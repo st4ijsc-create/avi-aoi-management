@@ -7,7 +7,8 @@
  *       the adapter protocols REGISTERED in the server registry (registration ≠ a connected device).
  *   • (Đợt 3 Task 1) Recipe versions + load history (I1-b) MOVED to /recipes (tab "Phiên bản" row actions + tab
  *       "Lịch sử nạp"); `?tab=recipes|history` redirects there keeping the query (LegacyTabRedirectGate).
- *   • Acquisition workers (W8-C) — visionAdapter worker status / start / stop.
+ *   • (Đợt 3 Task 2) Acquisition workers (W8-C) MOVED to Vision › Thu ảnh (`/vision/acquisition`, pages/VisionAcquisition.tsx);
+ *       `?tab=acquisition` redirects there keeping the query, for users who can open it (machine_alerts/canView).
  *
  * SAFETY / HONESTY (mirrors the router): FOCAS/Euromap are READ-ONLY frameworks — no real device is attached
  * and no telemetry is fabricated; the UI never invents values. Recipe mutations are METADATA/genealogy only —
@@ -22,11 +23,9 @@
  *    cũ trong popover) · `StatusChipStrip` thay 4 MetricCard, NHÃN ĐÚNG NGHĨA: "Adapter đăng ký" (đếm
  *    registry — đăng ký, KHÔNG phải kết nối) · "Framework đã kết nối" x/y (framework có thiết bị thật, `configured`,
  *    trên tổng số framework — thẻ "Framework" cũ gộp vào mẫu số) · "Cờ". Mỗi chip mang nguồn và trạng thái loading/lỗi riêng (không in 0 khi lỗi).
- *  - MAIN (`data-layout-main`) = hàng tab (`?tab=` status|acquisition; thanh công cụ DUY NHẤT trong MAIN, bộ
- *    lọc/hành động của từng tab nằm cùng hàng) + nội dung tab:
+ *  - MAIN (`data-layout-main`) = hàng tab (`?tab=` status [+ history chỉ-đọc, R-3-b]; thanh công cụ DUY NHẤT trong
+ *    MAIN, bộ lọc/hành động của từng tab nằm cùng hàng) + nội dung tab:
  *      · status: catalog connector danh sách–chi tiết (`SplitListDetail`, `?connector=`).
- *      · acquisition: panel worker `keepMounted` — mount LẦN ĐẦU khi mở tab, sau đó KHÔNG unmount khi đổi tab
- *        (Review Focus 3); khởi động worker = sheet `?flyout=acq-start`; dừng = một cú bấm như cũ.
  *  - Không thủ tục, input, cổng hay thông điệp lỗi nào đổi; mỗi lần xác nhận vẫn đúng MỘT lượt gọi như cũ (R-2-n).
  *
  * Doc 81 Đợt 3 Task 1 (doc 81 §11 "Đã chốt" 2026-10-05) — tab "Phiên bản recipe" và "Lịch sử nạp" DỜI sang Recipes:
@@ -34,7 +33,7 @@
  * theo mã/máy ở tab "Lịch sử nạp"; tạo phiên bản / lưu trữ dùng MỘT bộ với Recipes. `?tab=recipes|history` của trang
  * này chuyển hướng (REPLACE) sang `/recipes?tab=versions|history`, giữ nguyên văn mọi tham số khác.
  */
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearch } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
@@ -49,7 +48,6 @@ import {
   EmptyState,
   FeatureStatusNoticeChip,
   FlyoutHost,
-  NoticeChip,
   NoticeStack,
   PageContainer,
   SplitListDetail,
@@ -58,15 +56,13 @@ import {
   Text,
   VersionHistoryPanel,
   chipStateFromQuery,
-  useFlyout,
   useNarrowViewport,
-  useCloseOwnLayer,
   type FlyoutDefinition,
   type StatusChipItem,
   type VersionRow,
 } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
-import { LegacyTabRedirectGate } from "@/lib/engineeringLegacyRedirects";
+import { LegacyTabRedirectGate, VISION_ACQUISITION_PATH } from "@/lib/engineeringLegacyRedirects";
 import { LoadHistoryPanel, type HistoryMode, type LoadLogRow } from "./RecipeLoadHistory";
 import { type TabbedHubTab } from "@/components/workspace/TabbedHub";
 import { resolveActiveTab } from "@/components/workspace/hubState";
@@ -81,13 +77,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Plug, RefreshCw, Lock, AlertTriangle, Network,
-  CircleSlash, Camera, Play, Square, Loader2, History,
+  Plug, RefreshCw, AlertTriangle, Network,
+  CircleSlash, History,
 } from "lucide-react";
-import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   deriveFeatureStatus,
   featureStatusTone,
@@ -102,19 +95,11 @@ type AdapterEntry = IntegrationStatus["adapters"][number];
 type FrameworkSnapshot = RouterOutputs["equipmentIntegration"]["frameworkSnapshot"];
 
 type FrameworkKind = "focas" | "euromap";
-type StartWorkerInput = {
-  id: string;
-  source: { kind: "file"; directory?: string; loop?: boolean } | { kind: "mock"; width?: number; height?: number; maxFrames?: number };
-  machineCode?: string;
-  intervalMs?: number;
-  maxFrames?: number;
-  submit?: boolean;
-  assessQuality?: boolean;
-};
 
-const TAB_VALUES = ["status", "acquisition"] as const;
+// Đợt 3 Task 2 — tab "acquisition" dời sang Vision › Thu ảnh (`/vision/acquisition`).
+const TAB_VALUES = ["status"] as const;
 /** Fix round 1 (R-3-b) — tab CHỈ-ĐỌC "Phiên bản & lịch sử nạp" cho người KHÔNG mở được /recipes (machine_control/canView). */
-const TAB_VALUES_READONLY = ["status", "history", "acquisition"] as const;
+const TAB_VALUES_READONLY = ["status", "history"] as const;
 type TabValue = (typeof TAB_VALUES_READONLY)[number];
 const BASE_PATH = "/equipment-integration";
 
@@ -139,18 +124,12 @@ interface EqPageCtx {
   /** Ô mã recipe của tab chỉ-đọc (theo `?code=`). */
   roCode: string;
   setRoCode: (v: string) => void;
-  canViewAcq: boolean;
-  canControlAcq: boolean;
   userId: number | null;
   integration: IntegrationStatus | undefined;
   integrationLoading: boolean;
   integrationError: boolean;
   connector: string | null;
   setConnector: (v: string | null) => void;
-  // acquisition
-  acqLive: boolean | undefined;
-  setAcqLive: (v: boolean | undefined) => void;
-  refreshAcq: () => void;
 }
 const EqCtx = createContext<EqPageCtx | null>(null);
 function useEqCtx(): EqPageCtx {
@@ -160,11 +139,9 @@ function useEqCtx(): EqPageCtx {
 }
 
 const TAB_STATUS: TabbedHubTab = { value: "status", labelKey: "eqIntegration.tab.status", fallback: "Connector catalog", icon: <Network className="h-4 w-4" />, Content: CatalogTab };
-// W8-C (doc 27 V14 — W7-E's noted UI slot): acquisition worker status/start/stop. keepMounted: Review Focus 3.
-const TAB_ACQ: TabbedHubTab = { value: "acquisition", labelKey: "eqIntegration.tab.acquisition", fallback: "Acquisition workers", icon: <Camera className="h-4 w-4" />, Content: AcquisitionTab, keepMounted: true };
 const TAB_READONLY: TabbedHubTab = { value: "history", labelKey: "eqIntegration.tab.readonlyHistory", fallback: "Versions & load history (view only)", icon: <History className="h-4 w-4" />, Content: ReadOnlyHistoryTab };
-const TABS: readonly TabbedHubTab[] = [TAB_STATUS, TAB_ACQ];
-const TABS_READONLY: readonly TabbedHubTab[] = [TAB_STATUS, TAB_READONLY, TAB_ACQ];
+const TABS: readonly TabbedHubTab[] = [TAB_STATUS];
+const TABS_READONLY: readonly TabbedHubTab[] = [TAB_STATUS, TAB_READONLY];
 
 /**
  * Đợt 3 Task 1 — `?tab=recipes|history` (đã dời sang Recipes) ⇒ REPLACE sang `/recipes?tab=versions|history`, giữ query
@@ -173,10 +150,14 @@ const TABS_READONLY: readonly TabbedHubTab[] = [TAB_STATUS, TAB_READONLY, TAB_AC
 // Fix round 1 (Ruling R-3-b) — CHỈ chuyển người dùng mở được /recipes (machine_control/canView, cùng `canView` của
 // RecipeManagement). Người không có (vai seed operator/viewer) ở lại và thấy tab CHỈ-ĐỌC (phiên bản không thao tác + lịch
 // sử nạp) — cùng thủ tục đọc cũ (machine_monitoring/canView); quyền phía server không đổi.
+// Đợt 3 Task 2 — `?tab=acquisition` ⇒ `/vision/acquisition` (giữ query, bỏ `tab`) CHỈ cho người mở được trang đó
+// (machine_alerts/canView — cổng QĐ-3c của trang mới); người không có ở lại đây (tab catalog), không bị đẩy vào trang từ chối.
 export default function EquipmentIntegration() {
   const { hasPermission } = usePermissions();
+  const canOpenRecipes = hasPermission("machine_control", "canView");
+  const canViewAcq = hasPermission("machine_alerts", "canView");
   return (
-    <LegacyTabRedirectGate from={BASE_PATH} when={hasPermission("machine_control", "canView")}>
+    <LegacyTabRedirectGate from={BASE_PATH} when={(r) => (r.to === VISION_ACQUISITION_PATH ? canViewAcq : canOpenRecipes)}>
       <EquipmentIntegrationPage />
     </LegacyTabRedirectGate>
   );
@@ -189,9 +170,6 @@ function EquipmentIntegrationPage() {
   const canView = hasPermission("machine_monitoring", "canView");
   // "Chỉ xem" (machine_control/canCreate) — huy hiệu header giữ như cũ.
   const canControl = hasPermission("machine_control", "canCreate");
-  // W8-C — RBAC mirrors the visionAdapter router: machine_alerts/canView to read, canCreate to start/stop.
-  const canViewAcq = hasPermission("machine_alerts", "canView");
-  const canControlAcq = hasPermission("machine_alerts", "canCreate");
   const canOpenRecipes = hasPermission("machine_control", "canView");
 
   const search = useSearch();
@@ -208,8 +186,6 @@ function EquipmentIntegrationPage() {
   }, [codeParam]);
   const narrow = useNarrowViewport();
   const [connector, setConnector] = useUrlParam("connector");
-  // Acquisition: panel báo cờ thu ảnh trực tiếp lên hàng công cụ.
-  const [acqLive, setAcqLive] = useState<boolean | undefined>(undefined);
 
   const utils = trpc.useUtils();
 
@@ -231,15 +207,6 @@ function EquipmentIntegrationPage() {
     void utils.equipmentIntegration.status.invalidate();
     void utils.equipmentIntegration.integrationStatus.invalidate();
   };
-  const refreshAcq = () => void utils.visionAdapter.acquisitionWorkerStatus.invalidate();
-
-  // W8-C — start lives at page level (the sheet is rendered by FlyoutHost, outside the panel).
-  const startAcqM = trpc.visionAdapter.startAcquisitionWorker.useMutation({
-    onSuccess: () => { toast.success(t("eqIntegration.acq.started", "Acquisition worker started")); refreshAcq(); },
-    // PRECONDITION_FAILED carries the server's honest refusal reason (flag off,
-    // duplicate id, disabled config, source open failure) — show it verbatim.
-    onError: (e) => toastTrpcError(e),
-  });
 
   if (!canView) {
     return (
@@ -263,37 +230,17 @@ function EquipmentIntegrationPage() {
     canOpenRecipes,
     roCode,
     setRoCode,
-    canViewAcq,
-    canControlAcq,
     userId: user?.id ?? null,
     integration,
     integrationLoading: integrationQ.isLoading,
     integrationError: integrationQ.isError,
     connector,
     setConnector,
-    acqLive,
-    setAcqLive,
-    refreshAcq,
   };
 
-  // ── Flyouts (một stack sheet phải; URL `?flyout=&flyoutId=` là nguồn sự thật) ──
+  // ── Flyouts (một stack sheet phải; URL `?flyout=&flyoutId=` là nguồn sự thật). Đợt 3 Task 2: sheet khởi động worker
+  // ("acq-start") dời sang Vision › Thu ảnh — trang này không còn flyout nào.
   const flyouts: Record<string, FlyoutDefinition> = {};
-  if (canViewAcq && canControlAcq) {
-    flyouts["acq-start"] = {
-      size: "md",
-      title: t("eqIntegration.acq.startTitle", "Start acquisition worker"),
-      description: t(
-        "eqIntegration.acq.startHint",
-        "File source replays a capture folder; mock generates synthetic frames. Submission stamps NTF ('needs inspection') — acquisition is not judgement.",
-      ),
-      render: () => (
-        <StartAcquisitionWorkerForm
-          pending={startAcqM.isPending}
-          onSubmit={(cfg, done) => startAcqM.mutate(cfg, { onSuccess: done })}
-        />
-      ),
-    };
-  }
 
   const chipItems: StatusChipItem[] = [
     {
@@ -419,7 +366,6 @@ function flagChipState(s: FeatureStatus): StatusChipItem["state"] {
 // ── Hàng công cụ của tab đang mở (cùng hàng dải tab — thanh công cụ DUY NHẤT trong MAIN) ───────
 function TabToolbar() {
   const ctx = useEqCtx();
-  if (ctx.tab === "acquisition") return <AcquisitionToolbar />;
   if (ctx.tab === "history" && !ctx.canOpenRecipes) return <ReadOnlyHistoryToolbar />;
   return <CatalogToolbar />;
 }
@@ -566,45 +512,6 @@ function ReadOnlyHistoryTab() {
         pickMachineText={t("eqIntegration.readonly.pickMachine", "Select a machine above to see its load history.")}
       />
     </div>
-  );
-}
-
-function AcquisitionToolbar() {
-  const { t } = useTranslation();
-  const ctx = useEqCtx();
-  const flyout = useFlyout();
-  if (!ctx.canViewAcq) return null;
-  return (
-    <>
-      {/* Live-flag notice (honest gate — workers refuse to start when off), as a chip in the tool row. */}
-      {ctx.acqLive === false && (
-        <NoticeChip kind="flagOff" label={t("eqIntegration.acq.liveOffChip", "Live acquisition off")}>
-          <p>
-            {t(
-              "eqIntegration.acq.flagOff",
-              "Live acquisition is disabled (LIVE_ACQUISITION_ENABLED is off). Status stays readable; starting a worker will be refused until the flag is enabled.",
-            )}
-          </p>
-        </NoticeChip>
-      )}
-      <NoticeChip kind="hint" label={t("eqIntegration.acq.aboutChip", "About sources")}>
-        <p>
-          {t(
-            "eqIntegration.acq.desc",
-            "Grab → quality metrics → optional NTF submit through the same canonical ingest path. File/mock sources are real today; GenICam stays a stub until a camera driver is bound.",
-          )}
-        </p>
-      </NoticeChip>
-      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={ctx.refreshAcq} title={t("common.refresh", "Refresh")} aria-label={t("common.refresh", "Refresh")}>
-        <RefreshCw className="h-4 w-4" />
-      </Button>
-      {ctx.canControlAcq && (
-        <Button size="sm" variant="outline" className="h-8" onClick={() => flyout.open("acq-start")}>
-          <Play className="mr-1 h-4 w-4" />
-          {t("eqIntegration.acq.start", "Start worker")}
-        </Button>
-      )}
-    </>
   );
 }
 
@@ -833,323 +740,6 @@ function UemField({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-2">
       <span className="font-mono text-muted-foreground">{label}</span>
       <span className="font-mono font-medium">{value}</span>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// W8-C (doc 27 V14, Đợt 7.6 follow-up) — Acquisition worker panel.
-//
-// UI over visionAdapter.acquisitionWorkerStatus / startAcquisitionWorker /
-// stopAcquisitionWorker (W7-E built them API-only and documented THIS page as
-// the panel slot). RBAC mirrors the router: machine_alerts/canView to read,
-// machine_alerts/canCreate to start/stop. LIVE_ACQUISITION_ENABLED gates
-// starting — the refusal reason from the server is surfaced verbatim (honest).
-//
-// Doc 81 Đợt 2 Task 7 — Review Focus 3: the tab is keepMounted; the panel mounts the FIRST time the tab is
-// opened (no polling for a page visit that never opens it) and is never unmounted by a tab switch afterwards.
-// ════════════════════════════════════════════════════════════════════════════
-
-type AcqStatus = RouterOutputs["visionAdapter"]["acquisitionWorkerStatus"];
-type AcqWorker = AcqStatus["workers"][number];
-
-const ACQ_STATE_TONE: Record<string, "success" | "warning" | "error" | "default" | "info"> = {
-  running: "success",
-  completed: "info",
-  stopped: "default",
-  error: "error",
-};
-
-function AcquisitionTab() {
-  const { tab, narrow } = useEqCtx();
-  // Chốt "đã mở": một khi tab được mở, panel ở lại (TabbedHub keepMounted giữ instance).
-  const [opened, setOpened] = useState(tab === "acquisition");
-  useEffect(() => {
-    if (tab === "acquisition") setOpened(true);
-  }, [tab]);
-  // `{narrow && …}` giữ vị trí con ⇒ qua lại 1024 px KHÔNG remount panel.
-  return opened ? (
-    <>
-      {narrow && <NarrowTools />}
-      <AcquisitionWorkersPanel />
-    </>
-  ) : null;
-}
-
-function AcquisitionWorkersPanel() {
-  const { t } = useTranslation();
-  const { tab, canViewAcq, canControlAcq, setAcqLive, refreshAcq } = useEqCtx();
-  // Panel giữ instance khi rời tab (Review Focus 3) nhưng chỉ poll khi tab đang mở (như tab Radix cũ: rời tab ⇒
-  // hết poll); quay lại ⇒ đọc ngay một lần.
-  const active = tab === "acquisition";
-
-  const statusQ = trpc.visionAdapter.acquisitionWorkerStatus.useQuery(undefined, {
-    enabled: canViewAcq,
-    refetchInterval: active ? 5_000 : false,
-    retry: false,
-  });
-  const wasActive = useRef(active);
-  useEffect(() => {
-    if (active && !wasActive.current && canViewAcq) void statusQ.refetch();
-    wasActive.current = active;
-  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
-  const sourcesQ = trpc.visionAdapter.listAcquisitionSources.useQuery(undefined, {
-    enabled: canViewAcq,
-    retry: false,
-    staleTime: 60_000,
-  });
-
-  const stopM = trpc.visionAdapter.stopAcquisitionWorker.useMutation({
-    onSuccess: () => {
-      toast.success(t("eqIntegration.acq.stopped", "Acquisition worker stopped"));
-      refreshAcq();
-    },
-    onError: (e) => toastTrpcError(e),
-  });
-
-  const status = statusQ.data as AcqStatus | undefined;
-  const liveEnabled = status?.liveEnabled;
-  useEffect(() => {
-    setAcqLive(liveEnabled);
-  }, [liveEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!canViewAcq) {
-    return (
-      <div data-acq-panel="" className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-        <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-        {t("eqIntegration.acq.noPermission", "Viewing acquisition workers requires the machine-alerts view permission.")}
-      </div>
-    );
-  }
-
-  const workers = status?.workers ?? [];
-
-  return (
-    <div data-acq-panel="" className="space-y-2">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("eqIntegration.acq.col.id", "Worker")}</TableHead>
-            <TableHead>{t("eqIntegration.col.status", "Status")}</TableHead>
-            <TableHead>{t("eqIntegration.acq.col.source", "Source")}</TableHead>
-            <TableHead className="text-right">{t("eqIntegration.acq.col.frames", "Frames")}</TableHead>
-            <TableHead className="text-right">{t("eqIntegration.acq.col.submitted", "Submitted")}</TableHead>
-            <TableHead className="text-right">{t("eqIntegration.acq.col.errors", "Errors")}</TableHead>
-            <TableHead>{t("eqIntegration.acq.col.last", "Last frame / error")}</TableHead>
-            {canControlAcq && <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {statusQ.isLoading && (
-            <TableRow>
-              <TableCell colSpan={canControlAcq ? 8 : 7} className="py-8 text-center text-muted-foreground">
-                <Loader2 className="mx-auto h-5 w-5 animate-spin" />
-              </TableCell>
-            </TableRow>
-          )}
-          {!statusQ.isLoading && workers.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={canControlAcq ? 8 : 7} className="py-8 text-center text-muted-foreground">
-                {t("eqIntegration.acq.empty", "No acquisition workers registered in this server session.")}
-              </TableCell>
-            </TableRow>
-          )}
-          {workers.map((w: AcqWorker) => {
-            const lastEntry = w.ledger.length > 0 ? w.ledger[w.ledger.length - 1] : null;
-            return (
-              <TableRow key={w.id}>
-                <TableCell>
-                  <span className="font-mono text-xs font-medium">{w.id}</span>
-                  <p className="text-[10px] text-muted-foreground">
-                    {t("eqIntegration.acq.since", "since")} {new Date(w.startedAt).toLocaleString()}
-                    {w.stoppedAt ? ` → ${new Date(w.stoppedAt).toLocaleTimeString()}` : ""}
-                  </p>
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={w.state} tone={ACQ_STATE_TONE[w.state] ?? "default"} label={t(`eqIntegration.acq.state.${w.state}`, w.state)} />
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="font-mono text-[11px]">{w.config.source.kind}</Badge>
-                  {w.config.submit && (
-                    <Badge variant="outline" className="ml-1 text-[10px]" title={w.config.machineCode ?? undefined}>
-                      {t("eqIntegration.acq.submits", "submits NTF")}
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs">{w.framesGrabbed}</TableCell>
-                <TableCell className="text-right font-mono text-xs">{w.submitted}</TableCell>
-                <TableCell className={`text-right font-mono text-xs ${w.errors > 0 ? "text-destructive" : ""}`}>{w.errors}</TableCell>
-                <TableCell className="max-w-56">
-                  {w.lastError ? (
-                    <span className="block truncate text-xs text-destructive" title={w.lastError}>{w.lastError}</span>
-                  ) : lastEntry ? (
-                    <span className="text-xs text-muted-foreground">
-                      #{lastEntry.frameId} · {new Date(lastEntry.at).toLocaleTimeString()}
-                      {lastEntry.quality
-                        ? lastEntry.quality.acceptable
-                          ? ` · ${t("eqIntegration.acq.qualityOk", "quality OK")}`
-                          : ` · ${t("eqIntegration.acq.qualityBad", "quality poor")}`
-                        : ""}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                {canControlAcq && (
-                  <TableCell className="text-right">
-                    {w.state === "running" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-destructive hover:text-destructive/80"
-                        disabled={stopM.isPending}
-                        onClick={() => stopM.mutate({ id: w.id })}
-                      >
-                        <Square className="mr-1 h-3.5 w-3.5" />
-                        {t("eqIntegration.acq.stop", "Stop")}
-                      </Button>
-                    )}
-                  </TableCell>
-                )}
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-
-      {/* Discovery line — which source kinds are genuinely usable now */}
-      {sourcesQ.data && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <span>{t("eqIntegration.acq.sources", "Source kinds")}:</span>
-          {sourcesQ.data.sources.map((s: { kind: string; available: boolean; description?: string }) => (
-            <Badge
-              key={s.kind}
-              variant="outline"
-              className={`font-mono text-[10px] ${s.available ? "" : "text-muted-foreground line-through"}`}
-              title={s.description}
-            >
-              {s.kind}
-            </Badge>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SheetFooter({ children }: { children: ReactNode }) {
-  return <div className="flex justify-end gap-2 border-t pt-3">{children}</div>;
-}
-
-// ── Sheet: start acquisition worker (file / mock — the sources that are REAL today) ────────
-function StartAcquisitionWorkerForm({
-  pending, onSubmit,
-}: {
-  pending: boolean;
-  onSubmit: (cfg: StartWorkerInput, done: () => void) => void;
-}) {
-  const { t } = useTranslation();
-  const { layer, done } = useCloseOwnLayer();
-  const uid = useId();
-  const [id, setId] = useState("");
-  const [kind, setKind] = useState<"file" | "mock">("file");
-  const [directory, setDirectory] = useState("");
-  const [loop, setLoop] = useState(false);
-  const [mockMaxFrames, setMockMaxFrames] = useState("20");
-  const [intervalMs, setIntervalMs] = useState("2000");
-  const [submit, setSubmit] = useState(false);
-  const [machineCode, setMachineCode] = useState("");
-  const [assessQuality, setAssessQuality] = useState(true);
-
-  const dirty = id !== "" || kind !== "file" || directory !== "" || loop || mockMaxFrames !== "20" || intervalMs !== "2000" || submit || machineCode !== "" || !assessQuality;
-  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const doSubmit = () => {
-    if (!id.trim()) {
-      toast.error(t("eqIntegration.acq.idRequired", "Worker id is required.")); return;
-    }
-    if (kind === "file" && !directory.trim()) {
-      toast.error(t("eqIntegration.acq.dirRequired", "Directory is required for a file source.")); return;
-    }
-    if (submit && !machineCode.trim()) {
-      toast.error(t("eqIntegration.acq.machineRequired", "Submitting frames requires a machine code.")); return;
-    }
-    onSubmit(
-      {
-        id: id.trim(),
-        source: kind === "file"
-          ? { kind: "file", directory: directory.trim(), loop }
-          : { kind: "mock", maxFrames: Math.max(0, parseInt(mockMaxFrames) || 0) },
-        machineCode: machineCode.trim() || undefined,
-        intervalMs: Math.min(3_600_000, Math.max(50, parseInt(intervalMs) || 2000)),
-        submit,
-        assessQuality,
-      },
-      done,
-    );
-  };
-
-  return (
-    <div className="grid gap-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-id`}>{t("eqIntegration.acq.col.id", "Worker")}</Label>
-          <Input id={`${uid}-id`} value={id} placeholder="replay-line1" onChange={(e) => setId(e.target.value)} />
-        </div>
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-kind`}>{t("eqIntegration.acq.kind", "Source kind")}</Label>
-          <Select value={kind} onValueChange={(v) => setKind(v as "file" | "mock")}>
-            <SelectTrigger id={`${uid}-kind`} className="w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="file">file</SelectItem>
-              <SelectItem value="mock">mock</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      {kind === "file" ? (
-        <>
-          <div className="grid gap-1">
-            <Label htmlFor={`${uid}-dir`}>{t("eqIntegration.acq.directory", "Directory (on the server)")}</Label>
-            <Input id={`${uid}-dir`} value={directory} placeholder="D:\\captures\\line1" onChange={(e) => setDirectory(e.target.value)} />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={loop} onCheckedChange={(v) => setLoop(Boolean(v))} />
-            {t("eqIntegration.acq.loop", "Loop the folder (soak test)")}
-          </label>
-        </>
-      ) : (
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-max`}>{t("eqIntegration.acq.maxFrames", "Max frames (0 = until stopped)")}</Label>
-          <Input id={`${uid}-max`} type="number" min={0} value={mockMaxFrames} onChange={(e) => setMockMaxFrames(e.target.value)} />
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-interval`}>{t("eqIntegration.acq.interval", "Interval (ms)")}</Label>
-          <Input id={`${uid}-interval`} type="number" min={50} value={intervalMs} onChange={(e) => setIntervalMs(e.target.value)} />
-        </div>
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-mc`}>{t("eqIntegration.machineCode", "Machine code")}</Label>
-          <Input id={`${uid}-mc`} value={machineCode} placeholder="AOI-01" onChange={(e) => setMachineCode(e.target.value)} />
-        </div>
-      </div>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={submit} onCheckedChange={(v) => setSubmit(Boolean(v))} />
-        {t("eqIntegration.acq.submitFrames", "Submit each frame as a canonical NTF inspection (requires machine code)")}
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={assessQuality} onCheckedChange={(v) => setAssessQuality(Boolean(v))} />
-        {t("eqIntegration.acq.assessQuality", "Run image-quality metrics per frame")}
-      </label>
-      <SheetFooter>
-        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
-        <Button onClick={doSubmit} disabled={pending}>
-          {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-          <Play className="mr-1 h-4 w-4" />
-          {t("eqIntegration.acq.start", "Start worker")}
-        </Button>
-      </SheetFooter>
     </div>
   );
 }

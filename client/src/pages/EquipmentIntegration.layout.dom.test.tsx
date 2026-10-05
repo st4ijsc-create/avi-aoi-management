@@ -6,17 +6,17 @@
 //     `StatusChipStrip` (thay 4 MetricCard). Nhãn ĐÚNG NGHĨA: số adapter là ĐĂNG KÝ trong registry, không
 //     phải KẾT NỐI; chip "kết nối" đếm framework có thiết bị thật (configured), không phải "thiết bị".
 //   - MAIN (`data-layout-main`, CockpitLayout) = hàng tab (thanh công cụ DUY NHẤT) + nội dung tab. Tab đồng bộ
-//     `?tab=` (status / acquisition). Đợt 3 Task 1: tab recipes / history DỜI sang Recipes — `?tab=recipes|history`
-//     chuyển hướng `/recipes?tab=versions|history`, giữ query (các test cũ của hai tab nay ở
-//     RecipeManagement.integration.dom.test.tsx).
+//     `?tab=` (status; + history chỉ-đọc cho người không mở được /recipes — R-3-b). Đợt 3 Task 1: tab recipes / history
+//     DỜI sang Recipes — `?tab=recipes|history` chuyển hướng `/recipes?tab=versions|history`, giữ query (các test cũ của
+//     hai tab nay ở RecipeManagement.integration.dom.test.tsx). Đợt 3 Task 2: tab acquisition DỜI sang Vision › Thu ảnh —
+//     `?tab=acquisition` chuyển hướng `/vision/acquisition` (giữ query, bỏ `tab`) cho người mở được trang đó (các test cũ
+//     của tab nay ở VisionAcquisition.layout.dom.test.tsx).
 //   - Tab đầu = catalog connector dạng danh sách–chi tiết (`?connector=`), gồm framework FOCAS/Euromap và
 //     các giao thức adapter đã đăng ký; chi tiết framework giữ đầu dò snapshot trung thực.
-//   - Tab Worker thu ảnh: instance KHÔNG unmount khi đổi tab (Review Focus 3), chỉ mount lần đầu khi mở tab;
-//     khởi động worker = sheet; dừng = một cú bấm như cũ.
 // Chạy trên wouter THẬT với history jsdom. "Server" giả là kho trong bộ nhớ: truy vấn CHỈ đổi khi trang gọi
 // invalidate đúng thủ tục (như react-query).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
@@ -347,8 +347,9 @@ describe("Integration P4 — bố cục và chip trung thực", () => {
     expect(m.querySelector("[data-notice-kind]")).toBeNull();
     expect(m.querySelectorAll("[data-layout-toolbar]")).toHaveLength(1);
     const tabs = within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim());
-    // Đợt 3 Task 1 — tab "Phiên bản recipe" và "Lịch sử nạp" dời sang Recipes (yêu cầu của task).
-    expect(tabs).toEqual(["Danh mục connector", "Worker thu ảnh"]);
+    // Đợt 3 Task 1 — tab "Phiên bản recipe" và "Lịch sử nạp" dời sang Recipes; Đợt 3 Task 2 — tab "Worker thu ảnh" dời
+    // sang Vision › Thu ảnh (yêu cầu của hai task).
+    expect(tabs).toEqual(["Danh mục connector"]);
     const h1 = screen.getByRole("heading", { level: 1 });
     expect(h1).toHaveTextContent("Tích hợp thiết bị");
     expect(h1.closest("[data-layout-header]")).toBeTruthy();
@@ -472,17 +473,19 @@ describe("Catalog connector (danh sách–chi tiết)", () => {
 });
 
 describe("Tab + URL", () => {
-  it("bấm tab ghi `?tab=` (replace, giữ tham số khác); F5 `?tab=acquisition` mở đúng tab; `?tab=` lạ ⇒ catalog", async () => {
+  it("bấm tab ghi `?tab=` (replace, giữ tham số khác); F5 `?tab=history` mở đúng tab; `?tab=` lạ ⇒ catalog", async () => {
+    // Đợt 3 Task 2 — ĐỔI BỘ CHỌN: tab "Worker thu ảnh" đã dời ⇒ người còn ≥2 tab là vai không mở được /recipes (R-3-b):
+    // dùng tab chỉ-đọc "Phiên bản & lịch sử nạp".
+    Object.assign(perm, { controlView: false, control: false, release: false, acqView: false, acqControl: false });
     window.history.replaceState(null, "", "/equipment-integration?connector=framework:focas");
     render(<EquipmentIntegration />);
-    // Đợt 3 Task 1 — ĐỔI BỘ CHỌN: tab "Phiên bản recipe" / "Lịch sử nạp" đã dời ⇒ dùng tab Worker thu ảnh.
-    await openTab(/^Worker thu ảnh/);
-    expect(params().get("tab")).toBe("acquisition");
+    await openTab(/^Phiên bản & lịch sử nạp/);
+    expect(params().get("tab")).toBe("history");
     expect(params().get("connector")).toBe("framework:focas");
     cleanup();
-    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition");
+    window.history.replaceState(null, "", "/equipment-integration?tab=history");
     render(<EquipmentIntegration />);
-    expect(tabBtn(/^Worker thu ảnh/)).toHaveAttribute("aria-selected", "true");
+    expect(tabBtn(/^Phiên bản & lịch sử nạp/)).toHaveAttribute("aria-selected", "true");
     cleanup();
     window.history.replaceState(null, "", "/equipment-integration?tab=bogus");
     render(<EquipmentIntegration />);
@@ -523,7 +526,8 @@ describe("R-3-b — vai không có machine_control (operator/viewer): xem chỉ-
   it("tab chỉ-đọc có cho operator, KHÔNG có cho engineer (engineer dùng Recipes)", () => {
     asOperator();
     render(<EquipmentIntegration />);
-    expect(within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual(["Danh mục connector", "Phiên bản & lịch sử nạp (chỉ xem)", "Worker thu ảnh"]);
+    // Đợt 3 Task 2 — tab "Worker thu ảnh" đã dời sang Vision › Thu ảnh.
+    expect(within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual(["Danh mục connector", "Phiên bản & lịch sử nạp (chỉ xem)"]);
     cleanup();
     Object.assign(perm, { controlView: true });
     render(<EquipmentIntegration />);
@@ -577,128 +581,50 @@ describe("R-3-b — vai không có machine_control (operator/viewer): xem chỉ-
   });
 });
 
-describe("Worker thu ảnh — Review Focus 3: không unmount khi đổi tab", () => {
-  it("chưa mở tab ⇒ panel CHƯA mount (không truy vấn lúc nạp trang)", () => {
+describe("Đợt 3 Task 2 — worker thu ảnh đã dời sang Vision › Thu ảnh", () => {
+  it("`?tab=acquisition&flyout=acq-start&x=` (có machine_alerts/canView) ⇒ REPLACE `/vision/acquisition?flyout=acq-start&x=` (giữ query, bỏ `tab`)", () => {
+    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition&flyout=acq-start&x=a%20b");
+    const before = window.history.length;
     render(<EquipmentIntegration />);
+    expect(window.location.pathname + window.location.search).toBe("/vision/acquisition?flyout=acq-start&x=a%20b");
+    expect(window.history.length).toBe(before);
+  });
+
+  it("KHÔNG có machine_alerts/canView (vd operator) ⇒ KHÔNG chuyển vào trang bị từ chối; ở lại Integration, tab catalog", () => {
+    Object.assign(perm, { acqView: false, acqControl: false });
+    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition&connector=adapter:ot-s7");
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname).toBe("/equipment-integration");
+    expect(params().get("connector")).toBe("adapter:ot-s7");
+    expect(tabBtn(/^Danh mục connector/)).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("region", { name: "Chi tiết connector" })).toBeTruthy();
+  });
+
+  it("trang không còn tab, panel, truy vấn hay sheet nào của worker thu ảnh", async () => {
+    window.history.replaceState(null, "", "/equipment-integration?flyout=acq-start");
+    render(<EquipmentIntegration />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(within(toolbar()).queryByRole("tab", { name: /Worker thu ảnh/ })).toBeNull();
+    expect(acqPanel()).toBeNull();
+    expect(layer("acq-start")).toBeNull();
     expect(srv.acq.mounts).toBe(0);
     expect(srv.queryInputs.some((x) => x.startsWith("visionAdapter."))).toBe(false);
-    expect(acqPanel()).toBeNull();
-  });
-
-  it("mở tab ⇒ mount MỘT lần; trạng thái sống của instance (nhịp poll) còn nguyên sau khi đổi tab qua lại; không unmount; vẫn poll 5 s", async () => {
-    render(<EquipmentIntegration />);
-    const user = await openTab(/^Worker thu ảnh/);
-    expect(srv.acq.mounts).toBe(1);
-    expect(within(acqPanel()!).getByText("10")).toBeTruthy();
-    act(() => {
-      for (const p of srv.acq.polls) p();
-      for (const p of srv.acq.polls) p();
-    });
-    expect(within(acqPanel()!).getByText("12")).toBeTruthy();
-    await user.click(tabBtn(/^Danh mục connector/));
-    expect(srv.acq.unmounts).toBe(0);
-    expect(acqPanel()).toBeTruthy();
-    expect(acqPanel()!.closest("[hidden]")).toBeTruthy();
-    expect(catalog()).toBeTruthy();
-    // Đợt 3 Task 1 — ĐỔI BỘ CHỌN: tab "Phiên bản recipe" đã dời ⇒ qua lại bằng tab catalog.
-    await user.click(tabBtn(/^Danh mục connector/));
-    await user.click(tabBtn(/^Worker thu ảnh/));
-    expect(srv.acq.mounts).toBe(1);
-    expect(srv.acq.unmounts).toBe(0);
-    expect(acqPanel()!.closest("[hidden]")).toBeNull();
-    expect(within(acqPanel()!).getByText("12")).toBeTruthy();
-    expect((srv.queryOpts["visionAdapter.acquisitionWorkerStatus"] as { refetchInterval?: number }).refetchInterval).toBe(5000);
-  });
-
-  it("F5 `?tab=acquisition` mount ngay; cờ thu ảnh TẮT ⇒ chip trong hàng công cụ (câu cũ trong popover), không phải khối trong MAIN", async () => {
-    srv.liveEnabled = false;
-    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition");
-    const user = userEvent.setup();
-    render(<EquipmentIntegration />);
-    expect(srv.acq.mounts).toBe(1);
-    const chipBtn = await within(toolbar()).findByRole("button", { name: /Thu ảnh trực tiếp tắt/ });
-    expect(screen.queryByText(/LIVE_ACQUISITION_ENABLED off/)).toBeNull();
-    await user.click(chipBtn);
-    expect(await screen.findByText(/Thu ảnh trực tiếp đang tắt \(LIVE_ACQUISITION_ENABLED off\)/)).toBeTruthy();
-  });
-
-  it("khởi động worker qua sheet `?flyout=acq-start`: kiểm tra bắt buộc như cũ; lưu ⇒ payload đúng, invalidate, đóng; panel không remount", async () => {
-    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition");
-    const user = userEvent.setup();
-    render(<EquipmentIntegration />);
-    await user.click(within(toolbar()).getByRole("button", { name: /Khởi động worker/ }));
-    const sheet = await waitLayer("acq-start");
-    await user.click(within(sheet).getByRole("button", { name: /Khởi động worker/ }));
-    expect(toastSpy.error).toHaveBeenCalledWith("Cần nhập id worker.");
-    await user.type(within(sheet).getByLabelText("Worker"), "replay-1");
-    await user.click(within(sheet).getByRole("button", { name: /Khởi động worker/ }));
-    expect(toastSpy.error).toHaveBeenCalledWith("Nguồn file cần đường dẫn thư mục.");
-    await user.type(within(sheet).getByLabelText("Thư mục (trên server)"), "D:\\cap");
-    await user.click(within(sheet).getByRole("button", { name: /Khởi động worker/ }));
-    await waitFor(() =>
-      expect(calls("startAcquisitionWorker")).toEqual([
-        { id: "replay-1", source: { kind: "file", directory: "D:\\cap", loop: false }, machineCode: undefined, intervalMs: 2000, submit: false, assessQuality: true },
-      ]),
-    );
-    await waitFor(() => expect(layer("acq-start")).toBeNull());
-    expect(toastSpy.success).toHaveBeenCalledWith("Đã khởi động worker thu ảnh");
-    expect(srv.invalidated).toContain("visionAdapter.acquisitionWorkerStatus");
-    expect(within(acqPanel()!).getByText("replay-1")).toBeTruthy();
-    expect(srv.acq.mounts).toBe(1);
-  });
-
-  it("dừng worker: MỘT cú bấm ⇒ {id}, như cũ; không có quyền điều khiển ⇒ không có nút Khởi động/Dừng", async () => {
-    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition");
-    const user = userEvent.setup();
-    render(<EquipmentIntegration />);
-    await user.click(within(acqPanel()!).getByRole("button", { name: /Dừng/ }));
-    await waitFor(() => expect(calls("stopAcquisitionWorker")).toEqual([{ id: "w1" }]));
-    expect(toastSpy.success).toHaveBeenCalledWith("Đã dừng worker thu ảnh");
-    cleanup();
-    perm.acqControl = false;
-    render(<EquipmentIntegration />);
-    expect(within(toolbar()).queryByRole("button", { name: /Khởi động worker/ })).toBeNull();
-    expect(within(acqPanel()!).queryByRole("button", { name: /Dừng/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Khởi động worker/ })).toBeNull();
   });
 });
 
 describe("Màn hẹp (<1024 px) — GC10", () => {
-  it("công cụ của tab ra ĐẦU nội dung tab (hàng tab không cắt mất nút); qua lại 1024 px không remount panel worker", async () => {
+  it("công cụ của tab ra ĐẦU nội dung tab (hàng tab không cắt mất); qua lại 1024 px đưa công cụ về hàng tab", () => {
     presetNarrow(true);
-    // Đợt 3 Task 1 — ĐỔI BỘ CHỌN: công cụ của tab recipes đã dời ⇒ kiểm bằng công cụ của tab Worker thu ảnh.
-    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition");
+    // Đợt 3 Task 2 — ĐỔI BỘ CHỌN: công cụ của tab Worker thu ảnh đã dời ⇒ kiểm bằng công cụ của tab catalog (số connector).
     render(<EquipmentIntegration />);
-    expect(within(toolbar()).queryByRole("button", { name: /Khởi động worker/ })).toBeNull();
+    expect(within(toolbar()).queryByText("5 connector")).toBeNull();
     const tools = mainEl().querySelector("[data-narrow-tools]") as HTMLElement;
-    expect(within(tools).getByRole("button", { name: /Khởi động worker/ })).toBeTruthy();
+    expect(within(tools).getByText("5 connector")).toBeTruthy();
     setNarrow(false);
     expect(mainEl().querySelector("[data-narrow-tools]")).toBeNull();
-    expect(within(toolbar()).getByRole("button", { name: /Khởi động worker/ })).toBeTruthy();
-    const user = await openTab(/^Worker thu ảnh/);
-    expect(srv.acq.mounts).toBe(1);
+    expect(within(toolbar()).getByText("5 connector")).toBeTruthy();
     setNarrow(true);
-    setNarrow(false);
-    await user.click(tabBtn(/^Danh mục connector/));
-    expect(srv.acq.mounts).toBe(1);
-    expect(srv.acq.unmounts).toBe(0);
-  });
-});
-
-describe("Fix round 1", () => {
-  const interval = () => (srv.queryOpts["visionAdapter.acquisitionWorkerStatus"] as { refetchInterval?: number | false }).refetchInterval;
-
-  it("poll worker CHỈ khi tab Worker đang mở: rời tab ⇒ refetchInterval false (panel vẫn mount); quay lại ⇒ 5000 + refetch ngay một lần", async () => {
-    render(<EquipmentIntegration />);
-    const user = await openTab(/^Worker thu ảnh/);
-    expect(interval()).toBe(5000);
-    expect(srv.acq.refetches).toBe(0);
-    await user.click(tabBtn(/^Danh mục connector/));
-    expect(interval()).toBe(false);
-    expect(srv.acq.unmounts).toBe(0);
-    expect(srv.acq.refetches).toBe(0);
-    await user.click(tabBtn(/^Worker thu ảnh/));
-    expect(interval()).toBe(5000);
-    expect(srv.acq.refetches).toBe(1);
-    expect(srv.acq.mounts).toBe(1);
+    expect(within(mainEl().querySelector("[data-narrow-tools]") as HTMLElement).getByText("5 connector")).toBeTruthy();
   });
 });

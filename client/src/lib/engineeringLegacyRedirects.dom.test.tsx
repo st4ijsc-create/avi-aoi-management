@@ -19,6 +19,7 @@ import {
   engineeringLegacyRoutes,
   legacyRedirectTarget,
   legacyTabRedirectTarget,
+  type LegacyTabRedirect,
 } from "./engineeringLegacyRedirects";
 
 afterEach(() => cleanup());
@@ -102,7 +103,7 @@ function GateProbe() {
   const search = router.searchHook(router);
   return <output data-testid="where">{search ? `${path}?${search}` : path}</output>;
 }
-function goGate(start: string, when?: boolean) {
+function goGate(start: string, when?: boolean | ((r: LegacyTabRedirect) => boolean)) {
   const loc = memoryLocation({ path: start, record: true });
   const r = render(
     <Router hook={loc.hook} searchHook={loc.searchHook}>
@@ -132,7 +133,6 @@ describe("chuyển hướng theo TAB (Đợt 3 Task 1): Integration → Recipes"
   it.each([
     "/equipment-integration",
     "/equipment-integration?tab=status&connector=adapter:ot-s7",
-    "/equipment-integration?tab=acquisition",
     "/equipment-integration?tab=bogus",
   ])("%s — tab còn ở Integration ⇒ KHÔNG chuyển, dựng trang", (start) => {
     const r = goGate(start);
@@ -155,15 +155,55 @@ describe("chuyển hướng theo TAB (Đợt 3 Task 1): Integration → Recipes"
     expect(r.page()).toBeTruthy();
   });
 
-  it("bảng: đúng đích + giá trị tab đích; legacyTabRedirectTarget chép nguyên văn phần còn lại", () => {
-    const m = Object.fromEntries(ENGINEERING_LEGACY_TAB_REDIRECTS.map((r) => [`${r.from}?tab=${r.tab}`, `${r.to}?tab=${r.tabTo}`]));
-    expect(m).toEqual({ "/equipment-integration?tab=recipes": "/recipes?tab=versions", "/equipment-integration?tab=history": "/recipes?tab=history" });
+  it("bảng: đúng đích + giá trị tab đích (Đợt 3 Task 2: acquisition ⇒ trang KHÔNG tab, bỏ `tab`); legacyTabRedirectTarget chép nguyên văn phần còn lại", () => {
+    const m = Object.fromEntries(ENGINEERING_LEGACY_TAB_REDIRECTS.map((r) => [`${r.from}?tab=${r.tab}`, r.tabTo ? `${r.to}?tab=${r.tabTo}` : r.to]));
+    expect(m).toEqual({
+      "/equipment-integration?tab=recipes": "/recipes?tab=versions",
+      "/equipment-integration?tab=history": "/recipes?tab=history",
+      "/equipment-integration?tab=acquisition": "/vision/acquisition",
+    });
     expect(legacyTabRedirectTarget("/r", "?a=%2F&tab=x&b=1", "h")).toBe("/r?a=%2F&tab=h&b=1");
     expect(legacyTabRedirectTarget("/r", "a=1", "h")).toBe("/r?tab=h&a=1");
+    // không có tab đích ⇒ GỠ mọi `tab`, phần còn lại nguyên văn; không còn gì ⇒ đường dẫn trần
+    expect(legacyTabRedirectTarget("/r", "?a=%2F&tab=x&b=1&tab=y", undefined)).toBe("/r?a=%2F&b=1");
+    expect(legacyTabRedirectTarget("/r", "?tab=x", undefined)).toBe("/r");
   });
 
-  it("EquipmentIntegration.tsx bọc trang bằng LegacyTabRedirectGate từ đúng đường dẫn của nó, chỉ chuyển người mở được /recipes (R-3-b)", () => {
-    expect(EQ_SRC).toMatch(/<LegacyTabRedirectGate from=\{BASE_PATH\} when=\{hasPermission\("machine_control", "canView"\)\}>/);
+  it("EquipmentIntegration.tsx bọc trang bằng LegacyTabRedirectGate từ đúng đường dẫn của nó; mỗi đích chỉ chuyển người MỞ ĐƯỢC đích (R-3-b; Đợt 3 Task 2)", () => {
+    // ĐỔI BỘ CHỌN (Đợt 3 Task 2): `when` thành hàm theo từng chuyển hướng — /recipes ⇒ machine_control/canView (R-3-b),
+    // /vision/acquisition ⇒ machine_alerts/canView (cổng của trang mới, QĐ-3c).
+    expect(EQ_SRC).toMatch(/<LegacyTabRedirectGate from=\{BASE_PATH\} when=\{\(r\) => \(r\.to === VISION_ACQUISITION_PATH \? canViewAcq : canOpenRecipes\)\}>/);
+    expect(EQ_SRC).toMatch(/const canOpenRecipes = hasPermission\("machine_control", "canView"\);/);
+    expect(EQ_SRC).toMatch(/const canViewAcq = hasPermission\("machine_alerts", "canView"\);/);
     expect(EQ_SRC).toMatch(/const BASE_PATH = "\/equipment-integration";/);
+  });
+});
+
+// ── Doc 81 Đợt 3 Task 2 — tab "Worker thu ảnh" của Integration dời sang Vision › Thu ảnh (trang KHÔNG tab) ───────────
+describe("chuyển hướng theo TAB (Đợt 3 Task 2): Integration ?tab=acquisition → /vision/acquisition", () => {
+  it.each([
+    ["/equipment-integration?tab=acquisition", "/vision/acquisition"],
+    ["/equipment-integration?tab=acquisition&flyout=acq-start", "/vision/acquisition?flyout=acq-start"],
+    ["/equipment-integration?x=a%20b&tab=acquisition&x=2", "/vision/acquisition?x=a%20b&x=2"],
+  ])("%s ⇒ %s (REPLACE, query giữ nguyên văn, bỏ `tab`)", (start, expected) => {
+    const r = goGate(start);
+    expect(r.where()).toBe(expected);
+    expect(r.history).toEqual([expected]);
+  });
+
+  it("`when` theo từng đích: người KHÔNG mở được /vision/acquisition ở lại (không bị đẩy vào trang từ chối); đích khác không ảnh hưởng", () => {
+    const onlyRecipes = (r: LegacyTabRedirect) => r.to === "/recipes";
+    let g = goGate("/equipment-integration?tab=acquisition&flyout=acq-start", onlyRecipes);
+    expect(g.where()).toBe("/equipment-integration?tab=acquisition&flyout=acq-start");
+    expect(g.page()).toBeTruthy();
+    cleanup();
+    g = goGate("/equipment-integration?tab=history&machineId=3", onlyRecipes);
+    expect(g.where()).toBe("/recipes?tab=history&machineId=3");
+    cleanup();
+    g = goGate("/equipment-integration?tab=history&machineId=3", (r) => r.to !== "/recipes");
+    expect(g.where()).toBe("/equipment-integration?tab=history&machineId=3");
+    cleanup();
+    g = goGate("/equipment-integration?tab=acquisition", (r) => r.to !== "/recipes");
+    expect(g.where()).toBe("/vision/acquisition");
   });
 });

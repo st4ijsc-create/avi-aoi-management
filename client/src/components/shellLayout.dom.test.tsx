@@ -57,6 +57,8 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
 vi.mock("@/hooks/useLicenseModules", () => ({
   useLicenseModules: () => ({
     isNavGroupAllowed: () => true,
+    // doc 81 Đợt 3 Task 2 — HẠ TẦNG: DashboardLayout lọc mục có `licenseModule` qua isModuleAllowed.
+    isModuleAllowed: () => true,
     isRouteAllowed: () => true,
     allowedModules: [],
     isModuleBlocked: (code: string) => (code === "MOD_AI" ? S.aiBlocked : false),

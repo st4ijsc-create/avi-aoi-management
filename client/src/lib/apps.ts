@@ -250,6 +250,8 @@ const CORE_SET = new Set(CORE_MODULE_CODES);
  */
 const ROUTE_APP_OVERRIDES: ReadonlyMap<string, string> = new Map([
   ["/corporate-dashboard", "overview"],
+  // doc 81 Đợt 3 Task 2 — Vision › Thu ảnh thuộc giấy phép MOD_OT_CONTROL (QĐ-3c) nhưng nằm ở khu Vision của app AI.
+  ["/vision/acquisition", "ai"],
 ]);
 
 // ── Public API ───────────────────────────────────────────────────────────────

@@ -7214,7 +7214,9 @@
     "twin3d": "3D Factory",
     "twin3dDesc": "Spatial index: locate machines on the shop floor and see live status",
     "twinStudio": "3D Factory Design",
-    "twinStudioDesc": "Build buildings, floors and machine layout; import drawings; publish versions"
+    "twinStudioDesc": "Build buildings, floors and machine layout; import drawings; publish versions",
+    "visionAcquisition": "Image acquisition",
+    "visionAcquisitionDesc": "Acquisition workers: start, watch, stop"
   },
   "aboutPage": {
     "layoutTitle": "About System",
@@ -16214,49 +16216,6 @@
     "noAccess": "(you don't have access to this page)"
   },
   "eqIntegration": {
-    "acq": {
-      "desc": "Grab → quality metrics → optional NTF submit through the same canonical ingest path. File/mock sources are real today; GenICam stays a stub until a camera driver is bound.",
-      "flagOff": "Live acquisition is disabled (LIVE_ACQUISITION_ENABLED is off). Status stays readable; starting a worker will be refused until the flag is enabled.",
-      "noPermission": "Viewing acquisition workers requires the machine-alerts view permission.",
-      "start": "Start worker",
-      "stop": "Stop",
-      "started": "Acquisition worker started",
-      "stopped": "Acquisition worker stopped",
-      "empty": "No acquisition workers registered in this server session.",
-      "col": {
-        "id": "Worker",
-        "source": "Source",
-        "frames": "Frames",
-        "submitted": "Submitted",
-        "errors": "Errors",
-        "last": "Last frame / error"
-      },
-      "since": "since",
-      "submits": "submits NTF",
-      "state": {
-        "running": "Running",
-        "completed": "Completed",
-        "stopped": "Stopped",
-        "error": "Error"
-      },
-      "qualityOk": "quality OK",
-      "qualityBad": "quality poor",
-      "sources": "Source kinds",
-      "startTitle": "Start acquisition worker",
-      "startHint": "File source replays a capture folder; mock generates synthetic frames. Submission stamps NTF ('needs inspection') — acquisition is not judgement.",
-      "idRequired": "Worker id is required.",
-      "dirRequired": "Directory is required for a file source.",
-      "machineRequired": "Submitting frames requires a machine code.",
-      "kind": "Source kind",
-      "directory": "Directory (on the server)",
-      "loop": "Loop the folder (soak test)",
-      "maxFrames": "Max frames (0 = until stopped)",
-      "interval": "Interval (ms)",
-      "submitFrames": "Submit each frame as a canonical NTF inspection (requires machine code)",
-      "assessQuality": "Run image-quality metrics per frame",
-      "liveOffChip": "Live acquisition off",
-      "aboutChip": "About sources"
-    },
     "whenToUse": "When to use — browse vendor integration frameworks (FOCAS/Euromap) and the registered adapter protocols. Read-only metadata, no live device. Recipe versions and load history now live on the Recipes page.",
     "action": {
       "create": "Create",
@@ -16323,7 +16282,6 @@
     "selectMachine": "Select a machine…",
     "subtitle": "Multi-vendor integration frameworks (FOCAS / Euromap, read-only) — metadata only, no device commands.",
     "tab": {
-      "acquisition": "Acquisition workers",
       "status": "Connector catalog",
       "readonlyHistory": "Versions & load history (view only)"
     },
@@ -16368,6 +16326,60 @@
     "readonly": {
       "pickCode": "Enter a recipe code above to see its versions and load history (view only).",
       "pickMachine": "Select a machine above to see its load history."
+    }
+  },
+  "visionAcq": {
+    "title": "Image acquisition",
+    "whenToUse": "When to use — start, watch and stop image-acquisition workers (file replay / mock frames) that feed the inspection ingest path.",
+    "liveSubject": "Live acquisition",
+    "desc": "Grab → quality metrics → optional NTF submit through the same canonical ingest path. File/mock sources are real today; GenICam stays a stub until a camera driver is bound.",
+    "flagOff": "Live acquisition is turned off on the server. Status stays readable; starting a worker will be refused until an administrator turns live acquisition on.",
+    "noPermission": "Viewing acquisition workers requires the machine-alerts view permission.",
+    "start": "Start worker",
+    "stop": "Stop",
+    "started": "Acquisition worker started",
+    "stopped": "Acquisition worker stopped",
+    "empty": "No acquisition workers registered in this server session.",
+    "col": {
+      "id": "Worker",
+      "source": "Source",
+      "frames": "Frames",
+      "submitted": "Submitted",
+      "errors": "Errors",
+      "last": "Last frame / error",
+      "status": "Status"
+    },
+    "since": "since",
+    "submits": "submits NTF",
+    "state": {
+      "running": "Running",
+      "completed": "Completed",
+      "stopped": "Stopped",
+      "error": "Error"
+    },
+    "qualityOk": "quality OK",
+    "qualityBad": "quality poor",
+    "sources": "Source kinds",
+    "startTitle": "Start acquisition worker",
+    "startHint": "File source replays a capture folder; mock generates synthetic frames. Submission stamps NTF ('needs inspection') — acquisition is not judgement.",
+    "idRequired": "Worker id is required.",
+    "dirRequired": "Directory is required for a file source.",
+    "machineRequired": "Submitting frames requires a machine code.",
+    "kind": "Source kind",
+    "directory": "Directory (on the server)",
+    "loop": "Loop the folder (soak test)",
+    "maxFrames": "Max frames (0 = until stopped)",
+    "interval": "Interval (ms)",
+    "submitFrames": "Submit each frame as a canonical NTF inspection (requires machine code)",
+    "assessQuality": "Run image-quality metrics per frame",
+    "aboutChip": "About sources",
+    "flagError": "Could not read the worker status, so whether live acquisition is on is unknown.",
+    "machineCode": "Machine code",
+    "chip": {
+      "errors": "Workers with errors",
+      "running": "Running",
+      "srcErrors": "Server worker registry (acquisitionWorkerStatus) — state Error or frame errors above 0",
+      "srcRunning": "Running workers over all workers registered in this server session (acquisitionWorkerStatus)"
     }
   },
   "eqStandards": {

@@ -6997,7 +6997,9 @@
     "twin3d": "3D 工厂",
     "twin3dDesc": "空间索引：在车间中定位设备并查看实时状态",
     "twinStudio": "3D 工厂设计",
-    "twinStudioDesc": "创建建筑、楼层与设备布局；导入图纸；发布版本"
+    "twinStudioDesc": "创建建筑、楼层与设备布局；导入图纸；发布版本",
+    "visionAcquisition": "图像采集",
+    "visionAcquisitionDesc": "采集工作器：启动、监视、停止"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -14882,52 +14884,8 @@
   },
   "eqIntegration": {
     "tab": {
-      "acquisition": "采集工作器",
       "status": "连接器目录",
       "readonlyHistory": "版本与加载历史（仅查看）"
-    },
-    "acq": {
-      "desc": "抓帧 → 质量指标 → 可选按同一标准接入路径提交 NTF。file/mock 源今天即可用；GenICam 在绑定相机驱动前仍为占位。",
-      "flagOff": "实时采集已停用（LIVE_ACQUISITION_ENABLED 关闭）。状态仍可查看；启用该标志前无法启动工作器。",
-      "noPermission": "查看采集工作器需要 machine-alerts 查看权限。",
-      "start": "启动工作器",
-      "stop": "停止",
-      "started": "采集工作器已启动",
-      "stopped": "采集工作器已停止",
-      "empty": "本服务器会话中没有已注册的采集工作器。",
-      "col": {
-        "id": "工作器",
-        "source": "来源",
-        "frames": "帧数",
-        "submitted": "已提交",
-        "errors": "错误",
-        "last": "最近帧 / 错误"
-      },
-      "since": "自",
-      "submits": "提交 NTF",
-      "state": {
-        "running": "运行中",
-        "completed": "已完成",
-        "stopped": "已停止",
-        "error": "错误"
-      },
-      "qualityOk": "质量良好",
-      "qualityBad": "质量差",
-      "sources": "源类型",
-      "startTitle": "启动采集工作器",
-      "startHint": "file 源回放采集目录；mock 生成合成帧。提交会标记为 NTF（'待检'）— 采集不是判定。",
-      "idRequired": "请填写工作器 id。",
-      "dirRequired": "file 源需要目录路径。",
-      "machineRequired": "提交帧需要机台代码。",
-      "kind": "源类型",
-      "directory": "目录（服务器上）",
-      "loop": "循环目录（浸泡测试）",
-      "maxFrames": "最大帧数（0 = 直到停止）",
-      "interval": "间隔（毫秒）",
-      "submitFrames": "将每帧作为标准 NTF 检测提交（需要机台代码）",
-      "assessQuality": "对每帧运行图像质量指标",
-      "liveOffChip": "实时采集已关闭",
-      "aboutChip": "关于采集源"
     },
     "machineCode": "机台代码",
     "whenToUse": "适用场景 — 浏览厂商集成框架（FOCAS/Euromap）与已注册的适配器协议。只读元数据，无实时设备。配方版本与加载历史现位于配方页面。",
@@ -15035,6 +14993,60 @@
     "readonly": {
       "pickCode": "在上方输入配方代码，查看其版本与加载历史（仅查看）。",
       "pickMachine": "在上方选择一台机器，查看其加载历史。"
+    }
+  },
+  "visionAcq": {
+    "title": "图像采集",
+    "whenToUse": "何时使用 — 启动、监视和停止为检测接入路径提供图像的采集工作器（目录回放 / mock 帧）。",
+    "liveSubject": "实时采集",
+    "desc": "抓帧 → 质量指标 → 可选按同一标准接入路径提交 NTF。file/mock 源今天即可用；GenICam 在绑定相机驱动前仍为占位。",
+    "flagOff": "服务器上的实时采集已关闭。状态仍可查看；在管理员开启实时采集之前，启动工作器会被拒绝。",
+    "noPermission": "查看采集工作器需要 machine-alerts 查看权限。",
+    "start": "启动工作器",
+    "stop": "停止",
+    "started": "采集工作器已启动",
+    "stopped": "采集工作器已停止",
+    "empty": "本服务器会话中没有已注册的采集工作器。",
+    "col": {
+      "id": "工作器",
+      "source": "来源",
+      "frames": "帧数",
+      "submitted": "已提交",
+      "errors": "错误",
+      "last": "最近帧 / 错误",
+      "status": "状态"
+    },
+    "since": "自",
+    "submits": "提交 NTF",
+    "state": {
+      "running": "运行中",
+      "completed": "已完成",
+      "stopped": "已停止",
+      "error": "错误"
+    },
+    "qualityOk": "质量良好",
+    "qualityBad": "质量差",
+    "sources": "源类型",
+    "startTitle": "启动采集工作器",
+    "startHint": "file 源回放采集目录；mock 生成合成帧。提交会标记为 NTF（'待检'）— 采集不是判定。",
+    "idRequired": "请填写工作器 id。",
+    "dirRequired": "file 源需要目录路径。",
+    "machineRequired": "提交帧需要机台代码。",
+    "kind": "源类型",
+    "directory": "目录（服务器上）",
+    "loop": "循环目录（浸泡测试）",
+    "maxFrames": "最大帧数（0 = 直到停止）",
+    "interval": "间隔（毫秒）",
+    "submitFrames": "将每帧作为标准 NTF 检测提交（需要机台代码）",
+    "assessQuality": "对每帧运行图像质量指标",
+    "aboutChip": "关于采集源",
+    "flagError": "无法读取工作器状态，因此不清楚实时采集是否开启。",
+    "machineCode": "机台代码",
+    "chip": {
+      "errors": "出错工作器",
+      "running": "运行中",
+      "srcErrors": "服务器工作器列表（acquisitionWorkerStatus）— 状态为错误或帧错误大于 0",
+      "srcRunning": "运行中的工作器 / 本服务器会话中已注册的全部工作器（acquisitionWorkerStatus）"
     }
   },
   "panelDef": {

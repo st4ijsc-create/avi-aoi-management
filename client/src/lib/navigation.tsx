@@ -169,6 +169,14 @@ export interface NavItem {
    * chỉ-xem như trước) và quyền server không đổi. Admin bypass như mọi cổng nav khác.
    */
   authoringPermission?: string;
+  /**
+   * Doc 81 Đợt 3 Task 2 ([QĐ-3c]) — mã giấy phép RIÊNG của mục, THAY cho giấy phép của nhóm (`navGroupId` → module trong
+   * shared/module-registry.ts) khi lọc điều hướng theo giấy phép (`filterNavGroupsByLicense`). Dùng khi một mục dời vào
+   * nhóm của module khác mà KHÔNG được đổi giấy phép (vd Vision › Thu ảnh nằm ở nhóm AI nhưng giữ `MOD_OT_CONTROL` như
+   * `/equipment-integration`, không thêm `MOD_AI`). Giấy phép theo ROUTE (`isRouteAllowed`) vẫn áp như mọi mục.
+   * Không khai ⇒ luật cũ (giấy phép của nhóm).
+   */
+  licenseModule?: string;
 }
 
 export interface NavGroup {
@@ -1696,6 +1704,23 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "analytics",
         section: "visionLab",
       },
+      {
+        // Doc 81 Đợt 3 Task 2 — Vision › Thu ảnh: worker thu ảnh (trước là tab `?tab=acquisition` của
+        // /equipment-integration). [QĐ-3c] GIỮ ĐÚNG cổng cũ: quyền machine_alerts/canView (= router visionAdapter;
+        // RouteGuard navHref) + cờ thu ảnh trực tiếp của server (chặn khởi động, trang báo trạng thái cờ). KHÔNG MOD_AI:
+        // giấy phép của mục là MOD_OT_CONTROL như /equipment-integration (`licenseModule`; route ở module-registry).
+        // Không `tier` ⇒ ẩn ở chế độ Đơn giản như mục Integration cũ (nhóm advanced).
+        href: "/vision/acquisition",
+        label: "nav.visionAcquisition",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.visionAcquisitionDesc",
+        requiredPermission: "machine_alerts",
+        permissionCategory: "machine_monitoring",
+        section: "visionLab",
+        licenseModule: "MOD_OT_CONTROL",
+        engineerOriented: true,
+        beta: true,
+      },
       // ─ Knowledge & Training (doc 69 Wave E1 / T7 — NEW section) ─
       {
         // Split out of AIDataProcessingPage's dataset tab: a dataset split is a
@@ -2682,6 +2707,28 @@ function applyRbacFilter(
       ),
     }))
     .filter(group => group.items.length > 0);
+}
+
+/**
+ * Doc 81 Đợt 3 Task 2 — lọc điều hướng theo GIẤY PHÉP (thanh bên + ⌘K của DashboardLayout). Mục có `licenseModule` dùng
+ * giấy phép của chính nó thay cho giấy phép của nhóm; mọi mục khác giữ ĐÚNG luật cũ: nhóm không được phép ⇒ ẩn cả nhóm,
+ * route không được phép ⇒ ẩn mục. Nhóm rỗng sau lọc bị bỏ.
+ */
+export function filterNavGroupsByLicense(
+  groups: NavGroup[],
+  isNavGroupAllowed: (groupId: string) => boolean,
+  isModuleAllowed: (moduleCode: string) => boolean,
+  isRouteAllowed: (href: string) => boolean,
+): NavGroup[] {
+  return groups
+    .map((group) => {
+      const groupOk = isNavGroupAllowed(group.id);
+      return {
+        ...group,
+        items: group.items.filter((item) => (item.licenseModule ? isModuleAllowed(item.licenseModule) : groupOk) && isRouteAllowed(item.href)),
+      };
+    })
+    .filter((group) => group.items.length > 0);
 }
 
 export function getFilteredNavGroups(

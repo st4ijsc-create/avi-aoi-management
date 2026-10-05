@@ -45,7 +45,7 @@ import { useShellChromeHeight } from "./useShellChromeHeight";
 import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { NavGroup, NavItem, getFilteredNavGroups, getSearchNavGroups, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
+import { NavGroup, NavItem, filterNavGroupsByLicense, getFilteredNavGroups, getSearchNavGroups, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import {
   Breadcrumb,
@@ -412,7 +412,7 @@ function DashboardLayoutContent({
   const { hasPermission, hasAnyCategoryPermission } = usePermissions();
 
   // License module gating - filter groups by allowed modules
-  const { isNavGroupAllowed, isRouteAllowed: isLicenseRouteAllowed, allowedModules } = useLicenseModules();
+  const { isNavGroupAllowed, isModuleAllowed, isRouteAllowed: isLicenseRouteAllowed, allowedModules } = useLicenseModules();
 
   // doc 22 P4 — Simple vs Advanced menu mode (persisted; default per role).
   const { mode: navMode, toggleMode } = useNavMode(user?.role);
@@ -424,13 +424,12 @@ function DashboardLayoutContent({
   // Filter groups based on user role + granular permissions + license modules.
   // `accessibleGroups` = everything this user COULD see; `visibleGroups` then also
   // applies the Simple/Advanced mode filter (Simple hides engineering-heavy surface).
-  const accessibleGroups = getFilteredNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
-    .filter(group => isNavGroupAllowed(group.id))
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item => isLicenseRouteAllowed(item.href)),
-    }))
-    .filter(group => group.items.length > 0);
+  // doc 81 Đợt 3 Task 2 — mục có `licenseModule` (Vision › Thu ảnh: MOD_OT_CONTROL, không MOD_AI) lọc theo giấy phép
+  // của chính nó; mọi mục khác giữ luật cũ (nhóm → module, rồi route).
+  const accessibleGroups = filterNavGroupsByLicense(
+    getFilteredNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any),
+    isNavGroupAllowed, isModuleAllowed, isLicenseRouteAllowed,
+  );
 
   // Only offer the Advanced toggle when the user actually has advanced surface to reveal.
   const showModeToggle = hasAdvancedContent(accessibleGroups);
@@ -449,13 +448,10 @@ function DashboardLayoutContent({
   // doc 63 (AUD-05 / IA-09) — ⌘K searches the UNCOLLAPSED accessible set (incl. the 28
   // rows folded into hubs), so a page hidden from the rail is still findable by name.
   // Same license/nav-group filtering as the sidebar, minus the hub-collapse step.
-  const searchAccessibleGroups = getSearchNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
-    .filter(group => isNavGroupAllowed(group.id))
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item => isLicenseRouteAllowed(item.href)),
-    }))
-    .filter(group => group.items.length > 0);
+  const searchAccessibleGroups = filterNavGroupsByLicense(
+    getSearchNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any),
+    isNavGroupAllowed, isModuleAllowed, isLicenseRouteAllowed,
+  );
   const searchGroups = searchAccessibleGroups;
 
   // doc 40 Lan — RBAC cho App Launcher: một app "truy cập được" khi là core, HOẶC còn ≥1

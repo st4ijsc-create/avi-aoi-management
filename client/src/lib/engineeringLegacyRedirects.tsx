@@ -62,17 +62,25 @@ export function engineeringLegacyRoutes() {
 // không thể là một `<Route>` chuyển hướng: trang cũ bọc nội dung bằng `LegacyTabRedirectGate`.
 // Luật (test: `engineeringLegacyRedirects.dom.test.tsx`): như trên — query cũ chép NGUYÊN VĂN, chỉ GIÁ TRỊ của `tab`
 // được thay (mọi lần xuất hiện của `tab` gộp về một, tại vị trí đầu tiên), REPLACE.
+//
+// Đợt 3 Task 2: `/equipment-integration?tab=acquisition` ⇒ `/vision/acquisition` (Vision › Thu ảnh — trang KHÔNG tab):
+// không có `tabTo` ⇒ mọi `tab` bị GỠ, phần còn lại của query chép nguyên văn (vd `?flyout=acq-start`).
+
+/** Đợt 3 Task 2 — đường dẫn của Vision › Thu ảnh (đích chuyển hướng của `?tab=acquisition`). */
+export const VISION_ACQUISITION_PATH = "/vision/acquisition";
 
 export interface LegacyTabRedirect {
   from: string;
   tab: string;
   to: string;
-  tabTo: string;
+  /** Giá trị `tab` ở đích; bỏ trống ⇒ đích không có tab, `tab` bị gỡ khỏi query. */
+  tabTo?: string;
 }
 
 export const ENGINEERING_LEGACY_TAB_REDIRECTS: readonly LegacyTabRedirect[] = [
   { from: "/equipment-integration", tab: "recipes", to: "/recipes", tabTo: "versions" },
   { from: "/equipment-integration", tab: "history", to: "/recipes", tabTo: "history" },
+  { from: "/equipment-integration", tab: "acquisition", to: VISION_ACQUISITION_PATH },
 ];
 
 /** Khoá của một cặp `k=v` trong query thô (giải mã như URLSearchParams: `+` ⇒ dấu cách). */
@@ -85,22 +93,22 @@ function rawKey(part: string): string {
   }
 }
 
-/** Đích: `to` + query cũ NGUYÊN VĂN, riêng `tab` mang giá trị mới. */
-export function legacyTabRedirectTarget(to: string, search: string, tabTo: string): string {
+/** Đích: `to` + query cũ NGUYÊN VĂN, riêng `tab` mang giá trị mới (hoặc bị gỡ khi `tabTo` trống). */
+export function legacyTabRedirectTarget(to: string, search: string, tabTo: string | undefined): string {
   const raw = search.startsWith("?") ? search.slice(1) : search;
   const out: string[] = [];
   let replaced = false;
   for (const part of raw.split("&")) {
     if (part === "") continue;
     if (rawKey(part) === "tab") {
-      if (!replaced) out.push(`tab=${encodeURIComponent(tabTo)}`);
+      if (!replaced && tabTo !== undefined) out.push(`tab=${encodeURIComponent(tabTo)}`);
       replaced = true;
       continue;
     }
     out.push(part);
   }
-  if (!replaced) out.unshift(`tab=${encodeURIComponent(tabTo)}`);
-  return `${to}?${out.join("&")}`;
+  if (!replaced && tabTo !== undefined) out.unshift(`tab=${encodeURIComponent(tabTo)}`);
+  return out.length ? `${to}?${out.join("&")}` : to;
 }
 
 /** Chuyển hướng theo tab áp cho `from` với query `search` (giá trị `tab` theo URLSearchParams — lần đầu), hoặc null. */
@@ -112,14 +120,24 @@ export function findLegacyTabRedirect(from: string, search: string): LegacyTabRe
 /**
  * Bọc nội dung trang `from`: `?tab=` đã dời ⇒ REPLACE sang đích (giữ query); còn lại ⇒ dựng trang như thường.
  * `when` (Fix round 1, Ruling R-3-b): chỉ chuyển cho người dùng MỞ ĐƯỢC trang đích (vd /recipes cần machine_control/canView);
- * `false` ⇒ ở lại trang cũ (trang tự dựng chế độ chỉ-đọc). Mặc định `true`.
+ * `false` ⇒ ở lại trang cũ (trang tự dựng chế độ chỉ-đọc / tab mặc định). Mặc định `true`. Đợt 3 Task 2: `when` có thể là
+ * HÀM theo từng chuyển hướng (mỗi đích một cổng riêng — /recipes vs /vision/acquisition).
  */
-export function LegacyTabRedirectGate({ from, when = true, children }: { from: string; when?: boolean; children: ReactNode }) {
+export function LegacyTabRedirectGate({
+  from,
+  when = true,
+  children,
+}: {
+  from: string;
+  when?: boolean | ((r: LegacyTabRedirect) => boolean);
+  children: ReactNode;
+}) {
   const router = useRouter();
   const [path] = useLocation();
   const search = router.searchHook(router);
   // Chỉ khi ĐANG ở `from` (sau khi chuyển, cổng còn mount một nhịp ở đích thì không chuyển lại).
-  const hit = when && path === from ? findLegacyTabRedirect(from, search) : null;
+  const found = path === from ? findLegacyTabRedirect(from, search) : null;
+  const hit = found && (typeof when === "function" ? when(found) : when) ? found : null;
   if (hit) return <Redirect to={legacyTabRedirectTarget(hit.to, search, hit.tabTo)} replace />;
   return <>{children}</>;
 }

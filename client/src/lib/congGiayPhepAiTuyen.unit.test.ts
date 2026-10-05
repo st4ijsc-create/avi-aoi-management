@@ -84,8 +84,12 @@ const TUYEN_MOD_AI = new Set(getModuleByCode("MOD_AI")?.routes ?? []);
  * ★ Tuyến của nhóm điều hướng "ai" CỐ Ý **KHÔNG** thuộc `MOD_AI`.
  * `/inbox` nằm trong nhóm menu "ai" nhưng chủ thật của nó là `CORE_AUTH` (hộp thư cá nhân, còn
  * xuất hiện ở nhóm "Tôi"). Khai nó là MOD_AI sẽ khoá hộp thư của khách không mua AI.
+ * `/vision/acquisition` (doc 81 Đợt 3 Task 2, ký 2026-10-05 theo QĐ-3c của chủ dự án): worker thu ảnh dời khỏi
+ * `/equipment-integration` vào khu Vision của nhóm "ai" nhưng GIỮ ĐÚNG cổng cũ — chủ thật là `MOD_OT_CONTROL` (như
+ * trang cũ); khai MOD_AI sẽ lấy mất worker của khách có OT mà không mua AI. Mục khai `licenseModule` nên nhóm AI
+ * không ẩn nó (visionAcquisitionNav.unit.test.ts).
  */
-const NAV_AI_KHONG_THUOC_MOD_AI: readonly string[] = ["/inbox"];
+const NAV_AI_KHONG_THUOC_MOD_AI: readonly string[] = ["/inbox", "/vision/acquisition"];
 
 describe("§1 — CẦU CHÌ: bộ rút có thật sự nhìn thấy gì không", () => {
   it("★ không có ô mù + rút được ĐỦ tuyến (chống 'xanh vì rút trúng 0 dòng')", () => {
