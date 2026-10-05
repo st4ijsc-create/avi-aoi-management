@@ -4,7 +4,8 @@
  * the palette stay in sync without cross-importing a page component (critic). Framework-
  * free (no React) → the sidebar QuickAccess block + the palette both consume it.
  */
-import { canonicalNavHref } from "./engineeringLegacyRedirects";
+// Final wave (M-4) — bảng THUẦN (.ts), không qua engineeringLegacyRedirects.tsx (wouter + JSX): giữ lời hứa framework-free.
+import { canonicalNavHref } from "./engineeringLegacyRedirectTable";
 
 export const NAV_RECENT_KEY = "nav-recent";
 export const NAV_FAVORITES_KEY = "nav-favorites";

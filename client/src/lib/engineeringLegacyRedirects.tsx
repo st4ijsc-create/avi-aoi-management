@@ -17,46 +17,11 @@
 import type { ReactNode } from "react";
 import { Redirect, Route, useLocation, useRouter } from "wouter";
 
-export interface LegacyRedirect {
-  from: string;
-  to: string;
-  /** Tham số mặc định của đích — chỉ thêm khi URL cũ chưa mang tham số cùng tên. */
-  add: Readonly<Record<string, string>>;
-  /**
-   * Đợt 3 Task 5 — CÙNG trang, chỉ đổi đường dẫn (không gộp/không chế độ khác) ⇒ lối tắt Ghim/Gần đây đã lưu URL cũ được
-   * đọc như URL mới (`canonicalNavHref`, lib/navRecent.ts) thay vì âm thầm biến mất khỏi thanh bên.
-   */
-  rename?: true;
-}
-
-export const ENGINEERING_LEGACY_REDIRECTS: readonly LegacyRedirect[] = [
-  { from: "/engineering-studio", to: "/engineering-home", add: { tab: "catalog" } },
-  { from: "/engineering/studio", to: "/engineering-home", add: { tab: "catalog" } },
-  { from: "/programming-copilot", to: "/engineering", add: { copilot: "scratch" } },
-  // Đợt 3 Task 5 ([QĐ-3b]) — Fleet dời sang Labs: cùng trang, route mới; query cũ (?filter=deadlock, ?tab=, ?flyout=) đi tiếp.
-  { from: "/fleet-orchestration", to: "/labs/fleet-orchestration", add: {}, rename: true },
-];
-
-/**
- * Đợt 3 Task 5 — đường dẫn MỚI của một URL đã đổi tên (`rename: true`), giữ query NGUYÊN VĂN; URL khác trả nguyên.
- * Dùng cho Ghim/Gần đây (lib/navRecent.ts) — KHÔNG dùng cho các URL đã gộp vào trang khác (Studio, Copilot).
- */
-export function canonicalNavHref(href: string): string {
-  const q = href.indexOf("?");
-  const path = q < 0 ? href : href.slice(0, q);
-  const hit = ENGINEERING_LEGACY_REDIRECTS.find((r) => r.rename === true && r.from === path);
-  return hit ? hit.to + (q < 0 ? "" : href.slice(q)) : href;
-}
-
-/** Đích của một chuyển hướng: `to` + query cũ NGUYÊN VĂN + các tham số mặc định còn thiếu. */
-export function legacyRedirectTarget(to: string, search: string, add: Readonly<Record<string, string>> = {}): string {
-  const raw = search.startsWith("?") ? search.slice(1) : search;
-  const have = new URLSearchParams(raw);
-  const extra = new URLSearchParams();
-  for (const [k, v] of Object.entries(add)) if (!have.has(k)) extra.set(k, v);
-  const parts = [raw, extra.toString()].filter((x) => x !== "");
-  return parts.length ? `${to}?${parts.join("&")}` : to;
-}
+// Final wave (M-4) — bảng URL cũ + `canonicalNavHref` + `legacyRedirectTarget` là dữ liệu/hàm THUẦN, ở
+// `engineeringLegacyRedirectTable.ts` (navRecent.ts nhập từ đó, không qua file .tsx này). Tái xuất để mọi nơi nhập cũ giữ nguyên.
+import { ENGINEERING_LEGACY_REDIRECTS, legacyRedirectTarget } from "./engineeringLegacyRedirectTable";
+export { ENGINEERING_LEGACY_REDIRECTS, canonicalNavHref, legacyRedirectTarget } from "./engineeringLegacyRedirectTable";
+export type { LegacyRedirect } from "./engineeringLegacyRedirectTable";
 
 export function LegacyQueryRedirect({ to, add }: { to: string; add?: Readonly<Record<string, string>> }) {
   // Query THÔ của router (không qua `useSearch`, vốn `decodeURI` — %20 ⇒ dấu cách): chép nguyên văn.
