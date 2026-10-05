@@ -588,4 +588,14 @@ Plan `docs/superpowers/plans/2026-10-05-engineering-control-dot3.md` thực hi�
 
 ### Cần chủ dự án quyết
 
-(controller điền)
+**Thay đổi hành vi có chủ ý trong Đợt 3 (đã review):**
+- Phiên bản recipe/lịch sử nạp dời sang **Recipes**; người không mở được Recipes (thiếu quyền **hoặc** thiếu giấy phép MOD_ENGINEERING) giữ **đầy đủ** chức năng cũ trên Integration (R-3-h); Operator/Viewer giữ bản chỉ xem (R-3-b). Lưu trữ ở Recipes nay cần quyền sửa + xác nhận.
+- **Vision › Thu ảnh** (`/vision/acquisition`) giữ đúng cổng cũ (QĐ-3c); khách chỉ có giấy phép OT có lối vào trong menu Kỹ thuật + liên kết trên Integration.
+- **Sản xuất › Ca** (`/production/shifts`) cho đúng các vai trước đây thấy tab nhân lực ở Safety; ô "Sản xuất" trong bộ mở ứng dụng nay mở được cho kỹ sư/bảo trì/người xem (chỉ chứa trang Ca). Phối hợp người–robot vẫn ở Safety.
+- **Hộp việc "Của tôi"** theo người được giao (migration 0363 — **đã áp dev 2026-10-05**): người giao phải có cùng vai + quyền (+2FA khi bắt buộc) như người duyệt; **được giao ≠ được duyệt**; phân công tự hết hiệu lực khi mục rời trạng thái chờ (kể cả run điều phối bị giữ lại cùng bước).
+- **Fleet → Labs** (`/labs/fleet-orchestration`, nhóm Labs ẩn mặc định, mỗi người tự bật — lưu theo trình duyệt); cảnh báo bế tắc trên Hub luôn hiện và mở được Fleet.
+- Mọi script áp migration 0357–0363 nay **bắt buộc** chỉ rõ đích (`--dev-only` / `--test-only` / `--both`).
+
+**Đã chốt (2026-10-06):** giữ ô "Sản xuất" mở được cho kỹ sư/bảo trì/người xem; **thêm chọn ca khi phân công + lọc ca phía server**; danh mục công cụ Hub ẩn Fleet khi Labs tắt (ghim cá nhân giữ nguyên); **sửa chip đầu trang 640–1023 px** (gộp vào "+N", chip nghiêm trọng vẫn ghim); **nối chuông thông báo với bảng notifications**; duyệt ECN **giữ không 2FA** (theo nguyên tắc 2FA bật thủ công) — sửa ghi chú sai trong mã; **thống nhất lưu trữ recipe cần xác nhận** ở cả Recipes và Integration; xoá 10 ECN rác của test cũ trong `_test` (đã xoá). Gộp Đợt 3 vào main + push; 6 việc trên làm ở **Đợt 3b**.
+
+**Còn mở:** danh sách người được giao giới hạn 300; tuỳ chọn "Hiện Labs" theo trình duyệt (chưa có kho tuỳ chọn người dùng phía server); canvas Causal chưa kiểm trên trình duyệt (người dùng thử không có quyền).
