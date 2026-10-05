@@ -21824,6 +21824,7 @@
     "assigned": "Assigned to {{name}}",
     "unassigned": "Unassigned",
     "userFallback": "User #{{id}}",
-    "noApprovalRight": "Being assigned does not grant approval rights."
+    "noApprovalRight": "Being assigned does not grant approval rights.",
+    "needs2fa": "Assigning requires two-step verification (2FA) on your account. Set it up in Settings > Security."
   }
 }

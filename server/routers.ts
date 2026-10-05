@@ -4,7 +4,7 @@ import { establishSession, LOCKOUT_MINUTES, LoginError, verifyCredentials } from
 import { capVe2FA } from "./_core/pendingTwoFactor";
 import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, router, batBuoc2FA } from "./_core/trpc";
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
 import { toPublicUser, type MeUser, type KhongMangBiMat } from "./_core/publicUser";
 import { appError } from "./_core/appError";
@@ -252,6 +252,8 @@ export const appRouter = router({
       return {
         ...toPublicUser(opts.ctx.user),
         mustChangePassword: await db.phaiDoiMatKhau(opts.ctx.user.id),
+        // doc 81 Đợt 3 final wave — chính sách 2FA của triển khai (cùng vị từ `require2FA` / `assertTwoFactorForPrivileged`).
+        twoFactorRequired: batBuoc2FA(),
       };
     }),
     checkSetupRequired: publicProcedure.query(async () => {

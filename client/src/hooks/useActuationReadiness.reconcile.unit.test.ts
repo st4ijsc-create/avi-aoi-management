@@ -7,7 +7,8 @@
  * cảnh báo tư vấn của hook như cũ.
  */
 import { describe, expect, it } from "vitest";
-import { reconcileBlockersWithDeployPreview, type ActuationBlocker } from "./useActuationReadiness";
+import { reconcileBlockersWithDeployPreview, twoFactorSetupMissing, TWO_FA_BLOCKER, type ActuationBlocker } from "./useActuationReadiness";
+import HOOK_SRC from "./useActuationReadiness.ts?raw";
 
 const B2FA: ActuationBlocker = { code: "2fa", severity: "error", defaultMessage: "phải bật 2FA" };
 const BROLE: ActuationBlocker = { code: "role", severity: "error", defaultMessage: "vai không đủ" };
@@ -30,5 +31,26 @@ describe("reconcileBlockersWithDeployPreview", () => {
   });
   it("cảnh báo vai KHÔNG bị bản xem trước gỡ (hook và server cùng một luật vai)", () => {
     expect(reconcileBlockersWithDeployPreview([BROLE], [{ name: "role", ok: true }, { name: "twoFactor", ok: true }])).toEqual([BROLE]);
+  });
+});
+
+// doc 81 Đợt 3 final wave — "các trang khác vẫn báo giả 'phải bật 2FA'": hook nay đọc chính sách 2FA CỦA TRIỂN KHAI
+// (`auth.me.twoFactorRequired` = `batBuoc2FA()` của server). Chế độ nội bộ ⇒ không cảnh báo ở MỌI trang dùng hook
+// (Hộp duyệt, Workspace…), không chỉ wizard deploy có bản xem trước.
+describe("twoFactorSetupMissing — theo chính sách 2FA của triển khai", () => {
+  it("bắt buộc 2FA (server mặc định) + chưa bật ⇒ thiếu; đã bật ⇒ không thiếu", () => {
+    expect(twoFactorSetupMissing({ twoFactorEnabled: false, twoFactorRequired: true })).toBe(true);
+    expect(twoFactorSetupMissing({ twoFactorEnabled: true, twoFactorRequired: true })).toBe(false);
+  });
+  it("chế độ nội bộ (twoFactorRequired=false) ⇒ KHÔNG thiếu dù chưa bật — không cảnh báo/khoá giả", () => {
+    expect(twoFactorSetupMissing({ twoFactorEnabled: false, twoFactorRequired: false })).toBe(false);
+  });
+  it("ô vắng (server cũ) ⇒ coi như bắt buộc (mặc định server); chưa đăng nhập ⇒ không thiếu", () => {
+    expect(twoFactorSetupMissing({ twoFactorEnabled: false })).toBe(true);
+    expect(twoFactorSetupMissing(null)).toBe(false);
+  });
+  it("MỘT hằng cảnh báo 2FA: câu mặc định chỉ xuất hiện MỘT lần trong mã nguồn hook", () => {
+    expect(HOOK_SRC.split(TWO_FA_BLOCKER.defaultMessage).length - 1).toBe(1);
+    expect(TWO_FA_BLOCKER.code).toBe("2fa");
   });
 });

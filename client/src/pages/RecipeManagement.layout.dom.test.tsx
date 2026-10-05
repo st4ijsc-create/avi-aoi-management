@@ -39,8 +39,9 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
       a === "canView" ? perm.canView : a === "canCreate" ? perm.canCreate : a === "canEdit" ? perm.canEdit : false,
   }),
 }));
+// Final wave (M-3) — HẠ TẦNG: engineer ĐÃ bật 2FA (bộ chọn "Giao cho" nay mirror nửa 2FA của cổng server; thiếu 2FA ⇒ khoá).
 vi.mock("@/_core/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: 7, name: "Tester", role: "engineer" }, loading: false }),
+  useAuth: () => ({ user: { id: 7, name: "Tester", role: "engineer", twoFactorEnabled: true }, loading: false }),
 }));
 const toastSpy = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastSpy }));

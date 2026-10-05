@@ -25,8 +25,11 @@ vi.mock("sonner", () => ({ toast: toastSpy }));
 const errSpy = vi.hoisted(() => ({ toastTrpcError: vi.fn() }));
 vi.mock("@/lib/trpcErrors", () => ({ toastTrpcError: errSpy.toastTrpcError }));
 const who = vi.hoisted(() => ({ perms: new Set<string>(["machine_control:canEdit", "machine_control:canView", "interlock:canEdit", "machine_control:canCreate"]) }));
-const me = vi.hoisted(() => ({ role: "engineer" as string }));
-vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 3, role: me.role }, loading: false }) }));
+// Final wave (M-3) — HẠ TẦNG: người dùng mặc định ĐÃ bật 2FA (triển khai bắt buộc 2FA) ⇒ các ca cũ giữ nguyên nghĩa.
+const me = vi.hoisted(() => ({ role: "engineer" as string, twoFactorEnabled: true as boolean, twoFactorRequired: true as boolean | undefined }));
+vi.mock("@/_core/hooks/useAuth", () => ({
+  useAuth: () => ({ user: { id: 3, role: me.role, twoFactorEnabled: me.twoFactorEnabled, twoFactorRequired: me.twoFactorRequired }, loading: false }),
+}));
 vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({ isAdmin: false, hasPermission: (m: string, a: string) => who.perms.has(`${m}:${a}`) }),
 }));
@@ -96,6 +99,8 @@ beforeEach(() => {
   errSpy.toastTrpcError.mockReset();
   who.perms = new Set(["machine_control:canEdit", "machine_control:canView", "interlock:canEdit", "machine_control:canCreate"]);
   me.role = "engineer";
+  me.twoFactorEnabled = true;
+  me.twoFactorRequired = true;
 });
 afterEach(() => cleanup());
 
@@ -194,11 +199,68 @@ describe("AssignmentControl — không có quyền giao ⇒ chỉ đọc", () =>
   });
 });
 
+// Final wave (M-3) — bộ chọn mirror CẢ nửa 2FA của cổng server (assignGate → assertTwoFactorForPrivileged cho sàn
+// "actuation"): thiếu 2FA mà triển khai bắt buộc ⇒ bộ chọn hiện nhưng KHOÁ kèm lý do (không gọi roster, không gọi assign)
+// thay vì để server trả TWO_FACTOR_NOT_SET_UP. Chế độ nội bộ (twoFactorRequired=false) và sàn ECN (không 2FA) ⇒ không khoá.
+describe("AssignmentControl — 2FA của sàn vai (M-3)", () => {
+  it("recipe (sàn actuation) + chưa bật 2FA + triển khai bắt buộc ⇒ combobox KHOÁ, lý do 2FA hiện; KHÔNG gọi roster/assign", () => {
+    me.twoFactorEnabled = false;
+    render(<AssignmentControl entityType="recipe" entityId={9} assignment={undefined} canAssign />);
+    expect(combo()).toBeDisabled();
+    expect(screen.getByText(S("engineeringAssign.needs2fa"))).toBeVisible();
+    expect(document.querySelector('[data-assign-blocked="2fa"]')).toHaveAttribute("title", S("engineeringAssign.needs2fa"));
+    expect(srv.rosterCalls).toEqual([]);
+    fireEvent.click(combo());
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(srv.assign).toEqual([]);
+  });
+
+  it("đã giao A + thiếu 2FA ⇒ vẫn hiện tên A nhưng KHÔNG bỏ giao được (nút ✕ không hiện/không gọi)", () => {
+    me.twoFactorEnabled = false;
+    render(<AssignmentControl entityType="interlock_rule" entityId={3} assignment={{ entityId: 3, assigneeUserId: 11, assigneeName: "Nguyen Van A" }} canAssign />);
+    expect(combo()).toHaveTextContent("Nguyen Van A");
+    const clear = screen.queryByRole("button", { name: "Clear selection" });
+    if (clear) fireEvent.click(clear);
+    expect(srv.unassign).toEqual([]);
+  });
+
+  it("chế độ nội bộ (twoFactorRequired=false) ⇒ KHÔNG khoá dù chưa bật 2FA (server cũng không đòi)", () => {
+    me.twoFactorEnabled = false;
+    me.twoFactorRequired = false;
+    render(<AssignmentControl entityType="recipe" entityId={9} assignment={undefined} canAssign />);
+    expect(combo()).toBeEnabled();
+    expect(screen.queryByText(S("engineeringAssign.needs2fa"))).toBeNull();
+    expect(srv.rosterCalls).toEqual([{ entityType: "recipe" }]);
+  });
+
+  it("ECN (sàn ecnDecision, không 2FA) ⇒ KHÔNG khoá dù chưa bật 2FA", () => {
+    me.twoFactorEnabled = false;
+    render(<AssignmentControl entityType="ecn" entityId={5} assignment={undefined} canAssign />);
+    expect(combo()).toBeEnabled();
+    expect(srv.rosterCalls).toEqual([{ entityType: "ecn" }]);
+  });
+
+  it("dạng gọn (ô bảng) ⇒ lý do vẫn có cho trình đọc màn hình (sr-only) + title", () => {
+    me.twoFactorEnabled = false;
+    render(<AssignmentControl entityType="orchestration_run" entityId={4} assignment={undefined} canAssign compact />);
+    expect(combo()).toBeDisabled();
+    const reason = document.querySelector("[data-assign-blocked-reason]") as HTMLElement;
+    expect(reason).toHaveTextContent(S("engineeringAssign.needs2fa"));
+    expect(reason.className).toMatch(/sr-only/);
+  });
+
+  it("2FA đã bật ⇒ như cũ (không khoá)", () => {
+    render(<AssignmentControl entityType="changeover" entityId={2} assignment={undefined} canAssign />);
+    expect(combo()).toBeEnabled();
+    expect(document.querySelector("[data-assign-blocked]")).toBeNull();
+  });
+});
+
 describe("i18n — khoá engineeringAssign.* / Hub / lỗi có đủ vi/en/zh", () => {
   it.each([
     "engineeringAssign.label", "engineeringAssign.column", "engineeringAssign.none", "engineeringAssign.placeholder",
     "engineeringAssign.search", "engineeringAssign.empty", "engineeringAssign.assigned", "engineeringAssign.unassigned",
-    "engineeringAssign.userFallback", "engineeringAssign.noApprovalRight",
+    "engineeringAssign.userFallback", "engineeringAssign.noApprovalRight", "engineeringAssign.needs2fa",
     "engineeringHome.scopeMine", "engineeringHome.scopeMineHint", "engineeringHome.scopeApprovals", "oversight.mineAllClear",
     "errors.operation.assignEngineeringItem", "errors.operation.unassignEngineeringItem", "errors.field.assigneeUserId",
     "errors.reason.assignTargetNotPending", "errors.reason.assignmentChanged", "errors.reason.alreadyAssignedToUser",

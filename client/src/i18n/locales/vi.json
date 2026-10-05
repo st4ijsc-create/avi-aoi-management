@@ -21798,6 +21798,7 @@
     "assigned": "Đã giao cho {{name}}",
     "unassigned": "Đã bỏ giao",
     "userFallback": "Người dùng #{{id}}",
-    "noApprovalRight": "Được giao không cấp quyền duyệt."
+    "noApprovalRight": "Được giao không cấp quyền duyệt.",
+    "needs2fa": "Giao việc cần bật xác thực 2 bước (2FA) cho tài khoản của bạn. Vào Cài đặt > Bảo mật để thiết lập."
   }
 }

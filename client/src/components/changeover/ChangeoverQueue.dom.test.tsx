@@ -15,7 +15,8 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({ isAdmin: false, hasPermission: (_m: string, a: string) => (a === "canEdit" ? perm.canEdit : true) }),
 }));
 const who = vi.hoisted(() => ({ role: "engineer" }));
-vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 5, role: who.role }, loading: false }) }));
+// Final wave (M-3) — HẠ TẦNG: người dùng ĐÃ bật 2FA (bộ chọn "Giao cho" nay mirror nửa 2FA của cổng server; thiếu 2FA ⇒ khoá).
+vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 5, role: who.role, twoFactorEnabled: true }, loading: false }) }));
 const srv = vi.hoisted(() => ({ calls: [] as Array<{ path: string; input: unknown }> }));
 vi.mock("@/lib/trpc", () => {
   const q = (data: unknown, extra: Record<string, unknown> = {}) => ({ data, isLoading: false, isSuccess: data !== undefined, isError: false, ...extra });

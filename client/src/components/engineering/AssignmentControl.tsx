@@ -19,6 +19,7 @@ import { EntityPicker, type EntityOption } from "@/components/patterns/EntityPic
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { cn } from "@/lib/utils";
+import { twoFactorSetupMissing } from "@/hooks/useActuationReadiness";
 import { ASSIGNABLE, ASSIGN_ROLE_FLOORS, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 export interface AssignmentRow {
@@ -57,6 +58,18 @@ export function useCanAssign(entityType: AssignableEntityType): boolean {
   const def = ASSIGNABLE[entityType];
   const { module, action } = def.assignPerm;
   return role != null && ASSIGN_ROLE_FLOORS[def.roleFloor].roles.includes(role) && hasPermission(module, action);
+}
+
+/**
+ * doc 81 Đợt 3 final wave (M-3) — nửa 2FA của cổng server (`assignGate` → `assertTwoFactorForPrivileged` cho sàn
+ * "actuation"): sàn đòi 2FA, triển khai BẮT BUỘC 2FA (`auth.me.twoFactorRequired`, cùng vị từ `batBuoc2FA()`) và tài khoản
+ * chưa bật ⇒ server SẼ từ chối (TWO_FACTOR_NOT_SET_UP). Bộ chọn hiện nhưng KHOÁ kèm lý do thay vì để người dùng bấm rồi
+ * nhận lỗi. Chế độ nội bộ (`AUTH_2FA_BAT_BUOC=0`) ⇒ không khoá. Sàn "ecnDecision" không có 2FA ⇒ không khoá.
+ */
+export function useAssignTwoFactorBlocked(entityType: AssignableEntityType): boolean {
+  const { user } = useAuth();
+  if (!ASSIGN_ROLE_FLOORS[ASSIGNABLE[entityType].roleFloor].twoFactor) return false;
+  return twoFactorSetupMissing(user as { twoFactorEnabled?: boolean | null; twoFactorRequired?: boolean | null } | null | undefined);
 }
 
 function displayName(t: (k: string, o?: Record<string, unknown>) => string, row: { assigneeUserId: number; assigneeName: string | null }) {
@@ -101,7 +114,9 @@ export function AssignmentControl({
 }) {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
-  const roster = trpc.engineering.assignableUsers.useQuery({ entityType }, { enabled: canAssign, retry: false, staleTime: 60_000 });
+  // M-3 — có quyền + sàn vai nhưng thiếu 2FA mà triển khai đòi ⇒ bộ chọn KHOÁ kèm lý do (không gọi roster, không gọi assign).
+  const twoFaBlocked = useAssignTwoFactorBlocked(entityType) && canAssign;
+  const roster = trpc.engineering.assignableUsers.useQuery({ entityType }, { enabled: canAssign && !twoFaBlocked, retry: false, staleTime: 60_000 });
   const refresh = () => {
     void utils.engineering.assignments.invalidate({ entityType });
     void utils.oversight.pendingSummary.invalidate();
@@ -140,6 +155,10 @@ export function AssignmentControl({
 
   const label = t("engineeringAssign.label", "Assign to");
   const busy = assignM.isPending || unassignM.isPending;
+  const twoFaReason = t(
+    "engineeringAssign.needs2fa",
+    "Assigning requires two-step verification (2FA) on your account. Set it up in Settings > Security.",
+  );
 
   return (
     <div
@@ -151,13 +170,14 @@ export function AssignmentControl({
     >
       {!compact && <span className="shrink-0 text-xs font-medium text-muted-foreground">{label}</span>}
       {canAssign ? (
+        <span className="inline-flex min-w-0 items-center gap-1" title={twoFaBlocked ? twoFaReason : undefined} data-assign-blocked={twoFaBlocked ? "2fa" : undefined}>
         <EntityPicker
           aria-label={label}
           className="h-8 min-w-[10rem] max-w-[16rem] text-xs"
           options={options}
           value={assignment?.assigneeUserId ?? null}
-          loading={roster.isLoading}
-          disabled={busy}
+          loading={!twoFaBlocked && roster.isLoading}
+          disabled={busy || twoFaBlocked}
           placeholder={t("engineeringAssign.placeholder", "Unassigned — pick a person…")}
           searchPlaceholder={t("engineeringAssign.search", "Search people…")}
           emptyText={t("engineeringAssign.empty", "No one who can view this page")}
@@ -172,6 +192,10 @@ export function AssignmentControl({
             assignM.mutate({ entityType, entityId, assigneeUserId: next, expectedAssigneeUserId: assignment?.assigneeUserId ?? null });
           }}
         />
+        {twoFaBlocked && (
+          <span data-assign-blocked-reason="" className={compact ? "sr-only" : "text-[11px] text-warning"}>{twoFaReason}</span>
+        )}
+        </span>
       ) : (
         <span className="min-w-0">
           {assignment ? <AssigneeCell row={assignment} /> : <span className="text-xs text-muted-foreground">{t("engineeringAssign.none", "Unassigned")}</span>}

@@ -21826,6 +21826,7 @@
     "assigned": "已分配给 {{name}}",
     "unassigned": "已取消分配",
     "userFallback": "用户 #{{id}}",
-    "noApprovalRight": "被分配不授予审批权限。"
+    "noApprovalRight": "被分配不授予审批权限。",
+    "needs2fa": "分配需要为您的账户启用两步验证（2FA）。请前往 设置 > 安全 进行设置。"
   }
 }
