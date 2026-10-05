@@ -4,7 +4,7 @@
 // (modal) vẫn mở. Gốc: hộp OTP mở bằng mã (không có DialogTrigger) nên Radix trả focus về `triggerRef` = null. Hợp đồng:
 // đóng hộp OTP (Huỷ / Esc) ⇒ focus về đúng phần tử đã mở nó (nút xác nhận của wizard), nếu nó còn trong DOM.
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 vi.mock("react-i18next", () => ({
@@ -95,7 +95,7 @@ describe("useStepUpOtp — trả focus về nút đã mở hộp OTP", () => {
       fireEvent.click(screen.getByRole("button", { name: "Huỷ" }));
       await new Promise((r) => setTimeout(r, 10));
     });
-    expect(document.activeElement).toBe(opener);
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
   it("đích tường minh `guard(run, { returnFocus })` thắng activeElement", async () => {
@@ -107,6 +107,7 @@ describe("useStepUpOtp — trả focus về nút đã mở hộp OTP", () => {
       fireEvent.click(screen.getByRole("button", { name: "Huỷ" }));
       await new Promise((r) => setTimeout(r, 10));
     });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "khác" }));
+    // chờ có giới hạn (waitFor, 1 s): dưới tải song song, FocusScope của Radix trả focus muộn hơn 10 ms (đo: 1 lượt đỏ trong lượt quét)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "khác" })));
   });
 });
