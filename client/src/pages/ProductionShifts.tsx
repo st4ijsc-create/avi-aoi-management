@@ -43,6 +43,7 @@ import {
   chipStateFromQuery,
   useCloseOwnLayer,
   useFlyout,
+  useNarrowViewport,
   type FlyoutDefinition,
   type StatusChipItem,
 } from "@/components/patterns";
@@ -77,6 +78,8 @@ type AssignStatus = (typeof ASSIGN_STATUSES)[number];
 const ASSIGN_LIMIT = 200;
 /** `?shift=none` — phân công chưa gắn ca (`shiftConfigId` rỗng). */
 const NO_SHIFT = "none";
+/** Như Safety: dưới 1600 px panel phụ 300 px (MAIN rộng hơn ở 1366), từ 1600 px 340 px. */
+const WIDE_SIDE_BREAKPOINT_PX = 1600;
 
 type TFn = (key: string, fallback: string, opts?: Record<string, unknown>) => string;
 
@@ -148,6 +151,7 @@ export default function ProductionShifts() {
   const [shiftParam, setShiftParam] = useUrlParam("shift");
   const statusFilter = (ASSIGN_STATUSES as readonly string[]).includes(statusParam ?? "") ? (statusParam as AssignStatus) : undefined;
   const [closeTarget, setCloseTarget] = useState<Assignment | null>(null);
+  const wideSide = !useNarrowViewport(WIDE_SIDE_BREAKPOINT_PX);
 
   const utils = trpc.useUtils();
 
@@ -383,7 +387,7 @@ export default function ProductionShifts() {
               />
             }
             side={<BoardPanel board={board} loading={boardQ.isLoading} error={boardQ.isError} />}
-            sideWidth={340}
+            sideWidth={wideSide ? 340 : 300}
             sideLabel={t("shifts.side.label", "Current board — who and which robot is at each station now")}
             mainName="production-shifts"
           />
@@ -487,7 +491,7 @@ function AssignmentsTable({
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <div
-        className="max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_9rem)] min-h-[12rem] overflow-auto rounded-md border"
+        className="max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_14rem)] min-h-[12rem] overflow-auto rounded-md border"
         role="region"
         aria-label={t("workforce.assignmentsTitle", "Operator assignments")}
       >
@@ -609,7 +613,7 @@ function AssignmentDetail({ a, shift }: { a: Assignment; shift: ShiftConfig | un
 function BoardPanel({ board, loading, error }: { board: BoardStation[]; loading: boolean; error: boolean }) {
   const { t } = useTranslation();
   return (
-    <div className="flex max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_4.5rem)] min-h-0 flex-col gap-2 overflow-auto" data-board-panel="">
+    <div className="flex max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_8rem)] min-h-0 flex-col gap-2 overflow-auto" data-board-panel="">
       <div className="flex items-center gap-2 text-sm font-medium">
         <Users className="h-4 w-4" aria-hidden="true" />
         {t("workforce.boardTitle", "Current board — who & which robot is at each station now")}
