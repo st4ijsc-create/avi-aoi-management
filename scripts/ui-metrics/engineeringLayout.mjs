@@ -246,11 +246,15 @@ KNOWN_PROCS["programming-copilot"] = [...new Set([...KNOWN_PROCS["programming-co
 // final wave (I-4) — tab cảnh báo của Standards là CÙNG trang: đọc đúng những gì trang Standards đọc.
 PAGE_TABLES["equipment-standards-alarms"] = PAGE_TABLES["equipment-standards"];
 KNOWN_PROCS["equipment-standards-alarms"] = KNOWN_PROCS["equipment-standards"];
-// Đợt 3 Task 2 — Vision › Thu ảnh (trước: tab thu ảnh của Integration): bảng của vỏ (⊆ danh sách của Integration — giữ
-// nguyên để canh trôi không hẹp đi) + hai thủ tục visionAdapter (trạng thái worker và loại nguồn — bộ nhớ của server, không
-// bảng DB nào). Thủ tục equipmentIntegration.* của bước 1 giữ trong danh sách (chỉ là "đã biết", không bắt buộc gọi).
+// Đợt 3 Task 2 — Vision › Thu ảnh (trước: tab thu ảnh của Integration). Bảng: của vỏ (⊆ danh sách của Integration — giữ
+// nguyên để canh trôi không hẹp đi). Thủ tục đã biết (fix round 1, review minor): CHỈ vỏ + hai thủ tục visionAdapter (trạng
+// thái worker, loại nguồn — bộ nhớ server, không bảng) — trang không gọi equipmentIntegration.* nên không thừa kế chúng
+// (thừa kế = nới danh sách cho phép, che một thủ tục mới không mong muốn).
 PAGE_TABLES["vision-acquisition"] = PAGE_TABLES["equipment-integration"];
-KNOWN_PROCS["vision-acquisition"] = [...KNOWN_PROCS["equipment-integration"], "visionAdapter.acquisitionWorkerStatus", "visionAdapter.listAcquisitionSources"].sort();
+KNOWN_PROCS["vision-acquisition"] = [
+  ...KNOWN_PROCS["equipment-integration"].filter((p) => !p.startsWith("equipmentIntegration.") && p !== "machine.list"),
+  "visionAdapter.acquisitionWorkerStatus", "visionAdapter.listAcquisitionSources",
+].sort();
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 

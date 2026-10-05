@@ -333,8 +333,9 @@ URL cũ chuyển hướng tới trang mới (giữ query, bỏ `tab`). Màn đo 
 
 - `movedFrom` **chỉ** cấp tham chiếu h1 (`h1Ref` = của trang mẹ cũ, như `tabOf`/`calibrateAs`). Nó **không** có nhánh hiệu chuẩn
   riêng: không có bản ghi thì rơi vào nhánh thường (không tham chiếu FE1 ⇒ LỖI). Không gác nào bị nới.
-- `PAGE_TABLES` = của Integration (vỏ; ⊆ hợp `allTables()`), `KNOWN_PROCS` = của Integration + `visionAdapter.acquisitionWorkerStatus`,
-  `visionAdapter.listAcquisitionSources` (bộ nhớ server, không bảng).
+- `PAGE_TABLES` = của Integration (vỏ; ⊆ hợp `allTables()`). `KNOWN_PROCS` = CHỈ thủ tục của vỏ + `visionAdapter.acquisitionWorkerStatus`,
+  `visionAdapter.listAcquisitionSources` (bộ nhớ server, không bảng) — fix round 1 bỏ `equipmentIntegration.*`/`machine.list` thừa kế
+  (trang không gọi; giữ lại là nới danh sách cho phép).
 - Hành động khai báo: `khoi-dong-worker` (nút MỞ sheet `acq-start`; không bao giờ bấm nút gửi trong sheet).
 - **TRƯỚC/SAU KHÔNG CÙNG LOẠI** về hình học: trước là MAIN của Integration (hàng tab + bảng), sau là MAIN của trang mới (hàng công
   cụ + bảng). Đọc như "cùng nội dung ở chỗ mới", không như cải thiện/thoái lui của cùng một MAIN.
