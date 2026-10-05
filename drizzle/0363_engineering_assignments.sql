@@ -59,3 +59,31 @@ BEGIN
     GRANT USAGE, SELECT ON SEQUENCE "engineering_assignments_id_seq" TO avi_app;
   END IF;
 END $$;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Fix round 2 (2026-10-05) — ĐỢT CHỜ DUYỆT của orchestration run phải TĂNG ở MỌI lần run VÀO held/awaiting_confirm,
+-- không chỉ khi đổi bước. Resume giữ nguyên `currentStepId` (foeEngine.ts claimPausedRun), và cả `rehydrateInterrupted
+-- Runs` lúc khởi động lẫn edge coordinator đều giữ run lại ĐÚNG bước cũ ⇒ khoá theo bước làm phân công cũ SỐNG LẠI.
+-- Không có sổ sự kiện chỉ-ghi-thêm nào của run (`orchestration_run_steps` là upsert "latest wins") ⇒ một BỘ ĐẾM
+-- `pending_epoch` do TRIGGER tăng: MỘT cơ chế ở CSDL bắt mọi đường ghi (engine, rehydrate, edge, SQL tay) — không móc
+-- vào từng đường của engine.
+--   • tăng khi status đổi TỪ một trạng thái KHÔNG chờ (queued/running/…) SANG held | awaiting_confirm;
+--   • held ⇄ awaiting_confirm và cập nhật giữ nguyên status: KHÔNG tăng.
+-- Cột KHÔNG khai vào drizzle schema (`select().from(orchestrationRuns)` trên DB chưa áp 0363 sẽ hỏng toàn bộ
+-- orchestration — lý do 0361); chỉ `assignmentService.ts#EPISODE_SQL` đọc nó bằng SQL thô.
+-- ROLLBACK: DROP TRIGGER IF EXISTS "trg_orchestration_runs_pending_epoch" ON "orchestration_runs";
+--           DROP FUNCTION IF EXISTS "orchestration_runs_bump_pending_epoch"();
+--           ALTER TABLE "orchestration_runs" DROP COLUMN IF EXISTS "pending_epoch";
+ALTER TABLE "orchestration_runs" ADD COLUMN IF NOT EXISTS "pending_epoch" integer NOT NULL DEFAULT 0;
+CREATE OR REPLACE FUNCTION "orchestration_runs_bump_pending_epoch"() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF NEW.status::text IN ('held', 'awaiting_confirm') AND OLD.status::text NOT IN ('held', 'awaiting_confirm') THEN
+    NEW.pending_epoch := OLD.pending_epoch + 1;
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+DROP TRIGGER IF EXISTS "trg_orchestration_runs_pending_epoch" ON "orchestration_runs";
+CREATE TRIGGER "trg_orchestration_runs_pending_epoch"
+  BEFORE UPDATE OF "status" ON "orchestration_runs"
+  FOR EACH ROW EXECUTE FUNCTION "orchestration_runs_bump_pending_epoch"();

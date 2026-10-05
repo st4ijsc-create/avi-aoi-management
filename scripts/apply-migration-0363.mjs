@@ -11,7 +11,8 @@
  *       rồi ĐO HÀNH VI trong một giao dịch LUÔN HOÀN TÁC: chèn một phân công dò, chèn phân công active
  *       THỨ HAI cho cùng mục ⇒ 23505, đổi `active` ⇒ được, đổi `assignee_user_id` ⇒ 42501, DELETE ⇒ 42501
  *       (không một hàng thật nào bị đổi, kể cả khi chạy lại);
- *   (c) `__applied_migrations` có đúng 1 hàng cho tệp này.
+ *   (c) `__applied_migrations` có đúng 1 hàng cho tệp này;
+ *   (d) fix 2 — `orchestration_runs.pending_epoch` + trigger: đo chuỗi running→held→awaiting→running→held→held = [0,1,1,1,2,2].
  *
  *   node scripts/apply-migration-0363.mjs --dev-only    # DB dev (chủ dự án/Kỹ thuật tự chạy)
  *   node scripts/apply-migration-0363.mjs --test-only   # DB _test
@@ -210,6 +211,40 @@ async function applyTo(rawUrl, label) {
     const [conLai] = await appSql`SELECT count(*)::int AS n FROM ${appSql(BANG)} WHERE entity_type = 'probe-0363'`;
     if (conLai.n !== 0) throw new Error(`(b) giao dich do KHONG hoan tac: con ${conLai.n} hang probe`);
     console.log(`  ${TAG} ${label} (b) hành vi avi_app: ${JSON.stringify(kq)} — trong giao dịch HOÀN TÁC (0 hàng dò còn lại)`);
+
+    // (d) fix round 2 — bộ đếm đợt chờ duyệt của orchestration run (cột + trigger) và HÀNH VI của nó, đo bằng avi_app
+    //     trong giao dịch LUÔN HOÀN TÁC: running→held = +1, held→awaiting_confirm = giữ, →running→held (cùng bước) = +1,
+    //     cập nhật không đổi status = giữ.
+    const [cotEpoch] = await appSql`
+      SELECT data_type, is_nullable FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'orchestration_runs' AND column_name = 'pending_epoch'`;
+    if (!cotEpoch || cotEpoch.data_type !== "integer" || cotEpoch.is_nullable !== "NO") {
+      throw new Error(`(d) orchestration_runs.pending_epoch sai/thieu: ${JSON.stringify(cotEpoch)}`);
+    }
+    const [trg] = await appSql`
+      SELECT tgname, tgenabled FROM pg_trigger WHERE tgrelid = 'public.orchestration_runs'::regclass
+         AND tgname = 'trg_orchestration_runs_pending_epoch' AND NOT tgisinternal`;
+    if (!trg || trg.tgenabled === "D") throw new Error(`(d) thieu/tat trigger trg_orchestration_runs_pending_epoch: ${JSON.stringify(trg)}`);
+    const HOAN_TAC_D = new Error("probe-0363d-rollback");
+    let dem = null;
+    try {
+      await appSql.begin(async (tx) => {
+        const [r] = await tx`INSERT INTO orchestration_runs ("workflowId", "workflowRef", status, "currentStepId")
+          VALUES (-363, 'probe-0363', 'running', 'g1') RETURNING id, pending_epoch`;
+        const ep = async (patch) => (await tx`UPDATE orchestration_runs SET ${tx(patch)} WHERE id = ${r.id} RETURNING pending_epoch`)[0].pending_epoch;
+        const e1 = await ep({ status: "held" });
+        const e2 = await ep({ status: "awaiting_confirm" });
+        const e3 = await ep({ status: "running" });
+        const e4 = await ep({ status: "held", currentStepId: "g1" });
+        const e5 = await ep({ status: "held" });
+        dem = [r.pending_epoch, e1, e2, e3, e4, e5];
+        throw HOAN_TAC_D;
+      });
+    } catch (e) {
+      if (e !== HOAN_TAC_D) throw e;
+    }
+    if (JSON.stringify(dem) !== JSON.stringify([0, 1, 1, 1, 2, 2])) throw new Error(`(d) hanh vi trigger sai: ${JSON.stringify(dem)} (phai la [0,1,1,1,2,2])`);
+    console.log(`  ${TAG} ${label} (d) orchestration_runs.pending_epoch integer NOT NULL + trigger; chuỗi đo ${JSON.stringify(dem)} — giao dịch HOÀN TÁC`);
 
     // (c)
     await sql`

@@ -552,6 +552,80 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
   });
 
   // ══════════════════════════════════════════════════════════════════════════
+  describe("§9 fix 2 — run giữ lại ĐÚNG bước cũ sau resume (rehydrate lúc khởi động / edge coordinator) là ĐỢT MỚI", () => {
+    // Ghi bằng drizzle với ĐÚNG hình dạng các đường thật ghi (foeEngine claimPausedRun / setRunStatus trong
+    // rehydrateInterruptedRuns; edgeCoordinator đẩy kết quả run) — cơ chế tách đợt là trigger CSDL nên nguồn ghi không quan trọng.
+    const runsOf = async () => {
+      const { getDb } = await import("../db/connection");
+      const { orchestrationRuns } = await import("../../drizzle/schema");
+      const { and, eq, inArray } = await import("drizzle-orm");
+      return { d: (await getDb())!, orchestrationRuns, and, eq, inArray };
+    };
+    const resumeAt = async (runId: number, step: string) => {
+      const { d, orchestrationRuns, and, eq, inArray } = await runsOf();
+      const r = await d.update(orchestrationRuns).set({ status: "running", updatedAt: new Date() })
+        .where(and(eq(orchestrationRuns.id, runId), inArray(orchestrationRuns.status, ["awaiting_confirm", "held"]), eq(orchestrationRuns.currentStepId, step)))
+        .returning();
+      expect(r).toHaveLength(1);
+    };
+    const rehydrateHold = async (runId: number) => {
+      const { d, orchestrationRuns, eq } = await runsOf();
+      await d.update(orchestrationRuns).set({
+        status: "held",
+        error: "Interrupted by server restart (was running); awaiting manual resume.",
+        contextJson: { interrupted: true, interruptedFrom: "running" },
+        updatedAt: new Date(),
+      }).where(eq(orchestrationRuns.id, runId));
+    };
+    const edgeHold = async (runId: number) => {
+      const { d, orchestrationRuns, eq } = await runsOf();
+      const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId));
+      await d.update(orchestrationRuns).set({
+        status: "held",
+        error: run.error,
+        currentStepId: run.currentStepId,
+        contextJson: run.contextJson,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        updatedAt: new Date(),
+      }).where(eq(orchestrationRuns.id, runId));
+    };
+
+    for (const [name, hold] of [["rehydrateInterruptedRuns", rehydrateHold], ["edge coordinator", edgeHold]] as const) {
+      it(`★★★ ${name}: giao ở gate g1 cho A → resume → giữ lại ở CHÍNH g1 ⇒ A KHÔNG thấy; giao lại KHÔNG CONFLICT`, async () => {
+        const { oversightRouter } = await import("./oversightRouter");
+        const runId = await mkRun("awaiting_confirm");
+        const [{ currentStepId }] = await sql`SELECT "currentStepId" FROM orchestration_runs WHERE id = ${runId}`;
+        expect(currentStepId).toBe("gate1");
+        const sup = await as("supAssigner");
+        await sup.assign({ entityType: "orchestration_run", entityId: runId, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+        const mineA = async () => (await oversightRouter.createCaller(ctxOf("engViewer")).pendingSummary()).mine.orchestration.samples.map((x) => x.id);
+        expect(await mineA()).toContain(runId);
+        await resumeAt(runId, "gate1");
+        await hold(runId);
+        const [after] = await sql`SELECT status, "currentStepId" FROM orchestration_runs WHERE id = ${runId}`;
+        expect(after).toMatchObject({ status: "held", currentStepId: "gate1" });
+        expect(await mineA()).not.toContain(runId);
+        expect(await sup.assignments({ entityType: "orchestration_run", entityIds: [runId] })).toEqual([]);
+        await expect(sup.unassign({ entityType: "orchestration_run", entityId: runId, expectedAssigneeUserId: uid.engViewer })).rejects.toMatchObject({ code: "CONFLICT" });
+        // giao lại (kể cả cho CHÍNH A) với expected=null ⇒ thành công; hàng cũ tắt kèm audit expire
+        await sup.assign({ entityType: "orchestration_run", entityId: runId, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+        expect((await auditRows("orchestration_run", runId)).map((a) => a.action)).toEqual(["assign", "expire", "assign"]);
+        expect(await mineA()).toContain(runId);
+      });
+    }
+
+    it("chuyển qua lại held ⇄ awaiting_confirm (không rời trạng thái chờ) KHÔNG mở đợt mới — phân công vẫn sống", async () => {
+      const runId = await mkRun("held");
+      const sup = await as("supAssigner");
+      await sup.assign({ entityType: "orchestration_run", entityId: runId, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+      await sql`UPDATE orchestration_runs SET status = 'awaiting_confirm' WHERE id = ${runId}`;
+      await sql`UPDATE orchestration_runs SET status = 'held' WHERE id = ${runId}`;
+      expect((await sup.assignments({ entityType: "orchestration_run", entityIds: [runId] })).map((x) => x.assigneeUserId)).toEqual([uid.engViewer]);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
   describe("§6 roster 'Giao cho' — permissionHeldSql == checkPermission", () => {
     it("chỉ người GIAO được mới đọc roster; roster chỉ có người đang hoạt động XEM được trang, chỉ {id,name}", async () => {
       await expect((await as("engViewer")).assignableUsers({ entityType: "ecn" })).rejects.toMatchObject({ code: "FORBIDDEN" });

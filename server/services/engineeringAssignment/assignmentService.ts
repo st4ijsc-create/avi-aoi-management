@@ -53,7 +53,10 @@ export const PENDING_WHERE: Readonly<Record<AssignableEntityType, SQL>> = {
  *   • interlock rule — số lần ĐÃ DUYỆT (dòng `approve` của `control_audit_log`, ghi CÙNG giao dịch với lượt duyệt):
  *     sửa rule đã duyệt ⇒ `approvedBy/approvedAt` bị xoá (ILK-01) ⇒ chờ duyệt lại với khoá MỚI;
  *     ⚠ rule được duyệt THẲNG trong CSDL (seed, không qua router) không sinh dòng audit ⇒ không tách đợt được;
- *   • orchestration run — bước gate đang chờ (`currentStepId`): run sang gate sau ⇒ đợt mới.
+ *   • orchestration run — fix 2: `pending_epoch` (bộ đếm do TRIGGER mig 0363 tăng ở MỌI lần run VÀO held/awaiting_confirm
+ *     từ trạng thái không chờ — resume rồi rehydrate/edge giữ lại ĐÚNG bước cũ vẫn là đợt MỚI) + `currentStepId`. Cột KHÔNG
+ *     khai trong drizzle schema (DB chưa áp 0363 không được hỏng `select().from(orchestrationRuns)`), nên đọc bằng SQL thô
+ *     — chưa áp ⇒ 42703 ⇒ "Của tôi" degraded / giao trả `assignmentStoreMissing`.
  */
 export const EPISODE_SQL: Readonly<Record<AssignableEntityType, SQL>> = {
   ecn: sql`coalesce(to_char(${engineeringChanges.submittedAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US'), '')`,
@@ -61,7 +64,7 @@ export const EPISODE_SQL: Readonly<Record<AssignableEntityType, SQL>> = {
   interlock_rule: sql`(SELECT count(*) FROM ${controlAuditLog} WHERE ${controlAuditLog.entityType} = 'interlock_rule'
     AND ${controlAuditLog.entityId} = (${interlockRules.id})::text AND ${controlAuditLog.action} = 'approve')::text`,
   changeover: sql`''`,
-  orchestration_run: sql`coalesce(${orchestrationRuns.currentStepId}, '')`,
+  orchestration_run: sql`(${sql.raw('"orchestration_runs"."pending_epoch"')})::text || ':' || coalesce(${orchestrationRuns.currentStepId}, '')`,
 };
 
 const TABLE_ID = {
