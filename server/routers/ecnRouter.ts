@@ -48,7 +48,10 @@ import { ECN_CHANGE_TYPES, ECN_ITEM_ACTIONS, ECN_STATUSES } from "../../drizzle/
 
 // Engineering-change decisions are made by quality / engineering leadership.
 // (2FA is enforced by roleProcedure's require2FA for privileged roles.)
-const ecnDecisionProcedure = roleProcedure("admin", "supervisor", "quality_inspector", "engineer");
+// doc 81 Đợt 3 Task 4 fix 1 (R-3-e) — sàn vai xuất ra (chỉ đọc) để `engineering.assign` áp ĐÚNG sàn này cho ECN
+// thay vì chép một danh sách thứ hai. Hành vi của `transition` KHÔNG đổi.
+export const ECN_DECISION_ROLES = ["admin", "supervisor", "quality_inspector", "engineer"] as const;
+const ecnDecisionProcedure = roleProcedure(...ECN_DECISION_ROLES);
 
 function toTrpc(err: unknown): never {
   if (err instanceof EcnError) {

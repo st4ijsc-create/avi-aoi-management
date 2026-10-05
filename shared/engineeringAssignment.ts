@@ -23,6 +23,21 @@ export type AssignablePendingKey = "ecn" | "recipes" | "interlock" | "changeover
 
 type PermAction = "canView" | "canCreate" | "canEdit";
 
+/**
+ * doc 81 Đợt 3 Task 4 fix 1 (R-3-e) — SÀN VAI (+2FA) của đường sửa/duyệt thật của mỗi loại. Server KHÔNG đọc các mảng
+ * dưới đây để quyết định: nó áp `assertRoleFloor(ACTUATION_ROLES | ECN_DECISION_ROLES)` + `assertTwoFactorForPrivileged`
+ * — CHÍNH hằng của `_core/trpc.ts` / `ecnRouter.ts`. Mảng ở đây chỉ để client biết trước ai bấm được; lưới
+ * `assignGate.test.ts` canh hai bên KHÔNG lệch nhau.
+ *   • "actuation"   = `actuationProcedure` (admin/supervisor/engineer + 2FA): recipes.approve, changeover.approve,
+ *                     interlock.update, orchestration.resumeRun;
+ *   • "ecnDecision" = `ecnDecisionProcedure` (admin/supervisor/quality_inspector/engineer, KHÔNG chain require2FA).
+ */
+export type AssignRoleFloor = "actuation" | "ecnDecision";
+export const ASSIGN_ROLE_FLOORS: Readonly<Record<AssignRoleFloor, { roles: readonly string[]; twoFactor: boolean }>> = {
+  actuation: { roles: ["admin", "supervisor", "engineer"], twoFactor: true },
+  ecnDecision: { roles: ["admin", "supervisor", "quality_inspector", "engineer"], twoFactor: false },
+};
+
 export interface AssignableDef {
   type: AssignableEntityType;
   /** Nhóm của `pendingSummary` mà loại này thuộc về (Hub "Của tôi" đếm vào đúng nhóm này). */
@@ -32,6 +47,8 @@ export interface AssignableDef {
    * (server vẫn là tường thật của từng nút duyệt, không đổi).
    */
   assignPerm: { module: string; action: PermAction };
+  /** Sàn vai (+2FA) của đường sửa/duyệt thật — R-3-e: giao/bỏ giao đòi ĐÚNG sàn này cộng `assignPerm` + giấy phép. */
+  roleFloor: AssignRoleFloor;
   /**
    * Người được giao phải XEM được trang đích: MỌI module ở đây cần `canView` (cổng route của trang + cổng
    * của danh sách chờ duyệt trên trang, khi hai cổng khác nhau).
@@ -49,6 +66,7 @@ export const ASSIGNABLE: Readonly<Record<AssignableEntityType, AssignableDef>> =
     type: "ecn",
     pendingKey: "ecn",
     assignPerm: { module: "machine_control", action: "canEdit" },
+    roleFloor: "ecnDecision",
     viewModules: ["machine_control"],
     licenseModule: "MOD_ENGINEERING",
     errorEntity: "ecn",
@@ -58,6 +76,7 @@ export const ASSIGNABLE: Readonly<Record<AssignableEntityType, AssignableDef>> =
     type: "recipe",
     pendingKey: "recipes",
     assignPerm: { module: "machine_control", action: "canEdit" },
+    roleFloor: "actuation",
     viewModules: ["machine_control"],
     licenseModule: "MOD_OT_CONTROL",
     errorEntity: "recipe",
@@ -67,6 +86,7 @@ export const ASSIGNABLE: Readonly<Record<AssignableEntityType, AssignableDef>> =
     type: "interlock_rule",
     pendingKey: "interlock",
     assignPerm: { module: "interlock", action: "canEdit" },
+    roleFloor: "actuation",
     viewModules: ["interlock"],
     licenseModule: "MOD_OT_CONTROL",
     errorEntity: "interlockRule",
@@ -77,6 +97,7 @@ export const ASSIGNABLE: Readonly<Record<AssignableEntityType, AssignableDef>> =
     type: "changeover",
     pendingKey: "changeover",
     assignPerm: { module: "machine_control", action: "canEdit" },
+    roleFloor: "actuation",
     viewModules: ["machine_status", "machine_control"],
     licenseModule: "MOD_OT_CONTROL",
     errorEntity: "changeoverRequest",
@@ -87,6 +108,7 @@ export const ASSIGNABLE: Readonly<Record<AssignableEntityType, AssignableDef>> =
     type: "orchestration_run",
     pendingKey: "orchestration",
     assignPerm: { module: "machine_control", action: "canCreate" },
+    roleFloor: "actuation",
     viewModules: ["machine_control", "machine_monitoring"],
     licenseModule: "MOD_ENGINEERING",
     errorEntity: "workflowRun",

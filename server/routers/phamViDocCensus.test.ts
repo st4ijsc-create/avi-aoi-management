@@ -598,7 +598,15 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
  *   ⇒ C +2 · D +2 · tong +4.
  */
-const GHIM = { A: 341, B: 8, C: 482, D: 1131, S: 333, tong: 2295 } as const;
+/*
+ * ★★★ 2026-10-05 (doc 81 Đợt 3 Task 4 fix round 1, R-3-f) — **C 482→481 · S 333→334 · tong/A/B/D không đổi.**
+ *   • `engineering.assignments` giờ đọc phân công SỐNG bằng cách NỐI bảng thực thể (`engineering_changes`/`machine_recipes`/
+ *     `interlock_rules`/`changeover_requests`/`orchestration_runs` — vị từ chờ duyệt + đợt chờ duyệt) theo `entityIds` được
+ *     hỏi, và danh tính người gọi rời tay handler (`canViewTarget(ctx.user…)`) ⇒ bộ quét xếp nó sang **S** (chạm bảng
+ *     tenant, danh tính rời tay) thay vì C. Cổng đọc KHÔNG đổi (quyền xem trang); không thêm dòng nào vào sổ nợ.
+ *   ⇒ C −1 · S +1.
+ */
+const GHIM = { A: 341, B: 8, C: 481, D: 1131, S: 334, tong: 2295 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -29,7 +29,7 @@ let machineType: string | null = null;
 
 const ctxOf = (key: string) => {
   const role = ROLES[key];
-  return { user: { id: uid[key], role, name: `${RUN} ${key}`, twoFactorEnabled: true } } as any;
+  return { user: { id: uid[key], role, name: `${RUN} ${key}`, twoFactorEnabled: key !== "engNo2fa" } } as any;
 };
 const ROLES: Record<string, string> = {
   supAssigner: "supervisor", // machine_control canEdit + interlock canEdit ⇒ GIAO được ECN/recipe/changeover/rule
@@ -43,6 +43,11 @@ const ROLES: Record<string, string> = {
   supAuthor: "supervisor", // tác giả ECN (vai quyết định) — tự giao
   adminA: "admin",
   monitorOnly: "operator", // chỉ machine_status ⇒ gọi được pendingSummary, KHÔNG thấy tên
+  // fix 1 (R-3-e) — CÓ ĐỦ bit quyền sửa/duyệt nhưng NGOÀI sàn vai của đường sửa/duyệt thật.
+  opFull: "operator",
+  viewerFull: "viewer",
+  userFull: "user",
+  engNo2fa: "engineer", // đủ bit, vai đúng, CHƯA bật 2FA
 };
 const PERMS: Record<string, Array<[string, string, Partial<Record<"canView" | "canCreate" | "canEdit", boolean>>]>> = {
   supAssigner: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
@@ -54,6 +59,10 @@ const PERMS: Record<string, Array<[string, string, Partial<Record<"canView" | "c
   engAuthor: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
   supAuthor: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
   monitorOnly: [["machine_monitoring", "machine_status", { canView: true }]],
+  opFull: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
+  viewerFull: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
+  userFull: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
+  engNo2fa: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
 };
 
 async function engineering() {
@@ -183,6 +192,11 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       const nB = (await notifRows(uid.engViewer2)).filter((x) => x.entityId === ecnId).map((x) => (x.metadata as any).action);
       expect(nA).toEqual(["assigned", "unassigned"]);
       expect(nB).toEqual(["assigned"]);
+      // fix 1 — thông báo bỏ giao (giao lại) cho người CŨ không mang tiêu đề ECN.
+      const [{ title: ecnTitle }] = await sql`SELECT title FROM engineering_changes WHERE id = ${ecnId}`;
+      const unassignedA = (await notifRows(uid.engViewer)).filter((x) => x.entityId === ecnId && (x.metadata as any).action === "unassigned");
+      expect(unassignedA.map((x) => x.title)).toEqual([`Đã bỏ giao: ECN #${ecnId}`]);
+      expect(unassignedA[0].title).not.toContain(ecnTitle);
     });
 
     it("bỏ giao (CAS đúng) ⇒ không còn hàng active · audit `unassign` · 1 thông báo cho người bị bỏ giao", async () => {
@@ -196,6 +210,11 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       const n = (await notifRows(uid.engViewer)).filter((x) => x.entityId === ruleId);
       expect(n.map((x) => (x.metadata as any).action)).toEqual(["assigned", "unassigned"]);
       expect(n.every((x) => x.actionUrl === `/interlock-rules?filter=pending&rule=${ruleId}`)).toBe(true);
+      // fix 1 — thông báo BỎ GIAO không mang tên mục (người cũ có thể đã mất quyền xem): chỉ loại + #id.
+      const [{ name }] = await sql`SELECT name FROM interlock_rules WHERE id = ${ruleId}`;
+      expect(n[0].title).toContain(name);
+      expect(n[1].title).not.toContain(name);
+      expect(n[1].title).toBe(`Đã bỏ giao: interlock rule #${ruleId}`);
     });
 
     it("link sâu từng loại: recipe ?code=&tab=approval · changeover trang · run ?filter=pending&tab=approvals", async () => {
@@ -254,22 +273,23 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       expect(await activeRows("ecn", ecnId)).toHaveLength(0);
     });
 
-    it("người được giao: không tồn tại ⇒ NOT_FOUND · vô hiệu hoá ⇒ assigneeInactive · không xem được ⇒ assigneeCannotView", async () => {
+    it("người được giao: không tồn tại / vô hiệu hoá / không xem được ⇒ CÙNG MỘT lời từ chối assigneeInvalid", async () => {
       const ecnId = await mkEcn("submitted", uid.engAuthor);
       const c = await as("supAssigner");
-      await expect(c.assign({ entityType: "ecn", entityId: ecnId, assigneeUserId: 2_000_000_000, expectedAssigneeUserId: null }))
-        .rejects.toMatchObject({ code: "NOT_FOUND", cause: { appParams: { entity: "user" } } });
-      await expect(c.assign({ entityType: "ecn", entityId: ecnId, assigneeUserId: uid.engInactive, expectedAssigneeUserId: null }))
-        .rejects.toMatchObject({ code: "BAD_REQUEST", cause: { appParams: { reason: "assigneeInactive" } } });
-      await expect(c.assign({ entityType: "ecn", entityId: ecnId, assigneeUserId: uid.engNoView, expectedAssigneeUserId: null }))
-        .rejects.toMatchObject({ code: "BAD_REQUEST", cause: { appParams: { reason: "assigneeCannotView" } } });
+      // fix 1 — MỘT lời từ chối cho cả ba (không dò được trạng thái tài khoản): cùng mã, cùng tham số, cùng câu.
+      const ra = await c.assign({ entityType: "ecn", entityId: ecnId, assigneeUserId: 2_000_000_000, expectedAssigneeUserId: null }).catch((e) => e);
+      const rb = await c.assign({ entityType: "ecn", entityId: ecnId, assigneeUserId: uid.engInactive, expectedAssigneeUserId: null }).catch((e) => e);
+      const rc = await c.assign({ entityType: "ecn", entityId: ecnId, assigneeUserId: uid.engNoView, expectedAssigneeUserId: null }).catch((e) => e);
+      for (const e of [ra, rb, rc]) {
+        expect(e).toMatchObject({ code: "BAD_REQUEST", message: "Người được giao không hợp lệ.", cause: { appParams: { field: "assigneeUserId", reason: "assigneeInvalid" } } });
+      }
       expect(await activeRows("ecn", ecnId)).toHaveLength(0);
     });
 
     it("changeover cần XEM cả trang (machine_status) lẫn hàng đợi (machine_control): chỉ machine_control ⇒ assigneeCannotView", async () => {
       const coId = await mkChangeover(uid.engAuthor);
       await expect((await as("supAssigner")).assign({ entityType: "changeover", entityId: coId, assigneeUserId: uid.engCtlOnly, expectedAssigneeUserId: null }))
-        .rejects.toMatchObject({ code: "BAD_REQUEST", cause: { appParams: { reason: "assigneeCannotView" } } });
+        .rejects.toMatchObject({ code: "BAD_REQUEST", cause: { appParams: { reason: "assigneeInvalid" } } });
     });
 
     it("mục không chờ duyệt (ECN draft) ⇒ PRECONDITION_FAILED assignTargetNotPending · mục không tồn tại ⇒ NOT_FOUND · loại lạ ⇒ BAD_REQUEST (zod)", async () => {
@@ -284,7 +304,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
     });
 
     it("đọc phân công: không xem được trang ⇒ FORBIDDEN; xem được ⇒ chỉ tên hiển thị (không username/email/vai)", async () => {
-      await expect((await as("engNoView")).assignments({ entityType: "ecn" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect((await as("engNoView")).assignments({ entityType: "ecn", entityIds: [1] })).rejects.toMatchObject({ code: "FORBIDDEN" });
       const ecnId = await mkEcn("submitted", uid.engAuthor);
       await (await as("supAssigner")).assign({ entityType: "ecn", entityId: ecnId, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
       const rows = await (await as("engViewer2")).assignments({ entityType: "ecn", entityIds: [ecnId] });
@@ -324,7 +344,9 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
         .rejects.toMatchObject({ code: "FORBIDDEN" });
       const r2 = await mkRecipe(uid.engAuthor);
       await (await as("engAuthor")).assign({ entityType: "recipe", entityId: r2, assigneeUserId: uid.engAuthor, expectedAssigneeUserId: null });
-      await expect(machineRecipeRouter.createCaller(ctxOf("engAuthor")).recipes.approve({ recipeId: r2 })).rejects.toBeDefined();
+      // fix 1 — đúng lời từ chối second-approver (không phải một lỗi bất kỳ: 2FA, schema, guardrail…).
+      await expect(machineRecipeRouter.createCaller(ctxOf("engAuthor")).recipes.approve({ recipeId: r2 }))
+        .rejects.toMatchObject({ code: "BAD_REQUEST", cause: { appCode: "OPERATION_FAILED", appParams: { operation: "approveRecipe" } }, message: expect.stringMatching(/Segregation of duties/) });
       const rows = await sql`SELECT id, "approvedBy" FROM machine_recipes WHERE id IN ${sql([r1, r2])}`;
       expect(rows.every((x) => x.approvedBy == null)).toBe(true);
     });
@@ -408,6 +430,124 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       } finally {
         await sql`UPDATE permissions SET "canView" = true WHERE "userId" = ${uid.engViewer} AND "moduleName" = 'machine_control'`;
       }
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  describe("§7 fix 1 (R-3-e) — giao/bỏ giao đòi ĐÚNG sàn vai + 2FA của đường sửa/duyệt thật", () => {
+    const counts = async (type: string, id: number) => ({
+      audit: (await auditRows(type, id)).length,
+      notif: (await sql`SELECT count(*)::int AS n FROM notifications WHERE "entityType" = ${"engineering_" + type} AND "entityId" = ${id}`)[0].n as number,
+      rows: (await activeRows(type, id)).length,
+    });
+    const mkAll = async () => ({
+      ecn: await mkEcn("submitted", uid.engAuthor),
+      recipe: await mkRecipe(uid.engAuthor),
+      interlock_rule: await mkRule(uid.engAuthor),
+      changeover: await mkChangeover(uid.engAuthor),
+      orchestration_run: await mkRun(),
+    });
+
+    for (const who of ["opFull", "viewerFull", "userFull"]) {
+      it(`★★ ${who} (${ROLES[who]}) CÓ ĐỦ bit quyền ⇒ assign/unassign/roster FORBIDDEN cho MỌI loại; không audit, không thông báo, không hàng`, async () => {
+        const ids = await mkAll();
+        const c = await as(who);
+        for (const [type, id] of Object.entries(ids)) {
+          await expect(c.assign({ entityType: type as never, entityId: id, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null }), `${who} assign ${type}`)
+            .rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(c.assignableUsers({ entityType: type as never }), `${who} roster ${type}`).rejects.toMatchObject({ code: "FORBIDDEN" });
+          expect(await counts(type, id), `${who} ${type}`).toEqual({ audit: 0, notif: 0, rows: 0 });
+        }
+        // bỏ giao một phân công hợp lệ (do supervisor giao) cũng bị chặn, không ghi gì thêm
+        await (await as("supAssigner")).assign({ entityType: "ecn", entityId: ids.ecn, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+        await expect(c.unassign({ entityType: "ecn", entityId: ids.ecn, expectedAssigneeUserId: uid.engViewer })).rejects.toMatchObject({ code: "FORBIDDEN" });
+        expect(await counts("ecn", ids.ecn)).toEqual({ audit: 1, notif: 1, rows: 1 });
+      });
+    }
+
+    it("2FA bắt buộc ⇒ engineer CHƯA bật 2FA bị chặn ở loại 'actuation'; ECN theo đúng đường quyết định ECN (không chain 2FA) ⇒ qua", async () => {
+      const prev = process.env.AUTH_2FA_BAT_BUOC;
+      process.env.AUTH_2FA_BAT_BUOC = "1";
+      try {
+        const ids = await mkAll();
+        const c = await as("engNo2fa");
+        for (const type of ["recipe", "interlock_rule", "changeover", "orchestration_run"] as const) {
+          await expect(c.assign({ entityType: type, entityId: ids[type], assigneeUserId: uid.engViewer, expectedAssigneeUserId: null }), type)
+            .rejects.toMatchObject({ code: "FORBIDDEN", cause: { appCode: "TWO_FACTOR_NOT_SET_UP" } });
+          expect(await counts(type, ids[type])).toEqual({ audit: 0, notif: 0, rows: 0 });
+        }
+        await expect(c.assign({ entityType: "ecn", entityId: ids.ecn, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null })).resolves.toMatchObject({ entityId: ids.ecn });
+      } finally {
+        if (prev === undefined) delete process.env.AUTH_2FA_BAT_BUOC;
+        else process.env.AUTH_2FA_BAT_BUOC = prev;
+      }
+    });
+
+    it("SERVER_ROLE_FLOORS (hằng thật của trpc/ecnRouter) == ASSIGN_ROLE_FLOORS (shared, client) — không lệch", async () => {
+      const { SERVER_ROLE_FLOORS } = await import("../services/engineeringAssignment/assignGate");
+      const { ASSIGN_ROLE_FLOORS } = await import("@shared/engineeringAssignment");
+      for (const k of ["actuation", "ecnDecision"] as const) {
+        expect([...SERVER_ROLE_FLOORS[k].roles].sort(), k).toEqual([...ASSIGN_ROLE_FLOORS[k].roles].sort());
+        expect(SERVER_ROLE_FLOORS[k].twoFactor, k).toBe(ASSIGN_ROLE_FLOORS[k].twoFactor);
+      }
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  describe("§8 fix 1 (R-3-f) — phân công hết hiệu lực khi mục rời chờ duyệt; quay lại chờ ⇒ KHÔNG hiện lại cho người cũ", () => {
+    it("★★★ interlock: duyệt ⇒ rời 'Của tôi' + cột; sửa (về chờ duyệt) ⇒ người cũ KHÔNG thấy lại; giao lại KHÔNG CONFLICT (audit expire)", async () => {
+      const { oversightRouter } = await import("./oversightRouter");
+      const { interlockRouter } = await import("./interlockRouter");
+      const ruleId = await mkRule(uid.engAuthor);
+      const sup = await as("supAssigner");
+      await sup.assign({ entityType: "interlock_rule", entityId: ruleId, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+      const mineIds = async (k: string) => (await oversightRouter.createCaller(ctxOf(k)).pendingSummary()).mine.interlock.samples.map((x) => x.id);
+      expect(await mineIds("engViewer")).toContain(ruleId);
+      expect((await sup.assignments({ entityType: "interlock_rule", entityIds: [ruleId] })).map((r) => r.assigneeUserId)).toEqual([uid.engViewer]);
+      // duyệt THẬT (admin, khác tác giả) ⇒ rời chờ duyệt
+      const v = ((await interlockRouter.createCaller(ctxOf("adminA")).get({ id: ruleId })) as any).versionToken;
+      await interlockRouter.createCaller(ctxOf("adminA")).approve({ id: ruleId, expectedVersion: v });
+      expect(await mineIds("engViewer")).not.toContain(ruleId);
+      expect(await sup.assignments({ entityType: "interlock_rule", entityIds: [ruleId] })).toEqual([]);
+      // sửa rule đã duyệt (ILK-01 reset duyệt) ⇒ chờ duyệt LẠI, đợt mới ⇒ người cũ KHÔNG thấy
+      await interlockRouter.createCaller(ctxOf("engAuthor")).update({ id: ruleId, description: "sua sau duyet" });
+      const [r] = await sql`SELECT "approvedBy" FROM interlock_rules WHERE id = ${ruleId}`;
+      expect(r.approvedBy).toBeNull();
+      expect(await mineIds("engViewer")).not.toContain(ruleId);
+      expect(await sup.assignments({ entityType: "interlock_rule", entityIds: [ruleId] })).toEqual([]);
+      // giao lại (client thấy "chưa giao" ⇒ expected=null) ⇒ thành công, KHÔNG CONFLICT; hàng cũ tắt kèm audit expire
+      await sup.assign({ entityType: "interlock_rule", entityId: ruleId, assigneeUserId: uid.engViewer2, expectedAssigneeUserId: null });
+      expect((await activeRows("interlock_rule", ruleId)).map((x) => [x.assignee_user_id, x.active])).toEqual([[uid.engViewer, false], [uid.engViewer2, true]]);
+      expect((await auditRows("interlock_rule", ruleId)).map((a) => a.action)).toEqual(["assign", "expire", "assign"]);
+      // người cũ không nhận thêm thông báo nào khi hết hạn (chỉ 'assigned' ban đầu)
+      expect((await notifRows(uid.engViewer)).filter((x) => x.entityId === ruleId).map((x) => (x.metadata as any).action)).toEqual(["assigned"]);
+      expect(await mineIds("engViewer2")).toContain(ruleId);
+    });
+
+    it("orchestration run sang gate SAU ⇒ đợt mới: người được giao ở gate trước KHÔNG thấy; bỏ giao hàng đã chết ⇒ CONFLICT", async () => {
+      const { oversightRouter } = await import("./oversightRouter");
+      const runId = await mkRun("held");
+      const sup = await as("supAssigner");
+      await sup.assign({ entityType: "orchestration_run", entityId: runId, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+      await sql`UPDATE orchestration_runs SET "currentStepId" = 'gate2', status = 'awaiting_confirm' WHERE id = ${runId}`;
+      const mine = (await oversightRouter.createCaller(ctxOf("engViewer")).pendingSummary()).mine;
+      expect(mine.orchestration.samples.map((x) => x.id)).not.toContain(runId);
+      await expect(sup.unassign({ entityType: "orchestration_run", entityId: runId, expectedAssigneeUserId: uid.engViewer })).rejects.toMatchObject({ code: "CONFLICT" });
+      await sup.assign({ entityType: "orchestration_run", entityId: runId, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+      expect((await sup.assignments({ entityType: "orchestration_run", entityIds: [runId] })).map((x) => x.assigneeUserId)).toEqual([uid.engViewer]);
+    });
+
+    it("assignments: CHỈ id được hỏi, CHỈ phân công sống, sắp theo id mục; thiếu entityIds ⇒ BAD_REQUEST", async () => {
+      const sup = await as("supAssigner");
+      const a = await mkEcn("submitted", uid.engAuthor);
+      const b = await mkEcn("submitted", uid.engAuthor);
+      const gone = await mkEcn("submitted", uid.engAuthor);
+      for (const id of [b, a, gone]) await sup.assign({ entityType: "ecn", entityId: id, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+      await sql`UPDATE engineering_changes SET status = 'rejected' WHERE id = ${gone}`;
+      const rows = await sup.assignments({ entityType: "ecn", entityIds: [b, gone, a] });
+      expect(rows.map((r) => r.entityId)).toEqual([a, b].sort((x, y) => x - y));
+      expect(await sup.assignments({ entityType: "ecn", entityIds: [a] })).toHaveLength(1);
+      await expect(sup.assignments({ entityType: "ecn" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
   });
 

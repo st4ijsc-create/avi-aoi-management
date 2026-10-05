@@ -9,56 +9,50 @@
  *    bị SoD chặn.
  *
  * Cổng của từng loại lấy từ `shared/engineeringAssignment.ts` (danh sách DUY NHẤT; zod enum kiểm `entityType`):
- *   • giấy phép = module của router thực thể (`moduleGate` chạy NGUYÊN BẢN, cùng lời từ chối);
- *   • GIAO / BỎ GIAO = quyền sửa/duyệt của trang đó (`assignPerm`);
- *   • NGƯỜI ĐƯỢC GIAO phải tồn tại, đang hoạt động, và XEM được trang đích (`viewModules`, mọi module canView);
- *   • ĐỌC phân công (cột "Người được giao") = quyền xem trang đó.
+ *   • fix 1 (R-3-e) — GIAO / BỎ GIAO / roster = ĐÚNG cổng của đường sửa/duyệt thật: sàn vai (+2FA) + giấy phép + bit
+ *     quyền (`services/engineeringAssignment/assignGate.ts#requireAssignGate`, chạy chính thân kiểm của roleProcedure/
+ *     require2FA/moduleGate/requirePermission);
+ *   • NGƯỜI ĐƯỢC GIAO phải tồn tại, đang hoạt động, và XEM được trang đích (`viewModules`, mọi module canView) — fix 1:
+ *     ba trường hợp trả MỘT lời từ chối chung (`assigneeInvalid`) để người giao không dò được trạng thái tài khoản;
+ *   • ĐỌC phân công (cột "Người được giao") = quyền xem trang đó, CHỈ các id được hỏi, CHỈ phân công còn sống.
  * Phạm vi tenant/nhà máy: GIỮ NHƯ THỰC THỂ — năm router thực thể không lọc theo nhà máy (nằm trong sổ nợ
  * `phamViDocBaseline.ts`), nên giao việc cũng chỉ mang cổng RBAC của chúng — không hẹp hơn, không rộng hơn.
  *
+ * fix 1 (R-3-f) — phân công gắn với MỘT ĐỢT CHỜ DUYỆT (`pending_episode`; xem `assignmentService.ts#EPISODE_SQL`): mục
+ * rời chờ duyệt ⇒ hết hiệu lực ngay ở mọi lượt đọc; hàng `active` đã chết bị TẮT ở lượt giao kế tiếp (audit `expire`).
+ *
  * Mỗi lần giao / bỏ giao (trong MỘT giao dịch): 1 dòng `control_audit_log` + 1 dòng `notifications` cho người
  * được giao (hoặc người bị bỏ giao) với `actionUrl` = link sâu tới đúng mục. Giao lại A→B = bỏ giao A + giao B
- * (2 audit, 2 thông báo — mỗi người nhận đúng một). Chống đua: `expectedAssigneeUserId` (CAS, như
- * `ecn.transition#expectedStatus`) + chỉ mục UNIQUE `… WHERE active` (lượt thua ⇒ CONFLICT).
+ * (2 audit, 2 thông báo — mỗi người nhận đúng một). Thông báo BỎ GIAO không mang tên mục (fix 1 — người cũ có thể đã
+ * mất quyền xem): chỉ loại + #id. Chống đua: `expectedAssigneeUserId` (CAS, như `ecn.transition#expectedStatus`) + chỉ
+ * mục UNIQUE `… WHERE active` (lượt thua ⇒ CONFLICT).
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { checkPermission, permissionHeldSql } from "../_core/accessControl";
-import { moduleGate } from "../_core/moduleGate";
 import { getDb } from "../db/connection";
 import { engineeringAssignments, notifications, users } from "../../drizzle/schema";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
-import { loadTarget, activeAssignmentOf, type DbOrTx } from "../services/engineeringAssignment/assignmentService";
-import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, type AssignableEntityType } from "@shared/engineeringAssignment";
-
-type Ctx = { user: { id: number; role: string; name?: string | null } };
+import {
+  loadTarget,
+  activeAssignmentOf,
+  fetchLiveAssignments,
+  type DbOrTx,
+} from "../services/engineeringAssignment/assignmentService";
+import { requireAssignGate, requireLicense } from "../services/engineeringAssignment/assignGate";
+import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, assignmentDeepLink, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 const entityTypeInput = z.enum(ASSIGNABLE_ENTITY_TYPES);
 const OP_ASSIGN = "assignEngineeringItem";
 const OP_UNASSIGN = "unassignEngineeringItem";
-/** Roster "Giao cho" — trần số người trả về (danh sách lọc phía client trong EntityPicker). */
+/** Roster "Giao cho" — trần số người trả về (danh sách lọc phía client trong EntityPicker). Ghi chú chủ dự án. */
 const ROSTER_LIMIT = 300;
-
-/** Giấy phép của router thực thể — chạy CHÍNH middleware `moduleGate` (cùng nhánh cho qua / cùng lời từ chối). */
-async function requireLicense(ctx: Ctx, type: AssignableEntityType): Promise<void> {
-  await moduleGate(ASSIGNABLE[type].licenseModule)({ ctx: ctx as never, next: async () => undefined });
-}
-
-/** Cổng GIAO/BỎ GIAO = quyền sửa/duyệt của trang (cùng hình dạng lỗi với `requirePermission`). */
-async function requireAssignPermission(ctx: Ctx, type: AssignableEntityType): Promise<void> {
-  const { module, action } = ASSIGNABLE[type].assignPerm;
-  if (!(await checkPermission(ctx.user.id, ctx.user.role, module, action))) {
-    const msg = `Bạn không có quyền ${action.replace("can", "").toLowerCase()} cho module "${module}"`;
-    // `action` LITERAL từng nhánh (cổng appErrorParamsCoverage đòi khoá từ điển nhìn thấy được trong mã).
-    if (action === "canCreate") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "canCreate" }, msg);
-    if (action === "canEdit") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "canEdit" }, msg);
-    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "canView" }, msg);
-  }
-}
+/** Số id tối đa mỗi lượt đọc phân công (bảng của trang: ECN 200, run 25, rule/recipe/changeover nhỏ hơn). */
+const MAX_IDS = 1000;
 
 /** Xem được trang đích = MỌI module của `viewModules` có canView. */
 async function canViewTarget(userId: number, role: string, type: AssignableEntityType): Promise<boolean> {
@@ -78,7 +72,7 @@ async function dbOrThrow() {
 function rethrowStore(err: unknown, operation: string): never {
   const code = (err as { code?: string; cause?: { code?: string } })?.code ?? (err as { cause?: { code?: string } })?.cause?.code;
   if (err instanceof TRPCError) throw err;
-  if (code === "42P01") {
+  if (code === "42P01" || code === "42703") {
     throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation, reason: "assignmentStoreMissing" }, "engineering_assignments chưa có (migration 0363 chưa áp)");
   }
   if (code === "23505") {
@@ -122,6 +116,9 @@ async function notify(
   });
 }
 
+/** Nhãn TRUNG TÍNH cho thông báo bỏ giao (người cũ có thể đã mất quyền xem — không gửi tên/tiêu đề mục). */
+const neutralLabel = (type: AssignableEntityType, entityId: number) => `${TYPE_LABEL_VI[type]} #${entityId}`;
+
 export const engineeringAssignmentRouter = router({
   /** Giao (hoặc giao lại) một mục ĐANG CHỜ DUYỆT cho một người. */
   assign: protectedProcedure
@@ -135,19 +132,15 @@ export const engineeringAssignmentRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const type = input.entityType;
-      await requireLicense(ctx, type);
-      await requireAssignPermission(ctx, type);
+      await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
 
       const [assignee] = await d
         .select({ id: users.id, name: users.name, role: users.role, isActive: users.isActive })
         .from(users).where(eq(users.id, input.assigneeUserId)).limit(1);
-      if (!assignee) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, `User ${input.assigneeUserId} not found`);
-      if (!assignee.isActive) {
-        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInactive" }, "Người được giao đã bị vô hiệu hoá.");
-      }
-      if (!(await canViewTarget(assignee.id, assignee.role, type))) {
-        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeCannotView" }, "Người được giao không xem được trang của mục này.");
+      // fix 1 — không tồn tại / vô hiệu hoá / không xem được trang ⇒ MỘT lời từ chối (không lộ trạng thái tài khoản).
+      if (!assignee || !assignee.isActive || !(await canViewTarget(assignee.id, assignee.role, type))) {
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
       }
 
       try {
@@ -157,7 +150,20 @@ export const engineeringAssignmentRouter = router({
           if (!target.pending) {
             throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: OP_ASSIGN, reason: "assignTargetNotPending" }, "Chỉ giao được mục đang chờ duyệt.");
           }
-          const current = await activeAssignmentOf(tx, type, input.entityId, true);
+          const auditId = `${type}:${input.entityId}`;
+          const active = await activeAssignmentOf(tx, type, input.entityId, true);
+          // R-3-f — hàng active của một ĐỢT chờ duyệt đã qua: không còn sống ⇒ tắt (audit `expire`, không thông báo) và
+          // coi như chưa giao — giao lại KHÔNG vấp CONFLICT vì phân công cũ, người cũ KHÔNG thấy lại mục.
+          let current: typeof active | null = active;
+          if (active && active.pendingEpisode !== target.episode) {
+            await tx.update(engineeringAssignments).set({ active: false }).where(eq(engineeringAssignments.id, active.id));
+            await recordAuditEvent(tx, {
+              entityType: "engineering_assignment", entityId: auditId, action: "expire", actorId: ctx.user.id,
+              before: { assigneeUserId: active.assigneeUserId, assignmentId: active.id, pendingEpisode: active.pendingEpisode },
+              after: null, reason: "pendingEpisodeEnded",
+            });
+            current = null;
+          }
           const currentId = current?.assigneeUserId ?? null;
           if (currentId !== input.expectedAssigneeUserId) {
             throw appError("CONFLICT", "OPERATION_FAILED", { operation: OP_ASSIGN, reason: "assignmentChanged" }, "Người được giao đã đổi — tải lại.");
@@ -165,15 +171,14 @@ export const engineeringAssignmentRouter = router({
           if (currentId === input.assigneeUserId) {
             throw appError("CONFLICT", "OPERATION_FAILED", { operation: OP_ASSIGN, reason: "alreadyAssignedToUser" }, "Mục đã được giao cho người này.");
           }
-          const auditId = `${type}:${input.entityId}`;
           if (current) {
-            // Giao lại = bỏ giao người cũ (1 audit + 1 thông báo cho người cũ) rồi giao người mới.
+            // Giao lại = bỏ giao người cũ (1 audit + 1 thông báo TRUNG TÍNH cho người cũ) rồi giao người mới.
             await tx.update(engineeringAssignments).set({ active: false }).where(eq(engineeringAssignments.id, current.id));
             await recordAuditEvent(tx, {
               entityType: "engineering_assignment", entityId: auditId, action: "unassign", actorId: ctx.user.id,
               before: { assigneeUserId: current.assigneeUserId, assignmentId: current.id }, after: null, reason: "reassign",
             });
-            await notify(tx, current.assigneeUserId, "unassigned", type, input.entityId, target.label, target.deepLink, ctx.user);
+            await notify(tx, current.assigneeUserId, "unassigned", type, input.entityId, neutralLabel(type, input.entityId), target.deepLink, ctx.user);
           }
           const [row] = await tx.insert(engineeringAssignments).values({
             entityType: type,
@@ -181,11 +186,12 @@ export const engineeringAssignmentRouter = router({
             assigneeUserId: assignee.id,
             assignedBy: ctx.user.id,
             note: input.note || null,
+            pendingEpisode: target.episode,
           }).returning();
           await recordAuditEvent(tx, {
             entityType: "engineering_assignment", entityId: auditId, action: "assign", actorId: ctx.user.id,
             before: current ? { assigneeUserId: current.assigneeUserId } : null,
-            after: { assigneeUserId: assignee.id, assignmentId: row.id, note: row.note },
+            after: { assigneeUserId: assignee.id, assignmentId: row.id, note: row.note, pendingEpisode: row.pendingEpisode },
             reason: input.note || null,
           });
           await notify(tx, assignee.id, "assigned", type, input.entityId, target.label, target.deepLink, ctx.user);
@@ -196,7 +202,7 @@ export const engineeringAssignmentRouter = router({
       }
     }),
 
-  /** Bỏ giao — mục ở BẤT KỲ trạng thái nào (dọn phân công cũ). */
+  /** Bỏ giao một phân công CÒN SỐNG (mục đang chờ duyệt, đúng đợt). */
   unassign: protectedProcedure
     .input(z.object({
       entityType: entityTypeInput,
@@ -205,24 +211,24 @@ export const engineeringAssignmentRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const type = input.entityType;
-      await requireLicense(ctx, type);
-      await requireAssignPermission(ctx, type);
+      await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
       try {
         return await d.transaction(async (tx) => {
+          const target = await loadTarget(tx, type, input.entityId, true);
           const current = await activeAssignmentOf(tx, type, input.entityId, true);
-          if (!current || current.assigneeUserId !== input.expectedAssigneeUserId) {
+          const live = !!target && target.pending && !!current && current.pendingEpisode === target.episode;
+          if (!live || current!.assigneeUserId !== input.expectedAssigneeUserId) {
             throw appError("CONFLICT", "OPERATION_FAILED", { operation: OP_UNASSIGN, reason: "assignmentChanged" }, "Người được giao đã đổi — tải lại.");
           }
-          await tx.update(engineeringAssignments).set({ active: false }).where(eq(engineeringAssignments.id, current.id));
+          await tx.update(engineeringAssignments).set({ active: false }).where(eq(engineeringAssignments.id, current!.id));
           await recordAuditEvent(tx, {
             entityType: "engineering_assignment", entityId: `${type}:${input.entityId}`, action: "unassign", actorId: ctx.user.id,
-            before: { assigneeUserId: current.assigneeUserId, assignmentId: current.id }, after: null,
+            before: { assigneeUserId: current!.assigneeUserId, assignmentId: current!.id }, after: null,
           });
-          const target = await loadTarget(tx, type, input.entityId);
           await notify(
-            tx, current.assigneeUserId, "unassigned", type, input.entityId,
-            target?.label ?? `${type} #${input.entityId}`, target?.deepLink ?? "/engineering-home?scope=mine", ctx.user,
+            tx, current!.assigneeUserId, "unassigned", type, input.entityId,
+            neutralLabel(type, input.entityId), assignmentDeepLink(type, { id: input.entityId, code: null }), ctx.user,
           );
           return { success: true as const };
         });
@@ -231,35 +237,22 @@ export const engineeringAssignmentRouter = router({
       }
     }),
 
-  /** Phân công ĐANG hiệu lực của một loại (cột "Người được giao") — ai xem được trang thì đọc được. */
+  /**
+   * Phân công CÒN SỐNG (R-3-f) của ĐÚNG các mục được hỏi (cột "Người được giao") — sắp theo id mục, không trần hàng
+   * (≤ số id hỏi). Ai xem được trang thì đọc được.
+   */
   assignments: protectedProcedure
-    .input(z.object({ entityType: entityTypeInput, entityIds: z.array(z.number().int().positive()).max(500).optional() }))
+    .input(z.object({ entityType: entityTypeInput, entityIds: z.array(z.number().int().positive()).max(MAX_IDS) }))
     .query(async ({ ctx, input }) => {
       const type = input.entityType;
       await requireLicense(ctx, type);
       if (!(await canViewTarget(ctx.user.id, ctx.user.role, type))) {
         throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "canView" }, "Bạn không có quyền xem mục này.");
       }
+      if (input.entityIds.length === 0) return [];
       const d = await dbOrThrow();
-      if (input.entityIds && input.entityIds.length === 0) return [];
       try {
-        return await d
-          .select({
-            entityId: engineeringAssignments.entityId,
-            assigneeUserId: engineeringAssignments.assigneeUserId,
-            // CHỈ tên hiển thị — không username/email/vai (khuôn `user.assignableTechnicians`).
-            assigneeName: users.name,
-            assignedAt: engineeringAssignments.assignedAt,
-            note: engineeringAssignments.note,
-          })
-          .from(engineeringAssignments)
-          .leftJoin(users, eq(users.id, engineeringAssignments.assigneeUserId))
-          .where(and(
-            eq(engineeringAssignments.entityType, type),
-            eq(engineeringAssignments.active, true),
-            input.entityIds ? inArray(engineeringAssignments.entityId, input.entityIds) : undefined,
-          ))
-          .limit(1000);
+        return await fetchLiveAssignments(d, type, [...new Set(input.entityIds)]);
       } catch (err) {
         rethrowStore(err, OP_ASSIGN);
       }
@@ -273,8 +266,7 @@ export const engineeringAssignmentRouter = router({
     .input(z.object({ entityType: entityTypeInput }))
     .query(async ({ ctx, input }) => {
       const type = input.entityType;
-      await requireLicense(ctx, type);
-      await requireAssignPermission(ctx, type);
+      await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
       const canView = ASSIGNABLE[type].viewModules.map((m) => permissionHeldSql(users.id, users.role, m, "canView"));
       return d
