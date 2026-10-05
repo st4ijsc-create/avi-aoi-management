@@ -4,6 +4,8 @@
  * the palette stay in sync without cross-importing a page component (critic). Framework-
  * free (no React) → the sidebar QuickAccess block + the palette both consume it.
  */
+import { canonicalNavHref } from "./engineeringLegacyRedirects";
+
 export const NAV_RECENT_KEY = "nav-recent";
 export const NAV_FAVORITES_KEY = "nav-favorites";
 const RECENT_MAX = 5;
@@ -28,12 +30,20 @@ function writeHrefList(key: string, list: string[]) {
   }
 }
 
+/**
+ * Doc 81 Đợt 3 Task 5 — lối tắt đã lưu bằng URL ĐỔI TÊN (vd /fleet-orchestration ⇒ /labs/fleet-orchestration) đọc như URL
+ * mới (giữ query), bỏ trùng, giữ thứ tự — không thì mục đã ghim âm thầm biến mất (chỉ href khớp mục nav mới được vẽ).
+ */
+function canonicalList(list: string[]): string[] {
+  return [...new Set(list.map(canonicalNavHref))];
+}
+
 export function readRecent(): string[] {
-  return readHrefList(NAV_RECENT_KEY);
+  return canonicalList(readHrefList(NAV_RECENT_KEY));
 }
 
 export function readFavorites(): string[] {
-  return readHrefList(NAV_FAVORITES_KEY);
+  return canonicalList(readHrefList(NAV_FAVORITES_KEY));
 }
 
 export function isFavorite(href: string): boolean {

@@ -74,8 +74,10 @@ describe("★★★ doc 80 Task 8 (RBAC-01) — App.tsx RouteGuard khớp quyề
 
   // ── Ba ca hỏng ĐÃ ĐO trước bản vá (F §2, XC-02) — ghim tường minh để phép
   //    đột biến hoàn nguyên ĐÚNG dòng này thì ĐÚNG ba ca sau đỏ, không ca nào khác. ──
-  it("★ /ir-editor, /pou-studio, /fleet-orchestration — nav machine_status khớp route (KHÔNG còn machine_control)", () => {
-    for (const href of ["/ir-editor", "/pou-studio", "/fleet-orchestration"]) {
+  // doc 81 Đợt 3 Task 5 — Fleet dời sang Labs: route của nó nay là /labs/fleet-orchestration (cùng cổng navHref; URL cũ chỉ
+  // còn chuyển hướng giữ query — engineeringLegacyRedirects.tsx).
+  it("★ /ir-editor, /pou-studio, /labs/fleet-orchestration — nav machine_status khớp route (KHÔNG còn machine_control)", () => {
+    for (const href of ["/ir-editor", "/pou-studio", "/labs/fleet-orchestration"]) {
       const props = routeGuardPropsFor(href);
       expect(props, `${href} vẫn còn requirePermission="machine_control" lệch nav`).not.toContain(
         'requirePermission="machine_control"',

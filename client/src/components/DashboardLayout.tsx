@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile, useIsTablet } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, LayoutGrid } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, LayoutGrid, TestTube2 } from "lucide-react";
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
@@ -56,6 +56,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useNavMode } from "@/hooks/useNavMode";
+import { useShowLabs } from "@/hooks/useShowLabs";
 import { useAppLauncherMode } from "@/hooks/useAppLauncherMode";
 import { useActiveApp } from "@/hooks/useActiveApp";
 import { scopeGroupsToApp, listApps, resolveAppLandingHref, type AppDescriptor } from "@/lib/apps";
@@ -416,6 +417,9 @@ function DashboardLayoutContent({
 
   // doc 22 P4 — Simple vs Advanced menu mode (persisted; default per role).
   const { mode: navMode, toggleMode } = useNavMode(user?.role);
+  // doc 81 Đợt 3 Task 5 ([QĐ-3b]) — "Hiện Labs" theo NGƯỜI DÙNG (mặc định ẩn). Chỉ lọc thanh bên/menu điện thoại/BottomNav;
+  // ⌘K (searchGroups), RouteGuard, ô app launcher và deep link KHÔNG qua lớp này.
+  const { showLabs, toggleShowLabs } = useShowLabs(user?.id);
   // doc 64 IA-10 S3 — trục có selection? (cho hàng chip standalone khi breadcrumb ẩn).
   const { axis: assetAxis } = useAssetScope();
   const hasAssetAxis =
@@ -439,11 +443,12 @@ function DashboardLayoutContent({
   // ALL accessible apps. When the flag is OFF, everything behaves exactly as before.
   // doc 81 Đợt 2 Task 2 — chế độ Đơn giản KHÔNG được để thanh bên trống (supervisor ở app Kỹ thuật):
   // rỗng ⇒ hiện danh sách đầy đủ của cùng phạm vi (đã lọc vai/quyền/giấy phép) + ghi chú.
-  const { visible: visibleGroups, sidebar: sidebarGroups, simpleFallback } = resolveSidebarGroups({
+  const { visible: visibleGroups, sidebar: sidebarGroups, simpleFallback, labsAvailable } = resolveSidebarGroups({
     accessible: accessibleGroups,
     mode: navMode,
     launcherOn,
     appId: activeApp.appId,
+    showLabs,
   });
   // doc 63 (AUD-05 / IA-09) — ⌘K searches the UNCOLLAPSED accessible set (incl. the 28
   // rows folded into hubs), so a page hidden from the rail is still findable by name.
@@ -610,6 +615,27 @@ function DashboardLayoutContent({
                   {navMode === "simple"
                     ? t("nav.modeSimple", "Simple")
                     : t("nav.modeAdvanced", "Advanced")}
+                </span>
+              </button>
+            )}
+            {/* doc 81 Đợt 3 Task 5 ([QĐ-3b]) — công tắc "Hiện Labs" (nhớ theo người dùng). Chỉ hiện khi thanh bên CÓ mục Labs
+                để hiện (cùng chế độ + phạm vi app); icon-only khi rail thu gọn. */}
+            {labsAvailable && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showLabs}
+                data-nav-labs-toggle=""
+                onClick={toggleShowLabs}
+                title={t("nav.labsToggleHint", "Hiện các màn thử nghiệm (Labs) trong menu — chỉ cho bạn")}
+                className="mb-2 flex min-h-10 items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <TestTube2 className={cn("h-4 w-4 shrink-0", showLabs ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
+                <span className="flex-1 min-w-0 text-sm text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+                  {t("nav.showLabs", "Hiện Labs")}
+                </span>
+                <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  {showLabs ? t("nav.labsOn", "Bật") : t("nav.labsOff", "Tắt")}
                 </span>
               </button>
             )}

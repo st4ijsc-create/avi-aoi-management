@@ -68,7 +68,7 @@ function searchFor(role: string) {
 }
 
 const AUTHORING = ["/engineering", "/engineering-changes", "/recipes", "/ir-editor", "/pou-studio", "/orchestration-studio"];
-const MONITORING = ["/fleet-orchestration", "/safety-workforce", "/equipment-standards", "/equipment-integration"];
+const MONITORING = ["/labs/fleet-orchestration", "/safety-workforce", "/equipment-standards", "/equipment-integration"];
 // Đợt 3 Task 3 — bí danh "Nhân lực → Sản xuất › Ca" (màn giám sát/phân công, cổng machine_status như Safety; KHÔNG phải công
 // cụ soạn thảo). Lọc theo vai/quyền (không lọc giấy phép) luôn có nó; trong ứng dụng nó chỉ hiện khi THIẾU MOD_PRODUCTION
 // (`onlyWhenModuleMissing`, đo ở productionShiftsNav.unit.test.ts).

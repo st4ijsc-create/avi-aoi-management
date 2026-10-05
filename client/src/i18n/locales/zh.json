@@ -6469,7 +6469,8 @@
       "operationsControl": "运行与控制",
       "safety": "安全",
       "standardsIntegration": "标准与集成",
-      "twin": "孪生与仿真"
+      "twin": "孪生与仿真",
+      "labs": "Labs — 实验性"
     },
     "skipToContent": "跳到主要内容",
     "searchPlaceholder": "搜索页面、命令…",
@@ -6918,6 +6919,10 @@
     "modeAdvanced": "高级",
     "showAdvanced": "显示高级菜单",
     "showSimple": "简易菜单",
+    "showLabs": "显示 Labs",
+    "labsOn": "开",
+    "labsOff": "关",
+    "labsToggleHint": "在菜单中显示实验性（Labs）页面 — 仅对您生效",
     "beta": "测试版",
     "betaHint": "预览功能 — 在显示实时数据前可能需要先完成设置",
     "betaBanner": "这是预览功能。在显示实时数据前，可能需要完成设置或启用相应开关。",

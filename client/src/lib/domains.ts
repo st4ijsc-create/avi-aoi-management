@@ -61,7 +61,8 @@ export const DOMAINS: DomainTile[] = [
     icon: Bot,
     labelKey: "domains.robotics.label",
     blurbKey: "domains.robotics.blurb",
-    href: "/fleet-orchestration",
+    // doc 81 Đợt 3 Task 5 — Fleet ở nhóm Labs: link thẳng route mới (URL cũ chỉ còn là lưới chuyển hướng).
+    href: "/labs/fleet-orchestration",
   },
   {
     key: "twin",

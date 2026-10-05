@@ -74,7 +74,8 @@ export const PENDING_CATEGORIES: readonly CategoryDef[] = [
   { key: "interlockEventsOpen", icon: Siren, href: "/interlock-rules?filter=pending", critical: true, fallbackLabel: "Open interlock events" },
   { key: "orchestration", icon: Workflow, href: "/orchestration-studio?filter=pending", critical: false, fallbackLabel: "Runs awaiting confirm" },
   { key: "safety", icon: ShieldQuestion, href: "/safety-workforce?filter=pending", critical: true, fallbackLabel: "Unaudited safety events" },
-  { key: "deadlocks", icon: Bot, href: "/fleet-orchestration?filter=deadlock", critical: true, fallbackLabel: "Fleet deadlocks" },
+  // doc 81 Đợt 3 Task 5 — Fleet ở nhóm Labs (/labs/…): link KHẨN này (R-2-y) vẫn mở Fleet kể cả khi Labs đang ẩn trong menu.
+  { key: "deadlocks", icon: Bot, href: "/labs/fleet-orchestration?filter=deadlock", critical: true, fallbackLabel: "Fleet deadlocks" },
 ];
 const CATEGORIES = PENDING_CATEGORIES;
 

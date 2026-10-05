@@ -107,7 +107,6 @@ export const HUB_CATALOG: HubGroup[] = [
     sectionKey: "orchestration",
     tiles: [
       { icon: Workflow, navKey: "orchestrationStudio", href: "/orchestration-studio" },
-      { icon: Bot, navKey: "fleetOrchestration", href: "/fleet-orchestration" },
     ],
   },
   {
@@ -142,6 +141,12 @@ export const HUB_CATALOG: HubGroup[] = [
       { icon: Radio, navKey: "rfTestCell", href: "/rf-test-cell" },
       { icon: Workflow, navKey: "cellTwin", href: "/cell-twin" },
     ],
+  },
+  {
+    // Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — nhóm "Labs — thử nghiệm" (khớp section `labs` của nav). Danh mục là CHỈ MỤC đầy đủ của
+    // module (như ⌘K) nên luôn liệt kê Labs, dưới nhãn thử nghiệm; menu thanh bên mới là nơi ẩn theo "Hiện Labs".
+    sectionKey: "labs",
+    tiles: [{ icon: Bot, navKey: "fleetOrchestration", href: "/labs/fleet-orchestration" }],
   },
 ];
 const ALL_TILES = HUB_CATALOG.flatMap((g) => g.tiles);

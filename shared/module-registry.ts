@@ -407,6 +407,8 @@ const SEED_MODULES: SystemModule[] = [
       // (andon→CORE_DASHBOARD, device-adapters→MOD_MONITORING, command-audit→CORE_ADMIN, bom→MOD_PRODUCTION.)
       "/interlock-rules", "/fleet-orchestration", "/safety-workforce",
       "/equipment-standards", "/equipment-integration",
+      // doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Fleet ở nhóm Labs: route mới CÙNG giấy phép; URL cũ ở trên giữ (chuyển hướng tới đây).
+      "/labs/fleet-orchestration",
       // doc 81 Đợt 3 Task 2 (QĐ-3c) — Vision › Thu ảnh (worker thu ảnh dời khỏi /equipment-integration) giữ ĐÚNG giấy phép
       // của trang cũ; KHÔNG vào MOD_AI dù mục điều hướng nằm ở khu Vision (app AI — xem client/src/lib/apps.ts).
       "/vision/acquisition",

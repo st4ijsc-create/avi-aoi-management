@@ -583,7 +583,9 @@ function Router() {
       {/* doc 80 Task 8 (RBAC-01, XC-02) — nav khai machine_status (đọc); trang có
           chế độ chỉ-xem đã thiết kế sẵn, nút ghi vẫn gate machine_control tại
           trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
-      <Route path="/fleet-orchestration"><RouteGuard navHref="/fleet-orchestration"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Fleet ở nhóm Labs: route mới, CÙNG cổng (navHref của chính mục nav = machine_status;
+          giấy phép MOD_OT_CONTROL ở module-registry). URL cũ /fleet-orchestration chuyển hướng giữ query (engineeringLegacyRoutes). */}
+      <Route path="/labs/fleet-orchestration"><RouteGuard navHref="/labs/fleet-orchestration"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/control-plane"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
       <Route path="/safety-workforce"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
       <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status" requireModule="MOD_AI"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>

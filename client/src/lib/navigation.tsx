@@ -191,7 +191,18 @@ export interface NavItem {
    * navLicenseFieldsCensus (mục khai phải có `requiredPermission`).
    */
   ignoreGroupCategory?: boolean;
+  /**
+   * Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — mục thuộc nhóm "Labs — thử nghiệm" (section `LABS_SECTION_KEY`): ẨN khỏi ĐIỀU HƯỚNG
+   * (thanh bên, menu điện thoại, BottomNav) cho tới khi CHÍNH người dùng bật "Hiện Labs" (`useShowLabs`, nhớ theo người
+   * dùng). ⌘K vẫn tìm thấy (`getSearchNavGroups` không qua `filterLabsNavGroups`). KHÔNG phải cổng: route, RouteGuard
+   * (`hasAccessToItem` đọc `navGroups` tĩnh), quyền và giấy phép GIỮ NGUYÊN; deep link (Hub, PendingReviewStrip) vẫn mở.
+   * Census + allowlist: navLabs.unit.test.ts.
+   */
+  labs?: boolean;
 }
+
+/** Doc 81 Đợt 3 Task 5 — khoá section của nhóm "Labs — thử nghiệm" (nhãn `nav.section.labs`). */
+export const LABS_SECTION_KEY = "labs";
 
 export interface NavGroup {
   id: string;
@@ -1059,6 +1070,8 @@ export const navGroups: NavGroup[] = [
       { key: "safety", label: "nav.section.safety" },
       { key: "standardsIntegration", label: "nav.section.standardsIntegration" },
       { key: "twin", label: "nav.section.twin" },
+      // Doc 81 Đợt 3 Task 5 ([QĐ-3b], doc 80 "Labs (ẩn mặc định)") — mục `labs: true`, ẩn khỏi menu cho tới khi người dùng bật.
+      { key: LABS_SECTION_KEY, label: "nav.section.labs" },
     ],
     items: [
       // — Engineering Hub — hub-and-spoke front door (items[0] → breadcrumb /
@@ -1173,20 +1186,7 @@ export const navGroups: NavGroup[] = [
       // doc 81 Đợt 2 Task 15 — mục "/programming-copilot" ĐÃ GỠ: trang Copilot riêng thành CHẾ ĐỘ SCRATCH của IDE
       // (`/engineering?copilot=scratch` — panel Copilot trong layout, chưa cần mở dự án); URL cũ chuyển hướng giữ
       // query. Copilot lập trình nay chỉ còn là panel trong IDE / IR / POU.
-      {
-        // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
-        // skill/resource/charging. Read-mostly cockpit gated on machine_monitoring.
-        href: "/fleet-orchestration",
-        label: "nav.fleetOrchestration",
-        icon: <Bot className="h-4 w-4" />,
-        description: "nav.fleetOrchestrationDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-        section: "orchestration",
-        hint: "nav.hint.fleetOrchestration",
-        engineerOriented: true,
-        beta: true,
-      },
+      // Doc 81 Đợt 3 Task 5 — mục Fleet (/fleet-orchestration) DỜI sang section Labs, route /labs/fleet-orchestration (cuối nhóm).
       {
         // Automation Orchestration (Khối 3) — advisory safety cockpit + workforce
         // board (safety-adjacent, next to interlock rules). View-only.
@@ -1258,6 +1258,24 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_monitoring",
         section: "safety",
         onlyWhenModuleMissing: "MOD_PRODUCTION",
+        engineerOriented: true,
+        beta: true,
+      },
+      {
+        // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
+        // skill/resource/charging. Read-mostly cockpit gated on machine_monitoring.
+        // Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Labs: route mới /labs/fleet-orchestration (URL cũ /fleet-orchestration chuyển hướng,
+        // giữ query — engineeringLegacyRedirects.tsx). Quyền nav (machine_status), RouteGuard navHref, giấy phép MOD_OT_CONTROL
+        // (module-registry) và cổng server (fleetRouter) GIỮ NGUYÊN; chỉ đổi chỗ trong menu: ẩn cho tới khi người dùng bật Labs.
+        href: "/labs/fleet-orchestration",
+        label: "nav.fleetOrchestration",
+        icon: <Bot className="h-4 w-4" />,
+        description: "nav.fleetOrchestrationDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: LABS_SECTION_KEY,
+        labs: true,
+        hint: "nav.hint.fleetOrchestration",
         engineerOriented: true,
         beta: true,
       },
@@ -2540,7 +2558,8 @@ export function buildModuleL2(group: NavGroup): L2Entry[] {
     const hub = bucket.items.filter(i => isHubItem(i));
     // Keep a category only when ≥2 non-hub pages remain — a 0/1-item category after
     // pulling out hubs is noise, so those pages become direct links too.
-    if (nonHub.length >= 2) {
+    // Doc 81 Đợt 3 Task 5 — TRỪ section Labs: nhãn "Labs — thử nghiệm" là thông tin (màn thử nghiệm), luôn hiện kể cả 1 mục.
+    if (nonHub.length >= 2 || (bucket.key === LABS_SECTION_KEY && nonHub.length >= 1)) {
       out.push({ kind: "category", key: bucket.key, label: bucket.label, items: nonHub });
     } else {
       for (const item of nonHub) out.push({ kind: "link", item });
@@ -2803,6 +2822,23 @@ export function filterNavGroupsByLicense(
       };
     })
     .filter((group) => group.items.length > 0);
+}
+
+/**
+ * Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — lớp SỞ THÍCH "Hiện Labs" (sau lọc vai/quyền/giấy phép, như chế độ Đơn giản/Nâng cao):
+ * `showLabs=false` ⇒ bỏ mọi mục `labs: true`, nhóm rỗng bị bỏ; `true` ⇒ trả nguyên tập vào. CHỈ dùng cho thanh bên / menu
+ * điện thoại / BottomNav — KHÔNG cho ⌘K (`getSearchNavGroups`), RouteGuard hay deep link.
+ */
+export function filterLabsNavGroups(groups: NavGroup[], showLabs: boolean): NavGroup[] {
+  if (showLabs) return groups;
+  return groups
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.labs !== true) }))
+    .filter((group) => group.items.length > 0);
+}
+
+/** Doc 81 Đợt 3 Task 5 — tập (đã lọc) có ít nhất một mục Labs ⇒ mới đáng hiện công tắc "Hiện Labs". */
+export function hasLabsContent(groups: NavGroup[]): boolean {
+  return groups.some((group) => group.items.some((item) => item.labs === true));
 }
 
 export function getFilteredNavGroups(

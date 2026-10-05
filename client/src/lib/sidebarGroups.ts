@@ -11,7 +11,7 @@
  * lọc vai/quyền/giấy phép (`accessible`) — không mở thêm quyền nào — và báo `simpleFallback` để thanh
  * bên ghi chú. Chế độ Đơn giản còn mục ⇒ không đổi gì.
  */
-import { filterNavGroupsByMode, type NavGroup, type NavMode } from "./navigation";
+import { filterLabsNavGroups, filterNavGroupsByMode, hasLabsContent, type NavGroup, type NavMode } from "./navigation";
 import { scopeGroupsToApp } from "./apps";
 
 export interface ResolveSidebarGroupsInput {
@@ -20,6 +20,11 @@ export interface ResolveSidebarGroupsInput {
   mode: NavMode;
   launcherOn: boolean;
   appId: string;
+  /**
+   * Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — sở thích "Hiện Labs" của người dùng (`useShowLabs`). `false` ⇒ bỏ mục `labs: true` khỏi
+   * `visible`/`sidebar` (cả nhánh rơi về danh sách đầy đủ). Không khai ⇒ `true` (giữ hành vi cũ cho nơi gọi không biết Labs).
+   */
+  showLabs?: boolean;
 }
 
 export interface ResolvedSidebarGroups {
@@ -29,11 +34,24 @@ export interface ResolvedSidebarGroups {
   sidebar: NavGroup[];
   /** True khi Đơn giản trống và thanh bên đang hiện danh sách đầy đủ. */
   simpleFallback: boolean;
+  /** Đợt 3 Task 5 — thanh bên (cùng chế độ + phạm vi app) CÓ mục Labs khi bật ⇒ mới hiện công tắc "Hiện Labs". */
+  labsAvailable: boolean;
 }
 
-export function resolveSidebarGroups({ accessible, mode, launcherOn, appId }: ResolveSidebarGroupsInput): ResolvedSidebarGroups {
-  const visible = filterNavGroupsByMode(accessible, mode);
+export function resolveSidebarGroups({ accessible, mode, launcherOn, appId, showLabs = true }: ResolveSidebarGroupsInput): ResolvedSidebarGroups {
   const scope = (g: NavGroup[]) => (launcherOn ? scopeGroupsToApp(g, appId) : g);
+  const withLabs = resolveWithLabs(accessible, mode, scope);
+  const labsAvailable = hasLabsContent(withLabs.sidebar);
+  if (showLabs) return { ...withLabs, labsAvailable };
+  return { ...resolveWithLabs(filterLabsNavGroups(accessible, false), mode, scope), labsAvailable };
+}
+
+function resolveWithLabs(
+  accessible: NavGroup[],
+  mode: NavMode,
+  scope: (g: NavGroup[]) => NavGroup[],
+): Omit<ResolvedSidebarGroups, "labsAvailable"> {
+  const visible = filterNavGroupsByMode(accessible, mode);
   const sidebar = scope(visible);
   if (sidebar.length > 0 || mode === "advanced") return { visible, sidebar, simpleFallback: false };
   const full = scope(accessible);

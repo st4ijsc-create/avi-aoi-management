@@ -368,7 +368,7 @@ function KpiStrip({
   const { t } = useTranslation();
   // W4 (doc 67): chip KPI bấm được → điều hướng deep-view tương ứng (route đã
   // xác minh tồn tại trong App.tsx). fleet/energy KHÔNG gắn vì /fleet và /energy
-  // không tồn tại (chỉ có /fleet-orchestration gated-permission và /energy-analytics).
+  // không tồn tại (chỉ có /labs/fleet-orchestration gated-permission và /energy-analytics).
   const [, setLocation] = useLocation();
 
   // Unauthorized / forbidden → hide the strip quietly (the panels do the same).

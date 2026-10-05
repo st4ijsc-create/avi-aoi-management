@@ -100,6 +100,6 @@ describe("★ R-2-w — mỗi vai: mục điều hướng nhìn thấy ⇒ Route
     expect(hrefs).not.toContain("/robot-control");
     expect(hrefs).not.toContain("/control-plane");
     // Đợt 3 Task 3: + bí danh Sản xuất › Ca (cổng machine_status = Safety; trong ứng dụng chỉ hiện khi thiếu MOD_PRODUCTION).
-    expect(hrefs.sort()).toEqual(["/engineering/production-shifts", "/equipment-integration", "/equipment-standards", "/fleet-orchestration", "/safety-workforce"]);
+    expect(hrefs.sort()).toEqual(["/engineering/production-shifts", "/equipment-integration", "/equipment-standards", "/labs/fleet-orchestration", "/safety-workforce"]);
   });
 });

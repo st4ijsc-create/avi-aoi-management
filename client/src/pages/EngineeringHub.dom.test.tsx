@@ -20,6 +20,7 @@ import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { installMatchMedia, presetNarrow } from "@/components/patterns/layoutKitTestMedia";
 import { resolvePermissionModule } from "@shared/permissions";
 import HUB_SRC from "./EngineeringHub.tsx?raw";
+import { getNavItemByHref, hasAccessToItem } from "@/lib/navigation";
 
 const S = (k: string): string => {
   const v = k.split(".").reduce<unknown>((o, p) => (o as Record<string, unknown> | undefined)?.[p], vi_);
@@ -111,7 +112,7 @@ const CRITICAL_HREFS = [
   "/recipes?filter=pending",
   "/interlock-rules?filter=pending",
   "/safety-workforce?filter=pending",
-  "/fleet-orchestration?filter=deadlock",
+  "/labs/fleet-orchestration?filter=deadlock",
 ];
 const pinnedHrefs = () => Array.from(mainEl().querySelectorAll("table tbody[data-pending-pinned] tr a")).map((a) => a.getAttribute("href"));
 const headerEl = () => screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;
@@ -182,7 +183,7 @@ describe("★ Supervisor vào Hub ⇒ mở ĐÚNG hộp việc (doc 81 §1.4, Re
     expect(window.location.search).toContain("scope=all");
     expect(rowHrefs()).toHaveLength(9);
     expect(rowHrefs()).toContain("/safety-workforce?filter=pending");
-    expect(rowHrefs()).toContain("/fleet-orchestration?filter=deadlock");
+    expect(rowHrefs()).toContain("/labs/fleet-orchestration?filter=deadlock");
     cleanup();
     render(<EngineeringHub />); // F5
     expect(scopeBtn("scopeAll")).toHaveAttribute("aria-pressed", "true");
@@ -418,7 +419,7 @@ describe("Danh mục công cụ (Studio gộp vào — ?tab=catalog)", () => {
     const main = mainEl();
     const links = Array.from(main.querySelectorAll("[data-hub-tool] a")).map((a) => a.getAttribute("href"));
     for (const h of ["/engineering", "/engineering?copilot=scratch", "/ir-editor", "/pou-studio", "/recipes", "/engineering-changes",
-      "/orchestration-studio", "/fleet-orchestration", "/command-console", "/interlock-rules", "/safety-workforce",
+      "/orchestration-studio", "/labs/fleet-orchestration", "/command-console", "/interlock-rules", "/safety-workforce",
       "/equipment-standards", "/equipment-integration"]) {
       expect(links, h).toContain(h);
     }
@@ -471,5 +472,38 @@ describe("Danh mục công cụ (Studio gộp vào — ?tab=catalog)", () => {
     expect(links).not.toContain("/ir-editor");
     expect(links).not.toContain("/pou-studio");
     expect(links).toContain("/safety-workforce");
+  });
+});
+
+// ── Doc 81 Đợt 3 Task 5 ([QĐ-3b], Review Focus #4) — Fleet ở nhóm Labs, Labs ẨN trong menu của người xem: cảnh báo bế tắc trên
+// Hub vẫn ghim (R-2-y) ở MỌI phạm vi, là LINK, và bấm vào mở đúng Fleet ở route mới (giữ ?filter=deadlock). Sở thích "Hiện
+// Labs" chỉ lọc menu — không đụng hộp việc, không đụng cổng route (hasAccessToItem đọc navGroups tĩnh).
+describe("Task 5 — bế tắc đội xe trên Hub mở Fleet ở Labs, kể cả khi Labs đang ẩn trong menu", () => {
+  const DEADLOCK = "/labs/fleet-orchestration?filter=deadlock";
+  it.each([
+    ["supervisor", ["machine_status", "machine_control", "interlock"], "approvals"],
+    ["supervisor", ["machine_status", "machine_control", "interlock"], "mine"],
+    ["supervisor", ["machine_status", "machine_control", "interlock"], "all"],
+    ["engineer", ["machine_status", "machine_control"], "approvals"],
+  ] as const)("%s (%j) · phạm vi %s: dòng bế tắc ghim, đỏ, là link tới %s; bấm ⇒ /labs/fleet-orchestration?filter=deadlock", (role, mods, scope) => {
+    who.role = role;
+    who.modules = [...mods];
+    // Labs ẩn TƯỜNG MINH cho người xem (id 9) — và không có khoá nào khác bật Labs.
+    localStorage.setItem("layoutKit:nav-labs:u9:show", "0");
+    setSummary({ deadlocks: ok(2) });
+    window.history.replaceState({}, "", `/engineering-home?scope=${scope}`);
+    render(<EngineeringHub />);
+    expect(pinnedHrefs()).toContain(DEADLOCK);
+    const row = Array.from(mainEl().querySelectorAll("table tbody[data-pending-pinned] tr")).find(
+      (r) => r.querySelector("a")?.getAttribute("href") === DEADLOCK,
+    ) as HTMLElement;
+    expect(row.querySelector("[data-pending-count]")?.textContent).toBe("2");
+    expect(row.querySelector("[data-pending-count]")?.className).toMatch(/text-destructive/);
+    // đích là mục nav Labs có thật, và cổng route (cùng luật RouteGuard navHref) cho vai này qua
+    expect(getNavItemByHref(DEADLOCK)?.labs).toBe(true);
+    expect(hasAccessToItem("/labs/fleet-orchestration", role, (m: string, a: string) => a === "canView" && mods.includes(m as never))).toBe(true);
+    fireEvent.click(row.querySelector("a") as HTMLElement);
+    expect(window.location.pathname).toBe("/labs/fleet-orchestration");
+    expect(window.location.search).toBe("?filter=deadlock");
   });
 });

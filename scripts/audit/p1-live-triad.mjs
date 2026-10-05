@@ -48,7 +48,7 @@ const TIER1 = [
   "/war-room", "/mes-control-tower", "/wip-dashboard", "/digital-twin", "/device-monitor",
   "/factory-command", "/line-view", "/alarm-kpi", "/sla-cockpit", "/machine-status",
   "/machine-health", "/oee-dashboard", "/factory-live-map", "/field-devices", "/mqtt-dashboard",
-  "/command-center", "/digital-twin-center", "/engineering", "/fleet-orchestration",
+  "/command-center", "/digital-twin-center", "/engineering", "/labs/fleet-orchestration",
   "/safety-workforce", "/robot-control", "/alerts",
 ];
 
@@ -69,7 +69,7 @@ const FULL = [
   "/mqtt-clients", "/mqtt-alerts", "/mqtt-profiles", "/mqtt-topics", "/mqtt-ng-rate",
   "/machine-onboarding", "/aoi-onboarding", "/product-onboarding", "/product-changeover",
   "/machine-registration", "/device-adapters", "/uns-mapping", "/system-health", "/control-readiness",
-  "/edge-nodes", "/hot-folders", "/robot-control", "/command-console", "/fleet-orchestration",
+  "/edge-nodes", "/hot-folders", "/robot-control", "/command-console", "/labs/fleet-orchestration",
   "/control-plane", "/safety-workforce", "/robot-model-health", "/equipment-standards",
   "/equipment-integration", "/engineering-home", "/engineering", "/recipes", "/interlock-rules",
   "/orchestration-studio", "/ir-editor", "/pou-studio", "/factory-floor-editor",

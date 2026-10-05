@@ -273,3 +273,33 @@ describe("chuyển hướng theo TAB (Đợt 3 Task 3): Safety ?tab=workforce �
     expect(SAFETY_SRC).toMatch(/const BASE_PATH = "\/safety-workforce";/);
   });
 });
+
+// ── Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Fleet dời sang Labs: /fleet-orchestration ⇒ /labs/fleet-orchestration, query NGUYÊN VĂN ──
+// Cùng trang, chỉ đổi đường dẫn ⇒ không thêm tham số mặc định nào; deep link deadlock (?filter=deadlock), tab (?tab=) và sheet
+// (?flyout=&flyoutId=) đi tiếp như cũ. Đây là LƯỚI AN TOÀN: mọi link trong mã đã trỏ thẳng route mới.
+describe("chuyển hướng (Đợt 3 Task 5): /fleet-orchestration → /labs/fleet-orchestration", () => {
+  it.each([
+    ["/fleet-orchestration?filter=deadlock", "/labs/fleet-orchestration?filter=deadlock"],
+    ["/fleet-orchestration?tab=zones", "/labs/fleet-orchestration?tab=zones"],
+    ["/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1", "/labs/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1"],
+    ["/fleet-orchestration?flyout=fleet-task-assign&flyoutId=3", "/labs/fleet-orchestration?flyout=fleet-task-assign&flyoutId=3"],
+    ["/fleet-orchestration?q=a%20b&tab=map&tab=charging", "/labs/fleet-orchestration?q=a%20b&tab=map&tab=charging"],
+    ["/fleet-orchestration", "/labs/fleet-orchestration"],
+  ])("%s ⇒ %s (REPLACE)", (start, expected) => {
+    const r = go(start);
+    expect(r.where()).toBe(expected);
+    expect(r.history).toEqual([expected]);
+  });
+
+  it("bảng: đích /labs/fleet-orchestration, KHÔNG tham số mặc định; đánh dấu đổi tên (Ghim/Gần đây cũ theo sang)", () => {
+    const r = ENGINEERING_LEGACY_REDIRECTS.find((x) => x.from === "/fleet-orchestration");
+    expect(r).toEqual({ from: "/fleet-orchestration", to: "/labs/fleet-orchestration", add: {}, rename: true });
+  });
+
+  it("App.tsx: route mới có RouteGuard navHref của CHÍNH nó + AIPageWrapper + FleetOrchestration; KHÔNG còn route trang ở URL cũ", () => {
+    expect(APP_SRC).toMatch(
+      /<Route path="\/labs\/fleet-orchestration"><RouteGuard navHref="\/labs\/fleet-orchestration"><AIPageWrapper><FleetOrchestration \/><\/AIPageWrapper><\/RouteGuard><\/Route>/,
+    );
+    expect(APP_SRC).not.toMatch(/<Route path="\/fleet-orchestration"/);
+  });
+});

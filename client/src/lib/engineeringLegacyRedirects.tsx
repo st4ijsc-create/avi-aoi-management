@@ -6,6 +6,7 @@
  * - `/programming-copilot` (trang Copilot riêng, doc 34 P3) ⇒ `/engineering`: chế độ scratch của IDE
  *   (`?copilot=scratch` — panel Copilot trong layout, chưa cần mở dự án).
  * - `/engineering/studio`: cách viết trong task-15-brief (chưa từng là route thật) — cùng đích với Studio.
+ * - `/fleet-orchestration` (Đợt 3 Task 5) ⇒ `/labs/fleet-orchestration`: Fleet dời sang nhóm Labs — cùng trang, chỉ đổi đường dẫn.
  *
  * Luật (test: `engineeringLegacyRedirects.dom.test.tsx`):
  * - chuỗi query cũ được chép NGUYÊN VĂN (không mã hoá lại, giữ thứ tự và tham số lặp);
@@ -21,13 +22,31 @@ export interface LegacyRedirect {
   to: string;
   /** Tham số mặc định của đích — chỉ thêm khi URL cũ chưa mang tham số cùng tên. */
   add: Readonly<Record<string, string>>;
+  /**
+   * Đợt 3 Task 5 — CÙNG trang, chỉ đổi đường dẫn (không gộp/không chế độ khác) ⇒ lối tắt Ghim/Gần đây đã lưu URL cũ được
+   * đọc như URL mới (`canonicalNavHref`, lib/navRecent.ts) thay vì âm thầm biến mất khỏi thanh bên.
+   */
+  rename?: true;
 }
 
 export const ENGINEERING_LEGACY_REDIRECTS: readonly LegacyRedirect[] = [
   { from: "/engineering-studio", to: "/engineering-home", add: { tab: "catalog" } },
   { from: "/engineering/studio", to: "/engineering-home", add: { tab: "catalog" } },
   { from: "/programming-copilot", to: "/engineering", add: { copilot: "scratch" } },
+  // Đợt 3 Task 5 ([QĐ-3b]) — Fleet dời sang Labs: cùng trang, route mới; query cũ (?filter=deadlock, ?tab=, ?flyout=) đi tiếp.
+  { from: "/fleet-orchestration", to: "/labs/fleet-orchestration", add: {}, rename: true },
 ];
+
+/**
+ * Đợt 3 Task 5 — đường dẫn MỚI của một URL đã đổi tên (`rename: true`), giữ query NGUYÊN VĂN; URL khác trả nguyên.
+ * Dùng cho Ghim/Gần đây (lib/navRecent.ts) — KHÔNG dùng cho các URL đã gộp vào trang khác (Studio, Copilot).
+ */
+export function canonicalNavHref(href: string): string {
+  const q = href.indexOf("?");
+  const path = q < 0 ? href : href.slice(0, q);
+  const hit = ENGINEERING_LEGACY_REDIRECTS.find((r) => r.rename === true && r.from === path);
+  return hit ? hit.to + (q < 0 ? "" : href.slice(q)) : href;
+}
 
 /** Đích của một chuyển hướng: `to` + query cũ NGUYÊN VĂN + các tham số mặc định còn thiếu. */
 export function legacyRedirectTarget(to: string, search: string, add: Readonly<Record<string, string>> = {}): string {
