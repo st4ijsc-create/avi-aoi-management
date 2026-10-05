@@ -60,6 +60,7 @@ import {
   Cpu, AlertTriangle, Search, Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useResolvedTheme } from "@/contexts/ThemeContext";
 
 type NodeType = "machine" | "defect" | "cause" | "action";
 type EdgeType =
@@ -235,6 +236,7 @@ interface CausalGraphCanvasProps {
 function CausalCanvasInner({
   nodes: gNodes, edges: gEdges, selectedId, canEdit, canDelete, onSelect, onEdit, onDelete, t,
 }: CausalGraphCanvasProps) {
+  const colorMode = useResolvedTheme(); // doc 81 Đợt 3 Task 0 (D4) — canvas theo theme app, không mặc định "light"
   const rf = useReactFlow();
 
   const { nodes: builtNodes, edges } = useMemo(
@@ -255,6 +257,7 @@ function CausalCanvasInner({
       aria-label={t("causalGraph.canvasAria", "Sơ đồ nhân quả: máy, lỗi, nguyên nhân và hành động cùng các quan hệ có hướng")}
     >
       <ReactFlow
+        colorMode={colorMode}
         nodes={nodes}
         edges={edges}
         nodeTypes={CAUSAL_NODE_TYPES}

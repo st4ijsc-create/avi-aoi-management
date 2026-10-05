@@ -64,3 +64,16 @@ export function useTheme() {
   }
   return context;
 }
+
+/**
+ * doc 81 Đợt 3 Task 0 (D4) — theme THẬT của app cho thư viện tự vẽ theme (React Flow `colorMode`). Không ném khi thiếu
+ * provider (canvas render trong test/khung riêng): đọc lớp của `<html>` — ThemeProvider đặt đúng một trong `dark`/`light`.
+ * Lý do: React Flow mặc định `colorMode="light"` ⇒ wrapper mang lớp `light` ⇒ token `.light` (index.css) bị khai lại bên
+ * trong canvas khi app đang tối (nút điều khiển/minimap trắng, bảng thêm phần tử của POU trắng với nhãn sáng).
+ */
+export function useResolvedTheme(): Theme {
+  const context = useContext(ThemeContext);
+  if (context) return context.theme;
+  if (typeof document !== "undefined" && document.documentElement.classList.contains("dark")) return "dark";
+  return "light";
+}

@@ -72,6 +72,7 @@ import type {
   FbdBody, FbdSource,
   SfcBody, SfcAction, SfcQualifier,
 } from "../../../../server/services/programming/iec61131/pouModel";
+import { useResolvedTheme } from "@/contexts/ThemeContext";
 
 // ── Lint diagnostic shape (structurally identical to pouLinter.PouLintDiagnostic) ─────
 export type PouCanvasDiag = {
@@ -860,6 +861,7 @@ export interface PouCanvasProps {
 const PANEL_CARD = "rounded-md border border-border bg-card/95 p-2 shadow-md backdrop-blur";
 
 function CanvasInner({ project, pouIndex, diagsByRef, onChange, t, fill = false }: PouCanvasProps) {
+  const colorMode = useResolvedTheme(); // doc 81 Đợt 3 Task 0 (D4) — canvas theo theme app, không mặc định "light"
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showVars, setShowVars] = useState(false); // Variables panel (collapsed by default)
 
@@ -1129,6 +1131,7 @@ function CanvasInner({ project, pouIndex, diagsByRef, onChange, t, fill = false 
   return (
     <div style={wrapStyle} className={fill ? "w-full overflow-hidden bg-muted/20" : "w-full overflow-hidden rounded-md border border-border bg-muted/20"}>
       <ReactFlow
+        colorMode={colorMode}
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}

@@ -49,6 +49,7 @@ import { Boxes, Plus, Trash2, GitMerge, AlertTriangle, Cpu, CircuitBoard } from 
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { EntityCombobox, type EntityOption } from "@/components/EntityCombobox";
 import { toast } from "sonner";
+import { useResolvedTheme } from "@/contexts/ThemeContext";
 
 // P2: shared materials master picker — turns componentCode free-text into a real
 // materials.id FK. Degrades to [] when the user lacks masterdata:canView.
@@ -465,6 +466,7 @@ function TraceNode({ data }: NodeProps<Node<TGNodeData>>) {
 const TRACE_NODE_TYPES: NodeTypes = { traceNode: TraceNode };
 
 function TraceGenealogyInner({ serial, comps, t }: { serial: string; comps: TraceComponent[]; t: TFunction }) {
+  const colorMode = useResolvedTheme(); // doc 81 Đợt 3 Task 0 (D4) — canvas theo theme app, không mặc định "light"
   const rf = useReactFlow();
   const { nodes: builtNodes, edges } = useMemo(() => forwardToGraph(serial, comps, t), [serial, comps, t]);
   const [nodes, setNodes, onNodesChange] = useNodesState(builtNodes);
@@ -477,6 +479,7 @@ function TraceGenealogyInner({ serial, comps, t }: { serial: string; comps: Trac
       aria-label={t("bom.genealogyCanvasAria", "Cây phả hệ linh kiện: bảng mạch gốc và các linh kiện đã lắp, cạnh có hướng từ bảng mạch tới linh kiện")}
     >
       <ReactFlow
+        colorMode={colorMode}
         nodes={nodes}
         edges={edges}
         nodeTypes={TRACE_NODE_TYPES}
