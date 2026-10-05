@@ -3802,6 +3802,7 @@
       "scheduledReport": "scheduled report",
       "serviceIdentity": "service identity",
       "sharedResource": "shared resource",
+      "shiftConfig": "shift",
       "simRobot": "simulated robot",
       "site": "site",
       "slmp": "SLMP",
@@ -4004,6 +4005,7 @@
       "unassignEngineeringItem": "unassign the pending item"
     },
     "field": {
+      "shiftConfigId": "shift (shiftConfigId)",
       "stopValue": "pinned stop value (stopValue)",
       "inspectionTime": "inspection time (inspectionTime)",
       "completedAt": "completion time (completedAt)",
@@ -4273,6 +4275,7 @@
       "mqttDeviceRejected": "This device was REJECTED and cannot be bound to a machine. Approve the device first.",
       "robotNotActive": "This robot is not loaded by this process's robot gateway (disabled, or ROBOT_GATEWAY_ENABLED is off), so there is no live motion lock to clear.",
       "opcuaSecurityInvalid": "securityMode/securityPolicy is unknown or contradictory (e.g. None with Basic256Sha256, or SignAndEncrypt with None). Use None/None, or Sign/SignAndEncrypt with a policy such as Basic256Sha256.",
+      "shiftInactive": "This shift is inactive — pick an active shift or leave the shift empty.",
       "secretReentryRequired": "You changed {{field}} — where or how the stored secret is sent — so the saved password/secret is not reused. Re-enter the password/secret and save again; nothing has been changed yet.",
       "motionLockUnsupported": "This vendor's driver opens one connection per command and has no motion lock; there is nothing to clear.",
       "motionLockChanged": "The motion lock changed while you were confirming (a new link loss). Nothing was cleared; re-read the robot state and confirm again.",
@@ -21801,8 +21804,8 @@
     "boardError": "Could not read the current board.",
     "chip": {
       "planned": "Awaiting confirmation",
-      "srcActive": "safety.listAssignments — status 'Active' among the latest 200 assignments (shift and status filters apply)",
-      "srcPlanned": "safety.listAssignments — status 'Planned' (not yet confirmed) among the latest 200 assignments (shift and status filters apply)"
+      "srcActive": "safety.listAssignments — status 'Active' among the latest 200 assignments matching the shift and status filters (filtered on the server)",
+      "srcPlanned": "safety.listAssignments — status 'Planned' (not yet confirmed) among the latest 200 assignments matching the shift and status filters (filtered on the server)"
     },
     "side": {
       "label": "Current board — who and which robot is at each station now"
@@ -21817,7 +21820,11 @@
     },
     "movedLink": "Workforce → Production › Shifts",
     "emptyForShift": "No assignments for this shift.",
-    "emptyForShiftWindow": "No assignments for this shift among the latest {{limit}} loaded — older assignments of this shift are not shown here."
+    "form": {
+      "shift": "Shift (optional)",
+      "noShift": "— no shift —",
+      "defaultHint": "Pre-selected: the shift running now."
+    }
   },
   "engineeringAssign": {
     "label": "Assign to",

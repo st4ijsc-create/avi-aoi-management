@@ -23,14 +23,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, isNull } from "drizzle-orm";
 import { router, moduleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { collaborationSessions, operatorAssignments } from "../../drizzle/schema";
+import { collaborationSessions, operatorAssignments, shiftConfigs } from "../../drizzle/schema";
 import {
   safetyAuditEnabled,
   record as recordSafetyEvent,
@@ -66,12 +66,52 @@ import {
 } from "../services/safety/plc/safetyPlcAdapter";
 // doc 80 Đợt 1 Task 4 (SAF-02) — read-only source-health report for the Safety page.
 import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
-import { phamViCua } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { resolveTenantFactoryScope } from "../db/reportAggregators";
 
 async function db() {
   const d = await getDb();
   if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
+}
+
+/**
+ * doc 81 Đợt 3b Task 1 (doc 81 §12 "Đã chốt 2026-10-06") — ca gắn vào phân công (`shiftConfigId`, TUỲ CHỌN) phải:
+ *   1. TỒN TẠI trong `shift_configs`;
+ *   2. nằm TRONG PHẠM VI người gọi — ca toàn hệ thống (`factoryId IS NULL`, như `getShiftConfigs`) thuộc mọi phạm vi; ca của
+ *      một nhà máy chỉ khi nhà máy đó thuộc `resolveTenantFactoryScope(phamViCua(ctx))` (admin/không lọc ⇒ `null` ⇒ mọi ca).
+ *      Ngoài phạm vi ⇒ CÙNG lỗi như id không tồn tại (không lộ sự tồn tại của ca nhà máy khác);
+ *   3. ĐANG HOẠT ĐỘNG (`isActive`).
+ * Bỏ ca ⇒ không kiểm gì, hành vi y như trước. Gọi SAU cổng cờ nhân lực (thứ tự cổng cũ không đổi) và TRƯỚC khi ghi (phân
+ * công lại với ca sai không huỷ phân công cũ).
+ */
+async function assertAssignableShift(shiftConfigId: number | null | undefined, ctx: CoDanhTinh): Promise<void> {
+  if (shiftConfigId == null) return;
+  const d = await db();
+  const [ca] = await d
+    .select({ id: shiftConfigs.id, factoryId: shiftConfigs.factoryId, isActive: shiftConfigs.isActive })
+    .from(shiftConfigs)
+    .where(eq(shiftConfigs.id, shiftConfigId))
+    .limit(1);
+  let inScope = false;
+  if (ca) {
+    if (ca.factoryId == null) inScope = true;
+    else {
+      const { factoryIds } = await resolveTenantFactoryScope(phamViCua(ctx));
+      inScope = factoryIds === null || factoryIds.includes(ca.factoryId);
+    }
+  }
+  if (!ca || !inScope) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "shiftConfig" }, `Shift ${shiftConfigId} not found`);
+  }
+  if (!ca.isActive) {
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "shiftConfigId", reason: "shiftInactive" },
+      `Shift ${shiftConfigId} is inactive`,
+    );
+  }
 }
 
 function requireSafetyFlag() {
@@ -666,6 +706,9 @@ export const safetyRouter = router({
           operatorId: z.number().int().positive().optional(),
           status: z.enum(["planned", "active", "completed", "cancelled"]).optional(),
           stationId: z.number().int().positive().optional(),
+          // doc 81 Đợt 3b Task 1 — lọc ca TRONG SQL (trước `limit`): số = đúng ca đó; `null` = chưa gắn ca (IS NULL);
+          // vắng = không lọc (hành vi `{status, limit}` cũ). Phạm vi tenant/nhà máy KHÔNG đổi.
+          shiftConfigId: z.number().int().positive().nullable().optional(),
           limit: z.number().int().min(1).max(500).default(200),
         })
         .optional(),
@@ -676,6 +719,8 @@ export const safetyRouter = router({
       if (input?.operatorId != null) conds.push(eq(operatorAssignments.operatorId, input.operatorId));
       if (input?.status) conds.push(eq(operatorAssignments.status, input.status));
       if (input?.stationId != null) conds.push(eq(operatorAssignments.stationId, input.stationId));
+      if (input?.shiftConfigId === null) conds.push(isNull(operatorAssignments.shiftConfigId));
+      else if (input?.shiftConfigId != null) conds.push(eq(operatorAssignments.shiftConfigId, input.shiftConfigId));
       // build where lazily to keep the and()-of-conds pattern consistent
       const { and } = await import("drizzle-orm");
       return d
@@ -704,8 +749,9 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      await assertAssignableShift(input.shiftConfigId, ctx);
       const r = await assignOperator(input);
       if (!r.ok && r.conflict) {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignSafetyOperator" }, `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})`);
@@ -732,8 +778,9 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      await assertAssignableShift(input.shiftConfigId, ctx);
       const { assignmentId, ...rest } = input;
       const r = await reassignOperator(assignmentId, rest);
       if (!r.ok && r.conflict) {

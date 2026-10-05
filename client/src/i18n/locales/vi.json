@@ -3802,6 +3802,7 @@
       "scheduledReport": "báo cáo theo lịch",
       "serviceIdentity": "định danh dịch vụ",
       "sharedResource": "tài nguyên dùng chung",
+      "shiftConfig": "ca làm việc",
       "simRobot": "robot mô phỏng",
       "site": "chi nhánh",
       "slmp": "SLMP",
@@ -4004,6 +4005,7 @@
       "unassignEngineeringItem": "bỏ giao việc chờ duyệt"
     },
     "field": {
+      "shiftConfigId": "ca (shiftConfigId)",
       "stopValue": "giá trị dừng ghim (stopValue)",
       "inspectionTime": "thời điểm kiểm tra (inspectionTime)",
       "completedAt": "thời điểm hoàn tất (completedAt)",
@@ -4265,6 +4267,7 @@
       "mqttDeviceRejected": "Thiết bị này đã bị TỪ CHỐI — không thể gắn với máy. Duyệt lại thiết bị trước.",
       "robotNotActive": "Robot này chưa được cổng robot của tiến trình nạp (đang tắt hoặc ROBOT_GATEWAY_ENABLED chưa bật) nên không có khoá chuyển động sống để gỡ.",
       "opcuaSecurityInvalid": "securityMode/securityPolicy không hợp lệ hoặc mâu thuẫn (vd None đi với Basic256Sha256, hoặc SignAndEncrypt đi với None). Chọn None/None, hoặc Sign/SignAndEncrypt với một chính sách như Basic256Sha256.",
+      "shiftInactive": "Ca này đã ngừng hoạt động — chọn một ca đang hoạt động hoặc để trống ca.",
       "secretReentryRequired": "Bạn vừa đổi {{field}} — tức nơi gửi hoặc cách bảo vệ mật khẩu đã lưu — nên hệ thống không dùng lại mật khẩu cũ. Hãy nhập lại mật khẩu/bí mật rồi lưu; chưa có gì được thay đổi.",
       "motionLockUnsupported": "Driver của hãng này dùng kết nối một lần cho mỗi lệnh nên không có khoá chuyển động; không có gì để gỡ.",
       "motionLockChanged": "Khoá chuyển động đã thay đổi trong lúc bạn xác nhận (có lần mất kết nối mới). Không gỡ gì cả; hãy đọc lại trạng thái robot rồi xác nhận lại.",
@@ -21775,8 +21778,8 @@
     "boardError": "Không đọc được bảng hiện trường.",
     "chip": {
       "planned": "Chờ xác nhận",
-      "srcActive": "safety.listAssignments — trạng thái 'Hoạt động' trong 200 phân công mới nhất (theo bộ lọc ca và trạng thái)",
-      "srcPlanned": "safety.listAssignments — trạng thái 'Kế hoạch' (chưa xác nhận) trong 200 phân công mới nhất (theo bộ lọc ca và trạng thái)"
+      "srcActive": "safety.listAssignments — trạng thái 'Hoạt động' trong 200 phân công mới nhất khớp bộ lọc ca và trạng thái (máy chủ lọc)",
+      "srcPlanned": "safety.listAssignments — trạng thái 'Kế hoạch' (chưa xác nhận) trong 200 phân công mới nhất khớp bộ lọc ca và trạng thái (máy chủ lọc)"
     },
     "side": {
       "label": "Bảng hiện trường — ai và robot nào đang ở mỗi trạm lúc này"
@@ -21791,7 +21794,11 @@
     },
     "movedLink": "Nhân lực → Sản xuất › Ca",
     "emptyForShift": "Ca này chưa có phân công nào.",
-    "emptyForShiftWindow": "Không có phân công nào của ca này trong {{limit}} phân công mới nhất đã tải — phân công cũ hơn của ca này không hiện ở đây."
+    "form": {
+      "shift": "Ca (tuỳ chọn)",
+      "noShift": "— không gắn ca —",
+      "defaultHint": "Đã chọn sẵn ca đang diễn ra lúc này."
+    }
   },
   "engineeringAssign": {
     "label": "Giao cho",

@@ -97,7 +97,7 @@ vi.mock("@/lib/trpc", () => {
     Promise.resolve().then(() => {
       (srv.calls[path] ??= []).push(input);
       if (srv.mutationError) throw srv.mutationError;
-      if (path === "safety.assignOperator") srv.assignments.unshift(assignment(90, "planned", { operatorId: input.operatorId }));
+      if (path === "safety.assignOperator") srv.assignments.unshift(assignment(90, "planned", { operatorId: input.operatorId, shiftConfigId: input.shiftConfigId ?? null }));
       if (path === "safety.reassignOperator") Object.assign(srv.assignments.find((a) => a.id === input.assignmentId)!, { operatorId: input.operatorId });
       if (path === "safety.confirmAssignment") Object.assign(srv.assignments.find((a) => a.id === input.assignmentId)!, { status: "active" });
       if (path === "safety.closeAssignment") Object.assign(srv.assignments.find((a) => a.id === input.assignmentId)!, { status: "completed" });
@@ -115,7 +115,13 @@ vi.mock("@/lib/trpc", () => {
       if (path === "safety.listAssignments") {
         if (srv.assignError) return q(undefined, enabled, { isError: true });
         if (srv.assignLoading) return q(undefined, enabled, { isLoading: true, isPending: true });
-        return q(srv.snap.assignments.filter((a) => !input?.status || a.status === input.status), enabled);
+        // Đợt 3b Task 1 — "server" lọc ca như SQL thật: vắng ⇒ không lọc; null ⇒ chưa gắn ca; số ⇒ đúng ca đó.
+        return q(
+          srv.snap.assignments.filter(
+            (a) => (!input?.status || a.status === input.status) && (input?.shiftConfigId === undefined || a.shiftConfigId === input.shiftConfigId),
+          ),
+          enabled,
+        );
       }
       if (path === "shiftConfig.list") return srv.shiftsError ? q(undefined, enabled, { isError: true }) : q(srv.shifts, enabled);
       return q(undefined, enabled);
@@ -198,7 +204,7 @@ const OLD_REFETCH_ALL = [
   "safety.listAssignments", "safety.listCollaborations", "safety.sourceHealth",
 ];
 
-import ProductionShifts, { filterByShift } from "./ProductionShifts";
+import ProductionShifts, { defaultShiftId, shiftContains, shiftFilterInput } from "./ProductionShifts";
 
 beforeAll(async () => {
   installMatchMedia();
@@ -238,8 +244,15 @@ beforeEach(() => {
   localStorage.clear();
   presetNarrow(false);
   window.history.replaceState(null, "", "/production/shifts");
+  // Đợt 3b Task 1 — giờ "bây giờ" CỐ ĐỊNH (chỉ giả Date, hẹn giờ thật): 03:00 nằm ngoài cả hai ca A 06–14 / B 14–22 ⇒ sheet
+  // phân công KHÔNG chọn sẵn ca ⇒ payload các ca cũ giữ nguyên văn như trước Đợt 3b.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 9, 6, 3, 0, 0));
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const mainEl = () => {
   const all = [...document.querySelectorAll("[data-layout-main]")] as HTMLElement[];
@@ -333,30 +346,37 @@ describe("Sản xuất › Ca — lọc theo ca (shift_configs) và trạng thá
     await waitFor(() => expect(params().get("shift")).toBe("2"));
     expect(window.history.length).toBe(len0);
     expect(visibleOps()).toEqual([4]);
+    // Đợt 3b Task 1 — lọc ca do SERVER làm: ca đi vào input của listAssignments (không lọc trên 200 hàng đã tải).
+    expect(srv.queryInputs).toContain('safety.listAssignments:{"shiftConfigId":2,"limit":200}');
     await user.click(within(toolbar()).getByRole("combobox", { name: S("shifts.filter.shift") }));
     await user.click(await screen.findByRole("option", { name: S("shifts.filter.noShift") }));
     await waitFor(() => expect(params().get("shift")).toBe("none"));
     expect(visibleOps()).toEqual([5]);
+    expect(srv.queryInputs).toContain('safety.listAssignments:{"shiftConfigId":null,"limit":200}');
     await user.click(within(toolbar()).getByRole("combobox", { name: S("shifts.filter.shift") }));
     await user.click(await screen.findByRole("option", { name: S("shifts.filter.allShifts") }));
     await waitFor(() => expect(params().get("shift")).toBeNull());
     expect(visibleOps().sort()).toEqual([3, 4, 5]);
+    expect(srv.queryInputs.filter((x) => x.startsWith("safety.listAssignments:")).at(-1)).toBe('safety.listAssignments:{"limit":200}');
   });
 
   it("F5 với ?shift=1&status=planned mở thẳng đúng bộ lọc; trạng thái đi vào input của listAssignments như cũ", () => {
     window.history.replaceState(null, "", "/production/shifts?shift=1&status=planned");
     render(<ProductionShifts />);
     expect(visibleOps()).toEqual([3]);
-    expect(srv.queryInputs).toContain('safety.listAssignments:{"status":"planned","limit":200}');
+    expect(srv.queryInputs).toContain('safety.listAssignments:{"status":"planned","shiftConfigId":1,"limit":200}');
     expect(within(toolbar()).getByRole("combobox", { name: S("shifts.filter.shift") })).toHaveTextContent("Ca sáng (A) 06:00–14:00");
   });
 
-  it("filterByShift: tất cả / ca / chưa gắn ca / giá trị lạ ⇒ không lọc", () => {
-    const rows = [{ id: 1, shiftConfigId: 1 }, { id: 2, shiftConfigId: null }, { id: 3, shiftConfigId: 2 }];
-    expect(filterByShift(rows, null).map((r) => r.id)).toEqual([1, 2, 3]);
-    expect(filterByShift(rows, "1").map((r) => r.id)).toEqual([1]);
-    expect(filterByShift(rows, "none").map((r) => r.id)).toEqual([2]);
-    expect(filterByShift(rows, "abc").map((r) => r.id)).toEqual([1, 2, 3]);
+  it("shiftFilterInput (Đợt 3b): tất cả ⇒ không khoá; ca ⇒ số; chưa gắn ca ⇒ null; giá trị lạ ⇒ không lọc (như cũ)", () => {
+    expect(shiftFilterInput(null)).toEqual({});
+    expect(shiftFilterInput("")).toEqual({});
+    expect(shiftFilterInput("1")).toEqual({ shiftConfigId: 1 });
+    expect(shiftFilterInput("none")).toEqual({ shiftConfigId: null });
+    for (const bad of ["abc", "0", "-3", "1.5", "1e3"]) {
+      expect(shiftFilterInput(bad), bad).toEqual({});
+      expect("shiftConfigId" in shiftFilterInput(bad), bad).toBe(false);
+    }
   });
 });
 
@@ -375,6 +395,8 @@ describe("Sản xuất › Ca — luồng phân công qua flyout (R-2-n: payload
     await user.type(within(sheet).getByLabelText(S("workforce.lineId")), "2");
     await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
     await waitFor(() => expect(calls("assignOperator")).toEqual([{ operatorId: 77, lineId: 2, stationId: undefined, skillLevel: undefined }]));
+    // Đợt 3b Task 1 — 03:00 không thuộc ca nào ⇒ không chọn sẵn ⇒ payload NGUYÊN VĂN như cũ (không có khoá ca khi gửi đi).
+    expect(JSON.stringify(calls("assignOperator")[0])).toBe('{"operatorId":77,"lineId":2}');
     await waitFor(() => expect(layer("workforce-assign")).toBeNull());
     expect(params().get("flyout")).toBeNull();
     expect(params().get("shift")).toBe("1");
@@ -397,7 +419,9 @@ describe("Sản xuất › Ca — luồng phân công qua flyout (R-2-n: payload
     await user.clear(op);
     await user.type(op, "50");
     await user.click(within(sheet).getByRole("button", { name: S("workforce.reassign") }));
-    await waitFor(() => expect(calls("reassignOperator")).toEqual([{ assignmentId: 3, operatorId: 50, lineId: 1, stationId: 2, skillLevel: "qualified" }]));
+    // Đợt 3b Task 1 (doc 81 §12, chủ dự án duyệt) — sheet điền sẵn CẢ ca của phân công cũ (#3 thuộc ca 1) ⇒ payload mang ca;
+    // trước Đợt 3b phân công lại làm RƠI ca (hàng mới shiftConfigId NULL).
+    await waitFor(() => expect(calls("reassignOperator")).toEqual([{ assignmentId: 3, operatorId: 50, lineId: 1, stationId: 2, skillLevel: "qualified", shiftConfigId: 1 }]));
     await waitFor(() => expect(layer("workforce-reassign")).toBeNull());
     expect(new Set(srv.invalidated)).toEqual(new Set(OLD_REFETCH_ALL));
     unmount();
@@ -599,13 +623,15 @@ describe("Sản xuất › Ca — dưới 1024 px và i18n", () => {
 //     hiện ở đây (không để người dùng tưởng "ca này không có ai"); cửa sổ chưa đầy ⇒ "ca này chưa có phân công".
 // (b) lỗi cờ tắt phân biệt theo MÃ cờ (`params.feature`) như trang Safety cũ phân biệt an toàn / nhân lực.
 describe("Sản xuất › Ca — final wave: gợi ý bảng rỗng theo cửa sổ 200 + câu cờ tắt theo mã cờ", () => {
-  it("?shift=1 mà 200 phân công mới nhất đều thuộc ca khác ⇒ câu 'trong 200 phân công mới nhất… cũ hơn không hiện'", () => {
+  it("Đợt 3b: ?shift=1 mà 200 phân công mới nhất đều thuộc ca khác ⇒ server lọc ca ⇒ câu 'ca này chưa có phân công' (gợi ý cửa sổ 200 đã bỏ)", () => {
     srv.snap.assignments = Array.from({ length: 200 }, (_, i) => assignment(100 + i, "planned", { shiftConfigId: 2 }));
     window.history.replaceState(null, "", "/production/shifts?shift=1");
     render(<ProductionShifts />);
     expect(visibleOps()).toEqual([]);
     const hint = mainEl().querySelector("[data-empty-hint]") as HTMLElement;
-    expect(hint).toHaveTextContent(S("shifts.emptyForShiftWindow").replace("{{limit}}", "200"));
+    expect(hint).toHaveTextContent(S("shifts.emptyForShift"));
+    expect(hint.textContent).not.toContain("200");
+    expect((vi_ as { shifts: Record<string, unknown> }).shifts.emptyForShiftWindow).toBeUndefined();
   });
 
   it("cửa sổ CHƯA đầy ⇒ 'Ca này chưa có phân công nào.'; không lọc ca ⇒ câu rỗng cũ", () => {
@@ -632,5 +658,131 @@ describe("Sản xuất › Ca — final wave: gợi ý bảng rỗng theo cửa 
     await waitFor(() => expect(toastSpy.info).toHaveBeenCalledWith(S(key)));
     expect(S(key)).not.toMatch(/[A-Z][A-Z0-9]+_[A-Z0-9_]+/);
     expect(toastSpy.error).not.toHaveBeenCalled();
+  });
+});
+
+// ── Đợt 3b Task 1 (doc 81 §12 "Đã chốt 2026-10-06") — bộ chọn ca TUỲ CHỌN trong sheet phân công / phân công lại ───────────
+// Hợp đồng: chỉ ca ĐANG HOẠT ĐỘNG; mặc định = ca có khung giờ chứa "bây giờ" nếu ĐÚNG MỘT ca khớp (0 hoặc ≥2 ⇒ không chọn);
+// phân công lại ưu tiên ca của phân công cũ (nếu còn hoạt động, như mọi trường khác được điền sẵn); "không gắn ca" ⇒ payload
+// KHÔNG có khoá ca (y như trước). Oracle giờ: tính tay theo phút trong ngày, không gọi lại hàm của trang.
+describe("Đợt 3b Task 1 — bộ chọn ca trong sheet phân công", () => {
+  const at = (h: number, m = 0) => vi.setSystemTime(new Date(2026, 9, 6, h, m, 0));
+  const shiftBox = (sheet: HTMLElement) => within(sheet).getByRole("combobox", { name: S("shifts.form.shift") });
+  const openAssign = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(within(toolbar()).getByRole("button", { name: S("workforce.assign") }));
+    return waitLayer("workforce-assign");
+  };
+
+  it("shiftContains / defaultShiftId: khung thường, khung qua đêm, khung 24 h, biên [đầu, cuối); đúng MỘT ca khớp mới chọn", () => {
+    const A = { id: 1, startHour: 6, startMinute: 0, endHour: 14, endMinute: 0, isActive: true };
+    const N = { id: 3, startHour: 22, startMinute: 0, endHour: 6, endMinute: 0, isActive: true };
+    const D = { id: 4, startHour: 7, startMinute: 30, endHour: 7, endMinute: 30, isActive: true };
+    const d = (h: number, m = 0) => new Date(2026, 9, 6, h, m);
+    expect([shiftContains(A, d(6)), shiftContains(A, d(13, 59)), shiftContains(A, d(14)), shiftContains(A, d(5, 59))]).toEqual([true, true, false, false]);
+    expect([shiftContains(N, d(22)), shiftContains(N, d(23, 30)), shiftContains(N, d(5, 59)), shiftContains(N, d(6)), shiftContains(N, d(12))]).toEqual([true, true, true, false, false]);
+    expect([shiftContains(D, d(0)), shiftContains(D, d(7, 30)), shiftContains(D, d(23, 59))]).toEqual([true, true, true]);
+    expect(defaultShiftId([A, N], d(10))).toBe(1);
+    expect(defaultShiftId([A, N], d(23))).toBe(3);
+    expect(defaultShiftId([A, N], d(15))).toBeNull();
+    expect(defaultShiftId([A, D], d(10))).toBeNull(); // hai ca khớp ⇒ không đoán
+    expect(defaultShiftId([{ ...A, isActive: false }, N], d(10))).toBeNull(); // ca TẮT không bao giờ được chọn
+  });
+
+  it("10:00 ⇒ sheet chọn sẵn ca A (06–14); danh sách chỉ ca ĐANG HOẠT ĐỘNG + 'không gắn ca'; gửi ⇒ payload mang shiftConfigId 1", async () => {
+    at(10);
+    srv.shifts = [...srv.shifts, shift(7, "Ca cũ", "Z", 8, 12, { isActive: false })];
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    const sheet = await openAssign(user);
+    expect(shiftBox(sheet)).toHaveTextContent("Ca sáng (A) 06:00–14:00");
+    expect(within(sheet).getByText(S("shifts.form.defaultHint"))).toBeInTheDocument();
+    await user.click(shiftBox(sheet));
+    const opts = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(opts).toEqual([S("shifts.form.noShift"), "Ca sáng (A) 06:00–14:00", "Ca chiều (B) 14:00–22:00"]);
+    await user.keyboard("{Escape}");
+    await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "77");
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
+    await waitFor(() => expect(calls("assignOperator")).toEqual([{ operatorId: 77, lineId: undefined, stationId: undefined, skillLevel: undefined, shiftConfigId: 1 }]));
+    expect(new Set(srv.invalidated)).toEqual(new Set(OLD_REFETCH_ALL));
+  });
+
+  it("03:00 (ngoài mọi ca) ⇒ không chọn sẵn, không câu gợi ý; người dùng chọn ca B ⇒ payload shiftConfigId 2", async () => {
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    const sheet = await openAssign(user);
+    expect(shiftBox(sheet)).toHaveTextContent(S("shifts.form.noShift"));
+    expect(within(sheet).queryByText(S("shifts.form.defaultHint"))).toBeNull();
+    await user.click(shiftBox(sheet));
+    await user.click(await screen.findByRole("option", { name: "Ca chiều (B) 14:00–22:00" }));
+    await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "78");
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
+    await waitFor(() => expect(calls("assignOperator")).toEqual([expect.objectContaining({ operatorId: 78, shiftConfigId: 2 })]));
+  });
+
+  it("10:00 nhưng HAI ca khớp (thêm ca 08–16) ⇒ không chọn sẵn; chọn sẵn A rồi bỏ về 'không gắn ca' ⇒ payload KHÔNG có khoá ca", async () => {
+    at(10);
+    srv.shifts = [...srv.shifts, shift(8, "Ca hành chính", "HC", 8, 16)];
+    const user = userEvent.setup();
+    const r = render(<ProductionShifts />);
+    let sheet = await openAssign(user);
+    expect(shiftBox(sheet)).toHaveTextContent(S("shifts.form.noShift"));
+    r.unmount();
+    srv.shifts = srv.shifts.filter((s) => s.id !== 8);
+    window.history.replaceState(null, "", "/production/shifts");
+    render(<ProductionShifts />);
+    sheet = await openAssign(user);
+    expect(shiftBox(sheet)).toHaveTextContent("Ca sáng (A) 06:00–14:00");
+    await user.click(shiftBox(sheet));
+    await user.click(await screen.findByRole("option", { name: S("shifts.form.noShift") }));
+    await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "79");
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
+    await waitFor(() => expect(calls("assignOperator").length).toBe(1));
+    expect(JSON.stringify(calls("assignOperator")[0])).toBe('{"operatorId":79}');
+  });
+
+  it("ca qua đêm 22–06 lúc 23:30 ⇒ chọn sẵn ca đó", async () => {
+    at(23, 30);
+    srv.shifts = [...srv.shifts, shift(9, "Ca đêm", "C", 22, 6)];
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    const sheet = await openAssign(user);
+    expect(shiftBox(sheet)).toHaveTextContent("Ca đêm (C) 22:00–06:00");
+  });
+
+  it("phân công lại: ca của phân công cũ thắng ca 'bây giờ'; ca cũ đã TẮT ⇒ ca 'bây giờ'; cũ chưa gắn ca ⇒ ca 'bây giờ'", async () => {
+    at(10); // "bây giờ" thuộc ca A (1)
+    srv.shifts = [...srv.shifts, shift(7, "Ca cũ", "Z", 8, 12, { isActive: false })];
+    srv.assignments.push(assignment(6, "planned", { shiftConfigId: 7 }));
+    srv.snap.assignments = srv.assignments.map((x) => ({ ...x }));
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    // #4 thuộc ca B (2)
+    await user.click(within(rowOf(44)).getByRole("button", { name: S("workforce.reassign") }));
+    let sheet = await waitLayer("workforce-reassign");
+    expect(shiftBox(sheet)).toHaveTextContent("Ca chiều (B) 14:00–22:00");
+    expect(within(sheet).queryByText(S("shifts.form.defaultHint"))).toBeNull();
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.reassign") }));
+    await waitFor(() => expect(calls("reassignOperator")).toEqual([expect.objectContaining({ assignmentId: 4, shiftConfigId: 2 })]));
+    await waitFor(() => expect(layer("workforce-reassign")).toBeNull());
+    // #6 thuộc ca 7 đã TẮT ⇒ rơi về ca "bây giờ" (A).
+    await user.click(within(rowOf(46)).getByRole("button", { name: S("workforce.reassign") }));
+    sheet = await waitLayer("workforce-reassign");
+    expect(shiftBox(sheet)).toHaveTextContent("Ca sáng (A) 06:00–14:00");
+    await user.click(within(sheet).getByRole("button", { name: S("common.cancel") }));
+    await waitFor(() => expect(layer("workforce-reassign")).toBeNull());
+    // #3 chuyển thành chưa gắn ca qua "server" ⇒ ca "bây giờ" (A) + câu gợi ý.
+    Object.assign(srv.assignments.find((a) => a.id === 3)!, { shiftConfigId: null });
+    srv.snap.assignments = srv.assignments.map((x) => ({ ...x }));
+    await act(async () => bump());
+    await user.click(within(rowOf(43)).getByRole("button", { name: S("workforce.reassign") }));
+    sheet = await waitLayer("workforce-reassign");
+    expect(shiftBox(sheet)).toHaveTextContent("Ca sáng (A) 06:00–14:00");
+    expect(within(sheet).getByText(S("shifts.form.defaultHint"))).toBeInTheDocument();
+  });
+
+  it("i18n: khoá bộ chọn ca có ở vi/en/zh", () => {
+    for (const loc of [vi_, en_, zh_] as Array<{ shifts: { form?: Record<string, string> } }>) {
+      expect(Object.keys(loc.shifts.form ?? {}).sort()).toEqual(["defaultHint", "noShift", "shift"]);
+    }
   });
 });
