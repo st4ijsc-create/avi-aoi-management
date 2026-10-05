@@ -75,9 +75,19 @@ describe("census — ô giấy phép riêng của mục điều hướng", () =>
   });
 });
 
+/**
+ * Final wave (doc 81 Đợt 3, M-1) — tập mục được phép khai `ignoreGroupCategory` (đổi = quyết định có chủ đích, kèm ngày/ghi
+ * chú, như LABS_ALLOWLIST của navLabs). 2026-10-05 Đợt 3 Task 3: Sản xuất › Ca.
+ */
+const IGNORE_GROUP_CATEGORY_ALLOWLIST = ["/production/shifts"];
+
 describe("census — ô `ignoreGroupCategory` (Đợt 3 Task 3)", () => {
   it("thiết bị đo thấy dữ liệu: có ≥1 mục khai `ignoreGroupCategory`", () => {
     expect(ALL_CAT.filter((i) => i.ignoreGroupCategory === true).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("tập mục khai `ignoreGroupCategory` == allowlist (mục mới không được lặng lẽ bỏ qua quyền loại của nhóm)", () => {
+    expect(ALL_CAT.filter((i) => i.ignoreGroupCategory === true).map((i) => i.href).sort()).toEqual([...IGNORE_GROUP_CATEGORY_ALLOWLIST].sort());
   });
 
   it("mọi mục khai `ignoreGroupCategory` có quyền riêng và nằm trong nhóm có permissionCategory", () => {
