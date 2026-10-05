@@ -355,3 +355,10 @@ Bảng nhân lực rời tab `?tab=workforce` của Safety & Workforce sang tran
 - **TRƯỚC/SAU KHÔNG CÙNG LOẠI**: trước là MAIN của Safety (hàng tab + bảng phân công + bảng hiện trường, panel phụ của Safety);
   sau là MAIN của trang mới (hàng công cụ + bảng phân công; bảng hiện trường ở panel phụ của chính trang).
 
+
+## Đợt 3 Task 4 (2026-10-05) — giao việc Kỹ thuật (mig 0363)
+- `PAGE_TABLES` của `engineering-home`, `engineering-changes`, `recipes`, `interlock-rules`, `orchestration-studio` thêm
+  `engineering_assignments` (Hub đọc qua `oversight.pendingSummary.mine`; bốn trang đọc cột "Người được giao").
+- `KNOWN_PROCS` của bốn trang thêm `engineering.assignments` (gọi lúc nạp trang). `engineering.assignableUsers` KHÔNG thêm:
+  chỉ gọi khi mở sheet/khối duyệt — lần đo nạp trang không chạm nó (thêm vào là nới danh sách cho phép).
+- Không đổi gác, không đổi bản ghi hiệu chuẩn: MAIN của năm màn trùng hiệu chuẩn cũ (BEFORE/AFTER 0 dòng lệch).
