@@ -16259,7 +16259,8 @@
       "recipe": "Code @ version",
       "status": "Status",
       "when": "When",
-      "who": "Performed by"
+      "who": "Performed by",
+      "name": "Name"
     },
     "configured": "Connected",
     "flagOffBanner": "Preview mode: equipment integration is disabled. Reads work; integration actions (release / roll back a recipe version, record a load — now on the Recipes page) are blocked until it is enabled.",
@@ -16303,7 +16304,8 @@
     "subtitle": "Multi-vendor integration frameworks (FOCAS / Euromap, read-only) — metadata only, no device commands.",
     "tab": {
       "status": "Connector catalog",
-      "readonlyHistory": "Versions & load history (view only)"
+      "readonlyHistory": "Versions & load history (view only)",
+      "recipeHistory": "Versions & load history"
     },
     "title": "Equipment Integration",
     "uem": {
@@ -16347,7 +16349,27 @@
       "pickCode": "Enter a recipe code above to see its versions and load history (view only).",
       "pickMachine": "Select a machine above to see its load history."
     },
-    "acqMoved": "Acquisition workers → Vision › Image acquisition"
+    "acqMoved": "Acquisition workers → Vision › Image acquisition",
+    "recipeTab": {
+      "pickCode": "Enter a recipe code above to see its versions, version actions and load history."
+    },
+    "flagOffBannerHere": "Preview mode: equipment integration is disabled. Reads work; recipe version actions on this page (create / release / archive / roll back, record a load) are blocked until it is enabled.",
+    "flagOffToast": "Equipment integration is disabled (preview) — this action is blocked until it is enabled.",
+    "archive": "Archive",
+    "archiveTip": "Archive this version",
+    "create": "Create version",
+    "createRequired": "Code and name are required.",
+    "createTitle": "New recipe version (draft)",
+    "createDesc": "Immutable draft version — genealogy metadata only; nothing is pushed to a device.",
+    "createVersion": "New version",
+    "machineOptional": "Machine (optional)",
+    "noMachine": "(none)",
+    "payload": "Payload (JSON)",
+    "payloadInvalid": "Payload is not valid JSON.",
+    "payloadObject": "Payload must be a JSON object.",
+    "versionArchived": "Version archived",
+    "versionCreated": "Recipe version created (draft)",
+    "versionNotFound": "Version #{{id}} is not in the loaded recipe code."
   },
   "visionAcq": {
     "title": "Image acquisition",

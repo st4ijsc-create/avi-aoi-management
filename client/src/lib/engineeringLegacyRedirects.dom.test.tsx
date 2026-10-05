@@ -177,7 +177,12 @@ describe("chuyển hướng theo TAB (Đợt 3 Task 1): Integration → Recipes"
     // ĐỔI BỘ CHỌN (Đợt 3 Task 2): `when` thành hàm theo từng chuyển hướng — /recipes ⇒ machine_control/canView (R-3-b),
     // /vision/acquisition ⇒ machine_alerts/canView (cổng của trang mới, QĐ-3c).
     expect(EQ_SRC).toMatch(/<LegacyTabRedirectGate from=\{BASE_PATH\} when=\{\(r\) => \(r\.to === VISION_ACQUISITION_PATH \? canViewAcq : canOpenRecipes\)\}>/);
-    expect(EQ_SRC).toMatch(/const canOpenRecipes = hasPermission\("machine_control", "canView"\);/);
+    // Final wave (Ruling R-3-h) — ĐỔI BỘ CHỌN: "mở được /recipes" = quyền machine_control/canView VÀ giấy phép route /recipes
+    // (`isRouteAllowed` của useLicenseModules — cùng vị từ của nav/RouteGuard); hành vi kiểm ở EquipmentIntegration.layout.dom.test.
+    expect(EQ_SRC).toMatch(/const permitted = hasPermission\("machine_control", "canView"\);/);
+    expect(EQ_SRC).toMatch(/const canOpenRecipes = permitted && isRouteAllowed\(RECIPES_PATH\);/);
+    expect(EQ_SRC).toMatch(/const RECIPES_PATH = "\/recipes";/);
+    expect(EQ_SRC).toMatch(/const \{ canOpenRecipes \} = useRecipesAccess\(\);/);
     expect(EQ_SRC).toMatch(/const canViewAcq = hasPermission\("machine_alerts", "canView"\);/);
     expect(EQ_SRC).toMatch(/const BASE_PATH = "\/equipment-integration";/);
   });

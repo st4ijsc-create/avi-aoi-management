@@ -26,6 +26,10 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
 vi.mock("sonner", () => ({
   toast: { info: vi.fn(), error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
+// Final wave (R-3-h) — HẠ TẦNG (không đổi khẳng định): trang đọc giấy phép route /recipes; giữ kịch bản cũ (đủ giấy phép).
+vi.mock("@/hooks/useLicenseModules", () => ({
+  useLicenseModules: () => ({ isLoading: false, isRouteAllowed: () => true }),
+}));
 
 interface QueryResult {
   data: unknown;

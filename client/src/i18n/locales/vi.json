@@ -16239,7 +16239,8 @@
       "recipe": "Mã @ phiên bản",
       "status": "Trạng thái",
       "when": "Thời điểm",
-      "who": "Người thực hiện"
+      "who": "Người thực hiện",
+      "name": "Tên"
     },
     "configured": "Đã kết nối",
     "flagOffBanner": "Chế độ xem trước: tích hợp thiết bị đang tắt. Xem vẫn hoạt động; các thao tác tích hợp (phát hành / rollback phiên bản recipe, ghi nhận nạp — nay ở trang Recipes) bị chặn cho đến khi bật.",
@@ -16283,7 +16284,8 @@
     "subtitle": "Các framework tích hợp đa nhà cung cấp (FOCAS / Euromap, chỉ đọc) — chỉ metadata, không có lệnh thiết bị.",
     "tab": {
       "status": "Danh mục connector",
-      "readonlyHistory": "Phiên bản & lịch sử nạp (chỉ xem)"
+      "readonlyHistory": "Phiên bản & lịch sử nạp (chỉ xem)",
+      "recipeHistory": "Phiên bản & lịch sử nạp"
     },
     "title": "Tích hợp thiết bị",
     "uem": {
@@ -16327,7 +16329,27 @@
       "pickCode": "Nhập mã recipe ở trên để xem các phiên bản và lịch sử nạp của mã đó (chỉ xem).",
       "pickMachine": "Chọn một máy ở trên để xem lịch sử nạp của máy đó."
     },
-    "acqMoved": "Worker thu ảnh → Vision › Thu ảnh"
+    "acqMoved": "Worker thu ảnh → Vision › Thu ảnh",
+    "recipeTab": {
+      "pickCode": "Nhập mã recipe ở trên để xem các phiên bản, thao tác phiên bản và lịch sử nạp của mã đó."
+    },
+    "flagOffBannerHere": "Chế độ xem trước: tích hợp thiết bị đang tắt. Xem vẫn hoạt động; các thao tác phiên bản recipe trên trang này (tạo / phát hành / lưu trữ / rollback, ghi nhận nạp) bị chặn cho đến khi bật.",
+    "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước) — thao tác này bị chặn cho đến khi được bật.",
+    "archive": "Lưu trữ",
+    "archiveTip": "Lưu trữ phiên bản này",
+    "create": "Tạo phiên bản",
+    "createRequired": "Mã và tên là bắt buộc.",
+    "createTitle": "Phiên bản recipe mới (bản nháp)",
+    "createDesc": "Phiên bản bất biến ở dạng nháp — chỉ metadata truy xuất nguồn gốc; không đẩy gì xuống thiết bị.",
+    "createVersion": "Phiên bản mới",
+    "machineOptional": "Máy (tùy chọn)",
+    "noMachine": "(không có)",
+    "payload": "Payload (JSON)",
+    "payloadInvalid": "Payload không phải JSON hợp lệ.",
+    "payloadObject": "Payload phải là một object JSON.",
+    "versionArchived": "Đã lưu trữ phiên bản",
+    "versionCreated": "Đã tạo phiên bản recipe (bản nháp)",
+    "versionNotFound": "Không tìm thấy phiên bản #{{id}} trong mã recipe đang xem."
   },
   "visionAcq": {
     "title": "Thu ảnh",
