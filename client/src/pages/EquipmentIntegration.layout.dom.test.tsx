@@ -600,6 +600,35 @@ describe("Đợt 3 Task 2 — worker thu ảnh đã dời sang Vision › Thu �
     expect(screen.getByRole("region", { name: "Chi tiết connector" })).toBeTruthy();
   });
 
+  // Fix round 1 (Ruling R-3-d) — chỗ cũ trỏ tới chỗ mới: khách chỉ có giấy phép OT (ô AI là upsell khi bật launcher) vẫn
+  // có lối nhìn thấy được tới Vision › Thu ảnh. Cổng = cổng của trang đích (machine_alerts/canView).
+  it("R-3-d: có machine_alerts/canView ⇒ link 'Worker thu ảnh → Vision › Thu ảnh' trong hàng công cụ (MỌI tab) trỏ /vision/acquisition; không có ⇒ không link", async () => {
+    render(<EquipmentIntegration />);
+    const link = within(toolbar()).getByRole("link", { name: /Worker thu ảnh → Vision › Thu ảnh/ });
+    expect(link).toHaveAttribute("href", "/vision/acquisition");
+    const user = userEvent.setup();
+    await user.click(link);
+    expect(window.location.pathname).toBe("/vision/acquisition");
+    cleanup();
+    // operator-like có quyền xem thu ảnh nhưng không mở được /recipes ⇒ link cũng có ở tab chỉ-đọc
+    Object.assign(perm, { controlView: false, control: false, release: false });
+    window.history.replaceState(null, "", "/equipment-integration?tab=history");
+    render(<EquipmentIntegration />);
+    expect(within(toolbar()).getByRole("link", { name: /Worker thu ảnh → Vision › Thu ảnh/ })).toBeTruthy();
+    cleanup();
+    Object.assign(perm, { acqView: false, acqControl: false });
+    window.history.replaceState(null, "", "/equipment-integration");
+    render(<EquipmentIntegration />);
+    expect(screen.queryByRole("link", { name: /Worker thu ảnh/ })).toBeNull();
+  });
+
+  it("R-3-d: màn hẹp ⇒ link nằm trong công cụ đầu nội dung tab", () => {
+    presetNarrow(true);
+    render(<EquipmentIntegration />);
+    const tools = mainEl().querySelector("[data-narrow-tools]") as HTMLElement;
+    expect(within(tools).getByRole("link", { name: /Worker thu ảnh → Vision › Thu ảnh/ })).toHaveAttribute("href", "/vision/acquisition");
+  });
+
   it("trang không còn tab, panel, truy vấn hay sheet nào của worker thu ảnh", async () => {
     window.history.replaceState(null, "", "/equipment-integration?flyout=acq-start");
     render(<EquipmentIntegration />);

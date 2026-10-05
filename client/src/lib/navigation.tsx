@@ -177,6 +177,12 @@ export interface NavItem {
    * Không khai ⇒ luật cũ (giấy phép của nhóm).
    */
   licenseModule?: string;
+  /**
+   * Doc 81 Đợt 3 Task 2 fix round 1 (Ruling R-3-d) — mục CHỈ hiện khi module này KHÔNG được cấp phép (lọc trong
+   * `filterNavGroupsByLicense`). Dùng cho bí danh: vd "Worker thu ảnh → Vision › Thu ảnh" trong nhóm Kỹ thuật cho khách có
+   * OT mà không có MOD_AI (ô AI của launcher là upsell, mục Vision không với tới bằng thanh bên). Có MOD_AI ⇒ ẩn (không trùng).
+   */
+  onlyWhenModuleMissing?: string;
 }
 
 export interface NavGroup {
@@ -1192,6 +1198,22 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_monitoring",
         section: "standardsIntegration",
         hint: "nav.hint.equipmentIntegration",
+        engineerOriented: true,
+        beta: true,
+      },
+      {
+        // Doc 81 Đợt 3 Task 2 fix round 1 (Ruling R-3-d) — BÍ DANH của Vision › Thu ảnh cho khách có OT mà KHÔNG có MOD_AI:
+        // khi bật launcher, trang thật nằm ở app AI (ô upsell với SKU đó) nên thanh bên không với tới. Route bí danh là
+        // <Redirect> thuần tới /vision/acquisition ⇒ cổng = cổng của trang đích (machine_alerts/canView); giấy phép
+        // MOD_OT_CONTROL (nhóm này + route ở module-registry). Có MOD_AI ⇒ ẩn (mục Vision hiện, không trùng).
+        href: "/engineering/vision-acquisition",
+        label: "nav.visionAcquisitionAlias",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.visionAcquisitionDesc",
+        requiredPermission: "machine_alerts",
+        permissionCategory: "machine_monitoring",
+        section: "standardsIntegration",
+        onlyWhenModuleMissing: "MOD_AI",
         engineerOriented: true,
         beta: true,
       },
@@ -2725,7 +2747,13 @@ export function filterNavGroupsByLicense(
       const groupOk = isNavGroupAllowed(group.id);
       return {
         ...group,
-        items: group.items.filter((item) => (item.licenseModule ? isModuleAllowed(item.licenseModule) : groupOk) && isRouteAllowed(item.href)),
+        items: group.items.filter(
+          (item) =>
+            (item.licenseModule ? isModuleAllowed(item.licenseModule) : groupOk) &&
+            isRouteAllowed(item.href) &&
+            // R-3-d — bí danh chỉ khi module kia KHÔNG được cấp phép.
+            !(item.onlyWhenModuleMissing && isModuleAllowed(item.onlyWhenModuleMissing)),
+        ),
       };
     })
     .filter((group) => group.items.length > 0);

@@ -410,6 +410,8 @@ const SEED_MODULES: SystemModule[] = [
       // doc 81 Đợt 3 Task 2 (QĐ-3c) — Vision › Thu ảnh (worker thu ảnh dời khỏi /equipment-integration) giữ ĐÚNG giấy phép
       // của trang cũ; KHÔNG vào MOD_AI dù mục điều hướng nằm ở khu Vision (app AI — xem client/src/lib/apps.ts).
       "/vision/acquisition",
+      // R-3-d — bí danh trong nhóm Kỹ thuật (chuyển hướng tới /vision/acquisition), cùng giấy phép.
+      "/engineering/vision-acquisition",
       "/factory-floor-editor", "/control-plane", "/robot-control",
       "/rf-test-cell", "/cell-twin",
     ],

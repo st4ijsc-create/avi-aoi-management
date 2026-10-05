@@ -28,6 +28,8 @@ const S: {
   lic: Lic;
   aiBlocked: boolean;
   isa: boolean;
+  /** doc 81 Đợt 3 Task 2 fix round 1 (R-3-d) — null ⇒ mọi module được phép (hành vi cũ); tập ⇒ SKU chỉ gồm các mã này. */
+  mods: Set<string> | null;
 } = {
   user: { id: 7, role: "engineer", name: "Eng", email: "e@x" },
   permissions: [],
@@ -35,6 +37,7 @@ const S: {
   lic: {},
   aiBlocked: false,
   isa: false,
+  mods: null,
 };
 
 const LIC_NORMAL: Lic = {
@@ -54,16 +57,27 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
     loading: false,
   }),
 }));
-vi.mock("@/hooks/useLicenseModules", () => ({
-  useLicenseModules: () => ({
-    isNavGroupAllowed: () => true,
-    // doc 81 Đợt 3 Task 2 — HẠ TẦNG: DashboardLayout lọc mục có `licenseModule` qua isModuleAllowed.
-    isModuleAllowed: () => true,
-    isRouteAllowed: () => true,
-    allowedModules: [],
-    isModuleBlocked: (code: string) => (code === "MOD_AI" ? S.aiBlocked : false),
-  }),
-}));
+vi.mock("@/hooks/useLicenseModules", async () => {
+  // doc 81 Đợt 3 Task 2 — HẠ TẦNG: DashboardLayout lọc mục có `licenseModule`/`onlyWhenModuleMissing` qua isModuleAllowed.
+  // `S.mods` (fix round 1, R-3-d) dựng một SKU cụ thể theo ĐÚNG luật của hook thật (module-registry: lõi luôn được phép).
+  const reg = await import("@shared/module-registry");
+  const ok = (code: string) => !S.mods || !!reg.getModuleByCode(code)?.isCore || S.mods.has(code);
+  return {
+    useLicenseModules: () => ({
+      isNavGroupAllowed: (id: string) => {
+        const m = reg.getModuleByNavGroup(id);
+        return !m || ok(m.code);
+      },
+      isModuleAllowed: ok,
+      isRouteAllowed: (href: string) => {
+        const m = reg.getModuleByRoute(href);
+        return !m || ok(m.code);
+      },
+      allowedModules: [],
+      isModuleBlocked: (code: string) => (code === "MOD_AI" ? S.aiBlocked : false),
+    }),
+  };
+});
 vi.mock("@/hooks/useLicenseEnforcement", () => ({ useLicenseEnforcement: () => S.lic }));
 vi.mock("@/hooks/useSpcAlertToast", () => ({ useSpcAlertToast: () => undefined }));
 vi.mock("@/hooks/useAppLauncherMode", () => ({
@@ -123,6 +137,7 @@ beforeEach(() => {
   S.lic = { ...LIC_NORMAL };
   S.aiBlocked = false;
   S.isa = false;
+  S.mods = null;
   localStorage.clear();
   resetAiEntryForTest();
 });
@@ -788,5 +803,40 @@ describe("R-2-z4 — chiều cao trang theo chrome THẬT của shell", () => {
     }
     expect(bad).toEqual([]);
     expect(uses).toBeGreaterThanOrEqual(18);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Doc 81 Đợt 3 Task 2 fix round 1 (Ruling R-3-d) — khách có OT mà KHÔNG có MOD_AI, launcher bật: Vision › Thu ảnh nằm ở
+// app AI (ô upsell) ⇒ thanh bên của app Kỹ thuật phải có BÍ DANH "Worker thu ảnh → Vision › Thu ảnh"; có MOD_AI ⇒ không bí
+// danh (mục thật ở app AI, không trùng). Không mở khoá ô AI (AppLauncherOverlay không đổi).
+describe("R-3-d — bí danh Vision › Thu ảnh trong thanh bên Kỹ thuật theo giấy phép", () => {
+  const ALIAS_LABEL = "Worker thu ảnh → Vision › Thu ảnh";
+  const engineeringMenuTexts = () => {
+    const label = i18next.t("nav.engineeringGroup");
+    const icon = [...document.querySelectorAll('[data-cascading-nav] button[aria-haspopup="menu"]')].find(
+      (b) => b.getAttribute("aria-label") === label,
+    ) as HTMLElement;
+    expect(icon, "rail phải có icon nhóm Kỹ thuật").toBeTruthy();
+    fireEvent.mouseEnter(icon);
+    return within(screen.getByRole("menu", { name: label })).getAllByRole("menuitem").map((b) => b.textContent ?? "");
+  };
+
+  it("SKU chỉ OT (không MOD_AI) ⇒ menu nhóm Kỹ thuật có bí danh", () => {
+    S.mods = new Set(["MOD_OT_CONTROL", "MOD_ENGINEERING"]);
+    localStorage.setItem("sidebar_open", "false");
+    renderShell("/equipment-integration");
+    const texts = engineeringMenuTexts();
+    expect(texts.some((t) => t.includes(ALIAS_LABEL))).toBe(true);
+    expect(texts.some((t) => t.includes(i18next.t("nav.equipmentIntegration")))).toBe(true);
+  });
+
+  it("SKU có MOD_AI ⇒ KHÔNG bí danh trong nhóm Kỹ thuật", () => {
+    S.mods = new Set(["MOD_OT_CONTROL", "MOD_ENGINEERING", "MOD_AI"]);
+    localStorage.setItem("sidebar_open", "false");
+    renderShell("/equipment-integration");
+    const texts = engineeringMenuTexts();
+    expect(texts.some((t) => t.includes(ALIAS_LABEL))).toBe(false);
+    expect(texts.some((t) => t.includes(i18next.t("nav.equipmentIntegration")))).toBe(true);
   });
 });

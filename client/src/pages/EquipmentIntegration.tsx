@@ -35,7 +35,7 @@
  */
 import { createContext, useContext, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearch } from "wouter";
+import { Link, useSearch } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -79,7 +79,7 @@ import {
 } from "@/components/ui/select";
 import {
   Plug, RefreshCw, AlertTriangle, Network,
-  CircleSlash, History,
+  CircleSlash, History, Camera,
 } from "lucide-react";
 import {
   deriveFeatureStatus,
@@ -125,6 +125,8 @@ interface EqPageCtx {
   roCode: string;
   setRoCode: (v: string) => void;
   userId: number | null;
+  /** R-3-d — mở được Vision › Thu ảnh (machine_alerts/canView, cổng của trang đó) ⇒ link "Worker thu ảnh → …". */
+  canViewAcq: boolean;
   integration: IntegrationStatus | undefined;
   integrationLoading: boolean;
   integrationError: boolean;
@@ -171,6 +173,7 @@ function EquipmentIntegrationPage() {
   // "Chỉ xem" (machine_control/canCreate) — huy hiệu header giữ như cũ.
   const canControl = hasPermission("machine_control", "canCreate");
   const canOpenRecipes = hasPermission("machine_control", "canView");
+  const canViewAcq = hasPermission("machine_alerts", "canView");
 
   const search = useSearch();
   const tab = resolveActiveTab(search, canOpenRecipes ? TAB_VALUES : TAB_VALUES_READONLY, "status") as TabValue;
@@ -231,6 +234,7 @@ function EquipmentIntegrationPage() {
     roCode,
     setRoCode,
     userId: user?.id ?? null,
+    canViewAcq,
     integration,
     integrationLoading: integrationQ.isLoading,
     integrationError: integrationQ.isError,
@@ -366,8 +370,29 @@ function flagChipState(s: FeatureStatus): StatusChipItem["state"] {
 // ── Hàng công cụ của tab đang mở (cùng hàng dải tab — thanh công cụ DUY NHẤT trong MAIN) ───────
 function TabToolbar() {
   const ctx = useEqCtx();
-  if (ctx.tab === "history" && !ctx.canOpenRecipes) return <ReadOnlyHistoryToolbar />;
-  return <CatalogToolbar />;
+  return (
+    <>
+      {ctx.tab === "history" && !ctx.canOpenRecipes ? <ReadOnlyHistoryToolbar /> : <CatalogToolbar />}
+      {ctx.canViewAcq && <AcquisitionMovedLink />}
+    </>
+  );
+}
+
+/**
+ * Đợt 3 Task 2 fix round 1 (Ruling R-3-d) — chỗ CŨ trỏ tới chỗ MỚI: worker thu ảnh đã dời sang Vision › Thu ảnh. Hiện ở mọi
+ * tab, chỉ cho người mở được trang đó (machine_alerts/canView). Integration thuộc MOD_OT_CONTROL nên khách chỉ có OT (ô AI
+ * của launcher là upsell) luôn có lối nhìn thấy được tới trang.
+ */
+function AcquisitionMovedLink() {
+  const { t } = useTranslation();
+  return (
+    <Button asChild size="sm" variant="outline" className="h-8">
+      <Link href={VISION_ACQUISITION_PATH} data-acq-moved-link="">
+        <Camera className="mr-1 h-4 w-4" aria-hidden="true" />
+        {t("eqIntegration.acqMoved", "Acquisition workers → Vision › Image acquisition")}
+      </Link>
+    </Button>
+  );
 }
 
 /** <1024 px: cùng bộ công cụ, nhưng là một hàng xuống dòng được ở đầu nội dung tab (không bị hàng tab cắt). */

@@ -6999,7 +6999,8 @@
     "twinStudio": "3D 工厂设计",
     "twinStudioDesc": "创建建筑、楼层与设备布局；导入图纸；发布版本",
     "visionAcquisition": "图像采集",
-    "visionAcquisitionDesc": "采集工作器：启动、监视、停止"
+    "visionAcquisitionDesc": "采集工作器：启动、监视、停止",
+    "visionAcquisitionAlias": "采集工作器 → 视觉 › 图像采集"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -14993,7 +14994,8 @@
     "readonly": {
       "pickCode": "在上方输入配方代码，查看其版本与加载历史（仅查看）。",
       "pickMachine": "在上方选择一台机器，查看其加载历史。"
-    }
+    },
+    "acqMoved": "采集工作器 → 视觉 › 图像采集"
   },
   "visionAcq": {
     "title": "图像采集",

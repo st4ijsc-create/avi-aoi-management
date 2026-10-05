@@ -128,4 +128,62 @@ describe("Vision › Thu ảnh — điều hướng theo vai (QĐ-3c)", () => {
     expect(scopeGroupsToApp(g, "ai").flatMap((x) => x.items.map((i) => i.href))).toContain(NEW);
     expect(scopeGroupsToApp(g, "engineering").flatMap((x) => x.items.map((i) => i.href))).not.toContain(NEW);
   });
+
+  // ── Fix round 1 (Ruling R-3-d) — bí danh trong nhóm Kỹ thuật CHỈ khi giấy phép KHÔNG có MOD_AI ───────────────────
+  const ALIAS = "/engineering/vision-acquisition";
+  const runLic = (allowed: string[], role = "admin") => {
+    const c = checkers(role === "admin" ? "engineer" : role);
+    const groups = role === "admin" ? getFilteredNavGroups("admin") : getFilteredNavGroups(role, c.hasPermission, c.hasAnyCategoryPermission);
+    const set = new Set(allowed);
+    const groupModule: Record<string, string> = { ai: "MOD_AI", engineering: "MOD_OT_CONTROL" };
+    const isNavGroupAllowed = (id: string) => (groupModule[id] ? set.has(groupModule[id]) : true);
+    const isModuleAllowed = (code: string) => set.has(code);
+    const isRouteAllowed = (href: string) => {
+      const m = getModuleByRoute(href);
+      return !m || m.isCore || set.has(m.code);
+    };
+    return filterNavGroupsByLicense(groups, isNavGroupAllowed, isModuleAllowed, isRouteAllowed);
+  };
+  const hrefs = (g: ReturnType<typeof runLic>) => g.flatMap((x) => x.items.map((i) => i.href));
+
+  it("R-3-d: bí danh ở nhóm Kỹ thuật (section standardsIntegration), cùng quyền machine_alerts, chỉ hiện khi KHÔNG có MOD_AI", () => {
+    const g = navGroups.find((x) => x.items.some((i) => i.href === ALIAS))!;
+    expect(g.id).toBe("engineering");
+    const item = g.items.find((i) => i.href === ALIAS)!;
+    expect(item.section).toBe("standardsIntegration");
+    expect(item.requiredPermission).toBe("machine_alerts");
+    expect(item.onlyWhenModuleMissing).toBe("MOD_AI");
+  });
+
+  it("R-3-d: App.tsx — bí danh = RouteGuard navHref của CHÍNH nó (RBAC-01) bọc <Redirect> tới /vision/acquisition; cùng quyền với trang đích", () => {
+    const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+    expect(app).toMatch(new RegExp(`<Route path="${ALIAS}"><RouteGuard navHref="${ALIAS}"><Redirect to="${NEW}" /></RouteGuard></Route>`));
+    const alias = navGroups.flatMap((g) => g.items).find((i) => i.href === ALIAS)!;
+    const target = navGroups.flatMap((g) => g.items).find((i) => i.href === NEW)!;
+    expect(alias.requiredPermission).toBe(target.requiredPermission);
+    expect(alias.requiredRole).toBe(target.requiredRole);
+  });
+
+  it("R-3-d: SKU chỉ OT ⇒ bí danh hiện, nằm trong app Kỹ thuật khi bật launcher; có MOD_AI ⇒ bí danh ẩn (mục Vision hiện, không trùng); không OT ⇒ ẩn cả hai", () => {
+    const ot = runLic(["MOD_OT_CONTROL"], "engineer");
+    expect(hrefs(ot)).toContain(ALIAS);
+    expect(hrefs(scopeGroupsToApp(ot, "engineering"))).toContain(ALIAS);
+    expect(getAppForRoute(ALIAS)?.appId).toBe("engineering");
+    const both = runLic(["MOD_OT_CONTROL", "MOD_AI"], "engineer");
+    expect(hrefs(both)).not.toContain(ALIAS);
+    expect(hrefs(both)).toContain(NEW);
+    expect(hrefs(scopeGroupsToApp(both, "ai"))).toContain(NEW);
+    const aiOnly = runLic(["MOD_AI"], "engineer");
+    expect(hrefs(aiOnly)).not.toContain(ALIAS);
+    expect(hrefs(aiOnly)).not.toContain(NEW);
+    // vai không có machine_alerts (operator) ⇒ không bí danh dù chỉ có OT
+    expect(hrefs(runLic(["MOD_OT_CONTROL"], "operator"))).not.toContain(ALIAS);
+  });
+
+  it.each(Object.keys(ROLES).filter((r) => r !== "admin"))("R-3-d %s — bí danh ⇔ machine_alerts/canView; RouteGuard của trang đích cho qua", (role) => {
+    const c = checkers(role);
+    const seesAlias = sees(role, ALIAS);
+    expect(seesAlias).toBe(c.hasPermission("machine_alerts", "canView"));
+    if (seesAlias) expect(hasAccessToItem(NEW, role, c.hasPermission)).toBe(true);
+  });
 });

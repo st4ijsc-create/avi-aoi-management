@@ -7196,7 +7196,8 @@
     "twinStudio": "Thiết kế nhà máy 3D",
     "twinStudioDesc": "Dựng toà nhà, mặt sàn và bố cục máy; nhập bản vẽ kỹ thuật; xuất bản phiên bản",
     "visionAcquisition": "Thu ảnh",
-    "visionAcquisitionDesc": "Worker thu ảnh: khởi động, theo dõi, dừng"
+    "visionAcquisitionDesc": "Worker thu ảnh: khởi động, theo dõi, dừng",
+    "visionAcquisitionAlias": "Worker thu ảnh → Vision › Thu ảnh"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -16306,7 +16307,8 @@
     "readonly": {
       "pickCode": "Nhập mã recipe ở trên để xem các phiên bản và lịch sử nạp của mã đó (chỉ xem).",
       "pickMachine": "Chọn một máy ở trên để xem lịch sử nạp của máy đó."
-    }
+    },
+    "acqMoved": "Worker thu ảnh → Vision › Thu ảnh"
   },
   "visionAcq": {
     "title": "Thu ảnh",

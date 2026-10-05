@@ -7216,7 +7216,8 @@
     "twinStudio": "3D Factory Design",
     "twinStudioDesc": "Build buildings, floors and machine layout; import drawings; publish versions",
     "visionAcquisition": "Image acquisition",
-    "visionAcquisitionDesc": "Acquisition workers: start, watch, stop"
+    "visionAcquisitionDesc": "Acquisition workers: start, watch, stop",
+    "visionAcquisitionAlias": "Acquisition workers → Vision › Image acquisition"
   },
   "aboutPage": {
     "layoutTitle": "About System",
@@ -16326,7 +16327,8 @@
     "readonly": {
       "pickCode": "Enter a recipe code above to see its versions and load history (view only).",
       "pickMachine": "Select a machine above to see its load history."
-    }
+    },
+    "acqMoved": "Acquisition workers → Vision › Image acquisition"
   },
   "visionAcq": {
     "title": "Image acquisition",
