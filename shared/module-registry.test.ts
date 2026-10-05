@@ -49,7 +49,8 @@ describe("U4b — module registry (parity)", () => {
 
   it("doc 22 P3 — previously-unregistered automation routes now resolve to a module (license-gated)", () => {
     // OT-control cockpits (device control / safety / fleet / twin-cell).
-    for (const r of ["/fleet-orchestration", "/safety-workforce", "/interlock-rules", "/rf-test-cell", "/cell-twin", "/control-plane", "/robot-control"]) {
+    // doc 81 Đợt 3 Task 5 — Fleet ở Labs (/labs/fleet-orchestration) giữ ĐÚNG giấy phép MOD_OT_CONTROL như URL cũ.
+    for (const r of ["/fleet-orchestration", "/labs/fleet-orchestration", "/safety-workforce", "/interlock-rules", "/rf-test-cell", "/cell-twin", "/control-plane", "/robot-control"]) {
       expect(getModuleByRoute(r)?.code).toBe("MOD_OT_CONTROL");
       // No longer bypasses licensing: denied without the module, allowed with it.
       expect(isRouteAllowed(r, [])).toBe(false);

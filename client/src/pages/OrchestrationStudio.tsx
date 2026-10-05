@@ -120,6 +120,8 @@ import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 // doc 80 Đợt 1 Task 4 (X-01 · ORC-13) — nhãn SEED/DEMO/SIM + DRY-RUN trên run.
 import { ProvenanceBadge, ProvenanceSummary, DispatchModeBadge } from "@/components/common/ProvenanceBadge";
 import { classifyStepDispatch, type RunDispatchSummary } from "@shared/provenance";
+// doc 81 Đợt 3 Task 4 — "Giao cho" trên run đang chờ duyệt + tên người được giao trên hàng run. Được giao ≠ được duyệt.
+import { AssigneeCell, AssignmentControl, useAssignments, useCanAssign, type AssignmentRow } from "@/components/engineering/AssignmentControl";
 
 // ════════════════════════════════════════════════════════════════════════════
 // STEP-TREE CANVAS (left) — nested visual blocks per step type
@@ -1422,6 +1424,7 @@ export default function OrchestrationStudio() {
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const canControl = hasPermission("machine_control", "canCreate");
+  const canAssignRun = useCanAssign("orchestration_run");
   // U1 (doc 26) — nhớ workflow ref đang mở làm fallback deep-link khi sang Cell Twin/RF.
   const { setLastWorkflowRef } = useEngineering();
 
@@ -1473,6 +1476,10 @@ export default function OrchestrationStudio() {
       },
     },
   );
+
+  // doc 81 Đợt 3 Task 4 — phân công còn sống của ĐÚNG các run đang liệt kê.
+  const runIds = useMemo(() => ((runsQ.data ?? []) as Array<Record<string, unknown>>).map((r) => Number(r.id)), [runsQ.data]);
+  const { byId: runAssignments } = useAssignments("orchestration_run", runIds, hasPermission("machine_control", "canView"));
 
   // U13 (doc 26 §2.2/§2.3) — tìm/lọc client cho workflows + runs.
   const [wfSearch, setWfSearch] = useState("");
@@ -2144,6 +2151,8 @@ export default function OrchestrationStudio() {
       run={r}
       interrupted={interrupted}
       canControl={canControl}
+      assignment={runAssignments.get(Number(r.id))}
+      canAssign={canAssignRun}
       onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
       t={t}
@@ -2456,6 +2465,8 @@ function RunRow({
   run,
   interrupted = false,
   canControl,
+  assignment,
+  canAssign = false,
   onResume,
   onAbort,
   t,
@@ -2464,6 +2475,9 @@ function RunRow({
   /** doc 80 ORC-04 — run 'held' do server khởi động lại (không phải cổng chờ duyệt). */
   interrupted?: boolean;
   canControl: boolean;
+  /** doc 81 Đợt 3 Task 4 — phân công đang hiệu lực của run này + quyền giao (machine_control/canCreate). */
+  assignment?: AssignmentRow;
+  canAssign?: boolean;
   /** doc 80 Đợt 1 Task 9 — `expectedStepId` = gate đang HIỂN THỊ (server từ chối nếu run đã sang gate khác). */
   onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null) => void;
   onAbort: () => void;
@@ -2517,6 +2531,7 @@ function RunRow({
           {/* doc 80 Task 4 — X-01 source label + ORC-13 dry-run/live marker. */}
           <ProvenanceBadge row={run} />
           <DispatchModeBadge dispatch={run.dispatch as RunDispatchSummary | undefined} />
+          {assignment && <AssigneeCell row={assignment} className="max-w-[9rem]" />}
         </button>
         {interrupted && canControl && (
           <div className="flex gap-1">
@@ -2573,6 +2588,8 @@ function RunRow({
       {/* U6 (doc 26 §2.3) — NGỮ CẢNH duyệt: người duyệt thấy đang duyệt BƯỚC GÌ. */}
       {awaiting && canControl && (
         <div className="space-y-2 border-t bg-violet-500/5 px-2 py-2">
+          {/* doc 81 Đợt 3 Task 4 — "Giao cho" run đang giữ (không đụng nút Approve/Reject/Abort ở trên). */}
+          <AssignmentControl entityType="orchestration_run" entityId={runId} assignment={assignment} canAssign={canAssign} />
           {detailQ.isLoading ? (
             <p className="text-xs text-muted-foreground">{t("common.loading", "Loading…")}</p>
           ) : detailQ.isError ? (

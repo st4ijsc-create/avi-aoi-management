@@ -420,3 +420,182 @@ Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot2-bo-cuc.md` — 
 - (sau đợt sửa cuối) POU: gập panel phải khi Copilot đang mở ⇒ Copilot "mở" trên panel 0 px, nút AI đóng thay vì hiện; Fleet@1600 hiệu chuẩn chỉ còn biên 2,99 %/3 %; lưới bản đồ Fleet không tải khi vùng chưa có `factoryId` (chủ dự án lưu ý dữ liệu); form tạo ECN mất dữ liệu sau câu "Bỏ thay đổi?" (dialog cũ giữ khi Huỷ); dưới 1024 px chọn dòng chuyển sang tab panel dưới; sheet IDE/IR/POU chưa đồng bộ URL (chưa có FlyoutHost).
 
 **Đã chốt (2026-10-04):** (3) Copilot cho Operator/Viewer — **chấp nhận mất lối vào** (đúng §1.4); (1) triển khai recipe nhiều máy — **KHÔNG**, giữ một máy mỗi lần xác nhận; (5) nhãn deploy — **đổi**: khi adapter của dự án còn "(sắp có)" hiện "Mô phỏng (adapter sắp có)" thay "Triển khai thật: ON" (task nhỏ sau Đợt 2). Gộp Đợt 2 vào main + push: đồng ý.
+
+**Đã chốt (2026-10-05):** (2) màn đích — **làm cả 3** (phiên bản recipe/lịch sử nạp → Recipes, worker thu ảnh → Vision, bảng nhân lực → Sản xuất › Ca) trong **Đợt 3** riêng; (4) hộp việc "của tôi" — **theo người được giao** (thêm trường assignee, có migration) trong Đợt 3; (6) **Fleet dời sang Labs** trong Đợt 3; (7) POU 49,3 % khi mở "Mở" — **chấp nhận**. Đợt 3: viết plan, chủ dự án duyệt rồi mới làm. Migration 0362 — **đã áp lên DB dev 2026-10-05** (Claude chạy theo uỷ quyền; 3 cột + quyền avi_app đã kiểm). Kiểm trên trình duyệt thật — Claude làm bằng Playwright trên DB `_test`.
+
+**Đã chốt (2026-10-05, duyệt plan Đợt 3 `docs/superpowers/plans/2026-10-05-engineering-control-dot3.md`):** QĐ-3a người được giao lưu ở **bảng chung `engineering_assignments`**; QĐ-3b nhóm **Labs ẩn mặc định**, mỗi người tự bật (⌘K vẫn tìm thấy; cảnh báo bế tắc trên Hub vẫn luôn hiện); QĐ-3c trang **Vision › Thu ảnh giữ cổng cũ** (quyền cảnh báo máy + cờ thu ảnh trực tiếp, không thêm MOD_AI). **Duyệt thực thi Đợt 3.** Kiểm trình duyệt thật 2026-10-05: 6/6 mục đạt; lỗi phát hiện (tên biến môi trường lộ ra UI khi Copilot tắt, nút/tab bị khuất ở màn điện thoại, điều khiển React Flow trắng ở chế độ tối, chữ bị cắt ở 1366, tiêu điểm sau Huỷ OTP) sửa ở Đợt 3 Task 0.
+
+## 12. Kết quả Đợt 3 (2026-10-05)
+
+Plan `docs/superpowers/plans/2026-10-05-engineering-control-dot3.md` thực hiện các mục "Đã chốt 2026-10-05" ở §11: dời nội dung về đúng màn, hộp việc "Của tôi" theo người được giao, Fleet sang Labs. Thêm Task 0 sửa lỗi phát hiện khi kiểm trình duyệt thật (ruling R-3-a).
+- **33 commit** `3a3996c8c`…`97a11dce7`: Task 0–5 kèm các vòng sửa, rulings R-3-a..g.
+- **Một migration (0363)**.
+- Hành vi nghiệp vụ và an toàn giữ nguyên. Mọi mutation dời chỗ giữ đúng target, cổng, xác nhận và payload (R-2-n). Không có thao tác hàng loạt. Quyền phía server không đổi, trừ phần giao việc mới (dưới).
+- Ledger: `.superpowers/sdd/2026-10-05-engineering-control-dot3/progress.md`.
+
+### 12.1 Dời màn (Task 1–3, 5)
+
+| Nội dung | Trước | Nay | URL cũ |
+|---|---|---|---|
+| Phiên bản recipe (tích hợp) | Integration `?tab=recipes` | **Recipes** tab Phiên bản: thêm Phát hành, Rollback, Ghi nhận nạp. Tạo và lưu trữ gộp về bộ của Recipes; lưu trữ nay cần quyền sửa và có hộp xác nhận | `/equipment-integration?tab=recipes` ⇒ `/recipes?tab=versions` |
+| Lịch sử nạp | Integration `?tab=history` | **Recipes** tab "Lịch sử nạp" (theo mã hoặc theo máy) | `?tab=history` ⇒ `/recipes?tab=history` |
+| Worker thu ảnh | Integration `?tab=acquisition` | **Vision › Thu ảnh** `/vision/acquisition` | `?tab=acquisition` ⇒ `/vision/acquisition` |
+| Bảng nhân lực | Safety `?tab=workforce` | **Sản xuất › Ca** `/production/shifts`: lọc theo ca, cột Ca, sheet chi tiết chỉ đọc | `/safety-workforce?tab=workforce` (và `?flyout=workforce-assign/reassign`) ⇒ `/production/shifts` |
+| Fleet | Kỹ thuật › Điều phối `/fleet-orchestration` | **Kỹ thuật › Labs — thử nghiệm** `/labs/fleet-orchestration` | `/fleet-orchestration` ⇒ `/labs/fleet-orchestration` |
+
+- **Mọi chuyển hướng** là REPLACE và giữ nguyên query, kể cả `?filter=deadlock`, `?flyout=…&flyoutId=…`, khoá lặp và `%20`. Chúng nằm trong `client/src/lib/engineeringLegacyRedirects.tsx` và mỗi cái có test.
+- Chuyển hướng **chỉ** chạy khi người dùng mở được màn đích. Người không có quyền ở lại trang cũ, nên không ai bị đưa vào trang từ chối.
+  - Operator/Viewer (không có `machine_control`) giữ một tab **chỉ xem** "Phiên bản & lịch sử nạp" trên Integration (R-3-b).
+- **Cổng** giữ như chỗ cũ:
+  - Recipes: `machine_control`.
+  - Thu ảnh: quyền cảnh báo máy cộng cờ thu ảnh trực tiếp, **không** MOD_AI (QĐ-3c). Giấy phép là MOD_OT_CONTROL như Integration.
+  - Ca: `machine_status`, giấy phép MOD_OT_CONTROL. Phối hợp người–robot **ở lại** Safety.
+  - Fleet: `machine_status` + MOD_OT_CONTROL + cờ FLEET_ORCH, không đổi.
+- **Lối vào khi thiếu giấy phép:**
+  - SKU có OT mà không có MOD_AI: mục bí danh `/engineering/vision-acquisition` trong menu Kỹ thuật, cộng chip "Worker thu ảnh → Vision › Thu ảnh" trên Integration (R-3-d).
+  - SKU không có MOD_PRODUCTION: bí danh `/engineering/production-shifts`, cộng chip "Nhân lực → Sản xuất › Ca" trên Safety.
+- **Labs** ẩn mặc định. Mỗi người tự bật "Hiện Labs" ở chân thanh bên; lựa chọn lưu theo người dùng **trên trình duyệt đó**.
+  - ⌘K, RouteGuard và deep link không lọc Labs.
+  - Cảnh báo bế tắc Fleet trên Hub vẫn ghim (R-2-y) và mở đúng `/labs/fleet-orchestration?filter=deadlock` khi Labs đang ẩn (đã kiểm sống).
+  - Ghim/Gần đây lưu URL cũ được đọc như URL mới.
+- **TabbedHub (R-3-c, sửa lỗi chung có từ trước):** tab không hoạt động nay ẩn thật. Trước đó mỗi tab ẩn để lại một hộp rỗng 8 px.
+
+### 12.2 Hộp việc "Của tôi" theo người được giao (Task 4, migration 0363)
+
+- **Lưu trữ:** bảng chung `engineering_assignments` (QĐ-3a). Mỗi mục có tối đa một phân công active (unique một phần).
+  - `avi_app` chỉ được SELECT/INSERT và UPDATE cột `active`; không DELETE, nên lịch sử chỉ thêm.
+  - Cột `pending_episode` cho biết phân công thuộc **đợt chờ duyệt** nào.
+  - `orchestration_runs.pending_epoch` cùng trigger tăng mỗi lần run vào `held`/`awaiting_confirm`.
+- **Migration 0363 ĐÃ ÁP lên DB dev ngày 2026-10-05** (controller chạy theo uỷ quyền chủ dự án) bằng lệnh `node scripts/apply-migration-0363.mjs --dev-only`. Đã kiểm:
+  - cột và index;
+  - quyền `avi_app`;
+  - chuỗi trigger `[0,1,1,1,2,2]`, đo trong giao dịch hoàn tác.
+- Từ R-3-g, mọi script apply 0357–0363 **từ chối chạy** nếu không ghi đúng một đích `--dev-only` / `--test-only` / `--both`.
+- **Bốn thủ tục** `engineering.assign`, `unassign`, `assignments`, `assignableUsers` áp cho năm loại: ECN, recipe nháp, quy tắc interlock, changeover, orchestration run đang giữ.
+  - Mỗi lần giao hoặc bỏ giao ghi 1 dòng `control_audit_log` và 1 dòng `notifications` có deep link, trong cùng giao dịch. Thông báo bỏ giao trung tính: chỉ loại và #id, không tiêu đề.
+  - Giao dùng CAS (`expectedAssigneeUserId`), nên hai người giao cùng lúc ⇒ CONFLICT.
+  - Người được giao không tồn tại, không hoạt động hoặc không xem được trang đều nhận **một** lỗi chung, không lộ trạng thái người dùng.
+- **Được giao ≠ được duyệt.** Approve/reject và maker-checker **không đổi** một dòng.
+  - Người giao phải qua **đúng** sàn vai trò, 2FA, giấy phép và bit quyền của đường duyệt/sửa thật (R-3-e): `ACTUATION_ROLES` + 2FA cho recipe/interlock/changeover/orchestration, `ECN_DECISION_ROLES` cho ECN. Operator/viewer/user dù có đủ bit quyền vẫn bị từ chối, với 0 audit, 0 thông báo, 0 dòng.
+  - Test trên `_test`:
+    - người được giao không có quyền duyệt bấm duyệt ⇒ bị từ chối ở cả năm đường;
+    - tác giả tự giao cho mình ⇒ vẫn bị maker-checker chặn.
+- **Phân công chỉ sống trong một đợt chờ duyệt (R-3-f).** Mục rời trạng thái chờ (duyệt/từ chối/đóng) thì phân công "chết" lười theo trạng thái và đợt; lượt giao kế tiếp tắt nó (audit `expire`).
+  - Ví dụ: mục sửa lại rồi chờ duyệt lần nữa ⇒ người được giao cũ **không** thấy nó.
+- **Hub** có 3 phạm vi:
+  - **Của tôi**;
+  - **Chờ duyệt (tôi có quyền)**, mặc định và giữ nghĩa URL cũ;
+  - **Toàn module**.
+
+  4 nhóm nghiêm trọng luôn ghim với số toàn module ở mọi phạm vi (R-2-y). Luật "tên chỉ khi có quyền xem" giữ nguyên. Nhóm đọc lỗi hiện "—", không bao giờ hiện 0.
+- **UI giao việc** "Giao cho" có ở 5 chỗ: ECN DetailSheet, tab Duyệt của Recipes, sheet quy tắc Interlock, hàng đợi changeover, khối duyệt của run Orchestration. Cột "Người được giao" có trong các danh sách tương ứng.
+- **Chuông thông báo của app không đọc bảng `notifications`.** Dòng thông báo được ghi (có test) nhưng chưa có chuông nào hiện nó; theo plan, không tự làm chuông mới.
+
+### 12.3 Lỗi sửa ở Task 0 (kiểm trình duyệt thật 2026-10-05)
+
+- **Tên biến môi trường lộ ra UI khi Copilot tắt:** nay là mã `DISABLED` với câu vi/en/zh. Census mới quét đường Copilot.
+- **Copilot qua ngưỡng 1024 px:**
+  - thu hẹp ⇒ panel vẫn hiện;
+  - rời tab Copilot ở chế độ hẹp ⇒ đóng như chọn tab inspector khác.
+  - Dải tab hẹp xuống hàng.
+- **Header trang dưới 640 px** xuống hàng: Recipes ở 375 px còn 0 nút bị cắt (trước: "Lưu phiên bản mới" tràn 434 > 375).
+- **React Flow chế độ tối** trên 5 canvas (IR, POU, Orchestration, BOM, Causal): điều khiển và minimap theo token app, không còn khối trắng. Có census.
+- **Breadcrumb trang hiện tại** không còn bị cắt ở 1366: Hub 98/123 → 123/123 px, Fleet 77/98 → 98/98. Tab Copilot ở inspector IR/POU luôn vừa (trước tràn 46 px).
+- **Tiêu điểm sau Huỷ/Esc OTP** quay về nút deploy.
+- **Cảnh báo "phải bật 2FA"** chỉ hiện khi `deployPreview` nói cổng 2FA thật sự chặn. Chỉ đổi câu báo, không đổi cổng.
+
+### 12.4 Kết quả đo nghiệm thu
+
+**Thước đo và lần chạy:**
+- Thước đã commit: `scripts/ui-metrics/engineeringLayout.mjs`, HEAD `97a11dce7`, `gitDirty` rỗng.
+- Phạm vi: 14 màn Kỹ thuật, tab cảnh báo Standards và **2 màn mới** (Thu ảnh, Ca), mỗi màn × 1600×950 / 1366×768, cộng 3 biến thể mở Copilot (IDE/IR/POU) = **40 bản ghi**. Fleet đo ở URL Labs.
+- **Lần 1** (đối chứng dương) và **lần 2** (`--mutation`) đều `pass=true`. Cả hai:
+  - 0 lỗi;
+  - tự kiểm **37/37** ca;
+  - 0 kết nối ngoài danh sách;
+  - 0 trôi dữ liệu trên 59 bảng;
+  - cổng 3016/5176 trống sau khi tắt;
+  - user đo đã xoá.
+
+  Lần 2 thêm: gỡ từng gác ⇒ gỡ từng gác **32/32 gác đỏ** (đo lại 0 lần).
+- Hiệu chuẩn `recorded-match` **40/40**. Biến thể Copilot hiện thật 6/6 (open) và ẩn 6/6 (closed). `coverMain` 0 và `aiInsideMain` 0 ở mọi bản ghi. Cuộn ngang cấp trang 0 px ở 40/40.
+- Cảnh báo duy nhất: "Thêm quy tắc" của Interlock khoá với role đo (engineer), đúng quyền như ở Đợt 2.
+- **MSA** lần 1 ↔ lần 2: **840 phép so, 0 lệch**, mọi cổng MSA đạt (kể cả dữ liệu giống nhau giữa hai lần).
+- Kết quả lưu ở `do-bo-cuc/after-dot3.json` (= lần 2).
+
+**So với `after.json` (cuối Đợt 2):**
+- 756 phép so chung, **32 khác 0**. Mọi dòng khác đều do một task Đợt 3; không có dòng lệch không giải thích được.
+- **0 dòng lệch** ở IDE (kể cả mở Copilot), IR, POU, ECN, Interlock, Orchestration, Fleet và bí danh Copilot.
+- `sameDataAcrossRuns` sai chỉ vì dữ liệu `_test` dùng chung đã đổi sau 2026-10-04:
+  - dòng test của phiên khác (factories, machines, users…, `program_deployments` 3323→3329 như Task 0 đã ghi);
+  - hai bảng mới được băm (`engineering_assignments`, `shift_configs`).
+
+**Bảng TRƯỚC → SAU** cho các màn có đổi (1600 / 1366):
+
+| Màn | MAIN % | Vùng làm việc % | Khối trên vùng làm việc px | Cao trang × | Nguyên nhân |
+|---|---|---|---|---|---|
+| Hub | 49,8/41,9 → 49,3/41,4 | 46,4/38,2 → 45,9/37,7 | = | 1,00 | R-3-c: hộp rỗng 8 px của tab ẩn biến mất (MAIN 808→800 / 626→618 px) |
+| Studio ⚠ bí danh (Hub `?tab=catalog`) | 49,6/41,8 → 49,1/41,2 | 46,4/38,3 = | 52 → 44 | 1,00 | R-3-c (hộp rỗng của tab ẩn nằm trên vùng làm việc) |
+| Safety | 49,4/43,9 → 48,9/43,3 | 46,4/40,4 → 45,9/39,8 | = | 1,00 | R-3-c; tab Nhân lực đã dời đi (Task 3) không đổi hình học |
+| Standards | 69,3/63,9 → 66,6/60,7 | 64,5/58,2 → 61,8/55,0 | = | 1,01/1,02 → **1,00** | R-3-c (4 tab ẩn × 8 px, MAIN 818→786 / 636→604) |
+| Standards — tab cảnh báo | 60,8/65,1 → 58,0/65,1 | 56,3/59,8 → 54,2/60,6 | 53 → 45 | 1,00/1,12 → 1,00/**1,08** | R-3-c |
+| Recipes | 39,5/35,6 = | 36,4/32,0 → 35,6/31,0 | 60 → 76 | 1,00 | Task 1: tiêu đề h2 20 px thành hàng tab 36 px (Lịch sử triển khai / Lịch sử nạp) |
+| Integration | 68,0/62,3 → 66,6/60,7 | 64,1/57,8 → 62,8/56,2 | = | 1,00 | Task 1: bỏ hai tab, mất 2 × `mt-2` rỗng ở đáy (MAIN 802→786 / 620→604) |
+| Fleet (nay `/labs/fleet-orchestration`) | 42,8/36,5 = | 40,4/33,8 = | = | 1,00 | Task 5: cùng trang, chỉ đổi URL và breadcrumb ⇒ 0 dòng lệch |
+| **Thu ảnh** (mới; trước = tab Integration) | 16,6/19,7 → 16,3/19,3 | 12,9/15,3 = | 44 → 40 | 1,00 | Task 2: hàng công cụ 32 px thay hàng tab 36 px; 2 chip của trang thay 3 chip của Integration |
+| **Ca** (mới; trước = tab Safety) | 51,1/45,8 → 48,8/43,1 | 48,1/42,4 → 45,8/39,7 | — | 1,14/1,26 → **1,00** | Task 3: trang vừa khung, bảng tự cuộn bên trong |
+
+**Đọc bảng:**
+- Hai màn mới có TRƯỚC/SAU **không cùng loại** (README thước, "Màn dời ra trang riêng"). Trước là MAIN của trang mẹ (hàng tab + bảng); sau là MAIN của trang mới.
+  - Ca "giảm" % vì tab cũ tràn khung (trang cuộn 1,14/1,26×). Nay MAIN bằng đúng MAIN của Safety (936×792 so với 936×794 px).
+  - Thu ảnh MAIN nhỏ (16–19 %) vì `_test` không có worker nào; bảng trống. Không có ngưỡng % riêng.
+- Các dòng R-3-c **không mất nội dung**: đỉnh vùng làm việc và nội dung giữ nguyên, chỉ mất khoảng trống rỗng dưới đáy.
+
+**Mục tiêu §1.1 trên 2 màn mới:**
+- đỉnh h1 79 px (≤100);
+- 1 breadcrumb;
+- 0 banner trước MAIN;
+- chip 32 px;
+- hành động tạo mở **sheet** (Khởi động worker, Phân công);
+- che 0 px²;
+- cao trang 1,00×;
+- không cuộn ngang ở 1366.
+
+10/10 mục tiêu §1.1 của Đợt 2 vẫn đạt trên các màn cũ (số không đổi, trừ các dòng trong bảng trên).
+
+### 12.5 Test
+
+- **Bộ module + census: 146 tệp, 2 524/2 537 xanh.**
+  - Bộ gồm 123 tệp của Task 16 Đợt 2, mọi tệp test Đợt 3 tạo hoặc chạm (trừ test DB), toàn bộ test trang Kỹ thuật/Vision/Ca, `components/{engineering,orchestration,changeover}` và các census client/server.
+  - **13 đỏ trong 6 tệp census, tất cả của bên khác.** Không tệp nào Đợt 3 chạm:
+    - `appErrorParamsCoverage`: `twinCanhRouter.ts` (9 khoá).
+    - `appErrorCoverage`: `cuaIngestScan.ts` ×2, `aoiPackageRouter.ts`.
+    - `dataErrorStringCensus` F14: `machineDataContract.ts:187`.
+    - `clientErrorCoverage`: `AOIPackages.tsx`.
+    - `rawErrorMessageCensus`: twin3d ×3 (`occtWorker`, `NhapBanVe`, `XuongThietKe`) và `AOIPackages`.
+    - `viStringCoverage` hình-3: `TwinVanHanh` và `components/twin3d`; 34 chỗ, 4 lần chạm trần.
+- **Server giao việc (Task 4) trên `_test`:** `engineeringAssignment.db`, `assignmentService`, `oversightRouter` và `applyMigrationTargetFlag` đạt **90/90**.
+- Census Đợt 3 xanh:
+  - `navLabs` (danh sách cho phép Labs);
+  - `navLicenseFieldsCensus` (`licenseModule` / `onlyWhenModuleMissing` / `ignoreGroupCategory`);
+  - `copilotKhongTenBienMoiTruong`;
+  - `useResolvedTheme` (`colorMode` trên mọi `<ReactFlow>`);
+  - `phamViDocCensus` (ghim lại có ghi chú ngày 2026-10-05);
+  - `congGiayPhepAiCensus`;
+  - `engineeringNavRouteGuardParity`;
+  - `navRouteGuardRoles` (R-2-w).
+- Không build, không chạm `dist/`. Phép đo và test của task này không kết nối DB dev.
+
+### Cần chủ dự án quyết
+
+**Thay đổi hành vi có chủ ý trong Đợt 3 (đã review):**
+- Phiên bản recipe/lịch sử nạp dời sang **Recipes**; người không mở được Recipes (thiếu quyền **hoặc** thiếu giấy phép MOD_ENGINEERING) giữ **đầy đủ** chức năng cũ trên Integration (R-3-h); Operator/Viewer giữ bản chỉ xem (R-3-b). Lưu trữ ở Recipes nay cần quyền sửa + xác nhận.
+- **Vision › Thu ảnh** (`/vision/acquisition`) giữ đúng cổng cũ (QĐ-3c); khách chỉ có giấy phép OT có lối vào trong menu Kỹ thuật + liên kết trên Integration.
+- **Sản xuất › Ca** (`/production/shifts`) cho đúng các vai trước đây thấy tab nhân lực ở Safety; ô "Sản xuất" trong bộ mở ứng dụng nay mở được cho kỹ sư/bảo trì/người xem (chỉ chứa trang Ca). Phối hợp người–robot vẫn ở Safety.
+- **Hộp việc "Của tôi"** theo người được giao (migration 0363 — **đã áp dev 2026-10-05**): người giao phải có cùng vai + quyền (+2FA khi bắt buộc) như người duyệt; **được giao ≠ được duyệt**; phân công tự hết hiệu lực khi mục rời trạng thái chờ (kể cả run điều phối bị giữ lại cùng bước).
+- **Fleet → Labs** (`/labs/fleet-orchestration`, nhóm Labs ẩn mặc định, mỗi người tự bật — lưu theo trình duyệt); cảnh báo bế tắc trên Hub luôn hiện và mở được Fleet.
+- Mọi script áp migration 0357–0363 nay **bắt buộc** chỉ rõ đích (`--dev-only` / `--test-only` / `--both`).
+
+**Đã chốt (2026-10-06):** giữ ô "Sản xuất" mở được cho kỹ sư/bảo trì/người xem; **thêm chọn ca khi phân công + lọc ca phía server**; danh mục công cụ Hub ẩn Fleet khi Labs tắt (ghim cá nhân giữ nguyên); **sửa chip đầu trang 640–1023 px** (gộp vào "+N", chip nghiêm trọng vẫn ghim); **nối chuông thông báo với bảng notifications**; duyệt ECN **giữ không 2FA** (theo nguyên tắc 2FA bật thủ công) — sửa ghi chú sai trong mã; **thống nhất lưu trữ recipe cần xác nhận** ở cả Recipes và Integration; xoá 10 ECN rác của test cũ trong `_test` (đã xoá). Gộp Đợt 3 vào main + push; 6 việc trên làm ở **Đợt 3b**.
+
+**Còn mở:** danh sách người được giao giới hạn 300; tuỳ chọn "Hiện Labs" theo trình duyệt (chưa có kho tuỳ chọn người dùng phía server); canvas Causal chưa kiểm trên trình duyệt (người dùng thử không có quyền).

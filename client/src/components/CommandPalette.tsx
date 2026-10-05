@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/command";
 import { NavGroup, NavItem, isNavItemActive } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import { readFavorites, readRecent } from "@/lib/navRecent";
 
 const RECENT_KEY = "nav-recent";
 const FAVORITES_KEY = "nav-favorites";
@@ -90,8 +91,9 @@ export function CommandPalette({ open, onOpenChange, groups, onNavigate }: Comma
   // may have mutated localStorage since last open).
   useEffect(() => {
     if (open) {
-      setFavorites(readHrefList(FAVORITES_KEY));
-      setRecent(readHrefList(RECENT_KEY));
+      // Đợt 3 Task 5 — đọc qua kho chung (navRecent): URL đổi tên (Fleet ⇒ /labs/…) đọc như URL mới.
+      setFavorites(readFavorites());
+      setRecent(readRecent());
       setRecentSearches(readHrefList(RECENT_SEARCH_KEY));
       setSearch("");
     }

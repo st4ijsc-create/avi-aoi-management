@@ -167,7 +167,7 @@ describe("PendingReviewStrip variant='table' (Task 15)", () => {
       "/interlock-rules?filter=pending",
       "/orchestration-studio?filter=pending",
       "/safety-workforce?filter=pending",
-      "/fleet-orchestration?filter=deadlock",
+      "/labs/fleet-orchestration?filter=deadlock",
     ]);
     const ecnRow = screen.getByText("ECNs to approve").closest("tr") as HTMLElement;
     expect(ecnRow.textContent).toContain("1");

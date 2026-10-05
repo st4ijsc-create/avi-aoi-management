@@ -359,5 +359,10 @@ export function suyRaPhaiDoiMatKhau(moc: MocMatKhau): boolean {
   return doiLuc.getTime() <= thuHoi.getTime();
 }
 
-/** Hình dạng `auth.me` trả về: `PublicUser` **cộng đúng một ô SUY RA**. */
-export type MeUser = PublicUser & { mustChangePassword: boolean };
+/**
+ * Hình dạng `auth.me` trả về: `PublicUser` **cộng các ô SUY RA**.
+ * doc 81 Đợt 3 final wave (M-3 / Task 0 O2) — `twoFactorRequired` = chính sách 2FA CỦA TRIỂN KHAI (`batBuoc2FA()`,
+ * `AUTH_2FA_BAT_BUOC`), KHÔNG phải dữ liệu người dùng: client cần nó để cảnh báo/khoá "phải bật 2FA" ĐÚNG như server
+ * (chế độ nội bộ `0` ⇒ server không đòi ⇒ client không được báo giả). Không bí mật: bản xem trước deploy đã lộ cổng này.
+ */
+export type MeUser = PublicUser & { mustChangePassword: boolean; twoFactorRequired: boolean };

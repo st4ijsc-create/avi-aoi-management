@@ -112,8 +112,10 @@ export function TabbedHub({
           key={tab.value}
           value={tab.value}
           className="mt-2"
-          forceMount={tab.keepMounted ? true : undefined}
-          hidden={tab.keepMounted ? activeTab !== tab.value : undefined}
+          // doc 81 Đợt 3 Task 1 fix round 1 (R-3-c): CHỈ truyền `hidden` cho tab keepMounted. Radix rải props SAU
+          // `hidden: !present` — một `hidden={undefined}` tường minh xoá thuộc tính đó, tab không chọn thành hộp rỗng
+          // `mt-2` nhìn thấy (8 px mỗi tab, lộ cho công nghệ hỗ trợ). Tab thường để Radix tự đặt `hidden`.
+          {...(tab.keepMounted ? { forceMount: true as const, hidden: activeTab !== tab.value } : {})}
         >
           <tab.Content />
         </TabsContent>

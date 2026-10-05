@@ -70,8 +70,14 @@ describe.skipIf(!DB_URL)("ecnRouter Đợt 0 Task 8 — RBAC-02 · ECN-03 (CAS) 
 
   afterAll(async () => {
     if (!sql) return;
-    await sql`DELETE FROM engineering_changes WHERE "ecnKey" LIKE ${RUN + "%"}`;
+    // doc 81 Đợt 3 final wave (Task 4 note) — ECN tạo qua `ecnRouter.create` (ca "canCreate=true") có `ecnKey` DO SERVER
+    // SINH (không mang tiền tố RUN) ⇒ dọn theo `ecnKey` để sót đúng MỘT hàng mỗi lượt chạy trong `_test` (đo 2026-10-05:
+    // 10 hàng tồn ⇒ 11 sau một lượt). Dọn cả theo `title` (mọi tiêu đề của file mang tiền tố RUN) và KIỂM sau khi dọn.
+    await sql`DELETE FROM engineering_changes WHERE "ecnKey" LIKE ${RUN + "%"} OR title LIKE ${RUN + "%"} OR title LIKE ${"t8 ecn " + RUN + "%"}`;
+    const [{ n: left }] = await sql`SELECT count(*)::int AS n FROM engineering_changes
+      WHERE "ecnKey" LIKE ${RUN + "%"} OR title LIKE ${RUN + "%"} OR title LIKE ${"t8 ecn " + RUN + "%"}`;
     await sql`DELETE FROM permissions WHERE "userId" IN ${sql(ALL_USERS)}`;
+    if (left !== 0) throw new Error(`ecnRouter.dot0.db.test để sót ${left} hàng engineering_changes của lượt ${RUN}`);
     await sql.end({ timeout: 5 });
   });
 

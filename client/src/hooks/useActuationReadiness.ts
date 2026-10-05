@@ -34,9 +34,30 @@ export interface ActuationReadiness {
   isLoading: boolean;
 }
 
+/**
+ * doc 81 Đợt 3 final wave (Task 0 minor 3) — MỘT hằng cho cảnh báo 2FA (trước đây chép hai lần trong file này).
+ */
+export const TWO_FA_BLOCKER: ActuationBlocker = {
+  code: "2fa",
+  severity: "error",
+  defaultMessage:
+    "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA) để deploy/duyệt. Vào Cài đặt > Bảo mật để thiết lập.",
+};
+
+/**
+ * doc 81 Đợt 3 final wave — "thiếu 2FA mà server SẼ đòi": tài khoản chưa bật 2FA VÀ triển khai bắt buộc 2FA
+ * (`auth.me.twoFactorRequired` = `batBuoc2FA()` của server). Chế độ nội bộ (`AUTH_2FA_BAT_BUOC=0`, quyết định chủ dự án
+ * 2026-09-26: 2FA không tiên quyết) ⇒ `false` ⇒ KHÔNG cảnh báo/khoá giả. Ô vắng (server cũ) ⇒ coi là bắt buộc (mặc định
+ * của server: mọi giá trị khác `"0"`). Chỉ là tư vấn — server vẫn là bức tường.
+ */
+export function twoFactorSetupMissing(me: { twoFactorEnabled?: boolean | null; twoFactorRequired?: boolean | null } | null | undefined): boolean {
+  if (!me) return false;
+  return me.twoFactorRequired !== false && !me.twoFactorEnabled;
+}
+
 export function useActuationReadiness(): ActuationReadiness {
   const meQ = trpc.auth.me.useQuery();
-  const me = meQ.data as { role?: string | null; twoFactorEnabled?: boolean } | null | undefined;
+  const me = meQ.data as { role?: string | null; twoFactorEnabled?: boolean; twoFactorRequired?: boolean } | null | undefined;
 
   const role = me?.role ?? null;
   const isPrivileged = role != null && (ACTUATION_ROLES as readonly string[]).includes(role);
@@ -52,14 +73,10 @@ export function useActuationReadiness(): ActuationReadiness {
         defaultMessage:
           "Vai trò hiện tại không đủ quyền để deploy/duyệt (cần admin, supervisor hoặc engineer).",
       });
-    } else if (!twoFactorEnabled) {
-      // Privileged role but 2FA off → the server will reject actuation. Warn now.
-      blockers.push({
-        code: "2fa",
-        severity: "error",
-        defaultMessage:
-          "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA) để deploy/duyệt. Vào Cài đặt > Bảo mật để thiết lập.",
-      });
+    } else if (twoFactorSetupMissing(me)) {
+      // Privileged role, 2FA off AND the deployment requires it → the server will reject actuation. Warn now.
+      // (Final wave: internal mode `AUTH_2FA_BAT_BUOC=0` ⇒ the server does NOT require it ⇒ no false warning.)
+      blockers.push(TWO_FA_BLOCKER);
     }
   }
 
@@ -71,4 +88,32 @@ export function useActuationReadiness(): ActuationReadiness {
     twoFactorEnabled,
     isLoading: meQ.isLoading,
   };
+}
+
+/** Một cổng của `programming.deployPreview` (chỉ các ô cần đọc). */
+export interface DeployPreviewGateLike {
+  name: string;
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * doc 81 Đợt 3 Task 0 (O2, browser check 2026-10-05) — cảnh báo 2FA đọc CÙNG nguồn với bản xem trước deploy.
+ *
+ * Hook trên không biết chính sách 2FA của triển khai (`AUTH_2FA_BAT_BUOC=0` — chế độ nội bộ, quyết định chủ dự án
+ * 2026-09-26: 2FA không là điều kiện tiên quyết), nên báo "phải bật 2FA" ngay trên bản xem trước nói cổng 2FA ĐẠT.
+ * `deployPreview.callerGates` mirror đúng `deployProcedure` (require2FA → step-up) ⇒ cổng `twoFactor` của nó là sự thật:
+ *   · cổng ĐẠT ⇒ bỏ cảnh báo 2FA; cổng CHẶN ⇒ có cảnh báo 2FA;
+ *   · không có cổng `twoFactor` (chưa có bản xem trước, hoặc lối Hộp duyệt — người duyệt ký) ⇒ giữ cảnh báo tư vấn của hook.
+ * Chỉ đổi THÔNG ĐIỆP (tư vấn) — server vẫn là bức tường; không cổng nào được nới.
+ */
+export function reconcileBlockersWithDeployPreview(
+  blockers: readonly ActuationBlocker[],
+  gates: readonly DeployPreviewGateLike[] | null | undefined,
+): ActuationBlocker[] {
+  const tf = gates?.find((g) => g.name === "twoFactor");
+  if (!tf) return [...blockers];
+  const others = blockers.filter((b) => b.code !== "2fa");
+  if (tf.ok) return others;
+  return [...others, blockers.find((b) => b.code === "2fa") ?? TWO_FA_BLOCKER];
 }

@@ -786,3 +786,17 @@
     display: none !important;
   }
 }
+
+/*
+ * doc 81 Đợt 3 Task 0 (D4) — React Flow (IR / POU / Orchestration / BOM / Causal) dùng TOKEN của app cho nút điều khiển
+ * và minimap, ở cả hai theme (canvas cũng nhận `colorMode` theo theme app — xem `useResolvedTheme`). Trước: mặc định
+ * `colorMode="light"` + màu cứng của thư viện ⇒ nút điều khiển/minimap trắng trên nền tối.
+ */
+.react-flow {
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color: var(--card-foreground);
+  --xy-controls-button-color-hover: var(--accent-foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-minimap-background-color: var(--card);
+}

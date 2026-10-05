@@ -29,7 +29,7 @@
  *    như hai thẻ cũ (R-2-n, R-2-r). Bỏ card "Trợ lý Lập trình AI" (lối vào AI thứ 3). Tạo dự án / sửa biến / gắn thiết
  *    bị: sheet phải (thay dialog giữa màn). Rollback / xoá biến / bỏ thay đổi: giữ AlertDialog (xác nhận phá huỷ).
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
@@ -88,7 +88,7 @@ import {
 import { toast } from "sonner";
 import { useEngineeringStream } from "@/hooks/useEngineeringStream";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { useActuationReadiness } from "@/hooks/useActuationReadiness";
+import { useActuationReadiness, reconcileBlockersWithDeployPreview } from "@/hooks/useActuationReadiness";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
 // doc 80 Đợt 1 Task 5 — duyệt phiên bản trong IDE (WS-01) + bản xem trước deploy trước OTP (F2).
@@ -617,6 +617,9 @@ function EngineeringWorkspaceView() {
   // doc 81 Đợt 2 Task 13 (R-2-b) — IDE vẽ Copilot TRONG layout (inspector phải, lõi dùng chung ProgrammingCopilotCore);
   // dock cố định đã gỡ ở Task 14. `open` của context = tab Copilot đang mở (nút AI top bar mở/đóng nó — R-2-j).
   const { open: copilotOpen, setOpen: setCopilotOpen } = useProgrammingCopilot();
+  // doc 81 Đợt 3 Task 0 (D1) — màn hẹp: rời tab Inspector/Copilot ⇒ đóng Copilot (như chọn tab khác trong inspector ở
+  // màn rộng) để nút AI top bar khớp với thứ nhìn thấy; lõi Copilot vẫn mount (stream sống — Review Focus 3).
+  const closeCopilotHidden = useCallback(() => setCopilotOpen(false), [setCopilotOpen]);
   // Task 15 — vào chế độ scratch ⇒ mở tab Copilot (một lần); đã có dự án ⇒ rời chế độ scratch (tham số rời URL, giữ
   // các tham số khác) để F5 mở lại đúng dự án như luồng thường.
   const scratchOpenedRef = useRef(false);
@@ -783,13 +786,19 @@ function EngineeringWorkspaceView() {
     : [];
 
   // ── Pre-flight actuation readiness (2FA/quyền) — dùng chung cho deploy đơn và đội máy (wizard) ──
-  const readinessBlock = readiness.blockers.length > 0 && (
+  // doc 81 Đợt 3 Task 0 (O2) — cảnh báo 2FA đọc CÙNG nguồn với bản xem trước (cổng `twoFactor` của deployPreview, biết chế
+  // độ 2FA nội bộ); trước đây bước 4 báo "phải bật 2FA" ngay trên bản xem trước nói cổng 2FA đạt. Chỉ đổi thông điệp.
+  const readinessBlockers = reconcileBlockersWithDeployPreview(
+    readiness.blockers,
+    (deployPreviewQ.data as DeployPreviewView | undefined)?.gates,
+  );
+  const readinessBlock = readinessBlockers.length > 0 && (
     <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
       <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
       <div className="space-y-1">
         <div className="font-medium">{t("engineering.readinessTitle", "Chưa đủ điều kiện để deploy (actuation)")}</div>
         <ul className="list-disc space-y-0.5 pl-4">
-          {readiness.blockers.map((bl) => (
+          {readinessBlockers.map((bl) => (
             <li key={bl.code}>{t(`actuationReadiness.${bl.code}`, bl.defaultMessage)}</li>
           ))}
         </ul>
@@ -2139,6 +2148,8 @@ function EngineeringWorkspaceView() {
           inspectorIsAi={copilotOpen}
           inspectorSize={{ minPx: 320, maxPx: 420, defaultPx: 320 }}
           inspectorRevealToken={copilotOpen ? 1 : 0}
+          inspectorActive={copilotOpen}
+          onInspectorActiveHidden={closeCopilotHidden}
           bottomPanel={bottomPanel}
           bottomLabel={t("engineering.ws.bottomLabel", "Vấn đề · Build · Deploy")}
           bottomDefaultCollapsed

@@ -9,6 +9,10 @@
  * - Chip và hành động nằm CÙNG hàng với h1, nên thiết bị đo (Task 1) không đếm chúng là banner
  *   dưới h1. Vùng chip cắt tràn (`overflow-hidden`) thay vì xuống dòng — header không bao giờ
  *   cao quá 48 px. Mang `data-layout-header` để thiết bị đo cấm đặt nó trong MAIN.
+ * - doc 81 Đợt 3 Task 0 (D2/D3, browser check 2026-10-05): DƯỚI `sm` (640 px — điện thoại) một hàng không chứa nổi
+ *   hành động: ở 375/414 px "Lưu phiên bản mới" (Recipes), "Làm mới"/chọn dự án (IDE) nằm quá mép phải và bị cắt, không
+ *   với tới. Dưới 640 px header XUỐNG DÒNG (bỏ trần 48 px): chip và hành động mỗi thứ một hàng riêng, tự xuống dòng.
+ *   Từ 640 px trở lên hợp đồng một hàng ≤ 48 px giữ nguyên (thiết bị đo chấm ở 1366/1600).
  */
 import * as React from "react";
 import { cn } from "@/lib/utils";
@@ -31,7 +35,10 @@ export function PageHeaderCompact({ title, icon, chips, actions, className }: Pa
     <header
       {...{ [LAYOUT_HEADER]: "" }}
       style={{ minHeight: 40, maxHeight: 48 }}
-      className={cn("flex flex-nowrap items-center gap-2 overflow-hidden", className)}
+      className={cn(
+        "flex flex-nowrap items-center gap-2 overflow-hidden max-sm:h-auto max-sm:max-h-none! max-sm:flex-wrap max-sm:gap-y-1 max-sm:py-1",
+        className,
+      )}
     >
       {icon != null && (
         <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary [&_svg]:h-4 [&_svg]:w-4">
@@ -42,13 +49,13 @@ export function PageHeaderCompact({ title, icon, chips, actions, className }: Pa
         {title}
       </Heading>
       {chips != null && (
-        <div data-header-chips="" className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden">
+        <div data-header-chips="" className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden max-sm:basis-full max-sm:flex-wrap">
           {chips}
         </div>
       )}
       {chips == null && <div className="flex-1" aria-hidden="true" />}
       {actions != null && (
-        <div data-header-actions="" className="flex shrink-0 flex-nowrap items-center gap-2">
+        <div data-header-actions="" className="flex shrink-0 flex-nowrap items-center gap-2 max-sm:basis-full max-sm:flex-wrap">
           {actions}
         </div>
       )}

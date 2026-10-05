@@ -117,7 +117,11 @@ export const SCREENS = [
   { n: 10, id: "programming-copilot", route: "/engineering?copilot=scratch", aliasOf: "/programming-copilot", calibrateAs: { id: "engineering", variant: "open" },
     legacyMain: { desc: "ProgrammingCopilot card đầu (form sinh mã)", pick: (rs) => rs.filter((r) => /ProgrammingCopilot\.tsx/.test(r.loc || "") && r.kind === "card" && r.depth === 0).slice(0, 1) },
     actions: [] },
-  { n: 11, id: "fleet-orchestration", route: "/fleet-orchestration",
+  // Đợt 3 Task 5 ([QĐ-3b], khuôn R-2-x): Fleet dời sang nhóm Labs — CÙNG trang, chỉ đổi đường dẫn. `route` = route mới;
+  // `aliasOf` = URL cũ (nay chỉ chuyển hướng giữ query). Không `calibrateAs`/`movedFrom`: id, MAIN (`data-layout-main=
+  // "fleet-orchestration"`) và bản ghi hiệu chuẩn `fleet-orchestration|vw|n/a` là CỦA CHÍNH trang này ⇒ so lại như mọi lần
+  // chạy (lệch ⇒ LỖI). TRƯỚC/SAU CÙNG LOẠI (cùng trang); khác duy nhất là breadcrumb top bar (… › Labs — thử nghiệm › …).
+  { n: 11, id: "fleet-orchestration", route: "/labs/fleet-orchestration", aliasOf: "/fleet-orchestration",
     legacyMain: { desc: "FleetOrchestration tabs-content đang mở", fn: (r) => /FleetOrchestration\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
     actions: [] },
   { n: 12, id: "safety-workforce", route: "/safety-workforce",
@@ -136,6 +140,23 @@ export const SCREENS = [
   { n: 14, id: "equipment-integration", route: "/equipment-integration",
     legacyMain: { desc: "EquipmentIntegration tabs-content đang mở", fn: (r) => /EquipmentIntegration\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
     actions: [] },
+  // Đợt 3 Task 2 (doc 81 §11 "Đã chốt" 2026-10-05) — worker thu ảnh dời sang trang riêng Vision › Thu ảnh.
+  // Bước 1 (R-2-k, commit 5107ac3ca): đo TRƯỚC trên CHÍNH tab `?tab=acquisition` của Integration (khi đó `tabOf`; bản ghi
+  // `vision-acquisition|vw|n/a` ghi bằng --calibrate vì attribute trùng phần tử đã hiệu chuẩn của Integration).
+  // Bước 2: `route` = trang mới; `aliasOf` = URL cũ (nay chuyển hướng tới đây). `movedFrom` CHỈ cấp tham chiếu h1 (trang mẹ
+  // cũ); KHÔNG có nhánh hiệu chuẩn riêng — bản ghi đã có từ bước 1 nên mỗi lần chạy so lại với nó, lệch ⇒ LỖI, đổi bản ghi
+  // phải chạy --calibrate (giữ `previous`). README "Màn dời ra trang riêng".
+  { n: 14.5, id: "vision-acquisition", route: "/vision/acquisition", aliasOf: "/equipment-integration?tab=acquisition", movedFrom: "equipment-integration",
+    legacyMain: { desc: "VisionAcquisition: FE1 chưa từng đo — không có selector cũ (thiếu attribute ⇒ không thấy MAIN)", fn: () => false },
+    actions: [{ id: "khoi-dong-worker", label: /Khởi động worker/ }] },
+  // Đợt 3 Task 3 (doc 81 §11 "Đã chốt" 2026-10-05) — bảng nhân lực dời sang Sản xuất › Ca (`/production/shifts`).
+  // Bước 1 (R-2-k, commit 62100994f): đo TRƯỚC trên CHÍNH tab `?tab=workforce` của Safety (khi đó `tabOf`; bản ghi
+  // `production-shifts|vw|n/a` ghi bằng --calibrate vì attribute trùng phần tử đã hiệu chuẩn của Safety).
+  // Bước 2: `route` = trang mới; `aliasOf` = URL cũ (nay chuyển hướng tới đây); `movedFrom` CHỈ cấp tham chiếu h1 — khuôn
+  // `vision-acquisition`, README "Màn dời ra trang riêng".
+  { n: 12.5, id: "production-shifts", route: "/production/shifts", aliasOf: "/safety-workforce?tab=workforce", movedFrom: "safety-workforce",
+    legacyMain: { desc: "ProductionShifts: FE1 chưa từng đo — không có selector cũ (thiếu attribute ⇒ không thấy MAIN)", fn: () => false },
+    actions: [{ id: "phan-cong", label: /^Phân công$/ }] },
 ];
 
 /** FE1 §0 (docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/FE1_DO_BO_CUC_THEO_VUNG_14_MAN.md), :3000 dist, engineer1, 2026-09-26. */
@@ -173,13 +194,13 @@ export const FE1 = {
  * (vd `users.lastSignedIn` khi đăng nhập). Xem `SELF_WRITTEN` cho bảng loại trừ có lý do.
  */
 export const PAGE_TABLES = {
-  "engineering-home": ["ai_insights","ai_pending_actions","andon_events","changeover_requests","daily_statistics","engineering_changes","equipment_3d_models","factories","interlock_events","interlock_rules","machine_recipes","machine_status_logs","machines","oee_metrics","orchestration_runs","permissions","product_inspections","product_machine_mappings","production_lines","robot_telemetry","robots","safety_events","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zone_reservations","zones"],
+  "engineering-home": ["ai_insights","ai_pending_actions","andon_events","changeover_requests","daily_statistics","engineering_assignments","engineering_changes","equipment_3d_models","factories","interlock_events","interlock_rules","machine_recipes","machine_status_logs","machines","oee_metrics","orchestration_runs","permissions","product_inspections","product_machine_mappings","production_lines","robot_telemetry","robots","safety_events","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zone_reservations","zones"],
   "engineering-studio": ["ai_insights","ai_pending_actions","andon_events","equipment_3d_models","factories","machines","permissions","product_inspections","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zones"],
   "engineering": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","program_artifacts","program_deployments","program_projects","program_symbols","robot_jobs","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
-  "engineering-changes": ["ai_insights","ai_pending_actions","andon_events","engineering_changes","equipment_3d_models","factories","machines","permissions","product_inspections","product_models","production_lines","robot_telemetry","robots","sites","stations","tasks","user_factory_assignments","users","workshops","zones"],
-  "recipes": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","machine_recipes","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","recipe_deployments","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
-  "interlock-rules": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","interlock_events","interlock_rules","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
-  "orchestration-studio": ["ai_insights","ai_pending_actions","andon_events","equipment_3d_models","factories","machines","orchestration_runs","orchestration_workflows","permissions","product_inspections","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zones"],
+  "engineering-changes": ["ai_insights","ai_pending_actions","andon_events","engineering_assignments","engineering_changes","equipment_3d_models","factories","machines","permissions","product_inspections","product_models","production_lines","robot_telemetry","robots","sites","stations","tasks","user_factory_assignments","users","workshops","zones"],
+  "recipes": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","engineering_assignments","equipment_3d_models","factories","machine_recipes","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","recipe_deployments","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
+  "interlock-rules": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","engineering_assignments","equipment_3d_models","factories","interlock_events","interlock_rules","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
+  "orchestration-studio": ["ai_insights","ai_pending_actions","andon_events","engineering_assignments","equipment_3d_models","factories","machines","orchestration_runs","orchestration_workflows","permissions","product_inspections","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zones"],
   "ir-editor": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","program_artifacts","program_projects","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
   "pou-studio": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","program_projects","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
   "programming-copilot": ["ai_insights","ai_pending_actions","andon_events","equipment_3d_models","factories","machines","permissions","product_inspections","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zones"],
@@ -215,16 +236,17 @@ export const KNOWN_PROCS = {
   "engineering-home": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","oversight.pendingSummary","oversight.posture","permissions.getMyPermissions"],
   "engineering-studio": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
   "engineering": ["aiInbox.count","aiProgrammingKb.search","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","machine.list","permissions.getMyPermissions","programming.fleetVersionMatrix","programming.listApprovers","programming.listArtifacts","programming.listDeployments","programming.listProjects","programming.listSymbols","programming.status"],
-  "engineering-changes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ecn.list","license.getAllowedModules","license.systemState","permissions.getMyPermissions","productModel.list"],
-  "recipes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","machineRecipe.deployments.list","machineRecipe.machines.list","machineRecipe.recipes.listCodes","permissions.getMyPermissions"],
-  "interlock-rules": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","interlock.events","interlock.list","license.getAllowedModules","license.systemState","oversight.posture","permissions.getMyPermissions"],
-  "orchestration-studio": ["aiInbox.count","aiOrchestration.status","andon.active","auth.me","commandCenter.hierarchy","equipment.listEquipment","license.getAllowedModules","license.systemState","orchestration.listRuns","orchestration.listVersions","orchestration.listWorkflows","orchestration.status","permissions.getMyPermissions"],
+  "engineering-changes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ecn.list","engineering.assignments","license.getAllowedModules","license.systemState","permissions.getMyPermissions","productModel.list"],
+  "recipes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","engineering.assignments","license.getAllowedModules","license.systemState","machineRecipe.deployments.list","machineRecipe.machines.list","machineRecipe.recipes.listCodes","permissions.getMyPermissions"],
+  "interlock-rules": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","engineering.assignments","interlock.events","interlock.list","license.getAllowedModules","license.systemState","oversight.posture","permissions.getMyPermissions"],
+  "orchestration-studio": ["aiInbox.count","aiOrchestration.status","andon.active","auth.me","commandCenter.hierarchy","engineering.assignments","equipment.listEquipment","license.getAllowedModules","license.systemState","orchestration.listRuns","orchestration.listVersions","orchestration.listWorkflows","orchestration.status","permissions.getMyPermissions"],
   "ir-editor": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ir.lint","ir.listFlows","ir.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects"],
   "pou-studio": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects","programming.pouLint","programming.pouTranspilePreview"],
   "programming-copilot": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
   // final wave (I-4): Task 10 đưa bản đồ lên MAIN ⇒ `fleet.robotPositions` (5 s) + `twin.occupancyGrid` chạy mỗi lần mở trang.
   "fleet-orchestration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","fleet.deadlocks","fleet.listChargers","fleet.listChargingPlans","fleet.listOperations","fleet.listReservations","fleet.listResourceReservations","fleet.listResources","fleet.listTasks","fleet.listZones","fleet.resourceStatus","fleet.robotPositions","fleet.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","twin.occupancyGrid"],
-  "safety-workforce": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","safety.currentBoard","safety.feed","safety.listAssignments","safety.listCollaborations","safety.nearMissTrend","safety.sourceHealth","safety.status"],
+  // Đợt 3 Task 3: bỏ `safety.currentBoard` — bảng hiện trường dời sang Sản xuất › Ca, Safety không còn gọi (THU HẸP danh sách).
+  "safety-workforce": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","safety.feed","safety.listAssignments","safety.listCollaborations","safety.nearMissTrend","safety.sourceHealth","safety.status"],
   "equipment-standards": ["aiInbox.count","alarmKpi.summary","andon.active","auth.me","commandCenter.hierarchy","equipmentStandards.complianceMetrics","equipmentStandards.hierarchyTree","equipmentStandards.listAlarmMappings","equipmentStandards.listChangeRequests","equipmentStandards.listMasterAlarms","equipmentStandards.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
   "equipment-integration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","equipmentIntegration.integrationStatus","equipmentIntegration.status","license.getAllowedModules","license.systemState","machine.list","permissions.getMyPermissions"],
 };
@@ -237,6 +259,26 @@ KNOWN_PROCS["programming-copilot"] = [...new Set([...KNOWN_PROCS["programming-co
 // final wave (I-4) — tab cảnh báo của Standards là CÙNG trang: đọc đúng những gì trang Standards đọc.
 PAGE_TABLES["equipment-standards-alarms"] = PAGE_TABLES["equipment-standards"];
 KNOWN_PROCS["equipment-standards-alarms"] = KNOWN_PROCS["equipment-standards"];
+// Đợt 3 Task 2 — Vision › Thu ảnh (trước: tab thu ảnh của Integration). Bảng: của vỏ (⊆ danh sách của Integration — giữ
+// nguyên để canh trôi không hẹp đi). Thủ tục đã biết (fix round 1, review minor): CHỈ vỏ + hai thủ tục visionAdapter (trạng
+// thái worker, loại nguồn — bộ nhớ server, không bảng) — trang không gọi equipmentIntegration.* nên không thừa kế chúng
+// (thừa kế = nới danh sách cho phép, che một thủ tục mới không mong muốn).
+PAGE_TABLES["vision-acquisition"] = PAGE_TABLES["equipment-integration"];
+KNOWN_PROCS["vision-acquisition"] = [
+  ...KNOWN_PROCS["equipment-integration"].filter((p) => !p.startsWith("equipmentIntegration.") && p !== "machine.list"),
+  "visionAdapter.acquisitionWorkerStatus", "visionAdapter.listAcquisitionSources",
+].sort();
+
+// Đợt 3 Task 3 — Sản xuất › Ca (bước 2, trang riêng). Bảng: danh sách của Safety (đã phủ tab này ở bước 1; gồm
+// operator_assignments, robots, tasks của bảng hiện trường) + `shift_configs` (thủ tục mới `shiftConfig.list`) — HỢP để không
+// sót bảng (lần --discover-tables `dot3-task3/bang.json` không bắt được delta của hai bảng nhỏ này; thừa chỉ làm canh trôi nhạy
+// hơn). Thủ tục đã biết: CHỈ đúng 11 thủ tục trang gọi (7 của vỏ + safety.status/listAssignments/currentBoard +
+// shiftConfig.list) — không thừa kế danh sách Safety (feed/trend/collab/sourceHealth: trang này không gọi).
+PAGE_TABLES["production-shifts"] = [...new Set([...PAGE_TABLES["safety-workforce"], "shift_configs"])].sort();
+KNOWN_PROCS["production-shifts"] = [
+  "aiInbox.count", "andon.active", "auth.me", "commandCenter.hierarchy", "license.getAllowedModules", "license.systemState",
+  "permissions.getMyPermissions", "safety.currentBoard", "safety.listAssignments", "safety.status", "shiftConfig.list",
+];
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 
@@ -1028,6 +1070,11 @@ const ALWAYS_OFF = {
   SIM_OT_TELEMETRY_ENABLED: "false", SIM_KINEMATIC_ENABLED: "false", EDGE_RUNTIME_ENABLED: "false", SECS_GEM_ENABLED: "false", MTCONNECT_ENABLED: "false", VDA5050_ENABLED: "false",
   LLAMA_SERVER_ENABLED: "false", ENABLE_GPU: "false", GGUF_WARM_DEEP_MODEL_ON_BOOT: "false", PROG_KB_ENABLED: "false", KB_AUTOSYNC_ENABLED: "false", HOT_FOLDER_INGEST_ENABLED: "false",
   WEBHOOKS_ENABLED: "false", OTEL_ENABLED: "false", TWIN_LIVE_ENABLED: "false", TWIN_STREAM_ENABLED: "false", STREAM_TELEMETRY_TAP_ENABLED: "false", OPENAI_GATEWAY_ENABLED: "false",
+  // doc 81 Đợt 3 final wave (Task 2) — `warmUpOllamaModels()` (registerAiLocalKnowledgeRoutes, lúc khởi động) LUÔN bắn một
+  // POST làm ấm Ollama tới OLLAMA_BASE_URL (mặc định 127.0.0.1:11434), không cờ nào tắt được; Task 2 đo được MỘT kết nối
+  // Established tới :11434 ngay sau khởi động (f1-sau-1.json ⇒ pass=false). Hồ sơ đo trỏ nó vào cổng ĐÓNG (như
+  // UNS_BROKER_URL) ⇒ không tiến trình Ollama nào được chạm; bộ canh kết nối KHÔNG đổi (vẫn bắt mọi kết nối ngoài danh sách).
+  OLLAMA_BASE_URL: "http://127.0.0.1:9",
 };
 /** Env của tiến trình server đo: KHÔNG kế thừa env cha (ngoài biến hệ thống), KHÔNG nạp .env. */
 function serverEnv(port, logDir, flags) {
@@ -1595,7 +1642,7 @@ async function measureAll({ base, username, password, screens, sizes, shots, sho
           }
           if (shots) await page.screenshot({ path: path.join(shotDir, `${String(s.n).padStart(2, "0")}-${s.id}-${variant}-${w}.png`) });
           const v = s.copilot ? variant : "n/a";
-          const parentId = s.tabOf ?? s.calibrateAs?.id;
+          const parentId = s.tabOf ?? s.calibrateAs?.id ?? s.movedFrom;
           const opts = { ref: refs[`${s.id}|${w}|${v}`], h1Ref: parentId ? (refs[`${parentId}|${w}|${s.calibrateAs?.variant ?? v}`] ?? refs[`${parentId}|${w}|n/a`]) : undefined, calibrations };
           const rec = await measurePage(page, s, v, opts);
           // final wave (R-2-z1): màn có biến thể Copilot ⇒ kiểm Copilot THẬT SỰ mở/đóng đúng biến thể (LỖI nếu không).

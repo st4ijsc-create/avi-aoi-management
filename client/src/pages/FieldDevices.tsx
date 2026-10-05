@@ -147,7 +147,7 @@ export function FieldDevicesContent() {
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
     if (isFeatureDisabledError(e)) {
-      toast.info(t("field.flagOffToast", "Field abstraction is disabled (preview). Set FIELD_V2_ENABLED=true to act."));
+      toast.info(t("field.flagOffToast", "Field abstraction is turned off on the server (preview) — actions are refused until an administrator turns it on."));
       void utils.field.status.invalidate();
     } else {
       toastTrpcError(e);
@@ -228,7 +228,7 @@ export function FieldDevicesContent() {
             <span>
               {t(
                 "field.flagOffBanner",
-                "Preview mode: field abstraction v2 is disabled (FIELD_V2_ENABLED is off). Reads work; hot-plug actions (discover / register a device) are blocked until the flag is enabled.",
+                "Preview mode: field abstraction v2 is turned off on the server. Reads work; hot-plug actions (discover / register a device) are blocked until an administrator turns it on.",
               )}
             </span>
           </div>

@@ -4,7 +4,7 @@ import { establishSession, LOCKOUT_MINUTES, LoginError, verifyCredentials } from
 import { capVe2FA } from "./_core/pendingTwoFactor";
 import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, router, batBuoc2FA } from "./_core/trpc";
 // ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
 import { toPublicUser, type MeUser, type KhongMangBiMat } from "./_core/publicUser";
 import { appError } from "./_core/appError";
@@ -203,6 +203,7 @@ import { orderLifecycleRouter } from "./routers/orderLifecycleRouter"; // doc 44
 import { msdRouter } from "./routers/msdRouter"; // doc 35 W4-C — MSD floor-life clock (J-STD-020)
 import { stencilRouter } from "./routers/stencilRouter"; // doc 35 W4-C — stencil cycle counter
 import { ecnRouter } from "./routers/ecnRouter"; // doc 35 W4-D — engineering change control (ECN/ECO)
+import { engineeringAssignmentRouter } from "./routers/engineeringAssignmentRouter"; // doc 81 Đợt 3 Task 4 (QĐ-3a) — giao việc chờ duyệt Kỹ thuật (được giao ≠ được duyệt)
 import { routingRouter } from "./routers/routingRouter"; // doc 35 W4-E — ISA-95 routing master
 import { bootstrapRouter } from "./routers/bootstrapRouter"; // doc 54 §11 P0.5 — first-run bootstrap (corporate + factory shell + prod/sim flag)
 import { reportingMartRouter } from "./routers/reportingMartRouter"; // doc 35 W5-B — dim/fact reporting mart
@@ -251,6 +252,8 @@ export const appRouter = router({
       return {
         ...toPublicUser(opts.ctx.user),
         mustChangePassword: await db.phaiDoiMatKhau(opts.ctx.user.id),
+        // doc 81 Đợt 3 final wave — chính sách 2FA của triển khai (cùng vị từ `require2FA` / `assertTwoFactorForPrivileged`).
+        twoFactorRequired: batBuoc2FA(),
       };
     }),
     checkSetupRequired: publicProcedure.query(async () => {
@@ -529,6 +532,7 @@ export const appRouter = router({
   msd: msdRouter, // doc 35 W4-C
   stencil: stencilRouter, // doc 35 W4-C
   ecn: ecnRouter, // doc 35 W4-D
+  engineering: engineeringAssignmentRouter, // doc 81 Đợt 3 Task 4 (QĐ-3a): assign/unassign/assignments/assignableUsers
   routing: routingRouter, // doc 35 W4-E
   bootstrap: bootstrapRouter, // doc 54 §11 P0.5 — first-run bootstrap (corporate + factory shell + prod/sim flag)
   reportingMart: reportingMartRouter, // doc 35 W5-B

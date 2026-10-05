@@ -80,6 +80,13 @@ export interface EngineeringShellProps {
   bottomSize?: Partial<PxRange>;
   /** Task 13 — đổi giá trị ⇒ ở màn hẹp chuyển sang tab Inspector (vd nút AI mở Copilot). */
   inspectorRevealToken?: number;
+  /**
+   * doc 81 Đợt 3 Task 0 (D1) — inspector đang được yêu cầu hiện (Copilot mở): màn hẹp chọn tab Inspector khi vào màn hẹp /
+   * khi bật (WorkbenchShell `rightActive`). `onInspectorActiveHidden`: màn hẹp rời tab Inspector khi đang bật ⇒ trang đóng
+   * Copilot để nút AI khớp với thứ nhìn thấy.
+   */
+  inspectorActive?: boolean;
+  onInspectorActiveHidden?: () => void;
   /** final wave M-8 — gập inspector (màn rộng): 0 px, nội dung còn mount (WorkbenchShell `rightCollapsed`). */
   inspectorCollapsed?: boolean;
   statusBar?: React.ReactNode;
@@ -267,6 +274,8 @@ export function EngineeringShell({
   inspectorSize,
   bottomSize,
   inspectorRevealToken,
+  inspectorActive,
+  onInspectorActiveHidden,
   inspectorCollapsed,
   statusBar,
   toolbar,
@@ -314,6 +323,8 @@ export function EngineeringShell({
       leftCollapsed={explorerCollapsed}
       leftRevealToken={revealToken}
       rightRevealToken={inspectorRevealToken}
+      rightActive={inspectorActive}
+      onRightActiveHidden={onInspectorActiveHidden}
       rightCollapsed={inspectorCollapsed}
       onLeftCollapsedChange={setExplorerCollapsed}
       mainName={mainName ?? `${layoutId}-editor`}

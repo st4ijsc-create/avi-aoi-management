@@ -69,6 +69,8 @@ import type { SegregationResult, SegregationRole, TransitionAction } from "@/com
 import { GitPullRequestArrow, AlertTriangle, Wrench, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
+// doc 81 Đợt 3 Task 4 — "Giao cho" (sheet chi tiết) + cột "Người được giao" (danh sách). Được giao ≠ được duyệt.
+import { AssigneeCell, AssignmentControl, useAssignments, useCanAssign, type AssignmentRow } from "@/components/engineering/AssignmentControl";
 
 const CHANGE_TYPES = ["product", "bom", "recipe", "program", "process", "document"] as const;
 type ChangeType = (typeof CHANGE_TYPES)[number];
@@ -232,6 +234,9 @@ export default function EngineeringChanges() {
 
   const utils = trpc.useUtils();
   const listQ = trpc.ecn.list.useQuery({ limit: 200 }, { enabled: canView });
+  const ecnIds = useMemo(() => ((listQ.data ?? []) as Ecn[]).map((r) => r.id), [listQ.data]);
+  const { byId: assignments } = useAssignments("ecn", ecnIds, canView);
+  const canAssign = useCanAssign("ecn");
   const productsQ = trpc.productModel.list.useQuery({ limit: 100 }); // productModel.list cap = max(100)
   const products = (productsQ.data ?? []) as Product[];
 
@@ -363,6 +368,8 @@ export default function EngineeringChanges() {
           listLoaded={listLoaded}
           userName={userName}
           products={products}
+          assignment={(ecnId) => assignments.get(ecnId)}
+          canAssign={canAssign}
           actions={(ecn) => canDecide
             ? <EcnActionButtons ecn={ecn} currentUserId={currentUserId} pending={actionsPending} onAction={doTransition} />
             : null}
@@ -397,6 +404,7 @@ export default function EngineeringChanges() {
             loading={listQ.isLoading}
             filterDefs={filterDefs}
             filterPending={filterPending}
+            assignments={assignments}
             canDecide={canDecide}
             currentUserId={currentUserId}
             actionsPending={actionsPending}
@@ -468,13 +476,14 @@ function EcnHeader({ canCreate, isAdmin }: { canCreate: boolean; isAdmin: boolea
 
 /** MAIN — danh sách ECN: một thanh công cụ (bộ lọc) + DataTable phân trang. */
 function EcnList({
-  rows, hasAny, loading, filterDefs, filterPending, canDecide, currentUserId, actionsPending, onAction,
+  rows, hasAny, loading, filterDefs, filterPending, assignments, canDecide, currentUserId, actionsPending, onAction,
 }: {
   rows: Ecn[];
   hasAny: boolean;
   loading: boolean;
   filterDefs: FilterDef[];
   filterPending: boolean;
+  assignments: Map<number, AssignmentRow>;
   canDecide: boolean;
   currentUserId: number | null;
   actionsPending: boolean;
@@ -492,6 +501,7 @@ function EcnList({
     { id: "type", header: t("ecn.col.type", "Loại"), cell: (r) => t(`ecn.type.${r.changeType}`, r.changeType) },
     { id: "effectivity", header: t("ecn.col.effectivity", "Hiệu lực"), cell: (r) => fmtDate(r.effectivityDate) },
     { id: "status", header: t("ecn.col.status", "Trạng thái"), cell: (r) => <StatusBadge status={r.status} variant={ecnStatusVariant(r.status)} label={t(`ecn.status.${r.status}`, r.status)} /> },
+    { id: "assignee", header: t("engineeringAssign.column", "Assignee"), cell: (r) => <AssigneeCell row={assignments.get(r.id)} className="max-w-[10rem]" /> },
     {
       id: "actions", header: t("ecn.col.actions", "Thao tác"), align: "right",
       cell: (r) => (
@@ -655,13 +665,15 @@ function SectionLabel({ children }: { children: ReactNode }) {
  * trong 200 hàng đầu (deep-link/F5) thì đọc `ecn.getById`.
  */
 function EcnDetail({
-  id, rows, listLoaded, userName, products, actions,
+  id, rows, listLoaded, userName, products, assignment, canAssign, actions,
 }: {
   id: string | null;
   rows: Ecn[];
   listLoaded: boolean;
   userName: UserNameFn;
   products: Product[];
+  assignment: (ecnId: number) => AssignmentRow | undefined;
+  canAssign: boolean;
   actions: (ecn: Ecn) => ReactNode;
 }) {
   const { t } = useTranslation();
@@ -709,8 +721,11 @@ function EcnDetail({
     </div>
   ) : null;
 
+  // doc 81 Đợt 3 Task 4 — "Giao cho": chỉ mục ĐANG CHỜ DUYỆT mới giao được (server kiểm lại); ngoài ra chỉ hiện tên.
+  const isPending = ecn.status === "submitted" || ecn.status === "in_review";
   const overview = (
     <div className="space-y-5 text-sm">
+      <AssignmentControl entityType="ecn" entityId={ecn.id} assignment={assignment(ecn.id)} canAssign={canAssign && isPending} />
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
         <span>{t("ecn.col.type", "Loại")}: <b className="text-foreground">{t(`ecn.type.${ecn.changeType}`, ecn.changeType)}</b></span>
         <span>{t("ecn.col.effectivity", "Hiệu lực")}: <b className="text-foreground">{fmtDate(ecn.effectivityDate)}</b></span>

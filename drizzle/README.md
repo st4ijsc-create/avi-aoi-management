@@ -49,3 +49,7 @@ matter to tools we do not use for applying (see below).
   state in a different table, `drizzle.__drizzle_migrations`).
 - **Apply**: `npm run db:push` (add `--strict` in CI to fail fast).
 - **Verify**: `node scripts/check-applied-migrations.mjs [--from 0141]`.
+- **Per-migration apply scripts (0357+)**: `node scripts/apply-migration-NNNN.mjs --dev-only | --test-only | --both`.
+  Since 2026-10-05 (doc 81 Đợt 3 Task 4 fix 1, ruling R-3-g) every script 0357–0363 **refuses to run without
+  exactly one target flag** (exit 2, no connection opened). Before, no flag meant dev AND `_test`. Applying to the
+  dev DB (`aoi_management`) is the owner's call. Guarded by `scripts/applyMigrationTargetFlag.test.ts`.

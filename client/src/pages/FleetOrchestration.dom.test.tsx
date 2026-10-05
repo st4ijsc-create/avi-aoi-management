@@ -91,7 +91,7 @@ const ONE_ZONE = [
 beforeEach(() => {
   // Doc 81 Đợt 2 Task 10 — HẠ TẦNG (không phải khẳng định): tab panel phụ nay đồng bộ `?tab=` (Review Focus 4) — URL
   // jsdom sống qua các test, nên đưa về trang gốc để test sau không bắt đầu ở tab test trước đã mở.
-  window.history.replaceState(null, "", "/fleet-orchestration");
+  window.history.replaceState(null, "", "/labs/fleet-orchestration");
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
   // Zone đủ để render nút "Reserve" (nút ghi G1 đang canh) mà không cần đổi tab.
   setQueryOverride("fleet.listZones", makeQuery({ data: ONE_ZONE }));
@@ -105,7 +105,7 @@ describe("FleetOrchestration — G1 flag status (fleet.status) không còn `?? t
   // Doc 81 Đợt 2 Task 10 — HẠ TẦNG: vùng (và nút "Reserve") nay ở tab "Vùng" riêng của panel phụ (trước: chung tab
   // "Tasks & Zones" mặc định) ⇒ mở trang ở `?tab=zones`. Khẳng định giữ nguyên.
   beforeEach(() => {
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=zones");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=zones");
   });
   it("statusQ ĐANG TẢI ⇒ nút Reserve (G1) bị khoá, KHÔNG hiện banner OFF", () => {
     setQueryOverride("fleet.status", makeQuery({ isLoading: true }));

@@ -169,7 +169,40 @@ export interface NavItem {
    * chỉ-xem như trước) và quyền server không đổi. Admin bypass như mọi cổng nav khác.
    */
   authoringPermission?: string;
+  /**
+   * Doc 81 Đợt 3 Task 2 ([QĐ-3c]) — mã giấy phép RIÊNG của mục, THAY cho giấy phép của nhóm (`navGroupId` → module trong
+   * shared/module-registry.ts) khi lọc điều hướng theo giấy phép (`filterNavGroupsByLicense`). Dùng khi một mục dời vào
+   * nhóm của module khác mà KHÔNG được đổi giấy phép (vd Vision › Thu ảnh nằm ở nhóm AI nhưng giữ `MOD_OT_CONTROL` như
+   * `/equipment-integration`, không thêm `MOD_AI`). Giấy phép theo ROUTE (`isRouteAllowed`) vẫn áp như mọi mục.
+   * Không khai ⇒ luật cũ (giấy phép của nhóm).
+   */
+  licenseModule?: string;
+  /**
+   * Doc 81 Đợt 3 Task 2 fix round 1 (Ruling R-3-d) — mục CHỈ hiện khi module này KHÔNG được cấp phép (lọc trong
+   * `filterNavGroupsByLicense`). Dùng cho bí danh: vd "Worker thu ảnh → Vision › Thu ảnh" trong nhóm Kỹ thuật cho khách có
+   * OT mà không có MOD_AI (ô AI của launcher là upsell, mục Vision không với tới bằng thanh bên). Có MOD_AI ⇒ ẩn (không trùng).
+   */
+  onlyWhenModuleMissing?: string;
+  /**
+   * Doc 81 Đợt 3 Task 3 — mục KHÔNG bị ẩn theo `permissionCategory` của NHÓM (`applyRbacFilter`): cổng là quyền của CHÍNH
+   * mục (`requiredPermission`, như RouteGuard `navHref`). Dùng khi một mục dời vào nhóm mà vai cũ của nó không có quyền
+   * loại nào của nhóm (vd Sản xuất › Ca: engineer/maintenance/viewer có `machine_status` như ở Safety nhưng không có quyền
+   * loại `production` ⇒ nếu theo luật nhóm thì mất cả mục). Mọi mục không khai giữ ĐÚNG luật cũ; census:
+   * navLicenseFieldsCensus (mục khai phải có `requiredPermission`).
+   */
+  ignoreGroupCategory?: boolean;
+  /**
+   * Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — mục thuộc nhóm "Labs — thử nghiệm" (section `LABS_SECTION_KEY`): ẨN khỏi ĐIỀU HƯỚNG
+   * (thanh bên, menu điện thoại, BottomNav) cho tới khi CHÍNH người dùng bật "Hiện Labs" (`useShowLabs`, nhớ theo người
+   * dùng). ⌘K vẫn tìm thấy (`getSearchNavGroups` không qua `filterLabsNavGroups`). KHÔNG phải cổng: route, RouteGuard
+   * (`hasAccessToItem` đọc `navGroups` tĩnh), quyền và giấy phép GIỮ NGUYÊN; deep link (Hub, PendingReviewStrip) vẫn mở.
+   * Census + allowlist: navLabs.unit.test.ts.
+   */
+  labs?: boolean;
 }
+
+/** Doc 81 Đợt 3 Task 5 — khoá section của nhóm "Labs — thử nghiệm" (nhãn `nav.section.labs`). */
+export const LABS_SECTION_KEY = "labs";
 
 export interface NavGroup {
   id: string;
@@ -554,6 +587,26 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "production_orders",
         permissionCategory: "production",
         section: "ordersSchedule",
+      },
+      {
+        // Doc 81 Đợt 3 Task 3 — Sản xuất › Ca: bảng phân công nhân lực theo ca (trước là tab `?tab=workforce` của
+        // /safety-workforce). GIỮ ĐÚNG cổng/hiển thị cũ: quyền `machine_status` (= route /safety-workforce; RouteGuard
+        // navHref); giấy phép MOD_OT_CONTROL như /safety-workforce (`licenseModule`; route ở module-registry) — nhóm
+        // Sản xuất (MOD_PRODUCTION) không ẩn nó; `ignoreGroupCategory`: vai có machine_status mà không có quyền loại
+        // production (engineer/maintenance/viewer) vẫn thấy như thấy Safety; `tier: advanced` ⇒ ẩn ở chế độ Đơn giản như
+        // mục Safety cũ (nhóm Kỹ thuật advanced). Thiếu MOD_PRODUCTION khi bật launcher ⇒ bí danh ở nhóm Kỹ thuật.
+        href: "/production/shifts",
+        label: "nav.productionShifts",
+        icon: <CalendarClock className="h-4 w-4" />,
+        description: "nav.productionShiftsDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "ordersSchedule",
+        licenseModule: "MOD_OT_CONTROL",
+        ignoreGroupCategory: true,
+        tier: "advanced",
+        engineerOriented: true,
+        beta: true,
       },
       {
         href: "/history-export-scheduling",
@@ -1017,6 +1070,8 @@ export const navGroups: NavGroup[] = [
       { key: "safety", label: "nav.section.safety" },
       { key: "standardsIntegration", label: "nav.section.standardsIntegration" },
       { key: "twin", label: "nav.section.twin" },
+      // Doc 81 Đợt 3 Task 5 ([QĐ-3b], doc 80 "Labs (ẩn mặc định)") — mục `labs: true`, ẩn khỏi menu cho tới khi người dùng bật.
+      { key: LABS_SECTION_KEY, label: "nav.section.labs" },
     ],
     items: [
       // — Engineering Hub — hub-and-spoke front door (items[0] → breadcrumb /
@@ -1131,20 +1186,7 @@ export const navGroups: NavGroup[] = [
       // doc 81 Đợt 2 Task 15 — mục "/programming-copilot" ĐÃ GỠ: trang Copilot riêng thành CHẾ ĐỘ SCRATCH của IDE
       // (`/engineering?copilot=scratch` — panel Copilot trong layout, chưa cần mở dự án); URL cũ chuyển hướng giữ
       // query. Copilot lập trình nay chỉ còn là panel trong IDE / IR / POU.
-      {
-        // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
-        // skill/resource/charging. Read-mostly cockpit gated on machine_monitoring.
-        href: "/fleet-orchestration",
-        label: "nav.fleetOrchestration",
-        icon: <Bot className="h-4 w-4" />,
-        description: "nav.fleetOrchestrationDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-        section: "orchestration",
-        hint: "nav.hint.fleetOrchestration",
-        engineerOriented: true,
-        beta: true,
-      },
+      // Doc 81 Đợt 3 Task 5 — mục Fleet (/fleet-orchestration) DỜI sang section Labs, route /labs/fleet-orchestration (cuối nhóm).
       {
         // Automation Orchestration (Khối 3) — advisory safety cockpit + workforce
         // board (safety-adjacent, next to interlock rules). View-only.
@@ -1184,6 +1226,56 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_monitoring",
         section: "standardsIntegration",
         hint: "nav.hint.equipmentIntegration",
+        engineerOriented: true,
+        beta: true,
+      },
+      {
+        // Doc 81 Đợt 3 Task 2 fix round 1 (Ruling R-3-d) — BÍ DANH của Vision › Thu ảnh cho khách có OT mà KHÔNG có MOD_AI:
+        // khi bật launcher, trang thật nằm ở app AI (ô upsell với SKU đó) nên thanh bên không với tới. Route bí danh là
+        // <Redirect> thuần tới /vision/acquisition ⇒ cổng = cổng của trang đích (machine_alerts/canView); giấy phép
+        // MOD_OT_CONTROL (nhóm này + route ở module-registry). Có MOD_AI ⇒ ẩn (mục Vision hiện, không trùng).
+        href: "/engineering/vision-acquisition",
+        label: "nav.visionAcquisitionAlias",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.visionAcquisitionDesc",
+        requiredPermission: "machine_alerts",
+        permissionCategory: "machine_monitoring",
+        section: "standardsIntegration",
+        onlyWhenModuleMissing: "MOD_AI",
+        engineerOriented: true,
+        beta: true,
+      },
+      {
+        // Doc 81 Đợt 3 Task 3 — BÍ DANH của Sản xuất › Ca cho khách có OT mà KHÔNG có MOD_PRODUCTION (khuôn R-3-d): khi bật
+        // launcher, trang thật nằm ở app Sản xuất (ô upsell với SKU đó) nên thanh bên không với tới. Route bí danh =
+        // RouteGuard navHref của chính nó + <Redirect> tới /production/shifts; cổng = cổng của trang đích (machine_status);
+        // giấy phép MOD_OT_CONTROL. Có MOD_PRODUCTION ⇒ ẩn (mục Sản xuất hiện, không trùng).
+        href: "/engineering/production-shifts",
+        label: "nav.productionShiftsAlias",
+        icon: <CalendarClock className="h-4 w-4" />,
+        description: "nav.productionShiftsDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "safety",
+        onlyWhenModuleMissing: "MOD_PRODUCTION",
+        engineerOriented: true,
+        beta: true,
+      },
+      {
+        // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
+        // skill/resource/charging. Read-mostly cockpit gated on machine_monitoring.
+        // Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Labs: route mới /labs/fleet-orchestration (URL cũ /fleet-orchestration chuyển hướng,
+        // giữ query — engineeringLegacyRedirects.tsx). Quyền nav (machine_status), RouteGuard navHref, giấy phép MOD_OT_CONTROL
+        // (module-registry) và cổng server (fleetRouter) GIỮ NGUYÊN; chỉ đổi chỗ trong menu: ẩn cho tới khi người dùng bật Labs.
+        href: "/labs/fleet-orchestration",
+        label: "nav.fleetOrchestration",
+        icon: <Bot className="h-4 w-4" />,
+        description: "nav.fleetOrchestrationDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: LABS_SECTION_KEY,
+        labs: true,
+        hint: "nav.hint.fleetOrchestration",
         engineerOriented: true,
         beta: true,
       },
@@ -1695,6 +1787,23 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "analytics_root_cause",
         permissionCategory: "analytics",
         section: "visionLab",
+      },
+      {
+        // Doc 81 Đợt 3 Task 2 — Vision › Thu ảnh: worker thu ảnh (trước là tab `?tab=acquisition` của
+        // /equipment-integration). [QĐ-3c] GIỮ ĐÚNG cổng cũ: quyền machine_alerts/canView (= router visionAdapter;
+        // RouteGuard navHref) + cờ thu ảnh trực tiếp của server (chặn khởi động, trang báo trạng thái cờ). KHÔNG MOD_AI:
+        // giấy phép của mục là MOD_OT_CONTROL như /equipment-integration (`licenseModule`; route ở module-registry).
+        // Không `tier` ⇒ ẩn ở chế độ Đơn giản như mục Integration cũ (nhóm advanced).
+        href: "/vision/acquisition",
+        label: "nav.visionAcquisition",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.visionAcquisitionDesc",
+        requiredPermission: "machine_alerts",
+        permissionCategory: "machine_monitoring",
+        section: "visionLab",
+        licenseModule: "MOD_OT_CONTROL",
+        engineerOriented: true,
+        beta: true,
       },
       // ─ Knowledge & Training (doc 69 Wave E1 / T7 — NEW section) ─
       {
@@ -2449,7 +2558,8 @@ export function buildModuleL2(group: NavGroup): L2Entry[] {
     const hub = bucket.items.filter(i => isHubItem(i));
     // Keep a category only when ≥2 non-hub pages remain — a 0/1-item category after
     // pulling out hubs is noise, so those pages become direct links too.
-    if (nonHub.length >= 2) {
+    // Doc 81 Đợt 3 Task 5 — TRỪ section Labs: nhãn "Labs — thử nghiệm" là thông tin (màn thử nghiệm), luôn hiện kể cả 1 mục.
+    if (nonHub.length >= 2 || (bucket.key === LABS_SECTION_KEY && nonHub.length >= 1)) {
       out.push({ kind: "category", key: bucket.key, label: bucket.label, items: nonHub });
     } else {
       for (const item of nonHub) out.push({ kind: "link", item });
@@ -2667,21 +2777,68 @@ function applyRbacFilter(
       if (group.requiredRole === 'admin' && userRole !== 'admin') {
         return false;
       }
-      // Quick category-level check if available
-      if (hasAnyCategoryPermission && group.permissionCategory) {
-        return hasAnyCategoryPermission(group.permissionCategory);
-      }
       return true;
     })
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item =>
-        isItemAccessible(item, userRole, hasPermission) &&
-        // doc 81 Đợt 2 Task 15 — công cụ soạn thảo chỉ trong điều hướng của người soạn được (route giữ nguyên).
-        passesNavAuthoringGate(item, userRole, hasPermission),
-      ),
-    }))
+    .map(group => {
+      // Quick category-level check if available. Doc 81 Đợt 3 Task 3: nhóm trượt cổng loại ⇒ CHỈ giữ mục khai
+      // `ignoreGroupCategory` (cổng là quyền của chính mục); không mục nào như vậy ⇒ nhóm rỗng ⇒ bị bỏ như trước.
+      const groupCategoryOk = !(hasAnyCategoryPermission && group.permissionCategory) || hasAnyCategoryPermission(group.permissionCategory);
+      return {
+        ...group,
+        items: group.items.filter(item =>
+          (groupCategoryOk || item.ignoreGroupCategory === true) &&
+          isItemAccessible(item, userRole, hasPermission) &&
+          // doc 81 Đợt 2 Task 15 — công cụ soạn thảo chỉ trong điều hướng của người soạn được (route giữ nguyên).
+          passesNavAuthoringGate(item, userRole, hasPermission),
+        ),
+      };
+    })
     .filter(group => group.items.length > 0);
+}
+
+/**
+ * Doc 81 Đợt 3 Task 2 — lọc điều hướng theo GIẤY PHÉP (thanh bên + ⌘K của DashboardLayout). Mục có `licenseModule` dùng
+ * giấy phép của chính nó thay cho giấy phép của nhóm; mọi mục khác giữ ĐÚNG luật cũ: nhóm không được phép ⇒ ẩn cả nhóm,
+ * route không được phép ⇒ ẩn mục. Nhóm rỗng sau lọc bị bỏ.
+ */
+export function filterNavGroupsByLicense(
+  groups: NavGroup[],
+  isNavGroupAllowed: (groupId: string) => boolean,
+  isModuleAllowed: (moduleCode: string) => boolean,
+  isRouteAllowed: (href: string) => boolean,
+): NavGroup[] {
+  return groups
+    .map((group) => {
+      const groupOk = isNavGroupAllowed(group.id);
+      return {
+        ...group,
+        items: group.items.filter(
+          (item) =>
+            (item.licenseModule ? isModuleAllowed(item.licenseModule) : groupOk) &&
+            isRouteAllowed(item.href) &&
+            // R-3-d — bí danh chỉ khi module kia KHÔNG được cấp phép.
+            !(item.onlyWhenModuleMissing && isModuleAllowed(item.onlyWhenModuleMissing)),
+        ),
+      };
+    })
+    .filter((group) => group.items.length > 0);
+}
+
+/**
+ * Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — lớp SỞ THÍCH "Hiện Labs" (sau lọc vai/quyền/giấy phép, như chế độ Đơn giản/Nâng cao):
+ * `showLabs=false` ⇒ bỏ mọi mục `labs: true`, nhóm rỗng bị bỏ; `true` ⇒ trả nguyên tập vào. CHỈ dùng cho thanh bên / menu
+ * điện thoại / BottomNav — KHÔNG cho ⌘K (`getSearchNavGroups`), RouteGuard hay deep link.
+ */
+export function filterLabsNavGroups(groups: NavGroup[], showLabs: boolean): NavGroup[] {
+  if (showLabs) return groups;
+  return groups
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.labs !== true) }))
+    .filter((group) => group.items.length > 0);
+}
+
+/** Doc 81 Đợt 3 Task 5 — tập (đã lọc) có ít nhất một mục Labs ⇒ mới đáng hiện công tắc "Hiện Labs". */
+export function hasLabsContent(groups: NavGroup[]): boolean {
+  return groups.some((group) => group.items.some((item) => item.labs === true));
 }
 
 export function getFilteredNavGroups(

@@ -31,7 +31,7 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({ hasPermission: () => perm.canControl }),
 }));
 vi.mock("@/_core/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: 7, name: "Tester" }, loading: false }),
+  useAuth: () => ({ user: { id: 7, name: "Tester", role: "engineer" }, loading: false }),
 }));
 vi.mock("@/contexts/EngineeringContext", () => ({
   useEngineering: () => ({ setLastWorkflowRef: () => {} }),
@@ -102,6 +102,9 @@ vi.mock("@/lib/trpc", () => {
         }
         if (key === "orchestration.getRun") return q(key, srv.getRun);
         if (key === "equipment.listEquipment") return q(key, []);
+        // doc 81 Đợt 3 Task 4 — phân công run đang hiệu lực + roster.
+        if (key === "engineering.assignments") return q(key, [{ entityId: 30, assigneeUserId: 81, assigneeName: "Ky su Run" }]);
+        if (key === "engineering.assignableUsers") return q(key, [{ id: 81, name: "Ky su Run" }]);
         return q(key, undefined);
       },
       useMutation: (opts: MutOpts = {}) => ({
@@ -730,6 +733,29 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
     perm.canControl = false;
     render(<OrchestrationStudio />);
     expect(within(rowOf(30)).queryByRole("button", { name: S.approve })).toBeNull();
+  });
+});
+
+describe("doc 81 Đợt 3 Task 4 — 'Giao cho' run đang chờ duyệt", () => {
+  it("run chờ duyệt: hàng hiện tên người được giao + khối ngữ cảnh có bộ chọn; nút Duyệt giữ nguyên payload", async () => {
+    const user = userEvent.setup();
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, steps: [] };
+    render(<OrchestrationStudio />);
+    const row = rowOf(30);
+    expect(row.querySelector("[data-assignee-cell]")).toHaveTextContent("Ky su Run");
+    const ctl = row.querySelector('[data-assign-control="orchestration_run"]') as HTMLElement;
+    expect(within(ctl).getByRole("combobox", { name: VI.engineeringAssign.label })).toHaveTextContent("Ky su Run");
+    await user.click(within(row).getByRole("button", { name: S.approve }));
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1" }]);
+    expect(calls("engineering.assign")).toEqual([]);
+  });
+
+  it("không quyền điều khiển ⇒ không khối ngữ cảnh, không bộ chọn", () => {
+    perm.canControl = false;
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    render(<OrchestrationStudio />);
+    expect(rowOf(30).querySelector("[data-assign-control]")).toBeNull();
   });
 });
 

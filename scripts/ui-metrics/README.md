@@ -69,6 +69,9 @@ tự kiểm trượt, `1` khi lỗi hạ tầng.
    - **Luôn TẮT** actuation / ra ngoài: `DPC_DEPLOY`, `SAFETY_PLC_ADAPTER`, OT (control, store-forward, HA),
      MQTT/UNS/Sparkplug, robot, OPC UA, ROS2, SIM telemetry, edge, SECS/GEM, MTConnect, VDA5050,
      LLM (llama/GPU/KB, `AI_ORCHESTRATION*`), webhook, OTEL, twin stream, OpenAI gateway.
+   - `OLLAMA_BASE_URL=http://127.0.0.1:9` (cổng đóng, như `UNS_BROKER_URL`): lượt làm ấm Ollama lúc khởi động
+     (`warmUpOllamaModels`, không có cờ tắt) không chạm Ollama thật ở :11434 (doc 81 Đợt 3 final wave — Task 2 đo được
+     một kết nối :11434 ngay sau khởi động). Danh sách kết nối được phép KHÔNG đổi.
 5. **Vite dev chạy trong tiến trình script** ở 5176, dùng `vite.config.ts` của repo.
    - Proxy `/api` (kể cả websocket) và `/uploads` sang :3016.
    - `cacheDir` đặt trong `%TEMP%/aoi-ui-metrics-vite-cache` ⇒ không ghi `node_modules/`.
@@ -321,3 +324,54 @@ Trước đợt này hai số của doc 81 §11 chỉ có ở một bản sao th
 - `--calibrate` ghi kèm `gitDirty` (tệp chưa commit dưới `client/src`/`scripts/ui-metrics` lúc hiệu chuẩn) — `gitHead`
   một mình không nói bố cục đo có nằm trong commit đó (T4-M7).
 
+
+## Màn dời ra trang riêng (Đợt 3 Task 2, 2026-10-05) — `vision-acquisition`
+Worker thu ảnh rời tab `?tab=acquisition` của Equipment Integration sang trang riêng Vision › Thu ảnh (`/vision/acquisition`).
+URL cũ chuyển hướng tới trang mới (giữ query, bỏ `tab`). Màn đo theo khuôn R-2-k, hai bước, cùng **một** id:
+
+| bước | `route` đo | khoá khai báo | bản ghi hiệu chuẩn `vision-acquisition|vw|n/a` |
+|---|---|---|---|
+| 1 — TRƯỚC (commit 5107ac3ca) | `/equipment-integration?tab=acquisition` | `tabOf: "equipment-integration"` | ghi bằng `--calibrate` vì attribute TRÙNG phần tử đã hiệu chuẩn của Integration |
+| 2 — SAU | `/vision/acquisition` (`aliasOf` = URL cũ) | `movedFrom: "equipment-integration"` | so lại mỗi lần chạy; trang mới ⇒ lệch ⇒ LỖI cho tới khi `--calibrate` ghi đè (giữ `previous`, diff git cho thấy) |
+
+- `movedFrom` **chỉ** cấp tham chiếu h1 (`h1Ref` = của trang mẹ cũ, như `tabOf`/`calibrateAs`). Nó **không** có nhánh hiệu chuẩn
+  riêng: không có bản ghi thì rơi vào nhánh thường (không tham chiếu FE1 ⇒ LỖI). Không gác nào bị nới.
+- `PAGE_TABLES` = của Integration (vỏ; ⊆ hợp `allTables()`). `KNOWN_PROCS` = CHỈ thủ tục của vỏ + `visionAdapter.acquisitionWorkerStatus`,
+  `visionAdapter.listAcquisitionSources` (bộ nhớ server, không bảng) — fix round 1 bỏ `equipmentIntegration.*`/`machine.list` thừa kế
+  (trang không gọi; giữ lại là nới danh sách cho phép).
+- Hành động khai báo: `khoi-dong-worker` (nút MỞ sheet `acq-start`; không bao giờ bấm nút gửi trong sheet).
+- **TRƯỚC/SAU KHÔNG CÙNG LOẠI** về hình học: trước là MAIN của Integration (hàng tab + bảng), sau là MAIN của trang mới (hàng công
+  cụ + bảng). Đọc như "cùng nội dung ở chỗ mới", không như cải thiện/thoái lui của cùng một MAIN.
+
+### `production-shifts` (Đợt 3 Task 3, 2026-10-05) — cùng khuôn
+Bảng nhân lực rời tab `?tab=workforce` của Safety & Workforce sang trang riêng Sản xuất › Ca (`/production/shifts`).
+
+| bước | `route` đo | khoá khai báo | bản ghi hiệu chuẩn `production-shifts|vw|n/a` |
+|---|---|---|---|
+| 1 — TRƯỚC (commit 62100994f) | `/safety-workforce?tab=workforce` | `tabOf: "safety-workforce"` | ghi bằng `--calibrate` vì attribute TRÙNG phần tử đã hiệu chuẩn của Safety |
+| 2 — SAU | `/production/shifts` (`aliasOf` = URL cũ) | `movedFrom: "safety-workforce"` | so lại mỗi lần chạy; trang mới ⇒ lệch ⇒ LỖI cho tới khi `--calibrate` ghi đè (giữ `previous`) |
+
+- `PAGE_TABLES` = của Safety (đã phủ tab này ở bước 1) ∪ `shift_configs` (thủ tục mới `shiftConfig.list`). `KNOWN_PROCS` = CHỈ 11
+  thủ tục trang gọi (vỏ + `safety.status`/`listAssignments`/`currentBoard` + `shiftConfig.list`). `safety-workforce` bỏ
+  `safety.currentBoard` khỏi `KNOWN_PROCS` (Safety không còn gọi — thu hẹp, không nới).
+- Hành động khai báo: `phan-cong` (nút MỞ sheet `workforce-assign`; không bao giờ bấm nút gửi trong sheet).
+- **TRƯỚC/SAU KHÔNG CÙNG LOẠI**: trước là MAIN của Safety (hàng tab + bảng phân công + bảng hiện trường, panel phụ của Safety);
+  sau là MAIN của trang mới (hàng công cụ + bảng phân công; bảng hiện trường ở panel phụ của chính trang).
+
+
+## Đợt 3 Task 4 (2026-10-05) — giao việc Kỹ thuật (mig 0363)
+- `PAGE_TABLES` của `engineering-home`, `engineering-changes`, `recipes`, `interlock-rules`, `orchestration-studio` thêm
+  `engineering_assignments` (Hub đọc qua `oversight.pendingSummary.mine`; bốn trang đọc cột "Người được giao").
+- `KNOWN_PROCS` của bốn trang thêm `engineering.assignments` (gọi lúc nạp trang). `engineering.assignableUsers` KHÔNG thêm:
+  chỉ gọi khi mở sheet/khối duyệt — lần đo nạp trang không chạm nó (thêm vào là nới danh sách cho phép).
+- Không đổi gác, không đổi bản ghi hiệu chuẩn: MAIN của năm màn trùng hiệu chuẩn cũ (BEFORE/AFTER 0 dòng lệch).
+
+## Đợt 3 Task 5 (2026-10-05) — Fleet → Labs (`/labs/fleet-orchestration`, khuôn bí danh R-2-x)
+- Màn `fleet-orchestration` đo route MỚI `/labs/fleet-orchestration`; `aliasOf: "/fleet-orchestration"` (URL cũ chỉ còn chuyển hướng
+  giữ query — `client/src/lib/engineeringLegacyRedirects.tsx`).
+- Khác hai bí danh Task 15: đây là **CÙNG một trang** (chỉ đổi đường dẫn), nên KHÔNG có `calibrateAs` hay `movedFrom`. id, phần tử
+  mang `data-layout-main="fleet-orchestration"` và bản ghi hiệu chuẩn `fleet-orchestration|vw|n/a` là của chính trang ⇒ mỗi lần chạy so
+  lại với bản ghi đó (lệch ⇒ LỖI). Không ghi lại hiệu chuẩn, không gác nào bị nới.
+- **TRƯỚC/SAU CÙNG LOẠI** (cùng MAIN). Khác duy nhất nhìn thấy: breadcrumb trong top bar đổi section (`Điều phối` ⇒ `Labs — thử nghiệm`).
+- `PAGE_TABLES` / `KNOWN_PROCS` KHÔNG đổi (trang gọi đúng các thủ tục cũ; công tắc "Hiện Labs" ở thanh bên là localStorage, không gọi
+  server). Người dùng đo (`uim_engineer`) có Labs ẨN (mặc định) — thước vào màn bằng URL nên không phụ thuộc menu.

@@ -406,6 +406,8 @@ export const adminProcedure = thuTucGoc.use(
 // Role-based procedure factory — accepts an array of allowed roles
 type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'engineer' | 'viewer' | 'user';
 
+export type { UserRole };
+
 // Privileged roles that MUST have 2FA enabled (IEC 62443-2-1 CL2 requirement).
 // engineer holds machine_control (OT command authority) → 2FA required (doc 34 P3b decision).
 //
@@ -424,14 +426,18 @@ export const PRIVILEGED_ROLES: readonly UserRole[] = ['admin', 'supervisor', 'qu
 // pre-built supervisorProcedure/qualityProcedure/actuationProcedure combos can
 // still chain the SAME 2FA guard (e.g. `roleProcedure("admin","engineer").use(require2FA)`)
 // instead of re-implementing the twoFactorEnabled check inline.
-export const require2FA = t.middleware(async opts => {
-  const { ctx, next } = opts;
-  if (!ctx.user) {
+/**
+ * doc 81 Đợt 3 Task 4 fix 1 (R-3-e) — thân kiểm của `require2FA`, tách thành hàm THƯỜNG để một thủ tục phục vụ
+ * nhiều loại thực thể (`engineering.assign`) áp ĐÚNG cổng này theo loại mà KHÔNG chép lại luật. Middleware bên dưới
+ * gọi chính hàm này — một chỗ duy nhất.
+ */
+export function assertTwoFactorForPrivileged(user: { role: string; twoFactorEnabled?: boolean | null } | null | undefined): void {
+  if (!user) {
     throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
   }
   // Chế độ nội bộ (cờ `0`, xem `batBuoc2FA`): bỏ qua đòi-BẬT — nhánh `!ctx.user` UNAUTHORIZED ở
   // trên giữ NGUYÊN, và sàn vai (`roleProcedure`) đứng TRƯỚC middleware này không hề bị chạm.
-  if (batBuoc2FA() && PRIVILEGED_ROLES.includes(ctx.user.role as UserRole) && !ctx.user.twoFactorEnabled) {
+  if (batBuoc2FA() && PRIVILEGED_ROLES.includes(user.role as UserRole) && !user.twoFactorEnabled) {
     throw appError(
       "FORBIDDEN",
       "TWO_FACTOR_NOT_SET_UP",
@@ -439,7 +445,12 @@ export const require2FA = t.middleware(async opts => {
       "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
     );
   }
-  return next({ ctx: { ...ctx, user: ctx.user } });
+}
+
+export const require2FA = t.middleware(async opts => {
+  const { ctx, next } = opts;
+  assertTwoFactorForPrivileged(ctx.user);
+  return next({ ctx: { ...ctx, user: ctx.user! } });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -703,33 +714,41 @@ export const requireFreshTotp = stepUpTotpMiddleware(true);
  */
 export const requirePerCallFreshTotp = stepUpTotpMiddleware(false);
 
+/**
+ * doc 81 Đợt 3 Task 4 fix 1 (R-3-e) — thân kiểm SÀN VAI của `roleProcedure`, tách thành hàm thường (cùng lý do với
+ * `assertTwoFactorForPrivileged`). `roleProcedure` gọi chính hàm này — lời từ chối giữ NGUYÊN từng chữ.
+ */
+export function assertRoleFloor(
+  user: { role: string } | null | undefined,
+  allowedRoles: readonly UserRole[],
+): void {
+  if (!user) {
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
+  }
+  if (!allowedRoles.includes(user.role as UserRole)) {
+    // Task 10 (F3, doc71) — `roleProcedure` là factory DÙNG CHUNG (bomRouter,
+    // componentLibraryRouter, ...), mỗi call site truyền một tập role khác
+    // nhau — không có TÊN hành động cụ thể để gán action. action:
+    // "insufficientRole" là khoá CHUNG (giống mọi PERMISSION_DENIED khác đã
+    // migrate trong sprint này, danh sách role cụ thể CHỈ còn ở
+    // fallbackMessage — mất khi đã dịch, đúng tiền lệ đã chấp nhận cho toàn
+    // bộ 687 call site requirePermission() ở accessControl.ts, xem
+    // task-10-report.md).
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "insufficientRole" },
+      `Required role: ${allowedRoles.join(' or ')}`,
+    );
+  }
+}
+
 export function roleProcedure(...allowedRoles: UserRole[]) {
   return thuTucGoc.use(
     t.middleware(async opts => {
       const { ctx, next } = opts;
-
-      if (!ctx.user) {
-        throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
-      }
-
-      if (!allowedRoles.includes(ctx.user.role as UserRole)) {
-        // Task 10 (F3, doc71) — `roleProcedure` là factory DÙNG CHUNG (bomRouter,
-        // componentLibraryRouter, ...), mỗi call site truyền một tập role khác
-        // nhau — không có TÊN hành động cụ thể để gán action. action:
-        // "insufficientRole" là khoá CHUNG (giống mọi PERMISSION_DENIED khác đã
-        // migrate trong sprint này, danh sách role cụ thể CHỈ còn ở
-        // fallbackMessage — mất khi đã dịch, đúng tiền lệ đã chấp nhận cho toàn
-        // bộ 687 call site requirePermission() ở accessControl.ts, xem
-        // task-10-report.md).
-        throw appError(
-          "FORBIDDEN",
-          "PERMISSION_DENIED",
-          { action: "insufficientRole" },
-          `Required role: ${allowedRoles.join(' or ')}`,
-        );
-      }
-
-      return next({ ctx: { ...ctx, user: ctx.user } });
+      assertRoleFloor(ctx.user, allowedRoles);
+      return next({ ctx: { ...ctx, user: ctx.user! } });
     }),
   ).use(auditMutationMiddleware).use(tenantScopeMiddleware);
 }

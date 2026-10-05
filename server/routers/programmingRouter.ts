@@ -991,9 +991,9 @@ export const programmingRouter = router({
 
   copilotExplain: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .input(z.object({ kind: KIND, source: z.string().max(2_000_000) }))
+    .input(z.object({ kind: KIND, source: z.string().max(2_000_000), lang: z.enum(["vi", "en", "zh"]).optional() }))
     .query(({ input }) => {
-      const res = explainProgram(input.kind, input.source);
+      const res = explainProgram(input.kind, input.source, input.lang);
       // Doc 54 P3.4 (#1) — dù đây chỉ là mô tả cấu trúc (không phải model), KHÔNG được để bị hiểu
       // là "chứng nhận": mã liên quan an toàn ⇒ gắn cờ yêu cầu người kiểm định an toàn.
       if (isSafetyRelevantProgram(input.source)) {

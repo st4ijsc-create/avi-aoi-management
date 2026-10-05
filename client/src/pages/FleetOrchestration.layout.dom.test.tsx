@@ -316,7 +316,7 @@ beforeEach(() => {
   for (const f of Object.values(toastSpy)) f.mockClear();
   localStorage.clear();
   presetNarrow(false);
-  window.history.replaceState(null, "", "/fleet-orchestration");
+  window.history.replaceState(null, "", "/labs/fleet-orchestration");
 });
 afterEach(() => cleanup());
 
@@ -426,7 +426,7 @@ describe("Fleet P4 — bố cục: MAIN là bản đồ, panel phụ 4 tab", () 
     unmount();
     srv.status = undefined;
     srv.statusError = true;
-    window.history.replaceState(null, "", "/fleet-orchestration");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration");
     render(<FleetOrchestration />);
     expect(within(header()).getByTestId("feature-status-error")).toBeInTheDocument();
     expect(within(header()).queryByTestId("feature-status-off")).toBeNull();
@@ -470,7 +470,7 @@ describe("Fleet — `?tab=` panel phụ và bản đồ (Review Focus 4)", () =>
     await user.click(sideTab(/^Tác vụ$/));
     expect(params().has("tab")).toBe(false);
     cleanup();
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=map");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=map");
     render(<FleetOrchestration />);
     expect(sideTab(/^Tác vụ$/)).toHaveAttribute("aria-selected", "true");
   });
@@ -601,7 +601,7 @@ describe("Fleet — Tác vụ (G1): nhãn nguồn + hành động như cũ (R-2-
 
   it("không có quyền điều khiển: 'Chỉ xem' thay nút; deep link sheet ghi không mở (không đăng ký)", () => {
     perm.control = false;
-    window.history.replaceState(null, "", "/fleet-orchestration?flyout=fleet-task-assign&flyoutId=3");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?flyout=fleet-task-assign&flyoutId=3");
     render(<FleetOrchestration />);
     expect(within(taskRow("DEMO-TASK-PICK-1")).getByText("Chỉ xem")).toBeInTheDocument();
     expect(within(taskRow("DEMO-TASK-PICK-1")).queryByRole("button", { name: "Phân bổ" })).toBeNull();
@@ -612,7 +612,7 @@ describe("Fleet — Tác vụ (G1): nhãn nguồn + hành động như cũ (R-2-
 describe("Fleet — Vùng (G1): đặt trước = sheet, giải phóng một cú bấm, chặn chéo nhà máy", () => {
   it("Đặt trước ⇒ sheet fleet-zone-reserve; lưu ⇒ {zoneId, deviceId, queueIfFull:true}; đóng; đặt chỗ mới hiện ở thẻ vùng", async () => {
     const user = userEvent.setup();
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=zones");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=zones");
     render(<FleetOrchestration />);
     await user.click(within(zoneCard(2)).getByRole("button", { name: /Đặt trước$/ }));
     const l = await waitLayer("fleet-zone-reserve");
@@ -630,7 +630,7 @@ describe("Fleet — Vùng (G1): đặt trước = sheet, giải phóng một cú
   it("server TỪ CHỐI đặt chỗ ⇒ toast lỗi, sheet GIỮ MỞ (như dialog cũ)", async () => {
     const user = userEvent.setup();
     srv.result["fleet.reserve"] = { ok: false, status: "rejected", message: "full" };
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1");
     render(<FleetOrchestration />);
     const l = await waitLayer("fleet-zone-reserve");
     await user.click(within(l).getByRole("checkbox"));
@@ -648,7 +648,7 @@ describe("Fleet — Vùng (G1): đặt trước = sheet, giải phóng một cú
       shape: { data: { code: "FORBIDDEN", appCode: "SCOPE_MISMATCH", appParams: { entity: "zone", parent: "factory" } } },
     });
     srv.fail["fleet.reserve"] = err;
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=2");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=2");
     render(<FleetOrchestration />);
     const l = await waitLayer("fleet-zone-reserve");
     await user.type(within(l).getByLabelText("Mã thiết bị (robot)"), "9");
@@ -663,7 +663,7 @@ describe("Fleet — Vùng (G1): đặt trước = sheet, giải phóng một cú
 
   it("Giải phóng = MỘT cú bấm, MỘT lượt {deviceId, zoneId}, không dialog", async () => {
     const user = userEvent.setup();
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=zones");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=zones");
     render(<FleetOrchestration />);
     await user.click(within(zoneCard(1)).getByRole("button", { name: "Giải phóng" }));
     await waitFor(() => expect(calls("release")).toEqual([{ deviceId: 7, zoneId: 1 }]));
@@ -672,7 +672,7 @@ describe("Fleet — Vùng (G1): đặt trước = sheet, giải phóng một cú
 
   it("cờ G1 CHƯA RÕ ⇒ Đặt trước khoá + lý do; deep link sheet chỉ báo trạng thái (không form)", async () => {
     srv.status = undefined;
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1");
     render(<FleetOrchestration />);
     const l = await waitLayer("fleet-zone-reserve");
     expect(within(l).getByText("Đang kiểm tra trạng thái tính năng…")).toBeInTheDocument();
@@ -683,7 +683,7 @@ describe("Fleet — Vùng (G1): đặt trước = sheet, giải phóng một cú
 
   it("sheet đã nhập rồi Esc ⇒ hỏi 'Bỏ thay đổi chưa lưu?'", async () => {
     const user = userEvent.setup();
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1");
     render(<FleetOrchestration />);
     const l = await waitLayer("fleet-zone-reserve");
     await user.type(within(l).getByLabelText("Mã thiết bị (robot)"), "4");
@@ -696,7 +696,7 @@ describe("Fleet — bế tắc: chip GHIM + khối ngoài MAIN; xử lý một c
   it("có chu trình ⇒ chip Bế tắc tông lỗi; khối role=alert ở panel phụ (mọi tab); 'Xử lý bế tắc' MỘT lượt, không dialog; bấm chip ⇒ focus khối", async () => {
     const user = userEvent.setup();
     srv.cycles = [[1, 2, 3]];
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=charging");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=charging");
     render(<FleetOrchestration />);
     expect(chip("fleet-deadlocks")!.textContent).toMatch(/Bế tắc\s*1/);
     const block = side().querySelector("[data-fleet-deadlocks]") as HTMLElement;
@@ -747,7 +747,7 @@ describe("Fleet — sổ đăng ký thao tác (sheet, tab Operations cũ)", () =
 
   it("Ánh xạ chương trình (xếp lớp, flyoutId = id thao tác) ⇒ {operationCodeId, programProjectId, deviceKind}; Phân giải ⇒ {code} + chương trình đủ điều kiện", async () => {
     const user = userEvent.setup();
-    window.history.replaceState(null, "", "/fleet-orchestration?flyout=fleet-operations");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?flyout=fleet-operations");
     render(<FleetOrchestration />);
     const reg = await waitLayer("fleet-operations");
     await user.click(within(reg.querySelector('[data-op-id="21"]') as HTMLElement).getByRole("button", { name: "Phân giải" }));
@@ -766,7 +766,7 @@ describe("Fleet — sổ đăng ký thao tác (sheet, tab Operations cũ)", () =
 
   it("deep link ánh xạ chương trình khi cờ G2 CHƯA RÕ ⇒ sheet chỉ báo trạng thái, không form", async () => {
     srv.resStatus = undefined;
-    window.history.replaceState(null, "", "/fleet-orchestration?flyout=fleet-operation-map&flyoutId=21");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?flyout=fleet-operation-map&flyoutId=21");
     render(<FleetOrchestration />);
     const l = await waitLayer("fleet-operation-map");
     expect(within(l).getByText("Đang kiểm tra trạng thái tính năng…")).toBeInTheDocument();
@@ -775,7 +775,7 @@ describe("Fleet — sổ đăng ký thao tác (sheet, tab Operations cũ)", () =
 
   it("cờ G2 ĐANG TẢI ⇒ sổ hiện cổng G2 (đang kiểm tra), 'Thao tác mới' khoá, không có 'Ánh xạ chương trình'", async () => {
     srv.resStatus = undefined;
-    window.history.replaceState(null, "", "/fleet-orchestration?flyout=fleet-operations");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?flyout=fleet-operations");
     render(<FleetOrchestration />);
     const reg = await waitLayer("fleet-operations");
     expect(within(reg).getByTestId("feature-status-loading")).toBeInTheDocument();
@@ -787,7 +787,7 @@ describe("Fleet — sổ đăng ký thao tác (sheet, tab Operations cũ)", () =
 describe("Fleet — Tài nguyên + Sạc (G2): sheet sổ đăng ký, một cú bấm như cũ", () => {
   it("Tài nguyên mới ⇒ sheet: bắt buộc mã; lưu ⇒ payload cũ; đóng; thẻ mới trong danh sách", async () => {
     const user = userEvent.setup();
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=resources");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=resources");
     render(<FleetOrchestration />);
     await user.click(within(side()).getByRole("button", { name: "Tài nguyên mới" }));
     const l = await waitLayer("fleet-resource-new");
@@ -805,7 +805,7 @@ describe("Fleet — Tài nguyên + Sạc (G2): sheet sổ đăng ký, một cú 
 
   it("Đặt trước tài nguyên ⇒ sheet (flyoutId) ⇒ {resourceId, deviceId, queueIfFull}; Giải phóng MỘT lượt {deviceId, resourceId}", async () => {
     const user = userEvent.setup();
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=resources");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=resources");
     render(<FleetOrchestration />);
     const card = side().querySelector('[data-resource-card="31"]') as HTMLElement;
     await user.click(within(card).getByRole("button", { name: "Giải phóng" }));
@@ -822,7 +822,7 @@ describe("Fleet — Tài nguyên + Sạc (G2): sheet sổ đăng ký, một cú 
   it("server TỪ CHỐI chiếm tài nguyên ⇒ toast lỗi, sheet GIỮ MỞ (như dialog cũ)", async () => {
     const user = userEvent.setup();
     srv.result["fleet.reserveResource"] = { ok: false, status: "rejected", message: "busy" };
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=resources&flyout=fleet-resource-reserve&flyoutId=31");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=resources&flyout=fleet-resource-reserve&flyoutId=31");
     render(<FleetOrchestration />);
     const l = await waitLayer("fleet-resource-reserve");
     await user.type(within(l).getByLabelText("Mã thiết bị (robot)"), "8");
@@ -834,7 +834,7 @@ describe("Fleet — Tài nguyên + Sạc (G2): sheet sổ đăng ký, một cú 
 
   it("Trạm sạc mới ⇒ sheet ⇒ payload cũ (mặc định contact); thẻ mới; 'Quét ngay' MỘT lượt, không dialog", async () => {
     const user = userEvent.setup();
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=charging");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=charging");
     render(<FleetOrchestration />);
     await user.click(within(side()).getByRole("button", { name: "Quét ngay" }));
     await waitFor(() => expect(calls("sweepCharging")).toEqual([undefined]));
@@ -854,7 +854,7 @@ describe("Fleet — Tài nguyên + Sạc (G2): sheet sổ đăng ký, một cú 
 
   it("cờ G2 LỖI ⇒ deep link sheet tạo tài nguyên chỉ báo lỗi (role=alert), không form; nút khoá", async () => {
     srv.resStatusError = true;
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=resources&flyout=fleet-resource-new");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=resources&flyout=fleet-resource-new");
     render(<FleetOrchestration />);
     const l = await waitLayer("fleet-resource-new");
     expect(within(l).getByRole("alert")).toHaveTextContent(/Không kiểm tra được trạng thái lớp tài nguyên/);
@@ -867,7 +867,7 @@ describe("Fleet — Tài nguyên + Sạc (G2): sheet sổ đăng ký, một cú 
     srv.fail["fleet.sweepCharging"] = Object.assign(new Error("Fleet resource layer is disabled"), {
       data: { code: "CONFLICT", appCode: "FEATURE_DISABLED", appParams: { feature: "fleetResourceLayer" } },
     });
-    window.history.replaceState(null, "", "/fleet-orchestration?tab=charging");
+    window.history.replaceState(null, "", "/labs/fleet-orchestration?tab=charging");
     render(<FleetOrchestration />);
     await user.click(within(side()).getByRole("button", { name: "Quét ngay" }));
     await waitFor(() => expect(toastSpy.info).toHaveBeenCalledTimes(1));

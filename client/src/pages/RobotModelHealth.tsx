@@ -182,9 +182,9 @@ export default function RobotModelHealth() {
       // `robotAnomalyDetection`); giữ regex làm đường lui cho tuyến chưa di trú.
       const feature = featureKeyOf(e);
       if (feature === "modelAutoRollback" || (feature === undefined && /rollback/i.test(e.message))) {
-        toast.info(t("robotHealth.rollbackFlagOffToast", "Model auto-rollback is disabled (preview). Set AI_MODEL_AUTOROLLBACK_ENABLED=true to evaluate."));
+        toast.info(t("robotHealth.rollbackFlagOffToast", "Model auto-rollback is turned off on the server (preview) — evaluation is refused until an administrator turns it on."));
       } else {
-        toast.info(t("robotHealth.anomalyFlagOffToast", "Robot anomaly detection is disabled (preview). Set AI_ROBOT_ANOMALY_ENABLED=true to scan."));
+        toast.info(t("robotHealth.anomalyFlagOffToast", "Robot anomaly detection is turned off on the server (preview) — scans are refused until an administrator turns it on."));
       }
       void utils.aiRobotAnomaly.status.invalidate();
     } else {
@@ -300,7 +300,7 @@ export default function RobotModelHealth() {
             <span>
               {t(
                 "robotHealth.anomalyFlagOffBanner",
-                "Preview mode: robot anomaly detection is disabled (AI_ROBOT_ANOMALY_ENABLED is off). Reads work; manual scans are blocked until the flag is enabled.",
+                "Preview mode: robot anomaly detection is turned off on the server. Reads work; manual scans are blocked until an administrator turns it on.",
               )}
             </span>
           </div>
@@ -311,7 +311,7 @@ export default function RobotModelHealth() {
             <span>
               {t(
                 "robotHealth.rollbackFlagOffBanner",
-                "Preview mode: model auto-rollback is disabled (AI_MODEL_AUTOROLLBACK_ENABLED is off). Reads + manual rollback work; automatic evaluation is blocked until the flag is enabled.",
+                "Preview mode: model auto-rollback is turned off on the server. Reads + manual rollback work; automatic evaluation is blocked until an administrator turns it on.",
               )}
             </span>
           </div>

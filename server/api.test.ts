@@ -300,6 +300,24 @@ describe("Auth Router", () => {
     expect(result?.email).toBe("test@example.com");
   });
 
+  // doc 81 Đợt 3 final wave (M-3 / Task 0 O2) — `auth.me.twoFactorRequired` = chính sách 2FA của triển khai (`batBuoc2FA()`):
+  // client dùng nó để khoá/cảnh báo "phải bật 2FA" ĐÚNG như server. CHỈ chuỗi "0" tắt; vắng biến = bắt buộc.
+  it("auth.me.twoFactorRequired theo AUTH_2FA_BAT_BUOC (chỉ \"0\" tắt; vắng = bắt buộc)", async () => {
+    const saved = process.env.AUTH_2FA_BAT_BUOC;
+    try {
+      const caller = appRouter.createCaller(createUserContext());
+      process.env.AUTH_2FA_BAT_BUOC = "0";
+      expect((await caller.auth.me())?.twoFactorRequired).toBe(false);
+      delete process.env.AUTH_2FA_BAT_BUOC;
+      expect((await caller.auth.me())?.twoFactorRequired).toBe(true);
+      process.env.AUTH_2FA_BAT_BUOC = "1";
+      expect((await caller.auth.me())?.twoFactorRequired).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.AUTH_2FA_BAT_BUOC;
+      else process.env.AUTH_2FA_BAT_BUOC = saved;
+    }
+  });
+
   it("should return null for anonymous request", async () => {
     const ctx = createAnonymousContext();
     const caller = appRouter.createCaller(ctx);

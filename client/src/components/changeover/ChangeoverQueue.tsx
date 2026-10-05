@@ -9,6 +9,8 @@
  *     toast — server là tường thật) và Từ chối (bắt lý do ≥3 ký tự).
  *   • Với người KHÔNG có quyền duyệt, query list bị FORBIDDEN → panel duyệt tự ẨN (retry:false,
  *     không toast — đây là phân quyền bình thường, không phải lỗi).
+ *   • doc 81 Đợt 3 Task 4 — mỗi yêu cầu chờ duyệt có "Giao cho" (cổng machine_control/canEdit, như nút Duyệt) + tên người
+ *     được giao. Được giao ≠ được duyệt: nút Duyệt/Từ chối giữ nguyên cổng 2FA + SoD ở server.
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -23,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ClipboardCheck, Send } from "lucide-react";
+import { AssignmentControl, useAssignments, useCanAssign } from "@/components/engineering/AssignmentControl";
 
 function StatusChip({ status }: { status: string }) {
   const variant =
@@ -81,6 +84,9 @@ export function ChangeoverQueue({ machineId }: { machineId: number | undefined }
   });
 
   const canShowApprover = pending.isSuccess;
+  const pendingIds = (pending.data ?? []).map((r) => r.id);
+  const { byId: assignments } = useAssignments("changeover", pendingIds, canShowApprover);
+  const canAssign = useCanAssign("changeover");
 
   return (
     <Card>
@@ -178,6 +184,7 @@ export function ChangeoverQueue({ machineId }: { machineId: number | undefined }
                       <Badge variant="outline" className="text-[10px]">{String(r.recipeStatus)}</Badge>
                     )}
                     {r.requestNote && <span className="text-xs text-muted-foreground">— {r.requestNote}</span>}
+                    <AssignmentControl compact entityType="changeover" entityId={r.id} assignment={assignments.get(r.id)} canAssign={canAssign} />
                     <div className="ml-auto flex gap-1.5">
                       <Button
                         size="sm"

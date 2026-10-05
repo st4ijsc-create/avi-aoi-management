@@ -51,6 +51,7 @@ import {
   Terminal, ListOrdered, Layers, GitBranch, Hourglass, Activity, HandMetal, Timer, Trash2, CornerDownRight,
 } from "lucide-react";
 import { STEP_META, STEP_KINDS, type StudioStep, type StudioDef, type StepKind } from "./workflowTypes";
+import { useResolvedTheme } from "@/contexts/ThemeContext";
 
 // Slot con của một container (mirror tham số addChild ở page).
 type WfSlot = "steps" | "then" | "else";
@@ -341,6 +342,7 @@ function CanvasInner({
   def, selectedId, onSelect, onDelete, onAddTopLevel, onAddChild, onReorderToSibling, onMoveNode, t,
   fill = false, showPalette = true,
 }: WorkflowGraphCanvasProps) {
+  const colorMode = useResolvedTheme(); // doc 81 Đợt 3 Task 0 (D4) — canvas theo theme app, không mặc định "light"
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
   // final wave (T11b minor 5) — nội dung có thể mount vào host DOM đang tách (slot portal của WorkbenchShell) hoặc tab
@@ -431,6 +433,7 @@ function CanvasInner({
         className={`${fill ? "min-h-0 flex-1" : "h-[520px]"} w-full overflow-hidden rounded-md border border-border bg-muted/20`}
       >
         <ReactFlow
+          colorMode={colorMode}
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}

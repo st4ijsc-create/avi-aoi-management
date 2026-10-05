@@ -11,7 +11,18 @@ import { cleanup, render } from "@testing-library/react";
 import { Route, Router, Switch, useLocation, useRouter } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import APP_SRC from "../App.tsx?raw";
-import { ENGINEERING_LEGACY_REDIRECTS, engineeringLegacyRoutes, legacyRedirectTarget } from "./engineeringLegacyRedirects";
+import EQ_SRC from "../pages/EquipmentIntegration.tsx?raw";
+import SAFETY_SRC from "../pages/SafetyWorkforce.tsx?raw";
+import {
+  ENGINEERING_LEGACY_REDIRECTS,
+  ENGINEERING_LEGACY_TAB_REDIRECTS,
+  LegacyTabRedirectGate,
+  PRODUCTION_SHIFTS_PATH,
+  engineeringLegacyRoutes,
+  legacyRedirectTarget,
+  legacyTabRedirectTarget,
+  type LegacyTabRedirect,
+} from "./engineeringLegacyRedirects";
 
 afterEach(() => cleanup());
 
@@ -82,5 +93,218 @@ describe("App.tsx dùng đúng bảng này (không còn trang cũ)", () => {
     const nf = APP_SRC.search(/<Route component=\{NotFound\}|<Route>\s*<NotFound|path="\/:rest\*"/);
     expect(at).toBeGreaterThan(0);
     if (nf > 0) expect(at).toBeLessThan(nf);
+  });
+});
+
+// ── Doc 81 Đợt 3 Task 1 — tab cũ của Equipment Integration dời sang Recipes ────────────────────────────────────
+// `/equipment-integration?tab=recipes|history` ⇒ `/recipes?tab=versions|history`, query cũ NGUYÊN VĂN (giữ `?code=` /
+// `?machineId=` / mọi tham số khác), chỉ GIÁ TRỊ của `tab` đổi; REPLACE. Tab còn lại (status/acquisition) KHÔNG chuyển.
+function GateProbe() {
+  const [path] = useLocation();
+  const router = useRouter();
+  const search = router.searchHook(router);
+  return <output data-testid="where">{search ? `${path}?${search}` : path}</output>;
+}
+function goGate(start: string, when?: boolean | ((r: LegacyTabRedirect) => boolean)) {
+  const loc = memoryLocation({ path: start, record: true });
+  const r = render(
+    <Router hook={loc.hook} searchHook={loc.searchHook}>
+      <LegacyTabRedirectGate from="/equipment-integration" when={when}>
+        <span data-testid="page">trang cũ</span>
+      </LegacyTabRedirectGate>
+      <GateProbe />
+    </Router>,
+  );
+  return { where: () => r.getByTestId("where").textContent, page: () => r.queryByTestId("page"), history: loc.history! };
+}
+
+describe("chuyển hướng theo TAB (Đợt 3 Task 1): Integration → Recipes", () => {
+  it.each([
+    ["/equipment-integration?tab=recipes&code=RCP-1", "/recipes?tab=versions&code=RCP-1"],
+    ["/equipment-integration?tab=history&machineId=3", "/recipes?tab=history&machineId=3"],
+    ["/equipment-integration?code=A%20B&tab=recipes&x=1&x=2", "/recipes?code=A%20B&tab=versions&x=1&x=2"],
+    ["/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-load&flyoutId=102", "/recipes?tab=versions&code=RCP-1&flyout=eq-recipe-load&flyoutId=102"],
+    // `tab` lặp: URLSearchParams lấy giá trị ĐẦU ⇒ chuyển; các `tab` gộp về một ở vị trí đầu
+    ["/equipment-integration?tab=history&code=C&tab=status", "/recipes?tab=history&code=C"],
+  ])("%s ⇒ %s (REPLACE, query giữ nguyên văn)", (start, expected) => {
+    const r = goGate(start);
+    expect(r.where()).toBe(expected);
+    expect(r.history).toEqual([expected]);
+  });
+
+  it.each([
+    "/equipment-integration",
+    "/equipment-integration?tab=status&connector=adapter:ot-s7",
+    "/equipment-integration?tab=bogus",
+  ])("%s — tab còn ở Integration ⇒ KHÔNG chuyển, dựng trang", (start) => {
+    const r = goGate(start);
+    expect(r.where()).toBe(start);
+    expect(r.page()).toBeTruthy();
+  });
+
+  it("Fix round 1 (R-3-b): `when={false}` (người dùng KHÔNG mở được đích) ⇒ KHÔNG chuyển, dựng trang cũ; mặc định/`true` ⇒ chuyển", () => {
+    let r = goGate("/equipment-integration?tab=history&machineId=3", false);
+    expect(r.where()).toBe("/equipment-integration?tab=history&machineId=3");
+    expect(r.page()).toBeTruthy();
+    cleanup();
+    r = goGate("/equipment-integration?tab=history&machineId=3", true);
+    expect(r.where()).toBe("/recipes?tab=history&machineId=3");
+  });
+
+  it("chỉ áp cho đúng đường dẫn `from` (cổng nằm ở trang khác thì không chuyển)", () => {
+    const r = goGate("/somewhere-else?tab=recipes&code=X");
+    expect(r.where()).toBe("/somewhere-else?tab=recipes&code=X");
+    expect(r.page()).toBeTruthy();
+  });
+
+  it("bảng: đúng đích + giá trị tab đích (Đợt 3 Task 2: acquisition ⇒ trang KHÔNG tab, bỏ `tab`); legacyTabRedirectTarget chép nguyên văn phần còn lại", () => {
+    const m = Object.fromEntries(ENGINEERING_LEGACY_TAB_REDIRECTS.map((r) => [`${r.from}?tab=${r.tab}`, r.tabTo ? `${r.to}?tab=${r.tabTo}` : r.to]));
+    expect(m).toEqual({
+      "/equipment-integration?tab=recipes": "/recipes?tab=versions",
+      "/equipment-integration?tab=history": "/recipes?tab=history",
+      "/equipment-integration?tab=acquisition": "/vision/acquisition",
+      // Đợt 3 Task 3 — bảng nhân lực của Safety ⇒ Sản xuất › Ca (trang KHÔNG tab).
+      "/safety-workforce?tab=workforce": "/production/shifts",
+    });
+    expect(legacyTabRedirectTarget("/r", "?a=%2F&tab=x&b=1", "h")).toBe("/r?a=%2F&tab=h&b=1");
+    expect(legacyTabRedirectTarget("/r", "a=1", "h")).toBe("/r?tab=h&a=1");
+    // không có tab đích ⇒ GỠ mọi `tab`, phần còn lại nguyên văn; không còn gì ⇒ đường dẫn trần
+    expect(legacyTabRedirectTarget("/r", "?a=%2F&tab=x&b=1&tab=y", undefined)).toBe("/r?a=%2F&b=1");
+    expect(legacyTabRedirectTarget("/r", "?tab=x", undefined)).toBe("/r");
+  });
+
+  it("EquipmentIntegration.tsx bọc trang bằng LegacyTabRedirectGate từ đúng đường dẫn của nó; mỗi đích chỉ chuyển người MỞ ĐƯỢC đích (R-3-b; Đợt 3 Task 2)", () => {
+    // ĐỔI BỘ CHỌN (Đợt 3 Task 2): `when` thành hàm theo từng chuyển hướng — /recipes ⇒ machine_control/canView (R-3-b),
+    // /vision/acquisition ⇒ machine_alerts/canView (cổng của trang mới, QĐ-3c).
+    expect(EQ_SRC).toMatch(/<LegacyTabRedirectGate from=\{BASE_PATH\} when=\{\(r\) => \(r\.to === VISION_ACQUISITION_PATH \? canViewAcq : canOpenRecipes\)\}>/);
+    // Final wave (Ruling R-3-h) — ĐỔI BỘ CHỌN: "mở được /recipes" = quyền machine_control/canView VÀ giấy phép route /recipes
+    // (`isRouteAllowed` của useLicenseModules — cùng vị từ của nav/RouteGuard); hành vi kiểm ở EquipmentIntegration.layout.dom.test.
+    expect(EQ_SRC).toMatch(/const permitted = hasPermission\("machine_control", "canView"\);/);
+    expect(EQ_SRC).toMatch(/const canOpenRecipes = permitted && isRouteAllowed\(RECIPES_PATH\);/);
+    expect(EQ_SRC).toMatch(/const RECIPES_PATH = "\/recipes";/);
+    expect(EQ_SRC).toMatch(/const \{ canOpenRecipes \} = useRecipesAccess\(\);/);
+    expect(EQ_SRC).toMatch(/const canViewAcq = hasPermission\("machine_alerts", "canView"\);/);
+    expect(EQ_SRC).toMatch(/const BASE_PATH = "\/equipment-integration";/);
+  });
+});
+
+// ── Doc 81 Đợt 3 Task 2 — tab "Worker thu ảnh" của Integration dời sang Vision › Thu ảnh (trang KHÔNG tab) ───────────
+describe("chuyển hướng theo TAB (Đợt 3 Task 2): Integration ?tab=acquisition → /vision/acquisition", () => {
+  it.each([
+    ["/equipment-integration?tab=acquisition", "/vision/acquisition"],
+    ["/equipment-integration?tab=acquisition&flyout=acq-start", "/vision/acquisition?flyout=acq-start"],
+    ["/equipment-integration?x=a%20b&tab=acquisition&x=2", "/vision/acquisition?x=a%20b&x=2"],
+  ])("%s ⇒ %s (REPLACE, query giữ nguyên văn, bỏ `tab`)", (start, expected) => {
+    const r = goGate(start);
+    expect(r.where()).toBe(expected);
+    expect(r.history).toEqual([expected]);
+  });
+
+  it("`when` theo từng đích: người KHÔNG mở được /vision/acquisition ở lại (không bị đẩy vào trang từ chối); đích khác không ảnh hưởng", () => {
+    const onlyRecipes = (r: LegacyTabRedirect) => r.to === "/recipes";
+    let g = goGate("/equipment-integration?tab=acquisition&flyout=acq-start", onlyRecipes);
+    expect(g.where()).toBe("/equipment-integration?tab=acquisition&flyout=acq-start");
+    expect(g.page()).toBeTruthy();
+    cleanup();
+    g = goGate("/equipment-integration?tab=history&machineId=3", onlyRecipes);
+    expect(g.where()).toBe("/recipes?tab=history&machineId=3");
+    cleanup();
+    g = goGate("/equipment-integration?tab=history&machineId=3", (r) => r.to !== "/recipes");
+    expect(g.where()).toBe("/equipment-integration?tab=history&machineId=3");
+    cleanup();
+    g = goGate("/equipment-integration?tab=acquisition", (r) => r.to !== "/recipes");
+    expect(g.where()).toBe("/vision/acquisition");
+  });
+});
+
+// ── Doc 81 Đợt 3 Task 3 — tab "Nhân lực" của Safety dời sang Sản xuất › Ca (trang KHÔNG tab) ────────────────────────────
+function goSafety(start: string, when?: boolean | ((r: LegacyTabRedirect) => boolean)) {
+  const loc = memoryLocation({ path: start, record: true });
+  const r = render(
+    <Router hook={loc.hook} searchHook={loc.searchHook}>
+      <LegacyTabRedirectGate from="/safety-workforce" when={when}>
+        <span data-testid="page">trang cũ</span>
+      </LegacyTabRedirectGate>
+      <GateProbe />
+    </Router>,
+  );
+  return { where: () => r.getByTestId("where").textContent, page: () => r.queryByTestId("page"), history: loc.history! };
+}
+
+describe("chuyển hướng theo TAB (Đợt 3 Task 3): Safety ?tab=workforce → /production/shifts", () => {
+  it("đích là hằng PRODUCTION_SHIFTS_PATH = /production/shifts", () => {
+    expect(PRODUCTION_SHIFTS_PATH).toBe("/production/shifts");
+  });
+
+  it.each([
+    ["/safety-workforce?tab=workforce", "/production/shifts"],
+    ["/safety-workforce?tab=workforce&flyout=workforce-reassign&flyoutId=3", "/production/shifts?flyout=workforce-reassign&flyoutId=3"],
+    ["/safety-workforce?x=a%20b&tab=workforce&x=2", "/production/shifts?x=a%20b&x=2"],
+    // Deep link SHEET phân công cũ (không kèm `tab`, sheet mở trên tab mặc định) — sheet đã dời theo ⇒ cũng chuyển.
+    ["/safety-workforce?flyout=workforce-assign", "/production/shifts?flyout=workforce-assign"],
+    ["/safety-workforce?tab=cockpit&flyout=workforce-reassign&flyoutId=5", "/production/shifts?flyout=workforce-reassign&flyoutId=5"],
+  ])("%s ⇒ %s (REPLACE, query giữ nguyên văn, bỏ `tab`)", (start, expected) => {
+    const r = goSafety(start);
+    expect(r.where()).toBe(expected);
+    expect(r.history).toEqual([expected]);
+  });
+
+  it.each([
+    "/safety-workforce",
+    "/safety-workforce?tab=cockpit",
+    "/safety-workforce?filter=pending",
+    // Phối hợp Ở LẠI Safety: sheet bắt đầu phối hợp và sheet báo cáo tiệm cận KHÔNG chuyển.
+    "/safety-workforce?flyout=collab-start",
+    "/safety-workforce?flyout=safety-proximity",
+  ])("%s — nội dung còn ở Safety ⇒ KHÔNG chuyển, dựng trang", (start) => {
+    const r = goSafety(start);
+    expect(r.where()).toBe(start);
+    expect(r.page()).toBeTruthy();
+  });
+
+  it("`when` = false (người KHÔNG mở được /production/shifts) ⇒ ở lại Safety như cũ; bảng Integration không bị ảnh hưởng", () => {
+    let g = goSafety("/safety-workforce?tab=workforce&flyout=workforce-assign", false);
+    expect(g.where()).toBe("/safety-workforce?tab=workforce&flyout=workforce-assign");
+    expect(g.page()).toBeTruthy();
+    cleanup();
+    // flyout của Safety không làm Integration chuyển hướng (khớp theo `from`).
+    g = goGate("/equipment-integration?flyout=workforce-assign");
+    expect(g.where()).toBe("/equipment-integration?flyout=workforce-assign");
+  });
+
+  it("SafetyWorkforce.tsx bọc trang bằng LegacyTabRedirectGate từ đúng đường dẫn; chỉ chuyển người MỞ ĐƯỢC /production/shifts (quyền của mục điều hướng đích)", () => {
+    expect(SAFETY_SRC).toMatch(/<LegacyTabRedirectGate from=\{BASE_PATH\} when=\{canOpenShifts\}>/);
+    expect(SAFETY_SRC).toMatch(/const canOpenShifts = [^;]*hasPermission\(getRequiredPermissionForHref\(PRODUCTION_SHIFTS_PATH\)/);
+    expect(SAFETY_SRC).toMatch(/const BASE_PATH = "\/safety-workforce";/);
+  });
+});
+
+// ── Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Fleet dời sang Labs: /fleet-orchestration ⇒ /labs/fleet-orchestration, query NGUYÊN VĂN ──
+// Cùng trang, chỉ đổi đường dẫn ⇒ không thêm tham số mặc định nào; deep link deadlock (?filter=deadlock), tab (?tab=) và sheet
+// (?flyout=&flyoutId=) đi tiếp như cũ. Đây là LƯỚI AN TOÀN: mọi link trong mã đã trỏ thẳng route mới.
+describe("chuyển hướng (Đợt 3 Task 5): /fleet-orchestration → /labs/fleet-orchestration", () => {
+  it.each([
+    ["/fleet-orchestration?filter=deadlock", "/labs/fleet-orchestration?filter=deadlock"],
+    ["/fleet-orchestration?tab=zones", "/labs/fleet-orchestration?tab=zones"],
+    ["/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1", "/labs/fleet-orchestration?tab=zones&flyout=fleet-zone-reserve&flyoutId=1"],
+    ["/fleet-orchestration?flyout=fleet-task-assign&flyoutId=3", "/labs/fleet-orchestration?flyout=fleet-task-assign&flyoutId=3"],
+    ["/fleet-orchestration?q=a%20b&tab=map&tab=charging", "/labs/fleet-orchestration?q=a%20b&tab=map&tab=charging"],
+    ["/fleet-orchestration", "/labs/fleet-orchestration"],
+  ])("%s ⇒ %s (REPLACE)", (start, expected) => {
+    const r = go(start);
+    expect(r.where()).toBe(expected);
+    expect(r.history).toEqual([expected]);
+  });
+
+  it("bảng: đích /labs/fleet-orchestration, KHÔNG tham số mặc định; đánh dấu đổi tên (Ghim/Gần đây cũ theo sang)", () => {
+    const r = ENGINEERING_LEGACY_REDIRECTS.find((x) => x.from === "/fleet-orchestration");
+    expect(r).toEqual({ from: "/fleet-orchestration", to: "/labs/fleet-orchestration", add: {}, rename: true });
+  });
+
+  it("App.tsx: route mới có RouteGuard navHref của CHÍNH nó + AIPageWrapper + FleetOrchestration; KHÔNG còn route trang ở URL cũ", () => {
+    expect(APP_SRC).toMatch(
+      /<Route path="\/labs\/fleet-orchestration"><RouteGuard navHref="\/labs\/fleet-orchestration"><AIPageWrapper><FleetOrchestration \/><\/AIPageWrapper><\/RouteGuard><\/Route>/,
+    );
+    expect(APP_SRC).not.toMatch(/<Route path="\/fleet-orchestration"/);
   });
 });

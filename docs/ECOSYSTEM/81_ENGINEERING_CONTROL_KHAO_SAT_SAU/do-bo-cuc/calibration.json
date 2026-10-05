@@ -265,18 +265,19 @@
      "x": 288,
      "y": 120,
      "w": 1288,
-     "h": 818
+     "h": 786
     }
    ],
-   "areaPx": 1053584,
+   "areaPx": 1012368,
    "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
-   "gitHead": "eb1e804de",
-   "at": "2026-10-03T07:18:59.725Z",
+   "gitHead": "2fb3804f9",
+   "gitDirty": [],
+   "at": "2026-10-05T06:55:34.190Z",
    "previous": {
-    "mainTop": 482,
-    "areaPx": 1391040,
-    "attrSel": "div[data-layout-main=\"equipment-standards\"]@EquipmentStandards.tsx",
-    "gitHead": "ffd355edc"
+    "mainTop": 120,
+    "areaPx": 1053584,
+    "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+    "gitHead": "eb1e804de"
    }
   },
   "equipment-standards|1366|n/a": {
@@ -289,18 +290,19 @@
      "x": 288,
      "y": 120,
      "w": 1054,
-     "h": 636
+     "h": 604
     }
    ],
-   "areaPx": 670344,
+   "areaPx": 636616,
    "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
-   "gitHead": "eb1e804de",
-   "at": "2026-10-03T07:18:59.725Z",
+   "gitHead": "2fb3804f9",
+   "gitDirty": [],
+   "at": "2026-10-05T06:55:34.190Z",
    "previous": {
-    "mainTop": 482,
-    "areaPx": 1138320,
-    "attrSel": "div[data-layout-main=\"equipment-standards\"]@EquipmentStandards.tsx",
-    "gitHead": "ffd355edc"
+    "mainTop": 120,
+    "areaPx": 670344,
+    "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+    "gitHead": "eb1e804de"
    }
   },
   "fleet-orchestration|1600|n/a": {
@@ -752,22 +754,19 @@
      "x": 288,
      "y": 120,
      "w": 1288,
-     "h": 717
+     "h": 685
     }
    ],
-   "areaPx": 923496,
+   "areaPx": 882280,
    "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
-   "gitHead": "d1ff678b2",
-   "gitDirty": [
-    "client/src/pages/EngineeringChanges.tsx",
-    "client/src/pages/FleetOrchestration.layout.dom.test.tsx",
-    "client/src/pages/FleetOrchestration.tsx",
-    "scripts/ui-metrics/README.md",
-    "scripts/ui-metrics/engineeringLayout.mjs"
-   ],
-   "at": "2026-10-03T23:13:45.566Z",
-   "fromReference": {
-    "parentElement": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx"
+   "gitHead": "2fb3804f9",
+   "gitDirty": [],
+   "at": "2026-10-05T06:55:34.190Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 923496,
+    "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+    "gitHead": "d1ff678b2"
    }
   },
   "equipment-standards-alarms|1366|n/a": {
@@ -780,22 +779,127 @@
      "x": 288,
      "y": 120,
      "w": 1054,
-     "h": 717
+     "h": 685
     }
    ],
-   "areaPx": 755718,
+   "areaPx": 721990,
    "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
-   "gitHead": "d1ff678b2",
+   "gitHead": "2fb3804f9",
+   "gitDirty": [],
+   "at": "2026-10-05T06:55:34.190Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 755718,
+    "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+    "gitHead": "d1ff678b2"
+   }
+  },
+  "vision-acquisition|1600|n/a": {
+   "screen": "vision-acquisition",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 192
+    }
+   ],
+   "areaPx": 247296,
+   "attrSel": "div[data-layout-main=\"vision-acquisition\"]@CockpitLayout.tsx",
+   "gitHead": "e8665be02",
+   "gitDirty": [],
+   "at": "2026-10-05T07:44:52.424Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 252448,
+    "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+    "gitHead": "85c225399"
+   }
+  },
+  "vision-acquisition|1366|n/a": {
+   "screen": "vision-acquisition",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 192
+    }
+   ],
+   "areaPx": 202368,
+   "attrSel": "div[data-layout-main=\"vision-acquisition\"]@CockpitLayout.tsx",
+   "gitHead": "e8665be02",
+   "gitDirty": [],
+   "at": "2026-10-05T07:44:52.424Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 206584,
+    "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+    "gitHead": "85c225399"
+   }
+  },
+  "production-shifts|1600|n/a": {
+   "screen": "production-shifts",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 792
+    }
+   ],
+   "areaPx": 741312,
+   "attrSel": "div[data-layout-main=\"production-shifts\"]@CockpitLayout.tsx",
+   "gitHead": "eae98d96a",
    "gitDirty": [
-    "client/src/pages/EngineeringChanges.tsx",
-    "client/src/pages/FleetOrchestration.layout.dom.test.tsx",
-    "client/src/pages/FleetOrchestration.tsx",
+    "client/src/pages/ProductionShifts.tsx",
     "scripts/ui-metrics/README.md",
     "scripts/ui-metrics/engineeringLayout.mjs"
    ],
-   "at": "2026-10-03T23:13:45.566Z",
-   "fromReference": {
-    "parentElement": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx"
+   "at": "2026-10-05T10:08:53.381Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 876096,
+    "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+    "gitHead": "6b9c026af"
+   }
+  },
+  "production-shifts|1366|n/a": {
+   "screen": "production-shifts",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 742,
+     "h": 610
+    }
+   ],
+   "areaPx": 452620,
+   "attrSel": "div[data-layout-main=\"production-shifts\"]@CockpitLayout.tsx",
+   "gitHead": "eae98d96a",
+   "gitDirty": [
+    "client/src/pages/ProductionShifts.tsx",
+    "scripts/ui-metrics/README.md",
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-05T10:08:53.381Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 613634,
+    "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+    "gitHead": "6b9c026af"
    }
   }
  }

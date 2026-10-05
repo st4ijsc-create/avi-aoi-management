@@ -738,11 +738,11 @@ async function computeDeploy(
       ok: true,
       status: "simulated",
       simulated: true,
-      detail: {
-        reason: !dpcDeployEnabled()
-          ? "DPC_DEPLOY_ENABLED is off (default) — recorded as simulated."
-          : "No HITL sign-off (confirmedBy) — recorded as simulated.",
-      },
+      // doc 81 Đợt 3 final wave (Task 0 open item / M-2) — ghi chú hiển thị KHÔNG nêu tên biến môi trường; lý do CÓ MÃ
+      // (`reasonCode`, client dịch `engineering.deployReason.<mã>`) — cùng khuôn `detailJson.reasonCode` của Đợt 1B Task 4.
+      detail: !dpcDeployEnabled()
+        ? { reasonCode: "deploy_gate_off", reason: "Device deploy is turned off on this server (default) — recorded as simulated." }
+        : { reasonCode: "no_hitl_signoff", reason: "No HITL sign-off (confirmedBy) — recorded as simulated." },
     };
   }
 

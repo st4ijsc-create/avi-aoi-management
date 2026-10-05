@@ -351,6 +351,78 @@ describe("WorkbenchShell — leftRail (activity bar) còn ở màn hẹp", () =>
   });
 });
 
+// doc 81 Đợt 3 Task 0 (D1, browser check 2026-10-05) — Copilot mở rồi thu hẹp < 1024 px: tab vẫn ở "Soạn thảo" ⇒
+// Copilot bị giấu trong khi nút AI vẫn báo "mở" ⇒ bấm lần 1 đóng thứ vô hình, lần 2 mới hiện. Hợp đồng mới:
+// `rightActive` (panel phải đang được yêu cầu hiện — Copilot mở) ⇒ vào màn hẹp / nạp ở màn hẹp chọn tab phải;
+// ở màn hẹp RỜI tab phải khi `rightActive` ⇒ `onRightActiveHidden()` (trang đóng Copilot ⇒ nút AI khớp với thứ nhìn thấy).
+describe("D1 — rightActive: màn hẹp hiện panel phải khi nó đang mở; rời tab phải ⇒ báo ẩn", () => {
+  const ui = (o: Partial<WorkbenchShellProps>) => (
+    <main>
+      <WorkbenchShell layoutId="t-d1" userId={1} main={<p>m</p>} left={{ label: "Explorer", content: <p>cây</p> }} right={{ label: "Copilot", content: <p>trợ lý</p>, ai: true }} bottom={{ label: "Vấn đề", content: <p>bảng</p> }} {...o} />
+    </main>
+  );
+  it("rộng + rightActive ⇒ thu hẹp: tab phải được chọn, nội dung phải HIỆN", () => {
+    render(ui({ rightActive: true }));
+    setNarrow(true);
+    expect(screen.getByRole("tab", { name: "Copilot" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("trợ lý")).toBeVisible();
+  });
+  it("nạp ở màn hẹp với rightActive ⇒ tab phải; không rightActive ⇒ vẫn Soạn thảo", () => {
+    presetNarrow(true);
+    const r = render(ui({ rightActive: true }));
+    expect(screen.getByRole("tab", { name: "Copilot" })).toHaveAttribute("aria-selected", "true");
+    r.unmount();
+    render(ui({ rightActive: false }));
+    expect(screen.getByRole("tab", { name: VI.layoutKit.shell.editor })).toHaveAttribute("aria-selected", "true");
+  });
+  it("màn hẹp: rightActive false → true ⇒ chuyển sang tab phải (không cần token)", () => {
+    presetNarrow(true);
+    const r = render(ui({ rightActive: false }));
+    r.rerender(ui({ rightActive: true }));
+    expect(screen.getByRole("tab", { name: "Copilot" })).toHaveAttribute("aria-selected", "true");
+  });
+  it("màn hẹp: rời tab phải khi rightActive ⇒ onRightActiveHidden MỘT lần; rời khi không active ⇒ không gọi", async () => {
+    presetNarrow(true);
+    const user = userEvent.setup();
+    const onHidden = vi.fn();
+    const r = render(ui({ rightActive: true, onRightActiveHidden: onHidden }));
+    await user.click(screen.getByRole("tab", { name: VI.layoutKit.shell.editor }));
+    expect(onHidden).toHaveBeenCalledTimes(1);
+    r.rerender(ui({ rightActive: false, onRightActiveHidden: onHidden }));
+    await user.click(screen.getByRole("tab", { name: "Copilot" }));
+    await user.click(screen.getByRole("tab", { name: "Explorer" }));
+    expect(onHidden).toHaveBeenCalledTimes(1);
+  });
+  it("màn hẹp: chuyển tab do MÃ (ý định mở panel dưới) khi rightActive cũng báo ẩn", () => {
+    presetNarrow(true);
+    const onHidden = vi.fn();
+    const r = render(ui({ rightActive: true, onRightActiveHidden: onHidden, bottom: { label: "Vấn đề", content: <p>bảng</p>, openRequest: 0 } }));
+    r.rerender(ui({ rightActive: true, onRightActiveHidden: onHidden, bottom: { label: "Vấn đề", content: <p>bảng</p>, openRequest: 1 } }));
+    expect(screen.getByRole("tab", { name: "Vấn đề" })).toHaveAttribute("aria-selected", "true");
+    expect(onHidden).toHaveBeenCalledTimes(1);
+  });
+  it("màn rộng: không bao giờ gọi onRightActiveHidden", () => {
+    const onHidden = vi.fn();
+    const r = render(ui({ rightActive: true, onRightActiveHidden: onHidden }));
+    r.rerender(ui({ rightActive: false, onRightActiveHidden: onHidden }));
+    expect(onHidden).not.toHaveBeenCalled();
+  });
+});
+
+// doc 81 Đợt 3 Task 0 (D3) — 375/414 px: tab thứ 4 ("Vấn đề · Build · Deploy") nằm ngoài khung, bị overflow:hidden cắt,
+// không với tới. Dải tab ở màn hẹp XUỐNG DÒNG thay vì tràn (jsdom không dựng layout ⇒ khoá trên lớp; px thật do trình duyệt đo).
+describe("D3 — màn hẹp: dải tab vùng làm việc xuống dòng, không cắt tab", () => {
+  it("tablist có flex-wrap và cao tự do (không khoá h-9)", () => {
+    presetNarrow(true);
+    renderShell();
+    const list = screen.getByRole("tablist", { name: VI.layoutKit.shell.narrowLabel });
+    const cls = list.className.split(/\s+/);
+    expect(cls).toContain("flex-wrap");
+    expect(cls).toContain("h-auto");
+    expect(cls).not.toContain("h-9");
+  });
+});
+
 describe("final wave (T5 minor) — màn hẹp: ý định mở panel dưới chuyển sang tab của nó", () => {
   it("< 1024 px: openRequest đổi ⇒ tab panel dưới được chọn (trước: bị bỏ qua); giá trị ban đầu không chuyển", () => {
     presetNarrow(true);

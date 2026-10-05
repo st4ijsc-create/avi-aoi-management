@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile, useIsTablet } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, LayoutGrid } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, Layers, Sparkles, LayoutGrid, TestTube2 } from "lucide-react";
 import { CascadingNav, MobileDrillNav } from "./CascadingNav";
 import { BottomNav } from "./BottomNav";
 import { CommandPalette } from "./CommandPalette";
@@ -45,7 +45,7 @@ import { useShellChromeHeight } from "./useShellChromeHeight";
 import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { NavGroup, NavItem, getFilteredNavGroups, getSearchNavGroups, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
+import { NavGroup, NavItem, filterNavGroupsByLicense, getFilteredNavGroups, getSearchNavGroups, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import {
   Breadcrumb,
@@ -56,6 +56,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useNavMode } from "@/hooks/useNavMode";
+import { useShowLabs } from "@/hooks/useShowLabs";
 import { useAppLauncherMode } from "@/hooks/useAppLauncherMode";
 import { useActiveApp } from "@/hooks/useActiveApp";
 import { scopeGroupsToApp, listApps, resolveAppLandingHref, type AppDescriptor } from "@/lib/apps";
@@ -280,13 +281,18 @@ function ShellBreadcrumb({ crumbs, inHeader }: { crumbs: Crumb[]; inHeader: bool
           // Trong top bar hẹp (< 100rem bề rộng TOP BAR, container query `topbar`): mục giữa (section, chữ thuần — không phải link) ẩn để nhường chỗ
           // cho mục cha có link (module) và trang hiện tại; trang hiện tại co ít nhất.
           const middleText = inHeader && !isLast && i > 0 && crumb.href == null;
+          // doc 81 Đợt 3 Task 0 (D5) — mục cha có link: khi vùng breadcrumb < 12rem (container `crumb`) thì ẩn hẳn, nhường
+          // chỗ cho trang hiện tại (không để một mẩu "K…" và không đẩy trang hiện tại tràn khỏi vùng).
+          const parentLink = inHeader && !isLast && !middleText;
           return (
             <Fragment key={`${crumb.label}-${i}`}>
               <BreadcrumbItem
                 className={cn(
-                  inHeader && "min-w-0",
-                  inHeader && (isLast ? "shrink-[0.3]" : "max-w-[9rem] shrink"),
+                  // doc 81 Đợt 3 Task 0 (D5) — trang hiện tại KHÔNG co (trước shrink-[0.3]: 1366 + thanh bên mở cắt
+                  // "Điều phối robot" 77/98 px); chỉ cắt khi dài hơn cả vùng breadcrumb (max-w-full). Mục cha co trước.
+                  inHeader && (isLast ? "shrink-0 max-w-full" : "min-w-0 max-w-[9rem] shrink"),
                   middleText && "hidden @min-[100rem]/topbar:inline-flex",
+                  parentLink && "hidden @min-[12rem]/crumb:inline-flex",
                 )}
               >
                 {isLast || crumb.href == null ? (
@@ -297,7 +303,11 @@ function ShellBreadcrumb({ crumbs, inHeader }: { crumbs: Crumb[]; inHeader: bool
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>
-              {!isLast && <BreadcrumbSeparator className={cn(middleText && "hidden @min-[100rem]/topbar:list-item")} />}
+              {!isLast && (
+                <BreadcrumbSeparator
+                  className={cn(middleText && "hidden @min-[100rem]/topbar:list-item", parentLink && "hidden @min-[12rem]/crumb:list-item")}
+                />
+              )}
             </Fragment>
           );
         })}
@@ -403,10 +413,13 @@ function DashboardLayoutContent({
   const { hasPermission, hasAnyCategoryPermission } = usePermissions();
 
   // License module gating - filter groups by allowed modules
-  const { isNavGroupAllowed, isRouteAllowed: isLicenseRouteAllowed, allowedModules } = useLicenseModules();
+  const { isNavGroupAllowed, isModuleAllowed, isRouteAllowed: isLicenseRouteAllowed, allowedModules } = useLicenseModules();
 
   // doc 22 P4 — Simple vs Advanced menu mode (persisted; default per role).
   const { mode: navMode, toggleMode } = useNavMode(user?.role);
+  // doc 81 Đợt 3 Task 5 ([QĐ-3b]) — "Hiện Labs" theo NGƯỜI DÙNG (mặc định ẩn). Chỉ lọc thanh bên/menu điện thoại/BottomNav;
+  // ⌘K (searchGroups), RouteGuard, ô app launcher và deep link KHÔNG qua lớp này.
+  const { showLabs, toggleShowLabs } = useShowLabs(user?.id);
   // doc 64 IA-10 S3 — trục có selection? (cho hàng chip standalone khi breadcrumb ẩn).
   const { axis: assetAxis } = useAssetScope();
   const hasAssetAxis =
@@ -415,13 +428,12 @@ function DashboardLayoutContent({
   // Filter groups based on user role + granular permissions + license modules.
   // `accessibleGroups` = everything this user COULD see; `visibleGroups` then also
   // applies the Simple/Advanced mode filter (Simple hides engineering-heavy surface).
-  const accessibleGroups = getFilteredNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
-    .filter(group => isNavGroupAllowed(group.id))
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item => isLicenseRouteAllowed(item.href)),
-    }))
-    .filter(group => group.items.length > 0);
+  // doc 81 Đợt 3 Task 2 — mục có `licenseModule` (Vision › Thu ảnh: MOD_OT_CONTROL, không MOD_AI) lọc theo giấy phép
+  // của chính nó; mọi mục khác giữ luật cũ (nhóm → module, rồi route).
+  const accessibleGroups = filterNavGroupsByLicense(
+    getFilteredNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any),
+    isNavGroupAllowed, isModuleAllowed, isLicenseRouteAllowed,
+  );
 
   // Only offer the Advanced toggle when the user actually has advanced surface to reveal.
   const showModeToggle = hasAdvancedContent(accessibleGroups);
@@ -431,22 +443,20 @@ function DashboardLayoutContent({
   // ALL accessible apps. When the flag is OFF, everything behaves exactly as before.
   // doc 81 Đợt 2 Task 2 — chế độ Đơn giản KHÔNG được để thanh bên trống (supervisor ở app Kỹ thuật):
   // rỗng ⇒ hiện danh sách đầy đủ của cùng phạm vi (đã lọc vai/quyền/giấy phép) + ghi chú.
-  const { visible: visibleGroups, sidebar: sidebarGroups, simpleFallback } = resolveSidebarGroups({
+  const { visible: visibleGroups, sidebar: sidebarGroups, simpleFallback, labsAvailable } = resolveSidebarGroups({
     accessible: accessibleGroups,
     mode: navMode,
     launcherOn,
     appId: activeApp.appId,
+    showLabs,
   });
   // doc 63 (AUD-05 / IA-09) — ⌘K searches the UNCOLLAPSED accessible set (incl. the 28
   // rows folded into hubs), so a page hidden from the rail is still findable by name.
   // Same license/nav-group filtering as the sidebar, minus the hub-collapse step.
-  const searchAccessibleGroups = getSearchNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
-    .filter(group => isNavGroupAllowed(group.id))
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item => isLicenseRouteAllowed(item.href)),
-    }))
-    .filter(group => group.items.length > 0);
+  const searchAccessibleGroups = filterNavGroupsByLicense(
+    getSearchNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any),
+    isNavGroupAllowed, isModuleAllowed, isLicenseRouteAllowed,
+  );
   const searchGroups = searchAccessibleGroups;
 
   // doc 40 Lan — RBAC cho App Launcher: một app "truy cập được" khi là core, HOẶC còn ≥1
@@ -608,6 +618,27 @@ function DashboardLayoutContent({
                 </span>
               </button>
             )}
+            {/* doc 81 Đợt 3 Task 5 ([QĐ-3b]) — công tắc "Hiện Labs" (nhớ theo người dùng). Chỉ hiện khi thanh bên CÓ mục Labs
+                để hiện (cùng chế độ + phạm vi app); icon-only khi rail thu gọn. */}
+            {labsAvailable && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showLabs}
+                data-nav-labs-toggle=""
+                onClick={toggleShowLabs}
+                title={t("nav.labsToggleHint", "Hiện các màn thử nghiệm (Labs) trong menu — chỉ cho bạn")}
+                className="mb-2 flex min-h-10 items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <TestTube2 className={cn("h-4 w-4 shrink-0", showLabs ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
+                <span className="flex-1 min-w-0 text-sm text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+                  {t("nav.showLabs", "Hiện Labs")}
+                </span>
+                <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  {showLabs ? t("nav.labsOn", "Bật") : t("nav.labsOff", "Tắt")}
+                </span>
+              </button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -722,7 +753,7 @@ function DashboardLayoutContent({
           <div
             data-shell-context=""
             data-shell-crumb={crumbInHeader ? "" : undefined}
-            className={cn("flex min-w-0 flex-1 items-center", crumbInHeader && !licCritical && "xl:min-w-40")}
+            className={cn("@container/crumb flex min-w-0 flex-1 items-center", crumbInHeader && !licCritical && "xl:min-w-40")}
           >
             {/* M2: breadcrumb giữ ≥160 px từ lg (chip thường gộp "+N" trước); chỉ khi có chip license
                 nghiêm trọng (R-2-i, không bao giờ cắt) thì breadcrumb nhường trước. */}

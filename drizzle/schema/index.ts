@@ -62,6 +62,7 @@ export * from "./lineMaterials"; // doc 35 W4-C — feeder-verify + MSD floor-li
 export * from "./maintenanceParts"; // doc 35 W4-A — work-order spare-parts consumption ledger
 export * from "./ncr"; // doc 35 W4-B — nonconformance reports + golden-revalidation flags
 export * from "./ecn"; // doc 35 W4-D — engineering change control (ECN/ECO)
+export * from "./engineeringAssignment"; // doc 81 Đợt 3 Task 4 (QĐ-3a, mig 0363) — người được giao cho mục chờ duyệt Kỹ thuật
 export * from "./routing"; // doc 35 W4-E — ISA-95 routing master + steps
 export * from "./reportingMart"; // doc 35 W5-B — dim/fact reporting mart
 export * from "./contracts"; // doc 44 W0-E — persisted LDS-L1 contract-schema registry (G2.5)

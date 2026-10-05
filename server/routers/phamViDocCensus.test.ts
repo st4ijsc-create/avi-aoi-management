@@ -586,7 +586,27 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *     vào `phamViDocBaseline.ts`.
  *   ⇒ D +1 · tong +1.
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1129, S: 333, tong: 2291 } as const;
+/*
+ * ★★★ 2026-10-05 (doc 81 Đợt 3 Task 4, giao việc Kỹ thuật — QĐ-3a, mig 0363) — **C 480→482 · D 1129→1131 ·
+ * tong 2291→2295 · A/B/S không đổi.** ĐO bằng chính bộ quét này (HEAD `29405aac1` trước lượt sửa = C 480 · D 1129 ·
+ * tong 2291 — khớp ghim cũ):
+ *   • `engineering.assign`, `engineering.unassign` (mutation, MỚI): **D +2**.
+ *   • `engineering.assignments`, `engineering.assignableUsers` (query, MỚI): **C +2** — đọc `engineering_assignments`
+ *     + `users` (chỉ `{id,name}`), không bảng tenant nào; cổng = quyền xem / quyền giao của TRANG thực thể. Năm
+ *     router thực thể không lọc theo nhà máy (đã trong sổ nợ), nên giao việc giữ ĐÚNG phạm vi của chúng.
+ *   • `oversight.pendingSummary` thêm nhánh `mine` — cùng thủ tục, vẫn nhóm S.
+ *   KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   ⇒ C +2 · D +2 · tong +4.
+ */
+/*
+ * ★★★ 2026-10-05 (doc 81 Đợt 3 Task 4 fix round 1, R-3-f) — **C 482→481 · S 333→334 · tong/A/B/D không đổi.**
+ *   • `engineering.assignments` giờ đọc phân công SỐNG bằng cách NỐI bảng thực thể (`engineering_changes`/`machine_recipes`/
+ *     `interlock_rules`/`changeover_requests`/`orchestration_runs` — vị từ chờ duyệt + đợt chờ duyệt) theo `entityIds` được
+ *     hỏi, và danh tính người gọi rời tay handler (`canViewTarget(ctx.user…)`) ⇒ bộ quét xếp nó sang **S** (chạm bảng
+ *     tenant, danh tính rời tay) thay vì C. Cổng đọc KHÔNG đổi (quyền xem trang); không thêm dòng nào vào sổ nợ.
+ *   ⇒ C −1 · S +1.
+ */
+const GHIM = { A: 341, B: 8, C: 481, D: 1131, S: 334, tong: 2295 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

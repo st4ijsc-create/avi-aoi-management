@@ -2658,7 +2658,8 @@
     "contrast": "对比度",
     "on": "开",
     "off": "关",
-    "hide": "隐藏"
+    "hide": "隐藏",
+    "flagOffToastGeneric": "此功能在服务器上已关闭（预览）— 在管理员开启之前，操作会被拒绝。"
   },
   "corporate": {
     "yieldRatePercent": "良率百分比",
@@ -3990,7 +3991,9 @@
       "reviewArtifact": "审核程序版本",
       "approveInterlockRule": "批准联锁规则",
       "releaseRecipeVersion": "发布配方版本",
-      "rollbackRecipeVersion": "回滚配方版本"
+      "rollbackRecipeVersion": "回滚配方版本",
+      "assignEngineeringItem": "分配待审批事项",
+      "unassignEngineeringItem": "取消分配待审批事项"
     },
     "field": {
       "stopValue": "固定停止值（stopValue）",
@@ -4094,7 +4097,8 @@
       "reviewReason": "驳回原因",
       "gatewayId": "网关",
       "deviceIds": "允许的设备列表",
-      "expectedProjectId": "当前打开的项目（expectedProjectId）"
+      "expectedProjectId": "当前打开的项目（expectedProjectId）",
+      "assigneeUserId": "被分配人"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -4335,7 +4339,12 @@
       "recipeArchived": "此配方版本已归档——请创建新版本，而不是将已归档版本投入生产。",
       "recipeMachineTypeMismatch": "此配方适用的机型与目标设备不同——不能部署到该设备。",
       "recipeRetired": "此版本是被有意归档的（并非仅被新版本替换），或没有任何被替换的记录——不能回滚到该版本。请创建新版本。",
-      "buildNotInProject": "该构建不属于当前打开的项目——请重新选择本项目的构建后再试。未执行任何部署。"
+      "buildNotInProject": "该构建不属于当前打开的项目——请重新选择本项目的构建后再试。未执行任何部署。",
+      "assignTargetNotPending": "只能分配待审批的事项 — 此事项已不在待审批状态。",
+      "assignmentChanged": "负责人刚被他人更改。请刷新以查看当前负责人。",
+      "alreadyAssignedToUser": "此事项已分配给该人员。",
+      "assignmentStoreMissing": "分配功能尚不可用：数据库尚未更新（请联系管理员）。",
+      "assigneeInvalid": "被分配人无效（不存在、已停用或无权查看此事项的页面）。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -6461,7 +6470,8 @@
       "operationsControl": "运行与控制",
       "safety": "安全",
       "standardsIntegration": "标准与集成",
-      "twin": "孪生与仿真"
+      "twin": "孪生与仿真",
+      "labs": "Labs — 实验性"
     },
     "skipToContent": "跳到主要内容",
     "searchPlaceholder": "搜索页面、命令…",
@@ -6905,11 +6915,15 @@
     "equipmentStandards": "设备标准",
     "equipmentStandardsDesc": "版本化设备类型层级、ISA-18.2 报警分类法与设备标准委员会（仅查看）",
     "equipmentIntegration": "设备集成",
-    "equipmentIntegrationDesc": "FOCAS/Euromap 集成框架（只读）与配方版本谱系（仅查看）",
+    "equipmentIntegrationDesc": "FOCAS/Euromap 集成框架（只读）与适配器目录",
     "modeSimple": "简易",
     "modeAdvanced": "高级",
     "showAdvanced": "显示高级菜单",
     "showSimple": "简易菜单",
+    "showLabs": "显示 Labs",
+    "labsOn": "开",
+    "labsOff": "关",
+    "labsToggleHint": "在菜单中显示实验性（Labs）页面 — 仅对您生效",
     "beta": "测试版",
     "betaHint": "预览功能 — 在显示实时数据前可能需要先完成设置",
     "betaBanner": "这是预览功能。在显示实时数据前，可能需要完成设置或启用相应开关。",
@@ -6927,7 +6941,7 @@
       "fleetOrchestration": "为移动机器人/AGV 分配任务并管理其通行与充电（预览）",
       "safetyWorkforce": "咨询式安全概览及班次/人力看板（预览）",
       "equipmentStandards": "公司统一的设备类型及标准报警命名（预览）",
-      "equipmentIntegration": "连接 CNC/注塑机及配方版本历史（预览）",
+      "equipmentIntegration": "连接 CNC/注塑机（预览）",
       "rfTestCell": "带机器人+测试仪回放的模拟 RF 测试单元（预览）",
       "cellTwin": "单个生产单元的实时孪生，可观看并回放（预览）",
       "federationDashboard": "跨多个已连接站点/工厂的汇总视图（预览）"
@@ -6997,7 +7011,13 @@
     "twin3d": "3D 工厂",
     "twin3dDesc": "空间索引：在车间中定位设备并查看实时状态",
     "twinStudio": "3D 工厂设计",
-    "twinStudioDesc": "创建建筑、楼层与设备布局；导入图纸；发布版本"
+    "twinStudioDesc": "创建建筑、楼层与设备布局；导入图纸；发布版本",
+    "visionAcquisition": "图像采集",
+    "visionAcquisitionDesc": "采集工作器：启动、监视、停止",
+    "visionAcquisitionAlias": "采集工作器 → 视觉 › 图像采集",
+    "productionShifts": "班次",
+    "productionShiftsDesc": "按班次的操作员分配与现场看板",
+    "productionShiftsAlias": "人力 → 生产 › 班次"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -12147,6 +12167,7 @@
     },
     "error": {
       "title": "助手未能回答",
+      "DISABLED": "此系统上的 AI 编程助手已关闭。如需启用，请联系管理员。",
       "MODEL_OFFLINE": "编程助手暂不可用（模型离线）。请联系管理员。",
       "TOKEN_BUDGET": "助手未能完成回答（处理预算已用尽）。请重试或缩短请求。",
       "CONTEXT_TOO_LARGE": "请求或程序过长，助手无法处理。请缩短后重试。",
@@ -13378,7 +13399,8 @@
       "versions": "版本",
       "approval": "审批",
       "deploy": "部署",
-      "machines": "运行中的机台"
+      "machines": "运行中的机台",
+      "history": "加载历史"
     },
     "params": {
       "version": "当前查看的版本",
@@ -13391,7 +13413,23 @@
     },
     "allCodes": "全部编码",
     "allCodesHint": "取消选择编码——查看所有机台的部署台账",
-    "deployFailed": "部署到 {{machine}} 未能执行"
+    "deployFailed": "部署到 {{machine}} 未能执行",
+    "overviewTabs": "全部机台记录",
+    "loads": {
+      "pickCode": "在左侧列表中选择一个配方代码，查看其在各机台上的加载历史。",
+      "pickMachine": "在页面顶部的“选择一台机器”框中选择机台，查看其加载历史。",
+      "noPermission": "查看加载历史需要机台监控查看权限（machine_monitoring）。",
+      "loadError": "无法读取加载历史。"
+    },
+    "integ": {
+      "flagOff": "设备集成已关闭：发布、回滚版本和记录加载在启用前被阻止。加载历史仍可查看。",
+      "flagOffToast": "设备集成已禁用（预览）— 启用前此操作被阻止。",
+      "failed": "{{action}} {{version}} 未能完成",
+      "loadFailed": "记录加载到 {{machine}} 未能完成",
+      "flagError": "无法检查设备集成是否已启用。集成操作仍可提交，但若该功能已关闭，服务器将拒绝。"
+    },
+    "machineOptional": "机台（可选）",
+    "noMachineOption": "（不绑定机台）"
   },
   "confirmWithReason": {
     "defaultConfirmText": "确认",
@@ -14864,61 +14902,12 @@
   },
   "eqIntegration": {
     "tab": {
-      "acquisition": "采集工作器",
-      "history": "加载历史",
-      "recipes": "配方版本",
-      "status": "连接器目录"
-    },
-    "acq": {
-      "desc": "抓帧 → 质量指标 → 可选按同一标准接入路径提交 NTF。file/mock 源今天即可用；GenICam 在绑定相机驱动前仍为占位。",
-      "flagOff": "实时采集已停用（LIVE_ACQUISITION_ENABLED 关闭）。状态仍可查看；启用该标志前无法启动工作器。",
-      "noPermission": "查看采集工作器需要 machine-alerts 查看权限。",
-      "start": "启动工作器",
-      "stop": "停止",
-      "started": "采集工作器已启动",
-      "stopped": "采集工作器已停止",
-      "empty": "本服务器会话中没有已注册的采集工作器。",
-      "col": {
-        "id": "工作器",
-        "source": "来源",
-        "frames": "帧数",
-        "submitted": "已提交",
-        "errors": "错误",
-        "last": "最近帧 / 错误"
-      },
-      "since": "自",
-      "submits": "提交 NTF",
-      "state": {
-        "running": "运行中",
-        "completed": "已完成",
-        "stopped": "已停止",
-        "error": "错误"
-      },
-      "qualityOk": "质量良好",
-      "qualityBad": "质量差",
-      "sources": "源类型",
-      "startTitle": "启动采集工作器",
-      "startHint": "file 源回放采集目录；mock 生成合成帧。提交会标记为 NTF（'待检'）— 采集不是判定。",
-      "idRequired": "请填写工作器 id。",
-      "dirRequired": "file 源需要目录路径。",
-      "machineRequired": "提交帧需要机台代码。",
-      "kind": "源类型",
-      "directory": "目录（服务器上）",
-      "loop": "循环目录（浸泡测试）",
-      "maxFrames": "最大帧数（0 = 直到停止）",
-      "interval": "间隔（毫秒）",
-      "submitFrames": "将每帧作为标准 NTF 检测提交（需要机台代码）",
-      "assessQuality": "对每帧运行图像质量指标",
-      "liveOffChip": "实时采集已关闭",
-      "aboutChip": "关于采集源"
+      "status": "连接器目录",
+      "readonlyHistory": "版本与加载历史（仅查看）",
+      "recipeHistory": "版本与加载历史"
     },
     "machineCode": "机台代码",
-    "whenToUse": "适用场景 — 浏览厂商集成框架（FOCAS/Euromap）与配方版本谱系。只读元数据，无实时设备。",
-    "recipeStatus": {
-      "draft": "草稿",
-      "released": "已发布",
-      "archived": "已归档"
-    },
+    "whenToUse": "适用场景 — 浏览厂商集成框架（FOCAS/Euromap）与已注册的适配器协议。只读元数据，无实时设备。配方版本与加载历史现位于配方页面。",
     "action": {
       "create": "创建",
       "release": "发布",
@@ -14932,27 +14921,20 @@
       "none": "无"
     },
     "alsoDeploy": "同时写入一条 recipe_deployments 台账记录",
-    "archive": "归档",
-    "archiveTip": "归档此版本",
     "byCode": "配方编码",
     "byMachine": "机器",
     "col": {
       "action": "操作",
       "machine": "机器",
-      "name": "名称",
       "notes": "备注",
       "recipe": "编码 @ 版本",
       "status": "状态",
       "when": "时间",
-      "who": "执行人"
+      "who": "执行人",
+      "name": "名称"
     },
     "configured": "已连接",
-    "create": "创建版本",
-    "createRequired": "编码和名称为必填项。",
-    "createTitle": "新建配方版本（草稿）",
-    "createVersion": "新建版本",
-    "flagOffBanner": "预览模式：设备集成已禁用。读取可用；操作（创建 / 发布 / 归档 / 回滚版本、记录加载）在启用前被阻止。",
-    "flagOffToast": "设备集成已禁用（预览）。设置 EQ_INTEG_ENABLED=true 以执行操作。",
+    "flagOffBanner": "预览模式：设备集成已禁用。读取可用；集成操作（发布 / 回滚配方版本、记录加载 — 现位于配方页面）在启用前被阻止。",
     "flagStatusError": "无法检查设备集成是否已启用 — 在确认前，操作将被禁用。",
     "frameworkNoDevice": "框架 — 未连接设备",
     "frameworkNote": "这是集成框架。它建模真实 FOCAS/Euromap 连接器会映射到统一设备模型的只读字段，但实时数据需要已连接的设备/连接器。在此之前值保持“—”，快照来源为“无”。",
@@ -14963,30 +14945,21 @@
       "configured": "已连接的框架",
       "flag": "标志"
     },
-    "loadHistory": "加载历史",
     "loading": "加载中…",
     "loadRecorded": "配方加载已记录（谱系）",
     "loadTip": "记录该版本已加载到某台机器上（谱系）",
-    "loadVersions": "加载版本",
     "machine": "机器",
-    "machineOptional": "机器（可选）",
     "machineRequired": "请选择一台机器。",
     "needsEditPermission": "发布/回滚需要编辑权限（machine_control/canEdit）。",
     "noAdapters": "未注册适配器协议。",
-    "noMachine": "（无）",
     "noPermission": "您无权查看设备集成。",
     "noReadout": "无读数",
     "notConnected": "未连接",
     "notes": "备注",
     "off": "关闭",
     "on": "开启",
-    "payload": "载荷（JSON）",
-    "payloadInvalid": "载荷不是有效的 JSON。",
-    "payloadObject": "载荷必须是 JSON 对象。",
-    "pickHint": "在上方输入配方编码以列出其不可变版本与谱系操作。",
     "readOnly": "只读",
     "readSnapshot": "读取快照",
-    "recipeCode": "配方编码",
     "recordLoad": "记录加载",
     "recordLoadHint": "记录 {{code}} v{{version}} 已加载到某台机器上（谱系）。这不会打开任何设备路径；select_recipe 命令仍通过受控分派器路由。",
     "recordLoadTitle": "记录配方加载",
@@ -14996,11 +14969,9 @@
     "rollbackConfirmBody": "这会发布 {{code}} v{{version}} 并归档当前已发布版本。仅写入谱系元数据 — 不会向设备推送任何配方。",
     "rollbackConfirmTitle": "回滚已发布合约？",
     "rollbackTip": "将已发布合约回滚到此版本",
-    "safetyNote": "FOCAS/Euromap 是只读集成框架 — 未连接实时设备，也不伪造遥测。此处的配方版本管理仅为谱系/元数据；不会打开任何设备控制路径。",
-    "selectCodeHint": "输入配方编码以查看其跨机器的谱系。",
+    "safetyNote": "FOCAS/Euromap 是只读集成框架 — 未连接实时设备，也不伪造遥测；本页面不会打开任何设备控制路径。",
     "selectMachine": "选择一台机器…",
-    "selectMachineHint": "选择一台机器以查看其配方谱系。",
-    "subtitle": "多厂商集成框架（FOCAS / Euromap，只读）与配方版本谱系 — 仅元数据，无设备命令。",
+    "subtitle": "多厂商集成框架（FOCAS / Euromap，只读）— 仅元数据，无设备命令。",
     "title": "设备集成",
     "uem": {
       "alarmCode": "alarm_code",
@@ -15008,17 +14979,9 @@
       "recipeId": "recipe_id",
       "utilization": "utilization_rate"
     },
-    "versionArchived": "版本已归档",
-    "versionCreated": "配方版本已创建（草稿）",
     "versionReleased": "版本已发布",
     "versionRolledBack": "已发布合约已回滚",
-    "versionsTitle": "{{code}} 的版本",
-    "viewOnly": "仅查看",
     "safetyChip": "只读",
-    "versionNotFound": "当前配方代码中找不到版本 #{{id}}。",
-    "openInRecipes": "在配方中打开",
-    "openInRecipesHint": "配方目录、审批与部署位于配方页面",
-    "recipesElsewhere": "配方审批与下发到机器位于配方页面。",
     "chip": {
       "srcAdapters": "服务器适配器注册表（integrationStatus.adapters）— 已注册，并非已连接",
       "srcConnected": "具备真实连接器/设备的框架（integrationStatus.frameworks[].configured）",
@@ -15038,7 +15001,94 @@
       "pickHint": "选择一个连接器查看详情。",
       "loadError": "无法读取集成状态。"
     },
-    "createDesc": "不可变的草稿版本 — 仅谱系元数据；不会下发到设备。"
+    "recipeStatus": {
+      "draft": "草稿",
+      "released": "已发布",
+      "archived": "已归档"
+    },
+    "recipeCode": "配方编码",
+    "versionsTitle": "{{code}} 的版本",
+    "loadVersions": "加载版本",
+    "viewOnly": "仅查看",
+    "readonly": {
+      "pickCode": "在上方输入配方代码，查看其版本与加载历史（仅查看）。",
+      "pickMachine": "在上方选择一台机器，查看其加载历史。"
+    },
+    "acqMoved": "采集工作器 → 视觉 › 图像采集",
+    "recipeTab": {
+      "pickCode": "在上方输入配方代码，查看其版本、版本操作与加载历史。"
+    },
+    "flagOffBannerHere": "预览模式：设备集成已禁用。读取可用；本页的配方版本操作（创建 / 发布 / 归档 / 回滚、记录加载）在启用前被阻止。",
+    "flagOffToast": "设备集成已禁用（预览）— 启用前此操作被阻止。",
+    "archive": "归档",
+    "archiveTip": "归档此版本",
+    "create": "创建版本",
+    "createRequired": "编码和名称为必填项。",
+    "createTitle": "新建配方版本（草稿）",
+    "createDesc": "不可变的草稿版本 — 仅谱系元数据；不会下发到设备。",
+    "createVersion": "新建版本",
+    "machineOptional": "机器（可选）",
+    "noMachine": "（无）",
+    "payload": "载荷（JSON）",
+    "payloadInvalid": "载荷不是有效的 JSON。",
+    "payloadObject": "载荷必须是 JSON 对象。",
+    "versionArchived": "版本已归档",
+    "versionCreated": "配方版本已创建（草稿）",
+    "versionNotFound": "当前配方代码中找不到版本 #{{id}}。"
+  },
+  "visionAcq": {
+    "title": "图像采集",
+    "whenToUse": "何时使用 — 启动、监视和停止为检测接入路径提供图像的采集工作器（目录回放 / mock 帧）。",
+    "liveSubject": "实时采集",
+    "desc": "抓帧 → 质量指标 → 可选按同一标准接入路径提交 NTF。file/mock 源今天即可用；GenICam 在绑定相机驱动前仍为占位。",
+    "flagOff": "服务器上的实时采集已关闭。状态仍可查看；在管理员开启实时采集之前，启动工作器会被拒绝。",
+    "noPermission": "查看采集工作器需要 machine-alerts 查看权限。",
+    "start": "启动工作器",
+    "stop": "停止",
+    "started": "采集工作器已启动",
+    "stopped": "采集工作器已停止",
+    "empty": "本服务器会话中没有已注册的采集工作器。",
+    "col": {
+      "id": "工作器",
+      "source": "来源",
+      "frames": "帧数",
+      "submitted": "已提交",
+      "errors": "错误",
+      "last": "最近帧 / 错误",
+      "status": "状态"
+    },
+    "since": "自",
+    "submits": "提交 NTF",
+    "state": {
+      "running": "运行中",
+      "completed": "已完成",
+      "stopped": "已停止",
+      "error": "错误"
+    },
+    "qualityOk": "质量良好",
+    "qualityBad": "质量差",
+    "sources": "源类型",
+    "startTitle": "启动采集工作器",
+    "startHint": "file 源回放采集目录；mock 生成合成帧。提交会标记为 NTF（'待检'）— 采集不是判定。",
+    "idRequired": "请填写工作器 id。",
+    "dirRequired": "file 源需要目录路径。",
+    "machineRequired": "提交帧需要机台代码。",
+    "kind": "源类型",
+    "directory": "目录（服务器上）",
+    "loop": "循环目录（浸泡测试）",
+    "maxFrames": "最大帧数（0 = 直到停止）",
+    "interval": "间隔（毫秒）",
+    "submitFrames": "将每帧作为标准 NTF 检测提交（需要机台代码）",
+    "assessQuality": "对每帧运行图像质量指标",
+    "aboutChip": "关于采集源",
+    "flagError": "无法读取工作器状态，因此不清楚实时采集是否开启。",
+    "machineCode": "机台代码",
+    "chip": {
+      "errors": "出错工作器",
+      "running": "运行中",
+      "srcErrors": "服务器工作器列表（acquisitionWorkerStatus）— 状态为错误或帧错误大于 0",
+      "srcRunning": "运行中的工作器 / 本服务器会话中已注册的全部工作器（acquisitionWorkerStatus）"
+    }
   },
   "panelDef": {
     "button": "拼板 N-up",
@@ -16496,7 +16546,9 @@
     "fleetMatrix": "设备 × 版本矩阵",
     "fleetMatrixEmpty": "尚无设备上报版本",
     "deployReason": {
-      "techman_program_download_unsupported": "Techman（robot-tm）暂不支持下载程序——尚未实现 TMflow 程序下载指令，因此没有向机器人发送任何内容。"
+      "techman_program_download_unsupported": "Techman（robot-tm）暂不支持下载程序——尚未实现 TMflow 程序下载指令，因此没有向机器人发送任何内容。",
+      "deploy_gate_off": "此服务器已关闭设备部署（默认）— 仅记录为模拟，未触及设备。",
+      "no_hitl_signoff": "无人工签核（HITL）— 仅记录为模拟，未触及设备。"
     },
     "review": {
       "title": "版本审核",
@@ -16716,7 +16768,7 @@
     "inboxTab": "工作收件箱",
     "catalogTab": "工具目录",
     "scopeLabel": "收件箱范围",
-    "scopeApprovals": "待审批",
+    "scopeApprovals": "待审批（我有权限）",
     "scopeApprovalsHint": "您有权打开的页面上待审批 / 待确认的事项",
     "scopeAll": "全模块",
     "scopeAllHint": "本模块所有待办事项和告警（含安全事件、联锁事件、车队死锁）",
@@ -16738,7 +16790,9 @@
       "commandConsole": "命令控制台（HITL）"
     },
     "criticalChip": "紧急",
-    "criticalSource": "oversight.pendingSummary — 运行中未审批配方、未关闭联锁事件、未审核安全事件、车队死锁"
+    "criticalSource": "oversight.pendingSummary — 运行中未审批配方、未关闭联锁事件、未审核安全事件、车队死锁",
+    "scopeMine": "我的",
+    "scopeMineHint": "分配给您的待审批事项（被分配不授予审批权限）"
   },
   "oversight": {
     "title": "待审查与告警",
@@ -16775,7 +16829,8 @@
       "count": "数量",
       "samples": "等待中"
     },
-    "noAccess": "（无权打开此页面）"
+    "noAccess": "（无权打开此页面）",
+    "mineAllClear": "目前没有分配给您的事项。"
   },
   "eqStandards": {
     "whenToUse": "适用场景 — 治理设备类型标准、ISA-18.2 告警分类法与评审委员会。仅治理元数据，无设备命令。",
@@ -16833,7 +16888,7 @@
     "fail": "失败",
     "failingTypesTitle": "未通过合规的类型",
     "flagOffBanner": "预览模式：设备治理已禁用。读取可用；操作（注册类型 / 映射告警 / 提交 / 审查 / 发布）在启用前被阻止。",
-    "flagOffToast": "设备治理已禁用（预览）。设置 EQ_GOVERN_ENABLED=true 以执行操作。",
+    "flagOffToast": "服务器上的设备治理已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "flagStatusError": "无法检查设备治理是否已启用 — 在确认前，操作将被禁用。",
     "hierarchyTitle": "设备类型层次结构",
     "inheritance": "继承链",
@@ -17018,8 +17073,8 @@
     "discoveryViewOnly": "发现需要 machine_control / create 权限。您仅有查看权限。",
     "endpoint": "端点",
     "endpointRequired": "请输入要探测的端点。",
-    "flagOffBanner": "预览模式：现场抽象 v2 已禁用（FIELD_V2_ENABLED 处于关闭状态）。读取可用；热插拔操作（发现 / 注册设备）在启用该标志前被阻止。",
-    "flagOffToast": "现场抽象已禁用（预览）。设置 FIELD_V2_ENABLED=true 以执行操作。",
+    "flagOffBanner": "预览模式：服务器上的现场抽象 v2 已关闭。读取可用；热插拔操作（发现 / 注册设备）在管理员开启之前被阻止。",
+    "flagOffToast": "服务器上的现场抽象已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "healthDesc": "每个受跟踪设备一行。存活性由心跳时长派生（基于 TTL）。",
     "healthEmpty": "尚无受跟踪设备。设备在发送心跳或被发现后会出现在此处。",
     "healthTitle": "设备存活性看板",
@@ -17119,7 +17174,7 @@
     "deviceIdRequired": "请输入有效的设备 ID。",
     "filterStatus": "状态",
     "flagOffBanner": "预览模式：机群编排已禁用。读取可用；操作（分配 / 重新分配 / 取消 / 预留 / 释放）在启用前被阻止。",
-    "flagOffToast": "机群编排已禁用（预览）。设置 FLEET_ORCH_ENABLED=true 以执行操作。",
+    "flagOffToast": "服务器上的机群编排已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "flagStatusError": "无法检查机群编排是否已启用 — 在确认前，操作将被禁用。",
     "kpi": {
       "activeRes": "活跃预留",
@@ -17244,7 +17299,7 @@
     },
     "resourceCreated": "资源已创建",
     "resourceFlagOffBanner": "预览模式：机群资源层已禁用。读取可用；操作（创建 / 映射 / 预留 / 释放 / 扫描）在启用前被阻止。",
-    "resourceFlagOffToast": "机群资源层已禁用（预览）。设置 FLEET_RESOURCE_ENABLED=true 以执行操作。",
+    "resourceFlagOffToast": "服务器上的机群资源层已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "resourceFlagStatusError": "无法检查机群资源层是否已启用 — 在确认前，操作将被禁用。",
     "resourceReleased": "资源已释放",
     "resourceReserved": "资源已占用",
@@ -17370,9 +17425,9 @@
       "pidOut": "输出通道",
       "pidHint": "增益必须为有限且非负；输出被硬限幅到 [最小值, 最大值]。URScript 生成一个有界 PID 骨架（无原生 PID）。"
     },
-    "flagOffBanner": "预览模式：IR 编程已禁用（DPC_IR_V2_ENABLED 处于关闭状态）。编写、检查与转译预览可用；保存流程 / 请求构建 在启用该标志前被阻止。",
-    "flagOffTip": "启用 DPC_IR_V2_ENABLED 以构建",
-    "flagOffToast": "IR 编程已禁用（预览）。设置 DPC_IR_V2_ENABLED=true 以保存/构建。",
+    "flagOffBanner": "预览模式：服务器上的 IR 编程已关闭。编写、检查与转译预览可用；保存流程 / 请求构建 在管理员开启之前被阻止。",
+    "flagOffTip": "服务器上的 IR 编程已关闭 — 需由管理员开启后才能保存/构建",
+    "flagOffToast": "服务器上的 IR 编程已关闭（预览）— 在管理员开启之前，保存/构建会被拒绝。",
     "flowId": "流程 ID",
     "honestyNote": "仅结构预览 + 检查 + 转译 — 物理仿真与真实部署单独受控。真实部署始终通过既有的编程服务（人工在环双人复核）路由，绝不从此屏幕触发。",
     "inspector": "检查器",
@@ -17450,8 +17505,8 @@
       "conflictsHeading": "冲突 — 请选择一侧",
       "currentDraft": "当前编辑器草稿",
       "emptyMerged": "合并后的流程没有块。",
-      "flagOffTip": "启用 DPC_IR_V2_ENABLED 以保存合并后的流程",
-      "flagOffToast": "IR 编程已禁用（预览）。设置 DPC_IR_V2_ENABLED=true 以保存。",
+      "flagOffTip": "服务器上的 IR 编程已关闭 — 需由管理员开启后才能保存合并后的流程",
+      "flagOffToast": "服务器上的 IR 编程已关闭（预览）— 在管理员开启之前，保存会被拒绝。",
       "flowField": "流程字段",
       "gateNote": "合并预览是纯读取。“保存合并”通过既有的受控保存（DPC_IR_V2_ENABLED + machine_control）追加一个已校验的 ir-flow 版本 — 绝不绕过该闸口，且真实部署仍是单独步骤。",
       "noPermTip": "您需要 machine_control 权限才能保存。",
@@ -17640,8 +17695,8 @@
     "all": "全部",
     "anomaliesEmpty": "无异常记录。此台账为参考性 — 只有在存在力遥测后才会出现夹持力行。",
     "anomaliesTitle": "机器人行为异常（参考性）",
-    "anomalyFlagOffBanner": "预览模式：机器人异常检测已禁用（AI_ROBOT_ANOMALY_ENABLED 处于关闭状态）。读取可用；手动扫描在启用该标志前被阻止。",
-    "anomalyFlagOffToast": "机器人异常检测已禁用（预览）。设置 AI_ROBOT_ANOMALY_ENABLED=true 以扫描。",
+    "anomalyFlagOffBanner": "预览模式：服务器上的机器人异常检测已关闭。读取可用；手动扫描在管理员开启之前被阻止。",
+    "anomalyFlagOffToast": "服务器上的机器人异常检测已关闭（预览）— 在管理员开启之前，扫描会被拒绝。",
     "col": {
       "confidence": "置信度",
       "evidence": "证据",
@@ -17689,8 +17744,8 @@
     "robotIdPlaceholder": "例如 1",
     "robotRequired": "请选择要扫描的机器人。",
     "rollbackEmpty": "无回滚记录。自动评估在存在实时模型性能信号前保持惰性。",
-    "rollbackFlagOffBanner": "预览模式：模型自动回滚已禁用（AI_MODEL_AUTOROLLBACK_ENABLED 处于关闭状态）。读取 + 手动回滚可用；自动评估在启用该标志前被阻止。",
-    "rollbackFlagOffToast": "模型自动回滚已禁用（预览）。设置 AI_MODEL_AUTOROLLBACK_ENABLED=true 以评估。",
+    "rollbackFlagOffBanner": "预览模式：服务器上的模型自动回滚已关闭。读取 + 手动回滚可用；自动评估在管理员开启之前被阻止。",
+    "rollbackFlagOffToast": "服务器上的模型自动回滚已关闭（预览）— 在管理员开启之前，评估会被拒绝。",
     "rollbackTitle": "模型回滚历史（审计）",
     "rolledBack": "已记录手动回滚",
     "scan": "扫描机器人",
@@ -17752,7 +17807,7 @@
     "feedEmpty": "无安全事件记录。此数据源仅为参考性监控。",
     "feedTitle": "安全事件源",
     "filterType": "类型",
-    "flagOffToast": "安全审计已禁用（预览）。设置 SAFETY_AUDIT_ENABLED=true 以执行操作。",
+    "flagOffToast": "服务器上的安全审计已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "footerNote": "此页面上的所有写入仅为监控 / 记录 / 协调状态。未遂事件采集会触发一个黄色安灯，并通过既有的受控分派器提议（绝不执行）减速。",
     "handshake": {
       "ack": "已确认",
@@ -17781,8 +17836,7 @@
     "subtitle": "参考性安全监控、混合工作队伍分配与人↔机器人交接协调。",
     "tab": {
       "cockpit": "事件",
-      "collaboration": "协作",
-      "workforce": "工作队伍看板"
+      "collaboration": "协作"
     },
     "title": "安全与工作队伍",
     "trendEmpty": "此窗口内无未遂事件记录。",
@@ -17864,7 +17918,7 @@
       "src": {
         "openEvents": "safety.feed — 最近 200 条事件中尚未审核的事件（受类型筛选影响）",
         "nearMiss": "safety.nearMissTrend — 30 天趋势中今日（UTC）的险兆数",
-        "assignments": "safety.listAssignments — 已加载列表中状态为“进行中”的分配（受状态筛选影响）",
+        "assignments": "safety.listAssignments — 最近 200 条分配中状态为“进行中”的数量（详情见 生产 › 班次）",
         "collabs": "safety.listCollaborations — 未结束的会话（阶段不是 done 且无结束时间）"
       }
     },
@@ -18252,7 +18306,7 @@
     "confirmClose": "关闭分配",
     "confirmed": "分配已确认",
     "flagOffBanner": "预览模式：工作队伍已禁用。读取可用；分配与协作操作在启用前被阻止。",
-    "flagOffToast": "工作队伍已禁用（预览）。设置 WORKFORCE_ENABLED=true 以执行操作。",
+    "flagOffToast": "服务器上的人力功能已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "flagStatusError": "无法检查工作队伍是否已启用 — 在确认前，分配与协作操作将被禁用。",
     "handshakeSignalled": "已发出握手信号",
     "humanId": "人工操作员 ID",
@@ -21726,5 +21780,58 @@
     "nav": {
       "simpleFallback": "简洁菜单在此没有条目 — 正在显示完整菜单。"
     }
+  },
+  "shifts": {
+    "title": "班次",
+    "whenToUse": "何时使用 — 规划并确认每个班次中哪位操作员在哪条产线/工位，并查看此刻每个工位上的人员。人机协作仍在“安全与人力”页面。",
+    "noPermission": "您无权查看按班次的分配。",
+    "flagOff": "预览模式：服务器上的人力功能已关闭。读取正常；在管理员开启之前，分配操作会被拒绝。",
+    "flagStatusError": "无法确认人力功能是否已启用 — 在确认之前，分配操作已禁用。",
+    "flagOffToast": "服务器上的人力功能已关闭（预览）— 在管理员开启之前，分配操作会被拒绝。",
+    "filter": {
+      "shift": "班次",
+      "allShifts": "全部班次",
+      "noShift": "未关联班次"
+    },
+    "col": {
+      "shift": "班次"
+    },
+    "inactive": "已停用",
+    "shiftUnknown": "班次 #{{id}}",
+    "shiftsError": "无法读取班次列表",
+    "listError": "无法读取分配列表。",
+    "boardError": "无法读取现场看板。",
+    "chip": {
+      "planned": "待确认",
+      "srcActive": "safety.listAssignments — 最近 200 条分配中状态为“进行中”的数量（按班次与状态筛选）",
+      "srcPlanned": "safety.listAssignments — 最近 200 条分配中状态为“计划”（未确认）的数量（按班次与状态筛选）"
+    },
+    "side": {
+      "label": "现场看板 — 此刻每个工位上的人员与机器人"
+    },
+    "detailTitle": "分配详情",
+    "openDetail": "分配 #{{id}} 的详情",
+    "detail": {
+      "id": "分配",
+      "confirmed": "已确认",
+      "closedBy": "关闭人",
+      "notes": "备注"
+    },
+    "movedLink": "人力 → 生产 › 班次",
+    "emptyForShift": "该班次暂无分配。",
+    "emptyForShiftWindow": "在已加载的最新 {{limit}} 条分配中没有该班次的分配 — 该班次更早的分配不会在此显示。"
+  },
+  "engineeringAssign": {
+    "label": "分配给",
+    "column": "负责人",
+    "none": "未分配",
+    "placeholder": "未分配 — 选择人员…",
+    "search": "搜索人员…",
+    "empty": "没有可查看此页面的人员",
+    "assigned": "已分配给 {{name}}",
+    "unassigned": "已取消分配",
+    "userFallback": "用户 #{{id}}",
+    "noApprovalRight": "被分配不授予审批权限。",
+    "needs2fa": "分配需要为您的账户启用两步验证（2FA）。请前往 设置 > 安全 进行设置。"
   }
 }

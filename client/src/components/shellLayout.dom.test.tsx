@@ -28,6 +28,8 @@ const S: {
   lic: Lic;
   aiBlocked: boolean;
   isa: boolean;
+  /** doc 81 Đợt 3 Task 2 fix round 1 (R-3-d) — null ⇒ mọi module được phép (hành vi cũ); tập ⇒ SKU chỉ gồm các mã này. */
+  mods: Set<string> | null;
 } = {
   user: { id: 7, role: "engineer", name: "Eng", email: "e@x" },
   permissions: [],
@@ -35,7 +37,11 @@ const S: {
   lic: {},
   aiBlocked: false,
   isa: false,
+  mods: null,
 };
+
+/** Đợt 3 Task 5 — href trong bộ tìm ⌘K ở lần dựng gần nhất. */
+const PALETTE: { hrefs: string[] } = { hrefs: [] };
 
 const LIC_NORMAL: Lic = {
   showBanner: false, isLoading: false, isWarning: false, isNormal: true, isLocked: false, noLicense: false,
@@ -54,14 +60,27 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
     loading: false,
   }),
 }));
-vi.mock("@/hooks/useLicenseModules", () => ({
-  useLicenseModules: () => ({
-    isNavGroupAllowed: () => true,
-    isRouteAllowed: () => true,
-    allowedModules: [],
-    isModuleBlocked: (code: string) => (code === "MOD_AI" ? S.aiBlocked : false),
-  }),
-}));
+vi.mock("@/hooks/useLicenseModules", async () => {
+  // doc 81 Đợt 3 Task 2 — HẠ TẦNG: DashboardLayout lọc mục có `licenseModule`/`onlyWhenModuleMissing` qua isModuleAllowed.
+  // `S.mods` (fix round 1, R-3-d) dựng một SKU cụ thể theo ĐÚNG luật của hook thật (module-registry: lõi luôn được phép).
+  const reg = await import("@shared/module-registry");
+  const ok = (code: string) => !S.mods || !!reg.getModuleByCode(code)?.isCore || S.mods.has(code);
+  return {
+    useLicenseModules: () => ({
+      isNavGroupAllowed: (id: string) => {
+        const m = reg.getModuleByNavGroup(id);
+        return !m || ok(m.code);
+      },
+      isModuleAllowed: ok,
+      isRouteAllowed: (href: string) => {
+        const m = reg.getModuleByRoute(href);
+        return !m || ok(m.code);
+      },
+      allowedModules: [],
+      isModuleBlocked: (code: string) => (code === "MOD_AI" ? S.aiBlocked : false),
+    }),
+  };
+});
 vi.mock("@/hooks/useLicenseEnforcement", () => ({ useLicenseEnforcement: () => S.lic }));
 vi.mock("@/hooks/useSpcAlertToast", () => ({ useSpcAlertToast: () => undefined }));
 vi.mock("@/hooks/useAppLauncherMode", () => ({
@@ -81,7 +100,13 @@ vi.mock("@/components/FreshnessStrip", () => ({
 }));
 vi.mock("@/components/ShellAlertChip", () => ({ ShellAlertChip: stub("alert") }));
 vi.mock("@/components/AssetScopeBar", () => ({ AssetScopeBar: stub("scope"), ScopeStatusChip: stub("scopechip") }));
-vi.mock("@/components/CommandPalette", () => ({ CommandPalette: () => null }));
+// Đợt 3 Task 5 — giữ lại `groups` mà shell đưa cho ⌘K (đo "Labs ẩn khỏi menu nhưng ⌘K vẫn tìm thấy").
+vi.mock("@/components/CommandPalette", () => ({
+  CommandPalette: (p: { groups: { items: { href: string }[] }[] }) => {
+    PALETTE.hrefs = p.groups.flatMap((g) => g.items.map((i) => i.href));
+    return null;
+  },
+}));
 vi.mock("@/components/AppLauncherButton", () => ({ AppLauncherButton: stub("launcher") }));
 vi.mock("@/components/AppLauncherOverlay", () => ({ AppLauncherOverlay: () => null }));
 vi.mock("@/components/SidebarQuickAccess", () => ({ SidebarQuickAccess: () => null }));
@@ -104,7 +129,7 @@ import { getNavItemByHref, navGroups } from "@/lib/navigation";
 const ENGINEERING_ROUTES = [
   "/engineering-home", "/engineering", "/engineering-changes", "/recipes",
   "/interlock-rules", "/orchestration-studio", "/ir-editor", "/pou-studio",
-  "/fleet-orchestration", "/safety-workforce", "/equipment-standards", "/equipment-integration",
+  "/labs/fleet-orchestration", "/safety-workforce", "/equipment-standards", "/equipment-integration",
 ];
 
 beforeAll(async () => {
@@ -121,6 +146,7 @@ beforeEach(() => {
   S.lic = { ...LIC_NORMAL };
   S.aiBlocked = false;
   S.isa = false;
+  S.mods = null;
   localStorage.clear();
   resetAiEntryForTest();
 });
@@ -195,6 +221,27 @@ describe("Breadcrumb — đúng MỘT, nằm trong top bar", () => {
       }
     },
   );
+
+  // doc 81 Đợt 3 Task 0 (D5, browser check 2026-10-05) — 1366 + thanh bên mở: TRANG HIỆN TẠI bị cắt ("Điều phối robot"
+  // 77/98 px, "Trung tâm Kỹ thuật" 98/123 px) vì nó cũng co (shrink 0.3) cùng mục cha. Hợp đồng: trang hiện tại KHÔNG co
+  // (chỉ cắt khi dài hơn cả vùng breadcrumb — max-w-full); mục cha co trước (min-w-0, cắt có title). jsdom không dựng
+  // layout ⇒ khoá trên lớp; px thật đo bằng trình duyệt (báo cáo task 0).
+  it("D5: trong top bar, trang hiện tại không co (shrink-0, max-w-full); mục cha co trước (min-w-0, shrink) và ẩn khi vùng breadcrumb < 12rem", () => {
+    renderShell("/labs/fleet-orchestration");
+    const nav = crumbNavs()[0] as HTMLElement;
+    expect((nav.closest("[data-shell-crumb]")?.getAttribute("class") ?? "").split(/\s+/)).toContain("@container/crumb");
+    const items = within(nav).getAllByRole("listitem").filter((li) => li.getAttribute("data-slot") === "breadcrumb-item");
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    const cls = (li: Element) => (li.getAttribute("class") ?? "").split(/\s+/);
+    const last = items[items.length - 1];
+    expect(cls(last)).toEqual(expect.arrayContaining(["shrink-0", "max-w-full"]));
+    expect(cls(last).some((c) => /^shrink-\[/.test(c) || c === "hidden")).toBe(false);
+    const parents = items.slice(0, -1).filter((li) => li.querySelector("a"));
+    expect(parents.length).toBeGreaterThanOrEqual(1);
+    for (const li of parents) {
+      expect(cls(li)).toEqual(expect.arrayContaining(["min-w-0", "shrink", "hidden", "@min-[12rem]/crumb:inline-flex"]));
+    }
+  });
 
   it("route ẩn breadcrumb (trang chủ vai trò) vẫn KHÔNG có breadcrumb", () => {
     renderShell("/supervisor-home");
@@ -388,7 +435,7 @@ describe("Màn workbench: rail thu gọn mặc định, người dùng mở đư
       "/orchestration-studio": "OrchestrationStudio", "/engineering-home": "EngineeringHub",
       "/engineering-changes": "EngineeringChanges",
       "/recipes": "RecipeManagement", "/interlock-rules": "InterlockRuleManagement",
-      "/fleet-orchestration": "FleetOrchestration",
+      "/labs/fleet-orchestration": "FleetOrchestration",
       "/safety-workforce": "SafetyWorkforce", "/equipment-standards": "EquipmentStandards",
       "/equipment-integration": "EquipmentIntegration",
     };
@@ -753,6 +800,8 @@ describe("R-2-z4 — chiều cao trang theo chrome THẬT của shell", () => {
       "client/src/pages/EquipmentStandards.tsx", "client/src/pages/FleetOrchestration.tsx", "client/src/pages/InterlockRuleManagement.tsx",
       "client/src/pages/IrEditor.tsx", "client/src/pages/OrchestrationStudio.tsx", "client/src/pages/PouStudio.tsx",
       "client/src/pages/RecipeManagement.tsx", "client/src/pages/SafetyWorkforce.tsx", "client/src/pages/EngineeringChanges.tsx",
+      // Đợt 3 Task 3 — bảng nhân lực (2 chiều cao theo khung nhìn) DỜI từ SafetyWorkforce.tsx sang trang này: thước đi theo mã.
+      "client/src/pages/ProductionShifts.tsx",
     ];
     const bad: string[] = [];
     let uses = 0;
@@ -765,5 +814,109 @@ describe("R-2-z4 — chiều cao trang theo chrome THẬT của shell", () => {
     }
     expect(bad).toEqual([]);
     expect(uses).toBeGreaterThanOrEqual(18);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Doc 81 Đợt 3 Task 2 fix round 1 (Ruling R-3-d) — khách có OT mà KHÔNG có MOD_AI, launcher bật: Vision › Thu ảnh nằm ở
+// app AI (ô upsell) ⇒ thanh bên của app Kỹ thuật phải có BÍ DANH "Worker thu ảnh → Vision › Thu ảnh"; có MOD_AI ⇒ không bí
+// danh (mục thật ở app AI, không trùng). Không mở khoá ô AI (AppLauncherOverlay không đổi).
+describe("R-3-d — bí danh Vision › Thu ảnh trong thanh bên Kỹ thuật theo giấy phép", () => {
+  const ALIAS_LABEL = "Worker thu ảnh → Vision › Thu ảnh";
+  const engineeringMenuTexts = () => {
+    const label = i18next.t("nav.engineeringGroup");
+    const icon = [...document.querySelectorAll('[data-cascading-nav] button[aria-haspopup="menu"]')].find(
+      (b) => b.getAttribute("aria-label") === label,
+    ) as HTMLElement;
+    expect(icon, "rail phải có icon nhóm Kỹ thuật").toBeTruthy();
+    fireEvent.mouseEnter(icon);
+    return within(screen.getByRole("menu", { name: label })).getAllByRole("menuitem").map((b) => b.textContent ?? "");
+  };
+
+  it("SKU chỉ OT (không MOD_AI) ⇒ menu nhóm Kỹ thuật có bí danh", () => {
+    S.mods = new Set(["MOD_OT_CONTROL", "MOD_ENGINEERING"]);
+    localStorage.setItem("sidebar_open", "false");
+    renderShell("/equipment-integration");
+    const texts = engineeringMenuTexts();
+    expect(texts.some((t) => t.includes(ALIAS_LABEL))).toBe(true);
+    expect(texts.some((t) => t.includes(i18next.t("nav.equipmentIntegration")))).toBe(true);
+  });
+
+  it("SKU có MOD_AI ⇒ KHÔNG bí danh trong nhóm Kỹ thuật", () => {
+    S.mods = new Set(["MOD_OT_CONTROL", "MOD_ENGINEERING", "MOD_AI"]);
+    localStorage.setItem("sidebar_open", "false");
+    renderShell("/equipment-integration");
+    const texts = engineeringMenuTexts();
+    expect(texts.some((t) => t.includes(ALIAS_LABEL))).toBe(false);
+    expect(texts.some((t) => t.includes(i18next.t("nav.equipmentIntegration")))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Fleet ở nhóm "Labs — thử nghiệm": ẩn khỏi menu cho tới khi CHÍNH người dùng bật "Hiện Labs"
+// (nhớ theo người dùng — khoá `userLayoutKey("nav-labs", userId, "show")`); ⌘K vẫn tìm thấy; route/cổng không đổi.
+describe("Task 5 — Labs ẩn mặc định, mỗi người tự bật", () => {
+  const FLEET = () => i18next.t("nav.fleetOrchestration");
+  const engineeringMenu = () => {
+    const label = i18next.t("nav.engineeringGroup");
+    const icon = [...document.querySelectorAll('[data-cascading-nav] button[aria-haspopup="menu"]')].find(
+      (b) => b.getAttribute("aria-label") === label,
+    ) as HTMLElement;
+    expect(icon, "rail phải có icon nhóm Kỹ thuật").toBeTruthy();
+    fireEvent.mouseEnter(icon);
+    return screen.getByRole("menu", { name: label });
+  };
+  const menuTexts = () => within(engineeringMenu()).getAllByRole("menuitem").map((b) => b.textContent ?? "");
+  const toggle = () => document.querySelector("[data-nav-labs-toggle]") as HTMLElement | null;
+
+  it("mặc định: menu Kỹ thuật KHÔNG có Fleet; công tắc 'Hiện Labs' tắt; ⌘K VẪN có /labs/fleet-orchestration", () => {
+    localStorage.setItem("sidebar_open", "false");
+    renderShell("/recipes");
+    expect(menuTexts().some((t) => t.includes(FLEET()))).toBe(false);
+    expect(menuTexts().some((t) => t.includes(i18next.t("nav.recipes")))).toBe(true);
+    expect(toggle()).toBeTruthy();
+    expect(toggle()).toHaveAttribute("role", "switch");
+    expect(toggle()).toHaveAttribute("aria-checked", "false");
+    expect(PALETTE.hrefs).toContain("/labs/fleet-orchestration");
+  });
+
+  it("bật 'Hiện Labs' ⇒ Fleet hiện dưới section 'Labs — thử nghiệm'; lựa chọn nhớ THEO NGƯỜI DÙNG (người khác vẫn ẩn)", () => {
+    localStorage.setItem("sidebar_open", "false");
+    renderShell("/recipes");
+    fireEvent.click(toggle()!);
+    expect(toggle()).toHaveAttribute("aria-checked", "true");
+    expect(localStorage.getItem("layoutKit:nav-labs:u7:show")).toBe("1");
+    const menu = engineeringMenu();
+    expect(within(menu).getAllByRole("menuitem").some((b) => (b.textContent ?? "").includes(FLEET()))).toBe(true);
+    expect(menu.textContent).toContain(i18next.t("nav.section.labs"));
+    cleanup();
+    // người dùng khác trên cùng trình duyệt: mặc định (ẩn)
+    S.user = { id: 8, role: "engineer", name: "Eng2", email: "e2@x" };
+    renderShell("/recipes");
+    expect(menuTexts().some((t) => t.includes(FLEET()))).toBe(false);
+    expect(toggle()).toHaveAttribute("aria-checked", "false");
+    cleanup();
+    // người dùng 7 quay lại: vẫn bật
+    S.user = { id: 7, role: "engineer", name: "Eng", email: "e@x" };
+    renderShell("/recipes");
+    expect(menuTexts().some((t) => t.includes(FLEET()))).toBe(true);
+    // tắt lại ⇒ ẩn, lưu "0"
+    fireEvent.click(toggle()!);
+    expect(localStorage.getItem("layoutKit:nav-labs:u7:show")).toBe("0");
+    expect(menuTexts().some((t) => t.includes(FLEET()))).toBe(false);
+  });
+
+  it("đang ĐỨNG trên Fleet (vào bằng link/⌘K) khi Labs ẩn: trang vẫn dựng, breadcrumb Kỹ thuật › Labs — thử nghiệm › Fleet", () => {
+    renderShell("/labs/fleet-orchestration");
+    const nav = crumbNavs()[0] as HTMLElement;
+    const texts = within(nav).getAllByRole("listitem").map((li) => li.textContent ?? "").filter(Boolean);
+    expect(texts).toEqual(expect.arrayContaining([i18next.t("nav.section.labs"), FLEET()]));
+    expect(screen.getByRole("heading", { name: "Trang thử" })).toBeTruthy();
+  });
+
+  it("người không có mục Labs nào (SKU không có MOD_OT_CONTROL) ⇒ không có công tắc 'Hiện Labs'", () => {
+    S.mods = new Set(["MOD_ENGINEERING"]);
+    renderShell("/recipes");
+    expect(toggle()).toBeNull();
   });
 });

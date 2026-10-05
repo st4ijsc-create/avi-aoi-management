@@ -278,9 +278,16 @@ describe("§3 — MỤC MENU: có mặt, và tôn trọng CẢ `ai_repo_read` L�
     expect(dong!).toContain('requireModule="MOD_AI"');
 
     // Dây chuyền lọc ở thanh bên phải còn nguyên — gỡ dòng này thì mọi lập luận trên vô nghĩa.
-    expect(doc("client/src/components/DashboardLayout.tsx")).toContain(
-      "items.filter(item => isLicenseRouteAllowed(item.href))",
-    );
+    // Doc 81 Đợt 3 Task 2 (2026-10-05): phép lọc dời vào `filterNavGroupsByLicense` (navigation.tsx) để một mục được khai
+    // giấy phép riêng (`licenseModule`); DashboardLayout gọi nó cho CẢ thanh bên lẫn ⌘K, truyền đúng `isLicenseRouteAllowed`.
+    // Đo cả hai mắt xích: chỗ gọi (2 lần) và vị từ route TRONG phép lọc mục.
+    const dl = doc("client/src/components/DashboardLayout.tsx");
+    expect(dl.split("isNavGroupAllowed, isModuleAllowed, isLicenseRouteAllowed,").length - 1).toBe(2);
+    expect(dl.split("filterNavGroupsByLicense(").length - 1).toBe(2);
+    // (fix round 1, R-3-d: phép lọc xuống dòng + thêm điều kiện bí danh `onlyWhenModuleMissing` — đo theo khối của hàm.)
+    const nav = doc(NAV);
+    const fn = nav.slice(nav.indexOf("export function filterNavGroupsByLicense("), nav.indexOf("export function getFilteredNavGroups("));
+    expect(fn.replace(/\s+/g, " ")).toMatch(/items: group\.items\.filter\( \(item\) => \(item\.licenseModule \? isModuleAllowed\(item\.licenseModule\) : groupOk\) && isRouteAllowed\(item\.href\) &&/);
   });
 
   it("★★ mục nằm TRONG nhóm `ai` (nhóm này còn bị lọc giấy phép ở CẤP NHÓM qua `isNavGroupAllowed`)", () => {

@@ -6,6 +6,7 @@
  * - `/programming-copilot` (trang Copilot riêng, doc 34 P3) ⇒ `/engineering`: chế độ scratch của IDE
  *   (`?copilot=scratch` — panel Copilot trong layout, chưa cần mở dự án).
  * - `/engineering/studio`: cách viết trong task-15-brief (chưa từng là route thật) — cùng đích với Studio.
+ * - `/fleet-orchestration` (Đợt 3 Task 5) ⇒ `/labs/fleet-orchestration`: Fleet dời sang nhóm Labs — cùng trang, chỉ đổi đường dẫn.
  *
  * Luật (test: `engineeringLegacyRedirects.dom.test.tsx`):
  * - chuỗi query cũ được chép NGUYÊN VĂN (không mã hoá lại, giữ thứ tự và tham số lặp);
@@ -13,30 +14,14 @@
  * - chuyển hướng là REPLACE (Back không quay lại URL cũ để rồi bị đẩy đi lần nữa).
  * App.tsx dựng các `<Route>` này bằng CHÍNH `engineeringLegacyRoutes()` — test dựng cùng hàm.
  */
-import { Redirect, Route, useRouter } from "wouter";
+import type { ReactNode } from "react";
+import { Redirect, Route, useLocation, useRouter } from "wouter";
 
-export interface LegacyRedirect {
-  from: string;
-  to: string;
-  /** Tham số mặc định của đích — chỉ thêm khi URL cũ chưa mang tham số cùng tên. */
-  add: Readonly<Record<string, string>>;
-}
-
-export const ENGINEERING_LEGACY_REDIRECTS: readonly LegacyRedirect[] = [
-  { from: "/engineering-studio", to: "/engineering-home", add: { tab: "catalog" } },
-  { from: "/engineering/studio", to: "/engineering-home", add: { tab: "catalog" } },
-  { from: "/programming-copilot", to: "/engineering", add: { copilot: "scratch" } },
-];
-
-/** Đích của một chuyển hướng: `to` + query cũ NGUYÊN VĂN + các tham số mặc định còn thiếu. */
-export function legacyRedirectTarget(to: string, search: string, add: Readonly<Record<string, string>> = {}): string {
-  const raw = search.startsWith("?") ? search.slice(1) : search;
-  const have = new URLSearchParams(raw);
-  const extra = new URLSearchParams();
-  for (const [k, v] of Object.entries(add)) if (!have.has(k)) extra.set(k, v);
-  const parts = [raw, extra.toString()].filter((x) => x !== "");
-  return parts.length ? `${to}?${parts.join("&")}` : to;
-}
+// Final wave (M-4) — bảng URL cũ + `canonicalNavHref` + `legacyRedirectTarget` là dữ liệu/hàm THUẦN, ở
+// `engineeringLegacyRedirectTable.ts` (navRecent.ts nhập từ đó, không qua file .tsx này). Tái xuất để mọi nơi nhập cũ giữ nguyên.
+import { ENGINEERING_LEGACY_REDIRECTS, legacyRedirectTarget } from "./engineeringLegacyRedirectTable";
+export { ENGINEERING_LEGACY_REDIRECTS, canonicalNavHref, legacyRedirectTarget } from "./engineeringLegacyRedirectTable";
+export type { LegacyRedirect } from "./engineeringLegacyRedirectTable";
 
 export function LegacyQueryRedirect({ to, add }: { to: string; add?: Readonly<Record<string, string>> }) {
   // Query THÔ của router (không qua `useSearch`, vốn `decodeURI` — %20 ⇒ dấu cách): chép nguyên văn.
@@ -52,4 +37,109 @@ export function engineeringLegacyRoutes() {
       <LegacyQueryRedirect to={r.to} add={r.add} />
     </Route>
   ));
+}
+
+// ── Doc 81 Đợt 3 Task 1 — chuyển hướng theo TAB: một tab của trang cũ dời sang trang khác ───────────────────────
+//
+// `/equipment-integration?tab=recipes|history` ⇒ `/recipes?tab=versions|history` (phiên bản recipe và lịch sử nạp dời
+// sang Recipes; Integration bỏ hai tab đó). Route `/equipment-integration` vẫn là trang thật cho các tab còn lại, nên
+// không thể là một `<Route>` chuyển hướng: trang cũ bọc nội dung bằng `LegacyTabRedirectGate`.
+// Luật (test: `engineeringLegacyRedirects.dom.test.tsx`): như trên — query cũ chép NGUYÊN VĂN, chỉ GIÁ TRỊ của `tab`
+// được thay (mọi lần xuất hiện của `tab` gộp về một, tại vị trí đầu tiên), REPLACE.
+//
+// Đợt 3 Task 2: `/equipment-integration?tab=acquisition` ⇒ `/vision/acquisition` (Vision › Thu ảnh — trang KHÔNG tab):
+// không có `tabTo` ⇒ mọi `tab` bị GỠ, phần còn lại của query chép nguyên văn (vd `?flyout=acq-start`).
+//
+// Đợt 3 Task 3: `/safety-workforce?tab=workforce` ⇒ `/production/shifts` (Sản xuất › Ca — trang KHÔNG tab). Sheet phân công
+// của tab cũ (`?flyout=workforce-assign|workforce-reassign`) mở được cả khi URL không có `tab` (FlyoutHost đăng ký ở cấp
+// trang) ⇒ `flyouts`: các sheet đã dời theo cũng kích hoạt chuyển hướng. Sheet ở lại (vd `collab-start`) thì không.
+
+/** Đợt 3 Task 2 — đường dẫn của Vision › Thu ảnh (đích chuyển hướng của `?tab=acquisition`). */
+export const VISION_ACQUISITION_PATH = "/vision/acquisition";
+/** Đợt 3 Task 3 — đường dẫn của Sản xuất › Ca (đích chuyển hướng của `/safety-workforce?tab=workforce`). */
+export const PRODUCTION_SHIFTS_PATH = "/production/shifts";
+
+export interface LegacyTabRedirect {
+  from: string;
+  tab: string;
+  to: string;
+  /** Giá trị `tab` ở đích; bỏ trống ⇒ đích không có tab, `tab` bị gỡ khỏi query. */
+  tabTo?: string;
+  /** Đợt 3 Task 3 — `?flyout=` của trang cũ đã DỜI cùng tab: khớp cả khi URL không mang `tab` này. */
+  flyouts?: readonly string[];
+}
+
+export const ENGINEERING_LEGACY_TAB_REDIRECTS: readonly LegacyTabRedirect[] = [
+  { from: "/equipment-integration", tab: "recipes", to: "/recipes", tabTo: "versions" },
+  { from: "/equipment-integration", tab: "history", to: "/recipes", tabTo: "history" },
+  { from: "/equipment-integration", tab: "acquisition", to: VISION_ACQUISITION_PATH },
+  { from: "/safety-workforce", tab: "workforce", to: PRODUCTION_SHIFTS_PATH, flyouts: ["workforce-assign", "workforce-reassign"] },
+];
+
+/** Khoá của một cặp `k=v` trong query thô (giải mã như URLSearchParams: `+` ⇒ dấu cách). */
+function rawKey(part: string): string {
+  const k = part.split("=", 1)[0].replace(/\+/g, " ");
+  try {
+    return decodeURIComponent(k);
+  } catch {
+    return k;
+  }
+}
+
+/** Đích: `to` + query cũ NGUYÊN VĂN, riêng `tab` mang giá trị mới (hoặc bị gỡ khi `tabTo` trống). */
+export function legacyTabRedirectTarget(to: string, search: string, tabTo: string | undefined): string {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const out: string[] = [];
+  let replaced = false;
+  for (const part of raw.split("&")) {
+    if (part === "") continue;
+    if (rawKey(part) === "tab") {
+      if (!replaced && tabTo !== undefined) out.push(`tab=${encodeURIComponent(tabTo)}`);
+      replaced = true;
+      continue;
+    }
+    out.push(part);
+  }
+  if (!replaced && tabTo !== undefined) out.unshift(`tab=${encodeURIComponent(tabTo)}`);
+  return out.length ? `${to}?${out.join("&")}` : to;
+}
+
+/**
+ * Chuyển hướng theo tab áp cho `from` với query `search` (giá trị `tab`/`flyout` theo URLSearchParams — lần đầu), hoặc null.
+ * Khớp khi `tab` trùng, HOẶC (Đợt 3 Task 3) khi `flyout` là một sheet đã dời cùng tab (`flyouts`).
+ */
+export function findLegacyTabRedirect(from: string, search: string): LegacyTabRedirect | null {
+  const p = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const tab = p.get("tab");
+  const flyout = p.get("flyout");
+  return (
+    ENGINEERING_LEGACY_TAB_REDIRECTS.find(
+      (r) => r.from === from && (r.tab === tab || (flyout != null && (r.flyouts?.includes(flyout) ?? false))),
+    ) ?? null
+  );
+}
+
+/**
+ * Bọc nội dung trang `from`: `?tab=` đã dời ⇒ REPLACE sang đích (giữ query); còn lại ⇒ dựng trang như thường.
+ * `when` (Fix round 1, Ruling R-3-b): chỉ chuyển cho người dùng MỞ ĐƯỢC trang đích (vd /recipes cần machine_control/canView);
+ * `false` ⇒ ở lại trang cũ (trang tự dựng chế độ chỉ-đọc / tab mặc định). Mặc định `true`. Đợt 3 Task 2: `when` có thể là
+ * HÀM theo từng chuyển hướng (mỗi đích một cổng riêng — /recipes vs /vision/acquisition).
+ */
+export function LegacyTabRedirectGate({
+  from,
+  when = true,
+  children,
+}: {
+  from: string;
+  when?: boolean | ((r: LegacyTabRedirect) => boolean);
+  children: ReactNode;
+}) {
+  const router = useRouter();
+  const [path] = useLocation();
+  const search = router.searchHook(router);
+  // Chỉ khi ĐANG ở `from` (sau khi chuyển, cổng còn mount một nhịp ở đích thì không chuyển lại).
+  const found = path === from ? findLegacyTabRedirect(from, search) : null;
+  const hit = found && (typeof when === "function" ? when(found) : when) ? found : null;
+  if (hit) return <Redirect to={legacyTabRedirectTarget(hit.to, search, hit.tabTo)} replace />;
+  return <>{children}</>;
 }

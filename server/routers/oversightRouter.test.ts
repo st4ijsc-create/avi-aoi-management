@@ -268,6 +268,27 @@ describe("oversightRouter.pendingSummary (createCaller, admin — bỏ qua bản
   });
 });
 
+describe("doc 81 Đợt 3 Task 4 — pendingSummary.mine (fail-safe + luật tên)", () => {
+  const admin = () => ({ user: { id: 1, role: "admin" } }) as never;
+  const MINE_KEYS = ["ecn", "recipes", "interlock", "changeover", "orchestration"];
+
+  it("DB chưa kết nối ⇒ `mine` có ĐÚNG năm nhóm giao được, mỗi nhóm 0 — không throw", async () => {
+    mockGetDb.mockResolvedValue(undefined);
+    const r = await oversightRouter.createCaller(admin()).pendingSummary();
+    expect(Object.keys(r.mine).sort()).toEqual([...MINE_KEYS].sort());
+    for (const k of MINE_KEYS) expect(r.mine[k as keyof typeof r.mine]).toEqual({ count: 0, samples: [], degraded: false });
+  });
+
+  it("nguồn phân công ném (vd bảng 0363 chưa áp) ⇒ `mine` degraded từng nhóm, chín nhánh cũ KHÔNG đổi, total KHÔNG cộng mine", async () => {
+    // fakeDb không có innerJoin ⇒ mọi truy vấn "Của tôi" ném TypeError — đúng hình dạng "nguồn hỏng".
+    mockGetDb.mockResolvedValue(fakeDb(new Array(20).fill([{ c: 0 }])).db);
+    const r = await oversightRouter.createCaller(admin()).pendingSummary();
+    for (const k of MINE_KEYS) expect(r.mine[k as keyof typeof r.mine]).toMatchObject({ count: 0, degraded: true });
+    for (const key of ["recipes", "interlock", "orchestration", "ecn", "changeover"] as const) expect(r[key].degraded).toBe(false);
+    expect(r.total).toBe(0);
+  });
+});
+
 describe("oversightRouter.posture (ILK-06)", () => {
   const admin = () => ({ user: { id: 1, role: "admin" } }) as never;
   const ENV_KEYS = [

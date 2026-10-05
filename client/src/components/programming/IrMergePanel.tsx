@@ -391,7 +391,7 @@ export function IrMergePanel({
     },
     onError: (e: { data?: { code?: string } | null; message: string }) => {
       if (isFeatureDisabledError(e)) {
-        toast.info(t("ir.merge.flagOffToast", "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save."));
+        toast.info(t("ir.merge.flagOffToast", "IR programming is turned off on the server (preview) — saving is refused until an administrator turns it on."));
       } else {
         toastTrpcError(e);
       }
@@ -401,7 +401,7 @@ export function IrMergePanel({
   const projectSelected = Number.isInteger(Number(saveProjectId)) && Number(saveProjectId) > 0;
   const hasUnresolved = conflicts.length > 0 && !allResolved;
   const saveDisabledReason =
-    !flagEnabled ? t("ir.merge.flagOffTip", "Enable DPC_IR_V2_ENABLED to save the merged flow")
+    !flagEnabled ? t("ir.merge.flagOffTip", "IR programming is turned off on the server — an administrator must turn it on to save the merged flow")
       : !canControl ? t("ir.merge.noPermTip", "You need machine_control permission to save.")
         : hasUnresolved ? t("ir.merge.unresolvedTip", "Pick a side for every conflict before saving.")
           : !projectSelected ? t("ir.merge.pickProjectTip", "Pick an ir-flow project to save into.")

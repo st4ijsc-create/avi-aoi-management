@@ -6,18 +6,17 @@
 //     `StatusChipStrip` (thay 4 MetricCard). Nhãn ĐÚNG NGHĨA: số adapter là ĐĂNG KÝ trong registry, không
 //     phải KẾT NỐI; chip "kết nối" đếm framework có thiết bị thật (configured), không phải "thiết bị".
 //   - MAIN (`data-layout-main`, CockpitLayout) = hàng tab (thanh công cụ DUY NHẤT) + nội dung tab. Tab đồng bộ
-//     `?tab=` (giá trị cũ: status / recipes / history / acquisition).
+//     `?tab=` (status; + history chỉ-đọc cho người không mở được /recipes — R-3-b). Đợt 3 Task 1: tab recipes / history
+//     DỜI sang Recipes — `?tab=recipes|history` chuyển hướng `/recipes?tab=versions|history`, giữ query (các test cũ của
+//     hai tab nay ở RecipeManagement.integration.dom.test.tsx). Đợt 3 Task 2: tab acquisition DỜI sang Vision › Thu ảnh —
+//     `?tab=acquisition` chuyển hướng `/vision/acquisition` (giữ query, bỏ `tab`) cho người mở được trang đó (các test cũ
+//     của tab nay ở VisionAcquisition.layout.dom.test.tsx).
 //   - Tab đầu = catalog connector dạng danh sách–chi tiết (`?connector=`), gồm framework FOCAS/Euromap và
 //     các giao thức adapter đã đăng ký; chi tiết framework giữ đầu dò snapshot trung thực.
-//   - Phiên bản recipe = `VersionHistoryPanel` (`?code=`); tạo phiên bản / ghi nhận nạp = sheet (FlyoutHost);
-//     phát hành / lưu trữ một cú bấm như cũ; rollback = `RollbackConfirm requireReason={false}
-//     requireOtp={false}` (hợp đồng cũ: AlertDialog, không lý do, không OTP). Liên kết sang /recipes.
-//   - Tab Worker thu ảnh: instance KHÔNG unmount khi đổi tab (Review Focus 3), chỉ mount lần đầu khi mở tab;
-//     khởi động worker = sheet; dừng = một cú bấm như cũ.
 // Chạy trên wouter THẬT với history jsdom. "Server" giả là kho trong bộ nhớ: truy vấn CHỈ đổi khi trang gọi
 // invalidate đúng thủ tục (như react-query).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
@@ -30,12 +29,14 @@ vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock("@/components/PermissionGate", () => ({ ViewOnlyBadge: () => <span>Chỉ xem</span> }));
-const perm = vi.hoisted(() => ({ view: true, control: true, release: true, acqView: true, acqControl: true }));
+const perm = vi.hoisted(() => ({ view: true, controlView: true, control: true, release: true, acqView: true, acqControl: true }));
 vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({
     isAdmin: false,
     hasPermission: (m: string, a: string) => {
       if (m === "machine_monitoring" && a === "canView") return perm.view;
+      // Fix round 1 (R-3-b) — HẠ TẦNG: quyền mở /recipes (machine_control/canView); mặc định có (như engineer).
+      if (m === "machine_control" && a === "canView") return perm.controlView;
       if (m === "machine_control" && a === "canCreate") return perm.control;
       if (m === "machine_control" && a === "canEdit") return perm.release;
       if (m === "machine_alerts" && a === "canView") return perm.acqView;
@@ -46,6 +47,18 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
 }));
 vi.mock("@/_core/hooks/useAuth", () => ({
   useAuth: () => ({ user: { id: 7, name: "Tester" }, loading: false }),
+}));
+// Final wave (Ruling R-3-h) — HẠ TẦNG: giấy phép theo route (cùng vị từ `isRouteAllowed` mà thanh bên/RouteGuard dùng).
+// Mặc định /recipes ĐƯỢC cấp phép (MOD_ENGINEERING) như mọi test cũ; `lic.recipes=false` = khách chỉ mua MOD_OT_CONTROL.
+const lic = vi.hoisted(() => ({ recipes: true, asked: [] as string[] }));
+vi.mock("@/hooks/useLicenseModules", () => ({
+  useLicenseModules: () => ({
+    isLoading: false,
+    isRouteAllowed: (p: string) => {
+      lic.asked.push(p);
+      return p === "/recipes" ? lic.recipes : true;
+    },
+  }),
 }));
 const toastSpy = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastSpy }));
@@ -300,7 +313,9 @@ beforeEach(() => {
   srv.acq.unmounts = 0;
   srv.acq.polls.clear();
   srv.acq.refetches = 0;
-  Object.assign(perm, { view: true, control: true, release: true, acqView: true, acqControl: true });
+  Object.assign(perm, { view: true, controlView: true, control: true, release: true, acqView: true, acqControl: true });
+  lic.recipes = true;
+  lic.asked = [];
   for (const f of Object.values(toastSpy)) f.mockClear();
   localStorage.clear();
   presetNarrow(false);
@@ -333,12 +348,6 @@ async function openTab(name: RegExp) {
   await user.click(tabBtn(name));
   return user;
 }
-async function loadCode(code = "RCP-1") {
-  const user = await openTab(/^Phiên bản recipe/);
-  const input = within(toolbar()).getByRole("textbox", { name: "Mã recipe" });
-  await user.type(input, `${code}{Enter}`);
-  return user;
-}
 const versionRow = (id: number) => mainEl().querySelector(`tr[data-version-id="${id}"]`) as HTMLElement;
 
 describe("Integration P4 — bố cục và chip trung thực", () => {
@@ -352,7 +361,9 @@ describe("Integration P4 — bố cục và chip trung thực", () => {
     expect(m.querySelector("[data-notice-kind]")).toBeNull();
     expect(m.querySelectorAll("[data-layout-toolbar]")).toHaveLength(1);
     const tabs = within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim());
-    expect(tabs).toEqual(["Danh mục connector", "Phiên bản recipe", "Lịch sử nạp", "Worker thu ảnh"]);
+    // Đợt 3 Task 1 — tab "Phiên bản recipe" và "Lịch sử nạp" dời sang Recipes; Đợt 3 Task 2 — tab "Worker thu ảnh" dời
+    // sang Vision › Thu ảnh (yêu cầu của hai task).
+    expect(tabs).toEqual(["Danh mục connector"]);
     const h1 = screen.getByRole("heading", { level: 1 });
     expect(h1).toHaveTextContent("Tích hợp thiết bị");
     expect(h1.closest("[data-layout-header]")).toBeTruthy();
@@ -477,15 +488,18 @@ describe("Catalog connector (danh sách–chi tiết)", () => {
 
 describe("Tab + URL", () => {
   it("bấm tab ghi `?tab=` (replace, giữ tham số khác); F5 `?tab=history` mở đúng tab; `?tab=` lạ ⇒ catalog", async () => {
+    // Đợt 3 Task 2 — ĐỔI BỘ CHỌN: tab "Worker thu ảnh" đã dời ⇒ người còn ≥2 tab là vai không mở được /recipes (R-3-b):
+    // dùng tab chỉ-đọc "Phiên bản & lịch sử nạp".
+    Object.assign(perm, { controlView: false, control: false, release: false, acqView: false, acqControl: false });
     window.history.replaceState(null, "", "/equipment-integration?connector=framework:focas");
     render(<EquipmentIntegration />);
-    await openTab(/^Phiên bản recipe/);
-    expect(params().get("tab")).toBe("recipes");
+    await openTab(/^Phiên bản & lịch sử nạp/);
+    expect(params().get("tab")).toBe("history");
     expect(params().get("connector")).toBe("framework:focas");
     cleanup();
     window.history.replaceState(null, "", "/equipment-integration?tab=history");
     render(<EquipmentIntegration />);
-    expect(tabBtn(/^Lịch sử nạp/)).toHaveAttribute("aria-selected", "true");
+    expect(tabBtn(/^Phiên bản & lịch sử nạp/)).toHaveAttribute("aria-selected", "true");
     cleanup();
     window.history.replaceState(null, "", "/equipment-integration?tab=bogus");
     render(<EquipmentIntegration />);
@@ -493,321 +507,387 @@ describe("Tab + URL", () => {
   });
 });
 
-describe("Phiên bản recipe — VersionHistoryPanel + flyout + RollbackConfirm (hợp đồng cũ)", () => {
-  it("nhập mã (Enter) ⇒ `?code=`, VersionHistoryPanel liệt kê v3/v2/v1 kèm trạng thái; liên kết sang /recipes?code=", async () => {
+describe("Đợt 3 Task 1 — phiên bản recipe / lịch sử nạp đã dời sang Recipes", () => {
+  it("`?tab=recipes&code=` ⇒ REPLACE `/recipes?tab=versions&code=`; `?tab=history&machineId=` ⇒ `/recipes?tab=history&machineId=` (giữ query)", () => {
+    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-load&flyoutId=102");
+    const before = window.history.length;
     render(<EquipmentIntegration />);
-    await loadCode();
-    expect(params().get("code")).toBe("RCP-1");
-    expect(mainEl().querySelector("[data-version-history]")).toBeTruthy();
+    expect(window.location.pathname + window.location.search).toBe("/recipes?tab=versions&code=RCP-1&flyout=eq-recipe-load&flyoutId=102");
+    expect(window.history.length).toBe(before);
+    cleanup();
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&machineId=3");
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname + window.location.search).toBe("/recipes?tab=history&machineId=3");
+  });
+
+  it("trang không còn đọc phiên bản / lịch sử nạp / danh sách máy, không còn sheet tạo phiên bản hay ghi nhận nạp", async () => {
+    window.history.replaceState(null, "", "/equipment-integration?flyout=eq-recipe-new");
+    render(<EquipmentIntegration />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(layer("eq-recipe-new")).toBeNull();
+    expect(srv.queryInputs.filter((x) => /listRecipeVersions|listLoadHistory|listCodeHistory|^machine\.list/.test(x))).toEqual([]);
+    expect(screen.queryByRole("link", { name: /Mở trong Recipes/ })).toBeNull();
+  });
+});
+
+// ── Fix round 1 (Ruling R-3-b) — người KHÔNG mở được /recipes (vai seed operator/viewer: machine_status, không
+// machine_control) GIỮ quyền xem chỉ-đọc ngay trên Integration: một tab "Phiên bản & lịch sử nạp (chỉ xem)" =
+// danh sách phiên bản KHÔNG thao tác + LoadHistoryPanel; KHÔNG chuyển hướng sang /recipes. Server không đổi.
+describe("R-3-b — vai không có machine_control (operator/viewer): xem chỉ-đọc, không chuyển hướng", () => {
+  const asOperator = () => Object.assign(perm, { view: true, controlView: false, control: false, release: false, acqView: false, acqControl: false });
+  const roTab = () => tabBtn(/^Phiên bản & lịch sử nạp/);
+
+  it("tab chỉ-đọc có cho operator, KHÔNG có cho engineer (engineer dùng Recipes)", () => {
+    asOperator();
+    render(<EquipmentIntegration />);
+    // Đợt 3 Task 2 — tab "Worker thu ảnh" đã dời sang Vision › Thu ảnh.
+    expect(within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual(["Danh mục connector", "Phiên bản & lịch sử nạp (chỉ xem)"]);
+    cleanup();
+    Object.assign(perm, { controlView: true });
+    render(<EquipmentIntegration />);
+    expect(within(toolbar()).queryByRole("tab", { name: /Phiên bản & lịch sử nạp/ })).toBeNull();
+  });
+
+  it.each([
+    "/equipment-integration?tab=recipes&code=RCP-1",
+    "/equipment-integration?tab=history&code=RCP-1",
+  ])("%s (operator) ⇒ KHÔNG chuyển hướng; tab chỉ-đọc: phiên bản v3/v2/v1 kèm trạng thái, KHÔNG nút thao tác nào; lịch sử theo mã", (url) => {
+    asOperator();
+    window.history.replaceState(null, "", url);
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname).toBe("/equipment-integration");
+    expect(roTab()).toHaveAttribute("aria-selected", "true");
+    expect(srv.queryInputs).toContain(`equipmentIntegration.listRecipeVersions:${JSON.stringify({ code: "RCP-1" })}`);
     expect(within(versionRow(103)).getByText("Nháp")).toBeTruthy();
     expect(within(versionRow(102)).getByText("Đã phát hành")).toBeTruthy();
     expect(within(versionRow(101)).getByText("Đã lưu trữ")).toBeTruthy();
-    const link = within(toolbar()).getByRole("link", { name: /Mở trong Recipes/ });
-    expect(link.getAttribute("href")).toBe("/recipes?code=RCP-1");
+    for (const id of [101, 102, 103]) {
+      expect(within(versionRow(id)).queryAllByRole("button")).toHaveLength(0);
+    }
+    expect(screen.queryByRole("button", { name: /Phát hành|Rollback|Ghi nhận nạp|Lưu trữ|Phiên bản mới|Lưu phiên bản mới/ })).toBeNull();
+    expect(srv.queryInputs).toContain(`equipmentIntegration.listCodeHistory:${JSON.stringify({ code: "RCP-1", limit: 200 })}`);
+    const hist = mainEl().querySelector("[data-load-history]") as HTMLElement;
+    expect(within(hist).getByText("nap ca sang")).toBeTruthy();
+    expect(within(hist).getByText("M3")).toBeTruthy();
   });
 
-  it("F5 `?tab=recipes&code=RCP-1` dựng lại danh sách phiên bản", () => {
-    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1");
-    render(<EquipmentIntegration />);
-    expect(versionRow(102)).toBeTruthy();
-  });
-
-  it("tạo phiên bản qua sheet: mở → mã điền sẵn → kiểm tra bắt buộc/JSON (toast như cũ) → lưu ⇒ payload đúng, invalidate, danh sách cập nhật, sheet đóng, URL sạch", async () => {
-    render(<EquipmentIntegration />);
-    const user = await loadCode();
-    await user.click(within(toolbar()).getByRole("button", { name: /Phiên bản mới/ }));
-    const sheet = await waitLayer("eq-recipe-new");
-    expect(params().get("flyout")).toBe("eq-recipe-new");
-    expect(within(sheet).getByLabelText("Mã recipe")).toHaveValue("RCP-1");
-    await user.click(within(sheet).getByRole("button", { name: /Tạo phiên bản/ }));
-    expect(toastSpy.error).toHaveBeenCalledWith("Mã và tên là bắt buộc.");
-    await user.type(within(sheet).getByLabelText("Tên"), "Reflow B");
-    const payload = within(sheet).getByLabelText("Payload (JSON)");
-    await user.clear(payload);
-    await user.type(payload, "[[1]");
-    await user.click(within(sheet).getByRole("button", { name: /Tạo phiên bản/ }));
-    expect(toastSpy.error).toHaveBeenCalledWith("Payload phải là một object JSON.");
-    await user.clear(payload);
-    await user.type(payload, "{{\"t\":9}");
-    await user.type(within(sheet).getByLabelText("Ghi chú"), "thu");
-    expect(calls("createRecipeVersion")).toHaveLength(0);
-    expect(versionRow(200)).toBeNull();
-    await user.click(within(sheet).getByRole("button", { name: /Tạo phiên bản/ }));
-    await waitFor(() => expect(calls("createRecipeVersion")).toHaveLength(1));
-    expect(calls("createRecipeVersion")[0]).toEqual({ code: "RCP-1", name: "Reflow B", payload: { t: 9 }, machineId: undefined, notes: "thu" });
-    await waitFor(() => expect(layer("eq-recipe-new")).toBeNull());
-    expect(params().get("flyout")).toBeNull();
-    expect(toastSpy.success).toHaveBeenCalledWith("Đã tạo phiên bản recipe (bản nháp)");
-    expect(srv.invalidated).toContain("equipmentIntegration.listRecipeVersions");
-    expect(versionRow(200)).toBeTruthy();
-  });
-
-  it("'Phiên bản mới' khoá khi cờ chưa rõ; không có quyền tạo ⇒ không có nút, hàng ghi 'Chỉ xem', deep link sheet không mở", async () => {
-    srv.status = undefined;
-    render(<EquipmentIntegration />);
-    await loadCode();
-    expect(within(toolbar()).getByRole("button", { name: /Phiên bản mới/ })).toBeDisabled();
-    cleanup();
-    srv.status = { enabled: true };
-    perm.control = false;
-    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-new");
-    render(<EquipmentIntegration />);
-    expect(within(toolbar()).queryByRole("button", { name: /Phiên bản mới/ })).toBeNull();
-    expect(within(versionRow(103)).getByText("Chỉ xem")).toBeTruthy();
-    await new Promise((r) => setTimeout(r, 20));
-    expect(layer("eq-recipe-new")).toBeNull();
-  });
-
-  it("phát hành (nháp) và lưu trữ: MỘT cú bấm, MỘT lượt gọi như cũ, invalidate; thiếu canEdit ⇒ Phát hành/Rollback khoá kèm lý do", async () => {
-    render(<EquipmentIntegration />);
-    const user = await loadCode();
-    await user.click(within(versionRow(103)).getByRole("button", { name: /Phát hành/ }));
-    await waitFor(() => expect(calls("releaseRecipeVersion")).toEqual([{ recipeId: 103 }]));
-    expect(toastSpy.success).toHaveBeenCalledWith("Đã phát hành phiên bản");
-    expect(srv.invalidated).toContain("equipmentIntegration.listRecipeVersions");
-    // sau khi phát hành v3, server lưu trữ v2 (đã phát hành cũ) ⇒ v3 là bản đang phát hành, còn nút Lưu trữ
-    expect(within(versionRow(102)).queryByRole("button", { name: /Lưu trữ/ })).toBeNull();
-    await user.click(within(versionRow(103)).getByRole("button", { name: /Lưu trữ/ }));
-    await waitFor(() => expect(calls("archiveRecipeVersion")).toEqual([{ recipeId: 103 }]));
-    expect(screen.queryAllByRole("alertdialog")).toHaveLength(0);
-    cleanup();
-    perm.release = false;
-    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1");
-    srv.snap.versions = VERSIONS();
-    render(<EquipmentIntegration />);
-    const rel = within(versionRow(103)).getByRole("button", { name: /Phát hành/ });
-    expect(rel).toBeDisabled();
-    expect(rel.getAttribute("title")).toMatch(/machine_control\/canEdit/);
-    expect(within(versionRow(101)).getByRole("button", { name: /Rollback/ })).toBeDisabled();
-  });
-
-  it("rollback = AlertDialog cũ: tiêu đề + câu mô tả cũ, KHÔNG ô lý do, KHÔNG OTP; xác nhận ⇒ {toRecipeId}, toast, invalidate; Huỷ ⇒ không gọi", async () => {
-    render(<EquipmentIntegration />);
-    const user = await loadCode();
-    await user.click(within(versionRow(101)).getByRole("button", { name: /Rollback/ }));
-    let dlg = await screen.findByRole("alertdialog");
-    expect(within(dlg).getByText("Rollback hợp đồng đã phát hành?")).toBeTruthy();
-    expect(within(dlg).getByText(/Việc này phát hành RCP-1 v1 và lưu trữ phiên bản đang phát hành hiện tại/)).toBeTruthy();
-    expect(within(dlg).queryByRole("textbox")).toBeNull();
-    await user.click(within(dlg).getByRole("button", { name: "Hủy" }));
-    expect(calls("rollbackRecipeVersion")).toHaveLength(0);
-    await user.click(within(versionRow(101)).getByRole("button", { name: /Rollback/ }));
-    dlg = await screen.findByRole("alertdialog");
-    await user.click(within(dlg).getByRole("button", { name: /Rollback/ }));
-    await waitFor(() => expect(calls("rollbackRecipeVersion")).toEqual([{ toRecipeId: 101 }]));
-    expect(screen.queryByText(/mã OTP/i)).toBeNull();
-    expect(toastSpy.success).toHaveBeenCalledWith("Đã rollback hợp đồng đã phát hành");
-    expect(srv.invalidated).toContain("equipmentIntegration.listRecipeVersions");
-  });
-
-  it("ghi nhận nạp qua sheet `?flyout=eq-recipe-load&flyoutId=`: máy của phiên bản chọn sẵn; lưu ⇒ {recipeId, machineId, deploy, notes}, invalidate, đóng", async () => {
-    render(<EquipmentIntegration />);
-    const user = await loadCode();
-    await user.click(within(versionRow(102)).getByRole("button", { name: /Ghi nhận nạp/ }));
-    const sheet = await waitLayer("eq-recipe-load");
-    expect(params().get("flyoutId")).toBe("102");
-    expect(within(sheet).getByText(/RCP-1 v2 đã được nạp lên một máy/)).toBeTruthy();
-    await user.click(within(sheet).getByRole("checkbox", { name: /recipe_deployments/ }));
-    await user.type(within(sheet).getByLabelText("Ghi chú"), "ca 2");
-    await user.click(within(sheet).getByRole("button", { name: /Ghi nhận nạp/ }));
-    await waitFor(() => expect(calls("recordRecipeLoad")).toEqual([{ recipeId: 102, machineId: 3, deploy: true, notes: "ca 2" }]));
-    await waitFor(() => expect(layer("eq-recipe-load")).toBeNull());
-    expect(toastSpy.success).toHaveBeenCalledWith("Đã ghi nhận nạp recipe (truy xuất nguồn gốc)");
-    expect(srv.invalidated).toContain("equipmentIntegration.listLoadHistory");
-  });
-
-  it("ghi nhận nạp không có máy ⇒ toast 'Chọn một máy.' như cũ, không gọi", async () => {
-    render(<EquipmentIntegration />);
-    const user = await loadCode();
-    await user.click(within(versionRow(103)).getByRole("button", { name: /Ghi nhận nạp/ }));
-    const sheet = await waitLayer("eq-recipe-load");
-    await user.click(within(sheet).getByRole("button", { name: /Ghi nhận nạp/ }));
-    expect(toastSpy.error).toHaveBeenCalledWith("Chọn một máy.");
-    expect(calls("recordRecipeLoad")).toHaveLength(0);
-  });
-
-  it("cờ TẮT ở server ⇒ lỗi FEATURE_DISABLED hiện toast.info bình tĩnh (không đỏ), như cũ", async () => {
-    srv.mutationError = Object.assign(new Error("Equipment integration disabled"), { data: { code: "CONFLICT", appCode: "FEATURE_DISABLED", appParams: { feature: "equipmentIntegration" } } });
-    render(<EquipmentIntegration />);
-    const user = await loadCode();
-    await user.click(within(versionRow(102)).getByRole("button", { name: /Lưu trữ/ }));
-    await waitFor(() => expect(toastSpy.info).toHaveBeenCalled());
-    expect(toastSpy.error).not.toHaveBeenCalled();
-    expect(srv.invalidated).toContain("equipmentIntegration.status");
-  });
-});
-
-describe("Lịch sử nạp", () => {
-  it("chọn máy ⇒ listLoadHistory {machineId, limit 200}; liên kết sang /recipes?machineId=", async () => {
+  it("operator: nhập mã (Enter) ⇒ `?code=`; chọn máy ⇒ lịch sử theo máy (listLoadHistory {machineId, limit 200}); không gọi thủ tục ghi nào", async () => {
+    asOperator();
     window.history.replaceState(null, "", "/equipment-integration?tab=history");
     const user = userEvent.setup();
     render(<EquipmentIntegration />);
-    expect(within(mainEl()).getByText("Chọn một máy để xem truy xuất nguồn gốc recipe của nó.")).toBeTruthy();
+    await user.type(within(toolbar()).getByRole("textbox", { name: "Mã recipe" }), "RCP-1{Enter}");
+    expect(params().get("code")).toBe("RCP-1");
+    expect(versionRow(102)).toBeTruthy();
     await user.click(within(toolbar()).getByRole("combobox", { name: "Máy" }));
-    await user.click(await screen.findByRole("option", { name: /M3 \(MC-3\)/ }));
-    expect(srv.queryInputs).toContain(`equipmentIntegration.listLoadHistory:${JSON.stringify({ machineId: 3, limit: 200 })}`);
-    expect(within(mainEl()).getByText("nap ca sang")).toBeTruthy();
-    expect(within(toolbar()).getByRole("link", { name: /Mở trong Recipes/ }).getAttribute("href")).toBe("/recipes?machineId=3");
+    await user.click(await screen.findByRole("option", { name: /M4 \(MC-4\)/ }));
+    const hist = mainEl().querySelector("[data-load-history]") as HTMLElement;
+    await user.click(within(hist).getByRole("combobox", { name: "Lọc theo" }));
+    await user.click(await screen.findByRole("option", { name: "Máy" }));
+    expect(srv.queryInputs).toContain(`equipmentIntegration.listLoadHistory:${JSON.stringify({ machineId: 4, limit: 200 })}`);
+    expect(Object.keys(srv.calls)).toEqual([]);
+  });
+
+  it("engineer (mở được /recipes) ⇒ `?tab=history&machineId=3` vẫn chuyển hướng `/recipes?tab=history&machineId=3`", () => {
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&machineId=3");
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname + window.location.search).toBe("/recipes?tab=history&machineId=3");
   });
 });
 
-describe("Worker thu ảnh — Review Focus 3: không unmount khi đổi tab", () => {
-  it("chưa mở tab ⇒ panel CHƯA mount (không truy vấn lúc nạp trang)", () => {
+describe("Đợt 3 Task 2 — worker thu ảnh đã dời sang Vision › Thu ảnh", () => {
+  it("`?tab=acquisition&flyout=acq-start&x=` (có machine_alerts/canView) ⇒ REPLACE `/vision/acquisition?flyout=acq-start&x=` (giữ query, bỏ `tab`)", () => {
+    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition&flyout=acq-start&x=a%20b");
+    const before = window.history.length;
     render(<EquipmentIntegration />);
+    expect(window.location.pathname + window.location.search).toBe("/vision/acquisition?flyout=acq-start&x=a%20b");
+    expect(window.history.length).toBe(before);
+  });
+
+  it("KHÔNG có machine_alerts/canView (vd operator) ⇒ KHÔNG chuyển vào trang bị từ chối; ở lại Integration, tab catalog", () => {
+    Object.assign(perm, { acqView: false, acqControl: false });
+    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition&connector=adapter:ot-s7");
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname).toBe("/equipment-integration");
+    expect(params().get("connector")).toBe("adapter:ot-s7");
+    expect(tabBtn(/^Danh mục connector/)).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("region", { name: "Chi tiết connector" })).toBeTruthy();
+  });
+
+  // Fix round 1 (Ruling R-3-d) — chỗ cũ trỏ tới chỗ mới: khách chỉ có giấy phép OT (ô AI là upsell khi bật launcher) vẫn
+  // có lối nhìn thấy được tới Vision › Thu ảnh. Cổng = cổng của trang đích (machine_alerts/canView).
+  it("R-3-d: có machine_alerts/canView ⇒ link 'Worker thu ảnh → Vision › Thu ảnh' trong hàng công cụ (MỌI tab) trỏ /vision/acquisition; không có ⇒ không link", async () => {
+    render(<EquipmentIntegration />);
+    const link = within(toolbar()).getByRole("link", { name: /Worker thu ảnh → Vision › Thu ảnh/ });
+    expect(link).toHaveAttribute("href", "/vision/acquisition");
+    const user = userEvent.setup();
+    await user.click(link);
+    expect(window.location.pathname).toBe("/vision/acquisition");
+    cleanup();
+    // operator-like có quyền xem thu ảnh nhưng không mở được /recipes ⇒ link cũng có ở tab chỉ-đọc
+    Object.assign(perm, { controlView: false, control: false, release: false });
+    window.history.replaceState(null, "", "/equipment-integration?tab=history");
+    render(<EquipmentIntegration />);
+    expect(within(toolbar()).getByRole("link", { name: /Worker thu ảnh → Vision › Thu ảnh/ })).toBeTruthy();
+    cleanup();
+    Object.assign(perm, { acqView: false, acqControl: false });
+    window.history.replaceState(null, "", "/equipment-integration");
+    render(<EquipmentIntegration />);
+    expect(screen.queryByRole("link", { name: /Worker thu ảnh/ })).toBeNull();
+  });
+
+  it("R-3-d: màn hẹp ⇒ link nằm trong công cụ đầu nội dung tab", () => {
+    presetNarrow(true);
+    render(<EquipmentIntegration />);
+    const tools = mainEl().querySelector("[data-narrow-tools]") as HTMLElement;
+    expect(within(tools).getByRole("link", { name: /Worker thu ảnh → Vision › Thu ảnh/ })).toHaveAttribute("href", "/vision/acquisition");
+  });
+
+  it("trang không còn tab, panel, truy vấn hay sheet nào của worker thu ảnh", async () => {
+    window.history.replaceState(null, "", "/equipment-integration?flyout=acq-start");
+    render(<EquipmentIntegration />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(within(toolbar()).queryByRole("tab", { name: /Worker thu ảnh/ })).toBeNull();
+    expect(acqPanel()).toBeNull();
+    expect(layer("acq-start")).toBeNull();
     expect(srv.acq.mounts).toBe(0);
     expect(srv.queryInputs.some((x) => x.startsWith("visionAdapter."))).toBe(false);
-    expect(acqPanel()).toBeNull();
-  });
-
-  it("mở tab ⇒ mount MỘT lần; trạng thái sống của instance (nhịp poll) còn nguyên sau khi đổi tab qua lại; không unmount; vẫn poll 5 s", async () => {
-    render(<EquipmentIntegration />);
-    const user = await openTab(/^Worker thu ảnh/);
-    expect(srv.acq.mounts).toBe(1);
-    expect(within(acqPanel()!).getByText("10")).toBeTruthy();
-    act(() => {
-      for (const p of srv.acq.polls) p();
-      for (const p of srv.acq.polls) p();
-    });
-    expect(within(acqPanel()!).getByText("12")).toBeTruthy();
-    await user.click(tabBtn(/^Danh mục connector/));
-    expect(srv.acq.unmounts).toBe(0);
-    expect(acqPanel()).toBeTruthy();
-    expect(acqPanel()!.closest("[hidden]")).toBeTruthy();
-    expect(catalog()).toBeTruthy();
-    await user.click(tabBtn(/^Phiên bản recipe/));
-    await user.click(tabBtn(/^Worker thu ảnh/));
-    expect(srv.acq.mounts).toBe(1);
-    expect(srv.acq.unmounts).toBe(0);
-    expect(acqPanel()!.closest("[hidden]")).toBeNull();
-    expect(within(acqPanel()!).getByText("12")).toBeTruthy();
-    expect((srv.queryOpts["visionAdapter.acquisitionWorkerStatus"] as { refetchInterval?: number }).refetchInterval).toBe(5000);
-  });
-
-  it("F5 `?tab=acquisition` mount ngay; cờ thu ảnh TẮT ⇒ chip trong hàng công cụ (câu cũ trong popover), không phải khối trong MAIN", async () => {
-    srv.liveEnabled = false;
-    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition");
-    const user = userEvent.setup();
-    render(<EquipmentIntegration />);
-    expect(srv.acq.mounts).toBe(1);
-    const chipBtn = await within(toolbar()).findByRole("button", { name: /Thu ảnh trực tiếp tắt/ });
-    expect(screen.queryByText(/LIVE_ACQUISITION_ENABLED off/)).toBeNull();
-    await user.click(chipBtn);
-    expect(await screen.findByText(/Thu ảnh trực tiếp đang tắt \(LIVE_ACQUISITION_ENABLED off\)/)).toBeTruthy();
-  });
-
-  it("khởi động worker qua sheet `?flyout=acq-start`: kiểm tra bắt buộc như cũ; lưu ⇒ payload đúng, invalidate, đóng; panel không remount", async () => {
-    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition");
-    const user = userEvent.setup();
-    render(<EquipmentIntegration />);
-    await user.click(within(toolbar()).getByRole("button", { name: /Khởi động worker/ }));
-    const sheet = await waitLayer("acq-start");
-    await user.click(within(sheet).getByRole("button", { name: /Khởi động worker/ }));
-    expect(toastSpy.error).toHaveBeenCalledWith("Cần nhập id worker.");
-    await user.type(within(sheet).getByLabelText("Worker"), "replay-1");
-    await user.click(within(sheet).getByRole("button", { name: /Khởi động worker/ }));
-    expect(toastSpy.error).toHaveBeenCalledWith("Nguồn file cần đường dẫn thư mục.");
-    await user.type(within(sheet).getByLabelText("Thư mục (trên server)"), "D:\\cap");
-    await user.click(within(sheet).getByRole("button", { name: /Khởi động worker/ }));
-    await waitFor(() =>
-      expect(calls("startAcquisitionWorker")).toEqual([
-        { id: "replay-1", source: { kind: "file", directory: "D:\\cap", loop: false }, machineCode: undefined, intervalMs: 2000, submit: false, assessQuality: true },
-      ]),
-    );
-    await waitFor(() => expect(layer("acq-start")).toBeNull());
-    expect(toastSpy.success).toHaveBeenCalledWith("Đã khởi động worker thu ảnh");
-    expect(srv.invalidated).toContain("visionAdapter.acquisitionWorkerStatus");
-    expect(within(acqPanel()!).getByText("replay-1")).toBeTruthy();
-    expect(srv.acq.mounts).toBe(1);
-  });
-
-  it("dừng worker: MỘT cú bấm ⇒ {id}, như cũ; không có quyền điều khiển ⇒ không có nút Khởi động/Dừng", async () => {
-    window.history.replaceState(null, "", "/equipment-integration?tab=acquisition");
-    const user = userEvent.setup();
-    render(<EquipmentIntegration />);
-    await user.click(within(acqPanel()!).getByRole("button", { name: /Dừng/ }));
-    await waitFor(() => expect(calls("stopAcquisitionWorker")).toEqual([{ id: "w1" }]));
-    expect(toastSpy.success).toHaveBeenCalledWith("Đã dừng worker thu ảnh");
-    cleanup();
-    perm.acqControl = false;
-    render(<EquipmentIntegration />);
-    expect(within(toolbar()).queryByRole("button", { name: /Khởi động worker/ })).toBeNull();
-    expect(within(acqPanel()!).queryByRole("button", { name: /Dừng/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Khởi động worker/ })).toBeNull();
   });
 });
 
 describe("Màn hẹp (<1024 px) — GC10", () => {
-  it("công cụ của tab ra ĐẦU nội dung tab (hàng tab không cắt mất nút); qua lại 1024 px không remount panel worker", async () => {
+  it("công cụ của tab ra ĐẦU nội dung tab (hàng tab không cắt mất); qua lại 1024 px đưa công cụ về hàng tab", () => {
     presetNarrow(true);
-    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1");
+    // Đợt 3 Task 2 — ĐỔI BỘ CHỌN: công cụ của tab Worker thu ảnh đã dời ⇒ kiểm bằng công cụ của tab catalog (số connector).
     render(<EquipmentIntegration />);
-    expect(within(toolbar()).queryByRole("textbox")).toBeNull();
+    expect(within(toolbar()).queryByText("5 connector")).toBeNull();
     const tools = mainEl().querySelector("[data-narrow-tools]") as HTMLElement;
-    expect(within(tools).getByRole("textbox", { name: "Mã recipe" })).toBeTruthy();
-    expect(within(tools).getByRole("button", { name: /Phiên bản mới/ })).toBeTruthy();
+    expect(within(tools).getByText("5 connector")).toBeTruthy();
     setNarrow(false);
     expect(mainEl().querySelector("[data-narrow-tools]")).toBeNull();
-    expect(within(toolbar()).getByRole("textbox", { name: "Mã recipe" })).toBeTruthy();
-    const user = await openTab(/^Worker thu ảnh/);
-    expect(srv.acq.mounts).toBe(1);
+    expect(within(toolbar()).getByText("5 connector")).toBeTruthy();
     setNarrow(true);
-    setNarrow(false);
-    await user.click(tabBtn(/^Danh mục connector/));
-    expect(srv.acq.mounts).toBe(1);
-    expect(srv.acq.unmounts).toBe(0);
+    expect(within(mainEl().querySelector("[data-narrow-tools]") as HTMLElement).getByText("5 connector")).toBeTruthy();
   });
 });
 
-describe("Fix round 1", () => {
-  const interval = () => (srv.queryOpts["visionAdapter.acquisitionWorkerStatus"] as { refetchInterval?: number | false }).refetchInterval;
+// ── Final wave (Ruling R-3-h, "không ai mất quyền") — "mở được /recipes" = QUYỀN (machine_control/canView) VÀ GIẤY PHÉP
+// route /recipes (MOD_ENGINEERING; Integration thuộc MOD_OT_CONTROL). Khách chỉ mua OT + người có machine_control GIỮ NGUYÊN
+// năng lực recipe cũ của Integration (trước Đợt 3 Task 1): phiên bản + tạo / phát hành / lưu trữ / rollback, ghi nhận nạp,
+// lịch sử nạp — cùng thủ tục, payload, cổng hiện/bật, cùng bộ invalidate; KHÔNG bị đẩy vào khoá giấy phép của /recipes.
+describe("R-3-h — giấy phép chỉ OT (không MOD_ENGINEERING) + machine_control: đủ năng lực recipe cũ ngay trên Integration", () => {
+  const otOnly = () => {
+    lic.recipes = false;
+  };
+  const OLD_INVALIDATIONS = [
+    "equipmentIntegration.status",
+    "equipmentIntegration.integrationStatus",
+    "equipmentIntegration.listRecipeVersions",
+    "equipmentIntegration.listLoadHistory",
+    "equipmentIntegration.listCodeHistory",
+  ];
+  const appErr = (message: string, code: string, appCode: string, appParams: Record<string, string>) =>
+    Object.assign(new Error(message), { data: { code, appCode, appParams } });
 
-  it("poll worker CHỈ khi tab Worker đang mở: rời tab ⇒ refetchInterval false (panel vẫn mount); quay lại ⇒ 5000 + refetch ngay một lần", async () => {
+  it("giấy phép đọc ĐÚNG route /recipes (vị từ isRouteAllowed của nav/RouteGuard)", () => {
+    otOnly();
     render(<EquipmentIntegration />);
-    const user = await openTab(/^Worker thu ảnh/);
-    expect(interval()).toBe(5000);
-    expect(srv.acq.refetches).toBe(0);
-    await user.click(tabBtn(/^Danh mục connector/));
-    expect(interval()).toBe(false);
-    expect(srv.acq.unmounts).toBe(0);
-    expect(srv.acq.refetches).toBe(0);
-    await user.click(tabBtn(/^Worker thu ảnh/));
-    expect(interval()).toBe(5000);
-    expect(srv.acq.refetches).toBe(1);
-    expect(srv.acq.mounts).toBe(1);
+    expect(lic.asked).toContain("/recipes");
   });
 
-  it("deep link `?flyout=eq-recipe-new` khi cờ CHƯA RÕ (đang kiểm tra / lỗi) ⇒ sheet không có form tạo (như nút cũ bị khoá); cờ tắt ⇒ form như cũ (nút cũ vẫn bật)", async () => {
+  it.each([
+    ["/equipment-integration?tab=recipes&code=RCP-1", "/equipment-integration?tab=history&code=RCP-1"],
+    ["/equipment-integration?tab=history&code=RCP-1", "/equipment-integration?tab=history&code=RCP-1"],
+  ])("%s ⇒ KHÔNG chuyển hướng (ở lại %s); tab 'Phiên bản & lịch sử nạp' (không 'chỉ xem') đủ thao tác theo trạng thái", async (url, stay) => {
+    otOnly();
+    window.history.replaceState(null, "", url);
+    render(<EquipmentIntegration />);
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(stay));
+    expect(within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual(["Danh mục connector", "Phiên bản & lịch sử nạp"]);
+    expect(tabBtn(/^Phiên bản & lịch sử nạp$/)).toHaveAttribute("aria-selected", "true");
+    const names = (id: number) => within(versionRow(id)).getAllByRole("button").map((b) => b.getAttribute("aria-label"));
+    // ORACLE (hợp đồng tab "Phiên bản recipe" cũ): nháp ⇒ Phát hành + Lưu trữ + Ghi nhận nạp; đã phát hành ⇒ Lưu trữ +
+    // Ghi nhận nạp; đã lưu trữ ⇒ Rollback + Ghi nhận nạp.
+    expect(names(103)).toEqual(expect.arrayContaining(["Phát hành", "Lưu trữ", "Ghi nhận nạp"]));
+    expect(names(102)).toEqual(expect.arrayContaining(["Lưu trữ", "Ghi nhận nạp"]));
+    expect(names(102)).not.toContain("Phát hành");
+    expect(names(101)).toEqual(expect.arrayContaining(["Rollback", "Ghi nhận nạp"]));
+    expect(names(101)).not.toContain("Lưu trữ");
+    expect(within(toolbar()).getByRole("button", { name: /Phiên bản mới/ })).toBeEnabled();
+    expect(within(toolbar()).queryByText("Chỉ xem")).toBeNull();
+    // lịch sử nạp theo mã vẫn ở cùng tab
+    const hist = mainEl().querySelector("[data-load-history]") as HTMLElement;
+    expect(within(hist).getByText("nap ca sang")).toBeTruthy();
+  });
+
+  it("phát hành (nháp): MỘT cú bấm ⇒ MỘT lượt releaseRecipeVersion {recipeId}, toast, invalidate ĐÚNG bộ cũ; v3 thành đã phát hành", async () => {
+    otOnly();
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    const user = userEvent.setup();
+    render(<EquipmentIntegration />);
+    await user.click(within(versionRow(103)).getByRole("button", { name: "Phát hành" }));
+    await waitFor(() => expect(calls("releaseRecipeVersion")).toEqual([{ recipeId: 103 }]));
+    expect(toastSpy.success).toHaveBeenCalledWith("Đã phát hành phiên bản");
+    expect(srv.invalidated).toEqual(expect.arrayContaining(OLD_INVALIDATIONS));
+    await waitFor(() => expect(within(versionRow(103)).getByText("Đã phát hành")).toBeTruthy());
+  });
+
+  it("lưu trữ: MỘT cú bấm (hợp đồng cũ, không hộp xác nhận) ⇒ archiveRecipeVersion {recipeId}; toast; invalidate bộ cũ", async () => {
+    otOnly();
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    const user = userEvent.setup();
+    render(<EquipmentIntegration />);
+    await user.click(within(versionRow(102)).getByRole("button", { name: "Lưu trữ" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() => expect(calls("archiveRecipeVersion")).toEqual([{ recipeId: 102 }]));
+    expect(toastSpy.success).toHaveBeenCalledWith("Đã lưu trữ phiên bản");
+    expect(srv.invalidated).toEqual(expect.arrayContaining(OLD_INVALIDATIONS));
+  });
+
+  it("rollback = AlertDialog cũ (R-2-g): KHÔNG ô lý do, KHÔNG OTP; Huỷ ⇒ không gọi; xác nhận ⇒ {toRecipeId}", async () => {
+    otOnly();
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    const user = userEvent.setup();
+    render(<EquipmentIntegration />);
+    await user.click(within(versionRow(101)).getByRole("button", { name: "Rollback" }));
+    let dlg = await screen.findByRole("alertdialog");
+    expect(within(dlg).getByText("Rollback hợp đồng đã phát hành?")).toBeTruthy();
+    expect(within(dlg).queryByRole("textbox")).toBeNull();
+    await user.click(within(dlg).getByRole("button", { name: "Hủy" }));
+    expect(calls("rollbackRecipeVersion")).toHaveLength(0);
+    await user.click(within(versionRow(101)).getByRole("button", { name: "Rollback" }));
+    dlg = await screen.findByRole("alertdialog");
+    await user.click(within(dlg).getByRole("button", { name: /Rollback/ }));
+    await waitFor(() => expect(calls("rollbackRecipeVersion")).toEqual([{ toRecipeId: 101 }]));
+    expect(screen.queryByText(/mã OTP/i)).toBeNull();
+    expect(srv.invalidated).toEqual(expect.arrayContaining(OLD_INVALIDATIONS));
+  });
+
+  it("thiếu canEdit ⇒ Phát hành / Rollback hiện nhưng KHOÁ kèm lý do machine_control/canEdit; Lưu trữ / Ghi nhận nạp vẫn bật (như cũ)", () => {
+    otOnly();
+    perm.release = false;
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    render(<EquipmentIntegration />);
+    const rel = within(versionRow(103)).getByRole("button", { name: "Phát hành" });
+    expect(rel).toBeDisabled();
+    expect(rel.getAttribute("title")).toMatch(/machine_control\/canEdit/);
+    expect(within(versionRow(101)).getByRole("button", { name: "Rollback" })).toBeDisabled();
+    expect(within(versionRow(103)).getByRole("button", { name: "Lưu trữ" })).toBeEnabled();
+    expect(within(versionRow(103)).getByRole("button", { name: "Ghi nhận nạp" })).toBeEnabled();
+  });
+
+  it("thiếu canCreate (có canView) ⇒ hàng 'Chỉ xem', không nút, không 'Phiên bản mới'; deep link sheet không mở", async () => {
+    otOnly();
+    perm.control = false;
+    perm.release = false;
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1&flyout=eq-recipe-load&flyoutId=102");
+    render(<EquipmentIntegration />);
+    for (const id of [101, 102, 103]) {
+      expect(within(versionRow(id)).queryAllByRole("button")).toHaveLength(0);
+      expect(within(versionRow(id)).getByText("Chỉ xem")).toBeTruthy();
+    }
+    expect(within(toolbar()).queryByRole("button", { name: /Phiên bản mới/ })).toBeNull();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(layer("eq-recipe-load")).toBeNull();
+  });
+
+  it("ghi nhận nạp = sheet dùng chung `eq-recipe-load`: không chọn máy ⇒ 'Chọn một máy.'; chọn M4 ⇒ ĐÚNG MỘT lượt {recipeId, machineId, deploy, notes}, đóng, invalidate bộ cũ", async () => {
+    otOnly();
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    const user = userEvent.setup();
+    render(<EquipmentIntegration />);
+    await user.click(within(versionRow(103)).getByRole("button", { name: "Ghi nhận nạp" }));
+    const sheet = await waitLayer("eq-recipe-load");
+    expect(params().get("flyoutId")).toBe("103");
+    await waitFor(() => expect(within(sheet).getByText(/RCP-1 v3 đã được nạp lên một máy/)).toBeTruthy());
+    await user.click(within(sheet).getByRole("button", { name: /Ghi nhận nạp/ }));
+    expect(toastSpy.error).toHaveBeenCalledWith("Chọn một máy.");
+    expect(calls("recordRecipeLoad")).toHaveLength(0);
+    expect(within(sheet).getAllByRole("combobox")).toHaveLength(1);
+    await user.click(within(sheet).getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "M4 (MC-4)" }));
+    await user.type(within(sheet).getByLabelText("Ghi chú"), "ca 3");
+    await user.click(within(sheet).getByRole("button", { name: /Ghi nhận nạp/ }));
+    await waitFor(() => expect(layer("eq-recipe-load")).toBeNull());
+    expect(calls("recordRecipeLoad")).toEqual([{ recipeId: 103, machineId: 4, deploy: false, notes: "ca 3" }]);
+    expect(toastSpy.success).toHaveBeenCalledWith("Đã ghi nhận nạp recipe (truy xuất nguồn gốc)");
+    expect(srv.invalidated).toEqual(expect.arrayContaining(OLD_INVALIDATIONS));
+  });
+
+  it("deep link cũ `?tab=recipes&code=&flyout=eq-recipe-load&flyoutId=102` (OT-only) mở đúng sheet ngay trên Integration", async () => {
+    otOnly();
+    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-load&flyoutId=102");
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname).toBe("/equipment-integration");
+    const sheet = await waitLayer("eq-recipe-load");
+    await waitFor(() => expect(within(sheet).getByRole("combobox")).toHaveTextContent("M3 (MC-3)"));
+  });
+
+  it("'Phiên bản mới' ⇒ sheet `eq-recipe-new` cũ ⇒ createRecipeVersion {code, name, payload, machineId?, notes?}; mã/tên trống ⇒ lỗi cũ, không gọi", async () => {
+    otOnly();
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    const user = userEvent.setup();
+    render(<EquipmentIntegration />);
+    await user.click(within(toolbar()).getByRole("button", { name: /Phiên bản mới/ }));
+    const sheet = await waitLayer("eq-recipe-new");
+    expect(within(sheet).getByLabelText("Mã recipe")).toHaveValue("RCP-1");
+    await user.click(within(sheet).getByRole("button", { name: /Tạo phiên bản/ }));
+    expect(toastSpy.error).toHaveBeenCalledWith("Mã và tên là bắt buộc.");
+    expect(calls("createRecipeVersion")).toHaveLength(0);
+    await user.type(within(sheet).getByLabelText("Tên"), "Reflow B");
+    await user.click(within(sheet).getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "M3 (MC-3)" }));
+    await user.click(within(sheet).getByRole("button", { name: /Tạo phiên bản/ }));
+    await waitFor(() => expect(layer("eq-recipe-new")).toBeNull());
+    expect(calls("createRecipeVersion")).toEqual([{ code: "RCP-1", name: "Reflow B", payload: {}, machineId: 3, notes: undefined }]);
+    expect(toastSpy.success).toHaveBeenCalledWith("Đã tạo phiên bản recipe (bản nháp)");
+    expect(srv.invalidated).toEqual(expect.arrayContaining(OLD_INVALIDATIONS));
+  });
+
+  it("cờ chưa rõ ⇒ 'Phiên bản mới' khoá; deep link sheet chỉ báo trạng thái (không form) — như cũ", async () => {
+    otOnly();
     srv.status = undefined;
-    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-new");
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1&flyout=eq-recipe-new");
     render(<EquipmentIntegration />);
-    let sheet = await waitLayer("eq-recipe-new");
-    expect(within(sheet).getByText("Đang kiểm tra trạng thái tính năng…")).toBeTruthy();
-    expect(within(sheet).queryByRole("button", { name: /Tạo phiên bản/ })).toBeNull();
-    expect(within(sheet).queryByLabelText("Tên")).toBeNull();
-    cleanup();
-    srv.status = { enabled: true };
-    srv.statusError = true;
-    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-new");
-    render(<EquipmentIntegration />);
-    sheet = await waitLayer("eq-recipe-new");
-    expect(within(sheet).getByRole("alert")).toHaveTextContent("Không kiểm tra được trạng thái tích hợp thiết bị");
-    expect(within(sheet).queryByRole("button", { name: /Tạo phiên bản/ })).toBeNull();
-    cleanup();
-    srv.statusError = false;
-    srv.status = { enabled: false };
-    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-new");
-    render(<EquipmentIntegration />);
-    sheet = await waitLayer("eq-recipe-new");
-    expect(within(sheet).getByRole("button", { name: /Tạo phiên bản/ })).toBeTruthy();
+    // sheet mở ⇒ phần còn lại của trang aria-hidden (modal) ⇒ tìm cả phần tử ẩn với AT
+    expect(within(toolbar()).getByRole("button", { name: /Phiên bản mới/, hidden: true })).toBeDisabled();
+    const sheet = await waitLayer("eq-recipe-new");
+    expect(within(sheet).queryByRole("textbox")).toBeNull();
   });
 
-  it("ô mã recipe đi theo `?code=` khi back/forward", async () => {
+  it("cờ TẮT ở server ⇒ FEATURE_DISABLED: toast.info bình tĩnh KHÔNG tên biến môi trường, không toast đỏ, đọc lại cờ", async () => {
+    otOnly();
+    srv.mutationError = appErr("Equipment integration disabled", "CONFLICT", "FEATURE_DISABLED", { feature: "equipmentIntegration" });
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    const user = userEvent.setup();
+    render(<EquipmentIntegration />);
+    await user.click(within(versionRow(103)).getByRole("button", { name: "Phát hành" }));
+    await waitFor(() => expect(toastSpy.info).toHaveBeenCalled());
+    expect(String(toastSpy.info.mock.calls[0][0])).not.toMatch(/[A-Z][A-Z0-9]*_[A-Z0-9_]*ENABLED/);
+    expect(toastSpy.error).not.toHaveBeenCalled();
+    expect(srv.invalidated).toContain("equipmentIntegration.status");
+  });
+
+  it("CẢ HAI giấy phép + machine_control ⇒ vẫn chuyển hướng sang /recipes (không tab recipe trên Integration)", () => {
+    lic.recipes = true;
     window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1");
     render(<EquipmentIntegration />);
-    const input = () => within(toolbar()).getByRole("textbox", { name: "Mã recipe" });
-    expect(input()).toHaveValue("RCP-1");
-    act(() => window.history.pushState(null, "", "/equipment-integration?tab=recipes&code=RCP-9"));
-    await waitFor(() => expect(input()).toHaveValue("RCP-9"));
-    act(() => window.history.back());
-    await waitFor(() => expect(input()).toHaveValue("RCP-1"));
+    expect(window.location.pathname + window.location.search).toBe("/recipes?tab=versions&code=RCP-1");
+    cleanup();
+    window.history.replaceState(null, "", "/equipment-integration");
+    render(<EquipmentIntegration />);
+    expect(within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual(["Danh mục connector"]);
+  });
+
+  it("operator (không machine_control) + chỉ OT ⇒ vẫn CHỈ-ĐỌC (R-3-b không đổi): nhãn '(chỉ xem)', 0 nút trên hàng, không 'Phiên bản mới'", () => {
+    otOnly();
+    Object.assign(perm, { controlView: false, control: false, release: false });
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname).toBe("/equipment-integration");
+    expect(tabBtn(/^Phiên bản & lịch sử nạp \(chỉ xem\)/)).toHaveAttribute("aria-selected", "true");
+    for (const id of [101, 102, 103]) expect(within(versionRow(id)).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /Phát hành|Rollback|Ghi nhận nạp|Lưu trữ|Phiên bản mới/ })).toBeNull();
   });
 });

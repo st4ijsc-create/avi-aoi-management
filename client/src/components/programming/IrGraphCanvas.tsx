@@ -57,6 +57,7 @@ import {
   isContainer, defaultSlot,
   type Flow, type IrBlock, type BlockType, type Slot,
 } from "./irTree";
+import { useResolvedTheme } from "@/contexts/ThemeContext";
 
 /** Attribute the pane reads to route a drop into a specific container slot. */
 const SLOT_ATTR = "data-ir-slot";
@@ -308,6 +309,7 @@ function CanvasInner({
   flow, selectedId, diagsByBlock, onSelect, onDelete,
   onAddTopLevel, onAddChild, onReorderToSibling, onMoveNode, t, fill = false,
 }: IrGraphCanvasProps) {
+  const colorMode = useResolvedTheme(); // doc 81 Đợt 3 Task 0 (D4) — canvas theo theme app, không mặc định "light"
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
 
@@ -392,6 +394,7 @@ function CanvasInner({
       className={fill ? "h-full min-h-[320px] w-full overflow-hidden bg-muted/20" : "h-[560px] w-full overflow-hidden rounded-md border border-border bg-muted/20"}
     >
       <ReactFlow
+        colorMode={colorMode}
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}

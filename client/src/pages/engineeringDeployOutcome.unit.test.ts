@@ -10,7 +10,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
+import { deployOutcome, deployReasonKey, newDeployAttemptKey, DEPLOY_REASON_CODES } from "./engineeringDeployOutcome";
 import {
   initialWorkspaceState,
   workspaceReducer,
@@ -135,6 +135,19 @@ describe("doc 81 Đợt 1B Task 4 — lý do deploy có mã ⇒ khoá i18n (vi/e
     for (const l of LOCALES) {
       const v = load(l)?.engineering?.deployReason?.techman_program_download_unsupported;
       expect(typeof v === "string" && v.trim().length > 0, `${l}.json thiếu khoá`).toBe(true);
+    }
+  });
+
+  // doc 81 Đợt 3 final wave — ghi chú của hàng SIMULATED có MÃ (server không còn nêu tên biến môi trường).
+  it("deploy_gate_off / no_hitl_signoff ⇒ detailKey riêng; mọi mã có câu vi/en/zh KHÔNG mang tên biến môi trường", () => {
+    expect(deployReasonKey({ detailJson: { reasonCode: "deploy_gate_off" } })).toBe("engineering.deployReason.deploy_gate_off");
+    expect(deployReasonKey({ detailJson: { reasonCode: "no_hitl_signoff" } })).toBe("engineering.deployReason.no_hitl_signoff");
+    for (const l of LOCALES) {
+      for (const code of DEPLOY_REASON_CODES) {
+        const v = load(l)?.engineering?.deployReason?.[code];
+        expect(typeof v === "string" && v.trim().length > 0, `${l}.json thiếu engineering.deployReason.${code}`).toBe(true);
+        expect(v, `${l}: ${code}`).not.toMatch(/[A-Z][A-Z0-9]+_[A-Z0-9_]+/);
+      }
     }
   });
 });

@@ -2658,7 +2658,8 @@
     "contrast": "Độ tương phản",
     "on": "Bật",
     "off": "Tắt",
-    "hide": "ẩn"
+    "hide": "ẩn",
+    "flagOffToastGeneric": "Tính năng này đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật."
   },
   "corporate": {
     "performanceByCorporation": "Hiệu suất theo tập đoàn",
@@ -3998,7 +3999,9 @@
       "reviewArtifact": "duyệt phiên bản chương trình",
       "approveInterlockRule": "duyệt quy tắc khoá liên động",
       "releaseRecipeVersion": "phát hành phiên bản công thức",
-      "rollbackRecipeVersion": "quay lui phiên bản công thức"
+      "rollbackRecipeVersion": "quay lui phiên bản công thức",
+      "assignEngineeringItem": "giao việc chờ duyệt",
+      "unassignEngineeringItem": "bỏ giao việc chờ duyệt"
     },
     "field": {
       "stopValue": "giá trị dừng ghim (stopValue)",
@@ -4102,7 +4105,8 @@
       "reviewReason": "lý do từ chối",
       "gatewayId": "gateway",
       "deviceIds": "danh sách thiết bị được phép",
-      "expectedProjectId": "dự án đang mở (expectedProjectId)"
+      "expectedProjectId": "dự án đang mở (expectedProjectId)",
+      "assigneeUserId": "người được giao"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -4335,7 +4339,12 @@
       "recipeArchived": "Phiên bản công thức này đã lưu trữ — hãy tạo phiên bản mới thay vì đưa bản đã lưu trữ vào chạy.",
       "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này.",
       "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới.",
-      "buildNotInProject": "Build này không thuộc dự án đang mở — chọn lại một build của chính dự án này rồi thử lại. Không có gì được triển khai."
+      "buildNotInProject": "Build này không thuộc dự án đang mở — chọn lại một build của chính dự án này rồi thử lại. Không có gì được triển khai.",
+      "assignTargetNotPending": "Chỉ giao được mục đang chờ duyệt — mục này không còn chờ duyệt.",
+      "assignmentChanged": "Người được giao vừa bị người khác đổi. Tải lại để xem người được giao hiện tại.",
+      "alreadyAssignedToUser": "Mục này đã được giao cho người này.",
+      "assignmentStoreMissing": "Chưa bật được giao việc: cơ sở dữ liệu chưa được cập nhật (cần quản trị viên).",
+      "assigneeInvalid": "Người được giao không hợp lệ (không tồn tại, đã bị vô hiệu hoá hoặc không xem được trang của mục này)."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -6638,6 +6647,7 @@
       "safety": "An toàn",
       "standardsIntegration": "Chuẩn hóa & Tích hợp",
       "twin": "Twin & Mô phỏng",
+      "labs": "Labs — thử nghiệm",
       "maintenance": "Bảo trì & Cảnh báo",
       "reports": "Báo cáo",
       "analysis": "Phân tích",
@@ -7114,11 +7124,15 @@
     "equipmentStandards": "Tiêu chuẩn thiết bị",
     "equipmentStandardsDesc": "Cây phân loại thiết bị theo phiên bản, phân loại cảnh báo ISA-18.2 và Hội đồng tiêu chuẩn thiết bị (chỉ xem)",
     "equipmentIntegration": "Tích hợp thiết bị",
-    "equipmentIntegrationDesc": "Khung tích hợp FOCAS/Euromap (chỉ đọc) và phả hệ phiên bản công thức (chỉ xem)",
+    "equipmentIntegrationDesc": "Khung tích hợp FOCAS/Euromap (chỉ đọc) và danh mục adapter",
     "modeSimple": "Đơn giản",
     "modeAdvanced": "Nâng cao",
     "showAdvanced": "Hiện menu nâng cao",
     "showSimple": "Menu đơn giản",
+    "showLabs": "Hiện Labs",
+    "labsOn": "Bật",
+    "labsOff": "Tắt",
+    "labsToggleHint": "Hiện các màn thử nghiệm (Labs) trong menu — chỉ áp dụng cho bạn",
     "beta": "Beta",
     "betaHint": "Bản xem trước — có thể cần thiết lập trước khi hiển thị dữ liệu thực",
     "betaBanner": "Đây là tính năng xem trước. Có thể cần thiết lập hoặc bật cờ tính năng trước khi hiển thị dữ liệu thực.",
@@ -7136,7 +7150,7 @@
       "fleetOrchestration": "Giao việc cho robot/AGV di động và quản lý luồng di chuyển, sạc pin (xem trước)",
       "safetyWorkforce": "Tổng quan an toàn tư vấn và bảng phân ca/nhân lực (xem trước)",
       "equipmentStandards": "Chuẩn loại thiết bị toàn công ty và cách đặt tên cảnh báo chuẩn (xem trước)",
-      "equipmentIntegration": "Kết nối tới máy CNC/ép nhựa và lịch sử phiên bản công thức (xem trước)",
+      "equipmentIntegration": "Kết nối tới máy CNC/ép nhựa (xem trước)",
       "rfTestCell": "Cell kiểm tra RF mô phỏng với robot + máy đo, có phát lại (xem trước)",
       "cellTwin": "Bản sao số trực tiếp của một cell sản xuất để theo dõi và phát lại (xem trước)",
       "federationDashboard": "Chế độ xem tổng hợp qua nhiều nhà máy/địa điểm kết nối (xem trước)"
@@ -7194,7 +7208,13 @@
     "twin3d": "Nhà máy 3D",
     "twin3dDesc": "Mục lục không gian: định vị máy trong nhà xưởng, xem trạng thái theo thời gian thực",
     "twinStudio": "Thiết kế nhà máy 3D",
-    "twinStudioDesc": "Dựng toà nhà, mặt sàn và bố cục máy; nhập bản vẽ kỹ thuật; xuất bản phiên bản"
+    "twinStudioDesc": "Dựng toà nhà, mặt sàn và bố cục máy; nhập bản vẽ kỹ thuật; xuất bản phiên bản",
+    "visionAcquisition": "Thu ảnh",
+    "visionAcquisitionDesc": "Worker thu ảnh: khởi động, theo dõi, dừng",
+    "visionAcquisitionAlias": "Worker thu ảnh → Vision › Thu ảnh",
+    "productionShifts": "Ca làm việc",
+    "productionShiftsDesc": "Phân công người vận hành theo ca và bảng hiện trường",
+    "productionShiftsAlias": "Nhân lực → Sản xuất › Ca"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -12344,6 +12364,7 @@
     },
     "error": {
       "title": "Trợ lý chưa trả lời được",
+      "DISABLED": "Trợ lý lập trình AI đang tắt trên hệ thống này. Liên hệ quản trị viên nếu cần bật.",
       "MODEL_OFFLINE": "Trợ lý lập trình chưa sẵn sàng (model offline). Liên hệ quản trị viên.",
       "TOKEN_BUDGET": "Trợ lý chưa trả lời được (hết ngân sách xử lý). Thử lại hoặc rút ngắn yêu cầu.",
       "CONTEXT_TOO_LARGE": "Yêu cầu hoặc chương trình quá dài để trợ lý xử lý. Rút ngắn rồi thử lại.",
@@ -13575,7 +13596,8 @@
       "versions": "Phiên bản",
       "approval": "Duyệt",
       "deploy": "Triển khai",
-      "machines": "Máy đang chạy"
+      "machines": "Máy đang chạy",
+      "history": "Lịch sử nạp"
     },
     "params": {
       "version": "Phiên bản đang xem",
@@ -13588,7 +13610,23 @@
     },
     "allCodes": "Tất cả mã",
     "allCodesHint": "Bỏ chọn mã — xem sổ triển khai của mọi máy",
-    "deployFailed": "Triển khai lên {{machine}} không thực hiện được"
+    "deployFailed": "Triển khai lên {{machine}} không thực hiện được",
+    "overviewTabs": "Sổ của mọi máy",
+    "loads": {
+      "pickCode": "Chọn một mã recipe ở danh sách bên trái để xem lịch sử nạp của mã đó trên mọi máy.",
+      "pickMachine": "Chọn một máy ở ô \"Chọn máy\" trên đầu trang để xem lịch sử nạp của máy đó.",
+      "noPermission": "Xem lịch sử nạp cần quyền xem giám sát máy (machine_monitoring).",
+      "loadError": "Không đọc được lịch sử nạp."
+    },
+    "integ": {
+      "flagOff": "Tích hợp thiết bị đang tắt: phát hành, rollback phiên bản và ghi nhận nạp bị chặn cho đến khi bật. Xem lịch sử nạp vẫn được.",
+      "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước) — thao tác này bị chặn cho đến khi được bật.",
+      "failed": "{{action}} {{version}} không thực hiện được",
+      "loadFailed": "Ghi nhận nạp lên {{machine}} không thực hiện được",
+      "flagError": "Không kiểm tra được trạng thái tích hợp thiết bị. Thao tác tích hợp vẫn gửi được, nhưng máy chủ sẽ từ chối nếu tính năng đang tắt."
+    },
+    "machineOptional": "Máy (tùy chọn)",
+    "noMachineOption": "(không gắn máy)"
   },
   "confirmWithReason": {
     "defaultConfirmText": "XÁC NHẬN",
@@ -15894,7 +15932,9 @@
     "fleetMatrix": "Ma trận máy × version",
     "fleetMatrixEmpty": "Chưa có máy nào ghi nhận phiên bản",
     "deployReason": {
-      "techman_program_download_unsupported": "Robot Techman (robot-tm) chưa hỗ trợ tải chương trình — không có lệnh tải chương trình TMflow nào được cài đặt, nên KHÔNG có gì được gửi xuống robot."
+      "techman_program_download_unsupported": "Robot Techman (robot-tm) chưa hỗ trợ tải chương trình — không có lệnh tải chương trình TMflow nào được cài đặt, nên KHÔNG có gì được gửi xuống robot.",
+      "deploy_gate_off": "Triển khai xuống thiết bị đang tắt trên máy chủ này (mặc định) — chỉ ghi nhận mô phỏng, không chạm thiết bị.",
+      "no_hitl_signoff": "Chưa có người ký xác nhận (HITL) — chỉ ghi nhận mô phỏng, không chạm thiết bị."
     },
     "review": {
       "title": "Duyệt phiên bản",
@@ -16114,7 +16154,7 @@
     "inboxTab": "Hộp việc",
     "catalogTab": "Danh mục công cụ",
     "scopeLabel": "Phạm vi hộp việc",
-    "scopeApprovals": "Chờ duyệt",
+    "scopeApprovals": "Chờ duyệt (tôi có quyền)",
     "scopeApprovalsHint": "Việc chờ duyệt / xác nhận ở các màn bạn có quyền mở",
     "scopeAll": "Toàn module",
     "scopeAllHint": "Mọi việc chờ và cảnh báo của module (gồm sự cố an toàn, sự kiện interlock, bế tắc đội xe)",
@@ -16136,7 +16176,9 @@
       "commandConsole": "Bảng lệnh (HITL)"
     },
     "criticalChip": "Khẩn",
-    "criticalSource": "oversight.pendingSummary — recipe chạy chưa duyệt, sự kiện interlock đang mở, sự cố an toàn chưa kiểm định, bế tắc đội xe"
+    "criticalSource": "oversight.pendingSummary — recipe chạy chưa duyệt, sự kiện interlock đang mở, sự cố an toàn chưa kiểm định, bế tắc đội xe",
+    "scopeMine": "Của tôi",
+    "scopeMineHint": "Việc chờ duyệt đang được giao cho bạn (được giao không cấp quyền duyệt)"
   },
   "oversight": {
     "title": "Đang chờ duyệt & cảnh báo",
@@ -16173,58 +16215,11 @@
       "count": "Số",
       "samples": "Đang chờ"
     },
-    "noAccess": "(không có quyền mở trang này)"
+    "noAccess": "(không có quyền mở trang này)",
+    "mineAllClear": "Không có việc nào đang giao cho bạn."
   },
   "eqIntegration": {
-    "acq": {
-      "desc": "Grab → chỉ số chất lượng → tùy chọn submit NTF qua đúng đường ingest chuẩn. Nguồn file/mock chạy thật hôm nay; GenICam vẫn là stub cho tới khi gắn driver camera.",
-      "flagOff": "Thu ảnh trực tiếp đang tắt (LIVE_ACQUISITION_ENABLED off). Vẫn xem được trạng thái; khởi động worker sẽ bị từ chối tới khi bật cờ.",
-      "noPermission": "Xem worker thu ảnh cần quyền xem machine-alerts.",
-      "start": "Khởi động worker",
-      "stop": "Dừng",
-      "started": "Đã khởi động worker thu ảnh",
-      "stopped": "Đã dừng worker thu ảnh",
-      "empty": "Chưa có worker thu ảnh nào trong phiên server này.",
-      "col": {
-        "id": "Worker",
-        "source": "Nguồn",
-        "frames": "Frame",
-        "submitted": "Đã submit",
-        "errors": "Lỗi",
-        "last": "Frame / lỗi gần nhất"
-      },
-      "since": "từ",
-      "submits": "submit NTF",
-      "state": {
-        "running": "Đang chạy",
-        "completed": "Hoàn tất",
-        "stopped": "Đã dừng",
-        "error": "Lỗi"
-      },
-      "qualityOk": "chất lượng OK",
-      "qualityBad": "chất lượng kém",
-      "sources": "Loại nguồn",
-      "startTitle": "Khởi động worker thu ảnh",
-      "startHint": "Nguồn file phát lại thư mục ảnh; mock sinh frame tổng hợp. Submit gắn NTF ('cần kiểm tra') — thu ảnh không phải phán quyết.",
-      "idRequired": "Cần nhập id worker.",
-      "dirRequired": "Nguồn file cần đường dẫn thư mục.",
-      "machineRequired": "Submit frame cần mã máy.",
-      "kind": "Loại nguồn",
-      "directory": "Thư mục (trên server)",
-      "loop": "Lặp thư mục (soak test)",
-      "maxFrames": "Số frame tối đa (0 = tới khi dừng)",
-      "interval": "Chu kỳ (ms)",
-      "submitFrames": "Submit mỗi frame thành một lượt kiểm NTF chuẩn (cần mã máy)",
-      "assessQuality": "Chạy chỉ số chất lượng ảnh mỗi frame",
-      "liveOffChip": "Thu ảnh trực tiếp tắt",
-      "aboutChip": "Về nguồn thu"
-    },
-    "whenToUse": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS/Euromap) và phả hệ phiên bản recipe. Metadata chỉ đọc, không có thiết bị trực tiếp.",
-    "recipeStatus": {
-      "draft": "Nháp",
-      "released": "Đã phát hành",
-      "archived": "Đã lưu trữ"
-    },
+    "whenToUse": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS/Euromap) và các giao thức adapter đã đăng ký. Metadata chỉ đọc, không có thiết bị trực tiếp. Phiên bản recipe và lịch sử nạp nay ở trang Recipes.",
     "action": {
       "create": "Tạo",
       "release": "Phát hành",
@@ -16238,27 +16233,20 @@
       "none": "Không có"
     },
     "alsoDeploy": "Đồng thời ghi một dòng sổ recipe_deployments",
-    "archive": "Lưu trữ",
-    "archiveTip": "Lưu trữ phiên bản này",
     "byCode": "Mã recipe",
     "byMachine": "Máy",
     "col": {
       "action": "Thao tác",
       "machine": "Máy",
-      "name": "Tên",
       "notes": "Ghi chú",
       "recipe": "Mã @ phiên bản",
       "status": "Trạng thái",
       "when": "Thời điểm",
-      "who": "Người thực hiện"
+      "who": "Người thực hiện",
+      "name": "Tên"
     },
     "configured": "Đã kết nối",
-    "create": "Tạo phiên bản",
-    "createRequired": "Mã và tên là bắt buộc.",
-    "createTitle": "Phiên bản recipe mới (bản nháp)",
-    "createVersion": "Phiên bản mới",
-    "flagOffBanner": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc vẫn hoạt động; các thao tác (tạo / phát hành / lưu trữ / rollback phiên bản, ghi nhận nạp) bị chặn cho đến khi bật.",
-    "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước). Đặt EQ_INTEG_ENABLED=true để thao tác.",
+    "flagOffBanner": "Chế độ xem trước: tích hợp thiết bị đang tắt. Xem vẫn hoạt động; các thao tác tích hợp (phát hành / rollback phiên bản recipe, ghi nhận nạp — nay ở trang Recipes) bị chặn cho đến khi bật.",
     "flagStatusError": "Không kiểm tra được trạng thái tích hợp thiết bị — các thao tác bị khoá cho đến khi xác nhận lại.",
     "frameworkNoDevice": "Framework — chưa có thiết bị kết nối",
     "frameworkNote": "Đây là FRAMEWORK tích hợp. Nó mô hình hóa các trường chỉ đọc mà một connector FOCAS/Euromap thực sẽ ánh xạ vào Unified Equipment Model, nhưng dữ liệu trực tiếp cần một thiết bị/connector đã kết nối. Cho đến lúc đó, giá trị vẫn là \"—\" và nguồn snapshot là \"none\".",
@@ -16269,31 +16257,22 @@
       "configured": "Framework đã kết nối",
       "flag": "Cờ"
     },
-    "loadHistory": "Lịch sử nạp",
     "loading": "Đang tải…",
     "loadRecorded": "Đã ghi nhận nạp recipe (truy xuất nguồn gốc)",
     "loadTip": "Ghi nhận rằng phiên bản này đã được nạp lên một máy (truy xuất nguồn gốc)",
-    "loadVersions": "Nạp phiên bản",
     "machine": "Máy",
     "machineCode": "Mã máy",
-    "machineOptional": "Máy (tùy chọn)",
     "machineRequired": "Chọn một máy.",
     "needsEditPermission": "Cần quyền sửa (machine_control/canEdit) để phát hành/rollback.",
     "noAdapters": "Chưa đăng ký giao thức adapter nào.",
-    "noMachine": "(không có)",
     "noPermission": "Bạn không có quyền xem tích hợp thiết bị.",
     "noReadout": "không có số liệu",
     "notConnected": "chưa kết nối",
     "notes": "Ghi chú",
     "off": "Tắt",
     "on": "Bật",
-    "payload": "Payload (JSON)",
-    "payloadInvalid": "Payload không phải JSON hợp lệ.",
-    "payloadObject": "Payload phải là một object JSON.",
-    "pickHint": "Nhập mã recipe ở trên để liệt kê các phiên bản bất biến và thao tác truy xuất nguồn gốc của nó.",
     "readOnly": "chỉ đọc",
     "readSnapshot": "Đọc snapshot",
-    "recipeCode": "Mã recipe",
     "recordLoad": "Ghi nhận nạp",
     "recordLoadHint": "Ghi nhận rằng {{code}} v{{version}} đã được nạp lên một máy (truy xuất nguồn gốc). Việc này không mở đường dẫn thiết bị nào; lệnh select_recipe vẫn đi qua dispatcher có kiểm soát.",
     "recordLoadTitle": "Ghi nhận nạp recipe",
@@ -16303,16 +16282,13 @@
     "rollbackConfirmBody": "Việc này phát hành {{code}} v{{version}} và lưu trữ phiên bản đang phát hành hiện tại. Nó chỉ ghi metadata truy xuất nguồn gốc — không đẩy recipe nào xuống thiết bị.",
     "rollbackConfirmTitle": "Rollback hợp đồng đã phát hành?",
     "rollbackTip": "Rollback hợp đồng đã phát hành về phiên bản này",
-    "safetyNote": "FOCAS/Euromap là các framework tích hợp chỉ đọc — không có thiết bị trực tiếp nào được gắn và không có telemetry nào bị bịa. Việc quản lý phiên bản recipe ở đây chỉ là truy xuất nguồn gốc/metadata; nó không mở đường dẫn điều khiển thiết bị.",
-    "selectCodeHint": "Nhập mã recipe để xem truy xuất nguồn gốc của nó qua các máy.",
+    "safetyNote": "FOCAS/Euromap là các framework tích hợp chỉ đọc — không có thiết bị trực tiếp nào được gắn và không có telemetry nào bị bịa; trang này không mở đường dẫn điều khiển thiết bị.",
     "selectMachine": "Chọn một máy…",
-    "selectMachineHint": "Chọn một máy để xem truy xuất nguồn gốc recipe của nó.",
-    "subtitle": "Các framework tích hợp đa nhà cung cấp (FOCAS / Euromap, chỉ đọc) và truy xuất nguồn gốc phiên bản recipe — chỉ metadata, không có lệnh thiết bị.",
+    "subtitle": "Các framework tích hợp đa nhà cung cấp (FOCAS / Euromap, chỉ đọc) — chỉ metadata, không có lệnh thiết bị.",
     "tab": {
-      "acquisition": "Worker thu ảnh",
-      "history": "Lịch sử nạp",
-      "recipes": "Phiên bản recipe",
-      "status": "Danh mục connector"
+      "status": "Danh mục connector",
+      "readonlyHistory": "Phiên bản & lịch sử nạp (chỉ xem)",
+      "recipeHistory": "Phiên bản & lịch sử nạp"
     },
     "title": "Tích hợp thiết bị",
     "uem": {
@@ -16321,17 +16297,9 @@
       "recipeId": "recipe_id",
       "utilization": "utilization_rate"
     },
-    "versionArchived": "Đã lưu trữ phiên bản",
-    "versionCreated": "Đã tạo phiên bản recipe (bản nháp)",
     "versionReleased": "Đã phát hành phiên bản",
     "versionRolledBack": "Đã rollback hợp đồng đã phát hành",
-    "versionsTitle": "Các phiên bản của {{code}}",
-    "viewOnly": "Chỉ xem",
     "safetyChip": "Chỉ đọc",
-    "versionNotFound": "Không tìm thấy phiên bản #{{id}} trong mã recipe đang xem.",
-    "openInRecipes": "Mở trong Recipes",
-    "openInRecipesHint": "Danh mục, duyệt và triển khai recipe nằm ở trang Recipes",
-    "recipesElsewhere": "Duyệt và triển khai recipe xuống máy nằm ở trang Recipes.",
     "chip": {
       "srcAdapters": "Registry adapter trên server (integrationStatus.adapters) — đăng ký, không phải kết nối",
       "srcConnected": "Framework có connector/thiết bị thật (integrationStatus.frameworks[].configured)",
@@ -16351,7 +16319,94 @@
       "pickHint": "Chọn một connector để xem chi tiết.",
       "loadError": "Không đọc được trạng thái tích hợp."
     },
-    "createDesc": "Phiên bản bất biến ở dạng nháp — chỉ metadata truy xuất nguồn gốc; không đẩy gì xuống thiết bị."
+    "recipeStatus": {
+      "draft": "Nháp",
+      "released": "Đã phát hành",
+      "archived": "Đã lưu trữ"
+    },
+    "recipeCode": "Mã recipe",
+    "versionsTitle": "Các phiên bản của {{code}}",
+    "loadVersions": "Nạp phiên bản",
+    "viewOnly": "Chỉ xem",
+    "readonly": {
+      "pickCode": "Nhập mã recipe ở trên để xem các phiên bản và lịch sử nạp của mã đó (chỉ xem).",
+      "pickMachine": "Chọn một máy ở trên để xem lịch sử nạp của máy đó."
+    },
+    "acqMoved": "Worker thu ảnh → Vision › Thu ảnh",
+    "recipeTab": {
+      "pickCode": "Nhập mã recipe ở trên để xem các phiên bản, thao tác phiên bản và lịch sử nạp của mã đó."
+    },
+    "flagOffBannerHere": "Chế độ xem trước: tích hợp thiết bị đang tắt. Xem vẫn hoạt động; các thao tác phiên bản recipe trên trang này (tạo / phát hành / lưu trữ / rollback, ghi nhận nạp) bị chặn cho đến khi bật.",
+    "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước) — thao tác này bị chặn cho đến khi được bật.",
+    "archive": "Lưu trữ",
+    "archiveTip": "Lưu trữ phiên bản này",
+    "create": "Tạo phiên bản",
+    "createRequired": "Mã và tên là bắt buộc.",
+    "createTitle": "Phiên bản recipe mới (bản nháp)",
+    "createDesc": "Phiên bản bất biến ở dạng nháp — chỉ metadata truy xuất nguồn gốc; không đẩy gì xuống thiết bị.",
+    "createVersion": "Phiên bản mới",
+    "machineOptional": "Máy (tùy chọn)",
+    "noMachine": "(không có)",
+    "payload": "Payload (JSON)",
+    "payloadInvalid": "Payload không phải JSON hợp lệ.",
+    "payloadObject": "Payload phải là một object JSON.",
+    "versionArchived": "Đã lưu trữ phiên bản",
+    "versionCreated": "Đã tạo phiên bản recipe (bản nháp)",
+    "versionNotFound": "Không tìm thấy phiên bản #{{id}} trong mã recipe đang xem."
+  },
+  "visionAcq": {
+    "title": "Thu ảnh",
+    "whenToUse": "Khi nào dùng — khởi động, theo dõi và dừng worker thu ảnh (phát lại thư mục ảnh / frame mock) cấp ảnh cho đường ingest kiểm tra.",
+    "liveSubject": "Thu ảnh trực tiếp",
+    "desc": "Grab → chỉ số chất lượng → tùy chọn submit NTF qua đúng đường ingest chuẩn. Nguồn file/mock chạy thật hôm nay; GenICam vẫn là stub cho tới khi gắn driver camera.",
+    "flagOff": "Thu ảnh trực tiếp đang tắt trên server. Vẫn xem được trạng thái; khởi động worker sẽ bị từ chối tới khi quản trị viên bật cờ thu ảnh trực tiếp.",
+    "noPermission": "Xem worker thu ảnh cần quyền xem machine-alerts.",
+    "start": "Khởi động worker",
+    "stop": "Dừng",
+    "started": "Đã khởi động worker thu ảnh",
+    "stopped": "Đã dừng worker thu ảnh",
+    "empty": "Chưa có worker thu ảnh nào trong phiên server này.",
+    "col": {
+      "id": "Worker",
+      "source": "Nguồn",
+      "frames": "Frame",
+      "submitted": "Đã submit",
+      "errors": "Lỗi",
+      "last": "Frame / lỗi gần nhất",
+      "status": "Trạng thái"
+    },
+    "since": "từ",
+    "submits": "submit NTF",
+    "state": {
+      "running": "Đang chạy",
+      "completed": "Hoàn tất",
+      "stopped": "Đã dừng",
+      "error": "Lỗi"
+    },
+    "qualityOk": "chất lượng OK",
+    "qualityBad": "chất lượng kém",
+    "sources": "Loại nguồn",
+    "startTitle": "Khởi động worker thu ảnh",
+    "startHint": "Nguồn file phát lại thư mục ảnh; mock sinh frame tổng hợp. Submit gắn NTF ('cần kiểm tra') — thu ảnh không phải phán quyết.",
+    "idRequired": "Cần nhập id worker.",
+    "dirRequired": "Nguồn file cần đường dẫn thư mục.",
+    "machineRequired": "Submit frame cần mã máy.",
+    "kind": "Loại nguồn",
+    "directory": "Thư mục (trên server)",
+    "loop": "Lặp thư mục (soak test)",
+    "maxFrames": "Số frame tối đa (0 = tới khi dừng)",
+    "interval": "Chu kỳ (ms)",
+    "submitFrames": "Submit mỗi frame thành một lượt kiểm NTF chuẩn (cần mã máy)",
+    "assessQuality": "Chạy chỉ số chất lượng ảnh mỗi frame",
+    "aboutChip": "Về nguồn thu",
+    "flagError": "Không đọc được trạng thái worker nên chưa biết thu ảnh trực tiếp đang bật hay tắt.",
+    "machineCode": "Mã máy",
+    "chip": {
+      "errors": "Worker lỗi",
+      "running": "Đang chạy",
+      "srcErrors": "Danh sách worker của server (acquisitionWorkerStatus) — trạng thái Lỗi hoặc có lỗi frame",
+      "srcRunning": "Worker đang chạy trên tổng số worker đăng ký trong phiên server này (acquisitionWorkerStatus)"
+    }
   },
   "eqStandards": {
     "whenToUse": "Khi nào dùng — quản trị chuẩn loại thiết bị, phân loại cảnh báo ISA-18.2 và hội đồng duyệt. Chỉ là metadata quản trị, không phát lệnh thiết bị.",
@@ -16409,7 +16464,7 @@
     "fail": "Không đạt",
     "failingTypesTitle": "Các loại không đạt kiểm định",
     "flagOffBanner": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc vẫn hoạt động; các thao tác (đăng ký loại / ánh xạ cảnh báo / gửi / duyệt / xuất bản) bị chặn cho đến khi bật.",
-    "flagOffToast": "Quản trị thiết bị đang tắt (xem trước). Đặt EQ_GOVERN_ENABLED=true để thao tác.",
+    "flagOffToast": "Quản trị thiết bị đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "flagStatusError": "Không kiểm tra được trạng thái quản trị thiết bị — các thao tác bị khoá cho đến khi xác nhận lại.",
     "hierarchyTitle": "Phân cấp loại thiết bị",
     "inheritance": "Chuỗi kế thừa",
@@ -16594,8 +16649,8 @@
     "discoveryViewOnly": "Phát hiện cần quyền machine_control / create. Bạn chỉ có quyền xem.",
     "endpoint": "Endpoint",
     "endpointRequired": "Nhập một endpoint để probe.",
-    "flagOffBanner": "Chế độ xem trước: field abstraction v2 đang tắt (FIELD_V2_ENABLED tắt). Đọc vẫn hoạt động; các thao tác hot-plug (phát hiện / đăng ký thiết bị) bị chặn cho đến khi bật cờ.",
-    "flagOffToast": "Field abstraction đang tắt (xem trước). Đặt FIELD_V2_ENABLED=true để thao tác.",
+    "flagOffBanner": "Chế độ xem trước: field abstraction v2 đang tắt trên máy chủ. Đọc vẫn hoạt động; các thao tác hot-plug (phát hiện / đăng ký thiết bị) bị chặn cho đến khi quản trị viên bật.",
+    "flagOffToast": "Field abstraction đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "healthDesc": "Mỗi thiết bị theo dõi một dòng. Trạng thái sống được suy ra từ tuổi nhịp tim (dựa trên TTL).",
     "healthEmpty": "Chưa có thiết bị theo dõi nào. Thiết bị xuất hiện ở đây khi có nhịp tim hoặc được phát hiện.",
     "healthTitle": "Bảng trạng thái sống thiết bị",
@@ -16695,7 +16750,7 @@
     "deviceIdRequired": "Nhập mã thiết bị hợp lệ.",
     "filterStatus": "Trạng thái",
     "flagOffBanner": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc vẫn hoạt động; các thao tác (phân bổ / gán lại / hủy / đặt trước / giải phóng) bị chặn cho đến khi bật.",
-    "flagOffToast": "Điều phối đội xe đang tắt (xem trước). Đặt FLEET_ORCH_ENABLED=true để thao tác.",
+    "flagOffToast": "Điều phối đội xe đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "flagStatusError": "Không kiểm tra được trạng thái điều phối đội xe — các thao tác bị khoá cho đến khi xác nhận lại.",
     "kpi": {
       "activeRes": "Đặt trước đang hoạt động",
@@ -16820,7 +16875,7 @@
     },
     "resourceCreated": "Đã tạo tài nguyên",
     "resourceFlagOffBanner": "Chế độ xem trước: lớp tài nguyên đội xe đang tắt. Đọc vẫn hoạt động; các thao tác (tạo / ánh xạ / đặt trước / giải phóng / quét) bị chặn cho đến khi bật.",
-    "resourceFlagOffToast": "Lớp tài nguyên đội xe đang tắt (xem trước). Đặt FLEET_RESOURCE_ENABLED=true để thao tác.",
+    "resourceFlagOffToast": "Lớp tài nguyên đội xe đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "resourceFlagStatusError": "Không kiểm tra được trạng thái lớp tài nguyên đội xe — các thao tác bị khoá cho đến khi xác nhận lại.",
     "resourceReleased": "Đã giải phóng tài nguyên",
     "resourceReserved": "Đã chiếm tài nguyên",
@@ -16946,9 +17001,9 @@
       "pidOut": "Kênh ra",
       "pidHint": "Hệ số phải hữu hạn & không âm; đầu ra bị kẹp cứng trong [min, max]. URScript sinh khung PID có giới hạn (không PID gốc)."
     },
-    "flagOffBanner": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2_ENABLED tắt). Soạn, lint và xem trước transpile vẫn hoạt động; Lưu luồng / Yêu cầu build bị chặn cho đến khi bật cờ.",
-    "flagOffTip": "Bật DPC_IR_V2_ENABLED để build",
-    "flagOffToast": "Lập trình IR đang tắt (xem trước). Đặt DPC_IR_V2_ENABLED=true để lưu/build.",
+    "flagOffBanner": "Chế độ xem trước: lập trình IR đang tắt trên máy chủ. Soạn, lint và xem trước transpile vẫn hoạt động; Lưu luồng / Yêu cầu build bị chặn cho đến khi quản trị viên bật.",
+    "flagOffTip": "Lập trình IR đang tắt trên máy chủ — cần quản trị viên bật để lưu/build",
+    "flagOffToast": "Lập trình IR đang tắt trên máy chủ (xem trước) — lưu/build bị từ chối cho đến khi quản trị viên bật.",
     "flowId": "Mã luồng",
     "honestyNote": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏng vật lý và triển khai thật được kiểm soát riêng. Triển khai thật luôn đi qua dịch vụ lập trình hiện có (HITL 2 người) và không bao giờ được kích hoạt từ màn hình này.",
     "inspector": "Bảng thuộc tính",
@@ -17026,8 +17081,8 @@
       "conflictsHeading": "Xung đột — chọn một nhánh",
       "currentDraft": "Bản nháp hiện tại trong trình soạn",
       "emptyMerged": "Luồng đã hợp nhất không có khối nào.",
-      "flagOffTip": "Bật DPC_IR_V2_ENABLED để lưu luồng đã hợp nhất",
-      "flagOffToast": "Lập trình IR đang tắt (xem trước). Đặt DPC_IR_V2_ENABLED=true để lưu.",
+      "flagOffTip": "Lập trình IR đang tắt trên máy chủ — cần quản trị viên bật để lưu luồng đã hợp nhất",
+      "flagOffToast": "Lập trình IR đang tắt trên máy chủ (xem trước) — lưu bị từ chối cho đến khi quản trị viên bật.",
       "flowField": "Trường luồng",
       "gateNote": "Xem trước hợp nhất chỉ là thao tác đọc. “Lưu bản hợp nhất” thêm một phiên bản ir-flow đã kiểm định qua đường lưu có kiểm soát hiện có (DPC_IR_V2_ENABLED + machine_control) — không bao giờ bỏ qua cổng đó, và việc triển khai thật vẫn là một bước riêng.",
       "noPermTip": "Bạn cần quyền machine_control để lưu.",
@@ -17216,8 +17271,8 @@
     "all": "Tất cả",
     "anomaliesEmpty": "Chưa ghi nhận bất thường nào. Sổ này mang tính tư vấn — các dòng lực kẹp chỉ xuất hiện khi có telemetry lực.",
     "anomaliesTitle": "Bất thường hành vi robot (tư vấn)",
-    "anomalyFlagOffBanner": "Chế độ xem trước: phát hiện bất thường robot đang tắt (AI_ROBOT_ANOMALY_ENABLED tắt). Đọc vẫn hoạt động; quét thủ công bị chặn cho đến khi bật cờ.",
-    "anomalyFlagOffToast": "Phát hiện bất thường robot đang tắt (xem trước). Đặt AI_ROBOT_ANOMALY_ENABLED=true để quét.",
+    "anomalyFlagOffBanner": "Chế độ xem trước: phát hiện bất thường robot đang tắt trên máy chủ. Đọc vẫn hoạt động; quét thủ công bị chặn cho đến khi quản trị viên bật.",
+    "anomalyFlagOffToast": "Phát hiện bất thường robot đang tắt trên máy chủ (xem trước) — quét bị từ chối cho đến khi quản trị viên bật.",
     "col": {
       "confidence": "Độ tin cậy",
       "evidence": "Bằng chứng",
@@ -17265,8 +17320,8 @@
     "robotIdPlaceholder": "vd. 1",
     "robotRequired": "Chọn một robot để quét.",
     "rollbackEmpty": "Chưa ghi nhận rollback nào. Đánh giá tự động bất động cho đến khi có tín hiệu hiệu năng model trực tiếp.",
-    "rollbackFlagOffBanner": "Chế độ xem trước: tự-rollback model đang tắt (AI_MODEL_AUTOROLLBACK_ENABLED tắt). Đọc + rollback thủ công hoạt động; đánh giá tự động bị chặn cho đến khi bật cờ.",
-    "rollbackFlagOffToast": "Tự-rollback model đang tắt (xem trước). Đặt AI_MODEL_AUTOROLLBACK_ENABLED=true để đánh giá.",
+    "rollbackFlagOffBanner": "Chế độ xem trước: tự-rollback model đang tắt trên máy chủ. Đọc + rollback thủ công hoạt động; đánh giá tự động bị chặn cho đến khi quản trị viên bật.",
+    "rollbackFlagOffToast": "Tự-rollback model đang tắt trên máy chủ (xem trước) — đánh giá bị từ chối cho đến khi quản trị viên bật.",
     "rollbackTitle": "Lịch sử rollback model (audit)",
     "rolledBack": "Đã ghi nhận rollback thủ công",
     "scan": "Quét robot",
@@ -17353,7 +17408,7 @@
     "feedEmpty": "Chưa ghi nhận sự kiện an toàn nào. Luồng này chỉ giám sát tư vấn.",
     "feedTitle": "Luồng sự kiện an toàn",
     "filterType": "Loại",
-    "flagOffToast": "Kiểm định an toàn đang tắt (xem trước). Đặt SAFETY_AUDIT_ENABLED=true để thao tác.",
+    "flagOffToast": "Kiểm định an toàn đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "footerNote": "Mọi ghi trên trang này chỉ là trạng thái giám sát / ghi nhật ký / điều phối. Nạp dữ liệu suýt sự cố nâng một Andon vàng và ĐỀ XUẤT (không bao giờ thực thi) giảm tốc độ qua dispatcher có kiểm soát hiện có.",
     "handshake": {
       "ack": "Đã xác nhận",
@@ -17382,8 +17437,7 @@
     "subtitle": "Giám sát an toàn tư vấn, phân công nhân lực hỗn hợp và điều phối bàn giao người↔robot.",
     "tab": {
       "cockpit": "Sự kiện",
-      "collaboration": "Phối hợp",
-      "workforce": "Nhân lực"
+      "collaboration": "Phối hợp"
     },
     "title": "An toàn & Nhân lực",
     "trendEmpty": "Không ghi nhận suýt sự cố nào trong khoảng thời gian.",
@@ -17465,7 +17519,7 @@
       "src": {
         "openEvents": "safety.feed — sự kiện chưa có dấu kiểm định trong tối đa 200 sự kiện gần nhất (theo bộ lọc loại)",
         "nearMiss": "safety.nearMissTrend — số suýt sự cố của ngày hôm nay (UTC) trong xu hướng 30 ngày",
-        "assignments": "safety.listAssignments — phân công trạng thái 'Hoạt động' trong danh sách đang tải (theo bộ lọc trạng thái)",
+        "assignments": "safety.listAssignments — phân công trạng thái 'Hoạt động' trong 200 phân công mới nhất (chi tiết ở Sản xuất › Ca)",
         "collabs": "safety.listCollaborations — phiên chưa kết thúc (pha khác 'done' và chưa có giờ kết thúc)"
       }
     },
@@ -17911,7 +17965,7 @@
     "confirmClose": "Đóng phân công",
     "confirmed": "Đã xác nhận phân công",
     "flagOffBanner": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt động; các thao tác phân công và phối hợp bị chặn cho đến khi bật.",
-    "flagOffToast": "Nhân lực đang tắt (xem trước). Đặt WORKFORCE_ENABLED=true để thao tác.",
+    "flagOffToast": "Nhân lực đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "flagStatusError": "Không kiểm tra được trạng thái nhân lực — các thao tác phân công và phối hợp bị khoá cho đến khi xác nhận lại.",
     "handshakeSignalled": "Đã báo hiệu bắt tay",
     "humanId": "Mã người vận hành",
@@ -21698,5 +21752,58 @@
     "nav": {
       "simpleFallback": "Menu đơn giản không có mục ở đây — đang hiện menu đầy đủ."
     }
+  },
+  "shifts": {
+    "title": "Ca làm việc",
+    "whenToUse": "Khi nào dùng — lập và xác nhận ai đứng chuyền/trạm nào trong từng ca, và xem ai đang ở mỗi trạm lúc này. Phối hợp người↔robot vẫn ở An toàn & Nhân lực.",
+    "noPermission": "Bạn không có quyền xem phân công theo ca.",
+    "flagOff": "Chế độ xem trước: nhân lực đang tắt trên máy chủ. Đọc vẫn hoạt động; thao tác phân công bị từ chối cho đến khi quản trị viên bật.",
+    "flagStatusError": "Không kiểm tra được trạng thái nhân lực — thao tác phân công bị khoá cho đến khi xác nhận lại.",
+    "flagOffToast": "Nhân lực đang tắt trên máy chủ (xem trước) — thao tác phân công bị từ chối cho đến khi quản trị viên bật.",
+    "filter": {
+      "shift": "Ca",
+      "allShifts": "Tất cả ca",
+      "noShift": "Chưa gắn ca"
+    },
+    "col": {
+      "shift": "Ca"
+    },
+    "inactive": "đã tắt",
+    "shiftUnknown": "Ca #{{id}}",
+    "shiftsError": "Không đọc được danh sách ca",
+    "listError": "Không đọc được danh sách phân công.",
+    "boardError": "Không đọc được bảng hiện trường.",
+    "chip": {
+      "planned": "Chờ xác nhận",
+      "srcActive": "safety.listAssignments — trạng thái 'Hoạt động' trong 200 phân công mới nhất (theo bộ lọc ca và trạng thái)",
+      "srcPlanned": "safety.listAssignments — trạng thái 'Kế hoạch' (chưa xác nhận) trong 200 phân công mới nhất (theo bộ lọc ca và trạng thái)"
+    },
+    "side": {
+      "label": "Bảng hiện trường — ai và robot nào đang ở mỗi trạm lúc này"
+    },
+    "detailTitle": "Chi tiết phân công",
+    "openDetail": "Chi tiết phân công #{{id}}",
+    "detail": {
+      "id": "Phân công",
+      "confirmed": "Đã xác nhận",
+      "closedBy": "Đóng bởi",
+      "notes": "Ghi chú"
+    },
+    "movedLink": "Nhân lực → Sản xuất › Ca",
+    "emptyForShift": "Ca này chưa có phân công nào.",
+    "emptyForShiftWindow": "Không có phân công nào của ca này trong {{limit}} phân công mới nhất đã tải — phân công cũ hơn của ca này không hiện ở đây."
+  },
+  "engineeringAssign": {
+    "label": "Giao cho",
+    "column": "Người được giao",
+    "none": "Chưa giao",
+    "placeholder": "Chưa giao — chọn người…",
+    "search": "Tìm người…",
+    "empty": "Không có ai xem được trang này",
+    "assigned": "Đã giao cho {{name}}",
+    "unassigned": "Đã bỏ giao",
+    "userFallback": "Người dùng #{{id}}",
+    "noApprovalRight": "Được giao không cấp quyền duyệt.",
+    "needs2fa": "Giao việc cần bật xác thực 2 bước (2FA) cho tài khoản của bạn. Vào Cài đặt > Bảo mật để thiết lập."
   }
 }

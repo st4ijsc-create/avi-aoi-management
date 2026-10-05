@@ -400,10 +400,10 @@ export default function FleetOrchestration() {
       // `fleetOrchestration`); giữ regex làm đường lui cho tuyến chưa di trú.
       const feature = featureKeyOf(e);
       if (feature === "fleetResourceLayer" || (feature === undefined && /resource/i.test(e.message))) {
-        toast.info(t("fleet.resourceFlagOffToast", "Fleet resource layer is disabled (preview). Set FLEET_RESOURCE_ENABLED=true to act."));
+        toast.info(t("fleet.resourceFlagOffToast", "The fleet resource layer is turned off on the server (preview) — actions are refused until an administrator turns it on."));
         void utils.fleet.resourceStatus.invalidate();
       } else {
-        toast.info(t("fleet.flagOffToast", "Fleet orchestration is disabled (preview). Set FLEET_ORCH_ENABLED=true to act."));
+        toast.info(t("fleet.flagOffToast", "Fleet orchestration is turned off on the server (preview) — actions are refused until an administrator turns it on."));
         void utils.fleet.status.invalidate();
       }
     } else {

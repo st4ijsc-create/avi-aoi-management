@@ -90,13 +90,9 @@ afterEach(() => {
   cleanup();
 });
 
-// "Assign" lives on the "Workforce board" tab (not the default "Safety cockpit" tab).
-// Radix Tabs only mounts the active TabsContent, so it must be selected first.
-async function openWorkforceTab() {
-  const { default: userEvent } = await import("@testing-library/user-event");
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("tab", { name: /Workforce board/i }));
-}
+// Doc 81 Đợt 3 Task 3 — nút "Assign" (tab "Workforce board") DỜI sang Sản xuất › Ca: các khẳng định "Assign" theo 4 trạng
+// thái cờ nay ở ProductionShifts.layout.dom.test.tsx ("cờ nhân lực ĐANG TẢI / LỖI / TẮT / BẬT"); chip cờ nhân lực và nút
+// "Start collaboration" (cùng cờ) vẫn đo ở đây.
 
 describe("SafetyWorkforce — hai cờ độc lập trên CÙNG safety.status, không còn `?? true`", () => {
   it("safety.status ĐANG TẢI ⇒ nút 'Report proximity' (cockpit) bị khoá, không banner OFF, có skeleton", () => {
@@ -110,13 +106,6 @@ describe("SafetyWorkforce — hai cờ độc lập trên CÙNG safety.status, k
     expect(screen.getAllByTestId("feature-status-loading").length).toBe(2);
   });
 
-  it("safety.status ĐANG TẢI ⇒ nút 'Assign' (tab Workforce board) cũng bị khoá", async () => {
-    setQueryOverride("safety.status", makeQuery({ isLoading: true }));
-    render(<SafetyWorkforce />);
-    await openWorkforceTab();
-    expect(screen.getByRole("button", { name: /^Assign$/i })).toBeDisabled();
-  });
-
   it("safety.status LỖI ⇒ cả hai nút vẫn khoá + banner lỗi riêng biệt (không phải banner OFF)", async () => {
     setQueryOverride("safety.status", makeQuery({ isError: true }));
     render(<SafetyWorkforce />);
@@ -124,9 +113,6 @@ describe("SafetyWorkforce — hai cờ độc lập trên CÙNG safety.status, k
     expect(screen.getByRole("button", { name: /Report proximity/i })).toBeDisabled();
     expect(screen.getAllByTestId("feature-status-error").length).toBe(2);
     expect(screen.queryByTestId("feature-status-off")).not.toBeInTheDocument();
-
-    await openWorkforceTab();
-    expect(screen.getByRole("button", { name: /^Assign$/i })).toBeDisabled();
   });
 
   it("safety.status xong, CẢ HAI cờ TẮT ⇒ banner không chứa tên biến môi trường; nút VẪN bật", async () => {
@@ -139,8 +125,6 @@ describe("SafetyWorkforce — hai cờ độc lập trên CÙNG safety.status, k
       expect(b.textContent).not.toMatch(/SAFETY_AUDIT_ENABLED|WORKFORCE_ENABLED/);
     }
     expect(screen.getByRole("button", { name: /Report proximity/i })).not.toBeDisabled();
-    await openWorkforceTab();
-    expect(screen.getByRole("button", { name: /^Assign$/i })).not.toBeDisabled();
   });
 
   it("safety.status xong, CẢ HAI cờ BẬT ⇒ không banner nào, nút bật", async () => {
@@ -149,11 +133,9 @@ describe("SafetyWorkforce — hai cờ độc lập trên CÙNG safety.status, k
 
     expect(screen.queryByTestId("feature-status-off")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Report proximity/i })).not.toBeDisabled();
-    await openWorkforceTab();
-    expect(screen.getByRole("button", { name: /^Assign$/i })).not.toBeDisabled();
   });
 
-  it("một cờ TẮT, cờ kia CHƯA TẢI ⇒ nút 'Report proximity' (safetyAudit=off) bật ngay dù workforce (Assign) còn khoá", async () => {
+  it("một cờ TẮT, cờ kia CHƯA TẢI ⇒ nút 'Report proximity' (safetyAudit=off) bật ngay", async () => {
     // safetyAudit đã biết = off (không khoá vì lý do 'chưa biết'); workforce vẫn loading.
     setQueryOverride("safety.status", makeQuery({ isLoading: true }));
     const { rerender } = render(<SafetyWorkforce />);
@@ -163,8 +145,6 @@ describe("SafetyWorkforce — hai cờ độc lập trên CÙNG safety.status, k
     rerender(<SafetyWorkforce />);
     // Report proximity bật ngay: off đã biết, không còn "chưa biết" nữa.
     expect(screen.getByRole("button", { name: /Report proximity/i })).not.toBeDisabled();
-    await openWorkforceTab();
-    expect(screen.getByRole("button", { name: /^Assign$/i })).not.toBeDisabled();
   });
 
   // ĐỘT BIẾN riêng cho TỆP NÀY (Fix round 1 finding #1) — xem task-1-report.md: quay
@@ -286,40 +266,9 @@ describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
   });
 });
 
-// ORACLE ĐỘC LẬP: SEEDED_ASSIGNMENT_IDS khai tay cùng fixture (scope='demo', như 2 hàng DB dev).
-function assignment(id: number, scope: string | null) {
-  return {
-    id, operatorId: 40 + id, lineId: 1, stationId: 2, shiftConfigId: null, skillLevel: "qualified", role: "human",
-    status: "planned", assignedStart: "2026-09-26T05:00:00.000Z", assignedEnd: "2026-09-26T13:00:00.000Z",
-    confirmedBy: null, confirmedAt: null, closedBy: null, notes: null, scope, corporateCode: null, factoryId: 1,
-    createdAt: "2026-09-26T05:00:00.000Z", updatedAt: "2026-09-26T05:00:00.000Z",
-  };
-}
-const ASSIGNMENTS = [assignment(3, "demo"), assignment(4, "demo"), assignment(5, "F1:L1"), assignment(6, null)];
-const SEEDED_ASSIGNMENT_IDS = new Set([3, 4]);
 
-describe("SafetyWorkforce — Task 4 X-01: badge DEMO trên assignment", () => {
-  it("dải tóm tắt 2/4 + BẤT BIẾN: mọi hàng seed có badge, hàng thật không", async () => {
-    setQueryOverride("safety.status", makeQuery({ data: { safetyAudit: true, workforce: true } }));
-    setQueryOverride("safety.listAssignments", makeQuery({ data: ASSIGNMENTS }));
-    render(<SafetyWorkforce />);
-    await openWorkforceTab();
-    const s = screen.getByTestId("provenance-summary");
-    expect(s).toHaveAttribute("data-count", "2");
-    expect(s).toHaveAttribute("data-total", "4");
-    for (const a of ASSIGNMENTS) {
-      const row = screen.getByText(`#${a.operatorId}`).closest("tr") as HTMLElement;
-      expect(row, `assignment ${a.id}`).not.toBeNull();
-      const badge = row.querySelector('[data-testid="provenance-badge"]');
-      if (SEEDED_ASSIGNMENT_IDS.has(a.id)) {
-        expect(badge, `assignment seed #${a.id} THIẾU badge`).not.toBeNull();
-        expect(badge!.getAttribute("data-provenance")).toBe("DEMO");
-      } else {
-        expect(badge, `assignment thật #${a.id} bị gắn nhầm`).toBeNull();
-      }
-    }
-  });
-});
+// Doc 81 Đợt 3 Task 3 — "Task 4 X-01: badge DEMO trên assignment" DỜI cùng bảng phân công sang Sản xuất › Ca
+// (ProductionShifts.layout.dom.test.tsx, "nhãn nguồn dữ liệu … đi theo bảng" — cùng fixture scope demo/F1:L1/null).
 
 // ── Fix round 1 (#1 real_unmapped · #4 sim script · #7 query tắt không phải lỗi) ────────────
 describe("SafetyWorkforce — Fix round 1 panel nguồn", () => {

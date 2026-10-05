@@ -5,11 +5,14 @@
  *   • Connector catalog (I1-a) — the FOCAS/Euromap integration FRAMEWORKS (honest status: a framework with
  *       no connected device says so; the Unified Equipment Model snapshot shows "—" when source:'none') and
  *       the adapter protocols REGISTERED in the server registry (registration ≠ a connected device).
- *   • Recipe versions (I1-b) — pick a recipe code → versions (VersionHistoryPanel). Actions create / release /
- *       archive / rollback (rollback confirms via AlertDialog) + record-load. All gated (machine_control +
- *       flag).
- *   • Load history (I1-b) — append-only genealogy by machine OR by recipe code.
- *   • Acquisition workers (W8-C) — visionAdapter worker status / start / stop.
+ *   • (Đợt 3 Task 1) Recipe versions + load history (I1-b) MOVED to /recipes (tab "Phiên bản" row actions + tab
+ *       "Lịch sử nạp"); `?tab=recipes|history` redirects there keeping the query (LegacyTabRedirectGate) — ONLY for users who
+ *       can open /recipes (machine_control/canView AND the /recipes route licence, MOD_ENGINEERING). Final wave (Ruling
+ *       R-3-h): users without the permission keep a read-only tab (R-3-b); users WITH it but without the licence (OT-only
+ *       customers) keep the FULL former recipe capability here (tab "Phiên bản & lịch sử nạp": create / release / archive /
+ *       rollback version, record load, load history — same procedures, payloads, gates as before Đợt 3 Task 1).
+ *   • (Đợt 3 Task 2) Acquisition workers (W8-C) MOVED to Vision › Thu ảnh (`/vision/acquisition`, pages/VisionAcquisition.tsx);
+ *       `?tab=acquisition` redirects there keeping the query, for users who can open it (machine_alerts/canView).
  *
  * SAFETY / HONESTY (mirrors the router): FOCAS/Euromap are READ-ONLY frameworks — no real device is attached
  * and no telemetry is fabricated; the UI never invents values. Recipe mutations are METADATA/genealogy only —
@@ -24,28 +27,28 @@
  *    cũ trong popover) · `StatusChipStrip` thay 4 MetricCard, NHÃN ĐÚNG NGHĨA: "Adapter đăng ký" (đếm
  *    registry — đăng ký, KHÔNG phải kết nối) · "Framework đã kết nối" x/y (framework có thiết bị thật, `configured`,
  *    trên tổng số framework — thẻ "Framework" cũ gộp vào mẫu số) · "Cờ". Mỗi chip mang nguồn và trạng thái loading/lỗi riêng (không in 0 khi lỗi).
- *  - MAIN (`data-layout-main`) = hàng tab (`?tab=` status|recipes|history|acquisition — giữ giá trị cũ; thanh công
- *    cụ DUY NHẤT trong MAIN, bộ lọc/hành động của từng tab nằm cùng hàng) + nội dung tab:
+ *  - MAIN (`data-layout-main`) = hàng tab (`?tab=` status [+ history chỉ-đọc, R-3-b]; thanh công cụ DUY NHẤT trong
+ *    MAIN, bộ lọc/hành động của từng tab nằm cùng hàng) + nội dung tab:
  *      · status: catalog connector danh sách–chi tiết (`SplitListDetail`, `?connector=`).
- *      · recipes: `?code=` → `VersionHistoryPanel` (so sánh payload hai phiên bản) + hành động mỗi hàng như cũ.
- *        Rollback = `RollbackConfirm requireReason={false} requireOtp={false}` (hợp đồng cũ — R-2-g). Tạo phiên bản /
- *        ghi nhận nạp = sheet (`?flyout=eq-recipe-new`, `?flyout=eq-recipe-load&flyoutId=<id>`).
- *      · history: bảng phả hệ như cũ.
- *      · acquisition: panel worker `keepMounted` — mount LẦN ĐẦU khi mở tab, sau đó KHÔNG unmount khi đổi tab
- *        (Review Focus 3); khởi động worker = sheet `?flyout=acq-start`; dừng = một cú bấm như cũ.
- *  - doc 81 §1.2 muốn "phiên bản recipe/lịch sử nạp → Recipes" và "worker thu ảnh → Vision". Dời đi cần route/IA
- *    mới (Recipes đọc router `machineRecipe`, không có phả hệ nạp; chưa có màn Vision nào chứa worker) ⇒ GIỮ ở đây,
- *    tab recipes/history có liên kết "Mở trong Recipes" (`/recipes?code=` / `?machineId=`).
  *  - Không thủ tục, input, cổng hay thông điệp lỗi nào đổi; mỗi lần xác nhận vẫn đúng MỘT lượt gọi như cũ (R-2-n).
+ *
+ * Doc 81 Đợt 3 Task 1 (doc 81 §11 "Đã chốt" 2026-10-05) — tab "Phiên bản recipe" và "Lịch sử nạp" DỜI sang Recipes:
+ * phát hành / rollback phiên bản / ghi nhận nạp (cùng thủ tục, payload, cổng) ở hàng của tab Phiên bản; lịch sử nạp
+ * theo mã/máy ở tab "Lịch sử nạp"; tạo phiên bản / lưu trữ dùng MỘT bộ với Recipes. `?tab=recipes|history` của trang
+ * này chuyển hướng (REPLACE) sang `/recipes?tab=versions|history`, giữ nguyên văn mọi tham số khác.
  */
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation, useSearch } from "wouter";
+import { Link, useSearch } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useLicenseModules } from "@/hooks/useLicenseModules";
+import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import {
@@ -53,7 +56,6 @@ import {
   EmptyState,
   FeatureStatusNoticeChip,
   FlyoutHost,
-  NoticeChip,
   NoticeStack,
   PageContainer,
   RollbackConfirm,
@@ -63,14 +65,16 @@ import {
   Text,
   VersionHistoryPanel,
   chipStateFromQuery,
+  useCloseOwnLayer,
   useFlyout,
   useNarrowViewport,
-  useCloseOwnLayer,
   type FlyoutDefinition,
   type StatusChipItem,
   type VersionRow,
 } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
+import { LegacyTabRedirectGate, VISION_ACQUISITION_PATH } from "@/lib/engineeringLegacyRedirects";
+import { LoadHistoryPanel, RecordLoadForm, type HistoryMode, type LoadLogRow, type LoadMachine, type RecordLoadInput } from "./RecipeLoadHistory";
 import { type TabbedHubTab } from "@/components/workspace/TabbedHub";
 import { resolveActiveTab } from "@/components/workspace/hubState";
 import { Button } from "@/components/ui/button";
@@ -84,15 +88,11 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Plug, RefreshCw, Lock, AlertTriangle, Plus, FlaskConical,
-  History, Network, CheckCircle2, Send, Rocket, Archive, Undo2, Download,
-  CircleSlash, Camera, Play, Square, Loader2, ExternalLink,
+  Plug, RefreshCw, AlertTriangle, Network,
+  CircleSlash, History, Camera,
+  Archive, CheckCircle2, Download, Plus, Rocket, Undo2,
 } from "lucide-react";
-import { toast } from "sonner";
-import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
-import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import {
   deriveFeatureStatus,
   featureStatusTone,
@@ -106,28 +106,45 @@ type IntegrationStatus = RouterOutputs["equipmentIntegration"]["integrationStatu
 type FrameworkEntry = IntegrationStatus["frameworks"][number];
 type AdapterEntry = IntegrationStatus["adapters"][number];
 type FrameworkSnapshot = RouterOutputs["equipmentIntegration"]["frameworkSnapshot"];
-type RecipeVersionList = RouterOutputs["equipmentIntegration"]["listRecipeVersions"];
-type RecipeVersion = RecipeVersionList["versions"][number];
-type LoadLogRow = RouterOutputs["equipmentIntegration"]["listLoadHistory"][number];
-type MachineRow = RouterOutputs["machine"]["list"][number];
 
 type FrameworkKind = "focas" | "euromap";
-type HistoryMode = "machine" | "code";
-type CreateVersionInput = { code: string; name: string; payload: Record<string, unknown>; machineId?: number; notes?: string };
-type RecordLoadInput = { recipeId: number; machineId: number; deploy: boolean; notes?: string };
-type StartWorkerInput = {
-  id: string;
-  source: { kind: "file"; directory?: string; loop?: boolean } | { kind: "mock"; width?: number; height?: number; maxFrames?: number };
-  machineCode?: string;
-  intervalMs?: number;
-  maxFrames?: number;
-  submit?: boolean;
-  assessQuality?: boolean;
-};
 
-const TAB_VALUES = ["status", "recipes", "history", "acquisition"] as const;
-type TabValue = (typeof TAB_VALUES)[number];
+// Đợt 3 Task 2 — tab "acquisition" dời sang Vision › Thu ảnh (`/vision/acquisition`).
+const TAB_VALUES = ["status"] as const;
+/**
+ * Fix round 1 (R-3-b) — tab "Phiên bản & lịch sử nạp" cho người KHÔNG mở được /recipes. Final wave (R-3-h): "không mở
+ * được" = thiếu QUYỀN (machine_control/canView) HOẶC thiếu GIẤY PHÉP route /recipes (MOD_ENGINEERING) — xem `useRecipesAccess`.
+ */
+const TAB_VALUES_READONLY = ["status", "history"] as const;
+type TabValue = (typeof TAB_VALUES_READONLY)[number];
 const BASE_PATH = "/equipment-integration";
+const RECIPES_PATH = "/recipes";
+
+/**
+ * Final wave (Ruling R-3-h, "không ai mất quyền") — chế độ của tab phiên bản / lịch sử nạp trên Integration:
+ *  - "none": mở được /recipes (QUYỀN + GIẤY PHÉP) ⇒ không có tab; `?tab=recipes|history` chuyển sang Recipes.
+ *  - "readonly" (R-3-b, không đổi): không có machine_control/canView (vai seed operator/viewer) ⇒ chỉ xem.
+ *  - "full": có machine_control/canView nhưng giấy phép KHÔNG gồm /recipes (khách chỉ mua MOD_OT_CONTROL) ⇒ GIỮ NGUYÊN
+ *    năng lực recipe cũ của Integration trước Đợt 3 Task 1 (tạo / phát hành / lưu trữ / rollback phiên bản, ghi nhận nạp,
+ *    lịch sử nạp) — cùng thủ tục, payload, cổng hiện (canCreate) / cổng bật (canEdit cho phát hành/rollback) như cũ.
+ */
+type RecipeMode = "none" | "readonly" | "full";
+
+/**
+ * R-3-h — "mở được /recipes" = cổng QUYỀN của chính route (RouteGuard navHref "/recipes" ⇒ machine_control/canView) VÀ
+ * cổng GIẤY PHÉP theo route (`isRouteAllowed` của useLicenseModules — cùng vị từ mà thanh bên/⌘K lọc mục /recipes và
+ * RouteGuard §1b dùng). Thiếu một trong hai ⇒ người dùng ở lại Integration với tab recipe của mình.
+ */
+function useRecipesAccess(): { canOpenRecipes: boolean; mode: RecipeMode } {
+  const { hasPermission } = usePermissions();
+  const { isRouteAllowed } = useLicenseModules();
+  const permitted = hasPermission("machine_control", "canView");
+  const canOpenRecipes = permitted && isRouteAllowed(RECIPES_PATH);
+  return { canOpenRecipes, mode: canOpenRecipes ? "none" : permitted ? "full" : "readonly" };
+}
+
+type RecipeVersion = { id: number; code: string; name: string; version: number; payload: unknown; designStatus: string; machineId?: number | null; createdBy?: number | null; createdAt?: string | Date | null };
+type CreateVersionInput = { code: string; name: string; payload: Record<string, unknown>; machineId?: number; notes?: string };
 
 function pctOrDash(n: number | null): string {
   return n == null ? "—" : `${Math.round(n * 100)}%`;
@@ -145,27 +162,16 @@ interface EqPageCtx {
   /** <1024 px: công cụ của tab nằm ĐẦU nội dung tab (hàng tab không đủ chỗ) — GC10. */
   narrow: boolean;
   canView: boolean;
+  /** Mở được /recipes (quyền + giấy phép) ⇒ phiên bản/lịch sử nạp ở Recipes; không ⇒ tab ở đây (R-3-b / R-3-h). */
+  canOpenRecipes: boolean;
+  /** R-3-h — "readonly" (không machine_control) hoặc "full" (có quyền, thiếu giấy phép /recipes). */
+  recipeMode: RecipeMode;
+  /** Chế độ "full": hiện thao tác (machine_control/canCreate — cổng hiện cũ). */
   canControl: boolean;
+  /** Chế độ "full": bật phát hành/rollback (machine_control/canEdit — cổng cũ, doc 80 Task 3). */
   canRelease: boolean;
-  canViewAcq: boolean;
-  canControlAcq: boolean;
-  userId: number | null;
+  /** Cờ EQ_INTEG chưa rõ (đang kiểm tra / lỗi) ⇒ nút "Phiên bản mới" khoá như cũ. */
   flagUnsettled: boolean;
-  integration: IntegrationStatus | undefined;
-  integrationLoading: boolean;
-  integrationError: boolean;
-  connector: string | null;
-  setConnector: (v: string | null) => void;
-  machines: MachineRow[];
-  machineName: Map<number, string>;
-  // recipes
-  recipeCode: string;
-  setRecipeCode: (v: string) => void;
-  activeCode: string | null;
-  runVersionLookup: () => void;
-  versions: RecipeVersion[];
-  versionsLoading: boolean;
-  versionsError: boolean;
   release: (v: RecipeVersion) => void;
   archive: (v: RecipeVersion) => void;
   rollback: (v: RecipeVersion) => void;
@@ -173,21 +179,17 @@ interface EqPageCtx {
   archivePending: boolean;
   rollbackPending: boolean;
   recordLoadPending: boolean;
-  // history
-  historyMode: HistoryMode;
-  setHistoryMode: (m: HistoryMode) => void;
-  historyMachineId: number | null;
-  setHistoryMachineId: (id: number | null) => void;
-  historyCode: string;
-  setHistoryCode: (v: string) => void;
-  activeHistoryCode: string | null;
-  runHistoryCodeLookup: () => void;
-  historyRows: LoadLogRow[];
-  historyFetching: boolean;
-  // acquisition
-  acqLive: boolean | undefined;
-  setAcqLive: (v: boolean | undefined) => void;
-  refreshAcq: () => void;
+  /** Ô mã recipe của tab chỉ-đọc (theo `?code=`). */
+  roCode: string;
+  setRoCode: (v: string) => void;
+  userId: number | null;
+  /** R-3-d — mở được Vision › Thu ảnh (machine_alerts/canView, cổng của trang đó) ⇒ link "Worker thu ảnh → …". */
+  canViewAcq: boolean;
+  integration: IntegrationStatus | undefined;
+  integrationLoading: boolean;
+  integrationError: boolean;
+  connector: string | null;
+  setConnector: (v: string | null) => void;
 }
 const EqCtx = createContext<EqPageCtx | null>(null);
 function useEqCtx(): EqPageCtx {
@@ -196,84 +198,74 @@ function useEqCtx(): EqPageCtx {
   return v;
 }
 
-const TABS: readonly TabbedHubTab[] = [
-  { value: "status", labelKey: "eqIntegration.tab.status", fallback: "Connector catalog", icon: <Network className="h-4 w-4" />, Content: CatalogTab },
-  { value: "recipes", labelKey: "eqIntegration.tab.recipes", fallback: "Recipe versions", icon: <FlaskConical className="h-4 w-4" />, Content: RecipesTab },
-  { value: "history", labelKey: "eqIntegration.tab.history", fallback: "Load history", icon: <History className="h-4 w-4" />, Content: HistoryTab },
-  // W8-C (doc 27 V14 — W7-E's noted UI slot): acquisition worker status/start/stop. keepMounted: Review Focus 3.
-  { value: "acquisition", labelKey: "eqIntegration.tab.acquisition", fallback: "Acquisition workers", icon: <Camera className="h-4 w-4" />, Content: AcquisitionTab, keepMounted: true },
-];
+const TAB_STATUS: TabbedHubTab = { value: "status", labelKey: "eqIntegration.tab.status", fallback: "Connector catalog", icon: <Network className="h-4 w-4" />, Content: CatalogTab };
+const TAB_READONLY: TabbedHubTab = { value: "history", labelKey: "eqIntegration.tab.readonlyHistory", fallback: "Versions & load history (view only)", icon: <History className="h-4 w-4" />, Content: RecipeHistoryTab };
+// R-3-h — cùng tab (cùng `?tab=history`), nhãn không có "(chỉ xem)" vì người dùng này có thao tác.
+const TAB_FULL: TabbedHubTab = { value: "history", labelKey: "eqIntegration.tab.recipeHistory", fallback: "Versions & load history", icon: <History className="h-4 w-4" />, Content: RecipeHistoryTab };
+const TABS: readonly TabbedHubTab[] = [TAB_STATUS];
+const TABS_READONLY: readonly TabbedHubTab[] = [TAB_STATUS, TAB_READONLY];
+const TABS_FULL: readonly TabbedHubTab[] = [TAB_STATUS, TAB_FULL];
 
+/**
+ * Đợt 3 Task 1 — `?tab=recipes|history` (đã dời sang Recipes) ⇒ REPLACE sang `/recipes?tab=versions|history`, giữ query
+ * (lib/engineeringLegacyRedirects.tsx); tab còn lại dựng trang như cũ.
+ */
+// Fix round 1 (Ruling R-3-b) — CHỈ chuyển người dùng mở được /recipes (machine_control/canView, cùng `canView` của
+// RecipeManagement). Người không có (vai seed operator/viewer) ở lại và thấy tab CHỈ-ĐỌC (phiên bản không thao tác + lịch
+// sử nạp) — cùng thủ tục đọc cũ (machine_monitoring/canView); quyền phía server không đổi.
+// Đợt 3 Task 2 — `?tab=acquisition` ⇒ `/vision/acquisition` (giữ query, bỏ `tab`) CHỈ cho người mở được trang đó
+// (machine_alerts/canView — cổng QĐ-3c của trang mới); người không có ở lại đây (tab catalog), không bị đẩy vào trang từ chối.
+// Final wave (Ruling R-3-h) — "mở được /recipes" gồm cả GIẤY PHÉP route (/recipes thuộc MOD_ENGINEERING, Integration thuộc
+// MOD_OT_CONTROL): khách chỉ có OT ở lại đây với đủ năng lực recipe cũ (chế độ "full"), không bị đẩy vào khoá giấy phép.
 export default function EquipmentIntegration() {
+  const { hasPermission } = usePermissions();
+  const { canOpenRecipes } = useRecipesAccess();
+  const canViewAcq = hasPermission("machine_alerts", "canView");
+  return (
+    <LegacyTabRedirectGate from={BASE_PATH} when={(r) => (r.to === VISION_ACQUISITION_PATH ? canViewAcq : canOpenRecipes)}>
+      <EquipmentIntegrationPage />
+    </LegacyTabRedirectGate>
+  );
+}
+
+function EquipmentIntegrationPage() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const canView = hasPermission("machine_monitoring", "canView");
+  // "Chỉ xem" (machine_control/canCreate) — huy hiệu header giữ như cũ.
   const canControl = hasPermission("machine_control", "canCreate");
-  // doc 80 Task 3 (FLOW-01/INT-02) — release/rollback now require the SAME server gate as
-  // /recipes: machine_control/canEdit (+ actuationProcedure role-floor + 2FA), not the bare
-  // canCreate used for create/archive/record-load. A canCreate-only user must NOT see an
-  // enabled Release/Rollback button that the server will now reject.
+  // doc 80 Task 3 — phát hành/rollback: machine_control/canEdit (cổng server actuationProcedure + canEdit), như cũ.
   const canRelease = hasPermission("machine_control", "canEdit");
-  // W8-C — RBAC mirrors the visionAdapter router: machine_alerts/canView to read, canCreate to start/stop.
+  const { canOpenRecipes, mode: recipeMode } = useRecipesAccess();
+  const full = recipeMode === "full";
   const canViewAcq = hasPermission("machine_alerts", "canView");
-  const canControlAcq = hasPermission("machine_alerts", "canCreate");
 
   const search = useSearch();
-  const tab = resolveActiveTab(search, TAB_VALUES, "status") as TabValue;
+  const tab = resolveActiveTab(search, canOpenRecipes ? TAB_VALUES : TAB_VALUES_READONLY, "status") as TabValue;
+  // R-3-b — người xem chỉ-đọc đến bằng `?tab=recipes` (giá trị cũ) ⇒ tab chỉ-đọc (thay giá trị, giữ tham số khác).
+  const [tabParam, setTabParam] = useUrlParam("tab");
+  useEffect(() => {
+    if (!canOpenRecipes && tabParam === "recipes") setTabParam("history");
+  }, [canOpenRecipes, tabParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [codeParam] = useUrlParam("code");
+  const [roCode, setRoCode] = useState(() => codeParam ?? "");
+  useEffect(() => {
+    setRoCode(codeParam ?? "");
+  }, [codeParam]);
   const narrow = useNarrowViewport();
   const [connector, setConnector] = useUrlParam("connector");
-  // Recipe-versions: mã đang xem nằm ở `?code=` (F5 / deep link giữ được).
-  const [activeCode, setActiveCode] = useUrlParam("code");
-  const [recipeCode, setRecipeCode] = useState(() => activeCode ?? "");
-  // back/forward (hoặc deep link) đổi `?code=` ⇒ ô nhập theo URL (danh sách đã theo URL).
-  useEffect(() => {
-    setRecipeCode(activeCode ?? "");
-  }, [activeCode]);
-
-  // Load-history tab state
-  const [historyMode, setHistoryMode] = useState<HistoryMode>("machine");
-  const [historyMachineId, setHistoryMachineId] = useState<number | null>(null);
-  const [historyCode, setHistoryCode] = useState("");
-  const [activeHistoryCode, setActiveHistoryCode] = useState<string | null>(null);
-
-  // Acquisition: panel báo cờ thu ảnh trực tiếp lên hàng công cụ.
-  const [acqLive, setAcqLive] = useState<boolean | undefined>(undefined);
 
   const utils = trpc.useUtils();
 
   // ── Reads (RBAC: machine_monitoring/canView) ────────────────────────────────
   const statusQ = trpc.equipmentIntegration.status.useQuery(undefined, { enabled: canView });
   const integrationQ = trpc.equipmentIntegration.integrationStatus.useQuery(undefined, { enabled: canView });
-  const machinesQ = trpc.machine.list.useQuery(undefined, { enabled: canView });
-
-  const versionsQ = trpc.equipmentIntegration.listRecipeVersions.useQuery(
-    { code: activeCode ?? "" },
-    { enabled: canView && !!activeCode, retry: false },
-  );
-  const loadHistoryQ = trpc.equipmentIntegration.listLoadHistory.useQuery(
-    { machineId: historyMachineId ?? 0, limit: 200 },
-    { enabled: canView && historyMode === "machine" && !!historyMachineId, retry: false },
-  );
-  const codeHistoryQ = trpc.equipmentIntegration.listCodeHistory.useQuery(
-    { code: activeHistoryCode ?? "", limit: 200 },
-    { enabled: canView && historyMode === "code" && !!activeHistoryCode, retry: false },
-  );
 
   const integration = integrationQ.data as IntegrationStatus | undefined;
-  const machines = (machinesQ.data ?? []) as MachineRow[];
-  const versions = (versionsQ.data?.versions ?? []) as RecipeVersion[];
-  const historyRows = ((historyMode === "machine" ? loadHistoryQ.data : codeHistoryQ.data) ?? []) as LoadLogRow[];
 
   // Doc 80 Task 1 (PLT-02/G-07/X-07): pending/erroring status query is UNKNOWN, not "on".
   const flagStatus = deriveFeatureStatus(statusQ, (d: { enabled?: boolean }) => d.enabled);
-  const flagUnsettled = isFeatureStatusUnsettled(flagStatus);
-
-  const machineName = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const mc of machines) m.set(mc.id, mc.name ?? mc.code ?? String(mc.id));
-    return m;
-  }, [machines]);
 
   const configuredCount = useMemo(
     () => (integration?.frameworks ?? []).filter((f) => f.configured).length,
@@ -283,60 +275,56 @@ export default function EquipmentIntegration() {
   const refetchAll = () => {
     void utils.equipmentIntegration.status.invalidate();
     void utils.equipmentIntegration.integrationStatus.invalidate();
+  };
+
+  // ── R-3-h — chế độ "full" (có machine_control, giấy phép không gồm /recipes): năng lực recipe CŨ của trang, nguyên văn ──
+  // Cùng 5 mutation, cùng payload, cùng bộ invalidate (`refetchAll` cũ: status, integrationStatus, listRecipeVersions,
+  // listLoadHistory, listCodeHistory), cùng xử lý lỗi (cờ TẮT ⇒ toast.info bình tĩnh + đọc lại cờ; lỗi khác ⇒ toast đỏ).
+  const flagUnsettled = isFeatureStatusUnsettled(flagStatus);
+  const [flyoutParam] = useUrlParam("flyout");
+  const sheetOpen = full && canControl && (flyoutParam === "eq-recipe-new" || flyoutParam === "eq-recipe-load");
+  // Sheet cần danh sách máy (nguồn cũ `machine.list`) và — với ghi nhận nạp — phiên bản của mã đang xem (`?code=`).
+  const sheetMachinesQ = trpc.machine.list.useQuery(undefined, { enabled: canView && sheetOpen });
+  const sheetVersionsQ = trpc.equipmentIntegration.listRecipeVersions.useQuery(
+    { code: codeParam ?? "" },
+    { enabled: canView && sheetOpen && flyoutParam === "eq-recipe-load" && !!codeParam, retry: false },
+  );
+  const refetchRecipes = () => {
+    refetchAll();
     void utils.equipmentIntegration.listRecipeVersions.invalidate();
     void utils.equipmentIntegration.listLoadHistory.invalidate();
     void utils.equipmentIntegration.listCodeHistory.invalidate();
   };
-  const refreshAcq = () => void utils.visionAdapter.acquisitionWorkerStatus.invalidate();
-
-  // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
-  const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
+  const onMutationError = (e: unknown) => {
     if (isFeatureDisabledError(e)) {
-      toast.info(t("eqIntegration.flagOffToast", "Equipment integration is disabled (preview). Set EQ_INTEG_ENABLED=true to act."));
+      // Final wave (GC6) — câu KHÔNG mang tên biến môi trường (câu cũ có "EQ_INTEG_ENABLED=true").
+      toast.info(t("eqIntegration.flagOffToast", "Equipment integration is disabled (preview) — this action is blocked until it is enabled."));
       void utils.equipmentIntegration.status.invalidate();
     } else {
       toast.error(mapTrpcError(e));
     }
   };
-
-  // ── Mutations (RBAC: machine_control/canCreate + EQ_INTEG_ENABLED) ───────────
   // Toast + invalidate ở hook TRANG (chạy cả khi sheet đã đóng trong lúc chờ); sheet tự đóng qua callback lượt gọi.
   const createM = trpc.equipmentIntegration.createRecipeVersion.useMutation({
-    onSuccess: () => { toast.success(t("eqIntegration.versionCreated", "Recipe version created (draft)")); refetchAll(); },
-    onError: onMutationError,
+    onSuccess: () => { toast.success(t("eqIntegration.versionCreated", "Recipe version created (draft)")); refetchRecipes(); },
+    onError: (e) => onMutationError(e),
   });
   const releaseM = trpc.equipmentIntegration.releaseRecipeVersion.useMutation({
-    onSuccess: () => { toast.success(t("eqIntegration.versionReleased", "Version released")); refetchAll(); },
-    onError: onMutationError,
+    onSuccess: () => { toast.success(t("eqIntegration.versionReleased", "Version released")); refetchRecipes(); },
+    onError: (e) => onMutationError(e),
   });
   const archiveM = trpc.equipmentIntegration.archiveRecipeVersion.useMutation({
-    onSuccess: () => { toast.success(t("eqIntegration.versionArchived", "Version archived")); refetchAll(); },
-    onError: onMutationError,
+    onSuccess: () => { toast.success(t("eqIntegration.versionArchived", "Version archived")); refetchRecipes(); },
+    onError: (e) => onMutationError(e),
   });
   const rollbackM = trpc.equipmentIntegration.rollbackRecipeVersion.useMutation({
-    onSuccess: () => { toast.success(t("eqIntegration.versionRolledBack", "Released contract rolled back")); refetchAll(); },
-    onError: onMutationError,
+    onSuccess: () => { toast.success(t("eqIntegration.versionRolledBack", "Released contract rolled back")); refetchRecipes(); },
+    onError: (e) => onMutationError(e),
   });
   const recordLoadM = trpc.equipmentIntegration.recordRecipeLoad.useMutation({
-    onSuccess: () => { toast.success(t("eqIntegration.loadRecorded", "Recipe load recorded (genealogy)")); refetchAll(); },
-    onError: onMutationError,
+    onSuccess: () => { toast.success(t("eqIntegration.loadRecorded", "Recipe load recorded (genealogy)")); refetchRecipes(); },
+    onError: (e) => onMutationError(e),
   });
-  // W8-C — start lives at page level (the sheet is rendered by FlyoutHost, outside the panel).
-  const startAcqM = trpc.visionAdapter.startAcquisitionWorker.useMutation({
-    onSuccess: () => { toast.success(t("eqIntegration.acq.started", "Acquisition worker started")); refreshAcq(); },
-    // PRECONDITION_FAILED carries the server's honest refusal reason (flag off,
-    // duplicate id, disabled config, source open failure) — show it verbatim.
-    onError: (e) => toastTrpcError(e),
-  });
-
-  const runVersionLookup = () => {
-    const c = recipeCode.trim();
-    if (c) setActiveCode(c);
-  };
-  const runHistoryCodeLookup = () => {
-    const c = historyCode.trim();
-    if (c) setActiveHistoryCode(c);
-  };
 
   if (!canView) {
     return (
@@ -357,26 +345,11 @@ export default function EquipmentIntegration() {
     tab,
     narrow,
     canView,
+    canOpenRecipes,
+    recipeMode,
     canControl,
     canRelease,
-    canViewAcq,
-    canControlAcq,
-    userId: user?.id ?? null,
     flagUnsettled,
-    integration,
-    integrationLoading: integrationQ.isLoading,
-    integrationError: integrationQ.isError,
-    connector,
-    setConnector,
-    machines,
-    machineName,
-    recipeCode,
-    setRecipeCode,
-    activeCode,
-    runVersionLookup,
-    versions,
-    versionsLoading: versionsQ.isLoading,
-    versionsError: versionsQ.isError,
     release: (v) => releaseM.mutate({ recipeId: v.id }),
     archive: (v) => archiveM.mutate({ recipeId: v.id }),
     rollback: (v) => rollbackM.mutate({ toRecipeId: v.id }),
@@ -384,39 +357,35 @@ export default function EquipmentIntegration() {
     archivePending: archiveM.isPending,
     rollbackPending: rollbackM.isPending,
     recordLoadPending: recordLoadM.isPending,
-    historyMode,
-    setHistoryMode,
-    historyMachineId,
-    setHistoryMachineId,
-    historyCode,
-    setHistoryCode,
-    activeHistoryCode,
-    runHistoryCodeLookup,
-    historyRows,
-    historyFetching: historyMode === "machine" ? loadHistoryQ.isFetching : codeHistoryQ.isFetching,
-    acqLive,
-    setAcqLive,
-    refreshAcq,
+    roCode,
+    setRoCode,
+    userId: user?.id ?? null,
+    canViewAcq,
+    integration,
+    integrationLoading: integrationQ.isLoading,
+    integrationError: integrationQ.isError,
+    connector,
+    setConnector,
   };
 
-  // ── Flyouts (một stack sheet phải; URL `?flyout=&flyoutId=` là nguồn sự thật) ──
-  const findVersion = (id: string | null) =>
-    id != null && /^\d+$/.test(id) ? versions.find((v) => v.id === Number(id)) ?? null : null;
+  // ── Flyouts (một stack sheet phải; URL `?flyout=&flyoutId=` là nguồn sự thật). Đợt 3 Task 2: sheet khởi động worker
+  // ("acq-start") dời sang Vision › Thu ảnh. R-3-h: chế độ "full" giữ hai sheet recipe cũ (cùng khoá, cùng cổng canCreate).
   const flyouts: Record<string, FlyoutDefinition> = {};
-  if (canControl) {
+  if (full && canControl) {
+    const machines = (sheetMachinesQ.data ?? []) as LoadMachine[];
+    const sheetVersions = ((sheetVersionsQ.data as { versions?: RecipeVersion[] } | undefined)?.versions ?? []) as RecipeVersion[];
+    const findVersion = (id: string | null) =>
+      id != null && /^\d+$/.test(id) ? sheetVersions.find((v) => v.id === Number(id)) ?? null : null;
     flyouts["eq-recipe-new"] = {
       size: "md",
       title: t("eqIntegration.createTitle", "New recipe version (draft)"),
       description: t("eqIntegration.createDesc", "Immutable draft version — genealogy metadata only; nothing is pushed to a device."),
-      // Nút "Phiên bản mới" cũ bị khoá khi trạng thái cờ CHƯA RÕ (đang kiểm tra / lỗi) — deep link / F5 cũng vậy:
-      // chưa rõ ⇒ sheet chỉ báo trạng thái, không có form. Cờ TẮT (đã rõ) ⇒ form như nút cũ (server trả CONFLICT).
+      // Như cũ: cờ CHƯA RÕ (đang kiểm tra / lỗi) ⇒ sheet chỉ báo trạng thái, không form (cả deep link / F5). Cờ TẮT (đã rõ)
+      // ⇒ form như cũ (server trả CONFLICT ⇒ toast.info).
       render: () => flagUnsettled ? (
         flagStatus === "error" ? (
           <p role="alert" className="py-6 text-center text-sm text-destructive">
-            {t(
-              "eqIntegration.flagStatusError",
-              "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.",
-            )}
+            {t("eqIntegration.flagStatusError", "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.")}
           </p>
         ) : (
           <p className="py-6 text-center text-sm text-muted-foreground">
@@ -425,7 +394,7 @@ export default function EquipmentIntegration() {
         )
       ) : (
         <CreateVersionForm
-          defaultCode={activeCode ?? recipeCode}
+          defaultCode={codeParam ?? roCode}
           machines={machines}
           pending={createM.isPending}
           onSubmit={(v, done) => createM.mutate(v, { onSuccess: done })}
@@ -448,38 +417,23 @@ export default function EquipmentIntegration() {
         if (!v) {
           return (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              {versionsQ.isLoading
+              {sheetVersionsQ.isLoading
                 ? t("eqIntegration.loading", "Loading…")
                 : t("eqIntegration.versionNotFound", "Version #{{id}} is not in the loaded recipe code.", { id: layer.id ?? "" })}
             </p>
           );
         }
+        // Sheet DÙNG CHUNG với Recipes (RecipeLoadHistory.tsx): MỘT phiên bản, MỘT máy, MỘT lượt recordRecipeLoad.
         return (
           <RecordLoadForm
             key={v.id}
             version={v}
             machines={machines}
             pending={recordLoadM.isPending}
-            onSubmit={(input, done) => recordLoadM.mutate(input, { onSuccess: done })}
+            onSubmit={(input: RecordLoadInput, done, fail) => recordLoadM.mutate(input, { onSuccess: done, onError: (e) => fail(e) })}
           />
         );
       },
-    };
-  }
-  if (canViewAcq && canControlAcq) {
-    flyouts["acq-start"] = {
-      size: "md",
-      title: t("eqIntegration.acq.startTitle", "Start acquisition worker"),
-      description: t(
-        "eqIntegration.acq.startHint",
-        "File source replays a capture folder; mock generates synthetic frames. Submission stamps NTF ('needs inspection') — acquisition is not judgement.",
-      ),
-      render: () => (
-        <StartAcquisitionWorkerForm
-          pending={startAcqM.isPending}
-          onSubmit={(cfg, done) => startAcqM.mutate(cfg, { onSuccess: done })}
-        />
-      ),
     };
   }
 
@@ -529,10 +483,18 @@ export default function EquipmentIntegration() {
                   {/* Honest 4-state flag (loading/off/on/error) — doc 80 Task 1, as a chip. */}
                   <FeatureStatusNoticeChip
                     status={flagStatus}
-                    offMessage={t(
-                      "eqIntegration.flagOffBanner",
-                      "Preview mode: equipment integration is disabled. Reads work; actions (create / release / archive / rollback version, record load) are blocked until it is enabled.",
-                    )}
+                    offMessage={
+                      full
+                        ? t(
+                            // R-3-h — người dùng chế độ "full" có các thao tác NGAY TRÊN trang này (không phải "nay ở Recipes").
+                            "eqIntegration.flagOffBannerHere",
+                            "Preview mode: equipment integration is disabled. Reads work; recipe version actions on this page (create / release / archive / roll back, record a load) are blocked until it is enabled.",
+                          )
+                        : t(
+                            "eqIntegration.flagOffBanner",
+                            "Preview mode: equipment integration is disabled. Reads work; actions (create / release / archive / rollback version, record load) are blocked until it is enabled.",
+                          )
+                    }
                     errorMessage={t(
                       "eqIntegration.flagStatusError",
                       "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.",
@@ -585,7 +547,7 @@ export default function EquipmentIntegration() {
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               }
-              tabs={TABS}
+              tabs={recipeMode === "none" ? TABS : recipeMode === "full" ? TABS_FULL : TABS_READONLY}
               basePath={BASE_PATH}
               defaultTab="status"
               toolbarEnd={narrow ? undefined : <TabToolbar />}
@@ -607,10 +569,29 @@ function flagChipState(s: FeatureStatus): StatusChipItem["state"] {
 // ── Hàng công cụ của tab đang mở (cùng hàng dải tab — thanh công cụ DUY NHẤT trong MAIN) ───────
 function TabToolbar() {
   const ctx = useEqCtx();
-  if (ctx.tab === "recipes") return <RecipesToolbar />;
-  if (ctx.tab === "history") return <HistoryToolbar />;
-  if (ctx.tab === "acquisition") return <AcquisitionToolbar />;
-  return <CatalogToolbar />;
+  return (
+    <>
+      {ctx.tab === "history" && !ctx.canOpenRecipes ? <RecipeHistoryToolbar /> : <CatalogToolbar />}
+      {ctx.canViewAcq && <AcquisitionMovedLink />}
+    </>
+  );
+}
+
+/**
+ * Đợt 3 Task 2 fix round 1 (Ruling R-3-d) — chỗ CŨ trỏ tới chỗ MỚI: worker thu ảnh đã dời sang Vision › Thu ảnh. Hiện ở mọi
+ * tab, chỉ cho người mở được trang đó (machine_alerts/canView). Integration thuộc MOD_OT_CONTROL nên khách chỉ có OT (ô AI
+ * của launcher là upsell) luôn có lối nhìn thấy được tới trang.
+ */
+function AcquisitionMovedLink() {
+  const { t } = useTranslation();
+  return (
+    <Button asChild size="sm" variant="outline" className="h-8">
+      <Link href={VISION_ACQUISITION_PATH} data-acq-moved-link="">
+        <Camera className="mr-1 h-4 w-4" aria-hidden="true" />
+        {t("eqIntegration.acqMoved", "Acquisition workers → Vision › Image acquisition")}
+      </Link>
+    </Button>
+  );
 }
 
 /** <1024 px: cùng bộ công cụ, nhưng là một hàng xuống dòng được ở đầu nội dung tab (không bị hàng tab cắt). */
@@ -634,38 +615,42 @@ function CatalogToolbar() {
   );
 }
 
-function RecipesLink({ href }: { href: string }) {
-  const { t } = useTranslation();
-  return (
-    <Link
-      href={href}
-      className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-primary hover:bg-accent"
-      title={t("eqIntegration.openInRecipesHint", "Recipe catalog, approval and deployment live on the Recipes page")}
-    >
-      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-      {t("eqIntegration.openInRecipes", "Open in Recipes")}
-    </Link>
-  );
-}
+// ════════ Fix round 1 (R-3-b) / final wave (R-3-h) — tab "Phiên bản & lịch sử nạp" (người không mở được /recipes) ════════
+// Cùng thủ tục đọc cũ của Integration (machine_monitoring/canView): listRecipeVersions / listCodeHistory /
+// listLoadHistory / machine.list.
+//  - "readonly" (R-3-b): KHÔNG một nút thao tác nào (không tạo/phát hành/lưu trữ/rollback/ghi nhận nạp).
+//  - "full" (R-3-h): thao tác phiên bản như tab "Phiên bản recipe" cũ — cổng hiện machine_control/canCreate, phát hành/
+//    rollback bật theo machine_control/canEdit, lưu trữ một cú bấm, rollback = RollbackConfirm không lý do/không OTP (R-2-g),
+//    ghi nhận nạp = sheet dùng chung `eq-recipe-load`; "Phiên bản mới" = sheet `eq-recipe-new` (khoá khi cờ chưa rõ).
+type RoMachine = { id: number; code?: string | null; name?: string | null };
 
-function RecipesToolbar() {
+function RecipeHistoryToolbar() {
   const { t } = useTranslation();
   const ctx = useEqCtx();
   const flyout = useFlyout();
+  const [, setCode] = useUrlParam("code");
+  const [machineParam, setMachineParam] = useUrlParam("machineId");
+  const machinesQ = trpc.machine.list.useQuery(undefined, { enabled: ctx.canView });
+  const machines = (machinesQ.data ?? []) as RoMachine[];
+  const actions = ctx.recipeMode === "full" && ctx.canControl;
+  const run = () => {
+    const c = ctx.roCode.trim();
+    if (c) setCode(c);
+  };
   return (
     <>
       <Input
-        className="h-8 w-24"
-        value={ctx.recipeCode}
+        className="h-8 w-28"
+        value={ctx.roCode}
         placeholder="RCP-001"
         aria-label={t("eqIntegration.recipeCode", "Recipe code")}
-        onChange={(e) => ctx.setRecipeCode(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") ctx.runVersionLookup(); }}
+        onChange={(e) => ctx.setRoCode(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") run(); }}
       />
-      <Button variant="outline" size="sm" className="h-8" disabled={!ctx.recipeCode.trim()} onClick={ctx.runVersionLookup}>
+      <Button variant="outline" size="sm" className="h-8" disabled={!ctx.roCode.trim()} onClick={run}>
         {t("eqIntegration.loadVersions", "Load versions")}
       </Button>
-      {ctx.canControl && (
+      {actions && (
         <Button
           size="sm" variant="outline" className="h-8"
           disabled={ctx.flagUnsettled}
@@ -675,99 +660,160 @@ function RecipesToolbar() {
           <Plus className="mr-1 h-4 w-4" />{t("eqIntegration.createVersion", "New version")}
         </Button>
       )}
-      <RecipesLink href={ctx.activeCode ? `/recipes?code=${encodeURIComponent(ctx.activeCode)}` : "/recipes"} />
-    </>
-  );
-}
-
-function HistoryToolbar() {
-  const { t } = useTranslation();
-  const ctx = useEqCtx();
-  const link =
-    ctx.historyMode === "machine" && ctx.historyMachineId
-      ? `/recipes?machineId=${ctx.historyMachineId}`
-      : ctx.historyMode === "code" && ctx.activeHistoryCode
-        ? `/recipes?code=${encodeURIComponent(ctx.activeHistoryCode)}`
-        : "/recipes";
-  return (
-    <>
-      <Select value={ctx.historyMode} onValueChange={(v) => ctx.setHistoryMode(v as HistoryMode)}>
-        <SelectTrigger className="h-8 w-32" aria-label={t("eqIntegration.historyMode", "Filter by")}><SelectValue /></SelectTrigger>
+      {/* U11 — Select DS; "__none__" là sentinel cho "chưa chọn máy". */}
+      <Select value={machineParam && /^\d+$/.test(machineParam) ? machineParam : "__none__"} onValueChange={(v) => setMachineParam(v === "__none__" ? null : v)}>
+        <SelectTrigger className="h-8 w-56" aria-label={t("eqIntegration.machine", "Machine")}><SelectValue /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="machine">{t("eqIntegration.byMachine", "Machine")}</SelectItem>
-          <SelectItem value="code">{t("eqIntegration.byCode", "Recipe code")}</SelectItem>
+          <SelectItem value="__none__">{t("eqIntegration.selectMachine", "Select a machine…")}</SelectItem>
+          {machines.map((m) => (
+            <SelectItem key={m.id} value={String(m.id)}>{m.name ?? m.code} ({m.code})</SelectItem>
+          ))}
         </SelectContent>
       </Select>
-      {ctx.historyMode === "machine" ? (
-        // U11 — Select DS; "__none__" là sentinel cho "chưa chọn máy".
-        <Select
-          value={ctx.historyMachineId != null ? String(ctx.historyMachineId) : "__none__"}
-          onValueChange={(v) => ctx.setHistoryMachineId(v === "__none__" ? null : Number(v))}
-        >
-          <SelectTrigger className="h-8 w-56" aria-label={t("eqIntegration.machine", "Machine")}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">{t("eqIntegration.selectMachine", "Select a machine…")}</SelectItem>
-            {ctx.machines.map((m) => (
-              <SelectItem key={m.id} value={String(m.id)}>{m.name ?? m.code} ({m.code})</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : (
-        <>
-          <Input
-            className="h-8 w-32"
-            value={ctx.historyCode}
-            placeholder="RCP-001"
-            aria-label={t("eqIntegration.recipeCode", "Recipe code")}
-            onChange={(e) => ctx.setHistoryCode(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") ctx.runHistoryCodeLookup(); }}
-          />
-          <Button variant="outline" size="sm" className="h-8" disabled={!ctx.historyCode.trim()} onClick={ctx.runHistoryCodeLookup}>
-            {t("eqIntegration.loadHistory", "Load history")}
-          </Button>
-        </>
-      )}
-      <RecipesLink href={link} />
+      {!actions && <Badge variant="outline" className="text-muted-foreground">{t("eqIntegration.viewOnly", "View only")}</Badge>}
     </>
   );
 }
 
-function AcquisitionToolbar() {
+function RecipeHistoryTab() {
   const { t } = useTranslation();
   const ctx = useEqCtx();
   const flyout = useFlyout();
-  if (!ctx.canViewAcq) return null;
-  return (
-    <>
-      {/* Live-flag notice (honest gate — workers refuse to start when off), as a chip in the tool row. */}
-      {ctx.acqLive === false && (
-        <NoticeChip kind="flagOff" label={t("eqIntegration.acq.liveOffChip", "Live acquisition off")}>
-          <p>
-            {t(
-              "eqIntegration.acq.flagOff",
-              "Live acquisition is disabled (LIVE_ACQUISITION_ENABLED is off). Status stays readable; starting a worker will be refused until the flag is enabled.",
-            )}
-          </p>
-        </NoticeChip>
-      )}
-      <NoticeChip kind="hint" label={t("eqIntegration.acq.aboutChip", "About sources")}>
-        <p>
-          {t(
-            "eqIntegration.acq.desc",
-            "Grab → quality metrics → optional NTF submit through the same canonical ingest path. File/mock sources are real today; GenICam stays a stub until a camera driver is bound.",
-          )}
-        </p>
-      </NoticeChip>
-      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={ctx.refreshAcq} title={t("common.refresh", "Refresh")} aria-label={t("common.refresh", "Refresh")}>
-        <RefreshCw className="h-4 w-4" />
-      </Button>
-      {ctx.canControlAcq && (
-        <Button size="sm" variant="outline" className="h-8" onClick={() => flyout.open("acq-start")}>
-          <Play className="mr-1 h-4 w-4" />
-          {t("eqIntegration.acq.start", "Start worker")}
+  const [codeParam] = useUrlParam("code");
+  const [machineParam] = useUrlParam("machineId");
+  const code = codeParam != null && codeParam !== "" ? codeParam : null;
+  const machineId = machineParam != null && /^\d+$/.test(machineParam) ? Number(machineParam) : null;
+  const [modePick, setModePick] = useState<HistoryMode | null>(null);
+  const mode: HistoryMode = modePick ?? (code != null ? "code" : "machine");
+  const full = ctx.recipeMode === "full";
+
+  const machinesQ = trpc.machine.list.useQuery(undefined, { enabled: ctx.canView });
+  const versionsQ = trpc.equipmentIntegration.listRecipeVersions.useQuery({ code: code ?? "" }, { enabled: ctx.canView && code != null, retry: false });
+  const loadHistoryQ = trpc.equipmentIntegration.listLoadHistory.useQuery(
+    { machineId: machineId ?? 0, limit: 200 },
+    { enabled: ctx.canView && mode === "machine" && machineId != null, retry: false },
+  );
+  const codeHistoryQ = trpc.equipmentIntegration.listCodeHistory.useQuery(
+    { code: code ?? "", limit: 200 },
+    { enabled: ctx.canView && mode === "code" && code != null, retry: false },
+  );
+  const historyQ = mode === "machine" ? loadHistoryQ : codeHistoryQ;
+  const machines = (machinesQ.data ?? []) as RoMachine[];
+  const machineLabel = (id: number) => {
+    const m = machines.find((x) => x.id === id);
+    return m ? (m.name ?? m.code ?? `#${id}`) : `#${id}`;
+  };
+  const versions = ((versionsQ.data as { versions?: RecipeVersion[] } | undefined)?.versions ?? []) as RecipeVersion[];
+  const rows: VersionRow[] = versions.map((v) => ({
+    id: v.id,
+    label: `v${v.version}`,
+    createdAt: v.createdAt ?? null,
+    author: v.createdBy != null ? `#${v.createdBy}` : undefined,
+    current: v.designStatus === "released",
+    note: (
+      <span className="inline-flex items-center gap-2">
+        <StatusBadge status={v.designStatus} label={t(`eqIntegration.recipeStatus.${v.designStatus}`, v.designStatus)} />
+        <span>{v.name}</span>
+      </span>
+    ),
+    content: v.payload,
+  }));
+  const released = versions.find((v) => v.designStatus === "released");
+  const byId = new Map(versions.map((v) => [v.id, v]));
+  const needsEdit = t("eqIntegration.needsEditPermission", "Needs edit permission (machine_control/canEdit) to release/rollback.");
+
+  // R-3-h — hàng thao tác của tab "Phiên bản recipe" cũ (chỉ chế độ "full"; "readonly" KHÔNG renderRowActions ⇒ không cột).
+  const renderRowActions = (row: VersionRow): ReactNode => {
+    const v = byId.get(Number(row.id));
+    if (!v) return null;
+    if (!ctx.canControl) return <span className="text-xs text-muted-foreground">{t("eqIntegration.viewOnly", "View only")}</span>;
+    return (
+      <div className="flex justify-end gap-1">
+        {v.designStatus === "draft" && (
+          <Button size="icon" variant="ghost" className="h-8 w-8" disabled={ctx.releasePending || !ctx.canRelease}
+            aria-label={t("eqIntegration.release", "Release")}
+            title={ctx.canRelease ? t("eqIntegration.releaseTip", "Release this version (archives the current released one)") : needsEdit}
+            onClick={() => ctx.release(v)}>
+            <Rocket className="h-4 w-4 text-emerald-500" />
+          </Button>
+        )}
+        {v.designStatus === "archived" && (
+          // R-2-g — hợp đồng cũ: AlertDialog, không lý do, không OTP; MỘT lượt rollback mỗi xác nhận.
+          <RollbackConfirm
+            requireReason={false}
+            requireOtp={false}
+            versionLabel={`v${v.version}`}
+            title={t("eqIntegration.rollbackConfirmTitle", "Roll back released contract?")}
+            description={t(
+              "eqIntegration.rollbackConfirmBody",
+              "This releases {{code}} v{{version}} and archives the current released version. It writes genealogy metadata only — no recipe is pushed to a device.",
+            )
+              .replace("{{code}}", v.code)
+              .replace("{{version}}", String(v.version))}
+            confirmLabel={t("eqIntegration.rollback", "Rollback")}
+            disabled={ctx.rollbackPending || !ctx.canRelease}
+            onRollback={() => ctx.rollback(v)}
+            trigger={
+              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={ctx.rollbackPending || !ctx.canRelease}
+                aria-label={t("eqIntegration.rollback", "Rollback")}
+                title={ctx.canRelease ? t("eqIntegration.rollbackTip", "Roll the released contract back to this version") : needsEdit}>
+                <Undo2 className="h-4 w-4" />
+              </Button>
+            }
+          />
+        )}
+        {v.designStatus !== "archived" && (
+          <Button size="icon" variant="ghost" className="h-8 w-8" disabled={ctx.archivePending}
+            aria-label={t("eqIntegration.archive", "Archive")}
+            title={t("eqIntegration.archiveTip", "Archive this version")}
+            onClick={() => ctx.archive(v)}>
+            <Archive className="h-4 w-4" />
+          </Button>
+        )}
+        <Button size="icon" variant="ghost" className="h-8 w-8" disabled={ctx.recordLoadPending}
+          aria-label={t("eqIntegration.recordLoad", "Record load")}
+          title={t("eqIntegration.loadTip", "Record that this version was loaded onto a machine (genealogy)")}
+          onClick={() => flyout.open("eq-recipe-load", { id: v.id })}>
+          <Download className="h-4 w-4" />
         </Button>
+      </div>
+    );
+  };
+
+  const pickCode = full
+    ? t("eqIntegration.recipeTab.pickCode", "Enter a recipe code above to see its versions, version actions and load history.")
+    : t("eqIntegration.readonly.pickCode", "Enter a recipe code above to see its versions and load history (view only).");
+  return (
+    <div {...(full ? { "data-recipe-history": "full" } : { "data-readonly-history": "" })} className="space-y-4">
+      {ctx.narrow && <NarrowTools />}
+      {code == null ? (
+        <p className="text-sm text-muted-foreground">{pickCode}</p>
+      ) : (
+        // "readonly": KHÔNG renderRowActions ⇒ không cột thao tác, không nút nào trên hàng phiên bản.
+        <VersionHistoryPanel
+          title={t("eqIntegration.versionsTitle", "Versions of {{code}}").replace("{{code}}", code)}
+          versions={rows}
+          status={versionsQ.isError ? "error" : versionsQ.isLoading ? "loading" : "ready"}
+          defaultBaseId={released?.id ?? null}
+          diffMaxHeightClass="max-h-[40vh]"
+          {...(full ? { renderRowActions } : {})}
+        />
       )}
-    </>
+      <LoadHistoryPanel
+        mode={mode}
+        onModeChange={setModePick}
+        code={code}
+        machineId={machineId}
+        machineLabel={machineLabel}
+        canRead={ctx.canView}
+        rows={(historyQ.data ?? []) as LoadLogRow[]}
+        loading={historyQ.isFetching}
+        error={historyQ.isError}
+        onRetry={() => void historyQ.refetch()}
+        pickCodeText={pickCode}
+        pickMachineText={t("eqIntegration.readonly.pickMachine", "Select a machine above to see its load history.")}
+      />
+    </div>
   );
 }
 
@@ -1000,393 +1046,18 @@ function UemField({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ════════════════ TAB: Recipe versions (I1-b) — VersionHistoryPanel ════════════════
-
-function RecipesTab() {
-  const { t } = useTranslation();
-  const ctx = useEqCtx();
-  const flyout = useFlyout();
-  const [, setLocation] = useLocation();
-
-  if (!ctx.activeCode) {
-    return (
-      <>
-        {ctx.narrow && <NarrowTools />}
-        <EmptyState
-          variant="no-data"
-          title={t("eqIntegration.pickHint", "Enter a recipe code above to list its immutable versions and genealogy actions.")}
-          description={t("eqIntegration.recipesElsewhere", "Recipe approval and deployment to machines live on the Recipes page.")}
-          actionLabel={t("eqIntegration.openInRecipes", "Open in Recipes")}
-          onAction={() => setLocation("/recipes")}
-        />
-      </>
-    );
-  }
-
-  const released = ctx.versions.find((v) => v.designStatus === "released");
-  const rows: VersionRow[] = ctx.versions.map((v) => ({
-    id: v.id,
-    label: `v${v.version}`,
-    createdAt: v.createdAt ?? null,
-    author: v.createdBy != null ? `#${v.createdBy}` : undefined,
-    current: v.designStatus === "released",
-    note: (
-      <span className="inline-flex items-center gap-2">
-        <StatusBadge status={v.designStatus} label={t(`eqIntegration.recipeStatus.${v.designStatus}`, v.designStatus)} />
-        <span>{v.name}</span>
-      </span>
-    ),
-    content: v.payload,
-  }));
-  const byId = new Map(ctx.versions.map((v) => [v.id, v]));
-  const needsEdit = t("eqIntegration.needsEditPermission", "Needs edit permission (machine_control/canEdit) to release/rollback.");
-
-  return (
-    <>
-      {ctx.narrow && <NarrowTools />}
-      <VersionHistoryPanel
-        title={t("eqIntegration.versionsTitle", "Versions of {{code}}").replace("{{code}}", ctx.activeCode)}
-        versions={rows}
-        status={ctx.versionsError ? "error" : ctx.versionsLoading ? "loading" : "ready"}
-        defaultBaseId={released?.id ?? null}
-        diffMaxHeightClass="max-h-[40vh]"
-        renderRowActions={(row) => {
-          const v = byId.get(Number(row.id));
-          if (!v) return null;
-          if (!ctx.canControl) return <span className="text-xs text-muted-foreground">{t("eqIntegration.viewOnly", "View only")}</span>;
-          return (
-            <div className="flex justify-end gap-1">
-              {v.designStatus === "draft" && (
-                <Button size="sm" variant="ghost" className="h-7" disabled={ctx.releasePending || !ctx.canRelease}
-                  title={ctx.canRelease ? t("eqIntegration.releaseTip", "Release this version (archives the current released one)") : needsEdit}
-                  onClick={() => ctx.release(v)}>
-                  <Rocket className="mr-1 h-3.5 w-3.5 text-emerald-500" />{t("eqIntegration.release", "Release")}
-                </Button>
-              )}
-              {v.designStatus === "archived" && (
-                // R-2-g — hợp đồng cũ: AlertDialog, không lý do, không OTP; MỘT lượt rollback mỗi xác nhận.
-                <RollbackConfirm
-                  requireReason={false}
-                  requireOtp={false}
-                  versionLabel={`v${v.version}`}
-                  title={t("eqIntegration.rollbackConfirmTitle", "Roll back released contract?")}
-                  description={t(
-                    "eqIntegration.rollbackConfirmBody",
-                    "This releases {{code}} v{{version}} and archives the current released version. It writes genealogy metadata only — no recipe is pushed to a device.",
-                  )
-                    .replace("{{code}}", v.code)
-                    .replace("{{version}}", String(v.version))}
-                  confirmLabel={t("eqIntegration.rollback", "Rollback")}
-                  disabled={ctx.rollbackPending || !ctx.canRelease}
-                  onRollback={() => ctx.rollback(v)}
-                  trigger={
-                    <Button size="sm" variant="ghost" className="h-7" disabled={ctx.rollbackPending || !ctx.canRelease}
-                      title={ctx.canRelease ? t("eqIntegration.rollbackTip", "Roll the released contract back to this version") : needsEdit}>
-                      <Undo2 className="mr-1 h-3.5 w-3.5" />{t("eqIntegration.rollback", "Rollback")}
-                    </Button>
-                  }
-                />
-              )}
-              {v.designStatus !== "archived" && (
-                <Button size="sm" variant="ghost" className="h-7" disabled={ctx.archivePending}
-                  title={t("eqIntegration.archiveTip", "Archive this version")}
-                  onClick={() => ctx.archive(v)}>
-                  <Archive className="mr-1 h-3.5 w-3.5" />{t("eqIntegration.archive", "Archive")}
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" className="h-7" disabled={ctx.recordLoadPending}
-                title={t("eqIntegration.loadTip", "Record that this version was loaded onto a machine (genealogy)")}
-                onClick={() => flyout.open("eq-recipe-load", { id: v.id })}>
-                <Download className="mr-1 h-3.5 w-3.5" />{t("eqIntegration.recordLoad", "Record load")}
-              </Button>
-            </div>
-          );
-        }}
-      />
-    </>
-  );
-}
-
-// ════════════════ TAB: Load history / genealogy (I1-b) ════════════════
-
-// ── Action → tone for the genealogy table ─────────────────────────────────────
-const ACTION_TONE: Record<string, "success" | "warning" | "info" | "default" | "error"> = {
-  create: "default",
-  release: "success",
-  archive: "warning",
-  rollback: "info",
-  load: "info",
-};
-
-function HistoryTab() {
-  const { t } = useTranslation();
-  const ctx = useEqCtx();
-  const { historyMode, historyMachineId, activeHistoryCode, historyRows, historyFetching } = ctx;
-  return (
-    <>
-      {ctx.narrow && <NarrowTools />}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("eqIntegration.col.when", "When")}</TableHead>
-            <TableHead>{t("eqIntegration.col.action", "Action")}</TableHead>
-            <TableHead>{t("eqIntegration.col.recipe", "Code @ version")}</TableHead>
-            <TableHead>{t("eqIntegration.col.machine", "Machine")}</TableHead>
-            <TableHead>{t("eqIntegration.col.who", "Performed by")}</TableHead>
-            <TableHead>{t("eqIntegration.col.notes", "Notes")}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {historyFetching && (
-            <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("eqIntegration.loading", "Loading…")}</TableCell></TableRow>
-          )}
-          {historyMode === "machine" && !historyMachineId && (
-            <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("eqIntegration.selectMachineHint", "Select a machine to view its recipe genealogy.")}</TableCell></TableRow>
-          )}
-          {historyMode === "code" && !activeHistoryCode && (
-            <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("eqIntegration.selectCodeHint", "Enter a recipe code to view its genealogy across machines.")}</TableCell></TableRow>
-          )}
-          {((historyMode === "machine" && historyMachineId && !historyFetching) ||
-            (historyMode === "code" && activeHistoryCode && !historyFetching)) &&
-            historyRows.length === 0 && (
-            <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("eqIntegration.historyEmpty", "No genealogy events.")}</TableCell></TableRow>
-          )}
-          {historyRows.map((row) => (
-            <TableRow key={row.id}>
-              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                {row.createdAt ? new Date(row.createdAt).toLocaleString() : "—"}
-              </TableCell>
-              <TableCell>
-                <StatusBadge status={row.action} tone={ACTION_TONE[row.action] ?? "default"} label={t(`eqIntegration.action.${row.action}`, row.action)} />
-              </TableCell>
-              <TableCell className="font-mono text-xs">
-                {row.recipeCode}{row.recipeVersion != null ? ` @v${row.recipeVersion}` : ""}
-              </TableCell>
-              <TableCell className="text-xs">
-                {row.machineId != null ? (ctx.machineName.get(row.machineId) ?? `#${row.machineId}`) : "—"}
-              </TableCell>
-              <TableCell className="text-xs">{row.performedBy != null ? `#${row.performedBy}` : "—"}</TableCell>
-              <TableCell className="max-w-[20rem] truncate text-xs text-muted-foreground" title={row.notes ?? undefined}>
-                {row.notes ?? "—"}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// W8-C (doc 27 V14, Đợt 7.6 follow-up) — Acquisition worker panel.
-//
-// UI over visionAdapter.acquisitionWorkerStatus / startAcquisitionWorker /
-// stopAcquisitionWorker (W7-E built them API-only and documented THIS page as
-// the panel slot). RBAC mirrors the router: machine_alerts/canView to read,
-// machine_alerts/canCreate to start/stop. LIVE_ACQUISITION_ENABLED gates
-// starting — the refusal reason from the server is surfaced verbatim (honest).
-//
-// Doc 81 Đợt 2 Task 7 — Review Focus 3: the tab is keepMounted; the panel mounts the FIRST time the tab is
-// opened (no polling for a page visit that never opens it) and is never unmounted by a tab switch afterwards.
-// ════════════════════════════════════════════════════════════════════════════
-
-type AcqStatus = RouterOutputs["visionAdapter"]["acquisitionWorkerStatus"];
-type AcqWorker = AcqStatus["workers"][number];
-
-const ACQ_STATE_TONE: Record<string, "success" | "warning" | "error" | "default" | "info"> = {
-  running: "success",
-  completed: "info",
-  stopped: "default",
-  error: "error",
-};
-
-function AcquisitionTab() {
-  const { tab, narrow } = useEqCtx();
-  // Chốt "đã mở": một khi tab được mở, panel ở lại (TabbedHub keepMounted giữ instance).
-  const [opened, setOpened] = useState(tab === "acquisition");
-  useEffect(() => {
-    if (tab === "acquisition") setOpened(true);
-  }, [tab]);
-  // `{narrow && …}` giữ vị trí con ⇒ qua lại 1024 px KHÔNG remount panel.
-  return opened ? (
-    <>
-      {narrow && <NarrowTools />}
-      <AcquisitionWorkersPanel />
-    </>
-  ) : null;
-}
-
-function AcquisitionWorkersPanel() {
-  const { t } = useTranslation();
-  const { tab, canViewAcq, canControlAcq, setAcqLive, refreshAcq } = useEqCtx();
-  // Panel giữ instance khi rời tab (Review Focus 3) nhưng chỉ poll khi tab đang mở (như tab Radix cũ: rời tab ⇒
-  // hết poll); quay lại ⇒ đọc ngay một lần.
-  const active = tab === "acquisition";
-
-  const statusQ = trpc.visionAdapter.acquisitionWorkerStatus.useQuery(undefined, {
-    enabled: canViewAcq,
-    refetchInterval: active ? 5_000 : false,
-    retry: false,
-  });
-  const wasActive = useRef(active);
-  useEffect(() => {
-    if (active && !wasActive.current && canViewAcq) void statusQ.refetch();
-    wasActive.current = active;
-  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
-  const sourcesQ = trpc.visionAdapter.listAcquisitionSources.useQuery(undefined, {
-    enabled: canViewAcq,
-    retry: false,
-    staleTime: 60_000,
-  });
-
-  const stopM = trpc.visionAdapter.stopAcquisitionWorker.useMutation({
-    onSuccess: () => {
-      toast.success(t("eqIntegration.acq.stopped", "Acquisition worker stopped"));
-      refreshAcq();
-    },
-    onError: (e) => toastTrpcError(e),
-  });
-
-  const status = statusQ.data as AcqStatus | undefined;
-  const liveEnabled = status?.liveEnabled;
-  useEffect(() => {
-    setAcqLive(liveEnabled);
-  }, [liveEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!canViewAcq) {
-    return (
-      <div data-acq-panel="" className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-        <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-        {t("eqIntegration.acq.noPermission", "Viewing acquisition workers requires the machine-alerts view permission.")}
-      </div>
-    );
-  }
-
-  const workers = status?.workers ?? [];
-
-  return (
-    <div data-acq-panel="" className="space-y-2">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("eqIntegration.acq.col.id", "Worker")}</TableHead>
-            <TableHead>{t("eqIntegration.col.status", "Status")}</TableHead>
-            <TableHead>{t("eqIntegration.acq.col.source", "Source")}</TableHead>
-            <TableHead className="text-right">{t("eqIntegration.acq.col.frames", "Frames")}</TableHead>
-            <TableHead className="text-right">{t("eqIntegration.acq.col.submitted", "Submitted")}</TableHead>
-            <TableHead className="text-right">{t("eqIntegration.acq.col.errors", "Errors")}</TableHead>
-            <TableHead>{t("eqIntegration.acq.col.last", "Last frame / error")}</TableHead>
-            {canControlAcq && <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {statusQ.isLoading && (
-            <TableRow>
-              <TableCell colSpan={canControlAcq ? 8 : 7} className="py-8 text-center text-muted-foreground">
-                <Loader2 className="mx-auto h-5 w-5 animate-spin" />
-              </TableCell>
-            </TableRow>
-          )}
-          {!statusQ.isLoading && workers.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={canControlAcq ? 8 : 7} className="py-8 text-center text-muted-foreground">
-                {t("eqIntegration.acq.empty", "No acquisition workers registered in this server session.")}
-              </TableCell>
-            </TableRow>
-          )}
-          {workers.map((w: AcqWorker) => {
-            const lastEntry = w.ledger.length > 0 ? w.ledger[w.ledger.length - 1] : null;
-            return (
-              <TableRow key={w.id}>
-                <TableCell>
-                  <span className="font-mono text-xs font-medium">{w.id}</span>
-                  <p className="text-[10px] text-muted-foreground">
-                    {t("eqIntegration.acq.since", "since")} {new Date(w.startedAt).toLocaleString()}
-                    {w.stoppedAt ? ` → ${new Date(w.stoppedAt).toLocaleTimeString()}` : ""}
-                  </p>
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={w.state} tone={ACQ_STATE_TONE[w.state] ?? "default"} label={t(`eqIntegration.acq.state.${w.state}`, w.state)} />
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="font-mono text-[11px]">{w.config.source.kind}</Badge>
-                  {w.config.submit && (
-                    <Badge variant="outline" className="ml-1 text-[10px]" title={w.config.machineCode ?? undefined}>
-                      {t("eqIntegration.acq.submits", "submits NTF")}
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs">{w.framesGrabbed}</TableCell>
-                <TableCell className="text-right font-mono text-xs">{w.submitted}</TableCell>
-                <TableCell className={`text-right font-mono text-xs ${w.errors > 0 ? "text-destructive" : ""}`}>{w.errors}</TableCell>
-                <TableCell className="max-w-56">
-                  {w.lastError ? (
-                    <span className="block truncate text-xs text-destructive" title={w.lastError}>{w.lastError}</span>
-                  ) : lastEntry ? (
-                    <span className="text-xs text-muted-foreground">
-                      #{lastEntry.frameId} · {new Date(lastEntry.at).toLocaleTimeString()}
-                      {lastEntry.quality
-                        ? lastEntry.quality.acceptable
-                          ? ` · ${t("eqIntegration.acq.qualityOk", "quality OK")}`
-                          : ` · ${t("eqIntegration.acq.qualityBad", "quality poor")}`
-                        : ""}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                {canControlAcq && (
-                  <TableCell className="text-right">
-                    {w.state === "running" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-destructive hover:text-destructive/80"
-                        disabled={stopM.isPending}
-                        onClick={() => stopM.mutate({ id: w.id })}
-                      >
-                        <Square className="mr-1 h-3.5 w-3.5" />
-                        {t("eqIntegration.acq.stop", "Stop")}
-                      </Button>
-                    )}
-                  </TableCell>
-                )}
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-
-      {/* Discovery line — which source kinds are genuinely usable now */}
-      {sourcesQ.data && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <span>{t("eqIntegration.acq.sources", "Source kinds")}:</span>
-          {sourcesQ.data.sources.map((s: { kind: string; available: boolean; description?: string }) => (
-            <Badge
-              key={s.kind}
-              variant="outline"
-              className={`font-mono text-[10px] ${s.available ? "" : "text-muted-foreground line-through"}`}
-              title={s.description}
-            >
-              {s.kind}
-            </Badge>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
+// ── R-3-h — sheet "Phiên bản mới" (chế độ "full"): khôi phục NGUYÊN form cũ của Integration trước Đợt 3 Task 1 ─────────
+// `equipmentIntegration.createRecipeVersion` (machine_control/canCreate + EQ_INTEG_ENABLED), payload
+// `{ code, name, payload, machineId?, notes? }`, cùng kiểm tra "Mã và tên là bắt buộc." / JSON object.
 function SheetFooter({ children }: { children: ReactNode }) {
   return <div className="flex justify-end gap-2 border-t pt-3">{children}</div>;
 }
 
-// ── Sheet: create recipe version ───────────────────────────────────────────────
 function CreateVersionForm({
   defaultCode, machines, pending, onSubmit,
 }: {
   defaultCode: string;
-  machines: MachineRow[];
+  machines: LoadMachine[];
   pending: boolean;
   onSubmit: (v: CreateVersionInput, done: () => void) => void;
 }) {
@@ -1466,173 +1137,6 @@ function CreateVersionForm({
       <SheetFooter>
         <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
         <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqIntegration.create", "Create version")}</Button>
-      </SheetFooter>
-    </div>
-  );
-}
-
-// ── Sheet: start acquisition worker (file / mock — the sources that are REAL today) ────────
-function StartAcquisitionWorkerForm({
-  pending, onSubmit,
-}: {
-  pending: boolean;
-  onSubmit: (cfg: StartWorkerInput, done: () => void) => void;
-}) {
-  const { t } = useTranslation();
-  const { layer, done } = useCloseOwnLayer();
-  const uid = useId();
-  const [id, setId] = useState("");
-  const [kind, setKind] = useState<"file" | "mock">("file");
-  const [directory, setDirectory] = useState("");
-  const [loop, setLoop] = useState(false);
-  const [mockMaxFrames, setMockMaxFrames] = useState("20");
-  const [intervalMs, setIntervalMs] = useState("2000");
-  const [submit, setSubmit] = useState(false);
-  const [machineCode, setMachineCode] = useState("");
-  const [assessQuality, setAssessQuality] = useState(true);
-
-  const dirty = id !== "" || kind !== "file" || directory !== "" || loop || mockMaxFrames !== "20" || intervalMs !== "2000" || submit || machineCode !== "" || !assessQuality;
-  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const doSubmit = () => {
-    if (!id.trim()) {
-      toast.error(t("eqIntegration.acq.idRequired", "Worker id is required.")); return;
-    }
-    if (kind === "file" && !directory.trim()) {
-      toast.error(t("eqIntegration.acq.dirRequired", "Directory is required for a file source.")); return;
-    }
-    if (submit && !machineCode.trim()) {
-      toast.error(t("eqIntegration.acq.machineRequired", "Submitting frames requires a machine code.")); return;
-    }
-    onSubmit(
-      {
-        id: id.trim(),
-        source: kind === "file"
-          ? { kind: "file", directory: directory.trim(), loop }
-          : { kind: "mock", maxFrames: Math.max(0, parseInt(mockMaxFrames) || 0) },
-        machineCode: machineCode.trim() || undefined,
-        intervalMs: Math.min(3_600_000, Math.max(50, parseInt(intervalMs) || 2000)),
-        submit,
-        assessQuality,
-      },
-      done,
-    );
-  };
-
-  return (
-    <div className="grid gap-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-id`}>{t("eqIntegration.acq.col.id", "Worker")}</Label>
-          <Input id={`${uid}-id`} value={id} placeholder="replay-line1" onChange={(e) => setId(e.target.value)} />
-        </div>
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-kind`}>{t("eqIntegration.acq.kind", "Source kind")}</Label>
-          <Select value={kind} onValueChange={(v) => setKind(v as "file" | "mock")}>
-            <SelectTrigger id={`${uid}-kind`} className="w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="file">file</SelectItem>
-              <SelectItem value="mock">mock</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      {kind === "file" ? (
-        <>
-          <div className="grid gap-1">
-            <Label htmlFor={`${uid}-dir`}>{t("eqIntegration.acq.directory", "Directory (on the server)")}</Label>
-            <Input id={`${uid}-dir`} value={directory} placeholder="D:\\captures\\line1" onChange={(e) => setDirectory(e.target.value)} />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={loop} onCheckedChange={(v) => setLoop(Boolean(v))} />
-            {t("eqIntegration.acq.loop", "Loop the folder (soak test)")}
-          </label>
-        </>
-      ) : (
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-max`}>{t("eqIntegration.acq.maxFrames", "Max frames (0 = until stopped)")}</Label>
-          <Input id={`${uid}-max`} type="number" min={0} value={mockMaxFrames} onChange={(e) => setMockMaxFrames(e.target.value)} />
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-interval`}>{t("eqIntegration.acq.interval", "Interval (ms)")}</Label>
-          <Input id={`${uid}-interval`} type="number" min={50} value={intervalMs} onChange={(e) => setIntervalMs(e.target.value)} />
-        </div>
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-mc`}>{t("eqIntegration.machineCode", "Machine code")}</Label>
-          <Input id={`${uid}-mc`} value={machineCode} placeholder="AOI-01" onChange={(e) => setMachineCode(e.target.value)} />
-        </div>
-      </div>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={submit} onCheckedChange={(v) => setSubmit(Boolean(v))} />
-        {t("eqIntegration.acq.submitFrames", "Submit each frame as a canonical NTF inspection (requires machine code)")}
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={assessQuality} onCheckedChange={(v) => setAssessQuality(Boolean(v))} />
-        {t("eqIntegration.acq.assessQuality", "Run image-quality metrics per frame")}
-      </label>
-      <SheetFooter>
-        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
-        <Button onClick={doSubmit} disabled={pending}>
-          {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-          <Play className="mr-1 h-4 w-4" />
-          {t("eqIntegration.acq.start", "Start worker")}
-        </Button>
-      </SheetFooter>
-    </div>
-  );
-}
-
-// ── Sheet: record recipe load ──────────────────────────────────────────────────
-function RecordLoadForm({
-  version, machines, pending, onSubmit,
-}: {
-  version: RecipeVersion;
-  machines: MachineRow[];
-  pending: boolean;
-  onSubmit: (v: RecordLoadInput, done: () => void) => void;
-}) {
-  const { t } = useTranslation();
-  const { layer, done } = useCloseOwnLayer();
-  const uid = useId();
-  const initialMachine = version.machineId ?? null;
-  const [machineId, setMachineId] = useState<number | null>(initialMachine);
-  const [deploy, setDeploy] = useState(false);
-  const [notes, setNotes] = useState("");
-
-  const dirty = machineId !== initialMachine || deploy || notes !== "";
-  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const submit = () => {
-    if (!machineId) { toast.error(t("eqIntegration.machineRequired", "Select a machine.")); return; }
-    onSubmit({ recipeId: version.id, machineId, deploy, notes: notes.trim() || undefined }, done);
-  };
-
-  return (
-    <div className="grid gap-3">
-      <div className="grid gap-1">
-        <Label htmlFor={`${uid}-machine`}>{t("eqIntegration.machine", "Machine")}</Label>
-        {/* U11 — Select DS; "__none__" là sentinel cho "chưa chọn máy". */}
-        <Select value={machineId != null ? String(machineId) : "__none__"} onValueChange={(v) => setMachineId(v === "__none__" ? null : Number(v))}>
-          <SelectTrigger id={`${uid}-machine`} className="w-full"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">{t("eqIntegration.selectMachine", "Select a machine…")}</SelectItem>
-            {machines.map((m) => <SelectItem key={m.id} value={String(m.id)}>{m.name ?? m.code} ({m.code})</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={deploy} onCheckedChange={(v) => setDeploy(Boolean(v))} />
-        {t("eqIntegration.alsoDeploy", "Also write a recipe_deployments ledger row")}
-      </label>
-      <div className="grid gap-1">
-        <Label htmlFor={`${uid}-notes`}>{t("eqIntegration.notes", "Notes")}</Label>
-        <Input id={`${uid}-notes`} value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </div>
-      <SheetFooter>
-        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
-        <Button onClick={submit} disabled={pending}><Send className="mr-1 h-4 w-4" />{t("eqIntegration.recordLoad", "Record load")}</Button>
       </SheetFooter>
     </div>
   );

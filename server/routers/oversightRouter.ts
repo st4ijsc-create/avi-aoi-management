@@ -16,6 +16,9 @@
  *   • deadlock đội xe      — trafficManager.detectDeadlocks() cycles
  *   • ECN đang chờ duyệt  — engineering_changes: status IN (submitted, in_review)
  *   • changeover (đổi model / "deployment") đang chờ duyệt — changeover_requests: status='pending'
+ *   • doc 81 Đợt 3 Task 4 — `mine`: cùng năm nhóm CHỜ DUYỆT (ECN · recipe nháp · rule · changeover · run) nhưng
+ *     CHỈ các mục mà phân công ACTIVE (`engineering_assignments`) trỏ tới người gọi. Vị từ "chờ duyệt" lấy từ
+ *     `PENDING_WHERE` (một nguồn cho cả hai phạm vi); không cộng vào `total` (là tập con, không phải nguồn mới).
  *
  * SAFETY / READ-ONLY: chỉ ĐẾM + lấy vài mục mẫu từ dữ liệu sẵn có. KHÔNG duyệt,
  * KHÔNG mutation, KHÔNG mở đường lệnh thiết bị. Mọi cổng quyền/HITL/SoD của từng
@@ -62,6 +65,10 @@ import { isOtControlEnabled, isInterlockAutoBlockEnabled } from "../services/ot/
 import { isRobotControlEnabled } from "../services/robot/robotCommandDispatcher";
 import { dpcDeployEnabled as isDpcDeployEnabled } from "../services/programming/programmingService";
 import { isInterlockEngineEnabled } from "../services/interlock/interlockEngine";
+// doc 81 Đợt 3 Task 4 — "Của tôi": vị từ CHỜ DUYỆT dùng chung (một nguồn cho cả "Chờ duyệt" lẫn "Của tôi") +
+// đếm theo phân công active (bảng `engineering_assignments`, mig 0363).
+import { PENDING_WHERE, fetchMineSummary } from "../services/engineeringAssignment/assignmentService";
+import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, type AssignablePendingKey, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -110,7 +117,7 @@ async function canSeeNamesSafe(userId: number, userRole: string, moduleName: str
 // ── recipe chưa duyệt (draft + chưa có second-approver) ────────────────────────
 async function fetchRecipesDraftPending(d: Db, showNames: boolean): Promise<CategoryCount> {
   try {
-    const cond = and(eq(machineRecipes.status, "draft"), isNull(machineRecipes.approvedBy));
+    const cond = PENDING_WHERE.recipe; // draft AND approvedBy IS NULL
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(machineRecipes).where(cond);
     const rows = showNames
       ? await d
@@ -166,7 +173,7 @@ async function fetchRecipesActiveUnapproved(d: Db, showNames: boolean): Promise<
 // ── interlock rule chưa duyệt (approvedBy IS NULL) ──────────────────────────────
 async function fetchInterlockRulesPending(d: Db, showNames: boolean): Promise<CategoryCount> {
   try {
-    const cond = isNull(interlockRules.approvedBy);
+    const cond = PENDING_WHERE.interlock_rule; // approvedBy IS NULL
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(interlockRules).where(cond);
     const rows = showNames
       ? await d
@@ -217,7 +224,7 @@ async function fetchInterlockEventsOpen(d: Db, showNames: boolean): Promise<Cate
 // ── orchestration run đang giữ / chờ xác nhận (KHÔNG đổi hành vi) ──────────────
 async function fetchOrchestrationHeld(d: Db): Promise<CategoryCount> {
   try {
-    const cond = inArray(orchestrationRuns.status, ["held", "awaiting_confirm"]);
+    const cond = PENDING_WHERE.orchestration_run; // status IN (held, awaiting_confirm)
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(orchestrationRuns).where(cond);
     const rows = await d
       .select({
@@ -296,7 +303,7 @@ async function fetchDeadlocks(): Promise<CategoryCount> {
 // ── ECN đang chờ duyệt (submitted | in_review) — HUB-02 mới ────────────────────
 async function fetchEcnPending(d: Db, showNames: boolean): Promise<CategoryCount> {
   try {
-    const cond = inArray(engineeringChanges.status, ["submitted", "in_review"]);
+    const cond = PENDING_WHERE.ecn; // status IN (submitted, in_review)
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(engineeringChanges).where(cond);
     const rows = showNames
       ? await d
@@ -324,7 +331,7 @@ async function fetchEcnPending(d: Db, showNames: boolean): Promise<CategoryCount
 // ── changeover (đổi model / "deployment") đang chờ duyệt — HUB-02 mới ──────────
 async function fetchChangeoverPending(d: Db, showNames: boolean): Promise<CategoryCount> {
   try {
-    const cond = eq(changeoverRequests.status, "pending");
+    const cond = PENDING_WHERE.changeover; // status = 'pending'
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(changeoverRequests).where(cond);
     const rows = showNames
       ? await d
@@ -354,6 +361,12 @@ async function fetchChangeoverPending(d: Db, showNames: boolean): Promise<Catego
   } catch (err) {
     return degradedCategory(err, "changeover");
   }
+}
+
+/** doc 81 Đợt 3 Task 4 — phạm vi "Của tôi": một nhóm cho mỗi loại GIAO ĐƯỢC (`shared/engineeringAssignment.ts`). */
+type MineSummary = Record<AssignablePendingKey, CategoryCount>;
+function zeroMine(): MineSummary {
+  return Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [ASSIGNABLE[t].pendingKey, emptyCategory()])) as MineSummary;
 }
 
 const ZERO_SUMMARY = {
@@ -411,7 +424,7 @@ export const oversightRouter = router({
       const d = await getDb();
       // DB chưa kết nối → trả 0 cho mọi loại (không throw): Hub vẫn render dải trống.
       if (!d) {
-        return { ...ZERO_SUMMARY, generatedAt: new Date().toISOString() };
+        return { ...ZERO_SUMMARY, mine: zeroMine(), generatedAt: new Date().toISOString() };
       }
 
       // HUB-02 — mức quyền THẬT của trang đích (không phải `machine_status` — mức
@@ -445,6 +458,25 @@ export const oversightRouter = router({
         fetchChangeoverPending(d, showMachineControlNames),
       ]);
 
+      // doc 81 Đợt 3 Task 4 — "Của tôi": mục CÒN chờ duyệt mà phân công active trỏ tới người gọi. Luật tên GIỮ
+      // NGUYÊN HUB-02: tên chỉ khi người gọi có quyền xem THẬT của trang đích (cùng cờ với nhánh "Chờ duyệt" tương
+      // ứng; orchestration như nhánh cũ — tên luôn trả, cùng mức quyền gọi thủ tục này). Fail-safe từng nhóm.
+      const showNamesFor: Record<AssignablePendingKey, boolean> = {
+        ecn: showMachineControlNames,
+        recipes: showMachineControlNames,
+        changeover: showMachineControlNames,
+        interlock: showInterlockNames,
+        orchestration: true,
+      };
+      // Final wave (M-5) — MỘT truy vấn cho cả năm loại (trước: 5 lượt đếm + tới 5 lượt mẫu mỗi lần gọi); lỗi ⇒ rơi về
+      // đường cũ từng loại (fail-safe từng nhánh giữ nguyên). Kết quả bằng đường cũ — engineeringAssignment.db.test §7.
+      const mineByType = await fetchMineSummary(
+        d,
+        ctx.user.id,
+        Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [t, showNamesFor[ASSIGNABLE[t].pendingKey]])) as Record<AssignableEntityType, boolean>,
+      );
+      const mine = Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [ASSIGNABLE[t].pendingKey, mineByType[t]])) as MineSummary;
+
       const total =
         recipes.count +
         recipeActiveUnapproved.count +
@@ -467,6 +499,7 @@ export const oversightRouter = router({
         ecn,
         changeover,
         total,
+        mine,
         generatedAt: new Date().toISOString(),
       };
     }),

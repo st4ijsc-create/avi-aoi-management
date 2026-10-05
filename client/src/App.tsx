@@ -220,6 +220,11 @@ const SafetyWorkforce = React.lazy(() => import("./pages/SafetyWorkforce")); // 
 const RobotModelHealth = React.lazy(() => import("./pages/RobotModelHealth")); // I2 (doc 16 §9 Khối 4): advisory robot-behaviour anomaly + AI model rollback audit (read-mostly; mutations gated by AI_ROBOT_ANOMALY_ENABLED / AI_MODEL_AUTOROLLBACK_ENABLED)
 const EquipmentStandards = React.lazy(() => import("./pages/EquipmentStandards")); // E1 (doc 16 §10 Khối 5): device-type hierarchy + ISA-18.2 alarm taxonomy + Equipment Standards Board (governance metadata only; mutations gated by EQ_GOVERN_ENABLED)
 const EquipmentIntegration = React.lazy(() => import("./pages/EquipmentIntegration")); // I1 (doc 16 §6 Khối 1B): FOCAS/Euromap integration frameworks (read-only) + recipe versioning genealogy (mutations gated by EQ_INTEG_ENABLED)
+// doc 81 Đợt 3 Task 2 — Vision › Thu ảnh: worker thu ảnh (trước là tab `?tab=acquisition` của Integration). Cổng QĐ-3c:
+// navHref = mục điều hướng (machine_alerts/canView), KHÔNG requireModule="MOD_AI" (giấy phép MOD_OT_CONTROL như Integration).
+const VisionAcquisition = React.lazy(() => import("./pages/VisionAcquisition"));
+// doc 81 Đợt 3 Task 3 — Sản xuất › Ca: bảng phân công nhân lực theo ca (dời khỏi tab ?tab=workforce của /safety-workforce).
+const ProductionShifts = React.lazy(() => import("./pages/ProductionShifts"));
 const QualityCockpit = React.lazy(() => import("./pages/QualityCockpit")); // P3-W2 (doc 12 §8): flagship Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation tabs)
 const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-screen Action Inbox route (read-open)
 const ApprovalsInbox = React.lazy(() => import("./pages/ApprovalsInbox")); // doc 39 W6: unified HITL pending-approvals inbox (threshold + AI action; self-gates actions)
@@ -578,12 +583,21 @@ function Router() {
       {/* doc 80 Task 8 (RBAC-01, XC-02) — nav khai machine_status (đọc); trang có
           chế độ chỉ-xem đã thiết kế sẵn, nút ghi vẫn gate machine_control tại
           trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
-      <Route path="/fleet-orchestration"><RouteGuard navHref="/fleet-orchestration"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Fleet ở nhóm Labs: route mới, CÙNG cổng (navHref của chính mục nav = machine_status;
+          giấy phép MOD_OT_CONTROL ở module-registry). URL cũ /fleet-orchestration chuyển hướng giữ query (engineeringLegacyRoutes). */}
+      <Route path="/labs/fleet-orchestration"><RouteGuard navHref="/labs/fleet-orchestration"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/control-plane"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
       <Route path="/safety-workforce"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
       <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status" requireModule="MOD_AI"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-standards"><RouteGuard requirePermission="machine_status"><AIPageWrapper><EquipmentStandards /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-integration"><RouteGuard requirePermission="machine_status"><AIPageWrapper><EquipmentIntegration /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/vision/acquisition"><RouteGuard navHref="/vision/acquisition"><AIPageWrapper><VisionAcquisition /></AIPageWrapper></RouteGuard></Route>
+      {/* R-3-d — bí danh trong nhóm Kỹ thuật (chỉ hiện khi KHÔNG có MOD_AI): cổng = mục nav của nó (machine_alerts, = cổng trang đích), rồi chuyển tới trang thật. */}
+      <Route path="/engineering/vision-acquisition"><RouteGuard navHref="/engineering/vision-acquisition"><Redirect to="/vision/acquisition" /></RouteGuard></Route>
+      {/* doc 81 Đợt 3 Task 3 — Sản xuất › Ca: cổng = mục nav (machine_status = route /safety-workforce cũ); giấy phép MOD_OT_CONTROL (module-registry). */}
+      <Route path="/production/shifts"><RouteGuard navHref="/production/shifts"><AIPageWrapper><ProductionShifts /></AIPageWrapper></RouteGuard></Route>
+      {/* Bí danh trong nhóm Kỹ thuật (chỉ hiện khi KHÔNG có MOD_PRODUCTION): cổng = mục nav của nó (= cổng trang đích), rồi chuyển tới trang thật. */}
+      <Route path="/engineering/production-shifts"><RouteGuard navHref="/engineering/production-shifts"><Redirect to="/production/shifts" /></RouteGuard></Route>
       <Route path="/engineering-home"><RouteGuard navHref="/engineering-home"><EngineeringHub /></RouteGuard></Route>
       <Route path="/engineering"><RouteGuard navHref="/engineering"><EngineeringWorkspace /></RouteGuard></Route>
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>

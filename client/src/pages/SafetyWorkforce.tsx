@@ -13,13 +13,16 @@
  *    MetricCard) · bên phải (không bao giờ bị cắt): chip "Tư vấn — không phải SIS" (thay khối 88 px, popover giữ
  *    nguyên câu cũ + câu chân trang trùng đã bỏ) và chip NGUỒN AN TOÀN có chữ trạng thái — mọi trạng thái
  *    không-OK hiện sẵn, có màu, không nằm trong "+N" · làm mới.
- *  - MAIN (`data-layout-main`) = hàng tab `?tab=` (cockpit | workforce) + nội dung. Tab "Sự kiện an toàn" = luồng
- *    sự kiện (bảng, cuộn trong) + bảng tin trực tiếp (chip "Trực tiếp" trong hàng công cụ). Bảng nhân lực ở lại
- *    tab thứ hai (doc 80/81 muốn dời sang Sản xuất › Ca — trang đó chưa có).
+ *  - MAIN (`data-layout-main`) = hàng tab `?tab=` + nội dung. Tab "Sự kiện an toàn" = luồng sự kiện (bảng, cuộn
+ *    trong) + bảng tin trực tiếp (chip "Trực tiếp" trong hàng công cụ).
+ *  - Doc 81 Đợt 3 Task 3: bảng nhân lực (tab `workforce`: phân công / phân công lại / xác nhận / đóng + bảng hiện trường)
+ *    DỜI sang Sản xuất › Ca (`/production/shifts`, pages/ProductionShifts.tsx). `?tab=workforce` và deep link sheet phân
+ *    công chuyển hướng (REPLACE, giữ query) cho người mở được trang đó (LegacyTabRedirectGate); hàng công cụ có link tới
+ *    đó. Phối hợp người↔robot (máy trạng thái `phase`, bắt đầu phối hợp) Ở LẠI đây — một chỗ duy nhất.
  *  - Panel phụ (aside): panel NGUỒN AN TOÀN đầy đủ (luôn thấy) + tab Xu hướng / Phối hợp. Panel Phối hợp mount
  *    MỘT lần và KHÔNG unmount (Review Focus 3): đổi tab phụ, đổi tab MAIN, qua lại 1024 px.
- *  - Dialog tạo/sửa → sheet (`FlyoutHost`, `?flyout=`): báo cáo tiệm cận, phân công, phân công lại, bắt đầu phối
- *    hợp — form/kiểm tra/payload như cũ. Kiểm định / đóng phân công / huỷ phối hợp giữ AlertDialog (R-2-n).
+ *  - Dialog tạo/sửa → sheet (`FlyoutHost`, `?flyout=`): báo cáo tiệm cận, bắt đầu phối hợp — form/kiểm tra/payload
+ *    như cũ. Kiểm định / huỷ phối hợp giữ AlertDialog (R-2-n).
  *  - < 1024 px: chip an toàn + chip cờ + công cụ tab xuống hàng đầu nội dung tab (header hẹp cắt phần tràn).
  *
  * Flags (read from safety.status):
@@ -32,7 +35,7 @@
  */
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearch } from "wouter";
+import { Link, useSearch } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -56,6 +59,8 @@ import {
   type StatusChipItem,
 } from "@/components/patterns";
 import { type TabbedHubTab } from "@/components/workspace/TabbedHub";
+import { LegacyTabRedirectGate, PRODUCTION_SHIFTS_PATH } from "@/lib/engineeringLegacyRedirects";
+import { getRequiredPermissionForHref } from "@/lib/navigation";
 import { resolveActiveTab } from "@/components/workspace/hubState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,13 +85,14 @@ import {
   ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip,
 } from "recharts";
 import {
-  ShieldAlert, ShieldCheck, RefreshCw, Info, AlertTriangle, Activity, Users, Workflow,
-  Bot, User, CheckCircle2, Radio, Send, UserPlus, RefreshCcw,
+  ShieldAlert, ShieldCheck, RefreshCw, Info, AlertTriangle, Activity, Workflow,
+  Bot, User, CheckCircle2, Radio, Send, CalendarClock,
   Ban, ScanLine, ClipboardCheck, HandMetal, Handshake, ChevronRight, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { isFeatureDisabledError } from "@/lib/featureFlagError";
+import { featureKeyOf, isFeatureDisabledError } from "@/lib/featureFlagError";
+import { fmtDateTime } from "@/lib/fmtDateTime";
 import {
   deriveFeatureStatus,
   isFeatureStatusUnsettled,
@@ -100,7 +106,6 @@ import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/Provenan
 type RouterOutputs = inferRouterOutputs<AppRouter>;
 type SafetyEvent = RouterOutputs["safety"]["feed"][number];
 type TrendBucket = RouterOutputs["safety"]["nearMissTrend"][number];
-type BoardStation = RouterOutputs["safety"]["currentBoard"][number];
 type Assignment = RouterOutputs["safety"]["listAssignments"][number];
 type Collaboration = RouterOutputs["safety"]["listCollaborations"][number];
 type SourceHealth = RouterOutputs["safety"]["sourceHealth"];
@@ -123,10 +128,10 @@ type StartCollabInput = { operationCode?: string; humanOperatorId?: number; robo
 
 const EVENT_TYPES = ["estop", "collision", "intrusion", "force_limit", "speed_violation", "near_miss"] as const;
 const COLLAB_PHASES = ["human_prep", "robot_work", "human_verify", "done"] as const;
-const ASSIGN_STATUSES = ["planned", "active", "completed", "cancelled"] as const;
 const FEED_LIMIT = 200;
 
-const TAB_VALUES = ["cockpit", "workforce"] as const;
+// Đợt 3 Task 3: tab `workforce` DỜI sang Sản xuất › Ca (`?tab=workforce` ⇒ LegacyTabRedirectGate).
+const TAB_VALUES = ["cockpit"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 type SideTab = "trend" | "collab";
 /** Kết nối socket của trình duyệt này (luồng `safety:event` trực tiếp). "connecting" = chưa biết, KHÔNG phải ổn. */
@@ -168,34 +173,6 @@ function detectedByBadge(detectedBy: string | null | undefined, t: (k: string, f
   return <Badge variant="secondary" className="text-xs">{t(`safety.detectedBy.${detectedBy}`, detectedBy)}</Badge>;
 }
 
-function skillBadge(skillLevel: string | null | undefined, t: (k: string, f: string) => string) {
-  if (!skillLevel) return null;
-  const map: Record<string, string> = {
-    trainee: "bg-slate-400 text-white",
-    qualified: "bg-emerald-500 text-white",
-    expert: "bg-blue-500 text-white",
-    trainer: "bg-violet-500 text-white",
-  };
-  const cls = map[skillLevel] ?? "";
-  return cls
-    ? <Badge className={`${cls} text-xs`}>{t(`safety.skill.${skillLevel}`, skillLevel)}</Badge>
-    : <Badge variant="outline" className="text-xs">{skillLevel}</Badge>;
-}
-
-function assignStatusBadge(status: string, t: (k: string, f: string) => string) {
-  switch (status) {
-    case "active":
-      return <Badge className="bg-emerald-500 text-white">{t("safety.assign.active", "Active")}</Badge>;
-    case "planned":
-      return <Badge className="bg-amber-500 text-white">{t("safety.assign.planned", "Planned")}</Badge>;
-    case "completed":
-      return <Badge variant="outline" className="text-muted-foreground">{t("safety.assign.completed", "Completed")}</Badge>;
-    case "cancelled":
-    default:
-      return <Badge variant="outline" className="text-muted-foreground">{t("safety.assign.cancelled", "Cancelled")}</Badge>;
-  }
-}
-
 function handshakeBadge(state: string, t: (k: string, f: string) => string) {
   switch (state) {
     case "ack":
@@ -207,15 +184,6 @@ function handshakeBadge(state: string, t: (k: string, f: string) => string) {
       return <Badge className="bg-amber-500 text-white">{t("safety.handshake.pending", "Pending")}</Badge>;
   }
 }
-
-function fmtDateTime(d?: string | Date | null): string {
-  if (!d) return "—";
-  const dt = typeof d === "string" ? new Date(d) : d;
-  if (Number.isNaN(dt.getTime())) return "—";
-  return dt.toLocaleString();
-}
-
-const isTerminalAssignment = (a: Assignment) => a.status === "completed" || a.status === "cancelled";
 
 type MutationErrorHandler = (e: { data?: { code?: string } | null; message: string }) => void;
 
@@ -230,6 +198,8 @@ interface SafetyCtxValue {
   workforceControlReason: string | undefined;
   safetyAuditStatus: FeatureStatus;
   workforceStatus: FeatureStatus;
+  /** Đợt 3 Task 3 — mở được Sản xuất › Ca (quyền của mục điều hướng đích) ⇒ có link tới bảng nhân lực. */
+  canOpenShifts: boolean;
   // events
   feed: SafetyEvent[];
   feedLoading: boolean;
@@ -238,16 +208,6 @@ interface SafetyCtxValue {
   liveEvents: SafetyLiveEvent[];
   auditPending: boolean;
   setAuditTarget: (e: SafetyEvent) => void;
-  // workforce
-  board: BoardStation[];
-  boardLoading: boolean;
-  assignments: Assignment[];
-  assignmentsLoading: boolean;
-  assignStatusFilter: string;
-  setAssignStatusFilter: (v: string) => void;
-  confirmPending: boolean;
-  confirmAssignment: (a: Assignment) => void;
-  setCloseTarget: (a: Assignment) => void;
   // side
   sideTab: SideTab;
   setSideTab: (v: SideTab) => void;
@@ -275,10 +235,23 @@ function useSafetyCtx(): SafetyCtxValue {
 
 const TABS: TabbedHubTab[] = [
   { value: "cockpit", labelKey: "safety.tab.cockpit", fallback: "Safety events", icon: <Activity className="h-4 w-4" />, Content: EventsTab },
-  { value: "workforce", labelKey: "safety.tab.workforce", fallback: "Workforce board", icon: <Users className="h-4 w-4" />, Content: WorkforceTab },
 ];
 
+/**
+ * Đợt 3 Task 3 — `?tab=workforce` (và deep link sheet phân công) CHUYỂN sang Sản xuất › Ca, giữ query, CHỈ cho người mở
+ * được trang đó (quyền của mục điều hướng đích = RouteGuard navHref; cùng giấy phép MOD_OT_CONTROL). Người khác ở lại như cũ.
+ */
 export default function SafetyWorkforce() {
+  const { hasPermission } = usePermissions();
+  const canOpenShifts = hasPermission(getRequiredPermissionForHref(PRODUCTION_SHIFTS_PATH) ?? "machine_status", "canView");
+  return (
+    <LegacyTabRedirectGate from={BASE_PATH} when={canOpenShifts}>
+      <SafetyWorkforcePage canOpenShifts={canOpenShifts} />
+    </LegacyTabRedirectGate>
+  );
+}
+
+function SafetyWorkforcePage({ canOpenShifts }: { canOpenShifts: boolean }) {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
@@ -298,9 +271,7 @@ export default function SafetyWorkforce() {
   const kpiAll = !useNarrowViewport(KPI_ALL_BREAKPOINT_PX);
   const [sideTab, setSideTab] = useState<SideTab>("trend");
   const [eventTypeFilter, setEventTypeFilter] = useState<string>("");
-  const [assignStatusFilter, setAssignStatusFilter] = useState<string>("");
   const [auditTarget, setAuditTarget] = useState<SafetyEvent | null>(null);
-  const [closeTarget, setCloseTarget] = useState<Assignment | null>(null);
   // Live events received over the socket (newest first), kept separate from the feed.
   const [liveEvents, setLiveEvents] = useState<SafetyLiveEvent[]>([]);
   // doc 80 Task 4 (SAF-02/SAF-07) — this browser's socket connection, shown in the source panel.
@@ -318,18 +289,15 @@ export default function SafetyWorkforce() {
     { enabled: canView },
   );
   const trendQ = trpc.safety.nearMissTrend.useQuery({ sinceDays: 30 }, { enabled: canView });
-  const boardQ = trpc.safety.currentBoard.useQuery(undefined, { enabled: canView });
-  const assignmentsQ = trpc.safety.listAssignments.useQuery(
-    { status: (assignStatusFilter || undefined) as (typeof ASSIGN_STATUSES)[number] | undefined, limit: 200 },
-    { enabled: canView },
-  );
+  // Đợt 3 Task 3: bảng phân công + bảng hiện trường dời sang Sản xuất › Ca; Safety chỉ còn đọc danh sách phân công cho chip
+  // "Đang phân công" (không còn bộ lọc trạng thái ở đây ⇒ input = mặc định của tab cũ khi "Tất cả").
+  const assignmentsQ = trpc.safety.listAssignments.useQuery({ limit: 200 }, { enabled: canView });
   const collabsQ = trpc.safety.listCollaborations.useQuery({ limit: 100 }, { enabled: canView });
   // doc 80 Task 4 (SAF-02) — read-only source health; design §6.3 "panel reflects reality ≤5 s".
   const sourceHealthQ = trpc.safety.sourceHealth.useQuery(undefined, { enabled: canView, refetchInterval: 5000 });
 
   const feed = (feedQ.data ?? []) as SafetyEvent[];
   const trend = (trendQ.data ?? []) as TrendBucket[];
-  const board = (boardQ.data ?? []) as BoardStation[];
   const assignments = (assignmentsQ.data ?? []) as Assignment[];
   const collabs = (collabsQ.data ?? []) as Collaboration[];
 
@@ -347,6 +315,7 @@ export default function SafetyWorkforce() {
     ?? (workforceUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
   const workforceCanControl = canControl && !workforceUnsettled;
 
+  // Giữ NGUYÊN tập làm mới (kể cả currentBoard/listAssignments mà Sản xuất › Ca đọc) — Review Focus 1.
   const refetchAll = () => {
     void utils.safety.status.invalidate();
     void utils.safety.feed.invalidate();
@@ -386,13 +355,18 @@ export default function SafetyWorkforce() {
   // ── Mutation error handler — flag-off CONFLICT → calm info (not red) ─────────
   const onMutationError: MutationErrorHandler = (e) => {
     if (isFeatureDisabledError(e)) {
-      if (/workforce/i.test(e.message)) {
-        toast.info(t("workforce.flagOffToast", "Workforce is disabled (preview). Set WORKFORCE_ENABLED=true to act."));
-        void utils.safety.status.invalidate();
-      } else {
-        toast.info(t("safety.flagOffToast", "Safety audit is disabled (preview). Set SAFETY_AUDIT_ENABLED=true to act."));
-        void utils.safety.status.invalidate();
-      }
+      // Final wave (M-2 / Task 3) — phân nhánh theo MÃ (`params.feature`; đường lui: chữ message cho tuyến chưa di trú), câu
+      // KHÔNG nêu tên biến môi trường. Cờ khác (vùng an toàn / thị giác / adapter PLC) ⇒ câu chung — trước đây rơi nhầm vào
+      // câu "kiểm định an toàn".
+      const feature = featureKeyOf(e) ?? (/workforce/i.test(e.message) ? "workforce" : "safetyAudit");
+      toast.info(
+        feature === "workforce"
+          ? t("workforce.flagOffToast", "Workforce is turned off on the server (preview) — actions are refused until an administrator turns it on.")
+          : feature === "safetyAudit"
+            ? t("safety.flagOffToast", "Safety audit is turned off on the server (preview) — actions are refused until an administrator turns it on.")
+            : t("common.flagOffToastGeneric", "This feature is turned off on the server (preview) — the action is refused until an administrator turns it on."),
+      );
+      void utils.safety.status.invalidate();
     } else if (e.data?.code === "CONFLICT") {
       // Non-flag CONFLICT (e.g. double-booking) — still calm, but informative.
       toast.info(mapTrpcError(e));
@@ -421,22 +395,8 @@ export default function SafetyWorkforce() {
     },
     onError: onMutationError,
   });
-  const assignM = trpc.safety.assignOperator.useMutation({
-    onSuccess: () => { toast.success(t("workforce.assigned", "Operator assigned")); refetchAll(); },
-    onError: onMutationError,
-  });
-  const reassignM = trpc.safety.reassignOperator.useMutation({
-    onSuccess: () => { toast.success(t("workforce.reassigned", "Assignment updated")); refetchAll(); },
-    onError: onMutationError,
-  });
-  const confirmM = trpc.safety.confirmAssignment.useMutation({
-    onSuccess: () => { toast.success(t("workforce.confirmed", "Assignment confirmed")); refetchAll(); },
-    onError: onMutationError,
-  });
-  const closeM = trpc.safety.closeAssignment.useMutation({
-    onSuccess: () => { toast.success(t("workforce.closed", "Assignment closed")); setCloseTarget(null); refetchAll(); },
-    onError: onMutationError,
-  });
+  // Đợt 3 Task 3: assignOperator / reassignOperator / confirmAssignment / closeAssignment DỜI sang Sản xuất › Ca (cùng
+  // target, xác nhận, cổng, payload và tập làm mới). startCollaboration Ở LẠI (phối hợp thuộc Safety).
   const startCollabM = trpc.safety.startCollaboration.useMutation({
     onSuccess: () => { toast.success(t("workforce.collabStarted", "Collaboration started")); refetchAll(); },
     onError: onMutationError,
@@ -477,8 +437,6 @@ export default function SafetyWorkforce() {
     ) : (
       <p className="py-6 text-center text-sm text-muted-foreground">{t("common.gate.checkingStatus", "Checking feature status…")}</p>
     );
-  const findAssignment = (id: string | null) =>
-    id != null && /^\d+$/.test(id) ? assignments.find((a) => a.id === Number(id)) ?? null : null;
   const flyouts: Record<string, FlyoutDefinition> = {};
   if (canControl) {
     flyouts["safety-proximity"] = {
@@ -493,52 +451,6 @@ export default function SafetyWorkforce() {
         ) : (
           <ProximityForm pending={ingestM.isPending} onSubmit={(v, done) => ingestM.mutate(v, { onSuccess: done })} />
         ),
-    };
-    flyouts["workforce-assign"] = {
-      size: "md",
-      title: t("workforce.assignTitle", "Assign operator"),
-      render: () =>
-        workforceUnsettled ? (
-          unsettledBody(
-            workforceStatus,
-            t("workforce.flagStatusError", "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed."),
-          )
-        ) : (
-          <AssignmentForm mode="assign" pending={assignM.isPending} onSubmit={(v, done) => assignM.mutate(v, { onSuccess: done })} />
-        ),
-    };
-    // Nút "Phân công lại" cũ: chỉ khi có quyền, khoá khi phân công đã kết thúc (không theo cờ).
-    flyouts["workforce-reassign"] = {
-      size: "md",
-      title: t("workforce.reassignTitle", "Reassign operator"),
-      render: (layer) => {
-        const a = findAssignment(layer.id);
-        if (!a) {
-          return (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              {assignmentsQ.isLoading
-                ? t("safety.loading", "Loading…")
-                : t("workforce.assignmentNotFound", "Assignment #{{id}} is not in the loaded list.", { id: layer.id ?? "" })}
-            </p>
-          );
-        }
-        if (isTerminalAssignment(a)) {
-          return (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              {t("workforce.assignmentTerminal", "Assignment #{{id}} is finished — it cannot be reassigned.", { id: a.id })}
-            </p>
-          );
-        }
-        return (
-          <AssignmentForm
-            key={a.id}
-            mode="reassign"
-            existing={a}
-            pending={reassignM.isPending}
-            onSubmit={(v, done) => reassignM.mutate({ assignmentId: a.id, ...v }, { onSuccess: done })}
-          />
-        );
-      },
     };
     flyouts["collab-start"] = {
       size: "md",
@@ -582,7 +494,7 @@ export default function SafetyWorkforce() {
       value: kpis.activeAssignments,
       state: chipStateFromQuery(assignmentsQ),
       tone: kpis.activeAssignments > 0 ? "success" : "default",
-      source: t("safety.chip.src.assignments", "safety.listAssignments — assignments with status 'Active' in the loaded list (status filter applies)"),
+      source: t("safety.chip.src.assignments", "safety.listAssignments — assignments with status 'Active' among the latest 200 (details in Production › Shifts)"),
     },
     {
       id: "active-collabs",
@@ -606,6 +518,7 @@ export default function SafetyWorkforce() {
     workforceControlReason,
     safetyAuditStatus,
     workforceStatus,
+    canOpenShifts,
     feed,
     feedLoading: feedQ.isLoading,
     eventTypeFilter,
@@ -613,15 +526,6 @@ export default function SafetyWorkforce() {
     liveEvents,
     auditPending: auditM.isPending,
     setAuditTarget,
-    board,
-    boardLoading: boardQ.isLoading,
-    assignments,
-    assignmentsLoading: assignmentsQ.isLoading,
-    assignStatusFilter,
-    setAssignStatusFilter,
-    confirmPending: confirmM.isPending,
-    confirmAssignment: (a) => confirmM.mutate({ assignmentId: a.id }),
-    setCloseTarget,
     sideTab,
     setSideTab,
     trend,
@@ -707,23 +611,6 @@ export default function SafetyWorkforce() {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* ── Close assignment confirm (R-2-n: như cũ) ── */}
-        <AlertDialog open={!!closeTarget} onOpenChange={(o) => !o && setCloseTarget(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t("workforce.closeConfirmTitle", "Close this assignment?")}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t("workforce.closeConfirmBody", "Marks the assignment completed (terminal).")}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => closeTarget && closeM.mutate({ assignmentId: closeTarget.id })}>
-                {t("workforce.confirmClose", "Close assignment")}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </FlyoutHost>
     </DashboardLayout>
   );
@@ -947,8 +834,7 @@ function SafetySourceChip() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function TabToolbar() {
-  const ctx = useSafetyCtx();
-  return ctx.tab === "workforce" ? <WorkforceToolbar /> : <EventsToolbar />;
+  return <EventsToolbar />;
 }
 
 /** <1280 px: chip an toàn + cờ + công cụ tab thành hàng xuống dòng ở đầu nội dung (header hẹp cắt phần tràn). */
@@ -1001,6 +887,14 @@ function EventsToolbar() {
           {t("safety.testOnly", "Test only")}
         </span>
       </Button>
+      {/* Đợt 3 Task 3 — bảng nhân lực đã dời: lối tới trang mới, CHỈ cho người mở được trang đó (khuôn R-3-d). */}
+      {ctx.canOpenShifts && (
+        <Button asChild size="sm" variant="ghost" className="h-8">
+          <Link href={PRODUCTION_SHIFTS_PATH}>
+            <CalendarClock className="mr-1 h-4 w-4" aria-hidden="true" />{t("shifts.movedLink", "Workforce → Production › Shifts")}
+          </Link>
+        </Button>
+      )}
     </>
   );
 }
@@ -1116,169 +1010,6 @@ function EventsTab() {
           </TableBody>
         </Table>
       </div>
-    </div>
-  );
-}
-
-function WorkforceToolbar() {
-  const { t } = useTranslation();
-  const ctx = useSafetyCtx();
-  const flyout = useFlyout();
-  return (
-    <>
-      <Select value={ctx.assignStatusFilter || "all"} onValueChange={(v) => ctx.setAssignStatusFilter(v === "all" ? "" : v)}>
-        <SelectTrigger className="h-8 w-32" aria-label={t("workforce.col.status", "Status")}><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t("safety.all", "All")}</SelectItem>
-          {ASSIGN_STATUSES.map((s) => (
-            <SelectItem key={s} value={s}>{t(`safety.assign.${s}`, s)}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-8"
-        disabled={!ctx.workforceCanControl}
-        title={ctx.workforceControlReason}
-        onClick={() => flyout.open("workforce-assign")}
-      >
-        <UserPlus className="mr-1 h-4 w-4" />{t("workforce.assign", "Assign")}
-      </Button>
-    </>
-  );
-}
-
-/**
- * Bảng nhân lực (S1-a). Doc 80 §9 / doc 81 §1.2 muốn dời sang Sản xuất › Ca — trang đó CHƯA CÓ (nhóm Sản xuất
- * không có màn ca), nên bảng ở lại đây, mở thẳng bằng `?tab=workforce`.
- */
-function WorkforceTab() {
-  const { t } = useTranslation();
-  const ctx = useSafetyCtx();
-  const flyout = useFlyout();
-  const { board, assignments } = ctx;
-  return (
-    <div className="flex min-h-0 flex-col gap-3">
-      {ctx.narrow && <NarrowRows />}
-      <ProvenanceSummary rows={assignments} />
-      {/* Assignments table */}
-      <div className="max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_7.5rem)] min-h-[12rem] overflow-auto rounded-md border" role="region" aria-label={t("workforce.assignmentsTitle", "Operator assignments")}>
-        <Table>
-          <TableHeader className="sticky top-0 z-10 bg-card">
-            <TableRow>
-              <TableHead>{t("workforce.col.operator", "Operator")}</TableHead>
-              <TableHead>{t("workforce.col.lineStation", "Line / Station")}</TableHead>
-              <TableHead>{t("workforce.col.skill", "Skill")}</TableHead>
-              <TableHead>{t("workforce.col.status", "Status")}</TableHead>
-              <TableHead>{t("workforce.col.window", "Window")}</TableHead>
-              <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {ctx.assignmentsLoading && (
-              <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("safety.loading", "Loading…")}</TableCell></TableRow>
-            )}
-            {!ctx.assignmentsLoading && assignments.length === 0 && (
-              <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("workforce.assignmentsEmpty", "No operator assignments yet.")}</TableCell></TableRow>
-            )}
-            {assignments.map((a) => {
-              const terminal = isTerminalAssignment(a);
-              return (
-                <TableRow key={a.id}>
-                  <TableCell className="text-xs">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1"><User className="h-3 w-3" />#{a.operatorId}</span>
-                      <ProvenanceBadge row={a} />
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {a.lineId != null ? `L${a.lineId}` : "—"}{" / "}{a.stationId != null ? `S${a.stationId}` : "—"}
-                  </TableCell>
-                  <TableCell>{skillBadge(a.skillLevel, t) ?? <span className="text-xs text-muted-foreground">—</span>}</TableCell>
-                  <TableCell>{assignStatusBadge(a.status, t)}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">{fmtDateTime(a.assignedStart)} → {fmtDateTime(a.assignedEnd)}</TableCell>
-                  <TableCell className="text-right">
-                    {ctx.canControl ? (
-                      <div className="flex justify-end gap-1">
-                        {a.status === "planned" && (
-                          <Button size="sm" variant="ghost" className="h-7" disabled={ctx.confirmPending} onClick={() => ctx.confirmAssignment(a)}>
-                            <CheckCircle2 className="mr-1 h-3.5 w-3.5" />{t("workforce.confirm", "Confirm")}
-                          </Button>
-                        )}
-                        <Button size="sm" variant="ghost" className="h-7" disabled={terminal} onClick={() => flyout.open("workforce-reassign", { id: a.id })}>
-                          <RefreshCcw className="mr-1 h-3.5 w-3.5" />{t("workforce.reassign", "Reassign")}
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7" disabled={terminal} onClick={() => ctx.setCloseTarget(a)}>
-                          <Ban className="mr-1 h-3.5 w-3.5 text-muted-foreground" />{t("workforce.close", "Close")}
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">{t("safety.viewOnly", "View only")}</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Current board — humans + robots per station */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4" />
-            {t("workforce.boardTitle", "Current board — who & which robot is at each station now")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {ctx.boardLoading && <p className="py-6 text-center text-sm text-muted-foreground">{t("safety.loading", "Loading…")}</p>}
-          {!ctx.boardLoading && board.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              {t("workforce.boardEmpty", "No active assignments or enabled robots to show on the board.")}
-            </p>
-          )}
-          {/* Bảng hiện trường có thể rất dài (mọi robot đang bật) — cuộn trong, trang không cao theo. */}
-          <div className="grid max-h-[60dvh] gap-3 overflow-auto sm:grid-cols-2 lg:grid-cols-3">
-            {board.map((st, idx) => (
-              <Card key={`${st.stationId ?? "_"}-${st.lineId ?? "_"}-${idx}`} className="border-border/60">
-                <CardContent className="space-y-2 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-medium">
-                      {st.stationId != null ? t("workforce.station", "Station") + ` ${st.stationId}` : t("workforce.unassignedStation", "Unassigned")}
-                    </div>
-                    {st.lineId != null && <Badge variant="outline" className="text-xs">{t("workforce.line", "Line")} {st.lineId}</Badge>}
-                  </div>
-                  {/* Humans */}
-                  <div className="space-y-1">
-                    {st.humans.length === 0 && <div className="text-xs text-muted-foreground">{t("workforce.noHumans", "No humans")}</div>}
-                    {st.humans.map((h) => (
-                      <div key={`h-${h.assignmentId}`} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="inline-flex items-center gap-1"><User className="h-3 w-3 text-blue-500" />{t("workforce.operator", "Operator")} #{h.operatorId}</span>
-                        {skillBadge(h.skillLevel, t)}
-                      </div>
-                    ))}
-                  </div>
-                  {/* Robots */}
-                  <div className="space-y-1 border-t border-border/60 pt-1">
-                    {st.robots.length === 0 && <div className="text-xs text-muted-foreground">{t("workforce.noRobots", "No robots")}</div>}
-                    {st.robots.map((r) => (
-                      <div key={`r-${r.robotId}`} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3 text-violet-500" />{r.code}</span>
-                        <span className="inline-flex items-center gap-1 text-muted-foreground">
-                          <span>{r.status}</span>
-                          <Badge variant="secondary" className="text-[10px]">{r.openTaskCount} {t("workforce.openTasks", "tasks")}</Badge>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -1725,103 +1456,6 @@ function ProximityForm({
       <SheetFooter>
         <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
         <Button onClick={submit} disabled={pending}><ScanLine className="mr-1 h-4 w-4" />{t("safety.ingest", "Ingest (advisory)")}</Button>
-      </SheetFooter>
-    </div>
-  );
-}
-
-type AssignmentFormValue = {
-  operatorId: number;
-  lineId?: number;
-  stationId?: number;
-  skillLevel?: string;
-};
-
-function AssignmentForm({
-  mode, existing, pending, onSubmit,
-}: {
-  mode: "assign" | "reassign";
-  existing?: Assignment;
-  pending: boolean;
-  onSubmit: (v: AssignmentFormValue, done: () => void) => void;
-}) {
-  const { t } = useTranslation();
-  const { layer, done } = useCloseOwnLayer();
-  const uid = useId();
-  const initial = useMemo(
-    () => ({
-      operatorId: existing?.operatorId != null ? String(existing.operatorId) : "",
-      lineId: existing?.lineId != null ? String(existing.lineId) : "",
-      stationId: existing?.stationId != null ? String(existing.stationId) : "",
-      skillLevel: existing?.skillLevel ?? "",
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-  const [operatorId, setOperatorId] = useState(initial.operatorId);
-  const [lineId, setLineId] = useState(initial.lineId);
-  const [stationId, setStationId] = useState(initial.stationId);
-  const [skillLevel, setSkillLevel] = useState(initial.skillLevel);
-
-  const dirty = operatorId !== initial.operatorId || lineId !== initial.lineId || stationId !== initial.stationId || skillLevel !== initial.skillLevel;
-  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const submit = () => {
-    const op = Number(operatorId);
-    if (!Number.isInteger(op) || op <= 0) {
-      toast.error(t("workforce.operatorIdRequired", "Enter a valid operator (user) id."));
-      return;
-    }
-    const ln = lineId ? Number(lineId) : undefined;
-    const st = stationId ? Number(stationId) : undefined;
-    onSubmit(
-      {
-        operatorId: op,
-        lineId: Number.isInteger(ln) && (ln as number) > 0 ? ln : undefined,
-        stationId: Number.isInteger(st) && (st as number) > 0 ? st : undefined,
-        skillLevel: skillLevel.trim() || undefined,
-      },
-      done,
-    );
-  };
-
-  return (
-    <div className="grid gap-3">
-      <div className="grid gap-1">
-        <Label htmlFor={`${uid}-operator`}>{t("workforce.operatorId", "Operator (user) id")}</Label>
-        <Input id={`${uid}-operator`} type="number" min={1} value={operatorId} placeholder="e.g. 1" onChange={(e) => setOperatorId(e.target.value)} />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-line`}>{t("workforce.lineId", "Line id (optional)")}</Label>
-          <Input id={`${uid}-line`} type="number" min={1} value={lineId} placeholder="e.g. 1" onChange={(e) => setLineId(e.target.value)} />
-        </div>
-        <div className="grid gap-1">
-          <Label htmlFor={`${uid}-station`}>{t("workforce.stationId", "Station id (optional)")}</Label>
-          <Input id={`${uid}-station`} type="number" min={1} value={stationId} placeholder="e.g. 1" onChange={(e) => setStationId(e.target.value)} />
-        </div>
-      </div>
-      <div className="grid gap-1">
-        <Label htmlFor={`${uid}-skill`}>{t("workforce.skillLevel", "Skill level (optional)")}</Label>
-        <Select
-          value={skillLevel || "none"}
-          onValueChange={(v) => setSkillLevel(v === "none" ? "" : v)}
-        >
-          <SelectTrigger id={`${uid}-skill`} className="h-9"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">{t("workforce.skillNone", "— none —")}</SelectItem>
-            {["trainee", "qualified", "expert", "trainer"].map((s) => (
-              <SelectItem key={s} value={s}>{t(`safety.skill.${s}`, s)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <SheetFooter>
-        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
-        <Button onClick={submit} disabled={pending}>
-          <CheckCircle2 className="mr-1 h-4 w-4" />
-          {mode === "assign" ? t("workforce.assign", "Assign") : t("workforce.reassign", "Reassign")}
-        </Button>
       </SheetFooter>
     </div>
   );
