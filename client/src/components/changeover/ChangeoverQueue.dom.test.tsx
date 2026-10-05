@@ -14,6 +14,8 @@ const perm = vi.hoisted(() => ({ canEdit: true }));
 vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({ isAdmin: false, hasPermission: (_m: string, a: string) => (a === "canEdit" ? perm.canEdit : true) }),
 }));
+const who = vi.hoisted(() => ({ role: "engineer" }));
+vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 5, role: who.role }, loading: false }) }));
 const srv = vi.hoisted(() => ({ calls: [] as Array<{ path: string; input: unknown }> }));
 vi.mock("@/lib/trpc", () => {
   const q = (data: unknown, extra: Record<string, unknown> = {}) => ({ data, isLoading: false, isSuccess: data !== undefined, isError: false, ...extra });
@@ -55,6 +57,7 @@ beforeAll(async () => {
 beforeEach(() => {
   srv.calls = [];
   perm.canEdit = true;
+  who.role = "engineer";
 });
 afterEach(() => cleanup());
 
@@ -76,6 +79,12 @@ describe("ChangeoverQueue — 'Giao cho' trên từng yêu cầu chờ duyệt",
       { path: "engineering.assign", input: { entityType: "changeover", entityId: 72, assigneeUserId: 61, expectedAssigneeUserId: null } },
       { path: "machineRecipe.changeover.approve", input: { id: 71 } },
     ]);
+  });
+
+  it("R-3-e — operator CÓ bit canEdit nhưng ngoài sàn vai actuation ⇒ không bộ chọn", () => {
+    who.role = "operator";
+    render(<ChangeoverQueue machineId={3} />);
+    expect(screen.queryByRole("combobox", { name: "Giao cho" })).toBeNull();
   });
 
   it("không có canEdit ⇒ chỉ tên người được giao, không bộ chọn", () => {

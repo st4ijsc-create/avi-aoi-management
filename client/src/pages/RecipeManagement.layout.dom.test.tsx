@@ -40,7 +40,7 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
   }),
 }));
 vi.mock("@/_core/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: 7, name: "Tester" }, loading: false }),
+  useAuth: () => ({ user: { id: 7, name: "Tester", role: "engineer" }, loading: false }),
 }));
 const toastSpy = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastSpy }));

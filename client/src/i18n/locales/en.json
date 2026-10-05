@@ -4350,9 +4350,8 @@
       "assignTargetNotPending": "Only items awaiting approval can be assigned — this item is no longer awaiting approval.",
       "assignmentChanged": "Someone else just changed the assignee. Reload to see the current assignee.",
       "alreadyAssignedToUser": "This item is already assigned to this person.",
-      "assigneeInactive": "The assignee's account is disabled.",
-      "assigneeCannotView": "The assignee cannot view this item's page.",
-      "assignmentStoreMissing": "Assignment is not available yet: the database has not been updated (ask an administrator)."
+      "assignmentStoreMissing": "Assignment is not available yet: the database has not been updated (ask an administrator).",
+      "assigneeInvalid": "The assignee is not valid (does not exist, is disabled, or cannot view this item's page)."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

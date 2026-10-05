@@ -238,7 +238,6 @@ export default function RecipeManagement() {
   const [codeParam, setCodeParam] = useUrlParam("code");
   const selectedCode = codeParam != null && codeParam.length > 0 ? codeParam : null;
   const [tabParam, setTabParam] = useUrlParam("tab");
-  const { byId: recipeAssignments } = useAssignments("recipe", canView && selectedCode != null);
 
   // U15 (doc 26 §2.1) — lối vào theo MÁY: KTV chọn máy → thấy recipe đang ACTIVE
   // của máy đó mà không cần biết trước mã. Song song với trục theo-mã hiện có.
@@ -410,6 +409,8 @@ export default function RecipeManagement() {
   // HUB-03 — chỉ mã có phiên bản CẦN CHÚ Ý (`pendingCount` từ `listCodes`).
   const visibleCodes = showPendingOnly ? codes.filter((c) => c.pendingCount > 0) : codes;
   const versions = (versionsQuery.data ?? []) as VersionData[];
+  // doc 81 Đợt 3 Task 4 — phân công còn sống của ĐÚNG các phiên bản của mã đang chọn (tab Duyệt).
+  const { byId: recipeAssignments } = useAssignments("recipe", versions.map((v) => v.id), canView && selectedCode != null);
   const deployments = (deploymentsQuery.data ?? []) as DeploymentData[];
   const machineList = (machinesQuery.data ?? []) as MachineData[];
   const genealogy = genealogyQuery.data ?? [];

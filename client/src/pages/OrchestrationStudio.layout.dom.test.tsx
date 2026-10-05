@@ -31,7 +31,7 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({ hasPermission: () => perm.canControl }),
 }));
 vi.mock("@/_core/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: 7, name: "Tester" }, loading: false }),
+  useAuth: () => ({ user: { id: 7, name: "Tester", role: "engineer" }, loading: false }),
 }));
 vi.mock("@/contexts/EngineeringContext", () => ({
   useEngineering: () => ({ setLastWorkflowRef: () => {} }),

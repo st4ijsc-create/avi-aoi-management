@@ -351,6 +351,13 @@ describe("doc 81 Đợt 3 Task 4 — phạm vi 'Của tôi' (giao cho tôi) · '
     expect(row.querySelector("[data-pending-count]")?.textContent).toBe("—");
   });
 
+  it("fix 1 (HUB-01) — một nhóm 'Của tôi' không đọc được ⇒ số cạnh nút 'Của tôi' là '—', KHÔNG phải 0", () => {
+    setSummary({}, { changeover: { count: 0, samples: [], degraded: true } });
+    render(<EngineeringHub />);
+    expect(scopeBtn("scopeMine").textContent).toContain("—");
+    expect(scopeBtn("scopeMine").textContent).not.toMatch(/\d/);
+  });
+
   it("'Của tôi' giữ luật mở trang (R-2-z5): vai không mở được /interlock-rules ⇒ dòng rule giữ số, không là link", () => {
     who.role = "maintenance";
     who.modules = ["machine_status", "machine_control"];

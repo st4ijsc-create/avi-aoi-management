@@ -31,7 +31,7 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
 }));
 const me = { id: 7 as number | null };
 vi.mock("@/_core/hooks/useAuth", () => ({
-  useAuth: () => ({ user: me.id == null ? null : { id: me.id, name: "Tester" }, loading: false }),
+  useAuth: () => ({ user: me.id == null ? null : { id: me.id, name: "Tester", role: "engineer" }, loading: false }),
 }));
 const toastSpy = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastSpy }));

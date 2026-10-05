@@ -4342,9 +4342,8 @@
       "assignTargetNotPending": "只能分配待审批的事项 — 此事项已不在待审批状态。",
       "assignmentChanged": "负责人刚被他人更改。请刷新以查看当前负责人。",
       "alreadyAssignedToUser": "此事项已分配给该人员。",
-      "assigneeInactive": "被分配人的账户已停用。",
-      "assigneeCannotView": "被分配人无权查看此事项的页面。",
-      "assignmentStoreMissing": "分配功能尚不可用：数据库尚未更新（请联系管理员）。"
+      "assignmentStoreMissing": "分配功能尚不可用：数据库尚未更新（请联系管理员）。",
+      "assigneeInvalid": "被分配人无效（不存在、已停用或无权查看此事项的页面）。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

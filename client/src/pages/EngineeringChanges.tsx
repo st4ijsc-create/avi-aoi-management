@@ -234,7 +234,8 @@ export default function EngineeringChanges() {
 
   const utils = trpc.useUtils();
   const listQ = trpc.ecn.list.useQuery({ limit: 200 }, { enabled: canView });
-  const { byId: assignments } = useAssignments("ecn", canView);
+  const ecnIds = useMemo(() => ((listQ.data ?? []) as Ecn[]).map((r) => r.id), [listQ.data]);
+  const { byId: assignments } = useAssignments("ecn", ecnIds, canView);
   const canAssign = useCanAssign("ecn");
   const productsQ = trpc.productModel.list.useQuery({ limit: 100 }); // productModel.list cap = max(100)
   const products = (productsQ.data ?? []) as Product[];

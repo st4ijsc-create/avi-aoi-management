@@ -248,7 +248,8 @@ export default function InterlockRuleManagement() {
 
   const utils = trpc.useUtils();
   const rulesQuery = trpc.interlock.list.useQuery(undefined, { enabled: canView });
-  const { byId: assignments } = useAssignments("interlock_rule", canView);
+  const ruleIds = useMemo(() => ((rulesQuery.data ?? []) as Array<{ id: number }>).map((r) => r.id), [rulesQuery.data]);
+  const { byId: assignments } = useAssignments("interlock_rule", ruleIds, canView);
   const canAssign = useCanAssign("interlock_rule");
   // Realtime: refetch danh sách sự kiện định kỳ; dừng khi không có quyền xem
   // hoặc khi tab bị ẩn (doc 27 B12 — usePollingInterval).

@@ -84,7 +84,8 @@ export function ChangeoverQueue({ machineId }: { machineId: number | undefined }
   });
 
   const canShowApprover = pending.isSuccess;
-  const { byId: assignments } = useAssignments("changeover", canShowApprover);
+  const pendingIds = (pending.data ?? []).map((r) => r.id);
+  const { byId: assignments } = useAssignments("changeover", pendingIds, canShowApprover);
   const canAssign = useCanAssign("changeover");
 
   return (

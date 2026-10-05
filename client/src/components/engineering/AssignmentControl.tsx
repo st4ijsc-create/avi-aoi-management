@@ -17,8 +17,9 @@ import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { EntityPicker, type EntityOption } from "@/components/patterns/EntityPicker";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { ASSIGNABLE, type AssignableEntityType } from "@shared/engineeringAssignment";
+import { ASSIGNABLE, ASSIGN_ROLE_FLOORS, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 export interface AssignmentRow {
   entityId: number;
@@ -28,9 +29,16 @@ export interface AssignmentRow {
   note?: string | null;
 }
 
-/** Phân công đang hiệu lực của một loại: map entityId → hàng. `enabled=false` ⇒ không gọi (trang chưa được xem). */
-export function useAssignments(entityType: AssignableEntityType, enabled = true) {
-  const q = trpc.engineering.assignments.useQuery({ entityType }, { enabled, retry: false, staleTime: 15_000 });
+/**
+ * Phân công CÒN SỐNG (fix 1, R-3-f: mục còn chờ duyệt, đúng đợt) của ĐÚNG các mục `entityIds` đang hiện trên trang:
+ * map entityId → hàng. `enabled=false` hoặc danh sách rỗng ⇒ không gọi.
+ */
+export function useAssignments(entityType: AssignableEntityType, entityIds: readonly number[], enabled = true) {
+  const ids = useMemo(() => [...new Set(entityIds)].sort((a, b) => a - b), [entityIds]);
+  const q = trpc.engineering.assignments.useQuery(
+    { entityType, entityIds: ids },
+    { enabled: enabled && ids.length > 0, retry: false, staleTime: 15_000 },
+  );
   const byId = useMemo(() => {
     const m = new Map<number, AssignmentRow>();
     for (const r of (q.data ?? []) as AssignmentRow[]) m.set(r.entityId, r);
@@ -39,11 +47,16 @@ export function useAssignments(entityType: AssignableEntityType, enabled = true)
   return { byId, query: q };
 }
 
-/** Cổng client của nút GIAO — đúng `assignPerm` của loại (server là tường thật). */
+/**
+ * Cổng client của nút GIAO — đúng `assignPerm` + SÀN VAI của loại (fix 1, R-3-e; server là tường thật, kể cả 2FA).
+ */
 export function useCanAssign(entityType: AssignableEntityType): boolean {
   const { hasPermission } = usePermissions();
-  const { module, action } = ASSIGNABLE[entityType].assignPerm;
-  return hasPermission(module, action);
+  const { user } = useAuth();
+  const role = (user as { role?: string } | null | undefined)?.role;
+  const def = ASSIGNABLE[entityType];
+  const { module, action } = def.assignPerm;
+  return role != null && ASSIGN_ROLE_FLOORS[def.roleFloor].roles.includes(role) && hasPermission(module, action);
 }
 
 function displayName(t: (k: string, o?: Record<string, unknown>) => string, row: { assigneeUserId: number; assigneeName: string | null }) {

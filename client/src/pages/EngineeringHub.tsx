@@ -431,9 +431,11 @@ function ScopeToggle() {
   const count = (filter?: (c: CategoryDef) => boolean) =>
     q.data == null ? null : PENDING_CATEGORIES.filter(filter ?? (() => true)).reduce((n, c) => n + q.data![c.key].count, 0);
   // "Của tôi": tổng các nhóm giao được của `mine` (không cộng loại khẩn — đó là số toàn module, đã ở chip KHẨN).
-  const mineCount =
-    q.data == null ? null : ASSIGNABLE_PENDING_KEYS.reduce((n, k) => n + (q.data!.mine?.[k]?.count ?? 0), 0);
-  const item = (value: Scope, labelKey: string, fallback: string, hintKey: string, hintFallback: string, n: number | null) => (
+  // fix 1 (HUB-01) — một nhóm "Của tôi" KHÔNG đọc được (vd mig 0363 chưa áp) ⇒ "—", KHÔNG BAO GIỜ in 0.
+  const mineDegraded = q.data != null && ASSIGNABLE_PENDING_KEYS.some((k) => q.data!.mine?.[k]?.degraded !== false);
+  const mineCount: number | string | null =
+    q.data == null ? null : mineDegraded ? "—" : ASSIGNABLE_PENDING_KEYS.reduce((n, k) => n + (q.data!.mine?.[k]?.count ?? 0), 0);
+  const item = (value: Scope, labelKey: string, fallback: string, hintKey: string, hintFallback: string, n: number | string | null) => (
     <button
       type="button"
       aria-pressed={scope === value}
@@ -446,7 +448,7 @@ function ScopeToggle() {
       )}
     >
       {t(labelKey, fallback)}
-      {n != null && <span className="tabular-nums">{n > 99 ? "99+" : n}</span>}
+      {n != null && <span className="tabular-nums">{typeof n === "number" && n > 99 ? "99+" : n}</span>}
     </button>
   );
   return (

@@ -25,6 +25,8 @@ vi.mock("sonner", () => ({ toast: toastSpy }));
 const errSpy = vi.hoisted(() => ({ toastTrpcError: vi.fn() }));
 vi.mock("@/lib/trpcErrors", () => ({ toastTrpcError: errSpy.toastTrpcError }));
 const who = vi.hoisted(() => ({ perms: new Set<string>(["machine_control:canEdit", "machine_control:canView", "interlock:canEdit", "machine_control:canCreate"]) }));
+const me = vi.hoisted(() => ({ role: "engineer" as string }));
+vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 3, role: me.role }, loading: false }) }));
 vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({ isAdmin: false, hasPermission: (m: string, a: string) => who.perms.has(`${m}:${a}`) }),
 }));
@@ -93,6 +95,7 @@ beforeEach(() => {
   toastSpy.success.mockReset();
   errSpy.toastTrpcError.mockReset();
   who.perms = new Set(["machine_control:canEdit", "machine_control:canView", "interlock:canEdit", "machine_control:canCreate"]);
+  me.role = "engineer";
 });
 afterEach(() => cleanup());
 
@@ -166,6 +169,23 @@ describe("AssignmentControl — không có quyền giao ⇒ chỉ đọc", () =>
     expect(screen.getByTestId("p").textContent).toBe("ecn=false,recipe=false,interlock_rule=true,changeover=false,orchestration_run=true");
   });
 
+  it("R-3-e — useCanAssign đòi SÀN VAI: operator/viewer/user có đủ bit vẫn false; quality_inspector chỉ qua ECN", () => {
+    const Probe = () => (
+      <span data-testid="p">
+        {(["ecn", "recipe", "interlock_rule", "changeover", "orchestration_run"] as const).map((t) => `${t}=${useCanAssign(t)}`).join(",")}
+      </span>
+    );
+    for (const role of ["operator", "viewer", "user", "maintenance"]) {
+      me.role = role;
+      const { unmount } = render(<Probe />);
+      expect(screen.getByTestId("p").textContent, role).toBe("ecn=false,recipe=false,interlock_rule=false,changeover=false,orchestration_run=false");
+      unmount();
+    }
+    me.role = "quality_inspector";
+    render(<Probe />);
+    expect(screen.getByTestId("p").textContent).toBe("ecn=true,recipe=false,interlock_rule=false,changeover=false,orchestration_run=false");
+  });
+
   it("AssigneeCell: có ⇒ tên; không ⇒ '—'", () => {
     render(<div><AssigneeCell row={{ entityId: 1, assigneeUserId: 11, assigneeName: "Nguyen Van A" }} /><AssigneeCell row={undefined} /></div>);
     const cells = document.querySelectorAll("[data-assignee-cell]");
@@ -182,7 +202,7 @@ describe("i18n — khoá engineeringAssign.* / Hub / lỗi có đủ vi/en/zh", 
     "engineeringHome.scopeMine", "engineeringHome.scopeMineHint", "engineeringHome.scopeApprovals", "oversight.mineAllClear",
     "errors.operation.assignEngineeringItem", "errors.operation.unassignEngineeringItem", "errors.field.assigneeUserId",
     "errors.reason.assignTargetNotPending", "errors.reason.assignmentChanged", "errors.reason.alreadyAssignedToUser",
-    "errors.reason.assigneeInactive", "errors.reason.assigneeCannotView", "errors.reason.assignmentStoreMissing",
+    "errors.reason.assigneeInvalid", "errors.reason.assignmentStoreMissing",
   ])("%s", (k) => {
     for (const src of [vi_, en_, zh_]) expect(S(k, src).length).toBeGreaterThan(0);
     // không tên biến môi trường trong chuỗi người dùng (GC6)

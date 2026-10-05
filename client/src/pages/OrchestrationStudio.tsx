@@ -1425,7 +1425,6 @@ export default function OrchestrationStudio() {
   const { hasPermission } = usePermissions();
   const canControl = hasPermission("machine_control", "canCreate");
   const canAssignRun = useCanAssign("orchestration_run");
-  const { byId: runAssignments } = useAssignments("orchestration_run", hasPermission("machine_control", "canView"));
   // U1 (doc 26) — nhớ workflow ref đang mở làm fallback deep-link khi sang Cell Twin/RF.
   const { setLastWorkflowRef } = useEngineering();
 
@@ -1477,6 +1476,10 @@ export default function OrchestrationStudio() {
       },
     },
   );
+
+  // doc 81 Đợt 3 Task 4 — phân công còn sống của ĐÚNG các run đang liệt kê.
+  const runIds = useMemo(() => ((runsQ.data ?? []) as Array<Record<string, unknown>>).map((r) => Number(r.id)), [runsQ.data]);
+  const { byId: runAssignments } = useAssignments("orchestration_run", runIds, hasPermission("machine_control", "canView"));
 
   // U13 (doc 26 §2.2/§2.3) — tìm/lọc client cho workflows + runs.
   const [wfSearch, setWfSearch] = useState("");
