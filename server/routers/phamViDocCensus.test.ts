@@ -586,7 +586,19 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *     vào `phamViDocBaseline.ts`.
  *   ⇒ D +1 · tong +1.
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1129, S: 333, tong: 2291 } as const;
+/*
+ * ★★★ 2026-10-05 (doc 81 Đợt 3 Task 4, giao việc Kỹ thuật — QĐ-3a, mig 0363) — **C 480→482 · D 1129→1131 ·
+ * tong 2291→2295 · A/B/S không đổi.** ĐO bằng chính bộ quét này (HEAD `29405aac1` trước lượt sửa = C 480 · D 1129 ·
+ * tong 2291 — khớp ghim cũ):
+ *   • `engineering.assign`, `engineering.unassign` (mutation, MỚI): **D +2**.
+ *   • `engineering.assignments`, `engineering.assignableUsers` (query, MỚI): **C +2** — đọc `engineering_assignments`
+ *     + `users` (chỉ `{id,name}`), không bảng tenant nào; cổng = quyền xem / quyền giao của TRANG thực thể. Năm
+ *     router thực thể không lọc theo nhà máy (đã trong sổ nợ), nên giao việc giữ ĐÚNG phạm vi của chúng.
+ *   • `oversight.pendingSummary` thêm nhánh `mine` — cùng thủ tục, vẫn nhóm S.
+ *   KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   ⇒ C +2 · D +2 · tong +4.
+ */
+const GHIM = { A: 341, B: 8, C: 482, D: 1131, S: 333, tong: 2295 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

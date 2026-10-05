@@ -297,7 +297,15 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   "machine_control","canEdit")`, `module = null`, không phải bề mặt AI). beMatAi/aiCoCong/aiMienTru/
  *   ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. `tong` 2291 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2291, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-05 doc 81 Đợt 3 Task 4 (giao việc Kỹ thuật, QĐ-3a) — **tong 2291 → 2295, ghim lại ô `tong`**: đúng BỐN
+ *   thủ tục MỚI của `engineeringAssignmentRouter.ts` (`engineering.assign` · `unassign` · `assignments` ·
+ *   `assignableUsers`), sàn `protectedProcedure`, `module = null` ở tầng thủ tục — giấy phép của TỪNG loại mục
+ *   (MOD_ENGINEERING / MOD_OT_CONTROL) chạy `moduleGate` NGUYÊN BẢN bên trong handler theo `entityType` (một router
+ *   phục vụ hai SKU), nên bộ suy cấu trúc không thấy cổng — CỐ Ý, không phải bề mặt AI. beMatAi/aiCoCong/aiMienTru/
+ *   ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. `tong` 2295 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2295, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

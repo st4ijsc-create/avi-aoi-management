@@ -8,7 +8,7 @@
  */
 
 import { appError } from "./appError";
-import { eq, and, inArray, or, sql, SQL } from "drizzle-orm";
+import { eq, and, inArray, or, sql, SQL, type AnyColumn } from "drizzle-orm";
 import { productInspections } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "../db/auth";
 import { getDb } from "../db/connection";
@@ -232,6 +232,31 @@ export async function checkPermission(
   // An explicit row is authoritative for BOTH: a false action now genuinely
   // restricts a scoped-admin (the whole point), a true action allows.
   return perm[action] === true;
+}
+
+/**
+ * doc 81 Đợt 3 Task 4 — BẢN SQL của `checkPermission` cho NHIỀU người cùng lúc (roster "Giao cho": hàng nghìn
+ * người dùng, không thể gọi `checkPermission` từng người). Trả một vị từ trên cột id/role của bảng `users`,
+ * cùng bảng quyết định với hàm trên — sửa một bên thì sửa cả hai; lưới `engineeringAssignment.db.test.ts` §6 so
+ * TỪNG NGƯỜI hai đường với nhau ở cả hai chế độ RBAC_SCOPED_ADMIN:
+ *   • admin, scoped TẮT ⇒ qua;
+ *   • admin, scoped BẬT ⇒ qua TRỪ KHI có hàng quyền CÒN HẠN mà `action = false`;
+ *   • không phải admin ⇒ có hàng quyền CÒN HẠN mà `action = true`.
+ * Bí danh module (`machine_monitoring` → `machine_status`) áp đúng như `checkPermission`.
+ */
+export function permissionHeldSql(
+  userIdCol: AnyColumn,
+  roleCol: AnyColumn,
+  moduleName: string,
+  action: 'canView' | 'canCreate' | 'canEdit' | 'canDelete' | 'canExport',
+): SQL {
+  const resolvedModule = resolvePermissionModule(moduleName);
+  const bit = permissions[action];
+  const conHan = sql`(${permissions.expiresAt} IS NULL OR ${permissions.expiresAt} >= now())`;
+  const hang = (giaTri: boolean) => sql`EXISTS (SELECT 1 FROM ${permissions} WHERE ${permissions.userId} = ${userIdCol}
+    AND ${permissions.moduleName} = ${resolvedModule} AND ${conHan} AND ${bit} = ${giaTri})`;
+  const adminQua = scopedAdminEnabled() ? sql`NOT ${hang(false)}` : sql`TRUE`;
+  return sql`((${roleCol} = 'admin' AND ${adminQua}) OR (${roleCol} <> 'admin' AND ${hang(true)}))`;
 }
 
 /**
