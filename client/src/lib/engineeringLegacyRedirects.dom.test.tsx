@@ -11,7 +11,15 @@ import { cleanup, render } from "@testing-library/react";
 import { Route, Router, Switch, useLocation, useRouter } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import APP_SRC from "../App.tsx?raw";
-import { ENGINEERING_LEGACY_REDIRECTS, engineeringLegacyRoutes, legacyRedirectTarget } from "./engineeringLegacyRedirects";
+import EQ_SRC from "../pages/EquipmentIntegration.tsx?raw";
+import {
+  ENGINEERING_LEGACY_REDIRECTS,
+  ENGINEERING_LEGACY_TAB_REDIRECTS,
+  LegacyTabRedirectGate,
+  engineeringLegacyRoutes,
+  legacyRedirectTarget,
+  legacyTabRedirectTarget,
+} from "./engineeringLegacyRedirects";
 
 afterEach(() => cleanup());
 
@@ -82,5 +90,71 @@ describe("App.tsx dùng đúng bảng này (không còn trang cũ)", () => {
     const nf = APP_SRC.search(/<Route component=\{NotFound\}|<Route>\s*<NotFound|path="\/:rest\*"/);
     expect(at).toBeGreaterThan(0);
     if (nf > 0) expect(at).toBeLessThan(nf);
+  });
+});
+
+// ── Doc 81 Đợt 3 Task 1 — tab cũ của Equipment Integration dời sang Recipes ────────────────────────────────────
+// `/equipment-integration?tab=recipes|history` ⇒ `/recipes?tab=versions|history`, query cũ NGUYÊN VĂN (giữ `?code=` /
+// `?machineId=` / mọi tham số khác), chỉ GIÁ TRỊ của `tab` đổi; REPLACE. Tab còn lại (status/acquisition) KHÔNG chuyển.
+function GateProbe() {
+  const [path] = useLocation();
+  const router = useRouter();
+  const search = router.searchHook(router);
+  return <output data-testid="where">{search ? `${path}?${search}` : path}</output>;
+}
+function goGate(start: string) {
+  const loc = memoryLocation({ path: start, record: true });
+  const r = render(
+    <Router hook={loc.hook} searchHook={loc.searchHook}>
+      <LegacyTabRedirectGate from="/equipment-integration">
+        <span data-testid="page">trang cũ</span>
+      </LegacyTabRedirectGate>
+      <GateProbe />
+    </Router>,
+  );
+  return { where: () => r.getByTestId("where").textContent, page: () => r.queryByTestId("page"), history: loc.history! };
+}
+
+describe("chuyển hướng theo TAB (Đợt 3 Task 1): Integration → Recipes", () => {
+  it.each([
+    ["/equipment-integration?tab=recipes&code=RCP-1", "/recipes?tab=versions&code=RCP-1"],
+    ["/equipment-integration?tab=history&machineId=3", "/recipes?tab=history&machineId=3"],
+    ["/equipment-integration?code=A%20B&tab=recipes&x=1&x=2", "/recipes?code=A%20B&tab=versions&x=1&x=2"],
+    ["/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-load&flyoutId=102", "/recipes?tab=versions&code=RCP-1&flyout=eq-recipe-load&flyoutId=102"],
+    // `tab` lặp: URLSearchParams lấy giá trị ĐẦU ⇒ chuyển; các `tab` gộp về một ở vị trí đầu
+    ["/equipment-integration?tab=history&code=C&tab=status", "/recipes?tab=history&code=C"],
+  ])("%s ⇒ %s (REPLACE, query giữ nguyên văn)", (start, expected) => {
+    const r = goGate(start);
+    expect(r.where()).toBe(expected);
+    expect(r.history).toEqual([expected]);
+  });
+
+  it.each([
+    "/equipment-integration",
+    "/equipment-integration?tab=status&connector=adapter:ot-s7",
+    "/equipment-integration?tab=acquisition",
+    "/equipment-integration?tab=bogus",
+  ])("%s — tab còn ở Integration ⇒ KHÔNG chuyển, dựng trang", (start) => {
+    const r = goGate(start);
+    expect(r.where()).toBe(start);
+    expect(r.page()).toBeTruthy();
+  });
+
+  it("chỉ áp cho đúng đường dẫn `from` (cổng nằm ở trang khác thì không chuyển)", () => {
+    const r = goGate("/somewhere-else?tab=recipes&code=X");
+    expect(r.where()).toBe("/somewhere-else?tab=recipes&code=X");
+    expect(r.page()).toBeTruthy();
+  });
+
+  it("bảng: đúng đích + giá trị tab đích; legacyTabRedirectTarget chép nguyên văn phần còn lại", () => {
+    const m = Object.fromEntries(ENGINEERING_LEGACY_TAB_REDIRECTS.map((r) => [`${r.from}?tab=${r.tab}`, `${r.to}?tab=${r.tabTo}`]));
+    expect(m).toEqual({ "/equipment-integration?tab=recipes": "/recipes?tab=versions", "/equipment-integration?tab=history": "/recipes?tab=history" });
+    expect(legacyTabRedirectTarget("/r", "?a=%2F&tab=x&b=1", "h")).toBe("/r?a=%2F&tab=h&b=1");
+    expect(legacyTabRedirectTarget("/r", "a=1", "h")).toBe("/r?tab=h&a=1");
+  });
+
+  it("EquipmentIntegration.tsx bọc trang bằng LegacyTabRedirectGate từ đúng đường dẫn của nó", () => {
+    expect(EQ_SRC).toMatch(/<LegacyTabRedirectGate from=\{BASE_PATH\}>/);
+    expect(EQ_SRC).toMatch(/const BASE_PATH = "\/equipment-integration";/);
   });
 });

@@ -13,7 +13,8 @@
  * - chuyển hướng là REPLACE (Back không quay lại URL cũ để rồi bị đẩy đi lần nữa).
  * App.tsx dựng các `<Route>` này bằng CHÍNH `engineeringLegacyRoutes()` — test dựng cùng hàm.
  */
-import { Redirect, Route, useRouter } from "wouter";
+import type { ReactNode } from "react";
+import { Redirect, Route, useLocation, useRouter } from "wouter";
 
 export interface LegacyRedirect {
   from: string;
@@ -52,4 +53,69 @@ export function engineeringLegacyRoutes() {
       <LegacyQueryRedirect to={r.to} add={r.add} />
     </Route>
   ));
+}
+
+// ── Doc 81 Đợt 3 Task 1 — chuyển hướng theo TAB: một tab của trang cũ dời sang trang khác ───────────────────────
+//
+// `/equipment-integration?tab=recipes|history` ⇒ `/recipes?tab=versions|history` (phiên bản recipe và lịch sử nạp dời
+// sang Recipes; Integration bỏ hai tab đó). Route `/equipment-integration` vẫn là trang thật cho các tab còn lại, nên
+// không thể là một `<Route>` chuyển hướng: trang cũ bọc nội dung bằng `LegacyTabRedirectGate`.
+// Luật (test: `engineeringLegacyRedirects.dom.test.tsx`): như trên — query cũ chép NGUYÊN VĂN, chỉ GIÁ TRỊ của `tab`
+// được thay (mọi lần xuất hiện của `tab` gộp về một, tại vị trí đầu tiên), REPLACE.
+
+export interface LegacyTabRedirect {
+  from: string;
+  tab: string;
+  to: string;
+  tabTo: string;
+}
+
+export const ENGINEERING_LEGACY_TAB_REDIRECTS: readonly LegacyTabRedirect[] = [
+  { from: "/equipment-integration", tab: "recipes", to: "/recipes", tabTo: "versions" },
+  { from: "/equipment-integration", tab: "history", to: "/recipes", tabTo: "history" },
+];
+
+/** Khoá của một cặp `k=v` trong query thô (giải mã như URLSearchParams: `+` ⇒ dấu cách). */
+function rawKey(part: string): string {
+  const k = part.split("=", 1)[0].replace(/\+/g, " ");
+  try {
+    return decodeURIComponent(k);
+  } catch {
+    return k;
+  }
+}
+
+/** Đích: `to` + query cũ NGUYÊN VĂN, riêng `tab` mang giá trị mới. */
+export function legacyTabRedirectTarget(to: string, search: string, tabTo: string): string {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const out: string[] = [];
+  let replaced = false;
+  for (const part of raw.split("&")) {
+    if (part === "") continue;
+    if (rawKey(part) === "tab") {
+      if (!replaced) out.push(`tab=${encodeURIComponent(tabTo)}`);
+      replaced = true;
+      continue;
+    }
+    out.push(part);
+  }
+  if (!replaced) out.unshift(`tab=${encodeURIComponent(tabTo)}`);
+  return `${to}?${out.join("&")}`;
+}
+
+/** Chuyển hướng theo tab áp cho `from` với query `search` (giá trị `tab` theo URLSearchParams — lần đầu), hoặc null. */
+export function findLegacyTabRedirect(from: string, search: string): LegacyTabRedirect | null {
+  const tab = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("tab");
+  return ENGINEERING_LEGACY_TAB_REDIRECTS.find((r) => r.from === from && r.tab === tab) ?? null;
+}
+
+/** Bọc nội dung trang `from`: `?tab=` đã dời ⇒ REPLACE sang đích (giữ query); còn lại ⇒ dựng trang như thường. */
+export function LegacyTabRedirectGate({ from, children }: { from: string; children: ReactNode }) {
+  const router = useRouter();
+  const [path] = useLocation();
+  const search = router.searchHook(router);
+  // Chỉ khi ĐANG ở `from` (sau khi chuyển, cổng còn mount một nhịp ở đích thì không chuyển lại).
+  const hit = path === from ? findLegacyTabRedirect(from, search) : null;
+  if (hit) return <Redirect to={legacyTabRedirectTarget(hit.to, search, hit.tabTo)} replace />;
+  return <>{children}</>;
 }

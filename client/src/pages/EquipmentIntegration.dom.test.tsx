@@ -91,16 +91,13 @@ afterEach(() => {
   cleanup();
 });
 
-// "recipes" is not the default tab; the recipes tab (holding "New version") must be
-// selected first. Radix Tabs mounts inactive TabsContent only on activation.
-async function openRecipesTab() {
-  const { default: userEvent } = await import("@testing-library/user-event");
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("tab", { name: /Recipe versions/i }));
-}
+// Doc 81 Đợt 3 Task 1 — tab "Recipe versions" (nút "New version") đã DỜI khỏi trang: tạo phiên bản dùng MỘT bộ với
+// Recipes ("Lưu phiên bản mới", thủ tục machineRecipe.recipes.create không gắn cờ EQ_INTEG). Các khẳng định
+// "nút New version khoá/bật theo cờ" được GỠ (nút không còn); phần chip/banner cờ 4 trạng thái — trọng tâm của test —
+// giữ nguyên. Chip cờ tích hợp trên Recipes: RecipeManagement.integration.dom.test.tsx.
 
 describe("EquipmentIntegration — flag status (equipmentIntegration.status) không còn `?? true`", () => {
-  it("statusQ ĐANG TẢI ⇒ badge Flag KHÔNG hiện 'On'/'Off' literal, banner OFF không hiện, nút 'New version' bị khoá", async () => {
+  it("statusQ ĐANG TẢI ⇒ badge Flag KHÔNG hiện 'On'/'Off' literal, banner OFF không hiện", async () => {
     setQueryOverride("equipmentIntegration.status", makeQuery({ isLoading: true }));
     render(<EquipmentIntegration />);
 
@@ -113,12 +110,9 @@ describe("EquipmentIntegration — flag status (equipmentIntegration.status) kh�
     expect(within(document.querySelector('[data-chip-id="flag"]') as HTMLElement).getByText("Loading")).toBeInTheDocument();
     expect(screen.queryByText(/^On$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Off$/)).not.toBeInTheDocument();
-
-    await openRecipesTab();
-    expect(screen.getByRole("button", { name: /New version/i })).toBeDisabled();
   });
 
-  it("statusQ LỖI ⇒ badge hiện 'Unknown', banner lỗi riêng biệt, nút vẫn khoá", async () => {
+  it("statusQ LỖI ⇒ badge hiện 'Unknown', banner lỗi riêng biệt", async () => {
     setQueryOverride("equipmentIntegration.status", makeQuery({ isError: true }));
     render(<EquipmentIntegration />);
 
@@ -129,28 +123,22 @@ describe("EquipmentIntegration — flag status (equipmentIntegration.status) kh�
     expect(screen.queryByText(/^On$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Off$/)).not.toBeInTheDocument();
     expect(screen.getByTestId("feature-status-error")).toBeInTheDocument();
-    await openRecipesTab();
-    expect(screen.getByRole("button", { name: /New version/i })).toBeDisabled();
   });
 
-  it("statusQ xong, cờ TẮT ⇒ banner không chứa tên biến môi trường, badge 'Off', nút VẪN bật", async () => {
+  it("statusQ xong, cờ TẮT ⇒ banner không chứa tên biến môi trường, badge 'Off'", async () => {
     setQueryOverride("equipmentIntegration.status", makeQuery({ data: { enabled: false } }));
     render(<EquipmentIntegration />);
 
     const banner = screen.getByTestId("feature-status-off");
     expect(banner.textContent).not.toMatch(/EQ_INTEG_ENABLED/);
     expect(screen.getByText("Off")).toBeInTheDocument();
-    await openRecipesTab();
-    expect(screen.getByRole("button", { name: /New version/i })).not.toBeDisabled();
   });
 
-  it("statusQ xong, cờ BẬT ⇒ badge 'On', không banner, nút bật", async () => {
+  it("statusQ xong, cờ BẬT ⇒ badge 'On', không banner", async () => {
     setQueryOverride("equipmentIntegration.status", makeQuery({ data: { enabled: true } }));
     render(<EquipmentIntegration />);
 
     expect(screen.getByText("On")).toBeInTheDocument();
     expect(screen.queryByTestId("feature-status-off")).not.toBeInTheDocument();
-    await openRecipesTab();
-    expect(screen.getByRole("button", { name: /New version/i })).not.toBeDisabled();
   });
 });

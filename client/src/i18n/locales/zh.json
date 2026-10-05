@@ -6905,7 +6905,7 @@
     "equipmentStandards": "设备标准",
     "equipmentStandardsDesc": "版本化设备类型层级、ISA-18.2 报警分类法与设备标准委员会（仅查看）",
     "equipmentIntegration": "设备集成",
-    "equipmentIntegrationDesc": "FOCAS/Euromap 集成框架（只读）与配方版本谱系（仅查看）",
+    "equipmentIntegrationDesc": "FOCAS/Euromap 集成框架（只读）与适配器目录",
     "modeSimple": "简易",
     "modeAdvanced": "高级",
     "showAdvanced": "显示高级菜单",
@@ -6927,7 +6927,7 @@
       "fleetOrchestration": "为移动机器人/AGV 分配任务并管理其通行与充电（预览）",
       "safetyWorkforce": "咨询式安全概览及班次/人力看板（预览）",
       "equipmentStandards": "公司统一的设备类型及标准报警命名（预览）",
-      "equipmentIntegration": "连接 CNC/注塑机及配方版本历史（预览）",
+      "equipmentIntegration": "连接 CNC/注塑机（预览）",
       "rfTestCell": "带机器人+测试仪回放的模拟 RF 测试单元（预览）",
       "cellTwin": "单个生产单元的实时孪生，可观看并回放（预览）",
       "federationDashboard": "跨多个已连接站点/工厂的汇总视图（预览）"
@@ -14880,8 +14880,6 @@
   "eqIntegration": {
     "tab": {
       "acquisition": "采集工作器",
-      "history": "加载历史",
-      "recipes": "配方版本",
       "status": "连接器目录"
     },
     "acq": {
@@ -14928,12 +14926,7 @@
       "aboutChip": "关于采集源"
     },
     "machineCode": "机台代码",
-    "whenToUse": "适用场景 — 浏览厂商集成框架（FOCAS/Euromap）与配方版本谱系。只读元数据，无实时设备。",
-    "recipeStatus": {
-      "draft": "草稿",
-      "released": "已发布",
-      "archived": "已归档"
-    },
+    "whenToUse": "适用场景 — 浏览厂商集成框架（FOCAS/Euromap）与已注册的适配器协议。只读元数据，无实时设备。配方版本与加载历史现位于配方页面。",
     "action": {
       "create": "创建",
       "release": "发布",
@@ -14947,14 +14940,11 @@
       "none": "无"
     },
     "alsoDeploy": "同时写入一条 recipe_deployments 台账记录",
-    "archive": "归档",
-    "archiveTip": "归档此版本",
     "byCode": "配方编码",
     "byMachine": "机器",
     "col": {
       "action": "操作",
       "machine": "机器",
-      "name": "名称",
       "notes": "备注",
       "recipe": "编码 @ 版本",
       "status": "状态",
@@ -14962,12 +14952,7 @@
       "who": "执行人"
     },
     "configured": "已连接",
-    "create": "创建版本",
-    "createRequired": "编码和名称为必填项。",
-    "createTitle": "新建配方版本（草稿）",
-    "createVersion": "新建版本",
-    "flagOffBanner": "预览模式：设备集成已禁用。读取可用；操作（创建 / 发布 / 归档 / 回滚版本、记录加载）在启用前被阻止。",
-    "flagOffToast": "设备集成已禁用（预览）。设置 EQ_INTEG_ENABLED=true 以执行操作。",
+    "flagOffBanner": "预览模式：设备集成已禁用。读取可用；集成操作（发布 / 回滚配方版本、记录加载 — 现位于配方页面）在启用前被阻止。",
     "flagStatusError": "无法检查设备集成是否已启用 — 在确认前，操作将被禁用。",
     "frameworkNoDevice": "框架 — 未连接设备",
     "frameworkNote": "这是集成框架。它建模真实 FOCAS/Euromap 连接器会映射到统一设备模型的只读字段，但实时数据需要已连接的设备/连接器。在此之前值保持“—”，快照来源为“无”。",
@@ -14978,30 +14963,21 @@
       "configured": "已连接的框架",
       "flag": "标志"
     },
-    "loadHistory": "加载历史",
     "loading": "加载中…",
     "loadRecorded": "配方加载已记录（谱系）",
     "loadTip": "记录该版本已加载到某台机器上（谱系）",
-    "loadVersions": "加载版本",
     "machine": "机器",
-    "machineOptional": "机器（可选）",
     "machineRequired": "请选择一台机器。",
     "needsEditPermission": "发布/回滚需要编辑权限（machine_control/canEdit）。",
     "noAdapters": "未注册适配器协议。",
-    "noMachine": "（无）",
     "noPermission": "您无权查看设备集成。",
     "noReadout": "无读数",
     "notConnected": "未连接",
     "notes": "备注",
     "off": "关闭",
     "on": "开启",
-    "payload": "载荷（JSON）",
-    "payloadInvalid": "载荷不是有效的 JSON。",
-    "payloadObject": "载荷必须是 JSON 对象。",
-    "pickHint": "在上方输入配方编码以列出其不可变版本与谱系操作。",
     "readOnly": "只读",
     "readSnapshot": "读取快照",
-    "recipeCode": "配方编码",
     "recordLoad": "记录加载",
     "recordLoadHint": "记录 {{code}} v{{version}} 已加载到某台机器上（谱系）。这不会打开任何设备路径；select_recipe 命令仍通过受控分派器路由。",
     "recordLoadTitle": "记录配方加载",
@@ -15011,11 +14987,9 @@
     "rollbackConfirmBody": "这会发布 {{code}} v{{version}} 并归档当前已发布版本。仅写入谱系元数据 — 不会向设备推送任何配方。",
     "rollbackConfirmTitle": "回滚已发布合约？",
     "rollbackTip": "将已发布合约回滚到此版本",
-    "safetyNote": "FOCAS/Euromap 是只读集成框架 — 未连接实时设备，也不伪造遥测。此处的配方版本管理仅为谱系/元数据；不会打开任何设备控制路径。",
-    "selectCodeHint": "输入配方编码以查看其跨机器的谱系。",
+    "safetyNote": "FOCAS/Euromap 是只读集成框架 — 未连接实时设备，也不伪造遥测；本页面不会打开任何设备控制路径。",
     "selectMachine": "选择一台机器…",
-    "selectMachineHint": "选择一台机器以查看其配方谱系。",
-    "subtitle": "多厂商集成框架（FOCAS / Euromap，只读）与配方版本谱系 — 仅元数据，无设备命令。",
+    "subtitle": "多厂商集成框架（FOCAS / Euromap，只读）— 仅元数据，无设备命令。",
     "title": "设备集成",
     "uem": {
       "alarmCode": "alarm_code",
@@ -15023,17 +14997,9 @@
       "recipeId": "recipe_id",
       "utilization": "utilization_rate"
     },
-    "versionArchived": "版本已归档",
-    "versionCreated": "配方版本已创建（草稿）",
     "versionReleased": "版本已发布",
     "versionRolledBack": "已发布合约已回滚",
-    "versionsTitle": "{{code}} 的版本",
-    "viewOnly": "仅查看",
     "safetyChip": "只读",
-    "versionNotFound": "当前配方代码中找不到版本 #{{id}}。",
-    "openInRecipes": "在配方中打开",
-    "openInRecipesHint": "配方目录、审批与部署位于配方页面",
-    "recipesElsewhere": "配方审批与下发到机器位于配方页面。",
     "chip": {
       "srcAdapters": "服务器适配器注册表（integrationStatus.adapters）— 已注册，并非已连接",
       "srcConnected": "具备真实连接器/设备的框架（integrationStatus.frameworks[].configured）",
@@ -15052,8 +15018,7 @@
       "adapterHonesty": "该协议已在服务器适配器注册表中注册 — 注册并不代表有设备已连接。",
       "pickHint": "选择一个连接器查看详情。",
       "loadError": "无法读取集成状态。"
-    },
-    "createDesc": "不可变的草稿版本 — 仅谱系元数据；不会下发到设备。"
+    }
   },
   "panelDef": {
     "button": "拼板 N-up",
