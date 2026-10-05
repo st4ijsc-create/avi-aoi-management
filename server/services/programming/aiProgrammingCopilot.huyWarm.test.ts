@@ -162,8 +162,11 @@ describe("§B — warmModel THẬT: huỷ ⇒ POST tới llama-server bị đón
     const { warmModel } = await import("../aiGgufEngine");
     const ac = new AbortController();
     const p = warmModel("fake-code.gguf", 8192, ac.signal);
-    const bd = Date.now();
-    while (fake.luot.length === 0 && Date.now() - bd < 5000) await new Promise((r) => setTimeout(r, 10));
+    // doc 81 Đợt 3 final wave (Task 0 — flake `huyWarm`): chờ lượt warm TỚI llama-server giả bằng `cho` (10 s) thay vì vòng
+    // 5 s riêng. Đo 2026-10-05: 1/3 lượt chạy song song server/services/programming + server/routes đỏ ĐÚNG ở đây (10,2 s,
+    // lượt warm chưa tới sau 5 s — nạp nguội dưới tải). Đây là bước CHUẨN BỊ, không phải mệnh đề; mệnh đề "đóng ≤ 1 s sau
+    // huỷ" bên dưới GIỮ NGUYÊN.
+    expect(await cho(() => fake.luot.length > 0), "lượt warm không tới llama-server giả").toBe(true);
     expect(fake.luot, "lượt warm không tới llama-server giả").toHaveLength(1);
     const tHuy = Date.now();
     ac.abort();

@@ -580,7 +580,7 @@ describe("D1 — Copilot qua mốc 1024 px: nút AI khớp với thứ nhìn th�
   it("mở Copilot ở màn rộng → thu hẹp ⇒ Copilot HIỆN; rời tab ⇒ nút AI báo đóng; bấm MỘT lần ⇒ hiện lại", async () => {
     seed();
     renderPage({ aiButton: true });
-    
+
     const ai = screen.getByRole("button", { name: /^(Mở Trợ lý Lập trình|Open Programming Copilot)$/ });
     fireEvent.click(ai);
     expect(ai).toHaveAttribute("aria-expanded", "true");

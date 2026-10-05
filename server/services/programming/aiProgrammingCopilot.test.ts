@@ -192,6 +192,27 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
     expect(chatCompletion).not.toHaveBeenCalled();
   });
 
+  // doc 81 Đợt 3 final wave (Task 0 minor 2) — suggest bỏ qua `input.lang` mà router nhận (đoán từ intent), explain cứng
+  // "vi" ⇒ người dùng en/zh nhận tiếng Việt. `lang` tường minh THẮNG; vắng ⇒ như cũ (suggest đoán từ intent, explain "vi").
+  it("flag off ⇒ suggest/explain theo `lang` tường minh (vắng ⇒ hành vi cũ)", async () => {
+    process.env.AI_PROGRAMMING_COPILOT_ENABLED = "false";
+    for (const lang of ["vi", "en", "zh"] as const) {
+      const s = await suggestProgram({ kind: "zmotion-basic", intent: "bộ lọc trung bình trượt", lang });
+      expect(s.reason, `suggest ${lang}`).toBe(cauLoiCopilot("DISABLED", lang));
+      const e = explainProgram("iec61131-st", "x := 1;", lang);
+      expect(e.summary, `explain ${lang}`).toBe(cauLoiCopilot("DISABLED", lang));
+    }
+    expect((await suggestProgram({ kind: "zmotion-basic", intent: "move to home" })).reason).toBe(cauLoiCopilot("DISABLED", "en"));
+    expect(explainProgram("iec61131-st", "x := 1;").summary).toBe(cauLoiCopilot("DISABLED", "vi"));
+    expect(chatCompletion).not.toHaveBeenCalled();
+  });
+
+  it("router: copilotSuggest/copilotExplain chuyển `lang` của input xuống dịch vụ", () => {
+    const src = readFileSync(new URL("../../routers/programmingRouter.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/copilotExplain:[\s\S]{0,400}lang: z\.enum\(\["vi", "en", "zh"\]\)\.optional\(\)[\s\S]{0,200}explainProgram\(input\.kind, input\.source, input\.lang\)/);
+    expect(src).toMatch(/copilotSuggest:[\s\S]{0,300}lang: z\.enum\(\["vi", "en", "zh"\]\)\.optional\(\)[\s\S]{0,120}suggestProgram\(input\)/);
+  });
+
   it("HARD-REFUSES safety-function requests BEFORE calling the model", async () => {
     for (const request of ["add an e-stop interlock", "generate the light curtain muting logic", "SIL3 safety relay reset", "急停回路"]) {
       const r = await generateProgram({ kind: "iec61131-ld", request, mode: "generate" });

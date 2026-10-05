@@ -13,14 +13,14 @@ vi.mock("react-i18next", () => ({
 
 import { useStepUpOtp } from "./StepUpOtpDialog";
 
-function Harness({ onRun }: { onRun: (code: string) => void }) {
+function Harness({ onRun, explicit = false }: { onRun: (code: string) => void; explicit?: boolean }) {
   const stepUp = useStepUpOtp();
   return (
     <div>
-      <button type="button" onClick={() => stepUp.guard(onRun)}>
+      <button type="button" onClick={() => stepUp.guard(onRun, explicit ? { returnFocus: document.getElementById("dich") } : undefined)}>
         Triển khai build
       </button>
-      <button type="button">khác</button>
+      <button type="button" id="dich">khác</button>
       {stepUp.dialog}
     </div>
   );
@@ -72,11 +72,41 @@ describe("useStepUpOtp — trả focus về nút đã mở hộp OTP", () => {
     const opener = screen.getByRole("button", { name: "Triển khai build" });
     opener.focus();
     fireEvent.click(opener);
+    // Final wave (Task 0 minor 6) — khẳng định cũ (`activeElement !== opener`) KHÔNG THỂ đỏ: nút đã gỡ không bao giờ là
+    // activeElement. Đo đúng điều hợp đồng nói: KHÔNG gọi focus() lên phần tử đã rời DOM.
+    const focusSpy = vi.spyOn(opener, "focus");
     opener.remove();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Huỷ" }));
       await new Promise((r) => setTimeout(r, 10)); // Radix FocusScope trả focus trong setTimeout(0)
     });
-    expect(document.activeElement).not.toBe(opener);
+    expect(focusSpy).not.toHaveBeenCalled();
+  });
+
+  // Final wave (Task 0 minor 5) — Safari/macOS: bấm chuột KHÔNG focus nút ⇒ lúc guard() chạy activeElement là <body>.
+  it("Safari: nút KHÔNG được focus khi bấm (activeElement = body) ⇒ vẫn trả focus về nút vừa bấm", async () => {
+    render(<Harness onRun={vi.fn()} />);
+    const opener = screen.getByRole("button", { name: "Triển khai build" });
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.pointerDown(opener);
+    fireEvent.click(opener);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Huỷ" }));
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("đích tường minh `guard(run, { returnFocus })` thắng activeElement", async () => {
+    render(<Harness onRun={vi.fn()} explicit />);
+    const opener = screen.getByRole("button", { name: "Triển khai build" });
+    opener.focus();
+    fireEvent.click(opener);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Huỷ" }));
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "khác" }));
   });
 });

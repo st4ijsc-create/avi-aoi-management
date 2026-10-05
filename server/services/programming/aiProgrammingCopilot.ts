@@ -128,7 +128,8 @@ function skeleton(kind: ProgrammingKind, intent: string): string {
  */
 export async function suggestProgram(input: SuggestInput): Promise<SuggestResult> {
   // doc 81 Đợt 3 Task 0 — câu cho người dùng KHÔNG nêu tên biến môi trường (census copilotKhongTenBienMoiTruong).
-  if (!copilotEnabled()) return { available: false, refused: false, reason: cauLoiCopilot("DISABLED", detectRequestLang(input?.intent)) };
+  // Final wave (Task 0 minor 2) — `lang` tường minh của yêu cầu (router nhận nó) THẮNG; vắng ⇒ đoán từ intent như cũ.
+  if (!copilotEnabled()) return { available: false, refused: false, reason: cauLoiCopilot("DISABLED", input?.lang ?? detectRequestLang(input?.intent)) };
 
   const gate = checkCopilotSafety({ mode: "generate", request: input.intent });
   if (gate.refused) {
@@ -165,8 +166,10 @@ export interface ExplainResult {
 }
 
 /** Deterministic structural explanation of a program (no model required). */
-export function explainProgram(kind: ProgrammingKind, source: string): ExplainResult {
-  if (!copilotEnabled()) return { available: false, summary: cauLoiCopilot("DISABLED", "vi"), metrics: {} };
+export function explainProgram(kind: ProgrammingKind, source: string, lang?: GateLang): ExplainResult {
+  // Final wave (Task 0 minor 2) — câu cờ tắt theo `lang` của yêu cầu (trước: cứng "vi" ⇒ người dùng en/zh nhận tiếng Việt).
+  // Vắng `lang` ⇒ "vi" như cũ (mã nguồn chương trình không cho đoán ngôn ngữ người dùng).
+  if (!copilotEnabled()) return { available: false, summary: cauLoiCopilot("DISABLED", lang ?? "vi"), metrics: {} };
   const lines = source.split(/\r?\n/).filter((l) => l.trim() && !/^\s*('|;|\/\/|\(\*)/.test(l));
   const moves = (source.match(/\b(MOVE|MOVEABS|MOVEL|MOVECIRC|G0|G1)\b/gi) ?? []).length;
   const assigns = (source.match(/:?=/g) ?? []).length;

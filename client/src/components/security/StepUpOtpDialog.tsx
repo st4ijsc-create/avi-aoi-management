@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ShieldCheck } from "lucide-react";
 import {
@@ -50,10 +50,24 @@ export function useStepUpOtp() {
   // doc 81 Đợt 3 Task 0 (O1) — phần tử đã mở hộp OTP (vd nút "Triển khai build" của wizard). Hộp mở bằng mã, không có
   // DialogTrigger ⇒ Radix trả focus về triggerRef = null ⇒ focus rơi về <body> trong khi wizard (modal) vẫn mở.
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  // doc 81 Đợt 3 final wave (Task 0 minor 5) — Safari/macOS KHÔNG focus nút khi bấm chuột ⇒ `activeElement` là <body> lúc
+  // guard() chạy ⇒ không biết trả focus về đâu. Đường lui: phần tử tương tác vừa nhận pointerdown (pha capture, mọi nơi
+  // trong tài liệu). Thứ tự: `opts.returnFocus` tường minh > `activeElement` (≠ body) > phần tử vừa được bấm.
+  const lastPressedRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onDown = (e: Event) => {
+      const t = e.target instanceof Element ? e.target.closest("button, a[href], [role='button'], input, select, textarea, [tabindex]") : null;
+      lastPressedRef.current = t instanceof HTMLElement ? t : null;
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, []);
 
-  const guard = useCallback((run: (code: string) => void) => {
+  const guard = useCallback((run: (code: string) => void, opts?: { returnFocus?: HTMLElement | null }) => {
     const active = typeof document !== "undefined" ? document.activeElement : null;
-    returnFocusRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
+    const focused = active instanceof HTMLElement && active !== document.body ? active : null;
+    returnFocusRef.current = opts?.returnFocus ?? focused ?? lastPressedRef.current;
     runnerRef.current = run;
     setCode("");
     setOpen(true);
