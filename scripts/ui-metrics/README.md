@@ -362,3 +362,13 @@ Bảng nhân lực rời tab `?tab=workforce` của Safety & Workforce sang tran
 - `KNOWN_PROCS` của bốn trang thêm `engineering.assignments` (gọi lúc nạp trang). `engineering.assignableUsers` KHÔNG thêm:
   chỉ gọi khi mở sheet/khối duyệt — lần đo nạp trang không chạm nó (thêm vào là nới danh sách cho phép).
 - Không đổi gác, không đổi bản ghi hiệu chuẩn: MAIN của năm màn trùng hiệu chuẩn cũ (BEFORE/AFTER 0 dòng lệch).
+
+## Đợt 3 Task 5 (2026-10-05) — Fleet → Labs (`/labs/fleet-orchestration`, khuôn bí danh R-2-x)
+- Màn `fleet-orchestration` đo route MỚI `/labs/fleet-orchestration`; `aliasOf: "/fleet-orchestration"` (URL cũ chỉ còn chuyển hướng
+  giữ query — `client/src/lib/engineeringLegacyRedirects.tsx`).
+- Khác hai bí danh Task 15: đây là **CÙNG một trang** (chỉ đổi đường dẫn), nên KHÔNG có `calibrateAs` hay `movedFrom`. id, phần tử
+  mang `data-layout-main="fleet-orchestration"` và bản ghi hiệu chuẩn `fleet-orchestration|vw|n/a` là của chính trang ⇒ mỗi lần chạy so
+  lại với bản ghi đó (lệch ⇒ LỖI). Không ghi lại hiệu chuẩn, không gác nào bị nới.
+- **TRƯỚC/SAU CÙNG LOẠI** (cùng MAIN). Khác duy nhất nhìn thấy: breadcrumb trong top bar đổi section (`Điều phối` ⇒ `Labs — thử nghiệm`).
+- `PAGE_TABLES` / `KNOWN_PROCS` KHÔNG đổi (trang gọi đúng các thủ tục cũ; công tắc "Hiện Labs" ở thanh bên là localStorage, không gọi
+  server). Người dùng đo (`uim_engineer`) có Labs ẨN (mặc định) — thước vào màn bằng URL nên không phụ thuộc menu.

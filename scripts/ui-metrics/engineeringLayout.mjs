@@ -117,7 +117,11 @@ export const SCREENS = [
   { n: 10, id: "programming-copilot", route: "/engineering?copilot=scratch", aliasOf: "/programming-copilot", calibrateAs: { id: "engineering", variant: "open" },
     legacyMain: { desc: "ProgrammingCopilot card đầu (form sinh mã)", pick: (rs) => rs.filter((r) => /ProgrammingCopilot\.tsx/.test(r.loc || "") && r.kind === "card" && r.depth === 0).slice(0, 1) },
     actions: [] },
-  { n: 11, id: "fleet-orchestration", route: "/fleet-orchestration",
+  // Đợt 3 Task 5 ([QĐ-3b], khuôn R-2-x): Fleet dời sang nhóm Labs — CÙNG trang, chỉ đổi đường dẫn. `route` = route mới;
+  // `aliasOf` = URL cũ (nay chỉ chuyển hướng giữ query). Không `calibrateAs`/`movedFrom`: id, MAIN (`data-layout-main=
+  // "fleet-orchestration"`) và bản ghi hiệu chuẩn `fleet-orchestration|vw|n/a` là CỦA CHÍNH trang này ⇒ so lại như mọi lần
+  // chạy (lệch ⇒ LỖI). TRƯỚC/SAU CÙNG LOẠI (cùng trang); khác duy nhất là breadcrumb top bar (… › Labs — thử nghiệm › …).
+  { n: 11, id: "fleet-orchestration", route: "/labs/fleet-orchestration", aliasOf: "/fleet-orchestration",
     legacyMain: { desc: "FleetOrchestration tabs-content đang mở", fn: (r) => /FleetOrchestration\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
     actions: [] },
   { n: 12, id: "safety-workforce", route: "/safety-workforce",
