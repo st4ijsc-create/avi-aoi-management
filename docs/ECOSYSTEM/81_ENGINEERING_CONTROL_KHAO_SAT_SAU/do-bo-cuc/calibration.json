@@ -843,6 +843,54 @@
     "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
     "gitHead": "85c225399"
    }
+  },
+  "production-shifts|1600|n/a": {
+   "screen": "production-shifts",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 936
+    }
+   ],
+   "areaPx": 876096,
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+   "gitHead": "6b9c026af",
+   "gitDirty": [
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-05T09:30:28.476Z",
+   "fromReference": {
+    "parentElement": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx"
+   }
+  },
+  "production-shifts|1366|n/a": {
+   "screen": "production-shifts",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 742,
+     "h": 827
+    }
+   ],
+   "areaPx": 613634,
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+   "gitHead": "6b9c026af",
+   "gitDirty": [
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-05T09:30:28.477Z",
+   "fromReference": {
+    "parentElement": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx"
+   }
   }
  }
 }

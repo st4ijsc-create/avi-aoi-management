@@ -145,6 +145,12 @@ export const SCREENS = [
   { n: 14.5, id: "vision-acquisition", route: "/vision/acquisition", aliasOf: "/equipment-integration?tab=acquisition", movedFrom: "equipment-integration",
     legacyMain: { desc: "VisionAcquisition: FE1 chưa từng đo — không có selector cũ (thiếu attribute ⇒ không thấy MAIN)", fn: () => false },
     actions: [{ id: "khoi-dong-worker", label: /Khởi động worker/ }] },
+  // Đợt 3 Task 3 (doc 81 §11 "Đã chốt" 2026-10-05) — bảng nhân lực dời sang Sản xuất › Ca. Bước 1 (R-2-k): đo TRƯỚC khi
+  // dời, trên CHÍNH tab `?tab=workforce` của Safety (`tabOf`: bản ghi riêng, chỉ ghi được khi attribute trùng phần tử đã
+  // hiệu chuẩn của Safety). Bước 2 đổi `route` sang trang mới — README "Màn dời ra trang riêng".
+  { n: 12.5, id: "production-shifts", route: "/safety-workforce?tab=workforce", tabOf: "safety-workforce",
+    legacyMain: { desc: "SafetyWorkforce tabs-content đang mở", fn: (r) => /SafetyWorkforce\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
+    actions: [{ id: "phan-cong", label: /^Phân công$/ }] },
 ];
 
 /** FE1 §0 (docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/FE1_DO_BO_CUC_THEO_VUNG_14_MAN.md), :3000 dist, engineer1, 2026-09-26. */
@@ -255,6 +261,10 @@ KNOWN_PROCS["vision-acquisition"] = [
   ...KNOWN_PROCS["equipment-integration"].filter((p) => !p.startsWith("equipmentIntegration.") && p !== "machine.list"),
   "visionAdapter.acquisitionWorkerStatus", "visionAdapter.listAcquisitionSources",
 ].sort();
+
+// Đợt 3 Task 3 — tab nhân lực của Safety (bước 1): CÙNG trang Safety ⇒ đọc đúng những gì Safety đọc.
+PAGE_TABLES["production-shifts"] = PAGE_TABLES["safety-workforce"];
+KNOWN_PROCS["production-shifts"] = KNOWN_PROCS["safety-workforce"];
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 
