@@ -136,6 +136,12 @@ export const SCREENS = [
   { n: 14, id: "equipment-integration", route: "/equipment-integration",
     legacyMain: { desc: "EquipmentIntegration tabs-content đang mở", fn: (r) => /EquipmentIntegration\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
     actions: [] },
+  // Đợt 3 Task 2 (doc 81 §11 "Đã chốt" 2026-10-05) — worker thu ảnh dời sang trang riêng Vision › Thu ảnh. Bước 1 (R-2-k):
+  // đo TRƯỚC khi dời, trên CHÍNH tab `?tab=acquisition` của Integration (`tabOf`: bản ghi riêng, chỉ ghi được khi attribute
+  // trùng phần tử đã hiệu chuẩn của Integration). Bước 2 đổi `route` sang trang mới — README "Màn dời ra trang riêng".
+  { n: 14.5, id: "vision-acquisition", route: "/equipment-integration?tab=acquisition", tabOf: "equipment-integration",
+    legacyMain: { desc: "EquipmentIntegration tabs-content đang mở", fn: (r) => /EquipmentIntegration\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
+    actions: [{ id: "khoi-dong-worker", label: /Khởi động worker/ }] },
 ];
 
 /** FE1 §0 (docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/FE1_DO_BO_CUC_THEO_VUNG_14_MAN.md), :3000 dist, engineer1, 2026-09-26. */
@@ -237,6 +243,10 @@ KNOWN_PROCS["programming-copilot"] = [...new Set([...KNOWN_PROCS["programming-co
 // final wave (I-4) — tab cảnh báo của Standards là CÙNG trang: đọc đúng những gì trang Standards đọc.
 PAGE_TABLES["equipment-standards-alarms"] = PAGE_TABLES["equipment-standards"];
 KNOWN_PROCS["equipment-standards-alarms"] = KNOWN_PROCS["equipment-standards"];
+// Đợt 3 Task 2 — tab thu ảnh của Integration: đọc những gì Integration đọc + hai thủ tục visionAdapter (trạng thái worker
+// và loại nguồn — bộ nhớ của server, không bảng DB nào).
+PAGE_TABLES["vision-acquisition"] = PAGE_TABLES["equipment-integration"];
+KNOWN_PROCS["vision-acquisition"] = [...KNOWN_PROCS["equipment-integration"], "visionAdapter.acquisitionWorkerStatus", "visionAdapter.listAcquisitionSources"].sort();
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 

@@ -793,6 +793,54 @@
     "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
     "gitHead": "d1ff678b2"
    }
+  },
+  "vision-acquisition|1600|n/a": {
+   "screen": "vision-acquisition",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 196
+    }
+   ],
+   "areaPx": 252448,
+   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+   "gitHead": "85c225399",
+   "gitDirty": [
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-05T07:24:51.543Z",
+   "fromReference": {
+    "parentElement": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx"
+   }
+  },
+  "vision-acquisition|1366|n/a": {
+   "screen": "vision-acquisition",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 196
+    }
+   ],
+   "areaPx": 206584,
+   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+   "gitHead": "85c225399",
+   "gitDirty": [
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-05T07:24:51.543Z",
+   "fromReference": {
+    "parentElement": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx"
+   }
   }
  }
 }
