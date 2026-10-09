@@ -23,14 +23,15 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, isNull, and, or, inArray, asc, sql, type SQL } from "drizzle-orm";
 import { router, moduleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { collaborationSessions, operatorAssignments } from "../../drizzle/schema";
+import { collaborationSessions, operatorAssignments, shiftConfigs, factories, workshops, productionLines, stations, users } from "../../drizzle/schema";
+import { idsTrongPhamVi } from "../db/hierarchy";
 import {
   safetyAuditEnabled,
   record as recordSafetyEvent,
@@ -66,12 +67,188 @@ import {
 } from "../services/safety/plc/safetyPlcAdapter";
 // doc 80 Đợt 1 Task 4 (SAF-02) — read-only source-health report for the Safety page.
 import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
-import { phamViCua } from "./_phamViNguoiXem";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { resolveTenantFactoryScope } from "../db/reportAggregators";
 
 async function db() {
   const d = await getDb();
   if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
+}
+
+type FactoryScope = number[] | null;
+
+/** Phạm vi nhà máy của người gọi (`null` = không lọc: admin / vai toàn quyền). */
+async function callerFactoryScope(ctx: CoDanhTinh): Promise<FactoryScope> {
+  return (await resolveTenantFactoryScope(phamViCua(ctx))).factoryIds;
+}
+const inFactoryScope = (scope: FactoryScope, factoryId: number): boolean => scope === null || scope.includes(factoryId);
+
+/**
+ * doc 81 Đợt 3b final wave (post-review, chủ dự án duyệt) — MỘT luật "nhà máy của phân công" cho CẢ đọc (lọc hàng, soát hàng
+ * đích) lẫn ghi (kiểm ca ⇄ nhà máy, đóng dấu `factoryId`): CHUYỀN (`production_lines` → `workshops.factoryId`) › TRẠM
+ * (`stations` → chuyền → xưởng) › cột/ô `factoryId`. Vị trí VẬT LÝ là sự thật; cột `factoryId` chỉ là dự phòng khi không có
+ * chuyền/trạm (hay id của chúng không còn). Trước: đọc = factoryId › chuyền › trạm, ghi = chuyền › trạm › factoryId ⇒ hàng cũ có
+ * factoryId lệch chuyền bị xếp nhà máy khác nhau giữa đọc và ghi. NULL = mồ côi (không bậc nào ra).
+ */
+function assignmentFactorySql(line: SQL | typeof operatorAssignments.lineId, station: SQL | typeof operatorAssignments.stationId, factory: SQL | typeof operatorAssignments.factoryId): SQL {
+  return sql`COALESCE(
+  (SELECT w."factoryId" FROM production_lines l JOIN workshops w ON w."id" = l."workshopId" WHERE l."id" = ${line}),
+  (SELECT w."factoryId" FROM stations s JOIN production_lines l ON l."id" = s."lineId" JOIN workshops w ON w."id" = l."workshopId"
+    WHERE s."id" = ${station}),
+  ${factory}
+)`;
+}
+/** Nhà máy của một HÀNG phân công (luật ở trên, trên chính các cột của hàng). */
+const ASSIGNMENT_FACTORY_SQL = assignmentFactorySql(operatorAssignments.lineId, operatorAssignments.stationId, operatorAssignments.factoryId);
+
+/**
+ * Nhà máy của một phân công SẮP ghi (input) — CÙNG `assignmentFactorySql`. Gọi SAU `assertAssignmentInputsInScope` (với
+ * người bị thu hẹp mọi id đã TRONG phạm vi). `assignableShifts` (chỉ đọc, không soát input) tự bỏ chuyền/trạm ngoài phạm vi
+ * trước khi gọi — ngoài phạm vi ≡ không tồn tại.
+ */
+async function assignmentFactoryId(input: { lineId?: number | null; stationId?: number | null; factoryId?: number | null }): Promise<number | null> {
+  const d = await db();
+  const p = (v: number | null | undefined) => sql`${v ?? null}::int`;
+  const [r] = (await d.execute(sql`SELECT ${assignmentFactorySql(p(input.lineId), p(input.stationId), p(input.factoryId))} AS "f"`)) as unknown as Array<{ f: number | string | null }>;
+  return r?.f == null ? null : Number(r.f);
+}
+
+/**
+ * doc 81 Đợt 3b final wave (rà soát bảo mật) — nhà máy GHI vào hàng phân công mới: `assignmentFactoryId` (CÙNG luật đọc) ›
+ * phạm vi người gọi đúng MỘT nhà máy ⇒ nhà máy đó › `null` (người không lọc — admin — thấy mọi hàng). Nhờ vậy người bị thu
+ * hẹp thấy lại được chính phân công mình vừa tạo khi `listAssignments` lọc theo phạm vi.
+ */
+async function stampAssignmentFactory(
+  input: { lineId?: number | null; stationId?: number | null; factoryId?: number | null },
+  scope: FactoryScope,
+): Promise<number | null> {
+  const fac = await assignmentFactoryId(input);
+  if (fac != null) return fac;
+  if (scope !== null && scope.length === 1) return scope[0];
+  // post-review (3): phạm vi NHIỀU nhà máy mà không chỉ ra nhà máy (chuyền / trạm / factoryId) ⇒ hàng tạo ra mồ côi, chính người
+  // tạo cũng không thấy lại (lọc phạm vi loại hàng mồ côi) ⇒ đòi nhà máy, TRƯỚC khi ghi gì.
+  if (scope !== null && scope.length > 1) {
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "factoryId", reason: "factoryRequired" }, "Pick a factory, line or station for this assignment");
+  }
+  return null;
+}
+
+function assignmentScopeCond(scope: FactoryScope): SQL | undefined {
+  if (scope === null) return undefined;
+  if (scope.length === 0) return sql`false`;
+  return inArray(ASSIGNMENT_FACTORY_SQL, scope);
+}
+/** Phân công `id` tồn tại VÀ trong phạm vi người gọi (ngoài phạm vi ≡ không tồn tại). */
+async function assignmentVisible(id: number, scope: FactoryScope): Promise<boolean> {
+  const d = await db();
+  const cond = assignmentScopeCond(scope);
+  const rows = await d
+    .select({ id: operatorAssignments.id })
+    .from(operatorAssignments)
+    .where(cond ? and(eq(operatorAssignments.id, id), cond) : eq(operatorAssignments.id, id))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * doc 81 Đợt 3b final wave (rà soát bảo mật — vượt phạm vi khi GHI). Trước: `assignOperator`/`reassignOperator` ghi BẤT KỲ id
+ * người vận hành / chuyền / trạm / nhà máy (bảng không FK, không kiểm phạm vi) ⇒ người nhà máy A tạo/chuyển được phân công
+ * lên nhân sự, chuyền, trạm của nhà máy B. Nay mỗi id phải TỒN TẠI và TRONG PHẠM VI người gọi; ngoài phạm vi ⇒ CÙNG lỗi như id
+ * không tồn tại (ENTITY_NOT_FOUND cùng `entity`, câu KHÔNG vọng id). Dùng helper phạm vi CHUNG: `idsTrongPhamVi` (chuyền/trạm,
+ * cùng safetySourceHealth / mqtt) và `resolveTenantFactoryScope` (nhà máy; người vận hành = phạm vi của CHÍNH người đó giao với
+ * phạm vi người gọi — người không lọc như admin được coi là toàn hệ thống). Người gọi không lọc (admin) ⇒ chỉ đòi TỒN TẠI.
+ */
+async function assertAssignmentInputsInScope(
+  input: { operatorId: number; lineId?: number | null; stationId?: number | null; factoryId?: number | null },
+  ctx: CoDanhTinh,
+  scope: FactoryScope,
+): Promise<void> {
+  const d = await db();
+  // Mã lỗi viết LITERAL từng chỗ (appErrorParamsCoverage đọc được `entity` — không đi qua biến).
+  const [op] = await d
+    .select({ id: users.id, role: users.role, isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, input.operatorId))
+    .limit(1);
+  let opOk = !!op && op.isActive;
+  if (opOk && scope !== null) {
+    const opScope = (await resolveTenantFactoryScope({ userId: op!.id, userRole: op!.role })).factoryIds;
+    opOk = opScope === null || opScope.some((f) => scope.includes(f));
+  }
+  if (!opOk) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "Operator not found");
+  for (const [cap, id] of [
+    ["line", input.lineId],
+    ["station", input.stationId],
+  ] as const) {
+    if (id == null) continue;
+    let ok: boolean;
+    if (scope === null) {
+      const t = cap === "line" ? productionLines : stations;
+      ok = (await d.select({ id: t.id }).from(t).where(eq(t.id, id)).limit(1)).length > 0;
+    } else {
+      ok = ((await idsTrongPhamVi(cap, phamViCua(ctx))) ?? []).includes(id);
+    }
+    if (!ok && cap === "line") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
+    if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+  }
+  if (input.factoryId != null) {
+    const ok =
+      scope === null
+        ? (await d.select({ id: factories.id }).from(factories).where(eq(factories.id, input.factoryId)).limit(1)).length > 0
+        : scope.includes(input.factoryId);
+    if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+  }
+}
+
+/**
+ * doc 81 Đợt 3b Task 1 (doc 81 §12 "Đã chốt 2026-10-06") — ca gắn vào phân công (`shiftConfigId`, TUỲ CHỌN) phải:
+ *   1. TỒN TẠI trong `shift_configs`;
+ *   2. nằm TRONG PHẠM VI người gọi — ca toàn hệ thống (`factoryId IS NULL`, như `getShiftConfigs`) thuộc mọi phạm vi; ca của
+ *      một nhà máy chỉ khi nhà máy đó thuộc `resolveTenantFactoryScope(phamViCua(ctx))` (admin/không lọc ⇒ `null` ⇒ mọi ca).
+ *      Ngoài phạm vi ⇒ CÙNG lỗi như id không tồn tại (không lộ sự tồn tại của ca nhà máy khác);
+ *   3. (final wave I2) ca của MỘT nhà máy chỉ khi phân công thuộc CÙNG nhà máy (`assignmentFactoryId`: chuyền › trạm ›
+ *      `factoryId`, chỉ bậc TRONG phạm vi; không rõ ⇒ không kiểm) ⇒ INVALID_VALUE `shiftFactoryMismatch`. Kiểm sau (2);
+ *      câu lỗi KHÔNG vọng id nhà máy nào;
+ *   4. ĐANG HOẠT ĐỘNG (`isActive`).
+ * Bỏ ca ⇒ không kiểm gì, hành vi y như trước. Gọi SAU cổng cờ nhân lực (thứ tự cổng cũ không đổi) và TRƯỚC khi ghi (phân
+ * công lại với ca sai không huỷ phân công cũ).
+ */
+async function assertAssignableShift(
+  shiftConfigId: number | null | undefined,
+  scope: FactoryScope,
+  target: { lineId?: number | null; stationId?: number | null; factoryId?: number | null } = {},
+): Promise<void> {
+  if (shiftConfigId == null) return;
+  const d = await db();
+  const [ca] = await d
+    .select({ id: shiftConfigs.id, factoryId: shiftConfigs.factoryId, isActive: shiftConfigs.isActive })
+    .from(shiftConfigs)
+    .where(eq(shiftConfigs.id, shiftConfigId))
+    .limit(1);
+  const inScope = !!ca && (ca.factoryId == null || inFactoryScope(scope, ca.factoryId));
+  if (!ca || !inScope) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "shiftConfig" }, `Shift ${shiftConfigId} not found`);
+  }
+  if (ca.factoryId != null) {
+    const fac = await assignmentFactoryId(target);
+    if (fac != null && fac !== ca.factoryId) {
+      throw appError(
+        "BAD_REQUEST",
+        "INVALID_VALUE",
+        { field: "shiftConfigId", reason: "shiftFactoryMismatch" },
+        "The shift belongs to a different factory than the assignment",
+      );
+    }
+  }
+  if (!ca.isActive) {
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "shiftConfigId", reason: "shiftInactive" },
+      `Shift ${shiftConfigId} is inactive`,
+    );
+  }
 }
 
 function requireSafetyFlag() {
@@ -666,16 +843,26 @@ export const safetyRouter = router({
           operatorId: z.number().int().positive().optional(),
           status: z.enum(["planned", "active", "completed", "cancelled"]).optional(),
           stationId: z.number().int().positive().optional(),
+          // doc 81 Đợt 3b Task 1 — lọc ca TRONG SQL (trước `limit`): số = đúng ca đó; `null` = chưa gắn ca (IS NULL);
+          // vắng = không lọc (hành vi `{status, limit}` cũ).
+          shiftConfigId: z.number().int().positive().nullable().optional(),
           limit: z.number().int().min(1).max(500).default(200),
         })
         .optional(),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
       const conds = [];
+      // doc 81 Đợt 3b final wave (rà soát bảo mật): trước — KHÔNG lọc phạm vi (nợ phamViDocBaseline) ⇒ người bị thu hẹp đọc
+      // được phân công mọi nhà máy, và bộ lọc ca mới cho phép dò theo id ca của nhà máy khác. Nay chỉ hàng có nhà máy (factoryId
+      // › chuyền › trạm) TRONG phạm vi; mồ côi bị loại (fail-closed); admin/không lọc ⇒ như cũ.
+      const scopeCond = assignmentScopeCond(await callerFactoryScope(ctx));
+      if (scopeCond) conds.push(scopeCond);
       if (input?.operatorId != null) conds.push(eq(operatorAssignments.operatorId, input.operatorId));
       if (input?.status) conds.push(eq(operatorAssignments.status, input.status));
       if (input?.stationId != null) conds.push(eq(operatorAssignments.stationId, input.stationId));
+      if (input?.shiftConfigId === null) conds.push(isNull(operatorAssignments.shiftConfigId));
+      else if (input?.shiftConfigId != null) conds.push(eq(operatorAssignments.shiftConfigId, input.shiftConfigId));
       // build where lazily to keep the and()-of-conds pattern consistent
       const { and } = await import("drizzle-orm");
       return d
@@ -684,6 +871,54 @@ export const safetyRouter = router({
         .where(conds.length ? and(...conds) : undefined)
         .orderBy(desc(operatorAssignments.assignedStart))
         .limit(input?.limit ?? 200);
+    }),
+
+  /**
+   * doc 81 Đợt 3b final wave (I2) — ca cho bộ chọn của sheet phân công: ĐANG HOẠT ĐỘNG, TRONG PHẠM VI người gọi (ca toàn hệ
+   * thống thuộc mọi phạm vi — cùng luật `assertAssignableShift`) và, khi đã chọn chuyền/trạm, chỉ ca của NHÀ MÁY chuyền/trạm
+   * đó (+ toàn hệ thống). Kèm tên nhà máy để nhãn phân biệt ca trùng tên giữa các nhà máy. Chỉ đọc.
+   */
+  assignableShifts: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z
+        .object({
+          lineId: z.number().int().positive().optional(),
+          stationId: z.number().int().positive().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input, ctx }) => {
+      const d = await db();
+      const factoryIds = await callerFactoryScope(ctx);
+      // chuyền/trạm ngoài phạm vi ⇒ bỏ qua Y NHƯ không tồn tại (không lộ chuyền đó có thật / thuộc nhà máy nào), rồi CÙNG
+      // luật nhà máy của phân công (post-review).
+      const inScope = async (cap: "line" | "station", id: number | undefined) =>
+        id == null || factoryIds === null ? id : ((await idsTrongPhamVi(cap, phamViCua(ctx))) ?? []).includes(id) ? id : undefined;
+      const target = await assignmentFactoryId({ lineId: await inScope("line", input?.lineId), stationId: await inScope("station", input?.stationId) });
+      const conds = [eq(shiftConfigs.isActive, true)];
+      if (factoryIds !== null) {
+        conds.push(factoryIds.length ? or(isNull(shiftConfigs.factoryId), inArray(shiftConfigs.factoryId, factoryIds))! : isNull(shiftConfigs.factoryId));
+      }
+      if (target != null) conds.push(or(isNull(shiftConfigs.factoryId), eq(shiftConfigs.factoryId, target))!);
+      return d
+        .select({
+          id: shiftConfigs.id,
+          factoryId: shiftConfigs.factoryId,
+          factoryName: factories.name,
+          name: shiftConfigs.name,
+          code: shiftConfigs.code,
+          startHour: shiftConfigs.startHour,
+          startMinute: shiftConfigs.startMinute,
+          endHour: shiftConfigs.endHour,
+          endMinute: shiftConfigs.endMinute,
+          isActive: shiftConfigs.isActive,
+          orderIndex: shiftConfigs.orderIndex,
+        })
+        .from(shiftConfigs)
+        .leftJoin(factories, eq(factories.id, shiftConfigs.factoryId))
+        .where(and(...conds))
+        .orderBy(asc(shiftConfigs.orderIndex), asc(shiftConfigs.id));
     }),
 
   assignOperator: protectedProcedure
@@ -704,11 +939,16 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
-      const r = await assignOperator(input);
+      const scope = await callerFactoryScope(ctx);
+      await assertAssignmentInputsInScope(input, ctx, scope);
+      await assertAssignableShift(input.shiftConfigId, scope, input);
+      // final wave (rà soát bảo mật): ghi nhà máy của phân công (để người tạo — bị thu hẹp — thấy lại được nó).
+      const r = await assignOperator({ ...input, factoryId: (await stampAssignmentFactory(input, scope)) ?? undefined });
       if (!r.ok && r.conflict) {
-        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignSafetyOperator" }, `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})`);
+        // final wave (rà soát bảo mật): KHÔNG vọng id phân công đụng lịch — nó có thể thuộc nhà máy khác.
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignSafetyOperator" }, `Double-booking: ${r.conflict.reason}`);
       }
       return r;
     }),
@@ -732,12 +972,20 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      const scope = await callerFactoryScope(ctx);
+      await assertAssignmentInputsInScope(input, ctx, scope);
+      await assertAssignableShift(input.shiftConfigId, scope, input);
       const { assignmentId, ...rest } = input;
-      const r = await reassignOperator(assignmentId, rest);
+      // final wave (rà soát bảo mật): phân công NGOÀI phạm vi ⇒ Y HỆT không tồn tại (cùng kết quả của workforceService), không
+      // huỷ hàng của nhà máy khác.
+      if (!(await assignmentVisible(assignmentId, scope))) {
+        return { ok: false, enabled: true, message: `assignment ${assignmentId} not found` };
+      }
+      const r = await reassignOperator(assignmentId, { ...rest, factoryId: (await stampAssignmentFactory(rest, scope)) ?? undefined });
       if (!r.ok && r.conflict) {
-        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "reassignSafetyOperator" }, `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})`);
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "reassignSafetyOperator" }, `Double-booking: ${r.conflict.reason}`);
       }
       return r;
     }),
@@ -747,6 +995,10 @@ export const safetyRouter = router({
     .input(z.object({ assignmentId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      // final wave (rà soát bảo mật): ngoài phạm vi ⇒ CÙNG lỗi như không tồn tại (trước: xác nhận được + trả nguyên hàng).
+      if (!(await assignmentVisible(input.assignmentId, await callerFactoryScope(ctx)))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workforceAssignment" }, `Assignment ${input.assignmentId} not found`);
+      }
       const row = await confirmAssignment(input.assignmentId, ctx.user.id);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workforceAssignment" }, `Assignment ${input.assignmentId} not found`);
       return row;
@@ -757,6 +1009,9 @@ export const safetyRouter = router({
     .input(z.object({ assignmentId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
+      if (!(await assignmentVisible(input.assignmentId, await callerFactoryScope(ctx)))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workforceAssignment" }, `Assignment ${input.assignmentId} not found`);
+      }
       const row = await closeAssignment(input.assignmentId, ctx.user.id);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workforceAssignment" }, `Assignment ${input.assignmentId} not found`);
       return row;

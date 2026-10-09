@@ -38,7 +38,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeaderCompact, NoticeChip, FeatureStatusNoticeChip, StatusBadge } from "@/components/patterns";
+import { PageHeaderCompact, NoticeChip, NoticeStack, featureStatusNoticeItem, StatusBadge, type NoticeItem } from "@/components/patterns";
 import { EngineeringShell } from "@/components/engineering/shell";
 import { deriveFeatureStatus } from "@/components/common/FeatureStatusGate";
 import { Button } from "@/components/ui/button";
@@ -1290,6 +1290,88 @@ export default function IrEditor() {
       : t("ir.kpi.unreadable", "Unreadable");
   const flowFieldId = (k: string) => `ir-flow-meta-${k}`;
 
+  // Đợt 3b Task 2 fix 1 — các chip của top bar dưới dạng NoticeItem (nội dung/điều kiện như chip đứng riêng cũ).
+  const lintLabelText = lintOk
+    ? t("ir.lintOk", "Lint OK")
+    : t("ir.lintErrors", "{{n}} error(s)", { n: errorCount });
+  const lintText = `${lintLabelText}${warnCount > 0 ? ` · ${t("ir.lintWarns", "{{n}} warn", { n: warnCount })}` : ""}`;
+  const lintNotice: NoticeItem =
+    lintView.reason === "loading"
+      ? { id: "lint", kind: "loading", testId: "ir-lint-chip", label: t("ir.linting", "Linting…"), content: <p>{t("ir.linting", "Linting…")}</p> }
+      : lintView.reason === "error"
+        ? {
+            id: "lint",
+            kind: "honesty",
+            testId: "ir-lint-chip",
+            label: t("ir.lintUnreadable", "Lint unreadable"),
+            content: <p>{lintLockReason ?? t("ir.lintUnreadable", "Lint unreadable")}</p>,
+          }
+        : { id: "lint", kind: lintOk ? "status" : "error", testId: "ir-lint-chip", label: lintText, content: <p>{lintText}</p> };
+  const irHeaderNotices: Array<NoticeItem | null> = [
+    // Banner cờ tắt cũ ⇒ chip 4 trạng thái (câu cũ trong popover).
+    // doc 81 Đợt 3b final wave (I1): cờ IR khi KHÔNG "on" GHIM ⇒ header hẹp không gộp nó vào "+N" cùng metadata/lint.
+    featureStatusNoticeItem(t, {
+      id: "ir-flag",
+      pinned: true,
+      status: flagStatus,
+      offMessage: t("ir.flagOffBanner", "Preview mode: IR programming is turned off on the server. Authoring, lint and transpile preview work; Save flow / Request build are blocked until an administrator turns it on."),
+    }),
+    // Thẻ metadata luồng cũ (4 ô) ⇒ chip gọn mở popover cùng 4 ô (doc 81 §1.2 "toolbar metadata").
+    {
+      id: "flow-meta",
+      kind: "meta",
+      testId: "ir-flow-meta",
+      label: (
+        <span title={t("ir.ws.flowMeta", "Flow properties")}>
+          <span className="font-mono">{flow.flow_id || "—"}</span>
+          <span className="text-muted-foreground"> · v{flow.version} · {flow.target_device_type}</span>
+        </span>
+      ),
+      content: (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold">{t("ir.ws.flowMeta", "Flow properties")}</p>
+          <div className="space-y-1.5">
+            <Label htmlFor={flowFieldId("id")} className="text-xs">{t("ir.flowId", "Flow id")}</Label>
+            <Input id={flowFieldId("id")} className="h-8 font-mono" value={flow.flow_id} onChange={(e) => setFlow((f) => ({ ...f, flow_id: e.target.value }))} placeholder="pick-place-01" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={flowFieldId("device")} className="text-xs">{t("ir.targetDevice", "Target device type")}</Label>
+            <Select value={flow.target_device_type} onValueChange={(v) => setFlow((f) => ({ ...f, target_device_type: v as TargetDeviceType }))}>
+              <SelectTrigger id={flowFieldId("device")} className="h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>{TARGET_DEVICE_TYPES.map((dt) => <SelectItem key={dt} value={dt}>{dt}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <Label htmlFor={flowFieldId("version")} className="text-xs">{t("ir.version", "Version")}</Label>
+              <Input id={flowFieldId("version")} className="h-8" type="number" min={1} value={flow.version} onChange={(e) => setFlow((f) => ({ ...f, version: Math.max(1, Number(e.target.value) || 1) }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={flowFieldId("cap")} className="text-xs">{t("ir.linkedCapability", "Linked capability (optional)")}</Label>
+              <Input id={flowFieldId("cap")} className="h-8" value={flow.linked_capability ?? ""} onChange={(e) => setFlow((f) => ({ ...f, linked_capability: e.target.value || undefined }))} placeholder="pick_place" />
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    // Live lint indicator
+    lintNotice,
+    // W6-26 — "Khi nào dùng" + cross-link golden-thread (IR = motion/IO cấp thấp), trong popover.
+    {
+      id: "whenToUse",
+      kind: "whenToUse",
+      content: (
+        <>
+          <p className="text-sm">{t("ir.whenToUse", "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.")}</p>
+          {/* U1 — mang ?projectId theo project lưu đang chọn để trang đích mở đúng đối tượng. */}
+          <div className="mt-2 flex flex-wrap gap-3 text-xs">
+            <Link href={withParams("/engineering", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
+            <Link href={withParams("/pou-studio", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.pouStudio")}</Link>
+          </div>
+        </>
+      ),
+    },
+  ];
   // ═════ Top bar (PageHeaderCompact 48 px — R-2-t): metadata luồng · lint · cờ · Khi nào dùng │ Hoàn tác/Làm lại · đích lưu · Lưu ═════
   const header = (
     <PageHeaderCompact
@@ -1299,84 +1381,9 @@ export default function IrEditor() {
       chips={
         <>
           {!canControl && <ViewOnlyBadge module="machine_control" />}
-          {/* Banner cờ tắt cũ ⇒ chip 4 trạng thái (câu cũ trong popover). */}
-          <FeatureStatusNoticeChip
-            status={flagStatus}
-            offMessage={t("ir.flagOffBanner", "Preview mode: IR programming is turned off on the server. Authoring, lint and transpile preview work; Save flow / Request build are blocked until an administrator turns it on.")}
-          />
-          {/* Thẻ metadata luồng cũ (4 ô) ⇒ nút gọn trong top bar mở popover cùng 4 ô (doc 81 §1.2 "toolbar metadata"). */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                data-testid="ir-flow-meta"
-                title={t("ir.ws.flowMeta", "Flow properties")}
-                className="inline-flex h-7 max-w-[16rem] shrink-0 items-center gap-1 rounded-md border px-2 text-xs hover:bg-muted"
-              >
-                <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate font-mono">{flow.flow_id || "—"}</span>
-                <span className="shrink-0 text-muted-foreground">· v{flow.version} · {flow.target_device_type}</span>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-80 space-y-3">
-              <p className="text-xs font-semibold">{t("ir.ws.flowMeta", "Flow properties")}</p>
-              <div className="space-y-1.5">
-                <Label htmlFor={flowFieldId("id")} className="text-xs">{t("ir.flowId", "Flow id")}</Label>
-                <Input id={flowFieldId("id")} className="h-8 font-mono" value={flow.flow_id} onChange={(e) => setFlow((f) => ({ ...f, flow_id: e.target.value }))} placeholder="pick-place-01" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor={flowFieldId("device")} className="text-xs">{t("ir.targetDevice", "Target device type")}</Label>
-                <Select value={flow.target_device_type} onValueChange={(v) => setFlow((f) => ({ ...f, target_device_type: v as TargetDeviceType }))}>
-                  <SelectTrigger id={flowFieldId("device")} className="h-8"><SelectValue /></SelectTrigger>
-                  <SelectContent>{TARGET_DEVICE_TYPES.map((dt) => <SelectItem key={dt} value={dt}>{dt}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor={flowFieldId("version")} className="text-xs">{t("ir.version", "Version")}</Label>
-                  <Input id={flowFieldId("version")} className="h-8" type="number" min={1} value={flow.version} onChange={(e) => setFlow((f) => ({ ...f, version: Math.max(1, Number(e.target.value) || 1) }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={flowFieldId("cap")} className="text-xs">{t("ir.linkedCapability", "Linked capability (optional)")}</Label>
-                  <Input id={flowFieldId("cap")} className="h-8" value={flow.linked_capability ?? ""} onChange={(e) => setFlow((f) => ({ ...f, linked_capability: e.target.value || undefined }))} placeholder="pick_place" />
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-          {/* Live lint indicator */}
-          {lintView.reason === "loading" ? (
-            <Badge variant="outline" className="shrink-0 gap-1"><Loader2 className="h-3 w-3 animate-spin" /> {t("ir.linting", "Linting…")}</Badge>
-          ) : lintView.reason === "error" ? (
-            <StatusBadge
-              status="warning"
-              label={
-                <span className="inline-flex items-center gap-1" title={lintLockReason ?? undefined}>
-                  <AlertTriangle className="h-3 w-3" />
-                  {t("ir.lintUnreadable", "Lint unreadable")}
-                </span>
-              }
-            />
-          ) : (
-            <StatusBadge
-              status={lintOk ? "ok" : "error"}
-              label={
-                <span className="inline-flex items-center gap-1">
-                  <ShieldCheck className="h-3 w-3" />
-                  {lintOk ? t("ir.lintOk", "Lint OK") : t("ir.lintErrors", "{{n}} error(s)", { n: errorCount })}
-                  {warnCount > 0 ? ` · ${t("ir.lintWarns", "{{n}} warn", { n: warnCount })}` : ""}
-                </span>
-              }
-            />
-          )}
-          {/* W6-26 — "Khi nào dùng" + cross-link golden-thread (IR = motion/IO cấp thấp), trong popover. */}
-          <NoticeChip kind="whenToUse">
-            <p className="text-sm">{t("ir.whenToUse", "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.")}</p>
-            {/* U1 — mang ?projectId theo project lưu đang chọn để trang đích mở đúng đối tượng. */}
-            <div className="mt-2 flex flex-wrap gap-3 text-xs">
-              <Link href={withParams("/engineering", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
-              <Link href={withParams("/pou-studio", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.pouStudio")}</Link>
-            </div>
-          </NoticeChip>
+          {/* Đợt 3b Task 2 fix 1 (R-3b-b): chip cờ, metadata luồng, lint và "Khi nào dùng" vào MỘT NoticeStack (cùng nội dung,
+              cùng điều kiện; `data-testid` giữ) ⇒ header hẹp gộp được vào "+N" thay vì xuống dòng; lint LỖI / cờ LỖI vẫn hiện. */}
+          <NoticeStack maxVisible={4} items={irHeaderNotices} />
         </>
       }
       actions={

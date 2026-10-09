@@ -25,6 +25,7 @@ import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
+import { forceNarrowHeader } from "@/components/patterns/layoutKitTestHeaderFold";
 
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
 vi.mock("@/components/DashboardLayout", () => ({
@@ -349,6 +350,21 @@ describe("Recipes P3 — bố cục", () => {
     const header = document.querySelector("[data-layout-header]") as HTMLElement;
     await user.click(within(header).getByRole("button", { name: /Đẩy xuống máy qua HITL/ }));
     expect(await screen.findByText(/Triển khai chỉ cập nhật catalog \(kích hoạt phiên bản \+ ghi sổ\)/)).toBeTruthy();
+  });
+
+  // doc 81 Đợt 3b final wave (I1): ở 768/1024 px header GỘP — trước: notice HITL (an toàn) vào "+1" xám. Nay GHIM.
+  it("header HẸP (gộp) ⇒ chip HITL (an toàn) VẪN hiện thẳng, không vào '+N'", () => {
+    const restore = forceNarrowHeader();
+    try {
+      render(<RecipeManagement />);
+      const header = document.querySelector("[data-layout-header]") as HTMLElement;
+      expect(header.getAttribute("data-header-fit")).not.toBeNull();
+      const stack = header.querySelector("[data-notice-stack]") as HTMLElement;
+      expect(within(stack).getByRole("button", { name: /Đẩy xuống máy qua HITL/ })).toBeTruthy();
+      expect(stack.querySelector("[data-notice-more]")).toBeNull();
+    } finally {
+      restore();
+    }
   });
 
   it("chưa chọn mã: MAIN hiện sổ triển khai mọi máy (bảng) + gợi ý chọn mã; card 'Xem theo máy' không còn", () => {

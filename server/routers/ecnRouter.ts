@@ -47,7 +47,17 @@ import {
 import { ECN_CHANGE_TYPES, ECN_ITEM_ACTIONS, ECN_STATUSES } from "../../drizzle/schema/ecn";
 
 // Engineering-change decisions are made by quality / engineering leadership.
-// (2FA is enforced by roleProcedure's require2FA for privileged roles.)
+// The gate on `transition` is the ROLE FLOOR below (plus SoD + status CAS inside
+// transitionEcn). `roleProcedure` does NOT chain `require2FA` and there is no step-up
+// OTP here, so ECN approval itself never demands 2FA — owner decision 2026-10-06
+// (doc 81 §12): keep ECN approval without 2FA, 2FA is enabled manually per account.
+// doc 81 Đợt 3b final wave (minor 6) — two DIFFERENT 2FA mechanisms, neither on this path:
+//   • LOGIN 2FA (TOTP at sign-in) is a per-account opt-in (`two_factor_enabled`), independent
+//     of any deployment flag;
+//   • the deployment-wide setting `batBuoc2FA()` (AUTH_2FA_BAT_BUOC) only governs
+//     `adminProcedure`, `require2FA` and step-up gates (privileged roles must have 2FA set
+//     up) — and ECN `transition` uses none of them.
+// No behaviour change.
 // doc 81 Đợt 3 Task 4 fix 1 (R-3-e) — sàn vai xuất ra (chỉ đọc) để `engineering.assign` áp ĐÚNG sàn này cho ECN
 // thay vì chép một danh sách thứ hai. Hành vi của `transition` KHÔNG đổi.
 export const ECN_DECISION_ROLES = ["admin", "supervisor", "quality_inspector", "engineer"] as const;

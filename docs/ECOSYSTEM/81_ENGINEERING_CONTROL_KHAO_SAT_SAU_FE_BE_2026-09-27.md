@@ -599,3 +599,19 @@ Plan `docs/superpowers/plans/2026-10-05-engineering-control-dot3.md` thực hi�
 **Đã chốt (2026-10-06):** giữ ô "Sản xuất" mở được cho kỹ sư/bảo trì/người xem; **thêm chọn ca khi phân công + lọc ca phía server**; danh mục công cụ Hub ẩn Fleet khi Labs tắt (ghim cá nhân giữ nguyên); **sửa chip đầu trang 640–1023 px** (gộp vào "+N", chip nghiêm trọng vẫn ghim); **nối chuông thông báo với bảng notifications**; duyệt ECN **giữ không 2FA** (theo nguyên tắc 2FA bật thủ công) — sửa ghi chú sai trong mã; **thống nhất lưu trữ recipe cần xác nhận** ở cả Recipes và Integration; xoá 10 ECN rác của test cũ trong `_test` (đã xoá). Gộp Đợt 3 vào main + push; 6 việc trên làm ở **Đợt 3b**.
 
 **Còn mở:** danh sách người được giao giới hạn 300; tuỳ chọn "Hiện Labs" theo trình duyệt (chưa có kho tuỳ chọn người dùng phía server); canvas Causal chưa kiểm trên trình duyệt (người dùng thử không có quyền).
+
+### Đợt 3b (2026-10-06 → 10-09)
+
+Plan `docs/superpowers/plans/2026-10-06-engineering-control-dot3b.md` — 6 việc chủ dự án chốt 2026-10-06, không migration.
+- **Sản xuất › Ca:** phân công có thể gắn ca (tuỳ chọn; chỉ ca trong phạm vi người dùng và nhà máy của line đã chọn, ghi tên nhà máy); lọc ca chạy phía server trên toàn bộ dữ liệu.
+- **Hub:** danh mục công cụ ẩn Fleet khi Labs tắt (ghim cá nhân giữ nguyên, cảnh báo bế tắc vẫn luôn hiện).
+- **Đầu trang hẹp (640–1280 px):** hết chip bị cắt; chip thường gộp vào "+N" (mang màu nghiêm trọng nhất của chip bị ẩn), **thông tin an toàn luôn hiện** (tư thế Interlock, thông báo HITL của Recipes, cờ triển khai IDE/IR, giấy phép); từ 1024 px trở lên đầu trang ≤48 px, dưới đó 3 màn xuống dòng (IDE, Copilot scratch, Recipes ở 640 px).
+- **Lưu trữ recipe** cần xác nhận ở cả Recipes và Integration; ghi chú 2FA của duyệt ECN sửa cho đúng (không 2FA, không đổi hành vi).
+- **Chuông thông báo** đọc bảng `notifications` (chỉ của người đang đăng nhập, chỉ mở liên kết nội bộ, đánh dấu đã đọc/tất cả, theo ngôn ngữ app); sửa lỗi đếm chưa đọc trả về chuỗi.
+- **Bảo mật** (phát hiện của review tự động + review toàn nhánh): danh sách phân công nay theo phạm vi nhà máy; giao lại/xác nhận/đóng phân công nhà máy khác trả như "không tìm thấy"; giao việc từ chối operator/line/trạm/nhà máy ngoài phạm vi (lỗ **có từ trước**); người phụ trách nhiều nhà máy phải chọn nhà máy; **sửa lỗ chuyển hướng ra ngoài có từ trước** ở trang đăng nhập (`?next=`) và đăng nhập SAML (`redirect`/`RelayState`).
+- **Thước đo bố cục** tự gieo dữ liệu mẫu có đánh dấu trong `_test` và tự dọn (không còn phụ thuộc dữ liệu rác); theo dõi thêm bảng thông báo.
+- Kiểm: quét test chạm 1178/1179 (1 quá hạn khi chạy song song, chạy riêng 42/42); `tsc` sạch; mọi đột biến đỏ.
+
+**Đã chốt (2026-10-09):** phân công không gắn nhà máy — đếm trên dev: 2 hàng, 0 thiếu nhà máy, 0 lệch ⇒ không cần sửa dữ liệu; chip "Phù hợp tiêu chuẩn" không ghim; sửa chuyển hướng SAML trước khi gộp; gộp + push.
+
+**Còn mở:** tuỳ chọn tắt báo 1 giờ không còn xoá số trên chuông cho phần thông báo phía server; ca "đang chạy" lấy theo giờ trình duyệt, không theo múi giờ nhà máy; luồng ACS của SAML mới kiểm bằng đọc mã, chưa gọi HTTP thật.

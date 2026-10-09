@@ -22,8 +22,14 @@
  *
  * Thao tác (R-2-n — y hệt tab cũ): phân công / phân công lại = sheet, MỘT lượt gọi với cùng payload và kiểm tra; xác nhận =
  * MỘT cú bấm ⇒ `{assignmentId}`; đóng = AlertDialog ⇒ `{assignmentId}`. Mỗi thao tác làm mới ĐÚNG tập truy vấn như trang
- * cũ (`refetchAll` của Safety). Không thao tác hàng loạt. Bộ lọc ca CHỈ lọc phía client trên danh sách đã tải (200 phân
- * công mới nhất — như cũ); thủ tục và input không đổi.
+ * cũ (`refetchAll` của Safety). Không thao tác hàng loạt.
+ *
+ * Đợt 3b Task 1 (doc 81 §12 "Đã chốt 2026-10-06"):
+ *  - bộ lọc ca `?shift=` do SERVER lọc (`safety.listAssignments` nhận `shiftConfigId`: số = ca đó, `null` = "Chưa gắn ca");
+ *    vắng `?shift=` ⇒ input `{status, limit}` y như cũ. Cửa sổ 200 tính SAU khi lọc ⇒ bỏ câu gợi ý "≥200" của bộ lọc ca;
+ *  - sheet phân công / phân công lại có bộ chọn ca TUỲ CHỌN (payload thêm `shiftConfigId` — chủ dự án duyệt): chỉ ca đang
+ *    hoạt động; mặc định = ca có khung giờ chứa "bây giờ" nếu ĐÚNG MỘT ca khớp; phân công lại ưu tiên ca của phân công cũ
+ *    (nếu còn hoạt động). Không gắn ca ⇒ payload không có khoá ca (như cũ). Server kiểm ca tồn tại/hoạt động/trong phạm vi.
  */
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -72,6 +78,8 @@ type RouterOutputs = inferRouterOutputs<AppRouter>;
 type BoardStation = RouterOutputs["safety"]["currentBoard"][number];
 type Assignment = RouterOutputs["safety"]["listAssignments"][number];
 type ShiftConfig = RouterOutputs["shiftConfig"]["list"][number];
+/** final wave (I2) — ca cho bộ chọn của sheet: đang hoạt động, trong phạm vi, thuộc nhà máy của chuyền/trạm (server lọc). */
+type AssignableShift = RouterOutputs["safety"]["assignableShifts"][number];
 
 const ASSIGN_STATUSES = ["planned", "active", "completed", "cancelled"] as const;
 type AssignStatus = (typeof ASSIGN_STATUSES)[number];
@@ -120,13 +128,45 @@ export function shiftLabel(s: Pick<ShiftConfig, "name" | "code" | "startHour" | 
 
 const isTerminalAssignment = (a: Assignment) => a.status === "completed" || a.status === "cancelled";
 
-/** Lọc theo ca (phía client, trên danh sách đã tải): `null` ⇒ tất cả; `"none"` ⇒ chưa gắn ca; số ⇒ đúng ca đó. */
-export function filterByShift<T extends { shiftConfigId: number | null }>(rows: readonly T[], shift: string | null): T[] {
-  if (shift == null || shift === "") return [...rows];
-  if (shift === NO_SHIFT) return rows.filter((r) => r.shiftConfigId == null);
-  const id = Number(shift);
-  if (!Number.isInteger(id) || id <= 0) return [...rows];
-  return rows.filter((r) => r.shiftConfigId === id);
+/**
+ * Đợt 3b Task 1 — `?shift=` ⇒ phần input lọc ca của `safety.listAssignments` (server lọc trong SQL):
+ * vắng/rỗng ⇒ `{}` (input `{status, limit}` y như cũ); `"none"` ⇒ `{shiftConfigId: null}` (chưa gắn ca); id nguyên dương ⇒
+ * `{shiftConfigId: id}`; giá trị lạ ⇒ `{}` (không lọc — như bộ lọc client cũ).
+ */
+export function shiftFilterInput(shift: string | null): { shiftConfigId?: number | null } {
+  if (shift == null || shift === "") return {};
+  if (shift === NO_SHIFT) return { shiftConfigId: null };
+  if (!/^[1-9]\d*$/.test(shift)) return {};
+  return { shiftConfigId: Number(shift) };
+}
+
+type ShiftWindow = Pick<ShiftConfig, "startHour" | "startMinute" | "endHour" | "endMinute">;
+/** Khung giờ ca [đầu, cuối) có chứa `now` (giờ máy người dùng)? Cuối < đầu ⇒ ca qua đêm; đầu = cuối ⇒ ca 24 h. */
+export function shiftContains(s: ShiftWindow, now: Date): boolean {
+  const start = s.startHour * 60 + (s.startMinute ?? 0);
+  const end = s.endHour * 60 + (s.endMinute ?? 0);
+  const m = now.getHours() * 60 + now.getMinutes();
+  if (start === end) return true;
+  return start < end ? m >= start && m < end : m >= start || m < end;
+}
+/**
+ * doc 81 Đợt 3b final wave (I2) — nhãn ca trong bộ chọn: tập ca trải trên HƠN MỘT nhà máy (ca toàn hệ thống tính là một "nhà
+ * máy" riêng) ⇒ thêm " · <nhà máy>" để phân biệt ca trùng tên/giờ; một nhà máy ⇒ nhãn như cũ.
+ */
+export function assignableShiftLabels(
+  shifts: ReadonlyArray<AssignableShift>,
+  allFactories: string,
+): Map<number, string> {
+  const multi = new Set(shifts.map((s) => s.factoryId ?? null)).size > 1;
+  return new Map(
+    shifts.map((s) => [s.id, multi ? `${shiftLabel(s)} · ${s.factoryId == null ? allFactories : (s.factoryName ?? `#${s.factoryId}`)}` : shiftLabel(s)]),
+  );
+}
+
+/** Ca mặc định của sheet: ca ĐANG HOẠT ĐỘNG có khung chứa `now`, chỉ khi ĐÚNG MỘT ca khớp (0 hoặc ≥ 2 ⇒ `null`, không đoán). */
+export function defaultShiftId(shifts: ReadonlyArray<ShiftWindow & { id: number; isActive: boolean }>, now: Date): number | null {
+  const hits = shifts.filter((s) => s.isActive && shiftContains(s, now));
+  return hits.length === 1 ? hits[0].id : null;
 }
 
 type MutationErrorHandler = (e: { data?: { code?: string } | null; message: string }) => void;
@@ -151,7 +191,11 @@ export default function ProductionShifts() {
 
   // ── Reads (cùng thủ tục + input như tab cũ; thêm danh sách ca để lọc) ─────────────────────
   const statusQ = trpc.safety.status.useQuery(undefined, { enabled: canView });
-  const assignmentsQ = trpc.safety.listAssignments.useQuery({ status: statusFilter, limit: ASSIGN_LIMIT }, { enabled: canView });
+  // Đợt 3b Task 1 — lọc ca do server làm; vắng `?shift=` ⇒ input y như cũ `{status, limit}`.
+  const assignmentsQ = trpc.safety.listAssignments.useQuery(
+    { status: statusFilter, ...shiftFilterInput(shiftParam), limit: ASSIGN_LIMIT },
+    { enabled: canView },
+  );
   const boardQ = trpc.safety.currentBoard.useQuery(undefined, { enabled: canView });
   const shiftsQ = trpc.shiftConfig.list.useQuery(undefined, { enabled: canView });
 
@@ -159,7 +203,7 @@ export default function ProductionShifts() {
   const board = (boardQ.data ?? []) as BoardStation[];
   const shifts = (shiftsQ.data ?? []) as ShiftConfig[];
   const shiftById = useMemo(() => new Map(shifts.map((s) => [s.id, s])), [shifts]);
-  const rows = useMemo(() => filterByShift(assignments, shiftParam), [assignments, shiftParam]);
+  const rows = assignments;
 
   const workforceStatus = deriveFeatureStatus(statusQ, (d: { workforce?: boolean }) => d.workforce);
   const workforceUnsettled = isFeatureStatusUnsettled(workforceStatus);
@@ -382,13 +426,9 @@ export default function ProductionShifts() {
               <AssignmentsTable
                 rows={rows}
                 emptyHint={
-                  // Final wave (Task 3 FINAL-WAVE) — bộ lọc ca chỉ lọc trên 200 phân công MỚI NHẤT đã tải: lọc ra rỗng khi cửa sổ
-                  // đã đầy ⇒ nói rõ phân công cũ hơn của ca này không hiện ở đây (không để bảng rỗng như "ca không có ai").
-                  shiftParam != null && shiftParam !== ""
-                    ? assignments.length >= ASSIGN_LIMIT
-                      ? t("shifts.emptyForShiftWindow", { limit: ASSIGN_LIMIT, defaultValue: "No assignments for this shift among the latest {{limit}} loaded — older assignments of this shift are not shown here." })
-                      : t("shifts.emptyForShift", "No assignments for this shift.")
-                    : undefined
+                  // Đợt 3b Task 1 — server lọc ca TRƯỚC cửa sổ 200 ⇒ bảng rỗng khi lọc ca nghĩa là ca này thật sự không có phân
+                  // công (theo trạng thái đang lọc) — câu gợi ý "trong 200 mới nhất" của Final wave Đợt 3 không còn đúng, đã bỏ.
+                  shiftParam != null && shiftParam !== "" ? t("shifts.emptyForShift", "No assignments for this shift.") : undefined
                 }
                 loading={assignmentsQ.isLoading}
                 error={assignmentsQ.isError}
@@ -688,6 +728,14 @@ type AssignmentFormValue = {
   lineId?: number;
   stationId?: number;
   skillLevel?: string;
+  /** Đợt 3b Task 1 — TUỲ CHỌN; vắng ⇒ payload như cũ (server không kiểm gì). */
+  shiftConfigId?: number;
+};
+
+/** Ô nhập id (chuyền/trạm) ⇒ số nguyên dương, hoặc `undefined` (trống/sai) — cùng luật với payload gửi đi. */
+const positiveIntOrUndef = (v: string): number | undefined => {
+  const n = v ? Number(v) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : undefined;
 };
 
 function AssignmentForm({
@@ -701,6 +749,10 @@ function AssignmentForm({
   const { t } = useTranslation();
   const { layer, done } = useCloseOwnLayer();
   const uid = useId();
+  // Đợt 3b Task 1 — bộ chọn ca: chỉ ca đang hoạt động (server từ chối ca tắt). "Bây giờ" chốt lúc mở sheet (không nhảy ca
+  // khi sheet đang mở qua mốc giờ). Mặc định: ca của phân công cũ (phân công lại, nếu còn hoạt động) › ca chứa "bây giờ" nếu
+  // ĐÚNG MỘT ca khớp › không gắn ca. Danh sách ca có thể về SAU khi sheet mở ⇒ mặc định tính lại cho tới khi người dùng chọn.
+  const [openedAt] = useState(() => new Date());
   const initial = useMemo(
     () => ({
       operatorId: existing?.operatorId != null ? String(existing.operatorId) : "",
@@ -716,7 +768,35 @@ function AssignmentForm({
   const [stationId, setStationId] = useState(initial.stationId);
   const [skillLevel, setSkillLevel] = useState(initial.skillLevel);
 
-  const dirty = operatorId !== initial.operatorId || lineId !== initial.lineId || stationId !== initial.stationId || skillLevel !== initial.skillLevel;
+  // doc 81 Đợt 3b final wave (I2): tập ca do SERVER chọn — đang hoạt động, TRONG PHẠM VI người dùng, và (khi đã nhập chuyền /
+  // trạm) chỉ ca của NHÀ MÁY chuyền/trạm đó + ca toàn hệ thống (trước: `shiftConfig.list()` mọi nhà máy ⇒ mặc định có thể là ca
+  // server từ chối). Mặc định "bây giờ" và ca cũ (phân công lại) chỉ tính TRONG tập này; ca đã chọn rơi khỏi tập (đổi chuyền
+  // sang nhà máy khác) ⇒ về mặc định của tập mới.
+  const lineNum = positiveIntOrUndef(lineId);
+  const stationNum = positiveIntOrUndef(stationId);
+  const shiftsQ = trpc.safety.assignableShifts.useQuery(
+    { ...(lineNum != null ? { lineId: lineNum } : {}), ...(stationNum != null ? { stationId: stationNum } : {}) },
+  );
+  // post-review (4): KHÔNG giữ tập ca của chuyền TRƯỚC trong lúc tập mới đang tải (trước: `placeholderData: prev` ⇒ ca của nhà
+  // máy cũ vẫn hiện và gửi được). Đang tải ⇒ bộ chọn + nút gửi KHOÁ, câu "đang tải"; ca đã chọn nằm chờ, xét lại khi tập về.
+  const shiftsLoading = shiftsQ.data === undefined && !shiftsQ.isError;
+  const activeShifts = useMemo(() => ((shiftsQ.data ?? []) as AssignableShift[]).filter((s) => s.isActive), [shiftsQ.data]);
+  const shiftLabels = useMemo(
+    () => assignableShiftLabels(activeShifts, t("shifts.form.allFactories", "All factories")),
+    [activeShifts, t],
+  );
+  const existingShiftId =
+    existing?.shiftConfigId != null && activeShifts.some((s) => s.id === existing.shiftConfigId) ? existing.shiftConfigId : null;
+  const nowShiftId = defaultShiftId(activeShifts, openedAt);
+  const defaultShift = existingShiftId != null ? String(existingShiftId) : nowShiftId != null ? String(nowShiftId) : NO_SHIFT;
+  const [shiftPickRaw, setShiftPick] = useState<string | null>(null);
+  const shiftPick = shiftPickRaw != null && (shiftPickRaw === NO_SHIFT || activeShifts.some((s) => String(s.id) === shiftPickRaw)) ? shiftPickRaw : null;
+  const shiftValue = shiftPick ?? defaultShift;
+  const showNowHint = shiftPick == null && existingShiftId == null && nowShiftId != null;
+
+  const dirty =
+    operatorId !== initial.operatorId || lineId !== initial.lineId || stationId !== initial.stationId || skillLevel !== initial.skillLevel ||
+    shiftValue !== defaultShift;
   useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
@@ -727,15 +807,15 @@ function AssignmentForm({
     }
     const ln = lineId ? Number(lineId) : undefined;
     const st = stationId ? Number(stationId) : undefined;
-    onSubmit(
-      {
-        operatorId: op,
-        lineId: Number.isInteger(ln) && (ln as number) > 0 ? ln : undefined,
-        stationId: Number.isInteger(st) && (st as number) > 0 ? st : undefined,
-        skillLevel: skillLevel.trim() || undefined,
-      },
-      done,
-    );
+    const v: AssignmentFormValue = {
+      operatorId: op,
+      lineId: Number.isInteger(ln) && (ln as number) > 0 ? ln : undefined,
+      stationId: Number.isInteger(st) && (st as number) > 0 ? st : undefined,
+      skillLevel: skillLevel.trim() || undefined,
+    };
+    // Không gắn ca ⇒ KHÔNG đặt khoá ca (payload nguyên văn như trước Đợt 3b).
+    if (shiftValue !== NO_SHIFT) v.shiftConfigId = Number(shiftValue);
+    onSubmit(v, done);
   };
 
   return (
@@ -769,9 +849,27 @@ function AssignmentForm({
           </SelectContent>
         </Select>
       </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-shift`}>{t("shifts.form.shift", "Shift (optional)")}</Label>
+        <Select value={shiftValue} onValueChange={setShiftPick} disabled={shiftsLoading}>
+          <SelectTrigger id={`${uid}-shift`} className="h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_SHIFT}>{t("shifts.form.noShift", "— no shift —")}</SelectItem>
+            {activeShifts.map((s) => (
+              <SelectItem key={s.id} value={String(s.id)}>{shiftLabels.get(s.id) ?? shiftLabel(s)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {shiftsLoading && (
+          <p className="text-xs text-muted-foreground">{t("shifts.form.loadingShifts", "Loading the shifts for this line…")}</p>
+        )}
+        {showNowHint && (
+          <p className="text-xs text-muted-foreground">{t("shifts.form.defaultHint", "Pre-selected: the shift running now.")}</p>
+        )}
+      </div>
       <SheetFooter>
         <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
-        <Button onClick={submit} disabled={pending}>
+        <Button onClick={submit} disabled={pending || shiftsLoading}>
           <CheckCircle2 className="mr-1 h-4 w-4" />
           {mode === "assign" ? t("workforce.assign", "Assign") : t("workforce.reassign", "Reassign")}
         </Button>

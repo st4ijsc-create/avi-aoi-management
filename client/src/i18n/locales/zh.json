@@ -3794,6 +3794,7 @@
       "scheduledReport": "定时报告",
       "serviceIdentity": "服务身份",
       "sharedResource": "共享资源",
+      "shiftConfig": "班次",
       "simRobot": "仿真机器人",
       "site": "站点",
       "slmp": "SLMP",
@@ -3996,6 +3997,7 @@
       "unassignEngineeringItem": "取消分配待审批事项"
     },
     "field": {
+      "shiftConfigId": "班次 (shiftConfigId)",
       "stopValue": "固定停止值（stopValue）",
       "inspectionTime": "检测时间（inspectionTime）",
       "completedAt": "完成时间（completedAt）",
@@ -4081,6 +4083,7 @@
       "notificationContent": "通知内容",
       "apiKeyOrMachineCode": "API密钥或设备码",
       "factoryCode": "工厂代码",
+      "factoryId": "工厂",
       "machineId": "设备ID",
       "sizeBytes": "字节大小",
       "sha256": "SHA256哈希值",
@@ -4265,6 +4268,9 @@
       "mqttDeviceRejected": "该设备已被拒绝，无法绑定到机器。请先批准该设备。",
       "robotNotActive": "本进程的机器人网关尚未加载该机器人（已禁用或 ROBOT_GATEWAY_ENABLED 未开启），因此没有可解除的实时运动锁定。",
       "opcuaSecurityInvalid": "securityMode/securityPolicy 无效或相互矛盾（例如 None 搭配 Basic256Sha256，或 SignAndEncrypt 搭配 None）。请使用 None/None，或 Sign/SignAndEncrypt 搭配 Basic256Sha256 等策略。",
+      "shiftInactive": "该班次已停用——请选择一个启用中的班次，或不选择班次。",
+      "shiftFactoryMismatch": "该班次与所选产线/工位不属于同一工厂——请选择该工厂的班次（或全系统班次），或不选择班次。",
+      "factoryRequired": "您属于多个工厂——请为此分配选择产线、工位或工厂（否则连您自己也无法再看到它）。",
       "secretReentryRequired": "您更改了 {{field}}（已保存密钥的发送位置或保护方式），因此不会复用已保存的密码/密钥。请重新输入密码/密钥后再保存；目前尚未更改任何内容。",
       "motionLockUnsupported": "该厂商的驱动每条指令使用一次性连接，没有运动锁定；无可解除内容。",
       "motionLockChanged": "您确认期间运动锁定已发生变化（出现了新的连接丢失）。未解除任何内容；请重新读取机器人状态后再确认。",
@@ -7066,6 +7072,27 @@
     }
   },
   "notifications": {
+    "inbox": {
+      "title": "您的通知",
+      "markAllRead": "全部标为已读",
+      "linkBlocked": "链接无效 — 未打开",
+      "loadFailed": "无法加载您的通知",
+      "unread": "未读",
+      "markReadFailed": "无法标记为已读——请稍后重试。"
+    },
+    "assignment": {
+      "assignedTitle": "已分配给您：{{label}}",
+      "assignedMessage": "{{by}} 将一个待审批的{{entity}}分配给您。被分配不改变审批权限。",
+      "unassignedTitle": "已取消分配：{{label}}",
+      "unassignedMessage": "{{by}} 已将此{{entity}}从您处取消分配。",
+      "entity": {
+        "ecn": "ECN",
+        "recipe": "配方",
+        "interlock_rule": "联锁规则",
+        "changeover": "换型请求",
+        "orchestration_run": "编排运行"
+      }
+    },
     "yieldWarning": "良率警告",
     "volume": "音量",
     "uploadSound": "上传声音",
@@ -21659,7 +21686,9 @@
         "beta": "测试版",
         "whenToUse": "何时使用",
         "loading": "检查中",
-        "error": "状态未知"
+        "error": "状态未知",
+        "meta": "属性",
+        "status": "状态"
       },
       "more": "+{{count}}",
       "moreLabel": "查看另外 {{count}} 条说明",
@@ -21803,8 +21832,8 @@
     "boardError": "无法读取现场看板。",
     "chip": {
       "planned": "待确认",
-      "srcActive": "safety.listAssignments — 最近 200 条分配中状态为“进行中”的数量（按班次与状态筛选）",
-      "srcPlanned": "safety.listAssignments — 最近 200 条分配中状态为“计划”（未确认）的数量（按班次与状态筛选）"
+      "srcActive": "safety.listAssignments — 符合班次与状态筛选的最近 200 条分配中状态为“进行中”的数量（服务器端筛选）",
+      "srcPlanned": "safety.listAssignments — 符合班次与状态筛选的最近 200 条分配中状态为“计划”（未确认）的数量（服务器端筛选）"
     },
     "side": {
       "label": "现场看板 — 此刻每个工位上的人员与机器人"
@@ -21819,7 +21848,13 @@
     },
     "movedLink": "人力 → 生产 › 班次",
     "emptyForShift": "该班次暂无分配。",
-    "emptyForShiftWindow": "在已加载的最新 {{limit}} 条分配中没有该班次的分配 — 该班次更早的分配不会在此显示。"
+    "form": {
+      "shift": "班次（可选）",
+      "noShift": "— 不指定班次 —",
+      "allFactories": "全系统",
+      "loadingShifts": "正在加载该产线的班次…",
+      "defaultHint": "已预选当前正在进行的班次。"
+    }
   },
   "engineeringAssign": {
     "label": "分配给",

@@ -10,7 +10,8 @@
  *       can open /recipes (machine_control/canView AND the /recipes route licence, MOD_ENGINEERING). Final wave (Ruling
  *       R-3-h): users without the permission keep a read-only tab (R-3-b); users WITH it but without the licence (OT-only
  *       customers) keep the FULL former recipe capability here (tab "Phiên bản & lịch sử nạp": create / release / archive /
- *       rollback version, record load, load history — same procedures, payloads, gates as before Đợt 3 Task 1).
+ *       rollback version, record load, load history — same procedures, payloads, gates as before Đợt 3 Task 1; Đợt 3b
+ *       Task 2: archive now asks for the same confirmation as Recipes, gate unchanged).
  *   • (Đợt 3 Task 2) Acquisition workers (W8-C) MOVED to Vision › Thu ảnh (`/vision/acquisition`, pages/VisionAcquisition.tsx);
  *       `?tab=acquisition` redirects there keeping the query, for users who can open it (machine_alerts/canView).
  *
@@ -88,6 +89,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Plug, RefreshCw, AlertTriangle, Network,
   CircleSlash, History, Camera,
@@ -620,7 +625,7 @@ function CatalogToolbar() {
 // listLoadHistory / machine.list.
 //  - "readonly" (R-3-b): KHÔNG một nút thao tác nào (không tạo/phát hành/lưu trữ/rollback/ghi nhận nạp).
 //  - "full" (R-3-h): thao tác phiên bản như tab "Phiên bản recipe" cũ — cổng hiện machine_control/canCreate, phát hành/
-//    rollback bật theo machine_control/canEdit, lưu trữ một cú bấm, rollback = RollbackConfirm không lý do/không OTP (R-2-g),
+//    rollback bật theo machine_control/canEdit, lưu trữ qua hộp xác nhận như Recipes (Đợt 3b Task 2), rollback = RollbackConfirm không lý do/không OTP (R-2-g),
 //    ghi nhận nạp = sheet dùng chung `eq-recipe-load`; "Phiên bản mới" = sheet `eq-recipe-new` (khoá khi cờ chưa rõ).
 type RoMachine = { id: number; code?: string | null; name?: string | null };
 
@@ -763,12 +768,28 @@ function RecipeHistoryTab() {
           />
         )}
         {v.designStatus !== "archived" && (
-          <Button size="icon" variant="ghost" className="h-8 w-8" disabled={ctx.archivePending}
-            aria-label={t("eqIntegration.archive", "Archive")}
-            title={t("eqIntegration.archiveTip", "Archive this version")}
-            onClick={() => ctx.archive(v)}>
-            <Archive className="h-4 w-4" />
-          </Button>
+          // Đợt 3b Task 2 (c) — chủ dự án 2026-10-06 "thống nhất lưu trữ recipe cần xác nhận": CÙNG bước xác nhận như
+          // Recipes (AlertDialog: tiêu đề `recipes.archive`, câu `recipes.confirmArchive`, Hủy / Lưu trữ). Cổng hiện/bật
+          // KHÔNG đổi (canCreate qua `ctx.canControl`, chỉ khoá khi đang gửi); payload {recipeId} + invalidate KHÔNG đổi.
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={ctx.archivePending}
+                aria-label={t("eqIntegration.archive", "Archive")}
+                title={t("eqIntegration.archiveTip", "Archive this version")}>
+                <Archive className="h-4 w-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t("recipes.archive")}</AlertDialogTitle>
+                <AlertDialogDescription>{t("recipes.confirmArchive", { version: v.version })}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t("recipes.cancel")}</AlertDialogCancel>
+                <AlertDialogAction onClick={() => ctx.archive(v)}>{t("recipes.archive")}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
         <Button size="icon" variant="ghost" className="h-8 w-8" disabled={ctx.recordLoadPending}
           aria-label={t("eqIntegration.recordLoad", "Record load")}

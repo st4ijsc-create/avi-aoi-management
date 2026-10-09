@@ -40,6 +40,28 @@ describe("PageHeaderCompact", () => {
     expect(screen.getByRole("button", { name: "Tạo ECN" }).closest("[data-header-actions]")?.parentElement).toBe(row);
   });
 
+  // doc 81 Đợt 3b final wave (minor 8): ở mức gộp h1 cắt chữ (…, tối thiểu 4rem) ⇒ cần tooltip mang đủ tiêu đề.
+  it("h1 mang `title` = chữ đầy đủ của tiêu đề (chuỗi hoặc phần tử lồng; bỏ qua phần tử không có chữ)", () => {
+    const Badge = () => <span>CHỈ XEM</span>;
+    const { unmount } = render(<PageHeaderCompact title="Quản lý Recipe máy" />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveAttribute("title", "Quản lý Recipe máy");
+    unmount();
+    render(
+      <PageHeaderCompact
+        title={
+          <span className="flex">
+            {"Interlock "}
+            <b>{["an", " toàn"]}</b>
+            <Badge />
+          </span>
+        }
+      />,
+    );
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1).toHaveAttribute("title", "Interlock an toàn");
+    expect(h1).toHaveAccessibleName(/^Interlock an toàn/);
+  });
+
   it("cao tối đa 48 px (style max-height) và tối thiểu 40 px", () => {
     render(<PageHeaderCompact title="T" />);
     const header = screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;

@@ -112,7 +112,16 @@ async function notify(
     entityId,
     actionUrl: deepLink,
     priority: "NORMAL",
-    metadata: { kind: "engineeringAssignment", action: kind, entityType: type, entityId, actorId: actor.id },
+    // doc 81 Đợt 3b final wave — khoá i18n + tham số: chuông dịch bằng t() theo ngôn ngữ người đọc; `title`/`message` tiếng
+    // Việt ở trên chỉ còn là dự phòng (hàng cũ / khoá thiếu). Bỏ giao ⇒ `label` null (KHÔNG mang tên mục — như câu tiếng Việt).
+    metadata: {
+      kind: "engineeringAssignment", action: kind, entityType: type, entityId, actorId: actor.id,
+      i18n: {
+        title: kind === "assigned" ? "notifications.assignment.assignedTitle" : "notifications.assignment.unassignedTitle",
+        message: kind === "assigned" ? "notifications.assignment.assignedMessage" : "notifications.assignment.unassignedMessage",
+        params: { label: kind === "assigned" ? label : null, by, entityType: type, entityId },
+      },
+    },
   });
 }
 

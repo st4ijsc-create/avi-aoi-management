@@ -35,7 +35,8 @@ import {
 import { useUrlParam } from "@/components/patterns/useUrlParam";
 import type { TabbedHubTab } from "@/components/workspace/TabbedHub";
 import { PendingReviewStrip, PENDING_CATEGORIES, type CategoryDef } from "@/components/PendingReviewStrip";
-import { getNavItemByHref, hasAccessToItem, passesNavAuthoringGate } from "@/lib/navigation";
+import { getNavItemByHref, hasAccessToItem, passesNavAuthoringGate, LABS_SECTION_KEY } from "@/lib/navigation";
+import { useShowLabs } from "@/hooks/useShowLabs";
 import { readFavorites, readRecent, toggleFavorite } from "@/lib/navRecent";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ASSIGNABLE_PENDING_KEYS } from "@shared/engineeringAssignment";
@@ -143,9 +144,10 @@ export const HUB_CATALOG: HubGroup[] = [
     ],
   },
   {
-    // Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — nhóm "Labs — thử nghiệm" (khớp section `labs` của nav). Danh mục là CHỈ MỤC đầy đủ của
-    // module (như ⌘K) nên luôn liệt kê Labs, dưới nhãn thử nghiệm; menu thanh bên mới là nơi ẩn theo "Hiện Labs".
-    sectionKey: "labs",
+    // Doc 81 Đợt 3 Task 5 ([QĐ-3b]) — nhóm "Labs — thử nghiệm" (khớp section `labs` của nav). Đợt 3b Task 2 (a) (chủ dự án
+    // 2026-10-06): danh mục theo "Hiện Labs" như thanh bên — TẮT ⇒ nhóm này (và mọi ô trỏ mục nav `labs`) vắng khỏi danh
+    // mục. Ghim cá nhân ("Đã ghim"), ⌘K, deep link và cảnh báo bế tắc (R-2-y) KHÔNG đổi.
+    sectionKey: LABS_SECTION_KEY,
     tiles: [{ icon: Bot, navKey: "fleetOrchestration", href: "/labs/fleet-orchestration" }],
   },
 ];
@@ -257,12 +259,17 @@ function CatalogTab() {
   const { t } = useTranslation();
   const { visible } = useTileAccess();
   const [favs, toggle] = useFavorites();
+  const { user } = useAuth();
+  const { showLabs } = useShowLabs((user as { id?: number | string } | null | undefined)?.id);
+  /** Đợt 3b Task 2 (a) — Labs TẮT ⇒ bỏ nhóm Labs và mọi ô trỏ mục nav `labs: true` (chỉ danh mục; không phải cổng). */
+  const inCatalog = (group: HubGroup, tile: HubTile) =>
+    showLabs || (group.sectionKey !== LABS_SECTION_KEY && getNavItemByHref(tile.href)?.labs !== true);
   return (
     // R-2-v — cùng vùng cuộn cao theo khung nhìn như Hộp việc (MAIN không đổi hình khi đổi tab; danh mục cuộn BÊN TRONG).
     <div data-hub-catalog-scroll="" className={HUB_SCROLL_REGION}>
     <div data-hub-catalog="" className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-2 py-2">
       {HUB_CATALOG.map((group) => {
-        const tiles = group.tiles.filter(visible);
+        const tiles = group.tiles.filter((tile) => inCatalog(group, tile) && visible(tile));
         if (tiles.length === 0) return null;
         return [
           <h2 key={`h-${group.sectionKey}`} className="col-span-full pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:pt-0">

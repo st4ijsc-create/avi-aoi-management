@@ -21,6 +21,7 @@ import { installMatchMedia, presetNarrow } from "@/components/patterns/layoutKit
 import { resolvePermissionModule } from "@shared/permissions";
 import HUB_SRC from "./EngineeringHub.tsx?raw";
 import { getNavItemByHref, hasAccessToItem } from "@/lib/navigation";
+import { useShowLabs } from "@/hooks/useShowLabs";
 
 const S = (k: string): string => {
   const v = k.split(".").reduce<unknown>((o, p) => (o as Record<string, unknown> | undefined)?.[p], vi_);
@@ -85,7 +86,7 @@ vi.mock("@/lib/trpc", () => ({
   }),
 }));
 
-import EngineeringHub from "./EngineeringHub";
+import EngineeringHub, { HUB_CATALOG } from "./EngineeringHub";
 
 const POSTURE_OK = {
   otControlEnabled: false, robotControlEnabled: false, dpcDeployEnabled: false, interlockEngineEnabled: true,
@@ -419,7 +420,7 @@ describe("Danh mục công cụ (Studio gộp vào — ?tab=catalog)", () => {
     const main = mainEl();
     const links = Array.from(main.querySelectorAll("[data-hub-tool] a")).map((a) => a.getAttribute("href"));
     for (const h of ["/engineering", "/engineering?copilot=scratch", "/ir-editor", "/pou-studio", "/recipes", "/engineering-changes",
-      "/orchestration-studio", "/labs/fleet-orchestration", "/command-console", "/interlock-rules", "/safety-workforce",
+      "/orchestration-studio", "/command-console", "/interlock-rules", "/safety-workforce",
       "/equipment-standards", "/equipment-integration"]) {
       expect(links, h).toContain(h);
     }
@@ -505,5 +506,101 @@ describe("Task 5 — bế tắc đội xe trên Hub mở Fleet ở Labs, kể c�
     fireEvent.click(row.querySelector("a") as HTMLElement);
     expect(window.location.pathname).toBe("/labs/fleet-orchestration");
     expect(window.location.search).toBe("?filter=deadlock");
+  });
+});
+
+// ── Doc 81 Đợt 3b Task 2 (a) — danh mục công cụ theo "Hiện Labs" (chủ dự án 2026-10-06): Labs TẮT (mặc định) ⇒ Fleet và
+// mọi mục `labs` vắng khỏi danh mục; BẬT ⇒ hiện dưới nhóm Labs. Ghim cá nhân (panel phụ "Đã ghim") KHÔNG đổi; cảnh báo bế
+// tắc (R-2-y) KHÔNG đổi.
+describe("Đợt 3b Task 2 (a) — danh mục công cụ theo sở thích Hiện Labs", () => {
+  const FLEET = "/labs/fleet-orchestration";
+  const catalogHrefs = () => Array.from(mainEl().querySelectorAll("[data-hub-catalog] [data-hub-tool] a")).map((a) => a.getAttribute("href") ?? "");
+  const labsHeading = () => Array.from(mainEl().querySelectorAll("[data-hub-catalog] h2")).find((h) => h.textContent === S("nav.section.labs"));
+
+  it("Labs TẮT (mặc định, chưa có khoá) ⇒ không Fleet, không mục labs nào, không tiêu đề nhóm Labs; mục khác còn", () => {
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    const links = catalogHrefs();
+    expect(links).not.toContain(FLEET);
+    expect(links.filter((h) => getNavItemByHref(h)?.labs === true)).toEqual([]);
+    expect(labsHeading()).toBeUndefined();
+    expect(links).toContain("/orchestration-studio");
+    expect(links).toContain("/engineering-changes");
+  });
+
+  it("Labs TẮT tường minh ('0') ⇒ như mặc định", () => {
+    localStorage.setItem("layoutKit:nav-labs:u9:show", "0");
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    expect(catalogHrefs()).not.toContain(FLEET);
+  });
+
+  // doc 81 Đợt 3b final wave (test gap): ô trỏ mục nav `labs: true` nằm NGOÀI nhóm Labs (vd một nhóm thường liệt kê Fleet) —
+  // luật lọc phải theo CHÍNH mục nav, không chỉ theo nhóm (đột biến "bỏ vế nav.labs" từng sống sót vì chưa có ca này).
+  it("ô Labs nằm NGOÀI nhóm Labs: Labs TẮT ⇒ vẫn vắng; BẬT ⇒ hiện ở cả nhóm thường", () => {
+    const host = HUB_CATALOG.find((g) => g.sectionKey !== "labs" && g.tiles.length > 0)!;
+    const before = host.tiles.length;
+    host.tiles.push({ ...HUB_CATALOG.find((g) => g.sectionKey === "labs")!.tiles[0] });
+    try {
+      window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+      const r = render(<EngineeringHub />);
+      expect(catalogHrefs()).not.toContain(FLEET);
+      r.unmount();
+      localStorage.setItem("layoutKit:nav-labs:u9:show", "1");
+      render(<EngineeringHub />);
+      expect(catalogHrefs().filter((h) => h === FLEET)).toHaveLength(2);
+    } finally {
+      host.tiles.length = before;
+    }
+  });
+
+  it("Labs BẬT ('1') ⇒ Fleet hiện dưới tiêu đề nhóm Labs", () => {
+    localStorage.setItem("layoutKit:nav-labs:u9:show", "1");
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    expect(catalogHrefs()).toContain(FLEET);
+    expect(labsHeading()).toBeDefined();
+  });
+
+  it("Labs TẮT nhưng người dùng ĐÃ GHIM Fleet ⇒ 'Đã ghim' ở panel phụ VẪN có Fleet (ghim cá nhân giữ nguyên)", () => {
+    localStorage.setItem("nav-favorites", JSON.stringify([FLEET]));
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    expect(catalogHrefs()).not.toContain(FLEET);
+    const pinned = within(aside()).getByRole("list", { name: S("engineeringHome.tools.pinned") });
+    expect(within(pinned).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([FLEET]);
+    expect(JSON.parse(localStorage.getItem("nav-favorites") ?? "[]")).toEqual([FLEET]);
+  });
+
+  it("Labs TẮT ⇒ cảnh báo bế tắc (R-2-y) vẫn ghim ở hộp việc và chip nghiêm trọng ở header vẫn đỏ", () => {
+    setSummary({ deadlocks: ok(3) });
+    render(<EngineeringHub />);
+    expect(pinnedHrefs()).toContain("/labs/fleet-orchestration?filter=deadlock");
+    expect(criticalChip()).not.toBeNull();
+    const chipText = criticalChip().textContent;
+    cleanup();
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    expect(screen.getByRole("tab", { name: S("engineeringHome.catalogTab") })).toHaveAttribute("aria-selected", "true");
+    expect(catalogHrefs().length).toBeGreaterThan(0);
+    expect(catalogHrefs()).not.toContain(FLEET);
+    expect(criticalChip().textContent).toBe(chipText);
+  });
+
+  // Fix round 1 (R-3b-b (4)) — bật/tắt "Hiện Labs" ở thanh bên CÙNG tab ⇒ danh mục đang mở đổi NGAY, không cần tải lại
+  // (trước: hook chỉ nghe sự kiện `storage` — chỉ bắn ở tab KHÁC).
+  it("bật/tắt Labs trong CÙNG tab (công tắc thanh bên) ⇒ danh mục đang mở đổi ngay, không remount", () => {
+    function LabsToggle() {
+      const { showLabs, toggleShowLabs } = useShowLabs(9);
+      return <button type="button" data-testid="labs-toggle" aria-pressed={showLabs} onClick={toggleShowLabs}>labs</button>;
+    }
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<><LabsToggle /><EngineeringHub /></>);
+    expect(catalogHrefs()).not.toContain(FLEET);
+    act(() => { fireEvent.click(screen.getByTestId("labs-toggle")); });
+    expect(localStorage.getItem("layoutKit:nav-labs:u9:show")).toBe("1");
+    expect(catalogHrefs()).toContain(FLEET);
+    act(() => { fireEvent.click(screen.getByTestId("labs-toggle")); });
+    expect(catalogHrefs()).not.toContain(FLEET);
   });
 });

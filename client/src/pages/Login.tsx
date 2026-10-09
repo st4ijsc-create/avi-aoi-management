@@ -12,6 +12,7 @@ import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { landingPathForRole } from "@/lib/roleLanding";
 import { BRAND } from "@/config/brand";
+import { loginNextPath } from "@/lib/loginNext";
 
 export default function Login() {
   const { t } = useTranslation();
@@ -138,23 +139,18 @@ export default function Login() {
     setOtpToken("");
   };
 
+  // doc 81 Đợt 3b final wave (R-3b-c): ?next= chỉ nhận đường NỘI BỘ (safeInternalPath) — trước `startsWith("/")` để lọt
+  // "//evil.example" / "/\evil.example" (open redirect sau đăng nhập).
   const getRedirectPath = () => {
     if (typeof window === "undefined") return "/";
-    const params = new URLSearchParams(window.location.search);
-    const nextValue = params.get("next");
-    if (nextValue && nextValue.startsWith("/")) {
-      return nextValue;
-    }
-    return "/";
+    return loginNextPath(window.location.search) ?? "/";
   };
 
   // An explicit ?next=/some/path (e.g. a deep link the user was sent to before
   // login) always wins; otherwise we honor the role-aware landing destination.
   const resolveDestination = (roleDest: string) => {
     if (typeof window === "undefined") return roleDest;
-    const nextValue = new URLSearchParams(window.location.search).get("next");
-    if (nextValue && nextValue.startsWith("/")) return nextValue;
-    return roleDest;
+    return loginNextPath(window.location.search) ?? roleDest;
   };
 
   type ExternalProvider = "google" | "microsoft" | "github";

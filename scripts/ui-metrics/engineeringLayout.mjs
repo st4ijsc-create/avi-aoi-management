@@ -56,6 +56,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { cleanupFailures, cleanupFailureLines, runPass } from "./runGate.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(path.join(REPO, "package.json"));
@@ -230,6 +231,8 @@ const TABLE_WHERE = {
   permissions: `t."userId" not in ${PROBE_FILTER}`,
   user_factory_assignments: `t."userId" not in ${PROBE_FILTER}`,
   user_corporate_assignments: `t."userId" not in ${PROBE_FILTER}`,
+  // post-review 5: chuông chỉ đọc thông báo của CHÍNH người xem (= user đo).
+  notifications: `t."userId" in ${PROBE_FILTER}`,
 };
 /** Thủ tục tRPC mỗi màn gọi lúc rút `PAGE_TABLES`. Gọi thủ tục MỚI ⇒ cảnh báo: chạy lại --discover-tables. */
 export const KNOWN_PROCS = {
@@ -278,7 +281,18 @@ PAGE_TABLES["production-shifts"] = [...new Set([...PAGE_TABLES["safety-workforce
 KNOWN_PROCS["production-shifts"] = [
   "aiInbox.count", "andon.active", "auth.me", "commandCenter.hierarchy", "license.getAllowedModules", "license.systemState",
   "permissions.getMyPermissions", "safety.currentBoard", "safety.listAssignments", "safety.status", "shiftConfig.list",
+  // Đợt 3b final wave (I2): sheet "Phân công" (hành động `phan-cong`) đọc ca theo phạm vi + nhà máy của chuyền. Bảng nó đọc
+  // (shift_configs, factories, workshops, production_lines, stations, user_factory_assignments) đã nằm trong PAGE_TABLES trên.
+  "safety.assignableShifts",
 ];
+
+// Đợt 3b final wave (post-review 5) — CHUÔNG THÔNG BÁO của vỏ (Task 3, 2307412bb) chạy trên MỌI màn: `notification.unreadCount`
+// (poll 30 s) lúc nạp; `notification.list` khi mở ngăn chuông. Hai thủ tục vào danh sách đã biết của mọi màn, và bảng
+// `notifications` vào canh trôi của mọi màn — CHỈ hàng của user đo (đúng tập chuông hiển thị: router lọc `ctx.user.id`), để
+// hàng của vitest phiên khác trên `_test` dùng chung không thành trôi giả. (Mutation markAsRead/markAllAsRead không chạy khi đo.)
+const BELL_PROCS = ["notification.list", "notification.unreadCount"];
+for (const id of Object.keys(KNOWN_PROCS)) KNOWN_PROCS[id] = [...new Set([...KNOWN_PROCS[id], ...BELL_PROCS])].sort();
+for (const id of Object.keys(PAGE_TABLES)) PAGE_TABLES[id] = [...new Set([...PAGE_TABLES[id], "notifications"])].sort();
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 
@@ -1003,6 +1017,61 @@ async function createProbeUser() {
   });
 }
 
+/**
+ * doc 81 Đợt 3b Task 2 (e) — Ruling R-3b-a: DỮ LIỆU MẪU CỦA CHÍNH THIẾT BỊ ĐO. Hình học MAIN của ECN phụ thuộc số hàng
+ * (cao 704 px ở CẢ 1600×950 lẫn 1366×768 = cao theo nội dung): bản ghi hiệu chuẩn 2026-10-03 đo trên 10 hàng ECN RÒ từ
+ * một test cũ; chủ dự án xoá 10 hàng đó (2026-10-06) ⇒ bảng trống 179 px, hiệu chuẩn lệch 74,6 %, tự kiểm T02/T12/T20/T22
+ * trượt. Từ nay thiết bị đo KHÔNG dựa vào dữ liệu tình cờ của `_test`: lúc dựng (TRƯỚC ảnh dữ liệu TRƯỚC) nó tự gieo
+ * 10 ECN nháp tất định, đánh dấu tiền tố `uimetrics_` ở `ecnKey` VÀ `title`, `createdAt`/`updatedAt` cố định; xoá khi
+ * xong (cả khi lỗi / Ctrl-C), xoá trước mọi hàng mẫu sót của lần chạy hỏng trước. Chỉ ghi `aoi_management_test`
+ * (`withTestDb` kiểm `current_database()` trước mọi lệnh). Các màn danh sách khác: Interlock / Recipes / Standards (tab
+ * chính) cao theo KHUNG NHÌN (775/593, 776/594, 786/604 px ở 950/768) ⇒ không theo số hàng; Standards › Alarms cao theo
+ * nội dung (685 px cả hai cỡ) nhưng đọc dữ liệu THAM CHIẾU do script seed (`alarm_taxonomy`/`master_alarms`,
+ * scripts/seed-engineering-data.mjs), không phải hàng rò của test — xem task-2-report.md Đợt 3b.
+ */
+export const FIXTURE_PREFIX = "uimetrics_";
+const FIXTURE_LIKE = `${FIXTURE_PREFIX.replace(/_/g, "\\_")}%`;
+const ECN_FIXTURE_COUNT = 10;
+/** Hàng ECN mẫu (tất định: cùng nội dung mọi lần chạy — chỉ `id` serial khác). */
+export function ecnFixtureRows() {
+  return Array.from({ length: ECN_FIXTURE_COUNT }, (_, i) => {
+    const n = String(i + 1).padStart(2, "0");
+    // giờ cố định, cách nhau 1 phút ⇒ thứ tự `createdAt desc` của ecn.list tất định
+    const at = new Date(Date.UTC(2026, 0, 1, 0, i, 0));
+    return { ecnKey: `${FIXTURE_PREFIX}ECN-${n}`, title: `${FIXTURE_PREFIX}ECN ${n} process change`, changeType: "process", status: "draft", createdAt: at, updatedAt: at };
+  });
+}
+/** Hàng mẫu theo bảng: điều kiện SQL nhận diện (trên bí danh `t`). Dùng chung cho dọn, đếm và phép băm riêng. */
+export const FIXTURE_TABLES = {
+  engineering_changes: `(t."ecnKey" like '${FIXTURE_LIKE}' or t.title like '${FIXTURE_LIKE}')`,
+};
+async function deleteFixtures(sql) {
+  const ecnIds = (await sql.unsafe(`select id from engineering_changes t where ${FIXTURE_TABLES.engineering_changes}`)).map((r) => r.id);
+  let items = 0;
+  if (ecnIds.length) items = (await sql`delete from engineering_change_items where "ecnId" in ${sql(ecnIds)}`).count;
+  const ecn = (await sql.unsafe(`delete from engineering_changes t where ${FIXTURE_TABLES.engineering_changes}`)).count;
+  const [{ left }] = await sql.unsafe(`select count(*)::int "left" from engineering_changes t where ${FIXTURE_TABLES.engineering_changes}`);
+  if (left !== 0) throw new Error(`dọn hàng mẫu: còn ${left} ECN mẫu sau khi xoá`);
+  return { engineering_changes: ecn, engineering_change_items: items };
+}
+async function seedFixtures() {
+  return withTestDb(async (sql) => {
+    const stale = await deleteFixtures(sql);
+    const rows = ecnFixtureRows();
+    await sql.begin(async (tx) => {
+      const [{ db }] = await tx`select current_database() as db`;
+      if (db !== TEST_DB) throw new Error(`Từ chối gieo hàng mẫu: current_database()=${db}`);
+      for (const r of rows) {
+        await tx`insert into engineering_changes ("ecnKey", title, "changeType", status, "createdAt", "updatedAt")
+          values (${r.ecnKey}, ${r.title}, ${r.changeType}, ${r.status}, ${r.createdAt}, ${r.updatedAt})`;
+      }
+    });
+    const [{ n }] = await sql.unsafe(`select count(*)::int n from engineering_changes t where ${FIXTURE_TABLES.engineering_changes}`);
+    if (n !== rows.length) throw new Error(`gieo hàng mẫu: mong ${rows.length} ECN mẫu, có ${n}`);
+    return { engineering_changes: n, staleRemoved: stale };
+  });
+}
+
 /** Băm nội dung bảng: md5 từng hàng (hoặc các cột chỉ định), sắp theo md5 — không cần khoá chính. */
 async function dataSnapshot(tables) {
   return withTestDb(async (sql) => {
@@ -1012,9 +1081,18 @@ async function dataSnapshot(tables) {
       const ex = TABLE_EXCLUDE_COLS[t];
       const rowExpr = cols ? `md5(row(${cols.map((c) => `t."${c}"`).join(",")})::text)` : ex ? `md5((to_jsonb(t) ${ex.map((c) => `- '${c}'`).join(" ")})::text)` : "md5(t::text)";
       try {
-        const where = TABLE_WHERE[t] ? ` where ${TABLE_WHERE[t]}` : "";
+        // Đợt 3b (R-3b-a): hàng mẫu của thiết bị đo băm RIÊNG (khoá `<bảng>[uimetrics_]`, mọi cột trừ `id` serial — id mới
+        // mỗi lần gieo) ⇒ canh trôi TRONG lần chạy vẫn phủ hàng mẫu (đổi status/updatedAt… ⇒ trôi) và ảnh dữ liệu GIỮA hai
+        // lần chạy so được (`sameDataAcrossRuns`). Phần còn lại của bảng băm như cũ.
+        const conds = [TABLE_WHERE[t], FIXTURE_TABLES[t] ? `not ${FIXTURE_TABLES[t]}` : null].filter(Boolean);
+        const where = conds.length ? ` where ${conds.join(" and ")}` : "";
         const [r] = await sql.unsafe(`select count(*)::int n, md5(coalesce(string_agg(${rowExpr}, ',' order by ${rowExpr}), '')) h from "${t}" t${where}`);
         o[t] = `${r.n}:${r.h.slice(0, 12)}`;
+        if (FIXTURE_TABLES[t]) {
+          const fx = `md5((to_jsonb(t) - 'id')::text)`;
+          const [f] = await sql.unsafe(`select count(*)::int n, md5(coalesce(string_agg(${fx}, ',' order by ${fx}), '')) h from "${t}" t where ${FIXTURE_TABLES[t]}`);
+          o[`${t}[${FIXTURE_PREFIX}]`] = `${f.n}:${f.h.slice(0, 12)}`;
+        }
       } catch (e) { o[t] = `ERR:${e.message.slice(0, 60)}`; }
     }
     return o;
@@ -1788,17 +1866,25 @@ async function main() {
     gitDirty: (() => { try { return execFileSync("git", ["status", "--porcelain", "--", "client/src", "scripts/ui-metrics"], { cwd: REPO }).toString().split("\n").filter(Boolean).map((l) => l.slice(3)); } catch { return null; } })() };
   if (!args.spawn) throw new Error("Chỉ hỗ trợ --spawn (instance tự dựng, có canh dữ liệu + kết nối). Đo instance khác không được nghiệm thu.");
 
-  let serverChild = null, vite = null, probeMade = false;
+  let serverChild = null, vite = null, probeMade = false, fixturesMade = false, cleaning = null;
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "uim-"));
-  const cleanup = async () => {
+  const cleanupOnce = async () => {
     if (vite) { await vite.close().catch(() => {}); vite = null; }
     if (serverChild) { killTree(serverChild.pid); serverChild = null; }
+    // Đợt 3b (R-3b-a): hàng mẫu xoá TRƯỚC user đo (server đã tắt ⇒ không còn ai đọc/ghi chúng).
+    if (fixturesMade) { meta.fixturesRemoved = await withTestDb(deleteFixtures).catch((e) => ({ error: e.message })); fixturesMade = false; }
     if (probeMade) { meta.probeUserRemoved = await withTestDb(deleteProbeUser).catch((e) => ({ error: e.message })); probeMade = false; }
   };
-  process.on("SIGINT", async () => { await cleanup(); process.exit(130); });
+  // Một lượt dọn duy nhất dù Ctrl-C trùng lúc đang dọn ở nhánh thường.
+  const cleanup = () => (cleaning ??= cleanupOnce().finally(() => { cleaning = null; }));
+  // Đợt 3b final wave (minor 4): nhánh tín hiệu cũng IN lỗi dọn (trước: chỉ nhánh thường in ⇒ hàng mẫu rò sau Ctrl-C im lặng).
+  for (const sig of ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"]) process.on(sig, async () => { await cleanup(); for (const l of cleanupFailureLines(meta)) console.error(l); process.exit(130); });
   try {
     probeMade = true; // kể cả khi tạo hỏng giữa chừng ⇒ cleanup vẫn xoá
     const probe = await createProbeUser();
+    fixturesMade = true; // như user đo: gieo hỏng giữa chừng ⇒ cleanup vẫn dọn theo dấu tiền tố
+    meta.fixtures = await seedFixtures();
+    console.log(`[uim] hàng mẫu (${FIXTURE_PREFIX}, _test): ${JSON.stringify(meta.fixtures)}`);
     const tables = allTables();
     meta.data = { tables: tables.length, before: args["discover-tables"] ? null : await dataSnapshot(tables) };
     meta.instance = { server: `tsx server/_core/index.ts :${serverPort} (env tách, không nạp .env; ROLE=api)`, vite: `vite dev in-process :${vitePort} (proxy /api,/uploads → :${serverPort}; envDir của vite.config nạp VITE_* từ .env vào client)`, db: TEST_DB, flagsOn: flags === "dev" ? UI_FLAGS_DEV : [], alwaysOff: Object.keys(ALWAYS_OFF).filter((k) => ALWAYS_OFF[k] === "false"), user: { username: probe.username, role: "engineer", perms: probe.perms, factory: probe.factory } };
@@ -1848,17 +1934,22 @@ async function main() {
     if (args["discover-tables"]) out.discovered = r.discovered;
     await cleanup();
     await sleep(1500); out.meta.portsAfter = await portsReport([serverPort, vitePort]);
-    out.pass = errors.length === 0 && meta.outboundViolations.length === 0 && (args["discover-tables"] || (Object.keys(meta.data.drift).length === 0 && meta.data.errors.length === 0 && (args["no-selftest"] || !!meta.selfTest?.pass) && (!args.mutation || !!meta.selfTest?.mutationPass)));
+    // Đợt 3b fix 1 (R-3b-b (3)): dọn hàng mẫu / user đo hỏng ⇒ pass=false + in ra (runGate.mjs).
+    out.cleanupFailures = cleanupFailures(meta);
+    out.pass = runPass({ errors, meta, args });
     fs.writeFileSync(outFile, JSON.stringify(out, null, 1));
     if (missing.length) console.log(`\n⚠ ${missing.length}/${screens.length} màn CHƯA có [data-layout-main] — đang đo bằng selector FE1: ${missing.join(", ")}`);
     if (errors.length) console.log(`✗ ${errors.length} LỖI:\n  ${errors.join("\n  ")}`);
     console.log(`[uim] kết nối ngoài danh sách: ${meta.outboundViolations.length} · trôi dữ liệu trong lần chạy: ${meta.data.drift ? Object.keys(meta.data.drift).length : "n/a"} (${meta.data.tables} bảng) · lỗi băm: ${meta.data.errors ? meta.data.errors.length : "n/a"} · tự kiểm: ${meta.selfTest ? (meta.selfTest.pass ? "ĐẠT" : "TRƯỢT") : "n/a"}${args.mutation ? ` · đột biến gác: ${meta.selfTest?.mutationPass ? "mọi gác ĐỎ khi gỡ" : "CÓ gác không đỏ"}` : ""}`);
-    console.log(`[uim] cổng sau khi tắt: ${JSON.stringify(out.meta.portsAfter)} · user đo: ${JSON.stringify(out.meta.probeUserRemoved)}`);
+    console.log(`[uim] cổng sau khi tắt: ${JSON.stringify(out.meta.portsAfter)} · user đo: ${JSON.stringify(out.meta.probeUserRemoved)} · hàng mẫu đã xoá: ${JSON.stringify(out.meta.fixturesRemoved)}`);
+    for (const l of cleanupFailureLines(meta)) console.log(l);
     console.log(`[uim] ghi ${outFile} · pass=${out.pass}`);
     process.exitCode = out.pass ? 0 : 2;
   } catch (e) {
     await cleanup();
     console.error("[uim] LỖI:", e.message, `(log: ${logDir})`);
+    // Đợt 3b final wave (minor 4): nhánh lỗi cũng IN lỗi dọn.
+    for (const l of cleanupFailureLines(meta)) console.error(l);
     process.exit(1);
   }
 }
