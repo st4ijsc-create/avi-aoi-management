@@ -152,3 +152,60 @@ export function readOtPayloadHash(preview: unknown): string | null {
   const h = (preview as Record<string, unknown>)[OT_PAYLOAD_HASH_FIELD];
   return typeof h === "string" && h.startsWith("sha256:") ? h : null;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 4 Task A5 (QĐ-4a option (a), ruling R-4-a) — the orchestration engine no longer
+// approves itself. An engine-created action ('foe.orchestration') for an OT/robot step carries
+// WHO approved the earlier hitl_gate it rides on; both dispatchers refuse one whose confirmer is
+// the run owner (defence in depth — the engine already refuses to create it).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** ai_pending_actions.tool of every orchestration-engine action (= foeEngine.FOE_ACTION_TOOL). */
+export const FOE_ENGINE_TOOL = "foe.orchestration";
+
+/** previewJson key carrying the gate approval an engine action rides on (server-owned). */
+export const FOE_APPROVAL_FIELD = "__foeGateApproval";
+
+export interface FoeGateApproval {
+  runId: number;
+  /** orchestration_runs.startedBy — null when the run was not started by a user (API / system). */
+  runOwner: number | null;
+  /** users.id who approved the gate (never 0 / system). */
+  approvedBy: number;
+  gateStepId: string;
+}
+
+const posInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v > 0;
+
+/** Return a copy of previewJson carrying the gate approval. */
+export function withFoeGateApproval(preview: Record<string, unknown> | null | undefined, a: FoeGateApproval): Record<string, unknown> {
+  return { ...(preview ?? {}), [FOE_APPROVAL_FIELD]: { ...a } };
+}
+
+/** Read the stored gate approval; null when absent/malformed (⇒ no separate approval on record). */
+export function readFoeGateApproval(preview: unknown): FoeGateApproval | null {
+  if (!preview || typeof preview !== "object") return null;
+  const a = (preview as Record<string, unknown>)[FOE_APPROVAL_FIELD] as Record<string, unknown> | undefined;
+  if (!a || typeof a !== "object" || !("runOwner" in a)) return null;
+  if (!posInt(a.approvedBy) || !posInt(a.runId) || typeof a.gateStepId !== "string" || a.gateStepId.length === 0) return null;
+  if (a.runOwner !== null && !posInt(a.runOwner)) return null;
+  return { runId: a.runId, runOwner: a.runOwner as number | null, approvedBy: a.approvedBy, gateStepId: a.gateStepId };
+}
+
+/**
+ * PURE — null when `pending` is NOT an engine action, or is one confirmed by a SEPARATE gate approver.
+ * Otherwise the refusal detail: no approval on record (legacy self-approved row), confirmer ≠ the recorded
+ * approver, confirmer = the run owner, or confirmer = the requester the command names.
+ */
+export function foeSelfApprovalRefusal(
+  pending: { tool: string; userId: number; previewJson: unknown },
+  requestedBy?: number | null,
+): string | null {
+  if (pending.tool !== FOE_ENGINE_TOOL) return null;
+  const a = readFoeGateApproval(pending.previewJson);
+  if (!a) return "orchestration action carries no separate gate approval (FOE_GATE_REQUIRED) — an engine step needs an earlier hitl_gate approved by someone other than the run owner";
+  if (pending.userId !== a.approvedBy) return "orchestration action is not confirmed by the gate approver on record";
+  if (a.runOwner !== null && pending.userId === a.runOwner) return "orchestration action is confirmed by the run owner — a separate approval is required";
+  if (requestedBy != null && requestedBy > 0 && pending.userId === requestedBy) return "orchestration action is confirmed by its own requester — a separate approval is required";
+  return null;
+}

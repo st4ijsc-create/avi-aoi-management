@@ -201,7 +201,9 @@ async function makeRobotAction(robotId: number): Promise<string> {
   const id = `${DAU}-rb-${++seq}`;
   await (await d()).insert(aiPendingActions).values({
     id,
-    tool: "foe.orchestration",
+    // doc 81 Đợt 4 Task A5 — a GENERIC bound robot action (this file tests the safety preflight). The tool used to be
+    // "foe.orchestration"; that tool now also requires a separate gate approval on record (foeSelfApprovalRefusal).
+    tool: "robot.test.binding",
     argsJson: {},
     userId: OWNER,
     userRole: "engineer",

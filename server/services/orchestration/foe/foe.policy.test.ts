@@ -183,10 +183,20 @@ const fakeDb = {
 };
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fakeDb) }));
 
-import { deployWorkflow, startRun, getRun } from "./foeEngine";
+import { deployWorkflow, startRun, getRun, resumeRun } from "./foeEngine";
 import type { WorkflowDefinition } from "./workflowModel";
 
 const USER = { id: 42, role: "admin", name: "tester" };
+/** doc 81 Đợt 4 Task A5 — a command runs only after an earlier hitl_gate approved by someone other than the run owner. */
+const APPROVER = { id: 77, role: "admin", name: "approver" };
+function withGate0(def: WorkflowDefinition): WorkflowDefinition {
+  return { ...def, steps: [{ id: "gate0", type: "hitl_gate", prompt: "Approve the run" }, ...def.steps] };
+}
+async function startApproved(ref: string) {
+  const r = await startRun(ref, {}, USER);
+  expect(r.status).toBe("awaiting_confirm");
+  return resumeRun(r.runId!, { approved: true }, APPROVER);
+}
 
 function seedMachines() {
   store.set("machines", [
@@ -221,8 +231,8 @@ const DEF: WorkflowDefinition = {
 
 describe("FOE execCommand — policy seam (W3-B2 G3.14)", () => {
   it("SEC_PLATFORM OFF → run hoàn tất như cũ, evaluateActionPolicy KHÔNG được gọi (bit-compat)", async () => {
-    await deployWorkflow(DEF, USER);
-    const res = await startRun("pol-wf", {}, USER);
+    await deployWorkflow(withGate0(DEF), USER);
+    const res = await startApproved("pol-wf");
     expect(res.status).toBe("completed");
     expect(otDispatchMock).toHaveBeenCalledTimes(1);
     expect(policyMock.evaluateActionPolicy).not.toHaveBeenCalled();
@@ -230,8 +240,8 @@ describe("FOE execCommand — policy seam (W3-B2 G3.14)", () => {
 
   it("ON + PERMIT → run hoàn tất nguyên vẹn + action/resource/context đúng chuẩn foe.command.{command}", async () => {
     policyMock.secPlatformEnabled.mockReturnValue(true);
-    await deployWorkflow(DEF, USER);
-    const res = await startRun("pol-wf", {}, USER);
+    await deployWorkflow(withGate0(DEF), USER);
+    const res = await startApproved("pol-wf");
     expect(res.status).toBe("completed");
     expect(otDispatchMock).toHaveBeenCalledTimes(1);
 
@@ -247,7 +257,7 @@ describe("FOE execCommand — policy seam (W3-B2 G3.14)", () => {
       command: "start",
       machineId: 1,
       role: "admin",
-      startedBy: 42,
+      startedBy: 42, // the run OWNER, not the gate approver (Đợt 4 A5)
       attempt: 1,
     });
     expect(typeof context.runId).toBe("number");
@@ -312,8 +322,8 @@ describe("FOE execCommand — policy seam (W3-B2 G3.14)", () => {
         },
       ],
     };
-    await deployWorkflow(def, USER);
-    const res = await startRun("pol-comp", {}, USER);
+    await deployWorkflow(withGate0(def), USER);
+    const res = await startApproved("pol-comp");
     expect(res.status).toBe("failed");
     // 'start' bị deny (không dispatch); compensation 'stop' ĐƯỢC phép và đã dispatch.
     expect(otDispatchMock).toHaveBeenCalledTimes(1);

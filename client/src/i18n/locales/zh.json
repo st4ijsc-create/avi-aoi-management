@@ -11687,6 +11687,7 @@
     "noRunMatch": "无匹配过滤条件的运行",
     "otherRuns": "其他运行",
     "awaitingStep": "等待步骤",
+    "gateRequired": "未发送：此命令需要在本次运行中先有一个审批关卡，并由启动运行者以外的人批准。请在此步骤前添加审批关卡，重新部署后开始新的运行。",
     "approverRolesLabel": "审批人角色",
     "noGatePrompt": "作者未为此步骤编写提示。",
     "rejectReason": "拒绝原因（可选）",

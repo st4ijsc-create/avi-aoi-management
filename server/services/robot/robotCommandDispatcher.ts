@@ -44,7 +44,7 @@ import { and, eq, lt } from "drizzle-orm";
 import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions, type AiPendingAction } from "../../../drizzle/schema";
-import { readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
+import { foeSelfApprovalRefusal, readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver, RobotJobResult } from "./robotDriver";
 import {
@@ -1002,6 +1002,10 @@ export function verifyRobotActionBinding(pending: AiPendingAction | undefined, i
   if (input.confirmedBy !== undefined && pending.userId !== input.confirmedBy) {
     return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action owner mismatch" };
   }
+  // doc 81 Đợt 4 Task A5 (R-4-a, defence in depth) — an orchestration-engine action authorising MOTION must be
+  // confirmed by the approver of an earlier hitl_gate, never by the run owner (a STOP never reaches this check).
+  const self = foeSelfApprovalRefusal(pending, input.requestedBy);
+  if (self) return { ok: false, reason: "NOT_CONFIRMED", detail: self };
   const stored = readOtPayloadHash(pending.previewJson);
   if (!stored) {
     return { ok: false, reason: "ACTION_BINDING_MISMATCH", detail: "HITL action carries no robot payload binding" };

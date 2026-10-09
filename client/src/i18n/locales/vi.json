@@ -11862,6 +11862,7 @@
     "reject": "Từ chối",
     "abort": "Dừng",
     "awaitingStep": "Bước đang chờ",
+    "gateRequired": "Chưa gửi: lệnh này cần một bước duyệt (gate) trước nó trong lượt chạy, do người KHÁC người khởi động lượt chạy duyệt. Thêm bước duyệt trước bước này, triển khai lại và chạy lượt mới.",
     "approverRolesLabel": "Vai trò duyệt",
     "noGatePrompt": "Tác giả không soạn nội dung nhắc cho bước này.",
     "rejectReason": "Lý do từ chối (tùy chọn)",

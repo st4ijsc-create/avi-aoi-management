@@ -192,6 +192,21 @@ import {
 } from "./foeEngine";
 
 const USER = { id: 42, role: "admin", name: "tester" };
+/**
+ * doc 81 Đợt 4 Task A5 (QĐ-4a option (a)) — an OT/robot step now runs only after an earlier hitl_gate of the run
+ * approved by someone OTHER than the run owner (USER). Tests about engine mechanics put a gate `gate0` first and have
+ * APPROVER approve it; the gate rule itself is tested in foeGateApproval.dot4.test.ts.
+ */
+const APPROVER = { id: 77, role: "admin", name: "approver" };
+function withGate0(def: WorkflowDefinition): WorkflowDefinition {
+  return { ...def, steps: [{ id: "gate0", type: "hitl_gate", prompt: "Approve the run" }, ...def.steps] };
+}
+/** Start as USER, then APPROVER approves gate0 (the run pauses there first). */
+async function startApproved(ref: string, params: Record<string, unknown> = {}) {
+  const r = await startRun(ref, params, USER);
+  expect(r.status).toBe("awaiting_confirm");
+  return resumeRun(r.runId!, { approved: true }, APPROVER);
+}
 
 // Seed machines: id 1 = AUTOMATION (ot-opcua, supports start/stop), id 2 = AOI (vision).
 function seedMachines() {
@@ -317,8 +332,8 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
         { id: "b", type: "command", machineId: 1, command: "stop" },
       ],
     };
-    await deploy(def);
-    const res = await startRun("seq", {}, USER);
+    await deploy(withGate0(def));
+    const res = await startApproved("seq");
     expect(res.status).toBe("completed");
 
     // BOTH command steps routed to the EXISTING ot dispatcher (dry-run mock).
@@ -341,23 +356,25 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
       name: "GateWire",
       steps: [{ id: "a", type: "command", machineId: 1, command: "start" }],
     };
-    await deploy(def);
-    const res = await startRun("gatewire", {}, USER);
+    await deploy(withGate0(def));
+    const res = await startApproved("gatewire");
     expect(res.status).toBe("completed");
 
-    // FOE đã tạo ủy quyền ai_pending_actions confirmed, owner = user khởi động run.
+    // FOE đã tạo ủy quyền ai_pending_actions confirmed. doc 81 Đợt 4 Task A5: người xác nhận = người DUYỆT gate0
+    // (APPROVER), KHÔNG còn là người khởi động run.
     const pend = store.get("ai_pending_actions") ?? [];
     expect(pend).toHaveLength(1);
     // doc 81 Đợt 1B Task 6 (R4): bước OT ⇒ 'confirmed' (dispatcher tiêu thụ confirmed→executed,
     // một lần) + binding = hash chuẩn hoá của ĐÚNG lệnh gửi đi. Inbox chỉ đọc 'proposed' ⇒ không lọt.
     expect(pend[0].status).toBe("confirmed");
-    expect(pend[0].userId).toBe(USER.id);
+    expect(pend[0].userId).toBe(APPROVER.id);
     expect(String(pend[0].id)).toMatch(/^foe-/);
 
     // Trigger gửi tới dispatcher trỏ ĐÚNG bản ghi đó + confirmedBy = owner → qua cổng thật.
     const call = otDispatchMock.mock.calls[0][0];
     expect(call.triggeredBy.actionId).toBe(pend[0].id);
-    expect(call.triggeredBy.confirmedBy).toBe(USER.id);
+    expect(call.triggeredBy.confirmedBy).toBe(APPROVER.id);
+    expect(call.triggeredBy.requestedBy).toBe(USER.id);
     expect(call.triggeredBy.tool).toBe("foe.orchestration");
     const { otPayloadHash, readOtPayloadHash } = await import("../../ot/otActionBinding");
     expect(readOtPayloadHash(pend[0].previewJson)).toBe(
@@ -386,8 +403,8 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
         },
       ],
     };
-    await deploy(def);
-    const res = await startRun("par", {}, USER);
+    await deploy(withGate0(def));
+    const res = await startApproved("par");
     expect(res.status).toBe("completed");
     expect(otDispatchMock).toHaveBeenCalledTimes(2);
   });
@@ -406,14 +423,14 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
         },
       ],
     };
-    await deploy(def);
+    await deploy(withGate0(def));
 
-    const yes = await startRun("br", { go: true }, USER);
+    const yes = await startApproved("br", { go: true });
     expect(yes.status).toBe("completed");
     expect(otDispatchMock.mock.calls[0][0].commandType).toBe("start");
 
     otDispatchMock.mockClear();
-    const no = await startRun("br", { go: false }, USER);
+    const no = await startApproved("br", { go: false });
     expect(no.status).toBe("completed");
     expect(otDispatchMock.mock.calls[0][0].commandType).toBe("stop");
   });
@@ -481,7 +498,7 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
     // the post-gate command must NOT have run yet
     expect(otDispatchMock).toHaveBeenCalledTimes(0);
 
-    const resumed = await resumeRun(res.runId!, { approved: true }, USER);
+    const resumed = await resumeRun(res.runId!, { approved: true }, APPROVER); // Đợt 4 A5: not the run owner
     expect(resumed.status).toBe("completed");
     // now the post-gate command ran (once)
     expect(otDispatchMock).toHaveBeenCalledTimes(1);
@@ -516,14 +533,14 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
         { id: "after", type: "command", machineId: 1, command: "stop" },
       ],
     };
-    await deploy(def);
-    const res = await startRun("gate-pre", {}, USER);
+    await deploy(withGate0(def));
+    const res = await startApproved("gate-pre"); // Đợt 4 A5: gate0 cho 'pre'
     expect(res.status).toBe("awaiting_confirm");
     // 'pre' đã dispatch đúng 1 lần; 'after' (sau gate) chưa chạy
     expect(otDispatchMock).toHaveBeenCalledTimes(1);
     expect(otDispatchMock.mock.calls[0][0].commandType).toBe("start");
 
-    const resumed = await resumeRun(res.runId!, { approved: true }, USER);
+    const resumed = await resumeRun(res.runId!, { approved: true }, APPROVER);
     expect(resumed.status).toBe("completed");
     // 'pre' KHÔNG chạy lại (vẫn 1 'start'); chỉ 'after' chạy → tổng đúng [start, stop]
     expect(otDispatchMock).toHaveBeenCalledTimes(2);
@@ -552,13 +569,13 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
         },
       ],
     };
-    await deploy(def);
-    const res = await startRun("gate-par", {}, USER);
+    await deploy(withGate0(def));
+    const res = await startApproved("gate-par"); // Đợt 4 A5: gate0 cho 'p1'
     expect(res.status).toBe("awaiting_confirm");
     // 'p1' chạy; 'p2' (sau gate lồng) chưa
     expect(otDispatchMock.mock.calls.map((c) => c[0].commandType)).toEqual(["start"]);
 
-    const resumed = await resumeRun(res.runId!, { approved: true }, USER);
+    const resumed = await resumeRun(res.runId!, { approved: true }, APPROVER);
     expect(resumed.status).toBe("completed");
     // 'p1' KHÔNG re-dispatch, gate lồng được skip, 'p2' chạy → tổng [start, stop]
     expect(otDispatchMock.mock.calls.map((c) => c[0].commandType)).toEqual(["start", "stop"]);
@@ -587,7 +604,7 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
     // gate đứng trước 't' → chưa dispatch gì
     expect(otDispatchMock).toHaveBeenCalledTimes(0);
 
-    const resumed = await resumeRun(res.runId!, { approved: true }, USER);
+    const resumed = await resumeRun(res.runId!, { approved: true }, APPROVER); // Đợt 4 A5: not the run owner
     expect(resumed.status).toBe("completed");
     // đi đúng nhánh 'then', gate được skip, chỉ 't' chạy → [start] (không lạc sang 'else')
     expect(otDispatchMock.mock.calls.map((c) => c[0].commandType)).toEqual(["start"]);
@@ -615,8 +632,8 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
         },
       ],
     };
-    await deploy(def);
-    const res = await startRun("comp", {}, USER);
+    await deploy(withGate0(def));
+    const res = await startApproved("comp");
     expect(res.status).toBe("failed");
     // compensation 'stop' was dispatched after the 'start' failure
     const types = otDispatchMock.mock.calls.map((c) => c[0].commandType);
@@ -651,9 +668,10 @@ describe("foeEngine executor (SIMULATION via E0 dispatcher)", () => {
       name: "Boom",
       steps: [{ id: "a", type: "command", machineId: 1, command: "start" }],
     };
-    await deployWorkflow(def, USER);
-    const res = await startRun("boom", {}, USER);
+    await deployWorkflow(withGate0(def), USER);
+    const res = await startApproved("boom"); // Đợt 4 A5: gate0 so the throwing dispatch is actually reached
     expect(res.status).toBe("failed");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
     expect(res.ok).toBe(false);
     // engine did not throw — we got a structured result back
     expect(res.runId).toBeDefined();
@@ -782,8 +800,8 @@ describe("W4-17 durable execution", () => {
         { id: "after", type: "command", machineId: 1, command: "stop" },
       ],
     };
-    await deployWorkflow(def, USER);
-    const started = await startRun("durable-resume", {}, USER);
+    await deployWorkflow(withGate0(def), USER);
+    const started = await startApproved("durable-resume"); // Đợt 4 A5: gate0 cho 'pre'
     expect(started.status).toBe("awaiting_confirm");
     expect(otDispatchMock).toHaveBeenCalledTimes(1); // chỉ 'pre'
 
@@ -796,7 +814,7 @@ describe("W4-17 durable execution", () => {
 
     // Resume thủ công (approve) → đi lại: 'pre' KHÔNG re-dispatch, gate đã đánh dấu completed,
     // chỉ 'after' chạy → tổng [start, stop].
-    const resumed = await resumeRun(started.runId!, { approved: true }, USER);
+    const resumed = await resumeRun(started.runId!, { approved: true }, APPROVER);
     expect(resumed.status).toBe("completed");
     expect(otDispatchMock.mock.calls.map((c) => c[0].commandType)).toEqual(["start", "stop"]);
   });
@@ -810,13 +828,13 @@ describe("W4-17 durable execution", () => {
         { id: "b", type: "command", machineId: 1, command: "stop" },
       ],
     };
-    await deployWorkflow(def, USER);
+    await deployWorkflow(withGate0(def), USER);
     const res = await startRun("async-run", {}, USER, { async: true });
     expect(res.ok).toBe(true);
     expect(res.status).toBe("queued");
     expect(res.runId).toBeDefined();
 
-    // Chờ drive nền (setImmediate) hoàn tất.
+    // Chờ drive nền (setImmediate) tới gate0 (Đợt 4 A5), rồi người KHÁC duyệt.
     let status: string | undefined;
     for (let i = 0; i < 50; i++) {
       const v = await getRun(res.runId!);
@@ -824,6 +842,8 @@ describe("W4-17 durable execution", () => {
       if (status && ["completed", "failed", "aborted", "awaiting_confirm"].includes(status)) break;
       await new Promise((r) => setImmediate(r));
     }
+    expect(status).toBe("awaiting_confirm");
+    status = (await resumeRun(res.runId!, { approved: true }, APPROVER)).status;
     expect(status).toBe("completed");
     expect(otDispatchMock.mock.calls.map((c) => c[0].commandType)).toEqual(["start", "stop"]);
   });

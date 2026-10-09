@@ -87,7 +87,9 @@ async function makeAction(opts: {
         );
   await (await d()).insert(aiPendingActions).values({
     id,
-    tool: "foe.orchestration",
+    // doc 81 Đợt 4 Task A5 — a GENERIC bound action (this file tests the hash binding, not the engine). The tool used to
+    // be "foe.orchestration"; that tool now also requires a separate gate approval on record (foeSelfApprovalRefusal).
+    tool: "robot.test.binding",
     argsJson: {},
     userId: opts.userId ?? OWNER,
     userRole: "engineer",
@@ -134,6 +136,8 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     const db = await d();
     await db.delete(aiPendingActions).where(like(aiPendingActions.id, `${DAU}%`));
     await db.delete(aiPendingActions).where(and(eq(aiPendingActions.userId, OWNER), like(aiPendingActions.summary, "FOE orchestration:%")));
+    // doc 81 Đợt 4 Task A5 — engine rows are now confirmed by the gate approver (OTHER).
+    await db.delete(aiPendingActions).where(and(eq(aiPendingActions.userId, OTHER), like(aiPendingActions.summary, "FOE orchestration:%")));
     try {
       await db.delete(robotJobs).where(eq(robotJobs.robotId, ROBOT));
     } catch {
@@ -290,21 +294,48 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
       idempotencyKey: key,
       hitl: { actionId: "x", requestedBy: OWNER, confirmedBy: OWNER },
     };
-    await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: "s-robot", type: "command" } as any, {}, cmd as any);
+    // doc 81 Đợt 4 Task A5 — the row rides on a gate approved by OTHER (≠ the run owner OWNER): OTHER confirms it.
+    const approval = { runId: 1, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
+    await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: "s-robot", type: "command" } as any, {}, cmd as any, approval);
     const [row] = await (await d())
       .select()
       .from(aiPendingActions)
-      .where(and(eq(aiPendingActions.userId, OWNER), eq(aiPendingActions.summary, "FOE orchestration: step s-robot")))
+      .where(eq(aiPendingActions.id, `foe-${key}`.slice(0, 64)))
       .limit(1);
+    expect(row?.userId).toBe(OTHER);
     expect(row).toBeDefined();
     expect(row!.status).toBe("confirmed");
     const job = toRobotJob(cmd as any);
     expect(readOtPayloadHash(row!.previewJson)).toBe(robotPayloadHash({ robotId: ROBOT, jobType: job.jobType, params: job.params ?? null }));
     // Chính hàng ấy đi qua dispatcher như RobotEquipmentAdapter.sendCommand gọi.
-    const r = await dispatchRobotJob({ robotId: ROBOT, job, triggerKind: "hitl", actionId: row!.id, requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: key });
+    const r = await dispatchRobotJob({ robotId: ROBOT, job, triggerKind: "hitl", actionId: row!.id, requestedBy: OWNER, confirmedBy: OTHER, idempotencyKey: key });
     expect(r.status).toBe("done");
     expect(rt.runJobCalls).toBe(1);
     expect(await pendingStatus(row!.id)).toBe("executed");
+  });
+
+  it("★ Đợt 4 A5 (lớp dispatcher): hàng FOE do CHÍNH người chạy xác nhận (không có phê duyệt gate riêng) ⇒ NOT_CONFIRMED, 0 runJob, hàng vẫn confirmed", async () => {
+    const { ensureOrchestrationAction } = await import("../orchestration/foe/foeEngine");
+    const { toRobotJob } = await import("../equipment/robotJobMapping");
+    const mk = async (approval?: { runId: number; runOwner: number | null; approvedBy: number; gateStepId: string }) => {
+      const key = `${DAU}-foeself-${++seq}`;
+      const cmd = { name: "home", robotId: ROBOT, machineId: null, idempotencyKey: key, hitl: { actionId: "x", requestedBy: OWNER, confirmedBy: OWNER } };
+      await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: `s-${key}`, type: "command" } as any, {}, cmd as any, approval);
+      const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, `foe-${key}`.slice(0, 64))).limit(1);
+      return { row: row!, key, job: toRobotJob(cmd as any) };
+    };
+    const before = rt.runJobCalls;
+    // (1) legacy self-grant (no approval on record), confirmer = run owner
+    const a = await mk();
+    expect(a.row.userId).toBe(OWNER);
+    const r1 = await dispatchRobotJob({ robotId: ROBOT, job: a.job, triggerKind: "hitl", actionId: a.row.id, requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: a.key });
+    expect(r1).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+    expect(await pendingStatus(a.row.id)).toBe("confirmed");
+    // (2) an approval whose approver IS the run owner
+    const b = await mk({ runId: 1, runOwner: OWNER, approvedBy: OWNER, gateStepId: "g0" });
+    const r2 = await dispatchRobotJob({ robotId: ROBOT, job: b.job, triggerKind: "hitl", actionId: b.row.id, requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: b.key });
+    expect(r2).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+    expect(rt.runJobCalls).toBe(before);
   });
 
   it("sổ robot_jobs: mỗi lượt bị từ chối vì binding có hàng rejected mang mã lý do", async () => {

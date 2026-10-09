@@ -554,8 +554,11 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     const args = { adapterId, tagKey: "speed_sp", value: 7 };
     const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
     const cap = { adapterKind: "ot-stub" } as never;
-    const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user);
-    await ensureOrchestrationAction(user, key, { id: "s1", type: "command" } as never, args, cmd);
+    // doc 81 Đợt 4 Task A5 — the step rides on a gate approved by OTHER_USER (≠ run owner OWNER), who confirms it.
+    const approval = { runId: 1, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
+    const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user, approval);
+    expect(cmd.hitl).toMatchObject({ requestedBy: OWNER, confirmedBy: OTHER_USER });
+    await ensureOrchestrationAction(user, key, { id: "s1", type: "command" } as never, args, cmd, approval);
     const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
     expect(res.ok).toBe(true);
     expect(writeCalls).toBe(1);
@@ -567,6 +570,27 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
       .sendCommand({ ...cmd, idempotencyKey: `${key}-x`, writes: [{ tagKey: "speed_sp", value: 8 }] });
     expect(replay.ok).toBe(false);
     expect(writeCalls).toBe(1);
+  });
+
+  // ═════════════════ Đợt 4 A5 — lớp dispatcher: FOE không tự duyệt ═════════════════
+  it("★ Đợt 4 A5 (verifyActionBinding): hàng FOE xác nhận bởi CHÍNH người chạy (cũ, hoặc người duyệt = người chạy) ⇒ NOT_CONFIRMED, 0 ghi, hàng vẫn confirmed", async () => {
+    const { buildEquipmentCommand, ensureOrchestrationAction } = await import("../orchestration/foe/foeEngine");
+    const { equipmentRegistry } = await import("../equipment/equipmentAdapter");
+    const user = { id: OWNER, role: "engineer" } as never;
+    const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
+    const cap = { adapterKind: "ot-stub" } as never;
+    const before = writeCalls;
+    for (const [i, approval] of [[1, undefined], [2, { runId: 1, runOwner: OWNER, approvedBy: OWNER, gateStepId: "g0" }]] as const) {
+      const key = `${DAU}-self${i}-s1-a1`;
+      const args = { adapterId, tagKey: "speed_sp", value: 40 + i };
+      const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user, approval);
+      await ensureOrchestrationAction(user, key, { id: `self${i}`, type: "command" } as never, args, cmd, approval);
+      const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
+      expect(res.ok, `case ${i}`).toBe(false);
+      const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, cmd.hitl!.actionId));
+      expect(row?.status, `case ${i}`).toBe("confirmed");
+    }
+    expect(writeCalls).toBe(before);
   });
 
   // ═════════════════ tool AI: propose (lưu binding) → confirm → execute → dispatch ═════════════════

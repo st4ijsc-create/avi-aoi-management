@@ -112,7 +112,7 @@ import {
   type AiPendingAction,
   type CommandLog,
 } from "../../../drizzle/schema";
-import { boundedKey, canonicalOtValue, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { boundedKey, canonicalOtValue, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 import { adapterTargetFingerprint } from "./adapterTarget";
@@ -1223,7 +1223,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── (5b-0) doc 81 Đợt 1B Task 6 — WRITE-AHEAD RESERVATION (advisory lock → re-probe →
   //         bind + consume the HITL action → INSERT intent rows), committed BEFORE the
   //         driver is called. Refused / failed ⇒ return; driver.writeTags is never reached.
-  const reservation = await reserveRealWrite(db, input, resolved, { bindingInput: callerInput, ledgerExtra });
+  const reservation = await reserveRealWrite(db, input, resolved, { bindingInput: callerInput, ledgerExtra, pinnedStop: stopCls.pinnedStop });
   if (!reservation.ok) return reservation.result;
   const { intentIds } = reservation;
   const ledgerConfirmer = reservation.boundConfirmer ?? who.confirmedBy;
@@ -1551,6 +1551,8 @@ function verifyActionBinding(
   pending: AiPendingAction | undefined,
   input: DispatchInput,
   t: HitlTrigger,
+  /** doc 81 Đợt 4 Task A5 — true ⇔ the dispatcher classified THIS command as a PINNED stop (data-verified). */
+  opts: { pinnedStop?: boolean } = {},
 ): BindingVerdict {
   if (!pending) return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action not found" };
   if (pending.status !== "confirmed") {
@@ -1572,6 +1574,12 @@ function verifyActionBinding(
       reason: "ACTION_BINDING_MISMATCH",
       detail: `HITL action was created for tool '${pending.tool}', command claims '${t.tool ?? "(none)"}'`,
     };
+  }
+  // doc 81 Đợt 4 Task A5 (R-4-a, defence in depth) — an orchestration-engine action must be confirmed by the
+  // approver of an earlier hitl_gate, never by the run owner. A PINNED stop is exempt (L-7: a stop is never blocked).
+  if (opts.pinnedStop !== true) {
+    const self = foeSelfApprovalRefusal(pending, t.requestedBy);
+    if (self) return { ok: false, reason: "NOT_CONFIRMED", detail: self };
   }
   const stored = readOtPayloadHash(pending.previewJson);
   if (!stored) {
@@ -1630,6 +1638,8 @@ async function reserveRealWrite(
     bindingInput?: DispatchInput;
     /** Extra ackValue fields on the intent rows (pinned stop metadata). */
     ledgerExtra?: Record<string, unknown>;
+    /** doc 81 Đợt 4 Task A5 — this command is a PINNED stop (stopCls.pinnedStop): exempt from the engine-self-approval refusal. */
+    pinnedStop?: boolean;
   } = {},
 ): Promise<Reservation> {
   const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
@@ -1670,7 +1680,7 @@ async function reserveRealWrite(
             .from(aiPendingActions)
             .where(eq(aiPendingActions.id, t.actionId))
             .for("update");
-          verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t);
+          verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t, { pinnedStop: opts.pinnedStop === true });
           if (verdict.ok) {
             const consumed = await tx
               .update(aiPendingActions)

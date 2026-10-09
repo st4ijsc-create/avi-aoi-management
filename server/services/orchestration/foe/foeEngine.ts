@@ -61,7 +61,8 @@ import {
   type EquipmentCommandResult,
 } from "../../equipment/equipmentAdapter";
 import { asPackmlState } from "../../equipment/packml";
-import { otPayloadHash, robotPayloadHash, withOtPayloadHash } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6 + final wave (robot)
+import { FOE_ENGINE_TOOL, otPayloadHash, robotPayloadHash, withFoeGateApproval, withOtPayloadHash } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6 + final wave (robot) + Đợt 4 A5
+import { isStopJob } from "../../robot/stopJob"; // doc 81 Đợt 4 A5 — a robot STOP is never gated (L-7)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
@@ -289,6 +290,11 @@ interface RunContext extends LiveRunHandle {
    * lồng trong parallel/branch (vì mọi walker đều đi qua execStep). Rỗng khi chạy mới.
    */
   completed: Set<string>;
+  /**
+   * doc 81 Đợt 4 Task A5 — orchestration_runs.startedBy (the run OWNER). NOT `user`: on a resume `user` is
+   * the approver. null = the run was not started by a user (API key / system).
+   */
+  runOwner: number | null;
 }
 
 /** Outcome of executing a step subtree. */
@@ -514,10 +520,22 @@ function orchestrationActionId(idempotencyKey: string): string {
  * treatment — a 'confirmed' row bound with robotPayloadHash to the job toRobotJob(cmd) yields,
  * which the robot dispatcher verifies under FOR UPDATE and consumes once. Only a step that is
  * neither OT nor robot (no adapterId, no robotId) still gets the legacy unbound 'executed' row.
- * ⚠ CÒN MỞ (doc 81 BE2 §L2): FOE still GRANTS ITSELF this approval — no human confirms the
- * step; Task 6 / the final wave only bind the self-grant to the one command it was minted for.
+ * doc 81 Đợt 4 Task A5 (QĐ-4a option (a)) CLOSES the old "FOE grants itself this approval" gap: the row is
+ * confirmed by the approver of an earlier hitl_gate of the run (≠ run owner) — see findSeparateGateApproval.
  */
-export const FOE_ACTION_TOOL = "foe.orchestration";
+export const FOE_ACTION_TOOL = FOE_ENGINE_TOOL;
+
+/**
+ * doc 81 Đợt 4 Task A5 (QĐ-4a option (a), ruling R-4-a) — the separate human approval an OT/robot step rides on:
+ * an earlier hitl_gate of the SAME run, approved by `approvedBy` ≠ the run owner. Found by
+ * findSeparateGateApproval; recorded on the action (previewJson) so both dispatchers can re-check it.
+ */
+export interface FoeStepApproval {
+  runId: number;
+  runOwner: number | null;
+  approvedBy: number;
+  gateStepId: string;
+}
 
 export async function ensureOrchestrationAction(
   user: FoeUser,
@@ -525,6 +543,14 @@ export async function ensureOrchestrationAction(
   step: WorkflowStep,
   args: Record<string, unknown>,
   cmd?: EquipmentCommand,
+  /**
+   * doc 81 Đợt 4 Task A5 — the separate gate approval (OT/robot steps). With it the row is CONFIRMED BY the
+   * approver and carries the approval; without it an OT/robot row is still created confirmed by `user` — the only
+   * case the engine still does that is a STOP (every other OT/robot step is refused before this call), and the
+   * dispatchers accept such a self-confirmed engine row ONLY for a stop (a pinned OT stop; a robot abort is never
+   * verified at all).
+   */
+  approval?: FoeStepApproval,
 ): Promise<void> {
   try {
     const d = await getDb();
@@ -558,12 +584,15 @@ export async function ensureOrchestrationAction(
       const job = toRobotJob(cmd);
       previewJson = withOtPayloadHash(null, robotPayloadHash({ robotId: cmd.robotId!, jobType: job.jobType, params: job.params ?? null }));
     }
+    const approved = (isOt || isRobot) && approval != null;
+    if (approved && previewJson) previewJson = withFoeGateApproval(previewJson, approval);
     await d.insert(aiPendingActions).values({
       id: actionId,
       tool: FOE_ACTION_TOOL,
       argsJson: args ?? {},
-      userId: user.id || 0,
-      userRole: user.role || "system",
+      // doc 81 Đợt 4 Task A5 — confirmer = the gate approver (never the run owner).
+      userId: approved ? approval.approvedBy : user.id || 0,
+      userRole: approved ? "foe_gate_approver" : user.role || "system",
       summary: `FOE orchestration: step ${step.id}`,
       ...(isOt || isRobot
         ? { status: "confirmed" as const, previewJson }
@@ -583,6 +612,8 @@ export function buildEquipmentCommand(
   args: Record<string, unknown>,
   idempotencyKey: string,
   user: FoeUser,
+  /** doc 81 Đợt 4 Task A5 — requester = run owner, confirmer = the gate approver (absent ⇒ legacy: both `user`). */
+  approval?: FoeStepApproval,
 ): EquipmentCommand {
   const isRobot = capability.adapterKind === "robot" || capability.adapterKind === "vda5050";
   const cmd: EquipmentCommand = {
@@ -595,8 +626,8 @@ export function buildEquipmentCommand(
     hitl: {
       actionId: orchestrationActionId(idempotencyKey),
       tool: FOE_ACTION_TOOL, // doc 81 Đợt 1B Task 6 — part of the OT binding
-      requestedBy: user.id || 0,
-      confirmedBy: user.id || 0,
+      requestedBy: approval ? approval.runOwner ?? 0 : user.id || 0,
+      confirmedBy: approval ? approval.approvedBy : user.id || 0,
     },
   };
   if (isRobot) {
@@ -792,6 +823,53 @@ async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number):
   }
 }
 
+/**
+ * doc 81 Đợt 4 Task A5 — the OT dispatcher's OWN stop-type predicate (commandDispatcher.isStopCommandType — one
+ * definition), imported lazily (the dispatcher module is heavy and test suites replace it). Unavailable ⇒ false:
+ * the step is then treated as a non-stop and needs a gate (fail-closed).
+ */
+async function isOtStopCommandType(name: string): Promise<boolean> {
+  try {
+    const mod = await import("../../ot/commandDispatcher");
+    return typeof mod.isStopCommandType === "function" && mod.isStopCommandType(name) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** doc 81 Đợt 4 Task A5 — step error code (prefix) the Studio translates (studio.gateRequired). */
+export const FOE_GATE_REQUIRED = "FOE_GATE_REQUIRED";
+
+/**
+ * doc 81 Đợt 4 Task A5 (R-4-a) — the latest hitl_gate of THIS run that counts as a separate human approval:
+ *   • its _run_steps row is 'completed' with result { approved: true, approvedBy } (written by resumeRun);
+ *   • the step id is a hitl_gate IN THE WORKFLOW DEFINITION (resumeRun also marks a 'held' step it continues);
+ *   • approvedBy is a real user (positive integer — never 0 / the system auto-resume) and ≠ the run owner.
+ * A gate result with no approvedBy (runs from before Đợt 4) does NOT count. Any DB error ⇒ null (fail-closed).
+ */
+async function findSeparateGateApproval(rc: RunContext): Promise<FoeStepApproval | null> {
+  try {
+    const d = await getDb();
+    if (!d) return null;
+    const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, rc.runId));
+    let best: { approval: FoeStepApproval; at: number } | null = null;
+    for (const r of rows) {
+      if (r.status !== "completed") continue;
+      const node = findStepDeep(rc.def.steps, r.stepId);
+      if (!node || node.type !== "hitl_gate") continue;
+      const res = (r.resultJson ?? null) as { approved?: unknown; approvedBy?: unknown } | null;
+      const by = res?.approvedBy;
+      if (res?.approved !== true || typeof by !== "number" || !Number.isInteger(by) || by <= 0) continue;
+      if (rc.runOwner !== null && by === rc.runOwner) continue;
+      const at = r.finishedAt ? new Date(r.finishedAt).getTime() : 0;
+      if (!best || at >= best.at) best = { approval: { runId: rc.runId, runOwner: rc.runOwner, approvedBy: by, gateStepId: r.stepId }, at };
+    }
+    return best?.approval ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number): Promise<StepOutcome> {
   const m = rc.machineById.get(step.machineId);
   if (!m) return { kind: "failed", error: `Machine ${step.machineId} not found.` };
@@ -824,7 +902,8 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
           command: step.command,
           machineId: step.machineId,
           role: rc.user.role,
-          startedBy: rc.user.id,
+          // doc 81 Đợt 4 Task A5 — the run OWNER (on a resume rc.user is the approver, which this used to report).
+          startedBy: rc.runOwner ?? rc.user.id,
           attempt,
         },
         { requestId: idempotencyKey },
@@ -847,8 +926,26 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // cổng HITL của dispatcher (OT/robot) tái-xác-minh và cho qua HỢP LỆ (không còn phụ
   // thuộc mock). Fail-safe: nếu không tạo được, dispatcher fail-closed từ chối.
   // doc 81 Đợt 1B Task 6 — build the command FIRST so the authorisation row is bound to it.
-  const cmd = buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user);
-  await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {}, cmd);
+  // doc 81 Đợt 4 Task A5 (QĐ-4a option (a), R-4-a) — the engine no longer approves itself: an OT/robot step runs only
+  // on an earlier hitl_gate of THIS run approved by someone other than the run owner; that approver is the action's
+  // confirmer. No such gate ⇒ the step stops with FOE_GATE_REQUIRED (Studio: studio.gateRequired). A STOP is exempt
+  // (L-7, energy direction): a robot abort/stop is never gated by the robot dispatcher, and an OT stop-typed step is
+  // let through here but the OT dispatcher accepts its self-confirmed row ONLY for a PINNED stop.
+  const approval = await findSeparateGateApproval(rc);
+  const probe = buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user);
+  const isStop = probe.robotId != null ? isStopJob(toRobotJob(probe)) : await isOtStopCommandType(probe.name);
+  if (!approval && !isStop) {
+    // data-raw-ok: the code prefix FOE_GATE_REQUIRED is what the Studio keys its translated text on.
+    return {
+      kind: "failed",
+      error:
+        `${FOE_GATE_REQUIRED}: command step "${step.id}" needs an earlier approval gate (hitl_gate) in this run, approved by ` +
+        `someone other than the user who started it — none found, nothing was sent. Add a hitl_gate before this step, deploy, ` +
+        `and start a new run; another user must approve the gate.`,
+    };
+  }
+  const cmd = approval ? buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user, approval) : probe;
+  await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {}, cmd, approval ?? undefined);
 
   // doc 80 ORC-01 — last check before the command leaves the engine (the awaits above can span an abort).
   if (rc.aborting) return ABORTED_OUTCOME;
@@ -1053,6 +1150,7 @@ async function buildRunContext(
     telemetry,
     states,
     completed,
+    runOwner: run.startedBy ?? null,
     aborting: false,
     controller: new AbortController(),
   };

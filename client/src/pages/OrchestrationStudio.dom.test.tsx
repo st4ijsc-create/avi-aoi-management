@@ -210,6 +210,30 @@ describe("OrchestrationStudio — Fix round 1: failed/timeout là 'chưa xác nh
   });
 });
 
+describe("OrchestrationStudio — doc 81 Đợt 4 Task A5: bước dừng FOE_GATE_REQUIRED nói rõ phải làm gì", () => {
+  it("bước lệnh có lỗi FOE_GATE_REQUIRED ⇒ dòng giải thích (studio.gateRequired); bước lỗi khác ⇒ không có dòng ấy", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "w1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED: command step "w1" needs an earlier approval gate' },
+            { stepId: "w2", stepType: "command", status: "failed", attempt: 1, result: null, error: "POLICY_DENIED: no" },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = rowOf(20).querySelectorAll('[data-testid="step-gate-required"]');
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).toMatch(/approval gate earlier in the run, approved by someone other than the person who started it/);
+    expect(notes[0].closest("div")?.textContent).toMatch(/w1/);
+  });
+});
+
 describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang hiển thị (expectedStepId)", () => {
   // ORACLE khai tay: hàng danh sách còn ghi gate cũ, chi tiết (khối "Bước đang chờ") ghi gate mới —
   // thứ người duyệt NHÌN THẤY là khối chi tiết ⇒ đó là gate phải được gửi.

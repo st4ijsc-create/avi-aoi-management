@@ -2434,7 +2434,11 @@ type RunStepView = {
   stepType: string;
   status: string;
   result?: Record<string, unknown> | null;
+  error?: string | null;
 };
+
+/** doc 81 Đợt 4 Task A5 — the engine's step error code for "no separate gate approval" (foeEngine.FOE_GATE_REQUIRED). */
+const FOE_GATE_REQUIRED_PREFIX = "FOE_GATE_REQUIRED";
 
 /** doc 80 Task 4 (ORC-13) — per-step dispatch marker in the run drawer (routedTo + simulated/sent). */
 function StepDispatchTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
@@ -2648,17 +2652,26 @@ function RunRow({
           {detailQ.isError && <p className="text-xs text-destructive">{t("common.loadError", "Failed to load")}</p>}
           {steps.map((s) => {
             const isCurrent = currentStepId != null && s.stepId === currentStepId;
+            // doc 81 Đợt 4 Task A5 — a command step stopped because no separate approval gate preceded it.
+            const gateRequired = typeof s.error === "string" && s.error.startsWith(FOE_GATE_REQUIRED_PREFIX);
             return (
-              <div key={s.stepId} className={`flex items-center justify-between py-0.5 text-xs ${isCurrent ? "rounded bg-primary/10 px-1" : ""}`}>
-                <span className="font-mono text-[11px]">
-                  {isCurrent && <span className="mr-1 text-primary">▶</span>}
-                  {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  {/* doc 80 Task 4 (ORC-13) — where the command went and whether it was simulated. */}
-                  <StepDispatchTag result={s.result} t={t} />
-                  <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
-                </span>
+              <div key={s.stepId}>
+                <div className={`flex items-center justify-between py-0.5 text-xs ${isCurrent ? "rounded bg-primary/10 px-1" : ""}`}>
+                  <span className="font-mono text-[11px]">
+                    {isCurrent && <span className="mr-1 text-primary">▶</span>}
+                    {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    {/* doc 80 Task 4 (ORC-13) — where the command went and whether it was simulated. */}
+                    <StepDispatchTag result={s.result} t={t} />
+                    <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
+                  </span>
+                </div>
+                {gateRequired && (
+                  <p data-testid="step-gate-required" className="pb-1 pl-2 text-[11px] text-amber-700 dark:text-amber-300">
+                    {t("studio.gateRequired", "Not sent: this command needs an approval gate earlier in the run, approved by someone other than the person who started it. Add a gate before this step, deploy, and start a new run.")}
+                  </p>
+                )}
               </div>
             );
           })}

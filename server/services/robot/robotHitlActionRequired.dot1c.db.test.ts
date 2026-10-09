@@ -109,7 +109,9 @@ async function makeBoundAction(job: { jobType: string; params?: Record<string, u
   const id = `${DAU}-act-${++seq}`;
   await (await d()).insert(aiPendingActions).values({
     id,
-    tool: "foe.orchestration",
+    // doc 81 Đợt 4 Task A5 — a GENERIC bound action (this file tests the hash binding, not the engine). The tool used to
+    // be "foe.orchestration"; that tool now also requires a separate gate approval on record (foeSelfApprovalRefusal).
+    tool: "robot.test.binding",
     argsJson: {},
     userId,
     userRole: "engineer",

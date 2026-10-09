@@ -11882,6 +11882,7 @@
     "reject": "Reject",
     "abort": "Stop",
     "awaitingStep": "Awaiting step",
+    "gateRequired": "Not sent: this command needs an approval gate earlier in the run, approved by someone other than the person who started it. Add a gate before this step, deploy, and start a new run.",
     "approverRolesLabel": "Approver roles",
     "noGatePrompt": "The author did not write a prompt for this step.",
     "rejectReason": "Reject reason (optional)",
