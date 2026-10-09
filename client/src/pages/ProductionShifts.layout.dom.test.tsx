@@ -63,6 +63,9 @@ const srv = vi.hoisted(() => ({
   scope: null as number[] | null,
   lineFactory: {} as Record<number, number>,
   factoryNames: {} as Record<number, string>,
+  /** post-review (4): chuyền mà tập ca của nó ĐANG TẢI (chưa có câu trả lời). */
+  pendingLines: [] as number[],
+  lastAssignable: undefined as unknown,
   snap: { board: [] as Row[], assignments: [] as Row[] },
   version: 0,
   listeners: new Set<() => void>(),
@@ -131,12 +134,18 @@ vi.mock("@/lib/trpc", () => {
       if (path === "shiftConfig.list") return srv.shiftsError ? q(undefined, enabled, { isError: true }) : q(srv.shifts, enabled);
       if (path === "safety.assignableShifts") {
         // như SQL thật (server/routers/safetyRouter.ts — đã kiểm trên _test): đang hoạt động, trong phạm vi, thuộc nhà máy chuyền.
+        if (input?.lineId != null && srv.pendingLines.includes(input.lineId as number)) {
+          // như react-query: `placeholderData(prev)` (nếu trang truyền) trả dữ liệu của khoá TRƯỚC trong lúc khoá mới đang tải.
+          const ph = (opts as { placeholderData?: (p: unknown) => unknown } | undefined)?.placeholderData;
+          const prev = ph ? ph(srv.lastAssignable) : undefined;
+          return q(prev, enabled, { isLoading: prev === undefined, isPending: true, isFetching: true, isPlaceholderData: prev !== undefined });
+        }
         const lf = input?.lineId != null ? srv.lineFactory[input.lineId as number] : undefined;
         return q(
-          srv.shifts
+          (srv.lastAssignable = srv.shifts
             .filter((s) => s.isActive && (s.factoryId == null || srv.scope == null || srv.scope.includes(s.factoryId as number)))
             .filter((s) => lf == null || s.factoryId == null || s.factoryId === lf)
-            .map((s) => ({ ...s, factoryName: s.factoryId == null ? null : (srv.factoryNames[s.factoryId as number] ?? null) })),
+            .map((s) => ({ ...s, factoryName: s.factoryId == null ? null : (srv.factoryNames[s.factoryId as number] ?? null) }))),
           enabled,
         );
       }
@@ -251,6 +260,7 @@ beforeEach(() => {
   srv.scope = null;
   srv.lineFactory = {};
   srv.factoryNames = {};
+  srv.pendingLines = [];
   srv.snap = { board: srv.board.map((x) => ({ ...x })), assignments: srv.assignments.map((x) => ({ ...x })) };
   srv.calls = {};
   srv.invalidated = [];
@@ -801,7 +811,7 @@ describe("Đợt 3b Task 1 — bộ chọn ca trong sheet phân công", () => {
 
   it("i18n: khoá bộ chọn ca có ở vi/en/zh (final wave I2: + allFactories; lỗi shiftFactoryMismatch)", () => {
     for (const loc of [vi_, en_, zh_] as Array<{ shifts: { form?: Record<string, string> }; errors: { reason: Record<string, string> } }>) {
-      expect(Object.keys(loc.shifts.form ?? {}).sort()).toEqual(["allFactories", "defaultHint", "noShift", "shift"]);
+      expect(Object.keys(loc.shifts.form ?? {}).sort()).toEqual(["allFactories", "defaultHint", "loadingShifts", "noShift", "shift"]);
       expect(loc.errors.reason.shiftFactoryMismatch).toMatch(/\S/);
       // post-review (3): phạm vi nhiều nhà máy phải chỉ ra nhà máy
       expect(loc.errors.reason.factoryRequired).toMatch(/\S/);
@@ -923,5 +933,40 @@ describe("Đợt 3b final wave (I2) — bộ chọn ca theo phạm vi + nhà má
     expect(shiftBox(sheet)).toHaveTextContent("Ca 1 (C1) 06:00–14:00 · NM Bắc");
     await user.click(within(sheet).getByRole("button", { name: S("workforce.reassign") }));
     await waitFor(() => expect(calls("reassignOperator")).toEqual([expect.objectContaining({ assignmentId: 4, shiftConfigId: 11 })]));
+  });
+});
+
+// ── doc 81 Đợt 3b final wave — post-review (4): đổi chuyền ⇒ tập ca MỚI đang tải: KHÔNG hiện / KHÔNG gửi được ca của tập CŨ ──────
+describe("Đợt 3b post-review (4) — tập ca đang tải sau khi đổi chuyền", () => {
+  const shiftBox = (sheet: HTMLElement) => within(sheet).getByRole("combobox", { name: S("shifts.form.shift") });
+  it("chọn ca NM Bắc rồi gõ chuyền 8 (đang tải) ⇒ bộ chọn + Phân công KHOÁ, câu 'đang tải', không còn ca cũ; tải xong ⇒ mở lại với tập mới", async () => {
+    vi.setSystemTime(new Date(2026, 9, 6, 3, 0, 0));
+    srv.shifts = [shift(11, "Ca 1", "C1", 6, 14, { factoryId: 1 }), shift(21, "Ca 1", "C1", 6, 14, { factoryId: 2 }), shift(5, "Ca HC", "HC", 22, 23)];
+    srv.factoryNames = { 1: "NM Bắc", 2: "NM Nam" };
+    srv.lineFactory = { 8: 2 };
+    srv.pendingLines = [8];
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    await user.click(within(toolbar()).getByRole("button", { name: S("workforce.assign") }));
+    const sheet = await waitLayer("workforce-assign");
+    await user.click(shiftBox(sheet));
+    await user.click(await screen.findByRole("option", { name: "Ca 1 (C1) 06:00–14:00 · NM Bắc" }));
+    await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "73");
+    await user.type(within(sheet).getByLabelText(S("workforce.lineId")), "8");
+    await waitFor(() => expect(srv.queryInputs).toContain('safety.assignableShifts:{"lineId":8}'));
+    const submit = within(sheet).getByRole("button", { name: S("workforce.assign") });
+    expect(submit).toBeDisabled();
+    expect(shiftBox(sheet)).toBeDisabled();
+    expect(shiftBox(sheet)).not.toHaveTextContent("NM Bắc");
+    expect(within(sheet).getByText(S("shifts.form.loadingShifts"))).toBeInTheDocument();
+    await user.click(submit);
+    expect(calls("assignOperator")).toEqual([]);
+    srv.pendingLines = [];
+    await act(async () => bump());
+    await waitFor(() => expect(within(sheet).getByRole("button", { name: S("workforce.assign") })).toBeEnabled());
+    expect(within(sheet).queryByText(S("shifts.form.loadingShifts"))).toBeNull();
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
+    await waitFor(() => expect(calls("assignOperator").length).toBe(1));
+    expect(calls("assignOperator")[0]).not.toHaveProperty("shiftConfigId", 11);
   });
 });

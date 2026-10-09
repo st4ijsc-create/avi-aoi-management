@@ -776,8 +776,10 @@ function AssignmentForm({
   const stationNum = positiveIntOrUndef(stationId);
   const shiftsQ = trpc.safety.assignableShifts.useQuery(
     { ...(lineNum != null ? { lineId: lineNum } : {}), ...(stationNum != null ? { stationId: stationNum } : {}) },
-    { placeholderData: (prev) => prev },
   );
+  // post-review (4): KHÔNG giữ tập ca của chuyền TRƯỚC trong lúc tập mới đang tải (trước: `placeholderData: prev` ⇒ ca của nhà
+  // máy cũ vẫn hiện và gửi được). Đang tải ⇒ bộ chọn + nút gửi KHOÁ, câu "đang tải"; ca đã chọn nằm chờ, xét lại khi tập về.
+  const shiftsLoading = shiftsQ.data === undefined && !shiftsQ.isError;
   const activeShifts = useMemo(() => ((shiftsQ.data ?? []) as AssignableShift[]).filter((s) => s.isActive), [shiftsQ.data]);
   const shiftLabels = useMemo(
     () => assignableShiftLabels(activeShifts, t("shifts.form.allFactories", "All factories")),
@@ -849,7 +851,7 @@ function AssignmentForm({
       </div>
       <div className="grid gap-1">
         <Label htmlFor={`${uid}-shift`}>{t("shifts.form.shift", "Shift (optional)")}</Label>
-        <Select value={shiftValue} onValueChange={setShiftPick}>
+        <Select value={shiftValue} onValueChange={setShiftPick} disabled={shiftsLoading}>
           <SelectTrigger id={`${uid}-shift`} className="h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value={NO_SHIFT}>{t("shifts.form.noShift", "— no shift —")}</SelectItem>
@@ -858,13 +860,16 @@ function AssignmentForm({
             ))}
           </SelectContent>
         </Select>
+        {shiftsLoading && (
+          <p className="text-xs text-muted-foreground">{t("shifts.form.loadingShifts", "Loading the shifts for this line…")}</p>
+        )}
         {showNowHint && (
           <p className="text-xs text-muted-foreground">{t("shifts.form.defaultHint", "Pre-selected: the shift running now.")}</p>
         )}
       </div>
       <SheetFooter>
         <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
-        <Button onClick={submit} disabled={pending}>
+        <Button onClick={submit} disabled={pending || shiftsLoading}>
           <CheckCircle2 className="mr-1 h-4 w-4" />
           {mode === "assign" ? t("workforce.assign", "Assign") : t("workforce.reassign", "Reassign")}
         </Button>

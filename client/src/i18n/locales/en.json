@@ -21850,6 +21850,7 @@
       "shift": "Shift (optional)",
       "noShift": "— no shift —",
       "allFactories": "All factories",
+      "loadingShifts": "Loading the shifts for this line…",
       "defaultHint": "Pre-selected: the shift running now."
     }
   },

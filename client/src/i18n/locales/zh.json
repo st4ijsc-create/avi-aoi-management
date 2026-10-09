@@ -21852,6 +21852,7 @@
       "shift": "班次（可选）",
       "noShift": "— 不指定班次 —",
       "allFactories": "全系统",
+      "loadingShifts": "正在加载该产线的班次…",
       "defaultHint": "已预选当前正在进行的班次。"
     }
   },

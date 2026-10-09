@@ -21824,6 +21824,7 @@
       "shift": "Ca (tuỳ chọn)",
       "noShift": "— không gắn ca —",
       "allFactories": "Toàn hệ thống",
+      "loadingShifts": "Đang tải danh sách ca của chuyền này…",
       "defaultHint": "Đã chọn sẵn ca đang diễn ra lúc này."
     }
   },
