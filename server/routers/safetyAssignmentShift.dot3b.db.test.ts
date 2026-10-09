@@ -424,6 +424,58 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
     });
   });
 
+  // doc 81 Đợt 3c Task 2 — mỗi ca mang MÚI GIỜ của nhà máy (factories.timezone) để sheet chọn "ca đang chạy" theo giờ NHÀ
+  // MÁY, không theo đồng hồ trình duyệt. Ca nhà máy ⇒ múi giờ nhà máy của ca; ca toàn hệ thống ⇒ múi giờ nhà máy của chuyền /
+  // trạm đã chọn › nhà máy DUY NHẤT trong phạm vi người gọi › null (không biết ⇒ client dùng giờ máy và NÓI RA). Múi giờ hỏng
+  // ⇒ null (không bao giờ đưa chuỗi Intl ném lỗi xuống client). Chỉ là mặc định UI — server không tin "bây giờ" của client.
+  describe("§3c — assignableShifts: múi giờ nhà máy của từng ca (Đợt 3c Task 2)", () => {
+    type Row = { id: number; factoryId: number | null; factoryTimezone?: string | null };
+    const tzOf = (r: Row[], id: number) => r.find((x) => x.id === id)?.factoryTimezone;
+    const setTz = (id: number, tz: string | null) => sql`UPDATE factories SET timezone = ${tz} WHERE id = ${id}`;
+    afterAll(async () => {
+      await setTz(fx.facIn, "Asia/Ho_Chi_Minh");
+      await setTz(fx.facOut, "Asia/Ho_Chi_Minh");
+    });
+
+    it("ca nhà máy ⇒ múi giờ của nhà máy đó; ca toàn hệ thống ⇒ nhà máy của chuyền/trạm đã chọn", async () => {
+      await setTz(fx.facIn, "Asia/Ho_Chi_Minh");
+      await setTz(fx.facOut, "America/New_York");
+      const s = await asAdmin();
+      const out = (await s.assignableShifts({ lineId: fx.lineOut })) as Row[];
+      expect([tzOf(out, fx.shiftOut), tzOf(out, fx.shiftGlobal)]).toEqual(["America/New_York", "America/New_York"]);
+      const st = (await s.assignableShifts({ stationId: fx.stationOut })) as Row[];
+      expect(tzOf(st, fx.shiftGlobal)).toBe("America/New_York");
+      const inn = (await s.assignableShifts({ lineId: fx.lineIn })) as Row[];
+      expect([tzOf(inn, fx.shiftIn), tzOf(inn, fx.shiftGlobal)]).toEqual(["Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh"]);
+    });
+
+    it("admin chưa chọn chuyền ⇒ ca nhà máy theo nhà máy của nó; ca toàn hệ thống KHÔNG biết nhà máy ⇒ null (không đoán)", async () => {
+      await setTz(fx.facOut, "America/New_York");
+      const r = (await (await asAdmin()).assignableShifts({})) as Row[];
+      expect([tzOf(r, fx.shiftIn), tzOf(r, fx.shiftOut), tzOf(r, fx.shiftGlobal)]).toEqual(["Asia/Ho_Chi_Minh", "America/New_York", null]);
+    });
+
+    it("người phạm vi MỘT nhà máy, chưa chọn chuyền ⇒ ca toàn hệ thống theo nhà máy đó; phạm vi rỗng / NHIỀU nhà máy ⇒ null", async () => {
+      await setTz(fx.facIn, "Europe/Berlin");
+      await setTz(fx.facOut, "America/New_York");
+      const one = (await (await asScoped()).assignableShifts({})) as Row[];
+      expect([tzOf(one, fx.shiftIn), tzOf(one, fx.shiftGlobal)]).toEqual(["Europe/Berlin", "Europe/Berlin"]);
+      expect(tzOf((await (await asEmpty()).assignableShifts({})) as Row[], fx.shiftGlobal)).toBeNull();
+      const multi = (await (await asMulti()).assignableShifts({})) as Row[];
+      expect([tzOf(multi, fx.shiftIn), tzOf(multi, fx.shiftOut), tzOf(multi, fx.shiftGlobal)]).toEqual(["Europe/Berlin", "America/New_York", null]);
+    });
+
+    it("múi giờ NULL hoặc HỎNG ở nhà máy ⇒ null (client rơi về giờ máy và nói ra)", async () => {
+      await setTz(fx.facIn, null);
+      await setTz(fx.facOut, "Mars/Olympus_Mons");
+      const s = await asAdmin();
+      const inn = (await s.assignableShifts({ lineId: fx.lineIn })) as Row[];
+      expect([tzOf(inn, fx.shiftIn), tzOf(inn, fx.shiftGlobal)]).toEqual([null, null]);
+      const out = (await s.assignableShifts({ lineId: fx.lineOut })) as Row[];
+      expect([tzOf(out, fx.shiftOut), tzOf(out, fx.shiftGlobal)]).toEqual([null, null]);
+    });
+  });
+
   describe("§4 — assign/reassign: ca phải thuộc nhà máy của phân công (chuyền › trạm › factoryId)", () => {
     const MISMATCH = { code: "BAD_REQUEST", appCode: "INVALID_VALUE", appParams: { field: "shiftConfigId", reason: "shiftFactoryMismatch" } };
 

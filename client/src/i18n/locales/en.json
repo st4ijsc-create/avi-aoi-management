@@ -21852,7 +21852,9 @@
       "noShift": "— no shift —",
       "allFactories": "All factories",
       "loadingShifts": "Loading the shifts for this line…",
-      "defaultHint": "Pre-selected: the shift running now."
+      "defaultHint": "Pre-selected: the shift running now.",
+      "factoryClock": "By factory time ({{tz}}).",
+      "browserClock": "By this device's clock — the factory's time zone is unknown."
     }
   },
   "engineeringAssign": {

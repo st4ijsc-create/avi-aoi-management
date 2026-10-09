@@ -21854,7 +21854,9 @@
       "noShift": "— 不指定班次 —",
       "allFactories": "全系统",
       "loadingShifts": "正在加载该产线的班次…",
-      "defaultHint": "已预选当前正在进行的班次。"
+      "defaultHint": "已预选当前正在进行的班次。",
+      "factoryClock": "按工厂时间（{{tz}}）。",
+      "browserClock": "按本设备时钟——工厂时区未知。"
     }
   },
   "engineeringAssign": {

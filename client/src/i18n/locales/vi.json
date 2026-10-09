@@ -21826,7 +21826,9 @@
       "noShift": "— không gắn ca —",
       "allFactories": "Toàn hệ thống",
       "loadingShifts": "Đang tải danh sách ca của chuyền này…",
-      "defaultHint": "Đã chọn sẵn ca đang diễn ra lúc này."
+      "defaultHint": "Đã chọn sẵn ca đang diễn ra lúc này.",
+      "factoryClock": "Theo giờ nhà máy ({{tz}}).",
+      "browserClock": "Theo đồng hồ máy này — chưa biết múi giờ của nhà máy."
     }
   },
   "engineeringAssign": {

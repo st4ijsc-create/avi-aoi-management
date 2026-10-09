@@ -32,6 +32,7 @@ import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { collaborationSessions, operatorAssignments, shiftConfigs, factories, workshops, productionLines, stations, users } from "../../drizzle/schema";
 import { idsTrongPhamVi } from "../db/hierarchy";
+import { isValidTimeZone } from "../utils/factoryTime";
 import {
   safetyAuditEnabled,
   record as recordSafetyEvent,
@@ -901,11 +902,12 @@ export const safetyRouter = router({
         conds.push(factoryIds.length ? or(isNull(shiftConfigs.factoryId), inArray(shiftConfigs.factoryId, factoryIds))! : isNull(shiftConfigs.factoryId));
       }
       if (target != null) conds.push(or(isNull(shiftConfigs.factoryId), eq(shiftConfigs.factoryId, target))!);
-      return d
+      const rows = await d
         .select({
           id: shiftConfigs.id,
           factoryId: shiftConfigs.factoryId,
           factoryName: factories.name,
+          factoryTz: factories.timezone,
           name: shiftConfigs.name,
           code: shiftConfigs.code,
           startHour: shiftConfigs.startHour,
@@ -919,6 +921,17 @@ export const safetyRouter = router({
         .leftJoin(factories, eq(factories.id, shiftConfigs.factoryId))
         .where(and(...conds))
         .orderBy(asc(shiftConfigs.orderIndex), asc(shiftConfigs.id));
+      // doc 81 Đợt 3c Task 2 — MÚI GIỜ của từng ca (factories.timezone) để sheet chọn "ca đang chạy" theo giờ NHÀ MÁY: ca nhà
+      // máy ⇒ múi giờ nhà máy của ca; ca toàn hệ thống ⇒ nhà máy của chuyền/trạm đã chọn › nhà máy DUY NHẤT trong phạm vi
+      // (cùng thứ tự `stampAssignmentFactory`) › null. Múi giờ hỏng ⇒ null. Chỉ là mặc định UI — server không nhận "bây giờ".
+      const ctxFactory = target ?? (factoryIds !== null && factoryIds.length === 1 ? factoryIds[0] : null);
+      let ctxTz: string | null = null;
+      if (ctxFactory != null && rows.some((r) => r.factoryId == null)) {
+        const [f] = await d.select({ tz: factories.timezone }).from(factories).where(eq(factories.id, ctxFactory)).limit(1);
+        ctxTz = f?.tz ?? null;
+      }
+      const okTz = (tz: string | null | undefined) => (tz && isValidTimeZone(tz) ? tz : null);
+      return rows.map(({ factoryTz, ...r }) => ({ ...r, factoryTimezone: okTz(r.factoryId != null ? factoryTz : ctxTz) }));
     }),
 
   assignOperator: protectedProcedure
