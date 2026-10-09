@@ -86,7 +86,7 @@ vi.mock("@/lib/trpc", () => ({
   }),
 }));
 
-import EngineeringHub from "./EngineeringHub";
+import EngineeringHub, { HUB_CATALOG } from "./EngineeringHub";
 
 const POSTURE_OK = {
   otControlEnabled: false, robotControlEnabled: false, dpcDeployEnabled: false, interlockEngineEnabled: true,
@@ -533,6 +533,25 @@ describe("Đợt 3b Task 2 (a) — danh mục công cụ theo sở thích Hiện
     window.history.replaceState({}, "", "/engineering-home?tab=catalog");
     render(<EngineeringHub />);
     expect(catalogHrefs()).not.toContain(FLEET);
+  });
+
+  // doc 81 Đợt 3b final wave (test gap): ô trỏ mục nav `labs: true` nằm NGOÀI nhóm Labs (vd một nhóm thường liệt kê Fleet) —
+  // luật lọc phải theo CHÍNH mục nav, không chỉ theo nhóm (đột biến "bỏ vế nav.labs" từng sống sót vì chưa có ca này).
+  it("ô Labs nằm NGOÀI nhóm Labs: Labs TẮT ⇒ vẫn vắng; BẬT ⇒ hiện ở cả nhóm thường", () => {
+    const host = HUB_CATALOG.find((g) => g.sectionKey !== "labs" && g.tiles.length > 0)!;
+    const before = host.tiles.length;
+    host.tiles.push({ ...HUB_CATALOG.find((g) => g.sectionKey === "labs")!.tiles[0] });
+    try {
+      window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+      const r = render(<EngineeringHub />);
+      expect(catalogHrefs()).not.toContain(FLEET);
+      r.unmount();
+      localStorage.setItem("layoutKit:nav-labs:u9:show", "1");
+      render(<EngineeringHub />);
+      expect(catalogHrefs().filter((h) => h === FLEET)).toHaveLength(2);
+    } finally {
+      host.tiles.length = before;
+    }
   });
 
   it("Labs BẬT ('1') ⇒ Fleet hiện dưới tiêu đề nhóm Labs", () => {
