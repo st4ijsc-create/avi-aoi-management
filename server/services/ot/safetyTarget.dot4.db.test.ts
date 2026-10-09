@@ -405,6 +405,61 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
     });
   });
 
+  // ── 2b. fix round 1 (security scan on 7a0dd5632): the panel target is SCOPE-CHECKED ────────
+  it("★ safety.sourceHealth({target}): trong phạm vi ⇒ trả lời; ngoài phạm vi và KHÔNG tồn tại ⇒ CÙNG NOT_FOUND; admin không đổi", async () => {
+    const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+    const otherFactoryCode = `FX-${DAU}`;
+    const otherFactory = await one(sql`INSERT INTO factories (code, name, "isActive") VALUES (${otherFactoryCode}, 'A1 other', true) RETURNING id`);
+    const mk = (tag: string) =>
+      one(sql`INSERT INTO users ("openId", username, name, role, "isActive") VALUES (${`${DAU}-${tag}`}, ${`${DAU}-${tag}`}, ${`${DAU} ${tag}`}, 'engineer', true) RETURNING id`);
+    const uIn = await mk("in");
+    const uOut = await mk("out");
+    try {
+      await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uIn}, ${"F-" + DAU}), (${uOut}, ${otherFactoryCode})`;
+      for (const u of [uIn, uOut]) {
+        await sql`INSERT INTO permissions ("userId", category, "moduleName", "canView") VALUES (${u}, 'machine_monitoring', 'machine_status', true)`;
+      }
+      const { safetyRouter } = await import("../../routers/safetyRouter");
+      const as = (id: number, role = "engineer") => safetyRouter.createCaller({ user: { id, role, name: "p" } } as never);
+      const err = async (p: Promise<unknown>) => {
+        try {
+          await p;
+          return "OK";
+        } catch (e) {
+          const x = e as { code?: string; message?: string; cause?: { appCode?: string; appParams?: unknown } };
+          return JSON.stringify({ code: x.code, appCode: x.cause?.appCode, appParams: x.cause?.appParams, message: x.message });
+        }
+      };
+      // in scope (machine, adapter, robot) ⇒ answers
+      for (const target of [{ machineId: ids.m1 }, { adapterId: ids.adapter2 }, { robotId: ids.r1 }, { adapterId: ids.adapter1, machineId: ids.m2, robotId: ids.r1 }]) {
+        expect(await err(as(uIn).sourceHealth({ target })), JSON.stringify(target)).toBe("OK");
+      }
+      // out of scope vs nonexistent vs not attributable ⇒ byte-identical refusal
+      const outOfScope = await err(as(uOut).sourceHealth({ target: { machineId: ids.m1 } }));
+      expect(outOfScope).toContain('"code":"NOT_FOUND"');
+      for (const [who, target] of [
+        [uOut, { machineId: 2_000_000_000 }],
+        [uOut, { adapterId: ids.adapter1 }],
+        [uOut, { robotId: ids.r1 }],
+        [uIn, { machineId: 2_000_000_000 }],
+        [uIn, { adapterId: ids.adapterNone }],
+        [uIn, { robotId: ids.rUnplaced }],
+        [uIn, { machineId: ids.m1, robotId: 2_000_000_000 }],
+      ] as const) {
+        expect(await err(as(who).sourceHealth({ target })), JSON.stringify(target)).toBe(outOfScope);
+      }
+      // no target ⇒ unchanged for everyone; admin ⇒ never refused
+      expect(await err(as(uOut).sourceHealth())).toBe("OK");
+      expect(await err(as(954_991, "admin").sourceHealth({ target: { machineId: 2_000_000_000 } }))).toBe("OK");
+      expect(await err(as(954_991, "admin").sourceHealth({ target: { machineId: ids.m1 } }))).toBe("OK");
+    } finally {
+      await sql`DELETE FROM permissions WHERE "userId" IN (${uIn}, ${uOut})`;
+      await sql`DELETE FROM user_factory_assignments WHERE "userId" IN (${uIn}, ${uOut})`;
+      await sql`DELETE FROM users WHERE id IN (${uIn}, ${uOut})`;
+      await sql`DELETE FROM factories WHERE id = ${otherFactory}`;
+    }
+  });
+
   // ── 3. bảng nguồn an toàn dự đoán bằng CÙNG bộ so khớp + CÙNG bộ phân giải ──────────
   it("★ loadSafetySourceHealth(viewer, đích) liệt kê ĐÚNG tập cấu hình cổng đọc cho đích đó", async () => {
     await withDbSimConfigs(

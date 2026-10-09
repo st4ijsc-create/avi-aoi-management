@@ -68,6 +68,44 @@ import {
 } from "../services/safety/plc/safetyPlcAdapter";
 // doc 80 Đợt 1 Task 4 (SAF-02) — read-only source-health report for the Safety page.
 import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
+import { deviceAdapters, robots } from "../../drizzle/schema";
+
+/**
+ * doc 81 Đợt 4 fix round 1 (security scan on 7a0dd5632) — every id of a `safety.sourceHealth` target must resolve
+ * SERVER-SIDE into the caller's scope: adapter ⇒ its machine, machine ⇒ itself, robot ⇒ its station's line and its
+ * line (each that is set; an unplaced robot has nothing in scope). Out of scope, nonexistent, or not attributable ⇒ ONE
+ * NOT_FOUND (same code, key, params and message for every case). Every supplied id is always looked up — no early
+ * exit — so the work done does not depend on which check fails. Full scope (admin) ⇒ no check.
+ */
+async function assertSourceHealthTargetInScope(
+  ctx: CoDanhTinh,
+  t: { adapterId?: number; machineId?: number; robotId?: number },
+): Promise<void> {
+  const scope = phamViCua(ctx);
+  const [machineIds, lineIds] = await Promise.all([idsTrongPhamVi("machine", scope), idsTrongPhamVi("line", scope)]);
+  if (machineIds === null && lineIds === null) return;
+  const inList = (ids: number[] | null, id: number | null | undefined) => id != null && (ids === null || ids.includes(id));
+  const d = await getDb();
+  let ok = d != null;
+  if (t.adapterId != null && t.adapterId > 0) {
+    const [a] = d ? await d.select({ m: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, t.adapterId)).limit(1) : [];
+    ok = inList(machineIds, a?.m ?? null) && ok;
+  }
+  if (t.machineId != null) ok = inList(machineIds, t.machineId) && ok;
+  if (t.robotId != null) {
+    const [r] = d
+      ? await d
+          .select({ lineId: robots.lineId, stationLine: stations.lineId })
+          .from(robots)
+          .leftJoin(stations, eq(stations.id, robots.stationId))
+          .where(eq(robots.id, t.robotId))
+          .limit(1)
+      : [];
+    const lines = [r?.lineId ?? null, r?.stationLine ?? null].filter((x): x is number => x != null);
+    ok = lines.length > 0 && lines.every((l) => inList(lineIds, l)) && ok;
+  }
+  if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Safety target not found");
+}
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
 
@@ -371,7 +409,12 @@ export const safetyRouter = router({
         })
         .optional(),
     )
-    .query(({ ctx, input }) => loadSafetySourceHealth(phamViCua(ctx), input?.target)),
+    .query(async ({ ctx, input }) => {
+      // fix round 1 (security scan on 7a0dd5632) — a supplied target must be in the caller's scope, else the panel is a
+      // cross-tenant oracle (would the gate block? which PLCs are offline?). No target ⇒ unchanged.
+      if (input?.target) await assertSourceHealthTargetInScope(ctx, input.target);
+      return loadSafetySourceHealth(phamViCua(ctx), input?.target);
+    }),
 
   // ══════════════════════════════════════════════════════════════════════════
   // SAFETY EVENTS (S1-b) — feed/trend (read) + ingest/audit (mutations)
