@@ -21,6 +21,7 @@ import { installMatchMedia, presetNarrow } from "@/components/patterns/layoutKit
 import { resolvePermissionModule } from "@shared/permissions";
 import HUB_SRC from "./EngineeringHub.tsx?raw";
 import { getNavItemByHref, hasAccessToItem } from "@/lib/navigation";
+import { useShowLabs } from "@/hooks/useShowLabs";
 
 const S = (k: string): string => {
   const v = k.split(".").reduce<unknown>((o, p) => (o as Record<string, unknown> | undefined)?.[p], vi_);
@@ -565,5 +566,22 @@ describe("Đợt 3b Task 2 (a) — danh mục công cụ theo sở thích Hiện
     expect(catalogHrefs().length).toBeGreaterThan(0);
     expect(catalogHrefs()).not.toContain(FLEET);
     expect(criticalChip().textContent).toBe(chipText);
+  });
+
+  // Fix round 1 (R-3b-b (4)) — bật/tắt "Hiện Labs" ở thanh bên CÙNG tab ⇒ danh mục đang mở đổi NGAY, không cần tải lại
+  // (trước: hook chỉ nghe sự kiện `storage` — chỉ bắn ở tab KHÁC).
+  it("bật/tắt Labs trong CÙNG tab (công tắc thanh bên) ⇒ danh mục đang mở đổi ngay, không remount", () => {
+    function LabsToggle() {
+      const { showLabs, toggleShowLabs } = useShowLabs(9);
+      return <button type="button" data-testid="labs-toggle" aria-pressed={showLabs} onClick={toggleShowLabs}>labs</button>;
+    }
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<><LabsToggle /><EngineeringHub /></>);
+    expect(catalogHrefs()).not.toContain(FLEET);
+    act(() => { fireEvent.click(screen.getByTestId("labs-toggle")); });
+    expect(localStorage.getItem("layoutKit:nav-labs:u9:show")).toBe("1");
+    expect(catalogHrefs()).toContain(FLEET);
+    act(() => { fireEvent.click(screen.getByTestId("labs-toggle")); });
+    expect(catalogHrefs()).not.toContain(FLEET);
   });
 });

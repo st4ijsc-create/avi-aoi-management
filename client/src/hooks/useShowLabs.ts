@@ -4,7 +4,9 @@
  * (localStorage, khoá `userLayoutKey` — như kích thước/gập panel của WorkbenchShell), giá trị "1"/"0".
  *
  * - Chưa biết người dùng (đang tải) ⇒ ẩn, không đọc/ghi kho (không để lựa chọn của người này dính sang người khác).
- * - Đổi người dùng ⇒ đọc lại khoá của người mới. Tab khác đổi ⇒ đồng bộ (sự kiện `storage`).
+ * - Đổi người dùng ⇒ đọc lại khoá của người mới. Tab khác đổi ⇒ đồng bộ (sự kiện `storage`). CÙNG tab (công tắc thanh bên
+ *   ⇄ danh mục Hub đang mở — doc 81 Đợt 3b Task 2 fix 1) ⇒ sự kiện `SHOW_LABS_EVENT` trên window (`storage` không bắn ở tab
+ *   đang ghi).
  * - KHÔNG phải cổng: chỉ thanh bên/menu điện thoại/BottomNav dùng; ⌘K, RouteGuard và deep link không đọc nó.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -14,6 +16,9 @@ import { userLayoutKey } from "@/components/patterns/layoutKitHooks";
 export function showLabsKey(userId: number | string | null | undefined): string | null {
   return userLayoutKey("nav-labs", userId, "show");
 }
+
+/** Sự kiện cùng tab khi một instance của hook đổi sở thích (detail = khoá kho). */
+export const SHOW_LABS_EVENT = "nav-labs-changed";
 
 function readStored(key: string | null): boolean {
   if (!key) return false;
@@ -44,8 +49,15 @@ export function useShowLabs(userId: number | string | null | undefined): UseShow
     const onStorage = (e: StorageEvent) => {
       if (e.key === key) setState({ key, on: readStored(key) });
     };
+    const onSameTab = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === key) setState({ key, on: readStored(key) });
+    };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener(SHOW_LABS_EVENT, onSameTab);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(SHOW_LABS_EVENT, onSameTab);
+    };
   }, [key]);
 
   const setShowLabs = useCallback(
@@ -57,6 +69,7 @@ export function useShowLabs(userId: number | string | null | undefined): UseShow
       } catch {
         /* kho không dùng được — chỉ nhớ trong phiên */
       }
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(SHOW_LABS_EVENT, { detail: key }));
     },
     [key],
   );
