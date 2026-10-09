@@ -16,7 +16,7 @@
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, FlaskConical, Info, Lightbulb, Loader2, PowerOff, ShieldAlert, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Cpu, FlaskConical, Info, Lightbulb, Loader2, PowerOff, ShieldAlert, ShieldCheck, type LucideIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { FeatureStatus } from "@/components/common/FeatureStatusGate";
@@ -30,7 +30,11 @@ export type NoticeKind =
   | "simGate"
   | "beta"
   | "loading"
-  | "error";
+  | "error"
+  /** Đợt 3b Task 2 fix 1 — chip thuộc tính (vd metadata luồng IR: popover là form sửa). */
+  | "meta"
+  /** Đợt 3b Task 2 fix 1 — chip trạng thái ĐẠT (vd "Lint OK" của IR). */
+  | "status";
 
 const KIND_ICON: Record<NoticeKind, LucideIcon> = {
   hint: Lightbulb,
@@ -41,6 +45,8 @@ const KIND_ICON: Record<NoticeKind, LucideIcon> = {
   beta: FlaskConical,
   loading: Loader2,
   error: AlertTriangle,
+  meta: Cpu,
+  status: ShieldCheck,
 };
 
 const KIND_TONE: Record<NoticeKind, string> = {
@@ -52,6 +58,8 @@ const KIND_TONE: Record<NoticeKind, string> = {
   beta: "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300",
   loading: "border-border bg-muted text-muted-foreground",
   error: "border-destructive/40 bg-destructive/10 text-destructive",
+  meta: "border-border bg-card text-foreground hover:bg-muted",
+  status: "border-success/40 bg-success/10 text-success",
 };
 
 /** Nhãn mặc định theo loại (khoá `layoutKit.notice.kind.*`). */
@@ -64,6 +72,8 @@ const KIND_LABEL_KEY: Record<NoticeKind, [string, string]> = {
   beta: ["layoutKit.notice.kind.beta", "Beta"],
   loading: ["layoutKit.notice.kind.loading", "Checking"],
   error: ["layoutKit.notice.kind.error", "Status unknown"],
+  meta: ["layoutKit.notice.kind.meta", "Properties"],
+  status: ["layoutKit.notice.kind.status", "Status"],
 };
 
 export interface NoticeChipProps {
@@ -114,6 +124,13 @@ export interface NoticeItem {
   content: React.ReactNode;
   /** `data-testid` của chip (và của mục trong popover "+N" khi bị gộp) — Task 2 shell. */
   testId?: string;
+  /**
+   * Đợt 3b Task 2 fix 1 — câu đọc NGAY cho trình đọc màn hình (vùng `role="alert"` sr-only), hiện ĐỘC LẬP với việc chip
+   * đang hiện thẳng hay đã gộp vào "+N" (giữ final wave M-9 của `FeatureStatusNoticeChip` khi chip đó vào NoticeStack).
+   */
+  alert?: React.ReactNode;
+  /** Lớp thêm cho chip khi hiện thẳng (vd chữ mono của metadata). */
+  className?: string;
 }
 
 export interface NoticeStackProps {
@@ -147,10 +164,17 @@ export function NoticeStack({ items, maxVisible = 3, className }: NoticeStackPro
       className={cn("flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden", className)}
     >
       {visible.map((n) => (
-        <NoticeChip key={n.id} kind={n.kind} label={n.label} data-testid={n.testId}>
+        <NoticeChip key={n.id} kind={n.kind} label={n.label} data-testid={n.testId} className={n.className}>
           {n.content}
         </NoticeChip>
       ))}
+      {list.map((n) =>
+        n.alert != null ? (
+          <span key={`alert-${n.id}`} role="alert" className="sr-only" data-feature-status-alert="">
+            {n.alert}
+          </span>
+        ) : null,
+      )}
       {hidden.length > 0 && (
         <Popover>
           <PopoverTrigger asChild>
@@ -178,6 +202,35 @@ export function NoticeStack({ items, maxVisible = 3, className }: NoticeStackPro
       )}
     </div>
   );
+}
+
+/**
+ * Đợt 3b Task 2 fix 1 (R-3b-b (2)) — bản `NoticeItem` của `FeatureStatusNoticeChip` (cùng 4 trạng thái, cùng nhãn, cùng
+ * `data-testid`, cùng câu; lỗi ⇒ vẫn có vùng `role="alert"` đọc ngay qua `alert`) để chip cờ vào `NoticeStack` của trang
+ * và gộp được vào "+N". `on` ⇒ null (không hiện gì) như chip.
+ */
+export function featureStatusNoticeItem(
+  t: (key: string, fallback: string) => string,
+  { status, offMessage, errorMessage, subject, id = "feature-status" }: FeatureStatusNoticeChipProps & { id?: string },
+): NoticeItem | null {
+  if (status === "on") return null;
+  const label = (kind: NoticeKind): React.ReactNode => {
+    if (subject == null) return undefined;
+    const [labelKey, labelFallback] = KIND_LABEL_KEY[kind];
+    return (
+      <>
+        {subject}: {t(labelKey, labelFallback)}
+      </>
+    );
+  };
+  if (status === "loading") {
+    return { id, kind: "loading", label: label("loading"), testId: "feature-status-loading", content: <p>{t("layoutKit.notice.flagLoading", "Checking feature status…")}</p> };
+  }
+  if (status === "error") {
+    const msg = errorMessage ?? t("common.featureStatusError", "Could not check this feature's status — treating it as unavailable.");
+    return { id, kind: "error", label: label("error"), testId: "feature-status-error", content: <p>{msg}</p>, alert: msg };
+  }
+  return { id, kind: "flagOff", label: label("flagOff"), testId: "feature-status-off", content: <p>{offMessage}</p> };
 }
 
 export interface FeatureStatusNoticeChipProps {

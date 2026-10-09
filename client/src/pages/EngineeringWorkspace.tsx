@@ -43,7 +43,7 @@ import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeaderCompact, NoticeChip, FeatureStatusNoticeChip, WizardDialog, RollbackConfirm } from "@/components/patterns";
+import { PageHeaderCompact, NoticeStack, featureStatusNoticeItem, WizardDialog, RollbackConfirm } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
 import { EngineeringShell } from "@/components/engineering/shell";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
@@ -818,6 +818,24 @@ function EngineeringWorkspaceView() {
     }[verdict];
   })();
 
+  // W6-26 — "Khi nào dùng" + cross-link golden-thread (ranh giới IDE vs IR vs POU), trong popover (nay là mục NoticeStack).
+  const whenToUseContent = (
+    <>
+      <p className="text-sm">
+        {t("engineering.whenToUse", "When to use — the full IDE pipeline: build, simulate, sign-off & deploy device programs. Low-level motion/IO? Use the IR Editor. IEC 61131 LAD/FBD/SFC? Use POU Studio.")}
+      </p>
+      {/* U1 — cross-link MANG ?projectId: mở đúng project đang chọn ở IR/POU (không mở trống). */}
+      <div className="mt-2 flex flex-wrap gap-3 text-xs">
+        <Link href="/engineering-home" className="font-medium text-primary hover:underline">{t("nav.engineeringHome")}</Link>
+        <Link href={withParams("/ir-editor", { projectId })} className="font-medium text-primary hover:underline">
+          {projectId ? t("engineering.openInIr", "Mở project này trong IR") : t("nav.irEditor")}
+        </Link>
+        <Link href={withParams("/pou-studio", { projectId })} className="font-medium text-primary hover:underline">
+          {projectId ? t("engineering.openInPou", "Mở project này trong POU") : t("nav.pouStudio")}
+        </Link>
+      </div>
+    </>
+  );
   // ═════ Top bar (PageHeaderCompact, 40–48 px): dự án/phiên bản · Kiểm/Build/Mô phỏng/Deploy · pipeline · review ═════
   const header = (
     <PageHeaderCompact
@@ -827,18 +845,30 @@ function EngineeringWorkspaceView() {
       chips={
         <>
           {!canEdit && <ViewOnlyBadge module="machine_control" />}
-          {/* Doc 80 Task 1 (PLT-02/G-07): 4 trạng thái trung thực — chip (không banner), KHÔNG tên biến môi trường. */}
-          <FeatureStatusNoticeChip
-            status={deployStatus}
-            subject={realDeployLabel}
-            offMessage={t(
-              "engineering.deployOffBanner",
-              "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.",
-            )}
-            errorMessage={t(
-              "engineering.deployStatusError",
-              "Không kiểm tra được trạng thái triển khai — tạm coi mọi deploy chỉ mô phỏng cho tới khi xác nhận lại.",
-            )}
+          {/* Doc 80 Task 1 (PLT-02/G-07): 4 trạng thái trung thực — chip (không banner), KHÔNG tên biến môi trường.
+              Đợt 3b Task 2 fix 1 (R-3b-b): chip cờ + "Khi nào dùng" vào MỘT NoticeStack (cùng nội dung, cùng điều kiện) ⇒ header
+              hẹp gộp được vào "+N" thay vì xuống dòng; chip cờ LỖI vẫn luôn hiện. */}
+          <NoticeStack
+            items={[
+              featureStatusNoticeItem(t, {
+                id: "deploy-status",
+                status: deployStatus,
+                subject: realDeployLabel,
+                offMessage: t(
+                  "engineering.deployOffBanner",
+                  "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.",
+                ),
+                errorMessage: t(
+                  "engineering.deployStatusError",
+                  "Không kiểm tra được trạng thái triển khai — tạm coi mọi deploy chỉ mô phỏng cho tới khi xác nhận lại.",
+                ),
+              }),
+              {
+                id: "whenToUse",
+                kind: "whenToUse",
+                content: whenToUseContent,
+              },
+            ]}
           />
           {project && (
             <button
@@ -858,22 +888,6 @@ function EngineeringWorkspaceView() {
           )}
           {versionReviewEnabled && artifact && <ReviewStatusBadge status={artifact.reviewStatus} artifactId={artifact.id} />}
           {project && <PipelineChips steps={pipeline} t={t} />}
-          {/* W6-26 — "Khi nào dùng" + cross-link golden-thread (ranh giới IDE vs IR vs POU), trong popover. */}
-          <NoticeChip kind="whenToUse">
-            <p className="text-sm">
-              {t("engineering.whenToUse", "When to use — the full IDE pipeline: build, simulate, sign-off & deploy device programs. Low-level motion/IO? Use the IR Editor. IEC 61131 LAD/FBD/SFC? Use POU Studio.")}
-            </p>
-            {/* U1 — cross-link MANG ?projectId: mở đúng project đang chọn ở IR/POU (không mở trống). */}
-            <div className="mt-2 flex flex-wrap gap-3 text-xs">
-              <Link href="/engineering-home" className="font-medium text-primary hover:underline">{t("nav.engineeringHome")}</Link>
-              <Link href={withParams("/ir-editor", { projectId })} className="font-medium text-primary hover:underline">
-                {projectId ? t("engineering.openInIr", "Mở project này trong IR") : t("nav.irEditor")}
-              </Link>
-              <Link href={withParams("/pou-studio", { projectId })} className="font-medium text-primary hover:underline">
-                {projectId ? t("engineering.openInPou", "Mở project này trong POU") : t("nav.pouStudio")}
-              </Link>
-            </div>
-          </NoticeChip>
         </>
       }
       actions={

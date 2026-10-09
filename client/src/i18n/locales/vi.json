@@ -21634,7 +21634,9 @@
         "beta": "Beta",
         "whenToUse": "Khi nào dùng",
         "loading": "Đang kiểm tra",
-        "error": "Không kiểm được"
+        "error": "Không kiểm được",
+        "meta": "Thuộc tính",
+        "status": "Trạng thái"
       },
       "more": "+{{count}}",
       "moreLabel": "Xem thêm {{count}} ghi chú",

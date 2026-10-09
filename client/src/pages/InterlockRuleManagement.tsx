@@ -43,7 +43,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
 import {
-  ConfirmWithReason, PageContainer, PageHeaderCompact, NoticeChip, StatusChipStrip, chipStateFromQuery,
+  ConfirmWithReason, PageContainer, PageHeaderCompact, NoticeStack, StatusChipStrip, chipStateFromQuery,
   FlyoutHost, useFlyout, useFlyoutLayer, useCloseOwnLayer, WorkbenchShell,
   type StatusChipItem,
 } from "@/components/patterns";
@@ -620,21 +620,34 @@ function InterlockHeader({ canCreate, createReason, posture }: { canCreate: bool
       }
       chips={
         <>
-          {/* Thứ tự theo ưu tiên (header 1 dòng cắt phần tràn bên phải ở 1366): cảnh báo ILK-06 → tư thế → khi nào dùng. */}
-          {d?.writesOnEngineOff && (
-            <NoticeChip kind="error" label={t("interlockRules.posture.writesOnEngineOffChip", "Ghi thật khi engine TẮT")}>
-              {t(
-                "oversight.posture.writesOnEngineOffWarning",
-                "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked.",
-              )}
-            </NoticeChip>
-          )}
+          {/* Thứ tự theo ưu tiên: cảnh báo ILK-06 → khi nào dùng (MỘT NoticeStack) → tư thế. Đợt 3b Task 2 fix 1 (R-3b-b): hai
+              chip đứng riêng vào NoticeStack (cùng nội dung, cùng điều kiện) ⇒ header hẹp gộp "Khi nào dùng" vào "+N"; cảnh
+              báo ILK-06 (kind error) LUÔN hiện. */}
+          <NoticeStack
+            items={[
+              d?.writesOnEngineOff && {
+                id: "writesOnEngineOff",
+                kind: "error",
+                label: t("interlockRules.posture.writesOnEngineOffChip", "Ghi thật khi engine TẮT"),
+                content: t(
+                  "oversight.posture.writesOnEngineOffWarning",
+                  "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked.",
+                ),
+              },
+              // U7 (doc 26 §2.1) — "Khi nào dùng" + phụ đề cũ, trong popover (không còn khối trên MAIN).
+              {
+                id: "whenToUse",
+                kind: "whenToUse",
+                content: (
+                  <>
+                    <p>{t("interlockRules.whenToUse", "Khi nào dùng — định nghĩa quy tắc an toàn tự động dừng/giảm tốc máy khi vượt giới hạn, và xem lại các sự kiện đã kích hoạt.")}</p>
+                    <p className="mt-2 text-muted-foreground">{t("interlockRules.subtitle")}</p>
+                  </>
+                ),
+              },
+            ]}
+          />
           <StatusChipStrip items={items} ariaLabel={t("interlockRules.posture.ariaLabel", "Tư thế an toàn interlock")} maxVisible={3} className="shrink-0" />
-          {/* U7 (doc 26 §2.1) — "Khi nào dùng" + phụ đề cũ, trong popover (không còn khối trên MAIN). */}
-          <NoticeChip kind="whenToUse">
-            <p>{t("interlockRules.whenToUse", "Khi nào dùng — định nghĩa quy tắc an toàn tự động dừng/giảm tốc máy khi vượt giới hạn, và xem lại các sự kiện đã kích hoạt.")}</p>
-            <p className="mt-2 text-muted-foreground">{t("interlockRules.subtitle")}</p>
-          </NoticeChip>
         </>
       }
       actions={

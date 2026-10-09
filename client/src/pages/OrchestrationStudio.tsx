@@ -1186,9 +1186,10 @@ function AiAdvisorButton({ label }: { label: string }) {
       aria-label={label}
       onClick={() => flyout.open(AI_FLYOUT)}
     >
-      <Sparkles className="h-4 w-4 text-violet-600 sm:mr-1.5" aria-hidden="true" />
-      {/* < 640 px: chỉ biểu tượng (tên vẫn ở aria-label) để header một hàng không tràn. */}
-      <span className="hidden sm:inline">{label}</span>
+      <Sparkles className="h-4 w-4 text-violet-600 lg:mr-1.5" aria-hidden="true" />
+      {/* < 1024 px: chỉ biểu tượng (tên vẫn ở aria-label) để header một hàng không tràn (Đợt 3b Task 2 fix 1: trước là < 640;
+          768 px đo được 610 px nút ⇒ header phải xuống dòng). */}
+      <span className="hidden lg:inline">{label}</span>
     </Button>
   );
 }
@@ -2315,8 +2316,8 @@ export default function OrchestrationStudio() {
                   onClick={() => void runSimulate()}
                   disabled={simulating || def.steps.length === 0}
                 >
-                  <FlaskConical className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
-                  <span className="hidden sm:inline">{t("studio.simulate", "Simulate")}</span>
+                  <FlaskConical className="h-4 w-4 lg:mr-1.5" aria-hidden="true" />
+                  <span className="hidden lg:inline">{t("studio.simulate", "Simulate")}</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -2330,8 +2331,8 @@ export default function OrchestrationStudio() {
                       : undefined)
                   }
                 >
-                  <Save className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
-                  <span className="hidden sm:inline">{t("studio.deploy", "Save (deploy)")}</span>
+                  <Save className="h-4 w-4 lg:mr-1.5" aria-hidden="true" />
+                  <span className="hidden lg:inline">{t("studio.deploy", "Save (deploy)")}</span>
                 </Button>
                 <Button
                   aria-label={t("studio.run", "Run")}
@@ -2339,8 +2340,8 @@ export default function OrchestrationStudio() {
                   disabled={!canControl || !foeEnabled || startRunM.isPending || !def.ref}
                   title={controlReason}
                 >
-                  <Play className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
-                  <span className="hidden sm:inline">{t("studio.run", "Run")}</span>
+                  <Play className="h-4 w-4 lg:mr-1.5" aria-hidden="true" />
+                  <span className="hidden lg:inline">{t("studio.run", "Run")}</span>
                 </Button>
               </>
             }

@@ -21660,7 +21660,9 @@
         "beta": "Beta",
         "whenToUse": "When to use",
         "loading": "Checking",
-        "error": "Status unknown"
+        "error": "Status unknown",
+        "meta": "Properties",
+        "status": "Status"
       },
       "more": "+{{count}}",
       "moreLabel": "Show {{count}} more notes",

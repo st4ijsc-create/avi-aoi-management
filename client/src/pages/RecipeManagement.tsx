@@ -55,8 +55,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import {
-  PageContainer, PageHeaderCompact, NoticeChip, StatusBadge, SplitListDetail, FlyoutHost, useFlyout, useCloseOwnLayer,
-  VersionHistoryPanel, JsonDiffView, RollbackConfirm, EntityPicker, FeatureStatusNoticeChip,
+  PageContainer, PageHeaderCompact, NoticeStack, StatusBadge, SplitListDetail, FlyoutHost, useFlyout, useCloseOwnLayer,
+  VersionHistoryPanel, JsonDiffView, RollbackConfirm, EntityPicker, featureStatusNoticeItem,
   type BadgeVariant, type FlyoutApi, type FlyoutDefinition, type VersionRow, type EntityOption,
 } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
@@ -1066,20 +1066,24 @@ export default function RecipeManagement() {
                 }
                 chips={
                   <>
-                    {/* SAFETY — HITL: câu banner cũ, nay trong popover của chip (không còn khối trên MAIN). */}
-                    <NoticeChip kind="honesty" label={t("recipes.hitlChip", "Đẩy xuống máy qua HITL")}>
-                      {t("recipes.hitlBanner")}
-                    </NoticeChip>
-                    {/* Đợt 3 Task 1 — cờ tích hợp (EQ_INTEG) 4 trạng thái, chỉ khi khu tích hợp đang dùng; bật ⇒ không chip. */}
-                    {integNeeded && canViewMonitoring && (
-                      <FeatureStatusNoticeChip
-                        status={eqFlagStatus}
-                        subject={t("eqIntegration.title", "Equipment Integration")}
-                        offMessage={t("recipes.integ.flagOff", "Tích hợp thiết bị đang tắt: phát hành, rollback phiên bản và ghi nhận nạp bị chặn cho đến khi bật. Xem lịch sử nạp vẫn được.")}
-                        // Fix round 1 — câu ĐÚNG: thao tác tích hợp KHÔNG bị khoá khi cờ chưa rõ (như màn cũ); server tự chặn khi tắt.
-                        errorMessage={t("recipes.integ.flagError", "Không kiểm tra được trạng thái tích hợp thiết bị. Thao tác tích hợp vẫn gửi được, nhưng máy chủ sẽ từ chối nếu tính năng đang tắt.")}
-                      />
-                    )}
+                    {/* Đợt 3b Task 2 fix 1 (R-3b-b): hai chip đứng riêng ⇒ MỘT NoticeStack (cùng nội dung, cùng điều kiện) để header
+                        hẹp gộp được vào "+N"; chip cờ LỖI vẫn luôn hiện. */}
+                    <NoticeStack
+                      items={[
+                        // SAFETY — HITL: câu banner cũ, nay trong popover của chip (không còn khối trên MAIN).
+                        { id: "hitl", kind: "honesty", label: t("recipes.hitlChip", "Đẩy xuống máy qua HITL"), content: t("recipes.hitlBanner") },
+                        // Đợt 3 Task 1 — cờ tích hợp (EQ_INTEG) 4 trạng thái, chỉ khi khu tích hợp đang dùng; bật ⇒ không chip.
+                        integNeeded && canViewMonitoring &&
+                          featureStatusNoticeItem(t, {
+                            id: "eq-integ-flag",
+                            status: eqFlagStatus,
+                            subject: t("eqIntegration.title", "Equipment Integration"),
+                            offMessage: t("recipes.integ.flagOff", "Tích hợp thiết bị đang tắt: phát hành, rollback phiên bản và ghi nhận nạp bị chặn cho đến khi bật. Xem lịch sử nạp vẫn được."),
+                            // Fix round 1 — câu ĐÚNG: thao tác tích hợp KHÔNG bị khoá khi cờ chưa rõ (như màn cũ); server tự chặn khi tắt.
+                            errorMessage: t("recipes.integ.flagError", "Không kiểm tra được trạng thái tích hợp thiết bị. Thao tác tích hợp vẫn gửi được, nhưng máy chủ sẽ từ chối nếu tính năng đang tắt."),
+                          }),
+                      ]}
+                    />
                   </>
                 }
                 actions={

@@ -8,7 +8,7 @@ import "@testing-library/jest-dom/vitest";
 import vi from "@/i18n/locales/vi.json";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
 import { useTranslation } from "react-i18next";
-import { FeatureStatusNoticeChip, NoticeChip, NoticeStack, type NoticeItem } from "./NoticeChip";
+import { FeatureStatusNoticeChip, NoticeChip, NoticeStack, featureStatusNoticeItem, type NoticeItem } from "./NoticeChip";
 
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
@@ -185,3 +185,46 @@ describe("FeatureStatusNoticeChip — `subject` gọi tên cờ trong nhãn chip
     expect(container.innerHTML).toBe("");
   });
 });
+
+// ── Đợt 3b Task 2 fix 1 (R-3b-b (2)) — chip cờ vào NoticeStack của trang: CÙNG 4 trạng thái / nhãn / testid / câu như
+// FeatureStatusNoticeChip; lỗi ⇒ vùng role=alert đọc ngay KỂ CẢ khi mục bị gộp vào "+N" (final wave M-9).
+describe("featureStatusNoticeItem — bản NoticeItem của FeatureStatusNoticeChip", () => {
+  function Stack({ status, maxVisible }: { status: "on" | "off" | "loading" | "error"; maxVisible?: number }) {
+    const { t } = useTranslation();
+    return (
+      <NoticeStack
+        maxVisible={maxVisible}
+        items={[
+          { id: "w", kind: "whenToUse", content: "khi nào" },
+          featureStatusNoticeItem(t, { status, subject: "Triển khai thật", offMessage: "Câu tắt cũ", errorMessage: "Câu lỗi cũ" }),
+        ]}
+      />
+    );
+  }
+  it("on ⇒ không mục nào (như chip: không hiện gì)", () => {
+    render(<Stack status="on" />);
+    expect(document.querySelector('[data-testid^="feature-status-"]')).toBeNull();
+  });
+  it.each([
+    ["off", "feature-status-off", "flagOff", /Triển khai thật: Đang tắt/],
+    ["loading", "feature-status-loading", "loading", /Triển khai thật: Đang kiểm tra/],
+    ["error", "feature-status-error", "error", /Triển khai thật: Không kiểm được/],
+  ] as const)("%s ⇒ cùng testid %s, kind %s, nhãn có tên cờ", (status, testId, kind, name) => {
+    render(<Stack status={status} />);
+    const chip = screen.getByTestId(testId);
+    expect(chip).toHaveAttribute("data-notice-kind", kind);
+    expect(chip).toHaveTextContent(name);
+  });
+  it("off ⇒ popover = câu tắt cũ", async () => {
+    render(<Stack status="off" />);
+    fireEvent.click(screen.getByTestId("feature-status-off"));
+    expect(within(await screen.findByRole("dialog")).getByText("Câu tắt cũ")).toBeInTheDocument();
+  });
+  it("error ⇒ role=alert đọc NGAY câu lỗi, kể cả khi mục bị gộp vào '+N' (maxVisible 0)", () => {
+    render(<Stack status="error" maxVisible={0} />);
+    expect(screen.queryByTestId("feature-status-error")).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("Câu lỗi cũ");
+    expect(document.querySelector("[data-notice-more]")).toHaveAttribute("data-notice-more", "2");
+  });
+});
+

@@ -21662,7 +21662,9 @@
         "beta": "测试版",
         "whenToUse": "何时使用",
         "loading": "检查中",
-        "error": "状态未知"
+        "error": "状态未知",
+        "meta": "属性",
+        "status": "状态"
       },
       "more": "+{{count}}",
       "moreLabel": "查看另外 {{count}} 条说明",
