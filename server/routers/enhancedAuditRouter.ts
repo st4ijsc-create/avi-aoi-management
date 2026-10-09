@@ -662,10 +662,13 @@ const MASTER_DATA_DOMAINS: Record<string, { label: string; prefixes: string[] }>
 /** Parse cột details (TEXT chứa JSON) an toàn → object rỗng nếu thiếu/hỏng. */
 function parseAuditDetails(raw: unknown): Record<string, any> {
   if (raw == null) return {};
-  if (typeof raw === "object") return raw as Record<string, any>;
+  if (typeof raw === "object") return Array.isArray(raw) ? {} : (raw as Record<string, any>);
   if (typeof raw === "string") {
     try {
-      return JSON.parse(raw);
+      // doc 81 Đợt 4 fix round 1 (finding 9) — `"null"` / `"3"` / `"[...]"` parse to a non-object: never let one row
+      // turn `.source` into a TypeError that takes down the whole feed.
+      const v: unknown = JSON.parse(raw);
+      return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : {};
     } catch {
       return {};
     }

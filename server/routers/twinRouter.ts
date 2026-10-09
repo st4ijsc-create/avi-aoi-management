@@ -32,17 +32,6 @@ import { validateUpload } from "../_core/uploadValidation";
 import { phamViCua } from "./_phamViNguoiXem";
 import { trongPhamVi } from "../db/hierarchy";
 
-/**
- * doc 81 Đợt 4 Task A3 — the ONE factory gate of the twin read endpoints (the Đợt 42 usdExport check, now shared by
- * sceneGraph · twinModels · usdExport · replay · occupancyGrid). `factoryId` is the client's own claim: a factory outside
- * the caller's scope gets EXACTLY the response of a factory that does not exist for that caller (same code, same key,
- * same message) — no separate code confirms the factory is real (G82). Admin / scope `null` ⇒ no check.
- */
-async function assertTwinFactoryInScope(ctx: Parameters<typeof phamViCua>[0], factoryId: number): Promise<void> {
-  if (!(await trongPhamVi("factory", factoryId, phamViCua(ctx)))) {
-    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${factoryId} not found`);
-  }
-}
 import {
   twinLiveEnabled,
   registerModel,
@@ -61,6 +50,18 @@ import {
   convertStepModel,
 } from "../services/twin/pipeline/modelConversionService";
 import { SAMPLE_URDF_3DOF_ARM, SAMPLE_URDF_2DOF_PLANAR } from "../services/twin/pipeline/sampleUrdfs";
+
+/**
+ * doc 81 Đợt 4 Task A3 — the ONE factory gate of the twin read endpoints (the Đợt 42 usdExport check, now shared by
+ * sceneGraph · twinModels · usdExport · replay · occupancyGrid). `factoryId` is the client's own claim: a factory outside
+ * the caller's scope gets EXACTLY the response of a factory that does not exist for that caller (same code, same key,
+ * same message) — no separate code confirms the factory is real (G82). Admin / scope `null` ⇒ no check.
+ */
+async function assertTwinFactoryInScope(ctx: Parameters<typeof phamViCua>[0], factoryId: number): Promise<void> {
+  if (!(await trongPhamVi("factory", factoryId, phamViCua(ctx)))) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${factoryId} not found`);
+  }
+}
 
 /** Guard mutating actions behind the flag (matches fleetRouter.requireFlag). */
 function requireFlag() {

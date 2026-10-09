@@ -184,7 +184,7 @@ export interface PlcConfigTargetShape {
 
 /**
  * Where the command lands, resolved to the WHOLE chain (factory ← line ← station ← machine, or
- * the robot's line/station). Built only by safetyTarget.resolveSafetyTarget: a partial chain is
+ * the robot's line/station). Built only by safetyTarget.resolveSafetyTargets: a partial chain is
  * never built — anything it cannot resolve is `null` (⇒ every config applies).
  */
 export interface SafetyTarget {
@@ -216,4 +216,14 @@ export function plcConfigAppliesToTarget(cfg: PlcConfigTargetShape, target: Safe
   if (cfg.lineId != null) return target.lineId === cfg.lineId;
   if (cfg.factoryId != null) return target.factoryId === cfg.factoryId;
   return true;
+}
+
+/**
+ * doc 81 Đợt 4 fix round 1 (ruling R-4-d) — the UNION over every target a command touches (the written adapter's
+ * machine + the caller's machine/robot). `null` => not resolvable => every config applies. PURE; built on the ONE
+ * per-target matcher above (gate and Safety panel both call this).
+ */
+export function plcConfigAppliesToTargets(cfg: PlcConfigTargetShape, targets: readonly SafetyTarget[] | null): boolean {
+  if (targets === null || targets.length === 0) return true;
+  return targets.some((t) => plcConfigAppliesToTarget(cfg, t));
 }

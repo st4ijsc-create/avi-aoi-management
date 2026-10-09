@@ -354,9 +354,24 @@ export const safetyRouter = router({
    * backend, never writes. PLC config codes are shown only inside the viewer's factory scope;
    * the preflight basis counts are system-wide (the preflight reads every enabled config).
    */
+  // doc 81 Đợt 4 fix round 1 (finding 8, R-4-d) — optional command target: the panel then predicts with the gate's own
+  // resolver + matcher (written adapter's machine ∪ machine ∪ robot). No input ⇒ unchanged (every config).
   sourceHealth: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(({ ctx }) => loadSafetySourceHealth(phamViCua(ctx))),
+    .input(
+      z
+        .object({
+          target: z
+            .object({
+              adapterId: z.number().int().optional(),
+              machineId: z.number().int().positive().optional(),
+              robotId: z.number().int().positive().optional(),
+            })
+            .optional(),
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) => loadSafetySourceHealth(phamViCua(ctx), input?.target)),
 
   // ══════════════════════════════════════════════════════════════════════════
   // SAFETY EVENTS (S1-b) — feed/trend (read) + ingest/audit (mutations)

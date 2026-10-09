@@ -50,7 +50,7 @@ vi.mock("../robot/robotManager", async (importOriginal) => {
 });
 
 import { createAdapterFacade } from "./adapterFacade";
-import { resolveSafetyTarget } from "./safetyTarget";
+import { resolveSafetyTargets } from "./safetyTarget";
 import { createModbusDriver } from "./drivers/modbusDriver";
 import { registerDriver } from "./driverRegistry";
 import { dispatchRobotJob } from "../robot/robotCommandDispatcher";
@@ -85,7 +85,7 @@ async function freePort(): Promise<number> {
 }
 
 let sql: ReturnType<typeof postgres>;
-const ids = { factory: 0, workshop: 0, line1: 0, line2: 0, st1: 0, st2: 0, m1: 0, m2: 0, adapter1: 0, r1: 0, rUnplaced: 0, rContra: 0, rLineOnly: 0 };
+const ids = { factory: 0, workshop: 0, line1: 0, line2: 0, st1: 0, st2: 0, m1: 0, m2: 0, adapter1: 0, adapter2: 0, adapterNone: 0, r1: 0, rUnplaced: 0, rContra: 0, rLineOnly: 0 };
 const pl = { port: 0, closed: 0, close: async () => undefined as unknown };
 let seq = 0;
 
@@ -195,6 +195,9 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
     ids.m1 = await one(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${ids.st1}, ${"M1-" + DAU}, 'A1 m1', 'AOI', true) RETURNING id`);
     ids.m2 = await one(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${ids.st2}, ${"M2-" + DAU}, 'A1 m2', 'AOI', true) RETURNING id`);
     ids.adapter1 = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId") VALUES (${"A-" + DAU}, 'A1 adapter', 'stub', 'stub://a1', true, ${ids.m1}) RETURNING id`);
+    // fix round 1 (R-4-d): an adapter wired to the line-2 machine, and one wired to no machine.
+    ids.adapter2 = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId") VALUES (${"A2-" + DAU}, 'A1 adapter 2', 'stub', 'stub://a2', true, ${ids.m2}) RETURNING id`);
+    ids.adapterNone = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId") VALUES (${"A0-" + DAU}, 'A1 adapter none', 'stub', 'stub://a0', true, ${null}) RETURNING id`);
     const robot = (suffix: string, lineId: number | null, stationId: number | null) =>
       one(sql`INSERT INTO robots (code, name, vendor, endpoint, "lineId", "stationId") VALUES (${`R${suffix}-${DAU}`}, 'A1 robot', 'sim', 'sim://a1', ${lineId}, ${stationId}) RETURNING id`);
     ids.r1 = await robot("1", ids.line1, ids.st1);
@@ -218,7 +221,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
         await sql`DELETE FROM robot_jobs WHERE "robotId" IN ${sql(robots)}`.catch(() => undefined);
         await sql`DELETE FROM robots WHERE id IN ${sql(robots)}`;
       }
-      if (ids.adapter1) await sql`DELETE FROM device_adapters WHERE id = ${ids.adapter1}`;
+      for (const a of [ids.adapter1, ids.adapter2, ids.adapterNone].filter(Boolean)) await sql`DELETE FROM device_adapters WHERE id = ${a}`;
       await sql`DELETE FROM machines WHERE id IN ${sql([ids.m1, ids.m2].filter(Boolean))}`;
       await sql`DELETE FROM stations WHERE id IN ${sql([ids.st1, ids.st2].filter(Boolean))}`;
       await sql`DELETE FROM production_lines WHERE id IN ${sql([ids.line1, ids.line2].filter(Boolean))}`;
@@ -242,16 +245,52 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
   });
 
   // ── 0. bộ phân giải đích ─────────────────────────────────────────────────────────────
-  it("resolveSafetyTarget: máy ⇒ trạm/chuyền/nhà máy; adapter ⇒ máy của nó; robot ⇒ chuyền/trạm; không phân giải được ⇒ null", async () => {
-    expect(await resolveSafetyTarget({ machineId: ids.m1 })).toEqual({ robotId: null, machineId: ids.m1, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory });
-    expect(await resolveSafetyTarget({ adapterId: ids.adapter1, machineId: null })).toEqual({ robotId: null, machineId: ids.m1, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory });
-    expect(await resolveSafetyTarget({ adapterId: -1, robotId: ids.r1 })).toEqual({ robotId: ids.r1, machineId: null, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory });
-    expect(await resolveSafetyTarget({ robotId: ids.rLineOnly })).toEqual({ robotId: ids.rLineOnly, machineId: null, stationId: null, lineId: ids.line1, factoryId: ids.factory });
-    expect(await resolveSafetyTarget({ machineId: UNKNOWN_MACHINE })).toBeNull();
-    expect(await resolveSafetyTarget({ robotId: ids.rUnplaced })).toBeNull();
-    expect(await resolveSafetyTarget({ robotId: ids.rContra })).toBeNull();
-    expect(await resolveSafetyTarget({ adapterId: -1, machineId: null, robotId: null })).toBeNull();
-    expect(await resolveSafetyTarget({ machineId: ids.m1, robotId: ids.r1 })).toBeNull();
+  it("resolveSafetyTargets: máy ⇒ trạm/chuyền/nhà máy; adapter ⇒ máy của NÓ; robot ⇒ chuyền/trạm; nhiều phần ⇒ HỢP; không phân giải được ⇒ null", async () => {
+    const T1 = { robotId: null, machineId: ids.m1, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory };
+    const T2 = { robotId: null, machineId: ids.m2, stationId: ids.st2, lineId: ids.line2, factoryId: ids.factory };
+    const TR1 = { robotId: ids.r1, machineId: null, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory };
+    expect(await resolveSafetyTargets({ machineId: ids.m1 })).toEqual([T1]);
+    expect(await resolveSafetyTargets({ adapterId: ids.adapter1, machineId: null })).toEqual([T1]);
+    expect(await resolveSafetyTargets({ adapterId: ids.adapter1, machineId: ids.m1 })).toEqual([T1]); // same machine: once
+    // ★ R-4-d: the WRITTEN adapter's machine is ALWAYS a target; a different caller machineId is ADDED (union)
+    expect(await resolveSafetyTargets({ adapterId: ids.adapter2, machineId: ids.m1 })).toEqual([T2, T1]);
+    expect(await resolveSafetyTargets({ adapterId: -1, robotId: ids.r1 })).toEqual([TR1]);
+    expect(await resolveSafetyTargets({ machineId: ids.m1, robotId: ids.r1 })).toEqual([T1, TR1]);
+    expect(await resolveSafetyTargets({ robotId: ids.rLineOnly })).toEqual([{ robotId: ids.rLineOnly, machineId: null, stationId: null, lineId: ids.line1, factoryId: ids.factory }]);
+    expect(await resolveSafetyTargets({ machineId: UNKNOWN_MACHINE })).toBeNull();
+    expect(await resolveSafetyTargets({ robotId: ids.rUnplaced })).toBeNull();
+    expect(await resolveSafetyTargets({ robotId: ids.rContra })).toBeNull();
+    expect(await resolveSafetyTargets({ adapterId: -1, machineId: null, robotId: null })).toBeNull();
+    expect(await resolveSafetyTargets({ adapterId: ids.adapterNone, machineId: ids.m1 })).toBeNull(); // written target unknown
+    expect(await resolveSafetyTargets({ adapterId: 2_000_000_000, machineId: ids.m1 })).toBeNull(); // adapter unknown
+    expect(await resolveSafetyTargets({ adapterId: ids.adapter2, machineId: UNKNOWN_MACHINE })).toBeNull(); // any part fails
+  });
+
+  it("★ R-4-d (lỗ C1): caller khai machineId chuyền 1 nhưng GHI qua adapter chuyền 2 ⇒ PLC offline chuyền 2 VẪN chặn; adapter không gắn máy / adapter lạ ⇒ mọi cấu hình", async () => {
+    await withConfigs(
+      [
+        { cfg: clean(), t: { lineId: ids.line1, factoryId: ids.factory } },
+        { cfg: offline(), t: { lineId: ids.line2, factoryId: ids.factory } },
+      ],
+      async (codes) => {
+        h.readCodes.length = 0;
+        expect((await real({ adapterId: ids.adapter2, machineId: ids.m1 })).state).toBe("UNKNOWN");
+        expect([...h.readCodes].sort()).toEqual([...codes].sort()); // both lines read (union)
+        expect((await legacy({ adapterId: ids.adapter2, machineId: ids.m1 })).state).toBe("OK"); // legacy: a clean read is enough, but line 2 WAS read
+        for (const ctx of [{ adapterId: ids.adapterNone, machineId: ids.m1 }, { adapterId: 2_000_000_000, machineId: ids.m1 }]) {
+          h.readCodes.length = 0;
+          expect((await real(ctx)).state).toBe("UNKNOWN");
+          expect([...h.readCodes].sort()).toEqual([...codes].sort());
+        }
+        // control: written AND claimed both on line 1 ⇒ line 2 not read, OK
+        h.readCodes.length = 0;
+        expect((await real({ adapterId: ids.adapter1, machineId: ids.m1 })).state).toBe("OK");
+        expect(h.readCodes).toEqual([codes[0]]);
+      },
+    );
+    await withConfigs([{ cfg: simEstop(), t: { lineId: ids.line2 } }], async () => {
+      expect((await legacy({ adapterId: ids.adapter2, machineId: ids.m1 })).state).toBe("BLOCKED"); // AI gate path too
+    });
   });
 
   // ── 1. ca chính của brief ────────────────────────────────────────────────────────────
@@ -376,11 +415,16 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
         {},
       ],
       async () => {
-        for (const ref of [{ machineId: ids.m1 }, { machineId: ids.m2 }, { robotId: ids.r1 }, { robotId: ids.rUnplaced }, { machineId: UNKNOWN_MACHINE }]) {
+        for (const ref of [{ machineId: ids.m1 }, { machineId: ids.m2 }, { robotId: ids.r1 }, { robotId: ids.rUnplaced }, { machineId: UNKNOWN_MACHINE }, { adapterId: ids.adapter2, machineId: ids.m1 }]) {
           h.readCodes.length = 0;
           await real(ref);
           const gate = [...h.readCodes].sort();
           const panel = await loadSafetySourceHealth({ userId: 1, userRole: "admin" }, { adapterId: -1, ...ref });
+          // fix round 1 (finding 8): the tRPC procedure passes the target through — same set.
+          const viaRouter = await (await import("../../routers/safetyRouter")).safetyRouter
+            .createCaller({ user: { id: 954_990, role: "admin", name: "a1" } } as never)
+            .sourceHealth({ target: { adapterId: -1, ...ref } });
+          expect(viaRouter.safetyPlc.configs.map((c) => c.code).filter((c) => c.startsWith(DAU)).sort()).toEqual(gate);
           const shown = panel.safetyPlc.configs.map((c) => c.code).filter((c) => c.startsWith(DAU)).sort();
           expect(shown).toEqual(gate);
         }

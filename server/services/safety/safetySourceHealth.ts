@@ -38,12 +38,12 @@ import {
   effectiveBackend,
   isOtSafetyPreflightEnabled,
   isRobotSafetyPreflightEnabled,
-  plcConfigAppliesToTarget,
+  plcConfigAppliesToTargets,
   type EffectivePlcBackend,
   type SafetyPreflightReason,
   type SafetyTarget,
 } from "../ot/safetyPreflightPolicy";
-import { resolveSafetyTarget, type SafetyTargetRef } from "../ot/safetyTarget";
+import { resolveSafetyTargets, type SafetyTargetRef } from "../ot/safetyTarget";
 import { isOtControlEnabled } from "../ot/commandDispatcher";
 import { isRobotControlEnabled } from "../robot/robotCommandDispatcher"; // final wave item 5 — cùng vị từ với cổng bước 4
 import { getIO } from "../../_core/socket";
@@ -83,10 +83,10 @@ export interface SourceHealthSnapshot {
   /** 'error' khi không đọc được bảng cấu hình (getSafetyStatus khi đó cũng trả UNKNOWN). */
   plcRead: "ok" | "error";
   /**
-   * doc 81 Đợt 4 Task A1 — the command target the prediction is for (resolveSafetyTarget, the gate's own
+   * doc 81 Đợt 4 Task A1 / fix round 1 (R-4-d) — the command targets the prediction is for (resolveSafetyTargets, the gate's own
    * resolver). Absent / null = no target or not resolvable ⇒ every enabled config, exactly as the gate does.
    */
-  target?: SafetyTarget | null;
+  targets?: readonly SafetyTarget[] | null;
   /** null = người xem toàn quyền. */
   visibleFactoryIds: number[] | null;
   zones: Array<{ factoryId: number | null }>;
@@ -206,7 +206,7 @@ function planeVerdict(
 
 export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySourceHealth {
   // doc 81 Đợt 4 Task A1 — the SAME matcher the gate applies (plcConfigAppliesToTarget), never a copy.
-  const configs = s.plcRead === "ok" ? s.plcConfigsEnabled.filter((c) => plcConfigAppliesToTarget(c, s.target ?? null)) : [];
+  const configs = s.plcRead === "ok" ? s.plcConfigsEnabled.filter((c) => plcConfigAppliesToTargets(c, s.targets ?? null)) : [];
   const kinds = configs.map((c) => effectiveBackend(c));
   const count = (k: EffectivePlcBackend) => kinds.filter((x) => x === k).length;
   const simScriptedConfigs = count("sim_scripted");
@@ -355,14 +355,14 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem, targetRef?:
   const estopAdapter = getSafetyPlcAdapter();
 
   // doc 81 Đợt 4 Task A1 — the gate's own resolver; no ref (today's panel) ⇒ null ⇒ every config.
-  const target = targetRef ? await resolveSafetyTarget(targetRef) : null;
+  const targets = targetRef ? await resolveSafetyTargets(targetRef) : null;
 
   return computeSafetySourceHealth({
     checkedAt: new Date().toISOString(),
     flags: docCoDangBat(),
     plcConfigsEnabled,
     plcRead,
-    target,
+    targets,
     visibleFactoryIds,
     zones: zones.map((z) => ({ factoryId: z.factoryId ?? null })),
     calibrations: calibrations.map((c) => ({ factoryId: c.factoryId ?? null })),

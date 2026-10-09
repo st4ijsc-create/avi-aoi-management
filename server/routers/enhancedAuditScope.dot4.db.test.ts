@@ -197,6 +197,16 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A2 — sổ kiểm toán theo ph�
     }
   });
 
+  it("fix round 1 (finding 9): một dòng details = \"null\" / \"[1]\" KHÔNG làm sập luồng (admin), source = web", async () => {
+    const ins = async (details: string) =>
+      Number((await sql`INSERT INTO audit_logs ("userId", action, "entityType", "entityName", details, status)
+                        VALUES (${OTHER_ACTOR}, 'auth.probe', 'auth', ${`${DAU} bad-details`}, ${details}, 'success') RETURNING id`)[0].id);
+    const a = await ins("null");
+    const b = await ins("[1]");
+    const feed = await (await caller(ADMIN)).activityFeed({ limit: 50 });
+    for (const id of [a, b]) expect(feed.find((r) => r.id === id)?.source).toBe("web");
+  });
+
   // ── masterDataList ──────────────────────────────────────────────────────────────────
   it("★ masterDataList (người được gán IN): items + total chỉ gồm dòng trong phạm vi / của mình", async () => {
     const r = await (await caller(as(users.scoped))).masterDataList({ search: DAU, limit: 200, offset: 0 });
