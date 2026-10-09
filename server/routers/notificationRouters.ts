@@ -2,6 +2,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import * as db from "../db";
 import { adminProcedure } from "./_shared";
+import { safeInternalPath } from "@shared/internalPath";
 
 // ============= NOTIFICATION ROUTER =============
 export const notificationRouter = router({
@@ -13,7 +14,10 @@ export const notificationRouter = router({
       offset: z.number().min(0).optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return db.getNotifications(ctx.user.id, input);
+      // doc 81 Đợt 3b Task 3 (Review Focus #2) — chỉ đường NỘI BỘ tương đối mới tới client; còn lại ⇒ null
+      // (hàng cũ / ghi thẳng vào bảng không qua sendNotification). Client lọc lần nữa trước khi điều hướng.
+      const rows = await db.getNotifications(ctx.user.id, input);
+      return rows.map((n) => ({ ...n, actionUrl: safeInternalPath(n.actionUrl) }));
     }),
 
   unreadCount: protectedProcedure

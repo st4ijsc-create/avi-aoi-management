@@ -700,7 +700,8 @@ export async function getUnreadNotificationCount(userId: number) {
       eq(notifications.isRead, false)
     ));
   
-  return result[0]?.count || 0;
+  // doc 81 Đợt 3b Task 3 — COUNT(*) là bigint ⇒ postgres-js trả CHUỖI ("5", và "0" còn truthy) dù có `sql<number>`.
+  return Number(result[0]?.count ?? 0);
 }
 
 export async function markNotificationAsRead(id: number, userId: number) {

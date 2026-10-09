@@ -16,6 +16,7 @@ import { resolveLogicalModel } from './ai/modelResolver';
 import { stripThinking } from './ai/thinkingStrip';
 // ★ doc 80 PLT-01 — phân quyền vào phòng socket (một nơi duy nhất, dùng chung với socket.ts).
 import { duocVaoPhongNguoiDung, moTaSocket } from '../_core/socketPhongQuyen';
+import { safeInternalPath } from '@shared/internalPath';
 
 // Store Socket.io server instance
 let io: SocketIOServer | null = null;
@@ -122,6 +123,9 @@ export async function sendNotification(userId: number, payload: NotificationPayl
     }
   }
   
+  // doc 81 Đợt 3b Task 3 (Review Focus #2) — chỉ ghi đường NỘI BỘ tương đối; URL ngoài / "//" / scheme ⇒ null.
+  const actionUrl = safeInternalPath(payload.actionUrl) ?? undefined;
+
   // Create notification in database
   const result = await createNotification({
     userId,
@@ -130,7 +134,7 @@ export async function sendNotification(userId: number, payload: NotificationPayl
     message: payload.message,
     entityType: payload.entityType,
     entityId: payload.entityId,
-    actionUrl: payload.actionUrl,
+    actionUrl,
     priority: payload.priority || 'NORMAL',
     metadata: payload.metadata,
   });
@@ -142,6 +146,7 @@ export async function sendNotification(userId: number, payload: NotificationPayl
     const notification = {
       id: result.id,
       ...payload,
+      actionUrl,
       createdAt: new Date().toISOString(),
       isRead: false,
     };
