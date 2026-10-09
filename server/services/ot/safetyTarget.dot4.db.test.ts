@@ -6,7 +6,8 @@
  * được ⇒ MỌI cấu hình (fail-closed, không bao giờ ít hơn trước).
  *
  * Thật: hàng factories/workshops/production_lines/stations/machines/robots/device_adapters/safety_plc_configs
- * trong `_test`; `listPlcConfigs` THẬT (chỉ LỌC THÊM theo tiền tố mã của tệp này — `safety_plc_configs` của
+ * trong `_test` (cấu hình safety-PLC của các ca cổng là hàng TRONG BỘ NHỚ do listPlcConfigs giả trả — không chèn PLC
+ * thật/offline/estop vào bảng dùng chung; chỉ ca bảng nguồn chèn hàng SIM sạch); trước đó: `listPlcConfigs` THẬT (chỉ LỌC THÊM theo tiền tố mã của tệp này — `safety_plc_configs` của
  * `_test` dùng chung với tệp chạy song song); `backendForConfig` THẬT → ModbusDriver THẬT nói với một PLC an
  * toàn GIẢ trong tiến trình (`ServerTCP` của modbus-serial, 127.0.0.1 cổng 0, đóng ở afterAll). PLC "offline"
  * = cổng đã đóng (ECONNREFUSED). Robot: dispatchRobotJob THẬT, driver giả ĐẾM runJob (oracle).
@@ -22,6 +23,8 @@ const h = vi.hoisted(() => ({
   dau: `D4A1-${Date.now()}`,
   readCodes: [] as string[],
   robots: new Map<number, unknown>(),
+  /** In-memory configs served by listPlcConfigs (null ⇒ the real table, filtered to this file's codes). */
+  synthetic: null as null | Array<Record<string, unknown>>,
 }));
 
 vi.mock("../safety/plc/safetyPlcAdapter", async (importOriginal) => {
@@ -29,7 +32,9 @@ vi.mock("../safety/plc/safetyPlcAdapter", async (importOriginal) => {
   return {
     ...orig,
     listPlcConfigs: async (f: Parameters<typeof orig.listPlcConfigs>[0]) =>
-      (await orig.listPlcConfigs(f)).filter((c) => c.code.startsWith(h.dau)),
+      h.synthetic
+        ? (h.synthetic as unknown as Awaited<ReturnType<typeof orig.listPlcConfigs>>)
+        : (await orig.listPlcConfigs(f)).filter((c) => c.code.startsWith(h.dau)),
     backendForConfig: (cfg: Parameters<typeof orig.backendForConfig>[0]) => {
       h.readCodes.push(cfg.code);
       return orig.backendForConfig(cfg);
@@ -90,17 +95,41 @@ const clean = () => ({ backend: "modbus", endpoint: `tcp://127.0.0.1:${pl.port}`
 const offline = () => ({ backend: "modbus", endpoint: `tcp://127.0.0.1:${pl.closed}`, statusMap: ESTOP });
 const simEstop = () => ({ backend: "sim", endpoint: null, statusMap: { simScript: [{ estop: true }] } });
 
-/** Insert configs for ONE case, run, delete. Returns codes in insertion order. */
+/**
+ * Configs for ONE case, IN MEMORY (served by the mocked listPlcConfigs; backendForConfig/ModbusDriver stay real).
+ * fix (2026-10-09): they used to be INSERTed into the shared `_test.safety_plc_configs`, where an offline REAL or a
+ * tripped SIM row of this file was read by safetySimOnly.dot1c running in parallel (its fake machine resolves to no
+ * target ⇒ every config applies) — that file's contract is "other files only add clean SIM rows".
+ */
 async function withConfigs<T>(rows: Array<{ cfg: { backend: string; endpoint: string | null; statusMap: unknown }; t?: Target }>, fn: (codes: string[]) => Promise<T>): Promise<T> {
+  const codes: string[] = [];
+  h.synthetic = rows.map((r) => {
+    const code = `${DAU}-${++seq}`;
+    codes.push(code);
+    return {
+      id: 100_000 + seq, code, name: "Đợt 4 A1", vendor: "generic", backend: r.cfg.backend, endpoint: r.cfg.endpoint, statusMap: r.cfg.statusMap,
+      robotId: r.t?.robotId ?? null, stationId: r.t?.stationId ?? null, lineId: r.t?.lineId ?? null, factoryId: r.t?.factoryId ?? null,
+      enabled: true, notes: null, scope: null, corporateCode: null, createdAt: new Date(), updatedAt: new Date(),
+    };
+  });
+  try {
+    return await fn(codes);
+  } finally {
+    h.synthetic = null;
+  }
+}
+
+/** Panel case only: REAL rows (the panel reads the table itself) — clean SIM rows only, the shared-table convention. */
+async function withDbSimConfigs<T>(targets: Target[], fn: (codes: string[]) => Promise<T>): Promise<T> {
   const made: number[] = [];
   const codes: string[] = [];
   try {
-    for (const r of rows) {
+    for (const t of targets) {
       const code = `${DAU}-${++seq}`;
       const [x] = await sql`
-        INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", enabled, "robotId", "stationId", "lineId", "factoryId")
-        VALUES (${code}, 'Đợt 4 A1', 'generic', ${r.cfg.backend}, ${r.cfg.endpoint}, ${sql.json(r.cfg.statusMap as never)}, true,
-                ${r.t?.robotId ?? null}, ${r.t?.stationId ?? null}, ${r.t?.lineId ?? null}, ${r.t?.factoryId ?? null})
+        INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", enabled, scope, "robotId", "stationId", "lineId", "factoryId")
+        VALUES (${code}, 'Đợt 4 A1', 'generic', 'sim', ${null}, ${null}, true, 'sim',
+                ${t.robotId ?? null}, ${t.stationId ?? null}, ${t.lineId ?? null}, ${t.factoryId ?? null})
         RETURNING id`;
       made.push(Number(x.id));
       codes.push(code);
@@ -339,11 +368,12 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
 
   // ── 3. bảng nguồn an toàn dự đoán bằng CÙNG bộ so khớp + CÙNG bộ phân giải ──────────
   it("★ loadSafetySourceHealth(viewer, đích) liệt kê ĐÚNG tập cấu hình cổng đọc cho đích đó", async () => {
-    await withConfigs(
+    await withDbSimConfigs(
       [
-        { cfg: clean(), t: { lineId: ids.line1, factoryId: ids.factory } },
-        { cfg: offline(), t: { lineId: ids.line2, factoryId: ids.factory } },
-        { cfg: offline(), t: { stationId: ids.st1, factoryId: ids.factory } },
+        { lineId: ids.line1, factoryId: ids.factory },
+        { lineId: ids.line2, factoryId: ids.factory },
+        { stationId: ids.st1, factoryId: ids.factory },
+        {},
       ],
       async () => {
         for (const ref of [{ machineId: ids.m1 }, { machineId: ids.m2 }, { robotId: ids.r1 }, { robotId: ids.rUnplaced }, { machineId: UNKNOWN_MACHINE }]) {
