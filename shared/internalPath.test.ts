@@ -36,8 +36,19 @@ describe("safeInternalPath", () => {
     ["DEL", "/x\u007f"],
     ["rỗng", ""],
     ["quá dài (>500, cột varchar 500)", "/" + "a".repeat(500)],
+    // doc 81 Đợt 3b final wave (minor 1): đoạn chấm làm đường đã phân tích bắt đầu bằng "//" (WHATWG: "/..//evil" ⇒ pathname
+    // "//evil"; "%2e%2e" là ".." đã mã hoá) — cùng gốc hôm nay, nhưng "//evil" trong href là máy KHÁC.
+    ["đoạn chấm ⇒ //", "/..//evil.example"],
+    ["đoạn chấm mã hoá ⇒ //", "/%2e%2e//evil.example"],
+    ["đoạn chấm mã hoá HOA ⇒ //", "/%2E%2E//evil.example"],
+    ["đoạn chấm giữa đường ⇒ //", "/a/../..//evil.example"],
+    ["./ rồi .. ⇒ //", "/./..//evil.example/x?y=1"],
   ])("chặn %s", (_n, p) => {
     expect(safeInternalPath(p)).toBeNull();
+  });
+
+  it.each(["/a/../b", "/a/./b", "/..", "/x/%2e%2e/y"])("đoạn chấm KHÔNG ra '//' vẫn là đường nội bộ (%s)", (p) => {
+    expect(safeInternalPath(p)).toBe(p);
   });
 
   it.each([null, undefined, 42, {}, ["/x"]])("không phải chuỗi ⇒ null (%s)", (v) => {
