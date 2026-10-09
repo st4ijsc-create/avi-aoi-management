@@ -68,6 +68,10 @@ tự kiểm trượt, `1` khi lỗi hạ tầng.
      (không tín hiệu) ⇒ lần chạy kế tiếp dọn (`meta.fixtures.staleRemoved`);
    - phép băm canh trôi: hàng mẫu băm RIÊNG ở khoá `engineering_changes[uimetrics_]` (mọi cột trừ `id` serial) ⇒ đổi
      hàng mẫu trong lần chạy vẫn là trôi, và hai lần chạy so được (`sameDataAcrossRuns`); phần còn lại của bảng băm như cũ.
+   - dọn hỏng (xoá hàng mẫu hay user đo ném lỗi) ⇒ `cleanupFailures[]` trong JSON, dòng `✗ DỌN HỎNG` trên console và
+     **`pass=false`** (cổng ở `runGate.mjs`, test `engineeringLayoutCleanup.test.ts`);
+   - `_test` DÙNG CHUNG: trong lúc đo, 10 hàng mẫu nhìn thấy được với vitest DB của phiên khác (và ngược lại). Tiền tố
+     làm va chạm thật gần như không thể; một test khác xoá/sửa hàng mẫu thì canh trôi báo (`engineering_changes[uimetrics_]`).
    Các màn danh sách khác: Interlock / Recipes / Standards (tab chính) cao theo KHUNG NHÌN (khác nhau giữa 950/768) ⇒ không
    phụ thuộc số hàng; tab Standards › Alarms cao theo nội dung nhưng đọc dữ liệu tham chiếu do script seed
    (`alarm_taxonomy`/`master_alarms`, `scripts/seed-engineering-data.mjs`), không phải hàng rò của test.

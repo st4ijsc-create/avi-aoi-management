@@ -56,6 +56,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { cleanupFailures, runPass } from "./runGate.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(path.join(REPO, "package.json"));
@@ -1919,12 +1920,15 @@ async function main() {
     if (args["discover-tables"]) out.discovered = r.discovered;
     await cleanup();
     await sleep(1500); out.meta.portsAfter = await portsReport([serverPort, vitePort]);
-    out.pass = errors.length === 0 && meta.outboundViolations.length === 0 && (args["discover-tables"] || (Object.keys(meta.data.drift).length === 0 && meta.data.errors.length === 0 && (args["no-selftest"] || !!meta.selfTest?.pass) && (!args.mutation || !!meta.selfTest?.mutationPass)));
+    // Đợt 3b fix 1 (R-3b-b (3)): dọn hàng mẫu / user đo hỏng ⇒ pass=false + in ra (runGate.mjs).
+    out.cleanupFailures = cleanupFailures(meta);
+    out.pass = runPass({ errors, meta, args });
     fs.writeFileSync(outFile, JSON.stringify(out, null, 1));
     if (missing.length) console.log(`\n⚠ ${missing.length}/${screens.length} màn CHƯA có [data-layout-main] — đang đo bằng selector FE1: ${missing.join(", ")}`);
     if (errors.length) console.log(`✗ ${errors.length} LỖI:\n  ${errors.join("\n  ")}`);
     console.log(`[uim] kết nối ngoài danh sách: ${meta.outboundViolations.length} · trôi dữ liệu trong lần chạy: ${meta.data.drift ? Object.keys(meta.data.drift).length : "n/a"} (${meta.data.tables} bảng) · lỗi băm: ${meta.data.errors ? meta.data.errors.length : "n/a"} · tự kiểm: ${meta.selfTest ? (meta.selfTest.pass ? "ĐẠT" : "TRƯỢT") : "n/a"}${args.mutation ? ` · đột biến gác: ${meta.selfTest?.mutationPass ? "mọi gác ĐỎ khi gỡ" : "CÓ gác không đỏ"}` : ""}`);
-    console.log(`[uim] cổng sau khi tắt: ${JSON.stringify(out.meta.portsAfter)} · user đo: ${JSON.stringify(out.meta.probeUserRemoved)}`);
+    console.log(`[uim] cổng sau khi tắt: ${JSON.stringify(out.meta.portsAfter)} · user đo: ${JSON.stringify(out.meta.probeUserRemoved)} · hàng mẫu đã xoá: ${JSON.stringify(out.meta.fixturesRemoved)}`);
+    if (out.cleanupFailures.length) console.log(`✗ DỌN HỎNG (pass=false): ${out.cleanupFailures.join(" | ")}`);
     console.log(`[uim] ghi ${outFile} · pass=${out.pass}`);
     process.exitCode = out.pass ? 0 : 2;
   } catch (e) {
