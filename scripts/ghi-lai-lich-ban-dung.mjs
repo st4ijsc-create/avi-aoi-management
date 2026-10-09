@@ -79,6 +79,26 @@
  *   trả lời một câu hỏi rộng hơn. Vì thế hai giới hạn trên in **ngay trong dòng `DAT`** — gắn
  *   liền với lời khẳng định, không để ở một docblock mà người chạy lệnh có thể không mở ra.
  *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ LỐI DỰNG RIÊNG SERVER NAY CÓ TÊN: `npm run build:server`
+ * ════════════════════════════════════════════════════════════════════════════
+ * Bốn vòng liên tiếp (tháng 9) cùng một trình tự: một phiên gõ `esbuild` **tay** cho
+ * `dist/index.js`, `BUILD-INFO` nói sai, phiên ấy báo trước, rồi commit và ghi lại bằng tay.
+ * Không ai sai cả — `package.json` **không có** lệnh dựng-riêng-server, nên tệp lai lịch trôi
+ * là **hệ quả của một lệnh còn thiếu**.
+ *
+ * ⇒ `npm run build:server` = đúng các bước **server-side** của `build`, lấy **trích từ chính
+ *   `build`** chứ không chép tay (ba `esbuild` + copy `index.cjs` + bước ghi lai lịch này).
+ *   Cửa sổ nói sai biến mất: mtime được ghi **trong cùng một lượt** với lúc dựng.
+ *
+ * ★ Nó KHÔNG làm: `vite build` (client), `copy-font-assets`, `kiem-vo-app-https`. Ai sửa client
+ *   thì vẫn phải `npm run build` — và hai dòng mtime sẽ phơi ra nếu client bị bỏ lại phía sau.
+ *
+ * ⚠ Giới hạn còn lại, nói ra: `dist/index.cjs` **được copy** nhưng **KHÔNG** có dòng mtime trong
+ *   `BUILD-INFO`, nên `--kiem` không canh nó. Thêm nó vào `ARTEFACT` sẽ làm mọi tệp lai lịch
+ *   **cũ** thành ĐỎ cho tới khi được ghi lại — một sự gián đoạn cho các phiên khác, nên để lại
+ *   làm một quyết định riêng chứ không nhét kèm vào đây.
+ *
  * ⚠ `--kiem` KHÔNG nên cắm vào CI ngay sau `pnpm run build`: ở đó nó chỉ đọc lại tệp mà chính
  *   bước trước vừa ghi ⇒ **luôn xanh, không đo gì**. Chỗ nó có nghĩa là **vận hành**: trước khi
  *   tin lai lịch của một máy chủ đang chạy, hoặc sau một lượt dựng RIÊNG một phần.
