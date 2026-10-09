@@ -625,7 +625,17 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   • `reassignOperator`/`confirmAssignment`/`closeAssignment` (mutation) thêm soát phạm vi hàng — vẫn nhóm D.
  *   ⇒ A −1 · S +1.
  */
-const GHIM = { A: 340, B: 8, C: 481, D: 1131, S: 336, tong: 2296 } as const;
+/*
+ * ★★★ 2026-10-09 (doc 81 Đợt 4 Task A2, ruling R-4-b — sổ kiểm toán theo phạm vi) — **C 481→479 · S 336→338 · tong/A/B/D
+ * không đổi.** ĐO bằng chính bộ quét này (cây trước lượt sửa = C 481 · S 336, khớp ghim; sau = C 479 · S 338):
+ *   • `enhancedAudit.activityFeed` (query): **C → S** — thêm requirePermission("admin_system","canView") và cổng hàng
+ *     `auditRowScopeGate(ctx)` (danh tính rời tay qua `phamViCua(ctx)` → `idsTrongPhamVi`).
+ *   • `enhancedAudit.masterDataList` (query): **C → S** — cùng cổng hàng.
+ *   Cả hai trước ở (C) vì `audit_logs` không có cột mã tenant — không phải vì đã có lọc. KHÔNG thêm/gỡ dòng nào ở
+ *   `phamViDocBaseline.ts` (hai thủ tục chưa từng ở sổ nợ).
+ *   ⇒ C −2 · S +2.
+ */
+const GHIM = { A: 340, B: 8, C: 479, D: 1131, S: 338, tong: 2296 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
