@@ -58,6 +58,19 @@ tự kiểm trượt, `1` khi lỗi hạ tầng.
    - Quyền: role `engineer`, quyền mẫu `DEFAULT_ROLE_PERMISSIONS.engineer`, gán `SIM-FAC` như `engineer1`
      của FE1, không 2FA.
    - Xoá khi xong, kể cả khi lỗi giữa chừng.
+2b. **Hàng mẫu của chính thiết bị đo (Đợt 3b, ruling R-3b-a).** MAIN của ECN cao theo NỘI DUNG (704 px ở cả
+   1600×950 lẫn 1366×768); bản ghi hiệu chuẩn từng dựa vào 10 hàng ECN RÒ từ một test cũ — xoá chúng là hiệu chuẩn lệch
+   74,6 % và tự kiểm trượt. Nay script tự gieo **10 ECN nháp tất định** (`ecnKey`/`title` mang tiền tố `uimetrics_`,
+   `createdAt`/`updatedAt` cố định 2026-01-01) vào **`aoi_management_test`**, TRƯỚC ảnh dữ liệu TRƯỚC:
+   - xoá mọi hàng mẫu sót của lần chạy hỏng trước (kể cả `engineering_change_items` của chúng) rồi mới gieo, kiểm đếm = 10;
+   - `withTestDb` kiểm `current_database()` trước mọi lệnh, giao dịch gieo kiểm lại lần nữa;
+   - xoá khi xong, kể cả khi lỗi hay nhận SIGINT/SIGTERM/SIGBREAK/SIGHUP (dọn một lượt, trước khi xoá user đo). Bị giết cứng
+     (không tín hiệu) ⇒ lần chạy kế tiếp dọn (`meta.fixtures.staleRemoved`);
+   - phép băm canh trôi: hàng mẫu băm RIÊNG ở khoá `engineering_changes[uimetrics_]` (mọi cột trừ `id` serial) ⇒ đổi
+     hàng mẫu trong lần chạy vẫn là trôi, và hai lần chạy so được (`sameDataAcrossRuns`); phần còn lại của bảng băm như cũ.
+   Các màn danh sách khác: Interlock / Recipes / Standards (tab chính) cao theo KHUNG NHÌN (khác nhau giữa 950/768) ⇒ không
+   phụ thuộc số hàng; tab Standards › Alarms cao theo nội dung nhưng đọc dữ liệu tham chiếu do script seed
+   (`alarm_taxonomy`/`master_alarms`, `scripts/seed-engineering-data.mjs`), không phải hàng rò của test.
 3. **Ảnh chụp dữ liệu TRƯỚC:** băm nội dung các bảng mà 14 màn đọc (xem "Trôi dữ liệu").
 4. **Server từ mã nguồn**: `node node_modules/tsx/dist/cli.mjs server/_core/index.ts`, `ROLE=api` (không chạy
    cron/sweeper nền).
