@@ -22,10 +22,17 @@ import { resolvePermissionModule } from "@shared/permissions";
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `D3B1-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
-/** Người vận hành (không FK) — dải riêng của lượt này. */
-const OP0 = 960_000_000 + Math.floor(Math.random() * 30_000_000);
-let opSeq = 10;
-const nextOp = () => OP0 + opSeq++;
+/**
+ * Người vận hành. Đợt 3b final wave (rà soát bảo mật — vượt phạm vi khi GHI): người vận hành phải là người dùng THẬT, đang
+ * hoạt động, TRONG phạm vi người gọi ⇒ lượt này gieo sẵn một nhóm người dùng thuộc nhà máy TRONG; `nextOp()` lấy lần lượt.
+ */
+const OP_POOL: number[] = [];
+let opSeq = 0;
+const nextOp = () => {
+  if (opSeq >= OP_POOL.length) throw new Error("hết người vận hành gieo sẵn — tăng OP_POOL_SIZE");
+  return OP_POOL[opSeq++];
+};
+const OP_POOL_SIZE = 80;
 
 let sql: ReturnType<typeof postgres>;
 const savedWorkforce = process.env.WORKFORCE_ENABLED;
@@ -49,6 +56,11 @@ interface Fx {
   lineOut: number;
   stationOut: number;
   lineMissing: number;
+  // rà soát bảo mật (ghi): trạm TRONG, người vận hành của nhà máy NGOÀI, người dùng vô hiệu, id người dùng không tồn tại
+  stationIn: number;
+  opOut: number;
+  opInactive: number;
+  opMissing: number;
 }
 let fx: Fx;
 
@@ -128,10 +140,24 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
     const lineIn = await one(sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${wsIn}, ${`${DAU}-LI`}, ${`${DAU} chuyen trong`}) RETURNING id`);
     const lineOut = await one(sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${wsOut}, ${`${DAU}-LO`}, ${`${DAU} chuyen ngoai`}) RETURNING id`);
     const stationOut = await one(sql`INSERT INTO stations ("lineId", code, name) VALUES (${lineOut}, ${`${DAU}-SO`}, ${`${DAU} tram ngoai`}) RETURNING id`);
+    const stationIn = await one(sql`INSERT INTO stations ("lineId", code, name) VALUES (${lineIn}, ${`${DAU}-SI`}, ${`${DAU} tram trong`}) RETURNING id`);
     const [{ maxLine }] = (await sql`SELECT COALESCE(MAX(id), 0)::int AS "maxLine" FROM production_lines`) as unknown as Array<{ maxLine: number }>;
+    // người vận hành THẬT (nhà máy TRONG) + một người của nhà máy NGOÀI + một người vô hiệu
+    for (let i = 0; i < OP_POOL_SIZE; i++) {
+      const id = await mkUser(`op${i}`);
+      await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${id}, ${facInCode})`;
+      OP_POOL.push(id);
+    }
+    const opOut = await mkUser("opOut");
+    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${opOut}, ${`${DAU}-OUT`})`;
+    const opInactive = await mkUser("opOff");
+    await sql`UPDATE users SET "isActive" = false WHERE id = ${opInactive}`;
+    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${opInactive}, ${facInCode})`;
+    const [{ maxUser }] = (await sql`SELECT COALESCE(MAX(id), 0)::int AS "maxUser" FROM users`) as unknown as Array<{ maxUser: number }>;
     fx = {
       facIn, facOut, facInCode, shiftIn, shiftOut, shiftGlobal, shiftOff, shiftMissing: max + 100_000, userScoped, userEmpty, ops: [],
       wsIn, wsOut, lineIn, lineOut, stationOut, lineMissing: maxLine + 100_000,
+      stationIn, opOut, opInactive, opMissing: maxUser + 100_000,
     };
     process.env.WORKFORCE_ENABLED = "true";
   }, 90_000);
@@ -145,10 +171,10 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
     else process.env.WORKFORCE_ENABLED = savedWorkforce;
     if (!sql) return;
     if (fx) {
-      const uids = [fx.userScoped, fx.userEmpty];
+      const uids = [fx.userScoped, fx.userEmpty, ...OP_POOL, fx.opOut, fx.opInactive].filter(Boolean);
       if (fx.ops.length) await sql`DELETE FROM operator_assignments WHERE "operatorId" = ANY(${fx.ops})`;
       await sql`DELETE FROM shift_configs WHERE id = ANY(${[fx.shiftIn, fx.shiftOut, fx.shiftGlobal, fx.shiftOff]})`;
-      if (fx.stationOut) await sql`DELETE FROM stations WHERE id = ${fx.stationOut}`;
+      if (fx.stationOut) await sql`DELETE FROM stations WHERE id = ANY(${[fx.stationOut, fx.stationIn].filter(Boolean)})`;
       if (fx.lineIn) await sql`DELETE FROM production_lines WHERE id = ANY(${[fx.lineIn, fx.lineOut]})`;
       if (fx.wsIn) await sql`DELETE FROM workshops WHERE id = ANY(${[fx.wsIn, fx.wsOut]})`;
       await sql`DELETE FROM permissions WHERE "userId" = ANY(${uids})`;
@@ -238,7 +264,7 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
     it("bỏ ca ⇒ như trước: tạo phân công, shiftConfigId NULL (đọc lại bằng SQL thô)", async () => {
       const op = nextOp();
       fx.ops.push(op);
-      const r = await (await asScoped()).assignOperator({ operatorId: op, lineId: 7 });
+      const r = await (await asScoped()).assignOperator({ operatorId: op, lineId: fx.lineIn });
       expect(r.ok).toBe(true);
       expect(await rowsOf(op)).toEqual([expect.objectContaining({ operatorId: op, shiftConfigId: null, status: "planned" })]);
     });
@@ -266,13 +292,13 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       }
     });
 
-    it("phạm vi RỖNG (chưa gán nhà máy) ⇒ chỉ ca toàn hệ thống được; ca nhà máy ⇒ ENTITY_NOT_FOUND", async () => {
-      const opOk = nextOp();
+    it("phạm vi RỖNG (chưa gán nhà máy) ⇒ không người vận hành nào trong phạm vi ⇒ ENTITY_NOT_FOUND (user), không ghi (ca toàn hệ thống vẫn thấy ở §3)", async () => {
       const opNo = nextOp();
-      fx.ops.push(opOk, opNo);
-      expect((await (await asEmpty()).assignOperator({ operatorId: opOk, shiftConfigId: fx.shiftGlobal })).ok).toBe(true);
-      const e = await errOf((await asEmpty()).assignOperator({ operatorId: opNo, shiftConfigId: fx.shiftIn }));
-      expect(e?.appCode).toBe("ENTITY_NOT_FOUND");
+      fx.ops.push(opNo);
+      for (const shiftConfigId of [fx.shiftGlobal, fx.shiftIn]) {
+        const e = await errOf((await asEmpty()).assignOperator({ operatorId: opNo, shiftConfigId }));
+        expect(e).toEqual(expect.objectContaining({ appCode: "ENTITY_NOT_FOUND", appParams: { entity: "user" } }));
+      }
       expect(await rowsOf(opNo)).toEqual([]);
     });
 
@@ -402,13 +428,13 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       }
     });
 
-    it("cùng nhà máy hoặc ca toàn hệ thống ⇒ ghi được; chuyền không tồn tại (nhà máy không rõ) ⇒ không kiểm, như trước", async () => {
+    it("cùng nhà máy hoặc ca toàn hệ thống ⇒ ghi được (chuyền không tồn tại: xem §6 — nay bị từ chối)", async () => {
       const s = await asAdmin();
       const cases: Array<[number, { lineId?: number; stationId?: number }]> = [
         [fx.shiftOut, { lineId: fx.lineOut }],
         [fx.shiftOut, { stationId: fx.stationOut }],
         [fx.shiftGlobal, { lineId: fx.lineIn }],
-        [fx.shiftIn, { lineId: fx.lineMissing }],
+        [fx.shiftIn, {}],
       ];
       for (const [shiftConfigId, extra] of cases) {
         const op = nextOp();
@@ -509,7 +535,7 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
 
     it("★ phân công mới của người bị thu hẹp mang nhà máy của mình (chuyền › trạm › phạm vi MỘT nhà máy) ⇒ chính họ thấy lại được; chuyền ngoài phạm vi KHÔNG được dùng làm nhà máy", async () => {
       const s = await asScoped();
-      for (const extra of [{}, { lineId: fx.lineIn }, { lineId: fx.lineOut }, { lineId: fx.lineMissing }]) {
+      for (const extra of [{}, { lineId: fx.lineIn }, { stationId: fx.stationIn }]) {
         const o = nextOp();
         fx.ops.push(o);
         const r = await s.assignOperator({ operatorId: o, ...extra });
@@ -519,7 +545,7 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       }
     });
 
-    it("★ lệch nhà máy: câu lỗi KHÔNG vọng id nhà máy; chuyền NGOÀI phạm vi ≡ chuyền không tồn tại (không kiểm, không lộ chuyền có thật)", async () => {
+    it("★ lệch nhà máy: câu lỗi KHÔNG vọng id nhà máy; chuyền NGOÀI phạm vi ≡ chuyền không tồn tại (cùng lỗi, không lộ chuyền có thật)", async () => {
       const a = await asAdmin();
       const o1 = nextOp();
       fx.ops.push(o1);
@@ -529,9 +555,10 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       const s = await asScoped();
       const [o2, o3] = [nextOp(), nextOp()];
       fx.ops.push(o2, o3);
-      const viaOut = await s.assignOperator({ operatorId: o2, lineId: fx.lineOut, shiftConfigId: fx.shiftIn });
-      const viaMissing = await s.assignOperator({ operatorId: o3, lineId: fx.lineMissing, shiftConfigId: fx.shiftIn });
-      expect([viaOut.ok, viaOut.assignment?.shiftConfigId]).toEqual([viaMissing.ok, viaMissing.assignment?.shiftConfigId]);
+      const viaOut = await errOf(s.assignOperator({ operatorId: o2, lineId: fx.lineOut, shiftConfigId: fx.shiftIn }));
+      const viaMissing = await errOf(s.assignOperator({ operatorId: o3, lineId: fx.lineMissing, shiftConfigId: fx.shiftIn }));
+      expect(viaOut).toEqual(viaMissing);
+      expect(viaOut?.appCode).toBe("ENTITY_NOT_FOUND");
     });
 
     it("★ trùng lịch: câu lỗi KHÔNG vọng id phân công của nhà máy khác", async () => {
@@ -541,6 +568,71 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       expect(e?.cause?.appCode).toBe("OPERATION_FAILED");
       expect(e!.message).not.toContain(String(ids.facOut));
       expect(e!.message).not.toMatch(/#\d+/);
+    });
+  });
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 3b final wave — RÀ SOÁT BẢO MẬT (vượt phạm vi khi GHI). Trước: assign/reassign nhận BẤT KỲ id người vận hành /
+  // chuyền / trạm / nhà máy (không FK, không kiểm phạm vi) ⇒ người nhà máy A tạo được phân công trên chuyền/trạm/nhân sự nhà máy
+  // B. Nay mỗi id phải TỒN TẠI và TRONG PHẠM VI (idsTrongPhamVi / resolveTenantFactoryScope); ngoài phạm vi ≡ không tồn tại.
+  describe("§6 — ghi: người vận hành / chuyền / trạm / nhà máy NGOÀI phạm vi ≡ không tồn tại, không ghi", () => {
+    const NF = (entity: string) => expect.objectContaining({ code: "NOT_FOUND", appCode: "ENTITY_NOT_FOUND", appParams: { entity } });
+
+    it("★ người vận hành của nhà máy B / vô hiệu / không tồn tại ⇒ CÙNG ENTITY_NOT_FOUND (user), câu không vọng id; không hàng nào", async () => {
+      const s = await asScoped();
+      const errs = [];
+      for (const operatorId of [fx.opOut, fx.opInactive, fx.opMissing]) {
+        const e = await errOf(s.assignOperator({ operatorId, lineId: fx.lineIn }));
+        expect(e, String(operatorId)).toEqual(NF("user"));
+        errs.push(e);
+        expect(await rowsOf(operatorId)).toEqual([]);
+      }
+      expect(errs[0]).toEqual(errs[2]);
+      expect(errs[1]).toEqual(errs[2]);
+      const msg = (await s.assignOperator({ operatorId: fx.opOut }).then(() => null, (x: { message?: string }) => x.message)) ?? "";
+      expect(msg).not.toContain(String(fx.opOut));
+    });
+
+    it("★ chuyền / trạm / factoryId của nhà máy B ⇒ CÙNG lỗi như id không tồn tại (line / station / factory), không hàng nào", async () => {
+      const s = await asScoped();
+      const cases: Array<[Record<string, number>, Record<string, number>, string]> = [
+        [{ lineId: fx.lineOut }, { lineId: fx.lineMissing }, "line"],
+        [{ stationId: fx.stationOut }, { stationId: 2_000_000_000 }, "station"],
+        [{ factoryId: fx.facOut }, { factoryId: 2_000_000_000 }, "factory"],
+      ];
+      for (const [foreign, missing, entity] of cases) {
+        const [o1, o2] = [nextOp(), nextOp()];
+        fx.ops.push(o1, o2);
+        const e1 = await errOf(s.assignOperator({ operatorId: o1, ...foreign }));
+        const e2 = await errOf(s.assignOperator({ operatorId: o2, ...missing }));
+        expect(e1, JSON.stringify(foreign)).toEqual(NF(entity));
+        expect(e1).toEqual(e2);
+        expect(await rowsOf(o1)).toEqual([]);
+        expect(await rowsOf(o2)).toEqual([]);
+      }
+    });
+
+    it("★ phân công lại một phân công TRONG phạm vi sang người / chuyền / trạm nhà máy B ⇒ bị từ chối, hàng cũ KHÔNG bị huỷ", async () => {
+      const s = await asScoped();
+      const op = nextOp();
+      fx.ops.push(op);
+      const first = await s.assignOperator({ operatorId: op, lineId: fx.lineIn, assignedStart: new Date("2099-07-01T00:00:00Z"), assignedEnd: new Date("2099-07-01T08:00:00Z") });
+      for (const [extra, entity] of [[{ operatorId: fx.opOut }, "user"], [{ operatorId: op, lineId: fx.lineOut }, "line"], [{ operatorId: op, stationId: fx.stationOut }, "station"]] as const) {
+        const e = await errOf(s.reassignOperator({ assignmentId: first.assignment!.id, ...extra, assignedStart: new Date("2099-07-02T00:00:00Z"), assignedEnd: new Date("2099-07-02T08:00:00Z") }));
+        expect(e, JSON.stringify(extra)).toEqual(NF(entity));
+      }
+      expect((await rowsOf(op)).map((x) => [x.id, x.status])).toEqual([[first.assignment!.id, "planned"]]);
+      expect(await rowsOf(fx.opOut)).toEqual([]);
+    });
+
+    it("admin (không lọc) ⇒ id nhà máy B được, nhưng id KHÔNG TỒN TẠI vẫn bị từ chối (không còn hàng trỏ vào hư không)", async () => {
+      const a = await asAdmin();
+      const o = nextOp();
+      fx.ops.push(o);
+      expect((await a.assignOperator({ operatorId: fx.opOut, lineId: fx.lineOut, stationId: fx.stationOut, factoryId: fx.facOut })).ok).toBe(true);
+      fx.ops.push(fx.opOut);
+      expect(await errOf(a.assignOperator({ operatorId: fx.opMissing }))).toEqual(NF("user"));
+      expect(await errOf(a.assignOperator({ operatorId: o, lineId: fx.lineMissing }))).toEqual(NF("line"));
+      expect(await rowsOf(o)).toEqual([]);
     });
   });
 });

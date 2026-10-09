@@ -30,7 +30,8 @@ import { router, moduleProcedure } from "../_core/trpc";
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { collaborationSessions, operatorAssignments, shiftConfigs, factories, workshops, productionLines, stations } from "../../drizzle/schema";
+import { collaborationSessions, operatorAssignments, shiftConfigs, factories, workshops, productionLines, stations, users } from "../../drizzle/schema";
+import { idsTrongPhamVi } from "../db/hierarchy";
 import {
   safetyAuditEnabled,
   record as recordSafetyEvent,
@@ -157,6 +158,56 @@ async function assignmentVisible(id: number, scope: FactoryScope): Promise<boole
     .where(cond ? and(eq(operatorAssignments.id, id), cond) : eq(operatorAssignments.id, id))
     .limit(1);
   return rows.length > 0;
+}
+
+/**
+ * doc 81 Đợt 3b final wave (rà soát bảo mật — vượt phạm vi khi GHI). Trước: `assignOperator`/`reassignOperator` ghi BẤT KỲ id
+ * người vận hành / chuyền / trạm / nhà máy (bảng không FK, không kiểm phạm vi) ⇒ người nhà máy A tạo/chuyển được phân công
+ * lên nhân sự, chuyền, trạm của nhà máy B. Nay mỗi id phải TỒN TẠI và TRONG PHẠM VI người gọi; ngoài phạm vi ⇒ CÙNG lỗi như id
+ * không tồn tại (ENTITY_NOT_FOUND cùng `entity`, câu KHÔNG vọng id). Dùng helper phạm vi CHUNG: `idsTrongPhamVi` (chuyền/trạm,
+ * cùng safetySourceHealth / mqtt) và `resolveTenantFactoryScope` (nhà máy; người vận hành = phạm vi của CHÍNH người đó giao với
+ * phạm vi người gọi — người không lọc như admin được coi là toàn hệ thống). Người gọi không lọc (admin) ⇒ chỉ đòi TỒN TẠI.
+ */
+async function assertAssignmentInputsInScope(
+  input: { operatorId: number; lineId?: number | null; stationId?: number | null; factoryId?: number | null },
+  ctx: CoDanhTinh,
+  scope: FactoryScope,
+): Promise<void> {
+  const d = await db();
+  // Mã lỗi viết LITERAL từng chỗ (appErrorParamsCoverage đọc được `entity` — không đi qua biến).
+  const [op] = await d
+    .select({ id: users.id, role: users.role, isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, input.operatorId))
+    .limit(1);
+  let opOk = !!op && op.isActive;
+  if (opOk && scope !== null) {
+    const opScope = (await resolveTenantFactoryScope({ userId: op!.id, userRole: op!.role })).factoryIds;
+    opOk = opScope === null || opScope.some((f) => scope.includes(f));
+  }
+  if (!opOk) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "Operator not found");
+  for (const [cap, id] of [
+    ["line", input.lineId],
+    ["station", input.stationId],
+  ] as const) {
+    if (id == null) continue;
+    let ok: boolean;
+    if (scope === null) {
+      const t = cap === "line" ? productionLines : stations;
+      ok = (await d.select({ id: t.id }).from(t).where(eq(t.id, id)).limit(1)).length > 0;
+    } else {
+      ok = ((await idsTrongPhamVi(cap, phamViCua(ctx))) ?? []).includes(id);
+    }
+    if (!ok && cap === "line") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Line not found");
+    if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
+  }
+  if (input.factoryId != null) {
+    const ok =
+      scope === null
+        ? (await d.select({ id: factories.id }).from(factories).where(eq(factories.id, input.factoryId)).limit(1)).length > 0
+        : scope.includes(input.factoryId);
+    if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, "Factory not found");
+  }
 }
 
 /**
@@ -897,6 +948,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
       const scope = await callerFactoryScope(ctx);
+      await assertAssignmentInputsInScope(input, ctx, scope);
       await assertAssignableShift(input.shiftConfigId, scope, input);
       // final wave (rà soát bảo mật): ghi nhà máy của phân công (để người tạo — bị thu hẹp — thấy lại được nó).
       const r = await assignOperator({ ...input, factoryId: (await stampAssignmentFactory(input, scope)) ?? undefined });
@@ -929,6 +981,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
       const scope = await callerFactoryScope(ctx);
+      await assertAssignmentInputsInScope(input, ctx, scope);
       await assertAssignableShift(input.shiftConfigId, scope, input);
       const { assignmentId, ...rest } = input;
       // final wave (rà soát bảo mật): phân công NGOÀI phạm vi ⇒ Y HỆT không tồn tại (cùng kết quả của workforceService), không
