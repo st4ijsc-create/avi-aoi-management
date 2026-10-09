@@ -15,8 +15,20 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bell, X, AlertTriangle, XCircle, TrendingDown, Wifi, WifiOff } from "lucide-react";
+import { Bell, X, AlertTriangle, XCircle, TrendingDown, Wifi, WifiOff, Inbox, Link2Off } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
+import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { safeInternalPath } from "@shared/internalPath";
+
+/**
+ * doc 81 Đợt 3b Task 3 — hộp thư của CHÍNH người dùng (bảng `notifications`, router `notification.*` sẵn có; server
+ * lọc theo `ctx.user.id`). Client không join phòng socket `user:{id}` (không phát `auth:user`) và router giao việc
+ * ghi thẳng vào bảng không qua socket ⇒ POLL, chỉ khi tab hiển thị. GỘP với cảnh báo socket cũ, không thay.
+ */
+const INBOX_POLL_MS = 30_000;
+const INBOX_LIMIT = 20;
 
 interface NotificationCenterProps {
   factoryId?: number;
@@ -94,7 +106,33 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     if (prefs.highPriorityOnly) return extraEcoAlerts.filter((e) => e.severity === "high" || e.severity === "critical");
     return extraEcoAlerts;
   }, [extraEcoAlerts, prefs]);
-  const unreadCount = visibleAlerts.length + visibleEcoAlerts.length;
+  // doc 81 Đợt 3b Task 3 — hộp thư server (của chính mình). Không chịu bộ lọc U8 (đó là bộ lọc NHIỄU cảnh báo);
+  // đây là việc được giao cho riêng người này, lưu bền trong bảng.
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+  const signedIn = !!(user as { id?: number } | null)?.id;
+  const unreadPoll = usePollingInterval(signedIn ? INBOX_POLL_MS : false);
+  const listPoll = usePollingInterval(signedIn && isOpen ? INBOX_POLL_MS : false);
+  const inboxUnreadQ = trpc.notification.unreadCount.useQuery(undefined, { ...unreadPoll, enabled: signedIn });
+  const inboxQ = trpc.notification.list.useQuery({ limit: INBOX_LIMIT }, { ...listPoll, staleTime: 0, enabled: signedIn && isOpen });
+  const refreshInbox = () => {
+    void utils.notification.list.invalidate();
+    void utils.notification.unreadCount.invalidate();
+  };
+  const markRead = trpc.notification.markAsRead.useMutation({ onSettled: refreshInbox });
+  const markAllRead = trpc.notification.markAllAsRead.useMutation({ onSettled: refreshInbox });
+  const inbox = inboxQ.data ?? [];
+  const inboxUnread = Number(inboxUnreadQ.data ?? 0) || 0;
+  const openInboxItem = (n: { id: number; isRead: boolean; actionUrl: string | null }) => {
+    if (!n.isRead) markRead.mutate({ id: n.id });
+    // Kiểm LẠI ở client (server đã trả null cho URL lạ): chỉ đường nội bộ tương đối mới được đi theo.
+    const href = safeInternalPath(n.actionUrl);
+    if (!href) return;
+    setIsOpen(false);
+    setLocation(href);
+  };
+
+  const unreadCount = visibleAlerts.length + visibleEcoAlerts.length + inboxUnread;
   const clearAll = () => { clearAlerts(); clearEcoAlerts(); };
 
   const getAlertIcon = (type: InspectionAlert["type"]) => {
@@ -131,8 +169,8 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+        <Button variant="ghost" size="icon" className="relative" aria-label={t('notifications.title')}>
+          <Bell className="h-5 w-5" aria-hidden="true" />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-xs text-white flex items-center justify-center">
               {unreadCount > 9 ? "9+" : unreadCount}
@@ -189,11 +227,72 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
         </SheetHeader>
 
         <ScrollArea className="h-[calc(100vh-150px)] mt-4">
+          {/* doc 81 Đợt 3b Task 3 — hộp thư của chính người dùng (bảng notifications), TRÊN các cảnh báo cũ. */}
+          {(inbox.length > 0 || inboxQ.isError) && (
+            <section data-testid="notif-inbox" aria-label={t('notifications.inbox.title')} className="mb-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-medium">
+                  <Inbox className="h-4 w-4" aria-hidden="true" />
+                  {t('notifications.inbox.title')}
+                  {inboxUnread > 0 && (
+                    <Badge variant="secondary" className="text-xs" title={t('notifications.inbox.unread')}>
+                      {inboxUnread}
+                    </Badge>
+                  )}
+                </h3>
+                {inboxUnread > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7"
+                    disabled={markAllRead.isPending}
+                    onClick={() => markAllRead.mutate()}
+                  >
+                    {t('notifications.inbox.markAllRead')}
+                  </Button>
+                )}
+              </div>
+              {inboxQ.isError && (
+                <p className="text-xs text-destructive">{t('notifications.inbox.loadFailed')}</p>
+              )}
+              <ul className="space-y-2">
+                {inbox.map((n) => {
+                  const blocked = n.actionUrl != null && safeInternalPath(n.actionUrl) == null;
+                  return (
+                    <li key={`inbox-${n.id}`}>
+                      <button
+                        type="button"
+                        data-testid="notif-inbox-item"
+                        data-unread={n.isRead ? "false" : "true"}
+                        onClick={() => openInboxItem(n)}
+                        className={`flex w-full items-start gap-3 rounded-lg p-3 text-left transition-colors hover:bg-muted ${n.isRead ? "bg-muted/30" : "bg-primary/5"}`}
+                      >
+                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.isRead ? "bg-transparent" : "bg-primary"}`} aria-hidden="true" />
+                        <span className="min-w-0 flex-1">
+                          <span className={`block text-sm ${n.isRead ? "" : "font-medium"}`}>{n.title}</span>
+                          <span className="block text-sm text-muted-foreground line-clamp-2">{n.message}</span>
+                          <span className="mt-1 block text-xs text-muted-foreground">{new Date(n.createdAt).toLocaleString()}</span>
+                          {blocked && (
+                            <span className="mt-1 flex items-center gap-1 text-xs text-destructive">
+                              <Link2Off className="h-3 w-3" aria-hidden="true" />
+                              {t('notifications.inbox.linkBlocked')}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
           {visibleAlerts.length === 0 && visibleEcoAlerts.length === 0 ? (
+            inbox.length > 0 || inboxQ.isError ? null : (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
               <Bell className="h-12 w-12 mb-2 opacity-20" />
               <p>{t('notifications.noNew')}</p>
             </div>
+            )
           ) : (
             <div className="space-y-3">
               {/* U1-c — unified alert-stream items (safety/andon/SPC/escalation/…) */}

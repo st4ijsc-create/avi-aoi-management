@@ -7286,6 +7286,13 @@
     }
   },
   "notifications": {
+    "inbox": {
+      "title": "Your notifications",
+      "markAllRead": "Mark all as read",
+      "linkBlocked": "Invalid link — not opened",
+      "loadFailed": "Could not load your notifications",
+      "unread": "Unread"
+    },
     "yieldWarning": "Yield warning",
     "volume": "Volume",
     "uploadSound": "Upload sound",

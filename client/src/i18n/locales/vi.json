@@ -7266,6 +7266,13 @@
     }
   },
   "notifications": {
+    "inbox": {
+      "title": "Thông báo của bạn",
+      "markAllRead": "Đánh dấu tất cả đã đọc",
+      "linkBlocked": "Liên kết không hợp lệ — không mở",
+      "loadFailed": "Không tải được thông báo của bạn",
+      "unread": "Chưa đọc"
+    },
     "maxCustomSoundsReached": "Tối đa Tùy chỉnh sounds reached",
     "configureAlertSounds": "Cấu hình Cảnh báo sounds",
     "cannotReadAudioFile": "Không thể đọc tệp âm thanh",

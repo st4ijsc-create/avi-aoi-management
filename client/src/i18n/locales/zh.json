@@ -7069,6 +7069,13 @@
     }
   },
   "notifications": {
+    "inbox": {
+      "title": "您的通知",
+      "markAllRead": "全部标为已读",
+      "linkBlocked": "链接无效 — 未打开",
+      "loadFailed": "无法加载您的通知",
+      "unread": "未读"
+    },
     "yieldWarning": "良率警告",
     "volume": "音量",
     "uploadSound": "上传声音",
