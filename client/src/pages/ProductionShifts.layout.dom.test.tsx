@@ -803,6 +803,9 @@ describe("Đợt 3b Task 1 — bộ chọn ca trong sheet phân công", () => {
     for (const loc of [vi_, en_, zh_] as Array<{ shifts: { form?: Record<string, string> }; errors: { reason: Record<string, string> } }>) {
       expect(Object.keys(loc.shifts.form ?? {}).sort()).toEqual(["allFactories", "defaultHint", "noShift", "shift"]);
       expect(loc.errors.reason.shiftFactoryMismatch).toMatch(/\S/);
+      // post-review (3): phạm vi nhiều nhà máy phải chỉ ra nhà máy
+      expect(loc.errors.reason.factoryRequired).toMatch(/\S/);
+      expect((loc.errors as unknown as { field: Record<string, string> }).field.factoryId).toMatch(/\S/);
     }
   });
 });

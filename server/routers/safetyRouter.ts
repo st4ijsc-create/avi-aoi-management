@@ -125,7 +125,13 @@ async function stampAssignmentFactory(
 ): Promise<number | null> {
   const fac = await assignmentFactoryId(input);
   if (fac != null) return fac;
-  return scope !== null && scope.length === 1 ? scope[0] : null;
+  if (scope !== null && scope.length === 1) return scope[0];
+  // post-review (3): phạm vi NHIỀU nhà máy mà không chỉ ra nhà máy (chuyền / trạm / factoryId) ⇒ hàng tạo ra mồ côi, chính người
+  // tạo cũng không thấy lại (lọc phạm vi loại hàng mồ côi) ⇒ đòi nhà máy, TRƯỚC khi ghi gì.
+  if (scope !== null && scope.length > 1) {
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "factoryId", reason: "factoryRequired" }, "Pick a factory, line or station for this assignment");
+  }
+  return null;
 }
 
 function assignmentScopeCond(scope: FactoryScope): SQL | undefined {

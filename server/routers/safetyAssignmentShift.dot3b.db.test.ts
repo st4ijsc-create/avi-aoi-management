@@ -686,4 +686,47 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       expect(await fac(r2.assignment!.id)).toBe(fx.facOut);
     });
   });
+
+  describe("§8 — phạm vi NHIỀU nhà máy phải chỉ ra nhà máy; MỘT nhà máy tự đóng dấu", () => {
+    const REQUIRED = expect.objectContaining({ code: "BAD_REQUEST", appCode: "INVALID_VALUE", appParams: { field: "factoryId", reason: "factoryRequired" } });
+
+    it("★ người 2 nhà máy, không chuyền/trạm/nhà máy ⇒ INVALID_VALUE factoryRequired, KHÔNG ghi (trước: tạo hàng mồ côi chính họ không thấy)", async () => {
+      const o = nextOp();
+      fx.ops.push(o);
+      expect(await errOf((await asMulti()).assignOperator({ operatorId: o }))).toEqual(REQUIRED);
+      expect(await rowsOf(o)).toEqual([]);
+    });
+
+    it("người 2 nhà máy CÓ chuyền / trạm / factoryId ⇒ ghi, đóng dấu đúng nhà máy, chính họ thấy lại", async () => {
+      const m = await asMulti();
+      for (const [extra, want] of [[{ lineId: fx.lineOut }, fx.facOut], [{ stationId: fx.stationIn }, fx.facIn], [{ factoryId: fx.facOut }, fx.facOut]] as const) {
+        const o = nextOp();
+        fx.ops.push(o);
+        const r = await m.assignOperator({ operatorId: o, ...extra });
+        const [row] = (await sql`SELECT "factoryId" FROM operator_assignments WHERE id = ${r.assignment!.id}`) as unknown as Array<{ factoryId: number }>;
+        expect(row.factoryId, JSON.stringify(extra)).toBe(want);
+        expect((await m.listAssignments({ operatorId: o })).map((x) => x.id)).toEqual([r.assignment!.id]);
+      }
+    });
+
+    it("phân công lại của người 2 nhà máy không chỉ ra nhà máy ⇒ cùng lỗi, hàng cũ KHÔNG bị huỷ", async () => {
+      const m = await asMulti();
+      const o = nextOp();
+      fx.ops.push(o);
+      const first = await m.assignOperator({ operatorId: o, lineId: fx.lineIn, assignedStart: new Date("2099-09-01T00:00:00Z"), assignedEnd: new Date("2099-09-01T08:00:00Z") });
+      const e = await errOf(m.reassignOperator({ assignmentId: first.assignment!.id, operatorId: o, assignedStart: new Date("2099-09-02T00:00:00Z"), assignedEnd: new Date("2099-09-02T08:00:00Z") }));
+      expect(e).toEqual(REQUIRED);
+      expect((await rowsOf(o)).map((x) => [x.id, x.status])).toEqual([[first.assignment!.id, "planned"]]);
+    });
+
+    it("người MỘT nhà máy không chỉ ra gì ⇒ tự đóng dấu nhà máy đó; admin không chỉ ra gì ⇒ như trước (factoryId rỗng)", async () => {
+      const [o1, o2] = [nextOp(), nextOp()];
+      fx.ops.push(o1, o2);
+      const r1 = await (await asScoped()).assignOperator({ operatorId: o1 });
+      const r2 = await (await asAdmin()).assignOperator({ operatorId: o2 });
+      const fac = async (id: number) => ((await sql`SELECT "factoryId" FROM operator_assignments WHERE id = ${id}`) as unknown as Array<{ factoryId: number | null }>)[0].factoryId;
+      expect(await fac(r1.assignment!.id)).toBe(fx.facIn);
+      expect(await fac(r2.assignment!.id)).toBeNull();
+    });
+  });
 });
