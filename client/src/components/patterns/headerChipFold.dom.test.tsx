@@ -13,14 +13,14 @@
 // động) rộng 100 px; header tràn khi tổng > sức chứa; header đã xuống dòng (`data-header-fit="wrap"`) thì không tràn.
 // Hình học THẬT trên trình duyệt: chips-sau*.json (0 mục bị cắt ở 640/768/900/1024/1280/1366/1600).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
 import { PageHeaderCompact } from "./PageHeaderCompact";
 import { StatusChipStrip, type StatusChipItem } from "./StatusChipStrip";
 import { NoticeStack, type NoticeItem } from "./NoticeChip";
-import { headerOverflows } from "./headerChipFold";
+import { contentSignature, headerOverflows } from "./headerChipFold";
 
 // ── mô hình bề rộng ───────────────────────────────────────────────────────────────────────────
 let capacity = 2000;
@@ -91,14 +91,15 @@ const NOTICES: NoticeItem[] = [
   { id: "e", kind: "error", label: "Lỗi nguồn", content: "lỗi" },
 ];
 // Mức 0: 3 notice + 4 chip + 1 hành động = 8 mục (800 px). Mức 1: notice lỗi + "+2" + chip ghim + "+3" + 1 hành động = 5 (500 px).
-function Header({ chips = CHIPS }: { chips?: StatusChipItem[] }) {
+function Header({ chips = CHIPS, notices = NOTICES, extra }: { chips?: StatusChipItem[]; notices?: NoticeItem[]; extra?: React.ReactNode }) {
   return (
     <PageHeaderCompact
       title="Trang"
       chips={
         <>
-          <NoticeStack items={NOTICES} />
+          <NoticeStack items={notices} />
           <StatusChipStrip items={chips} />
+          {extra}
         </>
       }
       actions={<button type="button">Hành động</button>}
@@ -137,6 +138,10 @@ describe("Đợt 3b Task 2 (b) — header không cắt chip: gộp '+N' rồi m�
     expect(h.style.maxHeight).toBe("48px");
     expect(h.className.split(/\s+/)).not.toContain("flex-wrap");
     expect(headerOverflows(h)).toBe(false);
+    // fix 1: ở mức gộp cụm chip (đã gọn) KHÔNG co về 0 (basis-auto, shrink-0) — h1 cắt chữ trước, giữ tối thiểu 4rem
+    const chipsBox = h.querySelector("[data-header-chips]") as HTMLElement;
+    expect(chipsBox.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "basis-auto"]));
+    expect(screen.getByRole("heading", { level: 1 }).className.split(/\s+/)).toContain("min-w-16");
   });
 
   it("gộp rồi vẫn tràn (400 px) ⇒ mức 2: xuống dòng (flex-wrap, bỏ trần 48 px), chip ghim VẪN hiện, không gì bị cắt", () => {
@@ -234,5 +239,66 @@ describe("Đợt 3b Task 2 (b) — header không cắt chip: gộp '+N' rồi m�
     Object.defineProperty(notices, "scrollWidth", { configurable: true, value: 120 });
     Object.defineProperty(notices, "clientWidth", { configurable: true, value: 60 });
     expect(headerOverflows(h)).toBe(true);
+  });
+
+  // ── Fix round 1 (R-3b-b (1)) ──────────────────────────────────────────────────────────────────
+  it("chữ ký nội dung: cùng dữ liệu, phần tử JSX MỚI ⇒ cùng chữ ký; đổi số/thêm chip ⇒ khác", () => {
+    const a = contentSignature(<Header />);
+    const b = contentSignature(<Header />);
+    expect(a).toBe(b);
+    expect(contentSignature(<StatusChipStrip items={CHIPS} />)).not.toBe(
+      contentSignature(<StatusChipStrip items={[CHIPS[0], { ...CHIPS[1], value: 7 }, CHIPS[2], CHIPS[3]]} />),
+    );
+    expect(contentSignature(<StatusChipStrip items={CHIPS} />)).not.toBe(contentSignature(<StatusChipStrip items={[...CHIPS, chip("d")]} />));
+  });
+
+  it("thăm dò 5 s dựng lại header với DỮ LIỆU Y NGUYÊN khi '+3' đang MỞ ⇒ popover vẫn mở, tiêu điểm không rơi, mức giữ nguyên", async () => {
+    capacity = 600;
+    const { rerender } = render(<Header />);
+    const more = chipMore(header()) as HTMLElement;
+    fireEvent.click(more);
+    const pop = await screen.findByRole("dialog");
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    const focused = document.activeElement;
+    for (let i = 0; i < 3; i++) rerender(<Header />); // ba lượt thăm dò, phần tử JSX mới, dữ liệu như cũ
+    expect(screen.getByRole("dialog")).toBe(pop);
+    expect(chipMore(header())).toBe(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(document.activeElement).toBe(focused);
+    expect(header().getAttribute("data-header-fit")).toBe("fold");
+  });
+
+  it("thăm dò ĐỔI nội dung khi '+3' đang mở ⇒ HOÃN đo lại (popover vẫn mở, mức giữ); đóng popover ⇒ đo lại, về mức 0 vì giờ vừa", async () => {
+    capacity = 600;
+    const { rerender } = render(<Header />);
+    const more = chipMore(header()) as HTMLElement;
+    fireEvent.click(more);
+    const pop = await screen.findByRole("dialog");
+    // còn 1 notice (lỗi): ở mức 0 = 1 notice + 4 chip + 1 hành động = 600 ≤ 600 ⇒ vừa — nhưng "+3" đang mở nên chưa về 0
+    rerender(<Header notices={[NOTICES[2]]} chips={[CHIPS[0], { ...CHIPS[1], value: 9 }, CHIPS[2], CHIPS[3]]} />);
+    expect(screen.getByRole("dialog")).toBe(pop);
+    expect(chipMore(header())).toBe(more);
+    expect(header().getAttribute("data-header-fit")).toBe("fold");
+    fireEvent.keyDown(pop, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(header().getAttribute("data-header-fit")).toBeNull());
+    expect(chipIds(header())).toEqual(["critical", "a", "b", "c"]);
+  });
+
+  it("nội dung chip LỚN lên mà trang KHÔNG dựng lại header (chip tự tải) ⇒ đo lại và gộp", async () => {
+    capacity = 900; // mức 0: 3 notice + 4 chip + 1 hành động = 800 ≤ 900
+    let grow: (n: number) => void = () => undefined;
+    function SelfLoading() {
+      const [n, setN] = React.useState(0);
+      grow = setN;
+      return <>{Array.from({ length: n }, (_, i) => <span key={i} data-notice-kind="hint">tự tải {i}</span>)}</>;
+    }
+    render(<Header extra={<SelfLoading />} />);
+    expect(header().getAttribute("data-header-fit")).toBeNull();
+    await act(async () => {
+      grow(3); // +300 px ⇒ 1100 > 900
+    });
+    await waitFor(() => expect(header().getAttribute("data-header-fit")).not.toBeNull());
+    expect(chipIds(header())).toEqual(["critical"]);
   });
 });

@@ -21,7 +21,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Heading } from "./Heading";
 import { LAYOUT_HEADER } from "./layoutMarkers";
-import { HeaderChipFoldContext, useHeaderFitLevel } from "./headerChipFold";
+import { HeaderChipFoldContext, contentSignature, useHeaderFitLevel } from "./headerChipFold";
 
 export interface PageHeaderCompactProps {
   title: React.ReactNode;
@@ -36,7 +36,8 @@ export interface PageHeaderCompactProps {
 
 export function PageHeaderCompact({ title, icon, chips, actions, className }: PageHeaderCompactProps): React.JSX.Element {
   const headerRef = React.useRef<HTMLElement>(null);
-  const level = useHeaderFitLevel(headerRef, [title, icon, chips, actions]);
+  // Fix round 1 (R-3b-b): đo lại theo CHỮ KÝ nội dung (dữ liệu), không theo danh tính JSX mới mỗi lượt dựng.
+  const level = useHeaderFitLevel(headerRef, contentSignature([title, icon, chips, actions]));
   const fold = level >= 1;
   const wrap = level === 2;
   return (
@@ -57,7 +58,9 @@ export function PageHeaderCompact({ title, icon, chips, actions, className }: Pa
           {icon}
         </span>
       )}
-      <Heading level={3} as="h1" className="min-w-0 shrink truncate">
+      {/* Fix round 1 (R-3b-b): mức GỘP ⇒ chip đã gọn tối đa (ghim/lỗi + "+N") được ưu tiên chỗ hơn h1 — h1 cắt chữ (…) nhưng
+          giữ tối thiểu 4rem; không đủ nữa thì mức 2 xuống dòng. */}
+      <Heading level={3} as="h1" className={cn("min-w-0 shrink truncate", level === 1 && "min-w-16")}>
         {title}
       </Heading>
       {chips != null && (
@@ -67,6 +70,7 @@ export function PageHeaderCompact({ title, icon, chips, actions, className }: Pa
           className={cn(
             "flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden max-sm:basis-full max-sm:flex-wrap",
             // chip xuống hàng RIÊNG phía dưới (order-last); h1 + hành động giữ hàng đầu.
+            level === 1 && "shrink-0 basis-auto",
             wrap && "order-last basis-full flex-wrap gap-y-1",
           )}
         >
