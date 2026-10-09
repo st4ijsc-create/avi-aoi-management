@@ -419,7 +419,7 @@ describe("Danh mục công cụ (Studio gộp vào — ?tab=catalog)", () => {
     const main = mainEl();
     const links = Array.from(main.querySelectorAll("[data-hub-tool] a")).map((a) => a.getAttribute("href"));
     for (const h of ["/engineering", "/engineering?copilot=scratch", "/ir-editor", "/pou-studio", "/recipes", "/engineering-changes",
-      "/orchestration-studio", "/labs/fleet-orchestration", "/command-console", "/interlock-rules", "/safety-workforce",
+      "/orchestration-studio", "/command-console", "/interlock-rules", "/safety-workforce",
       "/equipment-standards", "/equipment-integration"]) {
       expect(links, h).toContain(h);
     }
@@ -505,5 +505,65 @@ describe("Task 5 — bế tắc đội xe trên Hub mở Fleet ở Labs, kể c�
     fireEvent.click(row.querySelector("a") as HTMLElement);
     expect(window.location.pathname).toBe("/labs/fleet-orchestration");
     expect(window.location.search).toBe("?filter=deadlock");
+  });
+});
+
+// ── Doc 81 Đợt 3b Task 2 (a) — danh mục công cụ theo "Hiện Labs" (chủ dự án 2026-10-06): Labs TẮT (mặc định) ⇒ Fleet và
+// mọi mục `labs` vắng khỏi danh mục; BẬT ⇒ hiện dưới nhóm Labs. Ghim cá nhân (panel phụ "Đã ghim") KHÔNG đổi; cảnh báo bế
+// tắc (R-2-y) KHÔNG đổi.
+describe("Đợt 3b Task 2 (a) — danh mục công cụ theo sở thích Hiện Labs", () => {
+  const FLEET = "/labs/fleet-orchestration";
+  const catalogHrefs = () => Array.from(mainEl().querySelectorAll("[data-hub-catalog] [data-hub-tool] a")).map((a) => a.getAttribute("href") ?? "");
+  const labsHeading = () => Array.from(mainEl().querySelectorAll("[data-hub-catalog] h2")).find((h) => h.textContent === S("nav.section.labs"));
+
+  it("Labs TẮT (mặc định, chưa có khoá) ⇒ không Fleet, không mục labs nào, không tiêu đề nhóm Labs; mục khác còn", () => {
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    const links = catalogHrefs();
+    expect(links).not.toContain(FLEET);
+    expect(links.filter((h) => getNavItemByHref(h)?.labs === true)).toEqual([]);
+    expect(labsHeading()).toBeUndefined();
+    expect(links).toContain("/orchestration-studio");
+    expect(links).toContain("/engineering-changes");
+  });
+
+  it("Labs TẮT tường minh ('0') ⇒ như mặc định", () => {
+    localStorage.setItem("layoutKit:nav-labs:u9:show", "0");
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    expect(catalogHrefs()).not.toContain(FLEET);
+  });
+
+  it("Labs BẬT ('1') ⇒ Fleet hiện dưới tiêu đề nhóm Labs", () => {
+    localStorage.setItem("layoutKit:nav-labs:u9:show", "1");
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    expect(catalogHrefs()).toContain(FLEET);
+    expect(labsHeading()).toBeDefined();
+  });
+
+  it("Labs TẮT nhưng người dùng ĐÃ GHIM Fleet ⇒ 'Đã ghim' ở panel phụ VẪN có Fleet (ghim cá nhân giữ nguyên)", () => {
+    localStorage.setItem("nav-favorites", JSON.stringify([FLEET]));
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    expect(catalogHrefs()).not.toContain(FLEET);
+    const pinned = within(aside()).getByRole("list", { name: S("engineeringHome.tools.pinned") });
+    expect(within(pinned).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([FLEET]);
+    expect(JSON.parse(localStorage.getItem("nav-favorites") ?? "[]")).toEqual([FLEET]);
+  });
+
+  it("Labs TẮT ⇒ cảnh báo bế tắc (R-2-y) vẫn ghim ở hộp việc và chip nghiêm trọng ở header vẫn đỏ", () => {
+    setSummary({ deadlocks: ok(3) });
+    render(<EngineeringHub />);
+    expect(pinnedHrefs()).toContain("/labs/fleet-orchestration?filter=deadlock");
+    expect(criticalChip()).not.toBeNull();
+    const chipText = criticalChip().textContent;
+    cleanup();
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    expect(screen.getByRole("tab", { name: S("engineeringHome.catalogTab") })).toHaveAttribute("aria-selected", "true");
+    expect(catalogHrefs().length).toBeGreaterThan(0);
+    expect(catalogHrefs()).not.toContain(FLEET);
+    expect(criticalChip().textContent).toBe(chipText);
   });
 });
