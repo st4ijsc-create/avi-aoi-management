@@ -74,11 +74,23 @@ async function rowsOf(operatorId: number) {
     SELECT id, "operatorId", "shiftConfigId", status FROM operator_assignments
      WHERE "operatorId" = ${operatorId} ORDER BY id`) as unknown as Array<{ id: number; operatorId: number; shiftConfigId: number | null; status: string }>;
 }
-async function seedAssignment(operatorId: number, shiftConfigId: number | null, start: string, status = "planned") {
+/**
+ * Hàng phân công gieo bằng SQL thô. Đợt 3b final wave (rà soát bảo mật): `listAssignments` nay lọc theo phạm vi nhà máy của
+ * HÀNG (factoryId › chuyền › trạm) ⇒ hàng gieo mặc định thuộc nhà máy TRONG (`fx.facIn`); `where` cho phép gieo hàng nhà
+ * máy khác / mồ côi.
+ */
+async function seedAssignment(
+  operatorId: number,
+  shiftConfigId: number | null,
+  start: string,
+  status = "planned",
+  where: { factoryId?: number | null; lineId?: number | null; stationId?: number | null } = { factoryId: fx.facIn },
+) {
   fx.ops.push(operatorId);
   return one(sql`
-    INSERT INTO operator_assignments ("operatorId", "shiftConfigId", status, role, "assignedStart", "assignedEnd")
-    VALUES (${operatorId}, ${shiftConfigId}, ${status}, 'human', ${start}::timestamp, ${start}::timestamp + interval '1 hour')
+    INSERT INTO operator_assignments ("operatorId", "shiftConfigId", status, role, "assignedStart", "assignedEnd", "factoryId", "lineId", "stationId")
+    VALUES (${operatorId}, ${shiftConfigId}, ${status}, 'human', ${start}::timestamp, ${start}::timestamp + interval '1 hour',
+            ${where.factoryId ?? null}, ${where.lineId ?? null}, ${where.stationId ?? null})
     RETURNING id`);
 }
 
@@ -351,12 +363,13 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       expect(r.find((x) => x.id === fx.shiftGlobal)?.factoryName).toBeNull();
     });
 
-    it("chọn chuyền ⇒ chỉ ca của nhà máy chuyền đó (+ toàn hệ thống); chuyền nhà máy ngoài phạm vi ⇒ chỉ ca toàn hệ thống", async () => {
+    it("chọn chuyền ⇒ chỉ ca của nhà máy chuyền đó (+ toàn hệ thống); ★ chuyền/trạm nhà máy NGOÀI phạm vi ⇒ Y HỆT chuyền không tồn tại (không lộ chuyền đó có thật)", async () => {
       const s = await asScoped();
       expect(pick((await s.assignableShifts({ lineId: fx.lineIn })) as Row[])).toEqual([fx.shiftIn, fx.shiftGlobal]);
-      const out = (await s.assignableShifts({ lineId: fx.lineOut })) as Row[];
-      expect(pick(out)).toEqual([fx.shiftGlobal]);
-      expect(out.every((x) => x.factoryId == null)).toBe(true);
+      const missing = await s.assignableShifts({ lineId: fx.lineMissing });
+      expect(await s.assignableShifts({ lineId: fx.lineOut })).toEqual(missing);
+      expect(await s.assignableShifts({ stationId: fx.stationOut })).toEqual(missing);
+      expect((missing as Row[]).every((x) => x.factoryId == null || x.factoryId === fx.facIn)).toBe(true);
     });
 
     it("admin: chuyền / trạm của nhà máy NGOÀI ⇒ ca ngoài + toàn hệ thống, KHÔNG ca 'trong'; không chọn ⇒ mọi ca đang hoạt động", async () => {
@@ -427,6 +440,107 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       }));
       expect(e).toEqual(expect.objectContaining(MISMATCH));
       expect((await rowsOf(op)).map((x) => [x.id, x.status])).toEqual([[first.assignment!.id, "planned"]]);
+    });
+  });
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 3b final wave — RÀ SOÁT BẢO MẬT (lộ thông tin) các thủ tục safety.* của dải này. Hợp đồng: người gọi bị thu hẹp
+  // KHÔNG thấy hàng / tên / id của nhà máy khác, và ngoài phạm vi KHÔNG phân biệt được với không tồn tại (cùng mã, cùng câu,
+  // không vọng id/tên của nhà máy khác).
+  describe("§5 — rà soát bảo mật: ngoài phạm vi ≡ không tồn tại, không hàng nhà máy khác", () => {
+    let op: number;
+    const ids = { facIn: 0, lineIn: 0, facOut: 0, lineOut: 0, stationOut: 0, orphan: 0 };
+    beforeAll(async () => {
+      op = nextOp();
+      ids.facIn = await seedAssignment(op, fx.shiftIn, "2099-05-06T00:00:00", "planned", { factoryId: fx.facIn });
+      ids.lineIn = await seedAssignment(op, null, "2099-05-05T00:00:00", "planned", { lineId: fx.lineIn });
+      ids.facOut = await seedAssignment(op, fx.shiftOut, "2099-05-04T00:00:00", "planned", { factoryId: fx.facOut });
+      ids.lineOut = await seedAssignment(op, fx.shiftOut, "2099-05-03T00:00:00", "planned", { lineId: fx.lineOut });
+      ids.stationOut = await seedAssignment(op, null, "2099-05-02T00:00:00", "planned", { stationId: fx.stationOut });
+      ids.orphan = await seedAssignment(op, null, "2099-05-01T00:00:00", "planned", {});
+    });
+
+    it("★ listAssignments: người bị thu hẹp CHỈ thấy hàng nhà máy của mình (factoryId › chuyền › trạm); hàng mồ côi ẩn (fail-closed); admin thấy đủ", async () => {
+      const scoped = await (await asScoped()).listAssignments({ operatorId: op });
+      expect(scoped.map((x) => x.id)).toEqual([ids.facIn, ids.lineIn]);
+      const admin = await (await asAdmin()).listAssignments({ operatorId: op });
+      expect(admin.map((x) => x.id)).toEqual([ids.facIn, ids.lineIn, ids.facOut, ids.lineOut, ids.stationOut, ids.orphan]);
+      expect(await (await asEmpty()).listAssignments({ operatorId: op })).toEqual([]);
+    });
+
+    it("★ listAssignments lọc theo ca của nhà máy KHÁC ⇒ rỗng, Y HỆT ca không tồn tại (không dò được hàng nhà máy khác qua id ca)", async () => {
+      const s = await asScoped();
+      const foreign = await s.listAssignments({ shiftConfigId: fx.shiftOut, limit: 500 });
+      expect(foreign).toEqual([]);
+      expect(foreign).toEqual(await s.listAssignments({ shiftConfigId: fx.shiftMissing, limit: 500 }));
+      // không lọc ca, toàn bảng: không một hàng nào thuộc nhà máy ngoài
+      const all = await s.listAssignments({ limit: 500 });
+      expect(all.some((x) => [ids.facOut, ids.lineOut, ids.stationOut, ids.orphan].includes(x.id))).toBe(false);
+    });
+
+    it("★ phân công lại / xác nhận / đóng một phân công NGOÀI phạm vi ⇒ Y HỆT id không tồn tại; hàng KHÔNG đổi", async () => {
+      const s = await asScoped();
+      const missingId = 2_000_000_000;
+      for (const target of [ids.facOut, ids.lineOut, ids.stationOut, ids.orphan]) {
+        const r = await s.reassignOperator({ assignmentId: target, operatorId: nextOp() });
+        const m = await s.reassignOperator({ assignmentId: missingId, operatorId: nextOp() });
+        expect({ ...r, message: r.message?.replace(String(target), "#") }).toEqual({ ...m, message: m.message?.replace(String(missingId), "#") });
+        expect(r.ok).toBe(false);
+        for (const proc of ["confirmAssignment", "closeAssignment"] as const) {
+          const e = await errOf(s[proc]({ assignmentId: target }));
+          const eMissing = await errOf(s[proc]({ assignmentId: missingId }));
+          expect(e, `${proc} ${target}`).toEqual(eMissing);
+          expect(e?.appCode).toBe("ENTITY_NOT_FOUND");
+        }
+      }
+      const rows = (await sql`SELECT id, status, "confirmedBy", "closedBy" FROM operator_assignments WHERE id = ANY(${[ids.facOut, ids.lineOut, ids.stationOut, ids.orphan]}) ORDER BY id`) as unknown as Array<{ status: string; confirmedBy: number | null; closedBy: number | null }>;
+      expect(rows.every((x) => x.status === "planned" && x.confirmedBy == null && x.closedBy == null)).toBe(true);
+    });
+
+    it("phân công TRONG phạm vi: xác nhận / đóng / phân công lại vẫn chạy như trước", async () => {
+      const s = await asScoped();
+      const own = nextOp();
+      fx.ops.push(own);
+      const a = await s.assignOperator({ operatorId: own, lineId: fx.lineIn, assignedStart: new Date("2099-06-01T00:00:00Z"), assignedEnd: new Date("2099-06-01T08:00:00Z") });
+      expect((await s.confirmAssignment({ assignmentId: a.assignment!.id })).status).toBe("active");
+      const r = await s.reassignOperator({ assignmentId: a.assignment!.id, operatorId: own, lineId: fx.lineIn, assignedStart: new Date("2099-06-02T00:00:00Z"), assignedEnd: new Date("2099-06-02T08:00:00Z") });
+      expect(r.ok).toBe(true);
+      expect((await s.closeAssignment({ assignmentId: r.assignment!.id })).status).toBe("completed");
+    });
+
+    it("★ phân công mới của người bị thu hẹp mang nhà máy của mình (chuyền › trạm › phạm vi MỘT nhà máy) ⇒ chính họ thấy lại được; chuyền ngoài phạm vi KHÔNG được dùng làm nhà máy", async () => {
+      const s = await asScoped();
+      for (const extra of [{}, { lineId: fx.lineIn }, { lineId: fx.lineOut }, { lineId: fx.lineMissing }]) {
+        const o = nextOp();
+        fx.ops.push(o);
+        const r = await s.assignOperator({ operatorId: o, ...extra });
+        const [row] = (await sql`SELECT "factoryId" FROM operator_assignments WHERE id = ${r.assignment!.id}`) as unknown as Array<{ factoryId: number | null }>;
+        expect(row.factoryId, JSON.stringify(extra)).toBe(fx.facIn);
+        expect((await s.listAssignments({ operatorId: o })).map((x) => x.id)).toEqual([r.assignment!.id]);
+      }
+    });
+
+    it("★ lệch nhà máy: câu lỗi KHÔNG vọng id nhà máy; chuyền NGOÀI phạm vi ≡ chuyền không tồn tại (không kiểm, không lộ chuyền có thật)", async () => {
+      const a = await asAdmin();
+      const o1 = nextOp();
+      fx.ops.push(o1);
+      const e = (await a.assignOperator({ operatorId: o1, lineId: fx.lineIn, shiftConfigId: fx.shiftOut }).then(() => null, (x: unknown) => x)) as { message?: string } | null;
+      expect(e).not.toBeNull();
+      expect(e!.message).not.toMatch(new RegExp(`\\b(${fx.facIn}|${fx.facOut})\\b`));
+      const s = await asScoped();
+      const [o2, o3] = [nextOp(), nextOp()];
+      fx.ops.push(o2, o3);
+      const viaOut = await s.assignOperator({ operatorId: o2, lineId: fx.lineOut, shiftConfigId: fx.shiftIn });
+      const viaMissing = await s.assignOperator({ operatorId: o3, lineId: fx.lineMissing, shiftConfigId: fx.shiftIn });
+      expect([viaOut.ok, viaOut.assignment?.shiftConfigId]).toEqual([viaMissing.ok, viaMissing.assignment?.shiftConfigId]);
+    });
+
+    it("★ trùng lịch: câu lỗi KHÔNG vọng id phân công của nhà máy khác", async () => {
+      const s = await asScoped();
+      // người vận hành `op` đã có lịch 2099-05-04 ở nhà máy NGOÀI (ids.facOut)
+      const e = (await s.assignOperator({ operatorId: op, assignedStart: new Date("2099-05-04T00:10:00"), assignedEnd: new Date("2099-05-04T00:20:00") }).then(() => null, (x: unknown) => x)) as { message?: string; cause?: { appCode?: string } } | null;
+      expect(e?.cause?.appCode).toBe("OPERATION_FAILED");
+      expect(e!.message).not.toContain(String(ids.facOut));
+      expect(e!.message).not.toMatch(/#\d+/);
     });
   });
 });

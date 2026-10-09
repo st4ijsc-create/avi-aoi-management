@@ -616,7 +616,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *     nhóm. KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
  *   ⇒ S +1 · tong +1.
  */
-const GHIM = { A: 341, B: 8, C: 481, D: 1131, S: 335, tong: 2296 } as const;
+/*
+ * ★★★ 2026-10-09 (doc 81 Đợt 3b final wave, rà soát bảo mật thủ tục safety.*) — **A 341→340 · S 335→336 · tong/B/C/D không
+ * đổi.** ĐO bằng chính bộ quét này (cây ngay trước lượt sửa = A 341 · S 335 — khớp ghim ở trên):
+ *   • `safety.listAssignments` (query): **A −1 · S +1** — nay lọc hàng theo phạm vi nhà máy của người gọi
+ *     (`resolveTenantFactoryScope(phamViCua(ctx))`, nhà máy của hàng = factoryId › chuyền › trạm, mồ côi bị loại). Dòng của nó
+ *     ĐÃ GỠ khỏi `phamViDocBaseline.ts` (sổ nợ co lại 1 — trả nợ nhìn thấy trong diff).
+ *   • `reassignOperator`/`confirmAssignment`/`closeAssignment` (mutation) thêm soát phạm vi hàng — vẫn nhóm D.
+ *   ⇒ A −1 · S +1.
+ */
+const GHIM = { A: 340, B: 8, C: 481, D: 1131, S: 336, tong: 2296 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

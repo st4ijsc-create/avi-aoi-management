@@ -446,11 +446,13 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/robotRouter.ts#robotRouter.jobs",
   "server/routers/robotRouter.ts#robotRouter.list",
   "server/routers/robotRouter.ts#robotRouter.telemetry",
-  // ── server/routers/safetyRouter.ts (9) ─────────────────────────────────────────────────────
+  // ── server/routers/safetyRouter.ts (8) ─────────────────────────────────────────────────────
+  // ★ 2026-10-09 (doc 81 Đợt 3b final wave, rà soát bảo mật) — `safetyRouter.listAssignments` RỜI sổ: nay lọc theo phạm vi
+  //   nhà máy của HÀNG (factoryId › chuyền › trạm; mồ côi bị loại) bằng `resolveTenantFactoryScope(phamViCua(ctx))` — bộ lọc
+  //   ca Đợt 3b Task 1 từng cho phép dò hàng nhà máy khác theo id ca. Bộ quét xếp nó sang S.
   "server/routers/safetyRouter.ts#safetyRouter.currentBoard",
   "server/routers/safetyRouter.ts#safetyRouter.evaluateZones",
   "server/routers/safetyRouter.ts#safetyRouter.feed",
-  "server/routers/safetyRouter.ts#safetyRouter.listAssignments",
   "server/routers/safetyRouter.ts#safetyRouter.listCameraCalibrations",
   "server/routers/safetyRouter.ts#safetyRouter.listCollaborations",
   "server/routers/safetyRouter.ts#safetyRouter.listSafetyPlcConfigs",
