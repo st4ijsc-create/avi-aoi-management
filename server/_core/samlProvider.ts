@@ -22,6 +22,7 @@
 import { COOKIE_NAME } from "@shared/const";
 // ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, SESSION_TTL_DAYS).
 import { hanPhienMs } from "./hanPhien";
+import { safeInternalPath } from "@shared/internalPath";
 import type { Express, Request, Response } from "express";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
@@ -300,6 +301,15 @@ export async function consumeAssertion(
 
 // ─── Express routes (metadata + login initiate + ACS) ────────────────────────
 
+/**
+ * doc 81 Đợt 3b final wave (post-review, chủ dự án duyệt) — đích sau đăng nhập SAML (`?redirect=` lúc khởi tạo và
+ * `RelayState` ở ACS) CHỈ là đường NỘI BỘ tương đối: cùng luật `safeInternalPath` của chuông thông báo / Login `?next=`.
+ * Trước: `startsWith("/")` ⇒ "//evil.example", "/\evil.example" lọt vào `res.redirect` (open redirect). Không hợp lệ ⇒ "/".
+ */
+export function samlRelayTarget(raw: unknown): string {
+  return safeInternalPath(raw) ?? "/";
+}
+
 function acsUrlFor(req: Request, config: SamlConfig): string {
   return config.spAcsUrl || `${req.protocol}://${req.get("host")}/api/saml/acs`;
 }
@@ -326,8 +336,7 @@ export function registerSamlRoutes(app: Express): void {
       return;
     }
     const config = getSamlConfig();
-    const relay =
-      typeof req.query.redirect === "string" && req.query.redirect.startsWith("/") ? req.query.redirect : "/";
+    const relay = samlRelayTarget(req.query.redirect);
     const url = buildAuthnRequestRedirectUrl(config, acsUrlFor(req, config), relay);
     if (!url) {
       res.status(501).json({ error: "SAML_NOT_CONFIGURED", detail: "SAML_IDP_SSO_URL is not set" });
@@ -378,7 +387,7 @@ export function registerSamlRoutes(app: Express): void {
       await ghiSoPhienChoOpenId(openId, sessionToken, req, hanMs);
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: hanMs });
-      res.redirect(302, relayState.startsWith("/") ? relayState : "/");
+      res.redirect(302, samlRelayTarget(relayState));
     } catch (err: any) {
       if (err instanceof SamlNotConfiguredError) {
         res.status(501).json({ error: "SAML_NOT_CONFIGURED", detail: err.message });
