@@ -231,6 +231,8 @@ const TABLE_WHERE = {
   permissions: `t."userId" not in ${PROBE_FILTER}`,
   user_factory_assignments: `t."userId" not in ${PROBE_FILTER}`,
   user_corporate_assignments: `t."userId" not in ${PROBE_FILTER}`,
+  // post-review 5: chuông chỉ đọc thông báo của CHÍNH người xem (= user đo).
+  notifications: `t."userId" in ${PROBE_FILTER}`,
 };
 /** Thủ tục tRPC mỗi màn gọi lúc rút `PAGE_TABLES`. Gọi thủ tục MỚI ⇒ cảnh báo: chạy lại --discover-tables. */
 export const KNOWN_PROCS = {
@@ -283,6 +285,14 @@ KNOWN_PROCS["production-shifts"] = [
   // (shift_configs, factories, workshops, production_lines, stations, user_factory_assignments) đã nằm trong PAGE_TABLES trên.
   "safety.assignableShifts",
 ];
+
+// Đợt 3b final wave (post-review 5) — CHUÔNG THÔNG BÁO của vỏ (Task 3, 2307412bb) chạy trên MỌI màn: `notification.unreadCount`
+// (poll 30 s) lúc nạp; `notification.list` khi mở ngăn chuông. Hai thủ tục vào danh sách đã biết của mọi màn, và bảng
+// `notifications` vào canh trôi của mọi màn — CHỈ hàng của user đo (đúng tập chuông hiển thị: router lọc `ctx.user.id`), để
+// hàng của vitest phiên khác trên `_test` dùng chung không thành trôi giả. (Mutation markAsRead/markAllAsRead không chạy khi đo.)
+const BELL_PROCS = ["notification.list", "notification.unreadCount"];
+for (const id of Object.keys(KNOWN_PROCS)) KNOWN_PROCS[id] = [...new Set([...KNOWN_PROCS[id], ...BELL_PROCS])].sort();
+for (const id of Object.keys(PAGE_TABLES)) PAGE_TABLES[id] = [...new Set([...PAGE_TABLES[id], "notifications"])].sort();
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 
