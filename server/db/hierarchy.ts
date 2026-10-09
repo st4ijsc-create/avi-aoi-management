@@ -1033,8 +1033,11 @@ type MachineCredentialRevocation = {
  * would reactivate the client to PENDING on reconnect. Returns rows affected.
  * Caller gates on iotDeviceClassEnabled() (so mqtt_clients."machineId" — migration
  * 0292 — is never referenced while the feature is OFF).
+ * doc 81 Đợt 4 Task A4 — returns the revoked devices' `deviceId`s: the caller closes their LIVE
+ * sessions AFTER the transaction commits (disconnectRevokedMqttDevices). Revoking the password only
+ * stops the NEXT login; a session already open kept publishing until it dropped on its own.
  */
-async function revokeLinkedMqttClientsTx(tx: DbOrTx, machineId: number, reason: string): Promise<number> {
+async function revokeLinkedMqttClientsTx(tx: DbOrTx, machineId: number, reason: string): Promise<string[]> {
   const revoked = await tx.update(mqttClients)
     .set({
       passwordHash: MQTT_REVOKED_PASSWORD_SENTINEL,
@@ -1046,8 +1049,34 @@ async function revokeLinkedMqttClientsTx(tx: DbOrTx, machineId: number, reason: 
       updatedAt: new Date(),
     })
     .where(eq(mqttClients.machineId, machineId))
-    .returning({ id: mqttClients.id });
-  return revoked.length;
+    .returning({ id: mqttClients.id, deviceId: mqttClients.deviceId });
+  return revoked.map((r) => r.deviceId);
+}
+
+/**
+ * doc 81 Đợt 4 Task A4 — close every live MQTT session of devices whose credentials were just revoked.
+ * Call ONLY after the revoking transaction has COMMITTED (a rolled-back retire must not disconnect anything).
+ * Same mechanism as mqttClient.rotatePassword: disconnectMqttDevice bumps the device's binding generation
+ * (any session that slips past the sweep is refused on its next publish/subscribe) and closes its sessions.
+ * Dynamic import: mqttService imports this module's tree (static import would be a cycle).
+ * Never throws — a failure is logged and the retire/reject stands (the credential is already dead).
+ */
+async function disconnectRevokedMqttDevices(deviceIds: readonly string[], why: string): Promise<number> {
+  if (deviceIds.length === 0) return 0;
+  let closed = 0;
+  try {
+    const { disconnectMqttDevice } = await import("../services/mqttService");
+    for (const deviceId of new Set(deviceIds)) {
+      try {
+        closed += disconnectMqttDevice(deviceId);
+      } catch (err) {
+        console.warn(`[hierarchy] ${why}: closing live MQTT sessions of a revoked device failed (credential already revoked):`, (err as Error)?.message ?? err);
+      }
+    }
+  } catch (err) {
+    console.warn(`[hierarchy] ${why}: MQTT service unavailable — live sessions of ${deviceIds.length} revoked device(s) not closed (credential already revoked):`, (err as Error)?.message ?? err);
+  }
+  return closed;
 }
 
 /**
@@ -1064,7 +1093,7 @@ async function revokeLinkedMqttClientsTx(tx: DbOrTx, machineId: number, reason: 
 async function revokeMachineCredentialsTx(
   tx: DbOrTx,
   machineId: number,
-): Promise<MachineCredentialRevocation> {
+): Promise<{ revocation: MachineCredentialRevocation; mqttDeviceIds: string[] }> {
   const now = new Date();
 
   const revokedKeys = await tx.update(apiKeys)
@@ -1089,9 +1118,9 @@ async function revokeMachineCredentialsTx(
   // device(s) must ALSO stop authenticating. Gated by IOT_DEVICE_CLASS_ENABLED so
   // OFF (default) is byte-identical AND never references mqtt_clients."machineId"
   // before migration 0292 is applied.
-  let mqttClientsRevoked: number | undefined;
+  let mqttDeviceIds: string[] | undefined;
   if (iotDeviceClassEnabled()) {
-    mqttClientsRevoked = await revokeLinkedMqttClientsTx(
+    mqttDeviceIds = await revokeLinkedMqttClientsTx(
       tx,
       machineId,
       "machine retired/decommissioned (doc 56 Đ2a Việc 4)",
@@ -1099,9 +1128,12 @@ async function revokeMachineCredentialsTx(
   }
 
   return {
-    apiKeysRevoked: revokedKeys.length,
-    sharedKeyCleared: clearedShared.length > 0,
-    ...(mqttClientsRevoked !== undefined ? { mqttClientsRevoked } : {}),
+    revocation: {
+      apiKeysRevoked: revokedKeys.length,
+      sharedKeyCleared: clearedShared.length > 0,
+      ...(mqttDeviceIds !== undefined ? { mqttClientsRevoked: mqttDeviceIds.length } : {}),
+    },
+    mqttDeviceIds: mqttDeviceIds ?? [],
   };
 }
 
@@ -1109,7 +1141,10 @@ async function revokeMachineCredentialsTx(
 export async function revokeMachineCredentials(machineId: number): Promise<MachineCredentialRevocation> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
-  return db.transaction(async (tx) => revokeMachineCredentialsTx(tx, machineId));
+  const { revocation, mqttDeviceIds } = await db.transaction(async (tx) => revokeMachineCredentialsTx(tx, machineId));
+  // doc 81 Đợt 4 Task A4 — committed ⇒ close the revoked devices' live sessions.
+  await disconnectRevokedMqttDevices(mqttDeviceIds, `revokeMachineCredentials(${machineId})`);
+  return revocation;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1599,10 +1634,13 @@ export async function transitionMachineLifecycle(
   let revoked: MachineCredentialRevocation | undefined;
   if (MACHINE_LIFECYCLE_REVOKES_CREDENTIALS.includes(to)) {
     // Multi-statement → needs a transaction (state + every credential, atomically).
-    revoked = await db.transaction(async (tx) => {
+    const r = await db.transaction(async (tx) => {
       await tx.update(machines).set(setState).where(eq(machines.id, id));
       return revokeMachineCredentialsTx(tx, id);
     });
+    revoked = r.revocation;
+    // doc 81 Đợt 4 Task A4 — committed ⇒ the retired/decommissioned machine's live MQTT sessions are closed.
+    await disconnectRevokedMqttDevices(r.mqttDeviceIds, `machine ${id} → ${to}`);
   } else {
     // Single statement — atomic on its own; no transaction needed.
     await db.update(machines).set(setState).where(eq(machines.id, id));
@@ -1624,13 +1662,15 @@ export async function rejectMachine(id: number, reason?: string) {
   // with the status flip. Flag OFF (default) keeps the original single UPDATE
   // byte-identical (never touches mqtt_clients."machineId").
   if (iotDeviceClassEnabled()) {
-    await db.transaction(async (tx) => {
+    const deviceIds = await db.transaction(async (tx) => {
       await tx.update(machines).set({
         registrationStatus: "rejected",
         pendingConfig: reason || null,
       }).where(eq(machines.id, id));
-      await revokeLinkedMqttClientsTx(tx, id, "machine rejected (doc 56 Đ2a Việc 4)");
+      return revokeLinkedMqttClientsTx(tx, id, "machine rejected (doc 56 Đ2a Việc 4)");
     });
+    // doc 81 Đợt 4 Task A4 — committed ⇒ close the rejected machine's linked devices' live sessions.
+    await disconnectRevokedMqttDevices(deviceIds, `machine ${id} rejected`);
     return;
   }
   await db.update(machines).set({
