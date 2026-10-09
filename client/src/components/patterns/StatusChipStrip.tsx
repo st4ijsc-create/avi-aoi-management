@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import type { Tone } from "./tokens";
 import { LAYOUT_KPI } from "./layoutMarkers";
+import { useHeaderChipFold } from "./headerChipFold";
 
 export type ChipState = "ok" | "loading" | "error" | "degraded";
 
@@ -205,8 +206,10 @@ const OVERFLOW_CLASS: Record<OverflowState, string> = {
 
 export function StatusChipStrip({ items, ariaLabel, maxVisible = 5, className }: StatusChipStripProps): React.JSX.Element | null {
   const { t } = useTranslation();
+  // doc 81 Đợt 3b Task 2 (b) — trong header ở 640–1023 px: chỉ chip GHIM hiện, phần còn lại vào "+N".
+  const fold = useHeaderChipFold();
   if (items.length === 0) return null;
-  const { visible, hidden } = splitChipsForOverflow(items, maxVisible);
+  const { visible, hidden } = splitChipsForOverflow(items, fold ? 0 : maxVisible);
   const hiddenState = overflowState(hidden);
   return (
     <div

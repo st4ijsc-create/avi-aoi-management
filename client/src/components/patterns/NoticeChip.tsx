@@ -20,6 +20,7 @@ import { AlertTriangle, FlaskConical, Info, Lightbulb, Loader2, PowerOff, Shield
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { FeatureStatus } from "@/components/common/FeatureStatusGate";
+import { useHeaderChipFold } from "./headerChipFold";
 
 export type NoticeKind =
   | "hint"
@@ -128,11 +129,14 @@ export interface NoticeStackProps {
  */
 export function NoticeStack({ items, maxVisible = 3, className }: NoticeStackProps): React.JSX.Element | null {
   const { t } = useTranslation();
+  // doc 81 Đợt 3b Task 2 (b) — trong header ở 640–1023 px: chỉ notice LỖI hiện, phần còn lại vào "+N".
+  const fold = useHeaderChipFold();
   const list = items.filter((x): x is NoticeItem => Boolean(x));
   if (list.length === 0) return null;
   // Fix round 1: notice LỖI không bao giờ bị gộp vào "+N" trước notice khác (header cắt phần tràn).
   const ranked = [...list.filter((n) => n.kind === "error"), ...list.filter((n) => n.kind !== "error")];
-  const keep = new Set(ranked.slice(0, Math.max(0, maxVisible)));
+  const limit = fold ? Math.min(maxVisible, list.filter((n) => n.kind === "error").length) : maxVisible;
+  const keep = new Set(ranked.slice(0, Math.max(0, limit)));
   const visible = list.filter((n) => keep.has(n));
   const hidden = list.filter((n) => !keep.has(n));
   return (
