@@ -733,16 +733,40 @@ describe("R-3-h — giấy phép chỉ OT (không MOD_ENGINEERING) + machine_con
     await waitFor(() => expect(within(versionRow(103)).getByText("Đã phát hành")).toBeTruthy());
   });
 
-  it("lưu trữ: MỘT cú bấm (hợp đồng cũ, không hộp xác nhận) ⇒ archiveRecipeVersion {recipeId}; toast; invalidate bộ cũ", async () => {
+  // Đợt 3b Task 2 (c) — ĐỔI HỢP ĐỒNG (chủ dự án 2026-10-06, "thống nhất lưu trữ recipe cần xác nhận"): lưu trữ ở chế độ
+  // dự phòng R-3-h có CÙNG bước xác nhận như Recipes (AlertDialog: tiêu đề "Lưu trữ", câu `recipes.confirmArchive`,
+  // Hủy / Lưu trữ). Cổng KHÔNG đổi (canCreate — ca "thiếu canEdit" bên dưới vẫn bật); payload/invalidate KHÔNG đổi.
+  it("lưu trữ: hộp xác nhận như Recipes — bấm ⇒ CHƯA gọi; Hủy ⇒ 0 lượt; xác nhận ⇒ ĐÚNG MỘT archiveRecipeVersion {recipeId}; toast; invalidate bộ cũ", async () => {
     otOnly();
     window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
     const user = userEvent.setup();
     render(<EquipmentIntegration />);
     await user.click(within(versionRow(102)).getByRole("button", { name: "Lưu trữ" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    let dlg = await screen.findByRole("alertdialog");
+    expect(within(dlg).getByRole("heading", { name: "Lưu trữ" })).toBeTruthy();
+    expect(within(dlg).getByText("Lưu trữ phiên bản v2?")).toBeTruthy();
+    expect(calls("archiveRecipeVersion")).toHaveLength(0);
+    await user.click(within(dlg).getByRole("button", { name: "Hủy" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(calls("archiveRecipeVersion")).toHaveLength(0);
+    await user.click(within(versionRow(102)).getByRole("button", { name: "Lưu trữ" }));
+    dlg = await screen.findByRole("alertdialog");
+    await user.click(within(dlg).getByRole("button", { name: "Lưu trữ" }));
     await waitFor(() => expect(calls("archiveRecipeVersion")).toEqual([{ recipeId: 102 }]));
     expect(toastSpy.success).toHaveBeenCalledWith("Đã lưu trữ phiên bản");
     expect(srv.invalidated).toEqual(expect.arrayContaining(OLD_INVALIDATIONS));
+  });
+
+  it("lưu trữ bản nháp (v3) ⇒ câu xác nhận mang ĐÚNG phiên bản của hàng; xác nhận ⇒ {recipeId: 103}", async () => {
+    otOnly();
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&code=RCP-1");
+    const user = userEvent.setup();
+    render(<EquipmentIntegration />);
+    await user.click(within(versionRow(103)).getByRole("button", { name: "Lưu trữ" }));
+    const dlg = await screen.findByRole("alertdialog");
+    expect(within(dlg).getByText("Lưu trữ phiên bản v3?")).toBeTruthy();
+    await user.click(within(dlg).getByRole("button", { name: "Lưu trữ" }));
+    await waitFor(() => expect(calls("archiveRecipeVersion")).toEqual([{ recipeId: 103 }]));
   });
 
   it("rollback = AlertDialog cũ (R-2-g): KHÔNG ô lý do, KHÔNG OTP; Huỷ ⇒ không gọi; xác nhận ⇒ {toRecipeId}", async () => {
