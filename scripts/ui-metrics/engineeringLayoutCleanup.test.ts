@@ -2,7 +2,9 @@
 // không im lặng để hàng rò tới lần chạy sau. Kiểm hàm cổng thuần `cleanupFailures` + `runPass` mà main() dùng.
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — mô-đun .mjs không có khai báo kiểu (engineeringLayout.mjs có shebang ⇒ cổng tách ra runGate.mjs)
-import { cleanupFailures, runPass } from "./runGate.mjs";
+import { cleanupFailures, cleanupFailureLines, runPass } from "./runGate.mjs";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 const okMeta = () => ({
   outboundViolations: [],
@@ -41,5 +43,27 @@ describe("cổng dọn của thiết bị đo", () => {
     expect(runPass({ errors: [], meta: { ...okMeta(), selfTest: { pass: false } }, args: {} })).toBe(false);
     expect(runPass({ errors: [], meta: { ...okMeta(), selfTest: { pass: true, mutationPass: false } }, args: { mutation: true } })).toBe(false);
     expect(runPass({ errors: [], meta: { ...okMeta(), selfTest: undefined }, args: { "no-selftest": true } })).toBe(true);
+  });
+});
+
+// doc 81 Đợt 3b final wave (minor 4): nhánh LỖI (catch) và nhánh TÍN HIỆU (Ctrl-C …) trước đây không in lỗi dọn ⇒ hàng mẫu rò
+// sau một lần đo hỏng là im lặng (chỉ lần sau `staleRemoved` mới thấy). Nay MỌI nhánh in cùng dòng `✗ DỌN HỎNG`.
+describe("dòng in lỗi dọn — mọi nhánh thoát", () => {
+  it("cleanupFailureLines: dọn sạch ⇒ rỗng; hỏng ⇒ một dòng ✗ DỌN HỎNG gồm mọi lỗi", () => {
+    expect(cleanupFailureLines(okMeta())).toEqual([]);
+    const lines = cleanupFailureLines({ ...okMeta(), fixturesRemoved: { error: "boom" }, probeUserRemoved: { error: "dead" } });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^✗ DỌN HỎNG/);
+    expect(lines[0]).toMatch(/boom/);
+    expect(lines[0]).toMatch(/dead/);
+  });
+
+  it("engineeringLayout.mjs: nhánh thường, nhánh catch VÀ bộ xử lý tín hiệu đều in cleanupFailureLines sau khi dọn", () => {
+    const src = fs.readFileSync(path.join(__dirname, "engineeringLayout.mjs"), "utf8");
+    const sig = src.slice(src.indexOf('for (const sig of ["SIGINT"'), src.indexOf("try {", src.indexOf('for (const sig of ["SIGINT"')));
+    expect(sig).toMatch(/await cleanup\(\);[\s\S]*cleanupFailureLines\(meta\)/);
+    const katch = src.slice(src.lastIndexOf("} catch (e) {"), src.lastIndexOf("} catch (e) {") + 400);
+    expect(katch).toMatch(/await cleanup\(\);[\s\S]*cleanupFailureLines\(meta\)/);
+    expect(src.match(/cleanupFailureLines\(/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
   });
 });

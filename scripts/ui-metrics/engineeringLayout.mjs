@@ -56,7 +56,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { cleanupFailures, runPass } from "./runGate.mjs";
+import { cleanupFailures, cleanupFailureLines, runPass } from "./runGate.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(path.join(REPO, "package.json"));
@@ -1867,7 +1867,8 @@ async function main() {
   };
   // Một lượt dọn duy nhất dù Ctrl-C trùng lúc đang dọn ở nhánh thường.
   const cleanup = () => (cleaning ??= cleanupOnce().finally(() => { cleaning = null; }));
-  for (const sig of ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"]) process.on(sig, async () => { await cleanup(); process.exit(130); });
+  // Đợt 3b final wave (minor 4): nhánh tín hiệu cũng IN lỗi dọn (trước: chỉ nhánh thường in ⇒ hàng mẫu rò sau Ctrl-C im lặng).
+  for (const sig of ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"]) process.on(sig, async () => { await cleanup(); for (const l of cleanupFailureLines(meta)) console.error(l); process.exit(130); });
   try {
     probeMade = true; // kể cả khi tạo hỏng giữa chừng ⇒ cleanup vẫn xoá
     const probe = await createProbeUser();
@@ -1931,12 +1932,14 @@ async function main() {
     if (errors.length) console.log(`✗ ${errors.length} LỖI:\n  ${errors.join("\n  ")}`);
     console.log(`[uim] kết nối ngoài danh sách: ${meta.outboundViolations.length} · trôi dữ liệu trong lần chạy: ${meta.data.drift ? Object.keys(meta.data.drift).length : "n/a"} (${meta.data.tables} bảng) · lỗi băm: ${meta.data.errors ? meta.data.errors.length : "n/a"} · tự kiểm: ${meta.selfTest ? (meta.selfTest.pass ? "ĐẠT" : "TRƯỢT") : "n/a"}${args.mutation ? ` · đột biến gác: ${meta.selfTest?.mutationPass ? "mọi gác ĐỎ khi gỡ" : "CÓ gác không đỏ"}` : ""}`);
     console.log(`[uim] cổng sau khi tắt: ${JSON.stringify(out.meta.portsAfter)} · user đo: ${JSON.stringify(out.meta.probeUserRemoved)} · hàng mẫu đã xoá: ${JSON.stringify(out.meta.fixturesRemoved)}`);
-    if (out.cleanupFailures.length) console.log(`✗ DỌN HỎNG (pass=false): ${out.cleanupFailures.join(" | ")}`);
+    for (const l of cleanupFailureLines(meta)) console.log(l);
     console.log(`[uim] ghi ${outFile} · pass=${out.pass}`);
     process.exitCode = out.pass ? 0 : 2;
   } catch (e) {
     await cleanup();
     console.error("[uim] LỖI:", e.message, `(log: ${logDir})`);
+    // Đợt 3b final wave (minor 4): nhánh lỗi cũng IN lỗi dọn.
+    for (const l of cleanupFailureLines(meta)) console.error(l);
     process.exit(1);
   }
 }
