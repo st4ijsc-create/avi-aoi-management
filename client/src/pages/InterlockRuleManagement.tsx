@@ -584,6 +584,8 @@ function InterlockHeader({ canCreate, createReason, posture }: { canCreate: bool
   const onOff = (b: boolean) => (b ? t("oversight.posture.on", "ON") : t("oversight.posture.off", "OFF"));
   const source = t("interlockRules.posture.source", "oversight.posture — cờ của chính các cổng trên server");
   // ILK-06: ghi lệnh thật BẬT trong khi engine TẮT ⇒ tô cảnh báo cả engine lẫn OT (như dải của Hub).
+  // doc 81 Đợt 3b final wave (I1): ba chip TƯ THẾ an toàn GHIM (R-2-p) ⇒ header hẹp (768/1024) không gộp chúng vào "+N"
+  // (trước: "+3" xám, "Engine TẮT" tông default im lặng). Header không đủ chỗ ⇒ xuống dòng (mức 2), không cắt.
   const items: StatusChipItem[] = [
     {
       id: "engine",
@@ -592,6 +594,7 @@ function InterlockHeader({ canCreate, createReason, posture }: { canCreate: bool
       state,
       source,
       tone: d?.writesOnEngineOff ? "warning" : d?.interlockEngineEnabled ? "success" : "default",
+      pinned: true,
     },
     {
       id: "ot",
@@ -600,6 +603,7 @@ function InterlockHeader({ canCreate, createReason, posture }: { canCreate: bool
       state,
       source,
       tone: d?.writesOnEngineOff && d.otControlEnabled ? "warning" : "default",
+      pinned: true,
     },
     {
       id: "coverage",
@@ -608,6 +612,7 @@ function InterlockHeader({ canCreate, createReason, posture }: { canCreate: bool
       // Không đọc được độ phủ ⇒ server trả 0 kèm cờ degraded: KHÔNG được trưng "0" như một con số.
       state: state === "ok" && d?.interlockCoverageDegraded ? "error" : state,
       source: t("interlockRules.posture.coverageSource", "oversight.posture — rule đang bật, đã duyệt, chặn được và có đích"),
+      pinned: true,
     },
   ];
   return (

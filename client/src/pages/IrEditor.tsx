@@ -1309,8 +1309,10 @@ export default function IrEditor() {
         : { id: "lint", kind: lintOk ? "status" : "error", testId: "ir-lint-chip", label: lintText, content: <p>{lintText}</p> };
   const irHeaderNotices: Array<NoticeItem | null> = [
     // Banner cờ tắt cũ ⇒ chip 4 trạng thái (câu cũ trong popover).
+    // doc 81 Đợt 3b final wave (I1): cờ IR khi KHÔNG "on" GHIM ⇒ header hẹp không gộp nó vào "+N" cùng metadata/lint.
     featureStatusNoticeItem(t, {
       id: "ir-flag",
+      pinned: true,
       status: flagStatus,
       offMessage: t("ir.flagOffBanner", "Preview mode: IR programming is turned off on the server. Authoring, lint and transpile preview work; Save flow / Request build are blocked until an administrator turns it on."),
     }),

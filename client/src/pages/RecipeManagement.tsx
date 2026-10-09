@@ -1070,8 +1070,9 @@ export default function RecipeManagement() {
                         hẹp gộp được vào "+N"; chip cờ LỖI vẫn luôn hiện. */}
                     <NoticeStack
                       items={[
-                        // SAFETY — HITL: câu banner cũ, nay trong popover của chip (không còn khối trên MAIN).
-                        { id: "hitl", kind: "honesty", label: t("recipes.hitlChip", "Đẩy xuống máy qua HITL"), content: t("recipes.hitlBanner") },
+                        // SAFETY — HITL: câu banner cũ, nay trong popover của chip (không còn khối trên MAIN). doc 81 Đợt 3b final
+                        // wave (I1): GHIM ⇒ header hẹp (768/1024) không gộp nó vào "+N" (trước Đợt 3b nó vẫn nhìn thấy ở đó).
+                        { id: "hitl", kind: "honesty", label: t("recipes.hitlChip", "Đẩy xuống máy qua HITL"), content: t("recipes.hitlBanner"), pinned: true },
                         // Đợt 3 Task 1 — cờ tích hợp (EQ_INTEG) 4 trạng thái, chỉ khi khu tích hợp đang dùng; bật ⇒ không chip.
                         integNeeded && canViewMonitoring &&
                           featureStatusNoticeItem(t, {

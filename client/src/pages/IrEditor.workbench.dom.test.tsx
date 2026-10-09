@@ -12,6 +12,7 @@ vi.mock("react-resizable-panels", async () => (await import("@/components/patter
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
+import { forceNarrowHeader } from "@/components/patterns/layoutKitTestHeaderFold";
 import { installMatchMedia, presetNarrow, setNarrow } from "@/components/patterns/layoutKitTestMedia";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { getAiEntryState, resetAiEntryForTest, setAiChatOpen } from "@/lib/aiEntryStore";
@@ -469,6 +470,21 @@ describe("Giữ hành vi: lint (mapTrpcError), cổng Lưu, phím tắt, tạo p
     renderPage();
     expect(within(header()).getByTestId("feature-status-off")).toBeInTheDocument();
     expect(within(header()).getByRole("button", { name: /^Lưu luồng$/ })).toBeDisabled();
+  });
+
+  // doc 81 Đợt 3b final wave (I1): ở 640–1024 px header GỘP — trước: chip cờ IR "tắt" gộp vào "+N" xám cùng metadata/lint.
+  it("header HẸP (gộp) + cờ tắt ⇒ chip cờ VẪN hiện thẳng (ghim); '+N' mang tông của phần giấu", () => {
+    const restore = forceNarrowHeader();
+    try {
+      seed({ enabled: false });
+      renderPage();
+      expect(header().getAttribute("data-header-fit")).not.toBeNull();
+      const stack = header().querySelector("[data-notice-stack]") as HTMLElement;
+      expect(stack.querySelector(':scope > [data-testid="feature-status-off"]')).not.toBeNull();
+      expect(stack.querySelector("[data-notice-more]")).not.toBeNull();
+    } finally {
+      restore();
+    }
   });
 
   it("'Project ir-flow mới' mở SHEET phải (không dialog giữa màn); Tạo ⇒ createProject({code,name,kind:'ir-flow'})", async () => {

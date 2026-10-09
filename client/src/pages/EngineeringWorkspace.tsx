@@ -850,8 +850,10 @@ function EngineeringWorkspaceView() {
               hẹp gộp được vào "+N" thay vì xuống dòng; chip cờ LỖI vẫn luôn hiện. */}
           <NoticeStack
             items={[
+              // doc 81 Đợt 3b final wave (I1): cờ triển khai thật khi KHÔNG "on" (tắt/đang kiểm/lỗi) GHIM ⇒ không gộp vào "+N".
               featureStatusNoticeItem(t, {
                 id: "deploy-status",
+                pinned: true,
                 status: deployStatus,
                 subject: realDeployLabel,
                 offMessage: t(

@@ -21,6 +21,7 @@ import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
+import { forceNarrowHeader } from "@/components/patterns/layoutKitTestHeaderFold";
 
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
 vi.mock("@/components/DashboardLayout", () => ({
@@ -331,6 +332,25 @@ describe("Interlock P3 — chip tư thế trên header (oversight.posture)", () 
     expect(chip("coverage")).not.toHaveTextContent("0");
     expect(chip("engine").getAttribute("data-state")).toBe("ok");
     expect(screen.queryByRole("button", { name: /Ghi thật khi engine TẮT/ })).toBeNull();
+  });
+
+  // doc 81 Đợt 3b final wave (I1): ở 768/1024 px header GỘP — trước: "chip+3" xám, tư thế engine/OT im lặng (Engine TẮT có tông
+  // default). Nay ba chip tư thế GHIM (R-2-p) ⇒ luôn hiện; chỉ "Khi nào dùng" vào "+1"; cảnh báo ILK-06 (lỗi) vẫn hiện.
+  it("header HẸP (gộp) ⇒ engine / OT / độ phủ VẪN hiện thẳng (ghim), không vào '+N'; 'Khi nào dùng' vào '+1'", () => {
+    const restore = forceNarrowHeader();
+    try {
+      render(<InterlockRuleManagement />);
+      const header = screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;
+      expect(header.getAttribute("data-header-fit")).not.toBeNull();
+      const strip = header.querySelector("[data-status-chip-strip]") as HTMLElement;
+      expect(Array.from(strip.querySelectorAll(":scope > [data-chip-id]")).map((x) => x.getAttribute("data-chip-id"))).toEqual(["engine", "ot", "coverage"]);
+      expect(strip.querySelector("[data-chip-more]")).toBeNull();
+      expect(within(header).getByRole("button", { name: /Ghi thật khi engine TẮT/ })).toBeTruthy();
+      const more = header.querySelector("[data-notice-stack] [data-notice-more]") as HTMLElement;
+      expect(more.getAttribute("data-notice-more")).toBe("1");
+    } finally {
+      restore();
+    }
   });
 });
 

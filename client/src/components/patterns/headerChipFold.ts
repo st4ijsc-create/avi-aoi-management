@@ -7,7 +7,8 @@
  * Cách sửa = THEO ĐO (không theo mốc cố định), ba mức, chỉ leo khi mức trước VẪN tràn:
  *   0 — như cũ (một hàng).
  *   1 — GỘP: ngữ cảnh này = true ⇒ dùng cơ chế "+N" SẴN CÓ: `StatusChipStrip` chỉ hiện chip GHIM (R-2-p; tông "+N" = tệ
- *       nhất của phần giấu — như cũ), `NoticeStack` chỉ hiện notice LỖI, phần còn lại vào "+N".
+ *       nhất của phần giấu — như cũ), `NoticeStack` chỉ hiện notice GHIM (final wave I1 — vd HITL, cờ triển khai) và notice
+ *       LỖI, phần còn lại vào "+N" mang tông TỆ NHẤT của phần giấu (final wave I1).
  *   2 — XUỐNG DÒNG (như dưới 640 px — Đợt 3 Task 0): khi phần KHÔNG gộp được (chip ghim, chip tự viết của trang, hành
  *       động) vẫn không vừa một hàng ⇒ header xuống dòng thay vì CẮT. Không gì bị cắt ở mức nào.
  * Ở 1366/1600 không tràn ⇒ mức 0 ⇒ hợp đồng một hàng ≤48 px và số đo của thiết bị đo không đổi. Ngoài header (vd top bar

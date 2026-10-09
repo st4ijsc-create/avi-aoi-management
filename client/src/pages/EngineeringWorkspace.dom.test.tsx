@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import { forceNarrowHeader } from "@/components/patterns/layoutKitTestHeaderFold";
 
 vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -165,6 +166,28 @@ describe("EngineeringWorkspace (/engineering) — trạng thái đang tải khô
     expect(banner.textContent).not.toMatch(/DPC_DEPLOY_ENABLED/);
     expect(screen.getByText(isExactNoProjectsLabel)).toBeInTheDocument();
     expect(screen.getByTestId("engineering-deploy-badge")).toHaveTextContent("OFF");
+  });
+
+  // doc 81 Đợt 3b final wave (I1): ở 768 px header GỘP — trước: chip "triển khai thật đang tắt" vào "+N" xám. Nay GHIM
+  // (cả loading/error); "Khi nào dùng" vẫn gộp được.
+  it.each([
+    ["off", { data: { deployEnabled: false } }, "feature-status-off"],
+    ["loading", { isLoading: true }, "feature-status-loading"],
+    ["error", { isError: true }, "feature-status-error"],
+  ] as const)("header HẸP (gộp) + cờ triển khai %s ⇒ chip cờ VẪN hiện thẳng; chỉ 'Khi nào dùng' vào '+1'", (_s, q, testId) => {
+    const restore = forceNarrowHeader();
+    try {
+      setQueryOverride("programming.status", makeQuery(q));
+      setQueryOverride("programming.listProjects", makeQuery({ data: [] }));
+      render(<EngineeringWorkspace />);
+      const header = document.querySelector("[data-layout-header]") as HTMLElement;
+      expect(header.getAttribute("data-header-fit")).not.toBeNull();
+      const stack = header.querySelector("[data-notice-stack]") as HTMLElement;
+      expect(stack.querySelector(`:scope > [data-testid="${testId}"]`)).not.toBeNull();
+      expect(stack.querySelector("[data-notice-more]")?.getAttribute("data-notice-more")).toBe("1");
+    } finally {
+      restore();
+    }
   });
 
   it("cả hai query xong: cờ BẬT + có dự án ⇒ không banner off/error/loading, badge ON", () => {

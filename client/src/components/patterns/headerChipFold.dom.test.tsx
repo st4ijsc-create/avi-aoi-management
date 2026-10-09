@@ -19,7 +19,8 @@ import * as React from "react";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
 import { PageHeaderCompact } from "./PageHeaderCompact";
 import { StatusChipStrip, type StatusChipItem } from "./StatusChipStrip";
-import { NoticeStack, type NoticeItem } from "./NoticeChip";
+import { NoticeStack, featureStatusNoticeItem, noticeOverflowState, splitNoticesForOverflow, type NoticeItem } from "./NoticeChip";
+import { useTranslation } from "react-i18next";
 import { contentSignature, headerOverflows } from "./headerChipFold";
 
 // ── mô hình bề rộng ───────────────────────────────────────────────────────────────────────────
@@ -300,5 +301,103 @@ describe("Đợt 3b Task 2 (b) — header không cắt chip: gộp '+N' rồi m�
     });
     await waitFor(() => expect(header().getAttribute("data-header-fit")).not.toBeNull());
     expect(chipIds(header())).toEqual(["critical"]);
+  });
+});
+
+// ── doc 81 Đợt 3b final wave (I1) — thông tin an toàn không bị gộp im lặng ─────────────────────────
+// Đo trình duyệt sau fix 1 (chips-fix1-*.json): Interlock @768/1024 "chip+3" (engine/OT trước đó vẫn hiện), Recipes HITL và
+// cờ triển khai IDE/IR vào "+N" XÁM. Hợp đồng: notice GHIM không bao giờ vào "+N" (như chip ghim R-2-p); "+N" của NoticeStack
+// mang tông TỆ NHẤT của phần giấu.
+describe("Đợt 3b final wave (I1) — notice GHIM + '+N' tông tệ nhất", () => {
+  const SAFETY: NoticeItem[] = [
+    { id: "hitl", kind: "honesty", label: "HITL", content: "an toàn", pinned: true },
+    { id: "w", kind: "whenToUse", content: "khi nào dùng" },
+    { id: "f", kind: "flagOff", content: "cờ tắt" },
+  ];
+  it("header GỘP ⇒ notice ghim VẪN hiện thẳng; phần không ghim vào '+N' với tông CẢNH BÁO (có cờ tắt bị giấu)", () => {
+    capacity = 250;
+    render(<PageHeaderCompact title="T" chips={<NoticeStack items={SAFETY} />} />);
+    const h = header();
+    expect(h.getAttribute("data-header-fit")).not.toBeNull();
+    expect(noticeKinds(h)).toEqual(["honesty"]);
+    expect(noticeMore(h)?.getAttribute("data-notice-more")).toBe("2");
+    expect(noticeMore(h)?.getAttribute("data-state")).toBe("warning");
+  });
+
+  it("notice ghim không vào '+N' kể cả khi vượt maxVisible (ngoài header)", () => {
+    render(<NoticeStack maxVisible={0} items={SAFETY} />);
+    const root = document.querySelector("[data-notice-stack]") as HTMLElement;
+    expect(noticeKinds(root)).toEqual(["honesty"]);
+    expect(noticeMore(root)?.getAttribute("data-notice-more")).toBe("2");
+  });
+
+  it("'+N' chỉ giấu thông tin (Khi nào dùng / gợi ý) ⇒ tông trung tính 'ok'; giấu notice LỖI ⇒ 'error'", () => {
+    const { unmount } = render(<NoticeStack maxVisible={0} items={[NOTICES[0], NOTICES[1]]} />);
+    expect(document.querySelector("[data-notice-more]")?.getAttribute("data-state")).toBe("ok");
+    unmount();
+    render(<NoticeStack maxVisible={0} items={[NOTICES[0], { id: "f", kind: "flagOff", content: "x" }, NOTICES[2]]} />);
+    expect(document.querySelector("[data-notice-more]")?.getAttribute("data-state")).toBe("error");
+  });
+
+  it("noticeOverflowState: lỗi > cảnh báo (flagOff/honesty/simGate/beta) > đang kiểm tra > thông tin", () => {
+    expect(noticeOverflowState([])).toBe("ok");
+    expect(noticeOverflowState([{ kind: "hint" }, { kind: "whenToUse" }, { kind: "meta" }, { kind: "status" }])).toBe("ok");
+    expect(noticeOverflowState([{ kind: "hint" }, { kind: "loading" }])).toBe("loading");
+    for (const k of ["flagOff", "honesty", "simGate", "beta"] as const) expect(noticeOverflowState([{ kind: "loading" }, { kind: k }])).toBe("warning");
+    expect(noticeOverflowState([{ kind: "flagOff" }, { kind: "error" }, { kind: "hint" }])).toBe("error");
+  });
+
+  it("splitNoticesForOverflow: ghim chiếm chỗ trước; chỗ còn lại ưu tiên lỗi; gộp ⇒ chỗ còn lại CHỈ cho lỗi", () => {
+    const L: NoticeItem[] = [
+      { id: "w", kind: "whenToUse", content: "" },
+      { id: "p", kind: "flagOff", content: "", pinned: true },
+      { id: "e", kind: "error", content: "" },
+    ];
+    const ids = (xs: NoticeItem[]) => xs.map((x) => x.id);
+    expect(ids(splitNoticesForOverflow(L, 3, false).visible)).toEqual(["w", "p", "e"]);
+    expect(ids(splitNoticesForOverflow(L, 2, false).visible)).toEqual(["p", "e"]);
+    expect(ids(splitNoticesForOverflow(L, 3, true).visible)).toEqual(["p", "e"]);
+    expect(ids(splitNoticesForOverflow(L, 1, true).visible)).toEqual(["p"]);
+    expect(ids(splitNoticesForOverflow(L, 1, true).hidden)).toEqual(["w", "e"]);
+  });
+
+  it("featureStatusNoticeItem({pinned}) ⇒ off/loading/error đều GHIM, vẫn hiện khi header gộp; on ⇒ không gì", () => {
+    function Stack({ status }: { status: "on" | "off" | "loading" | "error" }) {
+      const { t } = useTranslation();
+      return (
+        <PageHeaderCompact
+          title="T"
+          chips={<NoticeStack items={[NOTICES[0], NOTICES[1], featureStatusNoticeItem(t, { id: "flag", status, offMessage: "tắt", pinned: true })]} />}
+        />
+      );
+    }
+    for (const [status, testId] of [["off", "feature-status-off"], ["loading", "feature-status-loading"], ["error", "feature-status-error"]] as const) {
+      capacity = 250;
+      const { unmount } = render(<Stack status={status} />);
+      expect(header().getAttribute("data-header-fit")).not.toBeNull();
+      expect(header().querySelector(`[data-notice-stack] > [data-testid="${testId}"]`)).not.toBeNull();
+      unmount();
+    }
+    const { t } = { t: (_k: string, f: string) => f };
+    expect(featureStatusNoticeItem(t, { status: "on", offMessage: "x", pinned: true })).toBeNull();
+    expect(featureStatusNoticeItem(t, { status: "off", offMessage: "x" })?.pinned).toBeFalsy();
+  });
+
+  it("test gap — chip KHÔNG ghim ở trạng thái lỗi bị gộp (vd eq-conformance) ⇒ '+N' đỏ; chip ghim (tư thế) vẫn hiện", () => {
+    capacity = 250;
+    render(
+      <PageHeaderCompact
+        title="T"
+        chips={
+          <StatusChipStrip
+            items={[chip("engine", { pinned: true, value: "OFF" }), chip("eq-conformance", { state: "error", value: undefined }), chip("x")]}
+          />
+        }
+      />,
+    );
+    expect(header().getAttribute("data-header-fit")).not.toBeNull();
+    expect(chipIds(header())).toEqual(["engine"]);
+    expect(chipMore(header())?.getAttribute("data-chip-more")).toBe("2");
+    expect(chipMore(header())?.getAttribute("data-state")).toBe("error");
   });
 });
