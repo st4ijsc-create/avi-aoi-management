@@ -172,7 +172,13 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
     if (!sql) return;
     if (fx) {
       const uids = [fx.userScoped, fx.userEmpty, ...OP_POOL, fx.opOut, fx.opInactive].filter(Boolean);
-      if (fx.ops.length) await sql`DELETE FROM operator_assignments WHERE "operatorId" = ANY(${fx.ops})`;
+      // final wave: dọn RỘNG — mọi hàng của người vận hành / nhà máy / chuyền / trạm CỦA LƯỢT NÀY (kể cả hàng một lần chạy đột biến
+      // ghi cho opOut / opInactive / opMissing mà ca không kịp đưa vào fx.ops) — không để rò sang `_test` dùng chung.
+      const opIds = [...new Set([...fx.ops, ...OP_POOL, fx.opOut, fx.opInactive, fx.opMissing].filter((x) => x != null))];
+      await sql`DELETE FROM operator_assignments WHERE "operatorId" = ANY(${opIds})
+        OR "factoryId" = ANY(${[fx.facIn, fx.facOut]})
+        OR "lineId" = ANY(${[fx.lineIn, fx.lineOut].filter(Boolean)})
+        OR "stationId" = ANY(${[fx.stationIn, fx.stationOut].filter(Boolean)})`;
       await sql`DELETE FROM shift_configs WHERE id = ANY(${[fx.shiftIn, fx.shiftOut, fx.shiftGlobal, fx.shiftOff]})`;
       if (fx.stationOut) await sql`DELETE FROM stations WHERE id = ANY(${[fx.stationOut, fx.stationIn].filter(Boolean)})`;
       if (fx.lineIn) await sql`DELETE FROM production_lines WHERE id = ANY(${[fx.lineIn, fx.lineOut]})`;
