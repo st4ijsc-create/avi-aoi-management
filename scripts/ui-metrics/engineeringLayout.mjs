@@ -279,6 +279,9 @@ PAGE_TABLES["production-shifts"] = [...new Set([...PAGE_TABLES["safety-workforce
 KNOWN_PROCS["production-shifts"] = [
   "aiInbox.count", "andon.active", "auth.me", "commandCenter.hierarchy", "license.getAllowedModules", "license.systemState",
   "permissions.getMyPermissions", "safety.currentBoard", "safety.listAssignments", "safety.status", "shiftConfig.list",
+  // Đợt 3b final wave (I2): sheet "Phân công" (hành động `phan-cong`) đọc ca theo phạm vi + nhà máy của chuyền. Bảng nó đọc
+  // (shift_configs, factories, workshops, production_lines, stations, user_factory_assignments) đã nằm trong PAGE_TABLES trên.
+  "safety.assignableShifts",
 ];
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];

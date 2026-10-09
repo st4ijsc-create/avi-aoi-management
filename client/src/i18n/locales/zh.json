@@ -4268,6 +4268,7 @@
       "robotNotActive": "本进程的机器人网关尚未加载该机器人（已禁用或 ROBOT_GATEWAY_ENABLED 未开启），因此没有可解除的实时运动锁定。",
       "opcuaSecurityInvalid": "securityMode/securityPolicy 无效或相互矛盾（例如 None 搭配 Basic256Sha256，或 SignAndEncrypt 搭配 None）。请使用 None/None，或 Sign/SignAndEncrypt 搭配 Basic256Sha256 等策略。",
       "shiftInactive": "该班次已停用——请选择一个启用中的班次，或不选择班次。",
+      "shiftFactoryMismatch": "该班次与所选产线/工位不属于同一工厂——请选择该工厂的班次（或全系统班次），或不选择班次。",
       "secretReentryRequired": "您更改了 {{field}}（已保存密钥的发送位置或保护方式），因此不会复用已保存的密码/密钥。请重新输入密码/密钥后再保存；目前尚未更改任何内容。",
       "motionLockUnsupported": "该厂商的驱动每条指令使用一次性连接，没有运动锁定；无可解除内容。",
       "motionLockChanged": "您确认期间运动锁定已发生变化（出现了新的连接丢失）。未解除任何内容；请重新读取机器人状态后再确认。",
@@ -21834,6 +21835,7 @@
     "form": {
       "shift": "班次（可选）",
       "noShift": "— 不指定班次 —",
+      "allFactories": "全系统",
       "defaultHint": "已预选当前正在进行的班次。"
     }
   },

@@ -58,6 +58,11 @@ const srv = vi.hoisted(() => ({
   assignLoading: false,
   shifts: [] as Row[],
   shiftsError: false,
+  // final wave (I2) — "server" của safety.assignableShifts: phạm vi nhà máy của người gọi (null = toàn quyền), nhà máy của
+  // từng chuyền (production_lines → workshops), tên nhà máy.
+  scope: null as number[] | null,
+  lineFactory: {} as Record<number, number>,
+  factoryNames: {} as Record<number, string>,
   snap: { board: [] as Row[], assignments: [] as Row[] },
   version: 0,
   listeners: new Set<() => void>(),
@@ -124,6 +129,17 @@ vi.mock("@/lib/trpc", () => {
         );
       }
       if (path === "shiftConfig.list") return srv.shiftsError ? q(undefined, enabled, { isError: true }) : q(srv.shifts, enabled);
+      if (path === "safety.assignableShifts") {
+        // như SQL thật (server/routers/safetyRouter.ts — đã kiểm trên _test): đang hoạt động, trong phạm vi, thuộc nhà máy chuyền.
+        const lf = input?.lineId != null ? srv.lineFactory[input.lineId as number] : undefined;
+        return q(
+          srv.shifts
+            .filter((s) => s.isActive && (s.factoryId == null || srv.scope == null || srv.scope.includes(s.factoryId as number)))
+            .filter((s) => lf == null || s.factoryId == null || s.factoryId === lf)
+            .map((s) => ({ ...s, factoryName: s.factoryId == null ? null : (srv.factoryNames[s.factoryId as number] ?? null) })),
+          enabled,
+        );
+      }
       return q(undefined, enabled);
     },
     useMutation: (hookOpts: { onSuccess?: (r: unknown, vars: Row) => void; onError?: (e: unknown, vars: Row) => void } = {}) => {
@@ -232,6 +248,9 @@ beforeEach(() => {
   srv.assignLoading = false;
   srv.shifts = [shift(1, "Ca sáng", "A", 6, 14), shift(2, "Ca chiều", "B", 14, 22)];
   srv.shiftsError = false;
+  srv.scope = null;
+  srv.lineFactory = {};
+  srv.factoryNames = {};
   srv.snap = { board: srv.board.map((x) => ({ ...x })), assignments: srv.assignments.map((x) => ({ ...x })) };
   srv.calls = {};
   srv.invalidated = [];
@@ -780,9 +799,126 @@ describe("Đợt 3b Task 1 — bộ chọn ca trong sheet phân công", () => {
     expect(within(sheet).getByText(S("shifts.form.defaultHint"))).toBeInTheDocument();
   });
 
-  it("i18n: khoá bộ chọn ca có ở vi/en/zh", () => {
-    for (const loc of [vi_, en_, zh_] as Array<{ shifts: { form?: Record<string, string> } }>) {
-      expect(Object.keys(loc.shifts.form ?? {}).sort()).toEqual(["defaultHint", "noShift", "shift"]);
+  it("i18n: khoá bộ chọn ca có ở vi/en/zh (final wave I2: + allFactories; lỗi shiftFactoryMismatch)", () => {
+    for (const loc of [vi_, en_, zh_] as Array<{ shifts: { form?: Record<string, string> }; errors: { reason: Record<string, string> } }>) {
+      expect(Object.keys(loc.shifts.form ?? {}).sort()).toEqual(["allFactories", "defaultHint", "noShift", "shift"]);
+      expect(loc.errors.reason.shiftFactoryMismatch).toMatch(/\S/);
     }
+  });
+});
+
+// ── doc 81 Đợt 3b final wave (I2) — bộ chọn ca theo PHẠM VI người dùng và NHÀ MÁY của chuyền đã chọn ────────────────────
+// Trước: sheet đọc `shiftConfig.list()` (không phạm vi, mọi nhà máy) ⇒ người bị thu hẹp được chọn sẵn ca nhà máy khác (server
+// từ chối ENTITY_NOT_FOUND); hai nhà máy cùng "Ca 1 06–14" ⇒ 2 ca khớp ⇒ không bao giờ chọn sẵn; nhãn không phân biệt.
+describe("Đợt 3b final wave (I2) — bộ chọn ca theo phạm vi + nhà máy của chuyền", () => {
+  const at = (h: number, m = 0) => vi.setSystemTime(new Date(2026, 9, 6, h, m, 0));
+  const shiftBox = (sheet: HTMLElement) => within(sheet).getByRole("combobox", { name: S("shifts.form.shift") });
+  const openAssign = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(within(toolbar()).getByRole("button", { name: S("workforce.assign") }));
+    return waitLayer("workforce-assign");
+  };
+  const optionTexts = async (user: ReturnType<typeof userEvent.setup>, sheet: HTMLElement) => {
+    await user.click(shiftBox(sheet));
+    const opts = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    await user.keyboard("{Escape}");
+    return opts;
+  };
+  const twoFactories = () => {
+    srv.shifts = [
+      shift(11, "Ca 1", "C1", 6, 14, { factoryId: 1 }),
+      shift(21, "Ca 1", "C1", 6, 14, { factoryId: 2 }),
+      shift(5, "Ca HC", "HC", 22, 23),
+    ];
+    srv.factoryNames = { 1: "NM Bắc", 2: "NM Nam" };
+    srv.lineFactory = { 7: 1, 8: 2 };
+  };
+
+  it("sheet đọc safety.assignableShifts (KHÔNG shiftConfig.list); người bị thu hẹp ⇒ chỉ ca nhà máy của mình ⇒ 10:00 chọn sẵn đúng MỘT ca", async () => {
+    at(10);
+    twoFactories();
+    srv.scope = [1];
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    const sheet = await openAssign(user);
+    expect(srv.queryInputs).toContain("safety.assignableShifts:{}");
+    // NM Bắc + toàn hệ thống = HAI "nhà máy" ⇒ nhãn mang nhà máy
+    expect(shiftBox(sheet)).toHaveTextContent("Ca 1 (C1) 06:00–14:00 · NM Bắc");
+    expect(await optionTexts(user, sheet)).toEqual([
+      S("shifts.form.noShift"),
+      "Ca 1 (C1) 06:00–14:00 · NM Bắc",
+      `Ca HC (HC) 22:00–23:00 · ${S("shifts.form.allFactories")}`,
+    ]);
+    await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "70");
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
+    await waitFor(() => expect(calls("assignOperator")).toEqual([expect.objectContaining({ operatorId: 70, shiftConfigId: 11 })]));
+  });
+
+  it("toàn quyền, hai nhà máy cùng 'Ca 1 06–14': chưa chọn chuyền ⇒ không đoán; nhập chuyền 8 (NM Nam) ⇒ input {lineId: 8}, chỉ ca NM Nam, chọn sẵn ca 21", async () => {
+    at(10);
+    twoFactories();
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    const sheet = await openAssign(user);
+    expect(shiftBox(sheet)).toHaveTextContent(S("shifts.form.noShift"));
+    expect(await optionTexts(user, sheet)).toEqual([
+      S("shifts.form.noShift"),
+      "Ca 1 (C1) 06:00–14:00 · NM Bắc",
+      "Ca 1 (C1) 06:00–14:00 · NM Nam",
+      `Ca HC (HC) 22:00–23:00 · ${S("shifts.form.allFactories")}`,
+    ]);
+    await user.type(within(sheet).getByLabelText(S("workforce.lineId")), "8");
+    await waitFor(() => expect(srv.queryInputs).toContain('safety.assignableShifts:{"lineId":8}'));
+    await waitFor(() => expect(shiftBox(sheet)).toHaveTextContent("Ca 1 (C1) 06:00–14:00 · NM Nam"));
+    expect(await optionTexts(user, sheet)).toEqual([
+      S("shifts.form.noShift"),
+      "Ca 1 (C1) 06:00–14:00 · NM Nam",
+      `Ca HC (HC) 22:00–23:00 · ${S("shifts.form.allFactories")}`,
+    ]);
+    await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "71");
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
+    await waitFor(() => expect(calls("assignOperator")).toEqual([expect.objectContaining({ operatorId: 71, lineId: 8, shiftConfigId: 21 })]));
+  });
+
+  it("đã chọn ca NM Bắc rồi đổi sang chuyền NM Nam ⇒ ca cũ không còn trong danh sách ⇒ về mặc định của tập mới (không gửi ca bị từ chối)", async () => {
+    at(3); // ngoài mọi ca ⇒ mặc định = không gắn ca
+    twoFactories();
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    const sheet = await openAssign(user);
+    await user.click(shiftBox(sheet));
+    await user.click(await screen.findByRole("option", { name: "Ca 1 (C1) 06:00–14:00 · NM Bắc" }));
+    expect(shiftBox(sheet)).toHaveTextContent("NM Bắc");
+    await user.type(within(sheet).getByLabelText(S("workforce.lineId")), "8");
+    await waitFor(() => expect(shiftBox(sheet)).toHaveTextContent(S("shifts.form.noShift")));
+    await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "72");
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
+    await waitFor(() => expect(calls("assignOperator").length).toBe(1));
+    expect("shiftConfigId" in (calls("assignOperator")[0] as Row)).toBe(false);
+  });
+
+  it("một nhà máy duy nhất (mọi ca toàn hệ thống hoặc cùng nhà máy) ⇒ nhãn KHÔNG thêm nhà máy (như trước)", async () => {
+    srv.shifts = [shift(1, "Ca sáng", "A", 6, 14, { factoryId: 1 }), shift(2, "Ca chiều", "B", 14, 22, { factoryId: 1 })];
+    srv.factoryNames = { 1: "NM Bắc" };
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    const sheet = await openAssign(user);
+    expect(await optionTexts(user, sheet)).toEqual([S("shifts.form.noShift"), "Ca sáng (A) 06:00–14:00", "Ca chiều (B) 14:00–22:00"]);
+  });
+
+  it("phân công lại: ca cũ của nhà máy NGOÀI phạm vi (không còn trong tập) ⇒ không điền sẵn ca đó, rơi về ca 'bây giờ' trong tập", async () => {
+    at(10);
+    twoFactories();
+    srv.scope = [1];
+    Object.assign(srv.assignments.find((a) => a.id === 4)!, { shiftConfigId: 21 });
+    srv.snap.assignments = srv.assignments.map((x) => ({ ...x }));
+    const user = userEvent.setup();
+    render(<ProductionShifts />);
+    await user.click(within(rowOf(44)).getByRole("button", { name: S("workforce.reassign") }));
+    const sheet = await waitLayer("workforce-reassign");
+    // hàng #4 có lineId 1 (không thuộc bản đồ chuyền ⇒ nhà máy không rõ ⇒ chỉ lọc phạm vi)
+    expect(srv.queryInputs).toContain('safety.assignableShifts:{"lineId":1,"stationId":2}');
+    expect(shiftBox(sheet)).toHaveTextContent("Ca 1 (C1) 06:00–14:00 · NM Bắc");
+    await user.click(within(sheet).getByRole("button", { name: S("workforce.reassign") }));
+    await waitFor(() => expect(calls("reassignOperator")).toEqual([expect.objectContaining({ assignmentId: 4, shiftConfigId: 11 })]));
   });
 });

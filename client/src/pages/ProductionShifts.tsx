@@ -78,6 +78,8 @@ type RouterOutputs = inferRouterOutputs<AppRouter>;
 type BoardStation = RouterOutputs["safety"]["currentBoard"][number];
 type Assignment = RouterOutputs["safety"]["listAssignments"][number];
 type ShiftConfig = RouterOutputs["shiftConfig"]["list"][number];
+/** final wave (I2) — ca cho bộ chọn của sheet: đang hoạt động, trong phạm vi, thuộc nhà máy của chuyền/trạm (server lọc). */
+type AssignableShift = RouterOutputs["safety"]["assignableShifts"][number];
 
 const ASSIGN_STATUSES = ["planned", "active", "completed", "cancelled"] as const;
 type AssignStatus = (typeof ASSIGN_STATUSES)[number];
@@ -147,6 +149,20 @@ export function shiftContains(s: ShiftWindow, now: Date): boolean {
   if (start === end) return true;
   return start < end ? m >= start && m < end : m >= start || m < end;
 }
+/**
+ * doc 81 Đợt 3b final wave (I2) — nhãn ca trong bộ chọn: tập ca trải trên HƠN MỘT nhà máy (ca toàn hệ thống tính là một "nhà
+ * máy" riêng) ⇒ thêm " · <nhà máy>" để phân biệt ca trùng tên/giờ; một nhà máy ⇒ nhãn như cũ.
+ */
+export function assignableShiftLabels(
+  shifts: ReadonlyArray<AssignableShift>,
+  allFactories: string,
+): Map<number, string> {
+  const multi = new Set(shifts.map((s) => s.factoryId ?? null)).size > 1;
+  return new Map(
+    shifts.map((s) => [s.id, multi ? `${shiftLabel(s)} · ${s.factoryId == null ? allFactories : (s.factoryName ?? `#${s.factoryId}`)}` : shiftLabel(s)]),
+  );
+}
+
 /** Ca mặc định của sheet: ca ĐANG HOẠT ĐỘNG có khung chứa `now`, chỉ khi ĐÚNG MỘT ca khớp (0 hoặc ≥ 2 ⇒ `null`, không đoán). */
 export function defaultShiftId(shifts: ReadonlyArray<ShiftWindow & { id: number; isActive: boolean }>, now: Date): number | null {
   const hits = shifts.filter((s) => s.isActive && shiftContains(s, now));
@@ -300,7 +316,7 @@ export default function ProductionShifts() {
       title: t("workforce.assignTitle", "Assign operator"),
       render: () =>
         workforceUnsettled ? unsettledBody(workforceStatus) : (
-          <AssignmentForm mode="assign" shifts={shifts} pending={assignM.isPending} onSubmit={(v, done) => assignM.mutate(v, { onSuccess: done })} />
+          <AssignmentForm mode="assign" pending={assignM.isPending} onSubmit={(v, done) => assignM.mutate(v, { onSuccess: done })} />
         ),
     };
     // Nút "Phân công lại" cũ: chỉ khi có quyền, khoá khi phân công đã kết thúc (không theo cờ).
@@ -322,7 +338,6 @@ export default function ProductionShifts() {
             key={a.id}
             mode="reassign"
             existing={a}
-            shifts={shifts}
             pending={reassignM.isPending}
             onSubmit={(v, done) => reassignM.mutate({ assignmentId: a.id, ...v }, { onSuccess: done })}
           />
@@ -717,12 +732,17 @@ type AssignmentFormValue = {
   shiftConfigId?: number;
 };
 
+/** Ô nhập id (chuyền/trạm) ⇒ số nguyên dương, hoặc `undefined` (trống/sai) — cùng luật với payload gửi đi. */
+const positiveIntOrUndef = (v: string): number | undefined => {
+  const n = v ? Number(v) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+};
+
 function AssignmentForm({
-  mode, existing, shifts, pending, onSubmit,
+  mode, existing, pending, onSubmit,
 }: {
   mode: "assign" | "reassign";
   existing?: Assignment;
-  shifts: ShiftConfig[];
   pending: boolean;
   onSubmit: (v: AssignmentFormValue, done: () => void) => void;
 }) {
@@ -733,14 +753,6 @@ function AssignmentForm({
   // khi sheet đang mở qua mốc giờ). Mặc định: ca của phân công cũ (phân công lại, nếu còn hoạt động) › ca chứa "bây giờ" nếu
   // ĐÚNG MỘT ca khớp › không gắn ca. Danh sách ca có thể về SAU khi sheet mở ⇒ mặc định tính lại cho tới khi người dùng chọn.
   const [openedAt] = useState(() => new Date());
-  const activeShifts = useMemo(() => shifts.filter((s) => s.isActive), [shifts]);
-  const existingShiftId =
-    existing?.shiftConfigId != null && activeShifts.some((s) => s.id === existing.shiftConfigId) ? existing.shiftConfigId : null;
-  const nowShiftId = defaultShiftId(activeShifts, openedAt);
-  const defaultShift = existingShiftId != null ? String(existingShiftId) : nowShiftId != null ? String(nowShiftId) : NO_SHIFT;
-  const [shiftPick, setShiftPick] = useState<string | null>(null);
-  const shiftValue = shiftPick ?? defaultShift;
-  const showNowHint = shiftPick == null && existingShiftId == null && nowShiftId != null;
   const initial = useMemo(
     () => ({
       operatorId: existing?.operatorId != null ? String(existing.operatorId) : "",
@@ -755,6 +767,30 @@ function AssignmentForm({
   const [lineId, setLineId] = useState(initial.lineId);
   const [stationId, setStationId] = useState(initial.stationId);
   const [skillLevel, setSkillLevel] = useState(initial.skillLevel);
+
+  // doc 81 Đợt 3b final wave (I2): tập ca do SERVER chọn — đang hoạt động, TRONG PHẠM VI người dùng, và (khi đã nhập chuyền /
+  // trạm) chỉ ca của NHÀ MÁY chuyền/trạm đó + ca toàn hệ thống (trước: `shiftConfig.list()` mọi nhà máy ⇒ mặc định có thể là ca
+  // server từ chối). Mặc định "bây giờ" và ca cũ (phân công lại) chỉ tính TRONG tập này; ca đã chọn rơi khỏi tập (đổi chuyền
+  // sang nhà máy khác) ⇒ về mặc định của tập mới.
+  const lineNum = positiveIntOrUndef(lineId);
+  const stationNum = positiveIntOrUndef(stationId);
+  const shiftsQ = trpc.safety.assignableShifts.useQuery(
+    { ...(lineNum != null ? { lineId: lineNum } : {}), ...(stationNum != null ? { stationId: stationNum } : {}) },
+    { placeholderData: (prev) => prev },
+  );
+  const activeShifts = useMemo(() => ((shiftsQ.data ?? []) as AssignableShift[]).filter((s) => s.isActive), [shiftsQ.data]);
+  const shiftLabels = useMemo(
+    () => assignableShiftLabels(activeShifts, t("shifts.form.allFactories", "All factories")),
+    [activeShifts, t],
+  );
+  const existingShiftId =
+    existing?.shiftConfigId != null && activeShifts.some((s) => s.id === existing.shiftConfigId) ? existing.shiftConfigId : null;
+  const nowShiftId = defaultShiftId(activeShifts, openedAt);
+  const defaultShift = existingShiftId != null ? String(existingShiftId) : nowShiftId != null ? String(nowShiftId) : NO_SHIFT;
+  const [shiftPickRaw, setShiftPick] = useState<string | null>(null);
+  const shiftPick = shiftPickRaw != null && (shiftPickRaw === NO_SHIFT || activeShifts.some((s) => String(s.id) === shiftPickRaw)) ? shiftPickRaw : null;
+  const shiftValue = shiftPick ?? defaultShift;
+  const showNowHint = shiftPick == null && existingShiftId == null && nowShiftId != null;
 
   const dirty =
     operatorId !== initial.operatorId || lineId !== initial.lineId || stationId !== initial.stationId || skillLevel !== initial.skillLevel ||
@@ -818,7 +854,7 @@ function AssignmentForm({
           <SelectContent>
             <SelectItem value={NO_SHIFT}>{t("shifts.form.noShift", "— no shift —")}</SelectItem>
             {activeShifts.map((s) => (
-              <SelectItem key={s.id} value={String(s.id)}>{shiftLabel(s)}</SelectItem>
+              <SelectItem key={s.id} value={String(s.id)}>{shiftLabels.get(s.id) ?? shiftLabel(s)}</SelectItem>
             ))}
           </SelectContent>
         </Select>

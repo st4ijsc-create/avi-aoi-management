@@ -4276,6 +4276,7 @@
       "robotNotActive": "This robot is not loaded by this process's robot gateway (disabled, or ROBOT_GATEWAY_ENABLED is off), so there is no live motion lock to clear.",
       "opcuaSecurityInvalid": "securityMode/securityPolicy is unknown or contradictory (e.g. None with Basic256Sha256, or SignAndEncrypt with None). Use None/None, or Sign/SignAndEncrypt with a policy such as Basic256Sha256.",
       "shiftInactive": "This shift is inactive — pick an active shift or leave the shift empty.",
+      "shiftFactoryMismatch": "This shift belongs to a different factory than the selected line/station — pick a shift of that factory (or an all-factory shift), or leave the shift empty.",
       "secretReentryRequired": "You changed {{field}} — where or how the stored secret is sent — so the saved password/secret is not reused. Re-enter the password/secret and save again; nothing has been changed yet.",
       "motionLockUnsupported": "This vendor's driver opens one connection per command and has no motion lock; there is nothing to clear.",
       "motionLockChanged": "The motion lock changed while you were confirming (a new link loss). Nothing was cleared; re-read the robot state and confirm again.",
@@ -21832,6 +21833,7 @@
     "form": {
       "shift": "Shift (optional)",
       "noShift": "— no shift —",
+      "allFactories": "All factories",
       "defaultHint": "Pre-selected: the shift running now."
     }
   },

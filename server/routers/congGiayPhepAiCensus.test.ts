@@ -305,7 +305,14 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   phục vụ hai SKU), nên bộ suy cấu trúc không thấy cổng — CỐ Ý, không phải bề mặt AI. beMatAi/aiCoCong/aiMienTru/
  *   ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. `tong` 2295 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2295, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-09 doc 81 Đợt 3b final wave (I2 — bộ chọn ca theo phạm vi) — **tong 2295 → 2296, ghim lại ô `tong`**: đúng MỘT
+ *   thủ tục MỚI `safety.assignableShifts` (query chỉ đọc, `safetyRouter.ts` — `protectedProcedure` đã che bằng
+ *   `moduleProcedure("MOD_OT_CONTROL")` cho MỌI thủ tục ⇒ `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 106 → 107, cùng khuôn
+ *   `safety.sourceHealth`). Không phải bề mặt AI ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong KHÔNG đổi. `tong` 2296 trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2296, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -333,7 +340,10 @@ const GHIM_MODULE_KHAC = {
   //   `moduleProcedure("MOD_OT_CONTROL")` cho MỌI thủ tục (Doc 38 Đợt Q). Cố ý: cùng cổng giấy phép
   //   với các thủ tục an toàn anh em. Không thủ tục cũ nào đổi cổng. (Ô `tong` của §2 đỏ TỪ TRƯỚC —
   //   ghim 2223, đo HEAD `290004e2c` = 2282; lượt này +1 → 2283, chính là thủ tục này.)
-  MOD_OT_CONTROL: 106,
+  // ★ 2026-10-09 doc 81 Đợt 3b final wave (I2) — 106 → 107: thủ tục MỚI `safety.assignableShifts` (query chỉ đọc, ca cho bộ
+  //   chọn của sheet phân công) trong `safetyRouter.ts` — cùng cổng MOD_OT_CONTROL với thủ tục an toàn anh em. Không thủ tục
+  //   cũ nào đổi cổng.
+  MOD_OT_CONTROL: 107,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

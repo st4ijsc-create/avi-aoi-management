@@ -23,14 +23,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { eq, desc, isNull } from "drizzle-orm";
+import { eq, desc, isNull, and, or, inArray, asc } from "drizzle-orm";
 import { router, moduleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { collaborationSessions, operatorAssignments, shiftConfigs } from "../../drizzle/schema";
+import { collaborationSessions, operatorAssignments, shiftConfigs, factories, workshops, productionLines, stations } from "../../drizzle/schema";
 import {
   safetyAuditEnabled,
   record as recordSafetyEvent,
@@ -81,11 +81,47 @@ async function db() {
  *   2. nằm TRONG PHẠM VI người gọi — ca toàn hệ thống (`factoryId IS NULL`, như `getShiftConfigs`) thuộc mọi phạm vi; ca của
  *      một nhà máy chỉ khi nhà máy đó thuộc `resolveTenantFactoryScope(phamViCua(ctx))` (admin/không lọc ⇒ `null` ⇒ mọi ca).
  *      Ngoài phạm vi ⇒ CÙNG lỗi như id không tồn tại (không lộ sự tồn tại của ca nhà máy khác);
- *   3. ĐANG HOẠT ĐỘNG (`isActive`).
+ *   3. ĐANG HOẠT ĐỘNG (`isActive`);
+ *   4. (final wave I2) ca của MỘT nhà máy chỉ khi phân công thuộc CÙNG nhà máy (`assignmentFactoryId`: chuyền › trạm ›
+ *      `factoryId`; không rõ ⇒ không kiểm) ⇒ INVALID_VALUE `shiftFactoryMismatch`. Kiểm sau (2) — không lộ nhà máy của ca
+ *      ngoài phạm vi.
  * Bỏ ca ⇒ không kiểm gì, hành vi y như trước. Gọi SAU cổng cờ nhân lực (thứ tự cổng cũ không đổi) và TRƯỚC khi ghi (phân
  * công lại với ca sai không huỷ phân công cũ).
  */
-async function assertAssignableShift(shiftConfigId: number | null | undefined, ctx: CoDanhTinh): Promise<void> {
+/**
+ * doc 81 Đợt 3b final wave (I2) — nhà máy của một phân công, theo thứ tự: CHUYỀN (`production_lines` → `workshops.factoryId`)
+ * › TRẠM (`stations` → chuyền → xưởng) › `factoryId` khai trong input. Id chuyền/trạm không tồn tại ⇒ bỏ qua bậc đó (không
+ * đoán); không bậc nào ra ⇒ `null` (nhà máy không rõ ⇒ không kiểm ca ⇄ nhà máy, như trước Đợt 3b).
+ */
+async function assignmentFactoryId(input: { lineId?: number | null; stationId?: number | null; factoryId?: number | null }): Promise<number | null> {
+  const d = await db();
+  if (input.lineId != null) {
+    const [r] = await d
+      .select({ factoryId: workshops.factoryId })
+      .from(productionLines)
+      .innerJoin(workshops, eq(workshops.id, productionLines.workshopId))
+      .where(eq(productionLines.id, input.lineId))
+      .limit(1);
+    if (r) return r.factoryId;
+  }
+  if (input.stationId != null) {
+    const [r] = await d
+      .select({ factoryId: workshops.factoryId })
+      .from(stations)
+      .innerJoin(productionLines, eq(productionLines.id, stations.lineId))
+      .innerJoin(workshops, eq(workshops.id, productionLines.workshopId))
+      .where(eq(stations.id, input.stationId))
+      .limit(1);
+    if (r) return r.factoryId;
+  }
+  return input.factoryId ?? null;
+}
+
+async function assertAssignableShift(
+  shiftConfigId: number | null | undefined,
+  ctx: CoDanhTinh,
+  target: { lineId?: number | null; stationId?: number | null; factoryId?: number | null } = {},
+): Promise<void> {
   if (shiftConfigId == null) return;
   const d = await db();
   const [ca] = await d
@@ -103,6 +139,19 @@ async function assertAssignableShift(shiftConfigId: number | null | undefined, c
   }
   if (!ca || !inScope) {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "shiftConfig" }, `Shift ${shiftConfigId} not found`);
+  }
+  // final wave (I2): ca của một nhà máy chỉ gắn được vào phân công CÙNG nhà máy (ca toàn hệ thống hợp mọi nơi). Kiểm SAU phạm
+  // vi (ca ngoài phạm vi vẫn là "không tìm thấy" — không lộ nhà máy của nó).
+  if (ca.factoryId != null) {
+    const fac = await assignmentFactoryId(target);
+    if (fac != null && fac !== ca.factoryId) {
+      throw appError(
+        "BAD_REQUEST",
+        "INVALID_VALUE",
+        { field: "shiftConfigId", reason: "shiftFactoryMismatch" },
+        `Shift ${shiftConfigId} belongs to factory ${ca.factoryId}, the assignment to factory ${fac}`,
+      );
+    }
   }
   if (!ca.isActive) {
     throw appError(
@@ -731,6 +780,50 @@ export const safetyRouter = router({
         .limit(input?.limit ?? 200);
     }),
 
+  /**
+   * doc 81 Đợt 3b final wave (I2) — ca cho bộ chọn của sheet phân công: ĐANG HOẠT ĐỘNG, TRONG PHẠM VI người gọi (ca toàn hệ
+   * thống thuộc mọi phạm vi — cùng luật `assertAssignableShift`) và, khi đã chọn chuyền/trạm, chỉ ca của NHÀ MÁY chuyền/trạm
+   * đó (+ toàn hệ thống). Kèm tên nhà máy để nhãn phân biệt ca trùng tên giữa các nhà máy. Chỉ đọc.
+   */
+  assignableShifts: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z
+        .object({
+          lineId: z.number().int().positive().optional(),
+          stationId: z.number().int().positive().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input, ctx }) => {
+      const d = await db();
+      const { factoryIds } = await resolveTenantFactoryScope(phamViCua(ctx));
+      const target = await assignmentFactoryId({ lineId: input?.lineId, stationId: input?.stationId });
+      const conds = [eq(shiftConfigs.isActive, true)];
+      if (factoryIds !== null) {
+        conds.push(factoryIds.length ? or(isNull(shiftConfigs.factoryId), inArray(shiftConfigs.factoryId, factoryIds))! : isNull(shiftConfigs.factoryId));
+      }
+      if (target != null) conds.push(or(isNull(shiftConfigs.factoryId), eq(shiftConfigs.factoryId, target))!);
+      return d
+        .select({
+          id: shiftConfigs.id,
+          factoryId: shiftConfigs.factoryId,
+          factoryName: factories.name,
+          name: shiftConfigs.name,
+          code: shiftConfigs.code,
+          startHour: shiftConfigs.startHour,
+          startMinute: shiftConfigs.startMinute,
+          endHour: shiftConfigs.endHour,
+          endMinute: shiftConfigs.endMinute,
+          isActive: shiftConfigs.isActive,
+          orderIndex: shiftConfigs.orderIndex,
+        })
+        .from(shiftConfigs)
+        .leftJoin(factories, eq(factories.id, shiftConfigs.factoryId))
+        .where(and(...conds))
+        .orderBy(asc(shiftConfigs.orderIndex), asc(shiftConfigs.id));
+    }),
+
   assignOperator: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
@@ -751,7 +844,7 @@ export const safetyRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
-      await assertAssignableShift(input.shiftConfigId, ctx);
+      await assertAssignableShift(input.shiftConfigId, ctx, input);
       const r = await assignOperator(input);
       if (!r.ok && r.conflict) {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignSafetyOperator" }, `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})`);
@@ -780,7 +873,7 @@ export const safetyRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
-      await assertAssignableShift(input.shiftConfigId, ctx);
+      await assertAssignableShift(input.shiftConfigId, ctx, input);
       const { assignmentId, ...rest } = input;
       const r = await reassignOperator(assignmentId, rest);
       if (!r.ok && r.conflict) {
