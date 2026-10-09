@@ -7344,7 +7344,8 @@
     "alertMappings": "Alert mappings",
     "highPriorityOnly": "High priority only",
     "snooze1h": "Snooze 1 hour",
-    "snoozed": "Snoozed"
+    "snoozed": "Snoozed",
+    "snoozeHint": "Snoozed: only the bell count and pop-ups for normal items are muted — urgent/critical items still alert; the list stays complete."
   },
   "oee": {
     "updateTarget": "Update target",

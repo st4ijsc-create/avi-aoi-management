@@ -7324,7 +7324,8 @@
     "noNew": "Không có thông báo mới",
     "highPriorityOnly": "Chỉ ưu tiên cao",
     "snooze1h": "Tạm tắt 1 giờ",
-    "snoozed": "Đang tạm tắt"
+    "snoozed": "Đang tạm tắt",
+    "snoozeHint": "Đang tạm tắt: chỉ ẩn số trên chuông và thông báo nổi của mục thường — mục khẩn/nghiêm trọng vẫn báo; danh sách vẫn đầy đủ."
   },
   "oee": {
     "targetSettingsDescription": "Thiết lập mục tiêu OEE cho máy hoặc dây chuyền",

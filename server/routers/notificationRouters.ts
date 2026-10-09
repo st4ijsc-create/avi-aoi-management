@@ -25,9 +25,11 @@ export const notificationRouter = router({
       });
     }),
 
+  // doc 81 Đợt 3c Task 1 (R-3c-a) — `priority` TUỲ CHỌN: chuông lúc "tạm tắt" chỉ đếm mục KHẨN (URGENT). Không truyền ⇒ như cũ.
   unreadCount: protectedProcedure
-    .query(async ({ ctx }) => {
-      return db.getUnreadNotificationCount(ctx.user.id);
+    .input(z.object({ priority: z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return db.getUnreadNotificationCount(ctx.user.id, input?.priority);
     }),
 
   markAsRead: protectedProcedure

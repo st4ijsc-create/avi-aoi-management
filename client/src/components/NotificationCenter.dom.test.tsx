@@ -30,12 +30,24 @@ const sock = vi.hoisted(() => ({
   alerts: [] as Array<Record<string, unknown>>,
   clearAlerts: vi.fn(),
   dismissAlert: vi.fn(),
+  onAlert: undefined as undefined | ((a: Record<string, unknown>) => void),
 }));
 vi.mock("@/hooks/useSocket", () => ({
-  useSocket: () => ({ isConnected: true, alerts: sock.alerts, clearAlerts: sock.clearAlerts, dismissAlert: sock.dismissAlert }),
+  useSocket: (o: { onAlert?: (a: Record<string, unknown>) => void }) => {
+    sock.onAlert = o.onAlert;
+    return { isConnected: true, alerts: sock.alerts, clearAlerts: sock.clearAlerts, dismissAlert: sock.dismissAlert };
+  },
+}));
+// Đợt 3c Task 1 — luồng cảnh báo hệ sinh thái cấu hình được (mức critical/high) + bắt onEvent để thử toast lúc tạm tắt.
+const eco = vi.hoisted(() => ({
+  events: [] as Array<Record<string, unknown>>,
+  onEvent: undefined as undefined | ((e: Record<string, unknown>) => void),
 }));
 vi.mock("@/hooks/useEcosystemEvents", () => ({
-  useEcosystemEvents: () => ({ events: [], clear: vi.fn(), dismiss: vi.fn() }),
+  useEcosystemEvents: (o: { onEvent?: (e: Record<string, unknown>) => void }) => {
+    eco.onEvent = o.onEvent;
+    return { events: eco.events, clear: vi.fn(), dismiss: vi.fn() };
+  },
 }));
 
 const nav = vi.hoisted(() => ({ to: [] as string[] }));
@@ -50,6 +62,8 @@ type Row = {
 };
 const srv = vi.hoisted(() => ({
   unread: 0,
+  urgent: 0,
+  unreadInputs: [] as unknown[],
   rows: [] as Row[],
   unreadOpts: [] as Array<Record<string, unknown>>,
   listCalls: [] as Array<{ input: unknown; opts: Record<string, unknown> }>,
@@ -76,9 +90,11 @@ vi.mock("@/lib/trpc", () => {
       useUtils: () => ({ notification: { list: inv("notification.list"), unreadCount: inv("notification.unreadCount") } }),
       notification: {
         unreadCount: {
-          useQuery: (_i: unknown, opts: Record<string, unknown>) => {
+          useQuery: (i: unknown, opts: Record<string, unknown>) => {
             srv.unreadOpts.push(opts);
-            return { data: opts?.enabled === false ? undefined : srv.unread, isError: false };
+            srv.unreadInputs.push(i);
+            const urgentOnly = (i as { priority?: string } | undefined)?.priority === "URGENT";
+            return { data: opts?.enabled === false ? undefined : urgentOnly ? srv.urgent : srv.unread, isError: false };
           },
         },
         list: {
@@ -128,6 +144,9 @@ beforeEach(() => {
   sock.alerts = [];
   sock.clearAlerts.mockClear();
   srv.unread = 0;
+  srv.urgent = 0;
+  srv.unreadInputs = [];
+  eco.events = [];
   srv.rows = [];
   srv.unreadOpts = [];
   srv.listCalls = [];
@@ -371,7 +390,121 @@ describe("Đợt 3b final wave — chuông thông báo", () => {
   });
 });
 
+// ── doc 81 Đợt 3c Task 1 — Ruling R-3c-a: "tạm tắt" tắt số trên chuông (và toast) cho MỌI mục KHÔNG khẩn — cả cảnh báo
+//    socket lẫn thông báo server; mục KHẨN (server URGENT / hệ sinh thái critical) vẫn có số; DANH SÁCH không bị ảnh hưởng.
+const snoozeFor = (ms: number) => localStorage.setItem("notifPrefs:7", JSON.stringify({ highPriorityOnly: false, snoozeUntil: Date.now() + ms }));
+const ecoEvt = (id: string, severity: string, title = `E-${id}`) => ({ id, ts: Date.now(), kind: "safety", severity, source: "t", scope: {}, title });
+
+describe("Đợt 3c Task 1 — tạm tắt phủ cả thông báo server (R-3c-a)", () => {
+  it("đang tạm tắt + server có chưa đọc THƯỜNG + cảnh báo socket + hệ sinh thái high ⇒ KHÔNG có số trên chuông", () => {
+    snoozeFor(3600_000);
+    srv.unread = 3;
+    srv.urgent = 0;
+    sock.alerts = [{ type: "NG_ALERT", machineName: "M1", message: "NG!", timestamp: new Date() }];
+    eco.events = [ecoEvt("h1", "high")];
+    render(<NotificationCenter />);
+    expect(bell().textContent).toBe("");
+  });
+
+  it("đang tạm tắt + server có mục KHẨN (URGENT) ⇒ số = số mục khẩn (không phải tổng)", () => {
+    snoozeFor(3600_000);
+    srv.unread = 5;
+    srv.urgent = 2;
+    sock.alerts = [{ type: "NG_ALERT", machineName: "M1", message: "NG!", timestamp: new Date() }];
+    render(<NotificationCenter />);
+    expect(within(bell()).getByText("2")).toBeInTheDocument();
+    expect(srv.unreadInputs).toContainEqual({ priority: "URGENT" });
+  });
+
+  it("đang tạm tắt + cảnh báo hệ sinh thái CRITICAL ⇒ vẫn có số (critical + URGENT cộng lại); high không đếm", () => {
+    snoozeFor(3600_000);
+    srv.unread = 4;
+    srv.urgent = 1;
+    eco.events = [ecoEvt("c1", "critical"), ecoEvt("h1", "high"), ecoEvt("c2", "critical")];
+    render(<NotificationCenter />);
+    expect(within(bell()).getByText("3")).toBeInTheDocument();
+  });
+
+  it("KHÔNG tạm tắt ⇒ số như cũ (mọi mục), truy vấn KHẨN không chạy", () => {
+    srv.unread = 3;
+    srv.urgent = 1;
+    eco.events = [ecoEvt("h1", "high")];
+    sock.alerts = [{ type: "NG_ALERT", machineName: "M1", message: "NG!", timestamp: new Date() }];
+    render(<NotificationCenter />);
+    expect(within(bell()).getByText("5")).toBeInTheDocument();
+    const urgentOpts = srv.unreadOpts.filter((_, i) => (srv.unreadInputs[i] as { priority?: string } | undefined)?.priority === "URGENT");
+    expect(urgentOpts.every((o) => o.enabled === false)).toBe(true);
+  });
+
+  it("hết hạn tạm tắt ⇒ số TRỞ LẠI mà không cần thao tác nào", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      snoozeFor(60_000);
+      srv.unread = 3;
+      render(<NotificationCenter />);
+      expect(bell().textContent).toBe("");
+      act(() => { vi.advanceTimersByTime(61_000); });
+      expect(within(bell()).getByText("3")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("DANH SÁCH không bị ảnh hưởng: đang tạm tắt vẫn mở được và hiện ĐỦ — hộp thư server, cảnh báo socket, hệ sinh thái (cả critical)", () => {
+    snoozeFor(3600_000);
+    srv.unread = 1;
+    srv.rows = [row(31)];
+    sock.alerts = [{ type: "NG_ALERT", machineName: "Máy B", message: "NG lúc tạm tắt", timestamp: new Date() }];
+    eco.events = [ecoEvt("c9", "critical", "Dừng khẩn cấp L2"), ecoEvt("h9", "high", "SPC lệch")];
+    render(<NotificationCenter />);
+    fireEvent.click(bell());
+    expect(screen.getByText("Bạn được giao: ECN-31")).toBeInTheDocument();
+    expect(screen.getByText("NG lúc tạm tắt")).toBeInTheDocument();
+    expect(screen.getByText("Dừng khẩn cấp L2")).toBeInTheDocument();
+    expect(screen.getByText("SPC lệch")).toBeInTheDocument();
+    expect(screen.getByTestId("notif-snooze-hint")).toHaveTextContent(S("notifications.snoozeHint"));
+  });
+
+  it("bấm 'Tạm tắt 1 giờ' ⇒ số tắt ngay (mục thường), hiện lời giải thích; bấm lại ⇒ số trở lại", () => {
+    srv.unread = 2;
+    render(<NotificationCenter />);
+    expect(within(bell()).getByText("2")).toBeInTheDocument();
+    fireEvent.click(bell());
+    expect(screen.queryByTestId("notif-snooze-hint")).toBeNull();
+    // ngăn đang mở (modal) ⇒ nút chuông bị aria-hidden ⇒ tìm kể cả phần bị ẩn.
+    const bellBehind = () => screen.getByRole("button", { name: S("notifications.title"), hidden: true });
+    fireEvent.click(screen.getByRole("button", { name: S("notifications.snooze1h") }));
+    expect(bellBehind().textContent).toBe("");
+    expect(screen.getByTestId("notif-snooze-hint")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: S("notifications.snoozed") }));
+    expect(within(bellBehind()).getByText("2")).toBeInTheDocument();
+    expect(screen.queryByTestId("notif-snooze-hint")).toBeNull();
+  });
+
+  it("toast lúc tạm tắt: cảnh báo socket (NG) và hệ sinh thái HIGH ⇒ KHÔNG toast; CRITICAL ⇒ vẫn toast", () => {
+    snoozeFor(3600_000);
+    render(<NotificationCenter />);
+    act(() => { sock.onAlert?.({ type: "NG_ALERT", machineName: "M1", message: "NG-snz", timestamp: new Date() }); });
+    act(() => { eco.onEvent?.(ecoEvt("h5", "high", "HIGH-snz")); });
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    act(() => { eco.onEvent?.(ecoEvt("c5", "critical", "CRIT-snz")); });
+    expect(toast.error).toHaveBeenCalledWith("CRIT-snz", expect.anything());
+  });
+
+  it("toast KHÔNG tạm tắt ⇒ như cũ (NG ⇒ toast lỗi; high ⇒ toast cảnh báo)", () => {
+    render(<NotificationCenter />);
+    act(() => { sock.onAlert?.({ type: "NG_ALERT", machineName: "M1", message: "NG-on", timestamp: new Date() }); });
+    act(() => { eco.onEvent?.(ecoEvt("h6", "high", "HIGH-on")); });
+    expect(toast.error).toHaveBeenCalledWith("NG-on", expect.anything());
+    expect(toast.warning).toHaveBeenCalledWith("HIGH-on", expect.anything());
+  });
+});
+
 describe("i18n vi/en/zh", () => {
+  it("Đợt 3c: notifications.snoozeHint có ở cả ba", () => {
+    for (const src of [vi_, en_, zh_]) expect(S("notifications.snoozeHint", src).length).toBeGreaterThan(0);
+  });
   it.each([
     "inbox.markReadFailed", "assignment.assignedTitle", "assignment.assignedMessage", "assignment.unassignedTitle", "assignment.unassignedMessage",
     "assignment.entity.ecn", "assignment.entity.recipe", "assignment.entity.interlock_rule", "assignment.entity.changeover", "assignment.entity.orchestration_run",

@@ -25,9 +25,9 @@ async function as(key: "alice" | "bob") {
   return notificationRouter.createCaller({ user: { id: uid[key], role: "engineer", name: `${RUN} ${key}` } } as any);
 }
 
-async function mk(key: string, userId: number, actionUrl: string | null, isRead = false, expiresAt: Date | null = null): Promise<number> {
+async function mk(key: string, userId: number, actionUrl: string | null, isRead = false, expiresAt: Date | null = null, priority = "NORMAL"): Promise<number> {
   const [r] = await sql`INSERT INTO notifications ("userId", type, title, message, "actionUrl", "isRead", priority, "expiresAt")
-    VALUES (${userId}, 'INFO', ${`${RUN} ${key}`}, ${`msg ${key}`}, ${actionUrl}, ${isRead}, 'NORMAL', ${expiresAt}) RETURNING id`;
+    VALUES (${userId}, 'INFO', ${`${RUN} ${key}`}, ${`msg ${key}`}, ${actionUrl}, ${isRead}, ${priority}, ${expiresAt}) RETURNING id`;
   nid[key] = Number(r.id);
   return nid[key];
 }
@@ -129,6 +129,29 @@ describe.skipIf(!DB_URL)("notification.* — chuông thông báo (CSDL _test TH�
       const by = new Map(a.map((n) => [n.id, n.actionUrlBlocked]));
       expect([by.get(nid.aAbs), by.get(nid.aProto), by.get(nid.aBackslash)]).toEqual([true, true, true]);
       expect([by.get(nid.aSafe), by.get(nid.aNull), by.get(nid.aOld)]).toEqual([false, false, false]);
+    });
+  });
+
+  // doc 81 Đợt 3c Task 1 (Ruling R-3c-a) — "tạm tắt" trên chuông vẫn phải cho thấy mục KHẨN (URGENT) của server ⇒ unreadCount
+  // nhận lọc `priority` TUỲ CHỌN (không thêm thủ tục); không truyền ⇒ như cũ (mọi mức).
+  describe("§5 unreadCount lọc theo mức ưu tiên (cho chuông lúc tạm tắt)", () => {
+    it("priority URGENT ⇒ chỉ đếm hàng KHẨN chưa đọc, chưa hết hạn, của CHÍNH mình; không truyền ⇒ đếm mọi mức", async () => {
+      const c = await as("alice");
+      const before = await c.unreadCount();
+      expect(await c.unreadCount({ priority: "URGENT" })).toBe(0);
+      const u1 = await mk("aUrgent", uid.alice, null, false, null, "URGENT");
+      const u2 = await mk("aUrgentRead", uid.alice, null, true, null, "URGENT");
+      const u3 = await mk("aUrgentExpired", uid.alice, null, false, new Date(Date.now() - 3600_000), "URGENT");
+      const h = await mk("aHigh", uid.alice, null, false, null, "HIGH");
+      const b = await mk("bUrgent", uid.bob, null, false, null, "URGENT");
+      try {
+        expect(await c.unreadCount({ priority: "URGENT" })).toBe(1);
+        expect(await c.unreadCount({ priority: "HIGH" })).toBe(1);
+        expect(await c.unreadCount()).toBe(before + 2);
+        expect(await (await as("bob")).unreadCount({ priority: "URGENT" })).toBe(1);
+      } finally {
+        await sql`DELETE FROM notifications WHERE id = ANY(${[u1, u2, u3, h, b]})`;
+      }
     });
   });
 

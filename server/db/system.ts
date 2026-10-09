@@ -695,7 +695,7 @@ export async function getNotifications(userId: number, filters?: {
     .offset(filters?.offset || 0);
 }
 
-export async function getUnreadNotificationCount(userId: number) {
+export async function getUnreadNotificationCount(userId: number, priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT') {
   const db = await getDb();
   if (!db) return 0;
   
@@ -705,6 +705,8 @@ export async function getUnreadNotificationCount(userId: number) {
       eq(notifications.userId, userId),
       eq(notifications.isRead, false),
       notExpired(),
+      // doc 81 Đợt 3c Task 1 — lọc mức ưu tiên tuỳ chọn (chuông lúc tạm tắt chỉ đếm URGENT).
+      priority ? eq(notifications.priority, priority) : undefined,
     ));
 
   // doc 81 Đợt 3b Task 3 — COUNT(*) là bigint ⇒ postgres-js trả CHUỖI ("5", và "0" còn truthy) dù có `sql<number>`.

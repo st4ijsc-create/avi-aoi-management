@@ -7127,7 +7127,8 @@
     "alertMappings": "警告mappings",
     "highPriorityOnly": "仅高优先级",
     "snooze1h": "延后 1 小时",
-    "snoozed": "已延后"
+    "snoozed": "已延后",
+    "snoozeHint": "已延后：仅静音普通项的铃铛计数和弹出提示——紧急/严重项仍会提醒；列表保持完整。"
   },
   "oee": {
     "updateTarget": "更新目标",
