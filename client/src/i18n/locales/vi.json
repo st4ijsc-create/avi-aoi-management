@@ -7272,7 +7272,21 @@
       "markAllRead": "Đánh dấu tất cả đã đọc",
       "linkBlocked": "Liên kết không hợp lệ — không mở",
       "loadFailed": "Không tải được thông báo của bạn",
-      "unread": "Chưa đọc"
+      "unread": "Chưa đọc",
+      "markReadFailed": "Không đánh dấu đã đọc được — thử lại sau."
+    },
+    "assignment": {
+      "assignedTitle": "Bạn được giao: {{label}}",
+      "assignedMessage": "{{by}} giao cho bạn {{entity}} chờ duyệt. Được giao không đổi quyền duyệt.",
+      "unassignedTitle": "Đã bỏ giao: {{label}}",
+      "unassignedMessage": "{{by}} đã bỏ giao {{entity}} này khỏi bạn.",
+      "entity": {
+        "ecn": "ECN",
+        "recipe": "recipe",
+        "interlock_rule": "interlock rule",
+        "changeover": "yêu cầu đổi model",
+        "orchestration_run": "lần chạy orchestration"
+      }
     },
     "maxCustomSoundsReached": "Tối đa Tùy chỉnh sounds reached",
     "configureAlertSounds": "Cấu hình Cảnh báo sounds",

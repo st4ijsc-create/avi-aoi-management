@@ -178,6 +178,13 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       expect(n[0].actionUrl).toBe(`/engineering-changes?flyout=ecn&flyoutId=${ecnId}`);
       expect(n[0].entityType).toBe("engineering_ecn");
       expect(n[0].title).toContain("Bạn được giao");
+      // doc 81 Đợt 3b final wave — khoá i18n + tham số trong metadata (client dịch bằng t(), chữ đã lưu là dự phòng).
+      const [{ title: ecnTitle }] = await sql`SELECT title FROM engineering_changes WHERE id = ${ecnId}`;
+      expect((n[0].metadata as any).i18n).toEqual({
+        title: "notifications.assignment.assignedTitle",
+        message: "notifications.assignment.assignedMessage",
+        params: { label: expect.stringContaining(ecnTitle), by: `${RUN} supAssigner`, entityType: "ecn", entityId: ecnId },
+      });
     });
 
     it("giao lại A→B (CAS đúng A) ⇒ A tắt, B active · audit [unassign, assign] · A nhận 'bỏ giao', B nhận 'được giao'", async () => {
@@ -215,6 +222,13 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       expect(n[0].title).toContain(name);
       expect(n[1].title).not.toContain(name);
       expect(n[1].title).toBe(`Đã bỏ giao: interlock rule #${ruleId}`);
+      // final wave — bản i18n của thông báo BỎ GIAO cũng KHÔNG mang tên mục (label null; client dựng "<loại> #id").
+      expect((n[1].metadata as any).i18n).toEqual({
+        title: "notifications.assignment.unassignedTitle",
+        message: "notifications.assignment.unassignedMessage",
+        params: { label: null, by: `${RUN} supAssigner`, entityType: "interlock_rule", entityId: ruleId },
+      });
+      expect(JSON.stringify((n[1].metadata as any).i18n)).not.toContain(name);
     });
 
     it("link sâu từng loại: recipe ?code=&tab=approval · changeover trang · run ?filter=pending&tab=approvals", async () => {

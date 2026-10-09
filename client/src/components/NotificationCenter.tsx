@@ -30,6 +30,29 @@ import { safeInternalPath } from "@shared/internalPath";
 const INBOX_POLL_MS = 30_000;
 const INBOX_LIMIT = 20;
 
+type TFn = (key: string, opts?: Record<string, unknown>) => string;
+/**
+ * doc 81 Đợt 3b final wave — chữ của một thông báo theo NGÔN NGỮ APP: hàng mang `metadata.i18n` (khoá + tham số — vd giao
+ * việc Kỹ thuật) ⇒ dịch bằng t(); khoá không có trong từ điển / hàng cũ ⇒ chữ đã lưu (dự phòng). Thông báo bỏ giao không có
+ * `label` (không mang tên mục) ⇒ "<loại> #<id>".
+ */
+export function inboxText(
+  n: { title: string; message: string; metadata?: unknown },
+  t: TFn,
+  exists: (key: string) => boolean,
+): { title: string; message: string } {
+  const m = (n.metadata as { i18n?: { title?: unknown; message?: unknown; params?: Record<string, unknown> } } | null | undefined)?.i18n;
+  if (!m || typeof m.title !== "string" || typeof m.message !== "string") return { title: n.title, message: n.message };
+  const p = m.params ?? {};
+  const entity = typeof p.entityType === "string" ? t(`notifications.assignment.entity.${p.entityType}`, { defaultValue: p.entityType }) : "";
+  const label = typeof p.label === "string" && p.label ? p.label : `${entity} #${String(p.entityId ?? "")}`;
+  const vars = { ...p, entity, label, interpolation: { escapeValue: false } };
+  return {
+    title: exists(m.title) ? t(m.title, vars) : n.title,
+    message: exists(m.message) ? t(m.message, vars) : n.message,
+  };
+}
+
 interface NotificationCenterProps {
   factoryId?: number;
   workshopId?: number;
@@ -38,7 +61,7 @@ interface NotificationCenterProps {
 
 export function NotificationCenter({ factoryId, workshopId, machineId }: NotificationCenterProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const handleAlert = (alert: InspectionAlert) => {
     // Show toast notification for important alerts
@@ -119,15 +142,24 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     void utils.notification.list.invalidate();
     void utils.notification.unreadCount.invalidate();
   };
-  const markRead = trpc.notification.markAsRead.useMutation({ onSettled: refreshInbox });
-  const markAllRead = trpc.notification.markAllAsRead.useMutation({ onSettled: refreshInbox });
+  // final wave: lỗi đánh dấu đã đọc ⇒ báo (trước: im lặng, chấm số đứng yên không lý do).
+  const onMarkError = () => toast.error(t('notifications.inbox.markReadFailed'));
+  const markRead = trpc.notification.markAsRead.useMutation({ onSettled: refreshInbox, onError: onMarkError });
+  const markAllRead = trpc.notification.markAllAsRead.useMutation({ onSettled: refreshInbox, onError: onMarkError });
   const inbox = inboxQ.data ?? [];
   const inboxUnread = Number(inboxUnreadQ.data ?? 0) || 0;
-  const openInboxItem = (n: { id: number; isRead: boolean; actionUrl: string | null }) => {
+  /** Link bị CHẶN: server đã xoá (`actionUrlBlocked`, final wave) hoặc client kiểm lại thấy không phải đường nội bộ. */
+  const linkBlocked = (n: { actionUrl: string | null; actionUrlBlocked?: boolean }) =>
+    !!n.actionUrlBlocked || (n.actionUrl != null && safeInternalPath(n.actionUrl) == null);
+  const openInboxItem = (n: { id: number; isRead: boolean; actionUrl: string | null; actionUrlBlocked?: boolean }) => {
     if (!n.isRead) markRead.mutate({ id: n.id });
     // Kiểm LẠI ở client (server đã trả null cho URL lạ): chỉ đường nội bộ tương đối mới được đi theo.
     const href = safeInternalPath(n.actionUrl);
-    if (!href) return;
+    if (!href) {
+      // final wave: link bị chặn ⇒ BÁO thay vì im lặng (đã đánh dấu đọc ở trên như trước).
+      if (linkBlocked(n)) toast.warning(t('notifications.inbox.linkBlocked'));
+      return;
+    }
     setIsOpen(false);
     setLocation(href);
   };
@@ -159,7 +191,8 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
 
   const formatTime = (timestamp: Date) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString("vi-VN", {
+    // final wave: giờ theo NGÔN NGỮ APP (trước: cứng "vi-VN" — người dùng en/zh thấy định dạng Việt).
+    return date.toLocaleTimeString(i18n.language, {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
@@ -257,7 +290,8 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
               )}
               <ul className="space-y-2">
                 {inbox.map((n) => {
-                  const blocked = n.actionUrl != null && safeInternalPath(n.actionUrl) == null;
+                  const blocked = linkBlocked(n);
+                  const text = inboxText(n, t as TFn, (k) => i18n.exists(k));
                   return (
                     <li key={`inbox-${n.id}`}>
                       <button
@@ -269,9 +303,10 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
                       >
                         <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.isRead ? "bg-transparent" : "bg-primary"}`} aria-hidden="true" />
                         <span className="min-w-0 flex-1">
-                          <span className={`block text-sm ${n.isRead ? "" : "font-medium"}`}>{n.title}</span>
-                          <span className="block text-sm text-muted-foreground line-clamp-2">{n.message}</span>
-                          <span className="mt-1 block text-xs text-muted-foreground">{new Date(n.createdAt).toLocaleString()}</span>
+                          <span className={`block text-sm ${n.isRead ? "" : "font-medium"}`}>{text.title}</span>
+                          <span className="block text-sm text-muted-foreground line-clamp-2">{text.message}</span>
+                          {/* final wave: ngày giờ theo NGÔN NGỮ APP, không theo locale trình duyệt. */}
+                          <span className="mt-1 block text-xs text-muted-foreground">{new Date(n.createdAt).toLocaleString(i18n.language)}</span>
                           {blocked && (
                             <span className="mt-1 flex items-center gap-1 text-xs text-destructive">
                               <Link2Off className="h-3 w-3" aria-hidden="true" />

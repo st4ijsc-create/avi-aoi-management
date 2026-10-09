@@ -7292,7 +7292,21 @@
       "markAllRead": "Mark all as read",
       "linkBlocked": "Invalid link — not opened",
       "loadFailed": "Could not load your notifications",
-      "unread": "Unread"
+      "unread": "Unread",
+      "markReadFailed": "Could not mark as read — try again later."
+    },
+    "assignment": {
+      "assignedTitle": "Assigned to you: {{label}}",
+      "assignedMessage": "{{by}} assigned you a pending {{entity}}. Being assigned does not change who may approve.",
+      "unassignedTitle": "Unassigned: {{label}}",
+      "unassignedMessage": "{{by}} removed this {{entity}} from you.",
+      "entity": {
+        "ecn": "ECN",
+        "recipe": "recipe",
+        "interlock_rule": "interlock rule",
+        "changeover": "changeover request",
+        "orchestration_run": "orchestration run"
+      }
     },
     "yieldWarning": "Yield warning",
     "volume": "Volume",

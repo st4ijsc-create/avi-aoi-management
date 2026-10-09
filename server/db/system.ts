@@ -1,6 +1,6 @@
 import { getDb } from "./connection";
 import { DbUnavailableError } from "../_core/dbErrors";
-import { eq, and, desc, gte, lte, or, isNull, inArray, sql, SQL } from "drizzle-orm";
+import { eq, and, desc, gt, gte, lte, or, isNull, inArray, sql, SQL } from "drizzle-orm";
 import type { PhamViNguoiXem } from "./hierarchy";
 import {
   auditLogs,
@@ -655,6 +655,12 @@ export async function setDefaultEmailTemplateConfig(id: number) {
 
 // ============ NOTIFICATIONS FUNCTIONS ============
 
+/**
+ * doc 81 Đợt 3b final wave — thông báo HẾT HẠN (`expiresAt` đã qua) không hiện và không đếm trong chuông. So với `new Date()`
+ * qua CÙNG đường tuần tự hoá Date của driver đã ghi cột (không trộn `now()` của SQL với cột timestamp không múi giờ).
+ */
+const notExpired = () => or(isNull(notifications.expiresAt), gt(notifications.expiresAt, new Date()))!;
+
 export async function createNotification(data: InsertNotification) {
   const db = await getDb();
   if (!db) return null;
@@ -672,7 +678,7 @@ export async function getNotifications(userId: number, filters?: {
   const db = await getDb();
   if (!db) return [];
   
-  const conditions = [eq(notifications.userId, userId)];
+  const conditions = [eq(notifications.userId, userId), notExpired()];
   
   if (filters?.type) {
     conditions.push(eq(notifications.type, filters.type));
@@ -697,9 +703,10 @@ export async function getUnreadNotificationCount(userId: number) {
     .from(notifications)
     .where(and(
       eq(notifications.userId, userId),
-      eq(notifications.isRead, false)
+      eq(notifications.isRead, false),
+      notExpired(),
     ));
-  
+
   // doc 81 Đợt 3b Task 3 — COUNT(*) là bigint ⇒ postgres-js trả CHUỖI ("5", và "0" còn truthy) dù có `sql<number>`.
   return Number(result[0]?.count ?? 0);
 }

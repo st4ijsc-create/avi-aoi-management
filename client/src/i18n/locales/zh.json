@@ -7075,7 +7075,21 @@
       "markAllRead": "全部标为已读",
       "linkBlocked": "链接无效 — 未打开",
       "loadFailed": "无法加载您的通知",
-      "unread": "未读"
+      "unread": "未读",
+      "markReadFailed": "无法标记为已读——请稍后重试。"
+    },
+    "assignment": {
+      "assignedTitle": "已分配给您：{{label}}",
+      "assignedMessage": "{{by}} 将一个待审批的{{entity}}分配给您。被分配不改变审批权限。",
+      "unassignedTitle": "已取消分配：{{label}}",
+      "unassignedMessage": "{{by}} 已将此{{entity}}从您处取消分配。",
+      "entity": {
+        "ecn": "ECN",
+        "recipe": "配方",
+        "interlock_rule": "联锁规则",
+        "changeover": "换型请求",
+        "orchestration_run": "编排运行"
+      }
     },
     "yieldWarning": "良率警告",
     "volume": "音量",

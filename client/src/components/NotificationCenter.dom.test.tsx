@@ -44,7 +44,10 @@ vi.mock("wouter", async (orig) => ({
   useLocation: () => ["/", (to: string) => nav.to.push(to)],
 }));
 
-type Row = { id: number; userId: number; title: string; message: string; actionUrl: string | null; isRead: boolean; createdAt: Date; type: string; priority: string };
+type Row = {
+  id: number; userId: number; title: string; message: string; actionUrl: string | null; isRead: boolean; createdAt: Date; type: string; priority: string;
+  actionUrlBlocked?: boolean; metadata?: Record<string, unknown> | null;
+};
 const srv = vi.hoisted(() => ({
   unread: 0,
   rows: [] as Row[],
@@ -53,14 +56,16 @@ const srv = vi.hoisted(() => ({
   markRead: [] as unknown[],
   markAll: 0,
   invalidated: [] as string[],
+  failMark: false,
 }));
 vi.mock("@/lib/trpc", () => {
-  const mutation = (fn: (input: unknown) => void) => (opts: { onSuccess?: () => void; onSettled?: () => void } = {}) => ({
+  const mutation = (fn: (input: unknown) => void) => (opts: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void } = {}) => ({
     isPending: false,
     mutate: (input: unknown) => {
       fn(input);
       void Promise.resolve().then(() => {
-        opts.onSuccess?.();
+        if (srv.failMark) opts.onError?.(new Error("x"));
+        else opts.onSuccess?.();
         opts.onSettled?.();
       });
     },
@@ -90,6 +95,8 @@ vi.mock("@/lib/trpc", () => {
 });
 
 import { NotificationCenter } from "./NotificationCenter";
+import { toast } from "sonner";
+import i18next from "i18next";
 
 let visibility: DocumentVisibilityState = "visible";
 beforeAll(async () => {
@@ -127,6 +134,9 @@ beforeEach(() => {
   srv.markRead = [];
   srv.markAll = 0;
   srv.invalidated = [];
+  srv.failMark = false;
+  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.warning).mockClear();
   nav.to = [];
   try { localStorage.clear(); } catch { /* ignore */ }
 });
@@ -277,7 +287,97 @@ describe("NotificationCenter — đánh dấu tất cả đã đọc", () => {
   });
 });
 
+// ── doc 81 Đợt 3b final wave — chuông: link bị server chặn, lỗi đánh dấu, ngày theo ngôn ngữ app, thông báo giao việc i18n ──
+describe("Đợt 3b final wave — chuông thông báo", () => {
+  it("server đã CHẶN link (actionUrl null + actionUrlBlocked) ⇒ hiện 'liên kết không hợp lệ'; bấm ⇒ đánh dấu đọc + BÁO (không im lặng), không điều hướng", async () => {
+    srv.unread = 1;
+    srv.rows = [row(21, { actionUrl: null, actionUrlBlocked: true })];
+    render(<NotificationCenter />);
+    fireEvent.click(bell());
+    expect(screen.getByText(S("notifications.inbox.linkBlocked"))).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("notif-inbox-item"));
+    await flush();
+    expect(nav.to).toEqual([]);
+    expect(srv.markRead).toEqual([{ id: 21 }]);
+    expect(toast.warning).toHaveBeenCalledWith(S("notifications.inbox.linkBlocked"));
+  });
+
+  it("markAsRead / markAllAsRead LỖI ⇒ toast lỗi (trước: im lặng); vẫn làm mới list + unreadCount", async () => {
+    srv.failMark = true;
+    srv.unread = 2;
+    srv.rows = [row(22, { actionUrl: null }), row(23)];
+    render(<NotificationCenter />);
+    fireEvent.click(bell());
+    fireEvent.click(screen.getAllByTestId("notif-inbox-item")[0]);
+    await flush();
+    expect(toast.error).toHaveBeenCalledWith(S("notifications.inbox.markReadFailed"));
+    vi.mocked(toast.error).mockClear();
+    fireEvent.click(screen.getByRole("button", { name: S("notifications.inbox.markAllRead") }));
+    await flush();
+    expect(toast.error).toHaveBeenCalledWith(S("notifications.inbox.markReadFailed"));
+    expect(srv.invalidated).toEqual(expect.arrayContaining(["notification.list", "notification.unreadCount"]));
+  });
+
+  it("ngày giờ theo NGÔN NGỮ APP (i18n), không theo locale trình duyệt", () => {
+    const at = new Date("2026-10-09T08:00:00Z");
+    srv.rows = [row(24, { createdAt: at, isRead: true })];
+    render(<NotificationCenter />);
+    fireEvent.click(bell());
+    const item = screen.getByTestId("notif-inbox-item");
+    expect(item).toHaveTextContent(at.toLocaleString(i18next.language));
+    expect(i18next.language).toBe("vi");
+    expect(at.toLocaleString("vi")).not.toBe(at.toLocaleString("en-US"));
+  });
+
+  it("đổi ngôn ngữ app sang en ⇒ ngày của hộp thư VÀ giờ của cảnh báo socket cũ theo en (trước: cứng 'vi-VN' / locale trình duyệt)", async () => {
+    const at = new Date("2026-10-09T15:04:05Z");
+    srv.rows = [row(28, { createdAt: at, isRead: true })];
+    sock.alerts = [{ type: "NG_ALERT", machineName: "M1", message: "NG!", timestamp: at }];
+    await act(async () => { await i18next.changeLanguage("en"); });
+    try {
+      render(<NotificationCenter />);
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`^(${S("notifications.title", en_)}|${S("notifications.title")}|notifications\.title)`) }));
+      expect(screen.getByTestId("notif-inbox-item")).toHaveTextContent(at.toLocaleString("en"));
+      expect(screen.getByText(at.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", second: "2-digit" }))).toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18next.changeLanguage("vi"); });
+    }
+  });
+
+  it("thông báo giao việc mang khoá i18n + tham số ⇒ hiện bằng t() theo ngôn ngữ app; khoá lạ / không metadata ⇒ chữ đã lưu", () => {
+    srv.rows = [
+      row(25, {
+        title: "STORED-TITLE", message: "STORED-MSG",
+        metadata: { i18n: { title: "notifications.assignment.assignedTitle", message: "notifications.assignment.assignedMessage", params: { label: "ECN-25 Đổi keo", by: "Lan", entityType: "ecn", entityId: 25 } } },
+      }),
+      row(26, {
+        title: "STORED-T2", message: "STORED-M2",
+        metadata: { i18n: { title: "notifications.assignment.unassignedTitle", message: "notifications.assignment.unassignedMessage", params: { label: null, by: "Lan", entityType: "interlock_rule", entityId: 26 } } },
+      }),
+      row(27, { title: "STORED-T3", message: "STORED-M3", metadata: { i18n: { title: "notifications.khongCo", message: "notifications.khongCo2", params: {} } } }),
+    ];
+    render(<NotificationCenter />);
+    fireEvent.click(bell());
+    const [a, b, c] = screen.getAllByTestId("notif-inbox-item");
+    const ecn = S("notifications.assignment.entity.ecn");
+    const rule = S("notifications.assignment.entity.interlock_rule");
+    expect(a).toHaveTextContent(S("notifications.assignment.assignedTitle").replace("{{label}}", "ECN-25 Đổi keo"));
+    expect(a).toHaveTextContent(S("notifications.assignment.assignedMessage").replace("{{by}}", "Lan").replace("{{entity}}", ecn));
+    expect(a).not.toHaveTextContent("STORED");
+    expect(b).toHaveTextContent(S("notifications.assignment.unassignedTitle").replace("{{label}}", `${rule} #26`));
+    expect(b).toHaveTextContent(S("notifications.assignment.unassignedMessage").replace("{{by}}", "Lan").replace("{{entity}}", rule));
+    expect(c).toHaveTextContent("STORED-T3");
+    expect(c).toHaveTextContent("STORED-M3");
+  });
+});
+
 describe("i18n vi/en/zh", () => {
+  it.each([
+    "inbox.markReadFailed", "assignment.assignedTitle", "assignment.assignedMessage", "assignment.unassignedTitle", "assignment.unassignedMessage",
+    "assignment.entity.ecn", "assignment.entity.recipe", "assignment.entity.interlock_rule", "assignment.entity.changeover", "assignment.entity.orchestration_run",
+  ])("final wave: notifications.%s có ở cả ba", (k) => {
+    for (const src of [vi_, en_, zh_]) expect(S(`notifications.${k}`, src).length).toBeGreaterThan(0);
+  });
   it.each(["title", "markAllRead", "linkBlocked", "loadFailed"])("notifications.inbox.%s có ở cả ba", (k) => {
     for (const src of [vi_, en_, zh_]) expect(S(`notifications.inbox.${k}`, src).length).toBeGreaterThan(0);
   });

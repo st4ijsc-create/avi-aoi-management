@@ -25,9 +25,9 @@ async function as(key: "alice" | "bob") {
   return notificationRouter.createCaller({ user: { id: uid[key], role: "engineer", name: `${RUN} ${key}` } } as any);
 }
 
-async function mk(key: string, userId: number, actionUrl: string | null, isRead = false): Promise<number> {
-  const [r] = await sql`INSERT INTO notifications ("userId", type, title, message, "actionUrl", "isRead", priority)
-    VALUES (${userId}, 'INFO', ${`${RUN} ${key}`}, ${`msg ${key}`}, ${actionUrl}, ${isRead}, 'NORMAL') RETURNING id`;
+async function mk(key: string, userId: number, actionUrl: string | null, isRead = false, expiresAt: Date | null = null): Promise<number> {
+  const [r] = await sql`INSERT INTO notifications ("userId", type, title, message, "actionUrl", "isRead", priority, "expiresAt")
+    VALUES (${userId}, 'INFO', ${`${RUN} ${key}`}, ${`msg ${key}`}, ${actionUrl}, ${isRead}, 'NORMAL', ${expiresAt}) RETURNING id`;
   nid[key] = Number(r.id);
   return nid[key];
 }
@@ -106,6 +106,29 @@ describe.skipIf(!DB_URL)("notification.* — chuông thông báo (CSDL _test TH�
       expect((await row(good!.id)).actionUrl).toBe("/alerts?x=1");
       nid.bSendBad = bad!.id;
       nid.bSendGood = good!.id;
+    });
+  });
+
+  // doc 81 Đợt 3b final wave — hàng HẾT HẠN không hiện, không đếm; link bị server chặn được ĐÁNH DẤU để chuông báo được.
+  describe("§4 hết hạn + cờ link bị chặn", () => {
+    const DAY = 24 * 3600 * 1000;
+    it("expiresAt đã qua ⇒ KHÔNG trong list, KHÔNG trong unreadCount; tương lai / null ⇒ có", async () => {
+      const c = await as("alice");
+      const before = await c.unreadCount();
+      const past = await mk("aExpired", uid.alice, "/alerts", false, new Date(Date.now() - 2 * DAY));
+      const future = await mk("aFuture", uid.alice, "/alerts", false, new Date(Date.now() + 365 * DAY));
+      const ids = new Set((await c.list({ limit: 100 })).map((n) => n.id));
+      expect(ids.has(past)).toBe(false);
+      expect(ids.has(future)).toBe(true);
+      expect(await c.unreadCount()).toBe(before + 1);
+      await sql`DELETE FROM notifications WHERE id = ANY(${[past, future]})`;
+    });
+
+    it("actionUrlBlocked = true CHỈ khi hàng có link mà server chặn; link nội bộ / không link ⇒ false", async () => {
+      const a = await (await as("alice")).list({ limit: 50 });
+      const by = new Map(a.map((n) => [n.id, n.actionUrlBlocked]));
+      expect([by.get(nid.aAbs), by.get(nid.aProto), by.get(nid.aBackslash)]).toEqual([true, true, true]);
+      expect([by.get(nid.aSafe), by.get(nid.aNull), by.get(nid.aOld)]).toEqual([false, false, false]);
     });
   });
 
