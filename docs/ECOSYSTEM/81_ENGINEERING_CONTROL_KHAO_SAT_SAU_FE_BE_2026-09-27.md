@@ -615,3 +615,13 @@ Plan `docs/superpowers/plans/2026-10-06-engineering-control-dot3b.md` — 6 vi�
 **Đã chốt (2026-10-09):** phân công không gắn nhà máy — đếm trên dev: 2 hàng, 0 thiếu nhà máy, 0 lệch ⇒ không cần sửa dữ liệu; chip "Phù hợp tiêu chuẩn" không ghim; sửa chuyển hướng SAML trước khi gộp; gộp + push.
 
 **Còn mở:** tuỳ chọn tắt báo 1 giờ không còn xoá số trên chuông cho phần thông báo phía server; ca "đang chạy" lấy theo giờ trình duyệt, không theo múi giờ nhà máy; luồng ACS của SAML mới kiểm bằng đọc mã, chưa gọi HTTP thật.
+
+### Đợt 3c (2026-10-09)
+
+Plan `docs/superpowers/plans/2026-10-09-engineering-control-dot3c.md` — đóng 3 mục "Còn mở" của Đợt 3b, không migration.
+- **Chuông — tắt báo 1 giờ:** khi đang tắt, số trên chuông CHỈ gồm mục khẩn (thông báo server URGENT chưa đọc + cảnh báo hệ sinh thái critical); cảnh báo socket, cảnh báo dưới critical và thông báo server thường không đếm, không toast (critical vẫn toast). Hết hạn ⇒ số trở lại, không cần thao tác. Có dòng giải thích khi đang tắt. **Thay đổi hành vi:** tắt báo không còn giấu mục khỏi DANH SÁCH (trước: giấu cả mục critical).
+- **Sản xuất › Ca — ca đang chạy:** ca mặc định chọn theo **múi giờ nhà máy** (ca qua đêm đúng); không xác định được múi giờ ⇒ dùng giờ trình duyệt và form ghi rõ điều đó. Phần tính giờ dùng chung client/server ở `shared/factoryTime.ts` (một bản cài đặt).
+- **SAML ACS:** test HTTP thật `server/_core/samlAcsRelay.db.test.ts` — 5 giá trị RelayState xấu + thiếu ⇒ về "/", đường nội bộ đi đúng; kiểm chữ ký chỉ tắt trong tiến trình test (thư viện XML-DSig chưa cài), một ca riêng chứng minh khi bật thì bị từ chối.
+- Kiểm: review spec ✅/chất lượng ✅, 5 điểm nhỏ đã sửa (vòng sửa 1); test chạm 268/268; `tsc` sạch; mọi đột biến đỏ.
+
+**Còn mở:** `/api/saml/acs` chưa nằm trong danh sách miễn kiểm origin (`originCheck.ts`) — có từ trước, chỉ ảnh hưởng nếu bật chế độ `enforce`; quản trị viên chưa chọn line ⇒ ca toàn hệ thống dùng giờ trình duyệt (form có ghi chú); test `safetyAssignmentShift.dot3b.db.test.ts` để lại hàng `d3b1-*` trong `audit_logs` của `_test` mỗi lần chạy.
