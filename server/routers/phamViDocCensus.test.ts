@@ -643,7 +643,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *     ngoài phạm vi ⇒ NOT_FOUND giống hệt nhà máy không tồn tại. Bốn dòng ĐÃ GỠ khỏi `phamViDocBaseline.ts` (sổ nợ co 4).
  *   ⇒ A −4 · S +4.
  */
-const GHIM = { A: 336, B: 8, C: 479, D: 1131, S: 342, tong: 2296 } as const;
+/*
+ * ★★★ 2026-10-10 (doc 81 Đợt 4 Task D1 — sở thích giao diện phía server, mig 0365) — **C 479→480 · D 1131→1132 · tong
+ * 2296→2298 · A/B/S không đổi.** ĐO bằng chính bộ quét này (cây trước lượt sửa = C 479 · D 1131 · tong 2296, khớp ghim):
+ *   • `userSettingsRouter.getUiPrefs` (query, MỚI): **C +1** — đọc `user_settings.uiPrefs` của CHÍNH `ctx.user.id` (SQL thô ở
+ *     `server/db/userUiPrefs.ts`), không chạm bảng tenant nào.
+ *   • `userSettingsRouter.setUiPrefs` (mutation, MỚI): **D +1** — gộp vào hàng của CHÍNH người gọi.
+ *   KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   ⇒ C +1 · D +1 · tong +2.
+ */
+const GHIM = { A: 336, B: 8, C: 480, D: 1132, S: 342, tong: 2298 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

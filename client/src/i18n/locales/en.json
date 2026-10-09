@@ -4005,6 +4005,7 @@
       "unassignEngineeringItem": "unassign the pending item"
     },
     "field": {
+      "uiPrefs": "interface preferences",
       "shiftConfigId": "shift (shiftConfigId)",
       "stopValue": "pinned stop value (stopValue)",
       "inspectionTime": "inspection time (inspectionTime)",
@@ -4112,6 +4113,7 @@
       "assigneeUserId": "assignee"
     },
     "feature": {
+      "uiPrefs": "interface preference sync",
       "webIngest": "web content ingestion",
       "robotAnomalyDetection": "robot anomaly detection",
       "modelAutoRollback": "model auto-rollback",

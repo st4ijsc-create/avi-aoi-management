@@ -1,0 +1,182 @@
+/**
+ * doc 81 Đợt 4 Task D1 — `userSettingsRouter.getUiPrefs / setUiPrefs` trên `user_settings.uiPrefs` (mig 0365).
+ * CSDL THẬT `_test`, `appRouter.createCaller` THẬT.
+ *
+ * Đo: danh sách trắng (khoá lạ / khoá mang id người khác / giá trị sai ⇒ BAD_REQUEST, KHÔNG ghi gì — kể cả các khoá hợp
+ * lệ đi cùng); gộp `||` nguyên tử (20 lượt ghi song song khoá khác nhau ⇒ đủ 20); trần 16 KB của TỔNG sau gộp; phạm vi
+ * CHÍNH người gọi. "Đi theo tài khoản qua hai trình duyệt" (đồng bộ client): `userUiPrefsHaiTrinhDuyet.dot4.db.test.ts`.
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import postgres from "postgres";
+import { appRouter } from "../routers";
+import { UI_PREFS_MAX_BYTES } from "@shared/uiPrefs";
+
+const DB_URL = process.env.DATABASE_URL;
+const DAU = `D4D1-${Date.now()}`;
+
+let sql: ReturnType<typeof postgres>;
+const fx = { a: 0, b: 0, c: 0 };
+
+type Caller = ReturnType<typeof appRouter.createCaller>;
+const goi = (id: number): Caller => appRouter.createCaller({ user: { id, role: "engineer", name: "probe" } } as never);
+
+type KetQua = { ok: true; data: unknown } | { ok: false; code: string; appCode: string | null; msg: string };
+async function thu(p: Promise<unknown>): Promise<KetQua> {
+  try {
+    return { ok: true, data: await p };
+  } catch (e: unknown) {
+    const err = e as { code?: string; cause?: { appCode?: string }; message?: string };
+    return { ok: false, code: err?.code ?? "?", appCode: err?.cause?.appCode ?? null, msg: String(err?.message ?? "") };
+  }
+}
+
+/** Hàng thật trong CSDL (oracle độc lập với router). */
+async function hang(userId: number): Promise<Record<string, unknown> | null> {
+  const r = await sql`SELECT "uiPrefs" AS p FROM user_settings WHERE "userId" = ${userId}`;
+  return r.length ? (r[0].p as Record<string, unknown>) : null;
+}
+
+const hpx = (left: number, right: number) => ({ left: { px: left, pct: 20 }, right: { px: right, pct: 25 } });
+
+describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — user_settings.uiPrefs (CSDL _test)", () => {
+  beforeAll(async () => {
+    expect(DB_URL).toMatch(/_test/);
+    sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    const user = async (tag: string) =>
+      Number(
+        (
+          await sql`INSERT INTO users ("openId", username, name, role, "isActive")
+                    VALUES (${`${DAU}-${tag}`}, ${`${DAU}-${tag}`}, ${`${DAU} ${tag}`}, 'engineer', true) RETURNING id`
+        )[0].id,
+      );
+    fx.a = await user("a");
+    fx.b = await user("b");
+    fx.c = await user("c");
+  });
+
+  afterAll(async () => {
+    if (!sql) return;
+    const uids = [fx.a, fx.b, fx.c].filter(Boolean);
+    if (uids.length) {
+      await sql`DELETE FROM user_settings WHERE "userId" IN ${sql(uids)}`;
+      await sql`DELETE FROM users WHERE id IN ${sql(uids)}`;
+    }
+    await sql.end();
+  });
+
+  it("người chưa có hàng ⇒ {} và available:true", async () => {
+    expect(await goi(fx.a).userSettingsRouter.getUiPrefs()).toEqual({ prefs: {}, available: true });
+  });
+
+  it("★ ghi showLabs + kích thước panel của CHÍNH mình ⇒ đọc lại đúng, hàng CSDL đúng", async () => {
+    const kH = `layoutKit:ir-editor:u${fx.a}:hpx`;
+    const kV = `layoutKit:ir-editor:u${fx.a}:vpx`;
+    const kB = `layoutKit:ir-editor:u${fx.a}:bottomCollapsed`;
+    const patch = { showLabs: true, [kH]: hpx(260, 380), [kV]: { bottom: { px: 220, pct: 30.5 } }, [kB]: false };
+    await goi(fx.a).userSettingsRouter.setUiPrefs({ patch });
+    expect(await hang(fx.a)).toEqual(patch);
+    expect((await goi(fx.a).userSettingsRouter.getUiPrefs()).prefs).toEqual(patch);
+  });
+
+  it("★ gộp: khoá mới THÊM vào, khoá cũ cùng tên bị THAY, khoá khác GIỮ nguyên", async () => {
+    const kH = `layoutKit:ir-editor:u${fx.a}:hpx`;
+    const kH2 = `layoutKit:pou-studio:u${fx.a}:hpx`;
+    await goi(fx.a).userSettingsRouter.setUiPrefs({ patch: { showLabs: false, [kH2]: { left: { px: 240, pct: 18 } } } });
+    const p = (await hang(fx.a))!;
+    expect(p.showLabs).toBe(false);
+    expect(p[kH2]).toEqual({ left: { px: 240, pct: 18 } });
+    expect(p[kH]).toEqual(hpx(260, 380));
+  });
+
+  const TU_CHOI: Array<[string, (uid: number, other: number) => Record<string, unknown>]> = [
+    ["khoá lạ", () => ({ theme: "dark" })],
+    ["khoá lạ giống bố cục (part lạ)", (u) => ({ [`layoutKit:ide:u${u}:split`]: 30 })],
+    ["khoá Labs cục bộ thay vì showLabs", (u) => ({ [`layoutKit:nav-labs:u${u}:show`]: true })],
+    ["khoá bố cục mang id NGƯỜI KHÁC", (_u, o) => ({ [`layoutKit:ide:u${o}:hpx`]: hpx(250, 330) })],
+    ["showLabs không phải boolean", () => ({ showLabs: "1" })],
+    ["px âm", (u) => ({ [`layoutKit:ide:u${u}:hpx`]: { left: { px: -1, pct: 10 } } })],
+    ["px quá trần", (u) => ({ [`layoutKit:ide:u${u}:hpx`]: { left: { px: 5000, pct: 10 } } })],
+    ["pct > 100", (u) => ({ [`layoutKit:ide:u${u}:vpx`]: { bottom: { px: 200, pct: 101 } } })],
+    ["khoá con lạ trong hpx", (u) => ({ [`layoutKit:ide:u${u}:hpx`]: { bottom: { px: 200, pct: 20 } } })],
+    ["trường thừa trong kích thước", (u) => ({ [`layoutKit:ide:u${u}:hpx`]: { left: { px: 200, pct: 20, x: 1 } } })],
+    ["bottomCollapsed là chuỗi", (u) => ({ [`layoutKit:ide:u${u}:bottomCollapsed`]: "1" })],
+  ];
+  for (const [ten, mk] of TU_CHOI) {
+    it(`★ từ chối (${ten}) ⇒ BAD_REQUEST / INVALID_VALUE, KHÔNG ghi gì — kể cả khoá hợp lệ đi cùng`, async () => {
+      const truoc = await hang(fx.a);
+      const kem = `layoutKit:accomp:u${fx.a}:bottomCollapsed`; // khoá HỢP LỆ đi cùng
+      const k = await thu(goi(fx.a).userSettingsRouter.setUiPrefs({ patch: { [kem]: true, ...mk(fx.a, fx.b) } }));
+      expect(k.ok).toBe(false);
+      if (!k.ok) {
+        expect(k.code).toBe("BAD_REQUEST");
+        expect(k.appCode).toBe("INVALID_VALUE");
+      }
+      expect(await hang(fx.a)).toEqual(truoc);
+      expect(truoc!.showLabs).toBe(false);
+      expect(kem in truoc!).toBe(false); // khoá hợp lệ đi cùng KHÔNG được ghi
+    });
+  }
+
+  it("★ khoá mang id người khác KHÔNG chạm hàng của người kia", async () => {
+    await thu(goi(fx.a).userSettingsRouter.setUiPrefs({ patch: { [`layoutKit:ide:u${fx.b}:hpx`]: hpx(250, 330) } }));
+    expect(await hang(fx.b)).toBeNull();
+  });
+
+  it("★ phạm vi: B không thấy sở thích của A; B ghi không đổi hàng của A", async () => {
+    const truocA = await hang(fx.a);
+    expect((await goi(fx.b).userSettingsRouter.getUiPrefs()).prefs).toEqual({});
+    await goi(fx.b).userSettingsRouter.setUiPrefs({ patch: { showLabs: true } });
+    expect(await hang(fx.b)).toEqual({ showLabs: true });
+    expect(await hang(fx.a)).toEqual(truocA);
+  });
+
+  it("★ gộp NGUYÊN TỬ: 20 lượt ghi song song, mỗi lượt một khoá khác ⇒ đủ 20 khoá (không mất lượt nào)", async () => {
+    const c = goi(fx.c);
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) => c.userSettingsRouter.setUiPrefs({ patch: { [`layoutKit:p${i}:u${fx.c}:hpx`]: hpx(240 + i, 320) } })),
+    );
+    const p = (await hang(fx.c))!;
+    expect(Object.keys(p).filter((k) => k.startsWith("layoutKit:p")).length).toBe(20);
+  });
+
+  it(`★ trần ${UI_PREFS_MAX_BYTES} byte: một bản vá quá lớn ⇒ BAD_REQUEST, không ghi`, async () => {
+    const truoc = await hang(fx.b);
+    const patch: Record<string, unknown> = {};
+    for (let i = 0; i < 200; i++) patch[`layoutKit:big-${i}:u${fx.b}:hpx`] = hpx(260, 380);
+    expect(JSON.stringify(patch).length).toBeGreaterThan(UI_PREFS_MAX_BYTES);
+    const k = await thu(goi(fx.b).userSettingsRouter.setUiPrefs({ patch }));
+    expect(k.ok ? "ok" : k.code).toBe("BAD_REQUEST");
+    expect(await hang(fx.b)).toEqual(truoc);
+  });
+
+  it(`★ trần ${UI_PREFS_MAX_BYTES} byte của TỔNG sau gộp (đo ở CSDL): bản vá làm tổng vượt ⇒ BAD_REQUEST, hàng giữ nguyên`, async () => {
+    const c = goi(fx.b);
+    const lo = (from: number, n: number) => {
+      const p: Record<string, unknown> = {};
+      for (let i = from; i < from + n; i++) p[`layoutKit:fill-${i}:u${fx.b}:hpx`] = hpx(260, 380);
+      return p;
+    };
+    // Đổ đầy theo lô 40 khoá tới khi lô kế tiếp bị từ chối.
+    let from = 0;
+    let tuChoi: KetQua | null = null;
+    for (let vong = 0; vong < 10 && !tuChoi; vong++) {
+      const patch = lo(from, 40);
+      const truoc = await hang(fx.b);
+      const [{ sau }] = await sql`SELECT octet_length((${sql.json(truoc as never)}::jsonb || ${sql.json(patch as never)}::jsonb)::text) AS sau`;
+      const k = await thu(c.userSettingsRouter.setUiPrefs({ patch }));
+      if (Number(sau) > UI_PREFS_MAX_BYTES) {
+        tuChoi = k;
+        expect(k.ok ? "ok" : `${k.code}/${k.appCode}`).toBe("BAD_REQUEST/INVALID_VALUE");
+        expect(await hang(fx.b)).toEqual(truoc);
+      } else {
+        expect(k.ok).toBe(true);
+      }
+      from += 40;
+    }
+    expect(tuChoi).not.toBeNull();
+    const [{ n }] = await sql`SELECT octet_length("uiPrefs"::text) AS n FROM user_settings WHERE "userId" = ${fx.b}`;
+    expect(Number(n)).toBeLessThanOrEqual(UI_PREFS_MAX_BYTES);
+    // Dọn để các ca sau có chỗ.
+    await sql`UPDATE user_settings SET "uiPrefs" = '{"showLabs": true}'::jsonb WHERE "userId" = ${fx.b}`;
+  });
+});

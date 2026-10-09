@@ -312,7 +312,13 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `safety.sourceHealth`). Không phải bề mặt AI ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong KHÔNG đổi. `tong` 2296 trùng
  *   `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2296, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-10 doc 81 Đợt 4 Task D1 (sở thích giao diện phía server, mig 0365) — **tong 2296 → 2298, ghim lại ô `tong`**: đúng
+ *   HAI thủ tục MỚI của `userSettingsRouter` (`getUiPrefs` query · `setUiPrefs` mutation), sàn `protectedProcedure`,
+ *   `module = null` (sở thích của CHÍNH người gọi, không thuộc SKU nào), không phải bề mặt AI ⇒ beMatAi/aiCoCong/aiMienTru/
+ *   ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. `tong` 2298 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2298, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

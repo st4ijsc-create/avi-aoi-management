@@ -4005,6 +4005,7 @@
       "unassignEngineeringItem": "bỏ giao việc chờ duyệt"
     },
     "field": {
+      "uiPrefs": "tuỳ chọn giao diện",
       "shiftConfigId": "ca (shiftConfigId)",
       "stopValue": "giá trị dừng ghim (stopValue)",
       "inspectionTime": "thời điểm kiểm tra (inspectionTime)",
@@ -4112,6 +4113,7 @@
       "assigneeUserId": "người được giao"
     },
     "feature": {
+      "uiPrefs": "đồng bộ tuỳ chọn giao diện",
       "webIngest": "nạp nội dung từ web",
       "robotAnomalyDetection": "phát hiện bất thường robot",
       "modelAutoRollback": "tự động rollback mô hình",

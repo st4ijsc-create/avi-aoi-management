@@ -98,6 +98,8 @@ export const userSettings = pgTable("user_settings", {
   defaultDashboardTab: varchar("defaultDashboardTab", { length: 50 }).default("overview"),
   // Sidebar preferences
   sidebarCollapsed: boolean("sidebarCollapsed").default(false).notNull(),
+  // ⚠ doc 81 Đợt 4 Task D1 — cột `uiPrefs jsonb` (mig 0365) CỐ Ý KHÔNG khai ở đây: `select().from(userSettings)` liệt kê mọi
+  //   cột đã khai ⇒ DB chưa áp 0365 sẽ hỏng 42703. Chỉ `server/db/userUiPrefs.ts` đọc/ghi nó bằng SQL thô.
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

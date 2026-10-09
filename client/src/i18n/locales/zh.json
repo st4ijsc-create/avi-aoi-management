@@ -3997,6 +3997,7 @@
       "unassignEngineeringItem": "取消分配待审批事项"
     },
     "field": {
+      "uiPrefs": "界面偏好",
       "shiftConfigId": "班次 (shiftConfigId)",
       "stopValue": "固定停止值（stopValue）",
       "inspectionTime": "检测时间（inspectionTime）",
@@ -4104,6 +4105,7 @@
       "assigneeUserId": "被分配人"
     },
     "feature": {
+      "uiPrefs": "界面偏好同步",
       "webIngest": "网页内容导入",
       "robotAnomalyDetection": "机器人异常检测",
       "modelAutoRollback": "模型自动回滚",

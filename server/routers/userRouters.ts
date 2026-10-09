@@ -27,6 +27,9 @@ import { toPublicSessions, type PublicSession } from "../_core/publicSession";
 // ⚠ Ba điểm gọi dưới đây từng mỗi chỗ tự so `loginMethod !== 'local'`, trong khi dữ liệu THẬT mang
 //   `'password'` ⇒ 4/4 tài khoản không-admin đang hoạt động bị khoá ra ngoài. Xem `shared/xacThucNoiBo.ts`.
 import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
+// doc 81 Đợt 4 Task D1 — danh sách trắng sở thích giao diện phía server (mig 0365).
+import { checkUiPrefsPatch, UI_PREFS_MAX_BYTES } from "@shared/uiPrefs";
+import { readUiPrefs, mergeUiPrefs } from "../db/userUiPrefs";
 
 // ============ USER ROUTER ============
 export const userRouter = router({
@@ -700,5 +703,32 @@ export const userSettingsRouter = router({
     .mutation(async ({ ctx, input }) => {
       await db.upsertUserSettings(ctx.user.id, input);
       return { success: true };
+    }),
+
+  /**
+   * doc 81 Đợt 4 Task D1 — sở thích giao diện theo TÀI KHOẢN (`user_settings.uiPrefs`, mig 0365): "Hiện Labs" + kích
+   * thước/gập panel WorkbenchShell. Đọc = các khoá hợp lệ của CHÍNH người gọi. `available:false` = DB chưa áp 0365 —
+   * client giữ localStorage như trước.
+   */
+  getUiPrefs: protectedProcedure.query(async ({ ctx }) => readUiPrefs(ctx.user.id)),
+
+  /**
+   * Gộp `patch` vào uiPrefs của CHÍNH người gọi (`jsonb ||`, nguyên tử). Danh sách trắng `shared/uiPrefs.ts`: một khoá lạ,
+   * khoá bố cục mang id người khác, giá trị sai hay tổng > 16 KB ⇒ BAD_REQUEST và KHÔNG ghi gì.
+   */
+  setUiPrefs: protectedProcedure
+    .input(z.object({ patch: z.record(z.string(), z.unknown()) }))
+    .mutation(async ({ ctx, input }) => {
+      const checked = checkUiPrefsPatch(input.patch, ctx.user.id);
+      if (!checked.ok) {
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "uiPrefs" }, `uiPrefs refused (${checked.reason}${checked.key ? `: ${checked.key}` : ""})`);
+      }
+      if (Object.keys(checked.value).length === 0) return readUiPrefs(ctx.user.id);
+      const r = await mergeUiPrefs(ctx.user.id, checked.value);
+      if (!r.ok && r.reason === "tooLarge") {
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "uiPrefs" }, `uiPrefs refused (tooLarge: > ${UI_PREFS_MAX_BYTES} bytes)`);
+      }
+      if (!r.ok) throw appError("PRECONDITION_FAILED", "FEATURE_DISABLED", { feature: "uiPrefs" }, "uiPrefs column not available (migration 0365 not applied)");
+      return { prefs: r.prefs, available: true };
     }),
 });
