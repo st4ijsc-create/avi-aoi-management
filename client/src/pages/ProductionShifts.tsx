@@ -71,9 +71,9 @@ import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { featureKeyOf, isFeatureDisabledError } from "@/lib/featureFlagError";
 import { fmtDateTime } from "@/lib/fmtDateTime";
-// doc 81 Đợt 3c Task 2 — DÙNG LẠI bộ giờ nhà máy của server (Intl thuần, không phụ thuộc; chỉ gọi với múi giờ truyền vào ⇒
-// không chạm `process.env`). Không viết thư viện múi giờ mới.
-import { isValidTimeZone, wallClockInZone } from "../../../server/utils/factoryTime";
+// doc 81 Đợt 3c Task 2 / fix 1 — DÙNG LẠI bộ giờ nhà máy (phần Intl thuần ở `shared/`, server re-export cùng bản cài đặt).
+// Không viết thư viện múi giờ mới; không import runtime từ `server/`.
+import { isValidTimeZone, wallClockInZone } from "@shared/factoryTime";
 import { deriveFeatureStatus, isFeatureStatusUnsettled, type FeatureStatus } from "@/components/common/FeatureStatusGate";
 import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 

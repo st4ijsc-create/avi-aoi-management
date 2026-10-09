@@ -63,6 +63,25 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
   const [isOpen, setIsOpen] = useState(false);
   const { t, i18n } = useTranslation();
 
+  // U8 — per-user notification prefs (high-priority-only / snooze). Presentation filter only.
+  // fix 1 (Đợt 3c): khai TRƯỚC các handler toast bên dưới (chúng gọi `snoozedNow`).
+  const { user } = useAuth();
+  const userKey = String((user as any)?.id ?? (user as any)?.openId ?? "anon");
+  const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadNotifPrefs(userKey));
+  // doc 81 Đợt 3c Task 1 (Ruling R-3c-a) — "tạm tắt" chỉ tắt SỐ trên chuông + toast cho mục KHÔNG khẩn (cảnh báo socket,
+  // hệ sinh thái dưới critical, thông báo server dưới URGENT). DANH SÁCH không bị ảnh hưởng (trước: giấu cả cảnh báo khỏi
+  // danh sách, kể cả critical; còn số chưa đọc của server thì vẫn hiện).
+  const snoozedNow = () => prefs.snoozeUntil > Date.now();
+  const snoozed = snoozedNow();
+  // Hết hạn ⇒ vẽ lại đúng lúc để số TRỞ LẠI mà không cần thao tác (trước: chỉ khi có gì khác làm vẽ lại).
+  const [, setSnoozeTick] = useState(0);
+  useEffect(() => {
+    if (!snoozed) return;
+    const ms = Math.min(Math.max(prefs.snoozeUntil - Date.now() + 1, 0), 2 ** 31 - 1);
+    const id = setTimeout(() => setSnoozeTick((x) => x + 1), ms);
+    return () => clearTimeout(id);
+  }, [snoozed, prefs.snoozeUntil]);
+
   const handleAlert = (alert: InspectionAlert) => {
     // doc 81 Đợt 3c Task 1 (R-3c-a) — đang tạm tắt ⇒ không toast: cảnh báo socket không có mức "khẩn".
     if (snoozedNow()) return;
@@ -114,23 +133,6 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     [ecoAlerts],
   );
 
-  // U8 — per-user notification prefs (high-priority-only / snooze). Presentation filter only.
-  const { user } = useAuth();
-  const userKey = String((user as any)?.id ?? (user as any)?.openId ?? "anon");
-  const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadNotifPrefs(userKey));
-  // doc 81 Đợt 3c Task 1 (Ruling R-3c-a) — "tạm tắt" chỉ tắt SỐ trên chuông + toast cho mục KHÔNG khẩn (cảnh báo socket,
-  // hệ sinh thái dưới critical, thông báo server dưới URGENT). DANH SÁCH không bị ảnh hưởng (trước: giấu cả cảnh báo khỏi
-  // danh sách, kể cả critical; còn số chưa đọc của server thì vẫn hiện).
-  const snoozedNow = () => prefs.snoozeUntil > Date.now();
-  const snoozed = snoozedNow();
-  // Hết hạn ⇒ vẽ lại đúng lúc để số TRỞ LẠI mà không cần thao tác (trước: chỉ khi có gì khác làm vẽ lại).
-  const [, setSnoozeTick] = useState(0);
-  useEffect(() => {
-    if (!snoozed) return;
-    const ms = Math.min(Math.max(prefs.snoozeUntil - Date.now() + 1, 0), 2 ** 31 - 1);
-    const id = setTimeout(() => setSnoozeTick((x) => x + 1), ms);
-    return () => clearTimeout(id);
-  }, [snoozed, prefs.snoozeUntil]);
   const updatePrefs = (patch: Partial<NotificationPrefs>) => {
     setPrefs((prev) => {
       const next = { ...prev, ...patch };

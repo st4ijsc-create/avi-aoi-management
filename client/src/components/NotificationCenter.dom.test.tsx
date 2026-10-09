@@ -433,6 +433,8 @@ describe("Đợt 3c Task 1 — tạm tắt phủ cả thông báo server (R-3c-a
     render(<NotificationCenter />);
     expect(within(bell()).getByText("5")).toBeInTheDocument();
     const urgentOpts = srv.unreadOpts.filter((_, i) => (srv.unreadInputs[i] as { priority?: string } | undefined)?.priority === "URGENT");
+    // fix 1: truy vấn KHẨN phải ĐƯỢC KHAI (rồi tắt) — không để `every` đúng chân không khi nó không hề được gọi.
+    expect(urgentOpts.length).toBeGreaterThan(0);
     expect(urgentOpts.every((o) => o.enabled === false)).toBe(true);
   });
 
@@ -490,6 +492,21 @@ describe("Đợt 3c Task 1 — tạm tắt phủ cả thông báo server (R-3c-a
     expect(toast.warning).not.toHaveBeenCalled();
     act(() => { eco.onEvent?.(ecoEvt("c5", "critical", "CRIT-snz")); });
     expect(toast.error).toHaveBeenCalledWith("CRIT-snz", expect.anything());
+  });
+
+  it("fix 1: BẬT tạm tắt SAU khi gắn ⇒ toast thường (socket NG, hệ sinh thái high) bị chặn ngay; critical vẫn toast", () => {
+    render(<NotificationCenter />);
+    act(() => { sock.onAlert?.({ type: "NG_ALERT", machineName: "M1", message: "NG-before", timestamp: new Date() }); });
+    expect(toast.error).toHaveBeenCalledWith("NG-before", expect.anything()); // trước khi tạm tắt: như cũ
+    vi.mocked(toast.error).mockClear();
+    fireEvent.click(bell());
+    fireEvent.click(screen.getByRole("button", { name: S("notifications.snooze1h") }));
+    act(() => { sock.onAlert?.({ type: "NG_ALERT", machineName: "M1", message: "NG-after", timestamp: new Date() }); });
+    act(() => { eco.onEvent?.(ecoEvt("h7", "high", "HIGH-after")); });
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    act(() => { eco.onEvent?.(ecoEvt("c7", "critical", "CRIT-after")); });
+    expect(toast.error).toHaveBeenCalledWith("CRIT-after", expect.anything());
   });
 
   it("toast KHÔNG tạm tắt ⇒ như cũ (NG ⇒ toast lỗi; high ⇒ toast cảnh báo)", () => {

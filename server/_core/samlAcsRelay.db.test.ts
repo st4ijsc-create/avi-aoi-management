@@ -29,6 +29,8 @@ const ENV: Record<string, string> = {
   SAML_IDP_SSO_URL: "https://idp.example/sso",
   SAML_IDP_ENTITY_ID: "idp.example",
   JWT_SECRET: process.env.JWT_SECRET || "dot3c-saml-acs-relay-secret",
+  // fix 1: `./oauth` kêu "OAUTH_SERVER_URL is not configured!" lúc import ⇒ giá trị cục bộ GIẢ cho stderr sạch (không ai gọi tới).
+  OAUTH_SERVER_URL: "http://127.0.0.1:9/oauth-unused",
 };
 const saved: Record<string, string | undefined> = {};
 const savedRequireSigned = process.env.SAML_REQUIRE_SIGNED;

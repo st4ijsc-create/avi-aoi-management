@@ -21,19 +21,12 @@
  *   fix-up. Vietnam has no DST, but the helpers stay correct for any IANA TZ.
  */
 
-export const DEFAULT_FACTORY_TZ = "Asia/Ho_Chi_Minh";
+// doc 81 Đợt 3c fix 1 — phần thuần (Intl) sống ở `shared/factoryTime.ts` (client dùng chung); ở đây RE-EXPORT, một bản
+// cài đặt duy nhất. Người gọi phía server không đổi gì.
+import { isValidTimeZone, wallClockInZone as wallClockInZoneShared, type WallClock } from "../../shared/factoryTime";
+export { isValidTimeZone, type WallClock };
 
-/** True when `tz` is a valid IANA timezone identifier usable by Intl. */
-export function isValidTimeZone(tz: string | null | undefined): boolean {
-  if (!tz) return false;
-  try {
-    // Throws RangeError for unknown timezone identifiers.
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
+export const DEFAULT_FACTORY_TZ = "Asia/Ho_Chi_Minh";
 
 let warnedInvalidTz: string | null = null;
 
@@ -54,21 +47,6 @@ export function getFactoryTimezone(): string {
   return DEFAULT_FACTORY_TZ;
 }
 
-/** Wall-clock components of an instant as seen in a given timezone. */
-export interface WallClock {
-  year: number;
-  /** 1–12 (human month, NOT the JS 0-based month). */
-  month: number;
-  /** 1–31 */
-  day: number;
-  /** 0–23 */
-  hour: number;
-  minute: number;
-  second: number;
-  /** 0 = Sunday … 6 = Saturday (same convention as `scheduledReports.scheduleDayOfWeek`). */
-  dayOfWeek: number;
-}
-
 export interface WallClockInput {
   year: number;
   /** 1–12 */
@@ -79,41 +57,9 @@ export interface WallClockInput {
   second?: number;
 }
 
-const dtfCache = new Map<string, Intl.DateTimeFormat>();
-
-function formatterFor(timeZone: string): Intl.DateTimeFormat {
-  let dtf = dtfCache.get(timeZone);
-  if (!dtf) {
-    dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hourCycle: "h23", // avoid the "24:00" quirk of hour12:false
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    dtfCache.set(timeZone, dtf);
-  }
-  return dtf;
-}
-
 /** The wall clock in `timeZone` (default: factory TZ) at instant `date`. */
 export function wallClockInZone(date: Date, timeZone: string = getFactoryTimezone()): WallClock {
-  const parts = formatterFor(timeZone).formatToParts(date);
-  const v: Record<string, number> = {};
-  for (const p of parts) {
-    if (p.type !== "literal") v[p.type] = Number(p.value);
-  }
-  const year = v.year;
-  const month = v.month;
-  const day = v.day;
-  const hour = (v.hour ?? 0) % 24; // defensive vs engines emitting 24
-  // Weekday of the wall-clock DATE (built purely from wall parts, so it is the
-  // weekday the factory sees, independent of server TZ).
-  const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  return { year, month, day, hour, minute: v.minute ?? 0, second: v.second ?? 0, dayOfWeek };
+  return wallClockInZoneShared(date, timeZone);
 }
 
 /**
