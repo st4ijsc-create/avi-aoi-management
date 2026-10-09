@@ -375,6 +375,15 @@ describe("G1.1 — getSafetyStatus fallback (READ-ONLY, honest)", () => {
     expect(s.state).toBe("UNKNOWN");
   });
 
+  // doc 81 Đợt 4 Task A1 (R-4-c) — the target cannot be resolved here (fake DB has no execute()) ⇒ EVERY config
+  // applies, targeted or not: a line-targeted tripped PLC still blocks (never fewer configs than before).
+  it("Đợt 4 A1: target not resolvable ⇒ a config targeted elsewhere still applies (fail-closed)", async () => {
+    plcEnabled = true;
+    plcConfigs = [{ code: "PLC-L9", lineId: 9, factoryId: 4, __status: { estop: true } }];
+    const s = await createAdapterFacade({ adapterId: 10, machineId: 5 }).getSafetyStatus();
+    expect(s).toMatchObject({ state: "BLOCKED", source: "safety_plc:PLC-L9" });
+  });
+
   it("enabled but zero configs → UNKNOWN 'none'", async () => {
     plcEnabled = true;
     const facade = createAdapterFacade({ adapterId: 10 });

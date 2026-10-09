@@ -881,6 +881,8 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   //     doc 81 Đợt 1C Task 1 (owner decision 2026-09-27): the facade reads with
   //     { forRealActuation: true } (this gate is reachable only on the real, commissioned path) —
   //     SIM / real_unmapped alone ⇒ SAFETY_SIM_ONLY; a bad-quality real safety tag ⇒ SAFETY_UNKNOWN.
+  //     doc 81 Đợt 4 Task A1: robotId is passed so only the configs guarding THIS robot (its robot /
+  //     station / line / factory, plus untargeted ones) are read; unplaced/unknown robot ⇒ all configs.
   if (motion && isRobotSafetyPreflightEnabled()) {
     let safetyState: string;
     let safetySource: string | undefined;
@@ -888,7 +890,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
     try {
       const { createAdapterFacade } = await import("../ot/adapterFacade");
       const s = await withDeadline(
-        createAdapterFacade({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null }).getSafetyStatus({ forRealActuation: true }),
+        createAdapterFacade({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null, robotId: input.robotId }).getSafetyStatus({ forRealActuation: true }),
         SAFETY_PREFLIGHT_DEADLINE_MS,
         "safety-PLC preflight",
       );

@@ -102,3 +102,27 @@ describe("Đợt 1C Task 1 — actuationPreflightVerdict", () => {
     expect(() => safetyPreflightReason("OK", "sim_only")).toThrow(/OK is not a refusal/);
   });
 });
+
+// doc 81 Đợt 4 Task A1 (ruling R-4-c) — MỘT bộ so khớp cấu hình ↔ đích cho cổng và bảng nguồn an toàn.
+describe("Đợt 4 Task A1 — plcConfigAppliesToTarget", () => {
+  it("bảng chân trị (đích null ⇒ mọi cấu hình; không gắn đích ⇒ luôn; cột cụ thể nhất quyết định)", async () => {
+    const { plcConfigAppliesToTarget: f } = await import("./safetyPreflightPolicy");
+    const M = { robotId: null, machineId: 10, stationId: 3, lineId: 2, factoryId: 1 };
+    const R = { robotId: 7, machineId: null, stationId: 3, lineId: 2, factoryId: 1 };
+    const RL = { robotId: 8, machineId: null, stationId: null, lineId: 2, factoryId: 1 };
+    const none = {};
+    expect(f({ lineId: 99, robotId: 98 }, null)).toBe(true);
+    expect(f(none, M)).toBe(true);
+    expect(f({ robotId: null, stationId: null, lineId: null, factoryId: null }, R)).toBe(true);
+    expect(f({ lineId: 2, factoryId: 1 }, M)).toBe(true);
+    expect(f({ lineId: 5, factoryId: 1 }, M)).toBe(false); // factoryId của hàng chuyền 5 là chủ, không mở rộng
+    expect(f({ factoryId: 1 }, M)).toBe(true);
+    expect(f({ factoryId: 2 }, M)).toBe(false);
+    expect(f({ stationId: 3 }, M)).toBe(true);
+    expect(f({ stationId: 4, lineId: 2 }, M)).toBe(false);
+    expect(f({ stationId: 4, lineId: 2 }, RL)).toBe(true); // robot chỉ đặt ở chuyền: không loại trừ được trạm
+    expect(f({ robotId: 7, lineId: 2 }, R)).toBe(true);
+    expect(f({ robotId: 7, lineId: 2 }, M)).toBe(false);
+    expect(f({ robotId: 9, lineId: 2 }, R)).toBe(false);
+  });
+});

@@ -149,10 +149,11 @@ export interface ActuationPreflightVerdict {
  *      (a tripped safety flag always denies — even a SIM script's, conservative as before);
  *   2. ANY `real` config is incomplete (bad-quality / missing tag) or errored (unreadable)
  *                                                                   ⇒ UNKNOWN / SAFETY_UNKNOWN
- *      — fix round 1, ruling R-1C-b: safety-PLC configs are GLOBAL (not scoped to the target
- *      machine/line), so a clean PLC-B must not mask an unreadable e-stop on PLC-A. Cost: one
- *      real PLC offline blocks EVERY real write/motion. Scoping configs to the target is the
- *      right long-term fix and is CÒN MỞ. A SIM reading next to it never counts;
+ *      — fix round 1, ruling R-1C-b: a clean PLC-B must not mask an unreadable e-stop on PLC-A.
+ *      doc 81 Đợt 4 Task A1: the readings passed here are ONLY the configs that apply to the
+ *      target (plcConfigAppliesToTarget below), so an offline real PLC on line 2 no longer
+ *      blocks a write on line 1; untargeted configs and unresolvable targets still see every
+ *      config (fail-closed). A SIM reading next to it never counts;
  *   3. ≥1 `real` config and every `real` config read CLEAN (every mapped tag good) ⇒ OK;
  *   4. configs exist but none is `real` (only sim_empty / sim_scripted / real_unmapped)
  *                                                                   ⇒ UNKNOWN / SAFETY_SIM_ONLY;
@@ -166,4 +167,53 @@ export function actuationPreflightVerdict(readings: readonly PlcPreflightReading
   if (real.some((r) => r.outcome === "clean")) return { state: "OK", reason: null };
   if (readings.length > 0) return { state: "UNKNOWN", reason: "SAFETY_SIM_ONLY" };
   return { state: "UNKNOWN", reason: "SAFETY_UNKNOWN" };
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 4 Task A1 — WHICH configs a preflight reads. ONE matcher shared by the gate
+// (adapterFacade.getSafetyStatus) and the Safety panel (safetySourceHealth) — never two copies.
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/** The target-column part of a safety-PLC config (a DB row or the panel's lite row). */
+export interface PlcConfigTargetShape {
+  robotId?: number | null;
+  stationId?: number | null;
+  lineId?: number | null;
+  factoryId?: number | null;
+}
+
+/**
+ * Where the command lands, resolved to the WHOLE chain (factory ← line ← station ← machine, or
+ * the robot's line/station). Built only by safetyTarget.resolveSafetyTarget: a partial chain is
+ * never built — anything it cannot resolve is `null` (⇒ every config applies).
+ */
+export interface SafetyTarget {
+  robotId: number | null;
+  machineId: number | null;
+  /** null only for a robot placed at line level (robots.stationId NULL). */
+  stationId: number | null;
+  lineId: number;
+  factoryId: number;
+}
+
+/**
+ * doc 81 Đợt 4 Task A1 (ruling R-4-c) — does `cfg` guard `target`? PURE.
+ *   • target null (could not be resolved: DB error, unknown robot/machine, unplaced robot)
+ *     ⇒ TRUE for every config — never fewer than before (fail-closed);
+ *   • config with NO target column set ⇒ TRUE (applies globally, as before);
+ *   • otherwise the config's MOST SPECIFIC column decides — robot › station › line › factory —
+ *     because the coarser columns on a targeted row are its owner/context (a line-2 PLC row also
+ *     carries its factory); a line config applies to every station/machine/robot on that line, a
+ *     factory config to everything in that factory, a station config to its machines and robots,
+ *     a robot config to that robot only. A robot placed at line level only (no station) is
+ *     guarded by every station-targeted config — its station cannot be ruled out.
+ */
+export function plcConfigAppliesToTarget(cfg: PlcConfigTargetShape, target: SafetyTarget | null): boolean {
+  if (target === null) return true;
+  if (cfg.robotId != null) return target.robotId === cfg.robotId;
+  // A robot placed at line level only (robots.stationId NULL) cannot be ruled out of any station ⇒ applies.
+  if (cfg.stationId != null) return target.stationId === null || target.stationId === cfg.stationId;
+  if (cfg.lineId != null) return target.lineId === cfg.lineId;
+  if (cfg.factoryId != null) return target.factoryId === cfg.factoryId;
+  return true;
 }
