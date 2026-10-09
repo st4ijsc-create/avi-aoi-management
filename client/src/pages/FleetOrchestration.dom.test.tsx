@@ -47,6 +47,8 @@ function makeQuery(overrides: Partial<QueryResult> = {}): QueryResult {
   };
 }
 const queryOverrides: Record<string, () => QueryResult> = {};
+/** doc 81 Đợt 4 Task A3 — every useQuery call (key, input, options), to assert WHEN a query may run. */
+const queryCalls: Array<{ key: string; input: unknown; opts: { enabled?: boolean } | undefined }> = [];
 function setQueryOverride(key: string, result: QueryResult) {
   queryOverrides[key] = () => result;
 }
@@ -71,7 +73,10 @@ vi.mock("@/lib/trpc", () => ({
             get(_t2, procName: string) {
               const key = `${routerName}.${procName}`;
               return {
-                useQuery: () => (queryOverrides[key] ? queryOverrides[key]() : makeQuery()),
+                useQuery: (input?: unknown, opts?: { enabled?: boolean }) => {
+                  queryCalls.push({ key, input, opts });
+                  return queryOverrides[key] ? queryOverrides[key]() : makeQuery();
+                },
                 useMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
               };
             },
@@ -93,6 +98,7 @@ beforeEach(() => {
   // jsdom sống qua các test, nên đưa về trang gốc để test sau không bắt đầu ở tab test trước đã mở.
   window.history.replaceState(null, "", "/labs/fleet-orchestration");
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
+  queryCalls.length = 0;
   // Zone đủ để render nút "Reserve" (nút ghi G1 đang canh) mà không cần đổi tab.
   setQueryOverride("fleet.listZones", makeQuery({ data: ONE_ZONE }));
 });
@@ -294,5 +300,26 @@ describe("FleetOrchestration — Task 4 X-01: badge DEMO trên task seed", () =>
         expect(badge, `hàng thật ${tk.taskKey} bị gắn nhãn nhầm`).toBeNull();
       }
     }
+  });
+});
+
+// doc 81 Đợt 4 Task A3 — the fleet map asks twin.occupancyGrid ONLY for a KNOWN factory (no factoryId=1 fallback query).
+// The server now answers NOT_FOUND for a factory outside the caller's scope; the client must not probe one.
+describe("FleetOrchestration — Đợt 4 A3: twin.occupancyGrid chỉ hỏi khi BIẾT nhà máy", () => {
+  const gridCalls = () => queryCalls.filter((c) => c.key === "twin.occupancyGrid");
+
+  it("không vùng nào mang factoryId và người dùng chưa chọn ⇒ truy vấn lưới bị TẮT (enabled=false) ở MỌI lượt render", () => {
+    setQueryOverride("fleet.listZones", makeQuery({ data: [{ ...ONE_ZONE[0], factoryId: null }] }));
+    render(<FleetOrchestration />);
+    expect(gridCalls().length).toBeGreaterThan(0);
+    expect(gridCalls().every((c) => c.opts?.enabled === false)).toBe(true);
+  });
+
+  it("vùng đọc được của nhà máy 7 ⇒ truy vấn lưới BẬT, đúng factoryId 7 (không phải 1)", () => {
+    setQueryOverride("fleet.listZones", makeQuery({ data: [{ ...ONE_ZONE[0], factoryId: 7 }] }));
+    render(<FleetOrchestration />);
+    const on = gridCalls().filter((c) => c.opts?.enabled === true);
+    expect(on.length).toBeGreaterThan(0);
+    expect(on.every((c) => (c.input as { factoryId: number }).factoryId === 7)).toBe(true);
   });
 });

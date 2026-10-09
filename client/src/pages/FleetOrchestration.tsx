@@ -328,7 +328,8 @@ export default function FleetOrchestration() {
   );
   const effectiveFactoryId = mapFactoryId ?? factoryIds[0] ?? 1;
   // final wave T10 — chỉ đọc lưới khi BIẾT nhà máy (người dùng chọn, hoặc có vùng đọc được): không còn gọi factoryId=1
-  // dự phòng mỗi lần mở trang (twin.occupancyGrid chưa có kiểm phạm vi nhà máy phía server — còn mở, ghi ở báo cáo).
+  // dự phòng mỗi lần mở trang. doc 81 Đợt 4 Task A3: server nay kiểm phạm vi nhà máy (ngoài phạm vi = NOT_FOUND như
+  // nhà máy không tồn tại) — `?? 1` dưới đây chỉ còn là giá trị hiển thị của bộ chọn, KHÔNG bao giờ được hỏi.
   const gridFactoryKnown = mapFactoryId != null || factoryIds.length > 0;
   const occupancyGridQ = trpc.twin.occupancyGrid.useQuery(
     { factoryId: effectiveFactoryId },

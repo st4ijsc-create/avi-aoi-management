@@ -635,7 +635,15 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   `phamViDocBaseline.ts` (hai thủ tục chưa từng ở sổ nợ).
  *   ⇒ C −2 · S +2.
  */
-const GHIM = { A: 340, B: 8, C: 479, D: 1131, S: 338, tong: 2296 } as const;
+/*
+ * ★★★ 2026-10-09 (doc 81 Đợt 4 Task A3 — bốn thủ tục đọc nhà máy của twin.*) — **A 340→336 · S 338→342 · tong/B/C/D
+ * không đổi.** ĐO bằng chính bộ quét này (cây trước lượt sửa = A 340 · S 338, khớp ghim):
+ *   • `twin.sceneGraph` · `twin.twinModels` · `twin.replay` · `twin.occupancyGrid` (query): **A → S** — cùng cổng
+ *     `assertTwinFactoryInScope(ctx, factoryId)` của `twin.usdExport` (Đợt 42): `trongPhamVi("factory", …, phamViCua(ctx))`,
+ *     ngoài phạm vi ⇒ NOT_FOUND giống hệt nhà máy không tồn tại. Bốn dòng ĐÃ GỠ khỏi `phamViDocBaseline.ts` (sổ nợ co 4).
+ *   ⇒ A −4 · S +4.
+ */
+const GHIM = { A: 336, B: 8, C: 479, D: 1131, S: 342, tong: 2296 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

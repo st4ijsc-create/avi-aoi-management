@@ -31,6 +31,18 @@ import { validateUpload } from "../_core/uploadValidation";
 // ★ Đợt 42 — hàng rào tenant cho `usdExport` (QA Đợt 41 D-4 lỗ #1): cùng khuôn Đợt 40, không dựng bộ luật thứ hai (G12).
 import { phamViCua } from "./_phamViNguoiXem";
 import { trongPhamVi } from "../db/hierarchy";
+
+/**
+ * doc 81 Đợt 4 Task A3 — the ONE factory gate of the twin read endpoints (the Đợt 42 usdExport check, now shared by
+ * sceneGraph · twinModels · usdExport · replay · occupancyGrid). `factoryId` is the client's own claim: a factory outside
+ * the caller's scope gets EXACTLY the response of a factory that does not exist for that caller (same code, same key,
+ * same message) — no separate code confirms the factory is real (G82). Admin / scope `null` ⇒ no check.
+ */
+async function assertTwinFactoryInScope(ctx: Parameters<typeof phamViCua>[0], factoryId: number): Promise<void> {
+  if (!(await trongPhamVi("factory", factoryId, phamViCua(ctx)))) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${factoryId} not found`);
+  }
+}
 import {
   twinLiveEnabled,
   registerModel,
@@ -289,7 +301,10 @@ export const twinRouter = router({
   sceneGraph: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ factoryId: z.number().int().positive() }))
-    .query(async ({ input }) => buildSceneGraph(input.factoryId)),
+    .query(async ({ input, ctx }) => {
+      await assertTwinFactoryInScope(ctx, input.factoryId); // doc 81 Đợt 4 Task A3
+      return buildSceneGraph(input.factoryId);
+    }),
 
   // ── T3 DTDL TWIN MODELS (read-only, queryable) ─────────────────────────────
   //   The scene-graph projected into a DTDL-v3-shaped twin graph: the metamodel
@@ -299,7 +314,8 @@ export const twinRouter = router({
   twinModels: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ factoryId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await assertTwinFactoryInScope(ctx, input.factoryId); // doc 81 Đợt 4 Task A3
       const g = await buildFactoryTwinModels(input.factoryId);
       return {
         interfaces: g.interfaces,
@@ -338,10 +354,9 @@ export const twinRouter = router({
        *   non-admin đều có). `buildFactoryUsda(factoryId)` → `sceneGraph.ts` không nhận phạm vi.
        *   Nhà máy ngoài phạm vi ⇒ `NOT_FOUND`, CÙNG hình dạng với nhà máy không tồn tại (G82 — một mã
        *   riêng xác nhận nhà máy ấy có thật). Admin / phạm vi `null` ⇒ không thêm mệnh đề nào.
+       * doc 81 Đợt 4 Task A3: cùng cổng (assertTwinFactoryInScope) nay áp cho sceneGraph/twinModels/replay/occupancyGrid.
        */
-      if (!(await trongPhamVi("factory", input.factoryId, phamViCua(ctx)))) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${input.factoryId} not found`);
-      }
+      await assertTwinFactoryInScope(ctx, input.factoryId);
       const usda = await buildFactoryUsda(input.factoryId, {
         upAxis: input.upAxis,
         metersPerUnit: input.metersPerUnit,
@@ -368,7 +383,8 @@ export const twinRouter = router({
         step: z.number().int().min(1).max(3600).default(5), // seconds per frame
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await assertTwinFactoryInScope(ctx, input.factoryId); // doc 81 Đợt 4 Task A3
       if (input.to.getTime() <= input.from.getTime()) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "to" }, "`to` must be after `from`");
       }
@@ -388,7 +404,8 @@ export const twinRouter = router({
         to: z.object({ x: z.number(), y: z.number() }).optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await assertTwinFactoryInScope(ctx, input.factoryId); // doc 81 Đợt 4 Task A3
       const built = await buildFactoryGrid({ factoryId: input.factoryId, cellSize: input.cellSize, inflate: input.inflate });
       let route = null;
       if (built.grid && input.from && input.to) {
