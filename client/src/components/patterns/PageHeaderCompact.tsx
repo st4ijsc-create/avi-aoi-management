@@ -34,6 +34,19 @@ export interface PageHeaderCompactProps {
   className?: string;
 }
 
+/**
+ * doc 81 Đợt 3b final wave (minor 8) — chữ THUẦN của tiêu đề (chuỗi/số + con của phần tử, đệ quy) cho `title` của h1: ở mức
+ * gộp h1 cắt chữ (…) ⇒ rê chuột thấy đủ tiêu đề. Component con không có `children` (vd huy hiệu Chỉ xem) bị bỏ qua — không
+ * gọi component, không đọc DOM.
+ */
+export function plainTitleText(node: React.ReactNode, depth = 0): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map((x) => plainTitleText(x as React.ReactNode, depth)).join("");
+  if (depth < 8 && React.isValidElement(node)) return plainTitleText((node.props as { children?: React.ReactNode }).children, depth + 1);
+  return "";
+}
+
 export function PageHeaderCompact({ title, icon, chips, actions, className }: PageHeaderCompactProps): React.JSX.Element {
   const headerRef = React.useRef<HTMLElement>(null);
   // Fix round 1 (R-3b-b): đo lại theo CHỮ KÝ nội dung (dữ liệu), không theo danh tính JSX mới mỗi lượt dựng.
@@ -60,7 +73,7 @@ export function PageHeaderCompact({ title, icon, chips, actions, className }: Pa
       )}
       {/* Fix round 1 (R-3b-b): mức GỘP ⇒ chip đã gọn tối đa (ghim/lỗi + "+N") được ưu tiên chỗ hơn h1 — h1 cắt chữ (…) nhưng
           giữ tối thiểu 4rem; không đủ nữa thì mức 2 xuống dòng. */}
-      <Heading level={3} as="h1" className={cn("min-w-0 shrink truncate", level === 1 && "min-w-16")}>
+      <Heading level={3} as="h1" title={plainTitleText(title).trim() || undefined} className={cn("min-w-0 shrink truncate", level === 1 && "min-w-16")}>
         {title}
       </Heading>
       {chips != null && (

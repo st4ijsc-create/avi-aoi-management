@@ -111,7 +111,9 @@ export function useHeaderFitLevel(ref: React.RefObject<HTMLElement | null>, sign
     else climb();
   }, [ref, climb]);
 
-  // Chữ ký nội dung đổi ⇒ về 0 (hoãn nếu bận); mọi lượt dựng ⇒ chỉ LEO khi tràn.
+  // Chữ ký nội dung đổi ⇒ về 0 (hoãn nếu bận), rồi LEO khi tràn. final wave (minor 7): CHỈ khi chữ ký hoặc mức đổi — không
+  // phải mỗi lượt dựng (IR/IDE dựng lại header mỗi phím gõ với dữ liệu y nguyên; trước: mỗi lượt một lần đọc scrollWidth = ép
+  // layout). Bề rộng đổi ⇒ ResizeObserver; DOM header đổi mà chữ ký không đổi ⇒ MutationObserver (dưới).
   React.useLayoutEffect(() => {
     if (lastSig.current !== signature) {
       const first = lastSig.current === null;
@@ -126,7 +128,7 @@ export function useHeaderFitLevel(ref: React.RefObject<HTMLElement | null>, sign
       }
     }
     climb();
-  });
+  }, [signature, level, climb, ref]);
 
   React.useEffect(() => {
     const el = ref.current;

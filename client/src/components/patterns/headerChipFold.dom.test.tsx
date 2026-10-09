@@ -25,6 +25,8 @@ import { contentSignature, headerOverflows } from "./headerChipFold";
 
 // ── mô hình bề rộng ───────────────────────────────────────────────────────────────────────────
 let capacity = 2000;
+/** final wave (minor 7): số lần đọc `scrollWidth` của header (mỗi lần = một lần ép layout trên trình duyệt). */
+let headerReads = 0;
 const ITEM_PX = 100;
 const ITEM_SEL = "[data-chip-id],[data-chip-more],[data-notice-kind],[data-notice-more],[data-header-actions] > *";
 function itemsIn(el: Element): number {
@@ -42,6 +44,7 @@ beforeAll(async () => {
     configurable: true,
     get(this: HTMLElement) {
       if (!this.hasAttribute("data-layout-header")) return 0;
+      headerReads++;
       return this.getAttribute("data-header-fit") === "wrap" ? capacity : itemsIn(this) * ITEM_PX;
     },
   });
@@ -399,5 +402,30 @@ describe("Đợt 3b final wave (I1) — notice GHIM + '+N' tông tệ nhất", (
     expect(chipIds(header())).toEqual(["engine"]);
     expect(chipMore(header())?.getAttribute("data-chip-more")).toBe("2");
     expect(chipMore(header())?.getAttribute("data-state")).toBe("error");
+  });
+});
+
+// ── doc 81 Đợt 3b final wave (minor 7) — không đo lại mỗi lượt dựng ─────────────────────────────────────
+// IR/IDE dựng lại header MỖI phím gõ trong editor (dữ liệu header y nguyên). Trước: layout effect không deps gọi climb() ⇒
+// đọc scrollWidth (ép layout) mỗi lượt. Nay chỉ đo khi chữ ký nội dung / mức đổi, hoặc observer (bề rộng, DOM header) báo.
+describe("Đợt 3b final wave — header không đo lại khi dữ liệu y nguyên", () => {
+  it("20 lượt dựng lại với cùng dữ liệu (gõ phím) ⇒ 0 lần đọc hình học header; dữ liệu đổi ⇒ đo lại", () => {
+    capacity = 2000;
+    const { rerender } = render(<Header />);
+    headerReads = 0;
+    for (let i = 0; i < 20; i++) rerender(<Header />);
+    expect(headerReads).toBe(0);
+    rerender(<Header chips={[CHIPS[0], { ...CHIPS[1], value: 5 }, CHIPS[2], CHIPS[3]]} />);
+    expect(headerReads).toBeGreaterThan(0);
+  });
+
+  it("ở mức gộp: dựng lại cùng dữ liệu ⇒ 0 lần đọc, mức giữ nguyên", () => {
+    capacity = 600;
+    const { rerender } = render(<Header />);
+    expect(header().getAttribute("data-header-fit")).toBe("fold");
+    headerReads = 0;
+    for (let i = 0; i < 20; i++) rerender(<Header />);
+    expect(headerReads).toBe(0);
+    expect(header().getAttribute("data-header-fit")).toBe("fold");
   });
 });
