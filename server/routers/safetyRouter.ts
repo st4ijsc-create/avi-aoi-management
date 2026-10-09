@@ -85,64 +85,49 @@ async function callerFactoryScope(ctx: CoDanhTinh): Promise<FactoryScope> {
 const inFactoryScope = (scope: FactoryScope, factoryId: number): boolean => scope === null || scope.includes(factoryId);
 
 /**
- * doc 81 Đợt 3b final wave (I2 + rà soát bảo mật) — nhà máy của một phân công, theo thứ tự: CHUYỀN (`production_lines` →
- * `workshops.factoryId`) › TRẠM (`stations` → chuyền → xưởng) › `factoryId` khai trong input. Một bậc chỉ được tính khi
- * nhà máy của nó TRONG PHẠM VI người gọi — chuyền/trạm/nhà máy ngoài phạm vi bị bỏ qua Y NHƯ id không tồn tại (không lộ
- * chuyền đó có thật hay thuộc nhà máy nào). Không bậc nào ra ⇒ `null` (không rõ ⇒ không kiểm ca ⇄ nhà máy).
+ * doc 81 Đợt 3b final wave (post-review, chủ dự án duyệt) — MỘT luật "nhà máy của phân công" cho CẢ đọc (lọc hàng, soát hàng
+ * đích) lẫn ghi (kiểm ca ⇄ nhà máy, đóng dấu `factoryId`): CHUYỀN (`production_lines` → `workshops.factoryId`) › TRẠM
+ * (`stations` → chuyền → xưởng) › cột/ô `factoryId`. Vị trí VẬT LÝ là sự thật; cột `factoryId` chỉ là dự phòng khi không có
+ * chuyền/trạm (hay id của chúng không còn). Trước: đọc = factoryId › chuyền › trạm, ghi = chuyền › trạm › factoryId ⇒ hàng cũ có
+ * factoryId lệch chuyền bị xếp nhà máy khác nhau giữa đọc và ghi. NULL = mồ côi (không bậc nào ra).
  */
-async function assignmentFactoryId(
-  input: { lineId?: number | null; stationId?: number | null; factoryId?: number | null },
-  scope: FactoryScope,
-): Promise<number | null> {
+function assignmentFactorySql(line: SQL | typeof operatorAssignments.lineId, station: SQL | typeof operatorAssignments.stationId, factory: SQL | typeof operatorAssignments.factoryId): SQL {
+  return sql`COALESCE(
+  (SELECT w."factoryId" FROM production_lines l JOIN workshops w ON w."id" = l."workshopId" WHERE l."id" = ${line}),
+  (SELECT w."factoryId" FROM stations s JOIN production_lines l ON l."id" = s."lineId" JOIN workshops w ON w."id" = l."workshopId"
+    WHERE s."id" = ${station}),
+  ${factory}
+)`;
+}
+/** Nhà máy của một HÀNG phân công (luật ở trên, trên chính các cột của hàng). */
+const ASSIGNMENT_FACTORY_SQL = assignmentFactorySql(operatorAssignments.lineId, operatorAssignments.stationId, operatorAssignments.factoryId);
+
+/**
+ * Nhà máy của một phân công SẮP ghi (input) — CÙNG `assignmentFactorySql`. Gọi SAU `assertAssignmentInputsInScope` (với
+ * người bị thu hẹp mọi id đã TRONG phạm vi). `assignableShifts` (chỉ đọc, không soát input) tự bỏ chuyền/trạm ngoài phạm vi
+ * trước khi gọi — ngoài phạm vi ≡ không tồn tại.
+ */
+async function assignmentFactoryId(input: { lineId?: number | null; stationId?: number | null; factoryId?: number | null }): Promise<number | null> {
   const d = await db();
-  if (input.lineId != null) {
-    const [r] = await d
-      .select({ factoryId: workshops.factoryId })
-      .from(productionLines)
-      .innerJoin(workshops, eq(workshops.id, productionLines.workshopId))
-      .where(eq(productionLines.id, input.lineId))
-      .limit(1);
-    if (r && inFactoryScope(scope, r.factoryId)) return r.factoryId;
-  }
-  if (input.stationId != null) {
-    const [r] = await d
-      .select({ factoryId: workshops.factoryId })
-      .from(stations)
-      .innerJoin(productionLines, eq(productionLines.id, stations.lineId))
-      .innerJoin(workshops, eq(workshops.id, productionLines.workshopId))
-      .where(eq(stations.id, input.stationId))
-      .limit(1);
-    if (r && inFactoryScope(scope, r.factoryId)) return r.factoryId;
-  }
-  if (input.factoryId != null && inFactoryScope(scope, input.factoryId)) return input.factoryId;
-  return null;
+  const p = (v: number | null | undefined) => sql`${v ?? null}::int`;
+  const [r] = (await d.execute(sql`SELECT ${assignmentFactorySql(p(input.lineId), p(input.stationId), p(input.factoryId))} AS "f"`)) as unknown as Array<{ f: number | string | null }>;
+  return r?.f == null ? null : Number(r.f);
 }
 
 /**
- * doc 81 Đợt 3b final wave (rà soát bảo mật) — nhà máy GHI vào hàng phân công mới: nhà máy của chuyền/trạm/factoryId (trong
- * phạm vi) › phạm vi người gọi đúng MỘT nhà máy ⇒ nhà máy đó › `null` (người không lọc — admin — thấy mọi hàng). Nhờ vậy
- * người bị thu hẹp thấy lại được chính phân công mình vừa tạo khi `listAssignments` lọc theo phạm vi.
+ * doc 81 Đợt 3b final wave (rà soát bảo mật) — nhà máy GHI vào hàng phân công mới: `assignmentFactoryId` (CÙNG luật đọc) ›
+ * phạm vi người gọi đúng MỘT nhà máy ⇒ nhà máy đó › `null` (người không lọc — admin — thấy mọi hàng). Nhờ vậy người bị thu
+ * hẹp thấy lại được chính phân công mình vừa tạo khi `listAssignments` lọc theo phạm vi.
  */
 async function stampAssignmentFactory(
   input: { lineId?: number | null; stationId?: number | null; factoryId?: number | null },
   scope: FactoryScope,
 ): Promise<number | null> {
-  const fac = await assignmentFactoryId(input, scope);
+  const fac = await assignmentFactoryId(input);
   if (fac != null) return fac;
   return scope !== null && scope.length === 1 ? scope[0] : null;
 }
 
-/**
- * doc 81 Đợt 3b final wave (rà soát bảo mật) — nhà máy của một HÀNG phân công trong SQL: `factoryId` › nhà máy của chuyền ›
- * nhà máy của trạm; NULL = mồ côi. Người bị thu hẹp chỉ thấy/chạm hàng có nhà máy TRONG phạm vi; hàng mồ côi bị loại
- * (fail-closed — cùng luật công trạm mồ côi của `idsTrongPhamVi`).
- */
-const ASSIGNMENT_FACTORY_SQL = sql`COALESCE(
-  ${operatorAssignments.factoryId},
-  (SELECT w."factoryId" FROM production_lines l JOIN workshops w ON w."id" = l."workshopId" WHERE l."id" = ${operatorAssignments.lineId}),
-  (SELECT w."factoryId" FROM stations s JOIN production_lines l ON l."id" = s."lineId" JOIN workshops w ON w."id" = l."workshopId"
-    WHERE s."id" = ${operatorAssignments.stationId})
-)`;
 function assignmentScopeCond(scope: FactoryScope): SQL | undefined {
   if (scope === null) return undefined;
   if (scope.length === 0) return sql`false`;
@@ -240,7 +225,7 @@ async function assertAssignableShift(
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "shiftConfig" }, `Shift ${shiftConfigId} not found`);
   }
   if (ca.factoryId != null) {
-    const fac = await assignmentFactoryId(target, scope);
+    const fac = await assignmentFactoryId(target);
     if (fac != null && fac !== ca.factoryId) {
       throw appError(
         "BAD_REQUEST",
@@ -900,8 +885,11 @@ export const safetyRouter = router({
     .query(async ({ input, ctx }) => {
       const d = await db();
       const factoryIds = await callerFactoryScope(ctx);
-      // chuyền/trạm ngoài phạm vi ⇒ bỏ qua Y NHƯ không tồn tại (không lộ chuyền đó có thật / thuộc nhà máy nào).
-      const target = await assignmentFactoryId({ lineId: input?.lineId, stationId: input?.stationId }, factoryIds);
+      // chuyền/trạm ngoài phạm vi ⇒ bỏ qua Y NHƯ không tồn tại (không lộ chuyền đó có thật / thuộc nhà máy nào), rồi CÙNG
+      // luật nhà máy của phân công (post-review).
+      const inScope = async (cap: "line" | "station", id: number | undefined) =>
+        id == null || factoryIds === null ? id : ((await idsTrongPhamVi(cap, phamViCua(ctx))) ?? []).includes(id) ? id : undefined;
+      const target = await assignmentFactoryId({ lineId: await inScope("line", input?.lineId), stationId: await inScope("station", input?.stationId) });
       const conds = [eq(shiftConfigs.isActive, true)];
       if (factoryIds !== null) {
         conds.push(factoryIds.length ? or(isNull(shiftConfigs.factoryId), inArray(shiftConfigs.factoryId, factoryIds))! : isNull(shiftConfigs.factoryId));

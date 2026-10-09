@@ -48,6 +48,8 @@ interface Fx {
   shiftMissing: number;
   userScoped: number;
   userEmpty: number;
+  /** post-review (3): người dùng được gán HAI nhà máy (trong + ngoài). */
+  userMulti: number;
   ops: number[];
   // final wave (I2) — chuyền/trạm thật của từng nhà máy (production_lines → workshops.factoryId).
   wsIn: number;
@@ -80,6 +82,7 @@ const caller = async (ctx: object) => (await import("./safetyRouter")).safetyRou
 const asAdmin = () => caller({ user: { id: 960001, role: "admin", name: "d3b1-admin" } });
 const asScoped = () => caller({ user: { id: fx.userScoped, role: "engineer", name: "d3b1-scoped" } });
 const asEmpty = () => caller({ user: { id: fx.userEmpty, role: "engineer", name: "d3b1-empty" } });
+const asMulti = () => caller({ user: { id: fx.userMulti, role: "engineer", name: "d3b1-multi" } });
 
 async function rowsOf(operatorId: number) {
   return (await sql`
@@ -127,13 +130,15 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
         VALUES (${`${DAU}-${suffix}`}, ${`${DAU}-${suffix}`}, ${`${DAU} ${suffix}`}, 'engineer', true) RETURNING id`);
     const userScoped = await mkUser("scoped");
     const userEmpty = await mkUser("empty");
-    for (const uid of [userScoped, userEmpty]) {
+    const userMulti = await mkUser("multi");
+    for (const uid of [userScoped, userEmpty, userMulti]) {
       await sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate")
                 VALUES (${uid}, 'machine_control', ${resolvePermissionModule("machine_control")}, true, true)`;
       await sql`INSERT INTO permissions ("userId", category, "moduleName", "canView")
                 VALUES (${uid}, 'machine_monitoring', ${resolvePermissionModule("machine_monitoring")}, true)`;
     }
     await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${userScoped}, ${facInCode})`;
+    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${userMulti}, ${facInCode}), (${userMulti}, ${`${DAU}-OUT`})`;
     // final wave (I2): xưởng → chuyền → trạm của mỗi nhà máy.
     const wsIn = await one(sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${facIn}, ${`${DAU}-WI`}, ${`${DAU} xuong trong`}) RETURNING id`);
     const wsOut = await one(sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${facOut}, ${`${DAU}-WO`}, ${`${DAU} xuong ngoai`}) RETURNING id`);
@@ -155,7 +160,7 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
     await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${opInactive}, ${facInCode})`;
     const [{ maxUser }] = (await sql`SELECT COALESCE(MAX(id), 0)::int AS "maxUser" FROM users`) as unknown as Array<{ maxUser: number }>;
     fx = {
-      facIn, facOut, facInCode, shiftIn, shiftOut, shiftGlobal, shiftOff, shiftMissing: max + 100_000, userScoped, userEmpty, ops: [],
+      facIn, facOut, facInCode, shiftIn, shiftOut, shiftGlobal, shiftOff, shiftMissing: max + 100_000, userScoped, userEmpty, userMulti, ops: [],
       wsIn, wsOut, lineIn, lineOut, stationOut, lineMissing: maxLine + 100_000,
       stationIn, opOut, opInactive, opMissing: maxUser + 100_000,
     };
@@ -171,7 +176,7 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
     else process.env.WORKFORCE_ENABLED = savedWorkforce;
     if (!sql) return;
     if (fx) {
-      const uids = [fx.userScoped, fx.userEmpty, ...OP_POOL, fx.opOut, fx.opInactive].filter(Boolean);
+      const uids = [fx.userScoped, fx.userEmpty, fx.userMulti, ...OP_POOL, fx.opOut, fx.opInactive].filter(Boolean);
       // final wave: dọn RỘNG — mọi hàng của người vận hành / nhà máy / chuyền / trạm CỦA LƯỢT NÀY (kể cả hàng một lần chạy đột biến
       // ghi cho opOut / opInactive / opMissing mà ca không kịp đưa vào fx.ops) — không để rò sang `_test` dùng chung.
       const opIds = [...new Set([...fx.ops, ...OP_POOL, fx.opOut, fx.opInactive, fx.opMissing].filter((x) => x != null))];
@@ -639,6 +644,46 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       expect(await errOf(a.assignOperator({ operatorId: fx.opMissing }))).toEqual(NF("user"));
       expect(await errOf(a.assignOperator({ operatorId: o, lineId: fx.lineMissing }))).toEqual(NF("line"));
       expect(await rowsOf(o)).toEqual([]);
+    });
+  });
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 3b final wave — post-review (chủ dự án duyệt). (2) MỘT luật nhà máy của phân công cho cả ĐỌC lẫn GHI: chuyền ›
+  // trạm › cột factoryId (vị trí VẬT LÝ là sự thật). Trước: đọc = factoryId › chuyền › trạm, ghi = chuyền › trạm › factoryId ⇒
+  // hàng cũ có factoryId lệch chuyền được xếp vào nhà máy SAI khi đọc. (3) người phạm vi NHIỀU nhà máy không chỉ ra nhà máy ⇒
+  // hàng tạo ra không ai trong phạm vi thấy ⇒ đòi nhà máy (mã lỗi i18n); phạm vi MỘT nhà máy ⇒ tự đóng dấu.
+  describe("§7 — một luật nhà máy (chuyền › trạm › factoryId) cho đọc và ghi; hàng cũ lệch", () => {
+    let op: number;
+    const ids = { colInLineOut: 0, colOutLineIn: 0, colInStationOut: 0 };
+    beforeAll(async () => {
+      op = nextOp();
+      ids.colInLineOut = await seedAssignment(op, null, "2099-08-03T00:00:00", "planned", { factoryId: fx.facIn, lineId: fx.lineOut });
+      ids.colOutLineIn = await seedAssignment(op, null, "2099-08-02T00:00:00", "planned", { factoryId: fx.facOut, lineId: fx.lineIn });
+      ids.colInStationOut = await seedAssignment(op, null, "2099-08-01T00:00:00", "planned", { factoryId: fx.facIn, stationId: fx.stationOut });
+    });
+
+    it("★ hàng cũ: factoryId=TRONG nhưng chuyền/trạm thuộc NGOÀI ⇒ thuộc NGOÀI (người TRONG không thấy); factoryId=NGOÀI nhưng chuyền TRONG ⇒ thấy", async () => {
+      expect((await (await asScoped()).listAssignments({ operatorId: op })).map((x) => x.id)).toEqual([ids.colOutLineIn]);
+      expect((await (await asAdmin()).listAssignments({ operatorId: op })).map((x) => x.id)).toEqual([ids.colInLineOut, ids.colOutLineIn, ids.colInStationOut]);
+    });
+
+    it("★ cùng luật ở soát hàng đích: xác nhận/đóng/phân công lại hàng lệch (chuyền NGOÀI) ⇒ không tìm thấy; hàng chuyền TRONG ⇒ được", async () => {
+      const s = await asScoped();
+      for (const target of [ids.colInLineOut, ids.colInStationOut]) {
+        expect((await errOf(s.confirmAssignment({ assignmentId: target })))?.appCode).toBe("ENTITY_NOT_FOUND");
+        expect((await errOf(s.closeAssignment({ assignmentId: target })))?.appCode).toBe("ENTITY_NOT_FOUND");
+      }
+      expect((await s.confirmAssignment({ assignmentId: ids.colOutLineIn })).status).toBe("active");
+    });
+
+    it("★ ghi đóng dấu factoryId theo CÙNG luật: chuyền thắng factoryId khai; trạm thắng factoryId khai (admin)", async () => {
+      const a = await asAdmin();
+      const [o1, o2] = [nextOp(), nextOp()];
+      fx.ops.push(o1, o2);
+      const r1 = await a.assignOperator({ operatorId: o1, lineId: fx.lineIn, factoryId: fx.facOut });
+      const r2 = await a.assignOperator({ operatorId: o2, stationId: fx.stationOut, factoryId: fx.facIn });
+      const fac = async (id: number) => ((await sql`SELECT "factoryId" FROM operator_assignments WHERE id = ${id}`) as unknown as Array<{ factoryId: number }>)[0].factoryId;
+      expect(await fac(r1.assignment!.id)).toBe(fx.facIn);
+      expect(await fac(r2.assignment!.id)).toBe(fx.facOut);
     });
   });
 });
