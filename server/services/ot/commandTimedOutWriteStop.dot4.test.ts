@@ -450,19 +450,53 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
     expect(writesAfterStop()).toBe(0);
   });
 
-  it("★ target changed (adapter reconfigured) mid-watch ⇒ watch abandoned, audited once, NO alarm, no read through the new target", async () => {
+  it("★ fix 1 (R-4-s #3): target changed (adapter reconfigured) mid-watch ⇒ the SAME single critical alarm 'cannot verify — check manually', nothing read through the new target", async () => {
     await hungRunThenStop();
+    const readsBefore = D.reads;
     D.fingerprint = "a-different-target";
-    D.sticky.set("cmd_run", true); // would be a mismatch if it were (wrongly) still read
-    expect(await until(() => audit.events.some((e) => e.action === "ot_stop_watch_abandoned"), 1500)).toBe(true);
+    expect(await until(() => alarm.events.length > 0, 1500)).toBe(true);
     await new Promise((r) => setTimeout(r, 600));
-    expect(audit.events.filter((e) => e.action === "ot_stop_watch_abandoned")).toHaveLength(1);
-    expect(audit.events.find((e) => e.action === "ot_stop_watch_abandoned")!.after.reason).toBe("target_changed");
-    expect(alarm.events).toEqual([]);
+    expect(alarm.events).toHaveLength(1);
+    expect(alarm.events[0]).toMatchObject({ kind: "ot_stop_unverified", severity: "critical" });
+    expect(alarm.notes).toHaveLength(1);
+    expect(String(alarm.notes[0].message)).toMatch(/cannot be verified.*check manually/);
+    expect(unverified()).toHaveLength(1);
+    expect(unverified()[0].after).toMatchObject({ reason: "target_changed", unread: ["cmd_run"] });
+    expect(D.reads).toBe(readsBefore); // no read after the change
     expect(_stopWatchCountForTests(10)).toBe(0);
   });
 
-  it("★ driver replaced mid-watch ⇒ watch abandoned (target_changed), nothing read from or written to either driver", async () => {
+  it("★ fix 1 (R-4-s #6): the alarm audit's actor is SYSTEM (null); the abandoned command's confirmer is in the detail", async () => {
+    await hungRunThenStop();
+    D.readEmpty = true;
+    expect(await until(() => unverified().length > 0, 1500)).toBe(true);
+    expect(unverified()[0].actorId).toBeNull();
+    expect(unverified()[0].after.abandonedWrite).toMatchObject({ confirmedBy: 1 });
+  });
+
+  it("★ fix 1 (R-4-r): a reset that uses its WHOLE budget (= the 10 s TTL) still leaves the STOP a watch — a late landing is alarmed", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    D.reset.mode = "hang";
+    D.reset.boundMs = OT_STALE_WRITE_RISK_TTL_MS; // the real default bound (connect timeout 10 s)
+    const t0 = Date.now();
+    const pRun = dispatch(input("cmd_run", "start", `al-full-${actSeq}`, true));
+    expect(await until(() => D.log.length === 1, 2000)).toBe(true);
+    const pStop = dispatch(input("cmd_run", "stop", `al-full-stop-${actSeq}`, false));
+    // While the reset is still running, time "passes" beyond a TTL counted from the grace: the entry must survive a sweep.
+    expect(await until(() => D.reset.calls === 1, TIMEOUT_MS + GRACE + 1000)).toBe(true);
+    _sweepStaleWriteRiskForTests(Date.now() + OT_STALE_WRITE_RISK_TTL_MS + 1);
+    expect(_staleWriteRiskSizeForTests()).toBe(1);
+    const r = await within(pStop, TIMEOUT_MS + GRACE + OT_STALE_WRITE_RISK_TTL_MS + 250 + 1500);
+    expect(r.status).toBe("acked");
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(TIMEOUT_MS + GRACE + OT_STALE_WRITE_RISK_TTL_MS - 50); // it waited the full budget
+    expect((await pRun).status).toBe("timeout");
+    expect(_stopWatchCountForTests(10)).toBe(1); // the watch exists although the reset took the whole window
+    D.sticky.set("cmd_run", true); // the abandoned start lands now
+    expect(await until(() => alarm.events.length > 0, 1500)).toBe(true);
+    expect(writesAfterStop()).toBe(0);
+  }, 30_000);
+
+  it("★ driver replaced mid-watch ⇒ one 'cannot verify' alarm (target_changed), nothing read from or written to either driver", async () => {
     await hungRunThenStop();
     const swappedReads: unknown[] = [];
     D.swapped = {
@@ -474,9 +508,9 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
       writeTags: async (w) => w.map((x) => ({ tagKey: x.tagKey, ok: true })),
       writes: [],
     };
-    expect(await until(() => audit.events.some((e) => e.action === "ot_stop_watch_abandoned"), 1500)).toBe(true);
+    expect(await until(() => alarm.events.length > 0, 1500)).toBe(true);
+    expect(unverified()[0].after.reason).toBe("target_changed");
     expect(swappedReads).toEqual([]);
-    expect(alarm.events).toEqual([]);
     expect(writesAfterStop()).toBe(0);
   });
 

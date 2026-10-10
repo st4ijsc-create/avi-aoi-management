@@ -251,7 +251,7 @@ function unregisterStopWatch(adapterId: number, w: StopWatch): void {
   set.delete(w);
   if (set.size === 0) stopWatches.delete(adapterId);
 }
-/** A newer command's write to `tagKeys` is being dispatched: those tags are no longer the watches' to re-assert. */
+/** A newer command's write to `tagKeys` is being dispatched: those tags are no longer the read-only watches' to verify. */
 function releaseWatchedTags(adapterId: number, tagKeys: readonly string[]): void {
   const set = stopWatches.get(adapterId);
   if (!set) return;
@@ -1652,7 +1652,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
  *   = 1 s + connect timeout (default 10 s) + 0.25 s = 11.25 s.
  * fix scan (1): the reset is COOPERATIVE — it spends at most its budget (all steps) and then has itself given up, so it
  * never completes "late" and replaces the session a STOP is using; a connect landing after the budget is reaped, never
- * made active. fix scan (3): the old write may still land on the device after the STOP — see guardStopAgainstStaleWrite.
+ * made active. The old write may still land on the device after the STOP — see startStopWatch (read-only, alarm only).
+ * CUMULATIVE (fix round 1, review #4): the bound is PER timed-out predecessor. STOPs do not supersede each other, so N
+ * queued commands that EACH time out ahead of a STOP delay it by up to N × (write timeout + 11.25 s).
  * Applies ONLY with OT_CMD_SERIALIZE_ENABLED (there is no queue slot otherwise — residual risk, reported).
  * Non-STOP commands behind it wait for the slot the same way. Never rejects.
  */
@@ -1675,17 +1677,20 @@ async function holdSlotAfterTimedOutWrite(
     clearTimeout(graceTimer);
     if (first === "settled") return;
 
-    // fix scan (3) — the old write is abandoned with its fate unknown: a STOP in the next TTL is watched + re-asserted.
+    // The old write is abandoned with its fate unknown. Fix round 1 (R-4-r): the risk entry is LIVE for the whole reset
+    // (until = ∞) and gets its TTL only when the reset SETTLES (success, failure or budget expiry) — a full-budget reset
+    // can no longer expire it before the STOP behind it runs. The STOP's read-only watch then runs TTL from the STOP.
     sweepStaleWriteRisk();
-    staleWriteRisk.set(input.adapterId, {
-      until: Date.now() + OT_STALE_WRITE_RISK_TTL_MS,
+    const riskEntry: StaleWrite = {
+      until: Number.POSITIVE_INFINITY,
       commandType: input.commandType,
       idempotencyKey: input.idempotencyKey ?? null,
       intentIds: ledger.intentIds,
       confirmedBy: ledger.confirmedBy,
       machineId: input.machineId ?? null,
       writes: input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value })),
-    });
+    };
+    staleWriteRisk.set(input.adapterId, riskEntry);
     // fix scan (1) — the reset gets ONE budget it honours itself (cooperative); the outer deadline adds only a slack.
     const resetBoundMs = adapterSessionResetBoundMs(input.adapterId);
     let resetError: string;
@@ -1702,6 +1707,9 @@ async function holdSlotAfterTimedOutWrite(
       resetError = r.error ?? "session not reset";
     } catch (err) {
       resetError = (err as Error)?.message || String(err);
+    } finally {
+      // R-4-r — the reset has settled (any outcome): the risk window now counts from here.
+      riskEntry.until = Date.now() + OT_STALE_WRITE_RISK_TTL_MS;
     }
     console.error(
       `[Dispatch] adapter ${input.adapterId}: overlapRisk — a timed-out write may still be running on the old session and its reset failed (${resetError}); the next command (a STOP) proceeds anyway (L-7, B3)`,
@@ -1718,14 +1726,15 @@ async function holdSlotAfterTimedOutWrite(
  * risk window ends. It NEVER writes to the device — no automatic re-assert exists.
  *   • DETACHED: holds no queue slot, never delays the STOP's answer or any later command.
  *   • Reads go through the SAME target the STOP used: the connection fingerprint and the driver object captured at the
- *     STOP. If the adapter was reconfigured (fingerprint changed) or its driver replaced, the watch stops and audits
- *     "ot_stop_watch_abandoned" (reason target_changed) — once, no alarm.
+ *     STOP. If the adapter was reconfigured (fingerprint changed) or its driver replaced, nothing is read through the new
+ *     target: the same single critical alarm is raised (reason target_changed — "cannot verify, check manually").
  *   • A newer command whose write to one of the STOP's tags is DISPATCHED releases that tag (releaseWatchedTags); no tag
  *     left ⇒ the watch ends quietly (the operator's later intent owns those tags).
  *   • A read that shows a value other than the STOP's, or a tag that cannot be read (read error, missing sample, adapter
  *     offline) ⇒ ONE critical operator alarm per STOP (raiseStopUnverifiedAlarm) + audit "ot_stop_unverified" linked to
  *     the ABANDONED command's ledger row (entityId = its intent id), then the watch ends.
- * Reads per STOP ≤ (OT_STALE_WRITE_RISK_TTL_MS / OT_STOP_WATCH_POLL_MS), each ≤ the command timeout. Never rejects.
+ * The window starts at the STOP and lasts OT_STALE_WRITE_RISK_TTL_MS (R-4-r). Reads per STOP ≤ (TTL / poll), each ≤ the
+ * command timeout. Never rejects.
  */
 function startStopWatch(
   input: DispatchInput,
@@ -1739,7 +1748,8 @@ function startStopWatch(
   const token: StopWatch = { cancelled: false, tags: new Set(writes.map((w) => w.tagKey)) };
   registerStopWatch(input.adapterId, token);
   const risk = staleWriteRisk.get(input.adapterId);
-  const end = risk ? risk.until : Date.now();
+  // R-4-r — the watch window starts at the STOP and lasts OT_STALE_WRITE_RISK_TTL_MS (no risk ⇒ no window).
+  const end = risk ? Date.now() + OT_STALE_WRITE_RISK_TTL_MS : Date.now();
   const abandoned = risk
     ? { idempotencyKey: risk.idempotencyKey, intentIds: risk.intentIds, commandType: risk.commandType, confirmedBy: risk.confirmedBy, writes: risk.writes }
     : null;
@@ -1754,7 +1764,9 @@ function startStopWatch(
         const fpNow = getActiveConnectionFingerprint(input.adapterId);
         const drvNow = getActiveDriver(input.adapterId);
         if (fpNow !== stopFingerprint || (drvNow !== undefined && drvNow !== stopDriver)) {
-          auditOtEvent(input, ledger, "ot_stop_watch_abandoned", { reason: "target_changed", abandonedWrite: abandoned }, "B3 alert-only: the adapter's target or driver changed after the STOP — read-only watch abandoned");
+          // Fix round 1 (R-4-s) — the STOP can no longer be verified on its own target: the same single critical alarm
+          // (nothing is read through the new target), then the watch ends.
+          raiseStopUnverifiedAlarm(input, ledger, abandoned, stopRef, [], readTags.filter((t) => token.tags.has(t.tagKey)).map((t) => t.tagKey), "target_changed");
           break;
         }
         const tags = readTags.filter((t) => token.tags.has(t.tagKey));
@@ -1811,20 +1823,34 @@ function raiseStopUnverifiedAlarm(
   stopRef: { idempotencyKey: string | null; intentIds: number[]; commandType: string },
   drift: Array<{ tagKey: string; expected: unknown; actual: unknown; abandonedValueLanded: boolean }>,
   unread: string[],
+  reason: "drift" | "unreadable" | "target_changed" = drift.length > 0 ? "drift" : "unreadable",
 ): void {
   const tags = [...drift.map((d) => d.tagKey), ...unread];
-  const what = drift.length > 0 ? `reads back a value other than the STOP's on ${drift.map((d) => d.tagKey).join(", ")}` : `cannot be read back (${unread.join(", ")})`;
+  const what =
+    reason === "target_changed"
+      ? `cannot be verified — the adapter was reconfigured or its driver replaced after the STOP; check manually (${unread.join(", ")})`
+      : drift.length > 0
+        ? `reads back a value other than the STOP's on ${drift.map((d) => d.tagKey).join(", ")}`
+        : `cannot be read back (${unread.join(", ")})`;
   const message =
     `STOP on adapter ${input.adapterId} ${what} after an earlier command timed out with an unknown outcome — ` +
     `the device may have been re-energised. Check the equipment on site now. Nothing was re-sent automatically.`;
   console.error(`[Dispatch] CRITICAL: ${message}`);
-  const detail = { drift, unread, stop: stopRef, abandonedWrite: abandoned ? { idempotencyKey: abandoned.idempotencyKey, intentIds: abandoned.intentIds, commandType: abandoned.commandType } : null };
+  // Fix round 1 (R-4-s #6) — a SYSTEM observation: actor = system (null); the abandoned command's confirmer is in the detail.
+  const detail = {
+    reason,
+    drift,
+    unread,
+    stop: stopRef,
+    abandonedWrite: abandoned ? { idempotencyKey: abandoned.idempotencyKey, intentIds: abandoned.intentIds, commandType: abandoned.commandType, confirmedBy: abandoned.confirmedBy } : null,
+  };
   auditOtEvent(
     abandoned ? { ...input, commandType: abandoned.commandType, idempotencyKey: abandoned.idempotencyKey ?? input.idempotencyKey } : input,
     abandoned ? { intentIds: abandoned.intentIds, confirmedBy: abandoned.confirmedBy } : stopLedger,
     "ot_stop_unverified",
     detail,
     "B3 alert-only (R-4-q): after a STOP that followed a timed-out write, the STOP value could not be confirmed — operator alarm raised, nothing written",
+    null,
   );
   const recipients = [...new Set([stopLedger.confirmedBy, abandoned?.confirmedBy].filter((u): u is number => typeof u === "number" && u > 0))];
   const work = (async () => {
@@ -1881,6 +1907,8 @@ function auditOtEvent(
   action: string,
   detail: Record<string, unknown>,
   reason: string,
+  /** actorId of the row; default = the ledger's confirmer. null = system (fix round 1, R-4-s #6). */
+  actorId: number | null = ledger.confirmedBy,
 ): void {
   const work = (async () => {
     const db = await getDb();
@@ -1893,7 +1921,7 @@ function auditOtEvent(
       entityType: "ot_command",
       entityId: ledger.intentIds[0] ?? input.idempotencyKey ?? "unrecorded",
       action,
-      actorId: ledger.confirmedBy,
+      actorId,
       after: {
         adapterId: input.adapterId,
         machineId: input.machineId ?? null,
