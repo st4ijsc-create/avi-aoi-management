@@ -26,9 +26,15 @@ services via connection strings.
 | `Job` (migrate, Helm hook) | `pre-install`/`pre-upgrade`: `scripts/migrate-standalone.mjs` + core-table verify. Gated by `migrations.enabled`. |
 | `ServiceAccount`, `PVC` | SA always (unless disabled); PVC only when `persistence.enabled`. |
 
-Real endpoint used by every probe: **`GET /health`** (`server/_core/index.ts`) → `200 {"status":"ok",...}`
-when the DB is connected, `503 {"status":"degraded"}` otherwise. Container port **3000**
-(`process.env.PORT || 3000`).
+Probes use two REAL endpoints (`values.yaml` → `probes`; handlers in `server/_core/healthProbes.ts`,
+doc 81 Đợt 1B Task 11):
+
+| Probe | Path | Behaviour |
+|---|---|---|
+| liveness, startup | **`GET /health`** | `200` whenever the process answers; the body carries the DB state from a real `SELECT 1` (≤ 5 s old): `{"status":"ok","db":"connected"}` or `{"status":"degraded",...}`. **Never 503 on a DB blip** ⇒ no pod restart. |
+| readiness | **`GET /readyz`** | real `SELECT 1` (1500 ms timeout) ⇒ `200`, else **`503 {"db":"down"}`** ⇒ the pod is taken out of the Service. |
+
+Container port **3000** (`process.env.PORT || 3000`).
 
 ## 0. Build & push the image (once)
 
