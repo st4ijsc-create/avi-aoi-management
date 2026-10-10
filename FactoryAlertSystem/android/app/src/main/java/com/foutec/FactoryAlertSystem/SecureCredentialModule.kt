@@ -2,6 +2,7 @@ package com.foutec.FactoryAlertSystem
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.facebook.react.bridge.Promise
@@ -19,10 +20,12 @@ import javax.crypto.SecretKey
  * kỹ thuật viên gõ vào Cài đặt của máy tính bảng. Mật khẩu KHÔNG được ghi AsyncStorage (văn bản thô):
  *   · khoá AES-256/GCM sinh và giữ TRONG Android Keystore (không xuất ra được, không đi theo bản sao lưu);
  *   · chỉ bản MÃ HOÁ (iv + ciphertext, Base64) nằm trong SharedPreferences riêng của app.
- * G fix 1 (review finding 3) — logic nằm ở SecureCredentialCore (kiểm được trên JVM); module này chỉ nối Keystore +
- * SharedPreferences và bọc MỌI truy cập (kể cả SharedPreferences) trong try:
- *   · bản mã không giải được (khoá mất / sai) ⇒ XOÁ mục đó, trả null — KHÔNG đoán, KHÔNG rơi về thô;
- *   · khoá hỏng/không dùng được khi lưu ⇒ xoá alias, sinh khoá mới, thử lại MỘT lần;
+ * G fix 1/2 — logic nằm ở SecureCredentialCore (kiểm được trên JVM); module này chỉ nối Keystore + SharedPreferences
+ * và bọc MỌI truy cập trong try:
+ *   · CHỈ xoá mục khi CHẮC CHẮN không bao giờ giải được nữa (alias vắng, mục hỏng dạng, AEADBadTagException,
+ *     KeyPermanentlyInvalidatedException); lỗi khác (Keystore bận/khởi động lại…) ⇒ GIỮ mục, báo
+ *     E_SECURE_UNAVAILABLE, lần connect sau đọc lại;
+ *   · lưu không bao giờ phá mật khẩu cũ còn tốt (chỉ sinh lại khoá khi không còn gì để mất);
  *   · Xoá (removeItem) ⇒ xoá mục; hết mục ⇒ xoá luôn khoá.
  * JS: src/services/secureCredentialStore.ts (thiếu module này ⇒ JS từ chối lưu, không rơi về AsyncStorage).
  */
@@ -84,6 +87,7 @@ class SecureCredentialModule(reactContext: ReactApplicationContext) :
         entryStorage,
         { b -> Base64.encodeToString(b, Base64.NO_WRAP) },
         { s -> Base64.decode(s, Base64.NO_WRAP) },
+        { e -> e is KeyPermanentlyInvalidatedException || e.cause is KeyPermanentlyInvalidatedException },
     )
 
     private fun validKey(key: String?): Boolean =
@@ -100,6 +104,8 @@ class SecureCredentialModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: SecureCredentialCore.WriteFailed) {
             promise.reject("E_SECURE_WRITE", "write failed")
+        } catch (e: SecureCredentialCore.Unavailable) {
+            promise.reject("E_SECURE_UNAVAILABLE", "secure storage temporarily unavailable — retry")
         } catch (e: Exception) {
             promise.reject("E_SECURE_CRYPTO", e.javaClass.simpleName)
         }
@@ -113,6 +119,9 @@ class SecureCredentialModule(reactContext: ReactApplicationContext) :
         }
         try {
             promise.resolve(core.get(key!!))
+        } catch (e: SecureCredentialCore.Unavailable) {
+            // transient: the stored password is KEPT; JS treats this read as "no password this time" and retries next connect
+            promise.reject("E_SECURE_UNAVAILABLE", "secure storage temporarily unavailable — retry")
         } catch (e: Exception) {
             // SharedPreferences itself unreadable ⇒ report it (JS maps any rejection to "no password").
             promise.reject("E_SECURE_READ", e.javaClass.simpleName)
