@@ -49,7 +49,7 @@ async function resolveMachine(d: Exec, machineId: number): Promise<SafetyTarget 
   const lineId = n(m?.lineId);
   const factoryId = n(m?.factoryId);
   if (stationId === null || lineId === null || factoryId === null) return null;
-  return { robotId: null, machineId, stationId, lineId, factoryId, stationRobotIds: [] };
+  return { robotId: null, machineId, stationId, lineId, factoryId, stationRobotIds: [], lineLevelRobotIds: [], lineRobotIds: [] };
 }
 
 /** robot => its station (=> line) or line; unplaced / contradictory / dangling => null. */
@@ -79,7 +79,7 @@ async function resolveRobot(d: Exec, robotId: number): Promise<SafetyTarget | nu
   );
   const factoryId = n(l?.factoryId);
   if (factoryId === null) return null;
-  return { robotId, machineId: null, stationId, lineId, factoryId, stationRobotIds: [] };
+  return { robotId, machineId: null, stationId, lineId, factoryId, stationRobotIds: [], lineLevelRobotIds: [], lineRobotIds: [] };
 }
 
 /**
@@ -124,10 +124,20 @@ export async function resolveSafetyTargets(ref: SafetyTargetRef): Promise<Safety
     }
     if (out.length === 0) return null;
     // fix round 2 (M7) — the robots placed on each target's station: their robot-targeted configs guard it too.
+    // fix round 3 (R-4-o) — and the robots of each target's LINE (on a station of the line, or line-level only).
     for (const t of out) {
-      if (t.stationId === null) continue;
-      const rs = await rows<{ id: Num }>(d, sql`SELECT id FROM robots WHERE "stationId" = ${t.stationId} ORDER BY id`);
-      t.stationRobotIds = rs.map((r) => n(r.id)).filter((x): x is number => x !== null);
+      const rs = await rows<{ id: Num; stationId: Num; onLine: Num }>(
+        d,
+        sql`SELECT r.id, r."stationId", COALESCE(s."lineId", r."lineId") AS "onLine"
+            FROM robots r LEFT JOIN stations s ON s.id = r."stationId"
+            WHERE s."lineId" = ${t.lineId} OR (r."stationId" IS NULL AND r."lineId" = ${t.lineId})
+            ORDER BY r.id`,
+      );
+      const ids = (pred: (r: { id: Num; stationId: Num }) => boolean) =>
+        rs.filter(pred).map((r) => n(r.id)).filter((x): x is number => x !== null);
+      t.stationRobotIds = t.stationId === null ? [] : ids((r) => n(r.stationId) === t.stationId);
+      t.lineLevelRobotIds = ids((r) => n(r.stationId) === null);
+      t.lineRobotIds = ids(() => true);
     }
     return out;
   } catch {

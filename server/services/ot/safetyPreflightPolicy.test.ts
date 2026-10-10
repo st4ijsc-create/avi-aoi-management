@@ -107,11 +107,14 @@ describe("Đợt 1C Task 1 — actuationPreflightVerdict", () => {
 describe("Đợt 4 Task A1 — plcConfigAppliesToTarget", () => {
   it("bảng chân trị (đích null ⇒ mọi cấu hình; không gắn đích ⇒ luôn; cột cụ thể nhất quyết định)", async () => {
     const { plcConfigAppliesToTarget: f } = await import("./safetyPreflightPolicy");
-    // fix round 2 (M7): stationRobotIds = robots placed on the target's station (robot 7 sits on station 3).
-    const M = { robotId: null, machineId: 10, stationId: 3, lineId: 2, factoryId: 1, stationRobotIds: [7] };
-    const R = { robotId: 7, machineId: null, stationId: 3, lineId: 2, factoryId: 1, stationRobotIds: [7] };
-    const RL = { robotId: 8, machineId: null, stationId: null, lineId: 2, factoryId: 1, stationRobotIds: [] };
-    const M4 = { robotId: null, machineId: 11, stationId: 4, lineId: 2, factoryId: 1, stationRobotIds: [] };
+    // Line 2: station 3 (robot 7), station 4, robot 8 placed at LINE level only. Line 9: station 5, no robots.
+    // fix round 2 (M7) stationRobotIds; fix round 3 (R-4-o) lineLevelRobotIds / lineRobotIds.
+    const L2 = { lineLevelRobotIds: [8], lineRobotIds: [7, 8] };
+    const M = { robotId: null, machineId: 10, stationId: 3, lineId: 2, factoryId: 1, stationRobotIds: [7], ...L2 };
+    const R = { robotId: 7, machineId: null, stationId: 3, lineId: 2, factoryId: 1, stationRobotIds: [7], ...L2 };
+    const RL = { robotId: 8, machineId: null, stationId: null, lineId: 2, factoryId: 1, stationRobotIds: [], ...L2 };
+    const M4 = { robotId: null, machineId: 11, stationId: 4, lineId: 2, factoryId: 1, stationRobotIds: [], ...L2 };
+    const M9 = { robotId: null, machineId: 12, stationId: 5, lineId: 9, factoryId: 1, stationRobotIds: [], lineLevelRobotIds: [], lineRobotIds: [] };
     const none = {};
     expect(f({ lineId: 99, robotId: 98 }, null)).toBe(true);
     expect(f(none, M)).toBe(true);
@@ -128,9 +131,14 @@ describe("Đợt 4 Task A1 — plcConfigAppliesToTarget", () => {
     expect(f({ robotId: 7, lineId: 2 }, M)).toBe(true);
     expect(f({ robotId: 7 }, M4)).toBe(false); // other station
     expect(f({ robotId: 9, lineId: 2 }, R)).toBe(false);
-    // a robot placed at line level only: its config guards only itself; it is guarded only by its own robot configs
-    expect(f({ robotId: 8 }, M)).toBe(false);
+    // R-4-o (fail-safe M7): a robot placed at line level only may be at ANY station of its line —
+    expect(f({ robotId: 8 }, M)).toBe(true); // its PLC guards every machine/robot on its line…
+    expect(f({ robotId: 8 }, M4)).toBe(true);
+    expect(f({ robotId: 8 }, R)).toBe(true);
     expect(f({ robotId: 8 }, RL)).toBe(true);
-    expect(f({ robotId: 7 }, RL)).toBe(false);
+    expect(f({ robotId: 8 }, M9)).toBe(false); // …but not another line
+    expect(f({ robotId: 7 }, RL)).toBe(true); // and it is guarded by every robot PLC of its line
+    expect(f({ robotId: 7 }, M9)).toBe(false);
+    expect(f({ stationId: 5 }, RL)).toBe(true); // (station configs: unchanged — its station cannot be ruled out)
   });
 });

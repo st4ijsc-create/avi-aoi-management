@@ -198,6 +198,17 @@ export interface SafetyTarget {
    * target has no station (a robot placed at line level only).
    */
   stationRobotIds: readonly number[];
+  /**
+   * doc 81 Đợt 4 fix round 3 (R-4-o, fail-safe reading of M7) — robots placed at LINE LEVEL only (robots.stationId NULL,
+   * robots.lineId = this target's line): each may be at any station of the line, so its robot-targeted config guards
+   * this target.
+   */
+  lineLevelRobotIds: readonly number[];
+  /**
+   * R-4-o — every robot on this target's line (on a station of the line, or at line level). Used only when the TARGET
+   * itself is a line-level robot (stationId null): it may be at any station, so every robot config of its line guards it.
+   */
+  lineRobotIds: readonly number[];
   lineId: number;
   factoryId: number;
 }
@@ -212,13 +223,21 @@ export interface SafetyTarget {
  *     carries its factory); a line config applies to every station/machine/robot on that line, a
  *     factory config to everything in that factory, a station config to its machines and robots,
  *     a robot config to that robot AND (fix round 2, M7 — owner decision 2026-10-10, fail-safe) to every machine
- *     and robot on that robot's STATION. A robot placed at line level only (no station) is guarded by every
- *     station-targeted config — its station cannot be ruled out; a config targeted at such a robot still guards
- *     only that robot (it has no station), and such a robot is guarded only by its own robot configs.
+ *     and robot on that robot's STATION. A robot placed at line level only (no station) may be at ANY station of its
+ *     line (fix round 3, R-4-o): it is guarded by every station-targeted config and by every robot-targeted config of
+ *     a robot on its line, and its own robot config guards every machine and robot on that line.
  */
 export function plcConfigAppliesToTarget(cfg: PlcConfigTargetShape, target: SafetyTarget | null): boolean {
   if (target === null) return true;
-  if (cfg.robotId != null) return target.robotId === cfg.robotId || target.stationRobotIds.includes(cfg.robotId);
+  if (cfg.robotId != null) {
+    const x = cfg.robotId;
+    return (
+      target.robotId === x ||
+      target.stationRobotIds.includes(x) || // x sits on the target's station (M7)
+      target.lineLevelRobotIds.includes(x) || // x is line-level on the target's line ⇒ may be at its station (R-4-o)
+      (target.stationId === null && target.lineRobotIds.includes(x)) // the target is line-level ⇒ may be at x's station (R-4-o)
+    );
+  }
   // A robot placed at line level only (robots.stationId NULL) cannot be ruled out of any station ⇒ applies.
   if (cfg.stationId != null) return target.stationId === null || target.stationId === cfg.stationId;
   if (cfg.lineId != null) return target.lineId === cfg.lineId;
