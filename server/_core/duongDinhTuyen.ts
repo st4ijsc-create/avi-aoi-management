@@ -1,35 +1,56 @@
 /**
- * doc 81 Đợt 5 G fix 2 (re-review N1, ruling R-5-b) — the ONE place that answers "which path will Express route this
- * request to?", lower-cased, for every security classification in server/_core (originCheck, rateLimitConfig).
+ * doc 81 Đợt 5 G fix 2/3 (re-review N1, R2-1; ruling R-5-b) — the ONE place that answers "which path will Express route
+ * this request to?", lower-cased, for every security classification in server/_core (originCheck, rateLimitConfig).
  *
- * Express routes on `parseurl(req).pathname` and matches case-insensitively (`caseSensitive: false`). Splitting the raw
- * request line on `?` only was not the same thing — Node also accepts:
- *   · absolute-form  `POST http://x/api/ot/ingest`  — the path is after the authority;
- *   · a fragment     `POST /api/ot/ingest#x`        — parseurl drops it, the router still matches `/api/ot/ingest`.
- * Those variants reached the handler while missing classification (fresh rate-limit bucket per random Bearer, guard
- * skipped, `/api/machine/claim#x` in the 60k tier). Both modules now call this helper, so they cannot diverge again.
- *
- * Mirrors parseurl's result without `url.parse` (deprecated, DEP0169): origin-form ⇒ cut at the first `?` or `#`;
- * absolute-form ⇒ drop `scheme://authority` first (empty path ⇒ "/"). Nothing is decoded and no dot segment is
- * resolved — exactly like Express, which does not route `/./api/…` or `/api%2Ftrpc` to `/api` handlers either.
- * Uses `originalUrl` (the full target, independent of the mount point a middleware runs under), then `url`, then
- * `path` (plain request objects in unit tests).
+ * G fix 3: the path comes from EXACTLY the parser Express's router uses — `parseurl` (Express 4 router:
+ * `parseUrl(req).pathname`), resolved FROM Express's own install so it is the very same module and version, and
+ * `parseurl.original(req)` so it reads `originalUrl` (the full target) whatever mount point a middleware runs under.
+ * A hand-written mirror (fix 2) disagreed with it: parseurl hands any target containing `#` to `url.parse`, which treats
+ * a leading `//userinfo@host` as an authority — `POST //a@b/api/ot/ingest#x` is routed to `/api/ot/ingest` while the
+ * mirror saw `//a@b/api/ot/ingest`. Only for plain objects without `originalUrl`/`url` (unit tests) does the helper
+ * fall back to a string cut at `?`/`#`. If parseurl throws (Express would fail the request itself), the same fallback
+ * is used. The result is never decoded and dot segments are never resolved — like Express.
  */
+import { createRequire } from "node:module";
+
 export interface YeuCauCoDuong {
   originalUrl?: string;
   url?: string;
   path?: string;
 }
 
-const ABSOLUTE_FORM = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i;
+type ParseUrl = { original(req: unknown): { pathname?: string | null } | undefined };
+
+// parseurl is a dependency OF EXPRESS (not of this project): resolve it relative to express/package.json so the router
+// and this helper always run the same code. Lazy, once.
+let parseurlCache: ParseUrl | null = null;
+function parseurl(): ParseUrl {
+  if (!parseurlCache) {
+    const rootRequire = createRequire(import.meta.url);
+    const expressRequire = createRequire(rootRequire.resolve("express"));
+    parseurlCache = expressRequire("parseurl") as ParseUrl;
+  }
+  return parseurlCache;
+}
+
+function catChuoi(raw: string): string {
+  const cut = raw.search(/[?#]/);
+  return cut === -1 ? raw : raw.slice(0, cut);
+}
 
 /** The path Express routes this request on (no query, no fragment, no scheme/authority), as given — case kept. */
 export function duongDinhTuyenGoc(req: YeuCauCoDuong): string {
-  let raw = String(req.originalUrl || req.url || req.path || "");
-  const abs = raw.match(ABSOLUTE_FORM);
-  if (abs) raw = raw.slice(abs[0].length) || "/";
-  const cut = raw.search(/[?#]/);
-  return cut === -1 ? raw : raw.slice(0, cut);
+  if (typeof req.originalUrl === "string" || typeof req.url === "string") {
+    try {
+      // parseurl memoises on the object (`_parsedOriginalUrl`), exactly as Express does on a real request.
+      const pathname = parseurl().original(req)?.pathname;
+      if (typeof pathname === "string") return pathname;
+    } catch {
+      /* fall through — Express cannot route what parseurl cannot parse */
+    }
+    return catChuoi(String(req.originalUrl ?? req.url ?? ""));
+  }
+  return catChuoi(String(req.path ?? ""));
 }
 
 /** Same, lower-cased — what every prefix / exact-path security comparison must use. */

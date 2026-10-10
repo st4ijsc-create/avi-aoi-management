@@ -61,6 +61,12 @@ const TARGETS = [
   "/api/machine/claim#x", "http://evil.example/api/machine/claim", "/api/machine/Claim/", "/api/machine/heartbeat#h",
   "/api/trpc/x#y", "http://x/API/trpc/x", "/api/saml/acs#x", "http://idp/api/saml/acs",
   "/./api/ot/ingest", "//api/ot/ingest", "/api%2Fot/ingest",
+  // G fix 3 (R2-1) — targets from Express's own parser (parseurl → url.parse once a `#` is present: a leading
+  // `//userinfo@host` becomes an authority). Each one is decided by which handler REALLY ran.
+  "//a@b/api/ot/ingest#x", "//a@b/api/trpc/x#x", "//a@b/api/machine/claim#x", "//a@b/api/machine/heartbeat#x",
+  "//a@b/api/saml/acs#x", "//u:p@h/API/ot/ingest?x#y", "//a@b@c/api/ot/ingest#x", "//a@b/api/ot/ingest",
+  "//api/ot/ingest#x", "///api/ot/ingest#x", "//@/api/ot/ingest#x", "//a@/api/ot/ingest#x", "/api/ot/ingest?#",
+  "/%2F/api/ot/ingest#x", "//a@b/API/V1/ingest#x", "http://u@x/api/ot/ingest#x",
 ];
 
 describe("N1 — duongDinhTuyen agrees with Express routing (raw request targets)", () => {
@@ -76,10 +82,15 @@ describe("N1 — duongDinhTuyen agrees with Express routing (raw request targets
         expect(duongKhopChinhXac(duongDinhTuyen({ originalUrl: hit.originalUrl })), `${target} → ${hit.route}`).toBe(hit.route);
       } else {
         expect(status, target).toBe(404); // routed nowhere ⇒ no handler to protect
+        // …and the helper must not claim it is one of the handled routes either (both directions are compared)
+        expect(ROUTES, `${target} classified as a route Express did not run`).not.toContain(
+          duongKhopChinhXac(duongDinhTuyen({ originalUrl: target })),
+        );
       }
     }
     // the variants of the finding really reach the handlers (otherwise this test would prove nothing)
-    for (const t of ["http://x/api/ot/ingest", "/api/ot/ingest#x", "/api/machine/claim#x", "http://idp/api/saml/acs"]) {
+    for (const t of ["http://x/api/ot/ingest", "/api/ot/ingest#x", "/api/machine/claim#x", "http://idp/api/saml/acs",
+      "//a@b/api/ot/ingest#x", "//a@b/api/trpc/x#x", "//a@b/api/machine/claim#x"]) {
       expect(reached, t).toContain(t);
     }
   });
@@ -108,7 +119,7 @@ describe("N1 — originCheck (enforce) and rate-limit classification on absolute
         mw({ method: "POST", path, originalUrl, url: originalUrl, headers: { host: "factory.local", origin: "https://evil.example" } } as never, res, () => { nexted = true; });
         return { status, nexted };
       };
-      for (const t of ["http://x/api/trpc/x", "/api/trpc/x#y", "http://x/API/trpc/x?a#b"]) {
+      for (const t of ["http://x/api/trpc/x", "/api/trpc/x#y", "http://x/API/trpc/x?a#b", "//a@b/api/trpc/x#x"]) {
         expect(run(t), t).toEqual({ status: 403, nexted: false });
       }
       for (const t of ["/api/saml/acs#x", "http://idp/api/saml/acs"]) {
@@ -126,14 +137,15 @@ describe("N1 — originCheck (enforce) and rate-limit classification on absolute
   it("legacy OT ingest bucket ignores a random Bearer on absolute-form and `#` targets too", () => {
     const key = "mk_live_same";
     const canonical = apiKeyGenerator(reqOf("/api/ot/ingest", { "x-api-key": key, authorization: "Bearer r1" }));
-    for (const [t, b] of [["http://x/api/ot/ingest", "r2"], ["/api/ot/ingest#x", "r3"], ["HTTP://X/API/OT/INGEST?q#f", "r4"]] as const) {
+    for (const [t, b] of [["http://x/api/ot/ingest", "r2"], ["/api/ot/ingest#x", "r3"], ["HTTP://X/API/OT/INGEST?q#f", "r4"], ["//a@b/api/ot/ingest#x", "r5"]] as const) {
       expect(isOtIngestRequest(reqOf(t)), t).toBe(true);
       expect(apiKeyGenerator(reqOf(t, { "x-api-key": key, authorization: `Bearer ${b}` })), t).toBe(canonical);
     }
   });
 
   it("credentialConflictGuard runs on absolute-form and `#` machine-plane targets (400)", () => {
-    for (const t of ["http://x/api/ot/ingest", "/api/ot/ingest#x", "http://x/api/v1/ingest/telemetry", "/api/machine/heartbeat#h"]) {
+    for (const t of ["http://x/api/ot/ingest", "/api/ot/ingest#x", "http://x/api/v1/ingest/telemetry", "/api/machine/heartbeat#h",
+      "//a@b/api/ot/ingest#x", "//a@b/api/v1/ingest/telemetry#x", "//a@b/api/machine/heartbeat#x"]) {
       let status = 0;
       let nexted = false;
       const res = { status(c: number) { status = c; return this; }, json() { return this; } } as never;
@@ -143,7 +155,7 @@ describe("N1 — originCheck (enforce) and rate-limit classification on absolute
   });
 
   it("machine bootstrap (claim) stays out of the 60k tier on `#` and absolute-form; tRPC tier sees absolute-form", () => {
-    for (const t of ["/api/machine/claim#x", "http://evil.example/api/machine/claim", "/api/machine/CLAIM/#x"]) {
+    for (const t of ["/api/machine/claim#x", "http://evil.example/api/machine/claim", "/api/machine/CLAIM/#x", "//a@b/api/machine/claim#x"]) {
       expect(isMachineRestIngestRequest(reqOf(t)), t).toBe(false);
       expect(isMachineIngestRequest(reqOf(t)), t).toBe(false);
     }
