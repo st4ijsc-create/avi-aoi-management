@@ -145,7 +145,7 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, machines, deviceAdapters, deviceTags, robots } from "../../../../drizzle/schema";
-import { deployWorkflow, startRun, resumeRun, abortRun, abortStopKey } from "./foeEngine";
+import { deployWorkflow, startRun, resumeRun, abortRun, abortStopKey, abortRowId, ABORT_RESEND_WINDOW_MS } from "./foeEngine";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import type { WorkflowDefinition } from "./workflowModel";
@@ -766,7 +766,7 @@ describe("doc 81 Đợt 6 fix 2 (N1 N4) — an abort / rejection of an ALREADY-a
     expect(first).toMatchObject({ reason: "abortUnconfirmed", abortStops: { sent: ["ra"], failed: ["stop"] } });
     await waitFor(() => stepRow(runId, "abort:ra")?.status === "completed" && stepRow(runId, "abort:stop")?.status === "failed");
     HANG.statuses.clear();
-    runRow(runId).status = "aborted"; // the late write lands
+    Object.assign(runRow(runId), { status: "aborted", finishedAt: new Date() }); // the late write lands
     const retry = await abortRun(runId, SUP);
     expect(retry).toMatchObject({ ok: true, status: "aborted", abortStops: { sent: ["stop"], failed: [] } });
     expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop", "stop"]);
@@ -885,5 +885,98 @@ describe("doc 81 Đợt 6 fix 2 (N3) — the per-sweep key survives the 64-chara
     expect(rows).toHaveLength(2);
     expect(new Set(rows.map((r) => r.id)).size).toBe(2);
     for (const r of rows) expect(String(r.id).length).toBeLessThanOrEqual(64);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 6 fix 3 (M2 M3 M4 M5, ruling R-6-d)
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 6 fix 3 — re-send of the STOP steps of an aborted run", () => {
+  const refuseNextOtStop = () =>
+    otDispatchMock.mockImplementationOnce(async (input?: unknown) => {
+      order.push(`ot:${(input as { commandType: string }).commandType}`);
+      return { ok: false, simulated: false, status: "rejected" as const, reason: "DEVICE_BUSY", results: [], commandLogIds: [2] } as never;
+    });
+
+  it("★ R-6-d the window is the named 15-minute constant", () => {
+    expect(ABORT_RESEND_WINDOW_MS).toBe(15 * 60_000);
+  });
+
+  for (const how of ["abort", "reject"] as const) {
+    it(`★ R-6-d a re-send (${how}) MORE than 15 min after the abort is REFUSED (too old — direct STOP), sends nothing, audited`, async () => {
+      const runId = await pausedAfterMotion(`old-${how}`, [OT_STOP, RB_STOP]);
+      refuseNextOtStop();
+      await abortRun(runId, SUP); // stop failed, ra sent
+      await waitFor(() => stepRow(runId, "abort:ra")?.status === "completed");
+      runRow(runId).finishedAt = new Date(Date.now() - ABORT_RESEND_WINDOW_MS - 60_000);
+      const before = { ot: otDispatchMock.mock.calls.length, rb: robotDispatchMock.mock.calls.length };
+      const r = how === "abort" ? await abortRun(runId, SUP) : await resumeRun(runId, { approved: false }, SUP);
+      expect(r).toMatchObject({ ok: false, status: "aborted", reason: "resendTooOld", resend: true });
+      expect(r.message).toMatch(/direct STOP \/ E-STOP/);
+      expect(r.abortStops).toBeUndefined();
+      expect(otDispatchMock.mock.calls.length).toBe(before.ot);
+      expect(robotDispatchMock.mock.calls.length).toBe(before.rb);
+      await vi.waitFor(() => expect(auditsOf("abortStopResend").map((m) => m.outcome)).toEqual(["refusedTooOld"]));
+    });
+  }
+
+  it("★ R-6-d no known abort time ⇒ refused (fail toward NOT sending an old STOP)", async () => {
+    const runId = await pausedAfterMotion("notime", [OT_STOP]);
+    refuseNextOtStop();
+    await abortRun(runId, SUP);
+    runRow(runId).finishedAt = null;
+    const r = await abortRun(runId, SUP);
+    expect(r).toMatchObject({ reason: "resendTooOld" });
+  });
+
+  it("★ M2 + M5 a re-send within the window: the REQUEST is audited (abortStopResend started), each STOP audit carries resend: true, the answer is marked resend", async () => {
+    const runId = await pausedAfterMotion("resendaudit", [OT_STOP, RB_STOP]);
+    refuseNextOtStop();
+    await abortRun(runId, SUP);
+    await waitFor(() => stepRow(runId, "abort:stop")?.status === "failed" && stepRow(runId, "abort:ra")?.status === "completed");
+    audit.mockClear();
+    const r = await abortRun(runId, SUP);
+    expect(r).toMatchObject({ ok: true, status: "aborted", resend: true, abortStops: { sent: ["stop"] } });
+    await vi.waitFor(() => expect(auditsOf("abortStopSent").length).toBe(1));
+    expect(auditsOf("abortStopResend").map((m) => m.outcome)).toEqual(["started"]);
+    expect(auditsOf("abortStopSent")[0]).toMatchObject({ stepId: "stop", resend: true });
+    // a first abort is NOT marked as a re-send
+    otDispatchMock.mockClear();
+    const runId2 = await pausedAfterMotion("firstabort", [RB_STOP]);
+    audit.mockClear();
+    const first = await abortRun(runId2, SUP);
+    expect(first.resend).toBeUndefined();
+    await vi.waitFor(() => expect(auditsOf("abortStopSent").length).toBe(1));
+    expect(auditsOf("abortStopSent")[0].resend).toBeUndefined();
+  });
+
+  it("★ M2 a re-send that sends NOTHING (everything confirmed) still leaves an audit row", async () => {
+    const runId = await pausedAfterMotion("nothing", [RB_STOP]);
+    await abortRun(runId, SUP);
+    await waitFor(() => stepRow(runId, "abort:ra")?.status === "completed");
+    audit.mockClear();
+    const r = await abortRun(runId, SUP);
+    expect(r.abortStops?.sent).toEqual([]);
+    await vi.waitFor(() => expect(auditsOf("abortStopResend").map((m) => m.outcome)).toEqual(["started"]));
+  });
+
+  it("★ M4 pure: the abort row id of a step id > 122 chars stays ≤ 128, keeps the whole id's identity (no collision)", () => {
+    const a = "q".repeat(130) + "-a";
+    const b = "q".repeat(130) + "-b";
+    expect(abortRowId("short")).toBe("abort:short");
+    expect(abortRowId(a).length).toBeLessThanOrEqual(128);
+    expect(abortRowId(a)).not.toBe(abortRowId(b));
+  });
+
+  it("★ M4 a CONFIRMED STOP of a 130-char step is NOT re-sent by a re-send (its row is matched by the step id it records)", async () => {
+    const LONG = { ...RB_STOP, id: "r".repeat(130) };
+    const runId = await pausedAfterMotion("long130", [LONG, OT_STOP]);
+    refuseNextOtStop();
+    const first = await abortRun(runId, SUP);
+    expect(first.abortStops).toMatchObject({ sent: [LONG.id], failed: ["stop"] });
+    await waitFor(() => stepRow(runId, abortRowId(LONG.id))?.status === "completed");
+    const r = await abortRun(runId, SUP);
+    expect(r.abortStops?.sent).toEqual(["stop"]);
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
   });
 });
