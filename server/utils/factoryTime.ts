@@ -220,9 +220,26 @@ export function dayKeyInZone(date: Date, timeZone: string = getFactoryTimezone()
 export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | undefined {
   const s = String(dateStr).trim();
   if (s === "") return undefined;
-  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
+  // doc 81 Đợt 4 Task B5 — the ONE explicit-zone rule (coMuiGioTuongMinh), not a local regex: the old
+  // `Z$|[+-]\d{2}:?\d{2}$` took the "-2026" of a US date "09-28-2026" for an offset (the M2 bug) and handed it to V8,
+  // which read it at midnight of the PROCESS time zone and ignored endOfDay.
+  if (coMuiGioTuongMinh(s)) { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/.exec(s);
-  if (!m) { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
+  if (!m) {
+    // B5 — a naive non-ISO string ("09-28-2026", "Sep 28 2026 08:30"): V8 parses it in the PROCESS zone, so its local
+    // getters give back exactly the wall clock it read; that wall clock is re-read in the FACTORY zone (process-TZ
+    // independent, endOfDay honoured when the string carries no time).
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return undefined;
+    const coGioNgoai = /\d{1,2}:\d{2}/.test(s);
+    const utcNgoai = wallClockToUtc({
+      year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate(),
+      hour: coGioNgoai ? d.getHours() : endOfDay ? 23 : 0,
+      minute: coGioNgoai ? d.getMinutes() : endOfDay ? 59 : 0,
+      second: coGioNgoai ? d.getSeconds() : endOfDay ? 59 : 0,
+    }, getFactoryTimezone());
+    return new Date(utcNgoai.getTime() + (coGioNgoai ? d.getMilliseconds() : endOfDay ? 999 : 0));
+  }
   const coGio = m[4] !== undefined;
   const utc = wallClockToUtc({
     year: +m[1], month: +m[2], day: +m[3],
