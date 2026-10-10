@@ -101,3 +101,17 @@ export type InsertRobot = typeof robots.$inferInsert;
 export type RobotTelemetry = typeof robotTelemetry.$inferSelect;
 export type RobotJob = typeof robotJobs.$inferSelect;
 export type InsertRobotJob = typeof robotJobs.$inferInsert;
+
+/**
+ * doc 81 Đợt 4 Task B4 (QĐ-4c, mig 0364) — a robot's CURRENT motion lock, persisted so a restart starts locked.
+ * One row per locked robot (PK robotId); deleted when the lock is cleared (confirmed STOP / audited operator clear).
+ * Written/read only by server/services/robot/robotMotionLockStore.ts; the in-memory MotionLock stays authoritative.
+ */
+export const robotMotionLocks = pgTable("robot_motion_locks", {
+  robotId: integer("robotId").primaryKey(),
+  reasonCode: varchar("reasonCode", { length: 64 }).notNull(),
+  detail: text("detail"),
+  generation: integer("generation").notNull(),
+  lockedAt: timestamp("lockedAt").defaultNow().notNull(),
+});
+export type RobotMotionLockRow = typeof robotMotionLocks.$inferSelect;
