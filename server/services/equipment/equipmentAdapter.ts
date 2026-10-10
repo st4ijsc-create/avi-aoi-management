@@ -258,6 +258,7 @@ class RobotEquipmentAdapter implements EquipmentAdapter {
         ok: false,
         status: "rejected",
         routedTo: "robot-dispatcher",
+        // data-raw-ok: fixed English fallback of the appError above; detail.appError carries the localisable code + params.
         error: e.message,
         detail: { appError: { appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } } },
       };
