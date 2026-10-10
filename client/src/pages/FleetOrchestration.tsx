@@ -1149,7 +1149,8 @@ function MapToolbar({
         <EntityPicker
           id={`${uid}-factory`}
           aria-label={t("fleet.map.factory", "Factory")}
-          className="h-8 w-40"
+          /* h-9 = height of the former Select size="sm" — MAIN geometry unchanged (layout instrument) */
+          className="h-9 w-40"
           options={shown.list.map((f) => ({ value: f.id, label: f.label, ...(f.label === `#${f.id}` ? {} : { sublabel: `#${f.id}` }) }))}
           value={factoryId}
           onChange={(v) => { if (typeof v === "number") onFactoryChange(v); }}

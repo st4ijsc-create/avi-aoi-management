@@ -405,3 +405,12 @@ Bảng nhân lực rời tab `?tab=workforce` của Safety & Workforce sang tran
 - `KNOWN_PROCS["fleet-orchestration"]` thêm `factory.list` (bảng đã có trong `PAGE_TABLES`). Cảnh báo còn lại
   `userSettingsRouter.getUiPrefs` là thủ tục của VỎ (Đợt 4 D1, mọi màn) — chưa xử lý ở đây (cần quyết định canh trôi `user_settings`
   chỉ hàng của user đo, như chuông) — ghi vào báo cáo Nhóm H.
+
+## Đợt 5 H fix 1 (2026-10-10) — vỏ: sở thích giao diện; Studio: robotPositions
+- `SHELL_PROCS = ["userSettingsRouter.getUiPrefs"]` vào `KNOWN_PROCS` của MỌI màn (khuôn chuông); bảng `user_settings` vào
+  `PAGE_TABLES` của mọi màn, băm CHỈ hàng của user đo (`TABLE_WHERE`) ⇒ một lần `setUiPrefs` trong lần đo là trôi; user đo bị xoá
+  kèm hàng `user_settings` của nó. Cảnh báo "thủ tục chưa biết" của `getUiPrefs` (Đợt 4 D1) hết trên cả 40 lượt đo.
+- `KNOWN_PROCS["orchestration-studio"]` + `fleet.robotPositions` (Đợt 4 R-4-n — bộ chọn robot; bảng robots / robot_telemetry đã có).
+- Đo lại toàn bộ (14 màn, 40 lượt, `--spawn` 3056/5216, có tự kiểm): pass=true, 0 lỗi, 0 lệch hiệu chuẩn, 0 kết nối lạ, 0 trôi
+  (61 bảng), tự kiểm ĐẠT. Fleet sau khi đổi bộ chọn nhà máy (EntityPicker, cao h-9 như Select cũ): 1600/1366 recorded-match 0,00 %.
+
