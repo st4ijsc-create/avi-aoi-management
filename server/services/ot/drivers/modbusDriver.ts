@@ -216,6 +216,7 @@ export class ModbusDriver extends NotImplementedDriver {
         value,
         quality: "good",
         timestamp: now(),
+        tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
       } satisfies OtSample;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
@@ -225,6 +226,7 @@ export class ModbusDriver extends NotImplementedDriver {
         value: null,
         quality: "bad",
         timestamp: now(),
+        tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
       } satisfies OtSample;
     }
   }

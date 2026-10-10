@@ -46,6 +46,7 @@ export function sampleToCanonical(adapter: RuntimeAdapter, sample: OtSample): Ca
   return {
     ts: sample.tsReject ? undefined : sample.timestamp,
     ...(sample.tsReject ? { tsReject: sample.tsReject } : {}),
+    ...(sample.tsSource ? { tsSource: sample.tsSource } : {}), // doc 81 Đợt 4 Task B6
     machineId: adapter.machineId ?? null,
     deviceId: adapter.code,
     protocol: otProtocolToCanonical(adapter.protocol),

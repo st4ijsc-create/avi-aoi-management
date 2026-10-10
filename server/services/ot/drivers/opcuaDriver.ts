@@ -115,6 +115,16 @@ function optionalExport(pkg: any, name: string): any {
   }
 }
 
+
+/**
+ * doc 81 Đợt 4 Task B6 — the time of an OPC UA DataValue: its SOURCE timestamp when the server sent one ("device"),
+ * otherwise the receipt time stamped here ("server" — kept out of the clock-drift table).
+ */
+export function opcuaSampleTime(dv: { sourceTimestamp?: unknown } | null | undefined): { timestamp: Date; tsSource: "device" | "server" } {
+  const src = dv?.sourceTimestamp;
+  return src instanceof Date && !isNaN(src.getTime()) ? { timestamp: src, tsSource: "device" } : { timestamp: new Date(), tsSource: "server" };
+}
+
 export class OpcuaDriver extends NotImplementedDriver {
   readonly protocol: OtProtocol = "opcua";
   protected readonly packageName = "node-opcua";
@@ -423,6 +433,7 @@ export class OpcuaDriver extends NotImplementedDriver {
           value: null,
           quality: "bad",
           timestamp: new Date(),
+          tsSource: "server", // B6 — no DataValue: stamped on receipt
           statusCode: r.statusCode,
         } satisfies OtSample;
       }
@@ -435,8 +446,7 @@ export class OpcuaDriver extends NotImplementedDriver {
 
       const norm = normalizeOpcuaValue(raw, tag.dataType, tag.scale ?? 1, tag.offset ?? 0);
       const quality = scGood ? norm.quality : "bad";
-      const timestamp: Date =
-        dv?.sourceTimestamp instanceof Date ? dv.sourceTimestamp : new Date();
+      const { timestamp, tsSource } = opcuaSampleTime(dv);
 
       const sample: OtSample = {
         tagKey: tag.tagKey,
@@ -444,6 +454,7 @@ export class OpcuaDriver extends NotImplementedDriver {
         value: quality === "good" ? norm.value : null,
         quality,
         timestamp,
+        tsSource,
       };
       if (!scGood) sample.statusCode = describeStatus(sc, scVal);
       return sample;
@@ -553,7 +564,7 @@ export class OpcuaDriver extends NotImplementedDriver {
       if (prev !== undefined && now - prev < OPCUA_MONITORED_BAD_MIN_INTERVAL_MS) return;
       lastBadAt.set(tag.tagKey, now);
       void Promise.resolve(
-        onSample({ tagKey: tag.tagKey, raw: undefined, value: null, quality: "bad", timestamp: new Date(), statusCode }),
+        onSample({ tagKey: tag.tagKey, raw: undefined, value: null, quality: "bad", timestamp: new Date(), tsSource: "server", statusCode }),
       ).catch(() => undefined);
     };
     const deferredBad: Array<[OtTagAddress, string]> = [];
@@ -592,8 +603,7 @@ export class OpcuaDriver extends NotImplementedDriver {
           const scGood = scVal === 0;
           const norm = normalizeOpcuaValue(raw, tag.dataType, tag.scale ?? 1, tag.offset ?? 0);
           const quality = scGood ? norm.quality : "bad";
-          const timestamp: Date =
-            dataValue?.sourceTimestamp instanceof Date ? dataValue.sourceTimestamp : new Date();
+          const { timestamp, tsSource } = opcuaSampleTime(dataValue);
           this.lastOkAt = new Date();
           const sample: OtSample = {
             tagKey: tag.tagKey,
@@ -601,6 +611,7 @@ export class OpcuaDriver extends NotImplementedDriver {
             value: quality === "good" ? norm.value : null,
             quality,
             timestamp,
+            tsSource,
           };
           if (!scGood) sample.statusCode = describeStatus(sc, scVal);
           void Promise.resolve(onSample(sample)).catch(() => {
