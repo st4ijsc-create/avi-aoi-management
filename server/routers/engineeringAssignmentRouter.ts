@@ -65,10 +65,9 @@ const MAX_IDS = 1000;
 
 /** Xem được trang đích = MỌI module của `viewModules` có canView. */
 async function canViewTarget(userId: number, role: string, type: AssignableEntityType): Promise<boolean> {
-  for (const m of ASSIGNABLE[type].viewModules) {
-    if (!(await checkPermission(userId, role, m, "canView"))) return false;
-  }
-  return true;
+  // final wave P-H1 — every module is checked (no early exit): the cost does not depend on which permission is missing.
+  const held = await Promise.all(ASSIGNABLE[type].viewModules.map((m) => checkPermission(userId, role, m, "canView")));
+  return held.every(Boolean);
 }
 
 async function dbOrThrow() {
@@ -165,24 +164,27 @@ export const engineeringAssignmentRouter = router({
         .select({ id: users.id, name: users.name, role: users.role, isActive: users.isActive })
         .from(users).where(eq(users.id, input.assigneeUserId)).limit(1);
       // fix 1 — không tồn tại / vô hiệu hoá / không xem được trang ⇒ MỘT lời từ chối (không lộ trạng thái tài khoản).
-      if (!assignee || !assignee.isActive || !(await canViewTarget(assignee.id, assignee.role, type))) {
-        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
-      }
       // doc 81 Đợt 5 H5 + H fix 1 (I1) — the ONE assignee rule shared with the roster (`assigneeRuleSql`): factory rule, and
       // for a run: the assignee sees EVERY non-STOP target. Outside the rule ⇒ the SAME refusal as a missing / disabled /
       // non-viewing account (security scan: a distinct answer would reveal that an id is a live account of another factory);
       // the translated sentence says every case (errors.reason.assigneeInvalid, vi/en/zh).
+      // final wave P-H1 — and the SAME lookups: every check below runs for a missing / disabled / non-viewing account too
+      // (view permission, the rule query — which also requires isActive —, the engine's run check), ONE decision at the end;
+      // no early exit after the first query that would let a caller tell a live account from a missing one by timing.
       const outOfScope = () =>
         appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
+      const assigneeRole = assignee?.role ?? "";
+      const canView = await canViewTarget(input.assigneeUserId, assigneeRole, type);
       const assigneeRule = await assigneeRuleSql(d, ctx, type, input.entityId, scoped.factories);
-      if (assigneeRule) {
-        const [inRule] = await d.select({ id: users.id }).from(users).where(and(eq(users.id, assignee.id), assigneeRule)).limit(1);
-        if (!inRule) throw outOfScope();
-      }
+      const [inRule] = await d
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, input.assigneeUserId), eq(users.isActive, true), assigneeRule))
+        .limit(1);
       // E fix 1 (R-5-d, review #3) — defence in depth: the engine's own check (same rule as above, by construction + test).
       const assigneeSeesRun =
-        type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf({ id: assignee.id, role: assignee.role })));
-      if (!assigneeSeesRun) throw outOfScope();
+        type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf({ id: input.assigneeUserId, role: assigneeRole })));
+      if (!assignee || !assignee.isActive || !canView || !inRule || !assigneeSeesRun) throw outOfScope();
 
       try {
         return await d.transaction(async (tx) => {

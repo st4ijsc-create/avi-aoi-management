@@ -181,9 +181,11 @@ export async function resolveTargetForAssigner(
   entityId: number,
 ): Promise<{ factories: number[] } | null> {
   const factoryIds = await targetFactoryIds(d, type, entityId);
-  if (factoryIds === null) return null;
-  if (type === "orchestration_run") return { factories: factoryIds };
+  if (type === "orchestration_run") return factoryIds === null ? null : { factories: factoryIds };
+  // final wave P-H1 — the assigner's scope is resolved BEFORE the existence answer: a missing id and an existing id outside
+  // the assigner's factories cost the same lookups (no timing oracle), and get the same null (NOT_FOUND).
   const assigner = await assignerFactoryIds(ctx);
+  if (factoryIds === null) return null;
   if (assigner !== null && !factoryIds.every((f) => assigner.includes(f))) return null;
   return { factories: factoryIds };
 }
