@@ -474,3 +474,59 @@ describe("D1 — Copilot qua mốc 1024 px: nút AI khớp với thứ nhìn th�
     await nghi();
   });
 });
+
+// doc 81 Đợt 5 H1 (mục 15) — gập panel phải khi Copilot đang mở: trước đây Copilot vẫn "mở" trên panel 0 px ⇒ nút AI
+// lần 1 ĐÓNG thứ vô hình, phải bấm hai lần. Nay: gập ⇒ Copilot đóng (nút AI báo đóng, khớp thứ nhìn thấy); nút AI khi
+// đang gập ⇒ panel mở lại + Copilot chọn, MỘT lần bấm.
+describe("H1 — gập panel phải khi Copilot mở", () => {
+  it("Copilot mở → gập ⇒ 0 px + nút AI báo ĐÓNG; bấm nút AI MỘT lần ⇒ panel mở lại, tab Copilot chọn, nút AI báo mở", async () => {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-workbench-group")) return DOMRect.fromRect({ x: 0, y: 0, width: 1500, height: 800 });
+      return original.call(this);
+    });
+    try {
+      seed();
+      renderPage({ aiButton: true });
+      const rightSize = () => Number((document.querySelector('[data-panel-id="right"]') as HTMLElement).getAttribute("data-panel-size"));
+      const ai = screen.getByRole("button", { name: /^(Mở Trợ lý Lập trình|Open Programming Copilot)$/ });
+      fireEvent.click(ai);
+      expect(ai).toHaveAttribute("aria-expanded", "true");
+      await waitFor(() => expect(rightSize()).toBeGreaterThan(0));
+      fireEvent.click(screen.getByRole("button", { name: /Ẩn panel phải|Hide right panel/ }));
+      await waitFor(() => expect(rightSize()).toBe(0));
+      expect(ai).toHaveAttribute("aria-expanded", "false");
+      expect(statusBar().textContent).toContain("○");
+      expect(inspector()).not.toBeNull(); // nội dung vẫn mount
+      fireEvent.click(ai);
+      await waitFor(() => expect(rightSize()).toBeGreaterThan(0));
+      expect(ai).toHaveAttribute("aria-expanded", "true");
+      expect(within(inspector()).getByRole("tab", { name: /Copilot/ })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("button", { name: /Ẩn panel phải|Hide right panel/ })).toHaveAttribute("aria-pressed", "false");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("panel đang gập (Copilot đóng) ⇒ nút AI MỘT lần mở panel + Copilot", async () => {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-workbench-group")) return DOMRect.fromRect({ x: 0, y: 0, width: 1500, height: 800 });
+      return original.call(this);
+    });
+    try {
+      seed();
+      renderPage({ aiButton: true });
+      const rightSize = () => Number((document.querySelector('[data-panel-id="right"]') as HTMLElement).getAttribute("data-panel-size"));
+      fireEvent.click(screen.getByRole("button", { name: /Ẩn panel phải|Hide right panel/ }));
+      await waitFor(() => expect(rightSize()).toBe(0));
+      const ai = screen.getByRole("button", { name: /^(Mở Trợ lý Lập trình|Open Programming Copilot)$/ });
+      expect(ai).toHaveAttribute("aria-expanded", "false");
+      fireEvent.click(ai);
+      await waitFor(() => expect(rightSize()).toBeGreaterThan(0));
+      expect(ai).toHaveAttribute("aria-expanded", "true");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
