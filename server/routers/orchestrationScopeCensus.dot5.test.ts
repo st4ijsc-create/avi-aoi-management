@@ -77,9 +77,13 @@ const SCOPED_ENGINE = ["deployWorkflow", "rollbackWorkflow", "startRun", "resume
 const TAKES_ID = /\b(runId|runIds|workflowId|workflowIds|workflowRef|entityId|entityIds|id|ids|ref)\s*:/; // + bulk inputs (E fix 2, N5)
 const SCOPE_IN_CALL = /\((?:[^()]|\([^()]*\))*\b(scopeOf|foeScopeOf)\(\s*ctx\.user\s*\)/;
 
-/** procedure name → its source block (from `  name: xxxProcedure` to the next one at the same indent). */
+/**
+ * procedure name → its source block (from `name: xxxProcedure` to the next procedure).
+ * final wave P-E3 — at ANY indent (procedures of a nested `router({ … })`), and procedures defined as VALUES
+ * (`const name = xxxProcedure…`, later listed by name or shorthand in a router).
+ */
 export function proceduresOf(src: string): Array<{ name: string; block: string }> {
-  const re = /^ {2}(\w+): (\w+)\b/gm;
+  const re = /^[ \t]*(?:(?:export\s+)?const\s+)?(\w+)\s*[:=]\s*(\w+)\b/gm;
   const hits = [...src.matchAll(re)].filter((m) => /Procedure$/.test(m[2]));
   return hits.map((m, i) => ({ name: m[1], block: src.slice(m.index!, i + 1 < hits.length ? hits[i + 1].index! : src.length) }));
 }
@@ -318,5 +322,22 @@ export async function okOne(runId: number, user: FoeUser): Promise<void> {
     .query(async ({ input }) => input.ids),
 });`;
     expect(unscopedProcedures(bulk, {})).toEqual(["bulk", "bulk2"]);
+    // final wave P-E3 (E re-review 2) — procedures of a NESTED router and procedures defined as VALUES (then listed by name /
+    // shorthand) are seen too.
+    const nested = `const peekProc = protectedProcedure
+  .input(z.object({ runId: z.number() }))
+  .query(async ({ input }) => loadRunEvents(input.runId));
+export const r = router({
+  sub: router({
+    peekNested: protectedProcedure
+      .input(z.object({ runId: z.number() }))
+      .query(async ({ input }) => loadRunEvents(input.runId)),
+    fineNested: protectedProcedure
+      .input(z.object({ runId: z.number() }))
+      .query(async ({ input, ctx }) => runIdVisibleTo(input.runId, scopeOf(ctx.user))),
+  }),
+  peekProc,
+});`;
+    expect(unscopedProcedures(nested, {}).sort()).toEqual(["peekNested", "peekProc"]);
   });
 });
