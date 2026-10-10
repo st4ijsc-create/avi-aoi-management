@@ -4,8 +4,10 @@
  * tại). Hồ sơ env chép từ thiết bị đo bố cục (scripts/ui-metrics/engineeringLayout.mjs#serverEnv: mọi tích hợp ngoài TẮT)
  * + những gì đường DỪNG OT cần, CHỈ trên tiến trình này: FOE_ENABLED, OT_GATEWAY_ENABLED (driver `stub` trong tiến trình),
  * OT_CONTROL_ENABLED (đường ghi thật ⇒ preflight an toàn chạy ⇒ từ chối). Không bao giờ :3000, không bao giờ dev DB.
- * ⚠ OT_GATEWAY nạp MỌI adapter đang bật của `_test` (seed SIM-L1..L3 trỏ 127.0.0.1:4840/4841/4842/5020/1102/44818, và :1):
- *   globalSetup TỪ CHỐI chạy nếu bất kỳ cổng nào trong số đó đang có tiến trình nghe (không chạm simulator dùng chung).
+ * ⚠ OT_GATEWAY nạp MỌI adapter đang bật của `_test` — tập này TRÔI (test khác thêm adapter). H fix 1 (review I2): hàng rào là
+ *   BẤT BIẾN đọc từ CSDL ngay trước khi dựng, không phải danh sách cổng: MỌI adapter đang bật (kể cả endpoint dự phòng HA
+ *   `connectionOptions.ha.secondaryEndpoint`) phải là `stub` (driver trong tiến trình) HOẶC trỏ loopback (127.0.0.1 /
+ *   localhost / ::1) tới một cổng KHÔNG có ai nghe; endpoint không đọc được / host khác / cổng đang nghe ⇒ TỪ CHỐI dựng.
  */
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
@@ -24,8 +26,49 @@ const require = createRequire(path.join(REPO, "package.json"));
 
 export const SERVER_PORT = Number(process.env.H6_SERVER_PORT || 3046);
 export const VITE_PORT = Number(process.env.H6_VITE_PORT || 5206);
-/** Cổng các adapter seed của `_test` trỏ tới — phải KHÔNG có ai nghe khi bật OT_GATEWAY. */
-export const SEED_ADAPTER_PORTS = [4840, 4841, 4842, 5020, 1102, 44818];
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+/** host:port của một endpoint OT (`opc.tcp://h:p`, `tcp://h:p`, `h:p`); null = không đọc được (⇒ từ chối). */
+export function endpointHostPort(endpoint: string): { host: string; port: number } | null {
+  const raw = String(endpoint ?? "").trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.includes("://") ? raw : `tcp://${raw}`);
+    const port = Number(u.port);
+    if (!u.hostname || !Number.isInteger(port) || port <= 0 || port > 65535) return null;
+    return { host: u.hostname.toLowerCase(), port };
+  } catch {
+    return null;
+  }
+}
+
+export interface AdapterSafetyReport { checked: number; stub: number; loopbackFree: Array<{ id: number; endpoint: string }>; refused: Array<{ id: number; protocol: string; endpoint: string; why: string }> }
+
+/**
+ * BẤT BIẾN trước khi bật OT_GATEWAY + OT_CONTROL trên instance: mọi adapter đang bật của `_test` là `stub` hoặc trỏ loopback tới
+ * cổng không ai nghe (không bao giờ nối thiết bị / simulator thật với quyền ghi).
+ */
+export async function assertEnabledAdaptersSafe(
+  rows: Array<{ id: number; protocol: string; endpoint: string; connectionOptions: unknown }>,
+): Promise<AdapterSafetyReport> {
+  const report: AdapterSafetyReport = { checked: rows.length, stub: 0, loopbackFree: [], refused: [] };
+  for (const r of rows) {
+    if (r.protocol === "stub") { report.stub++; continue; }
+    const ha = (r.connectionOptions as { ha?: { secondaryEndpoint?: unknown } } | null)?.ha;
+    const endpoints = [r.endpoint, ...(typeof ha?.secondaryEndpoint === "string" && ha.secondaryEndpoint.trim() ? [ha.secondaryEndpoint] : [])];
+    for (const ep of endpoints) {
+      const hp = endpointHostPort(ep);
+      if (!hp) { report.refused.push({ id: r.id, protocol: r.protocol, endpoint: ep, why: "endpoint không đọc được" }); continue; }
+      if (!LOOPBACK.has(hp.host)) { report.refused.push({ id: r.id, protocol: r.protocol, endpoint: ep, why: "host không phải loopback" }); continue; }
+      if (await portBusy(hp.port)) { report.refused.push({ id: r.id, protocol: r.protocol, endpoint: ep, why: `cổng ${hp.port} đang có tiến trình nghe` }); continue; }
+      report.loopbackFree.push({ id: r.id, endpoint: ep });
+    }
+  }
+  if (report.refused.length) {
+    throw Object.assign(new Error(`H6: refusing to enable OT control — enabled adapter(s) not provably inert: ${JSON.stringify(report.refused)}`), { report });
+  }
+  return report;
+}
 
 export function portBusy(port: number): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
@@ -75,11 +118,9 @@ function serverEnv(logDir: string): NodeJS.ProcessEnv {
 
 export interface RunningInstance { child: ChildProcess; vite: { close: () => Promise<void> }; logDir: string }
 
-export async function startInstance(logDir: string): Promise<RunningInstance> {
+export async function startInstance(logDir: string, adapters: Parameters<typeof assertEnabledAdaptersSafe>[0]): Promise<RunningInstance & { adapterSafety: AdapterSafetyReport }> {
   for (const p of [SERVER_PORT, VITE_PORT]) if (await portBusy(p)) throw new Error(`H6: port ${p} busy — refusing`);
-  const busySeed = [];
-  for (const p of SEED_ADAPTER_PORTS) if (await portBusy(p)) busySeed.push(p);
-  if (busySeed.length) throw new Error(`H6: a process listens on seed adapter port(s) ${busySeed.join(",")} — refusing to enable OT_GATEWAY`);
+  const adapterSafety = await assertEnabledAdaptersSafe(adapters);
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, "server.log");
   const log = fs.openSync(logFile, "w");
@@ -106,7 +147,7 @@ export async function startInstance(logDir: string): Promise<RunningInstance> {
       proxy: { "/api": { target, ws: true, changeOrigin: false }, "/uploads": { target } } },
   });
   await vite.listen();
-  return { child, vite, logDir };
+  return { child, vite, logDir, adapterSafety };
 }
 
 export function killTree(pid: number | undefined): void {

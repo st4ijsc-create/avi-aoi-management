@@ -107,6 +107,7 @@ export async function teardownFixtures(): Promise<Record<string, number>> {
     if (users.length) {
       await sql`DELETE FROM user_sessions WHERE "userId" IN ${sql(users)}`.catch(() => undefined);
       await sql`DELETE FROM permissions WHERE "userId" IN ${sql(users)}`;
+      await sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(users)}`;
       await sql`DELETE FROM user_secrets WHERE "userId" IN ${sql(users)}`;
       out.notifications = (await sql`DELETE FROM notifications WHERE "userId" IN ${sql(users)}`.catch(() => ({ count: 0 }))).count;
       try {
@@ -154,10 +155,16 @@ export async function setupFixtures(): Promise<H6Fixture> {
         const id = await one(tx`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
           VALUES (${`${run}-${suffix}`}, ${`${run}_${suffix}`}, ${`H6 ${suffix}`}, 'password', ${role}, true, false, now()) RETURNING id`);
         await tx`INSERT INTO user_secrets ("userId", "passwordHash", "updatedAt") VALUES (${id}, ${hash}, now())`;
+        // H fix 1 (review M8) — NOT admins: engineers scoped to THIS fixture factory only (tiny command-center hierarchy, so the
+        // page settles in seconds, and the orchestration factory scope (E2) is exercised for real). Rights = exactly what the
+        // flow needs: start / approve (machine_control canCreate) + read the studio (machine_monitoring canView).
+        await tx`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit")
+          VALUES (${id}, 'machine_control', 'machine_control', true, true, true), (${id}, 'machine_monitoring', 'machine_status', true, false, false)`;
+        await tx`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${id}, ${run})`;
         return id;
       };
-      const ownerId = await mkUser("admin", "owner", ownerHash);
-      const approverId = await mkUser("admin", "approver", approverHash);
+      const ownerId = await mkUser("engineer", "owner", ownerHash);
+      const approverId = await mkUser("engineer", "approver", approverHash);
       const adapterId = await one(tx`INSERT INTO device_adapters (code, name, protocol, endpoint, "machineId", "isEnabled")
         VALUES (${run}, ${`${run} stub adapter`}, 'stub', 'stub://h6', ${machineId}, true) RETURNING id`);
       const tagId = await one(tx`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled")
@@ -183,5 +190,14 @@ export async function setupFixtures(): Promise<H6Fixture> {
         workflowId, workflowRef, tagKey,
       } satisfies H6Fixture;
     }),
+  );
+}
+
+/** Mọi adapter đang bật của `_test` — đầu vào của hàng rào `assertEnabledAdaptersSafe` (đọc NGAY trước khi dựng instance). */
+export async function enabledAdapters(): Promise<Array<{ id: number; protocol: string; endpoint: string; connectionOptions: unknown }>> {
+  return withTestDb(async (sql) =>
+    (await sql`SELECT id, protocol, endpoint, "connectionOptions" FROM device_adapters WHERE "isEnabled" = true ORDER BY id`).map((r) => ({
+      id: Number(r.id), protocol: String(r.protocol), endpoint: String(r.endpoint), connectionOptions: r.connectionOptions,
+    })),
   );
 }

@@ -13,6 +13,11 @@
  *   3. dòng bước s1 hiện CÂU ĐÃ DỊCH (`data-testid=step-app-error`) — vi, rồi en sau khi đổi ngôn ngữ.
  * ORACLE độc lập với mã trang: câu kỳ vọng ráp từ tệp từ điển vi/en (khuôn OPERATION_FAILED_WITH_REASON + câu lý do +
  * câu stopPinReason), stopPinReason đọc từ CSDL (kết quả bước do server ghi), không đọc từ DOM.
+ * H fix 1: hai người là KỸ SƯ chỉ thuộc nhà máy của fixture (không admin) — trang sẵn sàng sau vài giây; chờ theo tín hiệu
+ * sẵn sàng CỦA TRANG (listWorkflows + listRuns đã trả), không chờ cố định.
+ * ⚠ Mỗi lượt để lại ĐÚNG MỘT hàng `command_log` 'rejected': lệnh bị từ chối được dispatcher ghi sổ cái TRƯỚC khi trả lời
+ *   (đó là hành vi sản phẩm phải giữ), và sổ cái là append-only — vai `avi_app` không có quyền DELETE (mig 0279, đo:
+ *   has_table_privilege('command_log','DELETE') = false). Xoá nó cần vai chủ CSDL, tức phá WORM ⇒ không làm; teardown đếm nó.
  */
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import fs from "node:fs";
@@ -47,13 +52,26 @@ async function loggedIn(browser: Browser, base: string, user: { username: string
   return ctx;
 }
 
+/**
+ * H fix 1 (review M8) — wait on the page's OWN readiness signal, not a fixed 180 s: the Studio has loaded when its
+ * workflow list AND run list queries have answered (200). Bound = READY_MS, only a ceiling for a broken instance.
+ */
+const READY_MS = 60_000;
+async function openStudio(page: Page, url: string): Promise<void> {
+  const answered = (proc: string) =>
+    page.waitForResponse((r) => r.url().includes("/api/trpc/") && decodeURIComponent(r.url()).includes(proc) && r.ok(), { timeout: READY_MS });
+  const ready = Promise.all([answered("orchestration.listWorkflows"), answered("orchestration.listRuns")]);
+  await page.goto(url);
+  await ready;
+}
+
 /** Bottom panel tab via the status bar (existing UI): "runs" = every run, "awaiting" = runs waiting at a gate. */
 async function openRunsPanel(page: Page, which: "runs" | "awaiting" = "runs"): Promise<void> {
   await page.getByTestId(`orch-status-${which}`).click();
 }
 
 test("H6 — orchestration run with an OT STOP step: the dispatcher's refusal renders as a TRANSLATED sentence (vi, en)", async ({ browser }) => {
-  test.setTimeout(420_000);
+  test.setTimeout(300_000);
   const base = process.env.H6_BASE_URL!;
   const fx = JSON.parse(fs.readFileSync(process.env.H6_STATE!, "utf8")) as H6Fixture;
   const sql = postgres(testDatabaseUrl(), { max: 1, onnotice: () => {} });
@@ -61,9 +79,9 @@ test("H6 — orchestration run with an OT STOP step: the dispatcher's refusal re
     // ── 1. the owner starts the run from the Studio (existing "Run" button) ─────────────────────────────────────────────
     const owner = await loggedIn(browser, base, fx.owner, "vi");
     const p1 = await owner.newPage();
-    await p1.goto(`${base}/orchestration-studio`);
+    await openStudio(p1, `${base}/orchestration-studio`);
     const wfRow = p1.locator(`[data-workflow-row="${fx.workflowId}"]`);
-    await expect(wfRow).toBeVisible({ timeout: 180_000 });
+    await expect(wfRow).toBeVisible();
     await wfRow.getByRole("button", { name: "Nạp" }).click();
     await p1.getByRole("button", { name: dict("vi").studio.run }).click();
     let runId = 0;
@@ -79,10 +97,10 @@ test("H6 — orchestration run with an OT STOP step: the dispatcher's refusal re
     // ── 2. ANOTHER user approves gate g1 from the run list (existing "Approve" button) ──────────────────────────────────
     const approver = await loggedIn(browser, base, fx.approver, "vi");
     const p2 = await approver.newPage();
-    await p2.goto(`${base}/orchestration-studio`);
+    await openStudio(p2, `${base}/orchestration-studio`);
     await openRunsPanel(p2, "awaiting");
     const row = p2.locator(`[data-run-row="${runId}"]`);
-    await expect(row).toBeVisible({ timeout: 180_000 });
+    await expect(row).toBeVisible();
     const approve = row.getByRole("button", { name: "Duyệt", exact: true });
     await expect(approve).toBeEnabled({ timeout: 60_000 });
     await approve.click();
@@ -103,10 +121,14 @@ test("H6 — orchestration run with an OT STOP step: the dispatcher's refusal re
     expect(ledger.map((r) => r.status)).toEqual(["rejected"]); // refused before any write — nothing was sent
 
     // ── 3. the step line shows the TRANSLATED sentence (vi) ─────────────────────────────────────────────────────────────
-    await p2.reload();
+    {
+      const answered = p2.waitForResponse((r) => decodeURIComponent(r.url()).includes("orchestration.listRuns") && r.ok(), { timeout: READY_MS });
+      await p2.reload();
+      await answered;
+    }
     await openRunsPanel(p2);
     const row2 = p2.locator(`[data-run-row="${runId}"]`);
-    await expect(row2).toBeVisible({ timeout: 180_000 });
+    await expect(row2).toBeVisible();
     await row2.locator("button").first().click(); // expand the run → per-step lines
     const vi = row2.getByTestId("step-app-error");
     await expect(vi).toHaveText(expectedSentence("vi", stopPinReason), { timeout: 30_000 });
@@ -117,10 +139,10 @@ test("H6 — orchestration run with an OT STOP step: the dispatcher's refusal re
     // ── en: same run, same line, English dictionary ──────────────────────────────────────────────────────────────────────
     const en = await loggedIn(browser, base, fx.approver, "en");
     const p3 = await en.newPage();
-    await p3.goto(`${base}/orchestration-studio?tab=runs`);
+    await openStudio(p3, `${base}/orchestration-studio?tab=runs`);
     await openRunsPanel(p3);
     const row3 = p3.locator(`[data-run-row="${runId}"]`);
-    await expect(row3).toBeVisible({ timeout: 180_000 });
+    await expect(row3).toBeVisible();
     await row3.locator("button").first().click();
     await expect(row3.getByTestId("step-app-error")).toHaveText(expectedSentence("en", stopPinReason), { timeout: 30_000 });
     await en.close();

@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { countFixtures, setupFixtures, teardownFixtures } from "./fixtures";
+import { countFixtures, enabledAdapters, setupFixtures, teardownFixtures } from "./fixtures";
 import { killTree, portBusy, SERVER_PORT, startInstance, VITE_PORT } from "./instance";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -23,7 +23,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   fs.writeFileSync(stateFile, JSON.stringify(fx));
   let inst: Awaited<ReturnType<typeof startInstance>> | null = null;
   try {
-    inst = await startInstance(path.join(outDir, "instance"));
+    inst = await startInstance(path.join(outDir, "instance"), await enabledAdapters());
+    report.adapterSafety = inst.adapterSafety;
   } catch (e) {
     report.startError = (e as Error).message;
     await teardownFixtures();
