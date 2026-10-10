@@ -1452,11 +1452,15 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    reservation and the queue; a write queued behind a slow / timed-out one (B3 hold: up to ~11.25 s) reached the
   //    device on a verdict that old. A NON-STOP write whose preflight passed more than OT_SAFETY_PREFLIGHT_DEADLINE_MS
   //    ago re-runs the SAME preflight read just before writing; not OK => refused with the same reason (nothing written).
-  //    Stop-typed commands are never re-checked (L-7). The re-check holds this command's queue slot, so a PINNED STOP
+  //    doc 81 Đợt 5 task F4 (item 34) — the skip now matches the preflight: only a PINNED stop (stopCls.pinnedStop) is
+  //    never re-checked (L-7; it never preflights either). An UNPINNED stop-typed command ran the preflight, waited in
+  //    the queue like any write and can carry arbitrary writes, so it is re-checked too (was: skipped by NAME,
+  //    isStopCommandType); its refusal reads like the preflight's (use the hardware E-STOP + stop pin reason).
+  //    The re-check holds this command's queue slot, so a PINNED STOP
   //    queued meanwhile must not wait on it: the re-check gives way at once (this write is dropped as SUPERSEDED_BY_STOP,
   //    exactly like a waiting command) and the STOP runs next.
   const recheckSafetyIfStale = async (): Promise<Superseded | SafetyRecheckRefusal | null> => {
-    if (preflightPassedAt === undefined || isStopCommandType(input.commandType)) return null;
+    if (preflightPassedAt === undefined || stopCls.pinnedStop) return null;
     const waitedMs = Date.now() - preflightPassedAt;
     if (waitedMs <= OT_SAFETY_PREFLIGHT_DEADLINE_MS) return null;
     let unsubscribe: (() => void) | undefined;
@@ -1701,8 +1705,26 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
   if ("safetyRecheckRefused" in executed) {
     // final wave F7 — the RESULT row of the intent (like BUSY / SUPERSEDED_BY_STOP); driver.writeTags never reached.
-    const ids = await writeRejected(db, input, executed.reason, executed.detail, undefined, undefined, { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra });
-    return { ok: false, simulated: false, status: "rejected", reason: executed.reason, results: failedResults(input, executed.reason), commandLogIds: ids };
+    // Đợt 5 F4 — an unpinned stop-typed command refused here reads like its preflight refusal (R-1C-g): the hardware
+    // E-STOP sentence + appError, and the ledger carries pinnedStop:false + stopPinReason.
+    const ids = await writeRejected(
+      db,
+      input,
+      executed.reason,
+      withStopRefusalText(input, executed.reason, executed.detail, stopCls),
+      undefined,
+      undefined,
+      { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, ...(stopRefusalLedgerLink(stopCls)?.ackExtra ?? {}) } },
+    );
+    return {
+      ok: false,
+      simulated: false,
+      status: "rejected",
+      reason: executed.reason,
+      results: failedResults(input, executed.reason),
+      commandLogIds: ids,
+      ...stopRefusalExtras(input, executed.reason, stopCls),
+    };
   }
   const { sentAt, timedOut, outcomes } = executed;
 
