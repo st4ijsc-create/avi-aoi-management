@@ -1237,6 +1237,34 @@ export async function definitionFullyInScope(def: WorkflowDefinition | null | un
   return isOutOfScopeEmpty((await scopeVerdict(def, scope, { nonStopOnly: false })).out);
 }
 
+/**
+ * doc 81 Đợt 5 task E2 fix (ruling R-5-d) — THE shared run check of every entry point that takes a run id (engine resume /
+ * abort, orchestration router, edge router, API v1): the run EXISTS and its workflow is visible to `scope`. The scope is
+ * ALWAYS resolved, also for a missing run, so a nonexistent id and an out-of-scope id take the same path (same answer,
+ * no early exit). DB error ⇒ false (fail-closed).
+ */
+export async function runIdVisibleTo(runId: number, scope: FoeScope): Promise<boolean> {
+  try {
+    const d = await getDb();
+    const run = d ? (await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1))[0] : undefined;
+    const visible = await runVisibleTo({ workflowId: run?.workflowId ?? -1 }, scope);
+    return !!run && visible;
+  } catch {
+    return false;
+  }
+}
+
+/** doc 81 Đợt 5 task E2 fix — the runs (of any list) whose workflow `scope` may see; one workflow load for the batch. */
+export async function filterRunsVisibleTo<T extends { workflowId: number }>(runs: T[], scope: FoeScope): Promise<T[]> {
+  if (runs.length === 0) return runs;
+  const d = await getDb();
+  if (!d) return [];
+  const ids = [...new Set(runs.map((r) => r.workflowId))];
+  const wfs = await d.select().from(orchestrationWorkflows).where(inArray(orchestrationWorkflows.id, ids));
+  const defById = new Map(wfs.map((w) => [w.id, w.definitionJson as WorkflowDefinition] as const));
+  return filterVisibleBy(runs, (r) => defById.get(r.workflowId), scope);
+}
+
 /** doc 81 Đợt 5 task E2 — the run's workflow (current head definition) is visible to `scope`. DB error ⇒ false. */
 export async function runVisibleTo(run: { workflowId: number }, scope: FoeScope): Promise<boolean> {
   try {
@@ -1812,7 +1840,8 @@ export async function rollbackWorkflow(
   // doc 81 Đợt 5 task E2 — a workflow the actor cannot see is answered exactly like a missing snapshot.
   const scope = scopeFor(user, opts.scope);
   const [head] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, workflowId)).limit(1);
-  if (!head || !(await definitionVisibleTo(head.definitionJson as WorkflowDefinition, scope))) return noSnapshot;
+  const headVisible = await definitionVisibleTo(head?.definitionJson as WorkflowDefinition | undefined, scope); // resolved for a missing id too
+  if (!head || !headVisible) return noSnapshot;
   const snaps = await d
     .select()
     .from(orchestrationWorkflowVersions)
@@ -2044,18 +2073,23 @@ export async function resumeRun(
   try {
     const d = await db();
     const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
-    if (!run) return { ok: false, enabled: true, message: `Run ${runId} not found.` };
-    // doc 81 Đợt 5 task E2 — the APPROVER's scope must cover the run's non-STOP targets. A run outside it does not exist
-    // for them: the SAME answer as a missing run, before any status / gate information (no existence oracle; the brief's
-    // CONFLICT outOfScope would tell an out-of-scope caller that the run exists). A rejection is an abort (L-7): unchanged.
+    const notFound: StartRunResult = { ok: false, enabled: true, message: `Run ${runId} not found.` };
+    // doc 81 Đợt 5 task E2 + fix (ruling R-5-d) — EVERY decision by a real user (approve AND reject — a rejection aborts
+    // the run, a cross-factory mutation) needs the run's non-STOP targets in the decider's scope. Outside it the run does
+    // not exist for them: the SAME answer as a missing run, before any status / gate information, and the scope is
+    // resolved for a missing id too (same path). The brief's CONFLICT outOfScope would tell an out-of-scope caller that the
+    // run exists (Đợt 4 lesson: out-of-scope ⇒ indistinguishable from not found). Stopping is not weakened for the
+    // people who own the equipment: in-scope users approve / reject / abort as before; STOP steps run as before (L-7).
     let approvalStopOnlyOut: OutOfScope | null = null;
-    if (decision.approved && (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0))) {
-      const [wfS] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
+    if (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0)) {
+      const [wfS] = run ? await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1) : [];
       const defS = wfS?.definitionJson as WorkflowDefinition | undefined;
       const scope = scopeFor(user, opts.scope);
-      if (!(await definitionVisibleTo(defS, scope))) return { ok: false, enabled: true, message: `Run ${runId} not found.` };
-      approvalStopOnlyOut = (await scopeVerdict(defS!, scope, { nonStopOnly: true })).stopOnlyOut;
+      const visible = await definitionVisibleTo(defS, scope);
+      if (!run || !visible) return notFound;
+      if (decision.approved && defS) approvalStopOnlyOut = (await scopeVerdict(defS, scope, { nonStopOnly: true })).stopOnlyOut;
     }
+    if (!run) return notFound;
     if (run.status !== "awaiting_confirm" && run.status !== "held") {
       return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId} is not resumable (status=${run.status}).` };
     }
@@ -2395,12 +2429,27 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
  * (`setRunStatusUnlessAborted`); until then it may still execute steps. Closing that needs a
  * DB poll between steps (not in Đợt 0).
  */
-export async function abortRun(runId: number, user: FoeUser, reason?: string): Promise<StartRunResult> {
+export async function abortRun(
+  runId: number,
+  user: FoeUser,
+  reason?: string,
+  /**
+   * doc 81 Đợt 5 task E2 fix (ruling R-5-d) — the aborter's factory scope (see DeployOpts.scope). Checked for a real user
+   * (or whenever given): aborting a run of another factory is a cross-factory mutation ⇒ answered EXACTLY like a missing
+   * run. The owners of the equipment (in scope) abort as before; STOP steps are untouched (L-7).
+   */
+  opts: { scope?: FoeScope } = {},
+): Promise<StartRunResult> {
   try {
     const d = await getDb();
     if (!d) return { ok: false, enabled: foeEnabled(), runId, message: "DB unavailable." };
     const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
-    if (!run) return { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} not found.` };
+    const notFound: StartRunResult = { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} not found.` };
+    if (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0)) {
+      const visible = await runVisibleTo({ workflowId: run?.workflowId ?? -1 }, scopeFor(user, opts.scope)); // resolved for a missing id too
+      if (!run || !visible) return notFound;
+    }
+    if (!run) return notFound;
     if (["completed", "failed", "aborted"].includes(run.status)) {
       return { ok: false, enabled: foeEnabled(), runId, status: run.status, message: `Run ${runId} already terminal.` };
     }

@@ -589,7 +589,8 @@ export function createV1Router(): Router {
           .limit(1);
         // doc 81 Đợt 5 task E2 — a stored workflow outside the key's scope ⇒ the SAME 404 as a missing ref.
         const { definitionVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
-        if (!wf || !(await definitionVisibleTo(wf.definitionJson as never, orchestrationScopeOf(req.apiPrincipal?.tenantScope)))) {
+        const visible = await definitionVisibleTo(wf?.definitionJson as never, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+        if (!wf || !visible) {
           throw new ApiHttpError(404, "not_found", `Workflow "${body.workflowRef}" not found.`);
         }
         def = wf.definitionJson as never;
@@ -644,7 +645,8 @@ export function createV1Router(): Router {
       const { getRun, runVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
       const view = await getRun(id);
       // doc 81 Đợt 5 task E2 — out of the key's scope ⇒ the SAME 404 as a missing run.
-      if (!view || !(await runVisibleTo(view.run, orchestrationScopeOf(req.apiPrincipal?.tenantScope)))) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
+      const visible = await runVisibleTo({ workflowId: view?.run.workflowId ?? -1 }, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+      if (!view || !visible) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
       sendOk(res, {
         run: {
           id: view.run.id,
@@ -668,6 +670,7 @@ export function createV1Router(): Router {
   r.post(
     "/edge/sync",
     requireScope(API_SCOPES.EDGE_SYNC),
+    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2 fix (R-5-d) — an edge key must declare its factory scope
     wrap(async (req, res) => {
       const { syncRunResult } = await import("../../services/edge/edgeCoordinator");
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -686,7 +689,14 @@ export function createV1Router(): Router {
         finishedAt: (body.finishedAt as string | null) ?? null,
         steps: Array.isArray(body.steps) ? (body.steps as never[]) : [],
       };
-      const result = await syncRunResult(payload as never);
+      // doc 81 Đợt 5 task E2 fix (R-5-d) — a sync rewrites a run's steps / status: the run must be in the key's scope;
+      // outside it the run does not exist for the key (the SAME refusal as a missing run).
+      const { runIdVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
+      const { edgeRuntimeEnabled } = await import("../../services/edge/edgeCoordinator");
+      const inScope = await runIdVisibleTo(body.runId, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+      const result = inScope || !edgeRuntimeEnabled()
+        ? await syncRunResult(payload as never)
+        : { ok: false as const, enabled: true, message: `Run ${body.runId} not found.`, data: undefined };
       if (!result.enabled) {
         return sendError(res, 503, "edge_disabled", "Edge runtime is disabled (EDGE_RUNTIME_ENABLED).", { phase: "E4" });
       }

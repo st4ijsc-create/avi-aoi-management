@@ -193,9 +193,8 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.getFleetOverview",
   "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.getUnifiedFleetStatus",
   "server/routers/edgeDeploymentRouter.ts#edgeDeploymentRouter.listDeployments",
-  // ── server/routers/edgeRuntimeRouter.ts (2) ────────────────────────────────────────────────
+  // ── server/routers/edgeRuntimeRouter.ts (1) — 2026-10-10 (doc 81 Đợt 5 E2 fix): nodeStatus đã vá (runs lọc theo phạm vi), dòng đã gỡ.
   "server/routers/edgeRuntimeRouter.ts#edgeRuntimeRouter.listNodes",
-  "server/routers/edgeRuntimeRouter.ts#edgeRuntimeRouter.nodeStatus",
   // ── server/routers/energyRouter.ts (6) ─────────────────────────────────────────────────────
   "server/routers/energyRouter.ts#energyRouter.demandResponse",
   "server/routers/energyRouter.ts#energyRouter.enpi",

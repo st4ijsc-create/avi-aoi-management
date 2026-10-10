@@ -49,7 +49,7 @@ let sql: ReturnType<typeof postgres>;
 const saved = { FOE_ENABLED: process.env.FOE_ENABLED };
 
 type Fac = { code: string; factoryId: number; workshopId: number; lineId: number; stationId: number; machineId: number; robotMachineId: number; robotId: number; adapterId: number };
-const fx = { A: null as Fac | null, B: null as Fac | null, orphanRobot: 0, users: {} as Record<string, number> };
+const fx = { A: null as Fac | null, B: null as Fac | null, orphanRobot: 0, edgeNode: 0, users: {} as Record<string, number> };
 const refs: string[] = [];
 const ref = (tag: string) => {
   const r = `${RUN}-${tag}`;
@@ -143,6 +143,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
         await sql`DELETE FROM factories WHERE id = ${f.factoryId}`;
       }
       if (fx.orphanRobot) await sql`DELETE FROM robots WHERE id = ${fx.orphanRobot}`;
+      if (fx.edgeNode) await sql`DELETE FROM edge_nodes WHERE id = ${fx.edgeNode}`;
       await sql.end();
     }
     if (saved.FOE_ENABLED === undefined) delete process.env.FOE_ENABLED;
@@ -314,6 +315,62 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     }
   });
 
+  // ── doc 81 Đợt 5 task E2 fix (ruling R-5-d) — the sibling paths: abort, reject, edge assign / sync / nodeStatus. ──
+  it("★ R-5-d abort + reject: a run of another factory ⇒ the SAME answer as a missing run (engine AND router), the run is untouched; the owners still abort / reject", async () => {
+    const { deployWorkflow, startRun, resumeRun, abortRun } = await engine();
+    const rB = ref("abort-b");
+    expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
+    const runB = (await startRun(rB, {}, userOf("ub"))).runId!;
+    const N = 2_000_000_000;
+    const fix = (r: unknown, from: string) => JSON.stringify(r).split(from).join("ID");
+    expect(fix(await abortRun(runB, userOf("ua"), "x"), String(runB))).toEqual(fix(await abortRun(N, userOf("ua"), "x"), String(N)));
+    expect(fix(await resumeRun(runB, { approved: false, note: "no" }, userOf("ua")), String(runB))).toEqual(
+      fix(await resumeRun(N, { approved: false, note: "no" }, userOf("ua")), String(N)),
+    );
+    const ua = await router(ctxOf("ua"));
+    expect(fix(await ua.abortRun({ runId: runB, reason: "x" }), String(runB))).toEqual(fix(await ua.abortRun({ runId: N, reason: "x" }), String(N)));
+    expect(fix(await ua.resumeRun({ runId: runB, approved: false, expectedStepId: "g" }), String(runB))).toEqual(
+      fix(await ua.resumeRun({ runId: N, approved: false, expectedStepId: "g" }), String(N)),
+    );
+    const [row] = await sql`SELECT status FROM orchestration_runs WHERE id = ${runB}`;
+    expect(row.status).toBe("awaiting_confirm");
+    // the owner of the equipment (factory B) rejects / aborts as before
+    expect((await resumeRun(runB, { approved: false, note: "no" }, userOf("ub"))).status).toBe("aborted");
+    const runB2 = (await startRun(rB, {}, userOf("ub"))).runId!;
+    expect((await abortRun(runB2, userOf("ub"), "stop")).status).toBe("aborted");
+  });
+
+  it("★ R-5-d edge: assignRun / syncRunResult on another factory's run ⇒ the coordinator's own 'not found' and NOTHING written; nodeStatus lists only visible runs", async () => {
+    const saved = process.env.EDGE_RUNTIME_ENABLED;
+    process.env.EDGE_RUNTIME_ENABLED = "true";
+    try {
+      const { deployWorkflow, startRun } = await engine();
+      const rB = ref("edge-b");
+      const rA = ref("edge-a");
+      expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
+      expect((await deployWorkflow(defOf(rA, [otStart("a", A)]), ADMIN)).ok).toBe(true);
+      const runB = (await startRun(rB, {}, userOf("ub"))).runId!;
+      const runA = (await startRun(rA, {}, userOf("ua"))).runId!;
+      fx.edgeNode = Number((await sql`INSERT INTO edge_nodes (code, name) VALUES (${`${RUN}-EN`}, ${`${RUN}-EN`}) RETURNING id`)[0].id);
+      await sql`UPDATE orchestration_runs SET "edgeNodeId" = ${fx.edgeNode} WHERE id IN ${sql([runA, runB])}`;
+      const edge = (await import("./edgeRuntimeRouter")).edgeRuntimeRouter.createCaller(ctxOf("ua"));
+      const N = 2_000_000_000;
+      const fix = (r: unknown, from: string) => JSON.stringify(r).split(from).join("ID");
+      expect(fix(await edge.assignRun({ runId: runB, edgeNodeId: fx.edgeNode }), String(runB))).toEqual(fix(await edge.assignRun({ runId: N, edgeNodeId: fx.edgeNode }), String(N)));
+      const sync = (runId: number) => edge.syncRunResult({ edgeNodeCode: `${RUN}-EN`, runId, status: "completed", steps: [{ stepId: "g", stepType: "hitl_gate", status: "completed", result: { approved: true } }] } as never);
+      expect(fix(await sync(runB), String(runB))).toEqual(fix(await sync(N), String(N)));
+      const [row] = await sql`SELECT status FROM orchestration_runs WHERE id = ${runB}`;
+      expect(row.status).toBe("awaiting_confirm"); // the sync did not land
+      const st = await edge.nodeStatus({ code: `${RUN}-EN` });
+      expect((st.runs as Array<{ id: number }>).map((r) => r.id)).toEqual([runA]);
+      // in scope: the sync lands
+      expect((await sync(runA)).ok).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.EDGE_RUNTIME_ENABLED;
+      else process.env.EDGE_RUNTIME_ENABLED = saved;
+    }
+  });
+
   it("★ API v1: dataScopeMode NULL ⇒ 403 on every orchestration route; a factory-A key cannot deploy B targets, sees a B run as 404 (same body as missing), starts a B workflow like a missing ref; a global key is unrestricted", async () => {
     const { deployWorkflow, startRun } = await engine();
     const rB = ref("api-b");
@@ -339,6 +396,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
         ["POST", "/orchestration/runs", { workflowRef: rB }],
         ["GET", `/orchestration/runs/${runB}`, undefined],
         ["POST", "/orchestration/simulate", { workflowRef: rB }],
+        ["POST", "/edge/sync", { runId: runB, status: "completed" }], // E2 fix (R-5-d)
       ] as const) {
         const r = await call(m, p, b);
         expect(r.status, p).toBe(403);
@@ -361,6 +419,19 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
       expect((await runsOf(rB)).length).toBe(runs0);
       const sim = await call("POST", "/orchestration/simulate", { workflowRef: rB });
       expect(sim.status).toBe(404);
+      // E2 fix (R-5-d) — an edge sync of B's run with A's key ⇒ the same refusal as a missing run, nothing written
+      const prevEdge = process.env.EDGE_RUNTIME_ENABLED;
+      process.env.EDGE_RUNTIME_ENABLED = "true";
+      try {
+        const syncB = await call("POST", "/edge/sync", { runId: runB, status: "completed" });
+        const syncMiss = await call("POST", "/edge/sync", { runId: 2000000000, status: "completed" });
+        expect(syncB.status).toBe(syncMiss.status);
+        expect(JSON.stringify(syncB.body).replace(String(runB), "ID")).toBe(JSON.stringify(syncMiss.body).replace("2000000000", "ID"));
+        expect((await sql`SELECT status FROM orchestration_runs WHERE id = ${runB}`)[0].status).toBe("awaiting_confirm");
+      } finally {
+        if (prevEdge === undefined) delete process.env.EDGE_RUNTIME_ENABLED;
+        else process.env.EDGE_RUNTIME_ENABLED = prevEdge;
+      }
       h.principal = key({ mode: "global", corporateCode: null, factoryCode: null });
       expect((await call("GET", `/orchestration/runs/${runB}`)).status).toBe(200);
       expect((await call("POST", "/orchestration/workflows", defOf(ref("api-glob"), [otStart("b", B)]))).status).toBe(201);

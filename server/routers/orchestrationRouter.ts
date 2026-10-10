@@ -60,6 +60,7 @@ import {
   definitionVisibleTo,
   definitionFullyInScope,
   filterVisibleBy,
+  filterRunsVisibleTo,
   runVisibleTo,
   type FoeUser,
 } from "../services/orchestration/foe/foeEngine";
@@ -121,8 +122,9 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(eq(orchestrationWorkflows.id, input.id))
         .limit(1);
-      // doc 81 Đợt 5 task E2 — out of scope ⇒ the SAME NOT_FOUND as a missing id.
-      if (!row || !(await definitionVisibleTo(row.definitionJson as WorkflowDefinition, scopeOf(ctx.user)))) {
+      // doc 81 Đợt 5 task E2 — out of scope ⇒ the SAME NOT_FOUND as a missing id (scope resolved for both: same path).
+      const visible = await definitionVisibleTo(row?.definitionJson as WorkflowDefinition | undefined, scopeOf(ctx.user));
+      if (!row || !visible) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, `Workflow ${input.id} not found`);
       }
       return row;
@@ -167,7 +169,8 @@ export const orchestrationRouter = router({
       // visible one, only the versions whose own definition the caller may see.
       const scope = scopeOf(ctx.user);
       const [head] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, input.workflowId)).limit(1);
-      if (head && !(await definitionVisibleTo(head.definitionJson as WorkflowDefinition, scope))) return [];
+      const headVisible = await definitionVisibleTo(head?.definitionJson as WorkflowDefinition | undefined, scope);
+      if (!head || !headVisible) return []; // a missing workflow has no versions either (same answer)
       const rows = await d
         .select()
         .from(orchestrationWorkflowVersions)
@@ -189,11 +192,9 @@ export const orchestrationRouter = router({
         .limit(1);
       // doc 81 Đợt 5 task E2 — the version's own definition AND its workflow's current one must be visible.
       const scope = scopeOf(ctx.user);
-      const visible =
-        !!row &&
-        (await definitionVisibleTo(row.definitionJson as WorkflowDefinition, scope)) &&
-        (await runVisibleTo({ workflowId: row.workflowId }, scope));
-      if (!visible) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowVersion" }, `Version ${input.id} not found`);
+      const ownVisible = await definitionVisibleTo(row?.definitionJson as WorkflowDefinition | undefined, scope);
+      const headVisible = await runVisibleTo({ workflowId: row?.workflowId ?? -1 }, scope);
+      if (!row || !ownVisible || !headVisible) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowVersion" }, `Version ${input.id} not found`);
       return row;
     }),
 
@@ -239,10 +240,7 @@ export const orchestrationRouter = router({
         .limit(input?.limit ?? 100);
       // doc 81 Đợt 5 task E2 — only runs whose workflow (current definition) the caller may see; a run whose workflow row
       // is gone is visible only to an unrestricted scope (fail-closed).
-      const wfIds = [...new Set(allRuns.map((r) => r.workflowId))];
-      const wfs = wfIds.length ? await d.select().from(orchestrationWorkflows).where(inArray(orchestrationWorkflows.id, wfIds)) : [];
-      const defById = new Map(wfs.map((w) => [w.id, w.definitionJson as WorkflowDefinition] as const));
-      const runs = await filterVisibleBy(allRuns, (r) => defById.get(r.workflowId), scopeOf(ctx.user));
+      const runs = await filterRunsVisibleTo(allRuns, scopeOf(ctx.user));
       // doc 80 Đợt 1 Task 4 (ORC-13) — additive `dispatch`: were this run's commands simulated
       // (DRY-RUN) or really sent? Derived from the step results foeEngine records
       // ({routedTo, status, simulated}); one extra query over the listed run ids.
@@ -267,8 +265,9 @@ export const orchestrationRouter = router({
     .input(z.object({ runId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const view = await getRun(input.runId);
-      // doc 81 Đợt 5 task E2 — out of scope ⇒ the SAME NOT_FOUND as a missing run.
-      if (!view || !(await runVisibleTo(view.run, scopeOf(ctx.user)))) {
+      // doc 81 Đợt 5 task E2 — out of scope ⇒ the SAME NOT_FOUND as a missing run (scope resolved for both).
+      const visible = await runVisibleTo({ workflowId: view?.run.workflowId ?? -1 }, scopeOf(ctx.user));
+      if (!view || !visible) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowRun" }, `Run ${input.runId} not found`);
       }
       return view;
@@ -366,7 +365,8 @@ export const orchestrationRouter = router({
           .where(eq(orchestrationWorkflows.ref, input.workflowRef))
           .limit(1);
         // doc 81 Đợt 5 task E2 — a stored workflow outside the caller's scope ⇒ the SAME NOT_FOUND as a missing ref.
-        if (!wf || !(await definitionVisibleTo(wf.definitionJson as WorkflowDefinition, scopeOf(ctx.user)))) {
+        const visible = await definitionVisibleTo(wf?.definitionJson as WorkflowDefinition | undefined, scopeOf(ctx.user));
+        if (!wf || !visible) {
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, `Workflow "${input.workflowRef}" not found`);
         }
         def = wf.definitionJson as WorkflowDefinition;
@@ -419,6 +419,7 @@ export const orchestrationRouter = router({
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ runId: z.number().int().positive(), reason: z.string().max(1000).optional() }))
     .mutation(async ({ input, ctx }) => {
+      // doc 81 Đợt 5 task E2 fix (R-5-d) — the engine checks the aborter's scope (from ctx.user): out of scope ⇒ "not found".
       return abortRun(input.runId, toFoeUser(ctx.user), input.reason);
     }),
 
@@ -452,7 +453,8 @@ export const orchestrationRouter = router({
       // doc 81 Đợt 5 task E2 — invisible ⇒ the SAME NOT_FOUND; visible but some target (a STOP's, e.g. a shared emergency
       // stop of another factory) outside the caller's scope ⇒ refused: removing a workflow is a change like deploying one.
       const scope = scopeOf(ctx.user);
-      if (!wf || !(await definitionVisibleTo(wf.definitionJson as WorkflowDefinition, scope))) {
+      const visible = await definitionVisibleTo(wf?.definitionJson as WorkflowDefinition | undefined, scope);
+      if (!wf || !visible) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Workflow not found");
       }
       if (!(await definitionFullyInScope(wf.definitionJson as WorkflowDefinition, scope))) {
@@ -512,7 +514,8 @@ export const orchestrationRouter = router({
         .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
         .limit(1);
       // doc 81 Đợt 5 task E2 — a source outside the caller's scope ⇒ the SAME NOT_FOUND (copying is reading).
-      if (!src || !(await definitionVisibleTo(src.definitionJson as WorkflowDefinition, scopeOf(ctx.user)))) {
+      const srcVisible = await definitionVisibleTo(src?.definitionJson as WorkflowDefinition | undefined, scopeOf(ctx.user));
+      if (!src || !srcVisible) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Source workflow not found");
       }
 
