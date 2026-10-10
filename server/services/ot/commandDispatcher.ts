@@ -115,7 +115,7 @@ import {
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
-import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, resetAdapterSession } from "./otManager";
+import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, listActiveAdapters, resetAdapterSession } from "./otManager";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
@@ -222,12 +222,50 @@ export const OT_SESSION_RESET_SLACK_MS = 250;
 /**
  * doc 81 Đợt 4 Task B3 (alert-only, R-4-q) — resetting the session does NOT recall a request already on the wire: the
  * device may still apply the old (timed-out) write AFTER a STOP sent on the new session (re-energising after a stop).
- * For OT_STALE_WRITE_RISK_TTL_MS after such a write was abandoned, a STOP to that adapter gets a READ-ONLY watch (every
- * OT_STOP_WATCH_POLL_MS) that raises a critical operator alarm when the STOP value cannot be confirmed — see
- * startStopWatch. Nothing is ever written automatically.
+ * For the adapter's risk window (staleWriteRiskWindowMs, at least OT_STALE_WRITE_RISK_TTL_MS — Đợt 5 F3) after such a
+ * write was abandoned, a STOP to that adapter gets a READ-ONLY watch (every OT_STOP_WATCH_POLL_MS) that raises a
+ * critical operator alarm when the STOP value cannot be confirmed — see startStopWatch. Nothing is ever written
+ * automatically.
  */
 export const OT_STALE_WRITE_RISK_TTL_MS = 10_000;
 export const OT_STOP_WATCH_POLL_MS = 200;
+/** The connect/request timeout every built-in OT driver uses when `connection.timeoutMs` is unset (`cfg.timeoutMs ?? 5000`). */
+export const OT_DRIVER_DEFAULT_TIMEOUT_MS = 5000;
+
+function driverTimeoutOf(conn: { timeoutMs?: unknown } | null | undefined): number {
+  const t = conn?.timeoutMs;
+  return typeof t === "number" && Number.isFinite(t) && t > 0 ? t : OT_DRIVER_DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * doc 81 Đợt 5 task F3 (item 29, owner: survey recommendation (b)) — the stale-write risk window OF ONE ADAPTER:
+ * max(OT_STALE_WRITE_RISK_TTL_MS, 2 × the driver's request/connect timeout). A driver library may keep an abandoned
+ * request in flight (or retry it) for up to its own timeout; the old fixed 10 s was 2 × the 5 s driver default.
+ *   • The driver timeout is the running adapter's `connection.timeoutMs` (the larger of primary and HA backup — a
+ *     failover may run the slower one), the drivers' default 5000 when unset or not a positive number.
+ *   • Adapter not in the running set (e.g. a legacy reconnect in progress) ⇒ conservative: 2 × its reset (connect)
+ *     bound adapterSessionResetBoundMs, which is never below the endpoint's own timeout.
+ * Captured ONCE when the write is abandoned (StaleWrite.windowMs) — the abandoned request ran on THAT driver config; a
+ * later reconfiguration does not shorten the watch. Never throws (any lookup failure ⇒ the conservative branch / floor).
+ */
+export function staleWriteRiskWindowMs(adapterId: number): number {
+  let driverTimeoutMs: number | null = null;
+  try {
+    const a = listActiveAdapters().find((x) => x.adapterId === adapterId);
+    if (a) driverTimeoutMs = Math.max(driverTimeoutOf(a.connection), a.backupConnection ? driverTimeoutOf(a.backupConnection) : 0);
+  } catch {
+    driverTimeoutMs = null;
+  }
+  if (driverTimeoutMs == null) {
+    try {
+      const b = adapterSessionResetBoundMs(adapterId);
+      driverTimeoutMs = Math.max(OT_DRIVER_DEFAULT_TIMEOUT_MS, typeof b === "number" && Number.isFinite(b) && b > 0 ? b : 0);
+    } catch {
+      driverTimeoutMs = OT_DRIVER_DEFAULT_TIMEOUT_MS;
+    }
+  }
+  return Math.max(OT_STALE_WRITE_RISK_TTL_MS, 2 * driverTimeoutMs);
+}
 
 /**
  * B3 — the running read-only STOP watches of an adapter. A watch follows the STOP's tags; only a newer command whose write
@@ -268,10 +306,12 @@ function releaseWatchedTags(adapterId: number, tagKeys: readonly string[]): void
  * B3 fix scan (3) / scan 3 (b)(c) — the abandoned write of an adapter whose fate is unknown (until = epoch ms): its
  * identity and values, so the watch can recognise it landing and AUDIT-LINK that observation to the abandoned command.
  * One entry per adapter (overwritten by a newer abandonment); expired entries are swept on every write to the map and on
- * lookup — the map never holds more than one entry per adapter and none older than OT_STALE_WRITE_RISK_TTL_MS.
+ * lookup — the map never holds more than one entry per adapter and none older than its own window (windowMs, Đợt 5 F3).
  */
 type StaleWrite = {
   until: number;
+  /** Đợt 5 F3 — this adapter's risk window (staleWriteRiskWindowMs), captured when the write was abandoned. */
+  windowMs: number;
   commandType: string;
   idempotencyKey: string | null;
   intentIds: number[];
@@ -1768,6 +1808,7 @@ async function holdSlotAfterTimedOutWrite(
     sweepStaleWriteRisk();
     const riskEntry: StaleWrite = {
       until: Number.POSITIVE_INFINITY,
+      windowMs: staleWriteRiskWindowMs(input.adapterId),
       commandType: input.commandType,
       idempotencyKey: input.idempotencyKey ?? null,
       intentIds: ledger.intentIds,
@@ -1794,7 +1835,7 @@ async function holdSlotAfterTimedOutWrite(
       resetError = (err as Error)?.message || String(err);
     } finally {
       // R-4-r — the reset has settled (any outcome): the risk window now counts from here.
-      riskEntry.until = Date.now() + OT_STALE_WRITE_RISK_TTL_MS;
+      riskEntry.until = Date.now() + riskEntry.windowMs;
     }
     console.error(
       `[Dispatch] adapter ${input.adapterId}: overlapRisk — a timed-out write may still be running on the old session and its reset failed (${resetError}); the next command (a STOP) proceeds anyway (L-7, B3)`,
@@ -1818,7 +1859,7 @@ async function holdSlotAfterTimedOutWrite(
  *   • A read that shows a value other than the STOP's, or a tag that cannot be read (read error, missing sample, adapter
  *     offline) ⇒ ONE critical operator alarm per STOP (raiseStopUnverifiedAlarm) + audit "ot_stop_unverified" linked to
  *     the ABANDONED command's ledger row (entityId = its intent id), then the watch ends.
- * The window starts at the STOP and lasts OT_STALE_WRITE_RISK_TTL_MS (R-4-r). Reads per STOP ≤ (TTL / poll), each ≤ the
+ * The window starts at the STOP and lasts the adapter's risk window (R-4-r; Đợt 5 F3 windowMs). Reads per STOP ≤ (window / poll), each ≤ the
  * command timeout. Never rejects.
  */
 function startStopWatch(
@@ -1833,8 +1874,8 @@ function startStopWatch(
   const token: StopWatch = { cancelled: false, tags: new Set(writes.map((w) => w.tagKey)) };
   registerStopWatch(input.adapterId, token);
   const risk = staleWriteRisk.get(input.adapterId);
-  // R-4-r — the watch window starts at the STOP and lasts OT_STALE_WRITE_RISK_TTL_MS (no risk ⇒ no window).
-  const end = risk ? Date.now() + OT_STALE_WRITE_RISK_TTL_MS : Date.now();
+  // R-4-r — the watch window starts at the STOP and lasts the adapter's risk window (Đợt 5 F3; no risk ⇒ no window).
+  const end = risk ? Date.now() + risk.windowMs : Date.now();
   const abandoned = risk
     ? { idempotencyKey: risk.idempotencyKey, intentIds: risk.intentIds, commandType: risk.commandType, confirmedBy: risk.confirmedBy, writes: risk.writes }
     : null;

@@ -103,6 +103,8 @@ const D = vi.hoisted(() => ({
   /** tag ⇒ behaviour of its write: "hang" (only a session close ends it), number = answer after N ms, default ok now. */
   plan: new Map<string, "hang" | number>(),
   reset: { mode: "ok" as "ok" | "fail" | "hang", calls: 0, boundMs: 300 },
+  /** doc 81 Đợt 5 F3 — the running adapters otManager reports (connection/backup timeoutMs drive the risk window). */
+  active: [] as Array<{ adapterId: number; connection: { timeoutMs?: unknown }; backupConnection?: { timeoutMs?: unknown } }>,
 }));
 function closeSession(): void {
   const s = D.session;
@@ -147,6 +149,7 @@ vi.mock("./otManager", () => ({
   getActiveDriver: vi.fn(() => (D.offline ? undefined : D.swapped ? D.swapped : driver)),
   getActiveConnectionFingerprint: vi.fn(() => D.fingerprint),
   adapterSessionResetBoundMs: vi.fn(() => D.reset.boundMs),
+  listActiveAdapters: vi.fn(() => D.active),
   resetAdapterSession: vi.fn(async () => {
     D.reset.calls += 1;
     if (D.reset.mode === "hang") return new Promise(() => undefined);
@@ -156,7 +159,7 @@ vi.mock("./otManager", () => ({
   }),
 }));
 
-import { dispatch, _resetAdapterCommandQueuesForTests, _adapterCommandQueueDepthForTests, _staleWriteRiskSizeForTests, _sweepStaleWriteRiskForTests, _stopWatchCountForTests, OT_STALE_WRITE_RISK_TTL_MS, OT_TIMED_OUT_WRITE_GRACE_MS } from "./commandDispatcher";
+import { dispatch, _resetAdapterCommandQueuesForTests, _adapterCommandQueueDepthForTests, _staleWriteRiskSizeForTests, _sweepStaleWriteRiskForTests, _stopWatchCountForTests, OT_STALE_WRITE_RISK_TTL_MS, OT_TIMED_OUT_WRITE_GRACE_MS, staleWriteRiskWindowMs } from "./commandDispatcher";
 import { adapterTargetFingerprint } from "./adapterTarget";
 
 const TIMEOUT_MS = 300;
@@ -232,6 +235,7 @@ beforeEach(() => {
   D.reset.mode = "ok";
   D.reset.calls = 0;
   D.reset.boundMs = 300;
+  D.active = [];
   audit.events.length = 0;
   unhandled.length = 0;
   process.on("unhandledRejection", onUnhandled);
@@ -581,4 +585,65 @@ describe("B3 — queue holdSlot (pure tryEnqueueAdapterCommand)", () => {
     await within(b.result, 500);
     await expect(within(c.result, 500)).resolves.toBe("c");
   });
+});
+
+// doc 81 Đợt 5 task F3 (item 29) — the risk window per adapter = max(10 s, 2 × the driver's request/connect timeout).
+// Every built-in OT driver uses `connection.timeoutMs ?? 5000` as BOTH its connect and its request timeout.
+describe("Đợt 5 F3 — stale-write risk window per adapter = max(10 s, 2 × driver timeout)", () => {
+  it("formula: floor 10 s; 2 × connection.timeoutMs; the larger of primary/backup; driver default 5000 when unset/garbage", () => {
+    expect(OT_STALE_WRITE_RISK_TTL_MS).toBe(10_000);
+    D.active = [{ adapterId: 10, connection: {} }];
+    expect(staleWriteRiskWindowMs(10)).toBe(10_000); // unset ⇒ driver default 5000 ⇒ 10 s
+    D.active = [{ adapterId: 10, connection: { timeoutMs: 3000 } }];
+    expect(staleWriteRiskWindowMs(10)).toBe(10_000); // floor
+    D.active = [{ adapterId: 10, connection: { timeoutMs: 7000 } }];
+    expect(staleWriteRiskWindowMs(10)).toBe(14_000);
+    D.active = [{ adapterId: 10, connection: { timeoutMs: 7000 }, backupConnection: { timeoutMs: 9000 } }];
+    expect(staleWriteRiskWindowMs(10)).toBe(18_000); // the slower endpoint counts (HA failover)
+    for (const bad of [-5, 0, Number.NaN, "8000", null]) {
+      D.active = [{ adapterId: 10, connection: { timeoutMs: bad } }];
+      expect(staleWriteRiskWindowMs(10)).toBe(10_000);
+    }
+    D.active = [{ adapterId: 11, connection: { timeoutMs: 20_000 } }];
+    expect(staleWriteRiskWindowMs(10)).toBe(10_000); // another adapter's config never counts
+  });
+
+  it("adapter not in the running set ⇒ conservative: 2 × its reset (connect) bound, never below 10 s", () => {
+    D.active = [];
+    D.reset.boundMs = 8000;
+    expect(staleWriteRiskWindowMs(10)).toBe(16_000);
+    D.reset.boundMs = 300;
+    expect(staleWriteRiskWindowMs(10)).toBe(10_000);
+  });
+
+  it("the risk ENTRY of an abandoned write lives for the adapter's window (timeoutMs 7000 ⇒ 14 s), not a fixed 10 s", async () => {
+    D.active = [{ adapterId: 10, connection: { timeoutMs: 7000 } }];
+    D.plan.set("cmd_run=true", "hang");
+    const pRun = dispatch(input("cmd_run", "start", `f3-run-${actSeq}`, true));
+    expect((await within(pRun, TIMEOUT_MS + 700)).status).toBe("timeout");
+    expect(await until(() => D.reset.calls === 1, GRACE + 1000)).toBe(true);
+    await new Promise((r) => setTimeout(r, 50)); // the reset settled ⇒ the entry got its TTL
+    const settled = Date.now();
+    _sweepStaleWriteRiskForTests(settled + OT_STALE_WRITE_RISK_TTL_MS + 500);
+    expect(_staleWriteRiskSizeForTests()).toBe(1); // a fixed 10 s window would be gone
+    _sweepStaleWriteRiskForTests(settled + 14_000 + 1);
+    expect(_staleWriteRiskSizeForTests()).toBe(0);
+  });
+
+  it("★ the STOP's read-only watch lasts the adapter's window: a late landing 11.5 s after the STOP (timeoutMs 7000 ⇒ 14 s) is alarmed", async () => {
+    D.active = [{ adapterId: 10, connection: { timeoutMs: 7000 } }];
+    D.plan.set("cmd_run=true", "hang");
+    const pRun = dispatch(input("cmd_run", "start", `f3-w-${actSeq}`, true));
+    expect(await until(() => D.log.length === 1, 2000)).toBe(true);
+    const r = await within(dispatch(input("cmd_run", "stop", `f3-w-stop-${actSeq}`, false)), TIMEOUT_MS + GRACE + 300 + 700);
+    expect(r.status).toBe("acked");
+    expect((await pRun).status).toBe("timeout");
+    const stopAt = Date.now();
+    await new Promise((res) => setTimeout(res, 11_500));
+    expect(Date.now() - stopAt).toBeGreaterThan(OT_STALE_WRITE_RISK_TTL_MS + 1000);
+    expect(_stopWatchCountForTests(10)).toBe(1); // still watching past a fixed 10 s window
+    D.sticky.set("cmd_run", true); // the abandoned start lands now
+    expect(await until(() => alarm.events.length > 0, 1500)).toBe(true);
+    expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(2); // zero writes after the STOP
+  }, 30_000);
 });
