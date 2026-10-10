@@ -799,9 +799,18 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       expect(r.users.map((u) => u.id).sort((a, b) => a - b)).toEqual([uid.supAssigner, uid.engViewer].sort((a, b) => a - b));
       const r2 = await roster({ search: `${RUN} supAssigner`, selectedId: uid.supAssigner });
       expect(r2.users.map((u) => u.id)).toEqual([uid.supAssigner]);
-      // Không search, selectedId nằm NGOÀI trần 300 (tên RUN… xếp sau đa số? không chắc) ⇒ vẫn có.
-      const r3 = await roster({ selectedId: uid.userFull });
-      expect(r3.users.some((u) => u.id === uid.userFull)).toBe(true);
+      // final wave G8 (group C review M3) — không search, selectedId CHẮC CHẮN nằm NGOÀI trần 300: chọn người gieo hợp lệ
+      // KHÔNG có trong danh sách không-chọn (r0); điều kiện tiền đề được KHẲNG ĐỊNH (không âm thầm đo nhánh khác).
+      const r0 = await roster({});
+      expect(r0.truncated).toBe(true);
+      const ngoaiTran = HOP_LE.filter((k) => !r0.users.some((u) => u.id === uid[k]));
+      expect(ngoaiTran.length, "tiền đề: ít nhất một người gieo hợp lệ phải xếp NGOÀI trần 300").toBeGreaterThan(0);
+      const k = ngoaiTran[0];
+      const r3 = await roster({ selectedId: uid[k] });
+      expect(r3.truncated).toBe(true);
+      expect(r3.users).toHaveLength(301); // 300 + người được chọn (nhánh list.unshift)
+      expect(r3.users[0]).toEqual({ id: uid[k], name: ten(k) });
+      expect(r3.users.slice(1).map((u) => u.id)).toEqual(r0.users.map((u) => u.id));
     });
 
     it("★ selectedId KHÔNG hợp lệ (tắt / không quyền xem / không tồn tại) ⇒ KHÔNG lộ tên qua roster (fail-closed)", async () => {
