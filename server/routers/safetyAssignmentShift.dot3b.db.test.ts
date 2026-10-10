@@ -479,6 +479,41 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       expect([tzOf(multi, fx.shiftIn), tzOf(multi, fx.shiftOut), tzOf(multi, fx.shiftGlobal)]).toEqual(["Europe/Berlin", "America/New_York", null]);
     });
 
+    // doc 81 Đợt 5 H4 (mục 22) — chưa chọn chuyền/trạm và phạm vi KHÔNG phải đúng một nhà máy: nếu MỌI nhà máy đang hoạt
+    // động trong phạm vi (admin = mọi nhà máy đang hoạt động) cùng MỘT múi giờ HỢP LỆ ⇒ ca toàn hệ thống dùng múi đó; khác
+    // nhau / có nhà máy không múi giờ / múi hỏng ⇒ null như cũ (client dùng giờ máy và nói ra).
+    // ORACLE độc lập: SQL thô đếm múi giờ phân biệt của nhà máy đang hoạt động (`_test` dùng chung — tệp khác có thể thêm
+    // nhà máy; câu kỳ vọng đi theo oracle, và oracle phải đồng nhất thì ô dương mới được coi là đã chạy).
+    it("H4 admin chưa chọn chuyền: MỌI nhà máy đang hoạt động cùng MỘT múi giờ hợp lệ ⇒ ca toàn hệ thống dùng nó; một nhà máy lệch ⇒ null", async () => {
+      await setTz(fx.facIn, "Asia/Ho_Chi_Minh");
+      await setTz(fx.facOut, "Asia/Ho_Chi_Minh");
+      const distinct = (await sql`SELECT DISTINCT timezone FROM factories WHERE "isActive" = true`) as unknown as Array<{ timezone: string | null }>;
+      expect(distinct, "oracle: _test phải đồng nhất múi giờ để ô dương có nghĩa").toEqual([{ timezone: "Asia/Ho_Chi_Minh" }]);
+      const r = (await (await asAdmin()).assignableShifts({})) as Row[];
+      expect([tzOf(r, fx.shiftIn), tzOf(r, fx.shiftOut), tzOf(r, fx.shiftGlobal)]).toEqual(["Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh"]);
+      await setTz(fx.facOut, "America/New_York");
+      const r2 = (await (await asAdmin()).assignableShifts({})) as Row[];
+      expect(tzOf(r2, fx.shiftGlobal)).toBeNull();
+      await setTz(fx.facOut, null);
+      const r3 = (await (await asAdmin()).assignableShifts({})) as Row[];
+      expect(tzOf(r3, fx.shiftGlobal)).toBeNull();
+    });
+
+    it("H4 người NHIỀU nhà máy chưa chọn chuyền: các nhà máy trong phạm vi cùng múi hợp lệ ⇒ dùng; lệch / hỏng ⇒ null", async () => {
+      await setTz(fx.facIn, "Europe/Berlin");
+      await setTz(fx.facOut, "Europe/Berlin");
+      const multi = (await (await asMulti()).assignableShifts({})) as Row[];
+      expect([tzOf(multi, fx.shiftIn), tzOf(multi, fx.shiftOut), tzOf(multi, fx.shiftGlobal)]).toEqual(["Europe/Berlin", "Europe/Berlin", "Europe/Berlin"]);
+      await setTz(fx.facIn, "Mars/Olympus_Mons");
+      await setTz(fx.facOut, "Mars/Olympus_Mons");
+      expect(tzOf((await (await asMulti()).assignableShifts({})) as Row[], fx.shiftGlobal)).toBeNull();
+      await setTz(fx.facIn, "Europe/Berlin");
+      await setTz(fx.facOut, "America/New_York");
+      expect(tzOf((await (await asMulti()).assignableShifts({})) as Row[], fx.shiftGlobal)).toBeNull();
+      // phạm vi rỗng vẫn null (không có nhà máy nào để đồng nhất)
+      expect(tzOf((await (await asEmpty()).assignableShifts({})) as Row[], fx.shiftGlobal)).toBeNull();
+    });
+
     it("múi giờ NULL hoặc HỎNG ở nhà máy ⇒ null (client rơi về giờ máy và nói ra)", async () => {
       await setTz(fx.facIn, null);
       await setTz(fx.facOut, "Mars/Olympus_Mons");
