@@ -38,6 +38,7 @@ import {
   machines,
   aiPendingActions,
   deviceAdapters,
+  deviceTags, // final wave P-E1 — the scope-decision probe
   robots, // doc 81 Đợt 4 final wave G3 — a robot step names an existing, enabled robot
   type OrchestrationRun,
 } from "../../../../drizzle/schema";
@@ -52,11 +53,7 @@ import {
   type ValidationError,
   type MachineForValidation,
 } from "./workflowModel";
-import {
-  getCapabilitiesForMachine,
-  type EquipmentCapability,
-  type CommandDescriptor,
-} from "../../equipment/capabilityModel";
+import { getCapabilitiesForMachine } from "../../equipment/capabilityModel";
 import {
   equipmentRegistry,
   type EquipmentCommand,
@@ -64,7 +61,7 @@ import {
 } from "../../equipment/equipmentAdapter";
 import { asPackmlState } from "../../equipment/packml";
 import { FOE_ENGINE_TOOL, otPayloadHash, robotPayloadHash, withFoeGateApproval, withOtPayloadHash, type FoeGateApproval } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6 + final wave (robot) + Đợt 4 A5
-import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob"; // doc 81 Đợt 4 A5 — a robot STOP is never gated (L-7); F5 deadline
+import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob"; // final wave F5 — the STOP DB deadline
 import { withDeadline } from "../../ot/drivers/boundedClose"; // final wave F5 — bounded STOP-step lookups
 import {
   evaluateGateApprovals,
@@ -87,6 +84,7 @@ import {
   orchestrationActionId,
   subtreeHasStopCandidate,
   makeStopVerifier,
+  type StopVerification,
   type StopVerifier,
 } from "./foeStepClass"; // doc 81 Đợt 5 task E fix 1 (R-5-j) — THE step walk + stop classification
 export { buildEquipmentCommand } from "./foeStepClass";
@@ -435,13 +433,24 @@ async function setRunStatusUnlessAborted(
   runId: number,
   status: OrchestrationRun["status"],
   patch: Partial<OrchestrationRun> = {},
+  /**
+   * doc 81 Đợt 5 final wave P-E2 — write ONLY while the run is in one of these statuses (a guard evaluated when the UPDATE
+   * lands): a bounded write that lands LATE (after the run already ended / paused) must not regress it.
+   */
+  onlyFrom?: Array<OrchestrationRun["status"]>,
 ): Promise<boolean> {
   const d = await getDb();
   if (!d) return false;
   const written = await d
     .update(orchestrationRuns)
     .set({ status, updatedAt: new Date(), ...patch })
-    .where(and(eq(orchestrationRuns.id, runId), ne(orchestrationRuns.status, "aborted")))
+    .where(
+      and(
+        eq(orchestrationRuns.id, runId),
+        ne(orchestrationRuns.status, "aborted"),
+        onlyFrom ? inArray(orchestrationRuns.status, onlyFrom) : undefined,
+      ),
+    )
     .returning({ id: orchestrationRuns.id });
   if (written.length === 0) return false;
   if (status === "completed") void appendRunEvent(runId, "RUN_COMPLETED", { ts: Date.now() });
@@ -1041,17 +1050,20 @@ async function stopStepIdsOf(def: WorkflowDefinition, machineMap: Map<number, Ma
   return (await verifiedStopsOf(def, machineMap)).ids;
 }
 
-/** The verified stops + whether a lookup failed (no exemption for what could not be verified). Never throws. */
+/**
+ * The verified stops + whether a lookup failed (no exemption for what could not be verified). Never throws. `unsure` null
+ * ⇔ the classification itself failed (which steps are unsure is not known — final wave F3: any "out" is then undecided).
+ */
 async function verifiedStopsOf(
   def: WorkflowDefinition,
   machineMap: Map<number, MachineForValidation>,
   verifier?: StopVerifier,
-): Promise<{ ids: Set<string>; failed: boolean }> {
+): Promise<Omit<StopVerification, "unsure"> & { unsure: Set<string> | null }> {
   try {
     const v = verifier ?? (await makeStopVerifier((await getDb()) ?? null, [def], machineMap));
     return await v.verified(def, machineMap);
   } catch {
-    return { ids: new Set(), failed: true };
+    return { ids: new Set(), failed: true, unsure: null };
   }
 }
 
@@ -1160,38 +1172,92 @@ async function definitionTargets(def: WorkflowDefinition, machineMap?: Map<numbe
   const map = machineMap ?? (await loadMachines(validateWorkflow(def, null).referencedMachineIds));
   // E fix 1 (R-5-j) — only a VERIFIED stop makes a target "STOP-only" (an unpinned stop-typed write is a NON-stop target).
   const v = await verifiedStopsOf(def, map, verifier);
-  return { targets: collectTargets(def, map, v.ids), stops: v.ids, stopsFailed: v.failed };
+  // final wave F3 — the targets IF every unsure step (pinned, connection not confirmed / pins unreadable) were a stop:
+  // what a decision needs to tell "out whatever those steps are" (decided) from "out only because of them" (undecided).
+  const unsureTargets = v.unsure && v.unsure.size > 0 ? collectTargets(def, map, new Set([...v.ids, ...v.unsure])) : null;
+  return { targets: collectTargets(def, map, v.ids), stops: v.ids, stopsFailed: v.failed, unsureTargets };
+}
+
+type ScopeDecision = "in" | "out" | "unknown";
+
+/**
+ * doc 81 Đợt 5 final wave F3 — the READ / abort / reject decision for ONE definition: "in" (every non-STOP target in scope),
+ * "out" (out of scope WHATEVER the unverified steps are) or "unknown" (out only because a step that may be a pinned STOP
+ * could not be verified — e.g. its adapter is down or reconnecting — or a lookup failed). Never "out" on a guess.
+ */
+async function decideDefinition(
+  judge: Awaited<ReturnType<typeof makeScopeJudge>>,
+  def: WorkflowDefinition,
+  machineMap?: Map<number, MachineForValidation>,
+  verifier?: StopVerifier,
+): Promise<ScopeDecision> {
+  const { targets, stopsFailed, unsureTargets } = await definitionTargets(def, machineMap, verifier);
+  const out = await judge.outOf(targets, { nonStopOnly: true });
+  if (judge.failed) return "unknown";
+  if (isOutOfScopeEmpty(out)) return "in";
+  if (!stopsFailed) return "out";
+  if (!unsureTargets) return "unknown"; // the classification failed as a whole
+  const outIfStops = await judge.outOf(unsureTargets, { nonStopOnly: true });
+  if (judge.failed) return "unknown";
+  return isOutOfScopeEmpty(outIfStops) ? "unknown" : "out";
 }
 
 /**
- * doc 81 Đợt 5 task E fix 1 (ruling R-5-i) — the scope decision for an ABORT / REJECTION: "in" | "out" | "unknown".
- * Any lookup failure (scope resolution, machines, pins, adapters, robots) ⇒ "unknown" — never a guess. Callers bound it
- * by the STOP DB deadline; "unknown" ⇒ the abort / rejection PROCEEDS (both reduce actuation) with an audit entry
- * (scopeUnverified); only a DECIDED "out" is answered "not found".
+ * final wave P-E1 — one row of every table a scope decision may read (workflows, machines, adapters, stop-pin tags,
+ * robots), read for an existing AND a missing run id alike: when one of them cannot be read, a missing id is as undecided
+ * as an existing run whose decision needed it (the SAME "scope not verified" answer — no existence oracle). Never throws.
  */
-async function runScopeDecision(run: { workflowId: number } | undefined, scope: FoeScope): Promise<"in" | "out" | "unknown"> {
+async function scopeDecisionProbe(d: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<boolean> {
   try {
-    const judge = await makeScopeJudge(scope);
-    if (judge.failed) return "unknown";
-    if (judge.unrestricted) return "in";
-    const d = await getDb();
-    if (!d) return "unknown";
-    const [wf] = run ? await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1) : [];
-    const def = wf?.definitionJson as WorkflowDefinition | undefined;
-    if (!def || !Array.isArray(def.steps)) return "out";
-    const { targets, stopsFailed } = await definitionTargets(def);
-    const out = await judge.outOf(targets, { nonStopOnly: true });
-    if (judge.failed) return "unknown";
-    if (isOutOfScopeEmpty(out)) return "in";
-    return stopsFailed ? "unknown" : "out";
+    await Promise.all([
+      d.select({ id: orchestrationWorkflows.id }).from(orchestrationWorkflows).limit(1),
+      d.select({ id: machines.id }).from(machines).limit(1),
+      d.select({ id: deviceAdapters.id }).from(deviceAdapters).limit(1),
+      d.select({ id: deviceTags.id }).from(deviceTags).limit(1),
+      d.select({ id: robots.id }).from(robots).limit(1),
+    ]);
+    return true;
   } catch {
-    return "unknown";
+    return false;
   }
 }
 
-/** R-5-i — runScopeDecision bounded by STOP_DB_STEP_DEADLINE_MS (timeout ⇒ "unknown"). */
-async function boundedRunScopeDecision(run: { workflowId: number } | undefined, scope: FoeScope, label: string): Promise<"in" | "out" | "unknown"> {
-  return withDeadline(runScopeDecision(run, scope), STOP_DB_STEP_DEADLINE_MS, label).catch(() => "unknown" as const);
+/**
+ * doc 81 Đợt 5 task E fix 1 (ruling R-5-i → R-5-l) — the scope decision for an ABORT / REJECTION: "in" | "out" | "unknown".
+ * Any lookup failure (scope resolution, machines, pins, adapters, robots) ⇒ "unknown" — never a guess; "unknown" ⇒ REFUSED
+ * (R-5-l, scopeUnverified); only a DECIDED "out" is answered "not found".
+ * final wave F5 / P-E1 — the run row is read HERE (inside the caller's STOP-deadline bound, not before it), together with
+ * the judge and the probe; a missing id takes the same reads as an existing one, and a decision other than "in" stands
+ * only when the probe read every table (else "unknown" — for an existing and a missing id alike).
+ * F3 — a definition out of scope only because of a pinned STOP whose connection is not confirmed ⇒ "unknown".
+ */
+async function runScopeDecision(runId: number, scope: FoeScope): Promise<{ verdict: ScopeDecision; run: OrchestrationRun | undefined }> {
+  let run: OrchestrationRun | undefined;
+  try {
+    const d = await getDb();
+    if (!d) return { verdict: "unknown", run };
+    const probe = scopeDecisionProbe(d); // never rejects
+    const [rows, judge] = await Promise.all([d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1), makeScopeJudge(scope)]);
+    run = rows[0];
+    if (judge.failed) return { verdict: "unknown", run };
+    if (judge.unrestricted) return { verdict: "in", run };
+    const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run?.workflowId ?? -1)).limit(1);
+    const def = wf?.definitionJson as WorkflowDefinition | undefined;
+    const verdict: ScopeDecision = def && Array.isArray(def.steps) ? await decideDefinition(judge, def) : "out";
+    if (verdict === "in") return { verdict, run };
+    return { verdict: (await probe) ? verdict : "unknown", run };
+  } catch {
+    return { verdict: "unknown", run };
+  }
+}
+
+/** R-5-i / F5 — runScopeDecision (run read included) bounded by STOP_DB_STEP_DEADLINE_MS (timeout ⇒ "unknown", no run). */
+async function boundedRunScopeDecision(
+  runId: number,
+  scope: FoeScope,
+  label: string,
+): Promise<{ verdict: ScopeDecision; run: OrchestrationRun | undefined }> {
+  return withDeadline(runScopeDecision(runId, scope), STOP_DB_STEP_DEADLINE_MS, label).catch(() => ({ verdict: "unknown" as const, run: undefined }));
 }
 
 /**
@@ -1231,14 +1297,20 @@ async function auditScopeUnverified(user: FoeUser, runId: number, action: "abort
  */
 export async function visibleWorkflowIds(scope: FoeScope): Promise<number[] | null> {
   const r = await resolveVisibleWorkflowIds(scope);
-  return r.ok ? r.ids : [];
+  // final wave F3 — undecided: only the DECIDED-visible workflows (an undecided one is left out — fail-closed per item, as
+  // getRun / getWorkflow answer "not found" for it), instead of hiding every row because one definition is undecided.
+  return r.ok ? r.ids : r.decidedIds ?? [];
 }
 
 /**
  * doc 81 Đợt 5 task E fix 2 (review N3, N4) — visibleWorkflowIds that SAYS when it could not decide (`ok: false`) so a
  * count can be shown as degraded instead of a misleading 0. ONE definitions read, ONE judge, one batched verifier.
+ * final wave F3 — `decidedIds` (only when the scope itself was resolved): the workflows DECIDED visible while some other
+ * definition is undecided (e.g. its only foreign target is a pinned STOP whose adapter is down). Never an undecided one.
  */
-export async function resolveVisibleWorkflowIds(scope: FoeScope): Promise<{ ok: true; ids: number[] | null } | { ok: false }> {
+export async function resolveVisibleWorkflowIds(
+  scope: FoeScope,
+): Promise<{ ok: true; ids: number[] | null } | { ok: false; decidedIds?: number[] }> {
   try {
     const judge = await makeScopeJudge(scope);
     if (judge.unrestricted && !judge.failed) return { ok: true, ids: null };
@@ -1246,7 +1318,7 @@ export async function resolveVisibleWorkflowIds(scope: FoeScope): Promise<{ ok: 
     if (!d) return { ok: false };
     const rows = await d.select({ id: orchestrationWorkflows.id, definitionJson: orchestrationWorkflows.definitionJson }).from(orchestrationWorkflows);
     const r = await filterVisibleWith(judge, rows, (x) => x.definitionJson as WorkflowDefinition);
-    if (r.failed) return { ok: false };
+    if (r.failed) return judge.failed ? { ok: false } : { ok: false, decidedIds: r.keep.map((x) => x.id) };
     return { ok: true, ids: r.keep.map((x) => x.id) };
   } catch {
     return { ok: false };
@@ -1344,9 +1416,12 @@ async function filterVisibleWith<T>(
   for (let i = 0; i < items.length; i++) {
     const d = defs[i];
     if (!d || !Array.isArray(d.steps)) continue;
-    const { targets, stopsFailed } = await definitionTargets(d, machineMap, verifier);
-    if (stopsFailed) failed = true;
-    if (isOutOfScopeEmpty(await judge.outOf(targets, { nonStopOnly: true }))) keep.push(items[i]);
+    // final wave F3 — only a DECIDED "in" is kept; an undecided definition (out only because a pinned STOP's connection is
+    // not confirmed, or a lookup failed) is left out AND marks the result `failed` (the hub shows degraded). A definition
+    // that is in scope is no longer marked failed just because one of ITS OWN stops could not be verified.
+    const verdict = await decideDefinition(judge, d, machineMap, verifier);
+    if (verdict === "in") keep.push(items[i]);
+    else if (verdict === "unknown") failed = true;
   }
   return { keep, failed: failed || judge.failed };
 }
@@ -1638,7 +1713,9 @@ async function runCompensation(rc: RunContext, step: WorkflowStep): Promise<void
     // doc 80 ORC-01 — never flip an ABORTED run back to 'compensating'. E fix 2 (review N1) — bounded when the
     // compensation is a STOP (the status write is on its path).
     await stopBoundedWrite(compStop, rc.runId, comp.id, "compensating status", async () => {
-      await setRunStatusUnlessAborted(rc.runId, "compensating");
+      // final wave P-E2 — only FROM a live walk status: if this (bounded) write lands after the run already ended or paused
+      // (failed / completed / awaiting_confirm / held …) it changes nothing (it would leave a finished run "compensating").
+      await setRunStatusUnlessAborted(rc.runId, "compensating", {}, ["running", "compensating"]);
     });
     // run the compensation step body once (no nested compensation cascade)
     await stopBoundedWrite(compStop, rc.runId, comp.id, "running row", () =>
@@ -2209,7 +2286,17 @@ export async function resumeRun(
   }
   try {
     const d = await db();
-    const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+    const scopeChecked = opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0);
+    // final wave F5 — a REJECTION by a real user reads the run row INSIDE its STOP-deadline-bounded scope decision (below);
+    // every other path reads it here, as before.
+    let run: OrchestrationRun | undefined;
+    let rejectDecision: Awaited<ReturnType<typeof boundedRunScopeDecision>> | null = null;
+    if (scopeChecked && !decision.approved) {
+      rejectDecision = await boundedRunScopeDecision(runId, scopeFor(user, opts.scope), `FOE reject run ${runId} scope`);
+      run = rejectDecision.run;
+    } else {
+      [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+    }
     const notFound: StartRunResult = { ok: false, enabled: true, message: `Run ${runId} not found.` };
     // doc 81 Đợt 5 task E2 + fix (ruling R-5-d) — EVERY decision by a real user (approve AND reject — a rejection aborts
     // the run, a cross-factory mutation) needs the run's non-STOP targets in the decider's scope. Outside it the run does
@@ -2218,7 +2305,7 @@ export async function resumeRun(
     // run exists (Đợt 4 lesson: out-of-scope ⇒ indistinguishable from not found). Stopping is not weakened for the
     // people who own the equipment: in-scope users approve / reject / abort as before; STOP steps run as before (L-7).
     let approvalStopOnlyOut: OutOfScope | null = null;
-    if (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0)) {
+    if (scopeChecked) {
       const scope = scopeFor(user, opts.scope);
       if (decision.approved) {
         // An APPROVAL lets actuation proceed ⇒ fail-closed: any doubt ⇒ "not found".
@@ -2231,7 +2318,7 @@ export async function resumeRun(
         // E fix 2 (ruling R-5-l) — a REJECTION aborts the run (and with it its later STOP steps / STOP compensations): the
         // scope lookup is bounded by the STOP DB deadline; undecided ⇒ REFUSED with the distinct "scope not verified"
         // answer (also for a missing id — no oracle), audited; a DECIDED out-of-scope ⇒ "not found".
-        const verdict = await boundedRunScopeDecision(run, scope, `FOE reject run ${runId} scope`);
+        const verdict = rejectDecision?.verdict ?? "unknown";
         if (verdict === "unknown") {
           await auditScopeUnverified(user, runId, "reject");
           return { ...scopeUnverifiedAnswer(runId), enabled: true };
@@ -2593,18 +2680,22 @@ export async function abortRun(
   try {
     const d = await getDb();
     if (!d) return { ok: false, enabled: foeEnabled(), runId, message: "DB unavailable." };
-    const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     const notFound: StartRunResult = { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} not found.` };
+    let run: OrchestrationRun | undefined;
     if (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0)) {
       // E fix 2 (ruling R-5-l) — bounded by the STOP DB deadline (an abort is never held longer); undecided (timeout /
       // error / pins unreadable) ⇒ REFUSED with the distinct "scope not verified — retry; use the direct STOP / E-STOP"
       // answer (the SAME for a missing id — no oracle), audited synchronously (bounded); a DECIDED out-of-scope ⇒ "not found".
-      const verdict = await boundedRunScopeDecision(run ?? undefined, scopeFor(user, opts.scope), `FOE abort run ${runId} scope`);
-      if (verdict === "unknown") {
+      // final wave F5 — the run row read is INSIDE that bound (a hung read ⇒ "scope not verified", not a hung abort).
+      const decision = await boundedRunScopeDecision(runId, scopeFor(user, opts.scope), `FOE abort run ${runId} scope`);
+      if (decision.verdict === "unknown") {
         await auditScopeUnverified(user, runId, "abort");
         return scopeUnverifiedAnswer(runId);
       }
-      if (!run || verdict === "out") return notFound;
+      if (!decision.run || decision.verdict === "out") return notFound;
+      run = decision.run;
+    } else {
+      [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     }
     if (!run) return notFound;
     if (["completed", "failed", "aborted"].includes(run.status)) {

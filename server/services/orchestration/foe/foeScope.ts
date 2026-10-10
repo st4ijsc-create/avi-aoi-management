@@ -20,6 +20,8 @@
  * fail-closed; e.g. the QT template loader can only register target-free definitions). Robots are in scope through their
  * line or station (an orphan robot is in nobody's restricted scope — same rule as commandCenterScope.scopedRobotIds).
  * Any lookup error ⇒ every target counts as out of scope (fail-closed).
+ * final wave F5 — the scope is resolved in STRICT mode: a DB that is unavailable is a lookup ERROR (`failed`, undecided),
+ * never an empty scope (which would be a decided "nothing in scope").
  */
 import { inArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
@@ -121,9 +123,10 @@ export async function makeScopeJudge(scope: FoeScope): Promise<ScopeJudge> {
   if (scope === null) return { unrestricted: true, failed: false, outOf: async () => none };
   let sets: { machines: Set<number>; lines: Set<number>; stations: Set<number> } | null;
   try {
-    const machineIds = await idsTrongPhamVi("machine", scope);
+    const strict = { strict: true }; // final wave F5 — no DB ⇒ throws ⇒ failed (undecided), not an empty scope
+    const machineIds = await idsTrongPhamVi("machine", scope, strict);
     if (machineIds === null) return { unrestricted: true, failed: false, outOf: async () => none }; // the shared resolver: unrestricted
-    const [lines, stations] = await Promise.all([idsTrongPhamVi("line", scope), idsTrongPhamVi("station", scope)]);
+    const [lines, stations] = await Promise.all([idsTrongPhamVi("line", scope, strict), idsTrongPhamVi("station", scope, strict)]);
     sets = { machines: new Set(machineIds), lines: new Set(lines ?? []), stations: new Set(stations ?? []) };
   } catch {
     sets = null;
@@ -175,11 +178,6 @@ export async function makeScopeJudge(scope: FoeScope): Promise<ScopeJudge> {
       }
     },
   };
-}
-
-/** One-shot form of makeScopeJudge(scope).outOf(...). */
-export async function outOfScopeTargets(scope: FoeScope, t: FoeTargets, opts: { nonStopOnly?: boolean } = {}): Promise<OutOfScope> {
-  return (await makeScopeJudge(scope)).outOf(t, opts);
 }
 
 export const isOutOfScopeEmpty = (o: OutOfScope) => o.machines.length + o.robots.length + o.adapters.length === 0;

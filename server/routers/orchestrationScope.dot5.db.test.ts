@@ -456,6 +456,44 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     expect((await startRun(r, {}, userOf("ua"))).status).toBe("awaiting_confirm");
   });
 
+  it("★ final wave F3: B's adapter goes DOWN under a run whose only B target is a PINNED stop ⇒ UNDECIDED (not 'out'): getRun 'not found', the hub DEGRADED, abort / reject by its in-scope owner 'scope not verified'; A's decided runs stay listed; reconnect ⇒ all back", async () => {
+    const { deployWorkflow, startRun, resumeRun, abortRun } = await engine();
+    const rP = ref("f3-pinned-b");
+    const rA = ref("f3-a-only");
+    expect((await deployWorkflow(defOf(rP, [otStart("a", A), otStop("pb", B)]), ADMIN)).ok).toBe(true);
+    expect((await deployWorkflow(defOf(rA, [otStart("a", A)]), ADMIN)).ok).toBe(true);
+    const runP = (await startRun(rP, {}, userOf("ua"))).runId!;
+    const runA = (await startRun(rA, {}, userOf("ua"))).runId!;
+    expect(runP).toBeGreaterThan(0);
+    const ua = await router(ctxOf("ua"));
+    const hub = async () => (await import("./oversightRouter")).oversightRouter.createCaller(ctxOf("ua")).pendingSummary();
+    const listed = async () => ((await ua.listRuns({ limit: 500 })) as Array<{ id: number }>).map((r) => r.id);
+    expect(await listed()).toEqual(expect.arrayContaining([runP, runA]));
+    expect((await hub()).orchestration.degraded).toBe(false);
+    const fresh = conn.fp.get(B().adapterId)!;
+    conn.fp.delete(B().adapterId); // B's adapter is down / reconnecting: the pinned STOP cannot be verified
+    try {
+      await expect(ua.getRun({ runId: runP })).rejects.toMatchObject({ code: "NOT_FOUND" }); // reads: undecided ⇒ not shown
+      const ids = await listed();
+      expect(ids).not.toContain(runP);
+      expect(ids).toContain(runA); // only the undecided run is left out — A's decided runs stay
+      const s = await hub();
+      expect(s.orchestration.degraded).toBe(true);
+      expect(s.mine.orchestration.degraded).toBe(true);
+      const a = await abortRun(runP, userOf("ua"), "stop");
+      expect(a).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      const r = await resumeRun(runP, { approved: false, note: "no" }, userOf("ua"));
+      expect(r).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      const [row] = await sql`SELECT status FROM orchestration_runs WHERE id = ${runP}`;
+      expect(row.status).toBe("awaiting_confirm");
+    } finally {
+      conn.fp.set(B().adapterId, fresh);
+    }
+    expect((await ua.getRun({ runId: runP })) as { run: { id: number } }).toMatchObject({ run: { id: runP } });
+    expect((await hub()).orchestration.degraded).toBe(false);
+    expect((await abortRun(runP, userOf("ua"), "stop")).status).toBe("aborted");
+  });
+
   it("★ N4: the hub's orchestration scope cannot be decided ⇒ orchestration (and 'mine' orchestration) DEGRADED, not a silent 0", async () => {
     const hub = async () => (await import("./oversightRouter")).oversightRouter.createCaller(ctxOf("ua")).pendingSummary();
     hubFail.on = true;

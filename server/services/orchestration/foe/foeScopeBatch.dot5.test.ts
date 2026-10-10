@@ -134,6 +134,8 @@ describe("doc 81 Đợt 5 E fix 2 (review N3) — the list scope filter is batch
 
   it("a stop-pin read failure ⇒ reported (ok: false — the hub shows the count degraded), never a silent 'nothing visible'", async () => {
     FAIL.table = "device_tags";
-    expect(await resolveVisibleWorkflowIds({ userId: 1, userRole: "engineer" })).toEqual({ ok: false });
+    // final wave F3 (2026-10-10) — still `ok: false` (degraded); `decidedIds` now lists the workflows DECIDED visible
+    // despite the failure: none here (every definition is out of scope unless its unverifiable stop is a stop).
+    expect(await resolveVisibleWorkflowIds({ userId: 1, userRole: "engineer" })).toEqual({ ok: false, decidedIds: [] });
   });
 });

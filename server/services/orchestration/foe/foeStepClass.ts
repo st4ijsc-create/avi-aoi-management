@@ -15,6 +15,12 @@
  *     dispatcher's own `classifyOtStop` over the stop pins) over a running connection that matches the adapter row (the
  *     dispatcher's `runningConnectionMatchesAdapterRow`, E fix 2 / N6). An unpinned stop-typed OT step can write any tag
  *     (R-4-x), so it is NOT a stop here. Any lookup failure ⇒ not verified (fail-closed: no exemption), and `failed` says so.
+ *
+ * doc 81 Đợt 5 final wave F3 — a step whose writes ARE the adapter's stop pins but whose running connection does not match
+ * the adapter row (adapter down / reconnecting / stale), or whose pins / connection could not be read, is NOT verified
+ * (no exemption — unchanged) and is reported in `unsure`: it is not KNOWN to be a non-stop either. Scope decisions that
+ * must tell "decided out" from "could not decide" (read visibility, abort / reject) treat a definition that is out of scope
+ * ONLY because of such steps as UNDECIDED, never as "out of scope" (foeEngine.decideDefinition).
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
@@ -155,8 +161,17 @@ type OtCandidate = NonNullable<ReturnType<typeof commandOf>>;
  * pin matched over a stale connection is NOT a pinned stop for the dispatcher, so it is not a verified stop here either.
  * Any lookup failure ⇒ those steps are not verified and `failed` is set (no exemption).
  */
+export interface StopVerification {
+  /** VERIFIED stops (the only ones an exemption may use). */
+  ids: Set<string>;
+  /** true ⇔ some step could not be verified for a reason other than "it is not a stop" (= `unsure` is not empty). */
+  failed: boolean;
+  /** final wave F3 — steps that may be stops but could not be verified (pins unreadable, connection down / stale / unknown). */
+  unsure: Set<string>;
+}
+
 export interface StopVerifier {
-  verified(def: Pick<WorkflowDefinition, "steps">, machineMap: Map<number, MachineForValidation>): Promise<{ ids: Set<string>; failed: boolean }>;
+  verified(def: Pick<WorkflowDefinition, "steps">, machineMap: Map<number, MachineForValidation>): Promise<StopVerification>;
 }
 
 export async function makeStopVerifier(
@@ -226,7 +241,7 @@ export async function makeStopVerifier(
   return {
     async verified(def, map) {
       const ids = new Set<string>();
-      let failed = false;
+      const unsure = new Set<string>();
       for (const s of allStepsOf(def?.steps)) {
         const c = commandOf(s, map);
         if (!c) continue;
@@ -238,14 +253,14 @@ export async function makeStopVerifier(
         const classifyOtStop = fns.classifyOtStop;
         const connectionCheck = fns.connectionCheck;
         if (batchFailed || !classifyOtStop || !connectionCheck || !db) {
-          failed = true;
+          unsure.add(s.id);
           continue;
         }
         const adapterId = adapterOf(c);
         if (adapterId == null) continue; // unresolvable ⇒ the dispatcher would refuse it ⇒ not a verified stop
         const pins = pinsByAdapter.get(adapterId) ?? null;
         if (pins === null) {
-          failed = true;
+          unsure.add(s.id);
           continue;
         }
         const writes = buildEquipmentCommand(c.descriptor, c.cap, (c.step as { machineId: number }).machineId, (c.step.args ?? {}) as Record<string, unknown>, "probe", { id: 0, role: "system" }).writes ?? [];
@@ -255,12 +270,14 @@ export async function makeStopVerifier(
             connectionOk.set(adapterId, (await connectionCheck(db as never, adapterId)) === true);
           } catch {
             connectionOk.set(adapterId, false);
-            failed = true;
           }
         }
+        // F3 — pinned, but the running connection is not confirmed (false or failed): not verified, and not known to be a
+        // non-stop either ⇒ unsure (never decided "out of scope" on this).
         if (connectionOk.get(adapterId) === true) ids.add(s.id);
+        else unsure.add(s.id);
       }
-      return { ids, failed };
+      return { ids, failed: unsure.size > 0, unsure };
     },
   };
 }
@@ -270,10 +287,16 @@ export async function verifiedStopStepIds(
   def: Pick<WorkflowDefinition, "steps">,
   machineMap: Map<number, MachineForValidation>,
   db: DbLike | null,
-): Promise<{ ids: Set<string>; failed: boolean }> {
+): Promise<StopVerification> {
   try {
     return await (await makeStopVerifier(db, [def], machineMap)).verified(def, machineMap);
   } catch {
-    return { ids: new Set(), failed: true };
+    // nothing could be classified: every OT command step is unsure (no exemption on a failed call)
+    const unsure = new Set<string>();
+    for (const s of allStepsOf(def?.steps)) {
+      const c = commandOf(s, machineMap);
+      if (c && !isRobotKind(c.cap.adapterKind)) unsure.add(s.id);
+    }
+    return { ids: new Set(), failed: true, unsure };
   }
 }

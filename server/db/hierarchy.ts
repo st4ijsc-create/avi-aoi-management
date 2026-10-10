@@ -213,13 +213,21 @@ export type CapPhanCap = "factory" | "workshop" | "line" | "station" | "machine"
  * drizzle: drizzle kết xuất cột theo TÊN BẢNG (`"workshops"."factoryId"`) nên một bí danh sẽ vỡ
  * `42P01` (bẫy đã ghi ở `services/ecosystem/commandCenterScope.ts`).
  */
-export async function idsTrongPhamVi(cap: CapPhanCap, scope?: PhamViDoc): Promise<number[] | null> {
-  const { resolveTenantFactoryScope, factoryIdGate } = await import("./reportAggregators");
-  const pv = await resolveTenantFactoryScope(scope);
+export async function idsTrongPhamVi(
+  cap: CapPhanCap,
+  scope?: PhamViDoc,
+  /** doc 81 Đợt 5 final wave F5 — `strict`: no DB ⇒ THROW (undecided), not [] (see resolveTenantFactoryScope). */
+  opts: { strict?: boolean } = {},
+): Promise<number[] | null> {
+  const { resolveTenantFactoryScope, factoryIdGate, TenantScopeUnavailableError } = await import("./reportAggregators");
+  const pv = await resolveTenantFactoryScope(scope, { strict: opts.strict });
   if (pv.factoryIds === null) return null;
   if (pv.factoryIds.length === 0) return [];
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    if (opts.strict) throw new TenantScopeUnavailableError(`idsTrongPhamVi(${cap}) (primary DB)`);
+    return [];
+  }
   const congNhaMay = factoryIdGate(sql`w."factoryId"`, pv.factoryIds);
   const cauTruyVan =
     cap === "factory"

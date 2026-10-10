@@ -30,6 +30,8 @@ vi.mock("./foeScope", async (importOriginal) => {
 const fake = new FakeDb();
 /** A HUNG DB for chosen engine functions only: a select / insert issued from one of them never answers. */
 const HANG = { fns: new Set<string>(), hits: [] as string[], statuses: new Set<string>() };
+/** final wave P-E2 — a run-status UPDATE to one of these statuses LANDS LATE (after `ms`), evaluated against the row THEN. */
+const LATE = { statuses: new Map<string, number>(), landed: [] as string[] };
 const DELAY = { stepId: "" as string, ms: 0, used: false };
 {
   const hungBuilder = (): any => {
@@ -52,7 +54,26 @@ const DELAY = { stepId: "" as string, ms: 0, used: false };
   const realUpdate = (fake as any).update.bind(fake);
   (fake as any).update = (t: any) => {
     const u = realUpdate(t);
-    return { ...u, set: (patch: Record<string, any>) => (HANG.statuses.has(patch?.status) ? hungBuilder() : u.set(patch)) };
+    return {
+      ...u,
+      set: (patch: Record<string, any>) => {
+        if (HANG.statuses.has(patch?.status)) return hungBuilder();
+        const late = LATE.statuses.get(patch?.status);
+        if (late === undefined) return u.set(patch);
+        return {
+          where: (cond: unknown) => {
+            const landed = () =>
+              new Promise<Row[]>((res) =>
+                setTimeout(() => {
+                  LATE.landed.push(patch.status);
+                  res(u.set(patch).where(cond as never).returning());
+                }, late),
+              );
+            return { returning: landed, then: (a: any, b: any) => landed().then(a, b) };
+          },
+        };
+      },
+    };
   };
   (fake as any).insert = (t: any) => {
     if (hit()) return hungBuilder();
@@ -125,6 +146,8 @@ beforeEach(() => {
   HANG.fns.clear();
   HANG.statuses.clear();
   HANG.hits.length = 0;
+  LATE.statuses.clear();
+  LATE.landed.length = 0;
   DELAY.stepId = "";
   DELAY.used = false;
   process.env.FOE_ENABLED = "true";
@@ -296,6 +319,27 @@ describe("doc 81 Đợt 5 task E4 — an orchestrated STOP never waits on a hung
     expect(sentAt - t0).toBeLessThan(5 * STOP_DB_STEP_DEADLINE_MS + 700);
     expect(warn.mock.calls.flat().join(" ")).toMatch(/failed row not written in time/);
     expect(warn.mock.calls.flat().join(" ")).toMatch(/compensating status not written in time/);
+  });
+
+  // ── doc 81 Đợt 5 final wave P-E2 (E re-review 2 M2) ──────────────────────────────────────────────────────────────
+  it("★ P-E2: the bounded 'compensating' status write LANDS LATE (after the run already ended 'failed') ⇒ it never overwrites the terminal status", async () => {
+    await deployWorkflow(
+      {
+        ref: "complate",
+        name: "complate",
+        steps: [{ id: "w", type: "command", machineId: 1, command: "start", args: { adapterId: 501 }, compensation: { ...OT_STOP, id: "cs" } } as never],
+      },
+      OWNER,
+    );
+    LATE.statuses.set("compensating", 3 * STOP_DB_STEP_DEADLINE_MS);
+    const res = await within(startRun("complate", {}, OWNER), 8 * STOP_DB_STEP_DEADLINE_MS);
+    expect(res).not.toBe("HUNG");
+    const runRowNow = () => (fake.store.get("orchestration_runs") ?? []).find((r: Row) => r.workflowRef === "complate")!;
+    expect(otDispatchMock).toHaveBeenCalled(); // the STOP compensation was sent (bounded) …
+    await vi.waitFor(() => expect(runRowNow().status).toBe("failed"), { timeout: 3 * STOP_DB_STEP_DEADLINE_MS });
+    // … and when the late 'compensating' UPDATE finally lands it changes nothing
+    await vi.waitFor(() => expect(LATE.landed).toContain("compensating"), { timeout: 5 * STOP_DB_STEP_DEADLINE_MS });
+    expect(runRowNow().status).toBe("failed");
   });
 
   it("control (N1): a NON-stop compensation keeps the failed row unbounded (held by a hung write as before)", async () => {
