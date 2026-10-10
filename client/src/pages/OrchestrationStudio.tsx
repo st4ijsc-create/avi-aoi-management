@@ -1536,7 +1536,10 @@ export default function OrchestrationStudio() {
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
     onSuccess: (r) => {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
-      else toast.error(r?.message ?? t("studio.deployFail", "Deploy failed"));
+      // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step without a unique adapter: translated, names the steps.
+      else if (r?.reason === "stopAdapterAmbiguous") {
+        toast.error(t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps: (r.stepIds ?? []).join(", ") }));
+      } else toast.error(r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -2154,7 +2157,7 @@ export default function OrchestrationStudio() {
       canControl={canControl}
       assignment={runAssignments.get(Number(r.id))}
       canAssign={canAssignRun}
-      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
+      onResume={(approved, note, expectedStepId, expectedDefHash) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash })}
       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
       t={t}
     />
@@ -2505,7 +2508,8 @@ function RunRow({
   assignment?: AssignmentRow;
   canAssign?: boolean;
   /** doc 80 Đợt 1 Task 9 — `expectedStepId` = gate đang HIỂN THỊ (server từ chối nếu run đã sang gate khác). */
-  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null) => void;
+  /** doc 81 Đợt 4 fix round 2 (R-4-k) — `expectedDefHash` = getRun().defHash the screen loaded; required to approve. */
+  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string) => void;
   onAbort: () => void;
   t: TFunction;
 }) {
@@ -2525,7 +2529,8 @@ function RunRow({
   const detailQ = trpc.orchestration.getRun.useQuery(
     { runId },
     {
-      enabled: open || (awaiting && canControl),
+      // doc 81 Đợt 4 fix round 2 (R-4-k) — interrupted runs too: "Continue" sends the loaded definition hash.
+      enabled: open || ((awaiting || interrupted) && canControl),
       refetchInterval: (q) => {
         const st = String((q.state.data as { run?: { status?: string } } | undefined)?.run?.status ?? status);
         return open && !isRunTerminal(st) ? 1500 : false;
@@ -2539,6 +2544,8 @@ function RunRow({
     ? (detailQ.data.run.currentStepId ?? null)
     : typeof run.currentStepId === "string" ? run.currentStepId : null;
   const steps = (detailQ.data?.steps ?? []) as RunStepView[];
+  // doc 81 Đợt 4 fix round 2 (R-4-k) — the definition this screen shows; Approve / Continue wait for it.
+  const defHash = (detailQ.data as { defHash?: string | null } | undefined)?.defHash ?? undefined;
   // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
   const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
   const gatePrompt = typeof currentStep?.result?.prompt === "string" ? (currentStep.result.prompt as string) : "";
@@ -2576,7 +2583,7 @@ function RunRow({
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true, undefined, shownStepId)}>
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={!defHash} onClick={() => onResume(true, undefined, shownStepId, defHash)}>
               {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
@@ -2604,7 +2611,7 @@ function RunRow({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId); }}>
+            <AlertDialogAction disabled={!defHash} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash); }}>
               {t("studio.continueRunConfirm", "Continue run")}
             </AlertDialogAction>
           </AlertDialogFooter>

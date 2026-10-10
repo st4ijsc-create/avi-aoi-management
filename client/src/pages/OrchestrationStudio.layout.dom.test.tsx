@@ -714,21 +714,22 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
   it("Tiếp tục run bị gián đoạn: AlertDialog rồi resumeRun({runId, approved:true, expectedStepId})", async () => {
     const user = userEvent.setup();
     srv.runs = [INTERRUPTED].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...INTERRUPTED }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] }; // R-4-k: Continue sends the loaded hash
     render(<OrchestrationStudio />);
     await user.click(within(rowOf(31)).getByRole("button", { name: S.continueRun }));
     expect(calls("orchestration.resumeRun")).toEqual([]);
     const dlg = await screen.findByRole("alertdialog");
     await user.click(within(dlg).getByRole("button", { name: S.continueRunConfirm }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 31, approved: true, note: undefined, expectedStepId: "s-2" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 31, approved: true, note: undefined, expectedStepId: "s-2", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
   });
 
   it("Duyệt ở tab Chờ duyệt gửi expectedStepId của gate đang hiển thị; không quyền ⇒ không có nút", async () => {
     const user = userEvent.setup();
     srv.runs = [AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-detail" }, steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-detail" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
     const { unmount } = render(<OrchestrationStudio />);
     await user.click(within(rowOf(30)).getByRole("button", { name: S.approve }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
     unmount();
     perm.canControl = false;
     render(<OrchestrationStudio />);
@@ -740,14 +741,14 @@ describe("doc 81 Đợt 3 Task 4 — 'Giao cho' run đang chờ duyệt", () => 
   it("run chờ duyệt: hàng hiện tên người được giao + khối ngữ cảnh có bộ chọn; nút Duyệt giữ nguyên payload", async () => {
     const user = userEvent.setup();
     srv.runs = [AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
     render(<OrchestrationStudio />);
     const row = rowOf(30);
     expect(row.querySelector("[data-assignee-cell]")).toHaveTextContent("Ky su Run");
     const ctl = row.querySelector('[data-assign-control="orchestration_run"]') as HTMLElement;
     expect(within(ctl).getByRole("combobox", { name: VI.engineeringAssign.label })).toHaveTextContent("Ky su Run");
     await user.click(within(row).getByRole("button", { name: S.approve }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
     expect(calls("engineering.assign")).toEqual([]);
   });
 

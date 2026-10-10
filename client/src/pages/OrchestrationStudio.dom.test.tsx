@@ -241,6 +241,7 @@ describe("OrchestrationStudio — doc 81 Đợt 4 Task A5 + fix round 1: bước
   });
 });
 
+const DEF_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang hiển thị (expectedStepId)", () => {
   // ORACLE khai tay: hàng danh sách còn ghi gate cũ, chi tiết (khối "Bước đang chờ") ghi gate mới —
   // thứ người duyệt NHÌN THẤY là khối chi tiết ⇒ đó là gate phải được gửi.
@@ -250,12 +251,13 @@ describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang h
     setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
     setQueryOverride(
       "orchestration.getRun",
-      makeQuery({ data: { run: { ...AWAITING, currentStepId: "g-detail" }, steps: [{ stepId: "g-detail", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "Duyệt?" } }] } }),
+      makeQuery({ data: { run: { ...AWAITING, currentStepId: "g-detail" }, defHash: DEF_HASH, steps: [{ stepId: "g-detail", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "Duyệt?" } }] } }),
     );
     render(<OrchestrationStudio />);
     const { default: userEvent } = await import("@testing-library/user-event");
     await userEvent.setup().click(within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i }));
-    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail" });
+    // doc 81 Đợt 4 fix round 2 (R-4-k): + the hash of the definition this screen loaded
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail", expectedDefHash: DEF_HASH });
   });
 
   it("Reject (kèm lý do) ⇒ gửi cùng gate đang hiển thị", async () => {
@@ -270,16 +272,18 @@ describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang h
     await user.click(within(rowOf(30)).getByRole("button", { name: /^(Reject|studio\.reject)$/i }));
     await user.type(within(rowOf(30)).getByRole("textbox"), "sai");
     await user.click(within(rowOf(30)).getByRole("button", { name: /Xác nhận từ chối|confirm reject|studio\.confirmReject/i }));
-    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: false, note: "sai", expectedStepId: "g-detail" });
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: false, note: "sai", expectedStepId: "g-detail", expectedDefHash: undefined });
   });
 
-  it("chi tiết chưa nạp ⇒ dùng gate trên hàng danh sách (không bao giờ gửi thiếu)", async () => {
+  it("chi tiết chưa nạp ⇒ Approve KHOÁ (doc 81 Đợt 4 fix round 2, R-4-k: chưa biết định nghĩa đang xem ⇒ không duyệt được), không gửi gì", async () => {
     setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
     setQueryOverride("orchestration.getRun", makeQuery({ data: undefined }));
     render(<OrchestrationStudio />);
+    const btn = within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i });
+    expect(btn).toBeDisabled();
     const { default: userEvent } = await import("@testing-library/user-event");
-    await userEvent.setup().click(within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i }));
-    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-list" });
+    await userEvent.setup().click(btn);
+    expect(mutateSpies["orchestration.resumeRun"]).not.toHaveBeenCalled();
   });
 });
 

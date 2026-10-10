@@ -178,6 +178,10 @@ export interface FoeUser {
 export interface DeployResult {
   ok: boolean;
   enabled: boolean;
+  /** doc 81 Đợt 4 fix round 2 (R-4-j) — machine-readable refusal (Studio translates it). */
+  reason?: "stopAdapterAmbiguous";
+  /** Offending step ids for `reason`. */
+  stepIds?: string[];
   workflowId?: number;
   ref?: string;
   version?: number;
@@ -210,6 +214,11 @@ export interface StartRunResult {
 
 export interface RunView {
   run: OrchestrationRun;
+  /**
+   * doc 81 Đợt 4 fix round 2 (R-4-k) — hash of the definition currently deployed for this run's workflow (what the
+   * approver's screen shows); sent back as `expectedDefHash` on approval. null when the workflow row is missing.
+   */
+  defHash: string | null;
   steps: Array<{
     stepId: string;
     stepType: string;
@@ -234,6 +243,12 @@ export interface GateDecision {
    * read at the start of this call.
    */
   expectedStepId?: string | null;
+  /**
+   * doc 81 Đợt 4 fix round 2 (R-4-k) — hash (hashWorkflowDefinition) of the definition the approver's screen LOADED
+   * (RunView.defHash). Given on an approval of an open gate and ≠ the definition now deployed ⇒ CONFLICT
+   * (reason definitionChanged) before any state change. Omitted ⇒ no check (internal callers).
+   */
+  expectedDefHash?: string;
 }
 
 /** doc 80 Đợt 1 Task 9 — optional hooks of `resumeRun`. */
@@ -608,7 +623,7 @@ export function buildEquipmentCommand(
   /** doc 81 Đợt 4 Task A5 — requester = run owner, confirmer = the gate approver (absent ⇒ legacy: both `user`). */
   approval?: FoeStepApproval,
 ): EquipmentCommand {
-  const isRobot = capability.adapterKind === "robot" || capability.adapterKind === "vda5050";
+  const isRobot = isRobotKind(capability.adapterKind);
   const cmd: EquipmentCommand = {
     name: descriptor.name,
     machineId,
@@ -624,7 +639,9 @@ export function buildEquipmentCommand(
     },
   };
   if (isRobot) {
-    cmd.robotId = typeof args.robotId === "number" ? args.robotId : machineId;
+    // fix round 2 (R-4-m) — never default to the machine id (different id space): no robotId ⇒ the robot route refuses
+    // ("robotId required for robot command") and nothing reaches a robot.
+    cmd.robotId = typeof args.robotId === "number" ? args.robotId : undefined;
     if (descriptor.name === "run_job" && typeof args.jobType === "string") {
       cmd.job = { jobType: args.jobType as never, params: (args.params as Record<string, unknown>) ?? {} };
     }
@@ -877,15 +894,64 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
  * unrelated adapter.
  */
 async function withResolvedAdapter(kind: string, machineId: number, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-  if (kind === "robot" || kind === "vda5050" || typeof args.adapterId === "number") return args;
+  if (isRobotKind(kind) || typeof args.adapterId === "number") return args;
+  const ids = await enabledAdapterIdsOfMachine(machineId);
+  return ids !== null && ids.length === 1 ? { ...args, adapterId: ids[0] } : args;
+}
+
+/** doc 81 Đợt 4 fix round 2 (R-4-m) — robot/AGV adapter kinds (robotId, never adapterId). */
+function isRobotKind(kind: string): boolean {
+  return kind === "robot" || kind === "vda5050";
+}
+
+/**
+ * doc 81 Đợt 4 fix round 2 (R-4-j) — the ENABLED device_adapters bound to a machine: the ONE lookup behind both the
+ * runtime adapter choice (withResolvedAdapter) and the deploy-time stop check (ambiguousStopSteps). null ⇒ DB error.
+ */
+async function enabledAdapterIdsOfMachine(machineId: number): Promise<number[] | null> {
   try {
     const d = await getDb();
-    if (!d) return args;
+    if (!d) return null;
     const rows = await d.select().from(deviceAdapters).where(and(eq(deviceAdapters.machineId, machineId), eq(deviceAdapters.isEnabled, true)));
-    return rows.length === 1 ? { ...args, adapterId: rows[0].id } : args;
+    return rows.map((r) => r.id);
   } catch {
-    return args;
+    return null;
   }
+}
+
+/** Every step of a definition, depth-first (children, branches, compensation). */
+function allStepsOf(steps: WorkflowStep[] | undefined, out: WorkflowStep[] = []): WorkflowStep[] {
+  for (const s of steps ?? []) {
+    out.push(s);
+    const node = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
+    allStepsOf(node.steps, out);
+    allStepsOf(node.then, out);
+    allStepsOf(node.else, out);
+    if (s.compensation) allStepsOf([s.compensation], out);
+  }
+  return out;
+}
+
+/**
+ * doc 81 Đợt 4 fix round 2 (ruling R-4-j, review N1) — an OT STOP step whose adapter cannot be resolved uniquely at run
+ * time (no explicit args.adapterId and 0 or 2+ enabled adapters bound to its machine) would only fail during an
+ * emergency ("adapterId required"). Caught at DEPLOY instead; the runtime STOP path is unchanged and never gated (L-7).
+ * Returns the offending step ids (a DB error counts every candidate as offending — fail-closed).
+ */
+async function ambiguousStopSteps(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>): Promise<string[]> {
+  const bad: string[] = [];
+  for (const step of allStepsOf(def.steps)) {
+    if (step.type !== "command") continue;
+    const m = machineMap.get(step.machineId);
+    if (!m) continue; // semantic validation already refused unknown machines
+    const cap = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never });
+    if (isRobotKind(cap.adapterKind)) continue;
+    if (!(await isOtStopCommandType(step.command))) continue;
+    if (typeof step.args?.adapterId === "number") continue;
+    const ids = await enabledAdapterIdsOfMachine(step.machineId);
+    if (ids === null || ids.length !== 1) bad.push(step.id);
+  }
+  return bad;
 }
 
 async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number): Promise<StepOutcome> {
@@ -955,7 +1021,8 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   const found = await findSeparateGateApproval(rc);
   const approval = "approval" in found ? found.approval : null;
   const probe = buildEquipmentCommand(descriptor, cap, step.machineId, args, idempotencyKey, rc.user);
-  const isStop = probe.robotId != null ? isStopJob(toRobotJob(probe)) : await isOtStopCommandType(probe.name);
+  // fix round 2 (R-4-m) — classify by the ADAPTER KIND, not by whether a robotId was given.
+  const isStop = isRobotKind(cap.adapterKind) ? isStopJob(toRobotJob(probe)) : await isOtStopCommandType(probe.name);
   if (!approval && !isStop) {
     // data-raw-ok: the code prefix FOE_GATE_REQUIRED(<reason>) is what the Studio keys its translated text on.
     return { kind: "failed", error: gateRequiredError(step.id, "reason" in found ? found.reason : "noGate") };
@@ -1235,6 +1302,22 @@ export async function deployWorkflow(
     const machineMap = await loadMachines(structural.referencedMachineIds);
     const full = validateWorkflow(def, [...machineMap.values()]);
     if (!full.ok) return { ok: false, enabled: true, errors: full.errors };
+
+    // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step must name a resolvable adapter BEFORE the run exists.
+    const ambiguous = await ambiguousStopSteps(def, machineMap);
+    if (ambiguous.length > 0) {
+      return {
+        ok: false,
+        enabled: true,
+        reason: "stopAdapterAmbiguous",
+        stepIds: ambiguous,
+        errors: ambiguous.map((id) => ({
+          path: `step:${id}`,
+          message: `Stop step "${id}": its machine has no single enabled adapter (0 or several) and the step names no adapterId — at run time this STOP could not be sent. Set args.adapterId or fix the machine's adapters.`,
+        })),
+        message: `Stop step(s) ${ambiguous.join(", ")} cannot reach a unique adapter — set args.adapterId or fix the machine's adapters before deploying.`,
+      };
+    }
 
     // doc 40 ENG-F4 — SIM-GATE (sau khi validate, TRƯỚC khi persist). Khi cờ FOE_SIM_GATE_REQUIRED
     // bật: chỉ deploy definition có sim-token hợp lệ (đã mô phỏng ĐẠT) HOẶC có override kèm lý do
@@ -1519,8 +1602,11 @@ export async function getRun(runId: number): Promise<RunView | null> {
     .select()
     .from(orchestrationRunSteps)
     .where(eq(orchestrationRunSteps.runId, runId));
+  const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
+  const wfDef = wf?.definitionJson as WorkflowDefinition | undefined;
   return {
     run,
+    defHash: wfDef && Array.isArray(wfDef.steps) ? hashWorkflowDefinition(wfDef) : null,
     steps: stepRows.map((s) => ({
       stepId: s.stepId,
       stepType: s.stepType,
@@ -1612,6 +1698,17 @@ export async function resumeRun(
     const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
     if (!wf) return { ok: false, enabled: true, message: `Workflow ${run.workflowId} not found.` };
     const def = wf.definitionJson as WorkflowDefinition;
+
+    // doc 81 Đợt 4 fix round 2 (R-4-k) — the approver must have been looking at THIS definition (a redeploy since their
+    // screen loaded ⇒ their approval would be recorded against content they never saw) ⇒ CONFLICT, nothing changes.
+    if (run.status === "awaiting_confirm" && decision.expectedDefHash !== undefined && decision.expectedDefHash !== hashWorkflowDefinition(def)) {
+      throw appError(
+        "CONFLICT",
+        "OPERATION_FAILED",
+        { operation: "resumeOrchestrationRun", reason: "definitionChanged" },
+        `Workflow "${wf.ref}" was redeployed after your screen loaded — reload and review the current definition before approving.`,
+      );
+    }
 
     // doc 80 ORC-03 — approving a hitl_gate enforces its approverRoles / fourEyes (FORBIDDEN).
     // Only a run paused AT a gate ('awaiting_confirm'); an interrupted 'held' run has no open gate.

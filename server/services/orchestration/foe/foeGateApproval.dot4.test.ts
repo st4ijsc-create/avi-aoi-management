@@ -265,6 +265,65 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     expect(otDispatchMock).not.toHaveBeenCalled();
   });
 
+  it("★ R-4-m: a robot step with NO robotId never falls back to the machine id — refused by the robot route ('robotId required'), robot dispatcher not called; a STOP likewise (not a gate error)", async () => {
+    await deployWorkflow({ ref: "rbnoid", name: "RbNoId", steps: [{ id: "g", type: "hitl_gate", prompt: "g" }, { id: "m", type: "command", machineId: 2, command: "start" }] }, OWNER);
+    const started = await startRun("rbnoid", {}, OWNER);
+    const res = await resumeRun(started.runId!, { approved: true }, OTHER);
+    expect(res.status).toBe("failed");
+    expect(robotDispatchMock).not.toHaveBeenCalled();
+    expect(String(stepRow(started.runId!, "m")!.error)).toContain("robotId required");
+    await deployWorkflow({ ref: "rbnoidstop", name: "RbNoIdStop", steps: [{ id: "s", type: "command", machineId: 2, command: "abort" }] }, OWNER);
+    const stop = await startRun("rbnoidstop", {}, OWNER);
+    expect(stop.status).toBe("failed");
+    expect(robotDispatchMock).not.toHaveBeenCalled();
+    const err = String(stepRow(stop.runId!, "s")!.error);
+    expect(err).toContain("robotId required");
+    expect(err).not.toMatch(gateErr("noGate"));
+  });
+
+  it("★ R-4-j: an OT STOP step without a unique adapter is refused at DEPLOY (0 or 2 enabled adapters, no args.adapterId); 1 adapter / explicit adapterId / non-stop step ⇒ deploys", async () => {
+    const stopDef = (ref: string, args?: Record<string, unknown>): WorkflowDefinition => ({
+      ref,
+      name: ref,
+      steps: [{ id: "st", type: "command", machineId: 1, command: "stop", ...(args ? { args } : {}) }],
+    });
+    fake.store.set("device_adapters", []);
+    const none = await deployWorkflow(stopDef("st0"), OWNER);
+    expect(none).toMatchObject({ ok: false, reason: "stopAdapterAmbiguous", stepIds: ["st"] });
+    expect(String(none.message)).toContain("st");
+    expect(fake.store.get("orchestration_workflows") ?? []).toHaveLength(0); // nothing persisted
+    fake.store.set("device_adapters", [
+      { id: 501, machineId: 1, isEnabled: true },
+      { id: 502, machineId: 1, isEnabled: true },
+    ]);
+    expect(await deployWorkflow(stopDef("st2"), OWNER)).toMatchObject({ ok: false, reason: "stopAdapterAmbiguous" });
+    // nested in a branch/compensation is found too
+    const nested = await deployWorkflow(
+      { ref: "stn", name: "n", steps: [{ id: "c", type: "command", machineId: 1, command: "start", args: { adapterId: 501 }, compensation: { id: "undo", type: "command", machineId: 1, command: "stop" } }] },
+      OWNER,
+    );
+    expect(nested).toMatchObject({ ok: false, reason: "stopAdapterAmbiguous", stepIds: ["undo"] });
+    expect((await deployWorkflow(stopDef("st2x", { adapterId: 502 }), OWNER)).ok).toBe(true); // explicit adapter
+    expect((await deployWorkflow({ ref: "nonstop", name: "ns", steps: [{ id: "w", type: "command", machineId: 1, command: "start" }] }, OWNER)).ok).toBe(true);
+    fake.store.set("device_adapters", [{ id: 501, machineId: 1, isEnabled: true }, { id: 502, machineId: 1, isEnabled: false }]);
+    expect((await deployWorkflow(stopDef("st1"), OWNER)).ok).toBe(true); // exactly one ENABLED
+  });
+
+  it("R-4-j: the RUNTIME stop path is unchanged — never gated; adapters changed after deploy ⇒ the OT route refuses as before (no gate error)", async () => {
+    await deployWorkflow({ ref: "strt", name: "strt", steps: [{ id: "st", type: "command", machineId: 1, command: "stop" }] }, OWNER);
+    const ok = await startRun("strt", {}, OWNER);
+    expect(ok.status).toBe("completed");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    expect((otDispatchMock.mock.calls[0][0] as { adapterId: number }).adapterId).toBe(501);
+    fake.store.set("device_adapters", []); // adapter removed AFTER deploy
+    const later = await startRun("strt", {}, OWNER);
+    expect(later.status).toBe("failed");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    const err = String(stepRow(later.runId!, "st")!.error);
+    expect(err).toContain("adapterId required");
+    expect(err).not.toMatch(/FOE_GATE_REQUIRED/);
+  });
+
   it("a robot MOTION step without a gate is refused the same way (robot dispatcher not called)", async () => {
     await deployWorkflow({ ref: "rbmove", name: "RbMove", steps: [{ id: "m", type: "command", machineId: 2, command: "start" }] }, OWNER);
     const res = await startRun("rbmove", {}, OWNER);
@@ -279,7 +338,7 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
         ref: "stops",
         name: "Stops",
         steps: [
-          { id: "ra", type: "command", machineId: 2, command: "abort" },
+          { id: "ra", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } }, // fix round 2 (R-4-m): robotId explicit
           { id: "os", type: "command", machineId: 1, command: "stop" },
         ],
       },

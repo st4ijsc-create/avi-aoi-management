@@ -257,17 +257,27 @@ export const orchestrationRouter = router({
   resumeRun: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
-      z.object({
-        runId: z.number().int().positive(),
-        approved: z.boolean(),
-        note: z.string().max(1000).optional(),
-        expectedStepId: z.string().max(128).nullable(),
-      }),
+      z
+        .object({
+          runId: z.number().int().positive(),
+          approved: z.boolean(),
+          note: z.string().max(1000).optional(),
+          expectedStepId: z.string().max(128).nullable(),
+          /**
+           * doc 81 Đợt 4 fix round 2 (R-4-k) — REQUIRED on an approval: getRun().defHash as the approver's screen loaded
+           * it. A redeploy since then ⇒ CONFLICT (definitionChanged, "reload"). Rejections do not need it.
+           */
+          expectedDefHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+        })
+        .refine((i) => !i.approved || i.expectedDefHash !== undefined, {
+          message: "expectedDefHash is required to approve",
+          path: ["expectedDefHash"],
+        }),
     )
     .mutation(async ({ input, ctx }) => {
       return resumeRun(
         input.runId,
-        { approved: input.approved, note: input.note, expectedStepId: input.expectedStepId },
+        { approved: input.approved, note: input.note, expectedStepId: input.expectedStepId, expectedDefHash: input.expectedDefHash },
         toFoeUser(ctx.user),
       );
     }),
