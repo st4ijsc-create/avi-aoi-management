@@ -1635,29 +1635,40 @@ export default function OrchestrationStudio() {
       toast.error(t("studio.scopeUnverified", "Scope not verified — retry. To stop equipment now, use the machine's direct STOP / E-STOP."));
     }
   };
+  /**
+   * doc 81 Đợt 6 (owner decision 2026-10-11) + fix 1 — an abort AND a gate rejection skip the non-STOP steps but still SEND
+   * the remaining STOP steps and the due STOP compensations (when the run has acted — R-6-b). The confirmation counts only
+   * the STOPs the machine CONFIRMED (#7); STOPs still awaiting an answer, stop-typed steps that are not a pinned STOP and
+   * STOPs not needed are said apart; a STOP not sent / not verified ⇒ a warning pointing at the direct STOP / E-STOP.
+   */
+  const abortOutcomeToasts = (r: { ok?: boolean; runId?: number; reason?: string; abortStops?: { sent: string[]; failed: string[]; pending: string[]; unverified: string[]; untakenBranch: string[]; notPinned: string[]; notNeeded?: string[] } } | null | undefined) => {
+    const stops = r?.abortStops;
+    if (!stops) return;
+    if (r?.reason === "abortUnconfirmed") {
+      toast.error(t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length }));
+    } else {
+      toast.success(t("studio.abortDone", "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length }));
+    }
+    if (stops.pending.length > 0) toast.info(t("studio.abortStopsPending", "{{count}} STOP step(s) handed to the machine, answer not received yet — see the run's steps.", { count: stops.pending.length }));
+    const notSent = stops.failed.length + stops.unverified.length + stops.untakenBranch.length;
+    if (notSent > 0) {
+      toast.warning(t("studio.abortStopsNotSent", "{{count}} STOP step(s) could not be sent or verified — check the run's steps. To stop that equipment now, use the machine's direct STOP / E-STOP.", { count: notSent }));
+    }
+    if (stops.notPinned.length > 0) toast.info(t("studio.abortNotPinned", "{{count}} stop-typed step(s) were not sent: they are not a pinned STOP.", { count: stops.notPinned.length }));
+    if ((stops.notNeeded?.length ?? 0) > 0) toast.info(t("studio.abortStopsNotNeeded", "The run had not acted on any machine yet, so its STOP steps were not sent ({{count}}).", { count: stops.notNeeded?.length ?? 0 }));
+  };
   const resumeM = trpc.orchestration.resumeRun.useMutation({
-    onSuccess: (r) => { scopeUnverifiedToast(r); void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
+    onSuccess: (r) => { scopeUnverifiedToast(r); abortOutcomeToasts(r); void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
     // doc 80 Đợt 1 Task 9 — CONFLICT (gate đã đổi / lượt khác đã quyết định) ⇒ tải lại để thấy gate thật.
     onError: (e) => {
       toastTrpcError(e);
       if (e.data?.code === "CONFLICT") { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); }
     },
   });
-  /**
-   * doc 81 Đợt 6 (owner decision 2026-10-11) — an abort skips the non-STOP steps but still SENDS the remaining STOP steps
-   * and the due STOP compensations: the confirmation says so (with how many were sent), and warns when a STOP could not be
-   * sent / verified (or the abort itself was not confirmed in time) — pointing at the machine's direct STOP / E-STOP.
-   */
   const abortM = trpc.orchestration.abortRun.useMutation({
     onSuccess: (r) => {
       scopeUnverifiedToast(r);
-      const stops = r?.abortStops;
-      if (r?.reason === "abortUnconfirmed") toast.error(t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time — the remaining STOP steps were sent. Check the run and retry the abort."));
-      else if (r?.ok) toast.success(t("studio.abortDone", "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps still sent: {{sent}}.", { id: r.runId ?? "?", sent: (stops?.sent.length ?? 0) + (stops?.pending.length ?? 0) }));
-      const notSent = stops ? stops.failed.length + stops.unverified.length + stops.untakenBranch.length + stops.notPinned.length : 0;
-      if (notSent > 0) {
-        toast.warning(t("studio.abortStopsNotSent", "{{count}} STOP step(s) could not be sent or verified — check the run's steps. To stop that equipment now, use the machine's direct STOP / E-STOP.", { count: notSent }));
-      }
+      abortOutcomeToasts(r);
       void runsQ.refetch();
     },
     onError: (e) => toastTrpcError(e),
@@ -2691,13 +2702,13 @@ function RunRow({
             <Button size="sm" variant="outline" className="h-7" onClick={() => setConfirmContinue(true)}>
               {t("studio.continueRun", "Continue…")}
             </Button>
-            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped; the remaining STOP steps and the due STOP compensations are still sent.")}>
+            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.cancelRun", "Cancel run")}
             </Button>
           </div>
         )}
         {abortable && canControl && (
-          <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped; the remaining STOP steps and the due STOP compensations are still sent.")}>
+          <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
             {t("studio.abort", "Abort")}
           </Button>
         )}
@@ -2706,10 +2717,10 @@ function RunRow({
             <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={!defHash || defChanged} onClick={() => onResume(true, undefined, shownStepId, defHash)}>
               {t("studio.approve", "Approve")}
             </Button>
-            <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
+            <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)} title={t("studio.rejectHint", "Reject: the run is aborted. The remaining non-STOP steps are skipped; if the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.reject", "Reject")}
             </Button>
-            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped; the remaining STOP steps and the due STOP compensations are still sent.")}>
+            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.abort", "Abort")}
             </Button>
           </div>
