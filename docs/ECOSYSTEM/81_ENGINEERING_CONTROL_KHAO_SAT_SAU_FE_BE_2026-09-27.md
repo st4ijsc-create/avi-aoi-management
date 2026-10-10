@@ -625,3 +625,54 @@ Plan `docs/superpowers/plans/2026-10-09-engineering-control-dot3c.md` — đóng
 - Kiểm: review spec ✅/chất lượng ✅, 5 điểm nhỏ đã sửa (vòng sửa 1); test chạm 268/268; `tsc` sạch; mọi đột biến đỏ.
 
 **Còn mở:** `/api/saml/acs` chưa nằm trong danh sách miễn kiểm origin (`originCheck.ts`) — có từ trước, chỉ ảnh hưởng nếu bật chế độ `enforce`; quản trị viên chưa chọn line ⇒ ca toàn hệ thống dùng giờ trình duyệt (form có ghi chú); test `safetyAssignmentShift.dot3b.db.test.ts` để lại hàng `d3b1-*` trong `audit_logs` của `_test` mỗi lần chạy.
+
+## 13. Kết quả Đợt 4 (2026-10-09 → 10-10)
+
+Plan `docs/superpowers/plans/2026-10-09-engineering-control-dot4.md` — đóng các mục "Còn mở" §8–§12 mà chủ dự án chọn (nhóm A+B+C+D). Migration **0364** (`robot_motion_locks`) và **0365** (`user_settings.uiPrefs`) — đã áp `_test`; **dev chưa áp** (chủ dự án quyết).
+
+### Quyết định của chủ dự án
+- **QĐ-4a:** bước OT/robot của điều phối chỉ chạy khi có cổng `hitl_gate` do **người khác** (không phải chủ run) duyệt; không có cổng ⇒ dừng với thông báo rõ.
+- **QĐ-4b:** ân hạn **1 giây** trước khi đặt lại phiên driver khi lệnh ghi quá hạn.
+- **QĐ-4c:** khoá chuyển động robot lưu DB; khởi động lại vẫn khoá.
+- **M7 (2026-10-10):** PLC an toàn gắn **robot** bảo vệ **cả trạm** của robot đó (nghiêng về an toàn); robot chỉ gắn line ⇒ coi như có thể ở bất kỳ trạm nào của line.
+- **B3 (2026-10-10):** sau lệnh DỪNG chỉ **cảnh báo**, không tự ghi lại.
+- Gộp main + push **cuối Đợt 4** (Đợt 3c gộp cùng).
+
+### Nhóm A — bảo mật và phạm vi
+- **Safety-PLC theo đích:** kiểm trước lệnh chỉ đọc cấu hình của đích **thực sự được ghi** (adapter → máy → trạm → line → nhà máy, hợp với máy/robot người gọi) + cấu hình không gắn đích; không phân giải được ⇒ mọi cấu hình. Bảng nguồn an toàn dùng **cùng một** bộ so khớp; đích truyền vào bảng được kiểm **phạm vi** từng id (ngoài phạm vi ≡ không tồn tại).
+- **Sổ kiểm toán** (`activityFeed`, `masterDataList`) theo phạm vi; `activityFeed` trước đây **lỗi mọi lần gọi** (đọc cột TEXT như JSON) — đã sửa.
+- **Twin:** 4 thủ tục đọc nhà máy kiểm phạm vi; ngoài phạm vi trả như không tìm thấy.
+- **Ngừng máy ⇒ ngắt phiên MQTT đang sống** (sau khi commit).
+- **Điều phối không tự duyệt (QĐ-4a):** duyệt gắn với **mã băm định nghĩa** (deploy lại ⇒ duyệt cũ mất hiệu lực; màn Studio ghim mã băm lúc mở); run tạo qua API = chủ là người tạo khoá API (không xác định ⇒ từ chối bước OT/robot); "Tiếp tục" không phải duyệt; cổng từ edge sync không được tính; bộ điều phối lệnh tự đọc lại cổng từ DB. Deploy từ chối: bước DỪNG OT không xác định được adapter duy nhất, bước robot thiếu robot (Studio có ô chọn robot).
+- Quét bảo mật tự động bắt 2 lỗ trong quá trình làm (vượt cổng duyệt; bảng nguồn an toàn lộ trạng thái nhà máy khác) — đều đã đóng và có test.
+
+### Nhóm B — robot và OT
+- VDA5050 gửi mỗi order **một lần**; log DỪNG ở dry-run có hạn 1 s.
+- **DỪNG sau lệnh ghi quá hạn (QĐ-4b, chỉ khi `OT_CMD_SERIALIZE_ENABLED` bật):** giữ chỗ hàng đợi tới khi lệnh cũ xong hoặc hết ân hạn 1 s ⇒ đặt lại phiên trong ngân sách; lệnh quá hạn ghi "kết cục không rõ — có thể đã áp". Sau DỪNG: **chỉ đọc** giá trị trong cửa sổ rủi ro 10 s; lệch/không đọc được/kết nối đổi ⇒ **một** cảnh báo critical (hiện cả khi tắt báo) + audit; **không bao giờ tự ghi**. Trễ DỪNG tối đa ≈ 11,25 s cho mỗi lệnh quá hạn đứng trước.
+- **Khoá chuyển động lưu DB (mig 0364):** khởi động lại vẫn khoá; DB lỗi lúc nạp ⇒ khởi động **khoá** (`persistUnknown`); xoá khoá chỉ xoá bản ghi nó thay thế (không xoá nhầm khoá mới hơn).
+- Ngày nhà máy: chuỗi không có múi giờ đọc theo giờ nhà máy; chuỗi có múi giờ (Z, ±hh:mm, EST, UTC+7…) đọc như cũ. Bảng lệch đồng hồ bỏ mẫu do server đóng dấu thời gian.
+
+### Nhóm C — UX và dữ liệu
+- Sửa tag sẽ gỡ stop pin ⇒ hỏi xác nhận (luật dùng chung client/server); cập nhật adapter báo số pin đã gỡ.
+- CLI import `--apply` bắt buộc `--actor` (ghi vào audit).
+- "Sổ ký" hiện chip "cần kiểm lại" khi stop pin đổi sau chữ ký.
+- Lỗi lồng nhau báo đúng vị trí; kết quả fleet cũ không còn hiện khi đổi dự án (A → B → A bắt đầu lại).
+- Tìm người được giao vượt giới hạn 300 (có cờ "thu hẹp tìm kiếm").
+- Thông báo "bị DỪNG thay thế" ghi mã lệnh DỪNG.
+- Canvas Causal kiểm trên trình duyệt (sáng/tối) — đúng.
+
+### Nhóm D — tuỳ chọn giao diện theo tài khoản (mig 0365)
+- "Hiện Labs" và kích thước panel lưu theo tài khoản (danh sách khoá cho phép, ≤16 KB, đầy thì bỏ khoá bố cục cũ nhất); localStorage vẫn là bản tức thì; máy mới đăng nhập lấy tuỳ chọn phía server; tab cũ của người khác không ghi đè. DB chưa áp 0365 ⇒ app dùng localStorage, không báo lỗi.
+
+### Kiểm
+- Mỗi nhóm: review nhiệm vụ → vòng sửa → review lại (A: 3 vòng, B: 2 vòng + B3 làm lại theo QĐ, C/D: 1 vòng); review toàn nhánh Đợt 3c + 4 → một vòng sửa cuối.
+- RED → GREEN → đột biến cho mọi thay đổi hành vi; `tsc` sạch. Review toàn nhánh: 1114/1115 (1 test chập chờn — đã sửa: tập gộp 70 tệp 1140/1140 hai lần); vòng sửa cuối 131 tệp 1747/1747; sửa N1 cuối 30/30, quét rộng 230/234 (4 đỏ có từ trước của phiên khác: twin3d, twinCanh).
+- Vòng sửa cuối thêm: bước DỪNG robot của điều phối không tra cứu gì trước khi gửi; DỪNG OT tra cứu song song có hạn 1 s; lệnh ghi thường chờ quá hạn kiểm an toàn thì kiểm lại ngay trước khi ghi (nhường DỪNG đang xếp hàng); deploy kiểm robot tồn tại; khi bắt đầu chạy kiểm lại định nghĩa **chỉ với bước không phải DỪNG** (bước DỪNG lỗi tự thất bại lúc chạy, các DỪNG khác vẫn đi — L-7).
+
+### Cần chủ dự án quyết / biết
+- **Áp 0364 lên dev TRƯỚC khi khởi động lại server bản gộp:** dev bật `ROBOT_GATEWAY_ENABLED`; thiếu bảng ⇒ mọi robot khởi động **khoá** (`persistUnknown`) mỗi lần restart và thao tác xoá khoá không được lưu. 0365 an toàn khi chưa áp; hai migration áp theo thứ tự nào cũng được.
+- **`OT_CMD_SERIALIZE_ENABLED` đang tắt mặc định** ⇒ toàn bộ bảo vệ B3 không chạy; DỪNG vẫn có thể chồng lệnh ghi quá hạn.
+- Workflow trên dev có bước robot thiếu robot / bước DỪNG không rõ adapter sẽ bị từ chối khi deploy hoặc khi bắt đầu chạy cho tới khi sửa.
+- Run tạo qua khoá API mà người tạo khoá không còn hoạt động ⇒ bước OT/robot bị từ chối.
+
+**Còn mở:** người cầm khoá API (không phải người tạo) vẫn tự duyệt được run của mình (cần danh tính theo từng người cầm khoá); mã băm duyệt không phủ binding adapter / tag map / chương trình robot; điều phối chưa có phạm vi tenant (robot của nhà máy khác không bị chặn ở deploy); VDA5050: lệnh chuyển động instantActions qua driver thật chưa từng chạy (có từ trước); ngắt kết nối muộn của phiên cũ có thể làm hỏng phiên mới mà DỪNG đang dùng (DỪNG thất bại hiển thị rõ); cảnh báo B3 chỉ trong bộ nhớ (restart mất), cửa sổ 10 s là ước lượng; danh sách người được giao chưa giới hạn theo nhà máy (có từ trước); thay đổi stop pin cùng lúc với chữ ký có thể không bật chip; canvas Causal chưa kiểm khi có licence thật; hộp thông báo critical B3 bị bỏ với người tắt thông báo trong app (luồng cảnh báo critical vẫn mang). Deploy không chặn bước DỪNG chưa ghim (ghim đổi được sau deploy — kiểm lúc chạy vẫn là chốt); lệnh kiểu DỪNG chưa ghim không được kiểm an toàn lại trước khi ghi (như trước); bản ghi uỷ quyền DỪNG robot ghi chủ run làm người xác nhận (chỉ là bản ghi); `ensureOrchestrationAction` vẫn chờ DB không giới hạn (có từ trước).
