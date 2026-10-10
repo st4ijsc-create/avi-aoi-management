@@ -1641,13 +1641,25 @@ export default function OrchestrationStudio() {
    * the STOPs the machine CONFIRMED (#7); STOPs still awaiting an answer, stop-typed steps that are not a pinned STOP and
    * STOPs not needed are said apart; a STOP not sent / not verified ⇒ a warning pointing at the direct STOP / E-STOP.
    */
-  const abortOutcomeToasts = (r: { ok?: boolean; runId?: number; reason?: string; abortStops?: { sent: string[]; failed: string[]; pending: string[]; unverified: string[]; untakenBranch: string[]; notPinned: string[]; notNeeded?: string[] } } | null | undefined) => {
+  // fix 2 (N6) — `kind` says whether it was an abort or a gate rejection (the texts name the right action).
+  const abortOutcomeToasts = (
+    r: { ok?: boolean; runId?: number; reason?: string; abortStops?: { sent: string[]; failed: string[]; pending: string[]; unverified: string[]; untakenBranch: string[]; notPinned: string[]; notNeeded?: string[] } } | null | undefined,
+    kind: "abort" | "reject",
+  ) => {
     const stops = r?.abortStops;
     if (!stops) return;
     if (r?.reason === "abortUnconfirmed") {
-      toast.error(t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length }));
+      toast.error(
+        kind === "reject"
+          ? t("studio.rejectUnconfirmed", "The rejection could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length })
+          : t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length }),
+      );
     } else {
-      toast.success(t("studio.abortDone", "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length }));
+      toast.success(
+        kind === "reject"
+          ? t("studio.rejectDone", "Run #{{id}} rejected and aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length })
+          : t("studio.abortDone", "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length }),
+      );
     }
     if (stops.pending.length > 0) toast.info(t("studio.abortStopsPending", "{{count}} STOP step(s) handed to the machine, answer not received yet — see the run's steps.", { count: stops.pending.length }));
     const notSent = stops.failed.length + stops.unverified.length + stops.untakenBranch.length;
@@ -1655,10 +1667,10 @@ export default function OrchestrationStudio() {
       toast.warning(t("studio.abortStopsNotSent", "{{count}} STOP step(s) could not be sent or verified — check the run's steps. To stop that equipment now, use the machine's direct STOP / E-STOP.", { count: notSent }));
     }
     if (stops.notPinned.length > 0) toast.info(t("studio.abortNotPinned", "{{count}} stop-typed step(s) were not sent: they are not a pinned STOP.", { count: stops.notPinned.length }));
-    if ((stops.notNeeded?.length ?? 0) > 0) toast.info(t("studio.abortStopsNotNeeded", "The run had not acted on any machine yet, so its STOP steps were not sent ({{count}}).", { count: stops.notNeeded?.length ?? 0 }));
+    if ((stops.notNeeded?.length ?? 0) > 0) toast.info(t("studio.abortStopsNotNeeded", "The run had not sent any command other than a STOP, so its remaining STOP steps were not sent ({{count}}).", { count: stops.notNeeded?.length ?? 0 }));
   };
   const resumeM = trpc.orchestration.resumeRun.useMutation({
-    onSuccess: (r) => { scopeUnverifiedToast(r); abortOutcomeToasts(r); void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
+    onSuccess: (r) => { scopeUnverifiedToast(r); abortOutcomeToasts(r, "reject"); void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
     // doc 80 Đợt 1 Task 9 — CONFLICT (gate đã đổi / lượt khác đã quyết định) ⇒ tải lại để thấy gate thật.
     onError: (e) => {
       toastTrpcError(e);
@@ -1668,7 +1680,7 @@ export default function OrchestrationStudio() {
   const abortM = trpc.orchestration.abortRun.useMutation({
     onSuccess: (r) => {
       scopeUnverifiedToast(r);
-      abortOutcomeToasts(r);
+      abortOutcomeToasts(r, "abort");
       void runsQ.refetch();
     },
     onError: (e) => toastTrpcError(e),
@@ -2648,6 +2660,8 @@ function RunRow({
   const awaiting = !interrupted && (status === "awaiting_confirm" || status === "held");
   // doc 80 ORC-01 — Abort nay dừng THẬT run đang chạy ⇒ hiện nút cho run queued/running.
   const abortable = status === "running" || status === "queued";
+  // doc 81 Đợt 6 fix 2 (N1) — an aborted run: send again the STOP steps the machine has not CONFIRMED (never a confirmed one).
+  const resendable = status === "aborted";
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
   const detailQ = trpc.orchestration.getRun.useQuery(
@@ -2706,6 +2720,11 @@ function RunRow({
               {t("studio.cancelRun", "Cancel run")}
             </Button>
           </div>
+        )}
+        {resendable && canControl && (
+          <Button size="sm" variant="outline" className="h-7" onClick={onAbort} title={t("studio.resendStopsHint", "Sends again the run's STOP steps that the machine has not confirmed (never one it confirmed) — after an abort that was not confirmed or a STOP that failed.")}>
+            {t("studio.resendStops", "Send STOP steps again")}
+          </Button>
         )}
         {abortable && canControl && (
           <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
