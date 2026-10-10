@@ -48,6 +48,12 @@ const ROLES: Record<string, string> = {
   viewerFull: "viewer",
   userFull: "user",
   engNo2fa: "engineer", // đủ bit, vai đúng, CHƯA bật 2FA
+  // doc 81 Đợt 5 H5 — roster theo nhà máy: người của nhà máy B (gán nhà máy / gán tập đoàn), người giao KHÔNG được gán nhà máy.
+  engB: "engineer",
+  engCorpB: "engineer",
+  supNoFac: "supervisor",
+  supB: "supervisor", // giao được (machine_control canCreate) — CHỈ nhà máy B
+  supMulti: "supervisor", // giao được — HAI nhà máy ("nhà" + B)
 };
 const PERMS: Record<string, Array<[string, string, Partial<Record<"canView" | "canCreate" | "canEdit", boolean>>]>> = {
   supAssigner: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
@@ -63,7 +69,19 @@ const PERMS: Record<string, Array<[string, string, Partial<Record<"canView" | "c
   viewerFull: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
   userFull: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
   engNo2fa: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canCreate: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
+  engB: [["machine_control", "machine_control", { canView: true }], ["interlock", "interlock", { canView: true }], ["machine_monitoring", "machine_status", { canView: true }]],
+  engCorpB: [["machine_control", "machine_control", { canView: true }], ["interlock", "interlock", { canView: true }], ["machine_monitoring", "machine_status", { canView: true }]],
+  supNoFac: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
+  supB: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
+  supMulti: [["machine_control", "machine_control", { canView: true, canCreate: true, canEdit: true }], ["interlock", "interlock", { canView: true, canEdit: true }], ["machine_monitoring", "machine_status", { canView: true }]],
 };
+/**
+ * doc 81 Đợt 5 H5 (mục 30) — roster "Giao cho" theo NHÀ MÁY. Mọi người gieo (trừ admin, engB/engCorpB/supNoFac) được gán nhà
+ * máy "nhà" = nhà máy của máy dùng cho changeover (để các ô cũ — mục không có nhà máy ⇒ nhà máy người giao — đo đúng như
+ * trước); nhà máy B (+ tập đoàn B) là nhà máy THỨ HAI của lượt này.
+ */
+const H5_NO_HOME = new Set(["engB", "engCorpB", "supNoFac", "supB"]);
+const h5 = { homeId: 0, homeCode: "", homeCreated: false, facB: 0, corpB: "", wsB: 0, lineB: 0, stationB: 0, machineB: 0 };
 
 async function engineering() {
   return (await import("./engineeringAssignmentRouter")).engineeringAssignmentRouter;
@@ -149,6 +167,38 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
     const [m] = await sql`SELECT id, "machineType" FROM machines ORDER BY id LIMIT 1`;
     machineId = Number(m.id);
     machineType = m.machineType;
+    // H5 — nhà máy "nhà" = nhà máy của máy changeover (máy → trạm → chuyền → xưởng); không có ⇒ tạo nhà máy riêng của lượt.
+    const [home] = await sql`SELECT f.id, f.code FROM machines mm JOIN stations s ON s.id = mm."stationId"
+      JOIN production_lines pl ON pl.id = s."lineId" JOIN workshops w ON w.id = pl."workshopId" JOIN factories f ON f.id = w."factoryId"
+      WHERE mm.id = ${machineId}`;
+    if (home) {
+      h5.homeId = Number(home.id);
+      h5.homeCode = String(home.code);
+    } else {
+      const [f] = await sql`INSERT INTO factories (code, name) VALUES (${`${RUN}-HOME`}, ${`${RUN} home`}) RETURNING id, code`;
+      Object.assign(h5, { homeId: Number(f.id), homeCode: String(f.code), homeCreated: true });
+    }
+    for (const key of Object.keys(ROLES)) {
+      if (ROLES[key] === "admin" || H5_NO_HOME.has(key)) continue;
+      await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid[key]}, ${h5.homeCode})`;
+    }
+    h5.corpB = `${RUN}-CB`.slice(0, 50);
+    await sql`INSERT INTO corporates (code, name) VALUES (${h5.corpB}, ${`${RUN} corp B`})`;
+    const [fb] = await sql`INSERT INTO factories (code, name, "corporateCode") VALUES (${`${RUN}-FB`}, ${`${RUN} factory B`}, ${h5.corpB}) RETURNING id`;
+    h5.facB = Number(fb.id);
+    const [wb] = await sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${h5.facB}, ${`${RUN}-WB`}, ${`${RUN} ws B`}) RETURNING id`;
+    h5.wsB = Number(wb.id);
+    const [lb] = await sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${h5.wsB}, ${`${RUN}-LB`}, ${`${RUN} line B`}) RETURNING id`;
+    h5.lineB = Number(lb.id);
+    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid.engB}, ${`${RUN}-FB`})`;
+    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid.supB}, ${`${RUN}-FB`})`;
+    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid.supMulti}, ${`${RUN}-FB`})`;
+    const [sb] = await sql`INSERT INTO stations ("lineId", code, name) VALUES (${h5.lineB}, ${`${RUN}-SB`}, ${`${RUN} station B`}) RETURNING id`;
+    h5.stationB = Number(sb.id);
+    const [mb] = await sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+      VALUES (${h5.stationB}, ${`${RUN}-MB`}, ${`${RUN} machine B`}, ${machineType}, true) RETURNING id`;
+    h5.machineB = Number(mb.id);
+    await sql`INSERT INTO user_corporate_assignments ("userId", "corporateCode") VALUES (${uid.engCorpB}, ${h5.corpB})`;
   });
 
   afterAll(async () => {
@@ -168,6 +218,18 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
     if (created.ecn.length) await sql`DELETE FROM engineering_changes WHERE id IN ${sql(created.ecn)}`;
     if (created.rule.length) await sql`DELETE FROM interlock_rules WHERE id IN ${sql(created.rule)}`.catch(() => undefined);
     if (created.recipe.length) await sql`DELETE FROM machine_recipes WHERE id IN ${sql(created.recipe)}`.catch(() => undefined);
+    if (ids.length) {
+      await sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(ids)}`.catch(() => undefined);
+      await sql`DELETE FROM user_corporate_assignments WHERE "userId" IN ${sql(ids)}`.catch(() => undefined);
+    }
+    if (h5.machineB) await sql`DELETE FROM machine_recipes WHERE "machineId" = ${h5.machineB}`.catch(() => undefined);
+    if (h5.machineB) await sql`DELETE FROM machines WHERE id = ${h5.machineB}`.catch(() => undefined);
+    if (h5.stationB) await sql`DELETE FROM stations WHERE id = ${h5.stationB}`.catch(() => undefined);
+    if (h5.lineB) await sql`DELETE FROM production_lines WHERE id = ${h5.lineB}`.catch(() => undefined);
+    if (h5.wsB) await sql`DELETE FROM workshops WHERE id = ${h5.wsB}`.catch(() => undefined);
+    if (h5.facB) await sql`DELETE FROM factories WHERE id = ${h5.facB}`.catch(() => undefined);
+    if (h5.homeCreated) await sql`DELETE FROM factories WHERE id = ${h5.homeId}`.catch(() => undefined);
+    if (h5.corpB) await sql`DELETE FROM corporates WHERE code = ${h5.corpB}`.catch(() => undefined);
     if (ids.length) {
       await sql`DELETE FROM permissions WHERE "userId" IN ${sql(ids)}`;
       await sql`UPDATE users SET "isActive" = false WHERE id IN ${sql(ids)}`;
@@ -777,7 +839,8 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
   // ══════════════════════════════════════════════════════════════════════════
   describe("§11 doc 81 Đợt 4 C6 — roster tìm kiếm (search ilike có thoát), selectedId, truncated", () => {
     // Người XEM được /product-changeover (machine_status + machine_control canView), đang hoạt động, trong số người gieo.
-    const HOP_LE = ["supAssigner", "engViewer", "engViewer2", "userViewer", "engAuthor", "supAuthor", "adminA", "opFull", "viewerFull", "userFull", "engNo2fa"];
+    // doc 81 Đợt 5 H5 — roster nay theo nhà máy người giao ("nhà"): supMulti (nhà + B) có mặt; engB/engCorpB/supNoFac/supB (không ở "nhà") thì không.
+    const HOP_LE = ["supAssigner", "engViewer", "engViewer2", "userViewer", "engAuthor", "supAuthor", "adminA", "opFull", "viewerFull", "userFull", "engNo2fa", "supMulti"];
     const roster = async (input: { search?: string; selectedId?: number }) =>
       (await as("supAssigner")).assignableUsers({ entityType: "changeover", ...input });
     const ten = (k: string) => `${RUN} ${k}`;
@@ -838,6 +901,114 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
     it("search quá dài / selectedId không dương ⇒ bị từ chối ở input", async () => {
       await expect(roster({ search: "x".repeat(101) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
       await expect(roster({ selectedId: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 5 H5 (mục 30) — roster "Giao cho" + người được giao theo NHÀ MÁY: chỉ người CÙNG ≥1 nhà máy với mục (mục
+  // không có nhà máy / không tồn tại ⇒ với người giao). Admin gọi ⇒ không đổi; vai admin luôn có mặt (thấy mọi nhà máy).
+  // ORACLE: nhà máy của từng người do CHÍNH lượt này gán (user_factory_assignments / user_corporate_assignments) — độc lập
+  // với mã sản phẩm.
+  describe("§12 doc 81 Đợt 5 H5 — roster theo nhà máy (mục / người giao)", () => {
+    const ids = (r: { users: Array<{ id: number }> }) => new Set(r.users.map((u) => u.id));
+    const roster = async (who: string, input: { entityType: "ecn" | "interlock_rule" | "changeover" | "recipe" | "orchestration_run"; entityId?: number; selectedId?: number }) =>
+      (await as(who)).assignableUsers({ search: RUN, ...input } as never);
+    const mkEcnF = async (factoryId: number | null) => {
+      const id = await mkEcn("submitted", uid.engAuthor);
+      await sql`UPDATE engineering_changes SET "factoryId" = ${factoryId} WHERE id = ${id}`;
+      return id;
+    };
+
+    it("★ ECN của nhà máy B ⇒ roster chỉ người của B (gán nhà máy HOẶC gán tập đoàn của B) + admin; người chỉ ở nhà máy 'nhà' KHÔNG có", async () => {
+      const ecnB = await mkEcnF(h5.facB);
+      const r = ids(await roster("supAssigner", { entityType: "ecn", entityId: ecnB }));
+      for (const k of ["engB", "engCorpB", "adminA"]) expect(r.has(uid[k]), k).toBe(true);
+      for (const k of ["engViewer", "engViewer2", "supAuthor", "supAssigner", "supNoFac"]) expect(r.has(uid[k]), k).toBe(false);
+    });
+
+    it("★ ECN KHÔNG có nhà máy / id không tồn tại / không gửi entityId ⇒ theo nhà máy NGƯỜI GIAO ('nhà'): engViewer có, engB/engCorpB không", async () => {
+      const ecn0 = await mkEcnF(null);
+      for (const input of [{ entityId: ecn0 }, { entityId: 2_000_000_000 }, {}]) {
+        const r = ids(await roster("supAssigner", { entityType: "ecn", ...input }));
+        for (const k of ["engViewer", "engViewer2", "supAuthor", "adminA"]) expect(r.has(uid[k]), `${JSON.stringify(input)} ${k}`).toBe(true);
+        for (const k of ["engB", "engCorpB"]) expect(r.has(uid[k]), `${JSON.stringify(input)} ${k}`).toBe(false);
+      }
+    });
+
+    it("interlock rule trên CHUYỀN của nhà máy B (chuyền → xưởng → nhà máy) ⇒ người của B; người 'nhà' không", async () => {
+      const ruleId = await mkRule(uid.engAuthor);
+      await sql`UPDATE interlock_rules SET scope = 'line', "lineId" = ${h5.lineB} WHERE id = ${ruleId}`;
+      const r = ids(await roster("supAssigner", { entityType: "interlock_rule", entityId: ruleId }));
+      expect(r.has(uid.engB)).toBe(true);
+      expect(r.has(uid.engViewer)).toBe(false);
+    });
+
+    it("người giao KHÔNG được gán nhà máy nào + mục không nhà máy ⇒ chỉ còn admin (fail-closed)", async () => {
+      const ecn0 = await mkEcnF(null);
+      const r = await roster("supNoFac", { entityType: "ecn", entityId: ecn0 });
+      expect(r.users.map((u) => u.id)).toEqual([uid.adminA]);
+    });
+
+    it("admin GỌI ⇒ không đổi: ECN nhà máy B vẫn liệt kê cả người 'nhà' lẫn người của B (và người không nhà máy)", async () => {
+      const ecnB = await mkEcnF(h5.facB);
+      const r = ids(await roster("adminA", { entityType: "ecn", entityId: ecnB }));
+      for (const k of ["engViewer", "engB", "engCorpB", "supNoFac"]) expect(r.has(uid[k]), k).toBe(true);
+    });
+
+    it("recipe trên MÁY của nhà máy B (máy → trạm → chuyền → xưởng) ⇒ người của B; người 'nhà' không", async () => {
+      const rid = await mkRecipe(uid.engAuthor);
+      await sql`UPDATE machine_recipes SET "machineId" = ${h5.machineB} WHERE id = ${rid}`;
+      const r = ids(await roster("supAssigner", { entityType: "recipe", entityId: rid }));
+      expect(r.has(uid.engB)).toBe(true);
+      expect(r.has(uid.engViewer)).toBe(false);
+    });
+
+    it("★ orchestration run chạm máy của nhà máy B: người giao của B ⇒ người của B; người giao 'nhà' (run NGOÀI phạm vi họ, R-5-d) ⇒ NOT_FOUND Y HỆT run không tồn tại, không trả người nào", async () => {
+      const ref = `${RUN}-wfB`;
+      const def = { ref, name: ref, steps: [
+        { id: "c1", type: "command", machineId: h5.machineB, command: "start", args: {} },
+        { id: "gate1", type: "hitl_gate", prompt: "p" },
+      ] };
+      const [w] = await sql`INSERT INTO orchestration_workflows (ref, name, "definitionJson", status) VALUES (${ref}, ${ref}, ${sql.json(def as never)}, 'active') RETURNING id`;
+      created.wf.push(Number(w.id));
+      const [run] = await sql`INSERT INTO orchestration_runs ("workflowId", "workflowRef", status, "currentStepId")
+        VALUES (${Number(w.id)}, ${ref}, 'awaiting_confirm', 'gate1') RETURNING id`;
+      created.run.push(Number(run.id));
+      const runId = Number(run.id);
+      const byB = ids(await roster("supB", { entityType: "orchestration_run", entityId: runId }));
+      expect(byB.has(uid.engB)).toBe(true);
+      expect(byB.has(uid.engViewer)).toBe(false);
+      // người giao HAI nhà máy: đích = nhà máy của run (B), KHÔNG phải mọi nhà máy của người giao.
+      const byMulti = ids(await roster("supMulti", { entityType: "orchestration_run", entityId: runId }));
+      expect(byMulti.has(uid.engB)).toBe(true);
+      expect(byMulti.has(uid.engViewer)).toBe(false);
+      const shape = (e: unknown) => {
+        const x = e as { code?: string; message?: string; cause?: { appCode?: string; appParams?: unknown } };
+        return { code: x.code, appCode: x.cause?.appCode, appParams: x.cause?.appParams, message: x.message?.replace(/\d+/g, "#") };
+      };
+      const outOfScope = await roster("supAssigner", { entityType: "orchestration_run", entityId: runId }).catch((e) => e);
+      const missing = await roster("supAssigner", { entityType: "orchestration_run", entityId: 2_000_000_000 }).catch((e) => e);
+      expect(shape(outOfScope)).toEqual({ code: "NOT_FOUND", appCode: "ENTITY_NOT_FOUND", appParams: { entity: "workflowRun" }, message: "orchestration_run # not found" });
+      expect(shape(outOfScope)).toEqual(shape(missing));
+    });
+
+    it("★ selectedId của người KHÁC nhà máy ⇒ KHÔNG lộ tên qua roster", async () => {
+      const ecnB = await mkEcnF(h5.facB);
+      const r = await (await as("supAssigner")).assignableUsers({ entityType: "ecn", entityId: ecnB, search: `${RUN} engB`, selectedId: uid.engViewer } as never);
+      expect(r.users.map((u) => u.id)).toEqual([uid.engB]);
+    });
+
+    it("★ assign khớp roster: giao ECN nhà máy B cho người chỉ ở 'nhà' ⇒ assigneeInvalid, không ghi; cho người của B ⇒ ghi; admin giao thì không lọc", async () => {
+      const ecnB = await mkEcnF(h5.facB);
+      const c = await as("supAssigner");
+      const e = await c.assign({ entityType: "ecn", entityId: ecnB, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null }).catch((x) => x);
+      expect(e).toMatchObject({ code: "BAD_REQUEST", message: "Người được giao không hợp lệ.", cause: { appParams: { field: "assigneeUserId", reason: "assigneeInvalid" } } });
+      expect(await activeRows("ecn", ecnB)).toHaveLength(0);
+      await c.assign({ entityType: "ecn", entityId: ecnB, assigneeUserId: uid.engB, expectedAssigneeUserId: null });
+      expect((await activeRows("ecn", ecnB)).map((r) => Number(r.assignee_user_id))).toEqual([uid.engB]);
+      const ecnB2 = await mkEcnF(h5.facB);
+      await (await as("adminA")).assign({ entityType: "ecn", entityId: ecnB2, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null });
+      expect((await activeRows("ecn", ecnB2)).map((r) => Number(r.assignee_user_id))).toEqual([uid.engViewer]);
     });
   });
 });

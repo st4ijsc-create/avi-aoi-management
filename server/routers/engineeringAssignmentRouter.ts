@@ -15,8 +15,9 @@
  *   • NGƯỜI ĐƯỢC GIAO phải tồn tại, đang hoạt động, và XEM được trang đích (`viewModules`, mọi module canView) — fix 1:
  *     ba trường hợp trả MỘT lời từ chối chung (`assigneeInvalid`) để người giao không dò được trạng thái tài khoản;
  *   • ĐỌC phân công (cột "Người được giao") = quyền xem trang đó, CHỈ các id được hỏi, CHỈ phân công còn sống.
- * Phạm vi tenant/nhà máy: GIỮ NHƯ THỰC THỂ — năm router thực thể không lọc theo nhà máy (nằm trong sổ nợ
- * `phamViDocBaseline.ts`), nên giao việc cũng chỉ mang cổng RBAC của chúng — không hẹp hơn, không rộng hơn.
+ * Phạm vi tenant/nhà máy: năm router thực thể không lọc theo nhà máy (nằm trong sổ nợ `phamViDocBaseline.ts`). doc 81 Đợt 5
+ * H5 (mục 30): AI được giao thì có — roster và người được giao chỉ gồm người CÙNG ≥1 nhà máy với mục (mục không có nhà máy ⇒
+ * với người giao); admin gọi ⇒ không đổi (`services/engineeringAssignment/rosterScope.ts`).
  *
  * fix 1 (R-3-f) — phân công gắn với MỘT ĐỢT CHỜ DUYỆT (`pending_episode`; xem `assignmentService.ts#EPISODE_SQL`): mục
  * rời chờ duyệt ⇒ hết hiệu lực ngay ở mọi lượt đọc; hàng `active` đã chết bị TẮT ở lượt giao kế tiếp (audit `expire`).
@@ -47,6 +48,7 @@ import {
   type DbOrTx,
 } from "../services/engineeringAssignment/assignmentService";
 import { requireAssignGate, requireLicense } from "../services/engineeringAssignment/assignGate";
+import { rosterFactoryFilter } from "../services/engineeringAssignment/rosterScope";
 import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, assignmentDeepLink, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 const entityTypeInput = z.enum(ASSIGNABLE_ENTITY_TYPES);
@@ -154,7 +156,6 @@ export const engineeringAssignmentRouter = router({
       if (!assignee || !assignee.isActive || !(await canViewTarget(assignee.id, assignee.role, type))) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
       }
-
       // doc 81 Đợt 5 task E fix 1 (R-5-d, review #3) — an orchestration run outside the ASSIGNER's factory scope does not
       // exist for them (the SAME NOT_FOUND as a missing run, thrown at the same point); an assignee who cannot see the run
       // is not a valid assignee (the same single refusal as any other invalid assignee).
@@ -163,6 +164,16 @@ export const engineeringAssignmentRouter = router({
         type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf({ id: assignee.id, role: assignee.role })));
       if (runInScope && !assigneeSeesRun) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
+      }
+      // doc 81 Đợt 5 H5 (mục 30) — CÙNG luật nhà máy với roster: người được giao không cùng nhà máy nào với mục (hoặc với người
+      // giao khi mục không có nhà máy) ⇒ CÙNG một lời từ chối như người không hợp lệ. Admin giao ⇒ không lọc (như cũ). Run
+      // ngoài phạm vi người gọi ⇒ bỏ qua ở đây, đi tiếp tới NOT_FOUND như cũ (R-5-d).
+      const factoryRule = runInScope ? await rosterFactoryFilter(d, ctx, type, input.entityId) : undefined;
+      if (factoryRule) {
+        const [shares] = await d.select({ id: users.id }).from(users).where(and(eq(users.id, assignee.id), factoryRule)).limit(1);
+        if (!shares) {
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
+        }
       }
 
       try {
@@ -300,10 +311,14 @@ export const engineeringAssignmentRouter = router({
    *     người đó qua CÙNG bộ lọc (đang hoạt động + xem được trang): một id tuỳ ý không được biến roster thành chỗ dò
    *     tên người ngoài (fail-closed; người được giao đã mất quyền vẫn hiện ở client từ hàng phân công).
    *   • `truncated`: còn người hợp lệ ngoài trần ⇒ true (đọc trần + 1) — UI nói "gõ để thu hẹp".
+   *
+   * doc 81 Đợt 5 H5 (mục 30) — `entityId` (mục đang giao): chỉ người CÙNG ≥1 nhà máy với mục; mục không có nhà máy / không
+   * tồn tại / không gửi ⇒ cùng ≥1 nhà máy với người giao. Admin gọi ⇒ không lọc. Cùng bộ lọc cho `selectedId`.
    */
   assignableUsers: protectedProcedure
     .input(z.object({
       entityType: entityTypeInput,
+      entityId: z.number().int().positive().optional(),
       search: z.string().trim().max(100).optional(),
       selectedId: z.number().int().positive().optional(),
     }))
@@ -312,7 +327,14 @@ export const engineeringAssignmentRouter = router({
       await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
       const canView = ASSIGNABLE[type].viewModules.map((m) => permissionHeldSql(users.id, users.role, m, "canView"));
-      const hopLe = [eq(users.isActive, true), ...canView];
+      // R-5-d — run NGOÀI phạm vi người gọi ⇒ NOT_FOUND Y HỆT run không tồn tại (cùng mã, cùng câu, cùng điểm ném — như
+      // `assign`): không lộ sự tồn tại, không trả người nào. Bốn loại còn lại: router thực thể không lọc nhà máy (sổ nợ) ⇒
+      // không có "ngoài phạm vi"; id không tồn tại ⇒ như mục không có nhà máy (nhà máy người giao — không mang gì của mục).
+      if (input.entityId != null && type === "orchestration_run" && !(await runIdVisibleTo(input.entityId, foeScopeOf(ctx.user)))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: ASSIGNABLE[type].errorEntity }, `${type} ${input.entityId} not found`);
+      }
+      const factoryRule = await rosterFactoryFilter(d, ctx, type, input.entityId);
+      const hopLe = [eq(users.isActive, true), ...canView, ...(factoryRule ? [factoryRule] : [])];
       const search = input.search?.trim() ?? "";
       const timTen = search
         ? sql`coalesce(${users.name}, '') ILIKE ${`%${thoatLike(search)}%`} ESCAPE '\\'`

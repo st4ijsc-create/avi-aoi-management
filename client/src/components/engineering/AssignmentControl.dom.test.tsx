@@ -114,7 +114,8 @@ describe("AssignmentControl — giao / giao lại / bỏ giao", () => {
   it("chưa giao + có quyền ⇒ combobox 'Giao cho' (chỗ trống nói 'Chưa giao'); chọn người ⇒ assign đúng payload, expected=null", async () => {
     render(<AssignmentControl entityType="ecn" entityId={5} assignment={undefined} canAssign />);
     expect(combo()).toHaveTextContent(S("engineeringAssign.placeholder"));
-    expect(srv.rosterCalls).toEqual([{ entityType: "ecn" }]);
+    // doc 81 Đợt 5 H5 — roster hỏi KÈM mục (entityId): server lọc theo nhà máy của mục.
+    expect(srv.rosterCalls).toEqual([{ entityType: "ecn", entityId: 5 }]);
     fireEvent.click(combo());
     fireEvent.click(screen.getByRole("option", { name: /Tran Thi B/ }));
     expect(srv.assign).toEqual([{ entityType: "ecn", entityId: 5, assigneeUserId: 12, expectedAssigneeUserId: null }]);
@@ -233,14 +234,14 @@ describe("AssignmentControl — 2FA của sàn vai (M-3)", () => {
     render(<AssignmentControl entityType="recipe" entityId={9} assignment={undefined} canAssign />);
     expect(combo()).toBeEnabled();
     expect(screen.queryByText(S("engineeringAssign.needs2fa"))).toBeNull();
-    expect(srv.rosterCalls).toEqual([{ entityType: "recipe" }]);
+    expect(srv.rosterCalls).toEqual([{ entityType: "recipe", entityId: 9 }]);
   });
 
   it("ECN (sàn ecnDecision, không 2FA) ⇒ KHÔNG khoá dù chưa bật 2FA", () => {
     me.twoFactorEnabled = false;
     render(<AssignmentControl entityType="ecn" entityId={5} assignment={undefined} canAssign />);
     expect(combo()).toBeEnabled();
-    expect(srv.rosterCalls).toEqual([{ entityType: "ecn" }]);
+    expect(srv.rosterCalls).toEqual([{ entityType: "ecn", entityId: 5 }]);
   });
 
   it("dạng gọn (ô bảng) ⇒ lý do vẫn có cho trình đọc màn hình (sr-only) + title", () => {
@@ -309,7 +310,7 @@ describe("doc 81 Đợt 4 C6 — roster vượt trần: tìm trên server (debou
 
   it("★ đang giao cho #99 ⇒ roster hỏi kèm selectedId 99 (người đang chọn luôn có trong danh sách server trả)", () => {
     render(<AssignmentControl entityType="recipe" entityId={9} assignment={{ entityId: 9, assigneeUserId: 99, assigneeName: "Z" }} canAssign />);
-    expect(srv.rosterCalls.at(-1)).toMatchObject({ entityType: "recipe", selectedId: 99 });
+    expect(srv.rosterCalls.at(-1)).toMatchObject({ entityType: "recipe", entityId: 9, selectedId: 99 });
   });
 
   it("khoá entityPicker.narrowSearch có ở vi/en/zh", () => {

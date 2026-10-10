@@ -142,7 +142,14 @@ const CLASSIFIED: Record<string, Kind> = {
   },
   "server/routers/engineeringAssignmentRouter.ts": {
     kind: "router",
-    requires: [/runIdVisibleTo\(input\.entityId, foeScopeOf\(ctx\.user\)\)/, /visibleRunIds\(ids, foeScopeOf\(ctx\.user\)\)/],
+    requires: [
+      /runIdVisibleTo\(input\.entityId, foeScopeOf\(ctx\.user\)\)/,
+      /visibleRunIds\(ids, foeScopeOf\(ctx\.user\)\)/,
+      // 2026-10-10 doc 81 Đợt 5 H5 — roster `assignableUsers` (nay nhận entityId): run ngoài phạm vi ⇒ NOT_FOUND TRƯỚC khi đọc
+      // nhà máy của mục (rosterScope.ts); `assign` chỉ lọc nhà máy khi run trong phạm vi.
+      /type === "orchestration_run" && !\(await runIdVisibleTo\(input\.entityId, foeScopeOf\(ctx\.user\)\)\)\) \{\s*throw appError\("NOT_FOUND"/,
+      /const factoryRule = runInScope \? await rosterFactoryFilter\(/,
+    ],
   },
   "server/routers/orchestrationGovRouter.ts": {
     kind: "router",
@@ -169,6 +176,13 @@ const CLASSIFIED: Record<string, Kind> = {
       /export async function fetchMineCategory\([\s\S]*?orchestrationWorkflowIds: number\[\] \| null/,
       /\$\{runScopeSql\}/,
     ],
+  },
+  // 2026-10-10 doc 81 Đợt 5 H5 (mục 30) — tệp MỚI của quần thể: đọc định nghĩa workflow của MỘT run CHỈ để suy nhà máy của các
+  // đích (roster "Giao cho" theo nhà máy); không có danh tính người gọi riêng — người gọi duy nhất là engineeringAssignmentRouter,
+  // nơi run NGOÀI phạm vi bị chặn TRƯỚC (NOT_FOUND / không lọc) — đo bằng `requires` của router ở trên.
+  "server/services/engineeringAssignment/rosterScope.ts": {
+    kind: "allow",
+    reason: "derives the factories of ONE run's targets for the assignee roster; its only caller (engineeringAssignmentRouter) rejects an out-of-scope run (runIdVisibleTo + foeScopeOf(ctx.user)) before passing the id — required usages above",
   },
   "server/services/orchestration/foe/__foeGateRunFixture.ts": { kind: "allow", reason: "test fixture (_test only), not imported by product code" },
   "server/services/orchestration/foe/foeEngine.ts": { kind: "engine" },
