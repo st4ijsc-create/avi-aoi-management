@@ -238,6 +238,32 @@ Username: factory_user (nếu có)
 Password: ******** (nếu có)
 ```
 
+> Trường Username/Password ở trên chỉ dùng cho broker NGOÀI (HiveMQ, EMQX, Mosquitto…). Với broker
+> NHÚNG của server AVI-AOI (địa chỉ IP), app tự dùng username `deviceId:tên:model` và **mật khẩu thiết bị**
+> ở mục dưới.
+
+### Mật Khẩu MQTT Của Thiết Bị (broker nhúng) — doc 81 Đợt 5 G1
+
+Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết bị (broker nội bộ)"**:
+
+- Hiện **Mã thiết bị** — đúng mã ở màn web *Kết nối (MQTT / UNS) → tab Thiết bị* (`/connectivity`).
+- Mật khẩu lưu trong **Android Keystore** (mã hoá AES‑GCM), KHÔNG lưu AsyncStorage, KHÔNG hiện lại, KHÔNG ghi log.
+- Máy không có kho an toàn ⇒ app báo lỗi và KHÔNG lưu (không có đường lưu dạng thô).
+- Mật khẩu này chỉ gửi cho broker nhúng, không bao giờ gửi tới broker ngoài.
+
+**Thứ tự triển khai (BẮT BUỘC theo đúng thứ tự — làm ngược là khoá máy tính bảng):**
+
+1. **Cập nhật app** lên ≥ 1.0.17 cho MỌI máy tính bảng (app cũ ≤ 1.0.16 không gửi mật khẩu cho broker nhúng).
+2. **Cấp mật khẩu từng máy**: admin vào *Kết nối (MQTT / UNS) → Thiết bị* → **Cấp / xoay mật khẩu** cho đúng mã thiết bị
+   (mật khẩu hiện MỘT lần; phiên cũ của máy bị ngắt ngay) → kỹ thuật viên gõ ngay vào ô trên của máy đó → **Lưu**
+   (app tự kết nối lại). Kiểm tra máy ONLINE lại và cột mật khẩu hiện "Đã có".
+3. **Lật cờ**: khi KHÔNG còn thiết bị đã đăng ký nào "chưa có mật khẩu", server mới chạy với
+   `MQTT_ALLOW_PASSWORDLESS_REGISTERED=false` — từ Đợt 5 đây là **mặc định trong mã** (biến không đặt = false).
+   Site nào chưa xong bước 1–2 phải đặt TƯỜNG MINH `MQTT_ALLOW_PASSWORDLESS_REGISTERED=true` trong `.env`
+   TRƯỚC khi cập nhật server, rồi xoá dòng đó khi xong.
+4. Lỡ khoá một máy (gõ sai / mất mật khẩu): xoay lại mật khẩu và nhập lại; hoặc *Xoá mật khẩu* trên màn web
+   (chỉ cứu được khi cờ ở bước 3 còn `true`).
+
 ---
 
 ## �icing PHẦN 5: GỬI ALERT TỪ MÁY SẢN XUẤT

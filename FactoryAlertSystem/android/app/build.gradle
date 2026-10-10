@@ -84,8 +84,8 @@ android {
         // MB2/MB3/MB7/MB8/MB9 — doc 27 Đợt 6 (background FGS reliability, boot
         // auto-start, transport hardening, reproducible signed builds).
         // Keep in sync with src/services/updateService.ts CURRENT_VERSION(_CODE).
-        versionCode 16
-        versionName "1.0.16"
+        versionCode 17
+        versionName "1.0.17"
     }
     signingConfigs {
         debug {

@@ -24,6 +24,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import SettingItem, { SettingSection } from '../components/SettingItem';
 import HierarchyTreeSelector from '../components/HierarchyTreeSelector';
+import MqttDevicePasswordSetting from '../components/MqttDevicePasswordSetting';
 import {
   useSettingsStore,
   selectSettings,
@@ -1312,6 +1313,9 @@ const SettingsScreen: React.FC = () => {
               autoCorrect={false}
             />
           </View>
+
+          {/* doc 81 Đợt 5 G1 — device password for the BUILT-IN broker (secure storage, never shown back) */}
+          <MqttDevicePasswordSetting language={language} />
 
           {/* Subscription Mode Toggle – compact */}
           <View style={styles.inputContainer}>
