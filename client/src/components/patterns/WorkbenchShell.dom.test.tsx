@@ -885,6 +885,53 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
     expect(fitWorkbenchColumns(1600, 400, { ...L, targetPx: 999 }, null)).toEqual({ leftPx: 360, rightPx: 0, leftForcedCollapsed: false, rightForcedCollapsed: false });
   });
 
+  // doc 81 Đợt 5 H fix 1 (review M9) — panel phải bị GẬP VÌ THIẾU CHỖ (khung < ~960 px, cả ở viewport ≥ 1024) trong khi nó
+  // đang được yêu cầu hiện (`rightActive` — Copilot mở): trước đây Copilot "mở" trên panel 0 px. Nay (a) panel phải đang
+  // bật được ưu tiên — explorer gập TRƯỚC; (b) vẫn không đủ chỗ ⇒ `onRightActiveHidden()` (trang đóng Copilot).
+  it("H fix 1 — fitWorkbenchColumns preferRight: gập explorer TRƯỚC inspector; hết chỗ thì gập inspector (explorer lấy lại chỗ), rồi cả hai", () => {
+    const L = { minPx: 220, maxPx: 360, targetPx: 240 };
+    const R = { minPx: 300, maxPx: 480, targetPx: 340 };
+    expect(fitWorkbenchColumns(900, 400, L, R, { preferRight: true })).toEqual({ leftPx: 0, rightPx: 340, leftForcedCollapsed: true, rightForcedCollapsed: false });
+    // inspector vẫn không vừa ⇒ gập nó, explorer LẤY LẠI chỗ (như luật cũ)
+    expect(fitWorkbenchColumns(650, 400, L, R, { preferRight: true })).toEqual({ leftPx: 240, rightPx: 0, leftForcedCollapsed: false, rightForcedCollapsed: true });
+    expect(fitWorkbenchColumns(600, 400, L, R, { preferRight: true })).toEqual({ leftPx: 0, rightPx: 0, leftForcedCollapsed: true, rightForcedCollapsed: true });
+    expect(fitWorkbenchColumns(1600, 400, L, R, { preferRight: true })).toEqual({ leftPx: 240, rightPx: 340, leftForcedCollapsed: false, rightForcedCollapsed: false });
+  });
+
+  it("H fix 1 — rightActive + khung hẹp dần: 900 px ⇒ explorer gập, panel phải VẪN hiện (không báo ẩn); 650 px ⇒ panel phải gập + onRightActiveHidden MỘT lần", () => {
+    const g = growingGroup(1600);
+    const hidden = vi.fn();
+    try {
+      renderShell(px({ rightActive: true, onRightActiveHidden: hidden }));
+      expect(size("right")).toBeGreaterThan(0);
+      g.resize(900);
+      expect(size("left")).toBe(0);
+      expectPx("right", 900, 340);
+      expect(hidden).not.toHaveBeenCalled();
+      g.resize(650);
+      expect(size("right")).toBe(0);
+      expect(hidden).toHaveBeenCalledTimes(1);
+      g.resize(640);
+      expect(hidden).toHaveBeenCalledTimes(1); // vẫn gập — không báo lặp
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("H fix 1 — KHÔNG rightActive ⇒ như cũ: 900 px gập inspector, explorer giữ; không báo ẩn", () => {
+    const g = growingGroup(1600);
+    const hidden = vi.fn();
+    try {
+      renderShell(px({ onRightActiveHidden: hidden }));
+      g.resize(900);
+      expect(size("right")).toBe(0);
+      expect(size("left")).toBeGreaterThan(0);
+      expect(hidden).not.toHaveBeenCalled();
+    } finally {
+      g.restore();
+    }
+  });
+
   it("panel dưới đang GẬP (R-2-l) ⇒ khung đổi cỡ không mở nó ra", () => {
     const g = growingGroup(1336);
     try {

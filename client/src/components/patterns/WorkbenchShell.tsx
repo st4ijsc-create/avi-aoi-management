@@ -158,12 +158,15 @@ export interface WorkbenchColumnFit {
  *   2. thiếu chỗ ⇒ thu inspector về min, rồi explorer về min;
  *   3. vẫn thiếu ⇒ GẬP inspector (explorer lấy lại đích, rồi thu về min nếu cần);
  *   4. vẫn thiếu ⇒ gập explorer. MAIN không bao giờ bị ép dưới sàn để giữ panel phụ.
+ * doc 81 Đợt 5 H fix 1 (review M9) — `preferRight` (panel phải đang được yêu cầu hiện, vd Copilot mở): ở bước 3 gập EXPLORER
+ * trước (inspector lấy lại đích, rồi thu về min nếu cần); vẫn thiếu ⇒ gập inspector.
  */
 export function fitWorkbenchColumns(
   groupPx: number,
   mainMinPx: number,
   left: WorkbenchColumnSpec | null,
   right: WorkbenchColumnSpec | null,
+  opts: { preferRight?: boolean } = {},
 ): WorkbenchColumnFit {
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   const want = (c: WorkbenchColumnSpec | null) => (c && !c.collapsed ? clamp(c.targetPx, c.minPx, Math.max(c.minPx, c.maxPx)) : 0);
@@ -180,9 +183,16 @@ export function fitWorkbenchColumns(
   };
   shrink("R");
   shrink("L");
+  if (opts.preferRight && deficit() > 0 && L > 0 && R > 0) {
+    L = 0;
+    leftForcedCollapsed = true;
+    R = want(right);
+    shrink("R");
+  }
   if (deficit() > 0 && R > 0) {
     R = 0;
     rightForcedCollapsed = true;
+    leftForcedCollapsed = false; // explorer lấy lại chỗ (bước 4 quyết lại)
     L = want(left);
     shrink("L");
   }
@@ -419,6 +429,7 @@ export function WorkbenchShell({
           mainFloorPx,
           left ? { minPx: left.minPx ?? 240, maxPx: left.maxPx ?? 300, targetPx: pxOf(pick("left", storedH), left.defaultPx ?? 260), collapsed: leftUserCollapsed() } : null,
           right ? { minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, targetPx: pxOf(pick("right", storedH), right.defaultPx ?? 380), collapsed: rightCollapsed } : null,
+          { preferRight: rightActive },
         )
       : null;
   // Ghi lại SAU khi tính (lượt render sau dùng để phân biệt gập do người dùng / do thiếu chỗ). Cập nhật trong render
@@ -558,6 +569,17 @@ export function WorkbenchShell({
     prevNarrowTabRef.current = narrowTab;
     if (narrow && prev === "right" && narrowTab !== "right" && rightActiveRef.current) onRightActiveHiddenRef.current?.();
   }, [narrowTab, narrow]);
+
+  // doc 81 Đợt 5 H fix 1 (review M9) — màn RỘNG: panel phải đang được yêu cầu hiện (`rightActive`) mà bị GẬP VÌ THIẾU CHỖ
+  // (kể cả sau khi ưu tiên nó hơn explorer) ⇒ báo trang MỘT lần (đóng Copilot) — không để Copilot "mở" trên panel 0 px.
+  const rightForcedNow = !narrow && Boolean(fit?.rightForcedCollapsed);
+  const prevForcedActiveRef = React.useRef(false);
+  React.useEffect(() => {
+    const forcedActive = rightForcedNow && rightActive;
+    const was = prevForcedActiveRef.current;
+    prevForcedActiveRef.current = forcedActive;
+    if (forcedActive && !was) onRightActiveHiddenRef.current?.();
+  }, [rightForcedNow, rightActive]);
 
   const mainProps = { ...mainAria, [LAYOUT_MAIN]: mainName };
   const aiProps = right?.ai ? { [LAYOUT_AI]: "" } : {};

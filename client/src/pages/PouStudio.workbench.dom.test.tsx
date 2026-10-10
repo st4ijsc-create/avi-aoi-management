@@ -530,3 +530,45 @@ describe("H1 — gập panel phải khi Copilot mở", () => {
     }
   });
 });
+
+// doc 81 Đợt 5 H fix 1 (review M9) — khung làm việc HẸP (< ~960 px) dù viewport ≥ 1024: shell GẬP panel phải vì thiếu chỗ.
+// Copilot KHÔNG được "mở" trên panel 0 px: explorer gập trước để nhường chỗ; vẫn không đủ ⇒ Copilot đóng (nút AI báo đóng).
+describe("H fix 1 — Copilot khi shell gập panel phải vì thiếu chỗ", () => {
+  const withGroupWidth = (w: number) => {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    return vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-workbench-group")) return DOMRect.fromRect({ x: 0, y: 0, width: w, height: 800 });
+      return original.call(this);
+    });
+  };
+  const rightSize = () => Number((document.querySelector('[data-panel-id="right"]') as HTMLElement).getAttribute("data-panel-size"));
+
+  it("khung 600 px (không đủ cho inspector 320 + MAIN 400): bấm nút AI ⇒ Copilot KHÔNG ở trạng thái mở trên panel 0 px (nút AI báo đóng)", async () => {
+    const spy = withGroupWidth(600);
+    try {
+      seed();
+      renderPage({ aiButton: true });
+      const ai = screen.getByRole("button", { name: /^(Mở Trợ lý Lập trình|Open Programming Copilot)$/ });
+      fireEvent.click(ai);
+      await waitFor(() => expect(ai).toHaveAttribute("aria-expanded", "false"));
+      expect(rightSize()).toBe(0);
+      expect(statusBar().textContent).toContain("○");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("khung 760 px (đủ cho inspector khi explorer nhường chỗ): bấm nút AI ⇒ Copilot mở VÀ panel phải hiện (> 0)", async () => {
+    const spy = withGroupWidth(760);
+    try {
+      seed();
+      renderPage({ aiButton: true });
+      const ai = screen.getByRole("button", { name: /^(Mở Trợ lý Lập trình|Open Programming Copilot)$/ });
+      fireEvent.click(ai);
+      await waitFor(() => expect(rightSize()).toBeGreaterThan(0));
+      expect(ai).toHaveAttribute("aria-expanded", "true");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
