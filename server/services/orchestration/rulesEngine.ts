@@ -19,6 +19,7 @@
  *  - SPC critical: a 'critical' SPC violation → audit + notify + republish.
  */
 import { eventBus, EventTypes, type DomainEvent } from "../../_core/eventBus";
+import { trustedSafetyOriginOf, TRUSTED_ORIGIN_EVENT_TYPES } from "../safety/trustedSafetyOrigin";
 
 let enabled = false;
 const unsubscribers: Array<() => void> = [];
@@ -48,7 +49,7 @@ async function audit(action: string, metadata: Record<string, unknown>): Promise
   }
 }
 
-async function notifyConfigured(title: string, message: string): Promise<void> {
+async function notifyConfigured(title: string, message: string, opts: { safetyCritical?: boolean; dedupKey?: string; rateKey?: string } = {}): Promise<void> {
   const ids = (process.env.ORCH_NOTIFY_USER_IDS ?? "")
     .split(",")
     .map((s) => parseInt(s.trim(), 10))
@@ -57,7 +58,7 @@ async function notifyConfigured(title: string, message: string): Promise<void> {
   try {
     const { sendSystemNotification } = await import("../notificationService");
     for (const id of ids) {
-      await sendSystemNotification(id, { title, message, priority: "HIGH" });
+      await sendSystemNotification(id, { title, message, priority: "HIGH" }, opts);
     }
   } catch {
     /* notification best-effort */
@@ -109,13 +110,40 @@ function onAnomalyDetected(e: DomainEvent): void {
   eventBus.publish("orchestration.triggered", { rule: "anomaly", machine, kind: p.kind }, "orchestration");
 }
 
+/**
+ * doc 81 Đợt 5 task F fix 1 (R-5-f) + fix scan (R-5-h) — whether a safety event's notice is SAFETY-CRITICAL (bypasses the
+ * recipients' in-app opt-outs / quiet hours). The decision uses ONLY server-derived provenance: the event id must carry
+ * the trusted-origin mark that safetyAuditService.recordFromDeviceIngest sets for events created on a DEVICE-INGEST code
+ * path (trustedSafetyOrigin.ts — today: a polled real robot controller's e-stop transition), and the TYPE the server
+ * recorded for that id must be a physical type allowed for that origin (TRUSTED_ORIGIN_EVENT_TYPES). No payload field
+ * (eventType / detectedBy / handledBy / outcome / source) is trusted: safety.recordEvent, evaluateZones, readSafetyPlc,
+ * API and MQTT inputs can set those, so an event created by a router or a user action never bypasses, whatever it says.
+ * A near-miss never bypasses. Everything else is a NORMAL notice (still delivered; the recipient's preferences apply).
+ */
+export function isSafetyCriticalSafetyEvent(p: { id?: unknown; isNearMiss?: unknown }): boolean {
+  if (p.isNearMiss === true) return false;
+  const trusted = trustedSafetyOriginOf(p.id);
+  if (!trusted) return false;
+  return TRUSTED_ORIGIN_EVENT_TYPES[trusted.origin]?.has(trusted.eventType) === true;
+}
+
 function onSafetyEvent(e: DomainEvent): void {
-  const p = (e.payload ?? {}) as { eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number };
+  const p = (e.payload ?? {}) as { id?: number; eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number };
   const machine = String(p.robotId != null ? `robot:${p.robotId}` : p.lineId != null ? `line:${p.lineId}` : "unknown");
   const message = `Safety ${p.isNearMiss ? "near-miss" : "event"}: ${p.eventType ?? "?"} at ${machine}`;
   console.warn(`[Orchestration] ${message}`);
   void audit("orchestration.safety", { eventType: p.eventType, isNearMiss: p.isNearMiss, machine });
-  void notifyConfigured("Safety event", message);
+  // doc 81 Đợt 5 task F6 + fix 1/scan (R-5-f, R-5-h) — SAFETY-CRITICAL only for a server-trusted device-ingest event (see
+  // isSafetyCriticalSafetyEvent). The bypass dedup key is the OCCURRENCE (type, machine, safety_events.id): a re-delivery
+  // of the same event is not bypassed twice, while another type, another machine or a re-trip (a new row) never merges.
+  // The notice itself is ALWAYS sent (the throttle only downgrades a repeat to normal delivery).
+  // final wave P-F4 — rateKey (type, machine) WITHOUT the event id: a flapping e-stop (a new row per re-trip) bypasses the
+  // opt-outs at most once per SAFETY_CRITICAL_RATE_MS per recipient; the other re-trips are still delivered, as normal notices.
+  void notifyConfigured("Safety event", message, {
+    safetyCritical: isSafetyCriticalSafetyEvent(p),
+    dedupKey: `safety:${p.eventType ?? "?"}:${machine}:${typeof p.id === "number" ? p.id : "?"}`,
+    rateKey: `safety:${p.eventType ?? "?"}:${machine}`,
+  });
   eventBus.publish("orchestration.triggered", { rule: "safety", machine, eventType: p.eventType }, "orchestration");
 }
 

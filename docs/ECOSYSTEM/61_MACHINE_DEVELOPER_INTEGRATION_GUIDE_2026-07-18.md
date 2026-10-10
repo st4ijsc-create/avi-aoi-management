@@ -369,6 +369,8 @@ Cảm biến IoT / máy có OT tag gửi **dòng mẫu liên tục** (nhiệt/�
 | **`/api/v1/ingest/telemetry`** ⭐ | `Bearer` **hoặc** `X-API-Key` | `{ok, data:{accepted, received, machine}}` | **202** | mặc định (ESP32 dùng Bearer) |
 | `/api/ot/ingest` (gốc, high-throughput) | **chỉ** `X-API-Key`/`body.apiKey`/`machineCode` | `{ok, accepted, received, machine}` (không bọc `data`) | 200 | firehose OT có tier rate-limit riêng (300k/phút) |
 
+Cả hai endpoint áp **cùng** luật khoá ↔ thiết bị (§5.2a) và **cùng** mã lỗi (§5.2b) — chỉ khác lớp bọc `data`.
+
 > ⚠️ ESP32 gửi `Authorization: Bearer` **phải** dùng `/api/v1/ingest/telemetry` — bắn Bearer vào
 > `/api/ot/ingest` sẽ **401** (route đó không đọc Bearer).
 
@@ -379,28 +381,73 @@ Cảm biến IoT / máy có OT tag gửi **dòng mẫu liên tục** (nhiệt/�
 | `metric` | string | ✅ | tên tag chuẩn hóa, vd `"temperature"` (≤256, cắt nếu dài) |
 | `value` | number\|string\|bool\|null | — | bus tách vào numValue/textValue/boolValue |
 | `unit` | string | — | vd `"C"`, `"%"` |
-| `ts` | string (ISO) | — | vắng → server đóng dấu giờ nhận |
-| `deviceId` | string | — | **mã máy/cảm biến — server resolve `machineId` qua `machines.code`** |
-| `machineId` | int | — | nếu đã biết id cứng (bỏ qua bước resolve) |
+| `ts` | string (ISO 8601) | — | **BẮT BUỘC có múi giờ** `Z` hoặc `±hh:mm` (vd `2026-07-18T10:00:00+07:00`). Chuỗi **không** múi giờ ⇒ mẫu bị loại `ts_no_timezone`; quá **24 h** trong tương lai ⇒ `ts_too_far_future`. Vắng → server đóng dấu giờ nhận |
+| `deviceId` | string | — | xem §5.2a — khoá máy thường: **bỏ trống hoặc = mã máy của khoá**; khoá `IOT_GATEWAY`: mã một thiết bị **trong allowlist** của gateway |
+| `machineId` | int | — | cùng luật như `deviceId` (§5.2a) |
 | `protocol` | enum | — | `mqtt/opcua/modbus/s7/ethernet_ip/mtconnect/sparkplug/inspection/other`; giá trị lạ → `other` |
 | `quality` | enum | — | `good/bad/uncertain`; vắng/lạ → `good` |
 | `meta` | object | — | tùy ý |
 
 Body: `{ "samples": [ … ] }` **hoặc** mảng trần `[ … ]`; phải có **≥1 sample** (rỗng → 400 `bad_request`).
 
-> **Quan trọng để lên dashboard đúng máy**: đặt `deviceId` = mã máy trên MỖI sample. Nếu thiếu
-> `deviceId`/`machineId`, sample vẫn nhận (202) nhưng **không quy được về máy nào** (machineId null).
+#### 5.2a Khoá ↔ thiết bị (doc 81 Đợt 1B T8 + Đợt 1C T4 — đang LIVE; sửa tài liệu ở Đợt 5 G2)
+
+Với khoá gắn máy, server **không** quy máy theo `deviceId` qua `machines.code` — máy của mẫu do **khoá** quyết:
+
+- **Khoá `mk_` của một máy thường** (ESP32 có máy riêng, máy vít…): mọi mẫu thuộc **chính máy đó**. `deviceId`
+  bỏ trống hoặc **đúng bằng mã máy của khoá**; `machineId` bỏ trống hoặc đúng id máy đó. Lệch một mẫu ⇒
+  **403 `machine_mismatch` cho CẢ LÔ, không ghi dòng nào**. Mẫu hợp lệ được ghim `machineId` của khoá.
+- **Khoá của máy loại `IOT_GATEWAY`** (một bộ chuyển tiếp cho nhiều cảm biến): mỗi mẫu phải nêu `deviceId`
+  (hoặc `machineId`) của một thiết bị **trong allowlist của chính gateway đó** (*Cấu hình nhà máy → Máy kiểm tra →
+  "Thiết bị được phép"* trên dòng máy IOT_GATEWAY; bảng `gateway_device_allowlist`). Ngoài danh sách, thiếu cả hai
+  trường, hoặc **danh sách rỗng** ⇒ **403 `gateway_device_not_allowed` cho CẢ LÔ**. Gateway muốn ghi dữ liệu của
+  chính nó cũng phải có mặt trong danh sách.
+- Cảm biến chưa có máy trong hệ thống ⇒ tạo máy cho nó (khoá riêng) hoặc thêm nó vào allowlist của một gateway.
+  Đường cũ "gửi `deviceId` lạ, vẫn 202 với `machineId` null" **không còn** với khoá gắn máy.
+- Khoá **không** gắn máy (khoá tích hợp `ak_`, master key) không bị hai luật trên ràng buộc: bus vẫn quy máy theo
+  `deviceId` qua `machines.code` như trước (thiếu cả hai trường ⇒ mẫu không thuộc máy nào).
+
+#### 5.2b Mã HTTP
+
+Mã `error.code` theo phong bì `/api/v1` (`{ok:false, error:{code, message, details}}`); `/api/ot/ingest` trả cùng HTTP status
+với thân phẳng của nó.
+
+| HTTP | `error.code` | Nghĩa | Gửi lại? |
+|---|---|---|---|
+| **202** (`/api/ot/ingest`: 200) | — | mọi mẫu đã lưu | — |
+| **207** | `partial` | lưu một phần; `rejected[]` nêu lý do từng mẫu (`ts_no_timezone`, `ts_too_far_future`, `invalid_ts`, `invalid_value`, `db_error`…) | chỉ mẫu `db_error` |
+| **400** | `bad_request` | thân sai (không có `samples`, mảng rỗng) | sửa thân |
+| **400** | `all_rejected` | mọi mẫu bị loại (xem `rejected[]`) — không lưu gì | sửa dữ liệu |
+| **401** | `unauthorized` | thiếu/sai khoá; hoặc máy của khoá đã xoá/ngừng | — |
+| **403** | `forbidden` | khoá hợp lệ nhưng **thiếu scope `ingest:write`** (`details.required` / `details.granted`) | không — cấp scope |
+| **403** | `machine_mismatch` | khoá máy thường gửi cho máy khác | không — sửa `deviceId` |
+| **403** | `gateway_device_not_allowed` | khoá gateway gửi cho thiết bị ngoài allowlist (hoặc allowlist rỗng) | không — sửa allowlist |
+| **429** | — (thân `{"error":"OT ingest rate limit exceeded"}`) | vượt trần tần suất tầng ingest (theo khoá đã băm, `OT_INGEST_RATE_MAX`/phút); header **`Retry-After`** (giây) + `RateLimit-*` | có — SAU `Retry-After` giây |
+| **503** | `db_unavailable` | CSDL tạm không sẵn sàng | có |
 
 ### 5.3 Ví dụ ĐÃ KIỂM CHỨNG
 
 ```bash
+# (a) ESP32 dùng khoá mk_ của CHÍNH máy ESP32-ENV-01: deviceId = mã máy của khoá (hoặc bỏ trống)
 curl -X POST https://factory.local:5000/api/v1/ingest/telemetry \
   -H "Authorization: Bearer mk_..." -H "Content-Type: application/json" \
   -d '{"samples":[
         {"deviceId":"ESP32-ENV-01","metric":"temperature","value":31.4,"unit":"C","ts":"2026-07-18T10:00:00+07:00","quality":"good"},
-        {"deviceId":"ESP32-ENV-01","metric":"humidity","value":62.1,"unit":"%"}
+        {"deviceId":"ESP32-ENV-01","metric":"humidity","value":62.1,"unit":"%","ts":"2026-07-18T10:00:00+07:00"}
       ]}'
-# → HTTP 202  {"ok":true,"data":{"accepted":2,"received":2}}
+# → HTTP 202  {"ok":true,"data":{"accepted":2,"received":2,"machine":"ESP32-ENV-01"}}
+
+# (b) Gateway GW-LINE3 (loại IOT_GATEWAY) chuyển tiếp hai cảm biến có trong allowlist của nó
+curl -X POST https://factory.local:5000/api/v1/ingest/telemetry \
+  -H "X-API-Key: mk_...(khoá của GW-LINE3)" -H "Content-Type: application/json" \
+  -d '{"samples":[
+        {"deviceId":"ESP32-ENV-01","metric":"temperature","value":31.4,"unit":"C","ts":"2026-07-18T03:00:00Z"},
+        {"deviceId":"ESP32-ENV-02","metric":"temperature","value":29.8,"unit":"C","ts":"2026-07-18T03:00:00Z"}
+      ]}'
+# → HTTP 202; một deviceId ngoài allowlist ⇒ HTTP 403 gateway_device_not_allowed, KHÔNG mẫu nào được lưu
+
+# (c) SAI thường gặp — ts KHÔNG múi giờ: {"metric":"temperature","value":31.4,"ts":"2026-07-18T10:00:00"}
+# → mẫu bị loại rejected[i].reason = "ts_no_timezone" (HTTP 400 all_rejected, hoặc 207 nếu lô còn mẫu đúng)
 ```
 
 ### 5.4 Đọc lại để kiểm chứng đã ingest

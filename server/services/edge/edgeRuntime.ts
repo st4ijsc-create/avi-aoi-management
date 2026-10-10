@@ -215,6 +215,27 @@ export interface ExecuteAssignedResult {
   message?: string;
 }
 
+/**
+ * doc 81 Đợt 5 final wave F4 (final review M1) — the principal an assigned run is started AS on the edge: the account that
+ * started it centrally (`orchestration_runs.startedBy`), with its REAL role — so the engine resolves that account's real
+ * factory scope (and an admin keeps the admin bypass). No principal, an unknown or a disabled account ⇒ null (the run is
+ * NOT started: fail-closed). A lookup error throws (the caller's fail-safe path records a failure).
+ */
+async function startingPrincipal(startedBy: number | null | undefined): Promise<{ id: number; role: string } | null> {
+  if (typeof startedBy !== "number" || !Number.isInteger(startedBy) || startedBy <= 0) return null;
+  const [{ getDb }, { users }, { eq }, { DbUnavailableError }] = await Promise.all([
+    import("../../db/connection"),
+    import("../../../drizzle/schema"),
+    import("drizzle-orm"),
+    import("../../_core/dbErrors"),
+  ]);
+  const d = await getDb();
+  if (!d) throw new DbUnavailableError(); // the caller's fail-safe path records a failed run
+  const [u] = await d.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, startedBy)).limit(1);
+  if (!u || u.isActive === false || typeof u.role !== "string" || !u.role) return null;
+  return { id: u.id, role: u.role };
+}
+
 /** Minimal shape of an assigned run row the edge runtime needs. */
 export interface AssignedRun {
   id: number;
@@ -245,7 +266,15 @@ export async function executeAssignedRun(run: AssignedRun): Promise<ExecuteAssig
 
     let status: string | undefined;
     if (run.workflowRef && foeEnabled()) {
-      const user = { id: run.startedBy ?? 0, role: "edge", name: nodeCode() };
+      // final wave F4 — started AS the real starting principal (its real role ⇒ its real scope), never an anonymous "edge"
+      // role; none ⇒ not started (fail-closed), recorded as a failed run below.
+      const principal = await startingPrincipal(run.startedBy);
+      if (!principal) {
+        const message = `Run ${run.id} has no active starting principal — not started on the edge (its factory scope cannot be established).`;
+        await bufferPayload(minimalPayload(run.id, "failed", message)).catch(() => undefined);
+        return { ok: false, enabled: true, runId: run.id, status: "failed", buffered: true, message };
+      }
+      const user = { id: principal.id, role: principal.role, name: nodeCode() };
       const res = await startRun(run.workflowRef, (run.paramsJson ?? {}) as Record<string, unknown>, user);
       status = res.status;
     }

@@ -22,6 +22,8 @@ import { Router, type Request, type Response, json as jsonBody } from "express";
 import { nanoid } from "nanoid";
 import { API_SCOPES } from "./scopes";
 import { requireScope } from "./auth";
+import { requireDeclaredTenantScope, tenantCodeScopeOf } from "./apiKeyScope"; // doc 81 Đợt 5 task E2
+import type { FoeScope } from "../../services/orchestration/foe/foeScope";
 import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 import { buildV1OpenApiSpec } from "./openapi";
 import { emit } from "./webhookBridge";
@@ -73,6 +75,16 @@ async function loadMachine(id: number): Promise<MachineRow> {
   const m = await getMachineById(id);
   if (!m) throw new ApiHttpError(404, "not_found", `Machine ${id} not found.`);
   return m as unknown as MachineRow;
+}
+
+/**
+ * doc 81 Đợt 5 task E2 (item 26) — the factory scope an API key acts under in orchestration. Only after
+ * `requireDeclaredTenantScope()` (an undeclared key — dataScopeMode NULL — is refused 403 before this): `global` ⇒
+ * unrestricted (null); `factory` ⇒ that key's codes; anything else ⇒ an EMPTY scope (fail-closed, never "no filter").
+ */
+function orchestrationScopeOf(ts: NonNullable<Request["apiPrincipal"]>["tenantScope"] | undefined): FoeScope {
+  if (ts?.mode === "global") return null;
+  return { tenantScope: tenantCodeScopeOf(ts) ?? {} };
 }
 
 function resolveCapability(m: MachineRow): EquipmentCapability {
@@ -485,17 +497,20 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/workflows",
     requireScope(API_SCOPES.ORCHESTRATION_WRITE),
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2 — a key with no declared scope is refused (403)
     wrap(async (req, res) => {
       const { deployWorkflow } = await import("../../services/orchestration/foe/foeEngine");
       const def = (req.body ?? {}) as never;
       const principal = req.apiPrincipal?.name ?? "api-key";
-      const result = await deployWorkflow(def, { id: 0, role: "api", name: principal });
+      // doc 81 Đợt 5 task E2 — every target of the definition must be in the key's factory scope.
+      const result = await deployWorkflow(def, { id: 0, role: "api", name: principal }, { scope: orchestrationScopeOf(req.apiPrincipal?.tenantScope) });
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
       }
       if (!result.ok) {
         throw new ApiHttpError(400, "invalid_workflow", result.message ?? "Workflow validation failed.", {
           errors: result.errors ?? [],
+          ...(result.reason ? { reason: result.reason, stepIds: result.stepIds ?? [] } : {}),
         });
       }
       sendOk(res, { workflowId: result.workflowId, ref: result.ref, version: result.version }, 201);
@@ -506,6 +521,7 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/runs",
     requireScope(API_SCOPES.ORCHESTRATION_WRITE),
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const { startRun } = await import("../../services/orchestration/foe/foeEngine");
       const body = (req.body ?? {}) as { workflowRef?: string; params?: Record<string, unknown> };
@@ -517,7 +533,13 @@ export function createV1Router(): Router {
       // otherwise the run is owner-less and the engine refuses its OT/robot steps (FOE_GATE_REQUIRED(ownerUnknown)).
       const { apiKeyOwnerUserId } = await import("./apiKeyOwner");
       const ownerUserId = await apiKeyOwnerUserId(req.apiPrincipal);
-      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, { ownerUserId });
+      // doc 81 Đợt 5 task E1 (item 24, option C) — viaApi: the run is marked server-side as API-started; its OT/robot steps
+      // other than a STOP are never sent (FOE_GATE_REQUIRED(apiRun)), whoever approves its gates.
+      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, {
+        ownerUserId,
+        viaApi: true,
+        scope: orchestrationScopeOf(req.apiPrincipal?.tenantScope), // doc 81 Đợt 5 task E2 — a workflow outside the key's scope is "not found"
+      });
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
       }
@@ -536,6 +558,7 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/simulate",
     requireScope(API_SCOPES.ORCHESTRATION_READ),
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const body = (req.body ?? {}) as {
         workflow?: unknown;
@@ -564,7 +587,12 @@ export function createV1Router(): Router {
           .from(orchestrationWorkflows)
           .where(eq(orchestrationWorkflows.ref, body.workflowRef))
           .limit(1);
-        if (!wf) throw new ApiHttpError(404, "not_found", `Workflow "${body.workflowRef}" not found.`);
+        // doc 81 Đợt 5 task E2 — a stored workflow outside the key's scope ⇒ the SAME 404 as a missing ref.
+        const { definitionVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
+        const visible = await definitionVisibleTo(wf?.definitionJson as never, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+        if (!wf || !visible) {
+          throw new ApiHttpError(404, "not_found", `Workflow "${body.workflowRef}" not found.`);
+        }
         def = wf.definitionJson as never;
       } else {
         throw new ApiHttpError(400, "bad_request", "Provide either `workflow` or `workflowRef`.");
@@ -608,14 +636,17 @@ export function createV1Router(): Router {
   r.get(
     "/orchestration/runs/:id",
     requireScope(API_SCOPES.ORCHESTRATION_READ),
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) {
         throw new ApiHttpError(400, "bad_request", "Invalid run id.");
       }
-      const { getRun } = await import("../../services/orchestration/foe/foeEngine");
+      const { getRun, runVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
       const view = await getRun(id);
-      if (!view) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
+      // doc 81 Đợt 5 task E2 — out of the key's scope ⇒ the SAME 404 as a missing run.
+      const visible = await runVisibleTo({ workflowId: view?.run.workflowId ?? -1 }, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+      if (!view || !visible) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
       sendOk(res, {
         run: {
           id: view.run.id,
@@ -639,6 +670,7 @@ export function createV1Router(): Router {
   r.post(
     "/edge/sync",
     requireScope(API_SCOPES.EDGE_SYNC),
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2 fix (R-5-d) — an edge key must declare its factory scope
     wrap(async (req, res) => {
       const { syncRunResult } = await import("../../services/edge/edgeCoordinator");
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -657,7 +689,14 @@ export function createV1Router(): Router {
         finishedAt: (body.finishedAt as string | null) ?? null,
         steps: Array.isArray(body.steps) ? (body.steps as never[]) : [],
       };
-      const result = await syncRunResult(payload as never);
+      // doc 81 Đợt 5 task E2 fix (R-5-d) — a sync rewrites a run's steps / status: the run must be in the key's scope;
+      // outside it the run does not exist for the key (the SAME refusal as a missing run).
+      const { runIdVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
+      const { edgeRuntimeEnabled } = await import("../../services/edge/edgeCoordinator");
+      const inScope = await runIdVisibleTo(body.runId, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+      const result = inScope || !edgeRuntimeEnabled()
+        ? await syncRunResult(payload as never)
+        : { ok: false as const, enabled: true, message: `Run ${body.runId} not found.`, data: undefined };
       if (!result.enabled) {
         return sendError(res, 503, "edge_disabled", "Edge runtime is disabled (EDGE_RUNTIME_ENABLED).", { phase: "E4" });
       }

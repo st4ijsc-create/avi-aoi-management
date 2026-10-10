@@ -14,7 +14,7 @@
 //   - Chip header: tư thế engine / OT / độ phủ đọc `oversight.posture` — 4 trạng thái trung thực.
 // Chạy trên wouter THẬT với history của jsdom. "Server" giả là kho trong bộ nhớ: danh sách CHỈ đổi khi trang
 // gọi invalidate (như react-query).
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
@@ -743,5 +743,60 @@ describe("doc 81 Đợt 3 Task 4 — 'Giao cho' (sheet rule) + cột 'Người �
     render(<InterlockRuleManagement />);
     const l2 = await waitLayer("rule");
     expect(l2.querySelector("[data-assign-control]")).toBeNull();
+  });
+});
+
+// doc 81 Đợt 5 H2 (mục 17) — màn hẹp (< 1024 px, tab): chọn một hàng rule (hoặc ô ma trận) KHÔNG còn kéo người dùng sang
+// tab "Sự kiện" (trước: selectRule → openEventsPanel → WorkbenchShell hẹp ⇒ setNarrowTab("bottom"), mất danh sách + chi
+// tiết). Chỉ nút tường minh "Mở panel Sự kiện" (nút đếm + hành động toast) mới chuyển tab. Màn rộng giữ nguyên R-2-l.
+describe("H2 — màn hẹp: chọn hàng rule không đổi tab", () => {
+  let savedMatchMedia: typeof window.matchMedia | undefined;
+  beforeAll(async () => {
+    savedMatchMedia = window.matchMedia;
+    const m = await import("@/components/patterns/layoutKitTestMedia");
+    m.installMatchMedia();
+  });
+  afterEach(async () => {
+    (await import("@/components/patterns/layoutKitTestMedia")).presetNarrow(false);
+  });
+  afterAll(() => {
+    window.matchMedia = savedMatchMedia as typeof window.matchMedia;
+  });
+  const narrowTabs = () => within(screen.getByRole("tablist", { name: "Vùng làm việc" })).getAllByRole("tab");
+  const selectedTab = () => narrowTabs().find((x) => x.getAttribute("aria-selected") === "true")?.textContent;
+
+  it("chọn hàng / Enter trên hàng / ô ma trận ⇒ lọc theo rule nhưng VẪN ở tab danh sách; nút 'Mở panel Sự kiện' ⇒ sang tab Sự kiện", async () => {
+    (await import("@/components/patterns/layoutKitTestMedia")).presetNarrow(true);
+    render(<InterlockRuleManagement />);
+    expect(document.querySelector("[data-workbench][data-narrow]")).not.toBeNull();
+    const mainTab = selectedTab();
+    expect(mainTab).not.toBe("Sự kiện");
+    await userEvent.click(within(rowOf("rule-42")).getByText("rule-42"));
+    expect(params().get("rule")).toBe("42");
+    expect(selectedTab()).toBe(mainTab);
+    fireEvent.keyDown(rowOf("rule-41"), { key: "Enter" });
+    expect(params().get("rule")).toBe("41");
+    expect(selectedTab()).toBe(mainTab);
+    await userEvent.click(screen.getByTestId("events-open-button"));
+    expect(selectedTab()).toBe("Sự kiện");
+    expect(shownEvents()).toEqual(["11.1"]);
+    cleanup();
+    window.history.replaceState(null, "", "/interlock-rules?tab=matrix");
+    render(<InterlockRuleManagement />);
+    const mt = selectedTab();
+    await userEvent.click(within(mainEl()).getByRole("button", { name: "rule-43" }));
+    expect(params().get("rule")).toBe("43");
+    expect(selectedTab()).toBe(mt);
+  });
+
+  it("màn hẹp: hành động toast 'Mở panel Sự kiện' VẪN chuyển sang tab Sự kiện", async () => {
+    (await import("@/components/patterns/layoutKitTestMedia")).presetNarrow(true);
+    render(<InterlockRuleManagement />);
+    srv.events = [...srv.events, ev(9, 41, "open", "99.9")];
+    act(() => bump());
+    await waitFor(() => expect(toastSpy.warning).toHaveBeenCalled());
+    const opts = toastSpy.warning.mock.calls.at(-1)?.[1] as { action?: { label: string; onClick: () => void } };
+    act(() => opts.action?.onClick());
+    expect(selectedTab()).toBe("Sự kiện");
   });
 });

@@ -197,6 +197,12 @@ export default function PouStudio() {
   // sống). Mở Copilot (nút AI top bar / tab) ⇒ panel tự mở lại. Lựa chọn chỉ trong phiên.
   const [rightCollapsed, setRightCollapsed] = useState(false);
   useEffect(() => { if (copilotOpen) setRightCollapsed(false); }, [copilotOpen]);
+  // doc 81 Đợt 5 H1 (mục 15) — GẬP panel phải ⇒ ĐÓNG Copilot (không để Copilot "mở" trên panel 0 px khiến nút AI lần 1
+  // đóng thứ vô hình). Lõi Copilot vẫn mount (stream sống). Nút AI khi đang gập ⇒ mở Copilot ⇒ effect trên mở lại panel.
+  const toggleRightPanel = useCallback(() => {
+    if (!rightCollapsed) setCopilotOpen(false);
+    setRightCollapsed(!rightCollapsed);
+  }, [rightCollapsed, setCopilotOpen]);
 
   // Pure server-side preview + lint (no persistence).
   const transpileQ = trpc.programming.pouTranspilePreview.useQuery(
@@ -531,7 +537,7 @@ export default function PouStudio() {
         aria-pressed={rightCollapsed}
         aria-label={rightCollapsed ? t("pou.ws.showRight", "Show right panel") : t("pou.ws.hideRight", "Hide right panel")}
         title={rightCollapsed ? t("pou.ws.showRight", "Show right panel") : t("pou.ws.hideRight", "Hide right panel")}
-        onClick={() => setRightCollapsed((c) => !c)}
+        onClick={toggleRightPanel}
       >
         <PanelRight className="h-4 w-4" aria-hidden="true" />
       </Button>

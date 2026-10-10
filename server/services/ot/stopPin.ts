@@ -32,7 +32,7 @@ import { catTheoTranCot } from "../../db/catTheoTranCot";
 import { recordAuditEvent } from "../audit/controlAuditService";
 import { computeCrudContentHash } from "../auditTrailService";
 import { secPlatformEnabled } from "../security/policyGate";
-import { isCommissioned } from "./commissioningService";
+import { currentSignatureId, lockAdapterCommissioningTx } from "./commissioningService";
 import { adapterTargetCanonical, type AdapterTarget } from "./adapterTarget";
 import { lyDoGoStopPinKhiSuaTag } from "@shared/stopPinTagRule";
 
@@ -226,6 +226,8 @@ async function ghiAuditStopPinTx(
     reason: string;
     nguoiSua: NguoiSuaStopPin;
     commissioningRecheckRequired: boolean;
+    /** Đợt 5 F7 — the signature in force when the change was made (read under the per-adapter lock), or null. */
+    commissioningSignatureId: number | null;
     nguon: NguonGo;
   },
 ): Promise<void> {
@@ -237,6 +239,7 @@ async function ghiAuditStopPinTx(
     stopValue: e.sau ?? null,
     commissioningRecheckRequired: e.commissioningRecheckRequired,
   };
+  if (e.commissioningSignatureId != null) after.commissioningSignatureId = e.commissioningSignatureId;
   if (e.nguon !== "manual") after.autoClearedBy = e.nguon;
 
   await recordAuditEvent(tx, {
@@ -316,6 +319,10 @@ export async function datStopPin(input: {
       .where(and(eq(deviceTags.adapterId, adapter.id), eq(deviceTags.tagKey, input.tagKey)))
       .for("update");
     if (!tag) throw new StopPinLoi("tag_not_found", { adapterId: adapter.id, tagKey: input.tagKey });
+    // doc 81 Đợt 5 task F7 (item 31) — strictly ordered with a commissioning signature of this adapter (after the tag
+    // row lock, before reading the signature state; createRecord takes the same lock).
+    await lockAdapterCommissioningTx(tx, adapter.id);
+    const signatureId = await currentSignatureId(adapter.id, tx);
 
     let sau: unknown = null;
     if (input.stopValue !== null) {
@@ -336,11 +343,11 @@ export async function datStopPin(input: {
         tagId: tag.id, adapterId: tag.adapterId, tagKey: tag.tagKey, stopValue: truoc,
         stopPinnedBy: tag.stopPinnedBy ?? null, stopPinnedAt: tag.stopPinnedAt ?? null,
         changed: false, commissioningRecheckRequired: false,
-        adapterCommissioned: await isCommissioned(adapter.id, tx),
+        adapterCommissioned: signatureId != null,
       };
     }
 
-    const commissioningRecheckRequired = await isCommissioned(adapter.id, tx);
+    const commissioningRecheckRequired = signatureId != null;
     const pinnedBy = sau == null ? null : input.nguoiSua.id != null ? String(input.nguoiSua.id) : null;
     const pinnedAt = sau == null ? null : new Date();
     await tx
@@ -349,7 +356,8 @@ export async function datStopPin(input: {
       .where(eq(deviceTags.id, tag.id));
 
     await ghiAuditStopPinTx(tx, {
-      tag, truoc, sau, reason: input.reason, nguoiSua: input.nguoiSua, commissioningRecheckRequired, nguon: "manual",
+      tag, truoc, sau, reason: input.reason, nguoiSua: input.nguoiSua, commissioningRecheckRequired,
+      commissioningSignatureId: signatureId, nguon: "manual",
     });
 
     return {
@@ -379,8 +387,12 @@ export async function ghiAuditGoStopPinTx(
   tx: Tx,
   e: { tag: DongTag; nguon: Exclude<NguonGo, "manual">; nguoiSua: NguoiSuaStopPin; thaoTac: string },
 ): Promise<{ commissioningRecheckRequired: boolean }> {
-  const commissioningRecheckRequired = await isCommissioned(e.tag.adapterId, tx);
+  // doc 81 Đợt 5 task F7 — same per-adapter lock as createRecord (callers hold the tag row locks already).
+  await lockAdapterCommissioningTx(tx, e.tag.adapterId);
+  const signatureId = await currentSignatureId(e.tag.adapterId, tx);
+  const commissioningRecheckRequired = signatureId != null;
   await ghiAuditStopPinTx(tx, {
+    commissioningSignatureId: signatureId,
     tag: e.tag,
     truoc: e.tag.stopValue ?? null,
     sau: null,

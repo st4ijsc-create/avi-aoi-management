@@ -22,6 +22,19 @@ import {
 } from '../utils/constants';
 import { generateUUID, isValidAlertPayload, normalizeAlertPayload } from '../utils/helpers';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  MqttBrokerEndpoint,
+  StoredMqttDeviceCredential,
+  brokerEndpointLabel,
+  brokerEndpointOf,
+  clearMqttDevicePassword,
+  getMqttDeviceCredential,
+  getMqttDeviceCredentialForDisplay,
+  getMqttDeviceCredentialStatus,
+  MqttDeviceCredentialStatus,
+  sameBrokerEndpoint,
+  setMqttDevicePassword,
+} from './secureCredentialStore';
 
 // Import TCP socket for React Native
 // @ts-ignore - react-native-tcp-socket types may not be perfect
@@ -111,6 +124,10 @@ class MqttService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private deviceInfo: DeviceInfo | null = null;
   private deviceInfoPromise: Promise<void> | null = null;
+  // doc 81 Đợt 5 G1 — device MQTT password for the BUILT-IN broker + the endpoint it is PINNED to
+  // (R-5-a), read from the secure store right before every connect/testConnection. Never persisted here,
+  // never logged (neither the value nor its length).
+  private localBrokerCredential: StoredMqttDeviceCredential | null = null;
   
   // Circuit breaker for preventing infinite connection loops
   private lastConnectionAttempt: number = 0;
@@ -529,7 +546,8 @@ class MqttService {
    * Tạo MQTT client options - hỗ trợ nhiều broker types và protocols
    * 
    * Authentication modes:
-   * 1. Local Aedes broker: username = deviceId:deviceName:deviceModel (password optional)
+   * 1. Local Aedes broker: username = deviceId:deviceName:deviceModel + the device password from the
+   *    secure store when one is set (doc 81 Đợt 5 G1)
    * 2. External broker (HiveMQ, EMQX, etc.): standard username/password
    */
   private createClientOptions(): IClientOptions {
@@ -555,9 +573,34 @@ class MqttService {
       // 'factory-alert-app-001:FactoryAlertApp:Mobile' for ALL devices — causing the server
       // to see multiple devices as a single client.
       options.username = this.buildLocalBrokerUsername();
-      // Password is NOT required for local Aedes broker - don't send it
-      // Server only validates username format, not password
-      console.log('[MQTT] Using local broker auth format - username:', options.username);
+      // doc 81 Đợt 5 G1 — send the device password issued by the admin (`rotatePassword`, typed into
+      // Settings → "Device MQTT password", kept in the Android Keystore). With no stored password the
+      // CONNECT carries none (legacy passwordless registration — refused by the broker once
+      // MQTT_ALLOW_PASSWORDLESS_REGISTERED is false, the default from Đợt 5). This password is ONLY for
+      // the built-in broker: it is never sent to an external broker (branch below).
+      //
+      // R-5-a (G1 fix scan) — the password goes ONLY to the exact endpoint it was saved for. `this.config`
+      // here is the config being connected to (testConnection swaps in its override first), so an edited
+      // address/port/TLS/protocol or a "Test connection" pointed elsewhere never receives it.
+      const pinned = this.localBrokerCredential;
+      const target = brokerEndpointOf(this.config);
+      let pwState: 'none' | 'sent' | 'withheld' = 'none';
+      if (pinned) {
+        if (sameBrokerEndpoint(pinned.endpoint, target)) {
+          options.password = pinned.password;
+          pwState = 'sent';
+        } else {
+          pwState = 'withheld';
+        }
+      }
+      console.log(
+        '[MQTT] Using local broker auth format - username:',
+        options.username,
+        '| device password:',
+        pwState === 'withheld'
+          ? `withheld (pinned to ${brokerEndpointLabel(pinned!.endpoint)}, target ${target ? brokerEndpointLabel(target) : 'unset'})`
+          : pwState,
+      );
     } else {
       // External brokers (HiveMQ, EMQX, Mosquitto): standard username/password
       if (this.config.username) {
@@ -786,6 +829,48 @@ class MqttService {
   }
 
   /**
+   * doc 81 Đợt 5 G1 — refresh the cached built-in-broker password from the secure store.
+   * getMqttDevicePassword never throws (unavailable/unreadable ⇒ null ⇒ CONNECT without password).
+   */
+  private async loadLocalBrokerPassword(): Promise<void> {
+    this.localBrokerCredential = await getMqttDeviceCredential();
+  }
+
+  /** True when a (validly pinned) device MQTT password is stored in the secure store. */
+  public async hasLocalBrokerPassword(): Promise<boolean> {
+    return (await getMqttDeviceCredential()) !== null;
+  }
+
+  /** G fix 3 — state of the stored password for Settings (never the password itself). */
+  public async getLocalBrokerPasswordStatus(): Promise<MqttDeviceCredentialStatus> {
+    return getMqttDeviceCredentialStatus();
+  }
+
+  /**
+   * The endpoint the stored password is pinned to (for the UI) — never the password. final wave P-G2: an UNCOUNTED read
+   * (opening Settings never adds to the native 5-failure streak; only connect()'s reads count).
+   */
+  public async getLocalBrokerPasswordEndpoint(): Promise<MqttBrokerEndpoint | null> {
+    return (await getMqttDeviceCredentialForDisplay())?.endpoint ?? null;
+  }
+
+  /**
+   * Store the device MQTT password (Settings), PINNED to `endpoint` (default: the broker currently
+   * configured). Throws when the secure store is unavailable, no endpoint can be pinned or the write
+   * fails — the caller must then show an error, never "saved". Takes effect on the next connect().
+   */
+  public async setLocalBrokerPassword(password: string, endpoint?: MqttBrokerEndpoint | null): Promise<void> {
+    const pin = endpoint === undefined ? brokerEndpointOf(this.config) : endpoint;
+    this.localBrokerCredential = await setMqttDevicePassword(password, pin);
+  }
+
+  /** Remove the stored device MQTT password. Takes effect on the next connect(). */
+  public async clearLocalBrokerPassword(): Promise<void> {
+    await clearMqttDevicePassword();
+    this.localBrokerCredential = null;
+  }
+
+  /**
    * Check circuit breaker status
    */
   private isCircuitBreakerOpen(): boolean {
@@ -882,6 +967,8 @@ class MqttService {
 
     // IMPORTANT: Wait for device info to be ready first
     await this.ensureDeviceInfoReady();
+    // doc 81 Đợt 5 G1 — the current device password (may have been set/rotated since the last connect).
+    await this.loadLocalBrokerPassword();
     
     return new Promise((resolve, reject) => {
       // Clean up existing client WITHOUT resetting reconnect counters, circuit breaker, or health check.
@@ -2087,6 +2174,8 @@ class MqttService {
   public async testConnection(config?: Partial<MqttConfig>): Promise<boolean> {
     // Sử dụng config test hoặc config hiện tại
     const testConfig = config ? { ...this.config, ...config } : { ...this.config };
+    // doc 81 Đợt 5 G1 — test with the same device credential the real connect would send.
+    await this.loadLocalBrokerPassword();
     
     // NOTE: testConnection() intentionally BYPASSES circuit breaker for testing
     // This is why Settings connection test works even when circuit breaker is open

@@ -32,6 +32,17 @@ import {
   deleteNode,
   edgeRuntimeEnabled,
 } from "../services/edge/edgeCoordinator";
+// doc 81 Đợt 5 task E2 fix (ruling R-5-d) — the orchestration factory scope: a run outside the caller's scope does not
+// exist for them here either (assign / sync are cross-factory mutations; nodeStatus lists only visible runs).
+import { filterRunsVisibleTo, runIdVisibleTo } from "../services/orchestration/foe/foeEngine";
+import { resolveUserFoeScope } from "../services/orchestration/foe/foeScope";
+
+const scopeOf = (user: { id: number; role: string }) => resolveUserFoeScope({ id: user.id, role: String(user.role) });
+/** The coordinator's own answer for a missing run (disabled first, as it does). */
+const runNotFound = (runId: number) =>
+  edgeRuntimeEnabled()
+    ? { ok: false as const, enabled: true, message: `Run ${runId} not found.` }
+    : { ok: false as const, enabled: false, message: "Edge runtime is disabled (set EDGE_RUNTIME_ENABLED=true)." };
 
 const syncedStepSchema = z.object({
   stepId: z.string().min(1).max(128),
@@ -60,10 +71,10 @@ export const edgeRuntimeRouter = router({
   nodeStatus: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ code: z.string().min(1).max(128) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const node = await getNode(input.code);
       if (!node) return { node: null, runs: [] };
-      const runs = await listRunsForNode(node.id);
+      const runs = await filterRunsVisibleTo(await listRunsForNode(node.id), scopeOf(ctx.user)); // E2 fix (R-5-d)
       return { node, runs };
     }),
 
@@ -107,7 +118,9 @@ export const edgeRuntimeRouter = router({
   assignRun: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({ runId: z.number().int().positive(), edgeNodeId: z.number().int().positive() }))
-    .mutation(async ({ input }) => assignRun(input.runId, input.edgeNodeId)),
+    .mutation(async ({ input, ctx }) =>
+      (await runIdVisibleTo(input.runId, scopeOf(ctx.user))) ? assignRun(input.runId, input.edgeNodeId) : runNotFound(input.runId),
+    ),
 
   /**
    * Receive a run-result SYNC from an edge node (edge→central). Idempotent — replays
@@ -128,5 +141,7 @@ export const edgeRuntimeRouter = router({
         steps: z.array(syncedStepSchema).default([]),
       }),
     )
-    .mutation(async ({ input }) => syncRunResult(input)),
+    .mutation(async ({ input, ctx }) =>
+      (await runIdVisibleTo(input.runId, scopeOf(ctx.user))) ? syncRunResult(input) : runNotFound(input.runId),
+    ),
 });

@@ -6,6 +6,7 @@ import { robotTelemetry, robots } from "../../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import type { RuntimeRobot } from "./robotAdapter";
 import type { RobotState } from "./robotDriver";
+import { TRUSTED_ROBOT_TELEMETRY_VENDORS } from "../safety/trustedSafetyOrigin";
 
 // S1-b — per-robot last-observed e-stop flag, to record a safety_event only on the
 // TRANSITION into e-stop (not on every poll while it stays asserted). In-process,
@@ -247,8 +248,12 @@ async function runRobotSideEffects(robot: RuntimeRobot, state: RobotState, newSt
     // behaviour and is NOT a safety-rated stop — the software merely observed it.
     const wasEstop = lastEstop.get(robot.id) ?? false;
     if (state.estop && !wasEstop) {
+      // doc 81 Đợt 5 task F fix scan (R-5-h) — a polled REAL controller's e-stop transition is a device-ingest event
+      // (server-derived trusted origin ⇒ its notice may be safety-critical); sim / mock / bridge / MQTT vendors record
+      // a plain advisory event.
+      const trusted = TRUSTED_ROBOT_TELEMETRY_VENDORS.has(robot.vendor);
       void import("../safety/safetyAuditService")
-        .then((m) => m.record({
+        .then((m) => (trusted ? (i: Parameters<typeof m.record>[0]) => m.recordFromDeviceIngest("robot_telemetry", i) : m.record)({
           eventType: "estop",
           robotId: robot.id,
           detectedBy: "telemetry",

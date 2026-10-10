@@ -773,12 +773,18 @@ export function decideMqttSelfRegistration(
 
 /**
  * Fix round 1 (R19) — admit a REGISTERED, ACTIVE device that has NO stored credential on its
- * username alone? DEFAULT TRUE (compatibility: no provisioning path sets MQTT passwords yet).
- * Only an explicit false/0/off disables it (same style as MQTT_REQUIRE_PASSWORD).
+ * username alone?
+ *
+ * doc 81 Đợt 5 task G1 (items 4+9) — DEFAULT FALSE (fail-closed). The provisioning path now exists
+ * end to end: admin `mqttClient.rotatePassword` shows the password once, and FactoryAlertSystem ≥ 1.0.17
+ * keeps it in the Android Keystore (Settings → "Device MQTT password") and sends it on CONNECT. Only an
+ * explicit true/1/on re-admits passwordless registered devices — a TRANSITION setting for sites that have
+ * not finished the rollout (1. update every tablet app, 2. issue each device a password, 3. drop the
+ * override). Anything else (unset, typo) keeps them out. Devices WITH a stored credential are unaffected.
  */
 export function mqttAllowPasswordlessRegistered(env: NodeJS.ProcessEnv = process.env): boolean {
   const v = String(env.MQTT_ALLOW_PASSWORDLESS_REGISTERED ?? '').trim().toLowerCase();
-  return !(v === 'false' || v === '0' || v === 'off');
+  return v === 'true' || v === '1' || v === 'on';
 }
 
 /**
@@ -813,8 +819,8 @@ function warnPasswordlessOnce(deviceId: string): void {
   }
   console.warn(
     `[MQTT] Admitted passwordless registered device ${logSafe(deviceId)} on username only — ` +
-      'provision it with an MQTT password (mqtt_clients.passwordHash); set ' +
-      'MQTT_ALLOW_PASSWORDLESS_REGISTERED=false to stop admitting such devices',
+      'provision it with an MQTT password (mqtt_clients.passwordHash), then remove the transition ' +
+      'override MQTT_ALLOW_PASSWORDLESS_REGISTERED=true to stop admitting such devices',
   );
 }
 
@@ -2140,7 +2146,8 @@ function setupEventHandlers() {
 
         // Fix round 1 (R19) — a REGISTERED, ACTIVE device with NO stored credential is proven
         // by its (guessable) username alone. Admitted only while MQTT_ALLOW_PASSWORDLESS_REGISTERED
-        // (default true) AND the topic ACL can confine it; otherwise CONNACK 4.
+        // (default FALSE since doc 81 Đợt 5 G1 — explicit transition opt-in) AND the topic ACL can
+        // confine it; otherwise CONNACK 4.
         const passwordless = mqttClient.isActive && !mqttClient.passwordHash && !mqttClient.password;
         if (passwordless) {
           const pl = decidePasswordlessRegistered();

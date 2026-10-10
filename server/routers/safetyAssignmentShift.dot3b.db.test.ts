@@ -16,9 +16,18 @@
  * ★ G43: ô bị chặn khẳng định appCode của ĐÚNG cổng (ENTITY_NOT_FOUND / INVALID_VALUE), không phải PERMISSION_DENIED.
  * ★ Bảng dùng chung với tệp chạy song song ⇒ mọi khẳng định chỉ trên hàng CỦA RIÊNG lượt này (ca/người vận hành mới tạo).
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import postgres from "postgres";
 import { resolvePermissionModule } from "@shared/permissions";
+
+// doc 81 Đợt 5 G6 (item 23) — tệp này KHÔNG kiểm thử kiểm toán; middleware kiểm toán mọi mutation (server/_core/trpc.ts)
+// ghi `audit_logs` (WORM — không xoá được ở afterAll) cho mỗi lần gọi router ⇒ ~95 hàng rác mỗi lượt. Cờ được đọc MỘT lần
+// lúc nạp trpc.ts ⇒ phải đặt TRƯỚC mọi import (vi.hoisted); khôi phục ở afterAll. Ô §Z cuối tệp đo đúng con số này.
+const savedAuditAll = vi.hoisted(() => {
+  const v = process.env.AUDIT_ALL_MUTATIONS;
+  process.env.AUDIT_ALL_MUTATIONS = "false";
+  return v;
+});
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `D3B1-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
@@ -36,6 +45,8 @@ const OP_POOL_SIZE = 80;
 
 let sql: ReturnType<typeof postgres>;
 const savedWorkforce = process.env.WORKFORCE_ENABLED;
+/** doc 81 Đợt 5 G6 — audit_logs.id trước lượt chạy; ô cuối tệp đếm hàng `d3b1-*` mới sinh SAU mốc này (phải = 0). */
+let auditLogsStartId = 0;
 
 interface Fx {
   facIn: number;
@@ -112,6 +123,7 @@ async function seedAssignment(
 describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca phía server (CSDL THẬT _test)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    auditLogsStartId = ((await sql`SELECT COALESCE(MAX(id), 0)::int AS m FROM audit_logs`) as unknown as Array<{ m: number }>)[0].m;
     const facInCode = `${DAU}-IN`;
     const facIn = await one(sql`INSERT INTO factories (code, name) VALUES (${facInCode}, ${`${DAU} trong`}) RETURNING id`);
     const facOut = await one(sql`INSERT INTO factories (code, name) VALUES (${`${DAU}-OUT`}, ${`${DAU} ngoai`}) RETURNING id`);
@@ -174,6 +186,8 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
   afterAll(async () => {
     if (savedWorkforce === undefined) delete process.env.WORKFORCE_ENABLED;
     else process.env.WORKFORCE_ENABLED = savedWorkforce;
+    if (savedAuditAll === undefined) delete process.env.AUDIT_ALL_MUTATIONS;
+    else process.env.AUDIT_ALL_MUTATIONS = savedAuditAll;
     if (!sql) return;
     if (fx) {
       const uids = [fx.userScoped, fx.userEmpty, fx.userMulti, ...OP_POOL, fx.opOut, fx.opInactive].filter(Boolean);
@@ -463,6 +477,41 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       expect(tzOf((await (await asEmpty()).assignableShifts({})) as Row[], fx.shiftGlobal)).toBeNull();
       const multi = (await (await asMulti()).assignableShifts({})) as Row[];
       expect([tzOf(multi, fx.shiftIn), tzOf(multi, fx.shiftOut), tzOf(multi, fx.shiftGlobal)]).toEqual(["Europe/Berlin", "America/New_York", null]);
+    });
+
+    // doc 81 Đợt 5 H4 (mục 22) — chưa chọn chuyền/trạm và phạm vi KHÔNG phải đúng một nhà máy: nếu MỌI nhà máy đang hoạt
+    // động trong phạm vi (admin = mọi nhà máy đang hoạt động) cùng MỘT múi giờ HỢP LỆ ⇒ ca toàn hệ thống dùng múi đó; khác
+    // nhau / có nhà máy không múi giờ / múi hỏng ⇒ null như cũ (client dùng giờ máy và nói ra).
+    // ORACLE độc lập: SQL thô đếm múi giờ phân biệt của nhà máy đang hoạt động (`_test` dùng chung — tệp khác có thể thêm
+    // nhà máy; câu kỳ vọng đi theo oracle, và oracle phải đồng nhất thì ô dương mới được coi là đã chạy).
+    it("H4 admin chưa chọn chuyền: MỌI nhà máy đang hoạt động cùng MỘT múi giờ hợp lệ ⇒ ca toàn hệ thống dùng nó; một nhà máy lệch ⇒ null", async () => {
+      await setTz(fx.facIn, "Asia/Ho_Chi_Minh");
+      await setTz(fx.facOut, "Asia/Ho_Chi_Minh");
+      const distinct = (await sql`SELECT DISTINCT timezone FROM factories WHERE "isActive" = true`) as unknown as Array<{ timezone: string | null }>;
+      expect(distinct, "oracle: _test phải đồng nhất múi giờ để ô dương có nghĩa").toEqual([{ timezone: "Asia/Ho_Chi_Minh" }]);
+      const r = (await (await asAdmin()).assignableShifts({})) as Row[];
+      expect([tzOf(r, fx.shiftIn), tzOf(r, fx.shiftOut), tzOf(r, fx.shiftGlobal)]).toEqual(["Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh", "Asia/Ho_Chi_Minh"]);
+      await setTz(fx.facOut, "America/New_York");
+      const r2 = (await (await asAdmin()).assignableShifts({})) as Row[];
+      expect(tzOf(r2, fx.shiftGlobal)).toBeNull();
+      await setTz(fx.facOut, null);
+      const r3 = (await (await asAdmin()).assignableShifts({})) as Row[];
+      expect(tzOf(r3, fx.shiftGlobal)).toBeNull();
+    });
+
+    it("H4 người NHIỀU nhà máy chưa chọn chuyền: các nhà máy trong phạm vi cùng múi hợp lệ ⇒ dùng; lệch / hỏng ⇒ null", async () => {
+      await setTz(fx.facIn, "Europe/Berlin");
+      await setTz(fx.facOut, "Europe/Berlin");
+      const multi = (await (await asMulti()).assignableShifts({})) as Row[];
+      expect([tzOf(multi, fx.shiftIn), tzOf(multi, fx.shiftOut), tzOf(multi, fx.shiftGlobal)]).toEqual(["Europe/Berlin", "Europe/Berlin", "Europe/Berlin"]);
+      await setTz(fx.facIn, "Mars/Olympus_Mons");
+      await setTz(fx.facOut, "Mars/Olympus_Mons");
+      expect(tzOf((await (await asMulti()).assignableShifts({})) as Row[], fx.shiftGlobal)).toBeNull();
+      await setTz(fx.facIn, "Europe/Berlin");
+      await setTz(fx.facOut, "America/New_York");
+      expect(tzOf((await (await asMulti()).assignableShifts({})) as Row[], fx.shiftGlobal)).toBeNull();
+      // phạm vi rỗng vẫn null (không có nhà máy nào để đồng nhất)
+      expect(tzOf((await (await asEmpty()).assignableShifts({})) as Row[], fx.shiftGlobal)).toBeNull();
     });
 
     it("múi giờ NULL hoặc HỎNG ở nhà máy ⇒ null (client rơi về giờ máy và nói ra)", async () => {
@@ -779,6 +828,19 @@ describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca p
       const fac = async (id: number) => ((await sql`SELECT "factoryId" FROM operator_assignments WHERE id = ${id}`) as unknown as Array<{ factoryId: number | null }>)[0].factoryId;
       expect(await fac(r1.assignment!.id)).toBe(fx.facIn);
       expect(await fac(r2.assignment!.id)).toBeNull();
+    });
+  });
+
+  // doc 81 Đợt 5 G6 (item 23) — đo ĐẦU RA của chính tệp: lượt chạy này không để lại hàng `d3b1-*` nào trong `audit_logs`
+  // (WORM — avi_app không DELETE được, nên chỉ có thể KHÔNG GHI). Nguồn duy nhất trước đây: middleware kiểm toán mọi
+  // mutation (trpc.ts, `AUDIT_ALL_MUTATIONS` đọc MỘT lần lúc nạp) — tệp này không kiểm thử kiểm toán ⇒ tắt nó ở đầu tệp.
+  // Ghi của middleware là fire-and-forget ⇒ chờ một nhịp có trần trước khi đếm.
+  describe("§Z — không để lại hàng audit_logs (G6)", () => {
+    it("0 hàng audit_logs `d3b1-*` mới sau cả tệp", async () => {
+      await new Promise((r) => setTimeout(r, 750));
+      const [{ n }] = (await sql`
+        SELECT count(*)::int AS n FROM audit_logs WHERE id > ${auditLogsStartId} AND "userName" ILIKE 'd3b1-%'`) as unknown as Array<{ n: number }>;
+      expect(n).toBe(0);
     });
   });
 });

@@ -6,10 +6,10 @@
  * file was run against the pre-B1 code (vda5050Adapter.ts + robotCommandDispatcher.ts of 0d3a8b316~1) — see the
  * report: every STOP / instantActions row is identical before and after B1; only `sendOrder` changed (2 orders ⇒ 1).
  *
- * Pre-existing open item (NOT caused by B1): a MOTION instantActions message (e.g. stopPause) dispatched through the real
- * `vda5050` driver fails — the driver's runJob only builds ORDERS ("job has no usable nodes/x,y"), and the adapter only
- * publishes a motion message when the dispatcher reports 'done'. Before B1 it failed identically (sendInstantActions was
- * not touched by B1). Pinned below so a future fix is a visible change.
+ * Pre-existing open item (NOT caused by B1), CLOSED in Đợt 5 task F1 (item 27): a MOTION instantActions message (e.g.
+ * stopPause) dispatched through the real `vda5050` driver used to fail ("job has no usable nodes/x,y") — the driver's
+ * runJob only built ORDERS. The driver now has an instantActions branch and the adapter's own publish is for a STOP
+ * only, so a motion message reaches the broker exactly ONCE (pinned below, flipped from "0 messages, failed").
  * Oracle: a separate mqtt.js client subscribed to `#` counts messages per topic.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
@@ -123,13 +123,30 @@ describe("B1 non-regression — what reaches the broker (real driver, real dispa
     expect(seen).toHaveLength(0);
   });
 
-  it("PRE-EXISTING open item: MOTION instantActions (stopPause) through the real driver fails — 0 messages (same before B1)", async () => {
+  // doc 81 Đợt 5 task F1 (item 27) — was pinned as "fails: no usable nodes, 0 messages". The driver now has an
+  // instantActions branch; the adapter no longer publishes a motion a second time (only a STOP keeps that channel).
+  it("MOTION instantActions (stopPause) through the real driver: exactly ONE instantActions, 0 orders (Đợt 5 F1)", async () => {
     const r = await adapter.sendInstantActions({ actions: [act("stopPause")], ...manual });
-    expect(r.status).toBe("failed");
-    expect(r.published).toBe(false);
-    expect(String(r.error)).toMatch(/no usable nodes/);
-    await settle(300);
-    expect(seen).toHaveLength(0);
+    expect(r).toMatchObject({ status: "done", published: true });
+    await settle(400);
+    expect([count("instantActions"), count("order")]).toEqual([1, 0]);
+    const p = seen[0]!.payload;
+    expect(p.actions.map((a: any) => a.actionType)).toEqual(["stopPause"]);
+    expect([p.manufacturer, p.serialNumber]).toEqual([MF, SN]);
+  });
+
+  it("MOTION instantActions: a driver that reports 'done' WITHOUT published ⇒ adapter publishes nothing, published=false (Đợt 5 F1)", async () => {
+    const real = H.driver;
+    H.driver = { vendor: "vda5050", isConnected: () => true, runJob: async () => ({ ok: true, status: "done" }) };
+    try {
+      const r = await adapter.sendInstantActions({ actions: [act("stopPause")], ...manual });
+      expect(r.status).toBe("done");
+      expect(r.published).toBe(false);
+      await settle(300);
+      expect(seen).toHaveLength(0);
+    } finally {
+      H.driver = real;
+    }
   });
 
   it("sendOrder: exactly ONE order (before B1: two) — the only behaviour B1 changed", async () => {
@@ -137,5 +154,40 @@ describe("B1 non-regression — what reaches the broker (real driver, real dispa
     expect(r.status).toBe("done");
     await settle(400);
     expect([count("order"), count("instantActions")]).toEqual([1, 0]);
+  });
+});
+
+describe("Đợt 5 F1 — Vda5050RobotDriver.runJob instantActions branch (driver alone)", () => {
+  const msgOf = (over: Record<string, unknown>) => ({
+    headerId: 7,
+    timestamp: new Date().toISOString(),
+    version: "2.0.0",
+    manufacturer: "EVIL",
+    serialNumber: "OTHER",
+    actions: [act("stopPause")],
+    ...over,
+  });
+
+  it("publishes the bound message with the driver's OWN manufacturer/serialNumber (never the caller's)", async () => {
+    const r = await drv.runJob({ jobType: "custom", params: { vda5050: "instantActions", message: msgOf({}) } });
+    expect(r).toMatchObject({ ok: true, status: "done", detail: { published: true, instantActions: ["stopPause"] } });
+    await settle(300);
+    expect([count("instantActions"), count("order")]).toEqual([1, 0]);
+    expect(seen.some((m) => m.topic.includes("EVIL") || m.topic.includes("OTHER"))).toBe(false);
+    expect([seen[0]!.payload.manufacturer, seen[0]!.payload.serialNumber]).toEqual([MF, SN]);
+  });
+
+  it.each([
+    ["no message", { vda5050: "instantActions", x: 1, y: 2 }],
+    ["message without actions", { vda5050: "instantActions", message: msgOf({ actions: undefined }), x: 1, y: 2 }],
+    ["empty actions", { vda5050: "instantActions", message: msgOf({ actions: [] }), x: 1, y: 2 }],
+    ["action without actionType", { vda5050: "instantActions", message: msgOf({ actions: [{ actionId: "a" }] }), x: 1, y: 2 }],
+    ["message carries an order", { vda5050: "instantActions", message: msgOf({ actions: [] }), order: { orderId: "o", nodes: [], edges: [] } }],
+  ])("malformed instantActions (%s) ⇒ failed, 0 messages, NEVER falls through to the order path", async (_n, params) => {
+    const r = await drv.runJob({ jobType: "custom", params: params as Record<string, unknown> });
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe("failed");
+    await settle(250);
+    expect(seen).toHaveLength(0);
   });
 });

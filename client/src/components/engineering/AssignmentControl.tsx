@@ -4,8 +4,8 @@
  *
  * - Một nguồn: `trpc.engineering.assignments({entityType})` (phân công đang hiệu lực) — `useAssignments` trả map id → hàng
  *   cho cả cột danh sách lẫn bộ chọn trong sheet chi tiết (react-query gộp lượt gọi trùng khoá).
- * - Bộ chọn = `EntityPicker` (DS F1c) trên roster `engineering.assignableUsers` (người ĐANG hoạt động XEM được trang đích —
- *   server lọc). Chọn ⇒ `engineering.assign` (kèm `expectedAssigneeUserId` = người đang thấy — CAS); ✕ ⇒ `unassign`.
+ * - Bộ chọn = `EntityPicker` (DS F1c) trên roster `engineering.assignableUsers` (người ĐANG hoạt động XEM được trang đích,
+ *   CÙNG nhà máy với mục — doc 81 Đợt 5 H5 — server lọc). Chọn ⇒ `engineering.assign` (kèm `expectedAssigneeUserId` = người đang thấy — CAS); ✕ ⇒ `unassign`.
  * - Ai không có quyền giao (`canAssign` = cổng sửa/duyệt của trang, cùng `ASSIGNABLE[type].assignPerm`) chỉ thấy tên.
  * - ⚠ ĐƯỢC GIAO ≠ ĐƯỢC DUYỆT: thành phần này không đụng nút duyệt nào; nút duyệt của mỗi trang giữ cổng cũ.
  */
@@ -120,8 +120,9 @@ export function AssignmentControl({
   // đang được giao luôn được hỏi kèm (`selectedId`), `truncated` ⇒ dòng "gõ để thu hẹp". Giữ danh sách trước trong lúc tải
   // khoá mới (cùng bộ chọn, cùng loại mục) để popover không nháy "Đang tải".
   const [search, setSearch] = useState("");
+  // doc 81 Đợt 5 H5 — gửi kèm MỤC: server chỉ trả người cùng nhà máy với mục (mục không có nhà máy ⇒ với người giao).
   const roster = trpc.engineering.assignableUsers.useQuery(
-    { entityType, search: search || undefined, selectedId: assignment?.assigneeUserId },
+    { entityType, entityId, search: search || undefined, selectedId: assignment?.assigneeUserId },
     { enabled: canAssign && !twoFaBlocked, retry: false, staleTime: 60_000, placeholderData: (prev) => prev },
   );
   const refresh = () => {

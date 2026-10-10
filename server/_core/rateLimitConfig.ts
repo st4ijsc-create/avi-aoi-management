@@ -38,6 +38,7 @@ import { createHash } from "crypto";
 import type { NextFunction, Request, Response } from "express";
 import Redis from "ioredis";
 import { COOKIE_NAME } from "@shared/const";
+import { duongDinhTuyen, duongDinhTuyenGoc, duongKhopChinhXac } from "./duongDinhTuyen";
 
 const envInt = (name: string, fallback: number): number => {
   const raw = process.env[name];
@@ -86,10 +87,20 @@ export const OT_INGEST_RATE_LIMIT = {
 // Xác thực vẫn do `requireScope` của router v1 (khoá thiếu/sai ⇒ 401 trước mọi truy cập ghi).
 export const OT_INGEST_PATHS = ["/api/ot/ingest", "/api/v1/ingest"] as const;
 
-/** True when a request targets the high-throughput OT ingest tier (query-string safe). */
+/**
+ * doc 81 Đợt 5 G fix 1 (ruling R-5-b) — đường để PHÂN LOẠI tầng/bucket: bỏ query, hạ chữ thường. Express định tuyến
+ * không phân biệt hoa/thường (`/API/ot/ingest` tới đúng route `/api/ot/ingest`), nên so trên đường gốc từng cho
+ * biến thể chữ hoa thoát phân loại: bucket ingest khoá theo Bearer ngẫu nhiên (route đó không đọc Bearer ⇒ né trần),
+ * bỏ qua credentialConflictGuard, và `/api/machine/Claim` (bootstrap, đích dò mật mã) ăn tầng 60k/phút.
+ */
+export function duongPhanLoai(req: Request): string {
+  // G fix 2 (re-review N1) — CÙNG helper với originCheck: đường Express thật sự định tuyến (absolute-form, `#` đều quy về).
+  return duongDinhTuyen(req);
+}
+
+/** True when a request targets the high-throughput OT ingest tier (query-string safe, case-insensitive). */
 export function isOtIngestRequest(req: Request): boolean {
-  const raw = req.originalUrl || req.url || "";
-  const p = raw.split("?", 1)[0];
+  const p = duongPhanLoai(req);
   return OT_INGEST_PATHS.some((base) => p === base || p.startsWith(base + "/"));
 }
 
@@ -156,7 +167,8 @@ export const MACHINE_INGEST_TRPC_PROCEDURES: ReadonlySet<string> = new Set([
 /** Procedure names in a tRPC URL, or null when the path is not tRPC. */
 function trpcProcedures(pathname: string): string[] | null {
   const base = "/api/trpc/";
-  if (!pathname.startsWith(base)) return null;
+  // R-5-b: tiền tố so không phân biệt hoa/thường (như Express); TÊN thủ tục giữ nguyên (tRPC tra chính xác).
+  if (!pathname.toLowerCase().startsWith(base)) return null;
   const seg = pathname.slice(base.length);
   if (!seg) return null;
   // httpBatchLink packs a batch as comma-separated procedure names.
@@ -174,10 +186,10 @@ function trpcProcedures(pathname: string): string[] | null {
 
 /** The REST half of the machine ingest tier: `/api/machine/*` minus the bootstrap paths. */
 export function isMachineRestIngestRequest(req: Request): boolean {
-  const raw = req.originalUrl || req.url || "";
-  const p = raw.split("?", 1)[0];
+  const p = duongPhanLoai(req);
   if (p === MACHINE_REST_PREFIX || p.startsWith(MACHINE_REST_PREFIX + "/")) {
-    return !MACHINE_BOOTSTRAP_PATHS.includes(p);
+    // R-5-b: `/api/machine/claim/` tới CÙNG handler (strict:false) ⇒ bỏ MỘT dấu `/` cuối trước khi so danh sách bootstrap.
+    return !MACHINE_BOOTSTRAP_PATHS.includes(duongKhopChinhXac(p));
   }
   return false;
 }
@@ -188,8 +200,7 @@ export function isMachineRestIngestRequest(req: Request): boolean {
  * `X-API-Key` → body `apiKey` → body `machineCode` / `X-Machine-Code`, and NEVER reads Bearer.
  */
 export function isLegacyOtIngestRequest(req: Request): boolean {
-  const raw = req.originalUrl || req.url || "";
-  const p = raw.split("?", 1)[0];
+  const p = duongPhanLoai(req);
   return p === "/api/ot/ingest" || p.startsWith("/api/ot/ingest/");
 }
 
@@ -201,10 +212,8 @@ export function isLegacyOtIngestRequest(req: Request): boolean {
  */
 export function isMachineIngestRequest(req: Request): boolean {
   if (isMachineRestIngestRequest(req)) return true;
-  const raw = req.originalUrl || req.url || "";
-  const p = raw.split("?", 1)[0];
-
-  const procs = trpcProcedures(p);
+  // N1: đường định tuyến (giữ hoa/thường — tRPC tra tên thủ tục chính xác; tiền tố so không phân biệt trong trpcProcedures).
+  const procs = trpcProcedures(duongDinhTuyenGoc(req));
   if (procs && procs.length > 0) {
     return procs.every((name) => MACHINE_INGEST_TRPC_PROCEDURES.has(name));
   }
@@ -494,8 +503,7 @@ export function credentialConflictGuard(req: Request, res: Response, next: NextF
   if (distinct > 1) {
     const message =
       "Request carries more than one different credential (Authorization Bearer / X-API-Key / body apiKey) — send exactly one.";
-    const raw = req.originalUrl || req.url || "";
-    if (raw.startsWith("/api/v1/")) {
+    if (duongPhanLoai(req).startsWith("/api/v1/")) {
       // /api/v1 envelope {ok:false, error:{code,message}} — the SDKs read error.code.
       res.status(400).json({ ok: false, error: { code: "conflicting_credentials", message } });
     } else {

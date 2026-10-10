@@ -392,3 +392,25 @@ Bảng nhân lực rời tab `?tab=workforce` của Safety & Workforce sang tran
 - **TRƯỚC/SAU CÙNG LOẠI** (cùng MAIN). Khác duy nhất nhìn thấy: breadcrumb trong top bar đổi section (`Điều phối` ⇒ `Labs — thử nghiệm`).
 - `PAGE_TABLES` / `KNOWN_PROCS` KHÔNG đổi (trang gọi đúng các thủ tục cũ; công tắc "Hiện Labs" ở thanh bên là localStorage, không gọi
   server). Người dùng đo (`uim_engineer`) có Labs ẨN (mặc định) — thước vào màn bằng URL nên không phụ thuộc menu.
+
+## Đợt 5 H8 (2026-10-10) — đo lại Fleet @1600 (+1366), hiệu chuẩn lại 1366 theo quy trình
+- Đo `--spawn --screens fleet-orchestration` (cổng 3056/5216, `_test`, HEAD 06cd09003, cây sạch): **1600 = recorded-match Δ 0 / 0 px /
+  0,00 %** (MAIN 836×802 @y120 = đúng bản ghi `b2e9cdd3e` 670 472 px²) — biên 2,99 % của after.json / after-dot3.json (MAIN 836×778)
+  không còn. Hai lượt liên tiếp cùng số (MSA). 0 kết nối lạ, 0 trôi (60 bảng).
+- **1366 lệch 4,03 %** (MAIN 642×620 so với bản ghi 642×596 của d1ff678b2) — NGUYÊN NHÂN đo được: Đợt 5 H3(b) (d923dfd07) cho bộ chọn
+  nhà máy đọc `factory.list` ⇒ người đo (gán SIM-FAC) nay CÓ nhà máy ⇒ `twin.occupancyGrid` được hỏi (after-dot3: không gọi; nay gọi)
+  ⇒ dòng ghi chú trung thực của lưới (`grid.note`, text-xs 16 px + gap 8 px = **24 px**) hiện dưới bản đồ. Bố cục ĐỔI THẬT ⇒ theo quy
+  trình bước 2: `--calibrate --screens fleet-orchestration --sizes 1366x768` ghi đè bản ghi `fleet-orchestration|1366|n/a`
+  (giữ `previous` = 382 632 / d1ff678b2; mới 398 040 / 06cd09003, gitDirty rỗng). 1600 KHÔNG hiệu chuẩn lại (đã khớp đúng 0 %).
+- `KNOWN_PROCS["fleet-orchestration"]` thêm `factory.list` (bảng đã có trong `PAGE_TABLES`). Cảnh báo còn lại
+  `userSettingsRouter.getUiPrefs` là thủ tục của VỎ (Đợt 4 D1, mọi màn) — chưa xử lý ở đây (cần quyết định canh trôi `user_settings`
+  chỉ hàng của user đo, như chuông) — ghi vào báo cáo Nhóm H.
+
+## Đợt 5 H fix 1 (2026-10-10) — vỏ: sở thích giao diện; Studio: robotPositions
+- `SHELL_PROCS = ["userSettingsRouter.getUiPrefs"]` vào `KNOWN_PROCS` của MỌI màn (khuôn chuông); bảng `user_settings` vào
+  `PAGE_TABLES` của mọi màn, băm CHỈ hàng của user đo (`TABLE_WHERE`) ⇒ một lần `setUiPrefs` trong lần đo là trôi; user đo bị xoá
+  kèm hàng `user_settings` của nó. Cảnh báo "thủ tục chưa biết" của `getUiPrefs` (Đợt 4 D1) hết trên cả 40 lượt đo.
+- `KNOWN_PROCS["orchestration-studio"]` + `fleet.robotPositions` (Đợt 4 R-4-n — bộ chọn robot; bảng robots / robot_telemetry đã có).
+- Đo lại toàn bộ (14 màn, 40 lượt, `--spawn` 3056/5216, có tự kiểm): pass=true, 0 lỗi, 0 lệch hiệu chuẩn, 0 kết nối lạ, 0 trôi
+  (61 bảng), tự kiểm ĐẠT. Fleet sau khi đổi bộ chọn nhà máy (EntityPicker, cao h-9 như Select cũ): 1600/1366 recorded-match 0,00 %.
+

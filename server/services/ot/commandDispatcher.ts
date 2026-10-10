@@ -115,7 +115,7 @@ import {
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
-import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, resetAdapterSession } from "./otManager";
+import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, listActiveAdapters, resetAdapterSession } from "./otManager";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
@@ -222,12 +222,67 @@ export const OT_SESSION_RESET_SLACK_MS = 250;
 /**
  * doc 81 Đợt 4 Task B3 (alert-only, R-4-q) — resetting the session does NOT recall a request already on the wire: the
  * device may still apply the old (timed-out) write AFTER a STOP sent on the new session (re-energising after a stop).
- * For OT_STALE_WRITE_RISK_TTL_MS after such a write was abandoned, a STOP to that adapter gets a READ-ONLY watch (every
- * OT_STOP_WATCH_POLL_MS) that raises a critical operator alarm when the STOP value cannot be confirmed — see
- * startStopWatch. Nothing is ever written automatically.
+ * For the adapter's risk window (staleWriteRiskWindowMs, at least OT_STALE_WRITE_RISK_TTL_MS — Đợt 5 F3) after such a
+ * write was abandoned, a STOP to that adapter gets a READ-ONLY watch (every OT_STOP_WATCH_POLL_MS) that raises a
+ * critical operator alarm when the STOP value cannot be confirmed — see startStopWatch. Nothing is ever written
+ * automatically.
  */
 export const OT_STALE_WRITE_RISK_TTL_MS = 10_000;
 export const OT_STOP_WATCH_POLL_MS = 200;
+/** doc 81 Đợt 5 task F fix 1 (ruling R-5-g) — the env knob's allowed range for the window FLOOR. */
+export const OT_STALE_WRITE_RISK_TTL_MIN_MS = 10_000;
+export const OT_STALE_WRITE_RISK_TTL_MAX_MS = 60_000;
+
+/**
+ * R-5-g — the risk-window FLOOR: env OT_STALE_WRITE_RISK_TTL_MS (ms), clamped to [10 s, 60 s]; unset / not a finite
+ * number ⇒ 10 s. Read at call time. The per-adapter formula (2 × the driver timeout) still applies on top of it.
+ */
+export function staleWriteRiskFloorMs(): number {
+  const raw = process.env.OT_STALE_WRITE_RISK_TTL_MS;
+  const n = raw === undefined || raw.trim() === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return OT_STALE_WRITE_RISK_TTL_MS;
+  return Math.min(OT_STALE_WRITE_RISK_TTL_MAX_MS, Math.max(OT_STALE_WRITE_RISK_TTL_MIN_MS, Math.trunc(n)));
+}
+/** The connect/request timeout every built-in OT driver uses when `connection.timeoutMs` is unset (`cfg.timeoutMs ?? 5000`). */
+export const OT_DRIVER_DEFAULT_TIMEOUT_MS = 5000;
+
+function driverTimeoutOf(conn: { timeoutMs?: unknown } | null | undefined): number {
+  const t = conn?.timeoutMs;
+  return typeof t === "number" && Number.isFinite(t) && t > 0 ? t : OT_DRIVER_DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * doc 81 Đợt 5 task F3 (item 29, owner: survey recommendation (b)) — the stale-write risk window OF ONE ADAPTER:
+ * max(floor, 2 × the driver's request/connect timeout); floor = staleWriteRiskFloorMs() (env OT_STALE_WRITE_RISK_TTL_MS
+ * clamped to [10 s, 60 s], default 10 s — R-5-g). In production `connection.timeoutMs` is always unset today
+ * (deviceAdapter.ts), so the window tracks the drivers' fixed 5 s default ⇒ the floor decides it. A driver library
+ * may keep an abandoned request in flight (or retry it) for up to its own timeout; the old fixed 10 s was 2 × the 5 s
+ * driver default.
+ *   • The driver timeout is the running adapter's `connection.timeoutMs` (the larger of primary and HA backup — a
+ *     failover may run the slower one), the drivers' default 5000 when unset or not a positive number.
+ *   • Adapter not in the running set (e.g. a legacy reconnect in progress) ⇒ conservative: 2 × its reset (connect)
+ *     bound adapterSessionResetBoundMs, which is never below the endpoint's own timeout.
+ * Captured ONCE when the write is abandoned (StaleWrite.windowMs) — the abandoned request ran on THAT driver config; a
+ * later reconfiguration does not shorten the watch. Never throws (any lookup failure ⇒ the conservative branch / floor).
+ */
+export function staleWriteRiskWindowMs(adapterId: number): number {
+  let driverTimeoutMs: number | null = null;
+  try {
+    const a = listActiveAdapters().find((x) => x.adapterId === adapterId);
+    if (a) driverTimeoutMs = Math.max(driverTimeoutOf(a.connection), a.backupConnection ? driverTimeoutOf(a.backupConnection) : 0);
+  } catch {
+    driverTimeoutMs = null;
+  }
+  if (driverTimeoutMs == null) {
+    try {
+      const b = adapterSessionResetBoundMs(adapterId);
+      driverTimeoutMs = Math.max(OT_DRIVER_DEFAULT_TIMEOUT_MS, typeof b === "number" && Number.isFinite(b) && b > 0 ? b : 0);
+    } catch {
+      driverTimeoutMs = OT_DRIVER_DEFAULT_TIMEOUT_MS;
+    }
+  }
+  return Math.max(staleWriteRiskFloorMs(), 2 * driverTimeoutMs);
+}
 
 /**
  * B3 — the running read-only STOP watches of an adapter. A watch follows the STOP's tags; only a newer command whose write
@@ -268,10 +323,12 @@ function releaseWatchedTags(adapterId: number, tagKeys: readonly string[]): void
  * B3 fix scan (3) / scan 3 (b)(c) — the abandoned write of an adapter whose fate is unknown (until = epoch ms): its
  * identity and values, so the watch can recognise it landing and AUDIT-LINK that observation to the abandoned command.
  * One entry per adapter (overwritten by a newer abandonment); expired entries are swept on every write to the map and on
- * lookup — the map never holds more than one entry per adapter and none older than OT_STALE_WRITE_RISK_TTL_MS.
+ * lookup — the map never holds more than one entry per adapter and none older than its own window (windowMs, Đợt 5 F3).
  */
 type StaleWrite = {
   until: number;
+  /** Đợt 5 F3 — this adapter's risk window (staleWriteRiskWindowMs), captured when the write was abandoned. */
+  windowMs: number;
   commandType: string;
   idempotencyKey: string | null;
   intentIds: number[];
@@ -805,7 +862,9 @@ const STOP_PIN_REASON_TEXT: Record<StopPinRefusalReason, string> = {
  * sees the new target. true ⇔ both fingerprints (adapterTarget.ts — the same definition the R-1D-a clear uses) are
  * known and equal. Any error / missing value ⇒ false (no exemption, fail-closed).
  */
-async function runningConnectionMatchesAdapterRow(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adapterId: number): Promise<boolean> {
+// doc 81 Đợt 5 task E fix 2 (review N6) — EXPORTED so the orchestration engine's verified-stop classification
+// (foeStepClass.verifiedStopStepIds) applies THIS check, not a copy of it.
+export async function runningConnectionMatchesAdapterRow(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adapterId: number): Promise<boolean> {
   try {
     const running = getActiveConnectionFingerprint(adapterId);
     if (!running) return false;
@@ -1412,11 +1471,19 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    reservation and the queue; a write queued behind a slow / timed-out one (B3 hold: up to ~11.25 s) reached the
   //    device on a verdict that old. A NON-STOP write whose preflight passed more than OT_SAFETY_PREFLIGHT_DEADLINE_MS
   //    ago re-runs the SAME preflight read just before writing; not OK => refused with the same reason (nothing written).
-  //    Stop-typed commands are never re-checked (L-7). The re-check holds this command's queue slot, so a PINNED STOP
+  //    doc 81 Đợt 5 task F4 (item 34) — the skip now matches the preflight: only a PINNED stop (stopCls.pinnedStop) is
+  //    never re-checked (L-7; it never preflights either). An UNPINNED stop-typed command ran the preflight, waited in
+  //    the queue like any write and can carry arbitrary writes, so it is re-checked too (was: skipped by NAME,
+  //    isStopCommandType); its refusal reads like the preflight's (use the hardware E-STOP + stop pin reason).
+  //    DELAY BOUND (fix 1, documented): the re-check is ONE safety read under readSafetyStateForPreflight's deadline, so
+  //    an unpinned stop-typed command can be delayed by at most OT_SAFETY_PREFLIGHT_DEADLINE_MS (5 s) — and only when it
+  //    had already waited longer than that in the queue; a PINNED STOP queued meanwhile ends the wait at once (it
+  //    supersedes the re-checking command). A PINNED STOP itself is never re-checked and never delayed by this (L-7).
+  //    The re-check holds this command's queue slot, so a PINNED STOP
   //    queued meanwhile must not wait on it: the re-check gives way at once (this write is dropped as SUPERSEDED_BY_STOP,
   //    exactly like a waiting command) and the STOP runs next.
   const recheckSafetyIfStale = async (): Promise<Superseded | SafetyRecheckRefusal | null> => {
-    if (preflightPassedAt === undefined || isStopCommandType(input.commandType)) return null;
+    if (preflightPassedAt === undefined || stopCls.pinnedStop) return null;
     const waitedMs = Date.now() - preflightPassedAt;
     if (waitedMs <= OT_SAFETY_PREFLIGHT_DEADLINE_MS) return null;
     let unsubscribe: (() => void) | undefined;
@@ -1661,8 +1728,26 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
   if ("safetyRecheckRefused" in executed) {
     // final wave F7 — the RESULT row of the intent (like BUSY / SUPERSEDED_BY_STOP); driver.writeTags never reached.
-    const ids = await writeRejected(db, input, executed.reason, executed.detail, undefined, undefined, { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra });
-    return { ok: false, simulated: false, status: "rejected", reason: executed.reason, results: failedResults(input, executed.reason), commandLogIds: ids };
+    // Đợt 5 F4 — an unpinned stop-typed command refused here reads like its preflight refusal (R-1C-g): the hardware
+    // E-STOP sentence + appError, and the ledger carries pinnedStop:false + stopPinReason.
+    const ids = await writeRejected(
+      db,
+      input,
+      executed.reason,
+      withStopRefusalText(input, executed.reason, executed.detail, stopCls),
+      undefined,
+      undefined,
+      { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, ...(stopRefusalLedgerLink(stopCls)?.ackExtra ?? {}) } },
+    );
+    return {
+      ok: false,
+      simulated: false,
+      status: "rejected",
+      reason: executed.reason,
+      results: failedResults(input, executed.reason),
+      commandLogIds: ids,
+      ...stopRefusalExtras(input, executed.reason, stopCls),
+    };
   }
   const { sentAt, timedOut, outcomes } = executed;
 
@@ -1768,6 +1853,7 @@ async function holdSlotAfterTimedOutWrite(
     sweepStaleWriteRisk();
     const riskEntry: StaleWrite = {
       until: Number.POSITIVE_INFINITY,
+      windowMs: staleWriteRiskWindowMs(input.adapterId),
       commandType: input.commandType,
       idempotencyKey: input.idempotencyKey ?? null,
       intentIds: ledger.intentIds,
@@ -1794,7 +1880,7 @@ async function holdSlotAfterTimedOutWrite(
       resetError = (err as Error)?.message || String(err);
     } finally {
       // R-4-r — the reset has settled (any outcome): the risk window now counts from here.
-      riskEntry.until = Date.now() + OT_STALE_WRITE_RISK_TTL_MS;
+      riskEntry.until = Date.now() + riskEntry.windowMs;
     }
     console.error(
       `[Dispatch] adapter ${input.adapterId}: overlapRisk — a timed-out write may still be running on the old session and its reset failed (${resetError}); the next command (a STOP) proceeds anyway (L-7, B3)`,
@@ -1818,7 +1904,7 @@ async function holdSlotAfterTimedOutWrite(
  *   • A read that shows a value other than the STOP's, or a tag that cannot be read (read error, missing sample, adapter
  *     offline) ⇒ ONE critical operator alarm per STOP (raiseStopUnverifiedAlarm) + audit "ot_stop_unverified" linked to
  *     the ABANDONED command's ledger row (entityId = its intent id), then the watch ends.
- * The window starts at the STOP and lasts OT_STALE_WRITE_RISK_TTL_MS (R-4-r). Reads per STOP ≤ (TTL / poll), each ≤ the
+ * The window starts at the STOP and lasts the adapter's risk window (R-4-r; Đợt 5 F3 windowMs). Reads per STOP ≤ (window / poll), each ≤ the
  * command timeout. Never rejects.
  */
 function startStopWatch(
@@ -1833,8 +1919,8 @@ function startStopWatch(
   const token: StopWatch = { cancelled: false, tags: new Set(writes.map((w) => w.tagKey)) };
   registerStopWatch(input.adapterId, token);
   const risk = staleWriteRisk.get(input.adapterId);
-  // R-4-r — the watch window starts at the STOP and lasts OT_STALE_WRITE_RISK_TTL_MS (no risk ⇒ no window).
-  const end = risk ? Date.now() + OT_STALE_WRITE_RISK_TTL_MS : Date.now();
+  // R-4-r — the watch window starts at the STOP and lasts the adapter's risk window (Đợt 5 F3; no risk ⇒ no window).
+  const end = risk ? Date.now() + risk.windowMs : Date.now();
   const abandoned = risk
     ? { idempotencyKey: risk.idempotencyKey, intentIds: risk.intentIds, commandType: risk.commandType, confirmedBy: risk.confirmedBy, writes: risk.writes }
     : null;
@@ -1949,15 +2035,26 @@ function raiseStopUnverifiedAlarm(
     );
     const { sendNotification } = await import("../notificationService");
     for (const userId of recipients) {
-      await sendNotification(userId, {
-        type: "ALERT",
-        priority: "URGENT",
-        title: `STOP not confirmed — adapter ${input.adapterId}`,
-        message,
-        entityType: "ot_command",
-        entityId: abandoned?.intentIds[0] ?? stopLedger.intentIds[0],
-        metadata: detail,
-      });
+      // doc 81 Đợt 5 task F6 (item 33) — SAFETY-CRITICAL: delivered even to a recipient who opted out of in-app
+      // notifications / alerts or is in quiet hours (the STOP's confirmer must learn the STOP was not confirmed).
+      await sendNotification(
+        userId,
+        {
+          type: "ALERT",
+          priority: "URGENT",
+          title: `STOP not confirmed — adapter ${input.adapterId}`,
+          message,
+          entityType: "ot_command",
+          entityId: abandoned?.intentIds[0] ?? stopLedger.intentIds[0],
+          metadata: detail,
+        },
+        // fix 1 / fix scan (R-5-f, R-5-h) — bypass deduped per OCCURRENCE (type, machine, this STOP's ledger row) and
+        // recipient for 60 s; another STOP's alarm is a distinct occurrence and is never merged.
+        {
+          safetyCritical: true,
+          dedupKey: `ot_stop_unverified:${input.machineId != null ? `machine:${input.machineId}` : `adapter:${input.adapterId}`}:stop:${stopLedger.intentIds[0] ?? "?"}`,
+        },
+      );
     }
   })();
   void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, "ot_stop_unverified notification").catch((err) => {

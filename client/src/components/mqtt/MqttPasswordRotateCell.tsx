@@ -6,8 +6,9 @@
  * mutation react-query (`rotate.data`) — đóng hộp thoại xoá CẢ HAI (`setMatKhau(null)` + `rotate.reset()`).
  * Không log, không localStorage.
  *
- * ⚠ App FactoryAlertSystem trên broker nhúng KHÔNG gửi mật khẩu ⇒ cấp mật khẩu cho máy tính bảng là khoá
- * nó ngoài. Vì vậy: (1) câu cảnh báo nói thẳng điều đó; (2) thiết bị báo `appVersion` (SUY ĐOÁN là máy
+ * ⚠ App FactoryAlertSystem ≤ 1.0.16 trên broker nhúng KHÔNG gửi mật khẩu ⇒ cấp mật khẩu cho máy tính bảng
+ * chạy bản cũ là khoá nó ngoài (từ 1.0.17 có ô "Mật khẩu MQTT của thiết bị" trong Cài đặt — doc 81 Đợt 5 G1,
+ * lưu Android Keystore). Vì vậy: (1) câu cảnh báo nói thẳng điều đó; (2) thiết bị báo `appVersion` (SUY ĐOÁN là máy
  * tính bảng chạy app — không chắc chắn) phải gõ lại mã thiết bị trước khi xoay; (3) có đường phục hồi
  * "Xoá mật khẩu" (`mqttClient.clearCredential` — gỡ luôn ràng buộc máy nếu có).
  *

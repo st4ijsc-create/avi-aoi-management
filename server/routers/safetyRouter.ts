@@ -987,6 +987,16 @@ export const safetyRouter = router({
       if (ctxFactory != null && rows.some((r) => r.factoryId == null)) {
         const [f] = await d.select({ tz: factories.timezone }).from(factories).where(eq(factories.id, ctxFactory)).limit(1);
         ctxTz = f?.tz ?? null;
+      } else if (ctxFactory == null && (factoryIds === null || factoryIds.length > 1) && rows.some((r) => r.factoryId == null)) {
+        // doc 81 Đợt 5 H4 (mục 22) — không biết nhà máy ngữ cảnh (admin chưa chọn chuyền, hoặc phạm vi NHIỀU nhà máy): nếu MỌI
+        // nhà máy đang hoạt động trong phạm vi (admin: mọi nhà máy đang hoạt động) cùng ĐÚNG MỘT múi giờ ⇒ dùng nó. Có nhà máy
+        // lệch / không múi giờ (NULL là một giá trị phân biệt) ⇒ null như cũ; múi hỏng ⇒ `okTz` dưới đây trả null.
+        const tzs = await d
+          .selectDistinct({ tz: factories.timezone })
+          .from(factories)
+          .where(and(eq(factories.isActive, true), factoryIds === null ? undefined : inArray(factories.id, factoryIds)))
+          .limit(2);
+        ctxTz = tzs.length === 1 ? tzs[0].tz ?? null : null;
       }
       const okTz = (tz: string | null | undefined) => (tz && isValidTimeZone(tz) ? tz : null);
       return rows.map(({ factoryTz, ...r }) => ({ ...r, factoryTimezone: okTz(r.factoryId != null ? factoryTz : ctxTz) }));

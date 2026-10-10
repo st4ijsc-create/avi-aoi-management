@@ -34,6 +34,7 @@
 
 import type { NextFunction, Request, Response } from "express";
 import { incSecurityEvent } from "./metrics";
+import { duongDinhTuyen, duongKhopChinhXac } from "./duongDinhTuyen";
 
 export type OriginCheckMode = "off" | "log" | "enforce";
 
@@ -72,6 +73,32 @@ export const ORIGIN_CHECK_EXEMPT_PREFIXES: readonly string[] = [
   "/api/bi/",
   "/api/csp-report",
 ];
+
+/**
+ * doc 81 Đợt 5 task G5 (item 21) — đường MIỄN theo ĐÚNG NGUYÊN VĂN (so `===`, không prefix):
+ *   /api/saml/acs — SAML 2.0 HTTP-POST binding: trình duyệt của người dùng tự POST form từ trang IdP (khác
+ *                   site) về ACS, nên Origin LUÔN là IdP (hoặc "null"). Kiểm soát ở đây là CHỮ KÝ của
+ *                   assertion (samlProvider.ts), không phải cookie ambient ⇒ origin-check vô nghĩa và ở
+ *                   `enforce` nó làm hỏng SSO. Chỉ đúng đường này: không anh em (`/api/saml/login`…), không
+ *                   đường con, không biến thể `/api/saml/acs/` — thêm IdP vào ALLOWED_ORIGINS thay vào đó sẽ
+ *                   nới cả CORS.
+ */
+export const ORIGIN_CHECK_EXEMPT_EXACT_PATHS: readonly string[] = ["/api/saml/acs"];
+
+/**
+ * doc 81 Đợt 5 G fix 1 (ruling R-5-b) — Express định tuyến KHÔNG phân biệt hoa/thường (`caseSensitive: false` mặc
+ * định) và KHÔNG chặt dấu `/` cuối (`strict: false`): `POST /API/trpc/x` tới ĐÚNG handler của `/api/trpc/x`. So tiền tố
+ * trên đường gốc ⇒ `/API/…` rơi ra `not_api_path` và LỌT kiểm tra (đã tái hiện: multipart/form-data cross-origin ⇒ 200).
+ * Vì vậy MỌI phép so (tiền tố bảo vệ, tiền tố miễn, đường miễn chính xác) chạy trên `duongDinhTuyen(req)`
+ * (G fix 2, N1: helper DÙNG CHUNG với rateLimitConfig — đường Express định tuyến: bỏ query/fragment/scheme+authority):
+ *   · hạ chữ thường MỘT lần — khớp cách Express chọn handler;
+ *   · cho đường miễn CHÍNH XÁC, bỏ MỘT dấu `/` cuối — `/api/saml/acs/` cũng tới đúng handler ACS (strict:false) nên
+ *     miễn nó không rộng thêm gì; `/api/saml/acs//`, `/api/saml/acs/x` KHÔNG tới handler đó ⇒ vẫn bị kiểm.
+ */
+
+function laDuongMienChinhXac(pLower: string): boolean {
+  return ORIGIN_CHECK_EXEMPT_EXACT_PATHS.includes(duongKhopChinhXac(pLower));
+}
 
 const PROTECTED_PREFIXES = ["/api/", "/trpc/"];
 
@@ -112,18 +139,18 @@ export type OriginVerdict =
  * `req` chỉ cần { method, path, headers }.
  */
 export function evaluateOrigin(
-  req: Pick<Request, "method" | "path"> & { headers: Record<string, unknown> },
+  req: Pick<Request, "method" | "path"> & { headers: Record<string, unknown>; originalUrl?: string; url?: string },
   cfg: OriginCheckConfig,
 ): OriginVerdict {
   if (cfg.mode === "off") return { allowed: true, reason: "mode_off" };
   if (!UNSAFE_METHODS.has(String(req.method).toUpperCase())) {
     return { allowed: true, reason: "safe_method" };
   }
-  const p = req.path || "";
+  const p = duongDinhTuyen(req); // R-5-b + N1: đường Express định tuyến, hạ chữ thường — MỌI phép so dưới đây
   if (!PROTECTED_PREFIXES.some((x) => p.startsWith(x))) {
     return { allowed: true, reason: "not_api_path" };
   }
-  if (ORIGIN_CHECK_EXEMPT_PREFIXES.some((x) => p.startsWith(x))) {
+  if (ORIGIN_CHECK_EXEMPT_PREFIXES.some((x) => p.startsWith(x)) || laDuongMienChinhXac(p)) {
     return { allowed: true, reason: "exempt_path" };
   }
 

@@ -20,6 +20,8 @@ import type {
   Vda5050Action,
 } from "./vda5050Messages";
 import { VDA5050_VERSION } from "./vda5050Messages";
+import { docTsThietBi } from "../../utils/factoryTime";
+import { maxFutureSkewMs } from "../ot/otGuards";
 
 /** Map a VDA 5050 operatingMode → the platform's coarse mode string. */
 export function mapOperatingMode(operatingMode: string | undefined): string | undefined {
@@ -98,7 +100,7 @@ export function mapStateToRobotTelemetry(state: Vda5050State): RobotState {
     // X1-a — surface battery % as a first-class UDM field (honest undefined when absent).
     batteryPct: typeof battery.charge === "number" ? battery.charge : undefined,
     error: errorText,
-    timestamp: parseTimestamp(state.timestamp),
+    timestamp: parseTimestamp(state.timestamp, state.serialNumber),
   };
 }
 
@@ -128,10 +130,38 @@ export function mapConnectionToOnline(conn: Pick<Vda5050Connection, "connectionS
   return conn.connectionState === "ONLINE";
 }
 
-function parseTimestamp(ts: string | undefined): Date {
-  if (!ts) return new Date();
-  const d = new Date(ts);
-  return isNaN(d.getTime()) ? new Date() : d;
+/** Throttle of the rejected-timestamp log: one line per AGV + reason per this many ms. */
+const TS_REJECT_LOG_EVERY_MS = 60_000;
+const tsRejectLoggedAt = new Map<string, number>();
+
+/**
+ * doc 81 Đợt 5 task F5 (item 6) — the AGV's `state.timestamp` under the SAME device-time rule as every telemetry door:
+ * `docTsThietBi` (R-1C-a: no time zone ⇒ `ts_no_timezone`, unparseable ⇒ `invalid_ts`) plus the shared future cap
+ * `maxFutureSkewMs()` (24 h, OT_INGEST_MAX_FUTURE_SKEW_MS ⇒ `ts_too_far_future`). A rejected stamp falls back to SERVER
+ * time and is logged (throttled per AGV + reason). Absent ⇒ server time (as before, not a reject).
+ * Why: robotIngest writes this as `lastHeartbeat` and the field-health heartbeat; a +48 h clock kept the heartbeat in
+ * the future and the X1-b TTL sweep never saw a silent AGV go stale (false liveness). Was: any parseable string kept.
+ */
+function parseTimestamp(ts: unknown, serialNumber: unknown): Date {
+  const now = new Date();
+  const k = docTsThietBi(ts);
+  let reason: string | null = null;
+  if (!k.ok) reason = k.reason;
+  else if (!k.ts) return now;
+  else if (k.ts.getTime() > now.getTime() + maxFutureSkewMs()) reason = "ts_too_far_future";
+  else return k.ts;
+  // Device-supplied strings are logged JSON-escaped and truncated (no log forging through newlines).
+  const agv = (JSON.stringify(typeof serialNumber === "string" ? serialNumber : String(serialNumber ?? "?")) ?? '"?"').slice(0, 66);
+  const key = `${agv}|${reason}`;
+  const last = tsRejectLoggedAt.get(key);
+  if (last === undefined || now.getTime() - last >= TS_REJECT_LOG_EVERY_MS) {
+    tsRejectLoggedAt.set(key, now.getTime());
+    if (tsRejectLoggedAt.size > 1000) tsRejectLoggedAt.clear(); // bounded (one entry per AGV + reason in practice)
+    console.warn(
+      `[VDA5050] AGV ${agv} state.timestamp rejected (${reason}): ${(JSON.stringify(ts) ?? String(ts)).slice(0, 80)} — using server time`,
+    );
+  }
+  return now;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

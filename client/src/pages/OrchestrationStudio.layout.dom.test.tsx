@@ -569,7 +569,7 @@ describe("Orchestration P2 — Lịch sử phiên bản: VersionHistoryPanel + R
     expect(srv.refetched).toEqual(expect.arrayContaining(["orchestration.listWorkflows", "orchestration.listVersions"]));
   });
 
-  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"]] as const) {
+  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"], ["outOfScope", "deployOutOfScope"], ["refOutOfScope", "deployRefOutOfScope"]] as const) { // + doc 81 Đợt 5 E2
     it(`final wave G2: ROLLBACK refused with ${reason} ⇒ the translated sentence naming the steps (no raw server English)`, async () => {
       const user = userEvent.setup();
       srv.results["orchestration.rollbackWorkflow"] = { ok: false, enabled: true, reason, stepIds: ["s1", "s2"], message: "RAW server text" };
@@ -734,6 +734,17 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
     render(<OrchestrationStudio />);
     await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
     expect(calls("orchestration.abortRun")).toEqual([{ runId: 3 }]);
+  });
+
+  it("doc 81 Đợt 5 E fix 2 (R-5-l): abort REFUSED with scopeUnverified ⇒ the translated 'scope not verified — use the direct STOP' toast", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.abortRun"] = { ok: false, enabled: true, runId: 3, reason: "scopeUnverified", message: "RAW server text" };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+    expect(shown).toBe(S.scopeUnverified);
+    expect(shown).not.toContain("RAW server text");
   });
 
   it("Tiếp tục run bị gián đoạn: AlertDialog rồi resumeRun({runId, approved:true, expectedStepId})", async () => {

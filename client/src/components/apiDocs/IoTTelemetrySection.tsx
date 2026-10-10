@@ -18,49 +18,101 @@ interface ApiSectionProps {
   baseUrl: string;
 }
 
-export function IoTTelemetrySection({ baseUrl }: ApiSectionProps) {
-  const { t } = useTranslation();
-  const host = baseUrl || "https://<host>";
+/**
+ * The request/response examples shown on this page — exported so a test can check them against the REAL
+ * server ingest rules (key ↔ machine, gateway allowlist, timestamp with timezone).
+ */
+export function buildTelemetryDocExamples(host: string) {
+  // doc 81 Đợt 5 G2 (item 8): examples follow the live rules — a machine key writes only for ITS machine
+  // (deviceId omitted or = that machine's code, else 403 machine_mismatch); an IOT_GATEWAY key writes only
+  // for devices on its allowlist (else / empty list ⇒ 403 gateway_device_not_allowed); every `ts` carries a
+  // timezone (naive ⇒ rejected ts_no_timezone). /api/v1 reads `Authorization: Bearer <key>` or `X-API-Key`.
+  const deviceKeyMachine = "IOT-WS3-01";
+  const screwMachine = "SCRW-01";
+  const gatewayMachine = "GW-LINE3";
+  const gatewayAllowlist = ["ESP32-ENV-01", "ESP32-ENV-02"];
 
-  const esp32Curl = `# ESP32 nhiệt-ẩm — batch [temperature, humidity] mỗi ~30s
+  const deviceCurl = `# One device, its OWN machine key: deviceId = the key's machine code (or omit it)
 curl -X POST "${host}/api/v1/ingest/telemetry" \\
-  -H "Authorization: ApiKey mk_live_9f3a…" \\
+  -H "Authorization: Bearer mk_live_9f3a…" \\
   -H "Content-Type: application/json" \\
   -d '{"samples":[
-    {"deviceId":"esp32-ws3-01","metric":"temperature","value":27.4,"unit":"°C","ts":"2026-07-17T14:03:00+07:00"},
-    {"deviceId":"esp32-ws3-01","metric":"humidity","value":61.2,"unit":"%RH","ts":"2026-07-17T14:03:00+07:00"}
+    {"deviceId":"${deviceKeyMachine}","metric":"temperature","value":27.4,"unit":"°C","ts":"2026-07-17T14:03:00+07:00"},
+    {"deviceId":"${deviceKeyMachine}","metric":"humidity","value":61.2,"unit":"%RH","ts":"2026-07-17T14:03:00+07:00"}
   ]}'`;
 
-  const screwTelemetryCurl = `# Máy bắt vít — stream mô-men trục song song với RESULT
+  const gatewayCurl = `# IoT gateway (machine type IOT_GATEWAY) forwarding several devices:
+# every deviceId must be on THIS gateway's allowlist (${gatewayAllowlist.join(", ")}).
 curl -X POST "${host}/api/v1/ingest/telemetry" \\
-  -H "Authorization: ApiKey mk_live_9f3a…" \\
+  -H "X-API-Key: mk_live_gw77…" \\
   -H "Content-Type: application/json" \\
   -d '{"samples":[
-    {"deviceId":"SCRW-01","metric":"spindle.torque","value":0.81,"unit":"Nm","quality":"good","ts":"2026-07-17T14:03:00+07:00"},
-    {"deviceId":"SCRW-01","metric":"spindle.current","value":1.24,"unit":"A","ts":"2026-07-17T14:03:00+07:00"}
+    {"deviceId":"${gatewayAllowlist[0]}","metric":"temperature","value":31.4,"unit":"°C","ts":"2026-07-17T07:03:00Z"},
+    {"deviceId":"${gatewayAllowlist[1]}","metric":"temperature","value":29.8,"unit":"°C","ts":"2026-07-17T07:03:00Z"}
   ]}'`;
 
-  const esp32Python = `import requests
+  const screwTelemetryCurl = `# Screwdriver machine — spindle stream alongside RESULT (key of machine ${screwMachine})
+curl -X POST "${host}/api/v1/ingest/telemetry" \\
+  -H "Authorization: Bearer mk_live_5c1d…" \\
+  -H "Content-Type: application/json" \\
+  -d '{"samples":[
+    {"deviceId":"${screwMachine}","metric":"spindle.torque","value":0.81,"unit":"Nm","quality":"good","ts":"2026-07-17T14:03:00+07:00"},
+    {"deviceId":"${screwMachine}","metric":"spindle.current","value":1.24,"unit":"A","ts":"2026-07-17T14:03:00+07:00"}
+  ]}'`;
+
+  const python = `import requests
+from datetime import datetime, timezone
 
 BASE = "${host}"
-HEADERS = {"Authorization": "ApiKey mk_live_9f3a…"}
+HEADERS = {"Authorization": "Bearer mk_live_9f3a…"}
+TS = datetime.now(timezone.utc).isoformat()  # ALWAYS timezone-aware (naive ⇒ ts_no_timezone)
 
 batch = {"samples": [
-    {"deviceId": "esp32-ws3-01", "metric": "temperature", "value": 27.4,
-     "unit": "°C", "ts": "2026-07-17T14:03:00+07:00"},
-    {"deviceId": "esp32-ws3-01", "metric": "humidity", "value": 61.2,
-     "unit": "%RH", "ts": "2026-07-17T14:03:00+07:00"},
+    {"deviceId": "${deviceKeyMachine}", "metric": "temperature", "value": 27.4,
+     "unit": "°C", "ts": TS},
+    {"deviceId": "${deviceKeyMachine}", "metric": "humidity", "value": 61.2,
+     "unit": "%RH", "ts": TS},
 ]}
 r = requests.post(f"{BASE}/api/v1/ingest/telemetry", json=batch,
                   headers=HEADERS, timeout=10)
-print(r.status_code, r.json())  # {"ok": true, "accepted": 2, "received": 2, ...}`;
+print(r.status_code, r.json())  # 202 {"ok": true, "data": {"accepted": 2, "received": 2, "machine": "${deviceKeyMachine}"}}`;
 
   const telemetryResponse = `{
   "ok": true,
-  "accepted": 2,
-  "received": 2,
-  "machine": "IOT-WS3-01"
+  "data": { "accepted": 2, "received": 2, "machine": "${deviceKeyMachine}" }
 }`;
+
+  return {
+    deviceCurl,
+    gatewayCurl,
+    screwTelemetryCurl,
+    python,
+    telemetryResponse,
+    deviceKeyMachine,
+    screwMachine,
+    gatewayMachine,
+    gatewayAllowlist,
+  };
+}
+
+/** [HTTP status, error.code (or body), i18n key of the explanation]. Codes are literal API values. */
+const TELEMETRY_STATUS_ROWS: ReadonlyArray<readonly [string, string, string]> = [
+  ["202", "ok", "apiFeeds.status202"],
+  ["207", "partial", "apiFeeds.status207"],
+  ["400", "bad_request", "apiFeeds.status400BadRequest"],
+  ["400", "all_rejected", "apiFeeds.status400AllRejected"],
+  ["401", "unauthorized", "apiFeeds.status401"],
+  ["403", "forbidden", "apiFeeds.status403Scope"],
+  ["403", "machine_mismatch", "apiFeeds.status403Machine"],
+  ["403", "gateway_device_not_allowed", "apiFeeds.status403Gateway"],
+  ["429", "Retry-After", "apiFeeds.status429"],
+  ["503", "db_unavailable", "apiFeeds.status503"],
+];
+
+export function IoTTelemetrySection({ baseUrl }: ApiSectionProps) {
+  const { t } = useTranslation();
+  const host = baseUrl || "https://<host>";
+  const { deviceCurl, gatewayCurl, screwTelemetryCurl, python, telemetryResponse } = buildTelemetryDocExamples(host);
 
   return (
     <div className="space-y-6">
@@ -85,7 +137,7 @@ print(r.status_code, r.json())  # {"ok": true, "accepted": 2, "received": 2, ...
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">Authorization: ApiKey mk_…</Badge>
+            <Badge variant="outline">Authorization: Bearer mk_…</Badge>
             <Badge variant="outline">X-API-Key</Badge>
             <Badge variant="outline">alias: /api/ot/ingest</Badge>
           </div>
@@ -108,12 +160,17 @@ print(r.status_code, r.json())  # {"ok": true, "accepted": 2, "received": 2, ...
                 <Thermometer className="h-4 w-4" />
                 {t("apiFeeds.exampleEsp32")}
               </TabsTrigger>
+              <TabsTrigger value="gateway">{t("apiFeeds.exampleGateway")}</TabsTrigger>
               <TabsTrigger value="screw">{t("apiFeeds.exampleScrewTelemetry")}</TabsTrigger>
               <TabsTrigger value="python">Python</TabsTrigger>
             </TabsList>
             <TabsContent value="esp32">
               <p className="mb-2 text-sm font-semibold">{t("apiFeeds.requestLabel")}</p>
-              <CodeBlock code={esp32Curl} language="bash" />
+              <CodeBlock code={deviceCurl} language="bash" />
+            </TabsContent>
+            <TabsContent value="gateway">
+              <p className="mb-2 text-sm font-semibold">{t("apiFeeds.requestLabel")}</p>
+              <CodeBlock code={gatewayCurl} language="bash" />
             </TabsContent>
             <TabsContent value="screw">
               <p className="mb-2 text-sm font-semibold">{t("apiFeeds.requestLabel")}</p>
@@ -121,12 +178,35 @@ print(r.status_code, r.json())  # {"ok": true, "accepted": 2, "received": 2, ...
             </TabsContent>
             <TabsContent value="python">
               <p className="mb-2 text-sm font-semibold">{t("apiFeeds.requestLabel")}</p>
-              <CodeBlock code={esp32Python} language="python" />
+              <CodeBlock code={python} language="python" />
             </TabsContent>
           </Tabs>
           <div>
             <p className="mb-2 text-sm font-semibold">{t("apiFeeds.responseLabel")}</p>
             <CodeBlock code={telemetryResponse} language="json" />
+          </div>
+          <p className="text-sm text-white/80" data-testid="telemetry-gateway-note">{t("apiFeeds.gatewayNote")}</p>
+        </CardContent>
+      </Card>
+
+      {/* doc 81 Đợt 5 G2 — HTTP codes the endpoint really returns (same for /api/ot/ingest, without the data wrapper) */}
+      <Card className={glassCard}>
+        <CardHeader>
+          <CardTitle className="text-lg">{t("apiFeeds.telemetryStatusTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border border-white/10 rounded" data-testid="telemetry-status-table">
+              <tbody>
+                {TELEMETRY_STATUS_ROWS.map(([http, code, key]) => (
+                  <tr key={`${http}-${code}`}>
+                    <td className="p-2 border-b border-white/10 font-mono">{http}</td>
+                    <td className="p-2 border-b border-white/10"><code>{code}</code></td>
+                    <td className="p-2 border-b border-white/10">{t(key)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>
@@ -153,8 +233,8 @@ print(r.status_code, r.json())  # {"ok": true, "accepted": 2, "received": 2, ...
               <tbody>
                 <tr><td className="p-2 border-b border-white/10"><code>metric</code></td><td className="p-2 border-b border-white/10">string</td><td className="p-2 border-b border-white/10">✔</td><td className="p-2 border-b border-white/10">Tên metric (temperature, humidity, spindle.torque…)</td></tr>
                 <tr><td className="p-2 border-b border-white/10"><code>value</code></td><td className="p-2 border-b border-white/10">number|string|bool</td><td className="p-2 border-b border-white/10">✔</td><td className="p-2 border-b border-white/10">Giá trị mẫu</td></tr>
-                <tr><td className="p-2 border-b border-white/10"><code>ts</code></td><td className="p-2 border-b border-white/10">ISO 8601</td><td className="p-2 border-b border-white/10">—</td><td className="p-2 border-b border-white/10">Offset khuyến nghị; vắng → server đóng dấu giờ nhận</td></tr>
-                <tr><td className="p-2 border-b border-white/10"><code>deviceId</code></td><td className="p-2 border-b border-white/10">string</td><td className="p-2 border-b border-white/10">—</td><td className="p-2 border-b border-white/10">1 gateway credential forward nhiều device</td></tr>
+                <tr><td className="p-2 border-b border-white/10"><code>ts</code></td><td className="p-2 border-b border-white/10">ISO 8601 + TZ</td><td className="p-2 border-b border-white/10">—</td><td className="p-2 border-b border-white/10">{t("apiFeeds.fieldTsDesc")}</td></tr>
+                <tr><td className="p-2 border-b border-white/10"><code>deviceId</code></td><td className="p-2 border-b border-white/10">string</td><td className="p-2 border-b border-white/10">—</td><td className="p-2 border-b border-white/10">{t("apiFeeds.fieldDeviceIdDesc")}</td></tr>
                 <tr><td className="p-2 border-b border-white/10"><code>unit</code></td><td className="p-2 border-b border-white/10">string</td><td className="p-2 border-b border-white/10">—</td><td className="p-2 border-b border-white/10">°C, %RH, Nm, A… (đơn vị chuẩn)</td></tr>
                 <tr><td className="p-2 border-b border-white/10"><code>quality</code></td><td className="p-2 border-b border-white/10">enum</td><td className="p-2 border-b border-white/10">—</td><td className="p-2 border-b border-white/10">good | uncertain | bad (mặc định good)</td></tr>
                 <tr><td className="p-2 border-b border-white/10"><code>meta</code></td><td className="p-2 border-b border-white/10">object</td><td className="p-2 border-b border-white/10">—</td><td className="p-2 border-b border-white/10">Namespace mở rộng vendor (bảo toàn)</td></tr>

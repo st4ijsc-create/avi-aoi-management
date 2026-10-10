@@ -83,11 +83,91 @@ export interface NotificationPayload {
 }
 
 /**
+ * doc 81 Đợt 5 task F6 (item 33) — how a notification is delivered.
+ * `safetyCritical: true` (exactly `true`) — a SAFETY-CRITICAL notice: delivered whatever the recipient's in-app opt-outs
+ * (inAppEnabled / inAppAlerts / inAppReports / inAppSystem) and quiet hours say (quiet hours already let URGENT through;
+ * a safety notice must not hinge on a personal preference). The preferences are not even read, so a failing preference
+ * read cannot drop it. Only SERVER code sets this argument; it is never taken from the payload, and the stored
+ * `metadata.safetyCritical` marker is written only here (a payload claiming it has the marker removed).
+ * Callers — the ONLY ones (ruling R-5-f): commandDispatcher raiseStopUnverifiedAlarm (B3 "STOP not confirmed") and
+ * orchestration rulesEngine onSafetyEvent for the explicit allow-list isSafetyCriticalSafetyEvent.
+ * Fix 1 (R-5-f) + fix scan (R-5-h) — the BYPASS is throttled per recipient and `dedupKey` = the caller's OCCURRENCE
+ * identity (type, machine, event / command id): at most once per SAFETY_CRITICAL_DEDUP_MS (60 s). A repeat of the SAME
+ * occurrence inside the window is still delivered, as a NORMAL notice (the recipient's preferences apply) — never
+ * dropped. Distinct occurrences (another type, another machine, a re-trip = a new event) never share a key. Without a
+ * dedupKey there is no throttle (nothing is ever merged).
+ */
+export interface SendNotificationOptions {
+  safetyCritical?: boolean;
+  /** "(type, machine)" identity of a safety-critical notice for the bypass throttle. */
+  dedupKey?: string;
+  /**
+   * doc 81 Đợt 5 final wave P-F4 (F re-review N4) — the (type, robot / machine) identity WITHOUT the occurrence id: a
+   * flapping trusted e-stop creates a new event (a new dedupKey) on every re-trip; at most ONE bypass per
+   * SAFETY_CRITICAL_RATE_MS per recipient × rateKey. Beyond it ⇒ a NORMAL notice (preferences apply) — never dropped here.
+   */
+  rateKey?: string;
+}
+
+export const SAFETY_CRITICAL_DEDUP_MS = 60_000;
+/** final wave P-F4 — at most one opt-out bypass per (recipient, rateKey) in this window. */
+export const SAFETY_CRITICAL_RATE_MS = 10_000;
+const safetyCriticalLastBypass = new Map<string, number>();
+const safetyCriticalLastRate = new Map<string, number>();
+/** true ⇔ this (recipient, key) may bypass now (and records it). */
+export const SAFETY_CRITICAL_DEDUP_MAX = 5000;
+/**
+ * fix scan (R-5-h) — the throttle only ever DOWNGRADES (a repeat inside the window is delivered as a normal notice);
+ * it never drops one. Any failure here ⇒ true (bypass, i.e. deliver). Bounded: entries older than the window are swept
+ * when the map passes SAFETY_CRITICAL_DEDUP_MAX; if it is still full, it is cleared (fails toward delivering).
+ */
+function takeSafetyCriticalBypass(userId: number, key: string | undefined, rateKey?: string, now = Date.now()): boolean {
+  try {
+    const k = key ? `${userId}|${key}` : null;
+    const r = rateKey ? `${userId}|${rateKey}` : null;
+    const inside = (m: Map<string, number>, kk: string | null, windowMs: number) => {
+      if (kk === null) return false;
+      const last = m.get(kk);
+      return last !== undefined && now - last >= 0 && now - last < windowMs;
+    };
+    // the same occurrence again (dedup) OR another occurrence of the same (type, robot) too soon (rate cap) ⇒ normal notice
+    if (inside(safetyCriticalLastBypass, k, SAFETY_CRITICAL_DEDUP_MS) || inside(safetyCriticalLastRate, r, SAFETY_CRITICAL_RATE_MS)) return false;
+    const record = (m: Map<string, number>, kk: string | null, windowMs: number) => {
+      if (kk === null) return;
+      m.set(kk, now);
+      if (m.size > SAFETY_CRITICAL_DEDUP_MAX) {
+        for (const [x, t] of m) if (now - t >= windowMs) m.delete(x);
+        if (m.size > SAFETY_CRITICAL_DEDUP_MAX) m.clear();
+      }
+    };
+    record(safetyCriticalLastBypass, k, SAFETY_CRITICAL_DEDUP_MS);
+    record(safetyCriticalLastRate, r, SAFETY_CRITICAL_RATE_MS);
+    return true;
+  } catch {
+    return true;
+  }
+}
+export function _safetyCriticalDedupSizeForTests(): number {
+  return safetyCriticalLastBypass.size;
+}
+/** Test seam — forget every bypass timestamp. */
+export function _resetSafetyCriticalDedupForTests(): void {
+  safetyCriticalLastBypass.clear();
+  safetyCriticalLastRate.clear();
+}
+
+/**
  * Send notification to a specific user
  */
-export async function sendNotification(userId: number, payload: NotificationPayload) {
-  // Check user preferences
-  const prefs = await getUserNotificationPreferences(userId);
+export async function sendNotification(userId: number, payload: NotificationPayload, opts: SendNotificationOptions = {}) {
+  const dedupKey = typeof opts?.dedupKey === "string" && opts.dedupKey ? opts.dedupKey : undefined;
+  const rateKey = typeof opts?.rateKey === "string" && opts.rateKey ? opts.rateKey : undefined;
+  const safetyCritical = opts?.safetyCritical === true && (dedupKey || rateKey ? takeSafetyCriticalBypass(userId, dedupKey, rateKey) : true);
+  const { safetyCritical: _claimed, ...ownMetadata } = (payload.metadata ?? {}) as Record<string, any>;
+  const metadata = safetyCritical ? { ...ownMetadata, safetyCritical: true } : payload.metadata ? ownMetadata : undefined;
+
+  // Check user preferences (a safety-critical notice skips them — Đợt 5 F6)
+  const prefs = safetyCritical ? null : await getUserNotificationPreferences(userId);
   
   // Check if in-app notifications are enabled
   if (prefs && !prefs.inAppEnabled) {
@@ -136,7 +216,7 @@ export async function sendNotification(userId: number, payload: NotificationPayl
     entityId: payload.entityId,
     actionUrl,
     priority: payload.priority || 'NORMAL',
-    metadata: payload.metadata,
+    metadata,
   });
   
   if (!result) return null;
@@ -146,6 +226,7 @@ export async function sendNotification(userId: number, payload: NotificationPayl
     const notification = {
       id: result.id,
       ...payload,
+      metadata,
       actionUrl,
       createdAt: new Date().toISOString(),
       isRead: false,
@@ -225,13 +306,13 @@ export async function sendSystemNotification(userId: number, data: {
   title: string;
   message: string;
   priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
-}) {
+}, opts: SendNotificationOptions = {}) {
   return sendNotification(userId, {
     type: 'SYSTEM',
     title: data.title,
     message: data.message,
     priority: data.priority || 'NORMAL',
-  });
+  }, opts);
 }
 
 /**

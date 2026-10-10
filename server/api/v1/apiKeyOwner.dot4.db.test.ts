@@ -92,6 +92,8 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 1 — apiKeyOwnerUserId (CSD
         [0, ids.u],
         [0, null],
       ]);
+      // doc 81 Đợt 5 task E1 — the route marks every run it starts as API-started (server side, not from the body).
+      expect(h.calls.map((c) => (c[3] as { viaApi?: boolean }).viaApi)).toEqual([true, true]);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

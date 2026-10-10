@@ -232,14 +232,58 @@ describe("final wave F7 — a non-stop write that waited past OT_SAFETY_PREFLIGH
     expect(S.reads).toHaveLength(2);
   });
 
-  it("★ L-7: a stop-typed (unpinned) command is NEVER re-checked — written even though safety turned BLOCKED while it waited", async () => {
+  // doc 81 Đợt 5 task F4 (item 34) — was "a stop-typed (unpinned) command is NEVER re-checked". The skip was by NAME
+  // (isStopCommandType) although an unpinned stop runs the preflight and waits in the queue like any write, and can carry
+  // arbitrary writes. The re-check now matches the preflight: only a PINNED stop skips it.
+  it("★ Đợt 5 F4: an UNPINNED stop-typed command IS re-checked — safety turned BLOCKED while it waited ⇒ refused (use the hardware E-STOP), NOTHING written", async () => {
     const { pA, pB } = await slowWriteThen("cmd_stop", "stop");
     S.state = "BLOCKED";
     await within(pA, BOUND);
+    const rB = await within(pB, BOUND);
+    expect(rB).toMatchObject({ ok: false, status: "rejected", reason: "SAFETY_BLOCKED", pinnedStop: false });
+    expect(rB.appError).toMatchObject({ appCode: "OPERATION_FAILED", appParams: { operation: "softwareStop", reason: "softwareStopRefusedUseHardwareEstop" } });
+    expect(typeof (rB.appError?.appParams as Record<string, unknown> | undefined)?.stopPinReason).toBe("string");
+    expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed"]); // the unpinned "stop" never reached the driver
+    expect(S.reads).toHaveLength(3); // A preflight, the stop's preflight, the stop's re-check
+    const bRows = cmdLog.filter((r) => r.tagKey === "cmd_stop" && (r.ackValue as Row | undefined)?.ledger !== "intent");
+    expect(bRows).toHaveLength(1);
+    expect(String(bRows[0].errorText)).toMatch(/hardware E-STOP/);
+    expect(String(bRows[0].errorText)).toMatch(/re-check before the write .* returned BLOCKED/);
+    expect(bRows[0].ackValue).toMatchObject({ pinnedStop: false });
+    expect(typeof (bRows[0].ackValue as Row).stopPinReason).toBe("string");
+  }, 20_000);
+
+  it("Đợt 5 F4: an UNPINNED stop still OK at its turn ⇒ re-checked, then written", async () => {
+    const { pA, pB } = await slowWriteThen("cmd_stop", "stop");
+    await within(pA, BOUND);
     expect((await within(pB, BOUND)).status).toBe("acked");
     expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed", "cmd_stop"]);
-    expect(S.reads).toHaveLength(2); // A preflight + the stop's own preflight only
+    expect(S.reads).toHaveLength(3);
   }, 20_000);
+
+  it("★ L-7 (Đợt 5 F4): a PINNED stop waiting behind a slow write is NEVER re-checked — written even though safety turned BLOCKED", async () => {
+    D.plan.set("cmd_speed", SLOW);
+    const pA = dispatch(input("cmd_speed", "set_speed"));
+    expect(await until(() => D.log.length === 1, 2000)).toBe(true);
+    const pStop = dispatch(input("cmd_run", "stop", false)); // pinned: runs right after the in-flight write
+    S.state = "BLOCKED";
+    await within(pA, BOUND);
+    expect(await within(pStop, BOUND)).toMatchObject({ status: "acked", pinnedStop: true });
+    expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed", "cmd_run"]);
+    expect(S.reads).toHaveLength(1); // A's preflight only — the pinned stop neither preflights nor re-checks
+  }, 20_000);
+
+  it("Đợt 5 F fix 1 — DELAY BOUND: an UNPINNED stop whose re-check read HANGS is answered within OT_SAFETY_PREFLIGHT_DEADLINE_MS (refused UNKNOWN, nothing written)", async () => {
+    const { pA, pB } = await slowWriteThen("cmd_stop", "stop");
+    S.hangNext = true; // the NEXT read is the stop's re-check; it never answers
+    await within(pA, BOUND);
+    const tTurn = Date.now(); // the stop's turn (the slot is free now)
+    const rB = await within(pB, OT_SAFETY_PREFLIGHT_DEADLINE_MS + 1500);
+    const waited = Date.now() - tTurn;
+    expect(rB).toMatchObject({ ok: false, status: "rejected", reason: "SAFETY_UNKNOWN", pinnedStop: false });
+    expect(waited).toBeLessThanOrEqual(OT_SAFETY_PREFLIGHT_DEADLINE_MS + 1000); // documented bound (~5 s)
+    expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed"]);
+  }, 30_000);
 
   it("★ L-7: a PINNED STOP queued while a re-check HANGS is not held by it — the re-checking write gives way (SUPERSEDED_BY_STOP) and the STOP runs at once", async () => {
     const { pA, pB } = await slowWriteThen("cmd_jog", "set_jog");

@@ -17,6 +17,8 @@
 import crypto from "crypto";
 
 export const GENESIS_HASH = "0".repeat(64);
+// doc 81 Đợt 5 task F fix 1 — = commissioningService.COMMISSIONING_PIN_LOCK_NS (F7): per-adapter signature / stop-pin lock.
+export const COMMISSIONING_PIN_LOCK_NS = 563_118_407;
 const AUDIT_CHAIN_LOCK = 918_273_645; // = controlAuditService.AUDIT_CHAIN_LOCK
 export const THAO_TAC_CLI = "mapping_import_cli";
 
@@ -101,15 +103,22 @@ export async function goStopPinCliTx(tx, { row, nguon, xoa = false, actorId = nu
   if (!xoa) {
     await tx`UPDATE device_tags SET stop_value = NULL, stop_pinned_by = NULL, stop_pinned_at = NULL, "updatedAt" = NOW() WHERE id = ${row.id}`;
   }
+  // doc 81 Đợt 5 task F fix 1 (≡ ghiAuditGoStopPinTx, F7) — strictly ordered with a commissioning signature of this
+  // adapter: the per-adapter advisory lock (the caller already holds the tag row locks — same lock order as the app),
+  // then the signature IN FORCE is read and stamped on the audit (the recheck chip compares ids, not tx-start clocks).
+  await tx`SELECT pg_advisory_xact_lock(${COMMISSIONING_PIN_LOCK_NS}, ${row.adapterId})`;
   const [cm] = await tx`
-    SELECT EXISTS (SELECT 1 FROM commissioning_records
-                    WHERE "adapterId" = ${row.adapterId} AND status = 'active'
-                      AND ("expiresAt" IS NULL OR "expiresAt" > NOW())) AS c`;
-  const commissioningRecheckRequired = cm?.c === true;
+    SELECT max(id)::int AS sig FROM commissioning_records
+     WHERE "adapterId" = ${row.adapterId} AND status = 'active'
+       AND ("expiresAt" IS NULL OR "expiresAt" > NOW())`;
+  const commissioningSignatureId = cm?.sig ?? null;
+  const commissioningRecheckRequired = commissioningSignatureId !== null;
   const before = { tagKey: row.tagKey, adapterId: row.adapterId, dataType: row.dataType, stopValue: row.stop_value ?? null };
   const after = {
     tagKey: row.tagKey, adapterId: row.adapterId, dataType: row.dataType, stopValue: null,
-    commissioningRecheckRequired, autoClearedBy: nguon,
+    commissioningRecheckRequired,
+    ...(commissioningSignatureId !== null ? { commissioningSignatureId } : {}),
+    autoClearedBy: nguon,
   };
   const reason = `auto-clear: ${nguon} (${THAO_TAC_CLI}${xoa ? ",prune" : ""})`;
   await ghiControlAuditTx(tx, { tagId: row.id, actorId, before, after, reason }, secPlatform);

@@ -1858,6 +1858,8 @@ export interface SafetyRealtimeEvent {
   lineId?: number | null;
   stationId?: number | null;
   detectedBy?: string | null;
+  /** doc 81 Đợt 5 F fix 1 (R-5-f) — who recorded it ("operator" = user-recorded; "advisory"/"interlock_engine" = system). */
+  handledBy?: string | null;
   outcome: string;
   isNearMiss: boolean;
   createdAt: Date | string;

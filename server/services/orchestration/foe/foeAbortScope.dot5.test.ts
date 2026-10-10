@@ -1,0 +1,326 @@
+/**
+ * doc 81 Đợt 5 task E fix 1/2 (review #5; ruling R-5-l, which REPLACES R-5-i) — the factory-scope check of an ABORT and
+ * of a gate REJECTION is bounded by the STOP DB deadline and REFUSES on doubt (an abort also cancels
+ * the run's later STOP steps and STOP compensations, so it does not reduce actuation):
+ *   • scope lookup hung / failed ⇒ REFUSED within STOP_DB_STEP_DEADLINE_MS ("scope not verified — retry; use the direct
+ *     STOP / E-STOP"), the same answer for a missing id, audited synchronously (bounded);
+ *   • a DECIDED out-of-scope ⇒ the SAME answer as a missing run (R-5-d), the run untouched;
+ *   • an APPROVAL stays fail-closed (it lets actuation proceed).
+ * Also (review #9): startRun resolves the caller's scope for a MISSING ref too (same path as an existing one).
+ * The scope resolver (foeScope.makeScopeJudge) is driven by the test; everything else is the real engine on the FakeDb.
+ */
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
+
+const { otDispatchMock, audit, judge, conn } = vi.hoisted(() => ({
+  otDispatchMock: vi.fn(async (_cmd?: unknown) => ({ ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] })),
+  audit: vi.fn(async (_ctx: unknown, _e: Record<string, any>) => ({ id: 1 })),
+  judge: { mode: "in" as "in" | "out" | "fail" | "hang" | "scoped", calls: 0 },
+  // final wave F3 — the RUNNING connection fingerprint of each adapter; the dispatcher's own runningConnectionMatchesAdapterRow
+  // (real) compares it with the adapter row (absent / different ⇒ the pinned STOP is not verified).
+  conn: { fp: new Map<number, string>() },
+}));
+vi.mock("../../ot/otManager", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../ot/otManager")>();
+  return { ...orig, getActiveConnectionFingerprint: (adapterId: number) => conn.fp.get(adapterId) };
+});
+vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../ot/commandDispatcher")>();
+  return { isStopCommandType: orig.isStopCommandType, classifyOtStop: orig.classifyOtStop, dispatch: otDispatchMock };
+});
+vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: vi.fn() }));
+vi.mock("../../auditTrailService", () => ({ createAuditContext: (x: unknown) => x, logCrudOperation: audit }));
+vi.mock("./foeScope", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./foeScope")>();
+  const none = { machines: [], robots: [], adapters: [] };
+  return {
+    ...orig,
+    resolveUserFoeScope: (u: { id: number; role: string }) => ({ userId: u.id, userRole: u.role }),
+    makeScopeJudge: async () => {
+      judge.calls += 1;
+      switch (judge.mode) {
+        case "in":
+          return { unrestricted: true, failed: false, outOf: async () => none };
+        case "out":
+          return { unrestricted: false, failed: false, outOf: async () => ({ machines: [1], robots: [], adapters: [] }) };
+        case "fail":
+          return { unrestricted: false, failed: true, outOf: async () => ({ machines: [1], robots: [], adapters: [] }) };
+        case "hang":
+          return new Promise(() => undefined);
+        case "scoped": {
+          // final wave F3 — a REAL decision: machine 1 / adapter 501 are in the caller's scope, everything else is out.
+          const pick = (m: Map<number, boolean>, o?: { nonStopOnly?: boolean }) => [...m.entries()].filter(([, ns]) => !o?.nonStopOnly || ns).map(([id]) => id);
+          return {
+            unrestricted: false,
+            failed: false,
+            outOf: async (t: { machines: Map<number, boolean>; robots: Map<number, boolean>; adapters: Map<number, boolean> }, o?: { nonStopOnly?: boolean }) => ({
+              machines: pick(t.machines, o).filter((id) => id !== 1),
+              robots: pick(t.robots, o),
+              adapters: pick(t.adapters, o).filter((id) => id !== 501),
+            }),
+          };
+        }
+      }
+    },
+  };
+});
+
+const fake = new FakeDb();
+vi.mock("drizzle-orm", async (orig) => {
+  const actual = await orig<typeof import("drizzle-orm")>();
+  const ne = (col: { name: string }, v: unknown) => (row: Record<string, unknown>) => row[col.name] !== v;
+  const inArray = (col: { name: string }, vs: unknown[]) => (row: Record<string, unknown>) => vs.includes(row[col.name]);
+  const notInArray = (col: { name: string }, vs: unknown[]) => (row: Record<string, unknown>) => !vs.includes(row[col.name]);
+  const isNull = (col: { name: string }) => (row: Record<string, unknown>) => row[col.name] == null;
+  return { ...actual, eq: makeEq, and: makeAnd, ne, inArray, notInArray, isNull };
+});
+vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
+
+/**
+ * final wave F5 / P-E1 — a read of a chosen table HANGS ("hang") or FAILS ("fail"); everything else is the healthy FakeDb.
+ * Only SELECTs are affected (the run's own writes are untouched).
+ */
+const broken = new Map<string, "hang" | "fail">();
+{
+  const realSelect = fake.select.bind(fake);
+  const dead = (how: "hang" | "fail"): any => {
+    const b: any = new Proxy(
+      {},
+      {
+        get: (_t, k) =>
+          k === "then"
+            ? (res: unknown, rej: (e: unknown) => unknown) => (how === "fail" ? Promise.reject(new Error("relation read failed")).then(res as never, rej) : undefined)
+            : () => b,
+      },
+    );
+    return b;
+  };
+  (fake as any).select = (proj?: Record<string, any>) => {
+    const b = realSelect(proj);
+    const from = b.from.bind(b);
+    b.from = (t: any) => {
+      const name = t?.[Symbol.for("drizzle:Name")] as string | undefined;
+      const how = name ? broken.get(name) : undefined;
+      return how ? dead(how) : from(t);
+    };
+    return b;
+  };
+}
+
+import { orchestrationRunSteps, machines, deviceAdapters, deviceTags } from "../../../../drizzle/schema";
+import { deployWorkflow, startRun, resumeRun, abortRun } from "./foeEngine";
+import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
+import { adapterTargetFingerprint } from "../../ot/adapterTarget";
+
+const OWNER = { id: 10, role: "engineer", name: "owner" };
+const OTHER = { id: 12, role: "engineer", name: "other-factory" };
+type Row = Record<string, any>;
+const runRow = (id: number): Row => (fake.store.get("orchestration_runs") ?? []).find((r: Row) => r.id === id)!;
+const unverified = () => audit.mock.calls.map((c) => c[1]).filter((e) => e?.details?.operation === "foe_scope_unverified");
+
+beforeEach(() => {
+  fake.store.clear();
+  resetSeq();
+  fake.setUnique(orchestrationRunSteps, [["runId", "stepId"]]);
+  fake.seed(machines, [
+    { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "Auto-1", operationStatus: "stopped", stationId: 1 },
+    { id: 2, machineType: "AUTOMATION", capabilities: null, code: "M2", name: "Auto-2 (other factory)", operationStatus: "stopped", stationId: 2 },
+  ]);
+  fake.seed(deviceAdapters, [
+    { id: 501, machineId: 1, isEnabled: true, protocol: "modbus", endpoint: "tcp://127.0.0.1:1", connectionOptions: null },
+    { id: 502, machineId: 2, isEnabled: true, protocol: "modbus", endpoint: "tcp://127.0.0.1:1", connectionOptions: null },
+  ]);
+  // final wave F3 — adapter 502 (machine 2, ANOTHER factory) has a PINNED stop tag `estop` = true.
+  fake.seed(deviceTags, [{ id: 9001, adapterId: 502, tagKey: "estop", dataType: "bool", stopValue: true, writable: true, isEnabled: true }]);
+  otDispatchMock.mockClear();
+  audit.mockClear();
+  judge.mode = "in";
+  judge.calls = 0;
+  conn.fp = new Map([[502, adapterTargetFingerprint({ protocol: "modbus", endpoint: "tcp://127.0.0.1:1", machineId: 2, connectionOptions: null } as never)]]);
+  broken.clear();
+  process.env.FOE_ENABLED = "true";
+  delete process.env.FOE_SIM_GATE_REQUIRED;
+  delete process.env.SEC_PLATFORM;
+});
+
+async function pausedRun(): Promise<number> {
+  await deployWorkflow({ ref: "g", name: "g", steps: [{ id: "g", type: "hitl_gate", prompt: "p" }, { id: "w", type: "command", machineId: 1, command: "start" }] }, OWNER);
+  const s = await startRun("g", {}, OWNER);
+  expect(s.status).toBe("awaiting_confirm");
+  return s.runId!;
+}
+
+async function timed<T>(p: Promise<T>): Promise<{ v: T; ms: number }> {
+  const t0 = Date.now();
+  const v = await p;
+  return { v, ms: Date.now() - t0 };
+}
+
+describe("doc 81 Đợt 5 E fix 2 (R-5-l, replaces R-5-i) — abort / reject scope check: bounded, REFUSED on doubt (distinct answer), decided out-of-scope = not found", () => {
+  // doc 81 Đợt 5 task E fix 2 — ruling R-5-l REPLACES R-5-i: an undecided scope (slow / failing lookup) ⇒ REFUSED.
+  for (const mode of ["hang", "fail"] as const) {
+    it(`★ R-5-l abort with the scope lookup ${mode === "hang" ? "SLOW (hung)" : "FAILING"} ⇒ REFUSED within the STOP deadline with the distinct "scope not verified" answer (also for a missing id), audited synchronously; the run is untouched`, async () => {
+      const runId = await pausedRun();
+      judge.mode = mode;
+      const { v, ms } = await timed(abortRun(runId, OTHER, "stop now"));
+      expect(v).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      expect(v.message).toMatch(/Scope not verified — retry\. To stop equipment now, use the machine's direct STOP \/ E-STOP\./);
+      expect(ms).toBeLessThan(STOP_DB_STEP_DEADLINE_MS + 700);
+      expect(runRow(runId).status).toBe("awaiting_confirm");
+      // synchronous (bounded) audit: written BEFORE the answer
+      expect(unverified().map((e) => e.details.metadata)).toEqual([{ runId, action: "abort", outcome: "refused", reason: "scopeUnverified" }]);
+      // the same answer for an id that does not exist (no oracle)
+      const N = 999_999;
+      const fix = (r: unknown, id: number) => JSON.stringify(r).split(String(id)).join("ID");
+      expect(fix(await abortRun(N, OTHER, "stop now"), N)).toBe(fix(v, runId));
+    });
+
+    it(`★ R-5-l gate REJECTION with the scope lookup ${mode === "hang" ? "SLOW (hung)" : "FAILING"} ⇒ REFUSED (scope not verified), nothing changes, audited`, async () => {
+      const runId = await pausedRun();
+      judge.mode = mode;
+      const { v, ms } = await timed(resumeRun(runId, { approved: false, note: "no" }, OTHER));
+      expect(v).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      expect(ms).toBeLessThan(STOP_DB_STEP_DEADLINE_MS + 700);
+      expect(runRow(runId).status).toBe("awaiting_confirm");
+      expect(otDispatchMock).not.toHaveBeenCalled();
+      expect(unverified().map((e) => e.details.metadata.action)).toEqual(["reject"]);
+      const N = 999_999;
+      const fix = (r: unknown, id: number) => JSON.stringify(r).split(String(id)).join("ID");
+      expect(fix(await resumeRun(N, { approved: false, note: "no" }, OTHER), N)).toBe(fix(v, runId));
+    });
+  }
+
+  it("★ R-5-l a DECIDED in-scope abort / rejection works (scoped user, scope decided 'in')", async () => {
+    const runId = await pausedRun();
+    judge.mode = "in";
+    expect((await abortRun(runId, OTHER, "stop")).status).toBe("aborted");
+    const runId2 = await pausedRun();
+    expect((await resumeRun(runId2, { approved: false, note: "no" }, OTHER)).status).toBe("aborted");
+    expect(unverified()).toEqual([]);
+  });
+
+  it("★ a DECIDED out-of-scope abort / rejection ⇒ the SAME answer as a missing run, the run untouched, no audit", async () => {
+    const runId = await pausedRun();
+    judge.mode = "out";
+    const N = 999_999;
+    const fix = (r: unknown, id: number) => JSON.stringify(r).split(String(id)).join("ID");
+    expect(fix(await abortRun(runId, OTHER, "x"), runId)).toBe(fix(await abortRun(N, OTHER, "x"), N));
+    expect(fix(await resumeRun(runId, { approved: false }, OTHER), runId)).toBe(fix(await resumeRun(N, { approved: false }, OTHER), N));
+    expect(runRow(runId).status).toBe("awaiting_confirm");
+    expect(unverified()).toEqual([]);
+  });
+
+  it("an APPROVAL stays fail-closed: a failing scope lookup ⇒ 'not found', the gate is not approved", async () => {
+    const runId = await pausedRun();
+    judge.mode = "fail";
+    const r = await resumeRun(runId, { approved: true }, OTHER);
+    expect(r).toEqual({ ok: false, enabled: true, message: `Run ${runId} not found.` });
+    expect(runRow(runId).status).toBe("awaiting_confirm");
+    expect(otDispatchMock).not.toHaveBeenCalled();
+  });
+
+  it("review #9: startRun resolves the caller's scope for a MISSING ref too (same path as an existing ref)", async () => {
+    judge.calls = 0;
+    const r = await startRun("no-such-ref", {}, OWNER);
+    expect(r).toEqual({ ok: false, enabled: true, message: `Workflow "no-such-ref" not found.` });
+    expect(judge.calls).toBe(1);
+  });
+});
+
+/**
+ * doc 81 Đợt 5 final wave F3 / F5 / P-E1 — the undecided cases of an abort / rejection:
+ *   • F3: a PINNED stop on another factory's adapter whose running-connection check is false (or throws) is not "out of
+ *     scope" — it is UNDECIDED: the in-scope owner gets "scope not verified — use the direct STOP / E-STOP", never "not
+ *     found"; a run that is out of scope WHATEVER that stop is (a non-STOP target outside) stays "not found";
+ *   • F5: the run row read of an abort / rejection is inside the STOP DB bound (a hung read ⇒ "scope not verified");
+ *   • P-E1: when a read the decision needs is broken, a missing id gets the SAME answer as an existing run.
+ */
+describe("doc 81 Đợt 5 final wave F3 / F5 / P-E1 — undecided scope of an abort / rejection", () => {
+  const OT_STOP_B = { id: "s", type: "command", machineId: 2, command: "stop", args: { adapterId: 502, writes: [{ tagKey: "estop", value: true }] } };
+  async function pausedStopRun(extra: Row[] = []): Promise<number> {
+    judge.mode = "in";
+    const ref = `gs${extra.length}`;
+    const d = await deployWorkflow(
+      { ref, name: ref, steps: [{ id: "g", type: "hitl_gate", prompt: "p" }, { id: "w", type: "command", machineId: 1, command: "start" }, OT_STOP_B, ...extra] } as never,
+      OWNER,
+    );
+    expect(d.ok).toBe(true);
+    const s = await startRun(ref, {}, OWNER);
+    expect(s.status).toBe("awaiting_confirm");
+    return s.runId!;
+  }
+  const fix = (r: unknown, id: number) => JSON.stringify(r).split(String(id)).join("ID");
+
+  it("control: the pinned STOP of B over a matching running connection ⇒ a verified STOP ⇒ the owner's abort is DECIDED in and works", async () => {
+    const runId = await pausedStopRun();
+    judge.mode = "scoped";
+    expect((await abortRun(runId, OWNER, "stop")).status).toBe("aborted");
+    expect(unverified()).toEqual([]);
+  });
+
+  for (const how of ["down", "stale"] as const) {
+    it(`★ F3: B's adapter ${how === "down" ? "has NO running connection (down / reconnecting)" : "runs a STALE connection (made for another device)"} ⇒ abort AND reject by the in-scope owner answer "scope not verified" (never "not found"), the run untouched, audited`, async () => {
+      const runId = await pausedStopRun();
+      judge.mode = "scoped";
+      if (how === "down") conn.fp.delete(502);
+      else conn.fp.set(502, "0".repeat(64));
+      const a = await abortRun(runId, OWNER, "stop now");
+      expect(a).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      expect(a.message).toMatch(/use the machine's direct STOP \/ E-STOP/);
+      const r = await resumeRun(runId, { approved: false, note: "no" }, OWNER);
+      expect(r).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      expect(runRow(runId).status).toBe("awaiting_confirm");
+      expect(unverified().map((e) => e.details.metadata.action)).toEqual(["abort", "reject"]);
+    });
+  }
+
+  it("★ F3: a run that is out of scope WHATEVER the unverified stop is (a NON-STOP target of B) stays a decided 'not found' — same answer as a missing id", async () => {
+    const runId = await pausedStopRun([{ id: "wb", type: "command", machineId: 2, command: "start" }]);
+    judge.mode = "scoped";
+    conn.fp.delete(502);
+    const N = 999_999;
+    expect(fix(await abortRun(runId, OWNER, "x"), runId)).toBe(fix(await abortRun(N, OWNER, "x"), N));
+    expect(await abortRun(runId, OWNER, "x")).toEqual({ ok: false, enabled: true, runId, message: `Run ${runId} not found.` });
+    expect(runRow(runId).status).toBe("awaiting_confirm");
+    expect(unverified()).toEqual([]);
+  });
+
+  for (const action of ["abort", "reject"] as const) {
+    it(`★ F5: the ${action}'s first run-row read HANGS ⇒ answered "scope not verified" within the STOP deadline (was: hung)`, async () => {
+      const runId = await pausedStopRun();
+      judge.mode = "scoped";
+      broken.set("orchestration_runs", "hang");
+      const call = action === "abort" ? abortRun(runId, OWNER, "x") : resumeRun(runId, { approved: false }, OWNER);
+      const t0 = Date.now();
+      const v = await Promise.race([call, new Promise<"HUNG">((res) => setTimeout(() => res("HUNG"), 3 * STOP_DB_STEP_DEADLINE_MS))]);
+      const ms = Date.now() - t0;
+      broken.clear();
+      expect(v).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      expect(ms).toBeLessThan(2 * STOP_DB_STEP_DEADLINE_MS + 700); // decision bound + audit bound
+      expect(runRow(runId).status).toBe("awaiting_confirm");
+    });
+  }
+
+  for (const how of ["fail", "hang"] as const) {
+    it(`★ P-E1: the stop-pin read ${how === "fail" ? "FAILS" : "HANGS"} ⇒ an existing run (its stop cannot be verified) and a MISSING id get the SAME "scope not verified" answer (abort and reject)`, async () => {
+      const runId = await pausedStopRun();
+      judge.mode = "scoped";
+      broken.set("device_tags", how);
+      const N = 999_999;
+      const a = await abortRun(runId, OWNER, "x");
+      expect(a).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      expect(fix(await abortRun(N, OWNER, "x"), N)).toBe(fix(a, runId));
+      const r = await resumeRun(runId, { approved: false }, OWNER);
+      expect(r).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      expect(fix(await resumeRun(N, { approved: false }, OWNER), N)).toBe(fix(r, runId));
+      broken.clear();
+      expect(runRow(runId).status).toBe("awaiting_confirm");
+    });
+  }
+
+  it("P-E1 control: with every read healthy a missing id is a decided 'not found' (no refusal, no audit)", async () => {
+    judge.mode = "scoped";
+    expect(await abortRun(999_999, OWNER, "x")).toEqual({ ok: false, enabled: true, runId: 999_999, message: "Run 999999 not found." });
+    expect(unverified()).toEqual([]);
+  });
+});

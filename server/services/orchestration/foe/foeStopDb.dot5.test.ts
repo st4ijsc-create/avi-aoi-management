@@ -1,0 +1,355 @@
+/**
+ * doc 81 Đợt 5 task E4 (items 35 + 36) — an orchestrated STOP never waits on a hung database for its own bookkeeping.
+ *   • A ROBOT STOP creates NO ai_pending_actions row (the robot dispatcher never reads a stop's row; the row only named
+ *     whoever drove the walk as "confirmer" — item 35 — and cost an unbounded DB wait — item 36).
+ *   • An OT STOP keeps its (self-confirmed) row, but ensureOrchestrationAction AND the step's upsertStep('running') before
+ *     it are bounded by STOP_DB_STEP_DEADLINE_MS; past the deadline the STOP continues to the dispatcher, whose own error
+ *     path decides (here a counter; for real: no row ⇒ NOT_CONFIRMED, visibly).
+ *   • The post-dispatch writes of a STOP are bounded too: a SECOND stop of the same walk is never held behind them.
+ *   • Control: a NON-stop step's writes are unchanged (a hung write still holds it — nothing is relaxed for motion).
+ * The hung DB is explicit: a select / insert issued from the named engine function never answers (FakeDb otherwise healthy).
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
+
+const { otDispatchMock, robotDispatchMock } = vi.hoisted(() => ({
+  otDispatchMock: vi.fn(async (_cmd?: unknown) => ({ ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] })),
+  robotDispatchMock: vi.fn(async (_job?: unknown) => ({ ok: true, status: "simulated" as const, jobId: 7 })),
+}));
+vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../ot/commandDispatcher")>();
+  return { isStopCommandType: orig.isStopCommandType, dispatch: otDispatchMock };
+});
+vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: robotDispatchMock }));
+vi.mock("../../auditTrailService", () => ({ createAuditContext: (x: unknown) => x, logCrudOperation: vi.fn(async () => ({ id: 1 })) }));
+vi.mock("./foeScope", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./foeScope")>();
+  return { ...orig, resolveUserFoeScope: () => null };
+});
+
+const fake = new FakeDb();
+/** A HUNG DB for chosen engine functions only: a select / insert issued from one of them never answers. */
+const HANG = { fns: new Set<string>(), hits: [] as string[], statuses: new Set<string>() };
+/** final wave P-E2 — a run-status UPDATE to one of these statuses LANDS LATE (after `ms`), evaluated against the row THEN. */
+const LATE = { statuses: new Map<string, number>(), landed: [] as string[] };
+const DELAY = { stepId: "" as string, ms: 0, used: false };
+{
+  const hungBuilder = (): any => {
+    const h: any = new Proxy(
+      {},
+      { get: (_t, k) => (k === "then" ? () => undefined : () => h) },
+    );
+    return h;
+  };
+  const hit = () => {
+    const stack = new Error().stack ?? "";
+    const fn = [...HANG.fns].find((f) => stack.includes(f));
+    if (fn) HANG.hits.push(fn);
+    return fn;
+  };
+  const realSelect = fake.select.bind(fake);
+  (fake as any).select = (proj?: Record<string, any>) => (hit() ? hungBuilder() : realSelect(proj));
+  const realInsert = (fake as any).insert.bind(fake);
+  // E fix 2 — a run-status UPDATE to one of HANG.statuses (e.g. 'compensating') never answers.
+  const realUpdate = (fake as any).update.bind(fake);
+  (fake as any).update = (t: any) => {
+    const u = realUpdate(t);
+    return {
+      ...u,
+      set: (patch: Record<string, any>) => {
+        if (HANG.statuses.has(patch?.status)) return hungBuilder();
+        const late = LATE.statuses.get(patch?.status);
+        if (late === undefined) return u.set(patch);
+        return {
+          where: (cond: unknown) => {
+            const landed = () =>
+              new Promise<Row[]>((res) =>
+                setTimeout(() => {
+                  LATE.landed.push(patch.status);
+                  res(u.set(patch).where(cond as never).returning());
+                }, late),
+              );
+            return { returning: landed, then: (a: any, b: any) => landed().then(a, b) };
+          },
+        };
+      },
+    };
+  };
+  (fake as any).insert = (t: any) => {
+    if (hit()) return hungBuilder();
+    // E fix 2 — a step-row write carrying one of HANG.statuses never answers (e.g. only the 'failed' row).
+    if (HANG.statuses.size && (new Error().stack ?? "").includes("upsertStep")) {
+      return { values: (v: Record<string, any>) => (HANG.statuses.has(v.status) ? hungBuilder() : realInsert(t).values(v)) };
+    }
+    // E fix 1 — DELAY: the FIRST 'running' write of a chosen step lands `ms` later (a late write after a bounded STOP).
+    const stack = new Error().stack ?? "";
+    if (!DELAY.stepId || !stack.includes("upsertStep")) return realInsert(t);
+    return {
+      values(v: Record<string, any>) {
+        if (v.stepId !== DELAY.stepId || v.status !== "running" || DELAY.used) return realInsert(t).values(v);
+        DELAY.used = true;
+        let cfg: any;
+        const run = () => new Promise((res) => setTimeout(() => res(realInsert(t).values(v).onConflictDoUpdate(cfg)), DELAY.ms)).then((x: any) => x);
+        const b: any = {
+          onConflictDoUpdate(c: any) {
+            cfg = c;
+            return b;
+          },
+          then(resolve: any, reject: any) {
+            return run().then(() => undefined).then(resolve, reject);
+          },
+        };
+        return b;
+      },
+    };
+  };
+}
+vi.mock("drizzle-orm", async (orig) => {
+  const actual = await orig<typeof import("drizzle-orm")>();
+  const ne = (col: { name: string }, v: unknown) => (row: Record<string, unknown>) => row[col.name] !== v;
+  const inArray = (col: { name: string }, vs: unknown[]) => (row: Record<string, unknown>) => vs.includes(row[col.name]);
+  const notInArray = (col: { name: string }, vs: unknown[]) => (row: Record<string, unknown>) => !vs.includes(row[col.name]);
+  const isNull = (col: { name: string }) => (row: Record<string, unknown>) => row[col.name] == null;
+  return { ...actual, eq: makeEq, and: makeAnd, ne, inArray, notInArray, isNull };
+});
+vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
+
+import { orchestrationRunSteps, machines, deviceAdapters, robots } from "../../../../drizzle/schema";
+import { equipmentRegistry } from "../../equipment/equipmentAdapter";
+import { deployWorkflow, startRun } from "./foeEngine";
+import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
+
+const OWNER = { id: 10, role: "engineer", name: "owner" };
+type Row = Record<string, any>;
+const actions = (): Row[] => fake.store.get("ai_pending_actions") ?? [];
+
+async function within<T>(p: Promise<T>, ms: number): Promise<T | "HUNG"> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const r = await Promise.race([p, new Promise<"HUNG">((res) => (t = setTimeout(() => res("HUNG"), ms)))]);
+  clearTimeout(t);
+  return r;
+}
+
+let warn: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  fake.store.clear();
+  resetSeq();
+  fake.setUnique(orchestrationRunSteps, [["runId", "stepId"]]);
+  fake.seed(machines, [
+    { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "Auto-1", operationStatus: "stopped", stationId: 1 },
+    { id: 2, machineType: "ROBOT", capabilities: null, code: "R1", name: "Robot-1", operationStatus: "stopped", stationId: 1 },
+  ]);
+  fake.seed(deviceAdapters, [{ id: 501, machineId: 1, isEnabled: true }]);
+  fake.seed(robots, [{ id: 2, code: "R2", isEnabled: true }]);
+  otDispatchMock.mockClear();
+  robotDispatchMock.mockClear();
+  HANG.fns.clear();
+  HANG.statuses.clear();
+  HANG.hits.length = 0;
+  LATE.statuses.clear();
+  LATE.landed.length = 0;
+  DELAY.stepId = "";
+  DELAY.used = false;
+  process.env.FOE_ENABLED = "true";
+  process.env.OT_CONTROL_ENABLED = "";
+  delete process.env.FOE_SIM_GATE_REQUIRED;
+  delete process.env.SEC_PLATFORM;
+  warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+});
+afterEach(() => warn.mockRestore());
+
+const RB_ABORT = { id: "ra", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } } as const;
+const OT_STOP = { id: "os", type: "command", machineId: 1, command: "stop", args: { adapterId: 501 } } as const;
+
+describe("doc 81 Đợt 5 task E4 — an orchestrated STOP never waits on a hung DB for its bookkeeping", () => {
+  it("★ item 35: a robot STOP creates NO authorisation row (healthy DB) and is sent once; an OT STOP still gets its row", async () => {
+    await deployWorkflow({ ref: "rows", name: "rows", steps: [RB_ABORT, OT_STOP] }, OWNER);
+    const res = await startRun("rows", {}, OWNER);
+    expect(res.status).toBe("completed");
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    expect(actions().map((a) => a.summary)).toEqual(["FOE orchestration: step os"]);
+  });
+
+  it("★ robot STOP + HUNG authorisation lookup ⇒ never asked; sent well under the deadline", async () => {
+    await deployWorkflow({ ref: "rh", name: "rh", steps: [RB_ABORT] }, OWNER);
+    HANG.fns.add("ensureOrchestrationAction");
+    const t0 = Date.now();
+    const res = await within(startRun("rh", {}, OWNER), STOP_DB_STEP_DEADLINE_MS + 2000);
+    expect(res).not.toBe("HUNG");
+    expect(Date.now() - t0).toBeLessThan(STOP_DB_STEP_DEADLINE_MS / 2);
+    expect(HANG.hits).toEqual([]);
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("★ item 36: OT STOP + HUNG ensureOrchestrationAction ⇒ the STOP reaches the dispatcher within the deadline (logged)", async () => {
+    await deployWorkflow({ ref: "oh", name: "oh", steps: [OT_STOP] }, OWNER);
+    HANG.fns.add("ensureOrchestrationAction");
+    const t0 = Date.now();
+    const res = await within(startRun("oh", {}, OWNER), STOP_DB_STEP_DEADLINE_MS + 2000);
+    expect(res, "OT STOP held by the authorisation row write").not.toBe("HUNG");
+    expect(Date.now() - t0).toBeLessThan(STOP_DB_STEP_DEADLINE_MS + 700);
+    expect(HANG.hits).toContain("ensureOrchestrationAction");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    expect(actions()).toHaveLength(0); // no row ⇒ the real OT dispatcher would refuse NOT_CONFIRMED (its own path)
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/authorisation row not written in time/);
+  });
+
+  it("★ item 36: OT STOP + HUNG upsertStep (every step-row write) ⇒ BOTH stops of the walk reach their dispatchers, each bounded", async () => {
+    await deployWorkflow({ ref: "uh", name: "uh", steps: [OT_STOP, { ...RB_ABORT }] }, OWNER);
+    HANG.fns.add("upsertStep");
+    const t0 = Date.now();
+    const res = await within(startRun("uh", {}, OWNER), 6 * STOP_DB_STEP_DEADLINE_MS + 2000);
+    expect(res, "a STOP held by a hung step-row write").not.toBe("HUNG");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    // OT stop: running + result + completed rows (3 bounded waits); robot stop: running + result + completed (3)
+    expect(Date.now() - t0).toBeLessThan(6 * STOP_DB_STEP_DEADLINE_MS + 1500);
+    expect(HANG.hits.filter((h) => h === "upsertStep").length).toBeGreaterThanOrEqual(2);
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/running row not written in time/);
+  });
+
+  it("★ the FIRST stop is dispatched within ONE deadline of the start, even with every step-row write hung", async () => {
+    await deployWorkflow({ ref: "first", name: "first", steps: [OT_STOP] }, OWNER);
+    HANG.fns.add("upsertStep");
+    const t0 = Date.now();
+    let sentAt = 0;
+    otDispatchMock.mockImplementationOnce(async () => {
+      sentAt = Date.now();
+      return { ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] };
+    });
+    await within(startRun("first", {}, OWNER), 4 * STOP_DB_STEP_DEADLINE_MS + 2000);
+    expect(sentAt).toBeGreaterThan(0);
+    expect(sentAt - t0).toBeLessThan(STOP_DB_STEP_DEADLINE_MS + 700);
+  });
+
+  it("control: a NON-stop step with a hung step-row write is held as before (nothing relaxed for motion)", async () => {
+    await deployWorkflow({ ref: "mv", name: "mv", steps: [{ id: "w", type: "command", machineId: 1, command: "start", args: { adapterId: 501 } }] }, OWNER);
+    HANG.fns.add("upsertStep");
+    const res = await within(startRun("mv", {}, OWNER), 3 * STOP_DB_STEP_DEADLINE_MS + 500);
+    expect(res).toBe("HUNG");
+    expect(otDispatchMock).not.toHaveBeenCalled();
+    expect(warn.mock.calls.flat().join(" "), "a motion step's write must not be bounded/skipped").not.toMatch(/not written in time/);
+  });
+
+  // ── doc 81 Đợt 5 task E fix 1 (review #6 / #13) ────────────────────────────────────────────────────────────────────
+  for (const [shape, steps] of [
+    ["sequence", [{ id: "sq", type: "sequence", steps: [{ ...OT_STOP }] }]],
+    ["parallel", [{ id: "pl", type: "parallel", steps: [{ ...OT_STOP }, { ...RB_ABORT }] }]],
+    ["branch", [{ id: "br", type: "branch", condition: { source: "const", key: "x", op: "eq", value: "x" }, then: [{ ...OT_STOP }] }]],
+    ["nested sequence→branch", [{ id: "sq", type: "sequence", steps: [{ id: "br", type: "branch", condition: { source: "const", key: "x", op: "eq", value: "x" }, then: [{ ...OT_STOP }] }] }]],
+  ] as const) {
+    it(`★ a STOP inside a ${shape} + EVERY step-row write hung ⇒ dispatched within (depth + 4)·D (container writes bounded too)`, async () => {
+      await deployWorkflow({ ref: `n-${shape.length}`, name: "n", steps: steps as never }, OWNER);
+      HANG.fns.add("upsertStep");
+      const depth = shape.startsWith("nested") ? 2 : 1;
+      const t0 = Date.now();
+      let sentAt = 0;
+      otDispatchMock.mockImplementationOnce(async () => {
+        sentAt = Date.now();
+        return { ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] };
+      });
+      await within(startRun(`n-${shape.length}`, {}, OWNER), 12 * STOP_DB_STEP_DEADLINE_MS);
+      expect(sentAt, `${shape}: the STOP never reached the dispatcher`).toBeGreaterThan(0);
+      expect(sentAt - t0).toBeLessThan((depth + 4) * STOP_DB_STEP_DEADLINE_MS + 700);
+    });
+  }
+
+  it("★ a STOP's own precondition read-back hung (device read) ⇒ bounded, the STOP is still dispatched", async () => {
+    const real = equipmentRegistry.getAdapter.bind(equipmentRegistry);
+    const spy = vi.spyOn(equipmentRegistry, "getAdapter").mockImplementation((kind: any) => {
+      const a = real(kind);
+      return {
+        ...a,
+        sendCommand: (c: any) => a.sendCommand(c),
+        readTelemetry: () => new Promise(() => undefined),
+        getState: () => new Promise(() => undefined),
+      } as any;
+    });
+    try {
+      await deployWorkflow(
+        { ref: "pre", name: "pre", steps: [{ ...OT_STOP, precondition: { not: { source: "telemetry", machineId: 1, key: "never", op: "exists" } } } as never] },
+        OWNER,
+      );
+      const t0 = Date.now();
+      const res = await within(startRun("pre", {}, OWNER), 6 * STOP_DB_STEP_DEADLINE_MS);
+      expect(res).not.toBe("HUNG");
+      expect(otDispatchMock).toHaveBeenCalledTimes(1);
+      expect(Date.now() - t0).toBeLessThan(2 * STOP_DB_STEP_DEADLINE_MS + 700);
+      expect(warn.mock.calls.flat().join(" ")).toMatch(/condition read-back not answered in time/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("★ review #13: a LATE 'running' write (landing after the STOP completed) never regresses the step row", async () => {
+    await deployWorkflow({ ref: "late", name: "late", steps: [OT_STOP] }, OWNER);
+    DELAY.stepId = "os";
+    DELAY.ms = STOP_DB_STEP_DEADLINE_MS + 500; // lands after the bound gave up on it and after 'completed'
+    const res = await startRun("late", {}, OWNER);
+    expect(res.status).toBe("completed");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 900)); // let the late write land
+    expect(DELAY.used).toBe(true);
+    const row = (fake.store.get("orchestration_run_steps") ?? []).find((r: Row) => r.runId === res.runId && r.stepId === "os")!;
+    expect(row.status).toBe("completed");
+  });
+
+  // ── doc 81 Đợt 5 task E fix 2 (review N1) ─────────────────────────────────────────────────────────────────────────
+  it("★ N1: a STOP COMPENSATION of a failing motion step + its failed row AND the 'compensating' status hung ⇒ the STOP is dispatched within the documented 5·D", async () => {
+    await deployWorkflow(
+      {
+        ref: "comp",
+        name: "comp",
+        steps: [{ id: "w", type: "command", machineId: 1, command: "start", args: { adapterId: 501 }, compensation: { ...OT_STOP, id: "cs" } } as never],
+      },
+      OWNER,
+    );
+    HANG.statuses.add("failed");
+    HANG.statuses.add("compensating");
+    let sentAt = 0;
+    otDispatchMock.mockImplementationOnce(async () => {
+      sentAt = Date.now();
+      return { ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] };
+    });
+    const t0 = Date.now();
+    await within(startRun("comp", {}, OWNER), 8 * STOP_DB_STEP_DEADLINE_MS);
+    expect(sentAt, "the STOP compensation never reached the dispatcher").toBeGreaterThan(0);
+    expect((otDispatchMock.mock.calls[0][0] as { commandType: string }).commandType).toBe("stop"); // the motion was refused (no gate)
+    expect(sentAt - t0).toBeLessThan(5 * STOP_DB_STEP_DEADLINE_MS + 700);
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/failed row not written in time/);
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/compensating status not written in time/);
+  });
+
+  // ── doc 81 Đợt 5 final wave P-E2 (E re-review 2 M2) ──────────────────────────────────────────────────────────────
+  it("★ P-E2: the bounded 'compensating' status write LANDS LATE (after the run already ended 'failed') ⇒ it never overwrites the terminal status", async () => {
+    await deployWorkflow(
+      {
+        ref: "complate",
+        name: "complate",
+        steps: [{ id: "w", type: "command", machineId: 1, command: "start", args: { adapterId: 501 }, compensation: { ...OT_STOP, id: "cs" } } as never],
+      },
+      OWNER,
+    );
+    LATE.statuses.set("compensating", 3 * STOP_DB_STEP_DEADLINE_MS);
+    const res = await within(startRun("complate", {}, OWNER), 8 * STOP_DB_STEP_DEADLINE_MS);
+    expect(res).not.toBe("HUNG");
+    const runRowNow = () => (fake.store.get("orchestration_runs") ?? []).find((r: Row) => r.workflowRef === "complate")!;
+    expect(otDispatchMock).toHaveBeenCalled(); // the STOP compensation was sent (bounded) …
+    await vi.waitFor(() => expect(runRowNow().status).toBe("failed"), { timeout: 3 * STOP_DB_STEP_DEADLINE_MS });
+    // … and when the late 'compensating' UPDATE finally lands it changes nothing
+    await vi.waitFor(() => expect(LATE.landed).toContain("compensating"), { timeout: 5 * STOP_DB_STEP_DEADLINE_MS });
+    expect(runRowNow().status).toBe("failed");
+  });
+
+  it("control (N1): a NON-stop compensation keeps the failed row unbounded (held by a hung write as before)", async () => {
+    await deployWorkflow(
+      { ref: "compmv", name: "compmv", steps: [{ id: "w", type: "command", machineId: 1, command: "start", args: { adapterId: 501 }, compensation: { id: "cm", type: "command", machineId: 1, command: "start", args: { adapterId: 501 } } } as never] },
+      OWNER,
+    );
+    HANG.statuses.add("failed");
+    const res = await within(startRun("compmv", {}, OWNER), 2 * STOP_DB_STEP_DEADLINE_MS);
+    expect(res).toBe("HUNG");
+    expect(warn.mock.calls.flat().join(" ")).not.toMatch(/failed row not written in time/);
+  });
+});

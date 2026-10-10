@@ -676,3 +676,56 @@ Plan `docs/superpowers/plans/2026-10-09-engineering-control-dot4.md` — đóng 
 - Run tạo qua khoá API mà người tạo khoá không còn hoạt động ⇒ bước OT/robot bị từ chối.
 
 **Còn mở:** người cầm khoá API (không phải người tạo) vẫn tự duyệt được run của mình (cần danh tính theo từng người cầm khoá); mã băm duyệt không phủ binding adapter / tag map / chương trình robot; điều phối chưa có phạm vi tenant (robot của nhà máy khác không bị chặn ở deploy); VDA5050: lệnh chuyển động instantActions qua driver thật chưa từng chạy (có từ trước); ngắt kết nối muộn của phiên cũ có thể làm hỏng phiên mới mà DỪNG đang dùng (DỪNG thất bại hiển thị rõ); cảnh báo B3 chỉ trong bộ nhớ (restart mất), cửa sổ 10 s là ước lượng; danh sách người được giao chưa giới hạn theo nhà máy (có từ trước); thay đổi stop pin cùng lúc với chữ ký có thể không bật chip; canvas Causal chưa kiểm khi có licence thật; hộp thông báo critical B3 bị bỏ với người tắt thông báo trong app (luồng cảnh báo critical vẫn mang). Deploy không chặn bước DỪNG chưa ghim (ghim đổi được sau deploy — kiểm lúc chạy vẫn là chốt); lệnh kiểu DỪNG chưa ghim không được kiểm an toàn lại trước khi ghi (như trước); bản ghi uỷ quyền DỪNG robot ghi chủ run làm người xác nhận (chỉ là bản ghi); `ensureOrchestrationAction` vẫn chờ DB không giới hạn (có từ trước).
+
+## 14. Kết quả Đợt 5 (2026-10-10 → 10-11)
+
+Plan `docs/superpowers/plans/2026-10-10-engineering-control-dot5.md` — khảo sát lại 37 mục "Còn mở" §7–§13 bằng mã (`.superpowers/sdd/2026-10-10-engineering-control-dot5/survey-*.md`): **6 mục đã đóng từ trước** (1, 2, 3, 5, 7, 14), 31 mục làm trong Đợt 5. Không migration.
+
+### Quyết định của chủ dự án (2026-10-10)
+- 14 mục nhỏ theo khuyến nghị khảo sát; 13 (kênh thời gian deploy) và 16 (form ECN sau "Bỏ thay đổi?") **chấp nhận, đóng**; 18 (sheet IDE/IR/POU chưa đồng bộ URL) **hoãn** tới khi làm lại các màn đó.
+- **24:** run tạo qua khoá API **không bao giờ** chạy bước OT/robot không phải DỪNG (DỪNG vẫn chạy).
+- **26:** điều phối theo phạm vi nhà máy; khoá API không khai `dataScopeMode` bị từ chối; DỪNG ngoài phạm vi chặn ở deploy, cho chạy lúc start/run.
+- **37:** Claude build + restart sau khi gộp Đợt 5.
+
+### Nhóm E — bảo mật điều phối
+- Run từ API không tác động (lý do `apiRun`, kiểm ở engine và cả hai bộ điều phối lệnh).
+- **Phạm vi nhà máy ở MỌI lối vào** (deploy/rollback/xoá/start/duyệt/từ chối/huỷ/xem/lịch sử/replay/hub/giao việc/edge/API v1); ngoài phạm vi ≡ không tồn tại; census tự tìm mọi tệp chạm bảng điều phối.
+- **Huỷ/từ chối khi KHÔNG quyết được phạm vi trong 1 s ⇒ TỪ CHỐI** ("chưa xác minh được phạm vi — thử lại; dùng DỪNG trực tiếp / E-STOP"). Lý do: huỷ run **huỷ cả các bước DỪNG còn lại** (không phải thao tác giảm năng lượng); không đường DỪNG thiết bị nào đi qua kiểm này.
+- Duyệt cổng gắn **mã băm ràng buộc** (adapter, tag, robot) tính phía server; cấu hình đổi sau khi duyệt ⇒ duyệt mất hiệu lực.
+- Một bộ phân loại DỪNG dùng chung: chỉ **DỪNG thật** (ghim DỪNG OT / job dừng robot) được miễn — không theo tên lệnh. DỪNG điều phối (kể cả lồng trong khối, bù trừ) có giới hạn chờ DB.
+
+### Nhóm F — runtime OT/robot
+- VDA5050 instantActions chuyển động chạy qua driver thật (qua đủ khoá chuyển động, robot tắt, HITL; gửi đúng một lần).
+- Ngắt kết nối muộn không phá phiên mới — mọi driver (cả plugin), có hợp đồng kiểm theo census.
+- Cửa sổ rủi ro sau DỪNG theo adapter + biến `OT_STALE_WRITE_RISK_TTL_MS` (10–60 s); DỪNG chưa ghim được kiểm an toàn lại (≤ ~5 s); DỪNG ghim không bao giờ chậm thêm.
+- Mốc thời gian trạng thái VDA5050 tương lai/không múi giờ bị loại.
+- **Thông báo an toàn vượt "tắt thông báo"** chỉ khi server tự ghi nhận sự kiện từ đường thiết bị (không trường nào do người dùng/API đặt được); lặp trong 60 s chỉ hạ xuống giao bình thường, **không bao giờ bỏ**.
+- Chữ ký nghiệm thu và thay đổi stop pin được xếp thứ tự (khoá + ghi chữ ký đang hiệu lực) — cả đường CLI.
+
+### Nhóm G — MQTT, ingest, tài liệu
+- App tablet 1.0.17: ô "Mật khẩu MQTT của thiết bị" (Android Keystore AES-GCM), **chỉ gửi tới đúng broker đã lưu**, đọc không bao giờ xoá, hỏng hẳn ⇒ yêu cầu nhập lại.
+- **Mặc định `MQTT_ALLOW_PASSWORDLESS_REGISTERED` = false.** Thứ tự triển khai: cập nhật app → cấp mật khẩu → lật cờ (DEPLOY_LAN_GUIDE).
+- **Sửa lỗ có từ trước:** kiểm origin và giới hạn tần suất phân biệt hoa/thường và dạng địa chỉ (`/API/...`, `http://host/...`, `#`, `//a@b/...`) — nay dùng chung một hàm lấy đường như Express định tuyến; không nạp được ⇒ đóng.
+- Tài liệu IoT/doc 61 đúng luật thật (allowlist gateway, `ts` có múi giờ, 403/429); test dấu vân kết nối qua loader thật; test tranh chấp ghim; SAML ACS miễn kiểm origin đúng đường; test Đợt 3b không còn để lại hàng audit.
+
+### Nhóm H — UX và đo
+- POU: gập panel đóng Copilot; Interlock màn hẹp không nhảy tab; bản đồ Fleet lấy nhà máy theo phạm vi; quản trị chưa chọn line dùng múi giờ chung nếu mọi nhà máy cùng múi.
+- **Danh sách "Giao cho" và giao việc theo nhà máy** (một luật chung; với run: người được giao phải thấy mọi đích không phải DỪNG); mọi trường hợp ngoài phạm vi trả như không tồn tại.
+- Cổng licence không còn chờ batch chậm (0,9 s thay vì ~75 s); canvas Causal kiểm có/không licence AI.
+- Test trình duyệt câu từ chối DỪNG (vi/en) với hàng rào không chạm thiết bị thật; Fleet @1600 khớp bản ghi đo.
+
+### Kiểm
+- Mỗi nhóm: review → vòng sửa → review lại (E: 3 vòng, G: 3 vòng, F: 2, H: 1); review toàn nhánh → một vòng sửa cuối → review lại.
+- Quét bảo mật tự động bắt thêm 7 lần trong đợt (rò mật khẩu tablet, lối vào chưa kiểm phạm vi ×2, nguồn sự kiện giả mạo, throttle nuốt cảnh báo, cho qua khi chưa quyết phạm vi, lộ thông tin giao việc) — đều đã đóng có test.
+- `tsc` sạch. Review toàn nhánh: 822/825 (3 đỏ twin3d có từ trước); vòng sửa cuối 47 tệp 662/662, app tablet 37/37, kiểm Kotlin 53/53, 41 đột biến đều đỏ; review lại vòng cuối 184/184 — **sẵn sàng gộp**. Dữ liệu rác `_test` từ các lần chạy bị ngắt: 91 → 0 hàng.
+
+### Cần chủ dự án quyết / làm trước khi khởi động lại
+- **Tablet:** đếm thiết bị MQTT đăng ký không mật khẩu trên dev; nếu có (hoặc chưa rõ) đặt `MQTT_ALLOW_PASSWORDLESS_REGISTERED=true` trong `.env` trước restart; build APK 1.0.17 (chưa có).
+- **Run đang dở:** kết thúc/huỷ run đã qua cổng duyệt (duyệt cũ không có mã băm ràng buộc ⇒ không còn tính) và mọi run tạo qua khoá API trước khi gộp (không có dấu vết để nhận diện).
+- **Khoá API** dùng điều phối / edge sync: đặt `dataScopeMode` (factory/global) — không thì 403.
+- **Người dùng không phải admin chưa gắn nhà máy:** không thấy điều phối, danh sách "Giao cho" chỉ có admin.
+- **Dữ liệu vùng Fleet chưa gắn nhà máy (mục 19a):** chạy truy vấn chỉ-đọc `group-H-h3a-zones-no-factory.sql` trên dev rồi quyết gán.
+- **Huỷ run có nên vẫn chạy các bước DỪNG còn lại?** (hiện huỷ cả chúng — có từ trước).
+- **Bộ đọc nền safety-PLC:** E-stop từ safety-PLC thật chưa vượt "tắt thông báo" vì PLC chỉ được đọc khi người dùng thao tác.
+
+**Còn mở:** chương trình nằm trong bộ điều khiển robot/PLC không được mã băm duyệt phủ; tự động hoá VDA5050/ROS2 tự cấp quyền (gắn đúng job, một lần, có hạn — cùng loại mục 24); app tablet chưa chạy trên thiết bị thật; kết nối tablet → broker nhúng không mã hoá; webhook `orchestration.run.finished` gửi mọi người đăng ký; quan sát/danh sách theo phiên bản workflow hiện tại; một số khác biệt thời gian phản hồi (missing nhanh hơn ngoài phạm vi); mỗi lần chạy test H6 để lại 1 hàng `command_log` không xoá được trong `_test`; bắt tay plugin chưa có số thế hệ; replay sự kiện tin cậy giữa nhiều instance (Redis). Nhỏ (review cuối): khi bộ phân loại DỪNG lỗi toàn phần, huỷ/từ chối run không thấy được trả "chưa xác minh" còn id không tồn tại trả "không tìm thấy"; tài khoản admin bị tắt làm người được giao đi nhánh nhanh (lộ qua thời gian); census `registerDriver` chưa bắt import đổi tên; sự kiện không có robot/line dùng chung một khoá giới hạn 10 s.

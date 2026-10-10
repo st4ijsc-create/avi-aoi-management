@@ -652,7 +652,20 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
  *   ⇒ C +1 · D +1 · tong +2.
  */
-const GHIM = { A: 336, B: 8, C: 480, D: 1132, S: 342, tong: 2298 } as const;
+// ★★★ 2026-10-10 (doc 81 Đợt 5 task E2, item 26) — **A 336 → 335 · C 480 → 474 · S 342 → 349** (tổng giữ 2298).
+// `orchestrationRouter.ts`: simulate (A, đã GỠ khỏi sổ nợ) + listWorkflows/getWorkflow/listVersions/getVersion/listRuns/
+// getRun (C) nay đưa phạm vi ctx.user (`scopeOf(ctx.user)` → `definitionVisibleTo`/`filterVisibleBy`/`runVisibleTo`)
+// vào lượt đọc ⇒ nhóm S: 1 + 6 = 7. Ngoài phạm vi ⇒ NOT_FOUND Y HỆT không tồn tại.
+// Lưới: `server/routers/orchestrationScope.dot5.db.test.ts`. Đo trước/sau trên cùng cây (chỉ 7 thủ tục này đổi nhóm).
+// ★★★ 2026-10-10 (doc 81 Đợt 5 task E2 fix, ruling R-5-d) — **A 335 → 334 · S 349 → 350.** `edgeRuntimeRouter.nodeStatus`
+// nay lọc các run của node theo phạm vi ctx.user (`filterRunsVisibleTo(…, scopeOf(ctx.user))`) ⇒ nhóm S, đã GỠ khỏi sổ nợ.
+// ★★★ 2026-10-10 (doc 81 Đợt 5 task E fix 1, R-5-d) — **C 474 → 472 · S 350 → 352.** `orchestrationGovRouter.runEvents` /
+// `replayRun` nay đưa phạm vi ctx.user (`runIdVisibleTo(input.runId, scopeOf(ctx.user))`) vào lượt đọc ⇒ nhóm S.
+// ★★★ 2026-10-10 (doc 81 Đợt 5 task H5, mục 30) — **C 472 → 471 · S 352 → 353.** `engineering.assignableUsers` (roster "Giao
+// cho") nay đưa phạm vi nhà máy của người gọi vào lượt đọc (`assigneeRuleSql(d, ctx, …)` — tên từ H fix 1, trước là
+// `rosterFactoryFilter`; chỉ người cùng ≥1 nhà máy với mục / người giao; admin không đổi) ⇒ nhóm S. Đo bằng chính bộ quét này
+// (`nhomCua` = S). A/B/D/tong không đổi.
+const GHIM = { A: 334, B: 8, C: 471, D: 1132, S: 353, tong: 2298 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

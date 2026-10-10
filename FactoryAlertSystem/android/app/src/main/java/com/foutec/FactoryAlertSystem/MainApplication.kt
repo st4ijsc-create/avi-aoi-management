@@ -31,6 +31,8 @@ class MainApplication : Application(), ReactApplication {
                     add(FloatingBubblePackage())
                     // Add DeviceInfoPackage for real device info (IP, name, etc.)
                     add(DeviceInfoPackage())
+                    // doc 81 Đợt 5 G1: Android Keystore storage for the device MQTT password
+                    add(SecureCredentialPackage())
                 }
 
             override fun getJSMainModuleName(): String = "index"

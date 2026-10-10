@@ -188,6 +188,12 @@ function reset() {
   store.set("orchestration_runs", [
     { id: 1, workflowId: 10, workflowRef: "wf-1", status: "queued", paramsJson: {}, contextJson: {}, edgeNodeId: null, startedBy: 5, createdAt: new Date() },
   ]);
+  // final wave F4 — the principals that started runs centrally (the edge starts the run AS them, with their REAL role)
+  store.set("users", [
+    { id: 5, role: "admin", isActive: true, name: "admin" },
+    { id: 6, role: "engineer", isActive: true, name: "eng" },
+    { id: 7, role: "engineer", isActive: false, name: "disabled" },
+  ]);
 }
 
 beforeEach(reset);
@@ -340,7 +346,7 @@ describe("edge runtime — offline buffer + replay + foeEngine reuse", () => {
     const calls: number[] = [];
     setCentralSync(async (p) => { calls.push(p.runId); return reachable; });
 
-    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {} });
+    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 6 });
     expect(res.ok).toBe(true);
     expect(res.synced).toBe(false);
     expect(res.buffered).toBe(true);
@@ -359,12 +365,34 @@ describe("edge runtime — offline buffer + replay + foeEngine reuse", () => {
     startRunMock.mockRejectedValueOnce(new Error("boom"));
     getRunMock.mockRejectedValueOnce(new Error("boom"));
     setCentralSync(async () => false);
-    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1" });
+    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", startedBy: 6 });
     expect(res.ok).toBe(false);
     expect(res.status).toBe("failed");
     expect(res.buffered).toBe(true);
     expect(bufferedCount()).toBe(1);
   });
+
+  // doc 81 Đợt 5 final wave F4 (final review M1) — the edge starts a run AS the principal that started it centrally, with
+  // that account's REAL role (its real factory scope; an admin keeps the admin bypass), never as an anonymous "edge" role
+  // (which resolved an empty / wrong scope). No principal, an unknown or a disabled account ⇒ NOT started (fail-closed).
+  it("★ F4: the run is started AS its starting principal with the account's REAL role (admin keeps the admin bypass)", async () => {
+    setCentralSync(async () => true);
+    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 5, role: "admin" }));
+    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 6 });
+    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 6, role: "engineer" }));
+  });
+
+  for (const [label, startedBy] of [["no principal", null], ["an unknown account", 999], ["a disabled account", 7]] as const) {
+    it(`★ F4: ${label} ⇒ the engine is NOT called (fail-closed), a failed result is buffered / synced`, async () => {
+      setCentralSync(async () => false);
+      const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy });
+      expect(startRunMock).not.toHaveBeenCalled();
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe("failed");
+      expect(res.message).toMatch(/starting principal/);
+    });
+  }
 });
 
 // ════════════════════════════════════════════════════════════════════════════════

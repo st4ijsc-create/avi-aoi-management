@@ -325,14 +325,33 @@ export type TenantFactoryScopeArgs =
    */
   | { tenantScope: TenantCodeScope; userId?: never; userRole?: never };
 
+/**
+ * doc 81 Đợt 5 final wave F5 — `strict`: "no DB" is an ERROR (thrown), not an empty scope. For callers that must tell
+ * "could not decide" from "decided: nothing in scope" (the orchestration scope judge — R-5-l refuses abort / reject on
+ * an undecided scope). Without it the behaviour is unchanged (no DB ⇒ [] ⇒ every gate closes — fail-closed).
+ */
+export interface TenantFactoryScopeOpts {
+  strict?: boolean;
+}
+
+/** Thrown in strict mode when the scope cannot be resolved because a DB is unavailable. */
+export class TenantScopeUnavailableError extends Error {
+  constructor(where: string) {
+    super(`tenant factory scope unavailable: ${where} (DB_UNAVAILABLE)`);
+    this.name = "TenantScopeUnavailableError";
+  }
+}
+
 export async function resolveTenantFactoryScope(
   args?: TenantFactoryScopeArgs,
+  opts: TenantFactoryScopeOpts = {},
 ): Promise<TenantFactoryScope> {
   // ★ Trục ② hỏi TRƯỚC — cùng lý do đã ghi ở `tenantScopeFilter`: một lời gọi đã ép kiểu phải
   //   rơi về phía THU HẸP. Nhãn `scopeApplied: true` vì phạm vi ĐANG được áp; `scopeEmptyReason`
   //   để null vì lý do "chưa được gán nhà máy" nói về TÀI KHOẢN NGƯỜI DÙNG, không về một khoá API.
   if (args?.tenantScope) {
-    const { factoryIds } = await resolveTenantCodeFactoryIds(args.tenantScope);
+    const { factoryIds, outcome } = await resolveTenantCodeFactoryIds(args.tenantScope);
+    if (opts.strict && outcome === "db_unavailable") throw new TenantScopeUnavailableError("resolveTenantCodeFactoryIds");
     return { factoryIds, labels: { scopeApplied: true, scopeEmptyReason: null, scopeMessage: null } };
   }
   if (!args?.userId || args.userRole === "admin") {
@@ -342,6 +361,11 @@ export async function resolveTenantFactoryScope(
   // `server/db/**` tạo vòng router → db → trpc (cùng lý do đã ghi ở `db/statistics.ts`).
   const { resolveDataScope, getUserAssignmentCodes } = await import("../_core/accessControl");
   const userRole = args.userRole ?? "user";
+  // F5 strict — the assignment lookups below answer [] without the primary DB; that would read as "no factory".
+  if (opts.strict) {
+    const { getDb } = await import("./connection");
+    if (!(await getDb())) throw new TenantScopeUnavailableError("assignments (primary DB)");
+  }
   const resolved = await resolveDataScope(args.userId, userRole);
   // ⚠ `scopeLabelsOf` chép ĐÚNG BA ô — `filter` không có đường lọt ra ngoài hàm này.
   const labels = scopeLabelsOf(resolved);
@@ -358,6 +382,7 @@ export async function resolveTenantFactoryScope(
   const db = await getReadDb();
   if (!db) {
     console.error("[resolveTenantFactoryScope] Database connection unavailable (DB_UNAVAILABLE)");
+    if (opts.strict) throw new TenantScopeUnavailableError("factories (read DB)");
     return { factoryIds: [], labels };
   }
   const codeConds: SQL[] = [];

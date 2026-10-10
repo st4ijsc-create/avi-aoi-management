@@ -235,9 +235,34 @@ describe("OrchestrationStudio — doc 81 Đợt 4 Task A5 + fix round 1: bước
     expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["noGate", "approvedByOwner", "staleApproval", "ownerUnknown", "noGate"]);
     expect(notes[0].textContent).toMatch(/approval gate earlier in the run, approved by someone other than the person who started it/);
     expect(notes[1].textContent).toMatch(/approved by the person who started the run, which does not count/);
-    expect(notes[2].textContent).toMatch(/redeployed after the gate was approved/);
+    expect(notes[2].textContent).toMatch(/workflow was redeployed or the adapter, tag or robot configuration its commands use was changed/); // Đợt 5 E3
     expect(notes[3].textContent).toMatch(/no known owner/);
     expect(new Set(notes.slice(0, 4).map((n) => n.textContent)).size).toBe(4);
+  });
+});
+
+describe("OrchestrationStudio — doc 81 Đợt 5 task E1: bước của lượt chạy khởi động bằng khoá API (apiRun) có câu riêng", () => {
+  it("FOE_GATE_REQUIRED(apiRun) ⇒ data-reason apiRun + câu 'started through an API key' (khác câu noGate)", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "a1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(apiRun): command step "a1" was not sent' },
+            { stepId: "a2", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(noGate): command step "a2" was not sent' },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]'));
+    expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["apiRun", "noGate"]);
+    expect(notes[0].textContent).toMatch(/started through an API key/);
+    expect(notes[0].textContent).toMatch(/other than a STOP/);
+    expect(notes[0].textContent).not.toBe(notes[1].textContent);
   });
 });
 

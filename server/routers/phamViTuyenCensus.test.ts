@@ -100,7 +100,11 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 // tới qua `retrieveContext` của CHÍNH pipeline `generateProgram` dùng chung với thủ tục tRPC (đã đếm
 // trong census thủ tục), tuyến không đọc bảng nào khác. Lưới hành vi: `programmingCopilotStream.test.ts`.
 // (Đợt 1B `/api/ot/ingest` chỉ thay một tuyến inline có sẵn ⇒ 0 delta — đo ở `773ee78fc` và `d40237783`.)
-const GHIM = { A: 80, C: 38, D: 73, S: 18, U: 16, tong: 225 } as const;
+// ★★★ 2026-10-10 (doc 81 Đợt 5 task E2, item 26) — **C 38 → 37 · S 18 → 19.** `GET /orchestration/runs/:id` (api/v1)
+// nay đưa phạm vi KHOÁ (`req.apiPrincipal?.tenantScope` → `orchestrationScopeOf` → `runVisibleTo`) vào lượt đọc: run ngoài
+// phạm vi ⇒ 404 Y HỆT run không tồn tại. Lưới: `server/routers/orchestrationScope.dot5.db.test.ts` (khoá NULL/factory/global).
+// Chỉ đúng MỘT tuyến của lượt này đổi nhóm; A/D/U/tong giữ nguyên.
+const GHIM = { A: 80, C: 37, D: 73, S: 19, U: 16, tong: 225 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -303,6 +307,8 @@ describe("§6 — BỐN CA CHUẨN ĐÃ ĐƯỢC VÁ (hoàn nguyên bản vá �
       // ★ Đợt 42 — hai tuyến cockpit: `machineDetail(id, phamViCuaKhoa(req.apiPrincipal?.tenantScope))`.
       "server/api/v1/moduleReads.ts#GET /machines/:id/detail",
       "server/api/v1/moduleReads.ts#GET /robots/:id/detail",
+      // ★ 2026-10-10 (doc 81 Đợt 5 E2) — `runVisibleTo(view.run, orchestrationScopeOf(req.apiPrincipal?.tenantScope))`.
+      "server/api/v1/router.ts#GET /orchestration/runs/:id",
       // ⚠ `reportArtifactRoutes.ts#GET /api/reports/artifacts/:id/download` **KHÔNG** ở đây, và nó
       //   CÓ lọc theo người xem. Nó nằm trong SỔ NỢ vì `chamTenant` của nó bật do bao đóng của hàm
       //   XÁC THỰC (`api_keys` mang `factoryCode`), còn `report_artifacts` thì không thuộc tenant

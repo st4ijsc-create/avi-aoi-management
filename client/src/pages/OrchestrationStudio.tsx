@@ -1583,6 +1583,10 @@ export default function OrchestrationStudio() {
         return t("studio.deployRobotUnavailable", "Not deployed: robot step(s) {{steps}} name a robot that does not exist (or the robot list could not be read). Pick an existing robot for each step, then deploy again.", { steps });
       case "robotDisabled": // final wave R-4-x — motion steps only
         return t("studio.deployRobotDisabled", "Not deployed: motion step(s) {{steps}} name a robot that is not enabled. Enable the robot or pick an enabled one, then deploy again.", { steps });
+      case "outOfScope": // doc 81 Đợt 5 task E2 — deploy covers EVERY step, stop steps included
+        return t("studio.deployOutOfScope", "Not deployed: step(s) {{steps}} touch a machine, robot or adapter outside your factory scope (a deploy covers every step, stop steps included). Ask someone whose scope covers them to deploy it.", { steps });
+      case "refOutOfScope": // doc 81 Đợt 5 task E2 — the ref belongs to another factory's workflow
+        return t("studio.deployRefOutOfScope", "Not deployed: a workflow with this ref already exists outside your factory scope. Use another ref.");
       case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
         return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
       default:
@@ -1622,8 +1626,17 @@ export default function OrchestrationStudio() {
     },
     onError: (e) => toastTrpcError(e),
   });
+  /**
+   * doc 81 Đợt 5 task E fix 2 (ruling R-5-l) — an abort / rejection whose factory scope could not be verified in time is
+   * REFUSED by the server (`reason: "scopeUnverified"`): say so, and point at the machine's direct STOP / E-STOP.
+   */
+  const scopeUnverifiedToast = (r: { reason?: string } | null | undefined) => {
+    if (r?.reason === "scopeUnverified") {
+      toast.error(t("studio.scopeUnverified", "Scope not verified — retry. To stop equipment now, use the machine's direct STOP / E-STOP."));
+    }
+  };
   const resumeM = trpc.orchestration.resumeRun.useMutation({
-    onSuccess: () => { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
+    onSuccess: (r) => { scopeUnverifiedToast(r); void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
     // doc 80 Đợt 1 Task 9 — CONFLICT (gate đã đổi / lượt khác đã quyết định) ⇒ tải lại để thấy gate thật.
     onError: (e) => {
       toastTrpcError(e);
@@ -1631,7 +1644,7 @@ export default function OrchestrationStudio() {
     },
   });
   const abortM = trpc.orchestration.abortRun.useMutation({
-    onSuccess: () => { void runsQ.refetch(); },
+    onSuccess: (r) => { scopeUnverifiedToast(r); void runsQ.refetch(); },
     onError: (e) => toastTrpcError(e),
   });
 
@@ -2502,8 +2515,9 @@ type RunStepView = {
  * doc 81 Đợt 4 Task A5 + fix round 1 (finding 7) — the engine's step error for "no separate gate approval":
  * `FOE_GATE_REQUIRED(<reason>): …` (foeEngine.gateRequiredError). Each reason has its own translated sentence.
  */
-const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown)\))?(?=:|\s|$)/;
-type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown";
+// doc 81 Đợt 5 task E1 — apiRun: a run started through an API key never sends a non-STOP OT/robot command.
+const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown|apiRun)\))?(?=:|\s|$)/;
+type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun";
 function gateRequiredReasonOf(error: unknown): GateRequiredReason | null {
   if (typeof error !== "string") return null;
   const m = FOE_GATE_REQUIRED_RE.exec(error);
@@ -2522,7 +2536,9 @@ function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
     case "approvedByOwner":
       return t("studio.gateRequiredOwnerApproved", "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.");
     case "staleApproval":
-      return t("studio.gateRequiredStale", "Not sent: the workflow was redeployed after the gate was approved, so that approval does not cover what is running now. Start a new run and have the gate approved again.");
+      return t("studio.gateRequiredStale", "Not sent: after the gate was approved, the workflow was redeployed or the adapter, tag or robot configuration its commands use was changed, so that approval does not cover what would be sent now. Start a new run and have the gate approved again.");
+    case "apiRun":
+      return t("studio.gateRequiredApiRun", "Not sent: this run was started through an API key. A run started through an API key never sends machine or robot commands other than a STOP, because the person holding the key cannot be told apart from the approver. Start the run as a user in the Studio.");
     case "ownerUnknown":
       return t("studio.gateRequiredOwnerUnknown", "Not sent: this run has no known owner (started by the system or by an API key with no creating user), so a separate approval cannot be checked. Start the run as a user.");
     default:

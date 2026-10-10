@@ -141,15 +141,19 @@ export class S7Driver extends NotImplementedDriver {
   }
 
   override async disconnect(): Promise<void> {
-    if (this.conn && typeof this.conn.dropConnection === "function") {
+    // doc 81 Đợt 5 task F2 (item 28) — capture-and-null-first: the fields are cleared BEFORE the first await and only
+    // the CAPTURED handle is dropped. A drop that completes late (after a supervisor reset already reconnected this same
+    // driver object) therefore never clears the NEW session (was: `await drop(); this.conn = null; connected = false`).
+    const conn = this.conn;
+    this.conn = null;
+    this.connected = false;
+    if (conn && typeof conn.dropConnection === "function") {
       try {
-        await new Promise<void>((resolve) => this.conn.dropConnection(() => resolve()));
+        await new Promise<void>((resolve) => conn.dropConnection(() => resolve()));
       } catch {
         // ignore
       }
     }
-    this.conn = null;
-    this.connected = false;
   }
 
   /**

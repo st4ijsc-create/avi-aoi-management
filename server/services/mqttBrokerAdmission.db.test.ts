@@ -21,7 +21,9 @@ const DEV_LEGACY = `${RUN}-legacy`;
 const DEV_PENDING = `${RUN}-pend`;
 const DEV_DELETED = `${RUN}-del`;
 const DEV_PWLESS2 = `${RUN}-pwless2`;
+const DEV_TABLET = `${RUN}-tablet`;
 const PW = "dung-mat-khau-T10";
+const TABLET_PW = "Zk3n0QxV9u-ra8T_hb1LwYc2sPq4Ee7m"; // hình mật khẩu rotatePassword: base64url 32 ký tự
 
 type Mod = typeof import("./mqttService");
 let mod: Mod;
@@ -108,6 +110,7 @@ beforeAll(async () => {
   expect(db).toBeTruthy();
 
   const hash = await bcrypt.hash(PW, 10);
+  const tabletHash = await bcrypt.hash(TABLET_PW, 10);
   const base = {
     deviceName: "T10", deviceModel: "T10", mappingType: "MANUAL" as const,
     connectionStatus: "OFFLINE" as const, isActive: true,
@@ -118,6 +121,7 @@ beforeAll(async () => {
     { ...base, clientId: `${DEV_PENDING}-seed`, deviceId: DEV_PENDING, approvalStatus: "PENDING", passwordHash: hash },
     { ...base, clientId: `${DEV_DELETED}-seed`, deviceId: DEV_DELETED, approvalStatus: "APPROVED", isActive: false },
     { ...base, clientId: `${DEV_PWLESS2}-seed`, deviceId: DEV_PWLESS2, approvalStatus: "APPROVED" },
+    { ...base, clientId: `${DEV_TABLET}-seed`, deviceId: DEV_TABLET, approvalStatus: "APPROVED", passwordHash: tabletHash },
   ]);
 
   mod = await import("./mqttService");
@@ -194,10 +198,38 @@ describe("task 10 — admission: thiết bị lạ / mật khẩu", () => {
     }
   });
 
-  it("thiết bị ĐÃ BIẾT chưa cấu hình mật khẩu (đường cũ hợp lệ) ⇒ vẫn kết nối được", async () => {
+  it("doc 81 Đợt 5 G1 — thiết bị ĐÃ BIẾT chưa có mật khẩu, MẶC ĐỊNH trong mã (biến không đặt) ⇒ CONNACK 4", async () => {
+    mod._resetMqttAuthLimiters();
+    expect(process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED).toBeUndefined();
     const r = await tryConnect(`${DEV_LEGACY}:Tablet:M1`);
-    expect(r.ok).toBe(true);
-    r.client!.end(true);
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe(4);
+  });
+
+  it("thiết bị ĐÃ BIẾT chưa có mật khẩu + lối chuyển tiếp MQTT_ALLOW_PASSWORDLESS_REGISTERED=true (TƯỜNG MINH) ⇒ vẫn kết nối được", async () => {
+    mod._resetMqttAuthLimiters();
+    process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED = "true";
+    try {
+      const r = await tryConnect(`${DEV_LEGACY}:Tablet:M1`);
+      expect(r.ok).toBe(true);
+      r.client!.end(true);
+    } finally {
+      delete process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED;
+    }
+  });
+
+  it("★ Review focus 4 — máy tính bảng ĐÃ được cấp mật khẩu qua ô Cài đặt của app KHÔNG bị khoá khi lật mặc định", async () => {
+    // Đúng hình CONNECT của FactoryAlertSystem ≥ 1.0.17 trên broker nhúng: username `deviceId:tên:model`
+    // (buildLocalBrokerUsername) + mật khẩu do rotatePassword cấp (randomBytes(24) base64url) đọc từ Keystore.
+    mod._resetMqttAuthLimiters();
+    expect(process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED).toBeUndefined(); // mặc định MỚI
+    const ok = await tryConnect(`${DEV_TABLET}:FactoryAlertApp:SM-T505`, TABLET_PW);
+    expect(ok.ok).toBe(true);
+    ok.client!.end(true);
+    // Cùng máy, app cũ ≤ 1.0.16 (không gửi mật khẩu) ⇒ bị từ chối, đúng như ghi chú triển khai.
+    const old = await tryConnect(`${DEV_TABLET}:FactoryAlertApp:SM-T505`);
+    expect(old.ok).toBe(false);
+    expect(old.code).toBe(4);
   });
 
   it("thiết bị đã XOÁ MỀM (isActive=false) + cờ tắt ⇒ từ chối, KHÔNG tự hồi sinh thành PENDING", async () => {
@@ -261,6 +293,20 @@ describe("task 10 — đơn vị: cờ, bộ giới hạn, bộ gộp log (đồ
     for (const off of ["false", "0", "off", "FALSE"]) {
       expect(mod.mqttRequirePassword({ MQTT_REQUIRE_PASSWORD: off })).toBe(false);
     }
+  });
+
+  it("doc 81 Đợt 5 G1 — MQTT_ALLOW_PASSWORDLESS_REGISTERED: mặc định FALSE; chỉ true/1/on (tường minh) mới cho vào", () => {
+    expect(mod.mqttAllowPasswordlessRegistered({})).toBe(false);
+    expect(mod.mqttAllowPasswordlessRegistered({ MQTT_ALLOW_PASSWORDLESS_REGISTERED: "" })).toBe(false);
+    for (const v of ["false", "0", "off", "nonsense", "yes"]) {
+      expect(mod.mqttAllowPasswordlessRegistered({ MQTT_ALLOW_PASSWORDLESS_REGISTERED: v }), v).toBe(false);
+    }
+    for (const v of ["true", "1", "on", " TRUE "]) {
+      expect(mod.mqttAllowPasswordlessRegistered({ MQTT_ALLOW_PASSWORDLESS_REGISTERED: v }), v).toBe(true);
+    }
+    // ACL giam được, cờ không đặt ⇒ từ chối với lý do nêu cờ.
+    const d = mod.decidePasswordlessRegistered({});
+    expect(d.ok).toBe(false);
   });
 
   it("limiter: 10/phút theo khoá, khoá khác độc lập, hết cửa sổ thì mở lại", () => {
@@ -374,11 +420,12 @@ describe("fix round 1 — R19: thiết bị ĐÃ ĐĂNG KÝ không mật khẩu"
     }
   });
 
-  it("mặc định ⇒ vẫn vào (tương thích) + ĐÚNG MỘT dòng WARN qua 5 lần nối lại, nêu thiết bị, không lộ bí mật", async () => {
+  it("cờ =true (lối chuyển tiếp, tường minh) ⇒ vẫn vào + ĐÚNG MỘT dòng WARN qua 5 lần nối lại, nêu thiết bị, không lộ bí mật", async () => {
     await closeAll(); // trước reset: đóng kết nối cũ KHÔNG được chiếm dòng đầu của cửa sổ đo
     mod._resetMqttAuthLimiters();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED = "true"; // doc 81 Đợt 5 G1: mặc định nay là false
     try {
       for (let i = 0; i < 5; i++) {
         const r = await connectThenClose(`${DEV_PWLESS2}:Tablet:M1`, i === 0 ? undefined : "bat-ky-gi-khong-luu");
@@ -391,6 +438,7 @@ describe("fix round 1 — R19: thiết bị ĐÃ ĐĂNG KÝ không mật khẩu"
       expect(lines[0]).toMatch(/provision/i);
       expect(lines[0]).not.toContain("bat-ky-gi-khong-luu");
     } finally {
+      delete process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED;
       warnSpy.mockRestore(); logSpy.mockRestore();
     }
   }, 30_000);

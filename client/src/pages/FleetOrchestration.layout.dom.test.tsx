@@ -36,6 +36,12 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
 }));
 const toastSpy = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastSpy }));
+// doc 81 Đợt 5 H fix 1 — trục phạm vi tài sản của vỏ (nhà máy đang chọn trên thanh phạm vi).
+const scopeAxis = vi.hoisted(() => ({ value: {} as { factoryId?: number } }));
+vi.mock("@/contexts/AssetScopeContext", () => ({
+  useAssetScope: () => ({ axis: scopeAxis.value, labels: {}, setAxis: () => {}, clearAxis: () => {}, wiredCount: 0, _registerWired: () => () => {} }),
+  useScopeWired: () => {},
+}));
 
 // ── "Server" giả ───────────────────────────────────────────────────────────────────────────────
 type Row = Record<string, unknown>;
@@ -61,6 +67,9 @@ const srv = vi.hoisted(() => ({
   calls: {} as Record<string, unknown[]>,
   invalidated: [] as string[],
   queryInputs: [] as string[],
+  /** doc 81 Đợt 5 H3(b) — `factory.list` (danh sách nhà máy TRONG PHẠM VI người gọi); undefined = chưa có dữ liệu. */
+  factories: undefined as Row[] | undefined,
+  factoriesError: false,
 }));
 function bump() {
   srv.version++;
@@ -167,6 +176,8 @@ vi.mock("@/lib/trpc", () => {
           return q(srv.robots, enabled);
         case "twin.occupancyGrid":
           return q({ grid: null, note: null }, enabled);
+        case "factory.list":
+          return srv.factoriesError ? errored(enabled) : q(srv.factories, enabled);
         case "fleet.listOperations":
           return q(s.ops, enabled);
         case "fleet.resolveOperation":
@@ -312,6 +323,9 @@ beforeEach(() => {
   srv.calls = {};
   srv.invalidated = [];
   srv.queryInputs = [];
+  srv.factories = undefined;
+  srv.factoriesError = false;
+  scopeAxis.value = {};
   Object.assign(perm, { view: true, control: true });
   for (const f of Object.values(toastSpy)) f.mockClear();
   localStorage.clear();
@@ -888,5 +902,89 @@ describe("Fleet — R-2-n: không có thao tác hàng loạt", () => {
     act(() => undefined);
     fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
     expect(Object.keys(srv.calls)).toEqual([]);
+  });
+});
+
+// doc 81 Đợt 5 H3(b) (mục 19) — bộ chọn nhà máy của bản đồ lấy từ danh sách nhà máy TRONG PHẠM VI người gọi
+// (`factory.list`, server lọc theo phạm vi), không chỉ từ `zones[].factoryId`: site chưa có vùng nào mang factoryId vẫn
+// nạp được lưới. Vùng đọc được (server đã lọc phạm vi) vẫn góp nhà máy của nó; danh sách lỗi/đang tải ⇒ như cũ (từ vùng).
+describe("Fleet — H3(b): bộ chọn nhà máy từ danh sách nhà máy trong phạm vi", () => {
+  // H fix 1 (review M5): KHÔNG còn mặc định "nhà máy đầu tiên theo tên" — không vùng, không lựa chọn của vỏ, phạm vi NHIỀU
+  // nhà máy ⇒ chưa hỏi lưới; người dùng chọn trong bộ chọn tìm được.
+  const optionNames = () => screen.getAllByRole("option").map((o) => o.textContent);
+  it("KHÔNG vùng nào mang factoryId + factory.list [#4 Bắc, #9 Nam] (không lựa chọn nào khác) ⇒ CHƯA hỏi lưới; bộ chọn liệt kê tên; chọn Nam ⇒ occupancyGrid {factoryId:9}", async () => {
+    srv.db.zones = srv.db.zones.map((z) => ({ ...z, factoryId: null }));
+    srv.snap.zones = clone(srv.db.zones);
+    srv.factories = [{ id: 4, code: "F-N", name: "Nhà máy Bắc" }, { id: 9, code: "F-S", name: "Nhà máy Nam" }];
+    const user = userEvent.setup();
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:"))).toEqual([]);
+    await user.click(within(mainEl()).getByRole("combobox", { name: "Nhà máy" }));
+    expect(optionNames()).toEqual(["Nhà máy Bắc#4", "Nhà máy Nam#9"]);
+    await user.click(screen.getByRole("option", { name: /Nhà máy Nam/ }));
+    expect(srv.queryInputs).toContain('twin.occupancyGrid:{"factoryId":9}');
+  });
+
+  it("H fix 1 — nhà máy đang chọn trên thanh phạm vi của vỏ (#9, trong danh sách) ⇒ mặc định #9 (thắng nhà máy của vùng); ngoài danh sách ⇒ bỏ qua", async () => {
+    srv.factories = [{ id: 4, code: "F-N", name: "Nhà máy Bắc" }, { id: 9, code: "F-S", name: "Nhà máy Nam" }];
+    scopeAxis.value = { factoryId: 9 };
+    const r = render(<FleetOrchestration />);
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:")).at(-1)).toBe('twin.occupancyGrid:{"factoryId":9}');
+    r.unmount();
+    srv.queryInputs = [];
+    scopeAxis.value = { factoryId: 777 }; // không trong phạm vi ⇒ không dùng
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:")).at(-1)).toBe('twin.occupancyGrid:{"factoryId":1}'); // nhà máy của vùng
+  });
+
+  it("H fix 1 — phạm vi người dùng có ĐÚNG MỘT nhà máy, không vùng ⇒ mặc định nhà máy đó", async () => {
+    srv.db.zones = [];
+    srv.snap.zones = [];
+    srv.factories = [{ id: 12, code: "F12", name: "Nhà máy Duy Nhất" }];
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs).toContain('twin.occupancyGrid:{"factoryId":12}');
+  });
+
+  it("H fix 1 — 120 nhà máy (admin): bộ chọn hiện tối đa 50 + dòng 'gõ để thu hẹp'; gõ ⇒ lọc trên CẢ danh sách (tìm được nhà máy thứ 120)", async () => {
+    srv.db.zones = [];
+    srv.snap.zones = [];
+    srv.factories = Array.from({ length: 120 }, (_, i) => ({ id: 1000 + i, code: `F${i}`, name: `Factory ${String(i).padStart(3, "0")}` }));
+    const user = userEvent.setup();
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:"))).toEqual([]);
+    await user.click(within(mainEl()).getByRole("combobox", { name: "Nhà máy" }));
+    expect(screen.getAllByRole("option")).toHaveLength(50);
+    expect(screen.getByText(/gõ để thu hẹp|narrow/i)).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText(/Tìm tên nhà máy|Search factory/), "Factory 119");
+    await waitFor(() => expect(optionNames()).toEqual(["Factory 119#1119"]));
+    await user.click(screen.getByRole("option", { name: /Factory 119/ }));
+    expect(srv.queryInputs).toContain('twin.occupancyGrid:{"factoryId":1119}');
+  });
+
+  it("vùng của #1/#3 + factory.list [#3] ⇒ mặc định VẪN nhà máy của vùng (#1); bộ chọn = hợp (#3 theo tên, #1 thêm từ vùng)", async () => {
+    srv.factories = [{ id: 3, code: "F3", name: "Xưởng Ba" }];
+    const user = userEvent.setup();
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:"))[0]).toBe('twin.occupancyGrid:{"factoryId":1}');
+    await user.click(within(mainEl()).getByRole("combobox", { name: "Nhà máy" }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Xưởng Ba#3", "#1"]);
+  });
+
+  it("phạm vi RỖNG (factory.list = []) + không vùng ⇒ KHÔNG hỏi lưới (không dò nhà máy ngoài phạm vi)", async () => {
+    srv.db.zones = [];
+    srv.snap.zones = [];
+    srv.factories = [];
+    render(<FleetOrchestration />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:"))).toEqual([]);
+  });
+
+  it("factory.list LỖI ⇒ như cũ: nhà máy từ vùng (#1, #3)", async () => {
+    srv.factoriesError = true;
+    const user = userEvent.setup();
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs).toContain('twin.occupancyGrid:{"factoryId":1}');
+    await user.click(within(mainEl()).getByRole("combobox", { name: "Nhà máy" }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["#1", "#3"]);
   });
 });

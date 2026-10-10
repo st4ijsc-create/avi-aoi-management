@@ -67,15 +67,19 @@ import { demHinhDangBa } from "../../../scripts/viStringScan.mjs";
  * gửi) thêm vào khối tài liệu Lô 8 Mục 3 ở trên, sau khi review đo được `captureExtId`
  * KHÔNG duy nhất toàn hệ (cây clone) và cửa presign/commit cần trường này để hết nhập
  * nhằng. CÙNG nhóm/file đã tính ở lần nâng trước.
+ *
+ * `425 → 423` (2026-10-10, doc 81 Đợt 5 task G2) — **−2** `IoTTelemetrySection.tsx`: hai ô bảng
+ * CanonicalSample (`ts`, `deviceId`) nay qua t() (`apiFeeds.fieldTsDesc`/`fieldDeviceIdDesc`, vi/en/zh) vì
+ * nội dung cũ dạy sai (offset "khuyến nghị" — nay bắt buộc; không nhắc allowlist gateway).
  */
-const ALLOWED_RAW_VI_STRINGS = 425;
+const ALLOWED_RAW_VI_STRINGS = 423;
 
 /**
  * Trần riêng cho nhóm ApiDocs. Tồn tại để hai con số không thể bù trừ cho nhau:
  * nếu ai đó dịch bớt ApiDocs mà thêm nhãn trần vào màn vận hành, tổng vẫn 410 và
  * cổng trên sẽ xanh — chính là lớp lỗi "ngân sách tự thoả" đã trả giá ở Pha 7.
  */
-const ALLOWED_RAW_VI_APIDOCS = 425; // 424 → 425 (Lô 8 Mục 1 review, BG-116) — xem chú thích ở trần tổng.
+const ALLOWED_RAW_VI_APIDOCS = 423; // 424 → 425 (Lô 8 Mục 1 review, BG-116); 425 → 423 (Đợt 5 G2) — xem chú thích ở trần tổng.
 
 const CLIENT_SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCALES = resolve(CLIENT_SRC, "i18n/locales");

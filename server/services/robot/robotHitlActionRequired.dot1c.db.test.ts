@@ -491,7 +491,9 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       expect(no.status).toBe("rejected");
       expect(no.error).toBe("HITL_ACTION_REQUIRED");
       expect(rt.runJobCalls).toBe(1);
-      expect(published).toHaveLength(1);
+      // doc 81 Đợt 5 task F1 (item 27): thông điệp CHUYỂN ĐỘNG chỉ có MỘT kênh — driver (giả ở đây, báo published);
+      // adapter không tự phát lần hai nữa (kênh phát thứ hai chỉ dành cho LỆNH DỪNG).
+      expect(published).toHaveLength(0);
     });
 
     it("★ Ros2Bridge.dispatchToRos2 'hitl' không actionId ⇒ tạo bản ghi gắn hash ⇒ chạy + publish ĐÚNG MỘT lần; tạo không được ⇒ từ chối, 0 publish", async () => {

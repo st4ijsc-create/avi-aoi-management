@@ -35,6 +35,8 @@ import {
   type Vda5050State,
   type Vda5050Connection,
   type Vda5050Order,
+  type Vda5050InstantActions,
+  type Vda5050Action,
 } from "./vda5050Messages";
 import {
   mapStateToRobotTelemetry,
@@ -195,6 +197,25 @@ export class Vda5050RobotDriver implements RobotDriver {
         return { ok: false, status: "failed", error: (err as Error)?.message ?? String(err), detail: { jobType: "abort", sent: false } };
       }
     }
+    // doc 81 Đợt 5 task F1 (item 27) — a MOTION instantActions message (e.g. stopPause = resume). The adapter dispatches
+    // it as `{ jobType:"custom", params:{ vda5050:"instantActions", message } }` and the dispatcher binds `params.message`
+    // (robotPayloadHash) before it ever gets here. It used to fall through to the order path ("no usable nodes", or —
+    // with x/y in params — an ORDER). Now: published on the instantActions topic, addressed to THIS driver's AGV
+    // (manufacturer/serialNumber are the driver's, never the caller's), only the VDA 5050 header fields + actions.
+    // A malformed message fails; it NEVER falls through to the order path.
+    const params0 = job.params ?? {};
+    if (params0.vda5050 === "instantActions") {
+      const msg = instantActionsFromParams(params0.message, this.manufacturer, this.serialNumber);
+      if (!msg) {
+        return { ok: false, status: "failed", error: "vda5050: instantActions job has no valid message.actions", detail: { sent: false } };
+      }
+      try {
+        await this.publish("instantActions", msg);
+        return { ok: true, status: "done", detail: { published: true, instantActions: msg.actions.map((a) => a.actionType) } };
+      } catch (err) {
+        return { ok: false, status: "failed", error: (err as Error)?.message ?? String(err), detail: { sent: false } };
+      }
+    }
     try {
       const params = job.params ?? {};
       // A pre-built order may be passed straight through; else build from nodes.
@@ -232,6 +253,30 @@ export class Vda5050RobotDriver implements RobotDriver {
       lastError: this.lastError,
     };
   }
+}
+
+/**
+ * doc 81 Đợt 5 task F1 — the instantActions message a motion job may publish, or null when it is not one. Only the
+ * VDA 5050 header fields and a non-empty `actions` array whose every entry carries a string actionType are kept;
+ * manufacturer/serialNumber are always the driver's own (the topic is the driver's too).
+ */
+function instantActionsFromParams(raw: unknown, manufacturer: string, serialNumber: string): Vda5050InstantActions | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const m = raw as Record<string, unknown>;
+  const actions = m.actions;
+  if (!Array.isArray(actions) || actions.length === 0) return null;
+  for (const a of actions) {
+    if (!a || typeof a !== "object" || typeof (a as Record<string, unknown>).actionType !== "string") return null;
+    if (!((a as Record<string, unknown>).actionType as string).trim()) return null;
+  }
+  return {
+    headerId: typeof m.headerId === "number" && Number.isFinite(m.headerId) ? m.headerId : 0,
+    timestamp: typeof m.timestamp === "string" ? m.timestamp : new Date().toISOString(),
+    version: typeof m.version === "string" ? m.version : "2.0.0",
+    manufacturer,
+    serialNumber,
+    actions: actions as Vda5050Action[],
+  };
 }
 
 export const createVda5050Driver = () => new Vda5050RobotDriver();

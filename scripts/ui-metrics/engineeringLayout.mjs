@@ -233,6 +233,8 @@ const TABLE_WHERE = {
   user_corporate_assignments: `t."userId" not in ${PROBE_FILTER}`,
   // post-review 5: chuông chỉ đọc thông báo của CHÍNH người xem (= user đo).
   notifications: `t."userId" in ${PROBE_FILTER}`,
+  // H fix 1 (review M7) — sở thích giao diện: chỉ hàng của user đo (router lọc ctx.user.id).
+  user_settings: `t."userId" in ${PROBE_FILTER}`,
 };
 /** Thủ tục tRPC mỗi màn gọi lúc rút `PAGE_TABLES`. Gọi thủ tục MỚI ⇒ cảnh báo: chạy lại --discover-tables. */
 export const KNOWN_PROCS = {
@@ -242,12 +244,16 @@ export const KNOWN_PROCS = {
   "engineering-changes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ecn.list","engineering.assignments","license.getAllowedModules","license.systemState","permissions.getMyPermissions","productModel.list"],
   "recipes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","engineering.assignments","license.getAllowedModules","license.systemState","machineRecipe.deployments.list","machineRecipe.machines.list","machineRecipe.recipes.listCodes","permissions.getMyPermissions"],
   "interlock-rules": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","engineering.assignments","interlock.events","interlock.list","license.getAllowedModules","license.systemState","oversight.posture","permissions.getMyPermissions"],
-  "orchestration-studio": ["aiInbox.count","aiOrchestration.status","andon.active","auth.me","commandCenter.hierarchy","engineering.assignments","equipment.listEquipment","license.getAllowedModules","license.systemState","orchestration.listRuns","orchestration.listVersions","orchestration.listWorkflows","orchestration.status","permissions.getMyPermissions"],
+  // doc 81 Đợt 5 H fix 1 — Studio đọc `fleet.robotPositions` (Đợt 4 R-4-n, bộ chọn robot của bước robot) khi có máy robot;
+  // bảng của nó (robots, robot_telemetry) đã nằm trong PAGE_TABLES của màn này — chỉ thiếu tên thủ tục ở đây.
+  "orchestration-studio": ["aiInbox.count","aiOrchestration.status","andon.active","auth.me","commandCenter.hierarchy","fleet.robotPositions","engineering.assignments","equipment.listEquipment","license.getAllowedModules","license.systemState","orchestration.listRuns","orchestration.listVersions","orchestration.listWorkflows","orchestration.status","permissions.getMyPermissions"],
   "ir-editor": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ir.lint","ir.listFlows","ir.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects"],
   "pou-studio": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects","programming.pouLint","programming.pouTranspilePreview"],
   "programming-copilot": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
+  // doc 81 Đợt 5 H3/H8 (2026-10-10): bộ chọn nhà máy của bản đồ đọc `factory.list` (bảng factories / user_factory_assignments /
+  // user_corporate_assignments — đã có trong PAGE_TABLES của màn này; --discover-tables lượt H8 xác nhận).
   // final wave (I-4): Task 10 đưa bản đồ lên MAIN ⇒ `fleet.robotPositions` (5 s) + `twin.occupancyGrid` chạy mỗi lần mở trang.
-  "fleet-orchestration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","fleet.deadlocks","fleet.listChargers","fleet.listChargingPlans","fleet.listOperations","fleet.listReservations","fleet.listResourceReservations","fleet.listResources","fleet.listTasks","fleet.listZones","fleet.resourceStatus","fleet.robotPositions","fleet.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","twin.occupancyGrid"],
+  "fleet-orchestration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","fleet.deadlocks","fleet.listChargers","fleet.listChargingPlans","fleet.listOperations","fleet.listReservations","fleet.listResourceReservations","fleet.listResources","fleet.listTasks","fleet.listZones","fleet.resourceStatus","fleet.robotPositions","fleet.status","factory.list","license.getAllowedModules","license.systemState","permissions.getMyPermissions","twin.occupancyGrid"],
   // Đợt 3 Task 3: bỏ `safety.currentBoard` — bảng hiện trường dời sang Sản xuất › Ca, Safety không còn gọi (THU HẸP danh sách).
   "safety-workforce": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","safety.feed","safety.listAssignments","safety.listCollaborations","safety.nearMissTrend","safety.sourceHealth","safety.status"],
   "equipment-standards": ["aiInbox.count","alarmKpi.summary","andon.active","auth.me","commandCenter.hierarchy","equipmentStandards.complianceMetrics","equipmentStandards.hierarchyTree","equipmentStandards.listAlarmMappings","equipmentStandards.listChangeRequests","equipmentStandards.listMasterAlarms","equipmentStandards.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
@@ -293,6 +299,13 @@ KNOWN_PROCS["production-shifts"] = [
 const BELL_PROCS = ["notification.list", "notification.unreadCount"];
 for (const id of Object.keys(KNOWN_PROCS)) KNOWN_PROCS[id] = [...new Set([...KNOWN_PROCS[id], ...BELL_PROCS])].sort();
 for (const id of Object.keys(PAGE_TABLES)) PAGE_TABLES[id] = [...new Set([...PAGE_TABLES[id], "notifications"])].sort();
+// doc 81 Đợt 5 H fix 1 (review M7) — ĐỒNG BỘ SỞ THÍCH GIAO DIỆN của vỏ (Đợt 4 D1, `UiPrefsSync`) chạy trên MỌI màn:
+// `userSettingsRouter.getUiPrefs` lúc nạp (và `setUiPrefs` khi người dùng đổi bố cục — ghi `user_settings`). Cùng khuôn chuông:
+// thủ tục vào danh sách đã biết của mọi màn; bảng `user_settings` vào canh trôi của mọi màn — CHỈ hàng của user đo (đúng hàng
+// router đọc/ghi: `ctx.user.id`), nên một lần ghi sở thích TRONG lần đo là trôi (pass=false) còn hàng của vitest khác thì không.
+const SHELL_PROCS = ["userSettingsRouter.getUiPrefs"];
+for (const id of Object.keys(KNOWN_PROCS)) KNOWN_PROCS[id] = [...new Set([...KNOWN_PROCS[id], ...SHELL_PROCS])].sort();
+for (const id of Object.keys(PAGE_TABLES)) PAGE_TABLES[id] = [...new Set([...PAGE_TABLES[id], "user_settings"])].sort();
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 
@@ -989,6 +1002,7 @@ async function deleteProbeUser(sql) {
     await sql`delete from permissions where "userId" = ${id}`;
     await sql`delete from user_factory_assignments where "userId" = ${id}`;
     await sql`delete from user_sessions where "userId" = ${id}`.catch(() => {});
+    await sql`delete from user_settings where "userId" = ${id}`.catch(() => {}); // H fix 1 — sở thích giao diện của user đo
     await sql`delete from user_secrets where "userId" = ${id}`;
     try { await sql`delete from users where id = ${id}`; deleted++; }
     catch { await sql`update users set "isActive" = false where id = ${id}`; deactivated++; }
