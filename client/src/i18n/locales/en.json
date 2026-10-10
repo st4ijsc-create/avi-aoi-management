@@ -18488,6 +18488,10 @@
         "row": "{{tagKey}} = {{value}}",
         "unreadable": "Pinned STOP tags: could not be read — check them on the Device Adapter screen before signing."
       },
+      "recheck": {
+        "chip": "Commissioning needs rechecking — the STOP pin of tag {{tagKey}} changed at {{time}}, AFTER the current sign-off. Sign again once checked to clear this.",
+        "unreadable": "Could not check for STOP pin changes after the current sign-off — check on the Device Adapter screen before signing."
+      },
       "rec": {
         "active": "active",
         "expired": "expired",

@@ -799,6 +799,43 @@ export function PinnedStopTagsPanel({
   );
 }
 
+/**
+ * doc 81 Đợt 4 Task C3 — persistent "Commissioning needs rechecking" chip of the "Sổ ký" dialog. `recheck` is the
+ * server's latest pin change flagged for recheck that happened AFTER the current signature
+ * (`commissioning.status.commissioningRecheck`; the server compares DB timestamps — no client clock here). It has
+ * no dismiss button: it clears only when the server stops returning it, i.e. after the adapter is signed again.
+ * `unreadable` ⇒ the server could not check: say so (never look like "nothing to recheck"). Exported for a DOM test.
+ */
+export function CommissioningRecheckChip({
+  recheck,
+  unreadable,
+}: {
+  recheck: { tagId: number; tagKey: string | null; changedAt: string | Date } | null | undefined;
+  unreadable: boolean;
+}) {
+  const { t } = useTranslation();
+  if (unreadable) {
+    return (
+      <div role="alert" data-commissioning-recheck="unreadable" className="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
+        {t("systemHealth.comm.recheck.unreadable", "Không kiểm được thay đổi ghim DỪNG sau lần ký hiện tại — soát lại ở màn Device Adapter trước khi ký.")}
+      </div>
+    );
+  }
+  if (!recheck) return null;
+  return (
+    <div role="status" data-commissioning-recheck="required" className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs font-medium text-warning">
+      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+      <span>
+        {t(
+          "systemHealth.comm.recheck.chip",
+          "Cần soát lại commissioning — ghim DỪNG của tag {{tagKey}} đã đổi lúc {{time}}, SAU lần ký hiện tại. Soát xong thì ký lại để tắt nhắc này.",
+          { tagKey: recheck.tagKey ?? `#${recheck.tagId}`, time: fmtTime(recheck.changedAt) },
+        )}
+      </span>
+    </div>
+  );
+}
+
 /** Records ledger for one adapter + create (sign) + revoke. */
 function CommissioningRecordsDialog({
   adapter, canCreate, canDelete, onClose,
@@ -820,6 +857,9 @@ function CommissioningRecordsDialog({
   const pinnedStopTags = pinStatusQuery.data?.pinnedStopTags ?? [];
   // final wave 3 (M8) — the server could not read the pins: say so (never show "no pins" when unknown).
   const pinnedStopTagsUnreadable = pinStatusQuery.data?.pinnedStopTagsUnreadable === true;
+  // doc 81 Đợt 4 Task C3 — pin changed after the current signature ⇒ persistent chip until signed again.
+  const commissioningRecheck = pinStatusQuery.data?.commissioningRecheck ?? null;
+  const commissioningRecheckUnreadable = pinStatusQuery.data?.commissioningRecheckUnreadable === true;
 
   const [fatReference, setFatReference] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
@@ -874,6 +914,7 @@ function CommissioningRecordsDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <CommissioningRecheckChip recheck={commissioningRecheck} unreadable={commissioningRecheckUnreadable} />
         <PinnedStopTagsPanel pinnedStopTags={pinnedStopTags} unreadable={pinnedStopTagsUnreadable} />
 
         <div className="max-h-[300px] overflow-y-auto rounded-md border">

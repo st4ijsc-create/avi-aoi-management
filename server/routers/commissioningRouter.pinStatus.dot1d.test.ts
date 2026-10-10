@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const fake = vi.hoisted(() => ({ throwPins: false, pins: [] as Array<{ tagKey: string; value: unknown }> }));
+const fake = vi.hoisted(() => ({ throwPins: false, pins: [] as Array<{ tagKey: string; value: unknown }>, throwRecheck: false }));
 
 vi.mock("../db", () => ({ getDb: async () => ({}) }));
 vi.mock("../services/ot/commissioningService", () => ({
@@ -15,6 +15,11 @@ vi.mock("../services/ot/commissioningService", () => ({
   listRecords: vi.fn(async () => []),
   isCommissioned: vi.fn(async () => true),
   isCommissioningRequired: vi.fn(() => true),
+  // doc 81 Đợt 4 C3 — chip "cần soát lại" của Sổ ký.
+  latestCommissioningRecheck: vi.fn(async () => {
+    if (fake.throwRecheck) throw new Error("recheck read failed (forced)");
+    return null;
+  }),
 }));
 vi.mock("../services/ot/stopPin", () => ({
   loadStopPins: vi.fn(async () => {
@@ -31,6 +36,7 @@ const caller = () =>
 beforeEach(() => {
   fake.throwPins = false;
   fake.pins = [];
+  fake.throwRecheck = false;
 });
 
 describe("M8 — commissioning.status với đọc ghim DỪNG hỏng", () => {
@@ -45,6 +51,19 @@ describe("M8 — commissioning.status với đọc ghim DỪNG hỏng", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it("doc 81 Đợt 4 C3 — đọc cờ soát lại NÉM ⇒ status VẪN trả, commissioningRecheck null + commissioningRecheckUnreadable true", async () => {
+    fake.throwRecheck = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const st = await caller().status({ adapterId: 42 });
+      expect(st).toMatchObject({ adapterId: 42, commissioned: true, commissioningRecheck: null, commissioningRecheckUnreadable: true });
+    } finally {
+      warn.mockRestore();
+    }
+    fake.throwRecheck = false;
+    expect(await caller().status({ adapterId: 42 })).toMatchObject({ commissioningRecheck: null, commissioningRecheckUnreadable: false });
   });
 
   it("đọc ghim được ⇒ danh sách ghim + pinnedStopTagsUnreadable false (rỗng vẫn là [] chứ không null)", async () => {

@@ -18468,6 +18468,10 @@
         "row": "{{tagKey}} = {{value}}",
         "unreadable": "Tag DỪNG đã ghim: không đọc được — soát lại ở màn Device Adapter trước khi ký."
       },
+      "recheck": {
+        "chip": "Cần soát lại commissioning — ghim DỪNG của tag {{tagKey}} đã đổi lúc {{time}}, SAU lần ký hiện tại. Soát xong thì ký lại để tắt nhắc này.",
+        "unreadable": "Không kiểm được thay đổi ghim DỪNG sau lần ký hiện tại — soát lại ở màn Device Adapter trước khi ký."
+      },
       "rec": {
         "active": "active",
         "expired": "expired",

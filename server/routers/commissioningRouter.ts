@@ -30,6 +30,7 @@ import {
   listRecords,
   isCommissioned,
   isCommissioningRequired,
+  latestCommissioningRecheck,
 } from "../services/ot/commissioningService";
 import { loadStopPins } from "../services/ot/stopPin";
 
@@ -78,6 +79,16 @@ export const commissioningRouter = router({
         pinnedStopTagsUnreadable = true;
         console.warn(`[commissioning.status] pinned stop tags unreadable for adapter ${input.adapterId}:`, (err as Error)?.message || err);
       }
+      // doc 81 Đợt 4 Task C3 — thay đổi ghim DỪNG gắn cờ soát lại xảy ra SAU bản ký hiện tại (mới nhất), cho chip
+      // "Cần soát lại commissioning" ở Sổ ký; ký lại ⇒ null. Đọc hỏng ⇒ cờ unreadable (status vẫn trả, khuôn M8).
+      let commissioningRecheck: Awaited<ReturnType<typeof latestCommissioningRecheck>> = null;
+      let commissioningRecheckUnreadable = false;
+      try {
+        commissioningRecheck = await latestCommissioningRecheck(input.adapterId);
+      } catch (err) {
+        commissioningRecheckUnreadable = true;
+        console.warn(`[commissioning.status] recheck flag unreadable for adapter ${input.adapterId}:`, (err as Error)?.message || err);
+      }
       return {
         adapterId: input.adapterId,
         required: isCommissioningRequired(),
@@ -86,6 +97,8 @@ export const commissioningRouter = router({
         wouldForceSimulated: isCommissioningRequired() && !commissioned,
         pinnedStopTags,
         pinnedStopTagsUnreadable,
+        commissioningRecheck,
+        commissioningRecheckUnreadable,
       };
     }),
 
