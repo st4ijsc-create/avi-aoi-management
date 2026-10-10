@@ -295,6 +295,30 @@ class StopDbBudget {
   }
 }
 
+/**
+ * doc 81 Đợt 4 Task B2 — the 'simulated' row of the mode gate (dry-run) and of the commissioning gate (robot KNOWN not
+ * commissioned). For MOTION it is awaited as before. For a STOP (`stopDb` set) it runs under the same
+ * ROBOT_STOP_DB_STEP_DEADLINE_MS as every other STOP DB step (R-1C-h): a hung or failing DB used to hang / refuse the
+ * STOP's answer here. Timeout or error ⇒ still 'simulated' (nothing is sent in this branch, exactly as before),
+ * `ledgerError: "LEDGER_WRITE_FAILED"`, logged without secrets. Worst case added to a STOP: one deadline (1 s).
+ */
+async function recordSimulated(
+  input: RobotDispatchInput,
+  result: Record<string, unknown>,
+  errorText: string | undefined,
+  stopDb: StopDbBudget | undefined,
+): Promise<RobotDispatchResult> {
+  const write = record(input, "simulated", result, errorText);
+  if (!stopDb) return { ok: true, status: "simulated", jobId: await write };
+  try {
+    const jobId = await withDeadline(write, ROBOT_STOP_DB_STEP_DEADLINE_MS, "STOP simulated ledger");
+    return { ok: true, status: "simulated", jobId };
+  } catch (err) {
+    console.error(`[Robot] STOP on robot ${input.robotId}: 'simulated' ledger row not written (B2, bounded): ${safeDbError(err)}`);
+    return { ok: true, status: "simulated", ledgerError: "LEDGER_WRITE_FAILED" };
+  }
+}
+
 /** A robot_jobs write failed — never swallowed (doc 81 Đợt 1B Task 5). */
 export class RobotLedgerWriteError extends Error {
   constructor(message: string) {
@@ -760,8 +784,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
 
   // 4) MODE GATE — dry-run by default.
   if (!controlEnabled()) {
-    const jobId = await record(input, "simulated", { dryRun: true });
-    return { ok: true, status: "simulated", jobId };
+    return recordSimulated(input, { dryRun: true }, undefined, stopDb);
   }
 
   // 4a) COMMISSIONING / FAT GATE (CTL-02, doc 40) — ĐỐI XỨNG với OT commandDispatcher.
@@ -789,13 +812,12 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
     }
   }
   if (isRobotCommissioningRequired() && !commissioned) {
-    const jobId = await record(
+    return recordSimulated(
       input,
-      "simulated",
       { dryRun: true, notCommissioned: true },
       "not_commissioned: robot has no active, non-expired, signed commissioning record — real motion refused (recorded simulated)",
+      stopDb,
     );
-    return { ok: true, status: "simulated", jobId };
   }
 
   // 4a-policy) W3-B2 (doc 44 G3.14) — "MỘT CỬA": policy-as-code seam TRƯỚC nhánh thực
