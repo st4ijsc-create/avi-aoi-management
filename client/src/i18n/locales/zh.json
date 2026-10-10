@@ -11708,6 +11708,7 @@
     "gateRequiredOwnerApproved": "未发送：此命令前的审批关卡由启动运行的人自己批准，不予计入。请开始新的运行，并由其他用户批准该关卡。",
     "gateRequiredStale": "未发送：关卡批准后工作流已重新部署，该批准不覆盖当前运行的内容。请开始新的运行并重新批准关卡。",
     "gateRequiredOwnerUnknown": "未发送：此运行没有可确认的所有者（由系统或无创建者的 API 密钥启动），无法核验独立审批。请以用户身份启动运行。",
+    "gateRequiredApiRun": "未发送：此运行是通过 API 密钥启动的。通过 API 密钥启动的运行除停止命令外，绝不发送任何机器或机器人命令，因为无法区分持有密钥的人与审批人。请在 Studio 中以用户身份启动运行。",
     "approverRolesLabel": "审批人角色",
     "noGatePrompt": "作者未为此步骤编写提示。",
     "rejectReason": "拒绝原因（可选）",

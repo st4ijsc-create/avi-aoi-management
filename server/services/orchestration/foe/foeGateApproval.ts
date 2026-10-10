@@ -14,6 +14,16 @@
  *   3. approvedBy ≠ the run owner (orchestration_runs.startedBy); a run with NO owner ⇒ nothing counts (R-4-f);
  *   4. defHash = hash of the definition being executed (R-4-e): a redeploy after the approval makes it STALE.
  * Reasons when nothing counts: ownerUnknown › staleApproval › approvedByOwner › noGate.
+ *
+ * doc 81 Đợt 5 task E1 (item 24, owner decision option C) — a run started through an API key (runStartedViaApi) never
+ * gets a counting approval at all (reason `apiRun`): the person holding a key is invisible to the server, so "approved by
+ * someone other than the run owner" cannot be established (the holder may BE the approver). Both layers refuse it — the
+ * engine before it creates the authorisation row, and foeApprovalDbRefusal (the dispatchers, from the DB rows).
+ * STOPs (L-7): the engine never refuses a STOP step for `apiRun` (it is sent exactly as before, without an approval);
+ * the dispatchers never call foeApprovalDbRefusal for a PINNED OT stop or for any robot stop. What still reaches it is an
+ * UNPINNED OT stop-typed write — the OT dispatcher already treats that as needing four-eyes (it may write any tag), and
+ * an API run cannot provide four-eyes, so it is refused like every other non-STOP write (R-4-x: an exemption for STOP
+ * never extends to a write that is not a verified stop).
  */
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -27,7 +37,23 @@ export const FOE_APPROVAL_SOURCE_EDGE = "edge";
 /** Written when user 0 (system auto-resume / API) resolves a gate (never counts). */
 export const FOE_APPROVAL_SOURCE_SYSTEM = "system";
 
-export type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown";
+export type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun";
+
+/**
+ * doc 81 Đợt 5 task E1 — the SERVER-ONLY marker of a run started through an API key (or by any non-user principal).
+ * Written by foeEngine.startRun into BOTH `paramsJson[FOE_API_RUN_PARAM]` and `contextJson.startedViaApi`, never taken
+ * from the caller as a way to LIFT the restriction. paramsJson is written once (at the INSERT) and nothing else writes it,
+ * while contextJson is overwritten by an edge result sync (edgeCoordinator.syncRunResult) — so EITHER marker set ⇒ API run
+ * (fail-closed: an edge payload can wipe contextJson but cannot remove the params marker).
+ */
+export const FOE_API_RUN_PARAM = "__foeStartedViaApi";
+
+/** doc 81 Đợt 5 task E1 — was this run started through an API key? (either server-written marker ⇒ yes) */
+export function runStartedViaApi(run: { paramsJson?: unknown; contextJson?: unknown } | null | undefined): boolean {
+  const params = run?.paramsJson as Record<string, unknown> | null | undefined;
+  const ctx = run?.contextJson as Record<string, unknown> | null | undefined;
+  return params?.[FOE_API_RUN_PARAM] === true || ctx?.startedViaApi === true;
+}
 
 /** Canonical JSON (keys sorted, recursive) ⇒ a definition hash independent of key order. */
 function canonicalize(value: unknown): unknown {
@@ -131,6 +157,8 @@ export async function foeApprovalDbRefusal(
     if (!posInt(runId)) return "orchestration action does not name its run — no separate gate approval can be verified";
     const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     if (!run) return `orchestration run ${runId} not found — no separate gate approval can be verified`;
+    // doc 81 Đợt 5 task E1 — an API-started run never actuates through a gate approval (option C).
+    if (runStartedViaApi(run)) return "orchestration run was started through an API key (FOE_GATE_REQUIRED apiRun) — its OT/robot commands other than a STOP are never sent";
     const owner = (run as { startedBy: number | null }).startedBy ?? null;
     if (!posInt(owner)) return "orchestration run has no attributable owner (ownerUnknown) — OT/robot commands are refused";
     if (pending.userId === owner) return "orchestration action is confirmed by the run owner — a separate approval is required";

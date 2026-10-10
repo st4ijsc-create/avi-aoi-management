@@ -517,7 +517,9 @@ export function createV1Router(): Router {
       // otherwise the run is owner-less and the engine refuses its OT/robot steps (FOE_GATE_REQUIRED(ownerUnknown)).
       const { apiKeyOwnerUserId } = await import("./apiKeyOwner");
       const ownerUserId = await apiKeyOwnerUserId(req.apiPrincipal);
-      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, { ownerUserId });
+      // doc 81 Đợt 5 task E1 (item 24, option C) — viaApi: the run is marked server-side as API-started; its OT/robot steps
+      // other than a STOP are never sent (FOE_GATE_REQUIRED(apiRun)), whoever approves its gates.
+      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, { ownerUserId, viaApi: true });
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
       }

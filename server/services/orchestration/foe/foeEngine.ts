@@ -72,8 +72,10 @@ import {
   hashWorkflowDefinition,
   FOE_APPROVAL_SOURCE_SERVER,
   FOE_APPROVAL_SOURCE_SYSTEM,
+  FOE_API_RUN_PARAM,
+  runStartedViaApi,
   type GateRequiredReason,
-} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i)
+} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
@@ -314,6 +316,11 @@ interface RunContext extends LiveRunHandle {
    * the approver. null = the run was not started by a user (API key / system).
    */
   runOwner: number | null;
+  /**
+   * doc 81 Đợt 5 task E1 (item 24, option C) — the run was started through an API key (server-written markers, see
+   * foeGateApproval.runStartedViaApi). Its OT/robot steps other than a STOP are never sent (reason apiRun).
+   */
+  startedViaApi: boolean;
 }
 
 /** Outcome of executing a step subtree. */
@@ -860,8 +867,14 @@ export const FOE_GATE_REQUIRED = "FOE_GATE_REQUIRED";
  */
 async function findSeparateGateApproval(rc: RunContext): Promise<{ approval: FoeGateApproval } | { reason: GateRequiredReason }> {
   try {
+    // doc 81 Đợt 5 task E1 — an API-started run never has a counting approval (option C). The in-memory flag (read when
+    // the walk was built) AND the run row as it is now: either marker ⇒ apiRun (fail-closed).
+    if (rc.startedViaApi) return { reason: "apiRun" };
     const d = await getDb();
     if (!d) return { reason: "noGate" };
+    const [runNow] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, rc.runId)).limit(1);
+    if (!runNow) return { reason: "noGate" };
+    if (runStartedViaApi(runNow)) return { reason: "apiRun" };
     const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, rc.runId));
     const ev = evaluateGateApprovals(rows, rc.def, hashWorkflowDefinition(rc.def), rc.runOwner);
     if (!ev.ok) return { reason: ev.reason };
@@ -883,6 +896,8 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
       "the workflow was redeployed after the gate was approved, so the approval does not cover the definition now running. Start a new run and have the gate approved again.",
     ownerUnknown:
       "the run has no attributable owner (started by the system or by an API key with no creating user), so a separate approval cannot be verified. Start the run as a user.",
+    apiRun:
+      "the run was started through an API key. A run started through an API key never sends OT or robot commands other than a STOP: the person holding the key cannot be told apart from the approver. Start the run as a user in the Orchestration Studio.",
   };
   return `${FOE_GATE_REQUIRED}(${reason}): command step "${stepId}" was not sent: ${why[reason]}`;
 }
@@ -1424,6 +1439,7 @@ async function buildRunContext(
     states,
     completed,
     runOwner: run.startedBy ?? null,
+    startedViaApi: runStartedViaApi(run), // doc 81 Đợt 5 task E1
     aborting: false,
     controller: new AbortController(),
   };
@@ -1693,7 +1709,17 @@ export async function startRun(
    * ownerUserId — doc 81 Đợt 4 fix round 1 (R-4-f): the HUMAN who owns a run started by a non-user principal (API v1:
    * the API key's creating user). Ignored when `user` is a real user (id > 0).
    */
-  opts?: { async?: boolean; ownerUserId?: number | null },
+  opts?: {
+    async?: boolean;
+    ownerUserId?: number | null;
+    /**
+     * doc 81 Đợt 5 task E1 — set by the API v1 route (server side). The run is ALSO marked when a non-user principal
+     * (id ≤ 0) starts it on behalf of a human owner (`ownerUserId` — only the API route does that), and when the caller's
+     * params already carry the marker (an edge re-execution of an API run copies its params) — the marker can only be
+     * added, never lifted. A non-user start with NO owner stays unmarked: it is owner-less ⇒ ownerUnknown refuses it anyway.
+     */
+    viaApi?: boolean;
+  },
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
@@ -1728,14 +1754,21 @@ export async function startRun(
       const refusal = await definitionRefusal(def, await loadMachines(refs), { nonStopOnly: true });
       if (refusal) return { ok: false, enabled: true, reason: refusal.reason, stepIds: refusal.stepIds, errors: refusal.errors, message: refusal.message };
     }
+    // doc 81 Đợt 5 task E1 (item 24, option C) — mark an API-started run in BOTH server-written places (see
+    // foeGateApproval.FOE_API_RUN_PARAM): paramsJson is never rewritten after this INSERT; contextJson may be.
+    const humanStart = Number.isInteger(user.id) && user.id > 0;
+    const viaApi =
+      opts?.viaApi === true ||
+      (!humanStart && opts?.ownerUserId != null && opts.ownerUserId > 0) ||
+      runStartedViaApi({ paramsJson: params });
     const [run] = await d
       .insert(orchestrationRuns)
       .values({
         workflowId: wf.id,
         workflowRef: wf.ref,
         status: "queued",
-        paramsJson: params ?? {},
-        contextJson: {},
+        paramsJson: viaApi ? { ...(params ?? {}), [FOE_API_RUN_PARAM]: true } : params ?? {},
+        contextJson: viaApi ? { startedViaApi: true } : {},
         startedBy: user.id || (opts?.ownerUserId != null && opts.ownerUserId > 0 ? opts.ownerUserId : null),
         startedAt: new Date(),
       })

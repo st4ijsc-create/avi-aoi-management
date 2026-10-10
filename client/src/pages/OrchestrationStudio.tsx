@@ -2502,8 +2502,9 @@ type RunStepView = {
  * doc 81 Đợt 4 Task A5 + fix round 1 (finding 7) — the engine's step error for "no separate gate approval":
  * `FOE_GATE_REQUIRED(<reason>): …` (foeEngine.gateRequiredError). Each reason has its own translated sentence.
  */
-const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown)\))?(?=:|\s|$)/;
-type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown";
+// doc 81 Đợt 5 task E1 — apiRun: a run started through an API key never sends a non-STOP OT/robot command.
+const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown|apiRun)\))?(?=:|\s|$)/;
+type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun";
 function gateRequiredReasonOf(error: unknown): GateRequiredReason | null {
   if (typeof error !== "string") return null;
   const m = FOE_GATE_REQUIRED_RE.exec(error);
@@ -2523,6 +2524,8 @@ function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
       return t("studio.gateRequiredOwnerApproved", "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.");
     case "staleApproval":
       return t("studio.gateRequiredStale", "Not sent: the workflow was redeployed after the gate was approved, so that approval does not cover what is running now. Start a new run and have the gate approved again.");
+    case "apiRun":
+      return t("studio.gateRequiredApiRun", "Not sent: this run was started through an API key. A run started through an API key never sends machine or robot commands other than a STOP, because the person holding the key cannot be told apart from the approver. Start the run as a user in the Studio.");
     case "ownerUnknown":
       return t("studio.gateRequiredOwnerUnknown", "Not sent: this run has no known owner (started by the system or by an API key with no creating user), so a separate approval cannot be checked. Start the run as a user.");
     default:

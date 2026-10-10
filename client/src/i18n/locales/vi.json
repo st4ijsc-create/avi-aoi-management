@@ -11883,6 +11883,7 @@
     "gateRequiredOwnerApproved": "Chưa gửi: bước duyệt trước lệnh này do chính người khởi động lượt chạy duyệt nên không được tính. Chạy lượt mới và nhờ người khác duyệt.",
     "gateRequiredStale": "Chưa gửi: quy trình đã được triển khai lại sau khi bước duyệt được duyệt, nên lần duyệt đó không áp cho nội dung đang chạy. Chạy lượt mới và duyệt lại.",
     "gateRequiredOwnerUnknown": "Chưa gửi: lượt chạy không xác định được người sở hữu (do hệ thống hoặc khoá API không rõ người tạo khởi động), nên không kiểm được người duyệt riêng. Hãy khởi động lượt chạy bằng tài khoản người dùng.",
+    "gateRequiredApiRun": "Chưa gửi: lượt chạy này được khởi động bằng khoá API. Lượt chạy khởi động bằng khoá API không bao giờ gửi lệnh máy hoặc robot nào ngoài lệnh DỪNG, vì không phân biệt được người cầm khoá với người duyệt. Hãy khởi động lượt chạy bằng tài khoản người dùng trong Studio.",
     "approverRolesLabel": "Vai trò duyệt",
     "noGatePrompt": "Tác giả không soạn nội dung nhắc cho bước này.",
     "rejectReason": "Lý do từ chối (tùy chọn)",

@@ -241,6 +241,31 @@ describe("OrchestrationStudio — doc 81 Đợt 4 Task A5 + fix round 1: bước
   });
 });
 
+describe("OrchestrationStudio — doc 81 Đợt 5 task E1: bước của lượt chạy khởi động bằng khoá API (apiRun) có câu riêng", () => {
+  it("FOE_GATE_REQUIRED(apiRun) ⇒ data-reason apiRun + câu 'started through an API key' (khác câu noGate)", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "a1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(apiRun): command step "a1" was not sent' },
+            { stepId: "a2", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(noGate): command step "a2" was not sent' },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]'));
+    expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["apiRun", "noGate"]);
+    expect(notes[0].textContent).toMatch(/started through an API key/);
+    expect(notes[0].textContent).toMatch(/other than a STOP/);
+    expect(notes[0].textContent).not.toBe(notes[1].textContent);
+  });
+});
+
 const DEF_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 describe("OrchestrationStudio — doc 81 Đợt 4 fix round 3 (R-4-n): lỗi 'robotId required' của bước hiện bằng appError dịch", () => {
   it("bước lỗi mang detail.appError INVALID_VALUE robotId/robotIdRequired ⇒ dòng dịch (không phải chuỗi thô); bước thành công ⇒ không có", async () => {

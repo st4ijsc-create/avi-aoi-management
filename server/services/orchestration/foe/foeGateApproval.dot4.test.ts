@@ -222,14 +222,16 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     expect(String(stepRow(started.runId!, "w")!.error)).toMatch(gateErr("ownerUnknown"));
   });
 
-  it("★ R-4-f: API run owned by the key's creator U — U approving their own run is refused (approvedByOwner; fourEyes gate ⇒ FORBIDDEN); another user ⇒ runs", async () => {
+  // doc 81 Đợt 5 task E1 (2026-10-10, item 24 option C) — re-pinned: an API-started run never actuates a non-STOP step, so
+  // the reason is now apiRun (it precedes approvedByOwner) and "another user ⇒ runs" became "another user ⇒ still refused".
+  it("★ R-4-f + Đợt 5 E1: API run owned by the key's creator U — U approving is refused (apiRun; fourEyes gate ⇒ FORBIDDEN); another user approving ⇒ STILL refused (apiRun)", async () => {
     const U = { id: 31, role: "engineer", name: "key-creator" };
     const api = { id: 0, role: "api", name: "key-u" };
     await deployWorkflow(GATED, OWNER);
     const a = await startRun("gated", {}, api, { ownerUserId: U.id });
     expect(runRow(a.runId!).startedBy).toBe(U.id);
     expect((await resumeRun(a.runId!, { approved: true }, U)).status).toBe("failed");
-    expect(String(stepRow(a.runId!, "w")!.error)).toMatch(gateErr("approvedByOwner"));
+    expect(String(stepRow(a.runId!, "w")!.error)).toMatch(gateErr("apiRun"));
     expect(otDispatchMock).not.toHaveBeenCalled();
 
     await deployWorkflow({ ref: "fe", name: "FourEyes", steps: [{ id: "g", type: "hitl_gate", prompt: "4e", fourEyes: true }, { id: "w", type: "command", machineId: 1, command: "start" }] }, OWNER);
@@ -239,9 +241,10 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     await expect(resumeRun(c.runId!, { approved: true }, OTHER)).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(otDispatchMock).not.toHaveBeenCalled();
 
-    const ok = await resumeRun(b.runId!, { approved: true }, OTHER);
-    expect(ok.status).toBe("completed");
-    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    const other = await resumeRun(b.runId!, { approved: true }, OTHER);
+    expect(other.status).toBe("failed");
+    expect(String(stepRow(b.runId!, "w")!.error)).toMatch(gateErr("apiRun"));
+    expect(otDispatchMock).not.toHaveBeenCalled();
   });
 
   it("★ R-4-g: B approves → run interrupted → Continue by the OWNER, and by the SYSTEM (user 0) ⇒ B's approval kept, the run proceeds", async () => {
