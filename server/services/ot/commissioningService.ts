@@ -59,20 +59,37 @@ export function isCommissioningRequired(): boolean {
  */
 export async function isCommissioned(adapterId: number, dbOrTx?: DbOrTx): Promise<boolean> {
   // doc 81 Đợt 1D Task 1 — `dbOrTx` (tuỳ chọn): đọc TRONG transaction của nơi gọi (stopPin).
-  const db = dbOrTx ?? (await getDb());
-  if (!db) return false; // fail-safe: no DB ⇒ treat as NOT commissioned.
+  return (await currentSignatureId(adapterId, dbOrTx)) != null;
+}
 
+/**
+ * doc 81 Đợt 5 task F7 (item 31) — the id of the signature IN FORCE for `adapterId`: the largest `active`, non-expired
+ * commissioning record (the same predicate as isCommissioned, which is `currentSignatureId(...) != null`), or null.
+ * Fail-safe: no DB ⇒ null (not commissioned).
+ */
+export async function currentSignatureId(adapterId: number, dbOrTx?: DbOrTx): Promise<number | null> {
+  const db = dbOrTx ?? (await getDb());
+  if (!db) return null;
   const rows = await db
     .select()
     .from(commissioningRecords)
     .where(and(eq(commissioningRecords.adapterId, adapterId), eq(commissioningRecords.status, "active")));
-
   const now = Date.now();
-  return rows.some((r) => {
-    if (r.status !== "active") return false;
-    if (r.expiresAt == null) return true;
-    return new Date(r.expiresAt).getTime() > now;
-  });
+  const live = rows.filter((r) => r.status === "active" && (r.expiresAt == null || new Date(r.expiresAt).getTime() > now));
+  return live.length === 0 ? null : Math.max(...live.map((r) => r.id));
+}
+
+/**
+ * doc 81 Đợt 5 task F7 (item 31) — advisory-lock namespace (two-key form: its key space never overlaps the single-key
+ * locks of the audit chain / genealogy / worker leader) serialising, PER ADAPTER, a commissioning SIGNATURE (createRecord)
+ * and every STOP-PIN change (stopPin.ts: datStopPin, ghiAuditGoStopPinTx). Lock order everywhere: tag row locks first,
+ * then this lock (createRecord takes only this one) — no lock cycle. Released at COMMIT/ROLLBACK.
+ */
+export const COMMISSIONING_PIN_LOCK_NS = 563_118_407;
+
+/** Take the per-adapter signature / stop-pin lock inside `tx` (blocks until a concurrent holder commits). */
+export async function lockAdapterCommissioningTx(tx: DbOrTx, adapterId: number): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${COMMISSIONING_PIN_LOCK_NS}, ${adapterId})`);
 }
 
 export interface CreateCommissioningInput {
@@ -93,19 +110,25 @@ export async function createRecord(input: CreateCommissioningInput): Promise<Com
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
 
-  const [row] = await db
-    .insert(commissioningRecords)
-    .values({
-      adapterId: input.adapterId,
-      status: "active",
-      fatReference: input.fatReference ?? null,
-      signedBy: input.signedBy,
-      signedAt: new Date(),
-      expiresAt: input.expiresAt ?? null,
-      notes: input.notes ?? null,
-    })
-    .returning();
-  return row;
+  // doc 81 Đợt 5 task F7 (item 31) — the signature is strictly ordered with every stop-pin change of this adapter: a
+  // pin-change tx in flight finishes (commits) before the signature lands, and one that starts later sees this record
+  // and stamps its id (latestCommissioningRecheck compares those ids, not transaction-start clocks).
+  return db.transaction(async (tx) => {
+    await lockAdapterCommissioningTx(tx, input.adapterId);
+    const [row] = await tx
+      .insert(commissioningRecords)
+      .values({
+        adapterId: input.adapterId,
+        status: "active",
+        fatReference: input.fatReference ?? null,
+        signedBy: input.signedBy,
+        signedAt: new Date(),
+        expiresAt: input.expiresAt ?? null,
+        notes: input.notes ?? null,
+      })
+      .returning();
+    return row;
+  });
 }
 
 /**
@@ -198,7 +221,13 @@ export async function latestCommissioningRecheck(adapterId: number, dbOrTx?: DbO
         eq(controlAuditLog.entityType, "device_tag_stop_pin"),
         sql`${controlAuditLog.afterJson}->>'adapterId' = ${String(adapterId)}`,
         sql`${controlAuditLog.afterJson}->>'commissioningRecheckRequired' = 'true'`,
-        sql`${controlAuditLog.createdAt} > (SELECT cr."createdAt" FROM commissioning_records cr WHERE cr.id = ${signatureId})`,
+        // doc 81 Đợt 5 task F7 — a change audited WITH the signature id in force when it was made (stamped under the
+        // per-adapter lock) is "after the current signature" iff that id >= the current one. Older rows (no stamp) keep
+        // the transaction-start comparison.
+        sql`(CASE WHEN (${controlAuditLog.afterJson}->>'commissioningSignatureId') ~ '^[0-9]{1,18}$'
+                  THEN (${controlAuditLog.afterJson}->>'commissioningSignatureId')::bigint >= ${signatureId}
+                  ELSE ${controlAuditLog.createdAt} > (SELECT cr."createdAt" FROM commissioning_records cr WHERE cr.id = ${signatureId})
+             END)`,
       ),
     )
     .orderBy(desc(controlAuditLog.id))
