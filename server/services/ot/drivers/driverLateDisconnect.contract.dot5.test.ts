@@ -15,7 +15,7 @@
  * Census: the protocol list is read from ot/index.ts `registerDriver("…")` calls, so a new built-in driver without a
  * harness here fails this file.
  */
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
@@ -27,6 +27,21 @@ import { createMitsubishiMcDriver } from "./mitsubishiMcDriver";
 import { createOpcuaDriver } from "./opcuaDriver";
 import { createSlmpDriver } from "./slmpDriver";
 import { createStubDriver } from "./stubDriver";
+
+// ── Đợt 5 F fix 1 (R-5-e) — the plugin sidecar driver's process spawner is faked: no child process; each spawn yields one
+//    fake transport (JSON-lines RPC) whose `disconnect` RPC answers only when the test releases it.
+const PS = vi.hoisted(() => ({
+  spawn: null as null | ((onSpawn: (t: unknown, h: unknown) => void) => unknown),
+  /** every onSpawn callback handed to a spawner (index = spawner/supervisor order) */
+  onSpawns: [] as Array<(t: unknown, h: unknown) => void>,
+}));
+vi.mock("../../plugins/sidecar/nodeSpawner", () => ({
+  createSupervisedTransportSpawner: (onSpawn: (t: unknown, h: unknown) => void) => {
+    PS.onSpawns.push(onSpawn);
+    return () => PS.spawn!(onSpawn);
+  },
+}));
+import { createPluginDriver } from "../../plugins/pluginDriverBridge";
 
 /** Bounded wait: rejects (fails the test) if `p` has not settled within `ms`. */
 function within<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -103,6 +118,11 @@ type Harness = {
   handleOf(d: OtDriver): unknown;
   /** true ⇔ the harness gives a handle whose close is deferred (stub has no transport). */
   deferred: boolean;
+  /**
+   * Late completion on a REAL transport: fired on the OLD handle after the fresh connect (SLMP — its disconnect has no
+   * await at all; the only thing that can complete late is the old socket's own 'close'/'error' events).
+   */
+  lateOld?: (old: unknown) => void;
 };
 
 function withPackage(d: OtDriver, mod: unknown): OtDriver {
@@ -253,6 +273,57 @@ const slmp: Harness = {
     return { driver: createSlmpDriver(), handles: [], cfg: { endpoint: `tcp://127.0.0.1:${slmpCfgPort}`, timeoutMs: 2000 } };
   },
   handleOf: (d) => (d as unknown as { socket: unknown }).socket,
+  // SLMP's disconnect() clears socket/connected and destroys the socket SYNCHRONOUSLY (no await), so an "await then
+  // clear" clobber cannot exist; what can arrive late is the OLD socket's 'close'/'error' — replayed here after the
+  // fresh connect (the driver's `this.socket === socket` guard must ignore them).
+  lateOld: (old) => {
+    const sock = old as net.Socket;
+    sock.emit("close", true);
+    sock.emit("error", new Error("old socket late error"));
+  },
+};
+
+// ── plugin sidecar (pluginDriverBridge: RPC `disconnect` awaited, then supervisor.stop + transport.close) ────────────
+const plugin: Harness = {
+  deferred: true,
+  make() {
+    const handles: FakeHandle[] = [];
+    PS.spawn = (onSpawn) => {
+      const h = fakeHandle({
+        request: (method: string) =>
+          method === "disconnect" ? new Promise<void>((r) => defer(h, r)) : Promise.resolve({ ok: true }),
+        close() {
+          h.closeCalls++;
+        },
+      });
+      const child = {
+        kill() {
+          h.closeCalls++;
+        },
+        onExit() {
+          /* the fake child never exits by itself */
+        },
+      };
+      handles.push(h);
+      onSpawn(h, child);
+      return child;
+    };
+    const driver = createPluginDriver(
+      {
+        id: "f2-plugin",
+        name: "F2 plugin",
+        version: "1.0.0",
+        apiVersion: "1",
+        kind: "device-connector",
+        protocols: ["f2-vendor"],
+        sidecar: { command: "never-spawned", args: [] },
+        signed: { pluginId: "f2-plugin", version: "1.0.0", artifactSha256: "0".repeat(64) },
+      } as unknown as Parameters<typeof createPluginDriver>[0],
+      { publisherPublicKeyPem: null, requireSignature: false, callTimeoutMs: 3000, rate: { capacity: 100, refillPerSec: 100 } },
+    );
+    return { driver, handles, cfg: { endpoint: "plugin://f2" } };
+  },
+  handleOf: (d) => (d as unknown as { transport: unknown }).transport,
 };
 
 // ── stub (no transport) ──────────────────────────────────────────────────────────────────────────────────────────
@@ -270,18 +341,101 @@ const HARNESS: Record<string, Harness> = {
   opcua,
   slmp,
   stub,
+  "plugin-sidecar": plugin,
 };
 
+/**
+ * Census map: every `registerDriver(` CALL SITE in server/ (non-test) ⇒ the harness that covers it. A literal protocol in
+ * ot/index.ts maps to its own key; the plugin bridge's dynamic registration (any manifest protocol, one driver class) maps
+ * to "plugin-sidecar". A call site missing here — a driver registered ANYWHERE without a harness — fails the census.
+ */
+const CALL_SITE_HARNESS: Record<string, string> = {
+  'services/plugins/pluginDriverBridge.ts|protocol as OtProtocol, () => createPluginDriver(dm, opts)': "plugin-sidecar",
+};
+function registerDriverCallSites(): Array<{ file: string; key: string }> {
+  const root = path.resolve(__dirname, "../../..");
+  const out: Array<{ file: string; key: string }> = [];
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === "node_modules") continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (/\.ts$/.test(e.name) && !/\.test\.ts$/.test(e.name)) {
+        const rel = path.relative(root, full).split(path.sep).join("/");
+        if (rel === "services/ot/driverRegistry.ts") continue; // the definition
+        for (const line of fs.readFileSync(full, "utf8").split("\n")) {
+          const t = line.trim();
+          if (t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")) continue;
+          const m = /\bregisterDriver\(\s*(.+?)\);?\s*(\/\/.*)?$/.exec(t);
+          if (m) out.push({ file: rel, key: `${rel}|${m[1].trim()}` });
+        }
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
+// Expected noise only (OPC UA "securityMode None" posture warning) — kept out of the test output.
+let warnSpy: ReturnType<typeof vi.spyOn> | undefined;
+beforeAll(() => {
+  warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+});
 afterAll(async () => {
+  warnSpy?.mockRestore();
   for (const s of servers) await new Promise<void>((r) => s.close(() => r()));
 });
 
-describe("Đợt 5 F2 — census: every built-in OT driver registered in ot/index.ts has a harness here", () => {
-  it("registerDriver(...) protocols == harness keys", () => {
+describe("Đợt 5 F2 — census: every OT driver registered ANYWHERE in server/ has a harness here", () => {
+  it("built-ins: registerDriver(\"…\") protocols of ot/index.ts == the built-in harness keys", () => {
     const src = fs.readFileSync(path.resolve(__dirname, "../index.ts"), "utf8");
     const registered = [...src.matchAll(/registerDriver\(\s*"([^"]+)"/g)].map((m) => m[1]).sort();
     expect(registered.length).toBeGreaterThanOrEqual(7);
-    expect(registered).toEqual(Object.keys(HARNESS).sort());
+    expect(registered).toEqual(Object.keys(HARNESS).filter((k) => k !== "plugin-sidecar").sort());
+  });
+
+  it("every registerDriver( call site in server/ (non-test) is covered; every harness is reached by a call site", () => {
+    const sites = registerDriverCallSites();
+    expect(sites.length).toBeGreaterThanOrEqual(8); // 7 built-ins + the plugin bridge
+    const uncovered: string[] = [];
+    const reached = new Set<string>();
+    for (const s of sites) {
+      if (s.file === "services/ot/index.ts") {
+        const lit = /^"([^"]+)"/.exec(s.key.split("|")[1]) ?? /^"([^"]+)" as OtProtocol/.exec(s.key.split("|")[1]);
+        if (lit && HARNESS[lit[1]]) reached.add(lit[1]);
+        else uncovered.push(s.key);
+        continue;
+      }
+      const h = CALL_SITE_HARNESS[s.key];
+      if (h && HARNESS[h]) reached.add(h);
+      else uncovered.push(s.key);
+    }
+    expect(uncovered).toEqual([]);
+    expect([...reached].sort()).toEqual(Object.keys(HARNESS).sort());
+  });
+});
+
+describe("Đợt 5 F fix 1 (R-5-e) — plugin sidecar: a watchdog restart of the OLD supervisor is never adopted", () => {
+  it("disconnect pending → connect (new supervisor) → the old supervisor respawns a child ⇒ its transport is closed, not adopted", async () => {
+    PS.onSpawns.length = 0;
+    const { driver: d, handles, cfg } = plugin.make();
+    await within(d.connect(cfg), 3000, "plugin connect #1");
+    const late = d.disconnect();
+    await within(d.connect(cfg), 3000, "plugin connect #2");
+    const current = plugin.handleOf(d);
+    expect(PS.onSpawns).toHaveLength(2);
+    // The OLD supervisor's watchdog restarts its child while the old disconnect RPC is still pending.
+    const stray = fakeHandle({ request: async () => ({ ok: true }), close() { stray.closeCalls++; } });
+    PS.onSpawns[0]!(stray, { kill() {}, onExit() {} });
+    expect(plugin.handleOf(d)).toBe(current);
+    expect(stray.closeCalls).toBe(1);
+    release(handles[0]!);
+    await within(late, 3000, "plugin late disconnect");
+    expect(d.isConnected()).toBe(true);
+    expect(plugin.handleOf(d)).toBe(current);
+    const p = d.disconnect();
+    for (const x of handles) release(x);
+    await within(p, 3000, "plugin cleanup");
   });
 });
 
@@ -313,6 +467,7 @@ describe("Đợt 5 F2 — a LATE disconnect() completion never tears down the ne
       if (h.deferred) release(handles[0]!);
       await within(late, 3000, `${protocol} late disconnect`);
       if (h.deferred) emitLinkLoss(handles[0]!); // the old transport also reports its own death
+      h.lateOld?.(oldHandle);
       await tick();
 
       expect(d.isConnected()).toBe(true);

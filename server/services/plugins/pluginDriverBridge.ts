@@ -165,6 +165,11 @@ class PluginSidecarDriver implements OtDriver {
   private lastConfig: OtConnectionConfig | null = null;
   private lastError: string | null = null;
   private bucket: RateLimiterState;
+  /**
+   * doc 81 Đợt 5 task F fix 1 (R-5-e) — session generation: bumped by every spawn and every disconnect. A transport
+   * spawned by an OLDER supervisor (a watchdog restart racing a disconnect) is never adopted by a newer session.
+   */
+  private generation = 0;
 
   private readonly signed: SignedPlugin;
 
@@ -211,8 +216,9 @@ class PluginSidecarDriver implements OtDriver {
     this.stopped = false;
     this.handshakeDone = false;
     this.bucket = createBucket(this.opts.rate, Date.now());
+    const gen = ++this.generation;
     const spawner = createSupervisedTransportSpawner(
-      (transport, handle) => this.onFreshTransport(transport, handle),
+      (transport, handle) => this.onFreshTransport(transport, handle, gen),
       { timeoutMs: this.opts.callTimeoutMs },
     );
     const supervisor = new PluginSupervisor(
@@ -246,7 +252,16 @@ class PluginSidecarDriver implements OtDriver {
   }
 
   /** Called on the initial spawn AND every watchdog restart (fresh child ⇒ fresh transport). */
-  private onFreshTransport(transport: StdioTransport, handle: ChildHandle): void {
+  private onFreshTransport(transport: StdioTransport, handle: ChildHandle, gen: number): void {
+    if (gen !== this.generation) {
+      // R-5-e — a restart of a supervisor this driver has already let go of: never adopt its transport.
+      try {
+        transport.close();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     this.transport = transport;
     this.connected = false; // not usable until the connect handshake completes
     handle.onExit(() => {
@@ -350,25 +365,30 @@ class PluginSidecarDriver implements OtDriver {
   }
 
   async disconnect(): Promise<void> {
+    // doc 81 Đợt 5 task F fix 1 (R-5-e, item 28) — capture-and-null-first: the fields are cleared BEFORE the graceful
+    // RPC is awaited, and only the CAPTURED supervisor/transport are stopped/closed afterwards. A connect() that runs
+    // while the old disconnect RPC is still pending (ConnectionSupervisor.resetSession reuses this driver object)
+    // spawns a NEW session that the late tail can no longer stop (was: await RPC, then `this.supervisor.stop();
+    // this.transport.close()` — the NEW ones). The generation bump makes a late watchdog restart of the old
+    // supervisor unadoptable.
+    const supervisor = this.supervisor;
+    const transport = this.transport;
+    this.supervisor = null;
+    this.transport = null;
     this.stopped = true;
     this.connected = false;
     this.handshakeDone = false;
-    // Best-effort graceful RPC before killing the process (ignore failures).
-    if (this.transport) {
+    this.generation += 1;
+    // Best-effort graceful RPC before killing the process (ignore failures), bounded by the call timeout.
+    if (transport) {
       try {
-        await this.call(RPC.disconnect);
+        await withTimeout(transport.request(RPC.disconnect), this.opts.callTimeoutMs);
       } catch {
         /* ignore — we are tearing down anyway */
       }
     }
-    if (this.supervisor) {
-      this.supervisor.stop();
-      this.supervisor = null;
-    }
-    if (this.transport) {
-      this.transport.close();
-      this.transport = null;
-    }
+    supervisor?.stop();
+    transport?.close();
   }
 }
 
