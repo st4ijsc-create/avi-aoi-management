@@ -343,10 +343,12 @@ export async function ngungThietBi(input: {
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 // doc 81 Đợt 1C Task 5b fix round 2 (#1b) — XOÁ credential MQTT (đảo của xoay mật khẩu).
 //
-// App FactoryAlertSystem trên broker nhúng CỐ Ý không gửi mật khẩu (FactoryAlertSystem/src/services/
-// mqttService.ts — nhánh `brokerType === 'local'`) ⇒ xoay mật khẩu cho một máy tính bảng là KHOÁ NGOÀI nó
-// vĩnh viễn. Đường này đưa thiết bị về "không credential" (vào lại bằng username khi
-// MQTT_ALLOW_PASSWORDLESS_REGISTERED cho phép). Một thiết bị ĐANG GẮN máy phải giữ mật khẩu (bindMachine
+// App FactoryAlertSystem ≤ 1.0.16 trên broker nhúng KHÔNG gửi mật khẩu ⇒ xoay mật khẩu cho máy tính bảng chạy bản cũ
+// là KHOÁ NGOÀI nó. Từ 1.0.17 (doc 81 Đợt 5 G1) app gửi mật khẩu thiết bị nhập ở Cài đặt (Android Keystore, ghim theo
+// broker — FactoryAlertSystem/src/services/mqttService.ts, nhánh `brokerType === 'local'`). Đường này đưa thiết bị về
+// "không credential": từ Đợt 5 nó chỉ vào lại được khi MQTT_ALLOW_PASSWORDLESS_REGISTERED=true (cờ CHUYỂN TIẾP, mặc
+// định false) — tức là đường cứu một máy tính bảng cũ chỉ còn tác dụng trong giai đoạn chuyển tiếp; sau đó cách cứu
+// đúng là xoay lại mật khẩu và nhập vào app. Một thiết bị ĐANG GẮN máy phải giữ mật khẩu (bindMachine
 // đòi passwordHash) ⇒ xoá credential cũng GỠ ràng buộc trong CÙNG transaction và audit cả hai.
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════
 export const AUDIT_ACTION_MQTT_PASSWORD_CLEAR = "mqtt_password_clear";

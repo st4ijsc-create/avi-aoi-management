@@ -102,8 +102,10 @@ const TELEMETRY_STATUS_ROWS: ReadonlyArray<readonly [string, string, string]> = 
   ["400", "bad_request", "apiFeeds.status400BadRequest"],
   ["400", "all_rejected", "apiFeeds.status400AllRejected"],
   ["401", "unauthorized", "apiFeeds.status401"],
+  ["403", "forbidden", "apiFeeds.status403Scope"],
   ["403", "machine_mismatch", "apiFeeds.status403Machine"],
   ["403", "gateway_device_not_allowed", "apiFeeds.status403Gateway"],
+  ["429", "Retry-After", "apiFeeds.status429"],
   ["503", "db_unavailable", "apiFeeds.status503"],
 ];
 

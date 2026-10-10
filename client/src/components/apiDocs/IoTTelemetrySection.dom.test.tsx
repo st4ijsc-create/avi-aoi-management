@@ -89,10 +89,10 @@ describe("IoT Telemetry docs — page text", () => {
   it("documents the HTTP codes integrators actually get (202/207/400/401/403/503) and the 403/400 reasons", () => {
     const { container } = render(<IoTTelemetrySection endpointBase="" baseUrl="https://factory.example" />);
     const text = container.textContent ?? "";
-    for (const code of ["202", "207", "400", "401", "403", "503"]) {
+    for (const code of ["202", "207", "400", "401", "403", "429", "503", "Retry-After"]) {
       expect(text, `HTTP ${code}`).toContain(code);
     }
-    for (const reason of ["machine_mismatch", "gateway_device_not_allowed", "all_rejected", "db_unavailable"]) {
+    for (const reason of ["machine_mismatch", "gateway_device_not_allowed", "all_rejected", "db_unavailable", "forbidden"]) {
       expect(text, reason).toContain(reason);
     }
     // field-table rows for ts / deviceId go through i18n (rules live in the dictionaries)
@@ -121,8 +121,10 @@ describe("IoT Telemetry docs — dictionaries (vi/en/zh) state the rules", () =>
     expect(a.gatewayNote).toMatch(/IOT_GATEWAY/);
     expect(a.telemetryAuthDesc).toMatch(/Bearer/);
     expect(a.telemetryAuthDesc).not.toMatch(/ApiKey/);
+    expect(a.status403Scope).toMatch(/ingest:write/); // G fix 1: the scope a key must carry
+    expect(a.status429).toMatch(/Retry-After/);
     for (const k of ["telemetryStatusTitle", "exampleGateway", "status202", "status207", "status400BadRequest",
-      "status400AllRejected", "status401", "status403Machine", "status403Gateway", "status503"]) {
+      "status400AllRejected", "status401", "status403Machine", "status403Gateway", "status503", "status403Scope", "status429"]) {
       expect(typeof a[k], `${l}.apiFeeds.${k}`).toBe("string");
       expect(a[k].length).toBeGreaterThan(0);
     }

@@ -404,6 +404,8 @@ Với khoá gắn máy, server **không** quy máy theo `deviceId` qua `machines
   chính nó cũng phải có mặt trong danh sách.
 - Cảm biến chưa có máy trong hệ thống ⇒ tạo máy cho nó (khoá riêng) hoặc thêm nó vào allowlist của một gateway.
   Đường cũ "gửi `deviceId` lạ, vẫn 202 với `machineId` null" **không còn** với khoá gắn máy.
+- Khoá **không** gắn máy (khoá tích hợp `ak_`, master key) không bị hai luật trên ràng buộc: bus vẫn quy máy theo
+  `deviceId` qua `machines.code` như trước (thiếu cả hai trường ⇒ mẫu không thuộc máy nào).
 
 #### 5.2b Mã HTTP
 
@@ -417,8 +419,10 @@ với thân phẳng của nó.
 | **400** | `bad_request` | thân sai (không có `samples`, mảng rỗng) | sửa thân |
 | **400** | `all_rejected` | mọi mẫu bị loại (xem `rejected[]`) — không lưu gì | sửa dữ liệu |
 | **401** | `unauthorized` | thiếu/sai khoá; hoặc máy của khoá đã xoá/ngừng | — |
+| **403** | `forbidden` | khoá hợp lệ nhưng **thiếu scope `ingest:write`** (`details.required` / `details.granted`) | không — cấp scope |
 | **403** | `machine_mismatch` | khoá máy thường gửi cho máy khác | không — sửa `deviceId` |
 | **403** | `gateway_device_not_allowed` | khoá gateway gửi cho thiết bị ngoài allowlist (hoặc allowlist rỗng) | không — sửa allowlist |
+| **429** | — (thân `{"error":"OT ingest rate limit exceeded"}`) | vượt trần tần suất tầng ingest (theo khoá đã băm, `OT_INGEST_RATE_MAX`/phút); header **`Retry-After`** (giây) + `RateLimit-*` | có — SAU `Retry-After` giây |
 | **503** | `db_unavailable` | CSDL tạm không sẵn sàng | có |
 
 ### 5.3 Ví dụ ĐÃ KIỂM CHỨNG

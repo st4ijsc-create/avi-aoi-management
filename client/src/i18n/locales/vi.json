@@ -123,7 +123,9 @@
     "status401": "Thiếu/sai khoá, hoặc máy của khoá đã bị xoá/ngừng.",
     "status403Machine": "Khoá của máy thường gửi deviceId/machineId của máy khác — cả lô bị từ chối.",
     "status403Gateway": "Khoá gateway gửi cho thiết bị ngoài allowlist (hoặc allowlist rỗng) — cả lô bị từ chối.",
-    "status503": "CSDL tạm không sẵn sàng — gửi lại sau."
+    "status503": "CSDL tạm không sẵn sàng — gửi lại sau.",
+    "status403Scope": "Khoá hợp lệ nhưng thiếu scope ingest:write (error.details.required / granted).",
+    "status429": "Vượt trần tần suất của tầng ingest (theo khoá) — chờ đúng số giây ở header Retry-After rồi gửi lại; không mẫu nào của lần bị 429 được lưu."
   },
   "factoryCommand": {
     "title": "Chỉ huy nhà máy",

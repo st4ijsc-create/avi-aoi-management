@@ -123,7 +123,9 @@
     "status401": "缺少/无效密钥，或密钥所属设备已删除/停用。",
     "status403Machine": "普通设备密钥发送了其他设备的 deviceId/machineId——整批被拒绝。",
     "status403Gateway": "网关密钥为允许列表之外的设备发送（或允许列表为空）——整批被拒绝。",
-    "status503": "数据库暂时不可用——请稍后重试。"
+    "status503": "数据库暂时不可用——请稍后重试。",
+    "status403Scope": "密钥有效但缺少 ingest:write 权限范围（error.details.required / granted）。",
+    "status429": "超出采集层速率限制（按密钥）——等待 Retry-After 响应头中的秒数后重发；被 429 拒绝的请求中的采样均未保存。"
   },
   "factoryCommand": {
     "title": "工厂指挥",

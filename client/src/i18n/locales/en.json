@@ -123,7 +123,9 @@
     "status401": "Missing/invalid key, or the key's machine was deleted/deactivated.",
     "status403Machine": "An ordinary machine key sent another machine's deviceId/machineId — the whole batch is refused.",
     "status403Gateway": "A gateway key sent for a device outside its allowlist (or the allowlist is empty) — the whole batch is refused.",
-    "status503": "Database temporarily unavailable — retry later."
+    "status503": "Database temporarily unavailable — retry later.",
+    "status403Scope": "Valid key but it lacks the ingest:write scope (error.details.required / granted).",
+    "status429": "Ingest-tier rate limit exceeded (per key) — wait the number of seconds in the Retry-After header, then resend; nothing from the 429 request was stored."
   },
   "factoryCommand": {
     "title": "Factory Command",
