@@ -250,6 +250,16 @@ Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết
 - Mật khẩu lưu trong **Android Keystore** (mã hoá AES‑GCM), KHÔNG lưu AsyncStorage, KHÔNG hiện lại, KHÔNG ghi log.
 - Máy không có kho an toàn ⇒ app báo lỗi và KHÔNG lưu (không có đường lưu dạng thô).
 - Mật khẩu này chỉ gửi cho broker nhúng, không bao giờ gửi tới broker ngoài.
+- **Ghim theo broker (R-5-a):** lúc Lưu, mật khẩu được ghim vào đúng broker đang cấu hình (giao thức + TLS +
+  địa chỉ + cổng, ví dụ `ws://192.168.1.100:8883`). App CHỈ gửi mật khẩu tới đúng broker đó — cả khi kết nối lẫn
+  khi bấm "Test kết nối". Đổi địa chỉ / cổng / TLS / giao thức ⇒ app KHÔNG gửi mật khẩu và báo
+  "mật khẩu thuộc về <broker cũ> — nhập lại". Đổi broker xong phải nhập lại mật khẩu (xin admin xoay mới nếu cần).
+- ⚠ **Kết nối tới broker nhúng hiện KHÔNG mã hoá.** Server lắng nghe MQTT/TCP `MQTT_PORT` (1883) và
+  MQTT/WebSocket `MQTT_WS_PORT` (8883 — cổng này là **ws:// không TLS**, dù số cổng giống MQTTS chuẩn). Listener TLS
+  duy nhất là MQTTS/TCP `MQTT_TLS_PORT` (8884) khi bật `MQTT_TLS_ENABLED=true` + chứng chỉ — nhưng trên Android
+  đường TCP của app dùng socket thường (không có TLS), và server không có wss://. Vì vậy mật khẩu thiết bị (cũng như
+  mọi cảnh báo) đi qua mạng LAN **dạng rõ**; app hiện cảnh báo này ngay dưới ô mật khẩu. Chỉ dùng trong VLAN/Wi‑Fi
+  xưởng đã cách ly; khuyến nghị bổ sung TLS (wss:// ở server + xác thực chứng chỉ ở app) ở đợt sau.
 
 **Thứ tự triển khai (BẮT BUỘC theo đúng thứ tự — làm ngược là khoá máy tính bảng):**
 

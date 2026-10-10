@@ -1315,7 +1315,7 @@ const SettingsScreen: React.FC = () => {
           </View>
 
           {/* doc 81 Đợt 5 G1 — device password for the BUILT-IN broker (secure storage, never shown back) */}
-          <MqttDevicePasswordSetting language={language} />
+          <MqttDevicePasswordSetting language={language} mqttConfig={settings.mqtt} />
 
           {/* Subscription Mode Toggle – compact */}
           <View style={styles.inputContainer}>

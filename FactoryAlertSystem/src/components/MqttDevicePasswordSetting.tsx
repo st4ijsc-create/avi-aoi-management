@@ -6,12 +6,24 @@
  * (Android Keystore, secureCredentialStore) — it is never shown back, never put in AsyncStorage and never
  * logged. The screen shows only whether a password is stored. The device ID shown is the one the admin
  * screen lists, so the technician can match the two.
+ *
+ * R-5-a (G1 fix scan): the password is saved PINNED to the broker endpoint configured at that moment and is
+ * sent only there. When the configured endpoint differs, the screen says which endpoint the stored password
+ * belongs to and asks to re-enter it. When the connection to the broker is not encrypted, the screen says
+ * the password crosses the LAN in clear.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTheme, Theme } from '../context/ThemeContext';
 import { mqttService } from '../services/mqttService';
-import { isSecureStorageAvailable } from '../services/secureCredentialStore';
+import {
+  MqttBrokerEndpoint,
+  brokerEndpointLabel,
+  brokerEndpointOf,
+  isSecureStorageAvailable,
+  sameBrokerEndpoint,
+} from '../services/secureCredentialStore';
+import type { MqttConfig } from '../types';
 
 type Lang = 'vi' | 'en' | 'zh';
 
@@ -19,7 +31,10 @@ const TEXT: Record<Lang, Record<string, string>> = {
   vi: {
     title: 'Mật khẩu MQTT của thiết bị (broker nội bộ)',
     deviceId: 'Mã thiết bị',
-    stored: 'Đã lưu mật khẩu (kho an toàn)',
+    stored: 'Đã lưu mật khẩu (kho an toàn) cho',
+    mismatch: 'Mật khẩu đã lưu thuộc về {old} — KHÔNG được gửi tới broker đang cấu hình ({cur}). Nhập lại mật khẩu cho broker này.',
+    noEndpoint: 'Chưa cấu hình địa chỉ/cổng broker — cấu hình trước rồi mới lưu mật khẩu.',
+    plaintext: '⚠ Kết nối tới broker này KHÔNG mã hoá: mật khẩu đi qua mạng LAN dạng rõ. Khuyến nghị dùng TLS.',
     notStored: 'Chưa có mật khẩu',
     unavailable: 'Thiết bị này không có kho lưu an toàn — không lưu được mật khẩu. Cập nhật ứng dụng.',
     placeholder: 'Dán / gõ mật khẩu admin vừa cấp',
@@ -33,7 +48,10 @@ const TEXT: Record<Lang, Record<string, string>> = {
   en: {
     title: 'Device MQTT password (built-in broker)',
     deviceId: 'Device ID',
-    stored: 'Password stored (secure storage)',
+    stored: 'Password stored (secure storage) for',
+    mismatch: 'The stored password belongs to {old} — it is NOT sent to the configured broker ({cur}). Re-enter the password for this broker.',
+    noEndpoint: 'Broker address/port not configured — configure it first, then save the password.',
+    plaintext: '⚠ The connection to this broker is NOT encrypted: the password crosses the LAN in clear. TLS is recommended.',
     notStored: 'No password stored',
     unavailable: 'Secure storage is not available on this device — the password cannot be saved. Update the app.',
     placeholder: 'Paste / type the password issued by the admin',
@@ -47,7 +65,10 @@ const TEXT: Record<Lang, Record<string, string>> = {
   zh: {
     title: '设备 MQTT 密码（内置代理）',
     deviceId: '设备 ID',
-    stored: '已保存密码（安全存储）',
+    stored: '已保存密码（安全存储），对应',
+    mismatch: '已保存的密码属于 {old}——不会发送到当前配置的代理（{cur}）。请为此代理重新输入密码。',
+    noEndpoint: '尚未配置代理地址/端口——请先配置，再保存密码。',
+    plaintext: '⚠ 与此代理的连接未加密：密码以明文在局域网中传输。建议使用 TLS。',
     notStored: '未设置密码',
     unavailable: '此设备没有安全存储，无法保存密码。请更新应用。',
     placeholder: '粘贴/输入管理员签发的密码',
@@ -62,15 +83,26 @@ const TEXT: Record<Lang, Record<string, string>> = {
 
 interface Props {
   language: Lang;
+  /** The broker config shown in Settings — the password is pinned to (and only sent to) this endpoint. */
+  mqttConfig: Pick<MqttConfig, 'brokerAddress' | 'port' | 'protocol' | 'useSSL'>;
 }
 
-const MqttDevicePasswordSetting: React.FC<Props> = ({ language }) => {
+/** Is the app's connection to this endpoint actually encrypted? The Android TCP path is a plain socket. */
+function encryptedOnThisDevice(e: MqttBrokerEndpoint): boolean {
+  return e.tls && !(e.protocol === 'tcp' && Platform.OS === 'android');
+}
+
+const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) => {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const tx = TEXT[language] ?? TEXT.en;
 
   const available = isSecureStorageAvailable();
-  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+  // undefined = still loading; null = nothing stored; endpoint = stored and pinned there.
+  const [pinned, setPinned] = useState<MqttBrokerEndpoint | null | undefined>(undefined);
+  const hasPassword = pinned === undefined ? null : pinned !== null;
+  const current = brokerEndpointOf(mqttConfig);
+  const mismatch = !!pinned && !sameBrokerEndpoint(pinned, current);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -79,9 +111,9 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language }) => {
   useEffect(() => {
     let alive = true;
     mqttService
-      .hasLocalBrokerPassword()
-      .then((v: boolean) => alive && setHasPassword(v))
-      .catch(() => alive && setHasPassword(null));
+      .getLocalBrokerPasswordEndpoint()
+      .then((e: MqttBrokerEndpoint | null) => alive && setPinned(e))
+      .catch(() => alive && setPinned(null));
     return () => {
       alive = false;
     };
@@ -94,13 +126,13 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language }) => {
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !current) return;
     setBusy(true);
     setMessage(null);
     try {
-      await mqttService.setLocalBrokerPassword(input);
+      await mqttService.setLocalBrokerPassword(input, current);
       setInput('');
-      setHasPassword(true);
+      setPinned(current);
       setMessage({ kind: 'ok', text: tx.saved });
       reconnect();
     } catch (e) {
@@ -108,7 +140,7 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language }) => {
     } finally {
       setBusy(false);
     }
-  }, [input, reconnect, tx]);
+  }, [input, current, reconnect, tx]);
 
   const handleClear = useCallback(async () => {
     setBusy(true);
@@ -116,7 +148,7 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language }) => {
     try {
       await mqttService.clearLocalBrokerPassword();
       setInput('');
-      setHasPassword(false);
+      setPinned(null);
       setMessage({ kind: 'ok', text: tx.cleared });
     } catch (e) {
       setMessage({ kind: 'error', text: `${tx.failed}: ${(e as Error)?.message ?? ''}` });
@@ -136,8 +168,20 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language }) => {
       ) : (
         <>
           <Text style={styles.meta} testID="mqtt-device-password-status">
-            {hasPassword === null ? '…' : hasPassword ? tx.stored : tx.notStored}
+            {pinned === undefined ? '…' : pinned ? `${tx.stored} ${brokerEndpointLabel(pinned)}` : tx.notStored}
           </Text>
+          {mismatch ? (
+            <Text style={styles.error} testID="mqtt-device-password-mismatch">
+              {tx.mismatch
+                .replace('{old}', brokerEndpointLabel(pinned as MqttBrokerEndpoint))
+                .replace('{cur}', current ? brokerEndpointLabel(current) : '—')}
+            </Text>
+          ) : null}
+          {!current ? (
+            <Text style={styles.error} testID="mqtt-device-password-no-endpoint">{tx.noEndpoint}</Text>
+          ) : !encryptedOnThisDevice(current) ? (
+            <Text style={styles.warn} testID="mqtt-device-password-plaintext">{tx.plaintext}</Text>
+          ) : null}
           <TextInput
             testID="mqtt-device-password-input"
             style={styles.input}
@@ -155,9 +199,9 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language }) => {
           <View style={styles.row}>
             <TouchableOpacity
               testID="mqtt-device-password-save"
-              style={[styles.button, (!input.trim() || busy) && styles.buttonDisabled]}
+              style={[styles.button, (!input.trim() || busy || !current) && styles.buttonDisabled]}
               onPress={handleSave}
-              disabled={!input.trim() || busy}
+              disabled={!input.trim() || busy || !current}
               accessibilityRole="button"
             >
               <Text style={styles.buttonText}>{tx.save}</Text>
@@ -225,6 +269,7 @@ const createStyles = (theme: Theme) =>
     buttonDisabled: { opacity: 0.5 },
     ok: { fontSize: theme.fontSize.sm, color: theme.colors.success, marginTop: theme.spacing.xs },
     error: { fontSize: theme.fontSize.sm, color: theme.colors.error, marginTop: theme.spacing.xs },
+    warn: { fontSize: theme.fontSize.sm, color: theme.colors.warning, marginBottom: theme.spacing.xs },
     hint: { fontSize: theme.fontSize.xs, color: theme.colors.textMuted, marginTop: theme.spacing.xs, fontStyle: 'italic' },
   });
 

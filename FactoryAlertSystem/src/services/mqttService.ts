@@ -23,8 +23,13 @@ import {
 import { generateUUID, isValidAlertPayload, normalizeAlertPayload } from '../utils/helpers';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  MqttBrokerEndpoint,
+  StoredMqttDeviceCredential,
+  brokerEndpointLabel,
+  brokerEndpointOf,
   clearMqttDevicePassword,
-  getMqttDevicePassword,
+  getMqttDeviceCredential,
+  sameBrokerEndpoint,
   setMqttDevicePassword,
 } from './secureCredentialStore';
 
@@ -116,9 +121,10 @@ class MqttService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private deviceInfo: DeviceInfo | null = null;
   private deviceInfoPromise: Promise<void> | null = null;
-  // doc 81 Đợt 5 G1 — device MQTT password for the BUILT-IN broker, read from the secure store
-  // (secureCredentialStore) right before every connect. Never persisted here, never logged.
-  private localBrokerPassword: string | null = null;
+  // doc 81 Đợt 5 G1 — device MQTT password for the BUILT-IN broker + the endpoint it is PINNED to
+  // (R-5-a), read from the secure store right before every connect/testConnection. Never persisted here,
+  // never logged (neither the value nor its length).
+  private localBrokerCredential: StoredMqttDeviceCredential | null = null;
   
   // Circuit breaker for preventing infinite connection loops
   private lastConnectionAttempt: number = 0;
@@ -569,14 +575,28 @@ class MqttService {
       // CONNECT carries none (legacy passwordless registration — refused by the broker once
       // MQTT_ALLOW_PASSWORDLESS_REGISTERED is false, the default from Đợt 5). This password is ONLY for
       // the built-in broker: it is never sent to an external broker (branch below).
-      if (this.localBrokerPassword) {
-        options.password = this.localBrokerPassword;
+      //
+      // R-5-a (G1 fix scan) — the password goes ONLY to the exact endpoint it was saved for. `this.config`
+      // here is the config being connected to (testConnection swaps in its override first), so an edited
+      // address/port/TLS/protocol or a "Test connection" pointed elsewhere never receives it.
+      const pinned = this.localBrokerCredential;
+      const target = brokerEndpointOf(this.config);
+      let pwState: 'none' | 'sent' | 'withheld' = 'none';
+      if (pinned) {
+        if (sameBrokerEndpoint(pinned.endpoint, target)) {
+          options.password = pinned.password;
+          pwState = 'sent';
+        } else {
+          pwState = 'withheld';
+        }
       }
       console.log(
         '[MQTT] Using local broker auth format - username:',
         options.username,
         '| device password:',
-        this.localBrokerPassword ? 'set' : 'none',
+        pwState === 'withheld'
+          ? `withheld (pinned to ${brokerEndpointLabel(pinned!.endpoint)}, target ${target ? brokerEndpointLabel(target) : 'unset'})`
+          : pwState,
       );
     } else {
       // External brokers (HiveMQ, EMQX, Mosquitto): standard username/password
@@ -810,26 +830,33 @@ class MqttService {
    * getMqttDevicePassword never throws (unavailable/unreadable ⇒ null ⇒ CONNECT without password).
    */
   private async loadLocalBrokerPassword(): Promise<void> {
-    this.localBrokerPassword = await getMqttDevicePassword();
+    this.localBrokerCredential = await getMqttDeviceCredential();
   }
 
-  /** True when a device MQTT password is stored in the secure store. */
+  /** True when a (validly pinned) device MQTT password is stored in the secure store. */
   public async hasLocalBrokerPassword(): Promise<boolean> {
-    return (await getMqttDevicePassword()) !== null;
+    return (await getMqttDeviceCredential()) !== null;
+  }
+
+  /** The endpoint the stored password is pinned to (for the UI) — never the password. */
+  public async getLocalBrokerPasswordEndpoint(): Promise<MqttBrokerEndpoint | null> {
+    return (await getMqttDeviceCredential())?.endpoint ?? null;
   }
 
   /**
-   * Store the device MQTT password (Settings). Throws when the secure store is unavailable or the write
+   * Store the device MQTT password (Settings), PINNED to `endpoint` (default: the broker currently
+   * configured). Throws when the secure store is unavailable, no endpoint can be pinned or the write
    * fails — the caller must then show an error, never "saved". Takes effect on the next connect().
    */
-  public async setLocalBrokerPassword(password: string): Promise<void> {
-    this.localBrokerPassword = await setMqttDevicePassword(password);
+  public async setLocalBrokerPassword(password: string, endpoint?: MqttBrokerEndpoint | null): Promise<void> {
+    const pin = endpoint === undefined ? brokerEndpointOf(this.config) : endpoint;
+    this.localBrokerCredential = await setMqttDevicePassword(password, pin);
   }
 
   /** Remove the stored device MQTT password. Takes effect on the next connect(). */
   public async clearLocalBrokerPassword(): Promise<void> {
     await clearMqttDevicePassword();
-    this.localBrokerPassword = null;
+    this.localBrokerCredential = null;
   }
 
   /**

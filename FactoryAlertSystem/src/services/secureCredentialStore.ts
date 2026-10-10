@@ -5,6 +5,12 @@
  * password ONCE; the technician types it into this tablet's Settings. The value is kept ONLY in the
  * native SecureCredentialModule (Android Keystore AES-GCM, android/.../SecureCredentialModule.kt).
  *
+ * Ruling R-5-a (doc 81 Đợt 5 G1 fix scan) — the password is PINNED to the broker endpoint it was saved for
+ * (scheme from protocol+TLS, host, port), stored together in ONE secure entry. mqttService sends it only to
+ * that exact endpoint, from connect() and testConnection() alike; any other endpoint (edited address, port,
+ * TLS, protocol, or a "Test connection" override) gets no password. An entry without a valid pin (older or
+ * corrupt format) counts as "no password".
+ *
  * Fail-closed: when the native module is absent (iOS build without it, old native shell, tests) the
  * password is NOT written anywhere — `setMqttDevicePassword` throws SecureStorageUnavailableError. There is
  * deliberately NO fallback to AsyncStorage (plaintext JSON on disk).
@@ -20,6 +26,64 @@ export class SecureStorageUnavailableError extends Error {
   constructor() {
     super('Secure storage is not available on this device');
     this.name = 'SecureStorageUnavailableError';
+  }
+}
+
+/** The broker endpoint a stored password belongs to. */
+export interface MqttBrokerEndpoint {
+  host: string;
+  port: number;
+  protocol: 'tcp' | 'ws';
+  tls: boolean;
+}
+
+export interface StoredMqttDeviceCredential {
+  password: string;
+  endpoint: MqttBrokerEndpoint;
+}
+
+/**
+ * Endpoint identity of a broker config. null when it cannot be pinned (no host, no valid port) — then no
+ * password is ever sent. Host comparison is case/edge-whitespace insensitive; nothing else is normalised.
+ */
+export function brokerEndpointOf(cfg: {
+  brokerAddress?: string | null;
+  port?: number | string | null;
+  protocol?: string | null;
+  useSSL?: boolean | null;
+} | null | undefined): MqttBrokerEndpoint | null {
+  if (!cfg) return null;
+  const host = String(cfg.brokerAddress ?? '').trim().toLowerCase();
+  const port = Number(cfg.port);
+  if (!host || !Number.isInteger(port) || port <= 0 || port > 65535) return null;
+  return { host, port, protocol: cfg.protocol === 'tcp' ? 'tcp' : 'ws', tls: cfg.useSSL === true };
+}
+
+export function sameBrokerEndpoint(a: MqttBrokerEndpoint | null, b: MqttBrokerEndpoint | null): boolean {
+  return !!a && !!b && a.host === b.host && a.port === b.port && a.protocol === b.protocol && a.tls === b.tls;
+}
+
+/** Display form, e.g. `ws://192.168.1.10:8883` (no secret involved). */
+export function brokerEndpointLabel(e: MqttBrokerEndpoint): string {
+  const scheme = e.protocol === 'tcp' ? (e.tls ? 'mqtts' : 'mqtt') : e.tls ? 'wss' : 'ws';
+  return `${scheme}://${e.host}:${e.port}`;
+}
+
+function parseStored(raw: unknown): StoredMqttDeviceCredential | null {
+  if (typeof raw !== 'string' || !raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    if (!o || o.v !== 1 || typeof o.password !== 'string' || !o.password) return null;
+    const e = o.endpoint;
+    const endpoint = brokerEndpointOf(
+      e ? { brokerAddress: e.host, port: e.port, protocol: e.protocol, useSSL: e.tls } : null,
+    );
+    if (!endpoint || e.tls !== endpoint.tls || e.protocol !== endpoint.protocol || e.host !== endpoint.host) {
+      return null;
+    }
+    return { password: o.password, endpoint };
+  } catch {
+    return null; // a bare string (pre-pin format) or garbage ⇒ unpinned ⇒ treated as not stored
   }
 }
 
@@ -55,27 +119,35 @@ export function normaliseMqttDevicePassword(raw: string): string {
 }
 
 /**
- * The stored password, or null when none is stored, the store is unavailable or unreadable.
- * Never throws (a connect must not crash on a storage error — it simply connects without a password,
- * and the broker decides).
+ * The stored credential (password + the endpoint it is pinned to), or null when none is stored, the store is
+ * unavailable/unreadable, or the entry has no valid pin. Never throws (a connect must not crash on a storage
+ * error — it simply connects without a password, and the broker decides).
  */
-export async function getMqttDevicePassword(): Promise<string | null> {
+export async function getMqttDeviceCredential(): Promise<StoredMqttDeviceCredential | null> {
   const m = nativeModule();
   if (!m) return null;
   try {
-    const v = await m.getItem(MQTT_DEVICE_PASSWORD_KEY);
-    return typeof v === 'string' && v.length > 0 ? v : null;
+    return parseStored(await m.getItem(MQTT_DEVICE_PASSWORD_KEY));
   } catch {
     return null;
   }
 }
 
+/** Backwards-compatible accessor: the stored password regardless of its pin (tests / diagnostics only). */
+export async function getMqttDevicePassword(): Promise<string | null> {
+  return (await getMqttDeviceCredential())?.password ?? null;
+}
+
 /**
- * Store (or, for an empty value, remove) the device password. Throws SecureStorageUnavailableError when
- * the secure store is missing, and rethrows a native write failure — the caller must not report success.
- * Returns the value actually stored (null when removed).
+ * Store (or, for an empty value, remove) the device password PINNED to `endpoint`. Throws
+ * SecureStorageUnavailableError when the secure store is missing, an Error when there is no pinnable
+ * endpoint, and rethrows a native write failure — the caller must not report success. Returns what was stored (null when
+ * removed).
  */
-export async function setMqttDevicePassword(raw: string): Promise<string | null> {
+export async function setMqttDevicePassword(
+  raw: string,
+  endpoint: MqttBrokerEndpoint | null,
+): Promise<StoredMqttDeviceCredential | null> {
   const m = nativeModule();
   if (!m) throw new SecureStorageUnavailableError();
   const value = normaliseMqttDevicePassword(raw);
@@ -86,8 +158,12 @@ export async function setMqttDevicePassword(raw: string): Promise<string | null>
     await m.removeItem(MQTT_DEVICE_PASSWORD_KEY);
     return null;
   }
-  await m.setItem(MQTT_DEVICE_PASSWORD_KEY, value);
-  return value;
+  const pin = brokerEndpointOf(
+    endpoint ? { brokerAddress: endpoint.host, port: endpoint.port, protocol: endpoint.protocol, useSSL: endpoint.tls } : null,
+  );
+  if (!pin) throw new Error('Broker address/port not configured — cannot pin the MQTT password');
+  await m.setItem(MQTT_DEVICE_PASSWORD_KEY, JSON.stringify({ v: 1, password: value, endpoint: pin }));
+  return { password: value, endpoint: pin };
 }
 
 export async function clearMqttDevicePassword(): Promise<void> {
