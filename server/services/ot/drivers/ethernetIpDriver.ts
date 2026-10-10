@@ -125,15 +125,18 @@ export class EthernetIpDriver extends NotImplementedDriver {
   }
 
   override async disconnect(): Promise<void> {
-    if (this.plc && typeof this.plc.disconnect === "function") {
+    // doc 81 Đợt 5 task F2 (item 28) — capture-and-null-first (see s7Driver.disconnect): a late completion of the old
+    // Controller's disconnect never clears the session a later connect() opened on this same driver object.
+    const plc = this.plc;
+    this.plc = null;
+    this.connected = false;
+    if (plc && typeof plc.disconnect === "function") {
       try {
-        await this.plc.disconnect();
+        await plc.disconnect();
       } catch {
         // ignore
       }
     }
-    this.plc = null;
-    this.connected = false;
   }
 
   override isConnected(): boolean {
