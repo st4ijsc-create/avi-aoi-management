@@ -736,6 +736,17 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
     expect(calls("orchestration.abortRun")).toEqual([{ runId: 3 }]);
   });
 
+  it("doc 81 Đợt 5 E fix 2 (R-5-l): abort REFUSED with scopeUnverified ⇒ the translated 'scope not verified — use the direct STOP' toast", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.abortRun"] = { ok: false, enabled: true, runId: 3, reason: "scopeUnverified", message: "RAW server text" };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+    expect(shown).toBe(S.scopeUnverified);
+    expect(shown).not.toContain("RAW server text");
+  });
+
   it("Tiếp tục run bị gián đoạn: AlertDialog rồi resumeRun({runId, approved:true, expectedStepId})", async () => {
     const user = userEvent.setup();
     srv.runs = [INTERRUPTED].map((r) => ({ ...r }));

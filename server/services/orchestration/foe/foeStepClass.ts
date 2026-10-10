@@ -12,11 +12,13 @@
  *   • `verifiedStopStepIds` — the REAL classification, for every EXEMPTION a definition gets because a step is a STOP
  *     (factory scope at start / approval, the start-time definition checks): a robot step whose job is a stop job, or an
  *     OT step that is a PINNED stop — its writes are exactly the adapter's stop pins (stop-pin rows + values, the OT
- *     dispatcher's own `classifyOtStop` over `loadStopPins`). An unpinned stop-typed OT step can write any tag (R-4-x), so
- *     it is NOT a stop here. Any lookup failure ⇒ not verified (fail-closed: no exemption), and `failed` says so.
+ *     dispatcher's own `classifyOtStop` over the stop pins) over a running connection that matches the adapter row (the
+ *     dispatcher's `runningConnectionMatchesAdapterRow`, E fix 2 / N6). An unpinned stop-typed OT step can write any tag
+ *     (R-4-x), so it is NOT a stop here. Any lookup failure ⇒ not verified (fail-closed: no exemption), and `failed` says so.
  */
 import { and, eq, inArray } from "drizzle-orm";
-import { deviceAdapters } from "../../../../drizzle/schema";
+import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
+import type { StopPin, StopPinTagRow } from "../../ot/stopPin"; // types only — the module is loaded lazily (heavy, cycle-free)
 import { getCapabilitiesForMachine, type CommandDescriptor, type EquipmentCapability } from "../../equipment/capabilityModel";
 import type { EquipmentCommand } from "../../equipment/equipmentAdapter";
 import { toRobotJob } from "../../equipment/robotJobMapping";
@@ -141,56 +143,137 @@ export async function subtreeHasStopCandidate(step: WorkflowStep, machineMap: Ma
   return false;
 }
 
+
 type DbLike = { select: (...a: any[]) => any };
+type OtCandidate = NonNullable<ReturnType<typeof commandOf>>;
 
 /**
- * The VERIFIED stops of a definition (see the header): robot stop-job steps + OT steps that are PINNED stops on the adapter
- * they write through (explicit args.adapterId, else the single enabled adapter of the machine — foeEngine.withResolvedAdapter).
- * `failed` ⇒ some lookup failed: those steps are NOT in `ids` (no exemption).
+ * doc 81 Đợt 5 task E fix 2 (review N3, N6) — a BATCHED verifier of stops for one call (one list / one start): the OT
+ * candidates of ALL the definitions it is given are resolved with ONE bound-adapter read and ONE stop-pin read (device_tags
+ * of every adapter involved — `stopPinsFromTagRows`, the same rule as `loadStopPins`), and every adapter's RUNNING
+ * connection is checked once (`runningConnectionMatchesAdapterRow` — the OT dispatcher's own R-1D-k check, reused): a
+ * pin matched over a stale connection is NOT a pinned stop for the dispatcher, so it is not a verified stop here either.
+ * Any lookup failure ⇒ those steps are not verified and `failed` is set (no exemption).
  */
+export interface StopVerifier {
+  verified(def: Pick<WorkflowDefinition, "steps">, machineMap: Map<number, MachineForValidation>): Promise<{ ids: Set<string>; failed: boolean }>;
+}
+
+export async function makeStopVerifier(
+  db: DbLike | null,
+  defs: ReadonlyArray<Pick<WorkflowDefinition, "steps"> | null | undefined>,
+  machineMap: Map<number, MachineForValidation>,
+): Promise<StopVerifier> {
+  // pass 1 — every OT stop-typed candidate of every definition (no DB)
+  const candidates: OtCandidate[] = [];
+  for (const def of defs) {
+    for (const s of allStepsOf(def?.steps)) {
+      const c = commandOf(s, machineMap);
+      if (c && !isRobotKind(c.cap.adapterKind) && (await isOtStopCommandType(c.descriptor.name))) candidates.push(c);
+    }
+  }
+  let batchFailed = false;
+  const bound: Array<{ id: number; machineId: number | null }> = [];
+  const pinsByAdapter = new Map<number, StopPin[]>();
+  const connectionOk = new Map<number, boolean>();
+  const fns: {
+    classifyOtStop?: (name: string, writes: Array<{ tagKey: string; value: unknown }>, pins: StopPin[] | null) => { pinnedStop: boolean };
+    connectionCheck?: (db: never, adapterId: number) => Promise<boolean>;
+  } = {};
+  const adapterOf = (c: OtCandidate): number | null => {
+    const args = (c.step.args ?? {}) as Record<string, unknown>;
+    if (typeof args.adapterId === "number") return args.adapterId;
+    const enabled = bound.filter((a) => a.machineId === (c.step as { machineId: number }).machineId);
+    return enabled.length === 1 ? enabled[0].id : null;
+  };
+  if (candidates.length > 0) {
+    if (!db) batchFailed = true;
+    else {
+      try {
+        const disp = await import("../../ot/commandDispatcher");
+        const { stopPinsFromTagRows } = await import("../../ot/stopPin");
+        fns.classifyOtStop = disp.classifyOtStop as never;
+        fns.connectionCheck = disp.runningConnectionMatchesAdapterRow as never;
+        const machineIds = [...new Set(candidates.filter((c) => typeof (c.step.args ?? {}).adapterId !== "number").map((c) => (c.step as { machineId: number }).machineId))];
+        if (machineIds.length) {
+          const rows = (await db.select().from(deviceAdapters).where(and(inArray(deviceAdapters.machineId, machineIds), eq(deviceAdapters.isEnabled, true)))) as Array<{ id: number; machineId: number | null; isEnabled?: boolean }>;
+          for (const r of rows) if (r.isEnabled !== false) bound.push({ id: r.id, machineId: r.machineId });
+        }
+        const adapterIds = [...new Set(candidates.map(adapterOf).filter((v): v is number => v != null))];
+        if (adapterIds.length) {
+          // ONE read for every adapter's stop pins — the SAME rows + rule `loadStopPins` uses (enabled, writable).
+          const tagRows = (await db
+            .select({
+              adapterId: deviceTags.adapterId,
+              tagKey: deviceTags.tagKey,
+              dataType: deviceTags.dataType,
+              stopValue: deviceTags.stopValue,
+              writable: deviceTags.writable,
+              isEnabled: deviceTags.isEnabled,
+            })
+            .from(deviceTags)
+            .where(and(inArray(deviceTags.adapterId, adapterIds), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)))) as Array<{ adapterId: number } & StopPinTagRow>;
+          for (const id of adapterIds) {
+            const mine = tagRows.filter((r) => r.adapterId === id).sort((a, b) => (a.tagKey < b.tagKey ? -1 : a.tagKey > b.tagKey ? 1 : 0));
+            pinsByAdapter.set(id, stopPinsFromTagRows(mine));
+          }
+        }
+      } catch {
+        batchFailed = true;
+      }
+    }
+  }
+  return {
+    async verified(def, map) {
+      const ids = new Set<string>();
+      let failed = false;
+      for (const s of allStepsOf(def?.steps)) {
+        const c = commandOf(s, map);
+        if (!c) continue;
+        if (isRobotKind(c.cap.adapterKind)) {
+          if (isRobotStopStep(c)) ids.add(s.id);
+          continue;
+        }
+        if (!(await isOtStopCommandType(c.descriptor.name))) continue;
+        const classifyOtStop = fns.classifyOtStop;
+        const connectionCheck = fns.connectionCheck;
+        if (batchFailed || !classifyOtStop || !connectionCheck || !db) {
+          failed = true;
+          continue;
+        }
+        const adapterId = adapterOf(c);
+        if (adapterId == null) continue; // unresolvable ⇒ the dispatcher would refuse it ⇒ not a verified stop
+        const pins = pinsByAdapter.get(adapterId) ?? null;
+        if (pins === null) {
+          failed = true;
+          continue;
+        }
+        const writes = buildEquipmentCommand(c.descriptor, c.cap, (c.step as { machineId: number }).machineId, (c.step.args ?? {}) as Record<string, unknown>, "probe", { id: 0, role: "system" }).writes ?? [];
+        if (!classifyOtStop(c.descriptor.name, writes, pins).pinnedStop) continue;
+        if (!connectionOk.has(adapterId)) {
+          try {
+            connectionOk.set(adapterId, (await connectionCheck(db as never, adapterId)) === true);
+          } catch {
+            connectionOk.set(adapterId, false);
+            failed = true;
+          }
+        }
+        if (connectionOk.get(adapterId) === true) ids.add(s.id);
+      }
+      return { ids, failed };
+    },
+  };
+}
+
+/** The VERIFIED stops of ONE definition (a one-definition batch). See makeStopVerifier. */
 export async function verifiedStopStepIds(
   def: Pick<WorkflowDefinition, "steps">,
   machineMap: Map<number, MachineForValidation>,
   db: DbLike | null,
 ): Promise<{ ids: Set<string>; failed: boolean }> {
-  const ids = new Set<string>();
-  let failed = false;
-  const otCandidates: Array<NonNullable<ReturnType<typeof commandOf>>> = [];
-  for (const s of allStepsOf(def?.steps)) {
-    const c = commandOf(s, machineMap);
-    if (!c) continue;
-    if (isRobotKind(c.cap.adapterKind)) {
-      if (isRobotStopStep(c)) ids.add(s.id);
-    } else if (await isOtStopCommandType(c.descriptor.name)) otCandidates.push(c);
-  }
-  if (otCandidates.length === 0) return { ids, failed };
-  if (!db) return { ids, failed: true };
   try {
-    const { classifyOtStop } = await import("../../ot/commandDispatcher");
-    const { loadStopPins } = await import("../../ot/stopPin");
-    const machineIds = [...new Set(otCandidates.filter((c) => typeof (c.step.args ?? {}).adapterId !== "number").map((c) => c.step.machineId))];
-    const bound = machineIds.length
-      ? ((await db.select().from(deviceAdapters).where(and(inArray(deviceAdapters.machineId, machineIds), eq(deviceAdapters.isEnabled, true)))) as Array<{ id: number; machineId: number | null; isEnabled?: boolean }>)
-      : [];
-    const pinsByAdapter = new Map<number, Awaited<ReturnType<typeof loadStopPins>> | null>();
-    for (const c of otCandidates) {
-      const args = (c.step.args ?? {}) as Record<string, unknown>;
-      const enabled = bound.filter((a) => a.machineId === (c.step as { machineId: number }).machineId && a.isEnabled !== false);
-      const adapterId = typeof args.adapterId === "number" ? args.adapterId : enabled.length === 1 ? enabled[0].id : null;
-      if (adapterId == null) continue; // unresolvable ⇒ the dispatcher would refuse it ⇒ not a verified stop
-      if (!pinsByAdapter.has(adapterId)) {
-        try {
-          pinsByAdapter.set(adapterId, await loadStopPins(db as never, adapterId));
-        } catch {
-          pinsByAdapter.set(adapterId, null);
-          failed = true;
-        }
-      }
-      const writes = buildEquipmentCommand(c.descriptor, c.cap, (c.step as { machineId: number }).machineId, args, "probe", { id: 0, role: "system" }).writes ?? [];
-      if (classifyOtStop(c.descriptor.name, writes, pinsByAdapter.get(adapterId) ?? null).pinnedStop) ids.add(c.step.id);
-    }
+    return await (await makeStopVerifier(db, [def], machineMap)).verified(def, machineMap);
   } catch {
-    failed = true;
+    return { ids: new Set(), failed: true };
   }
-  return { ids, failed };
 }

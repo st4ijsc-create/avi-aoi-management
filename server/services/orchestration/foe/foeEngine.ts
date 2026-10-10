@@ -86,7 +86,8 @@ import {
   isStopCandidate,
   orchestrationActionId,
   subtreeHasStopCandidate,
-  verifiedStopStepIds,
+  makeStopVerifier,
+  type StopVerifier,
 } from "./foeStepClass"; // doc 81 Đợt 5 task E fix 1 (R-5-j) — THE step walk + stop classification
 export { buildEquipmentCommand } from "./foeStepClass";
 import {
@@ -245,7 +246,7 @@ export interface StartRunResult {
    * doc 81 Đợt 4 final wave G4 — set when the START was refused by the same definition checks deploy runs (a workflow
    * activated before those checks existed): no run was created. The Studio translates it like a deploy refusal.
    */
-  reason?: DefinitionRefusalReason;
+  reason?: DefinitionRefusalReason | typeof FOE_SCOPE_UNVERIFIED;
   stepIds?: string[];
 }
 
@@ -727,6 +728,9 @@ async function isStopCommandStep(rc: RunContext, step: WorkflowStep): Promise<bo
  *   After the dispatch it costs ≤ 2·D (result + completed rows) before the walk moves on, so in a run of STOP steps the k-th
  *   STOP is dispatched within (L + 4 + 6·(k − 1))·D (+ L·D for branch read-backs). A NON-stop step before a STOP is
  *   awaited as before (sequence semantics — not a STOP's own bookkeeping).
+ *   E fix 2 (review N1) — a STOP COMPENSATION of a failing step is dispatched within 4·D after the step's body returns:
+ *   the step's failed row (≤ D), the run's 'compensating' status (≤ D), the compensation's running row (≤ D), its
+ *   lookups / authorisation row (≤ D, ≤ D) — i.e. ≤ 5·D. (The failing step's OWN body is not a STOP — it is awaited as before.)
  */
 async function stopBoundedReadbacks(stop: boolean, rc: RunContext, stepId: string, c: Condition | undefined): Promise<void> {
   if (!stop) return refreshConditionReadbacks(rc, c);
@@ -811,9 +815,11 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   } else if (outcome.kind === "paused") {
     // step-level status already set by the body (awaiting_confirm)
   } else {
-    // failed / aborted → run compensation if declared (E4: a STOP's failure row is bounded too)
+    // failed / aborted → run compensation if declared (E4: a STOP's failure row is bounded too). E fix 2 (review N1) — a
+    // step whose COMPENSATION holds a STOP: its failed row is on that STOP's path ⇒ bounded as well.
     const failedOutcome = outcome;
-    await stopBoundedWrite(stop, rc.runId, step.id, "failed row", () =>
+    const compStop = step.compensation ? await isStopCommandStep(rc, step.compensation) : false;
+    await stopBoundedWrite(stop || compStop, rc.runId, step.id, "failed row", () =>
       upsertStep(rc.runId, step.id, step.type, {
         status: "failed",
         attempt,
@@ -1036,9 +1042,14 @@ async function stopStepIdsOf(def: WorkflowDefinition, machineMap: Map<number, Ma
 }
 
 /** The verified stops + whether a lookup failed (no exemption for what could not be verified). Never throws. */
-async function verifiedStopsOf(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>): Promise<{ ids: Set<string>; failed: boolean }> {
+async function verifiedStopsOf(
+  def: WorkflowDefinition,
+  machineMap: Map<number, MachineForValidation>,
+  verifier?: StopVerifier,
+): Promise<{ ids: Set<string>; failed: boolean }> {
   try {
-    return await verifiedStopStepIds(def, machineMap, (await getDb()) ?? null);
+    const v = verifier ?? (await makeStopVerifier((await getDb()) ?? null, [def], machineMap));
+    return await v.verified(def, machineMap);
   } catch {
     return { ids: new Set(), failed: true };
   }
@@ -1145,10 +1156,10 @@ function scopeFor(user: FoeUser, explicit: FoeScope | undefined): FoeScope {
 }
 
 /** A definition's targets + its STOP step ids (same classification execCommand uses). */
-async function definitionTargets(def: WorkflowDefinition, machineMap?: Map<number, MachineForValidation>) {
+async function definitionTargets(def: WorkflowDefinition, machineMap?: Map<number, MachineForValidation>, verifier?: StopVerifier) {
   const map = machineMap ?? (await loadMachines(validateWorkflow(def, null).referencedMachineIds));
   // E fix 1 (R-5-j) — only a VERIFIED stop makes a target "STOP-only" (an unpinned stop-typed write is a NON-stop target).
-  const v = await verifiedStopsOf(def, map);
+  const v = await verifiedStopsOf(def, map, verifier);
   return { targets: collectTargets(def, map, v.ids), stops: v.ids, stopsFailed: v.failed };
 }
 
@@ -1183,22 +1194,35 @@ async function boundedRunScopeDecision(run: { workflowId: number } | undefined, 
   return withDeadline(runScopeDecision(run, scope), STOP_DB_STEP_DEADLINE_MS, label).catch(() => "unknown" as const);
 }
 
-/** R-5-i — an abort / rejection that proceeded with an unverified scope (best-effort audit, never blocks). */
-function auditScopeUnverified(user: FoeUser, runId: number, action: "abort" | "reject"): void {
-  void (async () => {
-    try {
-      const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
-      await logCrudOperation(createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }), {
-        action: "config_change",
-        entityType: "orchestration_run",
-        entityId: runId,
-        details: { operation: "foe_scope_unverified", metadata: { runId, action, reason: "scopeUnverified" } },
-        status: "success",
-      });
-    } catch {
-      /* best-effort */
-    }
+/**
+ * doc 81 Đợt 5 task E fix 2 (ruling R-5-l, replaces R-5-i) — an abort / rejection whose scope could not be DECIDED within
+ * the bound is REFUSED (an abort also cancels the run's later STOP steps and STOP compensations, so it does not reduce
+ * actuation; no equipment STOP path goes through here — the direct STOP / E-STOP of the machine is unaffected). The answer
+ * is distinct from "not found" and is the SAME for a nonexistent id whose lookup was undecided (no oracle).
+ */
+export const FOE_SCOPE_UNVERIFIED = "scopeUnverified" as const;
+const SCOPE_UNVERIFIED_MESSAGE = "Scope not verified — retry. To stop equipment now, use the machine's direct STOP / E-STOP.";
+
+function scopeUnverifiedAnswer(runId: number): StartRunResult {
+  return { ok: false, enabled: foeEnabled(), runId, reason: FOE_SCOPE_UNVERIFIED, message: SCOPE_UNVERIFIED_MESSAGE };
+}
+
+/** R-5-l — the refusal is logged SYNCHRONOUSLY (console, always) and audited, the audit bounded by the STOP DB deadline. */
+async function auditScopeUnverified(user: FoeUser, runId: number, action: "abort" | "reject"): Promise<void> {
+  console.error(`[FOE] ${action} of run ${runId} by user ${user.id || 0} (${user.role}) REFUSED: factory scope not verified within ${STOP_DB_STEP_DEADLINE_MS} ms (R-5-l)`);
+  const write = (async () => {
+    const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+    await logCrudOperation(createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }), {
+      action: "config_change",
+      entityType: "orchestration_run",
+      entityId: runId,
+      details: { operation: "foe_scope_unverified", metadata: { runId, action, outcome: "refused", reason: FOE_SCOPE_UNVERIFIED } },
+      status: "failure",
+    });
   })();
+  await withDeadline(write, STOP_DB_STEP_DEADLINE_MS, `FOE ${action} run ${runId} scopeUnverified audit`).catch((err: unknown) => {
+    console.error(`[FOE] ${action} of run ${runId}: scopeUnverified audit not written: ${(err as Error)?.message ?? err}`);
+  });
 }
 
 /**
@@ -1206,15 +1230,26 @@ function auditScopeUnverified(user: FoeUser, runId: number, action: "abort" | "r
  * queries filter IN SQL before their LIMIT. Any error ⇒ [] (fail-closed).
  */
 export async function visibleWorkflowIds(scope: FoeScope): Promise<number[] | null> {
+  const r = await resolveVisibleWorkflowIds(scope);
+  return r.ok ? r.ids : [];
+}
+
+/**
+ * doc 81 Đợt 5 task E fix 2 (review N3, N4) — visibleWorkflowIds that SAYS when it could not decide (`ok: false`) so a
+ * count can be shown as degraded instead of a misleading 0. ONE definitions read, ONE judge, one batched verifier.
+ */
+export async function resolveVisibleWorkflowIds(scope: FoeScope): Promise<{ ok: true; ids: number[] | null } | { ok: false }> {
   try {
     const judge = await makeScopeJudge(scope);
-    if (judge.unrestricted && !judge.failed) return null;
+    if (judge.unrestricted && !judge.failed) return { ok: true, ids: null };
     const d = await getDb();
-    if (!d) return [];
+    if (!d) return { ok: false };
     const rows = await d.select({ id: orchestrationWorkflows.id, definitionJson: orchestrationWorkflows.definitionJson }).from(orchestrationWorkflows);
-    return (await filterVisibleBy(rows, (r) => r.definitionJson as WorkflowDefinition, scope)).map((r) => r.id);
+    const r = await filterVisibleWith(judge, rows, (x) => x.definitionJson as WorkflowDefinition);
+    if (r.failed) return { ok: false };
+    return { ok: true, ids: r.keep.map((x) => x.id) };
   } catch {
-    return [];
+    return { ok: false };
   }
 }
 
@@ -1285,20 +1320,35 @@ export async function definitionVisibleTo(def: WorkflowDefinition | null | undef
  * batch). A missing / malformed definition is visible only to an unrestricted scope (fail-closed).
  */
 export async function filterVisibleBy<T>(items: T[], defOf: (item: T) => WorkflowDefinition | null | undefined, scope: FoeScope): Promise<T[]> {
-  const judge = await makeScopeJudge(scope);
-  if (judge.unrestricted && !judge.failed) return items;
+  return (await filterVisibleWith(await makeScopeJudge(scope), items, defOf)).keep;
+}
+
+/**
+ * doc 81 Đợt 5 task E fix 2 (review N3) — ONE pass for a batch: the judge resolved once by the caller, ONE machine load,
+ * ONE stop verifier (one bound-adapter read + one stop-pin read for every definition of the batch). `failed` ⇒ some
+ * lookup failed (the result is the fail-closed one; callers that must SAY so — the hub — read it).
+ */
+async function filterVisibleWith<T>(
+  judge: Awaited<ReturnType<typeof makeScopeJudge>>,
+  items: T[],
+  defOf: (item: T) => WorkflowDefinition | null | undefined,
+): Promise<{ keep: T[]; failed: boolean }> {
+  if (judge.unrestricted && !judge.failed) return { keep: items, failed: false };
   const defs = items.map(defOf);
   const ids = new Set<number>();
   for (const d of defs) if (d && Array.isArray(d.steps)) for (const id of validateWorkflow(d, null).referencedMachineIds) ids.add(id);
   const machineMap = await loadMachines([...ids]);
+  const verifier = await makeStopVerifier((await getDb()) ?? null, defs.filter((d): d is WorkflowDefinition => !!d && Array.isArray(d.steps)), machineMap);
   const keep: T[] = [];
+  let failed = judge.failed;
   for (let i = 0; i < items.length; i++) {
     const d = defs[i];
     if (!d || !Array.isArray(d.steps)) continue;
-    const { targets } = await definitionTargets(d, machineMap);
+    const { targets, stopsFailed } = await definitionTargets(d, machineMap, verifier);
+    if (stopsFailed) failed = true;
     if (isOutOfScopeEmpty(await judge.outOf(targets, { nonStopOnly: true }))) keep.push(items[i]);
   }
-  return keep;
+  return { keep, failed: failed || judge.failed };
 }
 
 /** doc 81 Đợt 5 task E2 — EVERY target (STOPs included) in `scope`: the deploy rule, also for deleting a workflow. */
@@ -1583,10 +1633,13 @@ async function execWaitTelemetry(rc: RunContext, step: Extract<WorkflowStep, { t
 async function runCompensation(rc: RunContext, step: WorkflowStep): Promise<void> {
   if (!step.compensation) return;
   try {
-    // doc 80 ORC-01 — never flip an ABORTED run back to 'compensating'.
-    await setRunStatusUnlessAborted(rc.runId, "compensating");
     const comp = step.compensation;
     const compStop = await isStopCommandStep(rc, comp); // E fix 1 — a STOP compensation's bookkeeping is bounded too
+    // doc 80 ORC-01 — never flip an ABORTED run back to 'compensating'. E fix 2 (review N1) — bounded when the
+    // compensation is a STOP (the status write is on its path).
+    await stopBoundedWrite(compStop, rc.runId, comp.id, "compensating status", async () => {
+      await setRunStatusUnlessAborted(rc.runId, "compensating");
+    });
     // run the compensation step body once (no nested compensation cascade)
     await stopBoundedWrite(compStop, rc.runId, comp.id, "running row", () =>
       upsertStep(rc.runId, comp.id, comp.type, { status: "running", startedAt: new Date() }),
@@ -2175,11 +2228,15 @@ export async function resumeRun(
         if (!run || !visible) return notFound;
         if (defS) approvalStopOnlyOut = (await scopeVerdict(defS, scope, { nonStopOnly: true })).stopOnlyOut;
       } else {
-        // E fix 1 (ruling R-5-i) — a REJECTION aborts the run (reduces actuation): the scope lookup is bounded by the STOP
-        // DB deadline; a DECIDED out-of-scope ⇒ "not found"; undecidable (timeout / error) ⇒ it proceeds, audited.
+        // E fix 2 (ruling R-5-l) — a REJECTION aborts the run (and with it its later STOP steps / STOP compensations): the
+        // scope lookup is bounded by the STOP DB deadline; undecided ⇒ REFUSED with the distinct "scope not verified"
+        // answer (also for a missing id — no oracle), audited; a DECIDED out-of-scope ⇒ "not found".
         const verdict = await boundedRunScopeDecision(run, scope, `FOE reject run ${runId} scope`);
+        if (verdict === "unknown") {
+          await auditScopeUnverified(user, runId, "reject");
+          return { ...scopeUnverifiedAnswer(runId), enabled: true };
+        }
         if (!run || verdict === "out") return notFound;
-        if (verdict === "unknown") auditScopeUnverified(user, runId, "reject");
       }
     }
     if (!run) return notFound;
@@ -2539,11 +2596,15 @@ export async function abortRun(
     const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     const notFound: StartRunResult = { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} not found.` };
     if (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0)) {
-      // E fix 1 (ruling R-5-i) — bounded by the STOP DB deadline (an abort is never held longer); a DECIDED out-of-scope
-      // ⇒ "not found" (resolved for a missing id too); undecidable (timeout / error) ⇒ the abort PROCEEDS, audited.
+      // E fix 2 (ruling R-5-l) — bounded by the STOP DB deadline (an abort is never held longer); undecided (timeout /
+      // error / pins unreadable) ⇒ REFUSED with the distinct "scope not verified — retry; use the direct STOP / E-STOP"
+      // answer (the SAME for a missing id — no oracle), audited synchronously (bounded); a DECIDED out-of-scope ⇒ "not found".
       const verdict = await boundedRunScopeDecision(run ?? undefined, scopeFor(user, opts.scope), `FOE abort run ${runId} scope`);
+      if (verdict === "unknown") {
+        await auditScopeUnverified(user, runId, "abort");
+        return scopeUnverifiedAnswer(runId);
+      }
       if (!run || verdict === "out") return notFound;
-      if (verdict === "unknown") auditScopeUnverified(user, runId, "abort");
     }
     if (!run) return notFound;
     if (["completed", "failed", "aborted"].includes(run.status)) {

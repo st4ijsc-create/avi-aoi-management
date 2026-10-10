@@ -56,6 +56,20 @@ vi.mock("../api/v1/auth", async (importOriginal) => {
   };
 });
 
+// E fix 2 (review N6) — the dispatcher's running-connection check (runningConnectionMatchesAdapterRow) runs for real; the
+// running connection of each fixture adapter is registered here with the fingerprint of its row (or a STALE one).
+const conn = vi.hoisted(() => ({ fp: new Map<number, string>() }));
+vi.mock("../services/ot/otManager", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../services/ot/otManager")>();
+  return { ...orig, getActiveConnectionFingerprint: (adapterId: number) => conn.fp.get(adapterId) };
+});
+// E fix 2 (review N4) — make the hub's scope resolution fail on demand.
+const hubFail = vi.hoisted(() => ({ on: false }));
+vi.mock("../services/orchestration/foe/foeEngine", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../services/orchestration/foe/foeEngine")>();
+  return { ...orig, resolveVisibleWorkflowIds: async (s: never) => (hubFail.on ? { ok: false as const } : orig.resolveVisibleWorkflowIds(s)) };
+});
+
 const DB_URL = process.env.DATABASE_URL;
 const RUN = `d5e2${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
 let sql: ReturnType<typeof postgres>;
@@ -118,6 +132,10 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     sql = postgres(DB_URL!, { max: 2, connect_timeout: 30, onnotice: () => {} });
     fx.A = await makeFactory("A");
     fx.B = await makeFactory("B");
+    const { adapterTargetFingerprint } = await import("../services/ot/adapterTarget");
+    for (const f of [fx.A, fx.B]) {
+      conn.fp.set(f.adapterId, adapterTargetFingerprint({ protocol: "modbus", endpoint: "tcp://127.0.0.1:1", machineId: f.machineId, connectionOptions: null } as never));
+    }
     fx.orphanRobot = Number((await sql`INSERT INTO robots (code, name, vendor, kind, endpoint, "isEnabled") VALUES (${`${RUN}-ORPH`}, ${`${RUN}-ORPH`}, 'sim', 'arm', 'tcp://127.0.0.1:1', true) RETURNING id`)[0].id);
     for (const [key, role, fac] of [["ua", "engineer", "A"], ["ua2", "supervisor", "A"], ["ub", "engineer", "B"], ["adm", "admin", null]] as const) {
       const [u] = await sql`INSERT INTO users ("openId", username, name, role, "isActive", two_factor_enabled)
@@ -422,6 +440,33 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     const ua = await router(ctxOf("ua"));
     expect(((await ua.listRuns({ limit: 1 })) as Array<{ id: number }>).map((r) => r.id)).toEqual([runA]);
     expect(((await ua.listWorkflows({ limit: 1 })) as Array<{ ref: string }>).map((w) => w.ref)).toEqual([rA]);
+  });
+
+  it("★ N6: a PINNED stop of B over a STALE running connection is NOT a verified stop ⇒ the start is refused (not found); a fresh connection ⇒ starts", async () => {
+    const { deployWorkflow, startRun } = await engine();
+    const r = ref("stale-b");
+    expect((await deployWorkflow(defOf(r, [otStart("a", A), otStop("pb", B)]), ADMIN)).ok).toBe(true);
+    const fresh = conn.fp.get(B().adapterId)!;
+    conn.fp.set(B().adapterId, "0".repeat(64)); // the driver still talks to the device the adapter pointed at BEFORE
+    try {
+      expect(await startRun(r, {}, userOf("ua"))).toEqual({ ok: false, enabled: true, message: `Workflow "${r}" not found.` });
+    } finally {
+      conn.fp.set(B().adapterId, fresh);
+    }
+    expect((await startRun(r, {}, userOf("ua"))).status).toBe("awaiting_confirm");
+  });
+
+  it("★ N4: the hub's orchestration scope cannot be decided ⇒ orchestration (and 'mine' orchestration) DEGRADED, not a silent 0", async () => {
+    const hub = async () => (await import("./oversightRouter")).oversightRouter.createCaller(ctxOf("ua")).pendingSummary();
+    hubFail.on = true;
+    try {
+      const sA = await hub();
+      expect(sA.orchestration).toEqual({ count: 0, samples: [], degraded: true });
+      expect(sA.mine.orchestration.degraded).toBe(true);
+    } finally {
+      hubFail.on = false;
+    }
+    expect((await hub()).orchestration.degraded).toBe(false);
   });
 
   it("★ R-5-d gov: runEvents / replayRun of another factory's run ⇒ the SAME answer as a missing run; the owner reads them", async () => {

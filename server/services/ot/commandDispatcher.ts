@@ -862,7 +862,9 @@ const STOP_PIN_REASON_TEXT: Record<StopPinRefusalReason, string> = {
  * sees the new target. true ⇔ both fingerprints (adapterTarget.ts — the same definition the R-1D-a clear uses) are
  * known and equal. Any error / missing value ⇒ false (no exemption, fail-closed).
  */
-async function runningConnectionMatchesAdapterRow(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adapterId: number): Promise<boolean> {
+// doc 81 Đợt 5 task E fix 2 (review N6) — EXPORTED so the orchestration engine's verified-stop classification
+// (foeStepClass.verifiedStopStepIds) applies THIS check, not a copy of it.
+export async function runningConnectionMatchesAdapterRow(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adapterId: number): Promise<boolean> {
   try {
     const running = getActiveConnectionFingerprint(adapterId);
     if (!running) return false;

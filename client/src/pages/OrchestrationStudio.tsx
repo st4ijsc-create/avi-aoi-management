@@ -1626,8 +1626,17 @@ export default function OrchestrationStudio() {
     },
     onError: (e) => toastTrpcError(e),
   });
+  /**
+   * doc 81 Đợt 5 task E fix 2 (ruling R-5-l) — an abort / rejection whose factory scope could not be verified in time is
+   * REFUSED by the server (`reason: "scopeUnverified"`): say so, and point at the machine's direct STOP / E-STOP.
+   */
+  const scopeUnverifiedToast = (r: { reason?: string } | null | undefined) => {
+    if (r?.reason === "scopeUnverified") {
+      toast.error(t("studio.scopeUnverified", "Scope not verified — retry. To stop equipment now, use the machine's direct STOP / E-STOP."));
+    }
+  };
   const resumeM = trpc.orchestration.resumeRun.useMutation({
-    onSuccess: () => { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
+    onSuccess: (r) => { scopeUnverifiedToast(r); void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
     // doc 80 Đợt 1 Task 9 — CONFLICT (gate đã đổi / lượt khác đã quyết định) ⇒ tải lại để thấy gate thật.
     onError: (e) => {
       toastTrpcError(e);
@@ -1635,7 +1644,7 @@ export default function OrchestrationStudio() {
     },
   });
   const abortM = trpc.orchestration.abortRun.useMutation({
-    onSuccess: () => { void runsQ.refetch(); },
+    onSuccess: (r) => { scopeUnverifiedToast(r); void runsQ.refetch(); },
     onError: (e) => toastTrpcError(e),
   });
 

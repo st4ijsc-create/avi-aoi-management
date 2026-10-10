@@ -29,7 +29,7 @@ vi.mock("./foeScope", async (importOriginal) => {
 
 const fake = new FakeDb();
 /** A HUNG DB for chosen engine functions only: a select / insert issued from one of them never answers. */
-const HANG = { fns: new Set<string>(), hits: [] as string[] };
+const HANG = { fns: new Set<string>(), hits: [] as string[], statuses: new Set<string>() };
 const DELAY = { stepId: "" as string, ms: 0, used: false };
 {
   const hungBuilder = (): any => {
@@ -48,8 +48,18 @@ const DELAY = { stepId: "" as string, ms: 0, used: false };
   const realSelect = fake.select.bind(fake);
   (fake as any).select = (proj?: Record<string, any>) => (hit() ? hungBuilder() : realSelect(proj));
   const realInsert = (fake as any).insert.bind(fake);
+  // E fix 2 — a run-status UPDATE to one of HANG.statuses (e.g. 'compensating') never answers.
+  const realUpdate = (fake as any).update.bind(fake);
+  (fake as any).update = (t: any) => {
+    const u = realUpdate(t);
+    return { ...u, set: (patch: Record<string, any>) => (HANG.statuses.has(patch?.status) ? hungBuilder() : u.set(patch)) };
+  };
   (fake as any).insert = (t: any) => {
     if (hit()) return hungBuilder();
+    // E fix 2 — a step-row write carrying one of HANG.statuses never answers (e.g. only the 'failed' row).
+    if (HANG.statuses.size && (new Error().stack ?? "").includes("upsertStep")) {
+      return { values: (v: Record<string, any>) => (HANG.statuses.has(v.status) ? hungBuilder() : realInsert(t).values(v)) };
+    }
     // E fix 1 — DELAY: the FIRST 'running' write of a chosen step lands `ms` later (a late write after a bounded STOP).
     const stack = new Error().stack ?? "";
     if (!DELAY.stepId || !stack.includes("upsertStep")) return realInsert(t);
@@ -113,6 +123,7 @@ beforeEach(() => {
   otDispatchMock.mockClear();
   robotDispatchMock.mockClear();
   HANG.fns.clear();
+  HANG.statuses.clear();
   HANG.hits.length = 0;
   DELAY.stepId = "";
   DELAY.used = false;
@@ -259,5 +270,42 @@ describe("doc 81 Đợt 5 task E4 — an orchestrated STOP never waits on a hung
     expect(DELAY.used).toBe(true);
     const row = (fake.store.get("orchestration_run_steps") ?? []).find((r: Row) => r.runId === res.runId && r.stepId === "os")!;
     expect(row.status).toBe("completed");
+  });
+
+  // ── doc 81 Đợt 5 task E fix 2 (review N1) ─────────────────────────────────────────────────────────────────────────
+  it("★ N1: a STOP COMPENSATION of a failing motion step + its failed row AND the 'compensating' status hung ⇒ the STOP is dispatched within the documented 5·D", async () => {
+    await deployWorkflow(
+      {
+        ref: "comp",
+        name: "comp",
+        steps: [{ id: "w", type: "command", machineId: 1, command: "start", args: { adapterId: 501 }, compensation: { ...OT_STOP, id: "cs" } } as never],
+      },
+      OWNER,
+    );
+    HANG.statuses.add("failed");
+    HANG.statuses.add("compensating");
+    let sentAt = 0;
+    otDispatchMock.mockImplementationOnce(async () => {
+      sentAt = Date.now();
+      return { ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] };
+    });
+    const t0 = Date.now();
+    await within(startRun("comp", {}, OWNER), 8 * STOP_DB_STEP_DEADLINE_MS);
+    expect(sentAt, "the STOP compensation never reached the dispatcher").toBeGreaterThan(0);
+    expect((otDispatchMock.mock.calls[0][0] as { commandType: string }).commandType).toBe("stop"); // the motion was refused (no gate)
+    expect(sentAt - t0).toBeLessThan(5 * STOP_DB_STEP_DEADLINE_MS + 700);
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/failed row not written in time/);
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/compensating status not written in time/);
+  });
+
+  it("control (N1): a NON-stop compensation keeps the failed row unbounded (held by a hung write as before)", async () => {
+    await deployWorkflow(
+      { ref: "compmv", name: "compmv", steps: [{ id: "w", type: "command", machineId: 1, command: "start", args: { adapterId: 501 }, compensation: { id: "cm", type: "command", machineId: 1, command: "start", args: { adapterId: 501 } } } as never] },
+      OWNER,
+    );
+    HANG.statuses.add("failed");
+    const res = await within(startRun("compmv", {}, OWNER), 2 * STOP_DB_STEP_DEADLINE_MS);
+    expect(res).toBe("HUNG");
+    expect(warn.mock.calls.flat().join(" ")).not.toMatch(/failed row not written in time/);
   });
 });

@@ -31,11 +31,27 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8").replace(/\r\
 const TABLES = /\b(orchestrationRuns|orchestrationWorkflows|orchestrationRunSteps|orchestrationRunEvents|orchestrationWorkflowVersions)\b/;
 const RUN_MODULES = /(foe\/foeEngine|\.\/foeEngine|runEventStore|engineeringAssignment\/assignmentService|edge\/edgeCoordinator)$/;
 
+/** Source with comments removed (line + block) — raw-SQL table names in comments are not readers. */
+export function withoutComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'`\\])\/\/[^\n]*/g, "$1");
+}
+
+/** Raw-SQL / string use of an orchestration table name (E fix 2, review N5). */
+const RAW_TABLES = /\borchestration_(runs|workflows|run_steps|run_events|workflow_versions)\b/;
+
 export function importsOrchestration(src: string): boolean {
-  for (const m of src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"([^"]+)"/g)) {
+  // named (+ optional default) imports, single OR double quotes — E fix 2 (review N5)
+  for (const m of src.matchAll(/import\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g)) {
     if (TABLES.test(m[1]) || RUN_MODULES.test(m[2])) return true;
   }
-  for (const m of src.matchAll(/import\(\s*"([^"]+)"\s*\)/g)) if (RUN_MODULES.test(m[1])) return true;
+  // namespace imports: of a run module, or of any module whose namespace is used for an orchestration table
+  for (const m of src.matchAll(/import\s+(?:type\s+)?\*\s+as\s+([\w$]+)\s+from\s+["']([^"']+)["']/g)) {
+    if (RUN_MODULES.test(m[2])) return true;
+    if (new RegExp(`\\b${m[1]}\\.(orchestrationRuns|orchestrationWorkflows|orchestrationRunSteps|orchestrationRunEvents|orchestrationWorkflowVersions)\\b`).test(src)) return true;
+  }
+  for (const m of src.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g)) if (RUN_MODULES.test(m[1])) return true;
+  // raw SQL / string table names outside comments
+  if (RAW_TABLES.test(withoutComments(src))) return true;
   return false;
 }
 
@@ -46,7 +62,8 @@ function population(): string[] {
       const p = join(dir, f);
       if (statSync(p).isDirectory()) {
         if (f !== "node_modules") walk(p);
-      } else if (f.endsWith(".ts") && !f.endsWith(".test.ts") && !f.endsWith(".d.ts")) {
+      } else if (f.endsWith(".ts") && !f.endsWith(".test.ts") && !f.endsWith(".d.ts") && !/\.(__mut__|zzmut\w*)\.ts$/.test(f)) {
+        // ↑ E fix 2 — transient untracked MUTANT copies (`*.__mut__.ts`, `*.zzmut*.ts`) are never product code
         if (importsOrchestration(readFileSync(p, "utf8"))) out.push(relative(ROOT, p).split("\\").join("/"));
       }
     }
@@ -57,7 +74,7 @@ function population(): string[] {
 
 /** Engine entries that resolve + check the caller's scope themselves (from the FoeUser they are given). */
 const SCOPED_ENGINE = ["deployWorkflow", "rollbackWorkflow", "startRun", "resumeRun", "abortRun"];
-const TAKES_ID = /\b(runId|workflowId|workflowRef|entityId|entityIds|id|ref)\s*:/;
+const TAKES_ID = /\b(runId|runIds|workflowId|workflowIds|workflowRef|entityId|entityIds|id|ids|ref)\s*:/; // + bulk inputs (E fix 2, N5)
 const SCOPE_IN_CALL = /\((?:[^()]|\([^()]*\))*\b(scopeOf|foeScopeOf)\(\s*ctx\.user\s*\)/;
 
 /** procedure name → its source block (from `  name: xxxProcedure` to the next one at the same indent). */
@@ -138,8 +155,8 @@ const CLASSIFIED: Record<string, Kind> = {
   "server/routers/oversightRouter.ts": {
     kind: "router",
     requires: [
-      /visibleWorkflowIds\(resolveUserFoeScope\(\{ id: ctx\.user\.id/,
-      /fetchOrchestrationHeld\(d, orchestrationWorkflowIds\)/,
+      /resolveVisibleWorkflowIds\(resolveUserFoeScope\(\{ id: ctx\.user\.id/,
+      /orchScope\.ok \? fetchOrchestrationHeld\(d, orchestrationWorkflowIds\)/,
       /orchestrationWorkflowIds, \/\/ E fix 1/,
     ],
   },
@@ -269,5 +286,22 @@ export async function okOne(runId: number, user: FoeUser): Promise<void> {
     expect(importsOrchestration(`import { orchestrationRuns } from "../../drizzle/schema";`)).toBe(true);
     expect(importsOrchestration(`const { getRun } = await import("../services/orchestration/foe/foeEngine");`)).toBe(true);
     expect(importsOrchestration(`import { machines } from "../../drizzle/schema";`)).toBe(false);
+    // E fix 2 (review N5) — each shape the first version missed is now caught (fixtures):
+    expect(importsOrchestration(`import * as schema from "../../drizzle/schema";\nconst r = await db.select().from(schema.orchestrationRuns);`)).toBe(true);
+    expect(importsOrchestration(`import * as schema from "../../drizzle/schema";\nconst r = await db.select().from(schema.machines);`)).toBe(false);
+    expect(importsOrchestration(`import * as eng from "../services/orchestration/foe/foeEngine";`)).toBe(true);
+    expect(importsOrchestration(`import { orchestrationWorkflows } from '../../drizzle/schema';`)).toBe(true);
+    expect(importsOrchestration(`import schemaDefault, { orchestrationRunSteps } from "../../drizzle/schema";`)).toBe(true);
+    expect(importsOrchestration("const rows = await db.execute(sql`SELECT * FROM orchestration_runs WHERE id = ${id}`);")).toBe(true);
+    expect(importsOrchestration("// reads orchestration_runs only in this comment\n/* and orchestration_workflows here */ const x = 1;")).toBe(false);
+    const bulk = `export const r = router({
+  bulk: protectedProcedure
+    .input(z.object({ runIds: z.array(z.number()) }))
+    .query(async ({ input }) => input.runIds),
+  bulk2: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()) }))
+    .query(async ({ input }) => input.ids),
+});`;
+    expect(unscopedProcedures(bulk, {})).toEqual(["bulk", "bulk2"]);
   });
 });

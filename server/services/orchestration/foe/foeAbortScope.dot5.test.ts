@@ -1,7 +1,9 @@
 /**
- * doc 81 Đợt 5 task E fix 1 (ruling R-5-i, review #5) — the factory-scope check of an ABORT and of a gate REJECTION (both
- * reduce actuation) is bounded by the STOP DB deadline and never fails closed on doubt:
- *   • scope lookup hung / failed ⇒ the abort / rejection PROCEEDS within STOP_DB_STEP_DEADLINE_MS, audited "scopeUnverified";
+ * doc 81 Đợt 5 task E fix 1/2 (review #5; ruling R-5-l, which REPLACES R-5-i) — the factory-scope check of an ABORT and
+ * of a gate REJECTION is bounded by the STOP DB deadline and REFUSES on doubt (an abort also cancels
+ * the run's later STOP steps and STOP compensations, so it does not reduce actuation):
+ *   • scope lookup hung / failed ⇒ REFUSED within STOP_DB_STEP_DEADLINE_MS ("scope not verified — retry; use the direct
+ *     STOP / E-STOP"), the same answer for a missing id, audited synchronously (bounded);
  *   • a DECIDED out-of-scope ⇒ the SAME answer as a missing run (R-5-d), the run untouched;
  *   • an APPROVAL stays fail-closed (it lets actuation proceed).
  * Also (review #9): startRun resolves the caller's scope for a MISSING ref too (same path as an existing one).
@@ -92,28 +94,48 @@ async function timed<T>(p: Promise<T>): Promise<{ v: T; ms: number }> {
   return { v, ms: Date.now() - t0 };
 }
 
-describe("doc 81 Đợt 5 E fix 1 (R-5-i) — abort / reject scope check: bounded, proceeds on doubt, refuses only a decided out-of-scope", () => {
+describe("doc 81 Đợt 5 E fix 2 (R-5-l, replaces R-5-i) — abort / reject scope check: bounded, REFUSED on doubt (distinct answer), decided out-of-scope = not found", () => {
+  // doc 81 Đợt 5 task E fix 2 — ruling R-5-l REPLACES R-5-i: an undecided scope (slow / failing lookup) ⇒ REFUSED.
   for (const mode of ["hang", "fail"] as const) {
-    it(`★ abort with the scope lookup ${mode === "hang" ? "HUNG" : "FAILING"} ⇒ the abort PROCEEDS within the STOP deadline, audited scopeUnverified`, async () => {
+    it(`★ R-5-l abort with the scope lookup ${mode === "hang" ? "SLOW (hung)" : "FAILING"} ⇒ REFUSED within the STOP deadline with the distinct "scope not verified" answer (also for a missing id), audited synchronously; the run is untouched`, async () => {
       const runId = await pausedRun();
       judge.mode = mode;
       const { v, ms } = await timed(abortRun(runId, OTHER, "stop now"));
-      expect(v.status).toBe("aborted");
+      expect(v).toMatchObject({ ok: false, reason: "scopeUnverified" });
+      expect(v.message).toMatch(/Scope not verified — retry\. To stop equipment now, use the machine's direct STOP \/ E-STOP\./);
       expect(ms).toBeLessThan(STOP_DB_STEP_DEADLINE_MS + 700);
-      expect(runRow(runId).status).toBe("aborted");
-      await vi.waitFor(() => expect(unverified().map((e) => e.details.metadata)).toEqual([{ runId, action: "abort", reason: "scopeUnverified" }]));
+      expect(runRow(runId).status).toBe("awaiting_confirm");
+      // synchronous (bounded) audit: written BEFORE the answer
+      expect(unverified().map((e) => e.details.metadata)).toEqual([{ runId, action: "abort", outcome: "refused", reason: "scopeUnverified" }]);
+      // the same answer for an id that does not exist (no oracle)
+      const N = 999_999;
+      const fix = (r: unknown, id: number) => JSON.stringify(r).split(String(id)).join("ID");
+      expect(fix(await abortRun(N, OTHER, "stop now"), N)).toBe(fix(v, runId));
     });
 
-    it(`★ gate REJECTION with the scope lookup ${mode === "hang" ? "HUNG" : "FAILING"} ⇒ the rejection proceeds (run aborted, nothing sent), audited`, async () => {
+    it(`★ R-5-l gate REJECTION with the scope lookup ${mode === "hang" ? "SLOW (hung)" : "FAILING"} ⇒ REFUSED (scope not verified), nothing changes, audited`, async () => {
       const runId = await pausedRun();
       judge.mode = mode;
       const { v, ms } = await timed(resumeRun(runId, { approved: false, note: "no" }, OTHER));
-      expect(v.status).toBe("aborted");
+      expect(v).toMatchObject({ ok: false, reason: "scopeUnverified" });
       expect(ms).toBeLessThan(STOP_DB_STEP_DEADLINE_MS + 700);
+      expect(runRow(runId).status).toBe("awaiting_confirm");
       expect(otDispatchMock).not.toHaveBeenCalled();
-      await vi.waitFor(() => expect(unverified().map((e) => e.details.metadata.action)).toEqual(["reject"]));
+      expect(unverified().map((e) => e.details.metadata.action)).toEqual(["reject"]);
+      const N = 999_999;
+      const fix = (r: unknown, id: number) => JSON.stringify(r).split(String(id)).join("ID");
+      expect(fix(await resumeRun(N, { approved: false, note: "no" }, OTHER), N)).toBe(fix(v, runId));
     });
   }
+
+  it("★ R-5-l a DECIDED in-scope abort / rejection works (scoped user, scope decided 'in')", async () => {
+    const runId = await pausedRun();
+    judge.mode = "in";
+    expect((await abortRun(runId, OTHER, "stop")).status).toBe("aborted");
+    const runId2 = await pausedRun();
+    expect((await resumeRun(runId2, { approved: false, note: "no" }, OTHER)).status).toBe("aborted");
+    expect(unverified()).toEqual([]);
+  });
 
   it("★ a DECIDED out-of-scope abort / rejection ⇒ the SAME answer as a missing run, the run untouched, no audit", async () => {
     const runId = await pausedRun();
