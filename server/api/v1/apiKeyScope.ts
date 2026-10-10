@@ -206,13 +206,37 @@ export const TENANT_SCOPE_UNDECLARED_MESSAGE = {
     "（指定某一工厂，或显式声明为全局），密钥才能读取数据指标。",
 } as const;
 
+/**
+ * doc 81 Đợt 5 task E fix 1 (review #15) — the same refusal for the ORCHESTRATION / EDGE routes (deploy, start, read a run,
+ * simulate, edge sync): the BI sentence ("…before the key can read any figures") is wrong there. Same code, same remedy.
+ */
+export const TENANT_SCOPE_UNDECLARED_ORCHESTRATION_MESSAGE = {
+  vi:
+    "Khoá API này chưa được gán phạm vi nhà máy. Quản trị viên phải khai phạm vi cho khoá (một nhà máy cụ thể, hoặc " +
+    "toàn cục TƯỜNG MINH) tại Quản lý khoá API trước khi khoá triển khai, khởi động, xem hay đồng bộ được lượt chạy điều phối.",
+  en:
+    "This API key has no factory scope assigned. An administrator must declare the key's scope (a specific factory, or " +
+    "EXPLICIT global) in API Key management before the key can deploy, start, read or sync orchestration runs.",
+  zh:
+    "此 API 密钥尚未分配工厂范围。管理员必须先在 API 密钥管理中为该密钥声明范围（指定某一工厂，或显式声明为全局），" +
+    "密钥才能部署、启动、查看或同步编排运行。",
+} as const;
+
+export type TenantScopePurpose = "data" | "orchestration";
+
+const UNDECLARED_MESSAGES: Record<TenantScopePurpose, { vi: string; en: string; zh: string }> = {
+  data: TENANT_SCOPE_UNDECLARED_MESSAGE,
+  orchestration: TENANT_SCOPE_UNDECLARED_ORCHESTRATION_MESSAGE,
+};
+
 /** Chi tiết máy-đọc-được đi kèm 403 (client tích hợp tự sửa được, không phải đoán). */
-export function tenantScopeUndeclaredDetails() {
+export function tenantScopeUndeclaredDetails(purpose: TenantScopePurpose = "data") {
+  const msg = UNDECLARED_MESSAGES[purpose];
   return {
     reason: TENANT_SCOPE_UNDECLARED_CODE,
-    message_vi: TENANT_SCOPE_UNDECLARED_MESSAGE.vi,
-    message_en: TENANT_SCOPE_UNDECLARED_MESSAGE.en,
-    message_zh: TENANT_SCOPE_UNDECLARED_MESSAGE.zh,
+    message_vi: msg.vi,
+    message_en: msg.en,
+    message_zh: msg.zh,
     declarableModes: [...API_KEY_SCOPE_MODES],
     remedy: "apiKey.update { dataScopeMode: 'factory', factoryCode: '<factories.code>' } | { dataScopeMode: 'global' }",
   };
@@ -247,7 +271,7 @@ export function tenantScopeDescriptor(scope: ApiKeyTenantScope | null | undefine
  * Chạy SAU `requireScope(...)`: principal đã có, giờ hỏi *"khoá này THẤY ĐƯỢC GÌ"*.
  * Chưa khai ⇒ 403 (không phải 200-rỗng, không phải 500).
  */
-export function requireDeclaredTenantScope() {
+export function requireDeclaredTenantScope(purpose: TenantScopePurpose = "data") {
   return (req: Request, res: Response, next: NextFunction): void => {
     const scope = req.apiPrincipal?.tenantScope;
     if (!isTenantScopeDeclared(scope)) {
@@ -255,8 +279,8 @@ export function requireDeclaredTenantScope() {
         res,
         403,
         TENANT_SCOPE_UNDECLARED_CODE,
-        TENANT_SCOPE_UNDECLARED_MESSAGE.vi,
-        tenantScopeUndeclaredDetails(),
+        UNDECLARED_MESSAGES[purpose].vi,
+        tenantScopeUndeclaredDetails(purpose),
       );
       return;
     }

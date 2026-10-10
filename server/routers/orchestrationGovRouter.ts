@@ -11,6 +11,15 @@ import { requirePermission } from "../_core/accessControl";
 import { validateDag } from "../services/orchestration/dag";
 import { orderQueue, requiresFourEyes, type PriorityBand, type PrioritizedTask } from "../services/orchestration/slaPolicy";
 import { loadRunEvents, replayPersistedRun } from "../services/orchestration/runEventStore"; // doc 33 W4
+import { replayRun } from "../services/orchestration/eventSourcing";
+import { runIdVisibleTo } from "../services/orchestration/foe/foeEngine";
+import { resolveUserFoeScope } from "../services/orchestration/foe/foeScope";
+
+/**
+ * doc 81 Đợt 5 task E fix 1 (ruling R-5-d, review #1) — a run outside the caller's factory scope has NO events for them:
+ * the SAME answer as a run that does not exist (`[]` / the empty replay), and the scope is resolved for both.
+ */
+const scopeOf = (user: { id: number; role: string }) => resolveUserFoeScope({ id: user.id, role: String(user.role) });
 
 /**
  * doc 80 ORC-11 — every procedure: MOD_ENGINEERING license gate (like `orchestrationRouter`) +
@@ -58,10 +67,12 @@ export const orchestrationGovRouter = router({
   /** doc 33 W4: durable RunEvent log for a run (seq order). */
   runEvents: readProcedure
     .input(z.object({ runId: z.number() }))
-    .query(({ input }) => loadRunEvents(input.runId)),
+    .query(async ({ input, ctx }) => ((await runIdVisibleTo(input.runId, scopeOf(ctx.user))) ? loadRunEvents(input.runId) : [])),
 
   /** doc 33 W4: replay a run's persisted events into its reconstructed state (F8 reducer). */
   replayRun: readProcedure
     .input(z.object({ runId: z.number() }))
-    .query(({ input }) => replayPersistedRun(input.runId)),
+    .query(async ({ input, ctx }) =>
+      (await runIdVisibleTo(input.runId, scopeOf(ctx.user))) ? replayPersistedRun(input.runId) : replayRun(String(input.runId), []),
+    ),
 });

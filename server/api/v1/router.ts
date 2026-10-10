@@ -497,7 +497,7 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/workflows",
     requireScope(API_SCOPES.ORCHESTRATION_WRITE),
-    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2 — a key with no declared scope is refused (403)
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2 — a key with no declared scope is refused (403)
     wrap(async (req, res) => {
       const { deployWorkflow } = await import("../../services/orchestration/foe/foeEngine");
       const def = (req.body ?? {}) as never;
@@ -521,7 +521,7 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/runs",
     requireScope(API_SCOPES.ORCHESTRATION_WRITE),
-    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const { startRun } = await import("../../services/orchestration/foe/foeEngine");
       const body = (req.body ?? {}) as { workflowRef?: string; params?: Record<string, unknown> };
@@ -558,7 +558,7 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/simulate",
     requireScope(API_SCOPES.ORCHESTRATION_READ),
-    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const body = (req.body ?? {}) as {
         workflow?: unknown;
@@ -636,7 +636,7 @@ export function createV1Router(): Router {
   r.get(
     "/orchestration/runs/:id",
     requireScope(API_SCOPES.ORCHESTRATION_READ),
-    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) {
@@ -670,7 +670,7 @@ export function createV1Router(): Router {
   r.post(
     "/edge/sync",
     requireScope(API_SCOPES.EDGE_SYNC),
-    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2 fix (R-5-d) — an edge key must declare its factory scope
+    requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2 fix (R-5-d) — an edge key must declare its factory scope
     wrap(async (req, res) => {
       const { syncRunResult } = await import("../../services/edge/edgeCoordinator");
       const body = (req.body ?? {}) as Record<string, unknown>;

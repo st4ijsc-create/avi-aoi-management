@@ -40,6 +40,7 @@ import {
   robots,
 } from "../../../../drizzle/schema";
 import { getCapabilitiesForMachine } from "../../equipment/capabilityModel";
+import { allStepsOf } from "./foeStepClass"; // doc 81 Đợt 5 task E fix 1 — THE step walk
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
 /** resultJson.approvalSource written by resumeRun's approval path (the only one that counts). */
@@ -87,19 +88,6 @@ export function hashWorkflowDefinition(def: WorkflowDefinition): string {
   return createHash("sha256").update(JSON.stringify(canonicalize(def))).digest("hex");
 }
 
-/** Every step of a definition, depth-first (children, branches, compensation). */
-function allSteps(steps: WorkflowStep[] | undefined, out: WorkflowStep[] = []): WorkflowStep[] {
-  for (const s of steps ?? []) {
-    out.push(s);
-    const node = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
-    allSteps(node.steps, out);
-    allSteps(node.then, out);
-    allSteps(node.else, out);
-    if (s.compensation) allSteps([s.compensation], out);
-  }
-  return out;
-}
-
 const sha = (v: unknown) => createHash("sha256").update(JSON.stringify(canonicalize(v ?? null))).digest("hex");
 const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? null : String(v));
 
@@ -119,7 +107,7 @@ const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? n
  */
 export async function computeBindingDigest(db: DbLike, def: Pick<WorkflowDefinition, "steps">): Promise<string | null> {
   try {
-    const cmds = allSteps(def?.steps).filter(
+    const cmds = allStepsOf(def?.steps).filter(
       (s): s is Extract<WorkflowStep, { type: "command" }> => s.type === "command" && posInt((s as { machineId?: unknown }).machineId),
     );
     if (cmds.length === 0) return sha([]);

@@ -29,6 +29,9 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
+import { runIdVisibleTo, visibleRunIds } from "../services/orchestration/foe/foeEngine"; // doc 81 Đợt 5 task E fix 1
+import { resolveUserFoeScope } from "../services/orchestration/foe/foeScope";
+const foeScopeOf = (user: { id: number; role: string }) => resolveUserFoeScope({ id: user.id, role: String(user.role) });
 import { and, asc, eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -152,9 +155,19 @@ export const engineeringAssignmentRouter = router({
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
       }
 
+      // doc 81 Đợt 5 task E fix 1 (R-5-d, review #3) — an orchestration run outside the ASSIGNER's factory scope does not
+      // exist for them (the SAME NOT_FOUND as a missing run, thrown at the same point); an assignee who cannot see the run
+      // is not a valid assignee (the same single refusal as any other invalid assignee).
+      const runInScope = type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf(ctx.user)));
+      const assigneeSeesRun =
+        type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf({ id: assignee.id, role: assignee.role })));
+      if (runInScope && !assigneeSeesRun) {
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
+      }
+
       try {
         return await d.transaction(async (tx) => {
-          const target = await loadTarget(tx, type, input.entityId, true);
+          const target = runInScope ? await loadTarget(tx, type, input.entityId, true) : null;
           if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: ASSIGNABLE[type].errorEntity }, `${type} ${input.entityId} not found`);
           if (!target.pending) {
             throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: OP_ASSIGN, reason: "assignTargetNotPending" }, "Chỉ giao được mục đang chờ duyệt.");
@@ -222,10 +235,12 @@ export const engineeringAssignmentRouter = router({
       const type = input.entityType;
       await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
+      // E fix 1 (R-5-d) — out of the caller's orchestration scope ⇒ the SAME refusal as a missing / changed target.
+      const runInScope = type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf(ctx.user)));
       try {
         return await d.transaction(async (tx) => {
-          const target = await loadTarget(tx, type, input.entityId, true);
-          const current = await activeAssignmentOf(tx, type, input.entityId, true);
+          const target = runInScope ? await loadTarget(tx, type, input.entityId, true) : null;
+          const current = runInScope ? await activeAssignmentOf(tx, type, input.entityId, true) : null;
           const live = !!target && target.pending && !!current && current.pendingEpisode === target.episode;
           if (!live || current!.assigneeUserId !== input.expectedAssigneeUserId) {
             throw appError("CONFLICT", "OPERATION_FAILED", { operation: OP_UNASSIGN, reason: "assignmentChanged" }, "Người được giao đã đổi — tải lại.");
@@ -261,7 +276,14 @@ export const engineeringAssignmentRouter = router({
       if (input.entityIds.length === 0) return [];
       const d = await dbOrThrow();
       try {
-        return await fetchLiveAssignments(d, type, [...new Set(input.entityIds)]);
+        // E fix 1 (R-5-d) — orchestration runs outside the caller's scope have no assignment row for them.
+        let ids = [...new Set(input.entityIds)];
+        if (type === "orchestration_run") {
+          const visible = await visibleRunIds(ids, foeScopeOf(ctx.user));
+          ids = ids.filter((id) => visible.has(id));
+          if (ids.length === 0) return [];
+        }
+        return await fetchLiveAssignments(d, type, ids);
       } catch (err) {
         rethrowStore(err, OP_ASSIGN);
       }

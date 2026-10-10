@@ -16,7 +16,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, moduleProcedure, moduleGate, writeProcedure as writeBase, actuationProcedure as actuationBase, deployProcedure as deployBase } from "../_core/trpc";
@@ -62,6 +62,7 @@ import {
   filterVisibleBy,
   filterRunsVisibleTo,
   runVisibleTo,
+  visibleWorkflowIds,
   type FoeUser,
 } from "../services/orchestration/foe/foeEngine";
 import { resolveUserFoeScope, type FoeScope } from "../services/orchestration/foe/foeScope";
@@ -102,13 +103,15 @@ export const orchestrationRouter = router({
     .input(z.object({ limit: z.number().int().min(1).max(500).default(100) }).optional())
     .query(async ({ input, ctx }) => {
       const d = await db();
-      const rows = await d
+      // doc 81 Đợt 5 task E2 + E fix 1 (review #8) — only workflows whose non-STOP targets are in the caller's scope,
+      // filtered IN SQL before the LIMIT (a full page, no "hidden rows" count).
+      const ids = await visibleWorkflowIds(scopeOf(ctx.user));
+      return d
         .select()
         .from(orchestrationWorkflows)
+        .where(ids === null ? undefined : inArray(orchestrationWorkflows.id, ids.length ? ids : [-1]))
         .orderBy(desc(orchestrationWorkflows.updatedAt))
         .limit(input?.limit ?? 100);
-      // doc 81 Đợt 5 task E2 — only workflows whose non-STOP targets are in the caller's scope.
-      return filterVisibleBy(rows, (r) => r.definitionJson as WorkflowDefinition, scopeOf(ctx.user));
     }),
 
   /** Get one workflow by id (with its full definition). */
@@ -232,15 +235,20 @@ export const orchestrationRouter = router({
     )
     .query(async ({ input, ctx }) => {
       const d = await db();
-      const allRuns = await d
+      // doc 81 Đợt 5 task E2 + E fix 1 (review #8) — only runs whose workflow (current definition) the caller may see,
+      // filtered IN SQL before the LIMIT; a run whose workflow row is gone is visible only to an unrestricted scope.
+      const ids = await visibleWorkflowIds(scopeOf(ctx.user));
+      const runs = await d
         .select()
         .from(orchestrationRuns)
-        .where(input?.workflowId != null ? eq(orchestrationRuns.workflowId, input.workflowId) : undefined)
+        .where(
+          and(
+            input?.workflowId != null ? eq(orchestrationRuns.workflowId, input.workflowId) : undefined,
+            ids === null ? undefined : inArray(orchestrationRuns.workflowId, ids.length ? ids : [-1]),
+          ),
+        )
         .orderBy(desc(orchestrationRuns.createdAt))
         .limit(input?.limit ?? 100);
-      // doc 81 Đợt 5 task E2 — only runs whose workflow (current definition) the caller may see; a run whose workflow row
-      // is gone is visible only to an unrestricted scope (fail-closed).
-      const runs = await filterRunsVisibleTo(allRuns, scopeOf(ctx.user));
       // doc 80 Đợt 1 Task 4 (ORC-13) — additive `dispatch`: were this run's commands simulated
       // (DRY-RUN) or really sent? Derived from the step results foeEngine records
       // ({routedTo, status, simulated}); one extra query over the listed run ids.

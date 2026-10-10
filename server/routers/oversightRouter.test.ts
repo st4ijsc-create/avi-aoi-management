@@ -154,7 +154,7 @@ describe("oversightRouter._internal — mỗi nhánh KHOẺ + showNames", () => 
 
   it("fetchOrchestrationHeld / fetchSafetyUnaudited — hành vi KHÔNG đổi (không có showNames)", async () => {
     const orch = fakeDb([[{ c: 1 }], [{ id: 1, workflowRef: "wf-1", status: "held", currentStepId: "s1" }]]);
-    const rOrch = await _internal.fetchOrchestrationHeld(orch.db);
+    const rOrch = await _internal.fetchOrchestrationHeld(orch.db, null /* Đợt 5 E fix 1: null = unrestricted scope */);
     expect(rOrch.samples).toEqual([{ id: 1, label: "wf-1", hint: "held · s1" }]);
 
     const safety = fakeDb([[{ c: 1 }], [{ id: 2, eventType: "near_miss", isNearMiss: true, createdAt: new Date() }]]);
@@ -186,7 +186,7 @@ describe("oversightRouter._internal — MỖI NHÁNH degraded khi query ném (HU
     ["fetchRecipesActiveUnapproved", (db) => _internal.fetchRecipesActiveUnapproved(db, true)],
     ["fetchInterlockRulesPending", (db) => _internal.fetchInterlockRulesPending(db, true)],
     ["fetchInterlockEventsOpen", (db) => _internal.fetchInterlockEventsOpen(db, true)],
-    ["fetchOrchestrationHeld", (db) => _internal.fetchOrchestrationHeld(db)],
+    ["fetchOrchestrationHeld", (db) => _internal.fetchOrchestrationHeld(db, null)],
     ["fetchSafetyUnaudited", (db) => _internal.fetchSafetyUnaudited(db)],
     ["fetchEcnPending", (db) => _internal.fetchEcnPending(db, true)],
     ["fetchChangeoverPending", (db) => _internal.fetchChangeoverPending(db, true)],

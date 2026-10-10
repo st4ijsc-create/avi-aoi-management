@@ -79,6 +79,17 @@ import {
 } from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
+  allStepsOf,
+  buildEquipmentCommand,
+  isOtStopCommandType,
+  isRobotKind,
+  isStopCandidate,
+  orchestrationActionId,
+  subtreeHasStopCandidate,
+  verifiedStopStepIds,
+} from "./foeStepClass"; // doc 81 Đợt 5 task E fix 1 (R-5-j) — THE step walk + stop classification
+export { buildEquipmentCommand } from "./foeStepClass";
+import {
   collectTargets,
   isOutOfScopeEmpty,
   makeScopeJudge,
@@ -468,6 +479,12 @@ async function upsertStep(
     })
     .onConflictDoUpdate({
       target: [orchestrationRunSteps.runId, orchestrationRunSteps.stepId],
+      // doc 81 Đợt 5 task E fix 1 (review #13) — a 'running' write (issued before, landing after a bounded STOP moved on)
+      // never overwrites a FINISHED step (completed / skipped / compensated): the row cannot regress, so a resume never
+      // re-sends a STOP that completed. Every other transition is unconditional, as before.
+      ...(patch.status === "running"
+        ? { setWhere: notInArray(orchestrationRunSteps.status, ["completed", "skipped", "compensated"] as never[]) }
+        : {}),
       set: {
         status: patch.status as never,
         attempt: patch.attempt ?? 0,
@@ -543,18 +560,6 @@ async function refreshReadbacks(rc: RunContext, machineId: number | undefined): 
 }
 
 // ── command building (mirrors api/v1 buildCommand; HITL trigger synthesized) ─────
-
-/**
- * Doc 25 T1 — actionId hợp lệ cho lệnh FOE. Trước đây FOE gắn `foe-<key>` KHÔNG tồn
- * tại trong ai_pending_actions → dispatcher OT tái-xác-minh và TỪ CHỐI (NOT_CONFIRMED);
- * test cũ chỉ xanh vì mock dispatcher. Giờ FOE tạo bản ghi ai_pending_actions CONFIRMED
- * thật với đúng id này (ensureOrchestrationAction) nên cả cổng OT lẫn robot đều qua HỢP LỆ.
- * id là khóa chính ai_pending_actions (varchar 64) → cắt cho vừa.
- */
-function orchestrationActionId(idempotencyKey: string): string {
-  const id = `foe-${idempotencyKey}`;
-  return id.length <= 64 ? id : id.slice(0, 64);
-}
 
 /**
  * Tạo (idempotent, fail-safe) một bản ghi ai_pending_actions ĐÃ CONFIRMED cho một
@@ -645,52 +650,6 @@ export async function ensureOrchestrationAction(
   }
 }
 
-export function buildEquipmentCommand(
-  descriptor: CommandDescriptor,
-  capability: EquipmentCapability,
-  machineId: number,
-  args: Record<string, unknown>,
-  idempotencyKey: string,
-  user: FoeUser,
-  /** doc 81 Đợt 4 Task A5 — requester = run owner, confirmer = the gate approver (absent ⇒ legacy: both `user`). */
-  approval?: FoeGateApproval,
-): EquipmentCommand {
-  const isRobot = isRobotKind(capability.adapterKind);
-  const cmd: EquipmentCommand = {
-    name: descriptor.name,
-    machineId,
-    idempotencyKey,
-    // FOE is an automated multi-step actor; the dispatcher STILL applies its dry-run
-    // gate. actionId TRỎ tới bản ghi ai_pending_actions confirmed thật (ensureOrchestrationAction);
-    // requestedBy/confirmedBy = user đã khởi động run (owner của bản ghi) → cổng OT/robot qua hợp lệ.
-    hitl: {
-      actionId: orchestrationActionId(idempotencyKey),
-      tool: FOE_ACTION_TOOL, // doc 81 Đợt 1B Task 6 — part of the OT binding
-      requestedBy: approval ? approval.runOwner ?? 0 : user.id || 0,
-      confirmedBy: approval ? approval.approvedBy : user.id || 0,
-    },
-  };
-  if (isRobot) {
-    // fix round 2 (R-4-m) — never default to the machine id (different id space): no robotId ⇒ the robot route refuses
-    // ("robotId required for robot command") and nothing reaches a robot.
-    cmd.robotId = typeof args.robotId === "number" ? args.robotId : undefined;
-    if (descriptor.name === "run_job" && typeof args.jobType === "string") {
-      cmd.job = { jobType: args.jobType as never, params: (args.params as Record<string, unknown>) ?? {} };
-    }
-  } else {
-    // fix round 1 (R-4-d) — never default to the machine id (different id space); execCommand resolves the bound adapter.
-    cmd.adapterId = typeof args.adapterId === "number" ? args.adapterId : undefined;
-    if (Array.isArray(args.writes)) {
-      cmd.writes = (args.writes as Array<{ tagKey: string; value: unknown }>).filter(
-        (w) => w && typeof w.tagKey === "string",
-      );
-    } else if (typeof args.tagKey === "string") {
-      cmd.writes = [{ tagKey: args.tagKey, value: args.value }];
-    }
-  }
-  return cmd;
-}
-
 // ── the step walker ───────────────────────────────────────────────────────────
 
 /**
@@ -713,10 +672,10 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 const ABORTED_OUTCOME: StepOutcome = { kind: "aborted", error: "Run is aborting." };
 
 /** Run a precondition/interlock for a step. Returns null if it holds, else an outcome. */
-async function checkPrecondition(rc: RunContext, step: WorkflowStep): Promise<StepOutcome | null> {
+async function checkPrecondition(rc: RunContext, step: WorkflowStep, stop = false): Promise<StepOutcome | null> {
   if (!step.precondition) return null;
-  // refresh any machine readbacks the condition needs
-  await refreshConditionReadbacks(rc, step.precondition);
+  // refresh any machine readbacks the condition needs (E fix 1 — bounded on a STOP's path)
+  await stopBoundedReadbacks(stop, rc, step.id, step.precondition);
   const ok = evaluateCondition(step.precondition, evalCtxOf(rc));
   if (ok) return null;
   const mode = step.onPreconditionFail ?? "hold";
@@ -750,16 +709,30 @@ async function refreshConditionReadbacks(rc: RunContext, c: Condition | undefine
  * job toRobotJob maps it to is a stop; OT ⇒ the dispatcher's stop-type predicate)? No DB access (machine rows are in rc).
  */
 async function isStopCommandStep(rc: RunContext, step: WorkflowStep): Promise<boolean> {
-  if (step.type !== "command") return false;
-  const m = rc.machineById.get(step.machineId);
-  if (!m) return false;
-  const cap = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never });
-  const descriptor = cap.supportedCommands.find((c) => c.name === step.command);
-  if (!descriptor) return false;
-  if (isRobotKind(cap.adapterKind)) {
-    return isStopJob(toRobotJob(buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, "probe", rc.user)));
-  }
-  return isOtStopCommandType(descriptor.name);
+  if (step.type === "command") return isStopCandidate(step, rc.machineById);
+  // doc 81 Đợt 5 task E fix 1 (review #6) — a CONTAINER (sequence / parallel / branch) whose subtree holds a STOP: its own
+  // bookkeeping (running / completed rows, a branch's condition read-back) is on that STOP's path ⇒ bounded too.
+  if (step.type === "sequence" || step.type === "parallel" || step.type === "branch") return subtreeHasStopCandidate(step, rc.machineById);
+  return false;
+}
+
+/**
+ * doc 81 Đợt 5 task E fix 1 (review #13) — a STOP step's (or a STOP-holding container's) condition read-backs (device
+ * reads through the adapters) are bounded by the STOP deadline; past it the condition is evaluated on what was read.
+ *
+ * ★ WORST-CASE DELAY OF A STOP (D = STOP_DB_STEP_DEADLINE_MS = 1 s; every bounded wait is ≤ D, the gate / adapter lookups
+ *   of an OT STOP run CONCURRENTLY under ONE D). A STOP at container depth L is dispatched at most (L + 4)·D after the walk
+ *   reaches its outermost STOP-holding container: L container 'running' rows (a branch adds its condition read-back,
+ *   ≤ D more), its own precondition read-back, its own 'running' row, the lookups, its authorisation row (robot STOP: none).
+ *   After the dispatch it costs ≤ 2·D (result + completed rows) before the walk moves on, so in a run of STOP steps the k-th
+ *   STOP is dispatched within (L + 4 + 6·(k − 1))·D (+ L·D for branch read-backs). A NON-stop step before a STOP is
+ *   awaited as before (sequence semantics — not a STOP's own bookkeeping).
+ */
+async function stopBoundedReadbacks(stop: boolean, rc: RunContext, stepId: string, c: Condition | undefined): Promise<void> {
+  if (!stop) return refreshConditionReadbacks(rc, c);
+  await withDeadline(refreshConditionReadbacks(rc, c), STOP_DB_STEP_DEADLINE_MS, `FOE stop step ${stepId} read-back`).catch((err: unknown) => {
+    console.warn(`[FOE] run ${rc.runId} stop step ${stepId}: condition read-back not answered in time — evaluated on the last values (L-7): ${(err as Error)?.message ?? err}`);
+  });
 }
 
 /**
@@ -786,23 +759,30 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     return { kind: "ok" };
   }
 
+  // doc 81 Đợt 5 task E4 (item 36) + E fix 1 — on a STOP's path (a STOP step, or a container holding one) the step's own
+  // bookkeeping never waits on a hung DB / device: bounded (L-7). Classified FIRST (no DB).
+  const stop = await isStopCommandStep(rc, step);
+
   // Precondition / interlock
-  const pre = await checkPrecondition(rc, step);
+  const pre = await checkPrecondition(rc, step, stop);
   if (pre) {
     if (pre.kind === "skipped") {
-      await upsertStep(rc.runId, step.id, step.type, { status: "skipped", finishedAt: new Date() });
+      await stopBoundedWrite(stop, rc.runId, step.id, "skipped row", () =>
+        upsertStep(rc.runId, step.id, step.type, { status: "skipped", finishedAt: new Date() }),
+      );
     } else {
-      await upsertStep(rc.runId, step.id, step.type, {
-        status: pre.kind === "aborted" ? "failed" : "held",
-        error: "error" in pre ? pre.error : null,
-        finishedAt: new Date(),
-      });
+      const preOutcome = pre;
+      await stopBoundedWrite(stop, rc.runId, step.id, "held row", () =>
+        upsertStep(rc.runId, step.id, step.type, {
+          status: preOutcome.kind === "aborted" ? "failed" : "held",
+          error: "error" in preOutcome ? preOutcome.error : null,
+          finishedAt: new Date(),
+        }),
+      );
     }
     return pre;
   }
 
-  // doc 81 Đợt 5 task E4 (item 36) — a STOP step never waits on a hung DB for its 'running' row (bounded, L-7).
-  const stop = await isStopCommandStep(rc, step);
   await stopBoundedWrite(stop, rc.runId, step.id, "running row", () =>
     upsertStep(rc.runId, step.id, step.type, { status: "running", startedAt: new Date() }),
   );
@@ -814,7 +794,7 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   // eslint-disable-next-line no-constant-condition
   while (true) {
     attempt += 1;
-    outcome = await runStepBody(rc, step, attempt);
+    outcome = await runStepBody(rc, step, attempt, stop);
     if (outcome.kind !== "failed" || attempt >= maxAttempts) break;
   }
 
@@ -825,7 +805,9 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
       upsertStep(rc.runId, step.id, step.type, { status: "completed", attempt, finishedAt: new Date() }),
     );
   } else if (outcome.kind === "skipped") {
-    await upsertStep(rc.runId, step.id, step.type, { status: "skipped", attempt, finishedAt: new Date() });
+    await stopBoundedWrite(stop, rc.runId, step.id, "skipped row", () =>
+      upsertStep(rc.runId, step.id, step.type, { status: "skipped", attempt, finishedAt: new Date() }),
+    );
   } else if (outcome.kind === "paused") {
     // step-level status already set by the body (awaiting_confirm)
   } else {
@@ -849,7 +831,7 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
 }
 
 /** Run the inner logic of a single step (after precondition + status=running). */
-async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number): Promise<StepOutcome> {
+async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number, stop = false): Promise<StepOutcome> {
   try {
     switch (step.type) {
       case "command":
@@ -871,14 +853,16 @@ async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number):
         if (prior === "then" || prior === "else") {
           take = prior === "then";
         } else {
-          await refreshConditionReadbacks(rc, step.condition);
+          await stopBoundedReadbacks(stop, rc, step.id, step.condition); // E fix 1 — bounded when a STOP is inside
           take = evaluateCondition(step.condition, evalCtxOf(rc));
           rc.context[`branch:${step.id}`] = take ? "then" : "else";
         }
-        await upsertStep(rc.runId, step.id, step.type, {
-          status: "running",
-          result: { branch: take ? "then" : "else" },
-        });
+        await stopBoundedWrite(stop, rc.runId, step.id, "branch row", () =>
+          upsertStep(rc.runId, step.id, step.type, {
+            status: "running",
+            result: { branch: take ? "then" : "else" },
+          }),
+        );
         const path = take ? step.then : step.else ?? [];
         return await execSequence(rc, path);
       }
@@ -903,20 +887,6 @@ async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number):
     // data-raw-ok: `kind: "failed"` ĐÃ là mã; chuỗi là lỗi của MỘT BƯỚC trong quy trình.
     // Người đọc là kỹ sư đang dựng quy trình và cần biết bước nào hỏng vì sao.
     return { kind: "failed", error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-/**
- * doc 81 Đợt 4 Task A5 — the OT dispatcher's OWN stop-type predicate (commandDispatcher.isStopCommandType — one
- * definition), imported lazily (the dispatcher module is heavy and test suites replace it). Unavailable ⇒ false:
- * the step is then treated as a non-stop and needs a gate (fail-closed).
- */
-async function isOtStopCommandType(name: string): Promise<boolean> {
-  try {
-    const mod = await import("../../ot/commandDispatcher");
-    return typeof mod.isStopCommandType === "function" && mod.isStopCommandType(name) === true;
-  } catch {
-    return false;
   }
 }
 
@@ -980,11 +950,6 @@ async function withResolvedAdapter(kind: string, machineId: number, args: Record
   return ids !== null && ids.length === 1 ? { ...args, adapterId: ids[0] } : args;
 }
 
-/** doc 81 Đợt 4 fix round 2 (R-4-m) — robot/AGV adapter kinds (robotId, never adapterId). */
-function isRobotKind(kind: string): boolean {
-  return kind === "robot" || kind === "vda5050";
-}
-
 /**
  * doc 81 Đợt 4 fix round 2 (R-4-j) — the ENABLED device_adapters bound to a machine: the ONE lookup behind both the
  * runtime adapter choice (withResolvedAdapter) and the deploy-time stop check (ambiguousStopSteps). null ⇒ DB error.
@@ -998,19 +963,6 @@ async function enabledAdapterIdsOfMachine(machineId: number): Promise<number[] |
   } catch {
     return null;
   }
-}
-
-/** Every step of a definition, depth-first (children, branches, compensation). */
-function allStepsOf(steps: WorkflowStep[] | undefined, out: WorkflowStep[] = []): WorkflowStep[] {
-  for (const s of steps ?? []) {
-    out.push(s);
-    const node = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
-    allStepsOf(node.steps, out);
-    allStepsOf(node.then, out);
-    allStepsOf(node.else, out);
-    if (s.compensation) allStepsOf([s.compensation], out);
-  }
-  return out;
 }
 
 /**
@@ -1078,20 +1030,18 @@ async function robotStepsWithUnavailableRobot(
  * check never refuses a run because of a stop step (L-7): a defective stop step fails on its own at runtime, as before.
  */
 async function stopStepIdsOf(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>): Promise<Set<string>> {
-  const ids = new Set<string>();
-  for (const step of allStepsOf(def.steps)) {
-    if (step.type !== "command") continue;
-    const m = machineMap.get(step.machineId);
-    if (!m) continue;
-    const cap = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never });
-    if (isRobotKind(cap.adapterKind)) {
-      const descriptor = cap.supportedCommands.find((c) => c.name === step.command);
-      if (descriptor && isStopJob(toRobotJob(buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, "probe", { id: 0, role: "system" })))) {
-        ids.add(step.id);
-      }
-    } else if (await isOtStopCommandType(step.command)) ids.add(step.id);
+  // doc 81 Đợt 5 task E fix 1 (ruling R-5-j) — an EXEMPTION is given only to a VERIFIED stop (robot stop job, or an OT
+  // PINNED stop on the adapter it writes through) — never on the command name. foeStepClass.verifiedStopStepIds.
+  return (await verifiedStopsOf(def, machineMap)).ids;
+}
+
+/** The verified stops + whether a lookup failed (no exemption for what could not be verified). Never throws. */
+async function verifiedStopsOf(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>): Promise<{ ids: Set<string>; failed: boolean }> {
+  try {
+    return await verifiedStopStepIds(def, machineMap, (await getDb()) ?? null);
+  } catch {
+    return { ids: new Set(), failed: true };
   }
-  return ids;
 }
 
 /**
@@ -1197,8 +1147,88 @@ function scopeFor(user: FoeUser, explicit: FoeScope | undefined): FoeScope {
 /** A definition's targets + its STOP step ids (same classification execCommand uses). */
 async function definitionTargets(def: WorkflowDefinition, machineMap?: Map<number, MachineForValidation>) {
   const map = machineMap ?? (await loadMachines(validateWorkflow(def, null).referencedMachineIds));
-  const stops = await stopStepIdsOf(def, map);
-  return { targets: collectTargets(def, map, stops), stops };
+  // E fix 1 (R-5-j) — only a VERIFIED stop makes a target "STOP-only" (an unpinned stop-typed write is a NON-stop target).
+  const v = await verifiedStopsOf(def, map);
+  return { targets: collectTargets(def, map, v.ids), stops: v.ids, stopsFailed: v.failed };
+}
+
+/**
+ * doc 81 Đợt 5 task E fix 1 (ruling R-5-i) — the scope decision for an ABORT / REJECTION: "in" | "out" | "unknown".
+ * Any lookup failure (scope resolution, machines, pins, adapters, robots) ⇒ "unknown" — never a guess. Callers bound it
+ * by the STOP DB deadline; "unknown" ⇒ the abort / rejection PROCEEDS (both reduce actuation) with an audit entry
+ * (scopeUnverified); only a DECIDED "out" is answered "not found".
+ */
+async function runScopeDecision(run: { workflowId: number } | undefined, scope: FoeScope): Promise<"in" | "out" | "unknown"> {
+  try {
+    const judge = await makeScopeJudge(scope);
+    if (judge.failed) return "unknown";
+    if (judge.unrestricted) return "in";
+    const d = await getDb();
+    if (!d) return "unknown";
+    const [wf] = run ? await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1) : [];
+    const def = wf?.definitionJson as WorkflowDefinition | undefined;
+    if (!def || !Array.isArray(def.steps)) return "out";
+    const { targets, stopsFailed } = await definitionTargets(def);
+    const out = await judge.outOf(targets, { nonStopOnly: true });
+    if (judge.failed) return "unknown";
+    if (isOutOfScopeEmpty(out)) return "in";
+    return stopsFailed ? "unknown" : "out";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** R-5-i — runScopeDecision bounded by STOP_DB_STEP_DEADLINE_MS (timeout ⇒ "unknown"). */
+async function boundedRunScopeDecision(run: { workflowId: number } | undefined, scope: FoeScope, label: string): Promise<"in" | "out" | "unknown"> {
+  return withDeadline(runScopeDecision(run, scope), STOP_DB_STEP_DEADLINE_MS, label).catch(() => "unknown" as const);
+}
+
+/** R-5-i — an abort / rejection that proceeded with an unverified scope (best-effort audit, never blocks). */
+function auditScopeUnverified(user: FoeUser, runId: number, action: "abort" | "reject"): void {
+  void (async () => {
+    try {
+      const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+      await logCrudOperation(createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }), {
+        action: "config_change",
+        entityType: "orchestration_run",
+        entityId: runId,
+        details: { operation: "foe_scope_unverified", metadata: { runId, action, reason: "scopeUnverified" } },
+        status: "success",
+      });
+    } catch {
+      /* best-effort */
+    }
+  })();
+}
+
+/**
+ * doc 81 Đợt 5 task E fix 1 (review #8) — the ids of the workflows `scope` may see (null = unrestricted), so list
+ * queries filter IN SQL before their LIMIT. Any error ⇒ [] (fail-closed).
+ */
+export async function visibleWorkflowIds(scope: FoeScope): Promise<number[] | null> {
+  try {
+    const judge = await makeScopeJudge(scope);
+    if (judge.unrestricted && !judge.failed) return null;
+    const d = await getDb();
+    if (!d) return [];
+    const rows = await d.select({ id: orchestrationWorkflows.id, definitionJson: orchestrationWorkflows.definitionJson }).from(orchestrationWorkflows);
+    return (await filterVisibleBy(rows, (r) => r.definitionJson as WorkflowDefinition, scope)).map((r) => r.id);
+  } catch {
+    return [];
+  }
+}
+
+/** doc 81 Đợt 5 task E fix 1 — of `runIds`, those whose workflow `scope` may see (the "assignments" column, census). */
+export async function visibleRunIds(runIds: number[], scope: FoeScope): Promise<Set<number>> {
+  try {
+    if (runIds.length === 0) return new Set();
+    const d = await getDb();
+    if (!d) return new Set();
+    const rows = await d.select({ id: orchestrationRuns.id, workflowId: orchestrationRuns.workflowId }).from(orchestrationRuns).where(inArray(orchestrationRuns.id, runIds));
+    return new Set((await filterRunsVisibleTo(rows, scope)).map((r) => r.id));
+  } catch {
+    return new Set();
+  }
 }
 
 /**
@@ -1256,7 +1286,7 @@ export async function definitionVisibleTo(def: WorkflowDefinition | null | undef
  */
 export async function filterVisibleBy<T>(items: T[], defOf: (item: T) => WorkflowDefinition | null | undefined, scope: FoeScope): Promise<T[]> {
   const judge = await makeScopeJudge(scope);
-  if (judge.unrestricted) return items;
+  if (judge.unrestricted && !judge.failed) return items;
   const defs = items.map(defOf);
   const ids = new Set<number>();
   for (const d of defs) if (d && Array.isArray(d.steps)) for (const id of validateWorkflow(d, null).referencedMachineIds) ids.add(id);
@@ -1403,9 +1433,9 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // descriptor's and a robot step's args are never rewritten by withResolvedAdapter. fix round 2 (R-4-m) — by ADAPTER KIND.
   const rawArgs = step.args ?? {};
   const robotKind = isRobotKind(cap.adapterKind);
-  const isStop = robotKind
-    ? isStopJob(toRobotJob(buildEquipmentCommand(descriptor, cap, step.machineId, rawArgs, idempotencyKey, rc.user)))
-    : await isOtStopCommandType(descriptor.name);
+  // doc 81 Đợt 5 task E fix 1 (R-5-j) — the RUN-TIME candidate (foeStepClass.isStopCandidate): the engine only stays
+  // out of the way here; the dispatcher re-decides with the real pins (an unpinned stop needs a counting gate there).
+  const isStop = await isStopCandidate(step, rc.machineById);
   let args: Record<string, unknown>;
   let found: Awaited<ReturnType<typeof findSeparateGateApproval>>;
   if (!isStop) {
@@ -1556,14 +1586,19 @@ async function runCompensation(rc: RunContext, step: WorkflowStep): Promise<void
     // doc 80 ORC-01 — never flip an ABORTED run back to 'compensating'.
     await setRunStatusUnlessAborted(rc.runId, "compensating");
     const comp = step.compensation;
+    const compStop = await isStopCommandStep(rc, comp); // E fix 1 — a STOP compensation's bookkeeping is bounded too
     // run the compensation step body once (no nested compensation cascade)
-    await upsertStep(rc.runId, comp.id, comp.type, { status: "running", startedAt: new Date() });
-    const out = await runStepBody(rc, comp, 1);
-    await upsertStep(rc.runId, comp.id, comp.type, {
-      status: out.kind === "ok" ? "compensated" : "failed",
-      error: "error" in out ? out.error : null,
-      finishedAt: new Date(),
-    });
+    await stopBoundedWrite(compStop, rc.runId, comp.id, "running row", () =>
+      upsertStep(rc.runId, comp.id, comp.type, { status: "running", startedAt: new Date() }),
+    );
+    const out = await runStepBody(rc, comp, 1, compStop);
+    await stopBoundedWrite(compStop, rc.runId, comp.id, "compensated row", () =>
+      upsertStep(rc.runId, comp.id, comp.type, {
+        status: out.kind === "ok" ? "compensated" : "failed",
+        error: "error" in out ? out.error : null,
+        finishedAt: new Date(),
+      }),
+    );
   } catch {
     // swallow — compensation failures must not crash the run unwind.
   }
@@ -1986,12 +2021,11 @@ export async function startRun(
       .from(orchestrationWorkflows)
       .where(eq(orchestrationWorkflows.ref, workflowRef))
       .limit(1);
-    if (!wf) return { ok: false, enabled: true, message: `Workflow "${workflowRef}" not found.` };
     // doc 81 Đợt 5 task E2 — a workflow whose NON-STOP targets are outside the starter's scope does not exist for them
-    // (the SAME answer as a missing ref, before any status check). Targets reached only by STOP steps are allowed (L-7)
-    // and audited once the run exists.
-    const sv = await scopeVerdict(wf.definitionJson as WorkflowDefinition, scopeFor(user, opts?.scope), { nonStopOnly: true });
-    if (!isOutOfScopeEmpty(sv.out)) return { ok: false, enabled: true, message: `Workflow "${workflowRef}" not found.` };
+    // (the SAME answer as a missing ref, before any status check). Targets reached only by VERIFIED STOP steps are allowed
+    // (L-7, R-5-j) and audited once the run exists. E fix 1 (review #9) — the scope is resolved for a missing ref too.
+    const sv = await scopeVerdict((wf?.definitionJson ?? { ref: workflowRef, name: workflowRef, steps: [] }) as WorkflowDefinition, scopeFor(user, opts?.scope), { nonStopOnly: true });
+    if (!wf || !isOutOfScopeEmpty(sv.out)) return { ok: false, enabled: true, message: `Workflow "${workflowRef}" not found.` };
     // doc 80 ORC-06 — only a DEPLOYED ('active') workflow runs. A duplicate is created 'draft'
     // and must pass deployWorkflow (validation + sim-gate + version snapshot) before running.
     if (wf.status !== "active") {
@@ -2132,12 +2166,21 @@ export async function resumeRun(
     // people who own the equipment: in-scope users approve / reject / abort as before; STOP steps run as before (L-7).
     let approvalStopOnlyOut: OutOfScope | null = null;
     if (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0)) {
-      const [wfS] = run ? await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1) : [];
-      const defS = wfS?.definitionJson as WorkflowDefinition | undefined;
       const scope = scopeFor(user, opts.scope);
-      const visible = await definitionVisibleTo(defS, scope);
-      if (!run || !visible) return notFound;
-      if (decision.approved && defS) approvalStopOnlyOut = (await scopeVerdict(defS, scope, { nonStopOnly: true })).stopOnlyOut;
+      if (decision.approved) {
+        // An APPROVAL lets actuation proceed ⇒ fail-closed: any doubt ⇒ "not found".
+        const [wfS] = run ? await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1) : [];
+        const defS = wfS?.definitionJson as WorkflowDefinition | undefined;
+        const visible = await definitionVisibleTo(defS, scope);
+        if (!run || !visible) return notFound;
+        if (defS) approvalStopOnlyOut = (await scopeVerdict(defS, scope, { nonStopOnly: true })).stopOnlyOut;
+      } else {
+        // E fix 1 (ruling R-5-i) — a REJECTION aborts the run (reduces actuation): the scope lookup is bounded by the STOP
+        // DB deadline; a DECIDED out-of-scope ⇒ "not found"; undecidable (timeout / error) ⇒ it proceeds, audited.
+        const verdict = await boundedRunScopeDecision(run, scope, `FOE reject run ${runId} scope`);
+        if (!run || verdict === "out") return notFound;
+        if (verdict === "unknown") auditScopeUnverified(user, runId, "reject");
+      }
     }
     if (!run) return notFound;
     if (run.status !== "awaiting_confirm" && run.status !== "held") {
@@ -2496,8 +2539,11 @@ export async function abortRun(
     const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     const notFound: StartRunResult = { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} not found.` };
     if (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0)) {
-      const visible = await runVisibleTo({ workflowId: run?.workflowId ?? -1 }, scopeFor(user, opts.scope)); // resolved for a missing id too
-      if (!run || !visible) return notFound;
+      // E fix 1 (ruling R-5-i) — bounded by the STOP DB deadline (an abort is never held longer); a DECIDED out-of-scope
+      // ⇒ "not found" (resolved for a missing id too); undecidable (timeout / error) ⇒ the abort PROCEEDS, audited.
+      const verdict = await boundedRunScopeDecision(run ?? undefined, scopeFor(user, opts.scope), `FOE abort run ${runId} scope`);
+      if (!run || verdict === "out") return notFound;
+      if (verdict === "unknown") auditScopeUnverified(user, runId, "abort");
     }
     if (!run) return notFound;
     if (["completed", "failed", "aborted"].includes(run.status)) {

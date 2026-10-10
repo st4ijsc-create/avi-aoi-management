@@ -1,43 +1,82 @@
 /**
- * doc 81 Đợt 5 task E2 fix (ruling R-5-d) — CENSUS of the orchestration factory scope: EVERY procedure / engine entry
- * point that takes a run id, a workflow id or a workflow ref applies the ONE scope check before doing anything.
+ * doc 81 Đợt 5 task E2 fix (ruling R-5-d) + E fix 1 (review #4) — CENSUS of the orchestration factory scope.
  *
- * It counts, it does not trust a list: it reads the SOURCE of orchestrationRouter.ts, edgeRuntimeRouter.ts and the
- * exported functions of foeEngine.ts, finds each procedure / function, decides whether it takes an id (from its input
- * schema / parameters) and whether its body carries the scope check:
- *   • routers: `scopeOf(ctx.user)` in the body, or a call to a SCOPED engine entry with `toFoeUser(ctx.user)` (the engine
- *     resolves the scope from that user — fail-closed);
- *   • engine: `scopeFor(` / `definitionVisibleTo(` / `runVisibleTo(` / `scopeVerdict(` in the body.
- * Anything that takes an id without the check must be in ALLOW with a reason — otherwise RED. §3 proves the instrument
- * sees: a synthetic unscoped procedure / engine function is flagged by the SAME functions.
- * Behaviour (same NOT_FOUND for out-of-scope and missing ids) is measured on _test: orchestrationScope.dot5.db.test.ts.
+ * The POPULATION is found MECHANICALLY, not from a hand list: every non-test `.ts` file under `server/` that imports an
+ * orchestration table (`orchestrationRuns` / `orchestrationWorkflows` / `orchestrationRunSteps` / `orchestrationRunEvents`
+ * / `orchestrationWorkflowVersions`) or a module that reaches runs by id (`foeEngine`, `runEventStore`,
+ * `engineeringAssignment/assignmentService`, `edge/edgeCoordinator`) — static or dynamic import. The population is PINNED:
+ * a new file changes the pin, and the file must be classified below before the pin is updated.
+ *
+ * Every file of the population is either
+ *   • a tRPC ROUTER: every procedure whose input takes an id (runId / workflowId / workflowRef / entityId / id / ref /
+ *     entityIds) must pass the caller's scope into a call (`scopeOf(ctx.user)` / `foeScopeOf(ctx.user)` / a scoped engine
+ *     entry with `toFoeUser(ctx.user)`), or be allow-listed with a reason; plus per-file REQUIRED USAGES (e.g. the
+ *     oversight hub passes the scope into BOTH its run queries);
+ *   • the API v1 router: every /orchestration + /edge route declares the key scope and passes it to the check;
+ *   • the engine: every exported entry taking a run / workflow id checks the scope (§2);
+ *   • a scoped-by-parameter service: its run readers take the scope parameter (required usages);
+ *   • or ALLOW-listed with a reason (system paths, the stores whose readers are checked here, fixtures).
+ * §3 proves the instrument sees (synthetic leaks are flagged). Behaviour (identical NOT_FOUND, filtered counts) is
+ * measured on _test: orchestrationScope.dot5.db.test.ts.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 
+const TABLES = /\b(orchestrationRuns|orchestrationWorkflows|orchestrationRunSteps|orchestrationRunEvents|orchestrationWorkflowVersions)\b/;
+const RUN_MODULES = /(foe\/foeEngine|\.\/foeEngine|runEventStore|engineeringAssignment\/assignmentService|edge\/edgeCoordinator)$/;
+
+export function importsOrchestration(src: string): boolean {
+  for (const m of src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"([^"]+)"/g)) {
+    if (TABLES.test(m[1]) || RUN_MODULES.test(m[2])) return true;
+  }
+  for (const m of src.matchAll(/import\(\s*"([^"]+)"\s*\)/g)) if (RUN_MODULES.test(m[1])) return true;
+  return false;
+}
+
+function population(): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const f of readdirSync(dir)) {
+      const p = join(dir, f);
+      if (statSync(p).isDirectory()) {
+        if (f !== "node_modules") walk(p);
+      } else if (f.endsWith(".ts") && !f.endsWith(".test.ts") && !f.endsWith(".d.ts")) {
+        if (importsOrchestration(readFileSync(p, "utf8"))) out.push(relative(ROOT, p).split("\\").join("/"));
+      }
+    }
+  };
+  walk(join(ROOT, "server"));
+  return out.sort();
+}
+
 /** Engine entries that resolve + check the caller's scope themselves (from the FoeUser they are given). */
 const SCOPED_ENGINE = ["deployWorkflow", "rollbackWorkflow", "startRun", "resumeRun", "abortRun"];
-const TAKES_ID = /\b(runId|workflowId|workflowRef|id|ref)\s*:/;
+const TAKES_ID = /\b(runId|workflowId|workflowRef|entityId|entityIds|id|ref)\s*:/;
+const SCOPE_IN_CALL = /\((?:[^()]|\([^()]*\))*\b(scopeOf|foeScopeOf)\(\s*ctx\.user\s*\)/;
 
 /** procedure name → its source block (from `  name: xxxProcedure` to the next one at the same indent). */
 export function proceduresOf(src: string): Array<{ name: string; block: string }> {
   const re = /^ {2}(\w+): (\w+)\b/gm;
-  const hits = [...src.matchAll(re)].filter((m) => /Procedure$|^protectedProcedure$|^deployProcedure$/.test(m[2]));
+  const hits = [...src.matchAll(re)].filter((m) => /Procedure$/.test(m[2]));
   return hits.map((m, i) => ({ name: m[1], block: src.slice(m.index!, i + 1 < hits.length ? hits[i + 1].index! : src.length) }));
 }
 
 export function unscopedProcedures(src: string, allow: Record<string, string>): string[] {
   return proceduresOf(src)
     .filter(({ name, block }) => {
-      const input = block.slice(block.indexOf(".input("), block.search(/\.(query|mutation)\(/));
+      const cut = block.search(/\.(query|mutation)\(/);
+      const input = cut > 0 ? block.slice(block.indexOf(".input("), cut) : "";
       if (!TAKES_ID.test(input)) return false;
+      const v = /const (\w+) = (?:scopeOf|foeScopeOf)\(\s*ctx\.user\s*\)/.exec(block);
+      const viaVar = !!v && new RegExp(`\\w\\([^;]*\\b${v[1]}\\)`).test(block.slice(v.index + v[0].length));
       const scoped =
-        block.includes("scopeOf(ctx.user)") || SCOPED_ENGINE.some((f) => block.includes(`${f}(`) && block.includes("toFoeUser(ctx.user)"));
+        SCOPE_IN_CALL.test(block) || viaVar || SCOPED_ENGINE.some((f) => block.includes(`${f}(`) && block.includes("toFoeUser(ctx.user)"));
       return !scoped && !(name in allow);
     })
     .map((p) => p.name);
@@ -58,38 +97,105 @@ export function unscopedEngineEntries(src: string, allow: Record<string, string>
   return engineEntries(src)
     .filter(({ name, params, body }) => {
       if (!/\b(runId|workflowId|workflowRef|runIds)\b/.test(params)) return false;
-      const scoped = /\b(scopeFor|definitionVisibleTo|runVisibleTo|scopeVerdict)\(/.test(body);
+      const scoped = /\b(scopeFor|definitionVisibleTo|runVisibleTo|scopeVerdict|boundedRunScopeDecision|filterRunsVisibleTo)\(/.test(body);
       return !scoped && !(name in allow);
     })
     .map((e) => e.name);
 }
 
-const ALLOW_ROUTER: Record<string, string> = {};
-const ALLOW_EDGE: Record<string, string> = {
-  deleteNode: "takes an EDGE NODE id, not a run / workflow id (the node registry is not orchestration data)",
-  heartbeat: "edge NODE heartbeat by node code — no run / workflow id",
-  registerNode: "registers an edge NODE — no run / workflow id",
-};
-const ALLOW_ENGINE: Record<string, string> = {
-  getRun: "internal read (no caller identity); every caller that serves a person checks first: orchestrationRouter.getRun, api/v1 GET /orchestration/runs/:id (runVisibleTo), qtRunner / edgeRuntime are system paths",
-  autoResumeInterruptedRuns: "boot-time system sweep of runs interrupted by a restart (no caller); resumes them as the system user, whose decision never counts as an approval",
-  runIdVisibleTo: "IS the shared check",
+type Kind =
+  | { kind: "router"; allow?: Record<string, string>; requires?: RegExp[] }
+  | { kind: "api" }
+  | { kind: "engine" }
+  | { kind: "service"; requires: RegExp[] }
+  | { kind: "allow"; reason: string };
+
+/** ★ The classified population. A file found by the scan but missing here ⇒ RED (classify it first). */
+const CLASSIFIED: Record<string, Kind> = {
+  "server/_core/index.ts": { kind: "allow", reason: "boot only: rehydrateInterruptedRuns / QT template registration (system principal, no caller identity, no run id from a caller)" },
+  "server/api/v1/router.ts": { kind: "api" },
+  "server/routers/edgeRuntimeRouter.ts": {
+    kind: "router",
+    allow: {
+      deleteNode: "takes an EDGE NODE id, not a run / workflow id",
+      heartbeat: "edge NODE heartbeat by node code — no run / workflow id",
+      registerNode: "registers an edge NODE — no run / workflow id",
+    },
+    requires: [/filterRunsVisibleTo\(await listRunsForNode\(node\.id\), scopeOf\(ctx\.user\)\)/],
+  },
+  "server/routers/engineeringAssignmentRouter.ts": {
+    kind: "router",
+    requires: [/runIdVisibleTo\(input\.entityId, foeScopeOf\(ctx\.user\)\)/, /visibleRunIds\(ids, foeScopeOf\(ctx\.user\)\)/],
+  },
+  "server/routers/orchestrationGovRouter.ts": {
+    kind: "router",
+    allow: {
+      validateDag: "`id` of DAG NODES in the request body (a pure check over caller data), not a run / workflow id",
+      orderQueue: "`id` of queue TASKS in the request body (pure ordering of caller data), not a run / workflow id",
+    },
+  },
+  "server/routers/orchestrationRouter.ts": { kind: "router" },
+  "server/routers/oversightRouter.ts": {
+    kind: "router",
+    requires: [
+      /visibleWorkflowIds\(resolveUserFoeScope\(\{ id: ctx\.user\.id/,
+      /fetchOrchestrationHeld\(d, orchestrationWorkflowIds\)/,
+      /orchestrationWorkflowIds, \/\/ E fix 1/,
+    ],
+  },
+  "server/services/edge/edgeCoordinator.ts": { kind: "allow", reason: "service: run-id entries (assignRun / syncRunResult / listRunsForNode) are reached only through edgeRuntimeRouter + api/v1 /edge/sync, both checked here" },
+  "server/services/edge/edgeRuntime.ts": { kind: "allow", reason: "runs ON an edge host (no caller identity); executeAssignedRun has no production caller" },
+  "server/services/engineeringAssignment/assignmentService.ts": {
+    kind: "service",
+    requires: [
+      /export async function fetchMineSummary\([\s\S]*?orchestrationWorkflowIds: number\[\] \| null/,
+      /export async function fetchMineCategory\([\s\S]*?orchestrationWorkflowIds: number\[\] \| null/,
+      /\$\{runScopeSql\}/,
+    ],
+  },
+  "server/services/orchestration/foe/__foeGateRunFixture.ts": { kind: "allow", reason: "test fixture (_test only), not imported by product code" },
+  "server/services/orchestration/foe/foeEngine.ts": { kind: "engine" },
+  "server/services/orchestration/foe/foeGateApproval.ts": { kind: "allow", reason: "dispatcher DB layer: reads the run named by an engine-written action inside the reservation tx (no caller-supplied id, no caller identity)" },
+  "server/services/orchestration/runEventStore.ts": { kind: "allow", reason: "store; its readers (orchestrationGovRouter.runEvents / replayRun) are checked here" },
+  "server/services/orchestration/templates/qtRunner.ts": { kind: "allow", reason: "system principal (QT_SYSTEM_USER): the engine resolves an EMPTY scope for it (fail-closed); no caller identity" },
+  "server/services/orchestration/templates/qtStepHandlers.ts": { kind: "allow", reason: "QT step handlers run inside qtRunner (system path), read a workflow by a template ref" },
+  "server/services/orchestration/templates/registerQtTemplates.ts": { kind: "allow", reason: "boot-time template registration as the system loader (EMPTY scope in the engine ⇒ only target-free definitions)" },
 };
 
-describe("doc 81 Đợt 5 E2 fix (R-5-d) — every orchestration id-taking entry point carries the scope check", () => {
-  it("§1 orchestrationRouter: no id-taking procedure without the check", () => {
-    const src = read("server/routers/orchestrationRouter.ts");
-    const procs = proceduresOf(src).map((p) => p.name);
-    // the instrument found the population (not an empty scan)
-    expect(procs).toEqual(expect.arrayContaining(["getRun", "listRuns", "getWorkflow", "abortRun", "resumeRun", "deleteWorkflow", "duplicateWorkflow", "getVersion", "listVersions", "rollbackWorkflow", "simulate", "startRun", "deployWorkflow"]));
-    expect(procs).toHaveLength(15); // 2026-10-10: a NEW procedure changes this pin ⇒ decide its scope, then re-pin
-    expect(unscopedProcedures(src, ALLOW_ROUTER)).toEqual([]);
+const ALLOW_ENGINE: Record<string, string> = {
+  getRun: "internal read (no caller identity); every caller that serves a person checks first (orchestrationRouter.getRun, api/v1 GET /orchestration/runs/:id)",
+  autoResumeInterruptedRuns: "boot-time system sweep of runs interrupted by a restart (no caller)",
+  runIdVisibleTo: "IS the shared check",
+  visibleRunIds: "IS the shared check (batch)",
+};
+
+describe("doc 81 Đợt 5 E2 fix (R-5-d) + E fix 1 — every orchestration id-taking entry point carries the scope check", () => {
+  const POP = population();
+
+  it("§0 the population is found mechanically and is PINNED (a new file ⇒ classify it, then re-pin)", () => {
+    expect(POP).toEqual(Object.keys(CLASSIFIED).sort());
   });
 
-  it("§1b edgeRuntimeRouter: run-taking procedures carry the check (node-only ones are allow-listed with a reason)", () => {
-    const src = read("server/routers/edgeRuntimeRouter.ts");
-    expect(proceduresOf(src).map((p) => p.name)).toEqual(expect.arrayContaining(["assignRun", "syncRunResult", "nodeStatus"]));
-    expect(unscopedProcedures(src, ALLOW_EDGE)).toEqual([]);
+  it("§1 routers: every id-taking procedure passes the caller's scope; required usages present", () => {
+    const bad: string[] = [];
+    for (const [file, k] of Object.entries(CLASSIFIED)) {
+      if (k.kind !== "router") continue;
+      const src = read(file);
+      expect(proceduresOf(src).length, `${file}: no procedures found — the instrument is blind`).toBeGreaterThan(0);
+      for (const p of unscopedProcedures(src, k.allow ?? {})) bad.push(`${file}#${p}`);
+      for (const r of k.requires ?? []) if (!r.test(src)) bad.push(`${file} lacks ${r}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("§1b scoped-by-parameter services carry the scope parameter into their run queries", () => {
+    const bad: string[] = [];
+    for (const [file, k] of Object.entries(CLASSIFIED)) {
+      if (k.kind !== "service") continue;
+      const src = read(file);
+      for (const r of k.requires) if (!r.test(src)) bad.push(`${file} lacks ${r}`);
+    }
+    expect(bad).toEqual([]);
   });
 
   it("§2 foeEngine: every exported entry taking a run / workflow id checks the scope (or is allow-listed with a reason)", () => {
@@ -101,27 +207,57 @@ describe("doc 81 Đợt 5 E2 fix (R-5-d) — every orchestration id-taking entry
 
   it("§2b api/v1: every /orchestration and /edge route declares the key scope and passes it to the check", () => {
     const src = read("server/api/v1/router.ts");
-    const routes = [...src.matchAll(/r\.(get|post)\(\s*"(\/(?:orchestration|edge)[^"]*)",([\s\S]*?)\n  \);/g)];
+    const routes = [...src.matchAll(/r\.(get|post|put|patch|delete)\(\s*"(\/(?:orchestration|edge)[^"]*)",([\s\S]*?)\n  \);/g)];
     expect(routes.map((m) => m[2]).sort()).toEqual(["/edge/sync", "/orchestration/runs", "/orchestration/runs/:id", "/orchestration/simulate", "/orchestration/workflows"]);
     for (const m of routes) {
-      expect(m[3], m[2]).toContain("requireDeclaredTenantScope()");
-      expect(m[3], m[2]).toContain("orchestrationScopeOf(req.apiPrincipal?.tenantScope)");
+      expect(m[3], m[2]).toContain('requireDeclaredTenantScope("orchestration")');
+      expect(m[3], m[2]).toMatch(/\w+\([^;]*orchestrationScopeOf\(req\.apiPrincipal\?\.tenantScope\)/);
     }
   });
 
-  it("§3 the instrument SEES: an unscoped procedure / engine entry is flagged (mutation of the census input)", () => {
+  it("§4 the instrument would have caught the code BEFORE E fix 1 (base c13210e53, read from git — the tree is not touched)", () => {
+    const BASE = "c13210e53";
+    const at = (file: string) => {
+      try {
+        return execFileSync("git", ["show", `${BASE}:${file}`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).replace(/\r\n/g, "\n");
+      } catch {
+        return null; // shallow clone without the base commit ⇒ nothing to replay
+      }
+    };
+    const gov = at("server/routers/orchestrationGovRouter.ts");
+    if (gov === null) return;
+    const govK = CLASSIFIED["server/routers/orchestrationGovRouter.ts"] as Extract<Kind, { kind: "router" }>;
+    expect(unscopedProcedures(gov, govK.allow ?? {})).toEqual(["runEvents", "replayRun"]);
+    const ov = at("server/routers/oversightRouter.ts")!;
+    const ovK = CLASSIFIED["server/routers/oversightRouter.ts"] as Extract<Kind, { kind: "router" }>;
+    expect((ovK.requires ?? []).filter((r) => !r.test(ov)).length).toBe(3);
+    const ear = at("server/routers/engineeringAssignmentRouter.ts")!;
+    expect(importsOrchestration(ear)).toBe(true);
+    expect(unscopedProcedures(ear, {})).toEqual(["assign", "unassign", "assignments"]);
+    const svc = at("server/services/engineeringAssignment/assignmentService.ts")!;
+    const svcK = CLASSIFIED["server/services/engineeringAssignment/assignmentService.ts"] as Extract<Kind, { kind: "service" }>;
+    expect(svcK.requires.filter((r) => !r.test(svc)).length).toBe(3);
+  });
+
+  it("§3 the instrument SEES: an unscoped procedure / engine entry / new importing file is flagged", () => {
     const leakyRouter = `export const r = router({
   peek: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ runId: z.number() }))
-    .query(async ({ input }) => getRun(input.runId)),
+    .query(async ({ input }) => loadRunEvents(input.runId)),
   fine: protectedProcedure
     .input(z.object({ runId: z.number() }))
-    .query(async ({ input, ctx }) => runVisibleTo({ workflowId: 1 }, scopeOf(ctx.user))),
+    .query(async ({ input, ctx }) => runIdVisibleTo(input.runId, scopeOf(ctx.user))),
+  printsScope: protectedProcedure
+    .input(z.object({ runId: z.number() }))
+    .query(async ({ input, ctx }) => { const s = scopeOf; return loadRunEvents(input.runId); }),
+  viaVar: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input, ctx }) => { const scope = scopeOf(ctx.user); return getVersionScoped(input.id, scope); }),
   noId: protectedProcedure
     .query(() => 1),
 });`;
-    expect(unscopedProcedures(leakyRouter, {})).toEqual(["peek"]);
+    expect(unscopedProcedures(leakyRouter, {})).toEqual(["peek", "printsScope"]);
     const leakyEngine = `export async function retryStep(runId: number, user: FoeUser): Promise<void> {
   await db();
 }
@@ -130,5 +266,8 @@ export async function okOne(runId: number, user: FoeUser): Promise<void> {
 }
 `;
     expect(unscopedEngineEntries(leakyEngine, {})).toEqual(["retryStep"]);
+    expect(importsOrchestration(`import { orchestrationRuns } from "../../drizzle/schema";`)).toBe(true);
+    expect(importsOrchestration(`const { getRun } = await import("../services/orchestration/foe/foeEngine");`)).toBe(true);
+    expect(importsOrchestration(`import { machines } from "../../drizzle/schema";`)).toBe(false);
   });
 });

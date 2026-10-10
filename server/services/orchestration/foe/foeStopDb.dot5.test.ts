@@ -30,6 +30,7 @@ vi.mock("./foeScope", async (importOriginal) => {
 const fake = new FakeDb();
 /** A HUNG DB for chosen engine functions only: a select / insert issued from one of them never answers. */
 const HANG = { fns: new Set<string>(), hits: [] as string[] };
+const DELAY = { stepId: "" as string, ms: 0, used: false };
 {
   const hungBuilder = (): any => {
     const h: any = new Proxy(
@@ -47,7 +48,30 @@ const HANG = { fns: new Set<string>(), hits: [] as string[] };
   const realSelect = fake.select.bind(fake);
   (fake as any).select = (proj?: Record<string, any>) => (hit() ? hungBuilder() : realSelect(proj));
   const realInsert = (fake as any).insert.bind(fake);
-  (fake as any).insert = (t: any) => (hit() ? hungBuilder() : realInsert(t));
+  (fake as any).insert = (t: any) => {
+    if (hit()) return hungBuilder();
+    // E fix 1 — DELAY: the FIRST 'running' write of a chosen step lands `ms` later (a late write after a bounded STOP).
+    const stack = new Error().stack ?? "";
+    if (!DELAY.stepId || !stack.includes("upsertStep")) return realInsert(t);
+    return {
+      values(v: Record<string, any>) {
+        if (v.stepId !== DELAY.stepId || v.status !== "running" || DELAY.used) return realInsert(t).values(v);
+        DELAY.used = true;
+        let cfg: any;
+        const run = () => new Promise((res) => setTimeout(() => res(realInsert(t).values(v).onConflictDoUpdate(cfg)), DELAY.ms)).then((x: any) => x);
+        const b: any = {
+          onConflictDoUpdate(c: any) {
+            cfg = c;
+            return b;
+          },
+          then(resolve: any, reject: any) {
+            return run().then(() => undefined).then(resolve, reject);
+          },
+        };
+        return b;
+      },
+    };
+  };
 }
 vi.mock("drizzle-orm", async (orig) => {
   const actual = await orig<typeof import("drizzle-orm")>();
@@ -60,6 +84,7 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, machines, deviceAdapters, robots } from "../../../../drizzle/schema";
+import { equipmentRegistry } from "../../equipment/equipmentAdapter";
 import { deployWorkflow, startRun } from "./foeEngine";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 
@@ -89,6 +114,8 @@ beforeEach(() => {
   robotDispatchMock.mockClear();
   HANG.fns.clear();
   HANG.hits.length = 0;
+  DELAY.stepId = "";
+  DELAY.used = false;
   process.env.FOE_ENABLED = "true";
   process.env.OT_CONTROL_ENABLED = "";
   delete process.env.FOE_SIM_GATE_REQUIRED;
@@ -169,5 +196,68 @@ describe("doc 81 Đợt 5 task E4 — an orchestrated STOP never waits on a hung
     expect(res).toBe("HUNG");
     expect(otDispatchMock).not.toHaveBeenCalled();
     expect(warn.mock.calls.flat().join(" "), "a motion step's write must not be bounded/skipped").not.toMatch(/not written in time/);
+  });
+
+  // ── doc 81 Đợt 5 task E fix 1 (review #6 / #13) ────────────────────────────────────────────────────────────────────
+  for (const [shape, steps] of [
+    ["sequence", [{ id: "sq", type: "sequence", steps: [{ ...OT_STOP }] }]],
+    ["parallel", [{ id: "pl", type: "parallel", steps: [{ ...OT_STOP }, { ...RB_ABORT }] }]],
+    ["branch", [{ id: "br", type: "branch", condition: { source: "const", key: "x", op: "eq", value: "x" }, then: [{ ...OT_STOP }] }]],
+    ["nested sequence→branch", [{ id: "sq", type: "sequence", steps: [{ id: "br", type: "branch", condition: { source: "const", key: "x", op: "eq", value: "x" }, then: [{ ...OT_STOP }] }] }]],
+  ] as const) {
+    it(`★ a STOP inside a ${shape} + EVERY step-row write hung ⇒ dispatched within (depth + 4)·D (container writes bounded too)`, async () => {
+      await deployWorkflow({ ref: `n-${shape.length}`, name: "n", steps: steps as never }, OWNER);
+      HANG.fns.add("upsertStep");
+      const depth = shape.startsWith("nested") ? 2 : 1;
+      const t0 = Date.now();
+      let sentAt = 0;
+      otDispatchMock.mockImplementationOnce(async () => {
+        sentAt = Date.now();
+        return { ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] };
+      });
+      await within(startRun(`n-${shape.length}`, {}, OWNER), 12 * STOP_DB_STEP_DEADLINE_MS);
+      expect(sentAt, `${shape}: the STOP never reached the dispatcher`).toBeGreaterThan(0);
+      expect(sentAt - t0).toBeLessThan((depth + 4) * STOP_DB_STEP_DEADLINE_MS + 700);
+    });
+  }
+
+  it("★ a STOP's own precondition read-back hung (device read) ⇒ bounded, the STOP is still dispatched", async () => {
+    const real = equipmentRegistry.getAdapter.bind(equipmentRegistry);
+    const spy = vi.spyOn(equipmentRegistry, "getAdapter").mockImplementation((kind: any) => {
+      const a = real(kind);
+      return {
+        ...a,
+        sendCommand: (c: any) => a.sendCommand(c),
+        readTelemetry: () => new Promise(() => undefined),
+        getState: () => new Promise(() => undefined),
+      } as any;
+    });
+    try {
+      await deployWorkflow(
+        { ref: "pre", name: "pre", steps: [{ ...OT_STOP, precondition: { not: { source: "telemetry", machineId: 1, key: "never", op: "exists" } } } as never] },
+        OWNER,
+      );
+      const t0 = Date.now();
+      const res = await within(startRun("pre", {}, OWNER), 6 * STOP_DB_STEP_DEADLINE_MS);
+      expect(res).not.toBe("HUNG");
+      expect(otDispatchMock).toHaveBeenCalledTimes(1);
+      expect(Date.now() - t0).toBeLessThan(2 * STOP_DB_STEP_DEADLINE_MS + 700);
+      expect(warn.mock.calls.flat().join(" ")).toMatch(/condition read-back not answered in time/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("★ review #13: a LATE 'running' write (landing after the STOP completed) never regresses the step row", async () => {
+    await deployWorkflow({ ref: "late", name: "late", steps: [OT_STOP] }, OWNER);
+    DELAY.stepId = "os";
+    DELAY.ms = STOP_DB_STEP_DEADLINE_MS + 500; // lands after the bound gave up on it and after 'completed'
+    const res = await startRun("late", {}, OWNER);
+    expect(res.status).toBe("completed");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 900)); // let the late write land
+    expect(DELAY.used).toBe(true);
+    const row = (fake.store.get("orchestration_run_steps") ?? []).find((r: Row) => r.runId === res.runId && r.stepId === "os")!;
+    expect(row.status).toBe("completed");
   });
 });

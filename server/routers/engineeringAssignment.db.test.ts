@@ -99,9 +99,22 @@ async function mkChangeover(requestedBy: number): Promise<number> {
   created.changeover.push(Number(r.id));
   return Number(r.id);
 }
+// doc 81 Đợt 5 task E fix 1 (2026-10-10) — a run now belongs to a REAL workflow: orchestration has a factory scope (E2), and
+// a run whose workflow row does not exist (the old fixture used workflowId -424242 — a shape the product never creates:
+// deleteWorkflow cascades its runs) is visible only to an unrestricted scope. The workflow is TARGET-FREE (gates only), so
+// every viewer of this suite still sees its runs exactly as before.
+async function fixtureWorkflowId(): Promise<number> {
+  if (created.wf.length) return created.wf[0];
+  const ref = `${RUN}-wf`;
+  const def = { ref, name: ref, steps: [{ id: "gate1", type: "hitl_gate", prompt: "p" }, { id: "gate2", type: "hitl_gate", prompt: "p" }] };
+  const [w] = await sql`INSERT INTO orchestration_workflows (ref, name, "definitionJson", status) VALUES (${ref}, ${ref}, ${sql.json(def as never)}, 'active') RETURNING id`;
+  created.wf.push(Number(w.id));
+  return Number(w.id);
+}
 async function mkRun(status = "awaiting_confirm"): Promise<number> {
+  const wfId = await fixtureWorkflowId();
   const [r] = await sql`INSERT INTO orchestration_runs ("workflowId", "workflowRef", status, "currentStepId")
-    VALUES (-424242, ${`${RUN}-wf`}, ${status}, 'gate1') RETURNING id`;
+    VALUES (${wfId}, ${`${RUN}-wf`}, ${status}, 'gate1') RETURNING id`;
   created.run.push(Number(r.id));
   return Number(r.id);
 }
@@ -151,6 +164,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
     }
     if (created.changeover.length) await sql`DELETE FROM changeover_requests WHERE id IN ${sql(created.changeover)}`;
     if (created.run.length) await sql`DELETE FROM orchestration_runs WHERE id IN ${sql(created.run)}`;
+    if (created.wf.length) await sql`DELETE FROM orchestration_workflows WHERE id IN ${sql(created.wf)}`;
     if (created.ecn.length) await sql`DELETE FROM engineering_changes WHERE id IN ${sql(created.ecn)}`;
     if (created.rule.length) await sql`DELETE FROM interlock_rules WHERE id IN ${sql(created.rule)}`.catch(() => undefined);
     if (created.recipe.length) await sql`DELETE FROM machine_recipes WHERE id IN ${sql(created.recipe)}`.catch(() => undefined);

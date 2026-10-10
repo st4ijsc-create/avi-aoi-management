@@ -19,6 +19,19 @@ import postgres from "postgres";
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 
+// E fix 1 (review #18) — the app modules this suite boots announce themselves (DB / Redis / OAuth / SMTP / SLO / presence);
+// those lines are boot noise for THIS suite, filtered here only (everything else, and every error, still prints).
+vi.hoisted(() => {
+  const BOOT = /^\[(Database|Redis|Presence|OAuth|Email Service|api\/v1 state)\]/;
+  for (const k of ["log", "info", "warn", "error"] as const) {
+    const orig = console[k].bind(console);
+    console[k] = (...a: unknown[]) => {
+      if (typeof a[0] === "string" && BOOT.test(a[0])) return;
+      orig(...a);
+    };
+  }
+});
+
 const audit = vi.hoisted(() => ({ calls: [] as Array<Record<string, any>> }));
 vi.mock("../services/auditTrailService", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../services/auditTrailService")>();
@@ -68,6 +81,9 @@ async function makeFactory(tag: string): Promise<Fac> {
   const robotMachineId = await one(sql`INSERT INTO machines ("stationId", code, name, "machineType") VALUES (${stationId}, ${`${code}-RM`}, ${`${code}-RM`}, 'ROBOT') RETURNING id`);
   const robotId = await one(sql`INSERT INTO robots (code, name, vendor, kind, endpoint, "lineId", "isEnabled") VALUES (${`${code}-R`}, ${`${code}-R`}, 'sim', 'arm', 'tcp://127.0.0.1:1', ${lineId}, true) RETURNING id`);
   const adapterId = await one(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "isEnabled") VALUES (${machineId}, ${`${code}-AD`}, ${`${code}-AD`}, 'modbus', 'tcp://127.0.0.1:1', true) RETURNING id`);
+  // E fix 1 (R-5-j) — a PINNED stop tag (stop_value) and an ordinary writable tag on the adapter.
+  await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", stop_value, stop_pinned_by)
+    VALUES (${adapterId}, 'estop', '1', 'bool', true, true, 'true'::jsonb, 'test'), (${adapterId}, 'run', '2', 'bool', true, true, NULL, NULL)`;
   return { code, factoryId, workshopId, lineId, stationId, machineId, robotMachineId, robotId, adapterId };
 }
 
@@ -86,7 +102,10 @@ const defOf = (r: string, inner: any[], extra: any[] = []) => ({
   ],
 }) as any;
 const otStart = (id: string, f: () => Fac, args?: Record<string, unknown>) => ({ id, type: "command", machineId: f().machineId, command: "start", ...(args ? { args } : {}) });
-const otStop = (id: string, f: () => Fac) => ({ id, type: "command", machineId: f().machineId, command: "stop", args: { adapterId: f().adapterId } });
+/** E fix 1 (R-5-j) — a VERIFIED stop: writes exactly the adapter's pinned stop tag/value. */
+const otStop = (id: string, f: () => Fac) => ({ id, type: "command", machineId: f().machineId, command: "stop", args: { adapterId: f().adapterId, writes: [{ tagKey: "estop", value: true }] } });
+/** A stop-TYPED step that writes an UNPINNED tag (may energise anything — R-4-x): a NON-stop target for scope. */
+const otStopUnpinned = (id: string, f: () => Fac) => ({ id, type: "command", machineId: f().machineId, command: "stop", args: { adapterId: f().adapterId, writes: [{ tagKey: "run", value: true }] } });
 const rbMove = (id: string, f: () => Fac, robotId?: number) => ({ id, type: "command", machineId: f().robotMachineId, command: "start", args: { robotId: robotId ?? f().robotId } });
 const A = () => fx.A!;
 const B = () => fx.B!;
@@ -134,6 +153,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
         await sql`DELETE FROM users WHERE id IN ${sql(uids)}`;
       }
       for (const f of [fx.A, fx.B].filter(Boolean) as Fac[]) {
+        await sql`DELETE FROM device_tags WHERE "adapterId" = ${f.adapterId}`;
         await sql`DELETE FROM device_adapters WHERE id = ${f.adapterId}`;
         await sql`DELETE FROM robots WHERE id = ${f.robotId}`;
         await sql`DELETE FROM machines WHERE id IN ${sql([f.machineId, f.robotMachineId])}`;
@@ -371,6 +391,135 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     }
   });
 
+  // ── doc 81 Đợt 5 task E fix 1 ─────────────────────────────────────────────────────────────────────────────────────
+  it("★ R-5-j: two users of factory A cannot drive an UNPINNED stop-typed write to factory B — refused at START (not found); a PINNED stop of B starts (audited) and A's other user can approve it", async () => {
+    const { deployWorkflow, startRun, resumeRun } = await engine();
+    const rU = ref("unpinned-b");
+    const rP = ref("pinned-b");
+    expect((await deployWorkflow(defOf(rU, [otStart("a", A), otStopUnpinned("ub", B)]), ADMIN)).ok).toBe(true);
+    expect((await deployWorkflow(defOf(rP, [otStart("a", A), otStop("pb", B)]), ADMIN)).ok).toBe(true);
+    const missing = await startRun(`${RUN}-nope2`, {}, userOf("ua"));
+    const refused = await startRun(rU, {}, userOf("ua"));
+    expect(refused).toEqual({ ...missing, message: missing.message!.replace(`${RUN}-nope2`, rU) });
+    expect(await runsOf(rU)).toHaveLength(0);
+    const ok = await startRun(rP, {}, userOf("ua"));
+    expect(ok.status).toBe("awaiting_confirm");
+    expect((await resumeRun(ok.runId!, { approved: true }, userOf("ua2"))).status).toBe("completed");
+  });
+
+  it("★ review #8: lists are filtered in SQL BEFORE the limit — limit 1 returns A's newest visible row even when B's row is newer", async () => {
+    const { deployWorkflow, startRun } = await engine();
+    const rA = ref("lim-a");
+    const rB = ref("lim-b");
+    expect((await deployWorkflow(defOf(rA, [otStart("a", A)]), ADMIN)).ok).toBe(true);
+    const runA = (await startRun(rA, {}, userOf("ua"))).runId!;
+    expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
+    const runB = (await startRun(rB, {}, userOf("ub"))).runId!;
+    await sql`UPDATE orchestration_runs SET "createdAt" = now() + interval '2 day' WHERE id = ${runA}`;
+    await sql`UPDATE orchestration_runs SET "createdAt" = now() + interval '3 day' WHERE id = ${runB}`;
+    await sql`UPDATE orchestration_workflows SET "updatedAt" = now() + interval '2 day' WHERE ref = ${rA}`;
+    await sql`UPDATE orchestration_workflows SET "updatedAt" = now() + interval '3 day' WHERE ref = ${rB}`;
+    const ua = await router(ctxOf("ua"));
+    expect(((await ua.listRuns({ limit: 1 })) as Array<{ id: number }>).map((r) => r.id)).toEqual([runA]);
+    expect(((await ua.listWorkflows({ limit: 1 })) as Array<{ ref: string }>).map((w) => w.ref)).toEqual([rA]);
+  });
+
+  it("★ R-5-d gov: runEvents / replayRun of another factory's run ⇒ the SAME answer as a missing run; the owner reads them", async () => {
+    const saved = process.env.FOE_DURABLE;
+    process.env.FOE_DURABLE = "true";
+    try {
+      const { deployWorkflow, startRun } = await engine();
+      const rB = ref("gov-b");
+      expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
+      const runB = (await startRun(rB, {}, userOf("ub"))).runId!;
+      const gov = async (key: string, role = "engineer") => (await import("./orchestrationGovRouter")).orchestrationGovRouter.createCaller(ctxOf(key, role));
+      const N = 2_000_000_000;
+      const ua = await gov("ua");
+      expect(await ua.runEvents({ runId: runB })).toEqual(await ua.runEvents({ runId: N }));
+      expect(JSON.stringify(await ua.replayRun({ runId: runB })).split(String(runB)).join("ID")).toBe(JSON.stringify(await ua.replayRun({ runId: N })).split(String(N)).join("ID"));
+      await vi.waitFor(async () => expect((await (await gov("ub")).runEvents({ runId: runB })).length).toBeGreaterThan(0));
+    } finally {
+      if (saved === undefined) delete process.env.FOE_DURABLE;
+      else process.env.FOE_DURABLE = saved;
+    }
+  });
+
+  it("★ R-5-d oversight hub + 'mine': another factory's pending run is neither counted nor sampled for A; B's own user sees it", async () => {
+    const { deployWorkflow, startRun, visibleWorkflowIds } = await engine();
+    const rB = ref("hub-b");
+    expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
+    const runB = (await startRun(rB, {}, userOf("ub"))).runId!;
+    await sql`UPDATE orchestration_runs SET "updatedAt" = now() + interval '1 day' WHERE id = ${runB}`; // the newest sample
+    const [ep] = await sql`SELECT ("pending_epoch")::text || ':' || coalesce("currentStepId", '') AS e FROM orchestration_runs WHERE id = ${runB}`;
+    await sql`INSERT INTO engineering_assignments (entity_type, entity_id, assignee_user_id, assigned_by, pending_episode, active)
+      VALUES ('orchestration_run', ${runB}, ${fx.users.ua}, ${fx.users.adm}, ${ep.e}, true), ('orchestration_run', ${runB}, ${fx.users.ub}, ${fx.users.adm}, ${ep.e}, false)`;
+    try {
+      const hub = async (key: string, role = "engineer") => (await import("./oversightRouter")).oversightRouter.createCaller(ctxOf(key, role)).pendingSummary();
+      const sA = await hub("ua");
+      expect(sA.orchestration.samples.map((x: { id: number }) => x.id)).not.toContain(runB);
+      expect(sA.mine.orchestration.count).toBe(0); // assigned to A's user, but out of A's scope
+      // the count is the caller's count: equal to an independent SQL count over A's visible workflows
+      const ids = (await visibleWorkflowIds({ userId: fx.users.ua, userRole: "engineer" }))!;
+      const [{ c }] = await sql`SELECT count(*)::int AS c FROM orchestration_runs WHERE status IN ('held','awaiting_confirm') AND "workflowId" = ANY(${sql.array(ids.length ? ids : [-1])}::int[])`;
+      expect(sA.orchestration.count).toBe(c);
+      const sAdm = await hub("adm", "admin");
+      expect(sAdm.orchestration.samples.map((x: { id: number }) => x.id)).toContain(runB);
+      expect(sAdm.orchestration.count).toBeGreaterThan(sA.orchestration.count);
+    } finally {
+      // engineering_assignments: avi_app may not DELETE (same as engineeringAssignment.db.test) ⇒ deactivate
+      await sql`UPDATE engineering_assignments SET active = false WHERE entity_type = 'orchestration_run' AND entity_id = ${runB} AND active`;
+    }
+  });
+
+  it("★ R-5-d assignment: assigning / unassigning / reading assignments of another factory's run ⇒ the SAME refusal as a missing run; an assignee who cannot see the run is refused", async () => {
+    const { deployWorkflow, startRun } = await engine();
+    const rB = ref("asg-b");
+    const rA = ref("asg-a");
+    expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
+    expect((await deployWorkflow(defOf(rA, [otStart("a", A)]), ADMIN)).ok).toBe(true);
+    const runB = (await startRun(rB, {}, userOf("ub"))).runId!;
+    const runA = (await startRun(rA, {}, userOf("ua"))).runId!;
+    try {
+      const eng = async (key: string, role = "engineer") => (await import("./engineeringAssignmentRouter")).engineeringAssignmentRouter.createCaller(ctxOf(key, role));
+      const ua = await eng("ua");
+      const N = 2_000_000_000;
+      const err = async (f: () => Promise<unknown>) => {
+        try {
+          await f();
+          return null;
+        } catch (e: any) {
+          return { code: e.code, message: String(e.message) };
+        }
+      };
+      const asg = (id: number) => () => ua.assign({ entityType: "orchestration_run", entityId: id, assigneeUserId: fx.users.ua2, expectedAssigneeUserId: null });
+      const out = await err(asg(runB));
+      const miss = await err(asg(N));
+      expect(out?.code).toBe("NOT_FOUND");
+      expect({ ...out!, message: out!.message.replace(String(runB), "ID") }).toEqual({ ...miss!, message: miss!.message.replace(String(N), "ID") });
+      // the ASSIGNER's scope decides even when the assignee could see the run (admin assignee)
+      const viaAdmin = await err(() => ua.assign({ entityType: "orchestration_run", entityId: runB, assigneeUserId: fx.users.adm, expectedAssigneeUserId: null }));
+      expect(viaAdmin?.code).toBe("NOT_FOUND");
+      const un = (id: number) => () => ua.unassign({ entityType: "orchestration_run", entityId: id, expectedAssigneeUserId: fx.users.ua2 });
+      expect(await err(un(runB))).toEqual(await err(un(N)));
+      // a LIVE assignment of B's run (made by an admin) is not listed for A's user
+      const adm = await eng("adm", "admin");
+      expect((await adm.assign({ entityType: "orchestration_run", entityId: runB, assigneeUserId: fx.users.ub, expectedAssigneeUserId: null })).entityId).toBe(runB);
+      expect((await adm.assignments({ entityType: "orchestration_run", entityIds: [runB] })).map((r: { entityId: number }) => r.entityId)).toEqual([runB]);
+      expect(await ua.assignments({ entityType: "orchestration_run", entityIds: [runB] })).toEqual([]);
+      // an assignee who cannot see the run (B's user for A's run) ⇒ the generic invalid-assignee refusal
+      const bad = await err(() => ua.assign({ entityType: "orchestration_run", entityId: runA, assigneeUserId: fx.users.ub, expectedAssigneeUserId: null }));
+      expect(bad?.code).toBe("BAD_REQUEST");
+      // in scope: works
+      expect((await ua.assign({ entityType: "orchestration_run", entityId: runA, assigneeUserId: fx.users.ua2, expectedAssigneeUserId: null })).entityId).toBe(runA);
+      expect((await ua.assignments({ entityType: "orchestration_run", entityIds: [runA] })).map((r: { entityId: number }) => r.entityId)).toEqual([runA]);
+      const rowsB = await sql`SELECT assignee_user_id FROM engineering_assignments WHERE entity_type = 'orchestration_run' AND entity_id = ${runB}`;
+      expect(rowsB.map((r) => Number(r.assignee_user_id))).toEqual([fx.users.ub]); // only the admin's assignment
+    } finally {
+      await sql`UPDATE engineering_assignments SET active = false WHERE entity_type = 'orchestration_run' AND entity_id IN ${sql([runA, runB])} AND active`;
+      await sql`DELETE FROM notifications WHERE "userId" IN ${sql([fx.users.ua2])} AND "entityType" = 'engineering_orchestration_run'`.catch(() => undefined);
+    }
+  });
+
   it("★ API v1: dataScopeMode NULL ⇒ 403 on every orchestration route; a factory-A key cannot deploy B targets, sees a B run as 404 (same body as missing), starts a B workflow like a missing ref; a global key is unrestricted", async () => {
     const { deployWorkflow, startRun } = await engine();
     const rB = ref("api-b");
@@ -401,6 +550,9 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
         const r = await call(m, p, b);
         expect(r.status, p).toBe(403);
         expect(r.body.error?.code ?? r.body.code ?? JSON.stringify(r.body), p).toContain("tenant_scope_undeclared");
+        // E fix 1 (review #15) — the sentence names what the key cannot do HERE (not the BI "read any figures")
+        expect(JSON.stringify(r.body), p).toContain("deploy, start, read or sync orchestration runs");
+        expect(JSON.stringify(r.body), p).not.toContain("read any figures");
       }
       h.principal = key({ mode: "factory", corporateCode: null, factoryCode: A().code });
       const dep = await call("POST", "/orchestration/workflows", defOf(ref("api-dep-b"), [otStart("b", B)]));

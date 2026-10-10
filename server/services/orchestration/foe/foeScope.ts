@@ -26,6 +26,7 @@ import { getDb } from "../../../db/connection";
 import { idsTrongPhamVi, type PhamViDoc } from "../../../db/hierarchy";
 import { deviceAdapters, robots } from "../../../../drizzle/schema";
 import { getCapabilitiesForMachine } from "../../equipment/capabilityModel";
+import { allStepsOf } from "./foeStepClass"; // doc 81 Đợt 5 task E fix 1 — THE step walk (R-5-j / review #14)
 import { validateWorkflow, type Condition, type MachineForValidation, type WorkflowDefinition, type WorkflowStep } from "./workflowModel";
 
 /** null = unrestricted. */
@@ -53,18 +54,6 @@ export interface OutOfScope {
 const posInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v > 0;
 const isRobotKind = (kind: string) => kind === "robot" || kind === "vda5050";
 
-function walk(steps: WorkflowStep[] | undefined, out: WorkflowStep[] = []): WorkflowStep[] {
-  for (const s of steps ?? []) {
-    out.push(s);
-    const node = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
-    walk(node.steps, out);
-    walk(node.then, out);
-    walk(node.else, out);
-    if (s.compensation) walk([s.compensation], out);
-  }
-  return out;
-}
-
 function conditionMachines(c: Condition | undefined, acc: number[]): void {
   if (!c) return;
   const comp = c as { all?: Condition[]; any?: Condition[]; not?: Condition };
@@ -82,7 +71,7 @@ function conditionMachines(c: Condition | undefined, acc: number[]): void {
 export function collectTargets(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>, stops: Set<string>): FoeTargets {
   const t: FoeTargets = { machines: new Map(), robots: new Map(), adapters: new Map() };
   const mark = (m: Map<number, boolean>, id: number, nonStop: boolean) => m.set(id, (m.get(id) ?? false) || nonStop);
-  for (const step of walk(def?.steps)) {
+  for (const step of allStepsOf(def?.steps)) {
     const nonStop = !stops.has(step.id);
     const own: number[] = [];
     if ((step.type === "command" || step.type === "wait_state") && posInt(step.machineId)) own.push(step.machineId);
@@ -106,6 +95,12 @@ export function collectTargets(def: WorkflowDefinition, machineMap: Map<number, 
 export interface ScopeJudge {
   /** true ⇒ nothing is ever out of scope (null scope, admin, `global` key). */
   unrestricted: boolean;
+  /**
+   * doc 81 Đợt 5 task E fix 1 (R-5-i) — a lookup failed (scope resolution, adapter / robot rows): the answers are the
+   * fail-closed default (everything considered is out), NOT a decision. Callers that must tell "decided out" from
+   * "could not decide" (abort / reject) read this.
+   */
+  readonly failed: boolean;
   /** The targets OUTSIDE the scope (`nonStopOnly` ⇒ only targets with a non-STOP reference are considered). */
   outOf(t: FoeTargets, opts?: { nonStopOnly?: boolean }): Promise<OutOfScope>;
 }
@@ -123,20 +118,24 @@ export async function makeScopeJudge(scope: FoeScope): Promise<ScopeJudge> {
     adapters: pick(t.adapters, o?.nonStopOnly),
   });
   const none: OutOfScope = { machines: [], robots: [], adapters: [] };
-  if (scope === null) return { unrestricted: true, outOf: async () => none };
+  if (scope === null) return { unrestricted: true, failed: false, outOf: async () => none };
   let sets: { machines: Set<number>; lines: Set<number>; stations: Set<number> } | null;
   try {
     const machineIds = await idsTrongPhamVi("machine", scope);
-    if (machineIds === null) return { unrestricted: true, outOf: async () => none }; // the shared resolver: unrestricted
+    if (machineIds === null) return { unrestricted: true, failed: false, outOf: async () => none }; // the shared resolver: unrestricted
     const [lines, stations] = await Promise.all([idsTrongPhamVi("line", scope), idsTrongPhamVi("station", scope)]);
     sets = { machines: new Set(machineIds), lines: new Set(lines ?? []), stations: new Set(stations ?? []) };
   } catch {
     sets = null;
   }
+  let failed = sets === null;
   const adapterMachine = new Map<number, number | null>();
   const robotPlace = new Map<number, { lineId: number | null; stationId: number | null } | null>();
   return {
     unrestricted: false,
+    get failed() {
+      return failed;
+    },
     async outOf(t, o) {
       const want = wanted(t, o);
       if (!sets) return want;
@@ -144,7 +143,10 @@ export async function makeScopeJudge(scope: FoeScope): Promise<ScopeJudge> {
         const d = await getDb();
         const needA = want.adapters.filter((id) => !adapterMachine.has(id));
         const needR = want.robots.filter((id) => !robotPlace.has(id));
-        if ((needA.length > 0 || needR.length > 0) && !d) return want;
+        if ((needA.length > 0 || needR.length > 0) && !d) {
+          failed = true;
+          return want;
+        }
         if (needA.length > 0) {
           const rows = await d!.select().from(deviceAdapters).where(inArray(deviceAdapters.id, needA));
           for (const id of needA) adapterMachine.set(id, null);
@@ -168,6 +170,7 @@ export async function makeScopeJudge(scope: FoeScope): Promise<ScopeJudge> {
           }),
         };
       } catch {
+        failed = true;
         return want;
       }
     },
@@ -187,7 +190,7 @@ export function stepsTouching(def: WorkflowDefinition, o: OutOfScope, stops: Set
   const r = new Set(o.robots);
   const a = new Set(o.adapters);
   const ids: string[] = [];
-  for (const step of walk(def?.steps)) {
+  for (const step of allStepsOf(def?.steps)) {
     if (nonStopOnly && stops.has(step.id)) continue;
     const own: number[] = [];
     if ((step.type === "command" || step.type === "wait_state") && posInt(step.machineId)) own.push(step.machineId);

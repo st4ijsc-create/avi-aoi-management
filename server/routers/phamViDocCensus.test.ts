@@ -659,7 +659,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Lưới: `server/routers/orchestrationScope.dot5.db.test.ts`. Đo trước/sau trên cùng cây (chỉ 7 thủ tục này đổi nhóm).
 // ★★★ 2026-10-10 (doc 81 Đợt 5 task E2 fix, ruling R-5-d) — **A 335 → 334 · S 349 → 350.** `edgeRuntimeRouter.nodeStatus`
 // nay lọc các run của node theo phạm vi ctx.user (`filterRunsVisibleTo(…, scopeOf(ctx.user))`) ⇒ nhóm S, đã GỠ khỏi sổ nợ.
-const GHIM = { A: 334, B: 8, C: 474, D: 1132, S: 350, tong: 2298 } as const;
+// ★★★ 2026-10-10 (doc 81 Đợt 5 task E fix 1, R-5-d) — **C 474 → 472 · S 350 → 352.** `orchestrationGovRouter.runEvents` /
+// `replayRun` nay đưa phạm vi ctx.user (`runIdVisibleTo(input.runId, scopeOf(ctx.user))`) vào lượt đọc ⇒ nhóm S.
+const GHIM = { A: 334, B: 8, C: 472, D: 1132, S: 352, tong: 2298 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

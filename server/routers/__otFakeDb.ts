@@ -96,6 +96,8 @@ export class FakeDb {
         // Insertion is DEFERRED to returning()/then() so an optional onConflictDoUpdate()
         // can change the semantics from "throw on conflict" to "update the existing row".
         let conflictSet: Row | null = null;
+        // doc 81 Đợt 5 E fix 1 — drizzle `setWhere` (a JS predicate here, via the mocked operators): update only matching rows.
+        let conflictWhere: ((row: Row) => boolean) | null = null;
         let done: Row[] | null = null;
         const finalize = () => {
           if (done) return done;
@@ -105,6 +107,7 @@ export class FakeDb {
             if (existing) {
               if (conflictSet) {
                 // onConflictDoUpdate → patch the existing row, do NOT insert a new one.
+                if (conflictWhere && !conflictWhere(existing)) return { ...existing };
                 Object.assign(existing, conflictSet, { updatedAt: new Date() });
                 return { ...existing };
               }
@@ -117,8 +120,9 @@ export class FakeDb {
           return done;
         };
         const builder: any = {
-          onConflictDoUpdate(cfg: { target?: any; set?: Row }) {
+          onConflictDoUpdate(cfg: { target?: any; set?: Row; setWhere?: unknown }) {
             conflictSet = cfg?.set ?? {};
+            conflictWhere = typeof cfg?.setWhere === "function" ? (cfg.setWhere as (row: Row) => boolean) : null;
             return builder;
           },
           returning() { return Promise.resolve(finalize()); },

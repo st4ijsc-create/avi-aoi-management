@@ -68,6 +68,8 @@ import { isInterlockEngineEnabled } from "../services/interlock/interlockEngine"
 // doc 81 Đợt 3 Task 4 — "Của tôi": vị từ CHỜ DUYỆT dùng chung (một nguồn cho cả "Chờ duyệt" lẫn "Của tôi") +
 // đếm theo phân công active (bảng `engineering_assignments`, mig 0363).
 import { PENDING_WHERE, fetchMineSummary } from "../services/engineeringAssignment/assignmentService";
+import { visibleWorkflowIds } from "../services/orchestration/foe/foeEngine"; // doc 81 Đợt 5 task E fix 1
+import { resolveUserFoeScope } from "../services/orchestration/foe/foeScope";
 import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, type AssignablePendingKey, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -222,9 +224,14 @@ async function fetchInterlockEventsOpen(d: Db, showNames: boolean): Promise<Cate
 }
 
 // ── orchestration run đang giữ / chờ xác nhận (KHÔNG đổi hành vi) ──────────────
-async function fetchOrchestrationHeld(d: Db): Promise<CategoryCount> {
+async function fetchOrchestrationHeld(d: Db, workflowIds: number[] | null): Promise<CategoryCount> {
   try {
-    const cond = PENDING_WHERE.orchestration_run; // status IN (held, awaiting_confirm)
+    // doc 81 Đợt 5 task E fix 1 (R-5-d, review #2) — count AND samples only over runs whose workflow the caller may see
+    // (`visibleWorkflowIds`, null = unrestricted); filtered in SQL, so the count is the caller's count.
+    const cond = and(
+      PENDING_WHERE.orchestration_run, // status IN (held, awaiting_confirm)
+      workflowIds === null ? undefined : inArray(orchestrationRuns.workflowId, workflowIds.length ? workflowIds : [-1]),
+    );
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(orchestrationRuns).where(cond);
     const rows = await d
       .select({
@@ -431,9 +438,11 @@ export const oversightRouter = router({
       // Hub dùng để GỌI thủ tục này) quyết định ai thấy TÊN mục. Tính MỘT LẦN.
       // Fix round 1 — mỗi lượt kiểm quyền tự bọc try/catch (`canSeeNamesSafe`): lỗi ở
       // đây chỉ ẩn tên, KHÔNG được làm vỡ cả chín nhánh còn lại.
-      const [showMachineControlNames, showInterlockNames] = await Promise.all([
+      const [showMachineControlNames, showInterlockNames, orchestrationWorkflowIds] = await Promise.all([
         canSeeNamesSafe(ctx.user.id, ctx.user.role, "machine_control"),
         canSeeNamesSafe(ctx.user.id, ctx.user.role, "interlock"),
+        // doc 81 Đợt 5 task E fix 1 (R-5-d) — the orchestration factory scope of the caller (ctx.user only).
+        visibleWorkflowIds(resolveUserFoeScope({ id: ctx.user.id, role: String(ctx.user.role) })),
       ]);
 
       const [
@@ -451,7 +460,7 @@ export const oversightRouter = router({
         fetchRecipesActiveUnapproved(d, showMachineControlNames),
         fetchInterlockRulesPending(d, showInterlockNames),
         fetchInterlockEventsOpen(d, showInterlockNames),
-        fetchOrchestrationHeld(d),
+        fetchOrchestrationHeld(d, orchestrationWorkflowIds),
         fetchSafetyUnaudited(d),
         fetchDeadlocks(),
         fetchEcnPending(d, showMachineControlNames),
@@ -474,6 +483,7 @@ export const oversightRouter = router({
         d,
         ctx.user.id,
         Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [t, showNamesFor[ASSIGNABLE[t].pendingKey]])) as Record<AssignableEntityType, boolean>,
+        orchestrationWorkflowIds, // E fix 1 — "mine" runs filtered by the caller's orchestration scope
       );
       const mine = Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [ASSIGNABLE[t].pendingKey, mineByType[t]])) as MineSummary;
 

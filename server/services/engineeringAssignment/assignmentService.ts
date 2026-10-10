@@ -161,10 +161,20 @@ const COUNT = sql<number>`count(*)::int`;
  * Hộp "Của tôi" của MỘT loại: đếm + (khi `showNames`) tối đa 5 mẫu, mới giao trước. Lỗi (bảng 0363 chưa áp,
  * DB rớt…) ⇒ `degraded:true`, KHÔNG throw — đúng luật fail-safe từng nhánh của pendingSummary.
  */
-export async function fetchMineCategory(d: Db, type: AssignableEntityType, userId: number, showNames: boolean): Promise<MineCategory> {
+export async function fetchMineCategory(
+  d: Db,
+  type: AssignableEntityType,
+  userId: number,
+  showNames: boolean,
+  /** doc 81 Đợt 5 task E fix 1 (R-5-d) — orchestration runs: only those of these workflows (null = unrestricted). */
+  orchestrationWorkflowIds: number[] | null = null,
+): Promise<MineCategory> {
   try {
     const join = mineJoin(type, userId);
-    const where = PENDING_WHERE[type];
+    const where =
+      type === "orchestration_run" && orchestrationWorkflowIds !== null
+        ? (and(PENDING_WHERE[type], inArray(orchestrationRuns.workflowId, orchestrationWorkflowIds.length ? orchestrationWorkflowIds : [-1])) as SQL)
+        : PENDING_WHERE[type];
     const order = desc(engineeringAssignments.assignedAt);
     switch (type) {
       case "ecn": {
@@ -254,7 +264,16 @@ export async function fetchMineSummary(
   d: Db,
   userId: number,
   showNames: Readonly<Record<AssignableEntityType, boolean>>,
+  /**
+   * doc 81 Đợt 5 task E fix 1 (R-5-d, review #3) — the orchestration factory scope of the viewer as workflow ids
+   * (`foeEngine.visibleWorkflowIds`; null = unrestricted): runs of other workflows are not in the viewer's "mine".
+   */
+  orchestrationWorkflowIds: number[] | null = null,
 ): Promise<Record<AssignableEntityType, MineCategory>> {
+  const runScopeSql =
+    orchestrationWorkflowIds === null
+      ? sql``
+      : sql` AND ${inArray(orchestrationRuns.workflowId, orchestrationWorkflowIds.length ? orchestrationWorkflowIds : [-1])}`;
   try {
     const a = sql.raw("a");
     const pieces: SQL[] = [
@@ -280,7 +299,7 @@ export async function fetchMineSummary(
       sql`SELECT 'orchestration_run'::text, ${orchestrationRuns.id}, ${a}.assigned_at,
           json_build_object('workflowRef', ${orchestrationRuns.workflowRef}, 'status', ${orchestrationRuns.status}, 'currentStepId', ${orchestrationRuns.currentStepId})
         FROM ${a} JOIN ${orchestrationRuns} ON ${a}.entity_type = 'orchestration_run' AND ${a}.entity_id = ${orchestrationRuns.id}
-        WHERE ${PENDING_WHERE.orchestration_run} AND ${a}.pending_episode = ${EPISODE_SQL.orchestration_run}`,
+        WHERE ${PENDING_WHERE.orchestration_run} AND ${a}.pending_episode = ${EPISODE_SQL.orchestration_run}${runScopeSql}`,
     ];
     const res = (await d.execute(sql`
       WITH a AS (
@@ -318,7 +337,7 @@ export async function fetchMineSummary(
     // eslint-disable-next-line no-console
     console.error("[oversight] mine (một truy vấn) lỗi — rơi về đường từng loại:", err instanceof Error ? err.message : err);
     const types = ["ecn", "recipe", "interlock_rule", "changeover", "orchestration_run"] as const;
-    const list = await Promise.all(types.map((t) => fetchMineCategory(d, t, userId, showNames[t])));
+    const list = await Promise.all(types.map((t) => fetchMineCategory(d, t, userId, showNames[t], orchestrationWorkflowIds)));
     return Object.fromEntries(types.map((t, i) => [t, list[i]])) as Record<AssignableEntityType, MineCategory>;
   }
 }
