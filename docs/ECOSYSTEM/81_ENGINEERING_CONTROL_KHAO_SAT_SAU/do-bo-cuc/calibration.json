@@ -339,25 +339,19 @@
      "x": 288,
      "y": 120,
      "w": 642,
-     "h": 596
+     "h": 620
     }
    ],
-   "areaPx": 382632,
+   "areaPx": 398040,
    "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
-   "gitHead": "d1ff678b2",
-   "gitDirty": [
-    "client/src/pages/EngineeringChanges.tsx",
-    "client/src/pages/FleetOrchestration.layout.dom.test.tsx",
-    "client/src/pages/FleetOrchestration.tsx",
-    "scripts/ui-metrics/README.md",
-    "scripts/ui-metrics/engineeringLayout.mjs"
-   ],
-   "at": "2026-10-03T23:13:45.566Z",
+   "gitHead": "06cd09003",
+   "gitDirty": [],
+   "at": "2026-10-10T14:32:31.905Z",
    "previous": {
     "mainTop": 120,
-    "areaPx": 398040,
+    "areaPx": 382632,
     "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
-    "gitHead": "b2e9cdd3e"
+    "gitHead": "d1ff678b2"
    }
   },
   "orchestration-studio|1600|n/a": {

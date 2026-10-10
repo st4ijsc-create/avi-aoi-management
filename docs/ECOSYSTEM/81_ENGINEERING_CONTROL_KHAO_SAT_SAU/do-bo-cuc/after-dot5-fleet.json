@@ -1,0 +1,806 @@
+{
+ "meta": {
+  "tool": "scripts/ui-metrics/engineeringLayout.mjs",
+  "startedAt": "2026-10-10T14:32:55.423Z",
+  "argv": [
+   "--spawn",
+   "--screens",
+   "fleet-orchestration",
+   "--sizes",
+   "1600x950,1366x768",
+   "--no-selftest",
+   "--server-port",
+   "3056",
+   "--vite-port",
+   "5216",
+   "--out",
+   "C:/Users/Admin/AppData/Local/Temp/claude/d--SOURCES-avi-aoi-management/566024ac-dfb9-4bbb-bbb1-1e49d89511d8/scratchpad/dot5-H/h8-after.json"
+  ],
+  "sizes": [
+   [
+    1600,
+    950
+   ],
+   [
+    1366,
+    768
+   ]
+  ],
+  "flags": "dev",
+  "gitHead": "06cd09003",
+  "gitDirty": [
+   "scripts/ui-metrics/README.md",
+   "scripts/ui-metrics/engineeringLayout.mjs"
+  ],
+  "fixtures": {
+   "engineering_changes": 10,
+   "staleRemoved": {
+    "engineering_changes": 0,
+    "engineering_change_items": 0
+   }
+  },
+  "data": {
+   "tables": 60,
+   "before": {
+    "ai_insights": "45:84e12df22df3",
+    "ai_pending_actions": "372:319d7b22d19f",
+    "alarm_taxonomy": "175:49c49f1ab925",
+    "alert_settings": "0:d41d8cd98f00",
+    "andon_events": "10:2099f6232057",
+    "battery_charging_plans": "0:d41d8cd98f00",
+    "camera_calibrations": "0:d41d8cd98f00",
+    "changeover_requests": "0:d41d8cd98f00",
+    "charger_stations": "0:d41d8cd98f00",
+    "collaboration_sessions": "0:d41d8cd98f00",
+    "daily_statistics": "225:a899b7cf547d",
+    "device_type_change_requests": "0:d41d8cd98f00",
+    "device_types": "0:d41d8cd98f00",
+    "engineering_assignments": "3865:9e859f9cfc5d",
+    "engineering_changes": "0:d41d8cd98f00",
+    "engineering_changes[uimetrics_]": "10:39039aaeabc1",
+    "equipment_3d_models": "0:d41d8cd98f00",
+    "factories": "7496:078489ec628b",
+    "interlock_events": "1:46e391c32f94",
+    "interlock_rules": "16:83c777a0ce2e",
+    "machine_recipes": "0:d41d8cd98f00",
+    "machine_status_logs": "4144:db08378dd229",
+    "machines": "13579:2886859bff14",
+    "master_alarms": "9:84a0d80ac606",
+    "notifications": "0:d41d8cd98f00",
+    "oee_metrics": "1336:1758d1e873be",
+    "operation_codes": "0:d41d8cd98f00",
+    "operator_assignments": "0:d41d8cd98f00",
+    "orchestration_runs": "6:45ff9c858544",
+    "orchestration_workflows": "20:ae7d853a2b4a",
+    "permissions": "4801:b28c05fa48f3",
+    "predictive_alert_occurrences": "2204:775a4ef056fe",
+    "predictive_alerts": "838:0ce5c607c418",
+    "product_inspections": "71022:37505e3b462b",
+    "product_machine_mappings": "0:d41d8cd98f00",
+    "product_models": "5642:5bf58eb91917",
+    "production_lines": "7475:1460e2e037c0",
+    "program_artifacts": "1:3eb538fb3b97",
+    "program_deployments": "3793:031ec8b8978b",
+    "program_projects": "1:23ac17d6a032",
+    "program_symbols": "0:d41d8cd98f00",
+    "recipe_deployments": "0:d41d8cd98f00",
+    "resource_reservations": "0:d41d8cd98f00",
+    "robot_jobs": "8726:5cf68655951f",
+    "robot_telemetry": "403562:4dab4f0772ec",
+    "robots": "316:41a114c168d3",
+    "safety_events": "0:d41d8cd98f00",
+    "safety_plc_configs": "1:3c5d8c645e3a",
+    "safety_zones": "0:d41d8cd98f00",
+    "shared_resources": "0:d41d8cd98f00",
+    "shift_configs": "682:15fd008a1dbc",
+    "sites": "0:d41d8cd98f00",
+    "stations": "7508:51a956388566",
+    "tasks": "0:d41d8cd98f00",
+    "user_corporate_assignments": "165:545d51b80426",
+    "user_factory_assignments": "1192:3f6091735a93",
+    "users": "3461:a33fa19a75b0",
+    "vram_leases": "0:d41d8cd98f00",
+    "workshops": "7473:5550e305db34",
+    "zone_reservations": "0:d41d8cd98f00",
+    "zones": "0:d41d8cd98f00"
+   },
+   "after": {
+    "ai_insights": "45:84e12df22df3",
+    "ai_pending_actions": "372:319d7b22d19f",
+    "alarm_taxonomy": "175:49c49f1ab925",
+    "alert_settings": "0:d41d8cd98f00",
+    "andon_events": "10:2099f6232057",
+    "battery_charging_plans": "0:d41d8cd98f00",
+    "camera_calibrations": "0:d41d8cd98f00",
+    "changeover_requests": "0:d41d8cd98f00",
+    "charger_stations": "0:d41d8cd98f00",
+    "collaboration_sessions": "0:d41d8cd98f00",
+    "daily_statistics": "225:a899b7cf547d",
+    "device_type_change_requests": "0:d41d8cd98f00",
+    "device_types": "0:d41d8cd98f00",
+    "engineering_assignments": "3865:9e859f9cfc5d",
+    "engineering_changes": "0:d41d8cd98f00",
+    "engineering_changes[uimetrics_]": "10:39039aaeabc1",
+    "equipment_3d_models": "0:d41d8cd98f00",
+    "factories": "7496:078489ec628b",
+    "interlock_events": "1:46e391c32f94",
+    "interlock_rules": "16:83c777a0ce2e",
+    "machine_recipes": "0:d41d8cd98f00",
+    "machine_status_logs": "4144:db08378dd229",
+    "machines": "13579:2886859bff14",
+    "master_alarms": "9:84a0d80ac606",
+    "notifications": "0:d41d8cd98f00",
+    "oee_metrics": "1336:1758d1e873be",
+    "operation_codes": "0:d41d8cd98f00",
+    "operator_assignments": "0:d41d8cd98f00",
+    "orchestration_runs": "6:45ff9c858544",
+    "orchestration_workflows": "20:ae7d853a2b4a",
+    "permissions": "4801:b28c05fa48f3",
+    "predictive_alert_occurrences": "2204:775a4ef056fe",
+    "predictive_alerts": "838:0ce5c607c418",
+    "product_inspections": "71022:37505e3b462b",
+    "product_machine_mappings": "0:d41d8cd98f00",
+    "product_models": "5642:5bf58eb91917",
+    "production_lines": "7475:1460e2e037c0",
+    "program_artifacts": "1:3eb538fb3b97",
+    "program_deployments": "3793:031ec8b8978b",
+    "program_projects": "1:23ac17d6a032",
+    "program_symbols": "0:d41d8cd98f00",
+    "recipe_deployments": "0:d41d8cd98f00",
+    "resource_reservations": "0:d41d8cd98f00",
+    "robot_jobs": "8726:5cf68655951f",
+    "robot_telemetry": "403562:4dab4f0772ec",
+    "robots": "316:41a114c168d3",
+    "safety_events": "0:d41d8cd98f00",
+    "safety_plc_configs": "1:3c5d8c645e3a",
+    "safety_zones": "0:d41d8cd98f00",
+    "shared_resources": "0:d41d8cd98f00",
+    "shift_configs": "682:15fd008a1dbc",
+    "sites": "0:d41d8cd98f00",
+    "stations": "7508:51a956388566",
+    "tasks": "0:d41d8cd98f00",
+    "user_corporate_assignments": "165:545d51b80426",
+    "user_factory_assignments": "1192:3f6091735a93",
+    "users": "3461:a33fa19a75b0",
+    "vram_leases": "0:d41d8cd98f00",
+    "workshops": "7473:5550e305db34",
+    "zone_reservations": "0:d41d8cd98f00",
+    "zones": "0:d41d8cd98f00"
+   },
+   "drift": {},
+   "errors": []
+  },
+  "instance": {
+   "server": "tsx server/_core/index.ts :3056 (env tách, không nạp .env; ROLE=api)",
+   "vite": "vite dev in-process :5216 (proxy /api,/uploads → :3056; envDir của vite.config nạp VITE_* từ .env vào client)",
+   "db": "aoi_management_test",
+   "flagsOn": [
+    "FOE_ENABLED",
+    "DPC_IR_V2_ENABLED",
+    "WORKFORCE_ENABLED",
+    "SAFETY_AUDIT_ENABLED",
+    "EQ_GOVERN_ENABLED",
+    "EQ_INTEG_ENABLED",
+    "FLEET_ORCH_ENABLED",
+    "FLEET_RESOURCE_ENABLED"
+   ],
+   "alwaysOff": [
+    "DPC_DEPLOY_ENABLED",
+    "SAFETY_PLC_ADAPTER_ENABLED",
+    "ALERT_EVALUATOR_ENABLED",
+    "AI_ORCHESTRATION_ENABLED",
+    "AI_ORCHESTRATION_ADVISOR_ENABLED",
+    "MQTT_ENABLED",
+    "EXTERNAL_MQTT_ENABLED",
+    "UNS_BRIDGE_ENABLED",
+    "UNS_SPARKPLUG_ENABLED",
+    "SPARKPLUG_COMMAND_ENABLED",
+    "UNS_TOPIC_V2_ENABLED",
+    "OT_CONTROL_ENABLED",
+    "OT_STORE_FORWARD_ENABLED",
+    "OT_CONN_HA_ENABLED",
+    "ROBOT_GATEWAY_ENABLED",
+    "ROBOT_CONTROL_ENABLED",
+    "OPCUA_GATEWAY_ENABLED",
+    "ROS2_BRIDGE_ENABLED",
+    "SIM_OT_TELEMETRY_ENABLED",
+    "SIM_KINEMATIC_ENABLED",
+    "EDGE_RUNTIME_ENABLED",
+    "SECS_GEM_ENABLED",
+    "MTCONNECT_ENABLED",
+    "VDA5050_ENABLED",
+    "LLAMA_SERVER_ENABLED",
+    "ENABLE_GPU",
+    "GGUF_WARM_DEEP_MODEL_ON_BOOT",
+    "PROG_KB_ENABLED",
+    "KB_AUTOSYNC_ENABLED",
+    "HOT_FOLDER_INGEST_ENABLED",
+    "WEBHOOKS_ENABLED",
+    "OTEL_ENABLED",
+    "TWIN_LIVE_ENABLED",
+    "TWIN_STREAM_ENABLED",
+    "STREAM_TELEMETRY_TAP_ENABLED",
+    "OPENAI_GATEWAY_ENABLED"
+   ],
+   "user": {
+    "username": "uim_engineer",
+    "role": "engineer",
+    "perms": 22,
+    "factory": "SIM-FAC"
+   },
+   "serverBootMs": 6055,
+   "serverPid": 9908
+  },
+  "base": "http://127.0.0.1:5216",
+  "reference": {
+   "file": "docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/do-bo-cuc/baseline.json",
+   "pages": 34,
+   "calibrations": [
+    "engineering-changes|1600|n/a",
+    "engineering-changes|1366|n/a",
+    "interlock-rules|1600|n/a",
+    "interlock-rules|1366|n/a",
+    "recipes|1600|n/a",
+    "recipes|1366|n/a",
+    "equipment-integration|1600|n/a",
+    "equipment-integration|1366|n/a",
+    "safety-workforce|1600|n/a",
+    "safety-workforce|1366|n/a",
+    "equipment-standards|1600|n/a",
+    "equipment-standards|1366|n/a",
+    "fleet-orchestration|1600|n/a",
+    "fleet-orchestration|1366|n/a",
+    "orchestration-studio|1600|n/a",
+    "orchestration-studio|1366|n/a",
+    "engineering|1600|closed",
+    "engineering|1366|closed",
+    "engineering|1600|open",
+    "engineering|1366|open",
+    "ir-editor|1600|closed",
+    "ir-editor|1366|closed",
+    "pou-studio|1600|closed",
+    "pou-studio|1366|closed",
+    "ir-editor|1600|open",
+    "ir-editor|1366|open",
+    "pou-studio|1600|open",
+    "pou-studio|1366|open",
+    "engineering-home|1600|n/a",
+    "engineering-home|1366|n/a",
+    "equipment-standards-alarms|1600|n/a",
+    "equipment-standards-alarms|1366|n/a",
+    "vision-acquisition|1600|n/a",
+    "vision-acquisition|1366|n/a",
+    "production-shifts|1600|n/a",
+    "production-shifts|1366|n/a"
+   ]
+  },
+  "connections": [
+   {
+    "label": "sau khi khởi động",
+    "pids": [
+     9908,
+     34088
+    ],
+    "tcp": {
+     "Listen :::3056": 1,
+     "Bound → -": 4,
+     "Established → 127.0.0.1:5434": 4
+    },
+    "udp": [],
+    "violations": []
+   },
+   {
+    "label": "sau biến thể closed",
+    "pids": [
+     9908,
+     34088
+    ],
+    "tcp": {
+     "Listen :::3056": 1,
+     "Bound → -": 13,
+     "Established → 127.0.0.1:5434": 13,
+     "Established → vào :3056 từ 127.0.0.1": 1
+    },
+    "udp": [],
+    "violations": []
+   }
+  ],
+  "outboundViolations": [],
+  "selfTest": null,
+  "finishedAt": "2026-10-10T14:33:32.408Z",
+  "fixturesRemoved": {
+   "engineering_changes": 10,
+   "engineering_change_items": 0
+  },
+  "probeUserRemoved": {
+   "deleted": 1,
+   "deactivated": 0
+  },
+  "portsAfter": {
+   "3056": "trống",
+   "5216": "trống"
+  }
+ },
+ "pagesMissingDataLayoutMain": [],
+ "errors": [],
+ "results": [
+  {
+   "screen": "fleet-orchestration",
+   "route": "/labs/fleet-orchestration",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 836,
+     "h": 802
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 836,
+     "h": 802
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 44.1,
+   "workspacePct": 41.7,
+   "mainPctFe1": 44.1,
+   "mainPctUncovered": 44.1,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "svg",
+      "testid": null,
+      "loc": "FleetOrchestration.tsx:1246",
+      "role": "img",
+      "slot": null,
+      "label": "Bản đồ đội thiết bị",
+      "kind": "chart",
+      "top": 164
+     },
+     "aboveWorkspacePx": 44,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      44
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 836,
+       "h": 44,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "CockpitLayout.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Bản đồ đội thiết bị Robot có vị trí: 0/3 Nhà máy N"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Điều phối Đội xe & Tác vụ",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:70",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 575,
+     "w": 767,
+     "loc": "PageHeaderCompact.tsx:80",
+     "tag": "div",
+     "testid": null,
+     "label": "BẾ TẮC 0 Nguồn: fleet.deadlocks — các chu trình ch",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1350,
+     "w": 226,
+     "loc": "PageHeaderCompact.tsx:95",
+     "tag": "div",
+     "testid": null,
+     "label": "Sổ đăng ký thao tác",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 5,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 5,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:277"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [
+    "thủ tục tRPC chưa có trong KNOWN_PROCS (canh trôi có thể thiếu bảng — chạy --discover-tables): userSettingsRouter.getUiPrefs"
+   ],
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 670472,
+     "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+     "gitHead": "b2e9cdd3e"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "factory.list",
+    "fleet.deadlocks",
+    "fleet.listChargers",
+    "fleet.listChargingPlans",
+    "fleet.listOperations",
+    "fleet.listReservations",
+    "fleet.listResourceReservations",
+    "fleet.listResources",
+    "fleet.listTasks",
+    "fleet.listZones",
+    "fleet.resourceStatus",
+    "fleet.robotPositions",
+    "fleet.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "notification.unreadCount",
+    "permissions.getMyPermissions",
+    "twin.occupancyGrid",
+    "userSettingsRouter.getUiPrefs"
+   ]
+  },
+  {
+   "screen": "fleet-orchestration",
+   "route": "/labs/fleet-orchestration",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 642,
+     "h": 620
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 642,
+     "h": 620
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 37.9,
+   "workspacePct": 35.2,
+   "mainPctFe1": 37.9,
+   "mainPctUncovered": 37.9,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "svg",
+      "testid": null,
+      "loc": "FleetOrchestration.tsx:1246",
+      "role": "img",
+      "slot": null,
+      "label": "Bản đồ đội thiết bị",
+      "kind": "chart",
+      "top": 164
+     },
+     "aboveWorkspacePx": 44,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      44
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 642,
+       "h": 44,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "CockpitLayout.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Bản đồ đội thiết bị Robot có vị trí: 0/3 Nhà máy N"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Điều phối Đội xe & Tác vụ",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:70",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 575,
+     "w": 679,
+     "loc": "PageHeaderCompact.tsx:80",
+     "tag": "div",
+     "testid": null,
+     "label": "BẾ TẮC 0 Nguồn: fleet.deadlocks — các chu trình ch",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1262,
+     "w": 80,
+     "loc": "PageHeaderCompact.tsx:95",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 3,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 3,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:277"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [
+    "thủ tục tRPC chưa có trong KNOWN_PROCS (canh trôi có thể thiếu bảng — chạy --discover-tables): userSettingsRouter.getUiPrefs"
+   ],
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 398040,
+     "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+     "gitHead": "06cd09003"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "factory.list",
+    "fleet.deadlocks",
+    "fleet.listChargers",
+    "fleet.listChargingPlans",
+    "fleet.listOperations",
+    "fleet.listReservations",
+    "fleet.listResourceReservations",
+    "fleet.listResources",
+    "fleet.listTasks",
+    "fleet.listZones",
+    "fleet.resourceStatus",
+    "fleet.robotPositions",
+    "fleet.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "notification.unreadCount",
+    "permissions.getMyPermissions",
+    "twin.occupancyGrid",
+    "userSettingsRouter.getUiPrefs"
+   ]
+  }
+ ],
+ "cleanupFailures": [],
+ "pass": true
+}
