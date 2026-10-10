@@ -273,6 +273,18 @@ describe("final wave F7 — a non-stop write that waited past OT_SAFETY_PREFLIGH
     expect(S.reads).toHaveLength(1); // A's preflight only — the pinned stop neither preflights nor re-checks
   }, 20_000);
 
+  it("Đợt 5 F fix 1 — DELAY BOUND: an UNPINNED stop whose re-check read HANGS is answered within OT_SAFETY_PREFLIGHT_DEADLINE_MS (refused UNKNOWN, nothing written)", async () => {
+    const { pA, pB } = await slowWriteThen("cmd_stop", "stop");
+    S.hangNext = true; // the NEXT read is the stop's re-check; it never answers
+    await within(pA, BOUND);
+    const tTurn = Date.now(); // the stop's turn (the slot is free now)
+    const rB = await within(pB, OT_SAFETY_PREFLIGHT_DEADLINE_MS + 1500);
+    const waited = Date.now() - tTurn;
+    expect(rB).toMatchObject({ ok: false, status: "rejected", reason: "SAFETY_UNKNOWN", pinnedStop: false });
+    expect(waited).toBeLessThanOrEqual(OT_SAFETY_PREFLIGHT_DEADLINE_MS + 1000); // documented bound (~5 s)
+    expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed"]);
+  }, 30_000);
+
   it("★ L-7: a PINNED STOP queued while a re-check HANGS is not held by it — the re-checking write gives way (SUPERSEDED_BY_STOP) and the STOP runs at once", async () => {
     const { pA, pB } = await slowWriteThen("cmd_jog", "set_jog");
     await within(pA, BOUND);

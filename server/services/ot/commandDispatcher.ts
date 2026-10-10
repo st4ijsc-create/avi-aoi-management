@@ -229,6 +229,20 @@ export const OT_SESSION_RESET_SLACK_MS = 250;
  */
 export const OT_STALE_WRITE_RISK_TTL_MS = 10_000;
 export const OT_STOP_WATCH_POLL_MS = 200;
+/** doc 81 Đợt 5 task F fix 1 (ruling R-5-g) — the env knob's allowed range for the window FLOOR. */
+export const OT_STALE_WRITE_RISK_TTL_MIN_MS = 10_000;
+export const OT_STALE_WRITE_RISK_TTL_MAX_MS = 60_000;
+
+/**
+ * R-5-g — the risk-window FLOOR: env OT_STALE_WRITE_RISK_TTL_MS (ms), clamped to [10 s, 60 s]; unset / not a finite
+ * number ⇒ 10 s. Read at call time. The per-adapter formula (2 × the driver timeout) still applies on top of it.
+ */
+export function staleWriteRiskFloorMs(): number {
+  const raw = process.env.OT_STALE_WRITE_RISK_TTL_MS;
+  const n = raw === undefined || raw.trim() === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return OT_STALE_WRITE_RISK_TTL_MS;
+  return Math.min(OT_STALE_WRITE_RISK_TTL_MAX_MS, Math.max(OT_STALE_WRITE_RISK_TTL_MIN_MS, Math.trunc(n)));
+}
 /** The connect/request timeout every built-in OT driver uses when `connection.timeoutMs` is unset (`cfg.timeoutMs ?? 5000`). */
 export const OT_DRIVER_DEFAULT_TIMEOUT_MS = 5000;
 
@@ -239,8 +253,11 @@ function driverTimeoutOf(conn: { timeoutMs?: unknown } | null | undefined): numb
 
 /**
  * doc 81 Đợt 5 task F3 (item 29, owner: survey recommendation (b)) — the stale-write risk window OF ONE ADAPTER:
- * max(OT_STALE_WRITE_RISK_TTL_MS, 2 × the driver's request/connect timeout). A driver library may keep an abandoned
- * request in flight (or retry it) for up to its own timeout; the old fixed 10 s was 2 × the 5 s driver default.
+ * max(floor, 2 × the driver's request/connect timeout); floor = staleWriteRiskFloorMs() (env OT_STALE_WRITE_RISK_TTL_MS
+ * clamped to [10 s, 60 s], default 10 s — R-5-g). In production `connection.timeoutMs` is always unset today
+ * (deviceAdapter.ts), so the window tracks the drivers' fixed 5 s default ⇒ the floor decides it. A driver library
+ * may keep an abandoned request in flight (or retry it) for up to its own timeout; the old fixed 10 s was 2 × the 5 s
+ * driver default.
  *   • The driver timeout is the running adapter's `connection.timeoutMs` (the larger of primary and HA backup — a
  *     failover may run the slower one), the drivers' default 5000 when unset or not a positive number.
  *   • Adapter not in the running set (e.g. a legacy reconnect in progress) ⇒ conservative: 2 × its reset (connect)
@@ -264,7 +281,7 @@ export function staleWriteRiskWindowMs(adapterId: number): number {
       driverTimeoutMs = OT_DRIVER_DEFAULT_TIMEOUT_MS;
     }
   }
-  return Math.max(OT_STALE_WRITE_RISK_TTL_MS, 2 * driverTimeoutMs);
+  return Math.max(staleWriteRiskFloorMs(), 2 * driverTimeoutMs);
 }
 
 /**
@@ -1456,6 +1473,10 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    never re-checked (L-7; it never preflights either). An UNPINNED stop-typed command ran the preflight, waited in
   //    the queue like any write and can carry arbitrary writes, so it is re-checked too (was: skipped by NAME,
   //    isStopCommandType); its refusal reads like the preflight's (use the hardware E-STOP + stop pin reason).
+  //    DELAY BOUND (fix 1, documented): the re-check is ONE safety read under readSafetyStateForPreflight's deadline, so
+  //    an unpinned stop-typed command can be delayed by at most OT_SAFETY_PREFLIGHT_DEADLINE_MS (5 s) — and only when it
+  //    had already waited longer than that in the queue; a PINNED STOP queued meanwhile ends the wait at once (it
+  //    supersedes the re-checking command). A PINNED STOP itself is never re-checked and never delayed by this (L-7).
   //    The re-check holds this command's queue slot, so a PINNED STOP
   //    queued meanwhile must not wait on it: the re-check gives way at once (this write is dropped as SUPERSEDED_BY_STOP,
   //    exactly like a waiting command) and the STOP runs next.

@@ -159,7 +159,7 @@ vi.mock("./otManager", () => ({
   }),
 }));
 
-import { dispatch, _resetAdapterCommandQueuesForTests, _adapterCommandQueueDepthForTests, _staleWriteRiskSizeForTests, _sweepStaleWriteRiskForTests, _stopWatchCountForTests, OT_STALE_WRITE_RISK_TTL_MS, OT_TIMED_OUT_WRITE_GRACE_MS, staleWriteRiskWindowMs } from "./commandDispatcher";
+import { dispatch, _resetAdapterCommandQueuesForTests, _adapterCommandQueueDepthForTests, _staleWriteRiskSizeForTests, _sweepStaleWriteRiskForTests, _stopWatchCountForTests, OT_STALE_WRITE_RISK_TTL_MS, OT_TIMED_OUT_WRITE_GRACE_MS, staleWriteRiskWindowMs, staleWriteRiskFloorMs } from "./commandDispatcher";
 import { adapterTargetFingerprint } from "./adapterTarget";
 
 const TIMEOUT_MS = 300;
@@ -607,6 +607,28 @@ describe("Đợt 5 F3 — stale-write risk window per adapter = max(10 s, 2 × d
     }
     D.active = [{ adapterId: 11, connection: { timeoutMs: 20_000 } }];
     expect(staleWriteRiskWindowMs(10)).toBe(10_000); // another adapter's config never counts
+  });
+
+  it("fix 1 (R-5-g): env OT_STALE_WRITE_RISK_TTL_MS sets the FLOOR, clamped to [10 s, 60 s]; the per-adapter formula still applies", () => {
+    const saved = process.env.OT_STALE_WRITE_RISK_TTL_MS;
+    try {
+      D.active = [{ adapterId: 10, connection: {} }];
+      for (const [env, floor] of [[undefined, 10_000], ["", 10_000], ["abc", 10_000], ["30000", 30_000], ["5000", 10_000], ["0", 10_000], ["-1", 10_000], ["120000", 60_000], ["60000", 60_000], ["25000.9", 25_000]] as const) {
+        if (env === undefined) delete process.env.OT_STALE_WRITE_RISK_TTL_MS;
+        else process.env.OT_STALE_WRITE_RISK_TTL_MS = env;
+        expect(staleWriteRiskFloorMs()).toBe(floor);
+        expect(staleWriteRiskWindowMs(10)).toBe(floor); // driver default 5 s ⇒ 2 × 5 s ≤ floor
+      }
+      process.env.OT_STALE_WRITE_RISK_TTL_MS = "20000";
+      D.active = [{ adapterId: 10, connection: { timeoutMs: 15_000 } }];
+      expect(staleWriteRiskWindowMs(10)).toBe(30_000); // 2 × 15 s beats the 20 s floor
+      process.env.OT_STALE_WRITE_RISK_TTL_MS = "60000";
+      D.active = [{ adapterId: 10, connection: { timeoutMs: 40_000 } }];
+      expect(staleWriteRiskWindowMs(10)).toBe(80_000); // the clamp bounds the knob, not the per-adapter formula
+    } finally {
+      if (saved === undefined) delete process.env.OT_STALE_WRITE_RISK_TTL_MS;
+      else process.env.OT_STALE_WRITE_RISK_TTL_MS = saved;
+    }
   });
 
   it("adapter not in the running set ⇒ conservative: 2 × its reset (connect) bound, never below 10 s", () => {
