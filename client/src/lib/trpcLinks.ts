@@ -15,8 +15,12 @@
  *     thay vì dồn thành một URL > trần (một query đơn ≤ 2 KB ⇒ URL ≤ ~6,2 KB nên luôn vừa).
  *
  * Query vẫn là query ở cả hai phía (react-query cache, tRPC `type`), chỉ phương thức HTTP đổi.
+ *
+ * doc 81 Đợt 5 H fix 1 (review M1, R-5-m #3) — mọi thủ tục `license.*` đi một request RIÊNG (`httpLink`, không batch): cổng
+ * giấy phép của client (`license.systemState` → `license.getAllowedModules`, RouteGuard) không còn chờ thủ tục CHẬM NHẤT
+ * của batch (httpBatchLink không-stream trả cả batch một lần — `commandCenter.hierarchy` đo 113 s cho admin trên `_test`).
  */
-import { httpBatchLink, splitLink, type TRPCLink } from "@trpc/client";
+import { httpBatchLink, httpLink, splitLink, type TRPCLink } from "@trpc/client";
 import superjson from "superjson";
 import type { AppRouter } from "../../../server/routers";
 
@@ -35,6 +39,11 @@ export function serializedInputBytes(input: unknown): number {
   return new TextEncoder().encode(JSON.stringify(superjson.serialize(input))).length;
 }
 
+/** `license.*` — cổng giấy phép, không bao giờ chung batch với thủ tục khác. */
+export function isLicenseOp(op: { path: string }): boolean {
+  return op.path.startsWith("license.");
+}
+
 /** Chỉ QUERY có input > ngưỡng mới đi nhánh POST; mutation vốn đã POST, subscription không đổi. */
 export function shouldSendAsPost(op: { type: string; input: unknown }): boolean {
   if (op.type !== "query") return false;
@@ -49,9 +58,13 @@ export function createAppTrpcLinks(opts: {
   const common = { url: opts.url, transformer: superjson, headers: opts.headers, fetch: opts.fetch };
   return [
     splitLink<AppRouter>({
-      condition: (op) => shouldSendAsPost(op),
-      true: httpBatchLink<AppRouter>({ ...common, methodOverride: "POST" }),
-      false: httpBatchLink<AppRouter>({ ...common, maxURLLength: TRPC_MAX_GET_URL_LENGTH }),
+      condition: (op) => isLicenseOp(op),
+      true: httpLink<AppRouter>({ ...common }),
+      false: splitLink<AppRouter>({
+        condition: (op) => shouldSendAsPost(op),
+        true: httpBatchLink<AppRouter>({ ...common, methodOverride: "POST" }),
+        false: httpBatchLink<AppRouter>({ ...common, maxURLLength: TRPC_MAX_GET_URL_LENGTH }),
+      }),
     }),
   ];
 }

@@ -162,3 +162,54 @@ describe("main.tsx dùng links của app (không tự dựng httpBatchLink GET t
     expect(src).not.toMatch(/\bhttpBatchLink\(/);
   });
 });
+
+// doc 81 Đợt 5 H fix 1 (review M1, ruling R-5-m #3) — cổng GIẤY PHÉP của client (`license.systemState` →
+// `license.getAllowedModules`, useLicenseModules/RouteGuard) KHÔNG được chờ một truy vấn chậm cùng batch: httpBatchLink
+// không-stream trả cả batch khi thủ tục CHẬM NHẤT xong (đo: `commandCenter.hierarchy` 113 s cho admin trên `_test`) ⇒
+// trang module chưa mua hiện ~2 phút trước khi bị chặn. Nay mọi `license.*` đi request RIÊNG (httpLink, không batch).
+describe("license.* KHÔNG chung batch với truy vấn chậm", () => {
+  function taoClientCham() {
+    const ghi: Array<{ url: string; paths: string[]; at: number; doneAt?: number }> = [];
+    const t0 = Date.now();
+    const fakeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const u = new URL(url, "http://x");
+      const paths = decodeURIComponent(u.pathname.replace(/^\/api\/trpc\//, "")).split(",");
+      const row: { url: string; paths: string[]; at: number; doneAt?: number } = { url, paths, at: Date.now() - t0 };
+      ghi.push(row);
+      if (paths.includes("commandCenter.hierarchy")) await new Promise((r) => setTimeout(r, 400)); // truy vấn CHẬM
+      row.doneAt = Date.now() - t0;
+      const one = { result: { data: superjson.serialize({ ok: true }) } };
+      const body = u.searchParams.get("batch") === "1" ? JSON.stringify(paths.map(() => one)) : JSON.stringify(one);
+      return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const client = createTRPCClient<any>({ links: createAppTrpcLinks({ url: "http://x/api/trpc", fetch: fakeFetch as typeof fetch }) as any }) as any;
+    return { client, ghi };
+  }
+
+  it("★ cùng tick với commandCenter.hierarchy (chậm) ⇒ license.systemState và license.getAllowedModules mỗi thủ tục MỘT request riêng, xong TRƯỚC truy vấn chậm", async () => {
+    const { client, ghi } = taoClientCham();
+    const xong: string[] = [];
+    const slow = client.commandCenter.hierarchy.query().then(() => xong.push("hierarchy"));
+    const aiInbox = client.aiInbox.count.query().then(() => xong.push("aiInbox"));
+    const sys = client.license.systemState.query().then(() => xong.push("systemState"));
+    const mods = client.license.getAllowedModules.query({ licenseKey: "K" }).then(() => xong.push("getAllowedModules"));
+    await Promise.all([slow, aiInbox, sys, mods]);
+    for (const r of ghi) {
+      if (r.paths.some((p) => p.startsWith("license."))) expect(r.paths, r.url).toHaveLength(1); // không chung batch với ai
+    }
+    expect(ghi.filter((r) => r.paths.some((p) => p.startsWith("license.")))).toHaveLength(2);
+    expect(xong.indexOf("systemState")).toBeLessThan(xong.indexOf("hierarchy"));
+    expect(xong.indexOf("getAllowedModules")).toBeLessThan(xong.indexOf("hierarchy"));
+    // các truy vấn khác vẫn batch như cũ (không đổi hành vi ngoài license.*)
+    expect(ghi.find((r) => r.paths.includes("commandCenter.hierarchy"))!.paths).toEqual(["commandCenter.hierarchy", "aiInbox.count"]);
+  });
+
+  it("license.* vẫn là GET mang input trong URL (query nhỏ); mutation license.* cũng đi riêng", async () => {
+    const { client, ghi } = taoClientCham();
+    await client.license.getAllowedModules.query({ licenseKey: "K" });
+    expect(ghi[0].url).toContain("input=");
+    expect(new URL(ghi[0].url, "http://x").searchParams.get("batch")).toBeNull();
+  });
+});
