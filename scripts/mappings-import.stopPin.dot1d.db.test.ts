@@ -22,6 +22,8 @@ let adapterId = 0;
 let tagId = 0;
 let otherId = 0;
 let version = 0;
+// doc 81 Đợt 4 Task C2 — --apply bắt buộc --actor: một người chạy thử (users, _test).
+let actorId = 0;
 
 type TagFile = { address?: string; datatype?: string; writable?: boolean; enabled?: boolean; unit?: string };
 function yaml(stop: TagFile | null): string {
@@ -38,7 +40,7 @@ function yaml(stop: TagFile | null): string {
 function cli(y: string, ...flags: string[]): { code: number | null; out: string } {
   const f = path.join(TMP, `m${version}.mapping.yaml`);
   fs.writeFileSync(f, y, "utf8");
-  const r = spawnSync(process.execPath, [SCRIPT, f, "--apply", ...flags], {
+  const r = spawnSync(process.execPath, [SCRIPT, f, "--apply", "--actor", String(actorId), ...flags], {
     env: { ...process.env, DATABASE_URL: DB_URL, SEC_PLATFORM: "" },
     encoding: "utf8",
     timeout: 60_000,
@@ -60,6 +62,8 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 1D fix 
     sql = postgres(DB_URL!, { max: 2, connect_timeout: 30, onnotice: () => {} });
     adapterId = Number((await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled")
                                   VALUES (${RUN}, 'D1 cli', 'stub', 'stub://cli', false) RETURNING id`)[0].id);
+    actorId = Number((await sql`INSERT INTO users ("openId", name, role, "isActive")
+                                VALUES (${`${RUN}-actor`}, 'D1 cli actor', 'user', true) RETURNING id`)[0].id);
   }, 60_000);
 
   beforeEach(async () => {
@@ -77,23 +81,24 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 1D fix 
     await sql`DELETE FROM config_snapshots WHERE entity_type = 'mapping_file' AND entity_id = ${adapterId}`;
     await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId}`;
     await sql`DELETE FROM device_adapters WHERE id = ${adapterId}`;
+    if (actorId) await sql`DELETE FROM users WHERE id = ${actorId}`;
     await sql.end({ timeout: 5 });
   }, 60_000);
 
-  it("★ CLI đổi ADDRESS của tag đang ghim ⇒ ghim bị gỡ + MỘT dòng control_audit_log (hình ghiAuditGoStopPinTx) + audit_logs 'cli'", async () => {
+  it("★ CLI đổi ADDRESS của tag đang ghim ⇒ ghim bị gỡ + MỘT dòng control_audit_log (hình ghiAuditGoStopPinTx) + audit_logs mang NGƯỜI CHẠY (--actor, Đợt 4 C2)", async () => {
     const r = cli(yaml({ address: "DB1.DBX9.9" }));
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('[STOP-PIN] gỡ ghim DỪNG của tag "stop_cmd" (tag_redefined)');
     expect(await row(tagId)).toMatchObject({ address: "DB1.DBX9.9", stop_value: null });
     const a = await audits(tagId);
     expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ action: "stop_pin_clear", actorId: null });
+    expect(a[0]).toMatchObject({ action: "stop_pin_clear", actorId });
     expect(a[0].beforeJson).toEqual({ tagKey: "stop_cmd", adapterId, dataType: "bool", stopValue: true });
     expect(a[0].afterJson).toEqual({ tagKey: "stop_cmd", adapterId, dataType: "bool", stopValue: null, commissioningRecheckRequired: false, autoClearedBy: "tag_redefined" });
     expect(a[0].reason).toContain("mapping_import_cli");
     const l = await auditLogs(tagId);
     expect(l).toHaveLength(1);
-    expect(l[0].userName).toBe("cli");
+    expect(l[0].userName).toBe("D1 cli actor");
     expect(JSON.parse(l[0].details).after.autoClearedBy).toBe("tag_redefined");
   });
 
