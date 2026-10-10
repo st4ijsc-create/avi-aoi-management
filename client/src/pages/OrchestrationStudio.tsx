@@ -1569,16 +1569,29 @@ export default function OrchestrationStudio() {
   // doc 54 P3.2 — step-up 2FA (fresh OTP) for deployWorkflow when ACTUATION_STEPUP_2FA is on.
   const stepUp = useStepUpOtp();
 
+  /**
+   * doc 81 Đợt 4 (R-4-j, R-4-n) + final wave G2/G3/G4 — the translated sentence for a definition refused by the server's
+   * definition checks (deploy, rollback = deploy, and run START since G4), naming the steps; null for any other result
+   * (the caller keeps its own fallback). One place, so no refusal code reaches the operator as raw server English.
+   */
+  const definitionRefusalText = (r: { reason?: string; stepIds?: string[] } | null | undefined): string | null => {
+    const steps = (r?.stepIds ?? []).join(", ");
+    switch (r?.reason) {
+      case "robotIdMissing": // fix round 3 (R-4-n)
+        return t("studio.deployRobotIdMissing", "Not deployed: robot step(s) {{steps}} name no robot. Pick the robot for each step, then deploy again.", { steps });
+      case "robotUnavailable": // final wave G3
+        return t("studio.deployRobotUnavailable", "Not deployed: robot step(s) {{steps}} name a robot that does not exist or is not enabled. Pick an enabled robot for each step, then deploy again.", { steps });
+      case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
+        return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
+      default:
+        return null;
+    }
+  };
+
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
     onSuccess: (r) => {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
-      // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step without a unique adapter: translated, names the steps.
-      else if (r?.reason === "robotIdMissing") {
-        // doc 81 Đợt 4 fix round 3 (R-4-n)
-        toast.error(t("studio.deployRobotIdMissing", "Not deployed: robot step(s) {{steps}} name no robot. Pick the robot for each step, then deploy again.", { steps: (r.stepIds ?? []).join(", ") }));
-      } else if (r?.reason === "stopAdapterAmbiguous") {
-        toast.error(t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps: (r.stepIds ?? []).join(", ") }));
-      } else toast.error(r?.message ?? t("studio.deployFail", "Deploy failed"));
+      else toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -1596,6 +1609,9 @@ export default function OrchestrationStudio() {
               { status: r.workflowStatus },
             ),
           );
+        } else if (definitionRefusalText(r)) {
+          // final wave G4 — an active workflow failing the deploy-time definition checks is refused at START.
+          toast.error(`${t("studio.runRefusedDefinition", "Run not started — the deployed workflow fails a safety check:")} ${definitionRefusalText(r)}`);
         } else {
           toast.error(r.message ?? t("studio.runFail", "Could not start the run"));
         }
@@ -1654,7 +1670,8 @@ export default function OrchestrationStudio() {
         void workflowsQ.refetch();
         void versionsQ.refetch();
       } else {
-        toast.error(r?.message ?? t("studio.rollbackFail", "Khôi phục thất bại"));
+        // final wave G2 (re-review 3 A3-1) — rollback = deploy: the same refusal codes, translated (not raw server English).
+        toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.rollbackFail", "Khôi phục thất bại"));
       }
     },
     onError: (e) => toastTrpcError(e),

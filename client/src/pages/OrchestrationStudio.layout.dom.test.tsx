@@ -569,6 +569,25 @@ describe("Orchestration P2 — Lịch sử phiên bản: VersionHistoryPanel + R
     expect(srv.refetched).toEqual(expect.arrayContaining(["orchestration.listWorkflows", "orchestration.listVersions"]));
   });
 
+  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"]] as const) {
+    it(`final wave G2: ROLLBACK refused with ${reason} ⇒ the translated sentence naming the steps (no raw server English)`, async () => {
+      const user = userEvent.setup();
+      srv.results["orchestration.rollbackWorkflow"] = { ok: false, enabled: true, reason, stepIds: ["s1", "s2"], message: "RAW server text" };
+      render(<OrchestrationStudio />);
+      const l = await openVersions(user);
+      const dlg = await reasonStep(l, 1, "abc");
+      fireEvent.click(within(dlg).getByRole("button", { name: VI.confirmWithReason.continue }));
+      const fin = await screen.findByRole("dialog", { name: VI.confirmWithReason.finalTitle });
+      fireEvent.click(within(fin).getByRole("button", { name: S.rollback }));
+      const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
+      fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "123456" } });
+      await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+      const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+      expect(shown).toBe(S[key].replace("{{steps}}", "s1, s2"));
+      expect(shown).not.toContain("RAW server text");
+    });
+  }
+
   it("Huỷ OTP ⇒ KHÔNG gọi khôi phục", async () => {
     const user = userEvent.setup();
     render(<OrchestrationStudio />);
@@ -863,6 +882,19 @@ describe("doc 81 Đợt 4 fix round 3 — robot picker (R-4-n) + hash pinned at 
     await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
     const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
     expect(shown).toContain("mv, ab");
+    expect(shown).not.toContain("RAW server text");
+  });
+
+  it("final wave G4: START refused by the definition checks (robotUnavailable) ⇒ translated 'not started' + the step sentence, no raw server English", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.startRun"] = { ok: false, enabled: true, reason: "robotUnavailable", stepIds: ["ab"], message: "RAW server text" };
+    render(<OrchestrationStudio />);
+    await user.click(screen.getByRole("button", { name: S.editRef }));
+    await user.type(screen.getByRole("textbox", { name: S.editRef }), "legacy{Enter}");
+    await user.click(screen.getByRole("button", { name: S.run }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+    expect(shown).toBe(`${S.runRefusedDefinition} ${S.deployRobotUnavailable.replace("{{steps}}", "ab")}`);
     expect(shown).not.toContain("RAW server text");
   });
 
