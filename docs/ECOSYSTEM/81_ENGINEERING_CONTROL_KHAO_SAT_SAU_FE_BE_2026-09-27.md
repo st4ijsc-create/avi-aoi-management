@@ -729,3 +729,14 @@ Plan `docs/superpowers/plans/2026-10-10-engineering-control-dot5.md` — khảo 
 - **Bộ đọc nền safety-PLC:** E-stop từ safety-PLC thật chưa vượt "tắt thông báo" vì PLC chỉ được đọc khi người dùng thao tác.
 
 **Còn mở:** chương trình nằm trong bộ điều khiển robot/PLC không được mã băm duyệt phủ; tự động hoá VDA5050/ROS2 tự cấp quyền (gắn đúng job, một lần, có hạn — cùng loại mục 24); app tablet chưa chạy trên thiết bị thật; kết nối tablet → broker nhúng không mã hoá; webhook `orchestration.run.finished` gửi mọi người đăng ký; quan sát/danh sách theo phiên bản workflow hiện tại; một số khác biệt thời gian phản hồi (missing nhanh hơn ngoài phạm vi); mỗi lần chạy test H6 để lại 1 hàng `command_log` không xoá được trong `_test`; bắt tay plugin chưa có số thế hệ; replay sự kiện tin cậy giữa nhiều instance (Redis). Nhỏ (review cuối): khi bộ phân loại DỪNG lỗi toàn phần, huỷ/từ chối run không thấy được trả "chưa xác minh" còn id không tồn tại trả "không tìm thấy"; tài khoản admin bị tắt làm người được giao đi nhánh nhanh (lộ qua thời gian); census `registerDriver` chưa bắt import đổi tên; sự kiện không có robot/line dùng chung một khoá giới hạn 10 s.
+
+### Đợt 6 (2026-10-11) — huỷ run vẫn gửi bước DỪNG
+
+Plan `docs/superpowers/plans/2026-10-11-engineering-control-dot6.md` — quyết định chủ dự án 2026-10-11 ("Huỷ vẫn chạy bước DỪNG").
+- **Huỷ (abort) và từ chối cổng (reject)** bỏ mọi bước thường nhưng **vẫn gửi các bước DỪNG thật còn lại** và các bước bù trừ DỪNG đến hạn (thứ tự ngược), mỗi lần gửi có hạn thời gian + audit. Chỉ DỪNG thật (ghim DỪNG OT / job dừng robot) — bước "stop" chưa ghim không bao giờ được gửi; nhánh chưa đi không đoán (ghi audit).
+- **Chỉ gửi khi run đã tác động** (đã thử ít nhất một lệnh không phải DỪNG, kể cả lỗi/quá hạn); không quyết được (restart, DB lỗi, run chạy ở edge/instance khác) ⇒ **vẫn gửi**. Run tạo qua khoá API không tác động nên không có DỪNG khi huỷ.
+- Huỷ hai lần chỉ gửi một lần; ghi "đã huỷ" về muộn hoặc phản hồi mất ⇒ huỷ lại / nút **"Gửi lại các bước DỪNG"** gửi lại DỪNG chưa xác nhận (không gửi lại cái đã xác nhận), **chỉ trong 15 phút sau khi huỷ** (quá ⇒ "quá cũ — dùng DỪNG trực tiếp"), cùng kiểm quyền/phạm vi như huỷ, có audit.
+- Studio: nút Huỷ/thông báo nói rõ DỪNG vẫn được gửi; đếm chỉ DỪNG đã xác nhận (vi/en/zh). Trường hợp xấu nhất mỗi lượt quét ≈ 8 s.
+- Kiểm: review → 3 vòng sửa (quét bảo mật bắt 3 điểm: lệch trạng thái khi ghi muộn, run ở edge bị coi "chưa tác động", khoá gửi lại bị cắt) → review lại sẵn sàng gộp; engine 56/56, Studio 66 + 13; đột biến đều đỏ.
+
+**Còn mở (Đợt 6):** huỷ từ trung tâm không dừng được walker của run đang chạy ở edge (chỉ gửi DỪNG); gửi lại có thể lặp một DỪNG mà phản hồi trước còn đang chờ (DỪNG lặp vô hại); từ chối cổng có hook QT mà phản hồi mất thì việc quét để lại cho lần huỷ sau.
