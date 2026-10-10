@@ -26,7 +26,7 @@
  * (cùng hàm server dùng để từ chối). Module không dùng React/tRPC — kiểm được bằng hai kho tách biệt + một server thật
  * (`userUiPrefsHaiTrinhDuyet.dot4.db.test.ts`).
  */
-import { UI_PREF_SHOW_LABS, isValidUiPrefValue, uiPrefKeyKind } from "@shared/uiPrefs";
+import { SHOW_LABS_PART, UI_PREF_SHOW_LABS, isValidUiPrefValue, uiPrefKeyKind } from "@shared/uiPrefs";
 import { showLabsKey } from "./showLabsKey";
 
 /** Phát trên window sau khi giá trị server được ghi vào localStorage; detail = string[] khoá cục bộ đã đổi. */
@@ -317,7 +317,8 @@ export function startUiPrefsSync(userId: number | string, transport: UiPrefsTran
 export function markUiPrefDirty(localKey: string | null | undefined): void {
   if (!localKey) return;
   if (active) active.markDirty(localKey);
-  else if (uiPrefKeyKind(localKey) || localKey.endsWith(":show")) pendingBeforeStart.add(localKey);
+  // final wave G1 — the Labs key suffix comes from the ONE definition (shared/uiPrefs SHOW_LABS_PART), not a literal.
+  else if (uiPrefKeyKind(localKey) || localKey.endsWith(`:${SHOW_LABS_PART}`)) pendingBeforeStart.add(localKey);
 }
 
 /**
