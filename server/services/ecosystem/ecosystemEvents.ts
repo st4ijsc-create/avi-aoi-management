@@ -77,7 +77,8 @@ export interface WorkOrderEventPayload {
 export interface AnomalyEventPayload {
   kind: string;
   severity: "low" | "medium" | "high" | "critical" | string;
-  source: "robot" | "image";
+  /** doc 81 Đợt 4 Task B3 — "ot": an OT STOP that could not be confirmed after a timed-out write (alert-only). */
+  source: "robot" | "image" | "ot";
   robotId?: number | null;
   machineId?: number | null;
   productModelId?: number | null;
