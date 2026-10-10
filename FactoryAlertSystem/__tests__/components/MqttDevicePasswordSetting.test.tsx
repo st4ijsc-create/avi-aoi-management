@@ -35,6 +35,15 @@ function allText(tree: ReturnType<typeof render>): string {
   return JSON.stringify(tree.toJSON());
 }
 
+// G fix 1 (review finding 6): TouchableOpacity's press animation (Animated timing on jest timers) emits React
+// "not wrapped in act(...)" warnings after the assertions — swallow exactly those, let any other console.error through.
+const realConsoleError = console.error;
+const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('not wrapped in act(')) return;
+  realConsoleError(...(args as []));
+});
+afterAll(() => consoleErrorSpy.mockRestore());
+
 beforeEach(() => {
   jest.clearAllMocks();
   (NativeModules as any).SecureCredentialModule = {

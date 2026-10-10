@@ -56,6 +56,12 @@ async function asyncStorageContains(needle: string): Promise<boolean> {
   return pairs.some(([k, v]) => k.includes(needle) || (v ?? '').includes(needle));
 }
 
+// G fix 1 (review finding 6): the service logs a lot — keep the jest output pristine; the log test reads these spies.
+// Installed at module load (the mqttService singleton logs from its constructor, at require time) and restored afterAll.
+const CONSOLE_METHODS = ['log', 'warn', 'error', 'info', 'debug'] as const;
+const consoleSpies = CONSOLE_METHODS.map((m) => jest.spyOn(console, m).mockImplementation(() => {}));
+afterAll(() => consoleSpies.forEach((s) => s.mockRestore()));
+
 afterEach(async () => {
   removeFakeSecureModule();
   await AsyncStorage.clear();
@@ -327,10 +333,16 @@ describe('R-5-a — the device password is PINNED to the broker endpoint it was 
   });
 
   it('nothing logged mentions the password or its length', async () => {
-    const spies = (['log', 'warn', 'error', 'info', 'debug'] as const).map((m) =>
-      jest.spyOn(console, m).mockImplementation(() => {}),
-    );
-    try {
+    const spies = CONSOLE_METHODS.map((m) => console[m] as unknown as jest.Mock);
+    spies.forEach((s) => s.mockClear());
+    // G fix 1 (review finding 2): String.raw so `\b` is a regex word boundary, not a backspace character.
+    const LEN = SECRET.length;
+    const lengthLeak = new RegExp(String.raw`\b${LEN}\b.*(char|len)|(char|len).*\b${LEN}\b`, 'i');
+    // the detector itself must fire on a real length leak and stay quiet on a harmless line
+    expect(lengthLeak.test(`[MQTT] device password length: ${LEN}`)).toBe(true);
+    expect(lengthLeak.test(`[MQTT] password (${LEN} chars) set`)).toBe(true);
+    expect(lengthLeak.test('[MQTT] device password: sent')).toBe(false);
+    {
       await pinToLocal();
       await connectWith(LOCAL);
       await connectWith(ATTACKER);
@@ -339,10 +351,10 @@ describe('R-5-a — the device password is PINNED to the broker endpoint it was 
       const logged = spies.flatMap((s) => s.mock.calls.map((c) => c.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')));
       for (const line of logged) {
         expect(line).not.toContain(SECRET);
-        expect(line).not.toMatch(new RegExp(`\b${SECRET.length}\b.*(char|len)|(char|len).*\b${SECRET.length}\b`, 'i'));
+        expect(line).not.toMatch(lengthLeak);
       }
-    } finally {
-      spies.forEach((s) => s.mockRestore());
+      // the spies really captured the service's logging (otherwise the loop above would be vacuous)
+      expect(logged.some((l) => l.includes('device password:'))).toBe(true);
     }
   });
 });

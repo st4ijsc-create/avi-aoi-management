@@ -9,10 +9,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import java.security.KeyStore
-import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 /**
  * SecureCredentialModule — lưu bí mật nhỏ (mật khẩu MQTT của thiết bị) trong vùng an toàn của Android.
@@ -20,8 +18,12 @@ import javax.crypto.spec.GCMParameterSpec
  * doc 81 Đợt 5 task G1 (mục 4+9): admin xoay mật khẩu (`mqttClient.rotatePassword`) ⇒ mật khẩu hiện MỘT lần ⇒
  * kỹ thuật viên gõ vào Cài đặt của máy tính bảng. Mật khẩu KHÔNG được ghi AsyncStorage (văn bản thô):
  *   · khoá AES-256/GCM sinh và giữ TRONG Android Keystore (không xuất ra được, không đi theo bản sao lưu);
- *   · chỉ bản MÃ HOÁ (iv + ciphertext, Base64) nằm trong SharedPreferences riêng của app;
- *   · không giải mã được (khoá mất sau khi xoá dữ liệu/khôi phục) ⇒ trả null — KHÔNG đoán, KHÔNG rơi về thô.
+ *   · chỉ bản MÃ HOÁ (iv + ciphertext, Base64) nằm trong SharedPreferences riêng của app.
+ * G fix 1 (review finding 3) — logic nằm ở SecureCredentialCore (kiểm được trên JVM); module này chỉ nối Keystore +
+ * SharedPreferences và bọc MỌI truy cập (kể cả SharedPreferences) trong try:
+ *   · bản mã không giải được (khoá mất / sai) ⇒ XOÁ mục đó, trả null — KHÔNG đoán, KHÔNG rơi về thô;
+ *   · khoá hỏng/không dùng được khi lưu ⇒ xoá alias, sinh khoá mới, thử lại MỘT lần;
+ *   · Xoá (removeItem) ⇒ xoá mục; hết mục ⇒ xoá luôn khoá.
  * JS: src/services/secureCredentialStore.ts (thiếu module này ⇒ JS từ chối lưu, không rơi về AsyncStorage).
  */
 class SecureCredentialModule(reactContext: ReactApplicationContext) :
@@ -31,33 +33,58 @@ class SecureCredentialModule(reactContext: ReactApplicationContext) :
         private const val KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "factory_alert_secure_credential_v1"
         private const val PREFS = "factory_alert_secure_credential"
-        private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        private const val GCM_TAG_BITS = 128
         private const val MAX_KEY_LEN = 128
         private const val MAX_VALUE_LEN = 4096
     }
 
     override fun getName(): String = "SecureCredentialModule"
 
-    private fun prefs() =
-        reactApplicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val keyStorage = object : SecureCredentialCore.KeyStorage {
+        private fun ks() = KeyStore.getInstance(KEYSTORE).apply { load(null) }
 
-    private fun secretKey(): SecretKey {
-        val ks = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-        (ks.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
-        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)
-        gen.init(
-            KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+        override fun existing(): SecretKey? =
+            (ks().getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
+
+        override fun create(): SecretKey {
+            val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)
+            gen.init(
+                KeyGenParameterSpec.Builder(
+                    KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build(),
             )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build(),
-        )
-        return gen.generateKey()
+            return gen.generateKey()
+        }
+
+        override fun delete() {
+            val ks = ks()
+            if (ks.containsAlias(KEY_ALIAS)) ks.deleteEntry(KEY_ALIAS)
+        }
     }
+
+    private val entryStorage = object : SecureCredentialCore.EntryStorage {
+        private fun prefs() = reactApplicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+        override fun get(name: String): String? = prefs().getString(name, null)
+
+        // commit() (đồng bộ) — chỉ báo thành công khi đã ghi xuống đĩa.
+        override fun put(name: String, value: String): Boolean = prefs().edit().putString(name, value).commit()
+
+        override fun remove(name: String): Boolean = prefs().edit().remove(name).commit()
+
+        override fun isEmpty(): Boolean = prefs().all.isEmpty()
+    }
+
+    private val core = SecureCredentialCore(
+        keyStorage,
+        entryStorage,
+        { b -> Base64.encodeToString(b, Base64.NO_WRAP) },
+        { s -> Base64.decode(s, Base64.NO_WRAP) },
+    )
 
     private fun validKey(key: String?): Boolean =
         key != null && key.isNotEmpty() && key.length <= MAX_KEY_LEN
@@ -69,17 +96,10 @@ class SecureCredentialModule(reactContext: ReactApplicationContext) :
             return
         }
         try {
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-            val ct = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-            val packed = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
-                Base64.encodeToString(ct, Base64.NO_WRAP)
-            // commit() (đồng bộ) — chỉ báo thành công khi đã ghi xuống đĩa.
-            if (!prefs().edit().putString(key, packed).commit()) {
-                promise.reject("E_SECURE_WRITE", "write failed")
-                return
-            }
+            core.set(key!!, value)
             promise.resolve(true)
+        } catch (e: SecureCredentialCore.WriteFailed) {
+            promise.reject("E_SECURE_WRITE", "write failed")
         } catch (e: Exception) {
             promise.reject("E_SECURE_CRYPTO", e.javaClass.simpleName)
         }
@@ -91,25 +111,11 @@ class SecureCredentialModule(reactContext: ReactApplicationContext) :
             promise.reject("E_SECURE_ARG", "invalid key")
             return
         }
-        val packed = prefs().getString(key, null)
-        if (packed == null) {
-            promise.resolve(null)
-            return
-        }
         try {
-            val parts = packed.split(":")
-            if (parts.size != 2) {
-                promise.resolve(null)
-                return
-            }
-            val iv = Base64.decode(parts[0], Base64.NO_WRAP)
-            val ct = Base64.decode(parts[1], Base64.NO_WRAP)
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
-            promise.resolve(String(cipher.doFinal(ct), Charsets.UTF_8))
+            promise.resolve(core.get(key!!))
         } catch (e: Exception) {
-            // Khoá Keystore đã mất/đổi (khôi phục máy, xoá dữ liệu) ⇒ bản mã vô dụng: coi như CHƯA có.
-            promise.resolve(null)
+            // SharedPreferences itself unreadable ⇒ report it (JS maps any rejection to "no password").
+            promise.reject("E_SECURE_READ", e.javaClass.simpleName)
         }
     }
 
@@ -119,10 +125,13 @@ class SecureCredentialModule(reactContext: ReactApplicationContext) :
             promise.reject("E_SECURE_ARG", "invalid key")
             return
         }
-        if (!prefs().edit().remove(key).commit()) {
+        try {
+            core.remove(key!!)
+            promise.resolve(true)
+        } catch (e: SecureCredentialCore.WriteFailed) {
             promise.reject("E_SECURE_WRITE", "write failed")
-            return
+        } catch (e: Exception) {
+            promise.reject("E_SECURE_WRITE", e.javaClass.simpleName)
         }
-        promise.resolve(true)
     }
 }

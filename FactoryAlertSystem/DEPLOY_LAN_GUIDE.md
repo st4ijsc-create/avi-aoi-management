@@ -264,9 +264,15 @@ Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết
 **Thứ tự triển khai (BẮT BUỘC theo đúng thứ tự — làm ngược là khoá máy tính bảng):**
 
 1. **Cập nhật app** lên ≥ 1.0.17 cho MỌI máy tính bảng (app cũ ≤ 1.0.16 không gửi mật khẩu cho broker nhúng).
+   **Kiểm tra địa chỉ broker** trong Settings → MQTT của từng máy: phải là **địa chỉ IP** của server (vd `192.168.1.100`),
+   KHÔNG phải tên máy/tên miền — app chỉ coi là broker nhúng (gửi `deviceId:tên:model` + mật khẩu thiết bị) khi địa chỉ
+   là IP; dùng tên máy thì máy tính bảng đi nhánh "broker ngoài", KHÔNG gửi mật khẩu thiết bị ⇒ bị khoá sau bước 3.
 2. **Cấp mật khẩu từng máy**: admin vào *Kết nối (MQTT / UNS) → Thiết bị* → **Cấp / xoay mật khẩu** cho đúng mã thiết bị
    (mật khẩu hiện MỘT lần; phiên cũ của máy bị ngắt ngay) → kỹ thuật viên gõ ngay vào ô trên của máy đó → **Lưu**
-   (app tự kết nối lại). Kiểm tra máy ONLINE lại và cột mật khẩu hiện "Đã có".
+   (app tự kết nối lại). Kiểm tra máy ONLINE lại và cột mật khẩu hiện "Đã có". Mật khẩu được **ghim** vào ĐÚNG broker
+   đang cấu hình lúc Lưu (giao thức, TLS, IP, cổng — khớp từng ký tự, IP ≠ tên máy): nhập mật khẩu SAU khi địa chỉ/cổng
+   broker đã chốt; ô mật khẩu phải hiện "Đã lưu … cho ws://<IP>:<cổng>" đúng broker đang dùng và KHÔNG có dòng
+   "thuộc về <broker khác> — nhập lại". Đổi địa chỉ/cổng/TLS sau đó ⇒ mật khẩu KHÔNG được gửi cho tới khi nhập lại.
 3. **Lật cờ**: khi KHÔNG còn thiết bị đã đăng ký nào "chưa có mật khẩu", server mới chạy với
    `MQTT_ALLOW_PASSWORDLESS_REGISTERED=false` — từ Đợt 5 đây là **mặc định trong mã** (biến không đặt = false).
    Site nào chưa xong bước 1–2 phải đặt TƯỜNG MINH `MQTT_ALLOW_PASSWORDLESS_REGISTERED=true` trong `.env`
