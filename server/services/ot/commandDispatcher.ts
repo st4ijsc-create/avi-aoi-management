@@ -2025,8 +2025,12 @@ function raiseStopUnverifiedAlarm(
           entityId: abandoned?.intentIds[0] ?? stopLedger.intentIds[0],
           metadata: detail,
         },
-        // fix 1 (R-5-f) — bypass throttled per (type, machine) and recipient: 60 s.
-        { safetyCritical: true, dedupKey: `ot_stop_unverified:${input.machineId != null ? `machine:${input.machineId}` : `adapter:${input.adapterId}`}` },
+        // fix 1 / fix scan (R-5-f, R-5-h) — bypass deduped per OCCURRENCE (type, machine, this STOP's ledger row) and
+        // recipient for 60 s; another STOP's alarm is a distinct occurrence and is never merged.
+        {
+          safetyCritical: true,
+          dedupKey: `ot_stop_unverified:${input.machineId != null ? `machine:${input.machineId}` : `adapter:${input.adapterId}`}:stop:${stopLedger.intentIds[0] ?? "?"}`,
+        },
       );
     }
   })();

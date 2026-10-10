@@ -27,7 +27,14 @@ vi.mock("../db", () => ({
   getUnreadNotificationCount: vi.fn(async () => 0),
 }));
 
-import { sendNotification, sendSystemNotification, _resetSafetyCriticalDedupForTests, SAFETY_CRITICAL_DEDUP_MS } from "./notificationService";
+import {
+  sendNotification,
+  sendSystemNotification,
+  _resetSafetyCriticalDedupForTests,
+  _safetyCriticalDedupSizeForTests,
+  SAFETY_CRITICAL_DEDUP_MS,
+  SAFETY_CRITICAL_DEDUP_MAX,
+} from "./notificationService";
 
 const optedOutEverywhere = {
   inAppEnabled: false,
@@ -136,6 +143,34 @@ describe("Đợt 5 F6 fix 1 — safety-critical bypass dedup throttle (60 s per 
     expect(await sendNotification(7, alert, sc("safety:estop:robot:3"))).toBeNull(); // the repeat
     expect(DB.created).toHaveLength(4);
   });
+
+  it("fix scan (R-5-h): without a dedupKey nothing is throttled (no default key can merge distinct events)", async () => {
+    DB.prefs = opted;
+    expect(await sendNotification(7, alert, { safetyCritical: true })).not.toBeNull();
+    expect(await sendNotification(7, alert, { safetyCritical: true })).not.toBeNull();
+    expect(DB.created).toHaveLength(2);
+  });
+
+  it("★ fix scan (R-5-h): a throttle FAILURE falls back to delivering (bypass), never to dropping", async () => {
+    DB.prefs = opted;
+    const spy = vi.spyOn(Map.prototype, "get").mockImplementation(() => {
+      throw new Error("throttle state broken");
+    });
+    try {
+      expect(await sendNotification(7, alert, sc("k-fail"))).toEqual({ id: 1 });
+      expect(await sendNotification(7, alert, sc("k-fail"))).toEqual({ id: 2 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("★ fix scan (R-5-h): the throttle state is bounded (never above SAFETY_CRITICAL_DEDUP_MAX), and still delivers", async () => {
+    DB.prefs = opted;
+    for (let i = 0; i < SAFETY_CRITICAL_DEDUP_MAX + 50; i++) {
+      expect(await sendNotification(7, alert, sc(`occ:${i}`))).not.toBeNull();
+      expect(_safetyCriticalDedupSizeForTests()).toBeLessThanOrEqual(SAFETY_CRITICAL_DEDUP_MAX);
+    }
+  }, 60_000);
 
   it("a throttled repeat still reaches a recipient who did NOT opt out (normal path), without the safety marker", async () => {
     DB.prefs = null;

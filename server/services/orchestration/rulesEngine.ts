@@ -19,6 +19,7 @@
  *  - SPC critical: a 'critical' SPC violation → audit + notify + republish.
  */
 import { eventBus, EventTypes, type DomainEvent } from "../../_core/eventBus";
+import { trustedSafetyOriginOf, TRUSTED_ORIGIN_EVENT_TYPES } from "../safety/trustedSafetyOrigin";
 
 let enabled = false;
 const unsubscribers: Array<() => void> = [];
@@ -110,58 +111,35 @@ function onAnomalyDetected(e: DomainEvent): void {
 }
 
 /**
- * doc 81 Đợt 5 task F fix 1 (ruling R-5-f) — the EXPLICIT allow-list of safety events whose notice may bypass the
- * recipients' in-app opt-outs / quiet hours (safety-critical class). Everything else is a normal notice.
- *   • physical types only (safetyAuditService.SafetyEventType): "estop" (e-stop), "intrusion" (guard / light-curtain
- *     trip — the safety PLC's resetRequired flag; the interlock's stop), "zone_intrusion" (protective-zone breach);
- *   • from an automatic, non-sim observer: detectedBy "plc" | "telemetry" | "vision", or "interlock" only when the
- *     interlock really STOPPED (outcome "stopped"; a logged-only interlock never bypasses);
- *   • recorded by the system (handledBy "advisory" | "interlock_engine"): a user-recorded event (safety.recordEvent sets
- *     handledBy "operator", whatever detectedBy the user picked) never bypasses; a missing handledBy never bypasses;
- *   • never a near-miss.
- * Excluded by construction: lost_connection (fieldHealthService — comms health), the Andon→robot dispatch (detectedBy
- * "operator"), detectedBy "sim" / "test" / "operator", unknown types/sources (collision, force_limit, speed_violation,
- * near_miss).
+ * doc 81 Đợt 5 task F fix 1 (R-5-f) + fix scan (R-5-h) — whether a safety event's notice is SAFETY-CRITICAL (bypasses the
+ * recipients' in-app opt-outs / quiet hours). The decision uses ONLY server-derived provenance: the event id must carry
+ * the trusted-origin mark that safetyAuditService.recordFromDeviceIngest sets for events created on a DEVICE-INGEST code
+ * path (trustedSafetyOrigin.ts — today: a polled real robot controller's e-stop transition), and the TYPE the server
+ * recorded for that id must be a physical type allowed for that origin (TRUSTED_ORIGIN_EVENT_TYPES). No payload field
+ * (eventType / detectedBy / handledBy / outcome / source) is trusted: safety.recordEvent, evaluateZones, readSafetyPlc,
+ * API and MQTT inputs can set those, so an event created by a router or a user action never bypasses, whatever it says.
+ * A near-miss never bypasses. Everything else is a NORMAL notice (still delivered; the recipient's preferences apply).
  */
-export const SAFETY_CRITICAL_EVENT_TYPES: ReadonlySet<string> = new Set(["estop", "intrusion", "zone_intrusion"]);
-export const SAFETY_CRITICAL_DETECTORS: ReadonlySet<string> = new Set(["plc", "telemetry", "vision", "interlock"]);
-export const SAFETY_CRITICAL_RECORDERS: ReadonlySet<string> = new Set(["advisory", "interlock_engine"]);
-
-export function isSafetyCriticalSafetyEvent(p: {
-  eventType?: unknown;
-  detectedBy?: unknown;
-  handledBy?: unknown;
-  outcome?: unknown;
-  isNearMiss?: unknown;
-}): boolean {
+export function isSafetyCriticalSafetyEvent(p: { id?: unknown; isNearMiss?: unknown }): boolean {
   if (p.isNearMiss === true) return false;
-  if (typeof p.eventType !== "string" || !SAFETY_CRITICAL_EVENT_TYPES.has(p.eventType)) return false;
-  if (typeof p.detectedBy !== "string" || !SAFETY_CRITICAL_DETECTORS.has(p.detectedBy)) return false;
-  if (typeof p.handledBy !== "string" || !SAFETY_CRITICAL_RECORDERS.has(p.handledBy)) return false;
-  if (p.detectedBy === "interlock" && p.outcome !== "stopped") return false;
-  return true;
+  const trusted = trustedSafetyOriginOf(p.id);
+  if (!trusted) return false;
+  return TRUSTED_ORIGIN_EVENT_TYPES[trusted.origin]?.has(trusted.eventType) === true;
 }
 
 function onSafetyEvent(e: DomainEvent): void {
-  const p = (e.payload ?? {}) as {
-    eventType?: string;
-    isNearMiss?: boolean;
-    robotId?: number;
-    lineId?: number;
-    detectedBy?: string | null;
-    handledBy?: string | null;
-    outcome?: string;
-  };
+  const p = (e.payload ?? {}) as { id?: number; eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number };
   const machine = String(p.robotId != null ? `robot:${p.robotId}` : p.lineId != null ? `line:${p.lineId}` : "unknown");
   const message = `Safety ${p.isNearMiss ? "near-miss" : "event"}: ${p.eventType ?? "?"} at ${machine}`;
   console.warn(`[Orchestration] ${message}`);
   void audit("orchestration.safety", { eventType: p.eventType, isNearMiss: p.isNearMiss, machine });
-  // doc 81 Đợt 5 task F6 + fix 1 (R-5-f) — SAFETY-CRITICAL (delivered despite in-app opt-outs / quiet hours) ONLY for
-  // the explicit allow-list above; the bypass is throttled per (type, machine) and recipient (notificationService,
-  // 60 s). Every other safety event is a normal notice (the recipient's preferences apply).
+  // doc 81 Đợt 5 task F6 + fix 1/scan (R-5-f, R-5-h) — SAFETY-CRITICAL only for a server-trusted device-ingest event (see
+  // isSafetyCriticalSafetyEvent). The bypass dedup key is the OCCURRENCE (type, machine, safety_events.id): a re-delivery
+  // of the same event is not bypassed twice, while another type, another machine or a re-trip (a new row) never merges.
+  // The notice itself is ALWAYS sent (the throttle only downgrades a repeat to normal delivery).
   void notifyConfigured("Safety event", message, {
     safetyCritical: isSafetyCriticalSafetyEvent(p),
-    dedupKey: `safety:${p.eventType ?? "?"}:${machine}`,
+    dedupKey: `safety:${p.eventType ?? "?"}:${machine}:${typeof p.id === "number" ? p.id : "?"}`,
   });
   eventBus.publish("orchestration.triggered", { rule: "safety", machine, eventType: p.eventType }, "orchestration");
 }

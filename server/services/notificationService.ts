@@ -91,9 +91,11 @@ export interface NotificationPayload {
  * `metadata.safetyCritical` marker is written only here (a payload claiming it has the marker removed).
  * Callers — the ONLY ones (ruling R-5-f): commandDispatcher raiseStopUnverifiedAlarm (B3 "STOP not confirmed") and
  * orchestration rulesEngine onSafetyEvent for the explicit allow-list isSafetyCriticalSafetyEvent.
- * Fix 1 (R-5-f) — the BYPASS is throttled: per recipient and `dedupKey` (the caller's "(type, machine)"; default the
- * payload type + title) at most once per SAFETY_CRITICAL_DEDUP_MS (60 s). A repeat inside the window is delivered as a
- * NORMAL notice (the recipient's preferences apply again) — a flood cannot override an opt-out more than once a minute.
+ * Fix 1 (R-5-f) + fix scan (R-5-h) — the BYPASS is throttled per recipient and `dedupKey` = the caller's OCCURRENCE
+ * identity (type, machine, event / command id): at most once per SAFETY_CRITICAL_DEDUP_MS (60 s). A repeat of the SAME
+ * occurrence inside the window is still delivered, as a NORMAL notice (the recipient's preferences apply) — never
+ * dropped. Distinct occurrences (another type, another machine, a re-trip = a new event) never share a key. Without a
+ * dedupKey there is no throttle (nothing is ever merged).
  */
 export interface SendNotificationOptions {
   safetyCritical?: boolean;
@@ -104,15 +106,29 @@ export interface SendNotificationOptions {
 export const SAFETY_CRITICAL_DEDUP_MS = 60_000;
 const safetyCriticalLastBypass = new Map<string, number>();
 /** true ⇔ this (recipient, key) may bypass now (and records it). */
+export const SAFETY_CRITICAL_DEDUP_MAX = 5000;
+/**
+ * fix scan (R-5-h) — the throttle only ever DOWNGRADES (a repeat inside the window is delivered as a normal notice);
+ * it never drops one. Any failure here ⇒ true (bypass, i.e. deliver). Bounded: entries older than the window are swept
+ * when the map passes SAFETY_CRITICAL_DEDUP_MAX; if it is still full, it is cleared (fails toward delivering).
+ */
 function takeSafetyCriticalBypass(userId: number, key: string, now = Date.now()): boolean {
-  const k = `${userId}|${key}`;
-  const last = safetyCriticalLastBypass.get(k);
-  if (last !== undefined && now - last < SAFETY_CRITICAL_DEDUP_MS) return false;
-  safetyCriticalLastBypass.set(k, now);
-  if (safetyCriticalLastBypass.size > 5000) {
-    for (const [kk, t] of safetyCriticalLastBypass) if (now - t >= SAFETY_CRITICAL_DEDUP_MS) safetyCriticalLastBypass.delete(kk);
+  try {
+    const k = `${userId}|${key}`;
+    const last = safetyCriticalLastBypass.get(k);
+    if (last !== undefined && now - last >= 0 && now - last < SAFETY_CRITICAL_DEDUP_MS) return false;
+    safetyCriticalLastBypass.set(k, now);
+    if (safetyCriticalLastBypass.size > SAFETY_CRITICAL_DEDUP_MAX) {
+      for (const [kk, t] of safetyCriticalLastBypass) if (now - t >= SAFETY_CRITICAL_DEDUP_MS) safetyCriticalLastBypass.delete(kk);
+      if (safetyCriticalLastBypass.size > SAFETY_CRITICAL_DEDUP_MAX) safetyCriticalLastBypass.clear();
+    }
+    return true;
+  } catch {
+    return true;
   }
-  return true;
+}
+export function _safetyCriticalDedupSizeForTests(): number {
+  return safetyCriticalLastBypass.size;
 }
 /** Test seam — forget every bypass timestamp. */
 export function _resetSafetyCriticalDedupForTests(): void {
@@ -125,7 +141,7 @@ export function _resetSafetyCriticalDedupForTests(): void {
 export async function sendNotification(userId: number, payload: NotificationPayload, opts: SendNotificationOptions = {}) {
   const safetyCritical =
     opts?.safetyCritical === true &&
-    takeSafetyCriticalBypass(userId, typeof opts.dedupKey === "string" && opts.dedupKey ? opts.dedupKey : `${payload.type}|${payload.title}`);
+    (typeof opts.dedupKey === "string" && opts.dedupKey ? takeSafetyCriticalBypass(userId, opts.dedupKey) : true);
   const { safetyCritical: _claimed, ...ownMetadata } = (payload.metadata ?? {}) as Record<string, any>;
   const metadata = safetyCritical ? { ...ownMetadata, safetyCritical: true } : payload.metadata ? ownMetadata : undefined;
 

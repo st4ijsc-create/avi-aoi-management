@@ -25,6 +25,7 @@ import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { safetyEvents, type SafetyEvent } from "../../../drizzle/schema";
 import { emitSafetyEvent } from "../../_core/socket";
+import { markTrustedSafetyEvent, type TrustedSafetyOrigin } from "./trustedSafetyOrigin";
 
 /** Flag — default OFF (mirrors fleetOrchEnabled / workforceEnabled). */
 export function safetyAuditEnabled(): boolean {
@@ -86,6 +87,20 @@ export interface RecordResult {
  * SAFETY_AUDIT_ENABLED. Emits a realtime advisory event; never commands a device.
  */
 export async function record(input: RecordSafetyEventInput): Promise<RecordResult> {
+  return recordImpl(input, null);
+}
+
+/**
+ * doc 81 Đợt 5 task F fix scan (R-5-h) — record an event created by a server DEVICE-INGEST path. Identical to record(),
+ * plus the server-side trusted-origin marker (trustedSafetyOrigin.ts) keyed by the new row id, set BEFORE the emit.
+ * Callers are pinned by a census test (today only robotIngest's e-stop transition from a polled real controller);
+ * routers / API / user actions never call it, so nothing they send can make a notice safety-critical.
+ */
+export async function recordFromDeviceIngest(origin: TrustedSafetyOrigin, input: RecordSafetyEventInput): Promise<RecordResult> {
+  return recordImpl(input, origin);
+}
+
+async function recordImpl(input: RecordSafetyEventInput, trustedOrigin: TrustedSafetyOrigin | null): Promise<RecordResult> {
   if (!safetyAuditEnabled()) return { ok: false, enabled: false, message: "SAFETY_AUDIT_ENABLED off" };
   const d = await db();
   const [event] = await d
@@ -111,6 +126,15 @@ export async function record(input: RecordSafetyEventInput): Promise<RecordResul
       factoryId: input.factoryId ?? null,
     })
     .returning();
+
+  if (trustedOrigin) {
+    try {
+      markTrustedSafetyEvent(event.id, trustedOrigin, event.eventType);
+    } catch (err) {
+      // fail toward a NORMAL notice (still delivered); never toward a lost record
+      console.error("[Safety] trusted-origin mark failed:", (err as Error)?.message ?? err);
+    }
+  }
 
   try {
     emitSafetyEvent({
