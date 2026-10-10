@@ -61,6 +61,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { setAiChatOpen, useAiEntry } from "@/lib/aiEntryStore";
 import { toast } from "sonner";
+import { ABORT_RESEND_WINDOW_MS, abortResendAllowed } from "@shared/foeAbortResend"; // doc 81 Đợt 6 fix 3 (R-6-d)
 import {
   Workflow,
   Terminal,
@@ -1643,12 +1644,19 @@ export default function OrchestrationStudio() {
    */
   // fix 2 (N6) — `kind` says whether it was an abort or a gate rejection (the texts name the right action).
   const abortOutcomeToasts = (
-    r: { ok?: boolean; runId?: number; reason?: string; abortStops?: { sent: string[]; failed: string[]; pending: string[]; unverified: string[]; untakenBranch: string[]; notPinned: string[]; notNeeded?: string[] } } | null | undefined,
+    r: { ok?: boolean; runId?: number; reason?: string; resend?: boolean; abortStops?: { sent: string[]; failed: string[]; pending: string[]; unverified: string[]; untakenBranch: string[]; notPinned: string[]; notNeeded?: string[] } } | null | undefined,
     kind: "abort" | "reject",
   ) => {
+    if (r?.reason === "resendTooOld") {
+      toast.error(t("studio.resendTooOld", "Too old to send the STOP steps again: the run was aborted more than {{minutes}} minutes ago (the machine may have been restarted since). To stop equipment now, use the machine's direct STOP / E-STOP.", { minutes: Math.round(ABORT_RESEND_WINDOW_MS / 60_000) }));
+      return;
+    }
     const stops = r?.abortStops;
     if (!stops) return;
-    if (r?.reason === "abortUnconfirmed") {
+    if (r?.resend) {
+      // fix 3 (M5) — a re-send is not a new abort: say what was sent again
+      toast.success(t("studio.resendDone", "STOP steps of run #{{id}} sent again — confirmed by the machine: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length }));
+    } else if (r?.reason === "abortUnconfirmed") {
       toast.error(
         kind === "reject"
           ? t("studio.rejectUnconfirmed", "The rejection could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length })
@@ -2268,6 +2276,7 @@ export default function OrchestrationStudio() {
       canAssign={canAssignRun}
       onResume={(approved, note, expectedStepId, expectedDefHash) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash })}
       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
+      abortPending={abortM.isPending && abortM.variables?.runId === Number(r.id)}
       t={t}
     />
   );
@@ -2634,6 +2643,7 @@ function RunRow({
   canAssign = false,
   onResume,
   onAbort,
+  abortPending = false,
   t,
 }: {
   run: Record<string, unknown>;
@@ -2647,6 +2657,8 @@ function RunRow({
   /** doc 81 Đợt 4 fix round 2 (R-4-k) — `expectedDefHash` = getRun().defHash the screen loaded; required to approve. */
   onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string) => void;
   onAbort: () => void;
+  /** doc 81 Đợt 6 fix 3 (M1) — an abort / re-send request for THIS run is in flight ⇒ "Send STOP steps again" is disabled. */
+  abortPending?: boolean;
   t: TFunction;
 }) {
   const [open, setOpen] = useState(false);
@@ -2661,7 +2673,10 @@ function RunRow({
   // doc 80 ORC-01 — Abort nay dừng THẬT run đang chạy ⇒ hiện nút cho run queued/running.
   const abortable = status === "running" || status === "queued";
   // doc 81 Đợt 6 fix 2 (N1) — an aborted run: send again the STOP steps the machine has not CONFIRMED (never a confirmed one).
+  // fix 3 (R-6-d, M3) — only within ABORT_RESEND_WINDOW_MS of the abort (shared with the server, which decides): past it the
+  // button is shown DISABLED with the reason ("too old — use the machine's direct STOP / E-STOP").
   const resendable = status === "aborted";
+  const resendTooOld = resendable && !abortResendAllowed(run.finishedAt as string | Date | null | undefined);
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
   const detailQ = trpc.orchestration.getRun.useQuery(
@@ -2722,7 +2737,18 @@ function RunRow({
           </div>
         )}
         {resendable && canControl && (
-          <Button size="sm" variant="outline" className="h-7" onClick={onAbort} title={t("studio.resendStopsHint", "Sends again the run's STOP steps that the machine has not confirmed (never one it confirmed) — after an abort that was not confirmed or a STOP that failed.")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            onClick={onAbort}
+            disabled={abortPending || resendTooOld}
+            title={
+              resendTooOld
+                ? t("studio.resendTooOld", "Too old to send the STOP steps again: the run was aborted more than {{minutes}} minutes ago (the machine may have been restarted since). To stop equipment now, use the machine's direct STOP / E-STOP.", { minutes: Math.round(ABORT_RESEND_WINDOW_MS / 60_000) })
+                : t("studio.resendStopsHint", "Sends again the run's STOP steps that the machine has not confirmed (never one it confirmed) — after an abort that was not confirmed or a STOP that failed.")
+            }
+          >
             {t("studio.resendStops", "Send STOP steps again")}
           </Button>
         )}

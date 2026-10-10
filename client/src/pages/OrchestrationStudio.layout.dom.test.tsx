@@ -64,6 +64,8 @@ const srv = vi.hoisted(() => ({
   calls: {} as Record<string, unknown[]>,
   /** Kết quả trả cho onSuccess của mutation (khoá có mặt ⇒ tự gọi onSuccess sau một microtask). */
   results: {} as Record<string, unknown>,
+  /** doc 81 Đợt 6 fix 3 (M1) — mutations shown as IN FLIGHT (key ⇒ the variables of the pending call). */
+  pending: {} as Record<string, unknown>,
   refetched: [] as string[],
   invalidated: [] as string[],
   simulate: null as null | ((input: unknown) => Promise<unknown>),
@@ -112,7 +114,8 @@ vi.mock("@/lib/trpc", () => {
         return q(key, undefined);
       },
       useMutation: (opts: MutOpts = {}) => ({
-        isPending: false,
+        isPending: key in srv.pending,
+        variables: srv.pending[key],
         mutateAsync: vi.fn(),
         mutate: (input: unknown, callOpts?: MutOpts) => {
           (srv.calls[key] ??= []).push(input);
@@ -214,6 +217,7 @@ beforeEach(() => {
   srv.queryInputs = {};
   srv.calls = {};
   srv.results = {};
+  srv.pending = {};
   srv.refetched = [];
   srv.invalidated = [];
   srv.simulate = null;
@@ -826,8 +830,8 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
 
   it("doc 81 Đợt 6 fix 2 (N1): an ABORTED run offers 'Send STOP steps again' (abortRun once, no dialog) and shows the outcome", async () => {
     const user = userEvent.setup();
-    srv.runs = [...RUNS_PLAIN, run(40, "aborted")].map((r) => ({ ...r }));
-    srv.results["orchestration.abortRun"] = { ok: true, enabled: true, runId: 40, status: "aborted", abortStops: { ...ABORT_STOPS, sent: ["stop"] } };
+    srv.runs = [...RUNS_PLAIN, run(40, "aborted", { finishedAt: new Date().toISOString() })].map((r) => ({ ...r }));
+    srv.results["orchestration.abortRun"] = { ok: true, enabled: true, runId: 40, status: "aborted", resend: true, abortStops: { ...ABORT_STOPS, sent: ["stop"] } };
     render(<OrchestrationStudio />);
     const btn = within(rowOf(40)).getByRole("button", { name: S.resendStops });
     expect(btn).toHaveAccessibleDescription(S.resendStopsHint);
@@ -836,7 +840,35 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
     expect(calls("orchestration.abortRun")).toEqual([{ runId: 40 }]);
     expect(screen.queryByRole("alertdialog")).toBeNull();
     await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
-    expect(String((toastSpy.success as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortDone.replace("{{id}}", "40").replace("{{sent}}", "1"));
+    // fix 3 (M5) — a re-send is not a new abort
+    expect(String((toastSpy.success as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.resendDone.replace("{{id}}", "40").replace("{{sent}}", "1"));
+    expect(String((toastSpy.success as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).not.toContain(S.abortDone.split("#")[0]);
+  });
+
+  it("doc 81 Đợt 6 fix 3 (M1): 'Send STOP steps again' is DISABLED while that run's request is in flight", () => {
+    srv.runs = [...RUNS_PLAIN, run(40, "aborted", { finishedAt: new Date().toISOString() }), run(41, "aborted", { finishedAt: new Date().toISOString() })].map((r) => ({ ...r }));
+    srv.pending["orchestration.abortRun"] = { runId: 40 };
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(40)).getByRole("button", { name: S.resendStops })).toBeDisabled();
+    expect(within(rowOf(41)).getByRole("button", { name: S.resendStops })).toBeEnabled(); // another run: not affected
+  });
+
+  it("doc 81 Đợt 6 fix 3 (R-6-d): aborted MORE than 15 min ago ⇒ the button is disabled with the 'too old — use the direct STOP' reason; the server's refusal is translated", async () => {
+    const user = userEvent.setup();
+    const old = new Date(Date.now() - 16 * 60_000).toISOString();
+    srv.runs = [...RUNS_PLAIN, run(42, "aborted", { finishedAt: old }), run(43, "aborted", { finishedAt: new Date(Date.now() - 14 * 60_000).toISOString() })].map((r) => ({ ...r }));
+    srv.results["orchestration.abortRun"] = { ok: false, enabled: true, runId: 43, status: "aborted", reason: "resendTooOld", resend: true, message: "RAW" };
+    render(<OrchestrationStudio />);
+    const tooOld = S.resendTooOld.replace("{{minutes}}", "15");
+    const b42 = within(rowOf(42)).getByRole("button", { name: S.resendStops });
+    expect(b42).toBeDisabled();
+    expect(b42).toHaveAccessibleDescription(tooOld);
+    const b43 = within(rowOf(43)).getByRole("button", { name: S.resendStops });
+    expect(b43).toBeEnabled(); // 14 min: still allowed
+    await user.click(b43); // the server decides (clock skew): its refusal is shown translated
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    expect(String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(tooOld);
+    expect(toastSpy.success).not.toHaveBeenCalled();
   });
 
   it("doc 81 Đợt 6 fix 1 (R-6-a): Reject says the remaining STOP steps are still sent, and its answer gets the same confirmation + warning", async () => {

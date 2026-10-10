@@ -11905,6 +11905,8 @@
     "abortUnconfirmed": "Chưa xác nhận kịp lệnh huỷ trong cơ sở dữ liệu. Số bước DỪNG máy đã xác nhận nhận được: {{sent}}. Kiểm tra lượt chạy rồi thử lại.",
     "abortStopSent": "Đã gửi DỪNG khi huỷ",
     "abortStopFailed": "Gửi DỪNG khi huỷ thất bại",
+    "resendTooOld": "Đã quá lâu để gửi lại các bước DỪNG: lượt chạy đã bị huỷ hơn {{minutes}} phút trước (máy có thể đã được khởi động lại từ đó). Để dừng thiết bị ngay, dùng nút DỪNG / DỪNG KHẨN trực tiếp của máy.",
+    "resendDone": "Đã gửi lại các bước DỪNG của lượt chạy #{{id}} — số bước máy đã xác nhận nhận được: {{sent}}.",
     "resendStopsHint": "Gửi lại các bước DỪNG của lượt chạy mà máy chưa xác nhận (không bao giờ gửi lại bước máy đã xác nhận) — sau một lần huỷ chưa được xác nhận hoặc một lệnh DỪNG thất bại.",
     "resendStops": "Gửi lại các bước DỪNG",
     "rejectUnconfirmed": "Chưa xác nhận kịp lệnh từ chối trong cơ sở dữ liệu. Số bước DỪNG máy đã xác nhận nhận được: {{sent}}. Kiểm tra lượt chạy rồi thử lại.",

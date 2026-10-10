@@ -11925,6 +11925,8 @@
     "abortUnconfirmed": "The abort could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.",
     "abortStopSent": "STOP sent on abort",
     "abortStopFailed": "STOP on abort failed",
+    "resendTooOld": "Too old to send the STOP steps again: the run was aborted more than {{minutes}} minutes ago (the machine may have been restarted since). To stop equipment now, use the machine's direct STOP / E-STOP.",
+    "resendDone": "STOP steps of run #{{id}} sent again — confirmed by the machine: {{sent}}.",
     "resendStopsHint": "Sends again the run's STOP steps that the machine has not confirmed (never one it confirmed) — after an abort that was not confirmed or a STOP that failed.",
     "resendStops": "Send STOP steps again",
     "rejectUnconfirmed": "The rejection could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.",
