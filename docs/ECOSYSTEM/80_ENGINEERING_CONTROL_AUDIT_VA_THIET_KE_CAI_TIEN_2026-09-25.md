@@ -353,3 +353,7 @@ Dời nội dung về đúng màn (Recipes · Vision › Thu ảnh · Sản xu�
 ## 19. Đợt 3b/3c + Đợt 4 (2026-10-06 → 10-10) — xem doc 81 §12–§13
 
 Đợt 3b/3c: phân công gắn ca + lọc ca phía server, chuông đọc `notifications`, sửa chuyển hướng mở (đăng nhập + SAML), tắt báo chỉ giữ mục khẩn, ca mặc định theo múi giờ nhà máy. Đợt 4: safety-PLC theo đích thực sự ghi, sổ kiểm toán/twin theo phạm vi, điều phối cần cổng duyệt của **người khác**, DỪNG sau lệnh ghi quá hạn (chỉ cảnh báo, không tự ghi), khoá chuyển động robot lưu DB (mig 0364), tuỳ chọn giao diện theo tài khoản (mig 0365). **Áp 0364 lên dev trước khi khởi động lại server bản gộp.**
+
+## 20. Đợt 5 (2026-10-10 → 10-11) — xem doc 81 §14
+
+Đóng 31 mục còn mở sau khảo sát lại bằng mã (6 mục đã đóng từ trước): điều phối theo phạm vi nhà máy ở mọi lối vào, run từ khoá API không tác động, duyệt gắn cấu hình thiết bị, huỷ/từ chối từ chối khi chưa quyết được phạm vi; VDA5050 instantActions, ngắt kết nối muộn mọi driver, thông báo an toàn vượt tắt-thông-báo chỉ từ đường thiết bị; mật khẩu MQTT tablet (mặc định không còn cho thiết bị không mật khẩu), sửa lỗ hoa/thường ở kiểm origin + giới hạn tần suất; danh sách "Giao cho" theo nhà máy. **Trước khi restart: xem checklist doc 81 §14.**
