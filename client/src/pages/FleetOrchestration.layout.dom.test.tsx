@@ -61,6 +61,9 @@ const srv = vi.hoisted(() => ({
   calls: {} as Record<string, unknown[]>,
   invalidated: [] as string[],
   queryInputs: [] as string[],
+  /** doc 81 Đợt 5 H3(b) — `factory.list` (danh sách nhà máy TRONG PHẠM VI người gọi); undefined = chưa có dữ liệu. */
+  factories: undefined as Row[] | undefined,
+  factoriesError: false,
 }));
 function bump() {
   srv.version++;
@@ -167,6 +170,8 @@ vi.mock("@/lib/trpc", () => {
           return q(srv.robots, enabled);
         case "twin.occupancyGrid":
           return q({ grid: null, note: null }, enabled);
+        case "factory.list":
+          return srv.factoriesError ? errored(enabled) : q(srv.factories, enabled);
         case "fleet.listOperations":
           return q(s.ops, enabled);
         case "fleet.resolveOperation":
@@ -312,6 +317,8 @@ beforeEach(() => {
   srv.calls = {};
   srv.invalidated = [];
   srv.queryInputs = [];
+  srv.factories = undefined;
+  srv.factoriesError = false;
   Object.assign(perm, { view: true, control: true });
   for (const f of Object.values(toastSpy)) f.mockClear();
   localStorage.clear();
@@ -888,5 +895,51 @@ describe("Fleet — R-2-n: không có thao tác hàng loạt", () => {
     act(() => undefined);
     fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
     expect(Object.keys(srv.calls)).toEqual([]);
+  });
+});
+
+// doc 81 Đợt 5 H3(b) (mục 19) — bộ chọn nhà máy của bản đồ lấy từ danh sách nhà máy TRONG PHẠM VI người gọi
+// (`factory.list`, server lọc theo phạm vi), không chỉ từ `zones[].factoryId`: site chưa có vùng nào mang factoryId vẫn
+// nạp được lưới. Vùng đọc được (server đã lọc phạm vi) vẫn góp nhà máy của nó; danh sách lỗi/đang tải ⇒ như cũ (từ vùng).
+describe("Fleet — H3(b): bộ chọn nhà máy từ danh sách nhà máy trong phạm vi", () => {
+  it("KHÔNG vùng nào mang factoryId + factory.list [#4 Bắc, #9 Nam] ⇒ lưới nạp nhà máy #4; bộ chọn liệt kê tên; chọn Nam ⇒ occupancyGrid {factoryId:9}", async () => {
+    srv.db.zones = srv.db.zones.map((z) => ({ ...z, factoryId: null }));
+    srv.snap.zones = clone(srv.db.zones);
+    srv.factories = [{ id: 4, code: "F-N", name: "Nhà máy Bắc" }, { id: 9, code: "F-S", name: "Nhà máy Nam" }];
+    const user = userEvent.setup();
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs).toContain('twin.occupancyGrid:{"factoryId":4}');
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:")).every((x) => x.endsWith('{"factoryId":4}'))).toBe(true);
+    await user.click(within(mainEl()).getByRole("combobox", { name: "Nhà máy" }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Nhà máy Bắc", "Nhà máy Nam"]);
+    await user.click(screen.getByRole("option", { name: "Nhà máy Nam" }));
+    expect(srv.queryInputs).toContain('twin.occupancyGrid:{"factoryId":9}');
+  });
+
+  it("vùng của #1/#3 + factory.list [#3] ⇒ mặc định VẪN nhà máy của vùng (#1); bộ chọn = hợp (#3 theo tên, #1 thêm từ vùng)", async () => {
+    srv.factories = [{ id: 3, code: "F3", name: "Xưởng Ba" }];
+    const user = userEvent.setup();
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:"))[0]).toBe('twin.occupancyGrid:{"factoryId":1}');
+    await user.click(within(mainEl()).getByRole("combobox", { name: "Nhà máy" }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Xưởng Ba", "#1"]);
+  });
+
+  it("phạm vi RỖNG (factory.list = []) + không vùng ⇒ KHÔNG hỏi lưới (không dò nhà máy ngoài phạm vi)", async () => {
+    srv.db.zones = [];
+    srv.snap.zones = [];
+    srv.factories = [];
+    render(<FleetOrchestration />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:"))).toEqual([]);
+  });
+
+  it("factory.list LỖI ⇒ như cũ: nhà máy từ vùng (#1, #3)", async () => {
+    srv.factoriesError = true;
+    const user = userEvent.setup();
+    render(<FleetOrchestration />);
+    expect(srv.queryInputs).toContain('twin.occupancyGrid:{"factoryId":1}');
+    await user.click(within(mainEl()).getByRole("combobox", { name: "Nhà máy" }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["#1", "#3"]);
   });
 });
