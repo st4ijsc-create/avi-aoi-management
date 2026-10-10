@@ -14769,7 +14769,10 @@
       "reasonPlaceholder": "Ví dụ: đã kiểm tra tại chỗ, robot đứng yên, khu vực trống",
       "confirm": "Xác nhận gỡ khoá",
       "cleared": "Đã gỡ khoá chuyển động cho {{code}}",
-      "notLocked": "Robot {{code}} không bị khoá chuyển động"
+      "notLocked": "Robot {{code}} không bị khoá chuyển động",
+      "reason": {
+        "persistUnknown": "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn"
+      }
     }
   },
   "controlPlane": {

@@ -51,7 +51,12 @@ export async function startRobots(): Promise<boolean> {
     return false;
   }
 
+  const { attachMotionLockPersistence } = await import("./robotMotionLockStore");
   for (const robot of robots) {
+    // doc 81 Đợt 4 Task B4 (QĐ-4c) — BEFORE the driver can move anything: a robot locked before the restart starts
+    // locked (persisted row restored); an unreadable row ⇒ locked `persistUnknown` (fail-closed). Bounded, never throws.
+    const motionLock = robot.driver.motionLockController?.();
+    if (motionLock) await attachMotionLockPersistence(robot.id, motionLock);
     try {
       await robot.driver.connect(robot.connection);
       const handle = await robot.driver.subscribeState(

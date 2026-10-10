@@ -982,6 +982,11 @@ export class FanucDriver implements RobotDriver {
     this.motionLock.lock(reasonCode, detail);
   }
 
+  /** doc 81 Đợt 4 Task B4 — the lock itself (robotManager restores a persisted lock + attaches persistence). */
+  motionLockController(): MotionLock {
+    return this.motionLock;
+  }
+
   async health(): Promise<RobotHealth> {
     return {
       vendor: "fanuc",

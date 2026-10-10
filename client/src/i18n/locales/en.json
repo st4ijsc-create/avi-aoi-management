@@ -14789,7 +14789,10 @@
       "reasonPlaceholder": "e.g. checked on site, robot stationary, area clear",
       "confirm": "Confirm clear",
       "cleared": "Motion lock cleared on {{code}}",
-      "notLocked": "Robot {{code}} is not motion-locked"
+      "notLocked": "Robot {{code}} is not motion-locked",
+      "reason": {
+        "persistUnknown": "the saved lock could not be read at startup (database did not answer) — locked to be safe"
+      }
     }
   },
   "controlPlane": {

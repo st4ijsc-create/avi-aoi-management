@@ -14572,7 +14572,10 @@
       "reasonPlaceholder": "例如：已现场检查，机器人静止，区域无人",
       "confirm": "确认解除",
       "cleared": "已解除 {{code}} 的运动锁定",
-      "notLocked": "机器人 {{code}} 未被运动锁定"
+      "notLocked": "机器人 {{code}} 未被运动锁定",
+      "reason": {
+        "persistUnknown": "启动时无法读取已保存的锁定（数据库无响应）——为安全起见已锁定"
+      }
     }
   },
   "controlPlane": {
