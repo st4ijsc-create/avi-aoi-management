@@ -34,6 +34,7 @@
 
 import type { NextFunction, Request, Response } from "express";
 import { incSecurityEvent } from "./metrics";
+import { duongDinhTuyen, duongKhopChinhXac } from "./duongDinhTuyen";
 
 export type OriginCheckMode = "off" | "log" | "enforce";
 
@@ -88,18 +89,15 @@ export const ORIGIN_CHECK_EXEMPT_EXACT_PATHS: readonly string[] = ["/api/saml/ac
  * doc 81 Đợt 5 G fix 1 (ruling R-5-b) — Express định tuyến KHÔNG phân biệt hoa/thường (`caseSensitive: false` mặc
  * định) và KHÔNG chặt dấu `/` cuối (`strict: false`): `POST /API/trpc/x` tới ĐÚNG handler của `/api/trpc/x`. So tiền tố
  * trên đường gốc ⇒ `/API/…` rơi ra `not_api_path` và LỌT kiểm tra (đã tái hiện: multipart/form-data cross-origin ⇒ 200).
- * Vì vậy MỌI phép so (tiền tố bảo vệ, tiền tố miễn, đường miễn chính xác) chạy trên `duongSoSanh(path)`:
+ * Vì vậy MỌI phép so (tiền tố bảo vệ, tiền tố miễn, đường miễn chính xác) chạy trên `duongDinhTuyen(req)`
+ * (G fix 2, N1: helper DÙNG CHUNG với rateLimitConfig — đường Express định tuyến: bỏ query/fragment/scheme+authority):
  *   · hạ chữ thường MỘT lần — khớp cách Express chọn handler;
  *   · cho đường miễn CHÍNH XÁC, bỏ MỘT dấu `/` cuối — `/api/saml/acs/` cũng tới đúng handler ACS (strict:false) nên
  *     miễn nó không rộng thêm gì; `/api/saml/acs//`, `/api/saml/acs/x` KHÔNG tới handler đó ⇒ vẫn bị kiểm.
  */
-export function duongSoSanh(path: string): string {
-  return (path || "").toLowerCase();
-}
 
 function laDuongMienChinhXac(pLower: string): boolean {
-  const motGachCuoi = pLower.length > 1 && pLower.endsWith("/") && !pLower.endsWith("//") ? pLower.slice(0, -1) : pLower;
-  return ORIGIN_CHECK_EXEMPT_EXACT_PATHS.includes(pLower) || ORIGIN_CHECK_EXEMPT_EXACT_PATHS.includes(motGachCuoi);
+  return ORIGIN_CHECK_EXEMPT_EXACT_PATHS.includes(duongKhopChinhXac(pLower));
 }
 
 const PROTECTED_PREFIXES = ["/api/", "/trpc/"];
@@ -141,14 +139,14 @@ export type OriginVerdict =
  * `req` chỉ cần { method, path, headers }.
  */
 export function evaluateOrigin(
-  req: Pick<Request, "method" | "path"> & { headers: Record<string, unknown> },
+  req: Pick<Request, "method" | "path"> & { headers: Record<string, unknown>; originalUrl?: string; url?: string },
   cfg: OriginCheckConfig,
 ): OriginVerdict {
   if (cfg.mode === "off") return { allowed: true, reason: "mode_off" };
   if (!UNSAFE_METHODS.has(String(req.method).toUpperCase())) {
     return { allowed: true, reason: "safe_method" };
   }
-  const p = duongSoSanh(req.path); // R-5-b: MỌI phép so dưới đây trên đường đã hạ chữ thường
+  const p = duongDinhTuyen(req); // R-5-b + N1: đường Express định tuyến, hạ chữ thường — MỌI phép so dưới đây
   if (!PROTECTED_PREFIXES.some((x) => p.startsWith(x))) {
     return { allowed: true, reason: "not_api_path" };
   }

@@ -2,7 +2,7 @@
  * W0-I (doc 44 G5.7b) — originCheck: same-origin pass, cross-origin log/enforce,
  * đường API-key miễn kiểm tra, thiếu Origin/Referer pass (trade-off chuẩn).
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ORIGIN_CHECK_EXEMPT_PREFIXES,
   _resetOriginCheckCounters,
@@ -21,6 +21,14 @@ function req(over: Partial<{ method: string; path: string; headers: Record<strin
     ...over,
   } as any;
 }
+
+// G fix 2 (re-review): the middleware logs every violation ("[Security] Origin mismatch") and warns on a bad mode —
+// expected here; keep the run output pristine (nothing below asserts on console output).
+let quietSpies: Array<{ mockRestore(): void }> = [];
+beforeAll(() => {
+  quietSpies = (["log", "info", "warn"] as const).map((m) => vi.spyOn(console, m).mockImplementation(() => {}));
+});
+afterAll(() => quietSpies.forEach((s) => s.mockRestore()));
 
 const logCfg = buildOriginCheckConfig({ SEC_ORIGIN_CHECK_MODE: "log", NODE_ENV: "production" } as any);
 

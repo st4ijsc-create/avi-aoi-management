@@ -38,6 +38,7 @@ import { createHash } from "crypto";
 import type { NextFunction, Request, Response } from "express";
 import Redis from "ioredis";
 import { COOKIE_NAME } from "@shared/const";
+import { duongDinhTuyen, duongDinhTuyenGoc, duongKhopChinhXac } from "./duongDinhTuyen";
 
 const envInt = (name: string, fallback: number): number => {
   const raw = process.env[name];
@@ -93,8 +94,8 @@ export const OT_INGEST_PATHS = ["/api/ot/ingest", "/api/v1/ingest"] as const;
  * bỏ qua credentialConflictGuard, và `/api/machine/Claim` (bootstrap, đích dò mật mã) ăn tầng 60k/phút.
  */
 export function duongPhanLoai(req: Request): string {
-  const raw = req.originalUrl || req.url || "";
-  return raw.split("?", 1)[0].toLowerCase();
+  // G fix 2 (re-review N1) — CÙNG helper với originCheck: đường Express thật sự định tuyến (absolute-form, `#` đều quy về).
+  return duongDinhTuyen(req);
 }
 
 /** True when a request targets the high-throughput OT ingest tier (query-string safe, case-insensitive). */
@@ -188,8 +189,7 @@ export function isMachineRestIngestRequest(req: Request): boolean {
   const p = duongPhanLoai(req);
   if (p === MACHINE_REST_PREFIX || p.startsWith(MACHINE_REST_PREFIX + "/")) {
     // R-5-b: `/api/machine/claim/` tới CÙNG handler (strict:false) ⇒ bỏ MỘT dấu `/` cuối trước khi so danh sách bootstrap.
-    const motGach = p.length > 1 && p.endsWith("/") && !p.endsWith("//") ? p.slice(0, -1) : p;
-    return !MACHINE_BOOTSTRAP_PATHS.includes(p) && !MACHINE_BOOTSTRAP_PATHS.includes(motGach);
+    return !MACHINE_BOOTSTRAP_PATHS.includes(duongKhopChinhXac(p));
   }
   return false;
 }
@@ -212,10 +212,8 @@ export function isLegacyOtIngestRequest(req: Request): boolean {
  */
 export function isMachineIngestRequest(req: Request): boolean {
   if (isMachineRestIngestRequest(req)) return true;
-  const raw = req.originalUrl || req.url || "";
-  const p = raw.split("?", 1)[0];
-
-  const procs = trpcProcedures(p);
+  // N1: đường định tuyến (giữ hoa/thường — tRPC tra tên thủ tục chính xác; tiền tố so không phân biệt trong trpcProcedures).
+  const procs = trpcProcedures(duongDinhTuyenGoc(req));
   if (procs && procs.length > 0) {
     return procs.every((name) => MACHINE_INGEST_TRPC_PROCEDURES.has(name));
   }
