@@ -2025,7 +2025,8 @@ function raiseStopUnverifiedAlarm(
           entityId: abandoned?.intentIds[0] ?? stopLedger.intentIds[0],
           metadata: detail,
         },
-        { safetyCritical: true },
+        // fix 1 (R-5-f) — bypass throttled per (type, machine) and recipient: 60 s.
+        { safetyCritical: true, dedupKey: `ot_stop_unverified:${input.machineId != null ? `machine:${input.machineId}` : `adapter:${input.adapterId}`}` },
       );
     }
   })();

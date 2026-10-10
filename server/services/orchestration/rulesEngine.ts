@@ -48,7 +48,7 @@ async function audit(action: string, metadata: Record<string, unknown>): Promise
   }
 }
 
-async function notifyConfigured(title: string, message: string, opts: { safetyCritical?: boolean } = {}): Promise<void> {
+async function notifyConfigured(title: string, message: string, opts: { safetyCritical?: boolean; dedupKey?: string } = {}): Promise<void> {
   const ids = (process.env.ORCH_NOTIFY_USER_IDS ?? "")
     .split(",")
     .map((s) => parseInt(s.trim(), 10))
@@ -109,16 +109,60 @@ function onAnomalyDetected(e: DomainEvent): void {
   eventBus.publish("orchestration.triggered", { rule: "anomaly", machine, kind: p.kind }, "orchestration");
 }
 
+/**
+ * doc 81 Đợt 5 task F fix 1 (ruling R-5-f) — the EXPLICIT allow-list of safety events whose notice may bypass the
+ * recipients' in-app opt-outs / quiet hours (safety-critical class). Everything else is a normal notice.
+ *   • physical types only (safetyAuditService.SafetyEventType): "estop" (e-stop), "intrusion" (guard / light-curtain
+ *     trip — the safety PLC's resetRequired flag; the interlock's stop), "zone_intrusion" (protective-zone breach);
+ *   • from an automatic, non-sim observer: detectedBy "plc" | "telemetry" | "vision", or "interlock" only when the
+ *     interlock really STOPPED (outcome "stopped"; a logged-only interlock never bypasses);
+ *   • recorded by the system (handledBy "advisory" | "interlock_engine"): a user-recorded event (safety.recordEvent sets
+ *     handledBy "operator", whatever detectedBy the user picked) never bypasses; a missing handledBy never bypasses;
+ *   • never a near-miss.
+ * Excluded by construction: lost_connection (fieldHealthService — comms health), the Andon→robot dispatch (detectedBy
+ * "operator"), detectedBy "sim" / "test" / "operator", unknown types/sources (collision, force_limit, speed_violation,
+ * near_miss).
+ */
+export const SAFETY_CRITICAL_EVENT_TYPES: ReadonlySet<string> = new Set(["estop", "intrusion", "zone_intrusion"]);
+export const SAFETY_CRITICAL_DETECTORS: ReadonlySet<string> = new Set(["plc", "telemetry", "vision", "interlock"]);
+export const SAFETY_CRITICAL_RECORDERS: ReadonlySet<string> = new Set(["advisory", "interlock_engine"]);
+
+export function isSafetyCriticalSafetyEvent(p: {
+  eventType?: unknown;
+  detectedBy?: unknown;
+  handledBy?: unknown;
+  outcome?: unknown;
+  isNearMiss?: unknown;
+}): boolean {
+  if (p.isNearMiss === true) return false;
+  if (typeof p.eventType !== "string" || !SAFETY_CRITICAL_EVENT_TYPES.has(p.eventType)) return false;
+  if (typeof p.detectedBy !== "string" || !SAFETY_CRITICAL_DETECTORS.has(p.detectedBy)) return false;
+  if (typeof p.handledBy !== "string" || !SAFETY_CRITICAL_RECORDERS.has(p.handledBy)) return false;
+  if (p.detectedBy === "interlock" && p.outcome !== "stopped") return false;
+  return true;
+}
+
 function onSafetyEvent(e: DomainEvent): void {
-  const p = (e.payload ?? {}) as { eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number };
+  const p = (e.payload ?? {}) as {
+    eventType?: string;
+    isNearMiss?: boolean;
+    robotId?: number;
+    lineId?: number;
+    detectedBy?: string | null;
+    handledBy?: string | null;
+    outcome?: string;
+  };
   const machine = String(p.robotId != null ? `robot:${p.robotId}` : p.lineId != null ? `line:${p.lineId}` : "unknown");
   const message = `Safety ${p.isNearMiss ? "near-miss" : "event"}: ${p.eventType ?? "?"} at ${machine}`;
   console.warn(`[Orchestration] ${message}`);
   void audit("orchestration.safety", { eventType: p.eventType, isNearMiss: p.isNearMiss, machine });
-  // doc 81 Đợt 5 task F6 (item 33) — a REAL safety event (anything not flagged as a near-miss: an unknown flag fails
-  // toward delivery) is SAFETY-CRITICAL: delivered despite the recipient's in-app opt-outs / quiet hours. Near-misses
-  // stay advisory (the recipient's preferences apply), like every other rule here.
-  void notifyConfigured("Safety event", message, { safetyCritical: p.isNearMiss !== true });
+  // doc 81 Đợt 5 task F6 + fix 1 (R-5-f) — SAFETY-CRITICAL (delivered despite in-app opt-outs / quiet hours) ONLY for
+  // the explicit allow-list above; the bypass is throttled per (type, machine) and recipient (notificationService,
+  // 60 s). Every other safety event is a normal notice (the recipient's preferences apply).
+  void notifyConfigured("Safety event", message, {
+    safetyCritical: isSafetyCriticalSafetyEvent(p),
+    dedupKey: `safety:${p.eventType ?? "?"}:${machine}`,
+  });
   eventBus.publish("orchestration.triggered", { rule: "safety", machine, eventType: p.eventType }, "orchestration");
 }
 

@@ -89,18 +89,43 @@ export interface NotificationPayload {
  * a safety notice must not hinge on a personal preference). The preferences are not even read, so a failing preference
  * read cannot drop it. Only SERVER code sets this argument; it is never taken from the payload, and the stored
  * `metadata.safetyCritical` marker is written only here (a payload claiming it has the marker removed).
- * Callers (Đợt 5): commandDispatcher raiseStopUnverifiedAlarm (B3 "STOP not confirmed"), orchestration rulesEngine
- * onSafetyEvent for a real (not near-miss) safety event.
+ * Callers — the ONLY ones (ruling R-5-f): commandDispatcher raiseStopUnverifiedAlarm (B3 "STOP not confirmed") and
+ * orchestration rulesEngine onSafetyEvent for the explicit allow-list isSafetyCriticalSafetyEvent.
+ * Fix 1 (R-5-f) — the BYPASS is throttled: per recipient and `dedupKey` (the caller's "(type, machine)"; default the
+ * payload type + title) at most once per SAFETY_CRITICAL_DEDUP_MS (60 s). A repeat inside the window is delivered as a
+ * NORMAL notice (the recipient's preferences apply again) — a flood cannot override an opt-out more than once a minute.
  */
 export interface SendNotificationOptions {
   safetyCritical?: boolean;
+  /** "(type, machine)" identity of a safety-critical notice for the bypass throttle. */
+  dedupKey?: string;
+}
+
+export const SAFETY_CRITICAL_DEDUP_MS = 60_000;
+const safetyCriticalLastBypass = new Map<string, number>();
+/** true ⇔ this (recipient, key) may bypass now (and records it). */
+function takeSafetyCriticalBypass(userId: number, key: string, now = Date.now()): boolean {
+  const k = `${userId}|${key}`;
+  const last = safetyCriticalLastBypass.get(k);
+  if (last !== undefined && now - last < SAFETY_CRITICAL_DEDUP_MS) return false;
+  safetyCriticalLastBypass.set(k, now);
+  if (safetyCriticalLastBypass.size > 5000) {
+    for (const [kk, t] of safetyCriticalLastBypass) if (now - t >= SAFETY_CRITICAL_DEDUP_MS) safetyCriticalLastBypass.delete(kk);
+  }
+  return true;
+}
+/** Test seam — forget every bypass timestamp. */
+export function _resetSafetyCriticalDedupForTests(): void {
+  safetyCriticalLastBypass.clear();
 }
 
 /**
  * Send notification to a specific user
  */
 export async function sendNotification(userId: number, payload: NotificationPayload, opts: SendNotificationOptions = {}) {
-  const safetyCritical = opts?.safetyCritical === true;
+  const safetyCritical =
+    opts?.safetyCritical === true &&
+    takeSafetyCriticalBypass(userId, typeof opts.dedupKey === "string" && opts.dedupKey ? opts.dedupKey : `${payload.type}|${payload.title}`);
   const { safetyCritical: _claimed, ...ownMetadata } = (payload.metadata ?? {}) as Record<string, any>;
   const metadata = safetyCritical ? { ...ownMetadata, safetyCritical: true } : payload.metadata ? ownMetadata : undefined;
 

@@ -27,7 +27,7 @@ vi.mock("../db", () => ({
   getUnreadNotificationCount: vi.fn(async () => 0),
 }));
 
-import { sendNotification, sendSystemNotification } from "./notificationService";
+import { sendNotification, sendSystemNotification, _resetSafetyCriticalDedupForTests, SAFETY_CRITICAL_DEDUP_MS } from "./notificationService";
 
 const optedOutEverywhere = {
   inAppEnabled: false,
@@ -41,6 +41,7 @@ const optedOutEverywhere = {
 const alert = { type: "ALERT" as const, title: "STOP not confirmed", message: "check the machine", priority: "URGENT" as const };
 
 beforeEach(() => {
+  _resetSafetyCriticalDedupForTests();
   DB.prefs = null;
   DB.created.length = 0;
   DB.prefReads = 0;
@@ -96,5 +97,52 @@ describe("Đợt 5 F6 — sendNotification safety-critical class", () => {
     DB.prefs = { inAppEnabled: true, inAppAlerts: true, inAppSystem: false, quietHoursEnabled: false };
     expect(await sendSystemNotification(9, { title: "Safety event", message: "x", priority: "HIGH" })).toBeNull();
     expect(await sendSystemNotification(9, { title: "Safety event", message: "x", priority: "HIGH" }, { safetyCritical: true })).toEqual({ id: 1 });
+  });
+});
+
+// doc 81 Đợt 5 task F fix 1 (R-5-f) — the opt-out BYPASS is throttled per recipient and (type, machine) key: 60 s.
+describe("Đợt 5 F6 fix 1 — safety-critical bypass dedup throttle (60 s per recipient × key)", () => {
+  const opted = { ...optedOutEverywhere, quietHoursEnabled: false };
+  const sc = (key: string) => ({ safetyCritical: true, dedupKey: key });
+
+  it("window is 60 s", () => {
+    expect(SAFETY_CRITICAL_DEDUP_MS).toBe(60_000);
+  });
+
+  it("★ a repeat with the same key inside 60 s is a NORMAL notice (the opt-out applies again); after 60 s it bypasses again", async () => {
+    DB.prefs = opted;
+    let now = 1_800_000_000_000;
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      expect(await sendNotification(7, alert, sc("safety:estop:robot:3"))).toEqual({ id: 1 });
+      now += 30_000;
+      expect(await sendNotification(7, alert, sc("safety:estop:robot:3"))).toBeNull(); // throttled ⇒ opted out ⇒ dropped
+      now += SAFETY_CRITICAL_DEDUP_MS - 30_000 - 1;
+      expect(await sendNotification(7, alert, sc("safety:estop:robot:3"))).toBeNull(); // still inside 60 s
+      now += 1;
+      expect(await sendNotification(7, alert, sc("safety:estop:robot:3"))).toEqual({ id: 2 }); // 60 s after the bypass
+    } finally {
+      spy.mockRestore();
+    }
+    expect(DB.created).toHaveLength(2);
+  });
+
+  it("the throttle is per recipient and per (type, machine): another user / machine / type still bypasses", async () => {
+    DB.prefs = opted;
+    expect(await sendNotification(7, alert, sc("safety:estop:robot:3"))).not.toBeNull();
+    expect(await sendNotification(8, alert, sc("safety:estop:robot:3"))).not.toBeNull(); // other recipient
+    expect(await sendNotification(7, alert, sc("safety:estop:robot:4"))).not.toBeNull(); // other machine
+    expect(await sendNotification(7, alert, sc("safety:zone_intrusion:robot:3"))).not.toBeNull(); // other type
+    expect(await sendNotification(7, alert, sc("safety:estop:robot:3"))).toBeNull(); // the repeat
+    expect(DB.created).toHaveLength(4);
+  });
+
+  it("a throttled repeat still reaches a recipient who did NOT opt out (normal path), without the safety marker", async () => {
+    DB.prefs = null;
+    await sendNotification(7, alert, sc("k"));
+    await sendNotification(7, alert, sc("k"));
+    expect(DB.created).toHaveLength(2);
+    expect(DB.created[0].metadata).toMatchObject({ safetyCritical: true });
+    expect(DB.created[1].metadata).toBeUndefined();
   });
 });

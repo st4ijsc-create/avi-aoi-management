@@ -120,6 +120,9 @@ export async function record(input: RecordSafetyEventInput): Promise<RecordResul
       lineId: event.lineId,
       stationId: event.stationId,
       detectedBy: event.detectedBy,
+      // doc 81 Đợt 5 task F fix 1 (R-5-f) — who RECORDED it: "operator" for safety.recordEvent (user-recorded), the
+      // system's own observers "advisory" / "interlock_engine". The rules engine's safety-critical allow-list needs it.
+      handledBy: event.handledBy,
       outcome: event.outcome,
       isNearMiss: event.isNearMiss,
       createdAt: event.createdAt,
