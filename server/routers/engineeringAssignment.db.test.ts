@@ -920,7 +920,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
   // không có nhà máy / không gửi mục ⇒ với người giao). Admin gọi ⇒ không đổi; vai admin luôn có mặt (thấy mọi nhà máy).
   // H fix 1: R-5-m (mục ngoài phạm vi NGƯỜI GIAO ≡ không tồn tại ⇒ NOT_FOUND), I1 (MỘT luật cho roster và `assign`; run:
   // người được giao xem được MỌI đích không-DỪNG), M4 (id mục không tồn tại ⇒ NOT_FOUND ở `assign`), lời từ chối riêng
-  // `assigneeOutOfScope`.
+  // `assigneeInvalid` (security scan: ngoài luật ≡ tài khoản không tồn tại — không lộ tài khoản nhà máy khác).
   // ORACLE: nhà máy của từng người do CHÍNH lượt này gán (user_factory_assignments / user_corporate_assignments) — độc lập
   // với mã sản phẩm; luật run so với CHÍNH `runIdVisibleTo` của E (bộ máy phạm vi của engine).
   describe("§12 doc 81 Đợt 5 H5 + H fix 1 — roster theo nhà máy (mục / người giao)", () => {
@@ -952,7 +952,8 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       return { code: x.code, appCode: x.cause?.appCode, appParams: x.cause?.appParams, message: x.message?.replace(/\d+/g, "#") };
     };
     const MISSING = 2_000_000_000;
-    const OUT_OF_SCOPE = { code: "BAD_REQUEST", cause: { appParams: { field: "assigneeUserId", reason: "assigneeOutOfScope" } } };
+    // security scan (H fix 1) — out-of-rule assignee ⇒ the SAME refusal as a missing / disabled account (no cross-factory oracle).
+    const OUT_OF_SCOPE = { code: "BAD_REQUEST", message: "Người được giao không hợp lệ.", cause: { appParams: { field: "assigneeUserId", reason: "assigneeInvalid" } } };
 
     it("★ ECN của nhà máy B ⇒ roster chỉ người của B (gán nhà máy HOẶC gán tập đoàn của B) + admin; người chỉ ở nhà máy 'nhà' KHÔNG có — người giao của B, và người giao HAI nhà máy (đích = nhà máy của mục)", async () => {
       const ecnB = await mkEcnF(h5.facB);
@@ -1049,7 +1050,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       expect(shape(outOfScope)).toEqual(shape(missing));
     });
 
-    it("★★ I1 — run chạm HAI nhà máy ('nhà' + B): roster và assign dùng MỘT luật (xem được MỌI đích): chỉ người có CẢ HAI (hoặc admin); người một nhà máy KHÔNG có trong roster và assign từ chối bằng câu RIÊNG (assigneeOutOfScope); áp cả khi admin giao", async () => {
+    it("★★ I1 — run chạm HAI nhà máy ('nhà' + B): roster và assign dùng MỘT luật (xem được MỌI đích): chỉ người có CẢ HAI (hoặc admin); người một nhà máy KHÔNG có trong roster và assign từ chối (CÙNG câu với tài khoản không tồn tại); áp cả khi admin giao", async () => {
       expect(h5.homeCreated, "tiền đề: máy changeover thuộc một nhà máy thật của _test").toBe(false);
       const runId = await mkRunOn("HB", [machineId, h5.machineB]);
       for (const who of ["supMulti", "adminA"]) {
@@ -1102,13 +1103,45 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       }
     });
 
+    it("★ security scan — người được giao NGOÀI luật (tài khoản thật của nhà máy khác) ⇒ lời từ chối Y HỆT id người dùng không tồn tại / tài khoản tắt", async () => {
+      const ecnB = await mkEcnF(h5.facB);
+      const c = await as("supB");
+      const out = await c.assign({ entityType: "ecn", entityId: ecnB, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null }).catch((x) => x);
+      const missing = await c.assign({ entityType: "ecn", entityId: ecnB, assigneeUserId: MISSING, expectedAssigneeUserId: null }).catch((x) => x);
+      const disabled = await c.assign({ entityType: "ecn", entityId: ecnB, assigneeUserId: uid.engInactive, expectedAssigneeUserId: null }).catch((x) => x);
+      expect(shape(out)).toEqual(shape(missing));
+      expect(shape(out)).toEqual(shape(disabled));
+    });
+
+    it("★ security scan — `assignments` (cột 'Người được giao'): mục NGOÀI phạm vi người gọi KHÔNG trả hàng (không lộ TÊN người được giao), Y HỆT id không tồn tại; người gọi của B / admin thấy", async () => {
+      const ecnB = await mkEcnF(h5.facB);
+      await (await as("supB")).assign({ entityType: "ecn", entityId: ecnB, assigneeUserId: uid.engB, expectedAssigneeUserId: null });
+      const home = await (await as("supAssigner")).assignments({ entityType: "ecn", entityIds: [ecnB, MISSING] });
+      expect(home).toEqual([]);
+      for (const who of ["supB", "adminA"]) {
+        const rows = (await (await as(who)).assignments({ entityType: "ecn", entityIds: [ecnB] })) as Array<{ entityId: number; assigneeUserId: number }>;
+        expect(rows.map((r) => [r.entityId, r.assigneeUserId]), who).toEqual([[ecnB, uid.engB]]);
+      }
+    });
+
+    it("★ security scan — `unassign` một mục NGOÀI phạm vi người gọi ⇒ CÙNG lời từ chối như mục không tồn tại; phân công KHÔNG đổi", async () => {
+      const ecnB = await mkEcnF(h5.facB);
+      await (await as("supB")).assign({ entityType: "ecn", entityId: ecnB, assigneeUserId: uid.engB, expectedAssigneeUserId: null });
+      const c = await as("supAssigner");
+      const out = await c.unassign({ entityType: "ecn", entityId: ecnB, expectedAssigneeUserId: uid.engB }).catch((x) => x);
+      const missing = await c.unassign({ entityType: "ecn", entityId: MISSING, expectedAssigneeUserId: uid.engB }).catch((x) => x);
+      expect(shape(out).code).toBe("CONFLICT");
+      expect(shape(out)).toEqual(shape(missing));
+      expect((await activeRows("ecn", ecnB)).map((r) => Number(r.assignee_user_id))).toEqual([uid.engB]);
+    });
+
     it("★ selectedId của người KHÁC nhà máy ⇒ KHÔNG lộ tên qua roster", async () => {
       const ecnB = await mkEcnF(h5.facB);
       const r = await (await as("supB")).assignableUsers({ entityType: "ecn", entityId: ecnB, search: `${RUN} engB`, selectedId: uid.engViewer } as never);
       expect(r.users.map((u) => u.id)).toEqual([uid.engB]);
     });
 
-    it("★ assign khớp roster: giao ECN nhà máy B cho người chỉ ở 'nhà' ⇒ assigneeOutOfScope (câu riêng), không ghi; cho người của B ⇒ ghi; admin giao ECN thì không lọc", async () => {
+    it("★ assign khớp roster: giao ECN nhà máy B cho người chỉ ở 'nhà' ⇒ CÙNG lời từ chối như tài khoản không tồn tại (không lộ tài khoản nhà máy khác), không ghi; cho người của B ⇒ ghi; admin giao ECN thì không lọc", async () => {
       const ecnB = await mkEcnF(h5.facB);
       const c = await as("supB");
       const e = await c.assign({ entityType: "ecn", entityId: ecnB, assigneeUserId: uid.engViewer, expectedAssigneeUserId: null }).catch((x) => x);

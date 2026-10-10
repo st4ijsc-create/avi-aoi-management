@@ -20,7 +20,8 @@
  * với người giao); admin gọi ⇒ không đổi (`services/engineeringAssignment/rosterScope.ts`).
  * Fix round 1 — R-5-m: mục NGOÀI phạm vi người giao ≡ không tồn tại (NOT_FOUND, roster lẫn `assign`); MỘT luật người được
  * giao cho roster và `assign` (`assigneeRuleSql`; run: người được giao xem được MỌI đích không-DỪNG); người hợp lệ nhưng
- * ngoài luật ⇒ lời từ chối RIÊNG đã dịch `assigneeOutOfScope` (vi/en/zh).
+ * ngoài luật ⇒ CÙNG lời từ chối `assigneeInvalid` (câu đã dịch nêu mọi trường hợp) — security scan: không lộ tài khoản
+ * nhà máy khác. `assignments` / `unassign`: mục ngoài phạm vi người gọi ≡ không tồn tại.
  *
  * fix 1 (R-3-f) — phân công gắn với MỘT ĐỢT CHỜ DUYỆT (`pending_episode`; xem `assignmentService.ts#EPISODE_SQL`): mục
  * rời chờ duyệt ⇒ hết hiệu lực ngay ở mọi lượt đọc; hàng `active` đã chết bị TẮT ở lượt giao kế tiếp (audit `expire`).
@@ -51,7 +52,7 @@ import {
   type DbOrTx,
 } from "../services/engineeringAssignment/assignmentService";
 import { requireAssignGate, requireLicense } from "../services/engineeringAssignment/assignGate";
-import { assigneeRuleSql, resolveTargetForAssigner } from "../services/engineeringAssignment/rosterScope";
+import { assigneeRuleSql, entityIdsInAssignerScope, resolveTargetForAssigner } from "../services/engineeringAssignment/rosterScope";
 import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, assignmentDeepLink, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 const entityTypeInput = z.enum(ASSIGNABLE_ENTITY_TYPES);
@@ -168,9 +169,11 @@ export const engineeringAssignmentRouter = router({
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
       }
       // doc 81 Đợt 5 H5 + H fix 1 (I1) — the ONE assignee rule shared with the roster (`assigneeRuleSql`): factory rule, and
-      // for a run: the assignee sees EVERY non-STOP target. A valid account outside the rule ⇒ its own translated refusal.
+      // for a run: the assignee sees EVERY non-STOP target. Outside the rule ⇒ the SAME refusal as a missing / disabled /
+      // non-viewing account (security scan: a distinct answer would reveal that an id is a live account of another factory);
+      // the translated sentence says every case (errors.reason.assigneeInvalid, vi/en/zh).
       const outOfScope = () =>
-        appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeOutOfScope" }, "Người được giao không thuộc phạm vi của mục này.");
+        appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
       const assigneeRule = await assigneeRuleSql(d, ctx, type, input.entityId, scoped.factories);
       if (assigneeRule) {
         const [inRule] = await d.select({ id: users.id }).from(users).where(and(eq(users.id, assignee.id), assigneeRule)).limit(1);
@@ -252,11 +255,13 @@ export const engineeringAssignmentRouter = router({
       await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
       // E fix 1 (R-5-d) — out of the caller's orchestration scope ⇒ the SAME refusal as a missing / changed target.
+      // H fix 1 (R-5-m, security scan) — the same for every type: outside the assigner's factories ≡ missing.
       const runInScope = type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf(ctx.user)));
+      const inScope = runInScope && (await resolveTargetForAssigner(d, ctx, type, input.entityId)) !== null;
       try {
         return await d.transaction(async (tx) => {
-          const target = runInScope ? await loadTarget(tx, type, input.entityId, true) : null;
-          const current = runInScope ? await activeAssignmentOf(tx, type, input.entityId, true) : null;
+          const target = inScope ? await loadTarget(tx, type, input.entityId, true) : null;
+          const current = inScope ? await activeAssignmentOf(tx, type, input.entityId, true) : null;
           const live = !!target && target.pending && !!current && current.pendingEpisode === target.episode;
           if (!live || current!.assigneeUserId !== input.expectedAssigneeUserId) {
             throw appError("CONFLICT", "OPERATION_FAILED", { operation: OP_UNASSIGN, reason: "assignmentChanged" }, "Người được giao đã đổi — tải lại.");
@@ -293,7 +298,13 @@ export const engineeringAssignmentRouter = router({
       const d = await dbOrThrow();
       try {
         // E fix 1 (R-5-d) — orchestration runs outside the caller's scope have no assignment row for them.
+        // H fix 1 (R-5-m, security scan) — the same for every type: an item outside the caller's factories has no assignment
+        // row for them (no assignee NAME crosses factories); identical to a missing id (both simply absent).
         let ids = [...new Set(input.entityIds)];
+        if (type !== "orchestration_run") {
+          ids = await entityIdsInAssignerScope(d, ctx, type, ids);
+          if (ids.length === 0) return [];
+        }
         if (type === "orchestration_run") {
           const visible = await visibleRunIds(ids, foeScopeOf(ctx.user));
           ids = ids.filter((id) => visible.has(id));

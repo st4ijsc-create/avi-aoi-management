@@ -41,6 +41,7 @@ import { validateWorkflow, type MachineForValidation, type WorkflowDefinition } 
 import type { AssignableEntityType } from "@shared/engineeringAssignment";
 import type { DbOrTx } from "./assignmentService";
 
+type Caller = CoDanhTinh & { user: { id: number; role: string } };
 const posInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v > 0;
 const uniq = (xs: Array<number | null | undefined>) => [...new Set(xs.filter(posInt))];
 
@@ -66,27 +67,62 @@ async function factoriesOf(d: DbOrTx, p: { machineIds?: number[]; lineIds?: numb
   return uniq(ws.map((w) => w.factoryId));
 }
 
+/** Nhà máy của máy / chuyền / trạm (cột SQL) — CÙNG chuỗi máy → trạm → chuyền → xưởng như `factoriesOf` / `idsTrongPhamVi`. */
+const machineFactorySql = (col: SQL) =>
+  sql`(SELECT w."factoryId" FROM ${machines} m JOIN ${stations} s ON s.id = m."stationId" JOIN ${productionLines} pl ON pl.id = s."lineId" JOIN ${workshops} w ON w.id = pl."workshopId" WHERE m.id = ${col})`;
+const lineFactorySql = (col: SQL) =>
+  sql`(SELECT w."factoryId" FROM ${productionLines} pl JOIN ${workshops} w ON w.id = pl."workshopId" WHERE pl.id = ${col})`;
+const stationFactorySql = (col: SQL) =>
+  sql`(SELECT w."factoryId" FROM ${stations} s JOIN ${productionLines} pl ON pl.id = s."lineId" JOIN ${workshops} w ON w.id = pl."workshopId" WHERE s.id = ${col})`;
+
+/**
+ * H fix 1 — nhà máy của NHIỀU mục (không phải run) trong MỘT truy vấn: id → nhà máy (id vắng = mục không tồn tại). Đường
+ * duy nhất cho R-5-m của cả mục đơn (`resolveTargetForAssigner`) lẫn danh sách (`entityIdsInAssignerScope`).
+ */
+export async function entityFactoriesBatch(
+  d: DbOrTx,
+  type: Exclude<AssignableEntityType, "orchestration_run">,
+  ids: number[],
+): Promise<Map<number, number[]>> {
+  const out = new Map<number, number[]>();
+  const want = uniq(ids);
+  if (!want.length) return out;
+  const list = sql.join(want.map((id) => sql`${id}`), sql`, `);
+  const q =
+    type === "ecn"
+      ? sql`SELECT e.id AS id, ARRAY[e."factoryId"] AS f FROM ${engineeringChanges} e WHERE e.id IN (${list})`
+      : type === "recipe"
+        ? sql`SELECT r.id AS id, ARRAY[${machineFactorySql(sql`r."machineId"`)}] AS f FROM ${machineRecipes} r WHERE r.id IN (${list})`
+        : type === "changeover"
+          ? sql`SELECT c.id AS id, ARRAY[${machineFactorySql(sql`c."machineId"`)}] AS f FROM ${changeoverRequests} c WHERE c.id IN (${list})`
+          : sql`SELECT i.id AS id, ARRAY[${machineFactorySql(sql`i."machineId"`)}, ${machineFactorySql(sql`i."targetMachineId"`)},
+                  ${lineFactorySql(sql`i."lineId"`)}, ${stationFactorySql(sql`i."stationId"`)}] AS f
+                FROM ${interlockRules} i WHERE i.id IN (${list})`;
+  const res = (await d.execute(q)) as unknown as Array<{ id: number | string; f: Array<number | string | null> | null }>;
+  for (const r of [...res]) out.set(Number(r.id), uniq((r.f ?? []).map((x) => (x == null ? null : Number(x)))));
+  return out;
+}
+
+/** R-5-m cho DANH SÁCH: chỉ id (không phải run) mà người gọi thấy — id ngoài phạm vi ≡ id không tồn tại (bị bỏ như nhau). */
+export async function entityIdsInAssignerScope(
+  d: DbOrTx,
+  ctx: Caller,
+  type: Exclude<AssignableEntityType, "orchestration_run">,
+  ids: number[],
+): Promise<number[]> {
+  const assigner = await assignerFactoryIds(ctx);
+  if (assigner === null) return ids;
+  const byId = await entityFactoriesBatch(d, type, ids);
+  return ids.filter((id) => {
+    const f = byId.get(id);
+    return f !== undefined && f.every((x) => assigner.includes(x));
+  });
+}
+
 /** Nhà máy của MỤC. `null` = mục KHÔNG TỒN TẠI; [] = tồn tại nhưng không liên kết nhà máy nào. */
 export async function targetFactoryIds(d: DbOrTx, type: AssignableEntityType, entityId: number): Promise<number[] | null> {
+  if (type !== "orchestration_run") return (await entityFactoriesBatch(d, type, [entityId])).get(entityId) ?? null;
   switch (type) {
-    case "ecn": {
-      const [r] = await d.select({ f: engineeringChanges.factoryId }).from(engineeringChanges).where(eq(engineeringChanges.id, entityId)).limit(1);
-      return r ? uniq([r.f]) : null;
-    }
-    case "recipe": {
-      const [r] = await d.select({ m: machineRecipes.machineId }).from(machineRecipes).where(eq(machineRecipes.id, entityId)).limit(1);
-      return r ? factoriesOf(d, { machineIds: uniq([r.m]) }) : null;
-    }
-    case "interlock_rule": {
-      const [r] = await d
-        .select({ m: interlockRules.machineId, tm: interlockRules.targetMachineId, l: interlockRules.lineId, s: interlockRules.stationId })
-        .from(interlockRules).where(eq(interlockRules.id, entityId)).limit(1);
-      return r ? factoriesOf(d, { machineIds: uniq([r.m, r.tm]), lineIds: uniq([r.l]), stationIds: uniq([r.s]) }) : null;
-    }
-    case "changeover": {
-      const [r] = await d.select({ m: changeoverRequests.machineId }).from(changeoverRequests).where(eq(changeoverRequests.id, entityId)).limit(1);
-      return r ? factoriesOf(d, { machineIds: uniq([r.m]) }) : null;
-    }
     case "orchestration_run": {
       const [r] = await d
         .select({ def: orchestrationWorkflows.definitionJson })
@@ -128,8 +164,6 @@ export function userSharesFactorySql(factoryIds: number[]): SQL {
     OR EXISTS (SELECT 1 FROM ${userCorporateAssignments} uca JOIN ${factories} f ON f."corporateCode" = uca."corporateCode"
                WHERE uca."userId" = ${users.id} AND f.id IN (${list})))`;
 }
-
-type Caller = CoDanhTinh & { user: { id: number; role: string } };
 
 /** Nhà máy trong phạm vi NGƯỜI GIAO (`null` = toàn quyền — admin). Lỗi tra ⇒ ném (yêu cầu thất bại, fail-closed). */
 export async function assignerFactoryIds(ctx: Caller): Promise<number[] | null> {

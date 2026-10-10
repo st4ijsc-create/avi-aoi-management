@@ -4373,8 +4373,7 @@
       "assignmentChanged": "Người được giao vừa bị người khác đổi. Tải lại để xem người được giao hiện tại.",
       "alreadyAssignedToUser": "Mục này đã được giao cho người này.",
       "assignmentStoreMissing": "Chưa bật được giao việc: cơ sở dữ liệu chưa được cập nhật (cần quản trị viên).",
-      "assigneeInvalid": "Người được giao không hợp lệ (không tồn tại, đã bị vô hiệu hoá hoặc không xem được trang của mục này).",
-      "assigneeOutOfScope": "Người này không cùng nhà máy với mục cần giao (với lần chạy: không xem được mọi máy/robot mà lần chạy điều khiển) — hãy chọn người trong danh sách \"Giao cho\"."
+      "assigneeInvalid": "Người được giao không hợp lệ: người này không có trong danh sách \"Giao cho\" của mục này (không tồn tại, đã bị vô hiệu hoá, không xem được trang của mục, không cùng nhà máy với mục, hoặc — với lần chạy — không xem được mọi máy/robot mà lần chạy điều khiển). Hãy chọn người trong danh sách."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
