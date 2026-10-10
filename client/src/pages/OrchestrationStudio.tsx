@@ -1643,8 +1643,23 @@ export default function OrchestrationStudio() {
       if (e.data?.code === "CONFLICT") { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); }
     },
   });
+  /**
+   * doc 81 Đợt 6 (owner decision 2026-10-11) — an abort skips the non-STOP steps but still SENDS the remaining STOP steps
+   * and the due STOP compensations: the confirmation says so (with how many were sent), and warns when a STOP could not be
+   * sent / verified (or the abort itself was not confirmed in time) — pointing at the machine's direct STOP / E-STOP.
+   */
   const abortM = trpc.orchestration.abortRun.useMutation({
-    onSuccess: (r) => { scopeUnverifiedToast(r); void runsQ.refetch(); },
+    onSuccess: (r) => {
+      scopeUnverifiedToast(r);
+      const stops = r?.abortStops;
+      if (r?.reason === "abortUnconfirmed") toast.error(t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time — the remaining STOP steps were sent. Check the run and retry the abort."));
+      else if (r?.ok) toast.success(t("studio.abortDone", "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps still sent: {{sent}}.", { id: r.runId ?? "?", sent: (stops?.sent.length ?? 0) + (stops?.pending.length ?? 0) }));
+      const notSent = stops ? stops.failed.length + stops.unverified.length + stops.untakenBranch.length + stops.notPinned.length : 0;
+      if (notSent > 0) {
+        toast.warning(t("studio.abortStopsNotSent", "{{count}} STOP step(s) could not be sent or verified — check the run's steps. To stop that equipment now, use the machine's direct STOP / E-STOP.", { count: notSent }));
+      }
+      void runsQ.refetch();
+    },
     onError: (e) => toastTrpcError(e),
   });
 
@@ -2546,6 +2561,22 @@ function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
   }
 }
 
+/** doc 81 Đợt 6 — marker of a step row written by an abort's STOP sweep (`result.abortStop`: "sent" | "failed"). */
+function AbortStopTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
+  const v = result?.abortStop;
+  if (v !== "sent" && v !== "failed") return null;
+  return (
+    <Badge
+      variant="outline"
+      data-testid="abort-stop"
+      data-kind={v}
+      className={`text-[10px] ${v === "sent" ? "border-red-500/50 text-red-700 dark:text-red-300" : "border-amber-500/50 text-amber-700 dark:text-amber-300"}`}
+    >
+      {v === "sent" ? t("studio.abortStopSent", "STOP sent on abort") : t("studio.abortStopFailed", "STOP on abort failed")}
+    </Badge>
+  );
+}
+
 /** doc 80 Task 4 (ORC-13) — per-step dispatch marker in the run drawer (routedTo + simulated/sent). */
 function StepDispatchTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
   const kind = classifyStepDispatch(result);
@@ -2660,13 +2691,13 @@ function RunRow({
             <Button size="sm" variant="outline" className="h-7" onClick={() => setConfirmContinue(true)}>
               {t("studio.continueRun", "Continue…")}
             </Button>
-            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
+            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped; the remaining STOP steps and the due STOP compensations are still sent.")}>
               {t("studio.cancelRun", "Cancel run")}
             </Button>
           </div>
         )}
         {abortable && canControl && (
-          <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
+          <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped; the remaining STOP steps and the due STOP compensations are still sent.")}>
             {t("studio.abort", "Abort")}
           </Button>
         )}
@@ -2678,7 +2709,7 @@ function RunRow({
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
               {t("studio.reject", "Reject")}
             </Button>
-            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
+            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped; the remaining STOP steps and the due STOP compensations are still sent.")}>
               {t("studio.abort", "Abort")}
             </Button>
           </div>
@@ -2784,6 +2815,8 @@ function RunRow({
                     {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
                   </span>
                   <span className="flex items-center gap-1">
+                    {/* doc 81 Đợt 6 — a STOP the abort still sent (or could not send): its own `abort:<step>` row. */}
+                    <AbortStopTag result={s.result} t={t} />
                     {/* doc 80 Task 4 (ORC-13) — where the command went and whether it was simulated. */}
                     <StepDispatchTag result={s.result} t={t} />
                     <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
