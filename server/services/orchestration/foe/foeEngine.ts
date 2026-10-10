@@ -23,7 +23,7 @@
  * persists each step's state as it walks.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../../../_core/appError";
@@ -38,6 +38,7 @@ import {
   machines,
   aiPendingActions,
   deviceAdapters,
+  robots, // doc 81 Đợt 4 final wave G3 — a robot step names an existing, enabled robot
   type OrchestrationRun,
 } from "../../../../drizzle/schema";
 import {
@@ -62,8 +63,9 @@ import {
   type EquipmentCommandResult,
 } from "../../equipment/equipmentAdapter";
 import { asPackmlState } from "../../equipment/packml";
-import { FOE_ENGINE_TOOL, otPayloadHash, robotPayloadHash, withFoeGateApproval, withOtPayloadHash } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6 + final wave (robot) + Đợt 4 A5
-import { isStopJob } from "../../robot/stopJob"; // doc 81 Đợt 4 A5 — a robot STOP is never gated (L-7)
+import { FOE_ENGINE_TOOL, otPayloadHash, robotPayloadHash, withFoeGateApproval, withOtPayloadHash, type FoeGateApproval } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6 + final wave (robot) + Đợt 4 A5
+import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob"; // doc 81 Đợt 4 A5 — a robot STOP is never gated (L-7); F5 deadline
+import { withDeadline } from "../../ot/drivers/boundedClose"; // final wave F5 — bounded STOP-step lookups
 import {
   evaluateGateApprovals,
   findStepDeep,
@@ -179,7 +181,7 @@ export interface DeployResult {
   ok: boolean;
   enabled: boolean;
   /** doc 81 Đợt 4 fix round 2 (R-4-j) — machine-readable refusal (Studio translates it). */
-  reason?: "stopAdapterAmbiguous" | "robotIdMissing";
+  reason?: DefinitionRefusalReason;
   /** Offending step ids for `reason`. */
   stepIds?: string[];
   workflowId?: number;
@@ -210,7 +212,16 @@ export interface StartRunResult {
    * (`t()`) toast instead of showing `message` (English, server-authored) verbatim.
    */
   workflowStatus?: string;
+  /**
+   * doc 81 Đợt 4 final wave G4 — set when the START was refused by the same definition checks deploy runs (a workflow
+   * activated before those checks existed): no run was created. The Studio translates it like a deploy refusal.
+   */
+  reason?: DefinitionRefusalReason;
+  stepIds?: string[];
 }
+
+/** doc 81 Đợt 4 (R-4-j, R-4-n, final wave G3) — why a definition was refused (deploy, and since G4 run start). */
+export type DefinitionRefusalReason = "stopAdapterAmbiguous" | "robotIdMissing" | "robotUnavailable";
 
 export interface RunView {
   run: OrchestrationRun;
@@ -535,18 +546,6 @@ function orchestrationActionId(idempotencyKey: string): string {
  */
 export const FOE_ACTION_TOOL = FOE_ENGINE_TOOL;
 
-/**
- * doc 81 Đợt 4 Task A5 (QĐ-4a option (a), ruling R-4-a) — the separate human approval an OT/robot step rides on:
- * an earlier hitl_gate of the SAME run, approved by `approvedBy` ≠ the run owner. Found by
- * findSeparateGateApproval; recorded on the action (previewJson) so both dispatchers can re-check it.
- */
-export interface FoeStepApproval {
-  runId: number;
-  runOwner: number | null;
-  approvedBy: number;
-  gateStepId: string;
-}
-
 export async function ensureOrchestrationAction(
   user: FoeUser,
   idempotencyKey: string,
@@ -560,7 +559,7 @@ export async function ensureOrchestrationAction(
    * dispatchers accept such a self-confirmed engine row ONLY for a stop (a pinned OT stop; a robot abort is never
    * verified at all).
    */
-  approval?: FoeStepApproval,
+  approval?: FoeGateApproval,
 ): Promise<void> {
   try {
     const d = await getDb();
@@ -623,7 +622,7 @@ export function buildEquipmentCommand(
   idempotencyKey: string,
   user: FoeUser,
   /** doc 81 Đợt 4 Task A5 — requester = run owner, confirmer = the gate approver (absent ⇒ legacy: both `user`). */
-  approval?: FoeStepApproval,
+  approval?: FoeGateApproval,
 ): EquipmentCommand {
   const isRobot = isRobotKind(capability.adapterKind);
   const cmd: EquipmentCommand = {
@@ -859,7 +858,7 @@ export const FOE_GATE_REQUIRED = "FOE_GATE_REQUIRED";
  * owner, bound to the hash of the definition being executed; an owner-less run never counts). Otherwise WHY not.
  * Any DB error ⇒ noGate (fail-closed).
  */
-async function findSeparateGateApproval(rc: RunContext): Promise<{ approval: FoeStepApproval } | { reason: GateRequiredReason }> {
+async function findSeparateGateApproval(rc: RunContext): Promise<{ approval: FoeGateApproval } | { reason: GateRequiredReason }> {
   try {
     const d = await getDb();
     if (!d) return { reason: "noGate" };
@@ -954,6 +953,87 @@ function robotStepsWithoutRobotId(def: WorkflowDefinition, machineMap: Map<numbe
 }
 
 /**
+ * doc 81 Đợt 4 final wave G3 (re-review 3 A3-2) — a robot-kind command step whose args.robotId names a robot that does
+ * not exist or is not enabled could never be sent (the robot route refuses it) — an abort / e_stop would only discover
+ * that during the run. Refused at DEPLOY (and, since G4, at run start). A DB error counts every such step as offending
+ * (fail-closed). Steps without a valid robotId are robotStepsWithoutRobotId's. Orchestration has no tenant scope (out of
+ * scope here, pre-existing).
+ */
+async function robotStepsWithUnavailableRobot(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>): Promise<string[]> {
+  const wanted: Array<{ stepId: string; robotId: number }> = [];
+  for (const step of allStepsOf(def.steps)) {
+    if (step.type !== "command") continue;
+    const m = machineMap.get(step.machineId);
+    if (!m) continue;
+    const cap = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never });
+    if (!isRobotKind(cap.adapterKind)) continue;
+    const rid = step.args?.robotId;
+    if (typeof rid === "number" && Number.isInteger(rid) && rid > 0) wanted.push({ stepId: step.id, robotId: rid });
+  }
+  if (wanted.length === 0) return [];
+  let enabled: Set<number>;
+  try {
+    const d = await getDb();
+    if (!d) return wanted.map((w) => w.stepId);
+    const rows = await d.select().from(robots).where(inArray(robots.id, [...new Set(wanted.map((w) => w.robotId))]));
+    enabled = new Set(rows.filter((r) => r.isEnabled === true).map((r) => r.id));
+  } catch {
+    return wanted.map((w) => w.stepId);
+  }
+  return wanted.filter((w) => !enabled.has(w.robotId)).map((w) => w.stepId);
+}
+
+/**
+ * doc 81 Đợt 4 (R-4-n, final wave G3, R-4-j) — the definition checks deploy runs after validation, in this order; also run
+ * at run START since final wave G4 (workflows activated before these checks existed). null ⇒ the definition passes.
+ */
+async function definitionRefusal(
+  def: WorkflowDefinition,
+  machineMap: Map<number, MachineForValidation>,
+): Promise<{ reason: DefinitionRefusalReason; stepIds: string[]; errors: ValidationError[]; message: string } | null> {
+  // doc 81 Đợt 4 fix round 3 (R-4-n) — every robot step must name its robot BEFORE the run exists.
+  const noRobot = robotStepsWithoutRobotId(def, machineMap);
+  if (noRobot.length > 0) {
+    return {
+      reason: "robotIdMissing",
+      stepIds: noRobot,
+      errors: noRobot.map((id) => ({
+        path: `step:${id}`,
+        message: `Robot step "${id}" names no robot (args.robotId) — at run time it could not be sent. Pick the robot for the step.`,
+      })),
+      message: `Robot step(s) ${noRobot.join(", ")} name no robot — pick the robot for each step before deploying.`,
+    };
+  }
+  // final wave G3 — the named robot must exist and be enabled.
+  const unavailable = await robotStepsWithUnavailableRobot(def, machineMap);
+  if (unavailable.length > 0) {
+    return {
+      reason: "robotUnavailable",
+      stepIds: unavailable,
+      errors: unavailable.map((id) => ({
+        path: `step:${id}`,
+        message: `Robot step "${id}" names a robot that does not exist or is not enabled — at run time it could not be sent. Pick an enabled robot for the step.`,
+      })),
+      message: `Robot step(s) ${unavailable.join(", ")} name a robot that does not exist or is not enabled — pick an enabled robot for each step.`,
+    };
+  }
+  // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step must name a resolvable adapter BEFORE the run exists.
+  const ambiguous = await ambiguousStopSteps(def, machineMap);
+  if (ambiguous.length > 0) {
+    return {
+      reason: "stopAdapterAmbiguous",
+      stepIds: ambiguous,
+      errors: ambiguous.map((id) => ({
+        path: `step:${id}`,
+        message: `Stop step "${id}": its machine has no single enabled adapter (0 or several) and the step names no adapterId — at run time this STOP could not be sent. Set args.adapterId or fix the machine's adapters.`,
+      })),
+      message: `Stop step(s) ${ambiguous.join(", ")} cannot reach a unique adapter — set args.adapterId or fix the machine's adapters before deploying.`,
+    };
+  }
+  return null;
+}
+
+/**
  * doc 81 Đợt 4 fix round 2 (ruling R-4-j, review N1) — an OT STOP step whose adapter cannot be resolved uniquely at run
  * time (no explicit args.adapterId and 0 or 2+ enabled adapters bound to its machine) would only fail during an
  * emergency ("adapterId required"). Caught at DEPLOY instead; the runtime STOP path is unchanged and never gated (L-7).
@@ -1038,12 +1118,45 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // let through here but the OT dispatcher accepts its self-confirmed row ONLY for a PINNED stop.
   // fix round 1 (R-4-d) — an OT step without args.adapterId writes through the adapter BOUND to its machine (one enabled
   // device_adapters row), never "adapter id = machine id"; none / several ⇒ no adapter ⇒ the OT route refuses it.
-  const args = await withResolvedAdapter(cap.adapterKind, step.machineId, step.args ?? {});
-  const found = await findSeparateGateApproval(rc);
+  // final wave F5 (L-7, final review M3) — classify the STOP FIRST, from the step itself (no DB): the name is the
+  // descriptor's and a robot step's args are never rewritten by withResolvedAdapter. fix round 2 (R-4-m) — by ADAPTER KIND.
+  const rawArgs = step.args ?? {};
+  const robotKind = isRobotKind(cap.adapterKind);
+  const isStop = robotKind
+    ? isStopJob(toRobotJob(buildEquipmentCommand(descriptor, cap, step.machineId, rawArgs, idempotencyKey, rc.user)))
+    : await isOtStopCommandType(descriptor.name);
+  let args: Record<string, unknown>;
+  let found: Awaited<ReturnType<typeof findSeparateGateApproval>>;
+  if (!isStop) {
+    args = await withResolvedAdapter(cap.adapterKind, step.machineId, rawArgs);
+    found = await findSeparateGateApproval(rc);
+  } else if (robotKind) {
+    // A robot STOP never waits on the gate lookup: the robot dispatcher never verifies a stop's binding (L-7), so an
+    // approval would change nothing. No adapter lookup either (robot kinds carry robotId).
+    args = rawArgs;
+    found = { reason: "noGate" };
+  } else {
+    // An OT STOP: the OT dispatcher exempts only a PINNED stop from the four-eyes re-check, so an UNPINNED stop step
+    // still rides on a counting gate (refusing it here would refuse a stop that works today). Both lookups therefore
+    // run CONCURRENTLY under ONE STOP DB-step deadline (R-1C-h, STOP_DB_STEP_DEADLINE_MS): the STOP waits at most that
+    // long, never on a hung DB. Deadline/DB failure ⇒ adapter unresolved (the OT route refuses "adapterId required")
+    // and/or no approval (self-confirmed row: a pinned stop passes, an unpinned one is refused NOT_CONFIRMED) — the
+    // runtime stop path's own handling, logged here, never a silent hang.
+    [args, found] = await Promise.all([
+      withDeadline(withResolvedAdapter(cap.adapterKind, step.machineId, rawArgs), STOP_DB_STEP_DEADLINE_MS, `FOE stop step ${step.id} adapter lookup`).catch(
+        (err: unknown) => {
+          console.warn(`[FOE] run ${rc.runId} stop step ${step.id}: adapter lookup not answered — sent unresolved (L-7, F5): ${(err as Error)?.message ?? err}`);
+          return rawArgs;
+        },
+      ),
+      withDeadline(findSeparateGateApproval(rc), STOP_DB_STEP_DEADLINE_MS, `FOE stop step ${step.id} gate lookup`).catch((err: unknown) => {
+        console.warn(`[FOE] run ${rc.runId} stop step ${step.id}: gate lookup not answered — sent without a gate approval (L-7, F5): ${(err as Error)?.message ?? err}`);
+        return { reason: "noGate" as const };
+      }),
+    ]);
+  }
   const approval = "approval" in found ? found.approval : null;
   const probe = buildEquipmentCommand(descriptor, cap, step.machineId, args, idempotencyKey, rc.user);
-  // fix round 2 (R-4-m) — classify by the ADAPTER KIND, not by whether a robotId was given.
-  const isStop = isRobotKind(cap.adapterKind) ? isStopJob(toRobotJob(probe)) : await isOtStopCommandType(probe.name);
   if (!approval && !isStop) {
     // data-raw-ok: the code prefix FOE_GATE_REQUIRED(<reason>) is what the Studio keys its translated text on.
     return { kind: "failed", error: gateRequiredError(step.id, "reason" in found ? found.reason : "noGate") };
@@ -1328,37 +1441,9 @@ export async function deployWorkflow(
     const full = validateWorkflow(def, [...machineMap.values()]);
     if (!full.ok) return { ok: false, enabled: true, errors: full.errors };
 
-    // doc 81 Đợt 4 fix round 3 (R-4-n) — every robot step must name its robot BEFORE the run exists.
-    const noRobot = robotStepsWithoutRobotId(def, machineMap);
-    if (noRobot.length > 0) {
-      return {
-        ok: false,
-        enabled: true,
-        reason: "robotIdMissing",
-        stepIds: noRobot,
-        errors: noRobot.map((id) => ({
-          path: `step:${id}`,
-          message: `Robot step "${id}" names no robot (args.robotId) — at run time it could not be sent. Pick the robot for the step.`,
-        })),
-        message: `Robot step(s) ${noRobot.join(", ")} name no robot — pick the robot for each step before deploying.`,
-      };
-    }
-
-    // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step must name a resolvable adapter BEFORE the run exists.
-    const ambiguous = await ambiguousStopSteps(def, machineMap);
-    if (ambiguous.length > 0) {
-      return {
-        ok: false,
-        enabled: true,
-        reason: "stopAdapterAmbiguous",
-        stepIds: ambiguous,
-        errors: ambiguous.map((id) => ({
-          path: `step:${id}`,
-          message: `Stop step "${id}": its machine has no single enabled adapter (0 or several) and the step names no adapterId — at run time this STOP could not be sent. Set args.adapterId or fix the machine's adapters.`,
-        })),
-        message: `Stop step(s) ${ambiguous.join(", ")} cannot reach a unique adapter — set args.adapterId or fix the machine's adapters before deploying.`,
-      };
-    }
+    // doc 81 Đợt 4 (R-4-n, final wave G3, R-4-j) — robot steps name an existing, enabled robot; OT stops a unique adapter.
+    const refusal = await definitionRefusal(def, machineMap);
+    if (refusal) return { ok: false, enabled: true, ...refusal };
 
     // doc 40 ENG-F4 — SIM-GATE (sau khi validate, TRƯỚC khi persist). Khi cờ FOE_SIM_GATE_REQUIRED
     // bật: chỉ deploy definition có sim-token hợp lệ (đã mô phỏng ĐẠT) HOẶC có override kèm lý do
@@ -1582,6 +1667,13 @@ export async function startRun(
     }
 
     const def = wf.definitionJson as WorkflowDefinition;
+    // doc 81 Đợt 4 final wave G4 (re-review 3 A3-3) — a workflow activated BEFORE the R-4-j / R-4-n / G3 deploy checks is
+    // re-checked here with the SAME checks: refused ⇒ no run is created (an emergency step never discovers it mid-run).
+    {
+      const refs = validateWorkflow(def, null).referencedMachineIds;
+      const refusal = await definitionRefusal(def, await loadMachines(refs));
+      if (refusal) return { ok: false, enabled: true, reason: refusal.reason, stepIds: refusal.stepIds, errors: refusal.errors, message: refusal.message };
+    }
     const [run] = await d
       .insert(orchestrationRuns)
       .values({

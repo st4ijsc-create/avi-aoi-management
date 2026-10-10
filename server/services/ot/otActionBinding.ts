@@ -166,6 +166,11 @@ export const FOE_ENGINE_TOOL = "foe.orchestration";
 /** previewJson key carrying the gate approval an engine action rides on (server-owned). */
 export const FOE_APPROVAL_FIELD = "__foeGateApproval";
 
+/**
+ * The separate gate approval an orchestration OT/robot step rides on (an earlier hitl_gate of the SAME run approved by
+ * someone other than the run owner). final wave F9 — the ONE shape: foeEngine uses it too (its identical
+ * FoeStepApproval was removed).
+ */
 export interface FoeGateApproval {
   runId: number;
   /** orchestration_runs.startedBy — null when the run was not started by a user (API / system). */

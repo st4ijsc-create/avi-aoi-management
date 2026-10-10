@@ -55,7 +55,7 @@ import {
   RobotAbortUnsupportedError,
 } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
-import { isStopJob } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
+import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
 /**
@@ -236,7 +236,7 @@ const SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
  * bounded (≤ 1.5 s per the ruling) and a failure/timeout NEVER stops the STOP: it is sent, and its ledger
  * row is written best-effort afterwards. MOTION keeps its fail-closed behaviour (no deadline added there).
  */
-export const ROBOT_STOP_DB_STEP_DEADLINE_MS = 1000;
+export const ROBOT_STOP_DB_STEP_DEADLINE_MS = STOP_DB_STEP_DEADLINE_MS; // final wave F5 — one definition (stopJob.ts), shared with the FOE engine
 
 export type StopDbStep =
   | "idempotency_lookup"
