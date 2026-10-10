@@ -83,6 +83,15 @@ describe("B5 — '09-28-2026' is a FACTORY wall-clock date, not an offset", () =
     });
   }
 
+  it("★ fix 1 (R-4-s #9): an alphabetic zone abbreviation names the frame — parsed as before B5 (process TZ irrelevant)", () => {
+    process.env.TZ = "UTC";
+    vi.stubEnv("FACTORY_TZ", "Asia/Ho_Chi_Minh");
+    expect(docGioTuongNhaMay("Sep 28 2026 08:30 EST")?.toISOString()).toBe("2026-09-28T13:30:00.000Z");
+    expect(docGioTuongNhaMay("Sep 28 2026 08:30 PDT")?.toISOString()).toBe("2026-09-28T15:30:00.000Z");
+    // AM/PM is not a zone: still factory wall clock (20:30 +07 ⇒ 13:30Z)
+    expect(docGioTuongNhaMay("09-28-2026 08:30 PM")?.toISOString()).toBe("2026-09-28T13:30:00.000Z");
+  });
+
   it("explicit offsets still pass straight through (same rule as coMuiGioTuongMinh)", () => {
     vi.stubEnv("FACTORY_TZ", "Asia/Ho_Chi_Minh");
     expect(docGioTuongNhaMay("2026-09-28T08:30:00+07:00")?.toISOString()).toBe("2026-09-28T01:30:00.000Z");

@@ -11,12 +11,14 @@
  * Oracle: hàng SQL đọc bằng truy vấn riêng + quyết định của dispatcher + hàng audit_logs.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 const H = vi.hoisted(() => ({
   robotId: 990_364_000 + (Date.now() % 9_000),
   drivers: [] as unknown[],
   getDbFault: null as null | "throw" | "hang",
+  /** fix round 1 (#8) — how many robots the gateway registers (ids robotId, robotId+1, …). */
+  count: 1,
 }));
 
 vi.mock("../../db/connection", async (importOriginal) => {
@@ -80,11 +82,13 @@ vi.mock("./robotAdapter", async () => {
     }
   }
   return {
-    loadEnabledRobots: async () => {
-      const driver = new LockDriver();
-      H.drivers.push(driver);
-      return [{ id: H.robotId, code: `B4-${H.robotId}`, vendor: "mitsubishi", connection: { endpoint: "sim://b4" }, pollIntervalMs: 60_000, driver }];
-    },
+    loadEnabledRobots: async () =>
+      Array.from({ length: H.count }, (_, i) => {
+        const driver = new LockDriver();
+        if (i === 0) H.drivers.push(driver);
+        const id = H.robotId + i;
+        return { id, code: `B4-${id}`, vendor: "mitsubishi", connection: { endpoint: "sim://b4" }, pollIntervalMs: 60_000, driver };
+      }),
   };
 });
 // startRobots reconciles orphaned robot_jobs of the WHOLE shared _test DB — not this test's business.
@@ -134,7 +138,7 @@ for (const k of ENV) saved[k] = process.env[k];
 
 async function cleanup() {
   const d = await db();
-  await d.delete(robotMotionLocks).where(eq(robotMotionLocks.robotId, ROBOT)); // robot_jobs is append-only (no DELETE for avi_app): its rows of this fake robot id stay
+  await d.delete(robotMotionLocks).where(inArray(robotMotionLocks.robotId, [ROBOT, ROBOT + 1, ROBOT + 2])); // robot_jobs is append-only (no DELETE for avi_app): its rows of this fake robot id stay
 }
 beforeAll(async () => {
   await cleanup();
@@ -149,8 +153,20 @@ afterAll(async () => {
     else process.env[k] = saved[k];
   }
 });
+// Fix round 1 (#12) — the store logs on purpose (restored / not persisted / persistUnknown) and the router logs a clear:
+// captured so the run output stays pristine; the cases that care assert on these spies.
+let warnSpy: ReturnType<typeof vi.spyOn>;
+let logErrSpy: ReturnType<typeof vi.spyOn>;
+let logSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(async () => {
+  warnSpy?.mockRestore();
+  logErrSpy?.mockRestore();
+  warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  logSpy?.mockRestore();
+  logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined); // "[Robot] started — …" lifecycle lines
+  logErrSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   H.getDbFault = null;
+  H.count = 1;
   process.env.ROBOT_GATEWAY_ENABLED = "true";
   process.env.ROBOT_CONTROL_ENABLED = "true";
   process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
@@ -218,12 +234,11 @@ describe("B4 — motion lock survives a restart (robot_motion_locks, _test)", ()
   it("★ fail-closed: the persisted lock cannot be read at registration ⇒ starts LOCKED `persistUnknown`; an audited clear unlocks", async () => {
     await stopRobots();
     H.getDbFault = "throw";
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const errSpy = logErrSpy;
     await startRobots();
     H.getDbFault = null;
     expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "persistUnknown" });
     expect(errSpy.mock.calls.flat().join(" ")).not.toContain("SECRETPW");
-    errSpy.mockRestore();
     expect((await dispatchRobotJob(MOTION)).error).toBe("MOTION_LOCKED");
     const caller = robotRouter.createCaller({ user: { id: USER, role: "engineer", name: "B4 op", twoFactorEnabled: true }, req: { ip: "127.0.0.1", headers: {} } } as any);
     await caller.clearMotionLock({ robotId: ROBOT, reason: "DB was down at boot; robot checked", expectedGeneration: current().getMotionLock().generation });
@@ -233,26 +248,59 @@ describe("B4 — motion lock survives a restart (robot_motion_locks, _test)", ()
   it("★ a HUNG load is bounded: registration finishes within the DB deadline and the robot starts locked", async () => {
     await stopRobots();
     H.getDbFault = "hang";
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const errSpy = logErrSpy;
     const t0 = Date.now();
     await startRobots();
     const elapsed = Date.now() - t0;
     H.getDbFault = null;
-    errSpy.mockRestore();
     expect(elapsed).toBeLessThan(MOTION_LOCK_DB_DEADLINE_MS + 1000);
     expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "persistUnknown" });
   });
 
+  it("★ fix 1 (#8): N robots + a HUNG DB ⇒ ONE bounded load (≈ one deadline, not N × deadline); all start locked", async () => {
+    await stopRobots();
+    H.count = 3;
+    H.getDbFault = "hang";
+    const t0 = Date.now();
+    await startRobots();
+    const elapsed = Date.now() - t0;
+    H.getDbFault = null;
+    expect(elapsed).toBeLessThan(MOTION_LOCK_DB_DEADLINE_MS + 1000); // sequential was 3 × 2 s
+    for (const id of [ROBOT, ROBOT + 1, ROBOT + 2]) {
+      expect((getActiveRobot(id)?.driver as any).getMotionLock()).toMatchObject({ locked: true, reasonCode: "persistUnknown" });
+    }
+  });
+
+  it("★ fix 1 (#7): persistUnknown over a saved row of a HIGHER generation — the audited operator clear deletes it (next restart unlocked)", async () => {
+    current().lockMotion("a");
+    current().motionLock.clearByStop();
+    current().lockMotion("b");
+    current().motionLock.clearByStop();
+    current().lockMotion("line_connection_closed"); // generation 3 saved
+    await _flushMotionLockWritesForTests();
+    expect((await row())?.generation).toBe(3);
+    await stopRobots();
+    H.getDbFault = "throw";
+    await startRobots();
+    H.getDbFault = null;
+    expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "persistUnknown", generation: 1 });
+    const caller = robotRouter.createCaller({ user: { id: USER, role: "engineer", name: "B4 op", twoFactorEnabled: true }, req: { ip: "127.0.0.1", headers: {} } } as any);
+    await caller.clearMotionLock({ robotId: ROBOT, reason: "DB was down at boot; robot checked on site", expectedGeneration: 1 });
+    await _flushMotionLockWritesForTests();
+    expect(await row()).toBeNull();
+    await restart();
+    expect(current().getMotionLock().locked).toBe(false);
+  });
+
   it("★ a failing DB write never blocks lock(): locked at once in memory, error logged", async () => {
     H.getDbFault = "hang";
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const errSpy = logErrSpy;
     const t0 = Date.now();
     current().lockMotion("line_reply_timeout");
     expect(Date.now() - t0).toBeLessThan(50);
     expect(current().getMotionLock().locked).toBe(true);
     await _flushMotionLockWritesForTests();
     expect(errSpy.mock.calls.flat().join(" ")).toMatch(/not persisted/);
-    errSpy.mockRestore();
     H.getDbFault = null;
     expect(await row()).toBeNull();
     // and a STOP still clears instantly in memory while the DB is unreachable

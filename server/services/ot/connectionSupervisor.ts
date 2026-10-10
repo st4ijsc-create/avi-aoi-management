@@ -417,6 +417,11 @@ export class ConnectionSupervisor {
    * ITSELF given up — nothing it started keeps going and later replaces the session. A connect that lands after the
    * budget is never made active: connectAndSubscribe's late-connect reaper closes it (existing behaviour). Failure ⇒
    * 'failed' + the normal backoff retry. Never throws. true ⇔ a session opened by THIS call is connected.
+   * RESIDUAL (fix round 1, review #5 — documented, not guarded): the disconnect step is BOUNDED, not cancelled. A driver
+   * whose disconnect() hangs and completes only after the fresh connect could tear down the new session (driver-internal
+   * state; a supervisor-side generation check cannot stop a driver from closing its own transport — that needs a
+   * per-driver session epoch in every driver). The STOP on that session then FAILS visibly (ledger + overlapRisk audit),
+   * never silently. Same pattern as the existing reconnect loop.
    */
   async resetSession(reason: string, budgetMs: number = this.resetBoundMs()): Promise<boolean> {
     if (this.stopped || this.cycleRunning || this.state !== "connected" || this.activeIndex < 0) return false;

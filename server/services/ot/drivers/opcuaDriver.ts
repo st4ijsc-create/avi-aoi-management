@@ -122,7 +122,9 @@ function optionalExport(pkg: any, name: string): any {
  */
 export function opcuaSampleTime(dv: { sourceTimestamp?: unknown } | null | undefined): { timestamp: Date; tsSource: "device" | "server" } {
   const src = dv?.sourceTimestamp;
-  return src instanceof Date && !isNaN(src.getTime()) ? { timestamp: src, tsSource: "device" } : { timestamp: new Date(), tsSource: "server" };
+  // Fix round 1 (R-4-s #10) — as before B6, ANY Date from the server is passed through (an Invalid Date is then rejected by
+  // the bus as invalid_ts, counted against the device); only a missing source timestamp is stamped here.
+  return src instanceof Date ? { timestamp: src, tsSource: "device" } : { timestamp: new Date(), tsSource: "server" };
 }
 
 export class OpcuaDriver extends NotImplementedDriver {

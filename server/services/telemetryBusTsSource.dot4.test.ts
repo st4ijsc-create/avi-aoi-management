@@ -37,7 +37,11 @@ const sample = (dev: string, over: Partial<CanonicalSample> = {}): CanonicalSamp
 });
 const row = (dev: string) => getTsSkewByDevice(1000).find((r) => r.deviceId === dev);
 
+let warnSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
+  // fix 1 (#12) — the bus logs its ts rejections (warnGop); captured so the run output stays pristine.
+  warnSpy?.mockRestore();
+  warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   db.stored.length = 0;
   _resetTsDropStats();
   _resetLogGop();
@@ -78,6 +82,7 @@ describe("B6 — clock-drift table excludes server-stamped samples", () => {
     const r = await ingestTelemetry([sample("B6-BAD", { tsSource: "server", ts: new Date(NaN) })]);
     expect(db.stored).toHaveLength(0);
     expect(row("B6-BAD")).toBeUndefined();
+    expect(warnSpy.mock.calls.flat().join(" ")).toMatch(/invalid_ts=1/);
     void r;
   });
 });
@@ -96,7 +101,10 @@ describe("B6 — producers declare who stamped the time", () => {
     expect(opcuaSampleTime({ sourceTimestamp: src })).toEqual({ timestamp: src, tsSource: "device" });
     expect(opcuaSampleTime({}).tsSource).toBe("server");
     expect(opcuaSampleTime(undefined).tsSource).toBe("server");
-    expect(opcuaSampleTime({ sourceTimestamp: new Date(NaN) }).tsSource).toBe("server");
+    // fix 1 (R-4-s #10): an INVALID source timestamp is passed through as before B6 (the bus rejects it as invalid_ts)
+    const bad = opcuaSampleTime({ sourceTimestamp: new Date(NaN) });
+    expect(bad.tsSource).toBe("device");
+    expect(isNaN(bad.timestamp.getTime())).toBe(true);
   });
 
   it("plugin sidecar: no timestamp ⇒ 'server'; a zoned timestamp ⇒ 'device'", () => {

@@ -12,7 +12,7 @@
  * a late upsert; a write that times out may still land later — in the worst case a restart then starts LOCKED
  * (fail-closed direction), never unlocked.
  */
-import { and, eq, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { robotMotionLocks } from "../../../drizzle/schema";
 import { withDeadline } from "../ot/drivers/boundedClose";
@@ -68,55 +68,77 @@ export function persistMotionLock(robotId: number, state: MotionLockState): Prom
   });
 }
 
-/** DELETE the persisted lock of `robotId` up to `generation` (a newer lock's row is never removed). */
-export function deleteMotionLock(robotId: number, generation: number): Promise<void> {
+/**
+ * DELETE the persisted lock of `robotId` up to `generation` (a newer lock's row is never removed). `null` ⇒ delete
+ * whatever its generation — used by an AUDITED operator clear and by clearing a `persistUnknown` lock (fix round 1,
+ * R-4-s #7: after `persistUnknown` the in-memory generation knows nothing of the unread row's generation).
+ */
+export function deleteMotionLock(robotId: number, generation: number | null): Promise<void> {
   return enqueue(robotId, "delete", async () => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable (getDb returned null)");
-    await db.delete(robotMotionLocks).where(and(eq(robotMotionLocks.robotId, robotId), lte(robotMotionLocks.generation, generation)));
+    await db
+      .delete(robotMotionLocks)
+      .where(generation === null ? eq(robotMotionLocks.robotId, robotId) : and(eq(robotMotionLocks.robotId, robotId), lte(robotMotionLocks.generation, generation)));
   });
 }
 
-/** Read the persisted lock of `robotId` (null = none). THROWS on a DB failure / timeout (caller fails closed). */
-export async function loadMotionLock(robotId: number): Promise<{ reasonCode: string; detail: string | null; since: string; generation: number } | null> {
-  const read = (async () => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable (getDb returned null)");
-    const [row] = await db.select().from(robotMotionLocks).where(eq(robotMotionLocks.robotId, robotId)).limit(1);
-    return row ?? null;
-  })();
-  const row = await withDeadline(read, MOTION_LOCK_DB_DEADLINE_MS, `robot ${robotId} motion lock load`);
-  if (!row) return null;
-  return { reasonCode: row.reasonCode, detail: row.detail ?? null, since: new Date(row.lockedAt).toISOString(), generation: row.generation };
+export interface SavedMotionLock {
+  reasonCode: string;
+  detail: string | null;
+  since: string;
+  generation: number;
+}
+/** Result of the ONE registration-time read: the saved rows, or why they could not be read (every robot fails closed). */
+export type MotionLockLoad = { ok: true; rows: Map<number, SavedMotionLock> } | { ok: false; error: string };
+
+/**
+ * Fix round 1 (R-4-s #8) — read the persisted locks of ALL registering robots in ONE query under ONE deadline
+ * (MOTION_LOCK_DB_DEADLINE_MS), not one bounded read per robot (a hung DB used to cost N × 2 s at startup). Never throws.
+ */
+export async function loadMotionLocks(robotIds: number[]): Promise<MotionLockLoad> {
+  if (robotIds.length === 0) return { ok: true, rows: new Map() };
+  try {
+    const read = (async () => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable (getDb returned null)");
+      return db.select().from(robotMotionLocks).where(inArray(robotMotionLocks.robotId, robotIds));
+    })();
+    const rows = await withDeadline(read, MOTION_LOCK_DB_DEADLINE_MS, `motion lock load (${robotIds.length} robot(s))`);
+    const out = new Map<number, SavedMotionLock>();
+    for (const row of rows) {
+      out.set(row.robotId, { reasonCode: row.reasonCode, detail: row.detail ?? null, since: new Date(row.lockedAt).toISOString(), generation: row.generation });
+    }
+    return { ok: true, rows: out };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
 }
 
 /**
- * Registration step (robotManager, before connect): restore the persisted lock into `lock` — or, when it cannot be
- * read, lock with `persistUnknown` (fail-closed) — then attach the persistence hooks. Never throws.
+ * Registration step (robotManager, before connect), given the ONE batched load: restore the persisted lock into `lock`
+ * — or, when the load failed, lock with `persistUnknown` (fail-closed) — and attach the persistence hooks. Never throws.
  * Returns what happened (for logs/tests).
  */
-export async function attachMotionLockPersistence(robotId: number, lock: MotionLock): Promise<"restored" | "none" | "persistUnknown"> {
+export function attachMotionLockPersistence(robotId: number, lock: MotionLock, load: MotionLockLoad): "restored" | "none" | "persistUnknown" {
   let outcome: "restored" | "none" | "persistUnknown";
-  let loadError: string | null = null;
-  try {
-    const saved = await loadMotionLock(robotId);
-    if (saved) {
-      lock.restore(saved);
-      outcome = "restored";
-    } else {
-      outcome = "none";
-    }
-  } catch (err) {
-    loadError = errText(err);
-    outcome = "persistUnknown";
-  }
+  const saved = load.ok ? load.rows.get(robotId) : undefined;
+  if (!load.ok) outcome = "persistUnknown";
+  else if (saved) {
+    lock.restore(saved);
+    outcome = "restored";
+  } else outcome = "none";
   lock.attachPersistence({
     locked: (state) => void persistMotionLock(robotId, state),
-    cleared: (state) => void deleteMotionLock(robotId, state.generation ?? 0),
+    cleared: (state) =>
+      void deleteMotionLock(
+        robotId,
+        state.clearedBy === "operator" || state.reasonCode === MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE ? null : (state.generation ?? 0),
+      ),
   });
-  if (outcome === "persistUnknown") {
-    console.error(`[Robot] robot ${robotId}: persisted motion lock could not be read — starting LOCKED (${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE}, fail-closed, B4): ${loadError}`);
-    lock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, `persisted motion lock unreadable at registration: ${loadError}`);
+  if (!load.ok) {
+    console.error(`[Robot] robot ${robotId}: persisted motion lock could not be read — starting LOCKED (${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE}, fail-closed, B4): ${load.error}`);
+    lock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, `persisted motion lock unreadable at registration: ${load.error}`);
   } else if (outcome === "restored") {
     const st = lock.snapshot();
     console.warn(`[Robot] robot ${robotId}: motion lock restored from before the restart (${st.reasonCode} since ${st.since}, generation ${st.generation})`);

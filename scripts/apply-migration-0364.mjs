@@ -114,13 +114,16 @@ async function applyTo(rawUrl, label) {
 
     // (a) cột + khoá chính + CHECK + chú thích
     const cols = await appSql`
-      SELECT column_name AS n, data_type AS t, is_nullable AS nl, column_default AS d FROM information_schema.columns
+      SELECT column_name AS n, data_type AS t, is_nullable AS nl, column_default AS d, character_maximum_length AS len FROM information_schema.columns
        WHERE table_schema = 'public' AND table_name = ${BANG} ORDER BY ordinal_position`;
     const got = cols.map((c) => `${c.n}:${c.t}:${c.nl}`).join(",");
     const want =
       "robotId:integer:NO,reasonCode:character varying:NO,detail:text:YES,generation:integer:NO,lockedAt:timestamp without time zone:NO";
     if (got !== want) throw new Error(`(a) cot ${BANG} sai: ${got} (phai la ${want})`);
     if (cols.find((c) => c.n === "lockedAt")?.d !== "now()") throw new Error(`(a) lockedAt default phai la now()`);
+    // Fix round 1 (#11) — độ dài varchar như khuôn 0363 (character_maximum_length).
+    const lenReason = cols.find((c) => c.n === "reasonCode")?.len;
+    if (Number(lenReason) !== 64) throw new Error(`(a) reasonCode varchar(${lenReason}) (phai la varchar(64))`);
     const [pk] = await appSql`
       SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
        WHERE conrelid = ${"public." + BANG}::regclass AND contype = 'p'`;
