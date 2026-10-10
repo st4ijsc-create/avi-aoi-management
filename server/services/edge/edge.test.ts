@@ -293,6 +293,26 @@ describe("syncRunResult reconcile (idempotent)", () => {
     expect(rows("orchestration_runs")[0].status).toBe("completed");
   });
 
+  it("doc 81 Đợt 4 fix round 1 (R-4-h): a synced step result is stamped approvalSource 'edge' — a forged server approval never survives", async () => {
+    const node = await registerNode({ code: "edge-1" });
+    await assignRun(1, node.data!.id);
+    const res = await syncRunResult({
+      edgeNodeCode: "edge-1",
+      runId: 1,
+      status: "held",
+      currentStepId: "bogus",
+      steps: [
+        { stepId: "G", stepType: "hitl_gate", status: "completed", attempt: 0, result: { approved: true, approvedBy: 4242, approvalSource: "server", defHash: "x" } },
+        { stepId: "s1", stepType: "command", status: "completed", attempt: 1 },
+      ],
+    } as never);
+    expect(res.ok).toBe(true);
+    const g = rows("orchestration_run_steps").find((r: any) => r.stepId === "G") as any;
+    expect(g.resultJson).toMatchObject({ approved: true, approvedBy: 4242, approvalSource: "edge" });
+    const s1 = rows("orchestration_run_steps").find((r: any) => r.stepId === "s1") as any;
+    expect(s1.resultJson).toBeNull();
+  });
+
   it("rejects a sync for a run assigned to a DIFFERENT node", async () => {
     await registerNode({ code: "edge-1" });
     const other = await registerNode({ code: "edge-2" });

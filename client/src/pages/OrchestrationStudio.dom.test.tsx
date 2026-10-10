@@ -210,16 +210,20 @@ describe("OrchestrationStudio — Fix round 1: failed/timeout là 'chưa xác nh
   });
 });
 
-describe("OrchestrationStudio — doc 81 Đợt 4 Task A5: bước dừng FOE_GATE_REQUIRED nói rõ phải làm gì", () => {
-  it("bước lệnh có lỗi FOE_GATE_REQUIRED ⇒ dòng giải thích (studio.gateRequired); bước lỗi khác ⇒ không có dòng ấy", async () => {
+describe("OrchestrationStudio — doc 81 Đợt 4 Task A5 + fix round 1: bước dừng FOE_GATE_REQUIRED nói rõ VÌ SAO và phải làm gì", () => {
+  it("mỗi lý do một câu riêng (không gate / chủ run tự duyệt / duyệt cũ sau redeploy / không rõ chủ); lỗi khác ⇒ không có dòng ấy", async () => {
     setQueryOverride(
       "orchestration.getRun",
       makeQuery({
         data: {
           run: RUNS[2],
           steps: [
-            { stepId: "w1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED: command step "w1" needs an earlier approval gate' },
-            { stepId: "w2", stepType: "command", status: "failed", attempt: 1, result: null, error: "POLICY_DENIED: no" },
+            { stepId: "w1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(noGate): command step "w1" was not sent' },
+            { stepId: "w2", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(approvedByOwner): command step "w2" was not sent' },
+            { stepId: "w3", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(staleApproval): command step "w3" was not sent' },
+            { stepId: "w4", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(ownerUnknown): command step "w4" was not sent' },
+            { stepId: "w5", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED: legacy shape' },
+            { stepId: "w6", stepType: "command", status: "failed", attempt: 1, result: null, error: "POLICY_DENIED: no" },
           ],
         },
       }),
@@ -227,10 +231,13 @@ describe("OrchestrationStudio — doc 81 Đợt 4 Task A5: bước dừng FOE_GA
     render(<OrchestrationStudio />);
     const { default: userEvent } = await import("@testing-library/user-event");
     await userEvent.setup().click(screen.getByText(/run #20 ·/));
-    const notes = rowOf(20).querySelectorAll('[data-testid="step-gate-required"]');
-    expect(notes).toHaveLength(1);
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]'));
+    expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["noGate", "approvedByOwner", "staleApproval", "ownerUnknown", "noGate"]);
     expect(notes[0].textContent).toMatch(/approval gate earlier in the run, approved by someone other than the person who started it/);
-    expect(notes[0].closest("div")?.textContent).toMatch(/w1/);
+    expect(notes[1].textContent).toMatch(/approved by the person who started the run, which does not count/);
+    expect(notes[2].textContent).toMatch(/redeployed after the gate was approved/);
+    expect(notes[3].textContent).toMatch(/no known owner/);
+    expect(new Set(notes.slice(0, 4).map((n) => n.textContent)).size).toBe(4);
   });
 });
 

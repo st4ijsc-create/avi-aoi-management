@@ -214,6 +214,8 @@ function seedMachines() {
     { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "Auto-1", operationStatus: "stopped", stationId: 1 },
     { id: 2, machineType: "AOI", capabilities: null, code: "M2", name: "Aoi-1", operationStatus: "stopped", stationId: 1 },
   ]);
+  // doc 81 Đợt 4 fix round 1 (R-4-d): an OT step writes through the adapter BOUND to its machine (no more adapterId = machineId).
+  store.set("device_adapters", [{ id: 501, machineId: 1, isEnabled: true }]);
 }
 
 function reset() {
@@ -812,8 +814,12 @@ describe("W4-17 durable execution", () => {
     expect(rh.interrupted).toBe(1);
     expect(runById(started.runId!)!.status).toBe("held");
 
-    // Resume thủ công (approve) → đi lại: 'pre' KHÔNG re-dispatch, gate đã đánh dấu completed,
-    // chỉ 'after' chạy → tổng [start, stop].
+    // "Tiếp tục" run bị gián đoạn → đi lại: 'pre' KHÔNG re-dispatch. doc 81 Đợt 4 fix round 1 (R-4-g): "Tiếp tục"
+    // KHÔNG phải một lần duyệt — gate 'g' chưa được duyệt nên lượt đi lại DỪNG LẠI ở 'g' (trước: lượt tiếp tục tự
+    // đánh dấu 'g' đã duyệt). Người khác duyệt 'g' ⇒ chỉ 'after' chạy → tổng [start, stop].
+    const continued = await resumeRun(started.runId!, { approved: true }, APPROVER);
+    expect(continued.status).toBe("awaiting_confirm");
+    expect(otDispatchMock.mock.calls.map((c) => c[0].commandType)).toEqual(["start"]);
     const resumed = await resumeRun(started.runId!, { approved: true }, APPROVER);
     expect(resumed.status).toBe("completed");
     expect(otDispatchMock.mock.calls.map((c) => c[0].commandType)).toEqual(["start", "stop"]);

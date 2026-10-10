@@ -57,6 +57,7 @@ import {
   orchestrationRunSteps,
   orchestrationWorkflows,
   machines,
+  deviceAdapters,
 } from "../../../../drizzle/schema";
 import { deployWorkflow, startRun, resumeRun, abortRun, rollbackWorkflow } from "./foeEngine";
 import type { WorkflowDefinition } from "./workflowModel";
@@ -112,6 +113,8 @@ beforeEach(() => {
   fake.seed(machines, [
     { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "Auto-1", operationStatus: "stopped", stationId: 1 },
   ]);
+  // doc 81 Đợt 4 fix round 1 (R-4-d): an OT step writes through the adapter BOUND to its machine (no more adapterId = machineId).
+  fake.seed(deviceAdapters, [{ id: 501, machineId: 1, isEnabled: true }]);
   otDispatchMock.mockClear();
   robotDispatchMock.mockClear();
   auditMock.mockClear();

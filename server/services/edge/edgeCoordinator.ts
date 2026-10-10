@@ -20,6 +20,7 @@
  * always safe. FAIL-SAFE: a DB/transport error never crashes the process.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { FOE_APPROVAL_SOURCE_EDGE } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-h)
 import { and, desc, eq, lt, inArray } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
@@ -402,6 +403,13 @@ export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult
     let stepsApplied = 0;
     for (const s of payload.steps ?? []) {
       if (!s || typeof s.stepId !== "string" || !STEP_STATUSES.has(s.status)) continue;
+      // doc 81 Đợt 4 fix round 1 (R-4-h) — an edge-synced step result is NEVER a server-recorded gate approval:
+      // approvalSource is forced to "edge" (overwriting whatever the payload claims), so it never counts for
+      // four-eyes (foeGateApproval.evaluateGateApprovals). A synced row also replaces a server one ⇒ that approval
+      // stops counting (fail-closed).
+      const result = s.result && typeof s.result === "object" && !Array.isArray(s.result)
+        ? { ...(s.result as Record<string, unknown>), approvalSource: FOE_APPROVAL_SOURCE_EDGE }
+        : s.result ?? null;
       await d
         .insert(orchestrationRunSteps)
         .values({
@@ -410,7 +418,7 @@ export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult
           stepType: s.stepType ?? "command",
           status: s.status as never,
           attempt: s.attempt ?? 0,
-          resultJson: s.result ?? null,
+          resultJson: result,
           error: s.error ?? null,
           startedAt: toDate(s.startedAt),
           finishedAt: toDate(s.finishedAt),
@@ -421,7 +429,7 @@ export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult
             stepType: s.stepType ?? "command",
             status: s.status as never,
             attempt: s.attempt ?? 0,
-            resultJson: s.result ?? null,
+            resultJson: result,
             error: s.error ?? null,
             startedAt: toDate(s.startedAt) ?? undefined,
             finishedAt: toDate(s.finishedAt) ?? undefined,

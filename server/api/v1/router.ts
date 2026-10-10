@@ -513,7 +513,11 @@ export function createV1Router(): Router {
         throw new ApiHttpError(400, "bad_request", "Body field `workflowRef` is required.");
       }
       const principal = req.apiPrincipal?.name ?? "api-key";
-      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal });
+      // doc 81 Đợt 4 fix round 1 (R-4-f) — the run's OWNER is the human who created this API key (when attributable);
+      // otherwise the run is owner-less and the engine refuses its OT/robot steps (FOE_GATE_REQUIRED(ownerUnknown)).
+      const { apiKeyOwnerUserId } = await import("./apiKeyOwner");
+      const ownerUserId = await apiKeyOwnerUserId(req.apiPrincipal);
+      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, { ownerUserId });
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
       }

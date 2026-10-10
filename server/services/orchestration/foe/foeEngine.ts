@@ -37,6 +37,7 @@ import {
   orchestrationRunSteps,
   machines,
   aiPendingActions,
+  deviceAdapters,
   type OrchestrationRun,
 } from "../../../../drizzle/schema";
 import {
@@ -63,6 +64,14 @@ import {
 import { asPackmlState } from "../../equipment/packml";
 import { FOE_ENGINE_TOOL, otPayloadHash, robotPayloadHash, withFoeGateApproval, withOtPayloadHash } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6 + final wave (robot) + Đợt 4 A5
 import { isStopJob } from "../../robot/stopJob"; // doc 81 Đợt 4 A5 — a robot STOP is never gated (L-7)
+import {
+  evaluateGateApprovals,
+  findStepDeep,
+  hashWorkflowDefinition,
+  FOE_APPROVAL_SOURCE_SERVER,
+  FOE_APPROVAL_SOURCE_SYSTEM,
+  type GateRequiredReason,
+} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
@@ -100,25 +109,9 @@ export function foeSimGateRequired(): boolean {
 const SIM_TOKEN_SECRET =
   process.env.FOE_SIM_TOKEN_SECRET || process.env.SESSION_SECRET || randomBytes(32).toString("hex");
 
-/** Canonical JSON (khóa sắp xếp, đệ quy) → hash ĐỊNH NGHĨA ổn định bất kể thứ tự khóa. */
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    return Object.keys(obj)
-      .sort()
-      .reduce<Record<string, unknown>>((acc, k) => {
-        acc[k] = canonicalize(obj[k]);
-        return acc;
-      }, {});
-  }
-  return value;
-}
-
-/** Hash ổn định (sha256) của một WorkflowDefinition — khóa dùng cho sim-gate binding. */
-export function hashWorkflowDefinition(def: WorkflowDefinition): string {
-  return createHash("sha256").update(JSON.stringify(canonicalize(def))).digest("hex");
-}
+// doc 81 Đợt 4 fix round 1 — canonical-JSON definition hash moved to foeGateApproval.ts (ONE definition shared with the
+// gate-approval binding R-4-e and the dispatchers' DB check R-4-i); re-exported here for existing importers.
+export { hashWorkflowDefinition };
 
 /**
  * Phát hành sim-token (HMAC) cho một definition ĐÃ mô phỏng ĐẠT. CHỈ gọi khi sim.ok === true
@@ -636,7 +629,8 @@ export function buildEquipmentCommand(
       cmd.job = { jobType: args.jobType as never, params: (args.params as Record<string, unknown>) ?? {} };
     }
   } else {
-    cmd.adapterId = typeof args.adapterId === "number" ? args.adapterId : machineId;
+    // fix round 1 (R-4-d) — never default to the machine id (different id space); execCommand resolves the bound adapter.
+    cmd.adapterId = typeof args.adapterId === "number" ? args.adapterId : undefined;
     if (Array.isArray(args.writes)) {
       cmd.writes = (args.writes as Array<{ tagKey: string; value: unknown }>).filter(
         (w) => w && typeof w.tagKey === "string",
@@ -841,32 +835,56 @@ async function isOtStopCommandType(name: string): Promise<boolean> {
 export const FOE_GATE_REQUIRED = "FOE_GATE_REQUIRED";
 
 /**
- * doc 81 Đợt 4 Task A5 (R-4-a) — the latest hitl_gate of THIS run that counts as a separate human approval:
- *   • its _run_steps row is 'completed' with result { approved: true, approvedBy } (written by resumeRun);
- *   • the step id is a hitl_gate IN THE WORKFLOW DEFINITION (resumeRun also marks a 'held' step it continues);
- *   • approvedBy is a real user (positive integer — never 0 / the system auto-resume) and ≠ the run owner.
- * A gate result with no approvedBy (runs from before Đợt 4) does NOT count. Any DB error ⇒ null (fail-closed).
+ * doc 81 Đợt 4 Task A5 (R-4-a) + fix round 1 (R-4-e … R-4-h) — the latest hitl_gate of THIS run that counts as a separate
+ * human approval, by the ONE rule in foeGateApproval.evaluateGateApprovals (server-recorded approval, approver ≠ run
+ * owner, bound to the hash of the definition being executed; an owner-less run never counts). Otherwise WHY not.
+ * Any DB error ⇒ noGate (fail-closed).
  */
-async function findSeparateGateApproval(rc: RunContext): Promise<FoeStepApproval | null> {
+async function findSeparateGateApproval(rc: RunContext): Promise<{ approval: FoeStepApproval } | { reason: GateRequiredReason }> {
   try {
     const d = await getDb();
-    if (!d) return null;
+    if (!d) return { reason: "noGate" };
     const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, rc.runId));
-    let best: { approval: FoeStepApproval; at: number } | null = null;
-    for (const r of rows) {
-      if (r.status !== "completed") continue;
-      const node = findStepDeep(rc.def.steps, r.stepId);
-      if (!node || node.type !== "hitl_gate") continue;
-      const res = (r.resultJson ?? null) as { approved?: unknown; approvedBy?: unknown } | null;
-      const by = res?.approvedBy;
-      if (res?.approved !== true || typeof by !== "number" || !Number.isInteger(by) || by <= 0) continue;
-      if (rc.runOwner !== null && by === rc.runOwner) continue;
-      const at = r.finishedAt ? new Date(r.finishedAt).getTime() : 0;
-      if (!best || at >= best.at) best = { approval: { runId: rc.runId, runOwner: rc.runOwner, approvedBy: by, gateStepId: r.stepId }, at };
-    }
-    return best?.approval ?? null;
+    const ev = evaluateGateApprovals(rows, rc.def, hashWorkflowDefinition(rc.def), rc.runOwner);
+    if (!ev.ok) return { reason: ev.reason };
+    const top = ev.approvals[0];
+    return { approval: { runId: rc.runId, runOwner: rc.runOwner, approvedBy: top.approvedBy, gateStepId: top.gateStepId } };
   } catch {
-    return null;
+    return { reason: "noGate" };
+  }
+}
+
+/** doc 81 Đợt 4 fix round 1 (finding 7) — the step error per reason; the Studio keys its text on `FOE_GATE_REQUIRED(<reason>)`. */
+function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
+  const why: Record<GateRequiredReason, string> = {
+    noGate:
+      "needs an earlier approval gate (hitl_gate) in this run approved by someone other than the user who started it — none found. Add a hitl_gate before this step, deploy, and start a new run; another user must approve the gate.",
+    approvedByOwner:
+      "the approval gate before it was approved by the user who started the run — that does not count. Start a new run and have another user approve the gate.",
+    staleApproval:
+      "the workflow was redeployed after the gate was approved, so the approval does not cover the definition now running. Start a new run and have the gate approved again.",
+    ownerUnknown:
+      "the run has no attributable owner (started by the system or by an API key with no creating user), so a separate approval cannot be verified. Start the run as a user.",
+  };
+  return `${FOE_GATE_REQUIRED}(${reason}): command step "${stepId}" was not sent: ${why[reason]}`;
+}
+
+/**
+ * doc 81 Đợt 4 fix round 1 (R-4-d, review C1) — the OT adapter a step writes through. Explicit numeric args.adapterId is
+ * kept (the OT dispatcher + the safety preflight then resolve ITS machine server-side). Otherwise: the single ENABLED
+ * device_adapters row bound to the step's machine; zero or several ⇒ no adapterId (the OT route refuses — fail-closed).
+ * Robot kinds are untouched (robotId). Before: `adapterId = machineId` — two id spaces mixed, a write could land on an
+ * unrelated adapter.
+ */
+async function withResolvedAdapter(kind: string, machineId: number, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (kind === "robot" || kind === "vda5050" || typeof args.adapterId === "number") return args;
+  try {
+    const d = await getDb();
+    if (!d) return args;
+    const rows = await d.select().from(deviceAdapters).where(and(eq(deviceAdapters.machineId, machineId), eq(deviceAdapters.isEnabled, true)));
+    return rows.length === 1 ? { ...args, adapterId: rows[0].id } : args;
+  } catch {
+    return args;
   }
 }
 
@@ -931,21 +949,19 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // confirmer. No such gate ⇒ the step stops with FOE_GATE_REQUIRED (Studio: studio.gateRequired). A STOP is exempt
   // (L-7, energy direction): a robot abort/stop is never gated by the robot dispatcher, and an OT stop-typed step is
   // let through here but the OT dispatcher accepts its self-confirmed row ONLY for a PINNED stop.
-  const approval = await findSeparateGateApproval(rc);
-  const probe = buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user);
+  // fix round 1 (R-4-d) — an OT step without args.adapterId writes through the adapter BOUND to its machine (one enabled
+  // device_adapters row), never "adapter id = machine id"; none / several ⇒ no adapter ⇒ the OT route refuses it.
+  const args = await withResolvedAdapter(cap.adapterKind, step.machineId, step.args ?? {});
+  const found = await findSeparateGateApproval(rc);
+  const approval = "approval" in found ? found.approval : null;
+  const probe = buildEquipmentCommand(descriptor, cap, step.machineId, args, idempotencyKey, rc.user);
   const isStop = probe.robotId != null ? isStopJob(toRobotJob(probe)) : await isOtStopCommandType(probe.name);
   if (!approval && !isStop) {
-    // data-raw-ok: the code prefix FOE_GATE_REQUIRED is what the Studio keys its translated text on.
-    return {
-      kind: "failed",
-      error:
-        `${FOE_GATE_REQUIRED}: command step "${step.id}" needs an earlier approval gate (hitl_gate) in this run, approved by ` +
-        `someone other than the user who started it — none found, nothing was sent. Add a hitl_gate before this step, deploy, ` +
-        `and start a new run; another user must approve the gate.`,
-    };
+    // data-raw-ok: the code prefix FOE_GATE_REQUIRED(<reason>) is what the Studio keys its translated text on.
+    return { kind: "failed", error: gateRequiredError(step.id, "reason" in found ? found.reason : "noGate") };
   }
-  const cmd = approval ? buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user, approval) : probe;
-  await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {}, cmd, approval ?? undefined);
+  const cmd = approval ? buildEquipmentCommand(descriptor, cap, step.machineId, args, idempotencyKey, rc.user, approval) : probe;
+  await ensureOrchestrationAction(rc.user, idempotencyKey, step, args, cmd, approval ?? undefined);
 
   // doc 80 ORC-01 — last check before the command leaves the engine (the awaits above can span an abort).
   if (rc.aborting) return ABORTED_OUTCOME;
@@ -1156,20 +1172,6 @@ async function buildRunContext(
   };
 }
 
-/** Depth-first lookup of a step by id anywhere in the tree (children, branches, compensation). */
-function findStepDeep(steps: WorkflowStep[] | undefined, id: string): WorkflowStep | undefined {
-  for (const s of steps ?? []) {
-    if (s.id === id) return s;
-    const node = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
-    const hit =
-      findStepDeep(node.steps, id) ??
-      findStepDeep(node.then, id) ??
-      findStepDeep(node.else, id) ??
-      (s.compensation ? findStepDeep([s.compensation], id) : undefined);
-    if (hit) return hit;
-  }
-  return undefined;
-}
 
 /**
  * doc 80 ORC-03 — ENFORCE the gate's approver policy on APPROVAL (throws FORBIDDEN):
@@ -1187,6 +1189,15 @@ function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, user: Foe
       "PERMISSION_DENIED",
       { action: "approveOrchestrationGate" },
       `Gate "${gate.id}" may only be approved by: ${roles.join(", ")} (your role: ${role || "?"}).`,
+    );
+  }
+  // doc 81 Đợt 4 fix round 1 (R-4-f) — four-eyes cannot be verified for a run with no owner ⇒ refused (fail-closed).
+  if (gate.fourEyes === true && run.startedBy == null) {
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "selfApproveOrchestrationGate" },
+      `Gate "${gate.id}" requires four-eyes, but run ${run.id} has no attributable owner — it cannot be approved.`,
     );
   }
   if (gate.fourEyes === true && run.startedBy != null && run.startedBy === user.id) {
@@ -1417,7 +1428,11 @@ export async function startRun(
   workflowRef: string,
   params: Record<string, unknown>,
   user: FoeUser,
-  opts?: { async?: boolean },
+  /**
+   * ownerUserId — doc 81 Đợt 4 fix round 1 (R-4-f): the HUMAN who owns a run started by a non-user principal (API v1:
+   * the API key's creating user). Ignored when `user` is a real user (id > 0).
+   */
+  opts?: { async?: boolean; ownerUserId?: number | null },
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
@@ -1451,7 +1466,7 @@ export async function startRun(
         status: "queued",
         paramsJson: params ?? {},
         contextJson: {},
-        startedBy: user.id || null,
+        startedBy: user.id || (opts?.ownerUserId != null && opts.ownerUserId > 0 ? opts.ownerUserId : null),
         startedAt: new Date(),
       })
       .returning();
@@ -1609,15 +1624,36 @@ export async function resumeRun(
     // ('awaiting_confirm','held') RETURNING *`: 0 rows ⇒ another resume already claimed it ⇒ CONFLICT.
     // Exactly one caller proceeds to drive the run. Task 9 — also pinned to the gate read above
     // (the one the approver-role check ran against): a run that moved on to another gate ⇒ CONFLICT.
-    await claimPausedRun(runId, "running", {}, pinnedStepId);
+    // fix round 1 (R-4-g) — the claim also CLEARS currentStepId: it only names the step a run is paused AT; leaving it
+    // set made a later 'held' (interrupted) resume re-stamp a gate that had already passed.
+    const pausedAtGate = run.status === "awaiting_confirm"; // read BEFORE the claim mutates the run
+    await claimPausedRun(runId, "running", { currentStepId: null }, pinnedStepId);
 
-    // mark the gate resolved (completed) so the re-walk skips it
-    if (gateStepId) {
-      await upsertStep(runId, gateStepId, "hitl_gate", {
-        status: "completed",
-        result: { approved: true, note: decision.note ?? null, approvedBy: user.id },
-        finishedAt: new Date(),
-      });
+    // Mark the OPEN gate resolved (completed) so the re-walk skips it. fix round 1 (R-4-g/R-4-h/R-4-e):
+    //   • only for a run paused AT a gate ('awaiting_confirm') — a 'held' (interrupted) resume never writes or re-stamps
+    //     a step: "Continue" is not an approval (the walk re-pauses at any gate not yet approved);
+    //   • never over a gate row that is already 'completed' (its approval is kept as recorded);
+    //   • approvedBy + approvalSource "server" only for a real user (ctx.user, id > 0); user 0 (system / API) ⇒
+    //     approvalSource "system", no approvedBy (never counts);
+    //   • defHash binds the approval to the definition the approver acted on (a redeploy makes it stale).
+    if (gateStepId && pausedAtGate) {
+      const prior = (await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))).find(
+        (r) => r.stepId === gateStepId,
+      );
+      if (prior?.status !== "completed") {
+        const human = Number.isInteger(user.id) && user.id > 0;
+        await upsertStep(runId, gateStepId, "hitl_gate", {
+          status: "completed",
+          result: {
+            approved: true,
+            note: decision.note ?? null,
+            ...(human ? { approvedBy: user.id } : {}),
+            approvalSource: human ? FOE_APPROVAL_SOURCE_SERVER : FOE_APPROVAL_SOURCE_SYSTEM,
+            defHash: hashWorkflowDefinition(def),
+          },
+          finishedAt: new Date(),
+        });
+      }
     }
 
     // buildRunContext nạp rc.completed từ _run_steps (đã gồm gate vừa đánh dấu completed

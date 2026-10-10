@@ -205,7 +205,9 @@ export function foeSelfApprovalRefusal(
   const a = readFoeGateApproval(pending.previewJson);
   if (!a) return "orchestration action carries no separate gate approval (FOE_GATE_REQUIRED) — an engine step needs an earlier hitl_gate approved by someone other than the run owner";
   if (pending.userId !== a.approvedBy) return "orchestration action is not confirmed by the gate approver on record";
-  if (a.runOwner !== null && pending.userId === a.runOwner) return "orchestration action is confirmed by the run owner — a separate approval is required";
+  // fix round 1 (R-4-f): an owner-less run cannot prove a SEPARATE approval => refused.
+  if (a.runOwner === null) return "orchestration run has no attributable owner (ownerUnknown) — a separate approval cannot be verified";
+  if (pending.userId === a.runOwner) return "orchestration action is confirmed by the run owner — a separate approval is required";
   if (requestedBy != null && requestedBy > 0 && pending.userId === requestedBy) return "orchestration action is confirmed by its own requester — a separate approval is required";
   return null;
 }

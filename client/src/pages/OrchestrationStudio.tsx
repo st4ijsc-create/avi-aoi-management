@@ -2437,8 +2437,29 @@ type RunStepView = {
   error?: string | null;
 };
 
-/** doc 81 Đợt 4 Task A5 — the engine's step error code for "no separate gate approval" (foeEngine.FOE_GATE_REQUIRED). */
-const FOE_GATE_REQUIRED_PREFIX = "FOE_GATE_REQUIRED";
+/**
+ * doc 81 Đợt 4 Task A5 + fix round 1 (finding 7) — the engine's step error for "no separate gate approval":
+ * `FOE_GATE_REQUIRED(<reason>): …` (foeEngine.gateRequiredError). Each reason has its own translated sentence.
+ */
+const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown)\))?(?=:|\s|$)/;
+type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown";
+function gateRequiredReasonOf(error: unknown): GateRequiredReason | null {
+  if (typeof error !== "string") return null;
+  const m = FOE_GATE_REQUIRED_RE.exec(error);
+  return m ? ((m[1] as GateRequiredReason | undefined) ?? "noGate") : null;
+}
+function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
+  switch (reason) {
+    case "approvedByOwner":
+      return t("studio.gateRequiredOwnerApproved", "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.");
+    case "staleApproval":
+      return t("studio.gateRequiredStale", "Not sent: the workflow was redeployed after the gate was approved, so that approval does not cover what is running now. Start a new run and have the gate approved again.");
+    case "ownerUnknown":
+      return t("studio.gateRequiredOwnerUnknown", "Not sent: this run has no known owner (started by the system or by an API key with no creating user), so a separate approval cannot be checked. Start the run as a user.");
+    default:
+      return t("studio.gateRequired", "Not sent: this command needs an approval gate earlier in the run, approved by someone other than the person who started it. Add a gate before this step, deploy, and start a new run.");
+  }
+}
 
 /** doc 80 Task 4 (ORC-13) — per-step dispatch marker in the run drawer (routedTo + simulated/sent). */
 function StepDispatchTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
@@ -2653,7 +2674,7 @@ function RunRow({
           {steps.map((s) => {
             const isCurrent = currentStepId != null && s.stepId === currentStepId;
             // doc 81 Đợt 4 Task A5 — a command step stopped because no separate approval gate preceded it.
-            const gateRequired = typeof s.error === "string" && s.error.startsWith(FOE_GATE_REQUIRED_PREFIX);
+            const gateRequired = gateRequiredReasonOf(s.error);
             return (
               <div key={s.stepId}>
                 <div className={`flex items-center justify-between py-0.5 text-xs ${isCurrent ? "rounded bg-primary/10 px-1" : ""}`}>
@@ -2668,8 +2689,8 @@ function RunRow({
                   </span>
                 </div>
                 {gateRequired && (
-                  <p data-testid="step-gate-required" className="pb-1 pl-2 text-[11px] text-amber-700 dark:text-amber-300">
-                    {t("studio.gateRequired", "Not sent: this command needs an approval gate earlier in the run, approved by someone other than the person who started it. Add a gate before this step, deploy, and start a new run.")}
+                  <p data-testid="step-gate-required" data-reason={gateRequired} className="pb-1 pl-2 text-[11px] text-amber-700 dark:text-amber-300">
+                    {gateRequiredText(gateRequired, t)}
                   </p>
                 )}
               </div>

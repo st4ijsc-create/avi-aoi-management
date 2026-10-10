@@ -44,7 +44,8 @@ import { and, eq, lt } from "drizzle-orm";
 import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions, type AiPendingAction } from "../../../drizzle/schema";
-import { foeSelfApprovalRefusal, readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
+import { FOE_ENGINE_TOOL, foeSelfApprovalRefusal, readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
+import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver, RobotJobResult } from "./robotDriver";
 import {
@@ -1049,6 +1050,12 @@ async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record
   return await db.transaction(async (tx): Promise<RobotReservation> => {
     const [pending] = await tx.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).for("update");
     let verdict: RobotBindingVerdict = verifyRobotActionBinding(pending, input);
+    // doc 81 Đợt 4 fix round 1 (R-4-i) — an orchestration-engine action: re-derive run owner + gate approver from the
+    // DB rows under this transaction (a STOP never reaches here — non-motion jobs are not verified).
+    if (verdict.ok && pending?.tool === FOE_ENGINE_TOOL) {
+      const refusal = await foeApprovalDbRefusal(tx, pending, input.requestedBy);
+      if (refusal) verdict = { ok: false, reason: "NOT_CONFIRMED", detail: refusal };
+    }
     if (verdict.ok) {
       const consumed = await tx
         .update(aiPendingActions)

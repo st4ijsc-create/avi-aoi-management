@@ -53,6 +53,9 @@ vi.mock("../safety/plc/safetyPlcAdapter", () => ({
 
 import { getDb } from "../../db/connection";
 import { aiPendingActions, robotJobs } from "../../../drizzle/schema";
+import { makeFoeGateRun, type FoeGateRunFixture } from "../orchestration/foe/__foeGateRunFixture";
+
+const fixtures: FoeGateRunFixture[] = []; // doc 81 Đợt 4 fix round 1 — real run/gate rows, removed in afterAll
 import { dispatchRobotJob, ROBOT_MOTION_IN_PROGRESS, type RobotDispatchInput } from "./robotCommandDispatcher";
 import { robotPayloadHash, withOtPayloadHash, readOtPayloadHash } from "../ot/otActionBinding";
 
@@ -133,6 +136,7 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
   }, 60_000);
 
   afterAll(async () => {
+    for (const f of fixtures.splice(0)) await f.cleanup();
     const db = await d();
     await db.delete(aiPendingActions).where(like(aiPendingActions.id, `${DAU}%`));
     await db.delete(aiPendingActions).where(and(eq(aiPendingActions.userId, OWNER), like(aiPendingActions.summary, "FOE orchestration:%")));
@@ -294,8 +298,10 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
       idempotencyKey: key,
       hitl: { actionId: "x", requestedBy: OWNER, confirmedBy: OWNER },
     };
-    // doc 81 Đợt 4 Task A5 — the row rides on a gate approved by OTHER (≠ the run owner OWNER): OTHER confirms it.
-    const approval = { runId: 1, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
+    // doc 81 Đợt 4 Task A5 + fix round 1 (R-4-i) — a REAL run (owner OWNER) whose gate OTHER approved; OTHER confirms.
+    const fx = await makeFoeGateRun({ tag: `${DAU}-r4`, owner: OWNER, approvedBy: OTHER });
+    fixtures.push(fx);
+    const approval = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
     await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: "s-robot", type: "command" } as any, {}, cmd as any, approval);
     const [row] = await (await d())
       .select()
@@ -335,6 +341,35 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     const b = await mk({ runId: 1, runOwner: OWNER, approvedBy: OWNER, gateStepId: "g0" });
     const r2 = await dispatchRobotJob({ robotId: ROBOT, job: b.job, triggerKind: "hitl", actionId: b.row.id, requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: b.key });
     expect(r2).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+    expect(rt.runJobCalls).toBe(before);
+  });
+
+  it("★ R-4-i (robot): preview TỰ NHẤT QUÁN nhưng CSDL nói khác (chủ run thật, người duyệt khác, gate edge/stale, run không chủ / không gate / không có) ⇒ NOT_CONFIRMED, 0 runJob", async () => {
+    const { ensureOrchestrationAction } = await import("../orchestration/foe/foeEngine");
+    const { toRobotJob } = await import("../equipment/robotJobMapping");
+    const Z = OTHER + 7;
+    const specs: Array<Parameters<typeof makeFoeGateRun>[0] | null> = [
+      { tag: `${DAU}-i1`, owner: OTHER, approvedBy: Z },
+      { tag: `${DAU}-i2`, owner: OWNER, approvedBy: Z },
+      { tag: `${DAU}-i3`, owner: OWNER, approvedBy: OTHER, source: "edge" },
+      { tag: `${DAU}-i4`, owner: OWNER, approvedBy: OTHER, stale: true },
+      { tag: `${DAU}-i5`, owner: null, approvedBy: OTHER },
+      { tag: `${DAU}-i6`, owner: OWNER, approvedBy: null },
+      null,
+    ];
+    const before = rt.runJobCalls;
+    for (const spec of specs) {
+      const fx = spec ? await makeFoeGateRun(spec) : null;
+      if (fx) fixtures.push(fx);
+      const key = `${DAU}-rdb-${++seq}`;
+      const approval = { runId: fx?.runId ?? 2_000_000_000, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
+      const cmd = { name: "home", robotId: ROBOT, machineId: null, idempotencyKey: key, hitl: { actionId: "x", requestedBy: OWNER, confirmedBy: OTHER } };
+      await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: `s-${key}`, type: "command" } as any, {}, cmd as any, approval);
+      const id = `foe-${key}`.slice(0, 64);
+      const r = await dispatchRobotJob({ robotId: ROBOT, job: toRobotJob(cmd as any), triggerKind: "hitl", actionId: id, requestedBy: OWNER, confirmedBy: OTHER, idempotencyKey: key });
+      expect(r, JSON.stringify(spec)).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+      expect(await pendingStatus(id)).toBe("confirmed");
+    }
     expect(rt.runJobCalls).toBe(before);
   });
 

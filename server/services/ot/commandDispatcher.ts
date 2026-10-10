@@ -112,7 +112,8 @@ import {
   type AiPendingAction,
   type CommandLog,
 } from "../../../drizzle/schema";
-import { boundedKey, canonicalOtValue, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 import { adapterTargetFingerprint } from "./adapterTarget";
@@ -1681,6 +1682,13 @@ async function reserveRealWrite(
             .where(eq(aiPendingActions.id, t.actionId))
             .for("update");
           verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t, { pinnedStop: opts.pinnedStop === true });
+          // doc 81 Đợt 4 fix round 1 (R-4-i) — an orchestration-engine action: re-derive the run owner and the gate
+          // approver from the DB rows (run + gate + workflow) under this transaction; previewJson only points at the run.
+          // A PINNED stop is exempt (L-7).
+          if (verdict.ok && pending?.tool === FOE_ENGINE_TOOL && opts.pinnedStop !== true) {
+            const refusal = await foeApprovalDbRefusal(tx, pending, t.requestedBy);
+            if (refusal) verdict = { ok: false, reason: "NOT_CONFIRMED", detail: refusal };
+          }
           if (verdict.ok) {
             const consumed = await tx
               .update(aiPendingActions)
