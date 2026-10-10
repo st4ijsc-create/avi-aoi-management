@@ -16862,6 +16862,8 @@
     "map": {
       "title": "Fleet map",
       "factory": "Factory",
+      "pickFactory": "Choose a factory",
+      "searchFactory": "Search factory name or #id…",
       "empty": "No map geometry or located robots yet. Add zone bounds and robot telemetry poses to populate the map.",
       "online": "Online",
       "busy": "Busy",

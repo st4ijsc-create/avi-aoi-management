@@ -53,6 +53,8 @@ import {
   type StatusChipItem,
 } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
+import { EntityPicker } from "@/components/patterns/EntityPicker";
+import { useAssetScope } from "@/contexts/AssetScopeContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -329,7 +331,11 @@ export default function FleetOrchestration() {
   // doc 81 Đợt 5 H3(b) (mục 19) — bộ chọn nhà máy lấy từ danh sách nhà máy TRONG PHẠM VI người gọi (`factory.list`:
   // server lọc theo phạm vi tenant/nhà máy, chỉ nhà máy đang hoạt động), hợp với nhà máy của các vùng đọc được (server
   // cũng đã lọc phạm vi) — site chưa có vùng nào mang factoryId vẫn nạp được lưới. Danh sách đang tải/lỗi ⇒ như cũ
-  // (chỉ từ vùng). Mặc định: nhà máy của vùng (như cũ), không có thì nhà máy đầu tiên trong phạm vi.
+  // (chỉ từ vùng).
+  // H fix 1 (review M5) — mặc định KHÔNG còn là "nhà máy đầu tiên theo tên" (vô nghĩa với admin 6 130 nhà máy): lựa chọn
+  // của người dùng › nhà máy đang chọn ở thanh phạm vi tài sản của vỏ (AssetScope, nếu trong danh sách) › nhà máy của vùng
+  // đọc được › nhà máy DUY NHẤT trong phạm vi người dùng › KHÔNG có (không hỏi lưới; bộ chọn tìm kiếm mời chọn).
+  const { axis: scopeAxis } = useAssetScope();
   const scopedFactoriesQ = trpc.factory.list.useQuery(undefined, { enabled: canView, retry: false });
   const factoryOptions = useMemo<Array<{ id: number; label: string }>>(() => {
     const scoped = ((scopedFactoriesQ.data ?? []) as Array<{ id: number; name?: string | null; code?: string | null }>)
@@ -338,13 +344,20 @@ export default function FleetOrchestration() {
     const seen = new Set(scoped.map((f) => f.id));
     return [...scoped, ...factoryIds.filter((id) => !seen.has(id)).map((id) => ({ id, label: `#${id}` }))];
   }, [scopedFactoriesQ.data, factoryIds]);
-  const effectiveFactoryId = mapFactoryId ?? factoryIds[0] ?? factoryOptions[0]?.id ?? 1;
+  const defaultFactoryId = useMemo<number | null>(() => {
+    const scopedRows = (scopedFactoriesQ.data ?? []) as Array<{ id: number }>;
+    if (scopeAxis.factoryId != null && factoryOptions.some((f) => f.id === scopeAxis.factoryId)) return scopeAxis.factoryId;
+    if (factoryIds.length) return factoryIds[0];
+    if (scopedRows.length === 1 && typeof scopedRows[0].id === "number") return scopedRows[0].id;
+    return null;
+  }, [scopeAxis.factoryId, factoryOptions, factoryIds, scopedFactoriesQ.data]);
+  const effectiveFactoryId: number | null = mapFactoryId ?? defaultFactoryId;
   // final wave T10 — chỉ đọc lưới khi BIẾT nhà máy (người dùng chọn, hoặc có vùng đọc được): không còn gọi factoryId=1
   // dự phòng mỗi lần mở trang. doc 81 Đợt 4 Task A3: server nay kiểm phạm vi nhà máy (ngoài phạm vi = NOT_FOUND như
   // nhà máy không tồn tại) — `?? 1` dưới đây chỉ còn là giá trị hiển thị của bộ chọn, KHÔNG bao giờ được hỏi.
-  const gridFactoryKnown = mapFactoryId != null || factoryOptions.length > 0;
+  const gridFactoryKnown = effectiveFactoryId != null;
   const occupancyGridQ = trpc.twin.occupancyGrid.useQuery(
-    { factoryId: effectiveFactoryId },
+    { factoryId: effectiveFactoryId ?? 0 },
     { enabled: canView && gridFactoryKnown, retry: false },
   );
   const robotPositionsQ = trpc.fleet.robotPositions.useQuery(undefined, {
@@ -1099,17 +1112,30 @@ function HeaderActions({ compact, onRefresh }: { compact: boolean; onRefresh: ()
 }
 
 /** Hàng công cụ DUY NHẤT trong MAIN (≤56 px): tên bản đồ · nhà máy · số robot có vị trí. */
+/** H fix 1 (review M5) — số nhà máy tối đa hiện trong bộ chọn (danh sách của admin có thể hàng nghìn) — gõ để thu hẹp. */
+export const FLEET_FACTORY_PICKER_LIMIT = 50;
+
 function MapToolbar({
   factories, factoryId, onFactoryChange, located, total,
 }: {
   factories: Array<{ id: number; label: string }>;
-  factoryId: number;
+  factoryId: number | null;
   onFactoryChange: (id: number) => void;
   located: number;
   total: number;
 }) {
   const { t } = useTranslation();
   const uid = useId();
+  // H fix 1 (review M5) — bộ chọn TÌM ĐƯỢC (EntityPicker) thay cho Select liệt kê mọi nhà máy: lọc theo tên / mã #id trên
+  // danh sách trong phạm vi, hiện tối đa FLEET_FACTORY_PICKER_LIMIT dòng (+ dòng "gõ để thu hẹp"), nhà máy đang chọn luôn có.
+  const [query, setQuery] = useState("");
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const match = q ? factories.filter((f) => f.label.toLowerCase().includes(q) || `#${f.id}`.includes(q)) : factories;
+    const head = match.slice(0, FLEET_FACTORY_PICKER_LIMIT);
+    const sel = factoryId != null && !head.some((f) => f.id === factoryId) ? factories.find((f) => f.id === factoryId) : undefined;
+    return { list: sel ? [sel, ...head] : head, truncated: match.length > FLEET_FACTORY_PICKER_LIMIT };
+  }, [factories, factoryId, query]);
   return (
     <>
       <h2 className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold">
@@ -1120,14 +1146,18 @@ function MapToolbar({
           {t("fleet.map.locatedRobots", "Located robots")}: {located}/{total}
         </span>
         <Label htmlFor={`${uid}-factory`} className="text-xs text-muted-foreground">{t("fleet.map.factory", "Factory")}</Label>
-        <Select value={String(factoryId)} onValueChange={(v) => onFactoryChange(Number(v))}>
-          <SelectTrigger id={`${uid}-factory`} size="sm" className="w-28"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {(factories.length ? factories : [{ id: factoryId, label: `#${factoryId}` }]).map((f) => (
-              <SelectItem key={f.id} value={String(f.id)} title={`#${f.id}`}>{f.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <EntityPicker
+          id={`${uid}-factory`}
+          aria-label={t("fleet.map.factory", "Factory")}
+          className="h-8 w-40"
+          options={shown.list.map((f) => ({ value: f.id, label: f.label, ...(f.label === `#${f.id}` ? {} : { sublabel: `#${f.id}` }) }))}
+          value={factoryId}
+          onChange={(v) => { if (typeof v === "number") onFactoryChange(v); }}
+          placeholder={t("fleet.map.pickFactory", "Choose a factory")}
+          searchPlaceholder={t("fleet.map.searchFactory", "Search factory name or #id…")}
+          onSearchChange={setQuery}
+          truncated={shown.truncated}
+        />
       </div>
     </>
   );

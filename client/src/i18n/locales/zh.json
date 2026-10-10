@@ -17270,6 +17270,8 @@
     "map": {
       "title": "机群地图",
       "factory": "工厂",
+      "pickFactory": "选择工厂",
+      "searchFactory": "搜索工厂名称或 #id…",
       "empty": "尚无地图几何或已定位机器人。添加区域边界和机器人遥测位姿以填充地图。",
       "online": "在线",
       "busy": "忙碌",

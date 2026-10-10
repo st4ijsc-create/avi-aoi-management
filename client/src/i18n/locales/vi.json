@@ -16842,6 +16842,8 @@
     "map": {
       "title": "Bản đồ đội thiết bị",
       "factory": "Nhà máy",
+      "pickFactory": "Chọn nhà máy",
+      "searchFactory": "Tìm tên nhà máy hoặc #id…",
       "empty": "Chưa có hình học bản đồ hoặc robot có vị trí. Thêm bounds cho vùng và pose telemetry của robot để hiển thị bản đồ.",
       "online": "Trực tuyến",
       "busy": "Đang bận",
