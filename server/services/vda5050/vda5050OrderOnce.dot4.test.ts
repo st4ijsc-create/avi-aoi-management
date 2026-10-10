@@ -10,6 +10,8 @@
  * riêng đăng ký `#` và đếm gói nhận được trên từng topic. Driver `vda5050` THẬT nối vào broker này; dispatcher THẬT.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("../robot/robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import net from "node:net";
 import Aedes from "aedes";
 import mqtt, { type MqttClient } from "mqtt";

@@ -12,6 +12,8 @@
  * hạn giờ tường minh (`within`), KHÔNG dựa vào timeout của vitest.
  */
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 
 type Row = Record<string, any>;
 const S = vi.hoisted(() => ({

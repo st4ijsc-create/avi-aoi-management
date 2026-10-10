@@ -16,6 +16,8 @@
  * dưới dạng job `abort`. CSDL THẬT (`_test`); driver giả đếm từng job nó nhận (oracle độc lập).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import express from "express";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";

@@ -13,6 +13,8 @@
  *   - ON: action/resource/context đúng chuẩn robot.command.{verb} / robot:{id}.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 
 type Row = Record<string, any>;
 

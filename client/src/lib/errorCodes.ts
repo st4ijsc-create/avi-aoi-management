@@ -677,6 +677,7 @@ const ROBOT_REFUSAL_KEYS: Readonly<Record<string, string>> = Object.freeze({
   "MANUAL_CONFIRMER_MISMATCH": "manualConfirmerMismatch",
   "robot not active/connected": "robotNotActive",
   "MOTION_LOCKED": "motionLocked",
+  "ROBOT_DISABLED": "robotDisabled", // doc 81 Đợt 4 final wave R-4-x — motion to a robot disabled after boot
   "SAFETY_BLOCKED": "safetyBlocked",
   "SAFETY_UNKNOWN": "safetyUnknown",
   "SAFETY_SIM_ONLY": "safetySimOnly",

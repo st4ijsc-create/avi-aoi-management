@@ -11,6 +11,8 @@
  *   - ON + PERMIT (+ control enabled) → đi tiếp nguyên vẹn: dispatch → publish → done.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("../robot/robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 
 // ── DB mock: bắt mọi insert (ledger) ─────────────────────────────────────────
 const inserts: Array<{ table: any; values: any }> = [];

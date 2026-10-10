@@ -31,6 +31,7 @@ const CODES = [
   "MANUAL_CONFIRMER_MISMATCH",
   "robot not active/connected",
   "MOTION_LOCKED",
+  "ROBOT_DISABLED", // final wave R-4-x
   "SAFETY_BLOCKED",
   "SAFETY_UNKNOWN",
   "SAFETY_SIM_ONLY",

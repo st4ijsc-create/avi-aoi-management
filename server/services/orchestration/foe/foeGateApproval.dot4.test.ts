@@ -504,7 +504,7 @@ describe("final wave F5 (L-7) — an engine STOP step never waits on a hung DB l
   });
 });
 
-describe("final wave G3 + G4 (narrowed by N1, ruling R-4-w) — robot EXISTS (deploy) and NON-stop definition checks at run START", () => {
+describe("final wave G3 + G4 (N1 R-4-w, R-4-x) — robot exists (every step) + enabled (motion) at deploy; NON-stop checks at run START", () => {
   it("★ G3/N1 deploy: a robot step naming a robot that does not EXIST is REFUSED (robotUnavailable, names the steps, nothing persisted); a disabled-but-existing robot is NOT a refusal", async () => {
     const r = await deployWorkflow(
       {
@@ -524,15 +524,37 @@ describe("final wave G3 + G4 (narrowed by N1, ruling R-4-w) — robot EXISTS (de
     expect((await deployWorkflow({ ref: "rbok", name: "rbok", steps: [{ id: "fine", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } }] }, OWNER)).ok).toBe(true);
   });
 
-  it("★ N1 (c): deploying with a DISABLED-but-existing robot succeeds (abort and motion); a NONEXISTENT robot is still refused", async () => {
-    const off = await deployWorkflow(
-      { ref: "rboff", name: "rboff", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 3 } }, { id: "mv", type: "command", machineId: 2, command: "start", args: { robotId: 3 } }] },
+  it("★ N1 (c) + R-4-x deploy: a DISABLED-but-existing robot — an ABORT deploys; a MOTION step is refused (robotDisabled); a NONEXISTENT robot is still refused", async () => {
+    const ab = await deployWorkflow({ ref: "rboffab", name: "rboffab", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 3 } }] }, OWNER);
+    expect(ab.ok).toBe(true);
+    expect(ab.reason).toBeUndefined();
+    const mv = await deployWorkflow(
+      { ref: "rboffmv", name: "rboffmv", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 3 } }, { id: "mv", type: "command", machineId: 2, command: "start", args: { robotId: 3 } }] },
       OWNER,
     );
-    expect(off.ok).toBe(true);
-    expect(off.reason).toBeUndefined();
+    expect(mv).toMatchObject({ ok: false, reason: "robotDisabled", stepIds: ["mv"] }); // the abort "ab" is not named
+    // run_job classified by its JOB: jobType "move" is motion (refused), jobType "abort" is a stop (deploys)
+    const rjMove = await deployWorkflow({ ref: "rjmove", name: "rjmove", steps: [{ id: "rj", type: "command", machineId: 2, command: "run_job", args: { robotId: 3, jobType: "move", params: {} } }] }, OWNER);
+    expect(rjMove).toMatchObject({ ok: false, reason: "robotDisabled", stepIds: ["rj"] });
+    const rjAbort = await deployWorkflow({ ref: "rjabort", name: "rjabort", steps: [{ id: "rj", type: "command", machineId: 2, command: "run_job", args: { robotId: 3, jobType: "abort", params: { joints: [1, 2] } } }] }, OWNER);
+    expect(rjAbort.ok).toBe(true);
     const ghost = await deployWorkflow({ ref: "rbghost", name: "rbghost", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 4242 } }] }, OWNER);
     expect(ghost).toMatchObject({ ok: false, reason: "robotUnavailable", stepIds: ["ab"] });
+  });
+
+  it("★ R-4-x start: an ACTIVE workflow with a MOTION step to a DISABLED robot is refused at START (robotDisabled), nothing dispatched; the same robot with only an abort starts", async () => {
+    fake.seed(orchestrationWorkflows, [
+      { id: 7500, ref: "offmv", name: "offmv", version: 1, definitionJson: { ref: "offmv", name: "offmv", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 3 } }, { id: "mv", type: "command", machineId: 2, command: "start", args: { robotId: 3 } }] }, status: "active" },
+      { id: 7501, ref: "offab", name: "offab", version: 1, definitionJson: { ref: "offab", name: "offab", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 3 } }] }, status: "active" },
+    ]);
+    const r = await startRun("offmv", {}, OWNER);
+    expect(r).toMatchObject({ ok: false, enabled: true, reason: "robotDisabled", stepIds: ["mv"] });
+    expect(r.runId).toBeUndefined();
+    expect(robotDispatchMock).not.toHaveBeenCalled();
+    const ok = await startRun("offab", {}, OWNER);
+    expect(ok.reason).toBeUndefined();
+    expect(ok.status).toBe("completed");
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
   });
 
   it("G3 fail-closed: the robot lookup failing (DB error) refuses the robot steps", async () => {

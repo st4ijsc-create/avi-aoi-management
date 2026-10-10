@@ -55,6 +55,7 @@ import {
   RobotAbortUnsupportedError,
 } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
+import { readRobotEnabledForMotion } from "./robotEnabledGate"; // final wave R-4-x
 import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
@@ -237,6 +238,9 @@ const SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
  * row is written best-effort afterwards. MOTION keeps its fail-closed behaviour (no deadline added there).
  */
 export const ROBOT_STOP_DB_STEP_DEADLINE_MS = STOP_DB_STEP_DEADLINE_MS; // final wave F5 — one definition (stopJob.ts), shared with the FOE engine
+
+/** doc 81 Đợt 4 final wave R-4-x — refusal code of MOTION to a robot whose row is disabled (or unreadable). */
+export const ROBOT_DISABLED_REASON_CODE = "ROBOT_DISABLED";
 
 export type StopDbStep =
   | "idempotency_lookup"
@@ -779,6 +783,16 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
     if (!robot.driver.isConnected()) {
       const jobId = await record(input, "rejected", undefined, "robot not active/connected");
       return { ok: false, status: "rejected", jobId, error: "robot not active/connected" };
+    }
+    // doc 81 Đợt 4 final wave R-4-x — the active set is loaded at BOOT and robot.setEnabled only updates the row, so a
+    // robot disabled after boot used to keep receiving MOTION. Motion now re-reads `robots.isEnabled` at command time,
+    // bounded by ROBOT_STOP_DB_STEP_DEADLINE_MS; disabled / missing row / DB error or timeout ⇒ motion REFUSED (fail-closed).
+    // A STOP (abort/stop/e_stop) never reaches this check (L-7): a disabled robot still receives its stop.
+    const enabled = await readRobotEnabledForMotion(input.robotId);
+    if (enabled !== true) {
+      const why = enabled === false ? "robot is disabled (robots.isEnabled = false)" : `robot enabled state could not be read (${enabled.error})`;
+      const jobId = await record(input, "rejected", { reasonCode: ROBOT_DISABLED_REASON_CODE }, `${ROBOT_DISABLED_REASON_CODE}: ${why} — motion refused before any driver call; a STOP is still sent`);
+      return { ok: false, status: "rejected", jobId, error: ROBOT_DISABLED_REASON_CODE };
     }
   }
 

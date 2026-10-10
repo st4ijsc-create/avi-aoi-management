@@ -1580,7 +1580,9 @@ export default function OrchestrationStudio() {
       case "robotIdMissing": // fix round 3 (R-4-n)
         return t("studio.deployRobotIdMissing", "Not deployed: robot step(s) {{steps}} name no robot. Pick the robot for each step, then deploy again.", { steps });
       case "robotUnavailable": // final wave G3
-        return t("studio.deployRobotUnavailable", "Not deployed: robot step(s) {{steps}} name a robot that does not exist. Pick an existing robot for each step, then deploy again.", { steps });
+        return t("studio.deployRobotUnavailable", "Not deployed: robot step(s) {{steps}} name a robot that does not exist (or the robot list could not be read). Pick an existing robot for each step, then deploy again.", { steps });
+      case "robotDisabled": // final wave R-4-x — motion steps only
+        return t("studio.deployRobotDisabled", "Not deployed: motion step(s) {{steps}} name a robot that is not enabled. Enable the robot or pick an enabled one, then deploy again.", { steps });
       case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
         return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
       default:

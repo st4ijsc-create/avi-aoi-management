@@ -11,6 +11,8 @@
  * Oracle: hàng SQL đọc bằng truy vấn riêng + quyết định của dispatcher + hàng audit_logs.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import { and, eq, inArray } from "drizzle-orm";
 
 const H = vi.hoisted(() => ({

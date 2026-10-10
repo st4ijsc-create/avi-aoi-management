@@ -13,6 +13,8 @@
  * 60 ms để hai lượt song song chắc chắn chồng nhau. Facade an toàn THẬT; nguồn PLC nền giả trả OK.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import { and, eq, like } from "drizzle-orm";
 
 const rt = vi.hoisted(() => ({ runJobCalls: 0, jobs: [] as unknown[] }));

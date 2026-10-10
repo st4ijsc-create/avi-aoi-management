@@ -13,6 +13,8 @@
  * = cổng đã đóng (ECONNREFUSED). Robot: dispatchRobotJob THẬT, driver giả ĐẾM runJob (oracle).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("../robot/robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import net from "node:net";
 import postgres from "postgres";
 import * as ModbusSerialNs from "modbus-serial";
