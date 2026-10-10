@@ -44,7 +44,7 @@ import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
 import {
   ConfirmWithReason, PageContainer, PageHeaderCompact, NoticeStack, StatusChipStrip, chipStateFromQuery,
-  FlyoutHost, useFlyout, useFlyoutLayer, useCloseOwnLayer, WorkbenchShell,
+  FlyoutHost, useFlyout, useFlyoutLayer, useCloseOwnLayer, WorkbenchShell, useNarrowViewport,
   type StatusChipItem,
 } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
@@ -323,6 +323,10 @@ export default function InterlockRuleManagement() {
   // động "Mở panel Sự kiện" của toast. Lựa chọn gập/mở do chính người dùng làm được WorkbenchShell nhớ.
   const [eventsOpenRequest, setEventsOpenRequest] = useState(0);
   const openEventsPanel = () => setEventsOpenRequest((n) => n + 1);
+  // doc 81 Đợt 5 H2 (mục 17) — màn hẹp (tab): chọn hàng/ô ma trận KHÔNG phát ý định mở panel (WorkbenchShell hẹp sẽ
+  // chuyển sang tab "Sự kiện", kéo người dùng khỏi danh sách + chi tiết). Chỉ nút "Mở panel Sự kiện" (nút đếm, toast)
+  // chuyển tab. Màn rộng: chọn rule vẫn mở panel (R-2-l).
+  const narrow = useNarrowViewport();
   // Deep-link: chỉ URL LÚC NẠP trang (F5 / link từ Hub); các lần chọn sau đi qua `selectRule`.
   useEffect(() => {
     if (ruleParam != null || filterPending) openEventsPanel();
@@ -437,7 +441,7 @@ export default function InterlockRuleManagement() {
     selectedRuleId,
     selectRule: (id) => {
       setRuleParam(String(id));
-      openEventsPanel();
+      if (!narrow) openEventsPanel();
     },
     canEdit,
     canDelete,
