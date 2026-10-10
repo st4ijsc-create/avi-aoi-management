@@ -15,7 +15,21 @@
  *   and the set of `after` values = exactly the values the writers sent (none lost, none duplicated).
  * ⚠ `audit_logs` is WORM (no DELETE for avi_app): each run leaves its audit_logs rows, like stopPin.dot1d.db.test.ts.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+
+// G fix 1 (review finding 6) — pristine output: the held lock makes every writer's SELECT … FOR UPDATE "slow" by design
+// (queryMonitor would print one [SLOW QUERY] line per writer), and the db/redis modules log on import. Installed before
+// the imports (vi.hoisted), restored afterAll; console.error is left alone so real failures still show.
+const quiet = vi.hoisted(() => {
+  const saved = process.env.QUERY_MONITOR_ENABLED;
+  process.env.QUERY_MONITOR_ENABLED = "false";
+  const orig = { log: console.log, info: console.info, warn: console.warn };
+  console.log = () => {};
+  console.info = () => {};
+  console.warn = () => {};
+  return { saved, orig };
+});
+
 import postgres from "postgres";
 import { datStopPin, goMoiStopPinCuaAdapterTx } from "./stopPin";
 
@@ -69,25 +83,59 @@ function expectOneChain(chain: Link[], initial: unknown, finalPin: unknown, labe
 }
 
 /**
- * Hold FOR UPDATE on the tag row from another connection, start `writers` while it is held, assert they are all
- * still waiting (nothing committed), then release and wait (bounded) for every writer.
+ * Backends of this database that are BLOCKED, directly or through a queue of other waiters, by `holderPid`
+ * (pg_blocking_pids + transitive closure: later FOR UPDATE waiters queue behind the first one, and any extra lock a
+ * writer takes after the row lock — e.g. F7's advisory lock — still leaves it in this chain).
+ */
+async function backendsBlockedBy(holderPid: number): Promise<Array<{ pid: number; waitEventType: string | null }>> {
+  const rows = await sql<{ pid: number; blockers: number[]; wait_event_type: string | null }[]>`
+    SELECT pid, pg_blocking_pids(pid) AS blockers, wait_event_type
+      FROM pg_stat_activity
+     WHERE datname = current_database() AND pid <> pg_backend_pid()`;
+  const reaches = new Map<number, boolean>();
+  const byPid = new Map(rows.map((r) => [r.pid, r] as const));
+  const visit = (pid: number, seen: Set<number>): boolean => {
+    if (reaches.has(pid)) return reaches.get(pid)!;
+    if (seen.has(pid)) return false;
+    seen.add(pid);
+    const r = byPid.get(pid);
+    const ok = !!r && r.blockers.some((b) => b === holderPid || visit(b, seen));
+    reaches.set(pid, ok);
+    return ok;
+  };
+  return rows.filter((r) => r.pid !== holderPid && visit(r.pid, new Set())).map((r) => ({ pid: r.pid, waitEventType: r.wait_event_type }));
+}
+
+/**
+ * Hold FOR UPDATE on the tag row from another connection, start `writers` while it is held, PROVE from the server
+ * (pg_stat_activity / pg_blocking_pids) that every writer is blocked on a lock behind the holder — not merely slow or
+ * waiting for a pool slot — and that nothing was written, then release and wait (bounded) for every writer.
  */
 async function underHeldLock<T>(writers: Array<() => Promise<T>>): Promise<PromiseSettledResult<T>[]> {
   let release!: () => void;
   const released = new Promise<void>((r) => (release = r));
-  let locked!: () => void;
-  const isLocked = new Promise<void>((r) => (locked = r));
+  let locked!: (pid: number) => void;
+  const isLocked = new Promise<number>((r) => (locked = r));
   const holder = sql.begin(async (h) => {
+    const [{ pid }] = await h<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
     await h`SELECT id FROM device_tags WHERE id = ${tagId} FOR UPDATE`;
-    locked();
+    locked(pid);
     await released;
   });
-  await withTimeout(isLocked, 5000, "holder lock");
+  const holderPid = await withTimeout(isLocked, 5000, "holder lock");
   const before = await pinNow();
   let settled = 0;
   const running = writers.map((w) => w().finally(() => { settled++; }));
-  await sleep(400);
-  // Every writer reached the tag row lock and is waiting: none finished, the pin is untouched.
+  // Bounded poll (5 s) until the server shows EVERY writer blocked behind the holder.
+  let blocked: Array<{ pid: number; waitEventType: string | null }> = [];
+  const t0 = Date.now();
+  while (Date.now() - t0 < 5000) {
+    blocked = await backendsBlockedBy(holderPid);
+    if (blocked.length >= writers.length) break;
+    await sleep(25);
+  }
+  expect(blocked.length, `writers blocked behind the holder (pid ${holderPid})`).toBe(writers.length);
+  expect(blocked.every((b) => b.waitEventType === "Lock"), JSON.stringify(blocked)).toBe(true);
   expect(settled, "a writer finished while the tag row was locked by another transaction").toBe(0);
   expect(await pinNow()).toEqual(before);
   release();
@@ -99,7 +147,7 @@ const nguoiSua = (n: number) => ({ id: null, name: `G4 writer ${n}` });
 
 describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 — concurrent stop-pin writes (DB _test thật)", () => {
   beforeAll(async () => {
-    sql = postgres(DB_URL!, { max: 4, connect_timeout: 30, onnotice: () => {} });
+    sql = postgres(DB_URL!, { max: 4, connect_timeout: 30, onnotice: () => {} }); // holder + monitor + reads
     const [a] = await sql<{ id: number }[]>`
       INSERT INTO device_adapters (code, name, protocol, endpoint, "connectionOptions", "machineId", "isEnabled")
       VALUES (${`${RUN}-A`}, 'G4 contention', 'stub', 'stub://g4', ${sql.json({ unitId: 1 })}, NULL, false) RETURNING id`;
@@ -117,6 +165,9 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
   });
 
   afterAll(async () => {
+    Object.assign(console, quiet.orig);
+    if (quiet.saved === undefined) delete process.env.QUERY_MONITOR_ENABLED;
+    else process.env.QUERY_MONITOR_ENABLED = quiet.saved;
     if (!sql) return;
     await sql`DELETE FROM commissioning_records WHERE "adapterId" = ${adapterId}`;
     await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId}`;
