@@ -54,6 +54,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { translateAppError } from "@/lib/errorCodes"; // doc 81 Đợt 4 fix round 3 (R-4-n) — step detail.appError
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -318,7 +319,10 @@ type EquipmentRow = {
   name: string;
   code?: string | null;
   machineType: string;
+  /** equipment.listEquipment — routes robot kinds ("robot" / "vda5050") through robotId (R-4-n picker). */
+  adapterKind?: string;
   capability?: {
+    adapterKind?: string;
     supportedCommands?: Array<{ name: string; label?: string; paramsSchema?: ParamDesc[]; riskLevel?: string }>;
   };
 };
@@ -333,14 +337,24 @@ type ParamDesc = {
   unit?: string;
 };
 
+/** doc 81 Đợt 4 fix round 3 (R-4-n) — a robot the step can target (fleet.robotPositions: in-scope, enabled robots). */
+type RobotOption = { id: number; code?: string | null; name?: string | null };
+
+function isRobotKindRow(m: EquipmentRow | undefined): boolean {
+  const k = m?.adapterKind ?? m?.capability?.adapterKind;
+  return k === "robot" || k === "vda5050";
+}
+
 function Inspector({
   step,
   machines,
+  robots = [],
   onPatch,
   t,
 }: {
   step: StudioStep;
   machines: EquipmentRow[];
+  robots?: RobotOption[];
   onPatch: (patch: Partial<StudioStep>) => void;
   t: TFunction;
 }) {
@@ -386,7 +400,8 @@ function Inspector({
             <Label className="text-xs">{t("studio.command", "Command")}</Label>
             <Select
               value={(step.command as string) || ""}
-              onValueChange={(v) => onPatch({ command: v, args: {} })}
+              // fix round 3 (R-4-n): changing the command keeps the chosen robot
+              onValueChange={(v) => onPatch({ command: v, args: typeof (step.args ?? {}).robotId === "number" ? { robotId: (step.args ?? {}).robotId } : {} })}
               disabled={!selectedMachine}
             >
               <SelectTrigger><SelectValue placeholder={t("studio.pickCommand", "Select command…")} /></SelectTrigger>
@@ -400,6 +415,24 @@ function Inspector({
               </SelectContent>
             </Select>
           </div>
+          {/* doc 81 Đợt 4 fix round 3 (R-4-n) — a robot step must name its robot (deploy refuses robotIdMissing). */}
+          {isRobotKindRow(selectedMachine) && (
+            <div className="space-y-1.5" data-testid="robot-picker">
+              <Label className="text-xs">{t("studio.robot", "Robot")}</Label>
+              <Select
+                value={typeof (step.args ?? {}).robotId === "number" ? String((step.args ?? {}).robotId) : ""}
+                onValueChange={(v) => onPatch({ args: { ...(step.args ?? {}), robotId: Number(v) } })}
+              >
+                <SelectTrigger aria-label={t("studio.robot", "Robot")}><SelectValue placeholder={t("studio.pickRobot", "Select robot…")} /></SelectTrigger>
+                <SelectContent>
+                  {robots.map((r) => (
+                    <SelectItem key={r.id} value={String(r.id)}>#{r.id} · {r.name ?? r.code ?? ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {robots.length === 0 && <p className="text-[11px] text-muted-foreground">{t("studio.noRobots", "No robot in your scope is enabled.")}</p>}
+            </div>
+          )}
           {selectedCmd && (selectedCmd.paramsSchema?.length ?? 0) > 0 && (
             <div className="space-y-2 rounded-md border bg-muted/30 p-2">
               <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.args", "Parameters")}</div>
@@ -1465,6 +1498,9 @@ export default function OrchestrationStudio() {
 
   const equipmentQ = trpc.equipment.listEquipment.useQuery({ limit: 500 });
   const machines = (equipmentQ.data ?? []) as unknown as EquipmentRow[];
+  // doc 81 Đợt 4 fix round 3 (R-4-n) — robot picker source: in-scope, enabled robots (existing fleet query).
+  const robotsQ = trpc.fleet.robotPositions.useQuery(undefined, { enabled: machines.some((m) => isRobotKindRow(m)) });
+  const robotOptions = (robotsQ.data ?? []) as RobotOption[];
 
   const workflowsQ = trpc.orchestration.listWorkflows.useQuery({ limit: 100 });
   // Realtime: poll khi còn run chưa kết thúc; dừng khi tất cả đã terminal.
@@ -1537,7 +1573,10 @@ export default function OrchestrationStudio() {
     onSuccess: (r) => {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
       // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step without a unique adapter: translated, names the steps.
-      else if (r?.reason === "stopAdapterAmbiguous") {
+      else if (r?.reason === "robotIdMissing") {
+        // doc 81 Đợt 4 fix round 3 (R-4-n)
+        toast.error(t("studio.deployRobotIdMissing", "Not deployed: robot step(s) {{steps}} name no robot. Pick the robot for each step, then deploy again.", { steps: (r.stepIds ?? []).join(", ") }));
+      } else if (r?.reason === "stopAdapterAmbiguous") {
         toast.error(t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps: (r.stepIds ?? []).join(", ") }));
       } else toast.error(r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
@@ -2142,7 +2181,7 @@ export default function OrchestrationStudio() {
     <div className="p-3">
       <h2 className="mb-2 text-sm font-semibold">{t("studio.inspector", "Step configuration")}</h2>
       {selectedStep ? (
-        <Inspector step={selectedStep} machines={machines} onPatch={handlePatch} t={t} />
+        <Inspector step={selectedStep} machines={machines} robots={robotOptions} onPatch={handlePatch} t={t} />
       ) : (
         <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.selectStep", "Select a step on the tree to configure it.")}</p>
       )}
@@ -2451,6 +2490,14 @@ function gateRequiredReasonOf(error: unknown): GateRequiredReason | null {
   const m = FOE_GATE_REQUIRED_RE.exec(error);
   return m ? ((m[1] as GateRequiredReason | undefined) ?? "noGate") : null;
 }
+/** doc 81 Đợt 4 fix round 3 (R-4-n) — `result.detail.appError` of a failed step (e.g. INVALID_VALUE robotId/robotIdRequired). */
+function stepAppError(s: RunStepView): { appCode: string; appParams: Record<string, string | number> | undefined } | null {
+  if (s.status !== "failed") return null;
+  const a = (s.result?.detail as { appError?: { appCode?: unknown; appParams?: unknown } } | undefined)?.appError;
+  if (!a || typeof a.appCode !== "string") return null;
+  return { appCode: a.appCode, appParams: (a.appParams as Record<string, string | number> | undefined) ?? undefined };
+}
+
 function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
   switch (reason) {
     case "approvedByOwner":
@@ -2545,7 +2592,14 @@ function RunRow({
     : typeof run.currentStepId === "string" ? run.currentStepId : null;
   const steps = (detailQ.data?.steps ?? []) as RunStepView[];
   // doc 81 Đợt 4 fix round 2 (R-4-k) — the definition this screen shows; Approve / Continue wait for it.
-  const defHash = (detailQ.data as { defHash?: string | null } | undefined)?.defHash ?? undefined;
+  // fix round 3 (R-4-p) — PINNED at the first view of the gate (per gate step): a later poll with another hash never
+  // replaces it silently; the row says "definition changed, reload" and Approve / Continue stay disabled.
+  const polledHash = (detailQ.data as { defHash?: string | null } | undefined)?.defHash ?? undefined;
+  const pinKey = `${runId}:${shownStepId ?? ""}`;
+  const pinned = useRef<{ key: string; hash: string } | null>(null);
+  if (polledHash && (!pinned.current || pinned.current.key !== pinKey)) pinned.current = { key: pinKey, hash: polledHash };
+  const defHash = pinned.current?.key === pinKey ? pinned.current.hash : undefined;
+  const defChanged = defHash !== undefined && polledHash !== undefined && polledHash !== defHash;
   // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
   const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
   const gatePrompt = typeof currentStep?.result?.prompt === "string" ? (currentStep.result.prompt as string) : "";
@@ -2583,7 +2637,7 @@ function RunRow({
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={!defHash} onClick={() => onResume(true, undefined, shownStepId, defHash)}>
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={!defHash || defChanged} onClick={() => onResume(true, undefined, shownStepId, defHash)}>
               {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
@@ -2596,6 +2650,11 @@ function RunRow({
         )}
       </div>
 
+      {defChanged && (awaiting || interrupted) && canControl && (
+        <div data-testid="definition-changed" role="alert" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
+          {t("studio.definitionChangedReload", "The workflow definition changed since you opened this approval — reload the page and review it before approving.")}
+        </div>
+      )}
       {interrupted && (
         <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground">
           {t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
@@ -2611,7 +2670,7 @@ function RunRow({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction disabled={!defHash} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash); }}>
+            <AlertDialogAction disabled={!defHash || defChanged} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash); }}>
               {t("studio.continueRunConfirm", "Continue run")}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2695,6 +2754,12 @@ function RunRow({
                     <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
                   </span>
                 </div>
+                {/* doc 81 Đợt 4 fix round 3 (R-4-n) — a localisable refusal carried by the step (detail.appError). */}
+                {!gateRequired && stepAppError(s) && (
+                  <p data-testid="step-app-error" className="pb-1 pl-2 text-[11px] text-amber-700 dark:text-amber-300">
+                    {translateAppError(stepAppError(s)!.appCode, stepAppError(s)!.appParams, s.error ?? "")}
+                  </p>
+                )}
                 {gateRequired && (
                   <p data-testid="step-gate-required" data-reason={gateRequired} className="pb-1 pl-2 text-[11px] text-amber-700 dark:text-amber-300">
                     {gateRequiredText(gateRequired, t)}

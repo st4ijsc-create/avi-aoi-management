@@ -265,20 +265,51 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     expect(otDispatchMock).not.toHaveBeenCalled();
   });
 
-  it("★ R-4-m: a robot step with NO robotId never falls back to the machine id — refused by the robot route ('robotId required'), robot dispatcher not called; a STOP likewise (not a gate error)", async () => {
-    await deployWorkflow({ ref: "rbnoid", name: "RbNoId", steps: [{ id: "g", type: "hitl_gate", prompt: "g" }, { id: "m", type: "command", machineId: 2, command: "start" }] }, OWNER);
+  /** A definition that is ALREADY active (deployed before fix round 3) — R-4-n now refuses it at deploy. */
+  const seedActive = (ref: string, steps: WorkflowDefinition["steps"]) =>
+    fake.seed(orchestrationWorkflows, [{ id: 7000 + (fake.store.get("orchestration_workflows")?.length ?? 0), ref, name: ref, version: 1, definitionJson: { ref, name: ref, steps }, status: "active" }]);
+
+  it("★ R-4-m/R-4-n runtime: an already-deployed robot step with NO robotId never falls back to the machine id — refused with the localisable INVALID_VALUE robotId/robotIdRequired; robot dispatcher not called; no authorisation row; a STOP likewise (not a gate error)", async () => {
+    seedActive("rbnoid", [{ id: "g", type: "hitl_gate", prompt: "g" }, { id: "m", type: "command", machineId: 2, command: "start" }]);
     const started = await startRun("rbnoid", {}, OWNER);
     const res = await resumeRun(started.runId!, { approved: true }, OTHER);
     expect(res.status).toBe("failed");
     expect(robotDispatchMock).not.toHaveBeenCalled();
-    expect(String(stepRow(started.runId!, "m")!.error)).toContain("robotId required");
-    await deployWorkflow({ ref: "rbnoidstop", name: "RbNoIdStop", steps: [{ id: "s", type: "command", machineId: 2, command: "abort" }] }, OWNER);
+    const row = stepRow(started.runId!, "m")!;
+    expect(String(row.error)).toContain("robotId required");
+    expect(row.resultJson?.detail?.appError).toEqual({ appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } });
+    expect(actions()).toHaveLength(0); // R-4-n: no authorisation row for a command that can never be sent
+    seedActive("rbnoidstop", [{ id: "s", type: "command", machineId: 2, command: "abort" }]);
     const stop = await startRun("rbnoidstop", {}, OWNER);
     expect(stop.status).toBe("failed");
     expect(robotDispatchMock).not.toHaveBeenCalled();
-    const err = String(stepRow(stop.runId!, "s")!.error);
-    expect(err).toContain("robotId required");
-    expect(err).not.toMatch(gateErr("noGate"));
+    const srow = stepRow(stop.runId!, "s")!;
+    expect(String(srow.error)).toContain("robotId required");
+    expect(String(srow.error)).not.toMatch(gateErr("noGate"));
+    expect(srow.resultJson?.detail?.appError).toMatchObject({ appParams: { reason: "robotIdRequired" } });
+  });
+
+  it("★ R-4-n deploy: a robot step (motion, abort, nested compensation) without a numeric robotId is REFUSED at deploy (robotIdMissing, names the steps, nothing persisted); with robotId it deploys", async () => {
+    const r = await deployWorkflow(
+      {
+        ref: "rbdep",
+        name: "rbdep",
+        steps: [
+          { id: "mv", type: "command", machineId: 2, command: "start" },
+          { id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: "2" } },
+          { id: "ot", type: "command", machineId: 1, command: "start", args: { adapterId: 501 }, compensation: { id: "es", type: "command", machineId: 2, command: "e_stop" } },
+        ],
+      },
+      OWNER,
+    );
+    expect(r).toMatchObject({ ok: false, reason: "robotIdMissing", stepIds: ["mv", "ab", "es"] });
+    expect(String(r.message)).toContain("mv, ab, es");
+    expect(fake.store.get("orchestration_workflows") ?? []).toHaveLength(0);
+    const ok = await deployWorkflow({ ref: "rbdep2", name: "rbdep2", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } }] }, OWNER);
+    expect(ok.ok).toBe(true);
+    const run = await startRun("rbdep2", {}, OWNER);
+    expect(run.status).toBe("completed"); // L-7: a robot STOP with its robot is still never gated
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
   });
 
   it("★ R-4-j: an OT STOP step without a unique adapter is refused at DEPLOY (0 or 2 enabled adapters, no args.adapterId); 1 adapter / explicit adapterId / non-stop step ⇒ deploys", async () => {
@@ -325,7 +356,7 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
   });
 
   it("a robot MOTION step without a gate is refused the same way (robot dispatcher not called)", async () => {
-    await deployWorkflow({ ref: "rbmove", name: "RbMove", steps: [{ id: "m", type: "command", machineId: 2, command: "start" }] }, OWNER);
+    await deployWorkflow({ ref: "rbmove", name: "RbMove", steps: [{ id: "m", type: "command", machineId: 2, command: "start", args: { robotId: 2 } }] }, OWNER);
     const res = await startRun("rbmove", {}, OWNER);
     expect(res.status).toBe("failed");
     expect(robotDispatchMock).not.toHaveBeenCalled();

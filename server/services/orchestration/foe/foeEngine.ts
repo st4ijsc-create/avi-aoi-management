@@ -179,7 +179,7 @@ export interface DeployResult {
   ok: boolean;
   enabled: boolean;
   /** doc 81 Đợt 4 fix round 2 (R-4-j) — machine-readable refusal (Studio translates it). */
-  reason?: "stopAdapterAmbiguous";
+  reason?: "stopAdapterAmbiguous" | "robotIdMissing";
   /** Offending step ids for `reason`. */
   stepIds?: string[];
   workflowId?: number;
@@ -429,7 +429,9 @@ async function upsertStep(
       set: {
         status: patch.status as never,
         attempt: patch.attempt ?? 0,
-        resultJson: patch.result ?? null,
+        // doc 81 Đợt 4 fix round 3 (R-4-n) — a transition that carries no result KEEPS the step's result (the command's
+        // routedTo/status/detail, incl. a localisable detail.appError) instead of wiping it to NULL on completion/failure.
+        ...(patch.result !== undefined ? { resultJson: patch.result } : {}),
         error: patch.error ?? null,
         startedAt: patch.startedAt ?? undefined,
         finishedAt: patch.finishedAt ?? undefined,
@@ -933,6 +935,25 @@ function allStepsOf(steps: WorkflowStep[] | undefined, out: WorkflowStep[] = [])
 }
 
 /**
+ * doc 81 Đợt 4 fix round 3 (ruling R-4-n, re-review NEW-1) — a robot-kind command step must name its robot
+ * (numeric args.robotId > 0): robots have no machine link, so nothing can be derived at run time (R-4-m removed the
+ * machine-id fallback) and the step — an abort / e_stop included — would only fail during the run. Refused at DEPLOY.
+ */
+function robotStepsWithoutRobotId(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>): string[] {
+  const bad: string[] = [];
+  for (const step of allStepsOf(def.steps)) {
+    if (step.type !== "command") continue;
+    const m = machineMap.get(step.machineId);
+    if (!m) continue;
+    const cap = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never });
+    if (!isRobotKind(cap.adapterKind)) continue;
+    const rid = step.args?.robotId;
+    if (!(typeof rid === "number" && Number.isInteger(rid) && rid > 0)) bad.push(step.id);
+  }
+  return bad;
+}
+
+/**
  * doc 81 Đợt 4 fix round 2 (ruling R-4-j, review N1) — an OT STOP step whose adapter cannot be resolved uniquely at run
  * time (no explicit args.adapterId and 0 or 2+ enabled adapters bound to its machine) would only fail during an
  * emergency ("adapterId required"). Caught at DEPLOY instead; the runtime STOP path is unchanged and never gated (L-7).
@@ -1028,7 +1049,11 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     return { kind: "failed", error: gateRequiredError(step.id, "reason" in found ? found.reason : "noGate") };
   }
   const cmd = approval ? buildEquipmentCommand(descriptor, cap, step.machineId, args, idempotencyKey, rc.user, approval) : probe;
-  await ensureOrchestrationAction(rc.user, idempotencyKey, step, args, cmd, approval ?? undefined);
+  // fix round 3 (R-4-n) — a robot step with no robot never gets an authorisation row (it can never be sent; the robot
+  // route below refuses it with the localisable INVALID_VALUE robotId/robotIdRequired).
+  if (!(isRobotKind(cap.adapterKind) && cmd.robotId == null)) {
+    await ensureOrchestrationAction(rc.user, idempotencyKey, step, args, cmd, approval ?? undefined);
+  }
 
   // doc 80 ORC-01 — last check before the command leaves the engine (the awaits above can span an abort).
   if (rc.aborting) return ABORTED_OUTCOME;
@@ -1302,6 +1327,22 @@ export async function deployWorkflow(
     const machineMap = await loadMachines(structural.referencedMachineIds);
     const full = validateWorkflow(def, [...machineMap.values()]);
     if (!full.ok) return { ok: false, enabled: true, errors: full.errors };
+
+    // doc 81 Đợt 4 fix round 3 (R-4-n) — every robot step must name its robot BEFORE the run exists.
+    const noRobot = robotStepsWithoutRobotId(def, machineMap);
+    if (noRobot.length > 0) {
+      return {
+        ok: false,
+        enabled: true,
+        reason: "robotIdMissing",
+        stepIds: noRobot,
+        errors: noRobot.map((id) => ({
+          path: `step:${id}`,
+          message: `Robot step "${id}" names no robot (args.robotId) — at run time it could not be sent. Pick the robot for the step.`,
+        })),
+        message: `Robot step(s) ${noRobot.join(", ")} name no robot — pick the robot for each step before deploying.`,
+      };
+    }
 
     // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step must name a resolvable adapter BEFORE the run exists.
     const ambiguous = await ambiguousStopSteps(def, machineMap);

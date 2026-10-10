@@ -57,6 +57,9 @@ const srv = vi.hoisted(() => ({
   runs: [] as Array<Record<string, unknown>>,
   versions: {} as Record<number, Array<Record<string, unknown>>>,
   getRun: undefined as unknown,
+  /** doc 81 Đợt 4 fix round 3 (R-4-n) — equipment rows + in-scope robots for the robot picker. */
+  equipment: [] as unknown[],
+  robots: [] as unknown[],
   queryInputs: {} as Record<string, unknown[]>,
   calls: {} as Record<string, unknown[]>,
   /** Kết quả trả cho onSuccess của mutation (khoá có mặt ⇒ tự gọi onSuccess sau một microtask). */
@@ -101,7 +104,8 @@ vi.mock("@/lib/trpc", () => {
           return q(key, srv.versions[id] ?? []);
         }
         if (key === "orchestration.getRun") return q(key, srv.getRun);
-        if (key === "equipment.listEquipment") return q(key, []);
+        if (key === "equipment.listEquipment") return q(key, srv.equipment);
+        if (key === "fleet.robotPositions") return q(key, srv.robots);
         // doc 81 Đợt 3 Task 4 — phân công run đang hiệu lực + roster.
         if (key === "engineering.assignments") return q(key, [{ entityId: 30, assigneeUserId: 81, assigneeName: "Ky su Run" }]);
         if (key === "engineering.assignableUsers") return q(key, [{ id: 81, name: "Ky su Run" }]);
@@ -205,6 +209,8 @@ beforeEach(() => {
   srv.runs = RUNS_PLAIN.map((r) => ({ ...r }));
   srv.versions = { 11: VERSIONS_11.map((v) => ({ ...v })) };
   srv.getRun = undefined;
+  srv.equipment = [];
+  srv.robots = [];
   srv.queryInputs = {};
   srv.calls = {};
   srv.results = {};
@@ -798,5 +804,92 @@ describe("Orchestration P2 — i18n", () => {
         .map(([l]) => `${l}:${k}`),
     );
     expect(missing).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 4 fix round 3 (R-4-n / R-4-p)
+// ════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 4 fix round 3 — robot picker (R-4-n) + hash pinned at first view (R-4-p)", () => {
+  beforeAll(() => {
+    Element.prototype.scrollIntoView ??= function () {};
+    (Element.prototype as unknown as { hasPointerCapture: () => boolean }).hasPointerCapture ??= () => false;
+  });
+
+  it("★ R-4-n: a robot step shows a robot picker (in-scope robots only); the chosen robotId goes into the deployed definition", async () => {
+    const user = userEvent.setup();
+    srv.equipment = [
+      { machineId: 7, name: "Robot cell", machineType: "ROBOT", adapterKind: "robot", capability: { adapterKind: "robot", supportedCommands: [{ name: "abort", label: "Abort" }] } },
+    ];
+    srv.robots = [{ id: 42, code: "R42", name: "Arm 42" }];
+    srv.workflows = [
+      { id: 21, ref: "rb-wf", name: "Robot WF", version: 1, status: "deployed", definitionJson: { ref: "rb-wf", name: "Robot WF", version: 1, steps: [{ id: "rb-1", type: "command", machineId: 7, command: "abort", args: {} }] } },
+    ];
+    render(<OrchestrationStudio />);
+    await user.click(within(wfRow(21)).getByRole("button", { name: S.load }));
+    await user.click(within(mainEl()).getByText("rb-1"));
+    const picker = within(inspector()).getByTestId("robot-picker");
+    fireEvent.click(within(picker).getByRole("combobox", { name: S.robot }));
+    fireEvent.click(screen.getByRole("option", { name: /#42 · Arm 42/ }));
+    await user.click(screen.getByRole("button", { name: S.deploy }));
+    const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
+    fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "654321" } });
+    await waitFor(() => expect(calls("orchestration.deployWorkflow")).toHaveLength(1));
+    const def = (calls("orchestration.deployWorkflow")[0] as { definition: { steps: Array<{ args?: Record<string, unknown> }> } }).definition;
+    expect(def.steps[0].args).toEqual({ robotId: 42 });
+  });
+
+  it("R-4-n: a non-robot machine has no robot picker", async () => {
+    const user = userEvent.setup();
+    srv.equipment = [{ machineId: 8, name: "PLC line", machineType: "AUTOMATION", adapterKind: "ot-opcua", capability: { adapterKind: "ot-opcua", supportedCommands: [{ name: "start" }] } }];
+    srv.workflows = [
+      { id: 22, ref: "ot-wf", name: "OT WF", version: 1, status: "deployed", definitionJson: { ref: "ot-wf", name: "OT WF", version: 1, steps: [{ id: "ot-1", type: "command", machineId: 8, command: "start", args: {} }] } },
+    ];
+    render(<OrchestrationStudio />);
+    await user.click(within(wfRow(22)).getByRole("button", { name: S.load }));
+    await user.click(within(mainEl()).getByText("ot-1"));
+    expect(within(inspector()).queryByTestId("robot-picker")).toBeNull();
+  });
+
+  it("R-4-n: deploy refused with robotIdMissing ⇒ translated toast naming the steps (no raw server message)", async () => {
+    render(<OrchestrationStudio />);
+    srv.results["orchestration.deployWorkflow"] = { ok: false, enabled: true, reason: "robotIdMissing", stepIds: ["mv", "ab"], message: "RAW server text" };
+    // the mocked mutation answers onSuccess with srv.results (as the server would)
+    const user = userEvent.setup();
+    await user.click(within(leftPanel()).getByRole("button", { name: S.type.delay }));
+    await user.click(screen.getByRole("button", { name: S.deploy }));
+    const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
+    fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "654321" } });
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+    expect(shown).toContain("mv, ab");
+    expect(shown).not.toContain("RAW server text");
+  });
+
+  it("★ R-4-p: the hash is pinned at the first view of the gate; a later poll with ANOTHER hash ⇒ 'definition changed, reload' + Approve disabled (no silent update)", async () => {
+    const user = userEvent.setup();
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    const view = render(<OrchestrationStudio />);
+    expect(within(rowOf(30)).queryByTestId("definition-changed")).toBeNull();
+    // the next poll returns a redeployed definition
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", steps: [] };
+    view.rerender(<OrchestrationStudio />);
+    expect(within(rowOf(30)).getByTestId("definition-changed")).toHaveTextContent(S.definitionChangedReload);
+    const approve = within(rowOf(30)).getByRole("button", { name: S.approve });
+    expect(approve).toBeDisabled();
+    await user.click(approve);
+    expect(calls("orchestration.resumeRun") ?? []).toEqual([]);
+  });
+
+  it("R-4-p: same hash on later polls ⇒ no warning, the approval carries the FIRST-viewed hash", async () => {
+    const user = userEvent.setup();
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    const view = render(<OrchestrationStudio />);
+    view.rerender(<OrchestrationStudio />);
+    expect(within(rowOf(30)).queryByTestId("definition-changed")).toBeNull();
+    await user.click(within(rowOf(30)).getByRole("button", { name: S.approve }));
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
   });
 });

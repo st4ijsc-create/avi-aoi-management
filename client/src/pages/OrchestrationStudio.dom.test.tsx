@@ -242,6 +242,30 @@ describe("OrchestrationStudio — doc 81 Đợt 4 Task A5 + fix round 1: bước
 });
 
 const DEF_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+describe("OrchestrationStudio — doc 81 Đợt 4 fix round 3 (R-4-n): lỗi 'robotId required' của bước hiện bằng appError dịch", () => {
+  it("bước lỗi mang detail.appError INVALID_VALUE robotId/robotIdRequired ⇒ dòng dịch (không phải chuỗi thô); bước thành công ⇒ không có", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "r1", stepType: "command", status: "failed", attempt: 1, error: "robotId required for robot command", result: { routedTo: "robot-dispatcher", status: "rejected", accepted: false, detail: { appError: { appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } } } } },
+            { stepId: "r2", stepType: "command", status: "completed", attempt: 1, result: { routedTo: "robot-dispatcher", status: "done", accepted: true } },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-app-error"]'));
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).not.toBe("robotId required for robot command");
+    expect(notes[0].textContent).toMatch(/robotIdRequired|robot/i);
+  });
+});
+
 describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang hiển thị (expectedStepId)", () => {
   // ORACLE khai tay: hàng danh sách còn ghi gate cũ, chi tiết (khối "Bước đang chờ") ghi gate mới —
   // thứ người duyệt NHÌN THẤY là khối chi tiết ⇒ đó là gate phải được gửi.
