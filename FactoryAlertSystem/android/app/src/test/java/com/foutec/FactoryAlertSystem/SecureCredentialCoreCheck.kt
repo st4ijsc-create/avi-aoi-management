@@ -7,21 +7,19 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * doc 81 Đợt 5 G fix 1/2 — plain-JVM check of SecureCredentialCore (no JUnit in this Gradle project, no Android
- * Keystore on a JVM): a software AES key stands in for the Keystore key, a HashMap for SharedPreferences.
- *   · a "bogus" key (3-byte SecretKeySpec) makes Cipher.init throw InvalidKeyException — a TRANSIENT error unless the
- *     test marks it permanent (stand-in for KeyPermanentlyInvalidatedException, which only exists on Android);
- *   · `throwOnExisting` simulates a key store that cannot be read right now (keystore2 busy / restarting).
- * Exact command used (Windows, Git Bash; jars from the Gradle cache — see group-G-report.md "Fix round 2"):
- *   java -cp "<kotlin-compiler-embeddable-1.9.22.jar;kotlin-stdlib-1.9.0.jar;kotlin-script-runtime;kotlin-reflect;
- *     kotlin-daemon-embeddable-1.9.22;trove4j;annotations-13.0;kotlinx-coroutines-core-jvm>" \
- *     org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -jvm-target 17 \
- *     -classpath kotlin-stdlib-1.9.0.jar -d out SecureCredentialCore.kt SecureCredentialCoreCheck.kt
- *   java -cp "out;kotlin-stdlib-1.9.0.jar" com.foutec.FactoryAlertSystem.SecureCredentialCoreCheckKt
- *   ⇒ prints "ALL n CHECKS PASSED", exit 0 (any failure: "FAILED: …", exit 1)
+ * doc 81 Đợt 5 G fix 1/2/3 — plain-JVM check of SecureCredentialCore (no JUnit in this Gradle project, no Android
+ * Keystore on a JVM): a software AES key stands in for the Keystore key, HashMaps for the two SharedPreferences files.
+ *   · `looksAbsent` = the platform answers "absent" although the key is there (keystore2 getKeyMetadata / legacy
+ *     contains swallowing a busy or binder error — re-review 2, R2-2);
+ *   · `throwOnExisting` = the key store throws right now;
+ *   · a "bogus" key (3-byte SecretKeySpec) makes Cipher.init throw InvalidKeyException — transient unless `permanent`
+ *     (stand-in for KeyPermanentlyInvalidatedException, which only exists on Android).
+ * The exact command (absolute paths) is in .superpowers/sdd/2026-10-10-engineering-control-dot5/group-G-report.md,
+ * "Fix round 3". Prints "ALL n CHECKS PASSED" and exits 0; any failure prints "FAILED: …" and exits 1.
  */
 private class FakeKeys : SecureCredentialCore.KeyStorage {
     var key: SecretKey? = null
+    var looksAbsent = false
     var throwOnExisting = false
     var bogusNextCreates = 0
     var permanent = false
@@ -29,6 +27,7 @@ private class FakeKeys : SecureCredentialCore.KeyStorage {
     var deletes = 0
     override fun existing(): SecretKey? {
         if (throwOnExisting) throw java.security.KeyStoreException("simulated: keystore busy")
+        if (looksAbsent) return null
         return key
     }
     override fun create(): SecretKey {
@@ -42,8 +41,8 @@ private class FakeKeys : SecureCredentialCore.KeyStorage {
         return key!!
     }
     override fun delete() {
-        if (key != null) deletes++ // counts real deletions only (Android: containsAlias guard)
-        key = null
+        if (key != null && !looksAbsent) deletes++ // Android: containsAlias guard (false when it "looks absent")
+        if (!looksAbsent) key = null
     }
 }
 
@@ -64,7 +63,13 @@ private class FakeStore : SecureCredentialCore.EntryStorage {
         map.remove(name)
         return true
     }
-    override fun isEmpty() = map.isEmpty()
+    override fun count() = map.size
+}
+
+private class FakeCounter : SecureCredentialCore.FailureCounter {
+    val map = HashMap<String, Int>()
+    override fun get(name: String) = map[name] ?: 0
+    override fun set(name: String, n: Int) { map[name] = n }
 }
 
 private var checks = 0
@@ -76,26 +81,27 @@ private fun check(cond: Boolean, what: String) {
     }
 }
 
-private fun fresh(): Triple<FakeKeys, FakeStore, SecureCredentialCore> {
+private data class Rig(val k: FakeKeys, val s: FakeStore, val c: FakeCounter, val core: SecureCredentialCore)
+
+private fun fresh(): Rig {
     val k = FakeKeys()
     val s = FakeStore()
+    val c = FakeCounter()
     val enc = Base64.getEncoder()
     val dec = Base64.getDecoder()
-    val core = SecureCredentialCore(k, s, { enc.encodeToString(it) }, { dec.decode(it) }, { e -> k.permanent && e is InvalidKeyException })
-    return Triple(k, s, core)
+    return Rig(k, s, c, SecureCredentialCore(k, s, c, { enc.encodeToString(it) }, { dec.decode(it) }, { e -> k.permanent && e is InvalidKeyException }))
 }
 
-private inline fun unavailable(block: () -> Unit): Boolean =
-    try { block(); false } catch (e: SecureCredentialCore.Unavailable) { true }
-
-private inline fun throws(block: () -> Unit): Boolean = try { block(); false } catch (e: Exception) { true }
+private inline fun outcome(block: () -> Unit): String =
+    try { block(); "ok" } catch (e: SecureCredentialCore.Unavailable) { "unavailable" } catch (e: SecureCredentialCore.NeedsReentry) { "reentry" } catch (e: Exception) { "error:" + e.javaClass.simpleName }
 
 fun main() {
     val secret = "Zk3n0QxV9u-ra8T_hb1LwYc2sPq4Ee7m"
     val pinned = """{"v":1,"password":"$secret","endpoint":{"host":"192.168.10.20","port":8883,"protocol":"ws","tls":false}}"""
+    val N = SecureCredentialCore.REENTRY_AFTER
 
     run { // round trip, ciphertext only at rest, fresh IV per write
-        val (_, s, core) = fresh()
+        val (_, s, _, core) = fresh()
         core.set("p", pinned)
         val first = s.map["p"]!!
         check(!first.contains(secret), "plaintext at rest")
@@ -103,114 +109,156 @@ fun main() {
         core.set("p", pinned)
         check(s.map["p"] != first, "same value re-encrypted with a new IV")
         check(core.get("missing") == null, "absent entry ⇒ null")
+        check(core.status("p") == SecureCredentialCore.Status.OK && core.status("missing") == SecureCredentialCore.Status.NONE, "status OK / NONE")
     }
 
-    // ── DEFINITIVE ⇒ delete ────────────────────────────────────────────────────────────────────────────────────
-    run { // alias absent (no throw) ⇒ entry dropped; next set works with a new key
-        val (k, s, core) = fresh()
-        core.set("p", pinned)
-        k.key = null
-        check(core.get("p") == null && !s.map.containsKey("p"), "alias absent ⇒ null + deleted")
-        core.set("p", pinned)
-        check(core.get("p") == pinned, "set after loss works")
-    }
-    run { // different key ⇒ AEADBadTagException ⇒ dropped
-        val (k, s, core) = fresh()
-        core.set("p", pinned)
-        k.key = real()
-        check(core.get("p") == null && !s.map.containsKey("p"), "wrong key (AEADBadTag) ⇒ null + deleted")
-    }
-    run { // malformed entries ⇒ dropped
-        val (_, s, core) = fresh()
-        core.set("x", "keep-key-alive")
-        s.map["p"] = "garbage-without-colon"
-        check(core.get("p") == null && !s.map.containsKey("p"), "no separator ⇒ deleted")
-        s.map["p"] = "@@@:###"
-        check(core.get("p") == null && !s.map.containsKey("p"), "not Base64 ⇒ deleted")
-    }
-    run { // permanently invalidated key on read ⇒ dropped
-        val (k, s, core) = fresh()
-        core.set("p", pinned)
-        k.key = bogus(); k.permanent = true
-        check(core.get("p") == null && !s.map.containsKey("p"), "permanently invalidated ⇒ null + deleted")
-    }
-
-    // ── N2: TRANSIENT ⇒ keep the good password ─────────────────────────────────────────────────────────────────
-    run { // key store unreadable right now ⇒ Unavailable, entry KEPT, readable once the store recovers
-        val (k, s, core) = fresh()
+    // ── R2-2: the key LOOKS absent (platform swallowed a busy/binder error) ⇒ never delete, never re-key ─────────
+    run {
+        val (k, s, c, core) = fresh()
         core.set("p", pinned)
         val stored = s.map["p"]
-        k.throwOnExisting = true
-        check(unavailable { core.get("p") }, "unreadable key store on get ⇒ Unavailable")
-        check(s.map["p"] == stored, "unreadable key store on get ⇒ entry KEPT")
-        k.throwOnExisting = false
-        check(core.get("p") == pinned, "store recovered ⇒ the same password is back")
+        k.looksAbsent = true
+        check(outcome { core.get("p") } == "unavailable", "looks absent on get ⇒ unavailable")
+        check(s.map["p"] == stored, "looks absent on get ⇒ entry KEPT")
+        val createsBefore = k.creates
+        check(outcome { core.set("p", "new-value") } == "unavailable", "looks absent on set (entry stored) ⇒ unavailable")
+        check(k.creates == createsBefore && s.map["p"] == stored, "looks absent on set ⇒ no re-key, entry untouched")
+        k.looksAbsent = false
+        check(core.get("p") == pinned && c.get("p") == 0, "keystore back ⇒ same password, counter reset")
     }
-    run { // non-AEAD, non-permanent cipher error on read ⇒ Unavailable, entry KEPT
-        val (k, s, core) = fresh()
+    run { // status never counts (Settings may poll it)
+        val (k, _, c, core) = fresh()
+        core.set("p", pinned)
+        k.looksAbsent = true
+        repeat(3 * N) { core.status("p") }
+        check(c.get("p") == 0, "status does not count failures")
+        check(core.status("p") == SecureCredentialCore.Status.UNAVAILABLE, "status UNAVAILABLE while the key looks absent")
+    }
+
+    // ── R2-3: persistent failure ⇒ "re-enter" after N in a row; definitive ⇒ at once; never deleted ─────────────
+    run { // key really gone: N-1 reads unavailable, the N-th asks for re-entry; entry kept; re-entry then works
+        val (k, s, _, core) = fresh()
+        core.set("p", pinned)
+        k.looksAbsent = true
+        repeat(N - 1) { i -> check(outcome { core.get("p") } == "unavailable", "failure ${i + 1} < N ⇒ unavailable") }
+        check(outcome { core.get("p") } == "reentry", "N-th consecutive failure ⇒ reentry")
+        check(s.map.containsKey("p"), "reentry ⇒ entry still KEPT (no silent delete)")
+        check(core.status("p") == SecureCredentialCore.Status.NEEDS_REENTRY, "status NEEDS_REENTRY")
+        core.set("p", "re-entered") // user re-enters: the only, already-unreadable entry may be re-keyed
+        k.looksAbsent = false
+        check(core.get("p") == "re-entered" && core.status("p") == SecureCredentialCore.Status.OK, "re-entered password readable, status OK")
+    }
+    run { // a success in between resets the streak
+        val (k, _, c, core) = fresh()
+        core.set("p", pinned)
+        k.looksAbsent = true
+        repeat(N - 1) { core.status("p"); outcome { core.get("p") } }
+        k.looksAbsent = false
+        check(core.get("p") == pinned && c.get("p") == 0, "success resets the counter")
+        k.looksAbsent = true
+        check(outcome { core.get("p") } == "unavailable", "streak starts over after a success")
+    }
+    run { // AEADBadTag (wrong key) ⇒ reentry at once, entry kept, re-entry re-keys
+        val (k, s, _, core) = fresh()
+        core.set("p", pinned)
+        k.key = real()
+        check(outcome { core.get("p") } == "reentry" && s.map.containsKey("p"), "wrong key ⇒ reentry, entry KEPT")
+        core.set("p", "re-entered")
+        check(core.get("p") == "re-entered", "re-entry after AEAD failure works")
+    }
+    run { // malformed ⇒ reentry, kept
+        val (_, s, _, core) = fresh()
+        s.map["p"] = "garbage-without-colon"
+        check(outcome { core.get("p") } == "reentry" && s.map["p"] == "garbage-without-colon", "no separator ⇒ reentry, KEPT")
+        s.map["p"] = "@@@:###"
+        check(outcome { core.get("p") } == "reentry" && s.map["p"] == "@@@:###", "not Base64 ⇒ reentry, KEPT")
+    }
+    run { // permanently invalidated key ⇒ reentry at once, kept
+        val (k, s, _, core) = fresh()
+        core.set("p", pinned)
+        k.key = bogus(); k.permanent = true
+        check(outcome { core.get("p") } == "reentry" && s.map.containsKey("p"), "permanently invalidated ⇒ reentry, KEPT")
+    }
+    run { // key store throws / transient cipher error ⇒ unavailable, kept, readable afterwards
+        val (k, s, _, core) = fresh()
         core.set("p", pinned)
         val good = k.key
+        k.throwOnExisting = true
+        check(outcome { core.get("p") } == "unavailable" && s.map.containsKey("p"), "key store throws ⇒ unavailable, KEPT")
+        k.throwOnExisting = false
         k.key = bogus()
-        check(unavailable { core.get("p") }, "transient cipher error ⇒ Unavailable")
-        check(s.map.containsKey("p"), "transient cipher error ⇒ entry KEPT")
+        check(outcome { core.get("p") } == "unavailable" && s.map.containsKey("p"), "transient cipher error ⇒ unavailable, KEPT")
         k.key = good
-        check(core.get("p") == pinned, "after the transient error ⇒ readable")
+        check(core.get("p") == pinned, "readable afterwards")
     }
 
     // ── N3: a failing save never destroys the old good password ───────────────────────────────────────────────
-    run { // transient encrypt failure while a password is stored ⇒ Unavailable, key not deleted, old value intact
-        val (k, s, core) = fresh()
+    run {
+        val (k, _, _, core) = fresh()
         core.set("p", pinned)
         val good = k.key
         k.key = bogus()
-        check(unavailable { core.set("p", "new-value") }, "transient error on set ⇒ Unavailable")
-        check(k.deletes == 0, "transient error on set ⇒ alias NOT deleted (deletes=${k.deletes})")
+        check(outcome { core.set("p", "new-value") } == "unavailable" && k.deletes == 0, "transient error on set ⇒ unavailable, alias NOT deleted")
         k.key = good
         check(core.get("p") == pinned, "old password still decrypts after a failed save")
-    }
-    run { // key store unreadable on set ⇒ Unavailable, nothing touched
-        val (k, s, core) = fresh()
-        core.set("p", pinned)
         k.throwOnExisting = true
-        check(unavailable { core.set("p", "new-value") }, "unreadable key store on set ⇒ Unavailable")
+        check(outcome { core.set("p", "new-value") } == "unavailable", "key store throws on set ⇒ unavailable")
         k.throwOnExisting = false
         check(k.deletes == 0 && core.get("p") == pinned, "old password intact")
     }
     run { // nothing stored + unusable key ⇒ safe to re-key once ⇒ saved
-        val (k, s, core) = fresh()
+        val (k, _, _, core) = fresh()
         k.key = bogus()
         core.set("p", pinned)
-        check(k.deletes == 1 && core.get("p") == pinned, "empty store ⇒ re-keyed and saved")
+        check(core.get("p") == pinned, "empty store ⇒ re-keyed and saved")
     }
-    run { // permanently invalidated key on set ⇒ old entries are dead anyway ⇒ re-key and save the new value
-        val (k, s, core) = fresh()
+    run { // nothing stored + key looks absent ⇒ create ⇒ saved
+        val (k, _, _, core) = fresh()
+        core.set("p", pinned)
+        core.remove("p")
+        k.looksAbsent = true
+        check(outcome { core.set("p", pinned) } == "ok", "empty store + looks absent ⇒ saved with a new key")
+        k.looksAbsent = false
+        check(core.get("p") == pinned, "readable")
+    }
+    run { // permanently invalidated key on set ⇒ re-key and save the new value
+        val (k, _, _, core) = fresh()
         core.set("p", pinned)
         k.key = bogus(); k.permanent = true
         core.set("p", "new-value")
         k.permanent = false
         check(core.get("p") == "new-value", "permanent invalidation on set ⇒ re-keyed, new value readable")
     }
-    run { // re-key path fails as well ⇒ Unavailable, nothing stored
-        val (k, s, core) = fresh()
+    run { // a second entry that may still be good blocks re-keying even if "p" needs re-entry
+        val (k, s, _, core) = fresh()
+        core.set("p", pinned)
+        core.set("q", "other")
+        k.looksAbsent = true
+        repeat(N) { outcome { core.get("p") } }
+        check(outcome { core.set("p", "re-entered") } == "unavailable" && s.map["q"] != null, "other entry present ⇒ no re-key")
+        k.looksAbsent = false
+        check(core.get("q") == "other", "other entry intact")
+    }
+    run { // re-key path fails as well ⇒ unavailable, nothing stored
+        val (k, s, _, core) = fresh()
         k.key = bogus(); k.bogusNextCreates = 1
-        check(unavailable { core.set("p", pinned) }, "re-key fails too ⇒ Unavailable")
-        check(!s.map.containsKey("p"), "nothing stored on failure")
+        check(outcome { core.set("p", pinned) } == "unavailable" && !s.map.containsKey("p"), "re-key fails too ⇒ unavailable, nothing stored")
     }
     run { // write not persisted ⇒ WriteFailed, previous value unchanged
-        val (_, s, core) = fresh()
+        val (_, s, _, core) = fresh()
         core.set("p", pinned)
         s.failWrites = true
-        check(throws { core.set("p", "new-value") }, "put=false ⇒ throws")
+        check(outcome { core.set("p", "new-value") } == "error:WriteFailed", "put=false ⇒ WriteFailed")
         s.failWrites = false
         check(core.get("p") == pinned, "previous value unchanged after a failed write")
     }
-
-    run { // Clear: entry gone; last entry ⇒ key deleted too; another entry left ⇒ key kept
-        val (k, s, core) = fresh()
+    run { // Clear: entry + counter gone; last entry ⇒ key deleted too; another entry left ⇒ key kept
+        val (k, s, c, core) = fresh()
         core.set("p", pinned)
         core.set("q", "other")
+        c.set("p", 3)
         core.remove("p")
-        check(!s.map.containsKey("p") && k.key != null && k.deletes == 0, "other entry left ⇒ key kept")
+        check(!s.map.containsKey("p") && c.get("p") == 0 && k.key != null && k.deletes == 0, "other entry left ⇒ key kept, counter reset")
         core.remove("q")
         check(s.map.isEmpty() && k.key == null && k.deletes == 1, "last entry removed ⇒ key deleted")
         check(core.get("p") == null, "after Clear ⇒ null")

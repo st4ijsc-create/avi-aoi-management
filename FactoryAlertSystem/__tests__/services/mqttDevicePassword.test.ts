@@ -20,6 +20,7 @@ import {
   brokerEndpointOf,
   clearMqttDevicePassword,
   getMqttDeviceCredential,
+  getMqttDeviceCredentialStatus,
   getMqttDevicePassword,
   sameBrokerEndpoint,
   isSecureStorageAvailable,
@@ -139,6 +140,38 @@ describe('secureCredentialStore', () => {
     expect(sameBrokerEndpoint(base, brokerEndpointOf({ brokerAddress: '192.168.10.20', port: 8883, protocol: 'ws', useSSL: true }))).toBe(false);
     expect(sameBrokerEndpoint(null, null)).toBe(false);
     expect(sameBrokerEndpoint(base, null)).toBe(false);
+  });
+});
+
+describe('G fix 3 (R2-2/R2-3) — store status, and a failing read never deletes', () => {
+  it('status: unsupported / none / ok / unavailable / reentry; old native shell without getStatus falls back', async () => {
+    removeFakeSecureModule();
+    expect(await getMqttDeviceCredentialStatus()).toBe('unsupported');
+    const store = installFakeSecureModule();
+    expect(await getMqttDeviceCredentialStatus()).toBe('none');
+    await setMqttDevicePassword(SECRET, PIN);
+    expect(await getMqttDeviceCredentialStatus()).toBe('ok');
+    for (const st of ['unavailable', 'reentry'] as const) {
+      (NativeModules as any).SecureCredentialModule.getStatus = jest.fn(async () => st);
+      expect(await getMqttDeviceCredentialStatus()).toBe(st);
+    }
+    (NativeModules as any).SecureCredentialModule.getStatus = jest.fn(async () => 'garbage');
+    expect(await getMqttDeviceCredentialStatus()).toBe('unavailable');
+    delete (NativeModules as any).SecureCredentialModule.getStatus; // older native shell
+    expect(await getMqttDeviceCredentialStatus()).toBe('ok');
+    expect(store.size).toBe(1);
+  });
+
+  it('a rejected read (E_SECURE_UNAVAILABLE / E_SECURE_REENTRY) ⇒ no password this time, and JS never removes the entry', async () => {
+    const store = installFakeSecureModule();
+    await setMqttDevicePassword(SECRET, PIN);
+    const m = (NativeModules as any).SecureCredentialModule;
+    for (const code of ['E_SECURE_UNAVAILABLE', 'E_SECURE_REENTRY']) {
+      m.getItem = jest.fn(async () => { throw Object.assign(new Error(code), { code }); });
+      expect(await getMqttDeviceCredential()).toBeNull();
+    }
+    expect(m.removeItem).not.toHaveBeenCalled();
+    expect(store.has(MQTT_DEVICE_PASSWORD_KEY)).toBe(true);
   });
 });
 

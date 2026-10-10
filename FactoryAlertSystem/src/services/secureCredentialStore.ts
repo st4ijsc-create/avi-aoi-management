@@ -91,7 +91,17 @@ interface SecureCredentialNative {
   setItem(key: string, value: string): Promise<boolean>;
   getItem(key: string): Promise<string | null>;
   removeItem(key: string): Promise<boolean>;
+  /** G fix 3 — "none" | "ok" | "unavailable" | "reentry"; absent on older native shells. */
+  getStatus?(key: string): Promise<string>;
 }
+
+/**
+ * doc 81 Đợt 5 G fix 3 (R2-3) — what Settings shows about the stored password, WITHOUT reading it into JS:
+ *   unsupported — no secure module; none — nothing stored; ok — stored and readable;
+ *   unavailable — stored but not readable right now (key store busy…; kept, retried on the next connect);
+ *   reentry — stored but unreadable for good or 5 times in a row: the user must enter it again (never deleted silently).
+ */
+export type MqttDeviceCredentialStatus = 'unsupported' | 'none' | 'ok' | 'unavailable' | 'reentry';
 
 /** Read lazily so a late-registered module (and tests) are honoured. */
 function nativeModule(): SecureCredentialNative | null {
@@ -130,6 +140,21 @@ export async function getMqttDeviceCredential(): Promise<StoredMqttDeviceCredent
     return parseStored(await m.getItem(MQTT_DEVICE_PASSWORD_KEY));
   } catch {
     return null;
+  }
+}
+
+export async function getMqttDeviceCredentialStatus(): Promise<MqttDeviceCredentialStatus> {
+  const m = nativeModule();
+  if (!m) return 'unsupported';
+  try {
+    if (typeof m.getStatus === 'function') {
+      const st = await m.getStatus(MQTT_DEVICE_PASSWORD_KEY);
+      return st === 'none' || st === 'ok' || st === 'unavailable' || st === 'reentry' ? st : 'unavailable';
+    }
+    // older native shell: derive from a read (a rejection never removes anything)
+    return (await getMqttDeviceCredential()) ? 'ok' : 'none';
+  } catch {
+    return 'unavailable';
   }
 }
 

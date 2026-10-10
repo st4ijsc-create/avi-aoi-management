@@ -14,6 +14,7 @@ jest.mock('../../src/context/ThemeContext', () => {
 const mockService = {
   getDeviceInfo: jest.fn(() => ({ deviceId: 'tab-42', deviceName: 'Tab', deviceModel: 'M' })),
   getLocalBrokerPasswordEndpoint: jest.fn((): Promise<any> => Promise.resolve(null)),
+  getLocalBrokerPasswordStatus: jest.fn((): Promise<string> => Promise.resolve('none')),
   setLocalBrokerPassword: jest.fn((_pw: string, _endpoint?: unknown) => Promise.resolve()),
   clearLocalBrokerPassword: jest.fn(() => Promise.resolve()),
   resetAllRetriesExhausted: jest.fn(),
@@ -147,4 +148,22 @@ it('no broker address configured ⇒ Save disabled, nothing stored', async () =>
     fireEvent.press(tree.getByTestId('mqtt-device-password-save'));
   });
   expect(mockService.setLocalBrokerPassword).not.toHaveBeenCalled();
+});
+
+// doc 81 Đợt 5 G fix 3 (R2-3) — the stored password is unreadable: Settings says so and asks to re-enter, never "no password".
+it('stored password unreadable (status "reentry") ⇒ explicit re-enter message, Clear enabled, never "No password stored"', async () => {
+  mockService.getLocalBrokerPasswordStatus.mockImplementationOnce(() => Promise.resolve('reentry'));
+  const tree = render(<MqttDevicePasswordSetting language="en" mqttConfig={CFG} />);
+  await waitFor(() => expect(tree.getByTestId('mqtt-device-password-reentry')).toBeTruthy());
+  expect(tree.getByTestId('mqtt-device-password-reentry')).toHaveTextContent(/cannot be read.*enter it again/i);
+  expect(tree.getByTestId('mqtt-device-password-status')).not.toHaveTextContent('No password stored');
+  expect(tree.getByTestId('mqtt-device-password-status')).toHaveTextContent('Password stored — NOT readable');
+  expect(tree.getByTestId('mqtt-device-password-clear').props.accessibilityState?.disabled).toBeFalsy();
+});
+
+it('stored password temporarily unreadable (status "unavailable") ⇒ "temporarily unreadable", not "No password"', async () => {
+  mockService.getLocalBrokerPasswordStatus.mockImplementationOnce(() => Promise.resolve('unavailable'));
+  const tree = render(<MqttDevicePasswordSetting language="en" mqttConfig={CFG} />);
+  await waitFor(() => expect(tree.getByTestId('mqtt-device-password-status')).toHaveTextContent(/temporarily unreadable/i));
+  expect(tree.queryByTestId('mqtt-device-password-reentry')).toBeNull();
 });

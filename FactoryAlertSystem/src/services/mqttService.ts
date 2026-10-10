@@ -29,6 +29,8 @@ import {
   brokerEndpointOf,
   clearMqttDevicePassword,
   getMqttDeviceCredential,
+  getMqttDeviceCredentialStatus,
+  MqttDeviceCredentialStatus,
   sameBrokerEndpoint,
   setMqttDevicePassword,
 } from './secureCredentialStore';
@@ -836,6 +838,11 @@ class MqttService {
   /** True when a (validly pinned) device MQTT password is stored in the secure store. */
   public async hasLocalBrokerPassword(): Promise<boolean> {
     return (await getMqttDeviceCredential()) !== null;
+  }
+
+  /** G fix 3 — state of the stored password for Settings (never the password itself). */
+  public async getLocalBrokerPasswordStatus(): Promise<MqttDeviceCredentialStatus> {
+    return getMqttDeviceCredentialStatus();
   }
 
   /** The endpoint the stored password is pinned to (for the UI) — never the password. */

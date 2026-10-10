@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTheme, Theme } from '../context/ThemeContext';
 import { mqttService } from '../services/mqttService';
+import type { MqttDeviceCredentialStatus } from '../services/secureCredentialStore';
 import {
   MqttBrokerEndpoint,
   brokerEndpointLabel,
@@ -36,6 +37,9 @@ const TEXT: Record<Lang, Record<string, string>> = {
     noEndpoint: 'Chưa cấu hình địa chỉ/cổng broker — cấu hình trước rồi mới lưu mật khẩu.',
     plaintext: '⚠ Kết nối tới broker này KHÔNG mã hoá: mật khẩu đi qua mạng LAN dạng rõ. Khuyến nghị dùng TLS.',
     notStored: 'Chưa có mật khẩu',
+    storedUnreadable: 'Đã lưu mật khẩu — KHÔNG đọc được',
+    unreadableNow: 'Đã lưu mật khẩu nhưng tạm thời KHÔNG đọc được (kho an toàn bận) — sẽ thử lại ở lần kết nối sau.',
+    reentry: 'Mật khẩu đã lưu KHÔNG đọc được nữa trên máy này — hãy nhập lại mật khẩu (xin admin cấp mới nếu không còn). Mật khẩu cũ không bị xoá ngầm; có thể bấm Xoá.',
     unavailable: 'Thiết bị này không có kho lưu an toàn — không lưu được mật khẩu. Cập nhật ứng dụng.',
     placeholder: 'Dán / gõ mật khẩu admin vừa cấp',
     save: 'Lưu',
@@ -53,6 +57,9 @@ const TEXT: Record<Lang, Record<string, string>> = {
     noEndpoint: 'Broker address/port not configured — configure it first, then save the password.',
     plaintext: '⚠ The connection to this broker is NOT encrypted: the password crosses the LAN in clear. TLS is recommended.',
     notStored: 'No password stored',
+    storedUnreadable: 'Password stored — NOT readable',
+    unreadableNow: 'A password is stored but is temporarily unreadable (secure storage busy) — it will be retried on the next connect.',
+    reentry: 'The stored password cannot be read on this device any more — please enter it again (ask the admin for a new one if needed). It was not deleted silently; you can Clear it.',
     unavailable: 'Secure storage is not available on this device — the password cannot be saved. Update the app.',
     placeholder: 'Paste / type the password issued by the admin',
     save: 'Save',
@@ -70,6 +77,9 @@ const TEXT: Record<Lang, Record<string, string>> = {
     noEndpoint: '尚未配置代理地址/端口——请先配置，再保存密码。',
     plaintext: '⚠ 与此代理的连接未加密：密码以明文在局域网中传输。建议使用 TLS。',
     notStored: '未设置密码',
+    storedUnreadable: '已保存密码——无法读取',
+    unreadableNow: '已保存密码，但暂时无法读取（安全存储忙）——将在下次连接时重试。',
+    reentry: '此设备上已保存的密码无法再读取——请重新输入密码（如没有，请管理员重新签发）。旧密码不会被静默删除；可点击清除。',
     unavailable: '此设备没有安全存储，无法保存密码。请更新应用。',
     placeholder: '粘贴/输入管理员签发的密码',
     save: '保存',
@@ -100,7 +110,10 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
   const available = isSecureStorageAvailable();
   // undefined = still loading; null = nothing stored; endpoint = stored and pinned there.
   const [pinned, setPinned] = useState<MqttBrokerEndpoint | null | undefined>(undefined);
-  const hasPassword = pinned === undefined ? null : pinned !== null;
+  // G fix 3 (R2-3): readable-or-not state of the stored password (an unreadable one has no known pin).
+  const [credStatus, setCredStatus] = useState<MqttDeviceCredentialStatus | undefined>(undefined);
+  const storedButUnreadable = credStatus === 'unavailable' || credStatus === 'reentry';
+  const hasPassword = pinned === undefined ? null : pinned !== null || storedButUnreadable;
   const current = brokerEndpointOf(mqttConfig);
   const mismatch = !!pinned && !sameBrokerEndpoint(pinned, current);
   const [input, setInput] = useState('');
@@ -114,6 +127,10 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
       .getLocalBrokerPasswordEndpoint()
       .then((e: MqttBrokerEndpoint | null) => alive && setPinned(e))
       .catch(() => alive && setPinned(null));
+    mqttService
+      .getLocalBrokerPasswordStatus()
+      .then((st: MqttDeviceCredentialStatus) => alive && setCredStatus(st))
+      .catch(() => alive && setCredStatus('unavailable'));
     return () => {
       alive = false;
     };
@@ -133,6 +150,7 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
       await mqttService.setLocalBrokerPassword(input, current);
       setInput('');
       setPinned(current);
+      setCredStatus('ok');
       setMessage({ kind: 'ok', text: tx.saved });
       reconnect();
     } catch (e) {
@@ -149,6 +167,7 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
       await mqttService.clearLocalBrokerPassword();
       setInput('');
       setPinned(null);
+      setCredStatus('none');
       setMessage({ kind: 'ok', text: tx.cleared });
     } catch (e) {
       setMessage({ kind: 'error', text: `${tx.failed}: ${(e as Error)?.message ?? ''}` });
@@ -168,8 +187,19 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
       ) : (
         <>
           <Text style={styles.meta} testID="mqtt-device-password-status">
-            {pinned === undefined ? '…' : pinned ? `${tx.stored} ${brokerEndpointLabel(pinned)}` : tx.notStored}
+            {pinned === undefined
+              ? '…'
+              : pinned
+                ? `${tx.stored} ${brokerEndpointLabel(pinned)}`
+                : credStatus === 'unavailable'
+                  ? tx.unreadableNow
+                  : credStatus === 'reentry'
+                    ? tx.storedUnreadable
+                    : tx.notStored}
           </Text>
+          {credStatus === 'reentry' ? (
+            <Text style={styles.error} testID="mqtt-device-password-reentry">{tx.reentry}</Text>
+          ) : null}
           {mismatch ? (
             <Text style={styles.error} testID="mqtt-device-password-mismatch">
               {tx.mismatch
