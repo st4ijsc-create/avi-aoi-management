@@ -954,10 +954,12 @@ function robotStepsWithoutRobotId(def: WorkflowDefinition, machineMap: Map<numbe
 
 /**
  * doc 81 Đợt 4 final wave G3 (re-review 3 A3-2) — a robot-kind command step whose args.robotId names a robot that does
- * not exist or is not enabled could never be sent (the robot route refuses it) — an abort / e_stop would only discover
- * that during the run. Refused at DEPLOY (and, since G4, at run start). A DB error counts every such step as offending
- * (fail-closed). Steps without a valid robotId are robotStepsWithoutRobotId's. Orchestration has no tenant scope (out of
- * scope here, pre-existing).
+ * not EXIST could never be sent. Refused at DEPLOY (and at run start for NON-stop steps only, R-4-w). A DB error counts
+ * every such step as offending (fail-closed). Steps without a valid robotId are robotStepsWithoutRobotId's.
+ * Final wave N1 (ruling R-4-w) — EXISTENCE only, not `robots.isEnabled`: the robot dispatcher sends to the active set
+ * loaded at boot (robotManager.getActiveRobot), and robot.setEnabled only updates the row — a robot disabled after boot
+ * still receives an abort today, so the DB flag is not the truth about "can this stop be sent". Orchestration has no
+ * tenant scope (out of scope here, pre-existing).
  */
 async function robotStepsWithUnavailableRobot(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>): Promise<string[]> {
   const wanted: Array<{ stepId: string; robotId: number }> = [];
@@ -971,28 +973,56 @@ async function robotStepsWithUnavailableRobot(def: WorkflowDefinition, machineMa
     if (typeof rid === "number" && Number.isInteger(rid) && rid > 0) wanted.push({ stepId: step.id, robotId: rid });
   }
   if (wanted.length === 0) return [];
-  let enabled: Set<number>;
+  let existing: Set<number>;
   try {
     const d = await getDb();
     if (!d) return wanted.map((w) => w.stepId);
     const rows = await d.select().from(robots).where(inArray(robots.id, [...new Set(wanted.map((w) => w.robotId))]));
-    enabled = new Set(rows.filter((r) => r.isEnabled === true).map((r) => r.id));
+    existing = new Set(rows.map((r) => r.id)); // N1 (R-4-w) — exists; the enabled flag is not consulted
   } catch {
     return wanted.map((w) => w.stepId);
   }
-  return wanted.filter((w) => !enabled.has(w.robotId)).map((w) => w.stepId);
+  return wanted.filter((w) => !existing.has(w.robotId)).map((w) => w.stepId);
+}
+
+/**
+ * Final wave N1 (ruling R-4-w) — ids of the STOP command steps of a definition (robot: the job toRobotJob maps the step to
+ * is a stop — the same classification execCommand uses; OT: the dispatcher's stop-type predicate). Used so the run-START
+ * check never refuses a run because of a stop step (L-7): a defective stop step fails on its own at runtime, as before.
+ */
+async function stopStepIdsOf(def: WorkflowDefinition, machineMap: Map<number, MachineForValidation>): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const step of allStepsOf(def.steps)) {
+    if (step.type !== "command") continue;
+    const m = machineMap.get(step.machineId);
+    if (!m) continue;
+    const cap = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never });
+    if (isRobotKind(cap.adapterKind)) {
+      const descriptor = cap.supportedCommands.find((c) => c.name === step.command);
+      if (descriptor && isStopJob(toRobotJob(buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, "probe", { id: 0, role: "system" })))) {
+        ids.add(step.id);
+      }
+    } else if (await isOtStopCommandType(step.command)) ids.add(step.id);
+  }
+  return ids;
 }
 
 /**
  * doc 81 Đợt 4 (R-4-n, final wave G3, R-4-j) — the definition checks deploy runs after validation, in this order; also run
  * at run START since final wave G4 (workflows activated before these checks existed). null ⇒ the definition passes.
+ * Final wave N1 (ruling R-4-w) — at START (`nonStopOnly`) only NON-stop steps can cause a refusal: stop / abort / e_stop
+ * steps are left out of every check (stopAdapterAmbiguous is about stops only, so it never applies at start). Deploy
+ * (default) is unchanged.
  */
 async function definitionRefusal(
   def: WorkflowDefinition,
   machineMap: Map<number, MachineForValidation>,
+  opts: { nonStopOnly?: boolean } = {},
 ): Promise<{ reason: DefinitionRefusalReason; stepIds: string[]; errors: ValidationError[]; message: string } | null> {
+  const stops = opts.nonStopOnly ? await stopStepIdsOf(def, machineMap) : new Set<string>();
+  const keep = (ids: string[]) => ids.filter((id) => !stops.has(id));
   // doc 81 Đợt 4 fix round 3 (R-4-n) — every robot step must name its robot BEFORE the run exists.
-  const noRobot = robotStepsWithoutRobotId(def, machineMap);
+  const noRobot = keep(robotStepsWithoutRobotId(def, machineMap));
   if (noRobot.length > 0) {
     return {
       reason: "robotIdMissing",
@@ -1004,21 +1034,22 @@ async function definitionRefusal(
       message: `Robot step(s) ${noRobot.join(", ")} name no robot — pick the robot for each step before deploying.`,
     };
   }
-  // final wave G3 — the named robot must exist and be enabled.
-  const unavailable = await robotStepsWithUnavailableRobot(def, machineMap);
+  // final wave G3 / N1 — the named robot must exist.
+  const unavailable = keep(await robotStepsWithUnavailableRobot(def, machineMap));
   if (unavailable.length > 0) {
     return {
       reason: "robotUnavailable",
       stepIds: unavailable,
       errors: unavailable.map((id) => ({
         path: `step:${id}`,
-        message: `Robot step "${id}" names a robot that does not exist or is not enabled — at run time it could not be sent. Pick an enabled robot for the step.`,
+        message: `Robot step "${id}" names a robot that does not exist — at run time it could not be sent. Pick an existing robot for the step.`,
       })),
-      message: `Robot step(s) ${unavailable.join(", ")} name a robot that does not exist or is not enabled — pick an enabled robot for each step.`,
+      message: `Robot step(s) ${unavailable.join(", ")} name a robot that does not exist — pick an existing robot for each step.`,
     };
   }
-  // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step must name a resolvable adapter BEFORE the run exists.
-  const ambiguous = await ambiguousStopSteps(def, machineMap);
+  // doc 81 Đợt 4 fix round 2 (R-4-j) — an OT STOP step must name a resolvable adapter BEFORE the run exists (deploy only:
+  // every offender is a stop step, so at START (N1) this never refuses).
+  const ambiguous = opts.nonStopOnly ? [] : await ambiguousStopSteps(def, machineMap);
   if (ambiguous.length > 0) {
     return {
       reason: "stopAdapterAmbiguous",
@@ -1668,10 +1699,12 @@ export async function startRun(
 
     const def = wf.definitionJson as WorkflowDefinition;
     // doc 81 Đợt 4 final wave G4 (re-review 3 A3-3) — a workflow activated BEFORE the R-4-j / R-4-n / G3 deploy checks is
-    // re-checked here with the SAME checks: refused ⇒ no run is created (an emergency step never discovers it mid-run).
+    // re-checked here with the SAME checks: refused ⇒ no run is created. Final wave N1 (ruling R-4-w, L-7): ONLY non-stop
+    // steps can refuse a start — a run that exists to STOP is never kept from starting; a defective stop step fails on its
+    // own at runtime with its i18n error (R-4-n / R-4-j "runtime unchanged"), the other steps still go out.
     {
       const refs = validateWorkflow(def, null).referencedMachineIds;
-      const refusal = await definitionRefusal(def, await loadMachines(refs));
+      const refusal = await definitionRefusal(def, await loadMachines(refs), { nonStopOnly: true });
       if (refusal) return { ok: false, enabled: true, reason: refusal.reason, stepIds: refusal.stepIds, errors: refusal.errors, message: refusal.message };
     }
     const [run] = await d

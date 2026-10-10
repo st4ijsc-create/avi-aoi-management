@@ -11895,7 +11895,7 @@
     "pickRobot": "Select robot…",
     "noRobots": "No robot in your scope is enabled.",
     "deployRobotIdMissing": "Not deployed: robot step(s) {{steps}} name no robot. Pick the robot for each step, then deploy again.",
-    "deployRobotUnavailable": "Not deployed: robot step(s) {{steps}} name a robot that does not exist or is not enabled. Pick an enabled robot for each step, then deploy again.",
+    "deployRobotUnavailable": "Not deployed: robot step(s) {{steps}} name a robot that does not exist. Pick an existing robot for each step, then deploy again.",
     "runRefusedDefinition": "Run not started — the deployed workflow fails a safety check:",
     "definitionChangedReload": "The workflow definition changed since you opened this approval — reload the page and review it before approving.",
     "gateRequiredOwnerApproved": "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.",

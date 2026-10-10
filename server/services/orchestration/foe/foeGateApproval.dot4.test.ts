@@ -78,7 +78,7 @@ beforeEach(() => {
   ]);
   // doc 81 Đợt 4 fix round 1 (R-4-d): an OT step writes through the adapter BOUND to its machine (no more adapterId = machineId).
   fake.seed(deviceAdapters, [{ id: 501, machineId: 1, isEnabled: true }]);
-  // final wave G3 — a robot step must name an EXISTING, ENABLED robot (2 enabled, 3 disabled).
+  // final wave G3 / N1 (R-4-w) — a robot step must name an EXISTING robot (2 enabled, 3 disabled-but-existing).
   fake.seed(robots, [
     { id: 2, code: "R2", isEnabled: true },
     { id: 3, code: "R3", isEnabled: false },
@@ -327,9 +327,10 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     expect(row.resultJson?.detail?.appError).toEqual({ appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } });
     expect(actions()).toHaveLength(0); // R-4-n: no authorisation row for a command that can never be sent
     seedActive("rbnoidstop", [{ id: "s", type: "command", machineId: 2, command: "abort" }]);
-    expect(await startRun("rbnoidstop", {}, OWNER)).toMatchObject({ ok: false, reason: "robotIdMissing", stepIds: ["s"] }); // G4
-    seedInFlightRun("rbnoidstop", 802);
-    const stop = { ...(await resumeRun(802, { approved: true }, OTHER)), runId: 802 };
+    // final wave N1 (R-4-w) — a STOP step never refuses a start: the run starts and the abort fails on its own at runtime.
+    const stop = await startRun("rbnoidstop", {}, OWNER);
+    expect(stop.runId).toBeDefined();
+    expect(stop.reason).toBeUndefined();
     expect(stop.status).toBe("failed");
     expect(robotDispatchMock).not.toHaveBeenCalled();
     const srow = stepRow(stop.runId!, "s")!;
@@ -389,18 +390,16 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     expect((await deployWorkflow(stopDef("st1"), OWNER)).ok).toBe(true); // exactly one ENABLED
   });
 
-  it("R-4-j: the RUNTIME stop path is unchanged — never gated; adapters changed after deploy ⇒ a NEW run is refused at START (G4), a run already in flight gets the OT route's refusal as before (no gate error)", async () => {
+  it("R-4-j: the RUNTIME stop path is unchanged — never gated; adapters changed after deploy ⇒ a NEW run still STARTS (N1, R-4-w: a stop step never refuses a start) and the stop gets the OT route's refusal as before (no gate error)", async () => {
     await deployWorkflow({ ref: "strt", name: "strt", steps: [{ id: "st", type: "command", machineId: 1, command: "stop" }] }, OWNER);
     const ok = await startRun("strt", {}, OWNER);
     expect(ok.status).toBe("completed");
     expect(otDispatchMock).toHaveBeenCalledTimes(1);
     expect((otDispatchMock.mock.calls[0][0] as { adapterId: number }).adapterId).toBe(501);
     fake.store.set("device_adapters", []); // adapter removed AFTER deploy
-    const runsBefore = (fake.store.get("orchestration_runs") ?? []).length;
-    expect(await startRun("strt", {}, OWNER)).toMatchObject({ ok: false, reason: "stopAdapterAmbiguous", stepIds: ["st"] }); // final wave G4
-    expect(fake.store.get("orchestration_runs") ?? []).toHaveLength(runsBefore);
-    seedInFlightRun("strt", 803);
-    const later = { ...(await resumeRun(803, { approved: true }, OTHER)), runId: 803 };
+    const later = await startRun("strt", {}, OWNER);
+    expect(later.reason).toBeUndefined(); // N1 — not refused at start
+    expect(later.runId).toBeDefined();
     expect(later.status).toBe("failed");
     expect(otDispatchMock).toHaveBeenCalledTimes(1);
     const err = String(stepRow(later.runId!, "st")!.error);
@@ -505,8 +504,8 @@ describe("final wave F5 (L-7) — an engine STOP step never waits on a hung DB l
   });
 });
 
-describe("final wave G3 + G4 — robot exists + enabled (deploy) and the definition checks at run START", () => {
-  it("★ G3 deploy: a robot step naming a robot that does not exist or is disabled is REFUSED (robotUnavailable, names the steps, nothing persisted); an enabled robot deploys", async () => {
+describe("final wave G3 + G4 (narrowed by N1, ruling R-4-w) — robot EXISTS (deploy) and NON-stop definition checks at run START", () => {
+  it("★ G3/N1 deploy: a robot step naming a robot that does not EXIST is REFUSED (robotUnavailable, names the steps, nothing persisted); a disabled-but-existing robot is NOT a refusal", async () => {
     const r = await deployWorkflow(
       {
         ref: "rbun",
@@ -519,10 +518,21 @@ describe("final wave G3 + G4 — robot exists + enabled (deploy) and the definit
       },
       OWNER,
     );
-    expect(r).toMatchObject({ ok: false, reason: "robotUnavailable", stepIds: ["ghost", "off"] });
-    expect(String(r.message)).toContain("ghost, off");
+    expect(r).toMatchObject({ ok: false, reason: "robotUnavailable", stepIds: ["ghost"] }); // "off" (robot 3, disabled) is not refused
+    expect(String(r.message)).toContain("ghost");
     expect(fake.store.get("orchestration_workflows") ?? []).toHaveLength(0);
     expect((await deployWorkflow({ ref: "rbok", name: "rbok", steps: [{ id: "fine", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } }] }, OWNER)).ok).toBe(true);
+  });
+
+  it("★ N1 (c): deploying with a DISABLED-but-existing robot succeeds (abort and motion); a NONEXISTENT robot is still refused", async () => {
+    const off = await deployWorkflow(
+      { ref: "rboff", name: "rboff", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 3 } }, { id: "mv", type: "command", machineId: 2, command: "start", args: { robotId: 3 } }] },
+      OWNER,
+    );
+    expect(off.ok).toBe(true);
+    expect(off.reason).toBeUndefined();
+    const ghost = await deployWorkflow({ ref: "rbghost", name: "rbghost", steps: [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 4242 } }] }, OWNER);
+    expect(ghost).toMatchObject({ ok: false, reason: "robotUnavailable", stepIds: ["ab"] });
   });
 
   it("G3 fail-closed: the robot lookup failing (DB error) refuses the robot steps", async () => {
@@ -545,17 +555,91 @@ describe("final wave G3 + G4 — robot exists + enabled (deploy) and the definit
     }
   });
 
-  it("★ G4: a workflow ACTIVE from before the checks with a robot step naming a disabled robot ⇒ start refused (robotUnavailable), no run, nothing dispatched; once the robot is enabled it starts", async () => {
-    const steps: WorkflowDefinition["steps"] = [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 3 } }];
-    fake.seed(orchestrationWorkflows, [{ id: 7100, ref: "legacyrb", name: "legacyrb", version: 1, definitionJson: { ref: "legacyrb", name: "legacyrb", steps }, status: "active" }]);
+  const seedActiveDef = (id: number, ref: string, steps: WorkflowDefinition["steps"]) =>
+    fake.seed(orchestrationWorkflows, [{ id, ref, name: ref, version: 1, definitionJson: { ref, name: ref, steps }, status: "active" }]);
+
+  it("★ N1 (R-4-w): an ACTIVE workflow whose abort names a DISABLED (existing) robot STARTS and the abort goes out (it did before G4)", async () => {
+    seedActiveDef(7100, "legacyrb", [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 3 } }]);
     const r = await startRun("legacyrb", {}, OWNER);
-    expect(r).toMatchObject({ ok: false, enabled: true, reason: "robotUnavailable", stepIds: ["ab"] });
+    expect(r.reason).toBeUndefined();
+    expect(r.status).toBe("completed");
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("★ N1 (a): a run whose ONLY defects are in STOP steps starts; its other stop steps go out; the defective stop step fails visibly (i18n robotIdRequired / adapterId required)", async () => {
+    // a1 — robot abort with no robotId, after a good OT stop and a good robot abort
+    seedActiveDef(7200, "stopsA", [
+      { id: "os", type: "command", machineId: 1, command: "stop" },
+      { id: "ra", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } },
+      { id: "rbad", type: "command", machineId: 2, command: "abort" },
+    ]);
+    const a = await startRun("stopsA", {}, OWNER);
+    expect(a.reason).toBeUndefined();
+    expect(a.runId).toBeDefined();
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    expect(a.status).toBe("failed");
+    const bad = stepRow(a.runId!, "rbad")!;
+    expect(bad.status).toBe("failed");
+    expect(bad.resultJson?.detail?.appError).toEqual({ appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } });
+    // a2 — an OT stop whose machine has no unique adapter any more (changed after deploy), after a good robot abort.
+    otDispatchMock.mockClear();
+    robotDispatchMock.mockClear();
+    fake.store.set("device_adapters", [
+      { id: 501, machineId: 1, isEnabled: true },
+      { id: 502, machineId: 1, isEnabled: true },
+    ]);
+    seedActiveDef(7201, "stopsB", [
+      { id: "ra", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } },
+      { id: "os", type: "command", machineId: 1, command: "stop" },
+    ]);
+    const b = await startRun("stopsB", {}, OWNER);
+    expect(b.reason).toBeUndefined();
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    expect(otDispatchMock).not.toHaveBeenCalled();
+    expect(b.status).toBe("failed");
+    expect(String(stepRow(b.runId!, "os")!.error)).toContain("adapterId required");
+  });
+
+  it("★ N1 (b): a defect in a NON-stop step is still refused at START (robotUnavailable / robotIdMissing), no run, nothing dispatched — even next to good stops", async () => {
+    seedActiveDef(7300, "mixed", [
+      { id: "ra", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } },
+      { id: "mv", type: "command", machineId: 2, command: "start", args: { robotId: 4242 } },
+    ]);
+    const r = await startRun("mixed", {}, OWNER);
+    expect(r).toMatchObject({ ok: false, enabled: true, reason: "robotUnavailable", stepIds: ["mv"] });
     expect(r.runId).toBeUndefined();
     expect(fake.store.get("orchestration_runs") ?? []).toHaveLength(0);
+    seedActiveDef(7301, "mixed2", [
+      { id: "ra", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } },
+      { id: "mv", type: "command", machineId: 2, command: "start" },
+      { id: "s", type: "command", machineId: 2, command: "e_stop" },
+    ]);
+    expect(await startRun("mixed2", {}, OWNER)).toMatchObject({ ok: false, reason: "robotIdMissing", stepIds: ["mv"] }); // the e_stop "s" is not named
     expect(robotDispatchMock).not.toHaveBeenCalled();
-    (fake.store.get("robots") ?? []).find((x: Row) => x.id === 3)!.isEnabled = true;
-    expect((await startRun("legacyrb", {}, OWNER)).status).toBe("completed");
-    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    expect(otDispatchMock).not.toHaveBeenCalled();
+  });
+
+  it("N1: at START a robots-table DB error refuses only MOTION steps — a stop-only run still starts and goes out", async () => {
+    seedActiveDef(7400, "stopdb", [{ id: "ab", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } }]);
+    const realSelect = (fake as any).select;
+    (fake as any).select = (proj?: unknown) => {
+      const b = realSelect(proj);
+      const from = b.from;
+      b.from = (t: unknown) => {
+        if (t === robots) throw new Error("simulated DB error on robots");
+        return from(t);
+      };
+      return b;
+    };
+    try {
+      const r = await startRun("stopdb", {}, OWNER);
+      expect(r.reason).toBeUndefined();
+      expect(r.status).toBe("completed");
+      expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      (fake as any).select = realSelect;
+    }
   });
 
   it("G4: a valid active workflow starts exactly as before (the start-time check refuses nothing it should not)", async () => {
