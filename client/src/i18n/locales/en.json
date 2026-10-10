@@ -15807,7 +15807,8 @@
       "toast": {
         "saved": "Stop pin saved",
         "recheckCommissioning": "This adapter is commissioned — recheck its commissioning after changing a pin (see the sign-off log under System Health).",
-        "autoCleared": "The STOP pin of this tag was removed."
+        "autoCleared": "The STOP pin of this tag was removed.",
+        "adapterPinsCleared": "The adapter now points at a different device — {{count}} STOP pin(s) of this adapter were removed. Re-pin each tag if still needed."
       },
       "error": {
         "intRequired": "An int tag needs a WHOLE number — the value is never rounded.",
@@ -15817,7 +15818,9 @@
       "confirmOff": {
         "title": "Remove the STOP pin?",
         "body": "This tag has a pinned STOP value; turning this off removes the pin.",
-        "confirm": "Turn off and remove pin"
+        "confirm": "Turn off and remove pin",
+        "bodyEdit": "This tag has a pinned STOP value; saving this change (not writable / disabled / new address, type, scale or offset) removes the pin.",
+        "confirmEdit": "Save and remove pin"
       }
     },
     "toast": {

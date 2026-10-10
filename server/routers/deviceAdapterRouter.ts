@@ -311,12 +311,14 @@ export const deviceAdapterRouter = router({
           }
           const [updated] = await tx.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
           if (!updated) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+          // doc 81 Đợt 4 Task C1 — số ghim DỪNG vừa gỡ (0 khi không đổi đích) trả về để UI BÁO (trước: gỡ im lặng).
+          let stopPinsCleared = 0;
           if (goGhim) {
-            await goMoiStopPinCuaAdapterTx(tx, { adapterId: id, nguon: "adapter_redefined", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.update" });
+            stopPinsCleared = await goMoiStopPinCuaAdapterTx(tx, { adapterId: id, nguon: "adapter_redefined", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.update" });
           }
-          return updated;
+          return { updated, stopPinsCleared };
         });
-        return redactAdapterRow(row);
+        return { ...redactAdapterRow(row.updated), stopPinsCleared: row.stopPinsCleared };
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isUniqueViolation(err)) {

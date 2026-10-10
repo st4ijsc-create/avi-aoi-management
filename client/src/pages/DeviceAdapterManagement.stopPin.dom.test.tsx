@@ -52,9 +52,11 @@ import {
   TagFlagSwitch,
   TagStopPinEditor,
   checkStopPinInput,
+  notifyAdapterStopPinsCleared,
   notifyStopPinAutoClear,
   parseStopPinInput,
   stopPinValueToInput,
+  useStopPinRemovalGuard,
 } from "./DeviceAdapterManagement";
 
 beforeAll(async () => {
@@ -166,7 +168,8 @@ describe("final wave 3 (M3) — bool KHÔNG chọn sẵn; string không trim âm
 });
 
 describe("final wave 3 (M4) — tắt Writable/Enabled trên tag ĐANG ghim phải xác nhận; báo sau khi gỡ", () => {
-  const pinned = { id: 7, tagKey: "cmd_stop", stopValue: true };
+  // Đợt 4 C1 — hàng THẬT của tags.listByAdapter (luật chung đọc writable/isEnabled/địa chỉ…, không chỉ stopValue).
+  const pinned = { id: 7, tagKey: "cmd_stop", stopValue: true, writable: true, isEnabled: true, address: "DB1.DBX0.0", dataType: "bool", adapterId: 9, scale: "1", offset: "0" };
   it("★ tag ĐANG ghim: tắt ⇒ hỏi 'Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim', CHƯA gửi; Huỷ ⇒ không gửi; xác nhận ⇒ gửi false", async () => {
     const onChange = vi.fn();
     render(<TagFlagSwitch tag={pinned} field="writable" checked disabled={false} onChange={onChange} />);
@@ -188,7 +191,7 @@ describe("final wave 3 (M4) — tắt Writable/Enabled trên tag ĐANG ghim ph�
     expect(onChange).not.toHaveBeenCalled();
     cleanup();
     const onChange2 = vi.fn();
-    render(<TagFlagSwitch tag={{ id: 8, tagKey: "cmd_run", stopValue: null }} field="writable" checked disabled={false} onChange={onChange2} />);
+    render(<TagFlagSwitch tag={{ ...pinned, id: 8, tagKey: "cmd_run", stopValue: null }} field="writable" checked disabled={false} onChange={onChange2} />);
     fireEvent.click(screen.getByRole("switch"));
     expect(onChange2).toHaveBeenCalledWith(false);
     expect(screen.queryByText("Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim.")).toBeNull();
@@ -209,6 +212,66 @@ describe("final wave 3 (M4) — tắt Writable/Enabled trên tag ĐANG ghim ph�
     expect(toastWarning).toHaveBeenCalledTimes(1);
     toastWarning.mockReset();
     notifyStopPinAutoClear({ id: 7, writable: false }, t);
+    expect(toastWarning).not.toHaveBeenCalled();
+  });
+});
+
+describe("doc 81 Đợt 4 Task C1 — form sửa tag HỎI TRƯỚC theo luật chung; adapter.update báo số ghim đã gỡ", () => {
+  const pinned = { id: 7, tagKey: "cmd_stop", stopValue: true, writable: true, isEnabled: true, address: "DB1.DBX0.0", dataType: "bool", adapterId: 9, scale: "1", offset: "0" };
+  function Harness({ existing, patch, run }: { existing: any; patch: Record<string, unknown>; run: () => void }) {
+    const { guard, dialog } = useStopPinRemovalGuard("edit");
+    return (
+      <>
+        <button type="button" onClick={() => guard(existing, patch, run)}>save-tag</button>
+        {dialog}
+      </>
+    );
+  }
+  const BODY_EDIT = /lưu thay đổi này .* sẽ gỡ ghim/;
+
+  it("★ tag ĐANG ghim, lưu đổi ĐỊA CHỈ ⇒ hỏi (câu form), CHƯA gửi; Huỷ ⇒ không gửi; 'Lưu và gỡ ghim' ⇒ gửi đúng một lần", async () => {
+    const run = vi.fn();
+    render(<Harness existing={pinned} patch={{ ...pinned, address: "DB1.DBX9.9" }} run={run} />);
+    fireEvent.click(screen.getByRole("button", { name: "save-tag" }));
+    expect(await screen.findByText(BODY_EDIT)).toBeInTheDocument();
+    expect(run).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Hủy" }));
+    expect(run).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "save-tag" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Lưu và gỡ ghim" }));
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  it("lưu chỉ đổi unit/tên (gửi lại cùng scale/offset, ô trống ≡ 1/0) ⇒ gửi NGAY, không hỏi; tag không ghim đổi địa chỉ ⇒ gửi ngay", () => {
+    const run = vi.fn();
+    render(<Harness existing={pinned} patch={{ ...pinned, unit: "-", tagKey: "doi_ten", scale: null, offset: null }} run={run} />);
+    fireEvent.click(screen.getByRole("button", { name: "save-tag" }));
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(BODY_EDIT)).toBeNull();
+    cleanup();
+    const run2 = vi.fn();
+    render(<Harness existing={{ ...pinned, stopValue: null }} patch={{ address: "X" }} run={run2} />);
+    fireEvent.click(screen.getByRole("button", { name: "save-tag" }));
+    expect(run2).toHaveBeenCalledTimes(1);
+  });
+  it("cùng luật với server: đổi scale / dataType / thôi writable trên tag ghim ⇒ đều hỏi", async () => {
+    for (const patch of [{ scale: 2 }, { dataType: "int" }, { writable: false }]) {
+      const run = vi.fn();
+      render(<Harness existing={pinned} patch={patch} run={run} />);
+      fireEvent.click(screen.getByRole("button", { name: "save-tag" }));
+      expect(await screen.findByText(BODY_EDIT)).toBeInTheDocument();
+      expect(run).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+  it("★ adapter.update trả stopPinsCleared > 0 ⇒ báo (mang đúng số); 0 / vắng ⇒ im", () => {
+    const t = (k: string, _d: string, o?: Record<string, unknown>) => i18n.t(k, o);
+    notifyAdapterStopPinsCleared({ id: 1, stopPinsCleared: 2 }, t);
+    expect(toastWarning).toHaveBeenCalledTimes(1);
+    expect(String(toastWarning.mock.calls[0][0])).toContain("đã gỡ 2 ghim DỪNG");
+    toastWarning.mockReset();
+    notifyAdapterStopPinsCleared({ id: 1, stopPinsCleared: 0 }, t);
+    notifyAdapterStopPinsCleared({ id: 1 }, t);
+    notifyAdapterStopPinsCleared(undefined, t);
     expect(toastWarning).not.toHaveBeenCalled();
   });
 });

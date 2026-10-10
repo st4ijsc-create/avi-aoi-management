@@ -493,7 +493,9 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 1D Task
   ])("★ R-1D-a: adapter.update đổi %s ⇒ gỡ MỌI ghim của adapter trong CÙNG tx, audit TỪNG tag (adapter_redefined)", async (_ten, doi) => {
     await ghim("stop_cmd", true);
     await ghim("speed_sp", 0);
-    await eng().update({ id: fx.aA, ...doi() });
+    const r = await eng().update({ id: fx.aA, ...doi() });
+    // doc 81 Đợt 4 Task C1 — số ghim vừa gỡ được TRẢ VỀ (UI báo), đúng bằng số hàng bị gỡ.
+    expect(r.stopPinsCleared).toBe(2);
     expect((await tag(fx.tStop)).stop_value).toBeNull();
     expect((await tag(fx.tSpeed)).stop_value).toBeNull();
     for (const t of [fx.tStop, fx.tSpeed]) {
@@ -508,11 +510,14 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 1D Task
   it("R-1D-a: adapter.update KHÔNG đổi đích (đổi tên, pollIntervalMs, gửi lại nguyên endpoint/machineId/options, đổi mật khẩu) ⇒ GIỮ ghim", async () => {
     await ghim("stop_cmd", true);
     const truoc = (await auditRows(fx.tStop)).length;
-    await eng().update({
+    const r0 = await eng().update({
       id: fx.aA, name: "D1 doi ten", pollIntervalMs: 2000, endpoint: "stub://d1", protocol: "stub", machineId: fx.mTrong,
       connectionOptions: { userName: "op", password: "[redacted]", unitId: 1 },
     });
-    await eng().update({ id: fx.aA, connectionOptions: { userName: "op", password: "Mat-khau-moi-1", unitId: 1 } });
+    const r1 = await eng().update({ id: fx.aA, connectionOptions: { userName: "op", password: "Mat-khau-moi-1", unitId: 1 } });
+    // doc 81 Đợt 4 Task C1 — không gỡ ⇒ stopPinsCleared 0 (UI im).
+    expect(r0.stopPinsCleared).toBe(0);
+    expect(r1.stopPinsCleared).toBe(0);
     expect((await tag(fx.tStop)).stop_value).toBe(true);
     expect(await auditRows(fx.tStop)).toHaveLength(truoc);
   });
