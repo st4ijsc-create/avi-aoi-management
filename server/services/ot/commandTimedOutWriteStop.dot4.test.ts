@@ -514,6 +514,23 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
     expect(writesAfterStop()).toBe(0);
   });
 
+  it("★ fix 2 (N2): the watch window starts at the STOP, not at the reset's end — a STOP late in the risk window still watches a full TTL", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    const pRun = dispatch(input("cmd_run", "start", `al-n2-${actSeq}`, true));
+    expect((await within(pRun, TIMEOUT_MS + 700)).status).toBe("timeout");
+    expect(await until(() => D.reset.calls === 1, GRACE + 1000)).toBe(true); // reset settles ≈ now (quick, "ok")
+    const settledAt = Date.now();
+    await new Promise((r) => setTimeout(r, 8000)); // the STOP comes 8 s after the reset settled (risk still live)
+    const r = await within(dispatch(input("cmd_run", "stop", `al-n2-stop-${actSeq}`, false)), 1500);
+    expect(r.status).toBe("acked");
+    expect(_stopWatchCountForTests(10)).toBe(1);
+    await new Promise((r2) => setTimeout(r2, 5000)); // settle + 13 s: past a window anchored at the reset's end
+    expect(Date.now() - settledAt).toBeGreaterThan(OT_STALE_WRITE_RISK_TTL_MS + 2000);
+    D.sticky.set("cmd_run", true); // the abandoned start lands now — 5 s after the STOP
+    expect(await until(() => alarm.events.length > 0, 1500)).toBe(true);
+    expect(writesAfterStop()).toBe(0);
+  }, 30_000);
+
   it("(b) state hygiene: the watch unregisters when it ends; the risk map is swept after its TTL", async () => {
     await hungRunThenStop();
     expect(_stopWatchCountForTests(10)).toBe(1);

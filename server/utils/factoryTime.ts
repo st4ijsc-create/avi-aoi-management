@@ -225,10 +225,13 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
   // which read it at midnight of the PROCESS time zone and ignored endOfDay.
   if (coMuiGioTuongMinh(s)) { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/.exec(s);
-  // Fix round 1 (R-4-s #9) — a trailing ALPHABETIC zone designator V8 understands ("… EST", "… PDT", "… CET"; not AM/PM)
-  // names the frame like Z/±hh:mm does: parsed exactly as before B5. Only a string with NO zone takes the factory zone.
+  // Fix round 1 (R-4-s #9) + fix round 2 (N4) — a trailing ZONE DESIGNATOR names the frame like Z/±hh:mm does and is parsed
+  // exactly as before B5: an alphabetic abbreviation ("… EST", "… PDT"; not AM/PM — V8 returns Invalid for some, e.g.
+  // CET/ICT, which stays undefined as before) or a zone + short offset ("… UTC+7", "… GMT-5", "… UTC+7:30").
+  // Only a string with NO zone takes the factory zone.
   const tenVung = /\s([A-Za-z]{1,5})\s*$/.exec(s);
-  if (!m && tenVung && !/^(AM|PM)$/i.test(tenVung[1])) { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
+  const vungLech = /\s(?:UTC|GMT)\s*[+-]\d{1,2}(?::?\d{2})?\s*$/i.test(s);
+  if (!m && (vungLech || (tenVung && !/^(AM|PM)$/i.test(tenVung[1])))) { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
   if (!m) {
     // B5 — a naive non-ISO string ("09-28-2026", "Sep 28 2026 08:30"): V8 parses it in the PROCESS zone, so its local
     // getters give back exactly the wall clock it read; that wall clock is re-read in the FACTORY zone (process-TZ

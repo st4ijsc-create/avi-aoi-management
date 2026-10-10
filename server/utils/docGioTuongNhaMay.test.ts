@@ -88,6 +88,12 @@ describe("B5 — '09-28-2026' is a FACTORY wall-clock date, not an offset", () =
     vi.stubEnv("FACTORY_TZ", "Asia/Ho_Chi_Minh");
     expect(docGioTuongNhaMay("Sep 28 2026 08:30 EST")?.toISOString()).toBe("2026-09-28T13:30:00.000Z");
     expect(docGioTuongNhaMay("Sep 28 2026 08:30 PDT")?.toISOString()).toBe("2026-09-28T15:30:00.000Z");
+    // fix 2 (N4): a zone + short offset is a designator too (V8 parses it; process TZ irrelevant)
+    expect(docGioTuongNhaMay("Sep 28 2026 08:30 UTC+7")?.toISOString()).toBe("2026-09-28T01:30:00.000Z");
+    expect(docGioTuongNhaMay("Sep 28 2026 08:30 GMT+7")?.toISOString()).toBe("2026-09-28T01:30:00.000Z");
+    process.env.TZ = "America/New_York";
+    expect(docGioTuongNhaMay("Sep 28 2026 08:30 GMT+7")?.toISOString()).toBe("2026-09-28T01:30:00.000Z");
+    process.env.TZ = "UTC";
     // AM/PM is not a zone: still factory wall clock (20:30 +07 ⇒ 13:30Z)
     expect(docGioTuongNhaMay("09-28-2026 08:30 PM")?.toISOString()).toBe("2026-09-28T13:30:00.000Z");
   });

@@ -1760,7 +1760,9 @@ function startStopWatch(
       while (!token.cancelled && Date.now() < end) {
         await new Promise((r) => setTimeout(r, OT_STOP_WATCH_POLL_MS));
         if (token.cancelled) break;
-        // Same target as the STOP: a reconfigured adapter or a replaced driver ends the watch (no alarm, one audit).
+        // Same target as the STOP: a changed connection fingerprint (adapter reconfigured — or, on the legacy path, the adapter
+        // momentarily out of the active set during a reconnect) or a replaced driver ⇒ the ONE critical alarm "cannot verify —
+        // check manually" (reason target_changed), nothing read through another target, then the watch ends.
         const fpNow = getActiveConnectionFingerprint(input.adapterId);
         const drvNow = getActiveDriver(input.adapterId);
         if (fpNow !== stopFingerprint || (drvNow !== undefined && drvNow !== stopDriver)) {
@@ -1828,7 +1830,7 @@ function raiseStopUnverifiedAlarm(
   const tags = [...drift.map((d) => d.tagKey), ...unread];
   const what =
     reason === "target_changed"
-      ? `cannot be verified — the adapter was reconfigured or its driver replaced after the STOP; check manually (${unread.join(", ")})`
+      ? `cannot be verified — the adapter's connection changed after the STOP (reconfigured, reconnecting or driver replaced); check manually (${unread.join(", ")})`
       : drift.length > 0
         ? `reads back a value other than the STOP's on ${drift.map((d) => d.tagKey).join(", ")}`
         : `cannot be read back (${unread.join(", ")})`;

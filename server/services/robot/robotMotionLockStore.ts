@@ -8,11 +8,16 @@
  *   • registration (robotManager.startRobots, before connect) ⇒ LOAD the row: present ⇒ the driver starts LOCKED
  *     (restore: same cause, time, generation); the read fails / times out ⇒ FAIL-CLOSED: the driver starts locked with
  *     reason `persistUnknown` (cleared like any lock: a confirmed STOP or the audited robot.clearMotionLock).
- * Writes of one robot are applied in order (a per-robot chain), so a fast lock → clear never leaves a stale row behind
- * a late upsert; a write that times out may still land later — in the worst case a restart then starts LOCKED
- * (fail-closed direction), never unlocked.
+ * Writes of one robot are applied in order (a per-robot chain). A step that overruns its deadline is NOT cancelled and may
+ * still land later, after newer steps — so every write is CONDITIONAL on what it supersedes (fix round 2, ruling R-4-t):
+ *   • a clear of a lock with a known generation g deletes only `generation <= g`;
+ *   • a clear of a `persistUnknown` lock (boot instant B = its `since`) deletes `generation <= g OR lockedAt < B` (strict);
+ *   • the lock upsert replaces only `generation <= g OR lockedAt < B` (B only after a `persistUnknown` boot), so the first
+ *     lock after boot always replaces a pre-boot row.
+ * A late delete therefore never matches a NEWER lock's row (higher generation, lockedAt ≥ B): a timed-out write can at
+ * worst leave a restart LOCKED (fail-closed), never unlocked. There is no unconditional delete.
  */
-import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, lte, or } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { robotMotionLocks } from "../../../drizzle/schema";
 import { withDeadline } from "../ot/drivers/boundedClose";
@@ -28,6 +33,12 @@ function errText(err: unknown): string {
   const raw = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
   return raw.replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1***@").slice(0, 240);
 }
+
+/**
+ * R-4-t — the boot instant of a robot that started `persistUnknown` (= that lock's `since`). Read lazily by the upsert, so
+ * the persistUnknown lock's own upsert (queued inside lock()) already uses it.
+ */
+const bootSinceByRobot = new Map<number, Date>();
 
 /** Per-robot ordered chain of DB writes (lock/clear order is preserved at the DB). */
 const chains = new Map<number, Promise<void>>();
@@ -63,23 +74,27 @@ export function persistMotionLock(robotId: number, state: MotionLockState): Prom
       .onConflictDoUpdate({
         target: robotMotionLocks.robotId,
         set: { reasonCode: row.reasonCode, detail: row.detail, generation: row.generation, lockedAt: row.lockedAt },
-        setWhere: sql`${robotMotionLocks.generation} <= ${row.generation}`,
+        // R-4-t — replace only a row this lock supersedes (never a newer one written by a later step).
+        setWhere: supersededBy(row.generation, bootSinceByRobot.get(robotId)),
       });
   });
 }
 
+/** R-4-t — the rows a write for generation `g` (and, after a `persistUnknown` boot, boot instant `boot`) supersedes. */
+function supersededBy(g: number, boot: Date | undefined) {
+  return boot ? or(lte(robotMotionLocks.generation, g), lt(robotMotionLocks.lockedAt, boot)) : lte(robotMotionLocks.generation, g);
+}
+
 /**
- * DELETE the persisted lock of `robotId` up to `generation` (a newer lock's row is never removed). `null` ⇒ delete
- * whatever its generation — used by an AUDITED operator clear and by clearing a `persistUnknown` lock (fix round 1,
- * R-4-s #7: after `persistUnknown` the in-memory generation knows nothing of the unread row's generation).
+ * DELETE the persisted lock of `robotId` that the cleared lock supersedes (R-4-t): `generation <= generation`, plus — for a
+ * cleared `persistUnknown` lock, whose generation knows nothing of the unread row — `lockedAt < bootSince` (strict). Never
+ * unconditional: a late delete cannot erase a NEWER lock's row.
  */
-export function deleteMotionLock(robotId: number, generation: number | null): Promise<void> {
+export function deleteMotionLock(robotId: number, generation: number, bootSince?: Date): Promise<void> {
   return enqueue(robotId, "delete", async () => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable (getDb returned null)");
-    await db
-      .delete(robotMotionLocks)
-      .where(generation === null ? eq(robotMotionLocks.robotId, robotId) : and(eq(robotMotionLocks.robotId, robotId), lte(robotMotionLocks.generation, generation)));
+    await db.delete(robotMotionLocks).where(and(eq(robotMotionLocks.robotId, robotId), supersededBy(generation, bootSince)));
   });
 }
 
@@ -133,15 +148,21 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
     cleared: (state) =>
       void deleteMotionLock(
         robotId,
-        state.clearedBy === "operator" || state.reasonCode === MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE ? null : (state.generation ?? 0),
+        state.generation ?? 0,
+        state.reasonCode === MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE && state.since ? new Date(state.since) : undefined,
       ),
   });
   if (!load.ok) {
     console.error(`[Robot] robot ${robotId}: persisted motion lock could not be read — starting LOCKED (${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE}, fail-closed, B4): ${load.error}`);
     lock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, `persisted motion lock unreadable at registration: ${load.error}`);
-  } else if (outcome === "restored") {
-    const st = lock.snapshot();
-    console.warn(`[Robot] robot ${robotId}: motion lock restored from before the restart (${st.reasonCode} since ${st.since}, generation ${st.generation})`);
+    const since = lock.snapshot().since;
+    if (since) bootSinceByRobot.set(robotId, new Date(since)); // R-4-t — read lazily by the queued upserts
+  } else {
+    bootSinceByRobot.delete(robotId);
+    if (outcome === "restored") {
+      const st = lock.snapshot();
+      console.warn(`[Robot] robot ${robotId}: motion lock restored from before the restart (${st.reasonCode} since ${st.since}, generation ${st.generation})`);
+    }
   }
   return outcome;
 }

@@ -16,9 +16,13 @@ import { and, eq, inArray } from "drizzle-orm";
 const H = vi.hoisted(() => ({
   robotId: 990_364_000 + (Date.now() % 9_000),
   drivers: [] as unknown[],
-  getDbFault: null as null | "throw" | "hang",
+  getDbFault: null as null | "throw" | "hang" | "throwOnce",
   /** fix round 1 (#8) — how many robots the gateway registers (ids robotId, robotId+1, …). */
   count: 1,
+  /** fix round 2 (N1) — hold ONLY the next motion-lock STORE getDb() call until `release()` (a step overrunning its deadline). */
+  holdNext: null as null | Promise<void>,
+  /** settles when the held call has finished its own DB work (the late write has landed) */
+  heldDone: null as null | Promise<void>,
 }));
 
 vi.mock("../../db/connection", async (importOriginal) => {
@@ -26,6 +30,16 @@ vi.mock("../../db/connection", async (importOriginal) => {
   return {
     ...actual,
     getDb: vi.fn(async () => {
+      // only a motion-lock STORE step is held (not the audit / ledger writes of the same operation)
+      if (H.holdNext && /robotMotionLockStore/.test(new Error().stack ?? "")) {
+        const gate = H.holdNext;
+        H.holdNext = null;
+        await gate;
+      }
+      if (H.getDbFault === "throwOnce") {
+        H.getDbFault = null;
+        throw new Error("simulated DB outage (load only)");
+      }
       if (H.getDbFault === "throw") throw new Error("simulated DB outage (postgres://app:SECRETPW@db/x)");
       if (H.getDbFault === "hang") return new Promise(() => undefined);
       return actual.getDb();
@@ -167,6 +181,7 @@ beforeEach(async () => {
   logErrSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   H.getDbFault = null;
   H.count = 1;
+  H.holdNext = null;
   process.env.ROBOT_GATEWAY_ENABLED = "true";
   process.env.ROBOT_CONTROL_ENABLED = "true";
   process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
@@ -290,6 +305,89 @@ describe("B4 — motion lock survives a restart (robot_motion_locks, _test)", ()
     expect(await row()).toBeNull();
     await restart();
     expect(current().getMotionLock().locked).toBe(false);
+  });
+
+  // ── fix round 2 (N1, ruling R-4-t) — a DELETE that overruns its 2 s deadline is not cancelled; it lands AFTER a newer
+  //    lock's upsert. It must not erase that newer row (else the next restart starts UNLOCKED).
+  function holdNextDbCall(): () => Promise<void> {
+    let open!: () => void;
+    H.holdNext = new Promise<void>((r) => (open = r));
+    return async () => {
+      open();
+      await new Promise((r) => setTimeout(r, 300)); // let the late DELETE reach Postgres and finish
+    };
+  }
+
+  it("★ fix 2 (N1): operator clear whose DELETE lands late (after a NEWER lock) ⇒ the newer row survives; restart starts LOCKED", async () => {
+    current().lockMotion("line_connection_closed");
+    await _flushMotionLockWritesForTests();
+    await restart();
+    const gen = current().getMotionLock().generation!;
+    const release = holdNextDbCall(); // the clear's DELETE will be held past its deadline
+    const caller = robotRouter.createCaller({ user: { id: USER, role: "engineer", name: "B4 op", twoFactorEnabled: true }, req: { ip: "127.0.0.1", headers: {} } } as any);
+    await caller.clearMotionLock({ robotId: ROBOT, reason: "checked on site", expectedGeneration: gen });
+    await new Promise((r) => setTimeout(r, MOTION_LOCK_DB_DEADLINE_MS + 200)); // the delete step times out, the chain moves on
+    current().lockMotion("rmi_reply_timeout"); // a NEW fault: generation gen+1
+    await _flushMotionLockWritesForTests();
+    expect(await row()).toMatchObject({ reasonCode: "rmi_reply_timeout", generation: gen + 1 });
+    await release(); // the stale DELETE lands now
+    expect(await row()).toMatchObject({ reasonCode: "rmi_reply_timeout", generation: gen + 1 });
+    await restart();
+    expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "rmi_reply_timeout" });
+  });
+
+  it("★ fix 2 (N1): persistUnknown STOP whose DELETE lands late (after a NEWER lock) ⇒ the newer row survives; restart starts LOCKED", async () => {
+    current().lockMotion("a");
+    current().motionLock.clearByStop();
+    current().lockMotion("b");
+    current().motionLock.clearByStop();
+    current().lockMotion("line_connection_closed"); // pre-boot row, generation 3
+    await _flushMotionLockWritesForTests();
+    await stopRobots();
+    H.getDbFault = "throw";
+    await startRobots();
+    await _flushMotionLockWritesForTests(); // the persistUnknown upsert fails too (DB still "down")
+    H.getDbFault = null;
+    expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "persistUnknown", generation: 1 });
+    const release = holdNextDbCall();
+    expect((await dispatchRobotJob(STOP)).status).toBe("done"); // confirmed STOP clears the persistUnknown lock
+    await new Promise((r) => setTimeout(r, MOTION_LOCK_DB_DEADLINE_MS + 200));
+    current().lockMotion("line_reply_timeout"); // new fault after boot: generation 2, lockedAt > boot
+    await _flushMotionLockWritesForTests();
+    expect(await row()).toMatchObject({ reasonCode: "line_reply_timeout", generation: 2 }); // replaced the pre-boot gen-3 row
+    await release();
+    expect(await row()).toMatchObject({ reasonCode: "line_reply_timeout", generation: 2 });
+    await restart();
+    expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "line_reply_timeout" });
+  }, 15_000);
+
+  it("★ fix 2 (R-4-t): the persistUnknown lock's OWN row (lockedAt = boot) is removed by its clear via the generation guard", async () => {
+    current().lockMotion("line_connection_closed");
+    await _flushMotionLockWritesForTests();
+    await stopRobots();
+    H.getDbFault = "throwOnce"; // only the batched load fails; the persistUnknown upsert then succeeds
+    await startRobots();
+    await _flushMotionLockWritesForTests();
+    expect(await row()).toMatchObject({ reasonCode: "persistUnknown", generation: 1 }); // replaced the pre-boot row
+    expect((await dispatchRobotJob(STOP)).status).toBe("done");
+    await _flushMotionLockWritesForTests();
+    expect(await row()).toBeNull();
+    await restart();
+    expect(current().getMotionLock().locked).toBe(false);
+  });
+
+  it("★ fix 2 (R-4-t): the lockedAt branch is STRICT — a row stamped exactly at the boot instant with a newer generation survives the persistUnknown clear", async () => {
+    await stopRobots();
+    H.getDbFault = "throwOnce";
+    await startRobots();
+    await _flushMotionLockWritesForTests();
+    const boot = (await row())!;
+    expect(boot).toMatchObject({ reasonCode: "persistUnknown", generation: 1 });
+    // a NEWER lock's row carrying the same instant as the boot (same-ms lock): generation 5, lockedAt == boot
+    await (await db()).update(robotMotionLocks).set({ reasonCode: "same_ms_lock", generation: 5 }).where(eq(robotMotionLocks.robotId, ROBOT));
+    current().motionLock.clearByStop();
+    await _flushMotionLockWritesForTests();
+    expect(await row()).toMatchObject({ reasonCode: "same_ms_lock", generation: 5 });
   });
 
   it("★ a failing DB write never blocks lock(): locked at once in memory, error logged", async () => {
