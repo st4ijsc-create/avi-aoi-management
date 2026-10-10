@@ -358,6 +358,23 @@ describe('R-5-a — the device password is PINNED to the broker endpoint it was 
     expect((await connectWith(LOCAL)).password).toBe(SECRET);
   });
 
+  // doc 81 Đợt 5 final wave P-G2 (G re-review 3) — opening Settings must not add to the native 5-failure streak: the pin is
+  // read with the native UNCOUNTED read (peekItem), never with the counted getItem that connect() uses.
+  it('final wave P-G2: Settings reads the pin with the UNCOUNTED native read (peekItem) — getItem is never called', async () => {
+    await pinToLocal();
+    const m = (NativeModules as any).SecureCredentialModule;
+    const raw = await m.getItem(MQTT_DEVICE_PASSWORD_KEY);
+    m.getItem.mockClear();
+    m.peekItem = jest.fn(async () => raw);
+    expect(await mqttService.getLocalBrokerPasswordEndpoint()).toEqual({ host: '192.168.10.20', port: 8883, protocol: 'ws', tls: false });
+    m.peekItem = jest.fn(async () => null); // not readable right now (the native side answers null, nothing counted)
+    expect(await mqttService.getLocalBrokerPasswordEndpoint()).toBeNull();
+    m.peekItem = jest.fn(async () => { throw new Error('E_SECURE_ARG'); });
+    expect(await mqttService.getLocalBrokerPasswordEndpoint()).toBeNull();
+    expect(m.getItem).not.toHaveBeenCalled();
+    expect(m.removeItem).not.toHaveBeenCalled();
+  });
+
   it('the pin is exposed to the UI as an endpoint only — never the password or its length', async () => {
     await pinToLocal();
     const pinned = await mqttService.getLocalBrokerPasswordEndpoint();

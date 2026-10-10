@@ -93,6 +93,11 @@ interface SecureCredentialNative {
   removeItem(key: string): Promise<boolean>;
   /** G fix 3 — "none" | "ok" | "unavailable" | "reentry"; absent on older native shells. */
   getStatus?(key: string): Promise<string>;
+  /**
+   * final wave P-G2 — the stored value read WITHOUT counting toward the native 5-failure streak (null = nothing stored or
+   * not readable right now; never throws for a storage error, never deletes). For the Settings screen; absent on older shells.
+   */
+  peekItem?(key: string): Promise<string | null>;
 }
 
 /**
@@ -138,6 +143,23 @@ export async function getMqttDeviceCredential(): Promise<StoredMqttDeviceCredent
   if (!m) return null;
   try {
     return parseStored(await m.getItem(MQTT_DEVICE_PASSWORD_KEY));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * doc 81 Đợt 5 final wave P-G2 — the stored credential for DISPLAY (Settings shows the endpoint it is pinned to): read with
+ * the native UNCOUNTED read, so opening Settings never adds to the failure streak that leads to "re-enter the password"
+ * (only connect()'s reads count). Never throws; null when nothing readable is stored. An older native shell without
+ * peekItem falls back to the counted read (the JS ships with the native code, so that shell does not exist in practice).
+ */
+export async function getMqttDeviceCredentialForDisplay(): Promise<StoredMqttDeviceCredential | null> {
+  const m = nativeModule();
+  if (!m) return null;
+  if (typeof m.peekItem !== 'function') return getMqttDeviceCredential();
+  try {
+    return parseStored(await m.peekItem(MQTT_DEVICE_PASSWORD_KEY));
   } catch {
     return null;
   }

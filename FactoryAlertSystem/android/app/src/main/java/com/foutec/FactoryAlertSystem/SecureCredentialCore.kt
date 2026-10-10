@@ -24,6 +24,8 @@ import javax.crypto.spec.GCMParameterSpec
  *     or the stored entry is already marked "needs re-entry" (the user is re-entering it), or the key is permanently
  *     invalidated. A key that merely LOOKS absent while an entry exists ⇒ [Unavailable], nothing touched.
  *   · status: the same read WITHOUT counting (for the Settings screen).
+ *   · peek (final wave P-G2): the value for the Settings screen WITHOUT counting a failure (null when not readable now);
+ *     a success resets the streak like [get] — opening Settings never pushes a device towards "re-enter the password".
  *   · remove (Clear, an explicit user action): delete the entry and its counter; no entry left ⇒ delete the key too.
  */
 class SecureCredentialCore(
@@ -145,6 +147,19 @@ class SecureCredentialCore(
             Status.NEEDS_REENTRY
         } catch (e: Exception) {
             Status.UNAVAILABLE
+        }
+    }
+
+    /** final wave P-G2 — for the Settings screen: the value, or null (nothing stored / not readable now). Never counts a
+     *  failure, never deletes; a success resets the streak (the store IS readable). */
+    fun peek(name: String): String? {
+        val packed = store.get(name) ?: return null
+        return try {
+            val v = decryptOnce(packed)
+            if (failures.get(name) != 0) failures.set(name, 0)
+            v
+        } catch (e: Exception) {
+            null
         }
     }
 

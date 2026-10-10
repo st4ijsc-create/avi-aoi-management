@@ -167,3 +167,17 @@ it('stored password temporarily unreadable (status "unavailable") ⇒ "temporari
   await waitFor(() => expect(tree.getByTestId('mqtt-device-password-status')).toHaveTextContent(/temporarily unreadable/i));
   expect(tree.queryByTestId('mqtt-device-password-reentry')).toBeNull();
 });
+
+// doc 81 Đợt 5 final wave P-G1 (G re-review 3) — the endpoint read and the status read resolve separately: until the
+// STATUS is known, Settings shows "…", never "No password stored" (an unreadable entry has no pin ⇒ endpoint null).
+it('final wave P-G1: endpoint null while the status is still loading ⇒ "…", never a flash of "No password stored"', async () => {
+  let resolveStatus!: (st: string) => void;
+  mockService.getLocalBrokerPasswordStatus.mockImplementationOnce(() => new Promise<string>((r) => (resolveStatus = r)));
+  const tree = render(<MqttDevicePasswordSetting language="en" mqttConfig={CFG} />);
+  await act(async () => {}); // the endpoint read (null) has resolved; the status has not
+  expect(mockService.getLocalBrokerPasswordEndpoint).toHaveBeenCalled();
+  expect(tree.getByTestId('mqtt-device-password-status')).toHaveTextContent('…');
+  expect(tree.getByTestId('mqtt-device-password-status')).not.toHaveTextContent('No password stored');
+  await act(async () => resolveStatus('unavailable'));
+  expect(tree.getByTestId('mqtt-device-password-status')).toHaveTextContent(/temporarily unreadable/i);
+});

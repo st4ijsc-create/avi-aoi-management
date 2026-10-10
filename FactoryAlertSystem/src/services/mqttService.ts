@@ -29,6 +29,7 @@ import {
   brokerEndpointOf,
   clearMqttDevicePassword,
   getMqttDeviceCredential,
+  getMqttDeviceCredentialForDisplay,
   getMqttDeviceCredentialStatus,
   MqttDeviceCredentialStatus,
   sameBrokerEndpoint,
@@ -845,9 +846,12 @@ class MqttService {
     return getMqttDeviceCredentialStatus();
   }
 
-  /** The endpoint the stored password is pinned to (for the UI) — never the password. */
+  /**
+   * The endpoint the stored password is pinned to (for the UI) — never the password. final wave P-G2: an UNCOUNTED read
+   * (opening Settings never adds to the native 5-failure streak; only connect()'s reads count).
+   */
   public async getLocalBrokerPasswordEndpoint(): Promise<MqttBrokerEndpoint | null> {
-    return (await getMqttDeviceCredential())?.endpoint ?? null;
+    return (await getMqttDeviceCredentialForDisplay())?.endpoint ?? null;
   }
 
   /**

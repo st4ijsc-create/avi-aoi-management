@@ -171,6 +171,20 @@ class SecureCredentialModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /** final wave P-G2 — the value for Settings WITHOUT counting a failed read; null = none / not readable right now. */
+    @ReactMethod
+    fun peekItem(key: String?, promise: Promise) {
+        if (!validKey(key)) {
+            promise.reject("E_SECURE_ARG", "invalid key")
+            return
+        }
+        try {
+            promise.resolve(core.peek(key!!))
+        } catch (e: Exception) {
+            promise.resolve(null)
+        }
+    }
+
     @ReactMethod
     fun removeItem(key: String?, promise: Promise) {
         if (!validKey(key)) {

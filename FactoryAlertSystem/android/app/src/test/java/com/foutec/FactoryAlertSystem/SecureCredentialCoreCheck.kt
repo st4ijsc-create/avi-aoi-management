@@ -263,5 +263,23 @@ fun main() {
         check(s.map.isEmpty() && k.key == null && k.deletes == 1, "last entry removed ⇒ key deleted")
         check(core.get("p") == null, "after Clear ⇒ null")
     }
+    run { // final wave P-G2 — peek (Settings) never counts a failure and never deletes; a success resets the streak
+        val (k, s, c, core) = fresh()
+        core.set("p", pinned)
+        check(core.peek("p") == pinned && core.peek("missing") == null, "peek reads the value / null when nothing is stored")
+        k.looksAbsent = true
+        repeat(3 * N) { core.peek("p") }
+        check(core.peek("p") == null, "peek while unreadable ⇒ null")
+        check(c.get("p") == 0 && s.map.containsKey("p"), "peek never counts a failure and never deletes")
+        k.throwOnExisting = true
+        check(core.peek("p") == null && c.get("p") == 0, "peek with the key store throwing ⇒ null, not counted")
+        k.throwOnExisting = false
+        repeat(N - 1) { outcome { core.get("p") } }
+        check(c.get("p") == N - 1, "connect reads (get) still count")
+        repeat(3 * N) { core.peek("p") }
+        check(c.get("p") == N - 1 && core.status("p") == SecureCredentialCore.Status.UNAVAILABLE, "Settings visits do not push the streak to re-entry")
+        k.looksAbsent = false
+        check(core.peek("p") == pinned && c.get("p") == 0, "a successful peek resets the streak (the store is readable again)")
+    }
     println("ALL $checks CHECKS PASSED")
 }

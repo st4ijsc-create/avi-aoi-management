@@ -187,7 +187,9 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
       ) : (
         <>
           <Text style={styles.meta} testID="mqtt-device-password-status">
-            {pinned === undefined
+            {/* final wave P-G1 — the endpoint and the status resolve separately: no "No password stored" before the
+                status is known (an unreadable entry has no readable pin, so its endpoint arrives as null first). */}
+            {pinned === undefined || (pinned === null && credStatus === undefined)
               ? '…'
               : pinned
                 ? `${tx.stored} ${brokerEndpointLabel(pinned)}`
