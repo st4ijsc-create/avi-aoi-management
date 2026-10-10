@@ -235,7 +235,7 @@ describe("OrchestrationStudio — doc 81 Đợt 4 Task A5 + fix round 1: bước
     expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["noGate", "approvedByOwner", "staleApproval", "ownerUnknown", "noGate"]);
     expect(notes[0].textContent).toMatch(/approval gate earlier in the run, approved by someone other than the person who started it/);
     expect(notes[1].textContent).toMatch(/approved by the person who started the run, which does not count/);
-    expect(notes[2].textContent).toMatch(/redeployed after the gate was approved/);
+    expect(notes[2].textContent).toMatch(/workflow was redeployed or the adapter, tag or robot configuration its commands use was changed/); // Đợt 5 E3
     expect(notes[3].textContent).toMatch(/no known owner/);
     expect(new Set(notes.slice(0, 4).map((n) => n.textContent)).size).toBe(4);
   });

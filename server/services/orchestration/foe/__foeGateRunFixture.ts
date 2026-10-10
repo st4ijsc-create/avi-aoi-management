@@ -6,7 +6,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { orchestrationRunSteps, orchestrationRuns, orchestrationWorkflows } from "../../../../drizzle/schema";
-import { FOE_APPROVAL_SOURCE_SERVER, hashWorkflowDefinition } from "./foeGateApproval";
+import { FOE_APPROVAL_SOURCE_SERVER, computeBindingDigest, hashWorkflowDefinition } from "./foeGateApproval";
 import type { WorkflowDefinition } from "./workflowModel";
 
 export interface FoeGateRunFixture {
@@ -44,6 +44,7 @@ export async function makeFoeGateRun(opts: {
         approvedBy: opts.approvedBy,
         approvalSource: opts.source ?? FOE_APPROVAL_SOURCE_SERVER,
         defHash: opts.stale ? "0".repeat(64) : hashWorkflowDefinition(def),
+        bindingDigest: await computeBindingDigest(d, def), // doc 81 Đợt 5 task E3
       },
       finishedAt: new Date(),
     });

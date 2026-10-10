@@ -185,7 +185,8 @@ describe("doc 81 Đợt 5 task E1 — an API-started run never actuates a non-ST
   it("★ dispatcher DB layer: an action of an API run is refused (apiRun) even when a counting gate approved by its confirmer exists", async () => {
     await deployWorkflow(GATED_OT, OWNER);
     const wf = (fake.store.get("orchestration_workflows") ?? [])[0] as Row;
-    const { hashWorkflowDefinition } = await import("./foeGateApproval");
+    const { hashWorkflowDefinition, computeBindingDigest } = await import("./foeGateApproval");
+    const digest = await computeBindingDigest(fake as never, wf.definitionJson); // doc 81 Đợt 5 E3
     const seed = (runId: number, apiMarker: "params" | "context" | null) => {
       (fake.store.get("orchestration_runs") ?? fake.store.set("orchestration_runs", []).get("orchestration_runs")!).push({
         id: runId,
@@ -202,7 +203,7 @@ describe("doc 81 Đợt 5 task E1 — an API-started run never actuates a non-ST
         stepId: "g",
         stepType: "hitl_gate",
         status: "completed",
-        resultJson: { approved: true, approvedBy: HOLDER.id, approvalSource: "server", defHash: hashWorkflowDefinition(wf.definitionJson) },
+        resultJson: { approved: true, approvedBy: HOLDER.id, approvalSource: "server", defHash: hashWorkflowDefinition(wf.definitionJson), bindingDigest: digest },
       });
     };
     fake.store.set("orchestration_run_steps", []);

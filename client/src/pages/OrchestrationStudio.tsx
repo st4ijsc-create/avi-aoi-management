@@ -2527,7 +2527,7 @@ function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
     case "approvedByOwner":
       return t("studio.gateRequiredOwnerApproved", "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.");
     case "staleApproval":
-      return t("studio.gateRequiredStale", "Not sent: the workflow was redeployed after the gate was approved, so that approval does not cover what is running now. Start a new run and have the gate approved again.");
+      return t("studio.gateRequiredStale", "Not sent: after the gate was approved, the workflow was redeployed or the adapter, tag or robot configuration its commands use was changed, so that approval does not cover what would be sent now. Start a new run and have the gate approved again.");
     case "apiRun":
       return t("studio.gateRequiredApiRun", "Not sent: this run was started through an API key. A run started through an API key never sends machine or robot commands other than a STOP, because the person holding the key cannot be told apart from the approver. Start the run as a user in the Studio.");
     case "ownerUnknown":

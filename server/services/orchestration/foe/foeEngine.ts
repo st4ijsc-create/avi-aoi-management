@@ -68,6 +68,7 @@ import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob"; // do
 import { withDeadline } from "../../ot/drivers/boundedClose"; // final wave F5 — bounded STOP-step lookups
 import {
   evaluateGateApprovals,
+  computeBindingDigest,
   findStepDeep,
   hashWorkflowDefinition,
   FOE_APPROVAL_SOURCE_SERVER,
@@ -899,7 +900,8 @@ async function findSeparateGateApproval(rc: RunContext): Promise<{ approval: Foe
     if (!runNow) return { reason: "noGate" };
     if (runStartedViaApi(runNow)) return { reason: "apiRun" };
     const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, rc.runId));
-    const ev = evaluateGateApprovals(rows, rc.def, hashWorkflowDefinition(rc.def), rc.runOwner);
+    // doc 81 Đợt 5 task E3 — recompute the binding digest from the device configuration NOW (server side).
+    const ev = evaluateGateApprovals(rows, rc.def, hashWorkflowDefinition(rc.def), rc.runOwner, await computeBindingDigest(d, rc.def));
     if (!ev.ok) return { reason: ev.reason };
     const top = ev.approvals[0];
     return { approval: { runId: rc.runId, runOwner: rc.runOwner, approvedBy: top.approvedBy, gateStepId: top.gateStepId } };
@@ -916,7 +918,7 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
     approvedByOwner:
       "the approval gate before it was approved by the user who started the run — that does not count. Start a new run and have another user approve the gate.",
     staleApproval:
-      "the workflow was redeployed after the gate was approved, so the approval does not cover the definition now running. Start a new run and have the gate approved again.",
+      "the workflow was redeployed, or the adapter / tag / robot configuration its commands use changed, after the gate was approved, so the approval does not cover what would be sent now. Start a new run and have the gate approved again.",
     ownerUnknown:
       "the run has no attributable owner (started by the system or by an API key with no creating user), so a separate approval cannot be verified. Start the run as a user.",
     apiRun:
@@ -2163,6 +2165,9 @@ export async function resumeRun(
             ...(human ? { approvedBy: user.id } : {}),
             approvalSource: human ? FOE_APPROVAL_SOURCE_SERVER : FOE_APPROVAL_SOURCE_SYSTEM,
             defHash: hashWorkflowDefinition(def),
+            // doc 81 Đợt 5 task E3 — the device configuration the approval covers, computed HERE (server side); null
+            // (DB error) ⇒ the approval never counts (fail-closed).
+            bindingDigest: await computeBindingDigest(d, def),
           },
           finishedAt: new Date(),
         });

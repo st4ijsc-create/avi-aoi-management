@@ -61,7 +61,7 @@ vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 import { orchestrationRunSteps, orchestrationRuns, orchestrationWorkflows, machines, deviceAdapters, robots } from "../../../../drizzle/schema";
 import { deployWorkflow, startRun, resumeRun, FOE_GATE_REQUIRED } from "./foeEngine";
 import { readFoeGateApproval } from "../../ot/otActionBinding";
-import { hashWorkflowDefinition } from "./foeGateApproval";
+import { hashWorkflowDefinition, computeBindingDigest } from "./foeGateApproval";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import type { WorkflowDefinition } from "./workflowModel";
 
@@ -307,7 +307,8 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
    * final wave G4 — a run that was ALREADY IN FLIGHT before the start-time check existed: 'held' + interrupted, with (when
    * `gateBy` is given) gate "g" approved through the server path by that user for the current definition.
    */
-  const seedInFlightRun = (ref: string, runId: number, gateBy?: number) => {
+  // doc 81 Đợt 5 task E3 — async: the gate row now carries the server-computed binding digest (computeBindingDigest).
+  const seedInFlightRun = async (ref: string, runId: number, gateBy?: number) => {
     const wf = (fake.store.get("orchestration_workflows") ?? []).find((w: Row) => w.ref === ref)!;
     fake.seed(orchestrationRuns, [
       { id: runId, workflowId: wf.id, workflowRef: ref, status: "held", paramsJson: {}, contextJson: { interrupted: true }, startedBy: OWNER.id, startedAt: new Date(), currentStepId: null },
@@ -315,7 +316,7 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     fake.seed(
       orchestrationRunSteps,
       gateBy
-        ? [{ id: runId * 10, runId, stepId: "g", stepType: "hitl_gate", status: "completed", attempt: 0, resultJson: { approved: true, approvedBy: gateBy, approvalSource: "server", defHash: hashWorkflowDefinition(wf.definitionJson) }, finishedAt: new Date() }]
+        ? [{ id: runId * 10, runId, stepId: "g", stepType: "hitl_gate", status: "completed", attempt: 0, resultJson: { approved: true, approvedBy: gateBy, approvalSource: "server", defHash: hashWorkflowDefinition(wf.definitionJson), bindingDigest: await computeBindingDigest(fake as never, wf.definitionJson) }, finishedAt: new Date() }]
         : [],
     );
   };
@@ -326,7 +327,7 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     expect(refused).toMatchObject({ ok: false, enabled: true, reason: "robotIdMissing", stepIds: ["m"] });
     expect(refused.runId).toBeUndefined();
     expect(fake.store.get("orchestration_runs") ?? []).toHaveLength(0); // G4: no run created
-    seedInFlightRun("rbnoid", 801, OTHER.id);
+    await seedInFlightRun("rbnoid", 801, OTHER.id);
     const started = { runId: 801 };
     const res = await resumeRun(started.runId!, { approved: true }, OTHER);
     expect(res.status).toBe("failed");
