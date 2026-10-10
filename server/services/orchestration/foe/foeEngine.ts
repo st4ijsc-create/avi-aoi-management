@@ -745,6 +745,36 @@ async function refreshConditionReadbacks(rc: RunContext, c: Condition | undefine
   }
 }
 
+/**
+ * doc 81 Đợt 5 task E4 (items 35+36) — is this step a STOP command (the SAME classification execCommand uses: robot ⇒ the
+ * job toRobotJob maps it to is a stop; OT ⇒ the dispatcher's stop-type predicate)? No DB access (machine rows are in rc).
+ */
+async function isStopCommandStep(rc: RunContext, step: WorkflowStep): Promise<boolean> {
+  if (step.type !== "command") return false;
+  const m = rc.machineById.get(step.machineId);
+  if (!m) return false;
+  const cap = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never });
+  const descriptor = cap.supportedCommands.find((c) => c.name === step.command);
+  if (!descriptor) return false;
+  if (isRobotKind(cap.adapterKind)) {
+    return isStopJob(toRobotJob(buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, "probe", rc.user)));
+  }
+  return isOtStopCommandType(descriptor.name);
+}
+
+/**
+ * doc 81 Đợt 5 task E4 (item 36, L-7) — a STOP step's own bookkeeping write (step row, authorisation row) waits at most
+ * STOP_DB_STEP_DEADLINE_MS, and a failing write never holds the STOP: it is logged and the STOP continues to the
+ * dispatcher, whose own error path decides (OT: no authorisation row ⇒ NOT_CONFIRMED, visibly). A non-STOP write is
+ * awaited exactly as before.
+ */
+async function stopBoundedWrite(stop: boolean, runId: number, stepId: string, what: string, write: () => Promise<void>): Promise<void> {
+  if (!stop) return write();
+  await withDeadline(write(), STOP_DB_STEP_DEADLINE_MS, `FOE stop step ${stepId} ${what}`).catch((err: unknown) => {
+    console.warn(`[FOE] run ${runId} stop step ${stepId}: ${what} not written in time — the STOP continues (L-7, E4): ${(err as Error)?.message ?? err}`);
+  });
+}
+
 /** Execute ONE step subtree. Persists state; routes commands via E0. Fail-safe. */
 async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome> {
   if (rc.aborting) return { kind: "aborted", error: "Run is aborting." };
@@ -771,7 +801,11 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     return pre;
   }
 
-  await upsertStep(rc.runId, step.id, step.type, { status: "running", startedAt: new Date() });
+  // doc 81 Đợt 5 task E4 (item 36) — a STOP step never waits on a hung DB for its 'running' row (bounded, L-7).
+  const stop = await isStopCommandStep(rc, step);
+  await stopBoundedWrite(stop, rc.runId, step.id, "running row", () =>
+    upsertStep(rc.runId, step.id, step.type, { status: "running", startedAt: new Date() }),
+  );
 
   let outcome: StepOutcome;
   const maxAttempts = Math.max(1, (step.maxAttempts ?? 0) + 1);
@@ -786,19 +820,25 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
 
   // persist terminal step state (paused steps stay 'awaiting_confirm'/'held')
   if (outcome.kind === "ok") {
-    await upsertStep(rc.runId, step.id, step.type, { status: "completed", attempt, finishedAt: new Date() });
+    // E4 — bounded for a STOP too, so a following STOP of the same walk is never held behind this write.
+    await stopBoundedWrite(stop, rc.runId, step.id, "completed row", () =>
+      upsertStep(rc.runId, step.id, step.type, { status: "completed", attempt, finishedAt: new Date() }),
+    );
   } else if (outcome.kind === "skipped") {
     await upsertStep(rc.runId, step.id, step.type, { status: "skipped", attempt, finishedAt: new Date() });
   } else if (outcome.kind === "paused") {
     // step-level status already set by the body (awaiting_confirm)
   } else {
-    // failed / aborted → run compensation if declared
-    await upsertStep(rc.runId, step.id, step.type, {
-      status: "failed",
-      attempt,
-      error: "error" in outcome ? outcome.error : null,
-      finishedAt: new Date(),
-    });
+    // failed / aborted → run compensation if declared (E4: a STOP's failure row is bounded too)
+    const failedOutcome = outcome;
+    await stopBoundedWrite(stop, rc.runId, step.id, "failed row", () =>
+      upsertStep(rc.runId, step.id, step.type, {
+        status: "failed",
+        attempt,
+        error: "error" in failedOutcome ? failedOutcome.error : null,
+        finishedAt: new Date(),
+      }),
+    );
     // doc 80 ORC-01 — a USER abort must not dispatch anything after the abort instant, so the
     // saga compensation (which issues commands) is NOT run while the run is aborting.
     if (step.compensation && !rc.aborting) {
@@ -1405,8 +1445,15 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   const cmd = approval ? buildEquipmentCommand(descriptor, cap, step.machineId, args, idempotencyKey, rc.user, approval) : probe;
   // fix round 3 (R-4-n) — a robot step with no robot never gets an authorisation row (it can never be sent; the robot
   // route below refuses it with the localisable INVALID_VALUE robotId/robotIdRequired).
-  if (!(isRobotKind(cap.adapterKind) && cmd.robotId == null)) {
-    await ensureOrchestrationAction(rc.user, idempotencyKey, step, args, cmd, approval ?? undefined);
+  // doc 81 Đợt 5 task E4 (items 35+36) — a ROBOT STOP gets NO authorisation row: the robot dispatcher never reads or
+  // consumes a stop's row (a STOP is never refused on HITL grounds), so the row authorised nothing, named whoever drove
+  // the walk as "confirmer" (item 35) and cost an unbounded DB wait before the STOP (item 36). An OT STOP keeps its row
+  // (the OT dispatcher accepts a pinned stop on a self-confirmed row) but waits for it at most STOP_DB_STEP_DEADLINE_MS;
+  // past that the STOP goes on and the OT dispatcher's own path decides (no row ⇒ NOT_CONFIRMED, visibly).
+  if (!(isRobotKind(cap.adapterKind) && (cmd.robotId == null || isStop))) {
+    await stopBoundedWrite(isStop, rc.runId, step.id, "authorisation row", () =>
+      ensureOrchestrationAction(rc.user, idempotencyKey, step, args, cmd, approval ?? undefined),
+    );
   }
 
   // doc 80 ORC-01 — last check before the command leaves the engine (the awaits above can span an abort).
@@ -1416,16 +1463,19 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   const adapter = equipmentRegistry.getAdapter(cap.adapterKind);
   const result: EquipmentCommandResult = await adapter.sendCommand(cmd);
 
-  await upsertStep(rc.runId, step.id, step.type, {
-    status: "running",
-    result: {
-      routedTo: result.routedTo,
-      status: result.status,
-      accepted: result.ok,
-      simulated: result.detail?.simulated ?? undefined,
-      detail: result.detail ?? null,
-    },
-  });
+  // E4 — after a STOP was sent, recording its result is bounded too (the next STOP of the walk must not wait on it).
+  await stopBoundedWrite(isStop, rc.runId, step.id, "result row", () =>
+    upsertStep(rc.runId, step.id, step.type, {
+      status: "running",
+      result: {
+        routedTo: result.routedTo,
+        status: result.status,
+        accepted: result.ok,
+        simulated: result.detail?.simulated ?? undefined,
+        detail: result.detail ?? null,
+      },
+    }),
+  );
 
   if (!result.ok) {
     return { kind: "failed", error: result.error ?? `Command "${step.command}" rejected (${result.status}).` };
