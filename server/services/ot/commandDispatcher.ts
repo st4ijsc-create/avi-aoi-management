@@ -212,6 +212,38 @@ export const OT_SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
  */
 export const OT_TIMED_OUT_WRITE_GRACE_MS = 1000;
 
+/**
+ * doc 81 Đợt 4 Task B3 fix scan (1) — slack on top of the session-reset budget for the dispatcher's OUTER deadline. The
+ * reset is cooperative (it gives up by itself within its budget, adapterSessionResetBoundMs); the outer deadline is only
+ * a safety net for a reset path that would not honour its budget.
+ */
+export const OT_SESSION_RESET_SLACK_MS = 250;
+
+/**
+ * doc 81 Đợt 4 Task B3 fix scan (3) — resetting the session does NOT recall a request already on the wire: the device
+ * may still apply the old (timed-out) write AFTER a STOP sent on the new session (re-energising after a stop). For
+ * OT_STALE_WRITE_RISK_TTL_MS after such a write was abandoned, a STOP to that adapter is WATCHED: its tags are read back
+ * every OT_STOP_REASSERT_POLL_MS for OT_STOP_REASSERT_WINDOW_MS, and a read that positively shows a non-stop value makes
+ * the dispatcher re-write the same STOP (at most OT_STOP_REASSERT_MAX times), each audited. The watch runs AFTER the
+ * STOP's first write and its answer (it holds only the queue slot) — it never delays or blocks the STOP itself (L-7).
+ */
+export const OT_STALE_WRITE_RISK_TTL_MS = 10_000;
+export const OT_STOP_REASSERT_WINDOW_MS = 2000;
+export const OT_STOP_REASSERT_POLL_MS = 200;
+export const OT_STOP_REASSERT_MAX = 3;
+
+/** B3 fix scan (3) — adapters with an abandoned write whose fate is unknown (until = epoch ms). */
+const staleWriteRisk = new Map<number, { until: number; idempotencyKey: string | null; tagKeys: string[] }>();
+function staleWriteRiskActive(adapterId: number): boolean {
+  const r = staleWriteRisk.get(adapterId);
+  if (!r) return false;
+  if (Date.now() > r.until) {
+    staleWriteRisk.delete(adapterId);
+    return false;
+  }
+  return true;
+}
+
 async function readSafetyStateForPreflight(
   adapterId: number,
   machineId: number | null,
@@ -422,6 +454,7 @@ const adapterCommandQueues = new Map<number, AdapterCommandQueue>();
 /** Chỉ dùng trong test — xóa mọi hàng đợi lệnh per-adapter. */
 export function _resetAdapterCommandQueuesForTests(): void {
   adapterCommandQueues.clear();
+  staleWriteRisk.clear();
 }
 
 /** Chỉ dùng trong test — số adapter đang có entry hàng đợi (0 ⇔ mọi hàng đã được dọn). */
@@ -1323,7 +1356,14 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
 
     const outcomes: Outcome[] = resolved.map((r, i) => {
       if (timedOut) {
-        return { idx: i, ok: false, status: "timeout", errorText: `write timeout after ${timeoutMs}ms`, readBackValue: null };
+        // B3 fix scan (2) — a timeout is NOT "not applied": the device may have applied (part of) it.
+        return {
+          idx: i,
+          ok: false,
+          status: "timeout",
+          errorText: `write timeout after ${timeoutMs}ms — outcome unknown: the write may have been applied on the device`,
+          readBackValue: null,
+        };
       }
       if (threwError) {
         return { idx: i, ok: false, status: "failed", errorText: threwError, readBackValue: null };
@@ -1396,7 +1436,30 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       }
     }
 
-    return { sentAt, timedOut, outcomes, ...(slotHold ? { slotHold } : {}) };
+    // B3 fix scan (3) — a STOP after an abandoned write whose fate is unknown: watch it and re-assert it if the old write
+    // lands later. Holds the queue slot only; the STOP's answer is returned now (L-7).
+    let stopGuard: Promise<void> | undefined;
+    if (!slotHold && isCmdSerializeEnabled() && isStopCommandType(input.commandType) && staleWriteRiskActive(input.adapterId)) {
+      const acked = outcomes.filter((o) => o.ok).map((o) => o.idx);
+      if (acked.length > 0) {
+        stopGuard = guardStopAgainstStaleWrite(
+          input,
+          driver,
+          acked.map((i) => driverWrites[i]),
+          acked.map((i) => ({
+            tagKey: resolved[i].write.tagKey,
+            address: resolved[i].address,
+            dataType: (resolved[i].dataType ?? "float") as OtTagAddress["dataType"],
+            scale: resolved[i].scale,
+            offset: resolved[i].offset,
+          })),
+          timeoutMs,
+          { intentIds, confirmedBy: ledgerConfirmer },
+        );
+      }
+    }
+    const hold = slotHold ?? stopGuard;
+    return { sentAt, timedOut, outcomes, ...(hold ? { slotHold: hold } : {}) };
   };
 
   // ── (5c) G1.9 — PER-ADAPTER SERIALIZATION (flag OT_CMD_SERIALIZE_ENABLED,
@@ -1527,7 +1590,12 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
  * L-7 — a STOP is never held indefinitely: if the reset fails or exceeds its bound, the slot is released anyway (the
  * STOP proceeds), logged and audited as `overlapRisk` (control_audit_log "ot_write_overlap_risk").
  * WORST-CASE extra STOP start latency, counted from the old write's own timeout:
- *   OT_TIMED_OUT_WRITE_GRACE_MS + adapterSessionResetBoundMs = 1 s + connect timeout (default 10 s) = 11 s.
+ *   OT_TIMED_OUT_WRITE_GRACE_MS + adapterSessionResetBoundMs + OT_SESSION_RESET_SLACK_MS
+ *   = 1 s + connect timeout (default 10 s) + 0.25 s = 11.25 s.
+ * fix scan (1): the reset is COOPERATIVE — it spends at most its budget (all steps) and then has itself given up, so it
+ * never completes "late" and replaces the session a STOP is using; a connect landing after the budget is reaped, never
+ * made active. fix scan (3): the old write may still land on the device after the STOP — see guardStopAgainstStaleWrite.
+ * Applies ONLY with OT_CMD_SERIALIZE_ENABLED (there is no queue slot otherwise — residual risk, reported).
  * Non-STOP commands behind it wait for the slot the same way. Never rejects.
  */
 async function holdSlotAfterTimedOutWrite(
@@ -1549,12 +1617,19 @@ async function holdSlotAfterTimedOutWrite(
     clearTimeout(graceTimer);
     if (first === "settled") return;
 
+    // fix scan (3) — the old write is abandoned with its fate unknown: a STOP in the next TTL is watched + re-asserted.
+    staleWriteRisk.set(input.adapterId, {
+      until: Date.now() + OT_STALE_WRITE_RISK_TTL_MS,
+      idempotencyKey: input.idempotencyKey ?? null,
+      tagKeys: input.writes.map((w) => w.tagKey),
+    });
+    // fix scan (1) — the reset gets ONE budget it honours itself (cooperative); the outer deadline adds only a slack.
     const resetBoundMs = adapterSessionResetBoundMs(input.adapterId);
     let resetError: string;
     try {
       const r = await withDeadline(
-        resetAdapterSession(input.adapterId, `timed-out write still pending after ${OT_TIMED_OUT_WRITE_GRACE_MS}ms grace (B3)`),
-        resetBoundMs,
+        resetAdapterSession(input.adapterId, `timed-out write still pending after ${OT_TIMED_OUT_WRITE_GRACE_MS}ms grace (B3)`, resetBoundMs),
+        resetBoundMs + OT_SESSION_RESET_SLACK_MS,
         `adapter ${input.adapterId} session reset`,
       );
       if (r.reset) {
@@ -1574,37 +1649,117 @@ async function holdSlotAfterTimedOutWrite(
   }
 }
 
+/**
+ * doc 81 Đợt 4 Task B3 fix scan (3) — watch a STOP sent after an abandoned write (see OT_STALE_WRITE_RISK_TTL_MS): read
+ * its tags back every OT_STOP_REASSERT_POLL_MS for OT_STOP_REASSERT_WINDOW_MS; a read that POSITIVELY shows a value other
+ * than the STOP's (the old write landed after it) ⇒ write the same STOP again (≤ OT_STOP_REASSERT_MAX, each under the
+ * command timeout) and audit "ot_stop_reasserted"; still drifting after the last re-assert ⇒ audit
+ * "ot_stop_reassert_exhausted" + log. A failed/empty read proves nothing and triggers nothing. Runs after the STOP's
+ * first write and answer — holds only the queue slot, at most WINDOW + 2 × timeoutMs. Never rejects.
+ */
+async function guardStopAgainstStaleWrite(
+  input: DispatchInput,
+  driver: { readTags: (t: OtTagAddress[]) => Promise<Array<{ tagKey: string; value: unknown }>>; writeTags: (w: any[]) => Promise<unknown> },
+  writes: Array<{ tagKey: string; value: unknown }>,
+  readTags: OtTagAddress[],
+  timeoutMs: number,
+  ledger: { intentIds: number[]; confirmedBy: number },
+): Promise<void> {
+  try {
+    const tol = readbackFloatTolerance();
+    const end = Date.now() + OT_STOP_REASSERT_WINDOW_MS;
+    let reasserts = 0;
+    while (Date.now() < end) {
+      await new Promise((r) => setTimeout(r, OT_STOP_REASSERT_POLL_MS));
+      let samples: Array<{ tagKey: string; value: unknown }>;
+      try {
+        samples = await withDeadline(Promise.resolve(driver.readTags(readTags)), timeoutMs, `adapter ${input.adapterId} STOP guard read`);
+      } catch {
+        continue; // unverifiable this round — proves nothing
+      }
+      const drift = readTags
+        .map((t) => {
+          const s = Array.isArray(samples) ? samples.find((x) => x.tagKey === t.tagKey) : undefined;
+          const expected = writes.find((w) => w.tagKey === t.tagKey)?.value;
+          return s && s.value != null && !readbackMatches(expected, s.value, t.dataType, tol)
+            ? { tagKey: t.tagKey, expected, actual: s.value as unknown }
+            : null;
+        })
+        .filter((d): d is { tagKey: string; expected: unknown; actual: unknown } => d != null);
+      if (drift.length === 0) continue;
+      if (reasserts >= OT_STOP_REASSERT_MAX) {
+        console.error(`[Dispatch] adapter ${input.adapterId}: STOP still overridden after ${reasserts} re-asserts (B3 fix scan 3):`, JSON.stringify(drift));
+        auditOtEvent(input, ledger, "ot_stop_reassert_exhausted", { drift, reasserts }, "B3 fix scan (3): a STOP kept being overridden by a write that landed after it — re-asserts exhausted");
+        return;
+      }
+      reasserts += 1;
+      let writeError: string | null = null;
+      try {
+        await withDeadline(Promise.resolve(driver.writeTags(writes)), timeoutMs, `adapter ${input.adapterId} STOP re-assert`);
+      } catch (err) {
+        writeError = (err as Error)?.message || String(err);
+      }
+      console.warn(`[Dispatch] adapter ${input.adapterId}: STOP re-asserted (#${reasserts}) — a value other than the STOP's was read back (an abandoned write landed after it)`);
+      auditOtEvent(
+        input,
+        ledger,
+        "ot_stop_reasserted",
+        { drift, attempt: reasserts, writeError },
+        "B3 fix scan (3): an abandoned (timed-out) write landed after the STOP — the STOP was written again",
+      );
+    }
+  } catch (err) {
+    console.error(`[Dispatch] adapter ${input.adapterId}: STOP guard failed (slot released):`, (err as Error)?.message || err);
+  }
+}
+
 /** B3 — control_audit_log "ot_write_overlap_risk", fire-and-forget under a deadline (never holds the queue). */
 function auditWriteOverlapRisk(
   input: DispatchInput,
   ledger: { intentIds: number[]; confirmedBy: number },
   detail: { graceMs: number; resetBoundMs: number; resetError: string },
 ): void {
+  auditOtEvent(
+    input,
+    ledger,
+    "ot_write_overlap_risk",
+    { overlapRisk: true, ...detail },
+    "B3 (QĐ-4b): a timed-out write was still pending after its grace and the driver session could not be reset in time — the next command proceeded (L-7: a STOP is never held indefinitely)",
+  );
+}
+
+/** B3 — one control_audit_log row about an OT command, fire-and-forget under a deadline (never holds anything). */
+function auditOtEvent(
+  input: DispatchInput,
+  ledger: { intentIds: number[]; confirmedBy: number },
+  action: string,
+  detail: Record<string, unknown>,
+  reason: string,
+): void {
   const work = (async () => {
     const db = await getDb();
     if (!db) {
-      console.error(`[Dispatch] audit ot_write_overlap_risk skipped for adapter ${input.adapterId} — no DB`);
+      console.error(`[Dispatch] audit ${action} skipped for adapter ${input.adapterId} — no DB`);
       return;
     }
     const { recordAuditEvent } = await import("../audit/controlAuditService");
     await recordAuditEvent(db, {
       entityType: "ot_command",
       entityId: ledger.intentIds[0] ?? input.idempotencyKey ?? "unrecorded",
-      action: "ot_write_overlap_risk",
+      action,
       actorId: ledger.confirmedBy,
       after: {
         adapterId: input.adapterId,
         machineId: input.machineId ?? null,
         commandType: input.commandType,
         idempotencyKey: input.idempotencyKey ?? null,
-        overlapRisk: true,
         ...detail,
       },
-      reason: "B3 (QĐ-4b): a timed-out write was still pending after its grace and the driver session could not be reset in time — the next command proceeded (L-7: a STOP is never held indefinitely)",
+      reason,
     });
   })();
-  void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, "ot_write_overlap_risk audit").catch((err) => {
-    console.error(`[Dispatch] audit ot_write_overlap_risk failed or is stuck for adapter ${input.adapterId}:`, (err as Error)?.message || err);
+  void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, `${action} audit`).catch((err) => {
+    console.error(`[Dispatch] audit ${action} failed or is stuck for adapter ${input.adapterId}:`, (err as Error)?.message || err);
   });
 }
 

@@ -71,34 +71,53 @@ type WriteLog = { tag: string; session: number; start: number; end?: number; out
 const D = vi.hoisted(() => ({
   session: 1,
   log: [] as Array<{ tag: string; session: number; start: number; end?: number; outcome?: string }>,
-  hung: [] as Array<{ session: number; finish: (outcome: string, err?: boolean) => void }>,
+  hung: [] as Array<{ session: number; finish: (outcome: string, err?: boolean) => void; tag: string; value: unknown }>,
+  /** fix scan (3) — the DEVICE: what a read returns. A write that finishes "ok" lands its value here. */
+  device: new Map<string, unknown>(),
+  /** A hung write rejected by a session close still LANDS on the device this many ms later (null = never). */
+  landLateMs: null as number | null,
+  /** tag ⇒ value the device keeps returning whatever is written (an old write that keeps winning). */
+  sticky: new Map<string, unknown>(),
+  /** the device answers reads with NO sample (unverifiable). */
+  readEmpty: false,
   /** tag ⇒ behaviour of its write: "hang" (only a session close ends it), number = answer after N ms, default ok now. */
   plan: new Map<string, "hang" | number>(),
   reset: { mode: "ok" as "ok" | "fail" | "hang", calls: 0, boundMs: 300 },
 }));
 function closeSession(): void {
   const s = D.session;
-  for (const h of D.hung.filter((x) => x.session === s)) h.finish(`session ${s} closed`, true);
+  for (const h of D.hung.filter((x) => x.session === s)) {
+    h.finish(`session ${s} closed`, true);
+    // fix scan (3) — closing the client session does NOT recall a request already on the wire.
+    if (D.landLateMs != null) setTimeout(() => D.device.set(h.tag, h.value), D.landLateMs);
+  }
   D.hung = D.hung.filter((x) => x.session !== s);
   D.session += 1;
 }
 const driver = {
   isConnected: () => true,
-  readTags: async () => [],
-  writeTags: (writes: Array<{ tagKey: string }>) => {
+  readTags: async (tags: Array<{ tagKey: string }>) =>
+    (D.readEmpty ? [] : tags)
+      .filter((t) => D.sticky.has(t.tagKey) || D.device.has(t.tagKey))
+      .map((t) => ({ tagKey: t.tagKey, value: D.sticky.has(t.tagKey) ? D.sticky.get(t.tagKey) : D.device.get(t.tagKey), quality: "good", ts: new Date() })),
+  writeTags: (writes: Array<{ tagKey: string; value?: unknown }>) => {
     const tag = writes[0].tagKey;
+    const value = writes[0].value;
     const entry: WriteLog = { tag, session: D.session, start: Date.now() };
     D.log.push(entry);
-    const plan = D.plan.get(tag);
+    const plan = D.plan.get(`${tag}=${String(value)}`) ?? D.plan.get(tag);
     return new Promise((resolve, reject) => {
       const finish = (outcome: string, err?: boolean) => {
         if (entry.end != null) return;
         entry.end = Date.now();
         entry.outcome = outcome;
         if (err) reject(new Error(outcome));
-        else resolve(writes.map((w) => ({ tagKey: w.tagKey, ok: true })));
+        else {
+          for (const w of writes) D.device.set(w.tagKey, w.value);
+          resolve(writes.map((w) => ({ tagKey: w.tagKey, ok: true })));
+        }
       };
-      D.hung.push({ session: entry.session, finish });
+      D.hung.push({ session: entry.session, finish, tag, value });
       if (plan === "hang") return;
       setTimeout(() => finish("ok"), typeof plan === "number" ? plan : 0);
     });
@@ -123,13 +142,13 @@ const TIMEOUT_MS = 300;
 /** QĐ-4b — the ruling's grace (the exported constant is asserted equal to it below). */
 const GRACE = 1000;
 let actSeq = 0;
-function input(tagKey: string, commandType: string, key: string) {
+function input(tagKey: string, commandType: string, key: string, value: unknown = true) {
   const actionId = `b3-act-${++actSeq}`;
   const inp = {
     adapterId: 10,
     machineId: 5,
     commandType,
-    writes: [{ tagKey, value: true }],
+    writes: [{ tagKey, value }],
     triggeredBy: { kind: "hitl" as const, actionId, tool: TESTKIT_TOOL, confirmedBy: 1, requestedBy: 1 },
     lang: "vi" as const,
     idempotencyKey: key,
@@ -180,6 +199,10 @@ beforeEach(() => {
   D.log.length = 0;
   D.hung = [];
   D.plan.clear();
+  D.device.clear();
+  D.landLateMs = null;
+  D.sticky.clear();
+  D.readEmpty = false;
   D.reset.mode = "ok";
   D.reset.calls = 0;
   D.reset.boundMs = 300;
@@ -196,6 +219,7 @@ beforeEach(() => {
   adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });
   tags.push({ id: 100, adapterId: 10, tagKey: "cmd_speed", address: "ns=1;s=Speed", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
   tags.push({ id: 101, adapterId: 10, tagKey: "cmd_stop", address: "ns=1;s=Stop", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
+  tags.push({ id: 102, adapterId: 10, tagKey: "cmd_run", address: "ns=1;s=Run", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
   errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
@@ -233,6 +257,10 @@ describe("B3 — a STOP behind a timed-out write (QĐ-4b, grace = 1000 ms)", () 
     const rOld = await within(pOld, TIMEOUT_MS + 700);
     expect(rOld.status).toBe("timeout");
     expect(Date.now() - t0).toBeLessThan(TIMEOUT_MS + GRACE);
+    // fix scan (2) — the ledger never claims "not applied": the outcome is UNKNOWN.
+    const oldRows = cmdLog.filter((r) => String(r.idempotencyKey ?? "").startsWith("b3-old-") && r.status === "timeout");
+    expect(oldRows.length).toBeGreaterThan(0);
+    for (const r of oldRows) expect(String(r.errorText)).toMatch(/outcome unknown: the write may have been applied/);
     const rStop = await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700);
     expect(rStop.status).toBe("acked");
     const stop = D.log.find((w) => w.tag === "cmd_stop")!;
@@ -298,6 +326,77 @@ describe("B3 — a STOP behind a timed-out write (QĐ-4b, grace = 1000 ms)", () 
     expect((await within(pOld, 1000)).status).toBe("acked");
     expect((await within(pStop, 1000)).status).toBe("acked");
     expect(D.reset.calls).toBe(0);
+  });
+});
+
+describe("B3 fix scan (3) — the abandoned write lands AFTER the STOP on the device", () => {
+  function runThenStop() {
+    const t0 = Date.now();
+    const pRun = dispatch(input("cmd_run", "start", `fx-run-${actSeq}`, true));
+    return { t0, pRun };
+  }
+  async function stopAfter() {
+    expect(await until(() => D.log.length === 1, 2000)).toBe(true);
+    return dispatch(input("cmd_run", "stop", `fx-stop-${actSeq}`, false));
+  }
+
+  it("★ old write lands 300 ms after the session reset ⇒ the STOP is re-asserted (device ends stopped), audited; the STOP answer is not delayed", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    D.landLateMs = 300;
+    const { t0, pRun } = runThenStop();
+    const pStop = await stopAfter();
+    expect((await within(pRun, TIMEOUT_MS + 700)).status).toBe("timeout");
+    const rStop = await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700);
+    const answeredAt = Date.now() - t0;
+    expect(rStop.status).toBe("acked");
+    const stopWrite = D.log.find((w) => w.tag === "cmd_run" && w.session === 2)!;
+    expect(answeredAt - (stopWrite.start - t0)).toBeLessThan(150); // answered right after its own write — no guard wait (L-7)
+    expect(await until(() => D.device.get("cmd_run") === true, 1500)).toBe(true); // the old write DID land after the STOP
+    expect(await until(() => audit.events.some((e) => e.action === "ot_stop_reasserted"), 2500)).toBe(true);
+    expect(D.device.get("cmd_run")).toBe(false); // re-asserted: stopped again
+    const ev = audit.events.find((e) => e.action === "ot_stop_reasserted")!;
+    expect(ev.after).toMatchObject({ adapterId: 10, attempt: 1, drift: [{ tagKey: "cmd_run", expected: false, actual: true }] });
+  });
+
+  it("no late landing ⇒ the guard reads the STOP value and does nothing (no extra write, no audit)", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    runThenStop();
+    const pStop = await stopAfter();
+    expect((await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700)).status).toBe("acked");
+    await new Promise((r) => setTimeout(r, 2300)); // the whole guard window
+    expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(2); // old + STOP only
+    expect(audit.events.filter((e) => String(e.action).startsWith("ot_stop_reassert"))).toEqual([]);
+  });
+
+  it("the old write keeps winning ⇒ at most 3 re-asserts, then ot_stop_reassert_exhausted (bounded)", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    runThenStop();
+    const pStop = await stopAfter();
+    expect((await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700)).status).toBe("acked");
+    D.sticky.set("cmd_run", true);
+    expect(await until(() => audit.events.some((e) => e.action === "ot_stop_reassert_exhausted"), 3000)).toBe(true);
+    expect(audit.events.filter((e) => e.action === "ot_stop_reasserted")).toHaveLength(3);
+    expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(2 + 3);
+  });
+
+  it("reads that return NO sample prove nothing ⇒ no re-assert (only a positive mismatch triggers one)", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    runThenStop();
+    const pStop = await stopAfter();
+    expect((await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700)).status).toBe("acked");
+    D.readEmpty = true;
+    await new Promise((r) => setTimeout(r, 2300));
+    expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(2);
+    expect(audit.events.filter((e) => String(e.action).startsWith("ot_stop_reassert"))).toEqual([]);
+  });
+
+  it("a STOP with NO abandoned write before it is not watched (no extra reads/writes)", async () => {
+    const r = await within(dispatch(input("cmd_run", "stop", `fx-plain-${actSeq}`, false)), 1000);
+    expect(r.status).toBe("acked");
+    D.sticky.set("cmd_run", true);
+    await new Promise((res) => setTimeout(res, 600));
+    expect(audit.events).toEqual([]);
+    expect(D.log).toHaveLength(1);
   });
 });
 

@@ -174,9 +174,10 @@ async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
  * giờ chờ quá hạn + biên. Kết nối xong MUỘN sau hạn ⇒ bị hạ (đóng subscription + disconnect);
  * entry.inflight giữ tới lúc đó để vòng nối lại không connect chồng lên cùng driver.
  */
-async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number): Promise<boolean> {
+async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?: number): Promise<boolean> {
   const { adapter } = entry;
-  const timeoutMs = effectiveAdapterStartTimeoutMs(adapter.connection);
+  // doc 81 Đợt 4 Task B3 (fix scan 1) — a session reset passes what is left of ITS budget: the start then ends within it.
+  const timeoutMs = budgetMs != null ? Math.max(1, budgetMs) : effectiveAdapterStartTimeoutMs(adapter.connection);
   // final wave 1 (R-1D-k) — chụp dấu vân tay TRƯỚC connect (cấu hình driver sắp nối tới).
   const fingerprint = connectionFingerprintOf(adapter);
   entry.attempts += 1;
@@ -200,7 +201,15 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number): Promise<
     entry.lastError = errText(err);
     if (workSettled) {
       // Lỗi thường (vd ECONNREFUSED, protocol chưa triển khai): dọn như cũ nhưng có hạn.
-      await boundedQuiet(() => adapter.driver.disconnect(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "disconnect");
+      // B3 — inside a reset budget the cleanup is not awaited (inflight stays set until it is done).
+      const cleanup = boundedQuiet(() => adapter.driver.disconnect(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "disconnect");
+      if (budgetMs != null) {
+        void cleanup.finally(() => {
+          entry.inflight = false;
+        });
+        return false;
+      }
+      await cleanup;
       entry.inflight = false;
     } else {
       // Quá hạn: hạ transport ngay (best-effort, không đợi) và hạ nốt kết nối muộn khi settle.
@@ -296,7 +305,7 @@ async function legacyTick(myEpoch: number): Promise<void> {
  * 'reconnecting', close its poll and disconnect the driver — each bounded. The watchdog / caller then restarts it
  * with attemptLegacyStart.
  */
-async function dropLegacySession(entry: LegacyEntry, reason: string): Promise<void> {
+async function dropLegacySession(entry: LegacyEntry, reason: string, stepMs: number = OT_ADAPTER_START_CLEANUP_GRACE_MS): Promise<void> {
   entry.state = "reconnecting";
   entry.lastError = reason;
   entry.failures = 0;
@@ -304,8 +313,8 @@ async function dropLegacySession(entry: LegacyEntry, reason: string): Promise<vo
   const h = entry.handle;
   entry.handle = null;
   entry.inflight = true;
-  if (h) await boundedQuiet(() => h.close(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "close");
-  await boundedQuiet(() => entry.adapter.driver.disconnect(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "disconnect");
+  if (h) await boundedQuiet(() => h.close(), stepMs, "close");
+  await boundedQuiet(() => entry.adapter.driver.disconnect(), stepMs, "disconnect");
   entry.inflight = false;
 }
 
@@ -841,11 +850,15 @@ export interface AdapterSessionReset {
  * legacy restart is left to the watchdog's normal backoff. Never throws; the caller bounds it with
  * adapterSessionResetBoundMs.
  */
-export async function resetAdapterSession(adapterId: number, reason: string): Promise<AdapterSessionReset> {
+export async function resetAdapterSession(
+  adapterId: number,
+  reason: string,
+  budgetMs: number = adapterSessionResetBoundMs(adapterId),
+): Promise<AdapterSessionReset> {
   try {
     const sup = supervisors.get(adapterId);
     if (sup) {
-      const ok = await sup.supervisor.resetSession(reason);
+      const ok = await sup.supervisor.resetSession(reason, budgetMs);
       return ok
         ? { reset: true, via: "supervisor" }
         : { reset: false, via: "supervisor", error: sup.supervisor.status().lastError ?? "supervisor did not reset the session" };
@@ -854,9 +867,17 @@ export async function resetAdapterSession(adapterId: number, reason: string): Pr
     if (!entry || entry.state !== "active") return { reset: false, via: "none", error: "adapter is not active" };
     if (entry.inflight) return { reset: false, via: "legacy", error: "a reconnect is already in flight" };
     const myEpoch = epoch;
-    await dropLegacySession(entry, reason);
+    // fix scan (1) — ONE budget for the whole reset (drop + restart): spent ⇒ this call has itself given up.
+    const end = Date.now() + Math.max(1, budgetMs);
+    await dropLegacySession(entry, reason, Math.min(OT_ADAPTER_START_CLEANUP_GRACE_MS, Math.max(1, Math.floor(budgetMs / 4))));
     if (myEpoch !== epoch) return { reset: false, via: "legacy", error: "OT stopped during the reset" };
-    const ok = await attemptLegacyStart(entry, myEpoch);
+    const left = end - Date.now();
+    if (left <= 0) {
+      entry.failures = 1;
+      entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+      return { reset: false, via: "legacy", error: `session reset budget ${budgetMs}ms spent before reconnect` };
+    }
+    const ok = await attemptLegacyStart(entry, myEpoch, left);
     if (myEpoch !== epoch) return { reset: false, via: "legacy", error: "OT stopped during the reset" };
     if (ok) {
       listLegacyEntryIfNeeded(entry);
@@ -871,8 +892,9 @@ export async function resetAdapterSession(adapterId: number, reason: string): Pr
 }
 
 /**
- * doc 81 Đợt 4 Task B3 — the bound a caller puts on resetAdapterSession: the connect timeout of that adapter's
- * reconnect path (supervisor: the active endpoint's connect deadline; legacy: its start timeout). Default 10 s.
+ * doc 81 Đợt 4 Task B3 — the budget of resetAdapterSession (and the bound a caller puts on it): the connect timeout of
+ * that adapter's reconnect path (supervisor: the active endpoint's connect deadline; legacy: its start timeout).
+ * Default 10 s. The reset spends at most this, all of its steps included (cooperative, fix scan 1).
  */
 export function adapterSessionResetBoundMs(adapterId: number): number {
   const sup = supervisors.get(adapterId);

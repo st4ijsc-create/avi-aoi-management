@@ -36,6 +36,8 @@ class SessionDriver implements OtDriver {
   disconnectCalls = 0;
   /** connect() waits on this before succeeding (null = immediate). */
   connectGate: Promise<void> | null = null;
+  /** fix scan (1) — disconnect() marks the session closed but never returns (a stuck close). */
+  hangDisconnect = false;
   private hung: Array<{ session: number; reject: (e: Error) => void }> = [];
   async connect(_cfg: OtConnectionConfig): Promise<void> {
     this.connectCalls += 1;
@@ -49,6 +51,7 @@ class SessionDriver implements OtDriver {
     const s = this.session;
     for (const h of this.hung.filter((x) => x.session === s)) h.reject(new Error(`session ${s} closed`));
     this.hung = this.hung.filter((x) => x.session !== s);
+    if (this.hangDisconnect) await never<void>();
   }
   isConnected(): boolean {
     return this.connected;
@@ -69,7 +72,7 @@ class SessionDriver implements OtDriver {
   }
 }
 
-function makeSup(driver: SessionDriver, connectTimeoutMs = 400) {
+function makeSup(driver: SessionDriver, connectTimeoutMs = 400, disconnectTimeoutMs = 200) {
   return new ConnectionSupervisor({
     adapterId: 9,
     code: "B3",
@@ -83,7 +86,7 @@ function makeSup(driver: SessionDriver, connectTimeoutMs = 400) {
     backoff: { initialMs: 50, maxMs: 100, factor: 2, jitter: 0 },
     linkLossFailThreshold: 1,
     connectTimeoutMs,
-    disconnectTimeoutMs: 200,
+    disconnectTimeoutMs,
   });
 }
 
@@ -124,6 +127,40 @@ describe("B3 — ConnectionSupervisor.resetSession", () => {
     expect(r.value).toBe(false);
     expect(sup.getActiveDriver()).toBeUndefined(); // no stale session is offered
     expect(sup.resetBoundMs()).toBe(300);
+    await sup.stop();
+  });
+
+  it("★ fix scan (1) COOPERATIVE: disconnect AND connect hang ⇒ resetSession gives up within ITS budget (resetBoundMs), all steps included", async () => {
+    const d = new SessionDriver();
+    const sup = makeSup(d, 300); // connect deadline 300 ms, disconnect timeout 200 ms
+    await sup.start();
+    d.hangDisconnect = true;
+    let open!: () => void;
+    d.connectGate = new Promise<void>((r) => (open = r));
+    const budget = sup.resetBoundMs();
+    expect(budget).toBe(300);
+    const r = await settleWithin(sup.resetSession("hang both"), 2000);
+    expect(r.value).toBe(false);
+    expect(r.elapsed).toBeLessThanOrEqual(budget + 120); // the reset itself is over when its bound is
+    expect(sup.status().state).toBe("failed");
+    // A connect that lands AFTER the budget is never made active (the late-connect reaper closes it).
+    const before = d.disconnectCalls;
+    open();
+    await new Promise((res) => setTimeout(res, 30));
+    expect(d.disconnectCalls).toBeGreaterThan(before);
+    await sup.stop();
+  });
+
+  it("fix scan (1) — a disconnect timeout LONGER than the budget still cannot push the reset past its budget", async () => {
+    const d = new SessionDriver();
+    const sup = makeSup(d, 300, 2000);
+    await sup.start();
+    d.hangDisconnect = true;
+    d.connectGate = never<void>();
+    const r = await settleWithin(sup.resetSession("long disconnect"), 3000);
+    expect(r.value).toBe(false);
+    expect(r.elapsed).toBeLessThanOrEqual(300 + 120);
+    d.hangDisconnect = false;
     await sup.stop();
   });
 
@@ -182,6 +219,24 @@ describe("B3 — otManager.resetAdapterSession (existing reconnect paths)", () =
     expect(ot.getOtAdapterStatus(20)?.state).toBe("active");
     expect(ot.adapterSessionResetBoundMs(20)).toBe(ot.effectiveAdapterStartTimeoutMs({}));
     expect(await ot.resetAdapterSession(999, "x")).toMatchObject({ reset: false, via: "none" });
+    await ot.stopOt();
+  });
+
+  it("★ fix scan (1) COOPERATIVE legacy: disconnect AND connect hang ⇒ resetAdapterSession gives up within the budget it is given", async () => {
+    vi.stubEnv("OT_GATEWAY_ENABLED", "true");
+    const d = new SessionDriver();
+    vi.doMock("./deviceAdapter", () => ({ loadEnabledAdapters: async () => [fixture(21, d)] }));
+    vi.doMock("./ingest", () => ({ ingestSample: async () => undefined }));
+    const ot = await import("./otManager");
+    expect(await ot.startOt()).toBe(true);
+    d.hangDisconnect = true;
+    d.connectGate = never<void>();
+    const r = await settleWithin(ot.resetAdapterSession(21, "hang both", 400), 3000);
+    expect(r.settled).toBe(true);
+    expect(r.value).toMatchObject({ reset: false, via: "legacy" });
+    expect(r.elapsed).toBeLessThanOrEqual(400 + 150);
+    expect(ot.getActiveDriver(21)).toBeUndefined();
+    d.hangDisconnect = false;
     await ot.stopOt();
   });
 
