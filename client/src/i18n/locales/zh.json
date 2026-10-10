@@ -634,7 +634,8 @@
   },
   "entityPicker": {
     "createNew": "新建",
-    "invalid": "不存在"
+    "invalid": "不存在",
+    "narrowSearch": "结果多于此列表所示——请输入以缩小搜索范围。"
   },
   "deviceHub": {
     "title": "设备",

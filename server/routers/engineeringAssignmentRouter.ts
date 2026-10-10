@@ -270,21 +270,54 @@ export const engineeringAssignmentRouter = router({
   /**
    * Roster "Giao cho": người dùng ĐANG HOẠT ĐỘNG xem được trang đích (`viewModules`) — CHỈ `{id, name}`.
    * Chỉ người GIAO được mới đọc được (cùng cổng với `assign`, khuôn `user.assignableTechnicians`).
+   *
+   * doc 81 Đợt 4 Task C6 — vượt trần 300:
+   *   • `search`: lọc theo TÊN (`ILIKE`, không phân biệt hoa thường) với `%`, `_`, `\` được THOÁT ⇒ người dùng gõ
+   *     chữ nào tìm đúng chữ đó (không phải ký tự đại diện). Chỉ tên — đúng thứ roster vẫn trả, không dò email.
+   *   • `selectedId`: người đang được chọn LUÔN có trong kết quả kể cả khi ngoài trần / ngoài search — NHƯNG chỉ khi
+   *     người đó qua CÙNG bộ lọc (đang hoạt động + xem được trang): một id tuỳ ý không được biến roster thành chỗ dò
+   *     tên người ngoài (fail-closed; người được giao đã mất quyền vẫn hiện ở client từ hàng phân công).
+   *   • `truncated`: còn người hợp lệ ngoài trần ⇒ true (đọc trần + 1) — UI nói "gõ để thu hẹp".
    */
   assignableUsers: protectedProcedure
-    .input(z.object({ entityType: entityTypeInput }))
+    .input(z.object({
+      entityType: entityTypeInput,
+      search: z.string().trim().max(100).optional(),
+      selectedId: z.number().int().positive().optional(),
+    }))
     .query(async ({ ctx, input }) => {
       const type = input.entityType;
       await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
       const canView = ASSIGNABLE[type].viewModules.map((m) => permissionHeldSql(users.id, users.role, m, "canView"));
-      return d
+      const hopLe = [eq(users.isActive, true), ...canView];
+      const search = input.search?.trim() ?? "";
+      const timTen = search
+        ? sql`coalesce(${users.name}, '') ILIKE ${`%${thoatLike(search)}%`} ESCAPE '\\'`
+        : undefined;
+      const rows = await d
         .select({ id: users.id, name: users.name })
         .from(users)
-        .where(and(eq(users.isActive, true), ...canView))
+        .where(and(...hopLe, timTen))
         .orderBy(asc(sql`coalesce(${users.name}, '')`), asc(users.id))
-        .limit(ROSTER_LIMIT);
+        .limit(ROSTER_LIMIT + 1);
+      const truncated = rows.length > ROSTER_LIMIT;
+      const list = truncated ? rows.slice(0, ROSTER_LIMIT) : rows;
+      if (input.selectedId != null && !list.some((u) => u.id === input.selectedId)) {
+        const [sel] = await d
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .where(and(eq(users.id, input.selectedId), ...hopLe))
+          .limit(1);
+        if (sel) list.unshift(sel);
+      }
+      return { users: list, truncated };
     }),
 });
 
-export const _internal = { canViewTarget, ROSTER_LIMIT };
+/** doc 81 Đợt 4 C6 — thoát ký tự đại diện của LIKE (`\` trước, rồi `%`, `_`) cho `ESCAPE '\'`. */
+function thoatLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+export const _internal = { canViewTarget, ROSTER_LIMIT, thoatLike };

@@ -634,7 +634,8 @@
   },
   "entityPicker": {
     "createNew": "Create new",
-    "invalid": "Does not exist"
+    "invalid": "Does not exist",
+    "narrowSearch": "More results than this list shows — type to narrow your search."
   },
   "deviceHub": {
     "title": "Devices",

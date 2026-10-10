@@ -177,7 +177,7 @@ vi.mock("@/lib/trpc", () => {
         return q(srv.snap.versions.filter((v) => v.code === input?.code).sort((a, b) => Number(b.version) - Number(a.version)), enabled);
       if (path === "machineRecipe.recipes.genealogy") return q([], enabled);
       if (path === "engineering.assignments") return q(srv.assignments, enabled);
-      if (path === "engineering.assignableUsers") return q([{ id: 31, name: "Ky su A" }, { id: 32, name: "Ky su B" }], enabled);
+      if (path === "engineering.assignableUsers") return q({ users: [{ id: 31, name: "Ky su A" }, { id: 32, name: "Ky su B" }], truncated: false }, enabled);
       if (path === "machineRecipe.machines.list") return q(srv.machines, enabled);
       if (path === "machineRecipe.deployments.list") {
         const rows = input?.machineId != null ? srv.snap.deployments.filter((d) => d.machineId === input.machineId) : srv.snap.deployments;

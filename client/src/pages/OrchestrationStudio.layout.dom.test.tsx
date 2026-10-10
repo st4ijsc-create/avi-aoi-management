@@ -108,7 +108,7 @@ vi.mock("@/lib/trpc", () => {
         if (key === "fleet.robotPositions") return q(key, srv.robots);
         // doc 81 Đợt 3 Task 4 — phân công run đang hiệu lực + roster.
         if (key === "engineering.assignments") return q(key, [{ entityId: 30, assigneeUserId: 81, assigneeName: "Ky su Run" }]);
-        if (key === "engineering.assignableUsers") return q(key, [{ id: 81, name: "Ky su Run" }]);
+        if (key === "engineering.assignableUsers") return q(key, { users: [{ id: 81, name: "Ky su Run" }], truncated: false });
         return q(key, undefined);
       },
       useMutation: (opts: MutOpts = {}) => ({

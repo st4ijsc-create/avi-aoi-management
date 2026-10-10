@@ -91,7 +91,7 @@ vi.mock("@/lib/trpc", () => {
       }
       if (router === "productModel" && name === "list") return q([{ id: 5, code: "MODEL-A", name: "Model A" }], enabled);
       if (router === "engineering" && name === "assignments") return q(srv.assignments, enabled);
-      if (router === "engineering" && name === "assignableUsers") return q([{ id: 21, name: "Ky su Duyet" }, { id: 22, name: "Ky su Thu Hai" }], enabled);
+      if (router === "engineering" && name === "assignableUsers") return q({ users: [{ id: 21, name: "Ky su Duyet" }, { id: 22, name: "Ky su Thu Hai" }], truncated: false }, enabled);
       return q(undefined, enabled);
     },
     useMutation: (hookOpts: { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void } = {}) => ({

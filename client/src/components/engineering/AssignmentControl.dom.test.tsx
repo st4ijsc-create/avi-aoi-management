@@ -6,7 +6,7 @@
 // không combobox, không gọi roster; thành công ⇒ làm mới `engineering.assignments` + `oversight.pendingSummary`;
 // CONFLICT ⇒ báo lỗi + làm mới. EntityPicker THẬT (Popover + cmdk).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import vi_ from "@/i18n/locales/vi.json";
@@ -36,6 +36,7 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
 
 const srv = vi.hoisted(() => ({
   roster: [] as Array<{ id: number; name: string | null }>,
+  truncated: false,
   rosterCalls: [] as unknown[],
   assign: [] as unknown[],
   unassign: [] as unknown[],
@@ -66,7 +67,8 @@ vi.mock("@/lib/trpc", () => {
         assignableUsers: {
           useQuery: (input: unknown, opts: { enabled?: boolean }) => {
             if (opts?.enabled !== false) srv.rosterCalls.push(input);
-            return { data: opts?.enabled === false ? undefined : srv.roster, isLoading: false };
+            // doc 81 Đợt 4 C6 — hợp đồng mới: { users, truncated }.
+            return { data: opts?.enabled === false ? undefined : { users: srv.roster, truncated: srv.truncated }, isLoading: false };
           },
         },
         assign: { useMutation: mutation("assign") },
@@ -91,6 +93,7 @@ beforeAll(async () => {
 beforeEach(() => {
   srv.roster = [{ id: 11, name: "Nguyen Van A" }, { id: 12, name: "Tran Thi B" }];
   srv.rosterCalls = [];
+  srv.truncated = false;
   srv.assign = [];
   srv.unassign = [];
   srv.invalidated = [];
@@ -272,3 +275,44 @@ describe("i18n — khoá engineeringAssign.* / Hub / lỗi có đủ vi/en/zh", 
   });
 });
 
+describe("doc 81 Đợt 4 C6 — roster vượt trần: tìm trên server (debounce), selectedId, truncated", () => {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const searchBox = () => screen.getByPlaceholderText(S("engineeringAssign.search"));
+
+  it("★ gõ tìm ⇒ roster hỏi lại server với search SAU ~250 ms (không mỗi phím); xoá ⇒ hỏi lại không search", async () => {
+    render(<AssignmentControl entityType="ecn" entityId={5} assignment={undefined} canAssign />);
+    fireEvent.click(combo());
+    fireEvent.change(searchBox(), { target: { value: "Tr" } });
+    fireEvent.change(searchBox(), { target: { value: "Tran" } });
+    await wait(100);
+    expect(srv.rosterCalls.some((c) => (c as { search?: string }).search)).toBe(false);
+    await act(async () => { await wait(250); });
+    const searched = srv.rosterCalls.filter((c) => (c as { search?: string }).search);
+    expect(searched.at(-1)).toMatchObject({ entityType: "ecn", search: "Tran" });
+    expect(new Set(searched.map((c) => (c as { search: string }).search))).toEqual(new Set(["Tran"]));
+    fireEvent.change(searchBox(), { target: { value: "" } });
+    await act(async () => { await wait(300); });
+    expect((srv.rosterCalls.at(-1) as { search?: string }).search).toBeUndefined();
+  });
+
+  it("★ server báo truncated ⇒ dòng 'gõ để thu hẹp' trong danh sách; không truncated ⇒ không có", () => {
+    srv.truncated = true;
+    render(<AssignmentControl entityType="ecn" entityId={5} assignment={undefined} canAssign />);
+    fireEvent.click(combo());
+    expect(screen.getByRole("note")).toHaveTextContent(S("entityPicker.narrowSearch"));
+    cleanup();
+    srv.truncated = false;
+    render(<AssignmentControl entityType="ecn" entityId={5} assignment={undefined} canAssign />);
+    fireEvent.click(combo());
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("★ đang giao cho #99 ⇒ roster hỏi kèm selectedId 99 (người đang chọn luôn có trong danh sách server trả)", () => {
+    render(<AssignmentControl entityType="recipe" entityId={9} assignment={{ entityId: 9, assigneeUserId: 99, assigneeName: "Z" }} canAssign />);
+    expect(srv.rosterCalls.at(-1)).toMatchObject({ entityType: "recipe", selectedId: 99 });
+  });
+
+  it("khoá entityPicker.narrowSearch có ở vi/en/zh", () => {
+    for (const src of [vi_, en_, zh_]) expect(S("entityPicker.narrowSearch", src)).toBeTruthy();
+  });
+});
