@@ -45,7 +45,7 @@ vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }
 vi.mock("../../../drizzle/schema", () => ({
   aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" }, tool: { __name: "tool" } },
   deviceAdapters: { __table: "device_adapters", id: { __name: "id" }, machineId: { __name: "machineId" }, isEnabled: { __name: "isEnabled" } },
-  deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" } },
+  deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" }, isEnabled: { __name: "isEnabled" }, writable: { __name: "writable" }, stopValue: { __name: "stopValue" } },
   commandLog: { __table: "command_log", id: { __name: "id" }, idempotencyKey: { __name: "idempotencyKey" }, status: { __name: "status" } },
   interlockRules: { __table: "interlock_rules", id: { __name: "id" } },
   interlockEvents: { __table: "interlock_events", id: { __name: "id" } },
@@ -80,6 +80,8 @@ const D = vi.hoisted(() => ({
   sticky: new Map<string, unknown>(),
   /** the device answers reads with NO sample (unverifiable). */
   readEmpty: false,
+  /** fingerprint the running connection reports (= the adapter row's ⇒ pinned stops are honoured). */
+  fingerprint: undefined as string | undefined,
   /** tag ⇒ behaviour of its write: "hang" (only a session close ends it), number = answer after N ms, default ok now. */
   plan: new Map<string, "hang" | number>(),
   reset: { mode: "ok" as "ok" | "fail" | "hang", calls: 0, boundMs: 300 },
@@ -125,7 +127,7 @@ const driver = {
 };
 vi.mock("./otManager", () => ({
   getActiveDriver: vi.fn(() => driver),
-  getActiveConnectionFingerprint: vi.fn(() => undefined),
+  getActiveConnectionFingerprint: vi.fn(() => D.fingerprint),
   adapterSessionResetBoundMs: vi.fn(() => D.reset.boundMs),
   resetAdapterSession: vi.fn(async () => {
     D.reset.calls += 1;
@@ -136,7 +138,8 @@ vi.mock("./otManager", () => ({
   }),
 }));
 
-import { dispatch, _resetAdapterCommandQueuesForTests, OT_TIMED_OUT_WRITE_GRACE_MS } from "./commandDispatcher";
+import { dispatch, _resetAdapterCommandQueuesForTests, _adapterCommandQueueDepthForTests, OT_TIMED_OUT_WRITE_GRACE_MS } from "./commandDispatcher";
+import { adapterTargetFingerprint } from "./adapterTarget";
 
 const TIMEOUT_MS = 300;
 /** QĐ-4b — the ruling's grace (the exported constant is asserted equal to it below). */
@@ -216,10 +219,13 @@ beforeEach(() => {
   process.env.OT_CMD_SERIALIZE_ENABLED = "true";
   process.env.OT_CONTROL_TIMEOUT_MS = String(TIMEOUT_MS);
   delete process.env.OT_READBACK_ENABLED;
-  adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });
+  const adapterRow = { id: 10, machineId: 5, code: "A10", isEnabled: true, protocol: "modbus", endpoint: "tcp://127.0.0.1:1", connectionOptions: null };
+  adapters.push(adapterRow);
+  D.fingerprint = adapterTargetFingerprint({ protocol: adapterRow.protocol, endpoint: adapterRow.endpoint, machineId: adapterRow.machineId, connectionOptions: null });
   tags.push({ id: 100, adapterId: 10, tagKey: "cmd_speed", address: "ns=1;s=Speed", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
   tags.push({ id: 101, adapterId: 10, tagKey: "cmd_stop", address: "ns=1;s=Stop", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
-  tags.push({ id: 102, adapterId: 10, tagKey: "cmd_run", address: "ns=1;s=Run", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
+  // cmd_run carries a STOP PIN (false) ⇒ a "stop" writing cmd_run=false is a PINNED stop (Đợt 1D).
+  tags.push({ id: 102, adapterId: 10, tagKey: "cmd_run", address: "ns=1;s=Run", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true, stopValue: false });
   errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
@@ -329,65 +335,153 @@ describe("B3 — a STOP behind a timed-out write (QĐ-4b, grace = 1000 ms)", () 
   });
 });
 
-describe("B3 fix scan (3) — the abandoned write lands AFTER the STOP on the device", () => {
+describe("B3 fix scan (3) + scan 2 — the abandoned write lands AFTER the STOP on the device", () => {
   function runThenStop() {
     const t0 = Date.now();
     const pRun = dispatch(input("cmd_run", "start", `fx-run-${actSeq}`, true));
     return { t0, pRun };
   }
-  async function stopAfter() {
+  /** cmd_run is PINNED (stop value false) ⇒ this is a pinned STOP. NB: `await stopAfter()` resolves when the STOP is DONE. */
+  async function stopAfter(tag = "cmd_run") {
     expect(await until(() => D.log.length === 1, 2000)).toBe(true);
-    return dispatch(input("cmd_run", "stop", `fx-stop-${actSeq}`, false));
+    return dispatch(input(tag, "stop", `fx-stop-${actSeq}`, false));
   }
+  const STOP_DONE = TIMEOUT_MS + GRACE + 300 + 700;
 
-  it("★ old write lands 300 ms after the session reset ⇒ the STOP is re-asserted (device ends stopped), audited; the STOP answer is not delayed", async () => {
+  it("★ old write lands 300 ms after the session reset ⇒ the pinned STOP is re-asserted (device ends stopped), audited; the STOP answer is not delayed", async () => {
     D.plan.set("cmd_run=true", "hang");
     D.landLateMs = 300;
     const { t0, pRun } = runThenStop();
     const pStop = await stopAfter();
     expect((await within(pRun, TIMEOUT_MS + 700)).status).toBe("timeout");
-    const rStop = await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700);
+    const rStop = await within(pStop, STOP_DONE);
     const answeredAt = Date.now() - t0;
     expect(rStop.status).toBe("acked");
+    expect(rStop.pinnedStop).toBe(true);
     const stopWrite = D.log.find((w) => w.tag === "cmd_run" && w.session === 2)!;
-    expect(answeredAt - (stopWrite.start - t0)).toBeLessThan(150); // answered right after its own write — no guard wait (L-7)
+    expect(answeredAt - (stopWrite.start - t0)).toBeLessThan(150); // answered right after its own write (L-7)
     expect(await until(() => D.device.get("cmd_run") === true, 1500)).toBe(true); // the old write DID land after the STOP
     expect(await until(() => audit.events.some((e) => e.action === "ot_stop_reasserted"), 2500)).toBe(true);
-    expect(D.device.get("cmd_run")).toBe(false); // re-asserted: stopped again
+    expect(D.device.get("cmd_run")).toBe(false);
     const ev = audit.events.find((e) => e.action === "ot_stop_reasserted")!;
-    expect(ev.after).toMatchObject({ adapterId: 10, attempt: 1, drift: [{ tagKey: "cmd_run", expected: false, actual: true }] });
+    expect(ev.after).toMatchObject({ adapterId: 10, attempt: 1, outcome: "written", drift: [{ tagKey: "cmd_run", expected: false, actual: true }] });
   });
 
-  it("no late landing ⇒ the guard reads the STOP value and does nothing (no extra write, no audit)", async () => {
+  it("★ scan 2 (2): the old write lands 4 s later — past the old 2 s window — and is still caught (watch lasts the risk TTL)", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    D.landLateMs = 4000;
+    runThenStop();
+    const pStop = await stopAfter();
+    expect((await within(pStop, STOP_DONE)).status).toBe("acked");
+    expect(await until(() => D.device.get("cmd_run") === true, 5000)).toBe(true);
+    expect(await until(() => audit.events.some((e) => e.action === "ot_stop_reasserted"), 2000)).toBe(true);
+    expect(D.device.get("cmd_run")).toBe(false);
+  }, 20_000);
+
+  it("no late landing ⇒ the watch reads the STOP value and does nothing (no extra write, no audit)", async () => {
     D.plan.set("cmd_run=true", "hang");
     runThenStop();
     const pStop = await stopAfter();
-    expect((await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700)).status).toBe("acked");
-    await new Promise((r) => setTimeout(r, 2300)); // the whole guard window
+    expect((await within(pStop, STOP_DONE)).status).toBe("acked");
+    await new Promise((r) => setTimeout(r, 1500));
     expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(2); // old + STOP only
-    expect(audit.events.filter((e) => String(e.action).startsWith("ot_stop_reassert"))).toEqual([]);
+    expect(audit.events.filter((e) => String(e.action).startsWith("ot_stop_"))).toEqual([]);
+  });
+
+  it("★ scan 2 (1): reads that return NOTHING ⇒ a pinned STOP is re-asserted anyway (unknown ≠ OK), audited `ot_stop_reassert_unverified`, bounded to 3", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    runThenStop();
+    const pStop = await stopAfter();
+    expect((await within(pStop, STOP_DONE)).status).toBe("acked");
+    D.readEmpty = true;
+    expect(await until(() => audit.events.some((e) => e.action === "ot_stop_reassert_exhausted"), 3000)).toBe(true);
+    expect(audit.events.filter((e) => e.action === "ot_stop_reassert_unverified")).toHaveLength(3);
+    expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(2 + 3);
   });
 
   it("the old write keeps winning ⇒ at most 3 re-asserts, then ot_stop_reassert_exhausted (bounded)", async () => {
     D.plan.set("cmd_run=true", "hang");
     runThenStop();
     const pStop = await stopAfter();
-    expect((await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700)).status).toBe("acked");
+    expect((await within(pStop, STOP_DONE)).status).toBe("acked");
     D.sticky.set("cmd_run", true);
     expect(await until(() => audit.events.some((e) => e.action === "ot_stop_reassert_exhausted"), 3000)).toBe(true);
     expect(audit.events.filter((e) => e.action === "ot_stop_reasserted")).toHaveLength(3);
     expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(2 + 3);
   });
 
-  it("reads that return NO sample prove nothing ⇒ no re-assert (only a positive mismatch triggers one)", async () => {
+  it("★ scan 2 (3): a NEWER STOP is not held behind the watch — it writes at once", async () => {
     D.plan.set("cmd_run=true", "hang");
     runThenStop();
     const pStop = await stopAfter();
-    expect((await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700)).status).toBe("acked");
-    D.readEmpty = true;
-    await new Promise((r) => setTimeout(r, 2300));
+    expect((await within(pStop, STOP_DONE)).status).toBe("acked");
+    const t1 = Date.now();
+    const r2 = await within(dispatch(input("cmd_run", "stop", `fx-stop2-${actSeq}`, false)), 1000);
+    expect(r2.status).toBe("acked");
+    expect(Date.now() - t1).toBeLessThan(300);
+  });
+
+  it("★ scan 2 (3): the operator's NEWER command cancels the watch — the STOP is never re-asserted over it (R-2-n)", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    runThenStop();
+    const pStop = await stopAfter();
+    expect((await within(pStop, STOP_DONE)).status).toBe("acked");
+    D.plan.delete("cmd_run=true");
+    const t1 = Date.now();
+    const rStart = await within(dispatch(input("cmd_run", "start", `fx-restart-${actSeq}`, true)), 1000);
+    expect(rStart.status).toBe("acked");
+    expect(Date.now() - t1).toBeLessThan(300); // not held behind the watch either
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(D.device.get("cmd_run")).toBe(true); // the operator's start stands
+    expect(audit.events.filter((e) => String(e.action).startsWith("ot_stop_"))).toEqual([]);
+  });
+
+  it("★ scan 2 (3): a command accepted while the STOP was STILL IN FLIGHT (before its watch existed) also wins — no re-assert over it", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    D.plan.set("cmd_run=false", 250); // the STOP itself takes 250 ms on the new session (< its 300 ms timeout)
+    runThenStop();
+    expect(await until(() => D.log.length === 1, 2000)).toBe(true);
+    // NOT `await stopAfter()` — awaiting an async helper that returns the dispatch promise would wait for the STOP itself.
+    const pStop = dispatch(input("cmd_run", "stop", `fx-stop-${actSeq}`, false));
+    expect(await until(() => D.log.filter((w) => w.tag === "cmd_run").length === 2, STOP_DONE)).toBe(true); // STOP in flight
+    D.plan.delete("cmd_run=true");
+    const pStart = dispatch(input("cmd_run", "start", `fx-inflight-start-${actSeq}`, true)); // accepted, waits for the slot
+    expect(await until(() => _adapterCommandQueueDepthForTests(10) === 2, 200)).toBe(true); // start ACCEPTED while the STOP is in flight
+    expect(D.log.find((w) => w.tag === "cmd_run" && w.session === 2)?.end).toBeUndefined();
+    expect((await within(pStop, 1500)).status).toBe("acked");
+    expect((await within(pStart, 1500)).status).toBe("acked");
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(D.device.get("cmd_run")).toBe(true); // the operator's later start stands
+    expect(audit.events.filter((e) => String(e.action).startsWith("ot_stop_"))).toEqual([]);
+  });
+
+  it("★ scan 2 (3): a re-assert re-checks the stop pins — pin removed after the STOP ⇒ refused, audited, nothing written", async () => {
+    D.plan.set("cmd_run=true", "hang");
+    runThenStop();
+    const pStop = await stopAfter();
+    expect((await within(pStop, STOP_DONE)).status).toBe("acked");
+    tags.find((t) => t.tagKey === "cmd_run")!.stopValue = null;
+    D.sticky.set("cmd_run", true);
+    expect(await until(() => audit.events.some((e) => e.action === "ot_stop_reassert_refused"), 2000)).toBe(true);
+    const ref = audit.events.find((e) => e.action === "ot_stop_reassert_refused")!;
+    expect(String(ref.after.outcome)).toMatch(/^refused:/);
+    expect(String(ref.after.outcome)).not.toMatch(/pin_load_failed|connection_stale/); // refused BECAUSE the pin is gone
     expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(2);
-    expect(audit.events.filter((e) => String(e.action).startsWith("ot_stop_reassert"))).toEqual([]);
+  });
+
+  it("an UNPINNED stop is never re-written: drift ⇒ audited once `ot_stop_overridden_unpinned`", async () => {
+    D.plan.set("cmd_speed=true", "hang");
+    const pOld = dispatch(input("cmd_speed", "set_speed", `fx-old-${actSeq}`, true));
+    const pStop = await stopAfter("cmd_speed"); // cmd_speed has no stop pin
+    expect((await within(pOld, TIMEOUT_MS + 700)).status).toBe("timeout");
+    const r = await within(pStop, STOP_DONE);
+    expect(r.status).toBe("acked");
+    expect(r.pinnedStop).toBeUndefined();
+    D.sticky.set("cmd_speed", true);
+    expect(await until(() => audit.events.some((e) => e.action === "ot_stop_overridden_unpinned"), 2000)).toBe(true);
+    await new Promise((res) => setTimeout(res, 600));
+    expect(audit.events.filter((e) => e.action === "ot_stop_overridden_unpinned")).toHaveLength(1);
+    expect(D.log.filter((w) => w.tag === "cmd_speed")).toHaveLength(2);
   });
 
   it("a STOP with NO abandoned write before it is not watched (no extra reads/writes)", async () => {

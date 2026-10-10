@@ -220,17 +220,38 @@ export const OT_TIMED_OUT_WRITE_GRACE_MS = 1000;
 export const OT_SESSION_RESET_SLACK_MS = 250;
 
 /**
- * doc 81 Đợt 4 Task B3 fix scan (3) — resetting the session does NOT recall a request already on the wire: the device
- * may still apply the old (timed-out) write AFTER a STOP sent on the new session (re-energising after a stop). For
- * OT_STALE_WRITE_RISK_TTL_MS after such a write was abandoned, a STOP to that adapter is WATCHED: its tags are read back
- * every OT_STOP_REASSERT_POLL_MS for OT_STOP_REASSERT_WINDOW_MS, and a read that positively shows a non-stop value makes
- * the dispatcher re-write the same STOP (at most OT_STOP_REASSERT_MAX times), each audited. The watch runs AFTER the
- * STOP's first write and its answer (it holds only the queue slot) — it never delays or blocks the STOP itself (L-7).
+ * doc 81 Đợt 4 Task B3 fix scan (3) + fix scan 2 — resetting the session does NOT recall a request already on the wire:
+ * the device may still apply the old (timed-out) write AFTER a STOP sent on the new session (re-energising after a
+ * stop). For OT_STALE_WRITE_RISK_TTL_MS after such a write was abandoned, a STOP to that adapter is WATCHED for the
+ * WHOLE remaining risk window (fix scan 2 (2): nothing proves the old request cannot land earlier): its tags are read
+ * back every OT_STOP_REASSERT_POLL_MS. See startStopWatch for what a drift / an unreadable read does. The watch is
+ * DETACHED: it holds no queue slot and never delays the STOP or any later command (fix scan 2 (3)); any newer command
+ * accepted for the adapter cancels it at once.
  */
 export const OT_STALE_WRITE_RISK_TTL_MS = 10_000;
-export const OT_STOP_REASSERT_WINDOW_MS = 2000;
 export const OT_STOP_REASSERT_POLL_MS = 200;
 export const OT_STOP_REASSERT_MAX = 3;
+
+/** B3 fix scan 2 (3) — the running STOP watch of an adapter (cancelled by any newer accepted command). */
+const stopWatches = new Map<number, { cancelled: boolean }>();
+/**
+ * B3 fix scan 2 (3) — per-adapter count of commands ACCEPTED by the queue. A STOP's watch remembers the count at the STOP's
+ * own acceptance; any later acceptance (even one queued while the STOP was still in flight, before its watch existed)
+ * ends the watch — a re-assert never lands over a command the operator issued after the STOP (R-2-n).
+ */
+const acceptSeq = new Map<number, number>();
+function bumpAcceptSeq(adapterId: number): number {
+  const n = (acceptSeq.get(adapterId) ?? 0) + 1;
+  acceptSeq.set(adapterId, n);
+  return n;
+}
+function cancelStopWatch(adapterId: number): void {
+  const w = stopWatches.get(adapterId);
+  if (w) {
+    w.cancelled = true;
+    stopWatches.delete(adapterId);
+  }
+}
 
 /** B3 fix scan (3) — adapters with an abandoned write whose fate is unknown (until = epoch ms). */
 const staleWriteRisk = new Map<number, { until: number; idempotencyKey: string | null; tagKeys: string[] }>();
@@ -455,6 +476,9 @@ const adapterCommandQueues = new Map<number, AdapterCommandQueue>();
 export function _resetAdapterCommandQueuesForTests(): void {
   adapterCommandQueues.clear();
   staleWriteRisk.clear();
+  for (const w of stopWatches.values()) w.cancelled = true;
+  stopWatches.clear();
+  acceptSeq.clear();
 }
 
 /** Chỉ dùng trong test — số adapter đang có entry hàng đợi (0 ⇔ mọi hàng đã được dọn). */
@@ -1319,6 +1343,8 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── G1.9 — the write+verify body, extracted UNCHANGED so it can run either
   //    immediately (flag OFF — prior behaviour) or under the per-adapter queue.
   //    It never throws for expected failure modes (driver errors are caught).
+  /** B3 fix scan 2 — this command's acceptance number (set right after the queue accepted it, before its write resumes). */
+  let myAcceptSeq = 0;
   const executeWriteAndVerify = async (): Promise<{ sentAt: Date; timedOut: boolean; outcomes: Outcome[]; slotHold?: Promise<void> }> => {
     const sentAt = new Date();
 
@@ -1436,15 +1462,16 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       }
     }
 
-    // B3 fix scan (3) — a STOP after an abandoned write whose fate is unknown: watch it and re-assert it if the old write
-    // lands later. Holds the queue slot only; the STOP's answer is returned now (L-7).
-    let stopGuard: Promise<void> | undefined;
-    if (!slotHold && isCmdSerializeEnabled() && isStopCommandType(input.commandType) && staleWriteRiskActive(input.adapterId)) {
+    // B3 fix scan (3) / fix scan 2 — a STOP after an abandoned write whose fate is unknown: a DETACHED watch (no queue
+    // slot, the STOP's answer is returned now — L-7) re-asserts it if the old write lands later.
+    if (!timedOut && isCmdSerializeEnabled() && isStopCommandType(input.commandType) && staleWriteRiskActive(input.adapterId)) {
       const acked = outcomes.filter((o) => o.ok).map((o) => o.idx);
       if (acked.length > 0) {
-        stopGuard = guardStopAgainstStaleWrite(
+        startStopWatch(
           input,
           driver,
+          myAcceptSeq,
+          stopCls.pinnedStop === true,
           acked.map((i) => driverWrites[i]),
           acked.map((i) => ({
             tagKey: resolved[i].write.tagKey,
@@ -1458,8 +1485,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         );
       }
     }
-    const hold = slotHold ?? stopGuard;
-    return { sentAt, timedOut, outcomes, ...(hold ? { slotHold: hold } : {}) };
+    return { sentAt, timedOut, outcomes, ...(slotHold ? { slotHold } : {}) };
   };
 
   // ── (5c) G1.9 — PER-ADAPTER SERIALIZATION (flag OT_CMD_SERIALIZE_ENABLED,
@@ -1491,6 +1517,10 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       );
       return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids, ...(stopCls.pinnedStop ? { pinnedStop: true } : {}) };
     }
+    // B3 fix scan 2 (3) — a newer ACCEPTED command (a newer STOP, or the operator's next intent) ends any STOP watch of this
+    // adapter at once: a re-assert must never override a later command (R-2-n), and a newer STOP never waits on a watch.
+    cancelStopWatch(input.adapterId);
+    myAcceptSeq = bumpAcceptSeq(input.adapterId);
     const queued = await enq.result;
     if (isSuperseded(queued)) {
       // R-1E-a — cancelled while WAITING: never reached driver.writeTags. RESULT row of the intent, like BUSY.
@@ -1650,67 +1680,143 @@ async function holdSlotAfterTimedOutWrite(
 }
 
 /**
- * doc 81 Đợt 4 Task B3 fix scan (3) — watch a STOP sent after an abandoned write (see OT_STALE_WRITE_RISK_TTL_MS): read
- * its tags back every OT_STOP_REASSERT_POLL_MS for OT_STOP_REASSERT_WINDOW_MS; a read that POSITIVELY shows a value other
- * than the STOP's (the old write landed after it) ⇒ write the same STOP again (≤ OT_STOP_REASSERT_MAX, each under the
- * command timeout) and audit "ot_stop_reasserted"; still drifting after the last re-assert ⇒ audit
- * "ot_stop_reassert_exhausted" + log. A failed/empty read proves nothing and triggers nothing. Runs after the STOP's
- * first write and answer — holds only the queue slot, at most WINDOW + 2 × timeoutMs. Never rejects.
+ * doc 81 Đợt 4 Task B3 fix scan (3) + fix scan 2 — the STOP WATCH after an abandoned write (see OT_STALE_WRITE_RISK_TTL_MS).
+ *   • Runs DETACHED until the adapter's stale-write risk expires (the whole remaining window, not a fixed 2 s); holds
+ *     no queue slot — never delays the STOP's answer, a newer STOP or any later command (fix scan 2 (3)).
+ *   • Cancelled at once by any newer command ACCEPTED for the adapter (dispatchCore, before it can write) — a re-assert
+ *     never overrides the operator's later intent (R-2-n).
+ *   • Every poll reads back ALL the STOP's acked tags.
+ *   • PINNED stop (proven energy-reducing, Đợt 1D): a read that POSITIVELY shows another value ⇒ re-assert, audit
+ *     "ot_stop_reasserted"; a read that FAILS or misses a tag ⇒ re-assert too (fix scan 2 (1): unknown is not OK — the
+ *     safe direction for a pinned stop is to write it again), audit "ot_stop_reassert_unverified". Each re-assert goes
+ *     through the adapter queue (behind anything already queued, so a newer command still runs after it — and cancels
+ *     the watch before it) and RE-CHECKS the stop pins (classifyOtStop on freshly loaded pins) and the running connection
+ *     exactly like a pinned STOP; not pinned any more ⇒ refused, audited "ot_stop_reassert_refused". At most
+ *     OT_STOP_REASSERT_MAX re-asserts, then "ot_stop_reassert_exhausted" + log.
+ *   • NOT pinned (values not proven energy-reducing): never re-written (that would be a new actuation path); a positive
+ *     drift is audited once ("ot_stop_overridden_unpinned") + logged for the operator.
+ * Never rejects.
  */
-async function guardStopAgainstStaleWrite(
+function startStopWatch(
   input: DispatchInput,
   driver: { readTags: (t: OtTagAddress[]) => Promise<Array<{ tagKey: string; value: unknown }>>; writeTags: (w: any[]) => Promise<unknown> },
+  stopAcceptSeq: number,
+  pinned: boolean,
   writes: Array<{ tagKey: string; value: unknown }>,
   readTags: OtTagAddress[],
   timeoutMs: number,
   ledger: { intentIds: number[]; confirmedBy: number },
-): Promise<void> {
-  try {
-    const tol = readbackFloatTolerance();
-    const end = Date.now() + OT_STOP_REASSERT_WINDOW_MS;
-    let reasserts = 0;
-    while (Date.now() < end) {
-      await new Promise((r) => setTimeout(r, OT_STOP_REASSERT_POLL_MS));
-      let samples: Array<{ tagKey: string; value: unknown }>;
-      try {
-        samples = await withDeadline(Promise.resolve(driver.readTags(readTags)), timeoutMs, `adapter ${input.adapterId} STOP guard read`);
-      } catch {
-        continue; // unverifiable this round — proves nothing
-      }
-      const drift = readTags
-        .map((t) => {
-          const s = Array.isArray(samples) ? samples.find((x) => x.tagKey === t.tagKey) : undefined;
+): void {
+  cancelStopWatch(input.adapterId);
+  // A command accepted after this STOP (possibly while the STOP was still in flight) already owns the adapter: no watch.
+  if ((acceptSeq.get(input.adapterId) ?? 0) !== stopAcceptSeq) return;
+  const token = { cancelled: false };
+  stopWatches.set(input.adapterId, token);
+  const risk = staleWriteRisk.get(input.adapterId);
+  const end = risk ? risk.until : Date.now();
+  const staleTagKeys = risk ? risk.tagKeys.filter((k) => !writes.some((w) => w.tagKey === k)) : [];
+  void (async () => {
+    try {
+      const tol = readbackFloatTolerance();
+      let reasserts = 0;
+      let unpinnedReported = false;
+      while (!token.cancelled && Date.now() < end) {
+        await new Promise((r) => setTimeout(r, OT_STOP_REASSERT_POLL_MS));
+        if (token.cancelled) break;
+        let samples: Array<{ tagKey: string; value: unknown }> | null = null;
+        try {
+          const got = await withDeadline(Promise.resolve(driver.readTags(readTags)), timeoutMs, `adapter ${input.adapterId} STOP watch read`);
+          samples = Array.isArray(got) ? got : null;
+        } catch {
+          samples = null;
+        }
+        if (token.cancelled) break;
+        const drift: Array<{ tagKey: string; expected: unknown; actual: unknown }> = [];
+        const unread: string[] = [];
+        for (const t of readTags) {
+          const s = samples?.find((x) => x.tagKey === t.tagKey);
           const expected = writes.find((w) => w.tagKey === t.tagKey)?.value;
-          return s && s.value != null && !readbackMatches(expected, s.value, t.dataType, tol)
-            ? { tagKey: t.tagKey, expected, actual: s.value as unknown }
-            : null;
-        })
-        .filter((d): d is { tagKey: string; expected: unknown; actual: unknown } => d != null);
-      if (drift.length === 0) continue;
-      if (reasserts >= OT_STOP_REASSERT_MAX) {
-        console.error(`[Dispatch] adapter ${input.adapterId}: STOP still overridden after ${reasserts} re-asserts (B3 fix scan 3):`, JSON.stringify(drift));
-        auditOtEvent(input, ledger, "ot_stop_reassert_exhausted", { drift, reasserts }, "B3 fix scan (3): a STOP kept being overridden by a write that landed after it — re-asserts exhausted");
-        return;
+          if (!s || s.value == null) unread.push(t.tagKey);
+          else if (!readbackMatches(expected, s.value, t.dataType, tol)) drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown });
+        }
+        if (drift.length === 0 && unread.length === 0) continue;
+        if (!pinned) {
+          if (drift.length > 0 && !unpinnedReported) {
+            unpinnedReported = true;
+            console.error(`[Dispatch] adapter ${input.adapterId}: a NON-pinned STOP was overridden after it was sent (an abandoned write landed?) — not re-written (values not proven energy-reducing):`, JSON.stringify(drift));
+            auditOtEvent(input, ledger, "ot_stop_overridden_unpinned", { drift, staleTagKeys }, "B3 fix scan 2: an unpinned STOP read back another value after an abandoned write — operator must check; not re-written");
+          }
+          continue;
+        }
+        if (reasserts >= OT_STOP_REASSERT_MAX) {
+          console.error(`[Dispatch] adapter ${input.adapterId}: pinned STOP still not confirmed after ${reasserts} re-asserts (B3):`, JSON.stringify({ drift, unread }));
+          auditOtEvent(input, ledger, "ot_stop_reassert_exhausted", { drift, unread, reasserts, staleTagKeys }, "B3: a pinned STOP kept reading back another value (or unreadable) after an abandoned write — re-asserts exhausted");
+          break;
+        }
+        reasserts += 1;
+        const outcome = await reassertPinnedStop(input, driver, writes, timeoutMs, token);
+        if (outcome === "skipped") break; // cancelled by a newer command
+        const action = outcome.startsWith("refused") ? "ot_stop_reassert_refused" : drift.length > 0 ? "ot_stop_reasserted" : "ot_stop_reassert_unverified";
+        console.warn(`[Dispatch] adapter ${input.adapterId}: pinned STOP re-assert #${reasserts} — ${action} (${outcome})`);
+        auditOtEvent(
+          input,
+          ledger,
+          action,
+          { drift, unread, attempt: reasserts, outcome, staleTagKeys },
+          action === "ot_stop_reassert_refused"
+            ? "B3 fix scan 2: a pinned STOP read back another value (or unreadable) but is no longer a pinned stop on re-check — NOT re-written; operator must check"
+            : "B3 fix scan: an abandoned (timed-out) write may have landed after a pinned STOP — the STOP was written again",
+        );
+        if (outcome.startsWith("refused")) break;
       }
-      reasserts += 1;
-      let writeError: string | null = null;
+    } catch (err) {
+      console.error(`[Dispatch] adapter ${input.adapterId}: STOP watch failed:`, (err as Error)?.message || err);
+    } finally {
+      if (stopWatches.get(input.adapterId) === token) stopWatches.delete(input.adapterId);
+    }
+  })();
+}
+
+/**
+ * B3 fix scan 2 (3) — ONE re-assert of a pinned STOP, through the adapter queue (behind anything already queued; never
+ * a priority job, so it never cancels a later command) and through the SAME pinned-stop checks: pins reloaded and the
+ * writes re-classified (classifyOtStop), running connection must still match the adapter row. Cancelled ⇒ "skipped".
+ */
+async function reassertPinnedStop(
+  input: DispatchInput,
+  driver: { writeTags: (w: any[]) => Promise<unknown> },
+  writes: Array<{ tagKey: string; value: unknown }>,
+  timeoutMs: number,
+  token: { cancelled: boolean },
+): Promise<string> {
+  const enq = tryEnqueueAdapterCommand(
+    input.adapterId,
+    async (): Promise<string> => {
+      if (token.cancelled) return "skipped";
+      const db = await getDb();
+      if (!db) return "refused:no_db";
+      let pins: StopPin[];
+      try {
+        pins = await loadStopPins(db, input.adapterId);
+      } catch {
+        return "refused:pin_load_failed";
+      }
+      const cls = classifyOtStop(input.commandType, writes.map((w) => ({ tagKey: w.tagKey, value: w.value })) as DispatchWrite[], pins);
+      if (!cls.pinnedStop) return `refused:${"stopPinReason" in cls ? cls.stopPinReason : "not_a_stop"}`;
+      if (!(await runningConnectionMatchesAdapterRow(db, input.adapterId))) return "refused:adapter_connection_stale";
+      if (token.cancelled) return "skipped";
       try {
         await withDeadline(Promise.resolve(driver.writeTags(writes)), timeoutMs, `adapter ${input.adapterId} STOP re-assert`);
+        return "written";
       } catch (err) {
-        writeError = (err as Error)?.message || String(err);
+        return `failed:${(err as Error)?.message || String(err)}`;
       }
-      console.warn(`[Dispatch] adapter ${input.adapterId}: STOP re-asserted (#${reasserts}) — a value other than the STOP's was read back (an abandoned write landed after it)`);
-      auditOtEvent(
-        input,
-        ledger,
-        "ot_stop_reasserted",
-        { drift, attempt: reasserts, writeError },
-        "B3 fix scan (3): an abandoned (timed-out) write landed after the STOP — the STOP was written again",
-      );
-    }
-  } catch (err) {
-    console.error(`[Dispatch] adapter ${input.adapterId}: STOP guard failed (slot released):`, (err as Error)?.message || err);
-  }
+    },
+    { priorityStop: false },
+  );
+  if (!enq.accepted) return "skipped";
+  const r = await enq.result;
+  return isSuperseded(r) ? "skipped" : r;
 }
 
 /** B3 — control_audit_log "ot_write_overlap_risk", fire-and-forget under a deadline (never holds the queue). */
