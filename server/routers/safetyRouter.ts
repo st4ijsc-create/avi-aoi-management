@@ -68,6 +68,8 @@ import {
 } from "../services/safety/plc/safetyPlcAdapter";
 // doc 80 Đợt 1 Task 4 (SAF-02) — read-only source-health report for the Safety page.
 import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+import { resolveTenantFactoryScope } from "../db/reportAggregators";
 import { deviceAdapters, robots } from "../../drizzle/schema";
 
 /**
@@ -106,8 +108,6 @@ async function assertSourceHealthTargetInScope(
   }
   if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Safety target not found");
 }
-import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
-import { resolveTenantFactoryScope } from "../db/reportAggregators";
 
 async function db() {
   const d = await getDb();

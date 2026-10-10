@@ -49,7 +49,7 @@ async function resolveMachine(d: Exec, machineId: number): Promise<SafetyTarget 
   const lineId = n(m?.lineId);
   const factoryId = n(m?.factoryId);
   if (stationId === null || lineId === null || factoryId === null) return null;
-  return { robotId: null, machineId, stationId, lineId, factoryId };
+  return { robotId: null, machineId, stationId, lineId, factoryId, stationRobotIds: [] };
 }
 
 /** robot => its station (=> line) or line; unplaced / contradictory / dangling => null. */
@@ -79,7 +79,7 @@ async function resolveRobot(d: Exec, robotId: number): Promise<SafetyTarget | nu
   );
   const factoryId = n(l?.factoryId);
   if (factoryId === null) return null;
-  return { robotId, machineId: null, stationId, lineId, factoryId };
+  return { robotId, machineId: null, stationId, lineId, factoryId, stationRobotIds: [] };
 }
 
 /**
@@ -122,7 +122,14 @@ export async function resolveSafetyTargets(ref: SafetyTargetRef): Promise<Safety
       if (!t) return null;
       out.push(t);
     }
-    return out.length > 0 ? out : null;
+    if (out.length === 0) return null;
+    // fix round 2 (M7) — the robots placed on each target's station: their robot-targeted configs guard it too.
+    for (const t of out) {
+      if (t.stationId === null) continue;
+      const rs = await rows<{ id: Num }>(d, sql`SELECT id FROM robots WHERE "stationId" = ${t.stationId} ORDER BY id`);
+      t.stationRobotIds = rs.map((r) => n(r.id)).filter((x): x is number => x !== null);
+    }
+    return out;
   } catch {
     return null; // fail-closed: every config applies
   }

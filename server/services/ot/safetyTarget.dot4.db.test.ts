@@ -246,9 +246,11 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
 
   // ── 0. bộ phân giải đích ─────────────────────────────────────────────────────────────
   it("resolveSafetyTargets: máy ⇒ trạm/chuyền/nhà máy; adapter ⇒ máy của NÓ; robot ⇒ chuyền/trạm; nhiều phần ⇒ HỢP; không phân giải được ⇒ null", async () => {
-    const T1 = { robotId: null, machineId: ids.m1, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory };
-    const T2 = { robotId: null, machineId: ids.m2, stationId: ids.st2, lineId: ids.line2, factoryId: ids.factory };
-    const TR1 = { robotId: ids.r1, machineId: null, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory };
+    // fix round 2 (M7): robots on station 1 = r1 and rContra (both have robots.stationId = st1)
+    const st1Robots = [ids.r1, ids.rContra].sort((a, b) => a - b);
+    const T1 = { robotId: null, machineId: ids.m1, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory, stationRobotIds: st1Robots };
+    const T2 = { robotId: null, machineId: ids.m2, stationId: ids.st2, lineId: ids.line2, factoryId: ids.factory, stationRobotIds: [] };
+    const TR1 = { robotId: ids.r1, machineId: null, stationId: ids.st1, lineId: ids.line1, factoryId: ids.factory, stationRobotIds: st1Robots };
     expect(await resolveSafetyTargets({ machineId: ids.m1 })).toEqual([T1]);
     expect(await resolveSafetyTargets({ adapterId: ids.adapter1, machineId: null })).toEqual([T1]);
     expect(await resolveSafetyTargets({ adapterId: ids.adapter1, machineId: ids.m1 })).toEqual([T1]); // same machine: once
@@ -256,7 +258,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
     expect(await resolveSafetyTargets({ adapterId: ids.adapter2, machineId: ids.m1 })).toEqual([T2, T1]);
     expect(await resolveSafetyTargets({ adapterId: -1, robotId: ids.r1 })).toEqual([TR1]);
     expect(await resolveSafetyTargets({ machineId: ids.m1, robotId: ids.r1 })).toEqual([T1, TR1]);
-    expect(await resolveSafetyTargets({ robotId: ids.rLineOnly })).toEqual([{ robotId: ids.rLineOnly, machineId: null, stationId: null, lineId: ids.line1, factoryId: ids.factory }]);
+    expect(await resolveSafetyTargets({ robotId: ids.rLineOnly })).toEqual([{ robotId: ids.rLineOnly, machineId: null, stationId: null, lineId: ids.line1, factoryId: ids.factory, stationRobotIds: [] }]);
     expect(await resolveSafetyTargets({ machineId: UNKNOWN_MACHINE })).toBeNull();
     expect(await resolveSafetyTargets({ robotId: ids.rUnplaced })).toBeNull();
     expect(await resolveSafetyTargets({ robotId: ids.rContra })).toBeNull();
@@ -362,9 +364,17 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
     await withConfigs([{ cfg: clean(), t: { lineId: ids.line1 } }, { cfg: offline(), t: { factoryId: ids.factory + 1_000_000 } }], async () => {
       expect((await real({ machineId: ids.m1 })).state).toBe("OK");
     });
-    await withConfigs([{ cfg: clean(), t: { lineId: ids.line1 } }, { cfg: offline(), t: { robotId: ids.r1, lineId: ids.line1 } }], async () => {
+    await withConfigs([{ cfg: clean(), t: { lineId: ids.line1 } }, { cfg: clean(), t: { lineId: ids.line2 } }, { cfg: offline(), t: { robotId: ids.r1, lineId: ids.line1 } }], async () => {
       expect((await real({ robotId: ids.r1 })).state).toBe("UNKNOWN");
-      expect((await real({ machineId: ids.m1 })).state).toBe("OK"); // cấu hình của robot không phải của máy
+      // fix round 2 (M7, owner decision 2026-10-10): the robot r1 sits on station 1 ⇒ its PLC also guards machine m1
+      expect((await real({ machineId: ids.m1 })).state).toBe("UNKNOWN");
+      expect((await real({ machineId: ids.m2 })).state).toBe("OK"); // m2 is on station 2: r1's PLC does not guard it
+    });
+    // M7 control: a robot placed at line level only (rLineOnly) — its PLC guards only itself
+    await withConfigs([{ cfg: clean(), t: { lineId: ids.line1 } }, { cfg: offline(), t: { robotId: ids.rLineOnly } }], async () => {
+      expect((await real({ robotId: ids.rLineOnly })).state).toBe("UNKNOWN");
+      expect((await real({ machineId: ids.m1 })).state).toBe("OK");
+      expect((await real({ robotId: ids.r1 })).state).toBe("OK");
     });
   });
 
@@ -467,6 +477,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A1 — safety-PLC config theo đ�
         { lineId: ids.line1, factoryId: ids.factory },
         { lineId: ids.line2, factoryId: ids.factory },
         { stationId: ids.st1, factoryId: ids.factory },
+        { robotId: ids.r1 }, // fix round 2 (M7): listed for every target on station 1 (gate and panel alike)
         {},
       ],
       async () => {

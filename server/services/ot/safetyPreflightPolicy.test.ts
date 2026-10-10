@@ -107,9 +107,11 @@ describe("Đợt 1C Task 1 — actuationPreflightVerdict", () => {
 describe("Đợt 4 Task A1 — plcConfigAppliesToTarget", () => {
   it("bảng chân trị (đích null ⇒ mọi cấu hình; không gắn đích ⇒ luôn; cột cụ thể nhất quyết định)", async () => {
     const { plcConfigAppliesToTarget: f } = await import("./safetyPreflightPolicy");
-    const M = { robotId: null, machineId: 10, stationId: 3, lineId: 2, factoryId: 1 };
-    const R = { robotId: 7, machineId: null, stationId: 3, lineId: 2, factoryId: 1 };
-    const RL = { robotId: 8, machineId: null, stationId: null, lineId: 2, factoryId: 1 };
+    // fix round 2 (M7): stationRobotIds = robots placed on the target's station (robot 7 sits on station 3).
+    const M = { robotId: null, machineId: 10, stationId: 3, lineId: 2, factoryId: 1, stationRobotIds: [7] };
+    const R = { robotId: 7, machineId: null, stationId: 3, lineId: 2, factoryId: 1, stationRobotIds: [7] };
+    const RL = { robotId: 8, machineId: null, stationId: null, lineId: 2, factoryId: 1, stationRobotIds: [] };
+    const M4 = { robotId: null, machineId: 11, stationId: 4, lineId: 2, factoryId: 1, stationRobotIds: [] };
     const none = {};
     expect(f({ lineId: 99, robotId: 98 }, null)).toBe(true);
     expect(f(none, M)).toBe(true);
@@ -122,7 +124,13 @@ describe("Đợt 4 Task A1 — plcConfigAppliesToTarget", () => {
     expect(f({ stationId: 4, lineId: 2 }, M)).toBe(false);
     expect(f({ stationId: 4, lineId: 2 }, RL)).toBe(true); // robot chỉ đặt ở chuyền: không loại trừ được trạm
     expect(f({ robotId: 7, lineId: 2 }, R)).toBe(true);
-    expect(f({ robotId: 7, lineId: 2 }, M)).toBe(false);
+    // M7 (owner decision 2026-10-10): a robot-targeted config also guards every machine/robot on that robot's STATION
+    expect(f({ robotId: 7, lineId: 2 }, M)).toBe(true);
+    expect(f({ robotId: 7 }, M4)).toBe(false); // other station
     expect(f({ robotId: 9, lineId: 2 }, R)).toBe(false);
+    // a robot placed at line level only: its config guards only itself; it is guarded only by its own robot configs
+    expect(f({ robotId: 8 }, M)).toBe(false);
+    expect(f({ robotId: 8 }, RL)).toBe(true);
+    expect(f({ robotId: 7 }, RL)).toBe(false);
   });
 });

@@ -192,6 +192,12 @@ export interface SafetyTarget {
   machineId: number | null;
   /** null only for a robot placed at line level (robots.stationId NULL). */
   stationId: number | null;
+  /**
+   * doc 81 Đợt 4 fix round 2 (M7, owner decision 2026-10-10) — every robot placed on this target's STATION
+   * (robots.stationId = stationId). A config targeted at one of those robots also guards this target. Empty when the
+   * target has no station (a robot placed at line level only).
+   */
+  stationRobotIds: readonly number[];
   lineId: number;
   factoryId: number;
 }
@@ -205,12 +211,14 @@ export interface SafetyTarget {
  *     because the coarser columns on a targeted row are its owner/context (a line-2 PLC row also
  *     carries its factory); a line config applies to every station/machine/robot on that line, a
  *     factory config to everything in that factory, a station config to its machines and robots,
- *     a robot config to that robot only. A robot placed at line level only (no station) is
- *     guarded by every station-targeted config — its station cannot be ruled out.
+ *     a robot config to that robot AND (fix round 2, M7 — owner decision 2026-10-10, fail-safe) to every machine
+ *     and robot on that robot's STATION. A robot placed at line level only (no station) is guarded by every
+ *     station-targeted config — its station cannot be ruled out; a config targeted at such a robot still guards
+ *     only that robot (it has no station), and such a robot is guarded only by its own robot configs.
  */
 export function plcConfigAppliesToTarget(cfg: PlcConfigTargetShape, target: SafetyTarget | null): boolean {
   if (target === null) return true;
-  if (cfg.robotId != null) return target.robotId === cfg.robotId;
+  if (cfg.robotId != null) return target.robotId === cfg.robotId || target.stationRobotIds.includes(cfg.robotId);
   // A robot placed at line level only (robots.stationId NULL) cannot be ruled out of any station ⇒ applies.
   if (cfg.stationId != null) return target.stationId === null || target.stationId === cfg.stationId;
   if (cfg.lineId != null) return target.lineId === cfg.lineId;
