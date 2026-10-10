@@ -8,8 +8,13 @@
  * A hand-written mirror (fix 2) disagreed with it: parseurl hands any target containing `#` to `url.parse`, which treats
  * a leading `//userinfo@host` as an authority — `POST //a@b/api/ot/ingest#x` is routed to `/api/ot/ingest` while the
  * mirror saw `//a@b/api/ot/ingest`. Only for plain objects without `originalUrl`/`url` (unit tests) does the helper
- * fall back to a string cut at `?`/`#`. If parseurl throws (Express would fail the request itself), the same fallback
- * is used. The result is never decoded and dot segments are never resolved — like Express.
+ * fall back to a string cut at `?`/`#`. The result is never decoded and dot segments are never resolved — like Express.
+ *
+ * doc 81 Đợt 5 final wave F6 (G re-review 3) — FAIL CLOSED: parseurl is resolved ONCE at module load (outside any
+ * per-request catch) and a failure is logged loudly; while it is unavailable — or if it throws / answers no pathname for a
+ * request — the helper answers DUONG_KHONG_XAC_DINH, a protected API path that matches no exemption and no ingest /
+ * bootstrap tier (origin check enforced, general browser rate tier). Never the raw string cut for a real request: that cut
+ * keeps `http://x/api/…` and `//a@b/api/…#x` OUT of every API classification.
  */
 import { createRequire } from "node:module";
 
@@ -21,16 +26,34 @@ export interface YeuCauCoDuong {
 
 type ParseUrl = { original(req: unknown): { pathname?: string | null } | undefined };
 
+/** F6 — the fail-closed answer: a protected API path (lower-case) that no exemption, ingest or bootstrap list contains. */
+export const DUONG_KHONG_XAC_DINH = "/api/__route-path-unavailable__";
+
 // parseurl is a dependency OF EXPRESS (not of this project): resolve it relative to express/package.json so the router
-// and this helper always run the same code. Lazy, once.
+// and this helper always run the same code. F6 — resolved ONCE, at module load; a failure is kept (fail closed), not retried.
+function napParseurlMacDinh(): ParseUrl {
+  const rootRequire = createRequire(import.meta.url);
+  const expressRequire = createRequire(rootRequire.resolve("express"));
+  return expressRequire("parseurl") as ParseUrl;
+}
 let parseurlCache: ParseUrl | null = null;
-function parseurl(): ParseUrl {
-  if (!parseurlCache) {
-    const rootRequire = createRequire(import.meta.url);
-    const expressRequire = createRequire(rootRequire.resolve("express"));
-    parseurlCache = expressRequire("parseurl") as ParseUrl;
+function napParseurl(loader: () => ParseUrl): void {
+  try {
+    const p = loader();
+    if (!p || typeof p.original !== "function") throw new Error("parseurl.original is not a function");
+    parseurlCache = p;
+  } catch (err) {
+    parseurlCache = null;
+    console.error(
+      `[duongDinhTuyen] parseurl (Express's own URL parser) could not be loaded — every request path is classified as a protected API path until restart (fail closed): ${(err as Error)?.message ?? err}`,
+    );
   }
-  return parseurlCache;
+}
+napParseurl(napParseurlMacDinh);
+
+/** Test seam (F6) — reload with `loader` (null ⇒ the real one). */
+export function __napParseurlChoTest(loader: (() => ParseUrl) | null): void {
+  napParseurl(loader ?? napParseurlMacDinh);
 }
 
 function catChuoi(raw: string): string {
@@ -41,14 +64,15 @@ function catChuoi(raw: string): string {
 /** The path Express routes this request on (no query, no fragment, no scheme/authority), as given — case kept. */
 export function duongDinhTuyenGoc(req: YeuCauCoDuong): string {
   if (typeof req.originalUrl === "string" || typeof req.url === "string") {
+    if (!parseurlCache) return DUONG_KHONG_XAC_DINH; // F6 — parser unavailable ⇒ fail closed
     try {
       // parseurl memoises on the object (`_parsedOriginalUrl`), exactly as Express does on a real request.
-      const pathname = parseurl().original(req)?.pathname;
+      const pathname = parseurlCache.original(req)?.pathname;
       if (typeof pathname === "string") return pathname;
     } catch {
-      /* fall through — Express cannot route what parseurl cannot parse */
+      /* Express cannot route what parseurl cannot parse — classified fail-closed below */
     }
-    return catChuoi(String(req.originalUrl ?? req.url ?? ""));
+    return DUONG_KHONG_XAC_DINH; // F6 — never the raw cut for a real request
   }
   return catChuoi(String(req.path ?? ""));
 }

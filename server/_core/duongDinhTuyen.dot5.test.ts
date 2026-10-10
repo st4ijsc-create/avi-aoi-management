@@ -163,3 +163,60 @@ describe("N1 — originCheck (enforce) and rate-limit classification on absolute
     expect(isMachineIngestRequest(reqOf("http://x/api/trpc/machineApi.heartbeat,machineApi.issueKey"))).toBe(false);
   });
 });
+
+/**
+ * doc 81 Đợt 5 final wave F6 (G re-review 3) — parseurl that cannot be LOADED ⇒ fail CLOSED: every request target is
+ * classified as a protected API path (origin check enforced, general browser tier, never an ingest / bootstrap tier),
+ * never the raw string cut (which kept `http://x/api/…` and `//a@b/api/…#x` OUT of every API classification).
+ */
+describe("final wave F6 — parseurl load failure fails CLOSED", () => {
+  afterAll(async () => {
+    (await import("./duongDinhTuyen")).__napParseurlChoTest(null); // restore the real loader
+  });
+
+  it("★ loader throws ⇒ absolute-form / authority-form / plain targets all classify as a protected API path; the real loader restores the exact path", async () => {
+    const mod = await import("./duongDinhTuyen");
+    const errors: unknown[] = [];
+    const errSpy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void errors.push(a.join(" ")));
+    try {
+      mod.__napParseurlChoTest(() => {
+        throw new Error("Cannot find module 'parseurl'");
+      });
+      expect(errors.join("\n")).toMatch(/parseurl/); // said ONCE, loudly, at load — not swallowed per request
+      for (const t of ["http://x/api/ot/ingest", "//a@b/api/ot/ingest#x", "/api/ot/ingest", "/totally/not/api", "/API/trpc/x"]) {
+        const p = mod.duongDinhTuyen({ originalUrl: t, url: t });
+        expect(p.startsWith("/api/"), `${t} ⇒ ${p}`).toBe(true);
+        expect(["/api/ot/ingest", "/api/v1/ingest", "/api/machine/claim", "/api/saml/acs"].some((r) => p === r || p.startsWith(r + "/")), `${t} ⇒ ${p}`).toBe(false);
+      }
+      // originCheck (enforce) refuses a foreign Origin on the absolute-form target that the raw cut let through
+      const req = { method: "POST", originalUrl: "http://x/api/ot/ingest", url: "http://x/api/ot/ingest", path: "/api/ot/ingest", headers: { origin: "https://evil.example", host: "factory.local" } } as never;
+      const { evaluateOrigin } = await import("./originCheck");
+      expect(evaluateOrigin(req, { mode: "enforce", allowedOrigins: new Set(), allowDevLoopback: false } as never)).toMatchObject({ allowed: false });
+      // never the high tiers
+      expect(isOtIngestRequest({ originalUrl: "/api/ot/ingest", url: "/api/ot/ingest", headers: {} } as never)).toBe(false);
+      expect(isMachineRestIngestRequest({ originalUrl: "/api/machine/heartbeat", url: "/api/machine/heartbeat", headers: {} } as never)).toBe(false);
+      expect(isMachineIngestRequest({ originalUrl: "/api/trpc/machineApi.heartbeat", url: "/api/trpc/machineApi.heartbeat", headers: {} } as never)).toBe(false);
+    } finally {
+      mod.__napParseurlChoTest(null);
+      errSpy.mockRestore();
+    }
+    expect(mod.duongDinhTuyen({ originalUrl: "//a@b/api/ot/ingest#x", url: "//a@b/api/ot/ingest#x" })).toBe("/api/ot/ingest");
+    expect(mod.duongDinhTuyen({ originalUrl: "/API/trpc/x?y=1", url: "/API/trpc/x?y=1" })).toBe("/api/trpc/x");
+  });
+
+  it("★ parseurl loaded but it THROWS / answers no pathname for a request ⇒ the same fail-closed protected API path (no raw cut)", async () => {
+    const mod = await import("./duongDinhTuyen");
+    try {
+      for (const broken of [{ original: () => { throw new Error("URIError"); } }, { original: () => ({ pathname: null }) }, { original: () => undefined }]) {
+        mod.__napParseurlChoTest(() => broken as never);
+        for (const t of ["http://x/api/ot/ingest", "/totally/not/api"]) {
+          expect(mod.duongDinhTuyen({ originalUrl: t, url: t })).toBe(mod.DUONG_KHONG_XAC_DINH);
+        }
+      }
+    } finally {
+      mod.__napParseurlChoTest(null);
+    }
+    // plain objects without originalUrl / url (unit callers) keep the string cut of `path`
+    expect(mod.duongDinhTuyen({ path: "/API/x?y" })).toBe("/api/x");
+  });
+});
