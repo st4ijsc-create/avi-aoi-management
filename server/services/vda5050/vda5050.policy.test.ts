@@ -212,8 +212,8 @@ describe("VDA5050 sendOrder — fleet policy seam (W3-B2 G3.14)", () => {
     const res = await adapter.sendOrder({ ...ORDER_OPTS, triggerKind: "manual" });
     expect(res.status).toBe("done");
     expect(res.published).toBe(true);
-    expect(publishes.length).toBe(1);
-    expect(publishes[0].topic).toBe("uagv/v2/ACME/AGV-001/order");
+    // doc 81 Đợt 4 Task B1 — the driver (runJobSpy) is the ONE publish channel; the adapter no longer publishes again.
+    expect(publishes.length).toBe(0);
     expect(runJobSpy).toHaveBeenCalledTimes(1);
   });
 });

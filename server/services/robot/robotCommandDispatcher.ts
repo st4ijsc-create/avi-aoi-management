@@ -166,6 +166,12 @@ export interface RobotDispatchResult {
   code?: "PRECONDITION_FAILED";
   /** Set when the motion ran but its terminal ledger update failed (row stays 'running'). */
   ledgerError?: string;
+  /**
+   * doc 81 Đợt 4 Task B1 — the driver's OWN result detail, untouched (only when the driver returned a result; absent on
+   * refusal / dry-run / timeout / throw). Lets a caller report what the driver really did (VDA 5050: `published`)
+   * instead of doing it a second time.
+   */
+  driverDetail?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -1196,6 +1202,8 @@ async function runRealJob(
   let status: "done" | "failed";
   let detail: Record<string, unknown> | undefined;
   let errorText: string | undefined;
+  // B1 — the driver's own detail, before the dispatcher merges its notes into `detail`.
+  const driverOut = outcome.kind === "result" && outcome.r.detail ? { driverDetail: { ...outcome.r.detail } } : {};
   if (outcome.kind === "result") {
     status = outcome.r.ok ? "done" : "failed";
     detail = outcome.r.detail;
@@ -1243,11 +1251,11 @@ async function runRealJob(
     // R-1C-h — the STOP went out without a pre-written row: settle the ledger best-effort now.
     const ledger = await stopLedgerAfterSend(input, prewrite, status, { ...(detail ?? {}) }, errorText);
     if (policyOverride) auditStopPolicyOverride(input, ledger.jobId, policyOverride);
-    return { ok: status === "done", status, jobId: ledger.jobId, error: errorText, ...(ledger.ledgerError ? { ledgerError: ledger.ledgerError } : {}) };
+    return { ok: status === "done", status, jobId: ledger.jobId, error: errorText, ...(ledger.ledgerError ? { ledgerError: ledger.ledgerError } : {}), ...driverOut };
   }
   if (jobId == null) {
     // Unreachable: every other path reserved a row before the driver call.
-    return { ok: status === "done", status, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED" };
+    return { ok: status === "done", status, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED", ...driverOut };
   }
   try {
     const fin = finalize(jobId, status, detail, errorText);
@@ -1258,10 +1266,10 @@ async function runRealJob(
     const msg = (err as Error)?.message ?? String(err);
     console.error(`[Robot] ledger finalize failed for job ${jobId} (robot ${input.robotId}):`, msg);
     if (policyOverride) auditStopPolicyOverride(input, jobId, policyOverride);
-    return { ok: status === "done", status, jobId, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED" };
+    return { ok: status === "done", status, jobId, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED", ...driverOut };
   }
   if (policyOverride) auditStopPolicyOverride(input, jobId, policyOverride);
-  return { ok: status === "done", status, jobId, error: errorText };
+  return { ok: status === "done", status, jobId, error: errorText, ...driverOut };
 }
 
 /** Upper bound after which a still-pending STOP-override audit is logged as stuck (it is never awaited by the STOP). */

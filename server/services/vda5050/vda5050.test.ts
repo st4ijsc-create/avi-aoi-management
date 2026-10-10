@@ -281,8 +281,12 @@ describe("VDA5050 Adapter command gating (DRY-RUN)", () => {
     expect(publishes.length).toBe(0);
   });
 
-  it("control enabled: dispatcher runs driver (done) → adapter publishes Order to MQTT", async () => {
+  // doc 81 Đợt 4 Task B1 — ca này từng khẳng định ADAPTER publish order SAU khi driver (giả) đã chạy — tức là đóng
+  // khuôn lỗi gửi HAI lần (driver thật cũng publish). Nay: đúng MỘT kênh = driver; adapter không publish order nào,
+  // `published` lấy từ kết quả driver. Số order broker THẬT nhận đo ở vda5050OrderOnce.dot4.test.ts.
+  it("control enabled: dispatcher runs driver (done) → the DRIVER is the one channel; adapter publishes nothing", async () => {
     process.env.ROBOT_CONTROL_ENABLED = "true";
+    activeRobot.driver.runJob.mockClear();
     const adapter = await makeStartedAdapter();
     const res = await adapter.sendOrder({
       nodes: [{ nodeId: "t", x: 1, y: 2, mapId: "m" }],
@@ -291,12 +295,28 @@ describe("VDA5050 Adapter command gating (DRY-RUN)", () => {
       confirmedBy: 1,
     });
     expect(res.status).toBe("done");
-    expect(res.published).toBe(true);
-    expect(publishes.length).toBe(1);
-    expect(publishes[0].topic).toBe("uagv/v2/ACME/AGV-001/order");
-    const sent = JSON.parse(publishes[0].payload);
-    expect(sent.serialNumber).toBe("AGV-001");
-    expect(sent.nodes).toHaveLength(1);
+    expect(res.published).toBe(true); // from the driver's detail.published
+    expect(publishes.length).toBe(0); // no second (adapter) publish
+    expect(activeRobot.driver.runJob).toHaveBeenCalledTimes(1);
+    const job = (activeRobot.driver.runJob.mock.calls[0] as unknown as [{ params: { order: any } }])[0];
+    expect(job.params.order.serialNumber).toBe("AGV-001");
+    expect(job.params.order.nodes).toHaveLength(1);
+  });
+
+  // B1 — `published` is the DRIVER's word: a driver that ran ('done') but reports no publish ⇒ published=false.
+  it("control enabled: driver 'done' without detail.published → published=false (never assumed)", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    activeRobot.driver.runJob.mockImplementationOnce(async () => ({ ok: true, status: "done" as const, detail: {} as any }));
+    const adapter = await makeStartedAdapter();
+    const res = await adapter.sendOrder({
+      nodes: [{ nodeId: "t", x: 1, y: 2, mapId: "m" }],
+      triggerKind: "manual",
+      requestedBy: 1,
+      confirmedBy: 1,
+    });
+    expect(res.status).toBe("done");
+    expect(res.published).toBe(false);
+    expect(publishes.length).toBe(0);
   });
 });
 

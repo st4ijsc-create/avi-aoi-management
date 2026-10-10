@@ -37,7 +37,9 @@ vi.mock("./robotManager", () => ({
             runJob: async (job: { jobType: string; params?: Record<string, unknown> }) => {
               rt.runJobCalls++;
               rt.jobs.push(job);
-              return { ok: true, status: "done", detail: { fake: true } };
+              // doc 81 Đợt 4 Task B1 — stands in for the `vda5050` driver, which is the ONE order channel and reports
+              // `published`; the adapter no longer publishes the order a second time.
+              return { ok: true, status: "done", detail: { fake: true, published: true } };
             },
             abort: async () => undefined,
             health: async () => ({ vendor: "sim", connected: true }),
@@ -317,7 +319,7 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       expect(r.status).toBe("done");
       expect(r.published).toBe(true);
       expect(rt.runJobCalls).toBe(1);
-      expect(published.filter((p) => p.topic.endsWith("/order"))).toHaveLength(1);
+      expect(published.filter((p) => p.topic.endsWith("/order"))).toHaveLength(0); // B1: the driver is the one channel
       expect(mint.calls).toBe(0); // đường người vận hành KHÔNG tự cấp bản ghi xác nhận
       const row = await jobRow(r.jobId);
       expect(row?.triggerKind).toBe("manual");
@@ -374,7 +376,7 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
         );
       expect((err as any)?.cause?.appCode).toBe("PERMISSION_DENIED");
       expect(rt.runJobCalls).toBe(1);
-      expect(published).toHaveLength(1);
+      expect(published).toHaveLength(0); // B1: the driver (runJob) is the one order channel
     });
 
     it("fix round 1 (item 7) — dispatcher từ chối ⇒ router trả `error` (lý do) cho người vận hành, không nuốt", async () => {
@@ -414,7 +416,7 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       expect(r.status).toBe("done");
       expect(r.published).toBe(true);
       expect(rt.runJobCalls).toBe(1);
-      expect(published).toHaveLength(1);
+      expect(published).toHaveLength(0); // B1: the driver (runJob) is the one order channel
       const row = await jobRow(r.jobId);
       expect(row?.triggerKind).toBe("hitl");
       expect(row?.actionId).toMatch(/^vda5050-/);

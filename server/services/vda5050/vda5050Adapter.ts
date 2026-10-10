@@ -188,20 +188,9 @@ export class Vda5050Adapter {
   }
 
   /**
-   * Publish an Order JSON to the AGV's order topic. INTERNAL — callers MUST go
-   * through robotCommandDispatcher (sendOrder below) so HITL + dry-run gating is
-   * never bypassed. This is the ONLY place that actually publishes a command.
+   * doc 81 Đợt 4 Task B1 — there is no adapter-side ORDER publish any more: an order reaches the AGV only through
+   * robotCommandDispatcher → the `vda5050` driver (one channel). The adapter publishes only the STOP's second channel.
    */
-  private async publishOrder(order: Vda5050Order): Promise<void> {
-    if (!this.client) throw new Error("adapter not started (no mqtt client)");
-    await new Promise<void>((resolve, reject) => {
-      this.client!.publish(this.topic("order"), JSON.stringify(order), { qos: 1, retain: false }, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-  }
-
   private async publishInstantActions(msg: Vda5050InstantActions): Promise<void> {
     if (!this.client) throw new Error("adapter not started (no mqtt client)");
     await new Promise<void>((resolve, reject) => {
@@ -296,7 +285,6 @@ export class Vda5050Adapter {
     }
 
     const { dispatchRobotJob } = await import("../robot/robotCommandDispatcher");
-    let published = false;
     const job: RobotJobSpec = {
       jobType: "move",
       params: { vda5050: "order", order: order as unknown as Record<string, unknown> },
@@ -312,23 +300,12 @@ export class Vda5050Adapter {
       idempotencyKey: opts.idempotencyKey,
     });
 
-    // Only when the dispatcher really ran (status 'done') AND control is enabled
-    // do we publish. In 'simulated'/'rejected' we publish nothing.
-    if (res.status === "done") {
-      try {
-        await this.publishOrder(order);
-        published = true;
-      } catch (err) {
-        return {
-          ok: false,
-          status: "failed",
-          jobId: res.jobId,
-          order,
-          published: false,
-          error: (err as Error)?.message ?? String(err),
-        };
-      }
-    }
+    // doc 81 Đợt 4 Task B1 — the ORDER is published by ONE channel only: the `vda5050` robot driver, reached through
+    // the dispatcher after every gate. The adapter used to publish the same order a second time on 'done' (the AGV
+    // got two orders with one orderId). `published` is what the driver reports it really sent; 'simulated' /
+    // 'rejected' / 'failed' / a driver that reports nothing ⇒ false. (The STOP keeps its second channel — see
+    // sendInstantActions.)
+    const published = res.status === "done" && res.driverDetail?.published === true;
 
     return { ok: res.ok, status: res.status, jobId: res.jobId, order, published, ...(res.error ? { error: res.error } : {}) };
   }
