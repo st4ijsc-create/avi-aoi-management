@@ -33,7 +33,9 @@ vi.mock("../audit/controlAuditService", async (importOriginal) => {
 });
 
 import { getDb } from "../../db";
-import { createRecord, latestCommissioningRecheck } from "./commissioningService";
+import { createRecord, latestCommissioningRecheck, COMMISSIONING_PIN_LOCK_NS } from "./commissioningService";
+// doc 81 Đợt 5 task F fix 1 — the CLI importer's pin-clear (scripts/mappings-import.mjs ⇒ goStopPinCliTx) takes the same lock.
+import { goStopPinCliTx, COMMISSIONING_PIN_LOCK_NS as CLI_LOCK_NS } from "../../../scripts/lib/stopPinCli.mjs";
 import { datStopPin, ghiAuditGoStopPinTx, GO_STOP_PIN_PATCH } from "./stopPin";
 import { deviceTags } from "../../../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -91,7 +93,15 @@ const maxAuditId = async () =>
   Number((await sql<{ m: number | null }[]>`SELECT max(id)::int AS m FROM control_audit_log`)[0].m ?? 0);
 
 describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("Đợt 5 F7 — signature vs stop-pin change are strictly ordered (DB _test)", () => {
+  // The parked transactions here are deliberate: their lock waits cross the query monitor's slow threshold. Those
+  // "[SLOW QUERY]" lines are expected and kept out of the output; any other warning still prints.
+  let warnSpy: ReturnType<typeof vi.spyOn> | undefined;
   beforeAll(async () => {
+    const realWarn = console.warn.bind(console);
+    warnSpy = vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => {
+      if (typeof a[0] === "string" && a[0].startsWith("[SLOW QUERY]")) return;
+      realWarn(...a);
+    });
     sql = postgres(DB_URL!, { max: 4, connect_timeout: 30, onnotice: () => {} });
     const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
     fx.adapter = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled")
@@ -109,6 +119,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("Đợt 5 F7 — signa
   });
 
   afterAll(async () => {
+    warnSpy?.mockRestore();
     if (!sql) return;
     gate.armed = false;
     await sql`DELETE FROM commissioning_records WHERE "adapterId" = ${fx.adapter}`;
@@ -182,6 +193,38 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("Đợt 5 F7 — signa
     expect(await within(p, 5000, "auto-clear tx")).toEqual({ commissioningRecheckRequired: false });
     await within(s, 5000, "createRecord");
     expect(await latestCommissioningRecheck(fx.adapter)).toBeNull();
+  }, 30_000);
+
+  it("F fix 1 — CLI importer pin-clear (goStopPinCliTx): same lock namespace; a signature waits for it; audit stamps the signature in force", async () => {
+    expect(CLI_LOCK_NS).toBe(COMMISSIONING_PIN_LOCK_NS);
+    await sql`UPDATE device_tags SET stop_value = 'false'::jsonb WHERE id = ${fx.tag}`;
+    const s0 = await createRecord({ adapterId: fx.adapter, signedBy: fx.user, fatReference: `${RUN}-C0` });
+    const before = await maxAuditId();
+    let open!: () => void;
+    const parked = new Promise<void>((r) => (open = r));
+    let reached!: () => void;
+    const atAudit = new Promise<void>((r) => (reached = r));
+    const cli = sql.begin(async (tx) => {
+      const [row] = await tx`SELECT id, "adapterId", "tagKey", address, "dataType", scale, "offset", writable, "isEnabled", stop_value
+                              FROM device_tags WHERE id = ${fx.tag} FOR UPDATE`;
+      await goStopPinCliTx(tx, { row, nguon: "tag_not_writable", actorId: fx.user, actorName: "F7 cli" });
+      reached();
+      await parked; // the CLI transaction sits before COMMIT, holding the lock
+    });
+    await within(atAudit, 5000, "cli audit");
+    const s1 = createRecord({ adapterId: fx.adapter, signedBy: fx.user, fatReference: `${RUN}-C1` });
+    let early: string;
+    try {
+      early = await settledWithin(s1, 800);
+    } finally {
+      open();
+    }
+    expect(early).toBe("pending");
+    await within(cli, 5000, "cli tx");
+    await within(s1, 5000, "createRecord");
+    const [audit] = await xactStartOf(before);
+    expect(audit.afterJson).toMatchObject({ commissioningRecheckRequired: true, commissioningSignatureId: s0.id, autoClearedBy: "tag_not_writable" });
+    expect(await latestCommissioningRecheck(fx.adapter)).toBeNull(); // the newer signature came after the committed clear
   }, 30_000);
 
   it("a pin change made under a signature, then a NEW signature ⇒ chip shows, then clears (id comparison)", async () => {
