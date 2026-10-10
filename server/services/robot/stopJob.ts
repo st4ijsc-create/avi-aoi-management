@@ -12,6 +12,13 @@
  */
 import type { RobotJobSpec } from "./robotDriver";
 
+/**
+ * Deadline of ONE DB step on a STOP path (ruling R-1C-h). Defined here (dependency-free) so the orchestration engine can
+ * bound its pre-dispatch STOP lookups with the SAME value without importing the dispatcher (final wave F5); the robot
+ * dispatcher re-exports it as ROBOT_STOP_DB_STEP_DEADLINE_MS.
+ */
+export const STOP_DB_STEP_DEADLINE_MS = 1000;
+
 /** Job types that are a STOP (energy-reducing), compared trimmed and case-insensitive. */
 export const STOP_JOB_TYPES: ReadonlySet<string> = new Set(["abort", "stop", "e_stop"]);
 

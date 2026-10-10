@@ -634,7 +634,8 @@
   },
   "entityPicker": {
     "createNew": "新建",
-    "invalid": "不存在"
+    "invalid": "不存在",
+    "narrowSearch": "结果多于此列表所示——请输入以缩小搜索范围。"
   },
   "deviceHub": {
     "title": "设备",
@@ -3997,7 +3998,9 @@
       "unassignEngineeringItem": "取消分配待审批事项"
     },
     "field": {
+      "uiPrefs": "界面偏好",
       "shiftConfigId": "班次 (shiftConfigId)",
+      "robotId": "机器人 (robotId)",
       "stopValue": "固定停止值（stopValue）",
       "inspectionTime": "检测时间（inspectionTime）",
       "completedAt": "完成时间（completedAt）",
@@ -4104,6 +4107,7 @@
       "assigneeUserId": "被分配人"
     },
     "feature": {
+      "uiPrefs": "界面偏好同步",
       "webIngest": "网页内容导入",
       "robotAnomalyDetection": "机器人异常检测",
       "modelAutoRollback": "模型自动回滚",
@@ -4243,6 +4247,7 @@
       "manualConfirmerMismatch": "手动指令必须由发送它的当前登录用户确认。",
       "robotNotActive": "机器人未运行或未连接——无法发送指令。",
       "motionLocked": "运动已被锁定（通信中断或上一次运动结果未知）。成功发送停止指令或由授权人员解锁后方可解除。",
+      "robotDisabled": "机器人已被禁用（系统启动后被禁用，或无法读取其状态）——运动指令被拒绝。停止指令仍会发送。如需运动请重新启用机器人。",
       "safetyBlocked": "安全 PLC 报告急停/故障——运动在发送前被拒绝。",
       "safetyUnknown": "无法确认安全 PLC（未配置、无法读取或标签质量差）——运动被拒绝。",
       "safetySimOnly": "仅有仿真或未映射的安全 PLC——真实指令需要已映射安全标签的真实安全 PLC。",
@@ -4341,6 +4346,8 @@
       "buildChecksumMismatch": "重新编译该版本源码与已存构建不一致 — 将下载的不是已构建/仿真的版本。请重新构建并仿真后再部署。尚未向设备写入任何内容。",
       "interlockRuleChanged": "您打开页面后该规则已被修改——列表已重新加载。请查看新内容后再批准/启用。",
       "runGateChanged": "该运行已不在您查看的步骤等待（该步骤已由他人决定）。请刷新以查看当前等待的步骤。",
+      "definitionChanged": "在您的页面加载后工作流已重新部署——请刷新并查看当前定义后再审批。",
+      "robotIdRequired": "该步骤未指定机器人，因此未发送任何命令。请为步骤选择机器人后重新部署。",
       "recipeNotApproved": "此配方版本尚未经第二人批准——不能部署、发布或回滚到该版本。",
       "recipeArchived": "此配方版本已归档——请创建新版本，而不是将已归档版本投入生产。",
       "recipeMachineTypeMismatch": "此配方适用的机型与目标设备不同——不能部署到该设备。",
@@ -4379,7 +4386,8 @@
     },
     "DEVICE_UNREACHABLE": "无法连接到 {{entity}} 设备。请检查电源、网线和 IP 地址。",
     "DEVICE_PROTOCOL_UNSUPPORTED": "此版本不支持 {{entity}} 协议。",
-    "OT_COMMAND_SUPERSEDED_BY_STOP": "等待中的命令已因停止（STOP）命令而被取消——如仍需要，请重新发送。"
+    "OT_COMMAND_SUPERSEDED_BY_STOP": "等待中的命令已因停止（STOP）命令（{{stopKey}}）而被取消——如仍需要，请重新发送。",
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "等待中的命令已因停止（STOP）命令而被取消——如仍需要，请重新发送。"
   },
   "export": {
     "reportMenu": {
@@ -7127,7 +7135,8 @@
     "alertMappings": "警告mappings",
     "highPriorityOnly": "仅高优先级",
     "snooze1h": "延后 1 小时",
-    "snoozed": "已延后"
+    "snoozed": "已延后",
+    "snoozeHint": "已延后：仅静音普通项的铃铛计数和弹出提示——紧急/严重项仍会提醒；列表保持完整。"
   },
   "oee": {
     "updateTarget": "更新目标",
@@ -11686,6 +11695,19 @@
     "noRunMatch": "无匹配过滤条件的运行",
     "otherRuns": "其他运行",
     "awaitingStep": "等待步骤",
+    "gateRequired": "未发送：此命令需要在本次运行中先有一个审批关卡，并由启动运行者以外的人批准。请在此步骤前添加审批关卡，重新部署后开始新的运行。",
+    "deployStopAdapterAmbiguous": "未部署：停止步骤 {{steps}} 无法确定唯一的适配器（该设备没有或有多个已启用的适配器，且步骤未指定适配器）。请为步骤指定适配器或修正设备的适配器后重新部署。",
+    "robot": "机器人",
+    "pickRobot": "选择机器人…",
+    "noRobots": "您的范围内没有已启用的机器人。",
+    "deployRobotIdMissing": "未部署：机器人步骤 {{steps}} 未指定机器人。请为每个步骤选择机器人后重新部署。",
+    "deployRobotUnavailable": "未部署：机器人步骤 {{steps}} 指定的机器人不存在（或无法读取机器人列表）。请为每个步骤选择存在的机器人后重新部署。",
+    "deployRobotDisabled": "未部署：运动步骤 {{steps}} 指定的机器人未启用。请启用该机器人或选择已启用的机器人后重新部署。",
+    "runRefusedDefinition": "未启动运行 — 已部署的工作流未通过安全检查：",
+    "definitionChangedReload": "自您打开此审批以来工作流定义已更改——请刷新页面并查看后再审批。",
+    "gateRequiredOwnerApproved": "未发送：此命令前的审批关卡由启动运行的人自己批准，不予计入。请开始新的运行，并由其他用户批准该关卡。",
+    "gateRequiredStale": "未发送：关卡批准后工作流已重新部署，该批准不覆盖当前运行的内容。请开始新的运行并重新批准关卡。",
+    "gateRequiredOwnerUnknown": "未发送：此运行没有可确认的所有者（由系统或无创建者的 API 密钥启动），无法核验独立审批。请以用户身份启动运行。",
     "approverRolesLabel": "审批人角色",
     "noGatePrompt": "作者未为此步骤编写提示。",
     "rejectReason": "拒绝原因（可选）",
@@ -14556,7 +14578,10 @@
       "reasonPlaceholder": "例如：已现场检查，机器人静止，区域无人",
       "confirm": "确认解除",
       "cleared": "已解除 {{code}} 的运动锁定",
-      "notLocked": "机器人 {{code}} 未被运动锁定"
+      "notLocked": "机器人 {{code}} 未被运动锁定",
+      "reason": {
+        "persistUnknown": "启动时无法读取已保存的锁定（数据库无响应）——为安全起见已锁定"
+      }
     }
   },
   "controlPlane": {
@@ -14684,6 +14709,10 @@
         "title": "已固定的停止标签（{{count}}）",
         "row": "{{tagKey}} = {{value}}",
         "unreadable": "已固定的停止标签：无法读取——签署前请在设备适配器页面核对。"
+      },
+      "recheck": {
+        "chip": "需要重新核查调试签收——标签 {{tagKey}} 的停止固定值已于 {{time}} 更改，晚于当前签收。核查后请重新签收以清除此提示。",
+        "unreadable": "无法检查当前签收之后的停止固定值更改——签收前请在设备适配器页面核查。"
       },
       "rec": {
         "active": "有效",
@@ -16382,7 +16411,8 @@
       "toast": {
         "saved": "已保存停止固定值",
         "recheckCommissioning": "该适配器已调试签收——更改固定值后请到“系统健康”下的签收台账重新核查调试状态。",
-        "autoCleared": "已移除该标签的停止固定值。"
+        "autoCleared": "已移除该标签的停止固定值。",
+        "adapterPinsCleared": "适配器已指向不同的目标设备——已移除该适配器的 {{count}} 个停止固定值。如仍需要，请逐个标签重新固定。"
       },
       "error": {
         "intRequired": "int 类型标签需要一个整数——数值不会被取整。",
@@ -16392,7 +16422,9 @@
       "confirmOff": {
         "title": "移除停止固定值？",
         "body": "该标签已固定停止值；关闭后将移除该固定值。",
-        "confirm": "关闭并移除固定值"
+        "confirm": "关闭并移除固定值",
+        "bodyEdit": "该标签已固定停止值；保存此更改（不可写 / 禁用 / 更改地址、类型、缩放或偏移）将移除该固定值。",
+        "confirmEdit": "保存并移除固定值"
       }
     },
     "toast": {
@@ -21853,7 +21885,9 @@
       "noShift": "— 不指定班次 —",
       "allFactories": "全系统",
       "loadingShifts": "正在加载该产线的班次…",
-      "defaultHint": "已预选当前正在进行的班次。"
+      "defaultHint": "已预选当前正在进行的班次。",
+      "factoryClock": "按工厂时间（{{tz}}）。",
+      "browserClock": "按本设备时钟——工厂时区未知。"
     }
   },
   "engineeringAssign": {

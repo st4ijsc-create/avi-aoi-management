@@ -23,6 +23,7 @@ const AILocalChatBubble = React.lazy(() =>
   import("./components/AILocalChatBubble").then((m) => ({ default: m.AILocalChatBubble })),
 );
 import { ConnectionBanner } from "./components/ConnectionBanner";
+import { UiPrefsSync } from "./components/UiPrefsSync";
 import { RouteGuard } from "./components/RouteGuard";
 // ★★★ Đợt 21 lô Y (§13b 14.2.3) — 14 đường vào Twin cũ, mỗi đường ≤1 chặng.
 import { traDichCu } from "./components/twin3d/bo-cuc/dinhTuyenTwinCu";
@@ -864,6 +865,8 @@ function App() {
             <ProgrammingCopilotProvider>
             <AiCopilotProvider>
               <ConnectionBanner />
+              {/* doc 81 Đợt 4 Task D1 — sở thích giao diện theo tài khoản (localStorage ⇄ user_settings.uiPrefs). */}
+              <UiPrefsSync />
               <Toaster />
               {/* Wave 1 (foundation): a single top-level Suspense boundary so any
                   code-split page (including bare `component={}` routes like /api-docs)

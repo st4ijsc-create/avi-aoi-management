@@ -93,7 +93,7 @@ vi.mock("@/lib/trpc", () => {
       if (router === "interlock" && name === "list") return q(srv.listSnapshot, enabled);
       if (router === "interlock" && name === "events") return q(srv.events, enabled);
       if (router === "engineering" && name === "assignments") return q(srv.assignments, enabled);
-      if (router === "engineering" && name === "assignableUsers") return q([{ id: 51, name: "Ky su Rule" }], enabled);
+      if (router === "engineering" && name === "assignableUsers") return q({ users: [{ id: 51, name: "Ky su Rule" }], truncated: false }, enabled);
       if (router === "oversight" && name === "posture") {
         if (srv.posture.isError) return q(undefined, enabled, { isError: true, error: { message: "x" } });
         return q(srv.posture.data, enabled, { isLoading: enabled && srv.posture.data === undefined });

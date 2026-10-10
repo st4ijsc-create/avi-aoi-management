@@ -6,12 +6,17 @@
  * uns_tag_mappings) theo KHÓA TỰ NHIÊN (adapter code + tag name).
  *
  * Cách dùng (đọc DATABASE_URL từ .env, pattern migrate-standalone.mjs):
- *   node scripts/mappings-import.mjs contracts/mappings/plc-1.mapping.yaml           (DRY-RUN: chỉ in diff)
- *   node scripts/mappings-import.mjs contracts/mappings/plc-1.mapping.yaml --apply   (ghi DB)
- *   node scripts/mappings-import.mjs <file> --apply --prune                          (+ xoá row DB vắng mặt trong file)
+ *   node scripts/mappings-import.mjs contracts/mappings/plc-1.mapping.yaml                          (DRY-RUN: chỉ in diff)
+ *   node scripts/mappings-import.mjs contracts/mappings/plc-1.mapping.yaml --apply --actor <id|email> (ghi DB)
+ *   node scripts/mappings-import.mjs <file> --apply --actor <id|email> --prune                      (+ xoá row DB vắng mặt trong file)
  *
  * AN TOÀN:
  *   - Mặc định DRY-RUN. --apply mới ghi; --prune mới xoá (tường minh).
+ *   - doc 81 Đợt 4 Task C2 — --apply BẮT BUỘC --actor <userId|email>: thiếu ⇒ thoát 1 TRƯỚC khi mở kết nối DB.
+ *     Người chạy được tra trong `users` NGAY ĐẦU transaction của import (id, hoặc email không phân biệt hoa
+ *     thường; phải ĐANG HOẠT ĐỘNG; email trùng ⇒ từ chối, dùng id) — không tra được ⇒ thoát 1, không ghi gì.
+ *     Người chạy được ghi vào: dòng audit_logs `mapping_as_code.import` (cùng hình mappingAsCode.apply của
+ *     server), config_snapshots.payload_summary (importedBy/importedByUserId), và audit gỡ ghim DỪNG.
  *   - Version gate: file.version phải >= version đã import (config_snapshots
  *     entity_type='mapping_file'); file cũ không đè bản mới.
  *   - Import KHÔNG tạo adapter, KHÔNG đổi machineId/endpoint, KHÔNG restart
@@ -39,9 +44,21 @@ const ROOT = path.join(__dirname, '..');
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
 const PRUNE = args.includes('--prune');
-const fileArg = args.find((a) => !a.startsWith('--'));
+// doc 81 Đợt 4 Task C2 — `--actor <v>` hoặc `--actor=<v>`; giá trị của `--actor <v>` KHÔNG phải tham số vị trí (file).
+let ACTOR = null;
+const actorIdx = args.findIndex((a) => a === '--actor' || a.startsWith('--actor='));
+if (actorIdx !== -1) {
+  const a = args[actorIdx];
+  ACTOR = a === '--actor' ? (args[actorIdx + 1] && !args[actorIdx + 1].startsWith('--') ? args[actorIdx + 1] : '') : a.slice('--actor='.length);
+  ACTOR = ACTOR.trim();
+}
+const fileArg = args.find((a, i) => !a.startsWith('--') && !(actorIdx !== -1 && args[actorIdx] === '--actor' && i === actorIdx + 1));
 if (!fileArg) {
-  console.error('Usage: node scripts/mappings-import.mjs <file.mapping.yaml> [--apply] [--prune]');
+  console.error('Usage: node scripts/mappings-import.mjs <file.mapping.yaml> [--apply --actor <userId|email>] [--prune]');
+  process.exit(1);
+}
+if (APPLY && !ACTOR) {
+  console.error('ERROR: --apply cần --actor <userId|email> — người chạy import được ghi vào audit. Không ghi gì.');
   process.exit(1);
 }
 const FILE = path.resolve(fileArg);
@@ -213,6 +230,26 @@ function changedFields(from, to) {
   return Object.keys(to).filter((k) => stableStringify(from[k]) !== stableStringify(to[k]));
 }
 
+// ─── người chạy (doc 81 Đợt 4 Task C2) ─────────────────────────────────────────
+/**
+ * Tra `--actor` trong `users` bằng `tx` của import. Số nguyên dương ⇒ theo id; còn lại ⇒ theo email (không phân
+ * biệt hoa thường). Không thấy / tài khoản TẮT / email trùng nhiều người ⇒ ném (transaction rollback, thoát 1).
+ */
+async function resolveActorTx(tx, raw) {
+  const v = String(raw ?? '').trim();
+  if (!v) throw new Error('--actor trống — --apply cần --actor <userId|email>.');
+  const rows = /^[1-9][0-9]{0,9}$/.test(v)
+    ? await tx`SELECT id, name, email, username, "isActive" FROM users WHERE id = ${Number(v)}`
+    : await tx`SELECT id, name, email, username, "isActive" FROM users WHERE lower(email) = lower(${v}) ORDER BY id`;
+  if (rows.length === 0) throw new Error(`--actor "${v}": không có trong users (not found) — không ghi gì.`);
+  if (rows.length > 1) {
+    throw new Error(`--actor "${v}": ${rows.length} tài khoản cùng email (ambiguous) — dùng user id. Không ghi gì.`);
+  }
+  const u = rows[0];
+  if (u.isActive !== true) throw new Error(`--actor "${v}": tài khoản #${u.id} đã TẮT (inactive) — không ghi gì.`);
+  return { id: Number(u.id), name: u.name || u.username || u.email || `user#${u.id}` };
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────────
 const raw = YAML.parse(fs.readFileSync(FILE, 'utf-8'));
 const file = validateFile(raw);
@@ -301,7 +338,10 @@ try {
   // ── apply: MỘT transaction ────────────────────────────────────────────────
   const secPlatform = process.env.SEC_PLATFORM === 'true' || process.env.SEC_PLATFORM === '1';
   const goGhim = [];
+  let actor = null;
   await sql.begin(async (tx) => {
+    // doc 81 Đợt 4 Task C2 — người chạy tra TRONG transaction, TRƯỚC mọi lượt ghi; không tra được ⇒ ném ⇒ rollback.
+    actor = await resolveActorTx(tx, ACTOR);
     // doc 81 Đợt 1D fix round 2 — khoá mọi tag của adapter, đọc lại ghim TRÊN hàng đã khoá.
     const khoa = await tx`
       SELECT id, "adapterId", "tagKey", address, "dataType", scale, "offset", writable, "isEnabled", stop_value
@@ -319,14 +359,14 @@ try {
           "updatedAt" = NOW()`;
       const cu = khoaTheoKey.get(t.name);
       const nguon = cu ? lyDoGoStopPinCli(cu, t) : null;
-      if (cu && nguon) goGhim.push(await goStopPinCliTx(tx, { row: cu, nguon, secPlatform }));
+      if (cu && nguon) goGhim.push(await goStopPinCliTx(tx, { row: cu, nguon, secPlatform, actorId: actor.id, actorName: actor.name }));
     }
     if (PRUNE) {
       for (const k of tagDeletes) {
         await tx`DELETE FROM device_tags WHERE "adapterId" = ${adapter.id} AND "tagKey" = ${k}`;
         const cu = khoaTheoKey.get(k);
         if (cu && cu.stop_value !== null && cu.stop_value !== undefined) {
-          goGhim.push(await goStopPinCliTx(tx, { row: cu, nguon: 'tag_deleted', xoa: true, secPlatform }));
+          goGhim.push(await goStopPinCliTx(tx, { row: cu, nguon: 'tag_deleted', xoa: true, secPlatform, actorId: actor.id, actorName: actor.name }));
         }
       }
     }
@@ -353,7 +393,9 @@ try {
       version: file.version,
       adapterCode: adapter.code,
       importedAt: new Date().toISOString(),
-      importedBy: 'cli:mappings-import',
+      importedBy: actor.name,
+      importedByUserId: actor.id,
+      importedVia: 'cli:mappings-import',
       tagCount: file.tags.length,
       mappingCount: file.uns_mappings.length,
       prune: PRUNE,
@@ -365,9 +407,31 @@ try {
       ON CONFLICT (entity_type, entity_id) DO UPDATE SET
         config_hash = EXCLUDED.config_hash, status = 'in_sync',
         payload_summary = EXCLUDED.payload_summary, updated_at = NOW()`;
+
+    // doc 81 Đợt 4 Task C2 — dòng audit của lượt import (cùng action/entity với mappingAsCode.apply của server),
+    // TRONG transaction: audit không ghi được ⇒ import rollback. Không contentHash (khoá HMAC ở kho bí mật của app —
+    // cùng lý do audit gỡ ghim của stopPinCli.mjs).
+    const importDetails = {
+      operation: 'import',
+      metadata: {
+        via: 'cli:mappings-import',
+        fileVersion: file.version,
+        storedVersion: Number.isFinite(storedVersion) ? storedVersion : null,
+        prune: PRUNE,
+        applied: true,
+        changeCount: tagCreates.length + tagUpdates.length + tagDeletes.length + unsCreates.length + unsUpdates.length + unsDeletes.length,
+        fileHash,
+      },
+      source: 'cli',
+      timestamp: new Date().toISOString(),
+    };
+    await tx`INSERT INTO audit_logs ("userId", "userName", action, "entityType", "entityId", "entityName", details, status)
+             VALUES (${actor.id}, ${actor.name}, 'mapping_as_code.import', 'device_adapter_mapping', ${adapter.id}, ${adapter.code},
+                     ${JSON.stringify(importDetails)}, 'success')`;
   });
 
-  console.log(`\n[APPLIED] tags: +${tagCreates.length} ~${tagUpdates.length} -${PRUNE ? tagDeletes.length : 0} | uns: +${unsCreates.length} ~${unsUpdates.length} -${PRUNE ? unsDeletes.length : 0}`);
+  console.log(`\n[ACTOR] ${actor.name} (user #${actor.id}) — đã ghi vào audit.`);
+  console.log(`[APPLIED] tags: +${tagCreates.length} ~${tagUpdates.length} -${PRUNE ? tagDeletes.length : 0} | uns: +${unsCreates.length} ~${unsUpdates.length} -${PRUNE ? unsDeletes.length : 0}`);
   for (const g of goGhim) console.log(`[STOP-PIN] gỡ ghim DỪNG của tag "${g.tagKey}" (${g.nguon}) — đã ghi audit; ghim lại qua UI nếu vẫn cần.`);
   if (tagWrites > 0) {
     console.log('[NOTE] device_tags đã đổi — adapter chỉ nhận tag-set mới ở lần (re)connect kế; restart adapter/app theo quy trình vận hành.');

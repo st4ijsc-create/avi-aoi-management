@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import ManualHelp from "@/components/ManualHelp";
 import JsonSchemaForm, { jsonSchemaDefaults } from "@/components/JsonSchemaForm";
+import { lyDoGoStopPinKhiSuaTag, type TagChoLuatGoGhim } from "@shared/stopPinTagRule";
 
 const PROTOCOLS = ["stub", "opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip"] as const;
 const DATA_TYPES = ["bool", "int", "float", "string", "json"] as const;
@@ -352,9 +353,81 @@ export function notifyStopPinAutoClear(res: unknown, t: (k: string, d: string) =
 }
 
 /**
- * doc 81 Đợt 1D final wave 3 (M4) — the Writable / Enabled switch of a tag row. Turning it OFF on a PINNED tag clears
- * the pin on the server — so it asks first ("Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim"). Turning it on, or any
- * toggle on an unpinned tag, is immediate as before.
+ * doc 81 Đợt 4 Task C1 — after `deviceAdapter.update`: the server returns how many STOP pins it cleared because the
+ * adapter now points at a different device (`stopPinsCleared`, R-1D-a). Before, the clear was silent. Notice only when > 0.
+ */
+export function notifyAdapterStopPinsCleared(
+  res: unknown,
+  t: (k: string, d: string, o?: Record<string, unknown>) => string,
+): void {
+  const n = Number((res as { stopPinsCleared?: unknown } | null | undefined)?.stopPinsCleared);
+  if (!Number.isFinite(n) || n <= 0) return;
+  toast.warning(
+    t(
+      "deviceAdapter.stopPin.toast.adapterPinsCleared",
+      "Adapter đã đổi thiết bị đích — đã gỡ {{count}} ghim DỪNG của adapter. Ghim lại ở từng tag nếu vẫn cần.",
+      { count: n },
+    ),
+  );
+}
+
+/**
+ * doc 81 Đợt 4 Task C1 — ask BEFORE a tag save that would clear its STOP pin. The decision is the SHARED rule
+ * (`shared/stopPinTagRule.ts#lyDoGoStopPinKhiSuaTag`) — the very function the server uses to clear the pin inside
+ * `tags.update` — so the dialog shows exactly when the server would clear. `guard(existing, patch, run)`: rule says
+ * "clears" ⇒ open the dialog and run only on confirm (Cancel ⇒ nothing sent); otherwise run immediately.
+ * `variant`: "off" = a Writable/Enabled switch (existing `confirmOff.*` sentence); "edit" = the tag form.
+ */
+export function useStopPinRemovalGuard(variant: "off" | "edit" = "off") {
+  const { t } = useTranslation();
+  const [pending, setPending] = useState<(() => void) | null>(null);
+  const guard = (existing: TagChoLuatGoGhim | null | undefined, patch: Record<string, unknown>, run: () => void) => {
+    // Row not in the loaded list ⇒ the client can't tell; the server still decides and notifies after (stopPinAutoCleared).
+    if (existing && lyDoGoStopPinKhiSuaTag(existing, patch) !== null) {
+      setPending(() => run);
+      return;
+    }
+    run();
+  };
+  const dialog = (
+    <AlertDialog open={pending != null} onOpenChange={(o) => { if (!o) setPending(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("deviceAdapter.stopPin.confirmOff.title", "Gỡ ghim DỪNG?")}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {variant === "edit"
+              ? t(
+                  "deviceAdapter.stopPin.confirmOff.bodyEdit",
+                  "Tag này đang được ghim DỪNG; lưu thay đổi này (không ghi được / tắt / đổi địa chỉ, kiểu, scale, offset) sẽ gỡ ghim.",
+                )
+              : t("deviceAdapter.stopPin.confirmOff.body", "Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim.")}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("common.cancel", "Hủy")}</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              const run = pending;
+              setPending(null);
+              run?.();
+            }}
+          >
+            {variant === "edit"
+              ? t("deviceAdapter.stopPin.confirmOff.confirmEdit", "Lưu và gỡ ghim")
+              : t("deviceAdapter.stopPin.confirmOff.confirm", "Tắt và gỡ ghim")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+  return { guard, dialog };
+}
+
+/**
+ * doc 81 Đợt 1D final wave 3 (M4) — the Writable / Enabled switch of a tag row. A change that clears the pin on the
+ * server asks first ("Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim"). Đợt 4 Task C1: "would it clear" is the SHARED
+ * rule (same function as the server), not a local `!v && pinned` copy. Turning it on, or any toggle on an unpinned
+ * tag, is immediate as before.
  */
 export function TagFlagSwitch({
   tag,
@@ -363,15 +436,14 @@ export function TagFlagSwitch({
   disabled,
   onChange,
 }: {
-  tag: { id: number; tagKey: string; stopValue?: unknown };
+  tag: TagChoLuatGoGhim & { id: number; tagKey: string };
   field: "writable" | "isEnabled";
   checked: boolean;
   disabled: boolean;
   onChange: (v: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const pinned = tag.stopValue !== undefined && tag.stopValue !== null;
+  const { guard, dialog } = useStopPinRemovalGuard("off");
   const label = field === "writable" ? t("deviceAdapter.tag.writable", "Ghi được") : t("deviceAdapter.col.enabled", "Bật");
   return (
     <>
@@ -379,35 +451,9 @@ export function TagFlagSwitch({
         checked={checked}
         disabled={disabled}
         aria-label={`${label}: ${tag.tagKey}`}
-        onCheckedChange={(v) => {
-          if (!v && pinned) {
-            setConfirmOpen(true);
-            return;
-          }
-          onChange(v);
-        }}
+        onCheckedChange={(v) => guard(tag, { [field]: v }, () => onChange(v))}
       />
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("deviceAdapter.stopPin.confirmOff.title", "Gỡ ghim DỪNG?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("deviceAdapter.stopPin.confirmOff.body", "Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim.")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel", "Hủy")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setConfirmOpen(false);
-                onChange(false);
-              }}
-            >
-              {t("deviceAdapter.stopPin.confirmOff.confirm", "Tắt và gỡ ghim")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {dialog}
     </>
   );
 }
@@ -460,7 +506,14 @@ export default function DeviceAdapterManagement() {
     onError: (e) => toastTrpcError(e),
   });
   const updateAdapter = trpc.deviceAdapter.update.useMutation({
-    onSuccess: () => { toast.success(t("deviceAdapter.toast.updated", "Đã cập nhật adapter")); setAdapterOpen(false); invalidateAdapters(); },
+    onSuccess: (res) => {
+      toast.success(t("deviceAdapter.toast.updated", "Đã cập nhật adapter"));
+      notifyAdapterStopPinsCleared(res, t); // doc 81 Đợt 4 Task C1
+      setAdapterOpen(false);
+      invalidateAdapters();
+      // Pins may have been cleared server-side — refresh the open tag list.
+      invalidateTags();
+    },
     onError: (e) => toastTrpcError(e),
   });
   const deleteAdapter = trpc.deviceAdapter.delete.useMutation({
@@ -553,6 +606,9 @@ export default function DeviceAdapterManagement() {
     else createAdapter.mutate(base);
   };
 
+  const adapters = adaptersQuery.data ?? [];
+  const tags = tagsQuery.data ?? [];
+  const tagEditGuard = useStopPinRemovalGuard("edit");
   const submitTag = () => {
     if (tagSheetAdapterId == null) return;
     const base = {
@@ -565,12 +621,13 @@ export default function DeviceAdapterManagement() {
       writable: tagForm.writable,
       isEnabled: tagForm.isEnabled,
     };
-    if (tagForm.id != null) updateTag.mutate({ id: tagForm.id, ...base });
-    else createTag.mutate({ adapterId: tagSheetAdapterId, ...base });
+    if (tagForm.id != null) {
+      // doc 81 Đợt 4 Task C1 — saving the tag form asks first when the shared rule says the save clears the pin.
+      const id = tagForm.id;
+      tagEditGuard.guard(tags.find((tg) => tg.id === id), base, () => updateTag.mutate({ id, ...base }));
+    } else createTag.mutate({ adapterId: tagSheetAdapterId, ...base });
   };
 
-  const adapters = adaptersQuery.data ?? [];
-  const tags = tagsQuery.data ?? [];
 
   return (
     <DashboardLayout title="Device Adapter (OT)" navItems={navItems} currentPath="/device-adapters">
@@ -872,6 +929,8 @@ export default function DeviceAdapterManagement() {
           )}
         </SheetContent>
       </Sheet>
+
+      {tagEditGuard.dialog}
 
       {/* ── Delete adapter confirmation ── */}
       <AlertDialog open={adapterToDelete != null} onOpenChange={(o) => { if (!o) setAdapterToDelete(null); }}>

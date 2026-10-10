@@ -13,6 +13,8 @@
  * 60 ms để hai lượt song song chắc chắn chồng nhau. Facade an toàn THẬT; nguồn PLC nền giả trả OK.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import { and, eq, like } from "drizzle-orm";
 
 const rt = vi.hoisted(() => ({ runJobCalls: 0, jobs: [] as unknown[] }));
@@ -53,6 +55,9 @@ vi.mock("../safety/plc/safetyPlcAdapter", () => ({
 
 import { getDb } from "../../db/connection";
 import { aiPendingActions, robotJobs } from "../../../drizzle/schema";
+import { makeFoeGateRun, type FoeGateRunFixture } from "../orchestration/foe/__foeGateRunFixture";
+
+const fixtures: FoeGateRunFixture[] = []; // doc 81 Đợt 4 fix round 1 — real run/gate rows, removed in afterAll
 import { dispatchRobotJob, ROBOT_MOTION_IN_PROGRESS, type RobotDispatchInput } from "./robotCommandDispatcher";
 import { robotPayloadHash, withOtPayloadHash, readOtPayloadHash } from "../ot/otActionBinding";
 
@@ -87,7 +92,9 @@ async function makeAction(opts: {
         );
   await (await d()).insert(aiPendingActions).values({
     id,
-    tool: "foe.orchestration",
+    // doc 81 Đợt 4 Task A5 — a GENERIC bound action (this file tests the hash binding, not the engine). The tool used to
+    // be "foe.orchestration"; that tool now also requires a separate gate approval on record (foeSelfApprovalRefusal).
+    tool: "robot.test.binding",
     argsJson: {},
     userId: opts.userId ?? OWNER,
     userRole: "engineer",
@@ -128,12 +135,19 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     expect(DB_URL).toMatch(/_test/); // cầu chì: không bao giờ chạy trên DB dev
     for (const k of ENV_KEYS) saved[k] = process.env[k];
     await import("../ot/adapterFacade");
+    // final wave F4 — adapterFacade.getSafetyStatus (A1) imports ./safetyTarget DYNAMICALLY inside the same 5 s preflight
+    // deadline; warm it (and the PLC adapter mock) here so a cold import under parallel load is not measured as SAFETY_UNKNOWN.
+    await import("../ot/safetyTarget");
+    await import("../safety/plc/safetyPlcAdapter");
   }, 60_000);
 
   afterAll(async () => {
+    for (const f of fixtures.splice(0)) await f.cleanup();
     const db = await d();
     await db.delete(aiPendingActions).where(like(aiPendingActions.id, `${DAU}%`));
     await db.delete(aiPendingActions).where(and(eq(aiPendingActions.userId, OWNER), like(aiPendingActions.summary, "FOE orchestration:%")));
+    // doc 81 Đợt 4 Task A5 — engine rows are now confirmed by the gate approver (OTHER).
+    await db.delete(aiPendingActions).where(and(eq(aiPendingActions.userId, OTHER), like(aiPendingActions.summary, "FOE orchestration:%")));
     try {
       await db.delete(robotJobs).where(eq(robotJobs.robotId, ROBOT));
     } catch {
@@ -241,6 +255,8 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     // Nạp trước facade an toàn của registry MỚI (như beforeAll làm cho bản đầu): lần import động đầu tiên
     // nặng tới mức chạm hạn preflight 5 s ⇒ SAFETY_UNKNOWN giả — không phải thứ ca này đo.
     await import("../ot/adapterFacade");
+    await import("../ot/safetyTarget"); // final wave F4 — the facade's 2nd cold dynamic import (A1), same deadline
+    await import("../safety/plc/safetyPlcAdapter");
     expect(other.dispatchRobotJob).not.toBe(dispatchRobotJob); // cầu chì: đúng là bản module THỨ HAI
     const [a, b] = await Promise.all([dispatchRobotJob(input({ actionId })), other.dispatchRobotJob(input({ actionId }))]);
     expect([a.status, b.status].sort()).toEqual(["done", "rejected"]);
@@ -290,21 +306,79 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
       idempotencyKey: key,
       hitl: { actionId: "x", requestedBy: OWNER, confirmedBy: OWNER },
     };
-    await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: "s-robot", type: "command" } as any, {}, cmd as any);
+    // doc 81 Đợt 4 Task A5 + fix round 1 (R-4-i) — a REAL run (owner OWNER) whose gate OTHER approved; OTHER confirms.
+    const fx = await makeFoeGateRun({ tag: `${DAU}-r4`, owner: OWNER, approvedBy: OTHER });
+    fixtures.push(fx);
+    const approval = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
+    await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: "s-robot", type: "command" } as any, {}, cmd as any, approval);
     const [row] = await (await d())
       .select()
       .from(aiPendingActions)
-      .where(and(eq(aiPendingActions.userId, OWNER), eq(aiPendingActions.summary, "FOE orchestration: step s-robot")))
+      .where(eq(aiPendingActions.id, `foe-${key}`.slice(0, 64)))
       .limit(1);
+    expect(row?.userId).toBe(OTHER);
     expect(row).toBeDefined();
     expect(row!.status).toBe("confirmed");
     const job = toRobotJob(cmd as any);
     expect(readOtPayloadHash(row!.previewJson)).toBe(robotPayloadHash({ robotId: ROBOT, jobType: job.jobType, params: job.params ?? null }));
     // Chính hàng ấy đi qua dispatcher như RobotEquipmentAdapter.sendCommand gọi.
-    const r = await dispatchRobotJob({ robotId: ROBOT, job, triggerKind: "hitl", actionId: row!.id, requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: key });
+    const r = await dispatchRobotJob({ robotId: ROBOT, job, triggerKind: "hitl", actionId: row!.id, requestedBy: OWNER, confirmedBy: OTHER, idempotencyKey: key });
     expect(r.status).toBe("done");
     expect(rt.runJobCalls).toBe(1);
     expect(await pendingStatus(row!.id)).toBe("executed");
+  });
+
+  it("★ Đợt 4 A5 (lớp dispatcher): hàng FOE do CHÍNH người chạy xác nhận (không có phê duyệt gate riêng) ⇒ NOT_CONFIRMED, 0 runJob, hàng vẫn confirmed", async () => {
+    const { ensureOrchestrationAction } = await import("../orchestration/foe/foeEngine");
+    const { toRobotJob } = await import("../equipment/robotJobMapping");
+    const mk = async (approval?: { runId: number; runOwner: number | null; approvedBy: number; gateStepId: string }) => {
+      const key = `${DAU}-foeself-${++seq}`;
+      const cmd = { name: "home", robotId: ROBOT, machineId: null, idempotencyKey: key, hitl: { actionId: "x", requestedBy: OWNER, confirmedBy: OWNER } };
+      await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: `s-${key}`, type: "command" } as any, {}, cmd as any, approval);
+      const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, `foe-${key}`.slice(0, 64))).limit(1);
+      return { row: row!, key, job: toRobotJob(cmd as any) };
+    };
+    const before = rt.runJobCalls;
+    // (1) legacy self-grant (no approval on record), confirmer = run owner
+    const a = await mk();
+    expect(a.row.userId).toBe(OWNER);
+    const r1 = await dispatchRobotJob({ robotId: ROBOT, job: a.job, triggerKind: "hitl", actionId: a.row.id, requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: a.key });
+    expect(r1).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+    expect(await pendingStatus(a.row.id)).toBe("confirmed");
+    // (2) an approval whose approver IS the run owner
+    const b = await mk({ runId: 1, runOwner: OWNER, approvedBy: OWNER, gateStepId: "g0" });
+    const r2 = await dispatchRobotJob({ robotId: ROBOT, job: b.job, triggerKind: "hitl", actionId: b.row.id, requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: b.key });
+    expect(r2).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+    expect(rt.runJobCalls).toBe(before);
+  });
+
+  it("★ R-4-i (robot): preview TỰ NHẤT QUÁN nhưng CSDL nói khác (chủ run thật, người duyệt khác, gate edge/stale, run không chủ / không gate / không có) ⇒ NOT_CONFIRMED, 0 runJob", async () => {
+    const { ensureOrchestrationAction } = await import("../orchestration/foe/foeEngine");
+    const { toRobotJob } = await import("../equipment/robotJobMapping");
+    const Z = OTHER + 7;
+    const specs: Array<Parameters<typeof makeFoeGateRun>[0] | null> = [
+      { tag: `${DAU}-i1`, owner: OTHER, approvedBy: Z },
+      { tag: `${DAU}-i2`, owner: OWNER, approvedBy: Z },
+      { tag: `${DAU}-i3`, owner: OWNER, approvedBy: OTHER, source: "edge" },
+      { tag: `${DAU}-i4`, owner: OWNER, approvedBy: OTHER, stale: true },
+      { tag: `${DAU}-i5`, owner: null, approvedBy: OTHER },
+      { tag: `${DAU}-i6`, owner: OWNER, approvedBy: null },
+      null,
+    ];
+    const before = rt.runJobCalls;
+    for (const spec of specs) {
+      const fx = spec ? await makeFoeGateRun(spec) : null;
+      if (fx) fixtures.push(fx);
+      const key = `${DAU}-rdb-${++seq}`;
+      const approval = { runId: fx?.runId ?? 2_000_000_000, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
+      const cmd = { name: "home", robotId: ROBOT, machineId: null, idempotencyKey: key, hitl: { actionId: "x", requestedBy: OWNER, confirmedBy: OTHER } };
+      await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: `s-${key}`, type: "command" } as any, {}, cmd as any, approval);
+      const id = `foe-${key}`.slice(0, 64);
+      const r = await dispatchRobotJob({ robotId: ROBOT, job: toRobotJob(cmd as any), triggerKind: "hitl", actionId: id, requestedBy: OWNER, confirmedBy: OTHER, idempotencyKey: key });
+      expect(r, JSON.stringify(spec)).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+      expect(await pendingStatus(id)).toBe("confirmed");
+    }
+    expect(rt.runJobCalls).toBe(before);
   });
 
   it("sổ robot_jobs: mỗi lượt bị từ chối vì binding có hàng rejected mang mã lý do", async () => {

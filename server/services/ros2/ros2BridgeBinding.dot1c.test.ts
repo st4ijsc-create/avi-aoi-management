@@ -10,6 +10,8 @@
  * Oracle độc lập: client rosbridge giả ghi lại từng (topic, type, msg) THẬT SỰ được phát; driver giả ghi từng job nhận.
  */
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+// doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+vi.mock("../robot/robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 
 type Row = Record<string, any>;
 const S = vi.hoisted(() => ({ rows: [] as Record<string, any>[], seq: 1, driverJobs: [] as string[] }));

@@ -34,10 +34,20 @@ const PARAMS = { stopKey: "act-123:cmd_stop:0" };
 const TEN_CO = /[A-Z][A-Z0-9]+_[A-Z0-9_]+/; // OT_CMD_QUEUE_MAX, OT_COMMAND_… — không được lộ ra câu
 
 describe("Đợt 1E I-1 — OT_COMMAND_SUPERSEDED_BY_STOP có câu ở vi/en/zh", () => {
-  it("vi: đúng câu đã duyệt (lệnh chờ bị huỷ vì DỪNG — gửi lại nếu cần)", async () => {
+  it("vi: đúng câu đã duyệt (lệnh chờ bị huỷ vì DỪNG — gửi lại nếu cần), Đợt 4 C7: kèm KHOÁ lệnh DỪNG", async () => {
     await i18n.changeLanguage("vi");
-    expect(translateAppError(CODE, PARAMS, "__FALLBACK__")).toBe("Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần.");
+    expect(translateAppError(CODE, PARAMS, "__FALLBACK__")).toBe("Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG (act-123:cmd_stop:0) — gửi lại nếu cần.");
   });
+
+  for (const lng of ["vi", "en", "zh"] as const) {
+    it(`doc 81 Đợt 4 C7 — ${lng}: câu mang ĐÚNG khoá lệnh DỪNG (appParams.stopKey) — người vận hành tra được lệnh nào đã huỷ lệnh của họ`, async () => {
+      await i18n.changeLanguage(lng);
+      expect(translateAppError(CODE, PARAMS, "__FALLBACK__")).toContain("act-123:cmd_stop:0");
+      expect(translateAppError(CODE, { stopKey: "khac-9" }, "__FALLBACK__")).toContain("khac-9");
+      const raw = String(i18n.getResource(lng, "translation", `errors.${CODE}`) ?? "");
+      expect(raw.match(/\{\{stopKey\}\}/g) ?? []).toHaveLength(1);
+    });
+  }
 
   for (const lng of ["vi", "en", "zh"] as const) {
     it(`${lng}: câu dịch, không fallback, không mã trần, không tên cờ`, async () => {
@@ -61,5 +71,26 @@ describe("Đợt 1E I-1 — OT_COMMAND_SUPERSEDED_BY_STOP có câu ở vi/en/zh"
     const zh = translateAppError(CODE, PARAMS, "__FALLBACK__");
     expect(zh).toMatch(/取消/);
     expect(zh).toMatch(/重新发送/);
+  });
+});
+
+describe("doc 81 Đợt 4 final wave G9 — OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY (a STOP with no idempotency key)", () => {
+  const NO_KEY = "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY";
+  for (const lng of ["vi", "en", "zh"] as const) {
+    it(`${lng}: translated, same two ideas (cancelled + resend), no "(…)" key part, no "unknown", no placeholder`, async () => {
+      await i18n.changeLanguage(lng);
+      const s = translateAppError(NO_KEY, {}, "__FALLBACK__");
+      expect(s).not.toBe("__FALLBACK__");
+      expect(s).not.toMatch(/unknown/i);
+      expect(s).not.toMatch(/\{\{|\}\}/);
+      expect(s).not.toMatch(TEN_CO);
+      // same sentence as the keyed one minus the key part
+      const keyed = translateAppError(CODE, PARAMS, "__FALLBACK__");
+      expect(s.length).toBeLessThan(keyed.length);
+    });
+  }
+  it("vi exact", async () => {
+    await i18n.changeLanguage("vi");
+    expect(translateAppError(NO_KEY, {}, "__FALLBACK__")).toBe("Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần.");
   });
 });

@@ -144,17 +144,43 @@ import { requirePackageTimeOffset, TimeOffsetRequiredError, type TruongThoiGianM
  * mới kiểm; TẮT ⇒ không kiểm gì, hành vi cũ byte-identical (trần = UTC qua `docGioMay`). Mặc định
  * TẮT vì mẫu máy THẬT (InspectProAOI.Hooks) gửi chuỗi TRẦN ở cả bốn cấp. `inspectionTime` (v1.x)
  * KHÔNG đi qua đây — vẫn `INGEST_REQUIRE_TIME_OFFSET`, mặc định BẬT.
- * THROW (không `ctx.addIssue`): xem docblock `TimeOffsetRequiredError`.
+ * THROW (không `ctx.addIssue`): xem docblock `TimeOffsetRequiredError` — TRỪ chế độ chỉ kiểm (Đợt 4 C4, dưới đây).
  */
 const TRAN_MOC_THOI_GIAN = 64;
+
+/**
+ * doc 81 Đợt 4 Task C4 — CHẾ ĐỘ CHỈ KIỂM (công cụ tự kiểm `validateMachinePayload`): trong `chayCheDoChiKiem(fn)`,
+ * `mocThoiGianMay` gọi `ctx.addIssue` thay vì ném ⇒ zod gắn ĐÚNG đường dẫn lồng nhau (vd
+ * `surfaces.0.positions.0.completedAt`) và báo ĐỦ mọi mốc trần. Ngoài nó (mọi đường ingest) vẫn NÉM
+ * `TimeOffsetRequiredError` y như cũ (tRPC giữ mã — xem docblock lỗi). Bộ đếm (không phải cờ) + `finally` ⇒ lồng
+ * nhau / lỗi giữa chừng không để chế độ rò sang lượt parse khác; `safeParse` là ĐỒNG BỘ nên không có lượt parse nào
+ * khác chen vào giữa.
+ */
+let cheDoChiKiem = 0;
+export function chayCheDoChiKiem<T>(fn: () => T): T {
+  cheDoChiKiem++;
+  try {
+    return fn();
+  } finally {
+    cheDoChiKiem--;
+  }
+}
+
 function mocThoiGianMay(truong: Exclude<TruongThoiGianMay, "inspectionTime">) {
   return z
     .string()
     .max(TRAN_MOC_THOI_GIAN)
-    .superRefine((v) => {
+    .superRefine((v, ctx) => {
       if (!requirePackageTimeOffset()) return;
       if (v.trim().length === 0 || v.length > TRAN_MOC_THOI_GIAN) return;
-      if (!coMuiGioTuongMinh(v)) throw new TimeOffsetRequiredError(truong, v);
+      if (!coMuiGioTuongMinh(v)) {
+        const loi = new TimeOffsetRequiredError(truong, v);
+        if (cheDoChiKiem > 0) {
+          ctx.addIssue({ code: "custom", message: loi.message, params: { ...loi.appParams } });
+          return;
+        }
+        throw loi;
+      }
     })
     .optional();
 }

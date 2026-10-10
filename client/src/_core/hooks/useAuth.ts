@@ -2,6 +2,7 @@ import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
+import { flushUiPrefs } from "@/lib/uiPrefsSync";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -25,6 +26,9 @@ export function useAuth(options?: UseAuthOptions) {
   });
 
   const logout = useCallback(async () => {
+    // doc 81 Đợt 4 Task D1 fix 1 #3 — đẩy nốt sở thích giao diện đang chờ debounce TRƯỚC khi phiên mất (cố gắng, ≤ 1,5 s,
+    // không bao giờ ném): sau đăng xuất lượt đẩy sẽ bị từ chối và lần đăng nhập sau server sẽ ghi đè thay đổi cuối.
+    await flushUiPrefs();
     try {
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {

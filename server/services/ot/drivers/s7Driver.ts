@@ -235,6 +235,7 @@ export class S7Driver extends NotImplementedDriver {
         value: co.quality === "good" ? value : null,
         quality: co.quality,
         timestamp: new Date(),
+        tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
       } satisfies OtSample;
     });
   }

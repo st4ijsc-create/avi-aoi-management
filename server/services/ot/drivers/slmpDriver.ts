@@ -281,16 +281,16 @@ export class SlmpDriver implements OtDriver {
       }
 
       this.lastOkAt = now();
-      return { tagKey: tag.tagKey, raw, value, quality: "good", timestamp: now() } satisfies OtSample;
+      return { tagKey: tag.tagKey, raw, value, quality: "good", timestamp: now(), tsSource: "server" } satisfies OtSample; // B6
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      return { tagKey: tag.tagKey, raw: null, value: null, quality: "bad", timestamp: now() } satisfies OtSample;
+      return { tagKey: tag.tagKey, raw: null, value: null, quality: "bad", timestamp: now(), tsSource: "server" } satisfies OtSample; // B6
     }
   }
 
   private badSample(tag: OtTagAddress, endCode: number): OtSample {
     this.lastError = `slmp end-code 0x${endCode.toString(16).padStart(4, "0").toUpperCase()} on ${tag.address}`;
-    return { tagKey: tag.tagKey, raw: null, value: null, quality: "bad", timestamp: new Date() };
+    return { tagKey: tag.tagKey, raw: null, value: null, quality: "bad", timestamp: new Date(), tsSource: "server" }; // B6
   }
 
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {

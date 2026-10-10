@@ -21,6 +21,7 @@
  * a typed result, never a crash.
  * ════════════════════════════════════════════════════════════════════════════
  */
+import { appError } from "../../_core/appError"; // doc 81 Đợt 4 fix round 3 (R-4-n)
 import type { AdapterKind } from "./capabilityModel";
 import { listProtocols, createDriver } from "../ot/driverRegistry";
 import type { OtProtocol } from "../ot/otDriver";
@@ -251,7 +252,16 @@ class RobotEquipmentAdapter implements EquipmentAdapter {
 
   async sendCommand(command: EquipmentCommand): Promise<EquipmentCommandResult> {
     if (command.robotId == null) {
-      return { ok: false, status: "rejected", routedTo: "robot-dispatcher", error: "robotId required for robot command" };
+      // doc 81 Đợt 4 fix round 3 (R-4-n) — localisable: INVALID_VALUE { field: robotId, reason: robotIdRequired }.
+      const e = appError("BAD_REQUEST", "INVALID_VALUE", { field: "robotId", reason: "robotIdRequired" }, "robotId required for robot command");
+      return {
+        ok: false,
+        status: "rejected",
+        routedTo: "robot-dispatcher",
+        // data-raw-ok: fixed English fallback of the appError above; detail.appError carries the localisable code + params.
+        error: e.message,
+        detail: { appError: { appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } } },
+      };
     }
     const res = await dispatchRobotJob({
       robotId: command.robotId,

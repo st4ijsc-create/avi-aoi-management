@@ -493,6 +493,16 @@ function EngineeringWorkspaceView() {
     onError: (e) => toastTrpcError(e),
   });
   const fleetResult = deployToFleetM.data != null && fleetForProjectRef.current === projectId ? deployToFleetM.data : null;
+  // doc 81 Đợt 4 Task C5 — mọi lượt "project/select" (bấm chọn, deep-link, tạo dự án / DEMO) đổi projectId ⇒ reset
+  // mutation đội máy: kết quả cũ không hồi sinh khi quay lại dự án (A → B → A), và một lượt đang bay về MUỘN không còn
+  // gắn vào `.data` của trang (react-query tách observer; onSuccess vẫn chạy ⇒ toast vẫn báo lượt điều khiển thật).
+  const resetFleet = deployToFleetM.reset;
+  const fleetProjectRef = useRef(projectId);
+  useEffect(() => {
+    if (fleetProjectRef.current === projectId) return;
+    fleetProjectRef.current = projectId;
+    resetFleet();
+  }, [projectId, resetFleet]);
 
   // ── Symbols (tag table) CRUD — feeds Online Monitor ──
   const upsertSymbol = trpc.programming.upsertSymbol.useMutation({

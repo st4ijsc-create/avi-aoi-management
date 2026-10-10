@@ -22,10 +22,10 @@
  * ledger. The gate itself lives in commandDispatcher.dispatch() (single write path).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
-import { commissioningRecords, type CommissioningRecord } from "../../../drizzle/schema";
+import { commissioningRecords, controlAuditLog, type CommissioningRecord } from "../../../drizzle/schema";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -143,4 +143,76 @@ export async function listRecords(adapterId: number): Promise<CommissioningRecor
     .from(commissioningRecords)
     .where(eq(commissioningRecords.adapterId, adapterId))
     .orderBy(desc(commissioningRecords.id));
+}
+
+/**
+ * doc 81 Đợt 4 Task C3 — thay đổi ghim DỪNG cần SOÁT LẠI commissioning, hiện ở "Sổ ký".
+ *
+ * Mọi đổi ghim (setStopPin, gỡ tự động khi sửa/xoá tag, đổi đích adapter, import mapping/CLI) ghi một dòng
+ * `control_audit_log` (`entityType = device_tag_stop_pin`) mà `afterJson.commissioningRecheckRequired = true` khi
+ * adapter ĐANG commissioning lúc đổi. Hàm này trả dòng MỚI NHẤT như thế của `adapterId` xảy ra SAU bản ký HIỆN TẠI,
+ * hoặc null. Ký lại ⇒ bản ký mới hơn ⇒ null (chip tự tắt).
+ *
+ *   • bản ký hiện tại = bản `active`, chưa hết hạn (cùng vị từ `isCommissioned`), id LỚN NHẤT; không có ⇒ null
+ *     (adapter không commissioned thì không có gì để "soát lại" — cổng đã ép mô phỏng);
+ *   • so thời điểm TRÊN SERVER, trong SQL: `control_audit_log."createdAt"` vs `commissioning_records."createdAt"` —
+ *     cả hai cùng DEFAULT now() của CSDL (cùng đồng hồ, cùng quy ước múi giờ phiên). KHÔNG so với `signedAt`
+ *     (giá trị JS ghi vào) và KHÔNG dùng đồng hồ client.
+ * Ném khi CSDL lỗi — nơi gọi (commissioning.status) chuyển thành cờ "không đọc được" chứ không làm hỏng status.
+ */
+export interface CommissioningRecheck {
+  auditId: number;
+  tagId: number;
+  tagKey: string | null;
+  action: string;
+  autoClearedBy: string | null;
+  actorId: number | null;
+  changedAt: Date;
+  signatureId: number;
+}
+
+export async function latestCommissioningRecheck(adapterId: number, dbOrTx?: DbOrTx): Promise<CommissioningRecheck | null> {
+  const db = dbOrTx ?? (await getDb());
+  if (!db) throw new DbUnavailableError();
+  const rows = await db
+    .select({ id: commissioningRecords.id, expiresAt: commissioningRecords.expiresAt })
+    .from(commissioningRecords)
+    .where(and(eq(commissioningRecords.adapterId, adapterId), eq(commissioningRecords.status, "active")));
+  const now = Date.now();
+  const live = rows.filter((r) => r.expiresAt == null || new Date(r.expiresAt).getTime() > now);
+  if (live.length === 0) return null;
+  const signatureId = Math.max(...live.map((r) => r.id));
+
+  const [row] = await db
+    .select({
+      id: controlAuditLog.id,
+      entityId: controlAuditLog.entityId,
+      action: controlAuditLog.action,
+      actorId: controlAuditLog.actorId,
+      afterJson: controlAuditLog.afterJson,
+      createdAt: controlAuditLog.createdAt,
+    })
+    .from(controlAuditLog)
+    .where(
+      and(
+        eq(controlAuditLog.entityType, "device_tag_stop_pin"),
+        sql`${controlAuditLog.afterJson}->>'adapterId' = ${String(adapterId)}`,
+        sql`${controlAuditLog.afterJson}->>'commissioningRecheckRequired' = 'true'`,
+        sql`${controlAuditLog.createdAt} > (SELECT cr."createdAt" FROM commissioning_records cr WHERE cr.id = ${signatureId})`,
+      ),
+    )
+    .orderBy(desc(controlAuditLog.id))
+    .limit(1);
+  if (!row) return null;
+  const after = (row.afterJson ?? {}) as { tagKey?: unknown; autoClearedBy?: unknown };
+  return {
+    auditId: row.id,
+    tagId: Number(row.entityId),
+    tagKey: typeof after.tagKey === "string" ? after.tagKey : null,
+    action: row.action,
+    autoClearedBy: typeof after.autoClearedBy === "string" ? after.autoClearedBy : null,
+    actorId: row.actorId ?? null,
+    changedAt: row.createdAt,
+    signatureId,
+  };
 }

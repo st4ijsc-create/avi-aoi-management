@@ -18,8 +18,51 @@ import { adminProcedure } from "./_shared";
 import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
 import { getDb } from "../db/connection";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { AUDIT_ACTIONS, ENTITY_TYPES } from "../services/auditTrailService";
+import { idsTrongPhamVi, type CapPhanCap } from "../db/hierarchy";
+import { factoryIdGate } from "../db/reportAggregators";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
+
+/**
+ * doc 81 Đợt 4 Task A2 (ruling R-4-b) — which audit_logs rows a caller may read.
+ * The audit entity types that ARE hierarchy nodes, and the level whose scoped id set classifies them.
+ */
+const AUDIT_HIERARCHY_ENTITY: ReadonlyArray<readonly [entityType: string, cap: CapPhanCap]> = [
+  [ENTITY_TYPES.FACTORY, "factory"],
+  [ENTITY_TYPES.WORKSHOP, "workshop"],
+  [ENTITY_TYPES.LINE, "line"],
+  [ENTITY_TYPES.STATION, "station"],
+  [ENTITY_TYPES.MACHINE, "machine"],
+  ["workstation", "workstation"],
+];
+
+/**
+ * doc 81 Đợt 4 Task A2 (ruling R-4-b) — row gate over `audit_logs al` for the caller.
+ *   • `null` ⇒ caller has the FULL scope (admin, or a role whose scope resolves to "all factories") ⇒
+ *     no clause is added ⇒ the query and its output are unchanged (byte-identical for admin);
+ *   • otherwise a row is visible iff the caller is its actor (`al."userId"` = caller), OR it is a
+ *     hierarchy entity row (factory/workshop/line/station/machine/workstation) whose `entityId` is in
+ *     `idsTrongPhamVi(level, caller)`. Every other row (unclassifiable: trpc_mutation, auth, ai_action,
+ *     inspection…) is HIDDEN — fail-closed;
+ *   • scope cannot be resolved (throws) ⇒ only the caller's own rows.
+ */
+async function auditRowScopeGate(ctx: CoDanhTinh): Promise<SQL | null> {
+  const viewer = phamViCua(ctx);
+  const own = viewer.userId != null ? sql`al."userId" = ${viewer.userId}` : sql`1 = 0`;
+  let lists: Array<number[] | null>;
+  try {
+    lists = await Promise.all(AUDIT_HIERARCHY_ENTITY.map(([, cap]) => idsTrongPhamVi(cap, viewer)));
+  } catch {
+    return sql`(${own})`;
+  }
+  if (lists.every((l) => l === null)) return null;
+  if (lists.some((l) => l === null)) return sql`(${own})`; // inconsistent resolution ⇒ fail-closed
+  const byEntity = AUDIT_HIERARCHY_ENTITY.map(
+    ([entityType], i) => sql`(al."entityType" = ${entityType} AND ${factoryIdGate(sql`al."entityId"`, lists[i] as number[])})`,
+  );
+  return sql`(${own} OR ${sql.join(byEntity, sql` OR `)})`;
+}
 
 export const enhancedAuditRouter = router({
   /**
@@ -299,17 +342,21 @@ export const enhancedAuditRouter = router({
   /**
    * Get recent activity feed (timeline view)
    */
+  // doc 81 Đợt 4 Task A2 — gated like the page that shows it (/audit-logs, RouteGuard admin_system) and
+  // filtered by the caller's scope (auditRowScopeGate). Admin: no clause ⇒ output unchanged.
   activityFeed: protectedProcedure
+    .use(requirePermission("admin_system", "canView"))
     .input(z.object({
       limit: z.number().min(5).max(50).default(20),
       entityTypes: z.array(z.string()).optional(),
       excludeActions: z.array(z.string()).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const conn = await getDb();
       if (!conn) return [];
 
       const limit = input?.limit || 20;
+      const scopeGate = await auditRowScopeGate(ctx);
 
       const result: any = await conn.execute(sql`
         SELECT 
@@ -321,9 +368,10 @@ export const enhancedAuditRouter = router({
           al.status,
           al."createdAt",
           u."name" as "userName",
-          al.details->>'source' as source
+          al.details AS "detailsRaw"
         FROM audit_logs al
         LEFT JOIN users u ON u.id = al."userId"
+        ${scopeGate ? sql`WHERE ${scopeGate}` : sql``}
         ORDER BY al."createdAt" DESC
         LIMIT ${limit}
       `);
@@ -338,7 +386,9 @@ export const enhancedAuditRouter = router({
         userName: row.userName || "System",
         status: row.status,
         timestamp: row.createdAt,
-        source: row.source || "web",
+        // doc 81 Đợt 4 Task A2 — `details` is TEXT (drizzle/schema/system.ts): `details->>'source'` failed with
+        // 42883 on every call, so the feed never loaded. Parsed here instead; the raw details never leave.
+        source: parseAuditDetails(row.detailsRaw).source || "web",
         // Generate human-readable message
         message: generateActivityMessage(row),
       }));
@@ -507,7 +557,7 @@ export const enhancedAuditRouter = router({
         offset: z.number().min(0).default(0),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const conn = await getDb();
       if (!conn) return { items: [] as MasterDataAuditItem[], total: 0 };
 
@@ -535,6 +585,9 @@ export const enhancedAuditRouter = router({
       if (input.startDate) conditions.push(sql`al."createdAt" >= ${input.startDate}`);
       if (input.endDate) conditions.push(sql`al."createdAt" <= ${input.endDate}`);
       if (input.op) conditions.push(sql`(${opClassSql}) = ${input.op}`);
+      // doc 81 Đợt 4 Task A2 — non-admin: only rows of the caller's scope or the caller's own (R-4-b).
+      const scopeGate = await auditRowScopeGate(ctx);
+      if (scopeGate) conditions.push(scopeGate);
       if (input.search) {
         const like = `%${input.search}%`;
         conditions.push(
@@ -609,10 +662,13 @@ const MASTER_DATA_DOMAINS: Record<string, { label: string; prefixes: string[] }>
 /** Parse cột details (TEXT chứa JSON) an toàn → object rỗng nếu thiếu/hỏng. */
 function parseAuditDetails(raw: unknown): Record<string, any> {
   if (raw == null) return {};
-  if (typeof raw === "object") return raw as Record<string, any>;
+  if (typeof raw === "object") return Array.isArray(raw) ? {} : (raw as Record<string, any>);
   if (typeof raw === "string") {
     try {
-      return JSON.parse(raw);
+      // doc 81 Đợt 4 fix round 1 (finding 9) — `"null"` / `"3"` / `"[...]"` parse to a non-object: never let one row
+      // turn `.source` into a TypeError that takes down the whole feed.
+      const v: unknown = JSON.parse(raw);
+      return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : {};
     } catch {
       return {};
     }

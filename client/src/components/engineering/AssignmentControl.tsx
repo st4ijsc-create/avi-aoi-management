@@ -9,7 +9,7 @@
  * - Ai không có quyền giao (`canAssign` = cổng sửa/duyệt của trang, cùng `ASSIGNABLE[type].assignPerm`) chỉ thấy tên.
  * - ⚠ ĐƯỢC GIAO ≠ ĐƯỢC DUYỆT: thành phần này không đụng nút duyệt nào; nút duyệt của mỗi trang giữ cổng cũ.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { UserCheck } from "lucide-react";
@@ -116,7 +116,14 @@ export function AssignmentControl({
   const utils = trpc.useUtils();
   // M-3 — có quyền + sàn vai nhưng thiếu 2FA mà triển khai đòi ⇒ bộ chọn KHOÁ kèm lý do (không gọi roster, không gọi assign).
   const twoFaBlocked = useAssignTwoFactorBlocked(entityType) && canAssign;
-  const roster = trpc.engineering.assignableUsers.useQuery({ entityType }, { enabled: canAssign && !twoFaBlocked, retry: false, staleTime: 60_000 });
+  // doc 81 Đợt 4 Task C6 — roster có trần 300: tìm trên SERVER (gõ ⇒ EntityPicker gọi onSearchChange đã debounce), người
+  // đang được giao luôn được hỏi kèm (`selectedId`), `truncated` ⇒ dòng "gõ để thu hẹp". Giữ danh sách trước trong lúc tải
+  // khoá mới (cùng bộ chọn, cùng loại mục) để popover không nháy "Đang tải".
+  const [search, setSearch] = useState("");
+  const roster = trpc.engineering.assignableUsers.useQuery(
+    { entityType, search: search || undefined, selectedId: assignment?.assigneeUserId },
+    { enabled: canAssign && !twoFaBlocked, retry: false, staleTime: 60_000, placeholderData: (prev) => prev },
+  );
   const refresh = () => {
     void utils.engineering.assignments.invalidate({ entityType });
     void utils.oversight.pendingSummary.invalidate();
@@ -142,7 +149,7 @@ export function AssignmentControl({
   });
 
   const options = useMemo<EntityOption[]>(() => {
-    const list = ((roster.data ?? []) as Array<{ id: number; name: string | null }>).map((u) => ({
+    const list = ((roster.data?.users ?? []) as Array<{ id: number; name: string | null }>).map((u) => ({
       value: u.id,
       label: displayName(t, { assigneeUserId: u.id, assigneeName: u.name }),
     }));
@@ -182,6 +189,8 @@ export function AssignmentControl({
           searchPlaceholder={t("engineeringAssign.search", "Search people…")}
           emptyText={t("engineeringAssign.empty", "No one who can view this page")}
           warnOnInvalid={false}
+          onSearchChange={setSearch}
+          truncated={roster.data?.truncated === true}
           onChange={(v) => {
             if (v == null) {
               if (assignment) unassignM.mutate({ entityType, entityId, expectedAssigneeUserId: assignment.assigneeUserId });

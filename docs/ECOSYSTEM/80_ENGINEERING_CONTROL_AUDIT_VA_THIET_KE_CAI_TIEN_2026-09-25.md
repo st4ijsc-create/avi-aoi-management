@@ -349,3 +349,7 @@ DỪNG OT đã ghim chen hàng đợi adapter (không còn BUSY) và huỷ các 
 ## 18. Đợt 3 (2026-10-05 → 10-06) — xem doc 81 §12
 
 Dời nội dung về đúng màn (Recipes · Vision › Thu ảnh · Sản xuất › Ca), hộp việc "Của tôi" theo người được giao (mig 0363, đã áp dev; được giao ≠ được duyệt), Fleet sang Labs (ẩn mặc định); kèm sửa các lỗi phát hiện khi kiểm trình duyệt thật. Không ai mất quyền truy cập (R-3-b/h). Quyết định 2026-10-06 + Đợt 3b: doc 81 §12.
+
+## 19. Đợt 3b/3c + Đợt 4 (2026-10-06 → 10-10) — xem doc 81 §12–§13
+
+Đợt 3b/3c: phân công gắn ca + lọc ca phía server, chuông đọc `notifications`, sửa chuyển hướng mở (đăng nhập + SAML), tắt báo chỉ giữ mục khẩn, ca mặc định theo múi giờ nhà máy. Đợt 4: safety-PLC theo đích thực sự ghi, sổ kiểm toán/twin theo phạm vi, điều phối cần cổng duyệt của **người khác**, DỪNG sau lệnh ghi quá hạn (chỉ cảnh báo, không tự ghi), khoá chuyển động robot lưu DB (mig 0364), tuỳ chọn giao diện theo tài khoản (mig 0365). **Áp 0364 lên dev trước khi khởi động lại server bản gộp.**

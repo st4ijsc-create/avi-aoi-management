@@ -34,6 +34,7 @@ import { computeCrudContentHash } from "../auditTrailService";
 import { secPlatformEnabled } from "../security/policyGate";
 import { isCommissioned } from "./commissioningService";
 import { adapterTargetCanonical, type AdapterTarget } from "./adapterTarget";
+import { lyDoGoStopPinKhiSuaTag } from "@shared/stopPinTagRule";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -361,45 +362,11 @@ export async function datStopPin(input: {
 
 // ─── Gỡ ghim tự động khi sửa / xoá tag (router deviceAdapter) ─────────────────────────────────────
 
-function soHoacNull(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 /**
- * scale/offset HIỆU LỰC trên dây — cùng quy ước `inverseScale` (drivers/otScale.ts): scale null/0 ⇒ 1,
- * offset null ⇒ 0. So theo hiệu lực để form gửi ô trống (null) cho tag đang 1/0 không gỡ oan.
+ * doc 81 Đợt 4 Task C1 — luật "sửa tag có gỡ ghim không" sống ở `shared/stopPinTagRule.ts` (client hỏi trước
+ * bằng CHÍNH hàm đó); ở đây chỉ RE-EXPORT — một bản cài đặt.
  */
-function scaleHieuLuc(v: unknown): number | null {
-  const n = soHoacNull(v);
-  return n === null || n === 0 ? 1 : n;
-}
-function offsetHieuLuc(v: unknown): number | null {
-  const n = soHoacNull(v);
-  return n === null ? 0 : n;
-}
-
-/**
- * Sửa tag có làm ghim DỪNG mất hiệu lực không. Chỉ xét khi tag ĐANG có ghim. Trả nguồn gỡ hoặc null.
- *   • tag thành không ghi được / bị tắt (brief);
- *   • đổi ĐỊNH NGHĨA DÂY — address, dataType, scale, offset, adapterId: cùng giá trị ghim sẽ đi tới một
- *     điểm/ý nghĩa KHÁC trên thiết bị (vd bit dừng đổi địa chỉ thành bit chạy) mà không qua lý do +
- *     audit của setStopPin ⇒ gỡ, người sửa phải ghim lại có chủ đích.
- *   Đổi tên tagKey, unit, deadband, samplingMs: không đổi gì trên dây ⇒ ghim giữ nguyên.
- */
-export function lyDoGoStopPinKhiSuaTag(existing: DongTag, patch: Record<string, unknown>): Exclude<NguonGo, "manual"> | null {
-  if (existing.stopValue === null || existing.stopValue === undefined) return null;
-  const moi = <K extends keyof DongTag>(k: K): unknown => (patch[k as string] !== undefined ? patch[k as string] : existing[k]);
-  if (moi("writable") !== true) return "tag_not_writable";
-  if (moi("isEnabled") !== true) return "tag_disabled";
-  if (moi("address") !== existing.address) return "tag_redefined";
-  if (moi("dataType") !== existing.dataType) return "tag_redefined";
-  if (moi("adapterId") !== existing.adapterId) return "tag_redefined";
-  if (scaleHieuLuc(moi("scale")) !== scaleHieuLuc(existing.scale)) return "tag_redefined";
-  if (offsetHieuLuc(moi("offset")) !== offsetHieuLuc(existing.offset)) return "tag_redefined";
-  return null;
-}
+export { lyDoGoStopPinKhiSuaTag };
 
 /** Cột ghim đặt về NULL — nhập vào patch UPDATE của tag. */
 export const GO_STOP_PIN_PATCH = { stopValue: null, stopPinnedBy: null, stopPinnedAt: null } as const;

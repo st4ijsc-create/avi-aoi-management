@@ -142,9 +142,9 @@ export interface WireSample {
  */
 export function wireSampleToOtSample(s: WireSample): OtSample {
   const base = { tagKey: s.tagKey, raw: s.raw ?? s.value, value: s.value ?? null, quality: s.quality ?? "good" };
-  if (s.timestamp == null) return { ...base, timestamp: new Date() };
+  if (s.timestamp == null) return { ...base, timestamp: new Date(), tsSource: "server" }; // B6 — stamped on receipt
   const k = docTsThietBi(s.timestamp);
-  if (k.ok) return { ...base, timestamp: k.ts ?? new Date(s.timestamp) }; // bg99-ok: nhanh falsy (0/"") giu hinh dang cu
+  if (k.ok) return { ...base, timestamp: k.ts ?? new Date(s.timestamp), ...(k.ts ? { tsSource: "device" as const } : {}) }; // bg99-ok: nhanh falsy (0/"") giu hinh dang cu
   if (k.reason === "ts_no_timezone") return { ...base, timestamp: new Date(), tsReject: "ts_no_timezone" };
   return { ...base, timestamp: new Date(NaN) };
 }

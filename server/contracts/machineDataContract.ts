@@ -10,7 +10,7 @@
  */
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { machineDataContractV2, type MachineDataContractV2 } from "./machineDataContractV2";
+import { chayCheDoChiKiem, machineDataContractV2, type MachineDataContractV2 } from "./machineDataContractV2";
 import { TimeOffsetRequiredError } from "../utils/timeOffsetPolicy";
 
 // ── v1: phản ánh hợp đồng submitInspection hiện hành (tập ổn định) ──────────
@@ -177,11 +177,13 @@ export function validateMachinePayload(version: string, payload: unknown): Valid
     return { ok: false, version, errors: [{ path: "", message: `Unknown contract version: ${version}` }] };
   }
   // doc 81 Đợt 1D final wave 3 (M2) — refinement mốc thời gian gói NÉM `TimeOffsetRequiredError` (cần ném để tRPC giữ
-  // mã, xem timeOffsetPolicy.ts) khi INGEST_REQUIRE_PACKAGE_TIME_OFFSET bật: ở công cụ tự kiểm này nó thành MỘT mục báo
+  // mã, xem timeOffsetPolicy.ts) khi INGEST_REQUIRE_PACKAGE_TIME_OFFSET bật: ở công cụ tự kiểm này nó thành mục báo
   // cáo, không phải 500. Lỗi khác vẫn ném (không nuốt).
+  // doc 81 Đợt 4 Task C4 — parse trong CHẾ ĐỘ CHỈ KIỂM: refinement gọi ctx.addIssue ⇒ đường dẫn lồng nhau ĐÚNG và đủ
+  // mọi mốc trần. Nhánh catch dưới đây chỉ còn là lưới an toàn (vd một hợp đồng tương lai ném ngoài chế độ này).
   let r: ReturnType<typeof schema.safeParse>;
   try {
-    r = schema.safeParse(payload);
+    r = chayCheDoChiKiem(() => schema.safeParse(payload));
   } catch (e) {
     if (e instanceof TimeOffsetRequiredError) {
       return { ok: false, version, errors: [{ path: e.field, message: e.message }] };

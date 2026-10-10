@@ -8,14 +8,15 @@
  *   ⇄ danh mục Hub đang mở — doc 81 Đợt 3b Task 2 fix 1) ⇒ sự kiện `SHOW_LABS_EVENT` trên window (`storage` không bắn ở tab
  *   đang ghi).
  * - KHÔNG phải cổng: chỉ thanh bên/menu điện thoại/BottomNav dùng; ⌘K, RouteGuard và deep link không đọc nó.
+ * - doc 81 Đợt 4 Task D1 — theo TÀI KHOẢN: ghi kho ⇒ `markUiPrefDirty` (đẩy lên `user_settings.uiPrefs.showLabs`, gom +
+ *   debounce); giá trị server được áp vào kho lúc đăng nhập ⇒ sự kiện `UI_PREFS_APPLIED_EVENT` ⇒ đọc lại (lib/uiPrefsSync.ts).
  */
 import { useCallback, useEffect, useState } from "react";
-import { userLayoutKey } from "@/components/patterns/layoutKitHooks";
+import { markUiPrefDirty, UI_PREFS_APPLIED_EVENT } from "@/lib/uiPrefsSync";
+import { showLabsKey } from "@/lib/showLabsKey";
 
-/** Khoá kho của sở thích Labs (null khi chưa biết người dùng). */
-export function showLabsKey(userId: number | string | null | undefined): string | null {
-  return userLayoutKey("nav-labs", userId, "show");
-}
+// Khoá kho của sở thích Labs — MỘT định nghĩa dùng chung với bộ đồng bộ (D1 fix 1 #7).
+export { showLabsKey };
 
 /** Sự kiện cùng tab khi một instance của hook đổi sở thích (detail = khoá kho). */
 export const SHOW_LABS_EVENT = "nav-labs-changed";
@@ -52,11 +53,16 @@ export function useShowLabs(userId: number | string | null | undefined): UseShow
     const onSameTab = (e: Event) => {
       if ((e as CustomEvent<string>).detail === key) setState({ key, on: readStored(key) });
     };
+    const onApplied = (e: Event) => {
+      if ((e as CustomEvent<string[]>).detail?.includes(key)) setState({ key, on: readStored(key) });
+    };
     window.addEventListener("storage", onStorage);
     window.addEventListener(SHOW_LABS_EVENT, onSameTab);
+    window.addEventListener(UI_PREFS_APPLIED_EVENT, onApplied);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener(SHOW_LABS_EVENT, onSameTab);
+      window.removeEventListener(UI_PREFS_APPLIED_EVENT, onApplied);
     };
   }, [key]);
 
@@ -66,6 +72,7 @@ export function useShowLabs(userId: number | string | null | undefined): UseShow
       if (!key) return;
       try {
         localStorage.setItem(key, next ? "1" : "0");
+        markUiPrefDirty(key);
       } catch {
         /* kho không dùng được — chỉ nhớ trong phiên */
       }

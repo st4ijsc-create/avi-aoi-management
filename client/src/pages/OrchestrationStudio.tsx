@@ -54,6 +54,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { translateAppError } from "@/lib/errorCodes"; // doc 81 Đợt 4 fix round 3 (R-4-n) — step detail.appError
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -318,7 +319,10 @@ type EquipmentRow = {
   name: string;
   code?: string | null;
   machineType: string;
+  /** equipment.listEquipment — routes robot kinds ("robot" / "vda5050") through robotId (R-4-n picker). */
+  adapterKind?: string;
   capability?: {
+    adapterKind?: string;
     supportedCommands?: Array<{ name: string; label?: string; paramsSchema?: ParamDesc[]; riskLevel?: string }>;
   };
 };
@@ -333,14 +337,24 @@ type ParamDesc = {
   unit?: string;
 };
 
+/** doc 81 Đợt 4 fix round 3 (R-4-n) — a robot the step can target (fleet.robotPositions: in-scope, enabled robots). */
+type RobotOption = { id: number; code?: string | null; name?: string | null };
+
+function isRobotKindRow(m: EquipmentRow | undefined): boolean {
+  const k = m?.adapterKind ?? m?.capability?.adapterKind;
+  return k === "robot" || k === "vda5050";
+}
+
 function Inspector({
   step,
   machines,
+  robots = [],
   onPatch,
   t,
 }: {
   step: StudioStep;
   machines: EquipmentRow[];
+  robots?: RobotOption[];
   onPatch: (patch: Partial<StudioStep>) => void;
   t: TFunction;
 }) {
@@ -386,7 +400,8 @@ function Inspector({
             <Label className="text-xs">{t("studio.command", "Command")}</Label>
             <Select
               value={(step.command as string) || ""}
-              onValueChange={(v) => onPatch({ command: v, args: {} })}
+              // fix round 3 (R-4-n): changing the command keeps the chosen robot
+              onValueChange={(v) => onPatch({ command: v, args: typeof (step.args ?? {}).robotId === "number" ? { robotId: (step.args ?? {}).robotId } : {} })}
               disabled={!selectedMachine}
             >
               <SelectTrigger><SelectValue placeholder={t("studio.pickCommand", "Select command…")} /></SelectTrigger>
@@ -400,6 +415,24 @@ function Inspector({
               </SelectContent>
             </Select>
           </div>
+          {/* doc 81 Đợt 4 fix round 3 (R-4-n) — a robot step must name its robot (deploy refuses robotIdMissing). */}
+          {isRobotKindRow(selectedMachine) && (
+            <div className="space-y-1.5" data-testid="robot-picker">
+              <Label className="text-xs">{t("studio.robot", "Robot")}</Label>
+              <Select
+                value={typeof (step.args ?? {}).robotId === "number" ? String((step.args ?? {}).robotId) : ""}
+                onValueChange={(v) => onPatch({ args: { ...(step.args ?? {}), robotId: Number(v) } })}
+              >
+                <SelectTrigger aria-label={t("studio.robot", "Robot")}><SelectValue placeholder={t("studio.pickRobot", "Select robot…")} /></SelectTrigger>
+                <SelectContent>
+                  {robots.map((r) => (
+                    <SelectItem key={r.id} value={String(r.id)}>#{r.id} · {r.name ?? r.code ?? ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {robots.length === 0 && <p className="text-[11px] text-muted-foreground">{t("studio.noRobots", "No robot in your scope is enabled.")}</p>}
+            </div>
+          )}
           {selectedCmd && (selectedCmd.paramsSchema?.length ?? 0) > 0 && (
             <div className="space-y-2 rounded-md border bg-muted/30 p-2">
               <div className="text-[11px] font-semibold uppercase text-muted-foreground">{t("studio.args", "Parameters")}</div>
@@ -1465,6 +1498,9 @@ export default function OrchestrationStudio() {
 
   const equipmentQ = trpc.equipment.listEquipment.useQuery({ limit: 500 });
   const machines = (equipmentQ.data ?? []) as unknown as EquipmentRow[];
+  // doc 81 Đợt 4 fix round 3 (R-4-n) — robot picker source: in-scope, enabled robots (existing fleet query).
+  const robotsQ = trpc.fleet.robotPositions.useQuery(undefined, { enabled: machines.some((m) => isRobotKindRow(m)) });
+  const robotOptions = (robotsQ.data ?? []) as RobotOption[];
 
   const workflowsQ = trpc.orchestration.listWorkflows.useQuery({ limit: 100 });
   // Realtime: poll khi còn run chưa kết thúc; dừng khi tất cả đã terminal.
@@ -1533,10 +1569,31 @@ export default function OrchestrationStudio() {
   // doc 54 P3.2 — step-up 2FA (fresh OTP) for deployWorkflow when ACTUATION_STEPUP_2FA is on.
   const stepUp = useStepUpOtp();
 
+  /**
+   * doc 81 Đợt 4 (R-4-j, R-4-n) + final wave G2/G3/G4 — the translated sentence for a definition refused by the server's
+   * definition checks (deploy, rollback = deploy, and run START since G4), naming the steps; null for any other result
+   * (the caller keeps its own fallback). One place, so no refusal code reaches the operator as raw server English.
+   */
+  const definitionRefusalText = (r: { reason?: string; stepIds?: string[] } | null | undefined): string | null => {
+    const steps = (r?.stepIds ?? []).join(", ");
+    switch (r?.reason) {
+      case "robotIdMissing": // fix round 3 (R-4-n)
+        return t("studio.deployRobotIdMissing", "Not deployed: robot step(s) {{steps}} name no robot. Pick the robot for each step, then deploy again.", { steps });
+      case "robotUnavailable": // final wave G3
+        return t("studio.deployRobotUnavailable", "Not deployed: robot step(s) {{steps}} name a robot that does not exist (or the robot list could not be read). Pick an existing robot for each step, then deploy again.", { steps });
+      case "robotDisabled": // final wave R-4-x — motion steps only
+        return t("studio.deployRobotDisabled", "Not deployed: motion step(s) {{steps}} name a robot that is not enabled. Enable the robot or pick an enabled one, then deploy again.", { steps });
+      case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
+        return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
+      default:
+        return null;
+    }
+  };
+
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
     onSuccess: (r) => {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
-      else toast.error(r?.message ?? t("studio.deployFail", "Deploy failed"));
+      else toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -1554,6 +1611,9 @@ export default function OrchestrationStudio() {
               { status: r.workflowStatus },
             ),
           );
+        } else if (definitionRefusalText(r)) {
+          // final wave G4 — an active workflow failing the deploy-time definition checks is refused at START.
+          toast.error(`${t("studio.runRefusedDefinition", "Run not started — the deployed workflow fails a safety check:")} ${definitionRefusalText(r)}`);
         } else {
           toast.error(r.message ?? t("studio.runFail", "Could not start the run"));
         }
@@ -1612,7 +1672,8 @@ export default function OrchestrationStudio() {
         void workflowsQ.refetch();
         void versionsQ.refetch();
       } else {
-        toast.error(r?.message ?? t("studio.rollbackFail", "Khôi phục thất bại"));
+        // final wave G2 (re-review 3 A3-1) — rollback = deploy: the same refusal codes, translated (not raw server English).
+        toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.rollbackFail", "Khôi phục thất bại"));
       }
     },
     onError: (e) => toastTrpcError(e),
@@ -2139,7 +2200,7 @@ export default function OrchestrationStudio() {
     <div className="p-3">
       <h2 className="mb-2 text-sm font-semibold">{t("studio.inspector", "Step configuration")}</h2>
       {selectedStep ? (
-        <Inspector step={selectedStep} machines={machines} onPatch={handlePatch} t={t} />
+        <Inspector step={selectedStep} machines={machines} robots={robotOptions} onPatch={handlePatch} t={t} />
       ) : (
         <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.selectStep", "Select a step on the tree to configure it.")}</p>
       )}
@@ -2154,7 +2215,7 @@ export default function OrchestrationStudio() {
       canControl={canControl}
       assignment={runAssignments.get(Number(r.id))}
       canAssign={canAssignRun}
-      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
+      onResume={(approved, note, expectedStepId, expectedDefHash) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash })}
       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
       t={t}
     />
@@ -2434,7 +2495,40 @@ type RunStepView = {
   stepType: string;
   status: string;
   result?: Record<string, unknown> | null;
+  error?: string | null;
 };
+
+/**
+ * doc 81 Đợt 4 Task A5 + fix round 1 (finding 7) — the engine's step error for "no separate gate approval":
+ * `FOE_GATE_REQUIRED(<reason>): …` (foeEngine.gateRequiredError). Each reason has its own translated sentence.
+ */
+const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown)\))?(?=:|\s|$)/;
+type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown";
+function gateRequiredReasonOf(error: unknown): GateRequiredReason | null {
+  if (typeof error !== "string") return null;
+  const m = FOE_GATE_REQUIRED_RE.exec(error);
+  return m ? ((m[1] as GateRequiredReason | undefined) ?? "noGate") : null;
+}
+/** doc 81 Đợt 4 fix round 3 (R-4-n) — `result.detail.appError` of a failed step (e.g. INVALID_VALUE robotId/robotIdRequired). */
+function stepAppError(s: RunStepView): { appCode: string; appParams: Record<string, string | number> | undefined } | null {
+  if (s.status !== "failed") return null;
+  const a = (s.result?.detail as { appError?: { appCode?: unknown; appParams?: unknown } } | undefined)?.appError;
+  if (!a || typeof a.appCode !== "string") return null;
+  return { appCode: a.appCode, appParams: (a.appParams as Record<string, string | number> | undefined) ?? undefined };
+}
+
+function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
+  switch (reason) {
+    case "approvedByOwner":
+      return t("studio.gateRequiredOwnerApproved", "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.");
+    case "staleApproval":
+      return t("studio.gateRequiredStale", "Not sent: the workflow was redeployed after the gate was approved, so that approval does not cover what is running now. Start a new run and have the gate approved again.");
+    case "ownerUnknown":
+      return t("studio.gateRequiredOwnerUnknown", "Not sent: this run has no known owner (started by the system or by an API key with no creating user), so a separate approval cannot be checked. Start the run as a user.");
+    default:
+      return t("studio.gateRequired", "Not sent: this command needs an approval gate earlier in the run, approved by someone other than the person who started it. Add a gate before this step, deploy, and start a new run.");
+  }
+}
 
 /** doc 80 Task 4 (ORC-13) — per-step dispatch marker in the run drawer (routedTo + simulated/sent). */
 function StepDispatchTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
@@ -2480,7 +2574,8 @@ function RunRow({
   assignment?: AssignmentRow;
   canAssign?: boolean;
   /** doc 80 Đợt 1 Task 9 — `expectedStepId` = gate đang HIỂN THỊ (server từ chối nếu run đã sang gate khác). */
-  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null) => void;
+  /** doc 81 Đợt 4 fix round 2 (R-4-k) — `expectedDefHash` = getRun().defHash the screen loaded; required to approve. */
+  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string) => void;
   onAbort: () => void;
   t: TFunction;
 }) {
@@ -2500,7 +2595,8 @@ function RunRow({
   const detailQ = trpc.orchestration.getRun.useQuery(
     { runId },
     {
-      enabled: open || (awaiting && canControl),
+      // doc 81 Đợt 4 fix round 2 (R-4-k) — interrupted runs too: "Continue" sends the loaded definition hash.
+      enabled: open || ((awaiting || interrupted) && canControl),
       refetchInterval: (q) => {
         const st = String((q.state.data as { run?: { status?: string } } | undefined)?.run?.status ?? status);
         return open && !isRunTerminal(st) ? 1500 : false;
@@ -2514,6 +2610,15 @@ function RunRow({
     ? (detailQ.data.run.currentStepId ?? null)
     : typeof run.currentStepId === "string" ? run.currentStepId : null;
   const steps = (detailQ.data?.steps ?? []) as RunStepView[];
+  // doc 81 Đợt 4 fix round 2 (R-4-k) — the definition this screen shows; Approve / Continue wait for it.
+  // fix round 3 (R-4-p) — PINNED at the first view of the gate (per gate step): a later poll with another hash never
+  // replaces it silently; the row says "definition changed, reload" and Approve / Continue stay disabled.
+  const polledHash = (detailQ.data as { defHash?: string | null } | undefined)?.defHash ?? undefined;
+  const pinKey = `${runId}:${shownStepId ?? ""}`;
+  const pinned = useRef<{ key: string; hash: string } | null>(null);
+  if (polledHash && (!pinned.current || pinned.current.key !== pinKey)) pinned.current = { key: pinKey, hash: polledHash };
+  const defHash = pinned.current?.key === pinKey ? pinned.current.hash : undefined;
+  const defChanged = defHash !== undefined && polledHash !== undefined && polledHash !== defHash;
   // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
   const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
   const gatePrompt = typeof currentStep?.result?.prompt === "string" ? (currentStep.result.prompt as string) : "";
@@ -2551,7 +2656,7 @@ function RunRow({
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true, undefined, shownStepId)}>
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={!defHash || defChanged} onClick={() => onResume(true, undefined, shownStepId, defHash)}>
               {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
@@ -2564,6 +2669,11 @@ function RunRow({
         )}
       </div>
 
+      {defChanged && (awaiting || interrupted) && canControl && (
+        <div data-testid="definition-changed" role="alert" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
+          {t("studio.definitionChangedReload", "The workflow definition changed since you opened this approval — reload the page and review it before approving.")}
+        </div>
+      )}
       {interrupted && (
         <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground">
           {t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
@@ -2579,7 +2689,7 @@ function RunRow({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId); }}>
+            <AlertDialogAction disabled={!defHash || defChanged} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash); }}>
               {t("studio.continueRunConfirm", "Continue run")}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2648,17 +2758,32 @@ function RunRow({
           {detailQ.isError && <p className="text-xs text-destructive">{t("common.loadError", "Failed to load")}</p>}
           {steps.map((s) => {
             const isCurrent = currentStepId != null && s.stepId === currentStepId;
+            // doc 81 Đợt 4 Task A5 — a command step stopped because no separate approval gate preceded it.
+            const gateRequired = gateRequiredReasonOf(s.error);
             return (
-              <div key={s.stepId} className={`flex items-center justify-between py-0.5 text-xs ${isCurrent ? "rounded bg-primary/10 px-1" : ""}`}>
-                <span className="font-mono text-[11px]">
-                  {isCurrent && <span className="mr-1 text-primary">▶</span>}
-                  {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  {/* doc 80 Task 4 (ORC-13) — where the command went and whether it was simulated. */}
-                  <StepDispatchTag result={s.result} t={t} />
-                  <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
-                </span>
+              <div key={s.stepId}>
+                <div className={`flex items-center justify-between py-0.5 text-xs ${isCurrent ? "rounded bg-primary/10 px-1" : ""}`}>
+                  <span className="font-mono text-[11px]">
+                    {isCurrent && <span className="mr-1 text-primary">▶</span>}
+                    {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    {/* doc 80 Task 4 (ORC-13) — where the command went and whether it was simulated. */}
+                    <StepDispatchTag result={s.result} t={t} />
+                    <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
+                  </span>
+                </div>
+                {/* doc 81 Đợt 4 fix round 3 (R-4-n) — a localisable refusal carried by the step (detail.appError). */}
+                {!gateRequired && stepAppError(s) && (
+                  <p data-testid="step-app-error" className="pb-1 pl-2 text-[11px] text-amber-700 dark:text-amber-300">
+                    {translateAppError(stepAppError(s)!.appCode, stepAppError(s)!.appParams, s.error ?? "")}
+                  </p>
+                )}
+                {gateRequired && (
+                  <p data-testid="step-gate-required" data-reason={gateRequired} className="pb-1 pl-2 text-[11px] text-amber-700 dark:text-amber-300">
+                    {gateRequiredText(gateRequired, t)}
+                  </p>
+                )}
               </div>
             );
           })}

@@ -508,13 +508,10 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/traceabilityRouter.ts (2) ───────────────────────────────────────────────
   "server/routers/traceabilityRouter.ts#traceabilityRouter.byLot",
   "server/routers/traceabilityRouter.ts#traceabilityRouter.bySerial",
-  // ── server/routers/twinRouter.ts (6) ───────────────────────────────────────────────────────
+  // ── server/routers/twinRouter.ts (2) ───────────────────────────────────────────────────────
+  // doc 81 Đợt 4 Task A3: occupancyGrid · replay · sceneGraph · twinModels đã vá (assertTwinFactoryInScope) — đã GỠ.
   "server/routers/twinRouter.ts#twinRouter.models.list",
   "server/routers/twinRouter.ts#twinRouter.models.resolve",
-  "server/routers/twinRouter.ts#twinRouter.occupancyGrid",
-  "server/routers/twinRouter.ts#twinRouter.replay",
-  "server/routers/twinRouter.ts#twinRouter.sceneGraph",
-  "server/routers/twinRouter.ts#twinRouter.twinModels",
   // ── server/routers/userRouters.ts (1) ──────────────────────────────────────────────────────
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments",
   // ── server/routers/vda5050Router.ts (2) ────────────────────────────────────────────────────

@@ -74,8 +74,10 @@ node scripts/mappings-export.mjs --adapter plc-line1   # một adapter
 # 3. Ở env đích: dry-run xem diff (mặc định KHÔNG ghi)
 node scripts/mappings-import.mjs contracts/mappings/plc-line1.mapping.yaml
 
-# 4. Duyệt xong → apply (thêm --prune CHỈ khi PR duyệt việc xoá)
-node scripts/mappings-import.mjs contracts/mappings/plc-line1.mapping.yaml --apply
+# 4. Duyệt xong → apply (thêm --prune CHỈ khi PR duyệt việc xoá).
+#    --actor <userId|email> BẮT BUỘC với --apply (doc 81 Đợt 4 C2): người chạy được tra trong
+#    `users` (đang hoạt động; email trùng ⇒ dùng id) và ghi vào audit `mapping_as_code.import`.
+node scripts/mappings-import.mjs contracts/mappings/plc-line1.mapping.yaml --apply --actor kysu@nhamay.vn
 ```
 
 Tương đương trong app (tRPC, RBAC `machine_control`): `mappingAsCode.list` /

@@ -210,6 +210,62 @@ describe("OrchestrationStudio — Fix round 1: failed/timeout là 'chưa xác nh
   });
 });
 
+describe("OrchestrationStudio — doc 81 Đợt 4 Task A5 + fix round 1: bước dừng FOE_GATE_REQUIRED nói rõ VÌ SAO và phải làm gì", () => {
+  it("mỗi lý do một câu riêng (không gate / chủ run tự duyệt / duyệt cũ sau redeploy / không rõ chủ); lỗi khác ⇒ không có dòng ấy", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "w1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(noGate): command step "w1" was not sent' },
+            { stepId: "w2", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(approvedByOwner): command step "w2" was not sent' },
+            { stepId: "w3", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(staleApproval): command step "w3" was not sent' },
+            { stepId: "w4", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(ownerUnknown): command step "w4" was not sent' },
+            { stepId: "w5", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED: legacy shape' },
+            { stepId: "w6", stepType: "command", status: "failed", attempt: 1, result: null, error: "POLICY_DENIED: no" },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]'));
+    expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["noGate", "approvedByOwner", "staleApproval", "ownerUnknown", "noGate"]);
+    expect(notes[0].textContent).toMatch(/approval gate earlier in the run, approved by someone other than the person who started it/);
+    expect(notes[1].textContent).toMatch(/approved by the person who started the run, which does not count/);
+    expect(notes[2].textContent).toMatch(/redeployed after the gate was approved/);
+    expect(notes[3].textContent).toMatch(/no known owner/);
+    expect(new Set(notes.slice(0, 4).map((n) => n.textContent)).size).toBe(4);
+  });
+});
+
+const DEF_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+describe("OrchestrationStudio — doc 81 Đợt 4 fix round 3 (R-4-n): lỗi 'robotId required' của bước hiện bằng appError dịch", () => {
+  it("bước lỗi mang detail.appError INVALID_VALUE robotId/robotIdRequired ⇒ dòng dịch (không phải chuỗi thô); bước thành công ⇒ không có", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "r1", stepType: "command", status: "failed", attempt: 1, error: "robotId required for robot command", result: { routedTo: "robot-dispatcher", status: "rejected", accepted: false, detail: { appError: { appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } } } } },
+            { stepId: "r2", stepType: "command", status: "completed", attempt: 1, result: { routedTo: "robot-dispatcher", status: "done", accepted: true } },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-app-error"]'));
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).not.toBe("robotId required for robot command");
+    expect(notes[0].textContent).toMatch(/robotIdRequired|robot/i);
+  });
+});
+
 describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang hiển thị (expectedStepId)", () => {
   // ORACLE khai tay: hàng danh sách còn ghi gate cũ, chi tiết (khối "Bước đang chờ") ghi gate mới —
   // thứ người duyệt NHÌN THẤY là khối chi tiết ⇒ đó là gate phải được gửi.
@@ -219,12 +275,13 @@ describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang h
     setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
     setQueryOverride(
       "orchestration.getRun",
-      makeQuery({ data: { run: { ...AWAITING, currentStepId: "g-detail" }, steps: [{ stepId: "g-detail", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "Duyệt?" } }] } }),
+      makeQuery({ data: { run: { ...AWAITING, currentStepId: "g-detail" }, defHash: DEF_HASH, steps: [{ stepId: "g-detail", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "Duyệt?" } }] } }),
     );
     render(<OrchestrationStudio />);
     const { default: userEvent } = await import("@testing-library/user-event");
     await userEvent.setup().click(within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i }));
-    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail" });
+    // doc 81 Đợt 4 fix round 2 (R-4-k): + the hash of the definition this screen loaded
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail", expectedDefHash: DEF_HASH });
   });
 
   it("Reject (kèm lý do) ⇒ gửi cùng gate đang hiển thị", async () => {
@@ -239,16 +296,18 @@ describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang h
     await user.click(within(rowOf(30)).getByRole("button", { name: /^(Reject|studio\.reject)$/i }));
     await user.type(within(rowOf(30)).getByRole("textbox"), "sai");
     await user.click(within(rowOf(30)).getByRole("button", { name: /Xác nhận từ chối|confirm reject|studio\.confirmReject/i }));
-    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: false, note: "sai", expectedStepId: "g-detail" });
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: false, note: "sai", expectedStepId: "g-detail", expectedDefHash: undefined });
   });
 
-  it("chi tiết chưa nạp ⇒ dùng gate trên hàng danh sách (không bao giờ gửi thiếu)", async () => {
+  it("chi tiết chưa nạp ⇒ Approve KHOÁ (doc 81 Đợt 4 fix round 2, R-4-k: chưa biết định nghĩa đang xem ⇒ không duyệt được), không gửi gì", async () => {
     setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
     setQueryOverride("orchestration.getRun", makeQuery({ data: undefined }));
     render(<OrchestrationStudio />);
+    const btn = within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i });
+    expect(btn).toBeDisabled();
     const { default: userEvent } = await import("@testing-library/user-event");
-    await userEvent.setup().click(within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i }));
-    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-list" });
+    await userEvent.setup().click(btn);
+    expect(mutateSpies["orchestration.resumeRun"]).not.toHaveBeenCalled();
   });
 });
 

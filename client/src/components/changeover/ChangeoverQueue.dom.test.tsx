@@ -28,7 +28,7 @@ vi.mock("@/lib/trpc", () => {
       { id: 72, machineId: 4, machineCode: "MC-4", recipeCode: "RCP-B", recipeVersion: 1, recipeStatus: "active", requestNote: null },
     ],
     "engineering.assignments": [{ entityId: 71, assigneeUserId: 61, assigneeName: "Truong Ca" }],
-    "engineering.assignableUsers": [{ id: 61, name: "Truong Ca" }],
+    "engineering.assignableUsers": { users: [{ id: 61, name: "Truong Ca" }], truncated: false },
   };
   const at = (path: string[]): unknown =>
     new Proxy(() => undefined, {

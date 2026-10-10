@@ -97,6 +97,7 @@ export class StubDriver implements OtDriver {
       value,
       quality: "good",
       timestamp: new Date(now),
+      tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
     };
   }
 

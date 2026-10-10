@@ -95,6 +95,11 @@ function jobStatusBadge(status: string, t: (k: string, f: string) => string) {
 
 export default function RobotControl() {
   const { t } = useTranslation();
+  // doc 81 Đợt 4 Task B4 — a lock restored as `persistUnknown` (saved lock unreadable at startup) gets a sentence, not a code.
+  const lockReason = (code?: string): string =>
+    code === "persistUnknown"
+      ? t("robot.motionLock.reason.persistUnknown", "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn")
+      : (code ?? "link loss");
   const [, setLocation] = useLocation();
   const search = useSearch();
   const { hasPermission, isAdmin } = usePermissions();
@@ -300,7 +305,7 @@ export default function RobotControl() {
                           <span
                             title={t("robot.motionLock.tip", {
                               defaultValue: "Chuyển động bị khoá sau khi mất kết nối / kết cục lệnh không rõ ({{reason}}, từ {{since}}). Chỉ một lệnh DỪNG được robot xác nhận hoặc thao tác gỡ khoá có kiểm soát mới mở lại.",
-                              reason: r.live.motionLock.reasonCode ?? "link loss",
+                              reason: lockReason(r.live.motionLock.reasonCode),
                               since: fmt(r.live.motionLock.since),
                             })}
                           >
@@ -457,7 +462,7 @@ export default function RobotControl() {
               <AlertDialogDescription>
                 {t("robot.motionLock.clearDesc", {
                   defaultValue: "Khoá được đặt vì {{reason}} (từ {{since}}). Trước khi gỡ, hãy xác nhận tại chỗ rằng robot đã dừng và khu vực an toàn. Thao tác này được ghi vào nhật ký kiểm toán kèm lý do của bạn; không có byte nào được gửi tới robot.",
-                  reason: clearTarget?.live?.motionLock?.reasonCode ?? "link loss",
+                  reason: lockReason(clearTarget?.live?.motionLock?.reasonCode),
                   since: fmt(clearTarget?.live?.motionLock?.since),
                 })}
               </AlertDialogDescription>

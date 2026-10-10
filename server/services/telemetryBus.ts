@@ -78,6 +78,11 @@ export interface CanonicalSample {
    * (`truongTsMau`, `server/utils/factoryTime.ts`). Cổng `ts` loại mẫu với đúng lý do này.
    */
   tsReject?: "ts_no_timezone";
+  /**
+   * doc 81 Đợt 4 Task B6 — who stamped `ts` ("device" | "server"). "server" ⇒ the sample is NOT recorded in the per-device
+   * clock-drift table (a server stamp says nothing about the device clock). Absent ⇒ unchanged (recorded as before).
+   */
+  tsSource?: "device" | "server";
   /** Soft machine ref if already known (preferred — skips resolution). */
   machineId?: number | null;
   /** External device identifier; also used to resolve machineId when machineId absent. */
@@ -576,7 +581,8 @@ function gateSampleTs(samples: CanonicalSample[]): {
     // Đợt 1C T6 — cửa ingest đã đánh dấu `ts` không múi giờ ⇒ loại với lý do riêng (không đoán giờ).
     const reason = s?.tsReject === "ts_no_timezone" ? "ts_no_timezone" : checkSampleTs(s?.ts, now);
     // Số đo lệch theo thiết bị: chỉ mẫu THIẾT BỊ khai ts (mẫu giờ server không có gì để đo).
-    if (s && (s.ts != null || s.tsReject)) {
+    // doc 81 Đợt 4 Task B6 — a server-stamped sample measures nothing about the device clock: kept out of the table.
+    if (s && (s.ts != null || s.tsReject) && s.tsSource !== "server") {
       const t = s.ts instanceof Date ? s.ts.getTime() : NaN;
       const lech = reason === null || reason === "ts_too_far_future" ? t - now : null;
       recordTsObservation(s, lech, reason === "ts_too_far_future" || reason === "invalid_ts" || reason === "ts_no_timezone" ? reason : null, now);

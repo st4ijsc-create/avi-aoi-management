@@ -112,6 +112,11 @@ export interface RobotDriver {
    * lock (Techman / UR) simply do not implement it.
    */
   lockMotion?(reasonCode: string, detail?: string): void;
+  /**
+   * doc 81 Đợt 4 Task B4 (QĐ-4c) — the driver's MotionLock itself, so robotManager can restore a persisted lock at
+   * registration and attach the persistence hooks (robotMotionLockStore). Drivers without a lock do not implement it.
+   */
+  motionLockController?(): MotionLock;
 }
 
 /** Snapshot of a driver's motion lock (also what the UI reads through robot.list `live`). */
@@ -129,6 +134,20 @@ export interface MotionLockState {
   clearedByUserId?: number;
   clearReason?: string;
 }
+
+/** doc 81 Đợt 4 Task B4 — persistence hooks of a MotionLock (fire-and-forget; must not throw or block). */
+export interface MotionLockPersistence {
+  /** The lock was set (state.locked === true): persist it. */
+  locked(state: MotionLockState): void;
+  /** The lock was cleared (confirmed STOP or audited operator clear): forget it. */
+  cleared(state: MotionLockState): void;
+}
+
+/**
+ * doc 81 Đợt 4 Task B4 (QĐ-4c) — reason code of the lock a robot starts with when its persisted lock could not be read
+ * at registration (fail-closed: "unknown" counts as locked). Cleared like any lock (confirmed STOP / audited clear).
+ */
+export const MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE = "persistUnknown" as const;
 
 /** Fix round 5 (c) — reason code the dispatcher locks with when ITS deadline made the outcome unknown. */
 export const DISPATCH_DEADLINE_REASON_CODE = "dispatch_deadline_outcome_unknown" as const;
@@ -168,11 +187,51 @@ export class RobotMotionLockedError extends Error {
 export class MotionLock {
   private state: MotionLockState = { locked: false, generation: 0 };
   private generation = 0;
+  /** doc 81 Đợt 4 Task B4 — persistence hooks (robotMotionLockStore); null = in-memory only (as before). */
+  private persistence: MotionLockPersistence | null = null;
+
+  /**
+   * B4 — attach the persistence hooks. They are called AFTER the in-memory transition (which stays authoritative) and
+   * must not block: the store fires its DB work and returns. A hook that throws is logged and ignored — lock() and the
+   * clears never fail or wait because of the database.
+   */
+  attachPersistence(p: MotionLockPersistence): void {
+    this.persistence = p;
+  }
+
+  /**
+   * B4 — start LOCKED from a persisted row (restart): same cause, time and generation as before the restart, so an
+   * operator clear must quote that generation and the next lock() bumps it monotonically. No persistence hook fires
+   * (the row already exists). No-op while already locked.
+   */
+  restore(saved: { reasonCode: string; detail?: string | null; since: string; generation: number }): void {
+    if (this.state.locked) return;
+    this.generation = Math.max(this.generation, saved.generation);
+    this.state = {
+      locked: true,
+      reasonCode: saved.reasonCode,
+      ...(saved.detail != null ? { detail: saved.detail } : {}),
+      since: saved.since,
+      generation: this.generation,
+    };
+  }
+
+  private notify(kind: "locked" | "cleared"): void {
+    const p = this.persistence;
+    if (!p) return;
+    try {
+      if (kind === "locked") p.locked(this.snapshot());
+      else p.cleared(this.snapshot());
+    } catch (err) {
+      console.error(`[Robot] motion lock persistence hook (${kind}) failed — in-memory lock unchanged:`, (err as Error)?.message ?? err);
+    }
+  }
 
   lock(reasonCode: string, detail?: string): void {
     if (this.state.locked) return;
     this.generation++;
     this.state = { locked: true, reasonCode, detail, since: new Date().toISOString(), generation: this.generation };
+    this.notify("locked");
   }
 
   clearByStop(): void {
@@ -185,6 +244,7 @@ export class MotionLock {
       clearedBy: "stop_confirmed",
       clearedAt: new Date().toISOString(),
     };
+    this.notify("cleared");
   }
 
   /**
@@ -206,6 +266,7 @@ export class MotionLock {
       clearedByUserId: input.userId,
       clearReason: input.reason,
     };
+    this.notify("cleared");
     return this.snapshot();
   }
 

@@ -57,6 +57,9 @@ const srv = vi.hoisted(() => ({
   runs: [] as Array<Record<string, unknown>>,
   versions: {} as Record<number, Array<Record<string, unknown>>>,
   getRun: undefined as unknown,
+  /** doc 81 Đợt 4 fix round 3 (R-4-n) — equipment rows + in-scope robots for the robot picker. */
+  equipment: [] as unknown[],
+  robots: [] as unknown[],
   queryInputs: {} as Record<string, unknown[]>,
   calls: {} as Record<string, unknown[]>,
   /** Kết quả trả cho onSuccess của mutation (khoá có mặt ⇒ tự gọi onSuccess sau một microtask). */
@@ -101,10 +104,11 @@ vi.mock("@/lib/trpc", () => {
           return q(key, srv.versions[id] ?? []);
         }
         if (key === "orchestration.getRun") return q(key, srv.getRun);
-        if (key === "equipment.listEquipment") return q(key, []);
+        if (key === "equipment.listEquipment") return q(key, srv.equipment);
+        if (key === "fleet.robotPositions") return q(key, srv.robots);
         // doc 81 Đợt 3 Task 4 — phân công run đang hiệu lực + roster.
         if (key === "engineering.assignments") return q(key, [{ entityId: 30, assigneeUserId: 81, assigneeName: "Ky su Run" }]);
-        if (key === "engineering.assignableUsers") return q(key, [{ id: 81, name: "Ky su Run" }]);
+        if (key === "engineering.assignableUsers") return q(key, { users: [{ id: 81, name: "Ky su Run" }], truncated: false });
         return q(key, undefined);
       },
       useMutation: (opts: MutOpts = {}) => ({
@@ -205,6 +209,8 @@ beforeEach(() => {
   srv.runs = RUNS_PLAIN.map((r) => ({ ...r }));
   srv.versions = { 11: VERSIONS_11.map((v) => ({ ...v })) };
   srv.getRun = undefined;
+  srv.equipment = [];
+  srv.robots = [];
   srv.queryInputs = {};
   srv.calls = {};
   srv.results = {};
@@ -563,6 +569,25 @@ describe("Orchestration P2 — Lịch sử phiên bản: VersionHistoryPanel + R
     expect(srv.refetched).toEqual(expect.arrayContaining(["orchestration.listWorkflows", "orchestration.listVersions"]));
   });
 
+  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"]] as const) {
+    it(`final wave G2: ROLLBACK refused with ${reason} ⇒ the translated sentence naming the steps (no raw server English)`, async () => {
+      const user = userEvent.setup();
+      srv.results["orchestration.rollbackWorkflow"] = { ok: false, enabled: true, reason, stepIds: ["s1", "s2"], message: "RAW server text" };
+      render(<OrchestrationStudio />);
+      const l = await openVersions(user);
+      const dlg = await reasonStep(l, 1, "abc");
+      fireEvent.click(within(dlg).getByRole("button", { name: VI.confirmWithReason.continue }));
+      const fin = await screen.findByRole("dialog", { name: VI.confirmWithReason.finalTitle });
+      fireEvent.click(within(fin).getByRole("button", { name: S.rollback }));
+      const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
+      fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "123456" } });
+      await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+      const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+      expect(shown).toBe(S[key].replace("{{steps}}", "s1, s2"));
+      expect(shown).not.toContain("RAW server text");
+    });
+  }
+
   it("Huỷ OTP ⇒ KHÔNG gọi khôi phục", async () => {
     const user = userEvent.setup();
     render(<OrchestrationStudio />);
@@ -714,21 +739,22 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
   it("Tiếp tục run bị gián đoạn: AlertDialog rồi resumeRun({runId, approved:true, expectedStepId})", async () => {
     const user = userEvent.setup();
     srv.runs = [INTERRUPTED].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...INTERRUPTED }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] }; // R-4-k: Continue sends the loaded hash
     render(<OrchestrationStudio />);
     await user.click(within(rowOf(31)).getByRole("button", { name: S.continueRun }));
     expect(calls("orchestration.resumeRun")).toEqual([]);
     const dlg = await screen.findByRole("alertdialog");
     await user.click(within(dlg).getByRole("button", { name: S.continueRunConfirm }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 31, approved: true, note: undefined, expectedStepId: "s-2" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 31, approved: true, note: undefined, expectedStepId: "s-2", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
   });
 
   it("Duyệt ở tab Chờ duyệt gửi expectedStepId của gate đang hiển thị; không quyền ⇒ không có nút", async () => {
     const user = userEvent.setup();
     srv.runs = [AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-detail" }, steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-detail" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
     const { unmount } = render(<OrchestrationStudio />);
     await user.click(within(rowOf(30)).getByRole("button", { name: S.approve }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
     unmount();
     perm.canControl = false;
     render(<OrchestrationStudio />);
@@ -740,14 +766,14 @@ describe("doc 81 Đợt 3 Task 4 — 'Giao cho' run đang chờ duyệt", () => 
   it("run chờ duyệt: hàng hiện tên người được giao + khối ngữ cảnh có bộ chọn; nút Duyệt giữ nguyên payload", async () => {
     const user = userEvent.setup();
     srv.runs = [AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
     render(<OrchestrationStudio />);
     const row = rowOf(30);
     expect(row.querySelector("[data-assignee-cell]")).toHaveTextContent("Ky su Run");
     const ctl = row.querySelector('[data-assign-control="orchestration_run"]') as HTMLElement;
     expect(within(ctl).getByRole("combobox", { name: VI.engineeringAssign.label })).toHaveTextContent("Ky su Run");
     await user.click(within(row).getByRole("button", { name: S.approve }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
     expect(calls("engineering.assign")).toEqual([]);
   });
 
@@ -797,5 +823,105 @@ describe("Orchestration P2 — i18n", () => {
         .map(([l]) => `${l}:${k}`),
     );
     expect(missing).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 4 fix round 3 (R-4-n / R-4-p)
+// ════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 4 fix round 3 — robot picker (R-4-n) + hash pinned at first view (R-4-p)", () => {
+  beforeAll(() => {
+    Element.prototype.scrollIntoView ??= function () {};
+    (Element.prototype as unknown as { hasPointerCapture: () => boolean }).hasPointerCapture ??= () => false;
+  });
+
+  it("★ R-4-n: a robot step shows a robot picker (in-scope robots only); the chosen robotId goes into the deployed definition", async () => {
+    const user = userEvent.setup();
+    srv.equipment = [
+      { machineId: 7, name: "Robot cell", machineType: "ROBOT", adapterKind: "robot", capability: { adapterKind: "robot", supportedCommands: [{ name: "abort", label: "Abort" }] } },
+    ];
+    srv.robots = [{ id: 42, code: "R42", name: "Arm 42" }];
+    srv.workflows = [
+      { id: 21, ref: "rb-wf", name: "Robot WF", version: 1, status: "deployed", definitionJson: { ref: "rb-wf", name: "Robot WF", version: 1, steps: [{ id: "rb-1", type: "command", machineId: 7, command: "abort", args: {} }] } },
+    ];
+    render(<OrchestrationStudio />);
+    await user.click(within(wfRow(21)).getByRole("button", { name: S.load }));
+    await user.click(within(mainEl()).getByText("rb-1"));
+    const picker = within(inspector()).getByTestId("robot-picker");
+    fireEvent.click(within(picker).getByRole("combobox", { name: S.robot }));
+    fireEvent.click(screen.getByRole("option", { name: /#42 · Arm 42/ }));
+    await user.click(screen.getByRole("button", { name: S.deploy }));
+    const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
+    fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "654321" } });
+    await waitFor(() => expect(calls("orchestration.deployWorkflow")).toHaveLength(1));
+    const def = (calls("orchestration.deployWorkflow")[0] as { definition: { steps: Array<{ args?: Record<string, unknown> }> } }).definition;
+    expect(def.steps[0].args).toEqual({ robotId: 42 });
+  });
+
+  it("R-4-n: a non-robot machine has no robot picker", async () => {
+    const user = userEvent.setup();
+    srv.equipment = [{ machineId: 8, name: "PLC line", machineType: "AUTOMATION", adapterKind: "ot-opcua", capability: { adapterKind: "ot-opcua", supportedCommands: [{ name: "start" }] } }];
+    srv.workflows = [
+      { id: 22, ref: "ot-wf", name: "OT WF", version: 1, status: "deployed", definitionJson: { ref: "ot-wf", name: "OT WF", version: 1, steps: [{ id: "ot-1", type: "command", machineId: 8, command: "start", args: {} }] } },
+    ];
+    render(<OrchestrationStudio />);
+    await user.click(within(wfRow(22)).getByRole("button", { name: S.load }));
+    await user.click(within(mainEl()).getByText("ot-1"));
+    expect(within(inspector()).queryByTestId("robot-picker")).toBeNull();
+  });
+
+  it("R-4-n: deploy refused with robotIdMissing ⇒ translated toast naming the steps (no raw server message)", async () => {
+    render(<OrchestrationStudio />);
+    srv.results["orchestration.deployWorkflow"] = { ok: false, enabled: true, reason: "robotIdMissing", stepIds: ["mv", "ab"], message: "RAW server text" };
+    // the mocked mutation answers onSuccess with srv.results (as the server would)
+    const user = userEvent.setup();
+    await user.click(within(leftPanel()).getByRole("button", { name: S.type.delay }));
+    await user.click(screen.getByRole("button", { name: S.deploy }));
+    const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
+    fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "654321" } });
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+    expect(shown).toContain("mv, ab");
+    expect(shown).not.toContain("RAW server text");
+  });
+
+  it("final wave G4: START refused by the definition checks (robotUnavailable) ⇒ translated 'not started' + the step sentence, no raw server English", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.startRun"] = { ok: false, enabled: true, reason: "robotUnavailable", stepIds: ["ab"], message: "RAW server text" };
+    render(<OrchestrationStudio />);
+    await user.click(screen.getByRole("button", { name: S.editRef }));
+    await user.type(screen.getByRole("textbox", { name: S.editRef }), "legacy{Enter}");
+    await user.click(screen.getByRole("button", { name: S.run }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+    expect(shown).toBe(`${S.runRefusedDefinition} ${S.deployRobotUnavailable.replace("{{steps}}", "ab")}`);
+    expect(shown).not.toContain("RAW server text");
+  });
+
+  it("★ R-4-p: the hash is pinned at the first view of the gate; a later poll with ANOTHER hash ⇒ 'definition changed, reload' + Approve disabled (no silent update)", async () => {
+    const user = userEvent.setup();
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    const view = render(<OrchestrationStudio />);
+    expect(within(rowOf(30)).queryByTestId("definition-changed")).toBeNull();
+    // the next poll returns a redeployed definition
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", steps: [] };
+    view.rerender(<OrchestrationStudio />);
+    expect(within(rowOf(30)).getByTestId("definition-changed")).toHaveTextContent(S.definitionChangedReload);
+    const approve = within(rowOf(30)).getByRole("button", { name: S.approve });
+    expect(approve).toBeDisabled();
+    await user.click(approve);
+    expect(calls("orchestration.resumeRun") ?? []).toEqual([]);
+  });
+
+  it("R-4-p: same hash on later polls ⇒ no warning, the approval carries the FIRST-viewed hash", async () => {
+    const user = userEvent.setup();
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    const view = render(<OrchestrationStudio />);
+    view.rerender(<OrchestrationStudio />);
+    expect(within(rowOf(30)).queryByTestId("definition-changed")).toBeNull();
+    await user.click(within(rowOf(30)).getByRole("button", { name: S.approve }));
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
   });
 });

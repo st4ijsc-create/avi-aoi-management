@@ -41,6 +41,7 @@ import { getActiveDriver } from "./otManager";
 import {
   actuationPreflightVerdict,
   effectiveBackend,
+  plcConfigAppliesToTargets,
   type PlcPreflightReading,
   type PlcReadOutcome,
 } from "./safetyPreflightPolicy";
@@ -52,6 +53,11 @@ import type { SafetyPlcStatusSnapshot } from "../../../drizzle/schema";
 export interface AdapterFacadeContext {
   adapterId: number;
   machineId?: number | null;
+  /**
+   * doc 81 Đợt 4 Task A1 — the robot a motion is for (robot path: adapterId = ROBOT_NO_OT_ADAPTER_ID,
+   * machineId null). Only used to pick the safety-PLC configs that guard the target.
+   */
+  robotId?: number | null;
   /**
    * Driver đã resolve sẵn (tùy chọn — test/HA path). Vắng → facade tự resolve
    * driver ĐANG KẾT NỐI qua otManager.getActiveDriver tại thời điểm gọi (chỉ để
@@ -261,7 +267,15 @@ export function createAdapterFacade(ctx: AdapterFacadeContext): OtAdapterFacade 
       try {
         const plc = await import("../safety/plc/safetyPlcAdapter");
         if (!plc.safetyPlcAdapterEnabled()) return unknown;
-        const configs = await plc.listPlcConfigs({ onlyEnabled: true });
+        const enabled = await plc.listPlcConfigs({ onlyEnabled: true });
+        if (enabled.length === 0) return unknown;
+        // doc 81 Đợt 4 Task A1 (R-4-c) — only the configs guarding THIS target, plus untargeted ones.
+        // Target not resolvable ⇒ null ⇒ every config applies (never fewer than before). Same matcher
+        // as the Safety panel (safetySourceHealth).
+        // Fix round 1 (R-4-d): the WRITTEN adapter's machine is always covered (server-side), plus the caller's targets.
+        const { resolveSafetyTargets } = await import("./safetyTarget");
+        const targets = await resolveSafetyTargets({ adapterId: ctx.adapterId, machineId: ctx.machineId ?? null, robotId: ctx.robotId ?? null });
+        const configs = enabled.filter((cfg) => plcConfigAppliesToTargets(cfg, targets));
         if (configs.length === 0) return unknown;
 
         if (opts?.forRealActuation === true) return await readForRealActuation(plc, configs);

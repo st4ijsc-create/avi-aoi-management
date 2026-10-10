@@ -643,7 +643,7 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
   describe("§6 roster 'Giao cho' — permissionHeldSql == checkPermission", () => {
     it("chỉ người GIAO được mới đọc roster; roster chỉ có người đang hoạt động XEM được trang, chỉ {id,name}", async () => {
       await expect((await as("engViewer")).assignableUsers({ entityType: "ecn" })).rejects.toMatchObject({ code: "FORBIDDEN" });
-      const r = await (await as("supAssigner")).assignableUsers({ entityType: "changeover" });
+      const { users: r } = await (await as("supAssigner")).assignableUsers({ entityType: "changeover" });
       const ids = new Set(r.map((x) => x.id));
       expect(Object.keys(r[0] ?? { id: 0, name: "" }).sort()).toEqual(["id", "name"]);
       // Roster có trần ROSTER_LIMIT và _test có >1000 admin ⇒ chỉ đo vế PHỦ ĐỊNH chắc chắn trên người gieo:
@@ -758,6 +758,72 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
         spy.mockRestore();
         err.mockRestore();
       }
+    });
+  });
+  // ══════════════════════════════════════════════════════════════════════════
+  describe("§11 doc 81 Đợt 4 C6 — roster tìm kiếm (search ilike có thoát), selectedId, truncated", () => {
+    // Người XEM được /product-changeover (machine_status + machine_control canView), đang hoạt động, trong số người gieo.
+    const HOP_LE = ["supAssigner", "engViewer", "engViewer2", "userViewer", "engAuthor", "supAuthor", "adminA", "opFull", "viewerFull", "userFull", "engNo2fa"];
+    const roster = async (input: { search?: string; selectedId?: number }) =>
+      (await as("supAssigner")).assignableUsers({ entityType: "changeover", ...input });
+    const ten = (k: string) => `${RUN} ${k}`;
+
+    it("★ không search: _test có >300 người hợp lệ ⇒ trả đúng trần 300 + truncated:true", async () => {
+      const r = await roster({});
+      expect(r.users).toHaveLength(300);
+      expect(r.truncated).toBe(true);
+    });
+
+    it("★ search = mã lượt chạy ⇒ ĐÚNG người gieo hợp lệ (không người tắt / không quyền xem), truncated:false; không phân biệt hoa thường", async () => {
+      const r = await roster({ search: RUN.toUpperCase() });
+      expect(r.truncated).toBe(false);
+      expect(r.users.map((u) => u.name).sort()).toEqual(HOP_LE.map(ten).sort());
+      expect(Object.keys(r.users[0]).sort()).toEqual(["id", "name"]);
+    });
+
+    it("★ search THOÁT %, _, \\ (ký tự chữ, không phải ký tự đại diện)", async () => {
+      // `%` cuối: không thoát ⇒ khớp mọi tên bắt đầu bằng RUN; thoát ⇒ cần chữ '%' thật ⇒ rỗng.
+      expect((await roster({ search: `${RUN}%` })).users).toEqual([]);
+      // `_` thay MỘT ký tự thật (ký tự sau 't4a_'): không thoát ⇒ khớp; thoát ⇒ rỗng.
+      const gach = `${RUN.slice(0, 4)}_${RUN.slice(5)}`;
+      expect(gach).not.toBe(RUN);
+      expect((await roster({ search: gach })).users).toEqual([]);
+      // `\_` : không thoát ⇒ '\' thoát '_' thành chữ '_' ⇒ khớp RUN; thoát ⇒ cần chữ '\' thật ⇒ rỗng.
+      expect((await roster({ search: `${RUN.slice(0, 3)}\\${RUN.slice(3)}` })).users).toEqual([]);
+      // Đối chứng: chuỗi chứa '_' THẬT của RUN vẫn khớp (thoát không làm hỏng tìm chữ '_').
+      expect((await roster({ search: `${RUN} supAssigner` })).users.map((u) => u.id)).toEqual([uid.supAssigner]);
+    });
+
+    it("★ selectedId ngoài kết quả search ⇒ VẪN có trong danh sách (người hợp lệ); trong kết quả ⇒ không lặp", async () => {
+      const r = await roster({ search: `${RUN} supAssigner`, selectedId: uid.engViewer });
+      expect(r.users.map((u) => u.id).sort((a, b) => a - b)).toEqual([uid.supAssigner, uid.engViewer].sort((a, b) => a - b));
+      const r2 = await roster({ search: `${RUN} supAssigner`, selectedId: uid.supAssigner });
+      expect(r2.users.map((u) => u.id)).toEqual([uid.supAssigner]);
+      // final wave G8 (group C review M3) — không search, selectedId CHẮC CHẮN nằm NGOÀI trần 300: chọn người gieo hợp lệ
+      // KHÔNG có trong danh sách không-chọn (r0); điều kiện tiền đề được KHẲNG ĐỊNH (không âm thầm đo nhánh khác).
+      const r0 = await roster({});
+      expect(r0.truncated).toBe(true);
+      const ngoaiTran = HOP_LE.filter((k) => !r0.users.some((u) => u.id === uid[k]));
+      expect(ngoaiTran.length, "tiền đề: ít nhất một người gieo hợp lệ phải xếp NGOÀI trần 300").toBeGreaterThan(0);
+      const k = ngoaiTran[0];
+      const r3 = await roster({ selectedId: uid[k] });
+      expect(r3.truncated).toBe(true);
+      expect(r3.users).toHaveLength(301); // 300 + người được chọn (nhánh list.unshift)
+      expect(r3.users[0]).toEqual({ id: uid[k], name: ten(k) });
+      expect(r3.users.slice(1).map((u) => u.id)).toEqual(r0.users.map((u) => u.id));
+    });
+
+    it("★ selectedId KHÔNG hợp lệ (tắt / không quyền xem / không tồn tại) ⇒ KHÔNG lộ tên qua roster (fail-closed)", async () => {
+      for (const k of ["engInactive", "engNoView", "engCtlOnly"]) {
+        const r = await roster({ search: `${RUN} supAssigner`, selectedId: uid[k] });
+        expect(r.users.map((u) => u.id), k).toEqual([uid.supAssigner]);
+      }
+      expect((await roster({ search: `${RUN} supAssigner`, selectedId: 2_000_000_000 })).users.map((u) => u.id)).toEqual([uid.supAssigner]);
+    });
+
+    it("search quá dài / selectedId không dương ⇒ bị từ chối ở input", async () => {
+      await expect(roster({ search: "x".repeat(101) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(roster({ selectedId: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
   });
 });

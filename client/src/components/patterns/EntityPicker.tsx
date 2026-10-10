@@ -109,6 +109,19 @@ export interface EntityPickerProps {
   onQuickCreate?: (query: string) => Promise<EntityOption | null>;
   /** Nhãn đứng trước chuỗi «X» ở mục tạo nhanh. Defaults to the translated `entityPicker.createNew`. */
   createText?: string;
+  /**
+   * doc 81 Đợt 4 Task C6 — SERVER-SIDE search (opt-in). Called with the typed query, DEBOUNCED by `searchDebounceMs`
+   * (default 250 ms), so the caller can re-query its endpoint (e.g. a roster with a row cap). The local cmdk filter
+   * still narrows the current list instantly while the server answer is on its way. Not passed ⇒ unchanged behaviour.
+   */
+  onSearchChange?: (query: string) => void;
+  searchDebounceMs?: number;
+  /**
+   * doc 81 Đợt 4 Task C6 — the caller's list is CAPPED (more matching rows exist than shown): a hint row asks the user
+   * to narrow the search. Defaults to the translated `entityPicker.narrowSearch`.
+   */
+  truncated?: boolean;
+  truncatedText?: string;
 }
 
 export function EntityPicker({
@@ -128,6 +141,10 @@ export function EntityPicker({
   invalidText,
   onQuickCreate,
   createText,
+  onSearchChange,
+  searchDebounceMs = 250,
+  truncated = false,
+  truncatedText,
 }: EntityPickerProps): React.JSX.Element {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
@@ -135,6 +152,22 @@ export function EntityPicker({
   // and so we can tell whether the query matches any existing option.
   const [query, setQuery] = React.useState("");
   const [creating, setCreating] = React.useState(false);
+
+  // doc 81 Đợt 4 Task C6 — debounced server-side search. Only a CHANGE of the trimmed query is sent (mount with an
+  // empty box sends nothing); closing the popover clears the box ⇒ "" is sent once (back to the unfiltered list).
+  const onSearchChangeRef = React.useRef(onSearchChange);
+  onSearchChangeRef.current = onSearchChange;
+  const lastSentRef = React.useRef("");
+  const trimmedForServer = query.trim();
+  React.useEffect(() => {
+    if (!onSearchChangeRef.current) return;
+    if (trimmedForServer === lastSentRef.current) return;
+    const h = setTimeout(() => {
+      lastSentRef.current = trimmedForServer;
+      onSearchChangeRef.current?.(trimmedForServer);
+    }, searchDebounceMs);
+    return () => clearTimeout(h);
+  }, [trimmedForServer, searchDebounceMs]);
 
   const selected = React.useMemo(
     () => options.find((o) => o.value === value) ?? null,
@@ -315,6 +348,15 @@ export function EntityPicker({
                       );
                     })}
                   </CommandGroup>
+                  {truncated && (
+                    <div
+                      role="note"
+                      data-entity-picker-truncated=""
+                      className="border-t px-3 py-2 text-xs text-muted-foreground"
+                    >
+                      {truncatedText ?? t("entityPicker.narrowSearch", "Còn nhiều kết quả hơn danh sách này — gõ để thu hẹp tìm kiếm.")}
+                    </div>
+                  )}
                   {showQuickCreate && (
                     <CommandGroup>
                       <CommandItem

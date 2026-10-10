@@ -634,7 +634,8 @@
   },
   "entityPicker": {
     "createNew": "Tạo mới",
-    "invalid": "Không tồn tại"
+    "invalid": "Không tồn tại",
+    "narrowSearch": "Còn nhiều kết quả hơn danh sách này — gõ để thu hẹp tìm kiếm."
   },
   "deviceHub": {
     "title": "Thiết bị",
@@ -4005,7 +4006,9 @@
       "unassignEngineeringItem": "bỏ giao việc chờ duyệt"
     },
     "field": {
+      "uiPrefs": "tuỳ chọn giao diện",
       "shiftConfigId": "ca (shiftConfigId)",
+      "robotId": "robot (robotId)",
       "stopValue": "giá trị dừng ghim (stopValue)",
       "inspectionTime": "thời điểm kiểm tra (inspectionTime)",
       "completedAt": "thời điểm hoàn tất (completedAt)",
@@ -4112,6 +4115,7 @@
       "assigneeUserId": "người được giao"
     },
     "feature": {
+      "uiPrefs": "đồng bộ tuỳ chọn giao diện",
       "webIngest": "nạp nội dung từ web",
       "robotAnomalyDetection": "phát hiện bất thường robot",
       "modelAutoRollback": "tự động rollback mô hình",
@@ -4243,6 +4247,7 @@
       "manualConfirmerMismatch": "Lệnh thủ công phải do chính người đang đăng nhập xác nhận.",
       "robotNotActive": "Robot không hoạt động hoặc chưa kết nối — không gửi được lệnh.",
       "motionLocked": "Chuyển động đang bị KHOÁ (mất liên lạc hoặc kết quả chuyển động trước không rõ). Gửi lệnh DỪNG thành công hoặc nhờ người có quyền gỡ khoá.",
+      "robotDisabled": "Robot đang bị TẮT (đã tắt sau khi hệ thống khởi động, hoặc không đọc được trạng thái) — lệnh chuyển động bị từ chối. Lệnh DỪNG vẫn được gửi. Bật lại robot nếu cần chuyển động.",
       "safetyBlocked": "PLC an toàn đang báo DỪNG/sự cố — chuyển động bị từ chối trước khi gửi.",
       "safetyUnknown": "Không xác nhận được PLC an toàn (không cấu hình, không đọc được, hoặc tag chất lượng xấu) — chuyển động bị từ chối.",
       "safetySimOnly": "Chỉ có PLC an toàn MÔ PHỎNG hoặc chưa gán tag — lệnh thật cần một PLC an toàn THẬT có tag an toàn đã gán.",
@@ -4341,6 +4346,8 @@
       "buildChecksumMismatch": "Biên dịch lại nguồn của phiên bản không khớp build đã lưu — bản sắp nạp không phải bản đã build/mô phỏng. Hãy build và mô phỏng lại rồi deploy. Chưa có gì được ghi xuống thiết bị.",
       "interlockRuleChanged": "Quy tắc đã bị sửa kể từ lúc bạn mở trang — danh sách đã được tải lại. Xem nội dung mới rồi duyệt/bật lại.",
       "runGateChanged": "Lượt chạy không còn chờ ở bước bạn đang xem (bước đó đã được người khác quyết định). Tải lại để xem bước đang chờ hiện tại.",
+      "definitionChanged": "Quy trình đã được triển khai lại sau khi màn hình của bạn được tải — hãy tải lại và xem nội dung hiện tại trước khi duyệt.",
+      "robotIdRequired": "Bước không chỉ định robot nên không có lệnh nào được gửi. Chọn robot cho bước rồi triển khai lại.",
       "recipeNotApproved": "Phiên bản công thức này chưa được người thứ hai duyệt — không thể triển khai/phát hành/quay lui về nó.",
       "recipeArchived": "Phiên bản công thức này đã lưu trữ — hãy tạo phiên bản mới thay vì đưa bản đã lưu trữ vào chạy.",
       "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này.",
@@ -4379,7 +4386,8 @@
     },
     "DEVICE_UNREACHABLE": "Không kết nối được tới thiết bị {{entity}}. Hãy kiểm tra nguồn, dây mạng và địa chỉ IP.",
     "DEVICE_PROTOCOL_UNSUPPORTED": "Bản dựng này chưa hỗ trợ giao thức {{entity}}.",
-    "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần."
+    "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG ({{stopKey}}) — gửi lại nếu cần.",
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần."
   },
   "export": {
     "reportMenu": {
@@ -7324,7 +7332,8 @@
     "noNew": "Không có thông báo mới",
     "highPriorityOnly": "Chỉ ưu tiên cao",
     "snooze1h": "Tạm tắt 1 giờ",
-    "snoozed": "Đang tạm tắt"
+    "snoozed": "Đang tạm tắt",
+    "snoozeHint": "Đang tạm tắt: chỉ ẩn số trên chuông và thông báo nổi của mục thường — mục khẩn/nghiêm trọng vẫn báo; danh sách vẫn đầy đủ."
   },
   "oee": {
     "targetSettingsDescription": "Thiết lập mục tiêu OEE cho máy hoặc dây chuyền",
@@ -11861,6 +11870,19 @@
     "reject": "Từ chối",
     "abort": "Dừng",
     "awaitingStep": "Bước đang chờ",
+    "gateRequired": "Chưa gửi: lệnh này cần một bước duyệt (gate) trước nó trong lượt chạy, do người KHÁC người khởi động lượt chạy duyệt. Thêm bước duyệt trước bước này, triển khai lại và chạy lượt mới.",
+    "deployStopAdapterAmbiguous": "Chưa triển khai: bước dừng {{steps}} không xác định được đúng một bộ điều hợp (máy không có hoặc có nhiều bộ điều hợp đang bật, và bước không chỉ định bộ điều hợp). Chỉ định bộ điều hợp cho bước hoặc sửa bộ điều hợp của máy rồi triển khai lại.",
+    "robot": "Robot",
+    "pickRobot": "Chọn robot…",
+    "noRobots": "Không có robot nào đang bật trong phạm vi của bạn.",
+    "deployRobotIdMissing": "Chưa triển khai: bước robot {{steps}} chưa chọn robot. Chọn robot cho từng bước rồi triển khai lại.",
+    "deployRobotUnavailable": "Chưa triển khai: bước robot {{steps}} chọn robot không tồn tại (hoặc không đọc được danh sách robot). Chọn robot có thật cho từng bước rồi triển khai lại.",
+    "deployRobotDisabled": "Chưa triển khai: bước chuyển động {{steps}} chọn robot chưa được bật. Bật robot hoặc chọn robot đang bật rồi triển khai lại.",
+    "runRefusedDefinition": "Chưa chạy — workflow đã triển khai không qua một kiểm tra an toàn:",
+    "definitionChangedReload": "Định nghĩa quy trình đã thay đổi kể từ khi bạn mở mục duyệt này — hãy tải lại trang và xem lại trước khi duyệt.",
+    "gateRequiredOwnerApproved": "Chưa gửi: bước duyệt trước lệnh này do chính người khởi động lượt chạy duyệt nên không được tính. Chạy lượt mới và nhờ người khác duyệt.",
+    "gateRequiredStale": "Chưa gửi: quy trình đã được triển khai lại sau khi bước duyệt được duyệt, nên lần duyệt đó không áp cho nội dung đang chạy. Chạy lượt mới và duyệt lại.",
+    "gateRequiredOwnerUnknown": "Chưa gửi: lượt chạy không xác định được người sở hữu (do hệ thống hoặc khoá API không rõ người tạo khởi động), nên không kiểm được người duyệt riêng. Hãy khởi động lượt chạy bằng tài khoản người dùng.",
     "approverRolesLabel": "Vai trò duyệt",
     "noGatePrompt": "Tác giả không soạn nội dung nhắc cho bước này.",
     "rejectReason": "Lý do từ chối (tùy chọn)",
@@ -14753,7 +14775,10 @@
       "reasonPlaceholder": "Ví dụ: đã kiểm tra tại chỗ, robot đứng yên, khu vực trống",
       "confirm": "Xác nhận gỡ khoá",
       "cleared": "Đã gỡ khoá chuyển động cho {{code}}",
-      "notLocked": "Robot {{code}} không bị khoá chuyển động"
+      "notLocked": "Robot {{code}} không bị khoá chuyển động",
+      "reason": {
+        "persistUnknown": "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn"
+      }
     }
   },
   "controlPlane": {
@@ -15768,7 +15793,8 @@
       "toast": {
         "saved": "Đã lưu ghim tag dừng",
         "recheckCommissioning": "Adapter đã commissioning — hãy soát lại commissioning sau khi đổi ghim (mục Sổ ký ở Sức khỏe hệ thống).",
-        "autoCleared": "Đã gỡ ghim DỪNG của tag này."
+        "autoCleared": "Đã gỡ ghim DỪNG của tag này.",
+        "adapterPinsCleared": "Adapter đã đổi thiết bị đích — đã gỡ {{count}} ghim DỪNG của adapter. Ghim lại ở từng tag nếu vẫn cần."
       },
       "error": {
         "intRequired": "Tag kiểu int cần một số NGUYÊN — giá trị không được làm tròn.",
@@ -15778,7 +15804,9 @@
       "confirmOff": {
         "title": "Gỡ ghim DỪNG?",
         "body": "Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim.",
-        "confirm": "Tắt và gỡ ghim"
+        "confirm": "Tắt và gỡ ghim",
+        "bodyEdit": "Tag này đang được ghim DỪNG; lưu thay đổi này (không ghi được / tắt / đổi địa chỉ, kiểu, scale, offset) sẽ gỡ ghim.",
+        "confirmEdit": "Lưu và gỡ ghim"
       }
     },
     "toast": {
@@ -18445,6 +18473,10 @@
         "title": "Tag DỪNG đã ghim ({{count}})",
         "row": "{{tagKey}} = {{value}}",
         "unreadable": "Tag DỪNG đã ghim: không đọc được — soát lại ở màn Device Adapter trước khi ký."
+      },
+      "recheck": {
+        "chip": "Cần soát lại commissioning — ghim DỪNG của tag {{tagKey}} đã đổi lúc {{time}}, SAU lần ký hiện tại. Soát xong thì ký lại để tắt nhắc này.",
+        "unreadable": "Không kiểm được thay đổi ghim DỪNG sau lần ký hiện tại — soát lại ở màn Device Adapter trước khi ký."
       },
       "rec": {
         "active": "active",
@@ -21825,7 +21857,9 @@
       "noShift": "— không gắn ca —",
       "allFactories": "Toàn hệ thống",
       "loadingShifts": "Đang tải danh sách ca của chuyền này…",
-      "defaultHint": "Đã chọn sẵn ca đang diễn ra lúc này."
+      "defaultHint": "Đã chọn sẵn ca đang diễn ra lúc này.",
+      "factoryClock": "Theo giờ nhà máy ({{tz}}).",
+      "browserClock": "Theo đồng hồ máy này — chưa biết múi giờ của nhà máy."
     }
   },
   "engineeringAssign": {

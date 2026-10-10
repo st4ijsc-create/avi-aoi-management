@@ -63,6 +63,10 @@ const srv = vi.hoisted(() => ({
   scope: null as number[] | null,
   lineFactory: {} as Record<number, number>,
   factoryNames: {} as Record<number, string>,
+  // Đợt 3c Task 2 — múi giờ nhà máy (như server: ca nhà máy ⇒ nhà máy của ca; ca toàn hệ thống ⇒ nhà máy của chuyền ›
+  // `globalTz` (nhà máy duy nhất trong phạm vi) › null).
+  factoryTz: {} as Record<number, string | null>,
+  globalTz: null as string | null,
   /** post-review (4): chuyền mà tập ca của nó ĐANG TẢI (chưa có câu trả lời). */
   pendingLines: [] as number[],
   lastAssignable: undefined as unknown,
@@ -145,7 +149,12 @@ vi.mock("@/lib/trpc", () => {
           (srv.lastAssignable = srv.shifts
             .filter((s) => s.isActive && (s.factoryId == null || srv.scope == null || srv.scope.includes(s.factoryId as number)))
             .filter((s) => lf == null || s.factoryId == null || s.factoryId === lf)
-            .map((s) => ({ ...s, factoryName: s.factoryId == null ? null : (srv.factoryNames[s.factoryId as number] ?? null) }))),
+            .map((s) => ({
+              ...s,
+              factoryName: s.factoryId == null ? null : (srv.factoryNames[s.factoryId as number] ?? null),
+              factoryTimezone:
+                s.factoryId != null ? (srv.factoryTz[s.factoryId as number] ?? null) : lf != null ? (srv.factoryTz[lf] ?? null) : srv.globalTz,
+            }))),
           enabled,
         );
       }
@@ -260,6 +269,8 @@ beforeEach(() => {
   srv.scope = null;
   srv.lineFactory = {};
   srv.factoryNames = {};
+  srv.factoryTz = {};
+  srv.globalTz = null;
   srv.pendingLines = [];
   srv.snap = { board: srv.board.map((x) => ({ ...x })), assignments: srv.assignments.map((x) => ({ ...x })) };
   srv.calls = {};
@@ -811,7 +822,8 @@ describe("Đợt 3b Task 1 — bộ chọn ca trong sheet phân công", () => {
 
   it("i18n: khoá bộ chọn ca có ở vi/en/zh (final wave I2: + allFactories; lỗi shiftFactoryMismatch)", () => {
     for (const loc of [vi_, en_, zh_] as Array<{ shifts: { form?: Record<string, string> }; errors: { reason: Record<string, string> } }>) {
-      expect(Object.keys(loc.shifts.form ?? {}).sort()).toEqual(["allFactories", "defaultHint", "loadingShifts", "noShift", "shift"]);
+      // Đợt 3c Task 2: + browserClock / factoryClock (câu nói rõ "bây giờ" theo đồng hồ nào).
+      expect(Object.keys(loc.shifts.form ?? {}).sort()).toEqual(["allFactories", "browserClock", "defaultHint", "factoryClock", "loadingShifts", "noShift", "shift"]);
       expect(loc.errors.reason.shiftFactoryMismatch).toMatch(/\S/);
       // post-review (3): phạm vi nhiều nhà máy phải chỉ ra nhà máy
       expect(loc.errors.reason.factoryRequired).toMatch(/\S/);
@@ -968,5 +980,131 @@ describe("Đợt 3b post-review (4) — tập ca đang tải sau khi đổi chuy
     await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
     await waitFor(() => expect(calls("assignOperator").length).toBe(1));
     expect(calls("assignOperator")[0]).not.toHaveProperty("shiftConfigId", 11);
+  });
+});
+
+// ── doc 81 Đợt 3c Task 2 — "ca đang chạy" theo MÚI GIỜ NHÀ MÁY (factories.timezone), không theo đồng hồ trình duyệt ──────────
+// Oracle giờ tính TAY: Asia/Ho_Chi_Minh = UTC+7 (không DST); America/New_York tháng 10 = UTC−4 (EDT). "Trình duyệt ở UTC" =
+// process.env.TZ = "UTC" (kiểm tiền điều kiện: getHours() của instant 03:00Z phải là 3, không thì ô thử vô nghĩa).
+describe("Đợt 3c Task 2 — ca 'đang chạy' theo múi giờ nhà máy", () => {
+  const HCM = "Asia/Ho_Chi_Minh";
+  const A = { id: 1, startHour: 6, startMinute: 0, endHour: 14, endMinute: 0, isActive: true };
+  const B = { id: 2, startHour: 14, startMinute: 0, endHour: 22, endMinute: 0, isActive: true };
+  const N = { id: 3, startHour: 22, startMinute: 0, endHour: 6, endMinute: 0, isActive: true };
+  const tz = (t: string | null | undefined) => [A, B, N].map((x) => ({ ...x, factoryTimezone: t }));
+  const utc = (h: number, m = 0) => new Date(Date.UTC(2026, 9, 6, h, m, 0));
+  const withBrowserTz = <T,>(z: string, f: () => T): T => {
+    const saved = process.env.TZ;
+    process.env.TZ = z;
+    try {
+      return f();
+    } finally {
+      if (saved === undefined) delete process.env.TZ;
+      else process.env.TZ = saved;
+    }
+  };
+
+  it("trình duyệt ở UTC, nhà máy ở Asia/Ho_Chi_Minh: 03:00Z = 10:00 nhà máy ⇒ ca A (không phải ca đêm theo giờ trình duyệt)", () => {
+    withBrowserTz("UTC", () => {
+      expect(utc(3).getHours()).toBe(3); // tiền điều kiện: "trình duyệt" thật sự ở UTC
+      expect(defaultShiftId(tz(HCM), utc(3))).toBe(1);
+      expect(shiftContains(A, utc(3), HCM)).toBe(true);
+      expect(shiftContains(N, utc(3), HCM)).toBe(false);
+      // cùng instant, cùng ca nhưng KHÔNG biết múi giờ ⇒ giờ trình duyệt 03:00 ⇒ ca đêm
+      expect(defaultShiftId(tz(null), utc(3))).toBe(3);
+    });
+  });
+
+  it("ca QUA ĐÊM theo giờ nhà máy: 16:00Z = 23:00 và 20:30Z = 03:30 hôm sau (HCM) ⇒ ca đêm; trình duyệt UTC tự đọc là ca chiều", () => {
+    withBrowserTz("UTC", () => {
+      expect(defaultShiftId(tz(HCM), utc(16))).toBe(3);
+      expect(defaultShiftId(tz(HCM), utc(20, 30))).toBe(3);
+      expect(defaultShiftId(tz(null), utc(16))).toBe(2);
+      expect(defaultShiftId(tz(null), utc(20, 30))).toBe(2);
+      // biên [đầu, cuối): 22:59Z = 05:59 HCM ⇒ còn ca đêm; 23:00Z = 06:00 HCM ⇒ ca A
+      expect(defaultShiftId(tz(HCM), utc(22, 59))).toBe(3);
+      expect(defaultShiftId(tz(HCM), utc(23, 0))).toBe(1);
+    });
+  });
+
+  it("trình duyệt ở New York (UTC−4), nhà máy HCM: 03:00Z = 23:00 NY / 10:00 HCM ⇒ theo nhà máy là ca A", () => {
+    withBrowserTz("America/New_York", () => {
+      expect(utc(3).getHours()).toBe(23);
+      expect(defaultShiftId(tz(HCM), utc(3))).toBe(1);
+      expect(defaultShiftId(tz(null), utc(3))).toBe(3);
+    });
+  });
+
+  it("dự phòng: múi giờ null / vắng / HỎNG ⇒ giờ trình duyệt như trước (không ném lỗi)", () => {
+    withBrowserTz("UTC", () => {
+      expect(defaultShiftId(tz(undefined), utc(10))).toBe(1);
+      expect(defaultShiftId(tz(null), utc(10))).toBe(1);
+      expect(defaultShiftId(tz("Mars/Olympus_Mons"), utc(10))).toBe(1);
+      expect(defaultShiftId(tz("Mars/Olympus_Mons"), utc(3))).toBe(3);
+      expect(shiftContains(N, utc(3))).toBe(true);
+    });
+  });
+
+  describe("sheet phân công", () => {
+    const shiftBox = (sheet: HTMLElement) => within(sheet).getByRole("combobox", { name: S("shifts.form.shift") });
+    const openAssign = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(within(toolbar()).getByRole("button", { name: S("workforce.assign") }));
+      return waitLayer("workforce-assign");
+    };
+    let savedTz: string | undefined;
+    beforeEach(() => {
+      savedTz = process.env.TZ;
+      process.env.TZ = "UTC";
+      vi.setSystemTime(utc(3)); // 03:00 trình duyệt (UTC) = 10:00 nhà máy (HCM)
+      srv.shifts = [shift(1, "Ca sáng", "A", 6, 14), shift(2, "Ca chiều", "B", 14, 22), shift(3, "Ca đêm", "C", 22, 6)];
+    });
+    afterEach(() => {
+      if (savedTz === undefined) delete process.env.TZ;
+      else process.env.TZ = savedTz;
+    });
+
+    it("biết múi giờ nhà máy ⇒ chọn sẵn ca A theo giờ NHÀ MÁY + nói rõ 'theo giờ nhà máy (Asia/Ho_Chi_Minh)'; payload KHÔNG mang giờ nào của client", async () => {
+      srv.globalTz = HCM;
+      const user = userEvent.setup();
+      render(<ProductionShifts />);
+      const sheet = await openAssign(user);
+      expect(new Date().getHours()).toBe(3);
+      expect(shiftBox(sheet)).toHaveTextContent("Ca sáng (A) 06:00–14:00");
+      expect(within(sheet).getByText(S("shifts.form.defaultHint"))).toBeInTheDocument();
+      expect(within(sheet).getByText(S("shifts.form.factoryClock").replace("{{tz}}", HCM))).toBeInTheDocument();
+      expect(within(sheet).queryByText(S("shifts.form.browserClock"))).toBeNull();
+      await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "81");
+      await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
+      await waitFor(() => expect(calls("assignOperator")).toEqual([{ operatorId: 81, lineId: undefined, stationId: undefined, skillLevel: undefined, shiftConfigId: 1 }]));
+    });
+
+    it("chọn chuyền của nhà máy có múi giờ ⇒ ca toàn hệ thống tính theo nhà máy của CHUYỀN", async () => {
+      srv.lineFactory = { 5: 2 };
+      srv.factoryTz = { 2: HCM };
+      const user = userEvent.setup();
+      render(<ProductionShifts />);
+      const sheet = await openAssign(user);
+      expect(shiftBox(sheet)).toHaveTextContent("Ca đêm (C) 22:00–06:00"); // chưa biết nhà máy ⇒ giờ trình duyệt 03:00
+      expect(within(sheet).getByText(S("shifts.form.browserClock"))).toBeInTheDocument();
+      await user.type(within(sheet).getByLabelText(S("workforce.lineId")), "5");
+      await waitFor(() => expect(shiftBox(sheet)).toHaveTextContent("Ca sáng (A) 06:00–14:00"));
+      expect(within(sheet).getByText(S("shifts.form.factoryClock").replace("{{tz}}", HCM))).toBeInTheDocument();
+    });
+
+    it("KHÔNG biết múi giờ nhà máy ⇒ dùng giờ trình duyệt như trước VÀ nói ra", async () => {
+      const user = userEvent.setup();
+      render(<ProductionShifts />);
+      const sheet = await openAssign(user);
+      expect(shiftBox(sheet)).toHaveTextContent("Ca đêm (C) 22:00–06:00");
+      expect(within(sheet).getByText(S("shifts.form.defaultHint"))).toBeInTheDocument();
+      expect(within(sheet).getByText(S("shifts.form.browserClock"))).toBeInTheDocument();
+    });
+
+    it("i18n: factoryClock / browserClock có ở vi/en/zh; factoryClock mang {{tz}}", () => {
+      for (const loc of [vi_, en_, zh_] as Array<{ shifts: { form: Record<string, string> } }>) {
+        expect(loc.shifts.form.browserClock).toMatch(/\S/);
+        expect(loc.shifts.form.factoryClock).toContain("{{tz}}");
+      }
+    });
   });
 });

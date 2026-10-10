@@ -634,7 +634,8 @@
   },
   "entityPicker": {
     "createNew": "Create new",
-    "invalid": "Does not exist"
+    "invalid": "Does not exist",
+    "narrowSearch": "More results than this list shows — type to narrow your search."
   },
   "deviceHub": {
     "title": "Devices",
@@ -4005,7 +4006,9 @@
       "unassignEngineeringItem": "unassign the pending item"
     },
     "field": {
+      "uiPrefs": "interface preferences",
       "shiftConfigId": "shift (shiftConfigId)",
+      "robotId": "robot (robotId)",
       "stopValue": "pinned stop value (stopValue)",
       "inspectionTime": "inspection time (inspectionTime)",
       "completedAt": "completion time (completedAt)",
@@ -4112,6 +4115,7 @@
       "assigneeUserId": "assignee"
     },
     "feature": {
+      "uiPrefs": "interface preference sync",
       "webIngest": "web content ingestion",
       "robotAnomalyDetection": "robot anomaly detection",
       "modelAutoRollback": "model auto-rollback",
@@ -4251,6 +4255,7 @@
       "manualConfirmerMismatch": "A manual command must be confirmed by the signed-in user who sends it.",
       "robotNotActive": "The robot is not active or not connected — the command could not be sent.",
       "motionLocked": "Motion is LOCKED (link loss or an earlier motion with an unknown outcome). A confirmed STOP or an authorised unlock clears it.",
+      "robotDisabled": "The robot is DISABLED (switched off after start-up, or its state could not be read) — the motion command was refused. A STOP is still sent. Enable the robot to move it.",
       "safetyBlocked": "The safety PLC reports a trip / emergency stop — motion refused before anything was sent.",
       "safetyUnknown": "The safety PLC could not be confirmed (not configured, unreadable, or a bad-quality tag) — motion refused.",
       "safetySimOnly": "Only SIMULATED or unmapped safety PLCs exist — a real command needs a REAL safety PLC with mapped safety tags.",
@@ -4349,6 +4354,8 @@
       "buildChecksumMismatch": "Recompiling the version's source does not match the stored build — what would be downloaded is not what was built/simulated. Build and simulate again, then deploy. Nothing was written to the device.",
       "interlockRuleChanged": "The rule was changed after you opened the page — the list has been reloaded. Review the new content, then approve/enable again.",
       "runGateChanged": "The run is no longer waiting at the step you were viewing (someone else already decided it). Reload to see the step it is waiting at now.",
+      "definitionChanged": "The workflow was redeployed after your screen loaded — reload and review the current definition before approving.",
+      "robotIdRequired": "The step names no robot, so nothing was sent. Pick the robot for the step and deploy again.",
       "recipeNotApproved": "This recipe version has not been approved by a second person — it cannot be deployed, released or rolled back to.",
       "recipeArchived": "This recipe version is archived — create a new version instead of putting an archived one into production.",
       "recipeMachineTypeMismatch": "This recipe is for a different machine type than the target machine — it cannot be deployed there.",
@@ -4387,7 +4394,8 @@
     },
     "DEVICE_UNREACHABLE": "Could not reach the {{entity}} device. Check power, cabling and IP address.",
     "DEVICE_PROTOCOL_UNSUPPORTED": "This build does not support the {{entity}} protocol.",
-    "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command was issued — resend it if still needed."
+    "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command ({{stopKey}}) was issued — resend it if still needed.",
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed."
   },
   "export": {
     "reportMenu": {
@@ -7344,7 +7352,8 @@
     "alertMappings": "Alert mappings",
     "highPriorityOnly": "High priority only",
     "snooze1h": "Snooze 1 hour",
-    "snoozed": "Snoozed"
+    "snoozed": "Snoozed",
+    "snoozeHint": "Snoozed: only the bell count and pop-ups for normal items are muted — urgent/critical items still alert; the list stays complete."
   },
   "oee": {
     "updateTarget": "Update target",
@@ -11881,6 +11890,19 @@
     "reject": "Reject",
     "abort": "Stop",
     "awaitingStep": "Awaiting step",
+    "gateRequired": "Not sent: this command needs an approval gate earlier in the run, approved by someone other than the person who started it. Add a gate before this step, deploy, and start a new run.",
+    "deployStopAdapterAmbiguous": "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.",
+    "robot": "Robot",
+    "pickRobot": "Select robot…",
+    "noRobots": "No robot in your scope is enabled.",
+    "deployRobotIdMissing": "Not deployed: robot step(s) {{steps}} name no robot. Pick the robot for each step, then deploy again.",
+    "deployRobotUnavailable": "Not deployed: robot step(s) {{steps}} name a robot that does not exist (or the robot list could not be read). Pick an existing robot for each step, then deploy again.",
+    "deployRobotDisabled": "Not deployed: motion step(s) {{steps}} name a robot that is not enabled. Enable the robot or pick an enabled one, then deploy again.",
+    "runRefusedDefinition": "Run not started — the deployed workflow fails a safety check:",
+    "definitionChangedReload": "The workflow definition changed since you opened this approval — reload the page and review it before approving.",
+    "gateRequiredOwnerApproved": "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.",
+    "gateRequiredStale": "Not sent: the workflow was redeployed after the gate was approved, so that approval does not cover what is running now. Start a new run and have the gate approved again.",
+    "gateRequiredOwnerUnknown": "Not sent: this run has no known owner (started by the system or by an API key with no creating user), so a separate approval cannot be checked. Start the run as a user.",
     "approverRolesLabel": "Approver roles",
     "noGatePrompt": "The author did not write a prompt for this step.",
     "rejectReason": "Reject reason (optional)",
@@ -14773,7 +14795,10 @@
       "reasonPlaceholder": "e.g. checked on site, robot stationary, area clear",
       "confirm": "Confirm clear",
       "cleared": "Motion lock cleared on {{code}}",
-      "notLocked": "Robot {{code}} is not motion-locked"
+      "notLocked": "Robot {{code}} is not motion-locked",
+      "reason": {
+        "persistUnknown": "the saved lock could not be read at startup (database did not answer) — locked to be safe"
+      }
     }
   },
   "controlPlane": {
@@ -15788,7 +15813,8 @@
       "toast": {
         "saved": "Stop pin saved",
         "recheckCommissioning": "This adapter is commissioned — recheck its commissioning after changing a pin (see the sign-off log under System Health).",
-        "autoCleared": "The STOP pin of this tag was removed."
+        "autoCleared": "The STOP pin of this tag was removed.",
+        "adapterPinsCleared": "The adapter now points at a different device — {{count}} STOP pin(s) of this adapter were removed. Re-pin each tag if still needed."
       },
       "error": {
         "intRequired": "An int tag needs a WHOLE number — the value is never rounded.",
@@ -15798,7 +15824,9 @@
       "confirmOff": {
         "title": "Remove the STOP pin?",
         "body": "This tag has a pinned STOP value; turning this off removes the pin.",
-        "confirm": "Turn off and remove pin"
+        "confirm": "Turn off and remove pin",
+        "bodyEdit": "This tag has a pinned STOP value; saving this change (not writable / disabled / new address, type, scale or offset) removes the pin.",
+        "confirmEdit": "Save and remove pin"
       }
     },
     "toast": {
@@ -18465,6 +18493,10 @@
         "title": "Pinned STOP tags ({{count}})",
         "row": "{{tagKey}} = {{value}}",
         "unreadable": "Pinned STOP tags: could not be read — check them on the Device Adapter screen before signing."
+      },
+      "recheck": {
+        "chip": "Commissioning needs rechecking — the STOP pin of tag {{tagKey}} changed at {{time}}, AFTER the current sign-off. Sign again once checked to clear this.",
+        "unreadable": "Could not check for STOP pin changes after the current sign-off — check on the Device Adapter screen before signing."
       },
       "rec": {
         "active": "active",
@@ -21851,7 +21883,9 @@
       "noShift": "— no shift —",
       "allFactories": "All factories",
       "loadingShifts": "Loading the shifts for this line…",
-      "defaultHint": "Pre-selected: the shift running now."
+      "defaultHint": "Pre-selected: the shift running now.",
+      "factoryClock": "By factory time ({{tz}}).",
+      "browserClock": "By this device's clock — the factory's time zone is unknown."
     }
   },
   "engineeringAssign": {

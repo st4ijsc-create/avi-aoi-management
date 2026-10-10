@@ -44,7 +44,8 @@ import { and, eq, lt } from "drizzle-orm";
 import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions, type AiPendingAction } from "../../../drizzle/schema";
-import { readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
+import { FOE_ENGINE_TOOL, foeSelfApprovalRefusal, readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
+import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver, RobotJobResult } from "./robotDriver";
 import {
@@ -54,7 +55,8 @@ import {
   RobotAbortUnsupportedError,
 } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
-import { isStopJob } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
+import { readRobotEnabledForMotion } from "./robotEnabledGate"; // final wave R-4-x
+import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
 /**
@@ -165,6 +167,12 @@ export interface RobotDispatchResult {
   code?: "PRECONDITION_FAILED";
   /** Set when the motion ran but its terminal ledger update failed (row stays 'running'). */
   ledgerError?: string;
+  /**
+   * doc 81 Đợt 4 Task B1 — the driver's OWN result detail, untouched (only when the driver returned a result; absent on
+   * refusal / dry-run / timeout / throw). Lets a caller report what the driver really did (VDA 5050: `published`)
+   * instead of doing it a second time.
+   */
+  driverDetail?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -229,7 +237,10 @@ const SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
  * bounded (≤ 1.5 s per the ruling) and a failure/timeout NEVER stops the STOP: it is sent, and its ledger
  * row is written best-effort afterwards. MOTION keeps its fail-closed behaviour (no deadline added there).
  */
-export const ROBOT_STOP_DB_STEP_DEADLINE_MS = 1000;
+export const ROBOT_STOP_DB_STEP_DEADLINE_MS = STOP_DB_STEP_DEADLINE_MS; // final wave F5 — one definition (stopJob.ts), shared with the FOE engine
+
+/** doc 81 Đợt 4 final wave R-4-x — refusal code of MOTION to a robot whose row is disabled (or unreadable). */
+export const ROBOT_DISABLED_REASON_CODE = "ROBOT_DISABLED";
 
 export type StopDbStep =
   | "idempotency_lookup"
@@ -285,6 +296,30 @@ class StopDbBudget {
       console.error(`[Robot] STOP on robot ${this.robotId}: DB step '${step}' failed or timed out — the STOP is still sent (R-1C-h): ${error}`);
       return { ok: false, error };
     }
+  }
+}
+
+/**
+ * doc 81 Đợt 4 Task B2 — the 'simulated' row of the mode gate (dry-run) and of the commissioning gate (robot KNOWN not
+ * commissioned). For MOTION it is awaited as before. For a STOP (`stopDb` set) it runs under the same
+ * ROBOT_STOP_DB_STEP_DEADLINE_MS as every other STOP DB step (R-1C-h): a hung or failing DB used to hang / refuse the
+ * STOP's answer here. Timeout or error ⇒ still 'simulated' (nothing is sent in this branch, exactly as before),
+ * `ledgerError: "LEDGER_WRITE_FAILED"`, logged without secrets. Worst case added to a STOP: one deadline (1 s).
+ */
+async function recordSimulated(
+  input: RobotDispatchInput,
+  result: Record<string, unknown>,
+  errorText: string | undefined,
+  stopDb: StopDbBudget | undefined,
+): Promise<RobotDispatchResult> {
+  const write = record(input, "simulated", result, errorText);
+  if (!stopDb) return { ok: true, status: "simulated", jobId: await write };
+  try {
+    const jobId = await withDeadline(write, ROBOT_STOP_DB_STEP_DEADLINE_MS, "STOP simulated ledger");
+    return { ok: true, status: "simulated", jobId };
+  } catch (err) {
+    console.error(`[Robot] STOP on robot ${input.robotId}: 'simulated' ledger row not written (B2, bounded): ${safeDbError(err)}`);
+    return { ok: true, status: "simulated", ledgerError: "LEDGER_WRITE_FAILED" };
   }
 }
 
@@ -749,12 +784,21 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
       const jobId = await record(input, "rejected", undefined, "robot not active/connected");
       return { ok: false, status: "rejected", jobId, error: "robot not active/connected" };
     }
+    // doc 81 Đợt 4 final wave R-4-x — the active set is loaded at BOOT and robot.setEnabled only updates the row, so a
+    // robot disabled after boot used to keep receiving MOTION. Motion now re-reads `robots.isEnabled` at command time,
+    // bounded by ROBOT_STOP_DB_STEP_DEADLINE_MS; disabled / missing row / DB error or timeout ⇒ motion REFUSED (fail-closed).
+    // A STOP (abort/stop/e_stop) never reaches this check (L-7): a disabled robot still receives its stop.
+    const enabled = await readRobotEnabledForMotion(input.robotId);
+    if (enabled !== true) {
+      const why = enabled === false ? "robot is disabled (robots.isEnabled = false)" : `robot enabled state could not be read (${enabled.error})`;
+      const jobId = await record(input, "rejected", { reasonCode: ROBOT_DISABLED_REASON_CODE }, `${ROBOT_DISABLED_REASON_CODE}: ${why} — motion refused before any driver call; a STOP is still sent`);
+      return { ok: false, status: "rejected", jobId, error: ROBOT_DISABLED_REASON_CODE };
+    }
   }
 
   // 4) MODE GATE — dry-run by default.
   if (!controlEnabled()) {
-    const jobId = await record(input, "simulated", { dryRun: true });
-    return { ok: true, status: "simulated", jobId };
+    return recordSimulated(input, { dryRun: true }, undefined, stopDb);
   }
 
   // 4a) COMMISSIONING / FAT GATE (CTL-02, doc 40) — ĐỐI XỨNG với OT commandDispatcher.
@@ -782,13 +826,12 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
     }
   }
   if (isRobotCommissioningRequired() && !commissioned) {
-    const jobId = await record(
+    return recordSimulated(
       input,
-      "simulated",
       { dryRun: true, notCommissioned: true },
       "not_commissioned: robot has no active, non-expired, signed commissioning record — real motion refused (recorded simulated)",
+      stopDb,
     );
-    return { ok: true, status: "simulated", jobId };
   }
 
   // 4a-policy) W3-B2 (doc 44 G3.14) — "MỘT CỬA": policy-as-code seam TRƯỚC nhánh thực
@@ -881,6 +924,8 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   //     doc 81 Đợt 1C Task 1 (owner decision 2026-09-27): the facade reads with
   //     { forRealActuation: true } (this gate is reachable only on the real, commissioned path) —
   //     SIM / real_unmapped alone ⇒ SAFETY_SIM_ONLY; a bad-quality real safety tag ⇒ SAFETY_UNKNOWN.
+  //     doc 81 Đợt 4 Task A1: robotId is passed so only the configs guarding THIS robot (its robot /
+  //     station / line / factory, plus untargeted ones) are read; unplaced/unknown robot ⇒ all configs.
   if (motion && isRobotSafetyPreflightEnabled()) {
     let safetyState: string;
     let safetySource: string | undefined;
@@ -888,7 +933,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
     try {
       const { createAdapterFacade } = await import("../ot/adapterFacade");
       const s = await withDeadline(
-        createAdapterFacade({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null }).getSafetyStatus({ forRealActuation: true }),
+        createAdapterFacade({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null, robotId: input.robotId }).getSafetyStatus({ forRealActuation: true }),
         SAFETY_PREFLIGHT_DEADLINE_MS,
         "safety-PLC preflight",
       );
@@ -1000,6 +1045,10 @@ export function verifyRobotActionBinding(pending: AiPendingAction | undefined, i
   if (input.confirmedBy !== undefined && pending.userId !== input.confirmedBy) {
     return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action owner mismatch" };
   }
+  // doc 81 Đợt 4 Task A5 (R-4-a, defence in depth) — an orchestration-engine action authorising MOTION must be
+  // confirmed by the approver of an earlier hitl_gate, never by the run owner (a STOP never reaches this check).
+  const self = foeSelfApprovalRefusal(pending, input.requestedBy);
+  if (self) return { ok: false, reason: "NOT_CONFIRMED", detail: self };
   const stored = readOtPayloadHash(pending.previewJson);
   if (!stored) {
     return { ok: false, reason: "ACTION_BINDING_MISMATCH", detail: "HITL action carries no robot payload binding" };
@@ -1043,6 +1092,12 @@ async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record
   return await db.transaction(async (tx): Promise<RobotReservation> => {
     const [pending] = await tx.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).for("update");
     let verdict: RobotBindingVerdict = verifyRobotActionBinding(pending, input);
+    // doc 81 Đợt 4 fix round 1 (R-4-i) — an orchestration-engine action: re-derive run owner + gate approver from the
+    // DB rows under this transaction (a STOP never reaches here — non-motion jobs are not verified).
+    if (verdict.ok && pending?.tool === FOE_ENGINE_TOOL) {
+      const refusal = await foeApprovalDbRefusal(tx, pending, input.requestedBy);
+      if (refusal) verdict = { ok: false, reason: "NOT_CONFIRMED", detail: refusal };
+    }
     if (verdict.ok) {
       const consumed = await tx
         .update(aiPendingActions)
@@ -1183,6 +1238,8 @@ async function runRealJob(
   let status: "done" | "failed";
   let detail: Record<string, unknown> | undefined;
   let errorText: string | undefined;
+  // B1 — the driver's own detail, before the dispatcher merges its notes into `detail`.
+  const driverOut = outcome.kind === "result" && outcome.r.detail ? { driverDetail: { ...outcome.r.detail } } : {};
   if (outcome.kind === "result") {
     status = outcome.r.ok ? "done" : "failed";
     detail = outcome.r.detail;
@@ -1230,11 +1287,11 @@ async function runRealJob(
     // R-1C-h — the STOP went out without a pre-written row: settle the ledger best-effort now.
     const ledger = await stopLedgerAfterSend(input, prewrite, status, { ...(detail ?? {}) }, errorText);
     if (policyOverride) auditStopPolicyOverride(input, ledger.jobId, policyOverride);
-    return { ok: status === "done", status, jobId: ledger.jobId, error: errorText, ...(ledger.ledgerError ? { ledgerError: ledger.ledgerError } : {}) };
+    return { ok: status === "done", status, jobId: ledger.jobId, error: errorText, ...(ledger.ledgerError ? { ledgerError: ledger.ledgerError } : {}), ...driverOut };
   }
   if (jobId == null) {
     // Unreachable: every other path reserved a row before the driver call.
-    return { ok: status === "done", status, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED" };
+    return { ok: status === "done", status, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED", ...driverOut };
   }
   try {
     const fin = finalize(jobId, status, detail, errorText);
@@ -1245,10 +1302,10 @@ async function runRealJob(
     const msg = (err as Error)?.message ?? String(err);
     console.error(`[Robot] ledger finalize failed for job ${jobId} (robot ${input.robotId}):`, msg);
     if (policyOverride) auditStopPolicyOverride(input, jobId, policyOverride);
-    return { ok: status === "done", status, jobId, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED" };
+    return { ok: status === "done", status, jobId, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED", ...driverOut };
   }
   if (policyOverride) auditStopPolicyOverride(input, jobId, policyOverride);
-  return { ok: status === "done", status, jobId, error: errorText };
+  return { ok: status === "done", status, jobId, error: errorText, ...driverOut };
 }
 
 /** Upper bound after which a still-pending STOP-override audit is logged as stuck (it is never awaited by the STOP). */

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useSocket, InspectionAlert } from "@/hooks/useSocket";
 import { useEcosystemEvents, type EcosystemEvent } from "@/hooks/useEcosystemEvents";
@@ -63,7 +63,28 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
   const [isOpen, setIsOpen] = useState(false);
   const { t, i18n } = useTranslation();
 
+  // U8 — per-user notification prefs (high-priority-only / snooze). Presentation filter only.
+  // fix 1 (Đợt 3c): khai TRƯỚC các handler toast bên dưới (chúng gọi `snoozedNow`).
+  const { user } = useAuth();
+  const userKey = String((user as any)?.id ?? (user as any)?.openId ?? "anon");
+  const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadNotifPrefs(userKey));
+  // doc 81 Đợt 3c Task 1 (Ruling R-3c-a) — "tạm tắt" chỉ tắt SỐ trên chuông + toast cho mục KHÔNG khẩn (cảnh báo socket,
+  // hệ sinh thái dưới critical, thông báo server dưới URGENT). DANH SÁCH không bị ảnh hưởng (trước: giấu cả cảnh báo khỏi
+  // danh sách, kể cả critical; còn số chưa đọc của server thì vẫn hiện).
+  const snoozedNow = () => prefs.snoozeUntil > Date.now();
+  const snoozed = snoozedNow();
+  // Hết hạn ⇒ vẽ lại đúng lúc để số TRỞ LẠI mà không cần thao tác (trước: chỉ khi có gì khác làm vẽ lại).
+  const [, setSnoozeTick] = useState(0);
+  useEffect(() => {
+    if (!snoozed) return;
+    const ms = Math.min(Math.max(prefs.snoozeUntil - Date.now() + 1, 0), 2 ** 31 - 1);
+    const id = setTimeout(() => setSnoozeTick((x) => x + 1), ms);
+    return () => clearTimeout(id);
+  }, [snoozed, prefs.snoozeUntil]);
+
   const handleAlert = (alert: InspectionAlert) => {
+    // doc 81 Đợt 3c Task 1 (R-3c-a) — đang tạm tắt ⇒ không toast: cảnh báo socket không có mức "khẩn".
+    if (snoozedNow()) return;
     // Show toast notification for important alerts
     if (alert.type === "NG_ALERT") {
       toast.error(alert.message, {
@@ -93,8 +114,9 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     if (seenEcoIds.current.has(evt.id)) return;
     seenEcoIds.current.add(evt.id);
     if (evt.severity === "critical") {
+      // R-3c-a: mục CRITICAL vẫn toast dù đang tạm tắt (tạm tắt không bao giờ giấu thông tin an toàn — tinh thần R-2-y).
       toast.error(evt.title, { duration: 6000, icon: <XCircle className="h-4 w-4 text-red-500" /> });
-    } else if (evt.severity === "high") {
+    } else if (evt.severity === "high" && !snoozedNow()) {
       toast.warning(evt.title, { duration: 5000, icon: <AlertTriangle className="h-4 w-4 text-amber-500" /> });
     }
   };
@@ -111,10 +133,6 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     [ecoAlerts],
   );
 
-  // U8 — per-user notification prefs (high-priority-only / snooze). Presentation filter only.
-  const { user } = useAuth();
-  const userKey = String((user as any)?.id ?? (user as any)?.openId ?? "anon");
-  const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadNotifPrefs(userKey));
   const updatePrefs = (patch: Partial<NotificationPrefs>) => {
     setPrefs((prev) => {
       const next = { ...prev, ...patch };
@@ -122,10 +140,10 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
       return next;
     });
   };
-  const visibleAlerts = useMemo(() => filterAlertsByPrefs(alerts, prefs), [alerts, prefs]);
-  // U8 prefs (high-priority-only / snooze) apply to the ecosystem alerts too.
+  // Đợt 3c: danh sách chỉ còn chịu "chỉ ưu tiên cao"; tạm tắt KHÔNG lọc danh sách (R-3c-a).
+  const visibleAlerts = useMemo(() => filterAlertsByPrefs(alerts, { ...prefs, snoozeUntil: 0 }), [alerts, prefs]);
+  // U8 prefs (high-priority-only) apply to the ecosystem alerts too.
   const visibleEcoAlerts = useMemo(() => {
-    if (prefs.snoozeUntil > Date.now()) return [];
     if (prefs.highPriorityOnly) return extraEcoAlerts.filter((e) => e.severity === "high" || e.severity === "critical");
     return extraEcoAlerts;
   }, [extraEcoAlerts, prefs]);
@@ -137,6 +155,8 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
   const unreadPoll = usePollingInterval(signedIn ? INBOX_POLL_MS : false);
   const listPoll = usePollingInterval(signedIn && isOpen ? INBOX_POLL_MS : false);
   const inboxUnreadQ = trpc.notification.unreadCount.useQuery(undefined, { ...unreadPoll, enabled: signedIn });
+  // Đợt 3c Task 1 — đang tạm tắt ⇒ đếm riêng mục KHẨN chưa đọc (URGENT là mức cao nhất của bảng); chỉ chạy khi tạm tắt.
+  const inboxUrgentQ = trpc.notification.unreadCount.useQuery({ priority: "URGENT" }, { ...unreadPoll, enabled: signedIn && snoozed });
   const inboxQ = trpc.notification.list.useQuery({ limit: INBOX_LIMIT }, { ...listPoll, staleTime: 0, enabled: signedIn && isOpen });
   const refreshInbox = () => {
     void utils.notification.list.invalidate();
@@ -164,7 +184,12 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     setLocation(href);
   };
 
-  const unreadCount = visibleAlerts.length + visibleEcoAlerts.length + inboxUnread;
+  const inboxUrgent = Number(inboxUrgentQ.data ?? 0) || 0;
+  const criticalEco = visibleEcoAlerts.filter((e) => e.severity === "critical").length;
+  // R-3c-a: tạm tắt ⇒ số chỉ gồm mục KHẨN (hệ sinh thái critical + server URGENT); không tạm tắt ⇒ như cũ.
+  const unreadCount = snoozed
+    ? criticalEco + inboxUrgent
+    : visibleAlerts.length + visibleEcoAlerts.length + inboxUnread;
   const clearAll = () => { clearAlerts(); clearEcoAlerts(); };
 
   const getAlertIcon = (type: InspectionAlert["type"]) => {
@@ -245,18 +270,23 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
               {t('notifications.highPriorityOnly', 'Chỉ ưu tiên cao')}
             </Button>
             <Button
-              variant={prefs.snoozeUntil > Date.now() ? "default" : "outline"}
+              variant={snoozed ? "default" : "outline"}
               size="sm"
               className="h-7"
               onClick={() =>
-                updatePrefs({ snoozeUntil: prefs.snoozeUntil > Date.now() ? 0 : Date.now() + 60 * 60 * 1000 })
+                updatePrefs({ snoozeUntil: snoozedNow() ? 0 : Date.now() + 60 * 60 * 1000 })
               }
             >
-              {prefs.snoozeUntil > Date.now()
+              {snoozed
                 ? t('notifications.snoozed', 'Đang tạm tắt')
                 : t('notifications.snooze1h', 'Tạm tắt 1 giờ')}
             </Button>
           </div>
+          {snoozed && (
+            <p data-testid="notif-snooze-hint" className="mt-1 text-xs text-muted-foreground">
+              {t('notifications.snoozeHint')}
+            </p>
+          )}
         </SheetHeader>
 
         <ScrollArea className="h-[calc(100vh-150px)] mt-4">

@@ -53,6 +53,9 @@ import { getDb } from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags, interlockEvents, interlockRules } from "../../../drizzle/schema";
 import { dispatch, NO_CONFIRMER, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
+import { makeFoeGateRun, type FoeGateRunFixture } from "../orchestration/foe/__foeGateRunFixture";
+
+const fixtures: FoeGateRunFixture[] = []; // doc 81 Đợt 4 fix round 1 — real run/gate rows, removed in afterAll
 import { SparkplugCommandHandler, SPARKPLUG_ACTION_ID_METRIC, SPARKPLUG_COMMAND_TOOL } from "../uns/sparkplugCommand";
 import { encodePayload } from "../uns/sparkplugEncoder";
 
@@ -200,6 +203,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
 
   afterAll(async () => {
     fake.drivers.clear();
+    for (const f of fixtures.splice(0)) await f.cleanup();
     const x = await d();
     await x.delete(aiPendingActions).where(like(aiPendingActions.id, `${DAU}%`));
     await x.delete(aiPendingActions).where(like(aiPendingActions.id, `foe-${DAU}%`));
@@ -554,8 +558,14 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     const args = { adapterId, tagKey: "speed_sp", value: 7 };
     const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
     const cap = { adapterKind: "ot-stub" } as never;
-    const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user);
-    await ensureOrchestrationAction(user, key, { id: "s1", type: "command" } as never, args, cmd);
+    // doc 81 Đợt 4 Task A5 + fix round 1 (R-4-i) — the step rides on a REAL run (owner OWNER) whose gate OTHER_USER
+    // approved through the server path; the dispatcher re-reads both from the DB.
+    const fx = await makeFoeGateRun({ tag: `${DAU}-r4`, owner: OWNER, approvedBy: OTHER_USER });
+    fixtures.push(fx);
+    const approval = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
+    const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user, approval);
+    expect(cmd.hitl).toMatchObject({ requestedBy: OWNER, confirmedBy: OTHER_USER });
+    await ensureOrchestrationAction(user, key, { id: "s1", type: "command" } as never, args, cmd, approval);
     const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
     expect(res.ok).toBe(true);
     expect(writeCalls).toBe(1);
@@ -567,6 +577,87 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
       .sendCommand({ ...cmd, idempotencyKey: `${key}-x`, writes: [{ tagKey: "speed_sp", value: 8 }] });
     expect(replay.ok).toBe(false);
     expect(writeCalls).toBe(1);
+  });
+
+  // ═════════════════ Đợt 4 A5 — lớp dispatcher: FOE không tự duyệt ═════════════════
+  it("★ Đợt 4 A5 (verifyActionBinding): hàng FOE xác nhận bởi CHÍNH người chạy (cũ, hoặc người duyệt = người chạy) ⇒ NOT_CONFIRMED, 0 ghi, hàng vẫn confirmed", async () => {
+    const { buildEquipmentCommand, ensureOrchestrationAction } = await import("../orchestration/foe/foeEngine");
+    const { equipmentRegistry } = await import("../equipment/equipmentAdapter");
+    const user = { id: OWNER, role: "engineer" } as never;
+    const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
+    const cap = { adapterKind: "ot-stub" } as never;
+    const before = writeCalls;
+    for (const [i, approval] of [[1, undefined], [2, { runId: 1, runOwner: OWNER, approvedBy: OWNER, gateStepId: "g0" }]] as const) {
+      const key = `${DAU}-self${i}-s1-a1`;
+      const args = { adapterId, tagKey: "speed_sp", value: 40 + i };
+      const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user, approval);
+      await ensureOrchestrationAction(user, key, { id: `self${i}`, type: "command" } as never, args, cmd, approval);
+      const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
+      expect(res.ok, `case ${i}`).toBe(false);
+      const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, cmd.hitl!.actionId));
+      expect(row?.status, `case ${i}`).toBe("confirmed");
+    }
+    expect(writeCalls).toBe(before);
+  });
+
+  // ═════════════════ Đợt 4 fix round 1 (R-4-i) — lớp CSDL của dispatcher, đo RIÊNG từng lớp ═════════════════
+  it("★ R-4-i: hàng FOE mà previewJson TỰ NHẤT QUÁN (lớp thuần qua) nhưng CSDL nói khác ⇒ NOT_CONFIRMED, 0 ghi, hàng vẫn confirmed", async () => {
+    const { buildEquipmentCommand, ensureOrchestrationAction } = await import("../orchestration/foe/foeEngine");
+    const { equipmentRegistry } = await import("../equipment/equipmentAdapter");
+    const user = { id: OWNER, role: "engineer" } as never;
+    const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
+    const cap = { adapterKind: "ot-stub" } as never;
+    const Z = OTHER_USER + 7;
+    const cases: Array<[string, Parameters<typeof makeFoeGateRun>[0] | null]> = [
+      ["run really owned by the confirmer", { tag: `${DAU}-i1`, owner: OTHER_USER, approvedBy: Z }],
+      ["gate approved by someone else (not the confirmer)", { tag: `${DAU}-i2`, owner: OWNER, approvedBy: Z }],
+      ["gate row edge-synced", { tag: `${DAU}-i3`, owner: OWNER, approvedBy: OTHER_USER, source: "edge" }],
+      ["gate approval stale (redeploy)", { tag: `${DAU}-i4`, owner: OWNER, approvedBy: OTHER_USER, stale: true }],
+      ["run without owner", { tag: `${DAU}-i5`, owner: null, approvedBy: OTHER_USER }],
+      ["no gate row", { tag: `${DAU}-i6`, owner: OWNER, approvedBy: null }],
+      ["run does not exist", null],
+    ];
+    const before = writeCalls;
+    let i = 0;
+    for (const [label, spec] of cases) {
+      i += 1;
+      const fx = spec ? await makeFoeGateRun(spec) : null;
+      if (fx) fixtures.push(fx);
+      // previewJson says what a VALID approval looks like: owner OWNER, approver OTHER_USER = confirmer.
+      const approval = { runId: fx?.runId ?? 2_000_000_000, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
+      const key = `${DAU}-dbl${i}-s1-a1`;
+      const args = { adapterId, tagKey: "speed_sp", value: 60 + i };
+      const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user, approval);
+      await ensureOrchestrationAction(user, key, { id: `dbl${i}`, type: "command" } as never, args, cmd, approval);
+      const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
+      expect(res.ok, label).toBe(false);
+      const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, cmd.hitl!.actionId));
+      expect(row?.status, label).toBe("confirmed");
+    }
+    expect(writeCalls).toBe(before);
+  });
+
+  it("★ lớp THUẦN đo riêng: CSDL hợp lệ (B duyệt gate) nhưng previewJson ghi người duyệt KHÁC người xác nhận ⇒ NOT_CONFIRMED (lớp CSDL một mình sẽ cho qua)", async () => {
+    const { buildEquipmentCommand, ensureOrchestrationAction } = await import("../orchestration/foe/foeEngine");
+    const { equipmentRegistry } = await import("../equipment/equipmentAdapter");
+    const user = { id: OWNER, role: "engineer" } as never;
+    const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
+    const cap = { adapterKind: "ot-stub" } as never;
+    const fx = await makeFoeGateRun({ tag: `${DAU}-pure`, owner: OWNER, approvedBy: OTHER_USER });
+    fixtures.push(fx);
+    const key = `${DAU}-pure-s1-a1`;
+    const args = { adapterId, tagKey: "speed_sp", value: 77 };
+    const real = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
+    const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user, real);
+    await ensureOrchestrationAction(user, key, { id: "pure", type: "command" } as never, args, cmd, real);
+    // tamper ONLY the preview's claimed approver (row confirmer stays OTHER_USER = the real DB approver)
+    const [row0] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, cmd.hitl!.actionId));
+    const preview = { ...(row0!.previewJson as Record<string, unknown>), __foeGateApproval: { ...real, approvedBy: OTHER_USER + 9 } };
+    await (await d()).update(aiPendingActions).set({ previewJson: preview }).where(eq(aiPendingActions.id, cmd.hitl!.actionId));
+    const before = writeCalls;
+    const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
+    expect(res.ok).toBe(false);
+    expect(writeCalls).toBe(before);
   });
 
   // ═════════════════ tool AI: propose (lưu binding) → confirm → execute → dispatch ═════════════════

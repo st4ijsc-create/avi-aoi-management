@@ -32,6 +32,7 @@ import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { collaborationSessions, operatorAssignments, shiftConfigs, factories, workshops, productionLines, stations, users } from "../../drizzle/schema";
 import { idsTrongPhamVi } from "../db/hierarchy";
+import { isValidTimeZone } from "../utils/factoryTime";
 import {
   safetyAuditEnabled,
   record as recordSafetyEvent,
@@ -69,6 +70,44 @@ import {
 import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
+import { deviceAdapters, robots } from "../../drizzle/schema";
+
+/**
+ * doc 81 Đợt 4 fix round 1 (security scan on 7a0dd5632) — every id of a `safety.sourceHealth` target must resolve
+ * SERVER-SIDE into the caller's scope: adapter ⇒ its machine, machine ⇒ itself, robot ⇒ its station's line and its
+ * line (each that is set; an unplaced robot has nothing in scope). Out of scope, nonexistent, or not attributable ⇒ ONE
+ * NOT_FOUND (same code, key, params and message for every case). Every supplied id is always looked up — no early
+ * exit — so the work done does not depend on which check fails. Full scope (admin) ⇒ no check.
+ */
+async function assertSourceHealthTargetInScope(
+  ctx: CoDanhTinh,
+  t: { adapterId?: number; machineId?: number; robotId?: number },
+): Promise<void> {
+  const scope = phamViCua(ctx);
+  const [machineIds, lineIds] = await Promise.all([idsTrongPhamVi("machine", scope), idsTrongPhamVi("line", scope)]);
+  if (machineIds === null && lineIds === null) return;
+  const inList = (ids: number[] | null, id: number | null | undefined) => id != null && (ids === null || ids.includes(id));
+  const d = await getDb();
+  let ok = d != null;
+  if (t.adapterId != null && t.adapterId > 0) {
+    const [a] = d ? await d.select({ m: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, t.adapterId)).limit(1) : [];
+    ok = inList(machineIds, a?.m ?? null) && ok;
+  }
+  if (t.machineId != null) ok = inList(machineIds, t.machineId) && ok;
+  if (t.robotId != null) {
+    const [r] = d
+      ? await d
+          .select({ lineId: robots.lineId, stationLine: stations.lineId })
+          .from(robots)
+          .leftJoin(stations, eq(stations.id, robots.stationId))
+          .where(eq(robots.id, t.robotId))
+          .limit(1)
+      : [];
+    const lines = [r?.lineId ?? null, r?.stationLine ?? null].filter((x): x is number => x != null);
+    ok = lines.length > 0 && lines.every((l) => inList(lineIds, l)) && ok;
+  }
+  if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Safety target not found");
+}
 
 async function db() {
   const d = await getDb();
@@ -353,9 +392,29 @@ export const safetyRouter = router({
    * backend, never writes. PLC config codes are shown only inside the viewer's factory scope;
    * the preflight basis counts are system-wide (the preflight reads every enabled config).
    */
+  // doc 81 Đợt 4 fix round 1 (finding 8, R-4-d) — optional command target: the panel then predicts with the gate's own
+  // resolver + matcher (written adapter's machine ∪ machine ∪ robot). No input ⇒ unchanged (every config).
   sourceHealth: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(({ ctx }) => loadSafetySourceHealth(phamViCua(ctx))),
+    .input(
+      z
+        .object({
+          target: z
+            .object({
+              adapterId: z.number().int().optional(),
+              machineId: z.number().int().positive().optional(),
+              robotId: z.number().int().positive().optional(),
+            })
+            .optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      // fix round 1 (security scan on 7a0dd5632) — a supplied target must be in the caller's scope, else the panel is a
+      // cross-tenant oracle (would the gate block? which PLCs are offline?). No target ⇒ unchanged.
+      if (input?.target) await assertSourceHealthTargetInScope(ctx, input.target);
+      return loadSafetySourceHealth(phamViCua(ctx), input?.target);
+    }),
 
   // ══════════════════════════════════════════════════════════════════════════
   // SAFETY EVENTS (S1-b) — feed/trend (read) + ingest/audit (mutations)
@@ -901,11 +960,12 @@ export const safetyRouter = router({
         conds.push(factoryIds.length ? or(isNull(shiftConfigs.factoryId), inArray(shiftConfigs.factoryId, factoryIds))! : isNull(shiftConfigs.factoryId));
       }
       if (target != null) conds.push(or(isNull(shiftConfigs.factoryId), eq(shiftConfigs.factoryId, target))!);
-      return d
+      const rows = await d
         .select({
           id: shiftConfigs.id,
           factoryId: shiftConfigs.factoryId,
           factoryName: factories.name,
+          factoryTz: factories.timezone,
           name: shiftConfigs.name,
           code: shiftConfigs.code,
           startHour: shiftConfigs.startHour,
@@ -919,6 +979,17 @@ export const safetyRouter = router({
         .leftJoin(factories, eq(factories.id, shiftConfigs.factoryId))
         .where(and(...conds))
         .orderBy(asc(shiftConfigs.orderIndex), asc(shiftConfigs.id));
+      // doc 81 Đợt 3c Task 2 — MÚI GIỜ của từng ca (factories.timezone) để sheet chọn "ca đang chạy" theo giờ NHÀ MÁY: ca nhà
+      // máy ⇒ múi giờ nhà máy của ca; ca toàn hệ thống ⇒ nhà máy của chuyền/trạm đã chọn › nhà máy DUY NHẤT trong phạm vi
+      // (cùng thứ tự `stampAssignmentFactory`) › null. Múi giờ hỏng ⇒ null. Chỉ là mặc định UI — server không nhận "bây giờ".
+      const ctxFactory = target ?? (factoryIds !== null && factoryIds.length === 1 ? factoryIds[0] : null);
+      let ctxTz: string | null = null;
+      if (ctxFactory != null && rows.some((r) => r.factoryId == null)) {
+        const [f] = await d.select({ tz: factories.timezone }).from(factories).where(eq(factories.id, ctxFactory)).limit(1);
+        ctxTz = f?.tz ?? null;
+      }
+      const okTz = (tz: string | null | undefined) => (tz && isValidTimeZone(tz) ? tz : null);
+      return rows.map(({ factoryTz, ...r }) => ({ ...r, factoryTimezone: okTz(r.factoryId != null ? factoryTz : ctxTz) }));
     }),
 
   assignOperator: protectedProcedure

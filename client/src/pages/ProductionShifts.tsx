@@ -71,6 +71,9 @@ import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { featureKeyOf, isFeatureDisabledError } from "@/lib/featureFlagError";
 import { fmtDateTime } from "@/lib/fmtDateTime";
+// doc 81 Đợt 3c Task 2 / fix 1 — DÙNG LẠI bộ giờ nhà máy (phần Intl thuần ở `shared/`, server re-export cùng bản cài đặt).
+// Không viết thư viện múi giờ mới; không import runtime từ `server/`.
+import { isValidTimeZone, wallClockInZone } from "@shared/factoryTime";
 import { deriveFeatureStatus, isFeatureStatusUnsettled, type FeatureStatus } from "@/components/common/FeatureStatusGate";
 import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 
@@ -141,11 +144,21 @@ export function shiftFilterInput(shift: string | null): { shiftConfigId?: number
 }
 
 type ShiftWindow = Pick<ShiftConfig, "startHour" | "startMinute" | "endHour" | "endMinute">;
-/** Khung giờ ca [đầu, cuối) có chứa `now` (giờ máy người dùng)? Cuối < đầu ⇒ ca qua đêm; đầu = cuối ⇒ ca 24 h. */
-export function shiftContains(s: ShiftWindow, now: Date): boolean {
+/** doc 81 Đợt 3c Task 2 — múi giờ dùng được (IANA hợp lệ) hoặc `null` (vắng / hỏng ⇒ dự phòng giờ máy). */
+export function usableTimeZone(tz: string | null | undefined): string | null {
+  return tz && isValidTimeZone(tz) ? tz : null;
+}
+/**
+ * Khung giờ ca [đầu, cuối) có chứa `now`? Cuối < đầu ⇒ ca qua đêm; đầu = cuối ⇒ ca 24 h.
+ * Đợt 3c Task 2: giờ tường của `now` theo MÚI GIỜ NHÀ MÁY `tz` (giờ ca là giờ nhà máy); không biết / hỏng ⇒ giờ máy người dùng
+ * (như trước). Chỉ là mặc định UI — server không nhận "bây giờ" nào của client.
+ */
+export function shiftContains(s: ShiftWindow, now: Date, tz?: string | null): boolean {
   const start = s.startHour * 60 + (s.startMinute ?? 0);
   const end = s.endHour * 60 + (s.endMinute ?? 0);
-  const m = now.getHours() * 60 + now.getMinutes();
+  const zone = usableTimeZone(tz);
+  const wall = zone ? wallClockInZone(now, zone) : null;
+  const m = wall ? wall.hour * 60 + wall.minute : now.getHours() * 60 + now.getMinutes();
   if (start === end) return true;
   return start < end ? m >= start && m < end : m >= start || m < end;
 }
@@ -163,9 +176,15 @@ export function assignableShiftLabels(
   );
 }
 
-/** Ca mặc định của sheet: ca ĐANG HOẠT ĐỘNG có khung chứa `now`, chỉ khi ĐÚNG MỘT ca khớp (0 hoặc ≥ 2 ⇒ `null`, không đoán). */
-export function defaultShiftId(shifts: ReadonlyArray<ShiftWindow & { id: number; isActive: boolean }>, now: Date): number | null {
-  const hits = shifts.filter((s) => s.isActive && shiftContains(s, now));
+/**
+ * Ca mặc định của sheet: ca ĐANG HOẠT ĐỘNG có khung chứa `now`, chỉ khi ĐÚNG MỘT ca khớp (0 hoặc ≥ 2 ⇒ `null`, không đoán).
+ * Đợt 3c Task 2: mỗi ca xét theo `factoryTimezone` của nó (server gắn — nhà máy của ca / của chuyền-trạm đã chọn).
+ */
+export function defaultShiftId(
+  shifts: ReadonlyArray<ShiftWindow & { id: number; isActive: boolean; factoryTimezone?: string | null }>,
+  now: Date,
+): number | null {
+  const hits = shifts.filter((s) => s.isActive && shiftContains(s, now, s.factoryTimezone));
   return hits.length === 1 ? hits[0].id : null;
 }
 
@@ -793,6 +812,8 @@ function AssignmentForm({
   const shiftPick = shiftPickRaw != null && (shiftPickRaw === NO_SHIFT || activeShifts.some((s) => String(s.id) === shiftPickRaw)) ? shiftPickRaw : null;
   const shiftValue = shiftPick ?? defaultShift;
   const showNowHint = shiftPick == null && existingShiftId == null && nowShiftId != null;
+  // Đợt 3c Task 2 — "bây giờ" đã đọc theo đồng hồ nào: múi giờ nhà máy của ca được chọn sẵn, hay giờ máy (không biết múi giờ).
+  const nowShiftTz = nowShiftId != null ? usableTimeZone(activeShifts.find((s) => s.id === nowShiftId)?.factoryTimezone) : null;
 
   const dirty =
     operatorId !== initial.operatorId || lineId !== initial.lineId || stationId !== initial.stationId || skillLevel !== initial.skillLevel ||
@@ -864,7 +885,14 @@ function AssignmentForm({
           <p className="text-xs text-muted-foreground">{t("shifts.form.loadingShifts", "Loading the shifts for this line…")}</p>
         )}
         {showNowHint && (
-          <p className="text-xs text-muted-foreground">{t("shifts.form.defaultHint", "Pre-selected: the shift running now.")}</p>
+          <>
+            <p className="text-xs text-muted-foreground">{t("shifts.form.defaultHint", "Pre-selected: the shift running now.")}</p>
+            <p className="text-xs text-muted-foreground" data-testid="shift-now-clock">
+              {nowShiftTz
+                ? t("shifts.form.factoryClock", "By factory time ({{tz}}).", { tz: nowShiftTz })
+                : t("shifts.form.browserClock", "By this device's clock — the factory's time zone is unknown.")}
+            </p>
+          </>
         )}
       </div>
       <SheetFooter>

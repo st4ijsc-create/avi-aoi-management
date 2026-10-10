@@ -52,6 +52,12 @@ export interface OtSample {
    * khi đó chỉ là giờ nhận; `sampleToCanonical` chuyển cờ này sang bus ⇒ loại `ts_no_timezone`.
    */
   tsReject?: "ts_no_timezone";
+  /**
+   * doc 81 Đợt 4 Task B6 — WHO stamped `timestamp`: "device" = the device/source declared it (e.g. OPC UA
+   * sourceTimestamp); "server" = the driver stamped it itself on receipt. A server stamp measures nothing about the
+   * device's clock, so the bus keeps it OUT of the clock-drift table. Absent ⇒ behaviour unchanged (treated as device).
+   */
+  tsSource?: "device" | "server";
 }
 
 /** Sức khoẻ kết nối của driver. */

@@ -406,6 +406,104 @@ export class ConnectionSupervisor {
     this.activeIndex = -1;
   }
 
+  /**
+   * doc 81 Đợt 4 Task B3 (QĐ-4b) — drop the ACTIVE endpoint's session and open a FRESH one on the SAME endpoint (the
+   * driver object a STOP already resolved stays the one that gets the new session; no failover here — a failed reset
+   * leaves failover to the normal retry loop). Used by the command dispatcher when a timed-out write is still pending
+   * after its grace, so the next command (a STOP) never shares the session that write may still be using.
+   * Single-flight with the reconnect loop: a cycle already running / not connected / stopped ⇒ false.
+   * fix scan (1) — COOPERATIVE budget: every step (close + disconnect, then connect + subscribe) runs inside ONE budget
+   * `budgetMs` (default resetBoundMs() = the endpoint's connect deadline), so when the budget is spent this call has
+   * ITSELF given up — nothing it started keeps going and later replaces the session. A connect that lands after the
+   * budget is never made active: connectAndSubscribe's late-connect reaper closes it (existing behaviour). Failure ⇒
+   * 'failed' + the normal backoff retry. Never throws. true ⇔ a session opened by THIS call is connected.
+   * RESIDUAL (fix round 1, review #5 — documented, not guarded): the disconnect step is BOUNDED, not cancelled. A driver
+   * whose disconnect() hangs and completes only after the fresh connect could tear down the new session (driver-internal
+   * state; a supervisor-side generation check cannot stop a driver from closing its own transport — that needs a
+   * per-driver session epoch in every driver). The STOP on that session then FAILS visibly — through ITS OWN ledger row
+   * (failed / timeout) and, while a stale-write risk is live, the read-only watch's "unreadable" critical alarm. (No
+   * overlapRisk audit in this case: the reset itself had reported success.) Never silent. Same pattern as the existing
+   * reconnect loop.
+   */
+  async resetSession(reason: string, budgetMs: number = this.resetBoundMs()): Promise<boolean> {
+    if (this.stopped || this.cycleRunning || this.state !== "connected" || this.activeIndex < 0) return false;
+    const idx = this.activeIndex;
+    const ep = this.endpoints[idx];
+    const end = Date.now() + Math.max(1, budgetMs);
+    const left = (): number => end - Date.now();
+    this.cycleRunning = true;
+    try {
+      this.lastError = reason;
+      this.setState("reconnecting");
+      const h = this.activeHandle;
+      this.activeHandle = null;
+      await this.boundedMs(
+        (async () => {
+          if (h) await h.close();
+          await ep.driver.disconnect();
+        })(),
+        Math.min(this.disconnectTimeoutMs, Math.max(1, left())),
+        "reset disconnect",
+      );
+      if (this.stopped || left() <= 0) {
+        if (!this.stopped) this.failResetCycle(`session reset budget ${budgetMs}ms spent before reconnect`);
+        return false;
+      }
+      this.attempts += 1;
+      try {
+        await this.connectAndSubscribe(ep, left());
+      } catch (err) {
+        this.failResetCycle(errMsg(err));
+        void this.safeDisconnect(ep); // bounded on its own; never on the caller's budget
+        return false;
+      }
+      if (this.stopped) {
+        void this.closeActiveHandle().then(() => this.safeDisconnect(ep));
+        return false;
+      }
+      this.activeIndex = idx;
+      this.consecutiveFailures = 0;
+      this.consecutiveProbeFailures = 0;
+      this.lastError = null;
+      this.lastConnectedAt = Date.now();
+      this.reconnects += 1;
+      this.hasConnectedOnce = true;
+      this.setState("connected");
+      return true;
+    } catch {
+      return false;
+    } finally {
+      this.cycleRunning = false;
+    }
+  }
+
+  /** B3 — a reset that did not reconnect: honest state + the normal backoff retry (which may fail over). */
+  private failResetCycle(error: string): void {
+    this.lastError = error;
+    this.consecutiveFailures += 1;
+    this.setState("failed");
+    this.scheduleRetry(this.nextBackoffDelay());
+  }
+
+  /**
+   * doc 81 Đợt 4 Task B3 — the budget of resetSession() and the outer bound a caller puts on it: the connect deadline of
+   * the active endpoint (the supervisor's connect timeout, raised for a slow endpoint exactly as connectAndSubscribe
+   * does). resetSession spends at most this, all steps included.
+   */
+  resetBoundMs(): number {
+    const ep = this.endpoints[this.activeIndex] ?? this.endpoints[0];
+    return this.connectDeadlineFor(ep);
+  }
+
+  /** B3 — like bounded() with an explicit limit; never throws. */
+  private async boundedMs(p: Promise<unknown>, ms: number, what: string): Promise<void> {
+    try {
+      await withDeadline(p, ms, `supervisor ${this.code} ${what}`);
+    } catch (err) {
+      this.lastError = errMsg(err);
+    }
+  }
+
   /** doc 81 Đợt 1B Task 1 — chờ p tối đa disconnectTimeoutMs; không bao giờ ném. */
   private async bounded(p: Promise<unknown>, what: string): Promise<void> {
     try {
@@ -620,10 +718,12 @@ export class ConnectionSupervisor {
    * first (the old endpoint is already down when we get here). Throws on any
    * connect/subscribe failure so attemptCycle can move to the next endpoint.
    */
-  private async connectAndSubscribe(ep: RuntimeEndpoint): Promise<void> {
+  private async connectAndSubscribe(ep: RuntimeEndpoint, budgetMs?: number): Promise<void> {
     // doc 81 Đợt 1B Task 2 — lần connect trước (đã quá hạn) còn treo trên CHÍNH driver này:
     // không chồng connect thứ hai; tính lần này là thất bại, backoff sẽ thử lại sau.
-    const deadlineMs = this.connectDeadlineFor(ep);
+    // doc 81 Đợt 4 Task B3 (fix scan 1) — `budgetMs` (session reset): the stale disconnect AND the connect share it.
+    const t0 = Date.now();
+    const deadlineMs = budgetMs ?? this.connectDeadlineFor(ep);
     if (ep.pendingConnect) {
       throw new ConnectionSupervisorError("connect_pending", `previous ${ep.label} connect still pending (timed out after ${deadlineMs}ms)`);
     }
@@ -636,7 +736,11 @@ export class ConnectionSupervisor {
     } catch {
       // ignore — connect() below establishes a fresh transport
     }
-    if (staleConnected) await this.safeDisconnect(ep);
+    if (staleConnected) {
+      if (budgetMs == null) await this.safeDisconnect(ep);
+      else await this.boundedMs(Promise.resolve().then(() => ep.driver.disconnect()), Math.min(this.disconnectTimeoutMs, Math.max(1, budgetMs)), "disconnect");
+    }
+    const connectMs = budgetMs == null ? deadlineMs : Math.max(1, deadlineMs - (Date.now() - t0));
 
     const work = (async (): Promise<OtSubscriptionHandle> => {
       await ep.driver.connect(ep.connection);
@@ -656,7 +760,7 @@ export class ConnectionSupervisor {
     );
     let inTime = false;
     try {
-      const handle = await withDeadline(work, deadlineMs, `supervisor ${this.code} ${ep.label} connect`);
+      const handle = await withDeadline(work, connectMs, `supervisor ${this.code} ${ep.label} connect`);
       inTime = true;
       this.activeHandle = handle;
     } finally {

@@ -112,13 +112,14 @@ import {
   type AiPendingAction,
   type CommandLog,
 } from "../../../drizzle/schema";
-import { boundedKey, canonicalOtValue, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
-import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
+import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, resetAdapterSession } from "./otManager";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
-import type { OtTagAddress } from "./otDriver";
+import type { OtDriver, OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
 import { withDeadline } from "./drivers/boundedClose"; // final wave 5 (M4)
 import { isCommissioned, isCommissioningRequired } from "./commissioningService";
@@ -204,6 +205,98 @@ export function isSafetyPreflightEnabled(): boolean {
  * side already had SAFETY_PREFLIGHT_DEADLINE_MS = 5000; OT had none). Timeout ⇒ UNKNOWN ⇒ refused (fail-closed).
  */
 export const OT_SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
+
+/**
+ * doc 81 Đợt 4 Task B3 (QĐ-4b, owner ruling: 1000 ms) — how long a write that TIMED OUT keeps its adapter's queue
+ * slot while it may still be running on the driver's session (see holdSlotAfterTimedOutWrite).
+ */
+export const OT_TIMED_OUT_WRITE_GRACE_MS = 1000;
+
+/**
+ * doc 81 Đợt 4 Task B3 fix scan (1) — slack on top of the session-reset budget for the dispatcher's OUTER deadline. The
+ * reset is cooperative (it gives up by itself within its budget, adapterSessionResetBoundMs); the outer deadline is only
+ * a safety net for a reset path that would not honour its budget.
+ */
+export const OT_SESSION_RESET_SLACK_MS = 250;
+
+/**
+ * doc 81 Đợt 4 Task B3 (alert-only, R-4-q) — resetting the session does NOT recall a request already on the wire: the
+ * device may still apply the old (timed-out) write AFTER a STOP sent on the new session (re-energising after a stop).
+ * For OT_STALE_WRITE_RISK_TTL_MS after such a write was abandoned, a STOP to that adapter gets a READ-ONLY watch (every
+ * OT_STOP_WATCH_POLL_MS) that raises a critical operator alarm when the STOP value cannot be confirmed — see
+ * startStopWatch. Nothing is ever written automatically.
+ */
+export const OT_STALE_WRITE_RISK_TTL_MS = 10_000;
+export const OT_STOP_WATCH_POLL_MS = 200;
+
+/**
+ * B3 — the running read-only STOP watches of an adapter. A watch follows the STOP's tags; only a newer command whose write
+ * is actually DISPATCHED to the driver (executeWriteAndVerify, right before driver.writeTags) and that writes one of those
+ * tags releases THAT tag (the operator's later intent for it owns it now). Commands for other tags and commands
+ * superseded / cancelled / refused before their write release nothing. A watch with no tag left ends quietly.
+ */
+type StopWatch = { cancelled: boolean; tags: Set<string> };
+const stopWatches = new Map<number, Set<StopWatch>>();
+function registerStopWatch(adapterId: number, w: StopWatch): void {
+  let set = stopWatches.get(adapterId);
+  if (!set) {
+    set = new Set();
+    stopWatches.set(adapterId, set);
+  }
+  set.add(w);
+}
+function unregisterStopWatch(adapterId: number, w: StopWatch): void {
+  const set = stopWatches.get(adapterId);
+  if (!set) return;
+  set.delete(w);
+  if (set.size === 0) stopWatches.delete(adapterId);
+}
+/** A newer command's write to `tagKeys` is being dispatched: those tags are no longer the read-only watches' to verify. */
+function releaseWatchedTags(adapterId: number, tagKeys: readonly string[]): void {
+  const set = stopWatches.get(adapterId);
+  if (!set) return;
+  for (const w of [...set]) {
+    for (const k of tagKeys) w.tags.delete(k);
+    if (w.tags.size === 0) {
+      w.cancelled = true;
+      unregisterStopWatch(adapterId, w);
+    }
+  }
+}
+
+/**
+ * B3 fix scan (3) / scan 3 (b)(c) — the abandoned write of an adapter whose fate is unknown (until = epoch ms): its
+ * identity and values, so the watch can recognise it landing and AUDIT-LINK that observation to the abandoned command.
+ * One entry per adapter (overwritten by a newer abandonment); expired entries are swept on every write to the map and on
+ * lookup — the map never holds more than one entry per adapter and none older than OT_STALE_WRITE_RISK_TTL_MS.
+ */
+type StaleWrite = {
+  until: number;
+  commandType: string;
+  idempotencyKey: string | null;
+  intentIds: number[];
+  confirmedBy: number;
+  machineId: number | null;
+  writes: Array<{ tagKey: string; value: unknown }>;
+};
+const staleWriteRisk = new Map<number, StaleWrite>();
+function sweepStaleWriteRisk(now = Date.now()): void {
+  for (const [id, r] of staleWriteRisk) if (now > r.until) staleWriteRisk.delete(id);
+}
+/** Test seams (B3 fix scan 3 (b)) — sizes of the per-adapter state and an explicit sweep. */
+export function _staleWriteRiskSizeForTests(): number {
+  return staleWriteRisk.size;
+}
+export function _sweepStaleWriteRiskForTests(now: number): void {
+  sweepStaleWriteRisk(now);
+}
+export function _stopWatchCountForTests(adapterId: number): number {
+  return stopWatches.get(adapterId)?.size ?? 0;
+}
+function staleWriteRiskActive(adapterId: number): boolean {
+  sweepStaleWriteRisk();
+  return staleWriteRisk.has(adapterId);
+}
 
 async function readSafetyStateForPreflight(
   adapterId: number,
@@ -380,6 +473,36 @@ function cmdQueueMax(): number {
 //     định mới của người vận hành ⇒ FIFO phía sau DỪNG).
 // Mọi lệnh khác (kể cả "stop" KHÔNG ghim) giữ đúng ngữ nghĩa cũ: FIFO, BUSY khi depth ≥ OT_CMD_QUEUE_MAX.
 
+/** final wave F7 — what the write+verify body produced for one command (see executeWriteAndVerify in dispatch). */
+type ExecutedWrite = {
+  sentAt: Date;
+  timedOut: boolean;
+  outcomes: Array<{ idx: number; ok: boolean; status: DispatchStatus; errorText: string | null; readBackValue: unknown }>;
+  slotHold?: Promise<void>;
+};
+/** final wave F7 — the pre-write safety re-check refused a non-stop write that waited too long after its preflight. */
+type SafetyRecheckRefusal = { safetyRecheckRefused: true; reason: ReturnType<typeof safetyPreflightReason>; detail: string };
+
+/**
+ * final wave F7 — listeners told when a PINNED stop is queued for an adapter: an in-flight pre-write safety re-check of a
+ * non-stop command gives way to it at once (L-7). Returns the unsubscribe function.
+ */
+const pinnedStopQueuedListeners = new Map<number, Set<(stopRef?: Record<string, unknown>) => void>>();
+function onPinnedStopQueued(adapterId: number, fn: (stopRef?: Record<string, unknown>) => void): () => void {
+  let set = pinnedStopQueuedListeners.get(adapterId);
+  if (!set) {
+    set = new Set();
+    pinnedStopQueuedListeners.set(adapterId, set);
+  }
+  set.add(fn);
+  return () => {
+    const cur = pinnedStopQueuedListeners.get(adapterId);
+    if (!cur) return;
+    cur.delete(fn);
+    if (cur.size === 0) pinnedStopQueuedListeners.delete(adapterId);
+  };
+}
+
 /** Kết quả của một lệnh bị huỷ khi đang CHỜ vì một DỪNG ghim xếp sau nó (R-1E-a). */
 export type Superseded = {
   superseded: true;
@@ -415,6 +538,9 @@ const adapterCommandQueues = new Map<number, AdapterCommandQueue>();
 /** Chỉ dùng trong test — xóa mọi hàng đợi lệnh per-adapter. */
 export function _resetAdapterCommandQueuesForTests(): void {
   adapterCommandQueues.clear();
+  staleWriteRisk.clear();
+  for (const set of stopWatches.values()) for (const w of set) w.cancelled = true;
+  stopWatches.clear();
 }
 
 /** Chỉ dùng trong test — số adapter đang có entry hàng đợi (0 ⇔ mọi hàng đã được dọn). */
@@ -454,7 +580,16 @@ function pumpAdapterQueue(adapterId: number, queue: AdapterCommandQueue): void {
 export function tryEnqueueAdapterCommand<T>(
   adapterId: number,
   fn: () => Promise<T>,
-  opts?: { priorityStop?: boolean; stopRef?: Record<string, unknown> },
+  opts?: {
+    priorityStop?: boolean;
+    stopRef?: Record<string, unknown>;
+    /**
+     * doc 81 Đợt 4 Task B3 — given `fn`'s result, a promise the queue SLOT waits on before the next command runs
+     * (the caller still gets the result at once). It must settle on its own within a bounded time and never reject
+     * (a rejection releases the slot too). undefined ⇒ the slot is released immediately, as before.
+     */
+    holdSlot?: (v: T) => Promise<void> | undefined;
+  },
 ): EnqueueOutcome<T> {
   const max = cmdQueueMax();
   const priorityStop = opts?.priorityStop === true;
@@ -488,6 +623,18 @@ export function tryEnqueueAdapterCommand<T>(
       };
       p.then(
         (v) => {
+          let hold: Promise<void> | undefined;
+          try {
+            hold = opts?.holdSlot?.(v);
+          } catch {
+            hold = undefined;
+          }
+          if (hold) {
+            // B3 — answer the caller now, keep the slot until the hold settles (bounded by its producer).
+            hold.then(done, done);
+            settle.resolve(v);
+            return;
+          }
           done();
           settle.resolve(v);
         },
@@ -515,6 +662,8 @@ export function tryEnqueueAdapterCommand<T>(
       else j.cancel(opts?.stopRef);
     }
     queue.pending = kept;
+    // final wave F7 — an in-flight pre-write safety re-check gives way too (it has not written yet).
+    for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(opts?.stopRef);
     // Đứng sau DỪNG ghim cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng.
     let at = 0;
     for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].priorityStop) at = i + 1;
@@ -1098,6 +1247,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         alone ⇒ REJECT SAFETY_SIM_ONLY; a bad-quality real safety tag ⇒ SAFETY_UNKNOWN.
   //         doc 81 Đợt 1D Task 2 — a PINNED stop (5a-stop) skips this preflight entirely (energy-reducing, proven by
   //         data); any other stop-typed command still goes through it and its refusal carries `stopPinReason`.
+  // final wave F7 (final review M5) — when the preflight PASSED; a non-stop write that then waits longer than
+  // OT_SAFETY_PREFLIGHT_DEADLINE_MS before its write is re-checked just before writing (recheckSafetyIfStale).
+  let preflightPassedAt: number | undefined;
   if (input.triggeredBy.kind === "hitl" && isSafetyPreflightEnabled() && !stopCls.pinnedStop) {
     const { state: safety, basis: safetyBasis } = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
     if (safety === "BLOCKED") {
@@ -1167,6 +1319,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         ...stopRefusalExtras(input, "SAFETY_UNKNOWN", stopCls),
       };
     }
+    preflightPassedAt = Date.now();
   }
 
   if (input.triggeredBy.kind === "hitl") {
@@ -1223,7 +1376,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── (5b-0) doc 81 Đợt 1B Task 6 — WRITE-AHEAD RESERVATION (advisory lock → re-probe →
   //         bind + consume the HITL action → INSERT intent rows), committed BEFORE the
   //         driver is called. Refused / failed ⇒ return; driver.writeTags is never reached.
-  const reservation = await reserveRealWrite(db, input, resolved, { bindingInput: callerInput, ledgerExtra });
+  const reservation = await reserveRealWrite(db, input, resolved, { bindingInput: callerInput, ledgerExtra, pinnedStop: stopCls.pinnedStop });
   if (!reservation.ok) return reservation.result;
   const { intentIds } = reservation;
   const ledgerConfirmer = reservation.boundConfirmer ?? who.confirmedBy;
@@ -1255,31 +1408,91 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     readBackValue: unknown;
   }
 
+  // ── final wave F7 (final review M5) — the check-then-act gap. The safety preflight ran BEFORE the write-ahead
+  //    reservation and the queue; a write queued behind a slow / timed-out one (B3 hold: up to ~11.25 s) reached the
+  //    device on a verdict that old. A NON-STOP write whose preflight passed more than OT_SAFETY_PREFLIGHT_DEADLINE_MS
+  //    ago re-runs the SAME preflight read just before writing; not OK => refused with the same reason (nothing written).
+  //    Stop-typed commands are never re-checked (L-7). The re-check holds this command's queue slot, so a PINNED STOP
+  //    queued meanwhile must not wait on it: the re-check gives way at once (this write is dropped as SUPERSEDED_BY_STOP,
+  //    exactly like a waiting command) and the STOP runs next.
+  const recheckSafetyIfStale = async (): Promise<Superseded | SafetyRecheckRefusal | null> => {
+    if (preflightPassedAt === undefined || isStopCommandType(input.commandType)) return null;
+    const waitedMs = Date.now() - preflightPassedAt;
+    if (waitedMs <= OT_SAFETY_PREFLIGHT_DEADLINE_MS) return null;
+    let unsubscribe: (() => void) | undefined;
+    const stopQueued = new Promise<Superseded>((resolve) => {
+      unsubscribe = onPinnedStopQueued(input.adapterId, (stopRef) =>
+        resolve(stopRef ? { superseded: true, byStop: true, stop: stopRef } : { superseded: true, byStop: true }),
+      );
+    });
+    try {
+      const r = await Promise.race([readSafetyStateForPreflight(input.adapterId, input.machineId ?? null), stopQueued]);
+      if (isSuperseded(r)) return r;
+      if (r.state === "OK") return null;
+      const reason = safetyPreflightReason(r.state, r.basis);
+      return {
+        safetyRecheckRefused: true,
+        reason,
+        detail: `safety-PLC re-check before the write (the command waited ${waitedMs} ms after its preflight) returned ${r.state} — actuation denied before write, nothing sent`,
+      };
+    } finally {
+      unsubscribe?.();
+    }
+  };
+
   // ── G1.9 — the write+verify body, extracted UNCHANGED so it can run either
   //    immediately (flag OFF — prior behaviour) or under the per-adapter queue.
   //    It never throws for expected failure modes (driver errors are caught).
-  const executeWriteAndVerify = async (): Promise<{ sentAt: Date; timedOut: boolean; outcomes: Outcome[] }> => {
+  const executeWriteAndVerify = async (): Promise<ExecutedWrite | Superseded | SafetyRecheckRefusal> => {
+    const recheck = await recheckSafetyIfStale(); // final wave F7 — null => no re-check needed / still OK
+    if (recheck) return recheck;
     const sentAt = new Date();
 
     let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
     let threwError: string | null = null;
+    // doc 81 Đợt 4 Task B3 — keep the write promise: after a timeout it may still be running on the session.
+    let writePromise: Promise<unknown> | undefined;
+    let writeTimer: ReturnType<typeof setTimeout> | undefined;
     try {
+      // B3 fix scan 3 (a) — this write is DISPATCHED now: a running STOP watch gives up exactly these tags (the newer
+      // intent for them wins); watches on other tags keep running.
+      releaseWatchedTags(input.adapterId, driverWrites.map((w) => w.tagKey));
+      const wp = Promise.resolve(driver.writeTags(driverWrites));
+      writePromise = wp;
+      wp.catch(() => undefined); // a late rejection after the timeout is expected, never unhandled
       writeResults = await Promise.race([
-        driver.writeTags(driverWrites),
-        new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), timeoutMs)),
+        wp,
+        new Promise<typeof TIMEOUT>((resolve) => {
+          writeTimer = setTimeout(() => resolve(TIMEOUT), timeoutMs);
+        }),
       ]);
     } catch (err) {
       threwError = (err as Error)?.message || String(err);
       writeResults = [];
+    } finally {
+      clearTimeout(writeTimer);
     }
 
     // Decide a per-write outcome from the write result (status BEFORE read-back).
     const timedOut = writeResults === TIMEOUT;
+    // B3 — a timed-out write keeps the adapter's queue slot (only the serialized path has one) until it settles or
+    // its grace expires and the session is reset; the caller's answer is not delayed by this.
+    const slotHold =
+      timedOut && writePromise && isCmdSerializeEnabled()
+        ? holdSlotAfterTimedOutWrite(input, writePromise, { intentIds, confirmedBy: ledgerConfirmer })
+        : undefined;
     const resultsArr = Array.isArray(writeResults) ? writeResults : [];
 
     const outcomes: Outcome[] = resolved.map((r, i) => {
       if (timedOut) {
-        return { idx: i, ok: false, status: "timeout", errorText: `write timeout after ${timeoutMs}ms`, readBackValue: null };
+        // B3 fix scan (2) — a timeout is NOT "not applied": the device may have applied (part of) it.
+        return {
+          idx: i,
+          ok: false,
+          status: "timeout",
+          errorText: `write timeout after ${timeoutMs}ms — outcome unknown: the write may have been applied on the device`,
+          readBackValue: null,
+        };
       }
       if (threwError) {
         return { idx: i, ok: false, status: "failed", errorText: threwError, readBackValue: null };
@@ -1352,7 +1565,29 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       }
     }
 
-    return { sentAt, timedOut, outcomes };
+    // B3 alert-only (R-4-q) — a STOP after an abandoned write whose fate is unknown: a DETACHED read-only watch (no queue
+    // slot, the STOP's answer is returned now — L-7) alarms the operator if the STOP value cannot be confirmed.
+    if (!timedOut && isCmdSerializeEnabled() && isStopCommandType(input.commandType) && staleWriteRiskActive(input.adapterId)) {
+      const acked = outcomes.filter((o) => o.ok).map((o) => o.idx);
+      if (acked.length > 0) {
+        startStopWatch(
+          input,
+          driver,
+          getActiveConnectionFingerprint(input.adapterId),
+          acked.map((i) => driverWrites[i]),
+          acked.map((i) => ({
+            tagKey: resolved[i].write.tagKey,
+            address: resolved[i].address,
+            dataType: (resolved[i].dataType ?? "float") as OtTagAddress["dataType"],
+            scale: resolved[i].scale,
+            offset: resolved[i].offset,
+          })),
+          timeoutMs,
+          { intentIds, confirmedBy: ledgerConfirmer },
+        );
+      }
+    }
+    return { sentAt, timedOut, outcomes, ...(slotHold ? { slotHold } : {}) };
   };
 
   // ── (5c) G1.9 — PER-ADAPTER SERIALIZATION (flag OT_CMD_SERIALIZE_ENABLED,
@@ -1363,14 +1598,15 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    doc 81 Đợt 1E Task 1 (R-1E-a) — a PINNED stop (stopCls.pinnedStop, Đợt 1D: exact pin match + step-3 row +
   //    connection fingerprint) is never BUSY: it runs right after the in-flight write and cancels the non-stop
   //    commands still WAITING ahead of it; each cancelled caller ledgers SUPERSEDED_BY_STOP naming the stop.
-  let executed: { sentAt: Date; timedOut: boolean; outcomes: Outcome[] };
+  let executed: ExecutedWrite | SafetyRecheckRefusal;
+  const slotHoldOf = (v: ExecutedWrite | Superseded | SafetyRecheckRefusal): Promise<void> | undefined => ("slotHold" in v ? v.slotHold : undefined);
   if (isCmdSerializeEnabled()) {
     const enq = tryEnqueueAdapterCommand(
       input.adapterId,
       executeWriteAndVerify,
       stopCls.pinnedStop === true
-        ? { priorityStop: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds } }
-        : { priorityStop: false },
+        ? { priorityStop: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds }, holdSlot: slotHoldOf }
+        : { priorityStop: false, holdSlot: slotHoldOf },
     );
     if (!enq.accepted) {
       const ids = await writeRejected(
@@ -1387,12 +1623,13 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     const queued = await enq.result;
     if (isSuperseded(queued)) {
       // R-1E-a — cancelled while WAITING: never reached driver.writeTags. RESULT row of the intent, like BUSY.
-      const stopKey = typeof queued.stop?.idempotencyKey === "string" ? queued.stop.idempotencyKey : "unknown";
+      // final wave G9 — a STOP without an idempotency key: its own localisable code, never the literal "unknown".
+      const stopKey = typeof queued.stop?.idempotencyKey === "string" && queued.stop.idempotencyKey ? queued.stop.idempotencyKey : null;
       const ids = await writeRejected(
         db,
         input,
         "SUPERSEDED_BY_STOP",
-        `cancelled while waiting in the adapter command queue: pinned STOP ${stopKey} was queued after it — not sent to the device, resend if still needed`,
+        `cancelled while waiting in the adapter command queue: ${stopKey ? `pinned STOP ${stopKey}` : "a pinned STOP (no idempotency key)"} was queued after it — not sent to the device, resend if still needed`,
         undefined,
         undefined,
         { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, supersededByStop: queued.stop ?? null } },
@@ -1406,13 +1643,26 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         reason: "SUPERSEDED_BY_STOP",
         results: failedResults(input, "SUPERSEDED_BY_STOP"),
         commandLogIds: ids,
-        appError: { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey } },
+        appError: stopKey
+          ? { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey } }
+          : { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY", appParams: {} },
         message: "This waiting command was cancelled because a STOP command was queued after it — it was not sent to the device; resend it if still needed.",
       };
     }
     executed = queued;
   } else {
-    executed = await executeWriteAndVerify();
+    const direct = await executeWriteAndVerify();
+    // No queue => nothing can supersede it (onPinnedStopQueued fires only from the queue); kept total for the type.
+    if (isSuperseded(direct)) {
+      const ids = await writeRejected(db, input, "SUPERSEDED_BY_STOP", "cancelled before its write: a pinned STOP was queued", undefined, undefined, { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra });
+      return { ok: false, simulated: false, status: "rejected", reason: "SUPERSEDED_BY_STOP", results: failedResults(input, "SUPERSEDED_BY_STOP"), commandLogIds: ids };
+    }
+    executed = direct;
+  }
+  if ("safetyRecheckRefused" in executed) {
+    // final wave F7 — the RESULT row of the intent (like BUSY / SUPERSEDED_BY_STOP); driver.writeTags never reached.
+    const ids = await writeRejected(db, input, executed.reason, executed.detail, undefined, undefined, { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra });
+    return { ok: false, simulated: false, status: "rejected", reason: executed.reason, results: failedResults(input, executed.reason), commandLogIds: ids };
   }
   const { sentAt, timedOut, outcomes } = executed;
 
@@ -1470,6 +1720,308 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     return { ok: allOk, simulated: false, status: overall, results, commandLogIds, pinnedStop: true };
   }
   return { ok: allOk, simulated: false, status: overall, results, commandLogIds };
+}
+
+/**
+ * doc 81 Đợt 4 Task B3 (QĐ-4b) — the queue-slot hold of a write that TIMED OUT. Before: the slot was released at the
+ * timeout while the write could still be running on the driver's session, so a STOP queued behind it ran at the same
+ * time on the same session. Now the slot is held until
+ *   (a) the old write settles (the next command then runs on the same, now idle session), or
+ *   (b) OT_TIMED_OUT_WRITE_GRACE_MS expires ⇒ the session is reset through the EXISTING reconnect path
+ *       (otManager.resetAdapterSession: connection supervisor, or the legacy watchdog's own steps), bounded by
+ *       adapterSessionResetBoundMs (that path's connect timeout). The next command (a STOP) runs on the fresh session.
+ * L-7 — a STOP is never held indefinitely: if the reset fails or exceeds its bound, the slot is released anyway (the
+ * STOP proceeds), logged and audited as `overlapRisk` (control_audit_log "ot_write_overlap_risk").
+ * WORST-CASE extra STOP start latency, counted from the old write's own timeout:
+ *   OT_TIMED_OUT_WRITE_GRACE_MS + adapterSessionResetBoundMs + OT_SESSION_RESET_SLACK_MS
+ *   = 1 s + connect timeout (default 10 s) + 0.25 s = 11.25 s.
+ * fix scan (1): the reset is COOPERATIVE — it spends at most its budget (all steps) and then has itself given up, so it
+ * never completes "late" and replaces the session a STOP is using; a connect landing after the budget is reaped, never
+ * made active. The old write may still land on the device after the STOP — see startStopWatch (read-only, alarm only).
+ * CUMULATIVE (fix round 1, review #4): the bound is PER timed-out predecessor. STOPs do not supersede each other, so N
+ * queued commands that EACH time out ahead of a STOP delay it by up to N × (write timeout + 11.25 s).
+ * Applies ONLY with OT_CMD_SERIALIZE_ENABLED (there is no queue slot otherwise — residual risk, reported).
+ * Non-STOP commands behind it wait for the slot the same way. Never rejects.
+ */
+async function holdSlotAfterTimedOutWrite(
+  input: DispatchInput,
+  write: Promise<unknown>,
+  ledger: { intentIds: number[]; confirmedBy: number },
+): Promise<void> {
+  try {
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
+    const first = await Promise.race([
+      write.then(
+        () => "settled" as const,
+        () => "settled" as const,
+      ),
+      new Promise<"grace">((resolve) => {
+        graceTimer = setTimeout(() => resolve("grace"), OT_TIMED_OUT_WRITE_GRACE_MS);
+      }),
+    ]);
+    clearTimeout(graceTimer);
+    if (first === "settled") return;
+
+    // The old write is abandoned with its fate unknown. Fix round 1 (R-4-r): the risk entry is LIVE for the whole reset
+    // (until = ∞) and gets its TTL only when the reset SETTLES (success, failure or budget expiry) — a full-budget reset
+    // can no longer expire it before the STOP behind it runs. The STOP's read-only watch then runs TTL from the STOP.
+    sweepStaleWriteRisk();
+    const riskEntry: StaleWrite = {
+      until: Number.POSITIVE_INFINITY,
+      commandType: input.commandType,
+      idempotencyKey: input.idempotencyKey ?? null,
+      intentIds: ledger.intentIds,
+      confirmedBy: ledger.confirmedBy,
+      machineId: input.machineId ?? null,
+      writes: input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value })),
+    };
+    staleWriteRisk.set(input.adapterId, riskEntry);
+    // fix scan (1) — the reset gets ONE budget it honours itself (cooperative); the outer deadline adds only a slack.
+    const resetBoundMs = adapterSessionResetBoundMs(input.adapterId);
+    let resetError: string;
+    try {
+      const r = await withDeadline(
+        resetAdapterSession(input.adapterId, `timed-out write still pending after ${OT_TIMED_OUT_WRITE_GRACE_MS}ms grace (B3)`, resetBoundMs),
+        resetBoundMs + OT_SESSION_RESET_SLACK_MS,
+        `adapter ${input.adapterId} session reset`,
+      );
+      if (r.reset) {
+        console.warn(`[Dispatch] adapter ${input.adapterId}: timed-out write still pending after its grace — driver session reset via ${r.via} before the next command (B3)`);
+        return;
+      }
+      resetError = r.error ?? "session not reset";
+    } catch (err) {
+      resetError = (err as Error)?.message || String(err);
+    } finally {
+      // R-4-r — the reset has settled (any outcome): the risk window now counts from here.
+      riskEntry.until = Date.now() + OT_STALE_WRITE_RISK_TTL_MS;
+    }
+    console.error(
+      `[Dispatch] adapter ${input.adapterId}: overlapRisk — a timed-out write may still be running on the old session and its reset failed (${resetError}); the next command (a STOP) proceeds anyway (L-7, B3)`,
+    );
+    auditWriteOverlapRisk(input, ledger, { graceMs: OT_TIMED_OUT_WRITE_GRACE_MS, resetBoundMs, resetError });
+  } catch (err) {
+    console.error(`[Dispatch] adapter ${input.adapterId}: timed-out write slot hold failed (slot released):`, (err as Error)?.message || err);
+  }
+}
+
+/**
+ * doc 81 Đợt 4 Task B3 — ALERT-ONLY STOP watch (owner decision 2026-10-10, ruling R-4-q). After a STOP to an adapter
+ * whose earlier write was abandoned with its outcome unknown (staleWriteRisk), this watch READS the STOP's tags until the
+ * risk window ends. It NEVER writes to the device — no automatic re-assert exists.
+ *   • DETACHED: holds no queue slot, never delays the STOP's answer or any later command.
+ *   • Reads go through the SAME target the STOP used: the connection fingerprint and the driver object captured at the
+ *     STOP. If the adapter was reconfigured (fingerprint changed) or its driver replaced, nothing is read through the new
+ *     target: the same single critical alarm is raised (reason target_changed — "cannot verify, check manually").
+ *   • A newer command whose write to one of the STOP's tags is DISPATCHED releases that tag (releaseWatchedTags); no tag
+ *     left ⇒ the watch ends quietly (the operator's later intent owns those tags).
+ *   • A read that shows a value other than the STOP's, or a tag that cannot be read (read error, missing sample, adapter
+ *     offline) ⇒ ONE critical operator alarm per STOP (raiseStopUnverifiedAlarm) + audit "ot_stop_unverified" linked to
+ *     the ABANDONED command's ledger row (entityId = its intent id), then the watch ends.
+ * The window starts at the STOP and lasts OT_STALE_WRITE_RISK_TTL_MS (R-4-r). Reads per STOP ≤ (TTL / poll), each ≤ the
+ * command timeout. Never rejects.
+ */
+function startStopWatch(
+  input: DispatchInput,
+  stopDriver: OtDriver,
+  stopFingerprint: string | undefined,
+  writes: Array<{ tagKey: string; value: unknown }>,
+  readTags: OtTagAddress[],
+  timeoutMs: number,
+  ledger: { intentIds: number[]; confirmedBy: number },
+): void {
+  const token: StopWatch = { cancelled: false, tags: new Set(writes.map((w) => w.tagKey)) };
+  registerStopWatch(input.adapterId, token);
+  const risk = staleWriteRisk.get(input.adapterId);
+  // R-4-r — the watch window starts at the STOP and lasts OT_STALE_WRITE_RISK_TTL_MS (no risk ⇒ no window).
+  const end = risk ? Date.now() + OT_STALE_WRITE_RISK_TTL_MS : Date.now();
+  const abandoned = risk
+    ? { idempotencyKey: risk.idempotencyKey, intentIds: risk.intentIds, commandType: risk.commandType, confirmedBy: risk.confirmedBy, writes: risk.writes }
+    : null;
+  const stopRef = { idempotencyKey: input.idempotencyKey ?? null, intentIds: ledger.intentIds, commandType: input.commandType };
+  void (async () => {
+    try {
+      const tol = readbackFloatTolerance();
+      while (!token.cancelled && Date.now() < end) {
+        await new Promise((r) => setTimeout(r, OT_STOP_WATCH_POLL_MS));
+        if (token.cancelled) break;
+        // Same target as the STOP: a changed connection fingerprint (adapter reconfigured — or, on the legacy path, the adapter
+        // momentarily out of the active set during a reconnect) or a replaced driver ⇒ the ONE critical alarm "cannot verify —
+        // check manually" (reason target_changed), nothing read through another target, then the watch ends.
+        const fpNow = getActiveConnectionFingerprint(input.adapterId);
+        const drvNow = getActiveDriver(input.adapterId);
+        if (fpNow !== stopFingerprint || (drvNow !== undefined && drvNow !== stopDriver)) {
+          // Fix round 1 (R-4-s) — the STOP can no longer be verified on its own target: the same single critical alarm
+          // (nothing is read through the new target), then the watch ends.
+          raiseStopUnverifiedAlarm(input, ledger, abandoned, stopRef, [], readTags.filter((t) => token.tags.has(t.tagKey)).map((t) => t.tagKey), "target_changed");
+          break;
+        }
+        const tags = readTags.filter((t) => token.tags.has(t.tagKey));
+        if (tags.length === 0) break;
+        let samples: Array<{ tagKey: string; value: unknown }> | null = null;
+        if (drvNow) {
+          try {
+            const got = await withDeadline(Promise.resolve(stopDriver.readTags(tags)), timeoutMs, `adapter ${input.adapterId} STOP watch read`);
+            samples = Array.isArray(got) ? got : null;
+          } catch {
+            samples = null;
+          }
+        }
+        if (token.cancelled) break;
+        const drift: Array<{ tagKey: string; expected: unknown; actual: unknown; abandonedValueLanded: boolean }> = [];
+        const unread: string[] = [];
+        for (const t of tags) {
+          if (!token.tags.has(t.tagKey)) continue; // released by a newer command while we were reading
+          const s = samples?.find((x) => x.tagKey === t.tagKey);
+          const expected = writes.find((w) => w.tagKey === t.tagKey)?.value;
+          if (!s || s.value == null) unread.push(t.tagKey);
+          else if (!readbackMatches(expected, s.value, t.dataType, tol)) {
+            const old = abandoned?.writes.find((w) => w.tagKey === t.tagKey);
+            drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown, abandonedValueLanded: old != null && readbackMatches(old.value, s.value, t.dataType, tol) });
+          }
+        }
+        if (drift.length === 0 && unread.length === 0) continue;
+        // ONE alarm per STOP, then the watch is done (no spam). Nothing is written.
+        raiseStopUnverifiedAlarm(input, ledger, abandoned, stopRef, drift, unread);
+        break;
+      }
+    } catch (err) {
+      console.error(`[Dispatch] adapter ${input.adapterId}: STOP watch failed:`, (err as Error)?.message || err);
+    } finally {
+      token.cancelled = true;
+      unregisterStopWatch(input.adapterId, token);
+    }
+  })();
+}
+
+/**
+ * B3 alert-only — the CRITICAL operator alarm of an unverified STOP, through the existing paths:
+ *   • the unified alert stream: an `anomaly.detected` event with severity "critical" (NotificationCenter toasts critical
+ *     items even while the bell is snoozed — R-3c-a);
+ *   • the persisted inbox: an URGENT notification (counted while snoozed — R-3c-a) to the STOP's confirmer and the
+ *     abandoned command's confirmer;
+ *   • control_audit_log "ot_stop_unverified" on the ABANDONED command (entityId = its intent row).
+ * Fire-and-forget, bounded; never throws, never writes to a device.
+ */
+function raiseStopUnverifiedAlarm(
+  input: DispatchInput,
+  stopLedger: { intentIds: number[]; confirmedBy: number },
+  abandoned: { idempotencyKey: string | null; intentIds: number[]; commandType: string; confirmedBy: number } | null,
+  stopRef: { idempotencyKey: string | null; intentIds: number[]; commandType: string },
+  drift: Array<{ tagKey: string; expected: unknown; actual: unknown; abandonedValueLanded: boolean }>,
+  unread: string[],
+  reason: "drift" | "unreadable" | "target_changed" = drift.length > 0 ? "drift" : "unreadable",
+): void {
+  const tags = [...drift.map((d) => d.tagKey), ...unread];
+  const what =
+    reason === "target_changed"
+      ? `cannot be verified — the adapter's connection changed after the STOP (reconfigured, reconnecting or driver replaced); check manually (${unread.join(", ")})`
+      : drift.length > 0
+        ? `reads back a value other than the STOP's on ${drift.map((d) => d.tagKey).join(", ")}`
+        : `cannot be read back (${unread.join(", ")})`;
+  const message =
+    `STOP on adapter ${input.adapterId} ${what} after an earlier command timed out with an unknown outcome — ` +
+    `the device may have been re-energised. Check the equipment on site now. Nothing was re-sent automatically.`;
+  console.error(`[Dispatch] CRITICAL: ${message}`);
+  // Fix round 1 (R-4-s #6) — a SYSTEM observation: actor = system (null); the abandoned command's confirmer is in the detail.
+  const detail = {
+    reason,
+    drift,
+    unread,
+    stop: stopRef,
+    abandonedWrite: abandoned ? { idempotencyKey: abandoned.idempotencyKey, intentIds: abandoned.intentIds, commandType: abandoned.commandType, confirmedBy: abandoned.confirmedBy } : null,
+  };
+  auditOtEvent(
+    abandoned ? { ...input, commandType: abandoned.commandType, idempotencyKey: abandoned.idempotencyKey ?? input.idempotencyKey } : input,
+    abandoned ? { intentIds: abandoned.intentIds, confirmedBy: abandoned.confirmedBy } : stopLedger,
+    "ot_stop_unverified",
+    detail,
+    "B3 alert-only (R-4-q): after a STOP that followed a timed-out write, the STOP value could not be confirmed — operator alarm raised, nothing written",
+    null,
+  );
+  const recipients = [...new Set([stopLedger.confirmedBy, abandoned?.confirmedBy].filter((u): u is number => typeof u === "number" && u > 0))];
+  const work = (async () => {
+    // Dynamic imports: the ecosystem/notification modules pull in heavy graphs (and would form static cycles).
+    const { publishAnomalyDetected } = await import("../ecosystem/ecosystemEvents");
+    publishAnomalyDetected(
+      { kind: "ot_stop_unverified", severity: "critical", source: "ot", machineId: input.machineId ?? null, message: `STOP not confirmed on adapter ${input.adapterId} (${tags.join(", ")})` },
+      "ot",
+    );
+    const { sendNotification } = await import("../notificationService");
+    for (const userId of recipients) {
+      await sendNotification(userId, {
+        type: "ALERT",
+        priority: "URGENT",
+        title: `STOP not confirmed — adapter ${input.adapterId}`,
+        message,
+        entityType: "ot_command",
+        entityId: abandoned?.intentIds[0] ?? stopLedger.intentIds[0],
+        metadata: detail,
+      });
+    }
+  })();
+  void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, "ot_stop_unverified notification").catch((err) => {
+    console.error(`[Dispatch] ot_stop_unverified notification failed or is stuck:`, (err as Error)?.message || err);
+  });
+}
+
+/** B3 — control_audit_log "ot_write_overlap_risk", fire-and-forget under a deadline (never holds the queue). */
+function auditWriteOverlapRisk(
+  input: DispatchInput,
+  ledger: { intentIds: number[]; confirmedBy: number },
+  detail: { graceMs: number; resetBoundMs: number; resetError: string },
+): void {
+  auditOtEvent(
+    input,
+    ledger,
+    "ot_write_overlap_risk",
+    { overlapRisk: true, ...detail },
+    "B3 (QĐ-4b): a timed-out write was still pending after its grace and the driver session could not be reset in time — the next command proceeded (L-7: a STOP is never held indefinitely)",
+  );
+}
+
+/** B3 — the audit module, imported ONCE (dynamic: avoids a static cycle) and shared by every B3 audit row. */
+let controlAuditModule: Promise<typeof import("../audit/controlAuditService")> | undefined;
+function loadControlAudit(): Promise<typeof import("../audit/controlAuditService")> {
+  controlAuditModule ??= import("../audit/controlAuditService");
+  return controlAuditModule;
+}
+
+/** B3 — one control_audit_log row about an OT command, fire-and-forget under a deadline (never holds anything). */
+function auditOtEvent(
+  input: DispatchInput,
+  ledger: { intentIds: number[]; confirmedBy: number },
+  action: string,
+  detail: Record<string, unknown>,
+  reason: string,
+  /** actorId of the row; default = the ledger's confirmer. null = system (fix round 1, R-4-s #6). */
+  actorId: number | null = ledger.confirmedBy,
+): void {
+  const work = (async () => {
+    const db = await getDb();
+    if (!db) {
+      console.error(`[Dispatch] audit ${action} skipped for adapter ${input.adapterId} — no DB`);
+      return;
+    }
+    const { recordAuditEvent } = await loadControlAudit();
+    await recordAuditEvent(db, {
+      entityType: "ot_command",
+      entityId: ledger.intentIds[0] ?? input.idempotencyKey ?? "unrecorded",
+      action,
+      actorId,
+      after: {
+        adapterId: input.adapterId,
+        machineId: input.machineId ?? null,
+        commandType: input.commandType,
+        idempotencyKey: input.idempotencyKey ?? null,
+        ...detail,
+      },
+      reason,
+    });
+  })();
+  void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, `${action} audit`).catch((err) => {
+    console.error(`[Dispatch] audit ${action} failed or is stuck for adapter ${input.adapterId}:`, (err as Error)?.message || err);
+  });
 }
 
 /** Upper bound after which a still-pending pinned-stop override audit is logged as stuck (never awaited by the stop). */
@@ -1551,6 +2103,8 @@ function verifyActionBinding(
   pending: AiPendingAction | undefined,
   input: DispatchInput,
   t: HitlTrigger,
+  /** doc 81 Đợt 4 Task A5 — true ⇔ the dispatcher classified THIS command as a PINNED stop (data-verified). */
+  opts: { pinnedStop?: boolean } = {},
 ): BindingVerdict {
   if (!pending) return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action not found" };
   if (pending.status !== "confirmed") {
@@ -1572,6 +2126,12 @@ function verifyActionBinding(
       reason: "ACTION_BINDING_MISMATCH",
       detail: `HITL action was created for tool '${pending.tool}', command claims '${t.tool ?? "(none)"}'`,
     };
+  }
+  // doc 81 Đợt 4 Task A5 (R-4-a, defence in depth) — an orchestration-engine action must be confirmed by the
+  // approver of an earlier hitl_gate, never by the run owner. A PINNED stop is exempt (L-7: a stop is never blocked).
+  if (opts.pinnedStop !== true) {
+    const self = foeSelfApprovalRefusal(pending, t.requestedBy);
+    if (self) return { ok: false, reason: "NOT_CONFIRMED", detail: self };
   }
   const stored = readOtPayloadHash(pending.previewJson);
   if (!stored) {
@@ -1630,6 +2190,8 @@ async function reserveRealWrite(
     bindingInput?: DispatchInput;
     /** Extra ackValue fields on the intent rows (pinned stop metadata). */
     ledgerExtra?: Record<string, unknown>;
+    /** doc 81 Đợt 4 Task A5 — this command is a PINNED stop (stopCls.pinnedStop): exempt from the engine-self-approval refusal. */
+    pinnedStop?: boolean;
   } = {},
 ): Promise<Reservation> {
   const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
@@ -1670,7 +2232,14 @@ async function reserveRealWrite(
             .from(aiPendingActions)
             .where(eq(aiPendingActions.id, t.actionId))
             .for("update");
-          verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t);
+          verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t, { pinnedStop: opts.pinnedStop === true });
+          // doc 81 Đợt 4 fix round 1 (R-4-i) — an orchestration-engine action: re-derive the run owner and the gate
+          // approver from the DB rows (run + gate + workflow) under this transaction; previewJson only points at the run.
+          // A PINNED stop is exempt (L-7).
+          if (verdict.ok && pending?.tool === FOE_ENGINE_TOOL && opts.pinnedStop !== true) {
+            const refusal = await foeApprovalDbRefusal(tx, pending, t.requestedBy);
+            if (refusal) verdict = { ok: false, reason: "NOT_CONFIRMED", detail: refusal };
+          }
           if (verdict.ok) {
             const consumed = await tx
               .update(aiPendingActions)

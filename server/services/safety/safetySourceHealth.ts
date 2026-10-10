@@ -38,9 +38,12 @@ import {
   effectiveBackend,
   isOtSafetyPreflightEnabled,
   isRobotSafetyPreflightEnabled,
+  plcConfigAppliesToTargets,
   type EffectivePlcBackend,
   type SafetyPreflightReason,
+  type SafetyTarget,
 } from "../ot/safetyPreflightPolicy";
+import { resolveSafetyTargets, type SafetyTargetRef } from "../ot/safetyTarget";
 import { isOtControlEnabled } from "../ot/commandDispatcher";
 import { isRobotControlEnabled } from "../robot/robotCommandDispatcher"; // final wave item 5 — cùng vị từ với cổng bước 4
 import { getIO } from "../../_core/socket";
@@ -57,6 +60,10 @@ export interface PlcConfigLite {
   statusMap: SafetyPlcStatusMap | null;
   factoryId: number | null;
   scope: string | null;
+  /** doc 81 Đợt 4 Task A1 — target columns, read by the SAME matcher as the gate (optional: absent = null). */
+  robotId?: number | null;
+  stationId?: number | null;
+  lineId?: number | null;
 }
 
 export interface SourceHealthSnapshot {
@@ -75,6 +82,11 @@ export interface SourceHealthSnapshot {
   plcConfigsEnabled: PlcConfigLite[];
   /** 'error' khi không đọc được bảng cấu hình (getSafetyStatus khi đó cũng trả UNKNOWN). */
   plcRead: "ok" | "error";
+  /**
+   * doc 81 Đợt 4 Task A1 / fix round 1 (R-4-d) — the command targets the prediction is for (resolveSafetyTargets, the gate's own
+   * resolver). Absent / null = no target or not resolvable ⇒ every enabled config, exactly as the gate does.
+   */
+  targets?: readonly SafetyTarget[] | null;
   /** null = người xem toàn quyền. */
   visibleFactoryIds: number[] | null;
   zones: Array<{ factoryId: number | null }>;
@@ -107,8 +119,9 @@ export { effectiveBackend, type EffectivePlcBackend };
  *   blocked     — preflight không thể ra OK ⇒ lệnh thật bị từ chối (refusalReason: SAFETY_UNKNOWN khi
  *                 không có nguồn; SAFETY_SIM_ONLY khi chỉ có SIM / real_unmapped — Đợt 1C Task 1).
  *   real_basis  — có ≥1 PLC thật có gán tag: OK/BLOCKED theo phần cứng; BẤT KỲ PLC thật nào không đọc
- *                 được hoặc có tag chất lượng xấu ⇒ chặn SAFETY_UNKNOWN lúc chạy (fix round 1, R-1C-b:
- *                 cấu hình chưa theo máy đích ⇒ một PLC thật offline chặn MỌI lệnh thật — CÒN MỞ).
+ *                 được hoặc có tag chất lượng xấu ⇒ chặn SAFETY_UNKNOWN lúc chạy (fix round 1, R-1C-b).
+ *                 doc 81 Đợt 4 Task A1: cổng chỉ đọc cấu hình của ĐÍCH (+ cấu hình không gắn đích); bảng
+ *                 không có đích (gọi không targetRef) dự đoán cho đích không phân giải được = mọi cấu hình.
  *                 SIM bên cạnh KHÔNG được tính.
  * (Đợt 1C Task 1 bỏ sim_basis / unmapped_basis / sim_can_satisfy: SIM không còn thoả được preflight.)
  */
@@ -192,7 +205,8 @@ function planeVerdict(
 }
 
 export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySourceHealth {
-  const configs = s.plcRead === "ok" ? s.plcConfigsEnabled : [];
+  // doc 81 Đợt 4 Task A1 — the SAME matcher the gate applies (plcConfigAppliesToTarget), never a copy.
+  const configs = s.plcRead === "ok" ? s.plcConfigsEnabled.filter((c) => plcConfigAppliesToTargets(c, s.targets ?? null)) : [];
   const kinds = configs.map((c) => effectiveBackend(c));
   const count = (k: EffectivePlcBackend) => kinds.filter((x) => x === k).length;
   const simScriptedConfigs = count("sim_scripted");
@@ -297,7 +311,7 @@ export function docCoDangBat(): SourceHealthSnapshot["flags"] {
  * Nạp ảnh chụp cho người xem `viewer` rồi tính. Mọi lỗi đọc đều thành trạng thái trung thực
  * (plcRead='error', 0 zone/camera) — không ném, không bịa.
  */
-export async function loadSafetySourceHealth(viewer: PhamViNguoiXem): Promise<SafetySourceHealth> {
+export async function loadSafetySourceHealth(viewer: PhamViNguoiXem, targetRef?: SafetyTargetRef): Promise<SafetySourceHealth> {
   // Cùng đọc như safetyPlcAdapter.listPlcConfigs({ onlyEnabled: true }) — tập getSafetyStatus đọc.
   let plcConfigsEnabled: PlcConfigLite[] = [];
   let plcRead: "ok" | "error" = "ok";
@@ -315,6 +329,9 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem): Promise<Sa
           statusMap: safetyPlcConfigs.statusMap,
           factoryId: safetyPlcConfigs.factoryId,
           scope: safetyPlcConfigs.scope,
+          robotId: safetyPlcConfigs.robotId,
+          stationId: safetyPlcConfigs.stationId,
+          lineId: safetyPlcConfigs.lineId,
         })
         .from(safetyPlcConfigs)
         .where(eq(safetyPlcConfigs.enabled, true))
@@ -337,11 +354,15 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem): Promise<Sa
   // Fix round 1 #3 — NEVER health() per request (a registered vendor adapter would read the PLC).
   const estopAdapter = getSafetyPlcAdapter();
 
+  // doc 81 Đợt 4 Task A1 — the gate's own resolver; no ref (today's panel) ⇒ null ⇒ every config.
+  const targets = targetRef ? await resolveSafetyTargets(targetRef) : null;
+
   return computeSafetySourceHealth({
     checkedAt: new Date().toISOString(),
     flags: docCoDangBat(),
     plcConfigsEnabled,
     plcRead,
+    targets,
     visibleFactoryIds,
     zones: zones.map((z) => ({ factoryId: z.factoryId ?? null })),
     calibrations: calibrations.map((c) => ({ factoryId: c.factoryId ?? null })),

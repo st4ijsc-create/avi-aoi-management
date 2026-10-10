@@ -57,6 +57,7 @@ import {
   orchestrationRunSteps,
   orchestrationWorkflows,
   machines,
+  deviceAdapters,
 } from "../../../../drizzle/schema";
 import { deployWorkflow, startRun, resumeRun, abortRun, rollbackWorkflow } from "./foeEngine";
 import type { WorkflowDefinition } from "./workflowModel";
@@ -66,6 +67,18 @@ const ENGINEER_B = { id: 11, role: "engineer", name: "eng-b" };
 const SUP = { id: 12, role: "supervisor", name: "sup-a" };
 const SUP_B = { id: 14, role: "supervisor", name: "sup-b" };
 const ADMIN = { id: 13, role: "admin", name: "admin" };
+/**
+ * doc 81 Đợt 4 Task A5 (QĐ-4a option (a)) — a command step runs only after an earlier hitl_gate approved by someone
+ * other than the run owner. Tests whose subject is NOT the gate put `gate0` first; SUP approves it.
+ */
+function withGate0(def: WorkflowDefinition): WorkflowDefinition {
+  return { ...def, steps: [{ id: "gate0", type: "hitl_gate", prompt: "Approve the run" }, ...def.steps] };
+}
+async function startApproved(ref: string, starter = ENGINEER, approver = SUP) {
+  const r = await startRun(ref, {}, starter);
+  expect(r.status).toBe("awaiting_confirm");
+  return resumeRun(r.runId!, { approved: true }, approver);
+}
 
 type Row = Record<string, any>;
 function runRows(): Row[] {
@@ -100,6 +113,8 @@ beforeEach(() => {
   fake.seed(machines, [
     { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "Auto-1", operationStatus: "stopped", stationId: 1 },
   ]);
+  // doc 81 Đợt 4 fix round 1 (R-4-d): an OT step writes through the adapter BOUND to its machine (no more adapterId = machineId).
+  fake.seed(deviceAdapters, [{ id: 501, machineId: 1, isEnabled: true }]);
   otDispatchMock.mockClear();
   robotDispatchMock.mockClear();
   auditMock.mockClear();
@@ -122,10 +137,12 @@ describe("ORC-01 — abort dừng run ĐANG CHẠY", () => {
         { id: "b", type: "command", machineId: 1, command: "stop" },
       ],
     };
-    expect((await deployWorkflow(def, ENGINEER)).ok).toBe(true);
+    expect((await deployWorkflow(withGate0(def), ENGINEER)).ok).toBe(true);
 
+    const started = await startRun("abort-delay", {}, ENGINEER); // Đợt 4 A5: pauses at gate0
+    expect(started.status).toBe("awaiting_confirm");
     const t0 = Date.now();
-    const pending = startRun("abort-delay", {}, ENGINEER);
+    const pending = resumeRun(started.runId!, { approved: true }, SUP);
     await waitFor(() => runRows().length === 1 && stepRow(runRows()[0].id, "d")?.status === "running");
     const runId = runRows()[0].id as number;
     expect(dispatched()).toEqual(["start"]);
@@ -190,13 +207,13 @@ describe("ORC-01 — abort dừng run ĐANG CHẠY", () => {
       name: "AbortElsewhere",
       steps: [{ id: "a", type: "command", machineId: 1, command: "start" }],
     };
-    expect((await deployWorkflow(def, ENGINEER)).ok).toBe(true);
+    expect((await deployWorkflow(withGate0(def), ENGINEER)).ok).toBe(true);
     // Trong lúc bước 'a' đang dispatch, một instance khác ghi DB `aborted`.
     otDispatchMock.mockImplementationOnce(async () => {
       for (const r of runRows()) r.status = "aborted";
       return { ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] };
     });
-    const res = await startRun("abort-elsewhere", {}, ENGINEER);
+    const res = await startApproved("abort-elsewhere"); // Đợt 4 A5
     const runId = res.runId!;
     expect(runRow(runId).status).toBe("aborted");
     expect(res.status).toBe("aborted");
@@ -208,8 +225,8 @@ describe("ORC-01 — abort dừng run ĐANG CHẠY", () => {
       name: "AbortDone",
       steps: [{ id: "a", type: "command", machineId: 1, command: "start" }],
     };
-    await deployWorkflow(def, ENGINEER);
-    const res = await startRun("abort-done", {}, ENGINEER);
+    await deployWorkflow(withGate0(def), ENGINEER);
+    const res = await startApproved("abort-done"); // Đợt 4 A5
     expect(res.status).toBe("completed");
     const ab = await abortRun(res.runId!, SUP);
     expect(ab.ok).toBe(false);
@@ -391,11 +408,11 @@ describe("ORC-06 — workflow draft phải qua deploy mới chạy", () => {
     expect(runRows()).toHaveLength(0);
     expect(dispatched()).toEqual([]);
 
-    const dep = await deployWorkflow(def, ENGINEER);
+    const dep = await deployWorkflow(withGate0(def), ENGINEER); // Đợt 4 A5
     expect(dep.ok).toBe(true);
     const wf = (fake.store.get("orchestration_workflows") ?? []).find((w) => w.ref === "dup-copy");
     expect(wf?.status).toBe("active");
-    const res2 = await startRun("dup-copy", {}, ENGINEER);
+    const res2 = await startApproved("dup-copy");
     expect(res2.status).toBe("completed");
     expect(dispatched()).toEqual(["start"]);
   });
