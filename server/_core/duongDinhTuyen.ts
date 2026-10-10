@@ -38,14 +38,17 @@ function napParseurlMacDinh(): ParseUrl {
 }
 let parseurlCache: ParseUrl | null = null;
 function napParseurl(loader: () => ParseUrl): void {
+  let p: ParseUrl | null = null;
+  let why = "parseurl.original is not a function";
   try {
-    const p = loader();
-    if (!p || typeof p.original !== "function") throw new Error("parseurl.original is not a function");
-    parseurlCache = p;
+    p = loader();
   } catch (err) {
-    parseurlCache = null;
+    why = String((err as Error)?.message ?? err);
+  }
+  parseurlCache = p && typeof p.original === "function" ? p : null;
+  if (!parseurlCache) {
     console.error(
-      `[duongDinhTuyen] parseurl (Express's own URL parser) could not be loaded — every request path is classified as a protected API path until restart (fail closed): ${(err as Error)?.message ?? err}`,
+      `[duongDinhTuyen] parseurl (Express's own URL parser) could not be loaded — every request path is classified as a protected API path until restart (fail closed): ${why}`,
     );
   }
 }

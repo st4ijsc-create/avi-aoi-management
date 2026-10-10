@@ -204,6 +204,20 @@ describe("final wave F6 — parseurl load failure fails CLOSED", () => {
     expect(mod.duongDinhTuyen({ originalUrl: "/API/trpc/x?y=1", url: "/API/trpc/x?y=1" })).toBe("/api/trpc/x");
   });
 
+  it("a loaded module WITHOUT parseurl.original counts as a load failure (said loudly, fail closed)", async () => {
+    const mod = await import("./duongDinhTuyen");
+    const errors: string[] = [];
+    const errSpy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void errors.push(a.join(" ")));
+    try {
+      mod.__napParseurlChoTest(() => ({}) as never);
+      expect(errors.join(" | ")).toMatch(/could not be loaded.*parseurl\.original is not a function/);
+      expect(mod.duongDinhTuyen({ originalUrl: "http://x/api/ot/ingest", url: "http://x/api/ot/ingest" })).toBe(mod.DUONG_KHONG_XAC_DINH);
+    } finally {
+      mod.__napParseurlChoTest(null);
+      errSpy.mockRestore();
+    }
+  });
+
   it("★ parseurl loaded but it THROWS / answers no pathname for a request ⇒ the same fail-closed protected API path (no raw cut)", async () => {
     const mod = await import("./duongDinhTuyen");
     try {

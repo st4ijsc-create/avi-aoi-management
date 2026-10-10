@@ -223,9 +223,14 @@ export interface ExecuteAssignedResult {
  */
 async function startingPrincipal(startedBy: number | null | undefined): Promise<{ id: number; role: string } | null> {
   if (typeof startedBy !== "number" || !Number.isInteger(startedBy) || startedBy <= 0) return null;
-  const [{ getDb }, { users }, { eq }] = await Promise.all([import("../../db/connection"), import("../../../drizzle/schema"), import("drizzle-orm")]);
+  const [{ getDb }, { users }, { eq }, { DbUnavailableError }] = await Promise.all([
+    import("../../db/connection"),
+    import("../../../drizzle/schema"),
+    import("drizzle-orm"),
+    import("../../_core/dbErrors"),
+  ]);
   const d = await getDb();
-  if (!d) throw new Error("DB unavailable — the starting principal cannot be resolved");
+  if (!d) throw new DbUnavailableError(); // the caller's fail-safe path records a failed run
   const [u] = await d.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, startedBy)).limit(1);
   if (!u || u.isActive === false || typeof u.role !== "string" || !u.role) return null;
   return { id: u.id, role: u.role };
@@ -265,7 +270,9 @@ export async function executeAssignedRun(run: AssignedRun): Promise<ExecuteAssig
       // role; none ⇒ not started (fail-closed), recorded as a failed run below.
       const principal = await startingPrincipal(run.startedBy);
       if (!principal) {
-        throw new Error(`Run ${run.id} has no active starting principal — not started on the edge (its factory scope cannot be established).`);
+        const message = `Run ${run.id} has no active starting principal — not started on the edge (its factory scope cannot be established).`;
+        await bufferPayload(minimalPayload(run.id, "failed", message)).catch(() => undefined);
+        return { ok: false, enabled: true, runId: run.id, status: "failed", buffered: true, message };
       }
       const user = { id: principal.id, role: principal.role, name: nodeCode() };
       const res = await startRun(run.workflowRef, (run.paramsJson ?? {}) as Record<string, unknown>, user);
