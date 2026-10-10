@@ -361,6 +361,34 @@ describe("B4 — motion lock survives a restart (robot_motion_locks, _test)", ()
     expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "line_reply_timeout" });
   }, 15_000);
 
+  it("★ final wave G5 (NEW-1): wall clock STEPPED BACK after a persistUnknown boot — the new lock row is clamped to the boot instant, a late persistUnknown DELETE cannot erase it", async () => {
+    await stopRobots();
+    H.getDbFault = "throw";
+    await startRobots();
+    await _flushMotionLockWritesForTests(); // load + persistUnknown upsert both fail (DB "down")
+    H.getDbFault = null;
+    const boot = new Date(current().getMotionLock().since!);
+    expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "persistUnknown", generation: 1 });
+    const release = holdNextDbCall(); // the STOP's persistUnknown DELETE (generation <= 1 OR lockedAt < boot) is held
+    expect((await dispatchRobotJob(STOP)).status).toBe("done");
+    await new Promise((r) => setTimeout(r, MOTION_LOCK_DB_DEADLINE_MS + 200)); // the delete step times out, the chain moves on
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(boot.getTime() - 60 * 60_000)); // NTP / manual set: the clock jumps back one hour
+      current().lockMotion("line_reply_timeout"); // generation 2, since = stepped-back wall clock (< boot)
+    } finally {
+      vi.useRealTimers();
+    }
+    await _flushMotionLockWritesForTests();
+    const fresh = (await row())!;
+    expect(fresh).toMatchObject({ reasonCode: "line_reply_timeout", generation: 2 });
+    expect(new Date(fresh.lockedAt).getTime()).toBeGreaterThanOrEqual(boot.getTime()); // clamped, never sorts before the boot
+    await release(); // the stale DELETE lands now
+    expect(await row()).toMatchObject({ reasonCode: "line_reply_timeout", generation: 2 });
+    await restart();
+    expect(current().getMotionLock()).toMatchObject({ locked: true, reasonCode: "line_reply_timeout" });
+  }, 15_000);
+
   it("★ fix 2 (R-4-t): the persistUnknown lock's OWN row (lockedAt = boot) is removed by its clear via the generation guard", async () => {
     current().lockMotion("line_connection_closed");
     await _flushMotionLockWritesForTests();

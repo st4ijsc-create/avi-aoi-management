@@ -14,11 +14,16 @@
  *   • a clear of a `persistUnknown` lock (boot instant B = its `since`) deletes `generation <= g OR lockedAt < B` (strict);
  *   • the lock upsert replaces only `generation <= g OR lockedAt < B` (B only after a `persistUnknown` boot), so the first
  *     lock after boot always replaces a pre-boot row.
- * A late delete therefore never matches a NEWER lock's row (higher generation, lockedAt ≥ B): a timed-out write can at
- * worst leave a restart LOCKED (fail-closed), never unlocked. There is no unconditional delete.
+ * A late DELETE therefore never matches a NEWER lock's row (higher generation, lockedAt ≥ B — clamped to B if the wall
+ * clock stepped back after boot, final wave G5): a late delete can at worst leave a restart LOCKED (fail-closed), never
+ * unlocked. There is no unconditional delete.
+ * RESIDUAL (final wave G6, stated plainly): a lock whose UPSERT never lands — the DB is down past the deadline, or the
+ * process exits before the write reaches Postgres — leaves NO row, so the NEXT restart starts UNLOCKED for that lock.
+ * That is the "failed write is LOGGED" case above (`not persisted` in the log); this store does not retry it.
  */
 import { and, eq, inArray, lt, lte, or } from "drizzle-orm";
 import { getDb } from "../../db/connection";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { robotMotionLocks } from "../../../drizzle/schema";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, type MotionLock, type MotionLockState } from "./robotDriver";
@@ -60,13 +65,13 @@ function enqueue(robotId: number, what: string, work: () => Promise<void>): Prom
 export function persistMotionLock(robotId: number, state: MotionLockState): Promise<void> {
   return enqueue(robotId, "upsert", async () => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable (getDb returned null)");
+    if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
     const row = {
       robotId,
       reasonCode: String(state.reasonCode ?? "unknown").slice(0, REASON_MAX),
       detail: state.detail != null ? String(state.detail).slice(0, DETAIL_MAX) : null,
       generation: Math.max(1, state.generation ?? 1),
-      lockedAt: state.since ? new Date(state.since) : new Date(),
+      lockedAt: clampToBoot(state.since ? new Date(state.since) : new Date(), bootSinceByRobot.get(robotId)),
     };
     await db
       .insert(robotMotionLocks)
@@ -78,6 +83,16 @@ export function persistMotionLock(robotId: number, state: MotionLockState): Prom
         setWhere: supersededBy(row.generation, bootSinceByRobot.get(robotId)),
       });
   });
+}
+
+/**
+ * Final wave G5 (re-review 2 NEW-1) — a lock row written after a `persistUnknown` boot never sorts BEFORE the boot instant.
+ * The `lockedAt < boot` branch compares two wall-clock readings; if the clock steps back after boot (NTP/w32time, manual
+ * set), a newer lock would otherwise be stamped `< boot` and a late persistUnknown DELETE could erase it. Clamped to `boot`
+ * it survives (the branch is strict). Only the persisted row is clamped; the in-memory `since` is unchanged.
+ */
+function clampToBoot(at: Date, boot: Date | undefined): Date {
+  return boot && !(at.getTime() >= boot.getTime()) ? new Date(boot.getTime()) : at;
 }
 
 /** R-4-t — the rows a write for generation `g` (and, after a `persistUnknown` boot, boot instant `boot`) supersedes. */
@@ -93,7 +108,7 @@ function supersededBy(g: number, boot: Date | undefined) {
 export function deleteMotionLock(robotId: number, generation: number, bootSince?: Date): Promise<void> {
   return enqueue(robotId, "delete", async () => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable (getDb returned null)");
+    if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
     await db.delete(robotMotionLocks).where(and(eq(robotMotionLocks.robotId, robotId), supersededBy(generation, bootSince)));
   });
 }
@@ -116,7 +131,7 @@ export async function loadMotionLocks(robotIds: number[]): Promise<MotionLockLoa
   try {
     const read = (async () => {
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable (getDb returned null)");
+      if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
       return db.select().from(robotMotionLocks).where(inArray(robotMotionLocks.robotId, robotIds));
     })();
     const rows = await withDeadline(read, MOTION_LOCK_DB_DEADLINE_MS, `motion lock load (${robotIds.length} robot(s))`);

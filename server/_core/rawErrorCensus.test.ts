@@ -127,8 +127,15 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   `throw new Error("Recipe chưa được trình duyệt (second-approver) …")`) bị GỠ theo quyết định chủ
  *   dự án — ba caller của nó nay đi cổng chặt `assertRecipeReleasable` (appError PRECONDITION_FAILED
  *   có reason). Không thêm chỗ ném thô nào; không tệp nào khác đổi số. 464 − 1 = **463**.
+ *
+ * 463 → **462** (2026-10-10, doc 81 Đợt 4 final wave F1): ĐO trên cây làm việc sau vá ra **462**.
+ *   HEAD `e2892999e` đo ra **465** (cổng ĐỎ ×4): Task B4 thêm 3 chỗ `throw new Error("DB unavailable
+ *   (getDb returned null)")` ở `services/robot/robotMotionLockStore.ts` (họ "DB không sẵn sàng" — bất
+ *   biến 0 bị phá), Task B1 gỡ 1 chỗ ném thô ở `vda5050Adapter` (order gửi một lần). Cả 3 chỗ B4 nay ném
+ *   `DbUnavailableError` (đúng lớp của họ đã đóng; bị bắt + ghi log trong chuỗi ghi của store / thành
+ *   `ok:false` ⇒ khởi động `persistUnknown` — hành vi không đổi). 465 − 3 = **462**, không dư một đơn vị.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 463;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 462;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.
