@@ -35,10 +35,12 @@ describe("M2 — validateMachinePayload KHÔNG ném khi cờ mốc gói BẬT", 
     }).not.toThrow();
     expect(r!.ok).toBe(false);
     expect(r!.version).toBe("2.0");
-    expect(r!.errors).toHaveLength(1);
-    expect(r!.errors![0].path).toMatch(/startedAt|completedAt/);
-    expect(r!.errors![0].message).toContain("time_offset_required");
-    expect(r!.errors![0].message).not.toMatch(ENV_VAR_RE);
+    // doc 81 Đợt 4 C4 — chế độ chỉ kiểm báo ĐỦ mọi mốc trần (trước: dừng ở cái đầu tiên), mỗi cái đúng đường dẫn.
+    expect(r!.errors!.map((e) => e.path).sort()).toEqual(["completedAt", "startedAt"]);
+    for (const e of r!.errors!) {
+      expect(e.message).toContain("time_offset_required");
+      expect(e.message).not.toMatch(ENV_VAR_RE);
+    }
   });
 
   it("cờ BẬT + mốc CÓ múi giờ ⇒ ok:true; cờ TẮT (mặc định) + mốc trần ⇒ ok:true như cũ", () => {
