@@ -73,6 +73,17 @@ export const ORIGIN_CHECK_EXEMPT_PREFIXES: readonly string[] = [
   "/api/csp-report",
 ];
 
+/**
+ * doc 81 Đợt 5 task G5 (item 21) — đường MIỄN theo ĐÚNG NGUYÊN VĂN (so `===`, không prefix):
+ *   /api/saml/acs — SAML 2.0 HTTP-POST binding: trình duyệt của người dùng tự POST form từ trang IdP (khác
+ *                   site) về ACS, nên Origin LUÔN là IdP (hoặc "null"). Kiểm soát ở đây là CHỮ KÝ của
+ *                   assertion (samlProvider.ts), không phải cookie ambient ⇒ origin-check vô nghĩa và ở
+ *                   `enforce` nó làm hỏng SSO. Chỉ đúng đường này: không anh em (`/api/saml/login`…), không
+ *                   đường con, không biến thể `/api/saml/acs/` — thêm IdP vào ALLOWED_ORIGINS thay vào đó sẽ
+ *                   nới cả CORS.
+ */
+export const ORIGIN_CHECK_EXEMPT_EXACT_PATHS: readonly string[] = ["/api/saml/acs"];
+
 const PROTECTED_PREFIXES = ["/api/", "/trpc/"];
 
 export interface OriginCheckConfig {
@@ -123,7 +134,7 @@ export function evaluateOrigin(
   if (!PROTECTED_PREFIXES.some((x) => p.startsWith(x))) {
     return { allowed: true, reason: "not_api_path" };
   }
-  if (ORIGIN_CHECK_EXEMPT_PREFIXES.some((x) => p.startsWith(x))) {
+  if (ORIGIN_CHECK_EXEMPT_PREFIXES.some((x) => p.startsWith(x)) || ORIGIN_CHECK_EXEMPT_EXACT_PATHS.includes(p)) {
     return { allowed: true, reason: "exempt_path" };
   }
 
