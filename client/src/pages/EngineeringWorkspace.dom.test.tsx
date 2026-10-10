@@ -86,6 +86,8 @@ vi.mock("@/lib/trpc", () => ({
                   mutate: (...args: unknown[]) => { (mutateCalls[key] ??= []).push(args[0]); },
                   // Promise thật: CodeEditor (inline copilot) gọi `.then` khi đã nạp một phiên bản.
                   mutateAsync: vi.fn(() => Promise.resolve(undefined)),
+                  // doc 81 Đợt 4 C5 — trang gọi deployToFleet.reset() khi đổi dự án (react-query luôn có reset).
+                  reset: vi.fn(),
                   isPending: false,
                 }),
               };

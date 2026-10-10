@@ -77,6 +77,14 @@ const mutateCalls: Record<string, unknown[]> = {};
 const mutationResponses: Record<string, ((vars: any) => unknown) | undefined> = {};
 /** `.data` của mutation (vd deployToFleet ⇒ fleetResult). */
 const mutationData: Record<string, unknown> = {};
+/** doc 81 Đợt 4 C5 — vòng đời `.data` như react-query v5: `.data` chỉ CÓ sau onSuccess của lượt gọi; `reset()` xoá nó và
+ *  TÁCH lượt đang bay (kết quả về sau reset vẫn chạy onSuccess — toast — nhưng KHÔNG đặt lại `.data`). */
+const mutationLive: Record<string, unknown> = {};
+const mutationGen: Record<string, number> = {};
+const mutationResets: Record<string, number> = {};
+function datData(key: string, g: number) {
+  if ((mutationGen[key] ?? 0) === g && key in mutationData) mutationLive[key] = mutationData[key];
+}
 /** doc 81 Đợt 2 Task 12b — mutation HOÃN: onSuccess chỉ chạy khi lưới gọi `xaHoan(key)` (đua kết quả muộn). */
 const mutationDeferred = new Set<string>();
 const mutationPending: Record<string, Array<() => void>> = {};
@@ -119,11 +127,18 @@ vi.mock("@/lib/trpc", () => ({
                     (mutateCalls[key] ??= []).push(vars);
                     const r = mutationResponses[key];
                     if (mutationFails.has(key)) return;
+                    const g = mutationGen[key] ?? 0;
                     if (r && mutationDeferred.has(key)) {
-                      (mutationPending[key] ??= []).push(() => latestMutOpts[key]?.onSuccess?.(r(vars), vars));
+                      (mutationPending[key] ??= []).push(() => {
+                        datData(key, g);
+                        latestMutOpts[key]?.onSuccess?.(r(vars), vars);
+                      });
                       return;
                     }
-                    if (r) mopts?.onSuccess?.(r(vars), vars);
+                    if (r) {
+                      datData(key, g);
+                      mopts?.onSuccess?.(r(vars), vars);
+                    }
                   },
                   mutateAsync: (vars: unknown) => {
                     (mutateCalls[key] ??= []).push(vars);
@@ -133,8 +148,12 @@ vi.mock("@/lib/trpc", () => ({
                     if (r) mopts?.onSuccess?.(d, vars);
                     return Promise.resolve(d);
                   },
-                  reset: vi.fn(),
-                  data: mutationData[key],
+                  reset: () => {
+                    mutationResets[key] = (mutationResets[key] ?? 0) + 1;
+                    mutationGen[key] = (mutationGen[key] ?? 0) + 1;
+                    delete mutationLive[key];
+                  },
+                  data: mutationLive[key],
                   isPending: false,
                   isError: false,
                 }),
@@ -343,7 +362,7 @@ function fetchGia(_url: string, init: RequestInit): Promise<Response> {
 const nghi = () => act(() => new Promise((r) => setTimeout(r, 20)));
 
 beforeEach(() => {
-  for (const o of [queryOverrides, queryInputs, queryEnabled, mutateCalls, mutationResponses, mutationData, mutationPending]) {
+  for (const o of [queryOverrides, queryInputs, queryEnabled, mutateCalls, mutationResponses, mutationData, mutationPending, mutationLive, mutationGen, mutationResets]) {
     for (const k of Object.keys(o)) delete (o as Record<string, unknown>)[k];
   }
   mutationDeferred.clear();
@@ -757,7 +776,7 @@ describe("final wave (12b minor) — startWatch / kết quả đội máy về M
     expect(mutateCalls["programming.stopWatch"]).toEqual([{ projectId: 1 }]);
   });
 
-  it("kết quả rollout đội máy của P1 KHÔNG hiện dưới P2; quay lại P1 ⇒ hiện lại", async () => {
+  it("★ C5 (A → B → A): kết quả rollout của P1 KHÔNG hiện dưới P2; quay lại P1 ⇒ KHÔNG hồi sinh kết quả cũ (deployToFleet.reset() ở mỗi lượt chọn dự án)", async () => {
     seed();
     const fleet = { halted: false, promoted: true, haltCode: null, haltReason: null, results: [{ deviceId: 3, phase: "canary", status: "deployed", error: null, rolledBack: false, rollbackError: null }] };
     mutationResponses["programming.deployToFleet"] = () => fleet;
@@ -775,12 +794,44 @@ describe("final wave (12b minor) — startWatch / kết quả đội máy về M
     expect(mutateCalls["programming.deployToFleet"]).toHaveLength(1);
     const promoted = /Promoted to the whole fleet|Đã promote toàn đội máy/;
     expect(screen.getByText(promoted)).toBeInTheDocument();
+    const resetTruoc = mutationResets["programming.deployToFleet"] ?? 0;
     fireEvent.click(projectBtn("Ladder Two"));
     expect(screen.queryByText(promoted)).toBeNull();
+    expect(mutationResets["programming.deployToFleet"]).toBe(resetTruoc + 1);
     fireEvent.click(projectBtn("Cell One"));
     const hoi = screen.queryByRole("alertdialog"); // buffer cũ còn ⇒ trang hỏi bỏ thay đổi
     if (hoi) fireEvent.click(within(hoi).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
-    expect(screen.getByText(promoted)).toBeInTheDocument();
+    // doc 81 Đợt 4 C5 — trước: hiện lại kết quả cũ của P1 (một lượt rollout ĐÃ QUA trông như của phiên làm việc hiện tại).
+    expect(mutationResets["programming.deployToFleet"]).toBe(resetTruoc + 2);
+    expect(screen.queryByText(promoted)).toBeNull();
+  });
+
+  it("★ C5: rollout của P1 về MUỘN sau khi đã sang P2 ⇒ toast vẫn báo (lượt điều khiển thật), nhưng P2 không hiện; quay lại P1 cũng không", async () => {
+    seed();
+    const fleet = { halted: false, promoted: true, haltCode: null, haltReason: null, results: [{ deviceId: 3, phase: "canary", status: "deployed", error: null, rolledBack: false, rollbackError: null }] };
+    mutationResponses["programming.deployToFleet"] = () => fleet;
+    mutationData["programming.deployToFleet"] = fleet;
+    mutationDeferred.add("programming.deployToFleet");
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    fireEvent.click(screen.getByText("#5"));
+    fleetCardOpen();
+    fireEvent.click(fleetBox("M3 · #3"));
+    toWizardStep(3);
+    fireEvent.click(fleetBtnEl());
+    const otp = document.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
+    await act(async () => { fireEvent.change(otp, { target: { value: "654321" } }); });
+    await nghi();
+    expect(mutateCalls["programming.deployToFleet"]).toHaveLength(1);
+    fireEvent.click(projectBtn("Ladder Two"));
+    xaHoan("programming.deployToFleet");
+    const promoted = /Promoted to the whole fleet|Đã promote toàn đội máy/;
+    expect(toasts.success).toHaveBeenCalled();
+    expect(screen.queryByTestId("ide-fleet-result") ?? screen.queryByText(promoted)).toBeNull();
+    fireEvent.click(projectBtn("Cell One"));
+    const hoi = screen.queryByRole("alertdialog");
+    if (hoi) fireEvent.click(within(hoi).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
+    expect(screen.queryByText(promoted)).toBeNull();
   });
 });
 
