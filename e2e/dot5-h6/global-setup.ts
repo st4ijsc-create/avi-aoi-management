@@ -23,7 +23,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   fs.writeFileSync(stateFile, JSON.stringify(fx));
   let inst: Awaited<ReturnType<typeof startInstance>> | null = null;
   try {
-    inst = await startInstance(path.join(outDir, "instance"), await enabledAdapters());
+    inst = await startInstance(path.join(outDir, "instance"), enabledAdapters); // P-H4: read before AND right after the boot
     report.adapterSafety = inst.adapterSafety;
   } catch (e) {
     report.startError = (e as Error).message;

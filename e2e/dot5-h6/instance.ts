@@ -8,6 +8,14 @@
  *   BẤT BIẾN đọc từ CSDL ngay trước khi dựng, không phải danh sách cổng: MỌI adapter đang bật (kể cả endpoint dự phòng HA
  *   `connectionOptions.ha.secondaryEndpoint`) phải là `stub` (driver trong tiến trình) HOẶC trỏ loopback (127.0.0.1 /
  *   localhost / ::1) tới một cổng KHÔNG có ai nghe; endpoint không đọc được / host khác / cổng đang nghe ⇒ TỪ CHỐI dựng.
+ * Final wave (H re-review N2–N4):
+ *   • P-H2 — cổng được kiểm là cổng driver THẬT SỰ nối: EtherNet/IP bỏ cổng của endpoint, luôn nối 44818
+ *     (ethernetIpDriver.parseHost) ⇒ kiểm CẢ 44818 (và cổng ghi trong endpoint);
+ *   • P-H3 — "cổng đang nghe" dò CẢ IPv4 lẫn IPv6 loopback (127.0.0.1 và ::1): `localhost` / `::1` của driver có thể tới
+ *     một tiến trình chỉ nghe trên [::1];
+ *   • P-H4 — tập adapter đang bật được ĐỌC LẠI ngay sau khi server báo đã chạy (otManager nạp adapter lúc khởi động, có thể
+ *     tới 240 s sau lần kiểm đầu): khác tập đã kiểm (thêm / bớt / đổi endpoint / options) ⇒ tắt instance, TỪ CHỐI; giống ⇒
+ *     kiểm lại bất biến trên chính tập đó.
  */
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
@@ -27,6 +35,13 @@ const require = createRequire(path.join(REPO, "package.json"));
 export const SERVER_PORT = Number(process.env.H6_SERVER_PORT || 3046);
 export const VITE_PORT = Number(process.env.H6_VITE_PORT || 5206);
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+/** P-H2 — EtherNet/IP: the driver ignores the endpoint's port and always connects to this one (ethernetIpDriver.parseHost). */
+export const ETHERNET_IP_FIXED_PORT = 44818;
+
+/** P-H2 — the port(s) the driver of `protocol` really connects to for an endpoint naming `port`. */
+export function portsTheDriverUses(protocol: string, port: number): number[] {
+  return protocol === "ethernet-ip" ? [...new Set([ETHERNET_IP_FIXED_PORT, port])] : [port];
+}
 
 /** host:port của một endpoint OT (`opc.tcp://h:p`, `tcp://h:p`, `h:p`); null = không đọc được (⇒ từ chối). */
 export function endpointHostPort(endpoint: string): { host: string; port: number } | null {
@@ -60,7 +75,9 @@ export async function assertEnabledAdaptersSafe(
       const hp = endpointHostPort(ep);
       if (!hp) { report.refused.push({ id: r.id, protocol: r.protocol, endpoint: ep, why: "endpoint không đọc được" }); continue; }
       if (!LOOPBACK.has(hp.host)) { report.refused.push({ id: r.id, protocol: r.protocol, endpoint: ep, why: "host không phải loopback" }); continue; }
-      if (await portBusy(hp.port)) { report.refused.push({ id: r.id, protocol: r.protocol, endpoint: ep, why: `cổng ${hp.port} đang có tiến trình nghe` }); continue; }
+      let busyPort: number | null = null;
+      for (const p of portsTheDriverUses(r.protocol, hp.port)) if (await portBusy(p)) { busyPort = p; break; }
+      if (busyPort !== null) { report.refused.push({ id: r.id, protocol: r.protocol, endpoint: ep, why: `cổng ${busyPort} (driver nối tới) đang có tiến trình nghe` }); continue; }
       report.loopbackFree.push({ id: r.id, endpoint: ep });
     }
   }
@@ -70,21 +87,45 @@ export async function assertEnabledAdaptersSafe(
   return report;
 }
 
+/** true ⇔ something accepts a TCP connection on `host`:`port` (connect error / timeout ⇒ nobody there). */
+function accepts(port: number, host: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const c = net.connect({ port, host });
+    c.once("connect", () => { c.destroy(); resolve(true); });
+    c.once("error", () => resolve(false)); // ECONNREFUSED — or no IPv6 on this host (then nobody can listen there either)
+    c.setTimeout(1000, () => { c.destroy(); resolve(false); });
+  });
+}
+
 export function portBusy(port: number): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const s = net.createServer();
     s.once("error", () => resolve(true));
     s.once("listening", () => s.close(() => resolve(false)));
     s.listen(port, "0.0.0.0");
-  }).then((busy) =>
-    busy ||
-    new Promise<boolean>((resolve) => {
-      const c = net.connect({ port, host: "127.0.0.1" });
-      c.once("connect", () => { c.destroy(); resolve(true); });
-      c.once("error", () => resolve(false));
-      c.setTimeout(1000, () => { c.destroy(); resolve(false); });
-    }),
-  );
+  }).then(async (busy) => busy || (await accepts(port, "127.0.0.1")) || (await accepts(port, "::1"))); // P-H3: IPv6 loopback too
+}
+
+type AdapterRow = { id: number; protocol: string; endpoint: string; connectionOptions: unknown };
+
+/** P-H4 — what differs between the adapter set checked before the boot and the one read after it (null = identical). */
+export function adapterSetChange(before: AdapterRow[], after: AdapterRow[]): string | null {
+  const key = (rows: AdapterRow[]) =>
+    new Map(rows.map((r) => [r.id, JSON.stringify({ protocol: r.protocol, endpoint: r.endpoint, connectionOptions: r.connectionOptions ?? null })]));
+  const a = key(before);
+  const b = key(after);
+  const diff: string[] = [];
+  for (const [id, v] of b) if (!a.has(id)) diff.push(`+${id}`); else if (a.get(id) !== v) diff.push(`~${id}`);
+  for (const id of a.keys()) if (!b.has(id)) diff.push(`-${id}`);
+  return diff.length ? diff.join(" ") : null;
+}
+
+/** P-H4 — re-read the enabled adapters right after the boot: any change ⇒ throw (the caller stops the instance); else re-check. */
+export async function recheckAdaptersAfterBoot(checked: AdapterRow[], readAdapters: () => Promise<AdapterRow[]>): Promise<void> {
+  const now = await readAdapters();
+  const change = adapterSetChange(checked, now);
+  if (change) throw new Error(`H6: enabled adapters changed while the instance booted (${change}) — refusing to proceed`);
+  await assertEnabledAdaptersSafe(now);
 }
 
 const ALWAYS_OFF: Record<string, string> = {
@@ -118,8 +159,13 @@ function serverEnv(logDir: string): NodeJS.ProcessEnv {
 
 export interface RunningInstance { child: ChildProcess; vite: { close: () => Promise<void> }; logDir: string }
 
-export async function startInstance(logDir: string, adapters: Parameters<typeof assertEnabledAdaptersSafe>[0]): Promise<RunningInstance & { adapterSafety: AdapterSafetyReport }> {
+export async function startInstance(
+  logDir: string,
+  /** P-H4 — reads the enabled adapters of `_test`; called before the boot AND right after it. */
+  readAdapters: () => Promise<AdapterRow[]>,
+): Promise<RunningInstance & { adapterSafety: AdapterSafetyReport }> {
   for (const p of [SERVER_PORT, VITE_PORT]) if (await portBusy(p)) throw new Error(`H6: port ${p} busy — refusing`);
+  const adapters = await readAdapters();
   const adapterSafety = await assertEnabledAdaptersSafe(adapters);
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, "server.log");
@@ -133,6 +179,13 @@ export async function startInstance(logDir: string, adapters: Parameters<typeof 
     const m = /Server running on https?:\/\/localhost:(\d+)/.exec(fs.readFileSync(logFile, "utf8"));
     if (m) {
       if (Number(m[1]) !== SERVER_PORT) { killTree(child.pid); throw new Error(`H6: server on ${m[1]}, not ${SERVER_PORT}`); }
+      // P-H4 — the boot loaded the adapters enabled NOW: they must be exactly the ones checked above.
+      try {
+        await recheckAdaptersAfterBoot(adapters, readAdapters);
+      } catch (e) {
+        killTree(child.pid);
+        throw e;
+      }
       break;
     }
     if (Date.now() - t0 > 240_000) { killTree(child.pid); throw new Error("H6: server not up after 240 s"); }
