@@ -23,7 +23,7 @@
  * persists each step's state as it walks.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../../../_core/appError";
@@ -415,6 +415,8 @@ interface PriorSteps {
    * recorded, or the row is running / completed / failed / compensated (a failure after the hand-over may have no result).
    */
   attempted: Set<string>;
+  /** fix 2 (R-6-c) — true ⇔ the rows could not be read at all (no DB): whether the run acted is UNKNOWN ⇒ counted as acted. */
+  unknown: boolean;
 }
 
 /** Outcome of executing a step subtree. */
@@ -455,7 +457,7 @@ async function loadMachines(ids: number[]): Promise<Map<number, MachineForValida
 async function loadCompletedSteps(runId: number): Promise<{ completed: Set<string>; prior: PriorSteps }> {
   const set = new Set<string>();
   const d = await getDb();
-  if (!d) return { completed: set, prior: priorStepsOf([]) };
+  if (!d) return { completed: set, prior: { ...priorStepsOf([]), unknown: true } }; // fix 2 (R-6-c): unknown, not empty
   const rows = await d
     .select()
     .from(orchestrationRunSteps)
@@ -465,6 +467,9 @@ async function loadCompletedSteps(runId: number): Promise<{ completed: Set<strin
   }
   return { completed: set, prior: priorStepsOf(rows) }; // doc 81 Đợt 6 — same read, the abort sweep's picture
 }
+
+/** doc 81 Đợt 6 fix 2 (N5) — run-context key: the command steps handed to a dispatcher (see execCommand). */
+const DISPATCHED_CTX_KEY = "foeDispatchedSteps";
 
 /** doc 81 Đợt 6 — the step rows written by an abort's STOP sweep (`abort:<stepId>`; never a definition step). */
 const ABORT_ROW_PREFIX = "abort:";
@@ -490,7 +495,7 @@ function priorStepsOf(rows: ReadonlyArray<{ id?: number; stepId: string; status:
     }
   }
   started.sort((a, b) => a.at - b.at || a.id - b.id);
-  return { settled, branches, startOrder: started.map((s) => s.stepId), attempted };
+  return { settled, branches, startOrder: started.map((s) => s.stepId), attempted, unknown: false };
 }
 
 async function setRunStatus(
@@ -1713,6 +1718,10 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // here; the abort sweep sends it if it is a real STOP) or after (it is on its way; the sweep never sends it again).
   rc.dispatched.add(step.id);
   rc.attempted.add(step.id); // fix 1 (R-6-b) — handed to a dispatcher: the run has acted (never removed)
+  // fix 2 (N5) — ALSO in the run context, which is persisted (awaited, unbounded) when the walk pauses or ends: the step
+  // rows of a stop-TYPED step are bounded writes (it may be a STOP) and can be lost on a slow DB, this record cannot.
+  const already = Array.isArray(rc.context[DISPATCHED_CTX_KEY]) ? (rc.context[DISPATCHED_CTX_KEY] as unknown[]).map(String) : [];
+  if (!already.includes(step.id)) rc.context[DISPATCHED_CTX_KEY] = [...already, step.id];
   const result: EquipmentCommandResult = await adapter.sendCommand(cmd);
   // A refused attempt is not "on its way" any more: a STOP whose retry an abort cancels is sent once more by the sweep.
   if (!result.ok) rc.dispatched.delete(step.id);
@@ -2432,6 +2441,12 @@ export async function resumeRun(
       }
     }
     if (!run) return notFound;
+    if (!decision.approved && run.status === "aborted") {
+      // fix 2 (N4) — the same as an abort of an aborted run (N1): e.g. this rejection's claim committed but its reply was
+      // lost. The sweep runs again (never re-sends a confirmed STOP).
+      const abortStops = await abortStopSweep(runId, run, liveRuns.get(runId) ?? null, user, scopeFor(user, opts.scope));
+      return { ok: false, enabled: true, runId, status: "aborted", message: `Run ${runId} was already aborted — its STOP steps not yet confirmed were sent again.`, abortStops };
+    }
     if (run.status !== "awaiting_confirm" && run.status !== "held") {
       return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId} is not resumable (status=${run.status}).` };
     }
@@ -2517,7 +2532,20 @@ export async function resumeRun(
         console.error(`[FOE] rejection of run ${runId}: claim not answered in time — ${(err as Error)?.message ?? err}; STOPs follow if it lands as won`);
         void claim.then(
           () => finishRejection().catch(() => undefined),
-          () => undefined,
+          // fix 2 (N4) — the claim FAILED after the bound with something other than "lost" (e.g. its reply was lost after it
+          // committed): re-read the run (bounded); if it shows THIS rejection's claim, finish it (sweep + gate row).
+          async (lateErr: unknown) => {
+            if (lateErr instanceof TRPCError) return; // lost the claim: nothing to do
+            const now = await boundedAbortRead(async () => {
+              const d3 = await getDb();
+              return d3 ? d3.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1) : null;
+            }, `FOE reject run ${runId} claim re-read`);
+            const row = now?.[0];
+            // without a hook only: a 'compensating' row could be ANOTHER decision's claim, and its QT business compensations
+            // must not run twice — a later abort (it lands on 'compensating') sweeps that run instead.
+            const ours = !hooks.compensate && row?.status === "aborted" && row.error === rejectedBy(reason);
+            if (ours) await finishRejection().catch(() => undefined);
+          },
         );
         return {
           ok: false,
@@ -2951,7 +2979,7 @@ async function liveSweepSource(rc: RunContext): Promise<AbortSweepSource> {
       return b === "then" || b === "else" ? b : rc.prior.branches.get(id);
     },
     startOrder: [...rc.prior.startOrder, ...rc.startOrder],
-    mayHaveActuated: (id) => rc.attempted.has(id) || rc.prior.attempted.has(id) || !!fromRows?.attempted.has(id),
+    mayHaveActuated: (id) => rc.prior.unknown || rc.attempted.has(id) || rc.prior.attempted.has(id) || !!fromRows?.attempted.has(id),
     sentBefore: abortSentOf(rows),
   };
 }
@@ -2982,6 +3010,15 @@ async function storedSweepSource(run: OrchestrationRun): Promise<AbortSweepSourc
     new Map<number, MachineForValidation>();
   const prior = rows ? priorStepsOf(rows) : priorStepsOf([]);
   const context = (run.contextJson as Record<string, unknown>) ?? {};
+  // fix 2 (R-6-c, N2, N5) — when whether the run acted cannot be DECIDED from here, it counts as acted (STOPs are sent):
+  //   • its rows could not be read;
+  //   • it is driven ELSEWHERE — delegated to an edge node (its rows reach us only when the edge's walk returns), or
+  //     'running' / 'compensating' with no driver in this process (another instance, or orphaned): its rows may lag;
+  //   • it was interrupted by a restart (rehydrate marks it): a bounded row may never have been written.
+  // Plus the commands the walk recorded as dispatched in the run context (persisted, not a bounded write).
+  const drivenElsewhere = run.edgeNodeId != null || ((run.status === "running" || run.status === "compensating") && !liveRuns.has(run.id));
+  const undecidable = rows === null || drivenElsewhere || context.interrupted === true;
+  const ctxDispatched = new Set(Array.isArray(context[DISPATCHED_CTX_KEY]) ? (context[DISPATCHED_CTX_KEY] as unknown[]).map(String) : []);
   return {
     def: usable,
     machineById,
@@ -2992,8 +3029,7 @@ async function storedSweepSource(run: OrchestrationRun): Promise<AbortSweepSourc
       return b === "then" || b === "else" ? b : prior.branches.get(id);
     },
     startOrder: prior.startOrder,
-    // rows unreadable ⇒ whether it actuated is unknown ⇒ counted as actuated (conservative, R-6-b)
-    mayHaveActuated: (id) => rows === null || prior.attempted.has(id),
+    mayHaveActuated: (id) => undecidable || prior.attempted.has(id) || ctxDispatched.has(id),
     sentBefore: abortSentOf(rows),
   };
 }
@@ -3147,6 +3183,19 @@ function runHasActuated(def: WorkflowDefinition, src: AbortSweepSource, v: StopV
   return false;
 }
 
+/**
+ * fix 2 (N3) — the idempotency key of one abort STOP: `run<id>-abort-<nonce>-<step>`, the nonce BEFORE the step id, and a
+ * step id too long for the 64-character action id (`foe-<key>`, orchestrationActionId) shortened to a prefix + a hash of the
+ * WHOLE id — so a retried sweep never reuses an earlier sweep's action row, and two long step ids never share one.
+ */
+export function abortStopKey(runId: number, stepId: string, nonce: string): string {
+  const base = `run${runId}-abort-${nonce}-`;
+  const room = 64 - "foe-".length - base.length;
+  if (stepId.length <= room) return base + stepId;
+  const hash = createHash("sha256").update(stepId).digest("hex").slice(0, 10);
+  return base + stepId.slice(0, Math.max(0, room - hash.length - 1)) + "~" + hash;
+}
+
 type PreparedAbortStop = { step: CommandWorkflowStep; cmd: EquipmentCommand; kind: AdapterKind } | { step: CommandWorkflowStep; error: string };
 
 /**
@@ -3175,7 +3224,7 @@ async function prepareAbortStop(
             return raw;
           },
         );
-    const idempotencyKey = `run${runId}-${step.id}-abort-${nonce}`;
+    const idempotencyKey = abortStopKey(runId, step.id, nonce);
     const cmd = buildEquipmentCommand(c.descriptor, c.cap, step.machineId, args, idempotencyKey, user); // NO approval, ever
     if (robot ? !isStopJob(toRobotJob(cmd)) : !(await isOtStopCommandType(cmd.name))) {
       return { step, error: `"${step.command}" is not a STOP — never sent on an abort` };
@@ -3399,7 +3448,14 @@ export async function abortRun(
       }
     }
     if (!run) return notFound;
-    if (["completed", "failed", "aborted"].includes(run.status)) {
+    if (run.status === "aborted") {
+      // fix 2 (N1) — the retry the answer asks for ('aborted' landed late, or a STOP failed / could not be verified):
+      // nothing to write, the sweep runs AGAIN — it re-sends the STOPs that were not CONFIRMED (a new key per sweep) and
+      // never a confirmed one (`abort:<id>` row completed), R-6-b / R-6-c apply, an overlapping sweep is joined.
+      const abortStops = await abortStopSweep(runId, run, liveRuns.get(runId) ?? null, user, scopeFor(user, opts.scope));
+      return { ok: true, enabled: foeEnabled(), runId, status: "aborted", message: `Run ${runId} was already aborted — its STOP steps not yet confirmed were sent again.`, abortStops };
+    }
+    if (["completed", "failed"].includes(run.status)) {
       return { ok: false, enabled: foeEnabled(), runId, status: run.status, message: `Run ${runId} already terminal.` };
     }
     const live = liveRuns.get(runId);

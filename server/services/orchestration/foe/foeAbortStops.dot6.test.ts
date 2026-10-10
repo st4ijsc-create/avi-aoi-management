@@ -40,6 +40,8 @@ const scopeCtl = vi.hoisted(() => ({ outMachines: null as number[] | null }));
 const insertHook = vi.hoisted(() => ({ fn: null as null | ((table: string, values: Record<string, any>) => Promise<void> | undefined) }));
 /** fix 1 — a hook run just before an UPDATE's patch is applied (e.g. another decision claims the run first). */
 const updateHook = vi.hoisted(() => ({ fn: null as null | ((patch: Record<string, any>) => void) }));
+/** fix 2 (N4) — an UPDATE to one of these statuses COMMITS, but its reply is lost: it rejects after `ms`. */
+const LOST_REPLY = { statuses: new Set<string>(), ms: 0 };
 vi.mock("../../ot/otManager", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/otManager")>();
   return { ...orig, getActiveConnectionFingerprint: (adapterId: number) => conn.fp.get(adapterId) };
@@ -115,6 +117,18 @@ const HUNG_TABLES = new Set<string>();
       ...u,
       set: (patch: Record<string, any>) => {
         updateHook.fn?.(patch);
+        if (LOST_REPLY.statuses.has(patch?.status)) {
+          LOST_REPLY.statuses.delete(patch.status);
+          return {
+            where: (cond: unknown) => ({
+              returning: async () => {
+                await u.set(patch).where(cond as never).returning(); // committed …
+                await new Promise((r) => setTimeout(r, LOST_REPLY.ms));
+                throw new Error("connection reset"); // … but the reply never arrives
+              },
+            }),
+          };
+        }
         return HANG.statuses.has(patch?.status) ? hungBuilder() : u.set(patch);
       },
     };
@@ -131,7 +145,7 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, machines, deviceAdapters, deviceTags, robots } from "../../../../drizzle/schema";
-import { deployWorkflow, startRun, resumeRun, abortRun } from "./foeEngine";
+import { deployWorkflow, startRun, resumeRun, abortRun, abortStopKey } from "./foeEngine";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import type { WorkflowDefinition } from "./workflowModel";
@@ -221,6 +235,7 @@ beforeEach(() => {
   scopeCtl.outMachines = null;
   insertHook.fn = null;
   updateHook.fn = null;
+  LOST_REPLY.statuses.clear();
   process.env.FOE_ENABLED = "true";
   process.env.OT_CONTROL_ENABLED = "";
   delete process.env.FOE_SIM_GATE_REQUIRED;
@@ -328,7 +343,7 @@ describe("doc 81 Đợt 6 — abort still sends the remaining REAL STOP steps", 
     const { runId, walk } = await liveRunAt("noappr", [START, DELAY, OT_STOP], "d");
     await abortRun(runId, SUP);
     const rows = (fake.store.get("ai_pending_actions") ?? []) as Row[];
-    const abortRow = rows.find((r) => String(r.id).startsWith(`foe-run${runId}-stop-abort-`))!;
+    const abortRow = rows.find((r) => String(r.id).startsWith(`foe-run${runId}-abort-`) && String(r.id).endsWith("-stop"))!;
     expect(abortRow).toBeTruthy();
     expect(abortRow.userId).toBe(SUP.id);
     expect(JSON.stringify(abortRow.previewJson)).not.toMatch(/approvedBy|gateStepId/);
@@ -554,7 +569,8 @@ describe("doc 81 Đợt 6 fix 1 (#1 #2 #8 #9) — sent once, failed STOP retried
     const [a, b] = await Promise.all([abortRun(runId, SUP, "one"), abortRun(runId, SUP, "two")]);
     const third = await abortRun(runId, SUP, "three");
     expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
-    expect(third.ok).toBe(false);
+    // fix 2 (N1): an abort of an ALREADY-aborted run re-runs the sweep — every STOP here was confirmed ⇒ nothing re-sent
+    expect(third).toMatchObject({ ok: true, status: "aborted", abortStops: { sent: [], failed: [] } });
     expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]);
     expect(robotDispatchMock).toHaveBeenCalledTimes(1);
   });
@@ -729,5 +745,145 @@ describe("doc 81 Đợt 6 fix 1 (R-6-a) — a gate REJECTION sends the remaining
     expect(r).not.toBe("HUNG");
     expect(Date.now() - t0).toBeLessThan(8 * D + 700);
     expect(r).toMatchObject({ ok: false, reason: "abortUnconfirmed", abortStops: { sent: ["stop", "ra"] } });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 6 fix 2
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 6 fix 2 (N1 N4) — an abort / rejection of an ALREADY-aborted run re-sends the unconfirmed STOPs", () => {
+  const refuseNextOtStop = () =>
+    otDispatchMock.mockImplementationOnce(async (input?: unknown) => {
+      order.push(`ot:${(input as { commandType: string }).commandType}`);
+      return { ok: false, simulated: false, status: "rejected" as const, reason: "DEVICE_BUSY", results: [], commandLogIds: [2] } as never;
+    });
+
+  it("★ N1 the 'aborted' write LANDS LATE: the retry finds the run aborted, re-sends the FAILED OT STOP (new key), never the confirmed robot STOP, and answers with abortStops", async () => {
+    const runId = await pausedAfterMotion("late", [OT_STOP, RB_STOP]);
+    HANG.statuses.add("aborted");
+    refuseNextOtStop();
+    const first = await abortRun(runId, SUP);
+    expect(first).toMatchObject({ reason: "abortUnconfirmed", abortStops: { sent: ["ra"], failed: ["stop"] } });
+    await waitFor(() => stepRow(runId, "abort:ra")?.status === "completed" && stepRow(runId, "abort:stop")?.status === "failed");
+    HANG.statuses.clear();
+    runRow(runId).status = "aborted"; // the late write lands
+    const retry = await abortRun(runId, SUP);
+    expect(retry).toMatchObject({ ok: true, status: "aborted", abortStops: { sent: ["stop"], failed: [] } });
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop", "stop"]);
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("★ N1 a CONFIRMED abort whose OT STOP could not be verified (connection down) — retried once the connection is back ⇒ sent", async () => {
+    const runId = await pausedAfterMotion("unvretry", [OT_STOP]);
+    conn.fp.delete(501);
+    const first = await abortRun(runId, SUP);
+    expect(first).toMatchObject({ ok: true, status: "aborted", abortStops: { sent: [], unverified: ["stop"] } });
+    conn.fp.set(501, adapterTargetFingerprint({ protocol: "modbus", endpoint: "tcp://127.0.0.1:1", machineId: 1, connectionOptions: null } as never));
+    const retry = await abortRun(runId, SUP);
+    expect(retry.abortStops?.sent).toEqual(["stop"]);
+  });
+
+  it("★ N4 a later REJECTION of an already-aborted run re-sweeps the same way", async () => {
+    const runId = await pausedAfterMotion("rejagain", [OT_STOP, RB_STOP]);
+    refuseNextOtStop();
+    const first = await abortRun(runId, SUP);
+    expect(first.abortStops).toMatchObject({ sent: ["ra"], failed: ["stop"] });
+    await waitFor(() => stepRow(runId, "abort:ra")?.status === "completed");
+    const r = await resumeRun(runId, { approved: false }, SUP);
+    expect(r).toMatchObject({ status: "aborted", abortStops: { sent: ["stop"] } });
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("★ N4 the rejection's claim COMMITS but its reply is lost after the bound ⇒ answered unconfirmed (0 sent), then the run is re-read and the STOPs go", async () => {
+    const runId = await pausedAfterMotion("lostreply", [OT_STOP, RB_STOP]);
+    LOST_REPLY.statuses.add("aborted");
+    LOST_REPLY.ms = 1.3 * D;
+    const r = await resumeRun(runId, { approved: false, note: "no" }, SUP);
+    expect(r).toMatchObject({ ok: false, reason: "abortUnconfirmed", abortStops: { sent: [] } });
+    expect(runRow(runId).status).toBe("aborted"); // committed
+    await waitFor(() => robotDispatchMock.mock.calls.length === 1 && otCommands().length === 2, 4 * D);
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]);
+  });
+});
+
+describe("doc 81 Đợt 6 fix 2 (N2 N5, R-6-c) — when it cannot be DECIDED whether the run acted, the STOPs are sent", () => {
+  it("★ N2 a run driven on an EDGE node, mid-execution (central has no step rows yet) ⇒ counted as acted ⇒ STOPs sent", async () => {
+    await deploy("edge", [GATE, START, OT_STOP, RB_STOP]);
+    const s = await startRun("edge", {}, OWNER);
+    // central's row may still say 'queued' while the edge walks (the edge's rows reach central only when its walk returns)
+    Object.assign(runRow(s.runId!), { status: "queued", edgeNodeId: 5, currentStepId: null });
+    const ab = await abortRun(s.runId!, SUP);
+    expect(ab.abortStops).toMatchObject({ sent: ["stop", "ra"], notNeeded: [] });
+  });
+
+  it("★ N2 a 'running' run with NO driver in this process (another instance / orphaned) ⇒ counted as acted", async () => {
+    await deploy("orphan", [GATE, START, OT_STOP]);
+    const s = await startRun("orphan", {}, OWNER);
+    Object.assign(runRow(s.runId!), { status: "running", currentStepId: null });
+    const ab = await abortRun(s.runId!, SUP);
+    expect(ab.abortStops).toMatchObject({ sent: ["stop"], notNeeded: [] });
+  });
+
+  it("★ R-6-c a run INTERRUPTED by a restart (held) ⇒ counted as acted (a bounded row may never have been written)", async () => {
+    await deploy("restart", [GATE, START, OT_STOP]);
+    const s = await startRun("restart", {}, OWNER);
+    Object.assign(runRow(s.runId!), { status: "held", currentStepId: null, contextJson: { interrupted: true } });
+    const ab = await abortRun(s.runId!, SUP);
+    expect(ab.abortStops).toMatchObject({ sent: ["stop"], notNeeded: [] });
+  });
+
+  it("control: a paused run that never acted (no edge, not running, not interrupted) still sends none", async () => {
+    await deploy("ctl", [GATE, START, OT_STOP]);
+    const s = await startRun("ctl", {}, OWNER);
+    const ab = await abortRun(s.runId!, SUP);
+    expect(ab.abortStops).toMatchObject({ sent: [], notNeeded: ["stop"] });
+  });
+
+  it("★ N5 an UNPINNED stop-typed step that ran but whose (bounded) rows were LOST still counts: the run context records it", async () => {
+    await deploy("lostrows", [GATE, UNPINNED, GATE1, RB_STOP]);
+    const s = await startRun("lostrows", {}, OWNER);
+    expect((await resumeRun(s.runId!, { approved: true }, SUP)).status).toBe("awaiting_confirm");
+    expect(runRow(s.runId!).contextJson.foeDispatchedSteps).toEqual(["stopU"]);
+    const steps = fake.store.get("orchestration_run_steps") as Row[];
+    fake.store.set("orchestration_run_steps", steps.filter((r) => r.stepId !== "stopU")); // the bounded rows never landed
+    const ab = await abortRun(s.runId!, SUP);
+    expect(ab.abortStops).toMatchObject({ sent: ["ra"], notNeeded: [] });
+  });
+
+  it("F17 pinned: the live sweep's row read counts an engine-REFUSED command's failed row (the walk's memory does not)", async () => {
+    // START refused by the engine (no gate before it) ⇒ never handed to a dispatcher ⇒ not in memory; its row is 'failed'.
+    await deploy("refusedrow", [{ id: "pl", type: "parallel", steps: [START, { id: "sq", type: "sequence", steps: [DELAY, OT_STOP] }] }]);
+    const p = startRun("refusedrow", {}, OWNER);
+    await waitFor(() => runRows().length === 1 && stepRow(runRows()[0].id, "d")?.status === "running" && stepRow(runRows()[0].id, "start")?.status === "failed");
+    const ab = await abortRun(runRows()[0].id, SUP);
+    expect(ab.abortStops).toMatchObject({ sent: ["stop"], notNeeded: [] });
+    await p;
+  });
+});
+
+describe("doc 81 Đợt 6 fix 2 (N3) — the per-sweep key survives the 64-character action id", () => {
+  it("★ pure: long step ids keep the nonce, stay ≤ 64 with 'foe-', and never collide", () => {
+    const a = "s".repeat(45) + "-alpha";
+    const b = "s".repeat(45) + "-bravo";
+    const ka = abortStopKey(123456, a, "n1");
+    expect(("foe-" + ka).length).toBeLessThanOrEqual(64);
+    expect(ka).toContain("-abort-n1-");
+    expect(abortStopKey(123456, a, "n2")).not.toBe(ka);
+    expect(abortStopKey(123456, b, "n1")).not.toBe(ka);
+    expect(abortStopKey(1, "short", "n1")).toBe("run1-abort-n1-short");
+  });
+
+  it("★ a 45-char STOP step refused once is re-sent by the retry with its OWN fresh action row (not refused as a duplicate)", async () => {
+    const LONG = { ...OT_STOP, id: "x".repeat(45) };
+    const runId = await pausedAfterMotion("longid", [LONG]);
+    otDispatchMock.mockImplementationOnce(async () => ({ ok: false, simulated: false, status: "rejected" as const, reason: "DEVICE_BUSY", results: [], commandLogIds: [2] }) as never);
+    const first = await abortRun(runId, SUP);
+    expect(first.abortStops?.failed).toEqual([LONG.id]);
+    const retry = await abortRun(runId, SUP);
+    expect(retry.abortStops?.sent).toEqual([LONG.id]);
+    const rows = ((fake.store.get("ai_pending_actions") ?? []) as Row[]).filter((r) => String(r.id).includes("-abort-"));
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2);
+    for (const r of rows) expect(String(r.id).length).toBeLessThanOrEqual(64);
   });
 });
