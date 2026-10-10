@@ -49,7 +49,7 @@ async function audit(action: string, metadata: Record<string, unknown>): Promise
   }
 }
 
-async function notifyConfigured(title: string, message: string, opts: { safetyCritical?: boolean; dedupKey?: string } = {}): Promise<void> {
+async function notifyConfigured(title: string, message: string, opts: { safetyCritical?: boolean; dedupKey?: string; rateKey?: string } = {}): Promise<void> {
   const ids = (process.env.ORCH_NOTIFY_USER_IDS ?? "")
     .split(",")
     .map((s) => parseInt(s.trim(), 10))
@@ -137,9 +137,12 @@ function onSafetyEvent(e: DomainEvent): void {
   // isSafetyCriticalSafetyEvent). The bypass dedup key is the OCCURRENCE (type, machine, safety_events.id): a re-delivery
   // of the same event is not bypassed twice, while another type, another machine or a re-trip (a new row) never merges.
   // The notice itself is ALWAYS sent (the throttle only downgrades a repeat to normal delivery).
+  // final wave P-F4 — rateKey (type, machine) WITHOUT the event id: a flapping e-stop (a new row per re-trip) bypasses the
+  // opt-outs at most once per SAFETY_CRITICAL_RATE_MS per recipient; the other re-trips are still delivered, as normal notices.
   void notifyConfigured("Safety event", message, {
     safetyCritical: isSafetyCriticalSafetyEvent(p),
     dedupKey: `safety:${p.eventType ?? "?"}:${machine}:${typeof p.id === "number" ? p.id : "?"}`,
+    rateKey: `safety:${p.eventType ?? "?"}:${machine}`,
   });
   eventBus.publish("orchestration.triggered", { rule: "safety", machine, eventType: p.eventType }, "orchestration");
 }

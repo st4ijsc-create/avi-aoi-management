@@ -101,10 +101,19 @@ export interface SendNotificationOptions {
   safetyCritical?: boolean;
   /** "(type, machine)" identity of a safety-critical notice for the bypass throttle. */
   dedupKey?: string;
+  /**
+   * doc 81 Đợt 5 final wave P-F4 (F re-review N4) — the (type, robot / machine) identity WITHOUT the occurrence id: a
+   * flapping trusted e-stop creates a new event (a new dedupKey) on every re-trip; at most ONE bypass per
+   * SAFETY_CRITICAL_RATE_MS per recipient × rateKey. Beyond it ⇒ a NORMAL notice (preferences apply) — never dropped here.
+   */
+  rateKey?: string;
 }
 
 export const SAFETY_CRITICAL_DEDUP_MS = 60_000;
+/** final wave P-F4 — at most one opt-out bypass per (recipient, rateKey) in this window. */
+export const SAFETY_CRITICAL_RATE_MS = 10_000;
 const safetyCriticalLastBypass = new Map<string, number>();
+const safetyCriticalLastRate = new Map<string, number>();
 /** true ⇔ this (recipient, key) may bypass now (and records it). */
 export const SAFETY_CRITICAL_DEDUP_MAX = 5000;
 /**
@@ -112,16 +121,27 @@ export const SAFETY_CRITICAL_DEDUP_MAX = 5000;
  * it never drops one. Any failure here ⇒ true (bypass, i.e. deliver). Bounded: entries older than the window are swept
  * when the map passes SAFETY_CRITICAL_DEDUP_MAX; if it is still full, it is cleared (fails toward delivering).
  */
-function takeSafetyCriticalBypass(userId: number, key: string, now = Date.now()): boolean {
+function takeSafetyCriticalBypass(userId: number, key: string | undefined, rateKey?: string, now = Date.now()): boolean {
   try {
-    const k = `${userId}|${key}`;
-    const last = safetyCriticalLastBypass.get(k);
-    if (last !== undefined && now - last >= 0 && now - last < SAFETY_CRITICAL_DEDUP_MS) return false;
-    safetyCriticalLastBypass.set(k, now);
-    if (safetyCriticalLastBypass.size > SAFETY_CRITICAL_DEDUP_MAX) {
-      for (const [kk, t] of safetyCriticalLastBypass) if (now - t >= SAFETY_CRITICAL_DEDUP_MS) safetyCriticalLastBypass.delete(kk);
-      if (safetyCriticalLastBypass.size > SAFETY_CRITICAL_DEDUP_MAX) safetyCriticalLastBypass.clear();
-    }
+    const k = key ? `${userId}|${key}` : null;
+    const r = rateKey ? `${userId}|${rateKey}` : null;
+    const inside = (m: Map<string, number>, kk: string | null, windowMs: number) => {
+      if (kk === null) return false;
+      const last = m.get(kk);
+      return last !== undefined && now - last >= 0 && now - last < windowMs;
+    };
+    // the same occurrence again (dedup) OR another occurrence of the same (type, robot) too soon (rate cap) ⇒ normal notice
+    if (inside(safetyCriticalLastBypass, k, SAFETY_CRITICAL_DEDUP_MS) || inside(safetyCriticalLastRate, r, SAFETY_CRITICAL_RATE_MS)) return false;
+    const record = (m: Map<string, number>, kk: string | null, windowMs: number) => {
+      if (kk === null) return;
+      m.set(kk, now);
+      if (m.size > SAFETY_CRITICAL_DEDUP_MAX) {
+        for (const [x, t] of m) if (now - t >= windowMs) m.delete(x);
+        if (m.size > SAFETY_CRITICAL_DEDUP_MAX) m.clear();
+      }
+    };
+    record(safetyCriticalLastBypass, k, SAFETY_CRITICAL_DEDUP_MS);
+    record(safetyCriticalLastRate, r, SAFETY_CRITICAL_RATE_MS);
     return true;
   } catch {
     return true;
@@ -133,15 +153,16 @@ export function _safetyCriticalDedupSizeForTests(): number {
 /** Test seam — forget every bypass timestamp. */
 export function _resetSafetyCriticalDedupForTests(): void {
   safetyCriticalLastBypass.clear();
+  safetyCriticalLastRate.clear();
 }
 
 /**
  * Send notification to a specific user
  */
 export async function sendNotification(userId: number, payload: NotificationPayload, opts: SendNotificationOptions = {}) {
-  const safetyCritical =
-    opts?.safetyCritical === true &&
-    (typeof opts.dedupKey === "string" && opts.dedupKey ? takeSafetyCriticalBypass(userId, opts.dedupKey) : true);
+  const dedupKey = typeof opts?.dedupKey === "string" && opts.dedupKey ? opts.dedupKey : undefined;
+  const rateKey = typeof opts?.rateKey === "string" && opts.rateKey ? opts.rateKey : undefined;
+  const safetyCritical = opts?.safetyCritical === true && (dedupKey || rateKey ? takeSafetyCriticalBypass(userId, dedupKey, rateKey) : true);
   const { safetyCritical: _claimed, ...ownMetadata } = (payload.metadata ?? {}) as Record<string, any>;
   const metadata = safetyCritical ? { ...ownMetadata, safetyCritical: true } : payload.metadata ? ownMetadata : undefined;
 

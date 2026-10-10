@@ -34,6 +34,7 @@ import {
   _safetyCriticalDedupSizeForTests,
   SAFETY_CRITICAL_DEDUP_MS,
   SAFETY_CRITICAL_DEDUP_MAX,
+  SAFETY_CRITICAL_RATE_MS,
 } from "./notificationService";
 
 const optedOutEverywhere = {
@@ -171,6 +172,48 @@ describe("Đợt 5 F6 fix 1 — safety-critical bypass dedup throttle (60 s per 
       expect(_safetyCriticalDedupSizeForTests()).toBeLessThanOrEqual(SAFETY_CRITICAL_DEDUP_MAX);
     }
   }, 60_000);
+
+  // ── doc 81 Đợt 5 final wave P-F4 (F re-review N4) — a flapping trusted e-stop makes a NEW event (new dedup key) on every
+  // re-trip; the per-(type, robot) RATE key caps the opt-out bypass at one per SAFETY_CRITICAL_RATE_MS per recipient.
+  // Beyond it the notice is delivered NORMALLY (the recipient's preferences apply) — never dropped by the cap itself.
+  it("★ P-F4: re-trips of the same (type, robot) inside 10 s ⇒ ONE bypass, the rest are normal notices; after 10 s it bypasses again", async () => {
+    expect(SAFETY_CRITICAL_RATE_MS).toBe(10_000);
+    DB.prefs = opted;
+    let now = 1_800_000_000_000;
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const trip = (id: number) => sendNotification(7, alert, { safetyCritical: true, dedupKey: `safety:estop:robot:3:${id}`, rateKey: "safety:estop:robot:3" });
+    try {
+      expect(await trip(1)).toEqual({ id: 1 }); // bypass
+      now += 500;
+      expect(await trip(2)).toBeNull(); // new event, same robot+type, 0.5 s later ⇒ normal ⇒ this recipient opted out
+      now += SAFETY_CRITICAL_RATE_MS - 500 - 1;
+      expect(await trip(3)).toBeNull();
+      now += 1;
+      expect(await trip(4)).toEqual({ id: 2 }); // 10 s after the last bypass
+      // another robot / type is not capped by robot 3's e-stops
+      expect(await sendNotification(7, alert, { safetyCritical: true, dedupKey: "safety:estop:robot:4:9", rateKey: "safety:estop:robot:4" })).toEqual({ id: 3 });
+      expect(await sendNotification(7, alert, { safetyCritical: true, dedupKey: "safety:zone_intrusion:robot:3:9", rateKey: "safety:zone_intrusion:robot:3" })).toEqual({ id: 4 });
+      // the cap is per recipient
+      expect(await sendNotification(8, alert, { safetyCritical: true, dedupKey: "safety:estop:robot:3:5", rateKey: "safety:estop:robot:3" })).toEqual({ id: 5 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("P-F4: a rate key without an occurrence key caps the bypass too", async () => {
+    DB.prefs = opted;
+    expect(await sendNotification(7, alert, { safetyCritical: true, rateKey: "safety:estop:robot:9" })).toEqual({ id: 1 });
+    expect(await sendNotification(7, alert, { safetyCritical: true, rateKey: "safety:estop:robot:9" })).toBeNull();
+  });
+
+  it("★ P-F4: beyond the cap a recipient who did NOT opt out still gets every notice (normal delivery, never dropped)", async () => {
+    DB.prefs = null;
+    for (let i = 0; i < 5; i++) {
+      expect(await sendNotification(7, alert, { safetyCritical: true, dedupKey: `safety:estop:robot:3:${i}`, rateKey: "safety:estop:robot:3" })).not.toBeNull();
+    }
+    expect(DB.created).toHaveLength(5);
+    expect(DB.created.filter((r) => (r.metadata as { safetyCritical?: boolean } | undefined)?.safetyCritical === true)).toHaveLength(1);
+  });
 
   it("a throttled repeat still reaches a recipient who did NOT opt out (normal path), without the safety marker", async () => {
     DB.prefs = null;

@@ -101,14 +101,38 @@ describe("Đợt 5 F fix scan — census: the trusted door and the mark are reac
     }
   };
   walk(root);
-  const callers = (re: RegExp) => files.filter((f) => re.test(f.src)).map((f) => f.rel).sort();
+  /**
+   * final wave P-F2 (F re-review N2) — files whose CODE references `name` in any way: a call, the function passed as a value
+   * or aliased (`const f = name`, `cb(name)`, `{ name }`), an import. Whole-line comments do not count. (Was: only the call
+   * syntax `name(` — a value reference escaped the census.)
+   */
+  const referencers = (name: string, srcs = files) => {
+    const re = new RegExp(String.raw`\b${name}\b`);
+    return srcs
+      .filter((f) => f.src.split("\n").some((line) => {
+        const t = line.trim();
+        return !(t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")) && re.test(line);
+      }))
+      .map((f) => f.rel)
+      .sort();
+  };
 
-  it("recordFromDeviceIngest( is called only by services/robot/robotIngest.ts (and defined in safetyAuditService.ts)", () => {
-    expect(callers(/recordFromDeviceIngest\(/)).toEqual(["services/robot/robotIngest.ts", "services/safety/safetyAuditService.ts"]);
+  it("final wave P-F2: the census sees a reference passed as a VALUE / aliased, not only a call", () => {
+    const fx = [
+      { rel: "services/x/alias.ts", src: "import { recordFromDeviceIngest } from '../safety/safetyAuditService';\nconst door = recordFromDeviceIngest;\nvoid door;" },
+      { rel: "services/x/cb.ts", src: "export const handlers = { mark: markTrustedSafetyEvent };" },
+      { rel: "services/x/doc.ts", src: "/**\n * recordFromDeviceIngest is documented here only\n */\nexport const a = 1;" },
+    ];
+    expect(referencers("recordFromDeviceIngest", fx)).toEqual(["services/x/alias.ts"]);
+    expect(referencers("markTrustedSafetyEvent", fx)).toEqual(["services/x/cb.ts"]);
   });
 
-  it("markTrustedSafetyEvent( is called only by safetyAuditService.ts (and defined in trustedSafetyOrigin.ts)", () => {
-    expect(callers(/markTrustedSafetyEvent\(/)).toEqual(["services/safety/safetyAuditService.ts", "services/safety/trustedSafetyOrigin.ts"]);
+  it("recordFromDeviceIngest is referenced only by services/robot/robotIngest.ts (and defined in safetyAuditService.ts)", () => {
+    expect(referencers("recordFromDeviceIngest")).toEqual(["services/robot/robotIngest.ts", "services/safety/safetyAuditService.ts"]);
+  });
+
+  it("markTrustedSafetyEvent is referenced only by safetyAuditService.ts (and defined in trustedSafetyOrigin.ts)", () => {
+    expect(referencers("markTrustedSafetyEvent")).toEqual(["services/safety/safetyAuditService.ts", "services/safety/trustedSafetyOrigin.ts"]);
   });
 
   it("no router / route / API module references the trusted door or the marker module", () => {

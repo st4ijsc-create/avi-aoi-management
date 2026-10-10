@@ -352,6 +352,42 @@ const HARNESS: Record<string, Harness> = {
 const CALL_SITE_HARNESS: Record<string, string> = {
   'services/plugins/pluginDriverBridge.ts|protocol as OtProtocol, () => createPluginDriver(dm, opts)': "plugin-sidecar",
 };
+/**
+ * final wave P-F1 (F re-review N1) — every `registerDriver` token of ONE file's text: a CALL (arguments read by paren
+ * matching, so a call split over several lines is collected whole) or any other reference (the function passed as a value
+ * / aliased — reported as `<reference>`, never covered). Import statements and whole-line comments are not sites.
+ */
+export function registerDriverSitesIn(src: string): string[] {
+  // import statements and brace re-exports (`export { registerDriver } from "…"`) name the function, they do not register.
+  const text = src
+    .replace(/^import\s+(?:type\s+)?[\w*{}\s,]+\sfrom\s*["'][^"']+["'];?/gm, "")
+    .replace(/^export\s*(?:type\s+)?\{[^}]*\}\s*from\s*["'][^"']+["'];?/gm, "");
+  const out: string[] = [];
+  const re = /\bregisterDriver\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const lineStart = text.lastIndexOf("\n", m.index) + 1;
+    const lineEnd = text.indexOf("\n", m.index);
+    const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd).trim();
+    if (line.startsWith("*") || line.startsWith("//") || line.startsWith("/*")) continue;
+    const after = text.slice(m.index + m[0].length);
+    const open = /^\s*\(/.exec(after);
+    if (!open) {
+      out.push("<reference>");
+      continue;
+    }
+    let depth = 0;
+    let i = m.index + m[0].length + open[0].length - 1;
+    const from = i + 1;
+    for (; i < text.length; i++) {
+      if (text[i] === "(") depth++;
+      else if (text[i] === ")" && --depth === 0) break;
+    }
+    out.push(text.slice(from, i).replace(/\s+/g, " ").trim().replace(/,$/, "").trim());
+  }
+  return out;
+}
+
 function registerDriverCallSites(): Array<{ file: string; key: string }> {
   const root = path.resolve(__dirname, "../../..");
   const out: Array<{ file: string; key: string }> = [];
@@ -363,12 +399,8 @@ function registerDriverCallSites(): Array<{ file: string; key: string }> {
       else if (/\.ts$/.test(e.name) && !/\.test\.ts$/.test(e.name)) {
         const rel = path.relative(root, full).split(path.sep).join("/");
         if (rel === "services/ot/driverRegistry.ts") continue; // the definition
-        for (const line of fs.readFileSync(full, "utf8").split("\n")) {
-          const t = line.trim();
-          if (t.startsWith("*") || t.startsWith("//") || t.startsWith("/*")) continue;
-          const m = /\bregisterDriver\(\s*(.+?)\);?\s*(\/\/.*)?$/.exec(t);
-          if (m) out.push({ file: rel, key: `${rel}|${m[1].trim()}` });
-        }
+        // final wave P-F1 — the whole file text (multi-line calls, references passed as values), not one line at a time.
+        for (const args of registerDriverSitesIn(fs.readFileSync(full, "utf8"))) out.push({ file: rel, key: `${rel}|${args}` });
       }
     }
   };
@@ -377,9 +409,20 @@ function registerDriverCallSites(): Array<{ file: string; key: string }> {
 }
 
 // Expected noise only (OPC UA "securityMode None" posture warning) — kept out of the test output.
+// final wave P-F3 (F re-review N3) — ONLY those OPC UA security-posture lines are silenced (counted in `silencedWarns`);
+// every other warning still prints.
+const OPCUA_POSTURE_WARNING = /^\[OPCUA\] securityMode (not configured|None set explicitly)/;
+const silencedWarns: string[] = [];
 let warnSpy: ReturnType<typeof vi.spyOn> | undefined;
 beforeAll(() => {
-  warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const realWarn = console.warn.bind(console);
+  warnSpy = vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => {
+    if (typeof a[0] === "string" && OPCUA_POSTURE_WARNING.test(a[0])) {
+      silencedWarns.push(a[0]);
+      return;
+    }
+    realWarn(...a);
+  });
 });
 afterAll(async () => {
   warnSpy?.mockRestore();
@@ -392,6 +435,19 @@ describe("Đợt 5 F2 — census: every OT driver registered ANYWHERE in server/
     const registered = [...src.matchAll(/registerDriver\(\s*"([^"]+)"/g)].map((m) => m[1]).sort();
     expect(registered.length).toBeGreaterThanOrEqual(7);
     expect(registered).toEqual(Object.keys(HARNESS).filter((k) => k !== "plugin-sidecar").sort());
+  });
+
+  it("final wave P-F1: the site reader SEES a call split over several lines and a reference passed as a value", () => {
+    const multi = `import { registerDriver } from "../ot/driverRegistry";
+export { registerDriver } from "../ot/driverRegistry";
+// registerDriver("commented", x) is not a site
+registerDriver(
+  "x" as OtProtocol,
+  () => createX({ a: 1 }),
+);
+const reg = registerDriver;
+reg("y" as OtProtocol, createY);`;
+    expect(registerDriverSitesIn(multi)).toEqual(['"x" as OtProtocol, () => createX({ a: 1 })', "<reference>"]);
   });
 
   it("every registerDriver( call site in server/ (non-test) is covered; every harness is reached by a call site", () => {
@@ -488,4 +544,11 @@ describe("Đợt 5 F2 — a LATE disconnect() completion never tears down the ne
       );
     });
   }
+});
+
+describe("final wave P-F3 — only the expected OPC UA posture warning is silenced", () => {
+  it("the silenced lines are exactly OPC UA security-posture warnings (and the filter really met them)", () => {
+    expect(silencedWarns.length).toBeGreaterThan(0);
+    expect(silencedWarns.filter((w) => !OPCUA_POSTURE_WARNING.test(w))).toEqual([]);
+  });
 });

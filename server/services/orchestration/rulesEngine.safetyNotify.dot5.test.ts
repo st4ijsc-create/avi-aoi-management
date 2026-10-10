@@ -94,7 +94,8 @@ describe("Đợt 5 F fix scan — through the real event bus: always sent; only 
     eventBus.publish(EventTypes.SAFETY_EVENT, { id: 301, eventType: "estop", detectedBy: "telemetry", handledBy: "advisory", outcome: "logged_only", isNearMiss: false, robotId: 3 }, "test");
     expect(await until(() => N.calls.length === 2, 1500)).toBe(true);
     expect(N.calls.map((c) => c.userId)).toEqual([5, 6]);
-    for (const c of N.calls) expect(c.opts).toEqual({ safetyCritical: true, dedupKey: "safety:estop:robot:3:301" });
+    // final wave P-F4 — plus the per-(type, robot) rate key of the bypass cap (no event id: a flapping e-stop shares it)
+    for (const c of N.calls) expect(c.opts).toEqual({ safetyCritical: true, dedupKey: "safety:estop:robot:3:301", rateKey: "safety:estop:robot:3" });
   });
 
   it.each(EXCLUDED)("★ excluded (%s) ⇒ STILL SENT, as a normal notice (safetyCritical false)", async (_n, p) => {
@@ -114,6 +115,10 @@ describe("Đợt 5 F fix scan — through the real event bus: always sent; only 
     }
     const keys = new Set(N.calls.map((c) => c.opts.dedupKey));
     expect(keys.size).toBe(4);
+    // P-F4 — the re-trip (402) shares the RATE key of 401 (same type, same robot); another robot / type does not
+    const rate = (id: number) => N.calls.find((c) => c.opts.dedupKey.endsWith(`:${id}`))!.opts.rateKey;
+    expect(rate(402)).toBe(rate(401));
+    expect(new Set([rate(401), rate(403), rate(404)]).size).toBe(3);
   });
 
   it("advisory rules (SPC critical) are not safety-critical", async () => {
