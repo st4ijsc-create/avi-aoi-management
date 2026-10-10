@@ -4393,7 +4393,7 @@
     },
     "DEVICE_UNREACHABLE": "Could not reach the {{entity}} device. Check power, cabling and IP address.",
     "DEVICE_PROTOCOL_UNSUPPORTED": "This build does not support the {{entity}} protocol.",
-    "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command was issued — resend it if still needed."
+    "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command ({{stopKey}}) was issued — resend it if still needed."
   },
   "export": {
     "reportMenu": {
