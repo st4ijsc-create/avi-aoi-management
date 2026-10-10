@@ -287,6 +287,27 @@ export interface LicenseStateCache {
 // SERVICE
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * doc 81 Đợt 5 H7 (mục 32) — đường tệp state cache. Mặc định `cwd/server/license/license-state-cache.json` (như cũ).
+ * `LICENSE_STATE_CACHE_PATH` CHỈ dành cho TIẾN TRÌNH THỬ (instance đo / test với giấy phép thử): một instance như vậy trước đây
+ * ghi SKU thử vào chính tệp cache của repo/dev (sự cố 2026-08-19). Chỉ nhận đường TUYỆT ĐỐI và KHÔNG BAO GIỜ có hiệu lực khi
+ * NODE_ENV=production — khi đó bỏ qua kèm cảnh báo (bản triển khai không thể bị trỏ cache sang chỗ khác bằng env).
+ */
+export function resolveLicenseStateCachePath(env: NodeJS.ProcessEnv | Record<string, string | undefined>, cwd: string): string {
+  const fallback = path.join(cwd, 'server', 'license', 'license-state-cache.json');
+  const override = env.LICENSE_STATE_CACHE_PATH?.trim();
+  if (!override) return fallback;
+  if (env.NODE_ENV === 'production') {
+    console.warn('[License] LICENSE_STATE_CACHE_PATH bị BỎ QUA khi NODE_ENV=production (chỉ dành cho tiến trình thử).');
+    return fallback;
+  }
+  if (!path.isAbsolute(override)) {
+    console.warn('[License] LICENSE_STATE_CACHE_PATH phải là đường tuyệt đối — bỏ qua, dùng đường mặc định.');
+    return fallback;
+  }
+  return path.resolve(override);
+}
+
 class LicenseService {
   private privateKey: string | null = null;
   private publicKey: string | null = null;
@@ -300,7 +321,12 @@ class LicenseService {
   constructor() {
     this.keyDir = path.join(process.cwd(), 'server', 'license', 'keys');
     this.encryptionSecret = process.env.LICENSE_ENCRYPTION_SECRET || process.env.JWT_SECRET || 'default-license-secret';
-    this.stateCachePath = path.join(process.cwd(), 'server', 'license', 'license-state-cache.json');
+    this.stateCachePath = resolveLicenseStateCachePath(process.env, process.cwd());
+  }
+
+  /** Đường tệp state cache đang dùng (đọc-chỉ; doc 81 Đợt 5 H7). */
+  get stateCacheFilePath(): string {
+    return this.stateCachePath;
   }
 
   // ─── License State Cache (disk-based) ──────────────────────
