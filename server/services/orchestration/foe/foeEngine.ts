@@ -77,6 +77,16 @@ import {
   type GateRequiredReason,
 } from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
+import {
+  collectTargets,
+  isOutOfScopeEmpty,
+  makeScopeJudge,
+  resolveUserFoeScope,
+  stepsTouching,
+  type FoeScope,
+  type OutOfScope,
+} from "./foeScope"; // doc 81 Đợt 5 task E2 — factory scope (item 26)
+export type { FoeScope } from "./foeScope";
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
 
@@ -199,6 +209,11 @@ export interface DeployOpts {
   simToken?: string | null;
   /** Lý do override sim-gate (bắt buộc để bỏ qua khi gate BẬT mà không có token) — được ghi audit. */
   overrideReason?: string | null;
+  /**
+   * doc 81 Đợt 5 task E2 — the deployer's factory scope. Omitted (undefined) ⇒ resolved from `user` (a real user ⇒ their
+   * assignments; a non-user principal ⇒ EMPTY scope). `null` = explicitly unrestricted (a `global` API key).
+   */
+  scope?: FoeScope;
 }
 
 export interface StartRunResult {
@@ -223,7 +238,15 @@ export interface StartRunResult {
 }
 
 /** doc 81 Đợt 4 (R-4-j, R-4-n, final wave G3) — why a definition was refused (deploy, and since G4 run start). */
-export type DefinitionRefusalReason = "stopAdapterAmbiguous" | "robotIdMissing" | "robotUnavailable" | "robotDisabled";
+export type DefinitionRefusalReason =
+  | "stopAdapterAmbiguous"
+  | "robotIdMissing"
+  | "robotUnavailable"
+  | "robotDisabled"
+  /** doc 81 Đợt 5 task E2 — a step touches a machine / robot / adapter outside the deployer's factory scope. */
+  | "outOfScope"
+  /** doc 81 Đợt 5 task E2 — the ref belongs to an existing workflow that touches targets outside the deployer's scope. */
+  | "refOutOfScope";
 
 export interface RunView {
   run: OrchestrationRun;
@@ -1122,6 +1145,127 @@ async function ambiguousStopSteps(def: WorkflowDefinition, machineMap: Map<numbe
   return bad;
 }
 
+// ── doc 81 Đợt 5 task E2 (item 26) — FACTORY SCOPE (rule + targets: foeScope.ts header) ───────────────────────────
+
+/** The scope an engine call acts under: the caller's explicit one, else the one of `user` (fail-closed for non-users). */
+function scopeFor(user: FoeUser, explicit: FoeScope | undefined): FoeScope {
+  return explicit !== undefined ? explicit : resolveUserFoeScope(user);
+}
+
+/** A definition's targets + its STOP step ids (same classification execCommand uses). */
+async function definitionTargets(def: WorkflowDefinition, machineMap?: Map<number, MachineForValidation>) {
+  const map = machineMap ?? (await loadMachines(validateWorkflow(def, null).referencedMachineIds));
+  const stops = await stopStepIdsOf(def, map);
+  return { targets: collectTargets(def, map, stops), stops };
+}
+
+/**
+ * doc 81 Đợt 5 task E2 — deploy / rollback (`nonStopOnly` false: EVERY step, STOPs included — deploy is never urgent) and
+ * the start / approval rule (`nonStopOnly`: only targets referenced outside a STOP step).
+ * `stopOnlyOut` = targets referenced ONLY by STOP steps that are out of scope (allowed at start/approval, L-7; audited).
+ */
+async function scopeVerdict(
+  def: WorkflowDefinition,
+  scope: FoeScope,
+  opts: { nonStopOnly: boolean; machineMap?: Map<number, MachineForValidation> },
+): Promise<{ out: OutOfScope; stepIds: string[]; stopOnlyOut: OutOfScope }> {
+  const judge = await makeScopeJudge(scope);
+  const empty: OutOfScope = { machines: [], robots: [], adapters: [] };
+  if (judge.unrestricted) return { out: empty, stepIds: [], stopOnlyOut: empty };
+  const { targets, stops } = await definitionTargets(def, opts.machineMap);
+  const all = await judge.outOf(targets);
+  const nonStop = await judge.outOf(targets, { nonStopOnly: true });
+  const out = opts.nonStopOnly ? nonStop : all;
+  const minus = (a: number[], b: number[]) => a.filter((x) => !b.includes(x));
+  return {
+    out,
+    stepIds: isOutOfScopeEmpty(out) ? [] : stepsTouching(def, out, stops, opts.nonStopOnly),
+    stopOnlyOut: { machines: minus(all.machines, nonStop.machines), robots: minus(all.robots, nonStop.robots), adapters: minus(all.adapters, nonStop.adapters) },
+  };
+}
+
+function outOfScopeRefusal(stepIds: string[], out: OutOfScope) {
+  const what = [
+    out.machines.length ? `machine(s) ${out.machines.join(", ")}` : "",
+    out.robots.length ? `robot(s) ${out.robots.join(", ")}` : "",
+    out.adapters.length ? `adapter(s) ${out.adapters.join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+  return {
+    reason: "outOfScope" as const,
+    stepIds,
+    errors: stepIds.map((id) => ({ path: `step:${id}`, message: `Step "${id}" touches ${what || "a target"} outside your factory scope.` })),
+    message: `Step(s) ${stepIds.join(", ") || "?"} touch ${what || "targets"} outside your factory scope — a deploy covers every step, stop steps included. Ask someone whose scope covers them to deploy it.`,
+  };
+}
+
+/**
+ * doc 81 Đợt 5 task E2 — may `scope` SEE (and start / approve) this definition? Its non-STOP targets must all be in scope.
+ * The read rule of getRun / getWorkflow / listRuns / listWorkflows / versions / simulate-by-ref: outside it ⇒ "not found".
+ */
+export async function definitionVisibleTo(def: WorkflowDefinition | null | undefined, scope: FoeScope): Promise<boolean> {
+  return (await filterVisibleBy([def], (x) => x, scope)).length === 1;
+}
+
+/**
+ * doc 81 Đợt 5 task E2 — the items whose definition `scope` may see (ONE scope resolution, ONE machine load for the
+ * batch). A missing / malformed definition is visible only to an unrestricted scope (fail-closed).
+ */
+export async function filterVisibleBy<T>(items: T[], defOf: (item: T) => WorkflowDefinition | null | undefined, scope: FoeScope): Promise<T[]> {
+  const judge = await makeScopeJudge(scope);
+  if (judge.unrestricted) return items;
+  const defs = items.map(defOf);
+  const ids = new Set<number>();
+  for (const d of defs) if (d && Array.isArray(d.steps)) for (const id of validateWorkflow(d, null).referencedMachineIds) ids.add(id);
+  const machineMap = await loadMachines([...ids]);
+  const keep: T[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const d = defs[i];
+    if (!d || !Array.isArray(d.steps)) continue;
+    const { targets } = await definitionTargets(d, machineMap);
+    if (isOutOfScopeEmpty(await judge.outOf(targets, { nonStopOnly: true }))) keep.push(items[i]);
+  }
+  return keep;
+}
+
+/** doc 81 Đợt 5 task E2 — EVERY target (STOPs included) in `scope`: the deploy rule, also for deleting a workflow. */
+export async function definitionFullyInScope(def: WorkflowDefinition | null | undefined, scope: FoeScope): Promise<boolean> {
+  if (!def || !Array.isArray(def.steps)) return (await makeScopeJudge(scope)).unrestricted;
+  return isOutOfScopeEmpty((await scopeVerdict(def, scope, { nonStopOnly: false })).out);
+}
+
+/** doc 81 Đợt 5 task E2 — the run's workflow (current head definition) is visible to `scope`. DB error ⇒ false. */
+export async function runVisibleTo(run: { workflowId: number }, scope: FoeScope): Promise<boolean> {
+  try {
+    const d = await getDb();
+    const wf = d ? (await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1))[0] : undefined;
+    return await definitionVisibleTo(wf?.definitionJson as WorkflowDefinition | undefined, scope);
+  } catch {
+    return false;
+  }
+}
+
+/** doc 81 Đợt 5 task E2 — an out-of-scope target referenced only by STOP steps was allowed (L-7): audit it (best-effort). */
+function auditStopOutOfScope(user: FoeUser, def: WorkflowDefinition, runId: number, stage: "start" | "approve", out: OutOfScope): void {
+  if (isOutOfScopeEmpty(out)) return;
+  void (async () => {
+    try {
+      const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+      await logCrudOperation(createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }), {
+        action: "config_change",
+        entityType: "orchestration_run",
+        entityId: runId,
+        entityName: def.ref,
+        details: { operation: "foe_stop_target_out_of_scope", metadata: { stage, runId, ref: def.ref, outOfScope: out } },
+        status: "success",
+      });
+    } catch {
+      /* audit best-effort — never blocks a STOP (L-7) */
+    }
+  })();
+}
+
 async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number): Promise<StepOutcome> {
   const m = rc.machineById.get(step.machineId);
   if (!m) return { kind: "failed", error: `Machine ${step.machineId} not found.` };
@@ -1513,6 +1657,11 @@ export async function deployWorkflow(
     const refusal = await definitionRefusal(def, machineMap);
     if (refusal) return { ok: false, enabled: true, ...refusal };
 
+    // doc 81 Đợt 5 task E2 — every target (STOPs included) in the deployer's factory scope.
+    const scope = scopeFor(user, opts?.scope);
+    const sv = await scopeVerdict(def, scope, { nonStopOnly: false, machineMap });
+    if (!isOutOfScopeEmpty(sv.out)) return { ok: false, enabled: true, ...outOfScopeRefusal(sv.stepIds, sv.out) };
+
     // doc 40 ENG-F4 — SIM-GATE (sau khi validate, TRƯỚC khi persist). Khi cờ FOE_SIM_GATE_REQUIRED
     // bật: chỉ deploy definition có sim-token hợp lệ (đã mô phỏng ĐẠT) HOẶC có override kèm lý do
     // (ghi audit). Mặc định OFF → bỏ qua hoàn toàn (hành vi cũ). Fail-closed khi thiếu cả hai.
@@ -1539,6 +1688,21 @@ export async function deployWorkflow(
       .from(orchestrationWorkflows)
       .where(eq(orchestrationWorkflows.ref, def.ref))
       .limit(1);
+    // doc 81 Đợt 5 task E2 — refs are global: deploying over an EXISTING workflow replaces its definition, so the
+    // deployer's scope must also cover every target of the definition being replaced (else another factory's workflow
+    // could be overwritten). The refusal names no step and reveals only that the ref is taken (as duplicate does).
+    if (existing.length) {
+      const prev = await scopeVerdict(existing[0].definitionJson as WorkflowDefinition, scope, { nonStopOnly: false });
+      if (!isOutOfScopeEmpty(prev.out)) {
+        return {
+          ok: false,
+          enabled: true,
+          reason: "refOutOfScope",
+          stepIds: [],
+          message: `A workflow with ref "${def.ref}" already exists outside your factory scope — use another ref.`,
+        };
+      }
+    }
     const nextVersion = existing.length ? (existing[0].version ?? 1) + 1 : def.version ?? 1;
     const definitionJson: WorkflowDefinition = { ...def, version: nextVersion };
 
@@ -1630,6 +1794,8 @@ export async function rollbackWorkflow(
   version: number,
   user: FoeUser,
   reason: string,
+  /** doc 81 Đợt 5 task E2 — see DeployOpts.scope. */
+  opts: { scope?: FoeScope } = {},
 ): Promise<DeployResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
@@ -1640,20 +1806,25 @@ export async function rollbackWorkflow(
     return { ok: false, enabled: true, message: "A rollback reason (at least 3 characters) is required." };
   }
   const d = await db();
+  const noSnapshot: DeployResult = { ok: false, enabled: true, message: `No snapshot for workflow ${workflowId} version ${version}.` };
+  // doc 81 Đợt 5 task E2 — a workflow the actor cannot see is answered exactly like a missing snapshot.
+  const scope = scopeFor(user, opts.scope);
+  const [head] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, workflowId)).limit(1);
+  if (!head || !(await definitionVisibleTo(head.definitionJson as WorkflowDefinition, scope))) return noSnapshot;
   const snaps = await d
     .select()
     .from(orchestrationWorkflowVersions)
     .where(eq(orchestrationWorkflowVersions.workflowId, workflowId));
   const target = snaps.find((s) => s.version === version);
-  if (!target) {
-    return { ok: false, enabled: true, message: `No snapshot for workflow ${workflowId} version ${version}.` };
-  }
+  if (!target) return noSnapshot;
   // Re-deploy the old definition → bumps to a fresh version with the old content.
   // doc 80 ORC-05 — the sim-gate override is NO LONGER auto-filled by the engine: when the gate is
   // on, the override carries the HUMAN's mandatory reason (audited by auditDeploySimGate).
   const def = target.definitionJson as WorkflowDefinition;
+  // doc 81 Đợt 5 task E2 — the re-deploy runs the deploy scope check (every target of the old version AND of the head it replaces).
   const res = await deployWorkflow(def, user, {
     overrideReason: `rollback to v${version}: ${why}`,
+    scope,
   });
   if (res.ok) void auditRollback(user, def, version, res.version ?? null, why);
   return res;
@@ -1719,6 +1890,8 @@ export async function startRun(
      * added, never lifted. A non-user start with NO owner stays unmarked: it is owner-less ⇒ ownerUnknown refuses it anyway.
      */
     viaApi?: boolean;
+    /** doc 81 Đợt 5 task E2 — the starter's factory scope (see DeployOpts.scope). */
+    scope?: FoeScope;
   },
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
@@ -1733,6 +1906,11 @@ export async function startRun(
       .where(eq(orchestrationWorkflows.ref, workflowRef))
       .limit(1);
     if (!wf) return { ok: false, enabled: true, message: `Workflow "${workflowRef}" not found.` };
+    // doc 81 Đợt 5 task E2 — a workflow whose NON-STOP targets are outside the starter's scope does not exist for them
+    // (the SAME answer as a missing ref, before any status check). Targets reached only by STOP steps are allowed (L-7)
+    // and audited once the run exists.
+    const sv = await scopeVerdict(wf.definitionJson as WorkflowDefinition, scopeFor(user, opts?.scope), { nonStopOnly: true });
+    if (!isOutOfScopeEmpty(sv.out)) return { ok: false, enabled: true, message: `Workflow "${workflowRef}" not found.` };
     // doc 80 ORC-06 — only a DEPLOYED ('active') workflow runs. A duplicate is created 'draft'
     // and must pass deployWorkflow (validation + sim-gate + version snapshot) before running.
     if (wf.status !== "active") {
@@ -1774,6 +1952,7 @@ export async function startRun(
       })
       .returning();
     runId = run.id;
+    auditStopOutOfScope(user, def, run.id, "start", sv.stopOnlyOut); // doc 81 Đợt 5 task E2 (L-7: allowed, audited)
     // doc 33 W4 (F8 §5.1.2) — durable event log: record RUN_CREATED (best-effort, FOE_DURABLE-gated).
     void appendRunEvent(run.id, "RUN_CREATED", { ts: Date.now(), data: { workflowRef: wf.ref } });
 
@@ -1851,6 +2030,11 @@ export async function resumeRun(
   decision: GateDecision,
   user: FoeUser,
   hooks: ResumeHooks = {},
+  /**
+   * doc 81 Đợt 5 task E2 — the approver's factory scope (see DeployOpts.scope). Checked on every APPROVAL by a real user
+   * (or whenever given explicitly); a system resume (user 0: auto-resume / QT pump) records no counting approval.
+   */
+  opts: { scope?: FoeScope } = {},
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
@@ -1859,6 +2043,17 @@ export async function resumeRun(
     const d = await db();
     const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     if (!run) return { ok: false, enabled: true, message: `Run ${runId} not found.` };
+    // doc 81 Đợt 5 task E2 — the APPROVER's scope must cover the run's non-STOP targets. A run outside it does not exist
+    // for them: the SAME answer as a missing run, before any status / gate information (no existence oracle; the brief's
+    // CONFLICT outOfScope would tell an out-of-scope caller that the run exists). A rejection is an abort (L-7): unchanged.
+    let approvalStopOnlyOut: OutOfScope | null = null;
+    if (decision.approved && (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0))) {
+      const [wfS] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
+      const defS = wfS?.definitionJson as WorkflowDefinition | undefined;
+      const scope = scopeFor(user, opts.scope);
+      if (!(await definitionVisibleTo(defS, scope))) return { ok: false, enabled: true, message: `Run ${runId} not found.` };
+      approvalStopOnlyOut = (await scopeVerdict(defS!, scope, { nonStopOnly: true })).stopOnlyOut;
+    }
     if (run.status !== "awaiting_confirm" && run.status !== "held") {
       return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId} is not resumable (status=${run.status}).` };
     }
@@ -1945,6 +2140,7 @@ export async function resumeRun(
     // set made a later 'held' (interrupted) resume re-stamp a gate that had already passed.
     const pausedAtGate = run.status === "awaiting_confirm"; // read BEFORE the claim mutates the run
     await claimPausedRun(runId, "running", { currentStepId: null }, pinnedStepId);
+    if (approvalStopOnlyOut) auditStopOutOfScope(user, def, runId, "approve", approvalStopOnlyOut); // E2 (L-7: allowed, audited)
 
     // Mark the OPEN gate resolved (completed) so the re-walk skips it. fix round 1 (R-4-g/R-4-h/R-4-e):
     //   • only for a run paused AT a gate ('awaiting_confirm') — a 'held' (interrupted) resume never writes or re-stamps

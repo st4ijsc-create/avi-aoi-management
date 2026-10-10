@@ -1583,6 +1583,10 @@ export default function OrchestrationStudio() {
         return t("studio.deployRobotUnavailable", "Not deployed: robot step(s) {{steps}} name a robot that does not exist (or the robot list could not be read). Pick an existing robot for each step, then deploy again.", { steps });
       case "robotDisabled": // final wave R-4-x — motion steps only
         return t("studio.deployRobotDisabled", "Not deployed: motion step(s) {{steps}} name a robot that is not enabled. Enable the robot or pick an enabled one, then deploy again.", { steps });
+      case "outOfScope": // doc 81 Đợt 5 task E2 — deploy covers EVERY step, stop steps included
+        return t("studio.deployOutOfScope", "Not deployed: step(s) {{steps}} touch a machine, robot or adapter outside your factory scope (a deploy covers every step, stop steps included). Ask someone whose scope covers them to deploy it.", { steps });
+      case "refOutOfScope": // doc 81 Đợt 5 task E2 — the ref belongs to another factory's workflow
+        return t("studio.deployRefOutOfScope", "Not deployed: a workflow with this ref already exists outside your factory scope. Use another ref.");
       case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
         return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
       default:

@@ -50,6 +50,12 @@ vi.mock("drizzle-orm", async (orig) => {
   const isNull = (col: { name: string }) => (row: Record<string, unknown>) => row[col.name] == null;
   return { ...actual, eq: makeEq, and: makeAnd, ne, inArray, notInArray, isNull };
 });
+// doc 81 Đợt 5 task E2 (2026-10-10) — this file does not measure factory scope (foeScope.dot5.db.test.ts does, on _test):
+// every principal here is unrestricted, as before E2 (the FakeDb cannot answer the scope resolver's SQL).
+vi.mock("./foeScope", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./foeScope")>();
+  return { ...orig, resolveUserFoeScope: () => null };
+});
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, orchestrationRuns, orchestrationWorkflows, machines, deviceAdapters, robots } from "../../../../drizzle/schema";

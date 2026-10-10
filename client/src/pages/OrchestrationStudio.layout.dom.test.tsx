@@ -569,7 +569,7 @@ describe("Orchestration P2 — Lịch sử phiên bản: VersionHistoryPanel + R
     expect(srv.refetched).toEqual(expect.arrayContaining(["orchestration.listWorkflows", "orchestration.listVersions"]));
   });
 
-  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"]] as const) {
+  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"], ["outOfScope", "deployOutOfScope"], ["refOutOfScope", "deployRefOutOfScope"]] as const) { // + doc 81 Đợt 5 E2
     it(`final wave G2: ROLLBACK refused with ${reason} ⇒ the translated sentence naming the steps (no raw server English)`, async () => {
       const user = userEvent.setup();
       srv.results["orchestration.rollbackWorkflow"] = { ok: false, enabled: true, reason, stepIds: ["s1", "s2"], message: "RAW server text" };

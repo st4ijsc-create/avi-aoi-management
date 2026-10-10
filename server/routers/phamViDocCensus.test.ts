@@ -652,7 +652,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
  *   ⇒ C +1 · D +1 · tong +2.
  */
-const GHIM = { A: 336, B: 8, C: 480, D: 1132, S: 342, tong: 2298 } as const;
+// ★★★ 2026-10-10 (doc 81 Đợt 5 task E2, item 26) — **A 336 → 335 · C 480 → 474 · S 342 → 349** (tổng giữ 2298).
+// `orchestrationRouter.ts`: simulate (A, đã GỠ khỏi sổ nợ) + listWorkflows/getWorkflow/listVersions/getVersion/listRuns/
+// getRun (C) nay đưa phạm vi ctx.user (`scopeOf(ctx.user)` → `definitionVisibleTo`/`filterVisibleBy`/`runVisibleTo`)
+// vào lượt đọc ⇒ nhóm S: 1 + 6 = 7. Ngoài phạm vi ⇒ NOT_FOUND Y HỆT không tồn tại.
+// Lưới: `server/routers/orchestrationScope.dot5.db.test.ts`. Đo trước/sau trên cùng cây (chỉ 7 thủ tục này đổi nhóm).
+const GHIM = { A: 335, B: 8, C: 474, D: 1132, S: 349, tong: 2298 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

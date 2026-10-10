@@ -360,8 +360,7 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/ntfClassifierRouter.ts (2) ──────────────────────────────────────────────
   "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list",
   "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status",
-  // ── server/routers/orchestrationRouter.ts (1) ──────────────────────────────────────────────
-  "server/routers/orchestrationRouter.ts#orchestrationRouter.simulate",
+  // ── server/routers/orchestrationRouter.ts — 2026-10-10 (doc 81 Đợt 5 E2): simulate đã vá (nhóm S), dòng đã gỡ.
   // ── server/routers/orderLifecycleRouter.ts (3) ─────────────────────────────────────────────
   "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.detail",
   "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.list",

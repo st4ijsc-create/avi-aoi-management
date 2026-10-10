@@ -22,6 +22,8 @@ import { Router, type Request, type Response, json as jsonBody } from "express";
 import { nanoid } from "nanoid";
 import { API_SCOPES } from "./scopes";
 import { requireScope } from "./auth";
+import { requireDeclaredTenantScope, tenantCodeScopeOf } from "./apiKeyScope"; // doc 81 Đợt 5 task E2
+import type { FoeScope } from "../../services/orchestration/foe/foeScope";
 import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 import { buildV1OpenApiSpec } from "./openapi";
 import { emit } from "./webhookBridge";
@@ -73,6 +75,16 @@ async function loadMachine(id: number): Promise<MachineRow> {
   const m = await getMachineById(id);
   if (!m) throw new ApiHttpError(404, "not_found", `Machine ${id} not found.`);
   return m as unknown as MachineRow;
+}
+
+/**
+ * doc 81 Đợt 5 task E2 (item 26) — the factory scope an API key acts under in orchestration. Only after
+ * `requireDeclaredTenantScope()` (an undeclared key — dataScopeMode NULL — is refused 403 before this): `global` ⇒
+ * unrestricted (null); `factory` ⇒ that key's codes; anything else ⇒ an EMPTY scope (fail-closed, never "no filter").
+ */
+function orchestrationScopeOf(ts: NonNullable<Request["apiPrincipal"]>["tenantScope"] | undefined): FoeScope {
+  if (ts?.mode === "global") return null;
+  return { tenantScope: tenantCodeScopeOf(ts) ?? {} };
 }
 
 function resolveCapability(m: MachineRow): EquipmentCapability {
@@ -485,17 +497,20 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/workflows",
     requireScope(API_SCOPES.ORCHESTRATION_WRITE),
+    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2 — a key with no declared scope is refused (403)
     wrap(async (req, res) => {
       const { deployWorkflow } = await import("../../services/orchestration/foe/foeEngine");
       const def = (req.body ?? {}) as never;
       const principal = req.apiPrincipal?.name ?? "api-key";
-      const result = await deployWorkflow(def, { id: 0, role: "api", name: principal });
+      // doc 81 Đợt 5 task E2 — every target of the definition must be in the key's factory scope.
+      const result = await deployWorkflow(def, { id: 0, role: "api", name: principal }, { scope: orchestrationScopeOf(req.apiPrincipal?.tenantScope) });
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
       }
       if (!result.ok) {
         throw new ApiHttpError(400, "invalid_workflow", result.message ?? "Workflow validation failed.", {
           errors: result.errors ?? [],
+          ...(result.reason ? { reason: result.reason, stepIds: result.stepIds ?? [] } : {}),
         });
       }
       sendOk(res, { workflowId: result.workflowId, ref: result.ref, version: result.version }, 201);
@@ -506,6 +521,7 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/runs",
     requireScope(API_SCOPES.ORCHESTRATION_WRITE),
+    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const { startRun } = await import("../../services/orchestration/foe/foeEngine");
       const body = (req.body ?? {}) as { workflowRef?: string; params?: Record<string, unknown> };
@@ -519,7 +535,11 @@ export function createV1Router(): Router {
       const ownerUserId = await apiKeyOwnerUserId(req.apiPrincipal);
       // doc 81 Đợt 5 task E1 (item 24, option C) — viaApi: the run is marked server-side as API-started; its OT/robot steps
       // other than a STOP are never sent (FOE_GATE_REQUIRED(apiRun)), whoever approves its gates.
-      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, { ownerUserId, viaApi: true });
+      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, {
+        ownerUserId,
+        viaApi: true,
+        scope: orchestrationScopeOf(req.apiPrincipal?.tenantScope), // doc 81 Đợt 5 task E2 — a workflow outside the key's scope is "not found"
+      });
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
       }
@@ -538,6 +558,7 @@ export function createV1Router(): Router {
   r.post(
     "/orchestration/simulate",
     requireScope(API_SCOPES.ORCHESTRATION_READ),
+    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const body = (req.body ?? {}) as {
         workflow?: unknown;
@@ -566,7 +587,11 @@ export function createV1Router(): Router {
           .from(orchestrationWorkflows)
           .where(eq(orchestrationWorkflows.ref, body.workflowRef))
           .limit(1);
-        if (!wf) throw new ApiHttpError(404, "not_found", `Workflow "${body.workflowRef}" not found.`);
+        // doc 81 Đợt 5 task E2 — a stored workflow outside the key's scope ⇒ the SAME 404 as a missing ref.
+        const { definitionVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
+        if (!wf || !(await definitionVisibleTo(wf.definitionJson as never, orchestrationScopeOf(req.apiPrincipal?.tenantScope)))) {
+          throw new ApiHttpError(404, "not_found", `Workflow "${body.workflowRef}" not found.`);
+        }
         def = wf.definitionJson as never;
       } else {
         throw new ApiHttpError(400, "bad_request", "Provide either `workflow` or `workflowRef`.");
@@ -610,14 +635,16 @@ export function createV1Router(): Router {
   r.get(
     "/orchestration/runs/:id",
     requireScope(API_SCOPES.ORCHESTRATION_READ),
+    requireDeclaredTenantScope(), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) {
         throw new ApiHttpError(400, "bad_request", "Invalid run id.");
       }
-      const { getRun } = await import("../../services/orchestration/foe/foeEngine");
+      const { getRun, runVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
       const view = await getRun(id);
-      if (!view) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
+      // doc 81 Đợt 5 task E2 — out of the key's scope ⇒ the SAME 404 as a missing run.
+      if (!view || !(await runVisibleTo(view.run, orchestrationScopeOf(req.apiPrincipal?.tenantScope)))) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
       sendOk(res, {
         run: {
           id: view.run.id,
