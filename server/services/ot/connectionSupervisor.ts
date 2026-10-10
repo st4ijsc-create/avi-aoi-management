@@ -406,6 +406,43 @@ export class ConnectionSupervisor {
     this.activeIndex = -1;
   }
 
+  /**
+   * doc 81 Đợt 4 Task B3 (QĐ-4b) — drop the ACTIVE endpoint's session and open a FRESH one, trying the SAME endpoint
+   * first (then the others), through the normal reconnect cycle (attemptCycle — no second reconnect path). Used by
+   * the command dispatcher when a timed-out write is still pending after its grace, so the next command (a STOP)
+   * never shares the session that write may still be using.
+   * Single-flight with the reconnect loop: a cycle already running / not connected / stopped ⇒ false (no fresh
+   * session proven). Internally bounded (close + disconnect ≤ disconnectTimeoutMs each, every connect ≤ its connect
+   * deadline); the caller adds an outer bound of resetBoundMs(). Never throws. true ⇔ a session opened by THIS call
+   * is connected.
+   */
+  async resetSession(reason: string): Promise<boolean> {
+    if (this.stopped || this.cycleRunning || this.state !== "connected" || this.activeIndex < 0) return false;
+    this.cycleRunning = true;
+    try {
+      this.lastError = reason;
+      this.setState("reconnecting");
+      await this.closeActiveHandle();
+      await this.safeDisconnect(this.endpoints[this.activeIndex]);
+      const ok = await this.attemptCycle("same");
+      if (!ok && !this.stopped) this.scheduleRetry(this.nextBackoffDelay());
+      return ok;
+    } catch {
+      return false;
+    } finally {
+      this.cycleRunning = false;
+    }
+  }
+
+  /**
+   * doc 81 Đợt 4 Task B3 — the outer bound a caller puts on resetSession(): the connect deadline of the active
+   * endpoint (the supervisor's connect timeout, raised for a slow endpoint exactly as connectAndSubscribe does).
+   */
+  resetBoundMs(): number {
+    const ep = this.endpoints[this.activeIndex] ?? this.endpoints[0];
+    return this.connectDeadlineFor(ep);
+  }
+
   /** doc 81 Đợt 1B Task 1 — chờ p tối đa disconnectTimeoutMs; không bao giờ ném. */
   private async bounded(p: Promise<unknown>, what: string): Promise<void> {
     try {
@@ -557,7 +594,7 @@ export class ConnectionSupervisor {
    * the previously-active (different) endpoint to keep exactly one live connection.
    * On a full failure: bump consecutiveFailures + set 'failed'. Never throws.
    */
-  private async attemptCycle(preferOther: boolean): Promise<boolean> {
+  private async attemptCycle(preferOther: boolean | "same"): Promise<boolean> {
     if (this.stopped) return false;
     const prevIndex = this.activeIndex;
     this.setState(this.hasConnectedOnce ? "reconnecting" : "connecting");
@@ -604,10 +641,14 @@ export class ConnectionSupervisor {
     return false;
   }
 
-  /** Endpoint indices to try: primary-first, or standby-first when promoting. */
-  private tryOrder(preferOther: boolean): number[] {
+  /** Endpoint indices to try: primary-first, standby-first when promoting, or the active one first ("same", B3 reset). */
+  private tryOrder(preferOther: boolean | "same"): number[] {
     const n = this.endpoints.length;
     const all = Array.from({ length: n }, (_, i) => i);
+    if (preferOther === "same" && this.activeIndex >= 0) {
+      const start = this.activeIndex % n;
+      return [...all.slice(start), ...all.slice(0, start)];
+    }
     if (preferOther && n > 1) {
       const start = this.activeIndex >= 0 ? (this.activeIndex + 1) % n : 0;
       return [...all.slice(start), ...all.slice(0, start)];

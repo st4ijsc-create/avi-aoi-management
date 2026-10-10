@@ -115,7 +115,7 @@ import {
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
-import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
+import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, resetAdapterSession } from "./otManager";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
@@ -205,6 +205,12 @@ export function isSafetyPreflightEnabled(): boolean {
  * side already had SAFETY_PREFLIGHT_DEADLINE_MS = 5000; OT had none). Timeout ⇒ UNKNOWN ⇒ refused (fail-closed).
  */
 export const OT_SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
+
+/**
+ * doc 81 Đợt 4 Task B3 (QĐ-4b, owner ruling: 1000 ms) — how long a write that TIMED OUT keeps its adapter's queue
+ * slot while it may still be running on the driver's session (see holdSlotAfterTimedOutWrite).
+ */
+export const OT_TIMED_OUT_WRITE_GRACE_MS = 1000;
 
 async function readSafetyStateForPreflight(
   adapterId: number,
@@ -455,7 +461,16 @@ function pumpAdapterQueue(adapterId: number, queue: AdapterCommandQueue): void {
 export function tryEnqueueAdapterCommand<T>(
   adapterId: number,
   fn: () => Promise<T>,
-  opts?: { priorityStop?: boolean; stopRef?: Record<string, unknown> },
+  opts?: {
+    priorityStop?: boolean;
+    stopRef?: Record<string, unknown>;
+    /**
+     * doc 81 Đợt 4 Task B3 — given `fn`'s result, a promise the queue SLOT waits on before the next command runs
+     * (the caller still gets the result at once). It must settle on its own within a bounded time and never reject
+     * (a rejection releases the slot too). undefined ⇒ the slot is released immediately, as before.
+     */
+    holdSlot?: (v: T) => Promise<void> | undefined;
+  },
 ): EnqueueOutcome<T> {
   const max = cmdQueueMax();
   const priorityStop = opts?.priorityStop === true;
@@ -489,6 +504,18 @@ export function tryEnqueueAdapterCommand<T>(
       };
       p.then(
         (v) => {
+          let hold: Promise<void> | undefined;
+          try {
+            hold = opts?.holdSlot?.(v);
+          } catch {
+            hold = undefined;
+          }
+          if (hold) {
+            // B3 — answer the caller now, keep the slot until the hold settles (bounded by its producer).
+            hold.then(done, done);
+            settle.resolve(v);
+            return;
+          }
           done();
           settle.resolve(v);
         },
@@ -1259,23 +1286,39 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── G1.9 — the write+verify body, extracted UNCHANGED so it can run either
   //    immediately (flag OFF — prior behaviour) or under the per-adapter queue.
   //    It never throws for expected failure modes (driver errors are caught).
-  const executeWriteAndVerify = async (): Promise<{ sentAt: Date; timedOut: boolean; outcomes: Outcome[] }> => {
+  const executeWriteAndVerify = async (): Promise<{ sentAt: Date; timedOut: boolean; outcomes: Outcome[]; slotHold?: Promise<void> }> => {
     const sentAt = new Date();
 
     let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
     let threwError: string | null = null;
+    // doc 81 Đợt 4 Task B3 — keep the write promise: after a timeout it may still be running on the session.
+    let writePromise: Promise<unknown> | undefined;
+    let writeTimer: ReturnType<typeof setTimeout> | undefined;
     try {
+      const wp = Promise.resolve(driver.writeTags(driverWrites));
+      writePromise = wp;
+      wp.catch(() => undefined); // a late rejection after the timeout is expected, never unhandled
       writeResults = await Promise.race([
-        driver.writeTags(driverWrites),
-        new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), timeoutMs)),
+        wp,
+        new Promise<typeof TIMEOUT>((resolve) => {
+          writeTimer = setTimeout(() => resolve(TIMEOUT), timeoutMs);
+        }),
       ]);
     } catch (err) {
       threwError = (err as Error)?.message || String(err);
       writeResults = [];
+    } finally {
+      clearTimeout(writeTimer);
     }
 
     // Decide a per-write outcome from the write result (status BEFORE read-back).
     const timedOut = writeResults === TIMEOUT;
+    // B3 — a timed-out write keeps the adapter's queue slot (only the serialized path has one) until it settles or
+    // its grace expires and the session is reset; the caller's answer is not delayed by this.
+    const slotHold =
+      timedOut && writePromise && isCmdSerializeEnabled()
+        ? holdSlotAfterTimedOutWrite(input, writePromise, { intentIds, confirmedBy: ledgerConfirmer })
+        : undefined;
     const resultsArr = Array.isArray(writeResults) ? writeResults : [];
 
     const outcomes: Outcome[] = resolved.map((r, i) => {
@@ -1353,7 +1396,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       }
     }
 
-    return { sentAt, timedOut, outcomes };
+    return { sentAt, timedOut, outcomes, ...(slotHold ? { slotHold } : {}) };
   };
 
   // ── (5c) G1.9 — PER-ADAPTER SERIALIZATION (flag OT_CMD_SERIALIZE_ENABLED,
@@ -1364,14 +1407,14 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    doc 81 Đợt 1E Task 1 (R-1E-a) — a PINNED stop (stopCls.pinnedStop, Đợt 1D: exact pin match + step-3 row +
   //    connection fingerprint) is never BUSY: it runs right after the in-flight write and cancels the non-stop
   //    commands still WAITING ahead of it; each cancelled caller ledgers SUPERSEDED_BY_STOP naming the stop.
-  let executed: { sentAt: Date; timedOut: boolean; outcomes: Outcome[] };
+  let executed: { sentAt: Date; timedOut: boolean; outcomes: Outcome[]; slotHold?: Promise<void> };
   if (isCmdSerializeEnabled()) {
     const enq = tryEnqueueAdapterCommand(
       input.adapterId,
       executeWriteAndVerify,
       stopCls.pinnedStop === true
-        ? { priorityStop: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds } }
-        : { priorityStop: false },
+        ? { priorityStop: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds }, holdSlot: (v) => v.slotHold }
+        : { priorityStop: false, holdSlot: (v) => v.slotHold },
     );
     if (!enq.accepted) {
       const ids = await writeRejected(
@@ -1471,6 +1514,98 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     return { ok: allOk, simulated: false, status: overall, results, commandLogIds, pinnedStop: true };
   }
   return { ok: allOk, simulated: false, status: overall, results, commandLogIds };
+}
+
+/**
+ * doc 81 Đợt 4 Task B3 (QĐ-4b) — the queue-slot hold of a write that TIMED OUT. Before: the slot was released at the
+ * timeout while the write could still be running on the driver's session, so a STOP queued behind it ran at the same
+ * time on the same session. Now the slot is held until
+ *   (a) the old write settles (the next command then runs on the same, now idle session), or
+ *   (b) OT_TIMED_OUT_WRITE_GRACE_MS expires ⇒ the session is reset through the EXISTING reconnect path
+ *       (otManager.resetAdapterSession: connection supervisor, or the legacy watchdog's own steps), bounded by
+ *       adapterSessionResetBoundMs (that path's connect timeout). The next command (a STOP) runs on the fresh session.
+ * L-7 — a STOP is never held indefinitely: if the reset fails or exceeds its bound, the slot is released anyway (the
+ * STOP proceeds), logged and audited as `overlapRisk` (control_audit_log "ot_write_overlap_risk").
+ * WORST-CASE extra STOP start latency, counted from the old write's own timeout:
+ *   OT_TIMED_OUT_WRITE_GRACE_MS + adapterSessionResetBoundMs = 1 s + connect timeout (default 10 s) = 11 s.
+ * Non-STOP commands behind it wait for the slot the same way. Never rejects.
+ */
+async function holdSlotAfterTimedOutWrite(
+  input: DispatchInput,
+  write: Promise<unknown>,
+  ledger: { intentIds: number[]; confirmedBy: number },
+): Promise<void> {
+  try {
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
+    const first = await Promise.race([
+      write.then(
+        () => "settled" as const,
+        () => "settled" as const,
+      ),
+      new Promise<"grace">((resolve) => {
+        graceTimer = setTimeout(() => resolve("grace"), OT_TIMED_OUT_WRITE_GRACE_MS);
+      }),
+    ]);
+    clearTimeout(graceTimer);
+    if (first === "settled") return;
+
+    const resetBoundMs = adapterSessionResetBoundMs(input.adapterId);
+    let resetError: string;
+    try {
+      const r = await withDeadline(
+        resetAdapterSession(input.adapterId, `timed-out write still pending after ${OT_TIMED_OUT_WRITE_GRACE_MS}ms grace (B3)`),
+        resetBoundMs,
+        `adapter ${input.adapterId} session reset`,
+      );
+      if (r.reset) {
+        console.warn(`[Dispatch] adapter ${input.adapterId}: timed-out write still pending after its grace — driver session reset via ${r.via} before the next command (B3)`);
+        return;
+      }
+      resetError = r.error ?? "session not reset";
+    } catch (err) {
+      resetError = (err as Error)?.message || String(err);
+    }
+    console.error(
+      `[Dispatch] adapter ${input.adapterId}: overlapRisk — a timed-out write may still be running on the old session and its reset failed (${resetError}); the next command (a STOP) proceeds anyway (L-7, B3)`,
+    );
+    auditWriteOverlapRisk(input, ledger, { graceMs: OT_TIMED_OUT_WRITE_GRACE_MS, resetBoundMs, resetError });
+  } catch (err) {
+    console.error(`[Dispatch] adapter ${input.adapterId}: timed-out write slot hold failed (slot released):`, (err as Error)?.message || err);
+  }
+}
+
+/** B3 — control_audit_log "ot_write_overlap_risk", fire-and-forget under a deadline (never holds the queue). */
+function auditWriteOverlapRisk(
+  input: DispatchInput,
+  ledger: { intentIds: number[]; confirmedBy: number },
+  detail: { graceMs: number; resetBoundMs: number; resetError: string },
+): void {
+  const work = (async () => {
+    const db = await getDb();
+    if (!db) {
+      console.error(`[Dispatch] audit ot_write_overlap_risk skipped for adapter ${input.adapterId} — no DB`);
+      return;
+    }
+    const { recordAuditEvent } = await import("../audit/controlAuditService");
+    await recordAuditEvent(db, {
+      entityType: "ot_command",
+      entityId: ledger.intentIds[0] ?? input.idempotencyKey ?? "unrecorded",
+      action: "ot_write_overlap_risk",
+      actorId: ledger.confirmedBy,
+      after: {
+        adapterId: input.adapterId,
+        machineId: input.machineId ?? null,
+        commandType: input.commandType,
+        idempotencyKey: input.idempotencyKey ?? null,
+        overlapRisk: true,
+        ...detail,
+      },
+      reason: "B3 (QĐ-4b): a timed-out write was still pending after its grace and the driver session could not be reset in time — the next command proceeded (L-7: a STOP is never held indefinitely)",
+    });
+  })();
+  void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, "ot_write_overlap_risk audit").catch((err) => {
+    console.error(`[Dispatch] audit ot_write_overlap_risk failed or is stuck for adapter ${input.adapterId}:`, (err as Error)?.message || err);
+  });
 }
 
 /** Upper bound after which a still-pending pinned-stop override audit is logged as stuck (never awaited by the stop). */
