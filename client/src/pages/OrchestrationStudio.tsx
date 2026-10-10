@@ -61,6 +61,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { setAiChatOpen, useAiEntry } from "@/lib/aiEntryStore";
 import { toast } from "sonner";
+import { ABORT_RESEND_WINDOW_MS, abortResendAllowed } from "@shared/foeAbortResend"; // doc 81 Đợt 6 fix 3 (R-6-d)
 import {
   Workflow,
   Terminal,
@@ -1635,8 +1636,49 @@ export default function OrchestrationStudio() {
       toast.error(t("studio.scopeUnverified", "Scope not verified — retry. To stop equipment now, use the machine's direct STOP / E-STOP."));
     }
   };
+  /**
+   * doc 81 Đợt 6 (owner decision 2026-10-11) + fix 1 — an abort AND a gate rejection skip the non-STOP steps but still SEND
+   * the remaining STOP steps and the due STOP compensations (when the run has acted — R-6-b). The confirmation counts only
+   * the STOPs the machine CONFIRMED (#7); STOPs still awaiting an answer, stop-typed steps that are not a pinned STOP and
+   * STOPs not needed are said apart; a STOP not sent / not verified ⇒ a warning pointing at the direct STOP / E-STOP.
+   */
+  // fix 2 (N6) — `kind` says whether it was an abort or a gate rejection (the texts name the right action).
+  const abortOutcomeToasts = (
+    r: { ok?: boolean; runId?: number; reason?: string; resend?: boolean; abortStops?: { sent: string[]; failed: string[]; pending: string[]; unverified: string[]; untakenBranch: string[]; notPinned: string[]; notNeeded?: string[] } } | null | undefined,
+    kind: "abort" | "reject",
+  ) => {
+    if (r?.reason === "resendTooOld") {
+      toast.error(t("studio.resendTooOld", "Too old to send the STOP steps again: the run was aborted more than {{minutes}} minutes ago (the machine may have been restarted since). To stop equipment now, use the machine's direct STOP / E-STOP.", { minutes: Math.round(ABORT_RESEND_WINDOW_MS / 60_000) }));
+      return;
+    }
+    const stops = r?.abortStops;
+    if (!stops) return;
+    if (r?.resend) {
+      // fix 3 (M5) — a re-send is not a new abort: say what was sent again
+      toast.success(t("studio.resendDone", "STOP steps of run #{{id}} sent again — confirmed by the machine: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length }));
+    } else if (r?.reason === "abortUnconfirmed") {
+      toast.error(
+        kind === "reject"
+          ? t("studio.rejectUnconfirmed", "The rejection could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length })
+          : t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length }),
+      );
+    } else {
+      toast.success(
+        kind === "reject"
+          ? t("studio.rejectDone", "Run #{{id}} rejected and aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length })
+          : t("studio.abortDone", "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length }),
+      );
+    }
+    if (stops.pending.length > 0) toast.info(t("studio.abortStopsPending", "{{count}} STOP step(s) handed to the machine, answer not received yet — see the run's steps.", { count: stops.pending.length }));
+    const notSent = stops.failed.length + stops.unverified.length + stops.untakenBranch.length;
+    if (notSent > 0) {
+      toast.warning(t("studio.abortStopsNotSent", "{{count}} STOP step(s) could not be sent or verified — check the run's steps. To stop that equipment now, use the machine's direct STOP / E-STOP.", { count: notSent }));
+    }
+    if (stops.notPinned.length > 0) toast.info(t("studio.abortNotPinned", "{{count}} stop-typed step(s) were not sent: they are not a pinned STOP.", { count: stops.notPinned.length }));
+    if ((stops.notNeeded?.length ?? 0) > 0) toast.info(t("studio.abortStopsNotNeeded", "The run had not sent any command other than a STOP, so its remaining STOP steps were not sent ({{count}}).", { count: stops.notNeeded?.length ?? 0 }));
+  };
   const resumeM = trpc.orchestration.resumeRun.useMutation({
-    onSuccess: (r) => { scopeUnverifiedToast(r); void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
+    onSuccess: (r) => { scopeUnverifiedToast(r); abortOutcomeToasts(r, "reject"); void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
     // doc 80 Đợt 1 Task 9 — CONFLICT (gate đã đổi / lượt khác đã quyết định) ⇒ tải lại để thấy gate thật.
     onError: (e) => {
       toastTrpcError(e);
@@ -1644,7 +1686,11 @@ export default function OrchestrationStudio() {
     },
   });
   const abortM = trpc.orchestration.abortRun.useMutation({
-    onSuccess: (r) => { scopeUnverifiedToast(r); void runsQ.refetch(); },
+    onSuccess: (r) => {
+      scopeUnverifiedToast(r);
+      abortOutcomeToasts(r, "abort");
+      void runsQ.refetch();
+    },
     onError: (e) => toastTrpcError(e),
   });
 
@@ -2230,6 +2276,7 @@ export default function OrchestrationStudio() {
       canAssign={canAssignRun}
       onResume={(approved, note, expectedStepId, expectedDefHash) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash })}
       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
+      abortPending={abortM.isPending && abortM.variables?.runId === Number(r.id)}
       t={t}
     />
   );
@@ -2546,6 +2593,22 @@ function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
   }
 }
 
+/** doc 81 Đợt 6 — marker of a step row written by an abort's STOP sweep (`result.abortStop`: "sent" | "failed"). */
+function AbortStopTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
+  const v = result?.abortStop;
+  if (v !== "sent" && v !== "failed") return null;
+  return (
+    <Badge
+      variant="outline"
+      data-testid="abort-stop"
+      data-kind={v}
+      className={`text-[10px] ${v === "sent" ? "border-red-500/50 text-red-700 dark:text-red-300" : "border-amber-500/50 text-amber-700 dark:text-amber-300"}`}
+    >
+      {v === "sent" ? t("studio.abortStopSent", "STOP sent on abort") : t("studio.abortStopFailed", "STOP on abort failed")}
+    </Badge>
+  );
+}
+
 /** doc 80 Task 4 (ORC-13) — per-step dispatch marker in the run drawer (routedTo + simulated/sent). */
 function StepDispatchTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
   const kind = classifyStepDispatch(result);
@@ -2580,6 +2643,7 @@ function RunRow({
   canAssign = false,
   onResume,
   onAbort,
+  abortPending = false,
   t,
 }: {
   run: Record<string, unknown>;
@@ -2593,6 +2657,8 @@ function RunRow({
   /** doc 81 Đợt 4 fix round 2 (R-4-k) — `expectedDefHash` = getRun().defHash the screen loaded; required to approve. */
   onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string) => void;
   onAbort: () => void;
+  /** doc 81 Đợt 6 fix 3 (M1) — an abort / re-send request for THIS run is in flight ⇒ "Send STOP steps again" is disabled. */
+  abortPending?: boolean;
   t: TFunction;
 }) {
   const [open, setOpen] = useState(false);
@@ -2606,6 +2672,11 @@ function RunRow({
   const awaiting = !interrupted && (status === "awaiting_confirm" || status === "held");
   // doc 80 ORC-01 — Abort nay dừng THẬT run đang chạy ⇒ hiện nút cho run queued/running.
   const abortable = status === "running" || status === "queued";
+  // doc 81 Đợt 6 fix 2 (N1) — an aborted run: send again the STOP steps the machine has not CONFIRMED (never a confirmed one).
+  // fix 3 (R-6-d, M3) — only within ABORT_RESEND_WINDOW_MS of the abort (shared with the server, which decides): past it the
+  // button is shown DISABLED with the reason ("too old — use the machine's direct STOP / E-STOP").
+  const resendable = status === "aborted";
+  const resendTooOld = resendable && !abortResendAllowed(run.finishedAt as string | Date | null | undefined);
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
   const detailQ = trpc.orchestration.getRun.useQuery(
@@ -2660,13 +2731,29 @@ function RunRow({
             <Button size="sm" variant="outline" className="h-7" onClick={() => setConfirmContinue(true)}>
               {t("studio.continueRun", "Continue…")}
             </Button>
-            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
+            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.cancelRun", "Cancel run")}
             </Button>
           </div>
         )}
+        {resendable && canControl && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            onClick={onAbort}
+            disabled={abortPending || resendTooOld}
+            title={
+              resendTooOld
+                ? t("studio.resendTooOld", "Too old to send the STOP steps again: the run was aborted more than {{minutes}} minutes ago (the machine may have been restarted since). To stop equipment now, use the machine's direct STOP / E-STOP.", { minutes: Math.round(ABORT_RESEND_WINDOW_MS / 60_000) })
+                : t("studio.resendStopsHint", "Sends again the run's STOP steps that the machine has not confirmed (never one it confirmed) — after an abort that was not confirmed or a STOP that failed.")
+            }
+          >
+            {t("studio.resendStops", "Send STOP steps again")}
+          </Button>
+        )}
         {abortable && canControl && (
-          <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
+          <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
             {t("studio.abort", "Abort")}
           </Button>
         )}
@@ -2675,10 +2762,10 @@ function RunRow({
             <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={!defHash || defChanged} onClick={() => onResume(true, undefined, shownStepId, defHash)}>
               {t("studio.approve", "Approve")}
             </Button>
-            <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
+            <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)} title={t("studio.rejectHint", "Reject: the run is aborted. The remaining non-STOP steps are skipped; if the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.reject", "Reject")}
             </Button>
-            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
+            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.abort", "Abort")}
             </Button>
           </div>
@@ -2784,6 +2871,8 @@ function RunRow({
                     {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
                   </span>
                   <span className="flex items-center gap-1">
+                    {/* doc 81 Đợt 6 — a STOP the abort still sent (or could not send): its own `abort:<step>` row. */}
+                    <AbortStopTag result={s.result} t={t} />
                     {/* doc 80 Task 4 (ORC-13) — where the command went and whether it was simulated. */}
                     <StepDispatchTag result={s.result} t={t} />
                     <Badge variant="outline" className="text-[10px]">{s.status}</Badge>

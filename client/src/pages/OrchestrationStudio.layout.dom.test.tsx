@@ -64,6 +64,8 @@ const srv = vi.hoisted(() => ({
   calls: {} as Record<string, unknown[]>,
   /** Kết quả trả cho onSuccess của mutation (khoá có mặt ⇒ tự gọi onSuccess sau một microtask). */
   results: {} as Record<string, unknown>,
+  /** doc 81 Đợt 6 fix 3 (M1) — mutations shown as IN FLIGHT (key ⇒ the variables of the pending call). */
+  pending: {} as Record<string, unknown>,
   refetched: [] as string[],
   invalidated: [] as string[],
   simulate: null as null | ((input: unknown) => Promise<unknown>),
@@ -112,7 +114,8 @@ vi.mock("@/lib/trpc", () => {
         return q(key, undefined);
       },
       useMutation: (opts: MutOpts = {}) => ({
-        isPending: false,
+        isPending: key in srv.pending,
+        variables: srv.pending[key],
         mutateAsync: vi.fn(),
         mutate: (input: unknown, callOpts?: MutOpts) => {
           (srv.calls[key] ??= []).push(input);
@@ -214,6 +217,7 @@ beforeEach(() => {
   srv.queryInputs = {};
   srv.calls = {};
   srv.results = {};
+  srv.pending = {};
   srv.refetched = [];
   srv.invalidated = [];
   srv.simulate = null;
@@ -745,6 +749,161 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
     const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
     expect(shown).toBe(S.scopeUnverified);
     expect(shown).not.toContain("RAW server text");
+  });
+
+  // ── doc 81 Đợt 6 (owner decision 2026-10-11) — abort skips non-STOP steps but STILL SENDS the remaining STOP steps ──
+  const ABORT_STOPS = { sent: [], failed: [], pending: [], unverified: [], untakenBranch: [], notPinned: [], notNeeded: [] };
+  it("doc 81 Đợt 6: the Abort button says the remaining STOP steps are still sent (accessible description) — still one click, no dialog", async () => {
+    const user = userEvent.setup();
+    render(<OrchestrationStudio />);
+    const btn = within(rowOf(3)).getByRole("button", { name: S.abort });
+    expect(btn).toHaveAccessibleDescription(S.abortHint);
+    await user.click(btn);
+    expect(calls("orchestration.abortRun")).toEqual([{ runId: 3 }]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("doc 81 Đợt 6 + fix 1 #7: abort done ⇒ the confirmation counts only CONFIRMED STOPs; one awaiting its answer is said apart", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.abortRun"] = { ok: true, enabled: true, runId: 3, status: "aborted", abortStops: { ...ABORT_STOPS, sent: ["stop", "ra"], pending: ["late"] } };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
+    await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
+    expect(String((toastSpy.success as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortDone.replace("{{id}}", "3").replace("{{sent}}", "2"));
+    expect(String((toastSpy.info as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortStopsPending.replace("{{count}}", "1"));
+    expect(toastSpy.warning).not.toHaveBeenCalled();
+  });
+
+  it("doc 81 Đợt 6 + fix 1 #7: STOP steps not sent / not verified / in an untaken branch ⇒ a translated warning (direct STOP / E-STOP); unpinned steps are NOT counted as STOPs", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.abortRun"] = { ok: true, enabled: true, runId: 3, status: "aborted", abortStops: { ...ABORT_STOPS, sent: ["ra"], failed: ["x"], unverified: ["stop"], untakenBranch: ["b1"], notPinned: ["u"] } };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
+    await waitFor(() => expect(toastSpy.warning).toHaveBeenCalled());
+    expect(String((toastSpy.warning as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortStopsNotSent.replace("{{count}}", "3"));
+    expect((toastSpy.info as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]))).toContain(S.abortNotPinned.replace("{{count}}", "1"));
+  });
+
+  it("doc 81 Đợt 6: abort NOT confirmed by the database in time ⇒ the translated error (never the raw server text), no success toast", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.abortRun"] = { ok: false, enabled: true, runId: 3, reason: "abortUnconfirmed", message: "RAW server text", abortStops: { ...ABORT_STOPS, sent: ["stop"] } };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+    expect(shown).toBe(S.abortUnconfirmed.replace("{{sent}}", "1"));
+    expect(shown).not.toContain("RAW server text");
+    expect(toastSpy.success).not.toHaveBeenCalled();
+  });
+
+  it("doc 81 Đợt 6 fix 1 #7: abort NOT confirmed and NO STOP sent ⇒ the text says 0 confirmed (never claims STOPs were sent)", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.abortRun"] = { ok: false, enabled: true, runId: 3, reason: "abortUnconfirmed", message: "x", abortStops: { ...ABORT_STOPS } };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    expect(String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortUnconfirmed.replace("{{sent}}", "0"));
+  });
+
+  it("doc 81 Đợt 6 fix 1 (R-6-b): a run that never acted ⇒ the confirmation says its STOP steps were not needed", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.abortRun"] = { ok: true, enabled: true, runId: 3, status: "aborted", abortStops: { ...ABORT_STOPS, notNeeded: ["stop", "ra"] } };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
+    await waitFor(() => expect(toastSpy.info).toHaveBeenCalled());
+    expect(String((toastSpy.info as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortStopsNotNeeded.replace("{{count}}", "2"));
+    expect(toastSpy.warning).not.toHaveBeenCalled();
+  });
+
+  it("doc 81 Đợt 6 fix 2 (N6): a rejection NOT confirmed ⇒ the text names the REJECTION (not 'the abort')", async () => {
+    const user = userEvent.setup();
+    srv.runs = [...RUNS_PLAIN, AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    srv.results["orchestration.resumeRun"] = { ok: false, enabled: true, runId: 30, reason: "abortUnconfirmed", message: "x", abortStops: { ...ABORT_STOPS } };
+    render(<OrchestrationStudio />);
+    await user.click(within(bottomPanel()).getByRole("tab", { name: new RegExp(S.awaitingTab) }));
+    await user.click(within(rowOf(30)).getByRole("button", { name: S.reject }));
+    await user.click(within(rowOf(30)).getByRole("button", { name: S.confirmReject }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    expect(String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.rejectUnconfirmed.replace("{{sent}}", "0"));
+  });
+
+  it("doc 81 Đợt 6 fix 2 (N1): an ABORTED run offers 'Send STOP steps again' (abortRun once, no dialog) and shows the outcome", async () => {
+    const user = userEvent.setup();
+    srv.runs = [...RUNS_PLAIN, run(40, "aborted", { finishedAt: new Date().toISOString() })].map((r) => ({ ...r }));
+    srv.results["orchestration.abortRun"] = { ok: true, enabled: true, runId: 40, status: "aborted", resend: true, abortStops: { ...ABORT_STOPS, sent: ["stop"] } };
+    render(<OrchestrationStudio />);
+    const btn = within(rowOf(40)).getByRole("button", { name: S.resendStops });
+    expect(btn).toHaveAccessibleDescription(S.resendStopsHint);
+    expect(within(rowOf(1)).queryByRole("button", { name: S.resendStops })).toBeNull(); // completed: none
+    await user.click(btn);
+    expect(calls("orchestration.abortRun")).toEqual([{ runId: 40 }]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
+    // fix 3 (M5) — a re-send is not a new abort
+    expect(String((toastSpy.success as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.resendDone.replace("{{id}}", "40").replace("{{sent}}", "1"));
+    expect(String((toastSpy.success as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).not.toContain(S.abortDone.split("#")[0]);
+  });
+
+  it("doc 81 Đợt 6 fix 3 (M1): 'Send STOP steps again' is DISABLED while that run's request is in flight", () => {
+    srv.runs = [...RUNS_PLAIN, run(40, "aborted", { finishedAt: new Date().toISOString() }), run(41, "aborted", { finishedAt: new Date().toISOString() })].map((r) => ({ ...r }));
+    srv.pending["orchestration.abortRun"] = { runId: 40 };
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(40)).getByRole("button", { name: S.resendStops })).toBeDisabled();
+    expect(within(rowOf(41)).getByRole("button", { name: S.resendStops })).toBeEnabled(); // another run: not affected
+  });
+
+  it("doc 81 Đợt 6 fix 3 (R-6-d): aborted MORE than 15 min ago ⇒ the button is disabled with the 'too old — use the direct STOP' reason; the server's refusal is translated", async () => {
+    const user = userEvent.setup();
+    const old = new Date(Date.now() - 16 * 60_000).toISOString();
+    srv.runs = [...RUNS_PLAIN, run(42, "aborted", { finishedAt: old }), run(43, "aborted", { finishedAt: new Date(Date.now() - 14 * 60_000).toISOString() })].map((r) => ({ ...r }));
+    srv.results["orchestration.abortRun"] = { ok: false, enabled: true, runId: 43, status: "aborted", reason: "resendTooOld", resend: true, message: "RAW" };
+    render(<OrchestrationStudio />);
+    const tooOld = S.resendTooOld.replace("{{minutes}}", "15");
+    const b42 = within(rowOf(42)).getByRole("button", { name: S.resendStops });
+    expect(b42).toBeDisabled();
+    expect(b42).toHaveAccessibleDescription(tooOld);
+    const b43 = within(rowOf(43)).getByRole("button", { name: S.resendStops });
+    expect(b43).toBeEnabled(); // 14 min: still allowed
+    await user.click(b43); // the server decides (clock skew): its refusal is shown translated
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    expect(String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(tooOld);
+    expect(toastSpy.success).not.toHaveBeenCalled();
+  });
+
+  it("doc 81 Đợt 6 fix 1 (R-6-a): Reject says the remaining STOP steps are still sent, and its answer gets the same confirmation + warning", async () => {
+    const user = userEvent.setup();
+    srv.runs = [...RUNS_PLAIN, AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    srv.results["orchestration.resumeRun"] = { ok: false, enabled: true, runId: 30, status: "aborted", abortStops: { ...ABORT_STOPS, sent: ["stop"], unverified: ["s2"] } };
+    render(<OrchestrationStudio />);
+    await user.click(within(bottomPanel()).getByRole("tab", { name: new RegExp(S.awaitingTab) }));
+    const rejectBtn = within(rowOf(30)).getByRole("button", { name: S.reject });
+    expect(rejectBtn).toHaveAccessibleDescription(S.rejectHint);
+    await user.click(rejectBtn);
+    await user.click(within(rowOf(30)).getByRole("button", { name: S.confirmReject }));
+    await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
+    expect(String((toastSpy.success as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.rejectDone.replace("{{id}}", "30").replace("{{sent}}", "1"));
+    expect(String((toastSpy.warning as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortStopsNotSent.replace("{{count}}", "1"));
+  });
+
+  it("doc 81 Đợt 6: the run's steps show the STOP steps the abort sent / could not send", async () => {
+    const user = userEvent.setup();
+    srv.getRun = {
+      run: RUNS_PLAIN[0],
+      steps: [
+        { stepId: "abort:stop", stepType: "command", status: "completed", result: { abortStop: "sent", stepId: "stop", routedTo: "ot-dispatcher", status: "simulated", simulated: true, accepted: true } },
+        { stepId: "abort:ra", stepType: "command", status: "failed", result: { abortStop: "failed", stepId: "ra" }, error: "rejected" },
+        { stepId: "s1", stepType: "command", status: "completed", result: { routedTo: "ot-dispatcher", status: "simulated", simulated: true, accepted: true } },
+      ],
+    };
+    render(<OrchestrationStudio />);
+    await user.click(within(bottomPanel()).getByRole("tab", { name: new RegExp(S.runsTab) }));
+    await user.click(screen.getByText(/run #1 ·/));
+    await waitFor(() => expect(rowOf(1).querySelectorAll('[data-testid="abort-stop"]')).toHaveLength(2));
+    const tags = Array.from(rowOf(1).querySelectorAll('[data-testid="abort-stop"]'));
+    expect(tags.map((x) => x.getAttribute("data-kind"))).toEqual(["sent", "failed"]);
+    expect(tags.map((x) => x.textContent)).toEqual([S.abortStopSent, S.abortStopFailed]);
   });
 
   it("Tiếp tục run bị gián đoạn: AlertDialog rồi resumeRun({runId, approved:true, expectedStepId})", async () => {
