@@ -18,6 +18,9 @@
  * Phạm vi tenant/nhà máy: năm router thực thể không lọc theo nhà máy (nằm trong sổ nợ `phamViDocBaseline.ts`). doc 81 Đợt 5
  * H5 (mục 30): AI được giao thì có — roster và người được giao chỉ gồm người CÙNG ≥1 nhà máy với mục (mục không có nhà máy ⇒
  * với người giao); admin gọi ⇒ không đổi (`services/engineeringAssignment/rosterScope.ts`).
+ * Fix round 1 — R-5-m: mục NGOÀI phạm vi người giao ≡ không tồn tại (NOT_FOUND, roster lẫn `assign`); MỘT luật người được
+ * giao cho roster và `assign` (`assigneeRuleSql`; run: người được giao xem được MỌI đích không-DỪNG); người hợp lệ nhưng
+ * ngoài luật ⇒ lời từ chối RIÊNG đã dịch `assigneeOutOfScope` (vi/en/zh).
  *
  * fix 1 (R-3-f) — phân công gắn với MỘT ĐỢT CHỜ DUYỆT (`pending_episode`; xem `assignmentService.ts#EPISODE_SQL`): mục
  * rời chờ duyệt ⇒ hết hiệu lực ngay ở mọi lượt đọc; hàng `active` đã chết bị TẮT ở lượt giao kế tiếp (audit `expire`).
@@ -48,7 +51,7 @@ import {
   type DbOrTx,
 } from "../services/engineeringAssignment/assignmentService";
 import { requireAssignGate, requireLicense } from "../services/engineeringAssignment/assignGate";
-import { rosterFactoryFilter } from "../services/engineeringAssignment/rosterScope";
+import { assigneeRuleSql, resolveTargetForAssigner } from "../services/engineeringAssignment/rosterScope";
 import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, assignmentDeepLink, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 const entityTypeInput = z.enum(ASSIGNABLE_ENTITY_TYPES);
@@ -148,6 +151,14 @@ export const engineeringAssignmentRouter = router({
       const type = input.entityType;
       await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
+      const notFound = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: ASSIGNABLE[type].errorEntity }, `${type} ${input.entityId} not found`);
+
+      // doc 81 Đợt 5 task E fix 1 (R-5-d) — an orchestration run outside the ASSIGNER's factory scope does not exist for them.
+      // H fix 1 (R-5-m, M4) — the same for every type: missing or outside the assigner's scope ⇒ NOT_FOUND, FIRST (before
+      // anything about the assignee), one answer for both.
+      const runInScope = type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf(ctx.user)));
+      const scoped = runInScope ? await resolveTargetForAssigner(d, ctx, type, input.entityId) : null;
+      if (!scoped) throw notFound();
 
       const [assignee] = await d
         .select({ id: users.id, name: users.name, role: users.role, isActive: users.isActive })
@@ -156,30 +167,24 @@ export const engineeringAssignmentRouter = router({
       if (!assignee || !assignee.isActive || !(await canViewTarget(assignee.id, assignee.role, type))) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
       }
-      // doc 81 Đợt 5 task E fix 1 (R-5-d, review #3) — an orchestration run outside the ASSIGNER's factory scope does not
-      // exist for them (the SAME NOT_FOUND as a missing run, thrown at the same point); an assignee who cannot see the run
-      // is not a valid assignee (the same single refusal as any other invalid assignee).
-      const runInScope = type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf(ctx.user)));
+      // doc 81 Đợt 5 H5 + H fix 1 (I1) — the ONE assignee rule shared with the roster (`assigneeRuleSql`): factory rule, and
+      // for a run: the assignee sees EVERY non-STOP target. A valid account outside the rule ⇒ its own translated refusal.
+      const outOfScope = () =>
+        appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeOutOfScope" }, "Người được giao không thuộc phạm vi của mục này.");
+      const assigneeRule = await assigneeRuleSql(d, ctx, type, input.entityId, scoped.factories);
+      if (assigneeRule) {
+        const [inRule] = await d.select({ id: users.id }).from(users).where(and(eq(users.id, assignee.id), assigneeRule)).limit(1);
+        if (!inRule) throw outOfScope();
+      }
+      // E fix 1 (R-5-d, review #3) — defence in depth: the engine's own check (same rule as above, by construction + test).
       const assigneeSeesRun =
         type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf({ id: assignee.id, role: assignee.role })));
-      if (runInScope && !assigneeSeesRun) {
-        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
-      }
-      // doc 81 Đợt 5 H5 (mục 30) — CÙNG luật nhà máy với roster: người được giao không cùng nhà máy nào với mục (hoặc với người
-      // giao khi mục không có nhà máy) ⇒ CÙNG một lời từ chối như người không hợp lệ. Admin giao ⇒ không lọc (như cũ). Run
-      // ngoài phạm vi người gọi ⇒ bỏ qua ở đây, đi tiếp tới NOT_FOUND như cũ (R-5-d).
-      const factoryRule = runInScope ? await rosterFactoryFilter(d, ctx, type, input.entityId) : undefined;
-      if (factoryRule) {
-        const [shares] = await d.select({ id: users.id }).from(users).where(and(eq(users.id, assignee.id), factoryRule)).limit(1);
-        if (!shares) {
-          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
-        }
-      }
+      if (!assigneeSeesRun) throw outOfScope();
 
       try {
         return await d.transaction(async (tx) => {
-          const target = runInScope ? await loadTarget(tx, type, input.entityId, true) : null;
-          if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: ASSIGNABLE[type].errorEntity }, `${type} ${input.entityId} not found`);
+          const target = await loadTarget(tx, type, input.entityId, true);
+          if (!target) throw notFound();
           if (!target.pending) {
             throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: OP_ASSIGN, reason: "assignTargetNotPending" }, "Chỉ giao được mục đang chờ duyệt.");
           }
@@ -313,7 +318,9 @@ export const engineeringAssignmentRouter = router({
    *   • `truncated`: còn người hợp lệ ngoài trần ⇒ true (đọc trần + 1) — UI nói "gõ để thu hẹp".
    *
    * doc 81 Đợt 5 H5 (mục 30) — `entityId` (mục đang giao): chỉ người CÙNG ≥1 nhà máy với mục; mục không có nhà máy / không
-   * tồn tại / không gửi ⇒ cùng ≥1 nhà máy với người giao. Admin gọi ⇒ không lọc. Cùng bộ lọc cho `selectedId`.
+   * gửi ⇒ cùng ≥1 nhà máy với người giao. Admin gọi ⇒ không lọc. Cùng bộ lọc cho `selectedId`.
+   * H fix 1 — R-5-m: mục không tồn tại / ngoài phạm vi người giao ⇒ NOT_FOUND (một câu trả lời); luật người được giao là
+   * `assigneeRuleSql` — CÙNG hàm với `assign` (run: người xem được mọi đích không-DỪNG).
    */
   assignableUsers: protectedProcedure
     .input(z.object({
@@ -327,14 +334,19 @@ export const engineeringAssignmentRouter = router({
       await requireAssignGate(ctx, type);
       const d = await dbOrThrow();
       const canView = ASSIGNABLE[type].viewModules.map((m) => permissionHeldSql(users.id, users.role, m, "canView"));
-      // R-5-d — run NGOÀI phạm vi người gọi ⇒ NOT_FOUND Y HỆT run không tồn tại (cùng mã, cùng câu, cùng điểm ném — như
-      // `assign`): không lộ sự tồn tại, không trả người nào. Bốn loại còn lại: router thực thể không lọc nhà máy (sổ nợ) ⇒
-      // không có "ngoài phạm vi"; id không tồn tại ⇒ như mục không có nhà máy (nhà máy người giao — không mang gì của mục).
-      if (input.entityId != null && type === "orchestration_run" && !(await runIdVisibleTo(input.entityId, foeScopeOf(ctx.user)))) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: ASSIGNABLE[type].errorEntity }, `${type} ${input.entityId} not found`);
+      // R-5-d / R-5-m — mục KHÔNG TỒN TẠI hoặc NGOÀI phạm vi người giao ⇒ NOT_FOUND Y HỆT nhau (cùng mã, cùng câu, cùng điểm
+      // ném — như `assign`): không lộ sự tồn tại, không trả người nào. Run: luật của E; bốn loại còn lại: mọi nhà máy của mục
+      // ⊆ phạm vi người giao.
+      let scoped: { factories: number[] } | null | undefined;
+      if (input.entityId != null) {
+        const runVisible = type !== "orchestration_run" || (await runIdVisibleTo(input.entityId, foeScopeOf(ctx.user)));
+        scoped = runVisible ? await resolveTargetForAssigner(d, ctx, type, input.entityId) : null;
+        if (!scoped) {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: ASSIGNABLE[type].errorEntity }, `${type} ${input.entityId} not found`);
+        }
       }
-      const factoryRule = await rosterFactoryFilter(d, ctx, type, input.entityId);
-      const hopLe = [eq(users.isActive, true), ...canView, ...(factoryRule ? [factoryRule] : [])];
+      const assigneeRule = await assigneeRuleSql(d, ctx, type, input.entityId, scoped?.factories);
+      const hopLe = [eq(users.isActive, true), ...canView, ...(assigneeRule ? [assigneeRule] : [])];
       const search = input.search?.trim() ?? "";
       const timTen = search
         ? sql`coalesce(${users.name}, '') ILIKE ${`%${thoatLike(search)}%`} ESCAPE '\\'`

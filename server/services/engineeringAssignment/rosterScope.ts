@@ -16,6 +16,16 @@
  *   `engineeringAssignmentRouter`) kiểm `runIdVisibleTo(input.entityId, foeScopeOf(ctx.user))` TRƯỚC và khi đó không truyền id
  *   nào xuống đây (census `orchestrationScopeCensus.dot5.test.ts` đo dòng ấy ở router).
  * Được giao ≠ được duyệt: tệp này chỉ thu hẹp AI có thể được giao.
+ *
+ * Fix round 1 (review I1 + ruling R-5-m + M4):
+ *   • R-5-m — MỤC phải trong phạm vi NGƯỜI GIAO, nếu không ⇒ NOT_FOUND Y HỆT mục không tồn tại (`resolveTargetForAssigner`):
+ *     mọi nhà máy của mục ⊆ nhà máy của người giao (mục không có nhà máy ⇒ trong phạm vi; admin ⇒ mọi mục). Run: luật
+ *     của chính E (`runIdVisibleTo` ở router). Id không tồn tại ⇒ NOT_FOUND ở CẢ roster lẫn `assign` (trước: assigneeInvalid).
+ *   • I1 — MỘT luật người được giao cho roster VÀ `assign` (`assigneeRuleSql`). Run: người được giao phải XEM được run =
+ *     MỌI đích KHÔNG-DỪNG trong phạm vi của họ — đúng luật `definitionVisibleTo` của E (máy → nhà máy của máy; adapter →
+ *     máy của adapter; robot → nhà máy của chuyền HOẶC trạm; đích không ra nhà máy nào ⇒ chỉ admin; định nghĩa thiếu ⇒ chỉ
+ *     admin), dựng thành SQL một lượt cho cả danh sách; DỪNG phân loại bằng chính `verifiedStopStepIds` (R-5-j). Áp cho
+ *     MỌI người gọi (cũng là luật `assign` của E). Lưới `engineeringAssignment.db.test.ts` §12 đo SQL này == `runIdVisibleTo`.
  */
 import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
@@ -26,7 +36,8 @@ import {
 import { idsTrongPhamVi } from "../../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "../../routers/_phamViNguoiXem";
 import { collectTargets } from "../orchestration/foe/foeScope";
-import type { WorkflowDefinition } from "../orchestration/foe/workflowModel";
+import { verifiedStopStepIds } from "../orchestration/foe/foeStepClass";
+import { validateWorkflow, type MachineForValidation, type WorkflowDefinition } from "../orchestration/foe/workflowModel";
 import type { AssignableEntityType } from "@shared/engineeringAssignment";
 import type { DbOrTx } from "./assignmentService";
 
@@ -55,26 +66,26 @@ async function factoriesOf(d: DbOrTx, p: { machineIds?: number[]; lineIds?: numb
   return uniq(ws.map((w) => w.factoryId));
 }
 
-/** Nhà máy của MỤC. Không tồn tại / không liên kết nhà máy nào ⇒ []. */
-export async function targetFactoryIds(d: DbOrTx, type: AssignableEntityType, entityId: number): Promise<number[]> {
+/** Nhà máy của MỤC. `null` = mục KHÔNG TỒN TẠI; [] = tồn tại nhưng không liên kết nhà máy nào. */
+export async function targetFactoryIds(d: DbOrTx, type: AssignableEntityType, entityId: number): Promise<number[] | null> {
   switch (type) {
     case "ecn": {
       const [r] = await d.select({ f: engineeringChanges.factoryId }).from(engineeringChanges).where(eq(engineeringChanges.id, entityId)).limit(1);
-      return uniq([r?.f]);
+      return r ? uniq([r.f]) : null;
     }
     case "recipe": {
       const [r] = await d.select({ m: machineRecipes.machineId }).from(machineRecipes).where(eq(machineRecipes.id, entityId)).limit(1);
-      return r ? factoriesOf(d, { machineIds: uniq([r.m]) }) : [];
+      return r ? factoriesOf(d, { machineIds: uniq([r.m]) }) : null;
     }
     case "interlock_rule": {
       const [r] = await d
         .select({ m: interlockRules.machineId, tm: interlockRules.targetMachineId, l: interlockRules.lineId, s: interlockRules.stationId })
         .from(interlockRules).where(eq(interlockRules.id, entityId)).limit(1);
-      return r ? factoriesOf(d, { machineIds: uniq([r.m, r.tm]), lineIds: uniq([r.l]), stationIds: uniq([r.s]) }) : [];
+      return r ? factoriesOf(d, { machineIds: uniq([r.m, r.tm]), lineIds: uniq([r.l]), stationIds: uniq([r.s]) }) : null;
     }
     case "changeover": {
       const [r] = await d.select({ m: changeoverRequests.machineId }).from(changeoverRequests).where(eq(changeoverRequests.id, entityId)).limit(1);
-      return r ? factoriesOf(d, { machineIds: uniq([r.m]) }) : [];
+      return r ? factoriesOf(d, { machineIds: uniq([r.m]) }) : null;
     }
     case "orchestration_run": {
       const [r] = await d
@@ -82,7 +93,8 @@ export async function targetFactoryIds(d: DbOrTx, type: AssignableEntityType, en
         .from(orchestrationRuns)
         .innerJoin(orchestrationWorkflows, eq(orchestrationWorkflows.id, orchestrationRuns.workflowId))
         .where(eq(orchestrationRuns.id, entityId)).limit(1);
-      const def = r?.def as WorkflowDefinition | undefined;
+      if (!r) return null;
+      const def = r.def as WorkflowDefinition | undefined;
       if (!def || !Array.isArray(def.steps)) return [];
       // Bản đồ máy rỗng ⇒ `collectTargets` đếm CẢ robotId lẫn adapterId của bước lệnh (đường an toàn của chính nó).
       const t = collectTargets(def, new Map(), new Set());
@@ -117,19 +129,103 @@ export function userSharesFactorySql(factoryIds: number[]): SQL {
                WHERE uca."userId" = ${users.id} AND f.id IN (${list})))`;
 }
 
+type Caller = CoDanhTinh & { user: { id: number; role: string } };
+
+/** Nhà máy trong phạm vi NGƯỜI GIAO (`null` = toàn quyền — admin). Lỗi tra ⇒ ném (yêu cầu thất bại, fail-closed). */
+export async function assignerFactoryIds(ctx: Caller): Promise<number[] | null> {
+  return idsTrongPhamVi("factory", phamViCua(ctx));
+}
+
 /**
- * Mệnh đề lọc roster / người được giao cho người gọi `ctx`. `undefined` = không lọc (người gọi toàn quyền — admin không đổi).
- * `entityId` = mục ĐÃ qua kiểm phạm vi của người gọi (run ngoài phạm vi ⇒ người gọi truyền undefined).
- * Lỗi tra phạm vi ⇒ ném (yêu cầu thất bại, không bao giờ rơi về "không lọc").
+ * R-5-m — mục như NGƯỜI GIAO được thấy nó: `null` ⇒ NOT_FOUND (không tồn tại HOẶC ngoài phạm vi — cùng một câu trả lời).
+ * Run: router đã kiểm `runIdVisibleTo(…, foeScopeOf(ctx.user))` (luật của E, census đo ở router); ở đây chỉ còn tồn tại.
  */
-export async function rosterFactoryFilter(
+export async function resolveTargetForAssigner(
   d: DbOrTx,
-  ctx: CoDanhTinh & { user: { id: number; role: string } },
+  ctx: Caller,
+  type: AssignableEntityType,
+  entityId: number,
+): Promise<{ factories: number[] } | null> {
+  const factoryIds = await targetFactoryIds(d, type, entityId);
+  if (factoryIds === null) return null;
+  if (type === "orchestration_run") return { factories: factoryIds };
+  const assigner = await assignerFactoryIds(ctx);
+  if (assigner !== null && !factoryIds.every((f) => assigner.includes(f))) return null;
+  return { factories: factoryIds };
+}
+
+/** Nhà máy thoả MỘT đích không-DỪNG của run (máy / adapter / robot) — tập rỗng ⇒ không phạm vi nhà máy nào chứa được nó. */
+async function runTargetFactorySets(d: DbOrTx, def: WorkflowDefinition): Promise<number[][]> {
+  const referenced = validateWorkflow(def, null).referencedMachineIds;
+  const machineMap = new Map<number, MachineForValidation>();
+  if (referenced.length) {
+    const ms = await d
+      .select({ id: machines.id, machineType: machines.machineType, capabilities: machines.capabilities })
+      .from(machines)
+      .where(inArray(machines.id, referenced));
+    for (const m of ms) machineMap.set(m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities } as MachineForValidation);
+  }
+  const stops = await verifiedStopStepIds(def, machineMap, d);
+  const t = collectTargets(def, machineMap, stops.ids);
+  const nonStop = (m: Map<number, boolean>) => [...m.entries()].filter(([, ns]) => ns).map(([id]) => id);
+  const sets: number[][] = [];
+  for (const id of nonStop(t.machines)) sets.push(await factoriesOf(d, { machineIds: [id] }));
+  for (const id of nonStop(t.adapters)) {
+    const [a] = await d.select({ m: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, id)).limit(1);
+    sets.push(a && posInt(a.m) ? await factoriesOf(d, { machineIds: [a.m] }) : []);
+  }
+  for (const id of nonStop(t.robots)) {
+    const [r] = await d.select({ l: robots.lineId, s: robots.stationId }).from(robots).where(eq(robots.id, id)).limit(1);
+    const viaLine = r && posInt(r.l) ? await factoriesOf(d, { lineIds: [r.l] }) : [];
+    const viaStation = r && posInt(r.s) ? await factoriesOf(d, { stationIds: [r.s] }) : [];
+    sets.push(uniq([...viaLine, ...viaStation]));
+  }
+  return sets;
+}
+
+/**
+ * I1 — người được giao XEM được run (luật `definitionVisibleTo` của E): với MỌI đích không-DỪNG, có ít nhất một nhà máy
+ * thoả đích đó trong phạm vi của họ; admin luôn qua. Run / định nghĩa thiếu ⇒ chỉ admin.
+ */
+export async function runAssigneeVisibilitySql(d: DbOrTx, runId: number): Promise<SQL> {
+  const [r] = await d
+    .select({ def: orchestrationWorkflows.definitionJson })
+    .from(orchestrationRuns)
+    .innerJoin(orchestrationWorkflows, eq(orchestrationWorkflows.id, orchestrationRuns.workflowId))
+    .where(eq(orchestrationRuns.id, runId))
+    .limit(1);
+  const def = r?.def as WorkflowDefinition | undefined;
+  if (!def || !Array.isArray(def.steps)) return sql`${users.role} = 'admin'`;
+  const sets = await runTargetFactorySets(d, def);
+  const seen = new Set<string>();
+  const parts: SQL[] = [];
+  for (const set of sets) {
+    const key = [...set].sort((a, b) => a - b).join(",");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(userSharesFactorySql(set));
+  }
+  return parts.length ? sql`(${sql.join(parts, sql` AND `)})` : sql`TRUE`;
+}
+
+/**
+ * MỘT luật người được giao — roster (`assignableUsers`) và `assign` gọi CÙNG hàm này. `undefined` = không lọc.
+ *   • luật nhà máy (H5): người gọi không phải admin ⇒ cùng ≥1 nhà máy với mục (mục không có nhà máy / không gửi mục ⇒ với
+ *     người giao);
+ *   • run (I1): VÀ người được giao xem được run (mọi người gọi, kể cả admin — cũng là luật `assign` của E).
+ * `targetFactories` = kết quả `resolveTargetForAssigner` (mục đã qua kiểm phạm vi), `undefined` khi không gửi mục.
+ */
+export async function assigneeRuleSql(
+  d: DbOrTx,
+  ctx: Caller,
   type: AssignableEntityType,
   entityId: number | undefined,
+  targetFactories: number[] | undefined,
 ): Promise<SQL | undefined> {
-  const assigner = await idsTrongPhamVi("factory", phamViCua(ctx));
-  if (assigner === null) return undefined;
-  const target = entityId != null ? await targetFactoryIds(d, type, entityId) : [];
-  return userSharesFactorySql(target.length ? target : assigner);
+  const parts: SQL[] = [];
+  const assigner = await assignerFactoryIds(ctx);
+  if (assigner !== null) parts.push(userSharesFactorySql(targetFactories?.length ? targetFactories : assigner));
+  if (type === "orchestration_run" && entityId != null) parts.push(await runAssigneeVisibilitySql(d, entityId));
+  if (parts.length === 0) return undefined;
+  return parts.length === 1 ? parts[0] : sql`(${sql.join(parts, sql` AND `)})`;
 }

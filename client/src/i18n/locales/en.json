@@ -4381,7 +4381,8 @@
       "assignmentChanged": "Someone else just changed the assignee. Reload to see the current assignee.",
       "alreadyAssignedToUser": "This item is already assigned to this person.",
       "assignmentStoreMissing": "Assignment is not available yet: the database has not been updated (ask an administrator).",
-      "assigneeInvalid": "The assignee is not valid (does not exist, is disabled, or cannot view this item's page)."
+      "assigneeInvalid": "The assignee is not valid (does not exist, is disabled, or cannot view this item's page).",
+      "assigneeOutOfScope": "This person does not share a factory with the item (for a run: cannot see every machine or robot the run controls) — pick someone from the \"Assign to\" list."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

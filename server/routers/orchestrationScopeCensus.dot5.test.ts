@@ -145,10 +145,11 @@ const CLASSIFIED: Record<string, Kind> = {
     requires: [
       /runIdVisibleTo\(input\.entityId, foeScopeOf\(ctx\.user\)\)/,
       /visibleRunIds\(ids, foeScopeOf\(ctx\.user\)\)/,
-      // 2026-10-10 doc 81 Đợt 5 H5 — roster `assignableUsers` (nay nhận entityId): run ngoài phạm vi ⇒ NOT_FOUND TRƯỚC khi đọc
-      // nhà máy của mục (rosterScope.ts); `assign` chỉ lọc nhà máy khi run trong phạm vi.
-      /type === "orchestration_run" && !\(await runIdVisibleTo\(input\.entityId, foeScopeOf\(ctx\.user\)\)\)\) \{\s*throw appError\("NOT_FOUND"/,
-      /const factoryRule = runInScope \? await rosterFactoryFilter\(/,
+      // 2026-10-10 doc 81 Đợt 5 H5 + H fix 1 (R-5-m) — roster `assignableUsers` and `assign` (both take entityId): a run outside
+      // the caller's scope is never resolved further (same NOT_FOUND as a missing one) — the scope check gates the target
+      // read (rosterScope.ts#resolveTargetForAssigner) in both procedures.
+      /const runVisible = type !== "orchestration_run" \|\| \(await runIdVisibleTo\(input\.entityId, foeScopeOf\(ctx\.user\)\)\);\s*scoped = runVisible \? await resolveTargetForAssigner\(/,
+      /const scoped = runInScope \? await resolveTargetForAssigner\(/,
     ],
   },
   "server/routers/orchestrationGovRouter.ts": {
