@@ -4385,7 +4385,8 @@
     },
     "DEVICE_UNREACHABLE": "Không kết nối được tới thiết bị {{entity}}. Hãy kiểm tra nguồn, dây mạng và địa chỉ IP.",
     "DEVICE_PROTOCOL_UNSUPPORTED": "Bản dựng này chưa hỗ trợ giao thức {{entity}}.",
-    "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG ({{stopKey}}) — gửi lại nếu cần."
+    "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG ({{stopKey}}) — gửi lại nếu cần.",
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần."
   },
   "export": {
     "reportMenu": {
@@ -11874,6 +11875,8 @@
     "pickRobot": "Chọn robot…",
     "noRobots": "Không có robot nào đang bật trong phạm vi của bạn.",
     "deployRobotIdMissing": "Chưa triển khai: bước robot {{steps}} chưa chọn robot. Chọn robot cho từng bước rồi triển khai lại.",
+    "deployRobotUnavailable": "Chưa triển khai: bước robot {{steps}} chọn robot không tồn tại hoặc chưa được bật. Chọn robot đang bật cho từng bước rồi triển khai lại.",
+    "runRefusedDefinition": "Chưa chạy — workflow đã triển khai không qua một kiểm tra an toàn:",
     "definitionChangedReload": "Định nghĩa quy trình đã thay đổi kể từ khi bạn mở mục duyệt này — hãy tải lại trang và xem lại trước khi duyệt.",
     "gateRequiredOwnerApproved": "Chưa gửi: bước duyệt trước lệnh này do chính người khởi động lượt chạy duyệt nên không được tính. Chạy lượt mới và nhờ người khác duyệt.",
     "gateRequiredStale": "Chưa gửi: quy trình đã được triển khai lại sau khi bước duyệt được duyệt, nên lần duyệt đó không áp cho nội dung đang chạy. Chạy lượt mới và duyệt lại.",

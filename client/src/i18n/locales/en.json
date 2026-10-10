@@ -4393,7 +4393,8 @@
     },
     "DEVICE_UNREACHABLE": "Could not reach the {{entity}} device. Check power, cabling and IP address.",
     "DEVICE_PROTOCOL_UNSUPPORTED": "This build does not support the {{entity}} protocol.",
-    "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command ({{stopKey}}) was issued — resend it if still needed."
+    "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command ({{stopKey}}) was issued — resend it if still needed.",
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed."
   },
   "export": {
     "reportMenu": {
@@ -11894,6 +11895,8 @@
     "pickRobot": "Select robot…",
     "noRobots": "No robot in your scope is enabled.",
     "deployRobotIdMissing": "Not deployed: robot step(s) {{steps}} name no robot. Pick the robot for each step, then deploy again.",
+    "deployRobotUnavailable": "Not deployed: robot step(s) {{steps}} name a robot that does not exist or is not enabled. Pick an enabled robot for each step, then deploy again.",
+    "runRefusedDefinition": "Run not started — the deployed workflow fails a safety check:",
     "definitionChangedReload": "The workflow definition changed since you opened this approval — reload the page and review it before approving.",
     "gateRequiredOwnerApproved": "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.",
     "gateRequiredStale": "Not sent: the workflow was redeployed after the gate was approved, so that approval does not cover what is running now. Start a new run and have the gate approved again.",

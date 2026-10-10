@@ -157,6 +157,8 @@ export const APP_ERROR_CODES = [
                           // không hỏng): hệ thống ĐÃ BỎ lệnh của người vận hành, họ phải GỬI LẠI nếu
                           // còn cần — đúng điều mà dòng "cost if wrong" của ruling dựa vào. `stopKey`
                           // = khoá idempotency của lệnh DỪNG (truy vết; câu i18n không nội suy nó).
+  "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY", // no params — doc 81 Đợt 4 final wave G9: như trên nhưng lệnh DỪNG
+                          // KHÔNG có khoá idempotency ⇒ câu không có phần "(khoá)" (trước: chữ "unknown" lọt vào câu vi/zh).
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

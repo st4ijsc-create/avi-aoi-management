@@ -473,6 +473,36 @@ function cmdQueueMax(): number {
 //     định mới của người vận hành ⇒ FIFO phía sau DỪNG).
 // Mọi lệnh khác (kể cả "stop" KHÔNG ghim) giữ đúng ngữ nghĩa cũ: FIFO, BUSY khi depth ≥ OT_CMD_QUEUE_MAX.
 
+/** final wave F7 — what the write+verify body produced for one command (see executeWriteAndVerify in dispatch). */
+type ExecutedWrite = {
+  sentAt: Date;
+  timedOut: boolean;
+  outcomes: Array<{ idx: number; ok: boolean; status: DispatchStatus; errorText: string | null; readBackValue: unknown }>;
+  slotHold?: Promise<void>;
+};
+/** final wave F7 — the pre-write safety re-check refused a non-stop write that waited too long after its preflight. */
+type SafetyRecheckRefusal = { safetyRecheckRefused: true; reason: ReturnType<typeof safetyPreflightReason>; detail: string };
+
+/**
+ * final wave F7 — listeners told when a PINNED stop is queued for an adapter: an in-flight pre-write safety re-check of a
+ * non-stop command gives way to it at once (L-7). Returns the unsubscribe function.
+ */
+const pinnedStopQueuedListeners = new Map<number, Set<(stopRef?: Record<string, unknown>) => void>>();
+function onPinnedStopQueued(adapterId: number, fn: (stopRef?: Record<string, unknown>) => void): () => void {
+  let set = pinnedStopQueuedListeners.get(adapterId);
+  if (!set) {
+    set = new Set();
+    pinnedStopQueuedListeners.set(adapterId, set);
+  }
+  set.add(fn);
+  return () => {
+    const cur = pinnedStopQueuedListeners.get(adapterId);
+    if (!cur) return;
+    cur.delete(fn);
+    if (cur.size === 0) pinnedStopQueuedListeners.delete(adapterId);
+  };
+}
+
 /** Kết quả của một lệnh bị huỷ khi đang CHỜ vì một DỪNG ghim xếp sau nó (R-1E-a). */
 export type Superseded = {
   superseded: true;
@@ -632,6 +662,8 @@ export function tryEnqueueAdapterCommand<T>(
       else j.cancel(opts?.stopRef);
     }
     queue.pending = kept;
+    // final wave F7 — an in-flight pre-write safety re-check gives way too (it has not written yet).
+    for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(opts?.stopRef);
     // Đứng sau DỪNG ghim cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng.
     let at = 0;
     for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].priorityStop) at = i + 1;
@@ -1215,6 +1247,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         alone ⇒ REJECT SAFETY_SIM_ONLY; a bad-quality real safety tag ⇒ SAFETY_UNKNOWN.
   //         doc 81 Đợt 1D Task 2 — a PINNED stop (5a-stop) skips this preflight entirely (energy-reducing, proven by
   //         data); any other stop-typed command still goes through it and its refusal carries `stopPinReason`.
+  // final wave F7 (final review M5) — when the preflight PASSED; a non-stop write that then waits longer than
+  // OT_SAFETY_PREFLIGHT_DEADLINE_MS before its write is re-checked just before writing (recheckSafetyIfStale).
+  let preflightPassedAt: number | undefined;
   if (input.triggeredBy.kind === "hitl" && isSafetyPreflightEnabled() && !stopCls.pinnedStop) {
     const { state: safety, basis: safetyBasis } = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
     if (safety === "BLOCKED") {
@@ -1284,6 +1319,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         ...stopRefusalExtras(input, "SAFETY_UNKNOWN", stopCls),
       };
     }
+    preflightPassedAt = Date.now();
   }
 
   if (input.triggeredBy.kind === "hitl") {
@@ -1372,10 +1408,44 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     readBackValue: unknown;
   }
 
+  // ── final wave F7 (final review M5) — the check-then-act gap. The safety preflight ran BEFORE the write-ahead
+  //    reservation and the queue; a write queued behind a slow / timed-out one (B3 hold: up to ~11.25 s) reached the
+  //    device on a verdict that old. A NON-STOP write whose preflight passed more than OT_SAFETY_PREFLIGHT_DEADLINE_MS
+  //    ago re-runs the SAME preflight read just before writing; not OK => refused with the same reason (nothing written).
+  //    Stop-typed commands are never re-checked (L-7). The re-check holds this command's queue slot, so a PINNED STOP
+  //    queued meanwhile must not wait on it: the re-check gives way at once (this write is dropped as SUPERSEDED_BY_STOP,
+  //    exactly like a waiting command) and the STOP runs next.
+  const recheckSafetyIfStale = async (): Promise<Superseded | SafetyRecheckRefusal | null> => {
+    if (preflightPassedAt === undefined || isStopCommandType(input.commandType)) return null;
+    const waitedMs = Date.now() - preflightPassedAt;
+    if (waitedMs <= OT_SAFETY_PREFLIGHT_DEADLINE_MS) return null;
+    let unsubscribe: (() => void) | undefined;
+    const stopQueued = new Promise<Superseded>((resolve) => {
+      unsubscribe = onPinnedStopQueued(input.adapterId, (stopRef) =>
+        resolve(stopRef ? { superseded: true, byStop: true, stop: stopRef } : { superseded: true, byStop: true }),
+      );
+    });
+    try {
+      const r = await Promise.race([readSafetyStateForPreflight(input.adapterId, input.machineId ?? null), stopQueued]);
+      if (isSuperseded(r)) return r;
+      if (r.state === "OK") return null;
+      const reason = safetyPreflightReason(r.state, r.basis);
+      return {
+        safetyRecheckRefused: true,
+        reason,
+        detail: `safety-PLC re-check before the write (the command waited ${waitedMs} ms after its preflight) returned ${r.state} — actuation denied before write, nothing sent`,
+      };
+    } finally {
+      unsubscribe?.();
+    }
+  };
+
   // ── G1.9 — the write+verify body, extracted UNCHANGED so it can run either
   //    immediately (flag OFF — prior behaviour) or under the per-adapter queue.
   //    It never throws for expected failure modes (driver errors are caught).
-  const executeWriteAndVerify = async (): Promise<{ sentAt: Date; timedOut: boolean; outcomes: Outcome[]; slotHold?: Promise<void> }> => {
+  const executeWriteAndVerify = async (): Promise<ExecutedWrite | Superseded | SafetyRecheckRefusal> => {
+    const recheck = await recheckSafetyIfStale(); // final wave F7 — null => no re-check needed / still OK
+    if (recheck) return recheck;
     const sentAt = new Date();
 
     let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
@@ -1528,14 +1598,15 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    doc 81 Đợt 1E Task 1 (R-1E-a) — a PINNED stop (stopCls.pinnedStop, Đợt 1D: exact pin match + step-3 row +
   //    connection fingerprint) is never BUSY: it runs right after the in-flight write and cancels the non-stop
   //    commands still WAITING ahead of it; each cancelled caller ledgers SUPERSEDED_BY_STOP naming the stop.
-  let executed: { sentAt: Date; timedOut: boolean; outcomes: Outcome[]; slotHold?: Promise<void> };
+  let executed: ExecutedWrite | SafetyRecheckRefusal;
+  const slotHoldOf = (v: ExecutedWrite | Superseded | SafetyRecheckRefusal): Promise<void> | undefined => ("slotHold" in v ? v.slotHold : undefined);
   if (isCmdSerializeEnabled()) {
     const enq = tryEnqueueAdapterCommand(
       input.adapterId,
       executeWriteAndVerify,
       stopCls.pinnedStop === true
-        ? { priorityStop: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds }, holdSlot: (v) => v.slotHold }
-        : { priorityStop: false, holdSlot: (v) => v.slotHold },
+        ? { priorityStop: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds }, holdSlot: slotHoldOf }
+        : { priorityStop: false, holdSlot: slotHoldOf },
     );
     if (!enq.accepted) {
       const ids = await writeRejected(
@@ -1552,12 +1623,13 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     const queued = await enq.result;
     if (isSuperseded(queued)) {
       // R-1E-a — cancelled while WAITING: never reached driver.writeTags. RESULT row of the intent, like BUSY.
-      const stopKey = typeof queued.stop?.idempotencyKey === "string" ? queued.stop.idempotencyKey : "unknown";
+      // final wave G9 — a STOP without an idempotency key: its own localisable code, never the literal "unknown".
+      const stopKey = typeof queued.stop?.idempotencyKey === "string" && queued.stop.idempotencyKey ? queued.stop.idempotencyKey : null;
       const ids = await writeRejected(
         db,
         input,
         "SUPERSEDED_BY_STOP",
-        `cancelled while waiting in the adapter command queue: pinned STOP ${stopKey} was queued after it — not sent to the device, resend if still needed`,
+        `cancelled while waiting in the adapter command queue: ${stopKey ? `pinned STOP ${stopKey}` : "a pinned STOP (no idempotency key)"} was queued after it — not sent to the device, resend if still needed`,
         undefined,
         undefined,
         { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, supersededByStop: queued.stop ?? null } },
@@ -1571,13 +1643,26 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         reason: "SUPERSEDED_BY_STOP",
         results: failedResults(input, "SUPERSEDED_BY_STOP"),
         commandLogIds: ids,
-        appError: { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey } },
+        appError: stopKey
+          ? { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey } }
+          : { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY", appParams: {} },
         message: "This waiting command was cancelled because a STOP command was queued after it — it was not sent to the device; resend it if still needed.",
       };
     }
     executed = queued;
   } else {
-    executed = await executeWriteAndVerify();
+    const direct = await executeWriteAndVerify();
+    // No queue => nothing can supersede it (onPinnedStopQueued fires only from the queue); kept total for the type.
+    if (isSuperseded(direct)) {
+      const ids = await writeRejected(db, input, "SUPERSEDED_BY_STOP", "cancelled before its write: a pinned STOP was queued", undefined, undefined, { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra });
+      return { ok: false, simulated: false, status: "rejected", reason: "SUPERSEDED_BY_STOP", results: failedResults(input, "SUPERSEDED_BY_STOP"), commandLogIds: ids };
+    }
+    executed = direct;
+  }
+  if ("safetyRecheckRefused" in executed) {
+    // final wave F7 — the RESULT row of the intent (like BUSY / SUPERSEDED_BY_STOP); driver.writeTags never reached.
+    const ids = await writeRejected(db, input, executed.reason, executed.detail, undefined, undefined, { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra });
+    return { ok: false, simulated: false, status: "rejected", reason: executed.reason, results: failedResults(input, executed.reason), commandLogIds: ids };
   }
   const { sentAt, timedOut, outcomes } = executed;
 
@@ -1895,7 +1980,6 @@ function auditWriteOverlapRisk(
   );
 }
 
-/** B3 — one control_audit_log row about an OT command, fire-and-forget under a deadline (never holds anything). */
 /** B3 — the audit module, imported ONCE (dynamic: avoids a static cycle) and shared by every B3 audit row. */
 let controlAuditModule: Promise<typeof import("../audit/controlAuditService")> | undefined;
 function loadControlAudit(): Promise<typeof import("../audit/controlAuditService")> {
@@ -1903,6 +1987,7 @@ function loadControlAudit(): Promise<typeof import("../audit/controlAuditService
   return controlAuditModule;
 }
 
+/** B3 — one control_audit_log row about an OT command, fire-and-forget under a deadline (never holds anything). */
 function auditOtEvent(
   input: DispatchInput,
   ledger: { intentIds: number[]; confirmedBy: number },

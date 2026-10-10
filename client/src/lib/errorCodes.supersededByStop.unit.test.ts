@@ -73,3 +73,24 @@ describe("Đợt 1E I-1 — OT_COMMAND_SUPERSEDED_BY_STOP có câu ở vi/en/zh"
     expect(zh).toMatch(/重新发送/);
   });
 });
+
+describe("doc 81 Đợt 4 final wave G9 — OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY (a STOP with no idempotency key)", () => {
+  const NO_KEY = "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY";
+  for (const lng of ["vi", "en", "zh"] as const) {
+    it(`${lng}: translated, same two ideas (cancelled + resend), no "(…)" key part, no "unknown", no placeholder`, async () => {
+      await i18n.changeLanguage(lng);
+      const s = translateAppError(NO_KEY, {}, "__FALLBACK__");
+      expect(s).not.toBe("__FALLBACK__");
+      expect(s).not.toMatch(/unknown/i);
+      expect(s).not.toMatch(/\{\{|\}\}/);
+      expect(s).not.toMatch(TEN_CO);
+      // same sentence as the keyed one minus the key part
+      const keyed = translateAppError(CODE, PARAMS, "__FALLBACK__");
+      expect(s.length).toBeLessThan(keyed.length);
+    });
+  }
+  it("vi exact", async () => {
+    await i18n.changeLanguage("vi");
+    expect(translateAppError(NO_KEY, {}, "__FALLBACK__")).toBe("Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần.");
+  });
+});
