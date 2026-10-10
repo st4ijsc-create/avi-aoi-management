@@ -265,7 +265,9 @@ export interface StartRunResult {
  *   untakenBranch — real or possible STOPs inside a branch whose condition was never evaluated: NOT sent (no guess),
  *                 audited (abortStopSkippedUntakenBranch);
  *   notPinned   — stop-TYPED OT steps that are not a pinned stop (not a real STOP, R-5-j): not sent, audited
- *                 (abortStopNotPinned) so the operator is told.
+ *                 (abortStopNotPinned) so the operator is told;
+ *   notNeeded   — fix 1 (R-6-b): real STOPs NOT sent because the run never actuated (no non-STOP command attempted),
+ *                 audited (abortStopNotNeeded).
  */
 export interface AbortStopReport {
   sent: string[];
@@ -274,6 +276,7 @@ export interface AbortStopReport {
   unverified: string[];
   untakenBranch: string[];
   notPinned: string[];
+  notNeeded: string[];
 }
 
 /** doc 81 Đợt 4 (R-4-j, R-4-n, final wave G3) — why a definition was refused (deploy, and since G4 run start). */
@@ -395,6 +398,8 @@ interface RunContext extends LiveRunHandle {
   startOrder: string[];
   settled: Set<string>;
   prior: PriorSteps;
+  /** fix 1 (R-6-b) — command steps (compensations included) whose `sendCommand` was CALLED in this walk, whatever came back. */
+  attempted: Set<string>;
 }
 
 /** doc 81 Đợt 6 — the step rows of a run, as the abort sweep reads them (see priorStepsOf). */
@@ -405,6 +410,11 @@ interface PriorSteps {
   startOrder: string[];
   /** `branch:<id>` decisions recorded on branch rows. */
   branches: Map<string, "then" | "else">;
+  /**
+   * fix 1 (R-6-b) — steps that MAY have been handed to a dispatcher, counted conservatively: a dispatcher result is
+   * recorded, or the row is running / completed / failed / compensated (a failure after the hand-over may have no result).
+   */
+  attempted: Set<string>;
 }
 
 /** Outcome of executing a step subtree. */
@@ -467,10 +477,12 @@ function priorStepsOf(rows: ReadonlyArray<{ id?: number; stepId: string; status:
   const settled = new Set<string>();
   const branches = new Map<string, "then" | "else">();
   const started: Array<{ stepId: string; at: number; id: number }> = [];
+  const attempted = new Set<string>();
   for (const r of rows) {
     if (r.stepId.startsWith(ABORT_ROW_PREFIX)) continue;
     const result = (r.resultJson ?? null) as Record<string, unknown> | null;
     if (["completed", "skipped", "compensated", "failed"].includes(r.status) || typeof result?.routedTo === "string") settled.add(r.stepId);
+    if (["running", "completed", "failed", "compensated"].includes(r.status) || typeof result?.routedTo === "string") attempted.add(r.stepId);
     if (result?.branch === "then" || result?.branch === "else") branches.set(r.stepId, result.branch);
     if (r.startedAt || ["running", "completed", "failed", "compensated"].includes(r.status)) {
       const at = r.startedAt ? new Date(r.startedAt).getTime() : Number.MAX_SAFE_INTEGER;
@@ -478,7 +490,7 @@ function priorStepsOf(rows: ReadonlyArray<{ id?: number; stepId: string; status:
     }
   }
   started.sort((a, b) => a.at - b.at || a.id - b.id);
-  return { settled, branches, startOrder: started.map((s) => s.stepId) };
+  return { settled, branches, startOrder: started.map((s) => s.stepId), attempted };
 }
 
 async function setRunStatus(
@@ -1342,8 +1354,8 @@ async function boundedRunScopeDecision(
 
 /**
  * doc 81 Đợt 5 task E fix 2 (ruling R-5-l, replaces R-5-i) — an abort / rejection whose scope could not be DECIDED within
- * the bound is REFUSED (a rejection cancels the run's later STOP steps; an abort skips its later NON-STOP steps — a
- * cross-factory abort is a mutation of another factory's run either way; no equipment STOP path goes through here — the
+ * the bound is REFUSED (an abort or a rejection skips the run's later NON-STOP steps and — Đợt 6 + fix 1 R-6-a — sends its
+ * remaining STOPs: a cross-factory abort / rejection is a mutation of another factory's run; no equipment STOP path goes through here — the
  * direct STOP / E-STOP of the machine is unaffected; doc 81 Đợt 6 keeps this check in front of the abort's STOP sweep). The answer
  * is distinct from "not found" and is the SAME for a nonexistent id whose lookup was undecided (no oracle).
  */
@@ -1700,6 +1712,7 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // doc 81 Đợt 6 — marked in the SAME tick as the abort check above: an abort either came before (this step is not sent
   // here; the abort sweep sends it if it is a real STOP) or after (it is on its way; the sweep never sends it again).
   rc.dispatched.add(step.id);
+  rc.attempted.add(step.id); // fix 1 (R-6-b) — handed to a dispatcher: the run has acted (never removed)
   const result: EquipmentCommandResult = await adapter.sendCommand(cmd);
   // A refused attempt is not "on its way" any more: a STOP whose retry an abort cancels is sent once more by the sweep.
   if (!result.ok) rc.dispatched.delete(step.id);
@@ -1922,6 +1935,7 @@ async function buildRunContext(
     startOrder: [],
     settled: new Set(),
     prior,
+    attempted: new Set(),
   };
 }
 
@@ -2406,8 +2420,8 @@ export async function resumeRun(
         if (!run || !visible) return notFound;
         if (defS) approvalStopOnlyOut = (await scopeVerdict(defS, scope, { nonStopOnly: true })).stopOnlyOut;
       } else {
-        // E fix 2 (ruling R-5-l) — a REJECTION aborts the run (and with it its later STOP steps / STOP compensations): the
-        // scope lookup is bounded by the STOP DB deadline; undecided ⇒ REFUSED with the distinct "scope not verified"
+        // E fix 2 (ruling R-5-l) — a REJECTION aborts the run (a cross-factory mutation; since Đợt 6 fix 1 it sends the run's
+        // remaining STOP steps / due STOP compensations like an abort): the scope lookup is bounded by the STOP DB deadline; undecided ⇒ REFUSED with the distinct "scope not verified"
         // answer (also for a missing id — no oracle), audited; a DECIDED out-of-scope ⇒ "not found".
         const verdict = rejectDecision?.verdict ?? "unknown";
         if (verdict === "unknown") {
@@ -2432,46 +2446,100 @@ export async function resumeRun(
     if (!decision.approved) {
       // U6 (doc 26) — kèm lý do từ chối (note) vào audit của run + bước để truy vết.
       let reason = decision.note?.trim();
-      if (hooks.compensate) {
-        // doc 80 Đợt 1 Task 9 — CLAIM FIRST, compensate AFTER: CAS the paused run (gate pinned) to
-        // 'compensating'; only the winner runs the compensations, then finishes 'compensating' →
-        // 'aborted'. A restart mid-compensation leaves 'compensating' ⇒ rehydrate marks it failed
-        // (never auto-resumed). An abort landing meanwhile stays 'aborted' (the final CAS below
-        // only moves a run that is still 'compensating').
-        await claimPausedRun(runId, "compensating", {}, pinnedStepId);
-        let finalNote: string | undefined;
-        try {
-          finalNote = await hooks.compensate();
-        } catch (err) {
-          finalNote = [reason, `compensation threw: ${err instanceof Error ? err.message : String(err)}`].filter(Boolean).join(" · ");
+      const rejectedBy = (why?: string) => `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${why ? ` Reason: ${why}` : ""}`;
+      // doc 80 Đợt 1 Task 9 — CLAIM FIRST: CAS the paused run (gate pinned). With a compensation hook (QT) the claim moves it
+      // to 'compensating' and only the winner compensates, then finishes 'compensating' → 'aborted' (a restart mid-way leaves
+      // 'compensating' ⇒ rehydrate marks it failed; an abort landing meanwhile stays 'aborted' — the final CAS only moves a
+      // run still 'compensating'). Without a hook the claim writes 'aborted' itself. doc 80 ORC-02 — only ONE decision
+      // (approve OR reject) may claim the paused run.
+      // doc 81 Đợt 6 fix 1 (R-6-a) — a rejection aborts the run, so it sends the run's remaining STOP steps and due STOP
+      // compensations like an abort (abortStopSweep) — ONLY after its claim WON: a losing decision (CONFLICT) is thrown as
+      // before and sends nothing. The claim, the final write and the gate row are bounded by D (L-7). A claim that does not
+      // answer within D sends nothing NOW (it may not have won); if it lands later and won, the rest of the rejection
+      // (sweep, hook, final write, gate row) runs then, in the background — the answer says it was not confirmed.
+      const claim = claimPausedRun(
+        runId,
+        hooks.compensate ? "compensating" : "aborted",
+        hooks.compensate ? {} : { finishedAt: new Date(), error: rejectedBy(reason) },
+        pinnedStepId,
+      );
+      const finishRejection = async (): Promise<{ abortStops: AbortStopReport; confirmed: boolean }> => {
+        // STOPs FIRST (L-7), then the QT business compensations: the hook acts through services (cancel the order, line →
+        // held, cancel the AMR task, unlock the recipe), never through FOE command steps — it cannot send one of these
+        // STOPs again, nor is it a route for a non-STOP command compensation (unchanged since doc 80 Task 9).
+        const abortStops = await abortStopSweep(runId, run, liveRuns.get(runId) ?? null, user, scopeFor(user, opts.scope));
+        let confirmed = true;
+        if (hooks.compensate) {
+          let finalNote: string | undefined;
+          try {
+            finalNote = await hooks.compensate();
+          } catch (err) {
+            finalNote = [reason, `compensation threw: ${err instanceof Error ? err.message : String(err)}`].filter(Boolean).join(" · ");
+          }
+          reason = (finalNote ?? reason)?.trim() || reason;
+          try {
+            await withDeadline(
+              (async () => {
+                const d2 = await getDb();
+                if (!d2) throw new DbUnavailableError();
+                await d2
+                  .update(orchestrationRuns)
+                  .set({ status: "aborted", updatedAt: new Date(), finishedAt: new Date(), error: rejectedBy(reason) })
+                  .where(and(eq(orchestrationRuns.id, runId), eq(orchestrationRuns.status, "compensating")));
+              })(),
+              STOP_DB_STEP_DEADLINE_MS,
+              `FOE reject run ${runId} final write`,
+            );
+          } catch (err) {
+            confirmed = false;
+            console.error(`[FOE] rejection of run ${runId}: 'aborted' not confirmed by the database — ${(err as Error)?.message ?? err}`);
+          }
         }
-        reason = (finalNote ?? reason)?.trim() || reason;
-        await d
-          .update(orchestrationRuns)
-          .set({
-            status: "aborted",
-            updatedAt: new Date(),
-            finishedAt: new Date(),
-            error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
-          })
-          .where(and(eq(orchestrationRuns.id, runId), eq(orchestrationRuns.status, "compensating")));
-      } else {
-        // doc 80 ORC-02 — CAS: only ONE decision (approve OR reject) may claim the paused run.
-        await claimPausedRun(runId, "aborted", {
-          finishedAt: new Date(),
-          error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
-        }, pinnedStepId);
+        void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
+        if (gateStepId) {
+          await withDeadline(
+            upsertStep(runId, gateStepId, "hitl_gate", {
+              status: "failed",
+              error: reason ? `Rejected: ${reason}` : "Rejected",
+              result: { approved: false, note: reason ?? null, rejectedBy: user.id },
+              finishedAt: new Date(),
+            }),
+            STOP_DB_STEP_DEADLINE_MS,
+            `FOE reject run ${runId} gate row`,
+          ).catch(() => undefined);
+        }
+        return { abortStops, confirmed };
+      };
+      try {
+        await withDeadline(claim, STOP_DB_STEP_DEADLINE_MS, `FOE reject run ${runId} claim`);
+      } catch (err) {
+        if (err instanceof TRPCError) throw err; // LOST the claim (CONFLICT) — nothing was sent, nothing will be
+        console.error(`[FOE] rejection of run ${runId}: claim not answered in time — ${(err as Error)?.message ?? err}; STOPs follow if it lands as won`);
+        void claim.then(
+          () => finishRejection().catch(() => undefined),
+          () => undefined,
+        );
+        return {
+          ok: false,
+          enabled: true,
+          runId,
+          reason: FOE_ABORT_UNCONFIRMED,
+          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: 0; check the run and retry.`,
+          abortStops: emptyAbortReport(),
+        };
       }
-      void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
-      if (gateStepId) {
-        await upsertStep(runId, gateStepId, "hitl_gate", {
-          status: "failed",
-          error: reason ? `Rejected: ${reason}` : "Rejected",
-          result: { approved: false, note: reason ?? null, rejectedBy: user.id },
-          finishedAt: new Date(),
-        }).catch(() => undefined);
+      const { abortStops, confirmed } = await finishRejection();
+      if (!confirmed) {
+        return {
+          ok: false,
+          enabled: true,
+          runId,
+          reason: FOE_ABORT_UNCONFIRMED,
+          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: ${abortStops.sent.length}; check the run and retry.`,
+          abortStops,
+        };
       }
-      return { ok: false, enabled: true, runId, status: "aborted" };
+      return { ok: false, enabled: true, runId, status: "aborted", abortStops };
     }
 
     const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
@@ -2740,44 +2808,75 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
   return result;
 }
 
-// ── doc 81 Đợt 6 (owner decision 2026-10-11, "Huỷ vẫn chạy bước DỪNG") — an ABORT still sends the run's STOPs ──────────
+// ── doc 81 Đợt 6 (owner decision 2026-10-11, "Huỷ vẫn chạy bước DỪNG") — an ABORT / a gate REJECTION still sends the run's STOPs
 //
-// Before: an abort cancelled every later step, its STOP steps included, and the STOP compensations too — aborting
-// "start → delay → stop" during the delay left the equipment running. Now an abort (after its R-5-l scope check and its
-// 'aborted' write) runs ONE sweep over the run:
+// Before: an abort (and a gate rejection, which aborts the run) cancelled every later step, its STOP steps included, and the
+// STOP compensations too — aborting "start → delay → stop" during the delay left the equipment running. Now an abort (after
+// its R-5-l scope check and its 'aborted' write) and a rejection (fix 1, R-6-a: after its claim on the paused run WON) run
+// ONE sweep over the run:
 //   • every pending NON-STOP step is skipped (never sent — R-2-n), also inside sequences / parallels / branches;
 //   • every remaining REAL STOP step is sent: a robot step whose job is a stop job, or an OT step that is a PINNED stop
 //     over a confirmed running connection — the shared Đợt 5 classifier (foeStepClass.makeStopVerifier), never the
-//     command name (R-5-j). An unpinned stop-typed step is not a STOP (`notPinned`, not sent); a step that may be one but
-//     cannot be verified (pins / connection / machine unreadable) is NOT sent and is audited (`abortStopUnverified`);
+//     command name (R-5-j). An unpinned stop-typed step is not a STOP (`notPinned`, not sent, audited abortStopNotPinned);
+//     a step that may be one but cannot be verified (pins / connection / machine unreadable) is NOT sent and is audited
+//     (`abortStopUnverified`);
 //   • then the STOP compensations that are due (of steps that completed or were running), newest start first;
 //   • a STOP step already handed to the dispatcher is let finish (never sent twice, never cancelled); a non-STOP step
 //     running at abort time is cancelled as before;
 //   • a branch whose condition was never evaluated is not guessed: its STOPs are listed (`abortStopSkippedUntakenBranch`);
 //   • a STOP behind an unpassed hitl_gate is sent (a STOP never needs a gate, QĐ-4a);
+//   • fix 1 (R-6-b) — ONLY when the run has ACTUATED: at least one NON-STOP command step (any command that is not a verified
+//     STOP, compensations included) was ATTEMPTED — handed to a dispatcher whatever came back (refused, failed, timed out),
+//     or recorded as running / completed / failed / compensated / dispatched on its row (counted conservatively: a doubt
+//     counts as actuated). A run that never actuated (queued, paused before its first motion) sends NO STOP — its STOP
+//     steps exist to undo its own actions, not to stop equipment another process may be running — audited
+//     `abortStopNotNeeded`;
 //   • each STOP goes through the SAME dispatcher path as a run's own STOP (equipmentRegistry → OT / robot dispatcher, an
 //     engine authorisation row for OT, the run id in the action id) WITHOUT a gate approval — so the dispatchers' own
 //     checks still decide: the OT dispatcher accepts such a row ONLY for a pinned stop (R-4-x), the robot dispatcher sends
-//     only a stop job. Each outcome is audited (`abortStopSent` / `abortStopFailed`) and shown as an `abort:<id>` step row.
+//     only a stop job. Each outcome is audited (`abortStopSent` / `abortStopFailed`, with `outOfScopeTarget` — fix 1 #8 —
+//     true when the STOP's machine / robot / adapter is outside the caller's factory scope, "unknown" when that could not be
+//     decided) and shown as an `abort:<id>` step row;
+//   • fix 1 (#1, #2) — sent ONCE: a second abort finds the run 'aborted' (the write excludes it) and sends nothing; two
+//     sweeps of one run overlapping in this process share one; a STOP whose `abort:<id>` row says it was sent is never sent
+//     again, while one that FAILED is sent again by a later sweep under a NEW idempotency key (a per-sweep nonce: the OT
+//     dispatcher caches a failed key's result as terminal).
 //
-// ★ BOUND (D = STOP_DB_STEP_DEADLINE_MS = 1 s; every wait below is bounded, nothing waits on a hung DB or device):
-//   scope decision ≤ D · 'aborted' write ≤ D · picture of the run ≤ 2·D (a run without a live driver here: definition +
-//   step rows concurrently ≤ D, machines ≤ D; a live run: in memory, 0) · STOP verification ≤ D · preparing every STOP
-//   CONCURRENTLY ≤ 2·D (adapter lookup ≤ D, then the OT authorisation row ≤ D; a robot STOP: none) — so every STOP is
-//   handed to its dispatcher within 7·D of the abort request, in order (STOP steps in definition order, then the due
-//   compensations), and the abort answers within 8·D (it waits ≤ ABORT_STOP_ANSWER_WAIT_MS for the dispatchers' replies;
-//   a later reply is recorded when it comes). The record writes (step row, audit) are bounded and never awaited by a STOP.
+// ★ SLOW DATABASE (fix 1 #5) — said plainly: when the stop-pin / running-connection reads of an OT STOP do not answer within
+//   D, that OT STOP is NOT verified ⇒ NOT sent by the sweep (audited abortStopUnverified, the Studio warns and points at the
+//   machine's direct STOP / E-STOP) — even though the OT dispatcher would re-check it itself (plan constraint 3: no exemption
+//   on a guess). Robot stop jobs need no DB and still go. And in a LIVE run, an OT STOP the walker was about to send when the
+//   abort flag fell is cancelled by the flag and handed over by the sweep instead: up to ~4·D later than the walker would have
+//   (verification ≤ D + its adapter lookup ≤ D + authorisation row ≤ D, after the bounded 'aborted' write ≤ D).
+//
+// ★ BOUND (D = STOP_DB_STEP_DEADLINE_MS = 1 s; every wait below is bounded, nothing waits on a hung DB or device). ABORT:
+//   scope decision ≤ D (a real user; the system path's run read — getDb() included — ≤ D instead) · 'aborted' write ≤ D
+//   (getDb() included) · picture of the run ≤ 2·D (definition + step rows concurrently ≤ D, machines ≤ D; a live run: memory +
+//   its step rows ≤ D) · STOP verification + the scope marker ≤ D (concurrently) · preparing every STOP CONCURRENTLY ≤ 2·D
+//   (adapter lookup ≤ D, then the OT authorisation row ≤ D; a robot STOP: none) — so every STOP is handed to its dispatcher
+//   within 7·D of the abort request, in order (STOP steps in definition order, then the due compensations), and the abort
+//   answers within 8·D (it waits ≤ ABORT_STOP_ANSWER_WAIT_MS for the dispatchers' replies; a later reply is recorded when it
+//   comes). REJECTION: the scope decision ≤ D (a real user), the claim ≤ D, then the same sweep (≤ 6·D to its answer), then
+//   the QT compensation hook (business actions, not a STOP path — it is awaited as before), the final write ≤ D and the gate
+//   row ≤ D. The record writes (step row, audit) are bounded and never awaited by a STOP. NOT inside the figure: the first
+//   `db()` of resumeRun (pre-existing, before anything else) and the dispatchers' own work after the hand-over.
 
 /** doc 81 Đợt 6 — how long the abort ANSWER waits for the dispatchers' replies to its STOPs (they keep running past it). */
 export const ABORT_STOP_ANSWER_WAIT_MS = STOP_DB_STEP_DEADLINE_MS;
 
 /**
- * doc 81 Đợt 6 — the 'aborted' write did not answer within D: the abort is in effect in THIS process (a live driver is
- * flagged) and the STOP sweep ran, but the database may not say 'aborted' — the caller is told to check and retry.
+ * doc 81 Đợt 6 — the 'aborted' write (abort) / the claim or the final write (rejection) did not answer within D: the
+ * database may not say 'aborted' — the caller is told to check and retry (the answer says how many STOPs were CONFIRMED).
  */
 export const FOE_ABORT_UNCONFIRMED = "abortUnconfirmed" as const;
 
-type AbortAuditOp = "abortStopSent" | "abortStopFailed" | "abortStopSkippedUntakenBranch" | "abortStopUnverified" | "abortStopNotPinned";
+type AbortAuditOp =
+  | "abortStopSent"
+  | "abortStopFailed"
+  | "abortStopSkippedUntakenBranch"
+  | "abortStopUnverified"
+  | "abortStopNotPinned"
+  | "abortStopNotNeeded";
 
 /** The audit module, imported ONCE per process for the sweep's several concurrent audit writes (a failed import is retried). */
 let abortAuditModulePromise: Promise<typeof import("../../auditTrailService")> | undefined;
@@ -2792,7 +2891,7 @@ function abortAuditModule(): Promise<typeof import("../../auditTrailService")> {
 /** doc 81 Đợt 6 — one console line (always, synchronous) + one audit row (bounded by D, never awaited by a STOP). */
 function auditAbortStop(user: FoeUser, runId: number, operation: AbortAuditOp, metadata: Record<string, unknown>): void {
   const line = `[FOE] abort of run ${runId} by user ${user.id || 0} (${user.role}): ${operation} ${JSON.stringify(metadata)}`;
-  if (operation === "abortStopSent") console.log(line);
+  if (operation === "abortStopSent" || operation === "abortStopNotNeeded") console.log(line);
   else console.error(`${line} — to stop that equipment now, use the machine's direct STOP / E-STOP.`);
   const write = (async () => {
     const { logCrudOperation, createAuditContext } = await abortAuditModule();
@@ -2801,7 +2900,7 @@ function auditAbortStop(user: FoeUser, runId: number, operation: AbortAuditOp, m
       entityType: "orchestration_run",
       entityId: runId,
       details: { operation, metadata: { runId, ...metadata } },
-      status: operation === "abortStopSent" ? "success" : "failure",
+      status: operation === "abortStopSent" || operation === "abortStopNotNeeded" ? "success" : "failure",
     });
   })();
   void withDeadline(write, STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} ${operation} audit`).catch((err: unknown) => {
@@ -2818,9 +2917,30 @@ interface AbortSweepSource {
   settled: (stepId: string) => boolean;
   branchOf: (stepId: string) => "then" | "else" | undefined;
   startOrder: string[];
+  /** R-6-b — steps that MAY have been handed to a dispatcher (attempted, whatever the result) — counted conservatively. */
+  mayHaveActuated: (stepId: string) => boolean;
+  /** #2 — STOPs an earlier sweep of this run CONFIRMED sent (`abort:<id>` row completed): never sent again. */
+  sentBefore: Set<string>;
 }
 
-function liveSweepSource(rc: RunContext): AbortSweepSource {
+/** The step rows of a run, bounded by D (null when they could not be read). */
+function readRunStepRows(runId: number) {
+  return boundedAbortRead(async () => {
+    const d = await getDb();
+    return d ? d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId)) : null;
+  }, `FOE abort run ${runId} step rows`);
+}
+
+/** #2 — the STOPs earlier sweeps confirmed sent (pure). */
+function abortSentOf(rows: ReadonlyArray<{ stepId: string; status: string }> | null): Set<string> {
+  const out = new Set<string>();
+  for (const r of rows ?? []) if (r.stepId.startsWith(ABORT_ROW_PREFIX) && r.status === "completed") out.add(r.stepId.slice(ABORT_ROW_PREFIX.length));
+  return out;
+}
+
+async function liveSweepSource(rc: RunContext): Promise<AbortSweepSource> {
+  const rows = await readRunStepRows(rc.runId); // ≤ D — earlier sweeps' rows, and the rows' (conservative) actuation record
+  const fromRows = rows ? priorStepsOf(rows) : null;
   return {
     def: rc.def,
     machineById: rc.machineById,
@@ -2831,6 +2951,8 @@ function liveSweepSource(rc: RunContext): AbortSweepSource {
       return b === "then" || b === "else" ? b : rc.prior.branches.get(id);
     },
     startOrder: [...rc.prior.startOrder, ...rc.startOrder],
+    mayHaveActuated: (id) => rc.attempted.has(id) || rc.prior.attempted.has(id) || !!fromRows?.attempted.has(id),
+    sentBefore: abortSentOf(rows),
   };
 }
 
@@ -2851,10 +2973,7 @@ async function storedSweepSource(run: OrchestrationRun): Promise<AbortSweepSourc
       const d = await getDb();
       return d ? d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1) : null;
     }, `FOE abort run ${run.id} definition`),
-    boundedAbortRead(async () => {
-      const d = await getDb();
-      return d ? d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, run.id)) : null;
-    }, `FOE abort run ${run.id} step rows`),
+    readRunStepRows(run.id),
   ]);
   const def = (wf?.[0]?.definitionJson as WorkflowDefinition | undefined) ?? null;
   const usable = def && Array.isArray(def.steps) ? def : null;
@@ -2873,6 +2992,9 @@ async function storedSweepSource(run: OrchestrationRun): Promise<AbortSweepSourc
       return b === "then" || b === "else" ? b : prior.branches.get(id);
     },
     startOrder: prior.startOrder,
+    // rows unreadable ⇒ whether it actuated is unknown ⇒ counted as actuated (conservative, R-6-b)
+    mayHaveActuated: (id) => rows === null || prior.attempted.has(id),
+    sentBefore: abortSentOf(rows),
   };
 }
 
@@ -2897,6 +3019,37 @@ async function verifyStopsForAbort(runId: number, def: WorkflowDefinition, map: 
       return { ids: new Set(), failed: true, unsure };
     }
   }
+}
+
+/**
+ * fix 1 #8 — per STOP to send: is its target (machine / robot / explicit adapter) outside the caller's factory scope?
+ * true / false, or "unknown" when the scope could not be decided within D. An audit MARKER only — it never decides a send.
+ */
+async function outOfScopeMarkers(
+  runId: number,
+  scope: FoeScope,
+  steps: CommandWorkflowStep[],
+  map: Map<number, MachineForValidation>,
+): Promise<Map<string, boolean | "unknown">> {
+  const out = new Map<string, boolean | "unknown">();
+  if (steps.length === 0) return out;
+  try {
+    await withDeadline(
+      (async () => {
+        const judge = await makeScopeJudge(scope);
+        for (const s of steps) {
+          const o = await judge.outOf(collectTargets({ ref: "abort", name: "abort", steps: [s] }, map, new Set()));
+          out.set(s.id, judge.failed ? "unknown" : !isOutOfScopeEmpty(o));
+        }
+      })(),
+      STOP_DB_STEP_DEADLINE_MS,
+      `FOE abort run ${runId} scope marker`,
+    );
+  } catch {
+    /* not decided in time ⇒ "unknown" below */
+  }
+  for (const s of steps) if (!out.has(s.id)) out.set(s.id, "unknown");
+  return out;
 }
 
 /** Every step of the main tree (children and branches; NOT compensation subtrees — a compensation never compensates). */
@@ -2929,7 +3082,7 @@ async function planAbortSweep(src: AbortSweepSource, def: WorkflowDefinition, v:
     if (seen.has(s.id)) return;
     seen.add(s.id);
     if (v.ids.has(s.id)) {
-      plan.send.push(s); // a REAL stop (robot stop job / pinned OT stop) — the only thing an abort sends
+      if (!src.sentBefore.has(s.id)) plan.send.push(s); // a REAL stop (robot stop job / pinned OT stop) — the only thing sent
       return;
     }
     const c = commandOf(s, src.machineById);
@@ -2983,14 +3136,32 @@ async function planAbortSweep(src: AbortSweepSource, def: WorkflowDefinition, v:
   return plan;
 }
 
+/**
+ * fix 1 (R-6-b) — has the run ACTUATED? Some command step (compensations included) that is NOT a verified STOP may have been
+ * handed to a dispatcher. Conservative: an unpinned / unverifiable stop-typed step counts as a non-STOP; a doubt counts.
+ */
+function runHasActuated(def: WorkflowDefinition, src: AbortSweepSource, v: StopVerification): boolean {
+  for (const s of allStepsOf(def.steps)) {
+    if (s.type === "command" && !v.ids.has(s.id) && src.mayHaveActuated(s.id)) return true;
+  }
+  return false;
+}
+
 type PreparedAbortStop = { step: CommandWorkflowStep; cmd: EquipmentCommand; kind: AdapterKind } | { step: CommandWorkflowStep; error: string };
 
 /**
  * One STOP of the sweep, up to the dispatcher (bounded: adapter lookup ≤ D, OT authorisation row ≤ D). The command is
  * built WITHOUT a gate approval, always: the engine row it gets is self-confirmed, which the OT dispatcher accepts only for
  * a pinned stop. Re-checked here as a STOP (robot: stop job; OT: stop-typed — the dispatcher re-checks the pins).
+ * `nonce` (#2) — one per sweep: a STOP that failed in an earlier sweep is sent again under a NEW key.
  */
-async function prepareAbortStop(runId: number, user: FoeUser, step: CommandWorkflowStep, map: Map<number, MachineForValidation>): Promise<PreparedAbortStop> {
+async function prepareAbortStop(
+  runId: number,
+  user: FoeUser,
+  step: CommandWorkflowStep,
+  map: Map<number, MachineForValidation>,
+  nonce: string,
+): Promise<PreparedAbortStop> {
   try {
     const c = commandOf(step, map);
     if (!c) return { step, error: `machine ${step.machineId} / command "${step.command}" not found` };
@@ -3004,7 +3175,7 @@ async function prepareAbortStop(runId: number, user: FoeUser, step: CommandWorkf
             return raw;
           },
         );
-    const idempotencyKey = `run${runId}-${step.id}-abort`;
+    const idempotencyKey = `run${runId}-${step.id}-abort-${nonce}`;
     const cmd = buildEquipmentCommand(c.descriptor, c.cap, step.machineId, args, idempotencyKey, user); // NO approval, ever
     if (robot ? !isStopJob(toRobotJob(cmd)) : !(await isOtStopCommandType(cmd.name))) {
       return { step, error: `"${step.command}" is not a STOP — never sent on an abort` };
@@ -3034,7 +3205,15 @@ async function prepareAbortStop(runId: number, user: FoeUser, step: CommandWorkf
 }
 
 /** The outcome of one STOP: an `abort:<id>` step row (bounded, not awaited) + the audit (abortStopSent / abortStopFailed). */
-function recordAbortStop(runId: number, user: FoeUser, step: CommandWorkflowStep, ok: boolean, result: EquipmentCommandResult | null, error: string | null): void {
+function recordAbortStop(
+  runId: number,
+  user: FoeUser,
+  step: CommandWorkflowStep,
+  ok: boolean,
+  result: EquipmentCommandResult | null,
+  error: string | null,
+  outOfScopeTarget: boolean | "unknown",
+): void {
   const now = new Date();
   const dispatch = result
     ? { routedTo: result.routedTo, status: result.status, accepted: result.ok, simulated: result.detail?.simulated ?? undefined, detail: result.detail ?? null }
@@ -3054,19 +3233,38 @@ function recordAbortStop(runId: number, user: FoeUser, step: CommandWorkflowStep
     stepId: step.id,
     machineId: step.machineId,
     command: step.command,
+    outOfScopeTarget,
     ...(result ? { routedTo: result.routedTo, status: result.status } : {}),
     ...(error ? { error } : {}),
   });
 }
 
+function emptyAbortReport(): AbortStopReport {
+  return { sent: [], failed: [], pending: [], unverified: [], untakenBranch: [], notPinned: [], notNeeded: [] };
+}
+
+/** fix 1 (#1) — two sweeps of ONE run overlapping in this process share one (no STOP sent twice by this process). */
+const abortSweepsInFlight = new Map<number, Promise<AbortStopReport>>();
+
 /**
  * doc 81 Đợt 6 — THE sweep (see the section header). `live` = the run's driver in this process (its memory is the
- * picture), else the stored rows of `run`. Never throws; every wait is bounded.
+ * picture), else the stored rows of `run`. `scope` = the caller's factory scope (audit marker only). Never throws; every
+ * wait is bounded.
  */
-async function abortStopSweep(runId: number, run: OrchestrationRun | undefined, live: RunContext | null, user: FoeUser): Promise<AbortStopReport> {
-  const report: AbortStopReport = { sent: [], failed: [], pending: [], unverified: [], untakenBranch: [], notPinned: [] };
+function abortStopSweep(runId: number, run: OrchestrationRun | undefined, live: RunContext | null, user: FoeUser, scope: FoeScope): Promise<AbortStopReport> {
+  const running = abortSweepsInFlight.get(runId);
+  if (running) return running;
+  const p = runAbortStopSweep(runId, run, live, user, scope).finally(() => {
+    if (abortSweepsInFlight.get(runId) === p) abortSweepsInFlight.delete(runId);
+  });
+  abortSweepsInFlight.set(runId, p);
+  return p;
+}
+
+async function runAbortStopSweep(runId: number, run: OrchestrationRun | undefined, live: RunContext | null, user: FoeUser, scope: FoeScope): Promise<AbortStopReport> {
+  const report = emptyAbortReport();
   try {
-    const src = live ? liveSweepSource(live) : run ? await storedSweepSource(run) : null;
+    const src = live ? await liveSweepSource(live) : run ? await storedSweepSource(run) : null;
     if (!src?.def) {
       auditAbortStop(user, runId, "abortStopUnverified", { stepIds: [], reason: "definitionUnreadable" });
       return report;
@@ -3074,6 +3272,12 @@ async function abortStopSweep(runId: number, run: OrchestrationRun | undefined, 
     const def = src.def;
     const v = await verifyStopsForAbort(runId, def, src.machineById);
     const plan = await planAbortSweep(src, def, v);
+    // R-6-b — a run that never actuated sends none of its STOPs (said out loud)
+    if (plan.send.length > 0 && !runHasActuated(def, src, v)) {
+      report.notNeeded = plan.send.map((s) => s.id);
+      auditAbortStop(user, runId, "abortStopNotNeeded", { stepIds: report.notNeeded, reason: "runNeverActuated" });
+      plan.send = [];
+    }
     report.unverified = plan.unverified;
     report.untakenBranch = plan.untakenBranch;
     report.notPinned = plan.notPinned;
@@ -3081,14 +3285,21 @@ async function abortStopSweep(runId: number, run: OrchestrationRun | undefined, 
     if (plan.untakenBranch.length) auditAbortStop(user, runId, "abortStopSkippedUntakenBranch", { stepIds: plan.untakenBranch });
     // stop-TYPED steps that are not a pinned stop: not a real STOP (R-5-j), not sent — said out loud all the same
     if (plan.notPinned.length) auditAbortStop(user, runId, "abortStopNotPinned", { stepIds: plan.notPinned });
-    // every STOP prepared CONCURRENTLY (≤ 2·D), then handed to its dispatcher IN ORDER, without waiting on a reply
-    const prepared = await Promise.all(plan.send.map((s) => prepareAbortStop(runId, user, s, src.machineById)));
+    if (plan.send.length === 0) return report;
+    // every STOP prepared CONCURRENTLY (≤ 2·D, the scope marker alongside ≤ D), then handed to its dispatcher IN ORDER,
+    // without waiting on a reply
+    const nonce = `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+    const [prepared, markers] = await Promise.all([
+      Promise.all(plan.send.map((s) => prepareAbortStop(runId, user, s, src.machineById, nonce))),
+      outOfScopeMarkers(runId, scope, plan.send, src.machineById),
+    ]);
     const replies: Array<Promise<void>> = [];
     for (const p of prepared) {
       const id = p.step.id;
+      const marker = markers.get(id) ?? "unknown";
       if ("error" in p) {
         report.failed.push(id);
-        recordAbortStop(runId, user, p.step, false, null, p.error);
+        recordAbortStop(runId, user, p.step, false, null, p.error, marker);
         continue;
       }
       report.pending.push(id);
@@ -3101,7 +3312,7 @@ async function abortStopSweep(runId: number, run: OrchestrationRun | undefined, 
       const settle = (ok: boolean, result: EquipmentCommandResult | null, error: string | null) => {
         report.pending = report.pending.filter((x) => x !== id);
         (ok ? report.sent : report.failed).push(id);
-        recordAbortStop(runId, user, p.step, ok, result, error);
+        recordAbortStop(runId, user, p.step, ok, result, error, marker);
       };
       replies.push(
         sent.then(
@@ -3140,8 +3351,8 @@ async function abortStopSweep(runId: number, run: OrchestrationRun | undefined, 
  * STOP that driver is sending at that moment may be sent twice — a STOP, never motion.)
  *
  * doc 81 Đợt 6 — after the 'aborted' write the abort SENDS the run's remaining real STOP steps and its due STOP
- * compensations, and skips every non-STOP step (abortStopSweep; bound in the section header above). A gate REJECTION
- * (resumeRun approved:false) is unchanged.
+ * compensations (only when the run actuated — R-6-b), and skips every non-STOP step (abortStopSweep; bound in the section
+ * header above). A gate REJECTION (resumeRun approved:false) does the same since fix 1 (R-6-a).
  */
 export async function abortRun(
   runId: number,
@@ -3150,13 +3361,11 @@ export async function abortRun(
   /**
    * doc 81 Đợt 5 task E2 fix (ruling R-5-d) — the aborter's factory scope (see DeployOpts.scope). Checked for a real user
    * (or whenever given): aborting a run of another factory is a cross-factory mutation ⇒ answered EXACTLY like a missing
-   * run. The owners of the equipment (in scope) abort as before; STOP steps are untouched (L-7).
+   * run. The owners of the equipment (in scope) abort as before; the run's remaining STOPs are sent (Đợt 6, L-7).
    */
   opts: { scope?: FoeScope } = {},
 ): Promise<StartRunResult> {
   try {
-    const d = await getDb();
-    if (!d) return { ok: false, enabled: foeEnabled(), runId, message: "DB unavailable." };
     const notFound: StartRunResult = { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} not found.` };
     let run: OrchestrationRun | undefined;
     if (opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0)) {
@@ -3172,7 +3381,22 @@ export async function abortRun(
       if (!decision.run || decision.verdict === "out") return notFound;
       run = decision.run;
     } else {
-      [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+      // fix 1 (#6) — the system path's run read (getDb() included) is bounded by D too: it replaces the scope decision
+      // inside the documented 8·D; unanswered ⇒ nothing changed, nothing sent (the caller retries).
+      try {
+        [run] = await withDeadline(
+          (async () => {
+            const d = await getDb();
+            if (!d) throw new DbUnavailableError();
+            return d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+          })(),
+          STOP_DB_STEP_DEADLINE_MS,
+          `FOE abort run ${runId} read`,
+        );
+      } catch (err) {
+        console.error(`[FOE] abort of run ${runId}: run not read in time — ${(err as Error)?.message ?? err}`);
+        return { ok: false, enabled: foeEnabled(), runId, message: "DB unavailable." };
+      }
     }
     if (!run) return notFound;
     if (["completed", "failed", "aborted"].includes(run.status)) {
@@ -3188,9 +3412,13 @@ export async function abortRun(
     // never waits on the DB, L-7); the answer says the database may not show 'aborted'.
     let confirmed: boolean | "unknown";
     try {
+      // fix 1 (#6) — getDb() is inside the bound; (#1) 'aborted' is excluded too: a second abort (double click, two users)
+      // finds the run already aborted and sends nothing.
       const written = await withDeadline(
-        Promise.resolve(
-          d
+        (async () => {
+          const d = await getDb();
+          if (!d) throw new DbUnavailableError();
+          return d
             .update(orchestrationRuns)
             .set({
               status: "aborted",
@@ -3198,9 +3426,9 @@ export async function abortRun(
               finishedAt: new Date(),
               error: reason ? `Aborted by user ${user.id}: ${reason}` : `Aborted by user ${user.id}.`,
             })
-            .where(and(eq(orchestrationRuns.id, runId), notInArray(orchestrationRuns.status, ["completed", "failed"])))
-            .returning({ id: orchestrationRuns.id }),
-        ),
+            .where(and(eq(orchestrationRuns.id, runId), notInArray(orchestrationRuns.status, ["completed", "failed", "aborted"])))
+            .returning({ id: orchestrationRuns.id });
+        })(),
         STOP_DB_STEP_DEADLINE_MS,
         `FOE abort run ${runId} status write`,
       );
@@ -3226,14 +3454,14 @@ export async function abortRun(
     }
     if (confirmed === true) void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
     // doc 81 Đợt 6 — skip every non-STOP step, still send the remaining STOP steps and the due STOP compensations.
-    const abortStops = await abortStopSweep(runId, run, lateLive ?? live ?? null, user);
+    const abortStops = await abortStopSweep(runId, run, lateLive ?? live ?? null, user, scopeFor(user, opts.scope));
     if (confirmed === "unknown") {
       return {
         ok: false,
         enabled: foeEnabled(),
         runId,
         reason: FOE_ABORT_UNCONFIRMED,
-        message: `Abort of run ${runId} not confirmed by the database in time — its remaining STOP steps were sent; check the run and retry.`,
+        message: `Abort of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: ${abortStops.sent.length}; check the run and retry.`,
         abortStops,
       };
     }
