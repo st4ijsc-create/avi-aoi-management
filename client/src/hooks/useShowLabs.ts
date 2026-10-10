@@ -12,13 +12,11 @@
  *   debounce); giá trị server được áp vào kho lúc đăng nhập ⇒ sự kiện `UI_PREFS_APPLIED_EVENT` ⇒ đọc lại (lib/uiPrefsSync.ts).
  */
 import { useCallback, useEffect, useState } from "react";
-import { userLayoutKey } from "@/components/patterns/layoutKitHooks";
 import { markUiPrefDirty, UI_PREFS_APPLIED_EVENT } from "@/lib/uiPrefsSync";
+import { showLabsKey } from "@/lib/showLabsKey";
 
-/** Khoá kho của sở thích Labs (null khi chưa biết người dùng). */
-export function showLabsKey(userId: number | string | null | undefined): string | null {
-  return userLayoutKey("nav-labs", userId, "show");
-}
+// Khoá kho của sở thích Labs — MỘT định nghĩa dùng chung với bộ đồng bộ (D1 fix 1 #7).
+export { showLabsKey };
 
 /** Sự kiện cùng tab khi một instance của hook đổi sở thích (detail = khoá kho). */
 export const SHOW_LABS_EVENT = "nav-labs-changed";

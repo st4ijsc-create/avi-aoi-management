@@ -26,6 +26,7 @@ vi.mock("@/lib/trpc", () => ({
 }));
 
 import { UiPrefsSync } from "./UiPrefsSync";
+import { __resetUiPrefsSyncForTests, markUiPrefDirty } from "@/lib/uiPrefsSync";
 
 beforeEach(() => {
   localStorage.clear();
@@ -35,7 +36,10 @@ beforeEach(() => {
   h.hookUsed.mockReset();
   h.toastError.mockReset();
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  __resetUiPrefsSyncForTests(); // fix 1 #6
+});
 
 describe("<UiPrefsSync/>", () => {
   it("chưa đăng nhập ⇒ không gọi server", () => {
@@ -80,5 +84,20 @@ describe("<UiPrefsSync/>", () => {
     await waitFor(() => expect(h.query).toHaveBeenCalledTimes(2));
     await new Promise((r2) => setTimeout(r2, 10));
     expect(h.mutate).not.toHaveBeenCalled();
+  });
+
+  it("★ fix 1 #1/#3 — đổi người dùng khi còn lượt ghi chờ debounce ⇒ bản CŨ đẩy nốt dưới expectedUserId CŨ (server từ chối nếu phiên đã đổi)", async () => {
+    h.user = { id: 4 };
+    h.query.mockResolvedValue({ prefs: {}, available: true, userId: 4 });
+    h.mutate.mockResolvedValue({ prefs: {}, userId: 4 });
+    const r = render(<UiPrefsSync />);
+    await waitFor(() => expect(h.query).toHaveBeenCalledTimes(1));
+    await new Promise((r2) => setTimeout(r2, 10));
+    localStorage.setItem("layoutKit:nav-labs:u4:show", "1");
+    markUiPrefDirty("layoutKit:nav-labs:u4:show");
+    h.user = { id: 6 };
+    r.rerender(<UiPrefsSync />);
+    await waitFor(() => expect(h.mutate).toHaveBeenCalledTimes(1));
+    expect(h.mutate).toHaveBeenCalledWith({ patch: { showLabs: true }, expectedUserId: 4 });
   });
 });

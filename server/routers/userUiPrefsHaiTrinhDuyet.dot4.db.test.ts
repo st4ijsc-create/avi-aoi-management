@@ -19,7 +19,9 @@ const goi = (id: number): Caller => appRouter.createCaller({ user: { id, role: "
 
 async function hang(userId: number): Promise<Record<string, unknown> | null> {
   const r = await sql`SELECT "uiPrefs" AS p FROM user_settings WHERE "userId" = ${userId}`;
-  return r.length ? (r[0].p as Record<string, unknown>) : null;
+  if (!r.length) return null;
+  const { __order: _bo, ...p } = r[0].p as Record<string, unknown>; // khoá nội bộ thứ tự dùng (fix 1 #5)
+  return p;
 }
 
 /** Kho cục bộ trong bộ nhớ — "một trình duyệt". */
@@ -38,9 +40,9 @@ class MemStorage {
     this.m.set(k, String(v));
   }
 }
-const transportOf = (c: Caller): UiPrefsTransport => ({
+const transportOf = (c: Caller, uid: number): UiPrefsTransport => ({
   get: () => c.userSettingsRouter.getUiPrefs(),
-  set: (patch) => c.userSettingsRouter.setUiPrefs({ patch }),
+  set: (patch) => c.userSettingsRouter.setUiPrefs({ patch, expectedUserId: uid }),
 });
 
 describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — hai trình duyệt, một tài khoản (CSDL _test)", () => {
@@ -76,7 +78,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — hai trình duyệt, một 
 
     // Trình duyệt 1: bật Labs + kéo panel + gập panel dưới (hook ghi localStorage rồi đánh dấu).
     const kho1 = new MemStorage();
-    const b1 = createUiPrefsSync({ userId: fx.a, transport: transportOf(c), storage: kho1, events: new EventTarget(), debounceMs: 5 });
+    const b1 = createUiPrefsSync({ userId: fx.a, transport: transportOf(c, fx.a), storage: kho1, events: new EventTarget(), debounceMs: 5 });
     await b1.start();
     kho1.setItem(kLabs, "1");
     kho1.setItem(kH, JSON.stringify({ left: { px: 288, pct: 21 } }));
@@ -90,7 +92,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — hai trình duyệt, một 
     const ev2 = new EventTarget();
     const daBao: string[][] = [];
     ev2.addEventListener(UI_PREFS_APPLIED_EVENT, (e) => daBao.push((e as CustomEvent<string[]>).detail));
-    const b2 = createUiPrefsSync({ userId: fx.a, transport: transportOf(c), storage: kho2, events: ev2, debounceMs: 5 });
+    const b2 = createUiPrefsSync({ userId: fx.a, transport: transportOf(c, fx.a), storage: kho2, events: ev2, debounceMs: 5 });
     await b2.start();
     expect(kho2.getItem(kLabs)).toBe("1");
     expect(JSON.parse(kho2.getItem(kH)!)).toEqual({ left: { px: 288, pct: 21 } });
@@ -101,7 +103,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — hai trình duyệt, một 
     kho2.setItem(kLabs, "0");
     b2.markDirty(kLabs);
     await b2.flush();
-    const b1b = createUiPrefsSync({ userId: fx.a, transport: transportOf(c), storage: kho1, events: null, debounceMs: 5 });
+    const b1b = createUiPrefsSync({ userId: fx.a, transport: transportOf(c, fx.a), storage: kho1, events: null, debounceMs: 5 });
     await b1b.start();
     expect(kho1.getItem(kLabs)).toBe("0");
     for (const s of [b1, b2, b1b]) s.stop();
@@ -111,13 +113,13 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — hai trình duyệt, một 
     const kOnly = `layoutKit:recipes:u${fx.b}:vpx`;
     const kServer = `layoutKit:ir-editor:u${fx.b}:hpx`;
     const serverVal = { left: { px: 260, pct: 20 }, right: { px: 380, pct: 25 } };
-    await goi(fx.b).userSettingsRouter.setUiPrefs({ patch: { [kServer]: serverVal } });
+    await goi(fx.b).userSettingsRouter.setUiPrefs({ patch: { [kServer]: serverVal }, expectedUserId: fx.b });
     const kho = new MemStorage();
     kho.setItem(kOnly, JSON.stringify({ bottom: { px: 210, pct: 28 } }));
     kho.setItem(kServer, JSON.stringify({ left: { px: 299, pct: 23 } }));
     kho.setItem(`layoutKit:ide:u${fx.a}:hpx`, JSON.stringify(serverVal)); // của người khác ⇒ không đẩy
     let sets = 0;
-    const t = transportOf(goi(fx.b));
+    const t = transportOf(goi(fx.b), fx.b);
     const s = createUiPrefsSync({ userId: fx.b, transport: { get: t.get, set: (p) => (sets++, t.set(p)) }, storage: kho, events: null });
     await s.start();
     expect(sets).toBe(1);

@@ -710,25 +710,32 @@ export const userSettingsRouter = router({
    * thước/gập panel WorkbenchShell. Đọc = các khoá hợp lệ của CHÍNH người gọi. `available:false` = DB chưa áp 0365 —
    * client giữ localStorage như trước.
    */
-  getUiPrefs: protectedProcedure.query(async ({ ctx }) => readUiPrefs(ctx.user.id)),
+  // fix 1 #1 — trả kèm `userId` của PHIÊN: tab cũ (React còn tưởng người A, cookie đã là B) so và KHÔNG áp gì.
+  getUiPrefs: protectedProcedure.query(async ({ ctx }) => ({ ...(await readUiPrefs(ctx.user.id)), userId: ctx.user.id })),
 
   /**
-   * Gộp `patch` vào uiPrefs của CHÍNH người gọi (`jsonb ||`, nguyên tử). Danh sách trắng `shared/uiPrefs.ts`: một khoá lạ,
-   * khoá bố cục mang id người khác, giá trị sai hay tổng > 16 KB ⇒ BAD_REQUEST và KHÔNG ghi gì.
+   * Gộp `patch` vào uiPrefs của CHÍNH người gọi (giao dịch khoá hàng — server/db/userUiPrefs.ts). Danh sách trắng
+   * `shared/uiPrefs.ts`: một khoá lạ, khoá bố cục mang id người khác, giá trị sai hay bản vá > 16 KB ⇒ BAD_REQUEST và KHÔNG
+   * ghi gì. Tổng sau gộp > 16 KB ⇒ bỏ khoá bố cục dùng CŨ NHẤT (fix 1 #5, trả `evicted`).
+   * fix 1 #1 — `expectedUserId` (người dùng client TƯỞNG đang đăng nhập) ≠ người của phiên ⇒ CONFLICT, KHÔNG ghi gì: tab cũ
+   * không bao giờ đẩy sở thích của A vào hàng của B.
    */
   setUiPrefs: protectedProcedure
-    .input(z.object({ patch: z.record(z.string(), z.unknown()) }))
+    .input(z.object({ patch: z.record(z.string(), z.unknown()), expectedUserId: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
+      if (input.expectedUserId !== ctx.user.id) {
+        throw appError("CONFLICT", "INVALID_VALUE", { field: "uiPrefs" }, "uiPrefs refused (sessionMismatch)");
+      }
       const checked = checkUiPrefsPatch(input.patch, ctx.user.id);
       if (!checked.ok) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "uiPrefs" }, `uiPrefs refused (${checked.reason}${checked.key ? `: ${checked.key}` : ""})`);
       }
-      if (Object.keys(checked.value).length === 0) return readUiPrefs(ctx.user.id);
+      if (Object.keys(checked.value).length === 0) return { ...(await readUiPrefs(ctx.user.id)), userId: ctx.user.id, evicted: [] as string[] };
       const r = await mergeUiPrefs(ctx.user.id, checked.value);
       if (!r.ok && r.reason === "tooLarge") {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "uiPrefs" }, `uiPrefs refused (tooLarge: > ${UI_PREFS_MAX_BYTES} bytes)`);
       }
       if (!r.ok) throw appError("PRECONDITION_FAILED", "FEATURE_DISABLED", { feature: "uiPrefs" }, "uiPrefs column not available (migration 0365 not applied)");
-      return { prefs: r.prefs, available: true };
+      return { prefs: r.prefs, available: true, userId: ctx.user.id, evicted: r.evicted };
     }),
 });

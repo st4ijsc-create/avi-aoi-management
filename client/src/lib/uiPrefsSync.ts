@@ -8,27 +8,33 @@
  *   2. sau đó: hook ghi localStorage rồi gọi `markUiPrefDirty(khoá)` ⇒ gom, đẩy sau `debounceMs` (kéo separator bắn
  *      hàng chục lần/giây — chỉ giá trị cuối được gửi);
  *   3. khoá người dùng vừa đổi TRƯỚC khi lượt hỏi đầu về ⇒ KHÔNG bị giá trị server cũ ghi đè (được đẩy lên);
- *   4. server không tới được / DB chưa áp 0365 ⇒ im lặng (không toast — gọi qua client tRPC trần, ngoài cache của
- *      react-query nên lưới toast toàn cục của main.tsx không thấy), ứng dụng chạy tiếp trên localStorage; khoá chưa đẩy
- *      được giữ lại cho lần ghi sau.
+ *   4. server không tới được ⇒ im lặng (không toast — gọi qua client tRPC trần, ngoài cache của react-query nên lưới toast
+ *      toàn cục của main.tsx không thấy), ứng dụng chạy tiếp trên localStorage; khoá chưa đẩy được giữ lại.
  *
- * Ánh xạ khoá: `showLabs` ⇄ `layoutKit:nav-labs:u<id>:show` ("1"/"0"); khoá bố cục giống hệt hai bên (giá trị: hpx/vpx là
- * JSON, bottomCollapsed "1"/"0"). Danh sách trắng + giới hạn: `shared/uiPrefs.ts` (cùng hàm server dùng để từ chối).
- * Module KHÔNG import React/tRPC — kiểm được bằng hai kho tách biệt + một server thật (`userUiPrefs.dot4.db.test.ts`).
+ * Fix round 1 (review D minor 1–4, 6, 7):
+ *   • #1 GẮN PHIÊN: server trả `userId` của PHIÊN (cookie) và nhận `expectedUserId`; khác người dùng mà bản này phục vụ (tab
+ *     cũ sau khi tab khác đăng nhập người khác) ⇒ KHÔNG áp, KHÔNG đẩy, bản này tự khoá vĩnh viễn (`mismatch`);
+ *   • #2 NỐI TIẾP: mỗi lượt đẩy chờ lượt trước xong (một lượt bay một lúc), đọc giá trị LÚC GỬI ⇒ giá trị mới nhất thắng,
+ *     không lượt cũ nào tới sau đè lượt mới;
+ *   • #3 `stop()` (đổi người dùng) và `flushUiPrefs()` (gọi TRƯỚC đăng xuất) đẩy nốt lượt đang chờ debounce — cố gắng,
+ *     có hạn giờ;
+ *   • #4 lượt hỏi đầu hỏng ⇒ thử lại theo `retryDelaysMs` (lùi dần, có hạn); server nói KHÔNG CÓ tính năng (DB chưa áp
+ *     0365: `available:false` hoặc PRECONDITION_FAILED) ⇒ ngừng HẲN cho phiên này (không hỏi, không ghi — không 42703 lặp).
+ *
+ * Ánh xạ khoá: `showLabs` ⇄ `showLabsKey(id)` ("1"/"0", lib/showLabsKey.ts — MỘT định nghĩa với useShowLabs); khoá bố cục
+ * giống hệt hai bên (giá trị: hpx/vpx là JSON, bottomCollapsed "1"/"0"). Danh sách trắng + giới hạn: `shared/uiPrefs.ts`
+ * (cùng hàm server dùng để từ chối). Module không dùng React/tRPC — kiểm được bằng hai kho tách biệt + một server thật
+ * (`userUiPrefsHaiTrinhDuyet.dot4.db.test.ts`).
  */
-import {
-  SHOW_LABS_LAYOUT_ID,
-  SHOW_LABS_PART,
-  UI_PREF_SHOW_LABS,
-  isValidUiPrefValue,
-  uiPrefKeyKind,
-} from "@shared/uiPrefs";
+import { UI_PREF_SHOW_LABS, isValidUiPrefValue, uiPrefKeyKind } from "@shared/uiPrefs";
+import { showLabsKey } from "./showLabsKey";
 
 /** Phát trên window sau khi giá trị server được ghi vào localStorage; detail = string[] khoá cục bộ đã đổi. */
 export const UI_PREFS_APPLIED_EVENT = "ui-prefs-applied";
 
 export interface UiPrefsTransport {
-  get(): Promise<{ prefs: Record<string, unknown>; available?: boolean }>;
+  /** `userId` = người dùng của PHIÊN phía server (fix 1 #1). */
+  get(): Promise<{ prefs: Record<string, unknown>; available?: boolean; userId?: number | string }>;
   set(patch: Record<string, unknown>): Promise<unknown>;
 }
 
@@ -42,6 +48,10 @@ export interface UiPrefsSyncOptions {
   debounceMs?: number;
   /** Nơi phát `UI_PREFS_APPLIED_EVENT` (mặc định window; test truyền EventTarget riêng). */
   events?: EventTarget | null;
+  /** Lùi dần giữa các lần thử lại lượt hỏi đầu (fix 1 #4). Hết danh sách ⇒ chỉ thử lại khi người dùng ghi, cách nhau ≥ phần tử cuối. */
+  retryDelaysMs?: number[];
+  /** Hạn giờ của lượt đẩy nốt khi `stop()` (fix 1 #3). */
+  stopFlushTimeoutMs?: number;
 }
 
 export interface UiPrefsSync {
@@ -50,21 +60,25 @@ export interface UiPrefsSync {
   markDirty(localKey: string): void;
   /** Đẩy ngay các khoá đang chờ (không chờ debounce). Không bao giờ ném. */
   flush(): Promise<void>;
-  stop(): void;
+  /** Dừng; đẩy nốt khoá đang chờ (cố gắng, có hạn giờ). Không bao giờ ném. */
+  stop(): Promise<void>;
   readonly synced: boolean;
+  /** Đã ngừng hẳn cho phiên này: `"mismatch"` (phiên là người khác) | `"unavailable"` (DB chưa áp 0365) | null. */
+  readonly halted: "mismatch" | "unavailable" | null;
 }
 
-const showLabsLocalKey = (userId: number | string) => `layoutKit:${SHOW_LABS_LAYOUT_ID}:u${userId}:${SHOW_LABS_PART}`;
+export const DEFAULT_RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
+const DEFAULT_STOP_FLUSH_MS = 1_500;
 
 /** Khoá server của một khoá cục bộ của `userId`; null = không đồng bộ. */
 export function serverKeyForLocal(localKey: string, userId: number | string): string | null {
-  if (localKey === showLabsLocalKey(userId)) return UI_PREF_SHOW_LABS;
+  if (localKey === showLabsKey(userId)) return UI_PREF_SHOW_LABS;
   const k = uiPrefKeyKind(localKey);
   return k && k.kind === "layout" && k.userId === String(userId) ? localKey : null;
 }
 
 export function localKeyForServer(serverKey: string, userId: number | string): string | null {
-  if (serverKey === UI_PREF_SHOW_LABS) return showLabsLocalKey(userId);
+  if (serverKey === UI_PREF_SHOW_LABS) return showLabsKey(userId);
   const k = uiPrefKeyKind(serverKey);
   return k && k.kind === "layout" && k.userId === String(userId) ? serverKey : null;
 }
@@ -96,16 +110,38 @@ function decodeLocal(serverKey: string, raw: string | null): unknown {
 }
 
 const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const sameUser = (a: unknown, b: number | string) => a == null || String(a) === String(b);
+const errCode = (e: unknown) => {
+  const err = e as { data?: { code?: string }; code?: string } | null;
+  return err?.data?.code ?? err?.code;
+};
+/** Chờ `p` tối đa `ms`; không bao giờ ném. */
+const withTimeout = (p: Promise<unknown>, ms: number) =>
+  new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms);
+    p.then(
+      () => (clearTimeout(t), resolve()),
+      () => (clearTimeout(t), resolve()),
+    );
+  });
 
 export function createUiPrefsSync(opts: UiPrefsSyncOptions): UiPrefsSync {
   const { userId, transport, debounceMs = 800 } = opts;
+  const retryDelays = opts.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+  const stopFlushMs = opts.stopFlushTimeoutMs ?? DEFAULT_STOP_FLUSH_MS;
   const storage: UiPrefsStorage | null = opts.storage ?? (typeof localStorage !== "undefined" ? localStorage : null);
   const events = opts.events === undefined ? (typeof window !== "undefined" ? window : null) : opts.events;
   const dirty = new Set<string>();
   let synced = false;
   let stopped = false;
+  let halted: UiPrefsSync["halted"] = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryIdx = 0;
+  let nextAttemptAt = 0;
   let starting: Promise<void> | null = null;
+  /** Chuỗi lượt đẩy — một lượt bay một lúc (fix 1 #2). */
+  let chain: Promise<void> = Promise.resolve();
 
   const read = (k: string): string | null => {
     try {
@@ -114,16 +150,41 @@ export function createUiPrefsSync(opts: UiPrefsSyncOptions): UiPrefsSync {
       return null;
     }
   };
+  const halt = (why: "mismatch" | "unavailable") => {
+    halted = why;
+    dirty.clear();
+    if (timer) clearTimeout(timer);
+    if (retryTimer) clearTimeout(retryTimer);
+    timer = retryTimer = null;
+  };
+
+  function scheduleRetry(): void {
+    if (stopped || halted) return;
+    const last = retryDelays[retryDelays.length - 1] ?? 0;
+    if (retryIdx >= retryDelays.length) {
+      nextAttemptAt = Date.now() + last; // hết lượt tự thử: chỉ thử lại khi người dùng ghi, cách ≥ `last`
+      return;
+    }
+    const delay = retryDelays[retryIdx++];
+    nextAttemptAt = Date.now() + delay;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      starting = initialSync();
+    }, delay);
+  }
 
   async function initialSync(): Promise<void> {
+    if (stopped || halted) return;
     let res: Awaited<ReturnType<UiPrefsTransport["get"]>>;
     try {
       res = await transport.get();
     } catch {
-      return; // server không tới được ⇒ chạy trên localStorage; thử lại ở lần ghi sau
+      scheduleRetry(); // server không tới được ⇒ chạy trên localStorage; thử lại có lùi dần
+      return;
     }
-    if (stopped) return;
-    if (res.available === false) return; // DB chưa áp 0365
+    if (stopped || halted) return;
+    if (res.available === false) return halt("unavailable"); // DB chưa áp 0365 — ngừng hẳn cho phiên này
+    if (!sameUser(res.userId, userId)) return halt("mismatch"); // phiên là NGƯỜI KHÁC — không áp, không đẩy
     const server = res.prefs ?? {};
     const changed: string[] = [];
     for (const [sk, v] of Object.entries(server)) {
@@ -146,12 +207,14 @@ export function createUiPrefsSync(opts: UiPrefsSyncOptions): UiPrefsSync {
       if (sk && !(sk in server) && decodeLocal(sk, read(lk)) !== undefined) dirty.add(lk);
     }
     synced = true;
+    retryIdx = 0;
     if (changed.length && events) events.dispatchEvent(new CustomEvent(UI_PREFS_APPLIED_EVENT, { detail: changed }));
     if (dirty.size) await pushDirty();
   }
 
-  async function pushDirty(): Promise<void> {
-    if (stopped || dirty.size === 0) return;
+  /** Một lượt gửi: đọc khoá đang chờ LÚC GỬI (giá trị mới nhất). */
+  async function doPush(): Promise<void> {
+    if (halted || dirty.size === 0) return;
     const keys = [...dirty];
     dirty.clear();
     const patch: Record<string, unknown> = {};
@@ -163,25 +226,35 @@ export function createUiPrefsSync(opts: UiPrefsSyncOptions): UiPrefsSync {
     }
     if (Object.keys(patch).length === 0) return;
     try {
-      await transport.set(patch);
+      const r = (await transport.set(patch)) as { userId?: number | string } | null | undefined;
+      if (!sameUser(r?.userId, userId)) halt("mismatch");
     } catch (e) {
+      const code = errCode(e);
+      if (code === "CONFLICT") return halt("mismatch"); // server: phiên là người khác (expectedUserId)
+      if (code === "PRECONDITION_FAILED") return halt("unavailable"); // DB chưa áp 0365
       // Lỗi mạng ⇒ giữ để đẩy lần sau; server TỪ CHỐI (BAD_REQUEST) ⇒ bỏ (gửi lại vẫn bị từ chối — không lặp).
-      const err = e as { data?: { code?: string }; code?: string } | null;
-      const code = err?.data?.code ?? err?.code;
       if (code !== "BAD_REQUEST") for (const lk of keys) dirty.add(lk);
     }
+  }
+
+  function pushDirty(): Promise<void> {
+    chain = chain.then(doPush, doPush);
+    return chain;
   }
 
   const sync: UiPrefsSync = {
     get synced() {
       return synced;
     },
+    get halted() {
+      return halted;
+    },
     start() {
       if (!starting) starting = initialSync();
       return starting;
     },
     markDirty(localKey: string) {
-      if (stopped || !serverKeyForLocal(localKey, userId)) return;
+      if (stopped || halted || !serverKeyForLocal(localKey, userId)) return;
       dirty.add(localKey);
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
@@ -194,21 +267,26 @@ export function createUiPrefsSync(opts: UiPrefsSyncOptions): UiPrefsSync {
         clearTimeout(timer);
         timer = null;
       }
+      if (halted) return;
       if (!synced) {
-        // Lượt hỏi đầu chưa xong / đã hỏng (mất mạng) ⇒ thử lại lượt hỏi đầu (nó tự đẩy khoá đang chờ).
         if (starting) await starting;
-        if (!synced && !stopped) {
-          starting = initialSync();
-          await starting;
-        }
+        if (synced) return; // lượt hỏi đầu vừa xong đã tự đẩy khoá đang chờ
+        // Lượt hỏi đầu hỏng: KHÔNG hỏi dồn — lượt thử lại có lịch thì để nó làm; hết lịch thì cách ≥ phần tử cuối.
+        if (stopped || retryTimer || Date.now() < nextAttemptAt) return;
+        starting = initialSync();
+        await starting;
         return;
       }
       await pushDirty();
     },
-    stop() {
+    async stop() {
+      if (stopped) return;
+      const pending = timer != null || dirty.size > 0;
       stopped = true;
       if (timer) clearTimeout(timer);
-      timer = null;
+      if (retryTimer) clearTimeout(retryTimer);
+      timer = retryTimer = null;
+      if (pending && synced && !halted) await withTimeout(pushDirty(), stopFlushMs);
     },
   };
   return sync;
@@ -219,9 +297,9 @@ let active: UiPrefsSync | null = null;
 /** Khoá đổi trước khi có bản đồng bộ (auth đang tải) — giao cho bản kế tiếp. */
 const pendingBeforeStart = new Set<string>();
 
-/** Bắt đầu đồng bộ cho `userId` (thay bản cũ). Trả bản đồng bộ; `stop()` khi người dùng đổi / đăng xuất. */
+/** Bắt đầu đồng bộ cho `userId` (thay bản cũ — bản cũ đẩy nốt khoá đang chờ). `stop()` khi người dùng đổi / đăng xuất. */
 export function startUiPrefsSync(userId: number | string, transport: UiPrefsTransport, debounceMs?: number): UiPrefsSync {
-  active?.stop();
+  void active?.stop();
   const s = createUiPrefsSync({ userId, transport, debounceMs });
   active = s;
   for (const k of pendingBeforeStart) s.markDirty(k);
@@ -229,8 +307,8 @@ export function startUiPrefsSync(userId: number | string, transport: UiPrefsTran
   void s.start();
   const stop = s.stop;
   s.stop = () => {
-    stop();
     if (active === s) active = null;
+    return stop();
   };
   return s;
 }
@@ -239,5 +317,21 @@ export function startUiPrefsSync(userId: number | string, transport: UiPrefsTran
 export function markUiPrefDirty(localKey: string | null | undefined): void {
   if (!localKey) return;
   if (active) active.markDirty(localKey);
-  else if (uiPrefKeyKind(localKey) || localKey.endsWith(`:${SHOW_LABS_PART}`)) pendingBeforeStart.add(localKey);
+  else if (uiPrefKeyKind(localKey) || localKey.endsWith(":show")) pendingBeforeStart.add(localKey);
+}
+
+/**
+ * fix 1 #3 — đẩy NGAY khoá đang chờ debounce của bản đang chạy (gọi TRƯỚC đăng xuất: sau đó phiên đã mất, lượt đẩy sẽ bị
+ * từ chối). Chờ tối đa `timeoutMs`; không bao giờ ném.
+ */
+export function flushUiPrefs(timeoutMs = DEFAULT_STOP_FLUSH_MS): Promise<void> {
+  return active ? withTimeout(active.flush(), timeoutMs) : Promise.resolve();
+}
+
+/** Chỉ cho test: dừng bản đang chạy và xoá hàng đợi khoá-trước-khi-có-người-dùng (fix 1 #6 — không rò giữa các test). */
+export function __resetUiPrefsSyncForTests(): void {
+  const a = active;
+  active = null;
+  if (a) void a.stop();
+  pendingBeforeStart.clear();
 }

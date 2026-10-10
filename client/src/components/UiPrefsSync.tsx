@@ -19,9 +19,11 @@ export function UiPrefsSync(): null {
     if (userId === null || userId === "") return;
     const s = startUiPrefsSync(userId, {
       get: () => utils.client.userSettingsRouter.getUiPrefs.query(),
-      set: (patch) => utils.client.userSettingsRouter.setUiPrefs.mutate({ patch }),
+      // fix 1 #1 — server từ chối (CONFLICT) nếu phiên (cookie) không còn là người dùng này (tab cũ).
+      set: (patch) => utils.client.userSettingsRouter.setUiPrefs.mutate({ patch, expectedUserId: Number(userId) }),
     });
-    return () => s.stop();
+    // Đổi người dùng / đăng xuất ⇒ dừng; bản cũ đẩy nốt khoá đang chờ (fix 1 #3, có hạn giờ).
+    return () => void s.stop();
     // utils.client ổn định suốt đời provider
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);

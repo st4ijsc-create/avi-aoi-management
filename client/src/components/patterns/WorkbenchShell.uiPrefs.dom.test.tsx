@@ -12,7 +12,7 @@ import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
 import { WorkbenchShell, type WorkbenchShellProps } from "./WorkbenchShell";
 import { userLayoutKey } from "./layoutKitHooks";
 import { installMatchMedia, presetNarrow } from "./layoutKitTestMedia";
-import { startUiPrefsSync, type UiPrefsSync, type UiPrefsTransport } from "@/lib/uiPrefsSync";
+import { __resetUiPrefsSyncForTests, startUiPrefsSync, type UiPrefsSync, type UiPrefsTransport } from "@/lib/uiPrefsSync";
 import { checkUiPrefsPatch } from "@shared/uiPrefs";
 
 const UID = 5;
@@ -42,8 +42,9 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
-  sync?.stop();
+  void sync?.stop();
   sync = null;
+  __resetUiPrefsSyncForTests(); // fix 1 #6
   spy?.mockRestore();
   cleanup();
 });

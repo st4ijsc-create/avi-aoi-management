@@ -8,9 +8,10 @@
 -- NGỮ NGHĨA: một object JSON phẳng `{ khoá: giá trị }` cho mỗi người dùng.
 --   • Danh sách khoá hợp lệ nằm ở ĐÚNG MỘT chỗ: `shared/uiPrefs.ts` (`checkUiPrefsPatch`) — router từ chối mọi khoá
 --     khác. KHÔNG lặp lại thành CHECK ở đây (hai nguồn sẽ lệch); CHECK chỉ giữ HÌNH (object) và TRẦN 16 KB.
---   • Ghi = gộp `uiPrefs || bản_vá` trong MỘT câu (server/db/userUiPrefs.ts) — không đọc-sửa-ghi.
---   • Trần 16384 byte đo bằng `octet_length("uiPrefs"::text)` — CÙNG phép đo router dùng trong mệnh đề WHERE của
---     câu gộp (vượt ⇒ 0 hàng ⇒ BAD_REQUEST). CHECK là lớp thứ hai cho đường ghi khác (SQL tay).
+--   • Ghi = gộp trong MỘT giao dịch khoá hàng (`SELECT … FOR UPDATE`, server/db/userUiPrefs.ts) — các lượt ghi của cùng
+--     người dùng nối tiếp, không mất lượt nào. (Fix 1: thay cho câu `||` một lệnh — cần chỗ để bỏ khoá cũ khi chạm trần.)
+--   • Trần 16384 byte đo bằng `octet_length("uiPrefs"::text)` — CÙNG phép đo server dùng lúc gộp: vượt ⇒ bỏ khoá bố cục
+--     dùng CŨ NHẤT (khoá nội bộ `__order` giữ thứ tự dùng, không bao giờ rời server). CHECK là lớp thứ hai (SQL tay).
 --
 -- CỘT KHÔNG KHAI vào drizzle schema (`drizzle/schema/dashboard.ts#userSettings`): `select().from(userSettings)` liệt kê
 --   mọi cột đã khai ⇒ DB chưa áp 0365 sẽ hỏng 42703 ở trang cài đặt người dùng (bài học 0361; khuôn 0363). Chỉ

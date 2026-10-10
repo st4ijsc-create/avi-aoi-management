@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { useShowLabs } from "./useShowLabs";
-import { startUiPrefsSync, type UiPrefsSync, type UiPrefsTransport } from "@/lib/uiPrefsSync";
+import { __resetUiPrefsSyncForTests, startUiPrefsSync, type UiPrefsSync, type UiPrefsTransport } from "@/lib/uiPrefsSync";
 import { checkUiPrefsPatch } from "@shared/uiPrefs";
 
 const UID = 9;
@@ -44,8 +44,9 @@ function Labs() {
 let sync: UiPrefsSync | null = null;
 beforeEach(() => localStorage.clear());
 afterEach(() => {
-  sync?.stop();
+  void sync?.stop();
   sync = null;
+  __resetUiPrefsSyncForTests(); // fix 1 #6 — hàng đợi khoá-trước-khi-có-người-dùng không rò sang test sau
   cleanup();
 });
 
@@ -80,13 +81,23 @@ describe("useShowLabs — theo tài khoản (D1)", () => {
     expect(srv.sets).toEqual([]); // không đẩy lại thứ vừa nhận
   });
 
-  it("không có bản đồng bộ (chưa đăng nhập / server không tới được) ⇒ hook vẫn chạy trên localStorage", () => {
-    const set = vi.fn();
+  it("bản đồng bộ đã DỪNG (đăng xuất) ⇒ hook vẫn chạy trên localStorage, KHÔNG gửi gì; đăng nhập lại ⇒ khoá chờ được giao", async () => {
+    const srv = fakeServer();
+    const set = vi.spyOn(srv.transport, "set"); // fix 1 #6 — spy NỐI vào transport thật của bản đồng bộ
+    sync = startUiPrefsSync(UID, srv.transport, 5);
+    await sync.start();
+    await sync.stop();
     render(<Labs />);
     act(() => {
       fireEvent.click(screen.getByTestId("labs"));
     });
     expect(localStorage.getItem(KEY)).toBe("1");
+    await new Promise((r) => setTimeout(r, 30));
     expect(set).not.toHaveBeenCalled();
+    // Đối chứng: spy THẬT SỰ bắt được — bản mới (đăng nhập lại) nhận khoá đang chờ và đẩy nó.
+    sync = startUiPrefsSync(UID, srv.transport, 5);
+    await sync.start();
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(srv.prefs.showLabs).toBe(true);
   });
 });

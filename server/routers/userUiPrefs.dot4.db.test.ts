@@ -30,11 +30,16 @@ async function thu(p: Promise<unknown>): Promise<KetQua> {
   }
 }
 
-/** Hàng thật trong CSDL (oracle độc lập với router). */
+/** Hàng thật trong CSDL (oracle độc lập với router), BỎ khoá nội bộ `__order` (thứ tự dùng gần đây — fix 1 #5). */
 async function hang(userId: number): Promise<Record<string, unknown> | null> {
   const r = await sql`SELECT "uiPrefs" AS p FROM user_settings WHERE "userId" = ${userId}`;
-  return r.length ? (r[0].p as Record<string, unknown>) : null;
+  if (!r.length) return null;
+  const { __order: _bo, ...p } = r[0].p as Record<string, unknown>;
+  return p;
 }
+/** Ghi qua router, phiên = `uid` (fix 1 #1: `expectedUserId` bắt buộc, mặc định = chính người gọi). */
+const ghi = (uid: number, patch: Record<string, unknown>, expectedUserId = uid) =>
+  goi(uid).userSettingsRouter.setUiPrefs({ patch, expectedUserId });
 
 const hpx = (left: number, right: number) => ({ left: { px: left, pct: 20 }, right: { px: right, pct: 25 } });
 
@@ -65,7 +70,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — user_settings.uiPrefs (CSD
   });
 
   it("người chưa có hàng ⇒ {} và available:true", async () => {
-    expect(await goi(fx.a).userSettingsRouter.getUiPrefs()).toEqual({ prefs: {}, available: true });
+    expect(await goi(fx.a).userSettingsRouter.getUiPrefs()).toEqual({ prefs: {}, available: true, userId: fx.a });
   });
 
   it("★ ghi showLabs + kích thước panel của CHÍNH mình ⇒ đọc lại đúng, hàng CSDL đúng", async () => {
@@ -73,7 +78,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — user_settings.uiPrefs (CSD
     const kV = `layoutKit:ir-editor:u${fx.a}:vpx`;
     const kB = `layoutKit:ir-editor:u${fx.a}:bottomCollapsed`;
     const patch = { showLabs: true, [kH]: hpx(260, 380), [kV]: { bottom: { px: 220, pct: 30.5 } }, [kB]: false };
-    await goi(fx.a).userSettingsRouter.setUiPrefs({ patch });
+    await ghi(fx.a, patch);
     expect(await hang(fx.a)).toEqual(patch);
     expect((await goi(fx.a).userSettingsRouter.getUiPrefs()).prefs).toEqual(patch);
   });
@@ -81,7 +86,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — user_settings.uiPrefs (CSD
   it("★ gộp: khoá mới THÊM vào, khoá cũ cùng tên bị THAY, khoá khác GIỮ nguyên", async () => {
     const kH = `layoutKit:ir-editor:u${fx.a}:hpx`;
     const kH2 = `layoutKit:pou-studio:u${fx.a}:hpx`;
-    await goi(fx.a).userSettingsRouter.setUiPrefs({ patch: { showLabs: false, [kH2]: { left: { px: 240, pct: 18 } } } });
+    await ghi(fx.a, { showLabs: false, [kH2]: { left: { px: 240, pct: 18 } } });
     const p = (await hang(fx.a))!;
     expect(p.showLabs).toBe(false);
     expect(p[kH2]).toEqual({ left: { px: 240, pct: 18 } });
@@ -105,7 +110,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — user_settings.uiPrefs (CSD
     it(`★ từ chối (${ten}) ⇒ BAD_REQUEST / INVALID_VALUE, KHÔNG ghi gì — kể cả khoá hợp lệ đi cùng`, async () => {
       const truoc = await hang(fx.a);
       const kem = `layoutKit:accomp:u${fx.a}:bottomCollapsed`; // khoá HỢP LỆ đi cùng
-      const k = await thu(goi(fx.a).userSettingsRouter.setUiPrefs({ patch: { [kem]: true, ...mk(fx.a, fx.b) } }));
+      const k = await thu(ghi(fx.a, { [kem]: true, ...mk(fx.a, fx.b) }));
       expect(k.ok).toBe(false);
       if (!k.ok) {
         expect(k.code).toBe("BAD_REQUEST");
@@ -118,14 +123,14 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — user_settings.uiPrefs (CSD
   }
 
   it("★ khoá mang id người khác KHÔNG chạm hàng của người kia", async () => {
-    await thu(goi(fx.a).userSettingsRouter.setUiPrefs({ patch: { [`layoutKit:ide:u${fx.b}:hpx`]: hpx(250, 330) } }));
+    await thu(ghi(fx.a, { [`layoutKit:ide:u${fx.b}:hpx`]: hpx(250, 330) }));
     expect(await hang(fx.b)).toBeNull();
   });
 
   it("★ phạm vi: B không thấy sở thích của A; B ghi không đổi hàng của A", async () => {
     const truocA = await hang(fx.a);
     expect((await goi(fx.b).userSettingsRouter.getUiPrefs()).prefs).toEqual({});
-    await goi(fx.b).userSettingsRouter.setUiPrefs({ patch: { showLabs: true } });
+    await ghi(fx.b, { showLabs: true });
     expect(await hang(fx.b)).toEqual({ showLabs: true });
     expect(await hang(fx.a)).toEqual(truocA);
   });
@@ -133,7 +138,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — user_settings.uiPrefs (CSD
   it("★ gộp NGUYÊN TỬ: 20 lượt ghi song song, mỗi lượt một khoá khác ⇒ đủ 20 khoá (không mất lượt nào)", async () => {
     const c = goi(fx.c);
     await Promise.all(
-      Array.from({ length: 20 }, (_, i) => c.userSettingsRouter.setUiPrefs({ patch: { [`layoutKit:p${i}:u${fx.c}:hpx`]: hpx(240 + i, 320) } })),
+      Array.from({ length: 20 }, (_, i) => c.userSettingsRouter.setUiPrefs({ patch: { [`layoutKit:p${i}:u${fx.c}:hpx`]: hpx(240 + i, 320) }, expectedUserId: fx.c })),
     );
     const p = (await hang(fx.c))!;
     expect(Object.keys(p).filter((k) => k.startsWith("layoutKit:p")).length).toBe(20);
@@ -144,39 +149,76 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task D1 — user_settings.uiPrefs (CSD
     const patch: Record<string, unknown> = {};
     for (let i = 0; i < 200; i++) patch[`layoutKit:big-${i}:u${fx.b}:hpx`] = hpx(260, 380);
     expect(JSON.stringify(patch).length).toBeGreaterThan(UI_PREFS_MAX_BYTES);
-    const k = await thu(goi(fx.b).userSettingsRouter.setUiPrefs({ patch }));
+    const k = await thu(ghi(fx.b, patch));
     expect(k.ok ? "ok" : k.code).toBe("BAD_REQUEST");
     expect(await hang(fx.b)).toEqual(truoc);
   });
 
-  it(`★ trần ${UI_PREFS_MAX_BYTES} byte của TỔNG sau gộp (đo ở CSDL): bản vá làm tổng vượt ⇒ BAD_REQUEST, hàng giữ nguyên`, async () => {
-    const c = goi(fx.b);
-    const lo = (from: number, n: number) => {
-      const p: Record<string, unknown> = {};
-      for (let i = from; i < from + n; i++) p[`layoutKit:fill-${i}:u${fx.b}:hpx`] = hpx(260, 380);
-      return p;
-    };
-    // Đổ đầy theo lô 40 khoá tới khi lô kế tiếp bị từ chối.
-    let from = 0;
-    let tuChoi: KetQua | null = null;
-    for (let vong = 0; vong < 10 && !tuChoi; vong++) {
-      const patch = lo(from, 40);
-      const truoc = await hang(fx.b);
-      const [{ sau }] = await sql`SELECT octet_length((${sql.json(truoc as never)}::jsonb || ${sql.json(patch as never)}::jsonb)::text) AS sau`;
-      const k = await thu(c.userSettingsRouter.setUiPrefs({ patch }));
-      if (Number(sau) > UI_PREFS_MAX_BYTES) {
-        tuChoi = k;
-        expect(k.ok ? "ok" : `${k.code}/${k.appCode}`).toBe("BAD_REQUEST/INVALID_VALUE");
-        expect(await hang(fx.b)).toEqual(truoc);
-      } else {
-        expect(k.ok).toBe(true);
-      }
-      from += 40;
-    }
-    expect(tuChoi).not.toBeNull();
-    const [{ n }] = await sql`SELECT octet_length("uiPrefs"::text) AS n FROM user_settings WHERE "userId" = ${fx.b}`;
-    expect(Number(n)).toBeLessThanOrEqual(UI_PREFS_MAX_BYTES);
-    // Dọn để các ca sau có chỗ.
+  it(`★ fix 1 #5 — chạm trần ${UI_PREFS_MAX_BYTES} byte: khoá BỐ CỤC CŨ NHẤT bị bỏ để lượt ghi mới thành công; showLabs và khoá của chính bản vá KHÔNG bao giờ bị bỏ`, async () => {
     await sql`UPDATE user_settings SET "uiPrefs" = '{"showLabs": true}'::jsonb WHERE "userId" = ${fx.b}`;
+    const key = (i: number) => `layoutKit:fill-${i}:u${fx.b}:hpx`;
+    const daGhi: number[] = [];
+    const daBo: string[] = [];
+    let i = 0;
+    for (let vong = 0; vong < 9; vong++) {
+      const patch: Record<string, unknown> = {};
+      for (let j = 0; j < 20; j++, i++) {
+        patch[key(i)] = hpx(260, 380);
+        daGhi.push(i);
+      }
+      const r = (await ghi(fx.b, patch)) as { evicted?: string[] };
+      daBo.push(...(r.evicted ?? []));
+      const [{ n }] = await sql`SELECT octet_length("uiPrefs"::text) AS n FROM user_settings WHERE "userId" = ${fx.b}`;
+      expect(Number(n)).toBeLessThanOrEqual(UI_PREFS_MAX_BYTES);
+      const p = (await hang(fx.b))!;
+      for (const k of Object.keys(patch)) expect(p[k], `khoá vừa ghi ${k}`).toEqual(hpx(260, 380));
+      expect(p.showLabs).toBe(true);
+    }
+    expect(daBo.length).toBeGreaterThan(0); // 180 khoá × ~100 byte > 16 KB ⇒ phải có khoá bị bỏ
+    const p = (await hang(fx.b))!;
+    const conLai = daGhi.filter((n) => key(n) in p);
+    // Bị bỏ = ĐÚNG các khoá CŨ NHẤT (một tiền tố của thứ tự ghi), còn lại = một hậu tố liền mạch.
+    expect(daBo).toEqual(daGhi.slice(0, daBo.length).map(key));
+    expect(conLai).toEqual(daGhi.slice(daBo.length));
+    // Dùng LẠI một khoá cũ còn sống ⇒ nó thành MỚI NHẤT, không bị bỏ ở lượt sau.
+    const songCu = key(conLai[0]);
+    await ghi(fx.b, { [songCu]: hpx(250, 370) });
+    const r2 = (await ghi(fx.b, { [key(9999)]: hpx(260, 380) })) as { evicted?: string[] };
+    expect(r2.evicted).not.toContain(songCu);
+    expect((await hang(fx.b))![songCu]).toEqual(hpx(250, 370));
+    await sql`UPDATE user_settings SET "uiPrefs" = '{"showLabs": true}'::jsonb WHERE "userId" = ${fx.b}`;
+  });
+
+  it("fix 1 #5 — trần đo bằng CSDL, không chỉ ước lượng JS: số mũ (1e-7 ⇒ jsonb in '0.0000001', DÀI hơn) vẫn được bỏ khoá đủ, không lượt nào hỏng", async () => {
+    await sql`UPDATE user_settings SET "uiPrefs" = '{"showLabs": true}'::jsonb WHERE "userId" = ${fx.b}`;
+    const v = { left: { px: 1, pct: 1e-7 }, right: { px: 2, pct: 3e-7 } };
+    for (let vong = 0; vong < 12; vong++) {
+      const patch: Record<string, unknown> = {};
+      for (let j = 0; j < 20; j++) patch[`layoutKit:mu-${vong}-${j}:u${fx.b}:hpx`] = v;
+      const k = await thu(ghi(fx.b, patch));
+      expect(k.ok, `vòng ${vong}: ${k.ok ? "" : k.msg}`).toBe(true);
+      const [{ n }] = await sql`SELECT octet_length("uiPrefs"::text) AS n FROM user_settings WHERE "userId" = ${fx.b}`;
+      expect(Number(n)).toBeLessThanOrEqual(UI_PREFS_MAX_BYTES);
+    }
+    await sql`UPDATE user_settings SET "uiPrefs" = '{"showLabs": true}'::jsonb WHERE "userId" = ${fx.b}`;
+  });
+
+  it("★ fix 1 #1 — phiên khác người (expectedUserId ≠ người gọi) ⇒ CONFLICT, KHÔNG ghi gì; đọc trả userId của phiên", async () => {
+    const truocA = await hang(fx.a);
+    const truocB = await hang(fx.b);
+    const k = await thu(ghi(fx.b, { showLabs: false }, fx.a)); // tab cũ tưởng là A, cookie là B
+    expect(k.ok ? "ok" : `${k.code}/${k.appCode}`).toBe("CONFLICT/INVALID_VALUE");
+    expect(await hang(fx.a)).toEqual(truocA);
+    expect(await hang(fx.b)).toEqual(truocB);
+    expect((await goi(fx.b).userSettingsRouter.getUiPrefs()).userId).toBe(fx.b);
+  });
+
+  it("★ fix 1 #8 — đọc BỎ khoá bố cục mang id người khác và khoá nội bộ (hàng sửa tay)", async () => {
+    await sql`UPDATE user_settings SET "uiPrefs" = "uiPrefs" || ${sql.json({ [`layoutKit:ide:u${fx.a}:hpx`]: hpx(250, 330), __order: ["x"] } as never)}::jsonb
+              WHERE "userId" = ${fx.b}`;
+    const p = (await goi(fx.b).userSettingsRouter.getUiPrefs()).prefs;
+    expect(Object.keys(p)).not.toContain(`layoutKit:ide:u${fx.a}:hpx`);
+    expect(Object.keys(p)).not.toContain("__order");
+    expect(p.showLabs).toBe(true);
   });
 });
