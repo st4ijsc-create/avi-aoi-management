@@ -133,6 +133,10 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     expect(DB_URL).toMatch(/_test/); // cầu chì: không bao giờ chạy trên DB dev
     for (const k of ENV_KEYS) saved[k] = process.env[k];
     await import("../ot/adapterFacade");
+    // final wave F4 — adapterFacade.getSafetyStatus (A1) imports ./safetyTarget DYNAMICALLY inside the same 5 s preflight
+    // deadline; warm it (and the PLC adapter mock) here so a cold import under parallel load is not measured as SAFETY_UNKNOWN.
+    await import("../ot/safetyTarget");
+    await import("../safety/plc/safetyPlcAdapter");
   }, 60_000);
 
   afterAll(async () => {
@@ -249,6 +253,8 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     // Nạp trước facade an toàn của registry MỚI (như beforeAll làm cho bản đầu): lần import động đầu tiên
     // nặng tới mức chạm hạn preflight 5 s ⇒ SAFETY_UNKNOWN giả — không phải thứ ca này đo.
     await import("../ot/adapterFacade");
+    await import("../ot/safetyTarget"); // final wave F4 — the facade's 2nd cold dynamic import (A1), same deadline
+    await import("../safety/plc/safetyPlcAdapter");
     expect(other.dispatchRobotJob).not.toBe(dispatchRobotJob); // cầu chì: đúng là bản module THỨ HAI
     const [a, b] = await Promise.all([dispatchRobotJob(input({ actionId })), other.dispatchRobotJob(input({ actionId }))]);
     expect([a.status, b.status].sort()).toEqual(["done", "rejected"]);
