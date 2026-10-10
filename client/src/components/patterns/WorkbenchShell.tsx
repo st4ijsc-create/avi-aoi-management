@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { LAYOUT_AI, LAYOUT_MAIN } from "./layoutMarkers";
 import { pxRangeToPct, useElementBox, useNarrowViewport, userLayoutKey, type PctRange } from "./layoutKitHooks";
 import { SlotOutlet, slotPortal, useSlotHost } from "./slotPortal";
+import { markUiPrefDirty, UI_PREFS_APPLIED_EVENT } from "@/lib/uiPrefsSync";
 
 export interface WorkbenchSidePanel {
   label: string;
@@ -217,6 +218,7 @@ function writeStoredSizes(key: string | null, patch: StoredSizes): void {
   if (!key || Object.keys(patch).length === 0) return;
   try {
     localStorage.setItem(key, JSON.stringify({ ...(readStoredSizes(key) ?? {}), ...patch }));
+    markUiPrefDirty(key); // doc 81 Đợt 4 Task D1 — theo tài khoản (gom + debounce: kéo separator bắn liên tục)
   } catch {
     /* bộ nhớ trình duyệt bị chặn ⇒ chỉ không nhớ */
   }
@@ -266,6 +268,9 @@ export function WorkbenchShell({
   const bottomId = React.useId();
   // R-2-l — gập/mở panel dưới: lựa chọn người dùng đã nhớ (theo người dùng) thắng `defaultCollapsed`.
   const bottomKey = userLayoutKey(layoutId, userId, "bottomCollapsed");
+  // doc 81 Đợt 4 Task D1 — tăng khi giá trị SERVER của một khoá của shell này vừa được áp vào localStorage (đăng nhập ở máy
+  // mới, `UI_PREFS_APPLIED_EVENT`) ⇒ đọc lại kho (kích thước + gập), như lúc mount.
+  const [prefsVersion, setPrefsVersion] = React.useState(0);
   const readStoredBottom = (key: string | null): boolean | null => {
     if (!key) return null;
     try {
@@ -308,6 +313,7 @@ export function WorkbenchShell({
     if (!bottomKey) return;
     try {
       localStorage.setItem(bottomKey, c ? "1" : "0");
+      markUiPrefDirty(bottomKey);
     } catch {
       /* bộ nhớ trình duyệt bị chặn ⇒ chỉ không nhớ */
     }
@@ -355,7 +361,7 @@ export function WorkbenchShell({
     setBottomCollapsed(stored);
     bottomCmd(stored);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bottomKey]);
+  }, [bottomKey, prefsVersion]);
 
   // ── Task 11b — kích thước theo PX (mặc định hoặc của người dùng), không theo % lúc mount ─────────────────
   /**
@@ -373,8 +379,21 @@ export function WorkbenchShell({
   const hStoreKey = userLayoutKey(layoutId, userId, "hpx");
   const vStoreKey = userLayoutKey(layoutId, userId, "vpx");
   // Đọc bộ nhớ MỘT lần mỗi khi khoá đổi (không parse JSON mỗi lượt render); lượt kéo sau đó nằm trong `userSizesRef`.
-  const storedH = React.useMemo(() => readStoredSizes(hStoreKey), [hStoreKey]);
-  const storedV = React.useMemo(() => readStoredSizes(vStoreKey), [vStoreKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- prefsVersion: kho vừa nhận giá trị server (D1)
+  const storedH = React.useMemo(() => readStoredSizes(hStoreKey), [hStoreKey, prefsVersion]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const storedV = React.useMemo(() => readStoredSizes(vStoreKey), [vStoreKey, prefsVersion]);
+  const prefKeysRef = React.useRef<Array<string | null>>([]);
+  prefKeysRef.current = [hStoreKey, vStoreKey, bottomKey];
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onApplied = (e: Event) => {
+      const keys = (e as CustomEvent<string[]>).detail ?? [];
+      if (prefKeysRef.current.some((k) => k != null && keys.includes(k))) setPrefsVersion((v) => v + 1);
+    };
+    window.addEventListener(UI_PREFS_APPLIED_EVENT, onApplied);
+    return () => window.removeEventListener(UI_PREFS_APPLIED_EVENT, onApplied);
+  }, []);
   /** Kích thước người dùng đã kéo TRONG PHIÊN — thắng bộ nhớ; vẫn giữ khi không lưu được (chưa biết user / bị chặn). */
   const userSizesRef = React.useRef<StoredSizes>({});
   const lastStoreKeyRef = React.useRef(hStoreKey);
@@ -444,7 +463,7 @@ export function WorkbenchShell({
     if (height > 0 && b && !desiredBottomRef.current) apply(vGroupRef.current, [100 - b.defaultSize, b.defaultSize]);
     // l/r/b/fit suy từ width/height/leftCollapsed (+ bộ nhớ)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupReady, width, height, leftCollapsed, rightCollapsed]);
+  }, [groupReady, width, height, leftCollapsed, rightCollapsed, prefsVersion]);
   /** Bàn phím trên separator ⇒ lượt onLayout ngay sau là của người dùng (thư viện nghe keydown trên chính separator). */
   const markKeyInteraction = (e: React.KeyboardEvent) => {
     const h = (e.target as HTMLElement | null)?.closest?.("[data-panel-resize-handle-id]");
