@@ -2012,15 +2012,21 @@ function raiseStopUnverifiedAlarm(
     );
     const { sendNotification } = await import("../notificationService");
     for (const userId of recipients) {
-      await sendNotification(userId, {
-        type: "ALERT",
-        priority: "URGENT",
-        title: `STOP not confirmed — adapter ${input.adapterId}`,
-        message,
-        entityType: "ot_command",
-        entityId: abandoned?.intentIds[0] ?? stopLedger.intentIds[0],
-        metadata: detail,
-      });
+      // doc 81 Đợt 5 task F6 (item 33) — SAFETY-CRITICAL: delivered even to a recipient who opted out of in-app
+      // notifications / alerts or is in quiet hours (the STOP's confirmer must learn the STOP was not confirmed).
+      await sendNotification(
+        userId,
+        {
+          type: "ALERT",
+          priority: "URGENT",
+          title: `STOP not confirmed — adapter ${input.adapterId}`,
+          message,
+          entityType: "ot_command",
+          entityId: abandoned?.intentIds[0] ?? stopLedger.intentIds[0],
+          metadata: detail,
+        },
+        { safetyCritical: true },
+      );
     }
   })();
   void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, "ot_stop_unverified notification").catch((err) => {

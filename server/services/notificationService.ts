@@ -83,11 +83,29 @@ export interface NotificationPayload {
 }
 
 /**
+ * doc 81 Đợt 5 task F6 (item 33) — how a notification is delivered.
+ * `safetyCritical: true` (exactly `true`) — a SAFETY-CRITICAL notice: delivered whatever the recipient's in-app opt-outs
+ * (inAppEnabled / inAppAlerts / inAppReports / inAppSystem) and quiet hours say (quiet hours already let URGENT through;
+ * a safety notice must not hinge on a personal preference). The preferences are not even read, so a failing preference
+ * read cannot drop it. Only SERVER code sets this argument; it is never taken from the payload, and the stored
+ * `metadata.safetyCritical` marker is written only here (a payload claiming it has the marker removed).
+ * Callers (Đợt 5): commandDispatcher raiseStopUnverifiedAlarm (B3 "STOP not confirmed"), orchestration rulesEngine
+ * onSafetyEvent for a real (not near-miss) safety event.
+ */
+export interface SendNotificationOptions {
+  safetyCritical?: boolean;
+}
+
+/**
  * Send notification to a specific user
  */
-export async function sendNotification(userId: number, payload: NotificationPayload) {
-  // Check user preferences
-  const prefs = await getUserNotificationPreferences(userId);
+export async function sendNotification(userId: number, payload: NotificationPayload, opts: SendNotificationOptions = {}) {
+  const safetyCritical = opts?.safetyCritical === true;
+  const { safetyCritical: _claimed, ...ownMetadata } = (payload.metadata ?? {}) as Record<string, any>;
+  const metadata = safetyCritical ? { ...ownMetadata, safetyCritical: true } : payload.metadata ? ownMetadata : undefined;
+
+  // Check user preferences (a safety-critical notice skips them — Đợt 5 F6)
+  const prefs = safetyCritical ? null : await getUserNotificationPreferences(userId);
   
   // Check if in-app notifications are enabled
   if (prefs && !prefs.inAppEnabled) {
@@ -136,7 +154,7 @@ export async function sendNotification(userId: number, payload: NotificationPayl
     entityId: payload.entityId,
     actionUrl,
     priority: payload.priority || 'NORMAL',
-    metadata: payload.metadata,
+    metadata,
   });
   
   if (!result) return null;
@@ -146,6 +164,7 @@ export async function sendNotification(userId: number, payload: NotificationPayl
     const notification = {
       id: result.id,
       ...payload,
+      metadata,
       actionUrl,
       createdAt: new Date().toISOString(),
       isRead: false,
@@ -225,13 +244,13 @@ export async function sendSystemNotification(userId: number, data: {
   title: string;
   message: string;
   priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
-}) {
+}, opts: SendNotificationOptions = {}) {
   return sendNotification(userId, {
     type: 'SYSTEM',
     title: data.title,
     message: data.message,
     priority: data.priority || 'NORMAL',
-  });
+  }, opts);
 }
 
 /**

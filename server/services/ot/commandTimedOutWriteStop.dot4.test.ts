@@ -72,8 +72,8 @@ vi.mock("../ecosystem/ecosystemEvents", () => ({
   publishAnomalyDetected: vi.fn((p: Record<string, any>) => void alarm.events.push(p)),
 }));
 vi.mock("../notificationService", () => ({
-  sendNotification: vi.fn(async (userId: number, p: Record<string, any>) => {
-    alarm.notes.push({ userId, ...p });
+  sendNotification: vi.fn(async (userId: number, p: Record<string, any>, opts?: Record<string, any>) => {
+    alarm.notes.push({ userId, ...p, opts });
     return { id: 1 };
   }),
 }));
@@ -386,6 +386,7 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
     expect(alarm.events).toHaveLength(1);
     expect(alarm.events[0]).toMatchObject({ kind: "ot_stop_unverified", severity: "critical", source: "ot", machineId: 5 });
     expect(alarm.notes).toEqual([expect.objectContaining({ userId: 1, priority: "URGENT", type: "ALERT" })]); // same confirmer ⇒ one recipient
+    expect(alarm.notes[0].opts).toEqual({ safetyCritical: true }); // Đợt 5 F6 — ignores the recipient's in-app opt-outs
     expect(unverified()).toHaveLength(1);
     const ev = unverified()[0];
     const oldIntent = cmdLog.find((r) => String(r.idempotencyKey ?? "").startsWith("intent:al-run-"));

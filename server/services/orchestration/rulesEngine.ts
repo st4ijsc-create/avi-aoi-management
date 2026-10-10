@@ -48,7 +48,7 @@ async function audit(action: string, metadata: Record<string, unknown>): Promise
   }
 }
 
-async function notifyConfigured(title: string, message: string): Promise<void> {
+async function notifyConfigured(title: string, message: string, opts: { safetyCritical?: boolean } = {}): Promise<void> {
   const ids = (process.env.ORCH_NOTIFY_USER_IDS ?? "")
     .split(",")
     .map((s) => parseInt(s.trim(), 10))
@@ -57,7 +57,7 @@ async function notifyConfigured(title: string, message: string): Promise<void> {
   try {
     const { sendSystemNotification } = await import("../notificationService");
     for (const id of ids) {
-      await sendSystemNotification(id, { title, message, priority: "HIGH" });
+      await sendSystemNotification(id, { title, message, priority: "HIGH" }, opts);
     }
   } catch {
     /* notification best-effort */
@@ -115,7 +115,10 @@ function onSafetyEvent(e: DomainEvent): void {
   const message = `Safety ${p.isNearMiss ? "near-miss" : "event"}: ${p.eventType ?? "?"} at ${machine}`;
   console.warn(`[Orchestration] ${message}`);
   void audit("orchestration.safety", { eventType: p.eventType, isNearMiss: p.isNearMiss, machine });
-  void notifyConfigured("Safety event", message);
+  // doc 81 Đợt 5 task F6 (item 33) — a REAL safety event (anything not flagged as a near-miss: an unknown flag fails
+  // toward delivery) is SAFETY-CRITICAL: delivered despite the recipient's in-app opt-outs / quiet hours. Near-misses
+  // stay advisory (the recipient's preferences apply), like every other rule here.
+  void notifyConfigured("Safety event", message, { safetyCritical: p.isNearMiss !== true });
   eventBus.publish("orchestration.triggered", { rule: "safety", machine, eventType: p.eventType }, "orchestration");
 }
 
