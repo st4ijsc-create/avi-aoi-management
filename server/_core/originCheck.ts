@@ -84,6 +84,24 @@ export const ORIGIN_CHECK_EXEMPT_PREFIXES: readonly string[] = [
  */
 export const ORIGIN_CHECK_EXEMPT_EXACT_PATHS: readonly string[] = ["/api/saml/acs"];
 
+/**
+ * doc 81 Đợt 5 G fix 1 (ruling R-5-b) — Express định tuyến KHÔNG phân biệt hoa/thường (`caseSensitive: false` mặc
+ * định) và KHÔNG chặt dấu `/` cuối (`strict: false`): `POST /API/trpc/x` tới ĐÚNG handler của `/api/trpc/x`. So tiền tố
+ * trên đường gốc ⇒ `/API/…` rơi ra `not_api_path` và LỌT kiểm tra (đã tái hiện: multipart/form-data cross-origin ⇒ 200).
+ * Vì vậy MỌI phép so (tiền tố bảo vệ, tiền tố miễn, đường miễn chính xác) chạy trên `duongSoSanh(path)`:
+ *   · hạ chữ thường MỘT lần — khớp cách Express chọn handler;
+ *   · cho đường miễn CHÍNH XÁC, bỏ MỘT dấu `/` cuối — `/api/saml/acs/` cũng tới đúng handler ACS (strict:false) nên
+ *     miễn nó không rộng thêm gì; `/api/saml/acs//`, `/api/saml/acs/x` KHÔNG tới handler đó ⇒ vẫn bị kiểm.
+ */
+export function duongSoSanh(path: string): string {
+  return (path || "").toLowerCase();
+}
+
+function laDuongMienChinhXac(pLower: string): boolean {
+  const motGachCuoi = pLower.length > 1 && pLower.endsWith("/") && !pLower.endsWith("//") ? pLower.slice(0, -1) : pLower;
+  return ORIGIN_CHECK_EXEMPT_EXACT_PATHS.includes(pLower) || ORIGIN_CHECK_EXEMPT_EXACT_PATHS.includes(motGachCuoi);
+}
+
 const PROTECTED_PREFIXES = ["/api/", "/trpc/"];
 
 export interface OriginCheckConfig {
@@ -130,11 +148,11 @@ export function evaluateOrigin(
   if (!UNSAFE_METHODS.has(String(req.method).toUpperCase())) {
     return { allowed: true, reason: "safe_method" };
   }
-  const p = req.path || "";
+  const p = duongSoSanh(req.path); // R-5-b: MỌI phép so dưới đây trên đường đã hạ chữ thường
   if (!PROTECTED_PREFIXES.some((x) => p.startsWith(x))) {
     return { allowed: true, reason: "not_api_path" };
   }
-  if (ORIGIN_CHECK_EXEMPT_PREFIXES.some((x) => p.startsWith(x)) || ORIGIN_CHECK_EXEMPT_EXACT_PATHS.includes(p)) {
+  if (ORIGIN_CHECK_EXEMPT_PREFIXES.some((x) => p.startsWith(x)) || laDuongMienChinhXac(p)) {
     return { allowed: true, reason: "exempt_path" };
   }
 
