@@ -379,9 +379,17 @@ export class Vda5050Adapter {
       confirmedBy: opts.confirmedBy,
       idempotencyKey: opts.idempotencyKey,
     });
+    // doc 81 Đợt 5 task F1 (item 27) — a MOTION message is published by ONE channel only: the `vda5050` robot driver
+    // (its instantActions branch), reached through the dispatcher after every gate; `published` is what the driver
+    // reports it really sent (same rule B1 applied to orders). The adapter's own publish below is a second channel
+    // for a STOP only.
+    if (!stop) {
+      published = res.status === "done" && res.driverDetail?.published === true;
+      return { ok: res.ok, status: res.status, jobId: res.jobId, published, ...(res.error ? { error: res.error } : {}) };
+    }
     // A STOP is also published when the real path was reached but the robot driver reported failure — the
     // AGV's own instantActions topic is a second stop channel (energy-reducing). Dry-run / rejected: nothing.
-    if (res.status === "done" || (stop && res.status === "failed")) {
+    if (res.status === "done" || res.status === "failed") {
       try {
         await this.publishInstantActions(msg);
         published = true;
