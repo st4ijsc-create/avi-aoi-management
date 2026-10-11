@@ -227,6 +227,21 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 O2/O4 — both dispatchers check the c
     delete process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED;
   });
 
+  it("★ O4 wiring: the production loader (loadEnabledAdapters) hands this adapter's connectionOptions to the REGISTERED sim driver ⇒ it reports the program checksum the approval binds", async () => {
+    await import("../../ot/index"); // registers the built-in drivers ("stub" ⇒ StubDriver)
+    const { loadEnabledAdapters } = await import("../../ot/deviceAdapter");
+    const { readAdapterProgramCheck } = await import("../../ot/programChecksum");
+    const mine = (await loadEnabledAdapters()).find((a) => a.adapterId === ids.adapter);
+    expect(mine?.protocol).toBe("stub");
+    await mine!.driver.connect(mine!.connection); // in-process sim: no socket, no port
+    try {
+      const check = await readAdapterProgramCheck({ id: ids.adapter, code: mine!.code, protocol: "stub", connectionOptions: mine!.connection.options }, { driverOf: () => mine!.driver });
+      expect(check).toMatchObject({ status: "verified", checksum: "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" }); // FIPS 180-2 "abc"
+    } finally {
+      await mine!.driver.disconnect();
+    }
+  });
+
   it("control: program unchanged ⇒ OT dispatcher writes once; robot dispatcher runs once", async () => {
     const fx = await approvedRun("c0");
     const ot = await sendOt(fx);

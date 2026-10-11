@@ -91,6 +91,11 @@ describe("O1 — readAdapterProgramCheck (the framework every consumer uses)", (
     expect(r).toMatchObject({ target: "adapter", id: 3, label: "SIM-3", status: "verified", checksum: `sha256:${SHA256_ABC}`, source: "sim" });
   });
 
+  it("O4 wiring (smoke): the default lookup with NO live OT driver in this process (OT not started) fails closed ⇒ unreadable (notConnected), never 'unsupported'", async () => {
+    const r = await readAdapterProgramCheck(simRow(9));
+    expect(r).toMatchObject({ target: "adapter", id: 9, status: "unreadable", reason: "notConnected" });
+  });
+
   it("★ FAIL CLOSED: supported but no live driver ⇒ unreadable (notConnected) — never 'unsupported'", async () => {
     const r = await readAdapterProgramCheck(simRow(4), { driverOf: () => undefined });
     expect(r).toMatchObject({ status: "unreadable", reason: "notConnected" });
