@@ -64,7 +64,7 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, orchestrationWorkflows, machines, deviceAdapters, deviceTags } from "../../../../drizzle/schema";
-import { deployWorkflow, startRun, runVisibilityDefinitions, listVisibleRuns, refWithSuffix } from "./foeEngine";
+import { deployWorkflow, startRun, runVisibilityDefinitions, listVisibleRuns, refWithSuffix, runVisibleTo } from "./foeEngine";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 
 type Row = Record<string, any>;
@@ -163,6 +163,17 @@ describe("doc 81 Đợt 7 I3 — runVisibilityDefinitions / listVisibleRuns", ()
     expect(defs.map(machinesOf)).toEqual([[1], [2], [2, 1], null, null, [1]]);
   });
 
+  it("★ a run is visible only when EVERY version it executed is (one out ⇒ hidden), whatever its head", async () => {
+    seedWf(1, 2, [A_START]); // head v2: A
+    seedSnap(1, 1, [B_START]); // v1: B
+    const scope = { userId: 10, userRole: "engineer" } as never;
+    expect(await runVisibleTo({ workflowId: 1, paramsJson: { __foeDefVersions: [2] } }, scope)).toBe(true);
+    expect(await runVisibleTo({ workflowId: 1, paramsJson: { __foeDefVersions: [1] } }, scope)).toBe(false);
+    expect(await runVisibleTo({ workflowId: 1, paramsJson: { __foeDefVersions: [1, 2] } }, scope)).toBe(false);
+    expect(await runVisibleTo({ workflowId: 1, paramsJson: { __foeDefVersions: [2, 1] } }, scope)).toBe(false);
+    expect(await runVisibleTo({ workflowId: 1, paramsJson: null }, scope)).toBe(true); // legacy ⇒ head (A)
+  });
+
   it("★ listVisibleRuns fills a page of VISIBLE runs (newest first) from growing reads; unrestricted reads one page", async () => {
     seedWf(1, 1, [A_START]); // visible
     seedWf(2, 1, [B_START]); // not visible
@@ -171,6 +182,9 @@ describe("doc 81 Đợt 7 I3 — runVisibilityDefinitions / listVisibleRuns", ()
     fake.store.set("orchestration_runs", runs);
     const got = await listVisibleRuns({ limit: 5 }, { userId: 10, userRole: "engineer" } as never);
     expect(got.map((r) => r.id)).toEqual([300, 290, 280, 270, 260]);
+    // sparse: only every 100th run is visible ⇒ the first read (50 rows) holds 1 ⇒ the reads grow until the page is full
+    fake.store.set("orchestration_runs", runs.map((r) => ({ ...r, workflowId: r.id % 100 === 0 ? 1 : 2 })));
+    expect((await listVisibleRuns({ limit: 3 }, { userId: 10, userRole: "engineer" } as never)).map((r) => r.id)).toEqual([300, 200, 100]);
     const one = await listVisibleRuns({ limit: 3, workflowId: 2 }, { userId: 10, userRole: "engineer" } as never);
     expect(one).toEqual([]);
     judge.mode = "admin";
