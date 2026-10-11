@@ -11,7 +11,14 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 
-const h = vi.hoisted(() => ({ fail: null as null | { table: string; op: "insert" | "update"; err: Error } }));
+const h = vi.hoisted(() => ({
+  fail: null as null | { table: string; op: "insert" | "update"; err: Error },
+  /** R fix scan — runs right before the transaction opens (after any pre-check the router did outside it). */
+  beforeTx: null as null | (() => Promise<void>),
+}));
+// R fix scan — `admin_system` permission granted to every caller of this file (a canEdit holder who is NOT an admin): the
+// admin-only rules under test are the router's own, not the module permission.
+vi.mock("../_core/accessControl", () => ({ requirePermission: () => async ({ ctx, next }: any) => next({ ctx }) }));
 vi.mock("../db", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../db")>();
   const NAME = Symbol.for("drizzle:Name");
@@ -34,7 +41,13 @@ vi.mock("../db", async (importOriginal) => {
       if (!real) return real;
       return new Proxy(real, {
         get(t, p, r) {
-          if (p === "transaction") return (fn: (tx: any) => Promise<unknown>) => (t as any).transaction((tx: any) => fn(wrapTx(tx)));
+          if (p === "transaction")
+            return async (fn: (tx: any) => Promise<unknown>) => {
+              const pre = h.beforeTx;
+              h.beforeTx = null;
+              if (pre) await pre();
+              return (t as any).transaction((tx: any) => fn(wrapTx(tx)));
+            };
           return Reflect.get(t, p, r);
         },
       });
@@ -43,11 +56,12 @@ vi.mock("../db", async (importOriginal) => {
 });
 
 import { apiKeyRouter } from "./apiKeyRouter";
+import { verifyCrudContentHash } from "../services/auditTrailService";
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `R9F1-${Date.now()}`;
 let sql: ReturnType<typeof postgres>;
-const u = { admin: 0, a: 0, b: 0, off: 0 };
+const u = { admin: 0, a: 0, b: 0, off: 0, eng: 0, late: 0 };
 let keyId = 0;
 const ctx = () => ({ user: { id: u.admin, role: "admin", name: "R9F1 admin", twoFactorEnabled: true } }) as never;
 const holderOf = async () => Number((await sql`SELECT "holderUserId" AS h FROM api_keys WHERE id = ${keyId}`)[0].h);
@@ -58,7 +72,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 R fix 1 #6 — setHolder: one transact
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/);
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
-    for (const [k, role, active] of [["admin", "admin", true], ["a", "engineer", true], ["b", "engineer", true], ["off", "engineer", true]] as const) {
+    for (const [k, role, active] of [["admin", "admin", true], ["a", "engineer", true], ["b", "engineer", true], ["off", "engineer", true], ["eng", "engineer", true], ["late", "engineer", true]] as const) {
       u[k] = Number((await sql`INSERT INTO users ("openId", username, name, role, "isActive") VALUES (${`${DAU}-${k}`}, ${`${DAU}-${k}`}, ${`R9F1 ${k}`}, ${role}, ${active}) RETURNING id`)[0].id);
     }
     keyId = Number((await sql`INSERT INTO api_keys (name, "keyHash", scopes, "createdBy", "holderUserId") VALUES (${`${DAU}-k`}, ${`${DAU}-k-hash`}, ${sql.json(["orchestration:write"])}, ${u.admin}, ${u.a}) RETURNING id`)[0].id);
@@ -67,7 +81,8 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 R fix 1 #6 — setHolder: one transact
   afterAll(async () => {
     if (!sql) return;
     h.fail = null;
-    await sql`DELETE FROM api_keys WHERE id = ${keyId}`;
+    h.beforeTx = null;
+    await sql`DELETE FROM api_keys WHERE id = ${keyId} OR name LIKE ${DAU + "%"}`;
     await sql`DELETE FROM users WHERE id IN ${sql(Object.values(u).filter(Boolean))}`.catch(() => undefined); // audit_logs may reference (WORM)
     await sql.end();
   });
@@ -114,5 +129,90 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 R fix 1 #6 — setHolder: one transact
     await sql`UPDATE users SET "isActive" = false WHERE id = ${u.off}`;
     row = (await apiKeyRouter.createCaller(ctx()).list()).find((r) => r.id === keyId);
     expect(row).toMatchObject({ holderUserId: u.off, holderActive: false, holderName: "R9F1 off" });
+  });
+
+  // ════════════ doc 81 Đợt 9 R fix scan (security scan on 89a4e31d4: audit integrity + authorization) ════════════
+  const holderAudits = async () =>
+    (await sql`SELECT details, "ipAddress" FROM audit_logs WHERE "entityType" = 'api_key' AND "entityId" = ${keyId} AND details LIKE '%API_KEY_HOLDER_CHANGE%' ORDER BY id`) as Array<{ details: string; ipAddress: string | null }>;
+  const ctxWithReq = (id: number, role: string) =>
+    ({ user: { id, role, name: `R9F1 ${role}`, twoFactorEnabled: true }, req: { ip: "198.51.100.7", headers: { "user-agent": "r9-scan" } } }) as never;
+
+  it("★ scan (1): exactly ONE durable audit row per successful change, built like every CRUD row (SEC_PLATFORM content hash verifies, request ip), none for a failed change", async () => {
+    const saved = process.env.SEC_PLATFORM;
+    process.env.SEC_PLATFORM = "true";
+    try {
+      const n0 = (await holderAudits()).length;
+      await apiKeyRouter.createCaller(ctxWithReq(u.admin, "admin")).setHolder({ id: keyId, holderUserId: u.a, reason: "scan audit ok" });
+      const rows = await holderAudits();
+      expect(rows.length).toBe(n0 + 1);
+      const last = rows[rows.length - 1];
+      const details = JSON.parse(last.details);
+      expect(details).toMatchObject({ operation: "API_KEY_HOLDER_CHANGE", after: { holderUserId: u.a }, source: "web" });
+      expect(typeof details.contentHash).toBe("string");
+      expect(
+        verifyCrudContentHash({ userId: u.admin, action: "UPDATE", entityType: "api_key", entityId: keyId, entityName: `${DAU}-k`, details }),
+      ).toEqual({ ok: true });
+      expect(last.ipAddress).toBe("198.51.100.7");
+      // a FAILED change (inactive holder) leaves no holder-change audit row and changes nothing
+      await sql`UPDATE users SET "isActive" = false WHERE id = ${u.late}`;
+      await expect(apiKeyRouter.createCaller(ctxWithReq(u.admin, "admin")).setHolder({ id: keyId, holderUserId: u.late, reason: "inactive" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect((await holderAudits()).length).toBe(n0 + 1);
+      expect(await holderOf()).toBe(u.a);
+    } finally {
+      if (saved === undefined) delete process.env.SEC_PLATFORM;
+      else process.env.SEC_PLATFORM = saved;
+      await sql`UPDATE users SET "isActive" = true WHERE id = ${u.late}`;
+    }
+  });
+
+  it("★ scan (2): the holder is deactivated AFTER any pre-check but before the change ⇒ refused under the lock (nothing changed, no audit row)", async () => {
+    await apiKeyRouter.createCaller(ctx()).setHolder({ id: keyId, holderUserId: u.a, reason: "baseline" });
+    const n0 = (await holderAudits()).length;
+    const hist0 = await histCount();
+    h.beforeTx = async () => {
+      await sql`UPDATE users SET "isActive" = false WHERE id = ${u.late}`;
+    };
+    try {
+      await expect(apiKeyRouter.createCaller(ctx()).setHolder({ id: keyId, holderUserId: u.late, reason: "race" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    } finally {
+      h.beforeTx = null;
+      await sql`UPDATE users SET "isActive" = true WHERE id = ${u.late}`;
+    }
+    expect([await holderOf(), await histCount(), (await holderAudits()).length]).toEqual([u.a, hist0, n0]);
+  });
+
+  it("★ scan (2): user 0 / negative / missing ⇒ refused; non-admin, no session, admin without 2FA ⇒ FORBIDDEN — nothing changed, no audit row", async () => {
+    const before = [await holderOf(), (await holderAudits()).length];
+    for (const bad of [0, -5]) {
+      await expect(apiKeyRouter.createCaller(ctx()).setHolder({ id: keyId, holderUserId: bad, reason: "zero" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    }
+    await expect(apiKeyRouter.createCaller(ctx()).setHolder({ id: keyId, holderUserId: 2_000_000_000, reason: "ghost" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(apiKeyRouter.createCaller(ctxWithReq(u.eng, "engineer")).setHolder({ id: keyId, holderUserId: u.eng, reason: "mine now" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(apiKeyRouter.createCaller({ user: null } as never).setHolder({ id: keyId, holderUserId: u.eng, reason: "anon" })).rejects.toBeTruthy();
+    const saved2fa = process.env.AUTH_2FA_BAT_BUOC;
+    delete process.env.AUTH_2FA_BAT_BUOC;
+    try {
+      await expect(
+        apiKeyRouter.createCaller({ user: { id: u.admin, role: "admin", name: "no2fa", twoFactorEnabled: false } } as never).setHolder({ id: keyId, holderUserId: u.eng, reason: "no 2fa" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    } finally {
+      if (saved2fa !== undefined) process.env.AUTH_2FA_BAT_BUOC = saved2fa;
+    }
+    expect([await holderOf(), (await holderAudits()).length]).toEqual(before);
+  });
+
+  it("★ scan (2) / R-9-c: a NON-admin with admin_system canEdit cannot RE-ACTIVATE a key or EXTEND its expiry (it restores API runs' actuation); revoke / shorten stay allowed; an admin can", async () => {
+    const [k] = await sql`INSERT INTO api_keys (name, "keyHash", scopes, "createdBy", "holderUserId", "isActive", "expiresAt")
+                          VALUES (${`${DAU}-k2`}, ${`${DAU}-k2-hash`}, ${sql.json(["orchestration:write"])}, ${u.admin}, ${u.a}, false, now() + interval '1 day') RETURNING id`;
+    const id = Number(k.id);
+    const eng = apiKeyRouter.createCaller(ctxWithReq(u.eng, "engineer"));
+    await expect(eng.update({ id, isActive: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await sql`SELECT "isActive" FROM api_keys WHERE id = ${id}`)[0].isActive).toBe(false);
+    await expect(eng.update({ id, expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(eng.update({ id, expiresAt: null })).rejects.toMatchObject({ code: "FORBIDDEN" }); // "never expires" extends too
+    await eng.update({ id, expiresAt: new Date(Date.now() + 3_600_000).toISOString() }); // shorten: allowed
+    await eng.update({ id, isActive: false, name: `${DAU}-k2b` }); // revoke / other fields: allowed
+    await apiKeyRouter.createCaller(ctxWithReq(u.admin, "admin")).update({ id, isActive: true }); // an admin re-activates
+    expect((await sql`SELECT "isActive" FROM api_keys WHERE id = ${id}`)[0].isActive).toBe(true);
   });
 });

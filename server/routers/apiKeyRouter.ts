@@ -26,7 +26,8 @@ import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
-import { apiKeys, auditLogs, users } from "../../drizzle/schema";
+import { apiKeys, users } from "../../drizzle/schema";
+import { createAuditContext, logCrudOperationInTx } from "../services/auditTrailService";
 import { apiKeyIdentityCols, isMigrationMissingError, readHoldersOfKeys } from "../services/orchestration/foe/runApiKeyIdentity"; // doc 81 Đợt 9 R1 (mig 0369)
 import { hashApiKey } from "../api/v1/auth";
 import { ALL_SCOPES, SCOPE_DESCRIPTIONS } from "../api/v1/scopes";
@@ -155,6 +156,8 @@ async function withHolders<T extends { id: number }>(d: Awaited<ReturnType<typeo
 
 /** R fix 1 (#6) — the key row disappeared between the read and the locked update (deleted concurrently). */
 class KeyVanished extends Error {}
+/** R fix scan — the new holder does not exist / is not active (checked under a row lock in the transaction). */
+class HolderInvalid extends Error {}
 
 function toExpiry(v: string | Date | null | undefined): Date | null {
   if (v == null || v === "") return null;
@@ -253,17 +256,33 @@ export const apiKeyRouter = router({
         })
         .and(tenantScopeSchema),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
       const [existing] = await d.select().from(apiKeys).where(eq(apiKeys.id, input.id)).limit(1);
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${input.id} not found`);
+      // doc 81 Đợt 9 R fix scan (ruling R-9-c: "an ADMIN re-activating the key restores it") — re-activating a disabled key or
+      // EXTENDING its expiry gives its API-started orchestration runs their actuation back, so it is ADMIN-only (a holder of
+      // admin_system canEdit alone gets FORBIDDEN). Disabling, shortening and every other edit are unchanged. Fail-closed:
+      // anything but role === "admin" is refused.
+      const newExp = input.expiresAt !== undefined ? toExpiry(input.expiresAt) : undefined;
+      const oldExp = existing.expiresAt ? new Date(existing.expiresAt) : null;
+      const reactivates = input.isActive === true && existing.isActive !== true;
+      const extends_ = newExp !== undefined && oldExp !== null && (newExp === null || newExp.getTime() > oldExp.getTime());
+      if ((reactivates || extends_) && ctx.user?.role !== "admin") {
+        throw appError(
+          "FORBIDDEN",
+          "PERMISSION_DENIED",
+          { action: "adminAccess" },
+          "Only an administrator can re-activate an API key or extend its expiry (it gives its orchestration runs their machine / robot commands back).",
+        );
+      }
 
       const patch: Partial<typeof apiKeys.$inferInsert> = { updatedAt: new Date() };
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.description !== undefined) patch.description = input.description ?? null;
       if (input.scopes !== undefined) patch.scopes = input.scopes;
       if (input.isActive !== undefined) patch.isActive = input.isActive;
-      if (input.expiresAt !== undefined) patch.expiresAt = toExpiry(input.expiresAt);
+      if (newExp !== undefined) patch.expiresAt = newExp;
       // ⚠ Ba ô phạm vi luôn đi CÙNG NHAU. Vá lẻ một ô (chỉ `factoryCode`, giữ nguyên `mode`)
       //   sinh ra đúng hình dạng lệch mà CHECK cấm, và bắt người dùng nhận một lỗi CSDL thô
       //   thay vì một câu đọc được. Client gửi cả ba, hoặc không gửi ô nào.
@@ -294,11 +313,12 @@ export const apiKeyRouter = router({
       const d = await db();
       const [existing] = await d.select().from(apiKeys).where(eq(apiKeys.id, input.id)).limit(1);
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${input.id} not found`);
-      const [holder] = await d.select({ id: users.id, isActive: users.isActive }).from(users).where(eq(users.id, input.holderUserId)).limit(1);
-      if (!holder || holder.isActive !== true) {
-        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "holderUserId" }, `User ${input.holderUserId} does not exist or is not active.`);
+      const actor = ctx.user?.id;
+      if (typeof actor !== "number" || !Number.isInteger(actor) || actor <= 0) {
+        // adminProcedure guarantees a user; anything else here is refused (fail-closed), never treated as allowed
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess" }, "Only an administrator can change who an API key is issued to.");
       }
-      const actor = ctx.user!.id;
+      let holderInvalid = false;
       // R fix 1 (#6) — the change, its trigger-written history row AND its audit_logs row are ONE transaction: an audit row
       // that cannot be written refuses the change. Errors are specific and carry no database text to the client (it is
       // logged server-side): the key vanished meanwhile ⇒ NOT_FOUND; migration 0369 missing ⇒ FEATURE_NOT_CONFIGURED
@@ -316,28 +336,36 @@ export const apiKeyRouter = router({
             throw new KeyVanished();
           }
           const before = (cur.holderUserId as number | null | undefined) ?? null;
+          // R fix scan — the new holder is checked UNDER A ROW LOCK in the same transaction (FOR SHARE: a concurrent
+          // deactivation waits or is seen): it must exist and be ACTIVE now. Otherwise nothing changes.
+          const [holder] = await tx.select({ id: users.id, isActive: users.isActive }).from(users).where(eq(users.id, input.holderUserId)).for("share");
+          if (!holder || holder.isActive !== true) {
+            holderInvalid = true;
+            throw new HolderInvalid();
+          }
           await tx.execute(sql`SELECT set_config('aoi.actor_user_id', ${String(actor)}, true), set_config('aoi.holder_change_reason', ${input.reason}, true)`);
           await tx.update(apiKeyIdentityCols).set({ holderUserId: input.holderUserId }).where(eq(apiKeyIdentityCols.id, input.id));
-          await tx.insert(auditLogs).values({
-            userId: actor,
-            userName: ctx.user?.name ?? null,
+          // R fix scan — the audit row is built by the SHARED builder (same fields + SEC_PLATFORM content hash as every CRUD
+          // audit row) and written IN this transaction: it fails ⇒ the change fails; the change rolls back ⇒ no row.
+          await logCrudOperationInTx(tx, createAuditContext({ user: ctx.user, req: ctx.req as never }), {
             action: "UPDATE",
             entityType: "api_key",
             entityId: input.id,
-            entityName: existing.name.slice(0, 255),
-            details: JSON.stringify({
+            entityName: existing.name,
+            details: {
               operation: "API_KEY_HOLDER_CHANGE",
               before: { holderUserId: before },
               after: { holderUserId: input.holderUserId },
               metadata: { reason: input.reason, docRef: "doc 81 Dot 9 R1" },
               affectedFields: ["holderUserId"],
-              source: "web",
-              timestamp: new Date().toISOString(),
-            }),
+            },
             status: "success",
           });
         });
       } catch (err) {
+        if (holderInvalid || err instanceof HolderInvalid) {
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "holderUserId" }, `User ${input.holderUserId} does not exist or is not active — nothing was changed.`);
+        }
         if (vanished || err instanceof KeyVanished) {
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${input.id} not found`);
         }

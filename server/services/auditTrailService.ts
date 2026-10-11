@@ -329,6 +329,51 @@ export function generateRequestId(): string {
 // ─── Main Audit Functions ───────────────────────────────────────────────────
 
 /**
+ * The CRUD audit row exactly as logCrudOperation writes it: details + source / session / request / timestamp, and — with
+ * SEC_PLATFORM — the per-row content hash (doc 33 D4). ONE builder for the fire-and-forget path and the in-transaction path
+ * (doc 81 Đợt 9 R fix scan: a row written inside a transaction must carry the same tamper-evidence).
+ */
+export function buildCrudAuditRow(context: AuditContext, entry: AuditLogEntry): Parameters<typeof db.createAuditLog>[0] {
+  const details: Record<string, any> = {
+    ...entry.details,
+    source: context.source || "web",
+    sessionId: context.sessionId,
+    requestId: context.requestId,
+    timestamp: new Date().toISOString(),
+  };
+  // doc 33 D4 (F5 §5.11.2) — per-row content hash for tamper-evidence (SEC_PLATFORM). No
+  // serialization (perf-safe on this hot path); catches content edits.
+  if (secPlatformEnabled()) {
+    const hashTs = Date.now();
+    details.hashTs = hashTs;
+    details.contentHash = computeCrudContentHash(
+      { userId: context.userId, action: entry.action, entityType: entry.entityType, entityId: entry.entityId, entityName: entry.entityName, details },
+      hashTs,
+    );
+  }
+  return {
+    userId: context.userId,
+    userName: context.userName,
+    action: entry.action,
+    entityType: entry.entityType,
+    entityId: entry.entityId,
+    entityName: entry.entityName,
+    details,
+    ipAddress: context.ipAddress,
+    userAgent: context.userAgent,
+    status: entry.status,
+  };
+}
+
+/**
+ * doc 81 Đợt 9 R fix scan — write the CRUD audit row INSIDE the caller's transaction. Unlike logCrudOperation it THROWS:
+ * the caller's change must not commit without its audit row (and a rolled-back change leaves none).
+ */
+export async function logCrudOperationInTx(tx: { insert: (...a: any[]) => any }, context: AuditContext, entry: AuditLogEntry): Promise<{ id: number }> {
+  return db.createAuditLog(buildCrudAuditRow(context, entry), tx);
+}
+
+/**
  * Log a CRUD operation with full detail
  */
 export async function logCrudOperation(
@@ -336,35 +381,7 @@ export async function logCrudOperation(
   entry: AuditLogEntry
 ): Promise<{ id: number }> {
   try {
-    const details: Record<string, any> = {
-      ...entry.details,
-      source: context.source || "web",
-      sessionId: context.sessionId,
-      requestId: context.requestId,
-      timestamp: new Date().toISOString(),
-    };
-    // doc 33 D4 (F5 §5.11.2) — per-row content hash for tamper-evidence (SEC_PLATFORM). No
-    // serialization (perf-safe on this hot path); catches content edits.
-    if (secPlatformEnabled()) {
-      const hashTs = Date.now();
-      details.hashTs = hashTs;
-      details.contentHash = computeCrudContentHash(
-        { userId: context.userId, action: entry.action, entityType: entry.entityType, entityId: entry.entityId, entityName: entry.entityName, details },
-        hashTs,
-      );
-    }
-    const result = await db.createAuditLog({
-      userId: context.userId,
-      userName: context.userName,
-      action: entry.action,
-      entityType: entry.entityType,
-      entityId: entry.entityId,
-      entityName: entry.entityName,
-      details,
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
-      status: entry.status,
-    });
+    const result = await db.createAuditLog(buildCrudAuditRow(context, entry));
     return result;
   } catch (error) {
     console.error("[AuditTrail] Failed to log audit entry:", error);
