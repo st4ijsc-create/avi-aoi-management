@@ -648,6 +648,142 @@ export class OpcuaDriver extends NotImplementedDriver {
   }
 
   /**
+   * doc 81 Đợt 9 task U1 — a READ-ONLY subscription whose monitored items QUEUE every value change (queueSize > 1,
+   * discardOldest = false), for the safety-PLC poller (short e-stop presses). Unlike subscribe(), it reports:
+   *   • every notification of every item, in order, with the OPC-UA OVERFLOW info bit (Part 4 §7.39: the server's queue
+   *     was full ⇒ at least one value change of that item was lost — with discardOldest = false the NEWEST value replaces
+   *     the last queued one and carries the bit);
+   *   • liveness: every publish response (data or keep-alive) ⇒ sink.onAlive();
+   *   • gaps in the NotificationMessage sequence numbers (Part 4 §5.13.1: a keep-alive carries the number of the NEXT
+   *     message) ⇒ sink.onLost(n);
+   *   • the subscription's end (terminated / BadTimeout status change / internal error / link lost) ⇒ sink.onDead(why).
+   * Quality: Good SEVERITY (the info bits ignored) ⇒ "good"; anything else ⇒ "bad". Throws when the session or the package
+   * cannot create a subscription (the caller then falls back to polling). Returns the REVISED parameters so the caller can
+   * refuse a queue the server shrank below 2. Never writes.
+   */
+  async subscribeQueued(
+    tags: OtTagAddress[],
+    opts: { publishingIntervalMs: number; samplingIntervalMs: number; queueSize: number; maxKeepAliveCount: number },
+    sink: OpcuaQueuedSink,
+  ): Promise<OpcuaQueuedSubscription> {
+    if (!this.connected || !this.session) throw new DeviceUnreachableError("opcua");
+    const session = this.session;
+    const canCreate = typeof session.createSubscription2 === "function" || this.ClientSubscription;
+    if (!canCreate || !this.ClientMonitoredItem) throw new OpcuaConfigError("opcua_subscription_unsupported", "opcua: this session / package cannot create subscriptions");
+    const subParams = {
+      requestedPublishingInterval: opts.publishingIntervalMs,
+      requestedLifetimeCount: Math.max(30, opts.maxKeepAliveCount * 10),
+      requestedMaxKeepAliveCount: opts.maxKeepAliveCount,
+      maxNotificationsPerPublish: 0, // no limit: a burst is never split across publishes we might not get
+      publishingEnabled: true,
+      priority: 200,
+    };
+    const subscription =
+      typeof session.createSubscription2 === "function" ? await session.createSubscription2(subParams) : await this.ClientSubscription.create(session, subParams);
+    let closing = false;
+    let dead = false;
+    const die = (why: string) => {
+      if (closing || dead) return;
+      dead = true;
+      sink.onDead(why);
+    };
+    let expectedSeq: number | null = null;
+    subscription.on?.("raw_notification", (msg: any) => {
+      if (closing) return;
+      const seq = typeof msg?.sequenceNumber === "number" ? msg.sequenceNumber : null;
+      const isData = Array.isArray(msg?.notificationData) && msg.notificationData.length > 0;
+      if (seq != null) {
+        if (expectedSeq != null && seq > expectedSeq) sink.onLost(seq - expectedSeq, `notification sequence gap ${expectedSeq}→${seq}`);
+        expectedSeq = isData ? seq + 1 : Math.max(expectedSeq ?? seq, seq);
+      }
+      sink.onAlive();
+    });
+    subscription.on?.("keepalive", () => !closing && sink.onAlive());
+    subscription.on?.("terminated", () => die("subscription terminated"));
+    subscription.on?.("internal_error", (e: unknown) => die(`subscription internal error: ${(e as Error)?.message ?? e}`));
+    subscription.on?.("status_changed", (sc: any) => {
+      const v = typeof sc?.value === "number" ? sc.value : 0;
+      if ((v & 0xc0000000) !== 0) die(`subscription status ${describeStatus(sc, v)}`);
+    });
+    const client = this.client;
+    for (const ev of ["connection_lost", "close", "abort"]) {
+      try {
+        client?.on?.(ev, () => die(`opcua link lost (${ev})`));
+      } catch {
+        /* not an EventEmitter (minimal package) */
+      }
+    }
+    const tsToReturn = this.TimestampsToReturn?.Both ?? 2;
+    const items: OpcuaQueuedSubscription["items"] = [];
+    for (const tag of tags) {
+      const r = await this.resolveAddress(tag.address);
+      if ("error" in r) {
+        items.push({ tagKey: tag.tagKey, ok: false, statusCode: r.statusCode, queueSize: 0, samplingIntervalMs: 0 });
+        continue;
+      }
+      let mi: any;
+      const itemToMonitor = { nodeId: r.nodeId, attributeId: this.AttributeIds.Value };
+      const params = { samplingInterval: opts.samplingIntervalMs, discardOldest: false, queueSize: opts.queueSize };
+      try {
+        // the item must be CREATED on the server (revised queue size known) before we judge it: subscription.monitor()
+        // resolves after the create response; ClientMonitoredItem.create() returns at once (then "initialized" / "err").
+        mi =
+          typeof subscription.monitor === "function"
+            ? await subscription.monitor(itemToMonitor, params, tsToReturn)
+            : await new Promise((res, rej) => {
+                const m = this.ClientMonitoredItem.create(subscription, itemToMonitor, params, tsToReturn);
+                m.once?.("initialized", () => res(m));
+                m.once?.("err", (e: unknown) => rej(new Error(String((e as Error)?.message ?? e))));
+              });
+      } catch (e) {
+        items.push({ tagKey: tag.tagKey, ok: false, statusCode: monitoredStatus(e), queueSize: 0, samplingIntervalMs: 0 });
+        continue;
+      }
+      const mp = mi?.monitoringParameters ?? {};
+      const created = mi?.statusCode == null || (typeof mi.statusCode.value === "number" ? (mi.statusCode.value & 0xc0000000) === 0 : true);
+      items.push({
+        tagKey: tag.tagKey,
+        ok: created,
+        statusCode: created ? undefined : describeStatus(mi.statusCode, mi.statusCode.value),
+        queueSize: typeof mp.queueSize === "number" ? mp.queueSize : opts.queueSize,
+        samplingIntervalMs: typeof mp.samplingInterval === "number" ? mp.samplingInterval : opts.samplingIntervalMs,
+      });
+      mi.on("changed", (dv: any) => {
+        if (closing) return;
+        try {
+          const raw = dv?.value?.value;
+          const sc = dv?.statusCode;
+          const scVal = typeof sc?.value === "number" ? sc.value >>> 0 : 0;
+          const overflow = sc?.hasOverflowBit === true || (scVal & 0x0480) === 0x0480;
+          const goodSeverity = (scVal & 0xc0000000) === 0;
+          const norm = normalizeOpcuaValue(raw, tag.dataType, tag.scale ?? 1, tag.offset ?? 0);
+          const quality = goodSeverity ? norm.quality : "bad";
+          const { timestamp, tsSource } = opcuaSampleTime(dv);
+          this.lastOkAt = new Date();
+          const sample: OtSample = { tagKey: tag.tagKey, raw, value: quality === "good" ? norm.value : null, quality, timestamp, tsSource };
+          if (!goodSeverity) sample.statusCode = describeStatus(sc, scVal);
+          sink.onValue(tag.tagKey, sample, { overflow });
+        } catch (e) {
+          sink.onValue(tag.tagKey, { tagKey: tag.tagKey, raw: undefined, value: null, quality: "bad", timestamp: new Date(), tsSource: "server", statusCode: `decode failed: ${(e as Error)?.message ?? e}` }, { overflow: false });
+        }
+      });
+      mi.on("err", (e: unknown) => {
+        if (closing) return;
+        sink.onValue(tag.tagKey, { tagKey: tag.tagKey, raw: undefined, value: null, quality: "bad", timestamp: new Date(), tsSource: "server", statusCode: monitoredStatus(e) }, { overflow: false });
+      });
+    }
+    return {
+      publishingIntervalMs: typeof subscription.publishingInterval === "number" ? subscription.publishingInterval : opts.publishingIntervalMs,
+      maxKeepAliveCount: typeof subscription.maxKeepAliveCount === "number" ? subscription.maxKeepAliveCount : opts.maxKeepAliveCount,
+      items,
+      close: async () => {
+        closing = true;
+        await settleWithin(() => subscription.terminate(), OPCUA_CLOSE_STEP_MS, "opcua subscription terminate");
+      },
+    };
+  }
+
+  /**
    * ⚠️ ONLY commandDispatcher may call this — write reaches physical device.
    *
    * Ghi giá trị xuống node OPC-UA. Reachable CHỈ qua HITL execute() → dispatch().
@@ -801,6 +937,21 @@ export class OpcuaDriver extends NotImplementedDriver {
       latencyMs: this.lastLatencyMs,
     };
   }
+}
+
+/** doc 81 Đợt 9 U1 — receiver of OpcuaDriver.subscribeQueued (called synchronously from node-opcua events; must not throw). */
+export interface OpcuaQueuedSink {
+  onValue(tagKey: string, sample: OtSample, info: { overflow: boolean }): void;
+  onAlive(): void;
+  onLost(n: number, why: string): void;
+  onDead(why: string): void;
+}
+/** doc 81 Đợt 9 U1 — a queued subscription: the REVISED parameters (per item) + close(). */
+export interface OpcuaQueuedSubscription {
+  publishingIntervalMs: number;
+  maxKeepAliveCount: number;
+  items: Array<{ tagKey: string; ok: boolean; statusCode?: string; queueSize: number; samplingIntervalMs: number }>;
+  close(): Promise<void>;
 }
 
 export function createOpcuaDriver(): OtDriver {

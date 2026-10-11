@@ -40,6 +40,7 @@ import {
   deviceAdapters,
   deviceTags, // final wave P-E1 — the scope-decision probe
   robots, // doc 81 Đợt 4 final wave G3 — a robot step names an existing, enabled robot
+  users, // doc 81 Đợt 9 R3 — names on the approver's screen ("issued to")
   type OrchestrationRun,
 } from "../../../../drizzle/schema";
 import {
@@ -79,8 +80,11 @@ import {
   FOE_REJECT_CLAIM_CTX_KEY,
   runExecutedVersions,
   runStartedViaApi,
+  deriveRunApprovalIdentity,
+  excludedApprovers,
   type GateRequiredReason,
-} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2
+} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2; Đợt 9 R2
+import { isMigrationMissingError, orchestrationRunsWithApiKey, readApiKeyParties, readRunApiKeyId } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R1/R3 (mig 0369, narrow projections)
 import type { ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
@@ -108,6 +112,9 @@ import {
   type OutOfScope,
 } from "./foeScope"; // doc 81 Đợt 5 task E2 — factory scope (item 26); Đợt 7 I fix 1 — ref namespace
 export type { FoeScope } from "./foeScope";
+// doc 81 Đợt 9 task S2/S3 — the edge assignment of a run (mig 0370, narrow projections): runs a node executes
+import { edgeAssignedRunIdsAmong, readEdgeAssignment, runEdgeAssignments } from "../../edge/edgeExecutionSchema";
+import { orchestrationRunsWithApiKey as edgeRunInsertWithApiKey } from "./runApiKeyIdentity"; // S2 — the key IN the insert (mig 0369)
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
 
@@ -268,6 +275,8 @@ export interface StartRunResult {
   abortStops?: AbortStopReport;
   /** doc 81 Đợt 6 fix 3 (M5) — true ⇔ this answer is a RE-SEND on a run that was already aborted (not a new abort). */
   resend?: boolean;
+  /** doc 81 Đợt 9 task S2 — the run is executed by this edge node (central does not walk it; it waits 'queued' for the node). */
+  edgeNodeId?: number;
 }
 
 /**
@@ -314,6 +323,65 @@ export type DefinitionRefusalReason =
   /** final wave F9 (N5) — the workflow named by `targetWorkflowId` is gone / not visible and the ref is taken in the deployer's namespace (reload, no retry). */
   | "refTargetStale";
 
+/** doc 81 Đợt 9 task R3 — see RunView.apiKey. */
+export interface RunApiKeyView {
+  identified: boolean;
+  keyId: number | null;
+  name: string | null;
+  keyPrefix: string | null;
+  holder: { id: number; name: string | null } | null;
+  creator: { id: number; name: string | null } | null;
+  /** users the key was issued to before (still excluded: the secret did not change with the holder). */
+  earlierHolders: Array<{ id: number; name: string | null }>;
+  /** every user whose approval never counts for this run (starter + key parties). Empty when not identified. */
+  excludedUserIds: number[];
+  /** doc 81 Đợt 9 R fix 1 — why no approval can count now (null = identified and usable). */
+  refusal: "ownerUnknown" | "apiRun" | "apiKeyInactive" | "apiIdentityUnavailable" | null;
+  /** "inactive" | "expired" for apiKeyInactive; "migrationMissing" | "readError" for apiIdentityUnavailable. */
+  refusalDetail: string | null;
+}
+
+/**
+ * doc 81 Đợt 9 task R3 — the approver screen's view of an API run's key (best-effort read: any failure ⇒ identified false,
+ * which is also what the engine concludes — nothing on the screen can let an approval count that the server refuses).
+ */
+async function apiKeyViewOf(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, run: OrchestrationRun): Promise<RunApiKeyView | null> {
+  // R fix 1 (#3) — a recorded key also makes it an API run (read below); an unmarked run without one ⇒ null.
+  let recorded: number | null = null;
+  try {
+    recorded = await readRunApiKeyId(d, run.id);
+  } catch (err) {
+    if (!runStartedViaApi(run) && isMigrationMissingError(err)) return null;
+    return { identified: false, keyId: null, name: null, keyPrefix: null, holder: null, creator: null, earlierHolders: [], excludedUserIds: [], refusal: "apiIdentityUnavailable", refusalDetail: isMigrationMissingError(err) ? "migrationMissing" : "readError" };
+  }
+  if (!runStartedViaApi(run) && recorded === null) return null;
+  const none: RunApiKeyView = { identified: false, keyId: null, name: null, keyPrefix: null, holder: null, creator: null, earlierHolders: [], excludedUserIds: [], refusal: "apiRun", refusalDetail: null };
+  try {
+    const keyId = recorded;
+    if (keyId === null) return none;
+    const key = await readApiKeyParties(d, keyId);
+    if (!key) return { ...none, keyId };
+    const idr = await deriveRunApprovalIdentity(d, run);
+    const ids = [...new Set([key.holder, key.creator, ...key.everHolders].filter((v): v is number => typeof v === "number"))];
+    const rows = ids.length ? await d.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids)) : [];
+    const nameOf = (id: number) => rows.find((r) => r.id === id)?.name ?? null;
+    return {
+      identified: idr.ok,
+      keyId,
+      name: key.name,
+      keyPrefix: key.keyPrefix,
+      holder: key.holder !== null ? { id: key.holder, name: nameOf(key.holder) } : null,
+      creator: key.creator !== null ? { id: key.creator, name: nameOf(key.creator) } : null,
+      earlierHolders: key.everHolders.filter((u) => u !== key.holder).map((id) => ({ id, name: nameOf(id) })),
+      excludedUserIds: idr.ok ? excludedApprovers(idr.identity) : [],
+      refusal: idr.ok ? null : idr.reason,
+      refusalDetail: idr.ok ? null : (idr.detail ?? null),
+    };
+  } catch (err) {
+    return { ...none, refusal: "apiIdentityUnavailable", refusalDetail: isMigrationMissingError(err) ? "migrationMissing" : "readError" };
+  }
+}
+
 export interface RunView {
   run: OrchestrationRun;
   /**
@@ -334,6 +402,12 @@ export interface RunView {
    * bindingDigest is null ⇒ no approval). null exactly when bindingDigest is not computed for this read (see getRun).
    */
   programChecks: ProgramCheck[] | null;
+  /**
+   * doc 81 Đợt 9 task R3 — for a run started through an API key: which key, who it is issued to, and WHO cannot give a
+   * counting approval (the same derivation as the engine / dispatchers). null for a run started by a user. A key that
+   * cannot be identified ⇒ `identified: false` (its non-STOP OT/robot commands are refused whoever approves).
+   */
+  apiKey?: RunApiKeyView | null;
   steps: Array<{
     stepId: string;
     stepType: string;
@@ -426,8 +500,9 @@ interface RunContext extends LiveRunHandle {
    */
   runOwner: number | null;
   /**
-   * doc 81 Đợt 5 task E1 (item 24, option C) — the run was started through an API key (server-written markers, see
-   * foeGateApproval.runStartedViaApi). Its OT/robot steps other than a STOP are never sent (reason apiRun).
+   * doc 81 Đợt 5 task E1 — the run was started through an API key (server-written markers, see
+   * foeGateApproval.runStartedViaApi). doc 81 Đợt 9 R2 (option A) — its approvals then count only when the approver is
+   * none of the key's parties (deriveRunApprovalIdentity); this flag is a fail-closed HINT added to the row's markers.
    */
   startedViaApi: boolean;
   /**
@@ -444,6 +519,13 @@ interface RunContext extends LiveRunHandle {
   prior: PriorSteps;
   /** fix 1 (R-6-b) — command steps (compensations included) whose `sendCommand` was CALLED in this walk, whatever came back. */
   attempted: Set<string>;
+  /**
+   * doc 81 Đợt 9 task S3 — set ONLY on an EDGE walker (driveEdgeClaimedRun): asked before every NON-STOP command (never for a
+   * STOP — L-7). Anything but 'ok' ⇒ that command is not sent (edgeRunGuard.ts).
+   */
+  edgeGuard?: () => Promise<"ok" | "stopped" | "stale" | "revoked" | "unknown">;
+  /** doc 81 Đợt 9 task S3 — this edge walker lost its claim (another segment / nobody owns the run): it writes no run status. */
+  edgeDetached?: boolean;
 }
 
 /** doc 81 Đợt 6 — the step rows of a run, as the abort sweep reads them (see priorStepsOf). */
@@ -630,7 +712,12 @@ async function upsertStep(
       // re-sends a STOP that completed. Every other transition is unconditional, as before.
       ...(patch.status === "running"
         ? { setWhere: notInArray(orchestrationRunSteps.status, ["completed", "skipped", "compensated"] as never[]) }
-        : {}),
+        : patch.status === "failed" && stepId.startsWith(ABORT_ROW_PREFIX)
+          ? // doc 81 Đợt 9 task S3 — an edge run is swept by TWO processes (central's abort, its node's walker): a STOP one of
+            // them CONFIRMED sent (`abort:<id>` completed) is never shown as failed by the other's later failure (central
+            // cannot reach the node's devices). A failed row stays re-sendable as before.
+            { setWhere: notInArray(orchestrationRunSteps.status, ["completed"] as never[]) }
+          : {}),
       set: {
         status: patch.status as never,
         attempt: patch.attempt ?? 0,
@@ -1064,25 +1151,26 @@ async function findSeparateGateApproval(
   opts: { stop?: boolean } = {},
 ): Promise<{ approval: FoeGateApproval } | { reason: GateRequiredReason }> {
   try {
-    // doc 81 Đợt 5 task E1 — an API-started run never has a counting approval (option C). The in-memory flag (read when
-    // the walk was built) AND the run row as it is now: either marker ⇒ apiRun (fail-closed).
-    if (rc.startedViaApi) return { reason: "apiRun" };
     const d = await getDb();
     if (!d) return { reason: "noGate" };
     const [runNow] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, rc.runId)).limit(1);
     if (!runNow) return { reason: "noGate" };
-    if (runStartedViaApi(runNow)) return { reason: "apiRun" };
+    // doc 81 Đợt 9 task R2 (option A, replaces Đợt 5 E1 option C) — WHO may not approve, re-derived from the run row as it
+    // is NOW and the api_keys rows (owner; for an API run also the key's holder now / earlier and its creator). The
+    // in-memory marker (read when the walk was built) OR the row's ⇒ API run (fail-closed). Unidentifiable key ⇒ apiRun.
+    const idr = await deriveRunApprovalIdentity(d, runNow, { viaApiHint: rc.startedViaApi });
+    if (!idr.ok) return { reason: idr.reason };
     const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, rc.runId));
     // doc 81 Đợt 5 task E3 — recompute the binding digest from the device configuration NOW (server side).
     // doc 81 Đợt 8 O2 — including the program checksum of every supported controller, read now (bounded; unreadable ⇒
     // programUnreadable). On a STOP step no controller is read (L-7): the approval's own recorded checksums are used.
     const defHash = hashWorkflowDefinition(rc.def);
     const ev = opts.stop
-      ? evaluateGateApprovals(rows, rc.def, defHash, rc.runOwner, await recordedProgramDigests(d, rc.def))
-      : evaluateWithPrograms(rows, rc.def, defHash, rc.runOwner, await computeBindingDetail(d, rc.def));
+      ? evaluateGateApprovals(rows, rc.def, defHash, idr.identity, await recordedProgramDigests(d, rc.def))
+      : evaluateWithPrograms(rows, rc.def, defHash, idr.identity, await computeBindingDetail(d, rc.def));
     if (!ev.ok) return { reason: ev.reason };
     const top = ev.approvals[0];
-    return { approval: { runId: rc.runId, runOwner: rc.runOwner, approvedBy: top.approvedBy, gateStepId: top.gateStepId } };
+    return { approval: { runId: rc.runId, runOwner: idr.identity.owner, approvedBy: top.approvedBy, gateStepId: top.gateStepId } };
   } catch {
     return { reason: "noGate" };
   }
@@ -1095,14 +1183,20 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
       "needs an earlier approval gate (hitl_gate) in this run approved by someone other than the user who started it — none found. Add a hitl_gate before this step, deploy, and start a new run; another user must approve the gate.",
     approvedByOwner:
       "the approval gate before it was approved by the user who started the run — that does not count. Start a new run and have another user approve the gate.",
+    approvedByKeyHolder:
+      "the run was started through an API key and the approval gate before it was approved by the person the key is (or was) issued to, or by the person who created the key — that does not count. Have another user approve the gate of a new run.",
     staleApproval:
       "the workflow was redeployed, or the adapter / tag / robot configuration its commands use changed, or the program in a controller it writes to changed, after the gate was approved, so the approval does not cover what would be sent now. Start a new run and have the gate approved again.",
     programUnreadable:
       "the program checksum of a controller it writes to could not be read now (not connected, no answer in time, or an invalid answer), so it cannot be verified that the program is still the one that was approved. Check the controller connection and start a new run.",
     ownerUnknown:
-      "the run has no attributable owner (started by the system or by an API key with no creating user), so a separate approval cannot be verified. Start the run as a user.",
+      "the run has no attributable owner (started by the system, or by an API key that is issued to nobody active), so a separate approval cannot be verified. Start the run as a user.",
+    apiKeyInactive:
+      "the API key that started the run is revoked / disabled or expired now. Its OT and robot commands other than a STOP are refused until an administrator re-activates (or extends) the key.",
+    apiIdentityUnavailable:
+      "the API key identity of the run could not be read (database error, or database migration 0369 not applied — an administrator runs scripts/apply-migration-0369.mjs), so it cannot be checked that the approver is not the key's holder. Retry once the database is reachable.",
     apiRun:
-      "the run was started through an API key. A run started through an API key never sends OT or robot commands other than a STOP: the person holding the key cannot be told apart from the approver. Start the run as a user in the Orchestration Studio.",
+      "the run was started through an API key that cannot be identified (started before the key-holder record existed, the key was deleted, or a copy of the run without its key), so it cannot be checked that the approver is not the key's holder. Start a new run through the key, or start it as a user in the Orchestration Studio.",
   };
   return `${FOE_GATE_REQUIRED}(${reason}): command step "${stepId}" was not sent: ${why[reason]}`;
 }
@@ -1974,6 +2068,26 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // doc 81 Đợt 5 task E fix 1 (R-5-j) — the RUN-TIME candidate (foeStepClass.isStopCandidate): the engine only stays
   // out of the way here; the dispatcher re-decides with the real pins (an unpinned stop needs a counting gate there).
   const isStop = await isStopCandidate(step, rc.machineById);
+  // doc 81 Đợt 9 task S3 — an EDGE walker asks the run guard before every NON-STOP command (a STOP never asks — L-7): central
+  // stopped the run ⇒ the local abort (non-STOP steps stop, STOPs still sent); the claim is no longer this walker's ⇒ it lets
+  // go of the run without writing it; the claim's credential revoked / the guard undecidable ⇒ this command is refused.
+  if (!isStop && rc.edgeGuard) {
+    const verdict = await rc.edgeGuard();
+    if (verdict === "stopped") {
+      void stopLiveRunForCentralAbort(rc.runId, EDGE_GUARD_ABORT_USER).catch(() => undefined);
+      return ABORTED_OUTCOME;
+    }
+    if (verdict === "stale") {
+      rc.edgeDetached = true;
+      rc.aborting = true;
+      rc.controller.abort();
+      return { kind: "aborted", error: "Edge claim is no longer current — this walker let go of the run." };
+    }
+    if (verdict !== "ok") {
+      // data-raw-ok: an edge refusal recorded on the step row (machine-to-machine), like FOE_GATE_REQUIRED
+      return { kind: "failed", error: `EDGE_GUARD(${verdict}): step ${step.id} not sent — ${verdict === "revoked" ? "this edge node's credential was revoked" : "the edge could not confirm its claim on the run"}.` };
+    }
+  }
   let args: Record<string, unknown>;
   let found: Awaited<ReturnType<typeof findSeparateGateApproval>>;
   if (!isStop) {
@@ -2197,6 +2311,9 @@ async function withLiveRun(
  * reports 'aborted' — the abort is NEVER overwritten by completed/failed/awaiting_confirm.
  */
 async function finishWalk(rc: RunContext, out: StepOutcome): Promise<OrchestrationRun["status"]> {
+  // doc 81 Đợt 9 task S3 — an edge walker whose claim went stale owns nothing any more: no run-level write (it would overwrite
+  // the segment that now owns the run, or a run a person holds).
+  if (rc.edgeDetached) return "held";
   if (rc.aborting) {
     // abortRun owns the terminal write (with the user's reason). This guarded write only
     // matters if abortRun's own DB write failed — the run must not stay 'running' with no driver.
@@ -2270,7 +2387,7 @@ async function buildRunContext(
  *   • approverRoles declared ⇒ the approver's role must be listed (admin is always allowed);
  *   • fourEyes ⇒ the approver must not be the user who started the run (no admin exemption).
  */
-function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, user: FoeUser): void {
+async function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, user: FoeUser): Promise<void> {
   const role = String(user.role ?? "").trim().toLowerCase();
   const roles = (Array.isArray(gate.approverRoles) ? gate.approverRoles : [])
     .map((r) => String(r).trim().toLowerCase())
@@ -2299,6 +2416,44 @@ function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, user: Foe
       { action: "selfApproveOrchestrationGate" },
       `Gate "${gate.id}" requires four-eyes: the user who started run ${run.id} cannot approve it.`,
     );
+  }
+  // doc 81 Đợt 9 task R2 — a four-eyes gate of an API-started run: the key's holder (now or earlier) and its creator are
+  // not a second person either. Re-derived from the DB rows; cannot be decided (unidentifiable key, no holder, DB error)
+  // ⇒ refused (fail-closed — an approval is never urgent: stopping goes through abort / the machines' STOP / E-STOP).
+  if (gate.fourEyes === true) {
+    // R fix 1 (#3) — for EVERY four-eyes approval (a recorded key makes a run an API run even without a marker); a user run
+    // derives { owner, keyParties: [] } — the owner check above already decided it.
+    let idr: Awaited<ReturnType<typeof deriveRunApprovalIdentity>> | null = null;
+    try {
+      const d = await getDb();
+      if (d) idr = await deriveRunApprovalIdentity(d, run);
+    } catch {
+      idr = null;
+    }
+    if (!idr || !idr.ok) {
+      const why =
+        idr?.reason === "apiKeyInactive"
+          ? `is ${idr.detail === "expired" ? "expired" : "revoked / disabled"} now`
+          : idr?.reason === "ownerUnknown"
+            ? "has no holder"
+            : idr?.reason === "apiRun"
+              ? "cannot be identified"
+              : "could not be read (database error, or migration 0369 not applied)";
+      throw appError(
+        "FORBIDDEN",
+        "PERMISSION_DENIED",
+        { action: "selfApproveOrchestrationGate" },
+        `Gate "${gate.id}" requires four-eyes, but the API key that started run ${run.id} ${why} — it cannot be approved.`,
+      );
+    }
+    if (idr.identity.keyParties.includes(user.id)) {
+      throw appError(
+        "FORBIDDEN",
+        "PERMISSION_DENIED",
+        { action: "selfApproveOrchestrationGate" },
+        `Gate "${gate.id}" requires four-eyes: run ${run.id} was started through an API key issued to or created by you — another user must approve it.`,
+      );
+    }
   }
 }
 
@@ -2656,7 +2811,8 @@ export async function startRun(
   user: FoeUser,
   /**
    * ownerUserId — doc 81 Đợt 4 fix round 1 (R-4-f): the HUMAN who owns a run started by a non-user principal (API v1:
-   * the API key's creating user). Ignored when `user` is a real user (id > 0).
+   * since Đợt 9 R1 the user the API key is ISSUED TO — api_keys.holderUserId, default the creator). Ignored when `user` is
+   * a real user (id > 0).
    */
   opts?: {
     async?: boolean;
@@ -2668,10 +2824,23 @@ export async function startRun(
      * added, never lifted. A non-user start with NO owner stays unmarked: it is owner-less ⇒ ownerUnknown refuses it anyway.
      */
     viaApi?: boolean;
+    /**
+     * doc 81 Đợt 9 task R1/R2 — the API key that starts this run (API v1 route only, from the AUTHENTICATED principal, never
+     * from the body / params). Recorded on the run (orchestration_runs.startedViaApiKeyId, write-once) only for an API run;
+     * its holder / creator are then excluded from approving. Absent (or not recordable) ⇒ the API run stays unidentified ⇒
+     * its non-STOP OT/robot steps are refused (apiRun) — fail-closed.
+     */
+    apiKeyId?: number | null;
     /** doc 81 Đợt 5 task E2 — the starter's factory scope (see DeployOpts.scope). */
     scope?: FoeScope;
     /** doc 81 Đợt 7 I fix 1 — the workflow the caller means (several visible workflows may share a ref across namespaces). */
     workflowId?: number;
+    /**
+     * doc 81 Đợt 9 task S2 — hand the run to this EDGE NODE (edge_nodes.id; the caller checked the node is in its scope —
+     * edgeExecutionCentral.resolveAssignableNode). The run is created 'queued' with its edge assignment (mig 0370) in ONE
+     * transaction and is NOT walked here; the node claims and executes it. No assignment recordable ⇒ no run is created.
+     */
+    edgeNodeId?: number;
     /**
      * doc 81 Đợt 7 task I1 — called with the new run's id right after its row exists (before the walk): the edge runtime
      * uses it to watch central for an abort WHILE the run walks. A throwing callback is ignored (never stops the run).
@@ -2734,26 +2903,26 @@ export async function startRun(
       const refusal = await definitionRefusal(def, await loadMachines(refs), { nonStopOnly: true });
       if (refusal) return { ok: false, enabled: true, reason: refusal.reason, stepIds: refusal.stepIds, errors: refusal.errors, message: refusal.message };
     }
-    // doc 81 Đợt 5 task E1 (item 24, option C) — mark an API-started run in BOTH server-written places (see
-    // foeGateApproval.FOE_API_RUN_PARAM): paramsJson is never rewritten after this INSERT; contextJson may be.
-    const humanStart = Number.isInteger(user.id) && user.id > 0;
-    const viaApi =
-      opts?.viaApi === true ||
-      (!humanStart && opts?.ownerUserId != null && opts.ownerUserId > 0) ||
-      runStartedViaApi({ paramsJson: params });
-    const [run] = await d
-      .insert(orchestrationRuns)
-      .values({
-        workflowId: wf.id,
-        workflowRef: wf.ref,
-        status: "queued",
-        // doc 81 Đợt 7 task I3 — the version this run executes (server-written; a caller's value is replaced).
-        paramsJson: { ...(params ?? {}), ...(viaApi ? { [FOE_API_RUN_PARAM]: true } : {}), [FOE_DEF_VERSIONS_PARAM]: [wf.version ?? 1] },
-        contextJson: viaApi ? { startedViaApi: true } : {},
-        startedBy: user.id || (opts?.ownerUserId != null && opts.ownerUserId > 0 ? opts.ownerUserId : null),
-        startedAt: new Date(),
-      })
-      .returning();
+    // doc 81 Đợt 9 task S2 — handed to an EDGE NODE: created + assigned in ONE transaction, never walked here.
+    if (opts?.edgeNodeId !== undefined) return await startEdgeAssignedRun(d, { wf, def, params, user, opts, stopOnlyOut: sv.stopOnlyOut });
+    const { viaApi, runValues } = buildNewRunValues(wf, params, user, opts);
+    // doc 81 Đợt 9 task R1 + R fix 1 (#4) — WHICH key started this API run is written IN THE INSERT (the 0369 trigger refuses
+    // every later UPDATE of the column, a late first write included). Only for an API run with an authenticated key. 0369 not
+    // applied (42703) ⇒ the run is created without it, said loudly: it stays unidentified ⇒ its non-STOP OT/robot steps are
+    // refused (apiRun), its STOPs go out (a run that exists to stop is never kept from starting). Any other error ⇒ thrown.
+    const apiKeyId = opts?.apiKeyId;
+    let run: OrchestrationRun | undefined;
+    if (viaApi && typeof apiKeyId === "number" && Number.isInteger(apiKeyId) && apiKeyId > 0) {
+      try {
+        [run] = (await d.insert(orchestrationRunsWithApiKey).values({ ...runValues, startedViaApiKeyId: apiKeyId }).returning()) as unknown as OrchestrationRun[];
+      } catch (err) {
+        if (!isMigrationMissingError(err)) throw err;
+        console.error(
+          `[FOE] API run of workflow "${wf.ref}": the API key that starts it (${apiKeyId}) cannot be recorded — database migration 0369 is not applied; its OT/robot steps other than a STOP will be refused (apiRun).`,
+        );
+      }
+    }
+    if (!run) [run] = await d.insert(orchestrationRuns).values(runValues).returning();
     runId = run.id;
     try {
       opts?.onStarted?.(run.id); // doc 81 Đợt 7 I1
@@ -2833,12 +3002,15 @@ export async function getRun(
   // doc 81 Đợt 7 I2 (null on a DB error ⇒ cannot approve); final wave F6 — only for an approver's screen of a paused run.
   // doc 81 Đợt 8 O2/O3 — the program checks come from the SAME reading as the digest.
   const binding =
-    usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held") ? await computeBindingDetail(d, usable) : null;
+    usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held")
+      ? await computeBindingDetail(d, usable, undefined, { display: true }) // Đợt 9 R-9-b — screen only: display cache allowed
+      : null;
   return {
     run,
     defHash: usable ? hashWorkflowDefinition(usable) : null,
     bindingDigest: binding ? binding.digest : null,
     programChecks: binding ? binding.programs : null,
+    apiKey: opts.bindingDigest === true ? await apiKeyViewOf(d, run) : null, // doc 81 Đợt 9 R3 — the approver's screen only
     steps: stepRows.map((s) => ({
       stepId: s.stepId,
       stepType: s.stepType,
@@ -3098,11 +3270,20 @@ export async function resumeRun(
       }
     }
 
+    // doc 81 Đợt 9 task S2 — is this run executed by an edge node? Read BEFORE the claim; undecidable ⇒ the approval / Continue
+    // is refused (never urgent: stopping goes through abort / reject / the machines' STOP / E-STOP).
+    let edgeAssigned: Awaited<ReturnType<typeof readEdgeAssignment>> = null;
+    try {
+      edgeAssigned = await readEdgeAssignment(d, runId);
+    } catch {
+      return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId}: whether an edge node executes it could not be read — retry.` };
+    }
+
     // doc 80 ORC-03 — approving a hitl_gate enforces its approverRoles / fourEyes (FORBIDDEN).
     // Only a run paused AT a gate ('awaiting_confirm'); an interrupted 'held' run has no open gate.
     if (run.status === "awaiting_confirm" && gateStepId) {
       const gate = findStepDeep(def.steps, gateStepId);
-      if (gate && gate.type === "hitl_gate") assertGateApprover(gate, run, user);
+      if (gate && gate.type === "hitl_gate") await assertGateApprover(gate, run, user);
     }
 
     // doc 80 ORC-02 — CAS `UPDATE … SET status='running' WHERE id=$1 AND status IN
@@ -3120,6 +3301,63 @@ export async function resumeRun(
       executed && !executed.includes(headVersion)
         ? { paramsJson: { ...((run.paramsJson as Record<string, unknown> | null) ?? {}), [FOE_DEF_VERSIONS_PARAM]: [...executed, headVersion] } }
         : {};
+    // doc 81 Đợt 9 final wave F4 (final review M1) — a run an EDGE NODE executes: the claim, the gate row and the hand-back to
+    // 'queued' are ONE transaction (it used to be three writes: 'running' → gate row → 'queued', and a crash between them left
+    // the run 'running' with no claim, recoverable only by a manual abort). The node cannot claim before the commit (its claim
+    // is a compare-and-set on 'queued'); an abort landing first wins the CAS below (CONFLICT, nothing written). Nothing is
+    // dispatched here, so there is nothing to STOP.
+    if (edgeAssigned) {
+      const recordedEdge = gateStepId && pausedAtGate ? checked ?? (await computeBindingDetail(d, def)) : null;
+      const human = Number.isInteger(user.id) && user.id > 0;
+      const out = await d.transaction(async (tx) => {
+        const claimedRows = await tx
+          .update(orchestrationRuns)
+          .set({ status: "queued", updatedAt: new Date(), currentStepId: null, ...versionPatch })
+          .where(
+            and(
+              eq(orchestrationRuns.id, runId),
+              inArray(orchestrationRuns.status, RESUMABLE_STATUSES),
+              pinnedStepId != null ? eq(orchestrationRuns.currentStepId, pinnedStepId) : isNull(orchestrationRuns.currentStepId),
+            ),
+          )
+          .returning({ id: orchestrationRuns.id });
+        if (claimedRows.length === 0) {
+          throw appError(
+            "CONFLICT",
+            "OPERATION_FAILED",
+            { operation: "resumeOrchestrationRun", reason: "runAlreadyClaimed" },
+            `Run ${runId} was already resumed, rejected or aborted by another request (or moved to another gate).`,
+          );
+        }
+        let gateWritten = false;
+        if (gateStepId && pausedAtGate && recordedEdge) {
+          const [prior] = await tx
+            .select({ status: orchestrationRunSteps.status })
+            .from(orchestrationRunSteps)
+            .where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, gateStepId)))
+            .limit(1);
+          if (prior?.status !== "completed") {
+            const values = {
+              status: "completed" as never,
+              attempt: 0,
+              resultJson: gateApprovalResult(decision.note, human ? user.id : null, def, recordedEdge),
+              error: null,
+              finishedAt: new Date(),
+            };
+            await tx
+              .insert(orchestrationRunSteps)
+              .values({ runId, stepId: gateStepId, stepType: "hitl_gate", startedAt: null, ...values })
+              .onConflictDoUpdate({ target: [orchestrationRunSteps.runId, orchestrationRunSteps.stepId], set: values });
+            gateWritten = true;
+          }
+        }
+        return { gateWritten };
+      });
+      if (out.gateWritten && gateStepId) void appendRunEvent(runId, "TASK_COMPLETED", { taskId: gateStepId, ts: Date.now() });
+      if (approvalStopOnlyOut) auditStopOutOfScope(user, def, runId, "approve", approvalStopOnlyOut); // E2 (L-7: allowed, audited)
+      return { ok: true, enabled: true, runId, status: "queued", edgeNodeId: edgeAssigned.edgeNodeId };
+    }
+
     await claimPausedRun(runId, "running", { currentStepId: null, ...versionPatch }, pinnedStepId);
     if (approvalStopOnlyOut) auditStopOutOfScope(user, def, runId, "approve", approvalStopOnlyOut); // E2 (L-7: allowed, audited)
 
@@ -3140,24 +3378,13 @@ export async function resumeRun(
         const recorded = checked ?? (await computeBindingDetail(d, def));
         await upsertStep(runId, gateStepId, "hitl_gate", {
           status: "completed",
-          result: {
-            approved: true,
-            note: decision.note ?? null,
-            ...(human ? { approvedBy: user.id } : {}),
-            approvalSource: human ? FOE_APPROVAL_SOURCE_SERVER : FOE_APPROVAL_SOURCE_SYSTEM,
-            defHash: hashWorkflowDefinition(def),
-            // doc 81 Đợt 5 task E3 — the device configuration the approval covers, computed HERE (server side); null
-            // (DB error) ⇒ the approval never counts (fail-closed).
-            // doc 81 Đợt 7 I2 — the digest the approver's screen was checked against (else computed now, as before).
-            bindingDigest: recorded.digest,
-            // doc 81 Đợt 8 O2 — per adapter / robot: verified (+ checksum) · unsupported ("not verifiable") · unreadable.
-            programChecks: programChecksRecord(recorded.programs),
-          },
+          result: gateApprovalResult(decision.note, human ? user.id : null, def, recorded),
           finishedAt: new Date(),
         });
       }
     }
 
+    // doc 81 Đợt 9 task S2 — a run an EDGE NODE executes is never walked here (final wave F4: handed back above, in one transaction).
     // buildRunContext nạp rc.completed từ _run_steps (đã gồm gate vừa đánh dấu completed
     // ở trên + mọi bước đã xong lần trước) → execStep bỏ qua chúng khi đi lại.
     const rc = await buildRunContext(run, def, user);
@@ -3172,6 +3399,29 @@ export async function resumeRun(
     const wroteFailed = await setRunStatusUnlessAborted(runId, "failed", { finishedAt: new Date(), error: message }).catch(() => true);
     return { ok: false, enabled: true, runId, status: wroteFailed ? "failed" : "aborted", message };
   }
+}
+
+/**
+ * The result row of an APPROVED gate — ONE builder for the central walk and the edge hand-back (final wave F4), so the two can
+ * never drift: approvedBy + approvalSource "server" only for a real user (id > 0, else "system", never counts); defHash binds
+ * the approval to the definition; bindingDigest (Đợt 5 E3 / Đợt 7 I2 — null ⇒ the approval never counts, fail-closed) and the
+ * per-controller program checks (Đợt 8 O2) are the ones computed server side for this decision.
+ */
+function gateApprovalResult(
+  note: string | null | undefined,
+  approverId: number | null,
+  def: WorkflowDefinition,
+  recorded: { digest: string | null; programs: ProgramCheck[] },
+): Record<string, unknown> {
+  return {
+    approved: true,
+    note: note ?? null,
+    ...(approverId !== null ? { approvedBy: approverId } : {}),
+    approvalSource: approverId !== null ? FOE_APPROVAL_SOURCE_SERVER : FOE_APPROVAL_SOURCE_SYSTEM,
+    defHash: hashWorkflowDefinition(def),
+    bindingDigest: recorded.digest,
+    programChecks: programChecksRecord(recorded.programs),
+  };
 }
 
 /** Statuses a human/auto resume may claim (doc 80 ORC-02). */
@@ -3357,6 +3607,9 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
       if (!run || run.status !== "held") continue; // skip failed/terminal
       const ctx = (run.contextJson as Record<string, unknown>) ?? {};
       if (ctx.interrupted !== true) continue; // NEVER auto-resume a human gate
+      // doc 81 Đợt 9 task S2 — an edge run interrupted on its node waits for a person's Continue (undecidable ⇒ skipped)
+      const onEdge = await readEdgeAssignment(d, runId).catch(() => "unknown" as const);
+      if (onEdge !== null) continue;
       // doc 80 ORC-02 — resumeRun may now THROW (CONFLICT when a human resumed it first); one
       // refusal must not stop the sweep over the remaining interrupted runs.
       const res = await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, SYSTEM_FOE_USER).catch(
@@ -3407,7 +3660,16 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
       .from(orchestrationRuns)
       .where(inArray(orchestrationRuns.status, activeStatuses));
     // Lọc lại trong JS (chân lý cuối cùng) — chống mọi khác biệt where của driver.
-    const stuck = runsRows.filter((r) => activeStatuses.includes(r.status));
+    // doc 81 Đợt 9 task S2 — a run an EDGE NODE executes is not this process's to rehydrate: its walker lives on the node (a
+    // queued one waits for its claim); the node itself declares a lost walker interrupted. Undecidable ⇒ none is touched.
+    let onEdge: Set<number>;
+    try {
+      onEdge = await edgeAssignedRunIdsAmong(d, runsRows.map((r) => r.id));
+    } catch (err) {
+      console.error(`[FOE] rehydrate: which runs edge nodes execute could not be read — no run is rehydrated this time: ${(err as Error)?.message ?? err}`);
+      onEdge = new Set(runsRows.map((r) => r.id));
+    }
+    const stuck = runsRows.filter((r) => activeStatuses.includes(r.status) && !onEdge.has(r.id));
     result.scanned = stuck.length;
     const now = new Date();
     for (const run of stuck) {
@@ -4239,4 +4501,180 @@ export async function abortRun(
     // data-raw-ok: như trên — lỗi một bước trong bộ thực thi quy trình.
     return { ok: false, enabled: foeEnabled(), runId, message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 9 tasks S2 / S3 (owner decision 2026-10-12, "edge workflow execution — do it fully") — the engine side of EDGE
+// EXECUTION. The edge gateway's DATABASE_URL is the central control-plane DB, so an edge node executes THE CENTRAL RUN ROW
+// (same run id, same workflow id — mig 0370's ID mapping) with this very engine: every gate is the same code over the same
+// rows (Group R identity rule, binding digest, program checksum through the edge's own drivers, R-4-x, STOP exemptions).
+// Protocol and limits: server/services/edge/edgeExecutionCentral.ts, edgeExecutionAgent.ts, docs/EDGE_GATEWAY.md.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * doc 81 Đợt 9 final wave F6 (final review M6) — the row of a NEW run, built in ONE place for startRun and startEdgeAssignedRun
+ * (they used to build it twice "in step"):
+ *   • doc 81 Đợt 5 task E1 (item 24, option C) — an API-started run is marked in BOTH server-written places (see
+ *     foeGateApproval.FOE_API_RUN_PARAM): paramsJson is never rewritten after the INSERT; contextJson may be;
+ *   • doc 81 Đợt 7 task I3 — the version this run executes (server-written; a caller's value is replaced);
+ *   • the owner: the starting user, else the API key's holder (ownerUserId).
+ */
+function buildNewRunValues(
+  wf: { id: number; ref: string; version: number | null },
+  params: Record<string, unknown> | null | undefined,
+  user: FoeUser,
+  opts: { viaApi?: boolean; ownerUserId?: number | null } | undefined,
+) {
+  const humanStart = Number.isInteger(user.id) && user.id > 0;
+  const viaApi =
+    opts?.viaApi === true ||
+    (!humanStart && opts?.ownerUserId != null && opts.ownerUserId > 0) ||
+    runStartedViaApi({ paramsJson: params });
+  const runValues = {
+    workflowId: wf.id,
+    workflowRef: wf.ref,
+    status: "queued" as const,
+    paramsJson: { ...(params ?? {}), ...(viaApi ? { [FOE_API_RUN_PARAM]: true } : {}), [FOE_DEF_VERSIONS_PARAM]: [wf.version ?? 1] },
+    contextJson: viaApi ? { startedViaApi: true } : {},
+    startedBy: user.id || (opts?.ownerUserId != null && opts.ownerUserId > 0 ? opts.ownerUserId : null),
+    startedAt: new Date(),
+  };
+  return { viaApi, runValues };
+}
+
+/** The principal an edge-side abort (signal / run guard) is recorded under — never a person. */
+const EDGE_GUARD_ABORT_USER: FoeUser = { id: 0, role: "system", name: "edge: central abort" };
+
+/**
+ * central: create the run 'queued' + its edge assignment, atomically (startRun's checks already passed). The run row carries
+ * EXACTLY the values startRun's own insert writes (API marker, executed version, owner — one builder, buildNewRunValues) and, for an
+ * API run with an authenticated key, the key IN THE INSERT (mig 0369: the column is never written later). Nothing recordable
+ * (0370 / 0369 missing, the node gone, a DB error) ⇒ the transaction rolls back and no run exists.
+ */
+async function startEdgeAssignedRun(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  x: {
+    wf: { id: number; ref: string; version: number | null };
+    def: WorkflowDefinition;
+    params: Record<string, unknown>;
+    user: FoeUser;
+    opts: { viaApi?: boolean; ownerUserId?: number | null; apiKeyId?: number | null; edgeNodeId?: number; onStarted?: (runId: number) => void };
+    stopOnlyOut: OutOfScope;
+  },
+): Promise<StartRunResult> {
+  const { wf, def, params, user, opts } = x;
+  const { viaApi, runValues } = buildNewRunValues(wf, params, user, opts); // final wave F6 — the SAME builder as startRun
+  const apiKeyId = viaApi && typeof opts.apiKeyId === "number" && Number.isInteger(opts.apiKeyId) && opts.apiKeyId > 0 ? opts.apiKeyId : null;
+  const a = { wf, def, runValues, apiKeyId, edgeNodeId: opts.edgeNodeId as number, user, stopOnlyOut: x.stopOnlyOut, onStarted: opts.onStarted };
+  if (!Number.isInteger(a.edgeNodeId) || a.edgeNodeId <= 0) return { ok: false, enabled: true, message: "A valid edge node is required." };
+  let run: OrchestrationRun;
+  try {
+    run = await d.transaction(async (tx) => {
+      const [r] =
+        a.apiKeyId !== null
+          ? ((await tx.insert(edgeRunInsertWithApiKey).values({ ...a.runValues, startedViaApiKeyId: a.apiKeyId }).returning()) as unknown as OrchestrationRun[])
+          : await tx.insert(orchestrationRuns).values(a.runValues).returning();
+      await tx.insert(runEdgeAssignments).values({
+        runId: r.id,
+        edgeNodeId: a.edgeNodeId,
+        workflowId: a.wf.id,
+        workflowVersion: a.wf.version ?? 1,
+        defHash: hashWorkflowDefinition(a.def),
+        assignedBy: Number.isInteger(a.user.id) && a.user.id > 0 ? a.user.id : (a.runValues.startedBy ?? null),
+      });
+      return r;
+    });
+  } catch (err) {
+    // nothing was created (the transaction rolled back): 0370 / 0369 missing, the node gone, a DB error
+    console.error(`[FOE] run of "${a.wf.ref}" for edge node ${a.edgeNodeId} not created: ${(err as Error)?.message ?? err}`);
+    return { ok: false, enabled: true, message: "The run could not be handed to the edge node (edge execution unavailable) — nothing was started." };
+  }
+  try {
+    a.onStarted?.(run.id);
+  } catch {
+    /* a caller's callback never stops the run */
+  }
+  auditStopOutOfScope(a.user, a.def, run.id, "start", a.stopOnlyOut);
+  void appendRunEvent(run.id, "RUN_CREATED", { ts: Date.now(), data: { workflowRef: a.wf.ref, edgeNodeId: a.edgeNodeId } });
+  return { ok: true, enabled: true, runId: run.id, status: "queued", edgeNodeId: a.edgeNodeId };
+}
+
+/** What the edge's agent holds for the segment it claimed (the token itself never leaves the agent). */
+export interface EdgeClaim {
+  claimSeq: number;
+  claimTokenHash: string;
+  defHash: string;
+}
+
+/**
+ * EDGE: walk the CENTRAL run `runId` for the claim the agent just obtained. Refuses (nothing walked, nothing written) unless
+ * THIS process's database shows exactly that claim on that run (ID mapping: same run, same workflow, the head definition =
+ * the assigned snapshot = the one the agent checked) and the run's owner is an active user (its real role ⇒ its real scope).
+ * Then the run is walked like a resume (completed steps are skipped, an approved gate passes, an unapproved one pauses),
+ * every NON-STOP command first asking the run guard (edgeRunGuard). Returns the run status the walk ended in.
+ */
+export async function driveEdgeClaimedRun(runId: number, claim: EdgeClaim): Promise<{ ok: boolean; status?: OrchestrationRun["status"]; refused?: string }> {
+  if (!foeEnabled()) return { ok: false, refused: "FOE is disabled on this edge" };
+  const d = await db();
+  const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+  let a: Awaited<ReturnType<typeof readEdgeAssignment>>;
+  try {
+    a = await readEdgeAssignment(d, runId);
+  } catch {
+    return { ok: false, refused: "its edge assignment could not be read" };
+  }
+  const { sameDigest } = await import("../../edge/edgeNodeCredentials");
+  if (!run || !a || run.workflowId !== a.workflowId) return { ok: false, refused: "the run or its edge assignment is not in this edge's database (ID mapping)" };
+  if (a.claimSeq !== claim.claimSeq || !sameDigest(a.claimTokenHash, claim.claimTokenHash)) return { ok: false, refused: "this claim is not the current one in this edge's database" };
+  if (run.status === "aborted" || run.status === "completed" || run.status === "failed") return { ok: false, status: run.status }; // ended before the walk (e.g. aborted right after the claim)
+  if (run.status !== "running") return { ok: false, refused: `the run is ${run.status}, not running under this claim` };
+  const [wf] = await d.select(WF_CORE_COLS).from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, a.workflowId)).limit(1);
+  const def = wf?.definitionJson as WorkflowDefinition | undefined;
+  if (!def || hashWorkflowDefinition(def) !== a.defHash || claim.defHash !== a.defHash) return { ok: false, refused: "the workflow definition is not the assigned snapshot" };
+  const ownerId = run.startedBy;
+  const [owner] = typeof ownerId === "number" && ownerId > 0 ? await d.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, ownerId)).limit(1) : [];
+  if (!owner || owner.isActive === false || typeof owner.role !== "string" || !owner.role) return { ok: false, refused: "the run has no active owner on this edge" };
+  const rc = await buildRunContext(run, def, { id: owner.id, role: owner.role, name: "edge" });
+  const { readEdgeRunGuard } = await import("../../edge/edgeRunGuard");
+  rc.edgeGuard = () => readEdgeRunGuard(runId, { claimSeq: claim.claimSeq, claimTokenHash: claim.claimTokenHash });
+  const status = await driveRunFromResume(rc);
+  return { ok: status !== "failed" && status !== "aborted", status };
+}
+
+/**
+ * EDGE: central aborted `runId` after its last segment on this node ended (no walker left here) and its own sweep could not
+ * confirm some STOP. Re-sends the run's STOPs that are not confirmed through THIS process's dispatchers — the engine's abort
+ * re-send (a confirmed STOP is never sent again; refused past ABORT_RESEND_WINDOW_MS). Only for a run the database shows
+ * 'aborted': this never aborts (or touches) a run that is not.
+ */
+export async function resendStopsOfAbortedRun(runId: number, user: FoeUser): Promise<StartRunResult> {
+  let run: OrchestrationRun | undefined;
+  try {
+    [run] = await withDeadline(
+      (async () => (await db()).select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1))(),
+      STOP_DB_STEP_DEADLINE_MS,
+      `FOE edge resend run ${runId} read`,
+    );
+  } catch {
+    return { ok: false, enabled: foeEnabled(), runId, message: "DB unavailable." };
+  }
+  if (!run || run.status !== "aborted") return { ok: false, enabled: foeEnabled(), runId, status: run?.status, message: `Run ${runId} is not aborted — nothing re-sent.` };
+  return resendAbortStops(runId, run, user, null, true);
+}
+
+/**
+ * EDGE: central stopped `runId` (abort / gate rejection — learned from a protocol answer or the run guard). The walker of it
+ * in THIS process is flagged at once (no further non-STOP step; a wait wakes up), then the Đợt 6 sweep runs over its live
+ * picture: the remaining real STOP steps and due STOP compensations are SENT through this edge's dispatchers (a STOP central
+ * already confirmed sent is not sent again; one already on its way finishes). Nothing is written to the run row (central
+ * owns 'aborted'; the walker's own writes are conditional) — a run is never resurrected. No walker here ⇒ nothing to do.
+ */
+// (doc 81 Đợt 9 final wave F5 — this JSDoc sat above resendStopsOfAbortedRun's since S3; moved to its own function.)
+export async function stopLiveRunForCentralAbort(runId: number, user: FoeUser): Promise<{ live: boolean; abortStops?: AbortStopReport }> {
+  const live = liveRuns.get(runId);
+  if (!live) return { live: false };
+  live.aborting = true;
+  live.controller.abort();
+  const abortStops = await abortStopSweep(runId, undefined, live, user, null);
+  return { live: true, abortStops };
 }

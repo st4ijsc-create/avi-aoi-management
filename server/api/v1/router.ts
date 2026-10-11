@@ -42,6 +42,7 @@ import { registerPolicyRoutes } from "./policy";
 import { registerLineRoutes } from "./lines";
 import { registerOrdersLifecycleRoutes } from "./ordersLifecycle";
 import { registerErpOauthRoutes } from "./erpOauth";
+import { registerEdgeNodeRoutes } from "./edgeNodeRoutes"; // doc 81 Đợt 9 task S2
 import { mtlsGuard } from "./erpMtls";
 import { mayCuaKhoa, rangBuocMauTheoKhoa, rangBuocBanGhiTheoKhoa, nemLoiIngest } from "./ingestRangBuoc";
 import { otIngestHttpStatus } from "../../_core/otIngestRoute";
@@ -552,21 +553,36 @@ export function createV1Router(): Router {
     requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const { startRun } = await import("../../services/orchestration/foe/foeEngine");
-      const body = (req.body ?? {}) as { workflowRef?: string; params?: Record<string, unknown> };
+      const body = (req.body ?? {}) as { workflowRef?: string; params?: Record<string, unknown>; edgeNodeCode?: unknown };
       if (!body.workflowRef || typeof body.workflowRef !== "string") {
         throw new ApiHttpError(400, "bad_request", "Body field `workflowRef` is required.");
       }
+      // doc 81 Đợt 9 task S2 — `edgeNodeCode`: hand the run to that edge node (it executes the central run; central does not
+      // walk it). The node must be inside the key's factory scope — missing / outside ⇒ the SAME 404; undecidable ⇒ 503.
+      let edgeNodeId: number | undefined;
+      if (body.edgeNodeCode !== undefined) {
+        if (typeof body.edgeNodeCode !== "string" || !body.edgeNodeCode.trim()) throw new ApiHttpError(400, "bad_request", "`edgeNodeCode` must be a node code.");
+        const { resolveAssignableNode } = await import("../../services/edge/edgeExecutionCentral");
+        const n = await resolveAssignableNode(body.edgeNodeCode, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+        if (n.kind === "unverified") throw new ApiHttpError(503, "scope_unverified", "The key's factory scope could not be verified — retry.");
+        if (n.kind === "none") throw new ApiHttpError(404, "not_found", `Edge node "${body.edgeNodeCode}" not found.`);
+        edgeNodeId = n.id;
+      }
       const principal = req.apiPrincipal?.name ?? "api-key";
-      // doc 81 Đợt 4 fix round 1 (R-4-f) — the run's OWNER is the human who created this API key (when attributable);
-      // otherwise the run is owner-less and the engine refuses its OT/robot steps (FOE_GATE_REQUIRED(ownerUnknown)).
-      const { apiKeyOwnerUserId } = await import("./apiKeyOwner");
+      // doc 81 Đợt 4 fix round 1 (R-4-f) + Đợt 9 R1 — the run's OWNER is the human this API key is ISSUED TO (holder,
+      // default the creator; when attributable); otherwise the run is owner-less and the engine refuses its OT/robot steps
+      // (FOE_GATE_REQUIRED(ownerUnknown)).
+      const { apiKeyOwnerUserId, apiKeyIdOf } = await import("./apiKeyOwner");
       const ownerUserId = await apiKeyOwnerUserId(req.apiPrincipal);
-      // doc 81 Đợt 5 task E1 (item 24, option C) — viaApi: the run is marked server-side as API-started; its OT/robot steps
-      // other than a STOP are never sent (FOE_GATE_REQUIRED(apiRun)), whoever approves its gates.
+      // doc 81 Đợt 5 task E1 — viaApi: the run is marked server-side as API-started. doc 81 Đợt 9 task R2 (option A) — and the
+      // AUTHENTICATED key is recorded on the run: its OT/robot steps are sent only after a gate approved by someone who is
+      // none of {starter, the key's holder now / earlier, its creator}; STOPs as before.
       const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, {
         ownerUserId,
         viaApi: true,
+        apiKeyId: apiKeyIdOf(req.apiPrincipal),
         scope: orchestrationScopeOf(req.apiPrincipal?.tenantScope), // doc 81 Đợt 5 task E2 — a workflow outside the key's scope is "not found"
+        ...(edgeNodeId !== undefined ? { edgeNodeId } : {}), // doc 81 Đợt 9 task S2
       });
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
@@ -752,6 +768,10 @@ export function createV1Router(): Router {
       sendOk(res, result.data, 202);
     }),
   );
+
+  // ── doc 81 Đợt 9 task S2 — per-node edge EXECUTION protocol (pull / claim / progress / complete / release / interrupted),
+  // authenticated ONLY by the node's own credential (edgeNodeRoutes.requireEdgeNode — never an API key). ──
+  registerEdgeNodeRoutes(r);
 
   // ── OAuth2 client-credentials (K0+-a) — POST /oauth/token. ──────────────────
   // ADDITIVE machine-to-machine auth for ERP partners; issues a short-lived signed

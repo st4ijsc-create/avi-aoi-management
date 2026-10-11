@@ -261,7 +261,8 @@ describe("OrchestrationStudio — doc 81 Đợt 5 task E1: bước của lượt
     const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]'));
     expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["apiRun", "noGate"]);
     expect(notes[0].textContent).toMatch(/started through an API key/);
-    expect(notes[0].textContent).toMatch(/other than a STOP/);
+    // 2026-10-12 doc 81 Đợt 9 R2 (option A): apiRun now means "an API key that cannot be identified"
+    expect(notes[0].textContent).toMatch(/cannot be identified/);
     expect(notes[0].textContent).not.toBe(notes[1].textContent);
   });
 });
@@ -444,6 +445,78 @@ describe("OrchestrationStudio — doc 81 Đợt 8 O3: controller program check p
     expect(realLine.textContent).not.toMatch(/simulation/);
   });
 
+  it("★ doc 81 Đợt 9 T2 + R-9-a (4): an S7 checksum (source 's7-blockinfo') says 'per protocol documentation — not yet verified on a real device' and 'not tamper-proof'; other sources do not", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride(
+      "orchestration.getRun",
+      detail({
+        bindingDigest: BINDING_DIGEST,
+        programChecks: [
+          { target: "adapter", id: 601, label: "S7-PLC", status: "verified", checksum: "s7:sha256:" + "ab".repeat(32), source: "s7-blockinfo" },
+          { target: "adapter", id: 501, label: "SIM-PLC", status: "verified", checksum: CHECKSUM, source: "sim" },
+          { target: "adapter", id: 602, label: "S7-OFF", status: "unreadable", source: "s7", reason: "error" },
+        ],
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const [s7Line, simLine, offLine] = items();
+    expect(s7Line.textContent).toMatch(/Program verified \(checksum s7:sha256:abab/);
+    expect(s7Line.querySelector('[data-testid="program-check-s7-docs"]')?.textContent).toBe(
+      "(checksum per protocol documentation — not yet verified on a real device)",
+    );
+    // ruling R-9-a (4): said plainly — change detection, not tamper-proof
+    expect(s7Line.querySelector('[data-testid="program-check-s7-not-tamper-proof"]')?.textContent).toBe(
+      "(change detection per protocol data — not tamper-proof against an attacker with PLC write access)",
+    );
+    expect(s7Line.querySelector('[data-testid="program-check-sim"]')).toBeNull();
+    expect(simLine.querySelector('[data-testid="program-check-s7-docs"]')).toBeNull();
+    expect(simLine.querySelector('[data-testid="program-check-s7-not-tamper-proof"]')).toBeNull();
+    expect(offLine.querySelector('[data-testid="program-check-s7-docs"]')).toBeNull(); // unreadable: no "verified" line at all
+    expect(offLine.textContent).toMatch(/could not be read/);
+  });
+
+  it("★ doc 81 Đợt 9 T fix 1 (#7): an S7 adapter without the opt-in says 'verification not enabled for this adapter' (not 'cannot be verified')", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride(
+      "orchestration.getRun",
+      detail({
+        bindingDigest: BINDING_DIGEST,
+        programChecks: [
+          { target: "adapter", id: 603, label: "S7-NOOPT", status: "unsupported", source: "s7" },
+          { target: "adapter", id: 701, label: "MB-PLC", status: "unsupported", source: "modbus" },
+          { target: "robot", id: 2, label: "R2", status: "unsupported", source: "robot" },
+        ],
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const [s7, mb, robot] = items();
+    expect(s7.querySelector('[data-testid="program-check-s7-not-enabled"]')?.textContent).toBe("Program verification not enabled for this adapter");
+    expect(s7.textContent).not.toMatch(/cannot be verified/);
+    expect(mb.textContent).toMatch(/Program cannot be verified on this controller/);
+    expect(mb.querySelector('[data-testid="program-check-s7-not-enabled"]')).toBeNull();
+    expect(robot.textContent).toMatch(/Program cannot be verified on this controller/);
+  });
+
+  it("★ doc 81 Đợt 9 R-9-b: a reading served from the display-only cache is labelled as such; a fresh one is not", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride(
+      "orchestration.getRun",
+      detail({
+        bindingDigest: BINDING_DIGEST,
+        programChecks: [
+          { target: "adapter", id: 601, label: "S7-PLC", status: "verified", checksum: "s7:sha256:" + "ab".repeat(32), source: "s7-blockinfo", displayCache: { readAt: "2026-10-12T08:00:00.000Z" } },
+          { target: "adapter", id: 604, label: "S7-FRESH", status: "verified", checksum: "s7:sha256:" + "cd".repeat(32), source: "s7-blockinfo" },
+        ],
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const [cached, fresh] = items();
+    expect(cached.querySelector('[data-testid="program-check-display-cache"]')?.textContent).toMatch(
+      /^\(shown from a reading at .+ — display only; approving reads the controller again\)$/,
+    );
+    expect(fresh.querySelector('[data-testid="program-check-display-cache"]')).toBeNull();
+  });
+
   it("no program list from the server (older server / not an approver's read) ⇒ no block", () => {
     setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
     setQueryOverride("orchestration.getRun", detail({ bindingDigest: BINDING_DIGEST }));
@@ -471,5 +544,191 @@ describe("OrchestrationStudio — doc 81 Đợt 8 O3: controller program check p
     expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["programUnreadable", "staleApproval"]);
     expect(notes[0].textContent).toMatch(/program checksum of a controller/);
     expect(notes[1].textContent).toMatch(/the program in a controller it writes to was changed/);
+  });
+});
+
+describe("OrchestrationStudio — doc 81 Đợt 9 task R3: run started through an API key (option A)", () => {
+  const AWAITING = { ...run(50, "api-flow", { startedViaApi: true }, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "awaiting_confirm", currentStepId: "g1" };
+  const view = {
+    identified: true,
+    keyId: 700,
+    name: "line-integration",
+    keyPrefix: "ak_1a2b3c",
+    holder: { id: 12, name: "Holder Now" },
+    creator: { id: 10, name: "Key Creator" },
+    earlierHolders: [{ id: 13, name: "Earlier Holder" }],
+    excludedUserIds: [14, 10, 12, 13],
+  };
+  const detail = (apiKey: unknown) =>
+    makeQuery({ data: { run: AWAITING, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, apiKey, steps: [{ stepId: "g1", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "ok?" } }] } });
+
+  it("★ names the key and who it is issued to, and explains who cannot approve (holder, earlier holder, creator); not 'you' for another user", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail(view));
+    setQueryOverride("auth.me", makeQuery({ data: { id: 20, role: "supervisor", name: "Second Person" } }));
+    render(<OrchestrationStudio />);
+    const block = within(rowOf(50)).getByTestId("api-key-identity");
+    expect(block).toHaveAttribute("data-identified", "true");
+    expect(within(block).getByTestId("api-key-issued-to").textContent).toMatch(/line-integration \(ak_1a2b3c…\).*Holder Now/);
+    const why = within(block).getByTestId("api-key-excluded").textContent ?? "";
+    expect(why).toMatch(/person who started the run/);
+    for (const n of ["Holder Now", "Earlier Holder", "Key Creator"]) expect(why).toContain(n);
+    expect(within(block).queryByTestId("api-key-you-excluded")).toBeNull();
+    // the Approve button is not taken away — the server decides (a four-eyes gate refuses an excluded approver)
+    expect(within(rowOf(50)).getByRole("button", { name: /^(Approve|studio\.approve)$/i })).toBeEnabled();
+  });
+
+  it("★ the current user IS one of them (here: an earlier holder) ⇒ said plainly", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail(view));
+    setQueryOverride("auth.me", makeQuery({ data: { id: 13, role: "engineer", name: "Earlier Holder" } }));
+    render(<OrchestrationStudio />);
+    const you = within(rowOf(50)).getByTestId("api-key-you-excluded");
+    expect(you).toHaveAttribute("role", "alert");
+    expect(you.textContent).toMatch(/does not count/);
+  });
+
+  it("★ an API key that cannot be identified ⇒ red alert: its machine / robot commands are refused whoever approves", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail({ identified: false, keyId: null, name: null, keyPrefix: null, holder: null, creator: null, earlierHolders: [], excludedUserIds: [] }));
+    render(<OrchestrationStudio />);
+    const block = within(rowOf(50)).getByTestId("api-key-identity");
+    expect(block).toHaveAttribute("data-identified", "false");
+    expect(block.textContent).toMatch(/cannot be identified/);
+    expect(block.textContent).toMatch(/refused whoever approves/);
+  });
+
+  it("a run started by a user (no apiKey) ⇒ no block", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail(null));
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(50)).queryByTestId("api-key-identity")).toBeNull();
+  });
+
+  it("★ FOE_GATE_REQUIRED(approvedByKeyHolder) ⇒ its own sentence (holder / creator), different from the owner one", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "k1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(approvedByKeyHolder): command step "k1" was not sent' },
+            { stepId: "k2", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(approvedByOwner): command step "k2" was not sent' },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]'));
+    expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["approvedByKeyHolder", "approvedByOwner"]);
+    expect(notes[0].textContent).toMatch(/issued to, or by the person who created the key/);
+    expect(notes[0].textContent).not.toBe(notes[1].textContent);
+  });
+});
+
+describe("OrchestrationStudio — doc 81 Đợt 9 R fix 1: key revoked / expired now, identity unreadable", () => {
+  const AWAITING = { ...run(51, "api-flow2", { startedViaApi: true }, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "awaiting_confirm", currentStepId: "g1" };
+  const base = { identified: false, keyId: 700, name: "line-integration", keyPrefix: "ak_1a2b3c", holder: { id: 12, name: "Holder Now" }, creator: null, earlierHolders: [], excludedUserIds: [] };
+  const detail = (apiKey: unknown) =>
+    makeQuery({ data: { run: AWAITING, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, apiKey, steps: [{ stepId: "g1", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: {} }] } });
+  for (const [detailKey, re] of [["inactive", /revoked or disabled now/], ["expired", /has expired/]] as const) {
+    it(`★ key ${detailKey} ⇒ red alert naming the key: refused whoever approves until an administrator acts`, () => {
+      setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+      setQueryOverride("orchestration.getRun", detail({ ...base, refusal: "apiKeyInactive", refusalDetail: detailKey }));
+      render(<OrchestrationStudio />);
+      const block = within(rowOf(51)).getByTestId("api-key-identity");
+      expect(block).toHaveAttribute("data-refusal", "apiKeyInactive");
+      expect(block.textContent).toMatch(re);
+      expect(block.textContent).toMatch(/line-integration/);
+    });
+  }
+  it("★ identity unreadable ⇒ says so (database / migration 0369), not 'cannot be identified'", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail({ ...base, keyId: null, name: null, keyPrefix: null, holder: null, refusal: "apiIdentityUnavailable", refusalDetail: "migrationMissing" }));
+    render(<OrchestrationStudio />);
+    const block = within(rowOf(51)).getByTestId("api-key-identity");
+    expect(block).toHaveAttribute("data-refusal", "apiIdentityUnavailable");
+    expect(block.textContent).toMatch(/migration 0369/);
+  });
+  it("★ step errors apiKeyInactive / apiIdentityUnavailable ⇒ their own sentences (never the 'add a gate' one)", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "i1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(apiKeyInactive): command step "i1" was not sent' },
+            { stepId: "i2", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(apiIdentityUnavailable): command step "i2" was not sent' },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]'));
+    expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["apiKeyInactive", "apiIdentityUnavailable"]);
+    expect(notes[0].textContent).toMatch(/revoked, disabled or expired/);
+    expect(notes[1].textContent).toMatch(/could not be read/);
+    for (const n of notes) expect(n.textContent).not.toMatch(/Add a gate/);
+  });
+});
+
+describe("OrchestrationStudio — doc 81 Đợt 9 final wave: latch warning in the approval / Continue confirm + 'edge unreachable'", () => {
+  const SINCE = "2026-10-12T03:04:05.000Z";
+  const latchedHealth = (latched: unknown[]) => makeQuery({ data: { plcPoller: { state: "ok", lastPollAt: SINCE, staleConfigs: 0, configs: [], hiddenConfigs: 0, latched } } });
+  const AWAITING = { ...run(60, "latch-flow", {}, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "awaiting_confirm", currentStepId: "g1" };
+  const detail = makeQuery({ data: { run: AWAITING, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, steps: [{ stepId: "g1", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "ok?" } }] } });
+
+  it("★ R-9-e: a set e-stop latch is warned next to Approve — NON-blocking (Approve stays enabled and sends as before)", async () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail);
+    setQueryOverride("safety.sourceHealth", latchedHealth([{ code: "MB-7", since: SINCE }]));
+    render(<OrchestrationStudio />);
+    const warn = within(rowOf(60)).getByTestId("safety-latch-confirm-warning");
+    expect(warn.textContent).toMatch(/MB-7: e-stop latch first seen set at .*not reset — later short presses are NOT captured.*Warning only: this command is not blocked/);
+    const approve = within(rowOf(60)).getByRole("button", { name: /^(Approve|studio\.approve)$/i });
+    expect(approve).toBeEnabled();
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(approve);
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 60, approved: true, note: undefined, expectedStepId: "g1", expectedDefHash: DEF_HASH, expectedBindingDigest: BINDING_DIGEST });
+  });
+
+  it("no latch set ⇒ no warning", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail);
+    setQueryOverride("safety.sourceHealth", latchedHealth([]));
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(60)).queryByTestId("safety-latch-confirm-warning")).toBeNull();
+  });
+
+  it("★ F2: a run held because its edge node never claimed it shows 'edge unreachable' (badge + its own hint, not 'server restart'); Continue warns of a set latch", async () => {
+    const HELD = {
+      ...run(61, "edge-flow", { interrupted: true, interruptedFrom: "queued", interruptedBy: "edge unreachable", edgeUnreachable: true, edgeUnreachableNode: "N-LINE7" }, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }),
+      status: "held",
+    };
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [HELD] }));
+    setQueryOverride("orchestration.getRun", makeQuery({ data: { run: HELD, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, steps: [] } }));
+    setQueryOverride("safety.sourceHealth", latchedHealth([{ code: "MB-7", since: SINCE }]));
+    render(<OrchestrationStudio />);
+    const row = rowOf(61);
+    expect(within(row).getByTestId("edge-unreachable").textContent).toMatch(/edge unreachable/);
+    const hint = within(row).getByTestId("edge-unreachable-hint");
+    expect(hint.textContent).toMatch(/Edge node N-LINE7 did not claim this run in time/);
+    expect(hint.textContent).not.toMatch(/server restart/);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(within(row).getByRole("button", { name: /Continue…|studio\.continueRun/ }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByTestId("safety-latch-confirm-warning").textContent).toMatch(/MB-7/);
+  });
+
+  it("a run interrupted by a restart (no edge mark) keeps the restart hint and no badge", () => {
+    const HELD = { ...run(62, "restart-flow", { interrupted: true, interruptedFrom: "running" }, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "held" };
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [HELD] }));
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(62)).queryByTestId("edge-unreachable")).toBeNull();
+    expect(rowOf(62).textContent).toMatch(/server restart/);
   });
 });

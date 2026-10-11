@@ -664,7 +664,9 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "workflow of that ref); a workflow outside the key's scope is answered like a missing one. A run started through an " +
             "API key never sends OT / robot commands other than a STOP. `202 { runId, status, accepted }`. When the key's factory " +
             "scope cannot be verified at that moment the start is refused (`accepted: false`, no run) — retry; it never falls " +
-            "back to another namespace's workflow.",
+            "back to another namespace's workflow. doc 81 Đợt 9 S2 — optional `edgeNodeCode`: the run is handed to that edge node " +
+            "(created `queued` with its edge assignment; central never walks it; the node pulls, claims and executes it). The node " +
+            "must be in the key's factory scope — missing / outside ⇒ 404 `not_found`; undecidable ⇒ 503 `scope_unverified`.",
           requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
           responses: {
             "202": { description: "Accepted: { runId, status, accepted } (accepted=false: refused / not found — see status)" },
@@ -708,6 +710,125 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "400": { description: "Missing runId / sync failed", content: jsonErr() },
             "503": { description: "Edge runtime disabled (EDGE_RUNTIME_ENABLED)", content: jsonErr() },
             ...errResponses(),
+          },
+        },
+      },
+      "/api/v1/edge/node/pull": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node: pull the runs assigned to it (doc 81 Đợt 9 S2)",
+          description:
+            "The claimable runs of THIS node with the definition snapshot and central's binding digest, plus its current claims with `abortRequested`." +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
+          security: [{ bearerAuth: [] }],
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (claim_conflict / claim_stale / replayed / not_finished / definition_changed / binding_changed / claim_live)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migration 0370)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/runs/{runId}/claim": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node: claim a run (compare-and-set)",
+          description:
+            "Body `{ claimSeq, defHash, bindingDigest }`; answers a fresh claim token (only its SHA-256 is stored)." +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "runId", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (claim_conflict / claim_stale / replayed / not_finished / definition_changed / binding_changed / claim_live)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migration 0370)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/runs/{runId}/progress": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node: report progress (claim-bound, strictly increasing seq)",
+          description:
+            "Body `{ claimSeq, claimToken, seq, status }`; a replayed / older seq ⇒ 409 `replayed`. Answer: `abortRequested`." +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "runId", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (claim_conflict / claim_stale / replayed / not_finished / definition_changed / binding_changed / claim_live)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migration 0370)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/runs/{runId}/complete": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node: report the end of an execution segment",
+          description:
+            "Decided by the run row: a run still walking ⇒ 409 `not_finished`. Clears the claim." +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "runId", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (claim_conflict / claim_stale / replayed / not_finished / definition_changed / binding_changed / claim_live)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migration 0370)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/runs/{runId}/release": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node: give back a claimed run it will not execute",
+          description:
+            "The run goes to `held` (a person may Continue)." +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "runId", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (claim_conflict / claim_stale / replayed / not_finished / definition_changed / binding_changed / claim_live)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migration 0370)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/runs/{runId}/interrupted": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node: declare a stale claim of its own interrupted (after a restart)",
+          description:
+            "Only once the claim reported no progress for EDGE_CLAIM_STALE_MS ⇒ `held` (`compensating` ⇒ `failed`)." +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "runId", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (claim_conflict / claim_stale / replayed / not_finished / definition_changed / binding_changed / claim_live)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migration 0370)", content: jsonErr() },
           },
         },
       },

@@ -386,8 +386,13 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 O2/O4 — both dispatchers check the c
     expect(h.checksumReads).toBe(0);
     const v = await getRun(fx.runId, { bindingDigest: true, visibleTo: async () => true });
     expect(v?.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
-    expect(h.checksumReads).toBe(1);
-    expect(v?.programChecks?.find((c) => c.target === "adapter")).toMatchObject({ status: "verified", source: "sim" }); // M3
+    const shown = v?.programChecks?.find((c) => c.target === "adapter");
+    expect(shown).toMatchObject({ status: "verified", source: "sim" }); // M3
+    // doc 81 Đợt 9 R-9-b — the screen may show the reading approvedRun() took moments ago from the DISPLAY-ONLY cache
+    // (labelled); otherwise it reads the controller once. Either way: never more than one read, and a reused one says so.
+    expect(h.checksumReads).toBeLessThanOrEqual(1);
+    if (h.checksumReads === 0) expect(shown?.displayCache?.readAt).toEqual(expect.any(String));
+    else expect(shown?.displayCache).toBeUndefined();
   });
 
   for (const [what, breakIt] of [

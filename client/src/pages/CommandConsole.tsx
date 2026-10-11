@@ -40,6 +40,7 @@ import {
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { translateRobotRefusal } from "@/lib/errorCodes";
+import { SafetyLatchWarning } from "@/components/safety/SafetyLatchWarning";
 import {
   Terminal, Bot, ShieldAlert, ShieldCheck, Lock, Send, RefreshCw, AlertTriangle,
   Play, Square, Home, RotateCcw, Pause, OctagonAlert, Info,
@@ -383,6 +384,9 @@ export default function CommandConsole() {
                   )}
                 </div>
               </div>
+
+              {/* doc 81 Đợt 9 final wave (R-9-e) — a set e-stop LATCH on a PLC guarding this robot: non-blocking warning; never for a STOP */}
+              <SafetyLatchWarning target={{ robotId: robot.id }} isStop={command === "stop" || command === "abort"} enabled={dialogOpen} />
 
               {/* Typed confirm */}
               <div className="space-y-1.5">

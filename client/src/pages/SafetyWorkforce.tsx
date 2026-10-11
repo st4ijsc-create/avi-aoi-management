@@ -1335,16 +1335,38 @@ function SafetySourcePanel({
   const poller = data.plcPoller;
   // doc 81 Đợt 8 final wave NF-3 — a PLC whose link is offline / unknown (or whose monitoring is stale) is BLIND even while the
   // poller itself is alive: listed per PLC, and the line is an alert (never "● alive" while one is blind).
+  // doc 81 Đợt 9 final wave — an offline link whose PLC HEARTBEAT is frozen / unreadable is named as such ("heartbeat stale —
+  // program stopped?"): the remedy differs from a cable / network fault. Display only (the link is still offline, still an alert).
   const blindPlcs = (poller?.configs ?? [])
-    .map((c) => ({ code: c.code, kind: c.stale ? ("stale" as const) : c.link === "online" ? null : c.link === "offline" ? ("offline" as const) : ("unknown" as const) }))
-    .filter((c): c is { code: string; kind: "stale" | "offline" | "unknown" } => c.kind !== null);
+    .map((c) => ({
+      code: c.code,
+      kind: c.stale
+        ? ("stale" as const)
+        : c.link === "online"
+          ? null
+          : c.link === "offline"
+            ? (c as { blindReason?: string | null }).blindReason === "heartbeat_stale"
+              ? ("heartbeat_stale" as const)
+              : ("offline" as const)
+            : ("unknown" as const),
+    }))
+    .filter((c): c is { code: string; kind: "stale" | "offline" | "unknown" | "heartbeat_stale" } => c.kind !== null);
+  // doc 81 Đợt 9 U1/U2 — PLCs read by polling (short presses may be missed); the panel says so per PLC. Final wave (M10) — a row
+  // whose read mode was never reported (null: an older writer, or 0371 applied after start) is shown as UNKNOWN, never as nothing.
+  const pollingPlcs = (poller?.configs ?? []).filter((c) => c.readMode === "poll" || c.readMode === "poll_fallback" || c.readMode === null);
+  // doc 81 Đợt 9 U fix 1 (I3, ruling R-9-e) — a Modbus e-stop LATCH left set: later short presses are NOT captured until it is
+  // reset, and a non-blocking warning "e-stop latch first seen set at T, not reset" (U fix 2 N4: T = first OBSERVATION, not the
+  // press time; actuation is not gated by it; STOP always allowed).
+  const latchedPlcs = poller?.latched ?? [];
   const pollerBad = poller?.state === "stale" || poller?.state === "unknown" || (poller?.state === "ok" && blindPlcs.length > 0);
-  const linkText = (k: "stale" | "offline" | "unknown") =>
+  const linkText = (k: "stale" | "offline" | "unknown" | "heartbeat_stale") =>
     k === "stale"
       ? t("safety.source.poller.linkStale", "stale")
       : k === "offline"
         ? t("safety.source.poller.linkOffline", "offline")
-        : t("safety.source.poller.linkUnknown", "unknown");
+        : k === "heartbeat_stale"
+          ? t("safety.source.poller.linkHeartbeatStale", "offline — PLC heartbeat stale (program stopped?)")
+          : t("safety.source.poller.linkUnknown", "unknown");
   const pollerText = (() => {
     switch (poller?.state) {
       case "ok":
@@ -1408,6 +1430,31 @@ function SafetySourcePanel({
               ))}
             </div>
           )}
+          {/* doc 81 Đợt 9 U1/U2 — a PLC read by POLLING (Modbus without a latch, or OPC-UA whose subscription was refused) can
+              miss an e-stop pressed and released between two reads: said per PLC, never hidden. */}
+          {latchedPlcs.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-x-2 font-normal text-amber-700 dark:text-amber-400">
+              {latchedPlcs.map((c) => (
+                <span key={c.code} data-testid="safety-source-poller-latch" className="font-mono">
+                  {c.code}: {t("safety.source.poller.latchSet", "latch first seen set at {{time}} — further short presses are NOT captured until it is reset", { time: new Date(c.since).toLocaleTimeString() })}
+                </span>
+              ))}
+            </div>
+          )}
+          {pollingPlcs.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-x-2 font-normal text-amber-700 dark:text-amber-400">
+              {pollingPlcs.map((c) => (
+                <span key={c.code} data-testid="safety-source-poller-mode" data-mode={c.readMode ?? "unknown"} className="font-mono">
+                  {c.code}:{" "}
+                  {c.readMode === "poll_fallback"
+                    ? t("safety.source.poller.modePollFallback", "polling — OPC-UA subscription unavailable (short presses may be missed)")
+                    : c.readMode === null
+                      ? t("safety.source.poller.modeUnknown", "read mode not reported yet (unknown — short presses may be missed)")
+                      : t("safety.source.poller.modePolling", "polling (short presses may be missed)")}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div data-testid="safety-source-rule" className="text-muted-foreground">
@@ -1428,6 +1475,15 @@ function SafetySourcePanel({
           );
         })}
       </div>
+      {latchedPlcs.length > 0 && (
+        <div data-testid="safety-source-latch-warning" className="text-amber-700 dark:text-amber-400">
+          {latchedPlcs.map((c) => (
+            <div key={c.code}>
+              {t("safety.source.latchWarning", "⚠ {{code}}: e-stop latch first seen set at {{time}}, not reset — warning only: real writes / motion are not blocked by it; STOP is always allowed", { code: c.code, time: new Date(c.since).toLocaleString() })}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
         <span data-testid="safety-source-vision">
           {t("safety.source.vision", "Vision")} {onOff(data.vision.enabled)} · {data.vision.calibrations} {t("safety.source.cameras", "camera(s)")}

@@ -169,6 +169,20 @@ export interface SafetyPlcStatusMap {
   zoneOccupied?: SafetyPlcTagRef;
   resetRequired?: SafetyPlcTagRef;
   muting?: SafetyPlcTagRef;
+  /**
+   * doc 81 Đợt 9 U2 — OPTIONAL e-stop LATCH bit (real backends; meant for Modbus). The PLC program SETS it on every e-stop
+   * press and keeps it set until the PLC program / an operator clears it — so a press shorter than one poll interval is
+   * still seen. The background poller only READS it (never writes / clears it — L-7). Covered by the approval digest.
+   * Not read by the actuation preflight (it judges the live estop tag only). jsonb field — no migration.
+   */
+  estopLatch?: SafetyPlcTagRef;
+  /**
+   * doc 81 Đợt 9 U fix 1 (review I4) — OPTIONAL PLC HEARTBEAT tag (a counter / toggle the PLC program changes continuously).
+   * A value frozen AT THE SOURCE (PLC program stopped, gateway cache) is invisible to any read or subscription; a heartbeat
+   * that has not changed between two reads more than maxSilentMs apart (default 10 s, [1000, 60000]) ⇒ the config is
+   * UNDECIDABLE ⇒ "plc_offline" (blind, alarmed). READ only. Covered by the approval digest. jsonb field — no migration.
+   */
+  heartbeat?: { address?: string; dataType?: "bool" | "int" | "float"; maxSilentMs?: number };
   /** Sim-only scripted status stream (each entry = one snapshot; adapter cycles). */
   simScript?: SafetyPlcStatusSnapshot[];
   /**

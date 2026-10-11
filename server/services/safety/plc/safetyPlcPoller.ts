@@ -31,6 +31,12 @@
  * is refused (fail closed); a STOP never reads (pinned STOP skips the preflight). Sharing one connection would couple the
  * preflight's fail-closed path to the poller's lifecycle, so it is not done; instead check each PLC's max client count
  * before enabling the poller (≥ 2 clients needed, + any HMI / SCADA clients) or raise the poll interval.
+ * Short presses (doc 81 Đợt 9 U1/U2): OPC-UA configs are read through a QUEUED subscription (safetyPlcOpcuaSubscription.ts —
+ * every value change becomes its own read, so a press + release inside one interval give both events; overflow / sequence
+ * gaps ⇒ one "plc_events_lost" marker; a dead / silent subscription ⇒ "plc_offline" + re-subscribe; refused ⇒ VISIBLE
+ * "poll_fallback"). Modbus configs may map an e-stop LATCH bit (U2). The read mode of each config is persisted
+ * (safety_plc_poll_state.readMode, migration 0371) and shown on the Safety page: "poll" / "poll_fallback" ⇒ "polling
+ * (short presses may be missed)".
  * Durable-state writes (final wave N-R6): ≤ one upsert per config per SAFETY_PLC_STATE_REFRESH_MS (5 s) in steady state,
  * immediately on a change; the record-time config lookup reads ONE row.
  * ════════════════════════════════════════════════════════════════════════════
@@ -43,12 +49,14 @@ import {
   listPlcConfigs,
   loadEnabledPlcConfig,
   type SafetyPlcBackendReader,
+  type SafetyPlcCheckedRead,
 } from "./safetyPlcAdapter";
 import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEventInput, type RecordResult, type SafetyEventType } from "../safetyAuditService";
 import { isPlcConfigTrustApproved, plcTrustMaterial, plcTrustDigest } from "./safetyPlcTrust";
 import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLeader";
 import { redactEndpoint, safeBackendLabel } from "./plcRedact";
-import { pgPollStateStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollStateStore, type PollLink } from "./safetyPlcPollerHealth";
+import { OpcuaSubscriptionSafetyPlcBackend, monotonicNow, type SafetyPlcBatch, type SafetyPlcReadMode } from "./safetyPlcOpcuaSubscription";
+import { pgPollStateStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollStateStore, type PollLink, type BlindReason } from "./safetyPlcPollerHealth";
 
 /** Flag — default OFF. (Defined once in the health leaf module so the source-health panel reads the SAME predicate.) */
 export { safetyPlcPollerEnabled } from "./safetyPlcPollerHealth";
@@ -74,6 +82,12 @@ export const SAFETY_PLC_ONLINE_CONFIRM_MAX = 32;
 
 export type PlcFlag = keyof SafetyPlcStatusSnapshot;
 export const PLC_FLAGS: readonly PlcFlag[] = ["estop", "zoneOccupied", "resetRequired", "muting"];
+/**
+ * doc 81 Đợt 9 U2 — what the poller tracks per config: the four status flags plus the optional e-stop LATCH bit (real
+ * backends that map statusMap.estopLatch). The latch is processed AFTER estop (order matters, see applyTransitions).
+ */
+export type PollFlag = PlcFlag | "estopLatch";
+export const POLL_FLAGS: readonly PollFlag[] = [...PLC_FLAGS, "estopLatch"];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -116,11 +130,11 @@ async function ensureOtDriversRegistered(): Promise<void> {
   await import("../../ot");
 }
 
-/** The flags a config actually monitors (sim: all four; real: those with a mapped tag address). */
-function monitoredFlags(cfg: SafetyPlcConfig): PlcFlag[] {
+/** The flags a config actually monitors (sim: all four; real: those with a mapped tag address, incl. the U2 latch). */
+function monitoredFlags(cfg: SafetyPlcConfig): PollFlag[] {
   if (cfg.backend === "sim") return [...PLC_FLAGS];
   const map = (cfg.statusMap ?? {}) as SafetyPlcStatusMap;
-  return PLC_FLAGS.filter((f) => typeof map[f]?.address === "string" && map[f]!.address!.length > 0);
+  return POLL_FLAGS.filter((f) => typeof map[f]?.address === "string" && map[f]!.address!.length > 0);
 }
 
 /**
@@ -133,6 +147,8 @@ export function defaultBackendFor(cfg: SafetyPlcConfig, timeoutMs: number): { ba
   if (cfg.backend === "modbus" || cfg.backend === "opcua") {
     if (!cfg.endpoint) return { backend: null, reason: "endpoint missing" };
     if (monitoredFlags(cfg).length === 0) return { backend: null, reason: "no status tag mapped" };
+    // doc 81 Đợt 9 U1 — OPC-UA: a queued SUBSCRIPTION (falls back to this same poll read, visibly, when refused)
+    if (cfg.backend === "opcua") return { backend: new OpcuaSubscriptionSafetyPlcBackend(cfg.endpoint, map, timeoutMs, { intervalMs: pollIntervalMsFor(cfg) }) };
     return { backend: new OtReadSafetyPlcBackend(cfg.backend, cfg.endpoint, map, timeoutMs) };
   }
   return { backend: null, reason: `unsupported backend "${String(cfg.backend).slice(0, 32)}"` };
@@ -160,8 +176,8 @@ const EVENT_NOTE: Partial<Record<SafetyEventType, string>> = {
 
 /** One read's outcome. `decided` maps each monitored flag to an observed value, or lists it as unreadable. */
 export type PollRead =
-  | { kind: "decided"; flags: Partial<Record<PlcFlag, boolean>>; unreadable: PlcFlag[] }
-  | { kind: "undecidable"; reason: string };
+  | { kind: "decided"; flags: Partial<Record<PollFlag, boolean>>; unreadable: PollFlag[]; heartbeat?: SafetyPlcCheckedRead["heartbeat"] }
+  | { kind: "undecidable"; reason: string; /** final wave — DISPLAY cause (the PLC heartbeat, not the link) */ cause?: "heartbeat" };
 
 export interface PollerDeps {
   loadConfigs: () => Promise<SafetyPlcConfig[]>;
@@ -186,6 +202,11 @@ export interface PollerDeps {
   state: PollStateStore;
   /** fix scan 2 — bound of one event insert / approval lookup (ms). */
   recordTimeoutMs: number;
+  /**
+   * doc 81 Đợt 9 U fix 2 (re-review N1) — the MONOTONIC clock of local liveness timers (the heartbeat silence). Default
+   * performance.now: a wall-clock step can neither suspend nor stretch it. A test seam, monotonic by contract.
+   */
+  monoNow: () => number;
 }
 
 /** fix scan 2 — a transition waiting to be recorded (re-baseline captured at detection). */
@@ -199,7 +220,7 @@ interface QueuedEvent {
 /** fix scan 3 — the edge state (what transitions are computed against). */
 interface EdgeState {
   link: PollLink;
-  flags: Partial<Record<PlcFlag, boolean>>;
+  flags: Partial<Record<PollFlag, boolean>>;
 }
 
 interface ConfigState {
@@ -208,7 +229,7 @@ interface ConfigState {
   backend: SafetyPlcBackendReader | null;
   reason?: string;
   intervalMs: number;
-  monitored: PlcFlag[];
+  monitored: PollFlag[];
   failStreak: number;
   reads: number;
   /** Polls that ended undecidable (observability). */
@@ -223,7 +244,7 @@ interface ConfigState {
   /** N2 — the link state last RECORDED ("unknown" = never decided yet). */
   link: "unknown" | "online" | "offline";
   /** N2 — the flag values last RECORDED (edge detection; undefined = never decided). */
-  flags: Partial<Record<PlcFlag, boolean>>;
+  flags: Partial<Record<PollFlag, boolean>>;
   /** N3 — consecutive fully decided reads while offline, and when this config last went offline (bounded). */
   goodStreak: number;
   offlineAt: number[];
@@ -254,6 +275,24 @@ interface ConfigState {
   /** final wave N-R6 — content of the last SUCCESSFUL durable save and when (local ms); null ⇒ save at the next poll. */
   savedKey: string | null;
   savedAt: number | null;
+  /** doc 81 Đợt 9 U1/U2 — how this config is read (persisted; shown on the Safety page). null = no backend. */
+  readMode: SafetyPlcReadMode | null;
+  /** doc 81 Đợt 9 U1 — why the pending events-lost marker is due (subscription overflow / gap), if not the queue bound. */
+  lostReason: string | null;
+  /** doc 81 Đợt 9 U fix 1 (I3) — since when the e-stop latch is set (local ms; persisted on the DB clock); null = not set. */
+  latchSetAt: number | null;
+  /**
+   * doc 81 Đợt 9 U fix 1 (I4) — the PLC heartbeat: last value seen (JSON) and when it last CHANGED (MONOTONIC ms — U fix 2 N1).
+   * Not persisted: after a restart the FIRST read is the baseline (U fix 2 N5) and the very next read must show a change once
+   * maxSilentMs has passed.
+   */
+  hbValue: string | null;
+  hbChangedAt: number | null;
+  /**
+   * doc 81 Đợt 9 final wave — WHY the link is offline, for DISPLAY only ("heartbeat_stale": the heartbeat tag unreadable /
+   * frozen — program stopped?). Persisted with the row while offline; never read by any health / alarm / actuation decision.
+   */
+  blindReason: BlindReason | null;
 }
 
 export interface PollerConfigSnapshot {
@@ -270,6 +309,8 @@ export interface PollerConfigSnapshot {
   reads: number;
   undecidable: number;
   lastRead: PollRead | null;
+  /** doc 81 Đợt 9 U1/U2 */
+  readMode: SafetyPlcReadMode | null;
 }
 
 /** N fix 1 (M1) — the read identity: backend kind, endpoint and the normalised tag map (the trust digest's own material). */
@@ -290,6 +331,68 @@ export function safeReason(e: unknown): string {
 
 // redactEndpoint moved to the leaf module plcRedact.ts (N fix 1, M3: shared with the manual readSafetyPlc path).
 export { redactEndpoint } from "./plcRedact";
+
+/** doc 81 Đợt 9 U fix 1 (I4) — the config maps a PLC heartbeat tag (real backends only). */
+function heartbeatMapped(cfg: SafetyPlcConfig): boolean {
+  if (cfg.backend !== "modbus" && cfg.backend !== "opcua") return false;
+  const a = (cfg.statusMap as SafetyPlcStatusMap | null)?.heartbeat?.address;
+  return typeof a === "string" && a.length > 0;
+}
+
+/**
+ * The heartbeat silence bound: statusMap.heartbeat.maxSilentMs (default 10 s, [1000, 60000]). U fix 2 (re-review N5): no
+ * longer stretched to 3 poll intervals — a heartbeat (a counter) that did not change between two reads more than
+ * maxSilentMs apart is frozen, so after a restart (baseline = the first read) a frozen heartbeat goes offline at the first
+ * read after maxSilentMs (was up to 3 × the interval, 180 s at 60 s). A toggle sampled at a multiple of its period can look
+ * frozen — use a counter (guide §6.2).
+ */
+export function heartbeatMaxSilentMs(cfg: SafetyPlcConfig, _intervalMs?: number): number {
+  const own = (cfg.statusMap as SafetyPlcStatusMap | null)?.heartbeat?.maxSilentMs;
+  return typeof own === "number" && Number.isFinite(own) ? clamp(Math.round(own), 1000, 60_000) : 10_000;
+}
+
+/** doc 81 Đợt 9 U1 — a backend that delivers queued value changes (the OPC-UA subscription backend). */
+function isBatchBackend(b: SafetyPlcBackendReader): b is SafetyPlcBackendReader & { readBatch(): Promise<SafetyPlcBatch>; readMode(): "subscription" | "poll_fallback" } {
+  return typeof (b as { readBatch?: unknown }).readBatch === "function";
+}
+
+/** doc 81 Đợt 9 U1/U2 — the read mode before the first read: sim / poll (+ latch) / the subscription backend's own. */
+function initialReadMode(st: { backend: SafetyPlcBackendReader | null; monitored: readonly PollFlag[] }): SafetyPlcReadMode | null {
+  if (!st.backend) return null;
+  if (st.backend.kind === "sim") return "sim";
+  if (isBatchBackend(st.backend)) return st.backend.readMode();
+  return st.monitored.includes("estopLatch") ? "poll_latch" : "poll";
+}
+
+/** Release a backend's resources (a subscription session); bounded inside the backend; never throws / rejects. */
+function closeBackend(b: SafetyPlcBackendReader | null | undefined): Promise<void> {
+  const c = (b as { close?: () => Promise<void> } | null | undefined)?.close;
+  if (typeof c !== "function") return Promise.resolve();
+  return Promise.resolve()
+    .then(() => c.call(b))
+    .catch(() => undefined);
+}
+
+/**
+ * A checked read of a REAL backend → a poll read over the monitored flags: a flag missing, unparseable or reported
+ * unreadable is UNREADABLE (never "clear"); the U2 latch is decided only from the read's own latch answer.
+ */
+export function checkedToPollRead(r: SafetyPlcCheckedRead | null | undefined, monitored: readonly PollFlag[]): PollRead {
+  const flags: Partial<Record<PollFlag, boolean>> = {};
+  const unreadable: PollFlag[] = [];
+  for (const f of monitored) {
+    if (f === "estopLatch") {
+      const v = r?.latch?.estopLatch;
+      if (!r?.latch || r.latch.unreadable || typeof v !== "boolean") unreadable.push(f);
+      else flags.estopLatch = v;
+      continue;
+    }
+    const v = r?.status?.[f];
+    if (r?.unreadable?.includes(f) || typeof v !== "boolean") unreadable.push(f);
+    else flags[f] = v;
+  }
+  return r?.heartbeat ? { kind: "decided", flags, unreadable, heartbeat: r.heartbeat } : { kind: "decided", flags, unreadable };
+}
 
 export class SafetyPlcPoller {
   private readonly deps: PollerDeps;
@@ -312,6 +415,7 @@ export class SafetyPlcPoller {
       leader: deps.leader ?? pgPollerLeaderGate(),
       state: deps.state ?? pgPollStateStore(),
       recordTimeoutMs: deps.recordTimeoutMs ?? SAFETY_PLC_RECORD_TIMEOUT_MS,
+      monoNow: deps.monoNow ?? monotonicNow,
     };
   }
 
@@ -404,9 +508,11 @@ export class SafetyPlcPoller {
       // final wave N-R3 — a REPLACED state (identity change) never drops its unrecorded transitions silently: they are
       // counted into the new state's events-lost marker (recorded first, plain door, attributed to the current target).
       const pendingOld = old != null && !carry ? old.queue.length + old.lostEvents : 0;
-      if (old) this.dropState(cfg.id);
+      // U1 — a carried backend (an open subscription) is reused, unless its publishing interval no longer matches the config
+      const reuseBackend = carry && !(old!.backend && isBatchBackend(old!.backend) && old!.intervalMs !== pollIntervalMsFor(cfg));
+      if (old) this.dropState(cfg.id, undefined, reuseBackend);
       const timeout = readTimeoutMs();
-      const { backend, reason } = carry ? { backend: old!.backend, reason: old!.reason } : this.deps.backendFor(cfg, timeout);
+      const { backend, reason } = reuseBackend ? { backend: old!.backend, reason: old!.reason } : this.deps.backendFor(cfg, timeout);
       const st: ConfigState = {
         cfg,
         fingerprint: fp,
@@ -440,7 +546,14 @@ export class SafetyPlcPoller {
         unrecordedSince: null,
         savedKey: null,
         savedAt: null,
+        readMode: null,
+        lostReason: null,
+        latchSetAt: null,
+        hbValue: null,
+        hbChangedAt: null,
+        blindReason: null,
       };
+      st.readMode = initialReadMode(st);
       if (carry && old) {
         st.link = old.link;
         st.flags = { ...old.flags };
@@ -449,7 +562,7 @@ export class SafetyPlcPoller {
         st.failStreak = old.failStreak;
         st.recordFailStreak = old.recordFailStreak;
         st.rebaseline = old.rebaseline;
-        st.pending = old.pending;
+        if (reuseBackend) st.pending = old.pending; // a replaced backend's late read is not this backend's
         st.queue = old.queue; // fix scan 2 — queued transitions survive the edit (never dropped)
         st.loaded = old.loaded;
         st.confirmed = { link: old.confirmed.link, flags: { ...old.confirmed.flags } };
@@ -458,6 +571,12 @@ export class SafetyPlcPoller {
         st.lastAttemptAt = old.lastAttemptAt;
         st.lastOkAt = old.lastOkAt;
         st.unrecordedSince = old.unrecordedSince; // N-R1 — the wait carries with the queue
+        if (reuseBackend) st.readMode = old.readMode;
+        st.lostReason = old.lostReason;
+        st.latchSetAt = old.latchSetAt;
+        st.hbValue = old.hbValue;
+        st.hbChangedAt = old.hbChangedAt;
+        st.blindReason = old.blindReason;
         if (old.busy) {
           const b: Promise<void> = old.busy.then(() => undefined, () => undefined).finally(() => {
             if (st.busy === b) st.busy = null;
@@ -482,11 +601,12 @@ export class SafetyPlcPoller {
    * state is still recovered: the next leader / a re-enabled config continues from the DURABLE confirmed edge, which never
    * advanced past an unrecorded transition, so the current trip / release is re-detected and recorded.
    */
-  private dropState(id: number, why?: "leadership" | "removed" | "stopped"): void {
+  private dropState(id: number, why?: "leadership" | "removed" | "stopped", keepBackend = false): void {
     const st = this.states.get(id);
     if (st?.timer) clearTimeout(st.timer);
     this.states.delete(id);
     if (st && why) this.markDropped(st, why);
+    if (st && !keepBackend) void closeBackend(st.backend);
   }
 
   private markDropped(st: ConfigState, why: "leadership" | "removed" | "stopped"): void {
@@ -540,6 +660,7 @@ export class SafetyPlcPoller {
               st.confirmed = { link: row.link, flags: { ...row.flags } };
               st.link = row.link;
               st.flags = { ...row.flags };
+              if (row.flags.estopLatch === true) st.latchSetAt = row.latchSetAt ?? Date.now(); // U fix 1 (I3) — survives a restart
             }
             st.loaded = true;
           } catch (e) {
@@ -549,12 +670,19 @@ export class SafetyPlcPoller {
           }
         }
         st.lastAttemptAt = Date.now(); // health: the chain is alive (persisted below)
-        const read = await this.readOnce(st);
+        const reads = await this.readOnce(st);
         if (this.states.get(id) !== st) return; // config changed / removed / poller stopped meanwhile
-        st.lastRead = read;
-        st.failStreak = read.kind === "undecidable" ? st.failStreak + 1 : 0;
-        if (read.kind === "undecidable") st.undecidable += 1;
-        await this.applyTransitions(id, st, read);
+        // doc 81 Đợt 9 U1 — a subscription delivers every queued value change as its own read, IN ORDER: each one is a
+        // transition candidate (press + release inside one interval ⇒ both events); all are queued, then drained once.
+        const pollAt = this.deps.monoNow(); // U fix 2 (N1) — the heartbeat silence runs on the monotonic clock
+        for (const raw of reads) {
+          const read = this.applyHeartbeat(st, raw, pollAt); // U fix 1 (I4) — a frozen PLC heartbeat ⇒ undecidable
+          st.lastRead = read;
+          st.failStreak = read.kind === "undecidable" ? st.failStreak + 1 : 0;
+          if (read.kind === "undecidable") st.undecidable += 1;
+          await this.applyTransitions(id, st, read, false);
+        }
+        await this.drain(id, st);
         await this.saveDurable(id, st);
       } catch (e) {
         this.warnLimited(`tick:${id}`, `[SafetyPLC] poll of config ${id} failed: ${safeReason(e)}`);
@@ -578,9 +706,12 @@ export class SafetyPlcPoller {
    *         online — M2); zoneOccupied →true "zone_intrusion" (guard / light curtain); resetRequired →true "reset_required";
    *         muting →true "muting_active" (N fix 1, M6). Other changes are committed silently. An unreadable flag keeps its old value.
    */
-  private async applyTransitions(id: number, st: ConfigState, read: PollRead): Promise<void> {
+  private async applyTransitions(id: number, st: ConfigState, read: PollRead, drainNow = true): Promise<void> {
     const fullyDecided = read.kind === "decided" && read.unreadable.length === 0;
     if (fullyDecided) st.lastOkAt = Date.now();
+    // final wave — the DISPLAY reason of the latest undecidable read (heartbeat frozen / unreadable ⇒ "heartbeat_stale"); any other
+    // cause or a fully decided read clears it. Display only: the link transitions below are unchanged.
+    st.blindReason = !fullyDecided && read.kind === "undecidable" && read.cause === "heartbeat" ? "heartbeat_stale" : null;
     if (!fullyDecided) {
       st.goodStreak = 0;
       if (st.link !== "offline") {
@@ -602,10 +733,20 @@ export class SafetyPlcPoller {
       st.link = "online";
     }
     if (read.kind === "decided") {
-      for (const flag of PLC_FLAGS) {
+      const estopBefore = st.flags.estop; // U2 — was the press already seen live (previous state)?
+      for (const flag of POLL_FLAGS) {
         const now = read.flags[flag];
         if (typeof now !== "boolean") continue;
         const was = st.flags[flag];
+        if (flag === "estopLatch") {
+          st.flags.estopLatch = now;
+          // U fix 1 (I3, R-9-e) — while the latch is set, further short presses are NOT captured (it only rises once): remembered
+          // (persisted, shown on the Safety page with a non-blocking "e-stop latch first seen set at T, not reset" warning — T is the first OBSERVATION)
+          if (now && was !== true) st.latchSetAt = Date.now();
+          else if (!now) st.latchSetAt = null;
+          if (now && was !== true) this.latchRose(st, read, estopBefore);
+          continue; // a falling latch (cleared PLC-side / by an operator) is committed silently
+        }
         let ev: SafetyEventType | null = null;
         if (now && was !== true) ev = FLAG_RISE_EVENT[flag];
         else if (!now && was === true && flag === "estop") {
@@ -619,11 +760,33 @@ export class SafetyPlcPoller {
       // M1 — the re-baseline ends with the first FULLY decided read (its events were queued as re-baseline = plain door).
       if (fullyDecided) st.rebaseline = false;
     }
-    await this.drain(id, st);
+    if (drainNow) await this.drain(id, st);
+  }
+
+  /**
+   * doc 81 Đợt 9 U2 — the PLC's e-stop LATCH rose (false / unknown → true). The PLC program sets it on every press and holds
+   * it until it is cleared PLC-side / by an operator; the server only reads it. If the press was never seen live (estop not
+   * true in the previous state nor in this read), it happened BETWEEN two reads: record the press ("estop", transition
+   * "latched" — a real press, trusted like a live one) and, when the live estop tag reads released now, the release too
+   * (only while the link is online — M2; otherwise held, reported once online). A press already seen live adds nothing.
+   * Without a mapped / decided live estop tag only the press is recorded.
+   */
+  private latchRose(st: ConfigState, read: Extract<PollRead, { kind: "decided" }>, estopBefore: boolean | undefined): void {
+    const live = read.flags.estop;
+    if (estopBefore === true || live === true) return;
+    const prev = st.flags.estop;
+    st.flags.estop = true;
+    this.enqueue(st, "estop", { transition: "latched", flag: "estopLatch" });
+    if (live === false && st.link === "online") {
+      st.flags.estop = false;
+      this.enqueue(st, "estop_released", { transition: "released", flag: "estopLatch" });
+    } else if (live !== false) {
+      st.flags.estop = prev; // no live tag to compare with: the live state stays what it was
+    } // live false but not online ⇒ estop stays true here: the release is reported once the link is online (M2)
   }
 
   /** Queue one transition event (bounded: the OLDEST is dropped and counted beyond SAFETY_PLC_EVENT_QUEUE_MAX). */
-  private enqueue(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): void {
+  private enqueue(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PollFlag; reason?: string }): void {
     st.queue.push({ input: this.eventInput(st, eventType, info), rebaseline: st.rebaseline, after: { link: st.link, flags: { ...st.flags } } });
     st.unrecordedSince ??= Date.now(); // N-R1 — the wait starts with the first unrecorded transition
     while (st.queue.length > SAFETY_PLC_EVENT_QUEUE_MAX) {
@@ -632,7 +795,7 @@ export class SafetyPlcPoller {
     }
   }
 
-  private eventInput(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): RecordSafetyEventInput {
+  private eventInput(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PollFlag; reason?: string }): RecordSafetyEventInput {
     const cfg = st.cfg;
     const isSim = cfg.backend === "sim" || st.backend?.kind === "sim";
     const source = isSim ? "sim" : "plc";
@@ -648,7 +811,7 @@ export class SafetyPlcPoller {
       outcome: "logged_only",
       isNearMiss: false,
       humanPosition: { plcConfigId: cfg.id, plcFlag: info.flag ?? null, transition: info.transition, backend: st.backend?.kind ?? null, source, poller: true, detectedAt: new Date().toISOString() },
-      notes: `${EVENT_NOTE[eventType] ?? eventType}${info.reason ? ` — ${redactEndpoint(info.reason, cfg.endpoint)}` : ""} [source ${source}, PLC "${cfg.code}", backend ${label}, background poller, READ-ONLY]`,
+      notes: `${EVENT_NOTE[eventType] ?? eventType}${info.flag === "estopLatch" ? " — captured by the PLC's e-stop LATCH bit (the press happened between two reads; the latch is cleared PLC-side / by an operator, never by the server)" : ""}${info.reason ? ` — ${redactEndpoint(info.reason, cfg.endpoint)}` : ""} [source ${source}, PLC "${cfg.code}", backend ${label}, background poller, READ-ONLY]`,
       scope: cfg.scope ?? null,
       corporateCode: cfg.corporateCode ?? null,
       factoryId: cfg.factoryId ?? null,
@@ -672,9 +835,12 @@ export class SafetyPlcPoller {
     if (st.lostEvents > 0) {
       const n = st.lostEvents;
       const marker = this.eventInput(st, "plc_events_lost", { transition: "lost" });
-      marker.notes = `${n} safety-PLC transition event(s) of PLC "${st.cfg.code}" were LOST before they could be recorded (queue bound ${SAFETY_PLC_EVENT_QUEUE_MAX} exceeded while events could not be recorded, or the config's endpoint / tags / target changed meanwhile). The events below are the most recent ones. [background poller, READ-ONLY]`;
+      marker.notes = st.lostReason
+        ? `${n} safety-PLC value change(s) / transition event(s) of PLC "${st.cfg.code}" were LOST: ${st.lostReason}. The current state is re-detected; the events below are the ones observed. [background poller, READ-ONLY]`
+        : `${n} safety-PLC transition event(s) of PLC "${st.cfg.code}" were LOST before they could be recorded (queue bound ${SAFETY_PLC_EVENT_QUEUE_MAX} exceeded while events could not be recorded, or the config's endpoint / tags / target changed meanwhile). The events below are the most recent ones. [background poller, READ-ONLY]`;
       if (!(await this.recordOne(id, st, { input: marker, rebaseline: true, after: st.confirmed }))) return;
       st.lostEvents -= n;
+      if (st.lostEvents === 0) st.lostReason = null;
     }
     while (st.queue.length > 0) {
       if (this.states.get(id) !== st) return;
@@ -704,11 +870,16 @@ export class SafetyPlcPoller {
       // final wave N-R1 — health must not read "ok" while observed transitions are not recorded
       unrecordedSince: pending > 0 ? (st.unrecordedSince ?? Date.now()) : null,
       unrecordedCount: pending,
+      readMode: st.readMode, // doc 81 Đợt 9 U1/U2 — shown on the Safety page
+      // U fix 1 (I3) — the CONFIRMED (recorded) latch state: set ⇒ since when
+      latchSetAt: st.confirmed.flags.estopLatch === true ? (st.latchSetAt ?? Date.now()) : null,
+      // final wave — why the CONFIRMED offline link is blind (display only); online / unknown ⇒ none
+      blindReason: st.confirmed.link === "offline" ? st.blindReason : null,
     };
     // final wave N-R6 — the row is written when its CONTENT changes (edge, interval, identity, unrecorded wait / count, first
     // decided read) and otherwise at most every SAFETY_PLC_STATE_REFRESH_MS as the liveness proof (the stale bound is ≥ 60 s):
     // ≤ 1 upsert / 5 s / config in steady state instead of one per poll. A failed save forces the next one.
-    const key = JSON.stringify([row.link, row.flags, row.intervalMs, row.identityDigest, row.unrecordedSince, row.unrecordedCount, row.lastOkAt != null]);
+    const key = JSON.stringify([row.link, row.flags, row.intervalMs, row.identityDigest, row.unrecordedSince, row.unrecordedCount, row.lastOkAt != null, row.readMode, row.latchSetAt != null, row.blindReason]);
     const now = Date.now();
     if (st.savedKey === key && st.savedAt != null && now - st.savedAt >= 0 && now - st.savedAt < SAFETY_PLC_STATE_REFRESH_MS) return;
     try {
@@ -779,21 +950,29 @@ export class SafetyPlcPoller {
     }
   }
 
-  /** ONE bounded read. Never throws; anything it cannot decide is `undecidable`. */
-  private async readOnce(st: ConfigState): Promise<PollRead> {
-    if (!st.backend) return { kind: "undecidable", reason: st.reason ?? "no backend" };
-    if (st.pending) return { kind: "undecidable", reason: "previous read still pending (PLC not answering)" };
+  /**
+   * ONE bounded read (≥ 1 poll read: a subscription backend returns every queued value change, in order). Never throws;
+   * anything it cannot decide is `undecidable`.
+   */
+  private async readOnce(st: ConfigState): Promise<PollRead[]> {
+    if (!st.backend) return [{ kind: "undecidable", reason: st.reason ?? "no backend" }];
+    if (st.pending) return [{ kind: "undecidable", reason: "previous read still pending (PLC not answering)" }];
     const backend = st.backend;
     st.reads += 1;
-    let inner: Promise<PollRead>;
+    let inner: Promise<PollRead[]>;
     try {
-      inner = backend.kind === "sim" ? backend.read().then((s) => this.decideSim(s)) : this.readReal(backend, st);
+      inner =
+        backend.kind === "sim"
+          ? backend.read().then((s) => [this.decideSim(s)])
+          : isBatchBackend(backend)
+            ? backend.readBatch().then((b) => this.batchReads(st, b))
+            : this.readReal(backend, st).then((r) => [r]);
     } catch (e) {
-      return { kind: "undecidable", reason: `read failed: ${safeReason(e)}` };
+      return [{ kind: "undecidable", reason: `read failed: ${safeReason(e)}` }];
     }
     const settled = inner.then(
-      (r) => r,
-      (e): PollRead => ({ kind: "undecidable", reason: `read failed: ${safeReason(e)}` }),
+      (r) => (r.length ? r : [{ kind: "undecidable", reason: "empty read" } as PollRead]),
+      (e): PollRead[] => [{ kind: "undecidable", reason: `read failed: ${safeReason(e)}` }],
     );
     st.pending = settled;
     void settled.finally(() => {
@@ -801,8 +980,8 @@ export class SafetyPlcPoller {
     });
     const bound = readTimeoutMs();
     let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<PollRead>((r) => {
-      timer = setTimeout(() => r({ kind: "undecidable", reason: `read timed out after ${bound} ms` }), bound);
+    const timeout = new Promise<PollRead[]>((r) => {
+      timer = setTimeout(() => r([{ kind: "undecidable", reason: `read timed out after ${bound} ms` }]), bound);
     });
     try {
       return await Promise.race([settled, timeout]);
@@ -811,23 +990,56 @@ export class SafetyPlcPoller {
     }
   }
 
+  /**
+   * doc 81 Đợt 9 U1 — a subscription batch → poll reads (in order). Lost value changes (OPC-UA overflow bit, sequence gap,
+   * buffer bound) ⇒ counted into the events-lost marker (recorded first, plain door); the read mode is updated (visible).
+   */
+  private batchReads(st: ConfigState, b: SafetyPlcBatch): PollRead[] {
+    st.readMode = b.mode;
+    if (b.mode === "poll_fallback" && b.modeReason) this.warnLimited(`mode:${st.cfg.id}`, `[SafetyPLC] config ${st.cfg.id}: OPC-UA subscription NOT in use — polling (short presses may be missed): ${redactEndpoint(b.modeReason, st.cfg.endpoint)}`);
+    if (b.lost > 0) {
+      st.lostEvents += b.lost;
+      st.lostReason = "the PLC's OPC-UA subscription reported lost value changes (server queue overflow bit, notification sequence gap or buffer bound)";
+      st.unrecordedSince ??= Date.now();
+    }
+    return b.reads.map((r): PollRead => ("error" in r ? { kind: "undecidable", reason: r.error } : checkedToPollRead(r, st.monitored)));
+  }
+
   private async readReal(backend: SafetyPlcBackendReader, st: ConfigState): Promise<PollRead> {
     if (typeof backend.readChecked !== "function") return { kind: "undecidable", reason: "backend cannot report unreadable tags" };
-    const r = await backend.readChecked();
-    const flags: Partial<Record<PlcFlag, boolean>> = {};
-    const unreadable: PlcFlag[] = [];
-    for (const f of st.monitored) {
-      const v = r?.status?.[f];
-      if (r?.unreadable?.includes(f) || typeof v !== "boolean") unreadable.push(f);
-      else flags[f] = v;
+    const withLatch = st.monitored.includes("estopLatch");
+    const withHeartbeat = heartbeatMapped(st.cfg);
+    const r = await backend.readChecked(withLatch || withHeartbeat ? { withLatch, withHeartbeat } : undefined);
+    return checkedToPollRead(r, st.monitored);
+  }
+
+  /**
+   * doc 81 Đợt 9 U fix 1 (review I4) — the optional PLC HEARTBEAT tag (statusMap.heartbeat). A value frozen AT THE SOURCE
+   * (PLC program stopped, gateway cache) is invisible to any read or subscription; the heartbeat must keep changing.
+   * Unreadable heartbeat, or no change for heartbeatMaxSilentMs ⇒ this read is UNDECIDABLE (⇒ "plc_offline", never ok /
+   * released; health shows the PLC blind). A subscription batch counts the changes it saw (a toggle flipping an even number of
+   * times between two polls still counts). Not mapped ⇒ the read is returned unchanged.
+   */
+  private applyHeartbeat(st: ConfigState, read: PollRead, at: number): PollRead {
+    if (read.kind !== "decided" || !heartbeatMapped(st.cfg)) return read;
+    const hb = read.heartbeat;
+    if (!hb || hb.unreadable || hb.value === undefined) return { kind: "undecidable", reason: "PLC heartbeat tag unreadable", cause: "heartbeat" };
+    const v = JSON.stringify(hb.value);
+    if (st.hbChangedAt == null || v !== st.hbValue || (hb.changes ?? 0) > 0) {
+      st.hbValue = v;
+      st.hbChangedAt = at;
+      return read;
     }
-    return { kind: "decided", flags, unreadable };
+    const silent = at - st.hbChangedAt;
+    const bound = heartbeatMaxSilentMs(st.cfg, st.intervalMs);
+    if (silent > bound) return { kind: "undecidable", reason: `PLC heartbeat tag unchanged for ${Math.round(silent / 1000)} s (bound ${Math.round(bound / 1000)} s) — values may be frozen at the source`, cause: "heartbeat" };
+    return read;
   }
 
   /** Sim: an absent flag is clear (sim semantics); a present non-boolean is a PARSE ERROR ⇒ undecidable (N3). */
   private decideSim(s: SafetyPlcStatusSnapshot): PollRead {
     if (s == null || typeof s !== "object") return { kind: "undecidable", reason: "parse error: sim status is not an object" };
-    const flags: Partial<Record<PlcFlag, boolean>> = {};
+    const flags: Partial<Record<PollFlag, boolean>> = {};
     for (const f of PLC_FLAGS) {
       const v: unknown = s[f];
       if (v === undefined) flags[f] = false;
@@ -849,24 +1061,26 @@ export class SafetyPlcPoller {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = null;
     const busy: Promise<unknown>[] = [];
+    const closing: Promise<void>[] = [];
     for (const st of this.states.values()) {
       if (st.timer) clearTimeout(st.timer);
       st.timer = null;
       if (st.busy) busy.push(st.busy);
       this.markDropped(st, "stopped"); // N-R3
+      closing.push(closeBackend(st.backend)); // U1 — release a subscription session (awaited below, bounded)
     }
     this.states.clear();
     this.warnedAt.clear();
-    if (busy.length) {
+    if (busy.length || closing.length) {
       let t: NodeJS.Timeout | undefined;
-      await Promise.race([Promise.allSettled(busy), new Promise((r) => (t = setTimeout(r, readTimeoutMs() + 500)))]);
+      await Promise.race([Promise.allSettled([...busy, ...closing]), new Promise((r) => (t = setTimeout(r, readTimeoutMs() + 500)))]);
       clearTimeout(t);
     }
   }
 
   snapshot(): PollerConfigSnapshot[] {
     return [...this.states.values()]
-      .map((st) => ({ id: st.cfg.id, code: st.cfg.code, intervalMs: st.intervalMs, failStreak: st.failStreak, recordFailStreak: st.recordFailStreak, lastAttemptAt: st.lastAttemptAt, lastOkAt: st.lastOkAt, queued: st.queue.length, reads: st.reads, undecidable: st.undecidable, lastRead: st.lastRead }))
+      .map((st) => ({ id: st.cfg.id, code: st.cfg.code, intervalMs: st.intervalMs, failStreak: st.failStreak, recordFailStreak: st.recordFailStreak, lastAttemptAt: st.lastAttemptAt, lastOkAt: st.lastOkAt, queued: st.queue.length, reads: st.reads, undecidable: st.undecidable, lastRead: st.lastRead, readMode: st.readMode }))
       .sort((a, b) => a.id - b.id);
   }
 

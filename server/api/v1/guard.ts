@@ -56,6 +56,9 @@ const CRITICAL_V1_PATHS: RegExp[] = [
   /^\/equipment\/[^/]+\/commands$/,
   /^\/orchestration\/runs$/,
   /^\/edge\/sync$/,
+  // doc 81 Đợt 9 task S2 — the per-node edge execution protocol: an edge must keep reporting (and LEARNING of a central
+  // abort — L-7) whatever the licence state; its own credential is the hard gate.
+  /^\/edge\/node\//,
   /^\/oauth\/token$/,
 ];
 

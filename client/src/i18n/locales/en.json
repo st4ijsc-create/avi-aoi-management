@@ -3863,6 +3863,8 @@
       "safetyPlcConfig": "safety-PLC configuration"
     },
     "operation": {
+      "updateApiKey": "update the API key",
+      "changeApiKeyHolder": "change who the API key is issued to",
       "softwareStop": "send the software stop",
       "clearRobotMotionLock": "clear the robot's motion lock",
       "deployBuild": "deploy the program build",
@@ -4025,6 +4027,7 @@
       "rejectSafetyPlcConfig": "reject safety-PLC configuration"
     },
     "field": {
+      "holderUserId": "the user the key is issued to (an existing, active user)",
       "settingKey": "Setting key",
       "uiPrefs": "interface preferences",
       "shiftConfigId": "shift (shiftConfigId)",
@@ -4135,6 +4138,7 @@
       "assigneeUserId": "assignee"
     },
     "feature": {
+      "apiKeyHolder": "API key holder record (database migration 0369)",
       "uiPrefs": "interface preference sync",
       "webIngest": "web content ingestion",
       "robotAnomalyDetection": "robot anomaly detection",
@@ -11872,6 +11876,11 @@
     "spcTotalStations": "Total Stations"
   },
   "studio": {
+    "gateRequiredKeyInactive": "Not sent: the API key that started this run is revoked, disabled or expired now. Its machine and robot commands other than a STOP are refused until an administrator re-activates (or extends) the key.",
+    "gateRequiredIdentityUnavailable": "Not sent: the API key identity of this run could not be read (database error, or database migration 0369 not applied), so it cannot be checked that the approver is not the key's holder. Retry once the database is reachable.",
+    "apiKeyInactive": "Started via API key {{key}}, which is revoked or disabled now: its machine and robot commands other than a STOP are refused whoever approves, until an administrator re-activates it.",
+    "apiKeyExpired": "Started via API key {{key}}, which has expired: its machine and robot commands other than a STOP are refused whoever approves, until an administrator extends it.",
+    "apiKeyIdentityUnavailable": "The API key identity of this run could not be read (database error, or database migration 0369 not applied): its machine and robot commands other than a STOP are refused for now.",
     "whenToUse": "When to use — design multi-machine workflows visually and dry-run them on the twin before deploying. For a single-device program use the Engineering Workspace.",
     "title": "Workflow Studio",
     "subtitle": "Visually author multi-machine workflows, simulate on the digital twin, then deploy & run",
@@ -11989,15 +11998,25 @@
     "abortStopsPending": "{{count}} STOP step(s) handed to the machine, answer not received yet — see the run's steps.",
     "rejectHint": "Reject: the run is aborted. The remaining non-STOP steps are skipped; if the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.",
     "gateRequiredOwnerApproved": "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.",
+    "gateRequiredKeyHolder": "Not sent: this run was started through an API key and its approval gate was approved by the person the key is (or was) issued to, or by the person who created the key, which does not count. Have another user approve the gate of a new run.",
+    "apiKeyNoHolder": "nobody (no holder — refused)",
+    "apiKeyUnidentified": "Started via an API key that cannot be identified (started before the key-holder record existed, the key was deleted, or the key has no holder): its machine and robot commands other than a STOP are refused whoever approves.",
+    "apiKeyStartedVia": "Started via API key {{key}}, issued to {{holder}}.",
+    "apiKeyExcludedExplain": "Its machine and robot commands are sent only after a gate approved by someone other than the person who started the run, the person the key is issued to (now or earlier) and the person who created the key ({{names}}).",
+    "apiKeyYouExcluded": "You are one of them: your approval does not count for this run's machine or robot commands (a four-eyes gate refuses it). Ask another user to approve.",
     "gateRequiredStale": "Not sent: after the gate was approved, the workflow was redeployed or the adapter, tag or robot configuration its commands use was changed, or the program in a controller it writes to was changed, so that approval does not cover what would be sent now. Start a new run and have the gate approved again.",
-    "gateRequiredOwnerUnknown": "Not sent: this run has no known owner (started by the system or by an API key with no creating user), so a separate approval cannot be checked. Start the run as a user.",
-    "gateRequiredApiRun": "Not sent: this run was started through an API key. A run started through an API key never sends machine or robot commands other than a STOP, because the person holding the key cannot be told apart from the approver. Start the run as a user in the Studio.",
+    "gateRequiredOwnerUnknown": "Not sent: this run has no known owner (started by the system, or by an API key that is issued to nobody active), so a separate approval cannot be checked. Start the run as a user.",
+    "gateRequiredApiRun": "Not sent: this run was started through an API key that cannot be identified (started before the key-holder record existed, the key was deleted, or a copy of the run without its key), so it cannot be checked that the approver is not the key's holder. Start a new run through the key, or start it as a user in the Studio.",
     "gateRequiredProgramUnreadable": "Not sent: the program checksum of a controller this run writes to could not be read, so it cannot be checked that the program is still the one that was approved. Check the controller connection and start a new run.",
     "programChecksTitle": "Controller programs covered by this approval",
     "programTargetAdapter": "Adapter {{label}}",
     "programTargetRobot": "Robot {{label}}",
     "programVerified": "Program verified (checksum {{checksum}})",
     "programSimulation": "(simulation — not a real controller)",
+    "programS7PerProtocolDocs": "(checksum per protocol documentation — not yet verified on a real device)",
+    "programS7NotTamperProof": "(change detection per protocol data — not tamper-proof against an attacker with PLC write access)",
+    "programS7NotEnabled": "Program verification not enabled for this adapter",
+    "programDisplayCache": "(shown from a reading at {{time}} — display only; approving reads the controller again)",
     "programUnverifiable": "Program cannot be verified on this controller",
     "programUnreadable": "Program checksum could not be read — approval is not possible until it can (check the controller connection).",
     "approverRolesLabel": "Approver roles",
@@ -12084,6 +12103,8 @@
     "fourEyesHint": "The user who started the run cannot approve this gate (admin included).",
     "interruptedRuns": "Interrupted",
     "interruptedHint": "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.",
+    "edgeUnreachable": "edge unreachable",
+    "edgeUnreachableHint": "Edge node {{node}} did not claim this run in time (unreachable, or its checks keep refusing it). Continue re-queues it for that node; Cancel run aborts it.",
     "continueRun": "Continue…",
     "cancelRun": "Cancel run",
     "continueRunTitle": "Continue run #{{id}}?",
@@ -14139,6 +14160,7 @@
     "recognitionFailed": "Couldn't recognize your voice. Please try again."
   },
   "apiKeys": {
+    "holderInactive": "{{name}} — deactivated: machine / robot commands (other than STOP) of orchestration runs started with this key are refused",
     "title": "API Keys",
     "subtitle": "Scoped access keys for the Unified Machine API (/api/v1)",
     "noPermission": "You do not have permission to manage API keys.",
@@ -14175,6 +14197,16 @@
     "toastRevoked": "Key revoked",
     "toastDeleted": "Key deleted",
     "colDataScope": "Data scope",
+    "colIssuedTo": "Issued to",
+    "holderNotRecorded": "Not recorded",
+    "holderNone": "Nobody — machine / robot commands (other than STOP) of orchestration runs started with this key are refused",
+    "changeHolder": "Change who the key is issued to",
+    "changeHolderAdminOnly": "Only an administrator can change who a key is issued to",
+    "changeHolderTitle": "Change who the key is issued to",
+    "changeHolderDesc": "The person a key is issued to is responsible for it. An orchestration run started with this key sends machine / robot commands only after a gate approved by someone OTHER than the key's holder (now or earlier), its creator and the person who started the run. Changing the holder does NOT change the key's secret — if the key really changes hands, revoke it and create a new one. Every change is recorded.",
+    "fieldHolder": "Issued to *",
+    "fieldHolderReason": "Reason *",
+    "toastHolderChanged": "Key holder changed",
     "fieldDataScope": "DATA scope (what the key can SEE) *",
     "scopeUndeclared": "Undeclared — the key CANNOT read any figures (bi:read / export:read are denied)",
     "scopeFactory": "One factory — the key only sees data from the selected factory",
@@ -17720,8 +17752,15 @@
         "okBlind": "⚠ polling, but {{n}} PLC(s) offline / unknown — their trips are NOT being observed",
         "linkOffline": "offline",
         "linkUnknown": "unknown",
-        "linkStale": "stale"
-      }
+        "linkStale": "stale",
+        "modePolling": "polling (short presses may be missed)",
+        "modePollFallback": "polling — OPC-UA subscription unavailable (short presses may be missed)",
+        "latchSet": "latch first seen set at {{time}} — further short presses are NOT captured until it is reset",
+        "linkHeartbeatStale": "offline — PLC heartbeat stale (program stopped?)",
+        "modeUnknown": "read mode not reported yet (unknown — short presses may be missed)"
+      },
+      "latchWarning": "⚠ {{code}}: e-stop latch first seen set at {{time}}, not reset — warning only: real writes / motion are not blocked by it; STOP is always allowed",
+      "latchConfirm": "⚠ {{code}}: e-stop latch first seen set at {{time}}, not reset — later short presses are NOT captured until it is reset. Warning only: this command is not blocked by it."
     },
     "advisoryChip": "Advisory — not a SIS",
     "flag": {

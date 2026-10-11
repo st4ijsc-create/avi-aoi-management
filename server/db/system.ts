@@ -85,8 +85,14 @@ export async function createAuditLog(data: {
   ipAddress?: string | null;
   userAgent?: string | null;
   status?: 'success' | 'failure';
-}): Promise<{ id: number }> {
-  const db = await getDb();
+},
+  /**
+   * doc 81 Đợt 9 R fix scan — an open transaction to write the row IN (its rollback removes the row; its failure fails the
+   * caller's transaction). Omitted ⇒ the shared connection, as before.
+   */
+  executor?: { insert: (...a: any[]) => any },
+): Promise<{ id: number }> {
+  const db = executor ?? (await getDb());
   if (!db) throw new DbUnavailableError();
 
   const values = catTheoTranCot(auditLogs, {

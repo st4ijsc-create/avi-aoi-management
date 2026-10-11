@@ -57,6 +57,7 @@ import {
 } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { readRobotEnabledForMotion } from "./robotEnabledGate"; // final wave R-4-x
+import { persistedMotionLockCheckRequired, readPersistedMotionLock } from "./robotSharedMotionLockGate"; // Đợt 9 final wave F1
 import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
@@ -794,6 +795,24 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
       const why = enabled === false ? "robot is disabled (robots.isEnabled = false)" : `robot enabled state could not be read (${enabled.error})`;
       const jobId = await record(input, "rejected", { reasonCode: ROBOT_DISABLED_REASON_CODE }, `${ROBOT_DISABLED_REASON_CODE}: ${why} — motion refused before any driver call; a STOP is still sent`);
       return { ok: false, status: "rejected", jobId, error: ROBOT_DISABLED_REASON_CODE };
+    }
+    // doc 81 Đợt 9 final wave F1 — on an EDGE that executes runs, the motion lock another process (central) persisted counts too:
+    // a robot_motion_locks row ⇒ motion refused; unreadable (DB down / timeout, bounded) ⇒ refused (fail-closed). STOP exempt (L-7).
+    if (persistedMotionLockCheckRequired()) {
+      const saved = await readPersistedMotionLock(input.robotId);
+      if (!("locked" in saved) || saved.locked) {
+        const why =
+          "error" in saved
+            ? `the persisted motion lock could not be read (${saved.error})`
+            : `a persisted motion lock is set (${saved.reasonCode} since ${saved.since}, generation ${saved.generation}) — set by central or by this edge`;
+        const jobId = await record(
+          input,
+          "rejected",
+          { reasonCode: MOTION_LOCKED_REASON_CODE, persistedMotionLock: "error" in saved ? { unreadable: saved.error } : saved },
+          `MOTION_LOCKED: ${why} — motion refused before any driver call; a confirmed STOP or robot.clearMotionLock on the process holding the lock clears it`,
+        );
+        return { ok: false, status: "rejected", jobId, error: "MOTION_LOCKED" };
+      }
     }
   }
 

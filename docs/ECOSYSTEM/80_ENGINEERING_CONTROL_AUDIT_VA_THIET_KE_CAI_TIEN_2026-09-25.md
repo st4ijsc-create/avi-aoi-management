@@ -365,3 +365,7 @@ Dời nội dung về đúng màn (Recipes · Vision › Thu ảnh · Sản xu�
 ## 22. Đợt 8 (2026-10-11) — xem doc 81 §16
 
 Bộ đọc nền safety-PLC (chỉ đọc, cờ tắt, ghi bền trước, sức khoẻ từ DB) + duyệt hai người cho cấu hình PLC thật (mig 0368); checksum chương trình bộ điều khiển trong duyệt (OpenPLC không hỗ trợ — chỉ mô phỏng); sheet IDE/IR/POU lên FlyoutHost; dọn test đỏ trong module. **Bộ đọc giữ tắt — thử bench trước (doc 81 §16).**
+
+## 23. Đợt 9 (2026-10-12) — xem doc 81 §17
+
+Danh tính người cầm khoá API (mig 0369), edge chạy workflow có khoá node (mig 0370, cờ tắt), checksum S7 theo tài liệu, OPC-UA subscription + bit chốt Modbus + tin cậy tiêu thụ một lần (mig 0371). **Edge chưa bật được ngoài vùng tin cậy trung tâm (edge vẫn giữ đăng nhập DB) — doc 81 §17.**

@@ -6,6 +6,9 @@
  *
  * Oracles: the events captured at the record seam (unit part), and — with the REAL safetyAuditService (DB insert + socket
  * mocked at their seams) — the rules engine's own predicate judged at emit time.
+ * Re-pinned 2026-10-12 (doc 81 Đợt 9 U3 — trust = a DURABLE row written with the event, consumed once): "safety-critical AT
+ * EMIT" now means "the trust row exists when the event is emitted" (store seam: an in-memory stand-in for safety_event_trust);
+ * the rules engine's consume is asserted once on the trusted estop.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { SafetyPlcConfig, SafetyPlcStatusSnapshot } from "../../../../drizzle/schema";
@@ -14,21 +17,23 @@ const E = vi.hoisted(() => ({
   emitted: [] as Array<Record<string, unknown>>,
   atEmit: [] as boolean[],
   nextId: 7000,
-  judge: null as null | ((e: Record<string, unknown>) => boolean),
+  trust: new Map<number, { origin: string; eventType: string; digest: string; consumed: boolean }>(),
 }));
-vi.mock("../../../db/connection", () => ({
-  getDb: vi.fn(async () => ({
+vi.mock("../../../db/connection", () => {
+  const db: Record<string, unknown> = {
     insert: () => ({
       values: (v: Record<string, unknown>) => ({
         returning: async () => [{ id: E.nextId++, createdAt: new Date(), robotId: null, lineId: null, stationId: null, ...v }],
       }),
     }),
-  })),
-}));
+  };
+  db.transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(db); // Đợt 9 U3 — event + trust row in one tx
+  return { getDb: vi.fn(async () => db) };
+});
 vi.mock("../../../_core/socket", () => ({
   emitSafetyEvent: vi.fn((e: Record<string, unknown>) => {
     E.emitted.push(e);
-    E.atEmit.push(E.judge ? E.judge(e) : false);
+    E.atEmit.push(E.trust.get(e.id as number)?.consumed === false); // Đợt 9 U3 — a consumable trust row exists at emit
   }),
 }));
 
@@ -45,11 +50,21 @@ import { SafetyPlcPoller } from "./safetyPlcPoller";
 import { startOrchestration, stopOrchestration } from "../../orchestration/rulesEngine";
 import { eventBus, EventTypes } from "../../../_core/eventBus";
 import { OtReadSafetyPlcBackend, SimSafetyPlcBackend, type SafetyPlcBackendReader, type SafetyPlcCheckedRead } from "./safetyPlcAdapter";
-import { isSafetyCriticalSafetyEvent } from "../../orchestration/rulesEngine";
-import { _resetTrustedSafetyMarksForTests, TRUSTED_ORIGIN_EVENT_TYPES } from "../trustedSafetyOrigin";
+import { consumeSafetyCriticalTrust } from "../../orchestration/rulesEngine";
+import { _setTrustedEventStoreForTests, TRUSTED_ORIGIN_EVENT_TYPES } from "../trustedSafetyOrigin";
 import type { RecordSafetyEventInput } from "../safetyAuditService";
 
-E.judge = isSafetyCriticalSafetyEvent;
+_setTrustedEventStoreForTests({
+  async mark(_tx, r) {
+    E.trust.set(r.eventId, { origin: r.origin, eventType: r.eventType, digest: r.digest, consumed: false });
+  },
+  async consume(id, digest) {
+    const r = E.trust.get(id);
+    if (!r || r.consumed || r.digest !== digest) return null;
+    r.consumed = true;
+    return { origin: r.origin, eventType: r.eventType };
+  },
+});
 
 function cfg(id: number, over: Partial<SafetyPlcConfig> = {}): SafetyPlcConfig {
   return {
@@ -115,7 +130,7 @@ let log: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   E.emitted.length = 0;
   E.atEmit.length = 0;
-  _resetTrustedSafetyMarksForTests();
+  E.trust.clear();
   process.env.SAFETY_AUDIT_ENABLED = "true";
   warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   log = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -300,6 +315,10 @@ describe("doc 81 Đợt 8 N2 — with the REAL safetyAuditService: which notices
       plc_online: false,
     });
     expect(E.emitted.every((e) => e.detectedBy === "plc")).toBe(true);
+    // Đợt 9 U3 — the rules engine's verdict consumes the trust exactly once
+    const estop = E.emitted.find((e) => e.eventType === "estop")!;
+    expect(await consumeSafetyCriticalTrust(estop)).toBe(true);
+    expect(await consumeSafetyCriticalTrust(estop)).toBe(false);
   });
 
   it("★ sim e-stop through the REAL service ⇒ NOT safety-critical", async () => {

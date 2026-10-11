@@ -10,6 +10,13 @@
  * STOPs (L-7): a robot abort and an OT stop of an API run still go out exactly as before (engine side).
  *
  * DB = the shared FakeDb; OT/robot dispatchers are counters; `isStopCommandType` is the REAL one.
+ *
+ * 2026-10-12 doc 81 Đợt 9 task R2 (owner decision: OPTION A replaces option C) — every run started here carries NO recorded
+ * API key (startRun without `apiKeyId`, the FakeDb has no orchestration_runs."startedViaApiKeyId"): exactly the runs that
+ * stay refused under option A (an API run whose key cannot be identified ⇒ apiRun — runs started before mig 0369, master /
+ * OAuth principals, edge copies). These cases therefore keep measuring the fail-closed half of the rule. The identified
+ * half (holder / creator / starter refused, a second person accepted): foeApiKeyHolder.dot9.test.ts (+ the _test DB suite
+ * foeApiKeyHolderDispatchers.dot9.db.test.ts).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";

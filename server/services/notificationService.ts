@@ -90,7 +90,7 @@ export interface NotificationPayload {
  * read cannot drop it. Only SERVER code sets this argument; it is never taken from the payload, and the stored
  * `metadata.safetyCritical` marker is written only here (a payload claiming it has the marker removed).
  * Callers — the ONLY ones (ruling R-5-f): commandDispatcher raiseStopUnverifiedAlarm (B3 "STOP not confirmed") and
- * orchestration rulesEngine onSafetyEvent for the explicit allow-list isSafetyCriticalSafetyEvent.
+ * orchestration rulesEngine onSafetyEvent for the explicit allow-list consumeSafetyCriticalTrust (Đợt 9 U3: durable trust, consumed once).
  * Fix 1 (R-5-f) + fix scan (R-5-h) — the BYPASS is throttled per recipient and `dedupKey` = the caller's OCCURRENCE
  * identity (type, machine, event / command id): at most once per SAFETY_CRITICAL_DEDUP_MS (60 s). A repeat of the SAME
  * occurrence inside the window is still delivered, as a NORMAL notice (the recipient's preferences apply) — never

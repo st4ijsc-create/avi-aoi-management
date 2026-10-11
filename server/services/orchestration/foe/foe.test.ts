@@ -171,6 +171,11 @@ const fakeDb = {
     };
     return upd;
   },
+  // doc 81 Đợt 9 final wave F4 — the edge hand-back of an approval is one transaction; this in-memory fake runs the callback on
+  // itself (no rollback modelled — the atomicity is measured on the real DB: edgeExecution.fw.dot9fw.db.test.ts).
+  transaction(fn: (tx: unknown) => unknown) {
+    return Promise.resolve().then(() => fn(fakeDb));
+  },
 };
 
 vi.mock("../../../db/connection", () => ({
@@ -781,6 +786,43 @@ describe("W4-17 durable execution", () => {
     expect(runById(rHeld)!.status).toBe("held");
     expect((runById(rHeld)!.contextJson as any).interrupted).toBeUndefined();
     expect(runById(rDone)!.status).toBe("completed");
+  });
+
+  // doc 81 Đợt 9 task S2 — a run an EDGE NODE executes is not central's to rehydrate (its walker lives on the node; a queued one
+  // waits for its claim) and an approval / Continue of it never walks it here: the gate is recorded, the run goes back to 'queued'.
+  it("★ Đợt 9 S2: rehydrate leaves runs assigned to an edge node alone (queued / running)", async () => {
+    const rEdgeQ = seedRun("queued");
+    const rEdgeR = seedRun("running");
+    const rCentral = seedRun("running");
+    rows("orchestration_run_edge_assignments").push({ runId: rEdgeQ, edgeNodeId: 9 }, { runId: rEdgeR, edgeNodeId: 9 });
+    const res = await rehydrateInterruptedRuns();
+    expect(res.runIds).toEqual([rCentral]);
+    expect(runById(rEdgeQ)!.status).toBe("queued");
+    expect(runById(rEdgeR)!.status).toBe("running");
+    expect(runById(rCentral)!.status).toBe("held");
+  });
+
+  it("★ Đợt 9 S2: approving the gate of an edge-executed run records it and hands the run back to its node ('queued'), never walks it here", async () => {
+    const def: WorkflowDefinition = {
+      ref: "edge-approve",
+      name: "EdgeApprove",
+      steps: [
+        { id: "g", type: "hitl_gate", prompt: "Approve?" },
+        { id: "after", type: "command", machineId: 1, command: "start" },
+      ],
+    };
+    await deployWorkflow(def, USER);
+    const started = await startRun("edge-approve", {}, USER);
+    expect(started.status).toBe("awaiting_confirm"); // (walked here only to reach the gate — in production the NODE walks it)
+    rows("orchestration_run_edge_assignments").push({ runId: started.runId!, edgeNodeId: 9 });
+    otDispatchMock.mockClear();
+    const res = await resumeRun(started.runId!, { approved: true }, APPROVER);
+    expect(res).toMatchObject({ ok: true, status: "queued", edgeNodeId: 9 });
+    expect(runById(started.runId!)!.status).toBe("queued");
+    expect(otDispatchMock).not.toHaveBeenCalled();
+    const gate = rows("orchestration_run_steps").find((r) => r.runId === started.runId && r.stepId === "g");
+    expect(gate?.status).toBe("completed");
+    expect(gate?.resultJson).toMatchObject({ approved: true, approvedBy: APPROVER.id, approvalSource: "server" });
   });
 
   it("rehydrate no-op khi không có run đang chạy", async () => {

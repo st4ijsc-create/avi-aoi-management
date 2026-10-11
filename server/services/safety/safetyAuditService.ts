@@ -25,7 +25,7 @@ import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { safetyEvents, type SafetyEvent } from "../../../drizzle/schema";
 import { emitSafetyEvent } from "../../_core/socket";
-import { markTrustedSafetyEvent, type TrustedSafetyOrigin } from "./trustedSafetyOrigin";
+import { TRUSTED_ORIGIN_EVENT_TYPES, trustedEventDigest, trustedEventStore, isTrustTableMissing, type TrustedSafetyOrigin, type SqlRunner } from "./trustedSafetyOrigin";
 
 /** Flag — default OFF (mirrors fleetOrchEnabled / workforceEnabled). */
 export function safetyAuditEnabled(): boolean {
@@ -100,7 +100,8 @@ export async function record(input: RecordSafetyEventInput): Promise<RecordResul
 
 /**
  * doc 81 Đợt 5 task F fix scan (R-5-h) — record an event created by a server DEVICE-INGEST path. Identical to record(),
- * plus the server-side trusted-origin marker (trustedSafetyOrigin.ts) keyed by the new row id, set BEFORE the emit.
+ * plus (doc 81 Đợt 9 U3) a DURABLE trust row (safety_event_trust) bound to the event's content, written in the same
+ * transaction as the event — so it exists BEFORE the emit — for the types its origin may make safety-critical.
  * Callers are pinned by a census test (robotIngest's e-stop transition from a polled real controller; doc 81 Đợt 8 N2: the
  * background safety-PLC poller's transitions read from a REAL backend);
  * routers / API / user actions never call it, so nothing they send can make a notice safety-critical.
@@ -112,38 +113,47 @@ export async function recordFromDeviceIngest(origin: TrustedSafetyOrigin, input:
 async function recordImpl(input: RecordSafetyEventInput, trustedOrigin: TrustedSafetyOrigin | null): Promise<RecordResult> {
   if (!safetyAuditEnabled()) return { ok: false, enabled: false, message: "SAFETY_AUDIT_ENABLED off" };
   const d = await db();
-  const [event] = await d
-    .insert(safetyEvents)
-    .values({
-      eventType: input.eventType,
-      robotId: input.robotId ?? null,
-      deviceId: input.deviceId ?? null,
-      lineId: input.lineId ?? null,
-      stationId: input.stationId ?? null,
-      sourceInterlockEventId: input.sourceInterlockEventId ?? null,
-      humanPosition: input.humanPosition ?? undefined,
-      robotState: input.robotState ?? undefined,
-      responseTimeMs: input.responseTimeMs ?? null,
-      detectedBy: input.detectedBy ?? null,
-      handledBy: input.handledBy ?? null,
-      // logged_only is the honest default: the software only observed/logged it.
-      outcome: input.outcome ?? "logged_only",
-      isNearMiss: input.isNearMiss ?? input.eventType === "near_miss",
-      notes: input.notes ?? null,
-      scope: input.scope ?? null,
-      corporateCode: input.corporateCode ?? null,
-      factoryId: input.factoryId ?? null,
-    })
-    .returning();
+  const values = {
+    eventType: input.eventType,
+    robotId: input.robotId ?? null,
+    deviceId: input.deviceId ?? null,
+    lineId: input.lineId ?? null,
+    stationId: input.stationId ?? null,
+    sourceInterlockEventId: input.sourceInterlockEventId ?? null,
+    humanPosition: input.humanPosition ?? undefined,
+    robotState: input.robotState ?? undefined,
+    responseTimeMs: input.responseTimeMs ?? null,
+    detectedBy: input.detectedBy ?? null,
+    handledBy: input.handledBy ?? null,
+    // logged_only is the honest default: the software only observed/logged it.
+    outcome: input.outcome ?? "logged_only",
+    isNearMiss: input.isNearMiss ?? input.eventType === "near_miss",
+    notes: input.notes ?? null,
+    scope: input.scope ?? null,
+    corporateCode: input.corporateCode ?? null,
+    factoryId: input.factoryId ?? null,
+  };
 
-  if (trustedOrigin) {
+  let event: SafetyEvent | undefined;
+  if (trustedOrigin && TRUSTED_ORIGIN_EVENT_TYPES[trustedOrigin]?.has(input.eventType)) {
+    // doc 81 Đợt 9 U3 — the trust is a DURABLE row written in the SAME transaction as the event (never instance memory);
+    // the rules engine consumes it exactly once (trustedSafetyOrigin.consumeTrustedSafetyOrigin). Migration 0371 missing ⇒
+    // the event is still recorded, without trust (normal notice) — fail closed for the bypass only, never a lost record.
+    // Any other failure throws (as a plain insert failure does): the caller keeps the transition queued and retries.
     try {
-      markTrustedSafetyEvent(event.id, trustedOrigin, event.eventType);
+      event = await d.transaction(async (tx) => {
+        const [ev] = await tx.insert(safetyEvents).values(values).returning();
+        const digest = trustedEventDigest(ev);
+        if (digest) await trustedEventStore().mark(tx as unknown as SqlRunner, { eventId: ev.id, origin: trustedOrigin, eventType: ev.eventType, digest });
+        return ev;
+      });
     } catch (err) {
-      // fail toward a NORMAL notice (still delivered); never toward a lost record
-      console.error("[Safety] trusted-origin mark failed:", (err as Error)?.message ?? err);
+      if (!isTrustTableMissing(err)) throw err;
+      console.error("[Safety] trusted-event table missing (apply migration 0371) — event recorded WITHOUT trust (normal notice)");
+      event = undefined;
     }
   }
+  if (!event) [event] = await d.insert(safetyEvents).values(values).returning();
 
   try {
     emitSafetyEvent({

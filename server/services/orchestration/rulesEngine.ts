@@ -19,7 +19,7 @@
  *  - SPC critical: a 'critical' SPC violation → audit + notify + republish.
  */
 import { eventBus, EventTypes, type DomainEvent } from "../../_core/eventBus";
-import { trustedSafetyOriginOf, TRUSTED_ORIGIN_EVENT_TYPES } from "../safety/trustedSafetyOrigin";
+import { consumeTrustedSafetyOrigin, safetyNoticeMachine, trustedEventIdentity, TRUSTED_ORIGIN_EVENT_TYPES } from "../safety/trustedSafetyOrigin";
 
 let enabled = false;
 const unsubscribers: Array<() => void> = [];
@@ -112,43 +112,55 @@ function onAnomalyDetected(e: DomainEvent): void {
 
 /**
  * doc 81 Đợt 5 task F fix 1 (R-5-f) + fix scan (R-5-h) — whether a safety event's notice is SAFETY-CRITICAL (bypasses the
- * recipients' in-app opt-outs / quiet hours). The decision uses ONLY server-derived provenance: the event id must carry
- * the trusted-origin mark that safetyAuditService.recordFromDeviceIngest sets for events created on a DEVICE-INGEST code
- * path (trustedSafetyOrigin.ts — today: a polled real robot controller's e-stop transition), and the TYPE the server
- * recorded for that id must be a physical type allowed for that origin (TRUSTED_ORIGIN_EVENT_TYPES). No payload field
+ * recipients' in-app opt-outs / quiet hours). The decision uses ONLY server-derived provenance: the event must carry the
+ * trust that safetyAuditService.recordFromDeviceIngest writes for events created on a DEVICE-INGEST code path, and the TYPE
+ * the server recorded must be a physical type allowed for that origin (TRUSTED_ORIGIN_EVENT_TYPES). No payload field
  * (eventType / detectedBy / handledBy / outcome / source) is trusted: safety.recordEvent, evaluateZones, readSafetyPlc,
  * API and MQTT inputs can set those, so an event created by a router or a user action never bypasses, whatever it says.
  * A near-miss never bypasses. Everything else is a NORMAL notice (still delivered; the recipient's preferences apply).
+ * doc 81 Đợt 9 U3 — the trust is a DURABLE row bound to the event's content and CONSUMED EXACTLY ONCE here (one DB UPDATE):
+ * the same event delivered again — another instance over the Redis fan-out, a replayed / forged bus message reusing the id,
+ * an altered machine or type — is a normal notice. Undecidable (DB error / timeout) ⇒ normal notice. Async: call ONCE per
+ * event (it consumes).
  */
-export function isSafetyCriticalSafetyEvent(p: { id?: unknown; isNearMiss?: unknown }): boolean {
-  if (p.isNearMiss === true) return false;
-  const trusted = trustedSafetyOriginOf(p.id);
+export async function consumeSafetyCriticalTrust(p: { id?: unknown; eventType?: unknown; robotId?: unknown; stationId?: unknown; lineId?: unknown; isNearMiss?: unknown }): Promise<boolean> {
+  // doc 81 Đợt 9 U fix 1 (I1) — the ONE normaliser: a payload that does not normalise (a non-integer robot / station / line id,
+  // a non-string type…) is never trusted and consumes nothing; the notice is built from the same normalised identity.
+  const ident = trustedEventIdentity(p);
+  if (!ident || ident.isNearMiss) return false;
+  // a type no origin may make safety-critical can never carry trust (the digest binds the stored type): no DB round trip
+  if (!Object.values(TRUSTED_ORIGIN_EVENT_TYPES).some((set) => set.has(ident.eventType))) return false;
+  const trusted = await consumeTrustedSafetyOrigin(ident);
   if (!trusted) return false;
-  return TRUSTED_ORIGIN_EVENT_TYPES[trusted.origin]?.has(trusted.eventType) === true;
+  return TRUSTED_ORIGIN_EVENT_TYPES[trusted.origin]?.has(trusted.eventType) === true && trusted.eventType === ident.eventType;
 }
 
-function onSafetyEvent(e: DomainEvent): void {
+async function onSafetyEvent(e: DomainEvent): Promise<void> {
   const p = (e.payload ?? {}) as { id?: number; eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number; stationId?: number };
   // doc 81 Đợt 8 N2 — most specific first: robot > station > line (safety-PLC configs guard STATIONS: two PLCs on one line
   // must not share one P-F4 bypass budget).
-  const machine = String(
-    p.robotId != null ? `robot:${p.robotId}` : p.stationId != null ? `station:${p.stationId}` : p.lineId != null ? `line:${p.lineId}` : "unknown",
-  );
+  // doc 81 Đợt 9 U fix 1 (I1) — the machine comes from the SAME normalised identity the trust digest binds; a payload that does
+  // not normalise is never safety-critical (consumeSafetyCriticalTrust ⇒ false) and keeps its raw text in a NORMAL notice.
+  const ident = trustedEventIdentity(p);
+  const machine = String(ident ? safetyNoticeMachine(ident) : safetyNoticeMachine({ robotId: p.robotId ?? null, stationId: p.stationId ?? null, lineId: p.lineId ?? null }));
   const message = `Safety ${p.isNearMiss ? "near-miss" : "event"}: ${p.eventType ?? "?"} at ${machine}`;
   console.warn(`[Orchestration] ${message}`);
   void audit("orchestration.safety", { eventType: p.eventType, isNearMiss: p.isNearMiss, machine });
   // doc 81 Đợt 5 task F6 + fix 1/scan (R-5-f, R-5-h) — SAFETY-CRITICAL only for a server-trusted device-ingest event (see
-  // isSafetyCriticalSafetyEvent). The bypass dedup key is the OCCURRENCE (type, machine, safety_events.id): a re-delivery
+  // consumeSafetyCriticalTrust). The bypass dedup key is the OCCURRENCE (type, machine, safety_events.id): a re-delivery
   // of the same event is not bypassed twice, while another type, another machine or a re-trip (a new row) never merges.
   // The notice itself is ALWAYS sent (the throttle only downgrades a repeat to normal delivery).
   // final wave P-F4 — rateKey (type, machine) WITHOUT the event id: a flapping e-stop (a new row per re-trip) bypasses the
   // opt-outs at most once per SAFETY_CRITICAL_RATE_MS per recipient; the other re-trips are still delivered, as normal notices.
+  // doc 81 Đợt 9 U3 — consumed ONCE per delivered event (DB): a duplicate delivery / replay is a normal notice. The
+  // re-publish stays synchronous (before the DB round trip), as before.
+  eventBus.publish("orchestration.triggered", { rule: "safety", machine, eventType: p.eventType }, "orchestration");
+  const safetyCritical = await consumeSafetyCriticalTrust(p);
   void notifyConfigured("Safety event", message, {
-    safetyCritical: isSafetyCriticalSafetyEvent(p),
+    safetyCritical,
     dedupKey: `safety:${p.eventType ?? "?"}:${machine}:${typeof p.id === "number" ? p.id : "?"}`,
     rateKey: `safety:${p.eventType ?? "?"}:${machine}`,
   });
-  eventBus.publish("orchestration.triggered", { rule: "safety", machine, eventType: p.eventType }, "orchestration");
 }
 
 export function startOrchestration(): void {

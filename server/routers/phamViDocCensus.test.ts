@@ -686,7 +686,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // `phamViDocBaseline.ts` (safetyRouter 8 → 7). NEW: `safety.plcTrustList` (query, scope-filtered ⇒ S), and three mutations
 // `deleteSafetyPlcConfig` / `approveSafetyPlcConfig` / `rejectSafetyPlcConfig` (⇒ D; scope checked by id with NOT_FOUND
 // parity inside safetyPlcTrust.ts). Measured with this scanner (before = pin; after = A 333 · D 1137 · S 356 · tong 2306).
-const GHIM = { A: 333, B: 8, C: 472, D: 1137, S: 356, tong: 2306 } as const;
+// ★★★ 2026-10-12 (doc 81 Đợt 9 task R1 — API-key holder identity, option A) — **D 1137 → 1138 · tong 2306 → 2307 · A/B/C/S
+// unchanged.** NEW `apiKey.setHolder` (mutation, adminProcedure, `apiKeyRouter.ts`): changes who a key is ISSUED TO
+// (api_keys."holderUserId", mig 0369; trigger-recorded history + audit_logs) ⇒ group D. `apiKey.list` stays A (its debt row is
+// unchanged: it now also reads the holder's name). Measured with this scanner (before = pin; after = D 1138 · tong 2307),
+// with Groups T/U's uncommitted work in the same tree adding nothing to any group at the time of measuring.
+const GHIM = { A: 333, B: 8, C: 472, D: 1138, S: 356, tong: 2307 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

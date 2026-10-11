@@ -18,6 +18,9 @@
  *   "S7 write busy"; anyBadQualities → ok:false "bad write quality". ⚠️ chỉ
  *   commandDispatcher được gọi (xem comment writeTags).
  * - disconnect: dropConnection.
+ * - readProgramChecksum (doc 81 Đợt 9 task T1): checksum of the user program (OB/DB/FC/FB block infos) read through the
+ *   documented S7comm block functions on a SEPARATE, bounded connection — see s7BlockChecksum.ts (sources, formula,
+ *   status "not verified on a real device").
  *
  * Giữ extends NotImplementedDriver, override method, tái dùng loadPackage()/packageName.
  */
@@ -32,11 +35,13 @@ import type {
   OtWrite,
   OtHealth,
   OnOtSample,
+  ProgramChecksumResult,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseS7Address, coerceS7Value } from "./s7Address";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
 
 /** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
 function coerceS7Write(raw: unknown, dataType: string): number | boolean | string {
@@ -86,6 +91,8 @@ export class S7Driver extends NotImplementedDriver {
   private lastOkAt: Date | undefined;
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
+  /** doc 81 Đợt 9 T1 — where the program checksum is read (same host / port / rack / slot as the nodes7 session). */
+  private checksumTarget: S7ChecksumTarget | null = null;
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -121,6 +128,7 @@ export class S7Driver extends NotImplementedDriver {
       this.conn = conn;
       this.connected = true;
       this.connectedAt = new Date();
+      this.checksumTarget = { host, port, rack, slot };
       this.lastError = undefined;
       // doc 40 OT-F1 — NodeS7 là callback-based, KHÔNG có event channel ổn định. Gắn
       // 'error'/'close' phòng hờ (bọc try/catch — no-op nếu không expose). Đường phát
@@ -351,6 +359,23 @@ export class S7Driver extends NotImplementedDriver {
       if (batchError) return { tagKey: p.tagKey, ok: false, error: batchError };
       return { tagKey: p.tagKey, ok: true };
     });
+  }
+
+  /**
+   * doc 81 Đợt 9 task T1 — the checksum of the program loaded in the controller (READ-ONLY), per the S7comm protocol
+   * documentation (s7BlockChecksum.ts). Not verified on a real device yet — the source label says so on screen.
+   *   • a SEPARATE ISO-on-TCP connection per read: it shares no queue with writeTags (L-7 — a STOP write never waits);
+   *   • bounded by `opts.deadlineMs` (the adapter's deadline, R-9-b; default 1000 ms, hard cap 10 s — clampS7Deadline) and
+   *     cancelled by `opts.signal` (socket destroyed, nothing pending);
+   *   • not connected / any failure ⇒ THROWS (the caller fails closed); never answers `supported:false`.
+   */
+  async readProgramChecksum(opts?: { signal?: AbortSignal; deadlineMs?: number }): Promise<ProgramChecksumResult> {
+    const target = this.checksumTarget;
+    if (!this.isConnected() || !this.conn || !target) {
+      throw new DeviceUnreachableError("s7");
+    }
+    const checksum = await readS7ProgramChecksum(target, { signal: opts?.signal, deadlineMs: clampS7Deadline(opts?.deadlineMs) });
+    return { supported: true, checksum, source: S7_CHECKSUM_SOURCE };
   }
 
   override async health(): Promise<OtHealth> {

@@ -7,6 +7,7 @@ import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { orchestrationRunSteps, orchestrationRuns, orchestrationWorkflows } from "../../../../drizzle/schema";
 import { FOE_APPROVAL_SOURCE_SERVER, computeBindingDigest, hashWorkflowDefinition } from "./foeGateApproval";
+import { orchestrationRunsWithApiKey } from "./runApiKeyIdentity";
 import type { WorkflowDefinition } from "./workflowModel";
 
 export interface FoeGateRunFixture {
@@ -25,15 +26,29 @@ export async function makeFoeGateRun(opts: {
   stale?: boolean;
   /** doc 81 Đợt 8 O2 — steps after the gate (e.g. an OT command on a sim adapter whose program checksum the digest covers). */
   steps?: WorkflowDefinition["steps"];
+  /**
+   * doc 81 Đợt 9 R fix 1 — an API-started run: the run's paramsJson / contextJson carry the API marker and, when given, the
+   * key is written IN THE INSERT (mig 0369 refuses every later update of the column).
+   */
+  api?: { keyId: number | null };
 }): Promise<FoeGateRunFixture> {
   const d = await getDb();
   if (!d) throw new Error("no db");
   const def: WorkflowDefinition = { ref: `${opts.tag}-wf`.slice(0, 120), name: opts.tag, steps: [{ id: "g0", type: "hitl_gate", prompt: "fixture" }, ...(opts.steps ?? [])] };
   const [wf] = await d.insert(orchestrationWorkflows).values({ ref: def.ref, name: def.name, definitionJson: def, status: "active" }).returning();
-  const [run] = await d
-    .insert(orchestrationRuns)
-    .values({ workflowId: wf.id, workflowRef: def.ref, status: "running", paramsJson: {}, contextJson: {}, startedBy: opts.owner, startedAt: new Date() })
-    .returning();
+  const base = {
+    workflowId: wf.id,
+    workflowRef: def.ref,
+    status: "running" as const,
+    paramsJson: opts.api ? { __foeStartedViaApi: true } : {},
+    contextJson: opts.api ? { startedViaApi: true } : {},
+    startedBy: opts.owner,
+    startedAt: new Date(),
+  };
+  const [run] =
+    opts.api && opts.api.keyId !== null
+      ? await d.insert(orchestrationRunsWithApiKey).values({ ...base, startedViaApiKeyId: opts.api.keyId }).returning()
+      : await d.insert(orchestrationRuns).values(base).returning();
   if (opts.approvedBy !== null) {
     await d.insert(orchestrationRunSteps).values({
       runId: run.id,

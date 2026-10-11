@@ -119,6 +119,7 @@ import {
 } from "@/components/orchestration/workflowTypes";
 import { WorkflowGraphCanvas, WF_DND_MIME } from "@/components/orchestration/WorkflowGraphCanvas";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
+import { SafetyLatchWarning } from "@/components/safety/SafetyLatchWarning"; // doc 81 Đợt 9 final wave (R-9-e)
 // doc 80 Đợt 1 Task 4 (X-01 · ORC-13) — nhãn SEED/DEMO/SIM + DRY-RUN trên run.
 import { ProvenanceBadge, ProvenanceSummary, DispatchModeBadge } from "@/components/common/ProvenanceBadge";
 import { classifyStepDispatch, type RunDispatchSummary } from "@shared/provenance";
@@ -2596,6 +2597,8 @@ interface ProgramCheckView {
   checksum?: string;
   /** final wave (review O M3) — the driver's own source label ("sim" ⇒ the controller is a SIMULATION). */
   source?: string;
+  /** doc 81 Đợt 9 R-9-b — present iff the server showed a DISPLAY-ONLY cached reading (when it was taken). */
+  displayCache?: { readAt?: string };
 }
 function programChecksOf(data: unknown): ProgramCheckView[] {
   const raw = (data as { programChecks?: unknown } | undefined)?.programChecks;
@@ -2629,13 +2632,38 @@ function ProgramChecksBlock({ checks, t }: { checks: ProgramCheckView[]; t: TFun
                       {t("studio.programSimulation", "(simulation — not a real controller)")}
                     </span>
                   )}
+                  {/* doc 81 Đợt 9 T2 — the S7 block-info reader is built from the protocol documentation, not yet verified on a real device (until FAT);
+                      ruling R-9-a (4): it detects changes in what the controller REPORTS — not tamper-proof against someone with PLC write access. */}
+                  {c.source === "s7-blockinfo" && (
+                    <>
+                      <span data-testid="program-check-s7-docs" className="ml-1 font-medium text-amber-800 dark:text-amber-200">
+                        {t("studio.programS7PerProtocolDocs", "(checksum per protocol documentation — not yet verified on a real device)")}
+                      </span>
+                      <span data-testid="program-check-s7-not-tamper-proof" className="ml-1 font-medium text-amber-800 dark:text-amber-200">
+                        {t("studio.programS7NotTamperProof", "(change detection per protocol data — not tamper-proof against an attacker with PLC write access)")}
+                      </span>
+                    </>
+                  )}
+                  {/* doc 81 Đợt 9 R-9-b — a cached reading is labelled: display only, approving re-reads the controller. */}
+                  {c.displayCache?.readAt && (
+                    <span data-testid="program-check-display-cache" className="ml-1 text-muted-foreground">
+                      {t("studio.programDisplayCache", "(shown from a reading at {{time}} — display only; approving reads the controller again)", {
+                        time: new Date(c.displayCache.readAt).toLocaleTimeString(),
+                      })}
+                    </span>
+                  )}
                 </span>
               ) : c.status === "unreadable" ? (
                 <span className="text-red-700 dark:text-red-300">
                   {t("studio.programUnreadable", "Program checksum could not be read — approval is not possible until it can (check the controller connection).")}
                 </span>
               ) : (
-                <span className="text-amber-800 dark:text-amber-200">{t("studio.programUnverifiable", "Program cannot be verified on this controller")}</span>
+                // doc 81 Đợt 9 T fix 1 (#7) — an S7 adapter CAN be verified; the check is simply not enabled on it (opt-in)
+                <span className="text-amber-800 dark:text-amber-200" data-testid={c.target === "adapter" && c.source === "s7" ? "program-check-s7-not-enabled" : undefined}>
+                  {c.target === "adapter" && c.source === "s7"
+                    ? t("studio.programS7NotEnabled", "Program verification not enabled for this adapter")
+                    : t("studio.programUnverifiable", "Program cannot be verified on this controller")}
+                </span>
               )}
             </li>
           );
@@ -2645,14 +2673,88 @@ function ProgramChecksBlock({ checks, t }: { checks: ProgramCheckView[]; t: TFun
   );
 }
 
+/** doc 81 Đợt 9 task R3 — getRun().apiKey (server: foeEngine.RunApiKeyView). */
+interface RunApiKeyViewClient {
+  identified: boolean;
+  keyId: number | null;
+  name: string | null;
+  keyPrefix: string | null;
+  holder: { id: number; name: string | null } | null;
+  creator: { id: number; name: string | null } | null;
+  earlierHolders: Array<{ id: number; name: string | null }>;
+  excludedUserIds: number[];
+  /** R fix 1 — why no approval can count now (null = usable). */
+  refusal?: "ownerUnknown" | "apiRun" | "apiKeyInactive" | "apiIdentityUnavailable" | null;
+  refusalDetail?: string | null;
+}
+function apiKeyViewOf(data: unknown): RunApiKeyViewClient | null {
+  const v = (data as { apiKey?: unknown } | undefined)?.apiKey;
+  return v && typeof v === "object" ? (v as RunApiKeyViewClient) : null;
+}
+/**
+ * doc 81 Đợt 9 task R3 — on the approver's screen of a run started through an API key: which key, who it is issued to, and
+ * WHY some users cannot give the approval that sends its machine / robot commands (the starter, the key's holder now or
+ * earlier, the key's creator — the same set the server re-derives). The current user being one of them is said plainly.
+ * Display only: the server decides (an approval by an excluded user never counts; a four-eyes gate refuses it).
+ */
+function ApiKeyIdentityBlock({ view, meId, t }: { view: RunApiKeyViewClient; meId: number | null; t: TFunction }) {
+  const who = (u: { id: number; name: string | null } | null) => (u ? u.name ?? `#${u.id}` : t("studio.apiKeyNoHolder", "nobody (no holder — refused)"));
+  const keyLabelOf = () => `${view.name ?? `#${view.keyId}`}${view.keyPrefix ? ` (${view.keyPrefix}…)` : ""}`;
+  // R fix 1 (R-9-c / #2) — a key revoked / disabled / expired NOW, or an identity that cannot be read: refused whoever approves.
+  if (view.refusal === "apiKeyInactive" || view.refusal === "apiIdentityUnavailable") {
+    const text =
+      view.refusal === "apiIdentityUnavailable"
+        ? t("studio.apiKeyIdentityUnavailable", "The API key identity of this run could not be read (database error, or database migration 0369 not applied): its machine and robot commands other than a STOP are refused for now.")
+        : view.refusalDetail === "expired"
+          ? t("studio.apiKeyExpired", "Started via API key {{key}}, which has expired: its machine and robot commands other than a STOP are refused whoever approves, until an administrator extends it.", { key: keyLabelOf() })
+          : t("studio.apiKeyInactive", "Started via API key {{key}}, which is revoked or disabled now: its machine and robot commands other than a STOP are refused whoever approves, until an administrator re-activates it.", { key: keyLabelOf() });
+    return (
+      <div data-testid="api-key-identity" data-identified="false" data-refusal={view.refusal} role="alert" className="border-t bg-red-500/10 px-2 py-1.5 text-xs text-red-800 dark:text-red-200">
+        {text}
+      </div>
+    );
+  }
+  if (!view.identified) {
+    return (
+      <div data-testid="api-key-identity" data-identified="false" role="alert" className="border-t bg-red-500/10 px-2 py-1.5 text-xs text-red-800 dark:text-red-200">
+        {t("studio.apiKeyUnidentified", "Started via an API key that cannot be identified (started before the key-holder record existed, the key was deleted, or the key has no holder): its machine and robot commands other than a STOP are refused whoever approves.")}
+      </div>
+    );
+  }
+  const keyLabel = `${view.name ?? `#${view.keyId}`}${view.keyPrefix ? ` (${view.keyPrefix}…)` : ""}`;
+  const names = [
+    ...(view.holder ? [who(view.holder)] : []),
+    ...view.earlierHolders.map((u) => who(u)),
+    ...(view.creator ? [who(view.creator)] : []),
+  ];
+  const youExcluded = meId != null && view.excludedUserIds.includes(meId);
+  return (
+    <div data-testid="api-key-identity" data-identified="true" className="border-t bg-sky-500/10 px-2 py-1.5 text-xs text-sky-900 dark:text-sky-100">
+      <div data-testid="api-key-issued-to">
+        {t("studio.apiKeyStartedVia", "Started via API key {{key}}, issued to {{holder}}.", { key: keyLabel, holder: who(view.holder) })}
+      </div>
+      <div className="mt-0.5 text-muted-foreground" data-testid="api-key-excluded">
+        {t("studio.apiKeyExcludedExplain", "Its machine and robot commands are sent only after a gate approved by someone other than the person who started the run, the person the key is issued to (now or earlier) and the person who created the key ({{names}}).", { names: [...new Set(names)].join(", ") })}
+      </div>
+      {youExcluded && (
+        <div data-testid="api-key-you-excluded" role="alert" className="mt-0.5 font-medium text-amber-800 dark:text-amber-200">
+          {t("studio.apiKeyYouExcluded", "You are one of them: your approval does not count for this run's machine or robot commands (a four-eyes gate refuses it). Ask another user to approve.")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * doc 81 Đợt 4 Task A5 + fix round 1 (finding 7) — the engine's step error for "no separate gate approval":
  * `FOE_GATE_REQUIRED(<reason>): …` (foeEngine.gateRequiredError). Each reason has its own translated sentence.
  */
-// doc 81 Đợt 5 task E1 — apiRun: a run started through an API key never sends a non-STOP OT/robot command.
+// doc 81 Đợt 5 task E1 — apiRun; doc 81 Đợt 9 R2 (option A) — apiRun now means "started through an API key that cannot be
+// identified"; approvedByKeyHolder: approved only by the key's holder (now / earlier) or its creator.
 // doc 81 Đợt 8 task O2 — programUnreadable: a supported controller's program checksum could not be read (fail-closed).
-const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown|apiRun|programUnreadable)\))?(?=:|\s|$)/;
-type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun" | "programUnreadable";
+// doc 81 Đợt 9 R fix 1 — apiKeyInactive (R-9-c: key revoked / disabled / expired NOW) and apiIdentityUnavailable (identity unreadable).
+const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|approvedByKeyHolder|staleApproval|ownerUnknown|apiRun|apiKeyInactive|apiIdentityUnavailable|programUnreadable)\))?(?=:|\s|$)/;
+type GateRequiredReason = "noGate" | "approvedByOwner" | "approvedByKeyHolder" | "staleApproval" | "ownerUnknown" | "apiRun" | "apiKeyInactive" | "apiIdentityUnavailable" | "programUnreadable";
 function gateRequiredReasonOf(error: unknown): GateRequiredReason | null {
   if (typeof error !== "string") return null;
   const m = FOE_GATE_REQUIRED_RE.exec(error);
@@ -2674,10 +2776,16 @@ function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
       return t("studio.gateRequiredStale", "Not sent: after the gate was approved, the workflow was redeployed or the adapter, tag or robot configuration its commands use was changed, or the program in a controller it writes to was changed, so that approval does not cover what would be sent now. Start a new run and have the gate approved again.");
     case "programUnreadable":
       return t("studio.gateRequiredProgramUnreadable", "Not sent: the program checksum of a controller this run writes to could not be read, so it cannot be checked that the program is still the one that was approved. Check the controller connection and start a new run.");
+    case "apiKeyInactive":
+      return t("studio.gateRequiredKeyInactive", "Not sent: the API key that started this run is revoked, disabled or expired now. Its machine and robot commands other than a STOP are refused until an administrator re-activates (or extends) the key.");
+    case "apiIdentityUnavailable":
+      return t("studio.gateRequiredIdentityUnavailable", "Not sent: the API key identity of this run could not be read (database error, or database migration 0369 not applied), so it cannot be checked that the approver is not the key's holder. Retry once the database is reachable.");
+    case "approvedByKeyHolder":
+      return t("studio.gateRequiredKeyHolder", "Not sent: this run was started through an API key and its approval gate was approved by the person the key is (or was) issued to, or by the person who created the key, which does not count. Have another user approve the gate of a new run.");
     case "apiRun":
-      return t("studio.gateRequiredApiRun", "Not sent: this run was started through an API key. A run started through an API key never sends machine or robot commands other than a STOP, because the person holding the key cannot be told apart from the approver. Start the run as a user in the Studio.");
+      return t("studio.gateRequiredApiRun", "Not sent: this run was started through an API key that cannot be identified (started before the key-holder record existed, the key was deleted, or a copy of the run without its key), so it cannot be checked that the approver is not the key's holder. Start a new run through the key, or start it as a user in the Studio.");
     case "ownerUnknown":
-      return t("studio.gateRequiredOwnerUnknown", "Not sent: this run has no known owner (started by the system or by an API key with no creating user), so a separate approval cannot be checked. Start the run as a user.");
+      return t("studio.gateRequiredOwnerUnknown", "Not sent: this run has no known owner (started by the system, or by an API key that is issued to nobody active), so a separate approval cannot be checked. Start the run as a user.");
     default:
       return t("studio.gateRequired", "Not sent: this command needs an approval gate earlier in the run, approved by someone other than the person who started it. Add a gate before this step, deploy, and start a new run.");
   }
@@ -2767,6 +2875,9 @@ function RunRow({
   // fix 3 (R-6-d, M3) — only within ABORT_RESEND_WINDOW_MS of the abort (shared with the server, which decides): past it the
   // button is shown DISABLED with the reason ("too old — use the machine's direct STOP / E-STOP").
   const resendable = status === "aborted";
+  // doc 81 Đợt 9 final wave F2 — a run handed to an edge node that no node claimed in time is held as "edge unreachable".
+  const edgeUnreachableCtx = (run.contextJson as Record<string, unknown> | null | undefined) ?? null;
+  const edgeUnreachable = edgeUnreachableCtx?.edgeUnreachable === true;
   const resendTooOld = resendable && !abortResendAllowed(run.finishedAt as string | Date | null | undefined);
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
@@ -2806,6 +2917,9 @@ function RunRow({
   const bindingChanged = bindingDigest !== undefined && typeof polledDigest === "string" && polledDigest !== bindingDigest;
   const bindingUnknown = detailQ.data != null && defHash !== undefined && bindingDigest === undefined;
   const approveBlocked = !defHash || defChanged || !bindingDigest || bindingChanged;
+  // doc 81 Đợt 9 task R3 — an API-started run: which key, issued to whom, who cannot approve (server-derived).
+  const apiKeyView = apiKeyViewOf(detailQ.data);
+  const { user: me } = useAuth();
   // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
   const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
   const gatePrompt = typeof currentStep?.result?.prompt === "string" ? (currentStep.result.prompt as string) : "";
@@ -2824,6 +2938,11 @@ function RunRow({
           {/* doc 80 Task 4 — X-01 source label + ORC-13 dry-run/live marker. */}
           <ProvenanceBadge row={run} />
           <DispatchModeBadge dispatch={run.dispatch as RunDispatchSummary | undefined} />
+          {edgeUnreachable && (
+            <Badge variant="outline" data-testid="edge-unreachable" className="border-orange-500/60 text-[10px] text-orange-700 dark:text-orange-400">
+              {t("studio.edgeUnreachable", "edge unreachable")}
+            </Badge>
+          )}
           {assignment && <AssigneeCell row={assignment} className="max-w-[9rem]" />}
         </button>
         {interrupted && canControl && (
@@ -2878,6 +2997,9 @@ function RunRow({
         </div>
       )}
       {(awaiting || interrupted) && canControl && <ProgramChecksBlock checks={programChecksOf(detailQ.data)} t={t} />}
+      {(awaiting || interrupted) && canControl && apiKeyView && <ApiKeyIdentityBlock view={apiKeyView} meId={me?.id ?? null} t={t} />}
+      {/* doc 81 Đợt 9 final wave (R-9-e) — approving / continuing resumes actuation: a set e-stop latch is warned here (non-blocking) */}
+      {awaiting && canControl && <SafetyLatchWarning className="mx-2 my-1" />}
       {bindingChanged && (awaiting || interrupted) && canControl && (
         <div data-testid="binding-changed" role="alert" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
           {t("studio.bindingChangedReload", "The device configuration this approval covers (adapter, tags or robot of its commands, or the program in a controller) changed since you opened it — reload the page and review it before approving.")}
@@ -2889,8 +3011,10 @@ function RunRow({
         </div>
       )}
       {interrupted && (
-        <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground">
-          {t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
+        <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground" data-testid={edgeUnreachable ? "edge-unreachable-hint" : undefined}>
+          {edgeUnreachable
+            ? t("studio.edgeUnreachableHint", "Edge node {{node}} did not claim this run in time (unreachable, or its checks keep refusing it). Continue re-queues it for that node; Cancel run aborts it.", { node: String(edgeUnreachableCtx?.edgeUnreachableNode ?? "?") })
+            : t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
         </div>
       )}
       <AlertDialog open={confirmContinue} onOpenChange={setConfirmContinue}>
@@ -2901,6 +3025,8 @@ function RunRow({
               {t("studio.continueRunDesc", "The run resumes from where it was interrupted and may send real commands to machines. Completed steps are skipped.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* doc 81 Đợt 9 final wave (R-9-e) — Continue resumes actuation: a set e-stop latch is warned (non-blocking) */}
+          <SafetyLatchWarning enabled={confirmContinue} />
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
             <AlertDialogAction disabled={approveBlocked} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash, bindingDigest); }}>
