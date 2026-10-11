@@ -4,6 +4,10 @@
  * user can set through safety.recordEvent / evaluateZones / readSafetyPlc; they decide nothing.
  * Oracle: the emitted payload captured at the socket seam, judged by the rules engine's own predicate.
  * Census: who may call the trusted door / the mark, and that no router / route / API module imports either.
+ * Re-pinned 2026-10-12 (doc 81 Đợt 9 U3, owner decision "bind trust to durable rows, never to instance memory"): the trust is
+ * a durable row written with the event (here: an in-memory TrustedEventStore at the store seam, standing in for the DB table;
+ * the real table is covered by trustedSafetyOrigin.u3.dot9.db.test.ts) and the verdict CONSUMES it — once. "At emit" now
+ * means "the trust row already exists when the event is emitted"; each verdict below is asked once per event.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
@@ -14,34 +18,49 @@ const E = vi.hoisted(() => ({
   nextId: 9000,
   /** the verdict the rules engine would reach DURING the emit (it runs synchronously inside emitSafetyEvent) */
   atEmit: [] as boolean[],
-  judge: null as null | ((e: Record<string, unknown>) => boolean),
+  /** Đợt 9 U3 — the trust rows (store seam), keyed by event id */
+  trust: new Map<number, { origin: string; eventType: string; digest: string; consumed: boolean }>(),
 }));
-vi.mock("../../db/connection", () => ({
-  getDb: vi.fn(async () => ({
+vi.mock("../../db/connection", () => {
+  const db: Record<string, unknown> = {
     insert: () => ({
       values: (v: Record<string, unknown>) => ({
         returning: async () => [{ id: E.nextId++, createdAt: new Date(), robotId: null, lineId: null, stationId: null, ...v }],
       }),
     }),
-  })),
-}));
+  };
+  db.transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(db); // Đợt 9 U3 — event + trust row in one tx
+  return { getDb: vi.fn(async () => db) };
+});
 vi.mock("../../_core/socket", () => ({
   emitSafetyEvent: vi.fn((e: Record<string, unknown>) => {
     E.emitted.push(e);
-    E.atEmit.push(E.judge ? E.judge(e) : false);
+    E.atEmit.push(E.trust.has(e.id as number)); // Đợt 9 U3 — the trust row exists BEFORE the emit
   }),
 }));
 
 import { record, recordFromDeviceIngest } from "./safetyAuditService";
-import { isSafetyCriticalSafetyEvent } from "../orchestration/rulesEngine";
-import { _resetTrustedSafetyMarksForTests, TRUSTED_ROBOT_TELEMETRY_VENDORS } from "./trustedSafetyOrigin";
+import { consumeSafetyCriticalTrust } from "../orchestration/rulesEngine";
+import { _setTrustedEventStoreForTests, TRUSTED_ROBOT_TELEMETRY_VENDORS } from "./trustedSafetyOrigin";
 
-E.judge = isSafetyCriticalSafetyEvent;
+/** Đợt 9 U3 — in-memory stand-in for the safety_event_trust table (same consume-once semantics). */
+_setTrustedEventStoreForTests({
+  async mark(_tx, r) {
+    E.trust.set(r.eventId, { origin: r.origin, eventType: r.eventType, digest: r.digest, consumed: false });
+  },
+  async consume(id, digest) {
+    const r = E.trust.get(id);
+    if (!r || r.consumed || r.digest !== digest) return null;
+    r.consumed = true;
+    return { origin: r.origin, eventType: r.eventType };
+  },
+});
+const judge = (e: Record<string, unknown>) => consumeSafetyCriticalTrust(e);
 const saved = process.env.SAFETY_AUDIT_ENABLED;
 beforeEach(() => {
   E.emitted.length = 0;
   E.atEmit.length = 0;
-  _resetTrustedSafetyMarksForTests();
+  E.trust.clear();
   process.env.SAFETY_AUDIT_ENABLED = "true";
 });
 afterEach(() => {
@@ -55,31 +74,33 @@ describe("Đợt 5 F fix scan (R-5-h) — provenance is derived on the server, n
     await record({ eventType: "estop", detectedBy: "plc", handledBy: "advisory", outcome: "stopped", robotId: 3 });
     await record({ eventType: "zone_intrusion", detectedBy: "vision", handledBy: "advisory", outcome: "stopped", robotId: 3 }); // evaluateZones source "vision"
     expect(E.emitted).toHaveLength(3);
-    for (const e of E.emitted) expect(isSafetyCriticalSafetyEvent(e)).toBe(false);
+    for (const e of E.emitted) expect(await judge(e)).toBe(false);
   });
 
   it("the user-recorded marker is still emitted (handledBy) — informational only", async () => {
     await record({ eventType: "estop", detectedBy: "plc", handledBy: "operator", outcome: "stopped", robotId: 3 });
     expect(E.emitted[0]).toMatchObject({ eventType: "estop", detectedBy: "plc", handledBy: "operator" });
-    expect(isSafetyCriticalSafetyEvent(E.emitted[0])).toBe(false);
+    expect(await judge(E.emitted[0])).toBe(false);
   });
 
   it("★ the device-ingest door (robot telemetry e-stop) ⇒ safety-critical, whatever detectedBy says", async () => {
     await recordFromDeviceIngest("robot_telemetry", { eventType: "estop", detectedBy: "telemetry", handledBy: "advisory", outcome: "logged_only", robotId: 4 });
-    expect(E.atEmit[0]).toBe(true); // the mark is set BEFORE the emit (the rules engine decides inside it)
-    expect(isSafetyCriticalSafetyEvent(E.emitted[0])).toBe(true);
-    expect(isSafetyCriticalSafetyEvent({ ...E.emitted[0], isNearMiss: true })).toBe(false);
+    expect(E.atEmit[0]).toBe(true); // the trust row exists BEFORE the emit (the rules engine decides on the emit)
+    expect(await judge({ ...E.emitted[0], isNearMiss: true })).toBe(false); // near-miss: no bypass (and nothing consumed)
+    expect(await judge(E.emitted[0])).toBe(true);
+    expect(await judge(E.emitted[0])).toBe(false); // Đợt 9 U3 — consumed exactly once
   });
 
   it("the trusted door with a type not allowed for its origin ⇒ NOT safety-critical; a payload re-using the id with another type gains nothing", async () => {
     await recordFromDeviceIngest("robot_telemetry", { eventType: "collision", detectedBy: "telemetry", handledBy: "advisory", robotId: 4 });
-    expect(isSafetyCriticalSafetyEvent(E.emitted[0])).toBe(false);
-    expect(isSafetyCriticalSafetyEvent({ ...E.emitted[0], eventType: "estop" })).toBe(false); // the server stored "collision"
+    expect(E.trust.size).toBe(0); // Đợt 9 U3 — no trust row for a type the origin may not make safety-critical
+    expect(await judge(E.emitted[0])).toBe(false);
+    expect(await judge({ ...E.emitted[0], eventType: "estop" })).toBe(false); // the server stored "collision"
   });
 
-  it("a forged payload carrying an unmarked id, or an id of another type ⇒ NOT safety-critical", () => {
-    expect(isSafetyCriticalSafetyEvent({ id: 123456, eventType: "estop", detectedBy: "plc", handledBy: "advisory", outcome: "stopped", isNearMiss: false })).toBe(false);
-    expect(isSafetyCriticalSafetyEvent({ id: "9000", eventType: "estop" } as never)).toBe(false);
+  it("a forged payload carrying an unmarked id, or an id of another type ⇒ NOT safety-critical", async () => {
+    expect(await judge({ id: 123456, eventType: "estop", detectedBy: "plc", handledBy: "advisory", outcome: "stopped", isNearMiss: false })).toBe(false);
+    expect(await judge({ id: "9000", eventType: "estop" } as never)).toBe(false);
   });
 
   it("trusted robot vendors are the server-polled real controllers only", () => {
@@ -120,11 +141,11 @@ describe("Đợt 5 F fix scan — census: the trusted door and the mark are reac
   it("final wave P-F2: the census sees a reference passed as a VALUE / aliased, not only a call", () => {
     const fx = [
       { rel: "services/x/alias.ts", src: "import { recordFromDeviceIngest } from '../safety/safetyAuditService';\nconst door = recordFromDeviceIngest;\nvoid door;" },
-      { rel: "services/x/cb.ts", src: "export const handlers = { mark: markTrustedSafetyEvent };" },
+      { rel: "services/x/cb.ts", src: "export const handlers = { mark: trustedEventStore };" },
       { rel: "services/x/doc.ts", src: "/**\n * recordFromDeviceIngest is documented here only\n */\nexport const a = 1;" },
     ];
     expect(referencers("recordFromDeviceIngest", fx)).toEqual(["services/x/alias.ts"]);
-    expect(referencers("markTrustedSafetyEvent", fx)).toEqual(["services/x/cb.ts"]);
+    expect(referencers("trustedEventStore", fx)).toEqual(["services/x/cb.ts"]);
   });
 
   // Re-pinned 2026-10-11 (doc 81 Đợt 8 N2, owner decision "background safety-PLC poller produces trusted events"): the
@@ -137,15 +158,19 @@ describe("Đợt 5 F fix scan — census: the trusted door and the mark are reac
     ]);
   });
 
-  it("markTrustedSafetyEvent is referenced only by safetyAuditService.ts (and defined in trustedSafetyOrigin.ts)", () => {
-    expect(referencers("markTrustedSafetyEvent")).toEqual(["services/safety/safetyAuditService.ts", "services/safety/trustedSafetyOrigin.ts"]);
+  // Re-pinned 2026-10-12 (doc 81 Đợt 9 U3): the in-memory mark (markTrustedSafetyEvent) is GONE; the trust is a durable row.
+  // Only the audit service writes it (through the store), only trustedSafetyOrigin.ts holds the table's SQL.
+  it("the in-memory mark no longer exists; the trust store is used only by safetyAuditService.ts (writer) and trustedSafetyOrigin.ts", () => {
+    expect(referencers("markTrustedSafetyEvent")).toEqual([]);
+    expect(referencers("trustedEventStore")).toEqual(["services/safety/safetyAuditService.ts", "services/safety/trustedSafetyOrigin.ts"]);
+    expect(referencers("safety_event_trust")).toEqual(["services/safety/trustedSafetyOrigin.ts"]);
   });
 
   // doc 81 Đợt 8 N2 — also the background poller (its class takes injected deps; no request path may construct / drive it)
   it("no router / route / API module references the trusted door, the marker module or the background PLC poller", () => {
     const bad = files
       .filter((f) => /^(routers|routes|api)\//.test(f.rel))
-      .filter((f) => /recordFromDeviceIngest|trustedSafetyOrigin|markTrustedSafetyEvent|safetyPlcPoller|SafetyPlcPoller/.test(f.src))
+      .filter((f) => /recordFromDeviceIngest|trustedSafetyOrigin|trustedEventStore|safety_event_trust|safetyPlcPoller|SafetyPlcPoller/.test(f.src))
       .map((f) => f.rel);
     expect(bad).toEqual([]);
   });

@@ -12,6 +12,9 @@
  * readSafetyPlc incl. an injected status) do NOT; a re-trip inside the P-F4 window is DOWNGRADED (recipient 6 still gets
  * it), never dropped; the PLC sees ZERO writes; stop() ends all reads.
  * Hangs are bounded by explicit waits; every server/poller is closed in afterEach/afterAll.
+ * Re-pinned 2026-10-12 (doc 81 Đợt 9 U3): the trust is a durable row written with the event and consumed once by the rules
+ * engine; its storage seam here is an in-memory stand-in for safety_event_trust with the same semantics (the real table is
+ * covered by trustedSafetyOrigin.u3.dot9.db.test.ts). The DB mock gains a transaction (event + trust row in one tx).
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 
@@ -20,16 +23,19 @@ const S = vi.hoisted(() => ({
   emitted: [] as Array<Record<string, unknown>>,
   created: [] as Array<Record<string, unknown>>,
   prefReads: [] as number[],
+  trust: new Map<number, { origin: string; eventType: string; digest: string; consumed: boolean }>(),
 }));
-vi.mock("../../../db/connection", () => ({
-  getDb: vi.fn(async () => ({
+vi.mock("../../../db/connection", () => {
+  const db: Record<string, unknown> = {
     insert: () => ({
       values: (v: Record<string, unknown>) => ({
         returning: async () => [{ id: S.nextId++, createdAt: new Date(), robotId: null, lineId: null, stationId: null, ...v }],
       }),
     }),
-  })),
-}));
+  };
+  db.transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(db); // Đợt 9 U3 — event + trust row in one tx
+  return { getDb: vi.fn(async () => db) };
+});
 vi.mock("../../../_core/socket", async () => {
   const { eventBus, EventTypes } = await import("../../../_core/eventBus");
   return {
@@ -65,7 +71,19 @@ import { readAndRecord, SimSafetyPlcBackend } from "./safetyPlcAdapter";
 import { record } from "../safetyAuditService";
 import { startOrchestration, stopOrchestration } from "../../orchestration/rulesEngine";
 import { _resetSafetyCriticalDedupForTests } from "../../notificationService";
-import { _resetTrustedSafetyMarksForTests } from "../trustedSafetyOrigin";
+import { _setTrustedEventStoreForTests } from "../trustedSafetyOrigin";
+
+_setTrustedEventStoreForTests({
+  async mark(_tx, r) {
+    S.trust.set(r.eventId, { origin: r.origin, eventType: r.eventType, digest: r.digest, consumed: false });
+  },
+  async consume(id, digest) {
+    const r = S.trust.get(id);
+    if (!r || r.consumed || r.digest !== digest) return null;
+    r.consumed = true;
+    return { origin: r.origin, eventType: r.eventType };
+  },
+});
 import { plcTrustDigest } from "./safetyPlcTrust";
 
 /**
@@ -181,7 +199,7 @@ beforeEach(() => {
   plc.coils.clear();
   plc.writes = 0;
   _resetSafetyCriticalDedupForTests();
-  _resetTrustedSafetyMarksForTests();
+  S.trust.clear();
   APPROVED.clear();
   for (const m of ["warn", "log"] as const) quiet.push(vi.spyOn(console, m).mockImplementation(() => undefined));
   startOrchestration();
