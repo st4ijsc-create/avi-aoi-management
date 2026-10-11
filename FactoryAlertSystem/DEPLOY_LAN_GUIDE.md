@@ -277,32 +277,54 @@ Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết
 4. Lỡ khoá một máy (gõ sai / mất mật khẩu): xoay lại mật khẩu và nhập lại; hoặc *Xoá mật khẩu* trên màn web
    (chỉ cứu được khi cờ ở bước 3 còn `true`).
 
-### Kết Nối TLS Tới Broker Nhúng (app 1.0.18) — doc 81 Đợt 7 J1/J2
+### Kết Nối TLS Tới Broker Nhúng (app 1.0.18) — doc 81 Đợt 7 J1/J2, thiết kế lại J4 (quản trị viên cấp khoá)
 
 **Server.** Broker nhúng lắng nghe thêm **MQTT over TLS (MQTTS)** ở cổng `MQTT_TLS_PORT` (mặc định **8884**) — BẬT MẶC
-ĐỊNH (chỉ `MQTT_TLS_ENABLED=false` mới tắt). Lần khởi động đầu, server **tự sinh chứng chỉ site** (tự ký, ECDSA P‑256,
-~20 năm, có subjectAltName = tên máy, `localhost`, `127.0.0.1` và các IPv4 LAN lúc sinh) vào `data/mqtt-tls/broker-tls.pem`
-(ngoài git; đổi chỗ bằng `MQTT_TLS_DIR`; hoặc dùng chứng chỉ riêng: đặt cả `MQTT_TLS_CERT` + `MQTT_TLS_KEY`). Tệp chứa
-**khoá riêng**. Trên Windows (`mode 0600` không có tác dụng trên NTFS) áp DANH SÁCH CHO PHÉP: chỉ tài khoản chạy server,
-SYSTEM và Administrators (so theo SID đầy đủ — cả LocalService/NetworkService/Administrator dựng sẵn) được LÀ CHỦ và được có
-mặt trong ACL của thư mục `mqtt-tls`, tệp khoá và chứng chỉ; ACL phải được BẢO VỆ (không kế thừa). Lần đầu, server tạo thư mục
-tạm `mqtt-tls.<pid>.<ngẫu nhiên>.new` CÓ SẴN ACL riêng ngay lúc tạo, kiểm nó RỖNG rồi mới ghi khoá, sau đó đổi tên thành
-`mqtt-tls`. Mỗi lần khởi động, tệp khoá được mở MỘT lần: chủ, ACL, số hard link, reparse point đều kiểm qua chính handle đó và
-nội dung đọc từ chính handle đó. Kết quả:
-- chủ là tài khoản khác (có thể bị CÀI SẴN — `data/` cho Authenticated Users quyền Modify), tệp có hơn 1 hard link, hoặc là
-  liên kết/junction ⇒ KHÔNG mở TLS và KHÔNG đụng vào nó — hãy điều tra, xoá đồ lạ rồi khởi động lại;
-- ACL rỗng (null) hoặc có BẤT KỲ tài khoản nào khác được cho phép ⇒ khoá **CÓ THỂ ĐÃ LỘ**: server khoá lại ACL nhưng VẪN KHÔNG
-  dùng khoá đó, ghi tệp `ROTATE-REQUIRED` trong thư mục và thẻ web báo **"Cần thay khoá"** — mọi lần khởi động sau vẫn từ chối
-  cho tới khi THAY KHOÁ (mục dưới). Với chứng chỉ riêng (MQTT_TLS_KEY) tệp đánh dấu là `<MQTT_TLS_KEY>.ROTATE-REQUIRED`;
-  thư mục chứa chứng chỉ riêng có tài khoản lạ ⇒ từ chối (không sửa thư mục của người vận hành);
-- ACL chưa bảo vệ / ACE lạ / quá thời gian kiểm (`MQTT_TLS_ACL_TIMEOUT_MS`, mặc định 10 s mỗi lệnh) ⇒ KHÔNG mở TLS lần này.
-Cổng thường không ảnh hưởng; các lệnh kiểm chạy bất đồng bộ, không chặn server. **Nên cài server trên ổ/thư mục KHÔNG cho
-Authenticated Users quyền Modify** (ổ D: của máy dev hiện cho quyền đó từ gốc). Kiểm tay (PowerShell):
-`(Get-Acl data\mqtt-tls\broker-tls.pem).Sddl` — chủ `O:` và mọi `(A;…)` chỉ được là SY, BA hoặc SID tài khoản server.
-Linux: quyền 0600/0700. **Vân tay SHA‑256** của chứng chỉ hiện ở web: *Kết nối (MQTT / UNS) → Thiết bị* → thẻ
-**"TLS của broker nhúng"** (nút Sao chép). Tệp chứng chỉ hỏng ⇒ thẻ báo lỗi, cổng TLS KHÔNG mở và server KHÔNG tự sinh
-lại (sinh lại = đổi vân tay = mọi máy đã ghim bị từ chối); muốn sinh mới thì chuyển tệp đi chỗ khác rồi khởi động lại,
-sau đó nhập lại vân tay mới trên MỌI máy. Mở firewall cho cổng 8884 (TCP).
+ĐỊNH (chỉ `MQTT_TLS_ENABLED=false` mới tắt). **Server KHÔNG tự sinh khoá** và không bao giờ ghi, sửa ACL hay xoá gì trong
+thư mục khoá: khoá riêng + chứng chỉ do **quản trị viên cấp MỘT LẦN** bằng script, server chỉ ĐỌC và KIỂM TRA mỗi lần khởi
+động (ba bản vá trước để server tự sinh khoá trong `data/` — thư mục mọi người dùng cục bộ ghi được — đều bị quét bảo mật
+tìm ra lỗ mới; quyết định chủ dự án 2026‑10‑11).
+
+**Cấp khoá (một lần, PowerShell chạy "Run as Administrator" trên máy server):**
+```powershell
+cd D:\SOURCES\avi-aoi-management        # thư mục cài server
+.\scripts\provision-mqtt-tls.ps1 -ServerAccount 'NT AUTHORITY\SYSTEM'
+# -ServerAccount = tài khoản CHẠY server (dịch vụ/Task Scheduler/người dùng): 'NT AUTHORITY\SYSTEM', '.\svc-aoi', 'DOMAIN\user' hay SID.
+# Xem: Get-CimInstance Win32_Service -Filter "Name='<dịch vụ>'" | Select StartName  — hoặc Task Manager → Details → User name.
+```
+Script làm gì: tạo `C:\ProgramData\avi-aoi\mqtt-tls` (đổi bằng `-Dir`) với danh sách truy cập ĐẶT NGAY LÚC TẠO (không có
+khe hở kế thừa): **SYSTEM + Administrators toàn quyền, tài khoản server CHỈ ĐỌC, không ai khác, không kế thừa**; thư mục cha
+`avi-aoi` cũng vậy; sinh khoá **EC P‑256** (`-Algorithm RSA` = RSA‑3072) + chứng chỉ tự ký 20 năm (`-Days`) có subjectAltName
+= tên máy, mọi IPv4 LAN, `localhost`, `127.0.0.1` (thêm `-DnsName` / `-IpAddress`); ghi `broker.key` + `broker.crt` với cùng
+ACL (tạo mới, không bao giờ ghi đè); đọc lại từng tệp qua handle của nó để kiểm chủ sở hữu / ACL / hard link; in **vân tay
+SHA‑256** và các bước tiếp theo. Script **TỪ CHỐI, không ghi gì** khi: không chạy với quyền Administrator (mã 2); thư mục,
+thư mục cha hoặc tệp có sẵn thuộc tài khoản khác, cho tài khoản khác truy cập, kế thừa ACL, là junction/symlink, có hard link
+thứ hai, hoặc thư mục chứa tệp lạ (mã 3 — lưu ý `C:\ProgramData` cho phép người dùng thường TẠO thư mục con, nên kẻ xấu có
+thể cài sẵn `avi-aoi`: xoá nó bằng quyền Administrator rồi chạy lại); đã có cặp khoá mà không có `-Rotate` (mã 4); tham số
+sai (mã 6). Dùng `-Dir` khác mặc định thì đặt `MQTT_TLS_CERT` + `MQTT_TLS_KEY` trong `.env` (phải đặt CẢ HAI). Linux: tạo
+`/etc/avi-aoi/mqtt-tls` do root, tệp `broker.key`/`broker.crt` chủ = tài khoản server, quyền 0600; thư mục không cho
+group/other ghi.
+
+**Server mỗi lần khởi động** mở MỖI tệp (khoá và chứng chỉ) đúng MỘT lần và kiểm qua chính handle đó (Windows): chủ sở hữu
+∈ {tài khoản server, SYSTEM, Administrators}; ACL được bảo vệ (không kế thừa); MỌI mục cho phép chỉ thuộc ba tài khoản đó;
+không phải reparse point; đúng 1 hard link; rồi đọc nội dung từ chính handle đó (Linux: `open(O_NOFOLLOW)` + `fstat`: chủ =
+tài khoản server hoặc root, không bit group/other, nlink 1; thư mục không cho group/other ghi). Bất kỳ nghi ngờ nào ⇒ **KHÔNG
+mở cổng TLS**, log một dòng với mã, thẻ web báo lý do; server KHÔNG sửa ACL, KHÔNG sinh lại, KHÔNG xoá — quản trị viên chạy lại
+script. Cổng thường và phần còn lại của server không ảnh hưởng; các lệnh kiểm chạy bất đồng bộ, mỗi lệnh có hạn
+`MQTT_TLS_ACL_TIMEOUT_MS` (mặc định 10 s; quá hạn ⇒ không mở TLS). Mã: `TLS_NOT_PROVISIONED` (chưa chạy script — thẻ web in
+đường dẫn mong đợi), `TLS_FILE_UNREADABLE` (tài khoản server không có quyền đọc — sai `-ServerAccount`),
+`TLS_KEY_OWNER_FOREIGN`, `TLS_KEY_ACL_OPEN` (tài khoản khác đọc/sửa được hoặc ACL rỗng — khoá có thể đã lộ: cấp cặp MỚI),
+`TLS_KEY_ACL_UNPROTECTED`, `TLS_KEY_ACL_UNVERIFIED`, `TLS_KEY_LINKED`, `TLS_FILE_CORRUPT`, `TLS_KEY_MISMATCH`,
+`TLS_CONFIG_INCOMPLETE`. Kiểm tay: `(Get-Acl C:\ProgramData\avi-aoi\mqtt-tls\broker.key).Sddl` — `O:` là BA hoặc SY, có cờ
+`P`, mọi `(A;…)` chỉ là SY, BA hoặc SID tài khoản server.
+
+Thư mục cũ `data\mqtt-tls` (server tự sinh ở các bản trước) và biến `MQTT_TLS_DIR` bị **BỎ QUA** (server log một dòng khi
+còn thấy): cấp khoá bằng script, khởi động lại, nhập vân tay **MỚI** trên mọi máy tính bảng, rồi xoá thư mục cũ.
+
+**Vân tay SHA‑256** hiện ở web: *Kết nối (MQTT / UNS) → Thiết bị* → thẻ **"TLS của broker nhúng"** (nút Sao chép; thẻ
+cũng báo "chưa cấp khoá" kèm đường dẫn mong đợi, hoặc "từ chối" kèm lý do — khi đó KHÔNG có vân tay để ghim). **Firewall:**
+mở TCP **8884** chiều vào, vd `New-NetFirewallRule -DisplayName "AVI-AOI MQTTS 8884" -Direction Inbound -Protocol TCP
+-LocalPort 8884 -Action Allow`.
 
 **Máy tính bảng (app ≥ 1.0.18).** Settings → MQTT:
 1. Giao thức **TCP**, bật **TLS/SSL**, cổng **8884**, địa chỉ = **IP** của server (như bước 1 ở trên).
@@ -318,17 +340,21 @@ sau đó nhập lại vân tay mới trên MỌI máy. Mở firewall cho cổng 
 5. Máy ONLINE lại qua TLS ⇒ xong máy đó. Khi MỌI máy đã chạy TLS, có thể đóng cổng thường bằng `MQTT_PLAIN_ENABLED=false`
    (thiết bị/simulator khác còn dùng 1883/8883 sẽ mất kết nối — kiểm tra trước).
 
-**Thay chứng chỉ có chủ đích / khoá bị lộ (rotation).** Chứng chỉ có hạn ~20 năm và KHÔNG bao giờ tự sinh lại (kể cả để
-thêm subjectAltName cho chứng chỉ cũ) — vì đổi chứng chỉ = đổi vân tay = mọi máy đã ghim bị từ chối. Khi cần thay (nghi
-khoá riêng bị lộ/sao chép, đổi IP/tên máy server và cần SAN mới, hoặc sắp hết hạn):
+**Thay khoá (rotation) — khoá nghi bị lộ, đổi IP/tên máy cần SAN mới, hoặc sắp hết hạn.** Chứng chỉ KHÔNG bao giờ tự
+sinh lại — đổi chứng chỉ = đổi vân tay = mọi máy đã ghim bị từ chối, nên đây luôn là việc có chủ đích của quản trị viên:
 1. Báo trước: trong thời gian đổi, máy tính bảng TLS sẽ báo "Chứng chỉ broker đã THAY ĐỔI" và không nhận cảnh báo qua TLS.
-2. Dừng server; **chuyển CẢ thư mục** `data\mqtt-tls` (gồm khoá cũ và tệp `ROTATE-REQUIRED` nếu có) ra chỗ khác — vd
-   `mqtt-tls.revoked-<ngày>` ngoài `data/`, giữ ACL riêng (không xoá ngay nếu cần điều tra); khởi động lại server ⇒ thư mục và
-   chứng chỉ MỚI được tạo. Chứng chỉ riêng (MQTT_TLS_KEY): thay cặp khoá/chứng chỉ mới rồi xoá `<MQTT_TLS_KEY>.ROTATE-REQUIRED`.
-3. Mở thẻ "TLS của broker nhúng" lấy vân tay MỚI; trên TỪNG máy tính bảng nhập vân tay mới **cùng mật khẩu thiết bị** rồi
-   Lưu (đổi vân tay luôn bắt nhập lại mật khẩu). Nếu nghi lộ khoá: đồng thời **xoay mật khẩu** từng thiết bị (Cấp / xoay
-   mật khẩu) — kẻ có khoá cũ có thể đã giả broker và thu mật khẩu.
-4. Kiểm máy ONLINE lại qua TLS; huỷ hẳn tệp cũ khi không còn cần điều tra.
+2. PowerShell quyền Administrator: `.\scripts\provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>' -Rotate` — cặp cũ
+   được chuyển vào `mqtt-tls\backup-<ngày-giờ>\` (cùng ACL), cặp mới được ghi, vân tay mới in ra. Script từ chối nếu thư mục
+   có dấu hiệu bất thường (tệp lạ, hard link, chủ sở hữu lạ, ACL mở) — điều tra trước khi thay.
+3. Khởi động lại server; mở thẻ "TLS của broker nhúng" lấy vân tay MỚI; trên TỪNG máy tính bảng nhập vân tay mới **cùng mật
+   khẩu thiết bị** rồi Lưu (đổi vân tay luôn bắt nhập lại mật khẩu). Nếu nghi lộ khoá: đồng thời **xoay mật khẩu** từng
+   thiết bị (Cấp / xoay mật khẩu) — kẻ có khoá cũ có thể đã giả broker và thu mật khẩu.
+4. Kiểm máy ONLINE lại qua TLS; xoá thư mục `backup-*` khi không còn cần điều tra.
+
+**Sao lưu / khôi phục.** Sao chép hai tệp `broker.key` + `broker.crt` vào nơi lưu trữ mã hoá chỉ quản trị viên truy cập
+được — mất khoá = cấp khoá mới = nhập lại vân tay trên MỌI máy. Khôi phục trên máy mới: chạy script lần đầu để tạo thư mục
+và hai tệp với đúng ACL, rồi với quyền Administrator chép nội dung hai tệp sao lưu ĐÈ lên `broker.key`/`broker.crt` (chép đè
+giữ nguyên ACL của tệp đích; không xoá rồi tạo lại), khởi động lại server và đối chiếu vân tay trên thẻ web với vân tay cũ.
 
 Hạn chế: app 1.0.18 ghim vân tay trên đường **MQTT/TCP + TLS** (module native Android); đường WebSocket `wss://` dùng kho
 CA của hệ thống nên không dùng được với chứng chỉ tự ký — server Đợt 7 không mở wss://. iOS chưa có module ⇒ app từ chối
