@@ -294,11 +294,19 @@ export function generateMachineKey(): { plaintext: string; prefix: string } {
   return { plaintext: `mk_${secret}`, prefix: `mk_${secret.slice(0, 6)}` };
 }
 
-/** Default scopes a freshly issued machine key gets (covers the machine router). */
+/**
+ * Default scopes a freshly issued machine key gets (ingest + equipment read).
+ *
+ * Doc 81 Đợt 7 K1 (owner decision 2026-10-11): `edge:sync` is NO LONGER a default.
+ * It gates the WS-2 edge model-deployment procedures of the machine router
+ * (checkModelVersion / getModelPackage / confirmDeployment / edgeHeartbeat /
+ * syncEdgeResults) and REST POST /api/v1/edge/sync — an edge node's key must ask for
+ * it EXPLICITLY (issueKey `scopes`). Existing keys are unchanged by code: an explicit
+ * scope list is honoured verbatim and rotateMachineKey copies the source key's scopes.
+ */
 export const MACHINE_KEY_DEFAULT_SCOPES: ApiScope[] = [
   "ingest:write",
   "equipment:read",
-  "edge:sync",
 ];
 
 // ── errors ────────────────────────────────────────────────────────────────────
