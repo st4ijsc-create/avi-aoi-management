@@ -189,5 +189,11 @@ describe("doc 81 Đợt 7 I3 — runVisibilityDefinitions / listVisibleRuns", ()
     expect(one).toEqual([]);
     judge.mode = "admin";
     expect((await listVisibleRuns({ limit: 4 }, null)).map((r) => r.id)).toEqual([300, 299, 298, 297]);
+    judge.mode = "scoped";
+    // fix 1 (M-5): beyond any fixed cap — 5 000 runs, the only visible one is the OLDEST ⇒ still listed
+    const many: Row[] = [];
+    for (let i = 1; i <= 5000; i++) many.push({ id: i, workflowId: i === 1 ? 1 : 2, status: "completed", paramsJson: { __foeDefVersions: [1] }, createdAt: new Date(1_700_000_000_000 + i * 1000) });
+    fake.store.set("orchestration_runs", many);
+    expect((await listVisibleRuns({ limit: 10 }, { userId: 10, userRole: "engineer" } as never)).map((r) => r.id)).toEqual([1]);
   });
 });

@@ -1711,7 +1711,7 @@ export async function runVisibleTo(run: { workflowId: number; paramsJson: unknow
 
 /**
  * doc 81 Đợt 7 task I3 — the runs a list shows (newest first, at most `limit`), visible by the versions they executed. An
- * unrestricted scope reads one page in SQL; a restricted one reads growing pages (×4, up to 4 000 rows) and keeps the
+ * unrestricted scope reads one page in SQL; a restricted one reads growing pages (×4, no cap — fix 1, M-5) and keeps the
  * visible runs until the page is full or the rows run out. Any error ⇒ [] (fail-closed).
  */
 export async function listVisibleRuns(
@@ -1729,8 +1729,10 @@ export async function listVisibleRuns(
     for (;;) {
       const rows = await page(n);
       const { keep } = await filterRunsVisibleWith(judge, rows);
-      if (keep.length >= opts.limit || rows.length < n || n >= 4000) return keep.slice(0, opts.limit);
-      n = Math.min(n * 4, 4000);
+      // fix 1 (review M-5) — no cap: the reads grow (×4) until the page is full or the runs run out, so a restricted user
+      // never silently loses older visible runs (the cost grows only with how sparse the visible runs are).
+      if (keep.length >= opts.limit || rows.length < n) return keep.slice(0, opts.limit);
+      n *= 4;
     }
   } catch {
     return [];
