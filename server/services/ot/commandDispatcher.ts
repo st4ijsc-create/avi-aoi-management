@@ -2050,8 +2050,11 @@ function raiseStopUnverifiedAlarm(
         },
         // fix 1 / fix scan (R-5-f, R-5-h) — bypass deduped per OCCURRENCE (type, machine, this STOP's ledger row) and
         // recipient for 60 s; another STOP's alarm is a distinct occurrence and is never merged.
+        // final wave F1 (ruling R-8-d) — exempt from the per-recipient bypass cap: a burst of safety-event trips (correlated
+        // in time with STOPs) must never downgrade this alarm; it is still deduped per occurrence above.
         {
           safetyCritical: true,
+          capExempt: "ot_stop_unverified",
           dedupKey: `ot_stop_unverified:${input.machineId != null ? `machine:${input.machineId}` : `adapter:${input.adapterId}`}:stop:${stopLedger.intentIds[0] ?? "?"}`,
         },
       );
