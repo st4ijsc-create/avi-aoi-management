@@ -149,7 +149,8 @@ describe("doc 81 Đợt 8 N2 — transitions ⇒ events (real backend ⇒ device
     const c = cfg(1);
     const { p, recs } = mk(c, realScripted(c, [{}, { zoneOccupied: true }, { zoneOccupied: true, resetRequired: true }, { resetRequired: true, muting: true }, {}]));
     await run(p, 1, 5);
-    expect(recs.map((r) => r.input.eventType)).toEqual(["zone_intrusion", "intrusion", "speed_violation"]);
+    // N fix 1 (M6): distinct poller types for reset-required / muting
+    expect(recs.map((r) => r.input.eventType)).toEqual(["zone_intrusion", "reset_required", "muting_active"]);
     expect(recs.every((r) => r.door === "trusted")).toBe(true);
   });
 
@@ -283,8 +284,8 @@ describe("doc 81 Đợt 8 N2 — with the REAL safetyAuditService: which notices
     expect(verdict).toEqual({
       estop: true,
       zone_intrusion: true,
-      intrusion: false,
-      speed_violation: false,
+      reset_required: false,
+      muting_active: false,
       estop_released: false,
       plc_offline: false,
       plc_online: false,

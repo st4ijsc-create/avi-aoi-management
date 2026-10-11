@@ -48,7 +48,9 @@ export type SafetyEventType =
   | "estop_released" | "plc_offline" | "plc_online"
   // doc 81 Đợt 8 N fix scan 2 (R-8-b) — monitoring itself: the watchdog's "monitoring stale" alarm and the poller's
   // "events lost" marker (queue overflow while events could not be recorded). Never trusted types.
-  | "plc_monitor_stale" | "plc_events_lost";
+  | "plc_monitor_stale" | "plc_events_lost"
+  // N fix 1 (review M6) — the poller's reset-required / muting transitions (were "intrusion" / "speed_violation").
+  | "reset_required" | "muting_active";
 // Provenance of the OBSERVATION. `plc` = read from a certified Safety PLC's (non-
 // safety-rated) status interface; `sim` = a clearly-labelled SIMULATED track/status
 // (never a real sensor); `test` = the Safety Monitor UI's "test proximity" sandbox

@@ -383,6 +383,20 @@ const simRobotSchema = z.object({
 });
 
 const EVENT_TYPES = ["estop", "collision", "intrusion", "zone_intrusion", "force_limit", "speed_violation", "near_miss"] as const;
+/**
+ * doc 81 Đợt 8 N fix 1 (review M6) — the feed FILTER also accepts the types only the background safety-PLC poller /
+ * its watchdog write. safety.recordEvent keeps EVENT_TYPES (a user can never record a poller type).
+ */
+const FEED_EVENT_TYPES = [
+  ...EVENT_TYPES,
+  "estop_released",
+  "reset_required",
+  "muting_active",
+  "plc_offline",
+  "plc_online",
+  "plc_monitor_stale",
+  "plc_events_lost",
+] as const;
 
 // S2b — a pixel-space person detection bbox (from any detector / test).
 const personDetectionSchema = z.object({
@@ -462,7 +476,7 @@ export const safetyRouter = router({
     .input(
       z
         .object({
-          eventType: z.enum(EVENT_TYPES).optional(),
+          eventType: z.enum(FEED_EVENT_TYPES).optional(),
           robotId: z.number().int().positive().optional(),
           isNearMiss: z.boolean().optional(),
           sinceHours: z.number().int().min(1).max(24 * 90).optional(),

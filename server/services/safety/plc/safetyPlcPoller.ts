@@ -127,16 +127,18 @@ export function defaultBackendFor(cfg: SafetyPlcConfig, timeoutMs: number): { ba
 const FLAG_RISE_EVENT: Record<PlcFlag, SafetyEventType> = {
   estop: "estop",
   zoneOccupied: "zone_intrusion",
-  resetRequired: "intrusion",
-  muting: "speed_violation",
+  // N fix 1 (review M6) — distinct types: the feed badges "Intrusion" / "Speed violation" misread a reset-required /
+  // muting status of a safety PLC. Neither is a trusted bypass type.
+  resetRequired: "reset_required",
+  muting: "muting_active",
 };
 
 const EVENT_NOTE: Partial<Record<SafetyEventType, string>> = {
   estop: "safety-PLC reports e-stop PRESSED (the certified PLC performs the rated stop itself; software only observed it)",
   estop_released: "safety-PLC reports e-stop RELEASED (decided read of the e-stop status tag)",
   zone_intrusion: "safety-PLC reports a guard / light curtain TRIPPED (protected zone occupied)",
-  intrusion: "safety-PLC reports RESET REQUIRED — a safety function tripped and awaits manual reset",
-  speed_violation: "safety-PLC reports MUTING active — a protective function is temporarily bypassed",
+  reset_required: "safety-PLC reports RESET REQUIRED — a safety function tripped and awaits manual reset",
+  muting_active: "safety-PLC reports MUTING active — a protective function is temporarily bypassed",
   plc_offline: "safety-PLC status UNKNOWN (offline) — e-stop / guard state cannot be decided",
   plc_online: "safety-PLC status readable again (back online)",
 };
@@ -488,8 +490,8 @@ export class SafetyPlcPoller {
    *   link: undecidable (or a mapped flag unreadable) ⇒ "plc_offline" once; offline + a fully decided read ⇒ "plc_online";
    *         unknown + decided ⇒ online silently (no event at boot).
    *   flags (each decided flag on its own): estop false/unknown→true "estop", true→false "estop_released" (only while
-   *         online — M2); zoneOccupied →true "zone_intrusion" (guard / light curtain); resetRequired →true "intrusion";
-   *         muting →true "speed_violation". Other changes are committed silently. An unreadable flag keeps its old value.
+   *         online — M2); zoneOccupied →true "zone_intrusion" (guard / light curtain); resetRequired →true "reset_required";
+   *         muting →true "muting_active" (N fix 1, M6). Other changes are committed silently. An unreadable flag keeps its old value.
    */
   private async applyTransitions(id: number, st: ConfigState, read: PollRead): Promise<void> {
     const fullyDecided = read.kind === "decided" && read.unreadable.length === 0;
