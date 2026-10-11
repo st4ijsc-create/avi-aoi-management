@@ -71,6 +71,13 @@ function edgeLineCodes(): string[] | null {
   const codes = raw.split(",").map((s) => s.trim()).filter(Boolean);
   return codes.length ? codes : null;
 }
+/**
+ * doc 81 Đợt 9 final wave F1 — how this edge starts its robots: scoped to its own lines (EDGE_GATEWAY_LINE_CODES) and factory
+ * (EDGE_GATEWAY_FACTORY_CODE), never every enabled robot; state not ingested (central owns robot ingest).
+ */
+export function edgeRobotStartOptions(): { scope: { lineCodes: string[]; factoryCode: string | null }; ingest: false } {
+  return { scope: { lineCodes: edgeLineCodes() ?? [], factoryCode: edgeFactoryCode() }, ingest: false };
+}
 function edgeGatewayVersion(): string {
   return process.env.EDGE_GATEWAY_VERSION?.trim() || process.env.npm_package_version?.trim() || "1.0.0";
 }
@@ -500,10 +507,13 @@ export async function bootstrapEdgeGateway(): Promise<EdgeGatewayHandles> {
   // doc 81 Đợt 9 task S3 — RUN EXECUTION (owner decision 2026-10-12): flag EDGE_EXECUTION_ENABLED (default OFF) + this node's
   // own credential + the central URL; anything missing ⇒ nothing is started (said once). The robot gateway is started with it
   // (gated by ROBOT_GATEWAY_ENABLED as everywhere) so the edge's own dispatchers reach this line's robots.
+  // doc 81 Đợt 9 final wave F1 (final review I1) — ONLY this node's robots (its line codes / factory; none configured ⇒ none),
+  // and their state is NOT ingested here (central is the one ingest owner: an e-stop is never recorded twice). Motion on the
+  // edge also honours the motion lock central persisted (robotSharedMotionLockGate, read before every non-STOP motion).
   if (process.env.EDGE_EXECUTION_ENABLED === "true" || process.env.EDGE_EXECUTION_ENABLED === "1") {
     try {
       const { startRobots } = await import("../robot/robotManager");
-      await startRobots();
+      await startRobots(edgeRobotStartOptions());
     } catch (err) {
       console.error("[EdgeGateway] robot start failed:", (err as Error)?.message || err);
     }

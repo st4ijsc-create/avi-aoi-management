@@ -6,7 +6,7 @@
  * connect throws is logged "skipped" and never crashes the process.
  */
 import type { RobotStateHandle } from "./robotDriver";
-import type { RuntimeRobot } from "./robotAdapter";
+import type { RuntimeRobot, RobotLoadScope } from "./robotAdapter";
 
 let running = false;
 let orphanSweepScheduled = false;
@@ -16,7 +16,21 @@ function flagEnabled(): boolean {
   return process.env.ROBOT_GATEWAY_ENABLED === "true";
 }
 
-export async function startRobots(): Promise<boolean> {
+/**
+ * doc 81 Đợt 9 final wave F1 (final review I1) — how an EDGE gateway starts its robots:
+ *   • `scope` — only the robots of its node (its line codes / factory — robotAdapter.loadEnabledRobots), never every enabled
+ *     robot of the control plane; no line codes ⇒ none;
+ *   • `ingest: false` — ONE ingest owner per robot: central ingests robot state (robot_telemetry, the trusted e-stop
+ *     safety_events, registry status); the edge connects its drivers for its own dispatchers and polls state only to keep the
+ *     driver's link supervision (motion lock on a peer drop) — it records nothing, so an e-stop is never ingested twice.
+ * Central calls startRobots() with no options (unchanged).
+ */
+export interface StartRobotsOptions {
+  scope?: RobotLoadScope;
+  ingest?: boolean;
+}
+
+export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolean> {
   if (running) return true;
   // doc 81 Đợt 1B Task 5 fix round 1 (M1) — reconcile robot_jobs rows a previous process left
   // 'running' (died between the pre-motion row and its finalize). Runs even when the gateway
@@ -41,13 +55,13 @@ export async function startRobots(): Promise<boolean> {
 
   let robots: RuntimeRobot[] = [];
   try {
-    robots = await loadEnabledRobots();
+    robots = await loadEnabledRobots(opts.scope);
   } catch (err) {
     console.error("[Robot] loadEnabledRobots failed:", (err as Error)?.message ?? err);
     return false;
   }
   if (robots.length === 0) {
-    console.log("[Robot] no enabled robots — nothing to start");
+    console.log(opts.scope ? `[Robot] no enabled robot on this node's lines (${opts.scope.lineCodes.join(", ") || "none configured"}) — nothing to start` : "[Robot] no enabled robots — nothing to start");
     return false;
   }
 
@@ -62,7 +76,7 @@ export async function startRobots(): Promise<boolean> {
     try {
       await robot.driver.connect(robot.connection);
       const handle = await robot.driver.subscribeState(
-        (state) => ingestRobotState(robot, state),
+        opts.ingest === false ? () => undefined : (state) => ingestRobotState(robot, state),
         robot.pollIntervalMs,
       );
       active.push({ robot, handle });
@@ -78,7 +92,7 @@ export async function startRobots(): Promise<boolean> {
   }
 
   running = true;
-  console.log(`[Robot] started — ${active.length}/${robots.length} robot(s) active`);
+  console.log(`[Robot] started — ${active.length}/${robots.length} robot(s) active${opts.ingest === false ? " (edge: state NOT ingested here — central is the ingest owner)" : ""}`);
   return true;
 }
 
