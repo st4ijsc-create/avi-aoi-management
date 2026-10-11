@@ -341,7 +341,7 @@ script. Cổng thường và phần còn lại của server không ảnh hưởn
 | `TLS_FILE_UNREADABLE` (sai `-ServerAccount`) | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản ĐÚNG>' -Repair` — dựng lại ACL với tài khoản đúng, tài khoản cũ mất quyền; giữ nguyên cặp khoá (vân tay không đổi). Script báo `MQTT-TLS-KEY-WAS-EXPOSED-TO=<SID cũ>`: nếu tài khoản đó không đáng tin, làm tiếp như `TLS_KEY_ACL_OPEN`. |
 | `TLS_KEY_ACL_UNPROTECTED` | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>' -Repair` — đặt lại ACL được bảo vệ (không kế thừa); giữ cặp khoá. |
 | `TLS_KEY_ACL_OPEN` (khoá có thể đã lộ) | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>' -Repair -Rotate` — sửa ACL rồi cấp cặp MỚI (cặp cũ vào `backup-*`); nhập vân tay mới trên mọi máy tính bảng và **xoay mật khẩu thiết bị**. Chỉ dùng `-Repair` không kèm `-Rotate` khi chắc chắn không ai đã đọc khoá. |
-| `TLS_KEY_OWNER_FOREIGN`, `TLS_KEY_LINKED`, hoặc `-Repair` từ chối (mã 3: chủ sở hữu lạ, junction/symlink, hard link thứ hai, không đọc được) | Cách ly bằng tay rồi cấp mới — xem các bước bên dưới. Không bao giờ "nhận" một tệp/thư mục do tài khoản khác tạo. |
+| `TLS_KEY_OWNER_FOREIGN`, `TLS_KEY_LINKED`, hoặc `-Repair` từ chối (mã 3: chủ sở hữu lạ, junction/symlink, hard link thứ hai, không đọc được, mục lạ trong thư mục — `staging-*`, tệp/thư mục khác, thứ khác ngoài `broker.key`/`broker.crt` trong `backup-*`; nếu thông báo nói "locked first" thì riêng thư mục đã được khoá, bên trong chưa đổi gì) | Cách ly bằng tay rồi cấp mới — xem các bước bên dưới. Không bao giờ "nhận" một tệp/thư mục do tài khoản khác tạo. |
 
 Cách ly bằng tay (khi `-Repair` từ chối hoặc nghi bị cài cắm):
 ```powershell

@@ -28,9 +28,13 @@
   READ, no inheritance) to the existing folder, broker.key, broker.crt and backup-* folders: the way out of the server's
   TLS_FILE_UNREADABLE (wrong -ServerAccount: repair with the right one), TLS_KEY_ACL_OPEN and TLS_KEY_ACL_UNPROTECTED.
   It REFUSES (exit 3, nothing changed) when any of them is owned by an account other than SYSTEM / Administrators / the
-  server account (possibly planted: never adopted), is a reparse point, or has a second hard link - then quarantine the
-  folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair. When another account could read the private
+  server account (possibly planted: never adopted), is a reparse point, or has a second hard link, or when the folder holds
+  anything else (staging-*, stray files or folders, anything but broker.key / broker.crt inside a backup-*) - then quarantine
+  the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair. When another account could read the private
   key, it says so: combine with -Rotate (-Repair -Rotate) unless you can rule out that the key was read.
+  Order (Dot 8 Q2): the folder is LOCKED FIRST through a handle that does not follow reparse points and forbids renaming it
+  (its access list set without propagating to children), THEN its contents are re-checked and only then repaired - an entry
+  planted between the checks and the lock is refused, and the refusal says the folder itself was locked, nothing inside changed.
 
 .PARAMETER ServerAccount
   The account the server process runs as: a name ("NT AUTHORITY\SYSTEM", ".\svc-aoi", "DOMAIN\user") or a SID ("S-1-5-...").
@@ -161,6 +165,31 @@ using System; using System.Runtime.InteropServices; using Microsoft.Win32.SafeHa
 public static class AviMqttTlsProv {
   [StructLayout(LayoutKind.Sequential)] public struct BHFI { public uint Attributes; public uint C1, C2, A1, A2, W1, W2; public uint Volume; public uint SizeHigh; public uint SizeLow; public uint Links; public uint IndexHigh; public uint IndexLow; }
   [DllImport("kernel32.dll", SetLastError = true)] public static extern bool GetFileInformationByHandle(SafeFileHandle h, out BHFI info);
+  // doc 81 Dot 8 task Q2 - -Repair locks a folder THROUGH A HANDLE: opened without following a reparse point (the handle is the
+  // object that was checked, never a junction's target) and without FILE_SHARE_DELETE (nobody can rename / replace the folder
+  // while it is held); its access list is set with SetKernelObjectSecurity, which - unlike SetNamedSecurityInfo / .NET
+  // SetAccessControl - does NOT propagate to existing children (a child planted before the lock gets nothing).
+  [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+  [DllImport("advapi32.dll", SetLastError = true)] static extern bool SetKernelObjectSecurity(SafeFileHandle h, uint info, byte[] sd);
+  [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetKernelObjectSecurity(SafeFileHandle h, uint info, byte[] sd, uint length, out uint needed);
+  const uint OWNER = 1, DACL = 4;
+  public static SafeFileHandle OpenNoFollow(string path, bool writeOwner) {
+    uint access = 0x20000u | 0x40000u | 0x80u | (writeOwner ? 0x80000u : 0u); // READ_CONTROL | WRITE_DAC | FILE_READ_ATTRIBUTES (| WRITE_OWNER)
+    SafeFileHandle h = CreateFileW(path, access, 1u | 2u, IntPtr.Zero, 3u, 0x02000000u | 0x00200000u, IntPtr.Zero); // share READ|WRITE (no DELETE); OPEN_EXISTING; BACKUP_SEMANTICS | OPEN_REPARSE_POINT
+    if (h.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    return h;
+  }
+  public static byte[] GetSecurity(SafeFileHandle h) {
+    uint needed;
+    GetKernelObjectSecurity(h, OWNER | DACL, null, 0, out needed);
+    if (needed == 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    byte[] sd = new byte[needed];
+    if (!GetKernelObjectSecurity(h, OWNER | DACL, sd, needed, out needed)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    return sd;
+  }
+  public static void SetSecurity(SafeFileHandle h, byte[] sd, bool withOwner) {
+    if (!SetKernelObjectSecurity(h, DACL | (withOwner ? OWNER : 0u), sd)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
 }
 '@
 
@@ -295,35 +324,120 @@ if (Test-Path -LiteralPath $parent) {
   [void](Assert-Clean $parent $true 'the new parent folder')
 }
 
-# ── repair (final wave F5): re-apply the protected access list to what is already there; never adopt a foreign owner ──
+# ── repair (final wave F5; doc 81 Dot 8 task Q2): re-apply the protected access list to what is already there; never adopt a foreign owner ──
+# Order (Q2 - re-review N1, no junction-swap window):
+#   1. check EVERYTHING by path, and refuse unexpected entries exactly like provisioning (staging-*, stray files / folders, sub-folders
+#      or other files inside backup-*): a refusal here changes NOTHING;
+#   2. LOCK the folder first: open it through a handle that does not follow reparse points and forbids rename / delete while held,
+#      re-check that handle (a folder, not a reparse point, allowed owner), set its protected access list THROUGH the handle (no
+#      propagation to children) and verify it - from now on only SYSTEM / Administrators can add, rename or swap entries in it;
+#   3. RE-enumerate and RE-check what is inside (a backup-* folder is locked the same way BEFORE its own children are re-checked);
+#      a refusal from here on says so: the folder itself is locked, nothing inside it was changed;
+#   4. only then set the access lists of the files (by path, inside folders nobody else can change any more).
+function Get-RepairInventory([string]$root, [string]$phase) {
+  $list = @()
+  foreach ($e in @(Get-ChildItem -LiteralPath $root -Force)) {
+    if ($e.PSIsContainer -and $e.Name -like 'staging-*') { Fail 3 "-Repair: the folder $root holds '$($e.Name)', left by an interrupted -Rotate (it holds an UNUSED new pair). $phase Inspect it, delete it as Administrator, then run again." }
+    $isPairFile = (-not $e.PSIsContainer) -and ($e.Name -eq $CERT_NAME -or $e.Name -eq $KEY_NAME)
+    $isBackup = $e.PSIsContainer -and $e.Name -like 'backup-*'
+    if (-not ($isPairFile -or $isBackup)) { Fail 3 "-Repair: the folder $root holds an unexpected entry '$($e.Name)'. Only $CERT_NAME, $KEY_NAME and backup-* folders belong there. $phase Inspect and remove it (or quarantine the folder by hand: DEPLOY_LAN_GUIDE.md, TLS recovery), then run again." }
+    $list += , @($e.FullName, $isBackup)
+  }
+  return , $list
+}
+function Get-BackupInventory([string]$backup, [string]$phase) {
+  $files = @()
+  foreach ($bf in @(Get-ChildItem -LiteralPath $backup -Force)) {
+    if ($bf.PSIsContainer -or ($bf.Name -ne $CERT_NAME -and $bf.Name -ne $KEY_NAME)) { Fail 3 "-Repair: the backup folder $backup holds an unexpected entry '$($bf.Name)' (only $CERT_NAME and $KEY_NAME belong there). $phase Inspect and remove it (or quarantine the folder by hand: DEPLOY_LAN_GUIDE.md, TLS recovery), then run again." }
+    $files += $bf.FullName
+  }
+  return , $files
+}
+function Get-RepairFacts([string]$t, [string]$phase) {
+  try { $f = Get-Facts $t } catch { Fail 3 "-Repair: cannot read the owner / access list of $t ($($_.Exception.Message)). $phase Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+  if (($f.Attributes -band $FILE_ATTRIBUTE_REPARSE_POINT) -ne 0) { Fail 3 "-Repair: $t is a reparse point (symlink/junction). $phase Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+  if (-not $f.IsDir -and $f.Links -ne 1) { Fail 3 "-Repair: $t has $($f.Links) hard links. $phase Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+  if ($allowedOwners -notcontains $f.Owner) { Fail 3 "-Repair: $t is owned by $($f.Owner) - another account created it (possibly planted); it is never adopted. $phase Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+  return $f
+}
+# Lock one folder through a handle (see the order above). Returns the handle: the caller keeps it open until the repair is done.
+function Lock-RepairFolder([string]$folder, [string]$phase) {
+  try { $h = [AviMqttTlsProv]::OpenNoFollow($folder, (-not $TestUnelevated)) } catch { Fail 3 "-Repair: cannot open $folder to lock it ($($_.Exception.Message); another program may hold it open). $phase Close it and run again, or quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery)." }
+  $info = New-Object AviMqttTlsProv+BHFI
+  if (-not [AviMqttTlsProv]::GetFileInformationByHandle($h, [ref]$info)) { $h.Dispose(); Fail 3 "-Repair: cannot read $folder through its handle. $phase" }
+  if (($info.Attributes -band $FILE_ATTRIBUTE_REPARSE_POINT) -ne 0) { $h.Dispose(); Fail 3 "-Repair: $folder became a reparse point (symlink/junction) after it was checked. $phase Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+  if (($info.Attributes -band 0x10) -eq 0) { $h.Dispose(); Fail 3 "-Repair: $folder is no longer a folder. $phase" }
+  $sd = New-Object System.Security.AccessControl.RawSecurityDescriptor -ArgumentList @([AviMqttTlsProv]::GetSecurity($h), 0)
+  if ($allowedOwners -notcontains $sd.Owner.Value) { $h.Dispose(); Fail 3 "-Repair: $folder is owned by $($sd.Owner.Value) - another account created it (possibly planted); it is never adopted. $phase Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+  try { [AviMqttTlsProv]::SetSecurity($h, (New-DirSecurity).GetSecurityDescriptorBinaryForm(), (-not $TestUnelevated)) } catch { $h.Dispose(); Fail 3 "-Repair: could not lock $folder ($($_.Exception.Message)). $phase" }
+  $after = New-Object System.Security.AccessControl.RawSecurityDescriptor -ArgumentList @([AviMqttTlsProv]::GetSecurity($h), 0)
+  $locked = [ordered]@{ IsDir = $true; Attributes = [int]$info.Attributes; Links = 1; Owner = $after.Owner.Value; Protected = (($after.ControlFlags -band [System.Security.AccessControl.ControlFlags]::DiscretionaryAclProtected) -ne 0); DaclNull = ($null -eq $after.DiscretionaryAcl); Aces = @() }
+  if (-not $locked.DaclNull) { foreach ($a in $after.DiscretionaryAcl) { if ($a -is [System.Security.AccessControl.KnownAce]) { $locked.Aces += @{ Type = [string]$a.AceType; Sid = $a.SecurityIdentifier.Value } } else { $locked.Aces += @{ Type = [string]$a.AceType; Sid = '?' } } } }
+  $lp = @(Get-Problems $locked $allowedOwners $allowedAces $true)
+  if ($lp.Count -gt 0) { $h.Dispose(); Fail 3 "-Repair: $folder could not be locked ($($lp -join '; ')). $phase" }
+  return $h
+}
+# Test-only hook (inert unless the gated -TestUnelevated mode is on): plants a junction inside -Dir at a given point of -Repair - the
+# race the order above closes (re-review N1). AVI_MQTT_TLS_TEST_PLANT_AT = the point; AVI_MQTT_TLS_TEST_PLANT = '<path inside -Dir>|<target>'
+# plants a junction inside -Dir; AVI_MQTT_TLS_TEST_SWAP_DIR = '<target>' moves -Dir aside and puts a junction to <target> in its place.
+function Test-Plant([string]$at) {
+  if (-not $TestUnelevated -or $env:AVI_MQTT_TLS_TEST_PLANT_AT -ne $at) { return }
+  if ($env:AVI_MQTT_TLS_TEST_PLANT) {
+    $parts = $env:AVI_MQTT_TLS_TEST_PLANT.Split('|')
+    $link = Join-Path $Dir $parts[0]
+    [void](cmd /c mklink /J "$link" "$($parts[1])" 2>&1)
+  }
+  if ($env:AVI_MQTT_TLS_TEST_SWAP_DIR) {
+    [System.IO.Directory]::Move($Dir, $Dir + '.moved')
+    [void](cmd /c mklink /J "$Dir" "$($env:AVI_MQTT_TLS_TEST_SWAP_DIR)" 2>&1)
+  }
+}
+
 if ($Repair) {
   if (-not (Test-Path -LiteralPath $Dir)) { Fail 6 "-Repair: $Dir does not exist - nothing to repair (run without -Repair to provision)." }
+  $nothing = 'Nothing was changed.'
+  # 1. every check BEFORE any change: one refusal => nothing is changed
   $targets = @($Dir)
-  foreach ($e in @(Get-ChildItem -LiteralPath $Dir -Force)) {
-    if (-not $e.PSIsContainer -and ($e.Name -eq $CERT_NAME -or $e.Name -eq $KEY_NAME)) { $targets += $e.FullName }
-    elseif ($e.PSIsContainer -and $e.Name -like 'backup-*') {
-      $targets += $e.FullName
-      foreach ($bf in @(Get-ChildItem -LiteralPath $e.FullName -Force)) { $targets += $bf.FullName }
-    }
+  [void](Get-RepairFacts $Dir $nothing)
+  foreach ($entry in (Get-RepairInventory $Dir $nothing)) {
+    $targets += $entry[0]
+    if ($entry[1]) { foreach ($bf in (Get-BackupInventory $entry[0] $nothing)) { $targets += $bf } }
   }
-  # every check BEFORE any change: one refusal => nothing is changed
   $exposed = @()
   foreach ($t in $targets) {
-    try { $f = Get-Facts $t } catch { Fail 3 "-Repair: cannot read the owner / access list of $t ($($_.Exception.Message)). Nothing was changed. Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
-    if (($f.Attributes -band $FILE_ATTRIBUTE_REPARSE_POINT) -ne 0) { Fail 3 "-Repair: $t is a reparse point (symlink/junction). Nothing was changed. Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
-    if (-not $f.IsDir -and $f.Links -ne 1) { Fail 3 "-Repair: $t has $($f.Links) hard links. Nothing was changed. Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
-    if ($allowedOwners -notcontains $f.Owner) { Fail 3 "-Repair: $t is owned by $($f.Owner) - another account created it (possibly planted); it is never adopted. Nothing was changed. Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+    $f = Get-RepairFacts $t $nothing
     if (-not $f.IsDir -and (Split-Path -Leaf $t) -eq $KEY_NAME) {
       if ($f.DaclNull) { $exposed += 'everyone (no access list)' }
       foreach ($a in $f.Aces) { if ($a.Type -eq 'AccessAllowed' -and $allowedAces -notcontains $a.Sid) { $exposed += $a.Sid } }
     }
   }
-  foreach ($t in $targets) {
-    $item = Get-Item -LiteralPath $t -Force
-    if ($item -is [System.IO.DirectoryInfo]) { $item.SetAccessControl((New-DirSecurity)) } else { $item.SetAccessControl((New-FileSecurity)) }
+  Test-Plant 'repair-before-lock'
+  # 2. lock the folder first, through its handle (held until the end)
+  $lockedOnly = "The folder $Dir itself was locked first (protected access list: SYSTEM + Administrators full, server account read); nothing inside it was changed."
+  $handles = @()
+  try {
+    $handles += Lock-RepairFolder $Dir $nothing
+    # 3. re-enumerate and re-check inside the locked folder; lock each backup-* before re-checking its children
+    $files = @()
+    $backups = @()
+    foreach ($entry in (Get-RepairInventory $Dir $lockedOnly)) {
+      [void](Get-RepairFacts $entry[0] $lockedOnly)
+      if ($entry[1]) {
+        $handles += Lock-RepairFolder $entry[0] $lockedOnly
+        $backups += $entry[0]
+        foreach ($bf in (Get-BackupInventory $entry[0] $lockedOnly)) { [void](Get-RepairFacts $bf $lockedOnly); $files += $bf }
+      } else {
+        $files += $entry[0]
+      }
+    }
+    # 4. the files (inside folders nobody else can change any more)
+    foreach ($t in $files) { (Get-Item -LiteralPath $t -Force).SetAccessControl((New-FileSecurity)) }
+    $all = @($Dir) + $backups + $files
+    foreach ($t in $all) { [void](Assert-Clean $t $true 'the repaired object') }
+  } finally {
+    foreach ($h in $handles) { $h.Dispose() }
   }
-  foreach ($t in $targets) { [void](Assert-Clean $t $true 'the repaired object') }
-  Write-Output "Repaired the access list of $($targets.Count) object(s) under ${Dir}: SYSTEM + Administrators full, server account read ($serverSid), protected (no inheritance)."
+  Write-Output "Repaired the access list of $($all.Count) object(s) under ${Dir}: SYSTEM + Administrators full, server account read ($serverSid), protected (no inheritance)."
   $exposed = @($exposed | Select-Object -Unique)
   if ($exposed.Count -gt 0) {
     Write-Warning "the private key $KEY_NAME was readable by: $($exposed -join ', '). Unless you can rule out that it was read, rotate now (run again with -Rotate, or use -Repair -Rotate): every tablet then enters the NEW fingerprint; rotate the device passwords too."
