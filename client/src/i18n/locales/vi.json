@@ -17558,10 +17558,14 @@
     "evt": {
       "collision": "Va chạm",
       "estop": "E-stop",
+      "estop_released": "Đã nhả E-stop",
       "force_limit": "Giới hạn lực",
       "intrusion": "Xâm nhập",
       "near_miss": "Suýt sự cố",
-      "speed_violation": "Vi phạm tốc độ"
+      "plc_offline": "PLC an toàn mất kết nối (không rõ trạng thái)",
+      "plc_online": "PLC an toàn kết nối lại",
+      "speed_violation": "Vi phạm tốc độ",
+      "zone_intrusion": "Xâm nhập vùng / cửa bảo vệ ngắt"
     },
     "feedEmpty": "Chưa ghi nhận sự kiện an toàn nào. Luồng này chỉ giám sát tư vấn.",
     "feedTitle": "Luồng sự kiện an toàn",

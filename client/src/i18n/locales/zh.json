@@ -17961,10 +17961,14 @@
     "evt": {
       "collision": "碰撞",
       "estop": "急停",
+      "estop_released": "急停已释放",
       "force_limit": "力限值",
       "intrusion": "闯入",
       "near_miss": "未遂事件",
-      "speed_violation": "超速"
+      "plc_offline": "安全PLC离线（状态未知）",
+      "plc_online": "安全PLC已恢复在线",
+      "speed_violation": "超速",
+      "zone_intrusion": "区域闯入／防护触发"
     },
     "feedEmpty": "无安全事件记录。此数据源仅为参考性监控。",
     "feedTitle": "安全事件源",

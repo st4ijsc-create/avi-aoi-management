@@ -149,6 +149,11 @@ function eventTypeBadge(eventType: string, t: (k: string, f: string) => string) 
     force_limit: { cls: "bg-amber-500 text-white", label: t("safety.evt.force_limit", "Force limit") },
     speed_violation: { cls: "bg-yellow-500 text-black", label: t("safety.evt.speed_violation", "Speed violation") },
     near_miss: { cls: "bg-violet-500 text-white", label: t("safety.evt.near_miss", "Near-miss") },
+    // doc 81 Đợt 8 N2 — background safety-PLC poller transitions (+ the existing zone evaluator type, unlabelled until now)
+    zone_intrusion: { cls: "bg-orange-600 text-white", label: t("safety.evt.zone_intrusion", "Zone intrusion / guard tripped") },
+    estop_released: { cls: "bg-emerald-600 text-white", label: t("safety.evt.estop_released", "E-stop released") },
+    plc_offline: { cls: "bg-slate-600 text-white", label: t("safety.evt.plc_offline", "Safety PLC offline (status unknown)") },
+    plc_online: { cls: "bg-sky-600 text-white", label: t("safety.evt.plc_online", "Safety PLC back online") },
   };
   const e = map[eventType] ?? { cls: "", label: eventType };
   return e.cls ? <Badge className={e.cls}>{e.label}</Badge> : <Badge variant="outline">{eventType}</Badge>;

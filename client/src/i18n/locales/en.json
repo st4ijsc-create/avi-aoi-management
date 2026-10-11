@@ -17578,10 +17578,14 @@
     "evt": {
       "collision": "Collision",
       "estop": "E-stop",
+      "estop_released": "E-stop released",
       "force_limit": "Force limit",
       "intrusion": "Intrusion",
       "near_miss": "Near-miss",
-      "speed_violation": "Speed violation"
+      "plc_offline": "Safety PLC offline (status unknown)",
+      "plc_online": "Safety PLC back online",
+      "speed_violation": "Speed violation",
+      "zone_intrusion": "Zone intrusion / guard tripped"
     },
     "feedEmpty": "No safety events recorded. This feed is advisory monitoring only.",
     "feedTitle": "Safety event feed",
