@@ -172,6 +172,35 @@ async function applyTo(rawUrl, label) {
     if (conLai.n !== 0) throw new Error(`(b) giao dich do KHONG hoan tac: con ${conLai.n} hang probe`);
     console.log(`  ${TAG} ${label} (b) catalog ${JSON.stringify(q)}; hành vi avi_app: ${JSON.stringify(kq)}; HOÀN TÁC`);
 
+    // fix scan 3 (R-8-c) — durable poll state: columns, CHECK, grants (catalog) + behaviour in an ALWAYS-rolled-back tx
+    const BANG2 = "safety_plc_poll_state";
+    const cols2 = await appSql`SELECT column_name AS c, data_type AS t FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${BANG2}`;
+    const need2 = { configId: "integer", link: "character varying", flags: "jsonb", intervalMs: "integer", lastAttemptAt: "bigint", lastOkAt: "bigint", writerInstance: "character varying", staleAlarmEpisode: "character varying", updatedAt: "timestamp with time zone" };
+    for (const [c, t] of Object.entries(need2)) {
+      const got = cols2.find((r) => r.c === c);
+      if (!got || got.t !== t) throw new Error(`(d) ${BANG2}.${c} thieu/sai kieu: ${got?.t}`);
+    }
+    const [q2] = await appSql`
+      SELECT has_table_privilege(${BANG2}, 'SELECT') AS sel, has_table_privilege(${BANG2}, 'INSERT') AS ins,
+             has_table_privilege(${BANG2}, 'UPDATE') AS upd, has_table_privilege(${BANG2}, 'DELETE') AS del`;
+    if (!q2.sel || !q2.ins || !q2.upd || q2.del) throw new Error(`(d) quyen avi_app tren ${BANG2} sai: ${JSON.stringify(q2)}`);
+    const HOAN_TAC2 = new Error("probe-0368-scan3-rollback");
+    let kq2 = null;
+    try {
+      await appSql.begin(async (tx) => {
+        const [cfg] = await tx`INSERT INTO safety_plc_configs (code, name, backend) VALUES (${"__probe_0368s3_" + Date.now()}, 'p', 'sim') RETURNING id`;
+        await tx`INSERT INTO ${tx(BANG2)} ("configId", "link", "flags", "lastAttemptAt") VALUES (${cfg.id}, 'online', ${tx.json({ estop: true })}, ${Date.now()})`;
+        const linkSai = await maLoi(tx, (sp) => sp`UPDATE ${sp(BANG2)} SET "link" = 'ok' WHERE "configId" = ${cfg.id}`);
+        const xoa = await maLoi(tx, (sp) => sp`DELETE FROM ${sp(BANG2)} WHERE "configId" = ${cfg.id}`);
+        kq2 = { linkSai, xoa };
+        throw HOAN_TAC2;
+      });
+    } catch (e) {
+      if (e !== HOAN_TAC2) throw e;
+    }
+    if (!kq2 || kq2.linkSai !== "23514" || kq2.xoa !== "42501") throw new Error(`(d) hanh vi ${BANG2} sai: ${JSON.stringify(kq2)}`);
+    console.log(`  ${TAG} ${label} (d) ${BANG2}: ${Object.keys(need2).length} cột; quyền ${JSON.stringify(q2)}; hành vi ${JSON.stringify(kq2)}; HOÀN TÁC`);
+
     // (c)
     await sql`
       CREATE TABLE IF NOT EXISTS "__applied_migrations" (

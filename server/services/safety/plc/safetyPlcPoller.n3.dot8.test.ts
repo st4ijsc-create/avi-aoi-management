@@ -86,7 +86,7 @@ function mk(configs: SafetyPlcConfig[] | (() => SafetyPlcConfig[]), backendFor?:
     recordPlain: seam("plain"),
     recordTrusted: seam("trusted"),
     isTrustApproved: async () => true,
-    leader: { acquire: async () => true, held: async () => true, release: async () => undefined }, health: { readHeartbeat: async () => null, writeHeartbeat: async () => undefined, claimAlarm: async () => false }, // N fix 1 (M4)
+    leader: { acquire: async () => true, held: async () => true, release: async () => undefined }, state: { load: async () => null, save: async () => undefined, list: async () => [], claimStaleAlarm: async () => false }, // N fix 1 (M4)
   });
   pollers.push(p);
   return { p, recs, types: () => recs.map((r) => r.input.eventType) };

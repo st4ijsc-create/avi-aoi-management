@@ -104,6 +104,7 @@ function mk(c: SafetyPlcConfig, backend: SafetyPlcBackendReader, opts: { real?: 
     ...(opts.real ? {} : { recordPlain: seam("plain"), recordTrusted: seam("trusted") }),
     // N fix 1 (I1) — the maker-checker approval (default: approved by a second person)
     isTrustApproved: async () => (opts.approved ? await opts.approved() : true),
+    state: { load: async () => null, save: async () => undefined, list: async () => [], claimStaleAlarm: async () => false }, // fix scan 3: durable poll state (in-memory here)
   });
   return { p, recs };
 }
@@ -265,6 +266,7 @@ describe("doc 81 Đợt 8 N2 — audit turned off at runtime ⇒ no retry storm"
       recordPlain: async (i) => (calls.push(`plain:${i.eventType}`), { ok: false, enabled: false }),
       recordTrusted: async (i) => (calls.push(`trusted:${i.eventType}`), { ok: false, enabled: false }),
       isTrustApproved: async () => true,
+      state: { load: async () => null, save: async () => undefined, list: async () => [], claimStaleAlarm: async () => false }, // fix scan 3: durable poll state (in-memory here)
     });
     await run(p, 1, 4);
     expect(calls).toEqual(["trusted:estop"]);

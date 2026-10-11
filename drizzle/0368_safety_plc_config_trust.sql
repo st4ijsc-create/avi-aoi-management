@@ -73,3 +73,37 @@ ALTER TABLE "safety_plc_config_trust" ADD CONSTRAINT "ck_safety_plc_trust_two_pe
 ALTER TABLE "safety_plc_config_trust" DROP CONSTRAINT IF EXISTS "ck_safety_plc_trust_real_actor";
 ALTER TABLE "safety_plc_config_trust" ADD CONSTRAINT "ck_safety_plc_trust_real_actor"
   CHECK (("approvedBy" IS NULL OR "approvedBy" > 0) AND ("firstApprovedBy" IS NULL OR "firstApprovedBy" > 0));
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- doc 81 Đợt 8 task N fix scan 3 (ruling R-8-c) — DURABLE poll state of the background safety-PLC poller (one row per
+-- config). Replaces the in-memory edge state and the system_settings heartbeat (removed: an admin-editable registry could
+-- forge "healthy" or pre-claim an alarm).
+--   • "link" + "flags" = the CONFIRMED edge state: advanced ONLY after the transition events were recorded; a restarted /
+--     failed-over poller continues from it (no re-sent held trip, no lost release);
+--   • "lastAttemptAt" / "lastOkAt" (epoch ms, bigint — no time-zone drift) = health: every instance computes the SAME
+--     monitoring state from enabled configs × these rows; an enabled config WITHOUT a row is STALE;
+--   • "staleAlarmEpisode" = cluster-wide compare-and-set: one "monitoring stale" alarm per episode.
+-- Written only by safetyPlcPoller / its watchdog (safetyPlcPollerHealth.ts); no router writes it.
+-- ROLLBACK: DROP TABLE IF EXISTS "safety_plc_poll_state";
+-- ════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS "safety_plc_poll_state" (
+  "configId" integer PRIMARY KEY REFERENCES "safety_plc_configs" ("id") ON DELETE CASCADE,
+  "link" varchar(16) NOT NULL DEFAULT 'unknown',
+  "flags" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "intervalMs" integer,
+  "lastAttemptAt" bigint,
+  "lastOkAt" bigint,
+  "writerInstance" varchar(64),
+  "staleAlarmEpisode" varchar(200),
+  "updatedAt" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT "ck_safety_plc_poll_state_link" CHECK ("link" IN ('unknown', 'online', 'offline'))
+);
+COMMENT ON TABLE "safety_plc_poll_state" IS
+  'doc 81 Dot 8 N fix scan 3 (R-8-c): durable confirmed edge state + last attempt / last decided read per safety-PLC config (background poller); health is computed from these rows on every instance.';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'avi_app') THEN
+    REVOKE DELETE, TRUNCATE ON "safety_plc_poll_state" FROM avi_app;
+    GRANT SELECT, INSERT, UPDATE ON "safety_plc_poll_state" TO avi_app;
+  END IF;
+END $$;

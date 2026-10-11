@@ -30,7 +30,7 @@ import { idsTrongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
 import { eq } from "drizzle-orm";
 import { safetyPlcAdapterEnabled } from "./plc/safetyPlcAdapter";
 // doc 81 Đợt 8 N fix scan 2 (R-8-b) — background poller monitoring health.
-import { evaluatePollerHealth, pgPollerHealthStore, safetyPlcPollerEnabled, type PollerHealth, type PollerHealthState } from "./plc/safetyPlcPollerHealth";
+import { evaluatePollerHealth, pgPollStateStore, safetyPlcPollerEnabled, type PollerHealth, type PollerHealthState, type PollStateRow } from "./plc/safetyPlcPollerHealth";
 import { safetyAuditEnabled } from "./safetyAuditService";
 import { safetyZoneSwEnabled, listZones } from "./safetyZoneService";
 import { safetyVisionEnabled, listCalibrations } from "./vision/humanDetectionProducer";
@@ -178,8 +178,8 @@ export interface SafetySourceHealth {
    */
   plcPoller: {
     state: PollerHealthState;
-    heartbeatAt: string | null;
-    leaderAlive: boolean;
+    /** fix scan 3 (R-8-c) — the newest durable poll attempt of any config (the leader's last poll, read from the DB). */
+    lastPollAt: string | null;
     staleConfigs: number;
     configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean }>;
     hiddenConfigs: number;
@@ -306,13 +306,12 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
 
 /** fix scan 2 — the poller health, scoped to the viewer (no endpoint is ever part of the heartbeat). */
 function pollerPanel(h: PollerHealth | undefined, ids: number[] | null): SafetySourceHealth["plcPoller"] {
-  if (!h) return { state: "off", heartbeatAt: null, leaderAlive: false, staleConfigs: 0, configs: [], hiddenConfigs: 0 };
+  if (!h) return { state: "off", lastPollAt: null, staleConfigs: 0, configs: [], hiddenConfigs: 0 };
   const iso = (t: number | null | undefined) => (typeof t === "number" && Number.isFinite(t) ? new Date(t).toISOString() : null);
   const shown = h.configs.filter((c) => visible(ids, c.factoryId ?? null));
   return {
     state: h.state,
-    heartbeatAt: iso(h.heartbeatAt),
-    leaderAlive: h.leaderAlive,
+    lastPollAt: iso(h.lastPollAt),
     staleConfigs: shown.filter((c) => c.stale).length,
     configs: shown.map((c) => ({ code: c.code, link: c.link, lastAttemptAt: iso(c.lastAttemptAt), lastOkAt: iso(c.lastOkAt), stale: c.stale })),
     hiddenConfigs: h.configs.length - shown.length,
@@ -406,13 +405,21 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem, targetRef?:
       rated: estopAdapter.isRated(),
     },
     socketServerUp: getIO() != null,
-    plcPoller: await loadPollerHealth(),
+    plcPoller: await loadPollerHealth(plcRead === "ok" ? plcConfigsEnabled : null),
   });
 }
 
 /** fix scan 2 — the persisted heartbeat, evaluated now (flags off ⇒ "off"; unreadable ⇒ "unknown"). */
-async function loadPollerHealth(): Promise<PollerHealth> {
+async function loadPollerHealth(enabledConfigs: PlcConfigLite[] | null): Promise<PollerHealth> {
   const enabled = safetyPlcPollerEnabled() && safetyPlcAdapterEnabled() && safetyAuditEnabled();
-  if (!enabled) return evaluatePollerHealth(null, Date.now(), { enabled: false });
-  return evaluatePollerHealth(await pgPollerHealthStore().readHeartbeat(), Date.now(), { enabled: true });
+  if (!enabled) return evaluatePollerHealth([], [], Date.now(), { enabled: false });
+  // fix scan 3 (R-8-c) — durable rows × ENABLED configs (same answer on every instance; no row ⇒ stale; unreadable ⇒ unknown)
+  let rows: PollStateRow[] | "error";
+  try {
+    rows = enabledConfigs ? await pgPollStateStore().list() : "error";
+  } catch {
+    rows = "error";
+  }
+  const cfgs = (enabledConfigs ?? []).map((c) => ({ id: c.id, code: c.code, factoryId: c.factoryId ?? null }));
+  return evaluatePollerHealth(cfgs, rows, Date.now(), { enabled: true });
 }

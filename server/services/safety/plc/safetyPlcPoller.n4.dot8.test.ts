@@ -204,7 +204,7 @@ const ev = (type: string) => S.emitted.filter((e) => e.eventType === type);
 
 function startPoller(cfgs: SafetyPlcConfig[]) {
   // every other dep = production default (real backends, real audit service, real doors)
-  poller = new SafetyPlcPoller({ loadConfigs: async () => cfgs, isTrustApproved: async (c) => APPROVED.get(c.id) === plcTrustDigest(c), leader: { acquire: async () => true, held: async () => true, release: async () => undefined }, health: { readHeartbeat: async () => null, writeHeartbeat: async () => undefined, claimAlarm: async () => false } });
+  poller = new SafetyPlcPoller({ loadConfigs: async () => cfgs, isTrustApproved: async (c) => APPROVED.get(c.id) === plcTrustDigest(c), leader: { acquire: async () => true, held: async () => true, release: async () => undefined }, state: { load: async () => null, save: async () => undefined, list: async () => [], claimStaleAlarm: async () => false } });
   expect(poller.start()).toBe(true);
   return poller;
 }

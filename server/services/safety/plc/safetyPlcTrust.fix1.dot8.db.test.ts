@@ -43,7 +43,8 @@ const REAL = (over: Record<string, unknown> = {}) => ({
   endpoint: "tcp://192.0.2.10:502",
   statusMap: { estop: { address: "coil:1" }, zoneOccupied: { address: "coil:2", activeWhen: "falsy" as const } },
   robotId: 5,
-  enabled: true,
+  // disabled: the shared _test table is read by parallel preflight tests (an enabled REAL config would change their verdict)
+  enabled: false,
   ...over,
 });
 
@@ -105,7 +106,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 N fix 1 — safety-PLC config maker-ch
       { factoryId: 4 },
       { scope: "factory" },
       { corporateCode: "C2" },
-      { enabled: false },
+      { enabled: true }, // base fixture is disabled (see REAL)
     ];
     for (const o of diff) expect(plcTrustDigest({ ...base, ...o } as SafetyPlcConfig), JSON.stringify(o)).not.toBe(d0);
   });
@@ -229,7 +230,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 N fix 1 — safety-PLC config maker-ch
     async function legacyInsert(): Promise<SafetyPlcConfig> {
       const code = `${RUN}-L${Math.random().toString(36).slice(2, 7)}`;
       const [r] = await sql`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", "robotId", enabled, "factoryId")
-        VALUES (${code}, 'legacy', 'pilz', 'modbus', 'tcp://192.0.2.20:502', ${sql.json({ estop: { address: "coil:1" } } as never)}, 5, true, ${factory}) RETURNING id`;
+        VALUES (${code}, 'legacy', 'pilz', 'modbus', 'tcp://192.0.2.20:502', ${sql.json({ estop: { address: "coil:1" } } as never)}, 5, false, ${factory}) RETURNING id`;
       return cfgRow(Number(r.id));
     }
 
@@ -288,7 +289,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 N fix 1 — safety-PLC config maker-ch
       const c = await legacyInsert();
       expect((await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(c) }, B, null)).kind).toBe("first");
       expect((await listPlcTrust(null, { id: C, isAdmin: true })).find((x) => x.id === c.id)).toMatchObject({ state: "awaiting_second", firstApprovedBy: B, needsTwoApprovals: true });
-      await savePlcConfig({ code: c.code, name: "renamed", vendor: "pilz", backend: "modbus", endpoint: c.endpoint, statusMap: c.statusMap, robotId: 5, enabled: true, factoryId: factory, id: c.id } as never, C, null);
+      await savePlcConfig({ code: c.code, name: "renamed", vendor: "pilz", backend: "modbus", endpoint: c.endpoint, statusMap: c.statusMap, robotId: 5, enabled: false, factoryId: factory, id: c.id } as never, C, null);
       const row = (await listPlcTrust(null, { id: D_, isAdmin: true })).find((x) => x.id === c.id)!;
       expect(row).toMatchObject({ state: "pending", firstApprovedBy: null, needsTwoApprovals: false });
       const [t] = await sql`SELECT "firstApprovedBy" FROM safety_plc_config_trust WHERE "configId" = ${c.id}`;
@@ -358,7 +359,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 N fix 1 — safety-PLC config maker-ch
 
     it("fix scan: a legacy config via the router ⇒ first approval complete:false, same admin again FORBIDDEN, another admin completes", async () => {
       const code = `${RUN}-RL${Math.random().toString(36).slice(2, 6)}`;
-      const [r] = await sql`INSERT INTO safety_plc_configs (code, name, backend, endpoint, "statusMap", enabled, "factoryId") VALUES (${code}, 'legacy', 'opcua', 'opc.tcp://192.0.2.60:4840', ${sql.json({ estop: { address: "ns=2;s=E" } } as never)}, true, ${factory}) RETURNING id`;
+      const [r] = await sql`INSERT INTO safety_plc_configs (code, name, backend, endpoint, "statusMap", enabled, "factoryId") VALUES (${code}, 'legacy', 'opcua', 'opc.tcp://192.0.2.60:4840', ${sql.json({ estop: { address: "ns=2;s=E" } } as never)}, false, ${factory}) RETURNING id`;
       const c = await cfgRow(Number(r.id));
       const dg = plcTrustDigest(c);
       expect(await (await caller(admin(B))).approveSafetyPlcConfig({ id: c.id, expectedDigest: dg })).toEqual({ ok: true, digest: dg, decision: "approve", complete: false });

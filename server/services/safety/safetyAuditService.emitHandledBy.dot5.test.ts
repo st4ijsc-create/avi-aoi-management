@@ -182,6 +182,11 @@ describe("doc 81 Đợt 8 N2 — census: who may construct / start the backgroun
     expect(refs(/\bsafetyPlcConfigTrust\b/)).toEqual(["services/safety/plc/safetyPlcTrust.ts"]);
   });
 
+  // doc 81 Đợt 8 N fix scan 3 (R-8-c) — the durable poll state is written only by its own module (no router / registry).
+  it("only safetyPlcPollerHealth.ts references the durable poll-state table", () => {
+    expect(refs(/safety_plc_poll_state/)).toEqual(["services/safety/plc/safetyPlcPollerHealth.ts"]);
+  });
+
   it("the poller module is imported only by the server entry (start/stop)", () => {
     expect(refs(/safetyPlcPoller["']/)).toEqual(["_core/index.ts"]);
   });

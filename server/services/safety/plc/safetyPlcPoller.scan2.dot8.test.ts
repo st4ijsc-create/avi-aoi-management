@@ -15,14 +15,6 @@ vi.hoisted(() => {
 });
 import type { SafetyPlcConfig, SafetyPlcStatusSnapshot } from "../../../../drizzle/schema";
 import { SafetyPlcPoller, SAFETY_PLC_EVENT_QUEUE_MAX } from "./safetyPlcPoller";
-import {
-  evaluatePollerHealth,
-  runPollerWatchdogOnce,
-  configStaleAfterMs,
-  SAFETY_PLC_HEARTBEAT_STALE_MS,
-  type PollerHeartbeat,
-  type PollerHealthStore,
-} from "./safetyPlcPollerHealth";
 import { OtReadSafetyPlcBackend, type SafetyPlcBackendReader, type SafetyPlcCheckedRead } from "./safetyPlcAdapter";
 import type { RecordSafetyEventInput } from "../safetyAuditService";
 
@@ -48,27 +40,6 @@ function scripted(c: SafetyPlcConfig, steps: Step[]) {
   };
   return b;
 }
-function memStore(): PollerHealthStore & { hb: PollerHeartbeat | null; claims: Map<string, string>; writes: number } {
-  const st = {
-    hb: null as PollerHeartbeat | null,
-    claims: new Map<string, string>(),
-    writes: 0,
-    async readHeartbeat() {
-      return st.hb;
-    },
-    async writeHeartbeat(h: PollerHeartbeat) {
-      st.writes += 1;
-      st.hb = h;
-    },
-    async claimAlarm(scope: string, episode: string) {
-      if (st.claims.get(scope) === episode) return false;
-      st.claims.set(scope, episode);
-      return true;
-    },
-  };
-  return st;
-}
-
 const pollers: SafetyPlcPoller[] = [];
 const ENV = ["SAFETY_PLC_POLLER_ENABLED", "SAFETY_PLC_ADAPTER_ENABLED", "SAFETY_AUDIT_ENABLED"] as const;
 const saved: Record<string, string | undefined> = {};
@@ -97,97 +68,16 @@ function mk(c: () => SafetyPlcConfig[], backend: (c: SafetyPlcConfig) => SafetyP
     recordTrusted: ok,
     isTrustApproved: async () => true,
     leader: LEADER,
+    state: { load: async () => null, save: async () => undefined, list: async () => [], claimStaleAlarm: async () => false },
     ...extra,
   });
   pollers.push(p);
   return { p, recs };
 }
 
-describe("(a) monitoring health — explicit 'stale', never 'healthy silence'", () => {
-  const now = 1_900_000_000_000;
-  const hb = (over: Partial<PollerHeartbeat> = {}): PollerHeartbeat => ({
-    v: 1, at: now - 1000, instance: "i1",
-    configs: [{ id: 1, code: "S2", factoryId: 7, intervalMs: 1000, since: now - 600_000, lastAttemptAt: now - 2000, lastOkAt: now - 2000, link: "online" }],
-    ...over,
-  });
-
-  it("poller flag off ⇒ 'off'; heartbeat unreadable ⇒ 'unknown' (not ok)", () => {
-    expect(evaluatePollerHealth(hb(), now, { enabled: false }).state).toBe("off");
-    expect(evaluatePollerHealth("error", now, { enabled: true }).state).toBe("unknown");
-  });
-
-  it("★ no heartbeat at all ⇒ STALE (scope global, episode 'never')", () => {
-    const h = evaluatePollerHealth(null, now, { enabled: true });
-    expect(h.state).toBe("stale");
-    expect(h.staleScopes).toEqual([expect.objectContaining({ scope: "global", episode: "never" })]);
-  });
-
-  it("★ heartbeat older than 3 refreshes ⇒ STALE (the leader stopped or hangs)", () => {
-    const h = evaluatePollerHealth(hb({ at: now - SAFETY_PLC_HEARTBEAT_STALE_MS - 1 }), now, { enabled: true });
-    expect(h.state).toBe("stale");
-    expect(h.leaderAlive).toBe(false);
-    expect(h.staleScopes[0]).toMatchObject({ scope: "global" });
-  });
-
-  it("★ fresh heartbeat but one config not attempted within 4 × max(interval, 15 s) ⇒ that config STALE", () => {
-    const lim = configStaleAfterMs(1000);
-    expect(lim).toBe(60_000);
-    const h = evaluatePollerHealth(hb({ configs: [{ id: 1, code: "S2", factoryId: 7, intervalMs: 1000, since: now - 600_000, lastAttemptAt: now - lim - 1, lastOkAt: now - lim - 1, link: "online" }] }), now, { enabled: true });
-    expect(h.state).toBe("stale");
-    expect(h.configs[0].stale).toBe(true);
-    expect(h.staleScopes).toEqual([expect.objectContaining({ scope: "config:1" })]);
-  });
-
-  it("a config never attempted since it was added counts from 'since'", () => {
-    const h = evaluatePollerHealth(hb({ configs: [{ id: 2, code: "N", factoryId: 7, intervalMs: 1000, since: now - 120_000, lastAttemptAt: null, lastOkAt: null, link: "unknown" }] }), now, { enabled: true });
-    expect(h.configs[0].stale).toBe(true);
-  });
-
-  it("all fresh ⇒ 'ok', leaderAlive", () => {
-    const h = evaluatePollerHealth(hb(), now, { enabled: true });
-    expect(h).toMatchObject({ state: "ok", leaderAlive: true, staleScopes: [] });
-  });
-
-  it("★ the leader WRITES the heartbeat (per-config last attempt / last decided read); a non-leader writes nothing", async () => {
-    const store = memStore();
-    const c = cfg();
-    const { p } = mk(() => [c], () => scripted(c, [{}]), { health: store });
-    expect(await p.leaderCheckAndRefresh()).toBe(true);
-    await p.pollNow(1);
-    await p.leaderCheckAndRefresh();
-    expect(store.hb?.configs[0]).toMatchObject({ id: 1, code: "S2", factoryId: 7, link: "online" });
-    expect(typeof store.hb?.configs[0].lastAttemptAt).toBe("number");
-    expect(typeof store.hb?.configs[0].lastOkAt).toBe("number");
-    const s2 = memStore();
-    const nl = mk(() => [c], () => scripted(c, [{}]), { health: s2, leader: { acquire: async () => false, held: async () => false, release: async () => undefined } });
-    await nl.p.leaderCheckAndRefresh();
-    expect(s2.writes).toBe(0);
-  });
-
-  it("★ watchdog: a stale episode raises ONE 'plc_monitor_stale' alarm across checks and instances; a new episode alarms again", async () => {
-    const store = memStore();
-    store.hb = hb({ at: now - SAFETY_PLC_HEARTBEAT_STALE_MS - 5 });
-    const events: RecordSafetyEventInput[] = [];
-    const rec = async (i: RecordSafetyEventInput) => (events.push(i), { ok: true, enabled: true });
-    for (let k = 0; k < 3; k++) await runPollerWatchdogOnce({ store, record: rec, now: () => now, enabled: () => true, startedAt: now - 300_000 });
-    await runPollerWatchdogOnce({ store, record: rec, now: () => now + 1000, enabled: () => true, startedAt: now - 300_000 }); // "another instance"
-    expect(events.map((e) => e.eventType)).toEqual(["plc_monitor_stale"]);
-    expect(String(events[0].notes)).toMatch(/BLIND|not polled|stale/i);
-    store.hb = hb({ at: now - SAFETY_PLC_HEARTBEAT_STALE_MS - 99_000 }); // a later, different episode
-    await runPollerWatchdogOnce({ store, record: rec, now: () => now, enabled: () => true, startedAt: now - 300_000 });
-    expect(events).toHaveLength(2);
-  });
-
-  it("watchdog grace: no heartbeat right after boot does not alarm until the grace elapsed", async () => {
-    const store = memStore();
-    const events: string[] = [];
-    const rec = async (i: RecordSafetyEventInput) => (events.push(String(i.eventType)), { ok: true, enabled: true });
-    await runPollerWatchdogOnce({ store, record: rec, now: () => now, enabled: () => true, startedAt: now - 5_000 });
-    expect(events).toEqual([]);
-    await runPollerWatchdogOnce({ store, record: rec, now: () => now, enabled: () => true, startedAt: now - 120_000 });
-    expect(events).toEqual(["plc_monitor_stale"]);
-  });
-
+// fix scan 3 (R-8-c): the heartbeat health / watchdog tests that stood here are SUPERSEDED by safetyPlcPoller.scan3.dot8.test.ts
+// (health now comes from durable rows; the system_settings heartbeat was removed). The bounded-await tests stay.
+describe("(a) no await of the poll chain is unbounded", () => {
   it("★ a HUNG event insert does not stall the config's chain (bounded record): attempts keep advancing", async () => {
     const c = cfg();
     const { p } = mk(() => [c], () => scripted(c, [{ estop: true }]), {

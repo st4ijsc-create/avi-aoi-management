@@ -1,21 +1,21 @@
 /**
- * doc 81 Đợt 8 task N fix scan 2 (ruling R-8-b) — LOSS OF MONITORING is a safety-relevant state: visible and fail-safe.
+ * doc 81 Đợt 8 Group N — background safety-PLC poller: DURABLE poll state + monitoring health + watchdog.
  *
- *   • The LEADER poller persists a heartbeat (system_settings key SAFETY_PLC_HEARTBEAT_KEY, JSON; no endpoints) at every
- *     refresh: per config the last poll ATTEMPT and the last DECIDED read, its link state and binding factory.
- *   • ANY instance (leader or standby) evaluates it (evaluatePollerHealth, pure):
- *       – poller flag off ⇒ "off";            – heartbeat unreadable ⇒ "unknown" (never "ok");
- *       – no heartbeat / older than SAFETY_PLC_HEARTBEAT_STALE_MS ⇒ "stale" (no instance is polling — the leader stopped,
- *         hangs, lost its DB session, or none could take the lock);
- *       – a config not attempted within configStaleAfterMs(interval) ⇒ that config "stale" (its chain stalled).
- *     The state is exposed in safety.sourceHealth (plcPoller).
- *   • A WATCHDOG on every instance (independent of the poll chain) raises ONE "plc_monitor_stale" safety event per stale
- *     EPISODE cluster-wide (claimAlarm = compare-and-set on system_settings key prefix SAFETY_PLC_STALE_ALARM_KEY_PREFIX);
- *     a recovered-then-stale-again scope is a new episode. Boot grace: "no heartbeat yet" alarms only after
- *     SAFETY_PLC_WATCHDOG_BOOT_GRACE_MS.
+ * fix scan 3 (ruling R-8-c, replaces the fix-scan-2 heartbeat in system_settings — an admin-editable registry could forge
+ * "healthy" or pre-claim an alarm; and health only listed what the leader chose to report):
+ *   • ONE durable row per config in safety_plc_poll_state (migration 0368): the CONFIRMED edge state (link + flags,
+ *     advanced only after the transition events were recorded), the last poll ATTEMPT and the last DECIDED read (epoch ms),
+ *     the poll interval and the writing instance. Written only by the poller (and the watchdog's alarm CAS).
+ *   • HEALTH (evaluatePollerHealth, pure) = ENABLED configs × durable rows, so every instance computes the SAME answer:
+ *       flags off ⇒ "off"; no enabled config ⇒ "no_config"; rows unreadable ⇒ "unknown" (never ok);
+ *       an enabled config with NO row, or no attempt within configStaleAfterMs(interval) ⇒ that config STALE ⇒ "stale".
+ *     Nothing is healthy by default: "ok" needs a fresh row for EVERY enabled config.
+ *   • WATCHDOG on every instance (independent of the poll chain): ONE "plc_monitor_stale" safety event per config per
+ *     stale EPISODE (compare-and-set on the row's staleAlarmEpisode — cluster-wide); "unknown" is logged as an error at
+ *     every check (no DB ⇒ no event can be written either). Boot grace for configs that never had an attempt.
  * Residual (documented): if EVERY instance's event loop hangs, nothing in-process can alarm — external monitoring should
- * read safety.sourceHealth (plcPoller.state) / the heartbeat age.
- * L-7: reads / writes settings and records an advisory event; never touches a PLC.
+ * read safety.sourceHealth (plcPoller.state / lastPollAt).
+ * L-7: reads / writes its own rows and records advisory events; never touches a PLC.
  */
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
@@ -26,146 +26,162 @@ export function safetyPlcPollerEnabled(): boolean {
   return process.env.SAFETY_PLC_POLLER_ENABLED === "true" || process.env.SAFETY_PLC_POLLER_ENABLED === "1";
 }
 
-export const SAFETY_PLC_HEARTBEAT_KEY = "safety.plcPoller.heartbeat";
-export const SAFETY_PLC_STALE_ALARM_KEY_PREFIX = "safety.plcPoller.staleAlarm.";
-/** 3 × the poller refresh (10 s). */
-export const SAFETY_PLC_HEARTBEAT_STALE_MS = 30_000;
 export const SAFETY_PLC_WATCHDOG_PERIOD_MS = 10_000;
 export const SAFETY_PLC_WATCHDOG_BOOT_GRACE_MS = 60_000;
-const BACKOFF_CAP_MS = 15_000; // = SAFETY_PLC_POLL_BACKOFF_CAP_MS (not imported: leaf module, no cycle)
+const BACKOFF_CAP_MS = 15_000; // = SAFETY_PLC_POLL_BACKOFF_CAP_MS (leaf module: no import cycle)
+const DEFAULT_INTERVAL_MS = 1000;
 
-/** A config's chain is stale when no attempt happened within 4 × max(interval, backoff cap). */
-export function configStaleAfterMs(intervalMs: number): number {
-  return 4 * Math.max(Number.isFinite(intervalMs) ? intervalMs : 0, BACKOFF_CAP_MS);
+/** A config's monitoring is stale when no attempt happened within 4 × max(interval, backoff cap) (≥ 60 s). */
+export function configStaleAfterMs(intervalMs: number | null | undefined): number {
+  const i = typeof intervalMs === "number" && Number.isFinite(intervalMs) ? intervalMs : DEFAULT_INTERVAL_MS;
+  return 4 * Math.max(i, BACKOFF_CAP_MS);
 }
 
-export interface PollerHeartbeatConfig {
-  id: number;
-  code: string;
-  factoryId: number | null;
-  intervalMs: number;
-  /** when the leader started tracking this config */
-  since: number;
+export type PollLink = "unknown" | "online" | "offline";
+export interface PollStateRow {
+  configId: number;
+  link: PollLink;
+  flags: Partial<Record<"estop" | "zoneOccupied" | "resetRequired" | "muting", boolean>>;
+  intervalMs: number | null;
   lastAttemptAt: number | null;
   lastOkAt: number | null;
-  link: "unknown" | "online" | "offline";
-}
-export interface PollerHeartbeat {
-  v: 1;
-  at: number;
-  instance: string;
-  configs: PollerHeartbeatConfig[];
+  staleAlarmEpisode?: string | null;
 }
 
-export interface PollerHealthStore {
-  /** null = no heartbeat row; "error" = could not read (undecidable). */
-  readHeartbeat(): Promise<PollerHeartbeat | null | "error">;
-  writeHeartbeat(hb: PollerHeartbeat): Promise<void>;
-  /** true ⇔ THIS caller is the first to claim (scope, episode) cluster-wide. */
-  claimAlarm(scope: string, episode: string): Promise<boolean>;
+/** Durable poll state. load/save/list THROW on failure (callers decide); claimStaleAlarm never throws. */
+export interface PollStateStore {
+  load(configId: number): Promise<PollStateRow | null>;
+  save(row: Omit<PollStateRow, "staleAlarmEpisode">): Promise<void>;
+  list(): Promise<PollStateRow[]>;
+  /** true ⇔ THIS caller is the first to claim (configId, episode) cluster-wide. */
+  claimStaleAlarm(configId: number, episode: string): Promise<boolean>;
 }
 
-export type PollerHealthState = "off" | "ok" | "stale" | "unknown";
-export interface PollerHealth {
-  state: PollerHealthState;
-  heartbeatAt: number | null;
-  leaderAlive: boolean;
-  configs: Array<PollerHeartbeatConfig & { stale: boolean }>;
-  staleScopes: Array<{ scope: string; episode: string; reason: string }>;
+const num = (v: unknown): number | null => (v == null ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+function rowOf(r: Record<string, unknown>): PollStateRow {
+  const link = r.link === "online" || r.link === "offline" ? r.link : "unknown";
+  const flags = r.flags && typeof r.flags === "object" ? (r.flags as PollStateRow["flags"]) : {};
+  return { configId: Number(r.configId), link, flags, intervalMs: num(r.intervalMs), lastAttemptAt: num(r.lastAttemptAt), lastOkAt: num(r.lastOkAt), staleAlarmEpisode: (r.staleAlarmEpisode as string | null) ?? null };
 }
 
-/** PURE — the monitoring state from a heartbeat. Undecidable is never "ok". */
-export function evaluatePollerHealth(hb: PollerHeartbeat | null | "error", now: number, o: { enabled: boolean }): PollerHealth {
-  if (!o.enabled) return { state: "off", heartbeatAt: null, leaderAlive: false, configs: [], staleScopes: [] };
-  if (hb === "error") return { state: "unknown", heartbeatAt: null, leaderAlive: false, configs: [], staleScopes: [] };
-  if (hb == null || typeof hb !== "object" || !Number.isFinite(hb.at)) {
-    return { state: "stale", heartbeatAt: null, leaderAlive: false, configs: [], staleScopes: [{ scope: "global", episode: "never", reason: "no heartbeat — no instance has polled the safety PLCs" }] };
-  }
-  const leaderAlive = now - hb.at <= SAFETY_PLC_HEARTBEAT_STALE_MS;
-  const staleScopes: PollerHealth["staleScopes"] = [];
-  if (!leaderAlive) staleScopes.push({ scope: "global", episode: `hb:${hb.at}`, reason: `no poller heartbeat for ${Math.round((now - hb.at) / 1000)} s` });
-  const configs = (Array.isArray(hb.configs) ? hb.configs : []).slice(0, 500).map((c) => {
-    const last = c.lastAttemptAt ?? c.since;
-    const stale = !leaderAlive || !Number.isFinite(last) || now - last > configStaleAfterMs(c.intervalMs);
-    if (stale && leaderAlive) staleScopes.push({ scope: `config:${c.id}`, episode: `cfg:${c.id}:${last}`, reason: `config "${String(c.code).slice(0, 64)}" not polled for ${Math.round((now - last) / 1000)} s` });
-    return { ...c, stale };
-  });
-  return { state: staleScopes.length ? "stale" : "ok", heartbeatAt: hb.at, leaderAlive, configs, staleScopes };
-}
-
-/** The production store (system_settings; text JSON). Every call is bounded by the DB driver; errors ⇒ "error" / false. */
-export function pgPollerHealthStore(): PollerHealthStore {
+/** The production store: table safety_plc_poll_state (migration 0368). */
+export function pgPollStateStore(instance = `${process.pid}`): PollStateStore {
+  const db = async () => {
+    const d = await getDb();
+    if (!d) throw new Error("db unavailable");
+    return d;
+  };
   return {
-    async readHeartbeat() {
-      try {
-        const d = await getDb();
-        if (!d) return "error";
-        const rows = (await d.execute(sql`SELECT "settingValue" AS v FROM system_settings WHERE "settingKey" = ${SAFETY_PLC_HEARTBEAT_KEY} LIMIT 1`)) as unknown as Array<{ v: string | null }>;
-        const v = rows[0]?.v;
-        if (v == null) return null;
-        const parsed = JSON.parse(v) as PollerHeartbeat;
-        return parsed && parsed.v === 1 ? parsed : "error";
-      } catch {
-        return "error";
-      }
+    async load(configId) {
+      const rows = (await (await db()).execute(sql`
+        SELECT "configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "staleAlarmEpisode"
+          FROM safety_plc_poll_state WHERE "configId" = ${configId}`)) as unknown as Array<Record<string, unknown>>;
+      return rows[0] ? rowOf(rows[0]) : null;
     },
-    async writeHeartbeat(hb) {
-      const d = await getDb();
-      if (!d) throw new Error("db unavailable");
-      await d.execute(sql`
-        INSERT INTO system_settings ("settingKey", "settingValue", "category", "description")
-        VALUES (${SAFETY_PLC_HEARTBEAT_KEY}, ${JSON.stringify(hb)}, 'safety_plc_poller', 'doc 81 Dot 8 N fix scan 2: background safety-PLC poller heartbeat (written by the leader)')
-        ON CONFLICT ("settingKey") DO UPDATE SET "settingValue" = EXCLUDED."settingValue", "updatedAt" = now()`);
+    async save(r) {
+      await (await db()).execute(sql`
+        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "writerInstance", "updatedAt")
+        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${r.lastAttemptAt}, ${r.lastOkAt}, ${instance.slice(0, 64)}, now())
+        ON CONFLICT ("configId") DO UPDATE SET link = EXCLUDED.link, flags = EXCLUDED.flags, "intervalMs" = EXCLUDED."intervalMs",
+          "lastAttemptAt" = EXCLUDED."lastAttemptAt", "lastOkAt" = EXCLUDED."lastOkAt", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
     },
-    async claimAlarm(scope, episode) {
+    async list() {
+      const rows = (await (await db()).execute(sql`
+        SELECT "configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "staleAlarmEpisode" FROM safety_plc_poll_state`)) as unknown as Array<Record<string, unknown>>;
+      return rows.map(rowOf);
+    },
+    async claimStaleAlarm(configId, episode) {
       try {
-        const d = await getDb();
-        if (!d) return false;
-        const rows = (await d.execute(sql`
-          INSERT INTO system_settings ("settingKey", "settingValue", "category")
-          VALUES (${SAFETY_PLC_STALE_ALARM_KEY_PREFIX + scope.slice(0, 40)}, ${episode.slice(0, 200)}, 'safety_plc_poller')
-          ON CONFLICT ("settingKey") DO UPDATE SET "settingValue" = EXCLUDED."settingValue", "updatedAt" = now()
-            WHERE system_settings."settingValue" IS DISTINCT FROM EXCLUDED."settingValue"
-          RETURNING id`)) as unknown as unknown[];
+        const rows = (await (await db()).execute(sql`
+          INSERT INTO safety_plc_poll_state ("configId", "staleAlarmEpisode") VALUES (${configId}, ${episode.slice(0, 200)})
+          ON CONFLICT ("configId") DO UPDATE SET "staleAlarmEpisode" = EXCLUDED."staleAlarmEpisode"
+            WHERE safety_plc_poll_state."staleAlarmEpisode" IS DISTINCT FROM EXCLUDED."staleAlarmEpisode"
+          RETURNING "configId"`)) as unknown as unknown[];
         return rows.length > 0;
       } catch {
-        return false; // cannot claim ⇒ another instance (or the next check) will
+        return false; // cannot claim ⇒ the next check (or another instance) will
       }
     },
   };
 }
 
+export type PollerHealthState = "off" | "no_config" | "ok" | "stale" | "unknown";
+export interface EnabledConfigLite {
+  id: number;
+  code: string;
+  factoryId: number | null;
+}
+export interface PollerHealth {
+  state: PollerHealthState;
+  /** The newest attempt of ANY config (what every instance reports as "the leader's last poll"). */
+  lastPollAt: number | null;
+  configs: Array<EnabledConfigLite & { link: PollLink; lastAttemptAt: number | null; lastOkAt: number | null; stale: boolean }>;
+  staleScopes: Array<{ configId: number; episode: string; reason: string }>;
+}
+
+/** PURE — the monitoring state from ENABLED configs × durable rows. Undecidable is never "ok"; missing is stale. */
+export function evaluatePollerHealth(enabled: EnabledConfigLite[], rows: PollStateRow[] | "error", now: number, o: { enabled: boolean }): PollerHealth {
+  if (!o.enabled) return { state: "off", lastPollAt: null, configs: [], staleScopes: [] };
+  if (rows === "error") return { state: "unknown", lastPollAt: null, configs: [], staleScopes: [] };
+  if (enabled.length === 0) return { state: "no_config", lastPollAt: null, configs: [], staleScopes: [] };
+  const byId = new Map(rows.map((r) => [r.configId, r]));
+  const staleScopes: PollerHealth["staleScopes"] = [];
+  let lastPollAt: number | null = null;
+  const configs = enabled.map((c) => {
+    const r = byId.get(c.id);
+    const last = r?.lastAttemptAt ?? null;
+    if (last != null) lastPollAt = lastPollAt == null ? last : Math.max(lastPollAt, last);
+    const stale = last == null || now - last > configStaleAfterMs(r?.intervalMs);
+    if (stale) {
+      staleScopes.push({
+        configId: c.id,
+        episode: `cfg:${c.id}:${last ?? "never"}`,
+        reason: last == null ? `config "${String(c.code).slice(0, 64)}" has never been polled` : `config "${String(c.code).slice(0, 64)}" not polled for ${Math.round((now - last) / 1000)} s`,
+      });
+    }
+    return { ...c, link: r?.link ?? "unknown", lastAttemptAt: last, lastOkAt: r?.lastOkAt ?? null, stale };
+  });
+  return { state: staleScopes.length ? "stale" : "ok", lastPollAt, configs, staleScopes };
+}
+
 export interface WatchdogDeps {
-  store: PollerHealthStore;
+  store: PollStateStore;
+  listConfigs: () => Promise<EnabledConfigLite[]>;
   record: (i: RecordSafetyEventInput) => Promise<RecordResult>;
   now: () => number;
   enabled: () => boolean;
   startedAt: number;
 }
 
-/** One watchdog check: evaluate, then claim + record ONE alarm per stale episode. Never throws. */
+/** One watchdog check: evaluate from durable rows, then claim + record ONE alarm per stale episode. Never throws. */
 export async function runPollerWatchdogOnce(d: WatchdogDeps): Promise<PollerHealth> {
   const now = d.now();
-  let hb: PollerHeartbeat | null | "error";
+  let rows: PollStateRow[] | "error";
+  let cfgs: EnabledConfigLite[] = [];
   try {
-    hb = await d.store.readHeartbeat();
+    [cfgs, rows] = await Promise.all([d.listConfigs(), d.store.list()]);
   } catch {
-    hb = "error";
+    rows = "error";
   }
-  const h = evaluatePollerHealth(hb, now, { enabled: d.enabled() });
+  const h = evaluatePollerHealth(cfgs, rows, now, { enabled: d.enabled() });
+  if (h.state === "unknown") {
+    console.error("[SafetyPLC] MONITORING STATE UNKNOWN — the poll state cannot be read; treat safety-PLC monitoring as BLIND");
+  }
   for (const s of h.staleScopes) {
-    if (s.episode === "never" && now - d.startedAt < SAFETY_PLC_WATCHDOG_BOOT_GRACE_MS) continue;
+    if (s.episode.endsWith(":never") && now - d.startedAt < SAFETY_PLC_WATCHDOG_BOOT_GRACE_MS) continue;
     try {
-      if (!(await d.store.claimAlarm(s.scope, s.episode))) continue;
-      console.error(`[SafetyPLC] MONITORING STALE (${s.scope}): ${s.reason} — safety-PLC monitoring is BLIND until it recovers`);
+      if (!(await d.store.claimStaleAlarm(s.configId, s.episode))) continue;
+      const cfg = cfgs.find((c) => c.id === s.configId);
+      console.error(`[SafetyPLC] MONITORING STALE (config ${s.configId}): ${s.reason} — safety-PLC monitoring is BLIND for it`);
       await d.record({
         eventType: "plc_monitor_stale",
         detectedBy: "plc",
         handledBy: "advisory",
         outcome: "logged_only",
         isNearMiss: false,
-        humanPosition: { scope: s.scope, poller: true, watchdog: true },
-        notes: `safety-PLC monitoring STALE — ${s.reason}. Background monitoring is BLIND for this scope (the certified PLC still performs its rated stops in hardware; e-stop / guard trips are not being observed or notified). [watchdog, READ-ONLY]`,
+        factoryId: cfg?.factoryId ?? null,
+        humanPosition: { plcConfigId: s.configId, poller: true, watchdog: true },
+        notes: `safety-PLC monitoring STALE — ${s.reason}. Background monitoring is BLIND for this PLC (the certified PLC still performs its rated stops in hardware; its e-stop / guard trips are not being observed or notified). [watchdog, READ-ONLY]`,
       });
     } catch {
       /* the next check retries (the claim is per episode) */
@@ -176,11 +192,18 @@ export async function runPollerWatchdogOnce(d: WatchdogDeps): Promise<PollerHeal
 
 let watchdogTimer: NodeJS.Timeout | null = null;
 /** Start the watchdog on THIS instance (idempotent). */
-export function startSafetyPlcWatchdog(enabled: () => boolean, store: PollerHealthStore = pgPollerHealthStore()): void {
+export function startSafetyPlcWatchdog(enabled: () => boolean, deps: Partial<Pick<WatchdogDeps, "store" | "listConfigs">> = {}): void {
   if (watchdogTimer) return;
   const startedAt = Date.now();
+  const store = deps.store ?? pgPollStateStore();
+  const listConfigs =
+    deps.listConfigs ??
+    (async () => {
+      const { listPlcConfigs } = await import("./safetyPlcAdapter");
+      return (await listPlcConfigs({ onlyEnabled: true })).map((c) => ({ id: c.id, code: c.code, factoryId: c.factoryId ?? null }));
+    });
   watchdogTimer = setInterval(() => {
-    void runPollerWatchdogOnce({ store, record, now: Date.now, enabled, startedAt });
+    void runPollerWatchdogOnce({ store, listConfigs, record, now: Date.now, enabled, startedAt });
   }, SAFETY_PLC_WATCHDOG_PERIOD_MS);
   watchdogTimer.unref?.();
 }

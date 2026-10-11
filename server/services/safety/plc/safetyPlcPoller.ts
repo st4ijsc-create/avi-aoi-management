@@ -35,7 +35,7 @@ import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEv
 import { isPlcConfigTrustApproved, plcTrustMaterial } from "./safetyPlcTrust";
 import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLeader";
 import { redactEndpoint, safeBackendLabel } from "./plcRedact";
-import { pgPollerHealthStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollerHealthStore, type PollerHeartbeat } from "./safetyPlcPollerHealth";
+import { pgPollStateStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollStateStore, type PollLink } from "./safetyPlcPollerHealth";
 
 /** Flag — default OFF. (Defined once in the health leaf module so the source-health panel reads the SAME predicate.) */
 export { safetyPlcPollerEnabled } from "./safetyPlcPollerHealth";
@@ -162,8 +162,8 @@ export interface PollerDeps {
   isTrustApproved: (cfg: SafetyPlcConfig) => Promise<boolean>;
   /** N fix 1 (M4) — cluster leadership: only the holder polls. Default: pg_try_advisory_lock on a dedicated session. */
   leader: PollerLeaderGate;
-  /** fix scan 2 (R-8-b) — where the leader persists its heartbeat (default: system_settings). */
-  health: PollerHealthStore;
+  /** fix scan 3 (R-8-c) — the DURABLE poll state (confirmed edge + last attempt / decided read). Default: safety_plc_poll_state. */
+  state: PollStateStore;
   /** fix scan 2 — bound of one event insert / approval lookup (ms). */
   recordTimeoutMs: number;
 }
@@ -172,6 +172,14 @@ export interface PollerDeps {
 interface QueuedEvent {
   input: RecordSafetyEventInput;
   rebaseline: boolean;
+  /** fix scan 3 — the edge state right AFTER this transition: becomes the CONFIRMED (durable) state once recorded. */
+  after: EdgeState;
+}
+
+/** fix scan 3 — the edge state (what transitions are computed against). */
+interface EdgeState {
+  link: PollLink;
+  flags: Partial<Record<PlcFlag, boolean>>;
 }
 
 interface ConfigState {
@@ -208,6 +216,10 @@ interface ConfigState {
   /** fix scan 2 — not-yet-recorded transitions (bounded) + how many were dropped (one marker when the DB is back). */
   queue: QueuedEvent[];
   lostEvents: number;
+  /** fix scan 3 (R-8-c) — the durable edge was loaded for this state (else nothing is evaluated: no durable baseline). */
+  loaded: boolean;
+  /** fix scan 3 — the CONFIRMED edge = what the durable row says (advanced only after the events were recorded). */
+  confirmed: EdgeState;
   /** fix scan 2 — health: when tracking began, last poll attempt, last fully decided read (epoch ms). */
   since: number;
   lastAttemptAt: number | null;
@@ -265,7 +277,7 @@ export class SafetyPlcPoller {
       recordTrusted: deps.recordTrusted ?? ((i) => recordFromDeviceIngest("safety_plc", i)),
       isTrustApproved: deps.isTrustApproved ?? isPlcConfigTrustApproved,
       leader: deps.leader ?? pgPollerLeaderGate(),
-      health: deps.health ?? pgPollerHealthStore(),
+      state: deps.state ?? pgPollStateStore(),
       recordTimeoutMs: deps.recordTimeoutMs ?? SAFETY_PLC_RECORD_TIMEOUT_MS,
     };
   }
@@ -294,33 +306,7 @@ export class SafetyPlcPoller {
     if (!this.leading) console.log("[SafetyPLC] poller leadership acquired — this instance polls the safety PLCs");
     this.leading = true;
     await this.refreshConfigs();
-    await this.writeHeartbeat();
     return true;
-  }
-
-  /** fix scan 2 (R-8-b) — the leader's heartbeat (no endpoints): per config last attempt / last decided read / link. */
-  private async writeHeartbeat(): Promise<void> {
-    const hb: PollerHeartbeat = {
-      v: 1,
-      at: Date.now(),
-      instance: `${process.pid}`,
-      configs: [...this.states.values()].map((st) => ({
-        id: st.cfg.id,
-        code: st.cfg.code,
-        factoryId: st.cfg.factoryId ?? null,
-        intervalMs: st.intervalMs,
-        since: st.since,
-        lastAttemptAt: st.lastAttemptAt,
-        lastOkAt: st.lastOkAt,
-        link: st.link,
-      })),
-    };
-    try {
-      await this.bounded(this.deps.health.writeHeartbeat(hb), this.deps.recordTimeoutMs, "heartbeat write");
-    } catch (e) {
-      // a missing heartbeat is itself the alarm signal (watchdog ⇒ "stale") — fail-safe direction
-      this.warnLimited("heartbeat", `[SafetyPLC] poller heartbeat could not be written (monitoring will read as STALE): ${safeReason(e)}`);
-    }
   }
 
   /** Start polling. Returns false (and does nothing) unless every flag it needs is on. Idempotent. */
@@ -405,6 +391,8 @@ export class SafetyPlcPoller {
         recordFailStreak: 0,
         queue: [],
         lostEvents: 0,
+        loaded: false,
+        confirmed: { link: "unknown", flags: {} },
         since: Date.now(),
         lastAttemptAt: null,
         lastOkAt: null,
@@ -419,6 +407,8 @@ export class SafetyPlcPoller {
         st.rebaseline = old.rebaseline;
         st.pending = old.pending;
         st.queue = old.queue; // fix scan 2 — queued transitions survive the edit (never dropped)
+        st.loaded = old.loaded;
+        st.confirmed = { link: old.confirmed.link, flags: { ...old.confirmed.flags } };
         st.lostEvents = old.lostEvents;
         st.since = old.since;
         st.lastAttemptAt = old.lastAttemptAt;
@@ -464,13 +454,32 @@ export class SafetyPlcPoller {
     if (st.busy) return st.busy;
     const p = (async () => {
       try {
-        st.lastAttemptAt = Date.now(); // fix scan 2 — health: the chain is alive
+        // fix scan 3 (R-8-c) — continue from the DURABLE edge (restart / failover / new leader): no re-sent held trip, no
+        // lost release. Not loadable (DB down) ⇒ nothing is evaluated this poll (no durable baseline; health goes STALE).
+        if (!st.loaded) {
+          try {
+            const row = await this.bounded(this.deps.state.load(st.cfg.id), this.deps.recordTimeoutMs, "poll-state load");
+            if (this.states.get(id) !== st) return;
+            if (row) {
+              st.confirmed = { link: row.link, flags: { ...row.flags } };
+              st.link = row.link;
+              st.flags = { ...row.flags };
+            }
+            st.loaded = true;
+          } catch (e) {
+            st.recordFailStreak += 1;
+            this.warnLimited(`load:${id}`, `[SafetyPLC] durable poll state of config ${id} unreadable — not polled until it is: ${safeReason(e)}`);
+            return;
+          }
+        }
+        st.lastAttemptAt = Date.now(); // health: the chain is alive (persisted below)
         const read = await this.readOnce(st);
         if (this.states.get(id) !== st) return; // config changed / removed / poller stopped meanwhile
         st.lastRead = read;
         st.failStreak = read.kind === "undecidable" ? st.failStreak + 1 : 0;
         if (read.kind === "undecidable") st.undecidable += 1;
         await this.applyTransitions(id, st, read);
+        await this.saveDurable(id, st);
       } catch (e) {
         this.warnLimited(`tick:${id}`, `[SafetyPLC] poll of config ${id} failed: ${safeReason(e)}`);
       }
@@ -500,8 +509,8 @@ export class SafetyPlcPoller {
       st.goodStreak = 0;
       if (st.link !== "offline") {
         const why = read.kind === "undecidable" ? read.reason : `status flag(s) unreadable: ${read.unreadable.join(", ")}`;
-        this.enqueue(st, "plc_offline", { transition: "offline", reason: why });
         st.link = "offline";
+        this.enqueue(st, "plc_offline", { transition: "offline", reason: why });
         st.offlineAt.push(Date.now());
         if (st.offlineAt.length > SAFETY_PLC_FLAP_HISTORY_MAX) st.offlineAt.splice(0, st.offlineAt.length - SAFETY_PLC_FLAP_HISTORY_MAX);
       }
@@ -509,8 +518,8 @@ export class SafetyPlcPoller {
       // N3 flap damping: back online only after a clean run that doubles with every recent offline (2, 4, 8 … ≤ 32 reads).
       st.goodStreak += 1;
       if (st.goodStreak >= onlineConfirmReads(st.offlineAt)) {
-        this.enqueue(st, "plc_online", { transition: "online" });
         st.link = "online";
+        this.enqueue(st, "plc_online", { transition: "online" });
         st.goodStreak = 0;
       }
     } else {
@@ -528,8 +537,8 @@ export class SafetyPlcPoller {
           if (st.link !== "online") continue;
           ev = "estop_released";
         }
-        if (ev) this.enqueue(st, ev, { transition: now ? "active" : "released", flag });
         st.flags[flag] = now;
+        if (ev) this.enqueue(st, ev, { transition: now ? "active" : "released", flag });
       }
       // M1 — the re-baseline ends with the first FULLY decided read (its events were queued as re-baseline = plain door).
       if (fullyDecided) st.rebaseline = false;
@@ -539,7 +548,7 @@ export class SafetyPlcPoller {
 
   /** Queue one transition event (bounded: the OLDEST is dropped and counted beyond SAFETY_PLC_EVENT_QUEUE_MAX). */
   private enqueue(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): void {
-    st.queue.push({ input: this.eventInput(st, eventType, info), rebaseline: st.rebaseline });
+    st.queue.push({ input: this.eventInput(st, eventType, info), rebaseline: st.rebaseline, after: { link: st.link, flags: { ...st.flags } } });
     while (st.queue.length > SAFETY_PLC_EVENT_QUEUE_MAX) {
       st.queue.shift();
       st.lostEvents += 1;
@@ -587,13 +596,40 @@ export class SafetyPlcPoller {
       const n = st.lostEvents;
       const marker = this.eventInput(st, "plc_events_lost", { transition: "lost" });
       marker.notes = `${n} safety-PLC transition event(s) of PLC "${st.cfg.code}" were LOST while events could not be recorded (queue bound ${SAFETY_PLC_EVENT_QUEUE_MAX}; oldest dropped). The events below are the most recent ones. [background poller, READ-ONLY]`;
-      if (!(await this.recordOne(id, st, { input: marker, rebaseline: true }))) return;
+      if (!(await this.recordOne(id, st, { input: marker, rebaseline: true, after: st.confirmed }))) return;
       st.lostEvents -= n;
     }
     while (st.queue.length > 0) {
       if (this.states.get(id) !== st) return;
       if (!(await this.recordOne(id, st, st.queue[0]))) return;
-      st.queue.shift();
+      st.confirmed = st.queue.shift()!.after; // R-8-c — the edge advances ONLY after its event was recorded
+    }
+    // Nothing unconfirmed ⇒ silent changes (e.g. a zone clearing) are confirmed too.
+    st.confirmed = { link: st.link, flags: { ...st.flags } };
+  }
+
+  /**
+   * fix scan 3 (R-8-c) — persist the CONFIRMED edge + health timestamps (every poll, even when the PLC is offline or an
+   * event could not be recorded). Failure ⇒ backoff; the in-memory unconfirmed transitions are retried; health reads STALE.
+   */
+  private async saveDurable(id: number, st: ConfigState): Promise<void> {
+    if (this.states.get(id) !== st) return;
+    try {
+      await this.bounded(
+        this.deps.state.save({
+          configId: st.cfg.id,
+          link: st.confirmed.link,
+          flags: { ...st.confirmed.flags },
+          intervalMs: st.intervalMs,
+          lastAttemptAt: st.lastAttemptAt,
+          lastOkAt: st.lastOkAt,
+        }),
+        this.deps.recordTimeoutMs,
+        "poll-state save",
+      );
+    } catch (e) {
+      st.recordFailStreak += 1;
+      this.warnLimited(`save:${id}`, `[SafetyPLC] durable poll state of config ${id} not saved (monitoring reads STALE until it is): ${safeReason(e)}`);
     }
   }
 
