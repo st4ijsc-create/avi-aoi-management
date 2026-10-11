@@ -95,7 +95,11 @@ export function CockpitLayout({
               listRowStyle={{ maxHeight: 56 }}
               listRowClassName="flex-nowrap overflow-hidden"
               listEnd={toolbarEnd}
-              listClassName="flex h-9 min-h-9 flex-nowrap overflow-x-auto"
+              // doc 81 Đợt 7 task L4 — TabsTrigger mặc định `flex-1` ⇒ trong dải một dòng các tab CO đều nhau (Tiêu chuẩn
+              // thiết bị @390 px: 70 px cho nhãn 81–90 px ⇒ chữ đè nhau). Tab không co ⇒ thiếu chỗ thì dải cuộn ngang; và
+              // `justify-start` (TabsList mặc định `justify-center`: phần tràn chia HAI bên, phần bên trái không cuộn tới được
+              // — đo @390: tab đầu ở -67 px khi scrollLeft = 0).
+              listClassName="flex h-9 min-h-9 flex-nowrap justify-start overflow-x-auto [&>[role=tab]]:flex-none"
             />
           ) : (
             <>
