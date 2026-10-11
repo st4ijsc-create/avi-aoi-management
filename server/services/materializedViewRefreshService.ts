@@ -84,6 +84,31 @@ async function recordRefreshStatus(ok: boolean, detailError?: string): Promise<v
   }
 }
 
+/**
+ * doc 81 Đợt 7 K4 — the message to log/record for a failed refresh. drizzle wraps the Postgres error ("Failed query:
+ * SELECT refresh_qw_caches()" + `cause`), so the wrapper alone hid the real reason on dev for as long as the app has run
+ * as `avi_app`: 42501 "permission denied for materialized view machine_status_latest" (REFRESH needs the view's OWNER or,
+ * on PostgreSQL 17+, the MAINTAIN privilege — the views are owned by `aoi`). Surface the deepest driver message + SQLSTATE;
+ * for 42501 name the fix. Exported for tests.
+ */
+export function describeRefreshError(err: unknown): string {
+  let cur: any = err;
+  let pg: any = null;
+  for (let depth = 0; cur && depth < 5; depth++) {
+    if (typeof cur?.code === "string" && /^[0-9A-Z]{5}$/.test(cur.code)) pg = cur;
+    cur = cur?.cause;
+  }
+  const top = String((err as any)?.message ?? err);
+  if (!pg) return top;
+  let msg = `${String(pg.message ?? pg)} (SQLSTATE ${pg.code})`;
+  if (pg.code === "42501") {
+    msg +=
+      " — the app DB role may not REFRESH the qw materialized views: grant it MAINTAIN" +
+      " (drizzle/0366_qw_matview_maintain_grant.sql via scripts/apply-migration-0366.mjs)";
+  }
+  return pg === err ? msg : `${msg} [${top.split("\n")[0]}]`;
+}
+
 /** One refresh cycle; exported for tests and manual triggering. */
 export async function refreshQwCachesOnce(): Promise<boolean> {
   try {
@@ -95,7 +120,7 @@ export async function refreshQwCachesOnce(): Promise<boolean> {
     await recordRefreshStatus(true);
     return true;
   } catch (err: any) {
-    lastError = String(err?.message ?? err);
+    lastError = describeRefreshError(err);
     console.error("[MatviewRefresh] refresh failed:", lastError);
     await recordRefreshStatus(false, lastError);
     return false;
