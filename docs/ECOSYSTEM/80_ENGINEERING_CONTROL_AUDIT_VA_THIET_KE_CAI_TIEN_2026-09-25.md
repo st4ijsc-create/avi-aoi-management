@@ -361,3 +361,7 @@ Dời nội dung về đúng màn (Recipes · Vision › Thu ảnh · Sản xu�
 ## 21. Đợt 6–7 (2026-10-11) — xem doc 81 §14–§15
 
 Đợt 6: huỷ/từ chối run vẫn gửi bước DỪNG thật còn lại (chỉ khi run đã tác động; gửi lại ≤15 phút). Đợt 7: huỷ tới edge, tên workflow theo phạm vi (mig 0367), webhook theo phạm vi, công tắc tự động hoá robot; MQTTS :8884 với khoá do quản trị cấp + app tablet 1.0.18 ghim chứng chỉ; khoá máy mới không `edge:sync`, thu hồi 1.669 khoá test trên dev; mig 0366 sửa refresh cache; kiểm trình duyệt. **Trước restart: áp 0367, cấp khoá TLS — checklist doc 81 §15.**
+
+## 22. Đợt 8 (2026-10-11) — xem doc 81 §16
+
+Bộ đọc nền safety-PLC (chỉ đọc, cờ tắt, ghi bền trước, sức khoẻ từ DB) + duyệt hai người cho cấu hình PLC thật (mig 0368); checksum chương trình bộ điều khiển trong duyệt (OpenPLC không hỗ trợ — chỉ mô phỏng); sheet IDE/IR/POU lên FlyoutHost; dọn test đỏ trong module. **Bộ đọc giữ tắt — thử bench trước (doc 81 §16).**
