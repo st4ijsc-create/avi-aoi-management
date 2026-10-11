@@ -84,6 +84,19 @@ describe("doc 81 Đợt 7 I5 — census: the automation self-grant has exactly t
     expect(res.slice(check, consume)).toMatch(/readRobotAutomationState\(tx, input\.robotId\)[\s\S]*?if \(state !== "on"\)/);
   });
 
+  it("§2b the switch's storage key is built only in robotAutomationAction.ts; the generic settings upsert refuses it before any write", () => {
+    const users = serverFiles().filter((f) => /["'`]robot\.automation\./.test(read(f)));
+    expect(users).toEqual([DEFINITION, "server/_core/systemRouter.ts"]); // the definition + the reserved-prefix guard
+    const sys = read("server/_core/systemRouter.ts");
+    for (const proc of ["upsert:", "bulkUpsert:"]) {
+      const body = sys.slice(sys.indexOf(proc), sys.indexOf("}),", sys.indexOf(proc)));
+      const guard = body.indexOf("assertNotReservedSettingKey(");
+      const write = Math.min(...["updateSystemSetting(", "createSystemSetting("].map((w) => body.indexOf(w)).filter((i) => i >= 0));
+      expect(guard, proc).toBeGreaterThan(0);
+      expect(write, proc).toBeGreaterThan(guard);
+    }
+  });
+
   it("§3 the instrument sees: a direct insert of an automation grant / a tool literal outside the mint call is flagged", () => {
     const direct = `await db.insert(aiPendingActions).values({ id: "x", tool: "vda5050.automation", status: "confirmed" });`;
     expect(strayToolUses(direct)).toEqual(['"vda5050.automation"']);

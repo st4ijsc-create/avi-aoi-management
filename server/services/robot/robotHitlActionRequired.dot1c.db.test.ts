@@ -701,6 +701,18 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       expect(on).toMatchObject({ automation: "on", changed: true });
     });
 
+    it("★ the generic admin settings upsert / bulkUpsert can NOT write the automation switch (no reason / audit / floor bypass); nothing written", async () => {
+      const { systemRouter } = await import("../../_core/systemRouter");
+      const admin = systemRouter.createCaller({ user: { id: OWNER, role: "admin", name: "adm", twoFactorEnabled: true } } as never);
+      await expect(admin.settings.upsert({ category: "robot_automation", key: KEY, value: "false" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(admin.settings.upsert({ category: "x", key: ` ROBOT.Automation.off.${ROBOT}`, value: "false" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      const otherKey = `${DAU}-i5-harmless`;
+      await expect(
+        admin.settings.bulkUpsert({ category: "x", settings: [{ key: otherKey, value: "1" }, { key: KEY, value: "false" }] }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(await (await d()).select().from(systemSettings).where(inArray(systemSettings.settingKey, [KEY, otherKey]))).toHaveLength(0);
+    });
+
     it("router: a reason is required; a missing robot ⇒ NOT_FOUND; canCreate without canEdit ⇒ FORBIDDEN (nothing written)", async () => {
       await expect(router(OPERATOR).disableAutomation({ robotId: ROBOT, reason: "x" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
       await expect(router(OPERATOR).disableAutomation({ robotId: ROBOT + 1, reason: "no such robot" })).rejects.toMatchObject({ code: "NOT_FOUND" });

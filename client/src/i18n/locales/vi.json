@@ -4021,6 +4021,7 @@
       "unassignEngineeringItem": "bỏ giao việc chờ duyệt"
     },
     "field": {
+      "settingKey": "Khoá cài đặt",
       "uiPrefs": "tuỳ chọn giao diện",
       "shiftConfigId": "ca (shiftConfigId)",
       "robotId": "robot (robotId)",
@@ -4276,6 +4277,7 @@
       "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
     },
     "reason": {
+      "reservedSettingKey": "Cài đặt này chỉ đổi được ở màn riêng của nó (công tắc tự động hoá robot: màn Điều khiển Robot) — cần lý do và được ghi kiểm toán.",
       "stopPinTagNotWritable": "Chỉ ghim giá trị dừng cho tag đang BẬT và cho phép GHI. Bật ghi (writable) và bật tag trước, rồi ghim lại.",
       "stopPinTypeMismatch": "Giá trị dừng không đúng kiểu dữ liệu của tag: tag bool cần true/false (hoặc 1/0), tag int cần số nguyên, tag float cần số, tag string cần chuỗi; tag json không ghim được.",
       "softwareStopRefusedUseHardwareEstop": "Lệnh dừng phần mềm đã bị TỪ CHỐI: kiểm tra an toàn không xác nhận được PLC an toàn (không đọc được, chỉ có mô phỏng, hoặc đang báo dừng) nên nền tảng KHÔNG gửi lệnh dừng này. Hãy nhấn nút E-STOP cứng trên máy ngay.",

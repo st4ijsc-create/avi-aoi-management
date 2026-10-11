@@ -9,6 +9,25 @@ import {
   clearMetricsHistory,
 } from "../queryMonitor";
 
+/**
+ * doc 81 Đợt 7 task I5 — system_settings keys that only their OWN procedure may write (reason + audit + the right role
+ * floor). The per-robot automation switch (`robot.automation.off.<robotId>`) is written only by robot.disableAutomation /
+ * robot.enableAutomation; the generic upsert below refuses it, so turning automation back ON can never skip the actuation
+ * floor, the reason or the audit row.
+ */
+const RESERVED_SETTING_PREFIXES = ["robot.automation."] as const;
+function assertNotReservedSettingKey(key: string): void {
+  const k = key.trim().toLowerCase();
+  if (RESERVED_SETTING_PREFIXES.some((p) => k.startsWith(p))) {
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "settingKey", reason: "reservedSettingKey" },
+      `Setting "${key}" can only be changed through its own screen (robot automation switch: Robot Control) — it needs a reason and is audited.`,
+    );
+  }
+}
+
 export const systemRouter = router({
   // ─── System Settings CRUD ──────────────────────────────────────────
   settings: router({
@@ -34,6 +53,7 @@ export const systemRouter = router({
         description: z.string().max(1000).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        assertNotReservedSettingKey(input.key); // doc 81 Đợt 7 I5
         const db = await import("../db");
         const existing = await db.getSystemSetting(input.key);
         if (existing) {
@@ -60,6 +80,7 @@ export const systemRouter = router({
         })).max(100),
       }))
       .mutation(async ({ input, ctx }) => {
+        for (const setting of input.settings) assertNotReservedSettingKey(setting.key); // doc 81 Đợt 7 I5 — before ANY write
         const db = await import("../db");
         for (const setting of input.settings) {
           const existing = await db.getSystemSetting(setting.key);
