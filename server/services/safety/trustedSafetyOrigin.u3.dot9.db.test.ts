@@ -134,6 +134,26 @@ describe.skipIf(!DB_URL)("Đợt 9 U3 — durable, exactly-once trust of device-
     expect(quiet[0].mock.calls.map((c) => String(c[0]))).not.toContainEqual(expect.stringMatching(/consume failed/));
   });
 
+  // doc 81 Đợt 9 U fix 1 (review I1) — the digest and the notice come from ONE normaliser
+  it("★ U fix 1 (I1): a replay of a STATION trip with robotId:\"999\" (or any non-integer id) is never safety-critical, consumes nothing, and cannot redirect the bypass notice", async () => {
+    startOrchestration();
+    const p = await trustedEstop(); // station 77, line 7, robotId null
+    for (const forged of [{ robotId: "999" }, { stationId: "77" }, { lineId: 7.5 }, { robotId: {} }, { isNearMiss: "false" }, { eventType: ["estop"] }]) {
+      expect(await consumeSafetyCriticalTrust({ ...p, ...forged } as never)).toBe(false);
+    }
+    expect((await trustRow(p.id as number)).consumedAt).toBeNull();
+    eventBus.publish(EventTypes.SAFETY_EVENT, { ...p, robotId: "999" }, "redis-replay"); // the forged copy arrives FIRST
+    expect(await until(() => E.calls.length === 2, 5000)).toBe(true);
+    eventBus.publish(EventTypes.SAFETY_EVENT, p, "socket"); // then the genuine one
+    expect(await until(() => E.calls.length === 4, 5000)).toBe(true);
+    expect(E.calls.map((c) => [c.opts.safetyCritical, c.opts.rateKey])).toEqual([
+      [false, "safety:estop:robot:999"],
+      [false, "safety:estop:robot:999"],
+      [true, "safety:estop:station:77"],
+      [true, "safety:estop:station:77"],
+    ]);
+  });
+
   it("a near-miss recorded through the trusted door is never safety-critical (and its trust is left unconsumed)", async () => {
     const p = await trustedEstop({ isNearMiss: true });
     expect(p.isNearMiss).toBe(true);

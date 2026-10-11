@@ -176,7 +176,7 @@ const EVENT_NOTE: Partial<Record<SafetyEventType, string>> = {
 
 /** One read's outcome. `decided` maps each monitored flag to an observed value, or lists it as unreadable. */
 export type PollRead =
-  | { kind: "decided"; flags: Partial<Record<PollFlag, boolean>>; unreadable: PollFlag[] }
+  | { kind: "decided"; flags: Partial<Record<PollFlag, boolean>>; unreadable: PollFlag[]; heartbeat?: SafetyPlcCheckedRead["heartbeat"] }
   | { kind: "undecidable"; reason: string };
 
 export interface PollerDeps {
@@ -274,6 +274,11 @@ interface ConfigState {
   readMode: SafetyPlcReadMode | null;
   /** doc 81 Đợt 9 U1 — why the pending events-lost marker is due (subscription overflow / gap), if not the queue bound. */
   lostReason: string | null;
+  /** doc 81 Đợt 9 U fix 1 (I3) — since when the e-stop latch is set (local ms; persisted on the DB clock); null = not set. */
+  latchSetAt: number | null;
+  /** doc 81 Đợt 9 U fix 1 (I4) — the PLC heartbeat: last value seen (JSON) and when it last CHANGED (local ms). */
+  hbValue: string | null;
+  hbChangedAt: number | null;
 }
 
 export interface PollerConfigSnapshot {
@@ -312,6 +317,20 @@ export function safeReason(e: unknown): string {
 
 // redactEndpoint moved to the leaf module plcRedact.ts (N fix 1, M3: shared with the manual readSafetyPlc path).
 export { redactEndpoint } from "./plcRedact";
+
+/** doc 81 Đợt 9 U fix 1 (I4) — the config maps a PLC heartbeat tag (real backends only). */
+function heartbeatMapped(cfg: SafetyPlcConfig): boolean {
+  if (cfg.backend !== "modbus" && cfg.backend !== "opcua") return false;
+  const a = (cfg.statusMap as SafetyPlcStatusMap | null)?.heartbeat?.address;
+  return typeof a === "string" && a.length > 0;
+}
+
+/** The heartbeat silence bound: statusMap.heartbeat.maxSilentMs (default 10 s, [1000, 60000]), never below 3 poll intervals. */
+export function heartbeatMaxSilentMs(cfg: SafetyPlcConfig, intervalMs: number): number {
+  const own = (cfg.statusMap as SafetyPlcStatusMap | null)?.heartbeat?.maxSilentMs;
+  const base = typeof own === "number" && Number.isFinite(own) ? clamp(Math.round(own), 1000, 60_000) : 10_000;
+  return Math.max(base, 3 * intervalMs);
+}
 
 /** doc 81 Đợt 9 U1 — a backend that delivers queued value changes (the OPC-UA subscription backend). */
 function isBatchBackend(b: SafetyPlcBackendReader): b is SafetyPlcBackendReader & { readBatch(): Promise<SafetyPlcBatch>; readMode(): "subscription" | "poll_fallback" } {
@@ -353,7 +372,7 @@ export function checkedToPollRead(r: SafetyPlcCheckedRead | null | undefined, mo
     if (r?.unreadable?.includes(f) || typeof v !== "boolean") unreadable.push(f);
     else flags[f] = v;
   }
-  return { kind: "decided", flags, unreadable };
+  return r?.heartbeat ? { kind: "decided", flags, unreadable, heartbeat: r.heartbeat } : { kind: "decided", flags, unreadable };
 }
 
 export class SafetyPlcPoller {
@@ -509,6 +528,9 @@ export class SafetyPlcPoller {
         savedAt: null,
         readMode: null,
         lostReason: null,
+        latchSetAt: null,
+        hbValue: null,
+        hbChangedAt: null,
       };
       st.readMode = initialReadMode(st);
       if (carry && old) {
@@ -530,6 +552,9 @@ export class SafetyPlcPoller {
         st.unrecordedSince = old.unrecordedSince; // N-R1 — the wait carries with the queue
         if (reuseBackend) st.readMode = old.readMode;
         st.lostReason = old.lostReason;
+        st.latchSetAt = old.latchSetAt;
+        st.hbValue = old.hbValue;
+        st.hbChangedAt = old.hbChangedAt;
         if (old.busy) {
           const b: Promise<void> = old.busy.then(() => undefined, () => undefined).finally(() => {
             if (st.busy === b) st.busy = null;
@@ -613,6 +638,7 @@ export class SafetyPlcPoller {
               st.confirmed = { link: row.link, flags: { ...row.flags } };
               st.link = row.link;
               st.flags = { ...row.flags };
+              if (row.flags.estopLatch === true) st.latchSetAt = row.latchSetAt ?? Date.now(); // U fix 1 (I3) — survives a restart
             }
             st.loaded = true;
           } catch (e) {
@@ -626,7 +652,9 @@ export class SafetyPlcPoller {
         if (this.states.get(id) !== st) return; // config changed / removed / poller stopped meanwhile
         // doc 81 Đợt 9 U1 — a subscription delivers every queued value change as its own read, IN ORDER: each one is a
         // transition candidate (press + release inside one interval ⇒ both events); all are queued, then drained once.
-        for (const read of reads) {
+        const pollAt = Date.now();
+        for (const raw of reads) {
+          const read = this.applyHeartbeat(st, raw, pollAt); // U fix 1 (I4) — a frozen PLC heartbeat ⇒ undecidable
           st.lastRead = read;
           st.failStreak = read.kind === "undecidable" ? st.failStreak + 1 : 0;
           if (read.kind === "undecidable") st.undecidable += 1;
@@ -687,6 +715,10 @@ export class SafetyPlcPoller {
         const was = st.flags[flag];
         if (flag === "estopLatch") {
           st.flags.estopLatch = now;
+          // U fix 1 (I3, R-9-e) — while the latch is set, further short presses are NOT captured (it only rises once): remembered
+          // (persisted, shown on the Safety page with a non-blocking "e-stop pressed at T, latch not reset" warning)
+          if (now && was !== true) st.latchSetAt = Date.now();
+          else if (!now) st.latchSetAt = null;
           if (now && was !== true) this.latchRose(st, read, estopBefore);
           continue; // a falling latch (cleared PLC-side / by an operator) is committed silently
         }
@@ -814,11 +846,13 @@ export class SafetyPlcPoller {
       unrecordedSince: pending > 0 ? (st.unrecordedSince ?? Date.now()) : null,
       unrecordedCount: pending,
       readMode: st.readMode, // doc 81 Đợt 9 U1/U2 — shown on the Safety page
+      // U fix 1 (I3) — the CONFIRMED (recorded) latch state: set ⇒ since when
+      latchSetAt: st.confirmed.flags.estopLatch === true ? (st.latchSetAt ?? Date.now()) : null,
     };
     // final wave N-R6 — the row is written when its CONTENT changes (edge, interval, identity, unrecorded wait / count, first
     // decided read) and otherwise at most every SAFETY_PLC_STATE_REFRESH_MS as the liveness proof (the stale bound is ≥ 60 s):
     // ≤ 1 upsert / 5 s / config in steady state instead of one per poll. A failed save forces the next one.
-    const key = JSON.stringify([row.link, row.flags, row.intervalMs, row.identityDigest, row.unrecordedSince, row.unrecordedCount, row.lastOkAt != null, row.readMode]);
+    const key = JSON.stringify([row.link, row.flags, row.intervalMs, row.identityDigest, row.unrecordedSince, row.unrecordedCount, row.lastOkAt != null, row.readMode, row.latchSetAt != null]);
     const now = Date.now();
     if (st.savedKey === key && st.savedAt != null && now - st.savedAt >= 0 && now - st.savedAt < SAFETY_PLC_STATE_REFRESH_MS) return;
     try {
@@ -947,8 +981,32 @@ export class SafetyPlcPoller {
   private async readReal(backend: SafetyPlcBackendReader, st: ConfigState): Promise<PollRead> {
     if (typeof backend.readChecked !== "function") return { kind: "undecidable", reason: "backend cannot report unreadable tags" };
     const withLatch = st.monitored.includes("estopLatch");
-    const r = await backend.readChecked(withLatch ? { withLatch: true } : undefined);
+    const withHeartbeat = heartbeatMapped(st.cfg);
+    const r = await backend.readChecked(withLatch || withHeartbeat ? { withLatch, withHeartbeat } : undefined);
     return checkedToPollRead(r, st.monitored);
+  }
+
+  /**
+   * doc 81 Đợt 9 U fix 1 (review I4) — the optional PLC HEARTBEAT tag (statusMap.heartbeat). A value frozen AT THE SOURCE
+   * (PLC program stopped, gateway cache) is invisible to any read or subscription; the heartbeat must keep changing.
+   * Unreadable heartbeat, or no change for heartbeatMaxSilentMs ⇒ this read is UNDECIDABLE (⇒ "plc_offline", never ok /
+   * released; health shows the PLC blind). A subscription batch counts the changes it saw (a toggle flipping an even number of
+   * times between two polls still counts). Not mapped ⇒ the read is returned unchanged.
+   */
+  private applyHeartbeat(st: ConfigState, read: PollRead, at: number): PollRead {
+    if (read.kind !== "decided" || !heartbeatMapped(st.cfg)) return read;
+    const hb = read.heartbeat;
+    if (!hb || hb.unreadable || hb.value === undefined) return { kind: "undecidable", reason: "PLC heartbeat tag unreadable" };
+    const v = JSON.stringify(hb.value);
+    if (st.hbChangedAt == null || v !== st.hbValue || (hb.changes ?? 0) > 0) {
+      st.hbValue = v;
+      st.hbChangedAt = at;
+      return read;
+    }
+    const silent = at - st.hbChangedAt;
+    const bound = heartbeatMaxSilentMs(st.cfg, st.intervalMs);
+    if (silent > bound) return { kind: "undecidable", reason: `PLC heartbeat tag unchanged for ${Math.round(silent / 1000)} s (bound ${Math.round(bound / 1000)} s) — values may be frozen at the source` };
+    return read;
   }
 
   /** Sim: an absent flag is clear (sim semantics); a present non-boolean is a PARSE ERROR ⇒ undecidable (N3). */

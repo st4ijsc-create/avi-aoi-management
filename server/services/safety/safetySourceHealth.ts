@@ -182,7 +182,13 @@ export interface SafetySourceHealth {
     lastPollAt: string | null;
     staleConfigs: number;
     /** doc 81 Đợt 9 U1/U2 — readMode: "subscription" | "poll_fallback" | "poll" | "poll_latch" | "sim" | null (not reported yet). */
-    configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean; readMode: string | null }>;
+    configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean; readMode: string | null; latchSetAt: string | null }>;
+    /**
+     * doc 81 Đợt 9 U fix 1 (I3, ruling R-9-e) — configs (in scope) whose Modbus e-stop LATCH is set: "e-stop pressed at T, latch
+     * not reset" — further short presses are NOT captured until it is reset. A NON-blocking warning (actuation is not gated by
+     * it — owner decision later; STOP always allowed).
+     */
+    latched: Array<{ code: string; since: string }>;
     hiddenConfigs: number;
   };
 }
@@ -307,15 +313,16 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
 
 /** fix scan 2 — the poller health, scoped to the viewer (no endpoint is ever part of it; final wave F4: computed from the durable poll-state rows — the fix-scan-2 heartbeat was removed in R-8-c). */
 function pollerPanel(h: PollerHealth | undefined, ids: number[] | null): SafetySourceHealth["plcPoller"] {
-  if (!h) return { state: "off", lastPollAt: null, staleConfigs: 0, configs: [], hiddenConfigs: 0 };
+  if (!h) return { state: "off", lastPollAt: null, staleConfigs: 0, configs: [], hiddenConfigs: 0, latched: [] };
   const iso = (t: number | null | undefined) => (typeof t === "number" && Number.isFinite(t) ? new Date(t).toISOString() : null);
   const shown = h.configs.filter((c) => visible(ids, c.factoryId ?? null));
   return {
     state: h.state,
     lastPollAt: iso(h.lastPollAt),
     staleConfigs: shown.filter((c) => c.stale).length,
-    configs: shown.map((c) => ({ code: c.code, link: c.link, lastAttemptAt: iso(c.lastAttemptAt), lastOkAt: iso(c.lastOkAt), stale: c.stale, readMode: c.readMode ?? null })),
+    configs: shown.map((c) => ({ code: c.code, link: c.link, lastAttemptAt: iso(c.lastAttemptAt), lastOkAt: iso(c.lastOkAt), stale: c.stale, readMode: c.readMode ?? null, latchSetAt: iso(c.latchSetAt) })),
     hiddenConfigs: h.configs.length - shown.length,
+    latched: shown.filter((c) => c.latchSetAt != null).map((c) => ({ code: c.code, since: iso(c.latchSetAt)! })),
   };
 }
 

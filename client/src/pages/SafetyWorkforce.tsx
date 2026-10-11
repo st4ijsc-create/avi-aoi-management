@@ -1340,6 +1340,9 @@ function SafetySourcePanel({
     .filter((c): c is { code: string; kind: "stale" | "offline" | "unknown" } => c.kind !== null);
   // doc 81 Đợt 9 U1/U2 — PLCs read by polling (short presses may be missed); the panel says so per PLC.
   const pollingPlcs = (poller?.configs ?? []).filter((c) => c.readMode === "poll" || c.readMode === "poll_fallback");
+  // doc 81 Đợt 9 U fix 1 (I3, ruling R-9-e) — a Modbus e-stop LATCH left set: later short presses are NOT captured until it is
+  // reset, and a non-blocking warning "e-stop pressed at T, latch not reset" (actuation is not gated by it; STOP always allowed).
+  const latchedPlcs = poller?.latched ?? [];
   const pollerBad = poller?.state === "stale" || poller?.state === "unknown" || (poller?.state === "ok" && blindPlcs.length > 0);
   const linkText = (k: "stale" | "offline" | "unknown") =>
     k === "stale"
@@ -1412,6 +1415,15 @@ function SafetySourcePanel({
           )}
           {/* doc 81 Đợt 9 U1/U2 — a PLC read by POLLING (Modbus without a latch, or OPC-UA whose subscription was refused) can
               miss an e-stop pressed and released between two reads: said per PLC, never hidden. */}
+          {latchedPlcs.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-x-2 font-normal text-amber-700 dark:text-amber-400">
+              {latchedPlcs.map((c) => (
+                <span key={c.code} data-testid="safety-source-poller-latch" className="font-mono">
+                  {c.code}: {t("safety.source.poller.latchSet", "latch set since {{time}} — further short presses are NOT captured until it is reset", { time: new Date(c.since).toLocaleTimeString() })}
+                </span>
+              ))}
+            </div>
+          )}
           {pollingPlcs.length > 0 && (
             <div className="mt-0.5 flex flex-wrap gap-x-2 font-normal text-amber-700 dark:text-amber-400">
               {pollingPlcs.map((c) => (
@@ -1444,6 +1456,15 @@ function SafetySourcePanel({
           );
         })}
       </div>
+      {latchedPlcs.length > 0 && (
+        <div data-testid="safety-source-latch-warning" className="text-amber-700 dark:text-amber-400">
+          {latchedPlcs.map((c) => (
+            <div key={c.code}>
+              {t("safety.source.latchWarning", "⚠ {{code}}: e-stop pressed at {{time}}, latch not reset — warning only: real writes / motion are not blocked by it; STOP is always allowed", { code: c.code, time: new Date(c.since).toLocaleString() })}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
         <span data-testid="safety-source-vision">
           {t("safety.source.vision", "Vision")} {onOff(data.vision.enabled)} · {data.vision.calibrations} {t("safety.source.cameras", "camera(s)")}

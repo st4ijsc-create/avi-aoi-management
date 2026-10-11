@@ -19,7 +19,7 @@
  *  - SPC critical: a 'critical' SPC violation → audit + notify + republish.
  */
 import { eventBus, EventTypes, type DomainEvent } from "../../_core/eventBus";
-import { consumeTrustedSafetyOrigin, TRUSTED_ORIGIN_EVENT_TYPES } from "../safety/trustedSafetyOrigin";
+import { consumeTrustedSafetyOrigin, safetyNoticeMachine, trustedEventIdentity, TRUSTED_ORIGIN_EVENT_TYPES } from "../safety/trustedSafetyOrigin";
 
 let enabled = false;
 const unsubscribers: Array<() => void> = [];
@@ -124,21 +124,25 @@ function onAnomalyDetected(e: DomainEvent): void {
  * event (it consumes).
  */
 export async function consumeSafetyCriticalTrust(p: { id?: unknown; eventType?: unknown; robotId?: unknown; stationId?: unknown; lineId?: unknown; isNearMiss?: unknown }): Promise<boolean> {
-  if (p.isNearMiss === true) return false;
+  // doc 81 Đợt 9 U fix 1 (I1) — the ONE normaliser: a payload that does not normalise (a non-integer robot / station / line id,
+  // a non-string type…) is never trusted and consumes nothing; the notice is built from the same normalised identity.
+  const ident = trustedEventIdentity(p);
+  if (!ident || ident.isNearMiss) return false;
   // a type no origin may make safety-critical can never carry trust (the digest binds the stored type): no DB round trip
-  if (!Object.values(TRUSTED_ORIGIN_EVENT_TYPES).some((set) => set.has(String(p.eventType)))) return false;
-  const trusted = await consumeTrustedSafetyOrigin({ id: p.id, eventType: p.eventType, robotId: p.robotId, stationId: p.stationId, lineId: p.lineId, isNearMiss: p.isNearMiss });
+  if (!Object.values(TRUSTED_ORIGIN_EVENT_TYPES).some((set) => set.has(ident.eventType))) return false;
+  const trusted = await consumeTrustedSafetyOrigin(ident);
   if (!trusted) return false;
-  return TRUSTED_ORIGIN_EVENT_TYPES[trusted.origin]?.has(trusted.eventType) === true && trusted.eventType === p.eventType;
+  return TRUSTED_ORIGIN_EVENT_TYPES[trusted.origin]?.has(trusted.eventType) === true && trusted.eventType === ident.eventType;
 }
 
 async function onSafetyEvent(e: DomainEvent): Promise<void> {
   const p = (e.payload ?? {}) as { id?: number; eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number; stationId?: number };
   // doc 81 Đợt 8 N2 — most specific first: robot > station > line (safety-PLC configs guard STATIONS: two PLCs on one line
   // must not share one P-F4 bypass budget).
-  const machine = String(
-    p.robotId != null ? `robot:${p.robotId}` : p.stationId != null ? `station:${p.stationId}` : p.lineId != null ? `line:${p.lineId}` : "unknown",
-  );
+  // doc 81 Đợt 9 U fix 1 (I1) — the machine comes from the SAME normalised identity the trust digest binds; a payload that does
+  // not normalise is never safety-critical (consumeSafetyCriticalTrust ⇒ false) and keeps its raw text in a NORMAL notice.
+  const ident = trustedEventIdentity(p);
+  const machine = String(ident ? safetyNoticeMachine(ident) : safetyNoticeMachine({ robotId: p.robotId ?? null, stationId: p.stationId ?? null, lineId: p.lineId ?? null }));
   const message = `Safety ${p.isNearMiss ? "near-miss" : "event"}: ${p.eventType ?? "?"} at ${machine}`;
   console.warn(`[Orchestration] ${message}`);
   void audit("orchestration.safety", { eventType: p.eventType, isNearMiss: p.isNearMiss, machine });

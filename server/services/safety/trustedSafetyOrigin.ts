@@ -66,7 +66,7 @@ export const TRUSTED_EVENT_DIGEST_VERSION = "safety-event-trust-v1";
 
 /** The event content a trust row is bound to (the realtime payload carries the same fields). */
 export interface TrustedEventContent {
-  id: unknown;
+  id?: unknown;
   eventType?: unknown;
   robotId?: unknown;
   stationId?: unknown;
@@ -74,24 +74,50 @@ export interface TrustedEventContent {
   isNearMiss?: unknown;
 }
 
-const idOrNull = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) ? v : null);
+/** The normalised identity of a safety event — what BOTH the digest and the notice (machine, keys) are built from. */
+export interface TrustedEventIdentity {
+  id: number;
+  eventType: string;
+  robotId: number | null;
+  stationId: number | null;
+  lineId: number | null;
+  isNearMiss: boolean;
+}
+
+const optId = (v: unknown): number | null | undefined => (v == null ? null : typeof v === "number" && Number.isSafeInteger(v) ? v : undefined);
 
 /**
- * sha256 (hex) of what a safety notice is built from: id, type, robot / station / line, near-miss. The ONE digest function
- * (the writer — safetyAuditService — and the consumer — rulesEngine — both call it). null ⇔ no usable id.
+ * doc 81 Đợt 9 U fix 1 (review I1) — the ONE normaliser. null (⇒ never trusted, nothing consumed) unless: id is a positive
+ * safe integer, eventType a string, every PRESENT robot / station / line id a safe integer, isNearMiss absent or boolean.
+ * (Before, a non-integer id was silently mapped to null for the digest while the notice used the raw value: a replay with
+ * robotId:"999" kept the digest of a station event and redirected the bypass notice to "robot:999".)
+ */
+export function trustedEventIdentity(e: TrustedEventContent): TrustedEventIdentity | null {
+  const id = optId(e.id);
+  if (id == null || id <= 0) return null;
+  if (typeof e.eventType !== "string") return null;
+  const robotId = optId(e.robotId);
+  const stationId = optId(e.stationId);
+  const lineId = optId(e.lineId);
+  if (robotId === undefined || stationId === undefined || lineId === undefined) return null;
+  if (e.isNearMiss != null && typeof e.isNearMiss !== "boolean") return null;
+  return { id, eventType: e.eventType, robotId, stationId, lineId, isNearMiss: e.isNearMiss === true };
+}
+
+/** The notice's machine string (most specific first: robot > station > line), from the NORMALISED identity. */
+export function safetyNoticeMachine(i: Pick<TrustedEventIdentity, "robotId" | "stationId" | "lineId">): string {
+  return i.robotId != null ? `robot:${i.robotId}` : i.stationId != null ? `station:${i.stationId}` : i.lineId != null ? `line:${i.lineId}` : "unknown";
+}
+
+/**
+ * sha256 (hex) of what a safety notice is built from: id, type, robot / station / line, near-miss — of the NORMALISED identity
+ * (trustedEventIdentity). The ONE digest function (the writer — safetyAuditService — and the consumer — rulesEngine — both
+ * call it). null ⇔ the content does not normalise (never trusted).
  */
 export function trustedEventDigest(e: TrustedEventContent): string | null {
-  const id = idOrNull(e.id);
-  if (id == null || id <= 0) return null;
-  const material = [
-    TRUSTED_EVENT_DIGEST_VERSION,
-    id,
-    typeof e.eventType === "string" ? e.eventType : null,
-    idOrNull(e.robotId),
-    idOrNull(e.stationId),
-    idOrNull(e.lineId),
-    e.isNearMiss === true,
-  ];
+  const i = trustedEventIdentity(e);
+  if (!i) return null;
+  const material = [TRUSTED_EVENT_DIGEST_VERSION, i.id, i.eventType, i.robotId, i.stationId, i.lineId, i.isNearMiss];
   return createHash("sha256").update(JSON.stringify(material)).digest("hex");
 }
 
@@ -154,7 +180,7 @@ export function _setTrustedEventStoreForTests(s: TrustedEventStore | null): void
  * timeout — bounded by TRUSTED_SAFETY_CONSUME_TIMEOUT_MS).
  */
 export async function consumeTrustedSafetyOrigin(e: TrustedEventContent): Promise<{ origin: TrustedSafetyOrigin; eventType: string } | null> {
-  const digest = trustedEventDigest(e);
+  const digest = trustedEventDigest(e); // null ⇔ the content does not normalise ⇒ nothing is consumed
   if (digest == null) return null;
   let t: NodeJS.Timeout | undefined;
   try {

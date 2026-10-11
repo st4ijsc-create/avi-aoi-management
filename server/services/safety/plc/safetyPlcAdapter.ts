@@ -114,6 +114,12 @@ export interface SafetyPlcCheckedRead {
    * e-stop latch tag: its decided value, or `unreadable`. The actuation preflight never asks (it judges the live tags).
    */
   latch?: { estopLatch?: boolean; unreadable: boolean };
+  /**
+   * doc 81 Đợt 9 U fix 1 (I4) — ONLY when asked (`withHeartbeat`) and mapped: the heartbeat tag's raw value, or unreadable.
+   * `changes` (subscription backend only): how many changes were observed since the previous batch (a toggle that flips
+   * an even number of times between two polls still counts as alive).
+   */
+  heartbeat?: { value?: number | string | boolean; unreadable: boolean; changes?: number };
 }
 
 /** A pluggable status source. Returns the CURRENT observed status snapshot. */
@@ -126,7 +132,7 @@ export interface SafetyPlcBackendReader {
    * not be read with good quality. The real-actuation preflight REQUIRES it for a `real` config
    * (absent ⇒ that config cannot vouch "clean").
    */
-  readChecked?(opts?: { withLatch?: boolean }): Promise<SafetyPlcCheckedRead>;
+  readChecked?(opts?: { withLatch?: boolean; withHeartbeat?: boolean; timeoutMs?: number }): Promise<SafetyPlcCheckedRead>;
   /** Human-readable label — always states whether this is sim or a real endpoint. */
   label(): string;
 }
@@ -204,14 +210,22 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
     return ref?.address ? { tagKey: "estopLatch", address: ref.address, dataType: ref.dataType ?? "bool" } : null;
   }
 
-  async readChecked(opts: { withLatch?: boolean } = {}): Promise<SafetyPlcCheckedRead> {
+  /** doc 81 Đợt 9 U fix 1 (I4) — the PLC heartbeat tag (READ only), when the config maps one. */
+  protected heartbeatTag(): OtTagAddress | null {
+    const ref = this.statusMap.heartbeat;
+    return ref?.address ? { tagKey: "heartbeat", address: ref.address, dataType: ref.dataType ?? "int" } : null;
+  }
+
+  /** `timeoutMs` (U fix 1, M1): a caller with a smaller budget bounds the connect with it. */
+  async readChecked(opts: { withLatch?: boolean; withHeartbeat?: boolean; timeoutMs?: number } = {}): Promise<SafetyPlcCheckedRead> {
     const tags = this.tagList();
     const latch = opts.withLatch ? this.latchTag() : null;
-    if (tags.length === 0 && !latch) return { status: {}, unreadable: [] }; // nothing mapped → nothing to observe
+    const hb = opts.withHeartbeat ? this.heartbeatTag() : null;
+    if (tags.length === 0 && !latch && !hb) return { status: {}, unreadable: [] }; // nothing mapped → nothing to observe
     const driver = createDriver(this.kind as OtProtocol);
-    await driver.connect({ endpoint: this.endpoint, timeoutMs: this.timeoutMs });
+    await driver.connect({ endpoint: this.endpoint, timeoutMs: opts.timeoutMs ?? this.timeoutMs });
     try {
-      const samples = await driver.readTags([...tags.map((t) => t.tag), ...(latch ? [latch] : [])]);
+      const samples = await driver.readTags([...tags.map((t) => t.tag), ...(latch ? [latch] : []), ...(hb ? [hb] : [])]);
       const byKey = new Map(samples.map((s) => [s.tagKey, s]));
       const snap: SafetyPlcStatusSnapshot = {};
       const unreadable: Array<keyof SafetyPlcStatusSnapshot> = [];
@@ -231,8 +245,10 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
         }
         snap[flag] = ref?.activeWhen === "falsy" ? !truthy : truthy;
       }
-      if (latch) return { status: snap, unreadable, latch: decideLatch(this.statusMap, byKey.get("estopLatch")) };
-      return { status: snap, unreadable };
+      const out: SafetyPlcCheckedRead = { status: snap, unreadable };
+      if (latch) out.latch = decideLatch(this.statusMap, byKey.get("estopLatch"));
+      if (hb) out.heartbeat = decideHeartbeat(byKey.get("heartbeat"));
+      return out;
     } finally {
       await driver.disconnect().catch(() => undefined);
     }
@@ -251,6 +267,14 @@ export function decideLatch(map: SafetyPlcStatusMap, s: { quality?: string; valu
   const v = strictBool(s.value);
   if (v === undefined) return { unreadable: true };
   return { estopLatch: map.estopLatch?.activeWhen === "falsy" ? !v : v, unreadable: false };
+}
+
+/** doc 81 Đợt 9 U fix 1 (I4) — a heartbeat sample: a good, finite number / boolean / non-empty string, else UNREADABLE. */
+export function decideHeartbeat(s: { quality?: string; value?: unknown } | undefined): { value?: number | string | boolean; unreadable: boolean } {
+  if (!s || s.quality !== "good") return { unreadable: true };
+  const v = s.value;
+  if ((typeof v === "number" && Number.isFinite(v)) || typeof v === "boolean" || (typeof v === "string" && v.length > 0)) return { value: v, unreadable: false };
+  return { unreadable: true };
 }
 
 /**

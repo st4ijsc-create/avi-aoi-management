@@ -5,6 +5,9 @@
  * Oracles: the events captured at the two record doors, and the durable rows captured at the state seam.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.hoisted(() => {
+  process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused"; // quiet the [OAuth] import-time stderr (no call is made)
+});
 import type { SafetyPlcConfig } from "../../../../drizzle/schema";
 import { SafetyPlcPoller } from "./safetyPlcPoller";
 import { OtReadSafetyPlcBackend, decideLatch, type SafetyPlcCheckedRead } from "./safetyPlcAdapter";

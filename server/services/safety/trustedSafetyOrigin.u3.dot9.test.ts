@@ -161,6 +161,18 @@ describe("Đợt 9 U3 — consuming: undecidable is never trusted", () => {
     expect(trustedEventDigest(JSON.parse(JSON.stringify(p)))).toBe(base); // survives a JSON round trip (Redis fan-out)
   });
 
+  it("U fix 1 (I1): the ONE normaliser refuses any non-integer id / non-string type / non-boolean near-miss; the notice machine comes from it", async () => {
+    const { trustedEventIdentity, safetyNoticeMachine } = await import("./trustedSafetyOrigin");
+    expect(trustedEventIdentity(p)).toEqual({ id: 42, eventType: "estop", robotId: null, stationId: 4, lineId: null, isNearMiss: false });
+    for (const bad of [{ robotId: "999" }, { stationId: "4" }, { lineId: 1.5 }, { robotId: {} }, { eventType: 5 }, { isNearMiss: "true" }, { id: "42" }]) {
+      expect(trustedEventIdentity({ ...p, ...bad })).toBeNull();
+      expect(trustedEventDigest({ ...p, ...bad })).toBeNull();
+      expect(await consumeTrustedSafetyOrigin({ ...p, ...bad })).toBeNull();
+    }
+    expect(safetyNoticeMachine(trustedEventIdentity(p)!)).toBe("station:4");
+    expect(safetyNoticeMachine({ robotId: 3, stationId: 4, lineId: 5 })).toBe("robot:3");
+  });
+
   it("isTrustTableMissing: 42P01 / 42703 on the error or its cause only", () => {
     expect(isTrustTableMissing({ code: "42P01" })).toBe(true);
     expect(isTrustTableMissing({ cause: { code: "42703" } })).toBe(true);

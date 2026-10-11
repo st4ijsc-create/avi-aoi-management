@@ -206,6 +206,38 @@ describe("Đợt 9 U1 — background poller ⇄ in-process OPC-UA server through
     }
   });
 
+  it("U fix 1 (I4): the periodic verification read runs on the OPEN session against the real server — consistent ⇒ no false stall", async () => {
+    const quiet = [vi.spyOn(console, "log").mockImplementation(() => undefined), vi.spyOn(console, "warn").mockImplementation(() => undefined)];
+    const { OpcuaSubscriptionSafetyPlcBackend, SAFETY_PLC_OPCUA_VERIFY_MS } = await import("./safetyPlcOpcuaSubscription");
+    const { createDriver } = await import("../../ot/driverRegistry");
+    await import("../../ot");
+    const c = cfg(A, 99);
+    let reads = 0;
+    const b = new OpcuaSubscriptionSafetyPlcBackend(c.endpoint!, c.statusMap as never, 8000, {
+      intervalMs: 1000,
+      createDriver: () => {
+        const d = createDriver("opcua") as unknown as { readTags: (t: unknown[]) => Promise<unknown[]> };
+        const orig = d.readTags.bind(d);
+        d.readTags = (t) => ((reads += 1), orig(t));
+        return d as never;
+      },
+    });
+    try {
+      A.vals.ESTOP = false;
+      A.vals.GUARD_OK = true;
+      expect((await withTimeout(b.readBatch(), 30_000, "batch 1")).mode).toBe("subscription");
+      await sleep(SAFETY_PLC_OPCUA_VERIFY_MS + 300);
+      const r = await withTimeout(b.readBatch(), 30_000, "batch 2");
+      expect(reads).toBe(1);
+      expect(r.reads.every((x) => !("error" in x))).toBe(true);
+      expect(r.lost).toBe(0);
+      expect(A.writes).toBe(0);
+    } finally {
+      await b.close();
+      quiet.forEach((q) => q.mockRestore());
+    }
+  });
+
   it("control: a POLLING backend on the same short press sees nothing (what the subscription adds)", async () => {
     const quiet = [vi.spyOn(console, "log").mockImplementation(() => undefined), vi.spyOn(console, "warn").mockImplementation(() => undefined)];
     const { OtReadSafetyPlcBackend } = await import("./safetyPlcAdapter");

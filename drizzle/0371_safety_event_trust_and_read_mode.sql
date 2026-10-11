@@ -72,3 +72,9 @@ ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "readMode" varchar(
 ALTER TABLE "safety_plc_poll_state" DROP CONSTRAINT IF EXISTS "ck_safety_plc_poll_state_read_mode";
 ALTER TABLE "safety_plc_poll_state" ADD CONSTRAINT "ck_safety_plc_poll_state_read_mode"
   CHECK ("readMode" IS NULL OR "readMode" IN ('subscription', 'poll_fallback', 'poll', 'poll_latch', 'sim'));
+
+-- doc 81 Đợt 9 U fix 1 (review I3, ruling R-9-e) — idempotent addition (0371 applied to _test only): since when the Modbus
+-- e-stop LATCH has been set (epoch ms on the DB clock, like the other times). While set, further short presses are NOT captured
+-- (the latch only rises once) ⇒ the Safety page says so and warns "e-stop pressed at T, latch not reset" (non-blocking; STOP
+-- always allowed). NULL = latch not set / not mapped. Kept at its FIRST value while the latch stays set.
+ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "latchSetAt" bigint;

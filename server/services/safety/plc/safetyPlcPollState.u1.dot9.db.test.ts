@@ -57,6 +57,27 @@ describe.skipIf(!DB_URL)("Đợt 9 U1/U2 — durable read mode (_test)", () => {
     }
   });
 
+  it("★ U fix 1 (I3 / R-9-e): latchSetAt round-trips on the DB clock, keeps its FIRST value while set, clears on reset; the panel lists the latched PLC", async () => {
+    const st = pgPollStateStore();
+    const base = { ...row("poll_latch"), flags: { estopLatch: true } };
+    const t0 = Date.now() - 30_000;
+    await st.save({ ...base, latchSetAt: t0 });
+    const first = Number((await sql`SELECT "latchSetAt" FROM safety_plc_poll_state WHERE "configId" = ${cfgId}`)[0].latchSetAt);
+    const [db] = await sql`SELECT (extract(epoch from clock_timestamp()) * 1000)::bigint AS t`;
+    expect(Math.abs(Number(db.t) - first - 30_000)).toBeLessThan(10_000);
+    await st.save({ ...base, latchSetAt: Date.now() }); // a later save while still set never moves it
+    expect(Number((await sql`SELECT "latchSetAt" FROM safety_plc_poll_state WHERE "configId" = ${cfgId}`)[0].latchSetAt)).toBe(first);
+    expect((await st.load(cfgId))?.latchSetAt).toBe(first);
+    const p = await panel();
+    expect(p?.latchSetAt).toBe(new Date(first).toISOString());
+    const { loadSafetySourceHealth } = await import("../safetySourceHealth");
+    const h = await loadSafetySourceHealth({ userId: undefined, userRole: undefined });
+    expect(h.plcPoller.latched).toContainEqual({ code: `${RUN}-P`, since: new Date(first).toISOString() });
+    await st.save({ ...base, flags: {}, latchSetAt: null });
+    expect((await sql`SELECT "latchSetAt" FROM safety_plc_poll_state WHERE "configId" = ${cfgId}`)[0].latchSetAt).toBeNull();
+    expect((await panel())?.latchSetAt).toBeNull();
+  });
+
   it("an unknown mode is stored as NULL (never invented); the column CHECK refuses it on a raw write", async () => {
     await pgPollStateStore().save(row("magic"));
     const [raw] = await sql`SELECT "readMode" FROM safety_plc_poll_state WHERE "configId" = ${cfgId}`;

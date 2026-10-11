@@ -70,6 +70,8 @@ export function plcTrustMaterial(cfg: Pick<SafetyPlcConfig, "backend" | "endpoin
     cfg.corporateCode ?? null,
     cfg.enabled === true,
     ...(map.estopLatch?.address ? [["estopLatch", String(map.estopLatch.address), map.estopLatch.dataType ?? "bool", map.estopLatch.activeWhen ?? "truthy"]] : []),
+    // U fix 1 (I4) — the optional heartbeat tag, appended only when mapped (same rule as the latch)
+    ...(map.heartbeat?.address ? [["heartbeat", String(map.heartbeat.address), map.heartbeat.dataType ?? "int", map.heartbeat.maxSilentMs ?? null]] : []),
   ];
 }
 
@@ -521,6 +523,9 @@ export async function listPlcTrust(scope: PlcScope, viewer: { id: number; isAdmi
         ? [...TAG_FLAGS, "estopLatch" as const].map((f) => ({ flag: f, address: map[f]?.address ?? null, dataType: map[f]?.address ? (map[f]?.dataType ?? "bool") : null, activeWhen: map[f]?.address ? (map[f]?.activeWhen ?? "truthy") : null })) // Đợt 9 U2: the approver sees the latch tag too
         : null,
     });
+    // U fix 1 (I4) — the approver sees the heartbeat tag too (its liveness bound in the "activeWhen" column)
+    const last = out[out.length - 1];
+    if (last?.tags && map.heartbeat?.address) last.tags.push({ flag: "heartbeat", address: map.heartbeat.address, dataType: map.heartbeat.dataType ?? "int", activeWhen: `changes within ${map.heartbeat.maxSilentMs ?? 10_000} ms` });
   }
   return out;
 }

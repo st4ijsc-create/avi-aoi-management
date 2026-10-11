@@ -7,6 +7,9 @@
  * per-address READ counter and a WRITE counter (L-7: the server never writes — in particular it never clears the latch).
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+vi.hoisted(() => {
+  process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused"; // quiet the [OAuth] import-time stderr (no call is made)
+});
 import * as ModbusSerialNs from "modbus-serial";
 import type { SafetyPlcConfig } from "../../../../drizzle/schema";
 import type { RecordSafetyEventInput } from "../safetyAuditService";
@@ -18,7 +21,7 @@ import { OtReadSafetyPlcBackend } from "./safetyPlcAdapter";
 vi.setConfig({ testTimeout: 60_000 });
 const ServerTCP: any = (ModbusSerialNs as any).ServerTCP ?? (ModbusSerialNs as any).default?.ServerTCP;
 
-const PLC = { coils: new Map<number, boolean>(), reads: new Map<number, number>(), writes: 0, port: 0 };
+const PLC = { coils: new Map<number, boolean>(), discretes: new Map<number, boolean>(), holding: new Map<number, number>(), reads: new Map<number, number>(), writes: 0, port: 0 };
 let srv: any;
 const saved = process.env.SAFETY_PLC_POLL_READ_TIMEOUT_MS;
 
@@ -30,8 +33,8 @@ beforeAll(async () => {
         PLC.reads.set(addr, (PLC.reads.get(addr) ?? 0) + 1);
         return PLC.coils.get(addr) ?? false;
       },
-      getDiscreteInput: () => false,
-      getHoldingRegister: () => 0,
+      getDiscreteInput: (addr: number) => PLC.discretes.get(addr) ?? false, // U fix 1 — read-only latch (function code 02)
+      getHoldingRegister: (addr: number) => PLC.holding.get(addr) ?? 0, // U fix 1 — PLC heartbeat counter
       getInputRegister: () => 0,
       setCoil: () => {
         PLC.writes += 1;
@@ -132,5 +135,53 @@ describe("Đợt 9 U2 — e-stop latch on a real (in-process) Modbus PLC", () =>
     const withLatch = await b.readChecked({ withLatch: true });
     expect(withLatch.latch).toEqual({ estopLatch: false, unreadable: false });
     expect(PLC.writes).toBe(0);
+  });
+});
+
+describe("Đợt 9 U fix 1 — read-only latch on a DISCRETE input + PLC heartbeat register (real Modbus PLC)", () => {
+  it("★ latch on discrete:3 ⇒ the latched press is recorded and 'set since' persisted; a frozen heartbeat ⇒ 'plc_offline'; counting again ⇒ online; 0 writes", async () => {
+    const quiet = [vi.spyOn(console, "log").mockImplementation(() => undefined), vi.spyOn(console, "warn").mockImplementation(() => undefined)];
+    const c = {
+      ...cfg(),
+      id: 93,
+      statusMap: { estop: { address: "coil:1" }, estopLatch: { address: "discrete:3" }, heartbeat: { address: "holding:40010", maxSilentMs: 1000 }, pollIntervalMs: 250 },
+    } as SafetyPlcConfig;
+    const recs: Array<{ input: RecordSafetyEventInput }> = [];
+    const store = memStore();
+    const p = new SafetyPlcPoller({
+      loadConfigs: async () => [c],
+      recordPlain: async (i) => (recs.push({ input: i }), { ok: true, enabled: true }),
+      recordTrusted: async (i) => (recs.push({ input: i }), { ok: true, enabled: true }),
+      isTrustApproved: async () => true,
+      leader: { acquire: async () => true, held: async () => true, release: async () => undefined },
+      state: store,
+    });
+    const types = () => recs.map((r) => r.input.eventType);
+    try {
+      PLC.coils.clear();
+      PLC.discretes.clear();
+      PLC.holding.set(9, 1); // holding:40010 ⇒ register 9
+      await p.refreshConfigs();
+      await p.pollNow(93);
+      expect(recs).toEqual([]);
+      PLC.discretes.set(2, true); // the PLC program latched a short press (discrete:3 ⇒ input 2)
+      PLC.holding.set(9, 2);
+      await p.pollNow(93);
+      expect(types()).toEqual(["estop", "estop_released"]);
+      expect(store.rows.get(93)?.latchSetAt).toEqual(expect.any(Number));
+      await new Promise((r) => setTimeout(r, 1200)); // the heartbeat stays at 2 for > 1 s
+      await p.pollNow(93);
+      expect(types()).toEqual(["estop", "estop_released", "plc_offline"]);
+      expect(String(recs[2].input.notes)).toMatch(/PLC heartbeat tag unchanged/);
+      for (const v of [3, 4]) {
+        PLC.holding.set(9, v);
+        await p.pollNow(93);
+      }
+      expect(types()).toEqual(["estop", "estop_released", "plc_offline", "plc_online"]);
+      expect(PLC.writes, "L-7: the server never writes").toBe(0);
+    } finally {
+      await p.stop();
+      quiet.forEach((q) => q.mockRestore());
+    }
   });
 });

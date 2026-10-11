@@ -11,6 +11,9 @@
  * And at the poller level: the read mode is persisted per config, lost changes become ONE events-lost marker FIRST.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.hoisted(() => {
+  process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused"; // quiet the [OAuth] import-time stderr (no call is made)
+});
 import fs from "node:fs";
 import path from "node:path";
 import type { SafetyPlcConfig } from "../../../../drizzle/schema";

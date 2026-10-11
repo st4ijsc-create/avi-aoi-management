@@ -9,7 +9,7 @@
  *   (b) quyền avi_app SELECT/INSERT/UPDATE = true, DELETE/TRUNCATE = false (catalog), rồi ĐO HÀNH VI trong giao dịch LUÔN HOÀN
  *       TÁC: chèn sự kiện dò + hàng tin cậy; tiêu thụ lần 1 ⇒ 1 hàng; lần 2 ⇒ 0 hàng; đưa consumedAt về NULL ⇒ 23514; sửa digest
  *       ⇒ 23514; digest không phải hex-64 ⇒ 23514; origin lạ ⇒ 23514; DELETE ⇒ 42501; 0 hàng dò còn lại;
- *   (d) safety_plc_poll_state."readMode" varchar + CHECK (giá trị lạ ⇒ 23514);
+ *   (d) safety_plc_poll_state."readMode" varchar + CHECK (giá trị lạ ⇒ 23514); "latchSetAt" bigint (U fix 1);
  *   (c) `__applied_migrations` có đúng 1 hàng cho tệp này.
  *
  *   node scripts/apply-migration-0371.mjs --dev-only    # DB dev (chủ dự án quyết — TRƯỚC khi bật SAFETY_PLC_POLLER_ENABLED)
@@ -182,6 +182,9 @@ async function applyTo(rawUrl, label) {
     // (d) readMode column (catalog)
     const [rm] = await appSql`SELECT data_type AS t FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'safety_plc_poll_state' AND column_name = 'readMode'`;
     if (rm?.t !== "character varying") throw new Error(`(d) safety_plc_poll_state.readMode thieu/sai kieu: ${rm?.t}`);
+    // U fix 1 (I3) — latchSetAt
+    const [ls] = await appSql`SELECT data_type AS t FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'safety_plc_poll_state' AND column_name = 'latchSetAt'`;
+    if (ls?.t !== "bigint") throw new Error(`(d) safety_plc_poll_state.latchSetAt thieu/sai kieu: ${ls?.t}`);
 
     // (c)
     await sql`
