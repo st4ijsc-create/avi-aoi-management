@@ -45,6 +45,10 @@ export const SAFETY_PLC_POLL_BACKOFF_CAP_MS = 15_000;
 export const SAFETY_PLC_POLL_MAX_CONFIGS = 200;
 export const SAFETY_PLC_CONFIG_REFRESH_MS = 30_000;
 export const SAFETY_PLC_READ_TIMEOUT_DEFAULT_MS = 3000;
+/** N3 flap damping — offline transitions remembered per config (window + cap) and the clean-read run needed to go online. */
+export const SAFETY_PLC_FLAP_WINDOW_MS = 10 * 60_000;
+export const SAFETY_PLC_FLAP_HISTORY_MAX = 8;
+export const SAFETY_PLC_ONLINE_CONFIRM_MAX = 32;
 
 export type PlcFlag = keyof SafetyPlcStatusSnapshot;
 export const PLC_FLAGS: readonly PlcFlag[] = ["estop", "zoneOccupied", "resetRequired", "muting"];
@@ -74,6 +78,12 @@ export function readTimeoutMs(): number {
 export function backoffDelayMs(intervalMs: number, failStreak: number): number {
   if (failStreak <= 0) return intervalMs;
   return Math.min(intervalMs * 2 ** Math.min(failStreak, 16), Math.max(intervalMs, SAFETY_PLC_POLL_BACKOFF_CAP_MS));
+}
+
+/** N3 — clean reads needed to declare an offline PLC online again: 2 ^ (offline transitions in the last 10 min), 2..32. */
+export function onlineConfirmReads(offlineAt: readonly number[], now = Date.now()): number {
+  const recent = offlineAt.filter((t) => now - t < SAFETY_PLC_FLAP_WINDOW_MS).length;
+  return Math.min(Math.max(2, 2 ** recent), SAFETY_PLC_ONLINE_CONFIRM_MAX);
 }
 
 /** The OT read drivers (modbus / opcua) are registered by importing the OT entry module (its side effect). */
@@ -160,6 +170,9 @@ interface ConfigState {
   link: "unknown" | "online" | "offline";
   /** N2 — the flag values last RECORDED (edge detection; undefined = never decided). */
   flags: Partial<Record<PlcFlag, boolean>>;
+  /** N3 — consecutive fully decided reads while offline, and when this config last went offline (bounded). */
+  goodStreak: number;
+  offlineAt: number[];
 }
 
 export interface PollerConfigSnapshot {
@@ -270,6 +283,8 @@ export class SafetyPlcPoller {
         trusted: backend instanceof OtReadSafetyPlcBackend,
         link: "unknown",
         flags: {},
+        goodStreak: 0,
+        offlineAt: [],
       };
       this.states.set(cfg.id, st);
       if (this.running) this.schedule(cfg.id, st, (i * 37) % st.intervalMs);
@@ -333,12 +348,22 @@ export class SafetyPlcPoller {
   private async applyTransitions(id: number, st: ConfigState, read: PollRead): Promise<void> {
     const fullyDecided = read.kind === "decided" && read.unreadable.length === 0;
     if (!fullyDecided) {
+      st.goodStreak = 0;
       if (st.link !== "offline") {
         const why = read.kind === "undecidable" ? read.reason : `status flag(s) unreadable: ${read.unreadable.join(", ")}`;
-        if (await this.emit(id, st, "plc_offline", { transition: "offline", reason: why })) st.link = "offline";
+        if (await this.emit(id, st, "plc_offline", { transition: "offline", reason: why })) {
+          st.link = "offline";
+          st.offlineAt.push(Date.now());
+          if (st.offlineAt.length > SAFETY_PLC_FLAP_HISTORY_MAX) st.offlineAt.splice(0, st.offlineAt.length - SAFETY_PLC_FLAP_HISTORY_MAX);
+        }
       }
     } else if (st.link === "offline") {
-      if (await this.emit(id, st, "plc_online", { transition: "online" })) st.link = "online";
+      // N3 flap damping: back online only after a clean run that doubles with every recent offline (2, 4, 8 … ≤ 32 reads).
+      st.goodStreak += 1;
+      if (st.goodStreak >= onlineConfirmReads(st.offlineAt) && (await this.emit(id, st, "plc_online", { transition: "online" }))) {
+        st.link = "online";
+        st.goodStreak = 0;
+      }
     } else {
       st.link = "online";
     }
@@ -437,9 +462,16 @@ export class SafetyPlcPoller {
     return { kind: "decided", flags, unreadable };
   }
 
+  /** Sim: an absent flag is clear (sim semantics); a present non-boolean is a PARSE ERROR ⇒ undecidable (N3). */
   private decideSim(s: SafetyPlcStatusSnapshot): PollRead {
+    if (s == null || typeof s !== "object") return { kind: "undecidable", reason: "parse error: sim status is not an object" };
     const flags: Partial<Record<PlcFlag, boolean>> = {};
-    for (const f of PLC_FLAGS) flags[f] = s?.[f] === true;
+    for (const f of PLC_FLAGS) {
+      const v: unknown = s[f];
+      if (v === undefined) flags[f] = false;
+      else if (typeof v === "boolean") flags[f] = v;
+      else return { kind: "undecidable", reason: `parse error: sim flag ${f} is not a boolean` };
+    }
     return { kind: "decided", flags, unreadable: [] };
   }
 
@@ -468,6 +500,17 @@ export class SafetyPlcPoller {
     return [...this.states.values()]
       .map((st) => ({ id: st.cfg.id, code: st.cfg.code, intervalMs: st.intervalMs, failStreak: st.failStreak, reads: st.reads, undecidable: st.undecidable, lastRead: st.lastRead }))
       .sort((a, b) => a.id - b.id);
+  }
+
+  /** Test seam — sizes of the internal maps (bounded-memory checks). */
+  _sizesForTests(): { states: number; warned: number; maxHistory: number; maxFlagKeys: number } {
+    let maxHistory = 0;
+    let maxFlagKeys = 0;
+    for (const st of this.states.values()) {
+      maxHistory = Math.max(maxHistory, st.offlineAt.length);
+      maxFlagKeys = Math.max(maxFlagKeys, Object.keys(st.flags).length);
+    }
+    return { states: this.states.size, warned: this.warnedAt.size, maxHistory, maxFlagKeys };
   }
 
   private warnLimited(key: string, msg: string): void {

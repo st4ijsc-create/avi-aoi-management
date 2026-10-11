@@ -209,7 +209,13 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
           continue;
         }
         const ref = this.statusMap[flag];
-        const truthy = coerceBool(s.value);
+        const truthy = strictBool(s.value);
+        if (truthy === undefined) {
+          // doc 81 Đợt 8 N3 — an unparseable value ("abc", NaN, an object, "") is UNKNOWN, never "clear" (it used to
+          // coerce to false ⇒ a false "released" / a "clean" preflight). Fail toward unknown.
+          unreadable.push(flag);
+          continue;
+        }
         snap[flag] = ref?.activeWhen === "falsy" ? !truthy : truthy;
       }
       return { status: snap, unreadable };
@@ -223,11 +229,19 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
   }
 }
 
-function coerceBool(v: unknown): boolean {
+/**
+ * doc 81 Đợt 8 N3 — a status value as a boolean, or undefined when it cannot be decided: booleans; finite numbers (≠ 0 ⇒
+ * true); the strings "1"/"0"/"true"/"false" (any case, trimmed). Anything else (NaN, "abc", "", null, objects) ⇒ undefined.
+ */
+export function strictBool(v: unknown): boolean | undefined {
   if (typeof v === "boolean") return v;
-  if (typeof v === "number") return v !== 0;
-  if (typeof v === "string") return v === "1" || v.toLowerCase() === "true";
-  return false;
+  if (typeof v === "number") return Number.isFinite(v) ? v !== 0 : undefined;
+  if (typeof v === "string") {
+    const t = v.trim().toLowerCase();
+    if (t === "1" || t === "true") return true;
+    if (t === "0" || t === "false") return false;
+  }
+  return undefined;
 }
 
 /** Build the backend reader for a config (sim by default). */

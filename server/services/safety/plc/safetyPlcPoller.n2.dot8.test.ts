@@ -234,8 +234,8 @@ describe("doc 81 Đợt 8 N2 — with the REAL safetyAuditService: which notices
 
   it("★ real e-stop / guard trip ⇒ safety-critical AT EMIT; released / offline / online / reset / muting ⇒ not", async () => {
     const c = cfg(1);
-    const { p } = mk(c, realScripted(c, [{}, { estop: true, zoneOccupied: true, resetRequired: true, muting: true }, {}, "fail", {}]), { real: true });
-    await run(p, 1, 5);
+    const { p } = mk(c, realScripted(c, [{}, { estop: true, zoneOccupied: true, resetRequired: true, muting: true }, {}, "fail", {}, {}]), { real: true });
+    await run(p, 1, 6); // N3: back online after 2 clean reads (flap damping)
     const verdict = Object.fromEntries(E.emitted.map((e, i) => [String(e.eventType), E.atEmit[i]]));
     expect(verdict).toEqual({
       estop: true,
