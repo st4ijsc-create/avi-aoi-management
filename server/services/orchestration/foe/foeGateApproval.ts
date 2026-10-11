@@ -31,6 +31,11 @@
  * UNPINNED OT stop-typed write — the OT dispatcher already treats that as needing four-eyes (it may write any tag), and
  * an API run cannot provide four-eyes, so it is refused like every other non-STOP write (R-4-x: an exemption for STOP
  * never extends to a write that is not a verified stop).
+ * L-7 statement (doc 81 Đợt 8 final wave, review O M6 — owner-visible): since Đợt 8 O2 an UNPINNED stop-typed OT write
+ * of an orchestration run whose binding includes a checksum-capable controller can be REFUSED (programUnreadable /
+ * staleApproval) or DELAYED by up to PROGRAM_CHECKSUM_READ_DEADLINE_MS (1 s, read before the reservation — M2) by the
+ * program checksum read. This is R-4-x applied (an unpinned stop is a non-STOP write: it may write any tag). A PINNED
+ * stop and every robot stop read no checksum and are never refused or delayed by it; the hardware E-STOP is unaffected.
  */
 import { createHash } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
@@ -38,6 +43,7 @@ import {
   orchestrationRunSteps,
   orchestrationRuns,
   orchestrationWorkflows,
+  aiPendingActions,
   machines,
   deviceAdapters,
   deviceTags,
@@ -151,10 +157,12 @@ export async function computeBindingDigest(db: DbLike, def: Pick<WorkflowDefinit
 export async function computeBindingDetail(
   db: DbLike,
   def: Pick<WorkflowDefinition, "steps">,
+  /** final wave (review O M2) — program checks read BEFORE the caller's transaction (adapters missing here are read now). */
+  pre?: PreReadPrograms,
 ): Promise<{ digest: string | null; programs: ProgramCheck[] }> {
   try {
     const b = await loadBinding(db, def);
-    const checks = await Promise.all(b.adapters.map((a) => readAdapterProgramCheck(a as never)));
+    const checks = await Promise.all(b.adapters.map((a) => pre?.get(a.id as number) ?? readAdapterProgramCheck(a as never)));
     const byId = new Map(checks.map((c) => [c.id, c] as const));
     const digest = b.digestWith((id) => {
       const c = byId.get(id);
@@ -163,6 +171,38 @@ export async function computeBindingDetail(
     return { digest, programs: [...checks, ...b.robots.map((r) => robotProgramCheck(r as never))] };
   } catch {
     return { digest: null, programs: [] };
+  }
+}
+
+/**
+ * doc 81 Đợt 8 final wave (review O M2) — the controller program checks of an orchestration action's run, read BEFORE the
+ * dispatcher's reservation transaction, so no pool connection / advisory lock / FOR UPDATE row is held while a controller
+ * is read (each read bounded by PROGRAM_CHECKSUM_READ_DEADLINE_MS, concurrent, single-flight).
+ * Re-verification semantics: inside the transaction the binding digest is recomputed from the FRESH, locked DB rows
+ * (machines, adapters, tags, robots) together with THESE checksums; an adapter the fresh rows name that was not pre-read
+ * is read there (bounded, as before). The controller program is never under a DB lock, so reading it inside the
+ * transaction gave no stronger guarantee: in both designs a program change between the read and the device write is
+ * possible within the read deadline + the transaction time (documented residual), and an approval that no longer matches
+ * a checksum read after it was given is refused. Any problem here (no row, not an orchestration action, DB error) ⇒
+ * undefined ⇒ the transaction reads live (the pre-Đợt-8-final behaviour, fail-closed as before).
+ */
+export type PreReadPrograms = ReadonlyMap<number, ProgramCheck>;
+export async function preReadProgramChecksForAction(db: DbLike, actionId: string, engineTool: string): Promise<PreReadPrograms | undefined> {
+  try {
+    const [pending] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
+    if (!pending || (pending as { tool?: unknown }).tool !== engineTool) return undefined;
+    const ptr = ((pending as { previewJson?: unknown }).previewJson as Record<string, unknown> | null)?.["__foeGateApproval"] as { runId?: unknown } | undefined;
+    if (!posInt(ptr?.runId)) return undefined;
+    const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, ptr!.runId as number)).limit(1);
+    if (!run) return undefined;
+    const [wf] = await db.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, (run as { workflowId: number }).workflowId)).limit(1);
+    const def = (wf as { definitionJson?: WorkflowDefinition } | undefined)?.definitionJson;
+    if (!def || !Array.isArray(def.steps)) return undefined;
+    const b = await loadBinding(db, def);
+    const checks = await Promise.all(b.adapters.map((a) => readAdapterProgramCheck(a as never)));
+    return new Map(checks.map((c) => [c.id, c] as const));
+  } catch {
+    return undefined;
   }
 }
 
@@ -416,6 +456,8 @@ export async function foeApprovalDbRefusal(
   db: DbLike,
   pending: { userId: number; previewJson: unknown },
   requestedBy?: number | null,
+  /** final wave (review O M2) — checksums read before the caller's transaction (preReadProgramChecksForAction). */
+  prePrograms?: PreReadPrograms,
 ): Promise<string | null> {
   try {
     const ptr = (pending.previewJson as Record<string, unknown> | null)?.["__foeGateApproval"] as { runId?: unknown } | undefined;
@@ -438,7 +480,7 @@ export async function foeApprovalDbRefusal(
     if (!def || !Array.isArray(def.steps)) return "orchestration workflow definition not found";
     const rows = (await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))) as GateRowLike[];
     // E3 + Đợt 8 O2 — configuration AND controller program checksums read now (bounded); unreadable ⇒ refused.
-    const ev = evaluateWithPrograms(rows, def, hashWorkflowDefinition(def), owner, await computeBindingDetail(db, def));
+    const ev = evaluateWithPrograms(rows, def, hashWorkflowDefinition(def), owner, await computeBindingDetail(db, def, prePrograms));
     if (!ev.ok) return `no counting gate approval for this run (FOE_GATE_REQUIRED ${ev.reason})`;
     if (!ev.approvals.some((a) => a.approvedBy === pending.userId)) {
       return "orchestration action's confirmer is not the approver of a counting gate of its run";

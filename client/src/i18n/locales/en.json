@@ -11997,6 +11997,7 @@
     "programTargetAdapter": "Adapter {{label}}",
     "programTargetRobot": "Robot {{label}}",
     "programVerified": "Program verified (checksum {{checksum}})",
+    "programSimulation": "(simulation — not a real controller)",
     "programUnverifiable": "Program cannot be verified on this controller",
     "programUnreadable": "Program checksum could not be read — approval is not possible until it can (check the controller connection).",
     "approverRolesLabel": "Approver roles",

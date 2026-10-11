@@ -45,7 +45,7 @@ import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/
 import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions, type AiPendingAction } from "../../../drizzle/schema";
 import { FOE_ENGINE_TOOL, foeSelfApprovalRefusal, readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
-import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
+import { foeApprovalDbRefusal, preReadProgramChecksForAction } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isRobotAutomationTool, readRobotAutomationState, auditAutomationRefused } from "./robotAutomationAction"; // doc 81 Đợt 7 I5
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver, RobotJobResult } from "./robotDriver";
@@ -1090,13 +1090,16 @@ async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record
   const actionId = input.actionId;
   const db = await getDb();
   if (!db) throw new RobotLedgerWriteError("robot ledger unavailable (no DB) at reservation");
+  // doc 81 Đợt 8 final wave (review O M2) — controller program checksums of an orchestration action's run are read BEFORE the
+  // reservation transaction (bounded, no lock held while a controller is read). Motion jobs only — a STOP returned above.
+  const prePrograms = await preReadProgramChecksForAction(db, actionId, FOE_ENGINE_TOOL);
   return await db.transaction(async (tx): Promise<RobotReservation> => {
     const [pending] = await tx.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).for("update");
     let verdict: RobotBindingVerdict = verifyRobotActionBinding(pending, input);
     // doc 81 Đợt 4 fix round 1 (R-4-i) — an orchestration-engine action: re-derive run owner + gate approver from the
     // DB rows under this transaction (a STOP never reaches here — non-motion jobs are not verified).
     if (verdict.ok && pending?.tool === FOE_ENGINE_TOOL) {
-      const refusal = await foeApprovalDbRefusal(tx, pending, input.requestedBy);
+      const refusal = await foeApprovalDbRefusal(tx, pending, input.requestedBy, prePrograms);
       if (refusal) verdict = { ok: false, reason: "NOT_CONFIRMED", detail: refusal };
     }
     // doc 81 Đợt 7 task I5 — an AUTOMATION self-grant (VDA5050 / ROS2) is consumed only while the robot's automation switch is

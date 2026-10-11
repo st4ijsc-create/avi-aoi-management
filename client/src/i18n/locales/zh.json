@@ -11802,6 +11802,7 @@
     "programTargetAdapter": "适配器 {{label}}",
     "programTargetRobot": "机器人 {{label}}",
     "programVerified": "程序已验证（校验和 {{checksum}}）",
+    "programSimulation": "（模拟——并非真实控制器）",
     "programUnverifiable": "无法在此控制器上验证程序",
     "programUnreadable": "无法读取程序校验和——在可读取之前无法审批（请检查控制器连接）。",
     "approverRolesLabel": "审批人角色",

@@ -335,11 +335,21 @@ export const orchestrationRouter = router({
     .input(z.object({ runId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       // final wave F6 — the Studio's run screen is where an approval / continue binds: the digest is computed here (paused runs).
-      const view = await getRun(input.runId, { bindingDigest: true });
+      // doc 81 Đợt 8 final wave (review O M1) — the SCOPE check runs on the run row BEFORE anything else is read, so an
+      // out-of-scope viewer never triggers controller checksum reads (concurrent screens share one read: single-flight).
       // doc 81 Đợt 5 task E2 — out of scope ⇒ the SAME NOT_FOUND as a missing run (scope resolved for both).
-      // doc 81 Đợt 7 I3 — by the versions the run executed (view.run.paramsJson)
-      const visible = await runVisibleTo(view?.run ?? { workflowId: -1, paramsJson: null }, scopeOf(ctx.user));
-      if (!view || !visible) {
+      // doc 81 Đợt 7 I3 — by the versions the run executed (run.paramsJson)
+      const scope = scopeOf(ctx.user);
+      let checked = false;
+      const view = await getRun(input.runId, {
+        bindingDigest: true,
+        visibleTo: async (run) => {
+          checked = true;
+          return runVisibleTo(run, scope);
+        },
+      });
+      if (!checked) await runVisibleTo({ workflowId: -1, paramsJson: null }, scope); // missing run: scope resolved too (parity)
+      if (!view) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowRun" }, `Run ${input.runId} not found`);
       }
       return view;

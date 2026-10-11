@@ -55,10 +55,30 @@ export class StubDriver implements OtDriver {
    * with writeTags (no queue). Throws when not connected or when a read fault is injected (never answers supported:false
    * for a failure).
    */
-  async readProgramChecksum(): Promise<ProgramChecksumResult> {
+  async readProgramChecksum(opts: { signal?: AbortSignal } = {}): Promise<ProgramChecksumResult> {
     if (!this.connected) throw new DeviceUnreachableError("stub");
     if (this.simProgramFault === "error") throw new Error("sim program checksum read fault (injected)");
-    if (this.simProgramFault === "hang") return new Promise<ProgramChecksumResult>(() => undefined); // never settles, holds no timer
+    if (this.simProgramFault === "hang") {
+      // final wave (O M4) — a controller that never answers: the read settles ONLY when the caller aborts it (cancellation
+      // contract); counted so a test can prove nothing is left pending.
+      const signal = opts.signal;
+      return new Promise<ProgramChecksumResult>((_, reject) => {
+        if (!signal) {
+          this.simPendingReads += 1; // contract violation by the caller (no signal): stays pending, and is counted
+          return;
+        }
+        if (signal.aborted) return reject(new Error("program checksum read aborted"));
+        this.simPendingReads += 1;
+        signal.addEventListener(
+          "abort",
+          () => {
+            this.simPendingReads -= 1;
+            reject(new Error("program checksum read aborted"));
+          },
+          { once: true },
+        );
+      });
+    }
     if (this.simProgram === null) return { supported: false, source: "sim" };
     return { supported: true, checksum: `sha256:${createHash("sha256").update(this.simProgram, "utf8").digest("hex")}`, source: "sim" };
   }
@@ -67,6 +87,9 @@ export class StubDriver implements OtDriver {
   simLoadProgram(program: string | null): void {
     this.simProgram = program;
   }
+
+  /** SIM ONLY (final wave O M4) — checksum reads still pending (a "hang" read not yet aborted). */
+  simPendingReads = 0;
 
   /** SIM ONLY — make the next checksum reads fail ("error"), never answer ("hang"), or work again (null). */
   simSetProgramReadFault(fault: "error" | "hang" | null): void {

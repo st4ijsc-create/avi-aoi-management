@@ -2807,11 +2807,22 @@ export async function startRun(
  * edge progress tick, the QT pump, resolveQtGate, API v1 reads). null never lets an approval through: the Studio cannot
  * approve without a digest, and resumeRun recomputes and compares it server side (fail-closed).
  */
-export async function getRun(runId: number, opts: { bindingDigest?: boolean } = {}): Promise<RunView | null> {
+export async function getRun(
+  runId: number,
+  opts: {
+    bindingDigest?: boolean;
+    /**
+     * doc 81 Đợt 8 final wave (review O M1) — the caller's visibility check, applied to the run row FIRST: false ⇒ null
+     * (nothing else is read — no step rows, no controller checksum read for a run the caller may not see).
+     */
+    visibleTo?: (run: typeof orchestrationRuns.$inferSelect) => Promise<boolean>;
+  } = {},
+): Promise<RunView | null> {
   const d = await getDb();
   if (!d) return null;
   const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
   if (!run) return null;
+  if (opts.visibleTo && (await opts.visibleTo(run).catch(() => false)) !== true) return null;
   const stepRows = await d
     .select()
     .from(orchestrationRunSteps)

@@ -113,7 +113,7 @@ import {
   type CommandLog,
 } from "../../../drizzle/schema";
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
-import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
+import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, listActiveAdapters, resetAdapterSession } from "./otManager";
 import { adapterTargetFingerprint } from "./adapterTarget";
@@ -2296,6 +2296,14 @@ async function reserveRealWrite(
 ): Promise<Reservation> {
   const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
   const intentKeys = resultKeys.map(intentKeyFor);
+  // doc 81 Đợt 8 final wave (review O M2) — an orchestration action's controller program checksums are read HERE, before
+  // the reservation transaction (bounded 1 s, concurrent, single-flight): no pool connection, advisory lock or FOR UPDATE
+  // row is held while a controller is read. A PINNED stop reads nothing (L-7). L-7 statement (O M6): an UNPINNED
+  // stop-typed write of such a run may be refused or delayed ≤ 1 s by this read (R-4-x: it is not a verified stop).
+  let prePrograms: PreReadPrograms | undefined;
+  if (input.triggeredBy.kind === "hitl" && input.triggeredBy.actionId && opts.pinnedStop !== true) {
+    prePrograms = await preReadProgramChecksForAction(db, input.triggeredBy.actionId, FOE_ENGINE_TOOL);
+  }
   try {
     return await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${OT_COMMAND_LOCK_NS + input.idempotencyKey}))`);
@@ -2337,7 +2345,7 @@ async function reserveRealWrite(
           // approver from the DB rows (run + gate + workflow) under this transaction; previewJson only points at the run.
           // A PINNED stop is exempt (L-7).
           if (verdict.ok && pending?.tool === FOE_ENGINE_TOOL && opts.pinnedStop !== true) {
-            const refusal = await foeApprovalDbRefusal(tx, pending, t.requestedBy);
+            const refusal = await foeApprovalDbRefusal(tx, pending, t.requestedBy, prePrograms);
             if (refusal) verdict = { ok: false, reason: "NOT_CONFIRMED", detail: refusal };
           }
           if (verdict.ok) {

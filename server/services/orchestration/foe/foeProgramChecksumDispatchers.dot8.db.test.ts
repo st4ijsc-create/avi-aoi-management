@@ -9,12 +9,24 @@
  * counting runJob. Safety-PLC source = the same fake "real PLC reads clean" as the other dispatcher DB suites.
  * Program changed / unreadable after the approval ⇒ NOT_CONFIRMED, 0 device writes / 0 robot jobs, action still
  * 'confirmed' (not consumed).
+ * Final wave (review O): M2 — the checksum is read BEFORE the reservation transaction (oracle: while the controller is
+ * being read, a separate connection can lock the action row with FOR UPDATE NOWAIT — impossible inside the reservation);
+ * M5 — an UNPINNED stop-typed write with a changed program is refused, a PINNED stop on a HUNG supported controller is
+ * sent with ZERO checksum reads; M1 — the approver screen's getRun reads no controller for a run the caller cannot see.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { and, eq, like } from "drizzle-orm";
 import postgres from "postgres";
 
-const h = vi.hoisted(() => ({ drivers: new Map<number, unknown>(), robotId: 990_800_000 + (Date.now() % 9_000), runJobCalls: 0 }));
+const h = vi.hoisted(() => ({
+  drivers: new Map<number, unknown>(),
+  fingerprints: new Map<number, string>(),
+  robotId: 990_800_000 + (Date.now() % 9_000),
+  runJobCalls: 0,
+  checksumReads: 0,
+  /** final wave M2 — set ⇒ each checksum read first probes whether the action row is locked (FOR UPDATE NOWAIT). */
+  probe: null as null | { actionId: () => string | null; results: string[] },
+}));
 
 vi.mock("../../robot/robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 vi.mock("../../robot/robotManager", () => ({
@@ -50,7 +62,11 @@ vi.mock("../../safety/plc/safetyPlcAdapter", async (importOriginal) => {
 });
 vi.mock("../../ot/otManager", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/otManager")>();
-  return { ...orig, getActiveDriver: (id: number) => h.drivers.get(id) as ReturnType<typeof orig.getActiveDriver> };
+  return {
+    ...orig,
+    getActiveDriver: (id: number) => h.drivers.get(id) as ReturnType<typeof orig.getActiveDriver>,
+    getActiveConnectionFingerprint: (id: number) => h.fingerprints.get(id), // final wave M5 — the pinned stop's connection check
+  };
 });
 
 import { getDb } from "../../../db/connection";
@@ -83,6 +99,7 @@ const ids: Record<string, number> = {};
 let sql: ReturnType<typeof postgres> | null = null;
 let sim: StubDriver;
 let writeCalls = 0;
+let lastActionId: string | null = null;
 let seq = 0;
 
 async function d() {
@@ -109,28 +126,28 @@ async function pendingStatus(id: string) {
   return row?.status;
 }
 /** A real run (owner OWNER) whose gate OTHER approved via the server path, with an OT step on the sim adapter. */
-async function approvedRun(tag: string) {
+async function approvedRun(tag: string, steps?: Parameters<typeof makeFoeGateRun>[0]["steps"]) {
   const fx = await makeFoeGateRun({
     tag: `${DAU}-${tag}`,
     owner: OWNER,
     approvedBy: OTHER,
-    steps: [{ id: "w", type: "command", machineId: ids.machine, command: "set_param", args: { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 } }],
+    steps: steps ?? [{ id: "w", type: "command", machineId: ids.machine, command: "set_param", args: { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 } }],
   });
   fixtures.push(fx);
   return fx;
 }
 
-async function sendOt(fx: FoeGateRunFixture) {
+async function sendOt(fx: FoeGateRunFixture, cmdName = "set_param", args: Record<string, unknown> = { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 }) {
   const { buildEquipmentCommand, ensureOrchestrationAction } = await import("./foeEngine");
   const { equipmentRegistry } = await import("../../equipment/equipmentAdapter");
   const user = { id: OWNER, role: "engineer" } as never;
   const key = `${DAU}-ot${++seq}-s1-a1`;
-  const args = { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 };
-  const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
+  const descriptor = { name: cmdName, label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
   const cap = { adapterKind: "ot-stub" } as never;
   const approval = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
   const cmd = buildEquipmentCommand(descriptor, cap, ids.machine, args, key, user, approval);
   await ensureOrchestrationAction(user, key, { id: `s${seq}`, type: "command" } as never, args, cmd, approval);
+  lastActionId = cmd.hitl!.actionId;
   const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
   return { res, actionId: cmd.hitl!.actionId };
 }
@@ -167,6 +184,11 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 O2/O4 — both dispatchers check the c
       sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId", "connectionOptions") VALUES (${"A-" + DAU}, 'O8 sim adapter', 'stub', 'stub://o8', true, ${ids.machine}, ${sql.json({ simProgram: "abc" })}) RETURNING id`,
     );
     await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable) VALUES (${ids.adapter}, 'speed_sp', 'D100', 'int', true)`;
+    // final wave M5 — a PINNED stop tag (energy-reducing value pinned by an engineer) + the running connection's fingerprint
+    await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, stop_value, stop_pinned_by, stop_pinned_at)
+              VALUES (${ids.adapter}, 'stop_cmd', 'M0', 'bool', true, ${sql.json(true)}, ${String(OWNER)}, now())`;
+    const { adapterTargetFingerprint } = await import("../../ot/adapterTarget");
+    h.fingerprints.set(ids.adapter, adapterTargetFingerprint({ protocol: "stub", endpoint: "stub://o8", machineId: ids.machine, connectionOptions: { simProgram: "abc" } }));
   }, 60_000);
 
   afterAll(async () => {
@@ -199,11 +221,28 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 O2/O4 — both dispatchers check the c
     await sim.connect({ endpoint: "stub://o8", options: { simProgram: "abc" } });
     writeCalls = 0;
     h.runJobCalls = 0;
+    h.checksumReads = 0;
+    h.probe = null;
     // the adapter's live driver: the sim's checksum, writes counted (the sim's own writeTags is disabled by design)
     h.drivers.set(ids.adapter, {
       protocol: "stub",
       isConnected: () => true,
-      readProgramChecksum: () => sim.readProgramChecksum(),
+      readProgramChecksum: async (o?: { signal?: AbortSignal }) => {
+        h.checksumReads++;
+        if (h.probe && sql) {
+          const id = h.probe.actionId();
+          const r = await sql
+            .begin(async (tx) => {
+              await tx`SELECT id FROM ai_pending_actions WHERE id = ${id ?? ""} FOR UPDATE NOWAIT`;
+            })
+            .then(
+              () => "free",
+              (e: { code?: string }) => String(e?.code ?? "error"),
+            );
+          h.probe.results.push(r);
+        }
+        return sim.readProgramChecksum(o);
+      },
       async writeTags(writes: Array<{ tagKey: string }>) {
         writeCalls++;
         return writes.map((w) => ({ tagKey: w.tagKey, ok: true }));
@@ -272,6 +311,63 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 O2/O4 — both dispatchers check the c
     expect(await robotErrorText(rb.r)).toMatch(/staleApproval/);
     expect(h.runJobCalls).toBe(0);
     expect(await pendingStatus(rb.actionId)).toBe("confirmed");
+  });
+
+  it("★ final wave M2: the program checksum is read BEFORE the reservation transaction — the action row is NOT locked during the read", async () => {
+    const fx = await approvedRun("m2");
+    h.checksumReads = 0;
+    h.probe = { actionId: () => lastActionId, results: [] };
+    const ot = await sendOt(fx);
+    expect(ot.res.ok).toBe(true);
+    expect(writeCalls).toBe(1);
+    expect(h.probe.results.length).toBeGreaterThanOrEqual(1);
+    expect(h.probe.results.every((r) => r === "free")).toBe(true); // inside the reservation it would be 55P03 (locked)
+    expect(h.checksumReads).toBe(1); // ONE read, reused inside the transaction (not read again under the lock)
+  });
+
+  it("★ final wave M5 (a): an UNPINNED stop-typed write with the program changed after the approval ⇒ refused, 0 writes", async () => {
+    const stopArgs = { adapterId: ids.adapter, writes: [{ tagKey: "speed_sp", value: 0 }] };
+    const fx = await approvedRun("m5a", [{ id: "w", type: "command", machineId: ids.machine, command: "stop", args: stopArgs }]);
+    sim.simLoadProgram("abc (edited on the controller)");
+    const ot = await sendOt(fx, "stop", stopArgs);
+    expect(ot.res.ok).toBe(false);
+    expect(await otErrorText(ot.res)).toMatch(/FOE_GATE_REQUIRED staleApproval/);
+    expect(writeCalls).toBe(0);
+    expect(h.checksumReads).toBeGreaterThanOrEqual(1); // re-checked live (R-4-x: not a verified stop)
+  });
+
+  it("final wave M5 (a) control: the same unpinned stop with the program UNCHANGED is written", async () => {
+    const stopArgs = { adapterId: ids.adapter, writes: [{ tagKey: "speed_sp", value: 0 }] };
+    const fx = await approvedRun("m5c", [{ id: "w", type: "command", machineId: ids.machine, command: "stop", args: stopArgs }]);
+    const ot = await sendOt(fx, "stop", stopArgs);
+    expect(ot.res.ok).toBe(true);
+    expect(writeCalls).toBe(1);
+  });
+
+  it("★ final wave M5 (b): a PINNED stop on a HUNG supported controller is SENT with ZERO checksum reads and no delay", async () => {
+    const stopArgs = { adapterId: ids.adapter, writes: [{ tagKey: "stop_cmd", value: true }] };
+    const fx = await approvedRun("m5b", [{ id: "w", type: "command", machineId: ids.machine, command: "stop", args: stopArgs }]);
+    sim.simSetProgramReadFault("hang");
+    h.checksumReads = 0;
+    const t0 = Date.now();
+    const ot = await sendOt(fx, "stop", stopArgs);
+    expect(ot.res.ok).toBe(true);
+    expect(writeCalls).toBe(1);
+    expect(h.checksumReads).toBe(0);
+    expect(Date.now() - t0).toBeLessThan(1000); // never waits on the 1 s checksum deadline
+  });
+
+  it("★ final wave M1: the approver screen's getRun reads NO controller for a run the caller cannot see (scope first); visible ⇒ read", async () => {
+    const fx = await approvedRun("m1");
+    await sql!`UPDATE orchestration_runs SET status = 'awaiting_confirm' WHERE id = ${fx.runId}`;
+    const { getRun } = await import("./foeEngine");
+    h.checksumReads = 0;
+    expect(await getRun(fx.runId, { bindingDigest: true, visibleTo: async () => false })).toBeNull();
+    expect(h.checksumReads).toBe(0);
+    const v = await getRun(fx.runId, { bindingDigest: true, visibleTo: async () => true });
+    expect(v?.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(h.checksumReads).toBe(1);
+    expect(v?.programChecks?.find((c) => c.target === "adapter")).toMatchObject({ status: "verified", source: "sim" }); // M3
   });
 
   for (const [what, breakIt] of [

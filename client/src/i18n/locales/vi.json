@@ -11977,6 +11977,7 @@
     "programTargetAdapter": "Adapter {{label}}",
     "programTargetRobot": "Robot {{label}}",
     "programVerified": "Đã xác minh chương trình (checksum {{checksum}})",
+    "programSimulation": "(mô phỏng — không phải bộ điều khiển thật)",
     "programUnverifiable": "Không xác minh được chương trình trên bộ điều khiển này",
     "programUnreadable": "Không đọc được checksum chương trình — chưa thể duyệt cho tới khi đọc được (hãy kiểm tra kết nối bộ điều khiển).",
     "approverRolesLabel": "Vai trò duyệt",

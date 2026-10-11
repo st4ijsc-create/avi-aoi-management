@@ -425,6 +425,25 @@ describe("OrchestrationStudio — doc 81 Đợt 8 O3: controller program check p
     expect(within(rowOf(40)).getByRole("button", { name: /^(Approve|studio\.approve)$/i })).toBeDisabled();
   });
 
+  it("★ final wave (review O M3): a SIMULATED controller says so next to 'verified'; a real driver's source does not", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride(
+      "orchestration.getRun",
+      detail({
+        bindingDigest: BINDING_DIGEST,
+        programChecks: [
+          { target: "adapter", id: 501, label: "SIM-PLC", status: "verified", checksum: CHECKSUM, source: "sim" },
+          { target: "adapter", id: 502, label: "S7-PLC", status: "verified", checksum: CHECKSUM, source: "s7-plus" },
+        ],
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const [simLine, realLine] = items();
+    expect(simLine.querySelector('[data-testid="program-check-sim"]')?.textContent).toMatch(/simulation/);
+    expect(realLine.querySelector('[data-testid="program-check-sim"]')).toBeNull();
+    expect(realLine.textContent).not.toMatch(/simulation/);
+  });
+
   it("no program list from the server (older server / not an approver's read) ⇒ no block", () => {
     setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
     setQueryOverride("orchestration.getRun", detail({ bindingDigest: BINDING_DIGEST }));

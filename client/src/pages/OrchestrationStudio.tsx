@@ -2594,6 +2594,8 @@ interface ProgramCheckView {
   label: string | null;
   status: "verified" | "unsupported" | "unreadable";
   checksum?: string;
+  /** final wave (review O M3) — the driver's own source label ("sim" ⇒ the controller is a SIMULATION). */
+  source?: string;
 }
 function programChecksOf(data: unknown): ProgramCheckView[] {
   const raw = (data as { programChecks?: unknown } | undefined)?.programChecks;
@@ -2622,6 +2624,11 @@ function ProgramChecksBlock({ checks, t }: { checks: ProgramCheckView[]; t: TFun
               {c.status === "verified" ? (
                 <span className="text-emerald-700 dark:text-emerald-300" title={c.checksum}>
                   {t("studio.programVerified", "Program verified (checksum {{checksum}})", { checksum: short })}
+                  {c.source === "sim" && (
+                    <span data-testid="program-check-sim" className="ml-1 font-medium text-amber-800 dark:text-amber-200">
+                      {t("studio.programSimulation", "(simulation — not a real controller)")}
+                    </span>
+                  )}
                 </span>
               ) : c.status === "unreadable" ? (
                 <span className="text-red-700 dark:text-red-300">

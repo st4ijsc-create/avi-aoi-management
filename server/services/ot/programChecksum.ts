@@ -25,6 +25,15 @@
  * L-7: a checksum read is bounded (PROGRAM_CHECKSUM_READ_DEADLINE_MS) and goes to the driver's readProgramChecksum(),
  * which by contract shares no queue with writes. The orchestration engine never reads a checksum on a STOP step, and the
  * dispatchers never check approvals of a pinned OT stop or of a robot stop.
+ *
+ * Final wave (doc 81 Đợt 8, review O M3 / M4 / M1):
+ *   • M4 — a read is CANCELLED at its deadline: the driver receives an AbortSignal and must settle (reject) on abort, so a
+ *     hung controller leaves no pending promise behind (no leak per poll / dispatch);
+ *   • M1 — SINGLE-FLIGHT: concurrent reads of the same adapter on the same driver share ONE in-flight read (several open
+ *     approver screens / a screen + a dispatcher never multiply controller reads). A settled read is never reused: every
+ *     later call reads again (no cache — a binding check always sees a read that started at most one deadline earlier);
+ *   • M3 — `source` is the DRIVER's own label (sanitised: [a-z0-9_-], ≤ 32 chars; anything else ⇒ "unknown"), so a future
+ *     real reader is never mislabelled "sim" and the approver's screen can say "simulation" only when the driver says so.
  */
 import type { OtDriver } from "./otDriver";
 import { getActiveDriver } from "./otManager";
@@ -79,10 +88,12 @@ export async function readAdapterProgramCheck(
   opts: { deadlineMs?: number; driverOf?: (adapterId: number) => OtDriver | undefined } = {},
 ): Promise<ProgramCheck> {
   const base = { target: "adapter" as const, id: row.id, label: labelOf(row) };
+  const protocolLabel = typeof row.protocol === "string" && row.protocol ? sanitiseSource(row.protocol) : "unknown";
   if (!programChecksumCapable(row)) {
-    return { ...base, status: "unsupported", source: typeof row.protocol === "string" && row.protocol ? row.protocol : "unknown" };
+    return { ...base, status: "unsupported", source: protocolLabel };
   }
-  const unreadable = (reason: ProgramUnreadableReason): ProgramCheck => ({ ...base, status: "unreadable", source: "sim", reason });
+  // M3 — no answer ⇒ the source is what the configuration says (the sim protocol ⇒ "sim"), never a guess of a real reader.
+  const unreadable = (reason: ProgramUnreadableReason): ProgramCheck => ({ ...base, status: "unreadable", source: row.protocol === "stub" ? "sim" : protocolLabel, reason });
   let driver: OtDriver | undefined;
   try {
     driver = (opts.driverOf ?? getActiveDriver)(row.id);
@@ -92,21 +103,45 @@ export async function readAdapterProgramCheck(
   if (!driver) return unreadable("notConnected");
   const read = driver.readProgramChecksum;
   if (typeof read !== "function") return unreadable("inconsistent");
-  let answer: unknown;
+  // M1 — single-flight per (driver, adapter): share the read in progress, never a settled one.
+  let perDriver = inflight.get(driver);
+  if (!perDriver) inflight.set(driver, (perDriver = new Map()));
+  const shared = perDriver.get(row.id);
+  if (shared) return { ...(await shared), label: base.label };
+  const p = (async (): Promise<ProgramCheck> => {
+    // M4 — cancelled at the deadline (the driver settles on abort ⇒ nothing left pending).
+    const ac = new AbortController();
+    let answer: unknown;
+    try {
+      answer = await withDeadline(
+        Promise.resolve().then(() => read.call(driver, { signal: ac.signal })),
+        opts.deadlineMs ?? PROGRAM_CHECKSUM_READ_DEADLINE_MS,
+        `program checksum of adapter ${row.id}`,
+      );
+    } catch (err) {
+      ac.abort();
+      return unreadable(/timeout after/.test(String((err as Error)?.message ?? "")) ? "timeout" : "error");
+    }
+    const a = answer as { supported?: unknown; checksum?: unknown; source?: unknown } | null | undefined;
+    if (!a || typeof a !== "object") return unreadable("invalid");
+    if (a.supported !== true) return unreadable("inconsistent");
+    if (typeof a.checksum !== "string" || a.checksum.length === 0 || a.checksum.length > MAX_CHECKSUM_LEN) return unreadable("invalid");
+    return { ...base, status: "verified", checksum: a.checksum, source: sanitiseSource(a.source) };
+  })();
+  perDriver.set(row.id, p);
   try {
-    answer = await withDeadline(
-      Promise.resolve().then(() => read.call(driver)),
-      opts.deadlineMs ?? PROGRAM_CHECKSUM_READ_DEADLINE_MS,
-      `program checksum of adapter ${row.id}`,
-    );
-  } catch (err) {
-    return unreadable(/timeout after/.test(String((err as Error)?.message ?? "")) ? "timeout" : "error");
+    return await p;
+  } finally {
+    if (perDriver.get(row.id) === p) perDriver.delete(row.id);
   }
-  const a = answer as { supported?: unknown; checksum?: unknown; source?: unknown } | null | undefined;
-  if (!a || typeof a !== "object") return unreadable("invalid");
-  if (a.supported !== true) return unreadable("inconsistent");
-  if (typeof a.checksum !== "string" || a.checksum.length === 0 || a.checksum.length > MAX_CHECKSUM_LEN) return unreadable("invalid");
-  return { ...base, status: "verified", checksum: a.checksum, source: "sim" };
+}
+
+/** M1 — reads in progress, per driver instance (weak: a dropped driver takes its entries with it). */
+const inflight = new WeakMap<object, Map<number, Promise<ProgramCheck>>>();
+
+/** M3 — a driver-supplied source label, safe to show: [a-z0-9_-]{1,32}, else "unknown" (never an endpoint / host). */
+export function sanitiseSource(v: unknown): string {
+  return typeof v === "string" && /^[a-z0-9_-]{1,32}$/.test(v) ? v : "unknown";
 }
 
 /** A robot controller: no program checksum reader exists for any robot vendor ⇒ always "unsupported" (shown plainly). */
