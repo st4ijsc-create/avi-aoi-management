@@ -80,6 +80,14 @@ services:
       EDGE_UNS_STORE_FORWARD_DRAIN_MS: "30000"
       EDGE_GATEWAY_LIVENESS_FILE: /app/data/edge-gateway.alive
 
+      # ── Run EXECUTION (doc 81 Dot 9 S, docs/EDGE_GATEWAY.md section 8) — OFF by default. To turn it on: provision the node
+      #    credential on central (scripts/edge-node-credential.ts issue ... --out), put it at ./secrets/edge-node.cred, set the URL.
+      EDGE_EXECUTION_ENABLED: ${EDGE_EXECUTION_ENABLED:-false}
+      EDGE_CENTRAL_URL: ${EDGE_CENTRAL_URL:-}
+      EDGE_NODE_CREDENTIAL_FILE: /run/secrets/edge-node.cred
+      FOE_ENABLED: ${EDGE_EXECUTION_ENABLED:-false}
+      ROBOT_GATEWAY_ENABLED: ${ROBOT_GATEWAY_ENABLED:-false}
+
       # ── Control-plane DB (Asset Registry + edge_nodes registry). Point at the
       #    central DB reachable from the edge; the DB store-forward rides DB-down. ──
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the central control-plane DB}
@@ -88,6 +96,8 @@ services:
       - edgedata:/app/data
       # GitOps config (edge-node.yaml + contracts/mappings) mounted read-only.
       - ./config:/app/config:ro
+      # doc 81 Dot 9 S — the node credential (read only when EDGE_EXECUTION_ENABLED=true; never baked into the image).
+      - ./secrets/edge-node.cred:/run/secrets/edge-node.cred:ro
 
 volumes:
   edgedata:
