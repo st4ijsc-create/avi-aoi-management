@@ -144,6 +144,11 @@ export interface SafetyPlcStatusMap {
   muting?: SafetyPlcTagRef;
   /** Sim-only scripted status stream (each entry = one snapshot; adapter cycles). */
   simScript?: SafetyPlcStatusSnapshot[];
+  /**
+   * doc 81 Đợt 8 N1 — background poller period for THIS config (ms). Clamped by the poller to [250, 60000];
+   * absent/invalid ⇒ SAFETY_PLC_POLL_INTERVAL_MS (default 1000). jsonb field — no migration.
+   */
+  pollIntervalMs?: number;
 }
 
 /** One observed safety-PLC status snapshot (all flags optional; absent = unknown). */

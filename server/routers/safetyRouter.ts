@@ -785,6 +785,8 @@ export const safetyRouter = router({
             resetRequired: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
             muting: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
             simScript: z.array(plcStatusSnapshotSchema).optional(),
+            /** doc 81 Đợt 8 N1 — background poller period (ms) for this config; the poller also clamps it. */
+            pollIntervalMs: z.number().int().min(250).max(60_000).optional(),
           })
           .optional(),
         robotId: z.number().int().positive().optional(),

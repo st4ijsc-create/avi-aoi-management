@@ -6346,15 +6346,12 @@ async function startServer() {
     console.error("[Interlock] init failed:", (err as any)?.message || err);
   }
 
-  // S2b (doc 20 §2/§5) — Vision human-detection producer + Safety-PLC status adapter.
-  // Both are ADVISORY and ON-DEMAND (driven by safety.ingestDetectionFrame /
-  // safety.readSafetyPlc), so there is NO persistent poller/socket to start — this
-  // block only ANNOUNCES the flag state honestly (no work, no control path). Disabled
-  // by default; opt in via SAFETY_VISION_ENABLED / SAFETY_PLC_ADAPTER_ENABLED.
-  // HONEST: SAFETY_VISION needs a real camera + calibration + an exported ONNX person
-  // model (yolo26n.pt is PyTorch → export to .onnx once); with no backend it produces
-  // NOTHING. SAFETY_PLC is READ-ONLY monitoring — the certified Safety PLC performs the
-  // rated stop itself in hardware; this only OBSERVES and LOGS advisory events.
+  // S2b (doc 20 §2/§5) — Vision human-detection producer (ADVISORY, on-demand) + Safety-PLC status adapter. Off by
+  // default (SAFETY_VISION_ENABLED / SAFETY_PLC_ADAPTER_ENABLED). SAFETY_VISION needs a real camera + calibration + an ONNX
+  // person model; with no backend it produces NOTHING. SAFETY_PLC is READ-ONLY monitoring — the certified Safety PLC performs
+  // the rated stop itself in hardware. doc 81 Đợt 8 N1: the BACKGROUND poller (SAFETY_PLC_POLLER_ENABLED, default off) only READS
+  // the enabled configs and records advisory events; it never writes / actuates (safetyPlcPoller.ts). Stopped on shutdown.
+  // (line-neutral edit of this file: this comment was shortened to make room for the two call lines.)
   try {
     const { safetyVisionEnabled } = await import("../services/safety/vision/humanDetectionProducer");
     const { safetyPlcAdapterEnabled } = await import("../services/safety/plc/safetyPlcAdapter");
@@ -6364,6 +6361,7 @@ async function startServer() {
     if (safetyPlcAdapterEnabled()) {
       console.log("[SafetyPLC] SAFETY_PLC_ADAPTER_ENABLED=true — READ-ONLY status adapter ready (on-demand; sim backend by default; NEVER actuates a rated stop).");
     }
+    (await import("../services/safety/plc/safetyPlcPoller")).startSafetyPlcPoller(); // no-op unless SAFETY_PLC_POLLER_ENABLED
   } catch (err) {
     console.error("[S2b] init failed:", (err as any)?.message || err);
   }
@@ -6522,6 +6520,8 @@ async function startServer() {
     import("../services/mtconnect/mtconnectPoller")
       .then((m) => m.stopMtconnectPoller())
       .catch(() => {});
+    // doc 81 Đợt 8 N1 — dừng bộ đọc nền safety-PLC (no-op nếu chưa chạy)
+    import("../services/safety/plc/safetyPlcPoller").then((m) => m.stopSafetyPlcPoller()).catch(() => {});
     // G1.2 — dừng CFX client (no-op nếu chưa chạy)
     import("../services/cfx")
       .then((m) => m.stopCfxClient())
