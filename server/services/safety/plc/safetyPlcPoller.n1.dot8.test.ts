@@ -97,6 +97,7 @@ function mk(configs: SafetyPlcConfig[], backends: Map<number, SafetyPlcBackendRe
     backendFor: (c: SafetyPlcConfig) => ({ backend: backends.get(c.id) ?? null, reason: backends.has(c.id) ? undefined : "no test backend" }),
     recordPlain: async () => ({ ok: true, enabled: true }),
     recordTrusted: async () => ({ ok: true, enabled: true }),
+    leader: { acquire: async () => true, held: async () => true, release: async () => undefined }, // N fix 1 (M4) — single-instance gate faked here
     ...extra,
   });
   pollers.push(p);

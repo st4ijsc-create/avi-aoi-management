@@ -32,7 +32,8 @@ import {
   type SafetyPlcBackendReader,
 } from "./safetyPlcAdapter";
 import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEventInput, type RecordResult, type SafetyEventType } from "../safetyAuditService";
-import { isPlcConfigTrustApproved } from "./safetyPlcTrust";
+import { isPlcConfigTrustApproved, plcTrustMaterial } from "./safetyPlcTrust";
+import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLeader";
 
 /** Flag — default OFF. */
 export function safetyPlcPollerEnabled(): boolean {
@@ -44,7 +45,8 @@ export const SAFETY_PLC_POLL_MAX_INTERVAL_MS = 60_000;
 export const SAFETY_PLC_POLL_DEFAULT_INTERVAL_MS = 1000;
 export const SAFETY_PLC_POLL_BACKOFF_CAP_MS = 15_000;
 export const SAFETY_PLC_POLL_MAX_CONFIGS = 200;
-export const SAFETY_PLC_CONFIG_REFRESH_MS = 30_000;
+/** Config re-list + leader re-check period (N fix 1, M4: was 30 s — a lost lock must stop the polling quickly). */
+export const SAFETY_PLC_CONFIG_REFRESH_MS = 10_000;
 export const SAFETY_PLC_READ_TIMEOUT_DEFAULT_MS = 3000;
 /** N3 flap damping — offline transitions remembered per config (window + cap) and the clean-read run needed to go online. */
 export const SAFETY_PLC_FLAP_WINDOW_MS = 10 * 60_000;
@@ -152,6 +154,8 @@ export interface PollerDeps {
    * record time for every event of a real backend; false / error ⇒ the PLAIN door (recorded, normal notice, no bypass).
    */
   isTrustApproved: (cfg: SafetyPlcConfig) => Promise<boolean>;
+  /** N fix 1 (M4) — cluster leadership: only the holder polls. Default: pg_try_advisory_lock on a dedicated session. */
+  leader: PollerLeaderGate;
 }
 
 interface ConfigState {
@@ -179,6 +183,12 @@ interface ConfigState {
   /** N3 — consecutive fully decided reads while offline, and when this config last went offline (bounded). */
   goodStreak: number;
   offlineAt: number[];
+  /** N fix 1 (M1) — what is being READ (backend, endpoint, tag map): unchanged ⇒ an edit carries the state. */
+  readIdentity: string;
+  /** N fix 1 (M1) — rebuilt after a read-identity change: events of its first decided read are a re-baseline (plain door). */
+  rebaseline: boolean;
+  /** N fix 1 (M5) — consecutive failed event records (feeds the backoff like failed reads). */
+  recordFailStreak: number;
 }
 
 export interface PollerConfigSnapshot {
@@ -186,9 +196,17 @@ export interface PollerConfigSnapshot {
   code: string;
   intervalMs: number;
   failStreak: number;
+  /** N fix 1 (M5) */
+  recordFailStreak: number;
   reads: number;
   undecidable: number;
   lastRead: PollRead | null;
+}
+
+/** N fix 1 (M1) — the read identity: backend kind, endpoint and the normalised tag map (the trust digest's own material). */
+function readIdentityOf(cfg: SafetyPlcConfig): string {
+  const m = plcTrustMaterial(cfg);
+  return JSON.stringify([m[1], m[2], m[3]]);
 }
 
 function fingerprintOf(cfg: SafetyPlcConfig): string {
@@ -235,7 +253,35 @@ export class SafetyPlcPoller {
       recordPlain: deps.recordPlain ?? record,
       recordTrusted: deps.recordTrusted ?? ((i) => recordFromDeviceIngest("safety_plc", i)),
       isTrustApproved: deps.isTrustApproved ?? isPlcConfigTrustApproved,
+      leader: deps.leader ?? pgPollerLeaderGate(),
     };
+  }
+
+  private leading = false;
+
+  /**
+   * N fix 1 (M4) — (re)check cluster leadership, then re-list the configs. Not the leader (or undecided) ⇒ every state is
+   * dropped and nothing is polled. Returns whether this instance leads now. (refreshLoop's unit; also a test seam.)
+   */
+  async leaderCheckAndRefresh(): Promise<boolean> {
+    const gen = this.gen;
+    let lead = false;
+    try {
+      lead = (this.leading ? await this.deps.leader.held() : await this.deps.leader.acquire()) === true;
+    } catch {
+      lead = false;
+    }
+    if (gen !== this.gen) return false;
+    if (!lead) {
+      if (this.leading) console.warn("[SafetyPLC] poller leadership LOST — polling stopped on this instance (another instance may take over)");
+      this.leading = false;
+      for (const id of [...this.states.keys()]) this.dropState(id);
+      return false;
+    }
+    if (!this.leading) console.log("[SafetyPLC] poller leadership acquired — this instance polls the safety PLCs");
+    this.leading = true;
+    await this.refreshConfigs();
+    return true;
   }
 
   /** Start polling. Returns false (and does nothing) unless every flag it needs is on. Idempotent. */
@@ -260,7 +306,7 @@ export class SafetyPlcPoller {
   private async refreshLoop(gen: number): Promise<void> {
     if (gen !== this.gen) return;
     try {
-      await this.refreshConfigs();
+      await this.leaderCheckAndRefresh();
     } catch (e) {
       this.warnLimited("refresh", `[SafetyPLC] poller could not list configs (keeps the current set): ${safeReason(e)}`);
     }
@@ -289,9 +335,13 @@ export class SafetyPlcPoller {
       const fp = fingerprintOf(cfg);
       const old = this.states.get(cfg.id);
       if (old && old.fingerprint === fp) return;
+      const readIdentity = readIdentityOf(cfg);
+      // M1 — same read identity ⇒ CARRY the state (and the backend + any in-flight read: no second connection, no re-sent
+      // held trip); otherwise a fresh state whose first decided read is a RE-BASELINE (plain door, not trusted).
+      const carry = old != null && old.readIdentity === readIdentity;
       if (old) this.dropState(cfg.id);
       const timeout = readTimeoutMs();
-      const { backend, reason } = this.deps.backendFor(cfg, timeout);
+      const { backend, reason } = carry ? { backend: old!.backend, reason: old!.reason } : this.deps.backendFor(cfg, timeout);
       const st: ConfigState = {
         cfg,
         fingerprint: fp,
@@ -311,7 +361,26 @@ export class SafetyPlcPoller {
         flags: {},
         goodStreak: 0,
         offlineAt: [],
+        readIdentity,
+        rebaseline: old != null && !carry,
+        recordFailStreak: 0,
       };
+      if (carry && old) {
+        st.link = old.link;
+        st.flags = { ...old.flags };
+        st.goodStreak = old.goodStreak;
+        st.offlineAt = [...old.offlineAt];
+        st.failStreak = old.failStreak;
+        st.recordFailStreak = old.recordFailStreak;
+        st.rebaseline = old.rebaseline;
+        st.pending = old.pending;
+        if (old.busy) {
+          const b: Promise<void> = old.busy.then(() => undefined, () => undefined).finally(() => {
+            if (st.busy === b) st.busy = null;
+          });
+          st.busy = b;
+        }
+      }
       this.states.set(cfg.id, st);
       if (this.running) this.schedule(cfg.id, st, (i * 37) % st.intervalMs);
     });
@@ -336,7 +405,7 @@ export class SafetyPlcPoller {
     if (gen !== this.gen || this.states.get(id) !== st) return;
     await this.pollNow(id);
     if (gen !== this.gen || this.states.get(id) !== st || !this.running) return;
-    this.schedule(id, st, backoffDelayMs(st.intervalMs, st.failStreak));
+    this.schedule(id, st, backoffDelayMs(st.intervalMs, Math.max(st.failStreak, st.recordFailStreak)));
   }
 
   /** One poll of one config (the scheduler's unit; also a test seam). Concurrent calls share one read. */
@@ -400,10 +469,16 @@ export class SafetyPlcPoller {
       const was = st.flags[flag];
       let ev: SafetyEventType | null = null;
       if (now && was !== true) ev = FLAG_RISE_EVENT[flag];
-      else if (!now && was === true && flag === "estop") ev = "estop_released";
+      else if (!now && was === true && flag === "estop") {
+        // M2 — a release is reported only while the link is ONLINE (confirmed); until then it is held (not dropped).
+        if (st.link !== "online") continue;
+        ev = "estop_released";
+      }
       if (ev && !(await this.emit(id, st, ev, { transition: now ? "active" : "released", flag }))) continue;
       st.flags[flag] = now;
     }
+    // M1 — the re-baseline ends with the first FULLY decided read (its events went through the plain door).
+    if (fullyDecided) st.rebaseline = false;
   }
 
   /** Record one transition event. true ⇔ recorded (or audit off: nothing will ever be recorded — do not retry forever). */
@@ -432,7 +507,10 @@ export class SafetyPlcPoller {
     try {
       // I1 — trusted door ONLY for the real OT read class AND a config whose current content a second person approved.
       let approved = false;
-      if (st.trusted) {
+      if (st.trusted && st.rebaseline) {
+        // M1 — first read after the endpoint / tag map changed: whatever it shows is a new BASELINE, not a trip.
+        input.notes = `${input.notes} [re-baseline after a config change — normal notice]`;
+      } else if (st.trusted) {
         try {
           approved = (await this.deps.isTrustApproved(cfg)) === true;
         } catch {
@@ -441,14 +519,19 @@ export class SafetyPlcPoller {
         if (!approved) input.notes = `${input.notes} [config not approved by a second person — normal notice]`;
       }
       const res = approved ? await this.deps.recordTrusted(input) : await this.deps.recordPlain(input);
-      if (res.ok) return true;
+      if (res.ok) {
+        st.recordFailStreak = 0;
+        return true;
+      }
       if (res.enabled === false) {
         this.warnLimited("audit-off", "[SafetyPLC] SAFETY_AUDIT_ENABLED is off — poller transitions are not recorded");
         return true;
       }
+      st.recordFailStreak += 1; // M5 — backs the next poll off (retried, never dropped)
       this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (retried next poll): ${safeReason(res.message)}`);
       return false;
     } catch (e) {
+      st.recordFailStreak += 1; // M5
       this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (retried next poll): ${safeReason(e)}`);
       return false;
     }
@@ -516,6 +599,11 @@ export class SafetyPlcPoller {
   async stop(): Promise<void> {
     this.running = false;
     this.gen += 1;
+    // M4 — give the leadership back (another instance may take over at its next check).
+    if (this.leading) {
+      this.leading = false;
+      await this.deps.leader.release().catch(() => undefined);
+    }
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = null;
     const busy: Promise<unknown>[] = [];
@@ -535,7 +623,7 @@ export class SafetyPlcPoller {
 
   snapshot(): PollerConfigSnapshot[] {
     return [...this.states.values()]
-      .map((st) => ({ id: st.cfg.id, code: st.cfg.code, intervalMs: st.intervalMs, failStreak: st.failStreak, reads: st.reads, undecidable: st.undecidable, lastRead: st.lastRead }))
+      .map((st) => ({ id: st.cfg.id, code: st.cfg.code, intervalMs: st.intervalMs, failStreak: st.failStreak, recordFailStreak: st.recordFailStreak, reads: st.reads, undecidable: st.undecidable, lastRead: st.lastRead }))
       .sort((a, b) => a.id - b.id);
   }
 

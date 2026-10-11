@@ -82,6 +82,7 @@ function mk(configs: SafetyPlcConfig[] | (() => SafetyPlcConfig[]), backendFor?:
     recordPlain: seam("plain"),
     recordTrusted: seam("trusted"),
     isTrustApproved: async () => true,
+    leader: { acquire: async () => true, held: async () => true, release: async () => undefined }, // N fix 1 (M4)
   });
   pollers.push(p);
   return { p, recs, types: () => recs.map((r) => r.input.eventType) };
