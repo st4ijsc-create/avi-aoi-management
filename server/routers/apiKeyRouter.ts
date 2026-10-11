@@ -26,9 +26,8 @@ import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
-import { apiKeys, users } from "../../drizzle/schema";
-import { apiKeyIdentityCols, readHoldersOfKeys } from "../services/orchestration/foe/runApiKeyIdentity"; // doc 81 Đợt 9 R1 (mig 0369)
-import { createAuditContext, logCrudOperation } from "../services/auditTrailService";
+import { apiKeys, auditLogs, users } from "../../drizzle/schema";
+import { apiKeyIdentityCols, isMigrationMissingError, readHoldersOfKeys } from "../services/orchestration/foe/runApiKeyIdentity"; // doc 81 Đợt 9 R1 (mig 0369)
 import { hashApiKey } from "../api/v1/auth";
 import { ALL_SCOPES, SCOPE_DESCRIPTIONS } from "../api/v1/scopes";
 
@@ -136,17 +135,26 @@ function publicRow(r: typeof apiKeys.$inferSelect) {
 async function withHolders<T extends { id: number }>(d: Awaited<ReturnType<typeof db>>, rows: T[]) {
   const holders = await readHoldersOfKeys(d, rows.map((r) => r.id));
   const ids = [...new Set([...holders.values()].filter((v): v is number => typeof v === "number"))];
-  const names = ids.length ? await d.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids)).catch(() => []) : [];
+  const names = ids.length
+    ? await d.select({ id: users.id, name: users.name, isActive: users.isActive }).from(users).where(inArray(users.id, ids)).catch(() => null)
+    : [];
   return rows.map((r) => {
     const holderUserId = holders.has(r.id) ? (holders.get(r.id) ?? null) : null;
+    const u = holderUserId !== null && names ? names.find((n) => n.id === holderUserId) : undefined;
     return {
       ...r,
       holderRecorded: holders.has(r.id),
       holderUserId,
-      holderName: holderUserId !== null ? (names.find((n) => n.id === holderUserId)?.name ?? null) : null,
+      holderName: u?.name ?? null,
+      // R fix 1 (#5) — a deactivated / deleted holder makes the key's API runs owner-less (refused): flagged on the list.
+      // null = not known (users not read); false = deactivated or no longer exists.
+      holderActive: holderUserId === null ? null : names === null ? null : u ? u.isActive === true : false,
     };
   });
 }
+
+/** R fix 1 (#6) — the key row disappeared between the read and the locked update (deleted concurrently). */
+class KeyVanished extends Error {}
 
 function toExpiry(v: string | Date | null | undefined): Date | null {
   if (v == null || v === "") return null;
@@ -291,7 +299,11 @@ export const apiKeyRouter = router({
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "holderUserId" }, `User ${input.holderUserId} does not exist or is not active.`);
       }
       const actor = ctx.user!.id;
-      let before: number | null = null;
+      // R fix 1 (#6) — the change, its trigger-written history row AND its audit_logs row are ONE transaction: an audit row
+      // that cannot be written refuses the change. Errors are specific and carry no database text to the client (it is
+      // logged server-side): the key vanished meanwhile ⇒ NOT_FOUND; migration 0369 missing ⇒ FEATURE_NOT_CONFIGURED
+      // (apiKeyHolder); anything else ⇒ OPERATION_FAILED (changeApiKeyHolder) — nothing was changed in every case.
+      let vanished = false;
       try {
         await d.transaction(async (tx) => {
           const [cur] = await tx
@@ -299,32 +311,52 @@ export const apiKeyRouter = router({
             .from(apiKeyIdentityCols)
             .where(eq(apiKeyIdentityCols.id, input.id))
             .for("update");
-          before = (cur?.holderUserId as number | null | undefined) ?? null;
+          if (!cur) {
+            vanished = true;
+            throw new KeyVanished();
+          }
+          const before = (cur.holderUserId as number | null | undefined) ?? null;
           await tx.execute(sql`SELECT set_config('aoi.actor_user_id', ${String(actor)}, true), set_config('aoi.holder_change_reason', ${input.reason}, true)`);
           await tx.update(apiKeyIdentityCols).set({ holderUserId: input.holderUserId }).where(eq(apiKeyIdentityCols.id, input.id));
+          await tx.insert(auditLogs).values({
+            userId: actor,
+            userName: ctx.user?.name ?? null,
+            action: "UPDATE",
+            entityType: "api_key",
+            entityId: input.id,
+            entityName: existing.name.slice(0, 255),
+            details: JSON.stringify({
+              operation: "API_KEY_HOLDER_CHANGE",
+              before: { holderUserId: before },
+              after: { holderUserId: input.holderUserId },
+              metadata: { reason: input.reason, docRef: "doc 81 Dot 9 R1" },
+              affectedFields: ["holderUserId"],
+              source: "web",
+              timestamp: new Date().toISOString(),
+            }),
+            status: "success",
+          });
         });
       } catch (err) {
+        if (vanished || err instanceof KeyVanished) {
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${input.id} not found`);
+        }
+        console.error(`[apiKey] setHolder key ${input.id}: not changed — ${(err as Error)?.message ?? err}`);
+        if (isMigrationMissingError(err)) {
+          throw appError(
+            "PRECONDITION_FAILED",
+            "FEATURE_NOT_CONFIGURED",
+            { feature: "apiKeyHolder" },
+            "Who an API key is issued to cannot be recorded: database migration 0369 is not applied (an administrator runs scripts/apply-migration-0369.mjs). Nothing was changed.",
+          );
+        }
         throw appError(
-          "PRECONDITION_FAILED",
-          "FEATURE_NOT_CONFIGURED",
-          { feature: "API key holder (database migration 0369)" },
-          `The holder of API key ${input.id} could not be changed (database migration 0369 applied?): ${(err as Error)?.message ?? err}`,
+          "INTERNAL_SERVER_ERROR",
+          "OPERATION_FAILED",
+          { operation: "changeApiKeyHolder" },
+          `Who API key ${input.id} is issued to could not be changed (database error) — nothing was changed. Retry.`,
         );
       }
-      await logCrudOperation(createAuditContext({ user: ctx.user }), {
-        action: "UPDATE",
-        entityType: "api_key",
-        entityId: input.id,
-        entityName: existing.name,
-        details: {
-          operation: "API_KEY_HOLDER_CHANGE",
-          before: { holderUserId: before },
-          after: { holderUserId: input.holderUserId },
-          metadata: { reason: input.reason, docRef: "doc 81 Dot 9 R1" },
-          affectedFields: ["holderUserId"],
-        },
-        status: "success",
-      });
       const [row] = await withHolders(d, [publicRow(existing)]);
       return row;
     }),

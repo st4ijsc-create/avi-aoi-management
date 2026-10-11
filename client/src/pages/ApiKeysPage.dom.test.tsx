@@ -30,6 +30,8 @@ const ROWS = [
   { id: 1, name: "line-integration", keyPrefix: "ak_1a2b3c", scopes: ["orchestration:write"], isActive: true, dataScopeMode: "global", holderUserId: 12, holderName: "Holder Now", holderRecorded: true },
   { id: 2, name: "orphan", keyPrefix: "ak_000000", scopes: ["bi:read"], isActive: true, dataScopeMode: null, holderUserId: null, holderName: null, holderRecorded: true },
   { id: 3, name: "pre-0369", keyPrefix: "ak_111111", scopes: ["bi:read"], isActive: true, dataScopeMode: null, holderUserId: null, holderName: null, holderRecorded: false },
+  // R fix 1 (#5) — issued to a user who has since been deactivated
+  { id: 4, name: "left-company", keyPrefix: "ak_222222", scopes: ["orchestration:write"], isActive: true, dataScopeMode: "global", holderUserId: 30, holderName: "Gone User", holderRecorded: true, holderActive: false },
 ];
 vi.mock("@/lib/trpc", () => {
   const chain = (): unknown => new Proxy(() => undefined, { get: () => chain(), apply: () => undefined });
@@ -67,6 +69,12 @@ describe("ApiKeysPage — doc 81 Đợt 9 R3: 'Issued to'", () => {
     expect(within(rowOf("line-integration")).getByTestId("api-key-holder").textContent).toBe("Holder Now");
     expect(within(rowOf("orphan")).getByTestId("api-key-holder-none")).toBeInTheDocument();
     expect(within(rowOf("pre-0369")).getByTestId("api-key-holder-unrecorded")).toBeInTheDocument();
+    // R fix 1 (#5) — "nobody" refuses only the NON-STOP commands; a deactivated holder is flagged, not shown as a plain name
+    expect(within(rowOf("orphan")).getByTestId("api-key-holder-none").textContent).toMatch(/DỪNG|STOP/);
+    const gone = within(rowOf("left-company")).getByTestId("api-key-holder-inactive");
+    expect(gone.textContent).toMatch(/Gone User/);
+    expect(gone.textContent).toMatch(/vô hiệu hoá|deactivated/);
+    expect(within(rowOf("left-company")).queryByTestId("api-key-holder")).toBeNull();
   });
 
   it("★ a non-admin cannot open 'change who it is issued to' (button disabled, says why)", () => {

@@ -14,13 +14,45 @@
  * full-row object), for the same reason.
  */
 import { eq, inArray } from "drizzle-orm";
-import { boolean, integer, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { orchestrationRunStatusEnum } from "../../../../drizzle/schema/enums"; // direct (not the barrel): suites that mock the barrel keep working
 
-/** Narrow projection of orchestration_runs: the API key that started the run (mig 0369; write-once trigger). */
+/** Narrow projection of orchestration_runs: the API key that started the run (mig 0369; set ONLY in the INSERT — trigger). */
 export const runApiKeyCols = pgTable("orchestration_runs", {
   id: integer("id").notNull(),
   startedViaApiKeyId: integer("startedViaApiKeyId"),
 });
+
+/**
+ * doc 81 Đợt 9 R fix 1 (#4) — the INSERT shape of an orchestration run WITH its API key. The 0369 trigger refuses every
+ * UPDATE of "startedViaApiKeyId" (a late first write included), so the key can only be recorded by the INSERT itself.
+ * The columns mirror drizzle/schema/orchestration.ts `orchestrationRuns` (+ the 0369 column); used ONLY for inserting an
+ * API run (foeEngine.startRun). Group S: a run created anywhere else with a key must insert through this object too.
+ */
+export const orchestrationRunsWithApiKey = pgTable("orchestration_runs", {
+  id: serial("id").primaryKey(),
+  workflowId: integer("workflowId").notNull(),
+  workflowRef: varchar("workflowRef", { length: 128 }),
+  status: orchestrationRunStatusEnum("status").default("queued").notNull(),
+  paramsJson: jsonb("paramsJson").$type<Record<string, unknown>>(),
+  contextJson: jsonb("contextJson").$type<Record<string, unknown>>(),
+  currentStepId: varchar("currentStepId", { length: 128 }),
+  edgeNodeId: integer("edgeNodeId"),
+  startedBy: integer("startedBy"),
+  startedAt: timestamp("startedAt"),
+  finishedAt: timestamp("finishedAt"),
+  error: text("error"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  startedViaApiKeyId: integer("startedViaApiKeyId"),
+});
+
+/** 42703 undefined_column / 42P01 undefined_table — migration 0369 not applied (postgres-js puts the code on err or err.cause). */
+export function isMigrationMissingError(err: unknown): boolean {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  const c = e?.code ?? e?.cause?.code;
+  return c === "42703" || c === "42P01";
+}
 
 /** Narrow projection of api_keys: identity columns only (never keyHash). `holderUserId` = mig 0369. */
 export const apiKeyIdentityCols = pgTable("api_keys", {
@@ -28,6 +60,7 @@ export const apiKeyIdentityCols = pgTable("api_keys", {
   name: varchar("name", { length: 255 }),
   keyPrefix: varchar("keyPrefix", { length: 32 }),
   isActive: boolean("isActive"),
+  expiresAt: timestamp("expiresAt"),
   createdBy: integer("createdBy"),
   holderUserId: integer("holderUserId"),
 });
@@ -59,6 +92,8 @@ export interface ApiKeyParties {
   name: string | null;
   keyPrefix: string | null;
   isActive: boolean | null;
+  /** doc 81 Đợt 9 R fix 1 (R-9-c) — api_keys.expiresAt (null = never expires). */
+  expiresAt: Date | null;
   creator: number | null;
   /** The user the key is issued to NOW (null = no holder). */
   holder: number | null;
@@ -74,6 +109,7 @@ export async function readApiKeyParties(db: DbLike, keyId: number): Promise<ApiK
       name: apiKeyIdentityCols.name,
       keyPrefix: apiKeyIdentityCols.keyPrefix,
       isActive: apiKeyIdentityCols.isActive,
+      expiresAt: apiKeyIdentityCols.expiresAt,
       createdBy: apiKeyIdentityCols.createdBy,
       holderUserId: apiKeyIdentityCols.holderUserId,
     })
@@ -85,7 +121,8 @@ export async function readApiKeyParties(db: DbLike, keyId: number): Promise<ApiK
     .select({ apiKeyId: apiKeyHolderChanges.apiKeyId, fromUserId: apiKeyHolderChanges.fromUserId, toUserId: apiKeyHolderChanges.toUserId })
     .from(apiKeyHolderChanges)
     .where(eq(apiKeyHolderChanges.apiKeyId, keyId))) as Array<{ apiKeyId?: unknown; fromUserId?: unknown; toUserId?: unknown }>;
-  const row = k as { name?: string | null; keyPrefix?: string | null; isActive?: boolean | null; createdBy?: unknown; holderUserId?: unknown };
+  const row = k as { name?: string | null; keyPrefix?: string | null; isActive?: boolean | null; expiresAt?: unknown; createdBy?: unknown; holderUserId?: unknown };
+  const exp = row.expiresAt instanceof Date ? row.expiresAt : row.expiresAt != null ? new Date(String(row.expiresAt)) : null;
   const holder = posInt(row.holderUserId) ? row.holderUserId : null;
   const ever = new Set<number>();
   if (holder) ever.add(holder);
@@ -99,6 +136,7 @@ export async function readApiKeyParties(db: DbLike, keyId: number): Promise<ApiK
     name: row.name ?? null,
     keyPrefix: row.keyPrefix ?? null,
     isActive: row.isActive ?? null,
+    expiresAt: exp && !Number.isNaN(exp.getTime()) ? exp : exp ? new Date(0) : null, // unparsable ⇒ treated as expired (fail-closed)
     creator: posInt(row.createdBy) ? row.createdBy : null,
     holder,
     everHolders: [...ever].sort((a, b) => a - b),

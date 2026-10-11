@@ -59,6 +59,8 @@ type ApiKeyRow = {
   holderUserId?: number | null;
   holderName?: string | null;
   holderRecorded?: boolean;
+  /** R fix 1 (#5) — false ⇔ the holder is deactivated / gone (the key's API runs are owner-less ⇒ refused). */
+  holderActive?: boolean | null;
 };
 
 /** Ba lựa chọn hiện trên giao diện — đúng ba trạng thái của CSDL, không nhiều không ít. */
@@ -194,7 +196,11 @@ export default function ApiKeysPage() {
     r.holderRecorded === false ? (
       <span className="text-xs text-amber-700 dark:text-amber-300" data-testid="api-key-holder-unrecorded">{t("apiKeys.holderNotRecorded", "Chưa ghi nhận")}</span>
     ) : r.holderUserId == null ? (
-      <span className="text-xs text-red-700 dark:text-red-300" data-testid="api-key-holder-none">{t("apiKeys.holderNone", "Không ai — lượt chạy điều phối qua khoá này bị từ chối")}</span>
+      <span className="text-xs text-red-700 dark:text-red-300" data-testid="api-key-holder-none">{t("apiKeys.holderNone", "Không ai — lệnh máy / robot (ngoài lệnh DỪNG) của lượt chạy điều phối qua khoá này bị từ chối")}</span>
+    ) : r.holderActive === false ? (
+      <span className="text-xs text-red-700 dark:text-red-300" data-testid="api-key-holder-inactive">
+        {t("apiKeys.holderInactive", "{{name}} — đã bị vô hiệu hoá: lệnh máy / robot (ngoài lệnh DỪNG) của lượt chạy điều phối qua khoá này bị từ chối", { name: r.holderName ?? `#${r.holderUserId}` })}
+      </span>
     ) : (
       <span className="text-xs" data-testid="api-key-holder">{r.holderName ?? `#${r.holderUserId}`}</span>
     );
