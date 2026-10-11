@@ -186,6 +186,10 @@ export function validateMachinePayload(version: string, payload: unknown): Valid
     r = chayCheDoChiKiem(() => schema.safeParse(payload));
   } catch (e) {
     if (e instanceof TimeOffsetRequiredError) {
+      // data-raw-ok: khách của công cụ tự kiểm này là MÁY / hệ tích hợp (machineContract.validate — client không render,
+      // chỉ có đoạn mẫu ở trang tài liệu API): `errors[].message` là hợp đồng tiếng Anh, cùng mảng với thông điệp zod, và
+      // máy đọc token `time_offset_required` ở đầu câu. Từ Đợt 4 C4 nhánh này chỉ là lưới an toàn (chế độ chỉ kiểm dùng
+      // ctx.addIssue). (doc 81 Đợt 7 K5)
       return { ok: false, version, errors: [{ path: e.field, message: e.message }] };
     }
     throw e;
