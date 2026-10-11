@@ -844,3 +844,33 @@ Plan `docs/superpowers/plans/2026-10-11-engineering-control-dot8.md`. Migration 
 4. Sau khi quan sát ổn: hai admin khác nhau duyệt từng cấu hình PLC thật để bật vượt "tắt thông báo".
 
 **Còn mở:** danh tính người cầm khoá API (giữ C); replay sự kiện tin cậy nhiều instance; reader checksum cho bộ điều khiển thật (theo hãng); huỷ-tới-edge (cần lối kéo run + khoá edge nếu dùng edge chạy workflow); `-Repair` chạy quyền Administrator chưa thử lab; một nhấn-nhả E-stop ngắn hơn chu kỳ đọc không thấy; việc của chủ dự án: cấp khoá TLS, đổi mật khẩu keystore, thử APK 1.0.18.
+
+## 17. Kết quả Đợt 9 (2026-10-12)
+
+Plan `docs/superpowers/plans/2026-10-12-engineering-control-dot9.md` — chủ dự án: "hoàn tất các phần đang mở". Migration **0369** (danh tính người cầm khoá API), **0370** (edge chạy workflow), **0371** (tin cậy tiêu thụ một lần + chốt/heartbeat) — `_test`; áp dev theo thứ tự trước khởi động lại.
+
+### Quyết định của chủ dự án (2026-10-12)
+- Làm phương án A cho khoá API (thay C); edge chạy workflow đầy đủ; checksum S7 theo tài liệu; E-stop ngắn qua OPC-UA subscription + bit chốt Modbus; chặn replay đa instance.
+
+### Nhóm R — danh tính người cầm khoá API
+- Khoá ghi "cấp cho ai" (chỉ admin đổi, audit trong cùng giao dịch, khoá dòng chống đua); run ghi khoá khởi động (chỉ trong INSERT, không đổi được). Duyệt run tạo qua API chỉ tính khi người duyệt ≠ người khởi động, người cầm khoá (cả trước đây), người tạo — một nguồn `deriveRunApprovalIdentity` cho engine, hai bộ điều phối, edge, QT. Khoá **đang tắt hoặc hết hạn ⇒ không tác động**; bật lại/gia hạn chỉ admin. DỪNG luôn được.
+
+### Nhóm S — edge chạy workflow (cờ `EDGE_EXECUTION_ENABLED` tắt)
+- Khoá theo node (băm, xoay/thu hồi, chỉ đọc từ tệp, quyền tệp chặt), endpoint kéo run/tiến độ/huỷ theo node; edge áp cùng cổng như trung tâm; huỷ trung tâm dừng walker edge (DỪNG vẫn gửi); chỉ nạp robot của node; một chủ ghi trạng thái robot; khoá chuyển động đọc trước khi chuyển động; run không nhận được ⇒ "edge không liên lạc được" sau 10 phút. E2E hai tiến trình qua HTTP.
+- **Giới hạn thiết kế (review: hạng C):** edge vẫn giữ đăng nhập DB trung tâm ⇒ khoá node không phải ranh giới với một edge bị chiếm. Không chặn gộp khi cờ tắt; **chặn bật** ngoài vùng tin cậy trung tâm. Chưa có ô chọn "chạy trên edge" trong Studio.
+
+### Nhóm T — checksum chương trình Siemens S7 (bật theo adapter)
+- Theo tài liệu (RFC 1006, Wireshark s7comm, Snap7): SHA-256 trên định danh CPU (mã, serial, tên module, **firmware**), địa chỉ adapter, danh sách khối và thông tin từng khối OB/FB/FC/DB/SDB; SFC/SFB phủ bằng firmware; khối bảo vệ/không đọc được/gói bị cắt ⇒ không đọc được ⇒ từ chối; hạn theo adapter (mặc định 1 s, tối đa 10 s). **Phát hiện thay đổi, không chống giả mạo** với người có quyền ghi PLC; **chưa kiểm trên PLC thật** (FAT).
+
+### Nhóm U — E-stop ngắn và tin cậy đa instance
+- OPC-UA: subscription có hàng đợi (bắt nhấn-nhả ngắn), chu kỳ/keep-alive có trần, đọc kiểm tra định kỳ, đồng hồ đơn điệu; không đạt ⇒ chuyển đọc định kỳ (hiện rõ). Modbus: bit chốt chỉ đọc (mẫu chương trình PLC trong hướng dẫn); khi chốt đang bật hiện "E-stop lần đầu thấy lúc T, chốt chưa reset" (không chặn; không với DỪNG). Heartbeat tag tuỳ chọn; "heartbeat stale" hiển thị riêng.
+- Quyền vượt "tắt thông báo" là một dòng DB tiêu thụ đúng một lần — replay từ instance khác/Redis không lấy được lần thứ hai.
+
+### Kiểm
+- Mỗi nhóm review → vòng sửa (R: 3 + 2 lượt quét; T: 1 + 3 lượt quét; U: 2 + 2 lượt quét; S: 2 lượt quét); commit tích hợp tệp dùng chung; review toàn nhánh → vòng sửa cuối → review lại: **sẵn sàng gộp**. Vòng cuối: 2.100 test pass, 0 lỗi; 199/199 tệp đổi; `tsc` sạch.
+
+### Trước khởi động lại
+1. Xác nhận 0368 đã có trên dev; áp **0369 → 0370 → 0371** `--dev-only`.
+2. Build + restart; giữ `EDGE_EXECUTION_ENABLED` và `SAFETY_PLC_POLLER_ENABLED` tắt.
+
+**Còn mở:** edge bỏ đăng nhập DB trung tâm (lớn ~1 đợt) hoặc vai trò Postgres theo node (vừa); trung tâm chưa đọc khoá chuyển động do edge đặt và bộ đếm thế hệ khoá dùng chung; robot chỉ edge tới được không có ghi trạng thái; vài điểm nhỏ (node bận bị coi "không liên lạc", CLI đọc mật khẩu từ biến môi trường, đếm sai TOTP); S7 cần FAT; việc của chủ dự án: cấp khoá TLS, đổi mật khẩu keystore, thử APK 1.0.18.
