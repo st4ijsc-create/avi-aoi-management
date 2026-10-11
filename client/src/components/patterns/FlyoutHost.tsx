@@ -145,12 +145,37 @@ export interface FlyoutHistoryMarker {
   chain: string[];
 }
 
-function readMarker(hostId: string): FlyoutHistoryMarker | null {
+/**
+ * doc 81 Đợt 7 task L fix 1 (a) — dấu do một host TRƯỚC ĐÓ của cùng trang ghi (F5 / quay lại trang sau khi rời: host mới,
+ * id mới) được NHẬN như dấu của mình khi nó nhất quán với URL hiện tại: `stackSig` = chữ ký mục hiện tại, mọi mục trong
+ * `chain` cùng path và stack TĂNG DẦN theo tiền tố tới stack hiện tại. Trước đây mục ấy bị coi là "gốc F5" ⇒ đóng lớp
+ * REPLACE ⇒ còn một mục trang trùng ⇒ Back "chết" một lần (L2, 2026-10-11). Dấu không khớp (vd mục trang đã bị replace
+ * mà vẫn mang state cũ, chuỗi sang trang khác) ⇒ KHÔNG tin — không bao giờ lùi qua một mục mà dấu nói sai.
+ */
+function foreignMarkerConsistent(st: FlyoutHistoryMarker, currentSig: string): boolean {
+  if (st.stackSig !== currentSig) return false;
+  const cur = parseSig(currentSig);
+  const sigs = [...st.chain, currentSig];
+  for (let j = 0; j < sigs.length; j++) {
+    if (typeof sigs[j] !== "string") return false;
+    const here = parseSig(sigs[j]);
+    if (here.path !== cur.path) return false;
+    if (j > 0) {
+      const below = parseSig(sigs[j - 1]).stack;
+      if (!(below.length < here.stack.length && isPrefixStack(below, here.stack))) return false;
+    }
+  }
+  return true;
+}
+
+function readMarker(hostId: string, currentSig?: string): FlyoutHistoryMarker | null {
   if (typeof window === "undefined") return null;
   const st = window.history.state as Partial<FlyoutHistoryMarker> | null;
-  if (!st || typeof st !== "object" || st.flyoutHost !== hostId) return null;
+  if (!st || typeof st !== "object" || typeof st.flyoutHost !== "string") return null;
   if (!Array.isArray(st.chain) || st.chain.length !== st.depth || typeof st.stackSig !== "string") return null;
-  return st as FlyoutHistoryMarker;
+  if (st.flyoutHost === hostId) return st as FlyoutHistoryMarker;
+  if (currentSig != null && foreignMarkerConsistent(st as FlyoutHistoryMarker, currentSig)) return { ...(st as FlyoutHistoryMarker), flyoutHost: hostId };
+  return null;
 }
 
 /** Kỳ vọng sống tối đa bao lâu nếu location không đổi như dự tính (ms). */
@@ -324,7 +349,7 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
   const goTo = useCallback(
     (T: FlyoutEntry[], opts: { open: boolean; returnFocus?: HTMLElement | null }) => {
       const path = locationRef.current;
-      const m = readMarker(hostId);
+      const m = readMarker(hostId, currentSig());
       const chain = m ? m.chain : [];
       const d = chain.length;
       const cur = currentSig();
@@ -382,7 +407,7 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
     const raw = parseFlyoutStack(searchRef.current);
     const keep = knownPrefixOf(raw, layersRef.current);
     if (keep.length === raw.length) return;
-    const m = readMarker(hostId);
+    const m = readMarker(hostId, currentSig());
     const sig = flyoutStackSig(locationRef.current, keep);
     const state = m ? { ...m, stackSig: sig } : (window.history.state as unknown);
     expect(sig);
@@ -438,7 +463,7 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
       if (locChanged) {
         // Back/forward từ BÊN NGOÀI sắp gỡ form còn dữ liệu: giữ instance, push lại đúng URL vừa rời
         // (mục mới mang dấu nối tiếp mục vừa tới), rồi hỏi.
-        const m = readMarker(hostId);
+        const m = readMarker(hostId, currentSig());
         const nextChain = [...(m ? m.chain : []), sigNow];
         const qAt = leftHref.indexOf("?");
         const restoreSig = flyoutStackSig(qAt < 0 ? leftHref : leftHref.slice(0, qAt), parseFlyoutStack(qAt < 0 ? "" : leftHref.slice(qAt + 1)));
@@ -573,7 +598,7 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
     } else {
       // Back bị chặn: mục hiện tại là mục host vừa push lại (mang dấu) ⇒ lùi đúng một mục về đích
       // người dùng đã chọn. Không có dấu (không thể xảy ra trừ khi trang tự ghi đè) ⇒ không lùi.
-      const m = readMarker(hostId);
+      const m = readMarker(hostId, currentSig());
       for (const l of layersRef.current) dirtyRef.current.delete(l.uid);
       if (m && m.chain[m.depth - 1] === p.targetSig) {
         expect(p.targetSig);
