@@ -254,12 +254,9 @@ Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết
   địa chỉ + cổng, ví dụ `ws://192.168.1.100:8883`). App CHỈ gửi mật khẩu tới đúng broker đó — cả khi kết nối lẫn
   khi bấm "Test kết nối". Đổi địa chỉ / cổng / TLS / giao thức ⇒ app KHÔNG gửi mật khẩu và báo
   "mật khẩu thuộc về <broker cũ> — nhập lại". Đổi broker xong phải nhập lại mật khẩu (xin admin xoay mới nếu cần).
-- ⚠ **Kết nối tới broker nhúng hiện KHÔNG mã hoá.** Server lắng nghe MQTT/TCP `MQTT_PORT` (1883) và
-  MQTT/WebSocket `MQTT_WS_PORT` (8883 — cổng này là **ws:// không TLS**, dù số cổng giống MQTTS chuẩn). Listener TLS
-  duy nhất là MQTTS/TCP `MQTT_TLS_PORT` (8884) khi bật `MQTT_TLS_ENABLED=true` + chứng chỉ — nhưng trên Android
-  đường TCP của app dùng socket thường (không có TLS), và server không có wss://. Vì vậy mật khẩu thiết bị (cũng như
-  mọi cảnh báo) đi qua mạng LAN **dạng rõ**; app hiện cảnh báo này ngay dưới ô mật khẩu. Chỉ dùng trong VLAN/Wi‑Fi
-  xưởng đã cách ly; khuyến nghị bổ sung TLS (wss:// ở server + xác thực chứng chỉ ở app) ở đợt sau.
+- ⚠ **Cổng thường (1883 TCP, 8883 ws://) KHÔNG mã hoá** — mật khẩu và cảnh báo đi qua LAN dạng rõ; app hiện cảnh báo
+  ngay dưới ô mật khẩu. Từ server Đợt 7 + app **1.0.18** có **MQTT over TLS có ghim vân tay** — xem mục
+  *Kết nối TLS tới broker nhúng* ngay dưới. Cổng thường vẫn mở cho tới khi mọi máy đã chuyển sang TLS.
 
 **Thứ tự triển khai (BẮT BUỘC theo đúng thứ tự — làm ngược là khoá máy tính bảng):**
 
@@ -279,6 +276,34 @@ Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết
    TRƯỚC khi cập nhật server, rồi xoá dòng đó khi xong.
 4. Lỡ khoá một máy (gõ sai / mất mật khẩu): xoay lại mật khẩu và nhập lại; hoặc *Xoá mật khẩu* trên màn web
    (chỉ cứu được khi cờ ở bước 3 còn `true`).
+
+### Kết Nối TLS Tới Broker Nhúng (app 1.0.18) — doc 81 Đợt 7 J1/J2
+
+**Server.** Broker nhúng lắng nghe thêm **MQTT over TLS (MQTTS)** ở cổng `MQTT_TLS_PORT` (mặc định **8884**) — BẬT MẶC
+ĐỊNH (chỉ `MQTT_TLS_ENABLED=false` mới tắt). Lần khởi động đầu, server **tự sinh chứng chỉ site** (tự ký, ECDSA P‑256,
+~20 năm) vào `data/mqtt-tls/broker-tls.pem` (ngoài git; đổi chỗ bằng `MQTT_TLS_DIR`; hoặc dùng chứng chỉ riêng: đặt cả
+`MQTT_TLS_CERT` + `MQTT_TLS_KEY`). **Vân tay SHA‑256** của chứng chỉ hiện ở web: *Kết nối (MQTT / UNS) → Thiết bị* → thẻ
+**"TLS của broker nhúng"** (nút Sao chép). Tệp chứng chỉ hỏng ⇒ thẻ báo lỗi, cổng TLS KHÔNG mở và server KHÔNG tự sinh
+lại (sinh lại = đổi vân tay = mọi máy đã ghim bị từ chối); muốn sinh mới thì chuyển tệp đi chỗ khác rồi khởi động lại,
+sau đó nhập lại vân tay mới trên MỌI máy. Mở firewall cho cổng 8884 (TCP).
+
+**Máy tính bảng (app ≥ 1.0.18).** Settings → MQTT:
+1. Giao thức **TCP**, bật **TLS/SSL**, cổng **8884**, địa chỉ = **IP** của server (như bước 1 ở trên).
+2. Ô **"Vân tay chứng chỉ broker (SHA‑256)"** (ngay cạnh ô mật khẩu): gõ/dán đúng vân tay ở thẻ web (64 ký tự hex; dấu
+   `:`/khoảng trắng/chữ hoa‑thường không quan trọng). Ô **mật khẩu thiết bị**: nhập mật khẩu → **Lưu**. Vân tay được ghim
+   CÙNG mật khẩu vào đúng broker đó (R‑5‑a) — đổi vân tay = phải nhập lại mật khẩu.
+3. Từ lúc đã có vân tay: app CHỈ nói chuyện với broker trình đúng chứng chỉ đó, và **mật khẩu không bao giờ đi qua cổng
+   thường** nữa (kể cả khi ai đó sửa lại giao thức/cổng/TLS — mật khẩu bị giữ lại). Không có vân tay thì app KHÔNG kết nối
+   TLS kiểu "tin đại" (không có chế độ bỏ qua chứng chỉ).
+4. Broker trình chứng chỉ KHÁC (bị giả mạo, hoặc server đã sinh chứng chỉ mới) ⇒ app **từ chối** trước khi gửi bất kỳ byte
+   MQTT nào và báo **"Chứng chỉ broker đã THAY ĐỔI"**. Kiểm tra vân tay ở thẻ web; chỉ khi chắc chắn server đổi chứng chỉ
+   hợp lệ mới nhập vân tay mới + mật khẩu.
+5. Máy ONLINE lại qua TLS ⇒ xong máy đó. Khi MỌI máy đã chạy TLS, có thể đóng cổng thường bằng `MQTT_PLAIN_ENABLED=false`
+   (thiết bị/simulator khác còn dùng 1883/8883 sẽ mất kết nối — kiểm tra trước).
+
+Hạn chế: app 1.0.18 ghim vân tay trên đường **MQTT/TCP + TLS** (module native Android); đường WebSocket `wss://` dùng kho
+CA của hệ thống nên không dùng được với chứng chỉ tự ký — server Đợt 7 không mở wss://. iOS chưa có module ⇒ app từ chối
+TLS thay vì kết nối không kiểm.
 
 ---
 

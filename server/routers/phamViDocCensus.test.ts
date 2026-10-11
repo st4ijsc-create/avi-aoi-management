@@ -665,7 +665,10 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // cho") nay đưa phạm vi nhà máy của người gọi vào lượt đọc (`assigneeRuleSql(d, ctx, …)` — tên từ H fix 1, trước là
 // `rosterFactoryFilter`; chỉ người cùng ≥1 nhà máy với mục / người giao; admin không đổi) ⇒ nhóm S. Đo bằng chính bộ quét này
 // (`nhomCua` = S). A/B/D/tong không đổi.
-const GHIM = { A: 334, B: 8, C: 471, D: 1132, S: 353, tong: 2298 } as const;
+// ★★★ 2026-10-11 (doc 81 Đợt 7 task J1 — TLS broker nhúng) — **C 471 → 472 · tong 2298 → 2299 · A/B/D/S không đổi.**
+// `mqttClient.brokerTls` (query, MỚI, `mqttOeeRouters.ts`): trạng thái listener MQTTS + vân tay chứng chỉ từ bộ nhớ tiến trình
+// (`getMqttBrokerTlsStatus`), không chạm bảng nào ⇒ nhóm C. Đo bằng chính bộ quét này (trước lượt = khớp ghim; sau = C 472).
+const GHIM = { A: 334, B: 8, C: 472, D: 1132, S: 353, tong: 2299 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

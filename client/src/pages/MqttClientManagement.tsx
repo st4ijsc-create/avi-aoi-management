@@ -39,6 +39,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { MqttMachineBindingCell, coTheGanMayMqtt } from "@/components/mqtt/MqttMachineBindingCell";
 import { MqttPasswordRotateCell } from "@/components/mqtt/MqttPasswordRotateCell";
+import { MqttBrokerTlsCard } from "@/components/mqtt/MqttBrokerTlsCard";
 
 type ConnectionStatus = 'all' | 'ONLINE' | 'OFFLINE' | 'DISCONNECTED' | 'connected' | 'disconnected' | 'error' | 'pending';
 type ApprovalFilter = 'all' | 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -662,6 +663,9 @@ export function MqttClientManagementContent() {
             </div>
           </CardContent>
         </Card>
+
+        {/* doc 81 Đợt 7 J1 — MQTTS of the built-in broker + the certificate fingerprint tablets pin */}
+        <MqttBrokerTlsCard enabled={canBindMachine} />
 
         {/* Main Tabs */}
         <Tabs defaultValue="clients" className="space-y-4">

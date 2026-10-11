@@ -318,7 +318,14 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `module = null` (sở thích của CHÍNH người gọi, không thuộc SKU nào), không phải bề mặt AI ⇒ beMatAi/aiCoCong/aiMienTru/
  *   ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. `tong` 2298 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2298, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-11 doc 81 Đợt 7 Task J1 (TLS broker nhúng) — **tong 2298 → 2299, ghim lại ô `tong`**: đúng MỘT thủ tục MỚI
+ *   `mqttClient.brokerTls` (query chỉ đọc, `mqttOeeRouters.ts` — trạng thái listener MQTTS + vân tay SHA-256 của chứng chỉ
+ *   site), sàn `protectedProcedure` + `requirePermission("settings_factory","canView")`, `module = null`, không phải bề mặt AI
+ *   ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. Đo: cây trước lượt = 2298 (khớp ghim), sau = 2299.
+ *   `tong` 2299 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2299, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
