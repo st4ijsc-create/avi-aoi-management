@@ -17,19 +17,27 @@
  */
 
 /**
- * The device-ingest origins (today ONE):
+ * The device-ingest origins (today TWO):
  *   • "robot_telemetry" — robotIngest's e-stop TRANSITION from a robot whose driver the server itself polls on a configured
  *     endpoint (vendors TRUSTED_ROBOT_TELEMETRY_VENDORS: fanuc, mitsubishi, techman). Not "sim", not the "delta" mock, not
  *     the UR(sim) bridge, not "vda5050" (state arrives over MQTT topics, whose publisher identity is the broker's).
- * Not here (documented): the safety-PLC adapter (today only reached through the user-triggered safety.readSafetyPlc,
- * which can also inject a scripted status), vision/zone evaluation (detections are injected through safety.evaluateZones),
+ *   • "safety_plc" — doc 81 Đợt 8 N2: the BACKGROUND safety-PLC poller (safetyPlcPoller.ts, flag SAFETY_PLC_POLLER_ENABLED)
+ *     reading a REAL backend (the adapter's OtReadSafetyPlcBackend: modbus / opcua on the config's endpoint) on its own
+ *     timer — no request, no payload, no injected status. Trusted types: an e-stop PRESSED transition and a guard / light
+ *     curtain TRIP (zone occupied). Its other events (released, reset required, muting, PLC offline/online) are marked but
+ *     not of a trusted type ⇒ normal notices. The sim backend is never trusted. Trust anchor = the config row (endpoint +
+ *     status map), written only through safety.upsertSafetyPlcConfig (machine_control canCreate, flag-gated) — the same
+ *     anchor as a robot's controller endpoint for "robot_telemetry".
+ * Not here (documented): the user-triggered safety.readSafetyPlc (can inject a scripted status — plain record()),
+ * vision/zone evaluation (detections are injected through safety.evaluateZones),
  * the interlock engine's advisory mapping, the Andon dispatch, field-health lost_connection, safety.recordEvent.
  */
-export type TrustedSafetyOrigin = "robot_telemetry";
+export type TrustedSafetyOrigin = "robot_telemetry" | "safety_plc";
 
 /** Which event TYPES each origin may make safety-critical (physical types only). */
 export const TRUSTED_ORIGIN_EVENT_TYPES: Readonly<Record<TrustedSafetyOrigin, ReadonlySet<string>>> = {
   robot_telemetry: new Set(["estop"]),
+  safety_plc: new Set(["estop", "zone_intrusion"]),
 };
 
 /** Robot vendors whose telemetry the server polls itself from a configured controller endpoint (see "robot_telemetry"). */

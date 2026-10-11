@@ -128,8 +128,12 @@ export function isSafetyCriticalSafetyEvent(p: { id?: unknown; isNearMiss?: unkn
 }
 
 function onSafetyEvent(e: DomainEvent): void {
-  const p = (e.payload ?? {}) as { id?: number; eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number };
-  const machine = String(p.robotId != null ? `robot:${p.robotId}` : p.lineId != null ? `line:${p.lineId}` : "unknown");
+  const p = (e.payload ?? {}) as { id?: number; eventType?: string; isNearMiss?: boolean; robotId?: number; lineId?: number; stationId?: number };
+  // doc 81 Đợt 8 N2 — most specific first: robot > station > line (safety-PLC configs guard STATIONS: two PLCs on one line
+  // must not share one P-F4 bypass budget).
+  const machine = String(
+    p.robotId != null ? `robot:${p.robotId}` : p.stationId != null ? `station:${p.stationId}` : p.lineId != null ? `line:${p.lineId}` : "unknown",
+  );
   const message = `Safety ${p.isNearMiss ? "near-miss" : "event"}: ${p.eventType ?? "?"} at ${machine}`;
   console.warn(`[Orchestration] ${message}`);
   void audit("orchestration.safety", { eventType: p.eventType, isNearMiss: p.isNearMiss, machine });

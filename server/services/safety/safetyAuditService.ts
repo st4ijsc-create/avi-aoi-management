@@ -42,7 +42,10 @@ export type SafetyEventType =
   // 'zone_intrusion' (S2a) is a distinct, more specific variant of 'intrusion': it is
   // raised by the dynamic safety-zone evaluator (graduated 3-level reaction). The
   // column is a free varchar, so this is additive with no migration.
-  | "estop" | "collision" | "intrusion" | "zone_intrusion" | "force_limit" | "speed_violation" | "near_miss";
+  | "estop" | "collision" | "intrusion" | "zone_intrusion" | "force_limit" | "speed_violation" | "near_miss"
+  // doc 81 Đợt 8 N2 — background safety-PLC poller transitions (free varchar column ⇒ no migration). NOT recordable through
+  // safety.recordEvent (its input enum is separate); none of them is a trusted bypass type.
+  | "estop_released" | "plc_offline" | "plc_online";
 // Provenance of the OBSERVATION. `plc` = read from a certified Safety PLC's (non-
 // safety-rated) status interface; `sim` = a clearly-labelled SIMULATED track/status
 // (never a real sensor); `test` = the Safety Monitor UI's "test proximity" sandbox
@@ -93,7 +96,8 @@ export async function record(input: RecordSafetyEventInput): Promise<RecordResul
 /**
  * doc 81 Đợt 5 task F fix scan (R-5-h) — record an event created by a server DEVICE-INGEST path. Identical to record(),
  * plus the server-side trusted-origin marker (trustedSafetyOrigin.ts) keyed by the new row id, set BEFORE the emit.
- * Callers are pinned by a census test (today only robotIngest's e-stop transition from a polled real controller);
+ * Callers are pinned by a census test (robotIngest's e-stop transition from a polled real controller; doc 81 Đợt 8 N2: the
+ * background safety-PLC poller's transitions read from a REAL backend);
  * routers / API / user actions never call it, so nothing they send can make a notice safety-critical.
  */
 export async function recordFromDeviceIngest(origin: TrustedSafetyOrigin, input: RecordSafetyEventInput): Promise<RecordResult> {

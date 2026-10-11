@@ -127,19 +127,53 @@ describe("Đợt 5 F fix scan — census: the trusted door and the mark are reac
     expect(referencers("markTrustedSafetyEvent", fx)).toEqual(["services/x/cb.ts"]);
   });
 
-  it("recordFromDeviceIngest is referenced only by services/robot/robotIngest.ts (and defined in safetyAuditService.ts)", () => {
-    expect(referencers("recordFromDeviceIngest")).toEqual(["services/robot/robotIngest.ts", "services/safety/safetyAuditService.ts"]);
+  // Re-pinned 2026-10-11 (doc 81 Đợt 8 N2, owner decision "background safety-PLC poller produces trusted events"): the
+  // poller is the second device-ingest door user. It takes no request input (configs from the DB, its own timer).
+  it("recordFromDeviceIngest is referenced only by robotIngest.ts + the background safety-PLC poller (and defined in safetyAuditService.ts)", () => {
+    expect(referencers("recordFromDeviceIngest")).toEqual([
+      "services/robot/robotIngest.ts",
+      "services/safety/plc/safetyPlcPoller.ts",
+      "services/safety/safetyAuditService.ts",
+    ]);
   });
 
   it("markTrustedSafetyEvent is referenced only by safetyAuditService.ts (and defined in trustedSafetyOrigin.ts)", () => {
     expect(referencers("markTrustedSafetyEvent")).toEqual(["services/safety/safetyAuditService.ts", "services/safety/trustedSafetyOrigin.ts"]);
   });
 
-  it("no router / route / API module references the trusted door or the marker module", () => {
+  // doc 81 Đợt 8 N2 — also the background poller (its class takes injected deps; no request path may construct / drive it)
+  it("no router / route / API module references the trusted door, the marker module or the background PLC poller", () => {
     const bad = files
       .filter((f) => /^(routers|routes|api)\//.test(f.rel))
-      .filter((f) => /recordFromDeviceIngest|trustedSafetyOrigin|markTrustedSafetyEvent/.test(f.src))
+      .filter((f) => /recordFromDeviceIngest|trustedSafetyOrigin|markTrustedSafetyEvent|safetyPlcPoller|SafetyPlcPoller/.test(f.src))
       .map((f) => f.rel);
     expect(bad).toEqual([]);
+  });
+});
+
+describe("doc 81 Đợt 8 N2 — census: who may construct / start the background safety-PLC poller", () => {
+  const root = path.resolve(__dirname, "../..");
+  const srcs: Array<{ rel: string; src: string }> = [];
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === "node_modules") continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (/\.(ts|mjs|js)$/.test(e.name) && !/\.test\.(ts|mjs|js)$/.test(e.name)) srcs.push({ rel: path.relative(root, full).split(path.sep).join("/"), src: fs.readFileSync(full, "utf8") });
+    }
+  };
+  walk(root);
+  const refs = (re: RegExp) =>
+    srcs
+      .filter((f) => f.src.split("\n").some((l) => !/^\s*(\*|\/\/|\/\*)/.test(l) && re.test(l)))
+      .map((f) => f.rel)
+      .sort();
+
+  it("`new SafetyPlcPoller(` only inside the poller module (production deps only; tests are excluded from this census)", () => {
+    expect(refs(/\bnew SafetyPlcPoller\b/)).toEqual(["services/safety/plc/safetyPlcPoller.ts"]);
+  });
+
+  it("the poller module is imported only by the server entry (start/stop)", () => {
+    expect(refs(/safetyPlcPoller["']/)).toEqual(["_core/index.ts"]);
   });
 });

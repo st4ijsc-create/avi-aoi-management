@@ -31,7 +31,7 @@ import {
   listPlcConfigs,
   type SafetyPlcBackendReader,
 } from "./safetyPlcAdapter";
-import { safetyAuditEnabled, record, type RecordSafetyEventInput, type RecordResult } from "../safetyAuditService";
+import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEventInput, type RecordResult, type SafetyEventType } from "../safetyAuditService";
 
 /** Flag — default OFF. */
 export function safetyPlcPollerEnabled(): boolean {
@@ -106,6 +106,24 @@ export function defaultBackendFor(cfg: SafetyPlcConfig, timeoutMs: number): { ba
   return { backend: null, reason: `unsupported backend "${String(cfg.backend).slice(0, 32)}"` };
 }
 
+/** N2 — the event of each flag's RISING edge (the adapter's advisory mapping). */
+const FLAG_RISE_EVENT: Record<PlcFlag, SafetyEventType> = {
+  estop: "estop",
+  zoneOccupied: "zone_intrusion",
+  resetRequired: "intrusion",
+  muting: "speed_violation",
+};
+
+const EVENT_NOTE: Partial<Record<SafetyEventType, string>> = {
+  estop: "safety-PLC reports e-stop PRESSED (the certified PLC performs the rated stop itself; software only observed it)",
+  estop_released: "safety-PLC reports e-stop RELEASED (decided read of the e-stop status tag)",
+  zone_intrusion: "safety-PLC reports a guard / light curtain TRIPPED (protected zone occupied)",
+  intrusion: "safety-PLC reports RESET REQUIRED — a safety function tripped and awaits manual reset",
+  speed_violation: "safety-PLC reports MUTING active — a protective function is temporarily bypassed",
+  plc_offline: "safety-PLC status UNKNOWN (offline) — e-stop / guard state cannot be decided",
+  plc_online: "safety-PLC status readable again (back online)",
+};
+
 /** One read's outcome. `decided` maps each monitored flag to an observed value, or lists it as unreadable. */
 export type PollRead =
   | { kind: "decided"; flags: Partial<Record<PlcFlag, boolean>>; unreadable: PlcFlag[] }
@@ -136,6 +154,12 @@ interface ConfigState {
   pending: Promise<unknown> | null;
   busy: Promise<void> | null;
   timer: NodeJS.Timeout | null;
+  /** N2 — server-trusted device-ingest origin: ONLY the adapter's real OT read class (never sim, never a look-alike). */
+  trusted: boolean;
+  /** N2 — the link state last RECORDED ("unknown" = never decided yet). */
+  link: "unknown" | "online" | "offline";
+  /** N2 — the flag values last RECORDED (edge detection; undefined = never decided). */
+  flags: Partial<Record<PlcFlag, boolean>>;
 }
 
 export interface PollerConfigSnapshot {
@@ -171,7 +195,7 @@ export class SafetyPlcPoller {
       loadConfigs: deps.loadConfigs ?? (() => listPlcConfigs({ onlyEnabled: true })),
       backendFor: deps.backendFor ?? defaultBackendFor,
       recordPlain: deps.recordPlain ?? record,
-      recordTrusted: deps.recordTrusted ?? record,
+      recordTrusted: deps.recordTrusted ?? ((i) => recordFromDeviceIngest("safety_plc", i)),
     };
   }
 
@@ -243,6 +267,9 @@ export class SafetyPlcPoller {
         pending: null,
         busy: null,
         timer: null,
+        trusted: backend instanceof OtReadSafetyPlcBackend,
+        link: "unknown",
+        flags: {},
       };
       this.states.set(cfg.id, st);
       if (this.running) this.schedule(cfg.id, st, (i * 37) % st.intervalMs);
@@ -283,6 +310,7 @@ export class SafetyPlcPoller {
         st.lastRead = read;
         st.failStreak = read.kind === "undecidable" ? st.failStreak + 1 : 0;
         if (read.kind === "undecidable") st.undecidable += 1;
+        await this.applyTransitions(id, st, read);
       } catch (e) {
         this.warnLimited(`tick:${id}`, `[SafetyPLC] poll of config ${id} failed: ${safeReason(e)}`);
       }
@@ -291,6 +319,77 @@ export class SafetyPlcPoller {
     });
     st.busy = p;
     return p;
+  }
+
+  /**
+   * N2 — turn a read into events on TRANSITIONS only, committing each new state only after its event was recorded
+   * (a failed record leaves the old state ⇒ the same transition is retried at the next poll; never lost).
+   *   link: undecidable (or a mapped flag unreadable) ⇒ "plc_offline" once; offline + a fully decided read ⇒ "plc_online";
+   *         unknown + decided ⇒ online silently (no event at boot).
+   *   flags (each decided flag on its own): estop false/unknown→true "estop", true→false "estop_released";
+   *         zoneOccupied →true "zone_intrusion" (guard / light curtain tripped); resetRequired →true "intrusion";
+   *         muting →true "speed_violation". Other changes are committed silently. An unreadable flag keeps its old value.
+   */
+  private async applyTransitions(id: number, st: ConfigState, read: PollRead): Promise<void> {
+    const fullyDecided = read.kind === "decided" && read.unreadable.length === 0;
+    if (!fullyDecided) {
+      if (st.link !== "offline") {
+        const why = read.kind === "undecidable" ? read.reason : `status flag(s) unreadable: ${read.unreadable.join(", ")}`;
+        if (await this.emit(id, st, "plc_offline", { transition: "offline", reason: why })) st.link = "offline";
+      }
+    } else if (st.link === "offline") {
+      if (await this.emit(id, st, "plc_online", { transition: "online" })) st.link = "online";
+    } else {
+      st.link = "online";
+    }
+    if (read.kind !== "decided") return;
+    for (const flag of PLC_FLAGS) {
+      const now = read.flags[flag];
+      if (typeof now !== "boolean") continue;
+      const was = st.flags[flag];
+      let ev: SafetyEventType | null = null;
+      if (now && was !== true) ev = FLAG_RISE_EVENT[flag];
+      else if (!now && was === true && flag === "estop") ev = "estop_released";
+      if (ev && !(await this.emit(id, st, ev, { transition: now ? "active" : "released", flag }))) continue;
+      st.flags[flag] = now;
+    }
+  }
+
+  /** Record one transition event. true ⇔ recorded (or audit off: nothing will ever be recorded — do not retry forever). */
+  private async emit(id: number, st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): Promise<boolean> {
+    if (this.states.get(id) !== st) return false;
+    const cfg = st.cfg;
+    const isSim = cfg.backend === "sim" || st.backend?.kind === "sim";
+    const source = isSim ? "sim" : "plc";
+    const label = st.backend ? st.backend.label() : `${String(cfg.backend).slice(0, 16)} (no backend: ${st.reason ?? "?"})`;
+    const input: RecordSafetyEventInput = {
+      eventType,
+      robotId: cfg.robotId ?? null,
+      stationId: cfg.stationId ?? null,
+      lineId: cfg.lineId ?? null,
+      detectedBy: source,
+      handledBy: "advisory",
+      outcome: "logged_only",
+      isNearMiss: false,
+      humanPosition: { plcConfigId: cfg.id, plcFlag: info.flag ?? null, transition: info.transition, backend: st.backend?.kind ?? null, source, poller: true },
+      notes: `${EVENT_NOTE[eventType] ?? eventType}${info.reason ? ` — ${info.reason}` : ""} [source ${source}, PLC "${cfg.code}", backend ${label}, background poller, READ-ONLY]`,
+      scope: cfg.scope ?? null,
+      corporateCode: cfg.corporateCode ?? null,
+      factoryId: cfg.factoryId ?? null,
+    };
+    try {
+      const res = st.trusted ? await this.deps.recordTrusted(input) : await this.deps.recordPlain(input);
+      if (res.ok) return true;
+      if (res.enabled === false) {
+        this.warnLimited("audit-off", "[SafetyPLC] SAFETY_AUDIT_ENABLED is off — poller transitions are not recorded");
+        return true;
+      }
+      this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (retried next poll): ${safeReason(res.message)}`);
+      return false;
+    } catch (e) {
+      this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (retried next poll): ${safeReason(e)}`);
+      return false;
+    }
   }
 
   /** ONE bounded read. Never throws; anything it cannot decide is `undecidable`. */
