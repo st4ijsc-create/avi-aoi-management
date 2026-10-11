@@ -125,11 +125,6 @@ export async function runQtCompensations(
 }
 
 /**
- * doc 80 Đợt 1 Task 9 — hook bù trừ cho nhánh TỪ CHỐI: engine CHỈ gọi nó sau khi đã giành quyền
- * từ chối (CAS 'awaiting_confirm|held' → 'compensating', ghim đúng gate). Ghi chú bù trừ được đẩy
- * vào `notes` (kết quả pump) và trả về làm lý do cuối của run (persist ở run.error + bước gate).
- */
-/**
  * doc 81 Đợt 8 task Q3 (re-review N3) — the note of a rejection whose run's template could NOT be determined (lookup failed):
  * its compensations were NOT run — never "no step needs compensation". Fail-closed: no compensation is guessed from the ref
  * string (a factory workflow may carry a QT ref and must never get QT compensations, Đợt 7 F1); the rejection itself still
@@ -140,6 +135,12 @@ function compensationNotRunNote(reason: string): string {
   return `${QT_COMPENSATION_NOT_RUN}: không xác định được template của run (${reason}) — các bước nghiệp vụ đã làm (vd. giữ chỗ đơn, nhiệm vụ vận chuyển, lệnh tuyến) CHƯA được hoàn tác; cần bù trừ thủ công`;
 }
 
+/**
+ * doc 80 Đợt 1 Task 9 — hook bù trừ cho nhánh TỪ CHỐI: engine CHỈ gọi nó sau khi đã giành quyền
+ * từ chối (CAS 'awaiting_confirm|held' → 'compensating', ghim đúng gate). Ghi chú bù trừ được đẩy
+ * vào `notes` (kết quả pump) và trả về làm lý do cuối của run (persist ở run.error + bước gate).
+ * (Đợt 8 final wave F4: this JSDoc moved back onto the hook it describes.)
+ */
 function compensationHook(
   tpl: QtTemplateOfRun,
   runId: number,

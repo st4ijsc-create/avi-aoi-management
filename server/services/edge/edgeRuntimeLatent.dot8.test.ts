@@ -97,4 +97,15 @@ describe("doc 81 Đợt 8 Q1 — the edge half of the central abort is LATENT (m
     const edgeRoutes = [...api.matchAll(/\.(get|post|put|patch|delete)\(\s*["'](\/edge\/[^"']*)["']/g)].map((m) => `${m[1].toUpperCase()} ${m[2]}`);
     expect(edgeRoutes).toEqual(["POST /edge/sync"]);
   });
+
+  // doc 81 Đợt 8 final wave (review Q #5) — the REST pin above sees only `/api/v1` `/edge/*` string routes. A node's runs ARE
+  // listed by the tRPC procedure `edgeRuntime.nodeStatus`, but for PEOPLE only: a session `protectedProcedure` (machine_monitoring
+  // canView, scope-filtered), never an API key. This pins that, so a future API-key / edge-callable variant trips here; the
+  // production-caller census (`WIRED = []`) stays the real guard that no edge executes assigned runs.
+  it("★ the tRPC edgeRuntime.nodeStatus listing is a SESSION procedure for people (not an API-key / edge-callable door)", () => {
+    const r = fs.readFileSync(path.join(ROOT, "server/routers/edgeRuntimeRouter.ts"), "utf8");
+    const m = r.match(/\n\s*nodeStatus:\s*(\w+)/);
+    expect(m?.[1]).toBe("protectedProcedure");
+    expect(r).not.toMatch(/apiKey|ApiKey|publicProcedure/);
+  });
 });

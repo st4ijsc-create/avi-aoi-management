@@ -757,10 +757,13 @@ export async function qtTemplateRefOfRun(run: { workflowId: number }): Promise<s
  *   • `unknown` — the lookup failed (no DB, a DB error, migration 0367's "scopeKey" missing) or the row of a run that still
  *                 exists is gone: it may well be a QT template run. Callers never read it as `none`: the pump runs no handler
  *                 (the gate waits for a person) and a rejection says its compensations were NOT run (manual action needed).
+ *   doc 81 Đợt 8 final wave (review Q #4) — row gone BUT the run's own `workflowRef` (copied at start) is a string that is
+ *   NOT a QT template ref ⇒ `none` (decided: such a run can never be a QT template run — no false manual-compensation
+ *   alarm). The run's ref unknown (absent / not a string) or a QT ref ⇒ still `unknown` (cannot tell ⇒ fail closed).
  */
 export type QtTemplateOfRun = { kind: "qt"; ref: string } | { kind: "none" } | { kind: "unknown"; reason: string };
 
-export async function resolveQtTemplateOfRun(run: { workflowId: number }): Promise<QtTemplateOfRun> {
+export async function resolveQtTemplateOfRun(run: { workflowId: number; workflowRef?: unknown }): Promise<QtTemplateOfRun> {
   try {
     const { getDb } = await import("../../../db/connection");
     const db = await getDb();
@@ -772,7 +775,10 @@ export async function resolveQtTemplateOfRun(run: { workflowId: number }): Promi
       .from(orchestrationWorkflows)
       .where(eq(orchestrationWorkflows.id, run.workflowId))
       .limit(1);
-    if (!wf) return { kind: "unknown", reason: `workflow row ${run.workflowId} of the run not found` };
+    if (!wf) {
+      if (typeof run.workflowRef === "string" && !Object.prototype.hasOwnProperty.call(QT_BUSINESS_STEPS, run.workflowRef)) return { kind: "none" };
+      return { kind: "unknown", reason: `workflow row ${run.workflowId} of the run not found` };
+    }
     if (wf.scopeKey !== "global" || !Object.prototype.hasOwnProperty.call(QT_BUSINESS_STEPS, wf.ref)) return { kind: "none" };
     return { kind: "qt", ref: wf.ref };
   } catch (err) {

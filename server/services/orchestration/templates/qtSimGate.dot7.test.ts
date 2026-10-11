@@ -56,7 +56,7 @@ vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => (conn.up ? f
 
 import { machines, orchestrationRuns, orchestrationRunSteps, orchestrationWorkflows, users } from "../../../../drizzle/schema";
 import { issueSimToken } from "../foe/foeEngine";
-import { findQtBusinessStep, qtTemplateRefOfRun, SIM_GATE_FAIL_NOTE } from "./qtStepHandlers";
+import { findQtBusinessStep, qtTemplateRefOfRun, resolveQtTemplateOfRun, SIM_GATE_FAIL_NOTE } from "./qtStepHandlers";
 import { QT1_REF, QT4_REF } from "./qtTemplates";
 
 type Row = Record<string, any>;
@@ -163,6 +163,16 @@ describe("final wave F1 — QT handlers are keyed on the run's GLOBAL template r
     expect(await qtTemplateRefOfRun({ workflowId: 404 })).toBeNull(); // missing
     conn.up = false;
     expect(await qtTemplateRefOfRun({ workflowId: 7 })).toBeNull(); // no DB ⇒ no handler (the gate waits for a person)
+  });
+
+  it("★ final wave Q #4: workflow row GONE — the run's own ref decides when it can: not a QT ref ⇒ 'none'; a QT ref / no ref ⇒ 'unknown'", async () => {
+    expect(await resolveQtTemplateOfRun({ workflowId: 404, workflowRef: "line-changeover" })).toEqual({ kind: "none" });
+    expect((await resolveQtTemplateOfRun({ workflowId: 404, workflowRef: QT1_REF })).kind).toBe("unknown");
+    expect((await resolveQtTemplateOfRun({ workflowId: 404 })).kind).toBe("unknown");
+    expect((await resolveQtTemplateOfRun({ workflowId: 404, workflowRef: 42 })).kind).toBe("unknown");
+    expect((await resolveQtTemplateOfRun({ workflowId: 404, workflowRef: "toString" })).kind).toBe("none"); // own-property check (not the prototype)
+    conn.up = false;
+    expect((await resolveQtTemplateOfRun({ workflowId: 404, workflowRef: "line-changeover" })).kind).toBe("unknown"); // lookup failed ⇒ cannot tell
   });
 
   it("★ pumpQtRun on a paused run of the FACTORY copy of a QT ref runs NO handler (waiting_external — the gate waits for a person)", async () => {

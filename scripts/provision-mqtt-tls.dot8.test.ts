@@ -155,11 +155,24 @@ describe.runIf(WIN)("provision-mqtt-tls.ps1 -Repair — lock first, then re-chec
     expect(r.code, r.err + r.out).toBe(3);
     expect(r.err).toMatch(/backup folder .* unexpected entry 'planted'/);
     expect(r.err).toMatch(/itself was locked first/);
+    // final wave (review Q #1): the message names the backup folder it already locked (it no longer claims "nothing inside it
+    // was changed"), and says no file was changed
+    expect(r.err).toContain(`then these backup folder(s) inside it were locked too: ${f.backup}`);
+    expect(r.err).toMatch(/no file was changed/);
+    expect(r.err).not.toMatch(/nothing inside it was changed/);
     expect(snapshot([target, f.key])).toEqual(before);
     const b = allowSids(f.backup);
     expect(b.protectedAcl).toBe(true);
     expect(b.sids.has(USERS)).toBe(false); // the backup-* folder was locked (Users' write access gone)
   }, 300_000);
+
+  it("final wave (review Q #2): a check AFTER the repair's writes says what was already rewritten (never 'Nothing was written')", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "scripts", "provision-mqtt-tls.ps1"), "utf8");
+    expect(src).toMatch(/foreach \(\$t in \$all\) \{ \[void\]\(Assert-Clean \$t \$true 'the repaired object' \$written\) \}/);
+    expect(src).toMatch(/\$written = "The repair had ALREADY rewritten the access lists of/);
+    // the checks BEFORE any write keep the default text
+    expect(src).toMatch(/function Assert-Clean\(\[string\]\$path, \[bool\]\$strictInherit, \[string\]\$what, \[string\]\$changed = 'Nothing was written\.'\)/);
+  });
 
   it("control: the same folder without a planted entry ⇒ repaired (exit 0), Users gone from the key, the exposure is named", () => {
     const f = exposedFolder();

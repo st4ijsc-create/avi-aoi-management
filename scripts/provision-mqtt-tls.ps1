@@ -243,11 +243,13 @@ function Get-Problems($facts, [string[]]$owners, [string[]]$aces, [bool]$strictI
   if ($strictInherit -and -not $facts.Protected) { $p += 'inherits its access list (not protected)' }
   return $p   # callers wrap in @(): 0 ⇒ empty, 1 ⇒ one string, n ⇒ strings (a leading comma would nest the array)
 }
-function Assert-Clean([string]$path, [bool]$strictInherit, [string]$what) {
+function Assert-Clean([string]$path, [bool]$strictInherit, [string]$what, [string]$changed = 'Nothing was written.') {
+  # final wave (review Q #2): $changed says TRUTHFULLY what was already changed when this check refuses (a check after the
+  # repair's writes must not claim "Nothing was written").
   $f = Get-Facts $path
   $problems = @(Get-Problems $f $allowedOwners $allowedAces $strictInherit)
   if ($problems.Count -gt 0) {
-    Fail 3 "$what $path $($problems -join '; '). Nothing was written. Inspect it (another account may have planted it), remove or fix it, then run again."
+    Fail 3 "$what $path $($problems -join '; '). $changed Inspect it (another account may have planted it), remove or fix it, then run again."
   }
   return $f
 }
@@ -413,19 +415,25 @@ if ($Repair) {
   }
   Test-Plant 'repair-before-lock'
   # 2. lock the folder first, through its handle (held until the end)
-  $lockedOnly = "The folder $Dir itself was locked first (protected access list: SYSTEM + Administrators full, server account read); nothing inside it was changed."
+  # final wave (review Q #1): the refusal text names EXACTLY what was already locked — the folder and every backup-* folder
+  # locked so far (a backup-* is locked before its children are re-checked); no file is changed before step 4.
+  $backups = @()
+  $lockedSoFar = {
+    $acl = '(protected access list: SYSTEM + Administrators full, server account read)'
+    if ($backups.Count -eq 0) { "The folder $Dir itself was locked first $acl; nothing inside it was changed." }
+    else { "The folder $Dir itself was locked first, then these backup folder(s) inside it were locked too: $($backups -join ', ') $acl; no file was changed." }
+  }
   $handles = @()
   try {
     $handles += Lock-RepairFolder $Dir $nothing
     # 3. re-enumerate and re-check inside the locked folder; lock each backup-* before re-checking its children
     $files = @()
-    $backups = @()
-    foreach ($entry in (Get-RepairInventory $Dir $lockedOnly)) {
-      [void](Get-RepairFacts $entry[0] $lockedOnly)
+    foreach ($entry in (Get-RepairInventory $Dir (& $lockedSoFar))) {
+      [void](Get-RepairFacts $entry[0] (& $lockedSoFar))
       if ($entry[1]) {
-        $handles += Lock-RepairFolder $entry[0] $lockedOnly
+        $handles += Lock-RepairFolder $entry[0] (& $lockedSoFar)
         $backups += $entry[0]
-        foreach ($bf in (Get-BackupInventory $entry[0] $lockedOnly)) { [void](Get-RepairFacts $bf $lockedOnly); $files += $bf }
+        foreach ($bf in (Get-BackupInventory $entry[0] (& $lockedSoFar))) { [void](Get-RepairFacts $bf (& $lockedSoFar)); $files += $bf }
       } else {
         $files += $entry[0]
       }
@@ -433,7 +441,8 @@ if ($Repair) {
     # 4. the files (inside folders nobody else can change any more)
     foreach ($t in $files) { (Get-Item -LiteralPath $t -Force).SetAccessControl((New-FileSecurity)) }
     $all = @($Dir) + $backups + $files
-    foreach ($t in $all) { [void](Assert-Clean $t $true 'the repaired object') }
+    $written = "The repair had ALREADY rewritten the access lists of $Dir, its backup folder(s) and its $($files.Count) file(s) (SYSTEM + Administrators full, server account read) when this check refused."
+    foreach ($t in $all) { [void](Assert-Clean $t $true 'the repaired object' $written) }
   } finally {
     foreach ($h in $handles) { $h.Dispose() }
   }

@@ -341,7 +341,7 @@ script. Cổng thường và phần còn lại của server không ảnh hưởn
 | `TLS_FILE_UNREADABLE` (sai `-ServerAccount`) | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản ĐÚNG>' -Repair` — dựng lại ACL với tài khoản đúng, tài khoản cũ mất quyền; giữ nguyên cặp khoá (vân tay không đổi). Script báo `MQTT-TLS-KEY-WAS-EXPOSED-TO=<SID cũ>`: nếu tài khoản đó không đáng tin, làm tiếp như `TLS_KEY_ACL_OPEN`. |
 | `TLS_KEY_ACL_UNPROTECTED` | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>' -Repair` — đặt lại ACL được bảo vệ (không kế thừa); giữ cặp khoá. |
 | `TLS_KEY_ACL_OPEN` (khoá có thể đã lộ) | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>' -Repair -Rotate` — sửa ACL rồi cấp cặp MỚI (cặp cũ vào `backup-*`); nhập vân tay mới trên mọi máy tính bảng và **xoay mật khẩu thiết bị**. Chỉ dùng `-Repair` không kèm `-Rotate` khi chắc chắn không ai đã đọc khoá. |
-| `TLS_KEY_OWNER_FOREIGN`, `TLS_KEY_LINKED`, hoặc `-Repair` từ chối (mã 3: chủ sở hữu lạ, junction/symlink, hard link thứ hai, không đọc được, mục lạ trong thư mục — `staging-*`, tệp/thư mục khác, thứ khác ngoài `broker.key`/`broker.crt` trong `backup-*`; nếu thông báo nói "locked first" thì riêng thư mục đã được khoá, bên trong chưa đổi gì) | Cách ly bằng tay rồi cấp mới — xem các bước bên dưới. Không bao giờ "nhận" một tệp/thư mục do tài khoản khác tạo. |
+| `TLS_KEY_OWNER_FOREIGN`, `TLS_KEY_LINKED`, hoặc `-Repair` từ chối (mã 3: chủ sở hữu lạ, junction/symlink, hard link thứ hai, không đọc được, mục lạ trong thư mục — `staging-*`, tệp/thư mục khác, thứ khác ngoài `broker.key`/`broker.crt` trong `backup-*`; nếu thông báo nói "locked first" thì thư mục — và mọi thư mục `backup-*` được KỂ TÊN trong thông báo — đã được khoá (chỉ SYSTEM + Administrators toàn quyền, tài khoản server đọc), chưa tệp nào bị đổi; nếu thông báo nói "had ALREADY rewritten" thì ACL của thư mục, các `backup-*` và các tệp đã được ghi lại trước khi bước kiểm sau cùng từ chối) | Cách ly bằng tay rồi cấp mới — xem các bước bên dưới. Không bao giờ "nhận" một tệp/thư mục do tài khoản khác tạo. |
 
 Cách ly bằng tay (khi `-Repair` từ chối hoặc nghi bị cài cắm):
 ```powershell
@@ -353,6 +353,12 @@ icacls C:\ProgramData\avi-aoi\mqtt-tls.quarantine-* /inheritance:r /grant:r "*S-
 # 3) cấp cặp khoá MỚI vào thư mục sạch, khởi động server, nhập vân tay mới trên mọi máy tính bảng, xoay mật khẩu thiết bị
 powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $env:USERPROFILE 'avi-aoi-admin\provision-mqtt-tls.ps1') -ServerAccount '<tài khoản server>'
 ```
+Giới hạn đã biết của kiểm thử `-Repair` (doc 81 Đợt 8, review Q #3): các test tự động chạy KHÔNG quyền quản trị
+(`-TestUnelevated`) với tài khoản server = chính người chạy, và chỉ cài cắm TRƯỚC lúc khoá. Chúng chứng minh bước kiểm lại
+bắt được thứ đã cài trước khi khoá, nhưng KHÔNG chứng minh khoá chặn được một tài khoản không phải quản trị cài cắm SAU khi
+khoá (trên máy thật tài khoản server chỉ được đọc), cũng chưa chạy đường có quyền quản trị (đặt chủ sở hữu Administrators qua
+handle). Lần chạy `-Repair` đầu tiên trên máy thật: chạy bằng PowerShell quản trị và kiểm `icacls` của thư mục sau đó.
+
 Một thư mục `mqtt-tls\staging-<ngày-giờ>` còn sót (một lần `-Rotate` bị ngắt giữa chừng) chứa một cặp MỚI chưa dùng: script
 dừng (mã 3) và nêu tên nó — xem rồi xoá nó bằng quyền Administrator, chạy lại.
 
