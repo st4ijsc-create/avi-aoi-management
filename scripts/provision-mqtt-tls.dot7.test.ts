@@ -43,8 +43,12 @@ const mySid = (): string => ps("[System.Security.Principal.WindowsIdentity]::Get
 const elevated = (): boolean => /True/.test(ps("([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"));
 
 type Run = { code: number | null; out: string; err: string; vars: Record<string, string> };
-function run(args: string[]): Run {
-  const r = spawnSync(PS, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT, ...args], { encoding: "utf8", windowsHide: true, timeout: 120_000 });
+/** final wave F5 — `-TestUnelevated` is refused unless AVI_MQTT_TLS_TEST=1 AND -Dir is under the temp folder: the suite sets the
+ * variable (scratch folders are mkdtemp'd under os.tmpdir()); `env` overrides it per call (undefined = unset). */
+function run(args: string[], env: Record<string, string | undefined> = {}): Run {
+  const childEnv: Record<string, string | undefined> = { ...process.env, AVI_MQTT_TLS_TEST: "1", ...env };
+  for (const k of Object.keys(childEnv)) if (childEnv[k] === undefined) delete childEnv[k];
+  const r = spawnSync(PS, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT, ...args], { encoding: "utf8", windowsHide: true, timeout: 120_000, env: childEnv as NodeJS.ProcessEnv });
   const vars: Record<string, string> = {};
   for (const m of String(r.stdout).matchAll(/^(MQTT-TLS-[A-Z0-9-]+)=(.*)$/gm)) vars[m[1]] = m[2].trim();
   return { code: r.status, out: String(r.stdout), err: String(r.stderr), vars };
@@ -83,6 +87,20 @@ async function handshakeByPin(keyPem: string, certPem: string, pin: string): Pro
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
   }
+}
+/** KeyUsage bits read from the certificate's DER (independent of the script): OID 2.5.29.15, then the BIT STRING. */
+function keyUsageBits(certPem: string): { digitalSignature: boolean; keyEncipherment: boolean } {
+  const der = Buffer.from(certPem.match(/-----BEGIN CERTIFICATE-----([\s\S]+?)-----END CERTIFICATE-----/)![1].replace(/\s+/g, ""), "base64");
+  const oid = Buffer.from([0x06, 0x03, 0x55, 0x1d, 0x0f]);
+  let i = der.indexOf(oid);
+  expect(i).toBeGreaterThan(0);
+  i += oid.length;
+  if (der[i] === 0x01) i += 3; // BOOLEAN critical
+  expect(der[i]).toBe(0x04); // OCTET STRING wrapping …
+  const bs = i + 2;
+  expect(der[bs]).toBe(0x03); // … the BIT STRING (len, unused-bits, first byte)
+  const first = der[bs + 3];
+  return { digitalSignature: (first & 0x80) !== 0, keyEncipherment: (first & 0x20) !== 0 };
 }
 async function codeOf(p: Promise<unknown>): Promise<string> {
   try { await p; return "ok"; } catch (e) { return e instanceof BrokerTlsError ? e.code : `other:${(e as Error).message}`; }
@@ -132,6 +150,8 @@ describe.runIf(WIN)("provision-mqtt-tls.ps1 — admin-side provisioning (scratch
     expect(x.checkPrivateKey(key)).toBe(true);
     expect(x.ca).toBe(false);
     expect(x.keyUsage).toContain("1.3.6.1.5.5.7.3.1");
+    // final wave F5 (J N5) — EC: KeyUsage = digitalSignature ONLY (keyEncipherment is not valid for ECDSA, RFC 5480)
+    expect(keyUsageBits(certPem)).toEqual({ digitalSignature: true, keyEncipherment: false });
     expect(x.subjectAltName).toContain("DNS:localhost");
     expect(x.subjectAltName).toContain("DNS:broker.plant.local");
     expect(x.subjectAltName).toContain("IP Address:127.0.0.1");
@@ -177,6 +197,7 @@ describe.runIf(WIN)("provision-mqtt-tls.ps1 — admin-side provisioning (scratch
     expect(r.code, r.err).toBe(0);
     const key = createPrivateKey(fs.readFileSync(path.join(dir, TLS_KEY_FILE_NAME), "utf8"));
     expect(key.asymmetricKeyType).toBe("rsa");
+    expect(keyUsageBits(fs.readFileSync(path.join(dir, TLS_CERT_FILE_NAME), "utf8"))).toEqual({ digitalSignature: true, keyEncipherment: true });
     expect(key.asymmetricKeyDetails?.modulusLength).toBe(3072);
     const m = await resolveBrokerTls({ MQTT_TLS_CERT: path.join(dir, TLS_CERT_FILE_NAME), MQTT_TLS_KEY: path.join(dir, TLS_KEY_FILE_NAME) }, windowsInspector);
     expect(m.fingerprintSha256).toBe(r.vars["MQTT-TLS-FINGERPRINT-SHA256"]);
@@ -243,4 +264,103 @@ describe.runIf(WIN)("provision-mqtt-tls.ps1 — admin-side provisioning (scratch
     expect(fs.readFileSync(keyPath, "utf8")).toBe(keyBefore);
     expect(await codeOf(resolveBrokerTls({ MQTT_TLS_CERT: path.join(dir, TLS_CERT_FILE_NAME), MQTT_TLS_KEY: keyPath }, windowsInspector))).toBe("TLS_KEY_LINKED");
   }, 240_000);
+
+  // ── final wave F5 ─────────────────────────────────────────────────────────────────────────────────────────────────
+  it("★ F5 -TestUnelevated is GATED: without AVI_MQTT_TLS_TEST=1, or with -Dir outside the temp folder ⇒ exit 6, nothing created", () => {
+    const root = tempDir();
+    const dir = path.join(root, "avi-aoi", "mqtt-tls");
+    const noEnv = run(["-ServerAccount", me, "-Dir", dir, "-TestUnelevated"], { AVI_MQTT_TLS_TEST: undefined });
+    expect(noEnv.code).toBe(6);
+    expect(noEnv.err).toMatch(/automated tests only/);
+    expect(fs.existsSync(path.join(root, "avi-aoi"))).toBe(false);
+    // a scratch base OUTSIDE the temp folder (its parent chain exists, so only the gate can refuse): removed afterwards
+    const base = path.join(os.homedir(), `dot7-f5-not-temp-${process.pid}`);
+    fs.mkdirSync(base);
+    try {
+      const outside = path.join(base, "avi-aoi", "mqtt-tls");
+      expect(path.resolve(outside).toLowerCase().startsWith(path.resolve(os.tmpdir()).toLowerCase())).toBe(false);
+      const out = run(["-ServerAccount", me, "-Dir", outside, "-TestUnelevated"]);
+      expect(out.code).toBe(6);
+      expect(out.err).toMatch(/automated tests only/);
+      expect(fs.readdirSync(base)).toEqual([]); // nothing created
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("★ F5 -Rotate generates the new pair FIRST: a failure after staging leaves the current pair untouched (no backup, no staging); a failure mid-swap is ROLLED BACK", async () => {
+    const root = tempDir();
+    const dir = path.join(root, "avi-aoi", "mqtt-tls");
+    expect(run(["-ServerAccount", me, "-Dir", dir, "-TestUnelevated"]).code).toBe(0);
+    const keyPath = path.join(dir, TLS_KEY_FILE_NAME);
+    const certPath = path.join(dir, TLS_CERT_FILE_NAME);
+    const before = { key: fs.readFileSync(keyPath, "utf8"), cert: fs.readFileSync(certPath, "utf8") };
+    for (const at of ["staged", "backed-up"]) {
+      const r = run(["-ServerAccount", me, "-Dir", dir, "-Rotate", "-TestUnelevated"], { AVI_MQTT_TLS_TEST_FAULT: at });
+      expect(r.code, `${at}: ${r.err}`).toBe(5);
+      expect(r.err).toMatch(at === "staged" ? /BEFORE the swap - the current pair is untouched/ : /ROLLED BACK/);
+      expect(fs.readdirSync(dir).sort(), at).toEqual([TLS_CERT_FILE_NAME, TLS_KEY_FILE_NAME]); // no staging-*, no backup-*
+      expect(fs.readFileSync(keyPath, "utf8")).toBe(before.key);
+      expect(fs.readFileSync(certPath, "utf8")).toBe(before.cert);
+      expectProvisionedAcl(keyPath, me);
+      expect(await codeOf(resolveBrokerTls({ MQTT_TLS_CERT: certPath, MQTT_TLS_KEY: keyPath }, windowsInspector))).toBe("ok");
+    }
+    // a leftover staging folder (an interrupted rotation) is named, not silently adopted
+    fs.mkdirSync(path.join(dir, "staging-20000101-000000"));
+    const left = run(["-ServerAccount", me, "-Dir", dir, "-Rotate", "-TestUnelevated"]);
+    expect(left.code).toBe(3);
+    expect(left.err).toMatch(/interrupted -Rotate/);
+  }, 300_000);
+
+  it("★ F5 -Repair: a key readable by Users ⇒ -Rotate alone refuses; -Repair rebuilds the protected list, names the exposure, keeps the pair (server accepts it); -Repair -Rotate rotates", async () => {
+    const root = tempDir();
+    const dir = path.join(root, "avi-aoi", "mqtt-tls");
+    const first = run(["-ServerAccount", me, "-Dir", dir, "-TestUnelevated"]);
+    expect(first.code).toBe(0);
+    const keyPath = path.join(dir, TLS_KEY_FILE_NAME);
+    const certPath = path.join(dir, TLS_CERT_FILE_NAME);
+    execFileSync("icacls", [keyPath, "/grant", "*S-1-5-32-545:(R)"], { stdio: "ignore", windowsHide: true });
+    expect(await codeOf(resolveBrokerTls({ MQTT_TLS_CERT: certPath, MQTT_TLS_KEY: keyPath }, windowsInspector))).toBe("TLS_KEY_ACL_OPEN");
+    expect(run(["-ServerAccount", me, "-Dir", dir, "-Rotate", "-TestUnelevated"]).code).toBe(3); // the old dead end
+    const rep = run(["-ServerAccount", me, "-Dir", dir, "-Repair", "-TestUnelevated"]);
+    expect(rep.code, rep.err).toBe(0);
+    expect(rep.vars["MQTT-TLS-KEY-WAS-EXPOSED-TO"]).toBe("S-1-5-32-545");
+    expect(`${rep.out}\n${rep.err}`).toMatch(/rotate now/);
+    for (const p of [dir, keyPath, certPath]) expectProvisionedAcl(p, me);
+    const m = await resolveBrokerTls({ MQTT_TLS_CERT: certPath, MQTT_TLS_KEY: keyPath }, windowsInspector);
+    expect(m.fingerprintSha256).toBe(first.vars["MQTT-TLS-FINGERPRINT-SHA256"]); // repaired, not replaced
+    // exposure again ⇒ one command: -Repair -Rotate
+    execFileSync("icacls", [keyPath, "/grant", "*S-1-5-32-545:(R)"], { stdio: "ignore", windowsHide: true });
+    const both = run(["-ServerAccount", me, "-Dir", dir, "-Repair", "-Rotate", "-TestUnelevated"]);
+    expect(both.code, both.err).toBe(0);
+    expect(both.vars["MQTT-TLS-FINGERPRINT-SHA256"]).not.toBe(first.vars["MQTT-TLS-FINGERPRINT-SHA256"]);
+    expectProvisionedAcl(path.join(both.vars["MQTT-TLS-BACKUP"], TLS_KEY_FILE_NAME), me);
+    expect((await resolveBrokerTls({ MQTT_TLS_CERT: certPath, MQTT_TLS_KEY: keyPath }, windowsInspector)).fingerprintSha256).toBe(both.vars["MQTT-TLS-FINGERPRINT-SHA256"]);
+  }, 300_000);
+
+  it("★ F5 -Repair: the WRONG -ServerAccount (UNREADABLE for the real one) and an INHERITING key (UNPROTECTED) are repaired with the right account; a missing folder / a junction ⇒ refused, nothing changed", async () => {
+    const root = tempDir();
+    const dir = path.join(root, "avi-aoi", "mqtt-tls");
+    expect(run(["-ServerAccount", "S-1-5-19", "-Dir", dir, "-TestUnelevated"]).code).toBe(0); // provisioned for LocalService by mistake
+    const keyPath = path.join(dir, TLS_KEY_FILE_NAME);
+    expect(new Set(realDescriptor(keyPath).sids)).toEqual(new Set([SY, BA, me, "S-1-5-19"]));
+    expect(run(["-ServerAccount", me, "-Dir", dir, "-Rotate", "-TestUnelevated"]).code).toBe(3); // the old dead end
+    execFileSync("icacls", [keyPath, "/inheritance:e"], { stdio: "ignore", windowsHide: true });
+    expect(realDescriptor(keyPath).protectedAcl).toBe(false);
+    const rep = run(["-ServerAccount", me, "-Dir", dir, "-Repair", "-TestUnelevated"]);
+    expect(rep.code, rep.err).toBe(0);
+    for (const p of [dir, keyPath, path.join(dir, TLS_CERT_FILE_NAME)]) expectProvisionedAcl(p, me); // S-1-5-19 gone, protected
+    expect(rep.vars["MQTT-TLS-KEY-WAS-EXPOSED-TO"]).toContain("S-1-5-19");
+    // nothing to repair / a junction in place of the folder
+    expect(run(["-ServerAccount", me, "-Dir", path.join(root, "avi-aoi", "nope"), "-Repair", "-TestUnelevated"]).code).toBe(6);
+    const target = path.join(root, "elsewhere");
+    fs.mkdirSync(target);
+    const jdir = path.join(root, "avi-aoi", "jn");
+    execFileSync("cmd", ["/c", "mklink", "/J", jdir, target], { stdio: "ignore", windowsHide: true });
+    const before = realDescriptor(target);
+    const j = run(["-ServerAccount", me, "-Dir", jdir, "-Repair", "-TestUnelevated"]);
+    expect(j.code).toBe(3);
+    expect(j.err).toMatch(/-Repair: .*is a reparse point .*Nothing was changed/); // refused by the pre-check, before any change
+    expect(realDescriptor(target)).toEqual(before); // the junction's target was not touched
+  }, 300_000);
 });

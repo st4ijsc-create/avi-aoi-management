@@ -958,8 +958,10 @@ const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
 const MQTT_WS_PORT = parseInt(process.env.MQTT_WS_PORT || '8883');
 const MQTT_ENABLED = process.env.MQTT_ENABLED === 'true';
 
-// Phase 1 WS1.3 — Broker hardening. doc 81 Đợt 7 task J1: the MQTTS listener (MQTT_TLS_PORT, default 8884) is
-// now ON by default with a generated site certificate (or MQTT_TLS_CERT + MQTT_TLS_KEY) — see mqttBrokerTls.ts.
+// Phase 1 WS1.3 — Broker hardening. doc 81 Đợt 7 task J1 + J redesign: the MQTTS listener (MQTT_TLS_PORT, default 8884) is
+// ON by default and serves the key + certificate an ADMINISTRATOR provisioned (scripts/provision-mqtt-tls.ps1 ⇒
+// %ProgramData%\avi-aoi\mqtt-tls, or MQTT_TLS_CERT + MQTT_TLS_KEY). The server never generates, repairs or writes them: it
+// only reads and verifies them (mqttBrokerTls.ts); not provisioned / any doubt ⇒ no TLS listener (final wave F4).
 // The plaintext TCP/WS listeners stay open until migration is done (MQTT_PLAIN_ENABLED=false closes them).
 const MQTT_TLS_PORT = parseInt(process.env.MQTT_TLS_PORT || '8884');
 // Per-device password enforcement: a client whose DB record has a password set must
@@ -1799,8 +1801,9 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
     console.warn('[MQTT] Plaintext TCP/WS listeners CLOSED (MQTT_PLAIN_ENABLED=false) — MQTTS only.');
   }
 
-  // MQTTS (TLS) listener. doc 81 Đợt 7 J1: on by default, site certificate generated on first start (or
-  // MQTT_TLS_CERT + MQTT_TLS_KEY). doc 44 G5.22 — when MQTT_MTLS_ENABLED, the options gain requestCert + the
+  // MQTTS (TLS) listener. doc 81 Đợt 7 J1 + J redesign: on by default, serving the administrator-provisioned key +
+  // certificate (read and verified only — never generated here; not provisioned / any doubt ⇒ the listener stays down,
+  // the plain listeners are unaffected). doc 44 G5.22 — when MQTT_MTLS_ENABLED, the options gain requestCert + the
   // pinned internal CA (loaded async), so the listener setup is deferred to a helper.
   if (tlsOn) {
     const files = listen.tls?.cert && listen.tls?.key ? { cert: listen.tls.cert, key: listen.tls.key } : undefined;

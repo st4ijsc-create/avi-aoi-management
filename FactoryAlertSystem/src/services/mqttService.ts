@@ -1132,7 +1132,7 @@ class MqttService {
 
       // Create wrapper placeholder so the connect callback can access it
       let wrappedSocket: any = null;
-      
+
       // Add connection timeout
       let connectionTimeout: NodeJS.Timeout | null = null;
       const timeoutMs = this.config.connectTimeout || 30000;
@@ -1207,14 +1207,14 @@ class MqttService {
       wrappedSocket.writable = true;
       wrappedSocket.readable = true;
       wrappedSocket.destroyed = false;
-      
+
       // Add EventEmitter-style listener management
       wrappedSocket._eventListeners = new Map();
       wrappedSocket.listenerCount = function(eventName: string) {
         const listeners = this._eventListeners.get(eventName);
         return listeners ? listeners.length : 0;
       };
-      
+
       // Override the original socket's on/emit methods to track listeners
       const originalOn = socket.on.bind(socket);
       wrappedSocket.on = function(eventName: string, listener: any) {
@@ -1224,7 +1224,7 @@ class MqttService {
         this._eventListeners.get(eventName).push(listener);
         return originalOn(eventName as any, listener);
       };
-      
+
       const originalEmit = socket.emit.bind(socket);
       wrappedSocket.emit = function(eventName: string, ...args: any[]) {
         try {
@@ -1237,7 +1237,7 @@ class MqttService {
           return false;
         }
       };
-      
+
       // Clean up timeout on socket destruction
       const originalDestroy = socket.destroy.bind(socket);
       wrappedSocket.destroy = function(err?: Error) {
@@ -1293,7 +1293,7 @@ class MqttService {
           errorThrottleTime = now;
         }
         errorCount++;
-        
+
         if (errorCount <= MAX_ERRORS_PER_SECOND) {
           console.error(`[MQTT] TcpSocket error (${errorCount}/${MAX_ERRORS_PER_SECOND}):`, err?.message || 'Unknown socket error');
         } else if (errorCount === MAX_ERRORS_PER_SECOND + 1) {
@@ -1310,14 +1310,14 @@ class MqttService {
         if ((err as any)?.code === CERT_CHANGED) {
           this.noteTlsProblem(CERT_CHANGED);
         }
-        
+
         if (!wrappedSocket.destroyed) {
           wrappedSocket.destroyed = true;
           wrappedSocket.writable = false;
           wrappedSocket.readable = false;
         }
       });
-      
+
       // Same principle for 'close' — do NOT re-emit.
       socket.on('close', (hadError: boolean | undefined) => {
         if (errorCount <= MAX_ERRORS_PER_SECOND) {
@@ -1335,7 +1335,7 @@ class MqttService {
           wrappedSocket.destroyed = true;
         }
       });
-      
+
       // Add pipe() method required by MQTT.js
       wrappedSocket.pipe = function(destination: any) {
         console.log('[MQTT] Socket.pipe() called');
@@ -1357,7 +1357,7 @@ class MqttService {
         // consecutiveFailures and can trigger premature circuit breaker.
         return destination;
       };
-      
+
       // Track last data activity for socket idle timeout (Fix #5)
       let lastDataActivity = Date.now();
       let socketTimeoutTimer: NodeJS.Timeout | null = null;
@@ -1371,13 +1371,13 @@ class MqttService {
         // No-op: TcpSocket doesn't expose TCP_NODELAY
         return this;
       };
-      
+
       // Add setKeepAlive() method
       wrappedSocket.setKeepAlive = function(_enable?: boolean, _initialDelay?: number) {
         // No-op: MQTT-level keepalive handles connection liveness
         return this;
       };
-      
+
       // Socket idle timeout — mirrors Node.js net.Socket.setTimeout().
       // mqtt.js calls this with keepalive * 1000 * 1.5 to detect dead connections.
       // We track last data activity and emit 'timeout' when idle too long.
@@ -1415,7 +1415,7 @@ class MqttService {
 
         return this;
       };
-      
+
       // Add end() method - graceful close
       wrappedSocket.end = function(data?: any, _encoding?: string, callback?: () => void) {
         console.log('[MQTT] Socket.end() called');
@@ -1439,7 +1439,7 @@ class MqttService {
         if (callback) callback();
         return this;
       };
-      
+
       return wrappedSocket;
     };
     return streamBuilder;

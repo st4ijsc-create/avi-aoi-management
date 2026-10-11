@@ -19,8 +19,18 @@
   folder holds unexpected entries (exit 3); the files already exist and -Rotate was not given (exit 4); generation or
   writing failed (exit 5); a parameter is wrong (exit 6).
 
-  -Rotate moves the current pair into <dir>\backup-<yyyyMMdd-HHmmss>\ (same access list) before generating a new one.
+  -Rotate generates and writes the NEW pair FIRST, into a protected <dir>\staging-<yyyyMMdd-HHmmss>\ folder, verifies it, and
+  only then moves the current pair into <dir>\backup-<yyyyMMdd-HHmmss>\ (same access list) and the new pair into place; a
+  failure before the swap leaves the current pair untouched, a failure during the swap puts the current pair back.
   Rotation changes the fingerprint: EVERY pinned tablet shows "certificate changed" until the new fingerprint is entered.
+
+  -Repair (doc 81 Dot 7 final wave F5) re-applies the protected access list (SYSTEM + Administrators full, the server account
+  READ, no inheritance) to the existing folder, broker.key, broker.crt and backup-* folders: the way out of the server's
+  TLS_FILE_UNREADABLE (wrong -ServerAccount: repair with the right one), TLS_KEY_ACL_OPEN and TLS_KEY_ACL_UNPROTECTED.
+  It REFUSES (exit 3, nothing changed) when any of them is owned by an account other than SYSTEM / Administrators / the
+  server account (possibly planted: never adopted), is a reparse point, or has a second hard link - then quarantine the
+  folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair. When another account could read the private
+  key, it says so: combine with -Rotate (-Repair -Rotate) unless you can rule out that the key was read.
 
 .PARAMETER ServerAccount
   The account the server process runs as: a name ("NT AUTHORITY\SYSTEM", ".\svc-aoi", "DOMAIN\user") or a SID ("S-1-5-...").
@@ -36,15 +46,20 @@
 .PARAMETER IpAddress
   Extra IPv4 addresses for subjectAltName.
 .PARAMETER Rotate
-  Replace an existing pair (backup first).
+  Replace an existing pair (the new pair is generated and staged first; the old one is backed up).
+.PARAMETER Repair
+  Re-apply the protected access list to the existing folder and files (see above); with -Rotate, rotate afterwards.
 .PARAMETER TestUnelevated
   FOR AUTOMATED TESTS ON A SCRATCH FOLDER ONLY: skips the elevation check; the current user stands in for Administrators
-  (gets full control and stays the owner). Never use it for a real deployment.
+  (gets full control and stays the owner). Refused (exit 6) unless the environment variable AVI_MQTT_TLS_TEST=1 is set AND
+  -Dir is under the temp folder ([IO.Path]::GetTempPath()). Never use it for a real deployment.
 
 .EXAMPLE
   .\scripts\provision-mqtt-tls.ps1 -ServerAccount 'NT AUTHORITY\SYSTEM'
 .EXAMPLE
   .\scripts\provision-mqtt-tls.ps1 -ServerAccount '.\svc-aoi' -Rotate
+.EXAMPLE
+  .\scripts\provision-mqtt-tls.ps1 -ServerAccount '.\svc-aoi' -Repair -Rotate
 #>
 [CmdletBinding()]
 param(
@@ -55,6 +70,7 @@ param(
   [string[]]$DnsName = @(),
   [string[]]$IpAddress = @(),
   [switch]$Rotate,
+  [switch]$Repair,
   [switch]$TestUnelevated
 )
 
@@ -70,6 +86,15 @@ $KEY_NAME = 'broker.key'
 function Fail([int]$code, [string]$msg) {
   [Console]::Error.WriteLine("provision-mqtt-tls: REFUSED ($code): $msg")
   exit $code
+}
+
+# ── test mode gate (final wave F5): only an automated test on a scratch folder may skip elevation ───────────────
+if ($TestUnelevated) {
+  $tmpRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+  $dirFull = [System.IO.Path]::GetFullPath($Dir)
+  if ($env:AVI_MQTT_TLS_TEST -ne '1' -or -not $dirFull.StartsWith($tmpRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    Fail 6 "-TestUnelevated is for automated tests only: it needs the environment variable AVI_MQTT_TLS_TEST=1 AND -Dir under the temp folder ($tmpRoot). For a real deployment run an ELEVATED PowerShell without it."
+  }
 }
 
 # ── who ──────────────────────────────────────────────────────────────────────────
@@ -270,12 +295,54 @@ if (Test-Path -LiteralPath $parent) {
   [void](Assert-Clean $parent $true 'the new parent folder')
 }
 
+# ── repair (final wave F5): re-apply the protected access list to what is already there; never adopt a foreign owner ──
+if ($Repair) {
+  if (-not (Test-Path -LiteralPath $Dir)) { Fail 6 "-Repair: $Dir does not exist - nothing to repair (run without -Repair to provision)." }
+  $targets = @($Dir)
+  foreach ($e in @(Get-ChildItem -LiteralPath $Dir -Force)) {
+    if (-not $e.PSIsContainer -and ($e.Name -eq $CERT_NAME -or $e.Name -eq $KEY_NAME)) { $targets += $e.FullName }
+    elseif ($e.PSIsContainer -and $e.Name -like 'backup-*') {
+      $targets += $e.FullName
+      foreach ($bf in @(Get-ChildItem -LiteralPath $e.FullName -Force)) { $targets += $bf.FullName }
+    }
+  }
+  # every check BEFORE any change: one refusal => nothing is changed
+  $exposed = @()
+  foreach ($t in $targets) {
+    try { $f = Get-Facts $t } catch { Fail 3 "-Repair: cannot read the owner / access list of $t ($($_.Exception.Message)). Nothing was changed. Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+    if (($f.Attributes -band $FILE_ATTRIBUTE_REPARSE_POINT) -ne 0) { Fail 3 "-Repair: $t is a reparse point (symlink/junction). Nothing was changed. Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+    if (-not $f.IsDir -and $f.Links -ne 1) { Fail 3 "-Repair: $t has $($f.Links) hard links. Nothing was changed. Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+    if ($allowedOwners -notcontains $f.Owner) { Fail 3 "-Repair: $t is owned by $($f.Owner) - another account created it (possibly planted); it is never adopted. Nothing was changed. Quarantine the folder by hand (DEPLOY_LAN_GUIDE.md, TLS recovery) and provision a new pair." }
+    if (-not $f.IsDir -and (Split-Path -Leaf $t) -eq $KEY_NAME) {
+      if ($f.DaclNull) { $exposed += 'everyone (no access list)' }
+      foreach ($a in $f.Aces) { if ($a.Type -eq 'AccessAllowed' -and $allowedAces -notcontains $a.Sid) { $exposed += $a.Sid } }
+    }
+  }
+  foreach ($t in $targets) {
+    $item = Get-Item -LiteralPath $t -Force
+    if ($item -is [System.IO.DirectoryInfo]) { $item.SetAccessControl((New-DirSecurity)) } else { $item.SetAccessControl((New-FileSecurity)) }
+  }
+  foreach ($t in $targets) { [void](Assert-Clean $t $true 'the repaired object') }
+  Write-Output "Repaired the access list of $($targets.Count) object(s) under ${Dir}: SYSTEM + Administrators full, server account read ($serverSid), protected (no inheritance)."
+  $exposed = @($exposed | Select-Object -Unique)
+  if ($exposed.Count -gt 0) {
+    Write-Warning "the private key $KEY_NAME was readable by: $($exposed -join ', '). Unless you can rule out that it was read, rotate now (run again with -Rotate, or use -Repair -Rotate): every tablet then enters the NEW fingerprint; rotate the device passwords too."
+    Write-Output "MQTT-TLS-KEY-WAS-EXPOSED-TO=$($exposed -join ',')"
+  }
+  if (-not $Rotate) {
+    Write-Output "MQTT-TLS-REPAIRED=$Dir"
+    Write-Output 'Restart the server (or wait for its next start) and check that the admin card shows the fingerprint again.'
+    exit 0
+  }
+}
+
 $existing = @()
 if (Test-Path -LiteralPath $Dir) {
   $df = Assert-Clean $Dir $true 'the existing folder'
   if (-not $df.IsDir) { Fail 6 "$Dir is not a folder" }
   $entries = @(Get-ChildItem -LiteralPath $Dir -Force)
   foreach ($e in $entries) {
+    if ($e.PSIsContainer -and $e.Name -like 'staging-*') { Fail 3 "the folder $Dir holds '$($e.Name)', left by an interrupted -Rotate (it holds an UNUSED new pair). Inspect it, delete it as Administrator, then run again." }
     $ok = ($e.Name -eq $CERT_NAME) -or ($e.Name -eq $KEY_NAME) -or ($e.PSIsContainer -and $e.Name -like 'backup-*')
     if (-not $ok) { Fail 3 "the folder $Dir holds an unexpected entry '$($e.Name)'. Only $CERT_NAME, $KEY_NAME and backup-* folders belong there. Inspect and remove it, then run again." }
     if (-not $e.PSIsContainer) { $existing += $e.FullName }
@@ -289,37 +356,27 @@ if (Test-Path -LiteralPath $Dir) {
   [void](Assert-Clean $Dir $true 'the new folder')
   if (@(Get-ChildItem -LiteralPath $Dir -Force).Count -ne 0) { Fail 3 "something appeared inside the new folder $Dir before it was used" }
 }
+# rotate: the current pair must be clean BEFORE anything is generated or moved
+foreach ($f in $existing) { [void](Assert-Clean $f $true 'the existing file') }
 
-# ── rotate: verify the current pair, then move it into a protected backup folder ───
-$backupDir = $null
-if ($existing.Count -gt 0) {
-  foreach ($f in $existing) { [void](Assert-Clean $f $true 'the existing file') }
-  $backupDir = Join-Path $Dir ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-  if (Test-Path -LiteralPath $backupDir) { Fail 5 "backup folder $backupDir already exists - wait a second and run again" }
-  [void][System.IO.Directory]::CreateDirectory($backupDir, (New-DirSecurity))
-  [void](Assert-Clean $backupDir $true 'the backup folder')
-  foreach ($f in $existing) {
-    Move-Item -LiteralPath $f -Destination (Join-Path $backupDir (Split-Path -Leaf $f))
-    [void](Assert-Clean (Join-Path $backupDir (Split-Path -Leaf $f)) $true 'the backed-up file')
-  }
-  Write-Output "Previous pair moved to $backupDir (same access list). Keep it until every tablet has the new fingerprint; then delete it."
-}
-
-# ── generate ──────────────────────────────────────────────────────────────────────
+# ── generate (in memory; nothing on disk changes if this fails) ───────────────────
 try {
   if ($Algorithm -eq 'EC') {
     $key = [System.Security.Cryptography.ECDsa]::Create([System.Security.Cryptography.ECCurve]::CreateFromFriendlyName('nistP256'))
     $req = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest("CN=AVI-AOI built-in MQTT broker ($hostName)", $key, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    # final wave F5 - an ECDSA key signs (RFC 5480): DigitalSignature only, never KeyEncipherment
+    $usage = [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature
   } else {
     $key = New-Object System.Security.Cryptography.RSACng(3072)
     $req = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest("CN=AVI-AOI built-in MQTT broker ($hostName)", $key, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+    $usage = [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyEncipherment
   }
   $san = New-Object System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder
   foreach ($d in $dns) { $san.AddDnsName($d) }
   foreach ($ip in $ips) { $san.AddIpAddress([System.Net.IPAddress]::Parse($ip)) }
   $req.CertificateExtensions.Add($san.Build())
   $req.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension($false, $false, 0, $true)))
-  $req.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509KeyUsageExtension(([System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyEncipherment), $true)))
+  $req.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509KeyUsageExtension($usage, $true)))
   $eku = New-Object System.Security.Cryptography.OidCollection
   [void]$eku.Add((New-Object System.Security.Cryptography.Oid('1.3.6.1.5.5.7.3.1')))
   $req.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension($eku, $false)))
@@ -341,19 +398,85 @@ function Write-Protected([string]$path, [byte[]]$bytes) {
   $stream = New-Object System.IO.FileStream($path, [System.IO.FileMode]::CreateNew, [System.Security.AccessControl.FileSystemRights]::Write, [System.IO.FileShare]::None, 4096, [System.IO.FileOptions]::WriteThrough, (New-FileSecurity))
   try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
 }
+function Write-Pair([string]$folder) {
+  $kp = Join-Path $folder $KEY_NAME
+  $cp = Join-Path $folder $CERT_NAME
+  try {
+    Write-Protected $kp $keyPem
+    Write-Protected $cp $certPem
+  } catch {
+    throw "could not write the files: $($_.Exception.Message)"
+  }
+  foreach ($pair in @(@($kp, $keyPem), @($cp, $certPem))) {
+    $wf = Get-Facts $pair[0]
+    $wp = @(Get-Problems $wf $allowedOwners $allowedAces $true)
+    if ($wp.Count -gt 0) { throw "the written file $($pair[0]) $($wp -join '; ')" }
+    $readBack = ''
+    if ($null -ne $wf.Content) { $readBack = [Convert]::ToBase64String([byte[]]$wf.Content) }
+    if ($readBack -ne [Convert]::ToBase64String([byte[]]$pair[1])) { throw "the content read back from $($pair[0]) differs from what was written" }
+  }
+}
+# Test-only fault injection: inert unless the gated -TestUnelevated mode is on (AVI_MQTT_TLS_TEST=1 + a temp -Dir).
+function Test-Fault([string]$at) {
+  if ($TestUnelevated -and $env:AVI_MQTT_TLS_TEST_FAULT -eq $at) { throw "test fault at $at" }
+}
 $certPath = Join-Path $Dir $CERT_NAME
 $keyPath = Join-Path $Dir $KEY_NAME
-try {
-  Write-Protected $keyPath $keyPem
-  Write-Protected $certPath $certPem
-} catch {
-  Fail 5 "could not write the files: $($_.Exception.Message)"
-}
-foreach ($pair in @(@($keyPath, $keyPem), @($certPath, $certPem))) {
-  $f = Assert-Clean $pair[0] $true 'the written file'
-  $readBack = ''
-  if ($null -ne $f.Content) { $readBack = [Convert]::ToBase64String([byte[]]$f.Content) }
-  if ($readBack -ne [Convert]::ToBase64String([byte[]]$pair[1])) { Fail 5 "the content read back from $($pair[0]) differs from what was written" }
+$backupDir = $null
+if ($existing.Count -eq 0) {
+  try { Write-Pair $Dir } catch { Fail 5 "$($_.Exception.Message)" }
+} else {
+  # final wave F5 - ROTATE: the NEW pair is generated, written and verified in a protected staging folder FIRST; only then
+  # is the current pair moved into backup-* and the new pair moved into place (same volume: a move keeps each file's
+  # protected access list). A failure before the swap leaves the current pair untouched; during it, it is put back.
+  $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+  $stagingDir = Join-Path $Dir ('staging-' + $stamp)
+  $backupDir = Join-Path $Dir ('backup-' + $stamp)
+  if ((Test-Path -LiteralPath $stagingDir) -or (Test-Path -LiteralPath $backupDir)) { Fail 5 "staging/backup folder for $stamp already exists - wait a second and run again" }
+  try {
+    [void][System.IO.Directory]::CreateDirectory($stagingDir, (New-DirSecurity))
+    $sf = Get-Facts $stagingDir
+    $sp = @(Get-Problems $sf $allowedOwners $allowedAces $true)
+    if ($sp.Count -gt 0) { throw "the staging folder $stagingDir $($sp -join '; ')" }
+    Write-Pair $stagingDir
+    Test-Fault 'staged'
+  } catch {
+    $why = $_.Exception.Message
+    if (Test-Path -LiteralPath $stagingDir) { Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue }
+    Fail 5 "rotation stopped BEFORE the swap - the current pair is untouched: $why"
+  }
+  $moved = @()
+  try {
+    [void][System.IO.Directory]::CreateDirectory($backupDir, (New-DirSecurity))
+    $bfx = Get-Facts $backupDir
+    $bp = @(Get-Problems $bfx $allowedOwners $allowedAces $true)
+    if ($bp.Count -gt 0) { throw "the backup folder $backupDir $($bp -join '; ')" }
+    foreach ($f in $existing) {
+      $to = Join-Path $backupDir (Split-Path -Leaf $f)
+      Move-Item -LiteralPath $f -Destination $to
+      $moved += , @($f, $to)
+    }
+    Test-Fault 'backed-up'
+    foreach ($n in @($KEY_NAME, $CERT_NAME)) { Move-Item -LiteralPath (Join-Path $stagingDir $n) -Destination (Join-Path $Dir $n) }
+  } catch {
+    $why = $_.Exception.Message
+    # put the current pair back (never leave the folder without a pair): first take out a half-moved new pair
+    foreach ($n in @($KEY_NAME, $CERT_NAME)) {
+      $placed = Join-Path $Dir $n
+      $wasMoved = @($moved | Where-Object { $_[0] -eq $placed }).Count -gt 0
+      if ($wasMoved -and (Test-Path -LiteralPath $placed)) { Remove-Item -LiteralPath $placed -Force -ErrorAction SilentlyContinue }
+    }
+    foreach ($m in $moved) { if (-not (Test-Path -LiteralPath $m[0])) { Move-Item -LiteralPath $m[1] -Destination $m[0] -ErrorAction SilentlyContinue } }
+    Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+    if ((Test-Path -LiteralPath $backupDir) -and @(Get-ChildItem -LiteralPath $backupDir -Force).Count -eq 0) { Remove-Item -LiteralPath $backupDir -Force -ErrorAction SilentlyContinue }
+    $back = @($existing | Where-Object { -not (Test-Path -LiteralPath $_) }).Count -eq 0
+    if ($back) { Fail 5 "rotation failed during the swap and was ROLLED BACK - the current pair is back in place: $why" }
+    Fail 5 "rotation failed during the swap and the current pair could NOT be put back automatically - move broker.key and broker.crt from $backupDir back into $Dir by hand: $why"
+  }
+  Remove-Item -LiteralPath $stagingDir -Force
+  foreach ($m in $moved) { [void](Assert-Clean $m[1] $true 'the backed-up file') }
+  foreach ($p2 in @($keyPath, $certPath)) { [void](Assert-Clean $p2 $true 'the rotated file') }
+  Write-Output "Previous pair moved to $backupDir (same access list). Keep it until every tablet has the new fingerprint; then delete it."
 }
 # nothing else may be in the folder now
 foreach ($e in @(Get-ChildItem -LiteralPath $Dir -Force)) {

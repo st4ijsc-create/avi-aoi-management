@@ -286,12 +286,25 @@ thư mục khoá: khoá riêng + chứng chỉ do **quản trị viên cấp M�
 tìm ra lỗ mới; quyết định chủ dự án 2026‑10‑11).
 
 **Cấp khoá (một lần, PowerShell chạy "Run as Administrator" trên máy server):**
+
+⚠ **Chạy script từ một thư mục CHỈ quản trị viên ghi được** (final wave F5 / J N3). Tệp script thừa hưởng ACL của thư mục
+chứa nó: trên máy này ổ `D:\` cho *Authenticated Users* quyền Sửa (Modify), nên `D:\SOURCES\avi-aoi-management\scripts\`
+cũng vậy — bất kỳ người dùng cục bộ nào cũng sửa được script TRƯỚC khi quản trị viên chạy nó (= chạy mã của họ với quyền
+Administrator, hoặc cài sẵn một khoá qua được mọi kiểm tra của server). Vì vậy chép script sang thư mục chỉ Administrators
+ghi được rồi chạy bản chép (hoặc đối chiếu SHA‑256 của tệp với bản trong git trước khi chạy):
 ```powershell
-cd D:\SOURCES\avi-aoi-management        # thư mục cài server
-.\scripts\provision-mqtt-tls.ps1 -ServerAccount 'NT AUTHORITY\SYSTEM'
+# 1) thư mục chỉ SYSTEM + Administrators (không kế thừa), chép script vào đó
+New-Item -ItemType Directory -Force C:\ProgramData\avi-aoi-admin | Out-Null
+icacls C:\ProgramData\avi-aoi-admin /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"
+Copy-Item D:\SOURCES\avi-aoi-management\scripts\provision-mqtt-tls.ps1 C:\ProgramData\avi-aoi-admin\
+Get-FileHash C:\ProgramData\avi-aoi-admin\provision-mqtt-tls.ps1 -Algorithm SHA256   # so với SHA-256 của cùng tệp lấy từ git trên một máy tin cậy
+# 2) chạy bản chép (ExecutionPolicy mặc định của Windows client là Restricted ⇒ dùng -ExecutionPolicy Bypass cho lần chạy này)
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\avi-aoi-admin\provision-mqtt-tls.ps1 -ServerAccount 'NT AUTHORITY\SYSTEM'
 # -ServerAccount = tài khoản CHẠY server (dịch vụ/Task Scheduler/người dùng): 'NT AUTHORITY\SYSTEM', '.\svc-aoi', 'DOMAIN\user' hay SID.
 # Xem: Get-CimInstance Win32_Service -Filter "Name='<dịch vụ>'" | Select StartName  — hoặc Task Manager → Details → User name.
 ```
+Các lệnh `provision-mqtt-tls.ps1 …` ở dưới đều hiểu là chạy bản chép đó theo cùng cách. Không bao giờ dùng `-TestUnelevated`
+(chỉ cho bộ test tự động: script từ chối nó nếu thiếu biến `AVI_MQTT_TLS_TEST=1` hoặc `-Dir` không nằm trong thư mục tạm).
 Script làm gì: tạo `C:\ProgramData\avi-aoi\mqtt-tls` (đổi bằng `-Dir`) với danh sách truy cập ĐẶT NGAY LÚC TẠO (không có
 khe hở kế thừa): **SYSTEM + Administrators toàn quyền, tài khoản server CHỈ ĐỌC, không ai khác, không kế thừa**; thư mục cha
 `avi-aoi` cũng vậy; sinh khoá **EC P‑256** (`-Algorithm RSA` = RSA‑3072) + chứng chỉ tự ký 20 năm (`-Days`) có subjectAltName
@@ -318,6 +331,29 @@ script. Cổng thường và phần còn lại của server không ảnh hưởn
 `TLS_CONFIG_INCOMPLETE`. Kiểm tay: `(Get-Acl C:\ProgramData\avi-aoi\mqtt-tls\broker.key).Sddl` — `O:` là BA hoặc SY, có cờ
 `P`, mọi `(A;…)` chỉ là SY, BA hoặc SID tài khoản server.
 
+**Khôi phục khi thẻ báo một mã từ chối (final wave F5 / J N1)** — server không bao giờ tự sửa; quản trị viên làm (PowerShell
+"Run as Administrator", bản script đã chép như trên):
+
+| Mã | Làm gì |
+|---|---|
+| `TLS_FILE_UNREADABLE` (sai `-ServerAccount`) | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản ĐÚNG>' -Repair` — dựng lại ACL với tài khoản đúng, tài khoản cũ mất quyền; giữ nguyên cặp khoá (vân tay không đổi). Script báo `MQTT-TLS-KEY-WAS-EXPOSED-TO=<SID cũ>`: nếu tài khoản đó không đáng tin, làm tiếp như `TLS_KEY_ACL_OPEN`. |
+| `TLS_KEY_ACL_UNPROTECTED` | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>' -Repair` — đặt lại ACL được bảo vệ (không kế thừa); giữ cặp khoá. |
+| `TLS_KEY_ACL_OPEN` (khoá có thể đã lộ) | `provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>' -Repair -Rotate` — sửa ACL rồi cấp cặp MỚI (cặp cũ vào `backup-*`); nhập vân tay mới trên mọi máy tính bảng và **xoay mật khẩu thiết bị**. Chỉ dùng `-Repair` không kèm `-Rotate` khi chắc chắn không ai đã đọc khoá. |
+| `TLS_KEY_OWNER_FOREIGN`, `TLS_KEY_LINKED`, hoặc `-Repair` từ chối (mã 3: chủ sở hữu lạ, junction/symlink, hard link thứ hai, không đọc được) | Cách ly bằng tay rồi cấp mới — xem các bước bên dưới. Không bao giờ "nhận" một tệp/thư mục do tài khoản khác tạo. |
+
+Cách ly bằng tay (khi `-Repair` từ chối hoặc nghi bị cài cắm):
+```powershell
+# 1) dừng server (để nó không giữ tệp), rồi đổi tên — KHÔNG xoá — thư mục để còn điều tra
+Rename-Item C:\ProgramData\avi-aoi\mqtt-tls ("mqtt-tls.quarantine-" + (Get-Date -Format yyyyMMdd-HHmmss))
+# (nếu chính thư mục avi-aoi thuộc tài khoản khác: đổi tên avi-aoi → avi-aoi.quarantine-<ngày> theo cùng cách)
+# 2) quyền xem cho riêng quản trị viên trên bản cách ly (nó có thể còn chứa khoá cũ)
+icacls C:\ProgramData\avi-aoi\mqtt-tls.quarantine-* /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F"
+# 3) cấp cặp khoá MỚI vào thư mục sạch, khởi động server, nhập vân tay mới trên mọi máy tính bảng, xoay mật khẩu thiết bị
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\avi-aoi-admin\provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>'
+```
+Một thư mục `mqtt-tls\staging-<ngày-giờ>` còn sót (một lần `-Rotate` bị ngắt giữa chừng) chứa một cặp MỚI chưa dùng: script
+dừng (mã 3) và nêu tên nó — xem rồi xoá nó bằng quyền Administrator, chạy lại.
+
 Thư mục cũ `data\mqtt-tls` (server tự sinh ở các bản trước) và biến `MQTT_TLS_DIR` bị **BỎ QUA** (server log một dòng khi
 còn thấy): cấp khoá bằng script, khởi động lại, nhập vân tay **MỚI** trên mọi máy tính bảng, rồi xoá thư mục cũ.
 
@@ -343,9 +379,12 @@ mở TCP **8884** chiều vào, vd `New-NetFirewallRule -DisplayName "AVI-AOI MQ
 **Thay khoá (rotation) — khoá nghi bị lộ, đổi IP/tên máy cần SAN mới, hoặc sắp hết hạn.** Chứng chỉ KHÔNG bao giờ tự
 sinh lại — đổi chứng chỉ = đổi vân tay = mọi máy đã ghim bị từ chối, nên đây luôn là việc có chủ đích của quản trị viên:
 1. Báo trước: trong thời gian đổi, máy tính bảng TLS sẽ báo "Chứng chỉ broker đã THAY ĐỔI" và không nhận cảnh báo qua TLS.
-2. PowerShell quyền Administrator: `.\scripts\provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>' -Rotate` — cặp cũ
-   được chuyển vào `mqtt-tls\backup-<ngày-giờ>\` (cùng ACL), cặp mới được ghi, vân tay mới in ra. Script từ chối nếu thư mục
-   có dấu hiệu bất thường (tệp lạ, hard link, chủ sở hữu lạ, ACL mở) — điều tra trước khi thay.
+2. PowerShell quyền Administrator (bản script đã chép như ở phần cấp khoá): `provision-mqtt-tls.ps1 -ServerAccount '<tài
+   khoản server>' -Rotate` — cặp MỚI được sinh và ghi TRƯỚC vào `mqtt-tls\staging-<ngày-giờ>\` (cùng ACL) và kiểm lại; chỉ
+   khi đó cặp cũ mới được chuyển vào `mqtt-tls\backup-<ngày-giờ>\` và cặp mới vào chỗ, vân tay mới in ra. Lỗi trước bước đổi
+   ⇒ cặp cũ không bị đụng tới; lỗi giữa bước đổi ⇒ cặp cũ được đặt lại (script nói rõ, mã 5). Script từ chối nếu thư mục có
+   dấu hiệu bất thường (tệp lạ, hard link, chủ sở hữu lạ, ACL mở) — ACL mở / kế thừa: dùng `-Repair -Rotate` (xem bảng khôi
+   phục ở trên); chủ sở hữu lạ / link: cách ly bằng tay.
 3. Khởi động lại server; mở thẻ "TLS của broker nhúng" lấy vân tay MỚI; trên TỪNG máy tính bảng nhập vân tay mới **cùng mật
    khẩu thiết bị** rồi Lưu (đổi vân tay luôn bắt nhập lại mật khẩu). Nếu nghi lộ khoá: đồng thời **xoay mật khẩu** từng
    thiết bị (Cấp / xoay mật khẩu) — kẻ có khoá cũ có thể đã giả broker và thu mật khẩu.

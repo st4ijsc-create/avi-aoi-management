@@ -65,7 +65,7 @@ function provision(): { dir: string; cert: string; key: string } {
   const key = path.join(dir, TLS_KEY_FILE_NAME);
   if (WIN) {
     const me = execFileSync(PS, ["-NoProfile", "-NonInteractive", "-Command", "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value"], { encoding: "utf8", windowsHide: true }).trim();
-    const r = spawnSync(PS, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT, "-ServerAccount", me, "-Dir", dir, "-TestUnelevated"], { encoding: "utf8", windowsHide: true, timeout: 120_000 });
+    const r = spawnSync(PS, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT, "-ServerAccount", me, "-Dir", dir, "-TestUnelevated"], { encoding: "utf8", windowsHide: true, timeout: 120_000, env: { ...process.env, AVI_MQTT_TLS_TEST: "1" } }); // final wave F5 — the gated test mode
     if (r.status !== 0) throw new Error(`provisioning script failed (${r.status}): ${r.stderr}\n${r.stdout}`);
   } else {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
