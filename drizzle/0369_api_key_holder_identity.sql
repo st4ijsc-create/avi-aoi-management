@@ -16,7 +16,8 @@
 --     any path — router, psql, script — is recorded). Every user in it stays excluded from approving that key's runs: changing
 --     the holder does not change the secret, the earlier holder may still have it.
 --   • orchestration_runs."startedViaApiKeyId" — the key that started the run (written by foeEngine.startRun, server side
---     only). WRITE-ONCE (trigger): once set it can never be changed or cleared.
+--     only). Set ONLY in the INSERT (trigger): every UPDATE that changes it — a change, a clear, or a LATE FIRST WRITE
+--     (NULL → key, which would turn an unidentified API run into an identified one) — is refused (doc 81 Đợt 9 R fix 1 #4).
 --
 -- WHY THE NEW COLUMNS ARE NOT ON THE MAIN DRIZZLE TABLE OBJECTS (0368 lesson): `select().from(apiKeys)` is on the API v1
 --   AUTH path and `select().from(orchestrationRuns)` is on the ABORT / STOP paths. Code with these columns on the full-row
@@ -92,12 +93,14 @@ ALTER TABLE "orchestration_runs" ADD COLUMN IF NOT EXISTS "startedViaApiKeyId" i
 ALTER TABLE "orchestration_runs" DROP CONSTRAINT IF EXISTS "ck_orch_runs_api_key_real";
 ALTER TABLE "orchestration_runs" ADD CONSTRAINT "ck_orch_runs_api_key_real" CHECK ("startedViaApiKeyId" IS NULL OR "startedViaApiKeyId" > 0);
 COMMENT ON COLUMN "orchestration_runs"."startedViaApiKeyId" IS
-  'doc 81 Dot 9 R1 (option A): the API key that started this run (server-written by foeEngine.startRun). Write-once.';
+  'doc 81 Dot 9 R1 (option A): the API key that started this run (server-written by foeEngine.startRun). Set only in the INSERT; any UPDATE of it is refused.';
 
+-- doc 81 Đợt 9 R fix 1 (#4): insert-only — a late first write (NULL → key) is refused too (CREATE OR REPLACE: re-applying
+-- 0369 upgrades the R1 version of this function in place).
 CREATE OR REPLACE FUNCTION orch_runs_api_key_write_once() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF OLD."startedViaApiKeyId" IS NOT NULL AND NEW."startedViaApiKeyId" IS DISTINCT FROM OLD."startedViaApiKeyId" THEN
-    RAISE EXCEPTION 'orchestration_runs.startedViaApiKeyId is write-once (run %)', OLD."id" USING ERRCODE = 'check_violation';
+  IF NEW."startedViaApiKeyId" IS DISTINCT FROM OLD."startedViaApiKeyId" THEN
+    RAISE EXCEPTION 'orchestration_runs.startedViaApiKeyId is set only when the run is inserted (run %)', OLD."id" USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END $$;

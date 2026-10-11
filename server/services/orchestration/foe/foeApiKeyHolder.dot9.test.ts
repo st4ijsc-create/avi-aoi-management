@@ -434,11 +434,219 @@ describe("doc 81 Đợt 9 R3 — the approver's screen: getRun().apiKey", () => 
         { id: STARTER.id, name: STARTER.name },
       ],
       excludedUserIds: [STARTER.id, CREATOR.id, HOLDER.id, EARLIER.id],
+      refusal: null, // R fix 1
+      refusalDetail: null,
     });
     expect((await getRun(r.runId!))!.apiKey).toBeNull(); // not the approver's screen ⇒ not read
     const u = await startRun("api-ot", {}, CREATOR);
     expect((await getRun(u.runId!, { bindingDigest: true }))!.apiKey).toBeNull();
     const legacy = await startRun("api-ot", {}, API, { ownerUserId: STARTER.id, viaApi: true });
     expect((await getRun(legacy.runId!, { bindingDigest: true }))!.apiKey).toMatchObject({ identified: false, keyId: null, excludedUserIds: [] });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 9 R fix 1 — R-9-c (key inactive / expired NOW ⇒ refused; re-activated ⇒ restored), #2 (truthful reason when
+// the identity cannot be read), #3 (a recorded key alone makes it an API run). Every approval-consuming path.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+/** Makes the narrow read of orchestration_runs."startedViaApiKeyId" fail like a database without 0369 (42703) or a DB error. */
+function failKeyColumnRead(code: string | null) {
+  const realSelect = fake.select.bind(fake);
+  return vi.spyOn(fake, "select").mockImplementation(((p?: Record<string, unknown>) => {
+    const b = realSelect(p);
+    if (p && "startedViaApiKeyId" in p) {
+      const from = b.from;
+      b.from = (t: unknown) => {
+        const err = Object.assign(new Error(code === "42703" ? 'column "startedViaApiKeyId" does not exist' : "connection terminated"), code ? { code } : {});
+        void from;
+        throw err;
+      };
+    }
+    return b;
+  }) as never);
+}
+
+describe("doc 81 Đợt 9 R fix 1 — R-9-c: the key must be usable NOW (engine, retry, continue, four-eyes, dispatcher layer, screen)", () => {
+  it("★ key REVOKED after the start ⇒ a second person's approval does not send (apiKeyInactive); RE-ACTIVATED ⇒ a new approval sends", async () => {
+    await deployWorkflow(GATED_OT, CREATOR);
+    const r = await apiStart("api-ot");
+    keyRow().isActive = false; // apiKey.revoke
+    expect((await resumeRun(r.runId!, { approved: true }, OTHER)).status).toBe("failed");
+    expect(String(stepRow(r.runId!, "w")!.error)).toMatch(gateErr("apiKeyInactive"));
+    expect(otDispatchMock).not.toHaveBeenCalled();
+    expect(actions()).toHaveLength(0);
+    keyRow().isActive = true; // apiKey.update { isActive: true } — the rule is "now", not "ever"
+    const r2 = await apiStart("api-ot");
+    expect((await resumeRun(r2.runId!, { approved: true }, OTHER)).status).toBe("completed");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("★ key EXPIRED (expiresAt passed) ⇒ refused (apiKeyInactive); extended into the future ⇒ sends", async () => {
+    await deployWorkflow(GATED_OT, CREATOR);
+    const r = await apiStart("api-ot");
+    keyRow().expiresAt = new Date(Date.now() - 1000);
+    expect((await resumeRun(r.runId!, { approved: true }, OTHER)).status).toBe("failed");
+    expect(String(stepRow(r.runId!, "w")!.error)).toMatch(gateErr("apiKeyInactive"));
+    keyRow().expiresAt = new Date(Date.now() + 3_600_000);
+    const r2 = await apiStart("api-ot");
+    expect((await resumeRun(r2.runId!, { approved: true }, OTHER)).status).toBe("completed");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("★ RETRY: the key is revoked between two attempts ⇒ the retry is NOT sent (apiKeyInactive)", async () => {
+    await deployWorkflow({ ref: "api-retry2", name: "api-retry2", steps: [{ id: "g", type: "hitl_gate", prompt: "p" }, { id: "w", type: "command", machineId: 1, command: "start", maxAttempts: 2 }] }, CREATOR);
+    const r = await apiStart("api-retry2");
+    otDispatchMock.mockImplementationOnce(async () => {
+      keyRow().isActive = false;
+      return { ok: false, simulated: true, status: "rejected", results: [], commandLogIds: [] } as never;
+    });
+    expect((await resumeRun(r.runId!, { approved: true }, OTHER)).status).toBe("failed");
+    expect(otDispatchMock).toHaveBeenCalledTimes(1);
+    expect(String(stepRow(r.runId!, "w")!.error)).toMatch(gateErr("apiKeyInactive"));
+  });
+
+  it("★ CONTINUE (system user 0 — the QT pump / auto-resume path — and a user) after the key was revoked ⇒ the rest is NOT sent", async () => {
+    const def: WorkflowDefinition = { ref: "api-intr2", name: "api-intr2", steps: [{ id: "g", type: "hitl_gate", prompt: "g" }, { id: "c1", type: "command", machineId: 1, command: "start" }, { id: "c2", type: "command", machineId: 1, command: "start" }] };
+    await deployWorkflow(def, CREATOR);
+    for (const continuer of [{ id: 0, role: "system", name: "QT pump / auto-resume" }, OTHER2]) {
+      seedKeys();
+      otDispatchMock.mockClear();
+      const r = await apiStart("api-intr2");
+      expect((await resumeRun(r.runId!, { approved: true }, OTHER)).status).toBe("completed");
+      const steps = fake.store.get("orchestration_run_steps")!;
+      steps.splice(steps.findIndex((x: Row) => x.runId === r.runId && x.stepId === "c2"), 1);
+      Object.assign(runRow(r.runId!), { status: "held", currentStepId: null, contextJson: { interrupted: true, startedViaApi: true }, finishedAt: null });
+      keyRow().isActive = false;
+      expect((await resumeRun(r.runId!, { approved: true, note: "continue" }, continuer)).status).toBe("failed");
+      expect(otDispatchMock, `continued by ${continuer.id}`).toHaveBeenCalledTimes(2);
+      expect(String(stepRow(r.runId!, "c2")!.error)).toMatch(gateErr("apiKeyInactive"));
+    }
+  });
+
+  it("★ four-eyes gate of a run whose key is revoked / expired ⇒ FORBIDDEN for everyone (nothing changes)", async () => {
+    await deployWorkflow(FOUR_EYES, CREATOR);
+    const r = await apiStart("api-4e");
+    keyRow().isActive = false;
+    await expect(resumeRun(r.runId!, { approved: true }, OTHER)).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/revoked/) });
+    keyRow().isActive = true;
+    keyRow().expiresAt = new Date(Date.now() - 1);
+    await expect(resumeRun(r.runId!, { approved: true }, OTHER)).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/expired/) });
+    expect(runRow(r.runId!).status).toBe("awaiting_confirm");
+  });
+
+  it("★ L-7: STOP steps of a run whose key is revoked / expired still go out (no gate at all)", async () => {
+    await deployWorkflow(
+      { ref: "api-stop2", name: "api-stop2", steps: [{ id: "ra", type: "command", machineId: 2, command: "abort", args: { robotId: 2 } }, { id: "os", type: "command", machineId: 1, command: "stop" }] },
+      CREATOR,
+    );
+    keyRow().isActive = false;
+    expect((await apiStart("api-stop2")).status).toBe("completed");
+    keyRow().isActive = true;
+    keyRow().expiresAt = new Date(Date.now() - 1);
+    expect((await apiStart("api-stop2")).status).toBe("completed");
+    expect(robotDispatchMock).toHaveBeenCalledTimes(2);
+    expect(otDispatchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("★ dispatcher DB layer: revoked ⇒ refused with its reason; expired ⇒ refused; re-activated ⇒ accepted", async () => {
+    await deployWorkflow(GATED_OT, CREATOR);
+    const wf = (fake.store.get("orchestration_workflows") ?? [])[0] as Row;
+    const digest = await computeBindingDigest(fake as never, wf.definitionJson);
+    fake.store.get("orchestration_runs") ?? fake.store.set("orchestration_runs", []);
+    fake.store.get("orchestration_runs")!.push({ id: 950, workflowId: wf.id, status: "running", paramsJson: { [FOE_API_RUN_PARAM]: true }, contextJson: {}, startedBy: STARTER.id, startedViaApiKeyId: KEY });
+    (fake.store.get("orchestration_run_steps") ?? fake.store.set("orchestration_run_steps", []).get("orchestration_run_steps")!).push({
+      id: 9500, runId: 950, stepId: "g", stepType: "hitl_gate", status: "completed",
+      resultJson: { approved: true, approvedBy: OTHER.id, approvalSource: "server", defHash: hashWorkflowDefinition(wf.definitionJson), bindingDigest: digest },
+    });
+    const pend = { userId: OTHER.id, previewJson: { __foeGateApproval: { runId: 950 } } };
+    keyRow().isActive = false;
+    expect(await foeApprovalDbRefusal(fake as never, pend, STARTER.id)).toMatch(/revoked \/ disabled now \(FOE_GATE_REQUIRED apiKeyInactive\)/);
+    keyRow().isActive = true;
+    keyRow().expiresAt = new Date(Date.now() - 1);
+    expect(await foeApprovalDbRefusal(fake as never, pend, STARTER.id)).toMatch(/expired now \(FOE_GATE_REQUIRED apiKeyInactive\)/);
+    keyRow().expiresAt = null;
+    expect(await foeApprovalDbRefusal(fake as never, pend, STARTER.id)).toBeNull();
+  });
+
+  it("★ approver's screen: refusal apiKeyInactive (inactive / expired) is named", async () => {
+    await deployWorkflow(GATED_OT, CREATOR);
+    const r = await apiStart("api-ot");
+    keyRow().isActive = false;
+    expect((await getRun(r.runId!, { bindingDigest: true }))!.apiKey).toMatchObject({ identified: false, keyId: KEY, refusal: "apiKeyInactive", refusalDetail: "inactive" });
+    keyRow().isActive = true;
+    keyRow().expiresAt = new Date(Date.now() - 1);
+    expect((await getRun(r.runId!, { bindingDigest: true }))!.apiKey).toMatchObject({ refusal: "apiKeyInactive", refusalDetail: "expired" });
+  });
+});
+
+describe("doc 81 Đợt 9 R fix 1 — #2 truthful reason when the identity cannot be read; #3 a recorded key alone is an API run", () => {
+  it("★ #2 the key column cannot be read (DB error) ⇒ apiIdentityUnavailable (never noGate / 'add a gate'); still not sent", async () => {
+    await deployWorkflow(GATED_OT, CREATOR);
+    const r = await apiStart("api-ot");
+    const spy = failKeyColumnRead(null);
+    try {
+      expect((await resumeRun(r.runId!, { approved: true }, OTHER)).status).toBe("failed");
+    } finally {
+      spy.mockRestore();
+    }
+    const err = String(stepRow(r.runId!, "w")!.error);
+    expect(err).toMatch(gateErr("apiIdentityUnavailable"));
+    expect(err).not.toMatch(/hitl_gate/);
+    expect(otDispatchMock).not.toHaveBeenCalled();
+  });
+
+  it("★ #2 migration 0369 missing (42703): an API run ⇒ apiIdentityUnavailable naming the migration; a USER run still actuates (nothing can be recorded)", async () => {
+    await deployWorkflow(GATED_OT, CREATOR);
+    const api = await apiStart("api-ot");
+    const user = await startRun("api-ot", {}, CREATOR);
+    const spy = failKeyColumnRead("42703");
+    try {
+      expect((await resumeRun(api.runId!, { approved: true }, OTHER)).status).toBe("failed");
+      expect((await resumeRun(user.runId!, { approved: true }, OTHER)).status).toBe("completed");
+      const pend = (runId: number) => ({ userId: OTHER.id, previewJson: { __foeGateApproval: { runId } } });
+      expect(await foeApprovalDbRefusal(fake as never, pend(api.runId!), STARTER.id)).toMatch(/migration 0369 is not applied \(FOE_GATE_REQUIRED apiIdentityUnavailable\)/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(String(stepRow(api.runId!, "w")!.error)).toMatch(/migration 0369/);
+    expect(otDispatchMock).toHaveBeenCalledTimes(1); // the user run's command only
+  });
+
+  it("★ #3 a run with a RECORDED key but neither marker (wiped) ⇒ still an API run: the holder's approval does not count", async () => {
+    await deployWorkflow(GATED_OT, CREATOR);
+    const r = await startedThenReissued("api-ot");
+    runRow(r.runId!).paramsJson = { __foeDefVersions: [1] }; // both markers gone (not possible in product code — belt and braces)
+    runRow(r.runId!).contextJson = {};
+    expect((await resumeRun(r.runId!, { approved: true }, HOLDER)).status).toBe("failed");
+    expect(String(stepRow(r.runId!, "w")!.error)).toMatch(gateErr("approvedByKeyHolder"));
+    expect(otDispatchMock).not.toHaveBeenCalled();
+    // and a FOUR-EYES gate of such a run refuses the key's holder at approval time
+    await deployWorkflow(FOUR_EYES, CREATOR);
+    const fe = await apiStart("api-4e");
+    runRow(fe.runId!).paramsJson = { __foeDefVersions: [1] };
+    runRow(fe.runId!).contextJson = {};
+    await expect(resumeRun(fe.runId!, { approved: true }, CREATOR)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("★ #4 the API run's key is written by the INSERT itself (no later update of the column)", async () => {
+    await deployWorkflow(GATED_OT, CREATOR);
+    const realUpdate = fake.update.bind(fake);
+    const updates: string[] = [];
+    const spy = vi.spyOn(fake, "update").mockImplementation(((t: Record<symbol, unknown>) => {
+      const b = realUpdate(t);
+      const set = b.set;
+      b.set = (p: Record<string, unknown>) => {
+        if ("startedViaApiKeyId" in p) updates.push(String(t[Symbol.for("drizzle:Name")]));
+        return set(p);
+      };
+      return b;
+    }) as never);
+    try {
+      const r = await apiStart("api-ot");
+      expect(runRow(r.runId!).startedViaApiKeyId).toBe(KEY);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(updates).toEqual([]);
   });
 });

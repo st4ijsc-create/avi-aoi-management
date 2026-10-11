@@ -10,7 +10,8 @@
  *   (b) grants: api_key_holder_changes SELECT/INSERT = true, UPDATE/DELETE/TRUNCATE = false; column UPDATE on the two new
  *       columns = true; then BEHAVIOUR in an ALWAYS-rolled-back transaction: holder 0 ⇒ 23514; a key inserted with a holder
  *       ⇒ 1 history row; an admin change (aoi.actor_user_id set) ⇒ a history row naming the actor and the reason; UPDATE /
- *       DELETE of a history row ⇒ 42501; a run's startedViaApiKeyId set once ⇒ ok, changed / cleared ⇒ 23514, 0 ⇒ 23514;
+ *       DELETE of a history row ⇒ 42501; a run's startedViaApiKeyId set IN THE INSERT ⇒ ok; changed / cleared / a late
+ *       first write (NULL → key, R fix 1 #4) ⇒ 23514; an INSERT with 0 ⇒ 23514; an UPDATE of another column passes;
  *       0 probe rows left;
  *   (c) backfill: no key with a creator and no holder; every key with a holder has ≥1 history row;
  *   (d) `__applied_migrations` has exactly 1 row for this file.
@@ -146,14 +147,19 @@ async function applyTo(rawUrl, label) {
         const histUpd = await maLoi(tx, (sp) => sp`UPDATE ${sp(HIST)} SET reason = 'x' WHERE "apiKeyId" = ${k.id}`);
         const histDel = await maLoi(tx, (sp) => sp`DELETE FROM ${sp(HIST)} WHERE "apiKeyId" = ${k.id}`);
         const [wf] = await tx`INSERT INTO orchestration_workflows (ref, name, "definitionJson", "scopeKey") VALUES (${CODE}, ${CODE}, ${tx.json({ ref: CODE, name: CODE, steps: [] })}, ${CODE}) RETURNING id`;
-        const [run] = await tx`INSERT INTO orchestration_runs ("workflowId", status) VALUES (${wf.id}, 'queued') RETURNING id`;
-        const setOnce = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET "startedViaApiKeyId" = ${k.id} WHERE id = ${run.id}`);
+        let run = null;
+        const setOnce = await maLoi(tx, async (sp) => {
+          [run] = await sp`INSERT INTO orchestration_runs ("workflowId", status, "startedViaApiKeyId") VALUES (${wf.id}, 'queued', ${k.id}) RETURNING id`;
+        });
         const change = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET "startedViaApiKeyId" = ${k.id + 1} WHERE id = ${run.id}`);
         const clear = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET "startedViaApiKeyId" = NULL WHERE id = ${run.id}`);
+        const other = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET status = 'running', "startedViaApiKeyId" = ${k.id} WHERE id = ${run.id}`); // same value ⇒ allowed
         const [run2] = await tx`INSERT INTO orchestration_runs ("workflowId", status) VALUES (${wf.id}, 'queued') RETURNING id`;
-        const zero = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET "startedViaApiKeyId" = 0 WHERE id = ${run2.id}`);
+        const lateFirst = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET "startedViaApiKeyId" = ${k.id} WHERE id = ${run2.id}`);
+        const zero = await maLoi(tx, (sp) => sp`INSERT INTO orchestration_runs ("workflowId", status, "startedViaApiKeyId") VALUES (${wf.id}, 'queued', 0)`);
         const [still] = await tx`SELECT "startedViaApiKeyId" AS v FROM orchestration_runs WHERE id = ${run.id}`;
-        kq = { holder0, hist, histUpd, histDel, setOnce, change, clear, zero, still: still.v === k.id };
+        const [still2] = await tx`SELECT "startedViaApiKeyId" AS v FROM orchestration_runs WHERE id = ${run2.id}`;
+        kq = { holder0, hist, histUpd, histDel, setOnce, change, clear, other, lateFirst, zero, still: still.v === k.id && still2.v === null };
         throw ROLLBACK; // ALWAYS rolled back
       });
     } catch (e) {
@@ -164,7 +170,7 @@ async function applyTo(rawUrl, label) {
       kq.hist.length === 2 &&
       kq.hist[0].fromUserId === null && kq.hist[0].toUserId === 901 &&
       kq.hist[1].fromUserId === 901 && kq.hist[1].toUserId === 902 && kq.hist[1].changedBy === 7 && kq.hist[1].reason === "probe";
-    if (!kq || kq.holder0 !== "23514" || !histOk || kq.histUpd !== "42501" || kq.histDel !== "42501" || kq.setOnce !== null || kq.change !== "23514" || kq.clear !== "23514" || kq.zero !== "23514" || !kq.still) {
+    if (!kq || kq.holder0 !== "23514" || !histOk || kq.histUpd !== "42501" || kq.histDel !== "42501" || kq.setOnce !== null || kq.change !== "23514" || kq.clear !== "23514" || kq.other !== null || kq.lateFirst !== "23514" || kq.zero !== "23514" || !kq.still) {
       throw new Error(`(b) avi_app behaviour wrong: ${JSON.stringify(kq)}`);
     }
     const [left] = await appSql`SELECT count(*)::int AS n FROM api_keys WHERE name LIKE ${CODE + "%"}`;

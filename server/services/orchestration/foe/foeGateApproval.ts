@@ -31,7 +31,11 @@
  * both dispatchers, never from the action). The run may then actuate like any other. Fail-closed:
  *   • an API-marked run whose key cannot be identified (no startedViaApiKeyId — started before 0369, an edge copy, 0369 not
  *     applied —, the key deleted, any read error) ⇒ nothing counts (reason `apiRun`, as under option C);
- *   • a key with no holder ⇒ `ownerUnknown` (as before).
+ *   • a key with no holder ⇒ `ownerUnknown` (as before);
+ *   • doc 81 Đợt 9 R fix 1 (R-9-c) — the key revoked / disabled or expired NOW ⇒ `apiKeyInactive` (an admin re-activating
+ *     or extending the key restores the run: the rule is "now", not "ever");
+ *   • the identity cannot be READ (DB error, migration 0369 missing) ⇒ `apiIdentityUnavailable` (said truthfully);
+ *   • a recorded startedViaApiKeyId makes a run an API run even without the marker (R fix 1 #3).
  * Residual (procedural, documented): a holder who hands the secret to someone else is still out of reach — one key per
  * person, revoke and re-mint when it changes hands (changing the holder does NOT change the secret, which is why every
  * earlier holder stays excluded).
@@ -61,7 +65,7 @@ import {
 import { getCapabilitiesForMachine } from "../../equipment/capabilityModel";
 import { programChecksumCapable, readAdapterProgramCheck, robotProgramCheck, type ProgramCheck } from "../../ot/programChecksum"; // Đợt 8 O2
 import { allStepsOf } from "./foeStepClass"; // doc 81 Đợt 5 task E fix 1 — THE step walk
-import { readApiKeyParties, readRunApiKeyId } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R2 (mig 0369, narrow projections)
+import { isMigrationMissingError, readApiKeyParties, readRunApiKeyId } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R2 (mig 0369, narrow projections)
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
 /** resultJson.approvalSource written by resumeRun's approval path (the only one that counts). */
@@ -71,8 +75,22 @@ export const FOE_APPROVAL_SOURCE_EDGE = "edge";
 /** Written when user 0 (system auto-resume / API) resolves a gate (never counts). */
 export const FOE_APPROVAL_SOURCE_SYSTEM = "system";
 
-/** doc 81 Đợt 9 R2 — `approvedByKeyHolder`: the only approvals were given by the API key's holder (now / earlier) or creator. */
-export type GateRequiredReason = "noGate" | "approvedByOwner" | "approvedByKeyHolder" | "staleApproval" | "ownerUnknown" | "apiRun" | "programUnreadable";
+/**
+ * doc 81 Đợt 9 R2 — `approvedByKeyHolder`: the only approvals were given by the API key's holder (now / earlier) or creator.
+ * doc 81 Đợt 9 R fix 1 — `apiKeyInactive` (R-9-c): the key that started the run is revoked / disabled or expired NOW
+ * (an admin re-activating it restores the run); `apiIdentityUnavailable` (#2): the key identity could not be READ (DB error,
+ * or migration 0369 not applied) — refused, and said truthfully (never "add a gate").
+ */
+export type GateRequiredReason =
+  | "noGate"
+  | "approvedByOwner"
+  | "approvedByKeyHolder"
+  | "staleApproval"
+  | "ownerUnknown"
+  | "apiRun"
+  | "apiKeyInactive"
+  | "apiIdentityUnavailable"
+  | "programUnreadable";
 
 /**
  * doc 81 Đợt 9 task R2 — WHO may not give a counting approval for a run, as read from the DB rows NOW:
@@ -86,7 +104,10 @@ export interface RunApprovalIdentity {
   /** the key that started the run (API runs), else null */
   apiKeyId: number | null;
 }
-export type RunIdentityResult = { ok: true; identity: RunApprovalIdentity } | { ok: false; reason: "ownerUnknown" | "apiRun" };
+export type RunIdentityRefusal = "ownerUnknown" | "apiRun" | "apiKeyInactive" | "apiIdentityUnavailable";
+export type RunIdentityResult =
+  | { ok: true; identity: RunApprovalIdentity }
+  | { ok: false; reason: RunIdentityRefusal; detail?: "inactive" | "expired" | "migrationMissing" | "readError" };
 
 /**
  * doc 81 Đợt 9 task R2 — THE derivation of RunApprovalIdentity, used by the engine (findSeparateGateApproval, gate
@@ -101,15 +122,55 @@ export async function deriveRunApprovalIdentity(
 ): Promise<RunIdentityResult> {
   const owner = run.startedBy ?? null;
   if (!posInt(owner)) return { ok: false, reason: "ownerUnknown" };
-  if (!(opts.viaApiHint === true || runStartedViaApi(run))) return { ok: true, identity: { owner, keyParties: [], apiKeyId: null } };
-  const keyId = await readRunApiKeyId(db, run.id);
+  const marked = opts.viaApiHint === true || runStartedViaApi(run);
+  const unavailable = (err: unknown): RunIdentityResult => ({
+    ok: false,
+    reason: "apiIdentityUnavailable",
+    detail: isMigrationMissingError(err) ? "migrationMissing" : "readError",
+  });
+  // R fix 1 (#3) — the recorded key is read for EVERY run: a recorded startedViaApiKeyId makes it an API run even without a
+  // marker (belt and braces). The one exception: an UNMARKED run on a database without the 0369 column has nothing recorded
+  // (it cannot have), so it stays a user run — every other read failure refuses (apiIdentityUnavailable, #2).
+  let keyId: number | null;
+  try {
+    keyId = await readRunApiKeyId(db, run.id);
+  } catch (err) {
+    if (!marked && isMigrationMissingError(err)) return { ok: true, identity: { owner, keyParties: [], apiKeyId: null } };
+    return unavailable(err);
+  }
+  if (!marked && keyId === null) return { ok: true, identity: { owner, keyParties: [], apiKeyId: null } };
   if (keyId === null) return { ok: false, reason: "apiRun" };
-  const key = await readApiKeyParties(db, keyId);
+  let key: Awaited<ReturnType<typeof readApiKeyParties>>;
+  try {
+    key = await readApiKeyParties(db, keyId);
+  } catch (err) {
+    return unavailable(err);
+  }
   if (!key) return { ok: false, reason: "apiRun" };
+  // R fix 1 (R-9-c) — the key must be usable NOW: revoked / disabled (isActive false or unknown) or expired ⇒ refused. The
+  // rule is "now", not "ever": an admin re-activating the key (apiKey.update isActive) or extending it restores the run.
+  if (key.isActive !== true) return { ok: false, reason: "apiKeyInactive", detail: "inactive" };
+  if (key.expiresAt !== null && key.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "apiKeyInactive", detail: "expired" };
   if (key.holder === null) return { ok: false, reason: "ownerUnknown" };
   const parties = new Set<number>(key.everHolders);
   if (key.creator !== null) parties.add(key.creator);
   return { ok: true, identity: { owner, keyParties: [...parties].sort((a, b) => a - b), apiKeyId: keyId } };
+}
+
+/** doc 81 Đợt 9 R fix 1 — the dispatchers' refusal text for an identity that cannot be established (reason code included). */
+export function identityRefusalText(idr: Extract<RunIdentityResult, { ok: false }>): string {
+  switch (idr.reason) {
+    case "apiRun":
+      return "orchestration run was started through an API key that cannot be identified (FOE_GATE_REQUIRED apiRun) — its OT/robot commands other than a STOP are refused";
+    case "apiKeyInactive":
+      return `the API key that started this orchestration run is ${idr.detail === "expired" ? "expired" : "revoked / disabled"} now (FOE_GATE_REQUIRED apiKeyInactive) — its OT/robot commands other than a STOP are refused until an administrator re-activates the key`;
+    case "apiIdentityUnavailable":
+      return idr.detail === "migrationMissing"
+        ? "the API key identity of this orchestration run cannot be read: database migration 0369 is not applied (FOE_GATE_REQUIRED apiIdentityUnavailable) — fail-closed"
+        : "the API key identity of this orchestration run could not be read (database error) (FOE_GATE_REQUIRED apiIdentityUnavailable) — fail-closed";
+    default:
+      return "orchestration run has no attributable owner (ownerUnknown) — OT/robot commands are refused";
+  }
 }
 
 /** doc 81 Đợt 9 R2 — the users whose approval never counts for this run (owner first). */
@@ -215,10 +276,12 @@ export async function computeBindingDetail(
   def: Pick<WorkflowDefinition, "steps">,
   /** final wave (review O M2) — program checks read BEFORE the caller's transaction (adapters missing here are read now). */
   pre?: PreReadPrograms,
+  /** doc 81 Đợt 9 R-9-b — `display: true` ONLY for the approver's screen (getRun): may show a labelled cached reading. */
+  view?: { display?: boolean },
 ): Promise<{ digest: string | null; programs: ProgramCheck[] }> {
   try {
     const b = await loadBinding(db, def);
-    const checks = await Promise.all(b.adapters.map((a) => pre?.get(a.id as number) ?? readAdapterProgramCheck(a as never)));
+    const checks = await Promise.all(b.adapters.map((a) => pre?.get(a.id as number) ?? readAdapterProgramCheck(a as never, { display: view?.display === true })));
     const byId = new Map(checks.map((c) => [c.id, c] as const));
     const digest = b.digestWith((id) => {
       const c = byId.get(id);
@@ -537,11 +600,7 @@ export async function foeApprovalDbRefusal(
     // doc 81 Đợt 9 task R2 (option A, replaces Đợt 5 E1 option C) — owner AND, for an API-started run, the key's holder
     // (now / earlier) and creator, re-derived HERE from the run row and the api_keys rows (never from the action).
     const idr = await deriveRunApprovalIdentity(db, run as { id: number; startedBy: number | null; paramsJson: unknown; contextJson: unknown });
-    if (!idr.ok) {
-      return idr.reason === "apiRun"
-        ? "orchestration run was started through an API key that cannot be identified (FOE_GATE_REQUIRED apiRun) — its OT/robot commands other than a STOP are refused"
-        : "orchestration run has no attributable owner (ownerUnknown) — OT/robot commands are refused";
-    }
+    if (!idr.ok) return identityRefusalText(idr);
     const { owner } = idr.identity;
     if (pending.userId === owner) return "orchestration action is confirmed by the run owner — a separate approval is required";
     if (idr.identity.keyParties.includes(pending.userId)) {

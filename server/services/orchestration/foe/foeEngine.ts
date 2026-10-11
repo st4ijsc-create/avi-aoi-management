@@ -84,7 +84,7 @@ import {
   excludedApprovers,
   type GateRequiredReason,
 } from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2; Đợt 9 R2
-import { readApiKeyParties, readRunApiKeyId, runApiKeyCols } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R1/R3 (mig 0369, narrow projections)
+import { isMigrationMissingError, orchestrationRunsWithApiKey, readApiKeyParties, readRunApiKeyId } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R1/R3 (mig 0369, narrow projections)
 import type { ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
@@ -335,6 +335,10 @@ export interface RunApiKeyView {
   earlierHolders: Array<{ id: number; name: string | null }>;
   /** every user whose approval never counts for this run (starter + key parties). Empty when not identified. */
   excludedUserIds: number[];
+  /** doc 81 Đợt 9 R fix 1 — why no approval can count now (null = identified and usable). */
+  refusal: "ownerUnknown" | "apiRun" | "apiKeyInactive" | "apiIdentityUnavailable" | null;
+  /** "inactive" | "expired" for apiKeyInactive; "migrationMissing" | "readError" for apiIdentityUnavailable. */
+  refusalDetail: string | null;
 }
 
 /**
@@ -342,10 +346,18 @@ export interface RunApiKeyView {
  * which is also what the engine concludes — nothing on the screen can let an approval count that the server refuses).
  */
 async function apiKeyViewOf(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, run: OrchestrationRun): Promise<RunApiKeyView | null> {
-  if (!runStartedViaApi(run)) return null;
-  const none: RunApiKeyView = { identified: false, keyId: null, name: null, keyPrefix: null, holder: null, creator: null, earlierHolders: [], excludedUserIds: [] };
+  // R fix 1 (#3) — a recorded key also makes it an API run (read below); an unmarked run without one ⇒ null.
+  let recorded: number | null = null;
   try {
-    const keyId = await readRunApiKeyId(d, run.id);
+    recorded = await readRunApiKeyId(d, run.id);
+  } catch (err) {
+    if (!runStartedViaApi(run) && isMigrationMissingError(err)) return null;
+    return { identified: false, keyId: null, name: null, keyPrefix: null, holder: null, creator: null, earlierHolders: [], excludedUserIds: [], refusal: "apiIdentityUnavailable", refusalDetail: isMigrationMissingError(err) ? "migrationMissing" : "readError" };
+  }
+  if (!runStartedViaApi(run) && recorded === null) return null;
+  const none: RunApiKeyView = { identified: false, keyId: null, name: null, keyPrefix: null, holder: null, creator: null, earlierHolders: [], excludedUserIds: [], refusal: "apiRun", refusalDetail: null };
+  try {
+    const keyId = recorded;
     if (keyId === null) return none;
     const key = await readApiKeyParties(d, keyId);
     if (!key) return { ...none, keyId };
@@ -362,9 +374,11 @@ async function apiKeyViewOf(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, r
       creator: key.creator !== null ? { id: key.creator, name: nameOf(key.creator) } : null,
       earlierHolders: key.everHolders.filter((u) => u !== key.holder).map((id) => ({ id, name: nameOf(id) })),
       excludedUserIds: idr.ok ? excludedApprovers(idr.identity) : [],
+      refusal: idr.ok ? null : idr.reason,
+      refusalDetail: idr.ok ? null : (idr.detail ?? null),
     };
-  } catch {
-    return none;
+  } catch (err) {
+    return { ...none, refusal: "apiIdentityUnavailable", refusalDetail: isMigrationMissingError(err) ? "migrationMissing" : "readError" };
   }
 }
 
@@ -1177,6 +1191,10 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
       "the program checksum of a controller it writes to could not be read now (not connected, no answer in time, or an invalid answer), so it cannot be verified that the program is still the one that was approved. Check the controller connection and start a new run.",
     ownerUnknown:
       "the run has no attributable owner (started by the system, or by an API key that is issued to nobody active), so a separate approval cannot be verified. Start the run as a user.",
+    apiKeyInactive:
+      "the API key that started the run is revoked / disabled or expired now. Its OT and robot commands other than a STOP are refused until an administrator re-activates (or extends) the key.",
+    apiIdentityUnavailable:
+      "the API key identity of the run could not be read (database error, or database migration 0369 not applied — an administrator runs scripts/apply-migration-0369.mjs), so it cannot be checked that the approver is not the key's holder. Retry once the database is reachable.",
     apiRun:
       "the run was started through an API key that cannot be identified (started before the key-holder record existed, the key was deleted, or a copy of the run without its key), so it cannot be checked that the approver is not the key's holder. Start a new run through the key, or start it as a user in the Orchestration Studio.",
   };
@@ -2402,7 +2420,9 @@ async function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, use
   // doc 81 Đợt 9 task R2 — a four-eyes gate of an API-started run: the key's holder (now or earlier) and its creator are
   // not a second person either. Re-derived from the DB rows; cannot be decided (unidentifiable key, no holder, DB error)
   // ⇒ refused (fail-closed — an approval is never urgent: stopping goes through abort / the machines' STOP / E-STOP).
-  if (gate.fourEyes === true && runStartedViaApi(run)) {
+  if (gate.fourEyes === true) {
+    // R fix 1 (#3) — for EVERY four-eyes approval (a recorded key makes a run an API run even without a marker); a user run
+    // derives { owner, keyParties: [] } — the owner check above already decided it.
     let idr: Awaited<ReturnType<typeof deriveRunApprovalIdentity>> | null = null;
     try {
       const d = await getDb();
@@ -2411,11 +2431,19 @@ async function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, use
       idr = null;
     }
     if (!idr || !idr.ok) {
+      const why =
+        idr?.reason === "apiKeyInactive"
+          ? `is ${idr.detail === "expired" ? "expired" : "revoked / disabled"} now`
+          : idr?.reason === "ownerUnknown"
+            ? "has no holder"
+            : idr?.reason === "apiRun"
+              ? "cannot be identified"
+              : "could not be read (database error, or migration 0369 not applied)";
       throw appError(
         "FORBIDDEN",
         "PERMISSION_DENIED",
         { action: "selfApproveOrchestrationGate" },
-        `Gate "${gate.id}" requires four-eyes, but the API key that started run ${run.id} cannot be identified (or has no holder) — it cannot be approved.`,
+        `Gate "${gate.id}" requires four-eyes, but the API key that started run ${run.id} ${why} — it cannot be approved.`,
       );
     }
     if (idr.identity.keyParties.includes(user.id)) {
@@ -2884,33 +2912,34 @@ export async function startRun(
       opts?.viaApi === true ||
       (!humanStart && opts?.ownerUserId != null && opts.ownerUserId > 0) ||
       runStartedViaApi({ paramsJson: params });
-    const [run] = await d
-      .insert(orchestrationRuns)
-      .values({
-        workflowId: wf.id,
-        workflowRef: wf.ref,
-        status: "queued",
-        // doc 81 Đợt 7 task I3 — the version this run executes (server-written; a caller's value is replaced).
-        paramsJson: { ...(params ?? {}), ...(viaApi ? { [FOE_API_RUN_PARAM]: true } : {}), [FOE_DEF_VERSIONS_PARAM]: [wf.version ?? 1] },
-        contextJson: viaApi ? { startedViaApi: true } : {},
-        startedBy: user.id || (opts?.ownerUserId != null && opts.ownerUserId > 0 ? opts.ownerUserId : null),
-        startedAt: new Date(),
-      })
-      .returning();
-    runId = run.id;
-    // doc 81 Đợt 9 task R1 — WHICH key started this API run (narrow projection: the column is not on the full-row object, mig
-    // 0369). Written BEFORE the walk starts, so no approval is ever evaluated without it. A failure (0369 not applied, DB
-    // error) is said loudly and leaves the run unidentified ⇒ its non-STOP OT/robot steps are refused (apiRun), STOPs unchanged.
+    const runValues = {
+      workflowId: wf.id,
+      workflowRef: wf.ref,
+      status: "queued" as const,
+      // doc 81 Đợt 7 task I3 — the version this run executes (server-written; a caller's value is replaced).
+      paramsJson: { ...(params ?? {}), ...(viaApi ? { [FOE_API_RUN_PARAM]: true } : {}), [FOE_DEF_VERSIONS_PARAM]: [wf.version ?? 1] },
+      contextJson: viaApi ? { startedViaApi: true } : {},
+      startedBy: user.id || (opts?.ownerUserId != null && opts.ownerUserId > 0 ? opts.ownerUserId : null),
+      startedAt: new Date(),
+    };
+    // doc 81 Đợt 9 task R1 + R fix 1 (#4) — WHICH key started this API run is written IN THE INSERT (the 0369 trigger refuses
+    // every later UPDATE of the column, a late first write included). Only for an API run with an authenticated key. 0369 not
+    // applied (42703) ⇒ the run is created without it, said loudly: it stays unidentified ⇒ its non-STOP OT/robot steps are
+    // refused (apiRun), its STOPs go out (a run that exists to stop is never kept from starting). Any other error ⇒ thrown.
     const apiKeyId = opts?.apiKeyId;
+    let run: OrchestrationRun | undefined;
     if (viaApi && typeof apiKeyId === "number" && Number.isInteger(apiKeyId) && apiKeyId > 0) {
       try {
-        await d.update(runApiKeyCols).set({ startedViaApiKeyId: apiKeyId }).where(eq(runApiKeyCols.id, run.id));
+        [run] = (await d.insert(orchestrationRunsWithApiKey).values({ ...runValues, startedViaApiKeyId: apiKeyId }).returning()) as unknown as OrchestrationRun[];
       } catch (err) {
+        if (!isMigrationMissingError(err)) throw err;
         console.error(
-          `[FOE] run ${run.id}: the API key that started it (${apiKeyId}) could not be recorded (migration 0369 applied?) — its OT/robot steps other than a STOP will be refused (apiRun): ${(err as Error)?.message ?? err}`,
+          `[FOE] API run of workflow "${wf.ref}": the API key that starts it (${apiKeyId}) cannot be recorded — database migration 0369 is not applied; its OT/robot steps other than a STOP will be refused (apiRun).`,
         );
       }
     }
+    if (!run) [run] = await d.insert(orchestrationRuns).values(runValues).returning();
+    runId = run.id;
     try {
       opts?.onStarted?.(run.id); // doc 81 Đợt 7 I1
     } catch {
@@ -2989,7 +3018,9 @@ export async function getRun(
   // doc 81 Đợt 7 I2 (null on a DB error ⇒ cannot approve); final wave F6 — only for an approver's screen of a paused run.
   // doc 81 Đợt 8 O2/O3 — the program checks come from the SAME reading as the digest.
   const binding =
-    usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held") ? await computeBindingDetail(d, usable) : null;
+    usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held")
+      ? await computeBindingDetail(d, usable, undefined, { display: true }) // Đợt 9 R-9-b — screen only: display cache allowed
+      : null;
   return {
     run,
     defHash: usable ? hashWorkflowDefinition(usable) : null,

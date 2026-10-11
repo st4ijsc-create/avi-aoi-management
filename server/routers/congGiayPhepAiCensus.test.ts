@@ -340,7 +340,19 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `orchestrationRouter` đã che bằng `moduleProcedure("MOD_ENGINEERING")` + `requirePermission("machine_monitoring","canView")`
  *   như `listRuns`. Không phải bề mặt AI. Đo: trước = 2301 / 75 (khớp ghim), sau = 2302 / 76.
  */
-const GHIM = { tong: 2302, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-12 doc 81 Đợt 9 integration (R-9-d) — **tong +1 (2306 → 2307), KHÔNG ghim lại** (cùng khuôn Đợt 1C T4/T5b: ô `tong`
+ *   đỏ TỪ TRƯỚC Đợt 9, do trôi của lượt khác). Đo `quetCongGiayPhep` trên `git archive` của từng cây, đối chiếu từng khoá
+ *   `file#router.thủTục|module`, chạy một mình:
+ *   • ghim `a38062761` = **2302** (khớp ghim — đối chứng bộ suy);
+ *   • BASE Đợt 9 `4c2968450` = **2306**: +4 của Đợt 8 (safety-PLC maker-checker, mig 0368) — `safetyRouter.{approveSafetyPlcConfig,
+ *     deleteSafetyPlcConfig, plcTrustList, rejectSafetyPlcConfig}`, cổng MOD_OT_CONTROL ⇒ `GHIM_MODULE_KHAC.MOD_OT_CONTROL` đo 111
+ *     (ghim 107). KHÔNG thuộc Đợt 9 ⇒ lượt này KHÔNG ghim chúng (cần lời khai của chủ Đợt 8);
+ *   • HEAD `99afe8c50` = cây tích hợp = **2307**: đúng MỘT thủ tục MỚI của Đợt 9 nhóm R — `apiKey.setHolder` (mutation,
+ *     `adminProcedure`, `module = null`, không phải bề mặt AI) ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong KHÔNG đổi vì Đợt 9.
+ *   `tong` 2307 trùng `phamViDocCensus.test.ts#GHIM.tong` (2307).
+ */
+const GHIM ={ tong: 2302, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

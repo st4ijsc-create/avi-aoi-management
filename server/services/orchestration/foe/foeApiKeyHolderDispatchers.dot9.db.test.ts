@@ -152,15 +152,15 @@ async function reissue(keyId: number, to: number) {
 }
 /** A real run started (owner = holder at start) through `keyId`, whose gate `approvedBy` approved via the server path. */
 async function apiRun(tag: string, keyId: number | null, approvedBy: number, steps?: Parameters<typeof makeFoeGateRun>[0]["steps"]) {
+  // R fix 1 (#4) — the key is written IN THE INSERT (0369 refuses any later update of the column)
   const fx = await makeFoeGateRun({
     tag: `${DAU}-${tag}`,
     owner: u.starter,
     approvedBy,
     steps: steps ?? [{ id: "w", type: "command", machineId: ids.machine, command: "set_param", args: { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 } }],
+    api: { keyId },
   });
   fixtures.push(fx);
-  await sql!`UPDATE orchestration_runs SET "paramsJson" = ${sql!.json({ [FOE_API_RUN_PARAM]: true })}, "contextJson" = ${sql!.json({ startedViaApi: true })} WHERE id = ${fx.runId}`;
-  if (keyId !== null) await sql!`UPDATE orchestration_runs SET "startedViaApiKeyId" = ${keyId} WHERE id = ${fx.runId}`;
   return fx;
 }
 async function sendOt(fx: FoeGateRunFixture, approvedBy: number, cmdName = "set_param", args: Record<string, unknown> = { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 }) {
@@ -305,6 +305,15 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 R — API-key holder identity on the r
       (e: { code?: string }) => e?.code,
     );
     expect(err).toBe("23514");
+    // R fix 1 (#4) — a LATE FIRST write (unidentified run ⇒ identified) is refused too
+    const unident = await apiRun("wo2", null, u.other);
+    const late = await sql!`UPDATE orchestration_runs SET "startedViaApiKeyId" = ${k} WHERE id = ${unident.runId}`.then(
+      () => null,
+      (e: { code?: string }) => e?.code,
+    );
+    expect(late).toBe("23514");
+    const [still] = await sql!`SELECT "startedViaApiKeyId" AS v FROM orchestration_runs WHERE id = ${unident.runId}`;
+    expect(still.v).toBeNull();
   });
 
   for (const who of ["starter", "holder", "earlier", "creator"] as const) {
@@ -435,5 +444,54 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 R — API-key holder identity on the r
     expect(audits.some((a) => JSON.stringify(a.details).includes("API_KEY_HOLDER_CHANGE") && JSON.stringify(a.details).includes("handed to the line team"))).toBe(true);
     const listed = (await admin.list()).find((r) => r.id === created.id);
     expect(listed).toMatchObject({ holderUserId: u.holder, holderName: "R9 holder", holderRecorded: true });
+  });
+
+  // ── doc 81 Đợt 9 R fix 1 — R-9-c on BOTH real dispatchers ──
+  it("★ R-9-c BOTH dispatchers: the key REVOKED after the approval ⇒ NOT_CONFIRMED (apiKeyInactive), nothing sent; RE-ACTIVATED ⇒ sent", async () => {
+    const k = await makeKey("revoked");
+    const fx = await apiRun("revoked", k, u.other);
+    await sql!`UPDATE api_keys SET "isActive" = false, "revokedAt" = now() WHERE id = ${k}`;
+    const ot = await sendOt(fx, u.other);
+    expect(ot.res.ok).toBe(false);
+    expect(await otErrorText(ot.res)).toMatch(/^NOT_CONFIRMED: .*revoked \/ disabled now \(FOE_GATE_REQUIRED apiKeyInactive\)/);
+    const rb = await sendRobot(fx, u.other);
+    expect(rb.r).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+    expect(await robotErrorText(rb.r)).toMatch(/apiKeyInactive/);
+    expect(writeCalls + h.runJobCalls).toBe(0);
+    await sql!`UPDATE api_keys SET "isActive" = true, "revokedAt" = NULL WHERE id = ${k}`; // an admin re-activates it
+    expect((await sendOt(fx, u.other)).res.ok).toBe(true);
+    expect((await sendRobot(fx, u.other)).r.status).toBe("done");
+    expect(writeCalls).toBe(1);
+    expect(h.runJobCalls).toBe(1);
+  });
+
+  it("★ R-9-c BOTH dispatchers: the key EXPIRED ⇒ refused; extended ⇒ sent", async () => {
+    const k = await makeKey("expired");
+    const fx = await apiRun("expired", k, u.other);
+    await sql!`UPDATE api_keys SET "expiresAt" = now() - interval '1 minute' WHERE id = ${k}`;
+    expect(await otErrorText((await sendOt(fx, u.other)).res)).toMatch(/expired now \(FOE_GATE_REQUIRED apiKeyInactive\)/);
+    expect(await robotErrorText((await sendRobot(fx, u.other)).r)).toMatch(/apiKeyInactive/);
+    expect(writeCalls + h.runJobCalls).toBe(0);
+    await sql!`UPDATE api_keys SET "expiresAt" = now() + interval '1 hour' WHERE id = ${k}`;
+    expect((await sendOt(fx, u.other)).res.ok).toBe(true);
+    expect(writeCalls).toBe(1);
+  });
+
+  it("★ L-7: a PINNED stop of a run whose key is revoked is still SENT", async () => {
+    const k = await makeKey("stoprevoked");
+    const fx = await apiRun("stoprevoked", k, u.other, [{ id: "s", type: "command", machineId: ids.machine, command: "stop", args: { adapterId: ids.adapter, writes: [{ tagKey: "stop_cmd", value: true }] } }]);
+    await sql!`UPDATE api_keys SET "isActive" = false WHERE id = ${k}`;
+    const { buildEquipmentCommand, ensureOrchestrationAction } = await import("./foeEngine");
+    const { equipmentRegistry } = await import("../../equipment/equipmentAdapter");
+    const user = { id: u.starter, role: "engineer" } as never;
+    const key = `${DAU}-stop${++seq}`;
+    const args = { adapterId: ids.adapter, writes: [{ tagKey: "stop_cmd", value: true }] };
+    const descriptor = { name: "stop", label: "stop", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
+    const cmd = buildEquipmentCommand(descriptor, { adapterKind: "ot-stub" } as never, ids.machine, args, key, user);
+    await ensureOrchestrationAction(user, key, { id: "s", type: "command" } as never, args, cmd);
+    const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    expect(writeCalls).toBe(1);
+    void fx;
   });
 });

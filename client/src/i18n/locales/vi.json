@@ -3863,6 +3863,8 @@
       "safetyPlcConfig": "cấu hình safety-PLC"
     },
     "operation": {
+      "updateApiKey": "cập nhật khoá API",
+      "changeApiKeyHolder": "đổi người được cấp khoá API",
       "softwareStop": "gửi lệnh dừng phần mềm",
       "clearRobotMotionLock": "gỡ khoá chuyển động của robot",
       "deployBuild": "deploy build chương trình",
@@ -4025,6 +4027,7 @@
       "rejectSafetyPlcConfig": "từ chối cấu hình safety-PLC"
     },
     "field": {
+      "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
       "settingKey": "Khoá cài đặt",
       "uiPrefs": "tuỳ chọn giao diện",
       "shiftConfigId": "ca (shiftConfigId)",
@@ -4135,6 +4138,7 @@
       "assigneeUserId": "người được giao"
     },
     "feature": {
+      "apiKeyHolder": "bản ghi người được cấp khoá API (migration CSDL 0369)",
       "uiPrefs": "đồng bộ tuỳ chọn giao diện",
       "webIngest": "nạp nội dung từ web",
       "robotAnomalyDetection": "phát hiện bất thường robot",
@@ -11852,6 +11856,11 @@
     "spcTotalStations": "Tổng số trạm"
   },
   "studio": {
+    "gateRequiredKeyInactive": "Chưa gửi: khoá API đã khởi động lượt chạy này hiện đã bị thu hồi, vô hiệu hoá hoặc hết hạn. Lệnh máy và robot ngoài lệnh DỪNG bị từ chối cho đến khi quản trị viên kích hoạt lại (hoặc gia hạn) khoá.",
+    "gateRequiredIdentityUnavailable": "Chưa gửi: không đọc được danh tính khoá API của lượt chạy (lỗi CSDL, hoặc chưa áp migration CSDL 0369), nên không kiểm được người duyệt có phải người cầm khoá hay không. Hãy thử lại khi CSDL sẵn sàng.",
+    "apiKeyInactive": "Khởi động bằng khoá API {{key}}, khoá này hiện đã bị thu hồi hoặc vô hiệu hoá: lệnh máy và robot ngoài lệnh DỪNG bị từ chối, ai duyệt cũng vậy, cho đến khi quản trị viên kích hoạt lại.",
+    "apiKeyExpired": "Khởi động bằng khoá API {{key}}, khoá này đã hết hạn: lệnh máy và robot ngoài lệnh DỪNG bị từ chối, ai duyệt cũng vậy, cho đến khi quản trị viên gia hạn.",
+    "apiKeyIdentityUnavailable": "Không đọc được danh tính khoá API của lượt chạy này (lỗi CSDL, hoặc chưa áp migration CSDL 0369): tạm thời lệnh máy và robot ngoài lệnh DỪNG bị từ chối.",
     "whenToUse": "Khi nào dùng — thiết kế quy trình phối hợp NHIỀU máy bằng sơ đồ và chạy thử trên bản sao số trước khi deploy. Cần chương trình cho MỘT thiết bị thì dùng Xưởng lập trình.",
     "title": "Studio Quy trình",
     "subtitle": "Soạn quy trình đa máy bằng hình ảnh, mô phỏng trên bản sao số, rồi triển khai & chạy",
@@ -11969,15 +11978,25 @@
     "abortStopsPending": "{{count}} bước DỪNG đã giao cho máy nhưng chưa có trả lời — xem các bước của lượt chạy.",
     "rejectHint": "Từ chối: lượt chạy bị huỷ. Các bước KHÔNG phải DỪNG còn lại bị bỏ qua; nếu lượt chạy đã tác động lên máy, các bước DỪNG còn lại và các bước bù trừ DỪNG đến hạn vẫn được gửi.",
     "gateRequiredOwnerApproved": "Chưa gửi: bước duyệt trước lệnh này do chính người khởi động lượt chạy duyệt nên không được tính. Chạy lượt mới và nhờ người khác duyệt.",
+    "gateRequiredKeyHolder": "Chưa gửi: lượt chạy này được khởi động bằng khoá API và bước duyệt của nó do người được cấp khoá (hiện tại hoặc trước đây) hoặc người tạo khoá duyệt, nên không được tính. Hãy nhờ người khác duyệt bước duyệt của một lượt chạy mới.",
+    "apiKeyNoHolder": "không ai (khoá không có người được cấp — bị từ chối)",
+    "apiKeyUnidentified": "Khởi động bằng một khoá API không xác định được (khởi động trước khi có bản ghi người được cấp khoá, khoá đã bị xoá, hoặc khoá không có người được cấp): mọi lệnh máy và robot ngoài lệnh DỪNG đều bị từ chối, ai duyệt cũng vậy.",
+    "apiKeyStartedVia": "Khởi động bằng khoá API {{key}}, cấp cho {{holder}}.",
+    "apiKeyExcludedExplain": "Lệnh máy và robot của lượt chạy chỉ được gửi sau khi một bước duyệt được duyệt bởi người KHÁC người khởi động lượt chạy, người được cấp khoá (hiện tại hoặc trước đây) và người tạo khoá ({{names}}).",
+    "apiKeyYouExcluded": "Bạn là một trong số đó: phê duyệt của bạn không được tính cho lệnh máy hoặc robot của lượt chạy này (bước duyệt bốn mắt sẽ từ chối). Hãy nhờ người khác duyệt.",
     "gateRequiredStale": "Chưa gửi: sau khi bước duyệt được duyệt, quy trình đã được triển khai lại, cấu hình adapter, tag hay robot mà các lệnh dùng đã thay đổi, hoặc chương trình trong bộ điều khiển mà lượt chạy ghi tới đã thay đổi, nên lần duyệt đó không áp cho thứ sẽ được gửi bây giờ. Chạy lượt mới và duyệt lại.",
-    "gateRequiredOwnerUnknown": "Chưa gửi: lượt chạy không xác định được người sở hữu (do hệ thống hoặc khoá API không rõ người tạo khởi động), nên không kiểm được người duyệt riêng. Hãy khởi động lượt chạy bằng tài khoản người dùng.",
-    "gateRequiredApiRun": "Chưa gửi: lượt chạy này được khởi động bằng khoá API. Lượt chạy khởi động bằng khoá API không bao giờ gửi lệnh máy hoặc robot nào ngoài lệnh DỪNG, vì không phân biệt được người cầm khoá với người duyệt. Hãy khởi động lượt chạy bằng tài khoản người dùng trong Studio.",
+    "gateRequiredOwnerUnknown": "Chưa gửi: lượt chạy không xác định được người sở hữu (do hệ thống khởi động, hoặc bằng khoá API không cấp cho người dùng nào đang hoạt động), nên không kiểm được người duyệt riêng. Hãy khởi động lượt chạy bằng tài khoản người dùng.",
+    "gateRequiredApiRun": "Chưa gửi: lượt chạy này được khởi động bằng một khoá API không xác định được (khởi động trước khi có bản ghi người được cấp khoá, khoá đã bị xoá, hoặc là bản sao lượt chạy không kèm khoá), nên không kiểm được người duyệt có phải người cầm khoá hay không. Hãy khởi động lượt mới qua khoá, hoặc khởi động bằng tài khoản người dùng trong Studio.",
     "gateRequiredProgramUnreadable": "Chưa gửi: không đọc được checksum chương trình của một bộ điều khiển mà lượt chạy này ghi tới, nên không kiểm được chương trình có còn là chương trình đã được duyệt hay không. Hãy kiểm tra kết nối bộ điều khiển rồi chạy lượt mới.",
     "programChecksTitle": "Chương trình bộ điều khiển mà lượt duyệt này bao phủ",
     "programTargetAdapter": "Adapter {{label}}",
     "programTargetRobot": "Robot {{label}}",
     "programVerified": "Đã xác minh chương trình (checksum {{checksum}})",
     "programSimulation": "(mô phỏng — không phải bộ điều khiển thật)",
+    "programS7PerProtocolDocs": "(checksum theo tài liệu giao thức — chưa kiểm chứng trên thiết bị thật)",
+    "programS7NotTamperProof": "(phát hiện thay đổi theo dữ liệu giao thức — không chống được giả mạo bởi người có quyền ghi vào PLC)",
+    "programS7NotEnabled": "Chưa bật xác minh chương trình cho bộ điều hợp này",
+    "programDisplayCache": "(hiển thị từ lần đọc lúc {{time}} — chỉ để xem; khi duyệt sẽ đọc lại bộ điều khiển)",
     "programUnverifiable": "Không xác minh được chương trình trên bộ điều khiển này",
     "programUnreadable": "Không đọc được checksum chương trình — chưa thể duyệt cho tới khi đọc được (hãy kiểm tra kết nối bộ điều khiển).",
     "approverRolesLabel": "Vai trò duyệt",
@@ -14119,6 +14138,7 @@
     "recognitionFailed": "Không nhận diện được giọng nói. Vui lòng thử lại."
   },
   "apiKeys": {
+    "holderInactive": "{{name}} — đã bị vô hiệu hoá: lệnh máy / robot (ngoài lệnh DỪNG) của lượt chạy điều phối qua khoá này bị từ chối",
     "title": "Khoá API",
     "subtitle": "Khoá truy cập có phạm vi (scope) cho Unified Machine API (/api/v1)",
     "noPermission": "Bạn không có quyền quản lý khoá API.",
@@ -14155,6 +14175,16 @@
     "toastRevoked": "Đã thu hồi khoá",
     "toastDeleted": "Đã xoá khoá",
     "colDataScope": "Phạm vi dữ liệu",
+    "colIssuedTo": "Cấp cho",
+    "holderNotRecorded": "Chưa ghi nhận",
+    "holderNone": "Không ai — lệnh máy / robot (ngoài lệnh DỪNG) của lượt chạy điều phối qua khoá này bị từ chối",
+    "changeHolder": "Đổi người được cấp",
+    "changeHolderAdminOnly": "Chỉ quản trị viên mới đổi được người được cấp khoá",
+    "changeHolderTitle": "Đổi người được cấp khoá",
+    "changeHolderDesc": "Người được cấp là người chịu trách nhiệm về khoá. Lượt chạy điều phối khởi động bằng khoá này chỉ gửi lệnh máy/robot sau khi một cổng được duyệt bởi người KHÁC người được cấp (hiện tại hoặc trước đây), người tạo khoá và người khởi động lượt chạy. Đổi người được cấp KHÔNG đổi bí mật của khoá — nếu khoá thực sự đổi tay, hãy thu hồi và tạo khoá mới. Mọi lần đổi đều được ghi lại.",
+    "fieldHolder": "Cấp cho *",
+    "fieldHolderReason": "Lý do *",
+    "toastHolderChanged": "Đã đổi người được cấp khoá",
     "fieldDataScope": "Phạm vi DỮ LIỆU (khoá THẤY được gì) *",
     "scopeUndeclared": "Chưa khai — khoá KHÔNG đọc được số liệu (bi:read / export:read bị từ chối)",
     "scopeFactory": "Một nhà máy — khoá chỉ thấy dữ liệu của nhà máy được chọn",
@@ -17700,8 +17730,12 @@
         "okBlind": "⚠ đang đọc, nhưng {{n}} PLC mất kết nối / chưa rõ — các lần ngắt của chúng KHÔNG được theo dõi",
         "linkOffline": "mất kết nối",
         "linkUnknown": "chưa rõ",
-        "linkStale": "quá hạn"
-      }
+        "linkStale": "quá hạn",
+        "modePolling": "đang đọc định kỳ (có thể bỏ sót lần nhấn ngắn)",
+        "modePollFallback": "đang đọc định kỳ — không dùng được subscription OPC-UA (có thể bỏ sót lần nhấn ngắn)",
+        "latchSet": "bit chốt được thấy bật lần đầu lúc {{time}} — các lần nhấn ngắn tiếp theo KHÔNG được ghi nhận cho tới khi đặt lại"
+      },
+      "latchWarning": "⚠ {{code}}: bit chốt e-stop được thấy bật lần đầu lúc {{time}}, chưa đặt lại — chỉ cảnh báo: không chặn lệnh ghi / chuyển động thật; lệnh DỪNG luôn được phép"
     },
     "advisoryChip": "Tư vấn — không phải SIS",
     "flag": {
