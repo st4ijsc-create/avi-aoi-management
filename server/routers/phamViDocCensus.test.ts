@@ -668,7 +668,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★★ 2026-10-11 (doc 81 Đợt 7 task J1 — TLS broker nhúng) — **C 471 → 472 · tong 2298 → 2299 · A/B/D/S không đổi.**
 // `mqttClient.brokerTls` (query, MỚI, `mqttOeeRouters.ts`): trạng thái listener MQTTS + vân tay chứng chỉ từ bộ nhớ tiến trình
 // (`getMqttBrokerTlsStatus`), không chạm bảng nào ⇒ nhóm C. Đo bằng chính bộ quét này (trước lượt = khớp ghim; sau = C 472).
-const GHIM = { A: 334, B: 8, C: 472, D: 1132, S: 353, tong: 2299 } as const;
+// ★★★ 2026-10-11 (doc 81 Đợt 7 task I5 — công tắc tự động hoá theo robot) — **D 1132 → 1134 · tong 2299 → 2301 · A/B/C/S không
+// đổi.** `robot.disableAutomation` / `robot.enableAutomation` (mutation, MỚI, `robotRouter.ts`): ghi `system_settings` khoá
+// `robot.automation.off.<robotId>` + audit, không đọc hàng tenant nào ⇒ nhóm D. Đo bằng chính bộ quét này (trước lượt = khớp ghim;
+// sau = D 1134). KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+const GHIM = { A: 334, B: 8, C: 472, D: 1134, S: 353, tong: 2301 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

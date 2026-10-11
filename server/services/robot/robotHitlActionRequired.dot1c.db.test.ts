@@ -18,7 +18,7 @@
  * CSDL THẬT (`_test`). Thiết bị = driver giả trong tiến trình ĐẾM runJob; MQTT/rosbridge = client giả
  * ĐẾM publish (không nối broker nào). Facade an toàn THẬT, nguồn PLC nền giả trả OK (như binding test).
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 // doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
 vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import { and, eq, inArray, like } from "drizzle-orm";
@@ -86,7 +86,7 @@ vi.mock("../vda5050", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { aiPendingActions, robotJobs, permissions } from "../../../drizzle/schema";
+import { aiPendingActions, robotJobs, permissions, systemSettings, robots, auditLogs } from "../../../drizzle/schema";
 import { dispatchRobotJob, type RobotDispatchInput } from "./robotCommandDispatcher";
 import { robotPayloadHash, withOtPayloadHash, readOtPayloadHash } from "../ot/otActionBinding";
 import { Vda5050Adapter } from "../vda5050/vda5050Adapter";
@@ -604,6 +604,109 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       expect(mint.calls).toBe(0);
       expect(rt.runJobCalls).toBe(0);
       expect(published).toEqual(["/cmd", "/cmd"]);
+    });
+  });
+
+  // ─── doc 81 Đợt 7 task I5 — PER-ROBOT AUTOMATION SWITCH ──────────────────────────────────────────────────────────
+  describe("doc 81 Đợt 7 I5 — per-robot 'automation off' switch: the VDA5050 / ROS2 self-grant is refused, STOP unaffected", () => {
+    const KEY = `robot.automation.off.${ROBOT}`;
+    const setSwitch = async (value: string | null) => {
+      const db = await d();
+      await db.delete(systemSettings).where(eq(systemSettings.settingKey, KEY));
+      if (value !== null) await db.insert(systemSettings).values({ settingKey: KEY, settingValue: value, category: "robot_automation" });
+    };
+    const vdaRowsFor = async (key: string) => (await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, `vda5050-${key}`))).length;
+    const router = (userId: number) =>
+      vda5050RouterFree.robotRouter.createCaller({ user: { id: userId, role: "engineer", name: "op", twoFactorEnabled: true }, req: { ip: "127.0.0.1", headers: {} } } as never);
+    let vda5050RouterFree: typeof import("../../routers/robotRouter");
+
+    beforeAll(async () => {
+      vda5050RouterFree = await import("../../routers/robotRouter");
+      const db = await d();
+      await db.delete(robots).where(eq(robots.id, ROBOT));
+      await db.insert(robots).values({ id: ROBOT, code: `${DAU}-r`, name: `${DAU} robot`, vendor: "sim", endpoint: "sim://i5", isEnabled: true });
+    });
+    afterAll(async () => {
+      const db = await d();
+      await db.delete(systemSettings).where(eq(systemSettings.settingKey, KEY));
+      // audit_logs is append-only for the app role (WORM, 42501 on DELETE): its rows (robot id of this run only) stay.
+      await db.delete(robots).where(eq(robots.id, ROBOT));
+    });
+    afterEach(async () => setSwitch(null));
+
+    it("★ OFF ⇒ Vda5050Adapter.sendOrder 'hitl' is refused (HITL_ACTION_REQUIRED), NO grant row minted, robot 0 times", async () => {
+      await setSwitch("true");
+      const key = `${DAU}-i5-off`;
+      const { adapter, published } = makeAgv();
+      const r = await adapter.sendOrder({ nodes: [{ nodeId: "a", x: 0, y: 0, mapId: "map" }], requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: key });
+      expect(r.status).toBe("rejected");
+      expect(r.error).toBe("HITL_ACTION_REQUIRED");
+      expect(rt.runJobCalls).toBe(0);
+      expect(published).toHaveLength(0);
+      expect(await vdaRowsFor(key)).toBe(0);
+    });
+
+    it("★ OFF ⇒ Ros2Bridge motion refused too; a STOP (abort) on the same robot still reaches the driver", async () => {
+      await setSwitch("true");
+      const { bridge } = makeRos2();
+      const params = { ros2: ROS_SPEC };
+      const no = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "home", params }, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER });
+      expect(no.dispatch.error).toBe("HITL_ACTION_REQUIRED");
+      const stop = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "abort", params: {} }, triggerKind: "hitl", requestedBy: OWNER }, ROS_SPEC);
+      expect(stop.dispatch.status).toBe("done");
+      expect(rt.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+    });
+
+    it("★ a grant minted while ON, consumed after the switch went OFF ⇒ the dispatcher refuses it (AUTOMATION_OFF), the row is NOT consumed", async () => {
+      const { ensureBoundRobotAction } = await import("./robotAutomationAction");
+      const job = { jobType: "move" as const, params: { i5: 1 } };
+      const actionId = await ensureBoundRobotAction({ tool: "vda5050.automation", robotId: ROBOT, job, ownerUserId: OWNER, idempotencyKey: `${DAU}-i5-late` });
+      expect(actionId).toBeTruthy();
+      await setSwitch("true");
+      const r = await dispatchRobotJob(input({ actionId: actionId!, job }));
+      expect(r.status).toBe("rejected");
+      expect(r.error).toBe("NOT_CONFIRMED");
+      expect(rt.runJobCalls).toBe(0);
+      expect((await pendingRow(actionId!))?.status).toBe("confirmed");
+      expect(String((await jobRow(r.jobId))?.errorText ?? "")).toContain("AUTOMATION_OFF");
+    });
+
+    it("★ CANNOT DECIDE — an unreadable switch value ⇒ treated as OFF (no grant)", async () => {
+      await setSwitch("maybe");
+      const { ensureBoundRobotAction } = await import("./robotAutomationAction");
+      expect(await ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job: { jobType: "home", params: {} }, ownerUserId: OWNER, idempotencyKey: `${DAU}-i5-unk` })).toBeNull();
+    });
+
+    it("control: ON ('false' or no row) ⇒ the grant is minted and the motion runs once", async () => {
+      await setSwitch("false");
+      const { adapter } = makeAgv();
+      const r = await adapter.sendOrder({ nodes: [{ nodeId: "a", x: 0, y: 0, mapId: "map" }], requestedBy: OWNER, confirmedBy: OWNER });
+      expect(r.status).toBe("done");
+      expect(rt.runJobCalls).toBe(1);
+    });
+
+    it("★ router: disableAutomation (canEdit) writes the AUDIT row then the switch; robot.list shows it; enableAutomation turns it back on", async () => {
+      const off = await router(OPERATOR).disableAutomation({ robotId: ROBOT, reason: "AGV lane under repair" });
+      expect(off).toMatchObject({ robotId: ROBOT, automation: "off", changed: true });
+      const [row] = await (await d()).select().from(systemSettings).where(eq(systemSettings.settingKey, KEY));
+      expect(row?.settingValue).toBe("true");
+      expect(row?.updatedBy).toBe(OPERATOR);
+      const audits = await (await d()).select().from(auditLogs).where(and(eq(auditLogs.entityType, "robot"), eq(auditLogs.entityId, ROBOT), eq(auditLogs.action, "robot.disableAutomation")));
+      expect(audits.length).toBe(1);
+      const det = typeof audits[0].details === "string" ? JSON.parse(audits[0].details as string) : audits[0].details;
+      expect(det).toMatchObject({ reason: "AGV lane under repair", before: "on", after: "off" });
+      const listed = (await router(OPERATOR).list()).find((x: { id: number }) => x.id === ROBOT) as { automation?: string } | undefined;
+      expect(listed?.automation).toBe("off");
+      const on = await router(OPERATOR).enableAutomation({ robotId: ROBOT, reason: "lane repaired" });
+      expect(on).toMatchObject({ automation: "on", changed: true });
+    });
+
+    it("router: a reason is required; a missing robot ⇒ NOT_FOUND; canCreate without canEdit ⇒ FORBIDDEN (nothing written)", async () => {
+      await expect(router(OPERATOR).disableAutomation({ robotId: ROBOT, reason: "x" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(router(OPERATOR).disableAutomation({ robotId: ROBOT + 1, reason: "no such robot" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(router(OPERATOR_NO_EDIT).disableAutomation({ robotId: ROBOT, reason: "not allowed" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const rows = await (await d()).select().from(systemSettings).where(eq(systemSettings.settingKey, KEY));
+      expect(rows).toHaveLength(0);
     });
   });
 });

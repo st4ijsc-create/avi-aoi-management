@@ -9,7 +9,8 @@ import { router, protectedProcedure, adminProcedure, actuationProcedure } from "
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { createAuditLog } from "../db";
-import { robots, robotTelemetry, robotJobs } from "../../drizzle/schema";
+import { robots, robotTelemetry, robotJobs, systemSettings } from "../../drizzle/schema";
+import { readRobotAutomationState, readRobotAutomationStates, robotAutomationOffKey, type RobotAutomationState } from "../services/robot/robotAutomationAction"; // doc 81 Đợt 7 I5
 import { eq, desc } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
@@ -69,6 +70,45 @@ function verbToJobType(verb: z.infer<typeof consoleCommandEnum>): RobotJobType {
   }
 }
 
+/** doc 81 Đợt 7 I5 — set a robot's automation switch: robot must exist, audit FIRST, then the setting (upsert). */
+async function setRobotAutomation(
+  ctx: { user: { id: number; name?: string | null }; req?: { ip?: string; headers?: Record<string, unknown> } },
+  robotId: number,
+  enabled: boolean,
+  reason: string,
+): Promise<{ robotId: number; automation: RobotAutomationState; changed: boolean }> {
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
+  const [r] = await db.select().from(robots).where(eq(robots.id, robotId)).limit(1);
+  if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
+  const before = await readRobotAutomationState(db, robotId);
+  await createAuditLog({
+    userId: ctx.user.id,
+    userName: ctx.user.name ?? null,
+    action: enabled ? "robot.enableAutomation" : "robot.disableAutomation",
+    entityType: "robot",
+    entityId: robotId,
+    entityName: r.code,
+    ipAddress: ctx.req?.ip ?? null,
+    userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+    details: { reason, before, after: enabled ? "on" : "off" },
+  });
+  const value = enabled ? "false" : "true";
+  await db
+    .insert(systemSettings)
+    .values({
+      settingKey: robotAutomationOffKey(robotId),
+      settingValue: value,
+      category: "robot_automation",
+      description: `doc 81 Dot 7 I5 - automation switch of robot ${robotId} (true = automation OFF)`,
+      updatedBy: ctx.user.id,
+    })
+    .onConflictDoUpdate({ target: systemSettings.settingKey, set: { settingValue: value, updatedBy: ctx.user.id, updatedAt: new Date() } });
+  const after = await readRobotAutomationState(db, robotId);
+  console.warn(`[Robot] automation of robot ${robotId} (${r.code}) turned ${enabled ? "ON" : "OFF"} by user ${ctx.user.id}: ${reason}`);
+  return { robotId, automation: after, changed: before !== after };
+}
+
 export const robotRouter = router({
   // Doc 38 Đợt Q — these rows carry `endpoint` + `connectionOptions` (device address
   // and, potentially, connection credentials). Gate behind machine_control/canView so
@@ -79,9 +119,16 @@ export const robotRouter = router({
       const db = await getDb();
       if (!db) return [];
       const rows = await db.select().from(robots).orderBy(desc(robots.updatedAt));
+      // doc 81 Đợt 7 I5 — the per-robot automation switch ("unknown" = unreadable: automation is refused then).
+      const automation = await readRobotAutomationStates(db, rows.map((r) => r.id));
       // CTL-05 — kèm validationStatus per-vendor để UI badge (spec-verified/assumed/mock).
       // Fix round 4 (R13) — kèm `live` (kết nối + khoá chuyển động của tiến trình này).
-      return rows.map((r) => ({ ...r, validationStatus: getRobotVendorValidation(r.vendor), live: robotLiveState(r.id) }));
+      return rows.map((r) => ({
+        ...r,
+        validationStatus: getRobotVendorValidation(r.vendor),
+        live: robotLiveState(r.id),
+        automation: (automation.get(r.id) ?? "unknown") as RobotAutomationState,
+      }));
     }),
 
   get: protectedProcedure
@@ -92,7 +139,12 @@ export const robotRouter = router({
       if (!db) return null;
       const [row] = await db.select().from(robots).where(eq(robots.id, input.id)).limit(1);
       if (!row) return null;
-      return { ...row, validationStatus: getRobotVendorValidation(row.vendor), live: robotLiveState(row.id) };
+      return {
+        ...row,
+        validationStatus: getRobotVendorValidation(row.vendor),
+        live: robotLiveState(row.id),
+        automation: await readRobotAutomationState(db, row.id), // doc 81 Đợt 7 I5
+      };
     }),
 
   // doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — NGƯỜI VẬN HÀNH GỠ KHOÁ CHUYỂN ĐỘNG.
@@ -187,6 +239,22 @@ export const robotRouter = router({
       console.warn(`[Robot] motion lock cleared by user ${ctx.user.id} on robot ${input.robotId} (${rt.code}): ${input.reason}`);
       return { robotId: input.robotId, changed: true, connected: connectedNow(), motionLock: after };
     }),
+
+  // doc 81 Đợt 7 task I5 — PER-ROBOT AUTOMATION SWITCH (owner decision 2026-10-11). OFF ⇒ the VDA5050 / ROS2 automation
+  // self-grant is refused for this robot (robotAutomationAction + the dispatcher); STOPs are never affected; an operator's
+  // own 'manual' command is not automation. Turning automation OFF only withholds motion ⇒ machine_control/canEdit is
+  // enough (never held behind the actuation role floor / 2FA); turning it back ON re-enables automated motion ⇒ the
+  // actuation floor (admin/supervisor/engineer + 2FA) + canEdit. Both need a reason and write the audit row FIRST (no
+  // audit ⇒ no change, fail-closed).
+  disableAutomation: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({ robotId: z.number().int().positive(), reason: z.string().trim().min(3).max(500) }))
+    .mutation(async ({ ctx, input }) => setRobotAutomation(ctx, input.robotId, false, input.reason)),
+
+  enableAutomation: actuationProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({ robotId: z.number().int().positive(), reason: z.string().trim().min(3).max(500) }))
+    .mutation(async ({ ctx, input }) => setRobotAutomation(ctx, input.robotId, true, input.reason)),
 
   // CTL-05 — bản đồ vendor → validationStatus (spec-verified/assumed/mock) cho UI badge.
   vendorValidation: protectedProcedure

@@ -14829,6 +14829,21 @@
       "linkLost": "Mất kết nối",
       "connected": "Đang kết nối"
     },
+    "automation": {
+      "offBadge": "Tự động hoá: TẮT",
+      "unknownBadge": "Tự động hoá: không đọc được (coi như TẮT)",
+      "offTip": "Tự động hoá (VDA5050 / ROS2) bị TẮT cho robot này: hệ thống tự động không tự cấp quyền chuyển động; lệnh DỪNG không bị ảnh hưởng.",
+      "disable": "Tắt tự động hoá",
+      "enable": "Bật tự động hoá",
+      "disableTip": "Tắt tự động hoá: hệ thống VDA5050 / ROS2 không còn tự cấp quyền chuyển động cho robot này. Lệnh DỪNG không bị ảnh hưởng.",
+      "enableTip": "Bật lại tự động hoá: hệ thống VDA5050 / ROS2 lại được tự cấp quyền chuyển động (gắn đúng lệnh, một lần, có hạn, có kiểm toán).",
+      "disableTitle": "Tắt tự động hoá cho {{code}}?",
+      "enableTitle": "Bật lại tự động hoá cho {{code}}?",
+      "disableDesc": "Hệ thống VDA5050 / ROS2 sẽ không còn tự cấp quyền chuyển động cho robot này; quyền đã cấp mà chưa dùng cũng bị từ chối. Lệnh DỪNG và lệnh do người vận hành tự bấm không bị ảnh hưởng. Thao tác được ghi vào nhật ký kiểm toán kèm lý do.",
+      "enableDesc": "Hệ thống VDA5050 / ROS2 sẽ lại được tự cấp quyền chuyển động cho robot này (gắn đúng một lệnh, dùng một lần, có hạn, có kiểm toán). Thao tác được ghi vào nhật ký kiểm toán kèm lý do.",
+      "turnedOff": "Đã TẮT tự động hoá cho {{code}}",
+      "turnedOn": "Đã BẬT lại tự động hoá cho {{code}}"
+    },
     "motionLock": {
       "roleRequired": "Cần vai admin/supervisor/engineer và quyền điều khiển máy (machine_control)",
       "badge": "Khoá chuyển động",

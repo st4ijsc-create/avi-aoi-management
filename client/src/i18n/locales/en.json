@@ -14849,6 +14849,21 @@
       "linkLost": "Link lost",
       "connected": "Connected"
     },
+    "automation": {
+      "offBadge": "Automation: OFF",
+      "unknownBadge": "Automation: unreadable (treated as OFF)",
+      "offTip": "Automation (VDA5050 / ROS2) is OFF for this robot: automated systems cannot grant themselves motion; STOP commands are not affected.",
+      "disable": "Turn automation off",
+      "enable": "Turn automation on",
+      "disableTip": "Turn automation off: the VDA5050 / ROS2 systems can no longer grant themselves motion on this robot. STOP commands are not affected.",
+      "enableTip": "Turn automation back on: the VDA5050 / ROS2 systems may again grant themselves motion (bound to one command, single-use, time-limited, audited).",
+      "disableTitle": "Turn automation off for {{code}}?",
+      "enableTitle": "Turn automation back on for {{code}}?",
+      "disableDesc": "The VDA5050 / ROS2 systems will no longer grant themselves motion on this robot; a grant already made but not used is refused too. STOP commands and an operator's own commands are not affected. This is recorded in the audit log with your reason.",
+      "enableDesc": "The VDA5050 / ROS2 systems may again grant themselves motion on this robot (bound to one command, single-use, time-limited, audited). This is recorded in the audit log with your reason.",
+      "turnedOff": "Automation turned OFF for {{code}}",
+      "turnedOn": "Automation turned back ON for {{code}}"
+    },
     "motionLock": {
       "roleRequired": "Requires the admin/supervisor/engineer role and machine control permission (machine_control)",
       "badge": "Motion locked",

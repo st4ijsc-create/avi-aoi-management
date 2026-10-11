@@ -14632,6 +14632,21 @@
       "linkLost": "连接丢失",
       "connected": "已连接"
     },
+    "automation": {
+      "offBadge": "自动化：关闭",
+      "unknownBadge": "自动化：无法读取（视为关闭）",
+      "offTip": "此机器人的自动化（VDA5050 / ROS2）已关闭：自动化系统不能自行授予运动权限；停止命令不受影响。",
+      "disable": "关闭自动化",
+      "enable": "开启自动化",
+      "disableTip": "关闭自动化：VDA5050 / ROS2 系统不能再为此机器人自行授予运动权限。停止命令不受影响。",
+      "enableTip": "重新开启自动化：VDA5050 / ROS2 系统可再次自行授予运动权限（绑定单一命令、一次性、有时限、可审计）。",
+      "disableTitle": "关闭 {{code}} 的自动化？",
+      "enableTitle": "重新开启 {{code}} 的自动化？",
+      "disableDesc": "VDA5050 / ROS2 系统将不再为此机器人自行授予运动权限；已授予但未使用的权限也会被拒绝。停止命令和操作员自己发出的命令不受影响。此操作将连同您的原因记录到审计日志。",
+      "enableDesc": "VDA5050 / ROS2 系统将可再次为此机器人自行授予运动权限（绑定单一命令、一次性、有时限、可审计）。此操作将连同您的原因记录到审计日志。",
+      "turnedOff": "已关闭 {{code}} 的自动化",
+      "turnedOn": "已重新开启 {{code}} 的自动化"
+    },
     "motionLock": {
       "roleRequired": "需要 admin/supervisor/engineer 角色以及设备控制权限（machine_control）",
       "badge": "运动已锁定",

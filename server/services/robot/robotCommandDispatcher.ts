@@ -46,6 +46,7 @@ import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions, type AiPendingAction } from "../../../drizzle/schema";
 import { FOE_ENGINE_TOOL, foeSelfApprovalRefusal, readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
 import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
+import { isRobotAutomationTool, readRobotAutomationState, auditAutomationRefused } from "./robotAutomationAction"; // doc 81 Đợt 7 I5
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver, RobotJobResult } from "./robotDriver";
 import {
@@ -1097,6 +1098,16 @@ async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record
     if (verdict.ok && pending?.tool === FOE_ENGINE_TOOL) {
       const refusal = await foeApprovalDbRefusal(tx, pending, input.requestedBy);
       if (refusal) verdict = { ok: false, reason: "NOT_CONFIRMED", detail: refusal };
+    }
+    // doc 81 Đợt 7 task I5 — an AUTOMATION self-grant (VDA5050 / ROS2) is consumed only while the robot's automation switch is
+    // ON, read inside this transaction: a grant minted just before the switch was turned off is refused here. OFF or
+    // unreadable ⇒ refused (fail-closed). A STOP never reaches this branch (non-motion jobs are not verified).
+    if (verdict.ok && isRobotAutomationTool(pending?.tool)) {
+      const state = await readRobotAutomationState(tx, input.robotId);
+      if (state !== "on") {
+        auditAutomationRefused(input.robotId, String(pending?.tool), state, "dispatch", pending?.userId);
+        verdict = { ok: false, reason: "NOT_CONFIRMED", detail: `AUTOMATION_OFF — the robot's automation switch is ${state === "off" ? "off" : "unreadable"}; the automation grant is refused` };
+      }
     }
     if (verdict.ok) {
       const consumed = await tx

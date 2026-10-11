@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/table";
 import {
   Bot, RefreshCw, ShieldAlert, Plug, Activity, AlertTriangle, CheckCircle2, CircleSlash, ExternalLink,
-  Send, Unlock, Lock,
+  Send, Unlock, Lock, PowerOff, Power,
 } from "lucide-react";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
@@ -66,6 +66,8 @@ type RobotRow = {
   status: string;
   lastSeenAt?: string | Date | null;
   live?: RobotLive;
+  /** doc 81 Đợt 7 I5 — the per-robot automation switch ("unknown" = unreadable: the server refuses automation then). */
+  automation?: "on" | "off" | "unknown";
 };
 
 function fmt(v?: string | Date | null): string {
@@ -154,6 +156,30 @@ export default function RobotControl() {
       void utils.robot.list.invalidate();
     },
   });
+
+  // doc 81 Đợt 7 task I5 — per-robot automation switch (VDA5050 / ROS2 self-grant). Turning it OFF only withholds motion:
+  // machine_control/canEdit is enough; turning it back ON needs the actuation floor (admin/supervisor/engineer) too. A
+  // reason is required either way (the server writes the audit row before the change). STOPs are never affected.
+  const [autoTarget, setAutoTarget] = useState<{ robot: RobotRow; enable: boolean } | null>(null);
+  const [autoReason, setAutoReason] = useState("");
+  const canEnableAutomation = canClearLock; // same floor: actuation role + machine_control/canEdit
+  const autoDone = {
+    onSuccess: (r: { robotId: number; automation: string }) => {
+      const code = robots.find((x) => x.id === r.robotId)?.code ?? String(r.robotId);
+      if (r.automation === "off") toast.success(t("robot.automation.turnedOff", { defaultValue: "Đã TẮT tự động hoá cho {{code}}", code }));
+      else toast.success(t("robot.automation.turnedOn", { defaultValue: "Đã BẬT lại tự động hoá cho {{code}}", code }));
+      setAutoTarget(null);
+      setAutoReason("");
+      void utils.robot.list.invalidate();
+    },
+    onError: (e: unknown) => {
+      toastTrpcError(e);
+      void utils.robot.list.invalidate();
+    },
+  };
+  const disableAutoM = trpc.robot.disableAutomation.useMutation(autoDone);
+  const enableAutoM = trpc.robot.enableAutomation.useMutation(autoDone);
+  const autoPending = disableAutoM.isPending || enableAutoM.isPending;
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selected = useMemo(
@@ -301,6 +327,17 @@ export default function RobotControl() {
                             label={<><AlertTriangle className="mr-1 h-3 w-3" />{t("robot.live.linkLost", "Mất kết nối")}</>}
                           />
                         )}
+                        {r.automation && r.automation !== "on" && (
+                          <span
+                            data-testid="robot-automation-off"
+                            title={t("robot.automation.offTip", "Tự động hoá (VDA5050 / ROS2) bị TẮT cho robot này: hệ thống tự động không tự cấp quyền chuyển động; lệnh DỪNG không bị ảnh hưởng.")}
+                          >
+                            <StatusBadge
+                              status="automation_off" tone="warning" className="gap-0"
+                              label={<><PowerOff className="mr-1 h-3 w-3" />{r.automation === "off" ? t("robot.automation.offBadge", "Tự động hoá: TẮT") : t("robot.automation.unknownBadge", "Tự động hoá: không đọc được (coi như TẮT)")}</>}
+                            />
+                          </span>
+                        )}
                         {r.live?.motionLock?.locked && (
                           <span
                             title={t("robot.motionLock.tip", {
@@ -328,6 +365,25 @@ export default function RobotControl() {
                             title={!canClearLock ? t("robot.motionLock.roleRequired", "Cần vai admin/supervisor/engineer và quyền điều khiển máy (machine_control)") : t("robot.motionLock.badge", "Khoá chuyển động")}
                           >
                             <Unlock className="mr-1 h-3.5 w-3.5" />{t("robot.motionLock.clear", "Gỡ khoá")}
+                          </Button>
+                        )}
+                        {r.automation === "on" ? (
+                          <Button
+                            size="sm" variant="outline" className="h-7"
+                            disabled={!canControl || autoPending}
+                            onClick={() => { setAutoTarget({ robot: r, enable: false }); setAutoReason(""); }}
+                            title={!canControl ? t("robot.controlPermRequired", "Cần quyền điều khiển máy (machine_control)") : t("robot.automation.disableTip", "Tắt tự động hoá: hệ thống VDA5050 / ROS2 không còn tự cấp quyền chuyển động cho robot này. Lệnh DỪNG không bị ảnh hưởng.")}
+                          >
+                            <PowerOff className="mr-1 h-3.5 w-3.5" />{t("robot.automation.disable", "Tắt tự động hoá")}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm" variant="outline" className="h-7"
+                            disabled={!canEnableAutomation || autoPending}
+                            onClick={() => { setAutoTarget({ robot: r, enable: true }); setAutoReason(""); }}
+                            title={!canEnableAutomation ? t("robot.motionLock.roleRequired", "Cần vai admin/supervisor/engineer và quyền điều khiển máy (machine_control)") : t("robot.automation.enableTip", "Bật lại tự động hoá: hệ thống VDA5050 / ROS2 lại được tự cấp quyền chuyển động (gắn đúng lệnh, một lần, có hạn, có kiểm toán).")}
+                          >
+                            <Power className="mr-1 h-3.5 w-3.5" />{t("robot.automation.enable", "Bật tự động hoá")}
                           </Button>
                         )}
                         <Button
@@ -451,6 +507,45 @@ export default function RobotControl() {
             </Card>
           </div>
         )}
+
+        {/* doc 81 Đợt 7 I5 — tắt / bật tự động hoá theo robot: lý do bắt buộc, server ghi audit rồi mới đổi */}
+        <AlertDialog open={autoTarget != null} onOpenChange={(open) => { if (!open) setAutoTarget(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {autoTarget?.enable
+                  ? t("robot.automation.enableTitle", { defaultValue: "Bật lại tự động hoá cho {{code}}?", code: autoTarget?.robot.code ?? "" })
+                  : t("robot.automation.disableTitle", { defaultValue: "Tắt tự động hoá cho {{code}}?", code: autoTarget?.robot.code ?? "" })}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {autoTarget?.enable
+                  ? t("robot.automation.enableDesc", "Hệ thống VDA5050 / ROS2 sẽ lại được tự cấp quyền chuyển động cho robot này (gắn đúng một lệnh, dùng một lần, có hạn, có kiểm toán). Thao tác được ghi vào nhật ký kiểm toán kèm lý do.")
+                  : t("robot.automation.disableDesc", "Hệ thống VDA5050 / ROS2 sẽ không còn tự cấp quyền chuyển động cho robot này; quyền đã cấp mà chưa dùng cũng bị từ chối. Lệnh DỪNG và lệnh do người vận hành tự bấm không bị ảnh hưởng. Thao tác được ghi vào nhật ký kiểm toán kèm lý do.")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="robot-automation-reason">
+                {t("robot.motionLock.reasonLabel", "Lý do (bắt buộc, ít nhất 3 ký tự)")}
+              </label>
+              <Textarea id="robot-automation-reason" value={autoReason} onChange={(e) => setAutoReason(e.target.value)} rows={3} />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={autoPending}>{t("common.cancel", "Hủy")}</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={autoReason.trim().length < 3 || autoPending || !autoTarget || (autoTarget.enable ? !canEnableAutomation : !canControl)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (!autoTarget) return;
+                  const vars = { robotId: autoTarget.robot.id, reason: autoReason.trim() };
+                  if (autoTarget.enable) enableAutoM.mutate(vars);
+                  else disableAutoM.mutate(vars);
+                }}
+              >
+                {autoTarget?.enable ? t("robot.automation.enable", "Bật tự động hoá") : t("robot.automation.disable", "Tắt tự động hoá")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Fix round 4 (R13) — xác nhận gỡ khoá chuyển động: lý do bắt buộc, server ghi audit rồi mới gỡ */}
         <AlertDialog open={clearTarget != null} onOpenChange={(open) => { if (!open) setClearTarget(null); }}>

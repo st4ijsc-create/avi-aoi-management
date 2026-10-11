@@ -740,3 +740,11 @@ Plan `docs/superpowers/plans/2026-10-11-engineering-control-dot6.md` — quyết
 - Kiểm: review → 3 vòng sửa (quét bảo mật bắt 3 điểm: lệch trạng thái khi ghi muộn, run ở edge bị coi "chưa tác động", khoá gửi lại bị cắt) → review lại sẵn sàng gộp; engine 56/56, Studio 66 + 13; đột biến đều đỏ.
 
 **Còn mở (Đợt 6):** huỷ từ trung tâm không dừng được walker của run đang chạy ở edge (chỉ gửi DỪNG); gửi lại có thể lặp một DỪNG mà phản hồi trước còn đang chờ (DỪNG lặp vô hại); từ chối cổng có hook QT mà phản hồi mất thì việc quét để lại cho lần huỷ sau.
+
+### Đợt 7 — chính sách tự động hoá VDA5050 / ROS2 (quyết định chủ dự án 2026-10-11)
+
+- **Giữ nguyên quyền tự cấp** của đường tự động (bộ điều hợp VDA5050, cầu ROS2): khi một lệnh CHUYỂN ĐỘNG tự động không có bản ghi xác nhận của người, hệ thống tự tạo một bản ghi `ai_pending_actions` (`vda5050.automation` / `ros2.automation`) **gắn đúng một lệnh** (mã băm `robotPayloadHash` của chính job sẽ gửi), **dùng một lần** (dispatcher tiêu thụ confirmed→executed dưới khoá dòng), **có hạn** (5 phút), **có kiểm toán** (hàng ghi công cụ + chủ sở hữu). Không có người thứ hai xác nhận — đây là chủ ý, đã được chấp nhận.
+- **Công tắc "tắt tự động hoá" theo từng robot** (màn Điều khiển Robot; `robot.disableAutomation` / `robot.enableAutomation`, lý do bắt buộc, audit ghi TRƯỚC khi đổi): khi TẮT, quyền tự cấp bị **từ chối ở cả hai cửa** — lúc tạo (không tạo bản ghi ⇒ dispatcher từ chối `HITL_ACTION_REQUIRED`) và lúc tiêu thụ (quyền đã cấp ngay trước khi tắt ⇒ `NOT_CONFIRMED` `AUTOMATION_OFF`); mỗi lần từ chối ghi log + audit `robot.automationRefused`. Census `robotAutomationSwitchCensus.dot7` chứng minh không có cửa thứ ba.
+- **Tắt** chỉ cần quyền `machine_control/canEdit` (chỉ giữ lại chuyển động, không bao giờ đứng sau sàn vai/2FA); **bật lại** cần thêm sàn vai actuation (admin/supervisor/engineer + 2FA).
+- **Lệnh DỪNG không bị ảnh hưởng**: DỪNG không bao giờ tạo hay tiêu thụ quyền tự cấp. Lệnh người vận hành tự bấm (`manual`) và lệnh mang actionId do người xác nhận không phải tự động hoá.
+- **Khi không quyết được** (không đọc được công tắc: mất CSDL, lỗi truy vấn, giá trị lạ) ⇒ coi như **TẮT** (từ chối quyền tự cấp; chỉ giữ lại chuyển động). Lưu ở `system_settings` khoá `robot.automation.off.<robotId>` (không cần migration).
