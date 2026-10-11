@@ -114,7 +114,11 @@ async function claim(runId: number) {
   const c = await import("./edgeExecutionCentral");
   const n = await node();
   const p = (await c.pullForNode(n)).data!.runs.find((x) => x.runId === runId)!;
-  const got = await c.claimForNode(n, runId, { claimSeq: p.claimSeq, defHash: p.defHash, bindingDigest: p.bindingDigest });
+  // final wave F2 — the pull carries no digest: the edge reads its OWN (here: the same DB) and central compares it fresh at the claim
+  const { computeBindingDigest } = await import("../orchestration/foe/foeGateApproval");
+  const { getDb } = await import("../../db/connection");
+  const edgeDigest = await computeBindingDigest((await getDb())!, p.definition!);
+  const got = await c.claimForNode(n, runId, { claimSeq: p.claimSeq, defHash: p.defHash, bindingDigest: edgeDigest });
   expect(got.http).toBe(200);
   return { claimSeq: got.data!.claimSeq, token: got.data!.claimToken, tokenHash: sha(got.data!.claimToken), defHash: p.defHash };
 }

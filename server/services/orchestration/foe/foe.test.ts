@@ -171,6 +171,11 @@ const fakeDb = {
     };
     return upd;
   },
+  // doc 81 Đợt 9 final wave F4 — the edge hand-back of an approval is one transaction; this in-memory fake runs the callback on
+  // itself (no rollback modelled — the atomicity is measured on the real DB: edgeExecution.fw.dot9fw.db.test.ts).
+  transaction(fn: (tx: unknown) => unknown) {
+    return Promise.resolve().then(() => fn(fakeDb));
+  },
 };
 
 vi.mock("../../../db/connection", () => ({

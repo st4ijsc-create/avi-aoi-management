@@ -17,11 +17,15 @@ const h = vi.hoisted(() => ({
   resend: vi.fn(),
   guard: vi.fn(),
   runStatus: "running",
+  digestReads: 0,
 }));
 
 vi.mock("../orchestration/foe/foeGateApproval", () => ({
   hashWorkflowDefinition: (def: { tag?: string }) => (def?.tag === "other" ? "b".repeat(64) : def?.tag === "local" ? h.wfHash : "a".repeat(64)),
-  computeBindingDigest: async () => h.localDigest,
+  computeBindingDigest: async () => {
+    h.digestReads++; // final wave F2 — each call is a device-configuration read (an S7 block-info read per controller)
+    return h.localDigest;
+  },
 }));
 vi.mock("../orchestration/foe/foeEngine", () => ({ driveEdgeClaimedRun: h.drive, stopLiveRunForCentralAbort: h.stopLive, resendStopsOfAbortedRun: h.resend }));
 vi.mock("./edgeRunGuard", () => ({ readEdgeRunGuard: h.guard }));
@@ -68,7 +72,6 @@ const pulledRun = (over: Record<string, unknown> = {}) => ({
   defHash: "a".repeat(64),
   claimSeq: 0,
   definition: { tag: "pulled" },
-  bindingDigest: "d".repeat(64),
   ...over,
 });
 function agent(fetchImpl: typeof fetch) {
@@ -76,6 +79,7 @@ function agent(fetchImpl: typeof fetch) {
 }
 
 beforeEach(() => {
+  h.digestReads = 0;
   h.localDigest = "d".repeat(64);
   h.runStatus = "running";
   h.drive.mockReset();
@@ -139,8 +143,6 @@ describe("doc 81 Đợt 9 S3 — the edge agent", () => {
   it.each([
     ["the snapshot does not hash to its defHash", { definition: { tag: "other" } }],
     ["central refused it", { refused: "definitionChanged", definition: undefined }],
-    ["its binding digest differs from this edge's", { bindingDigest: "e".repeat(64) }],
-    ["central's binding digest is null", { bindingDigest: null }],
   ])("★ never claims when %s", async (_label, over) => {
     const c = central((p) => (p === "/edge/node/pull" ? ok({ runs: [pulledRun(over)], claims: [] }) : err(500, "x")));
     const r = await agent(c.fetchImpl).tick();
@@ -283,5 +285,80 @@ describe("doc 81 Đợt 9 S3 — the edge agent", () => {
     }
     expect(logs.length).toBeGreaterThan(0);
     expect(logs.join("\n")).not.toContain(TOKEN.split(".")[1]);
+  });
+});
+
+describe("doc 81 Đợt 9 final wave F2 — the device configuration is read only to claim, with a bounded back-off", () => {
+  const backoffAgent = (fetchImpl: typeof fetch, clock: { t: number }) =>
+    new EdgeExecutionAgent({ centralUrl: "http://central.test", credential: TOKEN, pullIntervalMs: 1000, progressMs: 20, maxConcurrent: 4, requestTimeoutMs: 1000, stopResendMinMs: 60_000, claimBackoffMaxMs: 8000, fetchImpl, now: () => clock.t });
+
+  it("★ the claim carries THIS edge's own digest (read once, right before the claim) — whatever a pull might say", async () => {
+    h.drive.mockResolvedValue({ ok: true, status: "completed" });
+    const c = central((p) => {
+      if (p === "/edge/node/pull") return ok({ runs: [pulledRun({ bindingDigest: "e".repeat(64) })], claims: [] });
+      if (p.endsWith("/claim")) return ok({ runId: 11, claimSeq: 1, claimToken: `ect_${"T".repeat(43)}` });
+      return ok({ abortRequested: false, status: "completed" });
+    });
+    const a = agent(c.fetchImpl);
+    expect((await a.tick()).claimed).toEqual([11]);
+    await a.idle();
+    expect(h.digestReads).toBe(1);
+    expect(c.calls.find((x) => x.path.endsWith("/claim"))!.body).toEqual({ claimSeq: 0, defHash: "a".repeat(64), bindingDigest: "d".repeat(64) });
+  });
+
+  it("★ an unclaimable run (its own digest unreadable) is NOT re-read on every pull: pullInterval × 2^n, capped", async () => {
+    h.localDigest = null;
+    const clock = { t: 0 };
+    const c = central((p) => (p === "/edge/node/pull" ? ok({ runs: [pulledRun()], claims: [] }) : err(500, "x")));
+    const a = backoffAgent(c.fetchImpl, clock);
+    const readsAt: number[] = [];
+    for (let t = 0; t <= 30_000; t += 500) {
+      clock.t = t;
+      const before = h.digestReads;
+      const r = await a.tick();
+      expect(r.claimed).toEqual([]);
+      if (h.digestReads > before) readsAt.push(t);
+    }
+    // 61 pulls in 30 s; reads only at 0, +2 s, +4 s, then the 8 s cap
+    expect(readsAt).toEqual([0, 2000, 6000, 14_000, 22_000, 30_000]);
+    expect(c.calls.some((x) => x.path.endsWith("/claim"))).toBe(false);
+  });
+
+  it("★ a claim central refuses (binding_changed) backs off too; once claimable it is claimed and the back-off is forgotten", async () => {
+    const clock = { t: 0 };
+    let refuse = true;
+    let taken = false;
+    h.drive.mockResolvedValue({ ok: true, status: "completed" });
+    const c = central((p) => {
+      if (p === "/edge/node/pull") return ok({ runs: taken ? [] : [pulledRun()], claims: [] });
+      if (p.endsWith("/claim")) return refuse ? err(409, "binding_changed") : ((taken = true), ok({ runId: 11, claimSeq: 1, claimToken: `ect_${"T".repeat(43)}` }));
+      return ok({ abortRequested: false, status: "completed" });
+    });
+    const a = backoffAgent(c.fetchImpl, clock);
+    expect((await a.tick()).skipped[0].why).toBe("claim refused (binding_changed)");
+    clock.t = 1500;
+    expect((await a.tick()).skipped[0].why).toMatch(/backing off after 1/);
+    expect(h.digestReads).toBe(1);
+    refuse = false;
+    clock.t = 2000;
+    expect((await a.tick()).claimed).toEqual([11]);
+    expect(h.digestReads).toBe(2);
+    await a.idle();
+  });
+
+  it("a run that leaves the pull (claimed elsewhere, held, aborted) forgets its back-off", async () => {
+    h.localDigest = null;
+    const clock = { t: 0 };
+    let listed = true;
+    const c = central((p) => (p === "/edge/node/pull" ? ok({ runs: listed ? [pulledRun()] : [], claims: [] }) : err(500, "x")));
+    const a = backoffAgent(c.fetchImpl, clock);
+    await a.tick(); // read #1, back-off 2 s
+    listed = false;
+    clock.t = 100;
+    await a.tick(); // gone: forgotten
+    listed = true;
+    clock.t = 200;
+    await a.tick(); // listed again: read at once (no stale back-off)
+    expect(h.digestReads).toBe(2);
   });
 });

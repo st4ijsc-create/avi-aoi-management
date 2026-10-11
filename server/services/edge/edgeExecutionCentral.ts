@@ -13,8 +13,11 @@
  * The protocol (all answers for a run that is not assigned to the calling node — missing, another node's, outside the node's
  * factory — are the SAME 404 `not_found`: no existence oracle):
  *   • pull      — the node's claimable runs ('queued' + assigned to it), each with the DEFINITION SNAPSHOT (head; its hash
- *                 must equal the assignment's), central's BINDING DIGEST now, and the claim sequence to claim; plus the
- *                 node's current claims with `abortRequested` (central aborted it, or a gate rejection claimed it).
+ *                 must equal the assignment's) and the claim sequence to claim; plus the node's current claims with
+ *                 `abortRequested` (central aborted it, or a gate rejection claimed it). Final wave F2: NO binding digest — the
+ *                 device configuration (program checksums: an S7 block-info read per controller) is read only at the claim,
+ *                 never on every pull. A run left unclaimed beyond EDGE_UNCLAIMED_HOLD_MS goes to 'held' ("edge
+ *                 unreachable", visible; a person may Continue or abort it) — so it leaves the pull and polling for it ends.
  *   • claim     — compare-and-set: run 'queued' → 'running', claimSeq n → n+1, a NEW claim token (only its SHA-256 is
  *                 stored), progressSeq 0. Refused: another claimSeq / status (409 claim_conflict), a redeploy since the
  *                 assignment or a snapshot other than the edge's (409 definition_changed), central's digest ≠ the edge's or
@@ -152,8 +155,6 @@ export interface PulledRun {
   claimSeq: number;
   /** the definition snapshot (absent when it no longer matches the assignment: `refused`) */
   definition?: WorkflowDefinition;
-  /** central's binding digest of that definition NOW (null ⇒ cannot be computed ⇒ the claim will be refused) */
-  bindingDigest?: string | null;
   refused?: "definitionChanged";
 }
 export interface NodeClaim {
@@ -170,6 +171,7 @@ export async function pullForNode(
 ): Promise<EdgeAnswer<{ node: string; runs: PulledRun[]; claims: NodeClaim[]; stopsUnconfirmed: number[] }>> {
   try {
     const d = await db();
+    await holdUnclaimedEdgeRuns(node.nodeId).catch(() => undefined); // F2 — bounded queueing (never blocks the pull)
     const queued = await d
       .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, workflowId: orchestrationRuns.workflowId, workflowRef: orchestrationRuns.workflowRef, status: orchestrationRuns.status, paramsJson: orchestrationRuns.paramsJson } })
       .from(runEdgeAssignments)
@@ -187,7 +189,7 @@ export async function pullForNode(
         runs.push({ ...base, refused: "definitionChanged" });
         continue;
       }
-      runs.push({ ...base, definition: def, bindingDigest: await computeBindingDigest(d, def) });
+      runs.push({ ...base, definition: def }); // F2 — no controller read here (the digest is compared fresh at the claim)
     }
     const claimedRows = await d
       .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson } })
@@ -235,6 +237,67 @@ export async function pullForNode(
     if (!isEdgeSchemaMissing(err)) console.error(`[EdgeExec] pull for node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
     return unavailable;
   }
+}
+
+// ── F2: a run no node claims is held, visibly (bounded queueing) ───────────────────────────────────────────────────────
+
+/** How long a run assigned to a node may stay 'queued' (unclaimed) before it is held as "edge unreachable" (default 10 min, [5 s, 24 h]). */
+export function edgeUnclaimedHoldMs(): number {
+  const n = parseInt(process.env.EDGE_UNCLAIMED_HOLD_MS || "600000", 10);
+  return Number.isFinite(n) ? Math.min(86_400_000, Math.max(5_000, n)) : 600_000;
+}
+
+/** The context mark of a run held because its node never claimed it (read by the run view / Studio). */
+export const EDGE_UNREACHABLE_CTX_KEY = "edgeUnreachable";
+
+/**
+ * doc 81 Đợt 9 final wave F2 (final review I2) — every run assigned to a node (`nodeId`, or every node — the central health
+ * scheduler) that has been 'queued' and unclaimed longer than EDGE_UNCLAIMED_HOLD_MS (since it was queued: max(assignedAt, the
+ * run's last update)) ⇒ 'held', error "edge node X did not claim run N …", context `edgeUnreachable` + interrupted. The write is
+ * conditional ('queued' only): a claim landing meanwhile wins, an abort stays 'aborted'. Nothing was dispatched for such a run
+ * in this segment (it was never claimed), so there is nothing to STOP. Continue re-queues it (resumeRun), abort ends it.
+ * Returns the held run ids. Throws on a DB error (callers catch: it never blocks a pull or the scheduler).
+ */
+export async function holdUnclaimedEdgeRuns(nodeId?: number): Promise<number[]> {
+  const d = await db();
+  const bound = edgeUnclaimedHoldMs();
+  const { edgeNodes } = await import("../../../drizzle/schema");
+  const due = await d
+    .select({ runId: runEdgeAssignments.runId, nodeCode: edgeNodes.code })
+    .from(runEdgeAssignments)
+    .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
+    .innerJoin(edgeNodes, eq(edgeNodes.id, runEdgeAssignments.edgeNodeId))
+    .where(
+      and(
+        nodeId !== undefined ? eq(runEdgeAssignments.edgeNodeId, nodeId) : undefined,
+        eq(orchestrationRuns.status, "queued"),
+        sql`${runEdgeAssignments.claimTokenHash} IS NULL`,
+        // on the DB clock; the run's updatedAt is a naive UTC timestamp (AT TIME ZONE 'UTC' — never the session zone)
+        sql`GREATEST(${runEdgeAssignments.assignedAt}, ${orchestrationRuns.updatedAt} AT TIME ZONE 'UTC') < now() - (${bound} * interval '1 millisecond')`,
+      ),
+    )
+    .limit(100);
+  const held: number[] = [];
+  for (const r of due) {
+    const minutes = Math.round(bound / 60_000);
+    const error = `Edge node ${r.nodeCode} did not claim run ${r.runId} within ${minutes} min (edge unreachable, or its checks keep refusing it — e.g. its device configuration differs from central's); held — Continue to re-queue it for the node, or abort it.`;
+    const mark = { [EDGE_UNREACHABLE_CTX_KEY]: true, edgeUnreachableAt: new Date().toISOString(), edgeUnreachableNode: r.nodeCode, interrupted: true, interruptedAt: new Date().toISOString(), interruptedFrom: "queued", interruptedBy: "edge unreachable" };
+    const moved = await d
+      .update(orchestrationRuns)
+      .set({ status: "held", error, contextJson: sql`COALESCE(${orchestrationRuns.contextJson}, '{}'::jsonb) || ${JSON.stringify(mark)}::jsonb`, updatedAt: new Date() })
+      .where(and(eq(orchestrationRuns.id, r.runId), eq(orchestrationRuns.status, "queued")))
+      .returning({ id: orchestrationRuns.id });
+    if (moved.length === 0) continue;
+    held.push(r.runId);
+    console.warn(`[EdgeExec] run ${r.runId}: ${error}`);
+    try {
+      const { createAuditLog } = await import("../../db/system");
+      await createAuditLog({ userId: null, userName: "system: edge claim bound", action: "EDGE_RUN_UNCLAIMED_HELD", entityType: "orchestration_run", entityId: r.runId, entityName: r.nodeCode, details: { boundMs: bound } });
+    } catch (err) {
+      console.error(`[EdgeExec] audit EDGE_RUN_UNCLAIMED_HELD run ${r.runId} not written: ${(err as Error)?.message ?? err}`);
+    }
+  }
+  return held;
 }
 
 // ── claim ───────────────────────────────────────────────────────────────────────────────────────────────────────────────

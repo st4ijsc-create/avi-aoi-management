@@ -6,9 +6,11 @@
  * it, and for each one:
  *   1. checks locally that the snapshot central handed out is the one it will execute: the snapshot's hash = the assignment's
  *      defHash = the hash of the workflow row in ITS database under the same id (ID mapping — an edge whose DB is not the
- *      central DB, or a different workflow under that id, never claims), and that ITS binding digest of that definition (its
- *      own drivers read the controllers' program checksums) equals central's; anything missing ⇒ not claimed;
- *   2. claims it (central's compare-and-set; a claim token only this walker holds);
+ *      central DB, or a different workflow under that id, never claims), and reads ITS binding digest of that definition (its
+ *      own drivers read the controllers' program checksums) — unreadable ⇒ not claimed. Final wave F2: read only here (right
+ *      before the claim), never on every pull; a refused run is retried with a bounded exponential back-off;
+ *   2. claims it with that digest (central's compare-and-set; central reads ITS digest fresh at the claim and refuses a
+ *      mismatch; a claim token only this walker holds);
  *   3. walks THE CENTRAL RUN through the shared engine (foeEngine.driveEdgeClaimedRun): the SAME gates as central (approval
  *      with the Group R identity rule, binding digest, program checksum, R-4-x, STOP exemptions) through the edge's own
  *      dispatchers; before every NON-STOP command the engine asks the run guard (edgeRunGuard: claim current, credential
@@ -44,7 +46,15 @@ export interface EdgeAgentConfig {
   requestTimeoutMs: number;
   /** minimum time between two STOP re-sends of one aborted run (default 10 s) */
   stopResendMinMs: number;
+  /**
+   * doc 81 Đợt 9 final wave F2 — upper bound of the per-run claim back-off (default 120 s): a run this edge could not claim (its
+   * local checks refused it, or central refused the claim) is retried after pullInterval × 2^failures, capped here — never a
+   * full device-configuration read (S7 block info) on every pull.
+   */
+  claimBackoffMaxMs?: number;
   fetchImpl?: typeof fetch;
+  /** test seam — the clock of the claim back-off */
+  now?: () => number;
 }
 
 const clampInt = (raw: string | undefined, dflt: number, min: number, max: number) => {
@@ -103,6 +113,7 @@ export async function edgeExecutionConfigFromEnv(
     maxConcurrent: clampInt(env.EDGE_MAX_CONCURRENT_RUNS, 4, 1, 32),
     requestTimeoutMs: clampInt(env.EDGE_REQUEST_TIMEOUT_MS, 10_000, 500, 60_000),
     stopResendMinMs: clampInt(env.EDGE_STOP_RESEND_MIN_MS, 10_000, 200, 600_000),
+    claimBackoffMaxMs: clampInt(env.EDGE_CLAIM_BACKOFF_MAX_MS, 120_000, 1_000, 3_600_000),
   };
 }
 
@@ -146,6 +157,8 @@ export class EdgeExecutionAgent {
   private readonly warned = new Map<number, string>();
   /** run id → when this agent last re-sent its unconfirmed STOPs (bounded retry of a STOP central could not confirm). */
   private readonly resentAt = new Map<number, number>();
+  /** doc 81 Đợt 9 final wave F2 — run id → claim back-off after a refused local check / claim (failures, next attempt time). */
+  private readonly claimBackoff = new Map<number, { failures: number; nextAt: number }>();
 
   constructor(private readonly cfg: EdgeAgentConfig) {}
 
@@ -257,21 +270,38 @@ export class EdgeExecutionAgent {
       }
     }
     // 3) claimable runs
-    for (const r of (pulled.data?.runs ?? []) as Array<Record<string, any>>) {
+    // doc 81 Đợt 9 final wave F2 (final review I2) — the device configuration (binding digest: program checksums, an S7 block-info
+    // read per controller) is read ONLY when this edge is about to claim, and a run it could not claim is retried with a bounded
+    // exponential back-off (never every pull). Central holds a run nobody claims within EDGE_UNCLAIMED_HOLD_MS ("edge
+    // unreachable", visible) — so it leaves the pull and the polling ends.
+    const pulledRuns = (pulled.data?.runs ?? []) as Array<Record<string, any>>;
+    const listed = new Set(pulledRuns.map((r) => Number(r.runId)));
+    for (const id of [...this.claimBackoff.keys()]) if (!listed.has(id)) this.claimBackoff.delete(id);
+    const now = this.cfg.now ?? Date.now;
+    for (const r of pulledRuns) {
       if (this.segments.size >= this.cfg.maxConcurrent) break;
       const runId = Number(r.runId);
       if (this.segments.has(runId)) continue;
-      const why = await this.localCheck(r);
-      if (why) {
-        report.skipped.push({ runId, why });
-        this.warnOnce(runId, `not claimed — ${why}`);
+      const back = this.claimBackoff.get(runId);
+      if (back && now() < back.nextAt) {
+        report.skipped.push({ runId, why: `backing off after ${back.failures} refused attempt(s)` });
         continue;
       }
-      const claimed = await this.post(`/edge/node/runs/${runId}/claim`, { claimSeq: r.claimSeq, defHash: r.defHash, bindingDigest: r.bindingDigest });
+      const checked = await this.localCheck(r);
+      if ("why" in checked) {
+        report.skipped.push({ runId, why: checked.why });
+        this.warnOnce(runId, `not claimed — ${checked.why}`);
+        this.backOff(runId);
+        continue;
+      }
+      // the edge's OWN digest, read now; central reads its own fresh at the claim and compares (no digest travels in the pull)
+      const claimed = await this.post(`/edge/node/runs/${runId}/claim`, { claimSeq: r.claimSeq, defHash: r.defHash, bindingDigest: checked.digest });
       if (!claimed.ok) {
         report.skipped.push({ runId, why: `claim refused (${claimed.code ?? claimed.status})` });
+        this.backOff(runId);
         continue;
       }
+      this.claimBackoff.delete(runId);
       this.warned.delete(runId);
       report.claimed.push(runId);
       this.startSegment(runId, Number(claimed.data.claimSeq), String(claimed.data.claimToken), String(r.defHash));
@@ -279,10 +309,20 @@ export class EdgeExecutionAgent {
     return report;
   }
 
-  /** null ⇔ this edge may claim the pulled run (see header, step 1). */
-  private async localCheck(r: Record<string, any>): Promise<string | null> {
-    if (r.refused) return `central refused it (${r.refused})`;
-    if (!r.definition || typeof r.defHash !== "string") return "no definition snapshot";
+  /** doc 81 Đợt 9 final wave F2 — the next attempt of a refused run: pullInterval × 2^failures, capped (bounded back-off). */
+  private backOff(runId: number): void {
+    const now = (this.cfg.now ?? Date.now)();
+    const failures = (this.claimBackoff.get(runId)?.failures ?? 0) + 1;
+    const cap = this.cfg.claimBackoffMaxMs ?? 120_000;
+    const delay = Math.min(cap, this.cfg.pullIntervalMs * 2 ** Math.min(failures, 20));
+    this.claimBackoff.set(runId, { failures, nextAt: now + delay });
+  }
+
+  /** `{ digest }` ⇔ this edge may claim the pulled run (see header, step 1) — its OWN binding digest, read now; else `{ why }`. */
+  private async localCheck(r: Record<string, any>): Promise<{ digest: string } | { why: string }> {
+    const why = (w: string) => ({ why: w });
+    if (r.refused) return why(`central refused it (${r.refused})`);
+    if (!r.definition || typeof r.defHash !== "string") return why("no definition snapshot");
     try {
       const [{ hashWorkflowDefinition, computeBindingDigest }, { getDb }, { orchestrationWorkflows }, { eq }] = await Promise.all([
         import("../orchestration/foe/foeGateApproval"),
@@ -290,16 +330,16 @@ export class EdgeExecutionAgent {
         import("../../../drizzle/schema"),
         import("drizzle-orm"),
       ]);
-      if (hashWorkflowDefinition(r.definition) !== r.defHash) return "the snapshot does not hash to its defHash";
+      if (hashWorkflowDefinition(r.definition) !== r.defHash) return why("the snapshot does not hash to its defHash");
       const d = await getDb();
-      if (!d) return "this edge's database is not reachable";
+      if (!d) return why("this edge's database is not reachable");
       const [wf] = await d.select({ id: orchestrationWorkflows.id, definitionJson: orchestrationWorkflows.definitionJson }).from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, Number(r.workflowId))).limit(1);
-      if (!wf || hashWorkflowDefinition(wf.definitionJson as never) !== r.defHash) return `workflow ${r.workflowId} in this edge's database is not the assigned snapshot (ID mapping)`;
+      if (!wf || hashWorkflowDefinition(wf.definitionJson as never) !== r.defHash) return why(`workflow ${r.workflowId} in this edge's database is not the assigned snapshot (ID mapping)`);
       const digest = await computeBindingDigest(d, r.definition);
-      if (digest === null || typeof r.bindingDigest !== "string" || digest !== r.bindingDigest) return "this edge's view of the device configuration differs from central's (or cannot be read)";
-      return null;
+      if (digest === null) return why("this edge's view of the device configuration cannot be read");
+      return { digest };
     } catch {
-      return "local check failed";
+      return why("local check failed");
     }
   }
 

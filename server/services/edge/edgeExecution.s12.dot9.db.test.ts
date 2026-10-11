@@ -54,6 +54,12 @@ async function workflow(tag: string, machineId: number, steps?: unknown[]) {
   wfIds.push(Number(wf.id));
   return { ref, id: Number(wf.id), def };
 }
+/** final wave F2 — the edge's OWN binding digest of a pulled definition (the pull carries none; central compares at the claim). */
+async function digestOf(def: unknown): Promise<string | null> {
+  const { computeBindingDigest } = await import("../orchestration/foe/foeGateApproval");
+  const { getDb } = await import("../../db/connection");
+  return computeBindingDigest((await getDb())!, def as never);
+}
 async function startForNode(ref: string, nodeId: number, user = u.admin) {
   const { startRun } = await import("../orchestration/foe/foeEngine");
   return startRun(ref, {}, { id: user, role: user === u.eng ? "engineer" : "admin", name: "t" }, { edgeNodeId: nodeId });
@@ -262,7 +268,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     }
   });
 
-  it("★ S2 pull: a node sees ONLY its own claimable runs, with the snapshot + central's binding digest", async () => {
+  it("★ S2 pull: a node sees ONLY its own claimable runs, with the snapshot — and NO binding digest (final wave F2: no controller read per pull)", async () => {
     const wfA = await workflow("pullA", ids.mA);
     const wfB = await workflow("pullB", ids.mB);
     const ra = await startForNode(wfA.ref, ids.nodeA);
@@ -274,14 +280,14 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     expect(mineA).not.toContain(rb.runId);
     const one = pa.json.data.runs.find((r: any) => r.runId === ra.runId);
     expect(one.definition).toEqual(wfA.def);
-    expect(one.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(one).not.toHaveProperty("bindingDigest");
     const pb = await post("/edge/node/pull", {}, tokens.B);
     expect(pb.json.data.runs.map((r: any) => r.runId)).not.toContain(ra.runId);
     // a second node of the SAME factory: the factory scope would let it see A's run — the assignment does not
     const pa2 = await post("/edge/node/pull", {}, tokens.A2);
     expect(pa2.status).toBe(200);
     expect(pa2.json.data.runs.map((r: any) => r.runId)).not.toContain(ra.runId);
-    const c2 = await post(`/edge/node/runs/${ra.runId}/claim`, { claimSeq: 0, defHash: one.defHash, bindingDigest: one.bindingDigest }, tokens.A2);
+    const c2 = await post(`/edge/node/runs/${ra.runId}/claim`, { claimSeq: 0, defHash: one.defHash, bindingDigest: await digestOf(one.definition) }, tokens.A2);
     expect(c2.status).toBe(404);
   });
 
@@ -289,7 +295,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     const wf = await workflow("cross", ids.mA);
     const r = await startForNode(wf.ref, ids.nodeA);
     const pulled = (await post("/edge/node/pull", {}, tokens.A)).json.data.runs.find((x: any) => x.runId === r.runId);
-    const claimBody = { claimSeq: 0, defHash: pulled.defHash, bindingDigest: pulled.bindingDigest };
+    const claimBody = { claimSeq: 0, defHash: pulled.defHash, bindingDigest: await digestOf(pulled.definition) };
     const foreign = await post(`/edge/node/runs/${r.runId}/claim`, claimBody, tokens.B);
     const missing = await post(`/edge/node/runs/2000000000/claim`, claimBody, tokens.B);
     expect(foreign.status).toBe(404);
@@ -308,6 +314,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     const wf = await workflow("claim", ids.mA);
     const r = await startForNode(wf.ref, ids.nodeA);
     const p = (await post("/edge/node/pull", {}, tokens.A)).json.data.runs.find((x: any) => x.runId === r.runId);
+    p.bindingDigest = await digestOf(p.definition); // the edge's own (F2)
     const path = `/edge/node/runs/${r.runId}/claim`;
     expect((await post(path, { claimSeq: 1, defHash: p.defHash, bindingDigest: p.bindingDigest }, tokens.A)).json.error.code).toBe("claim_conflict");
     expect((await post(path, { claimSeq: 0, defHash: "0".repeat(64), bindingDigest: p.bindingDigest }, tokens.A)).json.error.code).toBe("definition_changed");
@@ -331,6 +338,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     const wf = await workflow("redeploy", ids.mA);
     const r = await startForNode(wf.ref, ids.nodeA);
     const p = (await post("/edge/node/pull", {}, tokens.A)).json.data.runs.find((x: any) => x.runId === r.runId);
+    p.bindingDigest = await digestOf(p.definition); // the edge's own (F2)
     // a redeploy as deployWorkflow does it: the old version's snapshot is kept, the head moves to v2
     await sql`INSERT INTO orchestration_workflow_versions ("workflowId", ref, version, name, "definitionJson") VALUES (${wf.id}, ${wf.ref}, 1, ${wf.ref}, ${sql.json(wf.def as never)})`;
     await sql`UPDATE orchestration_workflows SET "definitionJson" = ${sql.json({ ...wf.def, name: "changed" } as never)}, version = 2 WHERE id = ${wf.id}`;
@@ -345,7 +353,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     const wf = await workflow(tag, ids.mA, steps);
     const r = await startForNode(wf.ref, ids.nodeA);
     const p = (await post("/edge/node/pull", {}, tokens.A)).json.data.runs.find((x: any) => x.runId === r.runId);
-    const c = await post(`/edge/node/runs/${r.runId}/claim`, { claimSeq: 0, defHash: p.defHash, bindingDigest: p.bindingDigest }, tokens.A);
+    const c = await post(`/edge/node/runs/${r.runId}/claim`, { claimSeq: 0, defHash: p.defHash, bindingDigest: await digestOf(p.definition) }, tokens.A);
     expect(c.status).toBe(200);
     return { runId: r.runId!, wf, claimSeq: c.json.data.claimSeq as number, token: c.json.data.claimToken as string };
   }
@@ -447,7 +455,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     // the node claims the next segment
     const p = (await post("/edge/node/pull", {}, tokens.A)).json.data.runs.find((x: any) => x.runId === c.runId);
     expect(p.claimSeq).toBe(1);
-    expect((await post(`/edge/node/runs/${c.runId}/claim`, { claimSeq: 1, defHash: p.defHash, bindingDigest: p.bindingDigest }, tokens.A)).json.data.claimSeq).toBe(2);
+    expect((await post(`/edge/node/runs/${c.runId}/claim`, { claimSeq: 1, defHash: p.defHash, bindingDigest: await digestOf(p.definition) }, tokens.A)).json.data.claimSeq).toBe(2);
   });
 
   it("★ S2 release / interrupted: a claimed run goes to 'held'; interrupted only once the claim is stale", async () => {

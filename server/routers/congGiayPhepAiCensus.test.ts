@@ -352,7 +352,22 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *     `adminProcedure`, `module = null`, không phải bề mặt AI) ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong KHÔNG đổi vì Đợt 9.
  *   `tong` 2307 trùng `phamViDocCensus.test.ts#GHIM.tong` (2307).
  */
-const GHIM ={ tong: 2302, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-12 doc 81 Đợt 9 final wave F6 — **tong 2302 → 2307 · GHIM_MODULE_KHAC.MOD_OT_CONTROL 107 → 111, GHIM LẠI** (theo đúng
+ *   thủ tục của file này: đo trước, đọc cổng của TỪNG thủ tục mới trong mã, rồi mới ghim). Đo HEAD `d5c822223` (cây tích hợp
+ *   Đợt 9) = 2307 / MOD_OT_CONTROL 111; beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và các SKU khác KHÔNG đổi. Đúng NĂM thủ tục:
+ *   • Đợt 8 (safety-PLC maker-checker, mig 0368) — bốn thủ tục trong `safetyRouter.ts`, nơi `protectedProcedure` =
+ *     `moduleProcedure("MOD_OT_CONTROL")` (+4 MOD_OT_CONTROL), cổng đã ĐỌC:
+ *       – `safety.plcTrustList` (query): MOD_OT_CONTROL + `requirePermission("machine_monitoring","canView")`, lọc theo phạm vi;
+ *       – `safety.deleteSafetyPlcConfig` (mutation): MOD_OT_CONTROL + `requirePermission("machine_control","canDelete")`;
+ *       – `safety.approveSafetyPlcConfig` (mutation): `adminProcedure.use(moduleGate("MOD_OT_CONTROL"))`, người duyệt ≠ người
+ *         tạo, `expectedDigest`;
+ *       – `safety.rejectSafetyPlcConfig` (mutation): như approve + lý do ≥ 3 ký tự;
+ *   • Đợt 9 nhóm R — `apiKey.setHolder` (mutation, `apiKeyRouter.ts`): `adminProcedure`, vai admin đọc LẠI dưới FOR SHARE trong
+ *     giao dịch, `module = null` như mọi thủ tục anh em của apiKeyRouter (không phải bề mặt AI).
+ *   Cả năm đã được kiểm cổng (đọc mã, final review Đợt 9 + lượt này). `tong` 2307 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2307, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -384,7 +399,10 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-10-09 doc 81 Đợt 3b final wave (I2) — 106 → 107: thủ tục MỚI `safety.assignableShifts` (query chỉ đọc, ca cho bộ
   //   chọn của sheet phân công) trong `safetyRouter.ts` — cùng cổng MOD_OT_CONTROL với thủ tục an toàn anh em. Không thủ tục
   //   cũ nào đổi cổng.
-  MOD_OT_CONTROL: 107,
+  // ★ 2026-10-12 doc 81 Đợt 9 final wave F6 — 107 → 111: bốn thủ tục Đợt 8 (safety-PLC maker-checker, mig 0368) trong
+  //   `safetyRouter.ts` — `plcTrustList` · `deleteSafetyPlcConfig` · `approveSafetyPlcConfig` · `rejectSafetyPlcConfig`, cổng đã đọc
+  //   (xem lời khai trên GHIM). Không thủ tục cũ nào đổi cổng.
+  MOD_OT_CONTROL: 111,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

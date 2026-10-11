@@ -31,6 +31,19 @@ export function startEdgeNodeHealthChecker(): void {
         }
       })
       .catch((err) => console.error("[EdgeNodeHealth] check failed:", err?.message || err));
+    // doc 81 Đợt 9 final wave F2 — a run assigned to a node that never claims it (the node is down, so it never pulls) is held
+    // visibly ("edge unreachable") after EDGE_UNCLAIMED_HOLD_MS. Migration 0370 missing ⇒ nothing to do (silent).
+    void import("./edgeExecutionCentral")
+      .then(async (m) => {
+        const { isEdgeSchemaMissing } = await import("./edgeExecutionSchema");
+        try {
+          const held = await m.holdUnclaimedEdgeRuns();
+          if (held.length > 0) console.log(`[EdgeNodeHealth] held ${held.length} unclaimed edge run(s): ${held.join(", ")}`);
+        } catch (err) {
+          if (!isEdgeSchemaMissing(err)) console.error("[EdgeNodeHealth] unclaimed edge run check failed:", (err as Error)?.message || err);
+        }
+      })
+      .catch(() => undefined);
   }, intervalMs);
 
   if (typeof timer.unref === "function") timer.unref();
