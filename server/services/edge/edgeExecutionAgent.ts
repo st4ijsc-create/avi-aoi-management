@@ -52,8 +52,17 @@ const clampInt = (raw: string | undefined, dflt: number, min: number, max: numbe
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : dflt;
 };
 
-/** The agent's configuration from the environment, or why it cannot start (it then starts NOTHING — fail-closed). */
-export async function edgeExecutionConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Promise<EdgeAgentConfig | { error: string }> {
+/**
+ * The agent's configuration from the environment, or why it cannot start (it then starts NOTHING — fail-closed).
+ * doc 81 Đợt 9 S fix (security scan "secret-exposure") — the node credential is read ONLY from a FILE
+ * (EDGE_NODE_CREDENTIAL_FILE — a compose file-based secret, docs/EDGE_GATEWAY.md §8.2), never from an env var, a label or a log.
+ * On POSIX the file must not be readable / writable by group or others (mode & 0o077 === 0) — otherwise the gateway REFUSES to
+ * start execution. Windows has no POSIX mode: a warning tells the operator to restrict it with an ACL (icacls).
+ */
+export async function edgeExecutionConfigFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  host: { platform?: NodeJS.Platform; stat?: (p: string) => Promise<{ mode: number; isFile(): boolean }>; warn?: (msg: string) => void } = {},
+): Promise<EdgeAgentConfig | { error: string }> {
   if (env.EDGE_EXECUTION_ENABLED !== "true" && env.EDGE_EXECUTION_ENABLED !== "1") return { error: "EDGE_EXECUTION_ENABLED is off" };
   if (env.FOE_ENABLED !== "true" && env.FOE_ENABLED !== "1") return { error: "FOE_ENABLED is off on this edge (the engine is needed to execute runs)" };
   if (env.EDGE_RUNTIME_ENABLED !== "true" && env.EDGE_RUNTIME_ENABLED !== "1") return { error: "EDGE_RUNTIME_ENABLED is off" };
@@ -64,15 +73,28 @@ export async function edgeExecutionConfigFromEnv(env: NodeJS.ProcessEnv = proces
     return { error: "EDGE_CENTRAL_URL is not a URL (e.g. https://central.example:3000)" };
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return { error: "EDGE_CENTRAL_URL must be http(s)" };
-  let credential = String(env.EDGE_NODE_CREDENTIAL ?? "").trim();
-  if (!credential && env.EDGE_NODE_CREDENTIAL_FILE) {
-    try {
-      credential = (await fs.readFile(env.EDGE_NODE_CREDENTIAL_FILE, "utf8")).trim();
-    } catch {
-      return { error: "EDGE_NODE_CREDENTIAL_FILE cannot be read" };
+  if (env.EDGE_NODE_CREDENTIAL) return { error: "EDGE_NODE_CREDENTIAL (a secret in an environment variable) is not accepted — use EDGE_NODE_CREDENTIAL_FILE" };
+  const file = String(env.EDGE_NODE_CREDENTIAL_FILE ?? "").trim();
+  if (!file) return { error: "EDGE_NODE_CREDENTIAL_FILE is not set" };
+  const platform = host.platform ?? process.platform;
+  let credential = "";
+  try {
+    const st = await (host.stat ?? fs.stat)(file);
+    if (!st.isFile()) return { error: "EDGE_NODE_CREDENTIAL_FILE is not a file" };
+    if (platform !== "win32") {
+      if ((st.mode & 0o077) !== 0) {
+        return { error: `EDGE_NODE_CREDENTIAL_FILE is readable or writable by group / others (mode ${(st.mode & 0o777).toString(8)}) — chmod 600 it` };
+      }
+    } else {
+      (host.warn ?? ((m: string) => console.warn(m)))(
+        "[EdgeExec] Windows: the node credential file's permissions cannot be checked here — restrict it to the gateway's account (icacls <file> /inheritance:r /grant:r <account>:R)",
+      );
     }
+    credential = (await fs.readFile(file, "utf8")).trim();
+  } catch {
+    return { error: "EDGE_NODE_CREDENTIAL_FILE cannot be read" };
   }
-  if (!EDGE_NODE_TOKEN_RE.test(credential)) return { error: "no valid node credential (EDGE_NODE_CREDENTIAL / EDGE_NODE_CREDENTIAL_FILE)" };
+  if (!EDGE_NODE_TOKEN_RE.test(credential)) return { error: "EDGE_NODE_CREDENTIAL_FILE holds no valid node credential" };
   return {
     centralUrl: url.toString().replace(/\/+$/, ""),
     credential,

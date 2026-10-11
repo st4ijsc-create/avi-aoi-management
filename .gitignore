@@ -291,3 +291,8 @@ knowledge/embeddings-meta.json
 knowledge/semantic-graph.json
 knowledge/rag-eval-results.json
 knowledge/operational/
+
+# doc 81 Dot 9 S fix scan — edge node credentials are never committed (keep them OUTSIDE the checkout; docs/EDGE_GATEWAY.md section 8)
+deploy/edge/secrets/*
+!deploy/edge/secrets/README.md
+*.cred

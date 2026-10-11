@@ -4,14 +4,14 @@
  * (its DATABASE_URL — the control-plane DB). Every change is made by a named ACTIVE ADMIN user (checked) with a reason, and is
  * recorded in the credential row itself (WORM identity) and in audit_logs — never with the secret.
  *
- *   npx tsx scripts/edge-node-credential.ts issue  --node edge-line1 --actor-user-id 1 --reason "commission line 1" --out ./edge-line1.cred
- *   npx tsx scripts/edge-node-credential.ts rotate --node edge-line1 --actor-user-id 1 --reason "quarterly rotation" --out ./edge-line1.cred
+ *   npx tsx scripts/edge-node-credential.ts issue  --node edge-line1 --actor-user-id 1 --reason "commission line 1" --out /root/edge-line1.cred
+ *   npx tsx scripts/edge-node-credential.ts rotate --node edge-line1 --actor-user-id 1 --reason "quarterly rotation" --out /root/edge-line1.cred
  *   npx tsx scripts/edge-node-credential.ts revoke --node edge-line1 --actor-user-id 1 --reason "gateway replaced"
  *   npx tsx scripts/edge-node-credential.ts list   --node edge-line1
  *
  * The secret is shown ONCE: with `--out FILE` it is written to that file only (created new, mode 0600 — an existing file is
- * refused, never overwritten), otherwise printed once on stdout. Copy it to the edge (EDGE_NODE_CREDENTIAL_FILE) and delete
- * the local copy. Exit codes: 0 done · 1 refused (not admin, node unknown, already active, …) · 2 bad arguments.
+ * refused, never overwritten), otherwise printed once on stdout. Write it OUTSIDE the repo checkout, move it to the edge host
+ * (outside any checkout, mode 600 — docs/EDGE_GATEWAY.md section 8.2) and delete the local copy. Exit codes: 0 done · 1 refused (not admin, node unknown, already active, …) · 2 bad arguments.
  */
 import { openSync, writeSync, closeSync, unlinkSync } from "node:fs";
 import { pathToFileURL } from "node:url";

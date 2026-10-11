@@ -169,6 +169,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S4 — central + edge in two processes
     // EDGE: a separate process
     dir = mkdtempSync(path.join(os.tmpdir(), "s9-edge-e2e-"));
     const log = openSync(path.join(dir, "edge.log"), "w");
+    writeFileSync(path.join(dir, "node-a.cred"), `${tokens.A}\n`, { mode: 0o600 });
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       S9_EDGE_E2E_CHILD: "1",
@@ -179,7 +180,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S4 — central + edge in two processes
       EDGE_RUNTIME_ENABLED: "true",
       FOE_ENABLED: "true",
       EDGE_CENTRAL_URL: base,
-      EDGE_NODE_CREDENTIAL: tokens.A,
+      EDGE_NODE_CREDENTIAL_FILE: path.join(dir, "node-a.cred"), // a FILE (never an env var — the agent refuses one)
       EDGE_PULL_INTERVAL_MS: "200",
       EDGE_ABORT_POLL_MS: "150",
       EDGE_REQUEST_TIMEOUT_MS: "2000",

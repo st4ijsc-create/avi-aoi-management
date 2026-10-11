@@ -208,19 +208,28 @@ Everything below is OFF until an operator turns it on, and nothing starts withou
 1. Apply migration 0370 to the target DB (`node scripts/apply-migration-0370.mjs --dev-only` — owner decision).
 2. Make sure the node is registered (it registers itself on its first heartbeat, or `edgeRuntime.registerNode`) with its
    `factoryCode` set — runs are only handed to nodes inside the starter's factories.
-3. Issue the credential as an **active admin** (the actor is checked and recorded), writing the secret to a NEW file:
+3. Issue the credential as an **active admin** (the actor is checked and recorded), writing the secret to a NEW file
+   **outside the repo checkout** (never into the repository — `*.cred` and `deploy/edge/secrets/*` are git-ignored as a
+   safety net only):
 
    ```bash
    npx tsx scripts/edge-node-credential.ts issue --node edge-line1 --actor-user-id <admin id> \
-       --reason "commission line 1 gateway" --out ./edge-line1.cred
+       --reason "commission line 1 gateway" --out /root/edge-line1.cred
    ```
 
-   The secret (`edn_<12 hex>.<43 chars>`) exists **only** in that file (mode 0600; an existing file is refused). The DB
-   keeps its SHA-256; audit rows keep the prefix only.
-4. Copy the file to the edge host (`deploy/edge/secrets/edge-node.cred`, mounted read-only by the compose file), then
-   delete the local copy.
+   The secret (`edn_<12 hex>.<43 chars>`) exists **only** in that file (created mode 0600; an existing file is refused).
+   The DB keeps its SHA-256; audit rows keep the prefix only.
+4. Move the file to the edge host, **outside any repo checkout**, readable only by the gateway's account, then delete the
+   central copy:
+   - Linux: `sudo install -d -m 700 /etc/avi-edge && sudo install -m 600 -o <app uid> edge-line1.cred /etc/avi-edge/edge-node.cred`
+     (the container's `app` uid: `docker compose -f deploy/edge/docker-compose.edge.yml run --rm --entrypoint id edge-gateway`);
+   - Windows: `icacls C:\avi-edge\edge-node.cred /inheritance:r /grant:r "<gateway account>:R"`.
+
+   The gateway reads it ONLY as a file (`EDGE_NODE_CREDENTIAL_FILE`; a secret in an environment variable is refused) and
+   **refuses to start execution if the file is readable or writable by group / others** (POSIX). On Windows it cannot check
+   and logs a warning naming the `icacls` command.
 5. **Rotate** (no overlap — the old secret stops at once; update the edge right after):
-   `npx tsx scripts/edge-node-credential.ts rotate --node edge-line1 --actor-user-id <id> --reason "…" --out ./new.cred`
+   `npx tsx scripts/edge-node-credential.ts rotate --node edge-line1 --actor-user-id <id> --reason "…" --out /root/new.cred`
 6. **Revoke** (terminal; the node can no longer pull, claim or report, and its in-flight non-STOP steps are refused):
    `npx tsx scripts/edge-node-credential.ts revoke --node edge-line1 --actor-user-id <id> --reason "…"`
 7. **List** (never shows a hash): `npx tsx scripts/edge-node-credential.ts list --node edge-line1`.
@@ -228,11 +237,19 @@ Everything below is OFF until an operator turns it on, and nothing starts withou
 
 ### 8.3 Run the gateway with execution on
 
+Add the overlay — it turns execution on and hands the credential to the container as a compose **file-based secret**
+(`/run/secrets/edge_node_credential`; only its PATH is in the environment):
+
+```bash
+export EDGE_NODE_CREDENTIAL_HOST_FILE=/etc/avi-edge/edge-node.cred EDGE_CENTRAL_URL=https://central.example:3000
+docker compose -f deploy/edge/docker-compose.edge.yml -f deploy/edge/docker-compose.edge.execution.yml --env-file .env.edge up -d
+```
+
 | Env (edge) | Default | Purpose |
 |---|---|---|
 | `EDGE_EXECUTION_ENABLED` | `false` | Turns run execution on. Off ⇒ the gateway is read + publish + buffer only. |
 | `EDGE_CENTRAL_URL` | — | Central server base URL (`https://…`; use TLS — the abort signal travels in its answers). |
-| `EDGE_NODE_CREDENTIAL_FILE` / `EDGE_NODE_CREDENTIAL` | — | The node secret (prefer the file; never in the image or a log). |
+| `EDGE_NODE_CREDENTIAL_FILE` | — | PATH of the node secret file (mode 600 on POSIX, else refused). `EDGE_NODE_CREDENTIAL` (the secret in the env) is refused. |
 | `FOE_ENABLED` | `false` | Must be `true` on the edge (the engine executes the runs). |
 | `EDGE_RUNTIME_ENABLED` | `false` | Must be `true` (also on central — the node routes answer 503 otherwise). |
 | `ROBOT_GATEWAY_ENABLED` / `OT_GATEWAY_ENABLED` | `false` | The edge's own device connections (its dispatchers). |
