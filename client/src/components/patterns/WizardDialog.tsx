@@ -136,6 +136,27 @@ export function WizardDialog({ open, onOpenChange, title, description, steps, on
   React.useEffect(() => {
     if (open) setIndex(0);
   }, [open]);
+  // doc 81 Đợt 7 task L1 — wizard thường mở BẰNG MÃ (vd IDE: dispatch, không có SheetTrigger) ⇒ Radix trả focus về
+  // triggerRef = null ⇒ đóng wizard thì focus rơi về <body>. Ghi phần tử đang focus ĐÚNG lúc open chuyển false→true
+  // (trong render: hiệu ứng của con — FocusScope — chạy trước hiệu ứng của cha và đã kéo focus vào sheet) và trả focus
+  // về nó khi đóng, nếu nó còn trong DOM. Đường lui khi bấm chuột không focus nút (Safari): phần tử vừa nhận pointerdown.
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
+  const lastPressedRef = React.useRef<HTMLElement | null>(null);
+  const wasOpenRef = React.useRef(false);
+  if (open && !wasOpenRef.current && typeof document !== "undefined") {
+    const active = document.activeElement;
+    returnFocusRef.current = active instanceof HTMLElement && active !== document.body ? active : lastPressedRef.current;
+  }
+  wasOpenRef.current = open;
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onDown = (e: Event) => {
+      const el = e.target instanceof Element ? e.target.closest("button, a[href], [role='button'], [tabindex]") : null;
+      lastPressedRef.current = el instanceof HTMLElement ? el : null;
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, []);
   const requestClose = () => {
     if (pending) return;
     if (dirty) setAsking(true);
@@ -153,6 +174,14 @@ export function WizardDialog({ open, onOpenChange, title, description, steps, on
           side="right"
           data-wizard-dialog=""
           aria-describedby={undefined}
+          onCloseAutoFocus={(e) => {
+            const el = returnFocusRef.current;
+            returnFocusRef.current = null;
+            if (el && el.isConnected) {
+              e.preventDefault();
+              el.focus();
+            }
+          }}
           className={cn("flex w-[92vw] flex-col gap-0 p-0", size === "lg" ? "sm:max-w-[720px]" : "sm:max-w-[560px]")}
         >
           <SheetHeader className="border-b px-4 py-3 pr-10">
