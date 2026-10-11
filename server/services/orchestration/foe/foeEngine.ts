@@ -72,9 +72,10 @@ import {
   FOE_APPROVAL_SOURCE_SERVER,
   FOE_APPROVAL_SOURCE_SYSTEM,
   FOE_API_RUN_PARAM,
+  FOE_REJECT_CLAIM_CTX_KEY,
   runStartedViaApi,
   type GateRequiredReason,
-} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun)
+} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
   allStepsOf,
@@ -2474,10 +2475,15 @@ export async function resumeRun(
       // before and sends nothing. The claim, the final write and the gate row are bounded by D (L-7). A claim that does not
       // answer within D sends nothing NOW (it may not have won); if it lands later and won, the rest of the rejection
       // (sweep, hook, final write, gate row) runs then, in the background — the answer says it was not confirmed.
+      // doc 81 Đợt 7 task I6 — with a hook the claim also writes THIS rejection's token into the run context (server-only,
+      // FOE_REJECT_CLAIM_CTX_KEY): when the claim's reply is lost, the re-read below recognises its OWN claim by it.
+      const claimToken = hooks.compensate ? `${Date.now().toString(36)}-${randomBytes(8).toString("hex")}` : null;
       const claim = claimPausedRun(
         runId,
         hooks.compensate ? "compensating" : "aborted",
-        hooks.compensate ? {} : { finishedAt: new Date(), error: rejectedBy(reason) },
+        hooks.compensate
+          ? { contextJson: { ...(((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>), [FOE_REJECT_CLAIM_CTX_KEY]: claimToken } }
+          : { finishedAt: new Date(), error: rejectedBy(reason) },
         pinnedStepId,
       );
       const finishRejection = async (): Promise<{ abortStops: AbortStopReport; confirmed: boolean }> => {
@@ -2527,26 +2533,39 @@ export async function resumeRun(
         }
         return { abortStops, confirmed };
       };
+      // doc 81 Đợt 7 task I6 — the rejection is finished (sweep, hook, final write, gate row) AT MOST ONCE per call, whichever
+      // path gets there: the hook (the QT business compensation) can never run twice for one claim.
+      let finishing: Promise<{ abortStops: AbortStopReport; confirmed: boolean }> | null = null;
+      const finishOnce = () => (finishing ??= finishRejection());
       try {
         await withDeadline(claim, STOP_DB_STEP_DEADLINE_MS, `FOE reject run ${runId} claim`);
       } catch (err) {
         if (err instanceof TRPCError) throw err; // LOST the claim (CONFLICT) — nothing was sent, nothing will be
         console.error(`[FOE] rejection of run ${runId}: claim not answered in time — ${(err as Error)?.message ?? err}; STOPs follow if it lands as won`);
         void claim.then(
-          () => finishRejection().catch(() => undefined),
+          () => finishOnce().catch(() => undefined),
           // fix 2 (N4) — the claim FAILED after the bound with something other than "lost" (e.g. its reply was lost after it
           // committed): re-read the run (bounded); if it shows THIS rejection's claim, finish it (sweep + gate row).
           async (lateErr: unknown) => {
             if (lateErr instanceof TRPCError) return; // lost the claim: nothing to do
-            const now = await boundedAbortRead(async () => {
-              const d3 = await getDb();
-              return d3 ? d3.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1) : null;
-            }, `FOE reject run ${runId} claim re-read`);
-            const row = now?.[0];
-            // without a hook only: a 'compensating' row could be ANOTHER decision's claim, and its QT business compensations
-            // must not run twice — a later abort (it lands on 'compensating') sweeps that run instead.
-            const ours = !hooks.compensate && row?.status === "aborted" && row.error === rejectedBy(reason);
-            if (ours) await finishRejection().catch(() => undefined);
+            const row = await rereadRejectClaim(runId);
+            if (row === undefined) {
+              // ★ CANNOT DECIDE (doc 81 Đợt 7 I6) — the run could not be re-read (3 bounded tries): whether THIS claim won is
+              // unknown, so nothing is finished here (no STOP from this path, no business compensation — it must never run
+              // for a claim that may be another decision's). Said loudly and audited. The run stays where the database has
+              // it: an ABORT of the run (it lands on 'compensating' or 'awaiting_confirm' alike) sweeps its STOPs.
+              console.error(`[FOE] rejection of run ${runId}: claim outcome not decided (run not re-read) — rejection NOT finished; abort the run to send its STOP steps, or use the machine's direct STOP / E-STOP`);
+              auditAbortStop(user, runId, "rejectClaimUndecided", { stepIds: [], hook: !!hooks.compensate });
+              return;
+            }
+            // With a hook (I6): THIS claim's token on a 'compensating' row — or on an 'aborted' one (an abort landed after the
+            // claim committed; its business compensation has still not run) ⇒ ours. Another decision's claim never matches
+            // the token. Without a hook (fix 2 N4): 'aborted' + this rejection's own error text.
+            const ctx = (row?.contextJson as Record<string, unknown> | null) ?? {};
+            const ours = hooks.compensate
+              ? claimToken !== null && ctx[FOE_REJECT_CLAIM_CTX_KEY] === claimToken && (row?.status === "compensating" || row?.status === "aborted")
+              : row?.status === "aborted" && row.error === rejectedBy(reason);
+            if (ours) await finishOnce().catch(() => undefined);
           },
         );
         return {
@@ -2558,7 +2577,7 @@ export async function resumeRun(
           abortStops: emptyAbortReport(),
         };
       }
-      const { abortStops, confirmed } = await finishRejection();
+      const { abortStops, confirmed } = await finishOnce();
       if (!confirmed) {
         return {
           ok: false,
@@ -2916,7 +2935,9 @@ type AbortAuditOp =
   | "abortStopNotPinned"
   | "abortStopNotNeeded"
   /** fix 3 (M2) — one row per re-send REQUEST (started / refused too old), even when it sends nothing. */
-  | "abortStopResend";
+  | "abortStopResend"
+  /** doc 81 Đợt 7 I6 — a rejection whose claim failed late could not re-read the run: not finished (abort it to send its STOPs). */
+  | "rejectClaimUndecided";
 
 /** The audit module, imported ONCE per process for the sweep's several concurrent audit writes (a failed import is retried). */
 let abortAuditModulePromise: Promise<typeof import("../../auditTrailService")> | undefined;
@@ -3020,6 +3041,22 @@ async function boundedAbortRead<T>(read: () => PromiseLike<T>, label: string): P
     console.warn(`[FOE] ${label}: not read (${(err as Error)?.message ?? err}) — the abort sweep goes on without it (L-7)`);
     return null;
   }
+}
+
+/**
+ * doc 81 Đợt 7 task I6 — re-read a run after a rejection's claim failed late: up to 3 bounded reads (now, after D, after
+ * 2·D more). `undefined` ⇔ none answered (CANNOT DECIDE — the caller finishes nothing); `null` ⇔ the run row is gone.
+ */
+async function rereadRejectClaim(runId: number): Promise<OrchestrationRun | null | undefined> {
+  for (const waitMs of [0, STOP_DB_STEP_DEADLINE_MS, 2 * STOP_DB_STEP_DEADLINE_MS]) {
+    if (waitMs) await new Promise((r) => setTimeout(r, waitMs));
+    const rows = await boundedAbortRead(async () => {
+      const d = await getDb();
+      return d ? d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1) : null;
+    }, `FOE reject run ${runId} claim re-read`);
+    if (rows) return rows[0] ?? null;
+  }
+  return undefined;
 }
 
 /** A run with NO live driver in this process (paused at a gate, held, queued, or driven elsewhere): its stored picture. */

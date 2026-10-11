@@ -61,6 +61,14 @@ export type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" 
  */
 export const FOE_API_RUN_PARAM = "__foeStartedViaApi";
 
+/**
+ * doc 81 Đợt 7 task I6 — the SERVER-ONLY claim token a gate REJECTION with a compensation hook (QT) writes into
+ * `contextJson` together with its claim ('compensating'). When the claim's reply is lost, the rejection re-reads the run
+ * and finishes ONLY a claim that carries ITS token (never another decision's). Task I1 — while it is set on a central run,
+ * an edge result sync never rewrites that run's status (a central rejection is in progress).
+ */
+export const FOE_REJECT_CLAIM_CTX_KEY = "foeRejectClaim";
+
 /** doc 81 Đợt 5 task E1 — was this run started through an API key? (either server-written marker ⇒ yes) */
 export function runStartedViaApi(run: { paramsJson?: unknown; contextJson?: unknown } | null | undefined): boolean {
   const params = run?.paramsJson as Record<string, unknown> | null | undefined;

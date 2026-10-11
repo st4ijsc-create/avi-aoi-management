@@ -41,7 +41,7 @@ const insertHook = vi.hoisted(() => ({ fn: null as null | ((table: string, value
 /** fix 1 — a hook run just before an UPDATE's patch is applied (e.g. another decision claims the run first). */
 const updateHook = vi.hoisted(() => ({ fn: null as null | ((patch: Record<string, any>) => void) }));
 /** fix 2 (N4) — an UPDATE to one of these statuses COMMITS, but its reply is lost: it rejects after `ms`. */
-const LOST_REPLY = { statuses: new Set<string>(), ms: 0 };
+const LOST_REPLY = { statuses: new Set<string>(), ms: 0, commit: true };
 vi.mock("../../ot/otManager", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/otManager")>();
   return { ...orig, getActiveConnectionFingerprint: (adapterId: number) => conn.fp.get(adapterId) };
@@ -122,7 +122,7 @@ const HUNG_TABLES = new Set<string>();
           return {
             where: (cond: unknown) => ({
               returning: async () => {
-                await u.set(patch).where(cond as never).returning(); // committed …
+                if (LOST_REPLY.commit) await u.set(patch).where(cond as never).returning(); // committed … (Đợt 7 I6: or NOT)
                 await new Promise((r) => setTimeout(r, LOST_REPLY.ms));
                 throw new Error("connection reset"); // … but the reply never arrives
               },
@@ -146,6 +146,7 @@ vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, machines, deviceAdapters, deviceTags, robots } from "../../../../drizzle/schema";
 import { deployWorkflow, startRun, resumeRun, abortRun, abortStopKey, abortRowId, ABORT_RESEND_WINDOW_MS } from "./foeEngine";
+import { FOE_REJECT_CLAIM_CTX_KEY } from "./foeGateApproval";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import type { WorkflowDefinition } from "./workflowModel";
@@ -236,6 +237,7 @@ beforeEach(() => {
   insertHook.fn = null;
   updateHook.fn = null;
   LOST_REPLY.statuses.clear();
+  LOST_REPLY.commit = true;
   process.env.FOE_ENABLED = "true";
   process.env.OT_CONTROL_ENABLED = "";
   delete process.env.FOE_SIM_GATE_REQUIRED;
@@ -979,4 +981,98 @@ describe("doc 81 Đợt 6 fix 3 — re-send of the STOP steps of an aborted run"
     expect(r.abortStops?.sent).toEqual(["stop"]);
     expect(robotDispatchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 7 task I6 — a REJECTION with a QT compensation hook whose claim reply is lost finishes its OWN sweep
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 7 I6 — rejection WITH a QT hook, claim reply lost ⇒ it finishes its own sweep, the hook runs ONCE", () => {
+  const hookCounter = () => {
+    const c = { n: 0 };
+    return { c, compensate: async () => { c.n += 1; return "comp note"; } };
+  };
+
+  it("★ the claim ('compensating') COMMITS, its reply is lost ⇒ answered unconfirmed (0), then the row shows THIS claim ⇒ STOPs go, hook ONCE, run 'aborted'", async () => {
+    const runId = await pausedAfterMotion("hooklost", [OT_STOP, RB_STOP]);
+    LOST_REPLY.statuses.add("compensating");
+    LOST_REPLY.ms = 1.3 * D;
+    const { c, compensate } = hookCounter();
+    const r = await resumeRun(runId, { approved: false, note: "no" }, SUP, { compensate });
+    expect(r).toMatchObject({ ok: false, reason: "abortUnconfirmed", abortStops: { sent: [] } });
+    expect(runRow(runId).status).toBe("compensating"); // committed
+    await waitFor(() => runRow(runId).status === "aborted", 6 * D);
+    expect(c.n).toBe(1);
+    expect(otCommands().map((x) => x.commandType)).toEqual(["start", "stop"]);
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    expect(String(runRow(runId).error)).toContain("comp note");
+    await waitFor(() => stepRow(runId, "gate1")?.status === "failed");
+    // a retried rejection (the run is now aborted) re-sweeps WITHOUT the hook — never a second business compensation
+    await resumeRun(runId, { approved: false }, SUP, { compensate });
+    expect(c.n).toBe(1);
+  });
+
+  it("★ the claim did NOT commit (reply lost) and ANOTHER decision holds 'compensating' ⇒ nothing finished: no STOP, no hook", async () => {
+    const runId = await pausedAfterMotion("hookother", [OT_STOP, RB_STOP]);
+    LOST_REPLY.statuses.add("compensating");
+    LOST_REPLY.ms = 1.3 * D;
+    LOST_REPLY.commit = false;
+    const { c, compensate } = hookCounter();
+    const r = await resumeRun(runId, { approved: false }, SUP, { compensate });
+    expect(r).toMatchObject({ reason: "abortUnconfirmed" });
+    Object.assign(runRow(runId), { status: "compensating", contextJson: { ...(runRow(runId).contextJson ?? {}), [FOE_REJECT_CLAIM_CTX_KEY]: "another-decision" } });
+    await new Promise((res) => setTimeout(res, 3.5 * D));
+    expect(c.n).toBe(0);
+    expect(otCommands().map((x) => x.commandType)).toEqual(["start"]);
+    expect(robotDispatchMock).not.toHaveBeenCalled();
+  });
+
+  it("★ an ABORT lands while the reply is lost (it sends the STOPs) ⇒ the rejection still finishes: hook ONCE, a confirmed STOP never sent again", async () => {
+    const runId = await pausedAfterMotion("hookabort", [RB_STOP]);
+    LOST_REPLY.statuses.add("compensating");
+    LOST_REPLY.ms = 1.3 * D;
+    const { c, compensate } = hookCounter();
+    const r = await resumeRun(runId, { approved: false }, SUP, { compensate });
+    expect(r).toMatchObject({ reason: "abortUnconfirmed" });
+    const ab = await abortRun(runId, SUP); // lands on 'compensating'
+    expect(ab.abortStops?.sent).toEqual(["ra"]);
+    await waitFor(() => stepRow(runId, "abort:ra")?.status === "completed");
+    await waitFor(() => c.n === 1, 6 * D);
+    await new Promise((res) => setTimeout(res, 2 * D));
+    expect(c.n).toBe(1);
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("★ a TRANSIENT re-read failure is retried (bounded): the second read answers ⇒ the rejection is finished, hook ONCE", async () => {
+    const runId = await pausedAfterMotion("hookretry", [RB_STOP]);
+    LOST_REPLY.statuses.add("compensating");
+    LOST_REPLY.ms = 1.3 * D;
+    const { c, compensate } = hookCounter();
+    const p = resumeRun(runId, { approved: false }, SUP, { compensate });
+    await waitFor(() => runRow(runId).status === "compensating");
+    HUNG_TABLES.add("orchestration_runs");
+    expect(await p).toMatchObject({ reason: "abortUnconfirmed" });
+    await new Promise((res) => setTimeout(res, 1.6 * D)); // the first re-read (from 1.3·D) is still hanging
+    HUNG_TABLES.clear();
+    await waitFor(() => runRow(runId).status === "aborted", 6 * D);
+    expect(c.n).toBe(1);
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+  }, 20_000);
+
+  it("★ undecidable: the re-read never answers ⇒ nothing finished (no STOP, no hook), said loudly; an abort of the run still sends its STOPs", async () => {
+    const runId = await pausedAfterMotion("hookhung", [OT_STOP, RB_STOP]);
+    LOST_REPLY.statuses.add("compensating");
+    LOST_REPLY.ms = 1.3 * D;
+    const { c, compensate } = hookCounter();
+    const p = resumeRun(runId, { approved: false }, SUP, { compensate });
+    await waitFor(() => runRow(runId).status === "compensating");
+    HUNG_TABLES.add("orchestration_runs"); // every later read of the run hangs
+    expect(await p).toMatchObject({ reason: "abortUnconfirmed" });
+    await new Promise((res) => setTimeout(res, 7.5 * D)); // the late failure at 1.3·D, then 3 bounded re-reads (≤ 6·D)
+    expect(c.n).toBe(0);
+    expect(robotDispatchMock).not.toHaveBeenCalled();
+    expect(err.mock.calls.map((a) => String(a[0])).some((l) => /claim .*not decided/i.test(l))).toBe(true);
+    HUNG_TABLES.clear();
+    const ab = await abortRun(runId, SUP);
+    expect(ab.abortStops?.sent).toEqual(["stop", "ra"]);
+  }, 20_000);
 });
