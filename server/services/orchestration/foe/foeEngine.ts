@@ -1333,9 +1333,8 @@ async function scopeDecisionProbe(d: NonNullable<Awaited<ReturnType<typeof getDb
       d.select({ id: deviceAdapters.id }).from(deviceAdapters).limit(1),
       d.select({ id: deviceTags.id }).from(deviceTags).limit(1),
       d.select({ id: robots.id }).from(robots).limit(1),
-      stopClassifierProbe(d),
     ]);
-    return true;
+    return await stopClassifierProbe(d);
   } catch {
     return false;
   }
@@ -1347,12 +1346,12 @@ async function scopeDecisionProbe(d: NonNullable<Awaited<ReturnType<typeof getDb
  * runningConnectionMatchesAdapterRow, stopPin's stopPinsFromTagRows) and its two batch query shapes (enabled adapters of
  * machines; enabled + writable stop-pin tags of adapters). When the classification of an existing run fails AS A WHOLE
  * (a module that does not load, a batch shape that fails), a missing id is now as undecided as that run — the same
- * "scope not verified" answer, not "not found" (no existence oracle). Throws on any failure.
+ * "scope not verified" answer, not "not found" (no existence oracle). false (or a rejection) on any failure.
  */
-async function stopClassifierProbe(d: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<void> {
+async function stopClassifierProbe(d: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<boolean> {
   const [disp, pin] = await Promise.all([import("../../ot/commandDispatcher"), import("../../ot/stopPin")]);
   if (typeof disp.classifyOtStop !== "function" || typeof disp.runningConnectionMatchesAdapterRow !== "function" || typeof pin.stopPinsFromTagRows !== "function") {
-    throw new Error("stop classifier unavailable");
+    return false; // the classifier cannot run ⇒ the probe fails (undecided), like a failed read
   }
   await Promise.all([
     d.select().from(deviceAdapters).where(and(inArray(deviceAdapters.machineId, [-1]), eq(deviceAdapters.isEnabled, true))).limit(1),
@@ -1369,6 +1368,7 @@ async function stopClassifierProbe(d: NonNullable<Awaited<ReturnType<typeof getD
       .where(and(inArray(deviceTags.adapterId, [-1]), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)))
       .limit(1),
   ]);
+  return true;
 }
 
 /**
