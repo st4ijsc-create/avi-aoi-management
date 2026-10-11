@@ -150,6 +150,20 @@ export function wireSampleToOtSample(s: WireSample): OtSample {
 }
 
 /**
+ * doc 81 Đợt 7 K3 — a handshake whose session was superseded (disconnect → connect, or a watchdog restart) before the
+ * sidecar answered. Its outcome is discarded; the connect() that issued it rejects with this error.
+ */
+export class StaleHandshakeError extends Error {
+  constructor(pluginId: string, cause: unknown) {
+    super(
+      `plugin "${pluginId}" handshake superseded by a newer session — result discarded` +
+        (cause ? ` (late failure: ${errMsg(cause)})` : ""),
+    );
+    this.name = "StaleHandshakeError";
+  }
+}
+
+/**
  * An OtDriver that proxies to an out-of-process sidecar. One instance ↔ one supervised process.
  * The OT ConnectionSupervisor reuses one driver instance across reconnects (calling connect() to
  * respawn), and the internal PluginSupervisor keeps the child alive between those calls.
@@ -245,8 +259,13 @@ class PluginSidecarDriver implements OtDriver {
     } catch (err) {
       // Fail-safe: if the initial handshake fails, tear the supervisor down so no orphaned
       // child churns in the background; the OT layer treats a connect() throw as offline.
-      this.lastError = errMsg(err);
-      await this.disconnect();
+      // doc 81 Đợt 7 K3 — ONLY while this connect's session is still the current one. If a disconnect() (and maybe a
+      // newer connect()) superseded it meanwhile, that disconnect already captured and stopped THIS supervisor; a
+      // `this.disconnect()` here would tear down the NEWER session (the Đợt 5 F2 late-disconnect bug, via the handshake).
+      if (gen === this.generation) {
+        this.lastError = errMsg(err);
+        await this.disconnect();
+      }
       throw err;
     }
   }
@@ -274,13 +293,35 @@ class PluginSidecarDriver implements OtDriver {
     // automatically. The initial connect() awaits its handshake explicitly, so skip it here.
     if (this.handshakeDone && !this.stopped && this.lastConfig) {
       this.handshake(this.lastConfig).catch((err) => {
-        this.lastError = errMsg(err);
+        // K3 — a superseded re-handshake (a newer restart / session replaced this transport) says nothing about now.
+        if (!(err instanceof StaleHandshakeError)) this.lastError = errMsg(err);
       });
     }
   }
 
+  /**
+   * The `connect` RPC that establishes the sidecar's device connection.
+   *
+   * doc 81 Đợt 7 K3 — bound to the session generation AND the transport it was sent on (same rule as the Đợt 5 F2
+   * late-disconnect fix, R-5-e). Its result is adopted only if, when it answers, the driver is still in that generation
+   * on that transport. Otherwise — a disconnect()/newer connect() or a watchdog restart replaced the session while the RPC
+   * was pending — it changes NOTHING (no `connected`, no `handshakeDone`, no `lastError`) and throws
+   * {@link StaleHandshakeError}: the superseded connect() rejects (fail-closed), and the newer session stays "not
+   * connected" until ITS OWN handshake answers. Undecidable case: none — the check is a synchronous identity compare.
+   */
   private async handshake(cfg: OtConnectionConfig): Promise<void> {
-    await this.call(RPC.connect, cfg);
+    const gen = this.generation;
+    const transport = this.transport; // `call` reads this.transport synchronously — the same transport the RPC goes to
+    let failure: unknown = null;
+    try {
+      await this.call(RPC.connect, cfg);
+    } catch (err) {
+      failure = err;
+    }
+    if (gen !== this.generation || transport !== this.transport) {
+      throw new StaleHandshakeError(this.manifest.id, failure);
+    }
+    if (failure !== null) throw failure;
     this.connected = true;
     this.handshakeDone = true;
     this.lastError = null;
