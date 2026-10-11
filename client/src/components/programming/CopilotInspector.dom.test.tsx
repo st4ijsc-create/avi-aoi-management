@@ -49,3 +49,43 @@ describe("CopilotInspector — dải tab không cắt tab Copilot", () => {
     }
   });
 });
+
+// doc 81 Đợt 7 task L fix 1 (b) — thanh trạng thái IDE/IR/POU: luồng Copilot đang chạy mà tab Copilot đang đóng/khuất ⇒
+// mục "Copilot đang chạy" (spinner, role=status) bấm được để mở lại Copilot; không chạy ⇒ "Copilot ●/○" như cũ.
+import { act, fireEvent } from "@testing-library/react";
+import { CopilotStatusItem } from "./CopilotInspector";
+import { useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
+
+describe("L fix 1 (b) — CopilotStatusItem", () => {
+  let api: ReturnType<typeof useProgrammingCopilot> | null = null;
+  function Grab() { api = useProgrammingCopilot(); return null; }
+  const setup = () => render(<ProgrammingCopilotProvider><Grab /><CopilotStatusItem /></ProgrammingCopilotProvider>);
+
+  it("không chạy ⇒ 'Copilot ○' (đóng) / '●' (mở), không mục bận", () => {
+    setup();
+    expect(screen.queryByTestId("copilot-status-busy")).toBeNull();
+    expect(screen.getByTestId("copilot-status")).toHaveTextContent("Copilot ○");
+    act(() => api!.setOpen(true));
+    expect(screen.getByTestId("copilot-status")).toHaveTextContent("Copilot ●");
+  });
+
+  it("đang chạy + Copilot đóng ⇒ 'Copilot đang chạy' (role=status) bấm ⇒ mở Copilot", () => {
+    setup();
+    act(() => api!.setBusy(true));
+    const busy = screen.getByTestId("copilot-status-busy");
+    expect(busy).toHaveTextContent("Copilot đang chạy");
+    expect(busy.closest("[role=status]")).not.toBeNull();
+    expect(api!.open).toBe(false);
+    fireEvent.click(busy);
+    expect(api!.open).toBe(true);
+  });
+
+  it("đang chạy + Copilot mở ⇒ vẫn báo đang chạy; hết chạy ⇒ về '●'", () => {
+    setup();
+    act(() => { api!.setOpen(true); api!.setBusy(true); });
+    expect(screen.getByTestId("copilot-status-busy")).toHaveTextContent("Copilot đang chạy");
+    act(() => api!.setBusy(false));
+    expect(screen.queryByTestId("copilot-status-busy")).toBeNull();
+    expect(screen.getByTestId("copilot-status")).toHaveTextContent("Copilot ●");
+  });
+});

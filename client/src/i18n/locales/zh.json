@@ -12306,6 +12306,8 @@
     "safetyNotCertified": "与安全相关的程序——此解释不构成认证。须由授权安全工程师验证。",
     "stream": {
       "cancel": "取消",
+      "running": "Copilot 正在运行",
+      "runningOpen": "Copilot 正在运行——点击查看",
       "cancelled": "已取消 — 助手已停止，AI 服务器已释放。",
       "progress": "进度",
       "notLicensed": "本系统的许可证不包含工程（Engineering）模块。",

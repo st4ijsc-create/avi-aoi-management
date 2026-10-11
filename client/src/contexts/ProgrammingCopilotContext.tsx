@@ -63,6 +63,12 @@ interface ProgrammingCopilotContextValue {
   binding: CopilotBinding | null;
   setBinding: (b: CopilotBinding | null) => void;
   clearBinding: () => void;
+  /**
+   * doc 81 Đợt 7 task L fix 1 (b) — một lượt Copilot (SSE) đang chạy. Panel báo qua `setBusy`; thanh trạng thái của
+   * IDE/IR/POU hiện "Copilot đang chạy" khi tab Copilot đóng/khuất (màn hẹp: chuyển tab giữa lượt ⇒ luồng chạy khuất).
+   */
+  busy: boolean;
+  setBusy: (v: boolean) => void;
 }
 
 const Ctx = createContext<ProgrammingCopilotContextValue | null>(null);
@@ -82,6 +88,8 @@ export function ProgrammingCopilotProvider({ children }: { children: ReactNode }
     }
   });
   const [binding, setBindingState] = useState<CopilotBinding | null>(null);
+  const [busy, setBusyState] = useState(false);
+  const setBusy = useCallback((v: boolean) => setBusyState(v), []);
 
   const setOpen = useCallback((v: boolean) => {
     setOpenState(v);
@@ -96,8 +104,8 @@ export function ProgrammingCopilotProvider({ children }: { children: ReactNode }
   const clearBinding = useCallback(() => setBindingState(null), []);
 
   const value = useMemo<ProgrammingCopilotContextValue>(
-    () => ({ open, setOpen, binding, setBinding, clearBinding }),
-    [open, setOpen, binding, setBinding, clearBinding],
+    () => ({ open, setOpen, binding, setBinding, clearBinding, busy, setBusy }),
+    [open, setOpen, binding, setBinding, clearBinding, busy, setBusy],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -107,6 +115,11 @@ export function useProgrammingCopilot(): ProgrammingCopilotContextValue {
   const c = useContext(Ctx);
   if (!c) throw new Error("useProgrammingCopilot must be used within a ProgrammingCopilotProvider");
   return c;
+}
+
+/** doc 81 Đợt 7 task L fix 1 (b) — như useProgrammingCopilot nhưng trả null ngoài Provider (lõi Copilot dùng được ở mọi nơi). */
+export function useProgrammingCopilotOptional(): ProgrammingCopilotContextValue | null {
+  return useContext(Ctx);
 }
 
 /**

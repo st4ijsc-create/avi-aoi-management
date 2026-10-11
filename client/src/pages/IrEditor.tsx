@@ -57,7 +57,7 @@ import {
   Cpu, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
   Save, Hammer, Code2, AlertTriangle, XCircle, RefreshCw,
   FolderOpen, FolderPlus, ListTree, ShieldCheck, Loader2, Network, GripVertical,
-  Boxes, ArrowLeft, Pencil, Undo2, Redo2, Sparkles,
+  Boxes, ArrowLeft, Pencil, Undo2, Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { deriveIrLintState } from "@/components/programming/irLintState";
@@ -78,7 +78,7 @@ import {
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useCopilotBinding, useProgrammingCopilot, type CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
-import { CopilotInspector } from "@/components/programming/CopilotInspector";
+import { CopilotInspector, CopilotStatusItem } from "@/components/programming/CopilotInspector";
 import { useFlowHistory } from "@/components/programming/flowHistory";
 import { IrDiffPanel } from "@/components/programming/IrDiffPanel";
 import { IrMergePanel } from "@/components/programming/IrMergePanel";
@@ -1707,9 +1707,8 @@ export default function IrEditor() {
           <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{lintLockReason}</span>
         </span>
       )}
-      <span className="ml-auto inline-flex shrink-0 items-center gap-1">
-        <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("engineering.ws.copilotTab", "Copilot")} {copilotOpen ? "●" : "○"}
-      </span>
+      {/* doc 81 Đợt 7 task L fix 1 (b) — mục dùng chung: "Copilot đang chạy" khi một lượt chạy khuất. */}
+      <CopilotStatusItem />
     </div>
   );
 

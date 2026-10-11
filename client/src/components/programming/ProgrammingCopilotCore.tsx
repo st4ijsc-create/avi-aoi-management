@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Info, MessageCircleQuestion, Wand2, XCircle } from "lucide-react";
 import type { CopilotSeed } from "@/components/programming/ProgrammingCopilotPanel";
-import type { CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
+import { useProgrammingCopilotOptional, type CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
 
 // doc64 S5-OPT: Panel kéo CodeEditor→@codemirror (~1MB) — chỉ tải khi lõi được mount (dock mở / tab Copilot mở).
 const ProgrammingCopilotPanel = lazy(() =>
@@ -24,6 +24,8 @@ const ProgrammingCopilotPanel = lazy(() =>
 export function ProgrammingCopilotCore({ binding, className }: { binding: CopilotBinding; className?: string }) {
   const { t } = useTranslation();
   const [seed, setSeed] = useState<CopilotSeed | undefined>();
+  // doc 81 Đợt 7 task L fix 1 (b) — trạng thái bận của engine lên context ⇒ thanh trạng thái hiện "Copilot đang chạy".
+  const setBusy = useProgrammingCopilotOptional()?.setBusy;
   const diags = binding.diagnostics ?? [];
   const errText = diags.map((d) => `- [${d.severity ?? "error"}] ${d.message}`).join("\n");
 
@@ -107,6 +109,7 @@ export function ProgrammingCopilotCore({ binding, className }: { binding: Copilo
           onApplyText={binding.onApplyText}
           seed={seed}
           hideSyncFromEditor={binding.scratch}
+          onBusyChange={setBusy}
         />
       </Suspense>
 

@@ -12523,6 +12523,8 @@
     "safetyNotCertified": "Safety-related program — this explanation is NOT a certification. An authorised safety engineer must verify it.",
     "stream": {
       "cancel": "Cancel",
+      "running": "Copilot running",
+      "runningOpen": "Copilot is running — click to view",
       "cancelled": "Cancelled — the assistant stopped and the AI server was released.",
       "progress": "Progress",
       "notLicensed": "The Engineering module is not included in this system's licence.",

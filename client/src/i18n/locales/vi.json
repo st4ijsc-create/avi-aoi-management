@@ -12503,6 +12503,8 @@
     "safetyNotCertified": "Chương trình liên quan an toàn — phần giải thích này KHÔNG phải chứng nhận. Cần kỹ sư an toàn có thẩm quyền kiểm định.",
     "stream": {
       "cancel": "Huỷ",
+      "running": "Copilot đang chạy",
+      "runningOpen": "Copilot đang chạy — bấm để xem",
       "cancelled": "Đã huỷ — trợ lý đã dừng và máy chủ AI đã được giải phóng.",
       "progress": "Tiến độ",
       "notLicensed": "Giấy phép của hệ thống chưa gồm module Kỹ thuật (Engineering).",

@@ -14,7 +14,7 @@
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProgrammingCopilotCore } from "@/components/programming/ProgrammingCopilotCore";
 import { useProgrammingCopilot, type CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
@@ -156,6 +156,37 @@ export function CopilotInspector({ idPrefix, label, tabs, activeTab, onTabChange
         {(open || mounted) && <ProgrammingCopilotCore binding={binding} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * doc 81 Đợt 7 task L fix 1 (b) — mục Copilot của thanh trạng thái IDE/IR/POU (một bản cho cả ba trang). Kiểm trình duyệt
+ * L3: ở màn hẹp chuyển khỏi tab Copilot giữa lượt ⇒ Copilot "đóng" (onInspectorActiveHidden) mà luồng vẫn chạy KHUẤT, thanh
+ * trạng thái vẫn ghi "Copilot ○". Nay: một lượt đang chạy (`busy` của context, do engine báo) ⇒ "Copilot đang chạy"
+ * (spinner, role=status) — bấm ⇒ mở lại Copilot (màn hẹp: chuyển sang tab của nó). Không chạy ⇒ "Copilot ●/○" như cũ.
+ */
+export function CopilotStatusItem(): React.JSX.Element {
+  const { t } = useTranslation();
+  const { open, setOpen, busy } = useProgrammingCopilot();
+  const label = t("engineering.ws.copilotTab", "Copilot");
+  return (
+    <span role="status" className="ml-auto inline-flex shrink-0 items-center gap-1">
+      {busy ? (
+        <button
+          type="button"
+          data-testid="copilot-status-busy"
+          onClick={() => setOpen(true)}
+          title={t("progCopilot.stream.runningOpen", "Copilot đang chạy — bấm để xem")}
+          className="inline-flex items-center gap-1 rounded px-1 font-medium text-primary hover:bg-accent"
+        >
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> {t("progCopilot.stream.running", "Copilot đang chạy")}
+        </button>
+      ) : (
+        <span data-testid="copilot-status" className="inline-flex items-center gap-1">
+          <Sparkles className="h-3 w-3" aria-hidden="true" /> {label} {open ? "●" : "○"}
+        </span>
+      )}
+    </span>
   );
 }
 

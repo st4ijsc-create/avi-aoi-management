@@ -55,7 +55,7 @@ import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
 import ManualHelp from "@/components/ManualHelp";
 // Doc 34 · P3 — embed the in-app Programming Copilot (LLM codegen, validated by the substrate).
 import { COPILOT_KINDS, type CopilotKind } from "@/components/programming/ProgrammingCopilotPanel";
-import { CopilotInspector } from "@/components/programming/CopilotInspector";
+import { CopilotInspector, CopilotStatusItem } from "@/components/programming/CopilotInspector";
 import { useCopilotBinding, useProgrammingCopilot, type CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,7 +83,7 @@ import {
   Code2, Plus, FolderGit2, FileCode, Play, Hammer, FlaskConical, Rocket,
   AlertTriangle, CheckCircle2, XCircle, RefreshCw, Variable, ShieldCheck,
   Radio, Trash2, Pencil, Wifi, WifiOff, RotateCcw, GitCompare, Info,
-  Check, Circle, Sparkles, ShieldAlert,
+  Check, Circle, ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useEngineeringStream } from "@/hooks/useEngineeringStream";
@@ -1815,9 +1815,8 @@ function EngineeringWorkspaceView() {
       >
         <AlertTriangle className="h-3 w-3" aria-hidden="true" /> {problemsCount}
       </button>
-      <span className="ml-auto inline-flex shrink-0 items-center gap-1">
-        <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("engineering.ws.copilotTab", "Copilot")} {copilotOpen ? "●" : "○"}
-      </span>
+      {/* doc 81 Đợt 7 task L fix 1 (b) — mục dùng chung: "Copilot đang chạy" khi một lượt chạy khuất. */}
+      <CopilotStatusItem />
     </div>
   );
 
