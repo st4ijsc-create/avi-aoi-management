@@ -7,13 +7,20 @@
  * Measurements after the DDL (role avi_app, Đ-28 current_database):
  *   (a) both tables with every column, the CHECKs, the partial unique index (one ACTIVE credential per node), the three
  *       triggers and both table comments;
- *   (b) grants (catalog): SELECT / INSERT / UPDATE = true, DELETE / TRUNCATE = false on both tables — then BEHAVIOUR in an
+ *   (b) grants (catalog, fix 1 — the EXACT set): SELECT / INSERT on both tables; NO table-level UPDATE, DELETE, TRUNCATE,
+ *       REFERENCES, TRIGGER; column UPDATE exactly on the revocation columns + lastUsedAt (credentials) and the claim columns
+ *       (assignments) — every other column (secretHash, identity, ID mapping) has none — then BEHAVIOUR in an
  *       ALWAYS-rolled-back transaction: a 2nd active credential for a node ⇒ 23505; a bad hash / prefix ⇒ 23514; revoke ⇒ ok,
  *       un-revoke / change the secret ⇒ 23514; DELETE a credential ⇒ 42501; an assignment of a queued run ⇒ ok, of a run in
  *       another state / with another workflow id / pre-claimed ⇒ 23514; identity change (defHash, node) ⇒ 23514; a claim
  *       (seq 0→1 + token, progress 0) ⇒ ok; a skipped claim (1→3), a claim without token, progress going back ⇒ 23514; a token
  *       swapped inside a claim ⇒ 23514; clearing the token (release) ⇒ ok; DELETE an assignment ⇒ 42501; deleting the RUN
  *       removes its assignment (cascade); deleting a NODE with an assignment ⇒ 23503, without one its credentials go with it;
+ *       fix 1 (write-once): as avi_app, UPDATE of secretHash / an identity column ⇒ 42501 (no privilege); a late revokedBy on an
+ *       ACTIVE credential ⇒ 23514; the claimant changed inside a claim ⇒ 23514; a claim naming ANOTHER node's credential ⇒
+ *       23514; the workflowId of an ASSIGNED run ⇒ 23514 (an unassigned run's is not touched by 0370); the startedViaApiKeyId
+ *       of an assigned run written late ⇒ 23514 (0369's insert-only trigger); and AS OWNER (the triggers, below privileges): a
+ *       change / clear / LATE FIRST WRITE of rotatedFromId, createdBy, assignedBy, workflowId, defHash ⇒ 23514;
  *       0 probe rows left;
  *   (c) `__applied_migrations` has exactly 1 row for this file.
  *
@@ -118,14 +125,14 @@ async function applyTo(rawUrl, label) {
     const cks = (
       await appSql`SELECT conname FROM pg_constraint WHERE conrelid IN (${"public." + CRED}::regclass, ${"public." + ASSIGN}::regclass) AND contype = 'c'`
     ).map((r) => r.conname).sort();
-    const wantCks = ["ck_edge_assign_claim_hash", "ck_edge_assign_defhash", "ck_edge_assign_seqs", "ck_edge_assign_workflow", "ck_edge_cred_hash", "ck_edge_cred_prefix", "ck_edge_cred_revoked", "ck_edge_cred_status"];
+    const wantCks = ["ck_edge_assign_claim_hash", "ck_edge_assign_defhash", "ck_edge_assign_seqs", "ck_edge_assign_workflow", "ck_edge_cred_active_clean", "ck_edge_cred_hash", "ck_edge_cred_prefix", "ck_edge_cred_revoked", "ck_edge_cred_status"];
     if (JSON.stringify(cks) !== JSON.stringify(wantCks)) throw new Error(`(a) CHECKs: ${JSON.stringify(cks)}`);
     const [ix] = await appSql`SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND indexname='uq_edge_node_credentials_one_active'`;
     if (!ix || !/UNIQUE/.test(ix.indexdef) || !/WHERE/.test(ix.indexdef)) throw new Error(`(a) partial unique index: ${ix?.indexdef}`);
     const trg = await appSql`
       SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D'
-        AND tgname IN ('trg_edge_node_credentials_guard', 'trg_edge_run_assignment_insert', 'trg_edge_run_assignment_guard')`;
-    if (trg.length !== 3) throw new Error(`(a) triggers: ${JSON.stringify(trg.map((r) => r.tgname))}`);
+        AND tgname IN ('trg_edge_node_credentials_guard', 'trg_edge_run_assignment_insert', 'trg_edge_run_assignment_guard', 'trg_orch_runs_edge_workflow_pinned')`;
+    if (trg.length !== 4) throw new Error(`(a) triggers: ${JSON.stringify(trg.map((r) => r.tgname))}`);
     for (const t of [CRED, ASSIGN]) {
       const [ct] = await appSql`SELECT obj_description(${"public." + t}::regclass, 'pg_class') AS c`;
       if (!ct?.c || !/Dot 9 S1/.test(ct.c)) throw new Error(`(a) ${t} comment missing`);
@@ -137,14 +144,28 @@ async function applyTo(rawUrl, label) {
       const [p] = await appSql`
         SELECT has_table_privilege(${t}, 'SELECT') AS sel, has_table_privilege(${t}, 'INSERT') AS ins,
                has_table_privilege(${t}, 'UPDATE') AS upd, has_table_privilege(${t}, 'DELETE') AS del,
-               has_table_privilege(${t}, 'TRUNCATE') AS trunc`;
+               has_table_privilege(${t}, 'TRUNCATE') AS trunc, has_table_privilege(${t}, 'REFERENCES') AS refs,
+               has_table_privilege(${t}, 'TRIGGER') AS trig`;
       return p;
+    };
+    const updCols = async (t, cols) => {
+      const out = [];
+      for (const c of cols) if ((await appSql`SELECT has_column_privilege(${t}, ${c}, 'UPDATE') AS u`)[0].u) out.push(c);
+      return out.sort();
     };
     const pc = await priv(CRED);
     const pa = await priv(ASSIGN);
     for (const [t, p] of [[CRED, pc], [ASSIGN, pa]]) {
-      if (!p.sel || !p.ins || !p.upd || p.del || p.trunc) throw new Error(`(b) avi_app grants on ${t} wrong: ${JSON.stringify(p)}`);
+      if (!p.sel || !p.ins || p.upd || p.del || p.trunc || p.refs || p.trig) throw new Error(`(b) avi_app table grants on ${t} not exact: ${JSON.stringify(p)}`);
     }
+    const credUpd = await updCols(CRED, CRED_COLS);
+    const assignUpd = await updCols(ASSIGN, ASSIGN_COLS);
+    const wantCredUpd = ["lastUsedAt", "revokeReason", "revokedAt", "revokedBy", "status"];
+    const wantAssignUpd = ["claimSeq", "claimTokenHash", "claimedAt", "claimedByCredentialId", "lastProgressAt", "progressSeq"];
+    if (JSON.stringify(credUpd) !== JSON.stringify(wantCredUpd)) throw new Error(`(b) column UPDATE on ${CRED} not exact: ${JSON.stringify(credUpd)}`);
+    if (JSON.stringify(assignUpd) !== JSON.stringify(wantAssignUpd)) throw new Error(`(b) column UPDATE on ${ASSIGN} not exact: ${JSON.stringify(assignUpd)}`);
+    const [seqP] = await appSql`SELECT has_sequence_privilege('edge_node_credentials_id_seq', 'USAGE') AS u, has_sequence_privilege('edge_node_credentials_id_seq', 'UPDATE') AS upd`;
+    if (!seqP.u || seqP.upd) throw new Error(`(b) sequence grants not exact: ${JSON.stringify(seqP)}`);
     // (b) behaviour, in an ALWAYS-rolled-back transaction
     const ROLLBACK = new Error("probe-0370-rollback");
     const CODE = `__probe_0370_${Date.now()}`;
@@ -180,6 +201,16 @@ async function applyTo(rawUrl, label) {
         const noToken = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "claimSeq" = 2, "claimTokenHash" = NULL, "progressSeq" = 0 WHERE "runId" = ${run.id}`);
         const swapToken = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "claimTokenHash" = ${H("5")} WHERE "runId" = ${run.id}`);
         const release = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "claimTokenHash" = NULL WHERE "runId" = ${run.id}`);
+        // fix 1 — write-once of the claimant / the run side of the ID mapping / a live credential
+        const claimantSwap = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "claimedByCredentialId" = ${c1.id} WHERE "runId" = ${run.id}`);
+        const [node3] = await tx`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE + "-3"}, ${CODE}, 'offline') RETURNING id`;
+        const [cOther] = await tx`INSERT INTO ${tx(CRED)} ("edgeNodeId", "keyPrefix", "secretHash") VALUES (${node3.id}, 'edn_ffffffffffff', ${H("7")}) RETURNING id`;
+        const foreignClaim = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "claimSeq" = 2, "claimTokenHash" = ${H("8")}, "claimedByCredentialId" = ${cOther.id}, "claimedAt" = now(), "progressSeq" = 0 WHERE "runId" = ${run.id}`);
+        const runWfPinned = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET "workflowId" = ${wf.id + 1} WHERE id = ${run.id}`);
+        const runWfFree = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET "workflowId" = ${wf.id} WHERE id = ${runR.id}`);
+        const lateRunKey = await maLoi(tx, (sp) => sp`UPDATE orchestration_runs SET "startedViaApiKeyId" = 999999 WHERE id = ${run.id}`);
+        const lateRevoker = await maLoi(tx, (sp) => sp`UPDATE ${sp(CRED)} SET "revokedBy" = 7 WHERE id = ${cOther.id}`);
+        const credNodeMove = await maLoi(tx, (sp) => sp`UPDATE ${sp(CRED)} SET "edgeNodeId" = ${node.id} WHERE id = ${cOther.id}`);
         const assignDel = await maLoi(tx, (sp) => sp`DELETE FROM ${sp(ASSIGN)} WHERE "runId" = ${run.id}`);
         const nodeDelBlocked = await maLoi(tx, (sp) => sp`DELETE FROM edge_nodes WHERE id = ${node.id}`);
         const [after] = await tx`SELECT "claimSeq" AS s, "progressSeq" AS p, "defHash" AS h FROM ${tx(ASSIGN)} WHERE "runId" = ${run.id}`;
@@ -191,6 +222,7 @@ async function applyTo(rawUrl, label) {
         kq = {
           secondActive, badHash, badPrefix, swapSecret, revoke, unrevoke, credDel, assign, notQueued, otherWf, preClaimed, idDef, idNode,
           claim, progress, back, skip, noToken, swapToken, release, assignDel, nodeDelBlocked, runDel,
+          claimantSwap, foreignClaim, runWfPinned, runWfFree, lateRunKey, lateRevoker, credNodeMove,
           after: after ? { s: after.s, p: Number(after.p), h: after.h === H("1") } : null, gone: gone.n, node2Del, credGone: credGone.n,
         };
         throw ROLLBACK; // ALWAYS rolled back
@@ -199,13 +231,38 @@ async function applyTo(rawUrl, label) {
       if (e !== ROLLBACK) throw e;
     }
     const want = {
-      secondActive: "23505", badHash: "23514", badPrefix: "23514", swapSecret: "23514", revoke: null, unrevoke: "23514", credDel: "42501",
-      assign: null, notQueued: "23514", otherWf: "23514", preClaimed: "23514", idDef: "23514", idNode: "23514",
+      secondActive: "23505", badHash: "23514", badPrefix: "23514", swapSecret: "42501", revoke: null, unrevoke: "23514", credDel: "42501",
+      assign: null, notQueued: "23514", otherWf: "23514", preClaimed: "23514", idDef: "42501", idNode: "42501",
+      claimantSwap: "23514", foreignClaim: "23514", runWfPinned: "23514", runWfFree: null, lateRunKey: "23514", lateRevoker: "23514", credNodeMove: "42501",
       claim: null, progress: null, back: "23514", skip: "23514", noToken: "23514", swapToken: "23514", release: null, assignDel: "42501",
       nodeDelBlocked: "23503", runDel: null, gone: 0, node2Del: null, credGone: 0,
     };
     const bad = !kq || Object.entries(want).some(([k, v]) => kq[k] !== v) || !kq.after || kq.after.s !== 1 || kq.after.p !== 5 || !kq.after.h;
     if (bad) throw new Error(`(b) avi_app behaviour wrong: ${JSON.stringify(kq)}`);
+    // fix 1 — the TRIGGERS themselves (below privileges: as the owner, who has every column), always rolled back
+    let ko = null;
+    try {
+      await sql.begin(async (tx) => {
+        const [node] = await tx`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE + "-o"}, ${CODE}, 'offline') RETURNING id`;
+        const [c1] = await tx`INSERT INTO ${tx(CRED)} ("edgeNodeId", "keyPrefix", "secretHash") VALUES (${node.id}, 'edn_a0a0a0a0a0a0', ${H("a")}) RETURNING id`;
+        const lateRotatedFrom = await maLoi(tx, (sp) => sp`UPDATE ${sp(CRED)} SET "rotatedFromId" = ${c1.id} WHERE id = ${c1.id}`);
+        const lateCreatedBy = await maLoi(tx, (sp) => sp`UPDATE ${sp(CRED)} SET "createdBy" = 5 WHERE id = ${c1.id}`);
+        const ownerSecret = await maLoi(tx, (sp) => sp`UPDATE ${sp(CRED)} SET "secretHash" = ${H("b")} WHERE id = ${c1.id}`);
+        const [wf] = await tx`INSERT INTO orchestration_workflows (ref, name, "definitionJson", "scopeKey") VALUES (${CODE + "-o"}, ${CODE}, ${tx.json({ ref: CODE, name: CODE, steps: [] })}, ${CODE + "-o"}) RETURNING id`;
+        const [run] = await tx`INSERT INTO orchestration_runs ("workflowId", status) VALUES (${wf.id}, 'queued') RETURNING id`;
+        await tx`INSERT INTO ${tx(ASSIGN)} ("runId", "edgeNodeId", "workflowId", "workflowVersion", "defHash") VALUES (${run.id}, ${node.id}, ${wf.id}, 1, ${H("1")})`;
+        const lateAssignedBy = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "assignedBy" = 5 WHERE "runId" = ${run.id}`);
+        const ownerMapping = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "workflowId" = ${wf.id + 1} WHERE "runId" = ${run.id}`);
+        const ownerDef = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "defHash" = ${H("2")} WHERE "runId" = ${run.id}`);
+        const ownerNode = await maLoi(tx, (sp) => sp`UPDATE ${sp(ASSIGN)} SET "edgeNodeId" = ${node.id} + 0, "workflowVersion" = 2 WHERE "runId" = ${run.id}`);
+        ko = { lateRotatedFrom, lateCreatedBy, ownerSecret, lateAssignedBy, ownerMapping, ownerDef, ownerNode };
+        throw ROLLBACK;
+      });
+    } catch (e) {
+      if (e !== ROLLBACK) throw e;
+    }
+    if (!ko || Object.values(ko).some((v) => v !== "23514")) throw new Error(`(b) owner-level write-once triggers wrong: ${JSON.stringify(ko)}`);
+    console.log(`  ${TAG} ${label} (b) exact column UPDATE: ${CRED} ${JSON.stringify(credUpd)}, ${ASSIGN} ${JSON.stringify(assignUpd)}; owner-level write-once ${JSON.stringify(ko)}; ROLLED BACK`);
     const [left] = await appSql`SELECT count(*)::int AS n FROM edge_nodes WHERE code LIKE ${CODE + "%"}`;
     if (left.n !== 0) throw new Error(`(b) probe transaction NOT rolled back: ${left.n} probe nodes left`);
     console.log(`  ${TAG} ${label} (b) catalog ${JSON.stringify({ [CRED]: pc, [ASSIGN]: pa })}; behaviour ${JSON.stringify(kq)}; ROLLED BACK`);

@@ -14,7 +14,9 @@
 --     public lookup id. ROTATION = revoke the active row + insert a new one in ONE transaction (at most one ACTIVE row per node,
 --     partial unique index); REVOKE is terminal (trigger: a revoked row never becomes active again, its secret / node / prefix
 --     never change). Rows go away only with their node (ON DELETE CASCADE, which itself is refused while the node has run
---     assignments — see below). avi_app: SELECT / INSERT / UPDATE (revoke, lastUsedAt); no DELETE / TRUNCATE.
+--     assignments — see below). avi_app (fix 1, security scan "over-broad grant"): SELECT, INSERT, and UPDATE ONLY of the
+--     revocation columns ("status", "revokedAt", "revokedBy", "revokeReason") + "lastUsedAt" — never of "secretHash" or any
+--     identity column (rotation INSERTS a new row; it never rewrites a hash); no DELETE / TRUNCATE.
 --   • orchestration_run_edge_assignments — "orchestration_runs gets an edge assignment": 1 row per run handed to a node, keyed
 --     by the CENTRAL run id. ID MAPPING: the edge executes `runId` / `workflowId` exactly (never a copy); `workflowVersion` +
 --     `defHash` pin the definition snapshot handed out (a redeploy after assignment ⇒ the edge refuses to claim). WRITE-ONCE
@@ -23,8 +25,22 @@
 --     resume after a central approval / Continue) is claimed by the node through central — `claimSeq` +1, a NEW claim token
 --     whose SHA-256 is `claimTokenHash` (the token only ever goes to the edge), the credential that claimed it, and the
 --     progress sequence restarts at 0. `claimSeq` never decreases; within a claim `progressSeq` never decreases (a replayed
---     progress report is refused by the application AND cannot move the row back). avi_app: SELECT / INSERT / UPDATE; rows go
---     away only with their run (ON DELETE CASCADE).
+--     progress report is refused by the application AND cannot move the row back). avi_app (fix 1): SELECT, INSERT, and UPDATE
+--     ONLY of the claim columns ("claimSeq", "claimTokenHash", "claimedByCredentialId", "claimedAt", "progressSeq",
+--     "lastProgressAt"); no DELETE / TRUNCATE; rows go away only with their run (ON DELETE CASCADE).
+--
+-- WRITE-ONCE (fix 1, security scan "incomplete write-once guard"): every identity column refuses a change, a clear AND a late
+--   first write after the insert (NULL → value) — the triggers compare with IS DISTINCT FROM, so any difference from the
+--   inserted value is refused:
+--     • edge_node_credentials: edgeNodeId, keyPrefix, secretHash, createdBy, createdAt, rotatedFromId; an ACTIVE row carries no
+--       revocation data (CHECK), a revoked row's revocation data never changes;
+--     • orchestration_run_edge_assignments: runId, edgeNodeId, workflowId, workflowVersion, defHash, assignedBy, assignedAt; the
+--       claim columns claimedByCredentialId / claimedAt change ONLY together with a new claim (claimSeq + 1), and the claiming
+--       credential must belong to the assigned node;
+--     • the ID mapping on the run side: orchestration_runs."workflowId" of a run that has an edge assignment never changes
+--       (trigger on orchestration_runs, only for assigned runs). orchestration_runs."startedViaApiKeyId" stays under 0369's
+--       insert-only trigger (Group R fix #4): an edge run carries its key from the INSERT (foeEngine.startEdgeAssignedRun).
+--   There is NO reassignment path: a run is handed to one node for good (abort it and start a new one for another node).
 --
 -- WHY NEW TABLES, NOT NEW COLUMNS ON orchestration_runs (0368 lesson, Group R interface note): `select().from(orchestrationRuns)`
 --   is on the ABORT / STOP paths; nothing here is added to that full-row object. The tables are read and written through
@@ -38,6 +54,7 @@
 --   DROP TABLE IF EXISTS "edge_node_credentials";
 --   DROP FUNCTION IF EXISTS edge_run_assignment_guard(); DROP FUNCTION IF EXISTS edge_run_assignment_insert_guard();
 --   DROP FUNCTION IF EXISTS edge_node_credentials_guard();
+--   DROP TRIGGER IF EXISTS trg_orch_runs_edge_workflow_pinned ON "orchestration_runs"; DROP FUNCTION IF EXISTS orch_runs_edge_workflow_pinned();
 --
 CREATE TABLE IF NOT EXISTS "edge_node_credentials" (
   "id" serial PRIMARY KEY,
@@ -58,6 +75,10 @@ CREATE TABLE IF NOT EXISTS "edge_node_credentials" (
   CONSTRAINT "ck_edge_cred_prefix" CHECK ("keyPrefix" ~ '^edn_[0-9a-f]{12}$'),
   CONSTRAINT "ck_edge_cred_revoked" CHECK (("status" = 'revoked') = ("revokedAt" IS NOT NULL))
 );
+-- fix 1 — an ACTIVE credential carries no revocation data (no late "revokedBy" / reason written onto a live secret)
+ALTER TABLE "edge_node_credentials" DROP CONSTRAINT IF EXISTS "ck_edge_cred_active_clean";
+ALTER TABLE "edge_node_credentials" ADD CONSTRAINT "ck_edge_cred_active_clean"
+  CHECK ("status" = 'revoked' OR ("revokedBy" IS NULL AND "revokeReason" IS NULL));
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_edge_node_credentials_one_active" ON "edge_node_credentials" ("edgeNodeId") WHERE "status" = 'active';
 COMMENT ON TABLE "edge_node_credentials" IS
   'doc 81 Dot 9 S1: per-node edge credential (sha256 of the token; plaintext never stored). Rotation = revoke + insert in one tx; revoke is terminal.';
@@ -140,20 +161,51 @@ BEGIN
   IF NEW."claimSeq" = OLD."claimSeq" AND NEW."claimTokenHash" IS NOT NULL AND NEW."claimTokenHash" IS DISTINCT FROM OLD."claimTokenHash" THEN
     RAISE EXCEPTION 'orchestration_run_edge_assignments: a claim token is set only by a new claim (run %)', OLD."runId" USING ERRCODE = 'check_violation';
   END IF;
+  -- fix 1 — who claimed / when: written ONLY by a new claim (no change, clear or late first write inside a claim)
+  IF NEW."claimSeq" = OLD."claimSeq" AND (NEW."claimedByCredentialId" IS DISTINCT FROM OLD."claimedByCredentialId"
+     OR NEW."claimedAt" IS DISTINCT FROM OLD."claimedAt") THEN
+    RAISE EXCEPTION 'orchestration_run_edge_assignments: the claimant is recorded only by a new claim (run %)', OLD."runId" USING ERRCODE = 'check_violation';
+  END IF;
+  -- fix 1 — a new claim names a credential OF THE ASSIGNED NODE
+  IF NEW."claimSeq" = OLD."claimSeq" + 1 AND NOT EXISTS (
+       SELECT 1 FROM "edge_node_credentials" c WHERE c."id" = NEW."claimedByCredentialId" AND c."edgeNodeId" = NEW."edgeNodeId") THEN
+    RAISE EXCEPTION 'orchestration_run_edge_assignments: a claim must name a credential of node % (run %)', NEW."edgeNodeId", OLD."runId"
+      USING ERRCODE = 'check_violation';
+  END IF;
   RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS trg_edge_run_assignment_guard ON "orchestration_run_edge_assignments";
 CREATE TRIGGER trg_edge_run_assignment_guard BEFORE UPDATE ON "orchestration_run_edge_assignments"
   FOR EACH ROW EXECUTE FUNCTION edge_run_assignment_guard();
 
+-- fix 1 — the run side of the ID mapping: the workflow of a run handed to a node never changes (only for assigned runs).
+CREATE OR REPLACE FUNCTION orch_runs_edge_workflow_pinned() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW."workflowId" IS DISTINCT FROM OLD."workflowId"
+     AND EXISTS (SELECT 1 FROM "orchestration_run_edge_assignments" a WHERE a."runId" = OLD."id") THEN
+    RAISE EXCEPTION 'orchestration_runs: run % is assigned to an edge node — its workflow is pinned (ID mapping)', OLD."id"
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_orch_runs_edge_workflow_pinned ON "orchestration_runs";
+CREATE TRIGGER trg_orch_runs_edge_workflow_pinned BEFORE UPDATE OF "workflowId" ON "orchestration_runs"
+  FOR EACH ROW EXECUTE FUNCTION orch_runs_edge_workflow_pinned();
+
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'avi_app') THEN
     -- explicit REVOKE: the dev default ACL grants avi_app everything (0357, measured 2026-09-15).
-    REVOKE DELETE, TRUNCATE ON "edge_node_credentials" FROM avi_app;
-    REVOKE DELETE, TRUNCATE ON "orchestration_run_edge_assignments" FROM avi_app;
-    GRANT SELECT, INSERT, UPDATE ON "edge_node_credentials" TO avi_app;
-    GRANT SELECT, INSERT, UPDATE ON "orchestration_run_edge_assignments" TO avi_app;
+    -- fix 1 — the EXACT privilege set: everything revoked first (the dev default ACL grants avi_app everything), then only
+    -- what the code needs; UPDATE is column-level.
+    REVOKE ALL ON "edge_node_credentials" FROM avi_app;
+    REVOKE ALL ON "orchestration_run_edge_assignments" FROM avi_app;
+    GRANT SELECT, INSERT ON "edge_node_credentials" TO avi_app;
+    GRANT UPDATE ("status", "revokedAt", "revokedBy", "revokeReason", "lastUsedAt") ON "edge_node_credentials" TO avi_app;
+    GRANT SELECT, INSERT ON "orchestration_run_edge_assignments" TO avi_app;
+    GRANT UPDATE ("claimSeq", "claimTokenHash", "claimedByCredentialId", "claimedAt", "progressSeq", "lastProgressAt")
+      ON "orchestration_run_edge_assignments" TO avi_app;
+    REVOKE ALL ON SEQUENCE "edge_node_credentials_id_seq" FROM avi_app;
     GRANT USAGE ON SEQUENCE "edge_node_credentials_id_seq" TO avi_app;
   END IF;
 END $$;

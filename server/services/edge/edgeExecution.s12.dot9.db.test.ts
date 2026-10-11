@@ -180,6 +180,19 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     expect((await authenticateEdgeNodeToken(tokens.A))?.nodeCode).toBe(`NA-${DAU}`);
   });
 
+  it("★ S1 fix 1 (security scan): the application role can never rewrite a secret or an identity column; a live secret carries no revocation data", async () => {
+    const code = async (q: Promise<unknown>) => q.then(() => null, (e: { code?: string }) => e?.code ?? "?");
+    const [c] = await sql`SELECT id FROM edge_node_credentials WHERE "edgeNodeId" = ${ids.nodeA} AND status = 'active'`;
+    expect(await code(sql`UPDATE edge_node_credentials SET "secretHash" = ${"0".repeat(64)} WHERE id = ${c.id}`)).toBe("42501");
+    expect(await code(sql`UPDATE edge_node_credentials SET "edgeNodeId" = ${ids.nodeB} WHERE id = ${c.id}`)).toBe("42501");
+    expect(await code(sql`UPDATE edge_node_credentials SET "keyPrefix" = 'edn_000000000000' WHERE id = ${c.id}`)).toBe("42501");
+    expect(await code(sql`UPDATE edge_node_credentials SET "rotatedFromId" = ${c.id} WHERE id = ${c.id}`)).toBe("42501");
+    expect(await code(sql`UPDATE edge_node_credentials SET "revokedBy" = ${u.admin} WHERE id = ${c.id}`)).toBe("23514"); // late revocation data on a LIVE secret
+    expect(await code(sql`DELETE FROM edge_node_credentials WHERE id = ${c.id}`)).toBe("42501");
+    expect(await code(sql`TRUNCATE edge_node_credentials`)).toBe("42501");
+    expect((await sql`SELECT "secretHash" FROM edge_node_credentials WHERE id = ${c.id}`)[0].secretHash).toBe(sha(tokens.A));
+  });
+
   // ── S2 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   it("★ S2 auth: no credential, an API-key-shaped one, an unknown one, a revoked one ⇒ the SAME 401 (also on claim / progress)", async () => {
     const bodies: string[] = [];
@@ -352,6 +365,17 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     expect((await post(path, body(6, `ect_${"A".repeat(43)}`), tokens.A)).json.error.code).toBe("claim_stale");
     expect((await post(path, { ...body(6), claimSeq: c.claimSeq + 1 }, tokens.A)).json.error.code).toBe("claim_stale");
     expect((await post(path, body(6), tokens.B)).status).toBe(404); // B holding A's token: still not B's run
+    // fix 1 (security scan) — the ID mapping and the claimant are write-once for the application role too
+    const code = async (q: Promise<unknown>) => q.then(() => null, (e: { code?: string }) => e?.code ?? "?");
+    expect(await code(sql`UPDATE orchestration_run_edge_assignments SET "edgeNodeId" = ${ids.nodeB} WHERE "runId" = ${c.runId}`)).toBe("42501");
+    expect(await code(sql`UPDATE orchestration_run_edge_assignments SET "workflowId" = ${c.wf.id + 1} WHERE "runId" = ${c.runId}`)).toBe("42501");
+    expect(await code(sql`UPDATE orchestration_run_edge_assignments SET "assignedBy" = ${u.eng} WHERE "runId" = ${c.runId}`)).toBe("42501");
+    expect(await code(sql`UPDATE orchestration_runs SET "workflowId" = ${c.wf.id + 1} WHERE id = ${c.runId}`)).toBe("23514"); // run side of the mapping
+    expect(await code(sql`UPDATE orchestration_runs SET "startedViaApiKeyId" = 999999 WHERE id = ${c.runId}`)).toBe("23514"); // late first write (0369)
+    const [credB] = await sql`SELECT id FROM edge_node_credentials WHERE "edgeNodeId" = ${ids.nodeB} AND status = 'active'`;
+    expect(await code(sql`UPDATE orchestration_run_edge_assignments SET "claimedByCredentialId" = ${credB.id} WHERE "runId" = ${c.runId}`)).toBe("23514"); // inside a claim
+    expect(await code(sql`UPDATE orchestration_run_edge_assignments SET "claimSeq" = "claimSeq" + 1, "claimTokenHash" = ${"9".repeat(64)}, "claimedByCredentialId" = ${credB.id}, "progressSeq" = 0 WHERE "runId" = ${c.runId}`)).toBe("23514"); // another node's credential
+    expect(await code(sql`DELETE FROM orchestration_run_edge_assignments WHERE "runId" = ${c.runId}`)).toBe("42501");
     // the SAME report sent 6 times at once (a replay racing the original): exactly one is accepted
     const burst = await Promise.all(Array.from({ length: 6 }, () => post(path, body(9), tokens.A)));
     expect(burst.filter((r) => r.status === 200).length).toBe(1);
@@ -437,7 +461,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S2 — node credential + node proto
     expect(early.json.error.code).toBe("claim_live");
     expect((await runRow(r2.runId)).status).toBe("running");
     expect((await post(`/edge/node/runs/${r2.runId}/interrupted`, { claimSeq: r2.claimSeq }, tokens.B)).status).toBe(404);
-    await sql`UPDATE orchestration_run_edge_assignments SET "lastProgressAt" = now() - interval '1 hour', "claimedAt" = now() - interval '1 hour' WHERE "runId" = ${r2.runId}`;
+    await sql`UPDATE orchestration_run_edge_assignments SET "lastProgressAt" = now() - interval '1 hour' WHERE "runId" = ${r2.runId}`;
     const late = await post(`/edge/node/runs/${r2.runId}/interrupted`, { claimSeq: r2.claimSeq }, tokens.A);
     expect(late.json.data).toEqual({ status: "held" });
     const row = await runRow(r2.runId);
