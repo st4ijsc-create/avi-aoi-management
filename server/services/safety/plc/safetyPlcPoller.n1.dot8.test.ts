@@ -278,6 +278,9 @@ describe("doc 81 Đợt 8 N1 — L-7: READ-ONLY, never actuates", () => {
             return { status: { estop: false }, unreadable: [] };
           };
           if (prop === "then") return undefined;
+          // Re-pinned 2026-10-12 (doc 81 Đợt 9 U1): the poller PROBES (never calls on a plain backend) two optional read-side
+          // members — readBatch (queued OPC-UA subscription reads) and close (release a subscription session). Absent here.
+          if (prop === "readBatch" || prop === "close") return undefined;
           throw new Error(`poller touched backend.${String(prop)}`);
         },
       },

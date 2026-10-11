@@ -151,3 +151,19 @@ The same logic in ladder:
 |----| |---------| |--------| |------------------(R)------|
 ```
 
+### 6.2 OPC-UA: subscription with a queue (U1)
+
+OPC-UA configs are read through a subscription instead of a poll. The monitored items use
+`queueSize > 1` and `discardOldest = false`. Every queued value change becomes its own transition, so a press and a
+release inside one publishing interval give both events.
+
+- **Lost values.** A queue overflow on the server (the OPC-UA overflow bit) or a gap in the notification sequence
+  numbers is recorded as one `plc_events_lost` marker. The net state is still re-detected.
+- **Silent subscription.** If the subscription goes quiet (no data and no keep-alive within the bound), the PLC reads
+  `plc_offline` and the poller re-subscribes. A silent subscription is never shown as healthy.
+- **Fallback to polling.** If the server refuses a subscription, revises the queue size below 2, or revises the
+  sampling interval above 250 ms (it would not see a short press), the poller falls back to polling. The safety
+  source panel then shows **"polling (short presses may be missed)"**. The poller retries the subscription every 60 s.
+- **Modbus without a latch.** It is polled too, so the panel shows the same "polling" note for it. Map a latch (6.1).
+- **Connections.** The subscription keeps one session open per PLC. The actuation preflight still opens its own, so
+  each PLC needs room for at least 2 clients.

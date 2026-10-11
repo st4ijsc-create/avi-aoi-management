@@ -1338,6 +1338,8 @@ function SafetySourcePanel({
   const blindPlcs = (poller?.configs ?? [])
     .map((c) => ({ code: c.code, kind: c.stale ? ("stale" as const) : c.link === "online" ? null : c.link === "offline" ? ("offline" as const) : ("unknown" as const) }))
     .filter((c): c is { code: string; kind: "stale" | "offline" | "unknown" } => c.kind !== null);
+  // doc 81 Đợt 9 U1/U2 — PLCs read by polling (short presses may be missed); the panel says so per PLC.
+  const pollingPlcs = (poller?.configs ?? []).filter((c) => c.readMode === "poll" || c.readMode === "poll_fallback");
   const pollerBad = poller?.state === "stale" || poller?.state === "unknown" || (poller?.state === "ok" && blindPlcs.length > 0);
   const linkText = (k: "stale" | "offline" | "unknown") =>
     k === "stale"
@@ -1404,6 +1406,20 @@ function SafetySourcePanel({
               {blindPlcs.map((c) => (
                 <span key={c.code} data-testid="safety-source-poller-plc" data-link={c.kind} className="font-mono">
                   {c.code}: {linkText(c.kind)}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* doc 81 Đợt 9 U1/U2 — a PLC read by POLLING (Modbus without a latch, or OPC-UA whose subscription was refused) can
+              miss an e-stop pressed and released between two reads: said per PLC, never hidden. */}
+          {pollingPlcs.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-x-2 font-normal text-amber-700 dark:text-amber-400">
+              {pollingPlcs.map((c) => (
+                <span key={c.code} data-testid="safety-source-poller-mode" data-mode={c.readMode} className="font-mono">
+                  {c.code}:{" "}
+                  {c.readMode === "poll_fallback"
+                    ? t("safety.source.poller.modePollFallback", "polling — OPC-UA subscription unavailable (short presses may be missed)")
+                    : t("safety.source.poller.modePolling", "polling (short presses may be missed)")}
                 </span>
               ))}
             </div>

@@ -61,6 +61,11 @@ export interface PollStateRow {
   /** final wave N-R1 — since when transitions wait to be recorded (null = nothing waiting) and how many (queue + lost). */
   unrecordedSince?: number | null;
   unrecordedCount?: number | null;
+  /**
+   * doc 81 Đợt 9 U1/U2 (migration 0371) — how the config is read: "subscription" (OPC-UA, queued), "poll_fallback" (OPC-UA
+   * subscription refused ⇒ polling), "poll" (Modbus, no latch), "poll_latch" (Modbus + e-stop latch), "sim". null = unknown.
+   */
+  readMode?: string | null;
 }
 
 /**
@@ -109,8 +114,12 @@ function rowOf(r: Record<string, unknown>): PollStateRow {
     staleAlarmEpisode: (r.staleAlarmEpisode as string | null) ?? null,
     unrecordedSince: num(r.unrecordedSince),
     unrecordedCount: num(r.unrecordedCount),
+    readMode: typeof r.readMode === "string" ? r.readMode : null,
   };
 }
+
+/** doc 81 Đợt 9 U1/U2 — the read modes the poller reports (= the 0371 CHECK). */
+export const READ_MODES: ReadonlySet<string> = new Set(["subscription", "poll_fallback", "poll", "poll_latch", "sim"]);
 
 /** final wave N-R5 — the DB clock in epoch ms (SQL fragment). */
 const DB_NOW_MS = sql`(extract(epoch from clock_timestamp()) * 1000)::bigint`;
@@ -125,7 +134,7 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & 
   const listAt = async (): Promise<{ rows: PollStateRow[]; nowMs: number }> => {
     // ONE query: the DB clock + every row (LEFT JOIN keeps the clock when there is no row at all).
     const rows = (await (await db()).execute(sql`
-      SELECT n.t AS "dbNow", s."configId", s.link, s.flags, s."intervalMs", s."lastAttemptAt", s."lastOkAt", s."staleAlarmEpisode", s."unrecordedSince", s."unrecordedCount"
+      SELECT n.t AS "dbNow", s."configId", s.link, s.flags, s."intervalMs", s."lastAttemptAt", s."lastOkAt", s."staleAlarmEpisode", s."unrecordedSince", s."unrecordedCount", s."readMode"
         FROM (SELECT ${DB_NOW_MS} AS t) n LEFT JOIN safety_plc_poll_state s ON true`)) as unknown as Array<Record<string, unknown>>;
     const nowMs = num(rows[0]?.dbNow);
     if (nowMs == null) throw new DbUnavailableError("db clock unreadable"); // caller ⇒ "unknown" (never ok)
@@ -144,16 +153,18 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & 
       const age = (t: number | null | undefined): number | null => (typeof t === "number" && Number.isFinite(t) ? Math.max(0, Math.round(local - t)) : null);
       const onDb = (a: number | null) => (a == null ? sql`NULL::bigint` : sql`(${DB_NOW_MS} - ${a}::bigint)`);
       const count = typeof r.unrecordedCount === "number" && Number.isFinite(r.unrecordedCount) ? Math.max(0, Math.min(2_000_000_000, Math.round(r.unrecordedCount))) : null;
+      // doc 81 Đợt 9 U1/U2 — only the known modes (the column CHECK refuses anything else; unknown ⇒ NULL, never invented)
+      const mode = typeof r.readMode === "string" && READ_MODES.has(r.readMode) ? r.readMode : null;
       await (await db()).execute(sql`
-        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "identityDigest", "unrecordedSince", "unrecordedCount", "writerInstance", "updatedAt")
-        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${onDb(age(r.lastAttemptAt))}, ${onDb(age(r.lastOkAt))}, ${r.identityDigest ?? null}, ${onDb(age(r.unrecordedSince))}, ${count}, ${instance.slice(0, 64)}, now())
+        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "identityDigest", "unrecordedSince", "unrecordedCount", "readMode", "writerInstance", "updatedAt")
+        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${onDb(age(r.lastAttemptAt))}, ${onDb(age(r.lastOkAt))}, ${r.identityDigest ?? null}, ${onDb(age(r.unrecordedSince))}, ${count}, ${mode}, ${instance.slice(0, 64)}, now())
         ON CONFLICT ("configId") DO UPDATE SET link = EXCLUDED.link, flags = EXCLUDED.flags, "intervalMs" = EXCLUDED."intervalMs",
           "lastAttemptAt" = EXCLUDED."lastAttemptAt", "lastOkAt" = EXCLUDED."lastOkAt", "identityDigest" = EXCLUDED."identityDigest",
           -- final wave NF-1/NF-2: a continuing wait keeps its FIRST stored value (no ±latency drift of the episode key,
           -- no effect of a local clock step); a cleared wait (NULL) clears it; a new wait after a clear starts fresh.
           "unrecordedSince" = CASE WHEN EXCLUDED."unrecordedSince" IS NULL THEN NULL
                                    ELSE COALESCE(safety_plc_poll_state."unrecordedSince", EXCLUDED."unrecordedSince") END,
-          "unrecordedCount" = EXCLUDED."unrecordedCount", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
+          "unrecordedCount" = EXCLUDED."unrecordedCount", "readMode" = EXCLUDED."readMode", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
     },
     async list() {
       return (await listAt()).rows;
@@ -199,7 +210,7 @@ export interface PollerHealth {
   state: PollerHealthState;
   /** The newest attempt of ANY config (what every instance reports as "the leader's last poll"). */
   lastPollAt: number | null;
-  configs: Array<EnabledConfigLite & { link: PollLink; lastAttemptAt: number | null; lastOkAt: number | null; stale: boolean; unrecordedSince: number | null }>;
+  configs: Array<EnabledConfigLite & { link: PollLink; lastAttemptAt: number | null; lastOkAt: number | null; stale: boolean; unrecordedSince: number | null; readMode: string | null }>;
   staleScopes: Array<{ configId: number; episode: string; reason: string }>;
 }
 
@@ -235,7 +246,7 @@ export function evaluatePollerHealth(enabled: EnabledConfigLite[], rows: PollSta
         reason: `config "${code}": ${r?.unrecordedCount ?? "?"} observed transition(s) NOT recorded for ${Math.round((now - unrec!) / 1000)} s (event inserts failing) — trips are seen but neither recorded nor notified`,
       });
     }
-    return { ...c, link: r?.link ?? "unknown", lastAttemptAt: last, lastOkAt: r?.lastOkAt ?? null, stale, unrecordedSince: unrec };
+    return { ...c, link: r?.link ?? "unknown", lastAttemptAt: last, lastOkAt: r?.lastOkAt ?? null, stale, unrecordedSince: unrec, readMode: r?.readMode ?? null };
   });
   return { state: staleScopes.length ? "stale" : "ok", lastPollAt, configs, staleScopes };
 }

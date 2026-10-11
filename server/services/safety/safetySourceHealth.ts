@@ -181,7 +181,8 @@ export interface SafetySourceHealth {
     /** fix scan 3 (R-8-c) — the newest durable poll attempt of any config (the leader's last poll, read from the DB). */
     lastPollAt: string | null;
     staleConfigs: number;
-    configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean }>;
+    /** doc 81 Đợt 9 U1/U2 — readMode: "subscription" | "poll_fallback" | "poll" | "poll_latch" | "sim" | null (not reported yet). */
+    configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean; readMode: string | null }>;
     hiddenConfigs: number;
   };
 }
@@ -313,7 +314,7 @@ function pollerPanel(h: PollerHealth | undefined, ids: number[] | null): SafetyS
     state: h.state,
     lastPollAt: iso(h.lastPollAt),
     staleConfigs: shown.filter((c) => c.stale).length,
-    configs: shown.map((c) => ({ code: c.code, link: c.link, lastAttemptAt: iso(c.lastAttemptAt), lastOkAt: iso(c.lastOkAt), stale: c.stale })),
+    configs: shown.map((c) => ({ code: c.code, link: c.link, lastAttemptAt: iso(c.lastAttemptAt), lastOkAt: iso(c.lastOkAt), stale: c.stale, readMode: c.readMode ?? null })),
     hiddenConfigs: h.configs.length - shown.length,
   };
 }

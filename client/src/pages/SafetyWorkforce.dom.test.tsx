@@ -299,6 +299,25 @@ describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
     expect(screen.queryAllByTestId("safety-source-poller-plc")).toHaveLength(0);
   });
 
+  // doc 81 Đợt 9 U1/U2 — a PLC read by POLLING (Modbus without latch, OPC-UA subscription refused) is said per PLC.
+  it("★ U1/U2: 'polling (short presses may be missed)' per polled PLC; subscription / latch / sim / unknown mode ⇒ nothing", () => {
+    const cfg = (code: string, readMode: string | null) => ({ code, link: "online", lastAttemptAt: null, lastOkAt: null, stale: false, readMode });
+    const poller = (configs: unknown[]) => ({ state: "ok", lastPollAt: "2026-10-12T10:00:00.000Z", staleConfigs: 0, configs, hiddenConfigs: 0 });
+    setQueryOverride(
+      "safety.sourceHealth",
+      makeQuery({ data: health({ plcPoller: poller([cfg("UA-1", "subscription"), cfg("UA-2", "poll_fallback"), cfg("MB-1", "poll"), cfg("MB-2", "poll_latch"), cfg("SIM-1", "sim"), cfg("OLD-1", null)]) }) }),
+    );
+    const { rerender } = render(<SafetyWorkforce />);
+    expect(screen.getAllByTestId("safety-source-poller-mode").map((e) => [e.textContent, e.getAttribute("data-mode")])).toEqual([
+      ["UA-2: polling — OPC-UA subscription unavailable (short presses may be missed)", "poll_fallback"],
+      ["MB-1: polling (short presses may be missed)", "poll"],
+    ]);
+    expect(screen.getByTestId("safety-source-poller").textContent).toMatch(/● alive/); // a degradation, not blindness
+    setQueryOverride("safety.sourceHealth", makeQuery({ data: health({ plcPoller: poller([cfg("UA-1", "subscription"), cfg("MB-2", "poll_latch")]) }) }));
+    rerender(<SafetyWorkforce />);
+    expect(screen.queryAllByTestId("safety-source-poller-mode")).toHaveLength(0);
+  });
+
   it("đang tải / lỗi ⇒ KHÔNG bịa trạng thái nguồn", () => {
     setQueryOverride("safety.sourceHealth", makeQuery({ isLoading: true }));
     const { rerender } = render(<SafetyWorkforce />);

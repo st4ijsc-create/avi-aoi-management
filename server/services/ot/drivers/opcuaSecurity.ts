@@ -61,7 +61,9 @@ export type OpcuaConfigReason =
   | "opcua_security_unsupported"
   | "opcua_password_undecryptable"
   | "opcua_password_empty"
-  | "opcua_tofu_not_allowed";
+  | "opcua_tofu_not_allowed"
+  // doc 81 Đợt 9 U1 — the session / package cannot create subscriptions (the safety-PLC poller then polls, visibly)
+  | "opcua_subscription_unsupported";
 
 export class OpcuaConfigError extends Error {
   readonly reasonCode: OpcuaConfigReason;
