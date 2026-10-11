@@ -20,6 +20,13 @@
  *   • OpenPLC: NO — neither the v3 webserver (Flask routes: dashboard shows only program name / file name / description)
  *     nor the v4 runtime REST API (/api/status, /api/upload-file, /api/compilation-status, …) exposes a program checksum
  *     or the program content; OpenPLC adapters are Modbus adapters and report "unsupported";
+ *   • Siemens S7 (doc 81 Đợt 9 task T1) when the adapter's configuration OPTS IN with `programChecksum` (documented value
+ *     "blockInfo"; any value other than false / "off" / null counts as opting in, so a typo never silently disables the
+ *     check): the checksum of the user program's OB/DB/FC/FB block infos, read through the documented S7comm block
+ *     functions (drivers/s7BlockChecksum.ts — sources, formula). Built from the protocol documentation and a simulator,
+ *     NOT verified on a real device (the screen says so). Opt-in rather than default because a CPU that does not answer
+ *     block functions (e.g. S7-1200/1500 per vendor docs on optimized access — to be checked at FAT) would otherwise
+ *     make every approval on that adapter impossible (fail-closed);
  *   • every other protocol / plugin driver: unsupported.
  *
  * L-7: a checksum read is bounded (PROGRAM_CHECKSUM_READ_DEADLINE_MS) and goes to the driver's readProgramChecksum(),
@@ -77,9 +84,14 @@ const labelOf = (row: { code?: unknown; name?: unknown }): string | null =>
  * true ⇒ an answer that is not a valid checksum is "unreadable" (fail-closed), never "unsupported".
  */
 export function programChecksumCapable(row: Pick<AdapterRowLike, "protocol" | "connectionOptions">): boolean {
-  if (row.protocol !== "stub") return false;
   const opts = row.connectionOptions as Record<string, unknown> | null | undefined;
-  return typeof opts?.simProgram === "string";
+  if (row.protocol === "stub") return typeof opts?.simProgram === "string";
+  // Đợt 9 T1 — S7 opts in through `programChecksum` (see header). Absent / false / "off" / null ⇒ unsupported.
+  if (row.protocol === "s7") {
+    const v = opts?.programChecksum;
+    return v !== undefined && v !== null && v !== false && v !== "off";
+  }
+  return false;
 }
 
 /** The program check of ONE OT adapter, bounded by `deadlineMs`. Never throws. */
