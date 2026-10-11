@@ -26,7 +26,7 @@ const MIGRATION_FILE = "0368_safety_plc_config_trust.sql";
 const MIGRATION_PATH = path.join(__dirname, "..", "drizzle", MIGRATION_FILE);
 const TAG = "[0368]";
 const BANG = "safety_plc_config_trust";
-const COTS = ["configId", "lastEditedBy", "lastEditedAt", "editDigest", "approvedDigest", "approvedBy", "approvedAt", "rejectedDigest", "rejectedBy", "rejectedAt", "rejectReason"];
+const COTS = ["configId", "lastEditedBy", "lastEditedAt", "editDigest", "approvedDigest", "approvedBy", "approvedAt", "rejectedDigest", "rejectedBy", "rejectedAt", "rejectReason", "editorsSinceApproval", "firstApprovedBy", "firstApprovedDigest", "firstApprovedAt"];
 
 function loadEnvFile(envPath) {
   if (!fs.existsSync(envPath)) return;
@@ -119,6 +119,11 @@ async function applyTo(rawUrl, label) {
     if (!pk || !/\("configId"\)/.test(pk.def)) throw new Error(`(a) khoa chinh sai: ${pk?.def}`);
     if (!fk || !/REFERENCES safety_plc_configs\(id\) ON DELETE CASCADE/.test(fk.def)) throw new Error(`(a) khoa ngoai sai: ${fk?.def}`);
     if (!ck || !/"approvedBy" <> "lastEditedBy"/.test(ck.def)) throw new Error(`(a) CHECK SoD sai: ${ck?.def}`);
+    // fix scan (R-8-a) — editor set, two-person rule, real actors
+    for (const [ten, mau] of [["ck_safety_plc_trust_sod_editors", /ANY \("editorsSinceApproval"\)/], ["ck_safety_plc_trust_two_person", /"approvedBy" <> "firstApprovedBy"/], ["ck_safety_plc_trust_real_actor", /"firstApprovedBy" > 0/]]) {
+      const c2 = cons.find((c) => c.conname === ten);
+      if (!c2 || !mau.test(c2.def)) throw new Error(`(a) CHECK ${ten} sai/thieu: ${c2?.def}`);
+    }
     const [ct] = await appSql`SELECT obj_description(${"public." + BANG}::regclass, 'pg_class') AS c`;
     if (!ct?.c || !/Dot 8 N fix 1/.test(ct.c)) throw new Error(`(a) thieu chu thich bang`);
     console.log(`  ${TAG} ${label} (a) ${COTS.length} cột; PK ${pk.def}; FK ${fk.def}; ${ck.def}`);
@@ -144,19 +149,23 @@ async function applyTo(rawUrl, label) {
         const tuDuyet = await maLoi(tx, (sp) => sp`UPDATE ${sp(BANG)} SET "approvedBy" = 101, "approvedDigest" = 'd1' WHERE "configId" = ${cfg.id}`);
         const nguoiKhac = await maLoi(tx, (sp) => sp`UPDATE ${sp(BANG)} SET "approvedBy" = 102, "approvedDigest" = 'd1', "approvedAt" = now() WHERE "configId" = ${cfg.id}`);
         const xoaHang = await maLoi(tx, (sp) => sp`DELETE FROM ${sp(BANG)} WHERE "configId" = ${cfg.id}`);
+        // fix scan (R-8-a): approver in the editor set / second approval by the first approver / actor 0 ⇒ 23514
+        const trongNhomSua = await maLoi(tx, (sp) => sp`UPDATE ${sp(BANG)} SET "approvedBy" = 103, "editorsSinceApproval" = '{103}' WHERE "configId" = ${cfg.id}`);
+        const haiNguoi = await maLoi(tx, (sp) => sp`UPDATE ${sp(BANG)} SET "approvedBy" = 104, "firstApprovedBy" = 104, "editorsSinceApproval" = '{}' WHERE "configId" = ${cfg.id}`);
+        const tacNhan0 = await maLoi(tx, (sp) => sp`UPDATE ${sp(BANG)} SET "approvedBy" = 0, "firstApprovedBy" = NULL WHERE "configId" = ${cfg.id}`);
         let cascade = "khong do (avi_app khong co DELETE tren safety_plc_configs)";
         if (q.cfg_del) {
           await tx`DELETE FROM safety_plc_configs WHERE id = ${cfg.id}`;
           const [n] = await tx`SELECT count(*)::int AS n FROM ${tx(BANG)} WHERE "configId" = ${cfg.id}`;
           cascade = n.n === 0 ? "CASCADE ok" : `CON ${n.n} hang`;
         }
-        kq = { tuDuyet, nguoiKhac, xoaHang, cascade };
+        kq = { tuDuyet, nguoiKhac, xoaHang, trongNhomSua, haiNguoi, tacNhan0, cascade };
         throw HOAN_TAC; // LUÔN hoàn tác
       });
     } catch (e) {
       if (e !== HOAN_TAC) throw e;
     }
-    if (!kq || kq.tuDuyet !== "23514" || kq.nguoiKhac !== null || kq.xoaHang !== "42501" || /CON/.test(kq.cascade)) {
+    if (!kq || kq.tuDuyet !== "23514" || kq.nguoiKhac !== null || kq.xoaHang !== "42501" || kq.trongNhomSua !== "23514" || kq.haiNguoi !== "23514" || kq.tacNhan0 !== "23514" || /CON/.test(kq.cascade)) {
       throw new Error(`(b) hanh vi avi_app sai: ${JSON.stringify(kq)}`);
     }
     const [conLai] = await appSql`SELECT count(*)::int AS n FROM safety_plc_configs WHERE code = ${CODE}`;

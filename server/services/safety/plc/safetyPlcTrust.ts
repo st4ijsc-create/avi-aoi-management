@@ -18,7 +18,7 @@
  * L-7: this module writes configuration / audit rows only; it never talks to a PLC.
  */
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { getDb } from "../../../db/connection";
 import {
@@ -70,11 +70,54 @@ export function plcTrustDigest(cfg: Parameters<typeof plcTrustMaterial>[0]): str
 }
 
 /** A trust row approves `cfg` ⇔ real backend, approved digest = current digest, approver set and ≠ last editor. */
-export function trustRowApproves(cfg: SafetyPlcConfig, row: Pick<SafetyPlcConfigTrust, "approvedDigest" | "approvedBy" | "lastEditedBy"> | null | undefined): boolean {
+export function trustRowApproves(
+  cfg: SafetyPlcConfig,
+  row: Pick<SafetyPlcConfigTrust, "approvedDigest" | "approvedBy" | "lastEditedBy" | "editorsSinceApproval" | "firstApprovedBy"> | null | undefined,
+): boolean {
   if (!isRealPlcBackend(cfg) || !row) return false;
-  if (row.approvedBy == null || !row.approvedDigest) return false;
+  if (row.approvedBy == null || !row.approvedDigest || !isRealActor(row.approvedBy)) return false;
   if (row.lastEditedBy != null && row.approvedBy === row.lastEditedBy) return false;
+  if ((row.editorsSinceApproval ?? []).includes(row.approvedBy)) return false; // fix scan (R-8-a)
+  if (row.firstApprovedBy != null && row.firstApprovedBy === row.approvedBy) return false; // two-person rule
   return row.approvedDigest === plcTrustDigest(cfg);
+}
+
+/** A real, human actor id (fix scan: no system / 0 / negative / fractional id ever approves). */
+export function isRealActor(id: unknown): id is number {
+  return typeof id === "number" && Number.isSafeInteger(id) && id > 0;
+}
+
+export interface ApprovalVerdictInput {
+  actorId: number;
+  row: Pick<SafetyPlcConfigTrust, "lastEditedBy" | "editDigest" | "editorsSinceApproval" | "firstApprovedBy" | "firstApprovedDigest"> | null;
+  /** The CURRENT digest of the stored row (under FOR UPDATE) — never client input. */
+  currentDigest: string;
+  /** The actor created / updated this config since its last approval, per the audit trail. */
+  authoredInAudit: boolean;
+}
+export type ApprovalVerdict = { ok: true; needsSecond: boolean } | { ok: false; why: "invalid_actor" | "editor" | "first_approver" };
+
+/**
+ * doc 81 Đợt 8 task N fix scan (security scan on 87a061041, ruling R-8-a) — who may decide on the CURRENT content (PURE).
+ * The approver must differ from EVERY user who changed the config since the last approval — three independent sources,
+ * each of which alone refuses: the last editor, the trust row's editor set, the audit trail. Provenance is KNOWN only when
+ * the last router edit recorded an editor AND the content is still what that edit wrote (editDigest = current digest);
+ * otherwise (legacy / seeded rows, raw-SQL changes) the editor is unknown ⇒ TWO distinct approvals of the same digest by
+ * two different admins (the first is only recorded; the first approver can never be the second).
+ */
+export function approvalVerdict(i: ApprovalVerdictInput): ApprovalVerdict {
+  if (!isRealActor(i.actorId)) return { ok: false, why: "invalid_actor" };
+  const row = i.row;
+  if (row?.lastEditedBy != null && row.lastEditedBy === i.actorId) return { ok: false, why: "editor" };
+  if ((row?.editorsSinceApproval ?? []).includes(i.actorId)) return { ok: false, why: "editor" };
+  if (i.authoredInAudit) return { ok: false, why: "editor" };
+  const provenanceKnown = row != null && row.lastEditedBy != null && row.editDigest === i.currentDigest;
+  if (provenanceKnown) return { ok: true, needsSecond: false };
+  if (row?.firstApprovedBy != null && row.firstApprovedDigest === i.currentDigest) {
+    if (row.firstApprovedBy === i.actorId) return { ok: false, why: "first_approver" };
+    return { ok: true, needsSecond: false };
+  }
+  return { ok: true, needsSecond: true };
 }
 
 /** Poller hook: is this (snapshot of a) config approved right now? Any error / missing table ⇒ false (not trusted). */
@@ -137,11 +180,23 @@ async function markEdited(tx: Tx, cfg: SafetyPlcConfig, actorId: number): Promis
     rejectedBy: null,
     rejectedAt: null,
     rejectReason: null,
+    firstApprovedBy: null,
+    firstApprovedDigest: null,
+    firstApprovedAt: null,
   };
+  // fix scan (R-8-a) — the editor set = every router editor since the approval in force: the first edit AFTER an approval
+  // restarts it; otherwise the editor is added (distinct). SET expressions read the EXISTING row's values.
   await tx
     .insert(safetyPlcConfigTrust)
-    .values({ configId: cfg.id, ...edit })
-    .onConflictDoUpdate({ target: safetyPlcConfigTrust.configId, set: edit });
+    .values({ configId: cfg.id, ...edit, editorsSinceApproval: [actorId] })
+    .onConflictDoUpdate({
+      target: safetyPlcConfigTrust.configId,
+      set: {
+        ...edit,
+        editorsSinceApproval: sql`CASE WHEN ${safetyPlcConfigTrust.approvedBy} IS NOT NULL THEN ARRAY[${actorId}::integer]
+          ELSE ARRAY(SELECT DISTINCT e FROM unnest(array_append(${safetyPlcConfigTrust.editorsSinceApproval}, ${actorId}::integer)) AS e) END`,
+      },
+    });
 }
 
 export type PlcWriteResult<T> = { kind: "ok"; value: T } | { kind: "not_found" };
@@ -203,9 +258,14 @@ async function authoredSinceLastApproval(tx: Tx | Db, configId: number, userId: 
 export type PlcDecision = "approve" | "reject";
 export type PlcDecideResult =
   | { kind: "ok"; digest: string; decision: PlcDecision }
+  /** fix scan — unknown provenance: the FIRST of two required approvals was recorded (not trusted yet). */
+  | { kind: "first"; digest: string }
   | { kind: "not_found" }
   | { kind: "sim" }
+  /** the actor changed the config since the last approval (or is not a real user) */
   | { kind: "self" }
+  /** the actor already gave the first approval of this digest; a DIFFERENT admin must give the second */
+  | { kind: "first_approver" }
   | { kind: "stale" };
 
 /**
@@ -224,33 +284,54 @@ export async function decidePlcConfigTrust(
     if (!cfg || !plcConfigInScope(scope, cfg.factoryId)) return { kind: "not_found" as const };
     if (!isRealPlcBackend(cfg)) return { kind: "sim" as const };
     const [row] = await tx.select().from(safetyPlcConfigTrust).where(eq(safetyPlcConfigTrust.configId, cfg.id)).limit(1).for("update");
-    if ((row?.lastEditedBy != null && row.lastEditedBy === actorId) || (await authoredSinceLastApproval(tx, cfg.id, actorId))) return { kind: "self" as const };
+    // fix scan (R-8-a) — the digest is ALWAYS the stored row's (locked), never client input; SoD before staleness.
     const digest = plcTrustDigest(cfg);
+    const verdict = approvalVerdict({
+      actorId,
+      row: row ?? null,
+      currentDigest: digest,
+      authoredInAudit: isRealActor(actorId) ? await authoredSinceLastApproval(tx, cfg.id, actorId) : true,
+    });
+    if (!verdict.ok) return verdict.why === "first_approver" && input.decision === "approve" ? { kind: "first_approver" as const } : { kind: "self" as const };
     if (input.expectedDigest !== digest) return { kind: "stale" as const };
     const now = new Date();
-    const set =
-      input.decision === "approve"
+    const first = input.decision === "approve" && verdict.needsSecond;
+    const set = first
+      ? { firstApprovedBy: actorId, firstApprovedDigest: digest, firstApprovedAt: now, approvedDigest: null, approvedBy: null, approvedAt: null }
+      : input.decision === "approve"
         ? { approvedDigest: digest, approvedBy: actorId, approvedAt: now, rejectedDigest: null, rejectedBy: null, rejectedAt: null, rejectReason: null }
-        : { approvedDigest: null, approvedBy: null, approvedAt: null, rejectedDigest: digest, rejectedBy: actorId, rejectedAt: now, rejectReason: input.reason ?? null };
+        : {
+            approvedDigest: null,
+            approvedBy: null,
+            approvedAt: null,
+            firstApprovedBy: null,
+            firstApprovedDigest: null,
+            firstApprovedAt: null,
+            rejectedDigest: digest,
+            rejectedBy: actorId,
+            rejectedAt: now,
+            rejectReason: input.reason ?? null,
+          };
     const [after] = await tx
       .insert(safetyPlcConfigTrust)
-      .values({ configId: cfg.id, lastEditedBy: row?.lastEditedBy ?? null, editDigest: row?.editDigest ?? null, ...set })
+      .values({ configId: cfg.id, lastEditedBy: row?.lastEditedBy ?? null, editDigest: row?.editDigest ?? null, editorsSinceApproval: row?.editorsSinceApproval ?? [], ...set })
       .onConflictDoUpdate({ target: safetyPlcConfigTrust.configId, set })
       .returning();
     await recordAuditEvent(tx, {
       entityType: PLC_CONFIG_AUDIT_ENTITY,
       entityId: cfg.id,
-      action: input.decision,
+      action: first ? "approve_first" : input.decision,
       actorId,
       before: row ?? null,
       after: { ...after, digest },
       reason: input.reason ?? null,
     });
+    if (first) return { kind: "first" as const, digest };
     return { kind: "ok" as const, digest, decision: input.decision };
   });
 }
 
-export type PlcTrustState = "sim" | "approved" | "pending" | "rejected";
+export type PlcTrustState = "sim" | "approved" | "pending" | "awaiting_second" | "rejected";
 export interface PlcTrustListRow {
   id: number;
   code: string;
@@ -272,8 +353,11 @@ export interface PlcTrustListRow {
   lastEditedAt: Date | null;
   /** The viewer may approve / reject now (admin, real backend, not the maker / a recent author). */
   mayDecide: boolean;
-  /** Why not (when the viewer is an admin): "sim" | "self". */
-  blockedBy: "sim" | "self" | null;
+  /** Why not (when the viewer is an admin): "sim" | "self" (changed it since the last approval) | "first_approver". */
+  blockedBy: "sim" | "self" | "first_approver" | null;
+  /** Unknown provenance: this content needs two different admins (fix scan). */
+  needsTwoApprovals: boolean;
+  firstApprovedBy: number | null;
   /** What the approver approves — shown to ADMINS only (null otherwise). */
   endpoint: string | null;
   tags: Array<{ flag: string; address: string | null; dataType: string | null; activeWhen: string | null }> | null;
@@ -297,11 +381,25 @@ export async function listPlcTrust(scope: PlcScope, viewer: { id: number; isAdmi
     const r = byId.get(c.id) ?? null;
     const real = isRealPlcBackend(c);
     const digest = plcTrustDigest(c);
-    const state: PlcTrustState = !real ? "sim" : trustRowApproves(c, r) ? "approved" : r?.rejectedDigest === digest ? "rejected" : "pending";
+    const firstInForce = r?.firstApprovedBy != null && r.firstApprovedDigest === digest;
+    const state: PlcTrustState = !real
+      ? "sim"
+      : trustRowApproves(c, r)
+        ? "approved"
+        : r?.rejectedDigest === digest
+          ? "rejected"
+          : firstInForce
+            ? "awaiting_second"
+            : "pending";
+    const needsTwoApprovals = !(r != null && r.lastEditedBy != null && r.editDigest === digest);
     let blockedBy: PlcTrustListRow["blockedBy"] = null;
     if (viewer.isAdmin) {
       if (!real) blockedBy = "sim";
-      else if ((r?.lastEditedBy != null && r.lastEditedBy === viewer.id) || (await authoredSinceLastApproval(d, c.id, viewer.id).catch(() => true))) blockedBy = "self";
+      else {
+        const authored = isRealActor(viewer.id) ? await authoredSinceLastApproval(d, c.id, viewer.id).catch(() => true) : true;
+        const vd = approvalVerdict({ actorId: viewer.id, row: r, currentDigest: digest, authoredInAudit: authored });
+        if (!vd.ok) blockedBy = vd.why === "first_approver" ? "first_approver" : "self";
+      }
     }
     const map = (c.statusMap ?? {}) as SafetyPlcStatusMap;
     out.push({
@@ -325,6 +423,8 @@ export async function listPlcTrust(scope: PlcScope, viewer: { id: number; isAdmi
       lastEditedAt: r?.lastEditedAt ?? null,
       mayDecide: viewer.isAdmin && blockedBy === null,
       blockedBy,
+      needsTwoApprovals: real && needsTwoApprovals,
+      firstApprovedBy: firstInForce ? (r?.firstApprovedBy ?? null) : null,
       endpoint: viewer.isAdmin ? (c.endpoint ?? null) : null,
       tags: viewer.isAdmin
         ? TAG_FLAGS.map((f) => ({ flag: f, address: map[f]?.address ?? null, dataType: map[f]?.address ? (map[f]?.dataType ?? "bool") : null, activeWhen: map[f]?.address ? (map[f]?.activeWhen ?? "truthy") : null }))

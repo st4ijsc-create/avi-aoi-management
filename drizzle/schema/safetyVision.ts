@@ -140,6 +140,11 @@ export const safetyPlcConfigTrust = pgTable("safety_plc_config_trust", {
   rejectedBy: integer("rejectedBy"),
   rejectedAt: timestamp("rejectedAt"),
   rejectReason: text("rejectReason"),
+  // fix scan (R-8-a) — every router editor since the approval in force; two-person rule for unknown provenance.
+  editorsSinceApproval: integer("editorsSinceApproval").array().notNull().default([]),
+  firstApprovedBy: integer("firstApprovedBy"),
+  firstApprovedDigest: varchar("firstApprovedDigest", { length: 64 }),
+  firstApprovedAt: timestamp("firstApprovedAt"),
 });
 
 export type SafetyPlcConfigTrust = typeof safetyPlcConfigTrust.$inferSelect;

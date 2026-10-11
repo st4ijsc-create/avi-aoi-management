@@ -4257,7 +4257,8 @@
       "sendUrScript": "send arbitrary URScript to a UR robot",
       "overrideUrHome": "set the home pose of a UR robot from the command",
       "selfApproveProgramVersion": "approve your own program version",
-      "selfApproveSafetyPlcConfig": "decide on a safety-PLC configuration you created or edited"
+      "selfApproveSafetyPlcConfig": "decide on a safety-PLC configuration you created or edited",
+      "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

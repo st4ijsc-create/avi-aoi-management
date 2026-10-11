@@ -4249,7 +4249,8 @@
       "sendUrScript": "向 UR 机器人发送任意 URScript",
       "overrideUrHome": "通过指令设置 UR 机器人的 home 位置",
       "selfApproveProgramVersion": "批准自己的程序版本",
-      "selfApproveSafetyPlcConfig": "对自己创建或修改的安全PLC配置作出决定"
+      "selfApproveSafetyPlcConfig": "对自己创建或修改的安全PLC配置作出决定",
+      "secondApproveOwnSafetyPlcConfig": "对您已作出首次批准的安全PLC配置进行第二次批准（需要两名不同的管理员）"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

@@ -224,6 +224,112 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 N fix 1 — safety-PLC config maker-ch
     expect(viewer).toMatchObject({ mayDecide: false, endpoint: null, tags: null });
   });
 
+  describe("fix scan (R-8-a) — separation of duties on the real DB", () => {
+    const D_ = 961_104; // a third admin
+    async function legacyInsert(): Promise<SafetyPlcConfig> {
+      const code = `${RUN}-L${Math.random().toString(36).slice(2, 7)}`;
+      const [r] = await sql`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", "robotId", enabled, "factoryId")
+        VALUES (${code}, 'legacy', 'pilz', 'modbus', 'tcp://192.0.2.20:502', ${sql.json({ estop: { address: "coil:1" } } as never)}, 5, true, ${factory}) RETURNING id`;
+      return cfgRow(Number(r.id));
+    }
+
+    it("★ a LEGACY config (no trust row, no history) starts untrusted and needs TWO different admins", async () => {
+      const c = await legacyInsert();
+      expect(await isPlcConfigTrustApproved(c)).toBe(false);
+      const dg = plcTrustDigest(c);
+      expect(await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: dg }, B, null)).toEqual({ kind: "first", digest: dg });
+      expect(await isPlcConfigTrustApproved(c)).toBe(false); // one approval is not enough
+      expect(await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: dg }, B, null)).toEqual({ kind: "first_approver" });
+      expect(await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: dg }, C, null)).toEqual({ kind: "ok", digest: dg, decision: "approve" });
+      expect(await isPlcConfigTrustApproved(c)).toBe(true);
+      expect((await audits(c.id)).map((a) => [a.action, a.actorId])).toEqual([["approve_first", B], ["approve", C]]);
+    });
+
+    it("★ content changed by raw SQL after an approval (editor unknown) ⇒ re-approval needs two different admins", async () => {
+      const c = await createAs(A);
+      await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(c) }, B, null);
+      await sql`UPDATE safety_plc_configs SET endpoint = 'tcp://203.0.113.50:502' WHERE id = ${c.id}`;
+      const cur = await cfgRow(c.id);
+      expect((await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(cur) }, B, null)).kind).toBe("first");
+      expect(await isPlcConfigTrustApproved(cur)).toBe(false);
+      expect((await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(cur) }, D_, null)).kind).toBe("ok");
+      expect(await isPlcConfigTrustApproved(cur)).toBe(true);
+    });
+
+    it("★ A edits, B trivially edits ⇒ A AND B are refused; the trust row carries both editors", async () => {
+      const c = await createAs(A);
+      await savePlcConfig({ ...REAL({ factoryId: factory }), id: c.id, code: c.code, name: "trivial" } as never, B, null);
+      const cur = await cfgRow(c.id);
+      for (const who of [A, B]) expect(await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(cur) }, who, null)).toEqual({ kind: "self" });
+      const [t] = await sql`SELECT "editorsSinceApproval" AS e FROM safety_plc_config_trust WHERE "configId" = ${c.id}`;
+      expect([...t.e].sort()).toEqual([A, B].sort());
+    });
+
+    it("approve → edit → approve by ONE person is refused; after a completed approval the editor set restarts", async () => {
+      const c = await createAs(A);
+      await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(c) }, B, null);
+      await savePlcConfig({ ...REAL({ factoryId: factory }), id: c.id, code: c.code, endpoint: "tcp://192.0.2.31:502" } as never, B, null);
+      const cur = await cfgRow(c.id);
+      expect(await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(cur) }, B, null)).toEqual({ kind: "self" });
+      const [t] = await sql`SELECT "editorsSinceApproval" AS e FROM safety_plc_config_trust WHERE "configId" = ${c.id}`;
+      expect([...t.e]).toEqual([B]); // A authored BEFORE the approval ⇒ not in the set
+      expect((await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(cur) }, A, null)).kind).toBe("ok");
+    });
+
+    it("the audit trail alone still refuses an author when the trust row lost its editor set (damaged / hand-edited row)", async () => {
+      const c = await createAs(A);
+      await savePlcConfig({ ...REAL({ factoryId: factory }), id: c.id, code: c.code, name: "by C" } as never, C, null);
+      await sql`UPDATE safety_plc_config_trust SET "editorsSinceApproval" = '{}' WHERE "configId" = ${c.id}`;
+      const cur = await cfgRow(c.id);
+      expect(await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(cur) }, A, null)).toEqual({ kind: "self" });
+    });
+
+    it("a router edit clears a first approval: a trivial edit after it ⇒ state 'pending' (not 'awaiting_second')", async () => {
+      const c = await legacyInsert();
+      expect((await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(c) }, B, null)).kind).toBe("first");
+      expect((await listPlcTrust(null, { id: C, isAdmin: true })).find((x) => x.id === c.id)).toMatchObject({ state: "awaiting_second", firstApprovedBy: B, needsTwoApprovals: true });
+      await savePlcConfig({ code: c.code, name: "renamed", vendor: "pilz", backend: "modbus", endpoint: c.endpoint, statusMap: c.statusMap, robotId: 5, enabled: true, factoryId: factory, id: c.id } as never, C, null);
+      const row = (await listPlcTrust(null, { id: D_, isAdmin: true })).find((x) => x.id === c.id)!;
+      expect(row).toMatchObject({ state: "pending", firstApprovedBy: null, needsTwoApprovals: false });
+      const [t] = await sql`SELECT "firstApprovedBy" FROM safety_plc_config_trust WHERE "configId" = ${c.id}`;
+      expect(t.firstApprovedBy).toBeNull();
+    });
+
+    it("invalid / system actor ids never approve", async () => {
+      const c = await createAs(A);
+      for (const who of [0, -5]) expect(await decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: plcTrustDigest(c) }, who, null)).toEqual({ kind: "self" });
+      expect(await isPlcConfigTrustApproved(c)).toBe(false);
+    });
+
+    it("the DB refuses an approver in the editor set, and a second approval by the first approver", async () => {
+      const c = await createAs(A);
+      const e1 = await sql`UPDATE safety_plc_config_trust SET "lastEditedBy" = ${C}, "approvedBy" = ${A}, "approvedDigest" = 'x' WHERE "configId" = ${c.id}`.catch((e) => e);
+      expect(e1?.code).toBe("23514");
+      const e2 = await sql`UPDATE safety_plc_config_trust SET "firstApprovedBy" = ${B}, "approvedBy" = ${B}, "approvedDigest" = 'x', "editorsSinceApproval" = '{}' WHERE "configId" = ${c.id}`.catch((e) => e);
+      expect(e2?.code).toBe("23514");
+    });
+
+    it("★ race: concurrent edits and approvals ⇒ an approval in force ALWAYS matches the current row and no approver edited it", async () => {
+      const c = await createAs(A);
+      for (let round = 0; round < 6; round++) {
+        const cur = await cfgRow(c.id);
+        const dg = plcTrustDigest(cur);
+        await Promise.allSettled([
+          decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: dg }, round % 2 ? B : D_, null),
+          savePlcConfig({ ...REAL({ factoryId: factory }), id: c.id, code: c.code, endpoint: `tcp://192.0.2.${40 + round}:502` } as never, C, null),
+          decidePlcConfigTrust({ id: c.id, decision: "approve", expectedDigest: dg }, round % 2 ? D_ : B, null),
+        ]);
+        const now = await cfgRow(c.id);
+        const [t] = await sql`SELECT "approvedDigest", "approvedBy", "editorsSinceApproval" AS e FROM safety_plc_config_trust WHERE "configId" = ${c.id}`;
+        if (t.approvedBy != null) {
+          expect(t.approvedDigest).toBe(plcTrustDigest(now));
+          expect([...t.e]).not.toContain(t.approvedBy);
+        }
+        expect(await isPlcConfigTrustApproved(now)).toBe(t.approvedBy != null && t.approvedDigest === plcTrustDigest(now));
+      }
+    });
+  });
+
   describe("router", () => {
     const admin = (id: number) => ({ user: { id, role: "admin", name: `u${id}`, twoFactorEnabled: true } }) as never;
     const caller = async (ctx: never) => (await import("../../../routers/safetyRouter")).safetyRouter.createCaller(ctx);
@@ -244,10 +350,22 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 N fix 1 — safety-PLC config maker-ch
       const op = { user: { id: B, role: "operator", name: "op", twoFactorEnabled: true } } as never;
       await expect((await caller(op)).approveSafetyPlcConfig({ id, expectedDigest: dg })).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect((await caller(admin(B))).approveSafetyPlcConfig({ id, expectedDigest: "f".repeat(64) })).rejects.toMatchObject({ code: "CONFLICT" });
-      expect(await (await caller(admin(B))).approveSafetyPlcConfig({ id, expectedDigest: dg })).toEqual({ ok: true, digest: dg, decision: "approve" });
+      expect(await (await caller(admin(B))).approveSafetyPlcConfig({ id, expectedDigest: dg })).toEqual({ ok: true, digest: dg, decision: "approve", complete: true });
       expect((await audits(id)).map((a) => [a.action, a.actorId])).toEqual([["create", A], ["approve", B]]);
       const list = await (await caller(admin(C))).plcTrustList();
       expect(list.find((x) => x.id === id)).toMatchObject({ state: "approved", approvedBy: B });
+    });
+
+    it("fix scan: a legacy config via the router ⇒ first approval complete:false, same admin again FORBIDDEN, another admin completes", async () => {
+      const code = `${RUN}-RL${Math.random().toString(36).slice(2, 6)}`;
+      const [r] = await sql`INSERT INTO safety_plc_configs (code, name, backend, endpoint, "statusMap", enabled, "factoryId") VALUES (${code}, 'legacy', 'opcua', 'opc.tcp://192.0.2.60:4840', ${sql.json({ estop: { address: "ns=2;s=E" } } as never)}, true, ${factory}) RETURNING id`;
+      const c = await cfgRow(Number(r.id));
+      const dg = plcTrustDigest(c);
+      expect(await (await caller(admin(B))).approveSafetyPlcConfig({ id: c.id, expectedDigest: dg })).toEqual({ ok: true, digest: dg, decision: "approve", complete: false });
+      await expect((await caller(admin(B))).approveSafetyPlcConfig({ id: c.id, expectedDigest: dg })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(await isPlcConfigTrustApproved(c)).toBe(false);
+      expect(await (await caller(admin(C))).approveSafetyPlcConfig({ id: c.id, expectedDigest: dg })).toEqual({ ok: true, digest: dg, decision: "approve", complete: true });
+      expect(await isPlcConfigTrustApproved(c)).toBe(true);
     });
 
     it("reject needs a reason; delete is audited", async () => {

@@ -49,3 +49,27 @@ BEGIN
     GRANT SELECT, INSERT, UPDATE ON "safety_plc_config_trust" TO avi_app;
   END IF;
 END $$;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- doc 81 Đợt 8 task N fix scan (security scan on 87a061041, ruling R-8-a) — idempotent additions (0368 was applied to _test
+-- only; dev has not been migrated).
+--   • "editorsSinceApproval": EVERY user who created / edited the config through the router since the approval in force
+--     (restarts with the first edit after an approval). The approver must not be in it (app check + CHECK below).
+--   • "firstApproved*": UNKNOWN provenance (pre-0368 / seeded rows, no recorded editor, or content changed outside the router
+--     since the last recorded edit) needs TWO distinct approvals of the SAME digest by two different admins; the first one is
+--     recorded here and is not trust. The second approver can never be the first (CHECK below).
+--   • approvers are real users (id > 0).
+-- ════════════════════════════════════════════════════════════════════════════
+ALTER TABLE "safety_plc_config_trust" ADD COLUMN IF NOT EXISTS "editorsSinceApproval" integer[] NOT NULL DEFAULT '{}';
+ALTER TABLE "safety_plc_config_trust" ADD COLUMN IF NOT EXISTS "firstApprovedBy" integer;
+ALTER TABLE "safety_plc_config_trust" ADD COLUMN IF NOT EXISTS "firstApprovedDigest" varchar(64);
+ALTER TABLE "safety_plc_config_trust" ADD COLUMN IF NOT EXISTS "firstApprovedAt" timestamp;
+ALTER TABLE "safety_plc_config_trust" DROP CONSTRAINT IF EXISTS "ck_safety_plc_trust_sod_editors";
+ALTER TABLE "safety_plc_config_trust" ADD CONSTRAINT "ck_safety_plc_trust_sod_editors"
+  CHECK ("approvedBy" IS NULL OR NOT ("approvedBy" = ANY ("editorsSinceApproval")));
+ALTER TABLE "safety_plc_config_trust" DROP CONSTRAINT IF EXISTS "ck_safety_plc_trust_two_person";
+ALTER TABLE "safety_plc_config_trust" ADD CONSTRAINT "ck_safety_plc_trust_two_person"
+  CHECK ("approvedBy" IS NULL OR "firstApprovedBy" IS NULL OR "approvedBy" <> "firstApprovedBy");
+ALTER TABLE "safety_plc_config_trust" DROP CONSTRAINT IF EXISTS "ck_safety_plc_trust_real_actor";
+ALTER TABLE "safety_plc_config_trust" ADD CONSTRAINT "ck_safety_plc_trust_real_actor"
+  CHECK (("approvedBy" IS NULL OR "approvedBy" > 0) AND ("firstApprovedBy" IS NULL OR "firstApprovedBy" > 0));

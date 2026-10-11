@@ -326,9 +326,12 @@ async function plcScopeOf(ctx: CoDanhTinh): Promise<PlcScope> {
 function plcDecisionAnswer(
   r: Awaited<ReturnType<typeof decidePlcConfigTrust>>,
   operation: "approveSafetyPlcConfig" | "rejectSafetyPlcConfig",
-): { ok: true; digest: string; decision: "approve" | "reject" } {
-  if (r.kind === "ok") return { ok: true, digest: r.digest, decision: r.decision };
+): { ok: true; digest: string; decision: "approve" | "reject"; complete: boolean } {
+  if (r.kind === "ok") return { ok: true, digest: r.digest, decision: r.decision, complete: true };
+  // fix scan (R-8-a) — unknown provenance: the first of two approvals was recorded; NOT trusted until a different admin approves.
+  if (r.kind === "first") return { ok: true, digest: r.digest, decision: "approve", complete: false };
   if (r.kind === "not_found") plcConfigNotFound();
+  if (r.kind === "first_approver") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "secondApproveOwnSafetyPlcConfig" }, "Two-person rule: the second approval must come from a different admin");
   if (r.kind === "sim") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation, reason: "simPlcConfigNeverTrusted" }, "A sim safety-PLC config is never trusted — nothing to approve");
   if (r.kind === "self") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveSafetyPlcConfig" }, "Separation of duties: the maker / a recent author of this config cannot decide on it");
   throw appError("CONFLICT", "OPERATION_FAILED", { operation, reason: "safetyPlcConfigChanged" }, "The config changed since it was shown — reload and review it again");

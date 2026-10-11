@@ -4257,7 +4257,8 @@
       "sendUrScript": "gửi URScript tuỳ ý tới robot UR",
       "overrideUrHome": "tự đặt vị trí home cho robot UR",
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình",
-      "selfApproveSafetyPlcConfig": "quyết định trên cấu hình safety-PLC do chính bạn tạo hoặc sửa"
+      "selfApproveSafetyPlcConfig": "quyết định trên cấu hình safety-PLC do chính bạn tạo hoặc sửa",
+      "secondApproveOwnSafetyPlcConfig": "duyệt lần hai một cấu hình safety-PLC mà chính bạn đã duyệt lần đầu (cần hai quản trị viên khác nhau)"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
