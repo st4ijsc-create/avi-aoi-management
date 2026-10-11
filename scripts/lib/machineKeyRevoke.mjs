@@ -112,8 +112,12 @@ function parseCsv(text) {
 }
 
 /**
- * Parse an approved revoke list. Needs a header with `key_id` and `machine_code` (other columns are ignored, so the full
- * K2 CSV filtered by hand also works). Fail-closed: any bad row ⇒ `errors` non-empty and the caller refuses.
+ * Parse an approved revoke list. Needs a header with `key_id` and `machine_code`.
+ *
+ * Fix round 1 (review #1): the list is bound to the REVOKE classification. If the file carries a `proposed` column (the
+ * full listing CSV does), EVERY row must say REVOKE — a single ASK / KEEP / NONE row refuses the WHOLE file, so passing
+ * the 1,713-row listing by mistake can never widen the run to the ASK keys. (The transaction also re-classifies every DB
+ * machine code — see revokeMachineKeysTx.) Fail-closed: any bad row ⇒ `errors` non-empty and the caller refuses.
  * @returns {{ entries: Array<{keyId: number, machineCode: string}>, errors: string[] }}
  */
 export function parseRevokeList(text) {
@@ -123,6 +127,7 @@ export function parseRevokeList(text) {
   const head = rows[0].map((h) => h.trim());
   const iId = head.indexOf("key_id");
   const iCode = head.indexOf("machine_code");
+  const iProposed = head.indexOf("proposed");
   if (iId < 0 || iCode < 0) return { entries: [], errors: ["header must contain key_id and machine_code"] };
   const entries = [];
   const seen = new Set();
@@ -135,6 +140,10 @@ export function parseRevokeList(text) {
     const keyId = Number(rawId);
     if (seen.has(keyId)) { errors.push(`line ${line}: key_id ${keyId} listed twice`); return; }
     seen.add(keyId);
+    if (iProposed >= 0 && (r[iProposed] ?? "").trim() !== "REVOKE") {
+      errors.push(`line ${line}: key_id ${keyId} is proposed "${(r[iProposed] ?? "").trim()}", not REVOKE - only REVOKE rows may be listed`);
+      return;
+    }
     entries.push({ keyId, machineCode: code });
   });
   if (entries.length === 0 && errors.length === 0) errors.push("list has no key rows");
@@ -157,14 +166,16 @@ export class RevokeRefused extends Error {
  * Revoke an approved list in ONE transaction (the caller's `sql.begin`). Never DELETE.
  *
  *   1. lock the listed rows (`FOR UPDATE OF k`, lock_timeout 5 s; a dry run is READ ONLY and takes no lock);
- *   2. refuse (throw RevokeRefused ⇒ ROLLBACK) unless EVERY entry exists, is a MACHINE key, and its machine code in the
- *      DB equals the code in the list (a stale or hand-edited list can never revoke someone else's key);
+ *   2. refuse (throw RevokeRefused ⇒ ROLLBACK) unless EVERY entry exists, is a MACHINE key, its machine code in the DB
+ *      equals the code in the list (a stale or hand-edited list can never revoke someone else's key), and that DB code
+ *      classifies as REVOKE under MACHINE_GROUPS (ASK / KEEP machines are never revoked by this script);
  *   3. confirm=false ⇒ report only (the caller runs it READ ONLY and rolls back);
  *   4. confirm=true ⇒ `isActive=false`, `revokedAt` kept or stamped (UTC wall, like the app's naive timestamps),
  *      `updatedAt` stamped; keys already inactive+revoked are left untouched;
  *   5. re-check in the same transaction: api_keys row count unchanged (nothing deleted) and every listed key is now
  *      inactive with a revokedAt — else throw ⇒ ROLLBACK;
- *   6. one audit_logs row (action machine.key.revoke.bulk) with the key ids and the list file's sha256.
+ *   6. one audit_logs row (action machine.key.revoke.bulk) with the key ids and the list file's sha256 — only when at
+ *      least one key was revoked (a no-op re-run writes nothing).
  *
  * @returns {Promise<{listed: number, toRevoke: number[], alreadyRevoked: number[], revoked: number[], total: number}>}
  */
@@ -189,6 +200,12 @@ export async function revokeMachineKeysTx(tx, entries, { confirm, listSha256, li
     else if (r.machine_id === null) problems.push(`key ${e.keyId}: not a machine key`);
     else if (r.machine_code !== e.machineCode) {
       problems.push(`key ${e.keyId}: list says machine "${e.machineCode}", DB says "${r.machine_code ?? "(machine row missing)"}"`);
+    } else {
+      // Fix round 1 (review #1): re-classify the DB machine code with the SAME rule as the listing — only REVOKE groups.
+      const c = classifyMachineCode(r.machine_code);
+      if (c.proposed !== "REVOKE") {
+        problems.push(`key ${e.keyId}: machine "${r.machine_code}" classifies as ${c.group}/${c.proposed}, not REVOKE`);
+      }
     }
   }
   if (problems.length) throw new RevokeRefused(problems);
@@ -216,6 +233,8 @@ export async function revokeMachineKeysTx(tx, entries, { confirm, listSha256, li
       `post-check failed: api_keys rows ${totalBefore} -> ${totalAfter}, still live ${stillLive}, revoked ${result.revoked.length}/${toRevoke.length}`,
     ]);
   }
+  // Fix round 1 (review #6): a run that revoked nothing (a re-run) changed nothing ⇒ writes NO audit row.
+  if (result.revoked.length === 0) return result;
   await tx`
     INSERT INTO audit_logs ("userId", "userName", action, "entityType", "entityId", "entityName", details, status)
     VALUES (NULL, 'script:revoke-machine-keys', 'machine.key.revoke.bulk', 'api_key', NULL, ${String(listName ?? "").slice(0, 255)},

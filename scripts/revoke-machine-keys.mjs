@@ -3,8 +3,13 @@
  * doc 81 Đợt 7 task K2 — REVOKE an owner-approved list of machine API keys in ONE transaction. Never DELETE.
  *
  *   node scripts/revoke-machine-keys.mjs --test-only --list approved.csv             # dry run (READ ONLY, rolled back)
- *   node scripts/revoke-machine-keys.mjs --test-only --list approved.csv --confirm   # revoke on _test
- *   node scripts/revoke-machine-keys.mjs --dev-only  --list approved.csv --confirm   # dev: ONLY after owner approval
+ *   node scripts/revoke-machine-keys.mjs --test-only --list approved.csv --confirm --sha256 <hash>   # revoke on _test
+ *   node scripts/revoke-machine-keys.mjs --dev-only  --list approved.csv --confirm --sha256 <hash>   # dev: ONLY after owner approval
+ *
+ * Fix round 1 (review #1, #5): the dry run prints the list file's sha256; a real run (--confirm) REQUIRES `--sha256` equal to
+ * it — the owner's approval binds to that exact file. Only REVOKE-classified machines can be listed (a `proposed` column with
+ * any other value refuses the whole file; every DB machine code is re-classified inside the transaction). `--dev-only` must
+ * resolve to the database named exactly `aoi_management`.
  *
  * Refuses (exit 2, opens no connection) without an explicit `--list <file>` or without exactly one target flag. The list
  * file is CSV with a header holding `key_id` and `machine_code` (scripts/list-test-machine-keys.mjs --revoke-list-out
@@ -64,6 +69,19 @@ if (errors.length) {
   process.exit(2);
 }
 const confirm = process.argv.includes("--confirm");
+const listSha256 = sha256Hex(text);
+if (confirm) {
+  const given = (arg("--sha256") ?? "").trim().toLowerCase();
+  if (!given) {
+    console.error(`${TAG} refusing: --confirm needs --sha256 <hash of the approved list> (dry run prints it). Nothing done.`);
+    process.exit(2);
+  }
+  if (given !== listSha256) {
+    console.error(`${TAG} refusing: --sha256 does not match the list file (file sha256=${listSha256}). Nothing done.`);
+    process.exit(2);
+  }
+}
+const DEV_DB_NAME = "aoi_management";
 
 const devUrl = envKey("DATABASE_URL");
 if (!devUrl) {
@@ -89,10 +107,12 @@ try {
   await sql.begin(confirm ? "ISOLATION LEVEL READ COMMITTED" : "TRANSACTION READ ONLY", async (tx) => {
     [{ db }] = await tx`SELECT current_database() AS db`;
     if (DICH[0] === "--test-only" && !/_test$/.test(db)) throw new RevokeRefused([`--test-only resolved to "${db}"`]);
-    if (DICH[0] === "--dev-only" && /_test$/.test(db)) throw new RevokeRefused([`--dev-only resolved to "${db}"`]);
+    if (DICH[0] === "--dev-only" && db !== DEV_DB_NAME) {
+      throw new RevokeRefused([`--dev-only resolved to "${db}", expected exactly "${DEV_DB_NAME}"`]);
+    }
     result = await revokeMachineKeysTx(tx, entries, {
       confirm,
-      listSha256: sha256Hex(text),
+      listSha256,
       listName: path.basename(listPath),
     });
     if (!confirm) throw DRY; // dry run: always roll back
@@ -110,5 +130,6 @@ const mode = confirm ? "COMMITTED" : "DRY RUN (read only, rolled back - add --co
 console.log(
   `${TAG} db=${db} ${mode}: listed=${result.listed} ` +
     `${confirm ? `revoked=${result.revoked.length}` : `would_revoke=${result.toRevoke.length}`} ` +
-    `already_revoked=${result.alreadyRevoked.length} api_keys_rows=${result.total} (unchanged, nothing deleted)`,
+    `already_revoked=${result.alreadyRevoked.length} api_keys_rows=${result.total} (unchanged, nothing deleted) ` +
+    `list_sha256=${listSha256}`,
 );

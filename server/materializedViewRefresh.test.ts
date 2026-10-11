@@ -114,13 +114,27 @@ describe("K4 — a failed refresh surfaces the Postgres cause, not drizzle's wra
     expect(getMatviewRefreshInfo().lastError).toMatch(/MAINTAIN.*0366|0366.*MAINTAIN/);
 
     const other = new Error("Failed query: SELECT refresh_qw_caches()", {
-      cause: Object.assign(new Error("canceling statement due to statement timeout"), { code: "57014" }),
+      cause: Object.assign(new Error("canceling statement due to statement timeout"), { code: "57014", severity: "ERROR" }),
     });
     mocks.execute.mockRejectedValueOnce(other).mockResolvedValueOnce([]);
     await refreshQwCachesOnce();
     const e = getMatviewRefreshInfo().lastError ?? "";
     expect(e).toContain("canceling statement due to statement timeout");
     expect(e).toContain("57014");
+    expect(e).not.toContain("0366");
+    spy.mockRestore();
+  });
+
+  it("fix round 1 (#3): a Node errno code (EPIPE) under the wrapper is shown as the cause, never as a SQLSTATE", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const node = new Error("Failed query: SELECT refresh_qw_caches()", {
+      cause: Object.assign(new Error("write EPIPE"), { code: "EPIPE", errno: -32, syscall: "write" }),
+    });
+    mocks.execute.mockRejectedValueOnce(node).mockResolvedValueOnce([]);
+    await refreshQwCachesOnce();
+    const e = getMatviewRefreshInfo().lastError ?? "";
+    expect(e).toContain("write EPIPE");
+    expect(e).not.toContain("SQLSTATE");
     expect(e).not.toContain("0366");
     spy.mockRestore();
   });

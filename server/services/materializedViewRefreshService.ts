@@ -94,12 +94,18 @@ async function recordRefreshStatus(ok: boolean, detailError?: string): Promise<v
 export function describeRefreshError(err: unknown): string {
   let cur: any = err;
   let pg: any = null;
+  let deepest: any = err;
   for (let depth = 0; cur && depth < 5; depth++) {
-    if (typeof cur?.code === "string" && /^[0-9A-Z]{5}$/.test(cur.code)) pg = cur;
+    if (isPostgresError(cur)) pg = cur;
+    deepest = cur;
     cur = cur?.cause;
   }
   const top = String((err as any)?.message ?? err);
-  if (!pg) return top;
+  if (!pg) {
+    // Not a Postgres error (e.g. a Node socket error EPIPE/ECONNRESET under the wrapper): show the cause WITHOUT
+    // calling its code a SQLSTATE (fix round 1, review #3).
+    return deepest !== err && deepest?.message ? `${String(deepest.message)} [${top.split("\n")[0]}]` : top;
+  }
   let msg = `${String(pg.message ?? pg)} (SQLSTATE ${pg.code})`;
   if (pg.code === "42501") {
     msg +=
@@ -107,6 +113,19 @@ export function describeRefreshError(err: unknown): string {
       " (drizzle/0366_qw_matview_maintain_grant.sql via scripts/apply-migration-0366.mjs)";
   }
   return pg === err ? msg : `${msg} [${top.split("\n")[0]}]`;
+}
+
+/**
+ * Fix round 1 (review #3): a 5-character `code` is a SQLSTATE only on a Postgres error object (postgres.js
+ * `PostgresError`, which always carries `severity`) — Node errno codes such as EPIPE / EPERM / EBUSY are also 5 letters.
+ */
+function isPostgresError(e: any): boolean {
+  return (
+    !!e &&
+    typeof e.code === "string" &&
+    /^[0-9A-Z]{5}$/.test(e.code) &&
+    (e.name === "PostgresError" || typeof e.severity === "string")
+  );
 }
 
 /** One refresh cycle; exported for tests and manual triggering. */

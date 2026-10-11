@@ -92,6 +92,11 @@ async function applyTo(rawUrl, label) {
     }
     const [db0] = await appSql`SELECT current_database() AS d, current_setting('server_version_num')::int AS v`;
     console.log(`  ${TAG} ${label} nghiệm thu: current_database()=${db0.d} vai="${vai.u}" server_version_num=${db0.v}`);
+    // Fix round 1 (review #2): check the version FIRST — on PG < 17 `has_table_privilege(…, 'MAINTAIN')` below would throw
+    // a generic "unrecognized privilege type" before the migration's own message is reached.
+    if (!(Number(db0.v) >= 170000)) {
+      throw new Error(`needs PostgreSQL 17+ (MAINTAIN privilege); server_version_num=${db0.v} - nothing changed`);
+    }
     const truoc = await quyenMaintain(appSql);
     console.log(`  ${TAG} ${label} TRƯỚC: MAINTAIN ${JSON.stringify(truoc)}`);
     if (Object.keys(truoc).length !== VIEWS.length) {

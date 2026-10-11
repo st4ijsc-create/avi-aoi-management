@@ -12,6 +12,9 @@
  *   • --confirm: listed keys inactive + revokedAt (an already-revoked key keeps its stamp), unlisted keys untouched, no
  *     row deleted, one audit row, re-run is a no-op;
  *   • neither script prints/writes key material.
+ * Fix round 1 (review #1/#5/#6): only REVOKE-classified machines (file `proposed` column AND in-transaction re-classification
+ * of the DB machine code), --confirm bound to the list's sha256, --dev-only = exactly `aoi_management`, no audit row for a
+ * no-op re-run.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
@@ -32,6 +35,7 @@ const tmp = mkdtempSync(path.join(tmpdir(), "dot7-k2-"));
 type Key = { id: number; plaintext: string; hash: string; prefix: string };
 let qaMachine: { id: number; code: string };
 let otherMachine: { id: number; code: string };
+let askMachine: { id: number; code: string };
 const k: Record<string, Key> = {};
 let nonMachineKeyId: number;
 
@@ -68,6 +72,10 @@ function run(script: string, args: string[]) {
   });
   return { code: r.status, out: `${r.stdout}\n${r.stderr}` };
 }
+/** --confirm args bound to the file's sha256 (fix round 1). */
+function confirmArgs(f: string) {
+  return ["--list", f, "--confirm", "--sha256", createHash("sha256").update(readFileSync(f, "utf8"), "utf8").digest("hex")];
+}
 function listFile(name: string, rows: Array<[number | string, string]>, header = "key_id,machine_code") {
   const p = path.join(tmp, name);
   writeFileSync(p, [header, ...rows.map(([a, b]) => `${a},${b}`)].join("\n") + "\n");
@@ -78,11 +86,13 @@ beforeAll(async () => {
   _resetMachineAuthState();
   qaMachine = await mkMachine(`QATD-Z-K2-${STAMP}`);
   otherMachine = await mkMachine(`K2KEEP-${STAMP}`);
+  askMachine = await mkMachine(`SIM-L9-K2-${STAMP}`); // classifies SIM-LINE / ASK
   k.a = await mkKey(qaMachine.id, `k2-a-${STAMP}`);
   k.b = await mkKey(qaMachine.id, `k2-b-${STAMP}`);
   k.old = await mkKey(qaMachine.id, `k2-old-${STAMP}`, true); // already revoked yesterday
   k.bystander = await mkKey(qaMachine.id, `k2-bystander-${STAMP}`); // same machine, NOT listed
   k.other = await mkKey(otherMachine.id, `k2-other-${STAMP}`);
+  k.ask = await mkKey(askMachine.id, `k2-ask-${STAMP}`);
   const nm = await mkKey(null, `k2-nonmachine-${STAMP}`);
   nonMachineKeyId = nm.id;
 });
@@ -90,7 +100,7 @@ beforeAll(async () => {
 afterAll(async () => {
   const ids = [...Object.values(k).map((x) => x.id), nonMachineKeyId].filter(Boolean);
   if (ids.length) await sql`DELETE FROM api_keys WHERE id IN ${sql(ids)}`;
-  const ms = [qaMachine?.id, otherMachine?.id].filter(Boolean) as number[];
+  const ms = [qaMachine?.id, otherMachine?.id, askMachine?.id].filter(Boolean) as number[];
   if (ms.length) await sql`DELETE FROM machines WHERE id IN ${sql(ms)}`;
   await sql.end({ timeout: 5 });
   rmSync(tmp, { recursive: true, force: true });
@@ -126,15 +136,35 @@ describe("K2 — revoke-machine-keys.mjs on _test (fixture keys)", () => {
     const noList = run("revoke-machine-keys.mjs", ["--test-only", "--confirm"]);
     expect(noList.code).toBe(2);
     expect(noList.out).toMatch(/explicit --list/);
-    const noTarget = run("revoke-machine-keys.mjs", ["--list", good, "--confirm"]);
+    const noTarget = run("revoke-machine-keys.mjs", confirmArgs(good));
     expect(noTarget.code).toBe(2);
     const missing = run("revoke-machine-keys.mjs", ["--test-only", "--list", path.join(tmp, "nope.csv"), "--confirm"]);
+    // fix round 1: --confirm without --sha256, or with a hash of another file ⇒ refused before any connection
+    const noSha = run("revoke-machine-keys.mjs", ["--test-only", "--list", good, "--confirm"]);
+    expect(noSha.code).toBe(2);
+    expect(noSha.out).toMatch(/--confirm needs --sha256/);
+    const badSha = run("revoke-machine-keys.mjs", ["--test-only", "--list", good, "--confirm", "--sha256", "0".repeat(64)]);
+    expect(badSha.code).toBe(2);
+    expect(badSha.out).toMatch(/does not match the list file/);
     expect(missing.code).toBe(2);
     const dup = listFile("dup.csv", [[k.a.id, qaMachine.code], [k.a.id, qaMachine.code]]);
-    expect(run("revoke-machine-keys.mjs", ["--test-only", "--list", dup, "--confirm"]).code).toBe(2);
+    expect(run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(dup)]).code).toBe(2);
     // --dev-only that resolves to a *_test DB is refused too (the target flag must mean what it says)
-    const devToTest = run("revoke-machine-keys.mjs", ["--dev-only", "--list", good, "--confirm"]);
+    const devToTest = run("revoke-machine-keys.mjs", ["--dev-only", ...confirmArgs(good)]);
     expect(devToTest.code).toBe(3);
+    expect(devToTest.out).toMatch(/expected exactly "aoi_management"/); // fix round 1 (#5): exact name, not "not *_test"
+    // …and a --dev-only that resolves to a database that is neither *_test nor aoi_management (the server's own
+    // `postgres` maintenance DB — NOT dev; the script only runs SELECT current_database() there and rolls back) is refused.
+    const other = new URL(TEST_URL);
+    other.pathname = "/postgres";
+    const r = spawnSync(process.execPath, [path.join(ROOT, "scripts", "revoke-machine-keys.mjs"), "--dev-only", ...confirmArgs(good)], {
+      cwd: ROOT,
+      env: { ...process.env, DATABASE_URL: other.toString(), TEST_DATABASE_URL: TEST_URL },
+      encoding: "utf8",
+      timeout: 60_000,
+    });
+    expect(r.status, `${r.stdout}\n${r.stderr}`).toBe(3);
+    expect(r.stderr).toMatch(/--dev-only resolved to "postgres", expected exactly "aoi_management"/);
     expect(await state([k.a.id, k.b.id])).toEqual(before);
   });
 
@@ -145,19 +175,21 @@ describe("K2 — revoke-machine-keys.mjs on _test (fixture keys)", () => {
     expect(r.code, r.out).toBe(0);
     expect(r.out).toMatch(/DRY RUN/);
     expect(r.out).toMatch(/would_revoke=2 already_revoked=1/);
+    const sha = createHash("sha256").update(readFileSync(f, "utf8"), "utf8").digest("hex");
+    expect(r.out).toContain(`list_sha256=${sha}`); // fix round 1: the owner approves THIS hash
     expect(await state([k.a.id, k.b.id, k.old.id])).toEqual(before);
   });
 
   it("ONE transaction: a single wrong machine code / unknown id / non-machine key ⇒ exit 3 and NOTHING revoked", async () => {
     const before = await state([k.a.id, k.b.id]);
     const wrongCode = listFile("wrong.csv", [[k.a.id, qaMachine.code], [k.other.id, qaMachine.code]]);
-    const r1 = run("revoke-machine-keys.mjs", ["--test-only", "--list", wrongCode, "--confirm"]);
+    const r1 = run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(wrongCode)]);
     expect(r1.code, r1.out).toBe(3);
     expect(r1.out).toMatch(new RegExp(`key ${k.other.id}: list says machine`));
     const unknown = listFile("unknown.csv", [[k.a.id, qaMachine.code], [2_000_000_000, qaMachine.code]]);
-    expect(run("revoke-machine-keys.mjs", ["--test-only", "--list", unknown, "--confirm"]).code).toBe(3);
+    expect(run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(unknown)]).code).toBe(3);
     const nonMachine = listFile("nonmachine.csv", [[k.b.id, qaMachine.code], [nonMachineKeyId, qaMachine.code]]);
-    const r3 = run("revoke-machine-keys.mjs", ["--test-only", "--list", nonMachine, "--confirm"]);
+    const r3 = run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(nonMachine)]);
     expect(r3.code).toBe(3);
     expect(r3.out).toMatch(/not a machine key/);
     expect(await state([k.a.id, k.b.id])).toEqual(before);
@@ -168,8 +200,9 @@ describe("K2 — revoke-machine-keys.mjs on _test (fixture keys)", () => {
   it("--confirm revokes exactly the listed keys (never deletes), keeps old stamps, audits once; re-run is a no-op", async () => {
     const [{ n: rowsBefore }] = await sql`SELECT count(*)::int AS n FROM api_keys WHERE "machineId" = ${qaMachine.id}`;
     const oldBefore = (await state([k.old.id]))[k.old.id];
-    const f = listFile("approved.csv", [[k.a.id, qaMachine.code], [k.b.id, qaMachine.code], [k.old.id, qaMachine.code]]);
-    const r = run("revoke-machine-keys.mjs", ["--test-only", "--list", f, "--confirm"]);
+    const fname = `approved-${STAMP}.csv`;
+    const f = listFile(fname, [[k.a.id, qaMachine.code], [k.b.id, qaMachine.code], [k.old.id, qaMachine.code]]);
+    const r = run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(f)]);
     expect(r.code, r.out).toBe(0);
     expect(r.out).toMatch(/COMMITTED: listed=3 revoked=2 already_revoked=1/);
 
@@ -191,14 +224,57 @@ describe("K2 — revoke-machine-keys.mjs on _test (fixture keys)", () => {
     expect(ok.keyId).toBe(k.bystander.id);
 
     const audits = await sql`
-      SELECT details FROM audit_logs WHERE action = 'machine.key.revoke.bulk' AND "entityName" = 'approved.csv'
-         AND details::jsonb -> 'revoked' @> ${sql.json([k.a.id, k.b.id])}`;
+      SELECT details FROM audit_logs WHERE action = 'machine.key.revoke.bulk' AND "entityName" = ${fname}`;
     expect(audits).toHaveLength(1);
     expect(JSON.parse(audits[0].details as string)).toMatchObject({ alreadyRevoked: [k.old.id], listed: 3 });
 
-    const again = run("revoke-machine-keys.mjs", ["--test-only", "--list", f, "--confirm"]);
+    expect(JSON.parse(audits[0].details as string).revoked).toEqual([k.a.id, k.b.id].sort((x, y) => x - y));
+
+    const again = run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(f)]);
     expect(again.code, again.out).toBe(0);
     expect(again.out).toMatch(/revoked=0 already_revoked=3/);
+    // fix round 1 (#6): a no-op re-run writes NO second audit row
+    const audits2 = await sql`SELECT id FROM audit_logs WHERE action = 'machine.key.revoke.bulk' AND "entityName" = ${fname}`;
+    expect(audits2).toHaveLength(1);
+  });
+
+  it("fix round 1 (#1): a file with ANY non-REVOKE `proposed` row (the full listing) is refused whole — nothing changes", async () => {
+    const before = await state([k.bystander.id, k.ask.id, k.other.id]);
+    const header = "group,proposed,machine_code,key_id";
+    const full = path.join(tmp, "full-listing.csv");
+    writeFileSync(
+      full,
+      [header, `QATD,REVOKE,${qaMachine.code},${k.bystander.id}`, `SIM-LINE,ASK,${askMachine.code},${k.ask.id}`].join("\n") + "\n",
+    );
+    for (const args of [["--list", full], confirmArgs(full)]) {
+      const r = run("revoke-machine-keys.mjs", ["--test-only", ...args]);
+      expect(r.code, r.out).toBe(2);
+      expect(r.out).toMatch(new RegExp(`key_id ${k.ask.id} is proposed "ASK", not REVOKE`));
+    }
+    const keepRow = path.join(tmp, "keep-row.csv");
+    writeFileSync(keepRow, [header, `OTHER,KEEP,${otherMachine.code},${k.other.id}`].join("\n") + "\n");
+    expect(run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(keepRow)]).code).toBe(2);
+    // a listing-shaped file whose rows are ALL REVOKE is accepted (dry run)
+    const onlyRevoke = path.join(tmp, "only-revoke.csv");
+    writeFileSync(onlyRevoke, [header, `QATD,REVOKE,${qaMachine.code},${k.bystander.id}`].join("\n") + "\n");
+    const ok = run("revoke-machine-keys.mjs", ["--test-only", "--list", onlyRevoke]);
+    expect(ok.code, ok.out).toBe(0);
+    expect(ok.out).toMatch(/would_revoke=1/);
+    expect(await state([k.bystander.id, k.ask.id, k.other.id])).toEqual(before);
+  });
+
+  it("fix round 1 (#1): the DB machine code is re-classified in the transaction — an ASK or KEEP machine ⇒ exit 3, nothing revoked", async () => {
+    const before = await state([k.bystander.id, k.ask.id, k.other.id]);
+    // a plain key_id,machine_code list (no proposed column) naming an ASK machine next to a valid REVOKE one
+    const askList = listFile("ask.csv", [[k.bystander.id, qaMachine.code], [k.ask.id, askMachine.code]]);
+    const r1 = run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(askList)]);
+    expect(r1.code, r1.out).toBe(3);
+    expect(r1.out).toMatch(new RegExp(`key ${k.ask.id}: machine "${askMachine.code}" classifies as SIM-LINE/ASK, not REVOKE`));
+    const keepList = listFile("keep.csv", [[k.other.id, otherMachine.code]]);
+    const r2 = run("revoke-machine-keys.mjs", ["--test-only", ...confirmArgs(keepList)]);
+    expect(r2.code, r2.out).toBe(3);
+    expect(r2.out).toMatch(/classifies as OTHER\/KEEP, not REVOKE/);
+    expect(await state([k.bystander.id, k.ask.id, k.other.id])).toEqual(before);
   });
 
   it("the scripts never DELETE a key", () => {
@@ -219,11 +295,13 @@ describe("K2 — list-test-machine-keys.mjs on _test (READ ONLY)", () => {
     const line = (id: number) => csv.split("\n").find((l) => l.split(",")[5] === String(id)) ?? "";
     expect(line(k.bystander.id)).toMatch(new RegExp(`^QATD,REVOKE,${qaMachine.code},`));
     expect(line(k.other.id)).toMatch(new RegExp(`^OTHER,KEEP,${otherMachine.code},`));
+    expect(line(k.ask.id)).toMatch(new RegExp(`^SIM-LINE,ASK,${askMachine.code},`));
     expect(line(k.old.id)).toMatch(/^QATD,NONE \(already inactive\),/);
     const revokeList = readFileSync(rl, "utf8");
     expect(revokeList.split("\n")[0]).toBe("key_id,machine_code");
     expect(revokeList).toContain(`${k.bystander.id},${qaMachine.code}`);
     expect(revokeList).not.toContain(`${k.other.id},`);
+    expect(revokeList).not.toContain(`${k.ask.id},`);
     for (const x of Object.values(k)) {
       for (const secret of [x.plaintext, x.hash, x.prefix]) {
         expect(csv.includes(secret)).toBe(false);
