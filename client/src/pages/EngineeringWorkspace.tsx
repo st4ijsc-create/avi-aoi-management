@@ -89,7 +89,7 @@ import { toast } from "sonner";
 import { useEngineeringStream } from "@/hooks/useEngineeringStream";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useActuationReadiness, reconcileBlockersWithDeployPreview } from "@/hooks/useActuationReadiness";
-import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
+import { useStepUpOtp, stepUpModeFromPreviewGates } from "@/components/security/StepUpOtpDialog";
 import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
 // doc 80 Đợt 1 Task 5 — duyệt phiên bản trong IDE (WS-01) + bản xem trước deploy trước OTP (F2).
 import { VersionReviewPanel, ReviewStatusBadge } from "@/components/engineering/VersionReviewPanel";
@@ -600,6 +600,13 @@ function EngineeringWorkspaceView() {
     { enabled: canView && buildId != null },
   );
   const previewBlocked = deployPreviewQ.data?.verdict === "blocked";
+  // doc 81 Đợt 7 task L fix 1 — Ruling R-7-c: có hỏi OTP hay không do SERVER nói (cổng twoFactor của bản xem trước, mirror
+  // deployProcedure) — CHỈ khi bản xem trước đọc được, không lỗi, và đúng build đang deploy; còn lại ⇒ "required" (hỏi OTP).
+  const previewData = deployPreviewQ.data as { gates?: unknown; target?: { buildId?: unknown } } | undefined;
+  const otpMode =
+    !deployPreviewQ.isError && previewData != null && buildId != null && previewData.target?.buildId === buildId
+      ? stepUpModeFromPreviewGates(previewData.gates)
+      : "required";
 
   // ── doc 40 W5 §11 — Triển khai đội máy (fleet rollout canary) — state.fleet ──
   const fleetIsProd = fleetStage === "production";
@@ -1884,7 +1891,7 @@ function EngineeringWorkspaceView() {
         reason: fleetIsProd ? fleetReason.trim() : undefined,
         totpCode,
         expectedProjectId,
-      }));
+      }), { mode: otpMode });
       return;
     }
     if (singleDeployDisabled) return;
@@ -1913,7 +1920,7 @@ function EngineeringWorkspaceView() {
       reason: isProd ? deployReason.trim() : undefined,
       totpCode,
       expectedProjectId,
-    }));
+    }), { mode: otpMode });
   };
 
   const wizardSteps = [

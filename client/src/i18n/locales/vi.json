@@ -19734,7 +19734,10 @@
   },
   "stepUp": {
     "title": "Xác thực 2 bước để triển khai",
-    "desc": "Nhập mã OTP 6 số từ ứng dụng xác thực để xác nhận lệnh triển khai/điều khiển."
+    "desc": "Nhập mã OTP 6 số từ ứng dụng xác thực để xác nhận lệnh triển khai/điều khiển.",
+    "confirmTitle": "Xác nhận lệnh triển khai",
+    "offDesc": "Xác thực 2 bước (step-up) đang TẮT trên máy chủ — không cần mã OTP. Bấm Xác nhận để gửi lệnh.",
+    "bypassDesc": "Tài khoản của bạn chưa bật xác thực 2 bước và máy chủ đang ở chế độ nội bộ — không cần mã OTP; lượt này được ghi sổ kiểm toán. Bấm Xác nhận để gửi lệnh."
   },
   "hub": {
     "noAccess": "Bạn chưa có quyền với mục nào ở đây.",

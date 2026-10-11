@@ -19754,7 +19754,10 @@
   },
   "stepUp": {
     "title": "Two-step verification to deploy",
-    "desc": "Enter the 6-digit OTP from your authenticator app to confirm the deploy/control command."
+    "desc": "Enter the 6-digit OTP from your authenticator app to confirm the deploy/control command.",
+    "confirmTitle": "Confirm the deploy command",
+    "offDesc": "Two-step verification (step-up) is OFF on the server — no OTP code is needed. Press Confirm to send the command.",
+    "bypassDesc": "Your account has not enabled two-step verification and the server is in internal mode — no OTP code is needed; this action is recorded in the audit log. Press Confirm to send the command."
   },
   "hub": {
     "noAccess": "You do not have access to anything here.",

@@ -641,6 +641,91 @@ describe("Deploy wizard 4 bước (WizardDialog) — deployPreview TRƯỚC OTP,
     expect(within(d).getByText(readinessText)).toBeInTheDocument();
   });
 
+  // doc 81 Đợt 7 task L fix 1 — Ruling R-7-c: cổng twoFactor của bản xem trước (server) nói step-up TẮT ⇒ bước xác nhận
+  // KHÔNG có ô OTP và nói rõ; Xác nhận ⇒ deployBuild với totpCode "" (server không đọc). Không xác định được (bản xem trước
+  // của build KHÁC, lỗi, không có cổng) ⇒ ô OTP như cũ.
+  const previewFor = (twoFactor: { ok: boolean; reason: string } | null, o: { buildId?: number; isError?: boolean } = {}) => (i: unknown) => {
+    const x = i as { buildId: number; stage: string };
+    // lỗi khi làm mới: react-query GIỮ data cũ (nói step-up tắt) kèm isError ⇒ vẫn phải hỏi OTP
+    const err = o.isError ? { isError: true, error: new Error("boom") as never } : {};
+    return makeQuery({
+      ...err,
+      data: {
+        verdict: "simulated",
+        gates: [{ name: "role", ok: true, reason: "roleAllowed" }, ...(twoFactor ? [{ name: "twoFactor", ...twoFactor }] : [])],
+        target: { buildId: o.buildId ?? x.buildId, adapterKind: "zmotion-basic", stage: x.stage, deviceId: 3, path: "direct", artifactVersion: 1 },
+      },
+    });
+  };
+  async function denBuocCuoiVaBam() {
+    const d = await moWizard();
+    next(d);
+    next(d);
+    fireEvent.click(within(d).getByTestId("engineering-deploy-signoff"));
+    next(d);
+    fireEvent.click(within(d).getByTestId("engineering-deploy-button"));
+    return d;
+  }
+  const oOtp = () => document.querySelector('input[autocomplete="one-time-code"]');
+
+  it("R-7-c: server nói step-up TẮT ⇒ xác nhận KHÔNG ô OTP, câu 'không cần mã OTP'; Xác nhận ⇒ deployBuild totpCode ''", async () => {
+    seed();
+    queryOverrides["programming.deployPreview"] = previewFor({ ok: true, reason: "stepUpOff" });
+    renderPage();
+    await denBuocCuoiVaBam();
+    expect(oOtp()).toBeNull();
+    expect(screen.getByTestId("stepup-mode")).toHaveAttribute("data-mode", "stepUpOff");
+    expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^(Confirm|Xác nhận)$/ })); });
+    await nghi();
+    expect(mutateCalls["programming.deployBuild"]).toHaveLength(1);
+    expect(mutateCalls["programming.deployBuild"]![0]).toMatchObject({ buildId: 5, stage: "staging", totpCode: "", expectedProjectId: 1 });
+  });
+
+  it("R-7-c: chế độ nội bộ (stepUpBypassedInternalMode) ⇒ không ô OTP, nói rõ ghi sổ", async () => {
+    seed();
+    queryOverrides["programming.deployPreview"] = previewFor({ ok: true, reason: "stepUpBypassedInternalMode" });
+    renderPage();
+    await denBuocCuoiVaBam();
+    expect(oOtp()).toBeNull();
+    expect(screen.getByTestId("stepup-mode")).toHaveAttribute("data-mode", "stepUpBypassed");
+  });
+
+  it("R-7-c: otpRequired / không có cổng / bản xem trước của build KHÁC / lỗi ⇒ ô OTP như cũ (hỏng theo hướng HỎI)", async () => {
+    for (const ov of [
+      previewFor({ ok: true, reason: "otpRequired" }),
+      previewFor(null),
+      previewFor({ ok: true, reason: "stepUpOff" }, { buildId: 999 }),
+      previewFor({ ok: true, reason: "stepUpOff" }, { isError: true }),
+    ]) {
+      cleanup();
+      seed();
+      queryOverrides["programming.deployPreview"] = ov;
+      renderPage();
+      await denBuocCuoiVaBam();
+      expect(oOtp()).not.toBeNull();
+      expect(screen.getByTestId("stepup-mode")).toHaveAttribute("data-mode", "required");
+    }
+  });
+
+  it("R-7-c: đội máy cũng đọc cổng của server — step-up TẮT ⇒ không ô OTP, deployToFleet totpCode ''", async () => {
+    seed();
+    queryOverrides["programming.deployPreview"] = previewFor({ ok: true, reason: "stepUpOff" });
+    renderPage();
+    const d = await moWizard();
+    next(d);
+    fireEvent.click(within(d).getByRole("radio", { name: /Fleet|Đội máy/ }));
+    fireEvent.click(within(d).getByText("M3 · #3").closest("label")!.querySelector('[role="checkbox"]') as HTMLElement);
+    next(d);
+    next(d);
+    fireEvent.click(within(d).getByTestId("engineering-fleet-deploy-button"));
+    expect(oOtp()).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^(Confirm|Xác nhận)$/ })); });
+    await nghi();
+    expect(mutateCalls["programming.deployToFleet"]).toHaveLength(1);
+    expect(mutateCalls["programming.deployToFleet"]![0]).toMatchObject({ buildId: 5, deviceIds: [3], totpCode: "" });
+  });
+
   it("canary đội máy: 2 máy + canary 1 ⇒ MỘT deployToFleet sau OTP với đúng deviceIds / strategy / expectedProjectId như thẻ cũ", async () => {
     seed();
     renderPage();
