@@ -17,10 +17,22 @@
  *   • per-config exponential backoff on undecidable reads: interval × 2^failures, capped at max(interval, 15 s);
  *   • every read is bounded (SAFETY_PLC_POLL_READ_TIMEOUT_MS, default 3000, clamped [100, 30000]); a read still pending
  *     after its bound is NOT duplicated — the next polls count as undecidable until it settles (≤ 1 connection per PLC);
- *   • configs are re-listed every 30 s; at most SAFETY_PLC_POLL_MAX_CONFIGS are polled (the rest are named in a warning).
+ *   • configs are re-listed every SAFETY_PLC_CONFIG_REFRESH_MS (10 s, with the leader re-check); at most
+ *     SAFETY_PLC_POLL_MAX_CONFIGS are polled (the rest are named in a warning and reported STALE by health).
  *
  * Undecidable (cannot decide) ⇒ the config is "unknown/offline"; never "ok" / never "released".
- * Run it on ONE instance only (the trusted-origin mark lives in this process; multi-instance replay is out of scope).
+ * Multi-instance: LEADER-GATED (N fix 1, M4) — only the holder of the advisory lock polls (safetyPlcPollerLeader.ts); every
+ * instance runs the watchdog. Replay of trusted events across instances stays out of scope.
+ *
+ * PLC connection limit (final wave F6, documented — not shared): the poller holds ONE client connection per real config
+ * (its own OtReadSafetyPlcBackend driver), and the actuation preflight (adapterFacade readOneForRealActuation) opens its
+ * own. On a PLC whose Modbus-TCP / OPC-UA server accepts very few clients, a poll in flight (bounded by
+ * SAFETY_PLC_POLL_READ_TIMEOUT_MS, default 3 s) can make a concurrent preflight read fail ⇒ SAFETY_UNKNOWN ⇒ REAL ACTUATION
+ * is refused (fail closed); a STOP never reads (pinned STOP skips the preflight). Sharing one connection would couple the
+ * preflight's fail-closed path to the poller's lifecycle, so it is not done; instead check each PLC's max client count
+ * before enabling the poller (≥ 2 clients needed, + any HMI / SCADA clients) or raise the poll interval.
+ * Durable-state writes (final wave N-R6): ≤ one upsert per config per SAFETY_PLC_STATE_REFRESH_MS (5 s) in steady state,
+ * immediately on a change; the record-time config lookup reads ONE row.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import type { SafetyPlcConfig, SafetyPlcStatusMap, SafetyPlcStatusSnapshot } from "../../../../drizzle/schema";
@@ -29,6 +41,7 @@ import {
   SimSafetyPlcBackend,
   safetyPlcAdapterEnabled,
   listPlcConfigs,
+  loadEnabledPlcConfig,
   type SafetyPlcBackendReader,
 } from "./safetyPlcAdapter";
 import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEventInput, type RecordResult, type SafetyEventType } from "../safetyAuditService";
@@ -50,6 +63,8 @@ export const SAFETY_PLC_CONFIG_REFRESH_MS = 10_000;
 export const SAFETY_PLC_READ_TIMEOUT_DEFAULT_MS = 3000;
 /** fix scan 2 (R-8-b) — bound of ONE event insert / approval lookup (a hung DB must not stall the poll chain). */
 export const SAFETY_PLC_RECORD_TIMEOUT_MS = 5000;
+/** final wave N-R6 — an unchanged durable row is re-written (liveness) at most this often (stale bound ≥ 60 s). */
+export const SAFETY_PLC_STATE_REFRESH_MS = 5000;
 /** fix scan 2 (R-8-b, (b)) — per-config queue of not-yet-recorded transitions (oldest dropped + counted beyond it). */
 export const SAFETY_PLC_EVENT_QUEUE_MAX = 32;
 /** N3 flap damping — offline transitions remembered per config (window + cap) and the clean-read run needed to go online. */
@@ -236,6 +251,9 @@ interface ConfigState {
    * null = nothing waiting. Persisted with the durable row: waiting beyond the stale bound ⇒ health STALE + alarm.
    */
   unrecordedSince: number | null;
+  /** final wave N-R6 — content of the last SUCCESSFUL durable save and when (local ms); null ⇒ save at the next poll. */
+  savedKey: string | null;
+  savedAt: number | null;
 }
 
 export interface PollerConfigSnapshot {
@@ -289,7 +307,8 @@ export class SafetyPlcPoller {
       recordPlain: deps.recordPlain ?? record,
       recordTrusted: deps.recordTrusted ?? ((i) => recordFromDeviceIngest("safety_plc", i)),
       isTrustApproved: deps.isTrustApproved ?? isPlcConfigTrustApproved,
-      loadConfig: deps.loadConfig ?? (async (id: number) => (await loadConfigs()).find((c) => c.id === id && c.enabled === true) ?? null),
+      // final wave N-R6 — production: ONE row by id (not a re-list of every enabled config per recorded event)
+      loadConfig: deps.loadConfig ?? (deps.loadConfigs ? async (id: number) => (await loadConfigs()).find((c) => c.id === id && c.enabled === true) ?? null : loadEnabledPlcConfig),
       leader: deps.leader ?? pgPollerLeaderGate(),
       state: deps.state ?? pgPollStateStore(),
       recordTimeoutMs: deps.recordTimeoutMs ?? SAFETY_PLC_RECORD_TIMEOUT_MS,
@@ -314,7 +333,7 @@ export class SafetyPlcPoller {
     if (!lead) {
       if (this.leading) console.warn("[SafetyPLC] poller leadership LOST — polling stopped on this instance (another instance may take over)");
       this.leading = false;
-      for (const id of [...this.states.keys()]) this.dropState(id);
+      for (const id of [...this.states.keys()]) this.dropState(id, "leadership");
       return false;
     }
     if (!this.leading) console.log("[SafetyPLC] poller leadership acquired — this instance polls the safety PLCs");
@@ -382,6 +401,9 @@ export class SafetyPlcPoller {
       // FRESH baseline (re-baseline ⇒ plain door): a held trip is reported to the new target, the old edge is never applied.
       const identity = plcTrustDigest(cfg);
       const carry = old != null && old.identity === identity && old.readIdentity === readIdentity;
+      // final wave N-R3 — a REPLACED state (identity change) never drops its unrecorded transitions silently: they are
+      // counted into the new state's events-lost marker (recorded first, plain door, attributed to the current target).
+      const pendingOld = old != null && !carry ? old.queue.length + old.lostEvents : 0;
       if (old) this.dropState(cfg.id);
       const timeout = readTimeoutMs();
       const { backend, reason } = carry ? { backend: old!.backend, reason: old!.reason } : this.deps.backendFor(cfg, timeout);
@@ -416,6 +438,8 @@ export class SafetyPlcPoller {
         lastAttemptAt: null,
         lastOkAt: null,
         unrecordedSince: null,
+        savedKey: null,
+        savedAt: null,
       };
       if (carry && old) {
         st.link = old.link;
@@ -441,16 +465,44 @@ export class SafetyPlcPoller {
           st.busy = b;
         }
       }
+      if (pendingOld > 0) {
+        st.lostEvents = pendingOld;
+        st.unrecordedSince = old!.unrecordedSince ?? Date.now();
+      }
       this.states.set(cfg.id, st);
       if (this.running) this.schedule(cfg.id, st, (i * 37) % st.intervalMs);
     });
-    for (const id of [...this.states.keys()]) if (!seen.has(id)) this.dropState(id);
+    for (const id of [...this.states.keys()]) if (!seen.has(id)) this.dropState(id, "removed");
   }
 
-  private dropState(id: number): void {
+  /**
+   * Forget a config's state. final wave N-R3 — `why` given (leadership lost, config disabled / deleted, poller stopped) and
+   * transitions still unrecorded ⇒ ONE "plc_events_lost" marker (plain door, fire-and-forget, bounded). Removed ⇒ no target
+   * (like fix scan 4: a deleted / disabled config has none). If even the marker cannot be written it is lost too; the net
+   * state is still recovered: the next leader / a re-enabled config continues from the DURABLE confirmed edge, which never
+   * advanced past an unrecorded transition, so the current trip / release is re-detected and recorded.
+   */
+  private dropState(id: number, why?: "leadership" | "removed" | "stopped"): void {
     const st = this.states.get(id);
     if (st?.timer) clearTimeout(st.timer);
     this.states.delete(id);
+    if (st && why) this.markDropped(st, why);
+  }
+
+  private markDropped(st: ConfigState, why: "leadership" | "removed" | "stopped"): void {
+    const n = st.queue.length + st.lostEvents;
+    if (n <= 0) return;
+    try {
+      const marker = this.eventInput(st, "plc_events_lost", { transition: "lost" });
+      if (why === "removed") Object.assign(marker, { robotId: null, stationId: null, lineId: null, scope: null, corporateCode: null, factoryId: null });
+      const what = why === "leadership" ? "poller leadership moved to another instance" : why === "removed" ? "the config was disabled or deleted" : "the poller stopped";
+      marker.notes = `${n} safety-PLC transition event(s) of PLC "${st.cfg.code}" were NOT recorded and are LOST: ${what} before they could be recorded. The current state is re-detected from the last durably recorded state. [background poller, READ-ONLY]`;
+      void this.bounded(this.deps.recordPlain(marker), this.deps.recordTimeoutMs, "events-lost marker").catch((e) =>
+        console.warn(`[SafetyPLC] events-lost marker of config ${st.cfg.id} not recorded: ${safeReason(e)}`),
+      );
+    } catch (e) {
+      console.warn(`[SafetyPLC] events-lost marker of config ${st.cfg.id} not built: ${safeReason(e)}`);
+    }
   }
 
   private schedule(id: number, st: ConfigState, delayMs: number): void {
@@ -620,7 +672,7 @@ export class SafetyPlcPoller {
     if (st.lostEvents > 0) {
       const n = st.lostEvents;
       const marker = this.eventInput(st, "plc_events_lost", { transition: "lost" });
-      marker.notes = `${n} safety-PLC transition event(s) of PLC "${st.cfg.code}" were LOST while events could not be recorded (queue bound ${SAFETY_PLC_EVENT_QUEUE_MAX}; oldest dropped). The events below are the most recent ones. [background poller, READ-ONLY]`;
+      marker.notes = `${n} safety-PLC transition event(s) of PLC "${st.cfg.code}" were LOST before they could be recorded (queue bound ${SAFETY_PLC_EVENT_QUEUE_MAX} exceeded while events could not be recorded, or the config's endpoint / tags / target changed meanwhile). The events below are the most recent ones. [background poller, READ-ONLY]`;
       if (!(await this.recordOne(id, st, { input: marker, rebaseline: true, after: st.confirmed }))) return;
       st.lostEvents -= n;
     }
@@ -640,30 +692,37 @@ export class SafetyPlcPoller {
    */
   private async saveDurable(id: number, st: ConfigState): Promise<void> {
     if (this.states.get(id) !== st) return;
+    const pending = st.queue.length + st.lostEvents;
+    const row = {
+      configId: st.cfg.id,
+      link: st.confirmed.link,
+      flags: { ...st.confirmed.flags },
+      intervalMs: st.intervalMs,
+      lastAttemptAt: st.lastAttemptAt,
+      lastOkAt: st.lastOkAt,
+      identityDigest: st.identity,
+      // final wave N-R1 — health must not read "ok" while observed transitions are not recorded
+      unrecordedSince: pending > 0 ? (st.unrecordedSince ?? Date.now()) : null,
+      unrecordedCount: pending,
+    };
+    // final wave N-R6 — the row is written when its CONTENT changes (edge, interval, identity, unrecorded wait / count, first
+    // decided read) and otherwise at most every SAFETY_PLC_STATE_REFRESH_MS as the liveness proof (the stale bound is ≥ 60 s):
+    // ≤ 1 upsert / 5 s / config in steady state instead of one per poll. A failed save forces the next one.
+    const key = JSON.stringify([row.link, row.flags, row.intervalMs, row.identityDigest, row.unrecordedSince, row.unrecordedCount, row.lastOkAt != null]);
+    const now = Date.now();
+    if (st.savedKey === key && st.savedAt != null && now - st.savedAt >= 0 && now - st.savedAt < SAFETY_PLC_STATE_REFRESH_MS) return;
     try {
-      await this.bounded(
-        this.deps.state.save({
-          configId: st.cfg.id,
-          link: st.confirmed.link,
-          flags: { ...st.confirmed.flags },
-          intervalMs: st.intervalMs,
-          lastAttemptAt: st.lastAttemptAt,
-          lastOkAt: st.lastOkAt,
-          identityDigest: st.identity,
-          // final wave N-R1 — health must not read "ok" while observed transitions are not recorded
-          unrecordedSince: st.queue.length + st.lostEvents > 0 ? (st.unrecordedSince ?? Date.now()) : null,
-          unrecordedCount: st.queue.length + st.lostEvents,
-        }),
-        this.deps.recordTimeoutMs,
-        "poll-state save",
-      );
+      await this.bounded(this.deps.state.save(row), this.deps.recordTimeoutMs, "poll-state save");
+      st.savedKey = key;
+      st.savedAt = now;
     } catch (e) {
+      st.savedKey = null;
       st.recordFailStreak += 1;
       this.warnLimited(`save:${id}`, `[SafetyPLC] durable poll state of config ${id} not saved (monitoring reads STALE until it is): ${safeReason(e)}`);
     }
   }
 
-  /** Record one queued event. true ⇔ recorded (or audit off: nothing will ever be recorded — do not retry forever). */
+  /** Record one queued event. true ⇔ durably recorded (anything else keeps it queued — final wave: audit off included). */
   private async recordOne(id: number, st: ConfigState, item: QueuedEvent): Promise<boolean> {
     const input = { ...item.input };
     const eventType = input.eventType;
@@ -703,8 +762,12 @@ export class SafetyPlcPoller {
         return true;
       }
       if (res.enabled === false) {
-        this.warnLimited("audit-off", "[SafetyPLC] SAFETY_AUDIT_ENABLED is off — poller transitions are not recorded");
-        return true;
+        // final wave (security scan "fail-open state drift") — audit off is NOT a durable record: the transition stays queued
+        // (the confirmed / durable edge never advances past an unrecorded event); retried with the record backoff
+        // (≤ one attempt per 15 s), and health reads "off" while the audit flag is off.
+        st.recordFailStreak += 1;
+        this.warnLimited("audit-off", "[SafetyPLC] SAFETY_AUDIT_ENABLED is off — poller transitions are NOT recorded (kept queued)");
+        return false;
       }
       st.recordFailStreak += 1; // M5 — backs the next poll off (kept queued, never dropped)
       this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (kept queued): ${safeReason(res.message)}`);
@@ -790,6 +853,7 @@ export class SafetyPlcPoller {
       if (st.timer) clearTimeout(st.timer);
       st.timer = null;
       if (st.busy) busy.push(st.busy);
+      this.markDropped(st, "stopped"); // N-R3
     }
     this.states.clear();
     this.warnedAt.clear();

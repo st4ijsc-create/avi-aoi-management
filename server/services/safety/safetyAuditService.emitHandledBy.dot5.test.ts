@@ -174,8 +174,9 @@ describe("doc 81 Đợt 8 N2 — census: who may construct / start the backgroun
   });
 
   // doc 81 Đợt 8 N fix 1 (I1) — config writes go through the AUDITED, scope-checked, maker-checker path only.
-  it("the legacy unaudited writer upsertPlcConfig has no production caller (only its definition)", () => {
-    expect(refs(/\bupsertPlcConfig\b/)).toEqual(["services/safety/plc/safetyPlcAdapter.ts"]);
+  // re-pinned 2026-10-11 (doc 81 Đợt 8 final wave N-R7): the legacy writer was REMOVED — not even its definition remains (stricter).
+  it("the legacy unaudited writer upsertPlcConfig no longer exists in production code", () => {
+    expect(refs(/\bupsertPlcConfig\b/)).toEqual([]);
   });
 
   it("no code outside safetyPlcTrust.ts writes the maker-checker table", () => {

@@ -71,9 +71,26 @@ export interface PollStateStore {
   list(): Promise<PollStateRow[]>;
   /** final wave N-R5 — the rows AND the clock they are on (the DB's now, same query). Absent ⇒ list() + the local clock. */
   listAt?(): Promise<{ rows: PollStateRow[]; nowMs: number }>;
-  /** true ⇔ THIS caller is the first to claim (configId, episode) cluster-wide. */
+  /**
+   * true ⇔ THIS caller now holds the LEASE of (configId, episode) cluster-wide (final wave N-R2: a claim is a lease, not
+   * "done": an episode is done only after confirmStaleAlarm; a lease older than SAFETY_PLC_STALE_ALARM_LEASE_MS may be
+   * re-claimed). Never throws (cannot claim ⇒ false; the next check retries).
+   */
   claimStaleAlarm(configId: number, episode: string): Promise<boolean>;
 }
+
+/**
+ * final wave N-R2 — the watchdog's alarm lease: claim → record → CONFIRM (episode done) or RELEASE (record failed ⇒ the
+ * next check, here or on another instance, retries). A confirm / release that fails leaves the lease to expire
+ * (SAFETY_PLC_STALE_ALARM_LEASE_MS) ⇒ retried: a duplicate alarm is possible, a lost one is not.
+ */
+export interface StaleAlarmLease {
+  confirmStaleAlarm(configId: number, episode: string): Promise<void>;
+  releaseStaleAlarm(configId: number, episode: string): Promise<void>;
+}
+export const SAFETY_PLC_STALE_ALARM_LEASE_MS = 30_000;
+/** Bound of the watchdog's alarm insert (a hung insert ⇒ treated as failed ⇒ released ⇒ retried). */
+export const SAFETY_PLC_WATCHDOG_RECORD_TIMEOUT_MS = 5000;
 
 const num = (v: unknown): number | null => (v == null ? null : Number.isFinite(Number(v)) ? Number(v) : null);
 function rowOf(r: Record<string, unknown>): PollStateRow {
@@ -97,7 +114,7 @@ function rowOf(r: Record<string, unknown>): PollStateRow {
 const DB_NOW_MS = sql`(extract(epoch from clock_timestamp()) * 1000)::bigint`;
 
 /** The production store: table safety_plc_poll_state (migration 0368). */
-export function pgPollStateStore(instance = `${process.pid}`): PollStateStore {
+export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & StaleAlarmLease {
   const db = async () => {
     const d = await getDb();
     if (!d) throw new Error("db unavailable");
@@ -137,16 +154,31 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore {
     },
     listAt,
     async claimStaleAlarm(configId, episode) {
+      // final wave N-R2 — a LEASE: refused when the episode is already DONE, or leased by someone within the lease time.
       try {
+        const ep = episode.slice(0, 200);
         const rows = (await (await db()).execute(sql`
-          INSERT INTO safety_plc_poll_state ("configId", "staleAlarmEpisode") VALUES (${configId}, ${episode.slice(0, 200)})
-          ON CONFLICT ("configId") DO UPDATE SET "staleAlarmEpisode" = EXCLUDED."staleAlarmEpisode"
-            WHERE safety_plc_poll_state."staleAlarmEpisode" IS DISTINCT FROM EXCLUDED."staleAlarmEpisode"
+          INSERT INTO safety_plc_poll_state ("configId", "staleAlarmClaim", "staleAlarmClaimAt") VALUES (${configId}, ${ep}, now())
+          ON CONFLICT ("configId") DO UPDATE SET "staleAlarmClaim" = EXCLUDED."staleAlarmClaim", "staleAlarmClaimAt" = now()
+            WHERE safety_plc_poll_state."staleAlarmEpisode" IS DISTINCT FROM EXCLUDED."staleAlarmClaim"
+              AND (safety_plc_poll_state."staleAlarmClaim" IS DISTINCT FROM EXCLUDED."staleAlarmClaim"
+                   OR safety_plc_poll_state."staleAlarmClaimAt" IS NULL
+                   OR safety_plc_poll_state."staleAlarmClaimAt" < now() - make_interval(secs => ${SAFETY_PLC_STALE_ALARM_LEASE_MS / 1000}))
           RETURNING "configId"`)) as unknown as unknown[];
         return rows.length > 0;
       } catch {
         return false; // cannot claim ⇒ the next check (or another instance) will
       }
+    },
+    async confirmStaleAlarm(configId, episode) {
+      await (await db()).execute(sql`
+        UPDATE safety_plc_poll_state SET "staleAlarmEpisode" = "staleAlarmClaim"
+         WHERE "configId" = ${configId} AND "staleAlarmClaim" = ${episode.slice(0, 200)}`);
+    },
+    async releaseStaleAlarm(configId, episode) {
+      await (await db()).execute(sql`
+        UPDATE safety_plc_poll_state SET "staleAlarmClaim" = NULL, "staleAlarmClaimAt" = NULL
+         WHERE "configId" = ${configId} AND "staleAlarmClaim" = ${episode.slice(0, 200)} AND "staleAlarmEpisode" IS DISTINCT FROM "staleAlarmClaim"`);
     },
   };
 }
@@ -203,7 +235,7 @@ export function evaluatePollerHealth(enabled: EnabledConfigLite[], rows: PollSta
 }
 
 export interface WatchdogDeps {
-  store: PollStateStore;
+  store: PollStateStore & StaleAlarmLease;
   listConfigs: () => Promise<EnabledConfigLite[]>;
   record: (i: RecordSafetyEventInput) => Promise<RecordResult>;
   now: () => number;
@@ -211,7 +243,10 @@ export interface WatchdogDeps {
   startedAt: number;
 }
 
-/** One watchdog check: evaluate from durable rows, then claim + record ONE alarm per stale episode. Never throws. */
+/**
+ * One watchdog check: evaluate from durable rows, then per stale episode: LEASE → record ONE alarm → confirm (done), or
+ * release when the record failed / timed out (final wave N-R2 — the alarm is never lost to a failed record). Never throws.
+ */
 export async function runPollerWatchdogOnce(d: WatchdogDeps): Promise<PollerHealth> {
   const localNow = d.now();
   let now = localNow;
@@ -237,7 +272,9 @@ export async function runPollerWatchdogOnce(d: WatchdogDeps): Promise<PollerHeal
       if (!(await d.store.claimStaleAlarm(s.configId, s.episode))) continue;
       const cfg = cfgs.find((c) => c.id === s.configId);
       console.error(`[SafetyPLC] MONITORING STALE (config ${s.configId}): ${s.reason} — safety-PLC monitoring is BLIND for it`);
-      await d.record({
+      let t: NodeJS.Timeout | undefined;
+      const recorded = await Promise.race([
+        d.record({
         eventType: "plc_monitor_stale",
         detectedBy: "plc",
         handledBy: "advisory",
@@ -246,9 +283,26 @@ export async function runPollerWatchdogOnce(d: WatchdogDeps): Promise<PollerHeal
         factoryId: cfg?.factoryId ?? null,
         humanPosition: { plcConfigId: s.configId, poller: true, watchdog: true },
         notes: `safety-PLC monitoring STALE — ${s.reason}. Background monitoring is BLIND for this PLC (the certified PLC still performs its rated stops in hardware; its e-stop / guard trips are not being observed or notified). [watchdog, READ-ONLY]`,
-      });
+        }).then(
+          // DONE only when the alarm row was durably written (ok). Audit off / any failure ⇒ released (security scan
+          // "alarm-integrity": an episode is never marked handled without a durable alarm). With audit off the health is
+          // "off" (no stale scopes) ⇒ no retry loop.
+          (r) => r?.ok === true,
+          () => false,
+        ),
+        new Promise<boolean>((res) => {
+          t = setTimeout(() => res(false), SAFETY_PLC_WATCHDOG_RECORD_TIMEOUT_MS);
+          t.unref?.();
+        }),
+      ]).finally(() => clearTimeout(t));
+      if (recorded) {
+        await d.store.confirmStaleAlarm(s.configId, s.episode).catch(() => undefined); // failure ⇒ lease expires ⇒ a duplicate at worst
+      } else {
+        console.error(`[SafetyPLC] the MONITORING STALE alarm of config ${s.configId} could not be recorded — released, retried at the next check`);
+        await d.store.releaseStaleAlarm(s.configId, s.episode).catch(() => undefined); // failure ⇒ the lease expires ⇒ retried
+      }
     } catch {
-      /* the next check retries (the claim is per episode) */
+      /* claim never throws; anything else ⇒ the lease expires and the next check retries */
     }
   }
   return h;

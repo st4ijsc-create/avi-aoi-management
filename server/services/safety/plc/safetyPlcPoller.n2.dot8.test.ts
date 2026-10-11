@@ -256,20 +256,27 @@ describe("doc 81 Đợt 8 N2 — a failed record is not lost: the transition is 
   });
 });
 
-describe("doc 81 Đợt 8 N2 — audit turned off at runtime ⇒ no retry storm", () => {
-  it("record answers enabled:false ⇒ the transition is treated as done (one call, not one per poll)", async () => {
+// Re-pinned 2026-10-11 (doc 81 Đợt 8 final wave, security scan "fail-open state drift"): audit off used to count as
+// "recorded" (one call, the durable edge advanced past an event that was never written). Now it stays QUEUED: the durable
+// edge does not advance, and the retry is bounded by the record backoff in the timer loop (pollNow here ignores timers).
+describe("doc 81 Đợt 8 N2 — audit turned off at runtime ⇒ NOT a record (kept queued, edge not advanced)", () => {
+  it("record answers enabled:false ⇒ the transition stays queued; the durable edge never shows it; backoff grows", async () => {
     const c = cfg(1);
     const calls: string[] = [];
+    const saves: Array<{ flags: Record<string, boolean> }> = [];
     const p = new SafetyPlcPoller({
       loadConfigs: async () => [c],
       backendFor: () => ({ backend: realScripted(c, [{ estop: true }]) }),
       recordPlain: async (i) => (calls.push(`plain:${i.eventType}`), { ok: false, enabled: false }),
       recordTrusted: async (i) => (calls.push(`trusted:${i.eventType}`), { ok: false, enabled: false }),
       isTrustApproved: async () => true,
-      state: { load: async () => null, save: async () => undefined, list: async () => [], claimStaleAlarm: async () => false }, // fix scan 3: durable poll state (in-memory here)
+      leader: { acquire: async () => true, held: async () => true, release: async () => undefined },
+      state: { load: async () => null, save: async (r) => void saves.push({ flags: { ...r.flags } as Record<string, boolean> }), list: async () => [], claimStaleAlarm: async () => false },
     });
-    await run(p, 1, 4);
-    expect(calls).toEqual(["trusted:estop"]);
+    await run(p, 1, 3);
+    expect(calls).toEqual(["trusted:estop", "trusted:estop", "trusted:estop"]);
+    expect(saves.every((s) => s.flags.estop !== true)).toBe(true);
+    expect(p.snapshot()[0]).toMatchObject({ queued: 1, recordFailStreak: 3 });
   });
 });
 

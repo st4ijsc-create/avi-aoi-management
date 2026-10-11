@@ -3,7 +3,8 @@
  *   • N-R5 — times are stored on the DB clock (local time → age → db-now − age) and health is judged on the DB clock, so a
  *     writer whose clock is skewed cannot make a fresh config look stale (or the reverse) on another instance;
  *   • N-R1 — "unrecordedSince" round-trips; a config polled on time but with transitions unrecorded beyond the bound is STALE
- *     in safety.sourceHealth.
+ *     in safety.sourceHealth;
+ *   • N-R2 — the stale-alarm LEASE: claim → (record) → confirm; a released claim is claimable again; a confirmed episode never.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
@@ -87,5 +88,28 @@ describe.skipIf(!DB_URL)("final wave — pg poll-state store (_test)", () => {
     expect(await mine()).toMatchObject({ stale: true });
     await st.save({ configId: cfgId, link: "online", flags: { estop: true }, intervalMs: 1000, lastAttemptAt: Date.now(), lastOkAt: Date.now(), unrecordedSince: null, unrecordedCount: 0 });
     expect(await mine()).toMatchObject({ stale: false });
+  });
+
+  it("★ N-R2 lease: claim ⇒ others refused; RELEASE ⇒ claimable again; CONFIRM ⇒ done for good; an expired lease is re-claimable", async () => {
+    const a = pgPollStateStore();
+    const b = pgPollStateStore();
+    const ep = `${RUN}-e1`;
+    expect(await a.claimStaleAlarm(cfgId, ep)).toBe(true);
+    expect(await b.claimStaleAlarm(cfgId, ep)).toBe(false); // leased
+    await a.releaseStaleAlarm(cfgId, ep); // the record failed
+    expect(await b.claimStaleAlarm(cfgId, ep)).toBe(true); // retried by another instance
+    await b.confirmStaleAlarm(cfgId, ep);
+    const [done] = await sql`SELECT "staleAlarmEpisode" FROM safety_plc_poll_state WHERE "configId" = ${cfgId}`;
+    expect(done.staleAlarmEpisode).toBe(ep);
+    expect(await a.claimStaleAlarm(cfgId, ep)).toBe(false); // done
+    await a.releaseStaleAlarm(cfgId, ep); // a late release never re-opens a DONE episode
+    expect(await a.claimStaleAlarm(cfgId, ep)).toBe(false);
+    // expired lease (holder died between claim and confirm) ⇒ re-claimable
+    const ep2 = `${RUN}-e2`;
+    expect(await a.claimStaleAlarm(cfgId, ep2)).toBe(true);
+    await sql`UPDATE safety_plc_poll_state SET "staleAlarmClaimAt" = now() - interval '31 seconds' WHERE "configId" = ${cfgId}`;
+    expect(await b.claimStaleAlarm(cfgId, ep2)).toBe(true);
+    const [e] = await sql`SELECT link, flags FROM safety_plc_poll_state WHERE "configId" = ${cfgId}`;
+    expect(e).toMatchObject({ link: "online", flags: { estop: true } }); // the lease never touches the edge state
   });
 });

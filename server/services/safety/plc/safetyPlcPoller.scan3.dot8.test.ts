@@ -12,7 +12,7 @@ vi.hoisted(() => {
 import type { SafetyPlcConfig, SafetyPlcStatusSnapshot } from "../../../../drizzle/schema";
 import { SafetyPlcPoller } from "./safetyPlcPoller";
 import { plcTrustDigest } from "./safetyPlcTrust";
-import { evaluatePollerHealth, runPollerWatchdogOnce, configStaleAfterMs, type PollStateRow, type PollStateStore } from "./safetyPlcPollerHealth";
+import { evaluatePollerHealth, runPollerWatchdogOnce, configStaleAfterMs, type PollStateRow, type PollStateStore, type StaleAlarmLease } from "./safetyPlcPollerHealth";
 import { OtReadSafetyPlcBackend, type SafetyPlcCheckedRead } from "./safetyPlcAdapter";
 import type { RecordSafetyEventInput } from "../safetyAuditService";
 
@@ -55,15 +55,24 @@ function memStore() {
       if (st.down) throw new Error("db down");
       return [...rows.values()].map((r) => JSON.parse(JSON.stringify(r)));
     },
+    // final wave N-R2 — the pg store's LEASE semantics: claim (lease) → confirm (done) / release
+    claims: new Map<number, string>(),
     async claimStaleAlarm(id: number, episode: string) {
       if (st.down) return false;
       const r = rows.get(id);
-      if (r?.staleAlarmEpisode === episode) return false;
-      rows.set(id, { configId: id, link: "unknown", flags: {}, intervalMs: null, lastAttemptAt: null, lastOkAt: null, ...r, staleAlarmEpisode: episode });
+      if (r?.staleAlarmEpisode === episode || st.claims.get(id) === episode) return false;
+      st.claims.set(id, episode);
+      if (!r) rows.set(id, { configId: id, link: "unknown", flags: {}, intervalMs: null, lastAttemptAt: null, lastOkAt: null, staleAlarmEpisode: null });
       return true;
     },
+    async confirmStaleAlarm(id: number, episode: string) {
+      if (st.claims.get(id) === episode) rows.set(id, { ...rows.get(id)!, staleAlarmEpisode: episode });
+    },
+    async releaseStaleAlarm(id: number, episode: string) {
+      if (st.claims.get(id) === episode && rows.get(id)?.staleAlarmEpisode !== episode) st.claims.delete(id);
+    },
   };
-  return st as typeof st & PollStateStore;
+  return st as typeof st & PollStateStore & StaleAlarmLease;
 }
 
 const pollers: SafetyPlcPoller[] = [];
@@ -144,9 +153,12 @@ describe("R-8-c — the edge state is DURABLE and advances only after the event 
     expect(recs).toEqual(["estop"]);
     expect(store.rows.get(1)?.flags.estop).toBe(true); // durable = after the RECORDED press, not the unrecorded release
     await pollers.pop()!.stop(); // crash
+    // re-pinned 2026-10-11 (doc 81 Đợt 8 final wave N-R3): stop() with a transition still queued now writes ONE
+    // "plc_events_lost" marker (plain door) — the queued release is lost to THAT poller; the next one re-detects it.
+    expect(recs).toEqual(["estop", "plc_events_lost"]);
     mode = "up";
     await polls(mk(store, cfg(), [{}], rec), 1);
-    expect(recs).toEqual(["estop", "estop_released"]);
+    expect(recs).toEqual(["estop", "plc_events_lost", "estop_released"]);
   });
 
   it("★ durable state UNREADABLE ⇒ nothing is evaluated (no unknown-baseline guesses); once readable it continues from the row", async () => {

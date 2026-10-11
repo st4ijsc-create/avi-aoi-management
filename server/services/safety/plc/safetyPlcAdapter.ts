@@ -302,44 +302,17 @@ export interface UpsertPlcConfigInput {
   factoryId?: number | null;
 }
 
-export interface PlcConfigWriteResult {
-  ok: boolean;
-  enabled: boolean;
-  config?: SafetyPlcConfig;
-  message?: string;
-}
+/**
+ * doc 81 Đợt 8 final wave N-R7 — the legacy UNAUDITED upsert writer of this module was REMOVED (it had no production caller): every
+ * config write goes through safetyPlcTrust.savePlcConfig (audited, scope-checked, clears the maker-checker approval). The
+ * input type above stays (savePlcConfig takes it).
+ */
 
-/** Create or update a safety-PLC config (flag-gated). */
-export async function upsertPlcConfig(input: UpsertPlcConfigInput): Promise<PlcConfigWriteResult> {
-  if (!safetyPlcAdapterEnabled()) return { ok: false, enabled: false, message: "SAFETY_PLC_ADAPTER_ENABLED off" };
+/** final wave N-R6 — ONE enabled config by id (the poller's record-time attribution lookup); null = missing / disabled. */
+export async function loadEnabledPlcConfig(id: number): Promise<SafetyPlcConfig | null> {
   const d = await db();
-  const values = {
-    code: input.code,
-    name: input.name,
-    vendor: input.vendor ?? "generic",
-    backend: input.backend ?? "sim",
-    endpoint: input.endpoint ?? null,
-    statusMap: input.statusMap ?? undefined,
-    robotId: input.robotId ?? null,
-    stationId: input.stationId ?? null,
-    lineId: input.lineId ?? null,
-    enabled: input.enabled ?? true,
-    notes: input.notes ?? null,
-    scope: input.scope ?? null,
-    corporateCode: input.corporateCode ?? null,
-    factoryId: input.factoryId ?? null,
-  };
-  if (input.id != null) {
-    const [config] = await d
-      .update(safetyPlcConfigs)
-      .set({ ...values, updatedAt: new Date() })
-      .where(eq(safetyPlcConfigs.id, input.id))
-      .returning();
-    if (!config) return { ok: false, enabled: true, message: `safety-PLC config ${input.id} not found` };
-    return { ok: true, enabled: true, config };
-  }
-  const [config] = await d.insert(safetyPlcConfigs).values(values).returning();
-  return { ok: true, enabled: true, config };
+  const [cfg] = await d.select().from(safetyPlcConfigs).where(and(eq(safetyPlcConfigs.id, id), eq(safetyPlcConfigs.enabled, true))).limit(1);
+  return cfg ?? null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
