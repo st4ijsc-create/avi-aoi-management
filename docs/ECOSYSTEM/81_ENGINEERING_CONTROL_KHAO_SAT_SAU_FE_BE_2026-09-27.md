@@ -754,3 +754,53 @@ Plan `docs/superpowers/plans/2026-10-11-engineering-control-dot6.md` — quyết
 - **Ref quy trình theo không gian phạm vi (quyết định chủ dự án 2026-10-11, mig 0367):** ref duy nhất theo cặp (ref, `scopeKey`). `scopeKey` = `global` (admin, khoá API `global`, trình nạp hệ thống / template QT) hoặc `f:<id nhà máy tăng dần>` của phạm vi người tạo. Ref trơn được phân giải TRONG tầm nhìn người gọi: không gian của chính họ › `global` › quy trình duy nhất họ xem được; nhiều quy trình cùng ref mà họ đều xem được ⇒ `refAmbiguous` (mở quy trình từ danh sách — Studio gửi kèm mã quy trình). Deploy lại là idempotent; nhà máy khác dùng cùng ref ⇒ deploy / nhân bản / chạy trả lời Y HỆT ref chưa có. **Dữ liệu cũ:** mọi quy trình trước 0367 ⇒ `global` (ref vốn đã duy nhất toàn cục; cách phân giải cho người đang xem được chúng không đổi). **Rollout:** áp `node scripts/apply-migration-0367.mjs --dev-only` TRƯỚC khi build + khởi động lại :3000 với mã mới (mã khai cột `scopeKey`).
 - **Huỷ từ trung tâm dừng walker ở edge (I1) — còn TIỀM ẨN:** trung tâm (đồng bộ edge không bao giờ ghi đè run đã huỷ / đang bị từ chối / đã kết thúc; trả `abortRequested`) đã có hiệu lực qua `edgeRuntime.syncRunResult` và `POST /api/v1/edge/sync`. Nửa phía edge (`edgeRuntime.executeAssignedRun` + `setCentralSync`: đồng bộ tiến độ, huỷ run cục bộ, chờ lượt tiến độ đang bay trước kết quả cuối) **chưa có máy biên nào nối** — không có lối gọi sản xuất nào trong repo. Khi một máy biên được nối, trung tâm không tới được ⇒ walker chạy tiếp tới lần đồng bộ đầu tiên tới được trung tâm (dùng DỪNG trực tiếp / E-STOP; lệnh huỷ ở trung tâm cũng gửi các bước DỪNG từ trung tâm).
 - **Danh sách run có giới hạn cứng:** lọc phạm vi chạy trong SQL trước LIMIT; mỗi lượt phán xét tối đa 2 000 định nghĩa (hơn ⇒ danh sách báo "bị cắt"), trang tối đa 500, hub tối đa 2 000 run chờ.
+
+## 15. Kết quả Đợt 7 (2026-10-11)
+
+Plan `docs/superpowers/plans/2026-10-11-engineering-control-dot7.md` — các mục còn mở sau Đợt 6 không cần phần cứng. Migration **0366** (MAINTAIN cho `avi_app` trên 2 view cache — **đã áp dev**) và **0367** (tên workflow theo phạm vi — `_test`; **dev phải áp trước khi khởi động lại**).
+
+### Quyết định của chủ dự án (2026-10-11)
+- Mã hoá tablet ↔ broker nhúng làm ngay; **khoá TLS do quản trị cấp** bằng script (server chỉ đọc + kiểm, không tự sinh) — sau 4 vòng quét bảo mật trên bản tự sinh trong `data/`.
+- Claude build APK 1.0.18; chủ dự án thử máy thật.
+- Khoá máy mới không còn `edge:sync` mặc định; **đã thu hồi 1.669 khoá máy test/QA trên dev** (không xoá; giữ 38 khoá SIM-L*/ESP32).
+- Tự động hoá VDA5050/ROS2 tự cấp quyền **giữ nguyên** (gắn một job, dùng một lần, có hạn, có audit) + công tắc tắt tự động hoá theo từng robot.
+- Tên workflow **duy nhất theo cặp (tên, phạm vi nhà máy)**; tên thường hiểu trong phạm vi người gọi (deploy lại cập nhật đúng workflow; tích hợp không đổi).
+
+### Chính sách tự động hoá robot
+Luồng tự động VDA5050/ROS2 được tự cấp quyền chuyển động cho **đúng một job**, **một lần**, **có hạn thời gian**, **có audit**; không cần người thứ hai. Công tắc theo robot (chỉ trong phạm vi nhà máy của người thao tác, có audit) tắt luồng này; DỪNG không bao giờ bị ảnh hưởng.
+
+### Nhóm I — điều phối
+- Huỷ/từ chối ở trung tâm truyền tới walker trên edge (edge vẫn gửi DỪNG); đồng bộ edge không bao giờ đưa run đã kết thúc về "đang chạy" (phần edge chưa có lối gọi production — tiềm ẩn).
+- Màn duyệt gắn mã băm ràng buộc (cả "Tiếp tục" run đang giữ, kiểm phía server).
+- Webhook `orchestration.run.finished` chỉ tới người đăng ký có phạm vi chứa nhà máy của run; run hiển thị theo phiên bản đã chạy; danh sách run lọc phạm vi trong SQL có trần (báo "một số run không được liệt kê").
+- Tên workflow theo phạm vi (mig 0367) — mọi đường tra theo tên dùng không gian tên của người gọi; không quyết được ⇒ từ chối.
+
+### Nhóm J — mã hoá tablet
+- Broker nhúng có cổng **MQTTS 8884**; khoá + chứng chỉ do **script quản trị** (`scripts/provision-mqtt-tls.ps1`) tạo trong thư mục bảo vệ (`C:\ProgramData\avi-aoi\mqtt-tls`, chỉ SYSTEM/Administrators/tài khoản server); server chỉ đọc qua một handle và kiểm chủ sở hữu, danh sách quyền (theo SID), không link — nghi ngờ ⇒ không mở TLS (cổng thường và :3000 không ảnh hưởng). Thẻ quản trị hiện vân tay/trạng thái.
+- **App tablet 1.0.18**: MQTT qua TLS ghim vân tay chứng chỉ; mật khẩu không bao giờ đi qua kết nối thường khi đã có vân tay; lệch ⇒ "chứng chỉ đã đổi". APK release ký bằng keystore của repo (arm64-v8a, armeabi-v7a) — **chưa chạy trên thiết bị thật**.
+- **Mật khẩu keystore release từng nằm trong tài liệu từ `ab65cb8ef`** — đã gỡ khỏi tài liệu, vẫn còn trong lịch sử git ⇒ coi là lộ.
+
+### Nhóm K — khoá và nền tảng
+- Khoá máy mới không có `edge:sync` mặc định; script thu hồi gắn đúng tệp danh sách (sha256), một giao dịch, không xoá, có audit.
+- **refresh_qw_caches lỗi mỗi 5 phút** do `avi_app` thiếu quyền MAINTAIN trên view của `aoi` (PG17) — mig 0366 đã áp dev, refresh chạy được.
+- Bắt tay plugin có số thế hệ; census `machineDataContract` hết đỏ.
+
+### Nhóm L — kiểm trình duyệt (`_test`, cổng riêng)
+- Đạt: OTP đè wizard deploy; F5/Back/Forward trên ECN/Interlock/Orchestration; Copilot qua 6 lần đổi cỡ qua 1024 px (máy chủ AI giả lập); 15 màn ở 390/412 px.
+- Sửa: tiêu điểm sau đóng wizard; tab Tiêu chuẩn thiết bị và Hub trên điện thoại; Back sau F5 với flyout; chỉ báo "Copilot đang chạy"; thanh trạng thái trên điện thoại; nhãn tab Interlock.
+- **Deploy khi step-up/2FA tắt (hoặc bỏ qua ở chế độ nội bộ) không còn hiện ô OTP** mà server bỏ qua — bước xác nhận nói rõ; khi bật thì như cũ; không xác định được ⇒ vẫn hỏi OTP.
+
+### Kiểm
+- Mỗi nhóm review → vòng sửa → review lại (J: 3 vòng + thiết kế lại bởi agent mới); review toàn nhánh → một vòng sửa cuối. Quét bảo mật bắt thêm 8 lần (cổng ACL Windows ×4, cạn tài nguyên danh sách run, gate mô phỏng QT theo tên, …) — đã xử lý.
+- `tsc` sạch. Review toàn nhánh: 665/665 tệp test đổi, app 43/43, không đỏ mới. Vòng sửa cuối (gate mô phỏng QT gắn đúng workflow của run, edge chạy theo workflowId, mọi lối vào không quyết được phạm vi ⇒ `scopeUnverified`, kiểm mig 0367 lúc khởi động — huỷ/từ chối vẫn gửi DỪNG khi thiếu 0367, script cấp khoá `-Repair`/`-Rotate` an toàn): 2.924 test pass (13 đỏ có từ trước, không thuộc tệp đổi), 79/80 đột biến đỏ, app 88/88; review lại vòng cuối 152/152 — **sẵn sàng gộp**.
+- Hướng dẫn cấp khoá: chạy script từ thư mục riêng trong hồ sơ quản trị viên (không dùng thư mục mới dưới ProgramData — người dùng cục bộ tạo trước và tráo script được).
+
+### Trước khi khởi động lại
+1. `node scripts/apply-migration-0367.mjs --dev-only` (trước build/restart).
+2. Cấp khoá TLS bằng quyền Administrator với `-ServerAccount` (thư mục chưa có trên máy này) — tới lúc đó :3000 báo "TLS chưa cấp", cổng thường vẫn chạy.
+3. Mở tường lửa TCP 8884; giữ cổng thường tới khi tablet chuyển xong.
+4. Sao lưu chứng chỉ + khoá ngoại tuyến (và trước mỗi `-Rotate`).
+5. Báo người vận hành: xác nhận deploy không có ô OTP khi step-up tắt.
+6. Báo tích hợp: tên workflow theo phạm vi (có thể trả `refAmbiguous`), webhook chỉ tới người thấy được run, khoá máy mới không có `edge:sync`.
+
+**Còn mở:** bộ đọc nền safety-PLC; checksum chương trình trong bộ điều khiển; danh tính người cầm khoá API; replay sự kiện tin cậy nhiều instance; sheet IDE/IR/POU đồng bộ URL; đổi mật khẩu keystore release (lộ qua lịch sử git); app 1.0.18 chưa thử thiết bị thật; phần edge của huỷ-tới-edge chưa có lối gọi production. Nhỏ: `-Repair` đặt ACL thư mục theo đường dẫn (khe tráo junction khi thư mục đang mở); QT bù trừ bị bỏ qua nếu tra mẫu toàn cục lỗi (chưa có lối production); người xem thấy được tín hiệu tồn tại qua mô phỏng theo tên khi phạm vi không quyết được (đã chấp nhận ở R-7-d).

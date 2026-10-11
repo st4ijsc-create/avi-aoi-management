@@ -293,13 +293,15 @@ cũng vậy — bất kỳ người dùng cục bộ nào cũng sửa được s
 Administrator, hoặc cài sẵn một khoá qua được mọi kiểm tra của server). Vì vậy chép script sang thư mục chỉ Administrators
 ghi được rồi chạy bản chép (hoặc đối chiếu SHA‑256 của tệp với bản trong git trước khi chạy):
 ```powershell
-# 1) thư mục chỉ SYSTEM + Administrators (không kế thừa), chép script vào đó
-New-Item -ItemType Directory -Force C:\ProgramData\avi-aoi-admin | Out-Null
-icacls C:\ProgramData\avi-aoi-admin /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"
-Copy-Item D:\SOURCES\avi-aoi-management\scripts\provision-mqtt-tls.ps1 C:\ProgramData\avi-aoi-admin\
-Get-FileHash C:\ProgramData\avi-aoi-admin\provision-mqtt-tls.ps1 -Algorithm SHA256   # so với SHA-256 của cùng tệp lấy từ git trên một máy tin cậy
+# 1) chép script vào thư mục RIÊNG trong hồ sơ của quản trị viên đang chạy (chỉ tài khoản đó + SYSTEM + Administrators
+#    truy cập được). KHÔNG dùng một thư mục mới dưới C:\ProgramData: mọi người dùng cục bộ tạo được thư mục con ở đó
+#    TRƯỚC (và vẫn là chủ sở hữu), rồi tráo script trước khi quản trị viên chạy (re-review final wave N2).
+$adm = Join-Path $env:USERPROFILE 'avi-aoi-admin'
+New-Item -ItemType Directory -Force $adm | Out-Null
+Copy-Item D:\SOURCES\avi-aoi-management\scripts\provision-mqtt-tls.ps1 $adm
+Get-FileHash (Join-Path $adm 'provision-mqtt-tls.ps1') -Algorithm SHA256   # so với SHA-256 của cùng tệp lấy từ git trên một máy tin cậy
 # 2) chạy bản chép (ExecutionPolicy mặc định của Windows client là Restricted ⇒ dùng -ExecutionPolicy Bypass cho lần chạy này)
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\avi-aoi-admin\provision-mqtt-tls.ps1 -ServerAccount 'NT AUTHORITY\SYSTEM'
+powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $adm 'provision-mqtt-tls.ps1') -ServerAccount 'NT AUTHORITY\SYSTEM'
 # -ServerAccount = tài khoản CHẠY server (dịch vụ/Task Scheduler/người dùng): 'NT AUTHORITY\SYSTEM', '.\svc-aoi', 'DOMAIN\user' hay SID.
 # Xem: Get-CimInstance Win32_Service -Filter "Name='<dịch vụ>'" | Select StartName  — hoặc Task Manager → Details → User name.
 ```
@@ -349,7 +351,7 @@ Rename-Item C:\ProgramData\avi-aoi\mqtt-tls ("mqtt-tls.quarantine-" + (Get-Date 
 # 2) quyền xem cho riêng quản trị viên trên bản cách ly (nó có thể còn chứa khoá cũ)
 icacls C:\ProgramData\avi-aoi\mqtt-tls.quarantine-* /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F"
 # 3) cấp cặp khoá MỚI vào thư mục sạch, khởi động server, nhập vân tay mới trên mọi máy tính bảng, xoay mật khẩu thiết bị
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\avi-aoi-admin\provision-mqtt-tls.ps1 -ServerAccount '<tài khoản server>'
+powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $env:USERPROFILE 'avi-aoi-admin\provision-mqtt-tls.ps1') -ServerAccount '<tài khoản server>'
 ```
 Một thư mục `mqtt-tls\staging-<ngày-giờ>` còn sót (một lần `-Rotate` bị ngắt giữa chừng) chứa một cặp MỚI chưa dùng: script
 dừng (mã 3) và nêu tên nó — xem rồi xoá nó bằng quyền Administrator, chạy lại.

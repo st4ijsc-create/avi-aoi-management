@@ -357,3 +357,7 @@ Dời nội dung về đúng màn (Recipes · Vision › Thu ảnh · Sản xu�
 ## 20. Đợt 5 (2026-10-10 → 10-11) — xem doc 81 §14
 
 Đóng 31 mục còn mở sau khảo sát lại bằng mã (6 mục đã đóng từ trước): điều phối theo phạm vi nhà máy ở mọi lối vào, run từ khoá API không tác động, duyệt gắn cấu hình thiết bị, huỷ/từ chối từ chối khi chưa quyết được phạm vi; VDA5050 instantActions, ngắt kết nối muộn mọi driver, thông báo an toàn vượt tắt-thông-báo chỉ từ đường thiết bị; mật khẩu MQTT tablet (mặc định không còn cho thiết bị không mật khẩu), sửa lỗ hoa/thường ở kiểm origin + giới hạn tần suất; danh sách "Giao cho" theo nhà máy. **Trước khi restart: xem checklist doc 81 §14.**
+
+## 21. Đợt 6–7 (2026-10-11) — xem doc 81 §14–§15
+
+Đợt 6: huỷ/từ chối run vẫn gửi bước DỪNG thật còn lại (chỉ khi run đã tác động; gửi lại ≤15 phút). Đợt 7: huỷ tới edge, tên workflow theo phạm vi (mig 0367), webhook theo phạm vi, công tắc tự động hoá robot; MQTTS :8884 với khoá do quản trị cấp + app tablet 1.0.18 ghim chứng chỉ; khoá máy mới không `edge:sync`, thu hồi 1.669 khoá test trên dev; mig 0366 sửa refresh cache; kiểm trình duyệt. **Trước restart: áp 0367, cấp khoá TLS — checklist doc 81 §15.**
