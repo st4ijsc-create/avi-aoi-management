@@ -331,10 +331,18 @@ function plcDecisionAnswer(
   // fix scan (R-8-a) — unknown provenance: the first of two approvals was recorded; NOT trusted until a different admin approves.
   if (r.kind === "first") return { ok: true, digest: r.digest, decision: "approve", complete: false };
   if (r.kind === "not_found") plcConfigNotFound();
+  if (r.kind === "migration_missing") plcTrustMigrationMissing(operation);
   if (r.kind === "first_approver") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "secondApproveOwnSafetyPlcConfig" }, "Two-person rule: the second approval must come from a different admin");
   if (r.kind === "sim") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation, reason: "simPlcConfigNeverTrusted" }, "A sim safety-PLC config is never trusted — nothing to approve");
   if (r.kind === "self") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveSafetyPlcConfig" }, "Separation of duties: the maker / a recent author of this config cannot decide on it");
   throw appError("CONFLICT", "OPERATION_FAILED", { operation, reason: "safetyPlcConfigChanged" }, "The config changed since it was shown — reload and review it again");
+}
+/**
+ * doc 81 Đợt 8 final wave F3 / N-R4 — migration 0368 (maker-checker table) is not applied on this database: a clear
+ * refusal (nothing was written — the transaction rolled back), never a 500. Apply 0368 before enabling safety-PLC writes.
+ */
+function plcTrustMigrationMissing(operation: "upsertSafetyPlcConfig" | "approveSafetyPlcConfig" | "rejectSafetyPlcConfig"): never {
+  throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation, reason: "plcTrustMigrationMissing" }, "Migration 0368 (safety-PLC maker-checker) is not applied on this database — nothing was saved; ask an administrator to apply it");
 }
 /** ONE answer for "missing" and "out of scope" (same code, key, params, message). */
 function plcConfigNotFound(): never {
@@ -870,6 +878,7 @@ export const safetyRouter = router({
       // maker-checker approval (the editor becomes the maker).
       const r = await savePlcConfig(input, ctx.user.id, await plcScopeOf(ctx));
       if (r.kind === "not_found") plcConfigNotFound();
+      if (r.kind === "migration_missing") plcTrustMigrationMissing("upsertSafetyPlcConfig");
       return { ok: true, enabled: true, config: r.value.config, created: r.value.created };
     }),
 

@@ -4394,7 +4394,8 @@
       "assignmentStoreMissing": "Assignment is not available yet: the database has not been updated (ask an administrator).",
       "assigneeInvalid": "The assignee is not valid: this person is not in this item's \"Assign to\" list (does not exist, is disabled, cannot view the item's page, does not share a factory with the item, or — for a run — cannot see every machine or robot the run controls). Pick someone from the list.",
       "safetyPlcConfigChanged": "The configuration changed after it was shown to you — reload, review the new content and its digest, then decide again.",
-      "simPlcConfigNeverTrusted": "A simulated (sim) safety-PLC configuration is never trusted — there is nothing to approve."
+      "simPlcConfigNeverTrusted": "A simulated (sim) safety-PLC configuration is never trusted — there is nothing to approve.",
+      "plcTrustMigrationMissing": "Migration 0368 (safety-PLC maker-checker) is not applied on this database — nothing was saved. Ask an administrator to apply it."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -17755,7 +17756,7 @@
       },
       "blocked": {
         "self": "You changed this config since its last approval — another admin must decide.",
-        "firstApprover": "You gave the first approval — a different admin must give the second."
+        "firstApprover": "You gave the first approval — a different admin must give the second (you may still reject it)."
       },
       "needsTwo": "Unknown provenance — needs approvals from two different admins.",
       "digest": "digest",
@@ -17770,7 +17771,22 @@
       "confirmReject": "Confirm rejection",
       "approvedToast": "Approved — this PLC's real trips are now trusted",
       "firstToast": "First approval recorded — a different admin must approve too",
-      "rejectedToast": "Rejected — this PLC's trips stay normal notices"
+      "rejectedToast": "Rejected — this PLC's trips stay normal notices",
+      "unavailable": {
+        "migrationMissing": "Approvals are unavailable: database migration 0368 is not applied. Every real safety-PLC config is NOT trusted (normal notices) and cannot be created, edited or approved until an administrator applies it.",
+        "unreadable": "The approval state cannot be read right now — every real safety-PLC config is treated as NOT trusted; no decision is possible until it can be read."
+      },
+      "target": {
+        "label": "Target (events are attributed here)",
+        "robot": "robot",
+        "station": "station",
+        "line": "line",
+        "factory": "factory",
+        "scope": "scope",
+        "corporate": "corporate",
+        "enabled": "enabled",
+        "disabled": "disabled"
+      }
     }
   },
   "sessionSignoff": {

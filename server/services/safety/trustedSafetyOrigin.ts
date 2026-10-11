@@ -25,9 +25,12 @@
  *     reading a REAL backend (the adapter's OtReadSafetyPlcBackend: modbus / opcua on the config's endpoint) on its own
  *     timer — no request, no payload, no injected status. Trusted types: an e-stop PRESSED transition and a guard / light
  *     curtain TRIP (zone occupied). Its other events (released, reset required, muting, PLC offline/online) are marked but
- *     not of a trusted type ⇒ normal notices. The sim backend is never trusted. Trust anchor = the config row (endpoint +
- *     status map), written only through safety.upsertSafetyPlcConfig (machine_control canCreate, flag-gated) — the same
- *     anchor as a robot's controller endpoint for "robot_telemetry".
+ *     not of a trusted type ⇒ normal notices. The sim backend is never trusted. Trust anchor (N fix 1, owner decision I1 —
+ *     MAKER-CHECKER; final wave F4 corrects the earlier text): the config row's CURRENT content (endpoint, tag map, target,
+ *     scope, enabled — safetyPlcTrust.plcTrustDigest) must equal a digest APPROVED by a second admin who did not edit it
+ *     since the last approval (safety_plc_config_trust, migration 0368); every router edit clears the approval. Not
+ *     approved / changed / undecidable (lookup error, table missing) ⇒ the event is recorded through the PLAIN door
+ *     (normal notice).
  * Not here (documented): the user-triggered safety.readSafetyPlc (can inject a scripted status — plain record()),
  * vision/zone evaluation (detections are injected through safety.evaluateZones),
  * the interlock engine's advisory mapping, the Andon dispatch, field-health lost_connection, safety.recordEvent.

@@ -9,6 +9,9 @@
  * The server decides who may decide (`mayDecide`, `blockedBy` — admin role, separation of duties); this screen only shows
  * it. Approve / reject send the digest the person was SHOWN (`expectedDigest`): a change in between ⇒ CONFLICT, reload.
  * The endpoint / tag map are returned to admins only (what they approve).
+ * Final wave (doc 81 Đợt 8): F2 — the review also shows the TARGET the digest covers (robot / station / line / factory /
+ * scope / corporate code / enabled); N-R7 — Reject is offered on `mayReject` (the first approver may reject); F3 — when
+ * the server says the trust state is unavailable (migration 0368 missing / unreadable) a notice replaces every decision.
  */
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -79,10 +82,12 @@ export function SafetyPlcTrustPanel({ enabled }: { enabled: boolean }) {
   const blockedText = (b: TrustRow["blockedBy"]) => {
     switch (b) {
       case "self": return t("safety.plcTrust.blocked.self", "You changed this config since its last approval — another admin must decide.");
-      case "first_approver": return t("safety.plcTrust.blocked.firstApprover", "You gave the first approval — a different admin must give the second.");
+      case "first_approver": return t("safety.plcTrust.blocked.firstApprover", "You gave the first approval — a different admin must give the second (you may still reject it).");
+      // the section-level notice explains these two; no per-row repetition
       default: return null;
     }
   };
+  const idOrDash = (v: number | string | null | undefined) => (v == null || v === "" ? "—" : String(v));
 
   if (!enabled) return null;
   if (listQ.isError) {
@@ -94,6 +99,7 @@ export function SafetyPlcTrustPanel({ enabled }: { enabled: boolean }) {
   }
   const rows = listQ.data ?? [];
   if (rows.length === 0) return null;
+  const unavailable = rows.find((r) => r.trustUnavailable)?.trustUnavailable ?? null;
 
   return (
     <section data-testid="safety-plc-trust" aria-labelledby={titleId} className="space-y-2 rounded-md border px-3 py-2 text-xs">
@@ -106,6 +112,13 @@ export function SafetyPlcTrustPanel({ enabled }: { enabled: boolean }) {
           "A REAL safety-PLC config's e-stop / guard trips bypass notification opt-outs only after a second admin approved its exact content (digest). Any edit clears the approval; unknown provenance needs two different admins.",
         )}
       </p>
+      {unavailable && (
+        <div role="alert" data-testid="safety-plc-trust-unavailable" className="rounded border border-destructive/40 px-2 py-1 text-destructive">
+          {unavailable === "migration_missing"
+            ? t("safety.plcTrust.unavailable.migrationMissing", "Approvals are unavailable: database migration 0368 is not applied. Every real safety-PLC config is NOT trusted (normal notices) and cannot be created, edited or approved until an administrator applies it.")
+            : t("safety.plcTrust.unavailable.unreadable", "The approval state cannot be read right now — every real safety-PLC config is treated as NOT trusted; no decision is possible until it can be read.")}
+        </div>
+      )}
       <ul className="space-y-2">
         {rows.map((r) => {
           const isOpen = open?.id === r.id;
@@ -128,20 +141,33 @@ export function SafetyPlcTrustPanel({ enabled }: { enabled: boolean }) {
                 <div className="text-muted-foreground">{t("safety.plcTrust.needsTwo", "Unknown provenance — needs approvals from two different admins.")}</div>
               )}
               {blocked && <div className="text-muted-foreground" data-testid="safety-plc-trust-blocked">{blocked}</div>}
-              {r.mayDecide && r.state !== "sim" && !isOpen && (
+              {(r.mayDecide || r.mayReject) && r.state !== "sim" && !isOpen && (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setOpen({ id: r.id, mode: "approve", digest: r.digest })}>
-                    {t("safety.plcTrust.approve", "Approve…")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setOpen({ id: r.id, mode: "reject", digest: r.digest })}>
-                    {t("safety.plcTrust.reject", "Reject…")}
-                  </Button>
+                  {r.mayDecide && (
+                    <Button size="sm" variant="outline" onClick={() => setOpen({ id: r.id, mode: "approve", digest: r.digest })}>
+                      {t("safety.plcTrust.approve", "Approve…")}
+                    </Button>
+                  )}
+                  {r.mayReject && (
+                    <Button size="sm" variant="outline" onClick={() => setOpen({ id: r.id, mode: "reject", digest: r.digest })}>
+                      {t("safety.plcTrust.reject", "Reject…")}
+                    </Button>
+                  )}
                 </div>
               )}
               {isOpen && open && (
                 <div role="group" aria-label={t("safety.plcTrust.reviewAria", "Review before deciding")} className="space-y-1 rounded bg-muted/40 p-2">
                   <div>{t("safety.plcTrust.reviewDigest", "You are deciding on this exact content (server digest):")}</div>
                   <code className="block break-all font-mono text-[10px]" data-testid="safety-plc-trust-full-digest">{open.digest}</code>
+                  <div data-testid="safety-plc-trust-target" className="break-all">
+                    {t("safety.plcTrust.target.label", "Target (events are attributed here)")}:{" "}
+                    <span className="font-mono">
+                      {t("safety.plcTrust.target.robot", "robot")} {idOrDash(r.robotId)} · {t("safety.plcTrust.target.station", "station")} {idOrDash(r.stationId)} ·{" "}
+                      {t("safety.plcTrust.target.line", "line")} {idOrDash(r.lineId)} · {t("safety.plcTrust.target.factory", "factory")} {idOrDash(r.factoryId)} ·{" "}
+                      {t("safety.plcTrust.target.scope", "scope")} {idOrDash(r.scope)} · {t("safety.plcTrust.target.corporate", "corporate")} {idOrDash(r.corporateCode)} ·{" "}
+                      {r.enabled ? t("safety.plcTrust.target.enabled", "enabled") : t("safety.plcTrust.target.disabled", "disabled")}
+                    </span>
+                  </div>
                   {r.endpoint && (
                     <div className="break-all">
                       {t("safety.plcTrust.endpoint", "Endpoint")}: <span className="font-mono">{r.endpoint}</span>

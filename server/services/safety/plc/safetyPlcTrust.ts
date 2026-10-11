@@ -15,6 +15,9 @@
  * Every config write is audited in control_audit_log (create / update / delete / approve / reject), in the SAME transaction
  * as the write. Scope: a config is reachable by id only when its factory is in the caller's factory scope (full scope ⇒
  * all; a config without factory ⇒ full scope only); out of scope and nonexistent give the SAME "not_found" (R-5-d parity).
+ * Before migration 0368 (final wave F3 / N-R4): config writes and decisions answer "migration_missing" (a clear refusal, not
+ * a 500); the list shows every real config as not trusted and offers no decision (`trustUnavailable`). Undecidable (the
+ * trust rows cannot be read for any other reason) ⇒ the same: not trusted, no decision offered.
  * L-7: this module writes configuration / audit rows only; it never talks to a PLC.
  */
 import { createHash } from "node:crypto";
@@ -199,7 +202,27 @@ async function markEdited(tx: Tx, cfg: SafetyPlcConfig, actorId: number): Promis
     });
 }
 
-export type PlcWriteResult<T> = { kind: "ok"; value: T } | { kind: "not_found" };
+export type PlcWriteResult<T> = { kind: "ok"; value: T } | { kind: "not_found" } | { kind: "migration_missing" };
+
+/**
+ * final wave F3 / N-R4 — the maker-checker table (or one of its 0368 columns) does not exist yet: Postgres 42P01 (undefined
+ * table) / 42703 (undefined column), on the error or its cause (drizzle wraps driver errors). Anything else ⇒ false.
+ */
+export function isPlcTrustMigrationMissing(e: unknown): boolean {
+  for (let x: unknown = e, i = 0; x != null && i < 4; x = (x as { cause?: unknown }).cause, i++) {
+    const code = (x as { code?: unknown }).code;
+    if (code === "42P01" || code === "42703") return true;
+  }
+  return false;
+}
+async function orMigrationMissing<T>(work: () => Promise<T>): Promise<T | { kind: "migration_missing" }> {
+  try {
+    return await work();
+  } catch (e) {
+    if (isPlcTrustMigrationMissing(e)) return { kind: "migration_missing" as const };
+    throw e;
+  }
+}
 
 /**
  * Create / update a config (router upsertSafetyPlcConfig). Scope: an update reaches only an in-scope row, and neither a
@@ -209,7 +232,8 @@ export type PlcWriteResult<T> = { kind: "ok"; value: T } | { kind: "not_found" }
 export async function savePlcConfig(input: UpsertPlcConfigInput, actorId: number, scope: PlcScope): Promise<PlcWriteResult<{ config: SafetyPlcConfig; created: boolean }>> {
   const d = await db();
   const values = configValues(input);
-  return d.transaction(async (tx) => {
+  // final wave F3 — before 0368 the whole transaction rolls back (nothing written) and the caller gets "migration_missing".
+  return orMigrationMissing(() => d.transaction(async (tx) => {
     if (input.id != null) {
       const [before] = await tx.select().from(safetyPlcConfigs).where(eq(safetyPlcConfigs.id, input.id)).limit(1).for("update");
       if (!before || !plcConfigInScope(scope, before.factoryId) || !plcConfigInScope(scope, values.factoryId)) return { kind: "not_found" as const };
@@ -223,7 +247,7 @@ export async function savePlcConfig(input: UpsertPlcConfigInput, actorId: number
     await markEdited(tx, config, actorId);
     await recordAuditEvent(tx, { entityType: PLC_CONFIG_AUDIT_ENTITY, entityId: config.id, action: "create", actorId, before: null, after: config });
     return { kind: "ok" as const, value: { config, created: true } };
-  });
+  }));
 }
 
 /** Delete a config (audited; its trust row goes with it — FK ON DELETE CASCADE). Out of scope ⇒ "not_found". */
@@ -236,6 +260,37 @@ export async function deletePlcConfig(id: number, actorId: number, scope: PlcSco
     await tx.delete(safetyPlcConfigs).where(eq(safetyPlcConfigs.id, id));
     return { kind: "ok" as const, value: { id } };
   });
+}
+
+/**
+ * final wave F5 — authoredSinceLastApproval for MANY configs in TWO grouped queries (not two per config): per config, the
+ * newest "approve" audit id and the newest create / update id by `userId`; authored ⇔ the latter exists and is newer.
+ */
+async function authoredSinceLastApprovalMany(d: Db, configIds: number[], userId: number): Promise<Map<number, boolean>> {
+  const out = new Map<number, boolean>();
+  if (configIds.length === 0) return out;
+  const ids = configIds.map(String);
+  const base = and(eq(controlAuditLog.entityType, PLC_CONFIG_AUDIT_ENTITY), inArray(controlAuditLog.entityId, ids));
+  const [approvals, authored] = await Promise.all([
+    d
+      .select({ entityId: controlAuditLog.entityId, last: sql<number>`max(${controlAuditLog.id})` })
+      .from(controlAuditLog)
+      .where(and(base, eq(controlAuditLog.action, "approve")))
+      .groupBy(controlAuditLog.entityId),
+    d
+      .select({ entityId: controlAuditLog.entityId, last: sql<number>`max(${controlAuditLog.id})` })
+      .from(controlAuditLog)
+      .where(and(base, inArray(controlAuditLog.action, ["create", "update"]), eq(controlAuditLog.actorId, userId)))
+      .groupBy(controlAuditLog.entityId),
+  ]);
+  const lastApproval = new Map(approvals.map((r) => [String(r.entityId), Number(r.last)]));
+  const lastAuthored = new Map(authored.map((r) => [String(r.entityId), Number(r.last)]));
+  for (const id of configIds) {
+    const a = lastAuthored.get(String(id));
+    const ap = lastApproval.get(String(id));
+    out.set(id, a != null && (ap == null || a > ap));
+  }
+  return out;
 }
 
 /** Authors (create / update actors) of a config since its last approval (audit trail — ILK-02 pattern). */
@@ -266,7 +321,9 @@ export type PlcDecideResult =
   | { kind: "self" }
   /** the actor already gave the first approval of this digest; a DIFFERENT admin must give the second */
   | { kind: "first_approver" }
-  | { kind: "stale" };
+  | { kind: "stale" }
+  /** final wave F3 — migration 0368 not applied: nothing was written */
+  | { kind: "migration_missing" };
 
 /**
  * Approve / reject the CURRENT content of a real config. `expectedDigest` = the digest the approver was shown; it must
@@ -279,7 +336,7 @@ export async function decidePlcConfigTrust(
   scope: PlcScope,
 ): Promise<PlcDecideResult> {
   const d = await db();
-  return d.transaction(async (tx) => {
+  return orMigrationMissing(() => d.transaction(async (tx) => {
     const [cfg] = await tx.select().from(safetyPlcConfigs).where(eq(safetyPlcConfigs.id, input.id)).limit(1).for("update");
     if (!cfg || !plcConfigInScope(scope, cfg.factoryId)) return { kind: "not_found" as const };
     if (!isRealPlcBackend(cfg)) return { kind: "sim" as const };
@@ -292,10 +349,13 @@ export async function decidePlcConfigTrust(
       currentDigest: digest,
       authoredInAudit: isRealActor(actorId) ? await authoredSinceLastApproval(tx, cfg.id, actorId) : true,
     });
-    if (!verdict.ok) return verdict.why === "first_approver" && input.decision === "approve" ? { kind: "first_approver" as const } : { kind: "self" as const };
+    // final wave N-R7 — the FIRST approver may REJECT (a rejection only removes trust: it clears the first approval and
+    // leaves the config untrusted ⇒ normal notices); only the second APPROVAL must come from a different admin.
+    const firstApproverRejects = !verdict.ok && verdict.why === "first_approver" && input.decision === "reject";
+    if (!verdict.ok && !firstApproverRejects) return verdict.why === "first_approver" ? { kind: "first_approver" as const } : { kind: "self" as const };
     if (input.expectedDigest !== digest) return { kind: "stale" as const };
     const now = new Date();
-    const first = input.decision === "approve" && verdict.needsSecond;
+    const first = input.decision === "approve" && verdict.ok && verdict.needsSecond;
     const set = first
       ? { firstApprovedBy: actorId, firstApprovedDigest: digest, firstApprovedAt: now, approvedDigest: null, approvedBy: null, approvedAt: null }
       : input.decision === "approve"
@@ -328,7 +388,7 @@ export async function decidePlcConfigTrust(
     });
     if (first) return { kind: "first" as const, digest };
     return { kind: "ok" as const, digest, decision: input.decision };
-  });
+  }));
 }
 
 export type PlcTrustState = "sim" | "approved" | "pending" | "awaiting_second" | "rejected";
@@ -342,6 +402,9 @@ export interface PlcTrustListRow {
   stationId: number | null;
   lineId: number | null;
   factoryId: number | null;
+  /** final wave F2 — the rest of the TARGET the digest covers (shown to the approver with robot / station / line / factory). */
+  scope: string | null;
+  corporateCode: string | null;
   state: PlcTrustState;
   digest: string;
   approvedBy: number | null;
@@ -351,10 +414,17 @@ export interface PlcTrustListRow {
   rejectReason: string | null;
   lastEditedBy: number | null;
   lastEditedAt: Date | null;
-  /** The viewer may approve / reject now (admin, real backend, not the maker / a recent author). */
+  /** The viewer may approve now (admin, real backend, not the maker / a recent author, not the first approver). */
   mayDecide: boolean;
-  /** Why not (when the viewer is an admin): "sim" | "self" (changed it since the last approval) | "first_approver". */
-  blockedBy: "sim" | "self" | "first_approver" | null;
+  /** final wave N-R7 — the viewer may reject now (as mayDecide, but the first approver may reject too). */
+  mayReject: boolean;
+  /**
+   * Why not (when the viewer is an admin): "sim" | "self" (changed it since the last approval) | "first_approver" |
+   * final wave F3: "migration_missing" (0368 not applied) | "trust_unreadable" (trust rows cannot be read — no decision).
+   */
+  blockedBy: "sim" | "self" | "first_approver" | "migration_missing" | "trust_unreadable" | null;
+  /** final wave F3 — the trust state cannot be known for ANY config (null = readable). Every real config is then NOT trusted. */
+  trustUnavailable: "migration_missing" | "trust_unreadable" | null;
   /** Unknown provenance: this content needs two different admins (fix scan). */
   needsTwoApprovals: boolean;
   firstApprovedBy: number | null;
@@ -370,12 +440,22 @@ export async function listPlcTrust(scope: PlcScope, viewer: { id: number; isAdmi
   if (cfgs.length === 0) return [];
   const ids = cfgs.map((c) => c.id);
   let rows: SafetyPlcConfigTrust[] = [];
+  let trustUnavailable: PlcTrustListRow["trustUnavailable"] = null;
   try {
     rows = await d.select().from(safetyPlcConfigTrust).where(inArray(safetyPlcConfigTrust.configId, ids));
-  } catch {
-    rows = []; // table missing (0368 not applied) ⇒ everything "pending" (not trusted)
+  } catch (e) {
+    // final wave F3 — table missing (0368 not applied) or unreadable ⇒ every real config "pending" (NOT trusted) and NO
+    // decision is offered (an Approve that can only fail is not shown).
+    rows = [];
+    trustUnavailable = isPlcTrustMigrationMissing(e) ? "migration_missing" : "trust_unreadable";
   }
   const byId = new Map(rows.map((r) => [r.configId, r]));
+  // final wave F5 — the audit trail for ALL configs in two grouped queries (admins only); unreadable ⇒ every config "self"
+  // (blocked: no decision offered — fail closed).
+  let authoredMap: Map<number, boolean> | null = null;
+  if (viewer.isAdmin && trustUnavailable === null && isRealActor(viewer.id)) {
+    authoredMap = await authoredSinceLastApprovalMany(d, cfgs.filter(isRealPlcBackend).map((c) => c.id), viewer.id).catch(() => null);
+  }
   const out: PlcTrustListRow[] = [];
   for (const c of cfgs) {
     const r = byId.get(c.id) ?? null;
@@ -395,8 +475,9 @@ export async function listPlcTrust(scope: PlcScope, viewer: { id: number; isAdmi
     let blockedBy: PlcTrustListRow["blockedBy"] = null;
     if (viewer.isAdmin) {
       if (!real) blockedBy = "sim";
+      else if (trustUnavailable) blockedBy = trustUnavailable;
       else {
-        const authored = isRealActor(viewer.id) ? await authoredSinceLastApproval(d, c.id, viewer.id).catch(() => true) : true;
+        const authored = authoredMap?.get(c.id) ?? true; // unknown ⇒ treated as an author (blocked)
         const vd = approvalVerdict({ actorId: viewer.id, row: r, currentDigest: digest, authoredInAudit: authored });
         if (!vd.ok) blockedBy = vd.why === "first_approver" ? "first_approver" : "self";
       }
@@ -412,6 +493,8 @@ export async function listPlcTrust(scope: PlcScope, viewer: { id: number; isAdmi
       stationId: c.stationId,
       lineId: c.lineId,
       factoryId: c.factoryId,
+      scope: c.scope ?? null,
+      corporateCode: c.corporateCode ?? null,
       state,
       digest,
       approvedBy: r?.approvedBy ?? null,
@@ -422,7 +505,9 @@ export async function listPlcTrust(scope: PlcScope, viewer: { id: number; isAdmi
       lastEditedBy: r?.lastEditedBy ?? null,
       lastEditedAt: r?.lastEditedAt ?? null,
       mayDecide: viewer.isAdmin && blockedBy === null,
+      mayReject: viewer.isAdmin && (blockedBy === null || blockedBy === "first_approver"),
       blockedBy,
+      trustUnavailable: real ? trustUnavailable : null,
       needsTwoApprovals: real && needsTwoApprovals,
       firstApprovedBy: firstInForce ? (r?.firstApprovedBy ?? null) : null,
       endpoint: viewer.isAdmin ? (c.endpoint ?? null) : null,

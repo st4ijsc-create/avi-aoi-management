@@ -31,7 +31,8 @@ const D = "ab".repeat(32);
 const row = (over: Record<string, unknown> = {}) => ({
   id: 7, code: "PNOZ-1", name: "p", backend: "modbus", enabled: true, robotId: 3, stationId: null, lineId: null, factoryId: 1,
   state: "pending", digest: D, approvedBy: null, approvedAt: null, rejectedBy: null, rejectedAt: null, rejectReason: null,
-  lastEditedBy: 2, lastEditedAt: null, mayDecide: true, blockedBy: null, needsTwoApprovals: false, firstApprovedBy: null,
+  lastEditedBy: 2, lastEditedAt: null, mayDecide: true, mayReject: true, blockedBy: null, needsTwoApprovals: false, firstApprovedBy: null,
+  scope: null, corporateCode: null, trustUnavailable: null, // final wave F2 / F3 / N-R7 fields
   endpoint: "tcp://10.1.2.3:502", tags: [{ flag: "estop", address: "coil:1", dataType: "bool", activeWhen: "truthy" }],
   ...over,
 });
@@ -68,11 +69,13 @@ describe("SafetyPlcTrustPanel (doc 81 Đợt 8 N fix 1)", () => {
     expect(M.reject).toHaveBeenCalledWith({ id: 7, expectedDigest: D, reason: "wrong PLC" });
   });
 
-  it("★ a viewer who may not decide gets NO buttons, and the reason (separation of duties) is shown", () => {
-    M.rows = [row({ mayDecide: false, blockedBy: "self" }), row({ id: 8, code: "PNOZ-2", mayDecide: false, blockedBy: "first_approver", state: "awaiting_second", needsTwoApprovals: true })];
+  // re-pinned 2026-10-11 (doc 81 Đợt 8 final wave N-R7): the FIRST approver is now offered Reject (server mayReject), never Approve.
+  it("★ a viewer who may not decide gets NO approve button, and the reason (separation of duties) is shown; the first approver may only reject", () => {
+    M.rows = [row({ mayDecide: false, mayReject: false, blockedBy: "self" }), row({ id: 8, code: "PNOZ-2", mayDecide: false, mayReject: true, blockedBy: "first_approver", state: "awaiting_second", needsTwoApprovals: true })];
     render(<SafetyPlcTrustPanel enabled />);
     expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Reject/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /Reject/ })).toHaveLength(1);
+    expect(screen.getByTestId("safety-plc-trust-row-8")).toContainElement(screen.getByRole("button", { name: /Reject/ }));
     expect(screen.getAllByTestId("safety-plc-trust-blocked").map((e) => e.textContent)).toEqual([
       expect.stringMatching(/changed this config/),
       expect.stringMatching(/first approval/),
@@ -89,5 +92,29 @@ describe("SafetyPlcTrustPanel (doc 81 Đợt 8 N fix 1)", () => {
     M.error = true;
     render(<SafetyPlcTrustPanel enabled />);
     expect(screen.getByTestId("safety-plc-trust")).toHaveTextContent(/NOT trusted/);
+  });
+
+  it("★ final wave F2: the review shows the TARGET the digest covers (robot / station / line / factory / scope / corporate / enabled)", () => {
+    M.rows = [row({ robotId: 3, stationId: 11, lineId: null, factoryId: 4, scope: "factory", corporateCode: "C1", enabled: false })];
+    render(<SafetyPlcTrustPanel enabled />);
+    expect(screen.queryByTestId("safety-plc-trust-target")).toBeNull(); // only inside the review
+    fireEvent.click(screen.getByRole("button", { name: /Approve/ }));
+    const target = screen.getByTestId("safety-plc-trust-target");
+    expect(target).toHaveTextContent(/robot 3 · station 11 · line — · factory 4 · scope factory · corporate C1 · disabled/);
+    fireEvent.click(screen.getByRole("button", { name: /Cancel/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Reject/ }));
+    expect(screen.getByTestId("safety-plc-trust-target")).toHaveTextContent(/robot 3/);
+  });
+
+  it("★ final wave F3: migration 0368 missing ⇒ an alert says so and NO decision is offered", () => {
+    M.rows = [row({ mayDecide: false, mayReject: false, blockedBy: "migration_missing", trustUnavailable: "migration_missing" })];
+    render(<SafetyPlcTrustPanel enabled />);
+    expect(screen.getByTestId("safety-plc-trust-unavailable")).toHaveTextContent(/migration 0368 is not applied/);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve|Reject/ })).toBeNull();
+    cleanup();
+    M.rows = [row({ mayDecide: false, mayReject: false, blockedBy: "trust_unreadable", trustUnavailable: "trust_unreadable" })];
+    render(<SafetyPlcTrustPanel enabled />);
+    expect(screen.getByTestId("safety-plc-trust-unavailable")).toHaveTextContent(/cannot be read/);
   });
 });

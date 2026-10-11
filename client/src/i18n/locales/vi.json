@@ -4386,7 +4386,8 @@
       "assignmentStoreMissing": "Chưa bật được giao việc: cơ sở dữ liệu chưa được cập nhật (cần quản trị viên).",
       "assigneeInvalid": "Người được giao không hợp lệ: người này không có trong danh sách \"Giao cho\" của mục này (không tồn tại, đã bị vô hiệu hoá, không xem được trang của mục, không cùng nhà máy với mục, hoặc — với lần chạy — không xem được mọi máy/robot mà lần chạy điều khiển). Hãy chọn người trong danh sách.",
       "safetyPlcConfigChanged": "Cấu hình đã bị sửa sau khi hiện cho bạn — tải lại, xem nội dung mới và mã digest rồi quyết định lại.",
-      "simPlcConfigNeverTrusted": "Cấu hình safety-PLC mô phỏng (sim) không bao giờ được tin cậy — không có gì để duyệt."
+      "simPlcConfigNeverTrusted": "Cấu hình safety-PLC mô phỏng (sim) không bao giờ được tin cậy — không có gì để duyệt.",
+      "plcTrustMigrationMissing": "Cơ sở dữ liệu chưa áp migration 0368 (duyệt hai người cho safety-PLC) — chưa lưu gì. Hãy nhờ quản trị viên áp migration này."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -17735,7 +17736,7 @@
       },
       "blocked": {
         "self": "Bạn đã sửa cấu hình này kể từ lần duyệt trước — một quản trị viên khác phải quyết định.",
-        "firstApprover": "Bạn đã duyệt lần đầu — một quản trị viên khác phải duyệt lần hai."
+        "firstApprover": "Bạn đã duyệt lần đầu — một quản trị viên khác phải duyệt lần hai (bạn vẫn có thể từ chối)."
       },
       "needsTwo": "Nguồn gốc không rõ — cần hai quản trị viên khác nhau duyệt.",
       "digest": "digest",
@@ -17750,7 +17751,22 @@
       "confirmReject": "Xác nhận từ chối",
       "approvedToast": "Đã duyệt — các lần ngắt thật của PLC này nay được tin cậy",
       "firstToast": "Đã ghi lần duyệt đầu — một quản trị viên khác cũng phải duyệt",
-      "rejectedToast": "Đã từ chối — các lần ngắt của PLC này vẫn là thông báo thường"
+      "rejectedToast": "Đã từ chối — các lần ngắt của PLC này vẫn là thông báo thường",
+      "unavailable": {
+        "migrationMissing": "Không duyệt được: cơ sở dữ liệu chưa áp migration 0368. Mọi cấu hình safety-PLC thật đều KHÔNG được tin cậy (thông báo thường) và không thể tạo, sửa hay duyệt cho tới khi quản trị viên áp migration.",
+        "unreadable": "Hiện không đọc được trạng thái duyệt — mọi cấu hình safety-PLC thật được coi là KHÔNG tin cậy; chưa thể quyết định cho tới khi đọc được."
+      },
+      "target": {
+        "label": "Đích (sự kiện được gán vào đây)",
+        "robot": "robot",
+        "station": "trạm",
+        "line": "chuyền",
+        "factory": "nhà máy",
+        "scope": "phạm vi",
+        "corporate": "tập đoàn",
+        "enabled": "đang bật",
+        "disabled": "đang tắt"
+      }
     }
   },
   "sessionSignoff": {
