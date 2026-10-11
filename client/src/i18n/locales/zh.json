@@ -18099,7 +18099,11 @@
         "noConfig": "○ 无启用的配置",
         "off": "○ 关闭",
         "staleCount": "{{n}} 个配置停滞",
-        "lastPoll": "最近一次读取"
+        "lastPoll": "最近一次读取",
+        "okBlind": "⚠ 正在轮询，但有 {{n}} 个PLC离线/状态未知——其触发未被监测",
+        "linkOffline": "离线",
+        "linkUnknown": "未知",
+        "linkStale": "过期"
       }
     },
     "advisoryChip": "仅供参考 — 非 SIS",

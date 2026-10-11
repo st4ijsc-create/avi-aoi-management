@@ -274,6 +274,31 @@ describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
     expect(screen.getByTestId("safety-source-poller").textContent).toMatch(/alive.*last poll/);
   });
 
+  // doc 81 Đợt 8 final wave NF-3 — never "● alive" while a PLC is offline / unknown / stale: an alert + the link state per PLC.
+  it("★ NF-3: poller ok but PLCs offline / unknown / stale ⇒ alert line, one entry per blind PLC; all online ⇒ '● alive', no entries", () => {
+    const cfg = (code: string, link: string, stale = false) => ({ code, link, lastAttemptAt: null, lastOkAt: null, stale });
+    const poller = (configs: unknown[]) => ({ state: "ok", lastPollAt: "2026-10-11T10:00:00.000Z", staleConfigs: 0, configs, hiddenConfigs: 0 });
+    setQueryOverride(
+      "safety.sourceHealth",
+      makeQuery({ data: health({ plcPoller: poller([cfg("PNOZ-1", "online"), cfg("PNOZ-2", "offline"), cfg("PNOZ-3", "unknown"), cfg("PNOZ-4", "online", true)]) }) }),
+    );
+    const { rerender } = render(<SafetyWorkforce />);
+    const line = screen.getByTestId("safety-source-poller");
+    expect(line).toHaveAttribute("role", "alert");
+    expect(line.textContent).not.toMatch(/● alive/);
+    expect(line.textContent).toMatch(/3 PLC\(s\) offline \/ unknown — their trips are NOT being observed/);
+    expect(screen.getAllByTestId("safety-source-poller-plc").map((e) => [e.textContent, e.getAttribute("data-link")])).toEqual([
+      ["PNOZ-2: offline", "offline"],
+      ["PNOZ-3: unknown", "unknown"],
+      ["PNOZ-4: stale", "stale"],
+    ]);
+    setQueryOverride("safety.sourceHealth", makeQuery({ data: health({ plcPoller: poller([cfg("PNOZ-1", "online"), cfg("PNOZ-2", "online")]) }) }));
+    rerender(<SafetyWorkforce />);
+    expect(screen.getByTestId("safety-source-poller")).not.toHaveAttribute("role");
+    expect(screen.getByTestId("safety-source-poller").textContent).toMatch(/● alive/);
+    expect(screen.queryAllByTestId("safety-source-poller-plc")).toHaveLength(0);
+  });
+
   it("đang tải / lỗi ⇒ KHÔNG bịa trạng thái nguồn", () => {
     setQueryOverride("safety.sourceHealth", makeQuery({ isLoading: true }));
     const { rerender } = render(<SafetyWorkforce />);

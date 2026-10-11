@@ -137,7 +137,12 @@ async function approvedRun(tag: string, steps?: Parameters<typeof makeFoeGateRun
   return fx;
 }
 
-async function sendOt(fx: FoeGateRunFixture, cmdName = "set_param", args: Record<string, unknown> = { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 }) {
+async function sendOt(
+  fx: FoeGateRunFixture,
+  cmdName = "set_param",
+  args: Record<string, unknown> = { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 },
+  beforeSend?: (key: string) => Promise<void>,
+) {
   const { buildEquipmentCommand, ensureOrchestrationAction } = await import("./foeEngine");
   const { equipmentRegistry } = await import("../../equipment/equipmentAdapter");
   const user = { id: OWNER, role: "engineer" } as never;
@@ -148,6 +153,7 @@ async function sendOt(fx: FoeGateRunFixture, cmdName = "set_param", args: Record
   const cmd = buildEquipmentCommand(descriptor, cap, ids.machine, args, key, user, approval);
   await ensureOrchestrationAction(user, key, { id: `s${seq}`, type: "command" } as never, args, cmd, approval);
   lastActionId = cmd.hitl!.actionId;
+  if (beforeSend) await beforeSend(key);
   const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
   return { res, actionId: cmd.hitl!.actionId };
 }
@@ -323,6 +329,20 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 8 O2/O4 — both dispatchers check the c
     expect(h.probe.results.length).toBeGreaterThanOrEqual(1);
     expect(h.probe.results.every((r) => r === "free")).toBe(true); // inside the reservation it would be 55P03 (locked)
     expect(h.checksumReads).toBe(1); // ONE read, reused inside the transaction (not read again under the lock)
+  });
+
+  it("★ final wave NF-4: an IN-FLIGHT DUPLICATE (intent row of the key, no result) is refused WITHOUT any controller checksum read", async () => {
+    const fx = await approvedRun("nf4");
+    h.checksumReads = 0;
+    const ot = await sendOt(fx, "set_param", { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 }, async (key) => {
+      // the write-ahead intent another call left for this key (WORM ledger row; key format = commandDispatcher intentKeyFor)
+      await sql!`INSERT INTO command_log ("adapterId", "requestedBy", "confirmedBy", status, "tagKey", "idempotencyKey", "commandType")
+                 VALUES (${ids.adapter}, ${OWNER}, ${OTHER}, 'sent', 'speed_sp', ${`intent:${key}:speed_sp:0`}, 'set_param')`;
+    });
+    expect(ot.res.ok).toBe(false);
+    expect(JSON.stringify(ot.res)).toMatch(/DUPLICATE_IN_FLIGHT/);
+    expect(writeCalls).toBe(0);
+    expect(h.checksumReads).toBe(0); // a duplicate costs nothing
   });
 
   it("★ final wave M5 (a): an UNPINNED stop-typed write with the program changed after the approval ⇒ refused, 0 writes", async () => {

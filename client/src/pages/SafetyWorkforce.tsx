@@ -1333,10 +1333,24 @@ function SafetySourcePanel({
   const plcRisky = RISKY_BASIS.has(plc.basis);
   // doc 81 Đợt 8 N fix scan 2/3 (R-8-b/c) — background monitoring health (durable rows; stale / unknown never look healthy).
   const poller = data.plcPoller;
-  const pollerBad = poller?.state === "stale" || poller?.state === "unknown";
+  // doc 81 Đợt 8 final wave NF-3 — a PLC whose link is offline / unknown (or whose monitoring is stale) is BLIND even while the
+  // poller itself is alive: listed per PLC, and the line is an alert (never "● alive" while one is blind).
+  const blindPlcs = (poller?.configs ?? [])
+    .map((c) => ({ code: c.code, kind: c.stale ? ("stale" as const) : c.link === "online" ? null : c.link === "offline" ? ("offline" as const) : ("unknown" as const) }))
+    .filter((c): c is { code: string; kind: "stale" | "offline" | "unknown" } => c.kind !== null);
+  const pollerBad = poller?.state === "stale" || poller?.state === "unknown" || (poller?.state === "ok" && blindPlcs.length > 0);
+  const linkText = (k: "stale" | "offline" | "unknown") =>
+    k === "stale"
+      ? t("safety.source.poller.linkStale", "stale")
+      : k === "offline"
+        ? t("safety.source.poller.linkOffline", "offline")
+        : t("safety.source.poller.linkUnknown", "unknown");
   const pollerText = (() => {
     switch (poller?.state) {
-      case "ok": return t("safety.source.poller.ok", "● alive");
+      case "ok":
+        return blindPlcs.length > 0
+          ? t("safety.source.poller.okBlind", "⚠ polling, but {{n}} PLC(s) offline / unknown — their trips are NOT being observed", { n: blindPlcs.length })
+          : t("safety.source.poller.ok", "● alive");
       case "stale": return t("safety.source.poller.stale", "⚠ STALE — safety-PLC trips are NOT being observed");
       case "unknown": return t("safety.source.poller.unknown", "⚠ state unknown — treat monitoring as blind");
       case "no_config": return t("safety.source.poller.noConfig", "○ no enabled config");
@@ -1385,6 +1399,15 @@ function SafetySourcePanel({
           {t("safety.source.poller.label", "Background PLC monitoring")} {pollerText}
           {poller.staleConfigs > 0 && <> · {t("safety.source.poller.staleCount", "{{n}} config(s) stale", { n: poller.staleConfigs })}</>}
           {poller.lastPollAt && <> · {t("safety.source.poller.lastPoll", "last poll")} {new Date(poller.lastPollAt).toLocaleTimeString()}</>}
+          {blindPlcs.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-x-2">
+              {blindPlcs.map((c) => (
+                <span key={c.code} data-testid="safety-source-poller-plc" data-link={c.kind} className="font-mono">
+                  {c.code}: {linkText(c.kind)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div data-testid="safety-source-rule" className="text-muted-foreground">

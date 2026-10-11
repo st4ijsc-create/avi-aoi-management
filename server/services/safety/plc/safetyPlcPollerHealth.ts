@@ -148,7 +148,11 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & 
         VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${onDb(age(r.lastAttemptAt))}, ${onDb(age(r.lastOkAt))}, ${r.identityDigest ?? null}, ${onDb(age(r.unrecordedSince))}, ${count}, ${instance.slice(0, 64)}, now())
         ON CONFLICT ("configId") DO UPDATE SET link = EXCLUDED.link, flags = EXCLUDED.flags, "intervalMs" = EXCLUDED."intervalMs",
           "lastAttemptAt" = EXCLUDED."lastAttemptAt", "lastOkAt" = EXCLUDED."lastOkAt", "identityDigest" = EXCLUDED."identityDigest",
-          "unrecordedSince" = EXCLUDED."unrecordedSince", "unrecordedCount" = EXCLUDED."unrecordedCount", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
+          -- final wave NF-1/NF-2: a continuing wait keeps its FIRST stored value (no ±latency drift of the episode key,
+          -- no effect of a local clock step); a cleared wait (NULL) clears it; a new wait after a clear starts fresh.
+          "unrecordedSince" = CASE WHEN EXCLUDED."unrecordedSince" IS NULL THEN NULL
+                                   ELSE COALESCE(safety_plc_poll_state."unrecordedSince", EXCLUDED."unrecordedSince") END,
+          "unrecordedCount" = EXCLUDED."unrecordedCount", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
     },
     async list() {
       return (await listAt()).rows;

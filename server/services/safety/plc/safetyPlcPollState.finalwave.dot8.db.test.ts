@@ -90,6 +90,48 @@ describe.skipIf(!DB_URL)("final wave — pg poll-state store (_test)", () => {
     expect(await mine()).toMatchObject({ stale: false });
   });
 
+  it("★ NF-1/NF-2: a continuing wait keeps its FIRST stored 'unrecordedSince' across saves (even with a local clock step) ⇒ ONE episode, ONE alarm; a clear then a new wait starts fresh", async () => {
+    const { runPollerWatchdogOnce } = await import("./safetyPlcPollerHealth");
+    const st = pgPollStateStore();
+    const since = Date.now() - 300_000; // the poller's (local) wait start: stuck for 5 min
+    const save = async (unrec: number | null) =>
+      st.save({ configId: cfgId, link: "online", flags: { estop: true }, intervalMs: 1000, lastAttemptAt: Date.now(), lastOkAt: Date.now(), unrecordedSince: unrec, unrecordedCount: unrec == null ? 0 : 2 });
+    const stored = async () => Number((await sql`SELECT "unrecordedSince" FROM safety_plc_poll_state WHERE "configId" = ${cfgId}`)[0].unrecordedSince);
+    await save(null);
+    await save(since);
+    const first = await stored();
+    const alarms: string[] = [];
+    const run = () =>
+      runPollerWatchdogOnce({
+        store: st,
+        listConfigs: async () => [{ id: cfgId, code: `${RUN}-P`, factoryId: null }],
+        record: async (i) => (alarms.push(String(i.notes)), { ok: true, enabled: true }),
+        now: Date.now,
+        enabled: () => true,
+        startedAt: 0,
+      });
+    for (let k = 0; k < 6; k++) {
+      await new Promise((r) => setTimeout(r, 7));
+      if (k === 3) {
+        const step = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 120_000); // the writer's clock steps BACK 2 min
+        try {
+          await save(since);
+        } finally {
+          step.mockRestore();
+        }
+      } else await save(since);
+      expect(await stored()).toBe(first); // never re-stored (no drift, no step effect)
+      await run();
+    }
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0]).toMatch(/NOT recorded/);
+    await save(null); // everything recorded ⇒ cleared
+    expect((await sql`SELECT "unrecordedSince" FROM safety_plc_poll_state WHERE "configId" = ${cfgId}`)[0].unrecordedSince).toBeNull();
+    await save(Date.now() - 1000); // a NEW wait ⇒ a new value
+    expect(Math.abs((await dbNowMs()) - (await stored()) - 1000)).toBeLessThan(10_000);
+    await save(null);
+  });
+
   it("★ N-R2 lease: claim ⇒ others refused; RELEASE ⇒ claimable again; CONFIRM ⇒ done for good; an expired lease is re-claimable", async () => {
     const a = pgPollStateStore();
     const b = pgPollStateStore();

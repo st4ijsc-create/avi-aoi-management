@@ -2300,9 +2300,19 @@ async function reserveRealWrite(
   // the reservation transaction (bounded 1 s, concurrent, single-flight): no pool connection, advisory lock or FOR UPDATE
   // row is held while a controller is read. A PINNED stop reads nothing (L-7). L-7 statement (O M6): an UNPINNED
   // stop-typed write of such a run may be refused or delayed ≤ 1 s by this read (R-4-x: it is not a verified stop).
+  // final wave NF-4 — a DUPLICATE costs nothing: a lock-free probe of the same two keys the transaction checks first; a prior
+  // intent / result ⇒ no controller read (the transaction answers cached / DUPLICATE_IN_FLIGHT before any approval check).
+  // The probe is only an optimisation: it decides nothing. Probe error / a race ⇒ the pre-read runs, or the transaction reads
+  // live (bounded) exactly as before — fail-closed semantics unchanged.
   let prePrograms: PreReadPrograms | undefined;
   if (input.triggeredBy.kind === "hitl" && input.triggeredBy.actionId && opts.pinnedStop !== true) {
-    prePrograms = await preReadProgramChecksForAction(db, input.triggeredBy.actionId, FOE_ENGINE_TOOL);
+    const duplicate = await db
+      .select({ id: commandLog.id })
+      .from(commandLog)
+      .where(inArray(commandLog.idempotencyKey, [resultKeys[0], intentKeys[0]]))
+      .limit(1)
+      .then((r) => r.length > 0, () => false);
+    if (!duplicate) prePrograms = await preReadProgramChecksForAction(db, input.triggeredBy.actionId, FOE_ENGINE_TOOL);
   }
   try {
     return await db.transaction(async (tx) => {

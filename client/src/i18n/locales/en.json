@@ -17716,7 +17716,11 @@
         "noConfig": "○ no enabled config",
         "off": "○ off",
         "staleCount": "{{n}} config(s) stale",
-        "lastPoll": "last poll"
+        "lastPoll": "last poll",
+        "okBlind": "⚠ polling, but {{n}} PLC(s) offline / unknown — their trips are NOT being observed",
+        "linkOffline": "offline",
+        "linkUnknown": "unknown",
+        "linkStale": "stale"
       }
     },
     "advisoryChip": "Advisory — not a SIS",

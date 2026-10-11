@@ -17696,7 +17696,11 @@
         "noConfig": "○ không có cấu hình đang bật",
         "off": "○ tắt",
         "staleCount": "{{n}} cấu hình bị ngưng",
-        "lastPoll": "lần đọc cuối"
+        "lastPoll": "lần đọc cuối",
+        "okBlind": "⚠ đang đọc, nhưng {{n}} PLC mất kết nối / chưa rõ — các lần ngắt của chúng KHÔNG được theo dõi",
+        "linkOffline": "mất kết nối",
+        "linkUnknown": "chưa rõ",
+        "linkStale": "quá hạn"
       }
     },
     "advisoryChip": "Tư vấn — không phải SIS",
