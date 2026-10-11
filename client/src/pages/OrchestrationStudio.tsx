@@ -2274,7 +2274,9 @@ export default function OrchestrationStudio() {
       canControl={canControl}
       assignment={runAssignments.get(Number(r.id))}
       canAssign={canAssignRun}
-      onResume={(approved, note, expectedStepId, expectedDefHash) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash })}
+      onResume={(approved, note, expectedStepId, expectedDefHash, expectedBindingDigest) =>
+        resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash, expectedBindingDigest })
+      }
       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
       abortPending={abortM.isPending && abortM.variables?.runId === Number(r.id)}
       t={t}
@@ -2655,7 +2657,8 @@ function RunRow({
   canAssign?: boolean;
   /** doc 80 Đợt 1 Task 9 — `expectedStepId` = gate đang HIỂN THỊ (server từ chối nếu run đã sang gate khác). */
   /** doc 81 Đợt 4 fix round 2 (R-4-k) — `expectedDefHash` = getRun().defHash the screen loaded; required to approve. */
-  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string) => void;
+  /** doc 81 Đợt 7 task I2 — `expectedBindingDigest` = getRun().bindingDigest the screen loaded (device configuration); required to approve. */
+  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string, expectedBindingDigest?: string) => void;
   onAbort: () => void;
   /** doc 81 Đợt 6 fix 3 (M1) — an abort / re-send request for THIS run is in flight ⇒ "Send STOP steps again" is disabled. */
   abortPending?: boolean;
@@ -2702,10 +2705,19 @@ function RunRow({
   // replaces it silently; the row says "definition changed, reload" and Approve / Continue stay disabled.
   const polledHash = (detailQ.data as { defHash?: string | null } | undefined)?.defHash ?? undefined;
   const pinKey = `${runId}:${shownStepId ?? ""}`;
-  const pinned = useRef<{ key: string; hash: string } | null>(null);
-  if (polledHash && (!pinned.current || pinned.current.key !== pinKey)) pinned.current = { key: pinKey, hash: polledHash };
+  // doc 81 Đợt 7 task I2 — the device configuration (binding digest) is pinned WITH the hash at the first view: a later poll
+  // with another digest ⇒ "configuration changed, reload" and Approve / Continue disabled; no digest (the server could not
+  // read the configuration) ⇒ they stay disabled too (fail-closed), with the reason shown.
+  const polledDigest = (detailQ.data as { bindingDigest?: string | null } | undefined)?.bindingDigest;
+  const pinned = useRef<{ key: string; hash: string; digest: string | null } | null>(null);
+  if (polledHash && (!pinned.current || pinned.current.key !== pinKey)) pinned.current = { key: pinKey, hash: polledHash, digest: polledDigest ?? null };
+  if (pinned.current?.key === pinKey && pinned.current.digest === null && polledDigest) pinned.current.digest = polledDigest; // first readable view
   const defHash = pinned.current?.key === pinKey ? pinned.current.hash : undefined;
   const defChanged = defHash !== undefined && polledHash !== undefined && polledHash !== defHash;
+  const bindingDigest = pinned.current?.key === pinKey ? pinned.current.digest ?? undefined : undefined;
+  const bindingChanged = bindingDigest !== undefined && typeof polledDigest === "string" && polledDigest !== bindingDigest;
+  const bindingUnknown = detailQ.data != null && defHash !== undefined && bindingDigest === undefined;
+  const approveBlocked = !defHash || defChanged || !bindingDigest || bindingChanged;
   // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
   const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
   const gatePrompt = typeof currentStep?.result?.prompt === "string" ? (currentStep.result.prompt as string) : "";
@@ -2759,7 +2771,7 @@ function RunRow({
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={!defHash || defChanged} onClick={() => onResume(true, undefined, shownStepId, defHash)}>
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={approveBlocked} onClick={() => onResume(true, undefined, shownStepId, defHash, bindingDigest)}>
               {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)} title={t("studio.rejectHint", "Reject: the run is aborted. The remaining non-STOP steps are skipped; if the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
@@ -2777,6 +2789,16 @@ function RunRow({
           {t("studio.definitionChangedReload", "The workflow definition changed since you opened this approval — reload the page and review it before approving.")}
         </div>
       )}
+      {bindingChanged && (awaiting || interrupted) && canControl && (
+        <div data-testid="binding-changed" role="alert" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
+          {t("studio.bindingChangedReload", "The device configuration this approval covers (adapter, tags or robot of its commands) changed since you opened it — reload the page and review it before approving.")}
+        </div>
+      )}
+      {bindingUnknown && !defChanged && (awaiting || interrupted) && canControl && (
+        <div data-testid="binding-unknown" role="status" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
+          {t("studio.bindingUnknown", "The device configuration this approval covers could not be read — approval is not possible until it can. Retry in a moment.")}
+        </div>
+      )}
       {interrupted && (
         <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground">
           {t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
@@ -2792,7 +2814,7 @@ function RunRow({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction disabled={!defHash || defChanged} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash); }}>
+            <AlertDialogAction disabled={approveBlocked} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash, bindingDigest); }}>
               {t("studio.continueRunConfirm", "Continue run")}
             </AlertDialogAction>
           </AlertDialogFooter>

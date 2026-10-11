@@ -314,16 +314,31 @@ export const orchestrationRouter = router({
            * it. A redeploy since then ⇒ CONFLICT (definitionChanged, "reload"). Rejections do not need it.
            */
           expectedDefHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+          /**
+           * doc 81 Đợt 7 task I2 — REQUIRED on an approval: getRun().bindingDigest as the approver's screen loaded it. The
+           * device configuration changed since then (or cannot be read now) ⇒ CONFLICT (bindingChanged, "reload").
+           */
+          expectedBindingDigest: z.string().regex(/^[0-9a-f]{64}$/).optional(),
         })
         .refine((i) => !i.approved || i.expectedDefHash !== undefined, {
           message: "expectedDefHash is required to approve",
           path: ["expectedDefHash"],
+        })
+        .refine((i) => !i.approved || i.expectedBindingDigest !== undefined, {
+          message: "expectedBindingDigest is required to approve",
+          path: ["expectedBindingDigest"],
         }),
     )
     .mutation(async ({ input, ctx }) => {
       return resumeRun(
         input.runId,
-        { approved: input.approved, note: input.note, expectedStepId: input.expectedStepId, expectedDefHash: input.expectedDefHash },
+        {
+          approved: input.approved,
+          note: input.note,
+          expectedStepId: input.expectedStepId,
+          expectedDefHash: input.expectedDefHash,
+          expectedBindingDigest: input.expectedBindingDigest,
+        },
         toFoeUser(ctx.user),
       );
     }),

@@ -267,6 +267,8 @@ describe("OrchestrationStudio — doc 81 Đợt 5 task E1: bước của lượt
 });
 
 const DEF_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+/** doc 81 Đợt 7 I2 — the device-configuration digest getRun returns (sent back on approval). */
+const BINDING_DIGEST = "c".repeat(64);
 describe("OrchestrationStudio — doc 81 Đợt 4 fix round 3 (R-4-n): lỗi 'robotId required' của bước hiện bằng appError dịch", () => {
   it("bước lỗi mang detail.appError INVALID_VALUE robotId/robotIdRequired ⇒ dòng dịch (không phải chuỗi thô); bước thành công ⇒ không có", async () => {
     setQueryOverride(
@@ -300,13 +302,13 @@ describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang h
     setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
     setQueryOverride(
       "orchestration.getRun",
-      makeQuery({ data: { run: { ...AWAITING, currentStepId: "g-detail" }, defHash: DEF_HASH, steps: [{ stepId: "g-detail", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "Duyệt?" } }] } }),
+      makeQuery({ data: { run: { ...AWAITING, currentStepId: "g-detail" }, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, steps: [{ stepId: "g-detail", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "Duyệt?" } }] } }),
     );
     render(<OrchestrationStudio />);
     const { default: userEvent } = await import("@testing-library/user-event");
     await userEvent.setup().click(within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i }));
     // doc 81 Đợt 4 fix round 2 (R-4-k): + the hash of the definition this screen loaded
-    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail", expectedDefHash: DEF_HASH });
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail", expectedDefHash: DEF_HASH, expectedBindingDigest: BINDING_DIGEST });
   });
 
   it("Reject (kèm lý do) ⇒ gửi cùng gate đang hiển thị", async () => {
@@ -321,7 +323,7 @@ describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang h
     await user.click(within(rowOf(30)).getByRole("button", { name: /^(Reject|studio\.reject)$/i }));
     await user.type(within(rowOf(30)).getByRole("textbox"), "sai");
     await user.click(within(rowOf(30)).getByRole("button", { name: /Xác nhận từ chối|confirm reject|studio\.confirmReject/i }));
-    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: false, note: "sai", expectedStepId: "g-detail", expectedDefHash: undefined });
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: false, note: "sai", expectedStepId: "g-detail", expectedDefHash: undefined, expectedBindingDigest: undefined });
   });
 
   it("chi tiết chưa nạp ⇒ Approve KHOÁ (doc 81 Đợt 4 fix round 2, R-4-k: chưa biết định nghĩa đang xem ⇒ không duyệt được), không gửi gì", async () => {

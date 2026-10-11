@@ -301,6 +301,12 @@ export interface RunView {
    * approver's screen shows); sent back as `expectedDefHash` on approval. null when the workflow row is missing.
    */
   defHash: string | null;
+  /**
+   * doc 81 Đợt 7 task I2 — computeBindingDigest of the device configuration the run's definition resolves to NOW (what the
+   * approver's screen covers); sent back as `expectedBindingDigest` on approval. null ⇔ it could not be computed (DB error)
+   * or the workflow row is missing — the Studio then cannot approve (fail-closed).
+   */
+  bindingDigest: string | null;
   steps: Array<{
     stepId: string;
     stepType: string;
@@ -331,6 +337,13 @@ export interface GateDecision {
    * (reason definitionChanged) before any state change. Omitted ⇒ no check (internal callers).
    */
   expectedDefHash?: string;
+  /**
+   * doc 81 Đợt 7 task I2 — the binding digest (RunView.bindingDigest) the approver's screen LOADED. On an approval of an open
+   * gate it must equal computeBindingDigest() NOW, else CONFLICT (reason bindingChanged, "configuration changed — reload")
+   * before any state change. A screen-bound approval (expectedDefHash given) without it ⇒ the same CONFLICT (fail-closed).
+   * Both omitted ⇒ no check (internal callers: QT pump, auto-resume — they record no counting approval of a person).
+   */
+  expectedBindingDigest?: string;
 }
 
 /** doc 80 Đợt 1 Task 9 — optional hooks of `resumeRun`. */
@@ -2366,9 +2379,11 @@ export async function getRun(runId: number): Promise<RunView | null> {
     .where(eq(orchestrationRunSteps.runId, runId));
   const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
   const wfDef = wf?.definitionJson as WorkflowDefinition | undefined;
+  const usable = wfDef && Array.isArray(wfDef.steps) ? wfDef : null;
   return {
     run,
-    defHash: wfDef && Array.isArray(wfDef.steps) ? hashWorkflowDefinition(wfDef) : null,
+    defHash: usable ? hashWorkflowDefinition(usable) : null,
+    bindingDigest: usable ? await computeBindingDigest(d, usable) : null, // doc 81 Đợt 7 I2 (null on a DB error ⇒ cannot approve)
     steps: stepRows.map((s) => ({
       stepId: s.stepId,
       stepType: s.stepType,
@@ -2605,6 +2620,22 @@ export async function resumeRun(
         `Workflow "${wf.ref}" was redeployed after your screen loaded — reload and review the current definition before approving.`,
       );
     }
+    // doc 81 Đợt 7 task I2 — the approver must also have been looking at THIS device configuration (adapter / tags / robot the
+    // commands resolve to — the binding digest the approval will record). Computed ONCE here and recorded below, so the
+    // approval covers exactly what was checked. Changed since the screen loaded, not computable now (DB error — cannot
+    // decide ⇒ refused), or a screen-bound approval without it ⇒ CONFLICT, nothing changes.
+    let checkedDigest: string | null | undefined;
+    if (run.status === "awaiting_confirm" && (decision.expectedDefHash !== undefined || decision.expectedBindingDigest !== undefined)) {
+      checkedDigest = await computeBindingDigest(d, def);
+      if (decision.expectedBindingDigest === undefined || checkedDigest === null || checkedDigest !== decision.expectedBindingDigest) {
+        throw appError(
+          "CONFLICT",
+          "OPERATION_FAILED",
+          { operation: "resumeOrchestrationRun", reason: "bindingChanged" },
+          `The device configuration of workflow "${wf.ref}" (adapter, tags or robot its commands use) changed after your screen loaded, or could not be read — reload and review it before approving.`,
+        );
+      }
+    }
 
     // doc 80 ORC-03 — approving a hitl_gate enforces its approverRoles / fourEyes (FORBIDDEN).
     // Only a run paused AT a gate ('awaiting_confirm'); an interrupted 'held' run has no open gate.
@@ -2646,7 +2677,8 @@ export async function resumeRun(
             defHash: hashWorkflowDefinition(def),
             // doc 81 Đợt 5 task E3 — the device configuration the approval covers, computed HERE (server side); null
             // (DB error) ⇒ the approval never counts (fail-closed).
-            bindingDigest: await computeBindingDigest(d, def),
+            // doc 81 Đợt 7 I2 — the digest the approver's screen was checked against (else computed now, as before).
+            bindingDigest: checkedDigest !== undefined ? checkedDigest : await computeBindingDigest(d, def),
           },
           finishedAt: new Date(),
         });

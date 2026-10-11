@@ -49,7 +49,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the 
     expect(started.status).toBe("awaiting_confirm");
     const view = await (await router()).getRun({ runId: started.runId! });
     expect(view?.defHash).toMatch(/^[0-9a-f]{64}$/);
-    const res = await (await router()).resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g", expectedDefHash: view!.defHash! });
+    const res = await (await router()).resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g", expectedDefHash: view!.defHash!, expectedBindingDigest: view!.bindingDigest! });
     expect(res.status).toBe("completed");
     const [g] = await sql`SELECT "resultJson" FROM orchestration_run_steps WHERE "runId" = ${started.runId!} AND "stepId" = 'g'`;
     expect(g.resultJson).toMatchObject({ approved: true, approvedBy: 990_852_102, approvalSource: "server", defHash: view!.defHash });
@@ -59,10 +59,11 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the 
     const { deployWorkflow, startRun } = await engine();
     expect((await deployWorkflow(def(2), OWNER)).ok).toBe(true);
     const started = await startRun(REF, {}, OWNER);
-    const seen = (await (await router()).getRun({ runId: started.runId! }))!.defHash!;
+    const seenView = (await (await router()).getRun({ runId: started.runId! }))!;
+    const seen = seenView.defHash!;
     expect((await deployWorkflow(def(3), OWNER)).ok).toBe(true); // redeploy while the approver looks at the old one
     const err = await (await router())
-      .resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g", expectedDefHash: seen })
+      .resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g", expectedDefHash: seen, expectedBindingDigest: seenView.bindingDigest! })
       .catch((e) => e);
     expect(err).toMatchObject({ code: "CONFLICT" });
     expect(err.cause?.appParams).toMatchObject({ operation: "resumeOrchestrationRun", reason: "definitionChanged" });
@@ -70,15 +71,20 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the 
     expect(run).toMatchObject({ status: "awaiting_confirm", currentStepId: "g" });
     const [g] = await sql`SELECT status FROM orchestration_run_steps WHERE "runId" = ${started.runId!} AND "stepId" = 'g'`;
     expect(g.status).toBe("awaiting_confirm");
-    const fresh = (await (await router()).getRun({ runId: started.runId! }))!.defHash!;
+    const freshView = (await (await router()).getRun({ runId: started.runId! }))!;
+    const fresh = freshView.defHash!;
     expect(fresh).not.toBe(seen);
-    expect((await (await router()).resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g", expectedDefHash: fresh })).status).toBe("completed");
+    expect((await (await router()).resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g", expectedDefHash: fresh, expectedBindingDigest: freshView.bindingDigest! })).status).toBe("completed");
   });
 
   it("an approval WITHOUT expectedDefHash is refused at the input (BAD_REQUEST); a rejection does not need it", async () => {
     const { startRun } = await engine();
     const started = await startRun(REF, {}, OWNER);
     await expect((await router()).resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // doc 81 Đợt 7 task I2 — nor without expectedBindingDigest (the screen's device-configuration binding)
+    const view = (await (await router()).getRun({ runId: started.runId! }))!;
+    expect(view.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+    await expect((await router()).resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g", expectedDefHash: view.defHash! })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     const rej = await (await router()).resumeRun({ runId: started.runId!, approved: false, expectedStepId: "g" });
     expect(rej.status).toBe("aborted");
   });

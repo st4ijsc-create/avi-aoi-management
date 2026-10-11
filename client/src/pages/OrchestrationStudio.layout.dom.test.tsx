@@ -66,6 +66,8 @@ const srv = vi.hoisted(() => ({
   results: {} as Record<string, unknown>,
   /** doc 81 Đợt 6 fix 3 (M1) — mutations shown as IN FLIGHT (key ⇒ the variables of the pending call). */
   pending: {} as Record<string, unknown>,
+  /** doc 81 Đợt 7 I2 — a mutation that FAILS: key ⇒ { code, appCode, appParams, message } (onError, after a microtask). */
+  errors: {} as Record<string, { code: string; appCode?: string; appParams?: Record<string, unknown>; message: string }>,
   refetched: [] as string[],
   invalidated: [] as string[],
   simulate: null as null | ((input: unknown) => Promise<unknown>),
@@ -119,6 +121,15 @@ vi.mock("@/lib/trpc", () => {
         mutateAsync: vi.fn(),
         mutate: (input: unknown, callOpts?: MutOpts) => {
           (srv.calls[key] ??= []).push(input);
+          if (key in srv.errors) {
+            const e = srv.errors[key];
+            const err = Object.assign(new Error(e.message), { data: { code: e.code, appCode: e.appCode, appParams: e.appParams } });
+            void Promise.resolve().then(() => {
+              opts.onError?.(err);
+              callOpts?.onError?.(err);
+            });
+            return;
+          }
           if (key in srv.results) {
             const r = srv.results[key];
             void Promise.resolve().then(() => {
@@ -218,6 +229,7 @@ beforeEach(() => {
   srv.calls = {};
   srv.results = {};
   srv.pending = {};
+  srv.errors = {};
   srv.refetched = [];
   srv.invalidated = [];
   srv.simulate = null;
@@ -818,7 +830,7 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
   it("doc 81 Đợt 6 fix 2 (N6): a rejection NOT confirmed ⇒ the text names the REJECTION (not 'the abort')", async () => {
     const user = userEvent.setup();
     srv.runs = [...RUNS_PLAIN, AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    srv.getRun = { run: { ...AWAITING }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
     srv.results["orchestration.resumeRun"] = { ok: false, enabled: true, runId: 30, reason: "abortUnconfirmed", message: "x", abortStops: { ...ABORT_STOPS } };
     render(<OrchestrationStudio />);
     await user.click(within(bottomPanel()).getByRole("tab", { name: new RegExp(S.awaitingTab) }));
@@ -874,7 +886,7 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
   it("doc 81 Đợt 6 fix 1 (R-6-a): Reject says the remaining STOP steps are still sent, and its answer gets the same confirmation + warning", async () => {
     const user = userEvent.setup();
     srv.runs = [...RUNS_PLAIN, AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    srv.getRun = { run: { ...AWAITING }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
     srv.results["orchestration.resumeRun"] = { ok: false, enabled: true, runId: 30, status: "aborted", abortStops: { ...ABORT_STOPS, sent: ["stop"], unverified: ["s2"] } };
     render(<OrchestrationStudio />);
     await user.click(within(bottomPanel()).getByRole("tab", { name: new RegExp(S.awaitingTab) }));
@@ -909,22 +921,22 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
   it("Tiếp tục run bị gián đoạn: AlertDialog rồi resumeRun({runId, approved:true, expectedStepId})", async () => {
     const user = userEvent.setup();
     srv.runs = [INTERRUPTED].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...INTERRUPTED }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] }; // R-4-k: Continue sends the loaded hash
+    srv.getRun = { run: { ...INTERRUPTED }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] }; // R-4-k: Continue sends the loaded hash
     render(<OrchestrationStudio />);
     await user.click(within(rowOf(31)).getByRole("button", { name: S.continueRun }));
     expect(calls("orchestration.resumeRun")).toEqual([]);
     const dlg = await screen.findByRole("alertdialog");
     await user.click(within(dlg).getByRole("button", { name: S.continueRunConfirm }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 31, approved: true, note: undefined, expectedStepId: "s-2", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 31, approved: true, note: undefined, expectedStepId: "s-2", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expectedBindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }]);
   });
 
   it("Duyệt ở tab Chờ duyệt gửi expectedStepId của gate đang hiển thị; không quyền ⇒ không có nút", async () => {
     const user = userEvent.setup();
     srv.runs = [AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-detail" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-detail" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
     const { unmount } = render(<OrchestrationStudio />);
     await user.click(within(rowOf(30)).getByRole("button", { name: S.approve }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expectedBindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }]);
     unmount();
     perm.canControl = false;
     render(<OrchestrationStudio />);
@@ -936,14 +948,14 @@ describe("doc 81 Đợt 3 Task 4 — 'Giao cho' run đang chờ duyệt", () => 
   it("run chờ duyệt: hàng hiện tên người được giao + khối ngữ cảnh có bộ chọn; nút Duyệt giữ nguyên payload", async () => {
     const user = userEvent.setup();
     srv.runs = [AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
     render(<OrchestrationStudio />);
     const row = rowOf(30);
     expect(row.querySelector("[data-assignee-cell]")).toHaveTextContent("Ky su Run");
     const ctl = row.querySelector('[data-assign-control="orchestration_run"]') as HTMLElement;
     expect(within(ctl).getByRole("combobox", { name: VI.engineeringAssign.label })).toHaveTextContent("Ky su Run");
     await user.click(within(row).getByRole("button", { name: S.approve }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expectedBindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }]);
     expect(calls("engineering.assign")).toEqual([]);
   });
 
@@ -1071,11 +1083,11 @@ describe("doc 81 Đợt 4 fix round 3 — robot picker (R-4-n) + hash pinned at 
   it("★ R-4-p: the hash is pinned at the first view of the gate; a later poll with ANOTHER hash ⇒ 'definition changed, reload' + Approve disabled (no silent update)", async () => {
     const user = userEvent.setup();
     srv.runs = [AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
     const view = render(<OrchestrationStudio />);
     expect(within(rowOf(30)).queryByTestId("definition-changed")).toBeNull();
     // the next poll returns a redeployed definition
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
     view.rerender(<OrchestrationStudio />);
     expect(within(rowOf(30)).getByTestId("definition-changed")).toHaveTextContent(S.definitionChangedReload);
     const approve = within(rowOf(30)).getByRole("button", { name: S.approve });
@@ -1084,14 +1096,56 @@ describe("doc 81 Đợt 4 fix round 3 — robot picker (R-4-n) + hash pinned at 
     expect(calls("orchestration.resumeRun") ?? []).toEqual([]);
   });
 
+  it("★ doc 81 Đợt 7 I2: the binding digest is pinned with the hash; a later poll with ANOTHER digest ⇒ 'configuration changed, reload' + Approve disabled", async () => {
+    const user = userEvent.setup();
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
+    const view = render(<OrchestrationStudio />);
+    expect(within(rowOf(30)).queryByTestId("binding-changed")).toBeNull();
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", steps: [] };
+    view.rerender(<OrchestrationStudio />);
+    expect(within(rowOf(30)).getByTestId("binding-changed")).toHaveTextContent(S.bindingChangedReload);
+    expect(within(rowOf(30)).queryByTestId("definition-changed")).toBeNull();
+    const approve = within(rowOf(30)).getByRole("button", { name: S.approve });
+    expect(approve).toBeDisabled();
+    await user.click(approve);
+    expect(calls("orchestration.resumeRun") ?? []).toEqual([]);
+  });
+
+  it("★ doc 81 Đợt 7 I2: the server could not read the configuration (bindingDigest null) ⇒ Approve AND Continue disabled, the reason shown", async () => {
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: null, steps: [] };
+    const view = render(<OrchestrationStudio />);
+    expect(within(rowOf(30)).getByRole("button", { name: S.approve })).toBeDisabled();
+    expect(within(rowOf(30)).getByTestId("binding-unknown")).toHaveTextContent(S.bindingUnknown);
+    view.unmount();
+    srv.runs = [INTERRUPTED].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...INTERRUPTED }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: null, steps: [] };
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(31)).getByTestId("binding-unknown")).toHaveTextContent(S.bindingUnknown);
+  });
+
+  it("doc 81 Đợt 7 I2: the server's CONFLICT bindingChanged is shown translated (never the raw server text)", async () => {
+    const user = userEvent.setup();
+    srv.runs = [AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
+    srv.errors["orchestration.resumeRun"] = { code: "CONFLICT", appCode: "OPERATION_FAILED", appParams: { operation: "resumeOrchestrationRun", reason: "bindingChanged" }, message: "RAW server text" };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(30)).getByRole("button", { name: S.approve }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
+    expect(shown).toContain(VI.errors.reason.bindingChanged);
+    expect(shown).not.toContain("RAW server text");
+  });
+
   it("R-4-p: same hash on later polls ⇒ no warning, the approval carries the FIRST-viewed hash", async () => {
     const user = userEvent.setup();
     srv.runs = [AWAITING].map((r) => ({ ...r }));
-    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", steps: [] };
+    srv.getRun = { run: { ...AWAITING, currentStepId: "g-1" }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
     const view = render(<OrchestrationStudio />);
     view.rerender(<OrchestrationStudio />);
     expect(within(rowOf(30)).queryByTestId("definition-changed")).toBeNull();
     await user.click(within(rowOf(30)).getByRole("button", { name: S.approve }));
-    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]);
+    expect(calls("orchestration.resumeRun")).toEqual([{ runId: 30, approved: true, note: undefined, expectedStepId: "g-1", expectedDefHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expectedBindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }]);
   });
 });
