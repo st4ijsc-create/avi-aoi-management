@@ -66,6 +66,34 @@ interface MachineRow {
   stationId: number;
 }
 
+/**
+ * doc 81 Đợt 7 task I3 — the audience of an orchestration run event: a subscriber receives it only when the run is visible
+ * to the webhook's OWNER (`webhook_configs.createdBy`, with that account's real role — an admin owner sees every factory) by
+ * THE run check of every entry point (foeEngine.runIdVisibleTo — the run's factory scope). Unknown / disabled owner, a
+ * failed lookup or an undecided scope ⇒ false (not delivered).
+ */
+export function orchestrationRunWebhookAudience(runId: number): (webhook: { id: number; createdBy: number }) => Promise<boolean> {
+  return async (webhook) => {
+    try {
+      if (!Number.isInteger(webhook.createdBy) || webhook.createdBy <= 0) return false;
+      const [{ getDb }, { users }, { eq }, { runIdVisibleTo }, { resolveUserFoeScope }] = await Promise.all([
+        import("../../db/connection"),
+        import("../../../drizzle/schema"),
+        import("drizzle-orm"),
+        import("../../services/orchestration/foe/foeEngine"),
+        import("../../services/orchestration/foe/foeScope"),
+      ]);
+      const d = await getDb();
+      if (!d) return false;
+      const [u] = await d.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, webhook.createdBy)).limit(1);
+      if (!u || u.isActive === false || typeof u.role !== "string" || !u.role) return false;
+      return (await runIdVisibleTo(runId, resolveUserFoeScope({ id: u.id, role: u.role }))) === true;
+    } catch {
+      return false;
+    }
+  };
+}
+
 /** Load a machine by id (fail-safe; throws ApiHttpError 404/500). */
 async function loadMachine(id: number): Promise<MachineRow> {
   if (!Number.isInteger(id) || id <= 0) {
@@ -543,11 +571,16 @@ export function createV1Router(): Router {
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
       }
-      void emit("orchestration.run.finished", {
-        runId: result.runId,
-        workflowRef: body.workflowRef,
-        status: result.status,
-      });
+      // doc 81 Đợt 7 task I3 — only for a run that EXISTS (a refused start creates nothing to announce), and only to the
+      // subscribers whose scope contains the run's factory: the scope of the user who created the webhook (its owner); an
+      // unknown / disabled owner or an undecidable scope ⇒ not delivered (fail-closed).
+      if (typeof result.runId === "number") {
+        void emit(
+          "orchestration.run.finished",
+          { runId: result.runId, workflowRef: body.workflowRef, status: result.status },
+          orchestrationRunWebhookAudience(result.runId),
+        );
+      }
       sendOk(res, { runId: result.runId, status: result.status, accepted: result.ok }, 202);
     }),
   );
@@ -645,7 +678,8 @@ export function createV1Router(): Router {
       const { getRun, runVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
       const view = await getRun(id);
       // doc 81 Đợt 5 task E2 — out of the key's scope ⇒ the SAME 404 as a missing run.
-      const visible = await runVisibleTo({ workflowId: view?.run.workflowId ?? -1 }, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+      // doc 81 Đợt 7 task I3 — by the definition versions the run executed
+      const visible = await runVisibleTo(view?.run ?? { workflowId: -1, paramsJson: null }, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
       if (!view || !visible) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
       sendOk(res, {
         run: {

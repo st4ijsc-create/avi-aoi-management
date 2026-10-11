@@ -62,6 +62,23 @@ export type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" 
 export const FOE_API_RUN_PARAM = "__foeStartedViaApi";
 
 /**
+ * doc 81 Đợt 7 task I3 — the SERVER-ONLY record of the definition VERSIONS a run executed: `paramsJson[FOE_DEF_VERSIONS_PARAM]`
+ * = [version at start, + the head version at each resume claim]. Written by foeEngine only (a caller's value is replaced at
+ * start), only ever ADDED to (the apiRun marker and the caller's params are kept). Run visibility follows these versions
+ * (foeEngine.runVisibilityDefinitions); a run WITHOUT the record (started before Đợt 7) is judged on the head definition.
+ */
+export const FOE_DEF_VERSIONS_PARAM = "__foeDefVersions";
+
+/** The executed versions recorded on a run (positive integers, deduplicated, in order); null ⇔ no record (legacy run). */
+export function runExecutedVersions(run: { paramsJson?: unknown } | null | undefined): number[] | null {
+  const raw = (run?.paramsJson as Record<string, unknown> | null | undefined)?.[FOE_DEF_VERSIONS_PARAM];
+  if (!Array.isArray(raw)) return null;
+  const out: number[] = [];
+  for (const v of raw) if (typeof v === "number" && Number.isInteger(v) && v > 0 && !out.includes(v)) out.push(v);
+  return out.length ? out : null;
+}
+
+/**
  * doc 81 Đợt 7 task I6 — the SERVER-ONLY claim token a gate REJECTION with a compensation hook (QT) writes into
  * `contextJson` together with its claim ('compensating'). When the claim's reply is lost, the rejection re-reads the run
  * and finishes ONLY a claim that carries ITS token (never another decision's). Task I1 — while it is set on a central run,

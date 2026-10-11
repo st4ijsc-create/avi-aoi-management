@@ -63,6 +63,9 @@ import {
   filterRunsVisibleTo,
   runVisibleTo,
   visibleWorkflowIds,
+  listVisibleRuns,
+  refWithSuffix,
+  scopeCreatesSuffixedRefs,
   type FoeUser,
 } from "../services/orchestration/foe/foeEngine";
 import { resolveUserFoeScope, type FoeScope } from "../services/orchestration/foe/foeScope";
@@ -196,7 +199,8 @@ export const orchestrationRouter = router({
       // doc 81 Đợt 5 task E2 — the version's own definition AND its workflow's current one must be visible.
       const scope = scopeOf(ctx.user);
       const ownVisible = await definitionVisibleTo(row?.definitionJson as WorkflowDefinition | undefined, scope);
-      const headVisible = await runVisibleTo({ workflowId: row?.workflowId ?? -1 }, scope);
+      // doc 81 Đợt 7 I3 — `paramsJson: null` asks about the workflow's HEAD (this is a workflow-level check, not a run)
+      const headVisible = await runVisibleTo({ workflowId: row?.workflowId ?? -1, paramsJson: null }, scope);
       if (!row || !ownVisible || !headVisible) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowVersion" }, `Version ${input.id} not found`);
       return row;
     }),
@@ -235,20 +239,10 @@ export const orchestrationRouter = router({
     )
     .query(async ({ input, ctx }) => {
       const d = await db();
-      // doc 81 Đợt 5 task E2 + E fix 1 (review #8) — only runs whose workflow (current definition) the caller may see,
-      // filtered IN SQL before the LIMIT; a run whose workflow row is gone is visible only to an unrestricted scope.
-      const ids = await visibleWorkflowIds(scopeOf(ctx.user));
-      const runs = await d
-        .select()
-        .from(orchestrationRuns)
-        .where(
-          and(
-            input?.workflowId != null ? eq(orchestrationRuns.workflowId, input.workflowId) : undefined,
-            ids === null ? undefined : inArray(orchestrationRuns.workflowId, ids.length ? ids : [-1]),
-          ),
-        )
-        .orderBy(desc(orchestrationRuns.createdAt))
-        .limit(input?.limit ?? 100);
+      // doc 81 Đợt 5 task E2 — only runs the caller may see; a run whose workflow row is gone is visible only to an
+      // unrestricted scope. doc 81 Đợt 7 task I3 — by the definition VERSIONS each run executed (not the workflow's current
+      // head): foeEngine.listVisibleRuns (a full page, newest first).
+      const runs = await listVisibleRuns({ workflowId: input?.workflowId ?? undefined, limit: input?.limit ?? 100 }, scopeOf(ctx.user));
       // doc 80 Đợt 1 Task 4 (ORC-13) — additive `dispatch`: were this run's commands simulated
       // (DRY-RUN) or really sent? Derived from the step results foeEngine records
       // ({routedTo, status, simulated}); one extra query over the listed run ids.
@@ -274,7 +268,8 @@ export const orchestrationRouter = router({
     .query(async ({ input, ctx }) => {
       const view = await getRun(input.runId);
       // doc 81 Đợt 5 task E2 — out of scope ⇒ the SAME NOT_FOUND as a missing run (scope resolved for both).
-      const visible = await runVisibleTo({ workflowId: view?.run.workflowId ?? -1 }, scopeOf(ctx.user));
+      // doc 81 Đợt 7 I3 — by the versions the run executed (view.run.paramsJson)
+      const visible = await runVisibleTo(view?.run ?? { workflowId: -1, paramsJson: null }, scopeOf(ctx.user));
       if (!view || !visible) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowRun" }, `Run ${input.runId} not found`);
       }
@@ -542,13 +537,20 @@ export const orchestrationRouter = router({
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Source workflow not found");
       }
 
-      const newRef = input.newRef.trim();
+      // doc 81 Đợt 7 task I3 — WORKFLOW-REF PROBING closed: a ref taken by a workflow the caller CANNOT see answers exactly
+      // like a free ref. A taken ref the caller can see ⇒ ENTITY_DUPLICATE, as before. A caller with a restricted factory
+      // scope always creates the copy under a server-made unique ref (`<ref>~<8 hex>`, foeEngine.refWithSuffix) — taken or
+      // free alike —, so the answer never says which. An unrestricted caller keeps plain refs (it sees every workflow).
+      const scopeD = scopeOf(ctx.user);
+      const wantedRef = input.newRef.trim();
       const [clash] = await d
         .select()
         .from(orchestrationWorkflows)
-        .where(eq(orchestrationWorkflows.ref, newRef))
+        .where(eq(orchestrationWorkflows.ref, wantedRef))
         .limit(1);
-      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workflow" }, `A workflow with ref "${newRef}" already exists.`);
+      const clashVisible = await definitionVisibleTo(clash?.definitionJson as WorkflowDefinition | undefined, scopeD); // resolved for a free ref too
+      if (clash && clashVisible) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workflow" }, `A workflow with ref "${wantedRef}" already exists.`);
+      const newRef = (await scopeCreatesSuffixedRefs(scopeD)) ? refWithSuffix(wantedRef) : wantedRef;
 
       // Re-stamp the definition's own ref so the stored JSON stays consistent.
       const def = {

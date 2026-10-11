@@ -1586,8 +1586,10 @@ export default function OrchestrationStudio() {
         return t("studio.deployRobotDisabled", "Not deployed: motion step(s) {{steps}} name a robot that is not enabled. Enable the robot or pick an enabled one, then deploy again.", { steps });
       case "outOfScope": // doc 81 Đợt 5 task E2 — deploy covers EVERY step, stop steps included
         return t("studio.deployOutOfScope", "Not deployed: step(s) {{steps}} touch a machine, robot or adapter outside your factory scope (a deploy covers every step, stop steps included). Ask someone whose scope covers them to deploy it.", { steps });
-      case "refOutOfScope": // doc 81 Đợt 5 task E2 — the ref belongs to another factory's workflow
-        return t("studio.deployRefOutOfScope", "Not deployed: a workflow with this ref already exists outside your factory scope. Use another ref.");
+      case "refOutOfScope": // doc 81 Đợt 5 task E2 / Đợt 7 I3 — a workflow you can see, touching targets outside your scope
+        return t("studio.deployRefOutOfScope", "Not deployed: the workflow with this ref touches machines or robots outside your factory scope (stop steps included) — only someone whose scope covers them can redeploy it. Use another ref.");
+      case "scopeUnverified": // doc 81 Đợt 7 I3 — the scope over the existing workflow of this ref could not be decided
+        return t("studio.deployScopeUnverified", "Not deployed: your factory scope over the existing workflow with this ref could not be verified (for example a device connection is down). Retry in a moment.");
       case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
         return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
       default:
@@ -1596,8 +1598,19 @@ export default function OrchestrationStudio() {
   };
 
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
-    onSuccess: (r) => {
-      if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
+    onSuccess: (r, vars) => {
+      if (r?.ok) {
+        toast.success(t("studio.deployed", "Workflow saved / deployed"));
+        // doc 81 Đợt 7 task I3 — a workflow CREATED by a user with a factory scope is stored under a server-made unique ref:
+        // the editor switches to it (a later deploy updates THIS workflow instead of creating another one).
+        const sent = (vars?.definition as { ref?: unknown } | undefined)?.ref;
+        if (typeof r.ref === "string" && r.ref && r.ref !== sent) {
+          const stored = r.ref;
+          setDef((prev) => (prev.ref === sent ? { ...cloneDef(prev), ref: stored } : prev));
+          toast.info(t("studio.deployedAsRef", "Saved under the ref {{ref}} — refs of workflows created within a factory scope are made unique by the server. Use this ref from now on.", { ref: stored }));
+        }
+        void workflowsQ.refetch();
+      }
       else toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
     onError: (e) => toastTrpcError(e),

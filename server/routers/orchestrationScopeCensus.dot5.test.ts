@@ -118,7 +118,8 @@ export function unscopedEngineEntries(src: string, allow: Record<string, string>
   return engineEntries(src)
     .filter(({ name, params, body }) => {
       if (!/\b(runId|workflowId|workflowRef|runIds)\b/.test(params)) return false;
-      const scoped = /\b(scopeFor|definitionVisibleTo|runVisibleTo|scopeVerdict|boundedRunScopeDecision|filterRunsVisibleTo)\(/.test(body);
+      // 2026-10-11 doc 81 Đợt 7 I3 — + filterRunsVisibleWith (the judge-taking form of filterRunsVisibleTo)
+      const scoped = /\b(scopeFor|definitionVisibleTo|runVisibleTo|scopeVerdict|boundedRunScopeDecision|filterRunsVisibleTo|filterRunsVisibleWith)\(/.test(body);
       return !scoped && !(name in allow);
     })
     .map((e) => e.name);
@@ -166,19 +167,23 @@ const CLASSIFIED: Record<string, Kind> = {
   "server/routers/orchestrationRouter.ts": { kind: "router" },
   "server/routers/oversightRouter.ts": {
     kind: "router",
+    // 2026-10-11 doc 81 Đợt 7 task I3 — run visibility follows the definition VERSIONS a run executed: the hub reads the
+    // pending RUN ids the caller may see (resolveVisiblePendingRunIds), no longer workflow ids (by head). Re-pinned: the
+    // same three required usages, on run ids. (§4 still replays the base, which lacks all three.)
     requires: [
-      /resolveVisibleWorkflowIds\(resolveUserFoeScope\(\{ id: ctx\.user\.id/,
-      /orchScope\.ok \? fetchOrchestrationHeld\(d, orchestrationWorkflowIds\)/,
-      /orchestrationWorkflowIds, \/\/ E fix 1/,
+      /resolveVisiblePendingRunIds\(resolveUserFoeScope\(\{ id: ctx\.user\.id/,
+      /orchScope\.ok \? fetchOrchestrationHeld\(d, orchestrationRunIds\)/,
+      /orchestrationRunIds, \/\/ E fix 1/,
     ],
   },
   "server/services/edge/edgeCoordinator.ts": { kind: "allow", reason: "service: run-id entries (assignRun / syncRunResult / listRunsForNode) are reached only through edgeRuntimeRouter + api/v1 /edge/sync, both checked here" },
   "server/services/edge/edgeRuntime.ts": { kind: "allow", reason: "runs ON an edge host (no caller identity); executeAssignedRun has no production caller" },
   "server/services/engineeringAssignment/assignmentService.ts": {
     kind: "service",
+    // 2026-10-11 doc 81 Đợt 7 task I3 — "mine" runs filtered by visible RUN ids (executed versions), not workflow ids.
     requires: [
-      /export async function fetchMineSummary\([\s\S]*?orchestrationWorkflowIds: number\[\] \| null/,
-      /export async function fetchMineCategory\([\s\S]*?orchestrationWorkflowIds: number\[\] \| null/,
+      /export async function fetchMineSummary\([\s\S]*?orchestrationRunIds: number\[\] \| null/,
+      /export async function fetchMineCategory\([\s\S]*?orchestrationRunIds: number\[\] \| null/,
       /\$\{runScopeSql\}/,
     ],
   },
@@ -203,6 +208,9 @@ const ALLOW_ENGINE: Record<string, string> = {
   autoResumeInterruptedRuns: "boot-time system sweep of runs interrupted by a restart (no caller)",
   runIdVisibleTo: "IS the shared check",
   visibleRunIds: "IS the shared check (batch)",
+  // 2026-10-11 doc 81 Đợt 7 task I3
+  runVisibilityDefinitions:
+    "a LOADER of the definitions a run executed (no caller identity, returns no run to anyone): its callers are the shared checks above (filterRunsVisibleTo / runScopeDecision) and rosterScope.runAssigneeVisibilitySql, reached only after the router's runIdVisibleTo",
 };
 
 describe("doc 81 Đợt 5 E2 fix (R-5-d) + E fix 1 — every orchestration id-taking entry point carries the scope check", () => {

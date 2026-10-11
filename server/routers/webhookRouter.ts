@@ -21,8 +21,15 @@ const WEBHOOK_EVENTS = [
   "system.error",
 ] as const;
 
+/**
+ * doc 81 Đợt 7 task I3 — who may receive one event: called once per matching subscriber; only `true` delivers. A throw or
+ * any other answer ⇒ NOT delivered (fail-closed: when the audience cannot be decided, the event stays in the box).
+ * Without an audience (the existing events) every matching subscriber receives it, as before.
+ */
+export type WebhookAudience = (webhook: { id: number; createdBy: number }) => Promise<boolean>;
+
 // Send webhook helper (exported for use by other modules)
-export async function sendWebhookEvent(eventType: string, payload: Record<string, any>) {
+export async function sendWebhookEvent(eventType: string, payload: Record<string, any>, audience?: WebhookAudience) {
   const db = await getDb();
   if (!db) return;
 
@@ -31,10 +38,24 @@ export async function sendWebhookEvent(eventType: string, payload: Record<string
     const webhooks = await db.select().from(webhookConfigs)
       .where(eq(webhookConfigs.isEnabled, true));
 
-    const matchingWebhooks = webhooks.filter(wh => {
+    const subscribed = webhooks.filter(wh => {
       const events = wh.events as string[];
       return events.includes(eventType) || events.includes("*");
     });
+    // doc 81 Đợt 7 I3 — a scoped event reaches only the subscribers its audience admits (fail-closed per subscriber).
+    const matchingWebhooks = audience
+      ? (
+          await Promise.all(
+            subscribed.map(async (wh) => {
+              try {
+                return (await audience({ id: wh.id, createdBy: wh.createdBy })) === true ? wh : null;
+              } catch {
+                return null;
+              }
+            }),
+          )
+        ).filter((wh): wh is (typeof subscribed)[number] => wh !== null)
+      : subscribed;
 
     for (const webhook of matchingWebhooks) {
       // Fire and forget - don't block the caller

@@ -68,7 +68,7 @@ import { isInterlockEngineEnabled } from "../services/interlock/interlockEngine"
 // doc 81 Đợt 3 Task 4 — "Của tôi": vị từ CHỜ DUYỆT dùng chung (một nguồn cho cả "Chờ duyệt" lẫn "Của tôi") +
 // đếm theo phân công active (bảng `engineering_assignments`, mig 0363).
 import { PENDING_WHERE, fetchMineSummary } from "../services/engineeringAssignment/assignmentService";
-import { resolveVisibleWorkflowIds } from "../services/orchestration/foe/foeEngine"; // doc 81 Đợt 5 task E fix 1/2
+import { resolveVisiblePendingRunIds } from "../services/orchestration/foe/foeEngine"; // doc 81 Đợt 5 task E fix 1/2; Đợt 7 I3
 import { resolveUserFoeScope } from "../services/orchestration/foe/foeScope";
 import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, type AssignablePendingKey, type AssignableEntityType } from "@shared/engineeringAssignment";
 
@@ -224,13 +224,14 @@ async function fetchInterlockEventsOpen(d: Db, showNames: boolean): Promise<Cate
 }
 
 // ── orchestration run đang giữ / chờ xác nhận (KHÔNG đổi hành vi) ──────────────
-async function fetchOrchestrationHeld(d: Db, workflowIds: number[] | null): Promise<CategoryCount> {
+async function fetchOrchestrationHeld(d: Db, runIds: number[] | null): Promise<CategoryCount> {
   try {
-    // doc 81 Đợt 5 task E fix 1 (R-5-d, review #2) — count AND samples only over runs whose workflow the caller may see
-    // (`visibleWorkflowIds`, null = unrestricted); filtered in SQL, so the count is the caller's count.
+    // doc 81 Đợt 5 task E fix 1 (R-5-d, review #2) — count AND samples only over runs the caller may see; filtered in SQL,
+    // so the count is the caller's count. doc 81 Đợt 7 task I3 — by RUN (the pending runs visible by the definition versions
+    // they executed — foeEngine.resolveVisiblePendingRunIds), no longer by the workflow's current head (null = unrestricted).
     const cond = and(
       PENDING_WHERE.orchestration_run, // status IN (held, awaiting_confirm)
-      workflowIds === null ? undefined : inArray(orchestrationRuns.workflowId, workflowIds.length ? workflowIds : [-1]),
+      runIds === null ? undefined : inArray(orchestrationRuns.id, runIds.length ? runIds : [-1]),
     );
     const [{ c }] = await d.select({ c: sql<number>`count(*)::int` }).from(orchestrationRuns).where(cond);
     const rows = await d
@@ -442,11 +443,12 @@ export const oversightRouter = router({
         canSeeNamesSafe(ctx.user.id, ctx.user.role, "machine_control"),
         canSeeNamesSafe(ctx.user.id, ctx.user.role, "interlock"),
         // doc 81 Đợt 5 task E fix 1 (R-5-d) — the orchestration factory scope of the caller (ctx.user only).
-        resolveVisibleWorkflowIds(resolveUserFoeScope({ id: ctx.user.id, role: String(ctx.user.role) })),
+        // doc 81 Đợt 7 task I3 — as the PENDING RUNS it may see (by the definition versions they executed).
+        resolveVisiblePendingRunIds(resolveUserFoeScope({ id: ctx.user.id, role: String(ctx.user.role) })),
       ]);
       // E fix 2 (review N4) — scope undecidable ⇒ the orchestration counts are DEGRADED (not a misleading 0); the queries
-      // still run fail-closed (no workflow ⇒ no run) so nothing outside the scope can show.
-      const orchestrationWorkflowIds: number[] | null = orchScope.ok ? orchScope.ids : [];
+      // still run fail-closed (no run id ⇒ no run) so nothing outside the scope can show.
+      const orchestrationRunIds: number[] | null = orchScope.ok ? orchScope.ids : [];
 
       const [
         recipes,
@@ -463,7 +465,7 @@ export const oversightRouter = router({
         fetchRecipesActiveUnapproved(d, showMachineControlNames),
         fetchInterlockRulesPending(d, showInterlockNames),
         fetchInterlockEventsOpen(d, showInterlockNames),
-        orchScope.ok ? fetchOrchestrationHeld(d, orchestrationWorkflowIds) : Promise.resolve(degradedCategory(new Error("orchestration scope not verified"), "orchestration")),
+        orchScope.ok ? fetchOrchestrationHeld(d, orchestrationRunIds) : Promise.resolve(degradedCategory(new Error("orchestration scope not verified"), "orchestration")),
         fetchSafetyUnaudited(d),
         fetchDeadlocks(),
         fetchEcnPending(d, showMachineControlNames),
@@ -486,7 +488,7 @@ export const oversightRouter = router({
         d,
         ctx.user.id,
         Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [t, showNamesFor[ASSIGNABLE[t].pendingKey]])) as Record<AssignableEntityType, boolean>,
-        orchestrationWorkflowIds, // E fix 1 — "mine" runs filtered by the caller's orchestration scope
+        orchestrationRunIds, // E fix 1 — "mine" runs filtered by the caller's orchestration scope (Đợt 7 I3: by run)
       );
       const mine = Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [ASSIGNABLE[t].pendingKey, mineByType[t]])) as MineSummary;
       // E fix 2 (review N4) — the "mine" orchestration count is degraded too when the scope could not be decided.

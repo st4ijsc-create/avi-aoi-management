@@ -48,7 +48,7 @@ vi.mock("@/components/orchestration/WorkflowGraphCanvas", () => ({
 
 // ── "Server" giả ───────────────────────────────────────────────────────────────────────────────
 type Row = Record<string, unknown>;
-interface MutOpts { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void }
+interface MutOpts { onSuccess?: (r: unknown, vars?: unknown) => void; onError?: (e: unknown) => void }
 const srv = vi.hoisted(() => ({
   status: { enabled: true, simGateRequired: false } as Record<string, unknown> | undefined,
   statusLoading: false,
@@ -133,8 +133,8 @@ vi.mock("@/lib/trpc", () => {
           if (key in srv.results) {
             const r = srv.results[key];
             void Promise.resolve().then(() => {
-              opts.onSuccess?.(r);
-              callOpts?.onSuccess?.(r);
+              opts.onSuccess?.(r, input); // (data, variables) — as tRPC / react-query call it
+              callOpts?.onSuccess?.(r, input);
             });
           }
         },
@@ -585,7 +585,7 @@ describe("Orchestration P2 — Lịch sử phiên bản: VersionHistoryPanel + R
     expect(srv.refetched).toEqual(expect.arrayContaining(["orchestration.listWorkflows", "orchestration.listVersions"]));
   });
 
-  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"], ["outOfScope", "deployOutOfScope"], ["refOutOfScope", "deployRefOutOfScope"]] as const) { // + doc 81 Đợt 5 E2
+  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"], ["outOfScope", "deployOutOfScope"], ["refOutOfScope", "deployRefOutOfScope"], ["scopeUnverified", "deployScopeUnverified"]] as const) { // + doc 81 Đợt 5 E2, Đợt 7 I3
     it(`final wave G2: ROLLBACK refused with ${reason} ⇒ the translated sentence naming the steps (no raw server English)`, async () => {
       const user = userEvent.setup();
       srv.results["orchestration.rollbackWorkflow"] = { ok: false, enabled: true, reason, stepIds: ["s1", "s2"], message: "RAW server text" };
@@ -712,6 +712,38 @@ describe("Orchestration P2 — tiêu đề sửa tại chỗ", () => {
       simToken: undefined,
       totpCode: "654321",
     });
+  });
+
+  it("★ doc 81 Đợt 7 I3: the server stored the new workflow under ANOTHER ref (factory scope) ⇒ told, and the editor switches to it (Run uses it)", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.deployWorkflow"] = { ok: true, enabled: true, workflowId: 5, ref: "line-c~0a1b2c3d", version: 1 };
+    render(<OrchestrationStudio />);
+    await user.click(within(leftPanel()).getByRole("button", { name: S.type.delay }));
+    await user.click(screen.getByRole("button", { name: S.editRef }));
+    await user.type(screen.getByRole("textbox", { name: S.editRef }), "line-c{Enter}");
+    await user.click(screen.getByRole("button", { name: S.deploy }));
+    const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
+    fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "654321" } });
+    await waitFor(() => expect(toastSpy.info).toHaveBeenCalled());
+    expect(String((toastSpy.info as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.deployedAsRef.replace("{{ref}}", "line-c~0a1b2c3d"));
+    await waitFor(() => expect(screen.getByRole("button", { name: S.editRef })).toHaveTextContent("line-c~0a1b2c3d"));
+    await user.click(screen.getByRole("button", { name: S.run }));
+    expect(calls("orchestration.startRun")).toEqual([{ workflowRef: "line-c~0a1b2c3d", params: {} }]);
+  });
+
+  it("doc 81 Đợt 7 I3 control: the server kept the submitted ref ⇒ no switch, no extra notice", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.deployWorkflow"] = { ok: true, enabled: true, workflowId: 5, ref: "line-c", version: 1 };
+    render(<OrchestrationStudio />);
+    await user.click(within(leftPanel()).getByRole("button", { name: S.type.delay }));
+    await user.click(screen.getByRole("button", { name: S.editRef }));
+    await user.type(screen.getByRole("textbox", { name: S.editRef }), "line-c{Enter}");
+    await user.click(screen.getByRole("button", { name: S.deploy }));
+    const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
+    fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "654321" } });
+    await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
+    expect(toastSpy.info).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: S.editRef })).toHaveTextContent(/^line-c$/);
   });
 
   it("mã (ref) trống ⇒ Chạy khoá; có mã ⇒ Chạy gọi startRun({workflowRef, params:{}}) MỘT lần, không hộp thoại", async () => {

@@ -14,7 +14,9 @@ const ADMIN_CTX = { user: { id: 990_852_102, role: "admin", name: "approver", tw
 let sql: ReturnType<typeof postgres>;
 const saved = { FOE_ENABLED: process.env.FOE_ENABLED };
 
-const def = (ms: number) => ({ ref: REF, name: "DefHash", steps: [{ id: "g", type: "hitl_gate" as const, prompt: "approve" }, { id: "d", type: "delay" as const, ms }] });
+const def = (ms: number) => ({ ref: storedRef || REF, name: "DefHash", steps: [{ id: "g", type: "hitl_gate" as const, prompt: "approve" }, { id: "d", type: "delay" as const, ms }] });
+/** doc 81 Đợt 7 task I3 — OWNER has a factory scope: its new workflow is stored under `<REF>~<hex>`; later deploys use it. */
+let storedRef = "";
 
 describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the definition the screen loaded (CSDL _test)", () => {
   beforeAll(async () => {
@@ -25,14 +27,14 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the 
 
   afterAll(async () => {
     if (sql) {
-      const runs = await sql`SELECT id FROM orchestration_runs WHERE "workflowRef" = ${REF}`;
+      const runs = await sql`SELECT id FROM orchestration_runs WHERE "workflowRef" LIKE ${REF + "%"}`;
       const ids = runs.map((r) => Number(r.id));
       if (ids.length) {
         await sql`DELETE FROM orchestration_run_steps WHERE "runId" IN ${sql(ids)}`;
         await sql`DELETE FROM orchestration_runs WHERE id IN ${sql(ids)}`;
       }
-      await sql`DELETE FROM orchestration_workflow_versions WHERE "workflowId" IN (SELECT id FROM orchestration_workflows WHERE ref = ${REF})`.catch(() => undefined);
-      await sql`DELETE FROM orchestration_workflows WHERE ref = ${REF}`;
+      await sql`DELETE FROM orchestration_workflow_versions WHERE "workflowId" IN (SELECT id FROM orchestration_workflows WHERE ref LIKE ${REF + "%"})`.catch(() => undefined);
+      await sql`DELETE FROM orchestration_workflows WHERE ref LIKE ${REF + "%"}`;
       await sql.end();
     }
     if (saved.FOE_ENABLED === undefined) delete process.env.FOE_ENABLED;
@@ -44,8 +46,11 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the 
 
   it("★ match: the hash getRun returned ⇒ the approval goes through, run completes, gate recorded", async () => {
     const { deployWorkflow, startRun } = await engine();
-    expect((await deployWorkflow(def(1), OWNER)).ok).toBe(true);
-    const started = await startRun(REF, {}, OWNER);
+    const dep = await deployWorkflow(def(1), OWNER);
+    expect(dep.ok).toBe(true);
+    storedRef = dep.ref!;
+    expect(storedRef).toMatch(new RegExp(`^${REF}~[0-9a-f]{8}$`)); // doc 81 Đợt 7 I3
+    const started = await startRun(storedRef, {}, OWNER);
     expect(started.status).toBe("awaiting_confirm");
     const view = await (await router()).getRun({ runId: started.runId! });
     expect(view?.defHash).toMatch(/^[0-9a-f]{64}$/);
@@ -57,8 +62,8 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the 
 
   it("★ mismatch: redeploy after the screen loaded ⇒ CONFLICT definitionChanged, run still awaiting, gate untouched; reload ⇒ approval works", async () => {
     const { deployWorkflow, startRun } = await engine();
-    expect((await deployWorkflow(def(2), OWNER)).ok).toBe(true);
-    const started = await startRun(REF, {}, OWNER);
+    expect((await deployWorkflow(def(2), OWNER)).ref).toBe(storedRef); // a visible workflow is UPDATED under its ref
+    const started = await startRun(storedRef, {}, OWNER);
     const seenView = (await (await router()).getRun({ runId: started.runId! }))!;
     const seen = seenView.defHash!;
     expect((await deployWorkflow(def(3), OWNER)).ok).toBe(true); // redeploy while the approver looks at the old one
@@ -79,7 +84,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the 
 
   it("an approval WITHOUT expectedDefHash is refused at the input (BAD_REQUEST); a rejection does not need it", async () => {
     const { startRun } = await engine();
-    const started = await startRun(REF, {}, OWNER);
+    const started = await startRun(storedRef, {}, OWNER);
     await expect((await router()).resumeRun({ runId: started.runId!, approved: true, expectedStepId: "g" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     // doc 81 Đợt 7 task I2 — nor without expectedBindingDigest (the screen's device-configuration binding)
     const view = (await (await router()).getRun({ runId: started.runId! }))!;

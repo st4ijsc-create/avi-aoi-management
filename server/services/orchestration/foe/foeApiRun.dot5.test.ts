@@ -90,11 +90,12 @@ describe("doc 81 Đợt 5 task E1 — an API-started run never actuates a non-ST
   it("★ the marker is written server-side in BOTH places; a user-started run has none; a caller cannot lift it", async () => {
     await deployWorkflow(GATED_OT, OWNER);
     const a = await apiStart("api-ot", { [FOE_API_RUN_PARAM]: false, x: 1 }); // a caller trying to say "not API"
-    expect(runRow(a.runId!).paramsJson).toEqual({ x: 1, [FOE_API_RUN_PARAM]: true });
+    // (+ doc 81 Đợt 7 I3: the server-written record of the executed definition version)
+    expect(runRow(a.runId!).paramsJson).toEqual({ x: 1, [FOE_API_RUN_PARAM]: true, __foeDefVersions: [1] });
     expect(runRow(a.runId!).contextJson).toMatchObject({ startedViaApi: true });
     expect(runRow(a.runId!).startedBy).toBe(OWNER.id);
     const u = await startRun("api-ot", { x: 1 }, OWNER);
-    expect(runRow(u.runId!).paramsJson).toEqual({ x: 1 });
+    expect(runRow(u.runId!).paramsJson).toEqual({ x: 1, __foeDefVersions: [1] });
     expect(runStartedViaApi(runRow(u.runId!))).toBe(false);
     // a non-user principal starting on behalf of an owner is an API start even if the route forgot `viaApi`
     const b = await startRun("api-ot", {}, API, { ownerUserId: OWNER.id });

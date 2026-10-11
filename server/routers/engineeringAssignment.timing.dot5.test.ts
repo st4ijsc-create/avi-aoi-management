@@ -66,6 +66,11 @@ vi.mock("../services/orchestration/foe/foeEngine", () => ({
     return true;
   }),
   visibleRunIds: vi.fn(async () => new Set()),
+  // doc 81 Đợt 7 I3 — the run rule's definitions (rosterScope.runAssigneeVisibilitySql reads them through the engine)
+  runVisibilityDefinitions: vi.fn(async (_d: unknown, runs: unknown[]) => {
+    rec.calls.push("runVisibilityDefinitions");
+    return runs.map(() => [{ ref: "x", name: "x", steps: [] }]);
+  }),
 }));
 vi.mock("../services/engineeringAssignment/assignGate", () => ({ requireAssignGate: vi.fn(async () => undefined), requireLicense: vi.fn(async () => undefined) }));
 vi.mock("../db/hierarchy", async (importOriginal) => {

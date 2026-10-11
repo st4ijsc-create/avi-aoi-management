@@ -36,6 +36,7 @@ import {
 import { idsTrongPhamVi } from "../../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "../../routers/_phamViNguoiXem";
 import { collectTargets } from "../orchestration/foe/foeScope";
+import { runVisibilityDefinitions } from "../orchestration/foe/foeEngine"; // doc 81 Đợt 7 I3 — THE run rule (executed versions)
 import { verifiedStopStepIds } from "../orchestration/foe/foeStepClass";
 import { validateWorkflow, type MachineForValidation, type WorkflowDefinition } from "../orchestration/foe/workflowModel";
 import type { AssignableEntityType } from "@shared/engineeringAssignment";
@@ -224,15 +225,18 @@ async function runTargetFactorySets(d: DbOrTx, def: WorkflowDefinition): Promise
  * thoả đích đó trong phạm vi của họ; admin luôn qua. Run / định nghĩa thiếu ⇒ chỉ admin.
  */
 export async function runAssigneeVisibilitySql(d: DbOrTx, runId: number): Promise<SQL> {
+  // doc 81 Đợt 7 task I3 — THE run rule of the engine: the definitions of the versions the run EXECUTED
+  // (foeEngine.runVisibilityDefinitions); the assignee must see EVERY non-STOP target of EVERY one of them (the factory
+  // sets of all versions together). None usable (row gone, a version without snapshot) ⇒ only an admin, as before.
   const [r] = await d
-    .select({ def: orchestrationWorkflows.definitionJson })
+    .select({ workflowId: orchestrationRuns.workflowId, paramsJson: orchestrationRuns.paramsJson })
     .from(orchestrationRuns)
-    .innerJoin(orchestrationWorkflows, eq(orchestrationWorkflows.id, orchestrationRuns.workflowId))
     .where(eq(orchestrationRuns.id, runId))
     .limit(1);
-  const def = r?.def as WorkflowDefinition | undefined;
-  if (!def || !Array.isArray(def.steps)) return sql`${users.role} = 'admin'`;
-  const sets = await runTargetFactorySets(d, def);
+  const [defs] = r ? await runVisibilityDefinitions(d as never, [r]) : [null];
+  if (!defs || defs.length === 0) return sql`${users.role} = 'admin'`;
+  const sets: number[][] = [];
+  for (const def of defs) sets.push(...(await runTargetFactorySets(d, def)));
   const seen = new Set<string>();
   const parts: SQL[] = [];
   for (const set of sets) {
