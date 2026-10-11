@@ -275,7 +275,7 @@ function scripted(c: SafetyPlcConfig, steps: Step[]) {
   };
   return { b, asked };
 }
-function mk(c: SafetyPlcConfig, steps: Step[], durable: PollStateRow | null = null) {
+function mk(c: SafetyPlcConfig, steps: Step[], durable: PollStateRow | null = null, monoNow?: () => number) {
   const recs: Array<{ input: RecordSafetyEventInput }> = [];
   const saves: PollStateRow[] = [];
   const { b, asked } = scripted(c, steps);
@@ -287,6 +287,7 @@ function mk(c: SafetyPlcConfig, steps: Step[], durable: PollStateRow | null = nu
     isTrustApproved: async () => true,
     leader: { acquire: async () => true, held: async () => true, release: async () => undefined },
     state: { load: async () => durable, save: async (r) => void saves.push(JSON.parse(JSON.stringify(r))), list: async () => [], claimStaleAlarm: async () => false },
+    ...(monoNow ? { monoNow } : {}),
   });
   return { p, recs, saves, asked };
 }
@@ -294,9 +295,8 @@ const types = (recs: Array<{ input: RecordSafetyEventInput }>) => recs.map((r) =
 
 describe("U fix 1 (I4) — the optional PLC heartbeat tag (a value frozen at the source)", () => {
   it("★ heartbeat keeps changing ⇒ normal; frozen beyond its bound ⇒ 'plc_offline' (reason names the heartbeat); changing again ⇒ back online", async () => {
-    let t = 1_000_000;
-    vi.spyOn(Date, "now").mockImplementation(() => t);
-    const { p, recs, asked } = mk(cfg(), [{ hb: 1 }, { hb: 2 }, { hb: 2 }, { hb: 2 }, { hb: 3 }, { hb: 4 }, { hb: 5 }]);
+    let t = 1_000_000; // re-pinned 2026-10-12 (U fix 2 N1): the heartbeat silence runs on the injected MONOTONIC clock
+    const { p, recs, asked } = mk(cfg(), [{ hb: 1 }, { hb: 2 }, { hb: 2 }, { hb: 2 }, { hb: 3 }, { hb: 4 }, { hb: 5 }], null, () => t);
     await p.refreshConfigs();
     for (const dt of [0, 1000, 1000, 2500, 1000, 1000, 1000]) {
       t += dt;
@@ -304,7 +304,7 @@ describe("U fix 1 (I4) — the optional PLC heartbeat tag (a value frozen at the
     }
     expect(asked[0]).toMatchObject({ withHeartbeat: true, withLatch: true });
     expect(types(recs)).toEqual(["plc_offline", "plc_online"]);
-    expect(String(recs[0].input.notes)).toMatch(/PLC heartbeat tag unchanged for 4 s \(bound 3 s\)/); // never below 3 poll intervals
+    expect(String(recs[0].input.notes)).toMatch(/PLC heartbeat tag unchanged for 4 s \(bound 1 s\)/); // re-pinned 2026-10-12 (U fix 2 N5): the bound is maxSilentMs itself
   });
 
   it("heartbeat unreadable ⇒ 'plc_offline', never ok", async () => {

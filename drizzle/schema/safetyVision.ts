@@ -179,7 +179,7 @@ export interface SafetyPlcStatusMap {
   /**
    * doc 81 Đợt 9 U fix 1 (review I4) — OPTIONAL PLC HEARTBEAT tag (a counter / toggle the PLC program changes continuously).
    * A value frozen AT THE SOURCE (PLC program stopped, gateway cache) is invisible to any read or subscription; a heartbeat
-   * that has not changed for maxSilentMs (default 10 s, [1000, 60000], never below 3 × the poll interval) ⇒ the config is
+   * that has not changed between two reads more than maxSilentMs apart (default 10 s, [1000, 60000]) ⇒ the config is
    * UNDECIDABLE ⇒ "plc_offline" (blind, alarmed). READ only. Covered by the approval digest. jsonb field — no migration.
    */
   heartbeat?: { address?: string; dataType?: "bool" | "int" | "float"; maxSilentMs?: number };

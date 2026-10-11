@@ -55,7 +55,7 @@ import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEv
 import { isPlcConfigTrustApproved, plcTrustMaterial, plcTrustDigest } from "./safetyPlcTrust";
 import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLeader";
 import { redactEndpoint, safeBackendLabel } from "./plcRedact";
-import { OpcuaSubscriptionSafetyPlcBackend, type SafetyPlcBatch, type SafetyPlcReadMode } from "./safetyPlcOpcuaSubscription";
+import { OpcuaSubscriptionSafetyPlcBackend, monotonicNow, type SafetyPlcBatch, type SafetyPlcReadMode } from "./safetyPlcOpcuaSubscription";
 import { pgPollStateStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollStateStore, type PollLink } from "./safetyPlcPollerHealth";
 
 /** Flag — default OFF. (Defined once in the health leaf module so the source-health panel reads the SAME predicate.) */
@@ -202,6 +202,11 @@ export interface PollerDeps {
   state: PollStateStore;
   /** fix scan 2 — bound of one event insert / approval lookup (ms). */
   recordTimeoutMs: number;
+  /**
+   * doc 81 Đợt 9 U fix 2 (re-review N1) — the MONOTONIC clock of local liveness timers (the heartbeat silence). Default
+   * performance.now: a wall-clock step can neither suspend nor stretch it. A test seam, monotonic by contract.
+   */
+  monoNow: () => number;
 }
 
 /** fix scan 2 — a transition waiting to be recorded (re-baseline captured at detection). */
@@ -276,7 +281,11 @@ interface ConfigState {
   lostReason: string | null;
   /** doc 81 Đợt 9 U fix 1 (I3) — since when the e-stop latch is set (local ms; persisted on the DB clock); null = not set. */
   latchSetAt: number | null;
-  /** doc 81 Đợt 9 U fix 1 (I4) — the PLC heartbeat: last value seen (JSON) and when it last CHANGED (local ms). */
+  /**
+   * doc 81 Đợt 9 U fix 1 (I4) — the PLC heartbeat: last value seen (JSON) and when it last CHANGED (MONOTONIC ms — U fix 2 N1).
+   * Not persisted: after a restart the FIRST read is the baseline (U fix 2 N5) and the very next read must show a change once
+   * maxSilentMs has passed.
+   */
   hbValue: string | null;
   hbChangedAt: number | null;
 }
@@ -325,11 +334,16 @@ function heartbeatMapped(cfg: SafetyPlcConfig): boolean {
   return typeof a === "string" && a.length > 0;
 }
 
-/** The heartbeat silence bound: statusMap.heartbeat.maxSilentMs (default 10 s, [1000, 60000]), never below 3 poll intervals. */
-export function heartbeatMaxSilentMs(cfg: SafetyPlcConfig, intervalMs: number): number {
+/**
+ * The heartbeat silence bound: statusMap.heartbeat.maxSilentMs (default 10 s, [1000, 60000]). U fix 2 (re-review N5): no
+ * longer stretched to 3 poll intervals — a heartbeat (a counter) that did not change between two reads more than
+ * maxSilentMs apart is frozen, so after a restart (baseline = the first read) a frozen heartbeat goes offline at the first
+ * read after maxSilentMs (was up to 3 × the interval, 180 s at 60 s). A toggle sampled at a multiple of its period can look
+ * frozen — use a counter (guide §6.2).
+ */
+export function heartbeatMaxSilentMs(cfg: SafetyPlcConfig, _intervalMs?: number): number {
   const own = (cfg.statusMap as SafetyPlcStatusMap | null)?.heartbeat?.maxSilentMs;
-  const base = typeof own === "number" && Number.isFinite(own) ? clamp(Math.round(own), 1000, 60_000) : 10_000;
-  return Math.max(base, 3 * intervalMs);
+  return typeof own === "number" && Number.isFinite(own) ? clamp(Math.round(own), 1000, 60_000) : 10_000;
 }
 
 /** doc 81 Đợt 9 U1 — a backend that delivers queued value changes (the OPC-UA subscription backend). */
@@ -396,6 +410,7 @@ export class SafetyPlcPoller {
       leader: deps.leader ?? pgPollerLeaderGate(),
       state: deps.state ?? pgPollStateStore(),
       recordTimeoutMs: deps.recordTimeoutMs ?? SAFETY_PLC_RECORD_TIMEOUT_MS,
+      monoNow: deps.monoNow ?? monotonicNow,
     };
   }
 
@@ -652,7 +667,7 @@ export class SafetyPlcPoller {
         if (this.states.get(id) !== st) return; // config changed / removed / poller stopped meanwhile
         // doc 81 Đợt 9 U1 — a subscription delivers every queued value change as its own read, IN ORDER: each one is a
         // transition candidate (press + release inside one interval ⇒ both events); all are queued, then drained once.
-        const pollAt = Date.now();
+        const pollAt = this.deps.monoNow(); // U fix 2 (N1) — the heartbeat silence runs on the monotonic clock
         for (const raw of reads) {
           const read = this.applyHeartbeat(st, raw, pollAt); // U fix 1 (I4) — a frozen PLC heartbeat ⇒ undecidable
           st.lastRead = read;
@@ -716,7 +731,7 @@ export class SafetyPlcPoller {
         if (flag === "estopLatch") {
           st.flags.estopLatch = now;
           // U fix 1 (I3, R-9-e) — while the latch is set, further short presses are NOT captured (it only rises once): remembered
-          // (persisted, shown on the Safety page with a non-blocking "e-stop pressed at T, latch not reset" warning)
+          // (persisted, shown on the Safety page with a non-blocking "e-stop latch first seen set at T, not reset" warning — T is the first OBSERVATION)
           if (now && was !== true) st.latchSetAt = Date.now();
           else if (!now) st.latchSetAt = null;
           if (now && was !== true) this.latchRose(st, read, estopBefore);

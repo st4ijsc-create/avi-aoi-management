@@ -59,6 +59,10 @@ function fakeDriver(o: { failSubscribe?: string; queueSize?: number; sampling?: 
     async disconnect() {
       d.disconnects += 1;
     },
+    // re-pinned 2026-10-12 (U fix 2 N2): a driver must offer the verification read (else the subscription is refused)
+    async readTags(tags: OtTagAddress[]) {
+      return tags.map((t) => good(t.tagKey, t.tagKey === "zoneOccupied" ? true : false));
+    },
     async subscribeQueued(tags, opts, sink) {
       d.subscribes += 1;
       d.opts.push(opts);

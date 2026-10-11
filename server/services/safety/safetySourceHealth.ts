@@ -184,8 +184,8 @@ export interface SafetySourceHealth {
     /** doc 81 Đợt 9 U1/U2 — readMode: "subscription" | "poll_fallback" | "poll" | "poll_latch" | "sim" | null (not reported yet). */
     configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean; readMode: string | null; latchSetAt: string | null }>;
     /**
-     * doc 81 Đợt 9 U fix 1 (I3, ruling R-9-e) — configs (in scope) whose Modbus e-stop LATCH is set: "e-stop pressed at T, latch
-     * not reset" — further short presses are NOT captured until it is reset. A NON-blocking warning (actuation is not gated by
+     * doc 81 Đợt 9 U fix 1 (I3, ruling R-9-e) — configs (in scope) whose Modbus e-stop LATCH is set: "e-stop latch first seen
+     * set at T, not reset" (U fix 2 N4: T = when the poller first SAW it set, not the press time) — further short presses are NOT captured until it is reset. A NON-blocking warning (actuation is not gated by
      * it — owner decision later; STOP always allowed).
      */
     latched: Array<{ code: string; since: string }>;

@@ -319,14 +319,14 @@ describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
   });
 
   // doc 81 Đợt 9 U fix 1 (I3, ruling R-9-e) — a set Modbus e-stop latch: said per PLC + a NON-blocking warning.
-  it("★ U fix 1: latch set ⇒ 'further short presses are NOT captured' per PLC + 'e-stop pressed at T, latch not reset' (warning only, STOP allowed); none ⇒ nothing", () => {
+  it("★ U fix 1: latch set ⇒ 'further short presses are NOT captured' per PLC + 'e-stop latch first seen set at T, not reset' (re-pinned U fix 2 N4) (warning only, STOP allowed); none ⇒ nothing", () => {
     const since = "2026-10-12T10:00:00.000Z";
     const poller = (latched: unknown[]) => ({ state: "ok", lastPollAt: since, staleConfigs: 0, configs: [{ code: "MB-1", link: "online", lastAttemptAt: null, lastOkAt: null, stale: false, readMode: "poll_latch", latchSetAt: since }], hiddenConfigs: 0, latched });
     setQueryOverride("safety.sourceHealth", makeQuery({ data: health({ plcPoller: poller([{ code: "MB-1", since }]) }) }));
     const { rerender } = render(<SafetyWorkforce />);
-    expect(screen.getByTestId("safety-source-poller-latch").textContent).toMatch(/MB-1: latch set since .* further short presses are NOT captured until it is reset/);
+    expect(screen.getByTestId("safety-source-poller-latch").textContent).toMatch(/MB-1: latch first seen set at .* further short presses are NOT captured until it is reset/);
     const w = screen.getByTestId("safety-source-latch-warning");
-    expect(w.textContent).toMatch(/MB-1: e-stop pressed at .*, latch not reset — warning only: real writes \/ motion are not blocked by it; STOP is always allowed/);
+    expect(w.textContent).toMatch(/MB-1: e-stop latch first seen set at .*, not reset — warning only: real writes \/ motion are not blocked by it; STOP is always allowed/);
     expect(screen.getByTestId("safety-source-poller")).not.toHaveAttribute("role"); // not an alarm: monitoring is not blind
     setQueryOverride("safety.sourceHealth", makeQuery({ data: health({ plcPoller: poller([]) }) }));
     rerender(<SafetyWorkforce />);

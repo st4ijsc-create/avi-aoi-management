@@ -115,9 +115,11 @@ Add an optional latch tag to the config, e.g. `statusMap.estopLatch = { "address
 - **Clearing.** Clearing the latch is a PLC-side or operator action. A latch that is cleared and set again before the
   next poll counts as one press, so keep it set long enough (see `T_HOLD` below).
 - **While the latch is set, further short presses are NOT captured** (the latch only rises once). The Safety page says
-  so per PLC ("latch set since T — further short presses are NOT captured until it is reset") and shows a non-blocking
-  warning "e-stop pressed at T, latch not reset" (ruling R-9-e: real writes / motion are not blocked by it, STOP is always
-  allowed; a blocking option is an owner decision). Reset the latch promptly after each e-stop.
+  so per PLC ("latch first seen set at T — further short presses are NOT captured until it is reset") and shows a
+  non-blocking warning "e-stop latch first seen set at T, not reset" (ruling R-9-e: real writes / motion are not blocked
+  by it, STOP is always allowed; a blocking option is an owner decision). T is when the poller FIRST SAW the latch set,
+  not when the e-stop was pressed (a latch already set when monitoring starts shows the start time). Reset the latch
+  promptly after each e-stop.
 - **Alternative without a reset.** A PLC press **counter** (a register incremented on every rising edge of the e-stop)
   needs no reset and counts every press; it is a candidate for a later change (not implemented).
 
@@ -173,16 +175,24 @@ release inside one publishing interval give both events.
 - **Silent subscription.** If the subscription goes quiet (no data and no keep-alive within the bound), the PLC reads
   `plc_offline` and the poller re-subscribes. A silent subscription is never shown as healthy.
 - **Bounded silence.** The poller asks for a publishing interval of at most 1 s and declares a silent subscription dead
-  within 20 s (a third of the smallest stale bound, 60 s). A server that revises the publishing interval above 2 s or the
+  at the first poll after at most 20 s of silence (a third of the smallest stale bound, 60 s; with a long poll interval
+  that is the next poll). All these local timers run on a monotonic clock: a wall-clock step cannot suspend them. A server that revises the publishing interval above 2 s or the
   keep-alive window (publishing interval × keep-alive count) above 9.5 s is refused (fallback below).
 - **Stalled item.** Every 10 s the poller reads the subscribed nodes on the open session. A value that differs from the
   subscription's, and still differs one publishing interval later, means a stalled item: `plc_events_lost`,
-  `plc_offline`, re-subscribe. A failed verification read does the same.
+  `plc_offline`, re-subscribe. A failed verification read does the same, and so does a verification read that comes back
+  bad / uncertain / unreadable while the subscription still shows a value (the item goes unknown at once — the cached
+  value is never kept).
+- **Limit of the stalled-item check.** Without a heartbeat tag, the verification read is the only item-liveness check:
+  a stalled item is caught at the next verification (≤ 10 s + one publishing interval), and only if its fresh value
+  differs or is not decided. A press **and** release that both fall between two verification reads of a stalled item
+  are missed. Map a heartbeat tag (below) for safety-PLC configs.
 - **Value frozen at the source.** If the PLC program or a gateway cache freezes a value, every read and every
   notification shows the frozen value. Map a PLC **heartbeat** tag (a counter the PLC program increments, e.g. every
   500 ms): `statusMap.heartbeat = { "address": "ns=2;s=HEARTBEAT", "dataType": "int", "maxSilentMs": 10000 }`. If it does
-  not change for `maxSilentMs` (default 10 s, never below 3 poll intervals), the PLC reads `plc_offline` (blind,
-  alarmed). Works for Modbus too. The heartbeat is part of the approval digest. Prefer a counter to a toggle (a toggle
+  not change between two reads more than `maxSilentMs` apart (default 10 s), the PLC reads `plc_offline` (blind,
+  alarmed). After a restart the first read is the baseline, so a frozen heartbeat goes offline at the first read after
+  `maxSilentMs`. Works for Modbus too. The heartbeat is part of the approval digest. Prefer a counter to a toggle (a toggle
   sampled at a multiple of its period looks frozen when polled).
 - **Order within a publish.** A server groups the notifications of one publish per monitored item, so the order of
   changes is exact per flag but not across flags inside one publishing interval (≤ 1 s); events carry the poll time.

@@ -21,6 +21,12 @@
  *     counted lost + an error read + re-subscribe. A failed verification read ⇒ the same (fail closed). A value frozen AT THE
  *     SOURCE (PLC program, gateway cache) is invisible to both reads and subscriptions: map a PLC HEARTBEAT tag
  *     (statusMap.heartbeat — the poller treats a heartbeat that stops changing as undecidable);
+ *     U fix 2 — a verification read that is NOT decided while the subscription shows a value ⇒ the item goes unknown at once
+ *     (never the cached value) + re-subscribe. The verification read is the ALWAYS-ON item-liveness check (a driver that
+ *     cannot read on the session is refused). LIMIT (re-review N2, documented): without a heartbeat tag, a stalled item is
+ *     caught only at the next verification (≤ SAFETY_PLC_OPCUA_VERIFY_MS + one publishing interval) and only if its fresh
+ *     value differs or is not decided — a press AND release that both fall between two verification reads of a stalled
+ *     item are missed. Map a PLC heartbeat tag (its silence ⇒ offline) to close that gap;
  *   • subscription impossible (create fails, the server revised a queue below 2, a sampling interval above
  *     SAFETY_PLC_OPCUA_MAX_SAMPLING_MS, a publishing interval above SAFETY_PLC_OPCUA_MAX_REVISED_PUBLISHING_MS or a keep-alive
  *     window above SAFETY_PLC_OPCUA_MAX_KEEPALIVE_WINDOW_MS, an item could not be created, no initial values) ⇒ mode
@@ -43,7 +49,15 @@ import type { OtSample, OtTagAddress } from "../../ot/otDriver";
 import type { OpcuaQueuedSink, OpcuaQueuedSubscription } from "../../ot/drivers/opcuaDriver";
 import { createDriver } from "../../ot/driverRegistry";
 import { OtReadSafetyPlcBackend, strictBool, decideHeartbeat, type SafetyPlcCheckedRead } from "./safetyPlcAdapter";
+import { performance } from "node:perf_hooks";
 import { configStaleAfterMs } from "./safetyPlcPollerHealth";
+
+/**
+ * doc 81 Đợt 9 U fix 2 (re-review N1, security scan "fail-open-liveness") — every LOCAL liveness / silence / verification /
+ * retry / budget timer runs on a MONOTONIC clock: a wall-clock step (NTP step, VM resume, manual change) can neither suspend
+ * nor stretch them. (Durable cross-instance staleness stays on the DB clock — Đợt 8 N-R5.)
+ */
+export const monotonicNow = (): number => performance.now();
 
 export const SAFETY_PLC_OPCUA_BUFFER_MAX = 256;
 export const SAFETY_PLC_OPCUA_RESUBSCRIBE_MS = 60_000;
@@ -183,13 +197,16 @@ export class OpcuaSubscriptionSafetyPlcBackend extends OtReadSafetyPlcBackend {
     endpoint: string,
     statusMap: SafetyPlcStatusMap,
     timeoutMs: number,
-    /** queueSize: a test seam only (the poller never passes it; it requests opcuaQueueSizeFor(publishing interval)). */
+    /**
+     * queueSize: a test seam only (the poller never passes it; it requests opcuaQueueSizeFor(publishing interval)).
+     * now: a test seam only — MUST be monotonic (default: performance.now, U fix 2 N1); never the wall clock.
+     */
     opts: { intervalMs: number; createDriver?: () => QueuedSubscriptionDriver; now?: () => number; queueSize?: number },
   ) {
     super("opcua", endpoint, statusMap, timeoutMs);
     this.publishingMs = opcuaPublishingIntervalFor(opts.intervalMs);
     this.makeDriver = opts.createDriver ?? (() => createDriver("opcua") as unknown as QueuedSubscriptionDriver);
-    this.now = opts.now ?? Date.now;
+    this.now = opts.now ?? monotonicNow; // U fix 2 (N1) — monotonic; a test clock is monotonic by contract
     this.queueSize = opts.queueSize ?? opcuaQueueSizeFor(this.publishingMs);
   }
 
@@ -292,13 +309,15 @@ export class OpcuaSubscriptionSafetyPlcBackend extends OtReadSafetyPlcBackend {
     if (entries.length === 0) throw new SafetyPlcSubscriptionRefused("no status tag mapped");
     const driver = this.makeDriver();
     if (typeof driver.subscribeQueued !== "function") throw new SafetyPlcSubscriptionRefused("driver cannot create queued subscriptions");
+    // U fix 2 (re-review N2) — the verification read is the ALWAYS-ON item-liveness check: a driver without it is refused
+    if (typeof driver.readTags !== "function") throw new SafetyPlcSubscriptionRefused("driver cannot verify the subscribed items (no read on the session)");
     const token: { live: Live | null } = { live: null };
     let handle: OpcuaQueuedSubscription | null = null;
     let connectP: Promise<void> | null = null;
     let subP: Promise<OpcuaQueuedSubscription> | null = null;
     // the bounds of THIS attempt run on real time (the injected clock drives liveness / retry decisions only)
-    const deadline = Date.now() + budgetMs;
-    const left = () => Math.max(1, deadline - Date.now());
+    const deadline = monotonicNow() + budgetMs;
+    const left = () => Math.max(1, deadline - monotonicNow());
     const bounded = <T>(p: Promise<T>, what: string): Promise<T> => {
       let t: NodeJS.Timeout | undefined;
       return Promise.race([
@@ -357,7 +376,7 @@ export class OpcuaSubscriptionSafetyPlcBackend extends OtReadSafetyPlcBackend {
       // the initial value of every item (a compliant server sends it in the first publish)
       while (this.pendingInitial.size > 0) {
         if (token.live.dead) throw new SafetyPlcSubscriptionRefused(token.live.dead);
-        if (Date.now() >= deadline) throw new SafetyPlcSubscriptionRefused(`no initial value for ${[...this.pendingInitial].join(", ")} within ${budgetMs} ms`);
+        if (monotonicNow() >= deadline) throw new SafetyPlcSubscriptionRefused(`no initial value for ${[...this.pendingInitial].join(", ")} within ${budgetMs} ms`);
         await sleepUnref(Math.min(20, left()));
       }
     } catch (e) {
@@ -416,7 +435,8 @@ export class OpcuaSubscriptionSafetyPlcBackend extends OtReadSafetyPlcBackend {
     const now = this.now();
     if (now < l.verifyDueAt) return undefined;
     const entries = this.monitored().filter((e) => e.key !== "heartbeat");
-    if (typeof l.driver.readTags !== "function" || entries.length === 0) {
+    if (typeof l.driver.readTags !== "function") return "driver cannot verify the subscribed items"; // U fix 2 (N2): fail closed, never skipped
+    if (entries.length === 0) {
       l.verifyDueAt = now + SAFETY_PLC_OPCUA_VERIFY_MS;
       return undefined;
     }
@@ -429,13 +449,25 @@ export class OpcuaSubscriptionSafetyPlcBackend extends OtReadSafetyPlcBackend {
     if (samples == null) return `verification read exceeded ${SAFETY_PLC_OPCUA_VERIFY_TIMEOUT_MS} ms`;
     if (this.live !== l) return undefined; // torn down meanwhile
     const byKey = new Map(samples.map((s) => [s.tagKey, s]));
+    // U fix 2 (re-review N3, security scan "fail-open-state-drift") — a fresh read that is NOT decided (bad / uncertain / missing /
+    // unparseable) for an item the subscription still shows as DECIDED is a mismatch at once: the cached value is never kept as
+    // current (the item goes unknown ⇒ error read ⇒ "plc_offline"), and the session is re-baselined (torn down + re-subscribed).
+    const notDecided: FlagKey[] = [];
     const differs = entries.filter((e) => {
-      const s = byKey.get(e.tag.tagKey);
-      if (!s) return true;
-      const read = this.decide(e.key, s);
       const sub = this.current.get(e.key);
-      return typeof read === "boolean" && read !== sub; // a decided value the subscription does not show
+      if (typeof sub !== "boolean") return false; // the subscription already shows it unknown (fail closed already)
+      const s = byKey.get(e.tag.tagKey);
+      const read = s ? this.decide(e.key, s) : "bad";
+      if (typeof read !== "boolean") {
+        notDecided.push(e.key as FlagKey);
+        return false;
+      }
+      return read !== sub; // a decided value the subscription does not show
     });
+    if (notDecided.length > 0) {
+      for (const k of notDecided) this.current.set(k, "bad");
+      return `verification read of ${notDecided.join(", ")} not decided (bad / uncertain / missing) while the subscription still showed a value — item(s) set unknown, re-baselined`;
+    }
     if (differs.length === 0) {
       l.mismatchSince = null;
       l.verifyDueAt = now + SAFETY_PLC_OPCUA_VERIFY_MS;
@@ -453,9 +485,9 @@ export class OpcuaSubscriptionSafetyPlcBackend extends OtReadSafetyPlcBackend {
   /** One batch for the poller (never throws: failures are error reads). */
   async readBatch(): Promise<SafetyPlcBatch> {
     if (this.closed) return { mode: this.mode, reads: [{ error: "backend closed" }], lost: 0 };
-    const started = Date.now();
+    const started = monotonicNow();
     const budget = this.budgetMs();
-    const leftMs = () => budget - (Date.now() - started);
+    const leftMs = () => budget - (monotonicNow() - started);
     const l = this.live;
     if (l) {
       const silentFor = this.now() - l.lastAliveAt;
@@ -506,7 +538,7 @@ export class OpcuaSubscriptionSafetyPlcBackend extends OtReadSafetyPlcBackend {
     // fallback: the inherited, fail-closed poll read (connect / read / disconnect), within what is left of the budget
     this.mode = "poll_fallback";
     try {
-      const r = await this.readChecked({ withLatch: true, withHeartbeat: true, timeoutMs: Math.max(50, leftMs()) });
+      const r = await this.readChecked({ withLatch: true, withHeartbeat: true, timeoutMs: Math.max(50, Math.floor(leftMs())) });
       return { mode: "poll_fallback", modeReason: this.modeReason, reads: [r], lost: 0 };
     } catch (e) {
       return { mode: "poll_fallback", modeReason: this.modeReason, reads: [{ error: `read failed: ${String((e as Error)?.message ?? e).slice(0, 200)}` }], lost: 0 };
