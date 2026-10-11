@@ -8,6 +8,10 @@
  *   M5 failed event inserts back off (no 4 retries/s per config while the DB is down).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.hoisted(() => {
+  // N fix 1 (M7) — sdk.ts complains at IMPORT time when OAUTH_SERVER_URL is unset; a local dummy keeps stderr clean (never called).
+  process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
+});
 import postgres from "postgres";
 import type { SafetyPlcConfig, SafetyPlcStatusSnapshot } from "../../../../drizzle/schema";
 import { SafetyPlcPoller } from "./safetyPlcPoller";
@@ -15,7 +19,6 @@ import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLead
 import { OtReadSafetyPlcBackend, type SafetyPlcBackendReader, type SafetyPlcCheckedRead } from "./safetyPlcAdapter";
 import type { RecordSafetyEventInput } from "../safetyAuditService";
 
-process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const MAP = { estop: { address: "coil:1" }, zoneOccupied: { address: "coil:2" } };
 

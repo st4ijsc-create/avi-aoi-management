@@ -40,6 +40,7 @@ import { record } from "../safetyAuditService";
 import type { SafetyEventType } from "../safetyAuditService";
 import { createDriver } from "../../ot/driverRegistry";
 import type { OtProtocol, OtTagAddress } from "../../ot/otDriver";
+import { redactEndpoint, safeBackendLabel } from "./plcRedact";
 
 /** Flag — default OFF (mirrors safetyAuditEnabled / safetyZoneSwEnabled). */
 export function safetyPlcAdapterEnabled(): boolean {
@@ -380,11 +381,12 @@ export async function readAndRecord(
     // Honest: unreachable/failed read → report the error, fabricate NOTHING.
     return {
       enabled: true,
-      backend: backend.label(),
+      // doc 81 Đợt 8 N fix 1 (M3) — never the endpoint in the answer (label without endpoint, redacted error text)
+      backend: safeBackendLabel(backend),
       status: {},
       findings: [],
       recorded: 0,
-      message: `read failed: ${(err as Error)?.message ?? String(err)}`,
+      message: `read failed: ${redactEndpoint(String((err as Error)?.message ?? err).slice(0, 300), cfg.endpoint)}`,
     };
   }
 
@@ -406,7 +408,7 @@ export async function readAndRecord(
       handledBy: "advisory",
       outcome: "logged_only",
       humanPosition: { plcFlag: f.flag, backend: backend.kind, source },
-      notes: `${f.note} [source ${source}, PLC "${cfg.code}", backend ${backend.label()}]`,
+      notes: `${f.note} [source ${source}, PLC "${cfg.code}", backend ${safeBackendLabel(backend)}]`, // N fix 1 (M3): no endpoint
       scope: cfg.scope ?? null,
       corporateCode: cfg.corporateCode ?? null,
       factoryId: cfg.factoryId ?? null,
@@ -419,7 +421,7 @@ export async function readAndRecord(
     out.push(rec);
   }
 
-  return { enabled: true, backend: backend.label(), status, findings: out, recorded };
+  return { enabled: true, backend: safeBackendLabel(backend), status, findings: out, recorded };
 }
 
 /** Read + record for a config id (loads the config, then readAndRecord). */

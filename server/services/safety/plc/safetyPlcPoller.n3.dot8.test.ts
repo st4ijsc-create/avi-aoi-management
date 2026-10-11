@@ -6,6 +6,10 @@
  * chooses (the adapter's real OtReadSafetyPlcBackend runs on top of it); read counters held by the test.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.hoisted(() => {
+  // N fix 1 (M7) — sdk.ts complains at IMPORT time when OAUTH_SERVER_URL is unset; a local dummy keeps stderr clean (never called).
+  process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
+});
 import type { SafetyPlcConfig, SafetyPlcStatusSnapshot } from "../../../../drizzle/schema";
 import type { OtSample, OtTagAddress } from "../../ot/otDriver";
 import { registerDriver } from "../../ot/driverRegistry";

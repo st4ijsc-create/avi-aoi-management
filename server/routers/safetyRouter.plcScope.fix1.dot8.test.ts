@@ -4,8 +4,11 @@
  * Oracle: the scope resolver is forced to throw; the config list is a fixed fake.
  */
 import { describe, it, expect, vi } from "vitest";
+vi.hoisted(() => {
+  // N fix 1 (M7) — sdk.ts complains at IMPORT time when OAUTH_SERVER_URL is unset; a local dummy keeps stderr clean (never called).
+  process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
+});
 
-process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
 
 vi.mock("../db/hierarchy", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../db/hierarchy")>();

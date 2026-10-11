@@ -34,6 +34,7 @@ import {
 import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEventInput, type RecordResult, type SafetyEventType } from "../safetyAuditService";
 import { isPlcConfigTrustApproved, plcTrustMaterial } from "./safetyPlcTrust";
 import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLeader";
+import { redactEndpoint, safeBackendLabel } from "./plcRedact";
 
 /** Flag — default OFF. */
 export function safetyPlcPollerEnabled(): boolean {
@@ -219,24 +220,8 @@ export function safeReason(e: unknown): string {
   return String(m).replace(/[\u0000-\u001f\u007f]+/g, " ").slice(0, 200);
 }
 
-/**
- * The PLC endpoint (host / port) must not reach a safety_events row (the feed is readable by monitoring users): remove
- * the configured endpoint, its host, and any URL / IPv4[:port] / [IPv6]:port / host:port token from a driver error text.
- */
-export function redactEndpoint(text: string, endpoint: string | null | undefined): string {
-  let out = String(text);
-  const ep = String(endpoint ?? "").trim();
-  if (ep) {
-    const host = ep.replace(/^[a-z.+-]+:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
-    for (const needle of [ep, host].filter((x) => x.length > 0)) out = out.split(needle).join("<endpoint>");
-  }
-  return out
-    .replace(/[a-z][a-z.+-]*:\/\/[^\s)'"]+/gi, "<endpoint>")
-    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, "<host>")
-    .replace(/\[[0-9a-f:.]+\](?::\d+)?/gi, "<host>")
-    .replace(/<endpoint>:\d+/g, "<endpoint>")
-    .replace(/\b[a-z0-9][a-z0-9.-]*:\d{2,5}\b/gi, "<host>");
-}
+// redactEndpoint moved to the leaf module plcRedact.ts (N fix 1, M3: shared with the manual readSafetyPlc path).
+export { redactEndpoint } from "./plcRedact";
 
 export class SafetyPlcPoller {
   private readonly deps: PollerDeps;
@@ -488,7 +473,7 @@ export class SafetyPlcPoller {
     const isSim = cfg.backend === "sim" || st.backend?.kind === "sim";
     const source = isSim ? "sim" : "plc";
     // Never the endpoint (host / port) in a feed row: the label names only the backend kind; reasons are redacted.
-    const label = st.backend ? (isSim ? "sim (scripted) — NOT a live PLC" : `real ${st.backend.kind} read`) : `${String(cfg.backend).slice(0, 16)} (no backend: ${st.reason ?? "?"})`;
+    const label = st.backend ? safeBackendLabel(st.backend) : `${String(cfg.backend).slice(0, 16)} (no backend: ${st.reason ?? "?"})`;
     const input: RecordSafetyEventInput = {
       eventType,
       robotId: cfg.robotId ?? null,

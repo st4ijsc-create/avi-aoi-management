@@ -5,6 +5,10 @@
  * here, and the poller's own source text (no write path). Hangs are bounded with explicit timers, not vitest timeouts.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+vi.hoisted(() => {
+  // N fix 1 (M7) — sdk.ts complains at IMPORT time when OAUTH_SERVER_URL is unset; a local dummy keeps stderr clean (never called).
+  process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
+});
 import fs from "node:fs";
 import path from "node:path";
 import type { SafetyPlcConfig, SafetyPlcStatusSnapshot } from "../../../../drizzle/schema";
