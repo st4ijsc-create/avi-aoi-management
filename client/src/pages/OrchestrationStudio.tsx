@@ -2587,13 +2587,65 @@ type RunStepView = {
   error?: string | null;
 };
 
+/** doc 81 Đợt 8 task O2/O3 — getRun().programChecks: one entry per OT adapter / robot the run's commands use. */
+interface ProgramCheckView {
+  target: "adapter" | "robot";
+  id: number;
+  label: string | null;
+  status: "verified" | "unsupported" | "unreadable";
+  checksum?: string;
+}
+function programChecksOf(data: unknown): ProgramCheckView[] {
+  const raw = (data as { programChecks?: unknown } | undefined)?.programChecks;
+  return Array.isArray(raw) ? (raw as ProgramCheckView[]).filter((c) => c && typeof c.id === "number" && typeof c.status === "string") : [];
+}
+/**
+ * doc 81 Đợt 8 task O3 — the approval screen says, per controller, whether its PROGRAM is covered by the approval:
+ * "Program verified (checksum …)" · "Program cannot be verified on this controller" (unsupported — never shown as verified)
+ * · "could not be read" (supported but unreadable now ⇒ the server gives no binding digest ⇒ Approve is disabled).
+ */
+function ProgramChecksBlock({ checks, t }: { checks: ProgramCheckView[]; t: TFunction }) {
+  if (checks.length === 0) return null;
+  return (
+    <div data-testid="program-checks" className="border-t px-2 py-1.5 text-xs">
+      <div className="mb-1 font-medium text-muted-foreground">{t("studio.programChecksTitle", "Controller programs covered by this approval")}</div>
+      <ul className="space-y-0.5">
+        {checks.map((c) => {
+          const who =
+            c.target === "robot"
+              ? t("studio.programTargetRobot", "Robot {{label}}", { label: c.label ?? `#${c.id}` })
+              : t("studio.programTargetAdapter", "Adapter {{label}}", { label: c.label ?? `#${c.id}` });
+          const short = c.checksum && c.checksum.length > 20 ? `${c.checksum.slice(0, 19)}…` : (c.checksum ?? "");
+          return (
+            <li key={`${c.target}:${c.id}`} data-testid="program-check" data-target={`${c.target}:${c.id}`} data-status={c.status} className="flex flex-wrap gap-x-1.5">
+              <span className="font-mono">{who}</span>
+              {c.status === "verified" ? (
+                <span className="text-emerald-700 dark:text-emerald-300" title={c.checksum}>
+                  {t("studio.programVerified", "Program verified (checksum {{checksum}})", { checksum: short })}
+                </span>
+              ) : c.status === "unreadable" ? (
+                <span className="text-red-700 dark:text-red-300">
+                  {t("studio.programUnreadable", "Program checksum could not be read — approval is not possible until it can (check the controller connection).")}
+                </span>
+              ) : (
+                <span className="text-amber-800 dark:text-amber-200">{t("studio.programUnverifiable", "Program cannot be verified on this controller")}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * doc 81 Đợt 4 Task A5 + fix round 1 (finding 7) — the engine's step error for "no separate gate approval":
  * `FOE_GATE_REQUIRED(<reason>): …` (foeEngine.gateRequiredError). Each reason has its own translated sentence.
  */
 // doc 81 Đợt 5 task E1 — apiRun: a run started through an API key never sends a non-STOP OT/robot command.
-const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown|apiRun)\))?(?=:|\s|$)/;
-type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun";
+// doc 81 Đợt 8 task O2 — programUnreadable: a supported controller's program checksum could not be read (fail-closed).
+const FOE_GATE_REQUIRED_RE = /^FOE_GATE_REQUIRED(?:\((noGate|approvedByOwner|staleApproval|ownerUnknown|apiRun|programUnreadable)\))?(?=:|\s|$)/;
+type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun" | "programUnreadable";
 function gateRequiredReasonOf(error: unknown): GateRequiredReason | null {
   if (typeof error !== "string") return null;
   const m = FOE_GATE_REQUIRED_RE.exec(error);
@@ -2612,7 +2664,9 @@ function gateRequiredText(reason: GateRequiredReason, t: TFunction): string {
     case "approvedByOwner":
       return t("studio.gateRequiredOwnerApproved", "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.");
     case "staleApproval":
-      return t("studio.gateRequiredStale", "Not sent: after the gate was approved, the workflow was redeployed or the adapter, tag or robot configuration its commands use was changed, so that approval does not cover what would be sent now. Start a new run and have the gate approved again.");
+      return t("studio.gateRequiredStale", "Not sent: after the gate was approved, the workflow was redeployed or the adapter, tag or robot configuration its commands use was changed, or the program in a controller it writes to was changed, so that approval does not cover what would be sent now. Start a new run and have the gate approved again.");
+    case "programUnreadable":
+      return t("studio.gateRequiredProgramUnreadable", "Not sent: the program checksum of a controller this run writes to could not be read, so it cannot be checked that the program is still the one that was approved. Check the controller connection and start a new run.");
     case "apiRun":
       return t("studio.gateRequiredApiRun", "Not sent: this run was started through an API key. A run started through an API key never sends machine or robot commands other than a STOP, because the person holding the key cannot be told apart from the approver. Start the run as a user in the Studio.");
     case "ownerUnknown":
@@ -2816,14 +2870,15 @@ function RunRow({
           {t("studio.definitionChangedReload", "The workflow definition changed since you opened this approval — reload the page and review it before approving.")}
         </div>
       )}
+      {(awaiting || interrupted) && canControl && <ProgramChecksBlock checks={programChecksOf(detailQ.data)} t={t} />}
       {bindingChanged && (awaiting || interrupted) && canControl && (
         <div data-testid="binding-changed" role="alert" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
-          {t("studio.bindingChangedReload", "The device configuration this approval covers (adapter, tags or robot of its commands) changed since you opened it — reload the page and review it before approving.")}
+          {t("studio.bindingChangedReload", "The device configuration this approval covers (adapter, tags or robot of its commands, or the program in a controller) changed since you opened it — reload the page and review it before approving.")}
         </div>
       )}
       {bindingUnknown && !defChanged && (awaiting || interrupted) && canControl && (
         <div data-testid="binding-unknown" role="status" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
-          {t("studio.bindingUnknown", "The device configuration this approval covers could not be read — approval is not possible until it can. Retry in a moment.")}
+          {t("studio.bindingUnknown", "The device configuration this approval covers (or the program checksum of a controller) could not be read — approval is not possible until it can. Retry in a moment.")}
         </div>
       )}
       {interrupted && (

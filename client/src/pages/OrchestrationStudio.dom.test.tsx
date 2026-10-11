@@ -373,3 +373,84 @@ describe("OrchestrationStudio — Task 11: toast từ chối 'draft' dùng t() t
     expect(toast.error).toHaveBeenCalledWith(rawServerMessage);
   });
 });
+
+// ════════════════ doc 81 Đợt 8 task O3 — the approval screen lists, per adapter / robot, whether its program is verified ════════════════
+describe("OrchestrationStudio — doc 81 Đợt 8 O3: controller program check per adapter on the approval screen", () => {
+  const AWAITING = { ...run(40, "prog-flow", {}, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "awaiting_confirm", currentStepId: "g1" };
+  const CHECKSUM = "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+  const detail = (over: Record<string, unknown>) =>
+    makeQuery({ data: { run: AWAITING, defHash: DEF_HASH, steps: [{ stepId: "g1", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "?" } }], ...over } });
+  const items = () => Array.from(rowOf(40).querySelectorAll('[data-testid="program-check"]')) as HTMLElement[];
+
+  it("★ verified (with the checksum) · unsupported (said plainly, never 'verified') — one line per adapter / robot; Approve stays enabled", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride(
+      "orchestration.getRun",
+      detail({
+        bindingDigest: BINDING_DIGEST,
+        programChecks: [
+          { target: "adapter", id: 501, label: "SIM-PLC", status: "verified", checksum: CHECKSUM, source: "sim" },
+          { target: "adapter", id: 701, label: "MB-PLC", status: "unsupported", source: "modbus" },
+          { target: "robot", id: 2, label: "R2", status: "unsupported", source: "robot" },
+        ],
+      }),
+    );
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(40)).getByTestId("program-checks")).toBeInTheDocument();
+    const list = items();
+    expect(list.map((i) => i.getAttribute("data-status"))).toEqual(["verified", "unsupported", "unsupported"]);
+    expect(list.map((i) => i.getAttribute("data-target"))).toEqual(["adapter:501", "adapter:701", "robot:2"]);
+    expect(list[0].textContent).toMatch(/SIM-PLC/);
+    expect(list[0].textContent).toMatch(/Program verified \(checksum sha256:ba7816bf8f01/);
+    expect(list[0].querySelector("[title]")?.getAttribute("title")).toBe(CHECKSUM); // the full value on hover
+    expect(list[1].textContent).toMatch(/MB-PLC/);
+    expect(list[1].textContent).toMatch(/Program cannot be verified on this controller/);
+    expect(list[1].textContent).not.toMatch(/verified \(/);
+    expect(list[2].textContent).toMatch(/R2/);
+    expect(list[2].textContent).toMatch(/Program cannot be verified on this controller/);
+    expect(within(rowOf(40)).getByRole("button", { name: /^(Approve|studio\.approve)$/i })).toBeEnabled();
+  });
+
+  it("★ unreadable on a supported adapter ⇒ shown as such, no digest ⇒ Approve DISABLED (fail-closed)", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride(
+      "orchestration.getRun",
+      detail({ bindingDigest: null, programChecks: [{ target: "adapter", id: 501, label: "SIM-PLC", status: "unreadable", source: "sim", reason: "timeout" }] }),
+    );
+    render(<OrchestrationStudio />);
+    const [only] = items();
+    expect(only.getAttribute("data-status")).toBe("unreadable");
+    expect(only.textContent).toMatch(/could not be read/);
+    expect(only.textContent).not.toMatch(/Program verified/);
+    expect(within(rowOf(40)).getByRole("button", { name: /^(Approve|studio\.approve)$/i })).toBeDisabled();
+  });
+
+  it("no program list from the server (older server / not an approver's read) ⇒ no block", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail({ bindingDigest: BINDING_DIGEST }));
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(40)).queryByTestId("program-checks")).toBeNull();
+  });
+
+  it("★ step note FOE_GATE_REQUIRED(programUnreadable) ⇒ its own sentence (not the noGate one)", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "p1", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(programUnreadable): command step "p1" was not sent' },
+            { stepId: "p2", stepType: "command", status: "failed", attempt: 1, result: null, error: 'FOE_GATE_REQUIRED(staleApproval): command step "p2" was not sent' },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]'));
+    expect(notes.map((n) => n.getAttribute("data-reason"))).toEqual(["programUnreadable", "staleApproval"]);
+    expect(notes[0].textContent).toMatch(/program checksum of a controller/);
+    expect(notes[1].textContent).toMatch(/the program in a controller it writes to was changed/);
+  });
+});
