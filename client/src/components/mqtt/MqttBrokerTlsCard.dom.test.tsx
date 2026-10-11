@@ -16,7 +16,7 @@ let data: Status | undefined;
 const useQuery = vi.fn((_input: unknown, opts: { enabled: boolean }) => ({ data: opts.enabled ? data : undefined, isError: false }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 // J fix 1 — no i18next instance in this test: translate to the key (same as the fallback) without the stderr warning.
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}${JSON.stringify(o)}` : k) }) }));
 vi.mock("@/lib/trpc", () => ({ trpc: { mqttClient: { brokerTls: { useQuery: (i: unknown, o: { enabled: boolean }) => useQuery(i, o) } } } }));
 
 import { MqttBrokerTlsCard } from "./MqttBrokerTlsCard";
@@ -79,5 +79,26 @@ describe("MqttBrokerTlsCard", () => {
     data = { ...OK, plainEnabled: false };
     render(<MqttBrokerTlsCard enabled />);
     expect(screen.getByTestId("mqtt-broker-tls-plain")).toHaveTextContent("mqtt.clientMgmt.brokerTls.plainClosed");
+  });
+
+  it("J fix 3 — key may be EXPOSED ⇒ a 'rotation required' alert, error badge, and NO fingerprint offered for pinning", () => {
+    data = { ...OK, listening: false, port: null, error: "TLS_KEY_EXPOSED" };
+    render(<MqttBrokerTlsCard enabled />);
+    expect(screen.getByTestId("mqtt-broker-tls-rotate")).toHaveTextContent("mqtt.clientMgmt.brokerTls.rotateRequired");
+    expect(screen.getByTestId("mqtt-broker-tls-rotate")).toHaveTextContent("mqtt.clientMgmt.brokerTls.error_TLS_KEY_EXPOSED");
+    expect(screen.getByTestId("mqtt-broker-tls-status")).toHaveTextContent("mqtt.clientMgmt.brokerTls.statusError");
+    expect(screen.queryByTestId("mqtt-broker-tls-fingerprint")).toBeNull();
+    expect(screen.queryByRole("button", { name: "common.copy" })).toBeNull();
+  });
+
+  it("J fix 3 — other key-security refusals show their own reason (not the generic listener error)", () => {
+    for (const code of ["TLS_KEY_OWNER_FOREIGN", "TLS_KEY_LINKED", "TLS_KEY_DIR_NOT_EMPTY", "TLS_KEY_ACL_UNVERIFIED", "TLS_KEY_ACL_UNPROTECTED"]) {
+      cleanup();
+      data = { ...OK, listening: false, port: null, fingerprintSha256: null, error: code };
+      render(<MqttBrokerTlsCard enabled />);
+      expect(screen.getByTestId("mqtt-broker-tls-status")).toHaveTextContent(`mqtt.clientMgmt.brokerTls.error_${code}`);
+      expect(screen.getByTestId("mqtt-broker-tls-status")).not.toHaveTextContent("error_other");
+      expect(screen.queryByTestId("mqtt-broker-tls-rotate")).toBeNull();
+    }
   });
 });

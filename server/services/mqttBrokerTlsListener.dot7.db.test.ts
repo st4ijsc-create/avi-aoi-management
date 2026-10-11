@@ -40,6 +40,11 @@ const ENV_KEYS = [
 const savedEnv: Record<string, string | undefined> = {};
 let SAFETY_DIR = "";
 
+/** J fix 3: the site folder must NOT exist yet (first start builds it private-from-birth); an existing,
+ * unprotected temp folder would be refused (TLS_KEY_ACL_UNPROTECTED). */
+function siteDir(): string {
+  return path.join(tempDir(), "mqtt-tls");
+}
 function tempDir(): string {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "dot7-j1l-"));
   dirs.push(d);
@@ -161,9 +166,9 @@ afterAll(async () => {
 
 describe("J1 — MQTTS listener of the built-in broker", () => {
   it("default: plaintext AND TLS listen; the site certificate is generated in MQTT_TLS_DIR; its fingerprint is reported", async () => {
-    const dir = tempDir();
+    const dir = siteDir();
     await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
-    await waitFor(() => !!mod.getMqttListenPorts().tls && !!mod.getMqttListenPorts().tcp, 10_000, "listeners");
+    await waitFor(() => !!mod.getMqttListenPorts().tls && !!mod.getMqttListenPorts().tcp, 30_000, "listeners");
     const ports = mod.getMqttListenPorts();
     for (const p of [ports.tcp, ports.ws, ports.tls]) expect([1883, 1884, 8883, 8884]).not.toContain(p);
 
@@ -190,7 +195,7 @@ describe("J1 — MQTTS listener of the built-in broker", () => {
     await stopBroker();
     expect(mod.getMqttListenPorts().tls).toBeNull();
     await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
-    await waitFor(() => !!mod.getMqttListenPorts().tls, 10_000, "tls again");
+    await waitFor(() => !!mod.getMqttListenPorts().tls, 30_000, "tls again");
     expect(mod.getMqttBrokerTlsStatus().fingerprintSha256).toBe(fp);
     expect(fs.readFileSync(path.join(dir, "broker-tls.pem"), "utf8")).toBe(text);
     await stopBroker();
@@ -199,9 +204,9 @@ describe("J1 — MQTTS listener of the built-in broker", () => {
   it("MQTT_PLAIN_ENABLED=false ⇒ MQTTS only (no plaintext TCP/WS listener), and shutdown still closes the broker", async () => {
     process.env.MQTT_PLAIN_ENABLED = "false";
     try {
-      const dir = tempDir();
+      const dir = siteDir();
       await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
-      await waitFor(() => !!mod.getMqttListenPorts().tls, 10_000, "tls");
+      await waitFor(() => !!mod.getMqttListenPorts().tls, 30_000, "tls");
       const ports = mod.getMqttListenPorts();
       expect(ports.tcp).toBeNull();
       expect(ports.ws).toBeNull();
@@ -216,10 +221,14 @@ describe("J1 — MQTTS listener of the built-in broker", () => {
   }, 60_000);
 
   it("fail-closed: a corrupt certificate file ⇒ NO TLS listener, error shown, file untouched, plaintext broker unaffected", async () => {
-    const dir = tempDir();
+    const dir = siteDir();
+    // a first start creates the private folder + key; then the file content gets damaged (its ACL stays private)
+    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
+    await waitFor(() => !!mod.getMqttListenPorts().tls, 30_000, "tls first");
+    await stopBroker();
     fs.writeFileSync(path.join(dir, "broker-tls.pem"), "not a pem");
     await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
-    await waitFor(() => !!mod.getMqttListenPorts().tcp && mod.getMqttBrokerTlsStatus().error !== null, 10_000, "status");
+    await waitFor(() => !!mod.getMqttListenPorts().tcp && mod.getMqttBrokerTlsStatus().error !== null, 30_000, "status");
     expect(mod.getMqttListenPorts().tls).toBeNull();
     expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ enabled: true, listening: false, fingerprintSha256: null, error: "TLS_FILE_CORRUPT" });
     expect(fs.readFileSync(path.join(dir, "broker-tls.pem"), "utf8")).toBe("not a pem");
@@ -232,8 +241,8 @@ describe("J1 — MQTTS listener of the built-in broker", () => {
     await new Promise<void>((r) => blocker.listen(0, "127.0.0.1", () => r()));
     const taken = (blocker.address() as { port: number }).port;
     try {
-      await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: taken, dir: tempDir() } });
-      await waitFor(() => !!mod.getMqttListenPorts().tcp && mod.getMqttBrokerTlsStatus().error !== null, 10_000, "status");
+      await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: taken, dir: siteDir() } });
+      await waitFor(() => !!mod.getMqttListenPorts().tcp && mod.getMqttBrokerTlsStatus().error !== null, 30_000, "status");
       expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ listening: false, error: "EADDRINUSE" });
       expect(mod.getMqttBrokerTlsStatus().fingerprintSha256).toMatch(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
       await new Promise((r) => setTimeout(r, 300)); // a broker shutdown (old EADDRINUSE path) would land here

@@ -23,6 +23,14 @@ const KNOWN_ERRORS = new Set([
   "TLS_CONFIG_INCOMPLETE",
   "TLS_WRITE_FAILED",
   "EADDRINUSE",
+  // doc 81 Đợt 7 J fix 3 — key-material security refusals (Windows allow-list / owner / links / exposure)
+  "TLS_KEY_EXPOSED",
+  "TLS_KEY_OWNER_FOREIGN",
+  "TLS_KEY_LINKED",
+  "TLS_KEY_DIR_NOT_EMPTY",
+  "TLS_KEY_ACL_UNVERIFIED",
+  "TLS_KEY_ACL_UNPROTECTED",
+  "TLS_KEY_ACL_OPEN",
 ]);
 
 export function MqttBrokerTlsCard({ enabled }: { enabled: boolean }) {
@@ -77,7 +85,14 @@ export function MqttBrokerTlsCard({ enabled }: { enabled: boolean }) {
             </span>
           ) : null}
         </div>
-        {s?.fingerprintSha256 ? (
+        {s?.error === "TLS_KEY_EXPOSED" ? (
+          // J fix 3 (R-7-b) — the key may be exposed: it is never used again; the admin must rotate it
+          <div className="rounded border border-destructive bg-destructive/10 p-2 text-destructive" data-testid="mqtt-broker-tls-rotate" role="alert">
+            <div className="font-semibold">{t("mqtt.clientMgmt.brokerTls.rotateRequired")}</div>
+            <div className="text-xs">{t("mqtt.clientMgmt.brokerTls.error_TLS_KEY_EXPOSED")}</div>
+          </div>
+        ) : null}
+        {s?.fingerprintSha256 && s.error !== "TLS_KEY_EXPOSED" ? (
           <div className="space-y-1">
             <div className="text-muted-foreground">{t("mqtt.clientMgmt.brokerTls.fingerprint")}</div>
             <div className="flex flex-wrap items-center gap-2">

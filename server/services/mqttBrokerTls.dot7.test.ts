@@ -91,17 +91,17 @@ async function handshake(keyPem: string, certPem: string, pin: string): Promise<
 }
 
 describe("flags — TLS on unless EXPLICITLY off; plaintext open unless EXPLICITLY off", () => {
-  it("MQTT_TLS_ENABLED", () => {
+  it("MQTT_TLS_ENABLED", async () => {
     expect(mqttTlsEnabled({})).toBe(true);
     for (const v of ["false", "0", "off", "no", " OFF ", "False"]) expect(mqttTlsEnabled({ MQTT_TLS_ENABLED: v })).toBe(false);
     for (const v of ["true", "1", "flase", "", "yes"]) expect(mqttTlsEnabled({ MQTT_TLS_ENABLED: v })).toBe(true);
   });
-  it("MQTT_PLAIN_ENABLED", () => {
+  it("MQTT_PLAIN_ENABLED", async () => {
     expect(mqttPlainEnabled({})).toBe(true);
     for (const v of ["false", "0", "off", "no"]) expect(mqttPlainEnabled({ MQTT_PLAIN_ENABLED: v })).toBe(false);
     for (const v of ["true", "typo", ""]) expect(mqttPlainEnabled({ MQTT_PLAIN_ENABLED: v })).toBe(true);
   });
-  it("MQTT_TLS_DIR default is <cwd>/data/mqtt-tls (gitignored /data/)", () => {
+  it("MQTT_TLS_DIR default is <cwd>/data/mqtt-tls (gitignored /data/)", async () => {
     expect(mqttTlsDir({})).toBe(path.resolve(process.cwd(), "data", "mqtt-tls"));
     const d = tempDir();
     expect(mqttTlsDir({ MQTT_TLS_DIR: d })).toBe(path.resolve(d));
@@ -109,7 +109,7 @@ describe("flags — TLS on unless EXPLICITLY off; plaintext open unless EXPLICIT
 });
 
 describe("mintSiteBrokerCertificate", () => {
-  it("is a parseable ECDSA P-256 self-signed server certificate, valid ~20 years, key matches", () => {
+  it("is a parseable ECDSA P-256 self-signed server certificate, valid ~20 years, key matches", async () => {
     const { keyPem, certPem } = mintSiteBrokerCertificate({ commonName: "T-J1", days: 7300 });
     const x = new X509Certificate(certPem);
     expect(x.ca).toBe(false);
@@ -126,7 +126,7 @@ describe("mintSiteBrokerCertificate", () => {
     expect(keyPem).toContain("BEGIN PRIVATE KEY");
   });
 
-  it("dates from 2050 use GeneralizedTime (still parseable, exact year)", () => {
+  it("dates from 2050 use GeneralizedTime (still parseable, exact year)", async () => {
     const { certPem } = mintSiteBrokerCertificate({ commonName: "T-2050", days: 3650, now: new Date("2049-06-01T00:00:00Z") });
     expect(new Date(new X509Certificate(certPem).validTo).getUTCFullYear()).toBe(2059);
   });
@@ -143,9 +143,9 @@ describe("mintSiteBrokerCertificate", () => {
 });
 
 describe("loadOrCreateSiteBrokerTls — generated once, stored outside git, never overwritten", () => {
-  it("first start generates (0600 file), second start loads the SAME certificate", () => {
+  it("first start generates (0600 file), second start loads the SAME certificate", async () => {
     const dir = path.join(tempDir(), "nested", "mqtt-tls");
-    const first = loadOrCreateSiteBrokerTls({ dir, acl: null });
+    const first = await loadOrCreateSiteBrokerTls({ dir, acl: null });
     const file = path.join(dir, SITE_TLS_FILE_NAME);
     expect(first.created).toBe(true);
     expect(first.source).toBe("generated");
@@ -156,34 +156,34 @@ describe("loadOrCreateSiteBrokerTls — generated once, stored outside git, neve
     if (process.platform !== "win32") expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(fs.readdirSync(dir)).toEqual([SITE_TLS_FILE_NAME]); // no temp file left behind
 
-    const second = loadOrCreateSiteBrokerTls({ dir, acl: null });
+    const second = await loadOrCreateSiteBrokerTls({ dir, acl: null });
     expect(second.created).toBe(false);
     expect(second.fingerprintSha256).toBe(first.fingerprintSha256);
     expect(fs.readFileSync(file, "utf8")).toBe(text);
   });
 
-  it("a corrupt file ⇒ BrokerTlsError TLS_FILE_CORRUPT and the file is NOT touched", () => {
+  it("a corrupt file ⇒ BrokerTlsError TLS_FILE_CORRUPT and the file is NOT touched", async () => {
     const dir = tempDir();
     const file = path.join(dir, SITE_TLS_FILE_NAME);
     fs.writeFileSync(file, "garbage-not-pem");
-    expect(() => loadOrCreateSiteBrokerTls({ dir, acl: null })).toThrow(BrokerTlsError);
-    try { loadOrCreateSiteBrokerTls({ dir, acl: null }); } catch (e) { expect((e as BrokerTlsError).code).toBe("TLS_FILE_CORRUPT"); }
+    await expect(loadOrCreateSiteBrokerTls({ dir, acl: null })).rejects.toThrow(BrokerTlsError);
+    try { await loadOrCreateSiteBrokerTls({ dir, acl: null }); } catch (e) { expect((e as BrokerTlsError).code).toBe("TLS_FILE_CORRUPT"); }
     expect(fs.readFileSync(file, "utf8")).toBe("garbage-not-pem");
   });
 
-  it("a key that does not match the certificate ⇒ TLS_KEY_MISMATCH, file untouched", () => {
+  it("a key that does not match the certificate ⇒ TLS_KEY_MISMATCH, file untouched", async () => {
     const dir = tempDir();
     const a = mintSiteBrokerCertificate({ commonName: "A", days: 30 });
     const b = mintSiteBrokerCertificate({ commonName: "B", days: 30 });
     const file = path.join(dir, SITE_TLS_FILE_NAME);
     fs.writeFileSync(file, b.keyPem + a.certPem);
     let code = "";
-    try { loadOrCreateSiteBrokerTls({ dir, acl: null }); } catch (e) { code = (e as BrokerTlsError).code; }
+    try { await loadOrCreateSiteBrokerTls({ dir, acl: null }); } catch (e) { code = (e as BrokerTlsError).code; }
     expect(code).toBe("TLS_KEY_MISMATCH");
     expect(fs.readFileSync(file, "utf8")).toBe(b.keyPem + a.certPem);
   });
 
-  it("losing the generation race loads the WINNER's certificate (exclusive link, no overwrite)", () => {
+  it("losing the generation race loads the WINNER's certificate (exclusive link, no overwrite)", async () => {
     const dir = tempDir();
     const winner = mintSiteBrokerCertificate({ commonName: "WINNER", days: 30 });
     const file = path.join(dir, SITE_TLS_FILE_NAME);
@@ -193,7 +193,7 @@ describe("loadOrCreateSiteBrokerTls — generated once, stored outside git, neve
       return realLink(src, dst);
     });
     try {
-      const got = loadOrCreateSiteBrokerTls({ dir, acl: null });
+      const got = await loadOrCreateSiteBrokerTls({ dir, acl: null });
       expect(got.created).toBe(false);
       expect(got.fingerprintSha256).toBe(fingerprintFromPem(winner.certPem));
       expect(fs.readFileSync(file, "utf8")).toBe(winner.keyPem + winner.certPem);
@@ -205,44 +205,44 @@ describe("loadOrCreateSiteBrokerTls — generated once, stored outside git, neve
 });
 
 describe("resolveBrokerTls — operator certificate wins; half a config refuses", () => {
-  it("MQTT_TLS_CERT + MQTT_TLS_KEY ⇒ that certificate (source configured)", () => {
+  it("MQTT_TLS_CERT + MQTT_TLS_KEY ⇒ that certificate (source configured)", async () => {
     const dir = tempDir();
     const c = mintSiteBrokerCertificate({ commonName: "OPERATOR", days: 30 });
     fs.writeFileSync(path.join(dir, "c.pem"), c.certPem);
     fs.writeFileSync(path.join(dir, "k.pem"), c.keyPem);
-    const m = resolveBrokerTls({ MQTT_TLS_CERT: path.join(dir, "c.pem"), MQTT_TLS_KEY: path.join(dir, "k.pem"), MQTT_TLS_DIR: dir }, null);
+    const m = await resolveBrokerTls({ MQTT_TLS_CERT: path.join(dir, "c.pem"), MQTT_TLS_KEY: path.join(dir, "k.pem"), MQTT_TLS_DIR: dir }, null);
     expect(m.source).toBe("configured");
     expect(m.fingerprintSha256).toBe(fingerprintFromPem(c.certPem));
     expect(fs.existsSync(path.join(dir, SITE_TLS_FILE_NAME))).toBe(false);
   });
 
-  it("only one of MQTT_TLS_CERT / MQTT_TLS_KEY ⇒ TLS_CONFIG_INCOMPLETE (no silent fallback)", () => {
+  it("only one of MQTT_TLS_CERT / MQTT_TLS_KEY ⇒ TLS_CONFIG_INCOMPLETE (no silent fallback)", async () => {
     const dir = tempDir();
     for (const env of [{ MQTT_TLS_CERT: "/x.pem" }, { MQTT_TLS_KEY: "/k.pem" }]) {
       let code = "";
-      try { resolveBrokerTls({ ...env, MQTT_TLS_DIR: dir }, null); } catch (e) { code = (e as BrokerTlsError).code; }
+      try { await resolveBrokerTls({ ...env, MQTT_TLS_DIR: dir }, null); } catch (e) { code = (e as BrokerTlsError).code; }
       expect(code).toBe("TLS_CONFIG_INCOMPLETE");
     }
     expect(fs.existsSync(path.join(dir, SITE_TLS_FILE_NAME))).toBe(false);
   });
 
-  it("an unreadable configured file ⇒ TLS_FILE_UNREADABLE", () => {
+  it("an unreadable configured file ⇒ TLS_FILE_UNREADABLE", async () => {
     const dir = tempDir();
     let code = "";
-    try { resolveBrokerTls({ MQTT_TLS_CERT: path.join(dir, "nope.pem"), MQTT_TLS_KEY: path.join(dir, "nope.key") }, null); } catch (e) { code = (e as BrokerTlsError).code; }
+    try { await resolveBrokerTls({ MQTT_TLS_CERT: path.join(dir, "nope.pem"), MQTT_TLS_KEY: path.join(dir, "nope.key") }, null); } catch (e) { code = (e as BrokerTlsError).code; }
     expect(code).toBe("TLS_FILE_UNREADABLE");
   });
 
-  it("nothing configured ⇒ the generated site certificate in MQTT_TLS_DIR", () => {
+  it("nothing configured ⇒ the generated site certificate in MQTT_TLS_DIR", async () => {
     const dir = tempDir();
-    const m = resolveBrokerTls({ MQTT_TLS_DIR: dir }, null);
+    const m = await resolveBrokerTls({ MQTT_TLS_DIR: dir }, null);
     expect(m.source).toBe("generated");
     expect(m.fingerprintSha256).toBe(fingerprintFromPem(fs.readFileSync(path.join(dir, SITE_TLS_FILE_NAME), "utf8")));
   });
 });
 
 describe("fix 1 — subjectAltName (hostname, localhost, 127.0.0.1, LAN IPv4)", () => {
-  it("siteSubjectAltNames = localhost + 127.0.0.1 + every non-internal IPv4 of this host (+ the hostname when DNS-valid)", () => {
+  it("siteSubjectAltNames = localhost + 127.0.0.1 + every non-internal IPv4 of this host (+ the hostname when DNS-valid)", async () => {
     const san = siteSubjectAltNames();
     const lan = Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a!.address);
     expect(new Set(san.ips)).toEqual(new Set(["127.0.0.1", ...lan]));
@@ -263,20 +263,20 @@ describe("fix 1 — subjectAltName (hostname, localhost, 127.0.0.1, LAN IPv4)", 
     expect((await handshakeByName(noSan.keyPem, noSan.certPem, "127.0.0.1")).err).toBe("ERR_TLS_CERT_ALTNAME_INVALID");
   });
 
-  it("invalid names are dropped, never encoded", () => {
+  it("invalid names are dropped, never encoded", async () => {
     const c = mintSiteBrokerCertificate({ commonName: "F", days: 30, subjectAltNames: { dns: ["ok-name", "bad name", "x_y"], ips: ["10.0.0.1", "999.1.1.1", "::1"] } });
     expect(new X509Certificate(c.certPem).subjectAltName).toBe("DNS:ok-name, IP Address:10.0.0.1");
   });
 
-  it("a generated site certificate carries the host SAN; an EXISTING certificate without SAN is NOT regenerated", () => {
+  it("a generated site certificate carries the host SAN; an EXISTING certificate without SAN is NOT regenerated", async () => {
     const dir = tempDir();
-    const m = loadOrCreateSiteBrokerTls({ dir, acl: null });
+    const m = await loadOrCreateSiteBrokerTls({ dir, acl: null });
     expect(new X509Certificate(m.certPem).subjectAltName).toContain("IP Address:127.0.0.1");
     const dir2 = tempDir();
     const old = mintSiteBrokerCertificate({ commonName: "OLD-NO-SAN", days: 30 });
     fs.writeFileSync(path.join(dir2, SITE_TLS_FILE_NAME), old.keyPem + old.certPem);
     const before = fs.readFileSync(path.join(dir2, SITE_TLS_FILE_NAME), "utf8");
-    const again = loadOrCreateSiteBrokerTls({ dir: dir2, acl: null });
+    const again = await loadOrCreateSiteBrokerTls({ dir: dir2, acl: null });
     expect(again.fingerprintSha256).toBe(fingerprintFromPem(old.certPem));
     expect(new X509Certificate(again.certPem).subjectAltName).toBeUndefined();
     expect(fs.readFileSync(path.join(dir2, SITE_TLS_FILE_NAME), "utf8")).toBe(before);
@@ -284,19 +284,19 @@ describe("fix 1 — subjectAltName (hostname, localhost, 127.0.0.1, LAN IPv4)", 
 });
 
 describe("fix 1/2 — leftover temp key files are swept at start (only crash leftovers older than 10 min)", () => {
-  it("a YOUNG temp file (a concurrent starter's, mid-write) is NOT deleted", () => {
+  it("a YOUNG temp file (a concurrent starter's, mid-write) is NOT deleted", async () => {
     const dir = tempDir();
     const young = path.join(dir, `${SITE_TLS_FILE_NAME}.4243.cafe00000000.tmp`);
     fs.writeFileSync(young, "concurrent starter");
-    loadOrCreateSiteBrokerTls({ dir, acl: null });
+    await loadOrCreateSiteBrokerTls({ dir, acl: null });
     expect(fs.existsSync(young)).toBe(true);
     const nineMin = new Date(Date.now() - 9 * 60_000);
     fs.utimesSync(young, nineMin, nineMin);
-    loadOrCreateSiteBrokerTls({ dir, acl: null });
+    await loadOrCreateSiteBrokerTls({ dir, acl: null });
     expect(fs.existsSync(young)).toBe(true);
   });
 
-  it("broker-tls.pem.<pid>.<rand>.tmp older than 10 min removed (with or without an existing certificate); unrelated files kept", () => {
+  it("broker-tls.pem.<pid>.<rand>.tmp older than 10 min removed (with or without an existing certificate); unrelated files kept", async () => {
     for (const existing of [true, false]) {
       const dir = tempDir();
       if (existing) {
@@ -308,7 +308,7 @@ describe("fix 1/2 — leftover temp key files are swept at start (only crash lef
       const old = new Date(Date.now() - 11 * 60_000);
       fs.utimesSync(left, old, old);
       fs.writeFileSync(path.join(dir, "other.tmp"), "keep");
-      loadOrCreateSiteBrokerTls({ dir, acl: null });
+      await loadOrCreateSiteBrokerTls({ dir, acl: null });
       expect(fs.readdirSync(dir).sort()).toEqual([SITE_TLS_FILE_NAME, "other.tmp"]);
     }
   });

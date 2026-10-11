@@ -1833,7 +1833,8 @@ async function startMqttTlsListener(host: string, tlsPort: number, dir?: string)
   // the stored file untouched; the plaintext listeners are unaffected.
   let material: BrokerTlsMaterial;
   try {
-    material = resolveBrokerTls(dir ? { ...process.env, MQTT_TLS_DIR: dir } : process.env);
+    // doc 81 Đợt 7 J fix 3 (F5): async — the Windows ownership/ACL checks never block the event loop
+    material = await resolveBrokerTls(dir ? { ...process.env, MQTT_TLS_DIR: dir } : process.env);
   } catch (err) {
     const code = err instanceof BrokerTlsError ? err.code : 'TLS_SETUP_FAILED';
     brokerTlsStatus = { ...brokerTlsStatus, listening: false, error: code };

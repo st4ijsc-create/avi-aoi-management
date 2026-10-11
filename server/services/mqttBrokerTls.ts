@@ -6,15 +6,16 @@
  * default 8884) — ON BY DEFAULT whenever the broker runs:
  *   · a site certificate is GENERATED on first start (ECDSA P-256, self-signed) and stored OUTSIDE git, in
  *     `MQTT_TLS_DIR` (default `<cwd>/data/mqtt-tls/`, ignored by `/data/` in .gitignore). POSIX: file mode 0600 /
- *     dir 0700. WINDOWS (fix 1/2, ruling R-7-a — `mode` does nothing on NTFS; `data/` gives Authenticated Users
- *     Modify): ALLOW-LIST by SID — only the server's own account, SYSTEM and Administrators may OWN the folder / key /
- *     certificate or appear in ANY allow ACE. The folder is created non-recursively and its DACL is REPLACED (no
- *     inheritance, allow-list only) before any file is written; the empty key file likewise before the key is written.
- *     At every start the full descriptor (Get-Acl .Sddl, strict parser) of the folder and the key is checked:
- *     foreign owner ⇒ possibly PLANTED ⇒ refused, never adopted or repaired; other trustees with our own owner ⇒
- *     logged, DACL rebuilt from scratch, re-checked; null DACL / conditional or unknown ACE / unparseable or
- *     unreadable descriptor ⇒ unverified. Any of these ⇒ the TLS listener does NOT start (plaintext unaffected).
- *     MQTT_TLS_KEY / MQTT_TLS_CERT get the same owner check (and the key the DACL check).
+ *     dir 0700. WINDOWS (fix 1/2/3, rulings R-7-a + R-7-b — `mode` does nothing on NTFS; `data/` gives Authenticated
+ *     Users Modify): ALLOW-LIST by full SID — only the server's own account, SYSTEM and Administrators may OWN the folder
+ *     / key / certificate or appear in ANY allow ACE, and the DACL must be PROTECTED. FIRST start: the key is built in a
+ *     staging folder created non-recursively WITH its DACL (no window), verified EMPTY before the key is written, then renamed
+ *     into place (no open window, nothing planted). EVERY start: the key file is opened ONCE and its owner, DACL, link
+ *     count and reparse attribute are checked through that handle, and the bytes are read from that same handle.
+ *     Foreign owner / hard link / reparse point ⇒ refused and NEVER touched or adopted. A NULL DACL or any stranger
+ *     allow ACE ⇒ "key may be exposed": the DACL is rebuilt to stop further access and TLS is STILL refused — the key
+ *     must be rotated (DEPLOY_LAN_GUIDE). Unverifiable / unprotected ⇒ locked down and refused for this start. All
+ *     Windows calls are async with a timeout (a timeout ⇒ refuse); the plaintext listeners are never affected.
  *   · the certificate names the host (subjectAltName: hostname, localhost, 127.0.0.1 and the LAN IPv4 addresses at
  *     generation time) so a client that validates normally can also use it; an EXISTING certificate is never
  *     regenerated to add them (that would change the fingerprint) — see DEPLOY_LAN_GUIDE for deliberate rotation;
@@ -42,7 +43,7 @@
  * Hand-rolled DER (no node-forge / openssl dependency, same approach as security/x509Mint.ts, but ECDSA P-256:
  * Android's TLS stack does not offer Ed25519 server certificates).
  */
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createPrivateKey, generateKeyPairSync, randomBytes, sign, X509Certificate } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -202,7 +203,11 @@ export class BrokerTlsError extends Error {
       | "TLS_WRITE_FAILED"
       | "TLS_KEY_ACL_OPEN"
       | "TLS_KEY_ACL_UNVERIFIED"
-      | "TLS_KEY_OWNER_FOREIGN",
+      | "TLS_KEY_ACL_UNPROTECTED"
+      | "TLS_KEY_OWNER_FOREIGN"
+      | "TLS_KEY_EXPOSED"
+      | "TLS_KEY_LINKED"
+      | "TLS_KEY_DIR_NOT_EMPTY",
     message: string,
   ) {
     super(message);
@@ -262,127 +267,191 @@ function materialFrom(pair: { keyPem: string; certPem: string; cert: X509Certifi
   };
 }
 
-// ── Windows security descriptor of the private key (fix 1 + fix 2, ruling R-7-a) ─────────────
+// ── Windows security of the key material (fix 1/2/3, rulings R-7-a + R-7-b) ──────────────────────────────────
 /**
- * Who owns / may access the key material. POSIX keeps file modes (0600/0700) and passes `null`. On Windows the
- * default is {@link windowsKeyFileAcl}; tests inject a fake. ALLOW-LIST semantics (R-7-a): only the server's own
- * account, SYSTEM (S-1-5-18) and Administrators (S-1-5-32-544) may own the folder / key / certificate or appear in
- * ANY allow ACE. Everything else — another SID, a null DACL, a conditional / object / unknown ACE, a descriptor that
- * cannot be read or fully parsed — is refused (fail closed).
+ * Owner / DACL / link facts of one object, as reported through ITS OWN HANDLE (files) or by path (folders).
+ * Every SID is a full SID (no SDDL aliases — LocalService, NetworkService, the built-in Administrator all compare by
+ * value). `aces` lists every DACL entry with its .NET AceType name; anything other than AccessAllowed/AccessDenied is
+ * unverifiable.
+ */
+export interface DescriptorFacts {
+  owner: string;
+  protectedDacl: boolean;
+  /** false = NULL DACL (Everyone full control). */
+  daclPresent: boolean;
+  aces: Array<{ type: string; sid: string }>;
+  /** Win32 attributes of the PATH itself (not followed): 0x400 = reparse point (symlink, junction…). */
+  pathAttributes: number;
+}
+export interface FileFacts extends DescriptorFacts {
+  /** NumberOfLinks from the open handle — > 1 means a hard link elsewhere shares this file (and its DACL). */
+  links: number;
+  /** Win32 attributes from the open handle. */
+  attributes: number;
+  /** The bytes, read from the SAME handle that was checked (opened once, FileShare.Read: nobody writes meanwhile). */
+  content: Buffer;
+}
+
+/**
+ * Windows access to the key material. Every method is ASYNC with a timeout (fix 3, F5): a hang or timeout throws ⇒ the
+ * caller refuses TLS; nothing here ever blocks the event loop. Tests inject a fake.
  */
 export interface KeyFileAcl {
-  /** SIDs allowed to own the key material and to appear in its DACL. */
-  allowedSids(): string[];
-  /** Full security descriptor as SDDL ("O:…G:…D:…"). Throws when it cannot be read. */
-  readSddl(target: string): string;
-  /** REPLACE the whole DACL with exactly the allowed set (protected: no inheritance). Throws on failure. */
-  rebuild(target: string, isDir: boolean): void;
+  /** Full SIDs allowed to own the key material and to appear in ANY allow ACE: the server account, SYSTEM, Administrators. */
+  allowedSids(): Promise<string[]>;
+  /** Facts of a FOLDER (by path; the path's own reparse attribute is reported, never followed for the descriptor). */
+  inspectDir(dir: string): Promise<DescriptorFacts>;
+  /** Open the FILE once, report its facts through that handle and its content from the same handle. */
+  inspectAndReadFile(file: string): Promise<FileFacts>;
+  /** REPLACE the whole DACL with exactly the allowed set (protected, no inheritance). */
+  rebuild(target: string, isDir: boolean): Promise<void>;
+  /**
+   * Create a NEW folder whose protected allow-list DACL is set AT CREATION (CreateDirectory with a security descriptor):
+   * there is no moment in which it inherits anything. Rejects if it cannot.
+   */
+  createPrivateDir(dir: string): Promise<void>;
 }
 
-const SID_ALIAS: Record<string, string> = { SY: "S-1-5-18", BA: "S-1-5-32-544" };
+const FILE_ATTRIBUTE_REPARSE_POINT = 0x400;
 const SID_RE = /^S-1-\d+(?:-\d+)+$/;
-
-export interface ParsedDescriptor {
-  /** Owner SID (aliases SY/BA expanded; any other alias kept as written ⇒ never allowed). */
-  owner: string;
-  /** Trustee of every ALLOW ACE (type A), aliases SY/BA expanded. Deny ACEs never grant and are not listed. */
-  allowTrustees: string[];
-}
-
-export class SddlUnverifiable extends Error {}
-
-function normTrustee(t: string): string {
-  const u = t.trim().toUpperCase();
-  return SID_ALIAS[u] ?? u;
-}
+const ACE_TYPES_ACCEPTED = new Set(["AccessAllowed", "AccessDenied"]);
+/** Largest key/certificate file we read (a PEM pair is ~1 KB). */
+const MAX_TLS_FILE_BYTES = 64 * 1024;
 
 /**
- * STRICT parser for the SDDL of a file/folder. Throws SddlUnverifiable for anything it cannot account for
- * completely: no owner, no DACL (a null DACL = Everyone full control), NO_ACCESS_CONTROL, unknown DACL flags,
- * stray text, unbalanced parentheses, a conditional ACE (nested parentheses), an ACE type other than A/D
- * (object, callback, conditional, mandatory-label, unknown) or a malformed ACE.
+ * STRICT parser for the report lines the PowerShell helpers print (format below). Anything missing, duplicated,
+ * malformed or unknown throws — the caller turns that into TLS_KEY_ACL_UNVERIFIED.
  */
-export function parseSecurityDescriptor(sddl: string): ParsedDescriptor {
-  const s = String(sddl ?? "").trim();
-  // split into top-level components O: G: D: S: (only at depth 0)
-  const parts: Record<string, string> = {};
-  let i = 0;
-  let depth = 0;
-  let key: string | null = null;
-  let start = 0;
-  const flush = (end: number) => {
-    if (key) {
-      if (key in parts) throw new SddlUnverifiable(`duplicate ${key}: component`);
-      parts[key] = s.slice(start, end);
+export function parseFactsReport(text: string, kind: "dir" | "file"): DescriptorFacts | FileFacts {
+  const one: Record<string, string> = {};
+  const aces: Array<{ type: string; sid: string }> = [];
+  for (const raw of String(text ?? "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^([A-Z]+)=(.*)$/);
+    if (!m) throw new Error(`unexpected report line "${line.slice(0, 80)}"`);
+    if (m[1] === "ACE") {
+      const a = m[2].match(/^([A-Za-z]+)\|(S-1-\d+(?:-\d+)+|\?)$/);
+      if (!a) throw new Error(`malformed ACE line "${m[2].slice(0, 80)}"`);
+      aces.push({ type: a[1], sid: a[2] });
+    } else {
+      if (m[1] in one) throw new Error(`duplicate ${m[1]}`);
+      one[m[1]] = m[2];
     }
+  }
+  const need = kind === "file" ? ["OWNER", "PROTECTED", "DACL", "PATHATTRS", "LINKS", "ATTRS", "CONTENT"] : ["OWNER", "PROTECTED", "DACL", "PATHATTRS"];
+  for (const k of need) if (!(k in one)) throw new Error(`report lacks ${k}`);
+  for (const k of Object.keys(one)) if (!need.includes(k)) throw new Error(`unexpected ${k}`);
+  if (!SID_RE.test(one.OWNER)) throw new Error("owner is not a SID");
+  if (!/^[01]$/.test(one.PROTECTED)) throw new Error("bad PROTECTED");
+  if (one.DACL !== "present" && one.DACL !== "null") throw new Error("bad DACL");
+  if (one.DACL === "null" && aces.length) throw new Error("ACEs reported for a null DACL");
+  const int = (k: string) => {
+    if (!/^\d{1,10}$/.test(one[k])) throw new Error(`bad ${k}`);
+    return Number(one[k]);
   };
-  while (i < s.length) {
-    const c = s[i];
-    if (c === "(") depth++;
-    else if (c === ")") {
-      depth--;
-      if (depth < 0) throw new SddlUnverifiable("unbalanced parentheses");
-    } else if (depth === 0 && /[OGDS]/.test(c) && s[i + 1] === ":" && (i === 0 || key !== null)) {
-      // a component starts here only if the previous one can end here (SIDs/flags never contain ':')
-      flush(i);
-      key = c;
-      start = i + 2;
-      i += 2;
-      continue;
-    } else if (key === null) {
-      throw new SddlUnverifiable("descriptor does not start with a component");
-    }
-    i++;
-  }
-  if (depth !== 0) throw new SddlUnverifiable("unbalanced parentheses");
-  flush(s.length);
+  const facts: DescriptorFacts = {
+    owner: one.OWNER,
+    protectedDacl: one.PROTECTED === "1",
+    daclPresent: one.DACL === "present",
+    aces,
+    pathAttributes: int("PATHATTRS"),
+  };
+  if (kind === "dir") return facts;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(one.CONTENT)) throw new Error("bad CONTENT");
+  return { ...facts, links: int("LINKS"), attributes: int("ATTRS"), content: Buffer.from(one.CONTENT, "base64") };
+}
 
-  const owner = parts.O;
-  if (!owner) throw new SddlUnverifiable("no owner");
-  const dacl = parts.D;
-  if (dacl === undefined) throw new SddlUnverifiable("no DACL (a null DACL grants Everyone full control)");
-  const firstAce = dacl.indexOf("(");
-  const flags = firstAce < 0 ? dacl : dacl.slice(0, firstAce);
-  if (/NO_ACCESS_CONTROL/i.test(flags)) throw new SddlUnverifiable("NO_ACCESS_CONTROL (null DACL)");
-  if (!/^(?:P|AI|AR)*$/.test(flags)) throw new SddlUnverifiable(`unknown DACL flags "${flags}"`);
-  const aceText = firstAce < 0 ? "" : dacl.slice(firstAce);
-  const allowTrustees: string[] = [];
-  let rest = aceText;
-  while (rest.length) {
-    const m = rest.match(/^\(([^()]*)\)/);
-    if (!m) throw new SddlUnverifiable("unparseable or conditional ACE");
-    const f = m[1].split(";");
-    if (f.length !== 6) throw new SddlUnverifiable(`malformed ACE "${m[1]}"`);
-    const type = f[0].toUpperCase();
-    const trustee = normTrustee(f[5]);
-    if (!trustee) throw new SddlUnverifiable(`ACE without trustee "${m[1]}"`);
-    if (type === "A") allowTrustees.push(trustee);
-    else if (type !== "D") throw new SddlUnverifiable(`ACE type "${f[0]}" not accepted`);
-    rest = rest.slice(m[0].length);
-  }
-  return { owner: normTrustee(owner), allowTrustees };
+export type MaterialVerdict = "ok" | "reparse" | "hardlink" | "foreign-owner" | "exposed" | "unverified" | "unprotected";
+
+/**
+ * What the facts mean (order matters): a reparse point or a second hard link is never touched; a foreign owner is
+ * never adopted or repaired; a NULL DACL or any allow ACE for a SID outside the allow-list = EXPOSED (it may have been
+ * read or written); an ACE type we cannot evaluate = unverified; an unprotected DACL = unprotected (inheritance could
+ * widen it later).
+ */
+export function classifyFacts(f: DescriptorFacts | FileFacts, allowed: ReadonlySet<string>): MaterialVerdict {
+  if ((f.pathAttributes & FILE_ATTRIBUTE_REPARSE_POINT) !== 0) return "reparse";
+  if ("attributes" in f && (f.attributes & FILE_ATTRIBUTE_REPARSE_POINT) !== 0) return "reparse";
+  if ("links" in f && f.links !== 1) return "hardlink";
+  if (!allowed.has(f.owner)) return "foreign-owner";
+  if (!f.daclPresent) return "exposed";
+  if (f.aces.some((a) => a.type === "AccessAllowed" && !allowed.has(a.sid))) return "exposed";
+  if (f.aces.some((a) => !ACE_TYPES_ACCEPTED.has(a.type) || a.sid === "?")) return "unverified";
+  if (!f.protectedDacl) return "unprotected";
+  return "ok";
 }
 
 function sys32(...p: string[]): string {
   return path.join(process.env.SystemRoot || process.env.windir || "C:\\Windows", "System32", ...p);
 }
 
-let cachedSid: string | null = null;
-/** SID of the account this server runs as (`whoami /user`), e.g. S-1-5-18 when it runs as LocalSystem. */
-function currentAccountSid(): string {
-  if (cachedSid) return cachedSid;
-  const out = execFileSync(sys32("whoami.exe"), ["/user", "/fo", "csv", "/nh"], { encoding: "utf8", windowsHide: true });
-  const sid = out.match(/"(S-1-[0-9-]+)"\s*$/m)?.[1];
-  if (!sid) throw new Error("cannot determine the server account SID");
-  cachedSid = sid;
-  return sid;
+/** Per-call timeout for the Windows helpers (whoami / PowerShell). A timeout ⇒ refuse TLS. */
+export function aclTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.MQTT_TLS_ACL_TIMEOUT_MS);
+  return Number.isFinite(n) && n >= 1000 && n <= 60_000 ? Math.floor(n) : 10_000;
+}
+
+/** Async execFile (no shell, absolute path) with a hard timeout; rejects on non-zero exit, kill or timeout. */
+export function runBounded(file: string, args: string[], env: Record<string, string> = {}): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      file,
+      args,
+      { encoding: "utf8", windowsHide: true, timeout: aclTimeoutMs(), killSignal: "SIGKILL", maxBuffer: 1024 * 1024, env: { ...process.env, ...env } },
+      (err, stdout) => {
+        if (err) {
+          const e = err as NodeJS.ErrnoException & { killed?: boolean; signal?: string };
+          reject(new Error(e.killed || e.signal ? `timed out after ${aclTimeoutMs()} ms` : `${path.basename(file)} failed: ${e.code ?? e.message}`));
+        } else resolve(String(stdout));
+      },
+    );
+  });
+}
+
+let cachedSid: Promise<string> | null = null;
+/** SID of the account this server runs as (`whoami /user` reads the process token: S-1-5-18 / -19 / -20 / a user SID). */
+function currentAccountSid(): Promise<string> {
+  if (!cachedSid) {
+    cachedSid = runBounded(sys32("whoami.exe"), ["/user", "/fo", "csv", "/nh"]).then((out) => {
+      const sid = out.match(/"(S-1-[0-9-]+)"\s*$/m)?.[1];
+      if (!sid) throw new Error("cannot determine the server account SID");
+      return sid;
+    });
+    cachedSid.catch(() => { cachedSid = null; });
+  }
+  return cachedSid;
 }
 
 /**
- * PowerShell scripts are CONSTANT strings; the path and the SDDL travel in environment variables of the child
- * process (never interpolated into a command line, never through a shell). `-NoProfile -NonInteractive`.
+ * PowerShell helpers: CONSTANT scripts, the path / SDDL in environment variables of the child (never on a command line,
+ * never through a shell), `-NoProfile -NonInteractive`, `$ErrorActionPreference='Stop'` ⇒ any failure = non-zero exit.
+ * The descriptor is converted to a RawSecurityDescriptor so every trustee is printed as a full SID with its AceType.
  */
-const PS_READ = "$ErrorActionPreference='Stop'; (Get-Acl -LiteralPath $env:MQTT_TLS_ACL_PATH).Sddl";
+const PS_REPORT_SD =
+  "function Report($bin){ $sd = New-Object System.Security.AccessControl.RawSecurityDescriptor -ArgumentList @($bin, 0); " +
+  "'OWNER=' + $sd.Owner.Value; " +
+  "'PROTECTED=' + [int](($sd.ControlFlags -band [System.Security.AccessControl.ControlFlags]::DiscretionaryAclProtected) -ne 0); " +
+  "if ($sd.DiscretionaryAcl -eq $null) { 'DACL=null' } else { 'DACL=present'; foreach ($a in $sd.DiscretionaryAcl) { " +
+  "if ($a -is [System.Security.AccessControl.KnownAce]) { 'ACE=' + $a.AceType + '|' + $a.SecurityIdentifier.Value } else { 'ACE=' + $a.AceType + '|?' } } } }; ";
+const PS_INSPECT_DIR =
+  "$ErrorActionPreference='Stop'; " + PS_REPORT_SD +
+  "$p=$env:MQTT_TLS_ACL_PATH; $i=Get-Item -LiteralPath $p -Force; if (-not ($i -is [System.IO.DirectoryInfo])) { throw 'not a directory' }; " +
+  "Report ((Get-Acl -LiteralPath $p).GetSecurityDescriptorBinaryForm()); 'PATHATTRS=' + [int]$i.Attributes";
+const PS_INSPECT_READ_FILE =
+  "$ErrorActionPreference='Stop'; " + PS_REPORT_SD +
+  "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; using Microsoft.Win32.SafeHandles; " +
+  "public static class MqttTlsJ7 { [StructLayout(LayoutKind.Sequential)] public struct BHFI { public uint Attributes; " +
+  "public uint C1, C2, A1, A2, W1, W2; public uint Volume; public uint SizeHigh; public uint SizeLow; public uint Links; " +
+  "public uint IndexHigh; public uint IndexLow; } [DllImport(\"kernel32.dll\", SetLastError = true)] public static extern bool " +
+  "GetFileInformationByHandle(SafeFileHandle h, out BHFI info); }'; " +
+  "$p=$env:MQTT_TLS_ACL_PATH; $pa=[int](Get-Item -LiteralPath $p -Force).Attributes; " +
+  "$fs=[System.IO.File]::Open($p, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read); " +
+  "try { $info=New-Object MqttTlsJ7+BHFI; if (-not [MqttTlsJ7]::GetFileInformationByHandle($fs.SafeFileHandle, [ref]$info)) { throw 'GetFileInformationByHandle failed' }; " +
+  "Report ($fs.GetAccessControl().GetSecurityDescriptorBinaryForm()); 'PATHATTRS=' + $pa; 'LINKS=' + $info.Links; 'ATTRS=' + $info.Attributes; " +
+  `$len=[int]$fs.Length; if ($len -gt ${MAX_TLS_FILE_BYTES}) { throw 'file too large' }; $buf=New-Object byte[] $len; $n=0; ` +
+  "while ($n -lt $len) { $r=$fs.Read($buf, $n, $len - $n); if ($r -le 0) { break }; $n+=$r }; " +
+  "'CONTENT=' + [Convert]::ToBase64String($buf, 0, $n) } finally { $fs.Dispose() }";
 const PS_REBUILD =
   "$ErrorActionPreference='Stop'; $p=$env:MQTT_TLS_ACL_PATH; $i=Get-Item -LiteralPath $p -Force; " +
   "if ($i -is [System.IO.DirectoryInfo]) { $s=New-Object System.Security.AccessControl.DirectorySecurity } " +
@@ -390,25 +459,35 @@ const PS_REBUILD =
   "$s.SetSecurityDescriptorSddlForm($env:MQTT_TLS_ACL_SDDL, [System.Security.AccessControl.AccessControlSections]::Access); " +
   "$i.SetAccessControl($s)";
 
-function powershell(script: string, env: Record<string, string>): string {
-  return execFileSync(sys32("WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", script], {
-    encoding: "utf8",
-    windowsHide: true,
-    env: { ...process.env, ...env },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+const PS_CREATE_PRIVATE_DIR =
+  "$ErrorActionPreference='Stop'; $p=$env:MQTT_TLS_ACL_PATH; if (Test-Path -LiteralPath $p) { throw 'already exists' }; " +
+  "$s=New-Object System.Security.AccessControl.DirectorySecurity; " +
+  "$s.SetSecurityDescriptorSddlForm($env:MQTT_TLS_ACL_SDDL, [System.Security.AccessControl.AccessControlSections]::Access); " +
+  "[void][System.IO.Directory]::CreateDirectory($p, $s)";
+
+function powershell(script: string, env: Record<string, string>): Promise<string> {
+  return runBounded(sys32("WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", script], env);
 }
 
-/** Windows implementation: Get-Acl (.Sddl) to read; a whole new DACL via SetAccessControl to rebuild. */
+/** Windows implementation (PowerShell + .NET; see the scripts above). */
 export const windowsKeyFileAcl: KeyFileAcl = {
-  allowedSids: () => [currentAccountSid(), "S-1-5-18", "S-1-5-32-544"],
-  readSddl(target) {
-    return powershell(PS_READ, { MQTT_TLS_ACL_PATH: target }).trim();
+  allowedSids: async () => [await currentAccountSid(), "S-1-5-18", "S-1-5-32-544"],
+  async inspectDir(dir) {
+    return parseFactsReport(await powershell(PS_INSPECT_DIR, { MQTT_TLS_ACL_PATH: dir }), "dir");
   },
-  rebuild(target, isDir) {
+  async inspectAndReadFile(file) {
+    return parseFactsReport(await powershell(PS_INSPECT_READ_FILE, { MQTT_TLS_ACL_PATH: file }), "file") as FileFacts;
+  },
+  async rebuild(target, isDir) {
     const inh = isDir ? "OICI" : "";
-    const sddl = `D:PAI(A;${inh};FA;;;${currentAccountSid()})(A;${inh};FA;;;SY)(A;${inh};FA;;;BA)`;
-    powershell(PS_REBUILD, { MQTT_TLS_ACL_PATH: target, MQTT_TLS_ACL_SDDL: sddl });
+    const sid = await currentAccountSid();
+    const sddl = `D:PAI(A;${inh};FA;;;${sid})(A;${inh};FA;;;SY)(A;${inh};FA;;;BA)`;
+    await powershell(PS_REBUILD, { MQTT_TLS_ACL_PATH: target, MQTT_TLS_ACL_SDDL: sddl });
+  },
+  async createPrivateDir(dir) {
+    const sid = await currentAccountSid();
+    const sddl = `D:PAI(A;OICI;FA;;;${sid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`;
+    await powershell(PS_CREATE_PRIVATE_DIR, { MQTT_TLS_ACL_PATH: dir, MQTT_TLS_ACL_SDDL: sddl });
   },
 };
 
@@ -416,101 +495,186 @@ export function defaultKeyFileAcl(platform: NodeJS.Platform = process.platform):
   return platform === "win32" ? windowsKeyFileAcl : null;
 }
 
-type Inspection = { ownerOk: boolean; private: boolean; owner: string; strangers: string[] };
+const VERDICT_CODE: Record<Exclude<MaterialVerdict, "ok">, BrokerTlsError["code"]> = {
+  reparse: "TLS_KEY_LINKED",
+  hardlink: "TLS_KEY_LINKED",
+  "foreign-owner": "TLS_KEY_OWNER_FOREIGN",
+  exposed: "TLS_KEY_EXPOSED",
+  unverified: "TLS_KEY_ACL_UNVERIFIED",
+  unprotected: "TLS_KEY_ACL_UNPROTECTED",
+};
 
-function inspect(acl: KeyFileAcl, target: string): Inspection {
-  let d: ParsedDescriptor;
-  let allowed: Set<string>;
+/**
+ * Enforce a verdict on EXISTING material (R-7-b). ok ⇒ return. reparse / hard link / foreign owner ⇒ refuse WITHOUT
+ * touching it (a rebuild through a hard link would rewrite another file's DACL; a foreign object is never adopted).
+ * exposed / unverified / unprotected with our own owner ⇒ the DACL is rebuilt to stop any further access, and TLS is
+ * STILL refused — a key that strangers could read or write is never used again ("rotate"). `repair=false` (operator
+ * folders) refuses without rebuilding.
+ */
+/**
+ * R-7-b — "never use a key after repairing it", ACROSS restarts: once exposure was seen, a marker is written (after the
+ * lock-down) and every later start refuses until the key is rotated. Site material: `<dir>/ROTATE-REQUIRED` (rotation =
+ * move the whole folder away, restart). Operator key: `<MQTT_TLS_KEY>.ROTATE-REQUIRED` (rotation = new key, remove marker).
+ */
+export const ROTATE_MARKER = "ROTATE-REQUIRED";
+
+function writeRotateMarker(markerPath: string, why: string): void {
   try {
-    allowed = new Set(acl.allowedSids().map(normTrustee));
-    d = parseSecurityDescriptor(acl.readSddl(target));
+    fs.writeFileSync(markerPath, `${new Date().toISOString()} ${why}
+`, { flag: "a", mode: 0o600 });
   } catch (e) {
-    throw new BrokerTlsError("TLS_KEY_ACL_UNVERIFIED", `${target}: cannot verify its owner/access list (${(e as Error)?.message ?? e})`);
+    console.error(`[MQTT] could not write ${markerPath} (${(e as Error)?.message ?? e}) — rotate the TLS key before the next start`);
   }
-  const strangers = [...new Set(d.allowTrustees.filter((t) => !allowed.has(t)))];
-  return { ownerOk: allowed.has(d.owner) && SID_RE.test(d.owner), private: strangers.length === 0, owner: d.owner, strangers };
+}
+
+function refuseIfRotationPending(markerPath: string): void {
+  if (fs.existsSync(markerPath)) {
+    console.error(`[MQTT] ${markerPath} exists — the TLS key was found exposed earlier and has not been rotated. MQTTS NOT started.`);
+    throw new BrokerTlsError("TLS_KEY_EXPOSED", `${markerPath}: key exposure recorded earlier — rotate the key`);
+  }
+}
+
+async function enforce(
+  acl: KeyFileAcl,
+  target: string,
+  isDir: boolean,
+  verdict: MaterialVerdict,
+  repair: boolean,
+  markerPath?: string,
+): Promise<void> {
+  if (verdict === "ok") return;
+  const code = VERDICT_CODE[verdict];
+  const what = isDir ? "folder" : "file";
+  if (verdict === "exposed") {
+    console.error(`[MQTT] TLS ${what} ${target} was accessible to accounts outside the server account / SYSTEM / Administrators — the key may be exposed: ROTATE it (DEPLOY_LAN_GUIDE). MQTTS NOT started.`);
+  } else {
+    console.error(`[MQTT] TLS ${what} ${target}: ${verdict} — MQTTS NOT started.`);
+  }
+  const mayRebuild = repair && (verdict === "exposed" || verdict === "unverified" || verdict === "unprotected");
+  if (mayRebuild) {
+    try {
+      await acl.rebuild(target, isDir);
+    } catch (e) {
+      console.error(`[MQTT] could not rebuild the access list of ${target}: ${(e as Error)?.message ?? e}`);
+    }
+  }
+  if (verdict === "exposed" && markerPath) writeRotateMarker(markerPath, `exposed: ${target}`);
+  throw new BrokerTlsError(code, `${target}: ${verdict}${verdict === "exposed" ? " — key may be exposed, rotate it" : ""}`);
+}
+
+async function allowedSet(acl: KeyFileAcl): Promise<Set<string>> {
+  try {
+    return new Set(await acl.allowedSids());
+  } catch (e) {
+    throw new BrokerTlsError("TLS_KEY_ACL_UNVERIFIED", `cannot determine the server account (${(e as Error)?.message ?? e})`);
+  }
+}
+
+async function checkDir(acl: KeyFileAcl, allowed: Set<string>, dir: string, repair: boolean, markerPath?: string): Promise<void> {
+  let facts: DescriptorFacts;
+  try {
+    facts = await acl.inspectDir(dir);
+  } catch (e) {
+    throw new BrokerTlsError("TLS_KEY_ACL_UNVERIFIED", `${dir}: cannot verify (${(e as Error)?.message ?? e})`);
+  }
+  await enforce(acl, dir, true, classifyFacts(facts, allowed), repair, markerPath);
+}
+
+/** Check a key/cert FILE through its own handle and return the bytes read from that handle. */
+async function checkAndReadFile(acl: KeyFileAcl, allowed: Set<string>, file: string, repair: boolean, markerPath?: string): Promise<Buffer> {
+  let facts: FileFacts;
+  try {
+    facts = await acl.inspectAndReadFile(file);
+  } catch (e) {
+    if ((e as Error)?.message?.includes("Could not find") || !fs.existsSync(file)) {
+      throw new BrokerTlsError("TLS_FILE_UNREADABLE", `${file}: not found or not readable`);
+    }
+    throw new BrokerTlsError("TLS_KEY_ACL_UNVERIFIED", `${file}: cannot verify (${(e as Error)?.message ?? e})`);
+  }
+  await enforce(acl, file, false, classifyFacts(facts, allowed), repair, markerPath);
+  return facts.content;
 }
 
 /**
- * The owner MUST be the server account / SYSTEM / Administrators — otherwise the material may have been PLANTED
- * (data/ lets Authenticated Users create files): refuse (TLS_KEY_OWNER_FOREIGN), never adopt, never "repair" it.
- * Owner fine but other trustees present ⇒ error logged, DACL rebuilt from scratch (only if `repair`), re-checked;
- * still open ⇒ TLS_KEY_ACL_OPEN. Descriptor unreadable / not fully parseable ⇒ TLS_KEY_ACL_UNVERIFIED.
+ * A NEW staging folder: created WITH its protected allow-list DACL (no open window), then verified (owner ours — a
+ * pre-existing object with that random name would show a foreign owner — protected, allow-list) AND empty.
  */
-export function ensurePrivate(acl: KeyFileAcl | null, target: string, isDir: boolean, repair = true): void {
-  if (!acl) return;
-  const first = inspect(acl, target);
-  if (!first.ownerOk) {
-    console.error(`[MQTT] ${target} is owned by ${first.owner}, not by the server account / SYSTEM / Administrators — possibly planted; MQTTS NOT started.`);
-    throw new BrokerTlsError("TLS_KEY_OWNER_FOREIGN", `${target}: owned by ${first.owner} (not the server account / SYSTEM / Administrators)`);
-  }
-  if (first.private) return;
-  if (!repair) throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: also accessible to ${first.strangers.join(", ")}`);
-  console.error(
-    `[MQTT] ${isDir ? "Directory" : "Key file"} ${target} is accessible to ${first.strangers.join(", ")} — rebuilding its ` +
-      "access list: server account, SYSTEM, Administrators only.",
-  );
+async function createLockedDir(acl: KeyFileAcl, allowed: Set<string>, dir: string): Promise<void> {
   try {
-    acl.rebuild(target, isDir);
+    await acl.createPrivateDir(dir);
   } catch (e) {
-    throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: could not rebuild its access list (${(e as Error)?.message ?? e})`);
+    throw new BrokerTlsError("TLS_WRITE_FAILED", `${dir}: could not create the private folder (${(e as Error)?.message ?? e})`);
   }
-  const again = inspect(acl, target);
-  if (!again.ownerOk || !again.private) {
-    throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: still accessible to ${again.strangers.join(", ") || "a foreign owner"} after rebuilding`);
+  await checkDir(acl, allowed, dir, false);
+  if (fs.readdirSync(dir).length !== 0) {
+    throw new BrokerTlsError("TLS_KEY_DIR_NOT_EMPTY", `${dir}: something was created in the new folder before it was locked down — refusing`);
   }
-}
-
-/** For what THIS process created: ALWAYS rebuild the DACL (no inheritance, allow-list only), then verify incl. owner. */
-function makePrivate(acl: KeyFileAcl | null, target: string, isDir: boolean): void {
-  if (!acl) return;
-  try {
-    acl.rebuild(target, isDir);
-  } catch (e) {
-    throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: could not set its access list (${(e as Error)?.message ?? e})`);
-  }
-  ensurePrivate(acl, target, isDir, false);
 }
 
 /**
- * Operator-provided certificate (MQTT_TLS_CERT + MQTT_TLS_KEY). Windows: both files must be owned by the server
- * account / SYSTEM / Administrators; the KEY must also be private (rebuilt when only its DACL is too wide).
+ * Operator-provided certificate (MQTT_TLS_CERT + MQTT_TLS_KEY). Windows: both FILES must pass every rule (owner,
+ * allow-list, protected DACL, single link, no reparse) — an exposed one is locked down and refused; both FOLDERS must
+ * be owned by an allowed account with no stranger allow ACE (refused, NOT modified: they are the operator's folders).
  */
-export function loadConfiguredBrokerTls(certPath: string, keyPath: string, acl: KeyFileAcl | null = defaultKeyFileAcl()): BrokerTlsMaterial {
-  const keyText = readText(keyPath); // missing/unreadable ⇒ TLS_FILE_UNREADABLE (clearer than "cannot verify")
-  const certText = readText(certPath);
-  ensurePrivate(acl, keyPath, false);
-  if (acl && !inspect(acl, certPath).ownerOk) {
-    throw new BrokerTlsError("TLS_KEY_OWNER_FOREIGN", `${certPath}: certificate owned by a foreign account`);
+export async function loadConfiguredBrokerTls(certPath: string, keyPath: string, acl: KeyFileAcl | null = defaultKeyFileAcl()): Promise<BrokerTlsMaterial> {
+  if (!acl) {
+    const pair = parseBrokerTlsPair(readText(keyPath), readText(certPath), certPath);
+    return materialFrom(pair, "configured", false, certPath);
   }
-  const pair = parseBrokerTlsPair(keyText, certText, certPath);
-  return materialFrom(pair, "configured", false, certPath);
+  const allowed = await allowedSet(acl);
+  for (const d of new Set([path.dirname(path.resolve(keyPath)), path.dirname(path.resolve(certPath))])) {
+    let facts: DescriptorFacts;
+    try {
+      facts = await acl.inspectDir(d);
+    } catch (e) {
+      throw new BrokerTlsError("TLS_KEY_ACL_UNVERIFIED", `${d}: cannot verify (${(e as Error)?.message ?? e})`);
+    }
+    const v = classifyFacts(facts, allowed);
+    if (v !== "ok" && v !== "unprotected") await enforce(acl, d, true, v, false);
+  }
+  const marker = `${path.resolve(keyPath)}.${ROTATE_MARKER}`;
+  refuseIfRotationPending(marker);
+  const keyText = (await checkAndReadFile(acl, allowed, keyPath, true, marker)).toString("utf8");
+  const certText = (await checkAndReadFile(acl, allowed, certPath, true, marker)).toString("utf8");
+  return materialFrom(parseBrokerTlsPair(keyText, certText, certPath), "configured", false, certPath);
 }
 
-/** A temp key file older than this is a crash leftover; younger ones may belong to a concurrent starter (fix 2, N3). */
+/** A leftover older than this is a crash leftover; a younger one may belong to a concurrent starter. */
 export const TEMP_KEY_SWEEP_AGE_MS = 10 * 60_000;
 
-/** fix 1/2 — remove `broker-tls.pem.<pid>.<rand>.tmp` crash leftovers, but only those older than TEMP_KEY_SWEEP_AGE_MS. */
-function sweepTempKeyFiles(dir: string, now = Date.now()): void {
-  let names: string[] = [];
-  try { names = fs.readdirSync(dir); } catch { return; }
-  for (const n of names) {
-    if (!(n.startsWith(`${SITE_TLS_FILE_NAME}.`) && n.endsWith(".tmp"))) continue;
-    const p = path.join(dir, n);
-    try {
-      if (now - fs.statSync(p).mtimeMs >= TEMP_KEY_SWEEP_AGE_MS) fs.unlinkSync(p);
-    } catch { /* gone, or another process is handling it */ }
+/** Remove crash leftovers older than TEMP_KEY_SWEEP_AGE_MS: `broker-tls.pem.*.tmp` (≤ fix 2) and staging folders. */
+function sweepLeftovers(dir: string, now = Date.now()): void {
+  const parent = path.dirname(dir);
+  const stagingPrefix = `${path.basename(dir)}.`;
+  const zones: Array<[string, (n: string) => boolean]> = [
+    [dir, (n) => n.startsWith(`${SITE_TLS_FILE_NAME}.`) && n.endsWith(".tmp")],
+    [parent, (n) => n.startsWith(stagingPrefix) && n.endsWith(".new")],
+  ];
+  for (const [where, match] of zones) {
+    let names: string[] = [];
+    try { names = fs.readdirSync(where); } catch { continue; }
+    for (const n of names) {
+      if (!match(n)) continue;
+      const p = path.join(where, n);
+      try {
+        const st = fs.lstatSync(p);
+        if (now - st.mtimeMs >= TEMP_KEY_SWEEP_AGE_MS && !st.isSymbolicLink()) fs.rmSync(p, { recursive: true, force: true });
+      } catch { /* gone, or another process is handling it */ }
+    }
   }
 }
 
 /**
- * The site certificate in `dir`: loaded when present, generated ONLY when the file does not exist. A present
- * but bad file throws (never overwritten). The folder is created NON-recursively and made private before any file
- * is written; a pre-existing folder (or file) must be owned by the server account / SYSTEM / Administrators.
- * Generation is exclusive: written to a private temp file, then hard-linked to the final name (EEXIST ⇒ another
- * process — or a planter — got there first ⇒ that file is verified like any existing one).
+ * The site certificate in `dir`: loaded when present, generated ONLY when absent; a present but bad file is never
+ * overwritten. Windows (R-7-a/R-7-b):
+ *   · FIRST start: the key is generated inside a STAGING folder `<dir>.<pid>.<rand>.new` created non-recursively WITH
+ *     its protected allow-list DACL (CreateDirectory + security descriptor — no window in which it inherits anything),
+ *     verified (owner, DACL) and EMPTY before the key is written; the finished folder is then renamed into place. A
+ *     folder that appears meanwhile (rename fails) is treated as existing.
+ *   · EXISTING folder/file: checked through the file's own handle (owner, allow-list, protected DACL, single link, no
+ *     reparse point) and read from that same handle. Anything exposed is locked down and REFUSED (rotate).
  */
-export function loadOrCreateSiteBrokerTls(opts: {
+export async function loadOrCreateSiteBrokerTls(opts: {
   dir: string;
   commonName?: string;
   days?: number;
@@ -518,46 +682,111 @@ export function loadOrCreateSiteBrokerTls(opts: {
   subjectAltNames?: SubjectAltNames;
   /** Windows security handling (default per platform; null = POSIX modes only). */
   acl?: KeyFileAcl | null;
-}): BrokerTlsMaterial {
+}): Promise<BrokerTlsMaterial> {
   const acl = opts.acl === undefined ? defaultKeyFileAcl() : opts.acl;
-  const file = path.join(opts.dir, SITE_TLS_FILE_NAME);
-  let createdDir = false;
+  const dir = path.resolve(opts.dir);
+  const file = path.join(dir, SITE_TLS_FILE_NAME);
+  const mint = () =>
+    mintSiteBrokerCertificate({
+      commonName: opts.commonName ?? `AVI-AOI built-in MQTT broker (${os.hostname()})`,
+      days: opts.days ?? 7300, // ~20 years: the pin, not the date, is the trust decision
+      now: opts.now,
+      subjectAltNames: opts.subjectAltNames ?? siteSubjectAltNames(),
+    });
+  if (!acl) return loadOrCreatePosix(dir, file, mint);
+
+  const allowed = await allowedSet(acl);
   try {
-    fs.mkdirSync(path.dirname(opts.dir), { recursive: true });
-    fs.mkdirSync(opts.dir, { mode: 0o700 }); // NON-recursive: tells us whether THIS process created it
-    createdDir = true;
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
   } catch (e) {
-    if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") {
-      throw new BrokerTlsError("TLS_WRITE_FAILED", `${opts.dir}: ${(e as NodeJS.ErrnoException)?.code ?? (e as Error)?.message}`);
+    throw new BrokerTlsError("TLS_WRITE_FAILED", `${path.dirname(dir)}: ${(e as NodeJS.ErrnoException)?.code ?? (e as Error)?.message}`);
+  }
+  sweepLeftovers(dir);
+
+  if (!fs.existsSync(dir)) {
+    // FIRST start: build everything in a private staging folder, then rename it into place.
+    const staging = `${dir}.${process.pid}.${randomBytes(6).toString("hex")}.new`;
+    try {
+      await createLockedDir(acl, allowed, staging); // non-recursive, fresh random name, DACL set at creation
+      const material = await writeNewKey(acl, allowed, path.join(staging, SITE_TLS_FILE_NAME), mint);
+      try {
+        fs.renameSync(staging, dir);
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException)?.code;
+        if (code !== "EEXIST" && code !== "EPERM" && code !== "ENOTEMPTY" && code !== "EACCES") throw e;
+        // another starter (or someone else) created <dir> meanwhile: verify it like any existing one below
+        fs.rmSync(staging, { recursive: true, force: true });
+        return loadExisting(acl, allowed, dir, file, mint);
+      }
+      return { ...material, file };
+    } catch (e) {
+      try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* best effort */ }
+      if (e instanceof BrokerTlsError) throw e;
+      throw new BrokerTlsError("TLS_WRITE_FAILED", `${dir}: ${(e as NodeJS.ErrnoException)?.code ?? (e as Error)?.message}`);
     }
   }
-  if (createdDir) makePrivate(acl, opts.dir, true);
-  else ensurePrivate(acl, opts.dir, true); // pre-existing folder: foreign owner ⇒ refuse; wide DACL ⇒ rebuilt
-  sweepTempKeyFiles(opts.dir);
+  return loadExisting(acl, allowed, dir, file, mint);
+}
 
+async function loadExisting(acl: KeyFileAcl, allowed: Set<string>, dir: string, file: string, mint: () => { keyPem: string; certPem: string }): Promise<BrokerTlsMaterial> {
+  const marker = path.join(dir, ROTATE_MARKER);
+  // foreign owner / reparse ⇒ refused untouched; exposed ⇒ locked down + marker + refused
+  await checkDir(acl, allowed, dir, true, marker);
+  refuseIfRotationPending(marker);
+  let st: fs.Stats | null = null;
+  try { st = fs.lstatSync(file); } catch { st = null; }
+  if (st) {
+    const text = (await checkAndReadFile(acl, allowed, file, true, marker)).toString("utf8");
+    return materialFrom(parseBrokerTlsPair(text, text, file), "generated", false, file);
+  }
+  // a verified, private, protected folder without a key (e.g. moved away on purpose): generate inside it
+  try {
+    return await writeNewKey(acl, allowed, file, mint);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "EEXIST") {
+      // a concurrent starter of ours won: verify and read its file
+      const text = (await checkAndReadFile(acl, allowed, file, true)).toString("utf8");
+      return materialFrom(parseBrokerTlsPair(text, text, file), "generated", false, file);
+    }
+    throw e;
+  }
+}
+
+/** Create the key file exclusively, make its DACL protected/allow-list BEFORE writing, write, then verify + read back. */
+async function writeNewKey(acl: KeyFileAcl, allowed: Set<string>, file: string, mint: () => { keyPem: string; certPem: string }): Promise<BrokerTlsMaterial> {
+  const { keyPem, certPem } = mint();
+  const fd = fs.openSync(file, "wx", 0o600); // EEXIST propagates to the caller
+  try {
+    try {
+      await acl.rebuild(file, false);
+    } catch (e) {
+      throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${file}: could not set its access list (${(e as Error)?.message ?? e})`);
+    }
+    fs.writeSync(fd, keyPem + certPem);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const text = (await checkAndReadFile(acl, allowed, file, false)).toString("utf8");
+  if (text !== keyPem + certPem) throw new BrokerTlsError("TLS_FILE_CORRUPT", `${file}: content changed while it was being created`);
+  return materialFrom(parseBrokerTlsPair(text, text, file), "generated", true, file);
+}
+
+/** POSIX path (unchanged since J1): 0700 folder, 0600 file via an exclusive temp file + hard link. */
+function loadOrCreatePosix(dir: string, file: string, mint: () => { keyPem: string; certPem: string }): BrokerTlsMaterial {
+  sweepLeftovers(dir);
   if (fs.existsSync(file)) {
-    ensurePrivate(acl, file, false); // planted (foreign owner) ⇒ refused BEFORE it is even read
     const text = readText(file);
     return materialFrom(parseBrokerTlsPair(text, text, file), "generated", false, file);
   }
-  const { keyPem, certPem } = mintSiteBrokerCertificate({
-    commonName: opts.commonName ?? `AVI-AOI built-in MQTT broker (${os.hostname()})`,
-    days: opts.days ?? 7300, // ~20 years: the pin, not the date, is the trust decision
-    now: opts.now,
-    subjectAltNames: opts.subjectAltNames ?? siteSubjectAltNames(),
-  });
+  const { keyPem, certPem } = mint();
   const tmp = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
-    // Windows: the EMPTY file is made private first, the key is written only afterwards (no readable window).
-    fs.writeFileSync(tmp, "", { mode: 0o600, flag: "wx" });
-    makePrivate(acl, tmp, false);
-    fs.writeFileSync(tmp, keyPem + certPem, { flag: "r+" });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(tmp, keyPem + certPem, { mode: 0o600, flag: "wx" });
     try {
       fs.linkSync(tmp, file);
     } catch (e) {
       if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
-      // lost the race (or a file was planted meanwhile): verify it exactly like an existing one
-      ensurePrivate(acl, file, false);
       const text = readText(file);
       return materialFrom(parseBrokerTlsPair(text, text, file), "generated", false, file);
     }
@@ -567,16 +796,15 @@ export function loadOrCreateSiteBrokerTls(opts: {
   } finally {
     try { fs.unlinkSync(tmp); } catch { /* already gone */ }
   }
-  ensurePrivate(acl, file, false, false); // the hard link shares the temp file's descriptor — verified, not assumed
   const text = readText(file);
   return materialFrom(parseBrokerTlsPair(text, text, file), "generated", true, file);
 }
 
 /**
- * Resolve the TLS material the listener should use, per env. Throws BrokerTlsError when it cannot decide
- * safely (caller: do not start the TLS listener, show the error).
+ * Resolve the TLS material the listener should use, per env. Rejects with BrokerTlsError when it cannot decide
+ * safely (caller: do not start the TLS listener, show the error). Async: never blocks the event loop.
  */
-export function resolveBrokerTls(env: NodeJS.ProcessEnv = process.env, acl: KeyFileAcl | null = defaultKeyFileAcl()): BrokerTlsMaterial {
+export async function resolveBrokerTls(env: NodeJS.ProcessEnv = process.env, acl: KeyFileAcl | null = defaultKeyFileAcl()): Promise<BrokerTlsMaterial> {
   const cert = (env.MQTT_TLS_CERT || "").trim();
   const key = (env.MQTT_TLS_KEY || "").trim();
   if (cert || key) {

@@ -284,11 +284,20 @@ Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết
 ~20 năm, có subjectAltName = tên máy, `localhost`, `127.0.0.1` và các IPv4 LAN lúc sinh) vào `data/mqtt-tls/broker-tls.pem`
 (ngoài git; đổi chỗ bằng `MQTT_TLS_DIR`; hoặc dùng chứng chỉ riêng: đặt cả `MQTT_TLS_CERT` + `MQTT_TLS_KEY`). Tệp chứa
 **khoá riêng**. Trên Windows (`mode 0600` không có tác dụng trên NTFS) áp DANH SÁCH CHO PHÉP: chỉ tài khoản chạy server,
-SYSTEM và Administrators được LÀ CHỦ (owner) và được có mặt trong ACL của thư mục `mqtt-tls`, tệp khoá và chứng chỉ. Server tự
-tạo thư mục và đặt lại toàn bộ ACL (bỏ kế thừa) TRƯỚC khi ghi khoá; mỗi lần khởi động kiểm lại: chủ là tài khoản khác ⇒ có thể
-bị CÀI SẴN (thư mục `data/` cho Authenticated Users quyền Modify) ⇒ ghi lỗi, KHÔNG mở TLS, KHÔNG tiếp nhận/sửa tệp đó — hãy
-điều tra, xoá tệp/thư mục lạ rồi khởi động lại; chủ đúng nhưng ACL có thêm ai khác ⇒ ghi lỗi và dựng lại ACL; ACL rỗng (null),
-ACE điều kiện/lạ, hoặc không đọc được ⇒ KHÔNG mở TLS. Cổng thường không ảnh hưởng. Kiểm tay (PowerShell):
+SYSTEM và Administrators (so theo SID đầy đủ — cả LocalService/NetworkService/Administrator dựng sẵn) được LÀ CHỦ và được có
+mặt trong ACL của thư mục `mqtt-tls`, tệp khoá và chứng chỉ; ACL phải được BẢO VỆ (không kế thừa). Lần đầu, server tạo thư mục
+tạm `mqtt-tls.<pid>.<ngẫu nhiên>.new` CÓ SẴN ACL riêng ngay lúc tạo, kiểm nó RỖNG rồi mới ghi khoá, sau đó đổi tên thành
+`mqtt-tls`. Mỗi lần khởi động, tệp khoá được mở MỘT lần: chủ, ACL, số hard link, reparse point đều kiểm qua chính handle đó và
+nội dung đọc từ chính handle đó. Kết quả:
+- chủ là tài khoản khác (có thể bị CÀI SẴN — `data/` cho Authenticated Users quyền Modify), tệp có hơn 1 hard link, hoặc là
+  liên kết/junction ⇒ KHÔNG mở TLS và KHÔNG đụng vào nó — hãy điều tra, xoá đồ lạ rồi khởi động lại;
+- ACL rỗng (null) hoặc có BẤT KỲ tài khoản nào khác được cho phép ⇒ khoá **CÓ THỂ ĐÃ LỘ**: server khoá lại ACL nhưng VẪN KHÔNG
+  dùng khoá đó, ghi tệp `ROTATE-REQUIRED` trong thư mục và thẻ web báo **"Cần thay khoá"** — mọi lần khởi động sau vẫn từ chối
+  cho tới khi THAY KHOÁ (mục dưới). Với chứng chỉ riêng (MQTT_TLS_KEY) tệp đánh dấu là `<MQTT_TLS_KEY>.ROTATE-REQUIRED`;
+  thư mục chứa chứng chỉ riêng có tài khoản lạ ⇒ từ chối (không sửa thư mục của người vận hành);
+- ACL chưa bảo vệ / ACE lạ / quá thời gian kiểm (`MQTT_TLS_ACL_TIMEOUT_MS`, mặc định 10 s mỗi lệnh) ⇒ KHÔNG mở TLS lần này.
+Cổng thường không ảnh hưởng; các lệnh kiểm chạy bất đồng bộ, không chặn server. **Nên cài server trên ổ/thư mục KHÔNG cho
+Authenticated Users quyền Modify** (ổ D: của máy dev hiện cho quyền đó từ gốc). Kiểm tay (PowerShell):
 `(Get-Acl data\mqtt-tls\broker-tls.pem).Sddl` — chủ `O:` và mọi `(A;…)` chỉ được là SY, BA hoặc SID tài khoản server.
 Linux: quyền 0600/0700. **Vân tay SHA‑256** của chứng chỉ hiện ở web: *Kết nối (MQTT / UNS) → Thiết bị* → thẻ
 **"TLS của broker nhúng"** (nút Sao chép). Tệp chứng chỉ hỏng ⇒ thẻ báo lỗi, cổng TLS KHÔNG mở và server KHÔNG tự sinh
@@ -313,8 +322,9 @@ sau đó nhập lại vân tay mới trên MỌI máy. Mở firewall cho cổng 
 thêm subjectAltName cho chứng chỉ cũ) — vì đổi chứng chỉ = đổi vân tay = mọi máy đã ghim bị từ chối. Khi cần thay (nghi
 khoá riêng bị lộ/sao chép, đổi IP/tên máy server và cần SAN mới, hoặc sắp hết hạn):
 1. Báo trước: trong thời gian đổi, máy tính bảng TLS sẽ báo "Chứng chỉ broker đã THAY ĐỔI" và không nhận cảnh báo qua TLS.
-2. Dừng server; **chuyển** (không xoá ngay nếu cần điều tra) `data/mqtt-tls/broker-tls.pem` ra khỏi thư mục — vd đổi tên
-   thành `broker-tls.pem.revoked-<ngày>` ở chỗ khác, ACL như trên; khởi động lại server ⇒ chứng chỉ MỚI được sinh.
+2. Dừng server; **chuyển CẢ thư mục** `data\mqtt-tls` (gồm khoá cũ và tệp `ROTATE-REQUIRED` nếu có) ra chỗ khác — vd
+   `mqtt-tls.revoked-<ngày>` ngoài `data/`, giữ ACL riêng (không xoá ngay nếu cần điều tra); khởi động lại server ⇒ thư mục và
+   chứng chỉ MỚI được tạo. Chứng chỉ riêng (MQTT_TLS_KEY): thay cặp khoá/chứng chỉ mới rồi xoá `<MQTT_TLS_KEY>.ROTATE-REQUIRED`.
 3. Mở thẻ "TLS của broker nhúng" lấy vân tay MỚI; trên TỪNG máy tính bảng nhập vân tay mới **cùng mật khẩu thiết bị** rồi
    Lưu (đổi vân tay luôn bắt nhập lại mật khẩu). Nếu nghi lộ khoá: đồng thời **xoay mật khẩu** từng thiết bị (Cấp / xoay
    mật khẩu) — kẻ có khoá cũ có thể đã giả broker và thu mật khẩu.
