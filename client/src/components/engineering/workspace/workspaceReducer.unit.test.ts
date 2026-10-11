@@ -52,9 +52,7 @@ describe("trạng thái đầu = giá trị useState cũ", () => {
       deleteSymTarget: null,
       rollbackTarget: null,
       demoCreating: false,
-      sym: { open: false, id: null, name: "", addr: "", type: "", comment: "", watchable: true },
-      newProject: { open: false, code: "", name: "", kind: "stub", deviceId: "" },
-      attach: { open: false, deviceId: "" },
+      // doc 81 Đợt 8 P1 — sym / newProject / attach đã RỜI reducer: form cục bộ của lớp FlyoutHost (IdeFlyoutForms).
       deploy: { stage: "staging", signOff: false, approverId: "", reason: "" },
       fleet: {
         deviceIds: [], stage: "staging", signOff: false, canary: 1, promoteVerified: false,
@@ -210,25 +208,12 @@ describe("buffer editor", () => {
 });
 
 describe("hộp thoại / form", () => {
-  it("sym/open với biến ⇒ điền sẵn; không biến ⇒ trống, watchable mặc định true", () => {
-    let s = workspaceReducer(initialWorkspaceState, {
-      type: "sym/open",
-      symbol: { id: 31, name: "X0", address: null, dataType: "INT", comment: null, watchable: false },
-    });
-    expect(s.sym).toEqual({ open: true, id: 31, name: "X0", addr: "", type: "INT", comment: "", watchable: false });
-    s = workspaceReducer(s, { type: "sym/open" });
-    expect(s.sym).toEqual({ open: true, id: null, name: "", addr: "", type: "", comment: "", watchable: true });
-  });
-  it("newProject/submitted ⇒ đóng + xoá mã/tên/thiết bị, GIỮ loại (hành vi cũ)", () => {
-    const s = run(
-      initialWorkspaceState,
-      { type: "newProject/set", patch: { open: true, code: "C", name: "N", kind: "gcode", deviceId: "3" } },
-      { type: "newProject/submitted" },
-    );
-    expect(s.newProject).toEqual({ open: false, code: "", name: "", kind: "gcode", deviceId: "" });
-  });
-  it("attach/open ⇒ mở với thiết bị hiện tại", () => {
-    expect(workspaceReducer(initialWorkspaceState, { type: "attach/open", deviceId: "3" }).attach).toEqual({ open: true, deviceId: "3" });
+  // doc 81 Đợt 8 P1 — ba sheet (biến / dự án mới / gắn thiết bị) lên FlyoutHost: trạng thái mở nằm ở URL, dữ liệu form là
+  // state cục bộ của lớp ⇒ reducer KHÔNG còn giữ chúng (một nguồn sự thật — không có cờ `open` lệch với URL).
+  it("Đợt 8 P1: reducer không còn trạng thái sheet sym/newProject/attach", () => {
+    expect(Object.keys(initialWorkspaceState)).not.toEqual(expect.arrayContaining(["sym"]));
+    expect(Object.keys(initialWorkspaceState)).not.toEqual(expect.arrayContaining(["newProject"]));
+    expect(Object.keys(initialWorkspaceState)).not.toEqual(expect.arrayContaining(["attach"]));
   });
   it("fleet/toggleDevice bật/tắt theo thứ tự chọn", () => {
     const s = run(

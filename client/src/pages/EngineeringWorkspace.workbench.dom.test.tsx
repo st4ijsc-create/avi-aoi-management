@@ -13,7 +13,7 @@
 //     trang (R-2-q); mỗi lượt xác nhận gửi ĐÚNG đích/cổng/expectedProjectId như thẻ cũ (R-2-n, R-2-r).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
@@ -1014,5 +1014,159 @@ describe("D1 — Copilot qua mốc 1024 px: nút AI khớp với thứ nhìn th�
     expect(panel).toBeVisible();
     setNarrow(false);
     await nghi();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 8 task P1 — ba sheet của IDE (Dự án mới / Thêm-Sửa biến / Gắn thiết bị nguồn) lên FlyoutHost như 10 màn kia:
+// URL `?flyout=&flyoutId=` là nguồn sự thật (F5 / deep link dựng lại lớp), Back đóng lớp, form còn dữ liệu ⇒ hỏi
+// "Bỏ thay đổi chưa lưu?", focus về nút đã mở. Các tham số khác của trang (`?projectId=`) được giữ.
+describe("Đợt 8 P1 — sheet IDE trên FlyoutHost", () => {
+  const params = () => new URLSearchParams(window.location.search);
+  const layer = (key: string) => document.querySelector(`[data-flyout-key="${key}"]`) as HTMLElement | null;
+  const unsaved = () => document.querySelector("[data-unsaved-confirm]") as HTMLElement | null;
+  const SYM = { id: 31, name: "X0", address: "D100", dataType: "INT", comment: null, watchable: false };
+  const openTags = () => fireEvent.click(within(screen.getByRole("tablist", { name: /Editor tabs|Tab soạn thảo/ })).getByRole("tab", { name: /^Tags$/ }));
+
+  it("'Dự án mới' ⇒ ?flyout=ide-new-project (giữ ?projectId) — lớp sheet; Tạo ⇒ createProject + mở dự án mới, lớp đóng, URL sạch", async () => {
+    seed();
+    mutationResponses["programming.createProject"] = () => ({ id: 2, code: "N2", name: "New Two", kind: "stub", deviceId: null });
+    renderPage();
+    fireEvent.click(btn(/^(New project|Dự án mới)$/));
+    await waitFor(() => expect(layer("ide-new-project")).not.toBeNull());
+    expect(params().getAll("flyout")).toEqual(["ide-new-project"]);
+    expect(params().get("projectId")).toBe("1");
+    const L = layer("ide-new-project")!;
+    expect(L.getAttribute("data-slot")).toBe("sheet-content");
+    fireEvent.change(within(L).getByPlaceholderText("ZMC-CELL-01"), { target: { value: "N2" } });
+    fireEvent.change(within(L).getByLabelText(/^(Name|Tên)$/), { target: { value: "New Two" } });
+    await act(async () => { fireEvent.click(within(L).getByRole("button", { name: /^(Create|Tạo)$/ })); });
+    expect(mutateCalls["programming.createProject"]).toEqual([{ code: "N2", name: "New Two", kind: "stub", deviceId: undefined }]);
+    await waitFor(() => expect(layer("ide-new-project")).toBeNull());
+    expect(params().get("flyout")).toBeNull();
+    expect(unsaved()).toBeNull(); // lưu thành công không hỏi "bỏ thay đổi"
+    expect(queryInputs["programming.listArtifacts"]).toEqual({ projectId: 2 });
+  });
+
+  it("đã gõ rồi Esc ⇒ hỏi 'Bỏ thay đổi chưa lưu?'; Tiếp tục sửa giữ chữ; Back (trình duyệt) cũng hỏi", async () => {
+    seed();
+    renderPage();
+    fireEvent.click(btn(/^(New project|Dự án mới)$/));
+    await waitFor(() => expect(layer("ide-new-project")).not.toBeNull());
+    fireEvent.change(within(layer("ide-new-project")!).getByPlaceholderText("ZMC-CELL-01"), { target: { value: "DANG-GO" } });
+    fireEvent.keyDown(layer("ide-new-project")!, { key: "Escape" });
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    fireEvent.click(within(unsaved()!).getByRole("button", { name: /Keep editing|Tiếp tục sửa/ }));
+    await waitFor(() => expect(unsaved()).toBeNull());
+    expect(within(layer("ide-new-project")!).getByPlaceholderText("ZMC-CELL-01")).toHaveValue("DANG-GO");
+    await act(async () => { window.history.back(); });
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    expect(within(layer("ide-new-project")!).getByPlaceholderText("ZMC-CELL-01")).toHaveValue("DANG-GO");
+    fireEvent.click(within(unsaved()!).getByRole("button", { name: /Discard changes|Bỏ thay đổi/ }));
+    await waitFor(() => expect(layer("ide-new-project")).toBeNull());
+    expect(params().get("flyout")).toBeNull();
+    expect(params().get("projectId")).toBe("1");
+  });
+
+  it("Back đóng lớp không dữ liệu (không hỏi); Esc đóng ⇒ focus về nút đã mở", async () => {
+    seed();
+    renderPage();
+    const plus = btn(/^(New project|Dự án mới)$/);
+    plus.focus();
+    fireEvent.click(plus);
+    await waitFor(() => expect(layer("ide-new-project")).not.toBeNull());
+    await act(async () => { window.history.back(); });
+    await waitFor(() => expect(layer("ide-new-project")).toBeNull());
+    expect(unsaved()).toBeNull();
+    expect(params().get("flyout")).toBeNull();
+    plus.focus();
+    fireEvent.click(plus);
+    await waitFor(() => expect(layer("ide-new-project")).not.toBeNull());
+    fireEvent.keyDown(layer("ide-new-project")!, { key: "Escape" });
+    await waitFor(() => expect(layer("ide-new-project")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(plus));
+  });
+
+  it("F5 / deep link ?flyout=ide-attach&flyoutId=1 ⇒ sheet 'Gắn thiết bị nguồn' của DỰ ÁN 1 dựng lại, chọn sẵn thiết bị hiện tại; Lưu ⇒ updateProject, lớp đóng", async () => {
+    seed();
+    window.history.replaceState({}, "", "/engineering?projectId=1&flyout=ide-attach&flyoutId=1");
+    mutationResponses["programming.updateProject"] = () => ({ id: 1 });
+    renderPage();
+    await waitFor(() => expect(layer("ide-attach")).not.toBeNull());
+    const L = layer("ide-attach")!;
+    expect(within(L).getByRole("combobox")).toHaveTextContent("M3 · #3");
+    await act(async () => { fireEvent.click(within(L).getByRole("button", { name: /^(Save|Lưu)$/ })); });
+    expect(mutateCalls["programming.updateProject"]).toEqual([{ id: 1, deviceId: 3 }]);
+    await waitFor(() => expect(layer("ide-attach")).toBeNull());
+    expect(params().get("flyout")).toBeNull();
+    expect(params().get("projectId")).toBe("1");
+  });
+
+  it("'Gắn/Đổi thiết bị' ⇒ ?flyout=ide-attach&flyoutId=<dự án đang mở>", async () => {
+    seed();
+    renderPage();
+    fireEvent.click(btn(/^(Change device|Đổi thiết bị)$/));
+    await waitFor(() => expect(layer("ide-attach")).not.toBeNull());
+    expect(params().getAll("flyout")).toEqual(["ide-attach"]);
+    expect(params().getAll("flyoutId")).toEqual(["1"]);
+  });
+
+  it("Sửa biến ⇒ ?flyout=ide-symbol&flyoutId=31, form điền sẵn; F5 trên URL đó điền sẵn lại; id không có ⇒ báo không tìm thấy, không nút Lưu", async () => {
+    seed();
+    queryOverrides["programming.listSymbols"] = () => makeQuery({ data: [SYM] });
+    renderPage();
+    openTags();
+    fireEvent.click(within(mainEl()).getByRole("button", { name: /^(Edit|Sửa)$/ }));
+    await waitFor(() => expect(layer("ide-symbol")).not.toBeNull());
+    expect(params().getAll("flyout")).toEqual(["ide-symbol"]);
+    expect(params().getAll("flyoutId")).toEqual(["31"]);
+    expect(within(layer("ide-symbol")!).getByPlaceholderText("X0 / Motor_Speed")).toHaveValue("X0");
+    expect(within(layer("ide-symbol")!).getByPlaceholderText("D100 / %MW10")).toHaveValue("D100");
+    // mở để sửa mà CHƯA đổi gì ⇒ không phải "dữ liệu chưa lưu": Esc đóng thẳng, không hỏi
+    fireEvent.keyDown(layer("ide-symbol")!, { key: "Escape" });
+    await waitFor(() => expect(layer("ide-symbol")).toBeNull());
+    expect(unsaved()).toBeNull();
+    cleanup();
+    seed();
+    queryOverrides["programming.listSymbols"] = () => makeQuery({ data: [SYM] });
+    window.history.replaceState({}, "", "/engineering?projectId=1&flyout=ide-symbol&flyoutId=31");
+    renderPage();
+    await waitFor(() => expect(layer("ide-symbol")).not.toBeNull());
+    expect(within(layer("ide-symbol")!).getByPlaceholderText("X0 / Motor_Speed")).toHaveValue("X0");
+    cleanup();
+    seed();
+    queryOverrides["programming.listSymbols"] = () => makeQuery({ data: [SYM] });
+    window.history.replaceState({}, "", "/engineering?projectId=1&flyout=ide-symbol&flyoutId=99");
+    renderPage();
+    await waitFor(() => expect(layer("ide-symbol")).not.toBeNull());
+    expect(within(layer("ide-symbol")!).queryByPlaceholderText("X0 / Motor_Speed")).toBeNull();
+    expect(within(layer("ide-symbol")!).queryByRole("button", { name: /^(Save|Lưu)$/ })).toBeNull();
+    expect(within(layer("ide-symbol")!).getByTestId("ide-symbol-missing")).toBeInTheDocument();
+  });
+
+  it("Thêm biến ⇒ ?flyout=ide-symbol (không id); sửa rồi Esc ⇒ hỏi; Lưu ⇒ upsertSymbol của dự án đang mở, lớp đóng", async () => {
+    seed();
+    mutationResponses["programming.upsertSymbol"] = () => ({ id: 40 });
+    renderPage();
+    openTags();
+    fireEvent.click(btn(/^(Add variable|Add symbol|Thêm biến)$/));
+    await waitFor(() => expect(layer("ide-symbol")).not.toBeNull());
+    expect(params().getAll("flyout")).toEqual(["ide-symbol"]);
+    expect(params().getAll("flyoutId")).toEqual([""]);
+    const L = layer("ide-symbol")!;
+    fireEvent.change(within(L).getByPlaceholderText("X0 / Motor_Speed"), { target: { value: " Y1 " } });
+    fireEvent.keyDown(L, { key: "Escape" });
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    fireEvent.click(within(unsaved()!).getByRole("button", { name: /Keep editing|Tiếp tục sửa/ }));
+    await waitFor(() => expect(unsaved()).toBeNull());
+    await act(async () => { fireEvent.click(within(layer("ide-symbol")!).getByRole("button", { name: /^(Save|Lưu)$/ })); });
+    expect(mutateCalls["programming.upsertSymbol"]).toEqual([{ projectId: 1, name: "Y1", address: undefined, dataType: undefined, comment: undefined, watchable: true }]);
+    await waitFor(() => expect(layer("ide-symbol")).toBeNull());
+    expect(unsaved()).toBeNull();
+  });
+
+  it("mã nguồn: không còn <Sheet open=…> tự quản trong trang (mọi sheet qua FlyoutHost)", () => {
+    expect(PAGE_SRC).not.toMatch(/<Sheet\s+open=/);
+    expect(PAGE_SRC).toMatch(/<FlyoutHost\b/);
   });
 });

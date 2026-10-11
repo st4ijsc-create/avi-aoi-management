@@ -38,7 +38,9 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeaderCompact, NoticeChip, NoticeStack, featureStatusNoticeItem, StatusBadge, type NoticeItem } from "@/components/patterns";
+import { PageHeaderCompact, NoticeChip, NoticeStack, featureStatusNoticeItem, StatusBadge, type NoticeItem, FlyoutHost, useCloseOwnLayer } from "@/components/patterns";
+import type { FlyoutDefinition } from "@/components/patterns/FlyoutHost";
+import { WithFlyout } from "@/components/engineering/WithFlyout";
 import { EngineeringShell } from "@/components/engineering/shell";
 import { deriveFeatureStatus } from "@/components/common/FeatureStatusGate";
 import { Button } from "@/components/ui/button";
@@ -50,9 +52,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
 import {
   Cpu, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
   Save, Hammer, Code2, AlertTriangle, XCircle, RefreshCw,
@@ -935,10 +934,8 @@ export default function IrEditor() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<"inspector" | "preview">("inspector");
   const [saveProjectId, setSaveProjectId] = useState<string>("");
-  // W3-12: tạo nhanh project kind "ir-flow" ngay tại đây (bỏ dead-end "No ir-flow projects").
-  const [newProjOpen, setNewProjOpen] = useState(false);
-  const [newProjCode, setNewProjCode] = useState("");
-  const [newProjName, setNewProjName] = useState("");
+  // W3-12: tạo nhanh project kind "ir-flow" ngay tại đây (bỏ dead-end "No ir-flow projects") — doc 81 Đợt 8 P1: sheet
+  // `?flyout=ir-new-project` trên FlyoutHost (form cục bộ IrNewProjectForm).
   // Tier-1c: the canvas edits either the MAIN flow or one function-block's body. Both are
   // rendered by the SAME tree/graph over the SAME AST — only the active block list differs.
   const [editScope, setEditScope] = useState<EditScope>({ kind: "main" });
@@ -1092,22 +1089,11 @@ export default function IrEditor() {
     onError: onMutationError,
   });
 
-  // W3-12: tạo project "ir-flow" → tự chọn làm đích lưu + làm mới danh sách project.
-  const createProjectM = trpc.programming.createProject.useMutation({
-    onSuccess: async (proj) => {
-      setSaveProjectId(String(proj.id));
-      setNewProjOpen(false);
-      setNewProjCode(""); setNewProjName("");
-      await utils.programming.listProjects.invalidate();
-      toast.success(t("ir.projectCreated", "Project created — selected as the save target."));
-    },
-    onError: (e) => toastTrpcError(e),
-  });
-  const doCreateProject = () => {
-    const code = newProjCode.trim();
-    const name = newProjName.trim();
-    if (!code || !name) { toast.error(t("ir.newProjectFields", "Enter a project code and name.")); return; }
-    createProjectM.mutate({ code, name, kind: "ir-flow" });
+  // W3-12: tạo project "ir-flow" → tự chọn làm đích lưu + làm mới danh sách project (form trong sheet gọi sau khi tạo xong).
+  const onIrProjectCreated = async (proj: { id: number }) => {
+    setSaveProjectId(String(proj.id));
+    await utils.programming.listProjects.invalidate();
+    toast.success(t("ir.projectCreated", "Project created — selected as the save target."));
   };
 
   // ── Editing scope (main flow OR a function-block body) ─────────────────────
@@ -1404,12 +1390,17 @@ export default function IrEditor() {
             </SelectContent>
           </Select>
           {/* W3-12: tạo nhanh project ir-flow (nối dead-end "No ir-flow projects") — sheet phải (không dialog giữa màn). */}
-          <Button size="sm" variant="outline" onClick={() => setNewProjOpen(true)}
-            disabled={!canControl}
-            aria-label={t("ir.newProject", "New ir-flow project")}
-            title={!canControl ? t("ir.needControl", "Requires machine_control permission") : t("ir.newProjectTip", "Create a new ir-flow project to save into")}>
-            <FolderPlus className="h-4 w-4 min-[1700px]:mr-1.5" /><span className="hidden min-[1700px]:inline">{t("ir.newProject", "New ir-flow project")}</span>
-          </Button>
+          <WithFlyout>
+            {(f) => (
+              <Button size="sm" variant="outline" onClick={() => f.open(IR_NEW_PROJECT_FLYOUT)}
+                disabled={!canControl}
+                aria-haspopup="dialog"
+                aria-label={t("ir.newProject", "New ir-flow project")}
+                title={!canControl ? t("ir.needControl", "Requires machine_control permission") : t("ir.newProjectTip", "Create a new ir-flow project to save into")}>
+                <FolderPlus className="h-4 w-4 min-[1700px]:mr-1.5" /><span className="hidden min-[1700px]:inline">{t("ir.newProject", "New ir-flow project")}</span>
+              </Button>
+            )}
+          </WithFlyout>
           <Button size="sm" onClick={doSave}
             disabled={saveDisabled}
             aria-label={t("ir.save", "Save flow")}
@@ -1712,8 +1703,19 @@ export default function IrEditor() {
     </div>
   );
 
+  // doc 81 Đợt 8 P1 — sheet phải trên FlyoutHost (URL `?flyout=ir-new-project` là nguồn sự thật: F5/Back/deep link).
+  const flyouts: Record<string, FlyoutDefinition> = {};
+  if (canControl) {
+    flyouts[IR_NEW_PROJECT_FLYOUT] = {
+      title: t("ir.newProjectTitle", "Create ir-flow project"),
+      description: t("ir.newProjectDesc", "A programming project (kind “ir-flow”) is the container your saved flows and builds live in. After creating it, save the current flow into it, then Request build below."),
+      render: () => <IrNewProjectForm canControl={canControl} onCreated={onIrProjectCreated} />,
+    };
+  }
+
   return (
     <DashboardLayout>
+      <FlyoutHost flyouts={flyouts}>
       <div className="flex h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))] min-h-[30rem] min-w-0 flex-col">
         {header}
         <EngineeringShell
@@ -1751,35 +1753,57 @@ export default function IrEditor() {
           statusBar={statusBar}
         />
       </div>
-
-      {/* W3-12: tạo nhanh project kind "ir-flow" — sheet phải (doc 81: tạo/sửa qua flyout, không dialog giữa màn). */}
-      <Sheet open={newProjOpen} onOpenChange={setNewProjOpen}>
-        <SheetContent side="right" className="flex w-[92vw] flex-col gap-0 p-0 sm:max-w-[480px]">
-          <SheetHeader className="border-b px-4 py-3 pr-10">
-            <SheetTitle>{t("ir.newProjectTitle", "Create ir-flow project")}</SheetTitle>
-            <SheetDescription>
-              {t("ir.newProjectDesc", "A programming project (kind “ir-flow”) is the container your saved flows and builds live in. After creating it, save the current flow into it, then Request build below.")}
-            </SheetDescription>
-          </SheetHeader>
-          <div className="grid grid-cols-2 gap-2 p-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="ir-new-proj-code" className="text-xs">{t("ir.projectCode", "Project code")}</Label>
-              <Input id="ir-new-proj-code" className="h-9 font-mono" value={newProjCode} onChange={(e) => setNewProjCode(e.target.value)} placeholder="pick-place" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ir-new-proj-name" className="text-xs">{t("ir.projectName", "Project name")}</Label>
-              <Input id="ir-new-proj-name" className="h-9" value={newProjName} onChange={(e) => setNewProjName(e.target.value)} placeholder={t("ir.projectNamePh", "Pick & place cell") as string} />
-            </div>
-          </div>
-          <div className="mt-auto flex justify-end gap-2 border-t px-4 py-3">
-            <Button variant="ghost" onClick={() => setNewProjOpen(false)} disabled={createProjectM.isPending}>{t("common.cancel", "Cancel")}</Button>
-            <Button onClick={doCreateProject} disabled={createProjectM.isPending || !canControl}>
-              {createProjectM.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-1.5 h-4 w-4" />}
-              {t("ir.create", "Create project")}
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      </FlyoutHost>
     </DashboardLayout>
+  );
+}
+
+/** doc 81 Đợt 8 P1 — khoá flyout của sheet "Tạo project ir-flow". */
+const IR_NEW_PROJECT_FLYOUT = "ir-new-project";
+
+/**
+ * doc 81 Đợt 8 P1 — form "Tạo project ir-flow" trong lớp FlyoutHost: state cục bộ (mỗi lần mở là form mới), báo dữ liệu
+ * chưa lưu (Esc / Huỷ / Back ⇒ hỏi), tạo xong ⇒ đóng CHÍNH lớp của nó; lỗi server ⇒ lớp giữ mở. Payload như sheet cũ.
+ */
+function IrNewProjectForm({ canControl, onCreated }: { canControl: boolean; onCreated: (proj: { id: number }) => void | Promise<void> }) {
+  const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const dirty = code !== "" || name !== "";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
+  const createProjectM = trpc.programming.createProject.useMutation({
+    onSuccess: (proj) => {
+      done();
+      void onCreated(proj);
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+  const doCreateProject = () => {
+    const c = code.trim();
+    const n = name.trim();
+    if (!c || !n) { toast.error(t("ir.newProjectFields", "Enter a project code and name.")); return; }
+    createProjectM.mutate({ code: c, name: n, kind: "ir-flow" });
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="ir-new-proj-code" className="text-xs">{t("ir.projectCode", "Project code")}</Label>
+          <Input id="ir-new-proj-code" className="h-9 font-mono" value={code} onChange={(e) => setCode(e.target.value)} placeholder="pick-place" />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ir-new-proj-name" className="text-xs">{t("ir.projectName", "Project name")}</Label>
+          <Input id="ir-new-proj-name" className="h-9" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("ir.projectNamePh", "Pick & place cell") as string} />
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 border-t pt-3">
+        <Button variant="ghost" onClick={() => layer.close()} disabled={createProjectM.isPending}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={doCreateProject} disabled={createProjectM.isPending || !canControl}>
+          {createProjectM.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-1.5 h-4 w-4" />}
+          {t("ir.create", "Create project")}
+        </Button>
+      </div>
+    </div>
   );
 }

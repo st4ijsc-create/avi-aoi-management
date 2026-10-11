@@ -36,7 +36,9 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeaderCompact, NoticeChip, StatusBadge } from "@/components/patterns";
+import { PageHeaderCompact, NoticeChip, StatusBadge, FlyoutHost, useCloseOwnLayer } from "@/components/patterns";
+import type { FlyoutDefinition } from "@/components/patterns/FlyoutHost";
+import { WithFlyout } from "@/components/engineering/WithFlyout";
 import { EngineeringShell } from "@/components/engineering/shell";
 import { CopilotInspector, CopilotStatusItem } from "@/components/programming/CopilotInspector";
 import { Button } from "@/components/ui/button";
@@ -48,9 +50,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import {
-  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
 import {
   Code2, FileCode2, ShieldCheck, AlertTriangle, XCircle,
   Download, Upload, Copy, Lock, Info, RefreshCw, Save, Hammer, FolderPlus, FolderOpen, ExternalLink, Loader2,
@@ -156,11 +155,9 @@ export default function PouStudio() {
   const [xmlText, setXmlText] = useState<string>("");
   const [rightTab, setRightTab] = useState<"transpile" | "plcopen">("transpile");
   // W3-12: lưu POU thành artifact "iec61131-pou" → build/deploy qua Engineering (pipeline gated).
-  const [saveOpen, setSaveOpen] = useState(false);
+  // doc 81 Đợt 8 P1 — sheet "Lưu vào project" trên FlyoutHost (`?flyout=pou-save`); "dự án mới" + mã/tên là state cục bộ
+  // của form trong lớp (PouSaveForm). `savePid` (đích lưu) vẫn là state của TRANG (liên kết IDE/IR dùng nó).
   const [savePid, setSavePid] = useState<string>("");
-  const [createNew, setCreateNew] = useState(false);
-  const [newCode, setNewCode] = useState("");
-  const [newName, setNewName] = useState("");
   const [savedProjectId, setSavedProjectId] = useState<number | null>(null);
   // View toggle: the graphical CANVAS is the default; the JSON editor stays available. Both
   // are views over the SAME POU model (the single source of truth).
@@ -347,25 +344,23 @@ export default function PouStudio() {
   };
 
   // Tạo/chọn project → tạo artifact (draft) từ JSON model hiện tại; deploy vẫn là bước gated riêng.
-  const doSaveToProject = useCallback(async () => {
-    if (!parsed.ok) { toast.error(t("pou.badJson", "Invalid JSON")); return; }
+  // Trả true khi đã lưu (form đóng lớp của nó); false ⇒ lớp GIỮ mở với dữ liệu đã nhập.
+  const doSaveToProject = useCallback(async ({ createNew, newCode, newName }: { createNew: boolean; newCode: string; newName: string }): Promise<boolean> => {
+    if (!parsed.ok) { toast.error(t("pou.badJson", "Invalid JSON")); return false; }
     try {
       let pid: number;
       if (createNew) {
         const code = newCode.trim();
         const name = newName.trim();
-        if (!code || !name) { toast.error(t("pou.newProjectFields", "Enter a project code and name.")); return; }
+        if (!code || !name) { toast.error(t("pou.newProjectFields", "Enter a project code and name.")); return false; }
         const proj = await createProjectM.mutateAsync({ code, name, kind: "iec61131-pou" });
         pid = proj.id;
       } else {
         pid = Number(savePid);
-        if (!Number.isInteger(pid) || pid <= 0) { toast.error(t("pou.pickProject", "Pick or create a project first.")); return; }
+        if (!Number.isInteger(pid) || pid <= 0) { toast.error(t("pou.pickProject", "Pick or create a project first.")); return false; }
       }
       const art = await createArtifactM.mutateAsync({ projectId: pid, branch: "main", language: "pou-json", content: jsonText });
       setSavedProjectId(pid);
-      setSaveOpen(false);
-      setCreateNew(false);
-      setNewCode(""); setNewName("");
       setSavePid(String(pid));
       // Fix round 1 (review I2): Explorer "Mở" chuyển sang dự án vừa lưu và danh sách phiên bản của nó được làm mới.
       setOpenPid(pid);
@@ -374,10 +369,12 @@ export default function PouStudio() {
         utils.programming.listArtifacts.invalidate({ projectId: pid }),
       ]);
       toast.success(t("pou.savedVersion", "Saved as draft v{{v}} — build & deploy in Engineering.", { v: art.version }));
+      return true;
     } catch (e) {
       toast.error((e as Error).message);
+      return false;
     }
-  }, [parsed, createNew, newCode, newName, savePid, jsonText, createProjectM, createArtifactM, utils, t]);
+  }, [parsed, savePid, jsonText, createProjectM, createArtifactM, utils, t]);
 
   if (!canView) {
     return (
@@ -435,15 +432,20 @@ export default function PouStudio() {
               <ExternalLink className="h-4 w-4 min-[1700px]:mr-1.5" /><span className="hidden min-[1700px]:inline">{t("pou.goEngineering", "Build/Deploy in Engineering")}</span>
             </Button>
           )}
-          <Button
-            size="sm"
-            onClick={() => setSaveOpen(true)}
-            disabled={!canControl || !parsed.ok}
-            aria-label={t("pou.saveToProject", "Save into project → Build/Deploy")}
-            title={!canControl ? t("pou.needControl", "Requires machine_control permission") : !parsed.ok ? t("pou.badJson", "Invalid JSON") : t("pou.saveToProject", "Save into project → Build/Deploy")}
-          >
-            <Save className="h-4 w-4 min-[1500px]:mr-1.5" /><span className="hidden min-[1500px]:inline">{t("pou.saveToProject", "Save into project → Build/Deploy")}</span>
-          </Button>
+          <WithFlyout>
+            {(f) => (
+              <Button
+                size="sm"
+                onClick={() => f.open(POU_SAVE_FLYOUT)}
+                disabled={!canControl || !parsed.ok}
+                aria-haspopup="dialog"
+                aria-label={t("pou.saveToProject", "Save into project → Build/Deploy")}
+                title={!canControl ? t("pou.needControl", "Requires machine_control permission") : !parsed.ok ? t("pou.badJson", "Invalid JSON") : t("pou.saveToProject", "Save into project → Build/Deploy")}
+              >
+                <Save className="h-4 w-4 min-[1500px]:mr-1.5" /><span className="hidden min-[1500px]:inline">{t("pou.saveToProject", "Save into project → Build/Deploy")}</span>
+              </Button>
+            )}
+          </WithFlyout>
           <Button size="sm" variant="ghost" onClick={() => { void transpileQ.refetch(); void lintQ.refetch(); }} aria-label={t("common.refresh", "Refresh")} title={t("common.refresh", "Refresh")}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -726,9 +728,27 @@ export default function PouStudio() {
     </div>
   );
 
-  const saveFieldId = (k: string) => `pou-save-${k}`;
+  // doc 81 Đợt 8 P1 — sheet phải trên FlyoutHost (URL `?flyout=pou-save` là nguồn sự thật: F5/Back/deep link).
+  const flyouts: Record<string, FlyoutDefinition> = {};
+  if (canControl) {
+    flyouts[POU_SAVE_FLYOUT] = {
+      title: t("pou.saveDialogTitle", "Save POU into a programming project"),
+      description: t("pou.saveDialogDesc", "Appends the current model as a draft “iec61131-pou” artifact. Build and gated deploy happen in the Engineering workspace — this screen never writes to a device."),
+      render: () => (
+        <PouSaveForm
+          pouProjects={pouProjects}
+          savePid={savePid}
+          onPickProject={(v) => { setSavePid(v); setLastProjectId(Number(v) || null); }}
+          canSave={canControl && parsed.ok}
+          saving={saving}
+          onSave={doSaveToProject}
+        />
+      ),
+    };
+  }
   return (
     <DashboardLayout>
+      <FlyoutHost flyouts={flyouts}>
       <div className="flex h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))] min-h-[30rem] min-w-0 flex-col">
         {header}
         <EngineeringShell
@@ -773,70 +793,98 @@ export default function PouStudio() {
         />
       </div>
 
-      {/* W3-12: lưu POU vào project gated → build/deploy ở Engineering — sheet phải (không dialog giữa màn). */}
-      <Sheet open={saveOpen} onOpenChange={setSaveOpen}>
-        <SheetContent side="right" className="flex w-[92vw] flex-col gap-0 p-0 sm:max-w-[480px]">
-          <SheetHeader className="border-b px-4 py-3 pr-10">
-            <SheetTitle>{t("pou.saveDialogTitle", "Save POU into a programming project")}</SheetTitle>
-            <SheetDescription>
-              {t("pou.saveDialogDesc", "Appends the current model as a draft “iec61131-pou” artifact. Build and gated deploy happen in the Engineering workspace — this screen never writes to a device.")}
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="space-y-3 p-4">
-            <div className="inline-flex rounded-md border border-border p-0.5">
-              <Button size="sm" variant={!createNew ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setCreateNew(false)}>
-                {t("pou.useExisting", "Existing project")}
-              </Button>
-              <Button size="sm" variant={createNew ? "secondary" : "ghost"} className="h-7 gap-1 px-2 text-xs" onClick={() => setCreateNew(true)}>
-                <FolderPlus className="h-3.5 w-3.5" />{t("pou.newProject", "New project")}
-              </Button>
-            </div>
-
-            {!createNew ? (
-              <div className="space-y-1.5">
-                <Label htmlFor={saveFieldId("project")} className="text-xs">{t("pou.projectLabel", "POU project (iec61131-pou)")}</Label>
-                {pouProjects.length === 0 ? (
-                  <p className="rounded-md border border-dashed p-2 text-[11px] text-muted-foreground">
-                    {t("pou.noPouProjects", "No iec61131-pou projects yet — switch to “New project” to create one.")}
-                  </p>
-                ) : (
-                  <Select value={savePid} onValueChange={(v) => { setSavePid(v); setLastProjectId(Number(v) || null); }}>
-                    <SelectTrigger id={saveFieldId("project")} className="h-9"><SelectValue placeholder={t("pou.pickProjectPlaceholder", "Pick a project…")} /></SelectTrigger>
-                    <SelectContent>
-                      {pouProjects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.code} · {p.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor={saveFieldId("code")} className="text-xs">{t("pou.projectCode", "Project code")}</Label>
-                  <Input id={saveFieldId("code")} className="h-9 font-mono" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="motor-ctrl" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={saveFieldId("name")} className="text-xs">{t("pou.projectName", "Project name")}</Label>
-                  <Input id={saveFieldId("name")} className="h-9" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("pou.projectNamePh", "Motor control POU") as string} />
-                </div>
-              </div>
-            )}
-
-            <p className="flex items-start gap-1 text-[10px] text-muted-foreground">
-              <Hammer className="mt-0.5 h-3 w-3 shrink-0" />
-              {t("pou.saveHint", "The saved draft still passes through the gated pipeline: build → HITL sign-off → gated deploy. Nothing is deployed by saving here.")}
-            </p>
-          </div>
-
-          <div className="mt-auto flex justify-end gap-2 border-t px-4 py-3">
-            <Button variant="ghost" onClick={() => setSaveOpen(false)} disabled={saving}>{t("common.cancel", "Cancel")}</Button>
-            <Button onClick={() => void doSaveToProject()} disabled={saving || !canControl}>
-              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
-              {createNew ? t("pou.createAndSave", "Create project & save") : t("pou.saveVersion", "Save version")}
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      </FlyoutHost>
     </DashboardLayout>
+  );
+}
+
+/** doc 81 Đợt 8 P1 — khoá flyout của sheet "Lưu POU vào project". */
+const POU_SAVE_FLYOUT = "pou-save";
+
+/**
+ * doc 81 Đợt 8 P1 — form "Lưu POU vào project" trong lớp FlyoutHost. Chế độ "Project mới" + mã/tên là state cục bộ (mỗi lần
+ * mở là form mới); đã gõ mã/tên ⇒ còn dữ liệu chưa lưu (Esc / Huỷ / Back ⇒ hỏi). Lưu xong ⇒ đóng CHÍNH lớp; thất bại ⇒ giữ mở.
+ * Việc lưu (createProject → createArtifact draft) vẫn là `doSaveToProject` của trang — không đổi hợp đồng.
+ */
+function PouSaveForm({
+  pouProjects,
+  savePid,
+  onPickProject,
+  canSave,
+  saving,
+  onSave,
+}: {
+  pouProjects: Array<{ id: number; code: string; name: string }>;
+  savePid: string;
+  onPickProject: (v: string) => void;
+  canSave: boolean;
+  saving: boolean;
+  onSave: (a: { createNew: boolean; newCode: string; newName: string }) => Promise<boolean>;
+}) {
+  const { t } = useTranslation();
+  const { layer, done, mountedRef } = useCloseOwnLayer();
+  const [createNew, setCreateNew] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [newName, setNewName] = useState("");
+  const dirty = createNew && (newCode !== "" || newName !== "");
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveFieldId = (k: string) => `pou-save-${k}`;
+  const submit = async () => {
+    const ok = await onSave({ createNew, newCode, newName });
+    if (ok && mountedRef.current) done();
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="inline-flex w-fit rounded-md border border-border p-0.5">
+        <Button size="sm" variant={!createNew ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setCreateNew(false)}>
+          {t("pou.useExisting", "Existing project")}
+        </Button>
+        <Button size="sm" variant={createNew ? "secondary" : "ghost"} className="h-7 gap-1 px-2 text-xs" onClick={() => setCreateNew(true)}>
+          <FolderPlus className="h-3.5 w-3.5" />{t("pou.newProject", "New project")}
+        </Button>
+      </div>
+
+      {!createNew ? (
+        <div className="space-y-1.5">
+          <Label htmlFor={saveFieldId("project")} className="text-xs">{t("pou.projectLabel", "POU project (iec61131-pou)")}</Label>
+          {pouProjects.length === 0 ? (
+            <p className="rounded-md border border-dashed p-2 text-[11px] text-muted-foreground">
+              {t("pou.noPouProjects", "No iec61131-pou projects yet — switch to “New project” to create one.")}
+            </p>
+          ) : (
+            <Select value={savePid} onValueChange={onPickProject}>
+              <SelectTrigger id={saveFieldId("project")} className="h-9"><SelectValue placeholder={t("pou.pickProjectPlaceholder", "Pick a project…")} /></SelectTrigger>
+              <SelectContent>
+                {pouProjects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.code} · {p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <Label htmlFor={saveFieldId("code")} className="text-xs">{t("pou.projectCode", "Project code")}</Label>
+            <Input id={saveFieldId("code")} className="h-9 font-mono" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="motor-ctrl" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={saveFieldId("name")} className="text-xs">{t("pou.projectName", "Project name")}</Label>
+            <Input id={saveFieldId("name")} className="h-9" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("pou.projectNamePh", "Motor control POU") as string} />
+          </div>
+        </div>
+      )}
+
+      <p className="flex items-start gap-1 text-[10px] text-muted-foreground">
+        <Hammer className="mt-0.5 h-3 w-3 shrink-0" />
+        {t("pou.saveHint", "The saved draft still passes through the gated pipeline: build → HITL sign-off → gated deploy. Nothing is deployed by saving here.")}
+      </p>
+
+      <div className="flex justify-end gap-2 border-t pt-3">
+        <Button variant="ghost" onClick={() => layer.close()} disabled={saving}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={() => void submit()} disabled={saving || !canSave}>
+          {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+          {createNew ? t("pou.createAndSave", "Create project & save") : t("pou.saveVersion", "Save version")}
+        </Button>
+      </div>
+    </div>
   );
 }

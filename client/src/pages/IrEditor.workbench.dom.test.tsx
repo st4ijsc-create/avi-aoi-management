@@ -9,7 +9,7 @@
 //   - Giữ: lint dịch lỗi qua mapTrpcError, cổng Lưu/Build như cũ, một lời gọi mỗi lần bấm (R-2-n), phím tắt.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
 import { forceNarrowHeader } from "@/components/patterns/layoutKitTestHeaderFold";
@@ -617,5 +617,81 @@ describe("D1 — Copilot qua mốc 1024 px: nút AI khớp với thứ nhìn th�
     expect(panel).toBeVisible();
     setNarrow(false);
     await nghi();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 8 task P1 — sheet "Tạo project ir-flow" lên FlyoutHost: `?flyout=ir-new-project` (F5/deep link dựng lại),
+// Back đóng, form còn dữ liệu ⇒ hỏi "Bỏ thay đổi chưa lưu?", focus về nút đã mở; tạo xong ⇒ lớp đóng, URL sạch.
+describe("Đợt 8 P1 — sheet IR trên FlyoutHost", () => {
+  const params = () => new URLSearchParams(window.location.search);
+  const layer = () => document.querySelector('[data-flyout-key="ir-new-project"]') as HTMLElement | null;
+  const unsaved = () => document.querySelector("[data-unsaved-confirm]") as HTMLElement | null;
+  const opener = () => within(header()).getByRole("button", { name: /Project ir-flow mới/ });
+
+  it("mở ⇒ ?flyout=ir-new-project (giữ tham số khác); Tạo ⇒ createProject, lớp đóng, URL sạch, đích lưu = project mới", async () => {
+    seed();
+    window.history.replaceState({}, "", "/ir-editor?projectId=7");
+    mutationResponses["programming.createProject"] = () => ({ id: 9, code: "NEW", name: "New" });
+    renderPage();
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    expect(params().getAll("flyout")).toEqual(["ir-new-project"]);
+    expect(params().get("projectId")).toBe("7");
+    fireEvent.change(within(layer()!).getByLabelText("Mã project"), { target: { value: "NEW" } });
+    fireEvent.change(within(layer()!).getByLabelText("Tên project"), { target: { value: "New" } });
+    await act(async () => { fireEvent.click(within(layer()!).getByRole("button", { name: /^Tạo project$/ })); });
+    expect(mutateCalls["programming.createProject"]).toEqual([{ code: "NEW", name: "New", kind: "ir-flow" }]);
+    await waitFor(() => expect(layer()).toBeNull());
+    expect(unsaved()).toBeNull();
+    expect(params().get("flyout")).toBeNull();
+    expect(params().get("projectId")).toBe("7");
+  });
+
+  it("F5 / deep link ?flyout=ir-new-project ⇒ lớp dựng lại; đã gõ rồi Esc / Huỷ / Back ⇒ hỏi; Tiếp tục sửa giữ chữ; Bỏ ⇒ đóng", async () => {
+    seed();
+    window.history.replaceState({}, "", "/ir-editor?flyout=ir-new-project&flyoutId=");
+    renderPage();
+    await waitFor(() => expect(layer()).not.toBeNull());
+    fireEvent.change(within(layer()!).getByLabelText("Mã project"), { target: { value: "dang-go" } });
+    fireEvent.keyDown(layer()!, { key: "Escape" });
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    fireEvent.click(within(unsaved()!).getByRole("button", { name: "Tiếp tục sửa" }));
+    await waitFor(() => expect(unsaved()).toBeNull());
+    expect(within(layer()!).getByLabelText("Mã project")).toHaveValue("dang-go");
+    fireEvent.click(within(layer()!).getByRole("button", { name: /^Hủy$|^Huỷ$|^Cancel$/ }));
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    fireEvent.click(within(unsaved()!).getByRole("button", { name: "Bỏ thay đổi" }));
+    await waitFor(() => expect(layer()).toBeNull());
+    expect(params().get("flyout")).toBeNull();
+    expect(mutateCalls["programming.createProject"]).toBeUndefined();
+  });
+
+  it("Back đóng lớp không dữ liệu; Esc đóng ⇒ focus về nút đã mở; Back khi có dữ liệu ⇒ hỏi", async () => {
+    seed();
+    renderPage();
+    opener().focus();
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    await act(async () => { window.history.back(); });
+    await waitFor(() => expect(layer()).toBeNull());
+    expect(unsaved()).toBeNull();
+    opener().focus();
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    fireEvent.keyDown(layer()!, { key: "Escape" });
+    await waitFor(() => expect(layer()).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener()));
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    fireEvent.change(within(layer()!).getByLabelText("Tên project"), { target: { value: "x" } });
+    await act(async () => { window.history.back(); });
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    expect(within(layer()!).getByLabelText("Tên project")).toHaveValue("x");
+  });
+
+  it("mã nguồn: không còn <Sheet open=…> tự quản trong trang", () => {
+    expect(PAGE_SRC).not.toMatch(/<Sheet\s+open=/);
+    expect(PAGE_SRC).toMatch(/<FlyoutHost\b/);
   });
 });
