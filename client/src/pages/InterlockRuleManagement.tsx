@@ -487,8 +487,11 @@ export default function InterlockRuleManagement() {
                     defaultTab="rules"
                     className="space-y-2"
                     listRowAttrs={{ "data-layout-toolbar": "" }}
-                    listRowStyle={{ maxHeight: 56 }}
-                    listClassName="h-9"
+                    // doc 81 Đợt 7 task L fix 1 (d) — < 1024 px hàng XUỐNG DÒNG (một dòng ép tab "Ma trận Cause×Effect" còn 108 px
+                    // cho nhãn 114 px và cắt "N quy tắc" ở mép @390/412); tab không co. Trần 56 px chỉ từ 1024 px (thiết bị đo).
+                    listRowStyle={narrow ? undefined : { maxHeight: 56 }}
+                    listRowClassName={narrow ? "flex-wrap gap-y-1" : undefined}
+                    listClassName="h-9 [&>[role=tab]]:flex-none"
                     listEnd={
                       <>
                         {/* Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Hub. */}

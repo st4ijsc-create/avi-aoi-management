@@ -800,3 +800,38 @@ describe("H2 — màn hẹp: chọn hàng rule không đổi tab", () => {
     expect(selectedTab()).toBe("Sự kiện");
   });
 });
+
+// doc 81 Đợt 7 task L fix 1 (d) — kiểm trình duyệt L4 @390/412: hàng tab của MAIN một dòng (tab + nút "Sự kiện" + "N quy
+// tắc") ⇒ tab "Ma trận Cause×Effect" co còn 108 px cho nhãn 114 px (TabsTrigger flex-1) và chữ "16 quy tắ…" bị cắt ở mép.
+// Hợp đồng: dưới 1024 px hàng XUỐNG DÒNG (không trần 56 px); tab không co (flex-none). Từ 1024 px: một dòng ≤56 px như cũ.
+describe("L fix 1 (d) — Interlock: hàng tab xuống dòng ở màn hẹp, tab không co", () => {
+  let savedMatchMedia: typeof window.matchMedia | undefined;
+  beforeAll(async () => {
+    savedMatchMedia = window.matchMedia;
+    (await import("@/components/patterns/layoutKitTestMedia")).installMatchMedia();
+  });
+  afterEach(async () => {
+    (await import("@/components/patterns/layoutKitTestMedia")).presetNarrow(false);
+  });
+  afterAll(() => {
+    window.matchMedia = savedMatchMedia as typeof window.matchMedia;
+  });
+  const toolbar = () => mainEl().querySelector("[data-layout-toolbar]") as HTMLElement;
+
+  it("< 1024 px: hàng tab flex-wrap, không trần 56 px; tab flex-none; nút Sự kiện + số quy tắc vẫn trong hàng", async () => {
+    (await import("@/components/patterns/layoutKitTestMedia")).presetNarrow(true);
+    render(<InterlockRuleManagement />);
+    expect(toolbar().className).toMatch(/(^|\s)flex-wrap(\s|$)/);
+    expect(toolbar().style.maxHeight).toBe("");
+    const list = within(toolbar()).getByRole("tablist");
+    expect(list.className).toMatch(/\[&>\[role=tab\]\]:flex-none/);
+    expect(within(toolbar()).getByTestId("events-open-button")).toBeInTheDocument();
+    expect(within(toolbar()).getByText(/quy tắc$/)).toBeInTheDocument();
+  });
+
+  it("≥ 1024 px: hàng một dòng, trần 56 px (thiết bị đo bố cục) như cũ", () => {
+    render(<InterlockRuleManagement />);
+    expect(toolbar().className).not.toMatch(/(^|\s)flex-wrap(\s|$)/);
+    expect(toolbar().style.maxHeight).toBe("56px");
+  });
+});
