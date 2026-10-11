@@ -35,16 +35,20 @@ vi.mock("./foeScope", async (importOriginal) => {
   return {
     ...orig,
     resolveUserFoeScope: (u: { id: number; role: string }) => ({ userId: u.id, userRole: u.role }),
+    // doc 81 Đợt 7 I fix 1 — the namespace of a scope: user 10 ⇒ factory A ('f:1'), user 11 ⇒ factory B ('f:2'), null ⇒ global
+    workflowScopeKeyOf: async (scope: { userId?: number; tenantScope?: unknown } | null) =>
+      scope === null ? "global" : scope.userId === 11 ? "f:2" : scope.userId === 10 ? "f:1" : "f:",
     makeScopeJudge: async (scope: unknown) => {
       if (judge.mode === "admin" || scope === null) return { unrestricted: true, failed: false, outOf: async () => ({ machines: [], robots: [], adapters: [] }) };
+      const mine = (scope as { userId?: number }).userId === 11 ? { m: 2, a: 502 } : { m: 1, a: 501 };
       const pick = (m: Map<number, boolean>, o?: { nonStopOnly?: boolean }) => [...m.entries()].filter(([, ns]) => !o?.nonStopOnly || ns).map(([id]) => id);
       return {
         unrestricted: false,
         failed: false,
         outOf: async (t: { machines: Map<number, boolean>; robots: Map<number, boolean>; adapters: Map<number, boolean> }, o?: { nonStopOnly?: boolean }) => ({
-          machines: pick(t.machines, o).filter((id) => id !== 1),
+          machines: pick(t.machines, o).filter((id) => id !== mine.m),
           robots: pick(t.robots, o),
-          adapters: pick(t.adapters, o).filter((id) => id !== 501),
+          adapters: pick(t.adapters, o).filter((id) => id !== mine.a),
         }),
       };
     },
@@ -64,11 +68,12 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, orchestrationWorkflows, machines, deviceAdapters, deviceTags } from "../../../../drizzle/schema";
-import { deployWorkflow, startRun, runVisibilityDefinitions, refWithSuffix, runVisibleTo } from "./foeEngine";
+import { deployWorkflow, startRun, runVisibilityDefinitions, runVisibleTo } from "./foeEngine";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 
 type Row = Record<string, any>;
-const ENG = { id: 10, role: "engineer", name: "eng" };
+const ENG = { id: 10, role: "engineer", name: "eng" }; // factory A
+const ENG_B = { id: 11, role: "engineer", name: "eng-b" }; // factory B
 const ADMIN_SCOPE = { scope: null };
 const LOADER = { id: 0, role: "system", name: "loader" };
 const wfRows = (): Row[] => fake.store.get("orchestration_workflows") ?? [];
@@ -82,7 +87,7 @@ beforeEach(() => {
   fake.store.clear();
   resetSeq();
   fake.setUnique(orchestrationRunSteps, [["runId", "stepId"]]);
-  fake.setUnique(orchestrationWorkflows, [["ref"]]);
+  fake.setUnique(orchestrationWorkflows, [["ref", "scopeKey"]]); // mig 0367
   fake.seed(machines, [
     { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "A", operationStatus: "stopped", stationId: 1 },
     { id: 2, machineType: "AUTOMATION", capabilities: null, code: "M2", name: "B", operationStatus: "stopped", stationId: 2 },
@@ -99,46 +104,110 @@ beforeEach(() => {
   delete process.env.SEC_PLATFORM;
 });
 
-describe("doc 81 Đợt 7 I3 — refs created by a restricted scope are server-made (no probing)", () => {
-  it("★ pure: `<ref>~<8 hex>`, within 128 characters, fresh every time", () => {
-    expect(refWithSuffix("line-a")).toMatch(/^line-a~[0-9a-f]{8}$/);
-    expect(refWithSuffix("x".repeat(200)).length).toBe(128);
-    expect(refWithSuffix("r")).not.toBe(refWithSuffix("r"));
+describe("doc 81 Đợt 7 I fix 1 — refs per scope NAMESPACE (owner decision, mig 0367)", () => {
+  const norm = (x: Row, n: number) => ({ ...x, workflowId: n });
+  const rowsOf = (ref: string) => wfRows().filter((w) => w.ref === ref);
+
+  it("★ two factories deploy the SAME ref without interfering; each redeploy updates its own (idempotent)", async () => {
+    const a1 = await deployWorkflow(def("shared", [A_START]), ENG);
+    const b1 = await deployWorkflow(def("shared", [B_START]), ENG_B);
+    expect(a1).toMatchObject({ ok: true, ref: "shared", version: 1 });
+    expect(b1).toMatchObject({ ok: true, ref: "shared", version: 1 });
+    expect(rowsOf("shared").map((w) => w.scopeKey).sort()).toEqual(["f:1", "f:2"]);
+    const a2 = await deployWorkflow(def("shared", [A_START, { id: "d", type: "delay", ms: 1 }]), ENG);
+    expect(a2).toMatchObject({ ok: true, ref: "shared", workflowId: a1.workflowId, version: 2 });
+    expect(rowsOf("shared")).toHaveLength(2);
+    expect(rowsOf("shared").find((w) => w.scopeKey === "f:2")!.version).toBe(1); // B's untouched
+    expect(rowsOf("shared").find((w) => w.scopeKey === "f:2")!.definitionJson.steps[0].machineId).toBe(2);
   });
 
-  it("★ a FREE ref and a ref TAKEN by an invisible workflow give the same answer; the taken one is untouched; the definition is re-stamped", async () => {
-    expect((await deployWorkflow(def("taken", [B_START]), ENG, ADMIN_SCOPE)).ref).toBe("taken"); // B's, plain (unrestricted)
-    const taken = await deployWorkflow(def("taken", [A_START]), ENG);
-    const free = await deployWorkflow(def("free", [A_START]), ENG);
-    const norm = (x: Row, base: string) => ({ ...x, workflowId: 0, ref: String(x.ref).replace(base, "R").replace(/~[0-9a-f]{8}$/, "~H") });
-    expect(norm(taken as Row, "taken")).toEqual(norm(free as Row, "free"));
-    expect(taken.ref).toMatch(/^taken~[0-9a-f]{8}$/);
-    expect(wfRows().find((w) => w.ref === "taken")!.definitionJson.steps[0].machineId).toBe(2);
-    expect(wfRows().find((w) => w.ref === taken.ref)!.definitionJson.ref).toBe(taken.ref);
-    expect((fake.store.get("orchestration_workflow_versions") ?? []).find((v: Row) => v.workflowId === taken.workflowId)?.ref).toBe(taken.ref);
+  it("★ probing: a ref used only by ANOTHER factory answers exactly like a free ref — deploy and start", async () => {
+    expect((await deployWorkflow(def("taken", [GATE, B_START]), ENG_B)).ok).toBe(true);
+    const taken = await deployWorkflow(def("taken", [GATE, A_START]), ENG);
+    const free = await deployWorkflow(def("free", [GATE, A_START]), ENG);
+    expect(norm({ ...(taken as Row), ref: "R" }, 0)).toEqual(norm({ ...(free as Row), ref: "R" }, 0));
+    // start of a ref only another factory uses ⇒ the same answer as a missing ref
+    expect((await deployWorkflow(def("bonly", [GATE, B_START]), ENG_B)).ok).toBe(true);
+    const out = await startRun("bonly", {}, ENG);
+    const missing = await startRun("nope", {}, ENG);
+    expect(out).toEqual({ ...missing, message: missing.message!.replace("nope", "bonly") });
+    // each factory starts ITS OWN workflow of the shared ref
+    const rA = await startRun("taken", {}, ENG);
+    const rB = await startRun("taken", {}, ENG_B);
+    const runs = fake.store.get("orchestration_runs") as Row[];
+    const wfOf = (id: number) => runs.find((r) => r.id === id)!.workflowId;
+    expect(wfOf(rA.runId!)).toBe(taken.workflowId);
+    expect(wfOf(rB.runId!)).not.toBe(taken.workflowId);
   });
 
-  it("★ a visible workflow is updated IN PLACE under its ref (no copy); starting by the stored ref works", async () => {
-    const first = await deployWorkflow(def("mine", [GATE, A_START]), ENG);
-    const again = await deployWorkflow(def(first.ref!, [GATE, A_START, { id: "d", type: "delay", ms: 1 }]), ENG);
-    expect(again).toMatchObject({ ok: true, ref: first.ref, workflowId: first.workflowId, version: (first.version ?? 1) + 1 });
-    expect(wfRows()).toHaveLength(1);
-    expect((await startRun(first.ref!, {}, ENG)).status).toBe("awaiting_confirm");
+  it("★ admin sees all: a ref in several factory namespaces (no global) ⇒ refAmbiguous for a plain start / deploy; by workflowId ⇒ that one", async () => {
+    const a = await deployWorkflow(def("both", [GATE, A_START]), ENG);
+    expect((await deployWorkflow(def("both", [GATE, B_START]), ENG_B)).ok).toBe(true);
+    expect(await startRun("both", {}, ENG, { scope: null })).toMatchObject({ ok: false, reason: "refAmbiguous" });
+    expect(await deployWorkflow(def("both", [GATE, A_START]), ENG, ADMIN_SCOPE)).toMatchObject({ ok: false, reason: "refAmbiguous" });
+    const pinned = await startRun("both", {}, ENG, { scope: null, workflowId: a.workflowId });
+    expect(pinned.status).toBe("awaiting_confirm");
+    const upd = await deployWorkflow(def("both", [GATE, A_START, { id: "x", type: "delay", ms: 1 }]), ENG, { scope: null, targetWorkflowId: a.workflowId });
+    expect(upd).toMatchObject({ ok: true, workflowId: a.workflowId, version: 2 });
+    // admin's own namespace is 'global' (a new ref ⇒ global)
+    expect((await deployWorkflow(def("adm", [A_START]), ENG, ADMIN_SCOPE)).ok).toBe(true);
+    expect(rowsOf("adm")[0].scopeKey).toBe("global");
   });
 
-  it("control: an unrestricted scope and the system loader keep PLAIN refs; the loader keeps the old refusal on an invisible ref", async () => {
-    expect((await deployWorkflow(def("adm", [A_START]), ENG, ADMIN_SCOPE)).ref).toBe("adm");
-    expect((await deployWorkflow(def("tpl", [GATE]), LOADER)).ref).toBe("tpl"); // target-free template
-    expect((await deployWorkflow(def("bonly", [B_START]), ENG, ADMIN_SCOPE)).ok).toBe(true);
-    expect(await deployWorkflow(def("bonly", [GATE]), LOADER)).toMatchObject({ ok: false, reason: "refOutOfScope" });
+  it("★ a VISIBLE 'global' workflow (pre-0367 / admin) is updated in place by a scoped user (no copy); an invisible one is not touched", async () => {
+    const g = await deployWorkflow(def("glob", [GATE, A_START]), ENG, ADMIN_SCOPE);
+    const again = await deployWorkflow(def("glob", [GATE, A_START, { id: "d", type: "delay", ms: 1 }]), ENG);
+    expect(again).toMatchObject({ ok: true, workflowId: g.workflowId, version: 2 });
+    expect(rowsOf("glob")).toHaveLength(1);
+    expect((await deployWorkflow(def("globB", [GATE, B_START]), ENG, ADMIN_SCOPE)).ok).toBe(true);
+    const mine = await deployWorkflow(def("globB", [GATE, A_START]), ENG); // B's global is invisible to A
+    expect(mine).toMatchObject({ ok: true, ref: "globB", version: 1 });
+    expect(rowsOf("globB").map((w) => w.scopeKey).sort()).toEqual(["f:1", "global"]);
   });
 
-  it("★ CANNOT DECIDE — the scope over the existing workflow is undecided (its pinned STOP's adapter is down) ⇒ refused scopeUnverified, nothing written", async () => {
+  it("★ preference: own namespace › 'global' › the single visible one — a visible global and a visible foreign-namespace workflow ⇒ the global one (not ambiguous)", async () => {
+    const g = await deployWorkflow(def("pref", [GATE, A_START]), ENG, ADMIN_SCOPE);
+    // a workflow of ANOTHER namespace whose targets the caller can see (e.g. created before the caller's factory set changed)
+    fake.store.set("orchestration_workflows", [...wfRows(), { id: 990, ref: "pref", scopeKey: "f:9", name: "x", version: 1, status: "active", definitionJson: { ref: "pref", name: "x", steps: [GATE, A_START] } }]);
+    const r = await startRun("pref", {}, ENG);
+    const run = (fake.store.get("orchestration_runs") as Row[]).find((x) => x.id === r.runId)!;
+    expect(run.workflowId).toBe(g.workflowId);
+    // and once the caller has its OWN workflow of the ref, that one wins
+    fake.store.set("orchestration_workflows", [...wfRows(), { id: 991, ref: "pref", scopeKey: "f:1", name: "mine", version: 1, status: "active", definitionJson: { ref: "pref", name: "mine", steps: [GATE, A_START] } }]);
+    const r2 = await startRun("pref", {}, ENG);
+    expect((fake.store.get("orchestration_runs") as Row[]).find((x) => x.id === r2.runId)!.workflowId).toBe(991);
+  });
+
+  it("★ M-1: an UNDECIDABLE workflow of this ref (its pinned STOP's adapter is down) is treated as not visible — like a free ref", async () => {
     expect((await deployWorkflow(def("undec", [A_START, B_PINNED_STOP]), ENG, ADMIN_SCOPE)).ok).toBe(true);
-    conn.fp.delete(502); // the pinned STOP of B can no longer be verified
-    const before = wfRows().length;
-    expect(await deployWorkflow(def("undec", [A_START]), ENG)).toMatchObject({ ok: false, reason: "scopeUnverified" });
-    expect(wfRows()).toHaveLength(before);
+    conn.fp.delete(502);
+    const r = await deployWorkflow(def("undec", [A_START]), ENG);
+    expect(r).toMatchObject({ ok: true, ref: "undec", version: 1 });
+    expect(rowsOf("undec").map((w) => w.scopeKey).sort()).toEqual(["f:1", "global"]);
+  });
+
+  it("★ M-2: a concurrent create (unique (ref, scope) violation) ⇒ refConflict, never the database text", async () => {
+    const realInsert = (fake as any).insert.bind(fake);
+    (fake as any).insert = (t: any) => {
+      if (t?.[Symbol.for("drizzle:Name")] === "orchestration_workflows") {
+        return { values: () => ({ returning: async () => { throw Object.assign(new Error('duplicate key value violates unique constraint "uq_orch_workflows_ref_scope"'), { code: "23505" }); } }) };
+      }
+      return realInsert(t);
+    };
+    try {
+      const r = await deployWorkflow(def("race", [A_START]), ENG);
+      expect(r).toMatchObject({ ok: false, reason: "refConflict" });
+      expect(String(r.message)).not.toMatch(/duplicate key|uq_orch/);
+    } finally {
+      (fake as any).insert = realInsert;
+    }
+  });
+
+  it("control: the system loader deploys into 'global' and keeps refusing a global workflow it cannot cover", async () => {
+    expect((await deployWorkflow(def("tpl", [GATE]), LOADER)).ok).toBe(true);
+    expect(rowsOf("tpl")[0].scopeKey).toBe("global");
+    expect((await deployWorkflow(def("bonly2", [B_START]), ENG, ADMIN_SCOPE)).ok).toBe(true);
+    expect(await deployWorkflow(def("bonly2", [GATE]), LOADER)).toMatchObject({ ok: false, reason: "refOutOfScope" });
   });
 });
 

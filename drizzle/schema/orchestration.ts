@@ -12,7 +12,7 @@
 //   • orchestration_run_steps  — append-style per-step audit (state/attempt/result).
 // ════════════════════════════════════════════════════════════════════════════
 import {
-  pgTable, serial, integer, varchar, text, jsonb, timestamp, index, unique,
+  pgTable, serial, integer, varchar, text, jsonb, timestamp, index, unique, uniqueIndex,
 } from "drizzle-orm/pg-core";
 import {
   orchestrationWorkflowStatusEnum,
@@ -24,8 +24,16 @@ import type { WorkflowDefinition } from "../../server/services/orchestration/foe
 /** A deployed orchestration workflow (the portable ISA-88-ish JSON definition). */
 export const orchestrationWorkflows = pgTable("orchestration_workflows", {
   id: serial("id").primaryKey(),
-  /** Stable code/ref (unique) — what a run references. */
-  ref: varchar("ref", { length: 128 }).notNull().unique(),
+  /**
+   * Stable code/ref — what a run references. doc 81 Đợt 7 I fix 1 (mig 0367): unique per (ref, scopeKey), no longer globally
+   * (two factories may use the same ref; a plain ref is resolved within the caller's scope — foeEngine.resolveWorkflowByRef).
+   */
+  ref: varchar("ref", { length: 128 }).notNull(),
+  /**
+   * doc 81 Đợt 7 I fix 1 (mig 0367) — the namespace of `ref`: 'global' (admin / global API key / system loader) or
+   * 'f:<factory ids ascending>' of the creator's factory scope (foeScope.workflowScopeKeyOf). Pre-0367 rows: 'global'.
+   */
+  scopeKey: varchar("scopeKey", { length: 160 }).default("global").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   version: integer("version").default(1).notNull(),
   description: text("description"),
@@ -38,6 +46,7 @@ export const orchestrationWorkflows = pgTable("orchestration_workflows", {
 }, (table) => [
   index("idx_orch_workflows_status").on(table.status),
   index("idx_orch_workflows_ref").on(table.ref),
+  uniqueIndex("uq_orch_workflows_ref_scope").on(table.ref, table.scopeKey), // mig 0367
 ]);
 
 /** One RUN (execution) of a workflow. The run-level status machine lives here. */

@@ -40,6 +40,24 @@ export function resolveUserFoeScope(user: { id: number; role: string }): FoeScop
   return { tenantScope: {} };
 }
 
+/**
+ * doc 81 Đợt 7 task I fix 1 (owner decision 2026-10-11, mig 0367) — the NAMESPACE of a workflow ref created under `scope`:
+ *   • 'global' — unrestricted (admin, a `global` API key; the system loader passes null);
+ *   • 'f:<factory ids ascending, comma-separated>' — a restricted user / API key: the factories of its scope (the same
+ *     resolver as every scope check, `idsTrongPhamVi("factory")`), ids because factory codes may be renamed; an empty scope
+ *     ⇒ 'f:'; a key longer than 160 characters ⇒ 'f#' + the first 40 hex of its SHA-256 (stable).
+ * Stable for a given factory set. STRICT: a scope that cannot be resolved THROWS (callers refuse — never a guessed namespace).
+ */
+export async function workflowScopeKeyOf(scope: FoeScope): Promise<string> {
+  if (scope === null) return "global";
+  const ids = await idsTrongPhamVi("factory", scope, { strict: true });
+  if (ids === null) return "global";
+  const key = `f:${[...new Set(ids)].sort((a, b) => a - b).join(",")}`;
+  if (key.length <= 160) return key;
+  const { createHash } = await import("node:crypto");
+  return `f#${createHash("sha256").update(key).digest("hex").slice(0, 40)}`;
+}
+
 export interface FoeTargets {
   /** id → true when at least one reference is outside a STOP step. */
   machines: Map<number, boolean>;

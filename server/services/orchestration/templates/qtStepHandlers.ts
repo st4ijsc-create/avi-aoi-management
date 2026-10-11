@@ -629,18 +629,17 @@ const qt4SimGate: QtBusinessStep = {
       if (!db) return { ok: false, note: "DB unavailable — sim-gate fail-closed" };
       const { eq } = await import("drizzle-orm");
       const { orchestrationWorkflows } = await import("../../../../drizzle/schema");
-      const [wf] = await db
-        .select()
-        .from(orchestrationWorkflows)
-        .where(eq(orchestrationWorkflows.ref, simWorkflowRef))
-        .limit(1);
-      if (!wf) return { ok: false, note: `workflow '${simWorkflowRef}' không tồn tại — sim-gate fail-closed` };
+      // doc 81 Đợt 7 I fix 1 (mig 0367) — refs are unique per namespace: the token must match the definition of SOME
+      // workflow carrying this ref (the HMAC binds the whole definition — no other workflow can satisfy it).
+      const wfs = await db.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.ref, simWorkflowRef));
+      if (wfs.length === 0) return { ok: false, note: `workflow '${simWorkflowRef}' không tồn tại — sim-gate fail-closed` };
       const { issueSimToken } = await import("../foe/foeEngine");
-      const expected = issueSimToken(wf.definitionJson as never);
       const { timingSafeEqual } = await import("node:crypto");
-      const a = Buffer.from(expected, "utf8");
       const b = Buffer.from(simToken, "utf8");
-      const valid = a.length === b.length && timingSafeEqual(a, b);
+      const valid = wfs.some((wf) => {
+        const a = Buffer.from(issueSimToken(wf.definitionJson as never), "utf8");
+        return a.length === b.length && timingSafeEqual(a, b);
+      });
       return valid
         ? { ok: true, note: `sim-gate PASS: sim-token hợp lệ cho '${simWorkflowRef}'` }
         : { ok: false, note: "sim-token KHÔNG khớp definition đã deploy — mô phỏng lại (fail-closed)" };

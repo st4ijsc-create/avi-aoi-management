@@ -1593,8 +1593,12 @@ export default function OrchestrationStudio() {
         return t("studio.deployOutOfScope", "Not deployed: step(s) {{steps}} touch a machine, robot or adapter outside your factory scope (a deploy covers every step, stop steps included). Ask someone whose scope covers them to deploy it.", { steps });
       case "refOutOfScope": // doc 81 Đợt 5 task E2 / Đợt 7 I3 — a workflow you can see, touching targets outside your scope
         return t("studio.deployRefOutOfScope", "Not deployed: the workflow with this ref touches machines or robots outside your factory scope (stop steps included) — only someone whose scope covers them can redeploy it. Use another ref.");
-      case "scopeUnverified": // doc 81 Đợt 7 I3 — the scope over the existing workflow of this ref could not be decided
-        return t("studio.deployScopeUnverified", "Not deployed: your factory scope over the existing workflow with this ref could not be verified (for example a device connection is down). Retry in a moment.");
+      case "scopeUnverified": // doc 81 Đợt 7 I3 / I fix 1 — the deployer's factory scope could not be resolved
+        return t("studio.deployScopeUnverified", "Not deployed: your factory scope could not be verified. Retry in a moment.");
+      case "refAmbiguous": // doc 81 Đợt 7 I fix 1 — several workflows you can see share this ref (factory namespaces)
+        return t("studio.deployRefAmbiguous", "Not done: several workflows you can see use this ref (in different factory scopes). Open the workflow from the list, then deploy or run it from there.");
+      case "refConflict": // doc 81 Đợt 7 I fix 1 — a concurrent create in your scope
+        return t("studio.deployRefConflict", "Not deployed: a workflow with this ref was just created in your scope. Retry.");
       case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
         return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
       default:
@@ -1603,19 +1607,8 @@ export default function OrchestrationStudio() {
   };
 
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
-    onSuccess: (r, vars) => {
-      if (r?.ok) {
-        toast.success(t("studio.deployed", "Workflow saved / deployed"));
-        // doc 81 Đợt 7 task I3 — a workflow CREATED by a user with a factory scope is stored under a server-made unique ref:
-        // the editor switches to it (a later deploy updates THIS workflow instead of creating another one).
-        const sent = (vars?.definition as { ref?: unknown } | undefined)?.ref;
-        if (typeof r.ref === "string" && r.ref && r.ref !== sent) {
-          const stored = r.ref;
-          setDef((prev) => (prev.ref === sent ? { ...cloneDef(prev), ref: stored } : prev));
-          toast.info(t("studio.deployedAsRef", "Saved under the ref {{ref}} — refs of workflows created within a factory scope are made unique by the server. Use this ref from now on.", { ref: stored }));
-        }
-        void workflowsQ.refetch();
-      }
+    onSuccess: (r) => {
+      if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
       else toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
     onError: (e) => toastTrpcError(e),
@@ -1824,11 +1817,15 @@ export default function OrchestrationStudio() {
   const handleMoveNode = (id: string, pos: { x: number; y: number }) =>
     mutate((d) => updateStep(d.steps, id, { ui: { x: pos.x, y: pos.y } }));
 
-  const loadWorkflow = (row: { definitionJson?: unknown }) => {
+  // doc 81 Đợt 7 I fix 1 (refs per scope namespace, mig 0367) — the workflow loaded into the editor: Deploy and Run name it
+  // by id while the editor's ref is still its ref (several visible workflows may share a ref across factory namespaces).
+  const [loadedWf, setLoadedWf] = useState<{ id: number; ref: string } | null>(null);
+  const loadWorkflow = (row: { id?: unknown; definitionJson?: unknown }) => {
     const json = row.definitionJson as StudioDef | undefined;
     if (json && Array.isArray(json.steps)) {
       const cloned = cloneDef(json);
       setDef(cloned);
+      setLoadedWf(typeof row.id === "number" ? { id: row.id, ref: String(cloned.ref ?? "") } : null);
       setSelectedId(null);
       setSim(null);
       setSimPass(null); // doc 40 ENG-F4 — định nghĩa mới nạp vào → phải mô phỏng lại trước khi Deploy
@@ -1862,8 +1859,10 @@ export default function OrchestrationStudio() {
       definition: serializeDef(def) as Record<string, unknown>,
       simToken: simFresh ? simPass?.token : undefined,
       totpCode,
+      ...(loadedWf && loadedWf.ref === def.ref ? { workflowId: loadedWf.id } : {}),
     }));
-  const runStart = () => startRunM.mutate({ workflowRef: def.ref, params: {} });
+  const runStart = () =>
+    startRunM.mutate({ workflowRef: def.ref, params: {}, ...(loadedWf && loadedWf.ref === def.ref ? { workflowId: loadedWf.id } : {}) });
 
   // ── E5: AI advisor — propose / optimize (HITL: AI only proposes; human deploys) ──
   const i18nLang = (((i18n.language || "vi").slice(0, 2)) as "vi" | "en" | "zh");
@@ -2513,7 +2512,7 @@ export default function OrchestrationStudio() {
                   wfSearch={wfSearch}
                   onSearch={setWfSearch}
                   onRefresh={() => void workflowsQ.refetch()}
-                  onLoad={(w) => loadWorkflow(w as { definitionJson?: unknown })}
+                  onLoad={(w) => loadWorkflow(w as { id?: unknown; definitionJson?: unknown })}
                   onDelete={setDeleteWf}
                   onAddStep={handleAddTopLevel}
                   canControl={canControl}

@@ -64,11 +64,10 @@ import {
   runVisibleTo,
   visibleWorkflowIds,
   listVisibleRuns,
-  refWithSuffix,
-  scopeCreatesSuffixedRefs,
+  resolveWorkflowByRef,
   type FoeUser,
 } from "../services/orchestration/foe/foeEngine";
-import { resolveUserFoeScope, type FoeScope } from "../services/orchestration/foe/foeScope";
+import { resolveUserFoeScope, workflowScopeKeyOf, type FoeScope } from "../services/orchestration/foe/foeScope";
 import {
   simulateWorkflow,
   type SimulationResult,
@@ -86,6 +85,34 @@ function toFoeUser(user: { id: number; role: string; name?: string | null }): Fo
  */
 function scopeOf(user: { id: number; role: string }): FoeScope {
   return resolveUserFoeScope({ id: user.id, role: String(user.role) });
+}
+
+/**
+ * doc 81 Đợt 7 I fix 1 — the workflow a by-id-or-ref input names FOR THE CALLER: by id (any namespace) or by ref resolved
+ * within the caller's view (foeEngine.resolveWorkflowByRef). Not visible / several ⇒ undefined + `ambiguous`; the visibility
+ * check of each procedure still runs on the result (a missing and an out-of-scope workflow answer the same).
+ */
+async function workflowByIdOrRef(
+  d: Awaited<ReturnType<typeof db>>,
+  input: { id?: number; ref?: string },
+  scope: FoeScope,
+): Promise<{ row: typeof orchestrationWorkflows.$inferSelect | undefined; ambiguous: boolean }> {
+  if (input.id != null) {
+    const [row] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, input.id)).limit(1);
+    return { row, ambiguous: false };
+  }
+  let key: string | null = null;
+  try {
+    key = await workflowScopeKeyOf(scope);
+  } catch {
+    key = null;
+  }
+  const r = await resolveWorkflowByRef(d, input.ref ?? "", scope, key);
+  return { row: r.kind === "row" ? r.row : undefined, ambiguous: r.kind === "ambiguous" };
+}
+
+function refAmbiguousError(ref: string) {
+  return appError("CONFLICT", "OPERATION_FAILED", { operation: "resolveWorkflowRef", reason: "refAmbiguous" }, `Several workflows you can see use the ref "${ref}" — use the workflow's id.`);
 }
 
 async function db() {
@@ -151,13 +178,15 @@ export const orchestrationRouter = router({
         simToken: z.string().max(256).optional(),
         overrideReason: z.string().max(1000).optional(),
         totpCode: z.string().max(16),
+        /** doc 81 Đợt 7 I fix 1 — the workflow the editor loaded (it is updated when it carries this ref and is visible). */
+        workflowId: z.number().int().positive().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const result = await deployWorkflow(
         input.definition as unknown as WorkflowDefinition,
         toFoeUser(ctx.user),
-        { simToken: input.simToken ?? null, overrideReason: input.overrideReason ?? null },
+        { simToken: input.simToken ?? null, overrideReason: input.overrideReason ?? null, targetWorkflowId: input.workflowId },
       );
       return result;
     }),
@@ -297,10 +326,12 @@ export const orchestrationRouter = router({
       z.object({
         workflowRef: z.string().min(1).max(128),
         params: z.record(z.string(), z.unknown()).default({}),
+        /** doc 81 Đợt 7 I fix 1 — the workflow the caller means when several visible ones share the ref. */
+        workflowId: z.number().int().positive().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      return startRun(input.workflowRef, input.params, toFoeUser(ctx.user));
+      return startRun(input.workflowRef, input.params, toFoeUser(ctx.user), { workflowId: input.workflowId });
     }),
 
   /**
@@ -391,11 +422,10 @@ export const orchestrationRouter = router({
       if (input.workflow) {
         def = input.workflow as unknown as WorkflowDefinition;
       } else if (input.workflowRef) {
-        const [wf] = await d
-          .select()
-          .from(orchestrationWorkflows)
-          .where(eq(orchestrationWorkflows.ref, input.workflowRef))
-          .limit(1);
+        // doc 81 Đợt 7 I fix 1 — resolved within the caller's view (namespaces)
+        const found = await workflowByIdOrRef(d, { ref: input.workflowRef }, scopeOf(ctx.user));
+        if (found.ambiguous) throw refAmbiguousError(input.workflowRef);
+        const wf = found.row;
         // doc 81 Đợt 5 task E2 — a stored workflow outside the caller's scope ⇒ the SAME NOT_FOUND as a missing ref.
         const visible = await definitionVisibleTo(wf?.definitionJson as WorkflowDefinition | undefined, scopeOf(ctx.user));
         if (!wf || !visible) {
@@ -477,14 +507,13 @@ export const orchestrationRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const d = await db();
-      const [wf] = await d
-        .select()
-        .from(orchestrationWorkflows)
-        .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
-        .limit(1);
       // doc 81 Đợt 5 task E2 — invisible ⇒ the SAME NOT_FOUND; visible but some target (a STOP's, e.g. a shared emergency
       // stop of another factory) outside the caller's scope ⇒ refused: removing a workflow is a change like deploying one.
+      // doc 81 Đợt 7 I fix 1 — a ref is resolved within the caller's view (namespaces).
       const scope = scopeOf(ctx.user);
+      const found = await workflowByIdOrRef(d, input, scope);
+      if (found.ambiguous) throw refAmbiguousError(input.ref ?? "");
+      const wf = found.row;
       const visible = await definitionVisibleTo(wf?.definitionJson as WorkflowDefinition | undefined, scope);
       if (!wf || !visible) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Workflow not found");
@@ -540,31 +569,29 @@ export const orchestrationRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const d = await db();
-      const [src] = await d
-        .select()
-        .from(orchestrationWorkflows)
-        .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
-        .limit(1);
+      const scopeD = scopeOf(ctx.user);
+      const srcFound = await workflowByIdOrRef(d, input, scopeD); // doc 81 Đợt 7 I fix 1 — namespaces
+      if (srcFound.ambiguous) throw refAmbiguousError(input.ref ?? "");
+      const src = srcFound.row;
       // doc 81 Đợt 5 task E2 — a source outside the caller's scope ⇒ the SAME NOT_FOUND (copying is reading).
-      const srcVisible = await definitionVisibleTo(src?.definitionJson as WorkflowDefinition | undefined, scopeOf(ctx.user));
+      const srcVisible = await definitionVisibleTo(src?.definitionJson as WorkflowDefinition | undefined, scopeD);
       if (!src || !srcVisible) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Source workflow not found");
       }
 
-      // doc 81 Đợt 7 task I3 — WORKFLOW-REF PROBING closed: a ref taken by a workflow the caller CANNOT see answers exactly
-      // like a free ref. A taken ref the caller can see ⇒ ENTITY_DUPLICATE, as before. A caller with a restricted factory
-      // scope always creates the copy under a server-made unique ref (`<ref>~<8 hex>`, foeEngine.refWithSuffix) — taken or
-      // free alike —, so the answer never says which. An unrestricted caller keeps plain refs (it sees every workflow).
-      const scopeD = scopeOf(ctx.user);
-      const wantedRef = input.newRef.trim();
-      const [clash] = await d
-        .select()
-        .from(orchestrationWorkflows)
-        .where(eq(orchestrationWorkflows.ref, wantedRef))
-        .limit(1);
-      const clashVisible = await definitionVisibleTo(clash?.definitionJson as WorkflowDefinition | undefined, scopeD); // resolved for a free ref too
-      if (clash && clashVisible) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workflow" }, `A workflow with ref "${wantedRef}" already exists.`);
-      const newRef = (await scopeCreatesSuffixedRefs(scopeD)) ? refWithSuffix(wantedRef) : wantedRef;
+      // doc 81 Đợt 7 task I3 + I fix 1 (owner decision, mig 0367) — WORKFLOW-REF PROBING closed by NAMESPACES: the copy is
+      // created in the caller's own namespace (scope key). A ref the caller can see (its own namespace, or a visible workflow
+      // of another one) ⇒ ENTITY_DUPLICATE, as before; a ref used only by workflows it cannot see answers exactly like a free
+      // ref (the copy is created under the plain ref — the namespaces never collide). A race ⇒ ENTITY_DUPLICATE (no raw text).
+      const newRef = input.newRef.trim();
+      let dupKey: string;
+      try {
+        dupKey = await workflowScopeKeyOf(scopeD);
+      } catch {
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Factory scope could not be resolved — retry.");
+      }
+      const clash = await resolveWorkflowByRef(d, newRef, scopeD, dupKey, { ownAnyVisibility: true });
+      if (clash.kind !== "none") throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workflow" }, `A workflow with ref "${newRef}" already exists.`);
 
       // Re-stamp the definition's own ref so the stored JSON stays consistent.
       const def = {
@@ -572,10 +599,11 @@ export const orchestrationRouter = router({
         ref: newRef,
       } as typeof src.definitionJson;
       const newName = input.newName?.trim() || `${src.name} (copy)`;
-      const [row] = await d
+      const insertCopy = d
         .insert(orchestrationWorkflows)
         .values({
           ref: newRef,
+          scopeKey: dupKey,
           name: newName,
           version: 1,
           description: src.description,
@@ -584,6 +612,14 @@ export const orchestrationRouter = router({
           createdBy: ctx.user?.id ?? null,
         })
         .returning();
+      let row: typeof orchestrationWorkflows.$inferSelect;
+      try {
+        [row] = await insertCopy;
+      } catch (err) {
+        const code = (err as { code?: unknown; cause?: { code?: unknown } })?.code ?? (err as { cause?: { code?: unknown } })?.cause?.code;
+        if (code === "23505") throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workflow" }, `A workflow with ref "${newRef}" already exists.`);
+        throw err;
+      }
       return { ok: true, id: row.id, ref: row.ref, status: row.status };
     }),
 });

@@ -99,9 +99,10 @@ import {
   makeScopeJudge,
   resolveUserFoeScope,
   stepsTouching,
+  workflowScopeKeyOf,
   type FoeScope,
   type OutOfScope,
-} from "./foeScope"; // doc 81 Đợt 5 task E2 — factory scope (item 26)
+} from "./foeScope"; // doc 81 Đợt 5 task E2 — factory scope (item 26); Đợt 7 I fix 1 — ref namespace
 export type { FoeScope } from "./foeScope";
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
@@ -230,6 +231,11 @@ export interface DeployOpts {
    * assignments; a non-user principal ⇒ EMPTY scope). `null` = explicitly unrestricted (a `global` API key).
    */
   scope?: FoeScope;
+  /**
+   * doc 81 Đợt 7 I fix 1 — the workflow to update (rollback; the Studio editor of a loaded workflow): used only when it
+   * carries the deployed ref and the deployer may see it (or it is in the deployer's own namespace); else as if absent.
+   */
+  targetWorkflowId?: number;
 }
 
 export interface StartRunResult {
@@ -295,8 +301,12 @@ export type DefinitionRefusalReason =
   | "outOfScope"
   /** doc 81 Đợt 5 task E2 — the ref belongs to an existing workflow that touches targets outside the deployer's scope. */
   | "refOutOfScope"
-  /** doc 81 Đợt 7 task I3 — the deployer's scope over the existing workflow of this ref could not be decided (retry). */
-  | "scopeUnverified";
+  /** doc 81 Đợt 7 task I3 / I fix 1 — the deployer's factory scope could not be resolved (retry). */
+  | "scopeUnverified"
+  /** doc 81 Đợt 7 I fix 1 — several workflows the caller can see share the ref (deploy / start from the workflow itself). */
+  | "refAmbiguous"
+  /** doc 81 Đợt 7 I fix 1 (M-2) — a concurrent create took the (ref, scope) first (retry). */
+  | "refConflict";
 
 export interface RunView {
   run: OrchestrationRun;
@@ -2309,42 +2319,38 @@ export async function deployWorkflow(
     }
 
     const d = await db();
-    const found = await d
-      .select()
-      .from(orchestrationWorkflows)
-      .where(eq(orchestrationWorkflows.ref, def.ref))
-      .limit(1);
-    // doc 81 Đợt 7 task I3 — WORKFLOW-REF PROBING closed. Refs are global keys; a deployer with a RESTRICTED factory scope
-    // (a user or an API key — never the system loader) never learns whether a ref is taken outside its scope:
-    //   • the ref names a workflow it may SEE ⇒ that workflow is updated, as before (its scope must also cover every
-    //     target of the definition being replaced, STOP steps included ⇒ else refOutOfScope);
-    //   • otherwise — the ref is free OR taken by a workflow it cannot see — a NEW workflow is created under a server-made
-    //     unique ref `<ref>~<8 hex>` (refWithSuffix), ALWAYS, so both cases give the same answer (ok, the new ref, the
-    //     submitted version); the definition is re-stamped with that ref, the answer carries it (the Studio switches to it);
-    //   • ★ CANNOT DECIDE — the deployer's scope over the existing workflow is undecided (e.g. one of its pinned STOP
-    //     adapters is down): REFUSED `scopeUnverified` ("retry") — never a silent second copy of what may be its own workflow.
-    // An unrestricted scope (admin, a `global` key) keeps plain refs, unchanged. The system loader (user 0, no explicit
-    // scope: QT templates at boot) keeps plain refs and the old refusal (it has no caller to leak to).
+    // doc 81 Đợt 7 task I fix 1 (owner decision 2026-10-11, mig 0367) — refs are unique per (ref, scopeKey): the deployer's
+    // NAMESPACE is its scope key (foeScope.workflowScopeKeyOf: 'global' for admin / a `global` key / the system loader,
+    // 'f:<factory ids>' for a restricted scope). The ref is resolved WITHIN the deployer's view (resolveWorkflowByRef):
+    //   • `targetWorkflowId` (rollback; the Studio editor of a loaded workflow) names the workflow to update — used only when
+    //     it carries this ref and the deployer may see it (or it is in the deployer's own namespace); else as if absent;
+    //   • else the deployer's OWN-namespace workflow of this ref (whatever its visibility — it is its own namespace), else the
+    //     single workflow of this ref it may SEE (a 'global' one first) ⇒ that workflow is UPDATED (idempotent redeploy) —
+    //     its targets must all be in the deployer's scope, STOP steps included ⇒ else refOutOfScope (a workflow it can see);
+    //   • several visible candidates and no own / global one ⇒ refused refAmbiguous (only about workflows it can see);
+    //   • otherwise — the ref is free, OR used only by workflows it cannot see (another factory; or undecidable ⇒ treated as
+    //     not visible, review M-1) — a NEW workflow is created in its OWN namespace: the SAME answer as a free ref.
+    // A race on the unique (ref, scopeKey) ⇒ refConflict ("retry"), never the database's text (review M-2).
     const systemLoader = !(Number.isInteger(user.id) && user.id > 0) && opts?.scope === undefined;
-    const deployJudge = await makeScopeJudge(scope);
-    const restricted = !(deployJudge.unrestricted && !deployJudge.failed);
-    let existing = found;
-    let storedRef = def.ref;
-    if (found.length && restricted && !systemLoader) {
-      const seen = await decideDefinition(deployJudge, found[0].definitionJson as WorkflowDefinition);
-      if (seen === "unknown") {
-        return {
-          ok: false,
-          enabled: true,
-          reason: "scopeUnverified",
-          stepIds: [],
-          message: `Your factory scope over the existing workflow "${def.ref}" could not be verified — retry in a moment.`,
-        };
-      }
-      if (seen === "out") existing = []; // not visible to this deployer: deployed as a NEW workflow (below), like a free ref
+    let scopeKey: string;
+    try {
+      scopeKey = systemLoader ? "global" : await workflowScopeKeyOf(scope);
+    } catch {
+      return { ok: false, enabled: true, reason: "scopeUnverified", stepIds: [], message: "Your factory scope could not be resolved — retry in a moment." };
     }
-    // doc 81 Đợt 5 task E2 — deploying over an EXISTING (visible) workflow replaces its definition, so the deployer's scope
-    // must also cover every target of the definition being replaced, STOP steps included.
+    const resolved = await resolveWorkflowByRef(d, def.ref, scope, scopeKey, { workflowId: opts?.targetWorkflowId, ownAnyVisibility: true });
+    if (resolved.kind === "ambiguous") {
+      return {
+        ok: false,
+        enabled: true,
+        reason: "refAmbiguous",
+        stepIds: [],
+        message: `Several workflows you can see use the ref "${def.ref}" — deploy from the workflow itself (open it in the Studio) so the right one is updated.`,
+      };
+    }
+    const existing = resolved.kind === "row" ? [resolved.row] : [];
+    // doc 81 Đợt 5 task E2 — deploying over an EXISTING workflow replaces its definition, so the deployer's scope must also
+    // cover every target of the definition being replaced, STOP steps included.
     if (existing.length) {
       const prev = await scopeVerdict(existing[0].definitionJson as WorkflowDefinition, scope, { nonStopOnly: false });
       if (!isOutOfScopeEmpty(prev.out)) {
@@ -2356,11 +2362,9 @@ export async function deployWorkflow(
           message: `The workflow "${def.ref}" touches machines/robots outside your factory scope (stop steps included) — only someone whose scope covers them can redeploy it; use another ref.`,
         };
       }
-    } else if (restricted && !systemLoader) {
-      storedRef = refWithSuffix(def.ref);
     }
     const nextVersion = existing.length ? (existing[0].version ?? 1) + 1 : def.version ?? 1;
-    const definitionJson: WorkflowDefinition = { ...def, ref: storedRef, version: nextVersion };
+    const definitionJson: WorkflowDefinition = { ...def, version: nextVersion };
 
     let workflowId: number;
     if (existing.length) {
@@ -2377,26 +2381,34 @@ export async function deployWorkflow(
         .where(eq(orchestrationWorkflows.id, existing[0].id));
       workflowId = existing[0].id;
     } else {
-      const [row] = await d
-        .insert(orchestrationWorkflows)
-        .values({
-          ref: storedRef,
-          name: def.name,
-          description: def.description ?? null,
-          definitionJson,
-          version: nextVersion,
-          status: "active",
-          createdBy: user.id || null,
-        })
-        .returning();
-      workflowId = row.id;
+      try {
+        const [row] = await d
+          .insert(orchestrationWorkflows)
+          .values({
+            ref: def.ref,
+            scopeKey,
+            name: def.name,
+            description: def.description ?? null,
+            definitionJson,
+            version: nextVersion,
+            status: "active",
+            createdBy: user.id || null,
+          })
+          .returning();
+        workflowId = row.id;
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, enabled: true, reason: "refConflict", stepIds: [], message: `A workflow with the ref "${def.ref}" was just created in your scope — retry.` };
+        }
+        throw err;
+      }
     }
 
     // W3-11 — SNAPSHOT this version (append-only) so the head-row overwrite above no
     // longer loses history; enables version diff + rollback in the Studio.
     await snapshotWorkflowVersion(d, {
       workflowId,
-      ref: storedRef,
+      ref: def.ref,
       version: nextVersion,
       name: def.name,
       description: def.description ?? null,
@@ -2404,26 +2416,46 @@ export async function deployWorkflow(
       createdBy: user.id || null,
     });
 
-    // doc 81 Đợt 7 I3 — the STORED ref (a restricted deployer's new workflow: `<ref>~<8 hex>`)
-    return { ok: true, enabled: true, workflowId, ref: storedRef, version: nextVersion };
+    return { ok: true, enabled: true, workflowId, ref: def.ref, version: nextVersion };
   } catch (err) {
     // data-raw-ok: như trên — lỗi một bước trong bộ thực thi quy trình.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
 }
 
-/**
- * doc 81 Đợt 7 task I3 — the server-made unique ref of a workflow CREATED by a restricted scope: `<ref>~<8 random hex>`, cut
- * to the 128-character column. Made for EVERY such creation (taken ref or free alike), so it tells nothing about other refs.
- */
-export function refWithSuffix(ref: string): string {
-  return `${ref.slice(0, 128 - 9)}~${randomBytes(4).toString("hex")}`;
+/** doc 81 Đợt 7 I fix 1 (M-2) — a unique-key violation (23505), however the driver wraps it. */
+function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  return e?.code === "23505" || e?.cause?.code === "23505";
 }
 
-/** doc 81 Đợt 7 task I3 — does `scope` CREATE workflows under a server-made unique ref (a restricted, decided scope)? */
-export async function scopeCreatesSuffixedRefs(scope: FoeScope): Promise<boolean> {
+type WorkflowRow = typeof orchestrationWorkflows.$inferSelect;
+export type RefResolution = { kind: "row"; row: WorkflowRow } | { kind: "none" } | { kind: "ambiguous" };
+
+/**
+ * doc 81 Đợt 7 task I fix 1 (owner decision 2026-10-11, mig 0367) — THE resolution of a plain workflow ref WITHIN a caller's
+ * view (deploy, start, simulate, delete, duplicate, API v1). Candidates: the workflows with this ref in ANY namespace (or only
+ * `workflowId` when given). A candidate counts only when the caller may SEE it (decideDefinition "in"; an undecidable one is
+ * NOT visible — fail-closed, review M-1) — except, with `ownAnyVisibility`, the caller's OWN-namespace row (deploy: its own
+ * namespace leaks nothing). Pick: own namespace › 'global' › the single visible one; several ⇒ ambiguous; none ⇒ none.
+ * Workflows of other factories the caller cannot see are never named: "none" is the SAME answer as a free ref.
+ */
+export async function resolveWorkflowByRef(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  ref: string,
+  scope: FoeScope,
+  scopeKey: string | null,
+  opts: { workflowId?: number; ownAnyVisibility?: boolean } = {},
+): Promise<RefResolution> {
+  let rows = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.ref, ref));
+  if (opts.workflowId != null) rows = rows.filter((r) => r.id === opts.workflowId);
   const judge = await makeScopeJudge(scope);
-  return !(judge.unrestricted && !judge.failed);
+  const own = scopeKey != null ? rows.find((r) => r.scopeKey === scopeKey) : undefined;
+  if (own && opts.ownAnyVisibility) return { kind: "row", row: own };
+  const visible = (await filterVisibleWith(judge, rows, (r) => r.definitionJson as WorkflowDefinition)).keep;
+  if (visible.length === 0) return { kind: "none" };
+  const pick = visible.find((r) => r.scopeKey === scopeKey) ?? visible.find((r) => r.scopeKey === "global") ?? (visible.length === 1 ? visible[0] : undefined);
+  return pick ? { kind: "row", row: pick } : { kind: "ambiguous" };
 }
 
 /**
@@ -2497,6 +2529,7 @@ export async function rollbackWorkflow(
   const res = await deployWorkflow(def, user, {
     overrideReason: `rollback to v${version}: ${why}`,
     scope,
+    targetWorkflowId: workflowId, // doc 81 Đợt 7 I fix 1 — the workflow being rolled back, never another namespace's
   });
   if (res.ok) void auditRollback(user, def, version, res.version ?? null, why);
   return res;
@@ -2564,6 +2597,8 @@ export async function startRun(
     viaApi?: boolean;
     /** doc 81 Đợt 5 task E2 — the starter's factory scope (see DeployOpts.scope). */
     scope?: FoeScope;
+    /** doc 81 Đợt 7 I fix 1 — the workflow the caller means (several visible workflows may share a ref across namespaces). */
+    workflowId?: number;
     /**
      * doc 81 Đợt 7 task I1 — called with the new run's id right after its row exists (before the walk): the edge runtime
      * uses it to watch central for an abort WHILE the run walks. A throwing callback is ignored (never stops the run).
@@ -2577,15 +2612,28 @@ export async function startRun(
   let runId: number | undefined;
   try {
     const d = await db();
-    const [wf] = await d
-      .select()
-      .from(orchestrationWorkflows)
-      .where(eq(orchestrationWorkflows.ref, workflowRef))
-      .limit(1);
-    // doc 81 Đợt 5 task E2 — a workflow whose NON-STOP targets are outside the starter's scope does not exist for them
-    // (the SAME answer as a missing ref, before any status check). Targets reached only by VERIFIED STOP steps are allowed
-    // (L-7, R-5-j) and audited once the run exists. E fix 1 (review #9) — the scope is resolved for a missing ref too.
-    const sv = await scopeVerdict((wf?.definitionJson ?? { ref: workflowRef, name: workflowRef, steps: [] }) as WorkflowDefinition, scopeFor(user, opts?.scope), { nonStopOnly: true });
+    // doc 81 Đợt 7 task I fix 1 — the ref is resolved WITHIN the starter's view (resolveWorkflowByRef: own namespace ›
+    // 'global' › the single visible one; `workflowId` pins one). doc 81 Đợt 5 task E2 — a workflow whose NON-STOP targets are
+    // outside the starter's scope does not exist for them (the SAME answer as a missing ref, before any status check).
+    // Targets reached only by VERIFIED STOP steps are allowed (L-7, R-5-j) and audited once the run exists.
+    const startScope = scopeFor(user, opts?.scope);
+    let startKey: string | null = null;
+    try {
+      startKey = await workflowScopeKeyOf(startScope);
+    } catch {
+      startKey = null; // no own namespace known: 'global' › the single visible one
+    }
+    const found = await resolveWorkflowByRef(d, workflowRef, startScope, startKey, { workflowId: opts?.workflowId });
+    if (found.kind === "ambiguous") {
+      return {
+        ok: false,
+        enabled: true,
+        reason: "refAmbiguous",
+        message: `Several workflows you can see use the ref "${workflowRef}" — start it from the workflow itself (open it in the Studio).`,
+      };
+    }
+    const wf = found.kind === "row" ? found.row : undefined;
+    const sv = await scopeVerdict((wf?.definitionJson ?? { ref: workflowRef, name: workflowRef, steps: [] }) as WorkflowDefinition, startScope, { nonStopOnly: true });
     if (!wf || !isOutOfScopeEmpty(sv.out)) return { ok: false, enabled: true, message: `Workflow "${workflowRef}" not found.` };
     // doc 80 ORC-06 — only a DEPLOYED ('active') workflow runs. A duplicate is created 'draft'
     // and must pass deployWorkflow (validation + sim-gate + version snapshot) before running.

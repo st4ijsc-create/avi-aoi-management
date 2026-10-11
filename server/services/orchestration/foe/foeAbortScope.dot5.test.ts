@@ -233,10 +233,19 @@ describe("doc 81 Đợt 5 E fix 2 (R-5-l, replaces R-5-i) — abort / reject sco
   });
 
   it("review #9: startRun resolves the caller's scope for a MISSING ref too (same path as an existing ref)", async () => {
+    // doc 81 Đợt 7 I fix 1 — the ref resolution (namespaces) resolves the scope too: the SAME number of resolutions for a
+    // missing ref as for an existing out-of-scope one (≥ 1), and the same answer.
+    await pausedRun();
+    judge.mode = "out";
     judge.calls = 0;
     const r = await startRun("no-such-ref", {}, OWNER);
+    const missingCalls = judge.calls;
     expect(r).toEqual({ ok: false, enabled: true, message: `Workflow "no-such-ref" not found.` });
-    expect(judge.calls).toBe(1);
+    judge.calls = 0;
+    const out = await startRun("g", {}, OWNER);
+    expect(out).toEqual({ ok: false, enabled: true, message: `Workflow "g" not found.` });
+    expect(missingCalls).toBeGreaterThanOrEqual(1);
+    expect(judge.calls).toBe(missingCalls);
   });
 });
 

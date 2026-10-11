@@ -589,7 +589,7 @@ describe("Orchestration P2 — Lịch sử phiên bản: VersionHistoryPanel + R
     expect(srv.refetched).toEqual(expect.arrayContaining(["orchestration.listWorkflows", "orchestration.listVersions"]));
   });
 
-  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"], ["outOfScope", "deployOutOfScope"], ["refOutOfScope", "deployRefOutOfScope"], ["scopeUnverified", "deployScopeUnverified"]] as const) { // + doc 81 Đợt 5 E2, Đợt 7 I3
+  for (const [reason, key] of [["robotIdMissing", "deployRobotIdMissing"], ["stopAdapterAmbiguous", "deployStopAdapterAmbiguous"], ["robotUnavailable", "deployRobotUnavailable"], ["robotDisabled", "deployRobotDisabled"], ["outOfScope", "deployOutOfScope"], ["refOutOfScope", "deployRefOutOfScope"], ["scopeUnverified", "deployScopeUnverified"], ["refAmbiguous", "deployRefAmbiguous"], ["refConflict", "deployRefConflict"]] as const) { // + doc 81 Đợt 5 E2, Đợt 7 I3 / I fix 1
     it(`final wave G2: ROLLBACK refused with ${reason} ⇒ the translated sentence naming the steps (no raw server English)`, async () => {
       const user = userEvent.setup();
       srv.results["orchestration.rollbackWorkflow"] = { ok: false, enabled: true, reason, stepIds: ["s1", "s2"], message: "RAW server text" };
@@ -718,36 +718,25 @@ describe("Orchestration P2 — tiêu đề sửa tại chỗ", () => {
     });
   });
 
-  it("★ doc 81 Đợt 7 I3: the server stored the new workflow under ANOTHER ref (factory scope) ⇒ told, and the editor switches to it (Run uses it)", async () => {
+  it("★ doc 81 Đợt 7 I fix 1: a workflow LOADED from the list is deployed and run BY ID (refs are per factory namespace); after the ref is edited, by ref only", async () => {
     const user = userEvent.setup();
-    srv.results["orchestration.deployWorkflow"] = { ok: true, enabled: true, workflowId: 5, ref: "line-c~0a1b2c3d", version: 1 };
+    srv.results["orchestration.deployWorkflow"] = { ok: true, enabled: true, workflowId: 11, ref: "line-a-startup", version: 4 };
     render(<OrchestrationStudio />);
-    await user.click(within(leftPanel()).getByRole("button", { name: S.type.delay }));
-    await user.click(screen.getByRole("button", { name: S.editRef }));
-    await user.type(screen.getByRole("textbox", { name: S.editRef }), "line-c{Enter}");
+    await user.click(within(wfRow(11)).getByRole("button", { name: S.load }));
     await user.click(screen.getByRole("button", { name: S.deploy }));
     const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
     fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "654321" } });
-    await waitFor(() => expect(toastSpy.info).toHaveBeenCalled());
-    expect(String((toastSpy.info as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.deployedAsRef.replace("{{ref}}", "line-c~0a1b2c3d"));
-    await waitFor(() => expect(screen.getByRole("button", { name: S.editRef })).toHaveTextContent("line-c~0a1b2c3d"));
+    await waitFor(() => expect(calls("orchestration.deployWorkflow")).toHaveLength(1));
+    expect(calls("orchestration.deployWorkflow")[0]).toMatchObject({ workflowId: 11, definition: { ref: "line-a-startup" } });
     await user.click(screen.getByRole("button", { name: S.run }));
-    expect(calls("orchestration.startRun")).toEqual([{ workflowRef: "line-c~0a1b2c3d", params: {} }]);
-  });
-
-  it("doc 81 Đợt 7 I3 control: the server kept the submitted ref ⇒ no switch, no extra notice", async () => {
-    const user = userEvent.setup();
-    srv.results["orchestration.deployWorkflow"] = { ok: true, enabled: true, workflowId: 5, ref: "line-c", version: 1 };
-    render(<OrchestrationStudio />);
-    await user.click(within(leftPanel()).getByRole("button", { name: S.type.delay }));
+    expect(calls("orchestration.startRun")).toEqual([{ workflowRef: "line-a-startup", params: {}, workflowId: 11 }]);
+    // the ref is changed in the editor ⇒ it is another workflow: no id is sent
     await user.click(screen.getByRole("button", { name: S.editRef }));
-    await user.type(screen.getByRole("textbox", { name: S.editRef }), "line-c{Enter}");
-    await user.click(screen.getByRole("button", { name: S.deploy }));
-    const otp = await screen.findByRole("dialog", { name: VI.stepUp.title });
-    fireEvent.change(otp.querySelector("input") as HTMLInputElement, { target: { value: "654321" } });
-    await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
-    expect(toastSpy.info).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: S.editRef })).toHaveTextContent(/^line-c$/);
+    const box = screen.getByRole("textbox", { name: S.editRef });
+    await user.clear(box);
+    await user.type(box, "line-a-v2{Enter}");
+    await user.click(screen.getByRole("button", { name: S.run }));
+    expect(calls("orchestration.startRun").at(-1)).toEqual({ workflowRef: "line-a-v2", params: {} });
   });
 
   it("mã (ref) trống ⇒ Chạy khoá; có mã ⇒ Chạy gọi startRun({workflowRef, params:{}}) MỘT lần, không hộp thoại", async () => {

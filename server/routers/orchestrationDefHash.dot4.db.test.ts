@@ -15,7 +15,7 @@ let sql: ReturnType<typeof postgres>;
 const saved = { FOE_ENABLED: process.env.FOE_ENABLED };
 
 const def = (ms: number) => ({ ref: storedRef || REF, name: "DefHash", steps: [{ id: "g", type: "hitl_gate" as const, prompt: "approve" }, { id: "d", type: "delay" as const, ms }] });
-/** doc 81 Đợt 7 task I3 — OWNER has a factory scope: its new workflow is stored under `<REF>~<hex>`; later deploys use it. */
+/** doc 81 Đợt 7 I fix 1 — the ref the deploy answered (the plain ref: namespaces, no suffix). */
 let storedRef = "";
 
 describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the definition the screen loaded (CSDL _test)", () => {
@@ -49,7 +49,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 fix round 2 — approval bound to the 
     const dep = await deployWorkflow(def(1), OWNER);
     expect(dep.ok).toBe(true);
     storedRef = dep.ref!;
-    expect(storedRef).toMatch(new RegExp(`^${REF}~[0-9a-f]{8}$`)); // doc 81 Đợt 7 I3
+    expect(storedRef).toBe(REF); // doc 81 Đợt 7 I fix 1 — refs per scope namespace: the plain ref is kept
     const started = await startRun(storedRef, {}, OWNER);
     expect(started.status).toBe("awaiting_confirm");
     const view = await (await router()).getRun({ runId: started.runId! });

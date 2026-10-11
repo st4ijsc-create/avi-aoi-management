@@ -227,47 +227,88 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     expect((await deployWorkflow(defOf(ref("dep-adm"), [otStart("a", A), otStart("b", B)]), ADMIN)).ok).toBe(true);
   });
 
-  // doc 81 Đợt 7 task I3 — replaces the Đợt 5 "refOutOfScope" answer, which told a caller that a ref of ANOTHER factory exists.
-  it("★ doc 81 Đợt 7 I3 — deploy of a ref TAKEN by another factory's workflow answers exactly like a FREE ref (a new workflow under a server-made ref); B's workflow stays", async () => {
-    const { deployWorkflow } = await engine();
-    const r = ref("hijack");
-    expect((await deployWorkflow(defOf(r, [otStart("b", B)]), ADMIN)).ref).toBe(r); // B's workflow under the PLAIN ref (admin)
-    const before = await wfRow(r);
-    const rFree = ref("hijack-free");
+  // doc 81 Đợt 7 I fix 1 (owner decision 2026-10-11, mig 0367) — refs are unique per (ref, scopeKey): replaces both the Đợt 5
+  // "refOutOfScope" answer (it told a caller that ANOTHER factory uses a ref) and the I3 `<ref>~<hex>` suffix.
+  const rowsOfRef = async (r: string) => sql`SELECT id, "scopeKey", version, "definitionJson" FROM orchestration_workflows WHERE ref = ${r} ORDER BY id`;
+  const keyOf = async (key: string) => {
+    const { workflowScopeKeyOf } = await import("../services/orchestration/foe/foeScope");
+    return workflowScopeKeyOf({ userId: fx.users[key], userRole: "engineer" });
+  };
+
+  it("★ doc 81 Đợt 7 I fix 1 — the namespace key is the creator's factory ids ('f:<id>'); admin / system ⇒ 'global'", async () => {
+    expect(await keyOf("ua")).toBe(`f:${A().factoryId}`);
+    expect(await keyOf("ub")).toBe(`f:${B().factoryId}`);
+    const { workflowScopeKeyOf } = await import("../services/orchestration/foe/foeScope");
+    expect(await workflowScopeKeyOf(null)).toBe("global");
+    expect(await workflowScopeKeyOf({ userId: fx.users.adm, userRole: "admin" })).toBe("global");
+  });
+
+  it("★ doc 81 Đợt 7 I fix 1 — two factories deploy the SAME ref without interfering; redeploy is idempotent; probing another factory's ref answers like a free ref (deploy, duplicate, start)", async () => {
+    const { deployWorkflow, startRun } = await engine();
+    const r = ref("ns-shared");
+    const rFree = ref("ns-free");
+    const b1 = await deployWorkflow(defOf(r, [otStart("b", B)]), userOf("ub"));
     const taken = await deployWorkflow(defOf(r, [otStart("a", A)]), userOf("ua"));
     const free = await deployWorkflow(defOf(rFree, [otStart("a", A)]), userOf("ua"));
-    const norm = (x: Record<string, unknown>, base: string) => ({ ...x, workflowId: 0, ref: String(x.ref).replace(base, "R").replace(/~[0-9a-f]{8}$/, "~H") });
-    expect(norm(taken as never, r)).toEqual(norm(free as never, rFree));
-    expect(taken).toMatchObject({ ok: true, ref: expect.stringMatching(new RegExp(`^${r}~[0-9a-f]{8}$`)) });
-    const after = await wfRow(r);
-    expect(after.version).toBe(before.version);
-    expect(JSON.stringify(after.definitionJson)).toBe(JSON.stringify(before.definitionJson));
-    // the new workflow is A's own; its definition carries the stored ref; redeploying under it UPDATES it (no third copy)
-    const mine = await wfRow(String(taken.ref));
-    expect(mine.definitionJson.ref).toBe(taken.ref);
-    const again = await deployWorkflow({ ...defOf(String(taken.ref), [otStart("a", A)]), name: "v2" }, userOf("ua"));
-    expect(again).toMatchObject({ ok: true, ref: taken.ref, version: Number(mine.version) + 1, workflowId: mine.id });
-    // a visible workflow with a STOP target outside the deployer's scope ⇒ still refused (it can see it), as before
-    const rSee = ref("hijack-see");
+    expect(b1).toMatchObject({ ok: true, ref: r, version: 1 });
+    expect({ ...taken, workflowId: 0, ref: "R" }).toEqual({ ...free, workflowId: 0, ref: "R" });
+    expect((await rowsOfRef(r)).map((x) => x.scopeKey).sort()).toEqual([await keyOf("ua"), await keyOf("ub")].sort());
+    // idempotent redeploy: A's own workflow gets version 2, B's stays version 1
+    const again = await deployWorkflow({ ...defOf(r, [otStart("a", A)]), name: "v2" }, userOf("ua"));
+    expect(again).toMatchObject({ ok: true, ref: r, workflowId: taken.workflowId, version: 2 });
+    const rows = await rowsOfRef(r);
+    expect(rows).toHaveLength(2);
+    const keyB = await keyOf("ub");
+    expect(rows.find((x) => x.scopeKey === keyB)!.version).toBe(1);
+    // duplicate to B's ref ⇒ like a free ref; to A's own ref ⇒ ENTITY_DUPLICATE
+    const ua = await router(ctxOf("ua"));
+    const src = await deployWorkflow(defOf(ref("ns-src"), [otStart("a", A)]), userOf("ua"));
+    const rB2 = ref("ns-bonly");
+    expect((await deployWorkflow(defOf(rB2, [otStart("b", B)]), userOf("ub"))).ok).toBe(true);
+    const dTaken = await ua.duplicateWorkflow({ id: src.workflowId!, newRef: rB2 });
+    const dFree = await ua.duplicateWorkflow({ id: src.workflowId!, newRef: ref("ns-dfree") });
+    expect({ ...dTaken, id: 0, ref: "R" }).toEqual({ ...dFree, id: 0, ref: "R" });
+    expect((await sql`SELECT "scopeKey" FROM orchestration_workflows WHERE id = ${dTaken.id}`)[0].scopeKey).toBe(await keyOf("ua")); // A's namespace
+    expect(await ua.duplicateWorkflow({ id: src.workflowId!, newRef: r }).catch((e) => e)).toMatchObject({ code: "CONFLICT" });
+    // start: each factory starts ITS OWN workflow of the shared ref; a ref only B uses ⇒ like a missing ref for A
+    const runA = (await startRun(r, {}, userOf("ua"))).runId!;
+    const runBId = (await startRun(r, {}, userOf("ub"))).runId!;
+    const wfOf = async (id: number) => Number((await sql`SELECT "workflowId" FROM orchestration_runs WHERE id = ${id}`)[0].workflowId);
+    expect(await wfOf(runA)).toBe(taken.workflowId);
+    expect(await wfOf(runBId)).toBe(b1.workflowId);
+    const rB3 = ref("ns-bonly3");
+    expect((await deployWorkflow(defOf(rB3, [otStart("b", B)]), userOf("ub"))).ok).toBe(true);
+    const out = await startRun(rB3, {}, userOf("ua"));
+    const miss = await startRun(`${RUN}-nope`, {}, userOf("ua"));
+    expect(out).toEqual({ ...miss, message: miss.message!.replace(`${RUN}-nope`, rB3) });
+  });
+
+  it("★ doc 81 Đợt 7 I fix 1 — admin sees all: a ref in two factory namespaces ⇒ refAmbiguous on a plain start; by workflowId ⇒ that one; listWorkflows shows both", async () => {
+    const { deployWorkflow, startRun } = await engine();
+    const r = ref("ns-adm");
+    const a = await deployWorkflow(defOf(r, [otStart("a", A)]), userOf("ua"));
+    expect((await deployWorkflow(defOf(r, [otStart("b", B)]), userOf("ub"))).ok).toBe(true);
+    expect(await startRun(r, {}, ADMIN)).toMatchObject({ ok: false, reason: "refAmbiguous" });
+    expect((await startRun(r, {}, ADMIN, { workflowId: a.workflowId })).runId).toBeGreaterThan(0);
+    const listed = await (await router(ctxOf("adm", "admin"))).listWorkflows({ limit: 500 });
+    expect(listed.filter((w: { ref: string }) => w.ref === r)).toHaveLength(2);
+    const listedA = await (await router(ctxOf("ua"))).listWorkflows({ limit: 500 });
+    expect(listedA.filter((w: { ref: string }) => w.ref === r).map((w: { id: number }) => w.id)).toEqual([a.workflowId]);
+    // a visible workflow with a STOP target outside the deployer's scope ⇒ still refused (it can see it)
+    const rSee = ref("ns-see");
     expect((await deployWorkflow(defOf(rSee, [otStart("a", A), otStop("sb", B)]), ADMIN)).ok).toBe(true);
     expect(await deployWorkflow(defOf(rSee, [otStart("a", A)]), userOf("ua"))).toMatchObject({ ok: false, reason: "refOutOfScope" });
   });
 
-  it("★ doc 81 Đợt 7 I3 — duplicate to a ref TAKEN by another factory answers like a FREE ref; to a ref the caller can see ⇒ ENTITY_DUPLICATE", async () => {
+  it("★ doc 81 Đợt 7 I fix 1 — the system loader (QT templates) deploys into 'global'; a global workflow is updated in place by it", async () => {
     const { deployWorkflow } = await engine();
-    const rB = ref("dupt-b");
-    expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
-    const src = await deployWorkflow(defOf(ref("dupt-src"), [otStart("a", A)]), userOf("ua"));
-    const srcRow = await wfRow(String(src.ref));
-    const ua = await router(ctxOf("ua"));
-    const taken = await ua.duplicateWorkflow({ id: srcRow.id, newRef: rB });
-    const rFree = ref("dupt-free");
-    const free = await ua.duplicateWorkflow({ id: srcRow.id, newRef: rFree });
-    const norm = (x: Record<string, unknown>, base: string) => ({ ...x, id: 0, ref: String(x.ref).replace(base, "R").replace(/~[0-9a-f]{8}$/, "~H") });
-    expect(norm(taken as never, rB)).toEqual(norm(free as never, rFree));
-    expect((await wfRow(rB)).definitionJson.steps[1].then[0].machineId).toBe(B().machineId); // B's untouched
-    const err = await ua.duplicateWorkflow({ id: srcRow.id, newRef: String(src.ref) }).catch((e) => e);
-    expect(err).toMatchObject({ code: "CONFLICT" });
+    const LOADER = { id: 0, role: "system", name: "qt-loader" };
+    const r = ref("ns-tpl");
+    const t1 = await deployWorkflow({ ref: r, name: r, steps: [{ id: "g", type: "hitl_gate", prompt: "p" }] } as never, LOADER);
+    expect(t1).toMatchObject({ ok: true, ref: r });
+    expect((await rowsOfRef(r)).map((x) => x.scopeKey)).toEqual(["global"]);
+    const t2 = await deployWorkflow({ ref: r, name: r, steps: [{ id: "g", type: "hitl_gate", prompt: "p2" }] } as never, LOADER);
+    expect(t2).toMatchObject({ ok: true, workflowId: t1.workflowId, version: 2 });
   });
 
   it("★ start: a workflow with a NON-STOP target outside the starter's scope is 'not found' (identical to a missing ref), no run; STOP-only out of scope ⇒ starts + audited", async () => {
@@ -827,6 +868,20 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
         if (prevEdge === undefined) delete process.env.EDGE_RUNTIME_ENABLED;
         else process.env.EDGE_RUNTIME_ENABLED = prevEdge;
       }
+      // doc 81 Đợt 7 I fix 1 — a factory-A key deploys a PLAIN ref B already uses: created in A's namespace (same answer as a
+      // free ref), redeploy is idempotent, start by the plain ref starts A's workflow
+      const rNs = ref("api-ns");
+      expect((await deployWorkflow(defOf(rNs, [otStart("b", B)]), userOf("ub"))).ok).toBe(true);
+      const d1 = await call("POST", "/orchestration/workflows", defOf(rNs, [otStart("a", A)]));
+      expect(d1.status).toBe(201);
+      expect(d1.body.data).toMatchObject({ ref: rNs, version: 1 });
+      const d2 = await call("POST", "/orchestration/workflows", defOf(rNs, [otStart("a", A)]));
+      expect(d2.body.data).toMatchObject({ ref: rNs, version: 2, workflowId: d1.body.data.workflowId });
+      const stNs = await call("POST", "/orchestration/runs", { workflowRef: rNs });
+      expect(stNs.status).toBe(202);
+      expect(Number((await sql`SELECT "workflowId" FROM orchestration_runs WHERE id = ${stNs.body.data.runId}`)[0].workflowId)).toBe(d1.body.data.workflowId);
+      const simNs = await call("POST", "/orchestration/simulate", { workflowRef: rNs });
+      expect(simNs.status).toBe(200);
       h.principal = key({ mode: "global", corporateCode: null, factoryCode: null });
       expect((await call("GET", `/orchestration/runs/${runB}`)).status).toBe(200);
       expect((await call("POST", "/orchestration/workflows", defOf(ref("api-glob"), [otStart("b", B)]))).status).toBe(201);

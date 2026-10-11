@@ -611,17 +611,18 @@ export function createV1Router(): Router {
         def = body.workflow as never;
       } else if (typeof body.workflowRef === "string" && body.workflowRef) {
         const { getDb } = await import("../../db/connection");
-        const { orchestrationWorkflows } = await import("../../../drizzle/schema");
-        const { eq } = await import("drizzle-orm");
         const d = await getDb();
         if (!d) throw new ApiHttpError(500, "db_unavailable", "Database not connected.");
-        const [wf] = await d
-          .select()
-          .from(orchestrationWorkflows)
-          .where(eq(orchestrationWorkflows.ref, body.workflowRef))
-          .limit(1);
-        // doc 81 Đợt 5 task E2 — a stored workflow outside the key's scope ⇒ the SAME 404 as a missing ref.
-        const { definitionVisibleTo } = await import("../../services/orchestration/foe/foeEngine");
+        // doc 81 Đợt 7 I fix 1 — the ref is resolved WITHIN the key's view (namespaces, mig 0367); doc 81 Đợt 5 task E2 — a
+        // stored workflow outside the key's scope ⇒ the SAME 404 as a missing ref.
+        const { definitionVisibleTo, resolveWorkflowByRef } = await import("../../services/orchestration/foe/foeEngine");
+        const { workflowScopeKeyOf } = await import("../../services/orchestration/foe/foeScope");
+        const nsKey = await workflowScopeKeyOf(orchestrationScopeOf(req.apiPrincipal?.tenantScope)).catch(() => null);
+        const found = await resolveWorkflowByRef(d, body.workflowRef, orchestrationScopeOf(req.apiPrincipal?.tenantScope), nsKey);
+        if (found.kind === "ambiguous") {
+          throw new ApiHttpError(409, "ref_ambiguous", `Several workflows visible to this key use the ref "${body.workflowRef}".`);
+        }
+        const wf = found.kind === "row" ? found.row : undefined;
         const visible = await definitionVisibleTo(wf?.definitionJson as never, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
         if (!wf || !visible) {
           throw new ApiHttpError(404, "not_found", `Workflow "${body.workflowRef}" not found.`);
