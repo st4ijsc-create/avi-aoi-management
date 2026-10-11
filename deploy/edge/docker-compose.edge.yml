@@ -15,9 +15,14 @@
 # Run:
 #   docker compose -f deploy/edge/docker-compose.edge.yml --env-file .env.edge up -d
 #
-# ⚠️ SAFETY: the gateway is READ + publish + buffer only. It runs on the edge
-#    server, SEPARATE from the certified safety-PLC — it never writes safety
-#    functions (SYNAPSE Tầng-1 §18 "ranh giới an toàn").
+# ⚠️ SAFETY: with THIS file alone the gateway is READ + publish + buffer only.
+#    With the execution overlay (docker-compose.edge.execution.yml, doc 81 Dot 9 S —
+#    docs/EDGE_GATEWAY.md section 8) it ALSO executes the runs central assigns to this
+#    node: it dispatches OT writes and robot motion to THIS node's devices (its own
+#    lines only), through the same gates as central (approval, binding digest,
+#    program checksum, interlocks, safety preflight, motion lock — STOPs exempt).
+#    Either way it runs on the edge server, SEPARATE from the certified safety-PLC —
+#    it never writes safety functions (SYNAPSE Tầng-1 §18 "ranh giới an toàn").
 # ─────────────────────────────────────────────────────────────────────────────
 services:
   # OPTIONAL embedded broker at the edge (store-and-forward store, or a local UNS

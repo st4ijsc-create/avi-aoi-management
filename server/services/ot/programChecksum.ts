@@ -24,8 +24,11 @@
  *     "blockInfo"; any value other than false / "off" / null counts as opting in, so a typo never silently disables the
  *     check): SHA-256 over the controller's identity (SZL order number, serial number, module name), the adapter's
  *     endpoint (host, port, rack, slot), the full block list and every reported block-info field of every listed block
- *     (OB/DB/FC/FB + SDB/SFC/SFB when listed), read through the documented S7comm functions (drivers/s7BlockChecksum.ts —
- *     sources, formula "s7-blockinfo-v2"); a know-how-protected or unreadable block ⇒ the whole checksum is unreadable.
+ *     (OB/DB/FC/FB/SDB read per block, each with its own block info), read through the documented S7comm functions
+ *     (drivers/s7BlockChecksum.ts — sources, formula "s7-blockinfo-v3", S7_PROGRAM_CHECKSUM_FORMULA); a know-how-protected or
+ *     unreadable OB/FB/FC/DB/SDB, or a truncated block list ⇒ the whole checksum is unreadable. SFC/SFB (firmware system
+ *     blocks) are NOT read per block (ruling R-9-b): they are covered by the controller identity + FIRMWARE VERSION and by
+ *     their presence in the block list, so their protection flag never refuses.
  *     Built from the protocol documentation and a simulator, NOT verified on a real device, and CHANGE DETECTION PER
  *     PROTOCOL DATA — NOT TAMPER-PROOF against an attacker with PLC write access (rulings R-9-a; the screen says both).
  *     Opt-in rather than default because a CPU that does not answer
