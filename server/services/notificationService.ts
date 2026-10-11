@@ -154,6 +154,46 @@ export function _safetyCriticalDedupSizeForTests(): number {
 export function _resetSafetyCriticalDedupForTests(): void {
   safetyCriticalLastBypass.clear();
   safetyCriticalLastRate.clear();
+  safetyCriticalRecipientTimes.clear();
+}
+
+/**
+ * doc 81 Đợt 8 task N fix 1 (owner decision I1, item 4) — a GLOBAL per-recipient cap on opt-out-bypassing notices, across
+ * EVERY source (rulesEngine safety events of all machines / types, the B3 "STOP not confirmed" alarm, …): at most
+ * SAFETY_CRITICAL_RECIPIENT_MAX_PER_MIN bypasses per recipient in any SAFETY_CRITICAL_RECIPIENT_WINDOW_MS. Beyond the cap a
+ * notice is DOWNGRADED to normal delivery (the recipient's preferences apply) — never dropped. It closes the gap the
+ * per-(type, machine) P-F4 key leaves open: many machines / configs × types could otherwise bypass many times per second.
+ * Failure here ⇒ allowed (fails toward delivering, like the throttle above). Bounded: ≤ MAX timestamps per recipient; the map
+ * is swept past SAFETY_CRITICAL_DEDUP_MAX recipients (then cleared if still full).
+ */
+export const SAFETY_CRITICAL_RECIPIENT_MAX_PER_MIN = 6;
+export const SAFETY_CRITICAL_RECIPIENT_WINDOW_MS = 60_000;
+const safetyCriticalRecipientTimes = new Map<number, number[]>();
+
+function recipientBypassBudgetLeft(userId: number, now: number): boolean {
+  try {
+    const recent = (safetyCriticalRecipientTimes.get(userId) ?? []).filter((t) => now - t >= 0 && now - t < SAFETY_CRITICAL_RECIPIENT_WINDOW_MS);
+    return recent.length < SAFETY_CRITICAL_RECIPIENT_MAX_PER_MIN;
+  } catch {
+    return true;
+  }
+}
+
+function chargeRecipientBypass(userId: number, now: number): void {
+  try {
+    const recent = (safetyCriticalRecipientTimes.get(userId) ?? []).filter((t) => now - t >= 0 && now - t < SAFETY_CRITICAL_RECIPIENT_WINDOW_MS);
+    recent.push(now);
+    safetyCriticalRecipientTimes.set(userId, recent.slice(-SAFETY_CRITICAL_RECIPIENT_MAX_PER_MIN));
+    if (safetyCriticalRecipientTimes.size > SAFETY_CRITICAL_DEDUP_MAX) {
+      for (const [u, ts] of safetyCriticalRecipientTimes) if (!ts.some((t) => now - t < SAFETY_CRITICAL_RECIPIENT_WINDOW_MS)) safetyCriticalRecipientTimes.delete(u);
+      if (safetyCriticalRecipientTimes.size > SAFETY_CRITICAL_DEDUP_MAX) safetyCriticalRecipientTimes.clear();
+    }
+  } catch {
+    /* fails toward delivering */
+  }
+}
+export function _safetyCriticalRecipientMapSizeForTests(): number {
+  return safetyCriticalRecipientTimes.size;
 }
 
 /**
@@ -162,7 +202,14 @@ export function _resetSafetyCriticalDedupForTests(): void {
 export async function sendNotification(userId: number, payload: NotificationPayload, opts: SendNotificationOptions = {}) {
   const dedupKey = typeof opts?.dedupKey === "string" && opts.dedupKey ? opts.dedupKey : undefined;
   const rateKey = typeof opts?.rateKey === "string" && opts.rateKey ? opts.rateKey : undefined;
-  const safetyCritical = opts?.safetyCritical === true && (dedupKey || rateKey ? takeSafetyCriticalBypass(userId, dedupKey, rateKey) : true);
+  // N fix 1 (I1 item 4) — the per-recipient cap is checked FIRST (a capped notice consumes no dedup / rate slot), then the
+  // occurrence dedup + P-F4 rate key; a bypass actually granted is charged to the recipient's budget.
+  const nowMs = Date.now();
+  let safetyCritical = false;
+  if (opts?.safetyCritical === true && recipientBypassBudgetLeft(userId, nowMs)) {
+    safetyCritical = dedupKey || rateKey ? takeSafetyCriticalBypass(userId, dedupKey, rateKey, nowMs) : true;
+    if (safetyCritical) chargeRecipientBypass(userId, nowMs);
+  }
   const { safetyCritical: _claimed, ...ownMetadata } = (payload.metadata ?? {}) as Record<string, any>;
   const metadata = safetyCritical ? { ...ownMetadata, safetyCritical: true } : payload.metadata ? ownMetadata : undefined;
 
