@@ -354,3 +354,39 @@ describe("doc 81 Đợt 8 N3 — stops and restarts cleanly", () => {
     expect(types()).toEqual([]);
   });
 });
+
+describe("doc 81 Đợt 8 N3 (self-review) — event notes never carry the PLC endpoint (host / port)", () => {
+  it("offline reason + backend label are redacted; the config code stays", async () => {
+    const c = cfg(7, { endpoint: "tcp://10.20.30.40:5020" });
+    DRV.byEndpoint.set("tcp://10.20.30.40:5020", [all({ estop: true }), new Error("connect ECONNREFUSED 10.20.30.40:5020 (tcp://10.20.30.40:5020)")]);
+    const { p, recs } = mk([c]);
+    await p.refreshConfigs();
+    await polls(p, 7, 2);
+    expect(recs.map((r) => r.input.eventType)).toEqual(["estop", "plc_offline"]);
+    for (const r of recs) {
+      const n = String(r.input.notes);
+      expect(n).toMatch(/N3-7/);
+      expect(n).not.toMatch(/10\.20\.30\.40|5020/);
+    }
+    expect(String(recs[1].input.notes)).toMatch(/ECONNREFUSED/);
+  });
+});
+
+describe("doc 81 Đợt 8 N3 (self-review) — redactEndpoint", () => {
+  it("removes the configured endpoint/host and any URL, IPv4[:port], [IPv6]:port, host:port; keeps the error class", async () => {
+    const { redactEndpoint } = await import("./safetyPlcPoller");
+    const cases: Array<[string, string | null]> = [
+      ["connect ECONNREFUSED 192.168.1.20:502", "tcp://192.168.1.20:502"],
+      ["getaddrinfo ENOTFOUND plc-07.lan", "tcp://plc-07.lan:502"],
+      ["BadSecureChannelClosed opc.tcp://safety-plc.example:4840/UA", "opc.tcp://safety-plc.example:4840/UA"],
+      ["connect ETIMEDOUT [fe80::1]:502", null],
+      ["socket hang up at other-host:5020", null],
+      ["connect EHOSTUNREACH 10.9.8.7 - route lost", null],
+    ];
+    for (const [msg, ep] of cases) {
+      const r = redactEndpoint(msg, ep);
+      expect(r, msg).not.toMatch(/192\.168|10\.9\.8\.7|plc-07|safety-plc\.example|fe80|other-host|:502\b|:4840|:5020/);
+      expect(r, msg).toMatch(/E[A-Z]+|Bad|hang up/);
+    }
+  });
+});
