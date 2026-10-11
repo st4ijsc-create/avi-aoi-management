@@ -1,14 +1,14 @@
 /**
- * doc 81 Đợt 7 task J fix 1 — the built-in broker's private key on WINDOWS (the production host): `mode 0o600` does
- * nothing on NTFS, so the directory and the key file get an explicit ACL (no inheritance; only the server account,
- * SYSTEM, Administrators), an open existing key is repaired, and an unrepairable / unreadable one refuses TLS.
+ * doc 81 Đợt 7 task J fix 1 + fix 2 (ruling R-7-a) — the built-in broker's private key on WINDOWS (production host).
+ * ALLOW-LIST by SID: only the server account, SYSTEM and Administrators may OWN the folder / key / certificate or appear
+ * in ANY allow ACE. Foreign owner ⇒ possibly planted ⇒ refused, never repaired. Other trustees with our own owner ⇒
+ * DACL rebuilt from scratch. Null DACL / conditional / unknown ACE / unparseable / unreadable ⇒ unverified ⇒ no TLS.
  *
  * Oracles independent of the product code:
- *   · the REAL ACL read back with PowerShell `Get-Acl` (identities translated to SIDs, so it does not depend on the
- *     Windows display language) — not with the module's own icacls/SDDL parser;
- *   · the SDDL parser itself is checked against strings captured from this host's `icacls /save`.
- * Real-ACL cases run only on win32; the fail-closed cases use an injected fake ACL and run everywhere.
- * Temp dirs only (os.tmpdir) — never the repo's data/ dir.
+ *   · the REAL descriptor read back with PowerShell `Get-Acl` (identities translated to SIDs) — not via the module;
+ *   · the strict SDDL parser is checked against strings captured from this host and hand-written adversarial ones.
+ * Real-ACL cases run only on win32 (this process is NOT elevated, so a foreign OWNER cannot be produced for real — that
+ * case uses an injected fake descriptor); everything else runs on every platform. Temp dirs only — never data/.
  */
 import { describe, it, expect, afterAll, vi } from "vitest";
 import fs from "node:fs";
@@ -19,11 +19,12 @@ import {
   BrokerTlsError,
   type KeyFileAcl,
   SITE_TLS_FILE_NAME,
+  ensurePrivate,
   loadConfiguredBrokerTls,
   loadOrCreateSiteBrokerTls,
   mintSiteBrokerCertificate,
+  parseSecurityDescriptor,
   resolveBrokerTls,
-  sddlGrantsBroadAccess,
   windowsKeyFileAcl,
 } from "./mqttBrokerTls";
 
@@ -44,17 +45,173 @@ afterAll(() => {
 const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 afterAll(() => errSpy.mockRestore());
 
-const BROAD = ["S-1-1-0", "S-1-5-11", "S-1-5-32-545", "S-1-5-32-546", "S-1-5-4", "S-1-5-7", "S-1-5-2"];
+const ME = "S-1-5-21-1393689357-3042344854-1725742880-1000";
+const OTHER_USER = "S-1-5-21-1393689357-3042344854-1725742880-1002";
+const PRIVATE = (owner = ME) => `O:${owner}G:${ME}D:PAI(A;;FA;;;${ME})(A;;FA;;;SY)(A;;FA;;;BA)`;
+const codeOf = (fn: () => unknown): string => {
+  try { fn(); return "ok"; } catch (e) { return e instanceof BrokerTlsError ? e.code : `other:${(e as Error).message}`; }
+};
 
-/** Independent oracle: SIDs granted on `p` + whether inheritance is blocked, via PowerShell Get-Acl. */
-function realAcl(p: string): { sids: string[]; protectedAcl: boolean } {
+/** Fake descriptor store: target → SDDL; rebuild writes the allow-list DACL (unless told to fail / leave a stranger). */
+function fakeAcl(init: Record<string, string> = {}, o: { rebuildThrows?: boolean; rebuildLeaves?: string; readThrows?: boolean } = {}) {
+  const map = new Map(Object.entries(init));
+  const rebuilt: string[] = [];
+  const acl: KeyFileAcl = {
+    allowedSids: () => [ME, "S-1-5-18", "S-1-5-32-544"],
+    readSddl: (t) => {
+      if (o.readThrows) throw new Error("Get-Acl failed");
+      return map.get(t) ?? PRIVATE();
+    },
+    rebuild: (t, isDir) => {
+      rebuilt.push(`${t}${isDir ? " (dir)" : ""}`);
+      if (o.rebuildThrows) throw new Error("access denied");
+      const owner = parseSecurityDescriptor(map.get(t) ?? PRIVATE()).owner;
+      map.set(t, o.rebuildLeaves ? `${PRIVATE(owner)}(A;;FR;;;${o.rebuildLeaves})` : PRIVATE(owner));
+    },
+  };
+  return { acl, map, rebuilt };
+}
+
+describe("parseSecurityDescriptor — strict, fails on anything it cannot account for", () => {
+  it("strings captured from this host's Get-Acl: owner + every allow trustee (SY/BA expanded, other aliases kept)", () => {
+    expect(parseSecurityDescriptor(`O:${ME}G:${ME.replace(/1000$/, "513")}D:(A;ID;FA;;;SY)(A;ID;FA;;;BA)(A;ID;FA;;;${ME})`)).toEqual({
+      owner: ME, allowTrustees: ["S-1-5-18", "S-1-5-32-544", ME],
+    });
+    const data = parseSecurityDescriptor("O:BAG:SYD:AI(A;ID;FA;;;BA)(A;OICIIOID;GA;;;BA)(A;ID;0x1301bf;;;AU)(A;OICIIOID;SDGXGWGR;;;AU)(A;ID;0x1200a9;;;BU)");
+    expect(data.owner).toBe("S-1-5-32-544");
+    expect(data.allowTrustees).toEqual(["S-1-5-32-544", "S-1-5-32-544", "AU", "AU", "BU"]);
+    expect(parseSecurityDescriptor(`O:${ME}D:PAI(D;;FA;;;BU)(A;;FA;;;SY)`).allowTrustees).toEqual(["S-1-5-18"]); // deny never grants
+  });
+
+  it("unverifiable ⇒ throws: null DACL (no D:), NO_ACCESS_CONTROL, conditional/object/unknown ACE, malformed, stray text, no owner", () => {
+    for (const bad of [
+      `O:${ME}G:${ME}`, // Get-Acl .Sddl of a NULL DACL (seen on this host)
+      `O:${ME}G:${ME}D:NO_ACCESS_CONTROL`,
+      `O:${ME}D:PAINO_ACCESS_CONTROL`, // icacls /save form
+      `O:${ME}D:PAI(XA;;FR;;;WD;(Member_of {SID(BA)}))(A;;FA;;;SY)`, // conditional ACE
+      `O:${ME}D:PAI(A;;FA;;;SY)(XA;;FR;;;BU;(@User.x == 1))`,
+      `O:${ME}D:PAI(OA;;RP;bf967a68-0de6-11d0-a285-00aa003049e2;;BU)`, // object ACE
+      `O:${ME}D:PAI(ZZ;;FA;;;SY)`, // unknown type
+      `O:${ME}D:PAI(A;;FA;;SY)`, // 5 fields
+      `O:${ME}D:PAI(A;;FA;;;SY)junk`,
+      `O:${ME}D:PAI(A;;FA;;;SY`,
+      `O:${ME}D:QQ(A;;FA;;;SY)`, // unknown flags
+      `G:${ME}D:PAI(A;;FA;;;SY)`, // no owner
+      "",
+    ]) {
+      expect(() => parseSecurityDescriptor(bad), bad).toThrow();
+    }
+  });
+});
+
+describe("allow-list evaluation (fake descriptors, every platform)", () => {
+  it("ANY trustee outside {server account, SYSTEM, Administrators} opens the key — and the DACL is REBUILT, not trimmed", () => {
+    for (const stranger of [OTHER_USER, "S-1-2-0", "S-1-5-113", "S-1-5-21-1-2-3-513", "AU", "BU", "WD", "CO", "OW"]) {
+      const f = fakeAcl({ "/k": `O:${ME}D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;${stranger})` });
+      errSpy.mockClear();
+      expect(codeOf(() => ensurePrivate(f.acl, "/k", false)), stranger).toBe("ok");
+      expect(f.rebuilt).toEqual(["/k"]);
+      expect(f.map.get("/k")).toBe(PRIVATE());
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes(stranger))).toBe(true);
+    }
+  });
+
+  it("a rebuild that leaves a stranger ⇒ TLS_KEY_ACL_OPEN; rebuild fails ⇒ TLS_KEY_ACL_OPEN; unreadable / null DACL ⇒ TLS_KEY_ACL_UNVERIFIED", () => {
+    const open = `O:${ME}D:PAI(A;;FR;;;S-1-2-0)`;
+    expect(codeOf(() => ensurePrivate(fakeAcl({ "/k": open }, { rebuildLeaves: "S-1-5-113" }).acl, "/k", false))).toBe("TLS_KEY_ACL_OPEN");
+    expect(codeOf(() => ensurePrivate(fakeAcl({ "/k": open }, { rebuildThrows: true }).acl, "/k", false))).toBe("TLS_KEY_ACL_OPEN");
+    expect(codeOf(() => ensurePrivate(fakeAcl({}, { readThrows: true }).acl, "/k", false))).toBe("TLS_KEY_ACL_UNVERIFIED");
+    expect(codeOf(() => ensurePrivate(fakeAcl({ "/k": `O:${ME}G:${ME}` }).acl, "/k", false))).toBe("TLS_KEY_ACL_UNVERIFIED");
+  });
+
+  it("★ foreign OWNER ⇒ TLS_KEY_OWNER_FOREIGN and NEVER repaired (even when its DACL looks private)", () => {
+    for (const owner of [OTHER_USER, "S-1-5-11", "BU", "CO"]) {
+      const f = fakeAcl({ "/k": `O:${owner}D:PAI(A;;FA;;;SY)(A;;FR;;;S-1-2-0)` });
+      expect(codeOf(() => ensurePrivate(f.acl, "/k", false)), owner).toBe("TLS_KEY_OWNER_FOREIGN");
+      expect(f.rebuilt).toEqual([]);
+      const g = fakeAcl({ "/k": PRIVATE(owner) });
+      expect(codeOf(() => ensurePrivate(g.acl, "/k", false)), owner).toBe("TLS_KEY_OWNER_FOREIGN");
+    }
+  });
+
+  it("★ a key PLANTED in the folder before the first start ⇒ refused before it is read, nothing rebuilt on it", () => {
+    const dir = tempDir();
+    const p = mintSiteBrokerCertificate({ commonName: "ATTACKER", days: 30 });
+    const file = path.join(dir, SITE_TLS_FILE_NAME);
+    fs.writeFileSync(file, p.keyPem + p.certPem);
+    const f = fakeAcl({ [file]: `O:${OTHER_USER}D:AI(A;ID;FA;;;${OTHER_USER})(A;ID;0x1301bf;;;AU)` });
+    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir, acl: f.acl }))).toBe("TLS_KEY_OWNER_FOREIGN");
+    expect(f.rebuilt.filter((t) => t.startsWith(file))).toEqual([]);
+    expect(fs.readFileSync(file, "utf8")).toBe(p.keyPem + p.certPem); // never adopted, never touched
+  });
+
+  it("★ a pre-existing FOLDER with a foreign owner ⇒ refused, no key written into it", () => {
+    const dir = path.join(tempDir(), "mqtt-tls");
+    fs.mkdirSync(dir);
+    const f = fakeAcl({ [dir]: `O:${OTHER_USER}D:AI(A;OICIID;FA;;;${OTHER_USER})` });
+    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir, acl: f.acl }))).toBe("TLS_KEY_OWNER_FOREIGN");
+    expect(fs.readdirSync(dir)).toEqual([]);
+    expect(f.rebuilt).toEqual([]);
+  });
+
+  it("a file planted between our mkdir and our link (EEXIST) is verified like any existing one ⇒ refused", () => {
+    const dir = path.join(tempDir(), "mqtt-tls");
+    const file = path.join(dir, SITE_TLS_FILE_NAME);
+    const evil = mintSiteBrokerCertificate({ commonName: "RACE", days: 30 });
+    const f = fakeAcl({ [file]: `O:${OTHER_USER}D:PAI(A;;FA;;;${OTHER_USER})` });
+    const realLink = fs.linkSync;
+    const spy = vi.spyOn(fs, "linkSync").mockImplementation((src, dst) => {
+      fs.writeFileSync(file, evil.keyPem + evil.certPem);
+      return realLink(src, dst);
+    });
+    try {
+      expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir, acl: f.acl }))).toBe("TLS_KEY_OWNER_FOREIGN");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("generation: folder created NON-recursively and rebuilt first; the EMPTY temp file rebuilt before the key is written", () => {
+    const dir = path.join(tempDir(), "mqtt-tls");
+    const seen: Array<{ t: string; size: number }> = [];
+    const f = fakeAcl();
+    const acl: KeyFileAcl = { ...f.acl, rebuild: (t, d) => { seen.push({ t, size: fs.statSync(t).isDirectory() ? -1 : fs.statSync(t).size }); f.acl.rebuild(t, d); } };
+    const m = loadOrCreateSiteBrokerTls({ dir, acl });
+    expect(m.created).toBe(true);
+    expect(seen[0]).toEqual({ t: dir, size: -1 });
+    expect(seen[1].t).toMatch(/broker-tls\.pem\.\d+\.[0-9a-f]+\.tmp$/);
+    expect(seen[1].size).toBe(0);
+  });
+
+  it("operator material: foreign-owned certificate ⇒ refused; key with a wide DACL ⇒ rebuilt; foreign-owned key ⇒ refused", () => {
+    const dir = tempDir();
+    const p = mintSiteBrokerCertificate({ commonName: "OP", days: 30 });
+    const c = path.join(dir, "c.pem");
+    const k = path.join(dir, "k.pem");
+    fs.writeFileSync(c, p.certPem);
+    fs.writeFileSync(k, p.keyPem);
+    expect(codeOf(() => loadConfiguredBrokerTls(c, k, fakeAcl({ [c]: PRIVATE(OTHER_USER) }).acl))).toBe("TLS_KEY_OWNER_FOREIGN");
+    expect(codeOf(() => loadConfiguredBrokerTls(c, k, fakeAcl({ [k]: PRIVATE(OTHER_USER) }).acl))).toBe("TLS_KEY_OWNER_FOREIGN");
+    const wide = fakeAcl({ [k]: `O:${ME}D:PAI(A;;FR;;;S-1-2-0)` });
+    expect(codeOf(() => resolveBrokerTls({ MQTT_TLS_CERT: c, MQTT_TLS_KEY: k }, wide.acl))).toBe("ok");
+    expect(wide.rebuilt).toEqual([k]);
+  });
+
+  it("POSIX (acl null) keeps the file-mode path", () => {
+    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir: path.join(tempDir(), "x"), acl: null }))).toBe("ok");
+  });
+});
+
+// ── real Windows ──────────────────────────────────────────────────────────────────────────────────────────────
+function realDescriptor(p: string): { owner: string; sids: string[]; protectedAcl: boolean } {
   const ps =
-    `$a = Get-Acl -LiteralPath '${p.replace(/'/g, "''")}'; ` +
-    `$s = $a.Access | Where-Object { $_.AccessControlType -eq 'Allow' } | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }; ` +
-    `Write-Output ('P=' + $a.AreAccessRulesProtected); $s | ForEach-Object { Write-Output ('S=' + $_) }`;
-  const out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", windowsHide: true });
+    "$a = Get-Acl -LiteralPath $env:J_PATH; Write-Output ('P=' + $a.AreAccessRulesProtected); " +
+    "Write-Output ('O=' + $a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value); " +
+    "$a.Access | Where-Object { $_.AccessControlType -eq 'Allow' } | ForEach-Object { Write-Output ('S=' + $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value) }";
+  const out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", windowsHide: true, env: { ...process.env, J_PATH: p } });
   return {
     protectedAcl: /P=True/.test(out),
+    owner: out.match(/^O=(\S+)/m)?.[1] ?? "",
     sids: [...out.matchAll(/^S=(\S+)/gm)].map((m) => m[1]),
   };
 }
@@ -63,128 +220,56 @@ function mySid(): string {
   return out.match(/"(S-1-[0-9-]+)"\s*$/m)![1];
 }
 function expectPrivate(p: string) {
-  const a = realAcl(p);
+  const a = realDescriptor(p);
+  const allowed = [mySid(), "S-1-5-18", "S-1-5-32-544"];
   expect(a.protectedAcl, `${p}: inheritance must be removed`).toBe(true);
-  expect(a.sids.filter((s) => BROAD.includes(s)), `${p}: broad trustees`).toEqual([]);
-  expect(new Set(a.sids)).toEqual(new Set([mySid(), "S-1-5-18", "S-1-5-32-544"]));
+  expect(allowed, `${p}: owner`).toContain(a.owner);
+  expect(new Set(a.sids)).toEqual(new Set(allowed));
 }
-const codeOf = (fn: () => unknown): string => {
-  try { fn(); return "ok"; } catch (e) { return e instanceof BrokerTlsError ? e.code : `other:${(e as Error).message}`; }
-};
+function setSddl(p: string, sddl: string) {
+  const ps =
+    "$i = Get-Item -LiteralPath $env:J_PATH -Force; $s = New-Object System.Security.AccessControl.FileSecurity; " +
+    "$s.SetSecurityDescriptorSddlForm($env:J_SDDL, [System.Security.AccessControl.AccessControlSections]::Access); $i.SetAccessControl($s)";
+  execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { stdio: "ignore", windowsHide: true, env: { ...process.env, J_PATH: p, J_SDDL: sddl } });
+}
 
-describe("sddlGrantsBroadAccess — SDDL captured from this host's icacls /save", () => {
-  it("D:\\SOURCES\\…\\data (inherits Users + Authenticated Users) ⇒ open; a private file ⇒ closed", () => {
-    expect(sddlGrantsBroadAccess("D:(A;ID;FA;;;BA)(A;OICIIOID;GA;;;BA)(A;ID;FA;;;SY)(A;OICIIOID;GA;;;SY)(A;ID;0x1301bf;;;AU)(A;OICIIOID;SDGXGWGR;;;AU)(A;ID;0x1200a9;;;BU)(A;OICIIOID;GXGR;;;BU)")).toBe(true);
-    expect(sddlGrantsBroadAccess("D:(A;ID;FA;;;SY)(A;ID;FA;;;BA)(A;ID;FA;;;S-1-5-21-1393689357-3042344854-1725742880-1000)")).toBe(false);
-    expect(sddlGrantsBroadAccess("D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;S-1-5-32-545)")).toBe(true); // SID form
-    expect(sddlGrantsBroadAccess("D:PAI(A;;FA;;;SY)(A;;GR;;;WD)")).toBe(true); // Everyone
-    // each broad trustee ALONE opens the key (alias and SID forms)
-    for (const t of ["AU", "S-1-5-11", "BU", "S-1-5-32-545", "WD", "S-1-1-0", "BG", "IU", "AN", "NU"]) {
-      expect(sddlGrantsBroadAccess(`D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;${t})`), t).toBe(true);
-    }
-    expect(sddlGrantsBroadAccess("D:PAI(D;;FA;;;BU)(A;;FA;;;SY)")).toBe(false); // a DENY to Users does not open
-    expect(sddlGrantsBroadAccess("O:BAG:SYD:PAI(A;;FA;;;SY)S:AI(AU;SA;FA;;;WD)")).toBe(false); // audit ACE (SACL) ignored
-  });
-});
-
-describe("fail closed (fake ACL, every platform)", () => {
-  const pair = () => mintSiteBrokerCertificate({ commonName: "ACL", days: 30 });
-  function fake(o: { open: boolean; fixes: boolean; readThrows?: boolean; restrictThrows?: boolean }): KeyFileAcl & { restricted: string[] } {
-    let open = o.open;
-    const restricted: string[] = [];
-    return {
-      restricted,
-      isOpen: () => {
-        if (o.readThrows) throw new Error("icacls missing");
-        return open;
-      },
-      restrict: (t) => {
-        restricted.push(t);
-        if (o.restrictThrows) throw new Error("access denied");
-        if (o.fixes) open = false;
-      },
-    };
-  }
-  function withFile() {
-    const dir = tempDir();
-    const p = pair();
-    fs.writeFileSync(path.join(dir, SITE_TLS_FILE_NAME), p.keyPem + p.certPem);
-    return dir;
-  }
-
-  it("existing key open + repair works ⇒ loads, error logged, both dir and file restricted", () => {
-    const dir = withFile();
-    const acl = fake({ open: true, fixes: true });
-    errSpy.mockClear();
-    expect(loadOrCreateSiteBrokerTls({ dir, acl }).fingerprintSha256).toMatch(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
-    expect(acl.restricted).toEqual([dir]); // first fix made it private; file then reads private in this fake
-    expect(errSpy.mock.calls.some((c) => /readable by ordinary local users/.test(String(c[0])))).toBe(true);
-  });
-
-  it("existing key open + repair has no effect ⇒ TLS_KEY_ACL_OPEN; repair throws ⇒ TLS_KEY_ACL_OPEN; ACL unreadable ⇒ TLS_KEY_ACL_UNVERIFIED", () => {
-    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir: withFile(), acl: fake({ open: true, fixes: false }) }))).toBe("TLS_KEY_ACL_OPEN");
-    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir: withFile(), acl: fake({ open: true, fixes: false, restrictThrows: true }) }))).toBe("TLS_KEY_ACL_OPEN");
-    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir: withFile(), acl: fake({ open: false, fixes: false, readThrows: true }) }))).toBe("TLS_KEY_ACL_UNVERIFIED");
-  });
-
-  it("generation whose ACL cannot be made private ⇒ refused and NO key left on disk", () => {
-    const dir = tempDir();
-    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir, acl: fake({ open: true, fixes: false, restrictThrows: true }) }))).toBe("TLS_KEY_ACL_OPEN");
-    expect(fs.readdirSync(dir)).toEqual([]);
-  });
-
-  it("generation ALWAYS restricts the directory and the empty file before the key is written", () => {
-    const dir = tempDir();
-    const seen: Array<{ t: string; size: number }> = [];
-    const acl: KeyFileAcl = {
-      isOpen: () => false,
-      restrict: (t) => seen.push({ t, size: fs.statSync(t).isDirectory() ? -1 : fs.statSync(t).size }),
-    };
-    loadOrCreateSiteBrokerTls({ dir, acl });
-    expect(seen[0]).toEqual({ t: dir, size: -1 });
-    expect(seen[1].t).toMatch(/broker-tls\.pem\.\d+\.[0-9a-f]+\.tmp$/);
-    expect(seen[1].size).toBe(0); // restricted while still EMPTY
-  });
-
-  it("operator key (MQTT_TLS_KEY) gets the same check", () => {
-    const dir = tempDir();
-    const p = pair();
-    fs.writeFileSync(path.join(dir, "c.pem"), p.certPem);
-    fs.writeFileSync(path.join(dir, "k.pem"), p.keyPem);
-    expect(codeOf(() => loadConfiguredBrokerTls(path.join(dir, "c.pem"), path.join(dir, "k.pem"), fake({ open: true, fixes: false })))).toBe("TLS_KEY_ACL_OPEN");
-    expect(codeOf(() => resolveBrokerTls({ MQTT_TLS_CERT: path.join(dir, "c.pem"), MQTT_TLS_KEY: path.join(dir, "k.pem") }, fake({ open: false, fixes: false })))).toBe("ok");
-  });
-
-  it("POSIX (acl null) keeps the file modes path unchanged", () => {
-    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir: tempDir(), acl: null }))).toBe("ok");
-  });
-});
-
-describe.runIf(process.platform === "win32")("Windows — REAL ACLs (icacls), checked with Get-Acl", () => {
-  it("a generated site certificate: dir + key file private, inheritance removed; the module's own check agrees", () => {
+describe.runIf(process.platform === "win32")("Windows — REAL descriptors, checked with Get-Acl", () => {
+  it("generated under a parent granting Users + Authenticated Users: folder + key private, protected, owner allowed", () => {
     const parent = tempDir();
-    // make the parent look like D:\SOURCES\…\data: Users + Authenticated Users inherited by everything below
     execFileSync("icacls", [parent, "/grant", "*S-1-5-32-545:(OI)(CI)(RX)", "*S-1-5-11:(OI)(CI)(M)"], { stdio: "ignore", windowsHide: true });
     const dir = path.join(parent, "mqtt-tls");
-    const m = loadOrCreateSiteBrokerTls({ dir });
-    expect(m.created).toBe(true);
+    expect(loadOrCreateSiteBrokerTls({ dir }).created).toBe(true);
     expectPrivate(dir);
     expectPrivate(path.join(dir, SITE_TLS_FILE_NAME));
-    expect(windowsKeyFileAcl.isOpen(path.join(dir, SITE_TLS_FILE_NAME))).toBe(false);
-    expect(windowsKeyFileAcl.isOpen(parent)).toBe(true);
-  }, 60_000);
+    expect(fs.readdirSync(dir)).toEqual([SITE_TLS_FILE_NAME]);
+  }, 120_000);
 
-  it("an EXISTING key readable by Users / Authenticated Users / Everyone ⇒ error logged, repaired at start, then loads", () => {
-    const dir = tempDir();
+  it("an existing key of ours granted to LOCAL, Local account, Everyone, Users ⇒ DACL rebuilt from scratch at start", () => {
+    const dir = path.join(tempDir(), "mqtt-tls");
+    fs.mkdirSync(dir);
     const p = mintSiteBrokerCertificate({ commonName: "OPEN", days: 30 });
     const file = path.join(dir, SITE_TLS_FILE_NAME);
     fs.writeFileSync(file, p.keyPem + p.certPem);
-    execFileSync("icacls", [file, "/grant", "*S-1-5-32-545:(R)", "*S-1-5-11:(R)", "*S-1-1-0:(R)"], { stdio: "ignore", windowsHide: true });
-    expect(realAcl(file).sids).toEqual(expect.arrayContaining(["S-1-5-32-545", "S-1-5-11", "S-1-1-0"]));
+    execFileSync("icacls", [file, "/grant", "*S-1-2-0:(R)", "*S-1-5-113:(R)", "*S-1-1-0:(R)", "*S-1-5-32-545:(R)"], { stdio: "ignore", windowsHide: true });
+    expect(realDescriptor(file).sids).toEqual(expect.arrayContaining(["S-1-2-0", "S-1-5-113", "S-1-1-0", "S-1-5-32-545"]));
     errSpy.mockClear();
-    const m = loadOrCreateSiteBrokerTls({ dir });
-    expect(m.created).toBe(false);
+    expect(loadOrCreateSiteBrokerTls({ dir }).created).toBe(false);
     expectPrivate(file);
+    // the pre-existing folder inherits only allowed trustees here ⇒ allow-list satisfied (left as is, checked every start)
+    const d = realDescriptor(dir);
+    expect(d.sids.every((x) => [mySid(), "S-1-5-18", "S-1-5-32-544"].includes(x))).toBe(true);
     expect(errSpy.mock.calls.some((c) => String(c[0]).includes(file))).toBe(true);
-  }, 60_000);
+  }, 120_000);
+
+  it("a REAL null DACL on the key ⇒ TLS_KEY_ACL_UNVERIFIED (Get-Acl shows no D:), and the module reads it the same way", () => {
+    const dir = path.join(tempDir(), "mqtt-tls");
+    fs.mkdirSync(dir);
+    const p = mintSiteBrokerCertificate({ commonName: "NULL", days: 30 });
+    const file = path.join(dir, SITE_TLS_FILE_NAME);
+    fs.writeFileSync(file, p.keyPem + p.certPem);
+    setSddl(file, "D:NO_ACCESS_CONTROL");
+    expect(windowsKeyFileAcl.readSddl(file)).not.toMatch(/D:\(/);
+    expect(codeOf(() => loadOrCreateSiteBrokerTls({ dir }))).toBe("TLS_KEY_ACL_UNVERIFIED");
+    setSddl(file, `D:PAI(A;;FA;;;${mySid()})`); // let afterAll clean it
+  }, 120_000);
 });

@@ -6,16 +6,20 @@
  * default 8884) — ON BY DEFAULT whenever the broker runs:
  *   · a site certificate is GENERATED on first start (ECDSA P-256, self-signed) and stored OUTSIDE git, in
  *     `MQTT_TLS_DIR` (default `<cwd>/data/mqtt-tls/`, ignored by `/data/` in .gitignore). POSIX: file mode 0600 /
- *     dir 0700. WINDOWS (fix 1 — `mode` does nothing on NTFS; `data/` inherits Users / Authenticated Users): the
- *     directory and the file get an explicit ACL — inheritance removed, access ONLY for the server's own account,
- *     SYSTEM and Administrators (icacls, argument array, no shell) — set on the empty file BEFORE the key is written;
- *     at every start the ACL of the directory and of the key file is checked: readable by Users / Authenticated
- *     Users / Everyone… ⇒ error logged, repaired; still open, or the ACL cannot be read ⇒ the TLS listener does NOT
- *     start (fail closed; the plaintext listeners are unaffected). The same check covers MQTT_TLS_KEY.
+ *     dir 0700. WINDOWS (fix 1/2, ruling R-7-a — `mode` does nothing on NTFS; `data/` gives Authenticated Users
+ *     Modify): ALLOW-LIST by SID — only the server's own account, SYSTEM and Administrators may OWN the folder / key /
+ *     certificate or appear in ANY allow ACE. The folder is created non-recursively and its DACL is REPLACED (no
+ *     inheritance, allow-list only) before any file is written; the empty key file likewise before the key is written.
+ *     At every start the full descriptor (Get-Acl .Sddl, strict parser) of the folder and the key is checked:
+ *     foreign owner ⇒ possibly PLANTED ⇒ refused, never adopted or repaired; other trustees with our own owner ⇒
+ *     logged, DACL rebuilt from scratch, re-checked; null DACL / conditional or unknown ACE / unparseable or
+ *     unreadable descriptor ⇒ unverified. Any of these ⇒ the TLS listener does NOT start (plaintext unaffected).
+ *     MQTT_TLS_KEY / MQTT_TLS_CERT get the same owner check (and the key the DACL check).
  *   · the certificate names the host (subjectAltName: hostname, localhost, 127.0.0.1 and the LAN IPv4 addresses at
  *     generation time) so a client that validates normally can also use it; an EXISTING certificate is never
  *     regenerated to add them (that would change the fingerprint) — see DEPLOY_LAN_GUIDE for deliberate rotation;
- *   · leftover `broker-tls.pem.*.tmp` files (a crash between write and link) are swept at start;
+ *   · leftover `broker-tls.pem.*.tmp` files (a crash between write and link) OLDER than 10 minutes are swept at start
+ *     (a younger one may belong to a concurrent starter);
  *   · tablets (app ≥ 1.0.18) PIN its SHA-256 fingerprint — the admin screen shows it (Connectivity → Devices),
  *     the technician types it next to the device password. A self-signed certificate is safe ONLY because of
  *     that pin: there is no CA, so there is nothing to bypass.
@@ -197,7 +201,8 @@ export class BrokerTlsError extends Error {
       | "TLS_CONFIG_INCOMPLETE"
       | "TLS_WRITE_FAILED"
       | "TLS_KEY_ACL_OPEN"
-      | "TLS_KEY_ACL_UNVERIFIED",
+      | "TLS_KEY_ACL_UNVERIFIED"
+      | "TLS_KEY_OWNER_FOREIGN",
     message: string,
   ) {
     super(message);
@@ -257,43 +262,109 @@ function materialFrom(pair: { keyPem: string; certPem: string; cert: X509Certifi
   };
 }
 
-// ── Windows ACL of the private key (fix 1) ──────────────────────────────────
+// ── Windows security descriptor of the private key (fix 1 + fix 2, ruling R-7-a) ─────────────
 /**
- * Who may read the private key. POSIX keeps file modes (0600/0700) and passes `null`. On Windows the default is
- * {@link windowsKeyFileAcl}; tests inject a fake.
+ * Who owns / may access the key material. POSIX keeps file modes (0600/0700) and passes `null`. On Windows the
+ * default is {@link windowsKeyFileAcl}; tests inject a fake. ALLOW-LIST semantics (R-7-a): only the server's own
+ * account, SYSTEM (S-1-5-18) and Administrators (S-1-5-32-544) may own the folder / key / certificate or appear in
+ * ANY allow ACE. Everything else — another SID, a null DACL, a conditional / object / unknown ACE, a descriptor that
+ * cannot be read or fully parsed — is refused (fail closed).
  */
 export interface KeyFileAcl {
-  /** true when anyone beyond the server account / SYSTEM / Administrators is granted access. Throws when unreadable. */
-  isOpen(target: string): boolean;
-  /** Remove inheritance and grant ONLY the server account, SYSTEM, Administrators. Throws on failure. */
-  restrict(target: string, isDir: boolean): void;
+  /** SIDs allowed to own the key material and to appear in its DACL. */
+  allowedSids(): string[];
+  /** Full security descriptor as SDDL ("O:…G:…D:…"). Throws when it cannot be read. */
+  readSddl(target: string): string;
+  /** REPLACE the whole DACL with exactly the allowed set (protected: no inheritance). Throws on failure. */
+  rebuild(target: string, isDir: boolean): void;
 }
 
-/** Trustees that make a key readable by ordinary local users (SDDL aliases and their SIDs). */
-const BROAD_TRUSTEES = new Set([
-  "WD", "S-1-1-0", // Everyone
-  "AU", "S-1-5-11", // Authenticated Users
-  "BU", "S-1-5-32-545", // BUILTIN\Users
-  "BG", "S-1-5-32-546", // Guests
-  "IU", "S-1-5-4", // Interactive
-  "AN", "S-1-5-7", // Anonymous
-  "NU", "S-1-5-2", // Network
-]);
-/** Broad SIDs removed explicitly after /inheritance:r (an explicit grant to them would survive it). */
-const BROAD_SIDS = ["S-1-1-0", "S-1-5-11", "S-1-5-32-545", "S-1-5-32-546", "S-1-5-4", "S-1-5-7", "S-1-5-2"];
+const SID_ALIAS: Record<string, string> = { SY: "S-1-5-18", BA: "S-1-5-32-544" };
+const SID_RE = /^S-1-\d+(?:-\d+)+$/;
 
-/** Does this SDDL (from `icacls /save`) grant access to a broad trustee? Allow ACEs only; deny ACEs never open. */
-export function sddlGrantsBroadAccess(sddl: string): boolean {
-  const dacl = sddl.match(/D:[^(]*((?:\([^)]*\))*)/)?.[1] ?? "";
-  for (const m of dacl.matchAll(/\(([^)]*)\)/g)) {
-    const f = m[1].split(";");
-    if (f.length >= 6 && (f[0] === "A" || f[0] === "OA") && BROAD_TRUSTEES.has(f[5].toUpperCase())) return true;
+export interface ParsedDescriptor {
+  /** Owner SID (aliases SY/BA expanded; any other alias kept as written ⇒ never allowed). */
+  owner: string;
+  /** Trustee of every ALLOW ACE (type A), aliases SY/BA expanded. Deny ACEs never grant and are not listed. */
+  allowTrustees: string[];
+}
+
+export class SddlUnverifiable extends Error {}
+
+function normTrustee(t: string): string {
+  const u = t.trim().toUpperCase();
+  return SID_ALIAS[u] ?? u;
+}
+
+/**
+ * STRICT parser for the SDDL of a file/folder. Throws SddlUnverifiable for anything it cannot account for
+ * completely: no owner, no DACL (a null DACL = Everyone full control), NO_ACCESS_CONTROL, unknown DACL flags,
+ * stray text, unbalanced parentheses, a conditional ACE (nested parentheses), an ACE type other than A/D
+ * (object, callback, conditional, mandatory-label, unknown) or a malformed ACE.
+ */
+export function parseSecurityDescriptor(sddl: string): ParsedDescriptor {
+  const s = String(sddl ?? "").trim();
+  // split into top-level components O: G: D: S: (only at depth 0)
+  const parts: Record<string, string> = {};
+  let i = 0;
+  let depth = 0;
+  let key: string | null = null;
+  let start = 0;
+  const flush = (end: number) => {
+    if (key) {
+      if (key in parts) throw new SddlUnverifiable(`duplicate ${key}: component`);
+      parts[key] = s.slice(start, end);
+    }
+  };
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "(") depth++;
+    else if (c === ")") {
+      depth--;
+      if (depth < 0) throw new SddlUnverifiable("unbalanced parentheses");
+    } else if (depth === 0 && /[OGDS]/.test(c) && s[i + 1] === ":" && (i === 0 || key !== null)) {
+      // a component starts here only if the previous one can end here (SIDs/flags never contain ':')
+      flush(i);
+      key = c;
+      start = i + 2;
+      i += 2;
+      continue;
+    } else if (key === null) {
+      throw new SddlUnverifiable("descriptor does not start with a component");
+    }
+    i++;
   }
-  return false;
+  if (depth !== 0) throw new SddlUnverifiable("unbalanced parentheses");
+  flush(s.length);
+
+  const owner = parts.O;
+  if (!owner) throw new SddlUnverifiable("no owner");
+  const dacl = parts.D;
+  if (dacl === undefined) throw new SddlUnverifiable("no DACL (a null DACL grants Everyone full control)");
+  const firstAce = dacl.indexOf("(");
+  const flags = firstAce < 0 ? dacl : dacl.slice(0, firstAce);
+  if (/NO_ACCESS_CONTROL/i.test(flags)) throw new SddlUnverifiable("NO_ACCESS_CONTROL (null DACL)");
+  if (!/^(?:P|AI|AR)*$/.test(flags)) throw new SddlUnverifiable(`unknown DACL flags "${flags}"`);
+  const aceText = firstAce < 0 ? "" : dacl.slice(firstAce);
+  const allowTrustees: string[] = [];
+  let rest = aceText;
+  while (rest.length) {
+    const m = rest.match(/^\(([^()]*)\)/);
+    if (!m) throw new SddlUnverifiable("unparseable or conditional ACE");
+    const f = m[1].split(";");
+    if (f.length !== 6) throw new SddlUnverifiable(`malformed ACE "${m[1]}"`);
+    const type = f[0].toUpperCase();
+    const trustee = normTrustee(f[5]);
+    if (!trustee) throw new SddlUnverifiable(`ACE without trustee "${m[1]}"`);
+    if (type === "A") allowTrustees.push(trustee);
+    else if (type !== "D") throw new SddlUnverifiable(`ACE type "${f[0]}" not accepted`);
+    rest = rest.slice(m[0].length);
+  }
+  return { owner: normTrustee(owner), allowTrustees };
 }
 
-function sys32(exe: string): string {
-  return path.join(process.env.SystemRoot || process.env.windir || "C:\\Windows", "System32", exe);
+function sys32(...p: string[]): string {
+  return path.join(process.env.SystemRoot || process.env.windir || "C:\\Windows", "System32", ...p);
 }
 
 let cachedSid: string | null = null;
@@ -307,24 +378,37 @@ function currentAccountSid(): string {
   return sid;
 }
 
-/** icacls-based implementation (absolute System32 paths, argument arrays — never a shell). */
+/**
+ * PowerShell scripts are CONSTANT strings; the path and the SDDL travel in environment variables of the child
+ * process (never interpolated into a command line, never through a shell). `-NoProfile -NonInteractive`.
+ */
+const PS_READ = "$ErrorActionPreference='Stop'; (Get-Acl -LiteralPath $env:MQTT_TLS_ACL_PATH).Sddl";
+const PS_REBUILD =
+  "$ErrorActionPreference='Stop'; $p=$env:MQTT_TLS_ACL_PATH; $i=Get-Item -LiteralPath $p -Force; " +
+  "if ($i -is [System.IO.DirectoryInfo]) { $s=New-Object System.Security.AccessControl.DirectorySecurity } " +
+  "else { $s=New-Object System.Security.AccessControl.FileSecurity }; " +
+  "$s.SetSecurityDescriptorSddlForm($env:MQTT_TLS_ACL_SDDL, [System.Security.AccessControl.AccessControlSections]::Access); " +
+  "$i.SetAccessControl($s)";
+
+function powershell(script: string, env: Record<string, string>): string {
+  return execFileSync(sys32("WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    windowsHide: true,
+    env: { ...process.env, ...env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+/** Windows implementation: Get-Acl (.Sddl) to read; a whole new DACL via SetAccessControl to rebuild. */
 export const windowsKeyFileAcl: KeyFileAcl = {
-  isOpen(target) {
-    const out = path.join(os.tmpdir(), `mqtt-tls-acl-${process.pid}-${randomBytes(4).toString("hex")}.txt`);
-    try {
-      execFileSync(sys32("icacls.exe"), [target, "/save", out], { windowsHide: true, stdio: "ignore" });
-      const sddl = fs.readFileSync(out).toString("utf16le");
-      if (!/D:/.test(sddl)) throw new Error("icacls /save produced no DACL");
-      return sddlGrantsBroadAccess(sddl);
-    } finally {
-      try { fs.unlinkSync(out); } catch { /* not written */ }
-    }
+  allowedSids: () => [currentAccountSid(), "S-1-5-18", "S-1-5-32-544"],
+  readSddl(target) {
+    return powershell(PS_READ, { MQTT_TLS_ACL_PATH: target }).trim();
   },
-  restrict(target, isDir) {
-    const perm = isDir ? "(OI)(CI)(F)" : "(F)";
-    const icacls = sys32("icacls.exe");
-    execFileSync(icacls, [target, "/inheritance:r", "/grant:r", `*${currentAccountSid()}:${perm}`, `*S-1-5-18:${perm}`, `*S-1-5-32-544:${perm}`], { windowsHide: true, stdio: "ignore" });
-    execFileSync(icacls, [target, "/remove:g", ...BROAD_SIDS.map((x) => `*${x}`)], { windowsHide: true, stdio: "ignore" });
+  rebuild(target, isDir) {
+    const inh = isDir ? "OICI" : "";
+    const sddl = `D:PAI(A;${inh};FA;;;${currentAccountSid()})(A;${inh};FA;;;SY)(A;${inh};FA;;;BA)`;
+    powershell(PS_REBUILD, { MQTT_TLS_ACL_PATH: target, MQTT_TLS_ACL_SDDL: sddl });
   },
 };
 
@@ -332,70 +416,99 @@ export function defaultKeyFileAcl(platform: NodeJS.Platform = process.platform):
   return platform === "win32" ? windowsKeyFileAcl : null;
 }
 
-/**
- * Make sure only the server account / SYSTEM / Administrators can access `target`. Already private ⇒ nothing.
- * Open ⇒ error logged, repaired, re-checked. Still open ⇒ TLS_KEY_ACL_OPEN; ACL unreadable ⇒ TLS_KEY_ACL_UNVERIFIED
- * (fail closed: the caller starts no TLS listener).
- */
-export function ensurePrivate(acl: KeyFileAcl | null, target: string, isDir: boolean): void {
-  if (!acl) return;
-  let open: boolean;
+type Inspection = { ownerOk: boolean; private: boolean; owner: string; strangers: string[] };
+
+function inspect(acl: KeyFileAcl, target: string): Inspection {
+  let d: ParsedDescriptor;
+  let allowed: Set<string>;
   try {
-    open = acl.isOpen(target);
+    allowed = new Set(acl.allowedSids().map(normTrustee));
+    d = parseSecurityDescriptor(acl.readSddl(target));
   } catch (e) {
-    throw new BrokerTlsError("TLS_KEY_ACL_UNVERIFIED", `${target}: cannot read its access list (${(e as Error)?.message ?? e})`);
+    throw new BrokerTlsError("TLS_KEY_ACL_UNVERIFIED", `${target}: cannot verify its owner/access list (${(e as Error)?.message ?? e})`);
   }
-  if (!open) return;
-  console.error(
-    `[MQTT] ${isDir ? "Directory" : "Private key file"} ${target} is readable by ordinary local users ` +
-      "(Users / Authenticated Users / Everyone) — restricting it to the server account, SYSTEM and Administrators.",
-  );
-  try {
-    acl.restrict(target, isDir);
-    open = acl.isOpen(target);
-  } catch (e) {
-    throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: readable by ordinary local users and could not be restricted (${(e as Error)?.message ?? e})`);
-  }
-  if (open) throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: still readable by ordinary local users after restricting it`);
+  const strangers = [...new Set(d.allowTrustees.filter((t) => !allowed.has(t)))];
+  return { ownerOk: allowed.has(d.owner) && SID_RE.test(d.owner), private: strangers.length === 0, owner: d.owner, strangers };
 }
 
 /**
- * For what THIS process creates (the directory, the empty key file): ALWAYS remove inheritance and grant only the
- * server account / SYSTEM / Administrators — an inherited-private ACL would silently widen if the parent later
- * grants Users — then verify. Failure ⇒ TLS_KEY_ACL_OPEN / TLS_KEY_ACL_UNVERIFIED (fail closed).
+ * The owner MUST be the server account / SYSTEM / Administrators — otherwise the material may have been PLANTED
+ * (data/ lets Authenticated Users create files): refuse (TLS_KEY_OWNER_FOREIGN), never adopt, never "repair" it.
+ * Owner fine but other trustees present ⇒ error logged, DACL rebuilt from scratch (only if `repair`), re-checked;
+ * still open ⇒ TLS_KEY_ACL_OPEN. Descriptor unreadable / not fully parseable ⇒ TLS_KEY_ACL_UNVERIFIED.
  */
+export function ensurePrivate(acl: KeyFileAcl | null, target: string, isDir: boolean, repair = true): void {
+  if (!acl) return;
+  const first = inspect(acl, target);
+  if (!first.ownerOk) {
+    console.error(`[MQTT] ${target} is owned by ${first.owner}, not by the server account / SYSTEM / Administrators — possibly planted; MQTTS NOT started.`);
+    throw new BrokerTlsError("TLS_KEY_OWNER_FOREIGN", `${target}: owned by ${first.owner} (not the server account / SYSTEM / Administrators)`);
+  }
+  if (first.private) return;
+  if (!repair) throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: also accessible to ${first.strangers.join(", ")}`);
+  console.error(
+    `[MQTT] ${isDir ? "Directory" : "Key file"} ${target} is accessible to ${first.strangers.join(", ")} — rebuilding its ` +
+      "access list: server account, SYSTEM, Administrators only.",
+  );
+  try {
+    acl.rebuild(target, isDir);
+  } catch (e) {
+    throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: could not rebuild its access list (${(e as Error)?.message ?? e})`);
+  }
+  const again = inspect(acl, target);
+  if (!again.ownerOk || !again.private) {
+    throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: still accessible to ${again.strangers.join(", ") || "a foreign owner"} after rebuilding`);
+  }
+}
+
+/** For what THIS process created: ALWAYS rebuild the DACL (no inheritance, allow-list only), then verify incl. owner. */
 function makePrivate(acl: KeyFileAcl | null, target: string, isDir: boolean): void {
   if (!acl) return;
   try {
-    acl.restrict(target, isDir);
+    acl.rebuild(target, isDir);
   } catch (e) {
-    throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: could not restrict its access list (${(e as Error)?.message ?? e})`);
+    throw new BrokerTlsError("TLS_KEY_ACL_OPEN", `${target}: could not set its access list (${(e as Error)?.message ?? e})`);
   }
-  ensurePrivate(acl, target, isDir);
+  ensurePrivate(acl, target, isDir, false);
 }
 
-/** Operator-provided certificate (MQTT_TLS_CERT + MQTT_TLS_KEY). The key file gets the same ACL check (Windows). */
+/**
+ * Operator-provided certificate (MQTT_TLS_CERT + MQTT_TLS_KEY). Windows: both files must be owned by the server
+ * account / SYSTEM / Administrators; the KEY must also be private (rebuilt when only its DACL is too wide).
+ */
 export function loadConfiguredBrokerTls(certPath: string, keyPath: string, acl: KeyFileAcl | null = defaultKeyFileAcl()): BrokerTlsMaterial {
-  const pair = parseBrokerTlsPair(readText(keyPath), readText(certPath), certPath);
+  const keyText = readText(keyPath); // missing/unreadable ⇒ TLS_FILE_UNREADABLE (clearer than "cannot verify")
+  const certText = readText(certPath);
   ensurePrivate(acl, keyPath, false);
+  if (acl && !inspect(acl, certPath).ownerOk) {
+    throw new BrokerTlsError("TLS_KEY_OWNER_FOREIGN", `${certPath}: certificate owned by a foreign account`);
+  }
+  const pair = parseBrokerTlsPair(keyText, certText, certPath);
   return materialFrom(pair, "configured", false, certPath);
 }
 
-/** fix 1 — a crash between writing the temp key file and linking it leaves `broker-tls.pem.<pid>.<rand>.tmp`. */
-function sweepTempKeyFiles(dir: string): void {
+/** A temp key file older than this is a crash leftover; younger ones may belong to a concurrent starter (fix 2, N3). */
+export const TEMP_KEY_SWEEP_AGE_MS = 10 * 60_000;
+
+/** fix 1/2 — remove `broker-tls.pem.<pid>.<rand>.tmp` crash leftovers, but only those older than TEMP_KEY_SWEEP_AGE_MS. */
+function sweepTempKeyFiles(dir: string, now = Date.now()): void {
   let names: string[] = [];
   try { names = fs.readdirSync(dir); } catch { return; }
   for (const n of names) {
-    if (n.startsWith(`${SITE_TLS_FILE_NAME}.`) && n.endsWith(".tmp")) {
-      try { fs.unlinkSync(path.join(dir, n)); } catch { /* another process is mid-write or it is gone */ }
-    }
+    if (!(n.startsWith(`${SITE_TLS_FILE_NAME}.`) && n.endsWith(".tmp"))) continue;
+    const p = path.join(dir, n);
+    try {
+      if (now - fs.statSync(p).mtimeMs >= TEMP_KEY_SWEEP_AGE_MS) fs.unlinkSync(p);
+    } catch { /* gone, or another process is handling it */ }
   }
 }
 
 /**
  * The site certificate in `dir`: loaded when present, generated ONLY when the file does not exist. A present
- * but bad file throws (never overwritten). Generation is exclusive: written to a private temp file, then
- * hard-linked to the final name (EEXIST ⇒ another process won ⇒ load its file).
+ * but bad file throws (never overwritten). The folder is created NON-recursively and made private before any file
+ * is written; a pre-existing folder (or file) must be owned by the server account / SYSTEM / Administrators.
+ * Generation is exclusive: written to a private temp file, then hard-linked to the final name (EEXIST ⇒ another
+ * process — or a planter — got there first ⇒ that file is verified like any existing one).
  */
 export function loadOrCreateSiteBrokerTls(opts: {
   dir: string;
@@ -403,18 +516,29 @@ export function loadOrCreateSiteBrokerTls(opts: {
   days?: number;
   now?: Date;
   subjectAltNames?: SubjectAltNames;
-  /** Windows ACL handling (default per platform; null = POSIX modes only). */
+  /** Windows security handling (default per platform; null = POSIX modes only). */
   acl?: KeyFileAcl | null;
 }): BrokerTlsMaterial {
   const acl = opts.acl === undefined ? defaultKeyFileAcl() : opts.acl;
   const file = path.join(opts.dir, SITE_TLS_FILE_NAME);
+  let createdDir = false;
+  try {
+    fs.mkdirSync(path.dirname(opts.dir), { recursive: true });
+    fs.mkdirSync(opts.dir, { mode: 0o700 }); // NON-recursive: tells us whether THIS process created it
+    createdDir = true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") {
+      throw new BrokerTlsError("TLS_WRITE_FAILED", `${opts.dir}: ${(e as NodeJS.ErrnoException)?.code ?? (e as Error)?.message}`);
+    }
+  }
+  if (createdDir) makePrivate(acl, opts.dir, true);
+  else ensurePrivate(acl, opts.dir, true); // pre-existing folder: foreign owner ⇒ refuse; wide DACL ⇒ rebuilt
   sweepTempKeyFiles(opts.dir);
+
   if (fs.existsSync(file)) {
+    ensurePrivate(acl, file, false); // planted (foreign owner) ⇒ refused BEFORE it is even read
     const text = readText(file);
-    const material = materialFrom(parseBrokerTlsPair(text, text, file), "generated", false, file);
-    ensurePrivate(acl, opts.dir, true);
-    ensurePrivate(acl, file, false);
-    return material;
+    return materialFrom(parseBrokerTlsPair(text, text, file), "generated", false, file);
   }
   const { keyPem, certPem } = mintSiteBrokerCertificate({
     commonName: opts.commonName ?? `AVI-AOI built-in MQTT broker (${os.hostname()})`,
@@ -424,8 +548,6 @@ export function loadOrCreateSiteBrokerTls(opts: {
   });
   const tmp = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
-    fs.mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
-    makePrivate(acl, opts.dir, true);
     // Windows: the EMPTY file is made private first, the key is written only afterwards (no readable window).
     fs.writeFileSync(tmp, "", { mode: 0o600, flag: "wx" });
     makePrivate(acl, tmp, false);
@@ -434,10 +556,10 @@ export function loadOrCreateSiteBrokerTls(opts: {
       fs.linkSync(tmp, file);
     } catch (e) {
       if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
-      const text = readText(file); // lost the race — the winner's certificate is the site certificate
-      const won = materialFrom(parseBrokerTlsPair(text, text, file), "generated", false, file);
+      // lost the race (or a file was planted meanwhile): verify it exactly like an existing one
       ensurePrivate(acl, file, false);
-      return won;
+      const text = readText(file);
+      return materialFrom(parseBrokerTlsPair(text, text, file), "generated", false, file);
     }
   } catch (e) {
     if (e instanceof BrokerTlsError) throw e;
@@ -445,10 +567,9 @@ export function loadOrCreateSiteBrokerTls(opts: {
   } finally {
     try { fs.unlinkSync(tmp); } catch { /* already gone */ }
   }
+  ensurePrivate(acl, file, false, false); // the hard link shares the temp file's descriptor — verified, not assumed
   const text = readText(file);
-  const material = materialFrom(parseBrokerTlsPair(text, text, file), "generated", true, file);
-  ensurePrivate(acl, file, false); // the hard link shares the temp file's ACL — verified, not assumed
-  return material;
+  return materialFrom(parseBrokerTlsPair(text, text, file), "generated", true, file);
 }
 
 /**

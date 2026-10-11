@@ -283,10 +283,14 @@ Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết
 ĐỊNH (chỉ `MQTT_TLS_ENABLED=false` mới tắt). Lần khởi động đầu, server **tự sinh chứng chỉ site** (tự ký, ECDSA P‑256,
 ~20 năm, có subjectAltName = tên máy, `localhost`, `127.0.0.1` và các IPv4 LAN lúc sinh) vào `data/mqtt-tls/broker-tls.pem`
 (ngoài git; đổi chỗ bằng `MQTT_TLS_DIR`; hoặc dùng chứng chỉ riêng: đặt cả `MQTT_TLS_CERT` + `MQTT_TLS_KEY`). Tệp chứa
-**khoá riêng**: trên Windows server tự đặt ACL cho thư mục và tệp (bỏ kế thừa, CHỈ tài khoản chạy server + SYSTEM +
-Administrators — `mode 0600` không có tác dụng trên NTFS); mỗi lần khởi động kiểm lại: nếu Users / Authenticated Users /
-Everyone đọc được thì ghi lỗi và sửa; sửa không được (hoặc không đọc được ACL) ⇒ KHÔNG mở cổng TLS (cổng thường không
-ảnh hưởng). Kiểm tay: `icacls data\mqtt-tls\broker-tls.pem` chỉ được thấy 3 chủ thể trên. Linux: quyền 0600/0700. **Vân tay SHA‑256** của chứng chỉ hiện ở web: *Kết nối (MQTT / UNS) → Thiết bị* → thẻ
+**khoá riêng**. Trên Windows (`mode 0600` không có tác dụng trên NTFS) áp DANH SÁCH CHO PHÉP: chỉ tài khoản chạy server,
+SYSTEM và Administrators được LÀ CHỦ (owner) và được có mặt trong ACL của thư mục `mqtt-tls`, tệp khoá và chứng chỉ. Server tự
+tạo thư mục và đặt lại toàn bộ ACL (bỏ kế thừa) TRƯỚC khi ghi khoá; mỗi lần khởi động kiểm lại: chủ là tài khoản khác ⇒ có thể
+bị CÀI SẴN (thư mục `data/` cho Authenticated Users quyền Modify) ⇒ ghi lỗi, KHÔNG mở TLS, KHÔNG tiếp nhận/sửa tệp đó — hãy
+điều tra, xoá tệp/thư mục lạ rồi khởi động lại; chủ đúng nhưng ACL có thêm ai khác ⇒ ghi lỗi và dựng lại ACL; ACL rỗng (null),
+ACE điều kiện/lạ, hoặc không đọc được ⇒ KHÔNG mở TLS. Cổng thường không ảnh hưởng. Kiểm tay (PowerShell):
+`(Get-Acl data\mqtt-tls\broker-tls.pem).Sddl` — chủ `O:` và mọi `(A;…)` chỉ được là SY, BA hoặc SID tài khoản server.
+Linux: quyền 0600/0700. **Vân tay SHA‑256** của chứng chỉ hiện ở web: *Kết nối (MQTT / UNS) → Thiết bị* → thẻ
 **"TLS của broker nhúng"** (nút Sao chép). Tệp chứng chỉ hỏng ⇒ thẻ báo lỗi, cổng TLS KHÔNG mở và server KHÔNG tự sinh
 lại (sinh lại = đổi vân tay = mọi máy đã ghim bị từ chối); muốn sinh mới thì chuyển tệp đi chỗ khác rồi khởi động lại,
 sau đó nhập lại vân tay mới trên MỌI máy. Mở firewall cho cổng 8884 (TCP).
