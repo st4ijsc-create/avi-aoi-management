@@ -125,6 +125,28 @@ describe("CockpitLayout — dấu đo", () => {
     expect(list.className).not.toMatch(/(^|\s)justify-center(\s|$)/);
   });
 
+  // doc 81 Đợt 7 task L4 — Trung tâm Kỹ thuật @390/412 px: hàng tab một dòng `overflow-hidden` + `toolbarEnd` (bộ chọn phạm
+  // vi, shrink-0, ~370 px) ⇒ dải tab chính (Hộp việc / Danh mục công cụ) bị ép còn 6 px, nút "Toàn module" bị cắt phải.
+  // Hợp đồng: dưới 1024 px hàng tab XUỐNG DÒNG (không cắt, không trần 56 px — thiết bị đo chỉ chấm trần ở 1366/1600);
+  // từ 1024 px giữ nguyên một dòng ≤56 px.
+  it("dưới 1024 px: hàng tab + toolbarEnd xuống dòng (không cắt, không trần 56 px); rộng: một dòng ≤56 px", () => {
+    presetNarrow(true);
+    const { unmount } = renderCockpit();
+    const bar = () => mainEl().querySelector("[data-layout-toolbar]") as HTMLElement;
+    expect(bar().className).toMatch(/(^|\s)flex-wrap(\s|$)/);
+    expect(bar().className).not.toMatch(/overflow-hidden/);
+    expect(bar().className).not.toMatch(/flex-nowrap/);
+    expect(bar().style.maxHeight).toBe("");
+    expect(bar()).toContainElement(screen.getByRole("tablist"));
+    expect(bar()).toContainElement(screen.getByRole("button", { name: "Lọc" }));
+    unmount();
+    presetNarrow(false);
+    renderCockpit();
+    expect(bar().className).toMatch(/flex-nowrap/);
+    expect(bar().className).toMatch(/overflow-hidden/);
+    expect(bar().style.maxHeight).toBe("56px");
+  });
+
   it("dưới 1024 px: panel phụ xếp dưới MAIN (stack)", () => {
     presetNarrow(true);
     renderCockpit();
