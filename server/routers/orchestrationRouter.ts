@@ -45,6 +45,15 @@ const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
 const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 // doc 80 ORC-06 — write floor (not a read-only role) + the same MOD_ENGINEERING license gate.
 const writeProcedure = writeBase.use(moduleGate("MOD_ENGINEERING"));
+/**
+ * doc 81 Đợt 7 final wave F8 — the WORKFLOW-MANAGEMENT procedures (list / get / deploy / rollback / versions / start / simulate /
+ * delete / duplicate) answer a clear "migration 0367 missing" while it is (foeEngine.assertFoeSchemaReady). NOT on the
+ * stopping paths (L-7): status, listRuns, runListMeta, getRun, abortRun and a gate REJECTION keep working.
+ */
+async function foeSchemaGuard({ ctx, next }: { ctx: unknown; next: Function }) {
+  await assertFoeSchemaReady();
+  return next({ ctx });
+}
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import { summarizeRunDispatch } from "../../shared/provenance";
 import {
@@ -65,6 +74,7 @@ import {
   visibleWorkflowIds,
   listVisibleRuns,
   resolveWorkflowByRef,
+  assertFoeSchemaReady,
   type FoeUser,
 } from "../services/orchestration/foe/foeEngine";
 import { resolveUserFoeScope, workflowScopeKeyOf, type FoeScope } from "../services/orchestration/foe/foeScope";
@@ -89,12 +99,15 @@ function scopeOf(user: { id: number; role: string }): FoeScope {
 
 /**
  * doc 81 Đợt 7 I fix 1 — the workflow a by-id-or-ref input names FOR THE CALLER: by id (any namespace) or by ref resolved
- * within the caller's view (foeEngine.resolveWorkflowByRef). Not visible / several ⇒ undefined + `ambiguous`; the visibility
- * check of each procedure still runs on the result (a missing and an out-of-scope workflow answer the same).
+ * within the caller's view (foeEngine.resolveWorkflowByRef; `workflowId` pins the ref resolution to that workflow — final wave
+ * F9 / N4). Not visible / several ⇒ undefined + `ambiguous`; the visibility check of each procedure still runs on the result
+ * (a missing and an out-of-scope workflow answer the same).
+ * final wave F3 (R-7-d) — the caller's namespace or view could not be decided ⇒ THROWS scopeUnverified ("retry"): never a
+ * fallback to the 'global' / single visible workflow in place of the caller's own.
  */
 async function workflowByIdOrRef(
   d: Awaited<ReturnType<typeof db>>,
-  input: { id?: number; ref?: string },
+  input: { id?: number; ref?: string; workflowId?: number },
   scope: FoeScope,
 ): Promise<{ row: typeof orchestrationWorkflows.$inferSelect | undefined; ambiguous: boolean }> {
   if (input.id != null) {
@@ -105,10 +118,16 @@ async function workflowByIdOrRef(
   try {
     key = await workflowScopeKeyOf(scope);
   } catch {
-    key = null;
+    key = null; // ⇒ resolveWorkflowByRef answers "unverified"
   }
-  const r = await resolveWorkflowByRef(d, input.ref ?? "", scope, key);
+  const r = await resolveWorkflowByRef(d, input.ref ?? "", scope, key, { workflowId: input.workflowId });
+  if (r.kind === "unverified") throw scopeUnverifiedError();
   return { row: r.kind === "row" ? r.row : undefined, ambiguous: r.kind === "ambiguous" };
+}
+
+/** final wave F3 (R-7-d) — the caller's factory scope / view of a ref could not be decided (retry). */
+function scopeUnverifiedError() {
+  return appError("CONFLICT", "OPERATION_FAILED", { operation: "resolveWorkflowRef", reason: "scopeUnverified" }, "Your factory scope could not be verified — retry in a moment.");
 }
 
 function refAmbiguousError(ref: string) {
@@ -130,6 +149,7 @@ export const orchestrationRouter = router({
   /** List deployed workflows (newest first). */
   listWorkflows: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(z.object({ limit: z.number().int().min(1).max(500).default(100) }).optional())
     .query(async ({ input, ctx }) => {
       const d = await db();
@@ -147,6 +167,7 @@ export const orchestrationRouter = router({
   /** Get one workflow by id (with its full definition). */
   getWorkflow: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const d = await db();
@@ -172,6 +193,7 @@ export const orchestrationRouter = router({
    */
   deployWorkflow: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(
       z.object({
         definition: z.record(z.string(), z.unknown()),
@@ -197,6 +219,7 @@ export const orchestrationRouter = router({
    */
   listVersions: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(z.object({ workflowId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const d = await db();
@@ -217,6 +240,7 @@ export const orchestrationRouter = router({
   /** W3-11 — get one version snapshot (with its full definition). Read-only. */
   getVersion: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const d = await db();
@@ -243,6 +267,7 @@ export const orchestrationRouter = router({
    */
   rollbackWorkflow: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(
       z.object({
         workflowId: z.number().int().positive(),
@@ -309,7 +334,8 @@ export const orchestrationRouter = router({
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({ runId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
-      const view = await getRun(input.runId);
+      // final wave F6 — the Studio's run screen is where an approval / continue binds: the digest is computed here (paused runs).
+      const view = await getRun(input.runId, { bindingDigest: true });
       // doc 81 Đợt 5 task E2 — out of scope ⇒ the SAME NOT_FOUND as a missing run (scope resolved for both).
       // doc 81 Đợt 7 I3 — by the versions the run executed (view.run.paramsJson)
       const visible = await runVisibleTo(view?.run ?? { workflowId: -1, paramsJson: null }, scopeOf(ctx.user));
@@ -322,6 +348,7 @@ export const orchestrationRouter = router({
   /** Start a run of a deployed workflow (by ref). Flag-gated. */
   startRun: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(
       z.object({
         workflowRef: z.string().min(1).max(128),
@@ -370,6 +397,9 @@ export const orchestrationRouter = router({
         }),
     )
     .mutation(async ({ input, ctx }) => {
+      // final wave F8 — an APPROVAL resumes actuation ⇒ refused clearly while migration 0367 is missing; a REJECTION is a
+      // stopping path (it sends the run's STOP steps — L-7) and is never gated here.
+      if (input.approved) await assertFoeSchemaReady();
       return resumeRun(
         input.runId,
         {
@@ -392,10 +422,13 @@ export const orchestrationRouter = router({
    */
   simulate: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(
       z.object({
         workflow: z.record(z.string(), z.unknown()).optional(),
         workflowRef: z.string().min(1).max(128).optional(),
+        /** final wave F9 (I re-review N4) — the workflow the caller picked when several visible ones share `workflowRef`. */
+        workflowId: z.number().int().positive().optional(),
         params: z.record(z.string(), z.unknown()).default({}),
         assumedTelemetry: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
         commandDurations: z.record(z.string(), z.number()).optional(),
@@ -423,7 +456,7 @@ export const orchestrationRouter = router({
         def = input.workflow as unknown as WorkflowDefinition;
       } else if (input.workflowRef) {
         // doc 81 Đợt 7 I fix 1 — resolved within the caller's view (namespaces)
-        const found = await workflowByIdOrRef(d, { ref: input.workflowRef }, scopeOf(ctx.user));
+        const found = await workflowByIdOrRef(d, { ref: input.workflowRef, workflowId: input.workflowId }, scopeOf(ctx.user));
         if (found.ambiguous) throw refAmbiguousError(input.workflowRef);
         const wf = found.row;
         // doc 81 Đợt 5 task E2 — a stored workflow outside the caller's scope ⇒ the SAME NOT_FOUND as a missing ref.
@@ -497,6 +530,7 @@ export const orchestrationRouter = router({
    */
   deleteWorkflow: protectedProcedure
     .use(requirePermission("machine_control", "canDelete"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(
       z
         .object({
@@ -557,6 +591,7 @@ export const orchestrationRouter = router({
    */
   duplicateWorkflow: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
+    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
     .input(
       z
         .object({
@@ -591,6 +626,7 @@ export const orchestrationRouter = router({
         throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Factory scope could not be resolved — retry.");
       }
       const clash = await resolveWorkflowByRef(d, newRef, scopeD, dupKey, { ownAnyVisibility: true });
+      if (clash.kind === "unverified") throw scopeUnverifiedError(); // final wave F3 (R-7-d)
       if (clash.kind !== "none") throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workflow" }, `A workflow with ref "${newRef}" already exists.`);
 
       // Re-stamp the definition's own ref so the stored JSON stays consistent.

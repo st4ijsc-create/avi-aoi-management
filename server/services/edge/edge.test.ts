@@ -343,7 +343,7 @@ describe("syncRunResult reconcile (idempotent)", () => {
 describe("edge runtime — offline buffer + replay + foeEngine reuse", () => {
   it("executeAssignedRun reuses foeEngine.startRun and syncs when central reachable", async () => {
     setCentralSync(async () => true); // central reachable
-    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
     expect(res.ok).toBe(true);
     expect(startRunMock).toHaveBeenCalledOnce();
     expect(getRunMock).toHaveBeenCalledWith(1);
@@ -356,7 +356,7 @@ describe("edge runtime — offline buffer + replay + foeEngine reuse", () => {
     const calls: number[] = [];
     setCentralSync(async (p) => { calls.push(p.runId); return reachable; });
 
-    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 6 });
+    const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 6 });
     expect(res.ok).toBe(true);
     expect(res.synced).toBe(false);
     expect(res.buffered).toBe(true);
@@ -375,7 +375,7 @@ describe("edge runtime — offline buffer + replay + foeEngine reuse", () => {
     startRunMock.mockRejectedValueOnce(new Error("boom"));
     getRunMock.mockRejectedValueOnce(new Error("boom"));
     setCentralSync(async () => false);
-    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", startedBy: 6 });
+    const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", startedBy: 6 });
     expect(res.ok).toBe(false);
     expect(res.status).toBe("failed");
     expect(res.buffered).toBe(true);
@@ -387,17 +387,35 @@ describe("edge runtime — offline buffer + replay + foeEngine reuse", () => {
   // (which resolved an empty / wrong scope). No principal, an unknown or a disabled account ⇒ NOT started (fail-closed).
   it("★ F4: the run is started AS its starting principal with the account's REAL role (admin keeps the admin bypass)", async () => {
     setCentralSync(async () => true);
-    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
     // (4th argument since doc 81 Đợt 7 I1: { onStarted } — the edge watches central for an abort while the run walks)
-    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 5, role: "admin" }), { onStarted: expect.any(Function) });
-    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 6 });
-    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 6, role: "engineer" }), { onStarted: expect.any(Function) });
+    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 5, role: "admin" }), { workflowId: 10, onStarted: expect.any(Function) });
+    await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 6 });
+    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 6, role: "engineer" }), { workflowId: 10, onStarted: expect.any(Function) });
+  });
+
+  // doc 81 Đợt 7 final wave F2 — the edge starts the CENTRAL run's workflow by its id; without it the run is not started.
+  for (const [label, workflowId] of [["no workflowId", undefined], ["a null workflowId", null], ["a non-integer workflowId", 1.5], ["workflowId 0", 0]] as const) {
+    it(`★ F2: ${label} ⇒ the engine is NOT called (fail-closed), a failed result is buffered`, async () => {
+      setCentralSync(async () => false);
+      const res = await executeAssignedRun({ id: 1, workflowId, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+      expect(startRunMock).not.toHaveBeenCalled();
+      expect(res).toMatchObject({ ok: false, status: "failed", buffered: true });
+      expect(res.message).toMatch(/no central workflow id/);
+    });
+  }
+
+  it("★ F2: the engine is called with the central workflowId pin (never by the plain ref alone)", async () => {
+    setCentralSync(async () => true);
+    await executeAssignedRun({ id: 1, workflowId: 42, workflowRef: "wf-1", paramsJson: {}, startedBy: 6 });
+    expect(startRunMock).toHaveBeenCalledOnce();
+    expect(startRunMock.mock.calls[0][3]).toMatchObject({ workflowId: 42 });
   });
 
   for (const [label, startedBy] of [["no principal", null], ["an unknown account", 999], ["a disabled account", 7]] as const) {
     it(`★ F4: ${label} ⇒ the engine is NOT called (fail-closed), a failed result is buffered / synced`, async () => {
       setCentralSync(async () => false);
-      const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy });
+      const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy });
       expect(startRunMock).not.toHaveBeenCalled();
       expect(res.ok).toBe(false);
       expect(res.status).toBe("failed");
@@ -513,7 +531,7 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
       return { ack: true, abortRequested: true };
     });
     const t0 = Date.now();
-    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
     expect(Date.now() - t0).toBeLessThan(1500); // stopped by the abort, not by the 3 s walk
     expect(abortRunMock).toHaveBeenCalledTimes(1);
     expect(abortRunMock.mock.calls[0][0]).toBe(77); // the LOCAL run
@@ -529,7 +547,7 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
     setCentralSync(async () => false);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
-      const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+      const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
       expect(res).toMatchObject({ ok: true, buffered: true });
       expect(abortRunMock).not.toHaveBeenCalled();
       expect(warn.mock.calls.map((c) => String(c[0])).some((l) => /central unreachable.*cannot be learned/.test(l))).toBe(true);
@@ -544,7 +562,7 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
       return { ok: true, enabled: true, runId: 78, status: "awaiting_confirm" as const };
     });
     setCentralSync(async () => ({ ack: true, abortRequested: true }));
-    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
     expect(abortRunMock.mock.calls.map((c) => c[0])).toEqual([78]);
     expect(getRunMock.mock.calls.map((c) => c[0])).toEqual([78]); // the final payload is read from the LOCAL run
   });
@@ -556,7 +574,7 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
     });
     let online = false;
     setCentralSync(async () => (online ? { ack: true, abortRequested: true } : false));
-    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
     expect(abortRunMock).not.toHaveBeenCalled();
     online = true;
     await replayBuffer();
@@ -582,7 +600,7 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
       return true;
     });
     try {
-      await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+      await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
     } finally {
       getRunMock.mockImplementation(async (runId: number) => defaultGetRun(runId) as never);
     }
@@ -612,7 +630,7 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
       return online;
     });
     try {
-      await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+      await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
       expect(seen.filter((x) => x.startsWith("running")).length).toBeGreaterThan(0); // progress was tried (and failed)
       expect(bufferedDuringWalk).toBe(0); // … and buffered nothing
       expect(bufferedCount()).toBe(1); // only the FINAL payload
@@ -628,7 +646,7 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
   it("control: central answers a plain `true` (no abort) ⇒ nothing aborted", async () => {
     walkingStart(200);
     setCentralSync(async () => true);
-    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
     expect(abortRunMock).not.toHaveBeenCalled();
   });
 });
@@ -649,7 +667,7 @@ describe("flag-off no-op", () => {
   });
 
   it("executeAssignedRun is a disabled no-op (does NOT touch foeEngine)", async () => {
-    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1" });
+    const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1" });
     expect(res.enabled).toBe(false);
     expect(startRunMock).not.toHaveBeenCalled();
   });

@@ -95,7 +95,16 @@ describe("★★★ TẦNG 4 — ba truy vấn mô phỏng ĐÃ RỜI TRANG và 
       expect(TRANG, `${ten}: hook trả ra mà trang không dùng`).toContain(ten);
     }
     expect(TRANG).toContain("onChayWhatIf={() => datDaBamChay(true)}");
-    expect(TRANG).toContain("onDoiWorkflow={datWorkflowRef}");
+    expect(TRANG).toContain("onDoiWorkflow={datWorkflowChon}");
+    expect(TRANG).toContain("workflowId={workflowId}");
+  });
+
+  it("★★★ doc 81 Đợt 7 final wave F9 (N4) — `simulate` mang `workflowId` của quy trình ĐÃ CHỌN (nhiều quy trình có thể trùng ref)", () => {
+    // Chỉ gửi ref ⇒ server chọn theo thứ tự ưu tiên (namespace mình › global), có thể KHÔNG phải cái người dùng chọn.
+    expect(HOOK_MA).toContain("workflowId: workflowChon?.id");
+    const NGAN = MA(doc("src/components/twin3d/van-hanh/NganMoPhong.tsx"));
+    expect(NGAN).toContain("value={String(w.id)}"); // lựa chọn theo id, không theo ref (hai ref trùng ⇒ hai giá trị trùng)
+    expect(NGAN).not.toContain("value={w.ref}");
   });
 });
 

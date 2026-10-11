@@ -42,6 +42,8 @@ import { computeBindingDigest } from "./foeGateApproval";
 import type { WorkflowDefinition } from "./workflowModel";
 
 type Row = Record<string, any>;
+/** final wave F6 — the approver's screen asks for the digest (the Studio's getRun); internal readers do not. */
+const SCREEN = { bindingDigest: true };
 const OWNER = { id: 10, role: "engineer", name: "owner" };
 const OTHER = { id: 12, role: "supervisor", name: "other" };
 const T0 = new Date("2026-10-01T00:00:00Z");
@@ -90,14 +92,44 @@ async function pausedRun(ref: string) {
 describe("doc 81 Đợt 7 I2 — the approver's screen is bound to the binding digest", () => {
   it("★ getRun returns the binding digest the server computes for the run's definition NOW", async () => {
     const runId = await pausedRun("view");
-    const view = await getRun(runId);
+    const view = await getRun(runId, SCREEN);
     expect(view?.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(view?.bindingDigest).toBe(await computeBindingDigest(fake as never, GATED("view")));
   });
 
+  it("★ final wave F6 — the digest's device reads happen only for an approver's screen of a PAUSED run (not on internal polls / other statuses)", async () => {
+    const runId = await pausedRun("poll");
+    const realSelect = fake.select.bind(fake);
+    let deviceReads = 0;
+    (fake as any).select = (p?: Record<string, any>) => {
+      const b = realSelect(p);
+      const from = b.from.bind(b);
+      b.from = (t: any) => {
+        if (["device_tags", "device_adapters", "robots"].includes(t?.[Symbol.for("drizzle:Name")])) deviceReads++;
+        return from(t);
+      };
+      return b;
+    };
+    try {
+      const polled = (await getRun(runId))!; // edge tick / QT pump / API read
+      expect(polled.bindingDigest).toBeNull();
+      expect(polled.defHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(deviceReads).toBe(0);
+      const screen = (await getRun(runId, SCREEN))!;
+      expect(screen.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+      expect(deviceReads).toBeGreaterThan(0);
+      deviceReads = 0;
+      Object.assign(rows("orchestration_runs").find((x) => x.id === runId)!, { status: "running" });
+      expect((await getRun(runId, SCREEN))!.bindingDigest).toBeNull(); // nothing to approve ⇒ nothing computed
+      expect(deviceReads).toBe(0);
+    } finally {
+      (fake as any).select = realSelect;
+    }
+  });
+
   it("★ match ⇒ approved; the gate records EXACTLY the digest the screen saw", async () => {
     const runId = await pausedRun("match");
-    const view = (await getRun(runId))!;
+    const view = (await getRun(runId, SCREEN))!;
     const r = await resumeRun(runId, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
     expect(r.status).toBe("completed");
     expect(stepRow(runId, "g1")!.resultJson).toMatchObject({ approved: true, approvedBy: OTHER.id, bindingDigest: view.bindingDigest });
@@ -110,7 +142,7 @@ describe("doc 81 Đợt 7 I2 — the approver's screen is bound to the binding d
   ] as const) {
     it(`★ ${what} after the screen loaded ⇒ CONFLICT bindingChanged, NOTHING changes (run paused, gate open, no command)`, async () => {
       const runId = await pausedRun(`chg-${what.length}`);
-      const view = (await getRun(runId))!;
+      const view = (await getRun(runId, SCREEN))!;
       change();
       const err = await resumeRun(runId, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER).catch((e) => e);
       expect(err).toMatchObject({ code: "CONFLICT" });
@@ -120,7 +152,7 @@ describe("doc 81 Đợt 7 I2 — the approver's screen is bound to the binding d
       expect(stepRow(runId, "g1")!.status).toBe("awaiting_confirm");
       expect(otDispatchMock).not.toHaveBeenCalled();
       // reload ⇒ the new digest is accepted
-      const fresh = (await getRun(runId))!;
+      const fresh = (await getRun(runId, SCREEN))!;
       expect(fresh.bindingDigest).not.toBe(view.bindingDigest);
       const ok = await resumeRun(runId, { approved: true, expectedStepId: "g1", expectedDefHash: fresh.defHash!, expectedBindingDigest: fresh.bindingDigest! }, OTHER);
       expect(ok.status).toBe("completed");
@@ -129,7 +161,7 @@ describe("doc 81 Đợt 7 I2 — the approver's screen is bound to the binding d
 
   it("★ a screen-bound approval (expectedDefHash) WITHOUT expectedBindingDigest ⇒ CONFLICT bindingChanged (fail-closed)", async () => {
     const runId = await pausedRun("nodigest");
-    const view = (await getRun(runId))!;
+    const view = (await getRun(runId, SCREEN))!;
     const err = await resumeRun(runId, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash! }, OTHER).catch((e) => e);
     expect(conflictReason(err)).toBe("bindingChanged");
     expect(stepRow(runId, "g1")!.status).toBe("awaiting_confirm");
@@ -137,7 +169,7 @@ describe("doc 81 Đợt 7 I2 — the approver's screen is bound to the binding d
 
   it("★ the digest cannot be computed NOW (device tables unreadable) ⇒ CONFLICT bindingChanged, nothing changes", async () => {
     const runId = await pausedRun("undecided");
-    const view = (await getRun(runId))!;
+    const view = (await getRun(runId, SCREEN))!;
     const realSelect = fake.select.bind(fake);
     (fake as any).select = (p?: Record<string, any>) => {
       const b = realSelect(p);
@@ -161,11 +193,11 @@ describe("doc 81 Đợt 7 I2 — the approver's screen is bound to the binding d
   it("★ fix 1 (M-3): CONTINUE of a 'held' (interrupted) run is bound server side too — config changed ⇒ bindingChanged, definition changed ⇒ definitionChanged; nothing changes", async () => {
     const runId = await pausedRun("held");
     Object.assign(rows("orchestration_runs").find((x) => x.id === runId)!, { status: "held", currentStepId: null, contextJson: { interrupted: true } });
-    const view = (await getRun(runId))!;
+    const view = (await getRun(runId, SCREEN))!;
     rows("device_tags").find((t) => t.id === 71)!.address = "40077";
     const e1 = await resumeRun(runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER).catch((e) => e);
     expect(conflictReason(e1)).toBe("bindingChanged");
-    const view2 = (await getRun(runId))!;
+    const view2 = (await getRun(runId, SCREEN))!;
     const e2 = await resumeRun(runId, { approved: true, expectedStepId: null, expectedDefHash: "0".repeat(64), expectedBindingDigest: view2.bindingDigest! }, OTHER).catch((e) => e);
     expect(conflictReason(e2)).toBe("definitionChanged");
     expect(rows("orchestration_runs").find((x) => x.id === runId)!.status).toBe("held");

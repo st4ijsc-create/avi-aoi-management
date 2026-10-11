@@ -71,6 +71,13 @@ vi.mock("../services/orchestration/foe/foeEngine", async (importOriginal) => {
   return { ...orig, resolveVisiblePendingRunIds: async (s: never) => (hubFail.on ? { ok: false as const } : orig.resolveVisiblePendingRunIds(s)) };
 });
 
+// final wave F3 (R-7-d) — make the caller's NAMESPACE key unresolvable on demand (the real resolver otherwise).
+const nsFail = vi.hoisted(() => ({ on: false }));
+vi.mock("../services/orchestration/foe/foeScope", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../services/orchestration/foe/foeScope")>();
+  return { ...orig, workflowScopeKeyOf: async (scope: never) => { if (nsFail.on) throw new Error("scope lookup failed"); return orig.workflowScopeKeyOf(scope); } };
+});
+
 const DB_URL = process.env.DATABASE_URL;
 const RUN = `d5e2${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
 let sql: ReturnType<typeof postgres>;
@@ -516,14 +523,17 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     expect(((await ua.listWorkflows({ limit: 1 })) as Array<{ ref: string }>).map((w) => w.ref)).toEqual([rA]);
   });
 
-  it("★ N6: a PINNED stop of B over a STALE running connection is NOT a verified stop ⇒ the start is refused (not found); a fresh connection ⇒ starts", async () => {
+  it("★ N6: a PINNED stop of B over a STALE running connection is NOT a verified stop ⇒ the start is refused (final wave F3: scope not verified); a fresh connection ⇒ starts", async () => {
     const { deployWorkflow, startRun } = await engine();
     const r = ref("stale-b");
     expect((await deployWorkflow(defOf(r, [otStart("a", A), otStop("pb", B)]), ADMIN)).ok).toBe(true);
     const fresh = conn.fp.get(B().adapterId)!;
     conn.fp.set(B().adapterId, "0".repeat(64)); // the driver still talks to the device the adapter pointed at BEFORE
     try {
-      expect(await startRun(r, {}, userOf("ua"))).toEqual({ ok: false, enabled: true, message: `Workflow "${r}" not found.` });
+      // final wave F3 (R-7-d) — the only workflow of this ref is UNDECIDED for A (its B stop is not verifiable): refused as
+      // "scope not verified" (retry), no run — no longer read as "not found" (that reading let a lower-ranked workflow win).
+      expect(await startRun(r, {}, userOf("ua"))).toEqual({ ok: false, enabled: true, reason: "scopeUnverified", message: "Your factory scope could not be verified — retry in a moment." });
+      expect(await runsOf(r)).toHaveLength(0);
     } finally {
       conn.fp.set(B().adapterId, fresh);
     }
@@ -692,6 +702,95 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     expect((await listVisibleRuns({ limit: 100_000 }, null)).runs.length).toBe(500);
     await sql`DELETE FROM orchestration_workflow_versions WHERE "workflowId" = ${wf.id} AND version >= 7777`;
   }, 60_000);
+
+  it("★ final wave F9 (I re-review N1/N2) — a snapshot of the head's own version is judged ONCE (as the head); with EXACTLY the cap of heads the snapshots are still read ⇒ `truncated`, never a silent hide", async () => {
+    const { deployWorkflow, startRun, listVisibleRuns, lastRunVisibilityStats, RUN_SCOPE_MAX_DEFINITIONS } = await engine();
+    const scopeA = { userId: fx.users.ua, userRole: "engineer" };
+    // N1 — every deploy snapshots its head: those snapshots are NOT counted again
+    const r1 = ref("n1");
+    expect((await deployWorkflow(defOf(r1, [otStart("a", A)]), ADMIN)).ok).toBe(true);
+    await listVisibleRuns({ limit: 1 }, scopeA);
+    const [{ heads }] = await sql`SELECT count(*)::int AS heads FROM orchestration_workflows`;
+    const [{ other }] = await sql`SELECT count(*)::int AS other FROM orchestration_workflow_versions v
+      WHERE NOT EXISTS (SELECT 1 FROM orchestration_workflows w WHERE w.id = v."workflowId" AND w.version = v.version)`;
+    const [{ same }] = await sql`SELECT count(*)::int AS same FROM orchestration_workflow_versions v
+      JOIN orchestration_workflows w ON w.id = v."workflowId" AND w.version = v.version`;
+    expect(same).toBeGreaterThan(0); // the duplicates exist (r1's own v1 at least)
+    expect(heads + other).toBeLessThanOrEqual(RUN_SCOPE_MAX_DEFINITIONS);
+    expect(lastRunVisibilityStats.definitionsRead).toBe(heads + other);
+    expect(lastRunVisibilityStats.truncated).toBe(false);
+    // N2 — EXACTLY the cap of heads + A's run of an older (snapshotted, non-head) version ⇒ truncated, the run not shown
+    const r2 = ref("n2");
+    expect((await deployWorkflow(defOf(r2, [otStart("a", A)]), ADMIN)).ok).toBe(true);
+    const run = (await startRun(r2, {}, userOf("ua"))).runId!;
+    expect((await deployWorkflow(defOf(r2, [otStart("a", A), { id: "x", type: "delay", ms: 1 }]), ADMIN)).ok).toBe(true); // head v2; the run executed v1
+    const [{ n }] = await sql`SELECT count(*)::int AS n FROM orchestration_workflows`;
+    const fill = RUN_SCOPE_MAX_DEFINITIONS - n;
+    expect(fill).toBeGreaterThan(0);
+    await sql`INSERT INTO orchestration_workflows (ref, "scopeKey", name, "definitionJson", version, status, "updatedAt")
+      SELECT ${RUN} || '-fill-' || g, 'global', 'fill', '{"ref":"f","name":"f","steps":[]}'::jsonb, 1, 'active', now() + interval '1 hour'
+      FROM generate_series(1, ${fill}) g`;
+    try {
+      const [{ total }] = await sql`SELECT count(*)::int AS total FROM orchestration_workflows`;
+      expect(total).toBe(RUN_SCOPE_MAX_DEFINITIONS);
+      const page = await listVisibleRuns({ limit: 500 }, scopeA);
+      expect(page.runs.map((x) => x.id)).not.toContain(run);
+      expect(page.truncated).toBe(true); // the old `<` read no snapshot here and said nothing
+    } finally {
+      await sql`DELETE FROM orchestration_workflows WHERE ref LIKE ${RUN + "-fill-%"}`;
+    }
+  }, 120_000);
+
+  it("★ final wave F3 (R-7-d) — the caller's namespace cannot be resolved ⇒ simulate / delete / duplicate by ref and API simulate refuse 'scope not verified' (never the global workflow); by id unaffected", async () => {
+    const { deployWorkflow } = await engine();
+    const r = ref("nsfail");
+    const g = await deployWorkflow(defOf(r, [otStart("a", A)]), ADMIN); // a GLOBAL X that A's user can see
+    expect(g.ok).toBe(true);
+    const ua = await router(ctxOf("ua"));
+    nsFail.on = true;
+    try {
+      const unverified = { code: "CONFLICT", message: "Your factory scope could not be verified — retry in a moment." };
+      await expect(ua.simulate({ workflowRef: r, params: {} } as any)).rejects.toMatchObject(unverified);
+      await expect(ua.simulate({ workflowRef: `${r}-missing`, params: {} } as any)).rejects.toMatchObject(unverified); // same answer
+      await expect(ua.deleteWorkflow({ ref: r })).rejects.toMatchObject(unverified);
+      await expect(ua.duplicateWorkflow({ ref: r, newRef: `${r}-copy` })).rejects.toMatchObject(unverified);
+      expect(await wfRow(`${r}-copy`)).toBeUndefined();
+      expect(await wfRow(r)).toBeDefined(); // not deleted
+      // by id: no ref resolution involved — the visibility rule alone
+      expect((await ua.simulate({ workflow: (await wfRow(r)).definitionJson, params: {} } as any)).ok).toBe(true);
+    } finally {
+      nsFail.on = false;
+    }
+    expect((await ua.simulate({ workflowRef: r, params: {} } as any)).ok).toBe(true);
+    // duplicate onto a ref whose only workflow is UNDECIDED for A (its B stop not verifiable) ⇒ refused, no shadow copy
+    const rU = ref("dup-undec");
+    expect((await deployWorkflow(defOf(rU, [otStart("a", A), otStop("pb", B)]), ADMIN)).ok).toBe(true);
+    const fresh = conn.fp.get(B().adapterId)!;
+    conn.fp.set(B().adapterId, "0".repeat(64));
+    try {
+      await expect(ua.duplicateWorkflow({ id: g.workflowId!, newRef: rU })).rejects.toMatchObject({ code: "CONFLICT", message: "Your factory scope could not be verified — retry in a moment." });
+      expect((await sql`SELECT count(*)::int AS n FROM orchestration_workflows WHERE ref = ${rU}`)[0].n).toBe(1);
+    } finally {
+      conn.fp.set(B().adapterId, fresh);
+    }
+  });
+
+  it("★ final wave F9 (I re-review N4) — simulate takes `workflowId`: admin's plain ref in two factory namespaces ⇒ refAmbiguous; by workflowId ⇒ THAT definition", async () => {
+    const { deployWorkflow } = await engine();
+    const r = ref("sim-pin");
+    const a = await deployWorkflow(defOf(r, [otStart("a", A)], [{ id: "only-a", type: "delay", ms: 1 }]), userOf("ua"));
+    const b = await deployWorkflow(defOf(r, [otStart("b", B)], [{ id: "only-b", type: "delay", ms: 1 }]), userOf("ub"));
+    expect(a.ok && b.ok).toBe(true);
+    const adm = await router(ctxOf("adm", "admin"));
+    await expect(adm.simulate({ workflowRef: r, params: {} } as any)).rejects.toMatchObject({ code: "CONFLICT" });
+    const steps = (x: { timeline?: Array<{ stepId: string }> }) => (x.timeline ?? []).map((t) => t.stepId);
+    expect(steps(await adm.simulate({ workflowRef: r, workflowId: b.workflowId, params: {} } as any))).toContain("only-b");
+    expect(steps(await adm.simulate({ workflowRef: r, workflowId: a.workflowId, params: {} } as any))).toContain("only-a");
+    // a workflowId the caller cannot see (B's, for A's user) ⇒ the SAME not found as a missing ref
+    const ua = await router(ctxOf("ua"));
+    await expect(ua.simulate({ workflowRef: r, workflowId: b.workflowId, params: {} } as any)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(steps(await ua.simulate({ workflowRef: r, params: {} } as any))).toContain("only-a");
+  });
 
   it("★ N4: the hub's orchestration scope cannot be decided ⇒ orchestration (and 'mine' orchestration) DEGRADED, not a silent 0", async () => {
     const hub = async () => (await import("./oversightRouter")).oversightRouter.createCaller(ctxOf("ua")).pendingSummary();
@@ -884,6 +983,22 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
       expect(simNs.status).toBe(200);
       h.principal = key({ mode: "global", corporateCode: null, factoryCode: null });
       expect((await call("GET", `/orchestration/runs/${runB}`)).status).toBe(200);
+      // final wave F9 (N4) — a global key sees rNs in A's AND B's namespace (no global one) ⇒ 409; `workflowId` pins it
+      expect((await call("POST", "/orchestration/simulate", { workflowRef: rNs })).status).toBe(409);
+      expect((await call("POST", "/orchestration/simulate", { workflowRef: rNs, workflowId: d1.body.data.workflowId })).status).toBe(200);
+      expect((await call("POST", "/orchestration/simulate", { workflowRef: rNs, workflowId: "x" })).status).toBe(400);
+      // final wave F3 — the key's namespace cannot be resolved ⇒ 503 scope_unverified (a factory key: its scope needs lookups)
+      h.principal = key({ mode: "factory", corporateCode: null, factoryCode: A().code });
+      nsFail.on = true;
+      try {
+        const nsF = await call("POST", "/orchestration/simulate", { workflowRef: rNs });
+        expect(nsF.status).toBe(503);
+        expect(JSON.stringify(nsF.body)).toContain("scope_unverified");
+      } finally {
+        nsFail.on = false;
+      }
+      expect((await call("POST", "/orchestration/simulate", { workflowRef: rNs })).status).toBe(200);
+      h.principal = key({ mode: "global", corporateCode: null, factoryCode: null });
       expect((await call("POST", "/orchestration/workflows", defOf(ref("api-glob"), [otStart("b", B)]))).status).toBe(201);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

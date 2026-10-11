@@ -12,7 +12,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
 
 const { judge, conn } = vi.hoisted(() => ({
-  judge: { mode: "scoped" as "scoped" | "admin" },
+  // final wave F3 — "failed": the scope lookups fail (judge.failed); keyFail: the namespace key cannot be resolved
+  judge: { mode: "scoped" as "scoped" | "admin" | "failed", keyFail: false },
   conn: { fp: new Map<number, string>() },
 }));
 vi.mock("../../ot/otManager", async (importOriginal) => {
@@ -36,10 +37,16 @@ vi.mock("./foeScope", async (importOriginal) => {
     ...orig,
     resolveUserFoeScope: (u: { id: number; role: string }) => ({ userId: u.id, userRole: u.role }),
     // doc 81 Đợt 7 I fix 1 — the namespace of a scope: user 10 ⇒ factory A ('f:1'), user 11 ⇒ factory B ('f:2'), null ⇒ global
-    workflowScopeKeyOf: async (scope: { userId?: number; tenantScope?: unknown } | null) =>
-      scope === null ? "global" : scope.userId === 11 ? "f:2" : scope.userId === 10 ? "f:1" : "f:",
+    workflowScopeKeyOf: async (scope: { userId?: number; tenantScope?: unknown } | null) => {
+      if (scope !== null && judge.keyFail) throw new Error("scope lookup failed");
+      return scope === null ? "global" : scope.userId === 11 ? "f:2" : scope.userId === 10 ? "f:1" : "f:";
+    },
     makeScopeJudge: async (scope: unknown) => {
       if (judge.mode === "admin" || scope === null) return { unrestricted: true, failed: false, outOf: async () => ({ machines: [], robots: [], adapters: [] }) };
+      if (judge.mode === "failed") {
+        const all = (m: Map<number, boolean>) => [...m.keys()];
+        return { unrestricted: false, failed: true, outOf: async (t: { machines: Map<number, boolean>; robots: Map<number, boolean>; adapters: Map<number, boolean> }) => ({ machines: all(t.machines), robots: all(t.robots), adapters: all(t.adapters) }) };
+      }
       const mine = (scope as { userId?: number }).userId === 11 ? { m: 2, a: 502 } : { m: 1, a: 501 };
       const pick = (m: Map<number, boolean>, o?: { nonStopOnly?: boolean }) => [...m.entries()].filter(([, ns]) => !o?.nonStopOnly || ns).map(([id]) => id);
       return {
@@ -99,6 +106,7 @@ beforeEach(() => {
   fake.seed(deviceTags, [{ id: 9001, adapterId: 502, tagKey: "estop", dataType: "bool", stopValue: true, writable: true, isEnabled: true }]);
   conn.fp = new Map([[502, adapterTargetFingerprint({ protocol: "modbus", endpoint: "tcp://127.0.0.1:1", machineId: 2, connectionOptions: null } as never)]]);
   judge.mode = "scoped";
+  judge.keyFail = false;
   process.env.FOE_ENABLED = "true";
   delete process.env.FOE_SIM_GATE_REQUIRED;
   delete process.env.SEC_PLATFORM;
@@ -178,12 +186,60 @@ describe("doc 81 Đợt 7 I fix 1 — refs per scope NAMESPACE (owner decision, 
     expect((fake.store.get("orchestration_runs") as Row[]).find((x) => x.id === r2.runId)!.workflowId).toBe(991);
   });
 
-  it("★ M-1: an UNDECIDABLE workflow of this ref (its pinned STOP's adapter is down) is treated as not visible — like a free ref", async () => {
+  it("★ final wave F3 (R-7-d, replaces M-1): an UNDECIDABLE workflow of this ref (its pinned STOP's adapter is down) ⇒ deploy refused scopeUnverified — no silent copy", async () => {
     expect((await deployWorkflow(def("undec", [A_START, B_PINNED_STOP]), ENG, ADMIN_SCOPE)).ok).toBe(true);
     conn.fp.delete(502);
     const r = await deployWorkflow(def("undec", [A_START]), ENG);
-    expect(r).toMatchObject({ ok: true, ref: "undec", version: 1 });
-    expect(rowsOf("undec").map((w) => w.scopeKey).sort()).toEqual(["f:1", "global"]);
+    expect(r).toMatchObject({ ok: false, reason: "scopeUnverified" });
+    expect(rowsOf("undec").map((w) => w.scopeKey)).toEqual(["global"]); // no f:1 shadow
+    // once decidable again (adapter back): visible ⇒ updated in place (no copy), as before
+    conn.fp.set(502, adapterTargetFingerprint({ protocol: "modbus", endpoint: "tcp://127.0.0.1:1", machineId: 2, connectionOptions: null } as never));
+    expect(await deployWorkflow(def("undec", [A_START]), ENG)).toMatchObject({ ok: false, reason: "refOutOfScope" }); // its B STOP is not ENG's
+    expect(rowsOf("undec")).toHaveLength(1);
+  });
+
+  it("★ final wave F3 — the scope JUDGE fails ⇒ deploy and start refused scopeUnverified (never 'none' ⇒ copy, never a fallback)", async () => {
+    expect((await deployWorkflow(def("jf", [GATE, A_START]), ENG, ADMIN_SCOPE)).ok).toBe(true);
+    judge.mode = "failed";
+    expect(await startRun("jf", {}, ENG)).toMatchObject({ ok: false, reason: "scopeUnverified" });
+    // the deploy refuses at the target check already (out of scope when the lookups fail); the resolver answers the same
+    const { resolveWorkflowByRef } = await import("./foeEngine");
+    expect(await resolveWorkflowByRef(fake as never, "jf", { userId: 10, userRole: "engineer" } as never, "f:1", { ownAnyVisibility: true })).toEqual({ kind: "unverified" });
+    expect(await resolveWorkflowByRef(fake as never, "nope", { userId: 10, userRole: "engineer" } as never, "f:1")).toEqual({ kind: "unverified" });
+    expect(rowsOf("jf")).toHaveLength(1);
+  });
+
+  it("★ final wave F3 — the starter's NAMESPACE key cannot be resolved ⇒ start refused scopeUnverified, the SAME answer for a missing ref; no fallback to the global X", async () => {
+    expect((await deployWorkflow(def("gx", [GATE, A_START]), ENG, ADMIN_SCOPE)).ok).toBe(true);
+    judge.keyFail = true;
+    const r = await startRun("gx", {}, ENG);
+    const missing = await startRun("nope", {}, ENG);
+    expect(r).toMatchObject({ ok: false, reason: "scopeUnverified" });
+    expect(missing).toEqual(r);
+    expect(fake.store.get("orchestration_runs") ?? []).toHaveLength(0);
+    expect(await deployWorkflow(def("gx", [GATE, A_START]), ENG)).toMatchObject({ ok: false, reason: "scopeUnverified" });
+  });
+
+  it("★ final wave F3 — the caller's OWN X is undecidable and a global X is visible ⇒ start refused (not the global X); a foreign undecidable X does not block the global X", async () => {
+    const g = await deployWorkflow(def("ow", [GATE, A_START]), ENG, ADMIN_SCOPE);
+    fake.store.set("orchestration_workflows", [...wfRows(), { id: 995, ref: "ow", scopeKey: "f:1", name: "mine", version: 1, status: "active", definitionJson: { ref: "ow", name: "mine", steps: [GATE, A_START, B_PINNED_STOP] } }]);
+    conn.fp.delete(502);
+    expect(await startRun("ow", {}, ENG)).toMatchObject({ ok: false, reason: "scopeUnverified" });
+    expect(fake.store.get("orchestration_runs") ?? []).toHaveLength(0);
+    // the same undecidable row in ANOTHER namespace cannot outrank the visible global one ⇒ the global X starts
+    (wfRows().find((w) => w.id === 995) as Row).scopeKey = "f:9";
+    const r = await startRun("ow", {}, ENG);
+    expect((fake.store.get("orchestration_runs") as Row[]).find((x) => x.id === r.runId)!.workflowId).toBe(g.workflowId);
+  });
+
+  it("★ final wave F9 (N5) — deploy with a STALE targetWorkflowId while the own namespace holds the ref ⇒ refTargetStale (not 'retry')", async () => {
+    const mine = await deployWorkflow(def("st", [A_START]), ENG);
+    expect(mine).toMatchObject({ ok: true, ref: "st" });
+    const stale = await deployWorkflow(def("st", [A_START]), ENG, { targetWorkflowId: 4242 }); // gone / never visible
+    expect(stale).toMatchObject({ ok: false, reason: "refTargetStale" });
+    expect(String(stale.message)).not.toMatch(/retry/i);
+    // the own row named by id ⇒ updated as before
+    expect(await deployWorkflow(def("st", [A_START]), ENG, { targetWorkflowId: mine.workflowId })).toMatchObject({ ok: true, version: 2 });
   });
 
   it("★ M-2: a concurrent create (unique (ref, scope) violation) ⇒ refConflict, never the database text", async () => {

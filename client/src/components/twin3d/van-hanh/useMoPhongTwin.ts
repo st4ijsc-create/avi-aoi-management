@@ -136,13 +136,18 @@ export function useMoPhongTwin({
    *   và trang truyền `null` xuống ngăn để nó ẩn cả mục — `null` khác `[]` (có
    *   quyền mà chưa có workflow nào, câu đó phải nói ra).
    */
-  const [workflowRef, datWorkflowRef] = useState<string | null>(null);
+  /*
+   * doc 81 Đợt 7 final wave F9 (I re-review N4) — the picker chooses a WORKFLOW (id + ref), not a ref: since mig 0367 several
+   * workflows the user can see may share a ref (factory namespaces); `workflowId` pins the server's resolution to the one picked.
+   */
+  const [workflowChon, datWorkflowChon] = useState<{ id: number; ref: string } | null>(null);
+  const workflowRef = workflowChon?.ref ?? null;
   const dsWorkflowQ = trpc.orchestration.listWorkflows.useQuery(
     { limit: 50 },
     { enabled: coQuyenXemQuyTrinh, retry: false, refetchOnWindowFocus: false },
   );
   const phatLaiQ = trpc.orchestration.simulate.useQuery(
-    { workflowRef: workflowRef ?? "", params: {} },
+    { workflowRef: workflowRef ?? "", workflowId: workflowChon?.id, params: {} },
     { enabled: coQuyenXemQuyTrinh && workflowRef !== null, retry: false, refetchOnWindowFocus: false },
   );
 
@@ -153,6 +158,7 @@ export function useMoPhongTwin({
     daBamChay,
     datDaBamChay,
     workflowRef,
-    datWorkflowRef,
+    workflowId: workflowChon?.id ?? null,
+    datWorkflowChon,
   };
 }

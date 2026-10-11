@@ -369,6 +369,14 @@ async function startingPrincipal(startedBy: number | null | undefined): Promise<
 /** Minimal shape of an assigned run row the edge runtime needs. */
 export interface AssignedRun {
   id: number;
+  /**
+   * doc 81 Đợt 7 final wave F2 — the CENTRAL run's workflow id (orchestration_runs.workflowId). Since mig 0367 several
+   * workflows may share a ref (factory namespaces): the edge starts EXACTLY this workflow (startRun `workflowId` pin — a row
+   * with another id, or another ref, is "not found"), never the one the starter's view would pick for the plain ref.
+   * Absent / invalid ⇒ the run is NOT started on the edge (fail-closed). Whether ids match on an edge with its own DB is
+   * decided when the edge host is wired (until then a mismatch is a refusal, never a different definition).
+   */
+  workflowId?: number | null;
   workflowRef?: string | null;
   paramsJson?: Record<string, unknown> | null;
   startedBy?: number | null;
@@ -397,6 +405,13 @@ export async function executeAssignedRun(run: AssignedRun): Promise<ExecuteAssig
     let status: string | undefined;
     let localRunId: number | undefined;
     if (run.workflowRef && foeEnabled()) {
+      // doc 81 Đợt 7 final wave F2 — by the central workflow ID, never by the plain ref; none ⇒ not started (fail-closed).
+      const workflowId = run.workflowId;
+      if (typeof workflowId !== "number" || !Number.isInteger(workflowId) || workflowId <= 0) {
+        const message = `Run ${run.id} carries no central workflow id — not started on the edge (a plain ref may resolve to another workflow).`;
+        await bufferPayload(minimalPayload(run.id, "failed", message)).catch(() => undefined);
+        return { ok: false, enabled: true, runId: run.id, status: "failed", buffered: true, message };
+      }
       // final wave F4 — started AS the real starting principal (its real role ⇒ its real scope), never an anonymous "edge"
       // role; none ⇒ not started (fail-closed), recorded as a failed run below.
       const principal = await startingPrincipal(run.startedBy);
@@ -410,6 +425,7 @@ export async function executeAssignedRun(run: AssignedRun): Promise<ExecuteAssig
       const watch: { stop: (() => Promise<void>) | null } = { stop: null };
       try {
         const res = await startRun(run.workflowRef, (run.paramsJson ?? {}) as Record<string, unknown>, user, {
+          workflowId, // final wave F2 — exactly the central run's workflow
           onStarted: (id: number) => {
             localRunId = id;
             localRunOf.set(run.id, id);

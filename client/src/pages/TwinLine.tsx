@@ -862,7 +862,7 @@ export function ThanManLine({
    *   #35, không bắn truy vấn, `nganXuLyLogic.ts:102-111`).
    */
   const coQuyenXemQuyTrinh = hasPermission("machine_monitoring", "canView");
-  const { whatIfQ, dsWorkflowQ, phatLaiQ, daBamChay, datDaBamChay, workflowRef, datWorkflowRef } =
+  const { whatIfQ, dsWorkflowQ, phatLaiQ, daBamChay, datDaBamChay, workflowRef, workflowId, datWorkflowChon } =
     useMoPhongTwin({ dungWhatIf, coQuyenXemQuyTrinh, lineDangXem: lineId, horizonHours, heSoCycle });
 
   /** Tên trạm theo id — để bảng what-if không chỉ in `#7`. */
@@ -1334,7 +1334,8 @@ export function ThanManLine({
                    chưa có quy trình nào — câu đó ngăn nói ra chứ không im lặng biến mất. */
               workflow={coQuyenXemQuyTrinh ? (dsWorkflowQ.data ?? []) : null}
               workflowRef={workflowRef}
-              onDoiWorkflow={datWorkflowRef}
+              workflowId={workflowId}
+              onDoiWorkflow={datWorkflowChon}
               phatLai={phatLaiQ.data}
               dangChayPhatLai={workflowRef !== null && phatLaiQ.isLoading}
             />

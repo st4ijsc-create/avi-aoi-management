@@ -28,7 +28,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { startRun, resumeRun, getRun, foeEnabled, type FoeUser, type GateDecision, type ResumeHooks } from "../foe/foeEngine";
-import { getQtBusinessSteps, findQtBusinessStep, type QtStepContext } from "./qtStepHandlers";
+import { getQtBusinessSteps, findQtBusinessStep, qtTemplateRefOfRun, type QtStepContext } from "./qtStepHandlers";
 
 /**
  * Final review fix #6 — resumeRun (doc 80 ORC-02/03) may THROW: CONFLICT when another approver /
@@ -177,7 +177,9 @@ export async function pumpQtRun(runId: number, user: FoeUser = QT_SYSTEM_USER): 
     const stepId = view.run.currentStepId ?? null;
     if (!stepId) return { ok: false, runId, status, notes, message: "run pause nhưng không có currentStepId" };
 
-    const handler = findQtBusinessStep(view.run.workflowRef ?? "", stepId);
+    // final wave F1 — handlers by the run's WORKFLOW ROW (the global QT template row), never by the ref string alone.
+    const tplRef = await qtTemplateRefOfRun(view.run);
+    const handler = tplRef ? findQtBusinessStep(tplRef, stepId) : null;
     if (!handler || handler.mode === "external" || !handler.run) {
       // Gate chờ ngoài (hoặc gate không thuộc registry — để cho người xử lý).
       return { ok: true, runId, status: "waiting_external", pausedStepId: stepId, notes };
@@ -214,7 +216,7 @@ export async function pumpQtRun(runId: number, user: FoeUser = QT_SYSTEM_USER): 
       runId,
       { approved: false, note: headline.slice(0, 1900), expectedStepId: stepId },
       user,
-      compensationHook(view.run.workflowRef ?? "", runId, params, stepId, headline, notes),
+      compensationHook(tplRef ?? "", runId, params, stepId, headline, notes),
     );
     if (!rejected) {
       const status = await currentStatus(runId);
@@ -282,11 +284,13 @@ export async function resolveQtGate(
 
   if (!decision.approved) {
     const headline = decision.note ?? `gate '${stepId}' bị từ chối`;
+    // final wave F1 — QT compensations only for a run of the global QT template row (a same-ref factory workflow gets none).
+    const tplRef = await qtTemplateRefOfRun(view.run);
     const rejected = await resumeUnlessClaimed(
       runId,
       { approved: false, note: headline.slice(0, 1900), expectedStepId },
       user,
-      compensationHook(view.run.workflowRef ?? "", runId, params, stepId, headline, notes),
+      compensationHook(tplRef ?? "", runId, params, stepId, headline, notes),
     );
     if (!rejected) {
       const current = await currentStatus(runId);

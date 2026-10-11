@@ -1599,6 +1599,8 @@ export default function OrchestrationStudio() {
         return t("studio.deployRefAmbiguous", "Not done: several workflows you can see use this ref (in different factory scopes). Open the workflow from the list, then deploy or run it from there.");
       case "refConflict": // doc 81 Đợt 7 I fix 1 — a concurrent create in your scope
         return t("studio.deployRefConflict", "Not deployed: a workflow with this ref was just created in your scope. Retry.");
+      case "refTargetStale": // doc 81 Đợt 7 final wave F9 (N5) — the opened workflow is gone / not visible; retrying cannot help
+        return t("studio.deployRefTargetStale", "Not deployed: the workflow you opened is no longer available under this ref (deleted or no longer visible to you), and your scope already has a workflow with this ref. Reload the list and open the workflow again, or use another ref.");
       case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
         return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
       default:
@@ -1619,7 +1621,10 @@ export default function OrchestrationStudio() {
       if (r && !r.ok && r.runId == null) {
         // doc 80 Đợt 1 Task 11 — khi lý do là TRẠNG THÁI WORKFLOW (draft/archived), dùng t()
         // thay vì hiện nguyên văn `message` tiếng Anh của server.
-        if (r.workflowStatus) {
+        if (r.reason === "scopeUnverified") {
+          // doc 81 Đợt 7 final wave F3 (R-7-d) — the starter's factory scope could not be verified: refused, retry.
+          toast.error(t("studio.scopeUnverified", "Scope not verified — retry. To stop equipment now, use the machine's direct STOP / E-STOP."));
+        } else if (r.workflowStatus) {
           toast.error(
             t(
               "studio.runNotDeployed",

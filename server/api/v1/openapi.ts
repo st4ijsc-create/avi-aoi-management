@@ -662,7 +662,9 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "Requires scope `orchestration:write` and a declared data scope. Body `{ workflowRef, params? }`. The plain " +
             "`workflowRef` is resolved within the key's view (its own namespace first, then `global`, then the single visible " +
             "workflow of that ref); a workflow outside the key's scope is answered like a missing one. A run started through an " +
-            "API key never sends OT / robot commands other than a STOP. `202 { runId, status, accepted }`.",
+            "API key never sends OT / robot commands other than a STOP. `202 { runId, status, accepted }`. When the key's factory " +
+            "scope cannot be verified at that moment the start is refused (`accepted: false`, no run) — retry; it never falls " +
+            "back to another namespace's workflow.",
           requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
           responses: {
             "202": { description: "Accepted: { runId, status, accepted } (accepted=false: refused / not found — see status)" },
@@ -677,13 +679,19 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           summary: "Digital-twin simulate a workflow WITHOUT dispatch (E3a)",
           description:
             "Requires scope `orchestration:read`. PURE + fail-safe, NOT flag-gated: predicts step order, " +
-            "duration and gates without touching any device. Body: `{ workflow | workflowRef, params?, " +
-            "assumedTelemetry?, commandDurations?, defaultCommandMs?, gateMs? }`.",
+            "duration and gates without touching any device. Body: `{ workflow | workflowRef, workflowId?, params?, " +
+            "assumedTelemetry?, commandDurations?, defaultCommandMs?, gateMs? }`. `workflowRef` is resolved within the key's " +
+            "view; `workflowId` pins it to that workflow (several visible workflows may share a ref). `409 ref_ambiguous` (pass " +
+            "`workflowId`), `503 scope_unverified` (the key's factory scope could not be verified — retry).",
           requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
           responses: {
             "200": { description: "Simulation result", content: jsonOk() },
             "400": { description: "Neither workflow nor workflowRef supplied", content: jsonErr() },
-            ...errResponses({ "404": { description: "workflowRef not found", content: jsonErr() } }),
+            ...errResponses({
+              "404": { description: "workflowRef not found", content: jsonErr() },
+              "409": { description: "ref_ambiguous — several visible workflows share workflowRef (pass workflowId)", content: jsonErr() },
+              "503": { description: "scope_unverified — the key's factory scope could not be verified (retry)", content: jsonErr() },
+            }),
           },
         },
       },

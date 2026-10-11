@@ -596,6 +596,8 @@ export function createV1Router(): Router {
       const body = (req.body ?? {}) as {
         workflow?: unknown;
         workflowRef?: string;
+        /** final wave F9 (I re-review N4) — pins `workflowRef` to this workflow (several visible ones may share the ref). */
+        workflowId?: unknown;
         params?: Record<string, unknown>;
         assumedTelemetry?: Record<string, Record<string, unknown>>;
         commandDurations?: Record<string, number>;
@@ -617,8 +619,17 @@ export function createV1Router(): Router {
         // stored workflow outside the key's scope ⇒ the SAME 404 as a missing ref.
         const { definitionVisibleTo, resolveWorkflowByRef } = await import("../../services/orchestration/foe/foeEngine");
         const { workflowScopeKeyOf } = await import("../../services/orchestration/foe/foeScope");
+        if (body.workflowId !== undefined && !(typeof body.workflowId === "number" && Number.isInteger(body.workflowId) && body.workflowId > 0)) {
+          throw new ApiHttpError(400, "bad_request", "`workflowId` must be a positive integer.");
+        }
         const nsKey = await workflowScopeKeyOf(orchestrationScopeOf(req.apiPrincipal?.tenantScope)).catch(() => null);
-        const found = await resolveWorkflowByRef(d, body.workflowRef, orchestrationScopeOf(req.apiPrincipal?.tenantScope), nsKey);
+        const found = await resolveWorkflowByRef(d, body.workflowRef, orchestrationScopeOf(req.apiPrincipal?.tenantScope), nsKey, {
+          workflowId: body.workflowId as number | undefined,
+        });
+        // final wave F3 (R-7-d) — the key's namespace / view could not be decided ⇒ refused (retry), never a fallback workflow.
+        if (found.kind === "unverified") {
+          throw new ApiHttpError(503, "scope_unverified", "The key's factory scope could not be verified — retry.");
+        }
         if (found.kind === "ambiguous") {
           throw new ApiHttpError(409, "ref_ambiguous", `Several workflows visible to this key use the ref "${body.workflowRef}".`);
         }
