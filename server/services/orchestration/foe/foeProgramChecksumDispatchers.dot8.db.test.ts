@@ -1,0 +1,282 @@
+/**
+ * doc 81 Đợt 8 tasks O2 + O4 — BOTH dispatchers (real code, real `_test` DB) check the controller program checksum of
+ * the run they consume an approval of: the OT dispatcher (commandDispatcher.reserveRealWrite) and the robot dispatcher
+ * (robotCommandDispatcher.reserveRobotJob) each call foeApprovalDbRefusal inside their reservation transaction, which
+ * recomputes the binding digest WITH the program checksum read from the live driver.
+ *
+ * Device = the REAL simulation driver (StubDriver, simulated program "abc") as the adapter's live driver; its writes are
+ * counted by a thin wrapper (independent oracle: how many times the device was written). Robot = an in-process fake
+ * counting runJob. Safety-PLC source = the same fake "real PLC reads clean" as the other dispatcher DB suites.
+ * Program changed / unreadable after the approval ⇒ NOT_CONFIRMED, 0 device writes / 0 robot jobs, action still
+ * 'confirmed' (not consumed).
+ */
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { and, eq, like } from "drizzle-orm";
+import postgres from "postgres";
+
+const h = vi.hoisted(() => ({ drivers: new Map<number, unknown>(), robotId: 990_800_000 + (Date.now() % 9_000), runJobCalls: 0 }));
+
+vi.mock("../../robot/robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
+vi.mock("../../robot/robotManager", () => ({
+  getActiveRobot: (id: number) =>
+    id === h.robotId
+      ? {
+          driver: {
+            vendor: "sim",
+            isConnected: () => true,
+            runJob: async () => {
+              h.runJobCalls++;
+              return { ok: true, status: "done", detail: { fake: true } };
+            },
+            abort: async () => undefined,
+            health: async () => ({ vendor: "sim", connected: true }),
+          },
+        }
+      : undefined,
+}));
+vi.mock("../../safety/plc/safetyPlcAdapter", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../safety/plc/safetyPlcAdapter")>();
+  return {
+    ...orig,
+    safetyPlcAdapterEnabled: () => true,
+    listPlcConfigs: async () => [{ code: "O8-SPLC", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } }],
+    backendForConfig: () => ({
+      kind: "modbus" as const,
+      label: () => "fake real PLC",
+      read: async () => ({ estop: false }),
+      readChecked: async () => ({ status: { estop: false }, unreadable: [] }),
+    }),
+  };
+});
+vi.mock("../../ot/otManager", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../ot/otManager")>();
+  return { ...orig, getActiveDriver: (id: number) => h.drivers.get(id) as ReturnType<typeof orig.getActiveDriver> };
+});
+
+import { getDb } from "../../../db/connection";
+import { aiPendingActions } from "../../../../drizzle/schema";
+import { StubDriver } from "../../ot/drivers/stubDriver";
+import { makeFoeGateRun, type FoeGateRunFixture } from "./__foeGateRunFixture";
+
+const DB_URL = process.env.DATABASE_URL;
+const DAU = `O8DB-${Date.now()}`;
+const OWNER = 990_800_101;
+const OTHER = 990_800_102;
+const ENV_KEYS = [
+  "OT_CONTROL_ENABLED",
+  "OT_COMMISSIONING_REQUIRED",
+  "OT_SAFETY_PREFLIGHT_ENABLED",
+  "OT_READBACK_ENABLED",
+  "OT_CMD_SERIALIZE_ENABLED",
+  "SEC_PLATFORM",
+  "UNS_CMD_ACK_ENABLED",
+  "PARAM_GUARDRAIL_ENABLED",
+  "ROBOT_CONTROL_ENABLED",
+  "ROBOT_COMMISSIONING_REQUIRED",
+  "ROBOT_CONTROL_TIMEOUT_MS",
+  "FIELD_V2_ENABLED",
+  "ROBOT_SAFETY_PREFLIGHT_ENABLED",
+] as const;
+const saved: Record<string, string | undefined> = {};
+const fixtures: FoeGateRunFixture[] = [];
+const ids: Record<string, number> = {};
+let sql: ReturnType<typeof postgres> | null = null;
+let sim: StubDriver;
+let writeCalls = 0;
+let seq = 0;
+
+async function d() {
+  const x = await getDb();
+  if (!x) throw new Error("no db");
+  return x;
+}
+/** The command_log refusal text of an OT result (independent read of the WORM ledger). */
+async function otErrorText(res: unknown): Promise<string> {
+  const ids = ((res as { detail?: { commandLogIds?: number[] } }).detail?.commandLogIds ?? []).map(Number);
+  if (!sql || ids.length === 0) return "";
+  const rows = await sql`SELECT "errorText" FROM command_log WHERE id IN ${sql(ids)}`;
+  return rows.map((r) => String(r.errorText ?? "")).join(" | ");
+}
+/** The robot_jobs refusal text of a robot result. */
+async function robotErrorText(r: unknown): Promise<string> {
+  const jobId = (r as { jobId?: number }).jobId;
+  if (!sql || !jobId) return "";
+  const rows = await sql`SELECT "errorText" FROM robot_jobs WHERE id = ${jobId}`;
+  return String(rows[0]?.errorText ?? "");
+}
+async function pendingStatus(id: string) {
+  const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, id)).limit(1);
+  return row?.status;
+}
+/** A real run (owner OWNER) whose gate OTHER approved via the server path, with an OT step on the sim adapter. */
+async function approvedRun(tag: string) {
+  const fx = await makeFoeGateRun({
+    tag: `${DAU}-${tag}`,
+    owner: OWNER,
+    approvedBy: OTHER,
+    steps: [{ id: "w", type: "command", machineId: ids.machine, command: "set_param", args: { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 } }],
+  });
+  fixtures.push(fx);
+  return fx;
+}
+
+async function sendOt(fx: FoeGateRunFixture) {
+  const { buildEquipmentCommand, ensureOrchestrationAction } = await import("./foeEngine");
+  const { equipmentRegistry } = await import("../../equipment/equipmentAdapter");
+  const user = { id: OWNER, role: "engineer" } as never;
+  const key = `${DAU}-ot${++seq}-s1-a1`;
+  const args = { adapterId: ids.adapter, tagKey: "speed_sp", value: 7 };
+  const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
+  const cap = { adapterKind: "ot-stub" } as never;
+  const approval = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
+  const cmd = buildEquipmentCommand(descriptor, cap, ids.machine, args, key, user, approval);
+  await ensureOrchestrationAction(user, key, { id: `s${seq}`, type: "command" } as never, args, cmd, approval);
+  const res = await equipmentRegistry.getAdapter("ot-stub").sendCommand(cmd);
+  return { res, actionId: cmd.hitl!.actionId };
+}
+
+async function sendRobot(fx: FoeGateRunFixture) {
+  const { ensureOrchestrationAction } = await import("./foeEngine");
+  const { toRobotJob } = await import("../../equipment/robotJobMapping");
+  const { dispatchRobotJob } = await import("../../robot/robotCommandDispatcher");
+  const key = `${DAU}-rb${++seq}`;
+  const cmd = { name: "home", robotId: h.robotId, machineId: null, idempotencyKey: key, hitl: { actionId: "x", requestedBy: OWNER, confirmedBy: OTHER } };
+  const approval = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER, gateStepId: "g0" };
+  await ensureOrchestrationAction({ id: OWNER, role: "engineer", name: "t" }, key, { id: `s-${key}`, type: "command" } as never, {}, cmd as never, approval);
+  const actionId = `foe-${key}`.slice(0, 64);
+  const r = await dispatchRobotJob({ robotId: h.robotId, job: toRobotJob(cmd as never), triggerKind: "hitl", actionId, requestedBy: OWNER, confirmedBy: OTHER, idempotencyKey: key });
+  return { r, actionId };
+}
+
+describe.skipIf(!DB_URL)("doc 81 Đợt 8 O2/O4 — both dispatchers check the controller program checksum (CSDL _test, sim driver)", () => {
+  beforeAll(async () => {
+    expect(DB_URL).toMatch(/_test/); // never the dev DB
+    for (const k of ENV_KEYS) saved[k] = process.env[k];
+    // warm the dynamic imports the dispatchers make inside their 5 s preflight deadline (as the other dispatcher suites do)
+    await import("../../ot/adapterFacade");
+    await import("../../ot/safetyTarget");
+    await import("../../safety/plc/safetyPlcAdapter");
+    sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+    ids.factory = await one(sql`INSERT INTO factories (code, name, "isActive") VALUES (${"F-" + DAU}, 'O8 factory', true) RETURNING id`);
+    ids.workshop = await one(sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${ids.factory}, ${"W-" + DAU}, 'O8 ws') RETURNING id`);
+    ids.line = await one(sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${ids.workshop}, ${"L-" + DAU}, 'O8 line') RETURNING id`);
+    ids.station = await one(sql`INSERT INTO stations ("lineId", code, name) VALUES (${ids.line}, ${"S-" + DAU}, 'O8 st') RETURNING id`);
+    ids.machine = await one(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${ids.station}, ${"M-" + DAU}, 'O8 m', 'AOI', true) RETURNING id`);
+    ids.adapter = await one(
+      sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId", "connectionOptions") VALUES (${"A-" + DAU}, 'O8 sim adapter', 'stub', 'stub://o8', true, ${ids.machine}, ${sql.json({ simProgram: "abc" })}) RETURNING id`,
+    );
+    await sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable) VALUES (${ids.adapter}, 'speed_sp', 'D100', 'int', true)`;
+  }, 60_000);
+
+  afterAll(async () => {
+    h.drivers.clear();
+    for (const f of fixtures.splice(0)) await f.cleanup();
+    const x = await d();
+    await x.delete(aiPendingActions).where(like(aiPendingActions.id, `foe-${DAU}%`));
+    await x.delete(aiPendingActions).where(and(eq(aiPendingActions.userId, OTHER), like(aiPendingActions.summary, "FOE orchestration:%")));
+    if (sql) {
+      await sql`DELETE FROM robot_jobs WHERE "robotId" = ${h.robotId}`.catch(() => undefined);
+      if (ids.adapter) {
+        await sql`DELETE FROM device_tags WHERE "adapterId" = ${ids.adapter}`;
+        await sql`DELETE FROM device_adapters WHERE id = ${ids.adapter}`;
+      }
+      if (ids.machine) await sql`DELETE FROM machines WHERE id = ${ids.machine}`;
+      if (ids.station) await sql`DELETE FROM stations WHERE id = ${ids.station}`;
+      if (ids.line) await sql`DELETE FROM production_lines WHERE id = ${ids.line}`;
+      if (ids.workshop) await sql`DELETE FROM workshops WHERE id = ${ids.workshop}`;
+      if (ids.factory) await sql`DELETE FROM factories WHERE id = ${ids.factory}`;
+      await sql.end();
+    }
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }, 60_000);
+
+  beforeEach(async () => {
+    sim = new StubDriver();
+    await sim.connect({ endpoint: "stub://o8", options: { simProgram: "abc" } });
+    writeCalls = 0;
+    h.runJobCalls = 0;
+    // the adapter's live driver: the sim's checksum, writes counted (the sim's own writeTags is disabled by design)
+    h.drivers.set(ids.adapter, {
+      protocol: "stub",
+      isConnected: () => true,
+      readProgramChecksum: () => sim.readProgramChecksum(),
+      async writeTags(writes: Array<{ tagKey: string }>) {
+        writeCalls++;
+        return writes.map((w) => ({ tagKey: w.tagKey, ok: true }));
+      },
+      async readTags() {
+        return [];
+      },
+    });
+    process.env.OT_CONTROL_ENABLED = "true";
+    process.env.OT_COMMISSIONING_REQUIRED = "false";
+    delete process.env.OT_SAFETY_PREFLIGHT_ENABLED;
+    delete process.env.OT_READBACK_ENABLED;
+    delete process.env.OT_CMD_SERIALIZE_ENABLED;
+    delete process.env.SEC_PLATFORM;
+    delete process.env.UNS_CMD_ACK_ENABLED;
+    delete process.env.PARAM_GUARDRAIL_ENABLED;
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    delete process.env.FIELD_V2_ENABLED;
+    delete process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED;
+  });
+
+  it("control: program unchanged ⇒ OT dispatcher writes once; robot dispatcher runs once", async () => {
+    const fx = await approvedRun("c0");
+    const ot = await sendOt(fx);
+    expect(ot.res.ok).toBe(true);
+    expect(writeCalls).toBe(1);
+    expect(await pendingStatus(ot.actionId)).toBe("executed");
+    const rb = await sendRobot(fx);
+    expect(rb.r.status).toBe("done");
+    expect(h.runJobCalls).toBe(1);
+  });
+
+  it("★ O4 OT dispatcher: the PLC program changed after the approval ⇒ NOT_CONFIRMED (staleApproval), 0 writes, action not consumed", async () => {
+    const fx = await approvedRun("otchg");
+    sim.simLoadProgram("abc (edited on the controller)");
+    const ot = await sendOt(fx);
+    expect(ot.res.ok).toBe(false);
+    expect(JSON.stringify(ot.res)).toMatch(/NOT_CONFIRMED/);
+    expect(await otErrorText(ot.res)).toMatch(/^NOT_CONFIRMED: .*FOE_GATE_REQUIRED staleApproval/);
+    expect(writeCalls).toBe(0);
+    expect(await pendingStatus(ot.actionId)).toBe("confirmed");
+  });
+
+  it("★ O4 robot dispatcher: the same run's PLC program changed ⇒ NOT_CONFIRMED, 0 robot jobs, action not consumed", async () => {
+    const fx = await approvedRun("rbchg");
+    sim.simLoadProgram("another program");
+    const rb = await sendRobot(fx);
+    expect(rb.r).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+    expect(await robotErrorText(rb.r)).toMatch(/staleApproval/);
+    expect(h.runJobCalls).toBe(0);
+    expect(await pendingStatus(rb.actionId)).toBe("confirmed");
+  });
+
+  for (const [what, breakIt] of [
+    ["read error", () => sim.simSetProgramReadFault("error")],
+    ["no answer (hang)", () => sim.simSetProgramReadFault("hang")],
+  ] as const) {
+    it(`★ O4 FAIL CLOSED (${what}) on the supported adapter ⇒ both dispatchers refuse, bounded, nothing sent`, async () => {
+      const fx = await approvedRun(`rf${what.length}`);
+      breakIt();
+      const t0 = Date.now();
+      const ot = await sendOt(fx);
+      expect(ot.res.ok).toBe(false);
+      expect(await otErrorText(ot.res)).toMatch(/FOE_GATE_REQUIRED programUnreadable/);
+      expect(writeCalls).toBe(0);
+      expect(await pendingStatus(ot.actionId)).toBe("confirmed");
+      const rb = await sendRobot(fx);
+      expect(rb.r).toMatchObject({ status: "rejected", error: "NOT_CONFIRMED" });
+      expect(await robotErrorText(rb.r)).toMatch(/programUnreadable/);
+      expect(h.runJobCalls).toBe(0);
+      expect(Date.now() - t0).toBeLessThan(10_000); // two reads, each ≤ 1000 ms, inside each reservation
+    });
+  }
+});
