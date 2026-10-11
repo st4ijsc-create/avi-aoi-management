@@ -45,7 +45,12 @@ export function isRealPlcBackend(cfg: Pick<SafetyPlcConfig, "backend">): boolean
   return cfg.backend === "modbus" || cfg.backend === "opcua";
 }
 
-/** The trust-relevant content of a config, in a FIXED order (defaults normalised: same meaning ⇒ same digest). */
+/**
+ * The trust-relevant content of a config, in a FIXED order (defaults normalised: same meaning ⇒ same digest).
+ * doc 81 Đợt 9 U2 — the optional e-stop LATCH tag is part of it: when mapped, one more element is APPENDED (so a config
+ * without a latch keeps the digest it had — existing approvals stay valid — while adding, changing or removing a latch
+ * changes the digest ⇒ the approval no longer matches ⇒ a second person must approve again).
+ */
 export function plcTrustMaterial(cfg: Pick<SafetyPlcConfig, "backend" | "endpoint" | "statusMap" | "robotId" | "stationId" | "lineId" | "factoryId" | "scope" | "corporateCode" | "enabled">) {
   const map = (cfg.statusMap ?? {}) as SafetyPlcStatusMap;
   const tags = TAG_FLAGS.map((f) => {
@@ -64,6 +69,7 @@ export function plcTrustMaterial(cfg: Pick<SafetyPlcConfig, "backend" | "endpoin
     cfg.scope ?? null,
     cfg.corporateCode ?? null,
     cfg.enabled === true,
+    ...(map.estopLatch?.address ? [["estopLatch", String(map.estopLatch.address), map.estopLatch.dataType ?? "bool", map.estopLatch.activeWhen ?? "truthy"]] : []),
   ];
 }
 
@@ -512,7 +518,7 @@ export async function listPlcTrust(scope: PlcScope, viewer: { id: number; isAdmi
       firstApprovedBy: firstInForce ? (r?.firstApprovedBy ?? null) : null,
       endpoint: viewer.isAdmin ? (c.endpoint ?? null) : null,
       tags: viewer.isAdmin
-        ? TAG_FLAGS.map((f) => ({ flag: f, address: map[f]?.address ?? null, dataType: map[f]?.address ? (map[f]?.dataType ?? "bool") : null, activeWhen: map[f]?.address ? (map[f]?.activeWhen ?? "truthy") : null }))
+        ? [...TAG_FLAGS, "estopLatch" as const].map((f) => ({ flag: f, address: map[f]?.address ?? null, dataType: map[f]?.address ? (map[f]?.dataType ?? "bool") : null, activeWhen: map[f]?.address ? (map[f]?.activeWhen ?? "truthy") : null })) // Đợt 9 U2: the approver sees the latch tag too
         : null,
     });
   }

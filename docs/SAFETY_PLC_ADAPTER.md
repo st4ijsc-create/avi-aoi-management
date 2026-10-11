@@ -87,3 +87,67 @@ skeletons) get registered and `SAFETY_ESTOP_ADAPTER_ENABLED` considered for ON.
 | --- | --- | --- |
 | `SAFETY_ESTOP_ADAPTER_ENABLED` | **OFF** | Arms the TRIGGER entry (`requestEmergencyStop`). OFF → absolute no-op. |
 | `SAFETY_PLC_ADAPTER_ENABLED` | **OFF** | Arms the READ-ONLY status observer (separate concern; enabling monitoring must not "arm" actuation). |
+
+## 6. Background poller — short e-stop presses (doc 81 Đợt 9 Group U)
+
+The background poller (`SAFETY_PLC_POLLER_ENABLED`, `server/services/safety/plc/safetyPlcPoller.ts`) only **observes**
+the safety PLC's non-safety-rated status and records advisory events. It never writes to the PLC. A plain poll cannot
+see an e-stop that is pressed **and** released between two reads. Two features close that gap.
+
+### 6.1 Modbus: the e-stop latch bit (U2)
+
+Add an optional latch tag to the config, e.g. `statusMap.estopLatch = { "address": "coil:3" }`.
+
+- **PLC side.** The PLC program **sets** the latch bit on every e-stop press. It **holds** the bit until the PLC
+  program or an operator clears it.
+- **Server side.** The poller **reads** the latch on every poll and never clears it (the poller stays read-only).
+- **Press never seen live.** If the latch rises and the live e-stop tag was never seen pressed, the press happened
+  between two reads. The poller then records `estop` (transition `latched`). If the live tag now reads released, it
+  also records `estop_released`.
+- **Press already seen live.** A press the poller has already seen live adds nothing.
+- **Latch unreadable.** An unreadable latch makes the PLC `plc_offline`. It is never read as "not latched".
+- **Approval.** The latch tag is part of the maker-checker approval digest. Adding, changing or removing it clears the
+  approval, so a second person must approve again.
+- **Preflight.** The latch is **not** used by the actuation preflight, which judges the live e-stop tag only.
+- **Clearing.** Clearing the latch is a PLC-side or operator action. A latch that is cleared and set again before the
+  next poll counts as one press, so keep it set long enough (see `T_HOLD` below).
+
+Sample latch program, IEC 61131-3 Structured Text. Map `ESTOP_LATCH` to the Modbus coil named in
+`statusMap.estopLatch`.
+
+```iecst
+(* E-stop latch for the monitoring system. NON-safety-rated: the rated stop is done by the safety program itself.
+   ESTOP_OK   : the e-stop circuit status (TRUE = not pressed), as already mapped for statusMap.estop (activeWhen falsy)
+   LATCH_RST  : operator reset (HMI button / key switch) — never written by the monitoring server
+   ESTOP_LATCH: the coil the poller reads (statusMap.estopLatch)                                                    *)
+VAR
+  ESTOP_OK    : BOOL;
+  LATCH_RST   : BOOL;
+  ESTOP_LATCH : BOOL;
+  HoldTimer   : TON;
+END_VAR
+VAR CONSTANT
+  T_HOLD : TIME := T#3S;   (* >= 2 x the poller interval (statusMap.pollIntervalMs) + one read timeout *)
+END_VAR
+
+IF NOT ESTOP_OK THEN
+  ESTOP_LATCH := TRUE;                    (* set on every press, however short *)
+END_IF;
+HoldTimer(IN := ESTOP_LATCH, PT := T_HOLD);
+IF LATCH_RST AND ESTOP_OK AND HoldTimer.Q THEN
+  ESTOP_LATCH := FALSE;                   (* cleared only by the operator, only after T_HOLD, only when released *)
+END_IF;
+```
+
+The same logic in ladder:
+
+```text
+|  ESTOP_OK                                   ESTOP_LATCH |
+|----|/|---------------------------------------(S)--------|
+|  ESTOP_LATCH                  +--TON HoldTimer--+       |
+|----| |------------------------|IN            Q |-------|
+|                       T_HOLD -|PT              |       |
+|  LATCH_RST   ESTOP_OK   HoldTimer.Q          ESTOP_LATCH|
+|----| |---------| |--------| |------------------(R)------|
+```
+

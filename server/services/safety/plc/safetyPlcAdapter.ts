@@ -109,6 +109,11 @@ export interface SafetyPlcCheckedRead {
   status: SafetyPlcStatusSnapshot;
   /** Mapped safety flags whose tag came back missing or with quality ≠ "good" (unknown, not clear). */
   unreadable: Array<keyof SafetyPlcStatusSnapshot>;
+  /**
+   * doc 81 Đợt 9 U2 — ONLY when asked (`readChecked({ withLatch: true })`, the background poller) and the config maps an
+   * e-stop latch tag: its decided value, or `unreadable`. The actuation preflight never asks (it judges the live tags).
+   */
+  latch?: { estopLatch?: boolean; unreadable: boolean };
 }
 
 /** A pluggable status source. Returns the CURRENT observed status snapshot. */
@@ -121,7 +126,7 @@ export interface SafetyPlcBackendReader {
    * not be read with good quality. The real-actuation preflight REQUIRES it for a `real` config
    * (absent ⇒ that config cannot vouch "clean").
    */
-  readChecked?(): Promise<SafetyPlcCheckedRead>;
+  readChecked?(opts?: { withLatch?: boolean }): Promise<SafetyPlcCheckedRead>;
   /** Human-readable label — always states whether this is sim or a real endpoint. */
   label(): string;
 }
@@ -156,15 +161,15 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
   readonly kind: "modbus" | "opcua";
   constructor(
     kind: "modbus" | "opcua",
-    private readonly endpoint: string,
-    private readonly statusMap: SafetyPlcStatusMap,
-    private readonly timeoutMs = 5000,
+    protected readonly endpoint: string,
+    protected readonly statusMap: SafetyPlcStatusMap,
+    protected readonly timeoutMs = 5000,
   ) {
     this.kind = kind;
   }
 
   /** Build the (flag → OT tag) read list from the statusMap. */
-  private tagList(): Array<{ flag: keyof SafetyPlcStatusSnapshot; tag: OtTagAddress }> {
+  protected tagList(): Array<{ flag: keyof SafetyPlcStatusSnapshot; tag: OtTagAddress }> {
     const flags: Array<keyof SafetyPlcStatusSnapshot> = ["estop", "zoneOccupied", "resetRequired", "muting"];
     const out: Array<{ flag: keyof SafetyPlcStatusSnapshot; tag: OtTagAddress }> = [];
     for (const flag of flags) {
@@ -193,13 +198,20 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
    * (advisory path unchanged); the real-actuation preflight uses `unreadable` so a bad-quality
    * safety tag makes this config UNKNOWN instead of "clean" (it used to count as OK).
    */
-  async readChecked(): Promise<SafetyPlcCheckedRead> {
+  /** doc 81 Đợt 9 U2 — the e-stop latch tag (READ only), when the config maps one. */
+  protected latchTag(): OtTagAddress | null {
+    const ref = this.statusMap.estopLatch;
+    return ref?.address ? { tagKey: "estopLatch", address: ref.address, dataType: ref.dataType ?? "bool" } : null;
+  }
+
+  async readChecked(opts: { withLatch?: boolean } = {}): Promise<SafetyPlcCheckedRead> {
     const tags = this.tagList();
-    if (tags.length === 0) return { status: {}, unreadable: [] }; // nothing mapped → nothing to observe
+    const latch = opts.withLatch ? this.latchTag() : null;
+    if (tags.length === 0 && !latch) return { status: {}, unreadable: [] }; // nothing mapped → nothing to observe
     const driver = createDriver(this.kind as OtProtocol);
     await driver.connect({ endpoint: this.endpoint, timeoutMs: this.timeoutMs });
     try {
-      const samples = await driver.readTags(tags.map((t) => t.tag));
+      const samples = await driver.readTags([...tags.map((t) => t.tag), ...(latch ? [latch] : [])]);
       const byKey = new Map(samples.map((s) => [s.tagKey, s]));
       const snap: SafetyPlcStatusSnapshot = {};
       const unreadable: Array<keyof SafetyPlcStatusSnapshot> = [];
@@ -219,6 +231,7 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
         }
         snap[flag] = ref?.activeWhen === "falsy" ? !truthy : truthy;
       }
+      if (latch) return { status: snap, unreadable, latch: decideLatch(this.statusMap, byKey.get("estopLatch")) };
       return { status: snap, unreadable };
     } finally {
       await driver.disconnect().catch(() => undefined);
@@ -228,6 +241,16 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
   label(): string {
     return `real ${this.kind} read @ ${this.endpoint} (READ-ONLY)`;
   }
+}
+
+/**
+ * doc 81 Đợt 9 U2 — the e-stop latch from its sample: missing / bad quality / unparseable ⇒ UNREADABLE (never "not latched").
+ */
+export function decideLatch(map: SafetyPlcStatusMap, s: { quality?: string; value?: unknown } | undefined): { estopLatch?: boolean; unreadable: boolean } {
+  if (!s || s.quality !== "good") return { unreadable: true };
+  const v = strictBool(s.value);
+  if (v === undefined) return { unreadable: true };
+  return { estopLatch: map.estopLatch?.activeWhen === "falsy" ? !v : v, unreadable: false };
 }
 
 /**

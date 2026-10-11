@@ -857,6 +857,8 @@ export const safetyRouter = router({
             zoneOccupied: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
             resetRequired: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
             muting: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
+            /** doc 81 Đợt 9 U2 — optional e-stop LATCH bit (set by the PLC program on a press, cleared PLC-side / by an operator; READ only). */
+            estopLatch: z.object({ address: z.string().max(256).optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
             simScript: z.array(plcStatusSnapshotSchema).optional(),
             /** doc 81 Đợt 8 N1 — background poller period (ms) for this config; the poller also clamps it. */
             pollIntervalMs: z.number().int().min(250).max(60_000).optional(),

@@ -43,6 +43,7 @@ import {
   listPlcConfigs,
   loadEnabledPlcConfig,
   type SafetyPlcBackendReader,
+  type SafetyPlcCheckedRead,
 } from "./safetyPlcAdapter";
 import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEventInput, type RecordResult, type SafetyEventType } from "../safetyAuditService";
 import { isPlcConfigTrustApproved, plcTrustMaterial, plcTrustDigest } from "./safetyPlcTrust";
@@ -74,6 +75,12 @@ export const SAFETY_PLC_ONLINE_CONFIRM_MAX = 32;
 
 export type PlcFlag = keyof SafetyPlcStatusSnapshot;
 export const PLC_FLAGS: readonly PlcFlag[] = ["estop", "zoneOccupied", "resetRequired", "muting"];
+/**
+ * doc 81 Đợt 9 U2 — what the poller tracks per config: the four status flags plus the optional e-stop LATCH bit (real
+ * backends that map statusMap.estopLatch). The latch is processed AFTER estop (order matters, see applyTransitions).
+ */
+export type PollFlag = PlcFlag | "estopLatch";
+export const POLL_FLAGS: readonly PollFlag[] = [...PLC_FLAGS, "estopLatch"];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -116,11 +123,11 @@ async function ensureOtDriversRegistered(): Promise<void> {
   await import("../../ot");
 }
 
-/** The flags a config actually monitors (sim: all four; real: those with a mapped tag address). */
-function monitoredFlags(cfg: SafetyPlcConfig): PlcFlag[] {
+/** The flags a config actually monitors (sim: all four; real: those with a mapped tag address, incl. the U2 latch). */
+function monitoredFlags(cfg: SafetyPlcConfig): PollFlag[] {
   if (cfg.backend === "sim") return [...PLC_FLAGS];
   const map = (cfg.statusMap ?? {}) as SafetyPlcStatusMap;
-  return PLC_FLAGS.filter((f) => typeof map[f]?.address === "string" && map[f]!.address!.length > 0);
+  return POLL_FLAGS.filter((f) => typeof map[f]?.address === "string" && map[f]!.address!.length > 0);
 }
 
 /**
@@ -160,7 +167,7 @@ const EVENT_NOTE: Partial<Record<SafetyEventType, string>> = {
 
 /** One read's outcome. `decided` maps each monitored flag to an observed value, or lists it as unreadable. */
 export type PollRead =
-  | { kind: "decided"; flags: Partial<Record<PlcFlag, boolean>>; unreadable: PlcFlag[] }
+  | { kind: "decided"; flags: Partial<Record<PollFlag, boolean>>; unreadable: PollFlag[] }
   | { kind: "undecidable"; reason: string };
 
 export interface PollerDeps {
@@ -199,7 +206,7 @@ interface QueuedEvent {
 /** fix scan 3 — the edge state (what transitions are computed against). */
 interface EdgeState {
   link: PollLink;
-  flags: Partial<Record<PlcFlag, boolean>>;
+  flags: Partial<Record<PollFlag, boolean>>;
 }
 
 interface ConfigState {
@@ -208,7 +215,7 @@ interface ConfigState {
   backend: SafetyPlcBackendReader | null;
   reason?: string;
   intervalMs: number;
-  monitored: PlcFlag[];
+  monitored: PollFlag[];
   failStreak: number;
   reads: number;
   /** Polls that ended undecidable (observability). */
@@ -223,7 +230,7 @@ interface ConfigState {
   /** N2 — the link state last RECORDED ("unknown" = never decided yet). */
   link: "unknown" | "online" | "offline";
   /** N2 — the flag values last RECORDED (edge detection; undefined = never decided). */
-  flags: Partial<Record<PlcFlag, boolean>>;
+  flags: Partial<Record<PollFlag, boolean>>;
   /** N3 — consecutive fully decided reads while offline, and when this config last went offline (bounded). */
   goodStreak: number;
   offlineAt: number[];
@@ -290,6 +297,27 @@ export function safeReason(e: unknown): string {
 
 // redactEndpoint moved to the leaf module plcRedact.ts (N fix 1, M3: shared with the manual readSafetyPlc path).
 export { redactEndpoint } from "./plcRedact";
+
+/**
+ * A checked read of a REAL backend → a poll read over the monitored flags: a flag missing, unparseable or reported
+ * unreadable is UNREADABLE (never "clear"); the U2 latch is decided only from the read's own latch answer.
+ */
+export function checkedToPollRead(r: SafetyPlcCheckedRead | null | undefined, monitored: readonly PollFlag[]): PollRead {
+  const flags: Partial<Record<PollFlag, boolean>> = {};
+  const unreadable: PollFlag[] = [];
+  for (const f of monitored) {
+    if (f === "estopLatch") {
+      const v = r?.latch?.estopLatch;
+      if (!r?.latch || r.latch.unreadable || typeof v !== "boolean") unreadable.push(f);
+      else flags.estopLatch = v;
+      continue;
+    }
+    const v = r?.status?.[f];
+    if (r?.unreadable?.includes(f) || typeof v !== "boolean") unreadable.push(f);
+    else flags[f] = v;
+  }
+  return { kind: "decided", flags, unreadable };
+}
 
 export class SafetyPlcPoller {
   private readonly deps: PollerDeps;
@@ -602,10 +630,16 @@ export class SafetyPlcPoller {
       st.link = "online";
     }
     if (read.kind === "decided") {
-      for (const flag of PLC_FLAGS) {
+      const estopBefore = st.flags.estop; // U2 — was the press already seen live (previous state)?
+      for (const flag of POLL_FLAGS) {
         const now = read.flags[flag];
         if (typeof now !== "boolean") continue;
         const was = st.flags[flag];
+        if (flag === "estopLatch") {
+          st.flags.estopLatch = now;
+          if (now && was !== true) this.latchRose(st, read, estopBefore);
+          continue; // a falling latch (cleared PLC-side / by an operator) is committed silently
+        }
         let ev: SafetyEventType | null = null;
         if (now && was !== true) ev = FLAG_RISE_EVENT[flag];
         else if (!now && was === true && flag === "estop") {
@@ -622,8 +656,30 @@ export class SafetyPlcPoller {
     await this.drain(id, st);
   }
 
+  /**
+   * doc 81 Đợt 9 U2 — the PLC's e-stop LATCH rose (false / unknown → true). The PLC program sets it on every press and holds
+   * it until it is cleared PLC-side / by an operator; the server only reads it. If the press was never seen live (estop not
+   * true in the previous state nor in this read), it happened BETWEEN two reads: record the press ("estop", transition
+   * "latched" — a real press, trusted like a live one) and, when the live estop tag reads released now, the release too
+   * (only while the link is online — M2; otherwise held, reported once online). A press already seen live adds nothing.
+   * Without a mapped / decided live estop tag only the press is recorded.
+   */
+  private latchRose(st: ConfigState, read: Extract<PollRead, { kind: "decided" }>, estopBefore: boolean | undefined): void {
+    const live = read.flags.estop;
+    if (estopBefore === true || live === true) return;
+    const prev = st.flags.estop;
+    st.flags.estop = true;
+    this.enqueue(st, "estop", { transition: "latched", flag: "estopLatch" });
+    if (live === false && st.link === "online") {
+      st.flags.estop = false;
+      this.enqueue(st, "estop_released", { transition: "released", flag: "estopLatch" });
+    } else if (live !== false) {
+      st.flags.estop = prev; // no live tag to compare with: the live state stays what it was
+    } // live false but not online ⇒ estop stays true here: the release is reported once the link is online (M2)
+  }
+
   /** Queue one transition event (bounded: the OLDEST is dropped and counted beyond SAFETY_PLC_EVENT_QUEUE_MAX). */
-  private enqueue(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): void {
+  private enqueue(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PollFlag; reason?: string }): void {
     st.queue.push({ input: this.eventInput(st, eventType, info), rebaseline: st.rebaseline, after: { link: st.link, flags: { ...st.flags } } });
     st.unrecordedSince ??= Date.now(); // N-R1 — the wait starts with the first unrecorded transition
     while (st.queue.length > SAFETY_PLC_EVENT_QUEUE_MAX) {
@@ -632,7 +688,7 @@ export class SafetyPlcPoller {
     }
   }
 
-  private eventInput(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): RecordSafetyEventInput {
+  private eventInput(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PollFlag; reason?: string }): RecordSafetyEventInput {
     const cfg = st.cfg;
     const isSim = cfg.backend === "sim" || st.backend?.kind === "sim";
     const source = isSim ? "sim" : "plc";
@@ -648,7 +704,7 @@ export class SafetyPlcPoller {
       outcome: "logged_only",
       isNearMiss: false,
       humanPosition: { plcConfigId: cfg.id, plcFlag: info.flag ?? null, transition: info.transition, backend: st.backend?.kind ?? null, source, poller: true, detectedAt: new Date().toISOString() },
-      notes: `${EVENT_NOTE[eventType] ?? eventType}${info.reason ? ` — ${redactEndpoint(info.reason, cfg.endpoint)}` : ""} [source ${source}, PLC "${cfg.code}", backend ${label}, background poller, READ-ONLY]`,
+      notes: `${EVENT_NOTE[eventType] ?? eventType}${info.flag === "estopLatch" ? " — captured by the PLC's e-stop LATCH bit (the press happened between two reads; the latch is cleared PLC-side / by an operator, never by the server)" : ""}${info.reason ? ` — ${redactEndpoint(info.reason, cfg.endpoint)}` : ""} [source ${source}, PLC "${cfg.code}", backend ${label}, background poller, READ-ONLY]`,
       scope: cfg.scope ?? null,
       corporateCode: cfg.corporateCode ?? null,
       factoryId: cfg.factoryId ?? null,
@@ -813,21 +869,15 @@ export class SafetyPlcPoller {
 
   private async readReal(backend: SafetyPlcBackendReader, st: ConfigState): Promise<PollRead> {
     if (typeof backend.readChecked !== "function") return { kind: "undecidable", reason: "backend cannot report unreadable tags" };
-    const r = await backend.readChecked();
-    const flags: Partial<Record<PlcFlag, boolean>> = {};
-    const unreadable: PlcFlag[] = [];
-    for (const f of st.monitored) {
-      const v = r?.status?.[f];
-      if (r?.unreadable?.includes(f) || typeof v !== "boolean") unreadable.push(f);
-      else flags[f] = v;
-    }
-    return { kind: "decided", flags, unreadable };
+    const withLatch = st.monitored.includes("estopLatch");
+    const r = await backend.readChecked(withLatch ? { withLatch: true } : undefined);
+    return checkedToPollRead(r, st.monitored);
   }
 
   /** Sim: an absent flag is clear (sim semantics); a present non-boolean is a PARSE ERROR ⇒ undecidable (N3). */
   private decideSim(s: SafetyPlcStatusSnapshot): PollRead {
     if (s == null || typeof s !== "object") return { kind: "undecidable", reason: "parse error: sim status is not an object" };
-    const flags: Partial<Record<PlcFlag, boolean>> = {};
+    const flags: Partial<Record<PollFlag, boolean>> = {};
     for (const f of PLC_FLAGS) {
       const v: unknown = s[f];
       if (v === undefined) flags[f] = false;

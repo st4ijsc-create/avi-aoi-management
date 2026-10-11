@@ -169,6 +169,13 @@ export interface SafetyPlcStatusMap {
   zoneOccupied?: SafetyPlcTagRef;
   resetRequired?: SafetyPlcTagRef;
   muting?: SafetyPlcTagRef;
+  /**
+   * doc 81 Đợt 9 U2 — OPTIONAL e-stop LATCH bit (real backends; meant for Modbus). The PLC program SETS it on every e-stop
+   * press and keeps it set until the PLC program / an operator clears it — so a press shorter than one poll interval is
+   * still seen. The background poller only READS it (never writes / clears it — L-7). Covered by the approval digest.
+   * Not read by the actuation preflight (it judges the live estop tag only). jsonb field — no migration.
+   */
+  estopLatch?: SafetyPlcTagRef;
   /** Sim-only scripted status stream (each entry = one snapshot; adapter cycles). */
   simScript?: SafetyPlcStatusSnapshot[];
   /**

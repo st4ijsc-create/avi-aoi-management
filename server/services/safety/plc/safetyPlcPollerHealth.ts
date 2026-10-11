@@ -50,7 +50,8 @@ export type PollLink = "unknown" | "online" | "offline";
 export interface PollStateRow {
   configId: number;
   link: PollLink;
-  flags: Partial<Record<"estop" | "zoneOccupied" | "resetRequired" | "muting", boolean>>;
+  /** the confirmed flags; Đợt 9 U2 adds the e-stop latch bit when the config maps one */
+  flags: Partial<Record<"estop" | "zoneOccupied" | "resetRequired" | "muting" | "estopLatch", boolean>>;
   intervalMs: number | null;
   lastAttemptAt: number | null;
   lastOkAt: number | null;
