@@ -670,8 +670,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // (`getMqttBrokerTlsStatus`), không chạm bảng nào ⇒ nhóm C. Đo bằng chính bộ quét này (trước lượt = khớp ghim; sau = C 472).
 // ★★★ 2026-10-11 (doc 81 Đợt 7 task I5 — công tắc tự động hoá theo robot) — **D 1132 → 1134 · tong 2299 → 2301 · A/B/C/S không
 // đổi.** `robot.disableAutomation` / `robot.enableAutomation` (mutation, MỚI, `robotRouter.ts`): ghi `system_settings` khoá
-// `robot.automation.off.<robotId>` + audit, không đọc hàng tenant nào ⇒ nhóm D. Đo bằng chính bộ quét này (trước lượt = khớp ghim;
-// sau = D 1134). KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+// `robot.automation.off.<robotId>` + audit ⇒ nhóm D. Đo bằng chính bộ quét này (trước lượt = khớp ghim; sau = D 1134). KHÔNG thêm
+// dòng nào vào `phamViDocBaseline.ts`.
+// ⚠ ĐÍNH CHÍNH 2026-10-11 (doc 81 Đợt 7 I fix 1, review M-4): ghi chú cũ nói "không đọc hàng tenant nào" là SAI — hai thủ tục ĐỌC
+// hàng `robots` (mang lineId/stationId). Nay chúng theo PHẠM VI NHÀ MÁY: `robotInCallerScope(ctx, …)` (robotRouter.ts — luật robot
+// của foeScope: theo line HOẶC station, robot mồ côi ngoài mọi phạm vi hạn chế; `idsTrongPhamVi(…, phamViCua(ctx), {strict})`)
+// chạy cho CẢ id không tồn tại; ngoài phạm vi ⇒ NOT_FOUND y hệt robot không tồn tại. Bộ quét vẫn xếp chúng vào D vì phạm vi
+// được áp TRONG hàm phụ (không phải lời gọi trực tiếp trong khối thủ tục) — số đo không đổi (D 1134), chỉ lời khai được sửa.
 const GHIM = { A: 334, B: 8, C: 472, D: 1134, S: 353, tong: 2301 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

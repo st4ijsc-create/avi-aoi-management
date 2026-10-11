@@ -11,6 +11,8 @@ import { getDb } from "../db/connection";
 import { createAuditLog } from "../db";
 import { robots, robotTelemetry, robotJobs, systemSettings } from "../../drizzle/schema";
 import { readRobotAutomationState, readRobotAutomationStates, robotAutomationOffKey, type RobotAutomationState } from "../services/robot/robotAutomationAction"; // doc 81 Đợt 7 I5
+import { phamViCua } from "./_phamViNguoiXem"; // doc 81 Đợt 7 I fix 1 (M-4)
+import { idsTrongPhamVi } from "../db/hierarchy";
 import { eq, desc } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
@@ -70,7 +72,23 @@ function verbToJobType(verb: z.infer<typeof consoleCommandEnum>): RobotJobType {
   }
 }
 
-/** doc 81 Đợt 7 I5 — set a robot's automation switch: robot must exist, audit FIRST, then the setting (upsert). */
+/**
+ * doc 81 Đợt 7 I fix 1 (review M-4) — is this robot inside the caller's FACTORY scope? The orchestration rule for robots
+ * (foeScope): through its line or its station; an orphan robot (no line, no station) is in nobody's restricted scope.
+ * Admin / unrestricted ⇒ true. The scope is resolved STRICT: a lookup that cannot be done THROWS (no change is made).
+ */
+async function robotInCallerScope(ctx: { user: { id: number; role?: string | null } }, r: { lineId: number | null; stationId: number | null }): Promise<boolean> {
+  const scope = phamViCua(ctx as never);
+  const strict = { strict: true };
+  const [lines, stations] = await Promise.all([idsTrongPhamVi("line", scope, strict), idsTrongPhamVi("station", scope, strict)]);
+  if (lines === null) return true; // the shared resolver: unrestricted
+  return (r.lineId != null && lines.includes(r.lineId)) || (r.stationId != null && (stations ?? []).includes(r.stationId));
+}
+
+/**
+ * doc 81 Đợt 7 I5 — set a robot's automation switch: robot must exist AND be inside the caller's factory scope (fix 1,
+ * M-4: outside it ⇒ the SAME NOT_FOUND as a missing robot), audit FIRST, then the setting (upsert).
+ */
 async function setRobotAutomation(
   ctx: { user: { id: number; name?: string | null }; req?: { ip?: string; headers?: Record<string, unknown> } },
   robotId: number,
@@ -80,7 +98,9 @@ async function setRobotAutomation(
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [r] = await db.select().from(robots).where(eq(robots.id, robotId)).limit(1);
-  if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
+  // the scope is resolved for a missing robot too (same path, same answer)
+  const inScope = await robotInCallerScope(ctx, { lineId: r?.lineId ?? null, stationId: r?.stationId ?? null });
+  if (!r || !inScope) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
   const before = await readRobotAutomationState(db, robotId);
   await createAuditLog({
     userId: ctx.user.id,

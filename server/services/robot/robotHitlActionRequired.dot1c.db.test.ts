@@ -620,17 +620,36 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       vda5050RouterFree.robotRouter.createCaller({ user: { id: userId, role: "engineer", name: "op", twoFactorEnabled: true }, req: { ip: "127.0.0.1", headers: {} } } as never);
     let vda5050RouterFree: typeof import("../../routers/robotRouter");
 
+    // fix 1 (M-4) — the switch is factory-scoped: OPERATOR / OPERATOR_NO_EDIT are assigned to factory F (the robot's line);
+    // ROBOT_OTHER sits on a line of another factory G.
+    const ROBOT_OTHER = ROBOT + 1;
+    const fac = { F: 0, G: 0, wF: 0, wG: 0, lF: 0, lG: 0 };
     beforeAll(async () => {
       vda5050RouterFree = await import("../../routers/robotRouter");
       const db = await d();
-      await db.delete(robots).where(eq(robots.id, ROBOT));
-      await db.insert(robots).values({ id: ROBOT, code: `${DAU}-r`, name: `${DAU} robot`, vendor: "sim", endpoint: "sim://i5", isEnabled: true });
+      const { sql: q } = await import("drizzle-orm");
+      const one = async (x: unknown) => Number(((x as { rows?: unknown[] }).rows ?? (x as unknown[]))[0] && (((x as { rows?: Array<{ id: number }> }).rows ?? (x as Array<{ id: number }>))[0].id));
+      fac.F = await one(await db.execute(q`INSERT INTO factories (code, name) VALUES (${`${DAU}-F`}, ${`${DAU}-F`}) RETURNING id`));
+      fac.G = await one(await db.execute(q`INSERT INTO factories (code, name) VALUES (${`${DAU}-G`}, ${`${DAU}-G`}) RETURNING id`));
+      fac.wF = await one(await db.execute(q`INSERT INTO workshops ("factoryId", code, name) VALUES (${fac.F}, ${`${DAU}-WF`}, ${`${DAU}-WF`}) RETURNING id`));
+      fac.wG = await one(await db.execute(q`INSERT INTO workshops ("factoryId", code, name) VALUES (${fac.G}, ${`${DAU}-WG`}, ${`${DAU}-WG`}) RETURNING id`));
+      fac.lF = await one(await db.execute(q`INSERT INTO production_lines ("workshopId", code, name) VALUES (${fac.wF}, ${`${DAU}-LF`}, ${`${DAU}-LF`}) RETURNING id`));
+      fac.lG = await one(await db.execute(q`INSERT INTO production_lines ("workshopId", code, name) VALUES (${fac.wG}, ${`${DAU}-LG`}, ${`${DAU}-LG`}) RETURNING id`));
+      for (const u of [OPERATOR, OPERATOR_NO_EDIT]) await db.execute(q`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u}, ${`${DAU}-F`})`);
+      await db.delete(robots).where(inArray(robots.id, [ROBOT, ROBOT_OTHER]));
+      await db.insert(robots).values({ id: ROBOT, code: `${DAU}-r`, name: `${DAU} robot`, vendor: "sim", endpoint: "sim://i5", isEnabled: true, lineId: fac.lF });
+      await db.insert(robots).values({ id: ROBOT_OTHER, code: `${DAU}-r2`, name: `${DAU} robot 2`, vendor: "sim", endpoint: "sim://i5b", isEnabled: true, lineId: fac.lG });
     });
     afterAll(async () => {
       const db = await d();
-      await db.delete(systemSettings).where(eq(systemSettings.settingKey, KEY));
+      const { sql: q } = await import("drizzle-orm");
+      await db.delete(systemSettings).where(inArray(systemSettings.settingKey, [KEY, `robot.automation.off.${ROBOT_OTHER}`]));
       // audit_logs is append-only for the app role (WORM, 42501 on DELETE): its rows (robot id of this run only) stay.
-      await db.delete(robots).where(eq(robots.id, ROBOT));
+      await db.delete(robots).where(inArray(robots.id, [ROBOT, ROBOT_OTHER]));
+      await db.execute(q`DELETE FROM user_factory_assignments WHERE "factoryCode" IN (${`${DAU}-F`}, ${`${DAU}-G`})`);
+      await db.execute(q`DELETE FROM production_lines WHERE id IN (${fac.lF}, ${fac.lG})`);
+      await db.execute(q`DELETE FROM workshops WHERE id IN (${fac.wF}, ${fac.wG})`);
+      await db.execute(q`DELETE FROM factories WHERE id IN (${fac.F}, ${fac.G})`);
     });
     afterEach(async () => setSwitch(null));
 
@@ -711,6 +730,17 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
         admin.settings.bulkUpsert({ category: "x", settings: [{ key: otherKey, value: "1" }, { key: KEY, value: "false" }] }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
       expect(await (await d()).select().from(systemSettings).where(inArray(systemSettings.settingKey, [KEY, otherKey]))).toHaveLength(0);
+    });
+
+    it("★ fix 1 (M-4): a robot OUTSIDE the caller's factory scope ⇒ the SAME NOT_FOUND as a missing robot, nothing written; an admin reaches it", async () => {
+      const out = await router(OPERATOR).disableAutomation({ robotId: ROBOT_OTHER, reason: "other factory" }).catch((e) => e);
+      const missing = await router(OPERATOR).disableAutomation({ robotId: ROBOT + 99, reason: "other factory" }).catch((e) => e);
+      expect(out).toMatchObject({ code: "NOT_FOUND" });
+      expect(out.message).toBe(missing.message);
+      expect(JSON.stringify(out.cause?.appParams ?? null)).toBe(JSON.stringify(missing.cause?.appParams ?? null));
+      expect(await (await d()).select().from(systemSettings).where(eq(systemSettings.settingKey, `robot.automation.off.${ROBOT_OTHER}`))).toHaveLength(0);
+      const admin = vda5050RouterFree.robotRouter.createCaller({ user: { id: OWNER, role: "admin", name: "adm", twoFactorEnabled: true }, req: { ip: "127.0.0.1", headers: {} } } as never);
+      expect(await admin.disableAutomation({ robotId: ROBOT_OTHER, reason: "admin, any factory" })).toMatchObject({ automation: "off" });
     });
 
     it("router: a reason is required; a missing robot ⇒ NOT_FOUND; canCreate without canEdit ⇒ FORBIDDEN (nothing written)", async () => {
