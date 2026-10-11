@@ -2844,7 +2844,10 @@ export async function resumeRun(
 
     // doc 81 Đợt 4 fix round 2 (R-4-k) — the approver must have been looking at THIS definition (a redeploy since their
     // screen loaded ⇒ their approval would be recorded against content they never saw) ⇒ CONFLICT, nothing changes.
-    if (run.status === "awaiting_confirm" && decision.expectedDefHash !== undefined && decision.expectedDefHash !== hashWorkflowDefinition(def)) {
+    // doc 81 Đợt 7 I fix 1 (review M-3) — also on "Continue" of a 'held' (interrupted) run: it resumes actuation on the
+    // definition and device configuration the screen showed, so both are checked server side for it too.
+    const screenBound = run.status === "awaiting_confirm" || run.status === "held";
+    if (screenBound && decision.expectedDefHash !== undefined && decision.expectedDefHash !== hashWorkflowDefinition(def)) {
       throw appError(
         "CONFLICT",
         "OPERATION_FAILED",
@@ -2857,7 +2860,7 @@ export async function resumeRun(
     // approval covers exactly what was checked. Changed since the screen loaded, not computable now (DB error — cannot
     // decide ⇒ refused), or a screen-bound approval without it ⇒ CONFLICT, nothing changes.
     let checkedDigest: string | null | undefined;
-    if (run.status === "awaiting_confirm" && (decision.expectedDefHash !== undefined || decision.expectedBindingDigest !== undefined)) {
+    if (screenBound && (decision.expectedDefHash !== undefined || decision.expectedBindingDigest !== undefined)) {
       checkedDigest = await computeBindingDigest(d, def);
       if (decision.expectedBindingDigest === undefined || checkedDigest === null || checkedDigest !== decision.expectedBindingDigest) {
         throw appError(

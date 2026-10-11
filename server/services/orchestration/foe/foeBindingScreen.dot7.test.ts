@@ -158,6 +158,22 @@ describe("doc 81 Đợt 7 I2 — the approver's screen is bound to the binding d
     expect(otDispatchMock).not.toHaveBeenCalled();
   });
 
+  it("★ fix 1 (M-3): CONTINUE of a 'held' (interrupted) run is bound server side too — config changed ⇒ bindingChanged, definition changed ⇒ definitionChanged; nothing changes", async () => {
+    const runId = await pausedRun("held");
+    Object.assign(rows("orchestration_runs").find((x) => x.id === runId)!, { status: "held", currentStepId: null, contextJson: { interrupted: true } });
+    const view = (await getRun(runId))!;
+    rows("device_tags").find((t) => t.id === 71)!.address = "40077";
+    const e1 = await resumeRun(runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER).catch((e) => e);
+    expect(conflictReason(e1)).toBe("bindingChanged");
+    const view2 = (await getRun(runId))!;
+    const e2 = await resumeRun(runId, { approved: true, expectedStepId: null, expectedDefHash: "0".repeat(64), expectedBindingDigest: view2.bindingDigest! }, OTHER).catch((e) => e);
+    expect(conflictReason(e2)).toBe("definitionChanged");
+    expect(rows("orchestration_runs").find((x) => x.id === runId)!.status).toBe("held");
+    expect(otDispatchMock).not.toHaveBeenCalled();
+    const ok = await resumeRun(runId, { approved: true, expectedStepId: null, expectedDefHash: view2.defHash!, expectedBindingDigest: view2.bindingDigest! }, OTHER);
+    expect(ok.status).not.toBe("held");
+  });
+
   it("a REJECTION needs no digest (it never lets actuation proceed)", async () => {
     const runId = await pausedRun("rej");
     rows("device_tags").find((t) => t.id === 71)!.address = "40003";
