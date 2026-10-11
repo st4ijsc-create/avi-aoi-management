@@ -38,6 +38,7 @@ const ENV_KEYS = [
   "MQTT_REQUIRE_PASSWORD", "MQTT_ALLOW_PASSWORDLESS_REGISTERED", "MQTT_ADMISSION_ENFORCE",
 ];
 const savedEnv: Record<string, string | undefined> = {};
+let SAFETY_DIR = "";
 
 function tempDir(): string {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "dot7-j1l-"));
@@ -130,6 +131,10 @@ beforeAll(async () => {
   process.env.UNS_BRIDGE_ENABLED = "false";
   process.env.UNS_SPARKPLUG_ENABLED = "false";
   process.env.EXTERNAL_MQTT_ENABLED = "false";
+  // Safety net: even a regression that starts TLS without `listen.tls.dir` writes into a temp dir, never the repo's
+  // data/mqtt-tls (a test certificate there would become the site certificate at the next server start).
+  SAFETY_DIR = tempDir();
+  process.env.MQTT_TLS_DIR = SAFETY_DIR;
 
   schema = await import("../../drizzle/schema");
   const { getDb } = await import("../db");
@@ -248,6 +253,7 @@ describe("J1 — MQTTS listener of the built-in broker", () => {
     expect(mod.getMqttListenPorts().tls).toBeNull();
     expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ enabled: false, listening: false });
     expect(fs.existsSync(path.resolve(process.cwd(), "data", "mqtt-tls", "broker-tls.pem"))).toBe(before);
+    expect(fs.existsSync(path.join(SAFETY_DIR, "broker-tls.pem"))).toBe(false);
     await stopBroker();
   }, 60_000);
 });
