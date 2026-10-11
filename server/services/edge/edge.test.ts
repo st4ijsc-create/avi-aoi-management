@@ -145,16 +145,19 @@ const fakeDb = {
 vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => fakeDb) }));
 
 // ── mock the shared FOE engine (executeAssignedRun must REUSE it, not fork) ──
-const { startRunMock, getRunMock, abortRunMock } = vi.hoisted(() => ({
-  startRunMock: vi.fn(async (..._a: unknown[]) => ({ ok: true, enabled: true, runId: 1, status: "completed" as const })),
-  /** doc 81 Đợt 7 I1 — the LOCAL abort the edge runs when central stopped the run. */
-  abortRunMock: vi.fn(async (runId: number, ..._a: unknown[]) => ({ ok: true, enabled: true, runId, status: "aborted" as const })),
-  getRunMock: vi.fn(async (runId: number) => ({
+function defaultGetRun(runId: number) {
+  return {
     run: { id: runId, status: "completed", error: null, currentStepId: null, startedAt: new Date(), finishedAt: new Date() },
     steps: [
       { stepId: "s1", stepType: "command", status: "completed", attempt: 1, result: { simulated: true }, error: null, startedAt: new Date(), finishedAt: new Date() },
     ],
-  })),
+  };
+}
+const { startRunMock, getRunMock, abortRunMock } = vi.hoisted(() => ({
+  startRunMock: vi.fn(async (..._a: unknown[]) => ({ ok: true, enabled: true, runId: 1, status: "completed" as const })),
+  /** doc 81 Đợt 7 I1 — the LOCAL abort the edge runs when central stopped the run. */
+  abortRunMock: vi.fn(async (runId: number, ..._a: unknown[]) => ({ ok: true, enabled: true, runId, status: "aborted" as const })),
+  getRunMock: vi.fn(async (runId: number) => defaultGetRun(runId)),
 }));
 vi.mock("../orchestration/foe/foeEngine", () => ({
   startRun: startRunMock,
@@ -470,6 +473,21 @@ describe("doc 81 Đợt 7 I1 — central: an edge sync never overwrites a centra
     expect(run1().contextJson).toEqual({ k: 1 });
   });
 
+  for (const done of ["completed", "failed"] as const) {
+    it(`★ fix 1 (I-1): a ${done} run is never moved back by a stale NON-terminal payload (no status / step rewrite)`, async () => {
+      Object.assign(run1(), { status: done, finishedAt: ABORTED_AT });
+      rows("orchestration_run_steps").push({ id: 900, runId: 1, stepId: "s1", status: "completed" });
+      const res = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: "running", steps: [{ stepId: "s1", stepType: "command", status: "running" }] } as never);
+      expect(res).toMatchObject({ ok: true, data: { stale: true, stepsApplied: 0 } });
+      expect(run1()).toMatchObject({ status: done, finishedAt: ABORTED_AT });
+      expect(rows("orchestration_run_steps").find((r: any) => r.stepId === "s1").status).toBe("completed");
+      // a TERMINAL replay (the same final payload again) is idempotent and still never moves the run
+      const again = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: "running" === done ? "x" : done, steps: [] } as never);
+      expect(again).toMatchObject({ ok: true, data: { stale: true } });
+      expect(run1().status).toBe(done);
+    });
+  }
+
   it("control: a run central has NOT stopped advances as before (abortRequested false)", async () => {
     const res = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: "completed", steps: [] } as never);
     expect(res).toMatchObject({ ok: true, data: { abortRequested: false } });
@@ -543,6 +561,68 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
     online = true;
     await replayBuffer();
     expect(abortRunMock.mock.calls.map((c) => c[0])).toEqual([79]);
+  });
+
+  it("★ fix 1 (I-1): a progress sync IN FLIGHT when the walk ends lands BEFORE the final sync (stop awaits it); the last payload central gets is the final one", async () => {
+    let walkDone = false;
+    startRunMock.mockImplementationOnce(async (...a: unknown[]) => {
+      (a[3] as { onStarted: (id: number) => void }).onStarted(80);
+      await new Promise((r) => setTimeout(r, 120)); // ≥ 1 progress tick starts (poll 50 ms)
+      walkDone = true;
+      return { ok: true, enabled: true, runId: 80, status: "completed" as const };
+    });
+    getRunMock.mockImplementation(async (runId: number) => ({
+      run: { id: runId, status: walkDone ? "completed" : "running", error: null, currentStepId: null, startedAt: new Date(), finishedAt: walkDone ? new Date() : null },
+      steps: [],
+    }) as never);
+    const got: string[] = [];
+    setCentralSync(async (p) => {
+      if (p.status === "running") await new Promise((r) => setTimeout(r, 200)); // a SLOW progress sync
+      got.push(p.status);
+      return true;
+    });
+    try {
+      await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    } finally {
+      getRunMock.mockImplementation(async (runId: number) => defaultGetRun(runId) as never);
+    }
+    expect(got.length).toBeGreaterThanOrEqual(2);
+    expect(got.at(-1)).toBe("completed");
+    expect(got.slice(0, -1).every((x) => x === "running")).toBe(true);
+  });
+
+  it("★ fix 1 (I-1): progress syncs never touch the offline buffer — a failed progress buffers nothing; the buffered FINAL payload is never replaced by a stale one", async () => {
+    let walkDone = false;
+    let bufferedDuringWalk = -1;
+    startRunMock.mockImplementationOnce(async (...a: unknown[]) => {
+      (a[3] as { onStarted: (id: number) => void }).onStarted(81);
+      await new Promise((r) => setTimeout(r, 160));
+      bufferedDuringWalk = bufferedCount(); // failed progress syncs happened by now
+      walkDone = true;
+      return { ok: true, enabled: true, runId: 81, status: "completed" as const };
+    });
+    getRunMock.mockImplementation(async (runId: number) => ({
+      run: { id: runId, status: walkDone ? "completed" : "running", error: null, currentStepId: null, startedAt: null, finishedAt: null },
+      steps: [],
+    }) as never);
+    const seen: string[] = [];
+    let online = false;
+    setCentralSync(async (p) => {
+      seen.push(`${p.status}:${online}`);
+      return online;
+    });
+    try {
+      await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+      expect(seen.filter((x) => x.startsWith("running")).length).toBeGreaterThan(0); // progress was tried (and failed)
+      expect(bufferedDuringWalk).toBe(0); // … and buffered nothing
+      expect(bufferedCount()).toBe(1); // only the FINAL payload
+      online = true;
+      seen.length = 0;
+      await replayBuffer();
+      expect(seen).toEqual(["completed:true"]);
+    } finally {
+      getRunMock.mockImplementation(async (runId: number) => defaultGetRun(runId) as never);
+    }
   });
 
   it("control: central answers a plain `true` (no abort) ⇒ nothing aborted", async () => {

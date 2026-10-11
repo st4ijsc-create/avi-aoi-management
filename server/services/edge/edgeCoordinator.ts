@@ -106,6 +106,8 @@ const RUN_STATUSES = new Set([
   "queued", "running", "held", "awaiting_confirm",
   "completed", "failed", "aborted", "compensating",
 ]);
+/** doc 81 Đợt 7 I1 fix 1 — statuses a sync never moves a run out of. */
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "aborted"]);
 const STEP_STATUSES = new Set([
   "pending", "running", "awaiting_confirm", "held",
   "completed", "failed", "skipped", "compensated",
@@ -404,7 +406,9 @@ function centralStopped(run: { status: string; contextJson?: unknown }): boolean
  * The edge node is authenticated UPSTREAM (a scoped API key / tRPC session); here we
  * only verify the node exists and owns the run (defence in depth).
  */
-export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult<{ runId: number; stepsApplied: number; abortRequested: boolean }>> {
+export async function syncRunResult(
+  payload: SyncRunPayload,
+): Promise<EdgeResult<{ runId: number; stepsApplied: number; abortRequested: boolean; stale?: boolean }>> {
   if (!edgeRuntimeEnabled()) {
     return { ok: false, enabled: false, message: "Edge runtime is disabled (set EDGE_RUNTIME_ENABLED=true)." };
   }
@@ -420,6 +424,12 @@ export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult
     const [node] = await d.select().from(edgeNodes).where(eq(edgeNodes.code, payload.edgeNodeCode)).limit(1);
     if (node && run.edgeNodeId != null && run.edgeNodeId !== node.id) {
       return { ok: false, enabled: true, message: `Run ${payload.runId} is not assigned to node "${payload.edgeNodeCode}".` };
+    }
+
+    // fix 1 (review I-1) — a NON-terminal payload for a run central already holds as finished / aborted is STALE (a progress
+    // snapshot that lost the race with the final sync): nothing of it is applied, step rows included.
+    if (TERMINAL_RUN_STATUSES.has(run.status) && !TERMINAL_RUN_STATUSES.has(payload.status)) {
+      return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied: 0, abortRequested: centralStopped(run), stale: true } };
     }
 
     // ── Upsert each step (idempotent on runId+stepId) ──
@@ -465,6 +475,11 @@ export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult
     // ── doc 81 Đợt 7 I1 — central has stopped the run: nothing at run level is rewritten; the edge is told to stop ──
     if (centralStopped(run)) {
       return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied, abortRequested: true } };
+    }
+    // fix 1 (review I-1) — a FINISHED run (completed / failed) is never moved by a sync: its run-level fields stay (a late or
+    // replayed payload cannot resurrect it to 'running'); the step rows of a terminal payload are an idempotent replay.
+    if (TERMINAL_RUN_STATUSES.has(run.status)) {
+      return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied, abortRequested: false, stale: true } };
     }
 
     // ── Advance the run-level status (only to a recognised state) ──

@@ -219,12 +219,38 @@ export async function applyCentralAbort(centralRunId: number): Promise<{ aborted
   }
 }
 
-/** Sync the local run's progress to central until stopped; an abort request stops the local walker. */
-function startAbortWatch(centralRunId: number, localRunId: number): () => void {
+/**
+ * PROGRESS sync (doc 81 Đợt 7 I1 fix 1, review I-1): sent straight through the transport — it NEVER touches the offline
+ * buffer (which holds only FINAL payloads): a progress snapshot that fails is simply dropped (the next tick or the final
+ * sync carries newer state), and one that succeeds never deletes a buffered final payload. Never throws.
+ */
+async function sendProgress(payload: SyncRunPayload): Promise<{ ack: boolean; abortRequested: boolean }> {
+  try {
+    const answer = await centralSync(payload);
+    const ack = typeof answer === "boolean" ? answer : answer?.ack === true;
+    const abortRequested = typeof answer === "object" && answer !== null && answer.ack === true && answer.abortRequested === true;
+    return { ack, abortRequested };
+  } catch {
+    return { ack: false, abortRequested: false };
+  }
+}
+
+/**
+ * Sync the local run's progress to central until stopped; an abort request stops the local walker.
+ * fix 1 (review I-1) — the returned stop() resolves only once a progress tick already in flight has FINISHED, so no stale
+ * "running" snapshot can reach central after the final sync (the caller awaits it before the final sync); a tick that
+ * finishes after stop() was called applies nothing (no abort, no re-schedule).
+ */
+function startAbortWatch(centralRunId: number, localRunId: number): () => Promise<void> {
   let stopped = false;
   let timer: NodeJS.Timeout | null = null;
+  let inFlight: Promise<void> | null = null;
   const schedule = () => {
-    timer = setTimeout(() => void tick(), abortPollMs());
+    timer = setTimeout(() => {
+      inFlight = tick().finally(() => {
+        inFlight = null;
+      });
+    }, abortPollMs());
     if (typeof timer.unref === "function") timer.unref();
   };
   const tick = async () => {
@@ -232,21 +258,26 @@ function startAbortWatch(centralRunId: number, localRunId: number): () => void {
     try {
       const { getRun } = await import("../orchestration/foe/foeEngine");
       const view = await getRun(localRunId);
+      if (stopped) return;
       const payload = view ? buildPayload(centralRunId, view) : minimalPayload(centralRunId, "running");
-      const { ack, abortRequested } = await trySyncAck(payload);
+      const { ack, abortRequested } = await sendProgress(payload);
       if (!ack) {
         console.warn(`[EdgeRuntime] run ${centralRunId}: central unreachable — a central abort cannot be learned until it is reached (the walk goes on; direct STOP / E-STOP stops equipment now)`);
       }
-      if (abortRequested) stopped = true; // applyCentralAbort already ran inside trySyncAck
+      if (abortRequested) {
+        stopped = true;
+        await applyCentralAbort(centralRunId);
+      }
     } catch {
       /* a failed progress read / sync never stops the walk */
     }
     if (!stopped) schedule();
   };
   schedule();
-  return () => {
+  return async () => {
     stopped = true;
     if (timer) clearTimeout(timer);
+    if (inFlight) await inFlight;
   };
 }
 
@@ -376,7 +407,7 @@ export async function executeAssignedRun(run: AssignedRun): Promise<ExecuteAssig
       }
       const user = { id: principal.id, role: principal.role, name: nodeCode() };
       // doc 81 Đợt 7 I1 — as soon as the local run exists: remember it and watch central for an abort while it walks.
-      const watch: { stop: (() => void) | null } = { stop: null };
+      const watch: { stop: (() => Promise<void>) | null } = { stop: null };
       try {
         const res = await startRun(run.workflowRef, (run.paramsJson ?? {}) as Record<string, unknown>, user, {
           onStarted: (id: number) => {
@@ -391,7 +422,7 @@ export async function executeAssignedRun(run: AssignedRun): Promise<ExecuteAssig
           localRunOf.set(run.id, res.runId);
         }
       } finally {
-        watch.stop?.();
+        await watch.stop?.(); // fix 1 (I-1) — waits for a progress tick in flight: nothing stale lands after the final sync
       }
     }
 
