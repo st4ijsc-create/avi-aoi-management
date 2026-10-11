@@ -97,20 +97,26 @@ afterEach(async () => {
 });
 
 describe("M1 — an edit does not re-send a held e-stop as a new trusted event", () => {
-  it("★ only the poll interval / name / binding changed ⇒ state carried: no new 'estop'", async () => {
+  // Re-pinned 2026-10-11 (fix scan 4, "stale identity mapping"): a BINDING change is an identity change ⇒ fresh baseline
+  // (the held e-stop is reported to the new target as a normal notice) — only interval / name edits carry the state.
+  it("★ only the poll interval / name changed ⇒ state carried; a binding change ⇒ re-baseline (plain)", async () => {
     let c = cfg();
     const { b } = scripted(c, [{ estop: true }]);
     const { p, types } = mk(() => [c], () => b);
     await p.refreshConfigs();
     await p.pollNow(1);
     expect(types()).toEqual(["trusted:estop"]);
-    for (const over of [{ statusMap: { ...MAP, pollIntervalMs: 400 } }, { name: "renamed" }, { robotId: 4 }] as Array<Partial<SafetyPlcConfig>>) {
+    for (const over of [{ statusMap: { ...MAP, pollIntervalMs: 400 } }, { name: "renamed" }] as Array<Partial<SafetyPlcConfig>>) {
       c = cfg(over);
       await p.refreshConfigs();
       await p.pollNow(1);
       await p.pollNow(1);
     }
     expect(types()).toEqual(["trusted:estop"]);
+    c = cfg({ name: "renamed", robotId: 4 });
+    await p.refreshConfigs();
+    await p.pollNow(1);
+    expect(types()).toEqual(["trusted:estop", "plain:estop"]);
   });
 
   it("★ endpoint / tag map changed ⇒ RE-BASELINE: the held e-stop is recorded, but through the PLAIN door; later transitions are trusted again", async () => {

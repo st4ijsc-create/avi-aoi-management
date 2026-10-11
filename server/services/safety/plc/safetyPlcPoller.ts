@@ -32,7 +32,7 @@ import {
   type SafetyPlcBackendReader,
 } from "./safetyPlcAdapter";
 import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEventInput, type RecordResult, type SafetyEventType } from "../safetyAuditService";
-import { isPlcConfigTrustApproved, plcTrustMaterial } from "./safetyPlcTrust";
+import { isPlcConfigTrustApproved, plcTrustMaterial, plcTrustDigest } from "./safetyPlcTrust";
 import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLeader";
 import { redactEndpoint, safeBackendLabel } from "./plcRedact";
 import { pgPollStateStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollStateStore, type PollLink } from "./safetyPlcPollerHealth";
@@ -160,6 +160,11 @@ export interface PollerDeps {
    * record time for every event of a real backend; false / error ⇒ the PLAIN door (recorded, normal notice, no bypass).
    */
   isTrustApproved: (cfg: SafetyPlcConfig) => Promise<boolean>;
+  /**
+   * fix scan 4 — the CURRENT row of one config (enabled), read at RECORD time to attribute the event to the target in force
+   * (null = deleted / disabled). Default: derived from loadConfigs (production: listPlcConfigs({ onlyEnabled: true })).
+   */
+  loadConfig: (id: number) => Promise<SafetyPlcConfig | null>;
   /** N fix 1 (M4) — cluster leadership: only the holder polls. Default: pg_try_advisory_lock on a dedicated session. */
   leader: PollerLeaderGate;
   /** fix scan 3 (R-8-c) — the DURABLE poll state (confirmed edge + last attempt / decided read). Default: safety_plc_poll_state. */
@@ -209,6 +214,8 @@ interface ConfigState {
   offlineAt: number[];
   /** N fix 1 (M1) — what is being READ (backend, endpoint, tag map): unchanged ⇒ an edit carries the state. */
   readIdentity: string;
+  /** fix scan 4 — the config's trust digest (endpoint, tags, TARGET, scope, enabled): the key of the edge state. */
+  identity: string;
   /** N fix 1 (M1) — rebuilt after a read-identity change: events of its first decided read are a re-baseline (plain door). */
   rebaseline: boolean;
   /** N fix 1 (M5) — consecutive failed event records (feeds the backoff like failed reads). */
@@ -270,12 +277,14 @@ export class SafetyPlcPoller {
   private readonly warnedAt = new Map<string, number>();
 
   constructor(deps: Partial<PollerDeps> = {}) {
+    const loadConfigs = deps.loadConfigs ?? (() => listPlcConfigs({ onlyEnabled: true }));
     this.deps = {
-      loadConfigs: deps.loadConfigs ?? (() => listPlcConfigs({ onlyEnabled: true })),
+      loadConfigs,
       backendFor: deps.backendFor ?? defaultBackendFor,
       recordPlain: deps.recordPlain ?? record,
       recordTrusted: deps.recordTrusted ?? ((i) => recordFromDeviceIngest("safety_plc", i)),
       isTrustApproved: deps.isTrustApproved ?? isPlcConfigTrustApproved,
+      loadConfig: deps.loadConfig ?? (async (id: number) => (await loadConfigs()).find((c) => c.id === id && c.enabled === true) ?? null),
       leader: deps.leader ?? pgPollerLeaderGate(),
       state: deps.state ?? pgPollStateStore(),
       recordTimeoutMs: deps.recordTimeoutMs ?? SAFETY_PLC_RECORD_TIMEOUT_MS,
@@ -363,7 +372,11 @@ export class SafetyPlcPoller {
       const readIdentity = readIdentityOf(cfg);
       // M1 — same read identity ⇒ CARRY the state (and the backend + any in-flight read: no second connection, no re-sent
       // held trip); otherwise a fresh state whose first decided read is a RE-BASELINE (plain door, not trusted).
-      const carry = old != null && old.readIdentity === readIdentity;
+      // fix scan 4 — the edge is keyed by (id + trust digest): ONLY a non-identity edit (name, code, poll interval) carries the
+      // state. Any change of endpoint / tags / TARGET (robot, station, line, factory, scope) or a re-created config is a
+      // FRESH baseline (re-baseline ⇒ plain door): a held trip is reported to the new target, the old edge is never applied.
+      const identity = plcTrustDigest(cfg);
+      const carry = old != null && old.identity === identity && old.readIdentity === readIdentity;
       if (old) this.dropState(cfg.id);
       const timeout = readTimeoutMs();
       const { backend, reason } = carry ? { backend: old!.backend, reason: old!.reason } : this.deps.backendFor(cfg, timeout);
@@ -387,6 +400,7 @@ export class SafetyPlcPoller {
         goodStreak: 0,
         offlineAt: [],
         readIdentity,
+        identity,
         rebaseline: old != null && !carry,
         recordFailStreak: 0,
         queue: [],
@@ -460,7 +474,10 @@ export class SafetyPlcPoller {
           try {
             const row = await this.bounded(this.deps.state.load(st.cfg.id), this.deps.recordTimeoutMs, "poll-state load");
             if (this.states.get(id) !== st) return;
-            if (row) {
+            if (row && row.identityDigest !== st.identity) {
+              // fix scan 4 — a durable edge of ANOTHER identity (re-targeted / re-created with a reused id): never applied.
+              st.rebaseline = true;
+            } else if (row) {
               st.confirmed = { link: row.link, flags: { ...row.flags } };
               st.link = row.link;
               st.flags = { ...row.flags };
@@ -623,6 +640,7 @@ export class SafetyPlcPoller {
           intervalMs: st.intervalMs,
           lastAttemptAt: st.lastAttemptAt,
           lastOkAt: st.lastOkAt,
+          identityDigest: st.identity,
         }),
         this.deps.recordTimeoutMs,
         "poll-state save",
@@ -638,14 +656,30 @@ export class SafetyPlcPoller {
     const input = { ...item.input };
     const eventType = input.eventType;
     try {
+      // fix scan 4 — attribute the event to the target IN FORCE NOW (current config row), never to a cached one.
+      // Lookup failure ⇒ not recorded yet (kept queued, retried) — never guessed.
+      const cur = await this.bounded(this.deps.loadConfig(st.cfg.id), this.deps.recordTimeoutMs, "config lookup");
+      const sameIdentity = cur != null && plcTrustDigest(cur) === st.identity;
+      Object.assign(input, {
+        robotId: cur?.robotId ?? null,
+        stationId: cur?.stationId ?? null,
+        lineId: cur?.lineId ?? null,
+        scope: cur?.scope ?? null,
+        corporateCode: cur?.corporateCode ?? null,
+        factoryId: cur?.factoryId ?? null,
+      });
       // I1 — trusted door ONLY for the real OT read class AND a config whose current content a second person approved.
       let approved = false;
-      if (st.trusted && item.rebaseline) {
+      if (!cur) {
+        input.notes = `${input.notes} [config deleted or disabled since detection — no target, normal notice]`;
+      } else if (!sameIdentity) {
+        input.notes = `${input.notes} [config changed since detection (endpoint / tags / target) — attributed to the current target, normal notice]`;
+      } else if (st.trusted && item.rebaseline) {
         // M1 — first read after the endpoint / tag map changed: whatever it shows is a new BASELINE, not a trip.
         if (eventType !== "plc_events_lost") input.notes = `${input.notes} [re-baseline after a config change — normal notice]`;
       } else if (st.trusted) {
         try {
-          approved = (await this.bounded(this.deps.isTrustApproved(st.cfg), this.deps.recordTimeoutMs, "approval lookup")) === true;
+          approved = (await this.bounded(this.deps.isTrustApproved(cur), this.deps.recordTimeoutMs, "approval lookup")) === true;
         } catch {
           approved = false; // undecided / hung ⇒ not trusted (the event is still recorded, as a normal notice)
         }

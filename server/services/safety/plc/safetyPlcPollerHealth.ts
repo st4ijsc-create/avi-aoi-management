@@ -45,6 +45,8 @@ export interface PollStateRow {
   intervalMs: number | null;
   lastAttemptAt: number | null;
   lastOkAt: number | null;
+  /** fix scan 4 — the config trust digest this edge was written for (another identity ⇒ never applied). */
+  identityDigest?: string | null;
   staleAlarmEpisode?: string | null;
 }
 
@@ -61,7 +63,7 @@ const num = (v: unknown): number | null => (v == null ? null : Number.isFinite(N
 function rowOf(r: Record<string, unknown>): PollStateRow {
   const link = r.link === "online" || r.link === "offline" ? r.link : "unknown";
   const flags = r.flags && typeof r.flags === "object" ? (r.flags as PollStateRow["flags"]) : {};
-  return { configId: Number(r.configId), link, flags, intervalMs: num(r.intervalMs), lastAttemptAt: num(r.lastAttemptAt), lastOkAt: num(r.lastOkAt), staleAlarmEpisode: (r.staleAlarmEpisode as string | null) ?? null };
+  return { configId: Number(r.configId), link, flags, intervalMs: num(r.intervalMs), lastAttemptAt: num(r.lastAttemptAt), lastOkAt: num(r.lastOkAt), identityDigest: (r.identityDigest as string | null) ?? null, staleAlarmEpisode: (r.staleAlarmEpisode as string | null) ?? null };
 }
 
 /** The production store: table safety_plc_poll_state (migration 0368). */
@@ -74,16 +76,16 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore {
   return {
     async load(configId) {
       const rows = (await (await db()).execute(sql`
-        SELECT "configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "staleAlarmEpisode"
+        SELECT "configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "identityDigest", "staleAlarmEpisode"
           FROM safety_plc_poll_state WHERE "configId" = ${configId}`)) as unknown as Array<Record<string, unknown>>;
       return rows[0] ? rowOf(rows[0]) : null;
     },
     async save(r) {
       await (await db()).execute(sql`
-        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "writerInstance", "updatedAt")
-        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${r.lastAttemptAt}, ${r.lastOkAt}, ${instance.slice(0, 64)}, now())
+        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "identityDigest", "writerInstance", "updatedAt")
+        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${r.lastAttemptAt}, ${r.lastOkAt}, ${r.identityDigest ?? null}, ${instance.slice(0, 64)}, now())
         ON CONFLICT ("configId") DO UPDATE SET link = EXCLUDED.link, flags = EXCLUDED.flags, "intervalMs" = EXCLUDED."intervalMs",
-          "lastAttemptAt" = EXCLUDED."lastAttemptAt", "lastOkAt" = EXCLUDED."lastOkAt", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
+          "lastAttemptAt" = EXCLUDED."lastAttemptAt", "lastOkAt" = EXCLUDED."lastOkAt", "identityDigest" = EXCLUDED."identityDigest", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
     },
     async list() {
       const rows = (await (await db()).execute(sql`

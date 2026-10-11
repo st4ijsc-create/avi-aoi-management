@@ -11,6 +11,7 @@ vi.hoisted(() => {
 });
 import type { SafetyPlcConfig, SafetyPlcStatusSnapshot } from "../../../../drizzle/schema";
 import { SafetyPlcPoller } from "./safetyPlcPoller";
+import { plcTrustDigest } from "./safetyPlcTrust";
 import { evaluatePollerHealth, runPollerWatchdogOnce, configStaleAfterMs, type PollStateRow, type PollStateStore } from "./safetyPlcPollerHealth";
 import { OtReadSafetyPlcBackend, type SafetyPlcCheckedRead } from "./safetyPlcAdapter";
 import type { RecordSafetyEventInput } from "../safetyAuditService";
@@ -150,7 +151,8 @@ describe("R-8-c — the edge state is DURABLE and advances only after the event 
 
   it("★ durable state UNREADABLE ⇒ nothing is evaluated (no unknown-baseline guesses); once readable it continues from the row", async () => {
     const store = memStore();
-    await store.save({ configId: 1, link: "online", flags: { estop: true }, intervalMs: 250, lastAttemptAt: 1, lastOkAt: 1 });
+    // fix scan 4: a durable edge is applied only to the identity it was written for
+    await store.save({ configId: 1, link: "online", flags: { estop: true }, intervalMs: 250, lastAttemptAt: 1, lastOkAt: 1, identityDigest: plcTrustDigest(cfg()) });
     store.down = true;
     const recs: string[] = [];
     const rec = async (i: RecordSafetyEventInput) => (recs.push(String(i.eventType)), { ok: true, enabled: true });

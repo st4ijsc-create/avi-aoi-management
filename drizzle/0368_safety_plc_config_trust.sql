@@ -107,3 +107,8 @@ BEGIN
     GRANT SELECT, INSERT, UPDATE ON "safety_plc_poll_state" TO avi_app;
   END IF;
 END $$;
+
+-- doc 81 Đợt 8 task N fix scan 4 (security scan "stale identity mapping") — the durable edge is keyed by (configId +
+-- the config's trust digest at write time): a re-targeted / re-created (reused id) config never inherits another
+-- identity's edge (loaded only when the digest matches; otherwise a fresh, untrusted baseline).
+ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "identityDigest" varchar(64);
