@@ -74,7 +74,8 @@ describe('secureCredentialStore', () => {
     expect(isSecureStorageAvailable()).toBe(true);
 
     const saved = await setMqttDevicePassword(`  ${SECRET}\n`, PIN); // pasted with edge whitespace
-    expect(saved).toEqual({ password: SECRET, endpoint: PIN });
+    // doc 81 Đợt 7 J2: the stored credential also carries the certificate pin (none for a ws:// v1 entry)
+    expect(saved).toEqual({ password: SECRET, endpoint: PIN, certSha256: null });
     // persisted as ONE entry: the password together with the endpoint it is pinned to (R-5-a)
     expect(JSON.parse(store.get(MQTT_DEVICE_PASSWORD_KEY)!)).toEqual({ v: 1, password: SECRET, endpoint: PIN });
     expect(await getMqttDevicePassword()).toBe(SECRET);

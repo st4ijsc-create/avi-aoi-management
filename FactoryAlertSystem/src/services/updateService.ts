@@ -58,8 +58,8 @@ export type UpdateEventListener = (event: UpdateEventType, data?: any) => void;
 // Current app version — MUST match build.gradle versionName/versionCode
 // (bumped for doc 27 Đợt 6 — MB2/MB3/MB7/MB8/MB9; was stale at 1.0.9/10 while
 // build.gradle had already reached 1.0.15)
-const CURRENT_VERSION = '1.0.17'; // doc 81 Đợt 5 G1: first version that sends the device MQTT password
-const CURRENT_VERSION_CODE = 17;
+const CURRENT_VERSION = '1.0.18'; // doc 81 Đợt 7 J2: MQTT over TLS with the broker certificate pinned by fingerprint (1.0.17: device MQTT password)
+const CURRENT_VERSION_CODE = 18;
 
 const STORAGE_KEYS = {
   UPDATE_SERVER_URL: 'update_server_url',

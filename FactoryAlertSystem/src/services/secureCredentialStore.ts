@@ -11,6 +11,14 @@
  * TLS, protocol, or a "Test connection" override) gets no password. An entry without a valid pin (older or
  * corrupt format) counts as "no password".
  *
+ * doc 81 Đợt 7 J2 — the certificate FINGERPRINT (SHA-256) of the built-in broker's TLS certificate is saved in the
+ * SAME entry (format v2), entered by the technician next to the password. A v2 entry pins the password to MQTT over
+ * TCP+TLS with exactly that certificate: brokerTransport.devicePasswordFor sends it ONLY over the pinned TLS socket
+ * with that fingerprint — never over plain TCP/WS. Changing the fingerprint means saving the password again (an
+ * attacker with the tablet in hand cannot re-point a stored password at their own certificate). A v2 entry with a
+ * malformed fingerprint or a non-TLS endpoint counts as "no password" (fail closed). v1 entries (no fingerprint)
+ * keep working as before during the migration.
+ *
  * Fail-closed: when the native module is absent (iOS build without it, old native shell, tests) the
  * password is NOT written anywhere — `setMqttDevicePassword` throws SecureStorageUnavailableError. There is
  * deliberately NO fallback to AsyncStorage (plaintext JSON on disk).
@@ -40,6 +48,20 @@ export interface MqttBrokerEndpoint {
 export interface StoredMqttDeviceCredential {
   password: string;
   endpoint: MqttBrokerEndpoint;
+  /** doc 81 Đợt 7 J2 — SHA-256 of the broker certificate (64 lowercase hex), or null (v1 entry: no TLS pin). */
+  certSha256: string | null;
+}
+
+/** doc 81 Đợt 7 J2 — same rule as pinnedTlsSocket.normalizeCertFingerprint / PinnedTlsCore (Kotlin). */
+function normaliseFingerprint(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const hex = raw.replace(/[\s:]/g, '').toLowerCase();
+  return /^[0-9a-f]{64}$/.test(hex) ? hex : null;
+}
+
+/** A certificate fingerprint pins the password to MQTT over TCP + TLS (the only transport that can pin). */
+function endpointCanPin(e: MqttBrokerEndpoint): boolean {
+  return e.protocol === 'tcp' && e.tls === true;
 }
 
 /**
@@ -73,7 +95,7 @@ function parseStored(raw: unknown): StoredMqttDeviceCredential | null {
   if (typeof raw !== 'string' || !raw) return null;
   try {
     const o = JSON.parse(raw);
-    if (!o || o.v !== 1 || typeof o.password !== 'string' || !o.password) return null;
+    if (!o || (o.v !== 1 && o.v !== 2) || typeof o.password !== 'string' || !o.password) return null;
     const e = o.endpoint;
     const endpoint = brokerEndpointOf(
       e ? { brokerAddress: e.host, port: e.port, protocol: e.protocol, useSSL: e.tls } : null,
@@ -81,7 +103,11 @@ function parseStored(raw: unknown): StoredMqttDeviceCredential | null {
     if (!endpoint || e.tls !== endpoint.tls || e.protocol !== endpoint.protocol || e.host !== endpoint.host) {
       return null;
     }
-    return { password: o.password, endpoint };
+    if (o.v === 1) return { password: o.password, endpoint, certSha256: null };
+    // v2 (doc 81 Đợt 7 J2): a well-formed fingerprint on a TCP+TLS endpoint, or nothing at all.
+    const certSha256 = normaliseFingerprint(o.certSha256);
+    if (!certSha256 || certSha256 !== o.certSha256 || !endpointCanPin(endpoint)) return null;
+    return { password: o.password, endpoint, certSha256 };
   } catch {
     return null; // a bare string (pre-pin format) or garbage ⇒ unpinned ⇒ treated as not stored
   }
@@ -185,15 +211,31 @@ export async function getMqttDevicePassword(): Promise<string | null> {
   return (await getMqttDeviceCredential())?.password ?? null;
 }
 
+/** Thrown when a certificate fingerprint is missing, malformed, or given for an endpoint that cannot pin it. */
+export class CertFingerprintError extends Error {
+  constructor(readonly code: 'CERT_FP_INVALID' | 'CERT_FP_NEEDS_TCP_TLS' | 'CERT_FP_REQUIRED') {
+    super(
+      code === 'CERT_FP_INVALID'
+        ? 'The certificate fingerprint must be 64 hex digits (SHA-256)'
+        : code === 'CERT_FP_NEEDS_TCP_TLS'
+          ? 'A certificate fingerprint needs MQTT over TCP with TLS on'
+          : 'MQTT over TCP with TLS needs the broker certificate fingerprint',
+    );
+    this.name = 'CertFingerprintError';
+  }
+}
+
 /**
- * Store (or, for an empty value, remove) the device password PINNED to `endpoint`. Throws
+ * Store (or, for an empty value, remove) the device password PINNED to `endpoint` (and, doc 81 Đợt 7 J2, to the
+ * broker certificate `certFingerprint` — required for a TCP+TLS endpoint, refused for any other). Throws
  * SecureStorageUnavailableError when the secure store is missing, an Error when there is no pinnable
- * endpoint, and rethrows a native write failure — the caller must not report success. Returns what was stored (null when
- * removed).
+ * endpoint, CertFingerprintError for a missing/malformed/misplaced fingerprint, and rethrows a native write failure —
+ * the caller must not report success. Returns what was stored (null when removed).
  */
 export async function setMqttDevicePassword(
   raw: string,
   endpoint: MqttBrokerEndpoint | null,
+  certFingerprint?: string | null,
 ): Promise<StoredMqttDeviceCredential | null> {
   const m = nativeModule();
   if (!m) throw new SecureStorageUnavailableError();
@@ -209,8 +251,18 @@ export async function setMqttDevicePassword(
     endpoint ? { brokerAddress: endpoint.host, port: endpoint.port, protocol: endpoint.protocol, useSSL: endpoint.tls } : null,
   );
   if (!pin) throw new Error('Broker address/port not configured — cannot pin the MQTT password');
+  const fpRaw = String(certFingerprint ?? '').trim();
+  if (fpRaw) {
+    const certSha256 = normaliseFingerprint(fpRaw);
+    if (!certSha256) throw new CertFingerprintError('CERT_FP_INVALID');
+    if (!endpointCanPin(pin)) throw new CertFingerprintError('CERT_FP_NEEDS_TCP_TLS');
+    await m.setItem(MQTT_DEVICE_PASSWORD_KEY, JSON.stringify({ v: 2, password: value, endpoint: pin, certSha256 }));
+    return { password: value, endpoint: pin, certSha256 };
+  }
+  // TCP+TLS without a fingerprint could never be used (no pinned socket without a pin) — refuse instead of storing it.
+  if (endpointCanPin(pin)) throw new CertFingerprintError('CERT_FP_REQUIRED');
   await m.setItem(MQTT_DEVICE_PASSWORD_KEY, JSON.stringify({ v: 1, password: value, endpoint: pin }));
-  return { password: value, endpoint: pin };
+  return { password: value, endpoint: pin, certSha256: null };
 }
 
 export async function clearMqttDevicePassword(): Promise<void> {
