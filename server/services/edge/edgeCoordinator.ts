@@ -23,6 +23,7 @@
 import { FOE_APPROVAL_SOURCE_EDGE, FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-h); Đợt 7 I1
 import { and, desc, eq, lt, inArray } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
+import { readEdgeAssignment } from "./edgeExecutionSchema"; // doc 81 Đợt 9 S2 — runs executed under the node protocol
 import { getDb } from "../../db/connection";
 import {
   edgeNodes,
@@ -299,6 +300,20 @@ export async function deleteNode(id: number): Promise<EdgeResult<{ id: number }>
         message: `Node "${node.code}" still has ${active.length} active run(s) delegated to it. Reassign or abort them first.`,
       };
     }
+    // doc 81 Đợt 9 task S2 — a node that executed runs under the node protocol keeps its identity (the assignments reference it,
+    // mig 0370 ON DELETE RESTRICT): it is retired by REVOKING its credential, never deleted.
+    {
+      const { runEdgeAssignments, isEdgeSchemaMissing } = await import("./edgeExecutionSchema");
+      let executed = 0;
+      try {
+        executed = (await d.select({ runId: runEdgeAssignments.runId }).from(runEdgeAssignments).where(eq(runEdgeAssignments.edgeNodeId, id)).limit(1)).length;
+      } catch (err) {
+        if (!isEdgeSchemaMissing(err)) throw err;
+      }
+      if (executed > 0) {
+        return { ok: false, enabled: true, message: `Node "${node.code}" has executed orchestration runs — revoke its credential instead of deleting it.` };
+      }
+    }
     // Detach terminal-run history from the node (keep the runs, null the FK) then delete.
     if (assigned.length > 0) {
       await d
@@ -339,6 +354,14 @@ export async function assignRun(runId: number, edgeNodeId: number): Promise<Edge
     if (["completed", "failed", "aborted"].includes(run.status)) {
       return { ok: false, enabled: true, message: `Run ${runId} is terminal (${run.status}); cannot reassign.` };
     }
+    // doc 81 Đợt 9 task S2 — the node of a run executed under the node protocol is write-once (mig 0370): never re-delegated here.
+    let nodeRun: Awaited<ReturnType<typeof readEdgeAssignment>> | undefined;
+    try {
+      nodeRun = await readEdgeAssignment(d, runId);
+    } catch {
+      nodeRun = undefined;
+    }
+    if (nodeRun !== null) return { ok: false, enabled: true, message: `Run ${runId} is assigned to an edge node for execution; it cannot be re-delegated.` };
     const [node] = await d.select().from(edgeNodes).where(eq(edgeNodes.id, edgeNodeId)).limit(1);
     if (!node) return { ok: false, enabled: true, message: `Edge node ${edgeNodeId} not found.` };
 
@@ -381,7 +404,7 @@ const CENTRAL_ABORT_ROW_PREFIX = "abort:";
  * or a central gate REJECTION has claimed it (the server-only claim token in its context — the rejection's sweep and
  * business compensation are under way). Either way the edge must stop walking the run's non-STOP steps.
  */
-function centralStopped(run: { status: string; contextJson?: unknown }): boolean {
+export function centralStopped(run: { status: string; contextJson?: unknown }): boolean {
   const ctx = (run.contextJson ?? null) as Record<string, unknown> | null;
   return run.status === "aborted" || (ctx != null && typeof ctx === "object" && ctx[FOE_REJECT_CLAIM_CTX_KEY] != null);
 }
@@ -419,6 +442,18 @@ export async function syncRunResult(
     const d = await db();
     const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, payload.runId)).limit(1);
     if (!run) return { ok: false, enabled: true, message: `Run ${payload.runId} not found.` };
+    // doc 81 Đợt 9 task S2 — a run handed to a node under the node protocol (mig 0370) is written ONLY by that node's engine
+    // (the central run row itself) and its claim-bound reports: this legacy push (a shared API key / a session) can never
+    // rewrite its status or step rows — a forged "completed" or a replayed snapshot changes nothing. Undecidable ⇒ refused.
+    let nodeRun: Awaited<ReturnType<typeof readEdgeAssignment>> | undefined;
+    try {
+      nodeRun = await readEdgeAssignment(d, run.id);
+    } catch {
+      nodeRun = undefined;
+    }
+    if (nodeRun !== null) {
+      return { ok: false, enabled: true, message: `Run ${payload.runId} is executed by an edge node under the node protocol — a sync cannot write it.` };
+    }
 
     // Defence in depth: the edge node must be the run's assignee (when known).
     const [node] = await d.select().from(edgeNodes).where(eq(edgeNodes.code, payload.edgeNodeCode)).limit(1);

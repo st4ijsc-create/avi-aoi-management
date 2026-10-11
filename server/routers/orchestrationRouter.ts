@@ -365,10 +365,26 @@ export const orchestrationRouter = router({
         params: z.record(z.string(), z.unknown()).default({}),
         /** doc 81 Đợt 7 I fix 1 — the workflow the caller means when several visible ones share the ref. */
         workflowId: z.number().int().positive().optional(),
+        /**
+         * doc 81 Đợt 9 task S2 — hand the run to this edge node (it executes the central run; central does not walk it). The
+         * node must be inside the caller's factory scope: missing / outside ⇒ the SAME NOT_FOUND; undecidable ⇒ refused.
+         */
+        edgeNodeCode: z.string().min(1).max(128).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      return startRun(input.workflowRef, input.params, toFoeUser(ctx.user), { workflowId: input.workflowId });
+      let edgeNodeId: number | undefined;
+      if (input.edgeNodeCode !== undefined) {
+        const { resolveAssignableNode } = await import("../services/edge/edgeExecutionCentral");
+        const n = await resolveAssignableNode(input.edgeNodeCode, scopeOf(ctx.user));
+        if (n.kind === "unverified") {
+          return { ok: false as const, enabled: true, reason: "scopeUnverified" as const, message: "Your factory scope could not be verified — retry in a moment." };
+        }
+        // the same shape as startRun's own "not found" answer (a refused start, nothing created)
+        if (n.kind === "none") return { ok: false as const, enabled: true, message: `Edge node "${input.edgeNodeCode}" not found.` };
+        edgeNodeId = n.id;
+      }
+      return startRun(input.workflowRef, input.params, toFoeUser(ctx.user), { workflowId: input.workflowId, ...(edgeNodeId !== undefined ? { edgeNodeId } : {}) });
     }),
 
   /**

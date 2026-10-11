@@ -42,6 +42,7 @@ import { registerPolicyRoutes } from "./policy";
 import { registerLineRoutes } from "./lines";
 import { registerOrdersLifecycleRoutes } from "./ordersLifecycle";
 import { registerErpOauthRoutes } from "./erpOauth";
+import { registerEdgeNodeRoutes } from "./edgeNodeRoutes"; // doc 81 Đợt 9 task S2
 import { mtlsGuard } from "./erpMtls";
 import { mayCuaKhoa, rangBuocMauTheoKhoa, rangBuocBanGhiTheoKhoa, nemLoiIngest } from "./ingestRangBuoc";
 import { otIngestHttpStatus } from "../../_core/otIngestRoute";
@@ -552,9 +553,20 @@ export function createV1Router(): Router {
     requireDeclaredTenantScope("orchestration"), // doc 81 Đợt 5 task E2
     wrap(async (req, res) => {
       const { startRun } = await import("../../services/orchestration/foe/foeEngine");
-      const body = (req.body ?? {}) as { workflowRef?: string; params?: Record<string, unknown> };
+      const body = (req.body ?? {}) as { workflowRef?: string; params?: Record<string, unknown>; edgeNodeCode?: unknown };
       if (!body.workflowRef || typeof body.workflowRef !== "string") {
         throw new ApiHttpError(400, "bad_request", "Body field `workflowRef` is required.");
+      }
+      // doc 81 Đợt 9 task S2 — `edgeNodeCode`: hand the run to that edge node (it executes the central run; central does not
+      // walk it). The node must be inside the key's factory scope — missing / outside ⇒ the SAME 404; undecidable ⇒ 503.
+      let edgeNodeId: number | undefined;
+      if (body.edgeNodeCode !== undefined) {
+        if (typeof body.edgeNodeCode !== "string" || !body.edgeNodeCode.trim()) throw new ApiHttpError(400, "bad_request", "`edgeNodeCode` must be a node code.");
+        const { resolveAssignableNode } = await import("../../services/edge/edgeExecutionCentral");
+        const n = await resolveAssignableNode(body.edgeNodeCode, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+        if (n.kind === "unverified") throw new ApiHttpError(503, "scope_unverified", "The key's factory scope could not be verified — retry.");
+        if (n.kind === "none") throw new ApiHttpError(404, "not_found", `Edge node "${body.edgeNodeCode}" not found.`);
+        edgeNodeId = n.id;
       }
       const principal = req.apiPrincipal?.name ?? "api-key";
       // doc 81 Đợt 4 fix round 1 (R-4-f) + Đợt 9 R1 — the run's OWNER is the human this API key is ISSUED TO (holder,
@@ -570,6 +582,7 @@ export function createV1Router(): Router {
         viaApi: true,
         apiKeyId: apiKeyIdOf(req.apiPrincipal),
         scope: orchestrationScopeOf(req.apiPrincipal?.tenantScope), // doc 81 Đợt 5 task E2 — a workflow outside the key's scope is "not found"
+        ...(edgeNodeId !== undefined ? { edgeNodeId } : {}), // doc 81 Đợt 9 task S2
       });
       if (!result.enabled) {
         return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
@@ -755,6 +768,10 @@ export function createV1Router(): Router {
       sendOk(res, result.data, 202);
     }),
   );
+
+  // ── doc 81 Đợt 9 task S2 — per-node edge EXECUTION protocol (pull / claim / progress / complete / release / interrupted),
+  // authenticated ONLY by the node's own credential (edgeNodeRoutes.requireEdgeNode — never an API key). ──
+  registerEdgeNodeRoutes(r);
 
   // ── OAuth2 client-credentials (K0+-a) — POST /oauth/token. ──────────────────
   // ADDITIVE machine-to-machine auth for ERP partners; issues a short-lived signed
