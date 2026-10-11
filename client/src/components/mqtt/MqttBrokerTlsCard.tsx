@@ -1,12 +1,13 @@
 /**
- * doc 81 Đợt 7 task J1 — "Built-in broker TLS" card (Connectivity → Devices).
+ * doc 81 Đợt 7 task J1 / J redesign (round 4) — "Built-in broker TLS" card (Connectivity → Devices).
  *
- * Shows whether the built-in broker's MQTTS listener runs, on which port, and the SHA-256 fingerprint of its
- * site certificate. The technician types that fingerprint into each tablet (app ≥ 1.0.18, Settings → MQTT) next
- * to the device password; the tablet then connects ONLY to a broker presenting exactly this certificate.
- * A certificate fault is shown as such (the server never silently regenerates it — that would change the
- * fingerprint and lock every pinned tablet out). Same audience as the password column: shown with settings_factory
- * canEdit (or admin) — the API `mqttClient.brokerTls` uses the same gate (J fix 1).
+ * Shows whether the built-in broker's MQTTS listener runs, on which port, and the SHA-256 fingerprint of the certificate
+ * an ADMINISTRATOR provisioned with scripts/provision-mqtt-tls.ps1. The technician types that fingerprint into each
+ * tablet (app ≥ 1.0.18, Settings → MQTT) next to the device password; the tablet then connects ONLY to a broker
+ * presenting exactly this certificate. Three states: NOT PROVISIONED (the script has not been run — the expected path is
+ * shown), OK (fingerprint), REFUSED (the server verified the files and found doubt: the reason is shown; the server never
+ * repairs or regenerates anything — the admin re-runs the script). Same audience as the password column: shown with
+ * settings_factory canEdit (or admin) — the API `mqttClient.brokerTls` uses the same gate (J fix 1).
  */
 import { useTranslation } from "react-i18next";
 import { Copy, Lock, ShieldAlert } from "lucide-react";
@@ -16,22 +17,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+/** Refusal codes with their own text (anything else ⇒ the generic "listener error (CODE)"). */
 const KNOWN_ERRORS = new Set([
   "TLS_FILE_CORRUPT",
   "TLS_KEY_MISMATCH",
   "TLS_FILE_UNREADABLE",
   "TLS_CONFIG_INCOMPLETE",
-  "TLS_WRITE_FAILED",
   "EADDRINUSE",
-  // doc 81 Đợt 7 J fix 3 — key-material security refusals (Windows allow-list / owner / links / exposure)
-  "TLS_KEY_EXPOSED",
+  // J redesign — read-only verification of the admin-provisioned files (owner / access list / links)
   "TLS_KEY_OWNER_FOREIGN",
-  "TLS_KEY_LINKED",
-  "TLS_KEY_DIR_NOT_EMPTY",
-  "TLS_KEY_ACL_UNVERIFIED",
-  "TLS_KEY_ACL_UNPROTECTED",
   "TLS_KEY_ACL_OPEN",
+  "TLS_KEY_ACL_UNPROTECTED",
+  "TLS_KEY_ACL_UNVERIFIED",
+  "TLS_KEY_LINKED",
 ]);
+const NOT_PROVISIONED = "TLS_NOT_PROVISIONED";
 
 export function MqttBrokerTlsCard({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation();
@@ -43,6 +43,7 @@ export function MqttBrokerTlsCard({ enabled }: { enabled: boolean }) {
   if (!s) status = { tone: "warn", text: q.isError ? t("mqtt.clientMgmt.brokerTls.loadFailed") : "…" };
   else if (!s.running) status = { tone: "warn", text: t("mqtt.clientMgmt.brokerTls.brokerOff") };
   else if (!s.enabled) status = { tone: "warn", text: t("mqtt.clientMgmt.brokerTls.statusOff") };
+  else if (s.error === NOT_PROVISIONED) status = { tone: "warn", text: t("mqtt.clientMgmt.brokerTls.notProvisioned") };
   else if (s.error) {
     const reason = KNOWN_ERRORS.has(s.error)
       ? t(`mqtt.clientMgmt.brokerTls.error_${s.error}`)
@@ -60,6 +61,9 @@ export function MqttBrokerTlsCard({ enabled }: { enabled: boolean }) {
       toast.error(t("mqtt.clientMgmt.brokerTls.copyFailed"));
     }
   };
+
+  // a verification refusal (not "port taken"): the key is never used until an administrator re-provisions it
+  const refused = !!s?.error && s.error !== NOT_PROVISIONED && s.error !== "EADDRINUSE";
 
   return (
     <Card data-testid="mqtt-broker-tls">
@@ -85,14 +89,19 @@ export function MqttBrokerTlsCard({ enabled }: { enabled: boolean }) {
             </span>
           ) : null}
         </div>
-        {s?.error === "TLS_KEY_EXPOSED" ? (
-          // J fix 3 (R-7-b) — the key may be exposed: it is never used again; the admin must rotate it
-          <div className="rounded border border-destructive bg-destructive/10 p-2 text-destructive" data-testid="mqtt-broker-tls-rotate" role="alert">
-            <div className="font-semibold">{t("mqtt.clientMgmt.brokerTls.rotateRequired")}</div>
-            <div className="text-xs">{t("mqtt.clientMgmt.brokerTls.error_TLS_KEY_EXPOSED")}</div>
+        {s?.running && s.enabled && s.error === NOT_PROVISIONED ? (
+          <div className="rounded border border-amber-500/60 bg-amber-500/10 p-2 text-xs" data-testid="mqtt-broker-tls-provision">
+            <div>{t("mqtt.clientMgmt.brokerTls.provisionHint")}</div>
+            {s.certPath ? <code className="mt-1 block break-all font-mono" data-testid="mqtt-broker-tls-path">{s.certPath}</code> : null}
           </div>
         ) : null}
-        {s?.fingerprintSha256 && s.error !== "TLS_KEY_EXPOSED" ? (
+        {refused ? (
+          <div className="rounded border border-destructive bg-destructive/10 p-2 text-xs text-destructive" data-testid="mqtt-broker-tls-refused" role="alert">
+            <div>{t("mqtt.clientMgmt.brokerTls.refusedHint")}</div>
+            {s?.certPath ? <code className="mt-1 block break-all font-mono" data-testid="mqtt-broker-tls-path">{s.certPath}</code> : null}
+          </div>
+        ) : null}
+        {s?.fingerprintSha256 && !refused ? (
           <div className="space-y-1">
             <div className="text-muted-foreground">{t("mqtt.clientMgmt.brokerTls.fingerprint")}</div>
             <div className="flex flex-wrap items-center gap-2">
@@ -105,7 +114,7 @@ export function MqttBrokerTlsCard({ enabled }: { enabled: boolean }) {
               </Button>
             </div>
             <div className="text-xs text-muted-foreground">
-              {s.source === "configured" ? t("mqtt.clientMgmt.brokerTls.sourceConfigured") : t("mqtt.clientMgmt.brokerTls.sourceGenerated")}
+              {s.source === "configured" ? t("mqtt.clientMgmt.brokerTls.sourceConfigured") : t("mqtt.clientMgmt.brokerTls.sourceDefault")}
               {s.notAfter ? ` · ${t("mqtt.clientMgmt.brokerTls.validUntil", { date: s.notAfter.slice(0, 10) })}` : ""}
             </div>
             <div className="text-xs text-amber-700 dark:text-amber-400">{t("mqtt.clientMgmt.brokerTls.changeWarning")}</div>
