@@ -354,7 +354,12 @@ describe("QT-1 end-to-end trên engine thật (in-memory)", () => {
       };
       const origWhere = upd.where;
       upd.where = (cond: any) => {
-        const isClaim = cond?.__op === "and" && cond.conds.some((c: any) => c.__op === "in");
+        // Re-pinned 2026-10-11 (doc 81 Dot 8 task Q4): `c?.__op`. Since 1ed6c55ff (Dot 5 final wave P-E2) the engine's
+        // setRunStatusUnlessAborted writes `and(eq, ne, onlyFrom ? inArray : undefined)` — drizzle's and() skips the
+        // undefined member, but this probe read `undefined.__op` ⇒ TypeError inside startRun's FIRST status write ⇒ the run
+        // stayed 'queued' and the hijack never fired. Measured: green at 1ed6c55ff^, red at 1ed6c55ff. The harness was
+        // stale, not the code (real drizzle and() ignores undefined).
+        const isClaim = cond?.__op === "and" && cond.conds.some((c: any) => c?.__op === "in");
         if (!fired && isClaim && patch.status === claimStatus) {
           fired = true;
           for (const r of rows(tbl(t))) if (matchCond(r, cond.conds[0])) r.status = "running";
