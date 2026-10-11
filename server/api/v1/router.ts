@@ -557,15 +557,18 @@ export function createV1Router(): Router {
         throw new ApiHttpError(400, "bad_request", "Body field `workflowRef` is required.");
       }
       const principal = req.apiPrincipal?.name ?? "api-key";
-      // doc 81 Đợt 4 fix round 1 (R-4-f) — the run's OWNER is the human who created this API key (when attributable);
-      // otherwise the run is owner-less and the engine refuses its OT/robot steps (FOE_GATE_REQUIRED(ownerUnknown)).
-      const { apiKeyOwnerUserId } = await import("./apiKeyOwner");
+      // doc 81 Đợt 4 fix round 1 (R-4-f) + Đợt 9 R1 — the run's OWNER is the human this API key is ISSUED TO (holder,
+      // default the creator; when attributable); otherwise the run is owner-less and the engine refuses its OT/robot steps
+      // (FOE_GATE_REQUIRED(ownerUnknown)).
+      const { apiKeyOwnerUserId, apiKeyIdOf } = await import("./apiKeyOwner");
       const ownerUserId = await apiKeyOwnerUserId(req.apiPrincipal);
-      // doc 81 Đợt 5 task E1 (item 24, option C) — viaApi: the run is marked server-side as API-started; its OT/robot steps
-      // other than a STOP are never sent (FOE_GATE_REQUIRED(apiRun)), whoever approves its gates.
+      // doc 81 Đợt 5 task E1 — viaApi: the run is marked server-side as API-started. doc 81 Đợt 9 task R2 (option A) — and the
+      // AUTHENTICATED key is recorded on the run: its OT/robot steps are sent only after a gate approved by someone who is
+      // none of {starter, the key's holder now / earlier, its creator}; STOPs as before.
       const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal }, {
         ownerUserId,
         viaApi: true,
+        apiKeyId: apiKeyIdOf(req.apiPrincipal),
         scope: orchestrationScopeOf(req.apiPrincipal?.tenantScope), // doc 81 Đợt 5 task E2 — a workflow outside the key's scope is "not found"
       });
       if (!result.enabled) {

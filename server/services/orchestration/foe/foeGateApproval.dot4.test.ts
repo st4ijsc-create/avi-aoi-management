@@ -230,7 +230,10 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
 
   // doc 81 Đợt 5 task E1 (2026-10-10, item 24 option C) — re-pinned: an API-started run never actuates a non-STOP step, so
   // the reason is now apiRun (it precedes approvedByOwner) and "another user ⇒ runs" became "another user ⇒ still refused".
-  it("★ R-4-f + Đợt 5 E1: API run owned by the key's creator U — U approving is refused (apiRun; fourEyes gate ⇒ FORBIDDEN); another user approving ⇒ STILL refused (apiRun)", async () => {
+  // 2026-10-12 doc 81 Đợt 9 task R2 (option A replaces E1 option C): these runs carry NO recorded API key (startRun without
+  // apiKeyId) ⇒ unidentified ⇒ still refused (apiRun) whoever approves; a FOUR-EYES gate of such a run cannot be approved at
+  // all now (FORBIDDEN: the key parties cannot be derived). Identified API runs: foeApiKeyHolder.dot9.test.ts.
+  it("★ R-4-f + Đợt 5 E1 / Đợt 9 R2: unidentified API run owned by U — U approving is refused (apiRun; fourEyes gate ⇒ FORBIDDEN); another user approving ⇒ STILL refused (apiRun; fourEyes gate ⇒ FORBIDDEN)", async () => {
     const U = { id: 31, role: "engineer", name: "key-creator" };
     const api = { id: 0, role: "api", name: "key-u" };
     await deployWorkflow(GATED, OWNER);
@@ -247,9 +250,11 @@ describe("doc 81 Đợt 4 Task A5 — engine: an OT/robot step needs a gate appr
     await expect(resumeRun(c.runId!, { approved: true }, OTHER)).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(otDispatchMock).not.toHaveBeenCalled();
 
-    const other = await resumeRun(b.runId!, { approved: true }, OTHER);
+    await expect(resumeRun(b.runId!, { approved: true }, OTHER)).rejects.toMatchObject({ code: "FORBIDDEN" }); // Đợt 9 R2
+    const d = await startRun("gated", {}, api, { ownerUserId: U.id });
+    const other = await resumeRun(d.runId!, { approved: true }, OTHER); // a non-fourEyes gate: approval taken, never counts
     expect(other.status).toBe("failed");
-    expect(String(stepRow(b.runId!, "w")!.error)).toMatch(gateErr("apiRun"));
+    expect(String(stepRow(d.runId!, "w")!.error)).toMatch(gateErr("apiRun"));
     expect(otDispatchMock).not.toHaveBeenCalled();
   });
 

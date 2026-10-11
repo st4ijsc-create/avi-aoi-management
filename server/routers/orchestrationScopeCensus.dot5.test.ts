@@ -199,6 +199,11 @@ const CLASSIFIED: Record<string, Kind> = {
   "server/services/orchestration/foe/__foeGateRunFixture.ts": { kind: "allow", reason: "test fixture (_test only), not imported by product code" },
   "server/services/orchestration/foe/foeEngine.ts": { kind: "engine" },
   "server/services/orchestration/foe/foeGateApproval.ts": { kind: "allow", reason: "dispatcher DB layer: reads the run named by an engine-written action inside the reservation tx (no caller-supplied id, no caller identity)" },
+  // 2026-10-12 doc 81 Đợt 9 task R1 — new file of the population (narrow projection of orchestration_runs, mig 0369).
+  "server/services/orchestration/foe/runApiKeyIdentity.ts": {
+    kind: "allow",
+    reason: "reads ONE run's startedViaApiKeyId for the approval rule (foeGateApproval.deriveRunApprovalIdentity / getRun's approver view) — its callers already hold that run (engine walk, dispatcher reservation tx, scope-checked getRun); returns no run to anyone",
+  },
   "server/services/orchestration/runEventStore.ts": { kind: "allow", reason: "store; its readers (orchestrationGovRouter.runEvents / replayRun) are checked here" },
   "server/services/orchestration/templates/qtRunner.ts": { kind: "allow", reason: "system principal (QT_SYSTEM_USER): the engine resolves an EMPTY scope for it (fail-closed); no caller identity" },
   "server/services/orchestration/templates/qtStepHandlers.ts": { kind: "allow", reason: "QT step handlers run inside qtRunner (system path), read a workflow by a template ref" },

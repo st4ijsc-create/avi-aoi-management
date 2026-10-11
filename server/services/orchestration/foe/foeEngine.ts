@@ -40,6 +40,7 @@ import {
   deviceAdapters,
   deviceTags, // final wave P-E1 — the scope-decision probe
   robots, // doc 81 Đợt 4 final wave G3 — a robot step names an existing, enabled robot
+  users, // doc 81 Đợt 9 R3 — names on the approver's screen ("issued to")
   type OrchestrationRun,
 } from "../../../../drizzle/schema";
 import {
@@ -79,8 +80,11 @@ import {
   FOE_REJECT_CLAIM_CTX_KEY,
   runExecutedVersions,
   runStartedViaApi,
+  deriveRunApprovalIdentity,
+  excludedApprovers,
   type GateRequiredReason,
-} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2
+} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2; Đợt 9 R2
+import { readApiKeyParties, readRunApiKeyId, runApiKeyCols } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R1/R3 (mig 0369, narrow projections)
 import type { ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
@@ -314,6 +318,51 @@ export type DefinitionRefusalReason =
   /** final wave F9 (N5) — the workflow named by `targetWorkflowId` is gone / not visible and the ref is taken in the deployer's namespace (reload, no retry). */
   | "refTargetStale";
 
+/** doc 81 Đợt 9 task R3 — see RunView.apiKey. */
+export interface RunApiKeyView {
+  identified: boolean;
+  keyId: number | null;
+  name: string | null;
+  keyPrefix: string | null;
+  holder: { id: number; name: string | null } | null;
+  creator: { id: number; name: string | null } | null;
+  /** users the key was issued to before (still excluded: the secret did not change with the holder). */
+  earlierHolders: Array<{ id: number; name: string | null }>;
+  /** every user whose approval never counts for this run (starter + key parties). Empty when not identified. */
+  excludedUserIds: number[];
+}
+
+/**
+ * doc 81 Đợt 9 task R3 — the approver screen's view of an API run's key (best-effort read: any failure ⇒ identified false,
+ * which is also what the engine concludes — nothing on the screen can let an approval count that the server refuses).
+ */
+async function apiKeyViewOf(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, run: OrchestrationRun): Promise<RunApiKeyView | null> {
+  if (!runStartedViaApi(run)) return null;
+  const none: RunApiKeyView = { identified: false, keyId: null, name: null, keyPrefix: null, holder: null, creator: null, earlierHolders: [], excludedUserIds: [] };
+  try {
+    const keyId = await readRunApiKeyId(d, run.id);
+    if (keyId === null) return none;
+    const key = await readApiKeyParties(d, keyId);
+    if (!key) return { ...none, keyId };
+    const idr = await deriveRunApprovalIdentity(d, run);
+    const ids = [...new Set([key.holder, key.creator, ...key.everHolders].filter((v): v is number => typeof v === "number"))];
+    const rows = ids.length ? await d.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids)) : [];
+    const nameOf = (id: number) => rows.find((r) => r.id === id)?.name ?? null;
+    return {
+      identified: idr.ok,
+      keyId,
+      name: key.name,
+      keyPrefix: key.keyPrefix,
+      holder: key.holder !== null ? { id: key.holder, name: nameOf(key.holder) } : null,
+      creator: key.creator !== null ? { id: key.creator, name: nameOf(key.creator) } : null,
+      earlierHolders: key.everHolders.filter((u) => u !== key.holder).map((id) => ({ id, name: nameOf(id) })),
+      excludedUserIds: idr.ok ? excludedApprovers(idr.identity) : [],
+    };
+  } catch {
+    return none;
+  }
+}
+
 export interface RunView {
   run: OrchestrationRun;
   /**
@@ -334,6 +383,12 @@ export interface RunView {
    * bindingDigest is null ⇒ no approval). null exactly when bindingDigest is not computed for this read (see getRun).
    */
   programChecks: ProgramCheck[] | null;
+  /**
+   * doc 81 Đợt 9 task R3 — for a run started through an API key: which key, who it is issued to, and WHO cannot give a
+   * counting approval (the same derivation as the engine / dispatchers). null for a run started by a user. A key that
+   * cannot be identified ⇒ `identified: false` (its non-STOP OT/robot commands are refused whoever approves).
+   */
+  apiKey?: RunApiKeyView | null;
   steps: Array<{
     stepId: string;
     stepType: string;
@@ -426,8 +481,9 @@ interface RunContext extends LiveRunHandle {
    */
   runOwner: number | null;
   /**
-   * doc 81 Đợt 5 task E1 (item 24, option C) — the run was started through an API key (server-written markers, see
-   * foeGateApproval.runStartedViaApi). Its OT/robot steps other than a STOP are never sent (reason apiRun).
+   * doc 81 Đợt 5 task E1 — the run was started through an API key (server-written markers, see
+   * foeGateApproval.runStartedViaApi). doc 81 Đợt 9 R2 (option A) — its approvals then count only when the approver is
+   * none of the key's parties (deriveRunApprovalIdentity); this flag is a fail-closed HINT added to the row's markers.
    */
   startedViaApi: boolean;
   /**
@@ -1064,25 +1120,26 @@ async function findSeparateGateApproval(
   opts: { stop?: boolean } = {},
 ): Promise<{ approval: FoeGateApproval } | { reason: GateRequiredReason }> {
   try {
-    // doc 81 Đợt 5 task E1 — an API-started run never has a counting approval (option C). The in-memory flag (read when
-    // the walk was built) AND the run row as it is now: either marker ⇒ apiRun (fail-closed).
-    if (rc.startedViaApi) return { reason: "apiRun" };
     const d = await getDb();
     if (!d) return { reason: "noGate" };
     const [runNow] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, rc.runId)).limit(1);
     if (!runNow) return { reason: "noGate" };
-    if (runStartedViaApi(runNow)) return { reason: "apiRun" };
+    // doc 81 Đợt 9 task R2 (option A, replaces Đợt 5 E1 option C) — WHO may not approve, re-derived from the run row as it
+    // is NOW and the api_keys rows (owner; for an API run also the key's holder now / earlier and its creator). The
+    // in-memory marker (read when the walk was built) OR the row's ⇒ API run (fail-closed). Unidentifiable key ⇒ apiRun.
+    const idr = await deriveRunApprovalIdentity(d, runNow, { viaApiHint: rc.startedViaApi });
+    if (!idr.ok) return { reason: idr.reason };
     const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, rc.runId));
     // doc 81 Đợt 5 task E3 — recompute the binding digest from the device configuration NOW (server side).
     // doc 81 Đợt 8 O2 — including the program checksum of every supported controller, read now (bounded; unreadable ⇒
     // programUnreadable). On a STOP step no controller is read (L-7): the approval's own recorded checksums are used.
     const defHash = hashWorkflowDefinition(rc.def);
     const ev = opts.stop
-      ? evaluateGateApprovals(rows, rc.def, defHash, rc.runOwner, await recordedProgramDigests(d, rc.def))
-      : evaluateWithPrograms(rows, rc.def, defHash, rc.runOwner, await computeBindingDetail(d, rc.def));
+      ? evaluateGateApprovals(rows, rc.def, defHash, idr.identity, await recordedProgramDigests(d, rc.def))
+      : evaluateWithPrograms(rows, rc.def, defHash, idr.identity, await computeBindingDetail(d, rc.def));
     if (!ev.ok) return { reason: ev.reason };
     const top = ev.approvals[0];
-    return { approval: { runId: rc.runId, runOwner: rc.runOwner, approvedBy: top.approvedBy, gateStepId: top.gateStepId } };
+    return { approval: { runId: rc.runId, runOwner: idr.identity.owner, approvedBy: top.approvedBy, gateStepId: top.gateStepId } };
   } catch {
     return { reason: "noGate" };
   }
@@ -1095,6 +1152,8 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
       "needs an earlier approval gate (hitl_gate) in this run approved by someone other than the user who started it — none found. Add a hitl_gate before this step, deploy, and start a new run; another user must approve the gate.",
     approvedByOwner:
       "the approval gate before it was approved by the user who started the run — that does not count. Start a new run and have another user approve the gate.",
+    approvedByKeyHolder:
+      "the run was started through an API key and the approval gate before it was approved by the person the key is (or was) issued to, or by the person who created the key — that does not count. Have another user approve the gate of a new run.",
     staleApproval:
       "the workflow was redeployed, or the adapter / tag / robot configuration its commands use changed, or the program in a controller it writes to changed, after the gate was approved, so the approval does not cover what would be sent now. Start a new run and have the gate approved again.",
     programUnreadable:
@@ -1102,7 +1161,7 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
     ownerUnknown:
       "the run has no attributable owner (started by the system or by an API key with no creating user), so a separate approval cannot be verified. Start the run as a user.",
     apiRun:
-      "the run was started through an API key. A run started through an API key never sends OT or robot commands other than a STOP: the person holding the key cannot be told apart from the approver. Start the run as a user in the Orchestration Studio.",
+      "the run was started through an API key that cannot be identified (started before the key-holder record existed, the key was deleted, or a copy of the run without its key), so it cannot be checked that the approver is not the key's holder. Start a new run through the key, or start it as a user in the Orchestration Studio.",
   };
   return `${FOE_GATE_REQUIRED}(${reason}): command step "${stepId}" was not sent: ${why[reason]}`;
 }
@@ -2270,7 +2329,7 @@ async function buildRunContext(
  *   • approverRoles declared ⇒ the approver's role must be listed (admin is always allowed);
  *   • fourEyes ⇒ the approver must not be the user who started the run (no admin exemption).
  */
-function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, user: FoeUser): void {
+async function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, user: FoeUser): Promise<void> {
   const role = String(user.role ?? "").trim().toLowerCase();
   const roles = (Array.isArray(gate.approverRoles) ? gate.approverRoles : [])
     .map((r) => String(r).trim().toLowerCase())
@@ -2299,6 +2358,34 @@ function assertGateApprover(gate: HitlGateStep, run: OrchestrationRun, user: Foe
       { action: "selfApproveOrchestrationGate" },
       `Gate "${gate.id}" requires four-eyes: the user who started run ${run.id} cannot approve it.`,
     );
+  }
+  // doc 81 Đợt 9 task R2 — a four-eyes gate of an API-started run: the key's holder (now or earlier) and its creator are
+  // not a second person either. Re-derived from the DB rows; cannot be decided (unidentifiable key, no holder, DB error)
+  // ⇒ refused (fail-closed — an approval is never urgent: stopping goes through abort / the machines' STOP / E-STOP).
+  if (gate.fourEyes === true && runStartedViaApi(run)) {
+    let idr: Awaited<ReturnType<typeof deriveRunApprovalIdentity>> | null = null;
+    try {
+      const d = await getDb();
+      if (d) idr = await deriveRunApprovalIdentity(d, run);
+    } catch {
+      idr = null;
+    }
+    if (!idr || !idr.ok) {
+      throw appError(
+        "FORBIDDEN",
+        "PERMISSION_DENIED",
+        { action: "selfApproveOrchestrationGate" },
+        `Gate "${gate.id}" requires four-eyes, but the API key that started run ${run.id} cannot be identified (or has no holder) — it cannot be approved.`,
+      );
+    }
+    if (idr.identity.keyParties.includes(user.id)) {
+      throw appError(
+        "FORBIDDEN",
+        "PERMISSION_DENIED",
+        { action: "selfApproveOrchestrationGate" },
+        `Gate "${gate.id}" requires four-eyes: run ${run.id} was started through an API key issued to or created by you — another user must approve it.`,
+      );
+    }
   }
 }
 
@@ -2656,7 +2743,8 @@ export async function startRun(
   user: FoeUser,
   /**
    * ownerUserId — doc 81 Đợt 4 fix round 1 (R-4-f): the HUMAN who owns a run started by a non-user principal (API v1:
-   * the API key's creating user). Ignored when `user` is a real user (id > 0).
+   * since Đợt 9 R1 the user the API key is ISSUED TO — api_keys.holderUserId, default the creator). Ignored when `user` is
+   * a real user (id > 0).
    */
   opts?: {
     async?: boolean;
@@ -2668,6 +2756,13 @@ export async function startRun(
      * added, never lifted. A non-user start with NO owner stays unmarked: it is owner-less ⇒ ownerUnknown refuses it anyway.
      */
     viaApi?: boolean;
+    /**
+     * doc 81 Đợt 9 task R1/R2 — the API key that starts this run (API v1 route only, from the AUTHENTICATED principal, never
+     * from the body / params). Recorded on the run (orchestration_runs.startedViaApiKeyId, write-once) only for an API run;
+     * its holder / creator are then excluded from approving. Absent (or not recordable) ⇒ the API run stays unidentified ⇒
+     * its non-STOP OT/robot steps are refused (apiRun) — fail-closed.
+     */
+    apiKeyId?: number | null;
     /** doc 81 Đợt 5 task E2 — the starter's factory scope (see DeployOpts.scope). */
     scope?: FoeScope;
     /** doc 81 Đợt 7 I fix 1 — the workflow the caller means (several visible workflows may share a ref across namespaces). */
@@ -2755,6 +2850,19 @@ export async function startRun(
       })
       .returning();
     runId = run.id;
+    // doc 81 Đợt 9 task R1 — WHICH key started this API run (narrow projection: the column is not on the full-row object, mig
+    // 0369). Written BEFORE the walk starts, so no approval is ever evaluated without it. A failure (0369 not applied, DB
+    // error) is said loudly and leaves the run unidentified ⇒ its non-STOP OT/robot steps are refused (apiRun), STOPs unchanged.
+    const apiKeyId = opts?.apiKeyId;
+    if (viaApi && typeof apiKeyId === "number" && Number.isInteger(apiKeyId) && apiKeyId > 0) {
+      try {
+        await d.update(runApiKeyCols).set({ startedViaApiKeyId: apiKeyId }).where(eq(runApiKeyCols.id, run.id));
+      } catch (err) {
+        console.error(
+          `[FOE] run ${run.id}: the API key that started it (${apiKeyId}) could not be recorded (migration 0369 applied?) — its OT/robot steps other than a STOP will be refused (apiRun): ${(err as Error)?.message ?? err}`,
+        );
+      }
+    }
     try {
       opts?.onStarted?.(run.id); // doc 81 Đợt 7 I1
     } catch {
@@ -2839,6 +2947,7 @@ export async function getRun(
     defHash: usable ? hashWorkflowDefinition(usable) : null,
     bindingDigest: binding ? binding.digest : null,
     programChecks: binding ? binding.programs : null,
+    apiKey: opts.bindingDigest === true ? await apiKeyViewOf(d, run) : null, // doc 81 Đợt 9 R3 — the approver's screen only
     steps: stepRows.map((s) => ({
       stepId: s.stepId,
       stepType: s.stepType,
@@ -3102,7 +3211,7 @@ export async function resumeRun(
     // Only a run paused AT a gate ('awaiting_confirm'); an interrupted 'held' run has no open gate.
     if (run.status === "awaiting_confirm" && gateStepId) {
       const gate = findStepDeep(def.steps, gateStepId);
-      if (gate && gate.type === "hitl_gate") assertGateApprover(gate, run, user);
+      if (gate && gate.type === "hitl_gate") await assertGateApprover(gate, run, user);
     }
 
     // doc 80 ORC-02 — CAS `UPDATE … SET status='running' WHERE id=$1 AND status IN

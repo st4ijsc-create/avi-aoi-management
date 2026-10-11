@@ -20,17 +20,26 @@
  *      when that adapter's controller supports it (ot/programChecksum.ts): a program changed in the controller since the
  *      approval ⇒ STALE; a supported adapter whose checksum cannot be read now ⇒ no digest ⇒ nothing counts (reason
  *      programUnreadable); an unsupported controller is recorded as not verifiable (approval.programChecks) and shown so.
- * Reasons when nothing counts: ownerUnknown › programUnreadable › staleApproval › approvedByOwner › noGate.
+ * Reasons when nothing counts: ownerUnknown / apiRun (identity) › programUnreadable › staleApproval › approvedByOwner ›
+ * approvedByKeyHolder (Đợt 9 R2) › noGate.
  *
- * doc 81 Đợt 5 task E1 (item 24, owner decision option C) — a run started through an API key (runStartedViaApi) never
- * gets a counting approval at all (reason `apiRun`): the person holding a key is invisible to the server, so "approved by
- * someone other than the run owner" cannot be established (the holder may BE the approver). Both layers refuse it — the
- * engine before it creates the authorisation row, and foeApprovalDbRefusal (the dispatchers, from the DB rows).
+ * doc 81 Đợt 9 task R2 (owner decision 2026-10-12, OPTION A — replaces Đợt 5 E1 option C "API runs never actuate"):
+ * a run started through an API key (runStartedViaApi) records WHICH key started it (orchestration_runs.startedViaApiKeyId,
+ * mig 0369) and the key records WHO IT IS ISSUED TO (api_keys.holderUserId + the append-only api_key_holder_changes). For
+ * such a run an approval counts only when the approver is NONE of {the run's starter (startedBy), the key's holder — now
+ * or at any earlier time —, the key's creator} (deriveRunApprovalIdentity, re-derived from the DB rows by the engine AND
+ * both dispatchers, never from the action). The run may then actuate like any other. Fail-closed:
+ *   • an API-marked run whose key cannot be identified (no startedViaApiKeyId — started before 0369, an edge copy, 0369 not
+ *     applied —, the key deleted, any read error) ⇒ nothing counts (reason `apiRun`, as under option C);
+ *   • a key with no holder ⇒ `ownerUnknown` (as before).
+ * Residual (procedural, documented): a holder who hands the secret to someone else is still out of reach — one key per
+ * person, revoke and re-mint when it changes hands (changing the holder does NOT change the secret, which is why every
+ * earlier holder stays excluded).
  * STOPs (L-7): the engine never refuses a STOP step for `apiRun` (it is sent exactly as before, without an approval);
  * the dispatchers never call foeApprovalDbRefusal for a PINNED OT stop or for any robot stop. What still reaches it is an
- * UNPINNED OT stop-typed write — the OT dispatcher already treats that as needing four-eyes (it may write any tag), and
- * an API run cannot provide four-eyes, so it is refused like every other non-STOP write (R-4-x: an exemption for STOP
- * never extends to a write that is not a verified stop).
+ * UNPINNED OT stop-typed write — the OT dispatcher already treats that as needing four-eyes (it may write any tag), so
+ * for an API run it needs a counting approval under the rule above, like every other non-STOP write (R-4-x: an exemption
+ * for STOP never extends to a write that is not a verified stop).
  * L-7 statement (doc 81 Đợt 8 final wave, review O M6 — owner-visible): since Đợt 8 O2 an UNPINNED stop-typed OT write
  * of an orchestration run whose binding includes a checksum-capable controller can be REFUSED (programUnreadable /
  * staleApproval) or DELAYED by up to PROGRAM_CHECKSUM_READ_DEADLINE_MS (1 s, read before the reservation — M2) by the
@@ -52,6 +61,7 @@ import {
 import { getCapabilitiesForMachine } from "../../equipment/capabilityModel";
 import { programChecksumCapable, readAdapterProgramCheck, robotProgramCheck, type ProgramCheck } from "../../ot/programChecksum"; // Đợt 8 O2
 import { allStepsOf } from "./foeStepClass"; // doc 81 Đợt 5 task E fix 1 — THE step walk
+import { readApiKeyParties, readRunApiKeyId } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R2 (mig 0369, narrow projections)
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
 /** resultJson.approvalSource written by resumeRun's approval path (the only one that counts). */
@@ -61,7 +71,51 @@ export const FOE_APPROVAL_SOURCE_EDGE = "edge";
 /** Written when user 0 (system auto-resume / API) resolves a gate (never counts). */
 export const FOE_APPROVAL_SOURCE_SYSTEM = "system";
 
-export type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun" | "programUnreadable";
+/** doc 81 Đợt 9 R2 — `approvedByKeyHolder`: the only approvals were given by the API key's holder (now / earlier) or creator. */
+export type GateRequiredReason = "noGate" | "approvedByOwner" | "approvedByKeyHolder" | "staleApproval" | "ownerUnknown" | "apiRun" | "programUnreadable";
+
+/**
+ * doc 81 Đợt 9 task R2 — WHO may not give a counting approval for a run, as read from the DB rows NOW:
+ *   • `owner` — orchestration_runs.startedBy (the starter; for an API run the key's holder at start);
+ *   • `keyParties` — API runs only: the key's current holder, every earlier holder (api_key_holder_changes) and its
+ *     creator. Empty for a run started by a user.
+ */
+export interface RunApprovalIdentity {
+  owner: number;
+  keyParties: number[];
+  /** the key that started the run (API runs), else null */
+  apiKeyId: number | null;
+}
+export type RunIdentityResult = { ok: true; identity: RunApprovalIdentity } | { ok: false; reason: "ownerUnknown" | "apiRun" };
+
+/**
+ * doc 81 Đợt 9 task R2 — THE derivation of RunApprovalIdentity, used by the engine (findSeparateGateApproval, gate
+ * approval policy) and by both dispatchers (foeApprovalDbRefusal, inside their reservation transaction). `run` is the run
+ * row as read from the DB by the caller; `viaApiHint` lets the engine add its in-memory marker (either ⇒ API run).
+ * THROWS on a DB error (callers fail closed). Never reads anything from an action.
+ */
+export async function deriveRunApprovalIdentity(
+  db: DbLike,
+  run: { id: number; startedBy?: number | null; paramsJson?: unknown; contextJson?: unknown },
+  opts: { viaApiHint?: boolean } = {},
+): Promise<RunIdentityResult> {
+  const owner = run.startedBy ?? null;
+  if (!posInt(owner)) return { ok: false, reason: "ownerUnknown" };
+  if (!(opts.viaApiHint === true || runStartedViaApi(run))) return { ok: true, identity: { owner, keyParties: [], apiKeyId: null } };
+  const keyId = await readRunApiKeyId(db, run.id);
+  if (keyId === null) return { ok: false, reason: "apiRun" };
+  const key = await readApiKeyParties(db, keyId);
+  if (!key) return { ok: false, reason: "apiRun" };
+  if (key.holder === null) return { ok: false, reason: "ownerUnknown" };
+  const parties = new Set<number>(key.everHolders);
+  if (key.creator !== null) parties.add(key.creator);
+  return { ok: true, identity: { owner, keyParties: [...parties].sort((a, b) => a - b), apiKeyId: keyId } };
+}
+
+/** doc 81 Đợt 9 R2 — the users whose approval never counts for this run (owner first). */
+export function excludedApprovers(identity: RunApprovalIdentity): number[] {
+  return [identity.owner, ...identity.keyParties.filter((u) => u !== identity.owner)];
+}
 
 /**
  * doc 81 Đợt 5 task E1 — the SERVER-ONLY marker of a run started through an API key (or by any non-user principal).
@@ -69,6 +123,8 @@ export type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" 
  * from the caller as a way to LIFT the restriction. paramsJson is written once (at the INSERT) and nothing else writes it,
  * while contextJson is overwritten by an edge result sync (edgeCoordinator.syncRunResult) — so EITHER marker set ⇒ API run
  * (fail-closed: an edge payload can wipe contextJson but cannot remove the params marker).
+ * doc 81 Đợt 9 R2 — the marker says "API run ⇒ the key identity rule applies"; WHICH key is only ever read from the
+ * write-once column orchestration_runs.startedViaApiKeyId (never from params, which a caller / an edge copy supplies).
  */
 export const FOE_API_RUN_PARAM = "__foeStartedViaApi";
 
@@ -388,16 +444,24 @@ export function evaluateGateApprovals(
   rows: readonly GateRowLike[],
   def: Pick<WorkflowDefinition, "steps">,
   defHash: string,
-  runOwner: number | null,
+  /**
+   * The run owner (startedBy) — or, doc 81 Đợt 9 R2, the whole RunApprovalIdentity (deriveRunApprovalIdentity): an
+   * approval by the owner OR by any API-key party (holder now / earlier, creator) never counts.
+   */
+  runOwner: number | null | RunApprovalIdentity,
   /**
    * doc 81 Đợt 5 task E3 — computeBindingDigest() of the definition NOW (null ⇒ not computable ⇒ nothing counts).
    * doc 81 Đợt 8 O2 — or, on the engine's STOP path only, a per-row digest (recordedProgramDigests).
    */
   bindingDigest: string | null | ((row: GateRowLike) => string | null),
 ): GateEvaluation {
-  if (!posInt(runOwner)) return { ok: false, reason: "ownerUnknown" };
+  const identity: { owner: number | null; keyParties: readonly number[] } =
+    runOwner !== null && typeof runOwner === "object" ? runOwner : { owner: runOwner, keyParties: [] };
+  const owner = identity.owner;
+  if (!posInt(owner)) return { ok: false, reason: "ownerUnknown" };
   let sawStale = false;
   let sawOwner = false;
+  let sawKeyParty = false;
   const approvals: CountingApproval[] = [];
   for (const r of rows) {
     if (r.status !== "completed") continue;
@@ -411,8 +475,13 @@ export function evaluateGateApprovals(
       bindingDigest?: unknown;
     } | null;
     if (!res || res.approved !== true || res.approvalSource !== FOE_APPROVAL_SOURCE_SERVER || !posInt(res.approvedBy)) continue;
-    if (res.approvedBy === runOwner) {
+    if (res.approvedBy === owner) {
       sawOwner = true;
+      continue;
+    }
+    // doc 81 Đợt 9 R2 — the API key's holder (now or earlier) or creator: never a second person for this run.
+    if (identity.keyParties.includes(res.approvedBy)) {
+      sawKeyParty = true;
       continue;
     }
     // E3 — the definition (R-4-e) AND the device configuration it resolves to must be what the approver approved.
@@ -424,7 +493,7 @@ export function evaluateGateApprovals(
     approvals.push({ approvedBy: res.approvedBy, gateStepId: r.stepId, at: r.finishedAt ? new Date(r.finishedAt).getTime() : 0 });
   }
   if (approvals.length > 0) return { ok: true, approvals: approvals.sort((a, b) => b.at - a.at) };
-  return { ok: false, reason: sawStale ? "staleApproval" : sawOwner ? "approvedByOwner" : "noGate" };
+  return { ok: false, reason: sawStale ? "staleApproval" : sawOwner ? "approvedByOwner" : sawKeyParty ? "approvedByKeyHolder" : "noGate" };
 }
 
 /**
@@ -436,7 +505,7 @@ export function evaluateWithPrograms(
   rows: readonly GateRowLike[],
   def: Pick<WorkflowDefinition, "steps">,
   defHash: string,
-  runOwner: number | null,
+  runOwner: number | null | RunApprovalIdentity,
   detail: { digest: string | null; programs: readonly ProgramCheck[] },
 ): GateEvaluation {
   const ev = evaluateGateApprovals(rows, def, defHash, runOwner, detail.digest);
@@ -465,11 +534,19 @@ export async function foeApprovalDbRefusal(
     if (!posInt(runId)) return "orchestration action does not name its run — no separate gate approval can be verified";
     const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     if (!run) return `orchestration run ${runId} not found — no separate gate approval can be verified`;
-    // doc 81 Đợt 5 task E1 — an API-started run never actuates through a gate approval (option C).
-    if (runStartedViaApi(run)) return "orchestration run was started through an API key (FOE_GATE_REQUIRED apiRun) — its OT/robot commands other than a STOP are never sent";
-    const owner = (run as { startedBy: number | null }).startedBy ?? null;
-    if (!posInt(owner)) return "orchestration run has no attributable owner (ownerUnknown) — OT/robot commands are refused";
+    // doc 81 Đợt 9 task R2 (option A, replaces Đợt 5 E1 option C) — owner AND, for an API-started run, the key's holder
+    // (now / earlier) and creator, re-derived HERE from the run row and the api_keys rows (never from the action).
+    const idr = await deriveRunApprovalIdentity(db, run as { id: number; startedBy: number | null; paramsJson: unknown; contextJson: unknown });
+    if (!idr.ok) {
+      return idr.reason === "apiRun"
+        ? "orchestration run was started through an API key that cannot be identified (FOE_GATE_REQUIRED apiRun) — its OT/robot commands other than a STOP are refused"
+        : "orchestration run has no attributable owner (ownerUnknown) — OT/robot commands are refused";
+    }
+    const { owner } = idr.identity;
     if (pending.userId === owner) return "orchestration action is confirmed by the run owner — a separate approval is required";
+    if (idr.identity.keyParties.includes(pending.userId)) {
+      return "orchestration action is confirmed by the holder or creator of the API key that started the run (FOE_GATE_REQUIRED approvedByKeyHolder) — a separate approval is required";
+    }
     if (posInt(requestedBy) && requestedBy !== owner) return "orchestration action's requester is not the run owner";
     const [wf] = await db
       .select()
@@ -480,7 +557,7 @@ export async function foeApprovalDbRefusal(
     if (!def || !Array.isArray(def.steps)) return "orchestration workflow definition not found";
     const rows = (await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))) as GateRowLike[];
     // E3 + Đợt 8 O2 — configuration AND controller program checksums read now (bounded); unreadable ⇒ refused.
-    const ev = evaluateWithPrograms(rows, def, hashWorkflowDefinition(def), owner, await computeBindingDetail(db, def, prePrograms));
+    const ev = evaluateWithPrograms(rows, def, hashWorkflowDefinition(def), idr.identity, await computeBindingDetail(db, def, prePrograms));
     if (!ev.ok) return `no counting gate approval for this run (FOE_GATE_REQUIRED ${ev.reason})`;
     if (!ev.approvals.some((a) => a.approvedBy === pending.userId)) {
       return "orchestration action's confirmer is not the approver of a counting gate of its run";

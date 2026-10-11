@@ -20,13 +20,15 @@
  */
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
-import { apiKeys } from "../../drizzle/schema";
+import { apiKeys, users } from "../../drizzle/schema";
+import { apiKeyIdentityCols, readHoldersOfKeys } from "../services/orchestration/foe/runApiKeyIdentity"; // doc 81 Đợt 9 R1 (mig 0369)
+import { createAuditContext, logCrudOperation } from "../services/auditTrailService";
 import { hashApiKey } from "../api/v1/auth";
 import { ALL_SCOPES, SCOPE_DESCRIPTIONS } from "../api/v1/scopes";
 
@@ -126,6 +128,26 @@ function publicRow(r: typeof apiKeys.$inferSelect) {
   };
 }
 
+/**
+ * doc 81 Đợt 9 task R1/R3 — "Issued to": the holder of each key with the user's name. The column is read through the narrow
+ * projection (mig 0369 — not on the full-row `apiKeys` object, which the API v1 auth path reads); 0369 missing / DB error ⇒
+ * every key `holderRecorded: false` (shown "not recorded"; orchestration runs of such keys are refused — fail-closed).
+ */
+async function withHolders<T extends { id: number }>(d: Awaited<ReturnType<typeof db>>, rows: T[]) {
+  const holders = await readHoldersOfKeys(d, rows.map((r) => r.id));
+  const ids = [...new Set([...holders.values()].filter((v): v is number => typeof v === "number"))];
+  const names = ids.length ? await d.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids)).catch(() => []) : [];
+  return rows.map((r) => {
+    const holderUserId = holders.has(r.id) ? (holders.get(r.id) ?? null) : null;
+    return {
+      ...r,
+      holderRecorded: holders.has(r.id),
+      holderUserId,
+      holderName: holderUserId !== null ? (names.find((n) => n.id === holderUserId)?.name ?? null) : null,
+    };
+  });
+}
+
 function toExpiry(v: string | Date | null | undefined): Date | null {
   if (v == null || v === "") return null;
   const d = v instanceof Date ? v : new Date(v);
@@ -149,7 +171,7 @@ export const apiKeyRouter = router({
     .query(async () => {
       const d = await db();
       const rows = await d.select().from(apiKeys).orderBy(desc(apiKeys.createdAt));
-      return rows.map(publicRow);
+      return withHolders(d, rows.map(publicRow)); // doc 81 Đợt 9 R3 — "Issued to"
     }),
 
   /**
@@ -188,8 +210,24 @@ export const apiKeyRouter = router({
           ...normalizeTenantScope(input),
         })
         .returning();
+      // doc 81 Đợt 9 task R1 — the key is ISSUED TO its creator by default (api_keys.holderUserId, mig 0369; the history
+      // trigger records it). Written through the narrow projection; a failure (0369 not applied) leaves the key WITHOUT a
+      // holder ⇒ orchestration runs it starts are owner-less and refused (fail-closed) — said loudly, the key still works
+      // for everything else.
+      const creator = ctx.user?.id;
+      if (typeof creator === "number" && creator > 0) {
+        try {
+          await d.transaction(async (tx) => {
+            await tx.execute(sql`SELECT set_config('aoi.actor_user_id', ${String(creator)}, true), set_config('aoi.holder_change_reason', 'default = creator', true)`);
+            await tx.update(apiKeyIdentityCols).set({ holderUserId: creator }).where(eq(apiKeyIdentityCols.id, row.id));
+          });
+        } catch (err) {
+          console.error(`[apiKey] key ${row.id}: holder (issued to) not recorded — migration 0369 applied? ${(err as Error)?.message ?? err}`);
+        }
+      }
+      const [withHolder] = await withHolders(d, [publicRow(row)]);
       // The plaintext is surfaced HERE ONLY — never persisted, never returned again.
-      return { ...publicRow(row), plaintextKey: plaintext };
+      return { ...withHolder, plaintextKey: plaintext };
     }),
 
   /** Edit name/description/scopes/expiry/active flag. NEVER returns the hash. */
@@ -227,6 +265,68 @@ export const apiKeyRouter = router({
 
       const [row] = await d.update(apiKeys).set(patch).where(eq(apiKeys.id, input.id)).returning();
       return publicRow(row);
+    }),
+
+  /**
+   * doc 81 Đợt 9 task R1 — change who a key is ISSUED TO. ADMIN ONLY (adminProcedure — `admin_system` canEdit is not
+   * enough). Every change is recorded twice, durably: the trigger writes api_key_holder_changes (from, to, acting admin,
+   * reason) in the SAME transaction as the change (no history row ⇒ no change), and audit_logs gets an entry.
+   * The new holder must be an existing, ACTIVE user. Changing the holder does NOT change the secret: every earlier holder
+   * stays excluded from approving the runs this key starts — revoke and re-mint the key when it really changes hands.
+   */
+  setHolder: adminProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        holderUserId: z.number().int().positive(),
+        reason: z.string().trim().min(3).max(500),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const d = await db();
+      const [existing] = await d.select().from(apiKeys).where(eq(apiKeys.id, input.id)).limit(1);
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${input.id} not found`);
+      const [holder] = await d.select({ id: users.id, isActive: users.isActive }).from(users).where(eq(users.id, input.holderUserId)).limit(1);
+      if (!holder || holder.isActive !== true) {
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "holderUserId" }, `User ${input.holderUserId} does not exist or is not active.`);
+      }
+      const actor = ctx.user!.id;
+      let before: number | null = null;
+      try {
+        await d.transaction(async (tx) => {
+          const [cur] = await tx
+            .select({ id: apiKeyIdentityCols.id, holderUserId: apiKeyIdentityCols.holderUserId })
+            .from(apiKeyIdentityCols)
+            .where(eq(apiKeyIdentityCols.id, input.id))
+            .for("update");
+          before = (cur?.holderUserId as number | null | undefined) ?? null;
+          await tx.execute(sql`SELECT set_config('aoi.actor_user_id', ${String(actor)}, true), set_config('aoi.holder_change_reason', ${input.reason}, true)`);
+          await tx.update(apiKeyIdentityCols).set({ holderUserId: input.holderUserId }).where(eq(apiKeyIdentityCols.id, input.id));
+        });
+      } catch (err) {
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_NOT_CONFIGURED",
+          { feature: "API key holder (database migration 0369)" },
+          `The holder of API key ${input.id} could not be changed (database migration 0369 applied?): ${(err as Error)?.message ?? err}`,
+        );
+      }
+      await logCrudOperation(createAuditContext({ user: ctx.user }), {
+        action: "UPDATE",
+        entityType: "api_key",
+        entityId: input.id,
+        entityName: existing.name,
+        details: {
+          operation: "API_KEY_HOLDER_CHANGE",
+          before: { holderUserId: before },
+          after: { holderUserId: input.holderUserId },
+          metadata: { reason: input.reason, docRef: "doc 81 Dot 9 R1" },
+          affectedFields: ["holderUserId"],
+        },
+        status: "success",
+      });
+      const [row] = await withHolders(d, [publicRow(existing)]);
+      return row;
     }),
 
   /** Revoke a key (isActive=false) — the auth middleware denies inactive keys. */
