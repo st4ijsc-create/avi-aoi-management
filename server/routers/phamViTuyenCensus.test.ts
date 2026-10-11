@@ -104,7 +104,15 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 // nay đưa phạm vi KHOÁ (`req.apiPrincipal?.tenantScope` → `orchestrationScopeOf` → `runVisibleTo`) vào lượt đọc: run ngoài
 // phạm vi ⇒ 404 Y HỆT run không tồn tại. Lưới: `server/routers/orchestrationScope.dot5.db.test.ts` (khoá NULL/factory/global).
 // Chỉ đúng MỘT tuyến của lượt này đổi nhóm; A/D/U/tong giữ nguyên.
-const GHIM = { A: 80, C: 37, D: 73, S: 19, U: 16, tong: 225 } as const;
+// ★★★ 2026-10-12 (doc 81 Đợt 9 task S2) — **D 73 → 79 · tong 225 → 231.** Sáu tuyến MỚI, đều POST, đều trong
+// `server/api/v1/edgeNodeRoutes.ts`: `/edge/node/pull`, `/edge/node/runs/:runId/{claim,progress,complete,release,interrupted}`
+// — giao thức thực thi run của MỘT nút biên. Đo: chạy bộ suy trên cây làm việc trước/sau (chỉ D đổi, +6; A/C/S/U giữ nguyên).
+// Vì sao không phải lỗ phạm vi mới: (1) danh tính là KHOÁ CỦA NÚT (`requireEdgeNode` — chỉ băm SHA-256 trong
+// `edge_node_credentials`, thu hồi ⇒ 401), không phải khoá API hay phiên; (2) mọi run id được so với PHÂN CÔNG của chính nút ấy
+// (`orchestration_run_edge_assignments.edgeNodeId`) VÀ phạm vi nhà máy của nút (`runInNodeScope`) — run của nút khác / ngoài
+// nhà máy / không tồn tại ⇒ CÙNG một 404; (3) tuyến không trả dữ liệu tenant nào ngoài định nghĩa run đã giao cho nút.
+// Lưới hành vi: `server/services/edge/edgeExecution.s12.dot9.db.test.ts` + `edgeExecution.s4.e2e.dot9.db.test.ts`.
+const GHIM = { A: 80, C: 37, D: 79, S: 19, U: 16, tong: 231 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {

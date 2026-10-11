@@ -497,6 +497,24 @@ export async function bootstrapEdgeGateway(): Promise<EdgeGatewayHandles> {
   startHeartbeatLoop();
   startDrainLoop();
 
+  // doc 81 Đợt 9 task S3 — RUN EXECUTION (owner decision 2026-10-12): flag EDGE_EXECUTION_ENABLED (default OFF) + this node's
+  // own credential + the central URL; anything missing ⇒ nothing is started (said once). The robot gateway is started with it
+  // (gated by ROBOT_GATEWAY_ENABLED as everywhere) so the edge's own dispatchers reach this line's robots.
+  if (process.env.EDGE_EXECUTION_ENABLED === "true" || process.env.EDGE_EXECUTION_ENABLED === "1") {
+    try {
+      const { startRobots } = await import("../robot/robotManager");
+      await startRobots();
+    } catch (err) {
+      console.error("[EdgeGateway] robot start failed:", (err as Error)?.message || err);
+    }
+    try {
+      const { startEdgeExecutionFromEnv } = await import("./edgeExecutionAgent");
+      await startEdgeExecutionFromEnv();
+    } catch (err) {
+      console.error("[EdgeGateway] run execution not started:", (err as Error)?.message || err);
+    }
+  }
+
   return { stop: stopEdgeGateway };
 }
 
@@ -511,6 +529,13 @@ export async function stopEdgeGateway(): Promise<void> {
   if (drainTimer) {
     clearInterval(drainTimer);
     drainTimer = null;
+  }
+  // doc 81 Đợt 9 task S3 — stop pulling new runs (walkers in flight finish their segment; a lost one is declared interrupted).
+  try {
+    const { stopEdgeExecution } = await import("./edgeExecutionAgent");
+    await stopEdgeExecution();
+  } catch {
+    /* best-effort */
   }
   // Last-chance drain so a graceful stop replays anything still buffered.
   try {

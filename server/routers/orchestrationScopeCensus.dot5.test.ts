@@ -178,6 +178,25 @@ const CLASSIFIED: Record<string, Kind> = {
       /orchestrationRunIds, \/\/ E fix 1/,
     ],
   },
+  // 2026-10-12 doc 81 Đợt 9 task S2/S3 — four NEW files of the population: the per-node edge execution protocol. Its scope is the
+  // NODE (authenticated by its own credential): every run id is matched to that node's assignment AND the node's factory scope.
+  "server/api/v1/edgeNodeRoutes.ts": {
+    kind: "service",
+    requires: [/const auth = requireEdgeNode\(\);/, /r\.post\(\s*"\/edge\/node\/pull",\s*auth,/, /r\.post\(\s*"\/edge\/node\/runs\/:runId\/claim",\s*auth,/, /r\.post\(\s*"\/edge\/node\/runs\/:runId\/progress",\s*auth,/, /r\.post\(\s*"\/edge\/node\/runs\/:runId\/complete",\s*auth,/, /r\.post\(\s*"\/edge\/node\/runs\/:runId\/release",\s*auth,/, /r\.post\(\s*"\/edge\/node\/runs\/:runId\/interrupted",\s*auth,/],
+  },
+  "server/services/edge/edgeExecutionCentral.ts": {
+    kind: "service",
+    requires: [
+      // a run id is this node's only through ITS assignment row …
+      /and\(eq\(runEdgeAssignments\.runId, runId\), eq\(runEdgeAssignments\.edgeNodeId, node\.nodeId\)\)/,
+      /and\(eq\(runEdgeAssignments\.edgeNodeId, node\.nodeId\), eq\(orchestrationRuns\.status, "queued"\)\)/,
+      // … and the run's non-STOP targets inside the NODE's factory (pull and claim)
+      /if \(!\(await runInNodeScope\(run, node\)\)\) continue;/,
+      /if \(!run0 \|\| !\(await runInNodeScope\(run0, node\)\)\) return notFound\(runId\);/,
+    ],
+  },
+  "server/services/edge/edgeExecutionAgent.ts": { kind: "allow", reason: "runs ON the edge (no caller identity): executes only runs central handed THIS node under a claim (foeEngine.driveEdgeClaimedRun re-verifies the claim in the DB)" },
+  "server/services/edge/edgeRunGuard.ts": { kind: "allow", reason: "reads ONE run's status + its assignment for the edge walker that holds the claim; returns a verdict, no run to anyone" },
   "server/services/edge/edgeCoordinator.ts": { kind: "allow", reason: "service: run-id entries (assignRun / syncRunResult / listRunsForNode) are reached only through edgeRuntimeRouter + api/v1 /edge/sync, both checked here" },
   "server/services/edge/edgeRuntime.ts": { kind: "allow", reason: "runs ON an edge host (no caller identity); executeAssignedRun has no production caller" },
   "server/services/engineeringAssignment/assignmentService.ts": {
@@ -218,6 +237,13 @@ const ALLOW_ENGINE: Record<string, string> = {
   // 2026-10-11 doc 81 Đợt 7 task I3
   runVisibilityDefinitions:
     "a LOADER of the definitions a run executed (no caller identity, returns no run to anyone): its callers are the shared checks above (filterRunsVisibleTo / runScopeDecision) and rosterScope.runAssigneeVisibilitySql, reached only after the router's runIdVisibleTo",
+  // 2026-10-12 doc 81 Đợt 9 task S3 — the EDGE half (no caller identity on an edge host)
+  driveEdgeClaimedRun:
+    "EDGE only (edgeExecutionAgent): walks a run only under the claim central minted for THIS node, re-verified in the DB (claimSeq + token hash + workflow id + snapshot); the node's scope was decided by central at assignment (resolveAssignableNode) and at pull / claim (runInNodeScope)",
+  stopLiveRunForCentralAbort:
+    "EDGE only: acts on a walker alive in THIS process (liveRuns) on central's stop signal, and only STOPS (L-7) — nothing to see, nothing new to start",
+  resendStopsOfAbortedRun:
+    "EDGE only: re-sends the unconfirmed STOPs of a run the DB shows ABORTED (never aborts or reads out anything; only STOPs, L-7) — listed for THIS node by central (its assignment)",
 };
 
 describe("doc 81 Đợt 5 E2 fix (R-5-d) + E fix 1 — every orchestration id-taking entry point carries the scope check", () => {
