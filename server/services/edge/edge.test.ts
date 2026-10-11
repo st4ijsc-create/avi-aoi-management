@@ -145,8 +145,10 @@ const fakeDb = {
 vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => fakeDb) }));
 
 // ── mock the shared FOE engine (executeAssignedRun must REUSE it, not fork) ──
-const { startRunMock, getRunMock } = vi.hoisted(() => ({
-  startRunMock: vi.fn(async () => ({ ok: true, enabled: true, runId: 1, status: "completed" as const })),
+const { startRunMock, getRunMock, abortRunMock } = vi.hoisted(() => ({
+  startRunMock: vi.fn(async (..._a: unknown[]) => ({ ok: true, enabled: true, runId: 1, status: "completed" as const })),
+  /** doc 81 Đợt 7 I1 — the LOCAL abort the edge runs when central stopped the run. */
+  abortRunMock: vi.fn(async (runId: number, ..._a: unknown[]) => ({ ok: true, enabled: true, runId, status: "aborted" as const })),
   getRunMock: vi.fn(async (runId: number) => ({
     run: { id: runId, status: "completed", error: null, currentStepId: null, startedAt: new Date(), finishedAt: new Date() },
     steps: [
@@ -157,6 +159,7 @@ const { startRunMock, getRunMock } = vi.hoisted(() => ({
 vi.mock("../orchestration/foe/foeEngine", () => ({
   startRun: startRunMock,
   getRun: getRunMock,
+  abortRun: abortRunMock,
   foeEnabled: () => true,
 }));
 
@@ -175,14 +178,18 @@ import {
   replayBuffer,
   bufferedCount,
   _clearBuffer,
+  EDGE_CENTRAL_ABORT_USER,
 } from "./edgeRuntime";
+import { FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval";
 
 function reset() {
   store.clear();
   seqs.clear();
   startRunMock.mockClear();
   getRunMock.mockClear();
+  abortRunMock.mockClear();
   _clearBuffer();
+  process.env.EDGE_ABORT_POLL_MS = "50";
   process.env.EDGE_RUNTIME_ENABLED = "true";
   // seed one workflow run + node
   store.set("orchestration_runs", [
@@ -378,9 +385,10 @@ describe("edge runtime — offline buffer + replay + foeEngine reuse", () => {
   it("★ F4: the run is started AS its starting principal with the account's REAL role (admin keeps the admin bypass)", async () => {
     setCentralSync(async () => true);
     await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
-    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 5, role: "admin" }));
+    // (4th argument since doc 81 Đợt 7 I1: { onStarted } — the edge watches central for an abort while the run walks)
+    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 5, role: "admin" }), { onStarted: expect.any(Function) });
     await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 6 });
-    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 6, role: "engineer" }));
+    expect(startRunMock).toHaveBeenLastCalledWith("wf-1", {}, expect.objectContaining({ id: 6, role: "engineer" }), { onStarted: expect.any(Function) });
   });
 
   for (const [label, startedBy] of [["no principal", null], ["an unknown account", 999], ["a disabled account", 7]] as const) {
@@ -393,6 +401,156 @@ describe("edge runtime — offline buffer + replay + foeEngine reuse", () => {
       expect(res.message).toMatch(/starting principal/);
     });
   }
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 7 task I1 — a CENTRAL abort / rejection stops the walker of a run executing on an edge node
+// ════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 7 I1 — central: an edge sync never overwrites a central abort / rejection, and tells the edge to stop", () => {
+  const run1 = () => rows("orchestration_runs")[0];
+  const ABORTED_AT = new Date("2026-10-11T01:00:00Z");
+
+  it("★ an 'aborted' run keeps status / error / finish time / context; the edge's step rows are recorded; abortRequested", async () => {
+    Object.assign(run1(), { status: "aborted", error: "Aborted by user 12.", finishedAt: ABORTED_AT, contextJson: { foeDispatchedSteps: ["s1"] } });
+    const res = await syncRunResult({
+      edgeNodeCode: "edge-x",
+      runId: 1,
+      status: "completed",
+      error: null,
+      currentStepId: "s9",
+      finishedAt: new Date("2026-10-11T02:00:00Z"),
+      contextJson: { wiped: true },
+      steps: [{ stepId: "s1", stepType: "command", status: "completed", attempt: 1 }],
+    } as never);
+    expect(res).toMatchObject({ ok: true, data: { abortRequested: true, stepsApplied: 1 } });
+    expect(run1()).toMatchObject({ status: "aborted", error: "Aborted by user 12.", finishedAt: ABORTED_AT, contextJson: { foeDispatchedSteps: ["s1"] } });
+    expect(rows("orchestration_run_steps").map((r: any) => r.stepId)).toEqual(["s1"]);
+  });
+
+  it("★ a run CLAIMED by a central rejection (claim token, 'compensating') is not rewritten either; abortRequested", async () => {
+    Object.assign(run1(), { status: "compensating", contextJson: { [FOE_REJECT_CLAIM_CTX_KEY]: "tok-1" } });
+    const res = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: "running", steps: [] } as never);
+    expect(res).toMatchObject({ ok: true, data: { abortRequested: true } });
+    expect(run1()).toMatchObject({ status: "compensating", contextJson: { [FOE_REJECT_CLAIM_CTX_KEY]: "tok-1" } });
+  });
+
+  it("★ the abort lands BETWEEN the sync's read and its write ⇒ the write changes nothing (compare-and-set), abortRequested", async () => {
+    Object.assign(run1(), { status: "running" });
+    // the step upsert runs between the read and the run-level write: land the central abort right there
+    const realInsert = fakeDb.insert;
+    (fakeDb as any).insert = (t: any) => {
+      // a NEW row object (another writer's committed update) — the sync's own read of the row keeps the old status
+      const list = rows("orchestration_runs");
+      list[0] = { ...list[0], status: "aborted", error: "Aborted by user 12." };
+      return realInsert(t);
+    };
+    try {
+      const res = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: "completed", steps: [{ stepId: "s1", stepType: "command", status: "completed" }] } as never);
+      expect(res).toMatchObject({ ok: true, data: { abortRequested: true } });
+    } finally {
+      (fakeDb as any).insert = realInsert;
+    }
+    expect(run1()).toMatchObject({ status: "aborted", error: "Aborted by user 12." });
+  });
+
+  it("★ an edge never writes central's `abort:<id>` STOP-sweep rows, nor sets / clears the rejection claim token", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    const res = await syncRunResult({
+      edgeNodeCode: "edge-x",
+      runId: 1,
+      status: "running",
+      contextJson: { [FOE_REJECT_CLAIM_CTX_KEY]: "forged", k: 1 },
+      steps: [
+        { stepId: "abort:stop", stepType: "command", status: "completed", result: { abortStop: "sent", stepId: "stop" } },
+        { stepId: "s1", stepType: "command", status: "running" },
+      ],
+    } as never);
+    expect(res).toMatchObject({ ok: true, data: { abortRequested: false, stepsApplied: 1 } });
+    expect(rows("orchestration_run_steps").map((r: any) => r.stepId)).toEqual(["s1"]);
+    expect(run1().contextJson).toEqual({ k: 1 });
+  });
+
+  it("control: a run central has NOT stopped advances as before (abortRequested false)", async () => {
+    const res = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: "completed", steps: [] } as never);
+    expect(res).toMatchObject({ ok: true, data: { abortRequested: false } });
+    expect(run1().status).toBe("completed");
+  });
+});
+
+describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL walker (non-STOP steps), via the shared engine's abort", () => {
+  /** startRun that creates local run 77, reports it, then "walks" until abortRun is called (or `ms` elapse). */
+  const walkingStart = (ms = 3000) =>
+    startRunMock.mockImplementationOnce(async (...a: unknown[]) => {
+      (a[3] as { onStarted: (id: number) => void }).onStarted(77);
+      const until = Date.now() + ms;
+      while (abortRunMock.mock.calls.length === 0 && Date.now() < until) await new Promise((r) => setTimeout(r, 10));
+      return { ok: false, enabled: true, runId: 77, status: abortRunMock.mock.calls.length ? ("aborted" as const) : ("completed" as const) };
+    });
+
+  it("★ a progress sync during the walk answers abortRequested ⇒ the local run 77 is aborted once, as the edge system user", async () => {
+    walkingStart();
+    const seen: Array<{ runId: number; status: string }> = [];
+    setCentralSync(async (p) => {
+      seen.push({ runId: p.runId, status: p.status });
+      return { ack: true, abortRequested: true };
+    });
+    const t0 = Date.now();
+    const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    expect(Date.now() - t0).toBeLessThan(1500); // stopped by the abort, not by the 3 s walk
+    expect(abortRunMock).toHaveBeenCalledTimes(1);
+    expect(abortRunMock.mock.calls[0][0]).toBe(77); // the LOCAL run
+    expect(abortRunMock.mock.calls[0][1]).toEqual({ ...EDGE_CENTRAL_ABORT_USER });
+    expect(EDGE_CENTRAL_ABORT_USER.id).toBe(0);
+    expect(seen.every((x) => x.runId === 1)).toBe(true); // synced under the CENTRAL run id
+    expect(getRunMock).toHaveBeenCalledWith(77); // progress + final read of the LOCAL run
+    expect(res.ok).toBe(true);
+  });
+
+  it("★ central unreachable during the walk ⇒ no abort can be learned: the walk goes on, said loudly; nothing aborted", async () => {
+    walkingStart(400);
+    setCentralSync(async () => false);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const res = await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+      expect(res).toMatchObject({ ok: true, buffered: true });
+      expect(abortRunMock).not.toHaveBeenCalled();
+      expect(warn.mock.calls.map((c) => String(c[0])).some((l) => /central unreachable.*cannot be learned/.test(l))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("★ the FINAL sync (e.g. the run paused at a gate here) answers abortRequested ⇒ the local run is aborted", async () => {
+    startRunMock.mockImplementationOnce(async (...a: unknown[]) => {
+      (a[3] as { onStarted: (id: number) => void }).onStarted(78);
+      return { ok: true, enabled: true, runId: 78, status: "awaiting_confirm" as const };
+    });
+    setCentralSync(async () => ({ ack: true, abortRequested: true }));
+    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    expect(abortRunMock.mock.calls.map((c) => c[0])).toEqual([78]);
+    expect(getRunMock.mock.calls.map((c) => c[0])).toEqual([78]); // the final payload is read from the LOCAL run
+  });
+
+  it("★ a BUFFERED payload replayed later gets abortRequested ⇒ the local run is aborted then", async () => {
+    startRunMock.mockImplementationOnce(async (...a: unknown[]) => {
+      (a[3] as { onStarted: (id: number) => void }).onStarted(79);
+      return { ok: true, enabled: true, runId: 79, status: "awaiting_confirm" as const };
+    });
+    let online = false;
+    setCentralSync(async () => (online ? { ack: true, abortRequested: true } : false));
+    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    expect(abortRunMock).not.toHaveBeenCalled();
+    online = true;
+    await replayBuffer();
+    expect(abortRunMock.mock.calls.map((c) => c[0])).toEqual([79]);
+  });
+
+  it("control: central answers a plain `true` (no abort) ⇒ nothing aborted", async () => {
+    walkingStart(200);
+    setCentralSync(async () => true);
+    await executeAssignedRun({ id: 1, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    expect(abortRunMock).not.toHaveBeenCalled();
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════════

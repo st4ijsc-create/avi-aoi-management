@@ -2269,6 +2269,11 @@ export async function startRun(
     viaApi?: boolean;
     /** doc 81 Đợt 5 task E2 — the starter's factory scope (see DeployOpts.scope). */
     scope?: FoeScope;
+    /**
+     * doc 81 Đợt 7 task I1 — called with the new run's id right after its row exists (before the walk): the edge runtime
+     * uses it to watch central for an abort WHILE the run walks. A throwing callback is ignored (never stops the run).
+     */
+    onStarted?: (runId: number) => void;
   },
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
@@ -2328,6 +2333,11 @@ export async function startRun(
       })
       .returning();
     runId = run.id;
+    try {
+      opts?.onStarted?.(run.id); // doc 81 Đợt 7 I1
+    } catch {
+      /* a caller's callback never stops the run */
+    }
     auditStopOutOfScope(user, def, run.id, "start", sv.stopOnlyOut); // doc 81 Đợt 5 task E2 (L-7: allowed, audited)
     // doc 33 W4 (F8 §5.1.2) — durable event log: record RUN_CREATED (best-effort, FOE_DURABLE-gated).
     void appendRunEvent(run.id, "RUN_CREATED", { ts: Date.now(), data: { workflowRef: wf.ref } });

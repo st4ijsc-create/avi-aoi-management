@@ -1076,3 +1076,21 @@ describe("doc 81 Đợt 7 I6 — rejection WITH a QT hook, claim reply lost ⇒ 
     expect(ab.abortStops?.sent).toEqual(["stop", "ra"]);
   }, 20_000);
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 7 task I1 — the EDGE side of a central abort: edgeRuntime.applyCentralAbort aborts the LOCAL run as the edge
+// system principal (id 0) through this same engine — measured here on a live walk with the real engine.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 7 I1 — the edge-side abort (system principal, central asked) stops the walker's non-STOP steps, never a STOP", () => {
+  it("★ live walk at the delay: no further non-STOP step is sent, the remaining pinned STOP and robot STOP ARE sent", async () => {
+    const START2 = { ...START, id: "start2" };
+    const { runId, walk } = await liveRunAt("edgeab", [START, DELAY, START2, OT_STOP, RB_STOP], "d");
+    const ab = await abortRun(runId, { id: 0, role: "system", name: "edge: central abort" }, "aborted centrally (run 1) — edge sync");
+    expect(ab).toMatchObject({ ok: true, status: "aborted" });
+    expect(ab.abortStops?.sent).toEqual(["stop", "ra"]);
+    await walk;
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]); // start2 (non-STOP) never sent
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    expect(runRow(runId).status).toBe("aborted");
+  });
+});
