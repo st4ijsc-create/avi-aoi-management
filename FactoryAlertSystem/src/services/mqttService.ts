@@ -32,13 +32,15 @@ import {
   getMqttDeviceCredentialForDisplay,
   getMqttDeviceCredentialStatus,
   MqttDeviceCredentialStatus,
-  sameBrokerEndpoint,
   setMqttDevicePassword,
 } from './secureCredentialStore';
 
 // Import TCP socket for React Native
 // @ts-ignore - react-native-tcp-socket types may not be perfect
 import TcpSocket from 'react-native-tcp-socket';
+// doc 81 Đợt 7 J2 — MQTT over TLS to the built-in broker, certificate pinned by SHA-256 fingerprint.
+import { CERT_CHANGED, createPinnedTlsConnection, isPinnedTlsAvailable } from './pinnedTlsSocket';
+import { BrokerTransportPlan, devicePasswordFor, planBrokerTransport } from './brokerTransport';
 
 // Device info interface for local broker authentication
 interface DeviceInfo {
@@ -111,6 +113,20 @@ type ErrorCallback = (error: Error) => void;
 // Broker type detection
 type BrokerType = 'local' | 'hivemq' | 'emqx' | 'mosquitto' | 'custom';
 
+/** doc 81 Đợt 7 J2 — English diagnostic text per TLS refusal code (Settings shows the localised text). */
+function tlsProblemText(code: string): string {
+  switch (code) {
+    case CERT_CHANGED:
+      return 'broker certificate changed — the fingerprint does not match; not connected, nothing sent';
+    case 'TLS_PIN_REQUIRED':
+      return 'MQTT over TLS needs the broker certificate fingerprint (Settings → MQTT)';
+    case 'TLS_PIN_UNSUPPORTED':
+      return 'pinned TLS is not available on this device';
+    default:
+      return code;
+  }
+}
+
 /**
  * MQTT Service Class - Singleton Pattern
  * Hỗ trợ nhiều loại MQTT Broker
@@ -128,6 +144,9 @@ class MqttService {
   // (R-5-a), read from the secure store right before every connect/testConnection. Never persisted here,
   // never logged (neither the value nor its length).
   private localBrokerCredential: StoredMqttDeviceCredential | null = null;
+  // doc 81 Đợt 7 J2 — why the last TLS connection was refused (CERT_CHANGED / TLS_PIN_REQUIRED / TLS_PIN_UNSUPPORTED),
+  // shown in Settings; cleared on a successful connect.
+  private tlsProblem: string | null = null;
   
   // Circuit breaker for preventing infinite connection loops
   private lastConnectionAttempt: number = 0;
@@ -550,7 +569,7 @@ class MqttService {
    *    secure store when one is set (doc 81 Đợt 5 G1)
    * 2. External broker (HiveMQ, EMQX, etc.): standard username/password
    */
-  private createClientOptions(): IClientOptions {
+  private createClientOptions(plan: BrokerTransportPlan = this.planTransport()): IClientOptions {
     const brokerType = this.detectBrokerType();
     const useTcp = this.config.protocol === 'tcp';
     
@@ -582,24 +601,19 @@ class MqttService {
       // R-5-a (G1 fix scan) — the password goes ONLY to the exact endpoint it was saved for. `this.config`
       // here is the config being connected to (testConnection swaps in its override first), so an edited
       // address/port/TLS/protocol or a "Test connection" pointed elsewhere never receives it.
+      // doc 81 Đợt 7 J2 — and once a certificate fingerprint is stored with it, ONLY over the pinned TLS socket
+      // with that fingerprint (`plan` is the transport this very connection uses): never over plain TCP/WS.
       const pinned = this.localBrokerCredential;
       const target = brokerEndpointOf(this.config);
-      let pwState: 'none' | 'sent' | 'withheld' = 'none';
-      if (pinned) {
-        if (sameBrokerEndpoint(pinned.endpoint, target)) {
-          options.password = pinned.password;
-          pwState = 'sent';
-        } else {
-          pwState = 'withheld';
-        }
-      }
+      const decision = devicePasswordFor(plan, pinned, target);
+      if (decision.state === 'sent') options.password = decision.password;
       console.log(
         '[MQTT] Using local broker auth format - username:',
         options.username,
         '| device password:',
-        pwState === 'withheld'
-          ? `withheld (pinned to ${brokerEndpointLabel(pinned!.endpoint)}, target ${target ? brokerEndpointLabel(target) : 'unset'})`
-          : pwState,
+        decision.state === 'withheld'
+          ? `withheld (${decision.reason}; pinned to ${brokerEndpointLabel(pinned!.endpoint)}${pinned!.certSha256 ? ' over pinned TLS' : ''}, target ${target ? brokerEndpointLabel(target) : 'unset'}, transport ${plan.kind})`
+          : decision.state,
       );
     } else {
       // External brokers (HiveMQ, EMQX, Mosquitto): standard username/password
@@ -616,10 +630,9 @@ class MqttService {
     if (useTcp) {
       options.protocol = this.config.useSSL ? 'mqtts' : 'mqtt';
       options.protocolVersion = 4;
-      if (this.config.useSSL) {
-        options.rejectUnauthorized = false; // Allow self-signed certs for local
-      }
-      console.log(`[MQTT] Using TCP protocol: ${options.protocol}`);
+      // doc 81 Đợt 7 J2 — TCP+TLS only runs over the pinned TLS socket (certificate fingerprint); certificate checks are
+      // never switched off (the former "allow self-signed" option is gone).
+      console.log(`[MQTT] Using TCP protocol: ${options.protocol} (transport ${plan.kind})`);
     } else {
       // WebSocket protocol - Broker-specific configurations
       switch (brokerType) {
@@ -647,7 +660,7 @@ class MqttService {
         case 'local':
           options.protocol = this.config.useSSL ? 'wss' : 'ws';
           options.protocolVersion = 4;
-          options.rejectUnauthorized = false; // Allow self-signed certs
+          // doc 81 Đợt 7 J2 — wss:// uses the system CA store; certificate checks are never switched off.
           console.log('[MQTT] Detected local AVI-AOI broker');
           break;
           
@@ -832,6 +845,38 @@ class MqttService {
    * doc 81 Đợt 5 G1 — refresh the cached built-in-broker password from the secure store.
    * getMqttDevicePassword never throws (unavailable/unreadable ⇒ null ⇒ CONNECT without password).
    */
+  /**
+   * doc 81 Đợt 7 J2 — the transport for the CURRENT `this.config` + stored credential (see brokerTransport.ts).
+   * connect()/testConnection() compute it once and use it for both the socket and the password decision.
+   */
+  private planTransport(): BrokerTransportPlan {
+    return planBrokerTransport({
+      platformOS: Platform.OS,
+      protocol: this.config.protocol,
+      useSSL: this.config.useSSL,
+      host: this.convertAddressForAndroid(this.config.brokerAddress, false),
+      port: Number(this.config.port) || 1883,
+      target: brokerEndpointOf(this.config),
+      credential: this.localBrokerCredential,
+      pinnedTlsAvailable: isPinnedTlsAvailable(),
+    });
+  }
+
+  /** doc 81 Đợt 7 J2 — record (and show) why a TLS connection was refused. */
+  private noteTlsProblem(code: string): void {
+    this.tlsProblem = code;
+    try {
+      useConnectionStore.getState().setError(`${code}: ${tlsProblemText(code)}`);
+    } catch {
+      /* store not ready */
+    }
+  }
+
+  /** doc 81 Đợt 7 J2 — CERT_CHANGED / TLS_PIN_REQUIRED / TLS_PIN_UNSUPPORTED of the last attempt, or null. */
+  public getTlsProblem(): string | null {
+    return this.tlsProblem;
+  }
+
   private async loadLocalBrokerPassword(): Promise<void> {
     this.localBrokerCredential = await getMqttDeviceCredential();
   }
@@ -855,13 +900,26 @@ class MqttService {
   }
 
   /**
+   * doc 81 Đợt 7 J2 — the broker certificate fingerprint stored with the password (64 lowercase hex), or null. Display
+   * only (uncounted read, like getLocalBrokerPasswordEndpoint); the fingerprint is not a secret.
+   */
+  public async getLocalBrokerCertPin(): Promise<string | null> {
+    return (await getMqttDeviceCredentialForDisplay())?.certSha256 ?? null;
+  }
+
+  /**
    * Store the device MQTT password (Settings), PINNED to `endpoint` (default: the broker currently
    * configured). Throws when the secure store is unavailable, no endpoint can be pinned or the write
    * fails — the caller must then show an error, never "saved". Takes effect on the next connect().
    */
-  public async setLocalBrokerPassword(password: string, endpoint?: MqttBrokerEndpoint | null): Promise<void> {
+  public async setLocalBrokerPassword(
+    password: string,
+    endpoint?: MqttBrokerEndpoint | null,
+    certFingerprint?: string | null,
+  ): Promise<void> {
     const pin = endpoint === undefined ? brokerEndpointOf(this.config) : endpoint;
-    this.localBrokerCredential = await setMqttDevicePassword(password, pin);
+    this.localBrokerCredential = await setMqttDevicePassword(password, pin, certFingerprint);
+    if (this.localBrokerCredential?.certSha256) this.tlsProblem = null; // a new pin: the old refusal no longer applies
   }
 
   /** Remove the stored device MQTT password. Takes effect on the next connect(). */
@@ -986,7 +1044,13 @@ class MqttService {
 
       try {
         const brokerUrl = this.getBrokerUrl(true);
-        const options = this.createClientOptions();
+        // doc 81 Đợt 7 J2 — ONE transport plan for this attempt: the socket AND the password decision follow it.
+        const plan = this.planTransport();
+        if (plan.kind === 'refuse') {
+          this.noteTlsProblem(plan.code);
+          throw Object.assign(new Error(`${plan.code}: ${tlsProblemText(plan.code)}`), { code: plan.code });
+        }
+        const options = this.createClientOptions(plan);
 
         console.log(`[MQTT] Connecting to ${brokerUrl}...`);
         const brokerType = this.detectBrokerType();
@@ -1000,323 +1064,9 @@ class MqttService {
           username: brokerType === 'local' ? options.username : (options.username ? '***' : undefined),
         });
 
-        // Check if using TCP protocol on React Native
-        const useTcp = this.config.protocol === 'tcp';
-        
-        if (useTcp && Platform.OS === 'android') {
-          // Use custom streamBuilder with react-native-tcp-socket for TCP connections
-          console.log('[MQTT] Using react-native-tcp-socket for TCP connection');
-          const address = this.convertAddressForAndroid(this.config.brokerAddress, false);
-          const port = this.config.port || 1883;
-          
-          // Validate TCP connection parameters
-          if (!address || !port) {
-            throw new Error('Invalid TCP connection parameters: address or port missing');
-          }
-          
-          // Create MQTT client with custom streamBuilder
-          const streamBuilder = () => {
-            console.log(`[MQTT] StreamBuilder creating socket to ${address}:${port}`);
-
-            // Create wrapper placeholder so the connect callback can access it
-            let wrappedSocket: any = null;
-            
-            // Add connection timeout
-            let connectionTimeout: NodeJS.Timeout | null = null;
-            const timeoutMs = this.config.connectTimeout || 30000;
-
-            // Error throttling to prevent infinite loops
-            let errorCount = 0;
-            let errorThrottleTime = 0;
-            const MAX_ERRORS_PER_SECOND = 5;
-            const ERROR_THROTTLE_DURATION = 1000;
-
-            // Create the actual TCP socket with timeout
-            const socket = TcpSocket.createConnection(
-              { 
-                host: address, 
-                port: port,
-                timeout: timeoutMs, // Native Java socket connect timeout
-              } as any,
-              () => {
-                console.log('[MQTT] TcpSocket connected!');
-                errorCount = 0; // Reset error count on successful connection
-                if (connectionTimeout) {
-                  clearTimeout(connectionTimeout);
-                  connectionTimeout = null;
-                }
-                if (!wrappedSocket) {
-                  return;
-                }
-                // Mark as connected and flush any buffered writes
-                wrappedSocket._tcpConnected = true;
-                if (Array.isArray(wrappedSocket._writeBuffer)) {
-                  wrappedSocket._writeBuffer.forEach((chunk: any) => {
-                    try {
-                      socket.write(chunk);
-                    } catch (e) {
-                      console.error('[MQTT] Error flushing buffered chunk:', (e as Error).message);
-                    }
-                  });
-                  wrappedSocket._writeBuffer = [];
-                }
-                // NOTE: Do NOT re-emit 'connect' here!
-                // The native TcpSocket already emits 'connect' which reaches mqtt.js
-                // through registered listeners. Re-emitting causes duplicate MQTT CONNECT packets.
-              }
-            );
-            
-            // Set up connection timeout (JS-side safety net in case native timeout doesn't fire)
-            connectionTimeout = setTimeout(() => {
-              console.error('[MQTT] TCP connection timeout (JS timer)');
-              if (wrappedSocket && typeof wrappedSocket.emit === 'function') {
-                const err = new Error('TCP connection timeout');
-                (err as any).code = 'ETIMEDOUT'; // Required for mqtt.js v5 streamErrorHandler
-                wrappedSocket.emit('error', err);
-              }
-              socket.destroy();
-            }, timeoutMs);
-
-            // Wrap socket immediately with all required properties/methods
-            wrappedSocket = socket as any;
-            // Ensure compatibility with mqtt.js expectations
-            if (typeof wrappedSocket.setMaxListeners !== 'function') {
-              wrappedSocket.setMaxListeners = function(_n?: number) {
-                // No-op implementation; React Native sockets don't emit the same warnings
-                return this;
-              };
-            }
-            wrappedSocket._tcpConnected = false;
-            wrappedSocket._writeBuffer = [];
-            wrappedSocket.writable = true;
-            wrappedSocket.readable = true;
-            wrappedSocket.destroyed = false;
-            
-            // Add EventEmitter-style listener management
-            wrappedSocket._eventListeners = new Map();
-            wrappedSocket.listenerCount = function(eventName: string) {
-              const listeners = this._eventListeners.get(eventName);
-              return listeners ? listeners.length : 0;
-            };
-            
-            // Override the original socket's on/emit methods to track listeners
-            const originalOn = socket.on.bind(socket);
-            wrappedSocket.on = function(eventName: string, listener: any) {
-              if (!this._eventListeners.has(eventName)) {
-                this._eventListeners.set(eventName, []);
-              }
-              this._eventListeners.get(eventName).push(listener);
-              return originalOn(eventName as any, listener);
-            };
-            
-            const originalEmit = socket.emit.bind(socket);
-            wrappedSocket.emit = function(eventName: string, ...args: any[]) {
-              try {
-                // Always delegate to original EventEmitter — do NOT gate on _eventListeners.
-                // react-native-tcp-socket calls destroy() before emit('error'), and
-                // eventemitter3 does not throw on unhandled 'error' events (unlike Node.js).
-                return originalEmit(eventName as any, ...args);
-              } catch (emitError) {
-                console.error(`[MQTT] Error in emit(${eventName}):`, (emitError as Error).message);
-                return false;
-              }
-            };
-            
-            // Clean up timeout on socket destruction
-            const originalDestroy = socket.destroy.bind(socket);
-            wrappedSocket.destroy = function(err?: Error) {
-              console.log('[MQTT] Socket.destroy() called', err?.message);
-              if (connectionTimeout) {
-                clearTimeout(connectionTimeout);
-                connectionTimeout = null;
-              }
-              if (socketTimeoutTimer) {
-                clearInterval(socketTimeoutTimer);
-                socketTimeoutTimer = null;
-              }
-              wrappedSocket.destroyed = true;
-              wrappedSocket.writable = false;
-              wrappedSocket.readable = false;
-              // Do NOT clear _eventListeners here!
-              // react-native-tcp-socket calls destroy() BEFORE emit('error') in its
-              // internal error handler. Clearing listeners would silence the error
-              // and leave mqtt.js hanging forever waiting for CONNACK.
-              return originalDestroy();
-            };
-
-            // Provide a write implementation that buffers until connected
-            const originalWrite = socket.write.bind(socket);
-            wrappedSocket.write = (chunk: any, encoding?: any, cb?: any) => {
-              const dataToWrite = chunk;
-              if (!wrappedSocket._tcpConnected) {
-                console.log('[MQTT] Socket.write() before connect - buffering');
-                wrappedSocket._writeBuffer.push(dataToWrite);
-                if (typeof cb === 'function') cb();
-                return true;
-              }
-              try {
-                const result = originalWrite(dataToWrite);
-                if (typeof cb === 'function') cb();
-                return result;
-              } catch (e) {
-                console.error('[MQTT] Socket.write() error:', (e as Error).message);
-                if (typeof cb === 'function') cb(e);
-                return false;
-              }
-            };
-
-            // Handle socket errors — update state only, do NOT re-emit.
-            // mqtt.js registers its own error listener on the native socket (via
-            // the overridden 'on' method) and will receive the error event directly.
-            // Re-emitting via wrappedSocket.emit() calls socket.emit() which
-            // re-dispatches to ALL listeners, causing mqtt.js to see each error TWICE.
-            socket.on('error', (err: Error | undefined) => {
-              const now = Date.now();
-              if (now - errorThrottleTime > ERROR_THROTTLE_DURATION) {
-                errorCount = 0;
-                errorThrottleTime = now;
-              }
-              errorCount++;
-              
-              if (errorCount <= MAX_ERRORS_PER_SECOND) {
-                console.error(`[MQTT] TcpSocket error (${errorCount}/${MAX_ERRORS_PER_SECOND}):`, err?.message || 'Unknown socket error');
-              } else if (errorCount === MAX_ERRORS_PER_SECOND + 1) {
-                console.error('[MQTT] Too many socket errors, throttling logs...');
-              }
-
-              // Ensure the error has a .code property so mqtt.js v5's
-              // streamErrorHandler actually propagates it to the client.
-              // Without .code, mqtt.js silently drops the error via noop().
-              if (err && !('code' in err)) {
-                (err as any).code = 'SOCKET_ERROR';
-              }
-              
-              if (!wrappedSocket.destroyed) {
-                wrappedSocket.destroyed = true;
-                wrappedSocket.writable = false;
-                wrappedSocket.readable = false;
-              }
-            });
-            
-            // Same principle for 'close' — do NOT re-emit.
-            socket.on('close', (hadError: boolean | undefined) => {
-              if (errorCount <= MAX_ERRORS_PER_SECOND) {
-                console.log('[MQTT] TcpSocket closed, hadError:', hadError || false);
-              }
-              if (!wrappedSocket.destroyed) {
-                wrappedSocket.writable = false;
-                wrappedSocket.readable = false;
-                wrappedSocket.destroyed = true;
-              }
-            });
-            
-            // Add pipe() method required by MQTT.js
-            wrappedSocket.pipe = function(destination: any) {
-              console.log('[MQTT] Socket.pipe() called');
-              this.on('data', (data: any) => {
-                if (destination.writable !== false) {
-                  destination.write(data);
-                }
-              });
-              this.on('end', () => {
-                if (destination.end) {
-                  destination.end();
-                }
-              });
-              // NOTE: Do NOT forward socket errors to the destination (parser).
-              // mqtt.js registers its own error listener on the socket (via our
-              // overridden 'on' method) and handles errors directly. Forwarding
-              // errors here causes mqtt.js to see each error TWICE — once from
-              // its own socket listener and once from the parser — which inflates
-              // consecutiveFailures and can trigger premature circuit breaker.
-              return destination;
-            };
-            
-            // Track last data activity for socket idle timeout (Fix #5)
-            let lastDataActivity = Date.now();
-            let socketTimeoutTimer: NodeJS.Timeout | null = null;
-
-            socket.on('data' as any, () => {
-              lastDataActivity = Date.now();
-            });
-
-            // Add setNoDelay() method
-            wrappedSocket.setNoDelay = function(_noDelay?: boolean) {
-              // No-op: TcpSocket doesn't expose TCP_NODELAY
-              return this;
-            };
-            
-            // Add setKeepAlive() method
-            wrappedSocket.setKeepAlive = function(_enable?: boolean, _initialDelay?: number) {
-              // No-op: MQTT-level keepalive handles connection liveness
-              return this;
-            };
-            
-            // Socket idle timeout — mirrors Node.js net.Socket.setTimeout().
-            // mqtt.js calls this with keepalive * 1000 * 1.5 to detect dead connections.
-            // We track last data activity and emit 'timeout' when idle too long.
-            wrappedSocket.setTimeout = function(timeout?: number, callback?: () => void) {
-              // Clear previous timer
-              if (socketTimeoutTimer) {
-                clearInterval(socketTimeoutTimer);
-                socketTimeoutTimer = null;
-              }
-
-              if (callback) {
-                wrappedSocket.on('timeout', callback);
-              }
-
-              if (!timeout || timeout <= 0) {
-                return this;
-              }
-
-              console.log(`[MQTT] Socket.setTimeout(${timeout}ms)`);
-              lastDataActivity = Date.now();
-
-              // Check every 5s (or timeout/3, whichever is smaller) if idle limit exceeded
-              const checkInterval = Math.min(Math.floor(timeout / 3), 5000);
-              socketTimeoutTimer = setInterval(() => {
-                if (wrappedSocket.destroyed) {
-                  if (socketTimeoutTimer) { clearInterval(socketTimeoutTimer); socketTimeoutTimer = null; }
-                  return;
-                }
-                if (Date.now() - lastDataActivity >= timeout) {
-                  console.warn(`[MQTT] Socket idle timeout (${timeout}ms since last data)`);
-                  if (socketTimeoutTimer) { clearInterval(socketTimeoutTimer); socketTimeoutTimer = null; }
-                  wrappedSocket.emit('timeout');
-                }
-              }, checkInterval);
-
-              return this;
-            };
-            
-            // Add end() method - graceful close
-            wrappedSocket.end = function(data?: any, _encoding?: string, callback?: () => void) {
-              console.log('[MQTT] Socket.end() called');
-              if (connectionTimeout) {
-                clearTimeout(connectionTimeout);
-                connectionTimeout = null;
-              }
-              if (socketTimeoutTimer) {
-                clearInterval(socketTimeoutTimer);
-                socketTimeoutTimer = null;
-              }
-              if (data) {
-                try {
-                  socket.write(data);
-                } catch (e) {
-                  console.error('[MQTT] Error writing final data:', (e as Error).message);
-                }
-              }
-              wrappedSocket.writable = false;
-              socket.destroy();
-              if (callback) callback();
-              return this;
-            };
-            
-            return wrappedSocket;
-          };
-          
+        if (plan.kind === 'tcp-plain' || plan.kind === 'pinned-tls') {
+          // Use custom streamBuilder with react-native-tcp-socket (plain) or the pinned TLS socket (doc 81 Đợt 7 J2)
+          console.log(`[MQTT] Using ${plan.kind === 'pinned-tls' ? 'pinned TLS socket' : 'react-native-tcp-socket'} for TCP connection`);
           // Use mqtt.Client constructor directly with streamBuilder
           // Remove URL-related options since we're providing our own stream
           const tcpOptions = {
@@ -1324,7 +1074,7 @@ class MqttService {
             // Don't pass URL options when using streamBuilder
             servers: undefined,
           };
-          this.client = new mqtt.MqttClient(streamBuilder as any, tcpOptions);
+          this.client = new mqtt.MqttClient(this.makeSocketStreamBuilder(plan) as any, tcpOptions);
         } else {
           // Standard connection for WebSocket or non-Android
           this.client = mqtt.connect(brokerUrl, options);
@@ -1336,7 +1086,7 @@ class MqttService {
           this.client.on('error', () => {
             // This will be overridden by setupEventHandlers, but ensures no unhandled errors during setup
           });
-          
+
           // Handle any stream errors that might not be caught
           try {
             if (this.client.stream && typeof this.client.stream.on === 'function') {
@@ -1359,6 +1109,340 @@ class MqttService {
         reject(error);
       }
     });
+  }
+
+  /**
+   * The mqtt.js streamBuilder for the Android TCP transports (doc 81 Đợt 7 J2: shared by the plaintext socket and the
+   * pinned TLS socket, and by connect() and testConnection()). Writes are BUFFERED until the socket's connect callback —
+   * for the pinned TLS socket that fires only after the handshake verified the pinned certificate — so the CONNECT (with
+   * the device password) never leaves before that.
+   */
+  private makeSocketStreamBuilder(plan: { kind: 'tcp-plain' | 'pinned-tls'; host: string; port: number; pinSha256?: string }): () => any {
+    const address = plan.host;
+    const port = plan.port;
+
+    // Validate TCP connection parameters
+    if (!address || !port) {
+      throw new Error('Invalid TCP connection parameters: address or port missing');
+    }
+
+    // Create MQTT client with custom streamBuilder
+    const streamBuilder = () => {
+      console.log(`[MQTT] StreamBuilder creating ${plan.kind} socket to ${address}:${port}`);
+
+      // Create wrapper placeholder so the connect callback can access it
+      let wrappedSocket: any = null;
+
+      // Add connection timeout
+      let connectionTimeout: NodeJS.Timeout | null = null;
+      const timeoutMs = this.config.connectTimeout || 30000;
+
+      // Error throttling to prevent infinite loops
+      let errorCount = 0;
+      let errorThrottleTime = 0;
+      const MAX_ERRORS_PER_SECOND = 5;
+      const ERROR_THROTTLE_DURATION = 1000;
+
+      // Create the actual TCP socket with timeout (doc 81 Đợt 7 J2: or the pinned TLS socket — its connect callback
+      // fires only after the handshake verified the pinned certificate)
+      const onSocketConnect = () => {
+          console.log(plan.kind === 'pinned-tls' ? '[MQTT] Pinned TLS socket connected (certificate verified)' : '[MQTT] TcpSocket connected!');
+          errorCount = 0; // Reset error count on successful connection
+          if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+            connectionTimeout = null;
+          }
+          if (!wrappedSocket) {
+            return;
+          }
+          // Mark as connected and flush any buffered writes
+          wrappedSocket._tcpConnected = true;
+          if (Array.isArray(wrappedSocket._writeBuffer)) {
+            wrappedSocket._writeBuffer.forEach((chunk: any) => {
+              try {
+                socket.write(chunk);
+              } catch (e) {
+                console.error('[MQTT] Error flushing buffered chunk:', (e as Error).message);
+              }
+            });
+            wrappedSocket._writeBuffer = [];
+          }
+          // NOTE: Do NOT re-emit 'connect' here!
+          // The native TcpSocket already emits 'connect' which reaches mqtt.js
+          // through registered listeners. Re-emitting causes duplicate MQTT CONNECT packets.
+        };
+      const socket: any = plan.kind === 'pinned-tls'
+        ? createPinnedTlsConnection({ host: address, port, pinSha256: plan.pinSha256 as string, timeout: timeoutMs }, onSocketConnect)
+        : TcpSocket.createConnection(
+            {
+              host: address,
+              port: port,
+              timeout: timeoutMs, // Native Java socket connect timeout
+            } as any,
+            onSocketConnect,
+          );
+
+      // Set up connection timeout (JS-side safety net in case native timeout doesn't fire)
+      connectionTimeout = setTimeout(() => {
+        console.error('[MQTT] TCP connection timeout (JS timer)');
+        if (wrappedSocket && typeof wrappedSocket.emit === 'function') {
+          const err = new Error('TCP connection timeout');
+          (err as any).code = 'ETIMEDOUT'; // Required for mqtt.js v5 streamErrorHandler
+          wrappedSocket.emit('error', err);
+        }
+        socket.destroy();
+      }, timeoutMs);
+
+      // Wrap socket immediately with all required properties/methods
+      wrappedSocket = socket as any;
+      // Ensure compatibility with mqtt.js expectations
+      if (typeof wrappedSocket.setMaxListeners !== 'function') {
+        wrappedSocket.setMaxListeners = function(_n?: number) {
+          // No-op implementation; React Native sockets don't emit the same warnings
+          return this;
+        };
+      }
+      wrappedSocket._tcpConnected = false;
+      wrappedSocket._writeBuffer = [];
+      wrappedSocket.writable = true;
+      wrappedSocket.readable = true;
+      wrappedSocket.destroyed = false;
+
+      // Add EventEmitter-style listener management
+      wrappedSocket._eventListeners = new Map();
+      wrappedSocket.listenerCount = function(eventName: string) {
+        const listeners = this._eventListeners.get(eventName);
+        return listeners ? listeners.length : 0;
+      };
+
+      // Override the original socket's on/emit methods to track listeners
+      const originalOn = socket.on.bind(socket);
+      wrappedSocket.on = function(eventName: string, listener: any) {
+        if (!this._eventListeners.has(eventName)) {
+          this._eventListeners.set(eventName, []);
+        }
+        this._eventListeners.get(eventName).push(listener);
+        return originalOn(eventName as any, listener);
+      };
+
+      const originalEmit = socket.emit.bind(socket);
+      wrappedSocket.emit = function(eventName: string, ...args: any[]) {
+        try {
+          // Always delegate to original EventEmitter — do NOT gate on _eventListeners.
+          // react-native-tcp-socket calls destroy() before emit('error'), and
+          // eventemitter3 does not throw on unhandled 'error' events (unlike Node.js).
+          return originalEmit(eventName as any, ...args);
+        } catch (emitError) {
+          console.error(`[MQTT] Error in emit(${eventName}):`, (emitError as Error).message);
+          return false;
+        }
+      };
+
+      // Clean up timeout on socket destruction
+      const originalDestroy = socket.destroy.bind(socket);
+      wrappedSocket.destroy = function(err?: Error) {
+        console.log('[MQTT] Socket.destroy() called', err?.message);
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+          connectionTimeout = null;
+        }
+        if (socketTimeoutTimer) {
+          clearInterval(socketTimeoutTimer);
+          socketTimeoutTimer = null;
+        }
+        wrappedSocket.destroyed = true;
+        wrappedSocket.writable = false;
+        wrappedSocket.readable = false;
+        // Do NOT clear _eventListeners here!
+        // react-native-tcp-socket calls destroy() BEFORE emit('error') in its
+        // internal error handler. Clearing listeners would silence the error
+        // and leave mqtt.js hanging forever waiting for CONNACK.
+        return originalDestroy();
+      };
+
+      // Provide a write implementation that buffers until connected
+      const originalWrite = socket.write.bind(socket);
+      wrappedSocket.write = (chunk: any, encoding?: any, cb?: any) => {
+        const dataToWrite = chunk;
+        if (!wrappedSocket._tcpConnected) {
+          console.log('[MQTT] Socket.write() before connect - buffering');
+          wrappedSocket._writeBuffer.push(dataToWrite);
+          if (typeof cb === 'function') cb();
+          return true;
+        }
+        try {
+          const result = originalWrite(dataToWrite);
+          if (typeof cb === 'function') cb();
+          return result;
+        } catch (e) {
+          console.error('[MQTT] Socket.write() error:', (e as Error).message);
+          if (typeof cb === 'function') cb(e);
+          return false;
+        }
+      };
+
+      // Handle socket errors — update state only, do NOT re-emit.
+      // mqtt.js registers its own error listener on the native socket (via
+      // the overridden 'on' method) and will receive the error event directly.
+      // Re-emitting via wrappedSocket.emit() calls socket.emit() which
+      // re-dispatches to ALL listeners, causing mqtt.js to see each error TWICE.
+      socket.on('error', (err: Error | undefined) => {
+        const now = Date.now();
+        if (now - errorThrottleTime > ERROR_THROTTLE_DURATION) {
+          errorCount = 0;
+          errorThrottleTime = now;
+        }
+        errorCount++;
+
+        if (errorCount <= MAX_ERRORS_PER_SECOND) {
+          console.error(`[MQTT] TcpSocket error (${errorCount}/${MAX_ERRORS_PER_SECOND}):`, err?.message || 'Unknown socket error');
+        } else if (errorCount === MAX_ERRORS_PER_SECOND + 1) {
+          console.error('[MQTT] Too many socket errors, throttling logs...');
+        }
+
+        // Ensure the error has a .code property so mqtt.js v5's
+        // streamErrorHandler actually propagates it to the client.
+        // Without .code, mqtt.js silently drops the error via noop().
+        if (err && !('code' in err)) {
+          (err as any).code = 'SOCKET_ERROR';
+        }
+        // doc 81 Đợt 7 J2 — the broker presented another certificate: refused before any MQTT byte; say so.
+        if ((err as any)?.code === CERT_CHANGED) {
+          this.noteTlsProblem(CERT_CHANGED);
+        }
+
+        if (!wrappedSocket.destroyed) {
+          wrappedSocket.destroyed = true;
+          wrappedSocket.writable = false;
+          wrappedSocket.readable = false;
+        }
+      });
+
+      // Same principle for 'close' — do NOT re-emit.
+      socket.on('close', (hadError: boolean | undefined) => {
+        if (errorCount <= MAX_ERRORS_PER_SECOND) {
+          console.log('[MQTT] TcpSocket closed, hadError:', hadError || false);
+        }
+        // doc 81 Đợt 7 J2 — a socket closed before connecting (e.g. CERT_CHANGED) must not raise a second,
+        // misleading "TCP connection timeout" error 30 s later (it would replace "certificate changed" in the UI).
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+          connectionTimeout = null;
+        }
+        if (!wrappedSocket.destroyed) {
+          wrappedSocket.writable = false;
+          wrappedSocket.readable = false;
+          wrappedSocket.destroyed = true;
+        }
+      });
+
+      // Add pipe() method required by MQTT.js
+      wrappedSocket.pipe = function(destination: any) {
+        console.log('[MQTT] Socket.pipe() called');
+        this.on('data', (data: any) => {
+          if (destination.writable !== false) {
+            destination.write(data);
+          }
+        });
+        this.on('end', () => {
+          if (destination.end) {
+            destination.end();
+          }
+        });
+        // NOTE: Do NOT forward socket errors to the destination (parser).
+        // mqtt.js registers its own error listener on the socket (via our
+        // overridden 'on' method) and handles errors directly. Forwarding
+        // errors here causes mqtt.js to see each error TWICE — once from
+        // its own socket listener and once from the parser — which inflates
+        // consecutiveFailures and can trigger premature circuit breaker.
+        return destination;
+      };
+
+      // Track last data activity for socket idle timeout (Fix #5)
+      let lastDataActivity = Date.now();
+      let socketTimeoutTimer: NodeJS.Timeout | null = null;
+
+      socket.on('data' as any, () => {
+        lastDataActivity = Date.now();
+      });
+
+      // Add setNoDelay() method
+      wrappedSocket.setNoDelay = function(_noDelay?: boolean) {
+        // No-op: TcpSocket doesn't expose TCP_NODELAY
+        return this;
+      };
+
+      // Add setKeepAlive() method
+      wrappedSocket.setKeepAlive = function(_enable?: boolean, _initialDelay?: number) {
+        // No-op: MQTT-level keepalive handles connection liveness
+        return this;
+      };
+
+      // Socket idle timeout — mirrors Node.js net.Socket.setTimeout().
+      // mqtt.js calls this with keepalive * 1000 * 1.5 to detect dead connections.
+      // We track last data activity and emit 'timeout' when idle too long.
+      wrappedSocket.setTimeout = function(timeout?: number, callback?: () => void) {
+        // Clear previous timer
+        if (socketTimeoutTimer) {
+          clearInterval(socketTimeoutTimer);
+          socketTimeoutTimer = null;
+        }
+
+        if (callback) {
+          wrappedSocket.on('timeout', callback);
+        }
+
+        if (!timeout || timeout <= 0) {
+          return this;
+        }
+
+        console.log(`[MQTT] Socket.setTimeout(${timeout}ms)`);
+        lastDataActivity = Date.now();
+
+        // Check every 5s (or timeout/3, whichever is smaller) if idle limit exceeded
+        const checkInterval = Math.min(Math.floor(timeout / 3), 5000);
+        socketTimeoutTimer = setInterval(() => {
+          if (wrappedSocket.destroyed) {
+            if (socketTimeoutTimer) { clearInterval(socketTimeoutTimer); socketTimeoutTimer = null; }
+            return;
+          }
+          if (Date.now() - lastDataActivity >= timeout) {
+            console.warn(`[MQTT] Socket idle timeout (${timeout}ms since last data)`);
+            if (socketTimeoutTimer) { clearInterval(socketTimeoutTimer); socketTimeoutTimer = null; }
+            wrappedSocket.emit('timeout');
+          }
+        }, checkInterval);
+
+        return this;
+      };
+
+      // Add end() method - graceful close
+      wrappedSocket.end = function(data?: any, _encoding?: string, callback?: () => void) {
+        console.log('[MQTT] Socket.end() called');
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+          connectionTimeout = null;
+        }
+        if (socketTimeoutTimer) {
+          clearInterval(socketTimeoutTimer);
+          socketTimeoutTimer = null;
+        }
+        if (data) {
+          try {
+            socket.write(data);
+          } catch (e) {
+            console.error('[MQTT] Error writing final data:', (e as Error).message);
+          }
+        }
+        wrappedSocket.writable = false;
+        socket.destroy();
+        if (callback) callback();
+        return this;
+      };
+
+      return wrappedSocket;
+    };
+    return streamBuilder;
   }
 
   /**
@@ -1398,8 +1482,9 @@ class MqttService {
       // Reset reconnect tracking flags
       this.allRetriesExhausted = false;
       
+      this.tlsProblem = null; // doc 81 Đợt 7 J2 — a verified connection: no TLS problem any more
       this.setConnectionStatus('connected');
-      
+
       // Bắt đầu health check định kỳ (monitor connection)
       this.startHealthCheck();
       
@@ -2191,15 +2276,23 @@ class MqttService {
         const originalConfig = this.config;
         this.config = testConfig;
         const testUrl = this.getBrokerUrl(true);
-        const testOptions = this.createClientOptions();
+        // doc 81 Đợt 7 J2 — the same transport plan as connect(): TCP+TLS only over the pinned TLS socket.
+        const testPlan = this.planTransport();
+        const testOptions = this.createClientOptions(testPlan);
         testOptions.clientId = testClientId;
         testOptions.reconnectPeriod = 0; // Không reconnect cho test
-        
-        console.log(`[MQTT] Testing connection to ${testUrl}...`);
-        console.log(`[MQTT] testConnection() uses direct mqtt.connect() - no TCP wrapper`);
-        
+        const testStreamBuilder = testPlan.kind === 'pinned-tls' ? this.makeSocketStreamBuilder(testPlan) : null;
+
+        console.log(`[MQTT] Testing connection to ${testUrl} (transport ${testPlan.kind})...`);
+
         this.config = originalConfig; // Restore lại config gốc
-        
+
+        if (testPlan.kind === 'refuse') {
+          this.noteTlsProblem(testPlan.code);
+          resolve(false);
+          return;
+        }
+
         // Timeout cho test (10 giây)
         const timeout = setTimeout(() => {
           console.log('[MQTT] Test connection timeout');
@@ -2210,7 +2303,9 @@ class MqttService {
         }, 10000);
         
         // Tạo test client riêng
-        const testClient = mqtt.connect(testUrl, testOptions);
+        const testClient = testStreamBuilder
+          ? new mqtt.MqttClient(testStreamBuilder as any, { ...testOptions, servers: undefined } as any)
+          : mqtt.connect(testUrl, testOptions);
         
         testClient.on('connect', () => {
           clearTimeout(timeout);

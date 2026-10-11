@@ -1515,6 +1515,11 @@ export default function OrchestrationStudio() {
     },
   );
 
+  // doc 81 Đợt 7 I fix 1 (review M-5) — the server judges a bounded number of workflow definitions per call: when more exist,
+  // the runs of the versions left out are not listed and the bar SAYS so (never a silent shorter list).
+  const runListMetaQ = trpc.orchestration.runListMeta.useQuery(undefined, { staleTime: 60_000 });
+  const runListTruncated = (runListMetaQ.data as { truncated?: boolean } | undefined)?.truncated === true;
+
   // doc 81 Đợt 3 Task 4 — phân công còn sống của ĐÚNG các run đang liệt kê.
   const runIds = useMemo(() => ((runsQ.data ?? []) as Array<Record<string, unknown>>).map((r) => Number(r.id)), [runsQ.data]);
   const { byId: runAssignments } = useAssignments("orchestration_run", runIds, hasPermission("machine_control", "canView"));
@@ -1586,8 +1591,16 @@ export default function OrchestrationStudio() {
         return t("studio.deployRobotDisabled", "Not deployed: motion step(s) {{steps}} name a robot that is not enabled. Enable the robot or pick an enabled one, then deploy again.", { steps });
       case "outOfScope": // doc 81 Đợt 5 task E2 — deploy covers EVERY step, stop steps included
         return t("studio.deployOutOfScope", "Not deployed: step(s) {{steps}} touch a machine, robot or adapter outside your factory scope (a deploy covers every step, stop steps included). Ask someone whose scope covers them to deploy it.", { steps });
-      case "refOutOfScope": // doc 81 Đợt 5 task E2 — the ref belongs to another factory's workflow
-        return t("studio.deployRefOutOfScope", "Not deployed: a workflow with this ref already exists outside your factory scope. Use another ref.");
+      case "refOutOfScope": // doc 81 Đợt 5 task E2 / Đợt 7 I3 — a workflow you can see, touching targets outside your scope
+        return t("studio.deployRefOutOfScope", "Not deployed: the workflow with this ref touches machines or robots outside your factory scope (stop steps included) — only someone whose scope covers them can redeploy it. Use another ref.");
+      case "scopeUnverified": // doc 81 Đợt 7 I3 / I fix 1 — the deployer's factory scope could not be resolved
+        return t("studio.deployScopeUnverified", "Not deployed: your factory scope could not be verified. Retry in a moment.");
+      case "refAmbiguous": // doc 81 Đợt 7 I fix 1 — several workflows you can see share this ref (factory namespaces)
+        return t("studio.deployRefAmbiguous", "Not done: several workflows you can see use this ref (in different factory scopes). Open the workflow from the list, then deploy or run it from there.");
+      case "refConflict": // doc 81 Đợt 7 I fix 1 — a concurrent create in your scope
+        return t("studio.deployRefConflict", "Not deployed: a workflow with this ref was just created in your scope. Retry.");
+      case "refTargetStale": // doc 81 Đợt 7 final wave F9 (N5) — the opened workflow is gone / not visible; retrying cannot help
+        return t("studio.deployRefTargetStale", "Not deployed: the workflow you opened is no longer available under this ref (deleted or no longer visible to you), and your scope already has a workflow with this ref. Reload the list and open the workflow again, or use another ref.");
       case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
         return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
       default:
@@ -1608,7 +1621,10 @@ export default function OrchestrationStudio() {
       if (r && !r.ok && r.runId == null) {
         // doc 80 Đợt 1 Task 11 — khi lý do là TRẠNG THÁI WORKFLOW (draft/archived), dùng t()
         // thay vì hiện nguyên văn `message` tiếng Anh của server.
-        if (r.workflowStatus) {
+        if (r.reason === "scopeUnverified") {
+          // doc 81 Đợt 7 final wave F3 (R-7-d) — the starter's factory scope could not be verified: refused, retry.
+          toast.error(t("studio.scopeUnverified", "Scope not verified — retry. To stop equipment now, use the machine's direct STOP / E-STOP."));
+        } else if (r.workflowStatus) {
           toast.error(
             t(
               "studio.runNotDeployed",
@@ -1806,11 +1822,15 @@ export default function OrchestrationStudio() {
   const handleMoveNode = (id: string, pos: { x: number; y: number }) =>
     mutate((d) => updateStep(d.steps, id, { ui: { x: pos.x, y: pos.y } }));
 
-  const loadWorkflow = (row: { definitionJson?: unknown }) => {
+  // doc 81 Đợt 7 I fix 1 (refs per scope namespace, mig 0367) — the workflow loaded into the editor: Deploy and Run name it
+  // by id while the editor's ref is still its ref (several visible workflows may share a ref across factory namespaces).
+  const [loadedWf, setLoadedWf] = useState<{ id: number; ref: string } | null>(null);
+  const loadWorkflow = (row: { id?: unknown; definitionJson?: unknown }) => {
     const json = row.definitionJson as StudioDef | undefined;
     if (json && Array.isArray(json.steps)) {
       const cloned = cloneDef(json);
       setDef(cloned);
+      setLoadedWf(typeof row.id === "number" ? { id: row.id, ref: String(cloned.ref ?? "") } : null);
       setSelectedId(null);
       setSim(null);
       setSimPass(null); // doc 40 ENG-F4 — định nghĩa mới nạp vào → phải mô phỏng lại trước khi Deploy
@@ -1844,8 +1864,10 @@ export default function OrchestrationStudio() {
       definition: serializeDef(def) as Record<string, unknown>,
       simToken: simFresh ? simPass?.token : undefined,
       totpCode,
+      ...(loadedWf && loadedWf.ref === def.ref ? { workflowId: loadedWf.id } : {}),
     }));
-  const runStart = () => startRunM.mutate({ workflowRef: def.ref, params: {} });
+  const runStart = () =>
+    startRunM.mutate({ workflowRef: def.ref, params: {}, ...(loadedWf && loadedWf.ref === def.ref ? { workflowId: loadedWf.id } : {}) });
 
   // ── E5: AI advisor — propose / optimize (HITL: AI only proposes; human deploys) ──
   const i18nLang = (((i18n.language || "vi").slice(0, 2)) as "vi" | "en" | "zh");
@@ -2274,7 +2296,9 @@ export default function OrchestrationStudio() {
       canControl={canControl}
       assignment={runAssignments.get(Number(r.id))}
       canAssign={canAssignRun}
-      onResume={(approved, note, expectedStepId, expectedDefHash) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash })}
+      onResume={(approved, note, expectedStepId, expectedDefHash, expectedBindingDigest) =>
+        resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash, expectedBindingDigest })
+      }
       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
       abortPending={abortM.isPending && abortM.variables?.runId === Number(r.id)}
       t={t}
@@ -2408,6 +2432,11 @@ export default function OrchestrationStudio() {
   const statusBar = (
     <div className="flex min-w-0 items-center gap-2">
       {statusItem("orch-status-runs", "runs", t("studio.runsTab", "Lần chạy"), runsQ.isLoading ? "…" : allRuns.length, null)}
+      {runListTruncated && (
+        <span data-testid="run-list-truncated" role="status" className="truncate text-[11px] text-amber-700 dark:text-amber-300">
+          {t("studio.runListTruncated", "Some runs are not listed: there are more workflow versions than one view can check. Ask an administrator, or open a run by its id.")}
+        </span>
+      )}
       {statusItem("orch-status-awaiting", "approvals", t("studio.awaitingTab", "Chờ duyệt"), runsQ.isLoading ? "…" : awaitingCount, awaitingCount > 0 ? "warning" : null)}
       {statusItem("orch-status-problems", "problems", t("studio.problemsTab", "Vấn đề"), problemsCount, problemsTone)}
     </div>
@@ -2488,7 +2517,7 @@ export default function OrchestrationStudio() {
                   wfSearch={wfSearch}
                   onSearch={setWfSearch}
                   onRefresh={() => void workflowsQ.refetch()}
-                  onLoad={(w) => loadWorkflow(w as { definitionJson?: unknown })}
+                  onLoad={(w) => loadWorkflow(w as { id?: unknown; definitionJson?: unknown })}
                   onDelete={setDeleteWf}
                   onAddStep={handleAddTopLevel}
                   canControl={canControl}
@@ -2655,7 +2684,8 @@ function RunRow({
   canAssign?: boolean;
   /** doc 80 Đợt 1 Task 9 — `expectedStepId` = gate đang HIỂN THỊ (server từ chối nếu run đã sang gate khác). */
   /** doc 81 Đợt 4 fix round 2 (R-4-k) — `expectedDefHash` = getRun().defHash the screen loaded; required to approve. */
-  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string) => void;
+  /** doc 81 Đợt 7 task I2 — `expectedBindingDigest` = getRun().bindingDigest the screen loaded (device configuration); required to approve. */
+  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string, expectedBindingDigest?: string) => void;
   onAbort: () => void;
   /** doc 81 Đợt 6 fix 3 (M1) — an abort / re-send request for THIS run is in flight ⇒ "Send STOP steps again" is disabled. */
   abortPending?: boolean;
@@ -2702,10 +2732,19 @@ function RunRow({
   // replaces it silently; the row says "definition changed, reload" and Approve / Continue stay disabled.
   const polledHash = (detailQ.data as { defHash?: string | null } | undefined)?.defHash ?? undefined;
   const pinKey = `${runId}:${shownStepId ?? ""}`;
-  const pinned = useRef<{ key: string; hash: string } | null>(null);
-  if (polledHash && (!pinned.current || pinned.current.key !== pinKey)) pinned.current = { key: pinKey, hash: polledHash };
+  // doc 81 Đợt 7 task I2 — the device configuration (binding digest) is pinned WITH the hash at the first view: a later poll
+  // with another digest ⇒ "configuration changed, reload" and Approve / Continue disabled; no digest (the server could not
+  // read the configuration) ⇒ they stay disabled too (fail-closed), with the reason shown.
+  const polledDigest = (detailQ.data as { bindingDigest?: string | null } | undefined)?.bindingDigest;
+  const pinned = useRef<{ key: string; hash: string; digest: string | null } | null>(null);
+  if (polledHash && (!pinned.current || pinned.current.key !== pinKey)) pinned.current = { key: pinKey, hash: polledHash, digest: polledDigest ?? null };
+  if (pinned.current?.key === pinKey && pinned.current.digest === null && polledDigest) pinned.current.digest = polledDigest; // first readable view
   const defHash = pinned.current?.key === pinKey ? pinned.current.hash : undefined;
   const defChanged = defHash !== undefined && polledHash !== undefined && polledHash !== defHash;
+  const bindingDigest = pinned.current?.key === pinKey ? pinned.current.digest ?? undefined : undefined;
+  const bindingChanged = bindingDigest !== undefined && typeof polledDigest === "string" && polledDigest !== bindingDigest;
+  const bindingUnknown = detailQ.data != null && defHash !== undefined && bindingDigest === undefined;
+  const approveBlocked = !defHash || defChanged || !bindingDigest || bindingChanged;
   // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
   const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
   const gatePrompt = typeof currentStep?.result?.prompt === "string" ? (currentStep.result.prompt as string) : "";
@@ -2759,7 +2798,7 @@ function RunRow({
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={!defHash || defChanged} onClick={() => onResume(true, undefined, shownStepId, defHash)}>
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={approveBlocked} onClick={() => onResume(true, undefined, shownStepId, defHash, bindingDigest)}>
               {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)} title={t("studio.rejectHint", "Reject: the run is aborted. The remaining non-STOP steps are skipped; if the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
@@ -2777,6 +2816,16 @@ function RunRow({
           {t("studio.definitionChangedReload", "The workflow definition changed since you opened this approval — reload the page and review it before approving.")}
         </div>
       )}
+      {bindingChanged && (awaiting || interrupted) && canControl && (
+        <div data-testid="binding-changed" role="alert" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
+          {t("studio.bindingChangedReload", "The device configuration this approval covers (adapter, tags or robot of its commands) changed since you opened it — reload the page and review it before approving.")}
+        </div>
+      )}
+      {bindingUnknown && !defChanged && (awaiting || interrupted) && canControl && (
+        <div data-testid="binding-unknown" role="status" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
+          {t("studio.bindingUnknown", "The device configuration this approval covers could not be read — approval is not possible until it can. Retry in a moment.")}
+        </div>
+      )}
       {interrupted && (
         <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground">
           {t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
@@ -2792,7 +2841,7 @@ function RunRow({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction disabled={!defHash || defChanged} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash); }}>
+            <AlertDialogAction disabled={approveBlocked} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash, bindingDigest); }}>
               {t("studio.continueRunConfirm", "Continue run")}
             </AlertDialogAction>
           </AlertDialogFooter>

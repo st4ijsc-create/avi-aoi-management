@@ -815,3 +815,66 @@ describe("final wave (T3 minor) — một FlyoutHost mỗi trang", () => {
     }
   });
 });
+
+// doc 81 Đợt 7 task L fix 1 (a) — kiểm trình duyệt L2: mở lớp (mục có dấu), F5 (host MỚI, id khác), Esc ⇒ trước đây host coi
+// mục là "gốc F5" và REPLACE ⇒ còn một mục trang trùng (Back "chết": bấm Back vẫn ở trang này). Hợp đồng: dấu của host
+// TRƯỚC (cùng trang, stackSig KHỚP URL hiện tại, chuỗi cùng path và là tiền tố tăng dần) được NHẬN như dấu của mình ⇒ đóng
+// lớp LÙI về mục bên dưới; Back kế tiếp rời trang. Dấu cũ KHÔNG khớp URL (vd mục trang đã bị replace giữ state cũ) ⇒ vẫn
+// không tin (coi như gốc) — không bao giờ lùi qua một mục mà dấu nói sai.
+describe("L fix 1 (a) — dấu của host trước F5 trên CÙNG trang được nhận ⇒ không còn Back chết", () => {
+  async function openThenF5() {
+    startAt("");
+    const first = renderHost3();
+    fireEvent.click(screen.getByRole("button", { name: "mở chi tiết" }));
+    await screen.findByRole("dialog", { name: "ECN 42" });
+    await waitFor(() => expect(flyoutParams()).toEqual(["detail"]));
+    await settle();
+    first.unmount(); // F5: host cũ chết, history.state (dấu của host cũ) còn nguyên
+    renderHost3();
+    const a = await screen.findByRole("dialog", { name: "ECN 42" });
+    return { a };
+  }
+
+  it("mở → F5 → Esc ⇒ LÙI về mục trang (không replace); Back kế tiếp ⇒ /a", async () => {
+    const { a } = await openThenF5();
+    fireEvent.keyDown(a, { key: "Escape" });
+    await waitFor(() => expect(flyoutParams()).toEqual([]));
+    await settle();
+    expect(window.location.pathname).toBe(P);
+    act(() => window.history.back());
+    await waitFor(() => expect(window.location.pathname).toBe("/a"));
+  });
+
+  it("mở → F5 → Back ⇒ đóng lớp; Back nữa ⇒ /a (không có mục trùng)", async () => {
+    await openThenF5();
+    act(() => window.history.back());
+    await waitFor(() => expect(flyoutParams()).toEqual([]));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    act(() => window.history.back());
+    await waitFor(() => expect(window.location.pathname).toBe("/a"));
+  });
+
+  it("dấu cũ KHÔNG khớp URL hiện tại ⇒ không tin: mục vẫn là gốc (replace, state của mục giữ nguyên)", async () => {
+    window.history.replaceState(null, "", "/a");
+    const stale = { flyoutHost: "fh-cu", depth: 1, stackSig: `${P}?flyout=detail&flyoutId=99`, chain: [`${P}?`] };
+    window.history.pushState(stale, "", `${P}?flyout=detail&flyoutId=7`);
+    renderHost3();
+    const a = await screen.findByRole("dialog", { name: "ECN 7" });
+    fireEvent.keyDown(a, { key: "Escape" });
+    await waitFor(() => expect(flyoutParams()).toEqual([]));
+    expect(window.location.pathname).toBe(P);
+    expect(window.history.state).toEqual(stale);
+  });
+
+  it("dấu cũ có chuỗi KHÁC path ⇒ không tin (không lùi qua trang khác)", async () => {
+    window.history.replaceState(null, "", "/a");
+    const foreign = { flyoutHost: "fh-cu", depth: 1, stackSig: `${P}?flyout=detail&flyoutId=7`, chain: ["/a?"] };
+    window.history.pushState(foreign, "", `${P}?flyout=detail&flyoutId=7`);
+    renderHost3();
+    const a = await screen.findByRole("dialog", { name: "ECN 7" });
+    fireEvent.keyDown(a, { key: "Escape" });
+    await waitFor(() => expect(flyoutParams()).toEqual([]));
+    expect(window.location.pathname).toBe(P);
+    expect(window.history.state).toEqual(foreign);
+  });
+});

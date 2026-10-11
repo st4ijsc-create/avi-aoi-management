@@ -134,6 +134,12 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   biến 0 bị phá), Task B1 gỡ 1 chỗ ném thô ở `vda5050Adapter` (order gửi một lần). Cả 3 chỗ B4 nay ném
  *   `DbUnavailableError` (đúng lớp của họ đã đóng; bị bắt + ghi log trong chuỗi ghi của store / thành
  *   `ok:false` ⇒ khởi động `persistUnknown` — hành vi không đổi). 465 − 3 = **462**, không dư một đơn vị.
+ *
+ * 462 GIỮ NGUYÊN (2026-10-11, doc 81 Đợt 7 task J redesign — round 4): ĐO trên HEAD `b01cc9542` ra **474** — cổng này
+ *   ĐỎ ×2 vì J fix 3 (`services/mqttBrokerTls.ts`) đã thêm **12** chỗ `throw new Error(` (bộ đọc báo cáo ACL nghiêm +
+ *   `whoami`) mà không đo lại. Thiết kế lại J4 (quản trị viên cấp khoá; server CHỈ đọc + kiểm) viết lại module: mọi chỗ ném
+ *   nay là `BrokerTlsError` / `InspectError` có mã, bị bắt trong `startMqttTlsListener` (không bao giờ tới tRPC). ĐO trên cây
+ *   làm việc sau khi viết lại ra **462** — đúng số ghim: 474 − 12 = 462, không nới, không dư.
  */
 const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 462;
 

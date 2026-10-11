@@ -331,6 +331,17 @@ export const mqttClientRouter = router({
       return { clientId: kq.clientId, changed: kq.changed, unboundMachineId: kq.unboundMachineId, sessionsClosed };
     }),
 
+  // doc 81 Đợt 7 J1 — the built-in broker's MQTTS listener + the SHA-256 fingerprint of its site certificate,
+  // which the technician types into each tablet (app ≥ 1.0.18) next to the device password. Same audience as
+  // the password column and the admin card (settings_factory canEdit — fix 1: UI and API use the same, stricter
+  // gate); the certificate is public, the private key is never returned.
+  brokerTls: protectedProcedure
+    .use(requirePermission("settings_factory", "canEdit"))
+    .query(async () => {
+      const { getMqttBrokerTlsStatus, isMqttRunning } = await import("../services/mqttService");
+      return { running: isMqttRunning(), ...getMqttBrokerTlsStatus() };
+    }),
+
   // Get MQTT status
   status: protectedProcedure.query(async () => {
     const { isMqttRunning, getConnectedClientsCount, getExternalMqttInfo, getMqttBindingDropStats } = await import('../services/mqttService');

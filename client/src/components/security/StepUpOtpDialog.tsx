@@ -42,11 +42,33 @@ import { Button } from "@/components/ui/button";
  * ⚠ Consequence for anyone adding a new deploy mutation: `guard()` is not optional decoration —
  * a call site that skips it can never succeed while `ACTUATION_STEPUP_2FA` is on.
  */
+/**
+ * doc 81 Đợt 7 task L fix 1 — Ruling R-7-c: hộp OTP KHÔNG được hỏi một mã mà server sẽ BỎ QUA. Quyết định "lượt này có cần
+ * OTP không" lấy từ SERVER — cổng `twoFactor` của `programming.deployPreview` (mirror đúng `deployProcedure`):
+ *   `stepUpOff` = cờ ACTUATION_STEPUP_2FA tắt; `stepUpBypassedInternalMode` = chế độ nội bộ, người gọi chưa bật 2FA ⇒
+ *   server bỏ qua step-up và GHI SỔ. Mọi thứ khác — không có bản xem trước, đang tải/lỗi, cổng vắng/không đạt, lý do lạ,
+ *   `otpRequired` — ⇒ "required" (hỏng theo hướng HỎI). Không phải thay đổi an ninh: server vẫn quyết; cờ bật lại giữa
+ *   chừng ⇒ server từ chối mã rỗng (INVALID_VALUE twoFactorCode).
+ */
+export type StepUpOtpMode = "required" | "stepUpOff" | "stepUpBypassed";
+export function stepUpModeFromPreviewGates(gates: unknown): StepUpOtpMode {
+  if (!Array.isArray(gates)) return "required";
+  const g = gates.find((x) => x != null && typeof x === "object" && (x as { name?: unknown }).name === "twoFactor") as
+    | { ok?: unknown; reason?: unknown }
+    | undefined;
+  if (!g || g.ok !== true) return "required";
+  if (g.reason === "stepUpOff") return "stepUpOff";
+  if (g.reason === "stepUpBypassedInternalMode") return "stepUpBypassed";
+  return "required";
+}
+
 export function useStepUpOtp() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
   const runnerRef = useRef<((code: string) => void) | null>(null);
+  // R-7-c — chế độ của lượt đang mở (không truyền ⇒ "required": hỏi OTP như cũ).
+  const [mode, setMode] = useState<StepUpOtpMode>("required");
   // doc 81 Đợt 3 Task 0 (O1) — phần tử đã mở hộp OTP (vd nút "Triển khai build" của wizard). Hộp mở bằng mã, không có
   // DialogTrigger ⇒ Radix trả focus về triggerRef = null ⇒ focus rơi về <body> trong khi wizard (modal) vẫn mở.
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -64,22 +86,27 @@ export function useStepUpOtp() {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  const guard = useCallback((run: (code: string) => void, opts?: { returnFocus?: HTMLElement | null }) => {
+  const guard = useCallback((run: (code: string) => void, opts?: { returnFocus?: HTMLElement | null; mode?: StepUpOtpMode }) => {
     const active = typeof document !== "undefined" ? document.activeElement : null;
     const focused = active instanceof HTMLElement && active !== document.body ? active : null;
     returnFocusRef.current = opts?.returnFocus ?? focused ?? lastPressedRef.current;
     runnerRef.current = run;
+    setMode(opts?.mode ?? "required");
     setCode("");
     setOpen(true);
   }, []);
 
+  const otpNeeded = mode === "required";
   const finish = useCallback((submit: boolean) => {
     const run = runnerRef.current;
     const value = code;
     setOpen(false);
     runnerRef.current = null;
-    if (submit && run && value.length === 6) run(value);
-  }, [code]);
+    if (!submit || !run) return;
+    // R-7-c — server báo step-up tắt / bỏ qua cho người gọi ⇒ gửi KHÔNG mã (server không đọc nó).
+    if (!otpNeeded) run("");
+    else if (value.length === 6) run(value);
+  }, [code, otpNeeded]);
 
   const dialog = (
     <Dialog open={open} onOpenChange={(o) => { if (!o) finish(false); }}>
@@ -97,32 +124,38 @@ export function useStepUpOtp() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-amber-500" />
-            {t("stepUp.title", "Xác thực 2 bước để triển khai")}
+            {otpNeeded ? t("stepUp.title", "Xác thực 2 bước để triển khai") : t("stepUp.confirmTitle", "Xác nhận lệnh triển khai")}
           </DialogTitle>
-          <DialogDescription>
-            {t("stepUp.desc", "Nhập mã OTP 6 số từ ứng dụng xác thực để xác nhận lệnh triển khai/điều khiển.")}
+          <DialogDescription data-testid="stepup-mode" data-mode={mode}>
+            {mode === "stepUpOff"
+              ? t("stepUp.offDesc", "Xác thực 2 bước (step-up) đang TẮT trên máy chủ — không cần mã OTP. Bấm Xác nhận để gửi lệnh.")
+              : mode === "stepUpBypassed"
+                ? t("stepUp.bypassDesc", "Tài khoản của bạn chưa bật xác thực 2 bước và máy chủ đang ở chế độ nội bộ — không cần mã OTP; lượt này được ghi sổ kiểm toán. Bấm Xác nhận để gửi lệnh.")
+                : t("stepUp.desc", "Nhập mã OTP 6 số từ ứng dụng xác thực để xác nhận lệnh triển khai/điều khiển.")}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex justify-center py-4">
-          <InputOTP
-            maxLength={6}
-            value={code}
-            onChange={setCode}
-            onComplete={() => finish(true)}
-            autoFocus
-          >
-            <InputOTPGroup>
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <InputOTPSlot key={i} index={i} />
-              ))}
-            </InputOTPGroup>
-          </InputOTP>
-        </div>
+        {otpNeeded && (
+          <div className="flex justify-center py-4">
+            <InputOTP
+              maxLength={6}
+              value={code}
+              onChange={setCode}
+              onComplete={() => finish(true)}
+              autoFocus
+            >
+              <InputOTPGroup>
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <InputOTPSlot key={i} index={i} />
+                ))}
+              </InputOTPGroup>
+            </InputOTP>
+          </div>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={() => finish(false)}>
             {t("common.cancel", "Huỷ")}
           </Button>
-          <Button disabled={code.length !== 6} onClick={() => finish(true)}>
+          <Button disabled={otpNeeded && code.length !== 6} onClick={() => finish(true)}>
             {t("common.confirm", "Xác nhận")}
           </Button>
         </DialogFooter>

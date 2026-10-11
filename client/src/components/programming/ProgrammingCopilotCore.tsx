@@ -8,13 +8,13 @@
  *   · ghi chú "chỉ sao chép" khi host là editor khối/LAD (không có `onApply`).
  * Khung bao (header, cuộn, vị trí) thuộc về host.
  */
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useCallback, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Info, MessageCircleQuestion, Wand2, XCircle } from "lucide-react";
 import type { CopilotSeed } from "@/components/programming/ProgrammingCopilotPanel";
-import type { CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
+import { useProgrammingCopilotOptional, type CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
 
 // doc64 S5-OPT: Panel kéo CodeEditor→@codemirror (~1MB) — chỉ tải khi lõi được mount (dock mở / tab Copilot mở).
 const ProgrammingCopilotPanel = lazy(() =>
@@ -24,6 +24,11 @@ const ProgrammingCopilotPanel = lazy(() =>
 export function ProgrammingCopilotCore({ binding, className }: { binding: CopilotBinding; className?: string }) {
   const { t } = useTranslation();
   const [seed, setSeed] = useState<CopilotSeed | undefined>();
+  // doc 81 Đợt 7 task L fix 1 (b) — trạng thái bận của engine lên context ⇒ thanh trạng thái hiện "Copilot đang chạy".
+  const setBusy = useProgrammingCopilotOptional()?.setBusy;
+  // final wave F7 — this core is ONE busy source (a dock and an inspector may both be mounted): its own id, not last-writer-wins.
+  const busySource = useId();
+  const reportBusy = useCallback((v: boolean) => setBusy?.(busySource, v), [setBusy, busySource]);
   const diags = binding.diagnostics ?? [];
   const errText = diags.map((d) => `- [${d.severity ?? "error"}] ${d.message}`).join("\n");
 
@@ -107,6 +112,7 @@ export function ProgrammingCopilotCore({ binding, className }: { binding: Copilo
           onApplyText={binding.onApplyText}
           seed={seed}
           hideSyncFromEditor={binding.scratch}
+          onBusyChange={setBusy ? reportBusy : undefined}
         />
       </Suspense>
 

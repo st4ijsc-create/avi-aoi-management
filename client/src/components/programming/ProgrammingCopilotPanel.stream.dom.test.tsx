@@ -253,3 +253,31 @@ describe("hideSyncFromEditor (Task 15 — scratch)", () => {
     expect(screen.getByRole("button", { name: /Sync from editor/ })).toBeInTheDocument();
   });
 });
+
+// doc 81 Đợt 7 task L fix 1 (b) — kiểm trình duyệt L3: ở màn hẹp, chuyển khỏi tab Copilot giữa lượt ⇒ Copilot "đóng" nhưng
+// luồng vẫn chạy KHUẤT, không có dấu hiệu nào. Panel báo trạng thái bận ra ngoài (onBusyChange) để trang hiện
+// "Copilot đang chạy": true khi luồng bắt đầu, false khi xong / huỷ / unmount.
+describe("L fix 1 (b) — onBusyChange báo luồng đang chạy", () => {
+  it("bắt đầu ⇒ true; result + đóng luồng ⇒ false", async () => {
+    const onBusy = vi.fn();
+    render(<ProgrammingCopilotPanel onBusyChange={onBusy} />);
+    expect(onBusy).not.toHaveBeenCalledWith(true);
+    await batDauLuot();
+    expect(onBusy).toHaveBeenLastCalledWith(true);
+    luot[0].day({ type: "result", result: { ok: true, refused: false, kind: "iec61131-st", code: "X", validation: { ok: true, diagnostics: [] } } });
+    luot[0].dong();
+    await nghi();
+    expect(onBusy).toHaveBeenLastCalledWith(false);
+  });
+  it("Huỷ ⇒ false; unmount giữa lượt ⇒ false", async () => {
+    const onBusy = vi.fn();
+    const { unmount } = render(<ProgrammingCopilotPanel onBusyChange={onBusy} />);
+    await batDauLuot();
+    await act(async () => { fireEvent.click(screen.getByTestId("copilot-cancel")); });
+    expect(onBusy).toHaveBeenLastCalledWith(false);
+    await batDauLuot();
+    expect(onBusy).toHaveBeenLastCalledWith(true);
+    unmount();
+    expect(onBusy).toHaveBeenLastCalledWith(false);
+  });
+});

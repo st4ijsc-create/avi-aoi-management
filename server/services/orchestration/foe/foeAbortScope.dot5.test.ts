@@ -15,7 +15,7 @@ import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
 const { otDispatchMock, audit, judge, conn } = vi.hoisted(() => ({
   otDispatchMock: vi.fn(async (_cmd?: unknown) => ({ ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] })),
   audit: vi.fn(async (_ctx: unknown, _e: Record<string, any>) => ({ id: 1 })),
-  judge: { mode: "in" as "in" | "out" | "fail" | "hang" | "scoped", calls: 0 },
+  judge: { mode: "in" as "in" | "out" | "fail" | "hang" | "scoped", calls: 0, classifierBroken: false },
   // final wave F3 — the RUNNING connection fingerprint of each adapter; the dispatcher's own runningConnectionMatchesAdapterRow
   // (real) compares it with the adapter row (absent / different ⇒ the pinned STOP is not verified).
   conn: { fp: new Map<number, string>() },
@@ -26,7 +26,19 @@ vi.mock("../../ot/otManager", async (importOriginal) => {
 });
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/commandDispatcher")>();
-  return { isStopCommandType: orig.isStopCommandType, classifyOtStop: orig.classifyOtStop, dispatch: otDispatchMock };
+  // doc 81 Đợt 7 I4 — the WHOLE stop classifier the engine uses (runningConnectionMatchesAdapterRow too: without it every
+  // classification of this file failed as a whole, which the scope probe now sees — M-1).
+  return {
+    isStopCommandType: orig.isStopCommandType,
+    // doc 81 Đợt 7 I4 (M-1) — `judge.classifierBroken` ⇒ the stop classifier's module member cannot be used (as when the
+    // lazy module fails to load): the classification of a definition fails AS A WHOLE.
+    get classifyOtStop() {
+      if (judge.classifierBroken) throw new Error("classifier module broken (test)");
+      return orig.classifyOtStop;
+    },
+    runningConnectionMatchesAdapterRow: orig.runningConnectionMatchesAdapterRow,
+    dispatch: otDispatchMock,
+  };
 });
 vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: vi.fn() }));
 vi.mock("../../auditTrailService", () => ({ createAuditContext: (x: unknown) => x, logCrudOperation: audit }));
@@ -136,6 +148,7 @@ beforeEach(() => {
   audit.mockClear();
   judge.mode = "in";
   judge.calls = 0;
+  judge.classifierBroken = false;
   conn.fp = new Map([[502, adapterTargetFingerprint({ protocol: "modbus", endpoint: "tcp://127.0.0.1:1", machineId: 2, connectionOptions: null } as never)]]);
   broken.clear();
   process.env.FOE_ENABLED = "true";
@@ -220,10 +233,19 @@ describe("doc 81 Đợt 5 E fix 2 (R-5-l, replaces R-5-i) — abort / reject sco
   });
 
   it("review #9: startRun resolves the caller's scope for a MISSING ref too (same path as an existing ref)", async () => {
+    // doc 81 Đợt 7 I fix 1 — the ref resolution (namespaces) resolves the scope too: the SAME number of resolutions for a
+    // missing ref as for an existing out-of-scope one (≥ 1), and the same answer.
+    await pausedRun();
+    judge.mode = "out";
     judge.calls = 0;
     const r = await startRun("no-such-ref", {}, OWNER);
+    const missingCalls = judge.calls;
     expect(r).toEqual({ ok: false, enabled: true, message: `Workflow "no-such-ref" not found.` });
-    expect(judge.calls).toBe(1);
+    judge.calls = 0;
+    const out = await startRun("g", {}, OWNER);
+    expect(out).toEqual({ ok: false, enabled: true, message: `Workflow "g" not found.` });
+    expect(missingCalls).toBeGreaterThanOrEqual(1);
+    expect(judge.calls).toBe(missingCalls);
   });
 });
 
@@ -317,6 +339,29 @@ describe("doc 81 Đợt 5 final wave F3 / F5 / P-E1 — undecided scope of an ab
       expect(runRow(runId).status).toBe("awaiting_confirm");
     });
   }
+
+  it("★ doc 81 Đợt 7 I4 (M-1): the stop classification fails AS A WHOLE (its module unusable) ⇒ an existing run whose only foreign target is an UNPINNED stop-typed step and a MISSING id get the SAME 'scope not verified' (abort and reject)", async () => {
+    judge.mode = "in";
+    const UNPINNED_B = { id: "u", type: "command", machineId: 2, command: "stop", args: { adapterId: 502, writes: [{ tagKey: "speed", value: 0 }] } };
+    const d = await deployWorkflow({ ref: "m1", name: "m1", steps: [{ id: "g", type: "hitl_gate", prompt: "p" }, { id: "w", type: "command", machineId: 1, command: "start" }, UNPINNED_B] } as never, OWNER);
+    expect(d.ok).toBe(true);
+    const s = await startRun("m1", {}, OWNER);
+    const runId = s.runId!;
+    judge.mode = "scoped";
+    // healthy control: the unpinned stop is a NON-STOP target of another factory ⇒ a decided 'not found', like a missing id
+    const N = 999_999;
+    expect(fix(await abortRun(runId, OWNER, "x"), runId)).toBe(fix(await abortRun(N, OWNER, "x"), N));
+    expect((await abortRun(runId, OWNER, "x")).reason).toBeUndefined();
+    judge.classifierBroken = true;
+    const a = await abortRun(runId, OWNER, "x");
+    expect(a).toMatchObject({ ok: false, reason: "scopeUnverified" });
+    expect(fix(await abortRun(N, OWNER, "x"), N)).toBe(fix(a, runId));
+    const r = await resumeRun(runId, { approved: false }, OWNER);
+    expect(r).toMatchObject({ ok: false, reason: "scopeUnverified" });
+    expect(fix(await resumeRun(N, { approved: false }, OWNER), N)).toBe(fix(r, runId));
+    judge.classifierBroken = false;
+    expect(runRow(runId).status).toBe("awaiting_confirm");
+  });
 
   it("P-E1 control: with every read healthy a missing id is a decided 'not found' (no refusal, no audit)", async () => {
     judge.mode = "scoped";

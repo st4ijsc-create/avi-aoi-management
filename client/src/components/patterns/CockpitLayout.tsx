@@ -92,10 +92,17 @@ export function CockpitLayout({
               defaultTab={defaultTab}
               className="flex min-h-0 flex-col gap-0"
               listRowAttrs={toolbarAttrs}
-              listRowStyle={{ maxHeight: 56 }}
-              listRowClassName="flex-nowrap overflow-hidden"
+              // doc 81 Đợt 7 task L4 — dưới 1024 px hàng XUỐNG DÒNG: một dòng `overflow-hidden` + `toolbarEnd` shrink-0 ép dải
+              // tab chính còn 6 px và cắt nút cuối (Trung tâm Kỹ thuật @390/412). Trần 56 px chỉ áp từ 1024 px (thiết bị đo
+              // chấm ở 1366/1600).
+              listRowStyle={narrow ? undefined : { maxHeight: 56 }}
+              listRowClassName={narrow ? "flex-wrap gap-y-1" : "flex-nowrap overflow-hidden"}
               listEnd={toolbarEnd}
-              listClassName="flex h-9 min-h-9 flex-nowrap overflow-x-auto"
+              // doc 81 Đợt 7 task L4 — TabsTrigger mặc định `flex-1` ⇒ trong dải một dòng các tab CO đều nhau (Tiêu chuẩn
+              // thiết bị @390 px: 70 px cho nhãn 81–90 px ⇒ chữ đè nhau). Tab không co ⇒ thiếu chỗ thì dải cuộn ngang; và
+              // `justify-start` (TabsList mặc định `justify-center`: phần tràn chia HAI bên, phần bên trái không cuộn tới được
+              // — đo @390: tab đầu ở -67 px khi scrollLeft = 0).
+              listClassName="flex h-9 min-h-9 flex-nowrap justify-start overflow-x-auto [&>[role=tab]]:flex-none"
             />
           ) : (
             <>

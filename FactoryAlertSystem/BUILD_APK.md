@@ -11,6 +11,24 @@
 
 ---
 
+## Build đã kiểm (doc 81 Đợt 7 J3, app 1.0.18)
+
+Máy dev (Windows, Git Bash) — chỉ đặt biến cho CHÍNH tiến trình build, không cài gì toàn hệ thống:
+
+```bash
+cd FactoryAlertSystem/android
+export JAVA_HOME="/c/Program Files/Java/jdk-17"   # Gradle 8.3 + AGP 8.1.4: JDK 17 (Java 21/26 trên PATH KHÔNG chạy được Gradle 8.3)
+export ANDROID_HOME="D:/Android/Sdk"               # có platforms/android-34, build-tools 34.0.0, NDK 25.1 (local.properties trỏ cùng chỗ)
+export PATH="$JAVA_HOME/bin:$PATH"
+./gradlew --no-daemon assembleRelease              # ký bằng signingConfigs.release (MYAPP_UPLOAD_* trong gradle.properties — gitignored)
+```
+
+Kết quả: `android/app/build/outputs/apk/release/FactoryAlertSystem-v1.0.18-release-{arm64-v8a,armeabi-v7a}.apk`
+(một APK mỗi ABI ARM — máy tính bảng thật; giả lập x86 không chạy được). Bản đã phát hành để thử: chép vào
+`FactoryAlertSystem/apk-out/<phiên bản>/` (gitignored) kèm SHA-256. Kiểm trước khi build: `npx jest` + `npx tsc --noEmit`
+(trong `FactoryAlertSystem/`) và kiểm JVM TLS ghim vân tay: `npx tsx FactoryAlertSystem/android/app/src/test/pinned-tls-check-driver.mts`
+(từ gốc repo; bắt tay TLS thật với chứng chỉ kiểu broker nhúng).
+
 ## 🚀 Cách Nhanh: Dùng Script
 
 ```powershell
@@ -56,7 +74,8 @@ keytool -genkeypair -v -storetype PKCS12 -keystore factory-alert-release.keystor
 ```
 
 **Nhập thông tin:**
-- Keystore password: `FactoryAlert@2026` (hoặc password của bạn)
+- Keystore password: tự đặt khi tạo keystore — KHÔNG ghi vào tài liệu/git. Mật khẩu của keystore phát hành hiện có nằm trong
+  `android/gradle.properties` (gitignored) — hỏi người giữ bản phát hành (release owner).
 - First and Last Name: `Factory Alert System`
 - Organization: `Foxconn`
 - City: `Hanoi`

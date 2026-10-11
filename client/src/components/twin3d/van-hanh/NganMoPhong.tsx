@@ -109,7 +109,9 @@ export interface NganMoPhongProps {
    */
   workflow: readonly WorkflowChon[] | null;
   workflowRef: string | null;
-  onDoiWorkflow: (ref: string | null) => void;
+  /** doc 81 Đợt 7 final wave F9 (N4) — the workflow picked (several visible workflows may share a ref). */
+  workflowId: number | null;
+  onDoiWorkflow: (w: { id: number; ref: string } | null) => void;
   phatLai: KetQuaPhatLai | undefined;
   dangChayPhatLai: boolean;
 }
@@ -150,7 +152,7 @@ export function NganMoPhong(p: NganMoPhongProps) {
   useEffect(() => {
     datMoc(0);
     datDangPhat(false);
-  }, [p.workflowRef]);
+  }, [p.workflowId]);
 
   /*
    * ★★★ HOẠT ẢNH PHẢI CÓ NGƯỜI LẬP LỊCH, VÀ PHẢI TỰ DỪNG Ở CUỐI.
@@ -435,12 +437,15 @@ export function NganMoPhong(p: NganMoPhongProps) {
                     className="pointer-events-auto h-6 w-full rounded border bg-background px-1 text-xs"
                     data-testid="chon-workflow"
                     aria-label={t("twin3d.moPhong.chonWorkflow", "Chọn quy trình để phát lại")}
-                    value={p.workflowRef ?? ""}
-                    onChange={(e) => p.onDoiWorkflow(e.target.value || null)}
+                    value={p.workflowId != null ? String(p.workflowId) : ""}
+                    onChange={(e) => {
+                      const w = p.workflow?.find((x) => String(x.id) === e.target.value);
+                      p.onDoiWorkflow(w ? { id: w.id, ref: w.ref } : null);
+                    }}
                   >
                     <option value="">{t("twin3d.moPhong.chonWorkflow", "Chọn quy trình để phát lại")}</option>
                     {p.workflow.map((w) => (
-                      <option key={w.id} value={w.ref}>
+                      <option key={w.id} value={String(w.id)}>
                         {w.name ?? w.ref}
                       </option>
                     ))}

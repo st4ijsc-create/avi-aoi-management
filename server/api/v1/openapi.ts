@@ -635,17 +635,42 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
       "/api/v1/orchestration/workflows": {
         post: {
           tags: ["Orchestration"],
-          summary: "Deploy a workflow (E2 — not implemented)",
-          description: "Requires scope `orchestration:write`. Published now; returns 501 until E2.",
-          responses: { "501": { description: "Not Implemented — coming in E2", content: jsonErr() }, ...errResponses() },
+          summary: "Deploy (create or update) a workflow definition",
+          description:
+            "Requires scope `orchestration:write` and a key with a declared data scope (`factory` or `global`). Every target of " +
+            "the definition must be in the key's factory scope. **Refs are namespaced per scope** (doc 81 Đợt 7): a workflow " +
+            "ref is unique per (ref, scope) — a `factory` key's namespace is its factory set, a `global` key's is `global`. The " +
+            "plain `ref` in the body is resolved within the key's own view: deploying the same ref again UPDATES that workflow " +
+            "(idempotent, new version); a ref used only by workflows outside the key's scope behaves exactly like a free ref " +
+            "(a new workflow in the key's namespace). `201 { workflowId, ref, version }`; `400 invalid_workflow` with `reason` " +
+            "`outOfScope` / `refOutOfScope` / `refAmbiguous` (several workflows visible to the key share the ref) / `refConflict` " +
+            "(concurrent create — retry) / `scopeUnverified` (retry).",
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "201": { description: "Deployed: { workflowId, ref, version }" },
+            "400": { description: "Definition refused (errors / reason)", content: jsonErr() },
+            "503": { description: "Orchestration engine disabled (FOE_ENABLED)", content: jsonErr() },
+            ...errResponses(),
+          },
         },
       },
       "/api/v1/orchestration/runs": {
         post: {
           tags: ["Orchestration"],
-          summary: "Start a run (E2 — not implemented)",
-          description: "Requires scope `orchestration:write`. Published now; returns 501 until E2.",
-          responses: { "501": { description: "Not Implemented — coming in E2", content: jsonErr() }, ...errResponses() },
+          summary: "Start a run of a deployed workflow",
+          description:
+            "Requires scope `orchestration:write` and a declared data scope. Body `{ workflowRef, params? }`. The plain " +
+            "`workflowRef` is resolved within the key's view (its own namespace first, then `global`, then the single visible " +
+            "workflow of that ref); a workflow outside the key's scope is answered like a missing one. A run started through an " +
+            "API key never sends OT / robot commands other than a STOP. `202 { runId, status, accepted }`. When the key's factory " +
+            "scope cannot be verified at that moment the start is refused (`accepted: false`, no run) — retry; it never falls " +
+            "back to another namespace's workflow.",
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
+          responses: {
+            "202": { description: "Accepted: { runId, status, accepted } (accepted=false: refused / not found — see status)" },
+            "503": { description: "Orchestration engine disabled (FOE_ENABLED)", content: jsonErr() },
+            ...errResponses(),
+          },
         },
       },
       "/api/v1/orchestration/simulate": {
@@ -654,13 +679,19 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           summary: "Digital-twin simulate a workflow WITHOUT dispatch (E3a)",
           description:
             "Requires scope `orchestration:read`. PURE + fail-safe, NOT flag-gated: predicts step order, " +
-            "duration and gates without touching any device. Body: `{ workflow | workflowRef, params?, " +
-            "assumedTelemetry?, commandDurations?, defaultCommandMs?, gateMs? }`.",
+            "duration and gates without touching any device. Body: `{ workflow | workflowRef, workflowId?, params?, " +
+            "assumedTelemetry?, commandDurations?, defaultCommandMs?, gateMs? }`. `workflowRef` is resolved within the key's " +
+            "view; `workflowId` pins it to that workflow (several visible workflows may share a ref). `409 ref_ambiguous` (pass " +
+            "`workflowId`), `503 scope_unverified` (the key's factory scope could not be verified — retry).",
           requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: true } } } },
           responses: {
             "200": { description: "Simulation result", content: jsonOk() },
             "400": { description: "Neither workflow nor workflowRef supplied", content: jsonErr() },
-            ...errResponses({ "404": { description: "workflowRef not found", content: jsonErr() } }),
+            ...errResponses({
+              "404": { description: "workflowRef not found", content: jsonErr() },
+              "409": { description: "ref_ambiguous — several visible workflows share workflowRef (pass workflowId)", content: jsonErr() },
+              "503": { description: "scope_unverified — the key's factory scope could not be verified (retry)", content: jsonErr() },
+            }),
           },
         },
       },

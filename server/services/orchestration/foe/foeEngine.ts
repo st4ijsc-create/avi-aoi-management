@@ -27,7 +27,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../../../_core/appError";
-import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray, sql, type SQL } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
 import {
@@ -72,9 +72,12 @@ import {
   FOE_APPROVAL_SOURCE_SERVER,
   FOE_APPROVAL_SOURCE_SYSTEM,
   FOE_API_RUN_PARAM,
+  FOE_DEF_VERSIONS_PARAM,
+  FOE_REJECT_CLAIM_CTX_KEY,
+  runExecutedVersions,
   runStartedViaApi,
   type GateRequiredReason,
-} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun)
+} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
   allStepsOf,
@@ -96,9 +99,10 @@ import {
   makeScopeJudge,
   resolveUserFoeScope,
   stepsTouching,
+  workflowScopeKeyOf,
   type FoeScope,
   type OutOfScope,
-} from "./foeScope"; // doc 81 Đợt 5 task E2 — factory scope (item 26)
+} from "./foeScope"; // doc 81 Đợt 5 task E2 — factory scope (item 26); Đợt 7 I fix 1 — ref namespace
 export type { FoeScope } from "./foeScope";
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
@@ -227,6 +231,11 @@ export interface DeployOpts {
    * assignments; a non-user principal ⇒ EMPTY scope). `null` = explicitly unrestricted (a `global` API key).
    */
   scope?: FoeScope;
+  /**
+   * doc 81 Đợt 7 I fix 1 — the workflow to update (rollback; the Studio editor of a loaded workflow): used only when it
+   * carries the deployed ref and the deployer may see it (or it is in the deployer's own namespace); else as if absent.
+   */
+  targetWorkflowId?: number;
 }
 
 export interface StartRunResult {
@@ -291,7 +300,15 @@ export type DefinitionRefusalReason =
   /** doc 81 Đợt 5 task E2 — a step touches a machine / robot / adapter outside the deployer's factory scope. */
   | "outOfScope"
   /** doc 81 Đợt 5 task E2 — the ref belongs to an existing workflow that touches targets outside the deployer's scope. */
-  | "refOutOfScope";
+  | "refOutOfScope"
+  /** doc 81 Đợt 7 task I3 / I fix 1 — the deployer's factory scope could not be resolved (retry). */
+  | "scopeUnverified"
+  /** doc 81 Đợt 7 I fix 1 — several workflows the caller can see share the ref (deploy / start from the workflow itself). */
+  | "refAmbiguous"
+  /** doc 81 Đợt 7 I fix 1 (M-2) — a concurrent create took the (ref, scope) first (retry). */
+  | "refConflict"
+  /** final wave F9 (N5) — the workflow named by `targetWorkflowId` is gone / not visible and the ref is taken in the deployer's namespace (reload, no retry). */
+  | "refTargetStale";
 
 export interface RunView {
   run: OrchestrationRun;
@@ -300,6 +317,12 @@ export interface RunView {
    * approver's screen shows); sent back as `expectedDefHash` on approval. null when the workflow row is missing.
    */
   defHash: string | null;
+  /**
+   * doc 81 Đợt 7 task I2 — computeBindingDigest of the device configuration the run's definition resolves to NOW (what the
+   * approver's screen covers); sent back as `expectedBindingDigest` on approval. null ⇔ it could not be computed (DB error)
+   * or the workflow row is missing — the Studio then cannot approve (fail-closed).
+   */
+  bindingDigest: string | null;
   steps: Array<{
     stepId: string;
     stepType: string;
@@ -330,6 +353,13 @@ export interface GateDecision {
    * (reason definitionChanged) before any state change. Omitted ⇒ no check (internal callers).
    */
   expectedDefHash?: string;
+  /**
+   * doc 81 Đợt 7 task I2 — the binding digest (RunView.bindingDigest) the approver's screen LOADED. On an approval of an open
+   * gate it must equal computeBindingDigest() NOW, else CONFLICT (reason bindingChanged, "configuration changed — reload")
+   * before any state change. A screen-bound approval (expectedDefHash given) without it ⇒ the same CONFLICT (fail-closed).
+   * Both omitted ⇒ no check (internal callers: QT pump, auto-resume — they record no counting approval of a person).
+   */
+  expectedBindingDigest?: string;
 }
 
 /** doc 80 Đợt 1 Task 9 — optional hooks of `resumeRun`. */
@@ -1316,10 +1346,41 @@ async function scopeDecisionProbe(d: NonNullable<Awaited<ReturnType<typeof getDb
       d.select({ id: deviceTags.id }).from(deviceTags).limit(1),
       d.select({ id: robots.id }).from(robots).limit(1),
     ]);
-    return true;
+    return await stopClassifierProbe(d);
   } catch {
     return false;
   }
+}
+
+/**
+ * doc 81 Đợt 7 task I4 (Đợt 5 re-review M-1) — the STOP classifier's own dependencies, exercised the SAME way
+ * foeStepClass.makeStopVerifier uses them: its two lazy modules (the OT dispatcher's classifyOtStop +
+ * runningConnectionMatchesAdapterRow, stopPin's stopPinsFromTagRows) and its two batch query shapes (enabled adapters of
+ * machines; enabled + writable stop-pin tags of adapters). When the classification of an existing run fails AS A WHOLE
+ * (a module that does not load, a batch shape that fails), a missing id is now as undecided as that run — the same
+ * "scope not verified" answer, not "not found" (no existence oracle). false (or a rejection) on any failure.
+ */
+async function stopClassifierProbe(d: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<boolean> {
+  const [disp, pin] = await Promise.all([import("../../ot/commandDispatcher"), import("../../ot/stopPin")]);
+  if (typeof disp.classifyOtStop !== "function" || typeof disp.runningConnectionMatchesAdapterRow !== "function" || typeof pin.stopPinsFromTagRows !== "function") {
+    return false; // the classifier cannot run ⇒ the probe fails (undecided), like a failed read
+  }
+  await Promise.all([
+    d.select().from(deviceAdapters).where(and(inArray(deviceAdapters.machineId, [-1]), eq(deviceAdapters.isEnabled, true))).limit(1),
+    d
+      .select({
+        adapterId: deviceTags.adapterId,
+        tagKey: deviceTags.tagKey,
+        dataType: deviceTags.dataType,
+        stopValue: deviceTags.stopValue,
+        writable: deviceTags.writable,
+        isEnabled: deviceTags.isEnabled,
+      })
+      .from(deviceTags)
+      .where(and(inArray(deviceTags.adapterId, [-1]), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)))
+      .limit(1),
+  ]);
+  return true;
 }
 
 /**
@@ -1341,9 +1402,18 @@ async function runScopeDecision(runId: number, scope: FoeScope): Promise<{ verdi
     run = rows[0];
     if (judge.failed) return { verdict: "unknown", run };
     if (judge.unrestricted) return { verdict: "in", run };
-    const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run?.workflowId ?? -1)).limit(1);
-    const def = wf?.definitionJson as WorkflowDefinition | undefined;
-    const verdict: ScopeDecision = def && Array.isArray(def.steps) ? await decideDefinition(judge, def) : "out";
+    // doc 81 Đợt 7 task I3 — the definitions of the versions the run EXECUTED (runVisibilityDefinitions); none usable ⇒ "out"
+    // (only an unrestricted scope sees it). Every version must be "in"; any decided "out" ⇒ "out"; else any doubt ⇒ "unknown".
+    const [defs] = await runVisibilityDefinitions(d, [run ?? { workflowId: -1, paramsJson: null }]);
+    let verdict: ScopeDecision = defs && defs.length ? "in" : "out";
+    for (const def of defs ?? []) {
+      const v = await decideDefinition(judge, def);
+      if (v === "out") {
+        verdict = "out";
+        break;
+      }
+      if (v === "unknown") verdict = "unknown";
+    }
     if (verdict === "in") return { verdict, run };
     return { verdict: (await probe) ? verdict : "unknown", run };
   } catch {
@@ -1432,7 +1502,10 @@ export async function visibleRunIds(runIds: number[], scope: FoeScope): Promise<
     if (runIds.length === 0) return new Set();
     const d = await getDb();
     if (!d) return new Set();
-    const rows = await d.select({ id: orchestrationRuns.id, workflowId: orchestrationRuns.workflowId }).from(orchestrationRuns).where(inArray(orchestrationRuns.id, runIds));
+    const rows = await d
+      .select({ id: orchestrationRuns.id, workflowId: orchestrationRuns.workflowId, paramsJson: orchestrationRuns.paramsJson })
+      .from(orchestrationRuns)
+      .where(inArray(orchestrationRuns.id, runIds));
     return new Set((await filterRunsVisibleTo(rows, scope)).map((r) => r.id));
   } catch {
     return new Set();
@@ -1505,14 +1578,15 @@ async function filterVisibleWith<T>(
   judge: Awaited<ReturnType<typeof makeScopeJudge>>,
   items: T[],
   defOf: (item: T) => WorkflowDefinition | null | undefined,
-): Promise<{ keep: T[]; failed: boolean }> {
-  if (judge.unrestricted && !judge.failed) return { keep: items, failed: false };
+): Promise<{ keep: T[]; failed: boolean; unknown: T[] }> {
+  if (judge.unrestricted && !judge.failed) return { keep: items, failed: false, unknown: [] };
   const defs = items.map(defOf);
   const ids = new Set<number>();
   for (const d of defs) if (d && Array.isArray(d.steps)) for (const id of validateWorkflow(d, null).referencedMachineIds) ids.add(id);
   const machineMap = await loadMachines([...ids]);
   const verifier = await makeStopVerifier((await getDb()) ?? null, defs.filter((d): d is WorkflowDefinition => !!d && Array.isArray(d.steps)), machineMap);
   const keep: T[] = [];
+  const unknown: T[] = []; // final wave F3 (R-7-d) — the undecided items, for callers that must not read them as "not visible"
   let failed = judge.failed;
   for (let i = 0; i < items.length; i++) {
     const d = defs[i];
@@ -1522,9 +1596,12 @@ async function filterVisibleWith<T>(
     // that is in scope is no longer marked failed just because one of ITS OWN stops could not be verified.
     const verdict = await decideDefinition(judge, d, machineMap, verifier);
     if (verdict === "in") keep.push(items[i]);
-    else if (verdict === "unknown") failed = true;
+    else if (verdict === "unknown") {
+      failed = true;
+      unknown.push(items[i]);
+    }
   }
-  return { keep, failed: failed || judge.failed };
+  return { keep, failed: failed || judge.failed, unknown };
 }
 
 /** doc 81 Đợt 5 task E2 — EVERY target (STOPs included) in `scope`: the deploy rule, also for deleting a workflow. */
@@ -1543,32 +1620,242 @@ export async function runIdVisibleTo(runId: number, scope: FoeScope): Promise<bo
   try {
     const d = await getDb();
     const run = d ? (await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1))[0] : undefined;
-    const visible = await runVisibleTo({ workflowId: run?.workflowId ?? -1 }, scope);
+    const visible = await runVisibleTo(run ?? { workflowId: -1, paramsJson: null }, scope); // I3 — the executed versions
     return !!run && visible;
   } catch {
     return false;
   }
 }
 
-/** doc 81 Đợt 5 task E2 fix — the runs (of any list) whose workflow `scope` may see; one workflow load for the batch. */
-export async function filterRunsVisibleTo<T extends { workflowId: number }>(runs: T[], scope: FoeScope): Promise<T[]> {
-  if (runs.length === 0) return runs;
-  const d = await getDb();
-  if (!d) return [];
+/**
+ * doc 81 Đợt 7 task I3 — the DEFINITIONS that decide whether each run is visible: the versions it EXECUTED
+ * (foeGateApproval.runExecutedVersions — the head row when it is that version, else the version snapshot). Per run:
+ *   • a run that carries no record (started before Đợt 7) ⇒ [the head definition] — the pre-Đợt-7 rule;
+ *   • ★ CANNOT DECIDE — the workflow row is gone, or a recorded version has no snapshot (a snapshot write that failed) ⇒
+ *     `null`: the run is visible ONLY to an unrestricted scope (fail-closed), answered "not found" to everyone else.
+ * ONE read of the heads and ONE of the snapshots for the whole batch. Throws on a DB error (callers fail closed).
+ */
+export async function runVisibilityDefinitions(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  runs: ReadonlyArray<{ workflowId: number; paramsJson?: unknown }>,
+): Promise<Array<WorkflowDefinition[] | null>> {
   const ids = [...new Set(runs.map((r) => r.workflowId))];
-  const wfs = await d.select().from(orchestrationWorkflows).where(inArray(orchestrationWorkflows.id, ids));
-  const defById = new Map(wfs.map((w) => [w.id, w.definitionJson as WorkflowDefinition] as const));
-  return filterVisibleBy(runs, (r) => defById.get(r.workflowId), scope);
+  if (ids.length === 0) return [];
+  // final wave F8 — explicit columns (no "scopeKey"): the abort / reject scope decision must survive a missing 0367 (L-7)
+  const heads = await d.select(WF_CORE_COLS).from(orchestrationWorkflows).where(inArray(orchestrationWorkflows.id, ids));
+  const headById = new Map(heads.map((w) => [w.id, w] as const));
+  const needSnapshots = runs.some((r) => {
+    const vs = runExecutedVersions(r);
+    const h = headById.get(r.workflowId);
+    return !!vs && !!h && vs.some((v) => v !== h.version);
+  });
+  const snaps = needSnapshots
+    ? await d
+        .select({ workflowId: orchestrationWorkflowVersions.workflowId, version: orchestrationWorkflowVersions.version, definitionJson: orchestrationWorkflowVersions.definitionJson })
+        .from(orchestrationWorkflowVersions)
+        .where(inArray(orchestrationWorkflowVersions.workflowId, ids))
+    : [];
+  const usable = (x: unknown): WorkflowDefinition | null => {
+    const def = x as WorkflowDefinition | null | undefined;
+    return def && Array.isArray(def.steps) ? def : null;
+  };
+  return runs.map((r) => {
+    const head = headById.get(r.workflowId);
+    if (!head) return null;
+    const headDef = usable(head.definitionJson);
+    const versions = runExecutedVersions(r);
+    if (!versions) return headDef ? [headDef] : null;
+    const defs: WorkflowDefinition[] = [];
+    for (const v of versions) {
+      const def = v === head.version ? headDef : usable(snaps.find((s) => s.workflowId === r.workflowId && s.version === v)?.definitionJson);
+      if (!def) return null;
+      defs.push(def);
+    }
+    return defs;
+  });
 }
 
-/** doc 81 Đợt 5 task E2 — the run's workflow (current head definition) is visible to `scope`. DB error ⇒ false. */
-export async function runVisibleTo(run: { workflowId: number }, scope: FoeScope): Promise<boolean> {
+/**
+ * doc 81 Đợt 7 task I3 — the runs a judge may see, and whether some decision was undecided (`failed` — the hub shows
+ * degraded): a run is kept only when EVERY definition it executed is decided "in" (one machine load + one verifier for
+ * the batch). A lookup error ⇒ nothing kept, failed.
+ */
+async function filterRunsVisibleWith<T extends { workflowId: number; paramsJson?: unknown }>(
+  judge: Awaited<ReturnType<typeof makeScopeJudge>>,
+  runs: T[],
+): Promise<{ keep: T[]; failed: boolean }> {
+  if (judge.unrestricted && !judge.failed) return { keep: runs, failed: false };
+  if (runs.length === 0) return { keep: runs, failed: judge.failed };
+  const d = await getDb();
+  if (!d) return { keep: [], failed: true };
+  const defsPer = await runVisibilityDefinitions(d, runs);
+  const flat: Array<{ i: number; def: WorkflowDefinition }> = [];
+  defsPer.forEach((defs, i) => (defs ?? []).forEach((def) => flat.push({ i, def })));
+  const r = await filterVisibleWith(judge, flat, (x) => x.def);
+  const kept = new Set(r.keep);
+  const keep = runs.filter((_, i) => {
+    const mine = flat.filter((x) => x.i === i);
+    return defsPer[i] !== null && mine.length > 0 && mine.every((x) => kept.has(x));
+  });
+  return { keep, failed: r.failed || judge.failed };
+}
+
+/**
+ * doc 81 Đợt 5 task E2 fix — the runs (of any list) `scope` may see. doc 81 Đợt 7 task I3 — by the definition VERSIONS each
+ * run executed (runVisibilityDefinitions), no longer by the workflow's current head. Any error ⇒ [] (fail-closed).
+ */
+export async function filterRunsVisibleTo<T extends { workflowId: number; paramsJson: unknown }>(runs: T[], scope: FoeScope): Promise<T[]> {
+  if (runs.length === 0) return runs;
   try {
-    const d = await getDb();
-    const wf = d ? (await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1))[0] : undefined;
-    return await definitionVisibleTo(wf?.definitionJson as WorkflowDefinition | undefined, scope);
+    return (await filterRunsVisibleWith(await makeScopeJudge(scope), runs)).keep;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * doc 81 Đợt 5 task E2 — is this run visible to `scope`? doc 81 Đợt 7 task I3 — by the versions it executed (its
+ * `paramsJson` record); `paramsJson: null` = no record ⇒ the workflow's head (also how a version / workflow-level caller
+ * asks about the head). DB error ⇒ false.
+ */
+export async function runVisibleTo(run: { workflowId: number; paramsJson: unknown }, scope: FoeScope): Promise<boolean> {
+  try {
+    return (await filterRunsVisibleTo([run], scope)).length === 1;
   } catch {
     return false;
+  }
+}
+
+/**
+ * doc 81 Đợt 7 I fix 1 (review M-5 + security scan "resource-cap-removal-dos") — HARD bounds of every run-list call:
+ *   • RUN_SCOPE_MAX_DEFINITIONS — at most this many workflow definitions (heads first, then the newest version snapshots) are
+ *     JUDGED per call (one machine load + one batched stop verifier for all of them). More exist ⇒ the runs of the versions
+ *     left out are not shown and the answer says `truncated` (fail-closed: never shown on a guess).
+ *   • RUN_LIST_MAX_LIMIT — the largest page; the scope filter runs IN SQL before LIMIT (no in-memory filtering of runs).
+ *   • RUN_PENDING_MAX — the most pending runs the hub / "mine" takes per call; more ⇒ degraded (not a silent subset).
+ */
+export const RUN_SCOPE_MAX_DEFINITIONS = 2000;
+export const RUN_LIST_MAX_LIMIT = 500;
+export const RUN_PENDING_MAX = 2000;
+
+/** For tests: what the last runVisibilitySql call judged (bounded-work measurement). */
+export const lastRunVisibilityStats = { definitionsRead: 0, definitionsJudged: 0, truncated: false };
+
+/**
+ * doc 81 Đợt 7 I fix 1 — the SQL predicate "this run is visible to `scope`" by the definition VERSIONS it executed (the same
+ * rule as runVisibilityDefinitions / filterRunsVisibleTo, computed ONCE per call over a bounded set of definitions):
+ *   • a run with no version record (legacy) ⇒ its workflow's HEAD must be decided "in";
+ *   • a recorded run ⇒ EVERY recorded version (workflowId:version) must be decided "in" (a non-number element, a version not
+ *     judged — snapshot missing, or beyond RUN_SCOPE_MAX_DEFINITIONS — ⇒ hidden).
+ * `where` undefined ⇔ unrestricted. A failed scope resolution ⇒ FALSE (nothing) + failed. Never throws on a judge failure;
+ * a DB error throws (callers fail closed).
+ */
+export async function runVisibilitySql(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  scope: FoeScope,
+): Promise<{ where: SQL | undefined; truncated: boolean; failed: boolean; scopeFailed: boolean }> {
+  const judge = await makeScopeJudge(scope);
+  if (judge.unrestricted && !judge.failed) return { where: undefined, truncated: false, failed: false, scopeFailed: false };
+  if (judge.failed) return { where: sql`FALSE`, truncated: false, failed: true, scopeFailed: true };
+  const max = RUN_SCOPE_MAX_DEFINITIONS;
+  const heads = await d
+    .select({ id: orchestrationWorkflows.id, version: orchestrationWorkflows.version, definitionJson: orchestrationWorkflows.definitionJson })
+    .from(orchestrationWorkflows)
+    .orderBy(desc(orchestrationWorkflows.updatedAt))
+    .limit(max + 1);
+  // final wave F9 (I re-review N1) — a snapshot of the version its workflow's head row IS (every deploy snapshots its head) is
+  // the same definition: judged once, as the head — not counted twice against the budget. (N2) the snapshots are read whenever
+  // the heads did not already overflow (`<=`): with exactly `max` heads one more snapshot ⇒ `truncated` (never a silent hide).
+  const snaps =
+    heads.length <= max
+      ? await d
+          .select({ workflowId: orchestrationWorkflowVersions.workflowId, version: orchestrationWorkflowVersions.version, definitionJson: orchestrationWorkflowVersions.definitionJson })
+          .from(orchestrationWorkflowVersions)
+          .where(
+            sql`NOT EXISTS (SELECT 1 FROM ${orchestrationWorkflows} w WHERE w."id" = ${orchestrationWorkflowVersions.workflowId} AND w."version" = ${orchestrationWorkflowVersions.version})`,
+          )
+          .orderBy(desc(orchestrationWorkflowVersions.createdAt))
+          .limit(max - heads.length + 1)
+      : [];
+  type Item = { wf: number; version: number; def: WorkflowDefinition | null; head: boolean };
+  const items: Item[] = [
+    ...heads.map((h) => ({ wf: h.id, version: h.version ?? 1, def: h.definitionJson as WorkflowDefinition, head: true })),
+    ...snaps.map((v) => ({ wf: v.workflowId, version: v.version, def: v.definitionJson as WorkflowDefinition, head: false })),
+  ];
+  const truncated = items.length > max;
+  const judged = items.slice(0, max);
+  const r = await filterVisibleWith(judge, judged, (x) => x.def);
+  lastRunVisibilityStats.definitionsRead = items.length;
+  lastRunVisibilityStats.definitionsJudged = judged.length;
+  lastRunVisibilityStats.truncated = truncated;
+  const headIds = [...new Set(r.keep.filter((x) => x.head).map((x) => x.wf))];
+  const pairs = [...new Set(r.keep.map((x) => `${x.wf}:${x.version}`))];
+  const p = orchestrationRuns.paramsJson;
+  const recorded = sql`(jsonb_typeof(${p} -> ${FOE_DEF_VERSIONS_PARAM}) = 'array' AND jsonb_array_length(${p} -> ${FOE_DEF_VERSIONS_PARAM}) > 0)`;
+  const pairArr = pairs.length ? sql`ARRAY[${sql.join(pairs.map((x) => sql`${x}`), sql`, `)}]::text[]` : sql`ARRAY[]::text[]`;
+  const where = sql`(
+    (NOT coalesce(${recorded}, false) AND ${inArray(orchestrationRuns.workflowId, headIds.length ? headIds : [-1])})
+    OR (coalesce(${recorded}, false) AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(${p} -> ${FOE_DEF_VERSIONS_PARAM}) e
+       WHERE jsonb_typeof(e) <> 'number' OR (${orchestrationRuns.workflowId}::text || ':' || (e #>> '{}')) <> ALL(${pairArr})
+    ))
+  )`;
+  return { where, truncated, failed: r.failed, scopeFailed: false };
+}
+
+/**
+ * doc 81 Đợt 7 task I3 + I fix 1 — ONE page of the runs a list shows (newest first, at most min(limit, RUN_LIST_MAX_LIMIT)),
+ * visible by the versions they executed: the scope filter is the SQL predicate of runVisibilitySql, applied BEFORE the LIMIT
+ * (no in-memory filtering, bounded work). `truncated` ⇔ some definitions were left unjudged (their runs are not shown).
+ * Any error ⇒ no runs, truncated (fail-closed, said).
+ */
+export async function listVisibleRuns(
+  opts: { workflowId?: number; limit: number },
+  scope: FoeScope,
+): Promise<{ runs: Array<typeof orchestrationRuns.$inferSelect>; truncated: boolean }> {
+  try {
+    const d = await getDb();
+    if (!d) return { runs: [], truncated: true };
+    const vis = await runVisibilitySql(d, scope);
+    const limit = Math.max(1, Math.min(opts.limit, RUN_LIST_MAX_LIMIT));
+    const runs = await d
+      .select()
+      .from(orchestrationRuns)
+      .where(and(opts.workflowId != null ? eq(orchestrationRuns.workflowId, opts.workflowId) : undefined, vis.where))
+      .orderBy(desc(orchestrationRuns.createdAt), desc(orchestrationRuns.id))
+      .limit(limit);
+    return { runs, truncated: vis.truncated || vis.failed };
+  } catch {
+    return { runs: [], truncated: true };
+  }
+}
+
+/**
+ * doc 81 Đợt 7 task I3 + I fix 1 — the PENDING runs (held / awaiting a decision) `scope` may see, as run ids for the oversight
+ * hub and the "mine" box (null = unrestricted), filtered IN SQL (runVisibilitySql), at most RUN_PENDING_MAX. `ok: false` ⇔
+ * the scope or some definition could not be decided, definitions were left unjudged, or more pending runs exist than the cap
+ * (the hub shows degraded; `decidedIds` = the runs decided visible, when the scope itself was resolved).
+ */
+export async function resolveVisiblePendingRunIds(
+  scope: FoeScope,
+): Promise<{ ok: true; ids: number[] | null } | { ok: false; decidedIds?: number[] }> {
+  try {
+    const d = await getDb();
+    if (!d) return { ok: false };
+    const vis = await runVisibilitySql(d, scope);
+    if (vis.where === undefined) return { ok: true, ids: null };
+    if (vis.scopeFailed) return { ok: false };
+    const rows = await d
+      .select({ id: orchestrationRuns.id })
+      .from(orchestrationRuns)
+      .where(and(inArray(orchestrationRuns.status, ["held", "awaiting_confirm"]), vis.where))
+      .orderBy(desc(orchestrationRuns.updatedAt))
+      .limit(RUN_PENDING_MAX + 1);
+    const ids = rows.slice(0, RUN_PENDING_MAX).map((x) => x.id);
+    if (vis.failed || vis.truncated || rows.length > RUN_PENDING_MAX) return { ok: false, decidedIds: ids };
+    return { ok: true, ids };
+  } catch {
+    return { ok: false };
   }
 }
 
@@ -2045,14 +2332,43 @@ export async function deployWorkflow(
     }
 
     const d = await db();
-    const existing = await d
-      .select()
-      .from(orchestrationWorkflows)
-      .where(eq(orchestrationWorkflows.ref, def.ref))
-      .limit(1);
-    // doc 81 Đợt 5 task E2 — refs are global: deploying over an EXISTING workflow replaces its definition, so the
-    // deployer's scope must also cover every target of the definition being replaced (else another factory's workflow
-    // could be overwritten). The refusal names no step and reveals only that the ref is taken (as duplicate does).
+    // doc 81 Đợt 7 task I fix 1 (owner decision 2026-10-11, mig 0367) — refs are unique per (ref, scopeKey): the deployer's
+    // NAMESPACE is its scope key (foeScope.workflowScopeKeyOf: 'global' for admin / a `global` key / the system loader,
+    // 'f:<factory ids>' for a restricted scope). The ref is resolved WITHIN the deployer's view (resolveWorkflowByRef):
+    //   • `targetWorkflowId` (rollback; the Studio editor of a loaded workflow) names the workflow to update — used only when
+    //     it carries this ref and the deployer may see it (or it is in the deployer's own namespace); else as if absent;
+    //   • else the deployer's OWN-namespace workflow of this ref (whatever its visibility — it is its own namespace), else the
+    //     single workflow of this ref it may SEE (a 'global' one first) ⇒ that workflow is UPDATED (idempotent redeploy) —
+    //     its targets must all be in the deployer's scope, STOP steps included ⇒ else refOutOfScope (a workflow it can see);
+    //   • several visible candidates and no own / global one ⇒ refused refAmbiguous (only about workflows it can see);
+    //   • otherwise — the ref is free, OR used only by workflows it cannot see (another factory; or undecidable ⇒ treated as
+    //     not visible, review M-1) — a NEW workflow is created in its OWN namespace: the SAME answer as a free ref.
+    // A race on the unique (ref, scopeKey) ⇒ refConflict ("retry"), never the database's text (review M-2).
+    const systemLoader = !(Number.isInteger(user.id) && user.id > 0) && opts?.scope === undefined;
+    let scopeKey: string;
+    try {
+      scopeKey = systemLoader ? "global" : await workflowScopeKeyOf(scope);
+    } catch {
+      return { ok: false, enabled: true, reason: "scopeUnverified", stepIds: [], message: "Your factory scope could not be resolved — retry in a moment." };
+    }
+    const resolved = await resolveWorkflowByRef(d, def.ref, scope, scopeKey, { workflowId: opts?.targetWorkflowId, ownAnyVisibility: true });
+    // final wave F3 (R-7-d) — the view could not be decided (judge failed / an undecided workflow of this ref) ⇒ refused, never
+    // a silent new copy in the deployer's namespace next to a workflow it may be meant to update.
+    if (resolved.kind === "unverified") {
+      return { ok: false, enabled: true, reason: "scopeUnverified", stepIds: [], message: "Your factory scope could not be verified for this ref — retry in a moment." };
+    }
+    if (resolved.kind === "ambiguous") {
+      return {
+        ok: false,
+        enabled: true,
+        reason: "refAmbiguous",
+        stepIds: [],
+        message: `Several workflows you can see use the ref "${def.ref}" — deploy from the workflow itself (open it in the Studio) so the right one is updated.`,
+      };
+    }
+    const existing = resolved.kind === "row" ? [resolved.row] : [];
+    // doc 81 Đợt 5 task E2 — deploying over an EXISTING workflow replaces its definition, so the deployer's scope must also
+    // cover every target of the definition being replaced, STOP steps included.
     if (existing.length) {
       const prev = await scopeVerdict(existing[0].definitionJson as WorkflowDefinition, scope, { nonStopOnly: false });
       if (!isOutOfScopeEmpty(prev.out)) {
@@ -2061,7 +2377,7 @@ export async function deployWorkflow(
           enabled: true,
           reason: "refOutOfScope",
           stepIds: [],
-          message: `A workflow with ref "${def.ref}" already exists outside your factory scope — use another ref.`,
+          message: `The workflow "${def.ref}" touches machines/robots outside your factory scope (stop steps included) — only someone whose scope covers them can redeploy it; use another ref.`,
         };
       }
     }
@@ -2083,19 +2399,38 @@ export async function deployWorkflow(
         .where(eq(orchestrationWorkflows.id, existing[0].id));
       workflowId = existing[0].id;
     } else {
-      const [row] = await d
-        .insert(orchestrationWorkflows)
-        .values({
-          ref: def.ref,
-          name: def.name,
-          description: def.description ?? null,
-          definitionJson,
-          version: nextVersion,
-          status: "active",
-          createdBy: user.id || null,
-        })
-        .returning();
-      workflowId = row.id;
+      try {
+        const [row] = await d
+          .insert(orchestrationWorkflows)
+          .values({
+            ref: def.ref,
+            scopeKey,
+            name: def.name,
+            description: def.description ?? null,
+            definitionJson,
+            version: nextVersion,
+            status: "active",
+            createdBy: user.id || null,
+          })
+          .returning();
+        workflowId = row.id;
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          // final wave F9 (I re-review N5) — a `targetWorkflowId` that resolved to nothing (deleted, moved out of view, or another
+          // ref) while the deployer's own namespace already holds the ref: retrying can never succeed ⇒ say so (not "retry").
+          if (opts?.targetWorkflowId != null) {
+            return {
+              ok: false,
+              enabled: true,
+              reason: "refTargetStale",
+              stepIds: [],
+              message: `The workflow you opened is no longer available under the ref "${def.ref}" — reload the list and open the workflow again (or use another ref).`,
+            };
+          }
+          return { ok: false, enabled: true, reason: "refConflict", stepIds: [], message: `A workflow with the ref "${def.ref}" was just created in your scope — retry.` };
+        }
+        throw err;
+      }
     }
 
     // W3-11 — SNAPSHOT this version (append-only) so the head-row overwrite above no
@@ -2115,6 +2450,59 @@ export async function deployWorkflow(
     // data-raw-ok: như trên — lỗi một bước trong bộ thực thi quy trình.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** doc 81 Đợt 7 I fix 1 (M-2) — a unique-key violation (23505), however the driver wraps it. */
+function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  return e?.code === "23505" || e?.cause?.code === "23505";
+}
+
+type WorkflowRow = typeof orchestrationWorkflows.$inferSelect;
+/**
+ * `unverified` — final wave F3 (ruling R-7-d): the caller's view could not be DECIDED (its namespace key is unknown, the scope
+ * judge failed, or a candidate the caller might see — one that could change the pick — is undecided). Callers REFUSE with
+ * `scopeUnverified` ("retry"): never "none" (deploy would silently create a copy in the caller's namespace) and never a
+ * fallback to a lower-ranked workflow (start would run the global X instead of the caller's own X).
+ */
+export type RefResolution = { kind: "row"; row: WorkflowRow } | { kind: "none" } | { kind: "ambiguous" } | { kind: "unverified" };
+
+/**
+ * doc 81 Đợt 7 task I fix 1 (owner decision 2026-10-11, mig 0367) — THE resolution of a plain workflow ref WITHIN a caller's
+ * view (deploy, start, simulate, delete, duplicate, API v1). Candidates: the workflows with this ref in ANY namespace (or only
+ * `workflowId` when given). A candidate counts only when the caller may SEE it (decideDefinition "in") — except, with
+ * `ownAnyVisibility`, the caller's OWN-namespace row (deploy: its own namespace leaks nothing). Pick: own namespace › 'global'
+ * › the single visible one; several ⇒ ambiguous; none ⇒ none. Workflows of other factories the caller cannot see (decided
+ * "out") are never named: "none" is the SAME answer as a free ref.
+ * final wave F3 (R-7-d) — what cannot be decided is never read as "not visible": `scopeKey` null (namespace unresolvable) or a
+ * failed judge ⇒ `unverified`; an UNDECIDED candidate ⇒ `unverified` unless the pick cannot change whatever it is (the
+ * caller's own visible row; or a visible 'global' row and no undecided own-namespace row). Accepted residual (owner ruling):
+ * `unverified` tells the caller that some workflow of this ref exists whose visibility is undecided right now.
+ */
+export async function resolveWorkflowByRef(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  ref: string,
+  scope: FoeScope,
+  scopeKey: string | null,
+  opts: { workflowId?: number; ownAnyVisibility?: boolean } = {},
+): Promise<RefResolution> {
+  if (scopeKey == null) return { kind: "unverified" }; // F3 — the SAME answer whatever exists (no fallback to 'global')
+  let rows = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.ref, ref));
+  if (opts.workflowId != null) rows = rows.filter((r) => r.id === opts.workflowId);
+  const judge = await makeScopeJudge(scope);
+  const own = rows.find((r) => r.scopeKey === scopeKey);
+  if (own && opts.ownAnyVisibility) return { kind: "row", row: own };
+  const judged = await filterVisibleWith(judge, rows, (r) => r.definitionJson as WorkflowDefinition);
+  if (judge.failed) return { kind: "unverified" };
+  const visible = judged.keep;
+  const ownVisible = visible.find((r) => r.scopeKey === scopeKey);
+  if (ownVisible) return { kind: "row", row: ownVisible };
+  const globalVisible = visible.find((r) => r.scopeKey === "global");
+  const undecidedOwn = judged.unknown.some((r) => r.scopeKey === scopeKey);
+  if (globalVisible && !undecidedOwn) return { kind: "row", row: globalVisible };
+  if (judged.unknown.length > 0) return { kind: "unverified" };
+  if (visible.length === 0) return { kind: "none" };
+  return visible.length === 1 ? { kind: "row", row: visible[0] } : { kind: "ambiguous" };
 }
 
 /**
@@ -2188,6 +2576,7 @@ export async function rollbackWorkflow(
   const res = await deployWorkflow(def, user, {
     overrideReason: `rollback to v${version}: ${why}`,
     scope,
+    targetWorkflowId: workflowId, // doc 81 Đợt 7 I fix 1 — the workflow being rolled back, never another namespace's
   });
   if (res.ok) void auditRollback(user, def, version, res.version ?? null, why);
   return res;
@@ -2255,6 +2644,13 @@ export async function startRun(
     viaApi?: boolean;
     /** doc 81 Đợt 5 task E2 — the starter's factory scope (see DeployOpts.scope). */
     scope?: FoeScope;
+    /** doc 81 Đợt 7 I fix 1 — the workflow the caller means (several visible workflows may share a ref across namespaces). */
+    workflowId?: number;
+    /**
+     * doc 81 Đợt 7 task I1 — called with the new run's id right after its row exists (before the walk): the edge runtime
+     * uses it to watch central for an abort WHILE the run walks. A throwing callback is ignored (never stops the run).
+     */
+    onStarted?: (runId: number) => void;
   },
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
@@ -2263,15 +2659,33 @@ export async function startRun(
   let runId: number | undefined;
   try {
     const d = await db();
-    const [wf] = await d
-      .select()
-      .from(orchestrationWorkflows)
-      .where(eq(orchestrationWorkflows.ref, workflowRef))
-      .limit(1);
-    // doc 81 Đợt 5 task E2 — a workflow whose NON-STOP targets are outside the starter's scope does not exist for them
-    // (the SAME answer as a missing ref, before any status check). Targets reached only by VERIFIED STOP steps are allowed
-    // (L-7, R-5-j) and audited once the run exists. E fix 1 (review #9) — the scope is resolved for a missing ref too.
-    const sv = await scopeVerdict((wf?.definitionJson ?? { ref: workflowRef, name: workflowRef, steps: [] }) as WorkflowDefinition, scopeFor(user, opts?.scope), { nonStopOnly: true });
+    // doc 81 Đợt 7 task I fix 1 — the ref is resolved WITHIN the starter's view (resolveWorkflowByRef: own namespace ›
+    // 'global' › the single visible one; `workflowId` pins one). doc 81 Đợt 5 task E2 — a workflow whose NON-STOP targets are
+    // outside the starter's scope does not exist for them (the SAME answer as a missing ref, before any status check).
+    // Targets reached only by VERIFIED STOP steps are allowed (L-7, R-5-j) and audited once the run exists.
+    const startScope = scopeFor(user, opts?.scope);
+    let startKey: string | null = null;
+    try {
+      startKey = await workflowScopeKeyOf(startScope);
+    } catch {
+      startKey = null; // final wave F3 (R-7-d) — no fallback to 'global' › single visible: resolveWorkflowByRef ⇒ unverified
+    }
+    const found = await resolveWorkflowByRef(d, workflowRef, startScope, startKey, { workflowId: opts?.workflowId });
+    if (found.kind === "unverified") {
+      // final wave F3 — the starter's namespace / view could not be decided: refused (the SAME answer whether the ref exists);
+      // a start is never urgent (stopping equipment goes through the machine's direct STOP / E-STOP, not a new run).
+      return { ok: false, enabled: true, reason: "scopeUnverified", message: "Your factory scope could not be verified — retry in a moment." };
+    }
+    if (found.kind === "ambiguous") {
+      return {
+        ok: false,
+        enabled: true,
+        reason: "refAmbiguous",
+        message: `Several workflows you can see use the ref "${workflowRef}" — start it from the workflow itself (open it in the Studio).`,
+      };
+    }
+    const wf = found.kind === "row" ? found.row : undefined;
+    const sv = await scopeVerdict((wf?.definitionJson ?? { ref: workflowRef, name: workflowRef, steps: [] }) as WorkflowDefinition, startScope, { nonStopOnly: true });
     if (!wf || !isOutOfScopeEmpty(sv.out)) return { ok: false, enabled: true, message: `Workflow "${workflowRef}" not found.` };
     // doc 80 ORC-06 — only a DEPLOYED ('active') workflow runs. A duplicate is created 'draft'
     // and must pass deployWorkflow (validation + sim-gate + version snapshot) before running.
@@ -2307,13 +2721,19 @@ export async function startRun(
         workflowId: wf.id,
         workflowRef: wf.ref,
         status: "queued",
-        paramsJson: viaApi ? { ...(params ?? {}), [FOE_API_RUN_PARAM]: true } : params ?? {},
+        // doc 81 Đợt 7 task I3 — the version this run executes (server-written; a caller's value is replaced).
+        paramsJson: { ...(params ?? {}), ...(viaApi ? { [FOE_API_RUN_PARAM]: true } : {}), [FOE_DEF_VERSIONS_PARAM]: [wf.version ?? 1] },
         contextJson: viaApi ? { startedViaApi: true } : {},
         startedBy: user.id || (opts?.ownerUserId != null && opts.ownerUserId > 0 ? opts.ownerUserId : null),
         startedAt: new Date(),
       })
       .returning();
     runId = run.id;
+    try {
+      opts?.onStarted?.(run.id); // doc 81 Đợt 7 I1
+    } catch {
+      /* a caller's callback never stops the run */
+    }
     auditStopOutOfScope(user, def, run.id, "start", sv.stopOnlyOut); // doc 81 Đợt 5 task E2 (L-7: allowed, audited)
     // doc 33 W4 (F8 §5.1.2) — durable event log: record RUN_CREATED (best-effort, FOE_DURABLE-gated).
     void appendRunEvent(run.id, "RUN_CREATED", { ts: Date.now(), data: { workflowRef: wf.ref } });
@@ -2353,8 +2773,15 @@ export async function startRun(
   }
 }
 
-/** Fetch a run + its per-step audit (read-only). */
-export async function getRun(runId: number): Promise<RunView | null> {
+/**
+ * Fetch a run + its per-step audit (read-only).
+ * final wave F6 — `bindingDigest` (computeBindingDigest: adapter / tag / robot reads) is computed only when the caller is an
+ * APPROVER'S SCREEN (`opts.bindingDigest`, the Studio's getRun) AND the run is paused where an approval / continue can bind
+ * to it ('awaiting_confirm' | 'held' — resumeRun's `screenBound`); every other read gets null without the extra reads (the
+ * edge progress tick, the QT pump, resolveQtGate, API v1 reads). null never lets an approval through: the Studio cannot
+ * approve without a digest, and resumeRun recomputes and compares it server side (fail-closed).
+ */
+export async function getRun(runId: number, opts: { bindingDigest?: boolean } = {}): Promise<RunView | null> {
   const d = await getDb();
   if (!d) return null;
   const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
@@ -2363,11 +2790,15 @@ export async function getRun(runId: number): Promise<RunView | null> {
     .select()
     .from(orchestrationRunSteps)
     .where(eq(orchestrationRunSteps.runId, runId));
-  const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
+  const [wf] = await d.select(WF_CORE_COLS).from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1); // F8: no "scopeKey"
   const wfDef = wf?.definitionJson as WorkflowDefinition | undefined;
+  const usable = wfDef && Array.isArray(wfDef.steps) ? wfDef : null;
   return {
     run,
-    defHash: wfDef && Array.isArray(wfDef.steps) ? hashWorkflowDefinition(wfDef) : null,
+    defHash: usable ? hashWorkflowDefinition(usable) : null,
+    // doc 81 Đợt 7 I2 (null on a DB error ⇒ cannot approve); final wave F6 — only for an approver's screen of a paused run
+    bindingDigest:
+      usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held") ? await computeBindingDigest(d, usable) : null,
     steps: stepRows.map((s) => ({
       stepId: s.stepId,
       stepType: s.stepType,
@@ -2474,10 +2905,15 @@ export async function resumeRun(
       // before and sends nothing. The claim, the final write and the gate row are bounded by D (L-7). A claim that does not
       // answer within D sends nothing NOW (it may not have won); if it lands later and won, the rest of the rejection
       // (sweep, hook, final write, gate row) runs then, in the background — the answer says it was not confirmed.
+      // doc 81 Đợt 7 task I6 — with a hook the claim also writes THIS rejection's token into the run context (server-only,
+      // FOE_REJECT_CLAIM_CTX_KEY): when the claim's reply is lost, the re-read below recognises its OWN claim by it.
+      const claimToken = hooks.compensate ? `${Date.now().toString(36)}-${randomBytes(8).toString("hex")}` : null;
       const claim = claimPausedRun(
         runId,
         hooks.compensate ? "compensating" : "aborted",
-        hooks.compensate ? {} : { finishedAt: new Date(), error: rejectedBy(reason) },
+        hooks.compensate
+          ? { contextJson: { ...(((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>), [FOE_REJECT_CLAIM_CTX_KEY]: claimToken } }
+          : { finishedAt: new Date(), error: rejectedBy(reason) },
         pinnedStepId,
       );
       const finishRejection = async (): Promise<{ abortStops: AbortStopReport; confirmed: boolean }> => {
@@ -2527,26 +2963,39 @@ export async function resumeRun(
         }
         return { abortStops, confirmed };
       };
+      // doc 81 Đợt 7 task I6 — the rejection is finished (sweep, hook, final write, gate row) AT MOST ONCE per call, whichever
+      // path gets there: the hook (the QT business compensation) can never run twice for one claim.
+      let finishing: Promise<{ abortStops: AbortStopReport; confirmed: boolean }> | null = null;
+      const finishOnce = () => (finishing ??= finishRejection());
       try {
         await withDeadline(claim, STOP_DB_STEP_DEADLINE_MS, `FOE reject run ${runId} claim`);
       } catch (err) {
         if (err instanceof TRPCError) throw err; // LOST the claim (CONFLICT) — nothing was sent, nothing will be
         console.error(`[FOE] rejection of run ${runId}: claim not answered in time — ${(err as Error)?.message ?? err}; STOPs follow if it lands as won`);
         void claim.then(
-          () => finishRejection().catch(() => undefined),
+          () => finishOnce().catch(() => undefined),
           // fix 2 (N4) — the claim FAILED after the bound with something other than "lost" (e.g. its reply was lost after it
           // committed): re-read the run (bounded); if it shows THIS rejection's claim, finish it (sweep + gate row).
           async (lateErr: unknown) => {
             if (lateErr instanceof TRPCError) return; // lost the claim: nothing to do
-            const now = await boundedAbortRead(async () => {
-              const d3 = await getDb();
-              return d3 ? d3.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1) : null;
-            }, `FOE reject run ${runId} claim re-read`);
-            const row = now?.[0];
-            // without a hook only: a 'compensating' row could be ANOTHER decision's claim, and its QT business compensations
-            // must not run twice — a later abort (it lands on 'compensating') sweeps that run instead.
-            const ours = !hooks.compensate && row?.status === "aborted" && row.error === rejectedBy(reason);
-            if (ours) await finishRejection().catch(() => undefined);
+            const row = await rereadRejectClaim(runId);
+            if (row === undefined) {
+              // ★ CANNOT DECIDE (doc 81 Đợt 7 I6) — the run could not be re-read (3 bounded tries): whether THIS claim won is
+              // unknown, so nothing is finished here (no STOP from this path, no business compensation — it must never run
+              // for a claim that may be another decision's). Said loudly and audited. The run stays where the database has
+              // it: an ABORT of the run (it lands on 'compensating' or 'awaiting_confirm' alike) sweeps its STOPs.
+              console.error(`[FOE] rejection of run ${runId}: claim outcome not decided (run not re-read) — rejection NOT finished; abort the run to send its STOP steps, or use the machine's direct STOP / E-STOP`);
+              auditAbortStop(user, runId, "rejectClaimUndecided", { stepIds: [], hook: !!hooks.compensate });
+              return;
+            }
+            // With a hook (I6): THIS claim's token on a 'compensating' row — or on an 'aborted' one (an abort landed after the
+            // claim committed; its business compensation has still not run) ⇒ ours. Another decision's claim never matches
+            // the token. Without a hook (fix 2 N4): 'aborted' + this rejection's own error text.
+            const ctx = (row?.contextJson as Record<string, unknown> | null) ?? {};
+            const ours = hooks.compensate
+              ? claimToken !== null && ctx[FOE_REJECT_CLAIM_CTX_KEY] === claimToken && (row?.status === "compensating" || row?.status === "aborted")
+              : row?.status === "aborted" && row.error === rejectedBy(reason);
+            if (ours) await finishOnce().catch(() => undefined);
           },
         );
         return {
@@ -2558,7 +3007,7 @@ export async function resumeRun(
           abortStops: emptyAbortReport(),
         };
       }
-      const { abortStops, confirmed } = await finishRejection();
+      const { abortStops, confirmed } = await finishOnce();
       if (!confirmed) {
         return {
           ok: false,
@@ -2578,13 +3027,32 @@ export async function resumeRun(
 
     // doc 81 Đợt 4 fix round 2 (R-4-k) — the approver must have been looking at THIS definition (a redeploy since their
     // screen loaded ⇒ their approval would be recorded against content they never saw) ⇒ CONFLICT, nothing changes.
-    if (run.status === "awaiting_confirm" && decision.expectedDefHash !== undefined && decision.expectedDefHash !== hashWorkflowDefinition(def)) {
+    // doc 81 Đợt 7 I fix 1 (review M-3) — also on "Continue" of a 'held' (interrupted) run: it resumes actuation on the
+    // definition and device configuration the screen showed, so both are checked server side for it too.
+    const screenBound = run.status === "awaiting_confirm" || run.status === "held";
+    if (screenBound && decision.expectedDefHash !== undefined && decision.expectedDefHash !== hashWorkflowDefinition(def)) {
       throw appError(
         "CONFLICT",
         "OPERATION_FAILED",
         { operation: "resumeOrchestrationRun", reason: "definitionChanged" },
         `Workflow "${wf.ref}" was redeployed after your screen loaded — reload and review the current definition before approving.`,
       );
+    }
+    // doc 81 Đợt 7 task I2 — the approver must also have been looking at THIS device configuration (adapter / tags / robot the
+    // commands resolve to — the binding digest the approval will record). Computed ONCE here and recorded below, so the
+    // approval covers exactly what was checked. Changed since the screen loaded, not computable now (DB error — cannot
+    // decide ⇒ refused), or a screen-bound approval without it ⇒ CONFLICT, nothing changes.
+    let checkedDigest: string | null | undefined;
+    if (screenBound && (decision.expectedDefHash !== undefined || decision.expectedBindingDigest !== undefined)) {
+      checkedDigest = await computeBindingDigest(d, def);
+      if (decision.expectedBindingDigest === undefined || checkedDigest === null || checkedDigest !== decision.expectedBindingDigest) {
+        throw appError(
+          "CONFLICT",
+          "OPERATION_FAILED",
+          { operation: "resumeOrchestrationRun", reason: "bindingChanged" },
+          `The device configuration of workflow "${wf.ref}" (adapter, tags or robot its commands use) changed after your screen loaded, or could not be read — reload and review it before approving.`,
+        );
+      }
     }
 
     // doc 80 ORC-03 — approving a hitl_gate enforces its approverRoles / fourEyes (FORBIDDEN).
@@ -2601,7 +3069,15 @@ export async function resumeRun(
     // fix round 1 (R-4-g) — the claim also CLEARS currentStepId: it only names the step a run is paused AT; leaving it
     // set made a later 'held' (interrupted) resume re-stamp a gate that had already passed.
     const pausedAtGate = run.status === "awaiting_confirm"; // read BEFORE the claim mutates the run
-    await claimPausedRun(runId, "running", { currentStepId: null }, pinnedStepId);
+    // doc 81 Đợt 7 task I3 — the walk below executes the CURRENT head: its version is added to the run's executed versions
+    // (only added — every other params key, the apiRun marker included, is kept). A legacy run (no record) gets none.
+    const executed = runExecutedVersions(run);
+    const headVersion = wf.version ?? 1;
+    const versionPatch =
+      executed && !executed.includes(headVersion)
+        ? { paramsJson: { ...((run.paramsJson as Record<string, unknown> | null) ?? {}), [FOE_DEF_VERSIONS_PARAM]: [...executed, headVersion] } }
+        : {};
+    await claimPausedRun(runId, "running", { currentStepId: null, ...versionPatch }, pinnedStepId);
     if (approvalStopOnlyOut) auditStopOutOfScope(user, def, runId, "approve", approvalStopOnlyOut); // E2 (L-7: allowed, audited)
 
     // Mark the OPEN gate resolved (completed) so the re-walk skips it. fix round 1 (R-4-g/R-4-h/R-4-e):
@@ -2627,7 +3103,8 @@ export async function resumeRun(
             defHash: hashWorkflowDefinition(def),
             // doc 81 Đợt 5 task E3 — the device configuration the approval covers, computed HERE (server side); null
             // (DB error) ⇒ the approval never counts (fail-closed).
-            bindingDigest: await computeBindingDigest(d, def),
+            // doc 81 Đợt 7 I2 — the digest the approver's screen was checked against (else computed now, as before).
+            bindingDigest: checkedDigest !== undefined ? checkedDigest : await computeBindingDigest(d, def),
           },
           finishedAt: new Date(),
         });
@@ -2715,6 +3192,91 @@ async function driveRunFromResume(rc: RunContext): Promise<OrchestrationRun["sta
   });
 }
 
+// ── final wave F8 — migration 0367 (orchestration_workflows."scopeKey") schema guard ─────────────────────────────────
+/**
+ * doc 81 Đợt 7 final wave F8 (final review #8) — a restart onto this code BEFORE mig 0367 is applied makes every full-row
+ * select of orchestration_workflows fail with 42703. Instead of a silent outage:
+ *   • boot (rehydrateInterruptedRuns, the FOE boot hook) logs ONE loud FATAL line naming the fix (apply 0367);
+ *   • the workflow-management procedures (orchestrationRouter: list / get / deploy / rollback / versions / start / simulate /
+ *     delete / duplicate) answer a clear "migration missing" error (assertFoeSchemaReady) instead of the database's text;
+ *   • ★ L-7 — the STOPPING paths are NOT gated: run lists / getRun / abort / gate rejection keep working, and the engine reads
+ *     they need select explicit columns WITHOUT "scopeKey" (WF_CORE_COLS), so an abort sweep still loads the stored
+ *     definition and SENDS its STOP steps (and a live run uses its in-memory definition, as before).
+ * State: "unknown" (no DB / another error) never blocks anything — those calls fail on their own. "missing" is re-checked at
+ * most every FOE_SCHEMA_RECHECK_MS, so applying 0367 while the server runs lifts the guard without a restart.
+ */
+export const FOE_SCHEMA_RECHECK_MS = 30_000;
+const foeSchema = { state: "unknown" as "ok" | "missing" | "unknown", checkedAt: 0 };
+
+/** The workflow columns every engine read on a STOPPING path uses (never "scopeKey" — those reads must survive a missing 0367). */
+const WF_CORE_COLS = {
+  id: orchestrationWorkflows.id,
+  ref: orchestrationWorkflows.ref,
+  name: orchestrationWorkflows.name,
+  version: orchestrationWorkflows.version,
+  status: orchestrationWorkflows.status,
+  definitionJson: orchestrationWorkflows.definitionJson,
+};
+
+function isUndefinedColumn(err: unknown): boolean {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  return e?.code === "42703" || e?.cause?.code === "42703";
+}
+
+/** Probe the 0367 column (one bounded read). Logs the FATAL line at boot, and once per change of state afterwards. */
+export async function checkFoeSchema(opts: { boot?: boolean } = {}): Promise<"ok" | "missing" | "unknown"> {
+  const before = foeSchema.state;
+  let state: "ok" | "missing" | "unknown" = "unknown";
+  try {
+    const d = await getDb();
+    if (d) {
+      await d.select({ scopeKey: orchestrationWorkflows.scopeKey }).from(orchestrationWorkflows).limit(1);
+      state = "ok";
+    }
+  } catch (err) {
+    state = isUndefinedColumn(err) ? "missing" : "unknown";
+  }
+  foeSchema.checkedAt = Date.now();
+  if (state === "unknown" && before !== "unknown") return before; // a transient error never flips a known state
+  foeSchema.state = state;
+  if (state === "missing" && (opts.boot || before !== "missing")) {
+    console.error(
+      '[FOE] FATAL: database migration 0367 is NOT applied (orchestration_workflows."scopeKey" is missing). Orchestration ' +
+        "workflow management is UNAVAILABLE until it is applied: node scripts/apply-migration-0367.mjs --dev-only (re-checked " +
+        `every ${FOE_SCHEMA_RECHECK_MS / 1000} s; no restart needed). Run lists, abort and gate rejection keep working and still ` +
+        "send the STOP steps of stored runs; the machines' direct STOP / E-STOP are unaffected.",
+    );
+  } else if (state === "ok" && before === "missing") {
+    console.log("[FOE] migration 0367 is now applied — orchestration workflow management available again.");
+  }
+  return state;
+}
+
+/** true ⇔ 0367 is known to be MISSING (re-checked at most every FOE_SCHEMA_RECHECK_MS). "unknown" ⇒ false (never blocks). */
+export async function foeSchemaMissing(): Promise<boolean> {
+  if (foeSchema.state === "ok") return false;
+  if (Date.now() - foeSchema.checkedAt >= (foeSchema.state === "unknown" ? 5_000 : FOE_SCHEMA_RECHECK_MS)) await checkFoeSchema();
+  return foeSchema.state === "missing";
+}
+
+/** The clear refusal of a workflow-management call while 0367 is missing (never used on a STOPPING path — L-7). */
+export async function assertFoeSchemaReady(): Promise<void> {
+  if (await foeSchemaMissing()) {
+    throw appError(
+      "PRECONDITION_FAILED",
+      "FEATURE_NOT_CONFIGURED",
+      { feature: "orchestration (database migration 0367)" },
+      "Orchestration is unavailable: database migration 0367 is not applied — an administrator runs scripts/apply-migration-0367.mjs. Aborting runs and the machines' direct STOP / E-STOP still work.",
+    );
+  }
+}
+
+/** For tests: forget the cached schema state. */
+export function _resetFoeSchemaState(): void {
+  foeSchema.state = "unknown";
+  foeSchema.checkedAt = 0;
+}
+
 // ── W4-17 — DURABLE EXECUTION: rehydrate-on-boot ─────────────────────────────────
 
 export interface RehydrateResult {
@@ -2785,6 +3347,8 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
  */
 export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
   const result: RehydrateResult = { enabled: foeEnabled(), scanned: 0, interrupted: 0, failed: 0, runIds: [] };
+  // final wave F8 — the boot-time schema check of migration 0367 (this function is the FOE's boot hook; it never throws).
+  await checkFoeSchema({ boot: true });
   try {
     const d = await getDb();
     if (!d) return result;
@@ -2916,7 +3480,9 @@ type AbortAuditOp =
   | "abortStopNotPinned"
   | "abortStopNotNeeded"
   /** fix 3 (M2) — one row per re-send REQUEST (started / refused too old), even when it sends nothing. */
-  | "abortStopResend";
+  | "abortStopResend"
+  /** doc 81 Đợt 7 I6 — a rejection whose claim failed late could not re-read the run: not finished (abort it to send its STOPs). */
+  | "rejectClaimUndecided";
 
 /** The audit module, imported ONCE per process for the sweep's several concurrent audit writes (a failed import is retried). */
 let abortAuditModulePromise: Promise<typeof import("../../auditTrailService")> | undefined;
@@ -3022,12 +3588,30 @@ async function boundedAbortRead<T>(read: () => PromiseLike<T>, label: string): P
   }
 }
 
+/**
+ * doc 81 Đợt 7 task I6 — re-read a run after a rejection's claim failed late: up to 3 bounded reads (now, after D, after
+ * 2·D more). `undefined` ⇔ none answered (CANNOT DECIDE — the caller finishes nothing); `null` ⇔ the run row is gone.
+ */
+async function rereadRejectClaim(runId: number): Promise<OrchestrationRun | null | undefined> {
+  for (const waitMs of [0, STOP_DB_STEP_DEADLINE_MS, 2 * STOP_DB_STEP_DEADLINE_MS]) {
+    if (waitMs) await new Promise((r) => setTimeout(r, waitMs));
+    const rows = await boundedAbortRead(async () => {
+      const d = await getDb();
+      return d ? d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1) : null;
+    }, `FOE reject run ${runId} claim re-read`);
+    if (rows) return rows[0] ?? null;
+  }
+  return undefined;
+}
+
 /** A run with NO live driver in this process (paused at a gate, held, queued, or driven elsewhere): its stored picture. */
 async function storedSweepSource(run: OrchestrationRun): Promise<AbortSweepSource> {
   const [wf, rows] = await Promise.all([
     boundedAbortRead(async () => {
       const d = await getDb();
-      return d ? d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1) : null;
+      // final wave F8 (L-7) — explicit columns (no "scopeKey"): the stored definition, hence the STOP steps, loads even when
+      // migration 0367 is missing.
+      return d ? d.select(WF_CORE_COLS).from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1) : null;
     }, `FOE abort run ${run.id} definition`),
     readRunStepRows(run.id),
   ]);

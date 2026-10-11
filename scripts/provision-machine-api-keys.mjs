@@ -9,7 +9,8 @@ import postgres from 'postgres';
 import { createHash } from 'node:crypto';
 
 const hashMachineKey = (k) => createHash('sha256').update(String(k), 'utf8').digest('hex');
-const DEFAULT_SCOPES = ['ingest:write', 'equipment:read', 'edge:sync'];
+// Doc 81 Đợt 7 K1: no `edge:sync` by default — an edge node's key asks for it explicitly.
+const DEFAULT_SCOPES = ['ingest:write', 'equipment:read'];
 
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });
 try {

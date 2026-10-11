@@ -1,6 +1,6 @@
 {
   "name": "FactoryAlertSystem",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "Hệ Thống Thông Báo Lỗi Thời Gian Thực Cho Dây Chuyền Sản Xuất",
   "main": "index.js",
   "scripts": {

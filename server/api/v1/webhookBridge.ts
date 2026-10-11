@@ -39,11 +39,16 @@ export function webhooksEnabled(): boolean {
  * immediately when WEBHOOKS_ENABLED is off, and never throws to the caller (the
  * underlying sendWebhookEvent fires-and-forgets each delivery with retry).
  */
-export async function emit(eventType: V1WebhookEvent | string, payload: Record<string, unknown>): Promise<void> {
+export async function emit(
+  eventType: V1WebhookEvent | string,
+  payload: Record<string, unknown>,
+  /** doc 81 Đợt 7 task I3 — optional per-subscriber audience (webhookRouter.WebhookAudience; fail-closed). */
+  audience?: import("../../routers/webhookRouter").WebhookAudience,
+): Promise<void> {
   if (!webhooksEnabled()) return;
   try {
     const { sendWebhookEvent } = await import("../../routers/webhookRouter");
-    await sendWebhookEvent(eventType, payload);
+    await sendWebhookEvent(eventType, payload, audience);
   } catch (err) {
     // Never let webhook delivery affect the request/emitter.
     console.error("[api/v1 webhook] emit failed:", (err as Error)?.message ?? err);

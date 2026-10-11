@@ -318,7 +318,29 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `module = null` (sở thích của CHÍNH người gọi, không thuộc SKU nào), không phải bề mặt AI ⇒ beMatAi/aiCoCong/aiMienTru/
  *   ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. `tong` 2298 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2298, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-11 doc 81 Đợt 7 Task J1 (TLS broker nhúng) — **tong 2298 → 2299, ghim lại ô `tong`**: đúng MỘT thủ tục MỚI
+ *   `mqttClient.brokerTls` (query chỉ đọc, `mqttOeeRouters.ts` — trạng thái listener MQTTS + vân tay SHA-256 của chứng chỉ
+ *   site), sàn `protectedProcedure` + `requirePermission("settings_factory","canEdit")` (J fix 1: cùng cổng với thẻ admin), `module = null`, không phải bề mặt AI
+ *   ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. Đo: cây trước lượt = 2298 (khớp ghim), sau = 2299.
+ *   `tong` 2299 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-11 doc 81 Đợt 7 Task I5 (công tắc "tắt tự động hoá" theo robot) — **tong 2299 → 2301, ghim lại ô `tong`**: đúng HAI
+ *   thủ tục MỚI của `robotRouter.ts`: `robot.disableAutomation` (mutation, `protectedProcedure` +
+ *   `requirePermission("machine_control","canEdit")` — tắt chỉ giữ lại chuyển động, không đứng sau sàn vai/2FA) và
+ *   `robot.enableAutomation` (mutation, `actuationProcedure` — sàn vai admin/supervisor/engineer + 2FA — +
+ *   `requirePermission("machine_control","canEdit")`), `module = null` như mọi thủ tục của `robotRouter` (cùng khuôn
+ *   `robot.clearMotionLock`), không phải bề mặt AI ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi.
+ *   Đo: cây trước lượt = 2299 (khớp ghim), sau = 2301. `tong` 2301 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-11 doc 81 Đợt 7 I fix 1 (review M-5) — **tong 2301 → 2302 · GHIM_MODULE_KHAC.MOD_ENGINEERING 75 → 76**: đúng MỘT thủ
+ *   tục MỚI `orchestration.runListMeta` (query chỉ đọc — danh sách run có bị cắt không), `protectedProcedure` của
+ *   `orchestrationRouter` đã che bằng `moduleProcedure("MOD_ENGINEERING")` + `requirePermission("machine_monitoring","canView")`
+ *   như `listRuns`. Không phải bề mặt AI. Đo: trước = 2301 / 75 (khớp ghim), sau = 2302 / 76.
+ */
+const GHIM = { tong: 2302, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -339,7 +361,8 @@ const GHIM_MODULE_KHAC = {
   //   đã che bằng `moduleProcedure("MOD_ENGINEERING")`). Cố ý: cùng cổng giấy phép với mọi thủ tục
   //   anh em trong router lập trình. Không thủ tục cũ nào đổi cổng. (Ô `tong` của §2 đỏ TỪ TRƯỚC —
   //   đo HEAD `8d51dc150` = 2283; lượt này +2 → 2285, chính là hai thủ tục này.)
-  MOD_ENGINEERING: 75,
+  // ★ 2026-10-11 doc 81 Đợt 7 I fix 1 — 75 → 76: `orchestration.runListMeta` (query, MOD_ENGINEERING như listRuns).
+  MOD_ENGINEERING: 76,
   MOD_FEDERATION: 8,
   // ★ 2026-09-27 doc 80 Đợt 1 Task 4 (SAF-02) — 105 → 106: thủ tục MỚI `safety.sourceHealth`
   //   (query chỉ đọc) nằm trong `safetyRouter.ts`, nơi `protectedProcedure` đã bị che bằng

@@ -181,6 +181,60 @@ describe("WizardDialog", () => {
     expect(plain).not.toHaveAttribute("title");
   });
 
+  // doc 81 Đợt 7 task L1 (kiểm trình duyệt 2026-10-11) — wizard deploy của IDE mở BẰNG MÃ (dispatch, không có
+  // SheetTrigger) ⇒ Radix trả focus về triggerRef = null ⇒ đóng wizard (Esc / X) focus rơi về <body>. Hợp đồng: đóng ⇒
+  // focus về phần tử đã mở wizard (nút "Deploy…"), nếu nó còn trong DOM; phần tử đã rời DOM ⇒ không cố focus nó.
+  function OpenerHarness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>Deploy…</button>
+        <WizardDialog
+          open={open}
+          onOpenChange={setOpen}
+          title="Triển khai"
+          steps={steps()}
+          onFinish={() => {}}
+        />
+      </>
+    );
+  }
+
+  it("mở bằng mã rồi Esc ⇒ focus về nút đã mở wizard (không rơi về body)", async () => {
+    render(<OpenerHarness />);
+    const opener = screen.getByRole("button", { name: "Deploy…" });
+    opener.focus();
+    fireEvent.click(opener);
+    const sheet = await screen.findByRole("dialog", { name: "Triển khai" });
+    await waitFor(() => expect(sheet.contains(document.activeElement)).toBe(true), { timeout: 1000 });
+    fireEvent.keyDown(sheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener), { timeout: 1000 });
+  });
+
+  it("nút mở rời DOM trong lúc wizard mở ⇒ đóng không ném, không focus phần tử chết", async () => {
+    function Gone() {
+      const [open, setOpen] = useState(false);
+      const [showOpener, setShowOpener] = useState(true);
+      return (
+        <>
+          {showOpener && <button type="button" onClick={() => { setOpen(true); setShowOpener(false); }}>Deploy…</button>}
+          <WizardDialog open={open} onOpenChange={setOpen} title="Triển khai" steps={steps()} onFinish={() => {}} />
+        </>
+      );
+    }
+    render(<Gone />);
+    const opener = screen.getByRole("button", { name: "Deploy…" });
+    opener.focus();
+    const focusSpy = vitestVi.spyOn(opener, "focus");
+    fireEvent.click(opener);
+    const sheet = await screen.findByRole("dialog", { name: "Triển khai" });
+    fireEvent.keyDown(sheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(focusSpy).not.toHaveBeenCalled();
+  });
+
   it("mở lại ⇒ về bước 1", () => {
     const { rerender, onFinish, onOpenChange } = renderWizard();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: vi.layoutKit.wizard.next }));

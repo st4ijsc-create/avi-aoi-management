@@ -20,7 +20,7 @@
  * always safe. FAIL-SAFE: a DB/transport error never crashes the process.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { FOE_APPROVAL_SOURCE_EDGE } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-h)
+import { FOE_APPROVAL_SOURCE_EDGE, FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-h); Đợt 7 I1
 import { and, desc, eq, lt, inArray } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
@@ -106,6 +106,8 @@ const RUN_STATUSES = new Set([
   "queued", "running", "held", "awaiting_confirm",
   "completed", "failed", "aborted", "compensating",
 ]);
+/** doc 81 Đợt 7 I1 fix 1 — statuses a sync never moves a run out of. */
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "aborted"]);
 const STEP_STATUSES = new Set([
   "pending", "running", "awaiting_confirm", "held",
   "completed", "failed", "skipped", "compensated",
@@ -371,8 +373,31 @@ export async function listRunsForNode(edgeNodeId: number, limit = 100): Promise<
 // RESULT RECONCILE (edge → central sync)
 // ════════════════════════════════════════════════════════════════════════════════
 
+/** doc 81 Đợt 7 task I1 — the step rows a CENTRAL abort / rejection sweep writes (`abort:<stepId>`, foeEngine.ABORT_ROW_PREFIX). */
+const CENTRAL_ABORT_ROW_PREFIX = "abort:";
+
+/**
+ * doc 81 Đợt 7 task I1 — has CENTRAL stopped this run? Its status is 'aborted' (an abort, or a gate rejection that finished),
+ * or a central gate REJECTION has claimed it (the server-only claim token in its context — the rejection's sweep and
+ * business compensation are under way). Either way the edge must stop walking the run's non-STOP steps.
+ */
+function centralStopped(run: { status: string; contextJson?: unknown }): boolean {
+  const ctx = (run.contextJson ?? null) as Record<string, unknown> | null;
+  return run.status === "aborted" || (ctx != null && typeof ctx === "object" && ctx[FOE_REJECT_CLAIM_CTX_KEY] != null);
+}
+
 /**
  * Reconcile a run-result payload SYNCED from an edge node into the E2 tables.
+ *
+ * doc 81 Đợt 7 task I1 — a CENTRAL abort / rejection is never overwritten by an edge sync, and the edge is told to stop:
+ *   • a run central has stopped (centralStopped) keeps its status, error, current step, times and context — the edge's
+ *     step rows are still recorded (what the edge did is evidence) — and the answer carries `abortRequested: true`, so
+ *     the edge stops the run's walker (its non-STOP steps; its STOPs still go — edgeRuntime.applyCentralAbort);
+ *   • the run-level write is a compare-and-set on the status read here: an abort / rejection claim landing between the read
+ *     and the write makes it write NOTHING (and the answer then says abortRequested);
+ *   • `abort:<id>` rows are central's record of the STOPs its own sweep sent (they decide what a re-send sends): an edge
+ *     never writes them; nor can an edge set or clear the server-only rejection claim token in the run context.
+ * Every entry point (tRPC edgeRuntime.syncRunResult and POST /api/v1/edge/sync) reaches the run row only through here.
  *
  * IDEMPOTENT: each step is upserted on (runId, stepId) so a replay (offline-buffer
  * drain that re-sends) writes the same row, never duplicates. The run-level status is
@@ -381,7 +406,9 @@ export async function listRunsForNode(edgeNodeId: number, limit = 100): Promise<
  * The edge node is authenticated UPSTREAM (a scoped API key / tRPC session); here we
  * only verify the node exists and owns the run (defence in depth).
  */
-export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult<{ runId: number; stepsApplied: number }>> {
+export async function syncRunResult(
+  payload: SyncRunPayload,
+): Promise<EdgeResult<{ runId: number; stepsApplied: number; abortRequested: boolean; stale?: boolean }>> {
   if (!edgeRuntimeEnabled()) {
     return { ok: false, enabled: false, message: "Edge runtime is disabled (set EDGE_RUNTIME_ENABLED=true)." };
   }
@@ -399,10 +426,17 @@ export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult
       return { ok: false, enabled: true, message: `Run ${payload.runId} is not assigned to node "${payload.edgeNodeCode}".` };
     }
 
+    // fix 1 (review I-1) — a NON-terminal payload for a run central already holds as finished / aborted is STALE (a progress
+    // snapshot that lost the race with the final sync): nothing of it is applied, step rows included.
+    if (TERMINAL_RUN_STATUSES.has(run.status) && !TERMINAL_RUN_STATUSES.has(payload.status)) {
+      return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied: 0, abortRequested: centralStopped(run), stale: true } };
+    }
+
     // ── Upsert each step (idempotent on runId+stepId) ──
     let stepsApplied = 0;
     for (const s of payload.steps ?? []) {
       if (!s || typeof s.stepId !== "string" || !STEP_STATUSES.has(s.status)) continue;
+      if (s.stepId.startsWith(CENTRAL_ABORT_ROW_PREFIX)) continue; // doc 81 Đợt 7 I1 — central's own STOP-sweep record
       // doc 81 Đợt 4 fix round 1 (R-4-h) — an edge-synced step result is NEVER a server-recorded gate approval:
       // approvalSource is forced to "edge" (overwriting whatever the payload claims), so it never counts for
       // four-eyes (foeGateApproval.evaluateGateApprovals). A synced row also replaces a server one ⇒ that approval
@@ -438,22 +472,47 @@ export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult
       stepsApplied += 1;
     }
 
+    // ── doc 81 Đợt 7 I1 — central has stopped the run: nothing at run level is rewritten; the edge is told to stop ──
+    if (centralStopped(run)) {
+      return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied, abortRequested: true } };
+    }
+    // fix 1 (review I-1) — a FINISHED run (completed / failed) is never moved by a sync: its run-level fields stay (a late or
+    // replayed payload cannot resurrect it to 'running'); the step rows of a terminal payload are an idempotent replay.
+    if (TERMINAL_RUN_STATUSES.has(run.status)) {
+      return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied, abortRequested: false, stale: true } };
+    }
+
     // ── Advance the run-level status (only to a recognised state) ──
     const runStatus = RUN_STATUSES.has(payload.status) ? payload.status : run.status;
-    await d
+    // the server-only rejection claim token is never taken from (nor removed by) an edge payload
+    let contextJson = run.contextJson;
+    if (payload.contextJson && typeof payload.contextJson === "object") {
+      const { [FOE_REJECT_CLAIM_CTX_KEY]: _ignored, ...rest } = payload.contextJson as Record<string, unknown>;
+      void _ignored;
+      contextJson = rest;
+    }
+    // compare-and-set on the status read above: a central abort / rejection claim landing meanwhile ⇒ 0 rows, nothing lost
+    const written = await d
       .update(orchestrationRuns)
       .set({
         status: runStatus as never,
         error: payload.error ?? run.error,
         currentStepId: payload.currentStepId ?? run.currentStepId,
-        contextJson: payload.contextJson ?? run.contextJson,
+        contextJson,
         startedAt: toDate(payload.startedAt) ?? run.startedAt,
         finishedAt: toDate(payload.finishedAt) ?? run.finishedAt,
         updatedAt: new Date(),
       })
-      .where(eq(orchestrationRuns.id, payload.runId));
+      .where(and(eq(orchestrationRuns.id, payload.runId), eq(orchestrationRuns.status, run.status)))
+      .returning({ id: orchestrationRuns.id });
+    if (written.length === 0) {
+      // the status moved under us: if central stopped the run, say so (the edge stops); anything else ⇒ not applied
+      const [now] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, payload.runId)).limit(1);
+      if (now && centralStopped(now)) return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied, abortRequested: true } };
+      return { ok: false, enabled: true, message: `Run ${payload.runId} changed while syncing — retry.` };
+    }
 
-    return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied } };
+    return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied, abortRequested: false } };
   } catch (err) {
     // data-raw-ok: node biên ĐẨY kết quả về trung tâm — luồng máy-máy, xem `registerNode`.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };

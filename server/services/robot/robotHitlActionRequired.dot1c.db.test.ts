@@ -18,7 +18,7 @@
  * CSDL THẬT (`_test`). Thiết bị = driver giả trong tiến trình ĐẾM runJob; MQTT/rosbridge = client giả
  * ĐẾM publish (không nối broker nào). Facade an toàn THẬT, nguồn PLC nền giả trả OK (như binding test).
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 // doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
 vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import { and, eq, inArray, like } from "drizzle-orm";
@@ -86,7 +86,7 @@ vi.mock("../vda5050", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { aiPendingActions, robotJobs, permissions } from "../../../drizzle/schema";
+import { aiPendingActions, robotJobs, permissions, systemSettings, robots, auditLogs } from "../../../drizzle/schema";
 import { dispatchRobotJob, type RobotDispatchInput } from "./robotCommandDispatcher";
 import { robotPayloadHash, withOtPayloadHash, readOtPayloadHash } from "../ot/otActionBinding";
 import { Vda5050Adapter } from "../vda5050/vda5050Adapter";
@@ -604,6 +604,151 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       expect(mint.calls).toBe(0);
       expect(rt.runJobCalls).toBe(0);
       expect(published).toEqual(["/cmd", "/cmd"]);
+    });
+  });
+
+  // ─── doc 81 Đợt 7 task I5 — PER-ROBOT AUTOMATION SWITCH ──────────────────────────────────────────────────────────
+  describe("doc 81 Đợt 7 I5 — per-robot 'automation off' switch: the VDA5050 / ROS2 self-grant is refused, STOP unaffected", () => {
+    const KEY = `robot.automation.off.${ROBOT}`;
+    const setSwitch = async (value: string | null) => {
+      const db = await d();
+      await db.delete(systemSettings).where(eq(systemSettings.settingKey, KEY));
+      if (value !== null) await db.insert(systemSettings).values({ settingKey: KEY, settingValue: value, category: "robot_automation" });
+    };
+    const vdaRowsFor = async (key: string) => (await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, `vda5050-${key}`))).length;
+    const router = (userId: number) =>
+      vda5050RouterFree.robotRouter.createCaller({ user: { id: userId, role: "engineer", name: "op", twoFactorEnabled: true }, req: { ip: "127.0.0.1", headers: {} } } as never);
+    let vda5050RouterFree: typeof import("../../routers/robotRouter");
+
+    // fix 1 (M-4) — the switch is factory-scoped: OPERATOR / OPERATOR_NO_EDIT are assigned to factory F (the robot's line);
+    // ROBOT_OTHER sits on a line of another factory G.
+    const ROBOT_OTHER = ROBOT + 1;
+    const fac = { F: 0, G: 0, wF: 0, wG: 0, lF: 0, lG: 0 };
+    beforeAll(async () => {
+      vda5050RouterFree = await import("../../routers/robotRouter");
+      const db = await d();
+      const { sql: q } = await import("drizzle-orm");
+      const one = async (x: unknown) => Number(((x as { rows?: unknown[] }).rows ?? (x as unknown[]))[0] && (((x as { rows?: Array<{ id: number }> }).rows ?? (x as Array<{ id: number }>))[0].id));
+      fac.F = await one(await db.execute(q`INSERT INTO factories (code, name) VALUES (${`${DAU}-F`}, ${`${DAU}-F`}) RETURNING id`));
+      fac.G = await one(await db.execute(q`INSERT INTO factories (code, name) VALUES (${`${DAU}-G`}, ${`${DAU}-G`}) RETURNING id`));
+      fac.wF = await one(await db.execute(q`INSERT INTO workshops ("factoryId", code, name) VALUES (${fac.F}, ${`${DAU}-WF`}, ${`${DAU}-WF`}) RETURNING id`));
+      fac.wG = await one(await db.execute(q`INSERT INTO workshops ("factoryId", code, name) VALUES (${fac.G}, ${`${DAU}-WG`}, ${`${DAU}-WG`}) RETURNING id`));
+      fac.lF = await one(await db.execute(q`INSERT INTO production_lines ("workshopId", code, name) VALUES (${fac.wF}, ${`${DAU}-LF`}, ${`${DAU}-LF`}) RETURNING id`));
+      fac.lG = await one(await db.execute(q`INSERT INTO production_lines ("workshopId", code, name) VALUES (${fac.wG}, ${`${DAU}-LG`}, ${`${DAU}-LG`}) RETURNING id`));
+      for (const u of [OPERATOR, OPERATOR_NO_EDIT]) await db.execute(q`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u}, ${`${DAU}-F`})`);
+      await db.delete(robots).where(inArray(robots.id, [ROBOT, ROBOT_OTHER]));
+      await db.insert(robots).values({ id: ROBOT, code: `${DAU}-r`, name: `${DAU} robot`, vendor: "sim", endpoint: "sim://i5", isEnabled: true, lineId: fac.lF });
+      await db.insert(robots).values({ id: ROBOT_OTHER, code: `${DAU}-r2`, name: `${DAU} robot 2`, vendor: "sim", endpoint: "sim://i5b", isEnabled: true, lineId: fac.lG });
+    });
+    afterAll(async () => {
+      const db = await d();
+      const { sql: q } = await import("drizzle-orm");
+      await db.delete(systemSettings).where(inArray(systemSettings.settingKey, [KEY, `robot.automation.off.${ROBOT_OTHER}`]));
+      // audit_logs is append-only for the app role (WORM, 42501 on DELETE): its rows (robot id of this run only) stay.
+      await db.delete(robots).where(inArray(robots.id, [ROBOT, ROBOT_OTHER]));
+      await db.execute(q`DELETE FROM user_factory_assignments WHERE "factoryCode" IN (${`${DAU}-F`}, ${`${DAU}-G`})`);
+      await db.execute(q`DELETE FROM production_lines WHERE id IN (${fac.lF}, ${fac.lG})`);
+      await db.execute(q`DELETE FROM workshops WHERE id IN (${fac.wF}, ${fac.wG})`);
+      await db.execute(q`DELETE FROM factories WHERE id IN (${fac.F}, ${fac.G})`);
+    });
+    afterEach(async () => setSwitch(null));
+
+    it("★ OFF ⇒ Vda5050Adapter.sendOrder 'hitl' is refused (HITL_ACTION_REQUIRED), NO grant row minted, robot 0 times", async () => {
+      await setSwitch("true");
+      const key = `${DAU}-i5-off`;
+      const { adapter, published } = makeAgv();
+      const r = await adapter.sendOrder({ nodes: [{ nodeId: "a", x: 0, y: 0, mapId: "map" }], requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: key });
+      expect(r.status).toBe("rejected");
+      expect(r.error).toBe("HITL_ACTION_REQUIRED");
+      expect(rt.runJobCalls).toBe(0);
+      expect(published).toHaveLength(0);
+      expect(await vdaRowsFor(key)).toBe(0);
+    });
+
+    it("★ OFF ⇒ Ros2Bridge motion refused too; a STOP (abort) on the same robot still reaches the driver", async () => {
+      await setSwitch("true");
+      const { bridge } = makeRos2();
+      const params = { ros2: ROS_SPEC };
+      const no = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "home", params }, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER });
+      expect(no.dispatch.error).toBe("HITL_ACTION_REQUIRED");
+      const stop = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "abort", params: {} }, triggerKind: "hitl", requestedBy: OWNER }, ROS_SPEC);
+      expect(stop.dispatch.status).toBe("done");
+      expect(rt.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+    });
+
+    it("★ a grant minted while ON, consumed after the switch went OFF ⇒ the dispatcher refuses it (AUTOMATION_OFF), the row is NOT consumed", async () => {
+      const { ensureBoundRobotAction } = await import("./robotAutomationAction");
+      const job = { jobType: "move" as const, params: { i5: 1 } };
+      const actionId = await ensureBoundRobotAction({ tool: "vda5050.automation", robotId: ROBOT, job, ownerUserId: OWNER, idempotencyKey: `${DAU}-i5-late` });
+      expect(actionId).toBeTruthy();
+      await setSwitch("true");
+      const r = await dispatchRobotJob(input({ actionId: actionId!, job }));
+      expect(r.status).toBe("rejected");
+      expect(r.error).toBe("NOT_CONFIRMED");
+      expect(rt.runJobCalls).toBe(0);
+      expect((await pendingRow(actionId!))?.status).toBe("confirmed");
+      expect(String((await jobRow(r.jobId))?.errorText ?? "")).toContain("AUTOMATION_OFF");
+    });
+
+    it("★ CANNOT DECIDE — an unreadable switch value ⇒ treated as OFF (no grant)", async () => {
+      await setSwitch("maybe");
+      const { ensureBoundRobotAction } = await import("./robotAutomationAction");
+      expect(await ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job: { jobType: "home", params: {} }, ownerUserId: OWNER, idempotencyKey: `${DAU}-i5-unk` })).toBeNull();
+    });
+
+    it("control: ON ('false' or no row) ⇒ the grant is minted and the motion runs once", async () => {
+      await setSwitch("false");
+      const { adapter } = makeAgv();
+      const r = await adapter.sendOrder({ nodes: [{ nodeId: "a", x: 0, y: 0, mapId: "map" }], requestedBy: OWNER, confirmedBy: OWNER });
+      expect(r.status).toBe("done");
+      expect(rt.runJobCalls).toBe(1);
+    });
+
+    it("★ router: disableAutomation (canEdit) writes the AUDIT row then the switch; robot.list shows it; enableAutomation turns it back on", async () => {
+      const off = await router(OPERATOR).disableAutomation({ robotId: ROBOT, reason: "AGV lane under repair" });
+      expect(off).toMatchObject({ robotId: ROBOT, automation: "off", changed: true });
+      const [row] = await (await d()).select().from(systemSettings).where(eq(systemSettings.settingKey, KEY));
+      expect(row?.settingValue).toBe("true");
+      expect(row?.updatedBy).toBe(OPERATOR);
+      const audits = await (await d()).select().from(auditLogs).where(and(eq(auditLogs.entityType, "robot"), eq(auditLogs.entityId, ROBOT), eq(auditLogs.action, "robot.disableAutomation")));
+      expect(audits.length).toBe(1);
+      const det = typeof audits[0].details === "string" ? JSON.parse(audits[0].details as string) : audits[0].details;
+      expect(det).toMatchObject({ reason: "AGV lane under repair", before: "on", after: "off" });
+      const listed = (await router(OPERATOR).list()).find((x: { id: number }) => x.id === ROBOT) as { automation?: string } | undefined;
+      expect(listed?.automation).toBe("off");
+      const on = await router(OPERATOR).enableAutomation({ robotId: ROBOT, reason: "lane repaired" });
+      expect(on).toMatchObject({ automation: "on", changed: true });
+    });
+
+    it("★ the generic admin settings upsert / bulkUpsert can NOT write the automation switch (no reason / audit / floor bypass); nothing written", async () => {
+      const { systemRouter } = await import("../../_core/systemRouter");
+      const admin = systemRouter.createCaller({ user: { id: OWNER, role: "admin", name: "adm", twoFactorEnabled: true } } as never);
+      await expect(admin.settings.upsert({ category: "robot_automation", key: KEY, value: "false" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(admin.settings.upsert({ category: "x", key: ` ROBOT.Automation.off.${ROBOT}`, value: "false" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      const otherKey = `${DAU}-i5-harmless`;
+      await expect(
+        admin.settings.bulkUpsert({ category: "x", settings: [{ key: otherKey, value: "1" }, { key: KEY, value: "false" }] }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(await (await d()).select().from(systemSettings).where(inArray(systemSettings.settingKey, [KEY, otherKey]))).toHaveLength(0);
+    });
+
+    it("★ fix 1 (M-4): a robot OUTSIDE the caller's factory scope ⇒ the SAME NOT_FOUND as a missing robot, nothing written; an admin reaches it", async () => {
+      const out = await router(OPERATOR).disableAutomation({ robotId: ROBOT_OTHER, reason: "other factory" }).catch((e) => e);
+      const missing = await router(OPERATOR).disableAutomation({ robotId: ROBOT + 99, reason: "other factory" }).catch((e) => e);
+      expect(out).toMatchObject({ code: "NOT_FOUND" });
+      expect(out.message).toBe(missing.message);
+      expect(JSON.stringify(out.cause?.appParams ?? null)).toBe(JSON.stringify(missing.cause?.appParams ?? null));
+      expect(await (await d()).select().from(systemSettings).where(eq(systemSettings.settingKey, `robot.automation.off.${ROBOT_OTHER}`))).toHaveLength(0);
+      const admin = vda5050RouterFree.robotRouter.createCaller({ user: { id: OWNER, role: "admin", name: "adm", twoFactorEnabled: true }, req: { ip: "127.0.0.1", headers: {} } } as never);
+      expect(await admin.disableAutomation({ robotId: ROBOT_OTHER, reason: "admin, any factory" })).toMatchObject({ automation: "off" });
+    });
+
+    it("router: a reason is required; a missing robot ⇒ NOT_FOUND; canCreate without canEdit ⇒ FORBIDDEN (nothing written)", async () => {
+      await expect(router(OPERATOR).disableAutomation({ robotId: ROBOT, reason: "x" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(router(OPERATOR).disableAutomation({ robotId: ROBOT + 1, reason: "no such robot" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(router(OPERATOR_NO_EDIT).disableAutomation({ robotId: ROBOT, reason: "not allowed" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const rows = await (await d()).select().from(systemSettings).where(eq(systemSettings.settingKey, KEY));
+      expect(rows).toHaveLength(0);
     });
   });
 });

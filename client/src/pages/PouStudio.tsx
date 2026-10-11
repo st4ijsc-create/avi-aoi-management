@@ -38,7 +38,7 @@ import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeaderCompact, NoticeChip, StatusBadge } from "@/components/patterns";
 import { EngineeringShell } from "@/components/engineering/shell";
-import { CopilotInspector } from "@/components/programming/CopilotInspector";
+import { CopilotInspector, CopilotStatusItem } from "@/components/programming/CopilotInspector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +53,7 @@ import {
 } from "@/components/ui/sheet";
 import {
   Code2, FileCode2, ShieldCheck, AlertTriangle, XCircle,
-  Download, Upload, Copy, Lock, Info, RefreshCw, Save, Hammer, FolderPlus, FolderOpen, ExternalLink, Loader2, Sparkles,
+  Download, Upload, Copy, Lock, Info, RefreshCw, Save, Hammer, FolderPlus, FolderOpen, ExternalLink, Loader2,
   PanelRight,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -721,9 +721,8 @@ export default function PouStudio() {
       >
         <AlertTriangle className="h-3 w-3" aria-hidden="true" /> {problemsCount}
       </button>
-      <span className="ml-auto inline-flex shrink-0 items-center gap-1">
-        <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("engineering.ws.copilotTab", "Copilot")} {copilotOpen ? "●" : "○"}
-      </span>
+      {/* doc 81 Đợt 7 task L fix 1 (b) — mục dùng chung: "Copilot đang chạy" khi một lượt chạy khuất. */}
+      <CopilotStatusItem />
     </div>
   );
 

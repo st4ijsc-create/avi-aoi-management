@@ -665,7 +665,22 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // cho") nay đưa phạm vi nhà máy của người gọi vào lượt đọc (`assigneeRuleSql(d, ctx, …)` — tên từ H fix 1, trước là
 // `rosterFactoryFilter`; chỉ người cùng ≥1 nhà máy với mục / người giao; admin không đổi) ⇒ nhóm S. Đo bằng chính bộ quét này
 // (`nhomCua` = S). A/B/D/tong không đổi.
-const GHIM = { A: 334, B: 8, C: 471, D: 1132, S: 353, tong: 2298 } as const;
+// ★★★ 2026-10-11 (doc 81 Đợt 7 task J1 — TLS broker nhúng) — **C 471 → 472 · tong 2298 → 2299 · A/B/D/S không đổi.**
+// `mqttClient.brokerTls` (query, MỚI, `mqttOeeRouters.ts`): trạng thái listener MQTTS + vân tay chứng chỉ từ bộ nhớ tiến trình
+// (`getMqttBrokerTlsStatus`), không chạm bảng nào ⇒ nhóm C. Đo bằng chính bộ quét này (trước lượt = khớp ghim; sau = C 472).
+// ★★★ 2026-10-11 (doc 81 Đợt 7 task I5 — công tắc tự động hoá theo robot) — **D 1132 → 1134 · tong 2299 → 2301 · A/B/C/S không
+// đổi.** `robot.disableAutomation` / `robot.enableAutomation` (mutation, MỚI, `robotRouter.ts`): ghi `system_settings` khoá
+// `robot.automation.off.<robotId>` + audit ⇒ nhóm D. Đo bằng chính bộ quét này (trước lượt = khớp ghim; sau = D 1134). KHÔNG thêm
+// dòng nào vào `phamViDocBaseline.ts`.
+// ⚠ ĐÍNH CHÍNH 2026-10-11 (doc 81 Đợt 7 I fix 1, review M-4): ghi chú cũ nói "không đọc hàng tenant nào" là SAI — hai thủ tục ĐỌC
+// hàng `robots` (mang lineId/stationId). Nay chúng theo PHẠM VI NHÀ MÁY: `robotInCallerScope(ctx, …)` (robotRouter.ts — luật robot
+// của foeScope: theo line HOẶC station, robot mồ côi ngoài mọi phạm vi hạn chế; `idsTrongPhamVi(…, phamViCua(ctx), {strict})`)
+// chạy cho CẢ id không tồn tại; ngoài phạm vi ⇒ NOT_FOUND y hệt robot không tồn tại. Bộ quét vẫn xếp chúng vào D vì phạm vi
+// được áp TRONG hàm phụ (không phải lời gọi trực tiếp trong khối thủ tục) — số đo không đổi (D 1134), chỉ lời khai được sửa.
+// ★★★ 2026-10-11 (doc 81 Đợt 7 I fix 1, review M-5) — **S 353 → 354 · tong 2301 → 2302.** `orchestration.runListMeta` (query,
+// MỚI, `orchestrationRouter.ts`): danh sách run có bị CẮT không (số định nghĩa vượt trần phán xét mỗi lượt) — đưa phạm vi
+// `scopeOf(ctx.user)` vào lượt đọc ⇒ nhóm S. Đo bằng chính bộ quét này (trước = khớp ghim; sau = S 354).
+const GHIM = { A: 334, B: 8, C: 472, D: 1134, S: 354, tong: 2302 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -610,10 +610,26 @@ const qt4DistributeRecipe: QtBusinessStep = {
   compensate: unlockRecipeCompensation,
 };
 
+/**
+ * doc 81 Đợt 7 final wave F1 (security scan #26/#27) — the ONE answer of every sim-gate failure once the parameters are
+ * present: wrong token, workflow missing, not visible to the run, several candidates, undecidable scope, DB error. A distinct
+ * note per case would be a cross-namespace ref-existence oracle (the note is stored in the run's step results).
+ */
+export const SIM_GATE_FAIL_NOTE =
+  "sim-gate fail-closed: không xác minh được sim-token cho simWorkflowRef trong phạm vi của run — mô phỏng lại đúng quy trình rồi chạy lại";
+
 const qt4SimGate: QtBusinessStep = {
   stepId: "qt4-sim-gate",
   mode: "auto",
   compensation: "none-readonly",
+  /**
+   * final wave F1 — the token is checked against EXACTLY ONE workflow: `simWorkflowRef` resolved WITHIN THE RUN'S SCOPE (the
+   * scope of the run's owner `startedBy`, with the account's REAL role — the resolution a start by that owner gets:
+   * foeEngine.resolveWorkflowByRef, own namespace › 'global' › the single visible one). Before: a workflow carrying the ref in
+   * ANY namespace could satisfy it (a token of factory B's X passed factory A's NPI run). No owner ⇒ the empty scope a
+   * system-started run was started with. Unknown / disabled owner, none / several / undecidable / any error ⇒ refused with the
+   * same note (fail-closed). Read-only: it never sends anything (no STOP path is involved).
+   */
   async run(ctx) {
     if (!boolParam(ctx.params, "npi")) {
       return { ok: true, skipped: true, note: "npi=false — sim-gate chỉ bắt buộc cho NPI (honest skip)" };
@@ -623,29 +639,41 @@ const qt4SimGate: QtBusinessStep = {
     if (!simToken || !simWorkflowRef) {
       return { ok: false, note: "NPI yêu cầu simulation pass: thiếu simToken/simWorkflowRef (fail-closed)" };
     }
+    const fail: QtStepResult = { ok: false, note: SIM_GATE_FAIL_NOTE };
     try {
       const { getDb } = await import("../../../db/connection");
       const db = await getDb();
-      if (!db) return { ok: false, note: "DB unavailable — sim-gate fail-closed" };
+      if (!db) return fail;
       const { eq } = await import("drizzle-orm");
-      const { orchestrationWorkflows } = await import("../../../../drizzle/schema");
-      const [wf] = await db
-        .select()
-        .from(orchestrationWorkflows)
-        .where(eq(orchestrationWorkflows.ref, simWorkflowRef))
-        .limit(1);
-      if (!wf) return { ok: false, note: `workflow '${simWorkflowRef}' không tồn tại — sim-gate fail-closed` };
-      const { issueSimToken } = await import("../foe/foeEngine");
-      const expected = issueSimToken(wf.definitionJson as never);
+      const { orchestrationRuns, users } = await import("../../../../drizzle/schema");
+      const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, ctx.runId)).limit(1);
+      if (!run) return fail;
+      const { resolveUserFoeScope, workflowScopeKeyOf } = await import("../foe/foeScope");
+      let scope: ReturnType<typeof resolveUserFoeScope>;
+      if (run.startedBy != null) {
+        const [u] = await db
+          .select({ id: users.id, role: users.role, isActive: users.isActive })
+          .from(users)
+          .where(eq(users.id, run.startedBy))
+          .limit(1);
+        if (!u || u.isActive === false || typeof u.role !== "string" || !u.role) return fail;
+        scope = resolveUserFoeScope({ id: u.id, role: u.role });
+      } else {
+        scope = resolveUserFoeScope({ id: 0, role: "system" }); // the empty scope a system start runs with
+      }
+      const key = await workflowScopeKeyOf(scope).catch(() => null); // null ⇒ resolveWorkflowByRef answers "unverified"
+      const { resolveWorkflowByRef, issueSimToken } = await import("../foe/foeEngine");
+      const found = await resolveWorkflowByRef(db, simWorkflowRef, scope, key);
+      if (found.kind !== "row") return fail;
       const { timingSafeEqual } = await import("node:crypto");
-      const a = Buffer.from(expected, "utf8");
+      const a = Buffer.from(issueSimToken(found.row.definitionJson as never), "utf8");
       const b = Buffer.from(simToken, "utf8");
-      const valid = a.length === b.length && timingSafeEqual(a, b);
-      return valid
-        ? { ok: true, note: `sim-gate PASS: sim-token hợp lệ cho '${simWorkflowRef}'` }
-        : { ok: false, note: "sim-token KHÔNG khớp definition đã deploy — mô phỏng lại (fail-closed)" };
+      return a.length === b.length && timingSafeEqual(a, b)
+        ? { ok: true, note: `sim-gate PASS: sim-token hợp lệ cho '${simWorkflowRef}' (workflow #${found.row.id})` }
+        : fail;
     } catch (err) {
-      return { ok: false, note: `sim-gate check failed (fail-closed): ${errMsg(err)}` };
+      console.error(`[QtRunner] run ${ctx.runId}: sim-gate check failed (fail-closed): ${errMsg(err)}`);
+      return fail;
     }
   },
 };
@@ -709,4 +737,29 @@ export function getQtBusinessSteps(ref: string): QtBusinessStep[] {
 /** Tra handler theo (templateRef, stepId) — null khi không có. */
 export function findQtBusinessStep(ref: string, stepId: string): QtBusinessStep | null {
   return getQtBusinessSteps(ref).find((s) => s.stepId === stepId) ?? null;
+}
+
+/**
+ * doc 81 Đợt 7 final wave F1 — the QT template a RUN executes, keyed on the run's WORKFLOW ROW (not on the ref string): only
+ * the GLOBAL row of a QT template ref (registerQtTemplates deploys them into 'global') gets the QT business handlers. Since
+ * mig 0367 a factory workflow may carry the same ref in its own namespace; it must never receive QT handlers / compensations.
+ * Missing row, another namespace, not a QT ref, DB error ⇒ null (no handler: the gate waits for a person — fail-closed).
+ */
+export async function qtTemplateRefOfRun(run: { workflowId: number }): Promise<string | null> {
+  try {
+    const { getDb } = await import("../../../db/connection");
+    const db = await getDb();
+    if (!db) return null;
+    const { eq } = await import("drizzle-orm");
+    const { orchestrationWorkflows } = await import("../../../../drizzle/schema");
+    const [wf] = await db
+      .select({ ref: orchestrationWorkflows.ref, scopeKey: orchestrationWorkflows.scopeKey })
+      .from(orchestrationWorkflows)
+      .where(eq(orchestrationWorkflows.id, run.workflowId))
+      .limit(1);
+    if (!wf || wf.scopeKey !== "global" || !Object.prototype.hasOwnProperty.call(QT_BUSINESS_STEPS, wf.ref)) return null;
+    return wf.ref;
+  } catch {
+    return null;
+  }
 }

@@ -33,6 +33,8 @@ class MainApplication : Application(), ReactApplication {
                     add(DeviceInfoPackage())
                     // doc 81 Đợt 5 G1: Android Keystore storage for the device MQTT password
                     add(SecureCredentialPackage())
+                    // doc 81 Đợt 7 J2: MQTT over TLS to the built-in broker, certificate pinned by fingerprint
+                    add(PinnedTlsSocketPackage())
                 }
 
             override fun getJSMainModuleName(): String = "index"

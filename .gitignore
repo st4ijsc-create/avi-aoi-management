@@ -124,6 +124,8 @@ FactoryAlertSystem/ios/Pods/
 FactoryAlertSystem/*.apk
 FactoryAlertSystem/*.aab
 FactoryAlertSystem/google-play-release/
+# doc 81 Đợt 7 J3 — APK đã build để thử trên máy thật (không bao giờ vào git)
+FactoryAlertSystem/apk-out/
 FactoryAlertSystem/build_output.txt
 FactoryAlertSystem/tsc_check.txt
 FactoryAlertSystem/tsc_output*.txt

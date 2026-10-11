@@ -33,6 +33,16 @@
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
 import { readFileSync } from 'fs';
+import {
+  BrokerTlsError,
+  type BrokerTlsMaterial,
+  type MqttBrokerTlsStatus,
+  legacySiteMaterialNotice,
+  mqttPlainEnabled,
+  mqttTlsEnabled,
+  mqttTlsPaths,
+  resolveBrokerTls,
+} from './mqttBrokerTls';
 import { timingSafeEqual } from 'node:crypto';
 import { initUnsPublisher, publishNormalized, publishAoiBridge, publishNdeathGraceful, shutdownUnsPublisher } from './unsPublisher';
 import { mapAoiTopicToSparkplug } from './uns/aoiBridge';
@@ -948,13 +958,12 @@ const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
 const MQTT_WS_PORT = parseInt(process.env.MQTT_WS_PORT || '8883');
 const MQTT_ENABLED = process.env.MQTT_ENABLED === 'true';
 
-// Phase 1 WS1.3 — Broker hardening (all opt-in, backward-compatible).
-// TLS (MQTTS): additive listener on MQTT_TLS_PORT when MQTT_TLS_ENABLED=true and
-// cert/key paths are provided; existing plaintext listeners are unchanged.
-const MQTT_TLS_ENABLED = process.env.MQTT_TLS_ENABLED === 'true';
+// Phase 1 WS1.3 — Broker hardening. doc 81 Đợt 7 task J1 + J redesign: the MQTTS listener (MQTT_TLS_PORT, default 8884) is
+// ON by default and serves the key + certificate an ADMINISTRATOR provisioned (scripts/provision-mqtt-tls.ps1 ⇒
+// %ProgramData%\avi-aoi\mqtt-tls, or MQTT_TLS_CERT + MQTT_TLS_KEY). The server never generates, repairs or writes them: it
+// only reads and verifies them (mqttBrokerTls.ts); not provisioned / any doubt ⇒ no TLS listener (final wave F4).
+// The plaintext TCP/WS listeners stay open until migration is done (MQTT_PLAIN_ENABLED=false closes them).
 const MQTT_TLS_PORT = parseInt(process.env.MQTT_TLS_PORT || '8884');
-const MQTT_TLS_CERT = process.env.MQTT_TLS_CERT || '';
-const MQTT_TLS_KEY = process.env.MQTT_TLS_KEY || '';
 // Per-device password enforcement: a client whose DB record has a password set must
 // present a matching MQTT password. Devices with no stored password keep working (so
 // enforcing this never locks out existing devices). doc 81 dot 1B task 10: now read per
@@ -1699,15 +1708,34 @@ export interface MqttListenOptions {
   host?: string;
   port?: number;
   wsPort?: number;
+  /**
+   * doc 81 Đợt 7 J1 / J redesign — MQTTS listener override (tests: `{ port: 0, cert: <temp>/broker.crt, key: <temp>/broker.key }`
+   * — admin-provisioned files the test laid out itself). When a test passes listen overrides WITHOUT `tls`, NO TLS
+   * listener starts (it never binds MQTT_TLS_PORT nor reads the host's provisioned material). Production passes
+   * nothing ⇒ TLS per env (on by default). The server never writes TLS material anywhere.
+   */
+  tls?: { port?: number; cert?: string; key?: string };
 }
 
-/** Actually-bound TCP/WS ports of the embedded broker (null while not listening). */
-export function getMqttListenPorts(): { tcp: number | null; ws: number | null } {
+/** Actually-bound TCP/WS/TLS ports of the embedded broker (null while not listening). */
+export function getMqttListenPorts(): { tcp: number | null; ws: number | null; tls: number | null } {
   const portOf = (s: ReturnType<typeof createServer> | null): number | null => {
     const a = s?.address?.();
     return a && typeof a === 'object' ? a.port : null;
   };
-  return { tcp: portOf(mqttServer), ws: portOf(mqttWsServer) };
+  return { tcp: portOf(mqttServer), ws: portOf(mqttWsServer), tls: portOf(mqttTlsServer) };
+}
+
+// doc 81 Đợt 7 J1 — what the admin screen shows about the MQTTS listener (the fingerprint tablets pin).
+let brokerTlsStatus: MqttBrokerTlsStatus = {
+  enabled: false, listening: false, port: null, fingerprintSha256: null, source: null, notAfter: null, certPath: null,
+  error: null, plainEnabled: true,
+};
+let legacyTlsNoticeLogged = false;
+
+/** doc 81 Đợt 7 J1 — MQTTS listener state + the site certificate fingerprint (a copy; never the key). */
+export function getMqttBrokerTlsStatus(): MqttBrokerTlsStatus {
+  return { ...brokerTlsStatus };
 }
 
 /** True once authenticate/ACL/event handlers are attached (they wait for the DB). */
@@ -1745,33 +1773,41 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
   const host = listen.host ?? '0.0.0.0';
   const tcpPort = listen.port ?? MQTT_PORT;
   const wsPort = listen.wsPort ?? MQTT_WS_PORT;
+  const isOverride = listen.host !== undefined || listen.port !== undefined || listen.wsPort !== undefined;
+  const plainOn = mqttPlainEnabled();
+  // doc 81 Đợt 7 J1 — TLS per env in production; a test override without `tls` starts no TLS listener.
+  const tlsOn = mqttTlsEnabled() && (!isOverride || listen.tls !== undefined);
+  brokerTlsStatus = {
+    enabled: tlsOn, listening: false, port: null, fingerprintSha256: null, source: null, notAfter: null, certPath: null,
+    error: null, plainEnabled: plainOn,
+  };
 
-  // Create TCP server (MQTT over TCP) listening on 0.0.0.0:MQTT_PORT
-  mqttServer = createServer(aedes);
-  attachServerErrorHandler(mqttServer, 'TCP broker', tcpPort);
-  mqttServer.listen(tcpPort, host, () => {
-    console.log(`[MQTT] TCP broker started on ${host}:${tcpPort}`);
-  });
+  if (plainOn) {
+    // Create TCP server (MQTT over TCP) listening on 0.0.0.0:MQTT_PORT
+    mqttServer = createServer(aedes);
+    attachServerErrorHandler(mqttServer, 'TCP broker', tcpPort);
+    mqttServer.listen(tcpPort, host, () => {
+      console.log(`[MQTT] TCP broker started on ${host}:${tcpPort}`);
+    });
 
-  // Create WebSocket server (MQTT over WebSocket) on 0.0.0.0:MQTT_WS_PORT
-  // This allows web clients to connect via ws://host:MQTT_WS_PORT
-  mqttWsServer = createServer(aedes, { ws: true });
-  attachServerErrorHandler(mqttWsServer, 'WebSocket broker', wsPort);
-  mqttWsServer.listen(wsPort, host, () => {
-    console.log(`[MQTT] WebSocket broker started on ${host}:${wsPort}`);
-  });
+    // Create WebSocket server (MQTT over WebSocket) on 0.0.0.0:MQTT_WS_PORT
+    // This allows web clients to connect via ws://host:MQTT_WS_PORT
+    mqttWsServer = createServer(aedes, { ws: true });
+    attachServerErrorHandler(mqttWsServer, 'WebSocket broker', wsPort);
+    mqttWsServer.listen(wsPort, host, () => {
+      console.log(`[MQTT] WebSocket broker started on ${host}:${wsPort}`);
+    });
+  } else {
+    console.warn('[MQTT] Plaintext TCP/WS listeners CLOSED (MQTT_PLAIN_ENABLED=false) — MQTTS only.');
+  }
 
-  // Phase 1 WS1.3 — Optional MQTTS (TLS) listener. Additive: existing plaintext
-  // listeners are untouched. Requires MQTT_TLS_CERT + MQTT_TLS_KEY (PEM files).
-  // doc 44 G5.22 — when MQTT_MTLS_ENABLED, the options gain requestCert + the
-  // pinned internal CA (loaded async), so the listener setup is deferred to a
-  // helper. mTLS OFF path stays option-identical to the prior behaviour.
-  if (MQTT_TLS_ENABLED) {
-    if (!MQTT_TLS_CERT || !MQTT_TLS_KEY) {
-      console.error('[MQTT] MQTT_TLS_ENABLED but MQTT_TLS_CERT/MQTT_TLS_KEY not set — skipping TLS listener.');
-    } else {
-      void startMqttTlsListener();
-    }
+  // MQTTS (TLS) listener. doc 81 Đợt 7 J1 + J redesign: on by default, serving the administrator-provisioned key +
+  // certificate (read and verified only — never generated here; not provisioned / any doubt ⇒ the listener stays down,
+  // the plain listeners are unaffected). doc 44 G5.22 — when MQTT_MTLS_ENABLED, the options gain requestCert + the
+  // pinned internal CA (loaded async), so the listener setup is deferred to a helper.
+  if (tlsOn) {
+    const files = listen.tls?.cert && listen.tls?.key ? { cert: listen.tls.cert, key: listen.tls.key } : undefined;
+    void startMqttTlsListener(host, listen.tls?.port ?? MQTT_TLS_PORT, files);
   }
 
   // If DB was initialized earlier (e.g. in tests), attach handlers now
@@ -1798,10 +1834,42 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
  * add requestCert + rejectUnauthorized:false + the pinned CA (internal CA cert
  * plus an optional external CA bundle from MQTT_MTLS_CA).
  */
-async function startMqttTlsListener(): Promise<void> {
+async function startMqttTlsListener(host: string, tlsPort: number, files?: { cert: string; key: string }): Promise<void> {
   if (!aedes) return;
+  const broker = aedes;
+  // doc 81 Đợt 7 J redesign (round 4) — the ADMIN-provisioned material (scripts/provision-mqtt-tls.ps1) is READ and
+  // VERIFIED (owner, access list, links — through one handle per file); any doubt ⇒ no TLS listener, error + path shown,
+  // nothing written or repaired; the plaintext listeners are unaffected.
+  const env = files ? { ...process.env, MQTT_TLS_CERT: files.cert, MQTT_TLS_KEY: files.key } : process.env;
   try {
-    const base = { key: readFileSync(MQTT_TLS_KEY), cert: readFileSync(MQTT_TLS_CERT) };
+    brokerTlsStatus = { ...brokerTlsStatus, certPath: mqttTlsPaths(env).certPath };
+  } catch { /* half a config: resolveBrokerTls reports TLS_CONFIG_INCOMPLETE below */ }
+  if (!legacyTlsNoticeLogged) {
+    legacyTlsNoticeLogged = true;
+    const notice = legacySiteMaterialNotice(process.env);
+    if (notice) console.warn(notice);
+  }
+  let material: BrokerTlsMaterial;
+  try {
+    // async — the ownership/ACL inspection never blocks the event loop (bounded by MQTT_TLS_ACL_TIMEOUT_MS per call)
+    material = await resolveBrokerTls(env);
+  } catch (err) {
+    const code = err instanceof BrokerTlsError ? err.code : 'TLS_SETUP_FAILED';
+    brokerTlsStatus = { ...brokerTlsStatus, listening: false, error: code };
+    console.error(`[MQTT] TLS listener NOT started (${code}):`, (err as Error)?.message ?? err);
+    return;
+  }
+  brokerTlsStatus = {
+    ...brokerTlsStatus,
+    fingerprintSha256: material.fingerprintSha256,
+    source: material.source,
+    notAfter: material.notAfter,
+    certPath: material.certPath,
+  };
+  console.log(`[MQTT] TLS material verified: ${material.certPath} + ${material.keyPath} (${material.source})`);
+  console.log(`[MQTT] TLS certificate SHA-256 fingerprint (tablets pin this): ${material.fingerprintSha256}`);
+  try {
+    const base = { key: material.keyPem, cert: material.certPem };
     const mtlsOn = mqttMtlsEnabled();
     const caPems: Array<Buffer | string> = [];
     if (mtlsOn) {
@@ -1821,15 +1889,30 @@ async function startMqttTlsListener(): Promise<void> {
       }
     }
     const tlsOpts = buildMqttTlsOptions(base, { mtlsEnabled: mtlsOn, caPems });
-    mqttTlsServer = createServer(aedes, { tls: tlsOpts });
-    attachServerErrorHandler(mqttTlsServer, 'TLS broker', MQTT_TLS_PORT);
-    mqttTlsServer.listen(MQTT_TLS_PORT, '0.0.0.0', () => {
+    if (aedes !== broker) return; // the broker was shut down / restarted while the CA loaded
+    const server = createServer(broker, { tls: tlsOpts });
+    mqttTlsServer = server;
+    // doc 81 Đợt 7 J1 — a TLS listen error (port taken…) closes ONLY the TLS listener and is shown to the
+    // admin; it never shuts the broker down (attachServerErrorHandler would, on EADDRINUSE).
+    server.on('error', (error: NodeJS.ErrnoException) => {
+      console.error(`[MQTT] TLS broker server error on ${host}:${tlsPort}:`, error?.code ?? error?.message ?? error);
+      if (mqttTlsServer === server) {
+        brokerTlsStatus = { ...brokerTlsStatus, listening: false, port: null, error: error?.code || 'TLS_LISTEN_FAILED' };
+        mqttTlsServer = null;
+      }
+      try { server.close(); } catch { /* not listening */ }
+    });
+    server.listen(tlsPort, host, () => {
+      const a = server.address();
+      const bound = a && typeof a === 'object' ? a.port : tlsPort;
+      if (mqttTlsServer === server) brokerTlsStatus = { ...brokerTlsStatus, listening: true, port: bound, error: null };
       console.log(
-        `[MQTT] TLS (MQTTS) broker started on 0.0.0.0:${MQTT_TLS_PORT}` +
+        `[MQTT] TLS (MQTTS) broker started on ${host}:${bound}` +
           (mtlsOn ? ` (mTLS=${mqttMtlsMode()}, client cert requested)` : ''),
       );
     });
   } catch (err) {
+    brokerTlsStatus = { ...brokerTlsStatus, listening: false, error: 'TLS_LISTEN_FAILED' };
     console.error('[MQTT] Failed to start TLS listener:', (err as Error)?.message ?? err);
   }
 }
@@ -3403,6 +3486,7 @@ export function shutdownMqttBroker(): Promise<void> {
       mqttTlsServer.close(() => console.log('[MQTT] TLS server closed'));
       mqttTlsServer = null;
     }
+    brokerTlsStatus = { ...brokerTlsStatus, listening: false, port: null };
     if (mqttServer) {
       mqttServer.close(() => {
         console.log('[MQTT] Server closed');
@@ -3436,9 +3520,13 @@ export function shutdownMqttBroker(): Promise<void> {
         });
         mqttWsServer = null;
       }
+      // doc 81 Đợt 7 J1 — with the plaintext listeners closed (MQTTS only) the broker itself still runs:
+      // close it (its TLS clients included) instead of just dropping the reference.
+      const broker = aedes;
       aedes = null;
       mqttHandlersInitialized = false;
-      resolve();
+      if (broker) broker.close(() => resolve());
+      else resolve();
     }
   });
 }

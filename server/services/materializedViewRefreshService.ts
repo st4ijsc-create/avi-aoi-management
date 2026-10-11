@@ -84,6 +84,50 @@ async function recordRefreshStatus(ok: boolean, detailError?: string): Promise<v
   }
 }
 
+/**
+ * doc 81 Đợt 7 K4 — the message to log/record for a failed refresh. drizzle wraps the Postgres error ("Failed query:
+ * SELECT refresh_qw_caches()" + `cause`), so the wrapper alone hid the real reason on dev for as long as the app has run
+ * as `avi_app`: 42501 "permission denied for materialized view machine_status_latest" (REFRESH needs the view's OWNER or,
+ * on PostgreSQL 17+, the MAINTAIN privilege — the views are owned by `aoi`). Surface the deepest driver message + SQLSTATE;
+ * for 42501 name the fix. Exported for tests.
+ */
+export function describeRefreshError(err: unknown): string {
+  let cur: any = err;
+  let pg: any = null;
+  let deepest: any = err;
+  for (let depth = 0; cur && depth < 5; depth++) {
+    if (isPostgresError(cur)) pg = cur;
+    deepest = cur;
+    cur = cur?.cause;
+  }
+  const top = String((err as any)?.message ?? err);
+  if (!pg) {
+    // Not a Postgres error (e.g. a Node socket error EPIPE/ECONNRESET under the wrapper): show the cause WITHOUT
+    // calling its code a SQLSTATE (fix round 1, review #3).
+    return deepest !== err && deepest?.message ? `${String(deepest.message)} [${top.split("\n")[0]}]` : top;
+  }
+  let msg = `${String(pg.message ?? pg)} (SQLSTATE ${pg.code})`;
+  if (pg.code === "42501") {
+    msg +=
+      " — the app DB role may not REFRESH the qw materialized views: grant it MAINTAIN" +
+      " (drizzle/0366_qw_matview_maintain_grant.sql via scripts/apply-migration-0366.mjs)";
+  }
+  return pg === err ? msg : `${msg} [${top.split("\n")[0]}]`;
+}
+
+/**
+ * Fix round 1 (review #3): a 5-character `code` is a SQLSTATE only on a Postgres error object (postgres.js
+ * `PostgresError`, which always carries `severity`) — Node errno codes such as EPIPE / EPERM / EBUSY are also 5 letters.
+ */
+function isPostgresError(e: any): boolean {
+  return (
+    !!e &&
+    typeof e.code === "string" &&
+    /^[0-9A-Z]{5}$/.test(e.code) &&
+    (e.name === "PostgresError" || typeof e.severity === "string")
+  );
+}
+
 /** One refresh cycle; exported for tests and manual triggering. */
 export async function refreshQwCachesOnce(): Promise<boolean> {
   try {
@@ -95,7 +139,7 @@ export async function refreshQwCachesOnce(): Promise<boolean> {
     await recordRefreshStatus(true);
     return true;
   } catch (err: any) {
-    lastError = String(err?.message ?? err);
+    lastError = describeRefreshError(err);
     console.error("[MatviewRefresh] refresh failed:", lastError);
     await recordRefreshStatus(false, lastError);
     return false;

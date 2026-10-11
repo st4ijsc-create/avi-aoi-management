@@ -149,6 +149,8 @@ export interface ProgrammingCopilotPanelProps {
   seed?: CopilotSeed;
   /** doc 81 Đợt 2 Task 15 — chế độ scratch của IDE: không có editor chủ ⇒ ẩn "Đồng bộ từ editor" (nút đó sẽ xoá mã đã dán). */
   hideSyncFromEditor?: boolean;
+  /** doc 81 Đợt 7 task L fix 1 (b) — báo ra ngoài: một lượt (SSE hoặc đường cũ) đang chạy (true) / đã xong, huỷ, unmount (false). */
+  onBusyChange?: (busy: boolean) => void;
   className?: string;
 }
 
@@ -164,6 +166,7 @@ export function ProgrammingCopilotPanel({
   onApplyText,
   seed,
   hideSyncFromEditor,
+  onBusyChange,
   className,
 }: ProgrammingCopilotPanelProps) {
   const { t } = useTranslation();
@@ -292,6 +295,13 @@ export function ProgrammingCopilotPanel({
   const errorView = copilotErrorView(result, isAdmin);
   const refusalView = result?.refused ? copilotRefusalView(result) : null;
   const busy = streamBusy || gen.isPending;
+  // L fix 1 (b) — báo trạng thái bận ra ngoài; unmount ⇒ false (lượt đã bị abort ở cleanup bên trên).
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  useEffect(() => {
+    onBusyChangeRef.current?.(busy);
+  }, [busy]);
+  useEffect(() => () => onBusyChangeRef.current?.(false), []);
   const language = KIND_LANGUAGE[kind] ?? "text";
   const editorHeight = embedded ? "220px" : "340px";
   const ctxHeight = embedded ? "140px" : "180px";

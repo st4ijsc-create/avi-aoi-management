@@ -173,7 +173,10 @@ export const engineeringAssignmentRouter = router({
       // no early exit after the first query that would let a caller tell a live account from a missing one by timing.
       const outOfScope = () =>
         appError("BAD_REQUEST", "INVALID_VALUE", { field: "assigneeUserId", reason: "assigneeInvalid" }, "Người được giao không hợp lệ.");
-      const assigneeRole = assignee?.role ?? "";
+      // doc 81 Đợt 7 task I4 (Đợt 5 re-review M-2) — the checks run with the account's role ONLY when it is a LIVE account: a
+      // disabled (or missing) account checks with no role, so a disabled ADMIN never takes the admin fast path (no permission
+      // query, unrestricted run scope) that would tell it apart from a missing id by timing. An active admin keeps its role.
+      const assigneeRole = assignee?.isActive === true ? assignee.role ?? "" : "";
       const canView = await canViewTarget(input.assigneeUserId, assigneeRole, type);
       const assigneeRule = await assigneeRuleSql(d, ctx, type, input.entityId, scoped.factories);
       const [inRule] = await d

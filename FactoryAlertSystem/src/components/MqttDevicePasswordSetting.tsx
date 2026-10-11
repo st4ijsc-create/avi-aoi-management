@@ -11,11 +11,18 @@
  * sent only there. When the configured endpoint differs, the screen says which endpoint the stored password
  * belongs to and asks to re-enter it. When the connection to the broker is not encrypted, the screen says
  * the password crosses the LAN in clear.
+ *
+ * doc 81 Đợt 7 J2 — next to the password, the SHA-256 fingerprint of the built-in broker's TLS certificate (shown on
+ * the admin web screen). Saved TOGETHER with the password for MQTT over TCP+TLS: the app then talks only to a broker
+ * presenting exactly that certificate, and the password never goes over a plaintext connection. A broker presenting
+ * another certificate is refused and the screen says "certificate changed".
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTheme, Theme } from '../context/ThemeContext';
 import { mqttService } from '../services/mqttService';
+import { useConnectionStore } from '../store/connectionStore';
+import { formatCertFingerprint, isPinnedTlsAvailable, normalizeCertFingerprint } from '../services/pinnedTlsSocket';
 import type { MqttDeviceCredentialStatus } from '../services/secureCredentialStore';
 import {
   MqttBrokerEndpoint,
@@ -30,6 +37,15 @@ type Lang = 'vi' | 'en' | 'zh';
 
 const TEXT: Record<Lang, Record<string, string>> = {
   vi: {
+    fpLabel: 'Vân tay chứng chỉ broker (SHA-256) — cho MQTT qua TLS',
+    fpPlaceholder: 'Dán / gõ vân tay ở màn web (AB:CD:…, 64 ký tự hex)',
+    fpPinned: 'Chứng chỉ đã ghim:',
+    fpInvalid: 'Vân tay phải gồm đúng 64 ký tự hex (SHA-256).',
+    fpNeedsTls: 'Vân tay chỉ dùng cho giao thức TCP có bật TLS — chọn TCP + TLS và cổng MQTTS trước.',
+    fpRequired: 'MQTT qua TLS cần vân tay chứng chỉ broker: nhập vân tay (màn web Kết nối → Thiết bị → TLS của broker nhúng) cùng mật khẩu rồi Lưu.',
+    tlsUnsupported: 'Máy này không có kết nối TLS ghim chứng chỉ — không kết nối TLS (cập nhật ứng dụng).',
+    certChanged: '⚠ Chứng chỉ broker đã THAY ĐỔI — vân tay không khớp. Đã từ chối kết nối, KHÔNG gửi gì. Kiểm tra vân tay ở màn web; chỉ khi chắc chắn server đổi chứng chỉ hợp lệ mới nhập vân tay mới cùng mật khẩu.',
+    pinnedTls: 'Kết nối được mã hoá (TLS, chứng chỉ được ghim theo vân tay).',
     title: 'Mật khẩu MQTT của thiết bị (broker nội bộ)',
     deviceId: 'Mã thiết bị',
     stored: 'Đã lưu mật khẩu (kho an toàn) cho',
@@ -50,6 +66,15 @@ const TEXT: Record<Lang, Record<string, string>> = {
     hint: 'Admin (web): Kết nối (MQTT / UNS) → Thiết bị → Cấp / xoay mật khẩu cho đúng mã thiết bị trên. Mật khẩu chỉ hiện MỘT lần; nhập vào đây rồi Lưu. Không bao giờ hiển thị lại.',
   },
   en: {
+    fpLabel: 'Broker certificate fingerprint (SHA-256) — for MQTT over TLS',
+    fpPlaceholder: 'Paste / type the fingerprint from the web screen (AB:CD:…, 64 hex digits)',
+    fpPinned: 'Pinned certificate:',
+    fpInvalid: 'The fingerprint must be exactly 64 hex digits (SHA-256).',
+    fpNeedsTls: 'The fingerprint is only used for TCP with TLS on — choose TCP + TLS and the MQTTS port first.',
+    fpRequired: 'MQTT over TLS needs the broker certificate fingerprint: enter it (web: Connectivity → Devices → Built-in broker TLS) together with the password, then Save.',
+    tlsUnsupported: 'This device has no certificate-pinned TLS connection — TLS is not used (update the app).',
+    certChanged: '⚠ The broker certificate has CHANGED — the fingerprint does not match. The connection was refused and NOTHING was sent. Check the fingerprint on the web screen; only if you are sure the server legitimately changed its certificate, enter the new fingerprint together with the password.',
+    pinnedTls: 'The connection is encrypted (TLS, certificate pinned by fingerprint).',
     title: 'Device MQTT password (built-in broker)',
     deviceId: 'Device ID',
     stored: 'Password stored (secure storage) for',
@@ -70,6 +95,15 @@ const TEXT: Record<Lang, Record<string, string>> = {
     hint: 'Admin (web): Connectivity (MQTT / UNS) → Devices → Issue / rotate password for the device ID above. The password is shown ONCE; enter it here and Save. It is never shown again.',
   },
   zh: {
+    fpLabel: '代理证书指纹（SHA-256）——用于 MQTT over TLS',
+    fpPlaceholder: '粘贴/输入网页上显示的指纹（AB:CD:…，64 位十六进制）',
+    fpPinned: '已固定的证书：',
+    fpInvalid: '指纹必须正好是 64 位十六进制（SHA-256）。',
+    fpNeedsTls: '指纹仅用于开启 TLS 的 TCP——请先选择 TCP + TLS 和 MQTTS 端口。',
+    fpRequired: 'MQTT over TLS 需要代理证书指纹：请输入指纹（网页：连接 → 设备 → 内置代理 TLS）和密码，然后保存。',
+    tlsUnsupported: '此设备不支持证书固定的 TLS 连接——不使用 TLS（请更新应用）。',
+    certChanged: '⚠ 代理证书已更改——指纹不匹配。已拒绝连接，未发送任何内容。请在网页上核对指纹；只有确认服务器合法更换了证书时，才与密码一起输入新指纹。',
+    pinnedTls: '连接已加密（TLS，证书按指纹固定）。',
     title: '设备 MQTT 密码（内置代理）',
     deviceId: '设备 ID',
     stored: '已保存密码（安全存储），对应',
@@ -97,10 +131,15 @@ interface Props {
   mqttConfig: Pick<MqttConfig, 'brokerAddress' | 'port' | 'protocol' | 'useSSL'>;
 }
 
-/** Is the app's connection to this endpoint actually encrypted? The Android TCP path is a plain socket. */
+/**
+ * Is the app's connection to this endpoint actually encrypted? doc 81 Đợt 7 J2: TCP+TLS runs ONLY over the pinned TLS
+ * socket (refused where that module is missing — never a plaintext fallback); wss:// is TLS with the system CA store.
+ */
 function encryptedOnThisDevice(e: MqttBrokerEndpoint): boolean {
-  return e.tls && !(e.protocol === 'tcp' && Platform.OS === 'android');
+  return e.tls && (e.protocol !== 'tcp' || isPinnedTlsAvailable());
 }
+
+const pinsWithFingerprint = (e: MqttBrokerEndpoint | null): boolean => !!e && e.protocol === 'tcp' && e.tls;
 
 const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) => {
   const { theme } = useTheme();
@@ -117,6 +156,15 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
   const current = brokerEndpointOf(mqttConfig);
   const mismatch = !!pinned && !sameBrokerEndpoint(pinned, current);
   const [input, setInput] = useState('');
+  // doc 81 Đợt 7 J2 — certificate fingerprint typed next to the password, and the one stored with it.
+  const [fpInput, setFpInput] = useState('');
+  const [pinnedFp, setPinnedFp] = useState<string | null>(null);
+  const connError = useConnectionStore((st) => st.error);
+  const tlsProblem = typeof connError === 'string' ? connError.split(':')[0] : null;
+  const fpTyped = fpInput.trim().length > 0;
+  const fpNorm = normalizeCertFingerprint(fpInput);
+  const fpError = fpTyped && !fpNorm ? 'invalid' : fpTyped && !pinsWithFingerprint(current) ? 'needsTls' : null;
+  const fpMissing = pinsWithFingerprint(current) && !fpNorm;
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const deviceId = mqttService.getDeviceInfo()?.deviceId ?? '—';
@@ -127,6 +175,10 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
       .getLocalBrokerPasswordEndpoint()
       .then((e: MqttBrokerEndpoint | null) => alive && setPinned(e))
       .catch(() => alive && setPinned(null));
+    // doc 81 Đợt 7 J2 — the fingerprint stored with the password (uncounted display read; older services lack it).
+    Promise.resolve(mqttService.getLocalBrokerCertPin?.())
+      .then((fp: string | null | undefined) => alive && setPinnedFp(fp ?? null))
+      .catch(() => alive && setPinnedFp(null));
     mqttService
       .getLocalBrokerPasswordStatus()
       .then((st: MqttDeviceCredentialStatus) => alive && setCredStatus(st))
@@ -143,12 +195,15 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!input.trim() || !current) return;
+    if (!input.trim() || !current || fpError || fpMissing) return;
     setBusy(true);
     setMessage(null);
     try {
-      await mqttService.setLocalBrokerPassword(input, current);
+      if (fpNorm) await mqttService.setLocalBrokerPassword(input, current, fpNorm);
+      else await mqttService.setLocalBrokerPassword(input, current);
       setInput('');
+      setFpInput('');
+      setPinnedFp(fpNorm);
       setPinned(current);
       setCredStatus('ok');
       setMessage({ kind: 'ok', text: tx.saved });
@@ -158,7 +213,7 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
     } finally {
       setBusy(false);
     }
-  }, [input, current, reconnect, tx]);
+  }, [input, current, reconnect, tx, fpError, fpMissing, fpNorm]);
 
   const handleClear = useCallback(async () => {
     setBusy(true);
@@ -166,6 +221,8 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
     try {
       await mqttService.clearLocalBrokerPassword();
       setInput('');
+      setFpInput('');
+      setPinnedFp(null);
       setPinned(null);
       setCredStatus('none');
       setMessage({ kind: 'ok', text: tx.cleared });
@@ -212,7 +269,41 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
           {!current ? (
             <Text style={styles.error} testID="mqtt-device-password-no-endpoint">{tx.noEndpoint}</Text>
           ) : !encryptedOnThisDevice(current) ? (
-            <Text style={styles.warn} testID="mqtt-device-password-plaintext">{tx.plaintext}</Text>
+            <Text style={styles.warn} testID="mqtt-device-password-plaintext">
+              {pinsWithFingerprint(current) ? tx.tlsUnsupported : tx.plaintext}
+            </Text>
+          ) : pinsWithFingerprint(current) && pinnedFp && pinned && sameBrokerEndpoint(pinned, current) ? (
+            <Text style={styles.ok} testID="mqtt-device-password-pinned-tls">{tx.pinnedTls}</Text>
+          ) : null}
+          {tlsProblem === 'CERT_CHANGED' ? (
+            <Text style={styles.error} testID="mqtt-device-cert-changed">{tx.certChanged}</Text>
+          ) : tlsProblem === 'TLS_PIN_REQUIRED' ? (
+            <Text style={styles.error} testID="mqtt-device-cert-required">{tx.fpRequired}</Text>
+          ) : null}
+          {/* doc 81 Đợt 7 J2 — the broker certificate fingerprint, next to the password */}
+          <Text style={styles.label}>{tx.fpLabel}</Text>
+          {pinnedFp ? (
+            <Text style={styles.meta} testID="mqtt-device-cert-pinned">
+              {tx.fpPinned} <Text style={styles.mono}>{formatCertFingerprint(pinnedFp)}</Text>
+            </Text>
+          ) : null}
+          <TextInput
+            testID="mqtt-device-cert-fp-input"
+            style={[styles.input, styles.mono]}
+            value={fpInput}
+            onChangeText={setFpInput}
+            placeholder={tx.fpPlaceholder}
+            placeholderTextColor={theme.colors.textMuted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            autoComplete="off"
+            importantForAutofill="no"
+            editable={!busy}
+          />
+          {fpError ? (
+            <Text style={styles.error} testID="mqtt-device-cert-fp-error">{fpError === 'invalid' ? tx.fpInvalid : tx.fpNeedsTls}</Text>
+          ) : fpMissing && input.trim() ? (
+            <Text style={styles.error} testID="mqtt-device-cert-fp-missing">{tx.fpRequired}</Text>
           ) : null}
           <TextInput
             testID="mqtt-device-password-input"
@@ -231,9 +322,9 @@ const MqttDevicePasswordSetting: React.FC<Props> = ({ language, mqttConfig }) =>
           <View style={styles.row}>
             <TouchableOpacity
               testID="mqtt-device-password-save"
-              style={[styles.button, (!input.trim() || busy || !current) && styles.buttonDisabled]}
+              style={[styles.button, (!input.trim() || busy || !current || !!fpError || fpMissing) && styles.buttonDisabled]}
               onPress={handleSave}
-              disabled={!input.trim() || busy || !current}
+              disabled={!input.trim() || busy || !current || !!fpError || fpMissing}
               accessibilityRole="button"
             >
               <Text style={styles.buttonText}>{tx.save}</Text>

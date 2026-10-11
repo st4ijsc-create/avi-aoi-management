@@ -40,6 +40,8 @@ const TWO_GATES: WorkflowDefinition = {
 
 let sql: ReturnType<typeof postgres>;
 const runIds: number[] = [];
+/** doc 81 Đợt 7 I3 — ENG has a factory scope: its new workflow is stored under a server-made unique ref (`<ref>~<hex>`). */
+let deployedRef = "";
 
 function codeOf(e: unknown): string | undefined {
   return (e as { code?: string } | null)?.code;
@@ -56,7 +58,7 @@ async function stepStatus(runId: number, stepId: string): Promise<string | null>
   return (r[0] as { status?: string } | undefined)?.status ?? null;
 }
 async function startAtG1(): Promise<number> {
-  const started = await startRun(TWO_GATES.ref, {}, ENG);
+  const started = await startRun(deployedRef, {}, ENG);
   expect(started.status).toBe("awaiting_confirm");
   runIds.push(started.runId!);
   expect((await runRow(started.runId!)).currentStepId).toBe("g1");
@@ -100,6 +102,7 @@ describe.skipIf(!DB_URL)("FOE Task 9 — gate ghim bước + từ chối có bù
     delete process.env.FOE_DURABLE;
     const dep = await deployWorkflow(TWO_GATES, ENG);
     expect(dep.ok, JSON.stringify(dep)).toBe(true);
+    deployedRef = dep.ref!;
   });
 
   afterAll(async () => {

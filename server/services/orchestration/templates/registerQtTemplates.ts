@@ -17,7 +17,7 @@
  *   • FAIL-SAFE: không bao giờ throw (gọi từ backgroundJobs boot path).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { orchestrationWorkflows } from "../../../../drizzle/schema";
 import { deployWorkflow, foeEnabled, hashWorkflowDefinition, type FoeUser } from "../foe/foeEngine";
@@ -73,10 +73,11 @@ export async function registerQtTemplates(): Promise<RegisterQtTemplatesResult> 
 
     for (const def of listQtTemplates()) {
       try {
+        // doc 81 Đợt 7 I fix 1 (mig 0367) — templates live in the 'global' namespace (refs are unique per namespace).
         const [existing] = await db
           .select()
           .from(orchestrationWorkflows)
-          .where(eq(orchestrationWorkflows.ref, def.ref))
+          .where(and(eq(orchestrationWorkflows.ref, def.ref), eq(orchestrationWorkflows.scopeKey, "global")))
           .limit(1);
         if (existing?.definitionJson && contentHash(existing.definitionJson as WorkflowDefinition) === contentHash(def)) {
           base.skipped.push(def.ref);
