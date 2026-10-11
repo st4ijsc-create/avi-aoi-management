@@ -29,6 +29,9 @@ import { getDb } from "../../db/connection";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
 import { eq } from "drizzle-orm";
 import { safetyPlcAdapterEnabled } from "./plc/safetyPlcAdapter";
+// doc 81 Đợt 8 N fix scan 2 (R-8-b) — background poller monitoring health.
+import { evaluatePollerHealth, pgPollerHealthStore, safetyPlcPollerEnabled, type PollerHealth, type PollerHealthState } from "./plc/safetyPlcPollerHealth";
+import { safetyAuditEnabled } from "./safetyAuditService";
 import { safetyZoneSwEnabled, listZones } from "./safetyZoneService";
 import { safetyVisionEnabled, listCalibrations } from "./vision/humanDetectionProducer";
 import { safetyEstopAdapterEnabled, getSafetyPlcAdapter } from "./estop/safetyEstopAdapter";
@@ -98,6 +101,8 @@ export interface SourceHealthSnapshot {
    */
   estop: { kind: string; label: string; rated: boolean };
   socketServerUp: boolean;
+  /** doc 81 Đợt 8 N fix scan 2 (R-8-b) — background poller monitoring health (absent ⇒ "off"). */
+  plcPoller?: PollerHealth;
 }
 
 // ── Đầu ra ────────────────────────────────────────────────────────────────────────
@@ -166,6 +171,19 @@ export interface SafetySourceHealth {
   /** `label` has any endpoint stripped (Fix round 1 #3). */
   estop: { enabled: boolean; adapter: string; label: string; rated: boolean };
   socket: { serverUp: boolean };
+  /**
+   * doc 81 Đợt 8 N fix scan 2 (R-8-b) — is the BACKGROUND safety-PLC monitoring alive? "stale" = no instance polled within
+   * its bound (or a config's chain stalled) — monitoring is BLIND; "unknown" = cannot tell (never shown as ok).
+   * Configs: only those in the viewer's scope (code, link, timestamps); others only counted.
+   */
+  plcPoller: {
+    state: PollerHealthState;
+    heartbeatAt: string | null;
+    leaderAlive: boolean;
+    staleConfigs: number;
+    configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean }>;
+    hiddenConfigs: number;
+  };
 }
 
 /**
@@ -282,6 +300,22 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
       rated: s.estop.rated,
     },
     socket: { serverUp: s.socketServerUp },
+    plcPoller: pollerPanel(s.plcPoller, s.visibleFactoryIds),
+  };
+}
+
+/** fix scan 2 — the poller health, scoped to the viewer (no endpoint is ever part of the heartbeat). */
+function pollerPanel(h: PollerHealth | undefined, ids: number[] | null): SafetySourceHealth["plcPoller"] {
+  if (!h) return { state: "off", heartbeatAt: null, leaderAlive: false, staleConfigs: 0, configs: [], hiddenConfigs: 0 };
+  const iso = (t: number | null | undefined) => (typeof t === "number" && Number.isFinite(t) ? new Date(t).toISOString() : null);
+  const shown = h.configs.filter((c) => visible(ids, c.factoryId ?? null));
+  return {
+    state: h.state,
+    heartbeatAt: iso(h.heartbeatAt),
+    leaderAlive: h.leaderAlive,
+    staleConfigs: shown.filter((c) => c.stale).length,
+    configs: shown.map((c) => ({ code: c.code, link: c.link, lastAttemptAt: iso(c.lastAttemptAt), lastOkAt: iso(c.lastOkAt), stale: c.stale })),
+    hiddenConfigs: h.configs.length - shown.length,
   };
 }
 
@@ -372,5 +406,13 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem, targetRef?:
       rated: estopAdapter.isRated(),
     },
     socketServerUp: getIO() != null,
+    plcPoller: await loadPollerHealth(),
   });
+}
+
+/** fix scan 2 — the persisted heartbeat, evaluated now (flags off ⇒ "off"; unreadable ⇒ "unknown"). */
+async function loadPollerHealth(): Promise<PollerHealth> {
+  const enabled = safetyPlcPollerEnabled() && safetyPlcAdapterEnabled() && safetyAuditEnabled();
+  if (!enabled) return evaluatePollerHealth(null, Date.now(), { enabled: false });
+  return evaluatePollerHealth(await pgPollerHealthStore().readHeartbeat(), Date.now(), { enabled: true });
 }

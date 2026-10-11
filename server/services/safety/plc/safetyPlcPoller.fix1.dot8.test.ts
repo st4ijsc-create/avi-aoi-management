@@ -71,6 +71,7 @@ function mk(cfgs: () => SafetyPlcConfig[], backendFor: (c: SafetyPlcConfig) => S
     recordTrusted: seam("trusted"),
     isTrustApproved: async () => true,
     leader: LEADER,
+    health: { readHeartbeat: async () => null, writeHeartbeat: async () => undefined, claimAlarm: async () => false },
     ...extra,
   });
   pollers.push(p);

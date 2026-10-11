@@ -45,7 +45,10 @@ export type SafetyEventType =
   | "estop" | "collision" | "intrusion" | "zone_intrusion" | "force_limit" | "speed_violation" | "near_miss"
   // doc 81 Đợt 8 N2 — background safety-PLC poller transitions (free varchar column ⇒ no migration). NOT recordable through
   // safety.recordEvent (its input enum is separate); none of them is a trusted bypass type.
-  | "estop_released" | "plc_offline" | "plc_online";
+  | "estop_released" | "plc_offline" | "plc_online"
+  // doc 81 Đợt 8 N fix scan 2 (R-8-b) — monitoring itself: the watchdog's "monitoring stale" alarm and the poller's
+  // "events lost" marker (queue overflow while events could not be recorded). Never trusted types.
+  | "plc_monitor_stale" | "plc_events_lost";
 // Provenance of the OBSERVATION. `plc` = read from a certified Safety PLC's (non-
 // safety-rated) status interface; `sim` = a clearly-labelled SIMULATED track/status
 // (never a real sensor); `test` = the Safety Monitor UI's "test proximity" sandbox

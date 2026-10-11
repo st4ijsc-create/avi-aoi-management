@@ -35,11 +35,10 @@ import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEv
 import { isPlcConfigTrustApproved, plcTrustMaterial } from "./safetyPlcTrust";
 import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLeader";
 import { redactEndpoint, safeBackendLabel } from "./plcRedact";
+import { pgPollerHealthStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollerHealthStore, type PollerHeartbeat } from "./safetyPlcPollerHealth";
 
-/** Flag — default OFF. */
-export function safetyPlcPollerEnabled(): boolean {
-  return process.env.SAFETY_PLC_POLLER_ENABLED === "true" || process.env.SAFETY_PLC_POLLER_ENABLED === "1";
-}
+/** Flag — default OFF. (Defined once in the health leaf module so the source-health panel reads the SAME predicate.) */
+export { safetyPlcPollerEnabled } from "./safetyPlcPollerHealth";
 
 export const SAFETY_PLC_POLL_MIN_INTERVAL_MS = 250;
 export const SAFETY_PLC_POLL_MAX_INTERVAL_MS = 60_000;
@@ -49,6 +48,10 @@ export const SAFETY_PLC_POLL_MAX_CONFIGS = 200;
 /** Config re-list + leader re-check period (N fix 1, M4: was 30 s — a lost lock must stop the polling quickly). */
 export const SAFETY_PLC_CONFIG_REFRESH_MS = 10_000;
 export const SAFETY_PLC_READ_TIMEOUT_DEFAULT_MS = 3000;
+/** fix scan 2 (R-8-b) — bound of ONE event insert / approval lookup (a hung DB must not stall the poll chain). */
+export const SAFETY_PLC_RECORD_TIMEOUT_MS = 5000;
+/** fix scan 2 (R-8-b, (b)) — per-config queue of not-yet-recorded transitions (oldest dropped + counted beyond it). */
+export const SAFETY_PLC_EVENT_QUEUE_MAX = 32;
 /** N3 flap damping — offline transitions remembered per config (window + cap) and the clean-read run needed to go online. */
 export const SAFETY_PLC_FLAP_WINDOW_MS = 10 * 60_000;
 export const SAFETY_PLC_FLAP_HISTORY_MAX = 8;
@@ -157,6 +160,16 @@ export interface PollerDeps {
   isTrustApproved: (cfg: SafetyPlcConfig) => Promise<boolean>;
   /** N fix 1 (M4) — cluster leadership: only the holder polls. Default: pg_try_advisory_lock on a dedicated session. */
   leader: PollerLeaderGate;
+  /** fix scan 2 (R-8-b) — where the leader persists its heartbeat (default: system_settings). */
+  health: PollerHealthStore;
+  /** fix scan 2 — bound of one event insert / approval lookup (ms). */
+  recordTimeoutMs: number;
+}
+
+/** fix scan 2 — a transition waiting to be recorded (re-baseline captured at detection). */
+interface QueuedEvent {
+  input: RecordSafetyEventInput;
+  rebaseline: boolean;
 }
 
 interface ConfigState {
@@ -190,6 +203,13 @@ interface ConfigState {
   rebaseline: boolean;
   /** N fix 1 (M5) — consecutive failed event records (feeds the backoff like failed reads). */
   recordFailStreak: number;
+  /** fix scan 2 — not-yet-recorded transitions (bounded) + how many were dropped (one marker when the DB is back). */
+  queue: QueuedEvent[];
+  lostEvents: number;
+  /** fix scan 2 — health: when tracking began, last poll attempt, last fully decided read (epoch ms). */
+  since: number;
+  lastAttemptAt: number | null;
+  lastOkAt: number | null;
 }
 
 export interface PollerConfigSnapshot {
@@ -199,6 +219,10 @@ export interface PollerConfigSnapshot {
   failStreak: number;
   /** N fix 1 (M5) */
   recordFailStreak: number;
+  /** fix scan 2 */
+  lastAttemptAt: number | null;
+  lastOkAt: number | null;
+  queued: number;
   reads: number;
   undecidable: number;
   lastRead: PollRead | null;
@@ -239,6 +263,8 @@ export class SafetyPlcPoller {
       recordTrusted: deps.recordTrusted ?? ((i) => recordFromDeviceIngest("safety_plc", i)),
       isTrustApproved: deps.isTrustApproved ?? isPlcConfigTrustApproved,
       leader: deps.leader ?? pgPollerLeaderGate(),
+      health: deps.health ?? pgPollerHealthStore(),
+      recordTimeoutMs: deps.recordTimeoutMs ?? SAFETY_PLC_RECORD_TIMEOUT_MS,
     };
   }
 
@@ -266,7 +292,33 @@ export class SafetyPlcPoller {
     if (!this.leading) console.log("[SafetyPLC] poller leadership acquired — this instance polls the safety PLCs");
     this.leading = true;
     await this.refreshConfigs();
+    await this.writeHeartbeat();
     return true;
+  }
+
+  /** fix scan 2 (R-8-b) — the leader's heartbeat (no endpoints): per config last attempt / last decided read / link. */
+  private async writeHeartbeat(): Promise<void> {
+    const hb: PollerHeartbeat = {
+      v: 1,
+      at: Date.now(),
+      instance: `${process.pid}`,
+      configs: [...this.states.values()].map((st) => ({
+        id: st.cfg.id,
+        code: st.cfg.code,
+        factoryId: st.cfg.factoryId ?? null,
+        intervalMs: st.intervalMs,
+        since: st.since,
+        lastAttemptAt: st.lastAttemptAt,
+        lastOkAt: st.lastOkAt,
+        link: st.link,
+      })),
+    };
+    try {
+      await this.bounded(this.deps.health.writeHeartbeat(hb), this.deps.recordTimeoutMs, "heartbeat write");
+    } catch (e) {
+      // a missing heartbeat is itself the alarm signal (watchdog ⇒ "stale") — fail-safe direction
+      this.warnLimited("heartbeat", `[SafetyPLC] poller heartbeat could not be written (monitoring will read as STALE): ${safeReason(e)}`);
+    }
   }
 
   /** Start polling. Returns false (and does nothing) unless every flag it needs is on. Idempotent. */
@@ -349,6 +401,11 @@ export class SafetyPlcPoller {
         readIdentity,
         rebaseline: old != null && !carry,
         recordFailStreak: 0,
+        queue: [],
+        lostEvents: 0,
+        since: Date.now(),
+        lastAttemptAt: null,
+        lastOkAt: null,
       };
       if (carry && old) {
         st.link = old.link;
@@ -359,6 +416,11 @@ export class SafetyPlcPoller {
         st.recordFailStreak = old.recordFailStreak;
         st.rebaseline = old.rebaseline;
         st.pending = old.pending;
+        st.queue = old.queue; // fix scan 2 — queued transitions survive the edit (never dropped)
+        st.lostEvents = old.lostEvents;
+        st.since = old.since;
+        st.lastAttemptAt = old.lastAttemptAt;
+        st.lastOkAt = old.lastOkAt;
         if (old.busy) {
           const b: Promise<void> = old.busy.then(() => undefined, () => undefined).finally(() => {
             if (st.busy === b) st.busy = null;
@@ -400,6 +462,7 @@ export class SafetyPlcPoller {
     if (st.busy) return st.busy;
     const p = (async () => {
       try {
+        st.lastAttemptAt = Date.now(); // fix scan 2 — health: the chain is alive
         const read = await this.readOnce(st);
         if (this.states.get(id) !== st) return; // config changed / removed / poller stopped meanwhile
         st.lastRead = read;
@@ -417,64 +480,77 @@ export class SafetyPlcPoller {
   }
 
   /**
-   * N2 — turn a read into events on TRANSITIONS only, committing each new state only after its event was recorded
-   * (a failed record leaves the old state ⇒ the same transition is retried at the next poll; never lost).
+   * N2 — turn a read into events on TRANSITIONS only. fix scan 2 (R-8-b, (b)): the new state is COMMITTED at detection
+   * (the read confirmed it) and the event goes into a bounded per-config QUEUE drained in order; a failed record stays
+   * queued (retried with backoff) — a transition is never dropped, and press + release while the DB is down are BOTH
+   * recorded later. Overflow drops the OLDEST and counts it; ONE "plc_events_lost" marker is recorded first when the DB is
+   * back. (c) edge detection compares with the last CONFIRMED (committed) state.
    *   link: undecidable (or a mapped flag unreadable) ⇒ "plc_offline" once; offline + a fully decided read ⇒ "plc_online";
    *         unknown + decided ⇒ online silently (no event at boot).
-   *   flags (each decided flag on its own): estop false/unknown→true "estop", true→false "estop_released";
-   *         zoneOccupied →true "zone_intrusion" (guard / light curtain tripped); resetRequired →true "intrusion";
+   *   flags (each decided flag on its own): estop false/unknown→true "estop", true→false "estop_released" (only while
+   *         online — M2); zoneOccupied →true "zone_intrusion" (guard / light curtain); resetRequired →true "intrusion";
    *         muting →true "speed_violation". Other changes are committed silently. An unreadable flag keeps its old value.
    */
   private async applyTransitions(id: number, st: ConfigState, read: PollRead): Promise<void> {
     const fullyDecided = read.kind === "decided" && read.unreadable.length === 0;
+    if (fullyDecided) st.lastOkAt = Date.now();
     if (!fullyDecided) {
       st.goodStreak = 0;
       if (st.link !== "offline") {
         const why = read.kind === "undecidable" ? read.reason : `status flag(s) unreadable: ${read.unreadable.join(", ")}`;
-        if (await this.emit(id, st, "plc_offline", { transition: "offline", reason: why })) {
-          st.link = "offline";
-          st.offlineAt.push(Date.now());
-          if (st.offlineAt.length > SAFETY_PLC_FLAP_HISTORY_MAX) st.offlineAt.splice(0, st.offlineAt.length - SAFETY_PLC_FLAP_HISTORY_MAX);
-        }
+        this.enqueue(st, "plc_offline", { transition: "offline", reason: why });
+        st.link = "offline";
+        st.offlineAt.push(Date.now());
+        if (st.offlineAt.length > SAFETY_PLC_FLAP_HISTORY_MAX) st.offlineAt.splice(0, st.offlineAt.length - SAFETY_PLC_FLAP_HISTORY_MAX);
       }
     } else if (st.link === "offline") {
       // N3 flap damping: back online only after a clean run that doubles with every recent offline (2, 4, 8 … ≤ 32 reads).
       st.goodStreak += 1;
-      if (st.goodStreak >= onlineConfirmReads(st.offlineAt) && (await this.emit(id, st, "plc_online", { transition: "online" }))) {
+      if (st.goodStreak >= onlineConfirmReads(st.offlineAt)) {
+        this.enqueue(st, "plc_online", { transition: "online" });
         st.link = "online";
         st.goodStreak = 0;
       }
     } else {
       st.link = "online";
     }
-    if (read.kind !== "decided") return;
-    for (const flag of PLC_FLAGS) {
-      const now = read.flags[flag];
-      if (typeof now !== "boolean") continue;
-      const was = st.flags[flag];
-      let ev: SafetyEventType | null = null;
-      if (now && was !== true) ev = FLAG_RISE_EVENT[flag];
-      else if (!now && was === true && flag === "estop") {
-        // M2 — a release is reported only while the link is ONLINE (confirmed); until then it is held (not dropped).
-        if (st.link !== "online") continue;
-        ev = "estop_released";
+    if (read.kind === "decided") {
+      for (const flag of PLC_FLAGS) {
+        const now = read.flags[flag];
+        if (typeof now !== "boolean") continue;
+        const was = st.flags[flag];
+        let ev: SafetyEventType | null = null;
+        if (now && was !== true) ev = FLAG_RISE_EVENT[flag];
+        else if (!now && was === true && flag === "estop") {
+          // M2 — a release is reported only while the link is ONLINE (confirmed); until then it is held (not dropped).
+          if (st.link !== "online") continue;
+          ev = "estop_released";
+        }
+        if (ev) this.enqueue(st, ev, { transition: now ? "active" : "released", flag });
+        st.flags[flag] = now;
       }
-      if (ev && !(await this.emit(id, st, ev, { transition: now ? "active" : "released", flag }))) continue;
-      st.flags[flag] = now;
+      // M1 — the re-baseline ends with the first FULLY decided read (its events were queued as re-baseline = plain door).
+      if (fullyDecided) st.rebaseline = false;
     }
-    // M1 — the re-baseline ends with the first FULLY decided read (its events went through the plain door).
-    if (fullyDecided) st.rebaseline = false;
+    await this.drain(id, st);
   }
 
-  /** Record one transition event. true ⇔ recorded (or audit off: nothing will ever be recorded — do not retry forever). */
-  private async emit(id: number, st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): Promise<boolean> {
-    if (this.states.get(id) !== st) return false;
+  /** Queue one transition event (bounded: the OLDEST is dropped and counted beyond SAFETY_PLC_EVENT_QUEUE_MAX). */
+  private enqueue(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): void {
+    st.queue.push({ input: this.eventInput(st, eventType, info), rebaseline: st.rebaseline });
+    while (st.queue.length > SAFETY_PLC_EVENT_QUEUE_MAX) {
+      st.queue.shift();
+      st.lostEvents += 1;
+    }
+  }
+
+  private eventInput(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): RecordSafetyEventInput {
     const cfg = st.cfg;
     const isSim = cfg.backend === "sim" || st.backend?.kind === "sim";
     const source = isSim ? "sim" : "plc";
     // Never the endpoint (host / port) in a feed row: the label names only the backend kind; reasons are redacted.
     const label = st.backend ? safeBackendLabel(st.backend) : `${String(cfg.backend).slice(0, 16)} (no backend: ${st.reason ?? "?"})`;
-    const input: RecordSafetyEventInput = {
+    return {
       eventType,
       robotId: cfg.robotId ?? null,
       stationId: cfg.stationId ?? null,
@@ -483,27 +559,61 @@ export class SafetyPlcPoller {
       handledBy: "advisory",
       outcome: "logged_only",
       isNearMiss: false,
-      humanPosition: { plcConfigId: cfg.id, plcFlag: info.flag ?? null, transition: info.transition, backend: st.backend?.kind ?? null, source, poller: true },
+      humanPosition: { plcConfigId: cfg.id, plcFlag: info.flag ?? null, transition: info.transition, backend: st.backend?.kind ?? null, source, poller: true, detectedAt: new Date().toISOString() },
       notes: `${EVENT_NOTE[eventType] ?? eventType}${info.reason ? ` — ${redactEndpoint(info.reason, cfg.endpoint)}` : ""} [source ${source}, PLC "${cfg.code}", backend ${label}, background poller, READ-ONLY]`,
       scope: cfg.scope ?? null,
       corporateCode: cfg.corporateCode ?? null,
       factoryId: cfg.factoryId ?? null,
     };
+  }
+
+  /** A promise bounded by `ms` (fix scan 2: no await of the poll chain may hang it). Rejects on timeout. */
+  private bounded<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+    let t: NodeJS.Timeout | undefined;
+    return Promise.race([
+      p,
+      new Promise<T>((_, reject) => {
+        t = setTimeout(() => reject(new Error(`${what} exceeded ${ms} ms`)), ms);
+        t.unref?.();
+      }),
+    ]).finally(() => clearTimeout(t));
+  }
+
+  /** Drain the queue in order: the "events lost" marker first, then each event; stop at the first failure (retried later). */
+  private async drain(id: number, st: ConfigState): Promise<void> {
+    if (st.lostEvents > 0) {
+      const n = st.lostEvents;
+      const marker = this.eventInput(st, "plc_events_lost", { transition: "lost" });
+      marker.notes = `${n} safety-PLC transition event(s) of PLC "${st.cfg.code}" were LOST while events could not be recorded (queue bound ${SAFETY_PLC_EVENT_QUEUE_MAX}; oldest dropped). The events below are the most recent ones. [background poller, READ-ONLY]`;
+      if (!(await this.recordOne(id, st, { input: marker, rebaseline: true }))) return;
+      st.lostEvents -= n;
+    }
+    while (st.queue.length > 0) {
+      if (this.states.get(id) !== st) return;
+      if (!(await this.recordOne(id, st, st.queue[0]))) return;
+      st.queue.shift();
+    }
+  }
+
+  /** Record one queued event. true ⇔ recorded (or audit off: nothing will ever be recorded — do not retry forever). */
+  private async recordOne(id: number, st: ConfigState, item: QueuedEvent): Promise<boolean> {
+    const input = { ...item.input };
+    const eventType = input.eventType;
     try {
       // I1 — trusted door ONLY for the real OT read class AND a config whose current content a second person approved.
       let approved = false;
-      if (st.trusted && st.rebaseline) {
+      if (st.trusted && item.rebaseline) {
         // M1 — first read after the endpoint / tag map changed: whatever it shows is a new BASELINE, not a trip.
-        input.notes = `${input.notes} [re-baseline after a config change — normal notice]`;
+        if (eventType !== "plc_events_lost") input.notes = `${input.notes} [re-baseline after a config change — normal notice]`;
       } else if (st.trusted) {
         try {
-          approved = (await this.deps.isTrustApproved(cfg)) === true;
+          approved = (await this.bounded(this.deps.isTrustApproved(st.cfg), this.deps.recordTimeoutMs, "approval lookup")) === true;
         } catch {
-          approved = false; // undecided ⇒ not trusted (the event is still recorded, as a normal notice)
+          approved = false; // undecided / hung ⇒ not trusted (the event is still recorded, as a normal notice)
         }
         if (!approved) input.notes = `${input.notes} [config not approved by a second person — normal notice]`;
       }
-      const res = approved ? await this.deps.recordTrusted(input) : await this.deps.recordPlain(input);
+      const res = await this.bounded(approved ? this.deps.recordTrusted(input) : this.deps.recordPlain(input), this.deps.recordTimeoutMs, "event insert");
       if (res.ok) {
         st.recordFailStreak = 0;
         return true;
@@ -512,12 +622,12 @@ export class SafetyPlcPoller {
         this.warnLimited("audit-off", "[SafetyPLC] SAFETY_AUDIT_ENABLED is off — poller transitions are not recorded");
         return true;
       }
-      st.recordFailStreak += 1; // M5 — backs the next poll off (retried, never dropped)
-      this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (retried next poll): ${safeReason(res.message)}`);
+      st.recordFailStreak += 1; // M5 — backs the next poll off (kept queued, never dropped)
+      this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (kept queued): ${safeReason(res.message)}`);
       return false;
     } catch (e) {
-      st.recordFailStreak += 1; // M5
-      this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (retried next poll): ${safeReason(e)}`);
+      st.recordFailStreak += 1; // M5 (incl. a hung insert: bounded ⇒ retried; a duplicate is possible, a loss is not)
+      this.warnLimited(`rec:${id}`, `[SafetyPLC] could not record ${eventType} for config ${id} (kept queued): ${safeReason(e)}`);
       return false;
     }
   }
@@ -608,19 +718,21 @@ export class SafetyPlcPoller {
 
   snapshot(): PollerConfigSnapshot[] {
     return [...this.states.values()]
-      .map((st) => ({ id: st.cfg.id, code: st.cfg.code, intervalMs: st.intervalMs, failStreak: st.failStreak, recordFailStreak: st.recordFailStreak, reads: st.reads, undecidable: st.undecidable, lastRead: st.lastRead }))
+      .map((st) => ({ id: st.cfg.id, code: st.cfg.code, intervalMs: st.intervalMs, failStreak: st.failStreak, recordFailStreak: st.recordFailStreak, lastAttemptAt: st.lastAttemptAt, lastOkAt: st.lastOkAt, queued: st.queue.length, reads: st.reads, undecidable: st.undecidable, lastRead: st.lastRead }))
       .sort((a, b) => a.id - b.id);
   }
 
   /** Test seam — sizes of the internal maps (bounded-memory checks). */
-  _sizesForTests(): { states: number; warned: number; maxHistory: number; maxFlagKeys: number } {
+  _sizesForTests(): { states: number; warned: number; maxHistory: number; maxFlagKeys: number; maxQueue: number } {
     let maxHistory = 0;
     let maxFlagKeys = 0;
+    let maxQueue = 0;
     for (const st of this.states.values()) {
       maxHistory = Math.max(maxHistory, st.offlineAt.length);
       maxFlagKeys = Math.max(maxFlagKeys, Object.keys(st.flags).length);
+      maxQueue = Math.max(maxQueue, st.queue.length);
     }
-    return { states: this.states.size, warned: this.warnedAt.size, maxHistory, maxFlagKeys };
+    return { states: this.states.size, warned: this.warnedAt.size, maxHistory, maxFlagKeys, maxQueue };
   }
 
   private warnLimited(key: string, msg: string): void {
@@ -641,7 +753,11 @@ export function startSafetyPlcPoller(): boolean {
   try {
     if (!safetyPlcPollerEnabled()) return false;
     singleton ??= new SafetyPlcPoller();
-    return singleton.start();
+    const started = singleton.start();
+    // fix scan 2 (R-8-b) — the watchdog runs on EVERY instance with the flags on (leader or standby), independently of the
+    // poll chain: no heartbeat / a stalled chain ⇒ "monitoring stale" + one alarm per episode.
+    if (started) startSafetyPlcWatchdog(() => safetyPlcPollerEnabled() && safetyPlcAdapterEnabled() && safetyAuditEnabled());
+    return started;
   } catch (e) {
     console.error("[SafetyPLC] poller start failed:", safeReason(e));
     return false;
@@ -649,5 +765,6 @@ export function startSafetyPlcPoller(): boolean {
 }
 
 export async function stopSafetyPlcPoller(): Promise<void> {
+  stopSafetyPlcWatchdog();
   if (singleton) await singleton.stop();
 }
