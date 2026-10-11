@@ -9,8 +9,13 @@
  * ghi theo id trong URL), nên "Bỏ thay đổi" bỏ thật; form báo dữ liệu chưa lưu qua `layer.setDirty` (Esc / Back / Huỷ ⇒
  * hỏi). Lưu thành công ⇒ `done()` đóng CHÍNH lớp của nó (useCloseOwnLayer). Lỗi server ⇒ lớp GIỮ mở với dữ liệu đã nhập.
  * Payload gửi server y hệt các sheet cũ (không đổi hợp đồng).
+ *
+ * Đợt cuối Đợt 8 (review P): #1 — form SỬA biến chỉ được dựng SAU một lượt tải lại danh sách biến bắt đầu từ lúc mở lớp
+ * (IdeSymbolEditGate), nên giá trị khởi tạo không bao giờ lấy từ bản cache cũ (Lưu không ghi đè dữ liệu mới hơn của server);
+ * #2 — lỗi tải danh sách là "lỗi tải", KHÔNG phải "không tìm thấy"; #3 — "Bỏ thay đổi" khi Tạo dự án đang chạy ⇒ kết quả về
+ * sau bị BỎ QUA (không mở dự án vừa tạo; chỉ làm mới danh sách).
  */
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
@@ -86,7 +91,8 @@ export function IdeNewProjectForm({
   onCreated: (row: { id: number }) => void;
 }) {
   const { t } = useTranslation();
-  const { layer, done } = useCloseOwnLayer();
+  const { layer, done, mountedRef } = useCloseOwnLayer();
+  const utils = trpc.useUtils();
   const fid = useId();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -98,10 +104,18 @@ export function IdeNewProjectForm({
 
   const createProject = trpc.programming.createProject.useMutation({
     onSuccess: (row) => {
+      // review P #3 — the layer was discarded while the create was in flight ⇒ ignore the result (the project exists on the
+      // server: the list is refreshed, but it is NOT opened behind the user's back).
+      if (!mountedRef.current) {
+        void utils.programming.listProjects.invalidate();
+        return;
+      }
       onCreated(row);
       done();
     },
-    onError: (e) => toastTrpcError(e),
+    onError: (e) => {
+      if (mountedRef.current) toastTrpcError(e);
+    },
   });
 
   return (
@@ -241,6 +255,54 @@ export function IdeSymbolForm({
       </FormFooter>
     </div>
   );
+}
+
+/**
+ * review P #1 / #2 — the EDIT form of symbol <symbolId> mounts only after a reload of the project's symbol list that
+ * STARTED when this layer opened (a cached row may be older than the server's: its values would prefill the form and a Save
+ * would overwrite newer data). Until then: "loading". The reload failing ⇒ "could not load" (never "not found"); the id
+ * absent from the FRESH list ⇒ "not found" (no Save). Once mounted, the form keeps its values (later refetches never
+ * re-initialise a form being edited).
+ */
+export function IdeSymbolEditGate({
+  projectId,
+  symbolId,
+  canEdit,
+  editReason,
+  note,
+}: {
+  projectId: number;
+  symbolId: string;
+  canEdit: boolean;
+  editReason?: string;
+  note: (text: string, testId?: string) => ReactNode;
+}) {
+  const { t } = useTranslation();
+  const q = trpc.programming.listSymbols.useQuery({ projectId });
+  const [reloaded, setReloaded] = useState(false);
+  useEffect(() => {
+    let live = true;
+    // settled (ok OR failed) ⇒ judge by the query's own state below (a failed reload ⇒ q.isError, cached data or not)
+    Promise.resolve()
+      .then(() => q.refetch())
+      .catch(() => undefined)
+      .finally(() => {
+        if (live) setReloaded(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — ONE reload per opened layer
+  const [frozen, setFrozen] = useState<IdeSymbolRow | null>(null);
+  const fresh = reloaded && !q.isError ? ((q.data ?? []) as IdeSymbolRow[]).find((x) => String(x.id) === symbolId) ?? null : null;
+  useEffect(() => {
+    if (fresh && !frozen) setFrozen(fresh);
+  }, [fresh, frozen]);
+  if (frozen) return <IdeSymbolForm key={`${projectId}:${frozen.id}`} symbol={frozen} projectId={projectId} canEdit={canEdit} editReason={editReason} />;
+  if (!reloaded) return note(t("common.loading", "Đang tải..."), "ide-symbol-loading");
+  if (q.isError) return note(t("engineering.symbolLoadError", "Không tải được danh sách biến — thử lại sau (chưa sửa gì)."), "ide-symbol-error");
+  if (!fresh) return note(t("engineering.symbolNotFound", "Không tìm thấy biến #{{id}} trong dự án đang mở.", { id: symbolId }), "ide-symbol-missing");
+  return note(t("common.loading", "Đang tải..."), "ide-symbol-loading"); // fresh row found: the form mounts on the next render
 }
 
 // ── Gắn / đổi thiết bị nguồn (U2) ─────────────────────────────────────────────────────────────────

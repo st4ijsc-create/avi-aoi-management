@@ -16634,6 +16634,7 @@
     "symbolDeleted": "符号已删除",
     "symbolDesc": "在在线监视器中监视的设备标签/变量",
     "symbolNotFound": "在当前打开的项目中找不到变量 #{{id}}。",
+    "symbolLoadError": "无法加载变量列表——请稍后重试（未作任何更改）。",
     "deleteSymbolConfirm": "删除此符号？",
     "deleteSymbolTitle": "从标签表中移除符号？",
     "deleteSymbolDesc": "此符号将从标签表中移除且不再被监视。此操作无法撤销。",

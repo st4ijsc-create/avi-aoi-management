@@ -78,6 +78,14 @@ const queryCalls: Record<string, number> = {};
 const queryCache = new Map<string, { fn: (input: unknown) => QueryResult; r: QueryResult }>();
 const mutateCalls: Record<string, unknown[]> = {};
 const mutationResponses: Record<string, ((vars: any) => unknown) | undefined> = {};
+/** doc 81 Đợt 8 final wave (review P #3) — keys whose answer is HELD until releaseDeferred() (the server answers late). */
+const deferredKeys = new Set<string>();
+const deferredAnswers: Array<() => void> = [];
+function releaseDeferred() {
+  act(() => {
+    for (const f of deferredAnswers.splice(0)) f();
+  });
+}
 const invalidateCalls: string[] = [];
 const fetchResponses: Record<string, (input: any) => unknown> = {};
 const fetchCalls: Record<string, unknown[]> = {};
@@ -121,6 +129,10 @@ vi.mock("@/lib/trpc", () => {
                 mutate: (vars: unknown) => {
                   (mutateCalls[key] ??= []).push(vars);
                   const r = mutationResponses[key];
+                  if (r && deferredKeys.has(key)) {
+                    deferredAnswers.push(() => mopts?.onSuccess?.(r(vars), vars));
+                    return;
+                  }
                   if (r) mopts?.onSuccess?.(r(vars), vars);
                 },
                 mutateAsync: (vars: unknown) => {
@@ -191,6 +203,8 @@ beforeAll(async () => {
   installMatchMedia();
 });
 beforeEach(() => {
+  deferredKeys.clear();
+  deferredAnswers.length = 0;
   for (const o of [queryOverrides, queryCalls, mutateCalls, mutationResponses, fetchResponses, fetchCalls]) {
     for (const k of Object.keys(o)) delete (o as Record<string, unknown>)[k];
   }
@@ -688,6 +702,40 @@ describe("Đợt 8 P1 — sheet IR trên FlyoutHost", () => {
     await act(async () => { window.history.back(); });
     await waitFor(() => expect(unsaved()).not.toBeNull());
     expect(within(layer()!).getByLabelText("Tên project")).toHaveValue("x");
+  });
+
+  it("★ final wave P #3: 'Bỏ thay đổi' while Tạo project is in flight ⇒ the late result is IGNORED (not selected as the save target)", async () => {
+    seed();
+    mutationResponses["programming.createProject"] = () => ({ id: 9, code: "NEW", name: "New" });
+    deferredKeys.add("programming.createProject");
+    renderPage();
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    fireEvent.change(within(layer()!).getByLabelText("Mã project"), { target: { value: "NEW" } });
+    fireEvent.change(within(layer()!).getByLabelText("Tên project"), { target: { value: "New" } });
+    fireEvent.click(within(layer()!).getByRole("button", { name: /^Tạo project$/ }));
+    expect(mutateCalls["programming.createProject"]).toHaveLength(1);
+    fireEvent.keyDown(layer()!, { key: "Escape" });
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    fireEvent.click(within(unsaved()!).getByRole("button", { name: "Bỏ thay đổi" }));
+    await waitFor(() => expect(layer()).toBeNull());
+    releaseDeferred(); // the server answers AFTER the discard
+    await act(async () => undefined);
+    expect(toasts.success).not.toHaveBeenCalled(); // "Project created — selected as the save target." never shown
+  });
+
+  it("final wave P #3 control: answered while the layer is open ⇒ selected as the save target (toast)", async () => {
+    seed();
+    mutationResponses["programming.createProject"] = () => ({ id: 9, code: "NEW", name: "New" });
+    deferredKeys.add("programming.createProject");
+    renderPage();
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    fireEvent.change(within(layer()!).getByLabelText("Mã project"), { target: { value: "NEW" } });
+    fireEvent.change(within(layer()!).getByLabelText("Tên project"), { target: { value: "New" } });
+    fireEvent.click(within(layer()!).getByRole("button", { name: /^Tạo project$/ }));
+    releaseDeferred();
+    await waitFor(() => expect(toasts.success).toHaveBeenCalled());
   });
 
   it("mã nguồn: không còn <Sheet open=…> tự quản trong trang", () => {

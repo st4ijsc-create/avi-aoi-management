@@ -48,7 +48,7 @@ import { useUrlParam } from "@/components/patterns/useUrlParam";
 import { FlyoutHost, type FlyoutDefinition } from "@/components/patterns/FlyoutHost";
 import { WithFlyout } from "@/components/engineering/WithFlyout";
 import {
-  IDE_FLYOUT, IdeAttachForm, IdeNewProjectForm, IdeSymbolForm,
+  IDE_FLYOUT, IdeAttachForm, IdeNewProjectForm, IdeSymbolForm, IdeSymbolEditGate,
 } from "@/components/engineering/workspace/IdeFlyoutForms";
 import { EngineeringShell } from "@/components/engineering/shell";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
@@ -2087,10 +2087,9 @@ function EngineeringWorkspaceView() {
       render: (layer) => {
         if (!project) return sheetNote(t("engineering.selectProject", "Chọn một dự án để bắt đầu"));
         if (layer.id == null) return <IdeSymbolForm key={`${project.id}:new`} symbol={null} projectId={project.id} canEdit={canEdit} editReason={editReason} />;
-        if (symbolsQ.isLoading) return sheetNote(t("common.loading", "Đang tải..."));
-        const sym = (symbolsQ.data ?? []).find((x) => String(x.id) === layer.id);
-        if (!sym) return sheetNote(t("engineering.symbolNotFound", "Không tìm thấy biến #{{id}} trong dự án đang mở.", { id: layer.id }), "ide-symbol-missing");
-        return <IdeSymbolForm key={`${project.id}:${sym.id}`} symbol={sym} projectId={project.id} canEdit={canEdit} editReason={editReason} />;
+        // review P #1/#2 — mounts only after a FRESH reload of the list (never prefilled from a stale cached row); a load
+        // error says so (not "not found").
+        return <IdeSymbolEditGate key={`${project.id}:${layer.id}`} projectId={project.id} symbolId={layer.id} canEdit={canEdit} editReason={editReason} note={sheetNote} />;
       },
     };
     // U2 — gắn/đổi thiết bị nguồn cho dự án <id> (id trong URL, không phải "dự án đang chọn" lúc F5).

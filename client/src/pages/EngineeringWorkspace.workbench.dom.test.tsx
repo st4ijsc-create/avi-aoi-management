@@ -1120,7 +1120,8 @@ describe("Đợt 8 P1 — sheet IDE trên FlyoutHost", () => {
     await waitFor(() => expect(layer("ide-symbol")).not.toBeNull());
     expect(params().getAll("flyout")).toEqual(["ide-symbol"]);
     expect(params().getAll("flyoutId")).toEqual(["31"]);
-    expect(within(layer("ide-symbol")!).getByPlaceholderText("X0 / Motor_Speed")).toHaveValue("X0");
+    // re-pinned 2026-10-11 (doc 81 Đợt 8 final wave, review P #1): the edit form mounts after a fresh reload (one tick)
+    await waitFor(() => expect(within(layer("ide-symbol")!).getByPlaceholderText("X0 / Motor_Speed")).toHaveValue("X0"));
     expect(within(layer("ide-symbol")!).getByPlaceholderText("D100 / %MW10")).toHaveValue("D100");
     // mở để sửa mà CHƯA đổi gì ⇒ không phải "dữ liệu chưa lưu": Esc đóng thẳng, không hỏi
     fireEvent.keyDown(layer("ide-symbol")!, { key: "Escape" });
@@ -1132,16 +1133,79 @@ describe("Đợt 8 P1 — sheet IDE trên FlyoutHost", () => {
     window.history.replaceState({}, "", "/engineering?projectId=1&flyout=ide-symbol&flyoutId=31");
     renderPage();
     await waitFor(() => expect(layer("ide-symbol")).not.toBeNull());
-    expect(within(layer("ide-symbol")!).getByPlaceholderText("X0 / Motor_Speed")).toHaveValue("X0");
+    // re-pinned 2026-10-11 (doc 81 Đợt 8 final wave, review P #1): the edit form mounts after a fresh reload (one tick)
+    await waitFor(() => expect(within(layer("ide-symbol")!).getByPlaceholderText("X0 / Motor_Speed")).toHaveValue("X0"));
     cleanup();
     seed();
     queryOverrides["programming.listSymbols"] = () => makeQuery({ data: [SYM] });
     window.history.replaceState({}, "", "/engineering?projectId=1&flyout=ide-symbol&flyoutId=99");
     renderPage();
     await waitFor(() => expect(layer("ide-symbol")).not.toBeNull());
+    await waitFor(() => expect(within(layer("ide-symbol")!).getByTestId("ide-symbol-missing")).toBeInTheDocument());
     expect(within(layer("ide-symbol")!).queryByPlaceholderText("X0 / Motor_Speed")).toBeNull();
     expect(within(layer("ide-symbol")!).queryByRole("button", { name: /^(Save|Lưu)$/ })).toBeNull();
-    expect(within(layer("ide-symbol")!).getByTestId("ide-symbol-missing")).toBeInTheDocument();
+  });
+
+  // ── doc 81 Đợt 8 final wave (review P #1 / #2 / #3) ─────────────────────────────────────────────────────────────────
+  it("★ P #1: Sửa biến mounts only after a FRESH reload — a stale cached row never prefills the form (Save cannot overwrite newer data)", async () => {
+    seed();
+    const STALE = { ...SYM, address: "D100" };
+    const FRESH = { ...SYM, address: "D200", comment: "edited elsewhere" };
+    let release: () => void = () => undefined;
+    const refetch = vi.fn(
+      () =>
+        new Promise((r) => {
+          release = () => {
+            queryOverrides["programming.listSymbols"] = () => makeQuery({ data: [FRESH], refetch });
+            r({ isError: false, data: [FRESH] });
+          };
+        }),
+    );
+    queryOverrides["programming.listSymbols"] = () => makeQuery({ data: [STALE], refetch });
+    window.history.replaceState({}, "", "/engineering?projectId=1&flyout=ide-symbol&flyoutId=31");
+    renderPage();
+    await waitFor(() => expect(layer("ide-symbol")).not.toBeNull());
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(within(layer("ide-symbol")!).getByTestId("ide-symbol-loading")).toBeInTheDocument();
+    expect(within(layer("ide-symbol")!).queryByPlaceholderText("D100 / %MW10")).toBeNull(); // nothing prefilled from the stale row
+    await act(async () => release());
+    await waitFor(() => expect(within(layer("ide-symbol")!).getByPlaceholderText("D100 / %MW10")).toHaveValue("D200"));
+  });
+
+  it("★ P #2: the list reload FAILS ⇒ 'could not load' (ide-symbol-error), never 'not found', no Save", async () => {
+    seed();
+    const refetch = vi.fn(async () => {
+      queryOverrides["programming.listSymbols"] = () => makeQuery({ isError: true, error: new Error("net"), refetch });
+      return { isError: true };
+    });
+    queryOverrides["programming.listSymbols"] = () => makeQuery({ data: undefined, refetch });
+    window.history.replaceState({}, "", "/engineering?projectId=1&flyout=ide-symbol&flyoutId=31");
+    renderPage();
+    await waitFor(() => expect(within(layer("ide-symbol")!).getByTestId("ide-symbol-error")).toBeInTheDocument());
+    expect(within(layer("ide-symbol")!).queryByTestId("ide-symbol-missing")).toBeNull();
+    expect(within(layer("ide-symbol")!).queryByRole("button", { name: /^(Save|Lưu)$/ })).toBeNull();
+  });
+
+  it("★ P #3: 'Bỏ thay đổi' while Tạo dự án is in flight ⇒ the late result is IGNORED (the new project is not opened)", async () => {
+    seed();
+    mutationResponses["programming.createProject"] = () => ({ id: 2, code: "N2", name: "New Two", kind: "stub", deviceId: null });
+    mutationDeferred.add("programming.createProject");
+    renderPage();
+    fireEvent.click(btn(/^(New project|Dự án mới)$/));
+    await waitFor(() => expect(layer("ide-new-project")).not.toBeNull());
+    const L = layer("ide-new-project")!;
+    fireEvent.change(within(L).getByPlaceholderText("ZMC-CELL-01"), { target: { value: "N2" } });
+    fireEvent.change(within(L).getByLabelText(/^(Name|Tên)$/), { target: { value: "New Two" } });
+    fireEvent.click(within(L).getByRole("button", { name: /^(Create|Tạo)$/ }));
+    expect(mutateCalls["programming.createProject"]).toHaveLength(1);
+    fireEvent.keyDown(layer("ide-new-project")!, { key: "Escape" });
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    fireEvent.click(within(unsaved()!).getByRole("button", { name: /Discard changes|Bỏ thay đổi/ }));
+    await waitFor(() => expect(layer("ide-new-project")).toBeNull());
+    xaHoan("programming.createProject"); // the server answers AFTER the discard
+    await act(async () => undefined);
+    expect(params().get("projectId")).toBe("1"); // still the project the user was on
+    expect(queryInputs["programming.listArtifacts"]).toEqual({ projectId: 1 });
   });
 
   it("Thêm biến ⇒ ?flyout=ide-symbol (không id); sửa rồi Esc ⇒ hỏi; Lưu ⇒ upsertSymbol của dự án đang mở, lớp đóng", async () => {

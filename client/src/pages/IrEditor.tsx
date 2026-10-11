@@ -1767,17 +1767,26 @@ const IR_NEW_PROJECT_FLYOUT = "ir-new-project";
  */
 function IrNewProjectForm({ canControl, onCreated }: { canControl: boolean; onCreated: (proj: { id: number }) => void | Promise<void> }) {
   const { t } = useTranslation();
-  const { layer, done } = useCloseOwnLayer();
+  const { layer, done, mountedRef } = useCloseOwnLayer();
+  const utils = trpc.useUtils();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const dirty = code !== "" || name !== "";
   useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
   const createProjectM = trpc.programming.createProject.useMutation({
     onSuccess: (proj) => {
+      // doc 81 Đợt 8 final wave (review P #3) — discarded while the create was in flight ⇒ ignore the result (the list is
+      // refreshed; the new project is NOT opened behind the user's back).
+      if (!mountedRef.current) {
+        void utils.programming.listProjects.invalidate();
+        return;
+      }
       done();
       void onCreated(proj);
     },
-    onError: (e) => toastTrpcError(e),
+    onError: (e) => {
+      if (mountedRef.current) toastTrpcError(e);
+    },
   });
   const doCreateProject = () => {
     const c = code.trim();

@@ -16016,6 +16016,7 @@
     "symbolDeleted": "Đã xóa biến",
     "symbolDesc": "Một tag/biến của thiết bị để theo dõi (watch) trong Online Monitor",
     "symbolNotFound": "Không tìm thấy biến #{{id}} trong dự án đang mở.",
+    "symbolLoadError": "Không tải được danh sách biến — thử lại sau (chưa sửa gì).",
     "deleteSymbolConfirm": "Xóa biến này?",
     "deleteSymbolTitle": "Xóa biến khỏi bảng tag?",
     "deleteSymbolDesc": "Biến này sẽ bị gỡ khỏi bảng tag và không còn được theo dõi. Không thể hoàn tác.",
