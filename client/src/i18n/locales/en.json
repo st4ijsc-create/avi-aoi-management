@@ -17599,7 +17599,11 @@
       "plc_offline": "Safety PLC offline (status unknown)",
       "plc_online": "Safety PLC back online",
       "speed_violation": "Speed violation",
-      "zone_intrusion": "Zone intrusion / guard tripped"
+      "zone_intrusion": "Zone intrusion",
+      "reset_required": "Reset required (safety PLC)",
+      "muting_active": "Muting active (safety PLC)",
+      "plc_monitor_stale": "Safety-PLC monitoring stale",
+      "plc_events_lost": "Safety-PLC events lost"
     },
     "feedEmpty": "No safety events recorded. This feed is advisory monitoring only.",
     "feedTitle": "Safety event feed",
@@ -17700,6 +17704,16 @@
         "socketDown": "Live: server down",
         "socketLost": "Live feed lost",
         "socketConnecting": "Live connecting"
+      },
+      "poller": {
+        "label": "Background PLC monitoring",
+        "ok": "● alive",
+        "stale": "⚠ STALE — safety-PLC trips are NOT being observed",
+        "unknown": "⚠ state unknown — treat monitoring as blind",
+        "noConfig": "○ no enabled config",
+        "off": "○ off",
+        "staleCount": "{{n}} config(s) stale",
+        "lastPoll": "last poll"
       }
     },
     "advisoryChip": "Advisory — not a SIS",
@@ -17727,7 +17741,37 @@
       "collabCountError": "Could not read collaboration sessions"
     },
     "reportProximityShort": "Report proximity",
-    "testOnly": "Test only"
+    "testOnly": "Test only",
+    "plcTrust": {
+      "title": "Safety-PLC trust (maker-checker)",
+      "rule": "A REAL safety-PLC config's e-stop / guard trips bypass notification opt-outs only after a second admin approved its exact content (digest). Any edit clears the approval; unknown provenance needs two different admins.",
+      "error": "Could not read the safety-PLC approvals — treat every config as NOT trusted.",
+      "state": {
+        "sim": "SIM — never trusted",
+        "approved": "Approved — trusted",
+        "pending": "Not approved — normal notices",
+        "awaitingSecond": "First approval given — awaiting a second admin",
+        "rejected": "Rejected — normal notices"
+      },
+      "blocked": {
+        "self": "You changed this config since its last approval — another admin must decide.",
+        "firstApprover": "You gave the first approval — a different admin must give the second."
+      },
+      "needsTwo": "Unknown provenance — needs approvals from two different admins.",
+      "digest": "digest",
+      "approve": "Approve…",
+      "reject": "Reject…",
+      "reviewAria": "Review before deciding",
+      "reviewDigest": "You are deciding on this exact content (server digest):",
+      "endpoint": "Endpoint",
+      "reasonPlaceholder": "Why is this config rejected? (required)",
+      "reasonAria": "Rejection reason",
+      "confirmApprove": "Confirm approval",
+      "confirmReject": "Confirm rejection",
+      "approvedToast": "Approved — this PLC's real trips are now trusted",
+      "firstToast": "First approval recorded — a different admin must approve too",
+      "rejectedToast": "Rejected — this PLC's trips stay normal notices"
+    }
   },
   "sessionSignoff": {
     "shift": "Shift",

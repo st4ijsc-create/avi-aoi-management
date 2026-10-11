@@ -17982,7 +17982,11 @@
       "plc_offline": "安全PLC离线（状态未知）",
       "plc_online": "安全PLC已恢复在线",
       "speed_violation": "超速",
-      "zone_intrusion": "区域闯入／防护触发"
+      "zone_intrusion": "区域闯入",
+      "reset_required": "需要复位（安全PLC）",
+      "muting_active": "屏蔽生效（安全PLC）",
+      "plc_monitor_stale": "安全PLC监控停滞",
+      "plc_events_lost": "安全PLC事件丢失"
     },
     "feedEmpty": "无安全事件记录。此数据源仅为参考性监控。",
     "feedTitle": "安全事件源",
@@ -18083,6 +18087,16 @@
         "socketDown": "实时：服务器未运行",
         "socketLost": "实时连接已断开",
         "socketConnecting": "实时连接中"
+      },
+      "poller": {
+        "label": "后台PLC监控",
+        "ok": "● 运行中",
+        "stale": "⚠ 停滞——安全PLC的触发未被监测",
+        "unknown": "⚠ 状态未知——视为监控失明",
+        "noConfig": "○ 无启用的配置",
+        "off": "○ 关闭",
+        "staleCount": "{{n}} 个配置停滞",
+        "lastPoll": "最近一次读取"
       }
     },
     "advisoryChip": "仅供参考 — 非 SIS",
@@ -18110,7 +18124,37 @@
       "collabCountError": "无法读取协作会话"
     },
     "reportProximityShort": "报告接近",
-    "testOnly": "仅测试"
+    "testOnly": "仅测试",
+    "plcTrust": {
+      "title": "安全PLC信任（双人审批）",
+      "rule": "真实安全PLC配置的急停／防护触发，仅在第二位管理员批准其确切内容（摘要）后才会绕过通知退订。任何修改都会清除批准；来源不明需两位不同管理员批准。",
+      "error": "无法读取安全PLC审批——请将所有配置视为不受信任。",
+      "state": {
+        "sim": "SIM——永不受信任",
+        "approved": "已批准——受信任",
+        "pending": "未批准——普通通知",
+        "awaitingSecond": "已首次批准——等待第二位管理员",
+        "rejected": "已驳回——普通通知"
+      },
+      "blocked": {
+        "self": "自上次批准以来您修改过此配置——须由另一位管理员决定。",
+        "firstApprover": "您已作出首次批准——须由另一位管理员作出第二次批准。"
+      },
+      "needsTwo": "来源不明——需要两位不同管理员批准。",
+      "digest": "摘要",
+      "approve": "批准…",
+      "reject": "驳回…",
+      "reviewAria": "决定前请审阅",
+      "reviewDigest": "您正在对以下确切内容作出决定（服务器摘要）：",
+      "endpoint": "端点",
+      "reasonPlaceholder": "为何驳回此配置？（必填）",
+      "reasonAria": "驳回原因",
+      "confirmApprove": "确认批准",
+      "confirmReject": "确认驳回",
+      "approvedToast": "已批准——此PLC的真实触发现在受信任",
+      "firstToast": "已记录首次批准——还需另一位管理员批准",
+      "rejectedToast": "已驳回——此PLC的触发仍为普通通知"
+    }
   },
   "sites": {
     "colBaseUrl": "基础 URL",

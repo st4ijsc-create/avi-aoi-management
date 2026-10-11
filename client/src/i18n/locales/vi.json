@@ -17579,7 +17579,11 @@
       "plc_offline": "PLC an toàn mất kết nối (không rõ trạng thái)",
       "plc_online": "PLC an toàn kết nối lại",
       "speed_violation": "Vi phạm tốc độ",
-      "zone_intrusion": "Xâm nhập vùng / cửa bảo vệ ngắt"
+      "zone_intrusion": "Xâm nhập vùng",
+      "reset_required": "Cần reset (PLC an toàn)",
+      "muting_active": "Đang muting (PLC an toàn)",
+      "plc_monitor_stale": "Giám sát PLC an toàn bị ngưng",
+      "plc_events_lost": "Mất sự kiện PLC an toàn"
     },
     "feedEmpty": "Chưa ghi nhận sự kiện an toàn nào. Luồng này chỉ giám sát tư vấn.",
     "feedTitle": "Luồng sự kiện an toàn",
@@ -17680,6 +17684,16 @@
         "socketDown": "Trực tiếp: máy chủ tắt",
         "socketLost": "Mất kết nối trực tiếp",
         "socketConnecting": "Đang nối trực tiếp"
+      },
+      "poller": {
+        "label": "Giám sát PLC chạy nền",
+        "ok": "● đang chạy",
+        "stale": "⚠ NGƯNG — các lần ngắt của PLC an toàn KHÔNG được quan sát",
+        "unknown": "⚠ không rõ trạng thái — coi như đang mù",
+        "noConfig": "○ không có cấu hình đang bật",
+        "off": "○ tắt",
+        "staleCount": "{{n}} cấu hình bị ngưng",
+        "lastPoll": "lần đọc cuối"
       }
     },
     "advisoryChip": "Tư vấn — không phải SIS",
@@ -17707,7 +17721,37 @@
       "collabCountError": "Không đọc được phiên phối hợp"
     },
     "reportProximityShort": "Báo cáo tiệm cận",
-    "testOnly": "Chỉ thử"
+    "testOnly": "Chỉ thử",
+    "plcTrust": {
+      "title": "Tin cậy PLC an toàn (hai người duyệt)",
+      "rule": "E-stop / ngắt cửa bảo vệ của một cấu hình PLC an toàn THẬT chỉ vượt tuỳ chọn tắt thông báo sau khi một quản trị viên thứ hai đã duyệt đúng nội dung (mã digest). Mọi lần sửa xoá duyệt; nguồn gốc không rõ cần hai quản trị viên khác nhau.",
+      "error": "Không đọc được trạng thái duyệt PLC an toàn — coi mọi cấu hình là KHÔNG tin cậy.",
+      "state": {
+        "sim": "SIM — không bao giờ tin cậy",
+        "approved": "Đã duyệt — tin cậy",
+        "pending": "Chưa duyệt — thông báo thường",
+        "awaitingSecond": "Đã duyệt lần đầu — chờ quản trị viên thứ hai",
+        "rejected": "Bị từ chối — thông báo thường"
+      },
+      "blocked": {
+        "self": "Bạn đã sửa cấu hình này kể từ lần duyệt trước — một quản trị viên khác phải quyết định.",
+        "firstApprover": "Bạn đã duyệt lần đầu — một quản trị viên khác phải duyệt lần hai."
+      },
+      "needsTwo": "Nguồn gốc không rõ — cần hai quản trị viên khác nhau duyệt.",
+      "digest": "digest",
+      "approve": "Duyệt…",
+      "reject": "Từ chối…",
+      "reviewAria": "Xem lại trước khi quyết định",
+      "reviewDigest": "Bạn đang quyết định trên đúng nội dung này (digest do server tính):",
+      "endpoint": "Địa chỉ",
+      "reasonPlaceholder": "Vì sao từ chối cấu hình này? (bắt buộc)",
+      "reasonAria": "Lý do từ chối",
+      "confirmApprove": "Xác nhận duyệt",
+      "confirmReject": "Xác nhận từ chối",
+      "approvedToast": "Đã duyệt — các lần ngắt thật của PLC này nay được tin cậy",
+      "firstToast": "Đã ghi lần duyệt đầu — một quản trị viên khác cũng phải duyệt",
+      "rejectedToast": "Đã từ chối — các lần ngắt của PLC này vẫn là thông báo thường"
+    }
   },
   "sessionSignoff": {
     "shift": "Ca",
