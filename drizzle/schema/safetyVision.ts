@@ -122,6 +122,28 @@ export const safetyPlcConfigs = pgTable("safety_plc_configs", {
 export type SafetyPlcConfig = typeof safetyPlcConfigs.$inferSelect;
 export type InsertSafetyPlcConfig = typeof safetyPlcConfigs.$inferInsert;
 
+/**
+ * doc 81 Đợt 8 task N fix 1 (I1, migration 0368) — MAKER-CHECKER of a REAL safety-PLC config. The background poller treats
+ * a modbus/opcua config as a TRUSTED device-ingest origin only while its current digest (safetyPlcTrust.plcTrustDigest)
+ * equals `approvedDigest`, approved by someone other than the last editor. Separate table on purpose: the preflight reads
+ * `safetyPlcConfigs` and must not break on a DB without 0368 (a missing table only means "not approved").
+ */
+export const safetyPlcConfigTrust = pgTable("safety_plc_config_trust", {
+  configId: integer("configId").primaryKey(),
+  lastEditedBy: integer("lastEditedBy"),
+  lastEditedAt: timestamp("lastEditedAt").defaultNow().notNull(),
+  editDigest: varchar("editDigest", { length: 64 }),
+  approvedDigest: varchar("approvedDigest", { length: 64 }),
+  approvedBy: integer("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  rejectedDigest: varchar("rejectedDigest", { length: 64 }),
+  rejectedBy: integer("rejectedBy"),
+  rejectedAt: timestamp("rejectedAt"),
+  rejectReason: text("rejectReason"),
+});
+
+export type SafetyPlcConfigTrust = typeof safetyPlcConfigTrust.$inferSelect;
+
 /** One boolean status flag carried by the PLC, and where to read it. */
 export interface SafetyPlcTagRef {
   /** OT tag address (Modbus "40001"/"1@coil" or OPC-UA nodeId) for the real backend. */

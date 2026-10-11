@@ -66,6 +66,15 @@ import { record } from "../safetyAuditService";
 import { startOrchestration, stopOrchestration } from "../../orchestration/rulesEngine";
 import { _resetSafetyCriticalDedupForTests } from "../../notificationService";
 import { _resetTrustedSafetyMarksForTests } from "../trustedSafetyOrigin";
+import { plcTrustDigest } from "./safetyPlcTrust";
+
+/**
+ * N fix 1 (I1) — the maker-checker approvals of this test: configId → the digest a SECOND person approved. The poller asks
+ * through its isTrustApproved seam; the comparison uses the REAL digest function (the DB row lookup is covered by
+ * safetyPlcTrust.fix1.dot8.db.test.ts on the real _test DB).
+ */
+const APPROVED = new Map<number, string>();
+const approve = (c: SafetyPlcConfig) => APPROVED.set(c.id, plcTrustDigest(c));
 
 const ServerTCP: any = (ModbusSerialNs as any).ServerTCP ?? (ModbusSerialNs as any).default?.ServerTCP;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -173,6 +182,7 @@ beforeEach(() => {
   plc.writes = 0;
   _resetSafetyCriticalDedupForTests();
   _resetTrustedSafetyMarksForTests();
+  APPROVED.clear();
   for (const m of ["warn", "log"] as const) quiet.push(vi.spyOn(console, m).mockImplementation(() => undefined));
   startOrchestration();
 });
@@ -193,13 +203,15 @@ const delivered = (userId: number, type: string) => S.created.filter((r) => r.us
 const ev = (type: string) => S.emitted.filter((e) => e.eventType === type);
 
 function startPoller(cfgs: SafetyPlcConfig[]) {
-  poller = new SafetyPlcPoller({ loadConfigs: async () => cfgs }); // every other dep = production default
+  // every other dep = production default (real backends, real audit service, real doors)
+  poller = new SafetyPlcPoller({ loadConfigs: async () => cfgs, isTrustApproved: async (c) => APPROVED.get(c.id) === plcTrustDigest(c) });
   expect(poller.start()).toBe(true);
   return poller;
 }
 
 describe("doc 81 Đợt 8 N4 — real Modbus PLC on 127.0.0.1:0 ⇒ trusted device-ingest events", () => {
   it("★ e-stop PRESSED reaches the OPTED-OUT recipient (bypass, marker); released does not; zero writes", async () => {
+    approve(realCfg(plc.port));
     startPoller([realCfg(plc.port)]);
     expect(await until(() => plc.reads >= 2, 3000), "poller never read the PLC").toBe(true);
     expect(S.emitted, "a clear PLC produces no event").toEqual([]);
@@ -222,6 +234,7 @@ describe("doc 81 Đợt 8 N4 — real Modbus PLC on 127.0.0.1:0 ⇒ trusted devi
   });
 
   it("★ guard / light curtain TRIPPED ⇒ bypass too (another type, its own budget)", async () => {
+    approve(realCfg(plc.port));
     startPoller([realCfg(plc.port)]);
     expect(await until(() => plc.reads >= 2, 3000)).toBe(true);
     plc.coils.set(0, true);
@@ -231,6 +244,7 @@ describe("doc 81 Đợt 8 N4 — real Modbus PLC on 127.0.0.1:0 ⇒ trusted devi
   });
 
   it("P-F4 + throttle: a re-trip inside the window is DOWNGRADED, never dropped (recipient 6 gets both, recipient 5 only the first)", async () => {
+    approve(realCfg(plc.port));
     startPoller([realCfg(plc.port)]);
     expect(await until(() => plc.reads >= 2, 3000)).toBe(true);
     plc.coils.set(0, true);
@@ -271,6 +285,36 @@ describe("doc 81 Đợt 8 N4 — real Modbus PLC on 127.0.0.1:0 ⇒ trusted devi
     const n = plc.reads;
     await sleep(800);
     expect(plc.reads).toBe(n);
+  });
+});
+
+describe("doc 81 Đợt 8 N fix 1 (I1) — maker-checker: a REAL PLC trip bypasses only while its config is approved", () => {
+  it("★ never approved ⇒ the real trip is recorded but NOT delivered to the opted-out recipient", async () => {
+    startPoller([realCfg(plc.port)]);
+    expect(await until(() => plc.reads >= 2, 3000)).toBe(true);
+    plc.coils.set(0, true);
+    expect(await until(() => delivered(6, "estop").length === 1 && S.prefReads.includes(5), 4000)).toBe(true);
+    await sleep(100);
+    expect(ev("estop")).toHaveLength(1);
+    expect(delivered(5, "estop")).toEqual([]);
+  });
+
+  it("★ approved, then EDITED (binding changed ⇒ new digest, not re-approved) ⇒ the next trip no longer bypasses", async () => {
+    const cfgs = [realCfg(plc.port)];
+    approve(cfgs[0]);
+    startPoller(cfgs);
+    expect(await until(() => plc.reads >= 2, 3000)).toBe(true);
+    plc.coils.set(0, true);
+    expect(await until(() => delivered(5, "estop").length === 1, 4000)).toBe(true);
+    plc.coils.set(0, false);
+    expect(await until(() => ev("estop_released").length === 1, 4000)).toBe(true);
+    cfgs[0] = { ...cfgs[0], robotId: 42 }; // an edit the second person has not seen
+    await poller!.refreshConfigs();
+    _resetSafetyCriticalDedupForTests(); // the next trip is outside every P-F4 window: only the approval decides
+    plc.coils.set(0, true);
+    expect(await until(() => delivered(6, "estop").length === 2, 4000)).toBe(true);
+    await sleep(100);
+    expect(delivered(5, "estop")).toHaveLength(1);
   });
 });
 

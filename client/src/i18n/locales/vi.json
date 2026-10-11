@@ -3859,7 +3859,8 @@
       "workstation": "trạm làm việc",
       "yieldAlertThreshold": "ngưỡng cảnh báo hiệu suất",
       "zone": "vùng (zone)",
-      "kbGoldenSet": "bộ câu hỏi vàng"
+      "kbGoldenSet": "bộ câu hỏi vàng",
+      "safetyPlcConfig": "cấu hình safety-PLC"
     },
     "operation": {
       "softwareStop": "gửi lệnh dừng phần mềm",
@@ -4019,7 +4020,9 @@
       "releaseRecipeVersion": "phát hành phiên bản công thức",
       "rollbackRecipeVersion": "quay lui phiên bản công thức",
       "assignEngineeringItem": "giao việc chờ duyệt",
-      "unassignEngineeringItem": "bỏ giao việc chờ duyệt"
+      "unassignEngineeringItem": "bỏ giao việc chờ duyệt",
+      "approveSafetyPlcConfig": "duyệt cấu hình safety-PLC",
+      "rejectSafetyPlcConfig": "từ chối cấu hình safety-PLC"
     },
     "field": {
       "settingKey": "Khoá cài đặt",
@@ -4253,7 +4256,8 @@
       "sendTechmanConsoleVerb": "gửi lệnh console start/reset/pause tới robot Techman",
       "sendUrScript": "gửi URScript tuỳ ý tới robot UR",
       "overrideUrHome": "tự đặt vị trí home cho robot UR",
-      "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
+      "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình",
+      "selfApproveSafetyPlcConfig": "quyết định trên cấu hình safety-PLC do chính bạn tạo hoặc sửa"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
@@ -4379,7 +4383,9 @@
       "assignmentChanged": "Người được giao vừa bị người khác đổi. Tải lại để xem người được giao hiện tại.",
       "alreadyAssignedToUser": "Mục này đã được giao cho người này.",
       "assignmentStoreMissing": "Chưa bật được giao việc: cơ sở dữ liệu chưa được cập nhật (cần quản trị viên).",
-      "assigneeInvalid": "Người được giao không hợp lệ: người này không có trong danh sách \"Giao cho\" của mục này (không tồn tại, đã bị vô hiệu hoá, không xem được trang của mục, không cùng nhà máy với mục, hoặc — với lần chạy — không xem được mọi máy/robot mà lần chạy điều khiển). Hãy chọn người trong danh sách."
+      "assigneeInvalid": "Người được giao không hợp lệ: người này không có trong danh sách \"Giao cho\" của mục này (không tồn tại, đã bị vô hiệu hoá, không xem được trang của mục, không cùng nhà máy với mục, hoặc — với lần chạy — không xem được mọi máy/robot mà lần chạy điều khiển). Hãy chọn người trong danh sách.",
+      "safetyPlcConfigChanged": "Cấu hình đã bị sửa sau khi hiện cho bạn — tải lại, xem nội dung mới và mã digest rồi quyết định lại.",
+      "simPlcConfigNeverTrusted": "Cấu hình safety-PLC mô phỏng (sim) không bao giờ được tin cậy — không có gì để duyệt."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",

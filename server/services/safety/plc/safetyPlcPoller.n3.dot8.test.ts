@@ -81,6 +81,7 @@ function mk(configs: SafetyPlcConfig[] | (() => SafetyPlcConfig[]), backendFor?:
     ...(backendFor ? { backendFor: (c: SafetyPlcConfig) => ({ backend: backendFor(c), reason: "test" }) } : {}),
     recordPlain: seam("plain"),
     recordTrusted: seam("trusted"),
+    isTrustApproved: async () => true,
   });
   pollers.push(p);
   return { p, recs, types: () => recs.map((r) => r.input.eventType) };

@@ -91,7 +91,7 @@ function realScripted(c: SafetyPlcConfig, steps: Step[]) {
 }
 
 type Rec = { door: "plain" | "trusted"; input: RecordSafetyEventInput };
-function mk(c: SafetyPlcConfig, backend: SafetyPlcBackendReader, opts: { real?: boolean; fail?: () => boolean } = {}) {
+function mk(c: SafetyPlcConfig, backend: SafetyPlcBackendReader, opts: { real?: boolean; fail?: () => boolean; approved?: () => boolean | Promise<boolean> } = {}) {
   const recs: Rec[] = [];
   const seam = (door: Rec["door"]) => async (input: RecordSafetyEventInput) => {
     if (opts.fail?.()) throw new Error("db down");
@@ -102,6 +102,8 @@ function mk(c: SafetyPlcConfig, backend: SafetyPlcBackendReader, opts: { real?: 
     loadConfigs: async () => [c],
     backendFor: () => ({ backend }),
     ...(opts.real ? {} : { recordPlain: seam("plain"), recordTrusted: seam("trusted") }),
+    // N fix 1 (I1) — the maker-checker approval (default: approved by a second person)
+    isTrustApproved: async () => (opts.approved ? await opts.approved() : true),
   });
   return { p, recs };
 }
@@ -177,6 +179,46 @@ describe("doc 81 Đợt 8 N2 — transitions ⇒ events (real backend ⇒ device
   });
 });
 
+describe("doc 81 Đợt 8 N fix 1 (I1) — a real config takes the trusted door ONLY while approved", () => {
+  it("not approved ⇒ every event through the PLAIN door, recorded, with a 'not approved' note", async () => {
+    const c = cfg(1);
+    const { p, recs } = mk(c, realScripted(c, [{}, { estop: true }, {}]), { approved: () => false });
+    await run(p, 1, 3);
+    expect(recs.map((r) => [r.door, r.input.eventType])).toEqual([["plain", "estop"], ["plain", "estop_released"]]);
+    expect(String(recs[0].input.notes)).toMatch(/not approved/);
+  });
+
+  it("the approval lookup throws ⇒ plain door (fail closed for trust), the event is NOT lost", async () => {
+    const c = cfg(1);
+    const { p, recs } = mk(c, realScripted(c, [{}, { estop: true }]), {
+      approved: () => {
+        throw new Error("relation safety_plc_config_trust does not exist");
+      },
+    });
+    await run(p, 1, 2);
+    expect(recs.map((r) => [r.door, r.input.eventType])).toEqual([["plain", "estop"]]);
+  });
+
+  it("approval is asked at RECORD time: revoked between two trips ⇒ the second one is plain", async () => {
+    const c = cfg(1);
+    let ok = true;
+    const { p, recs } = mk(c, realScripted(c, [{}, { estop: true }, {}, { estop: true }]), { approved: () => ok });
+    await run(p, 1, 2);
+    ok = false;
+    await p.pollNow(1);
+    await p.pollNow(1);
+    expect(recs.map((r) => [r.door, r.input.eventType])).toEqual([["trusted", "estop"], ["plain", "estop_released"], ["plain", "estop"]]);
+  });
+
+  it("★ with the REAL audit service: an unapproved real e-stop is NOT safety-critical", async () => {
+    const c = cfg(1);
+    const { p } = mk(c, realScripted(c, [{}, { estop: true }]), { real: true, approved: () => false });
+    await run(p, 1, 2);
+    expect(E.emitted.map((e) => e.eventType)).toEqual(["estop"]);
+    expect(E.atEmit).toEqual([false]);
+  });
+});
+
 describe("doc 81 Đợt 8 N2 — sim never takes the trusted door", () => {
   it("sim e-stop / zone trips ⇒ the PLAIN door, detectedBy 'sim'", async () => {
     const c = cfg(2, { backend: "sim", endpoint: null, statusMap: { simScript: [{}, { estop: true, zoneOccupied: true }] } });
@@ -221,6 +263,7 @@ describe("doc 81 Đợt 8 N2 — audit turned off at runtime ⇒ no retry storm"
       backendFor: () => ({ backend: realScripted(c, [{ estop: true }]) }),
       recordPlain: async (i) => (calls.push(`plain:${i.eventType}`), { ok: false, enabled: false }),
       recordTrusted: async (i) => (calls.push(`trusted:${i.eventType}`), { ok: false, enabled: false }),
+      isTrustApproved: async () => true,
     });
     await run(p, 1, 4);
     expect(calls).toEqual(["trusted:estop"]);

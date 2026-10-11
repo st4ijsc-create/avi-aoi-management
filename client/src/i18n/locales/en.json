@@ -3859,7 +3859,8 @@
       "workstation": "workstation",
       "yieldAlertThreshold": "yield alert threshold",
       "zone": "zone",
-      "kbGoldenSet": "golden question set"
+      "kbGoldenSet": "golden question set",
+      "safetyPlcConfig": "safety-PLC configuration"
     },
     "operation": {
       "softwareStop": "send the software stop",
@@ -4019,7 +4020,9 @@
       "releaseRecipeVersion": "release recipe version",
       "rollbackRecipeVersion": "roll back recipe version",
       "assignEngineeringItem": "assign the pending item",
-      "unassignEngineeringItem": "unassign the pending item"
+      "unassignEngineeringItem": "unassign the pending item",
+      "approveSafetyPlcConfig": "approve safety-PLC configuration",
+      "rejectSafetyPlcConfig": "reject safety-PLC configuration"
     },
     "field": {
       "settingKey": "Setting key",
@@ -4253,7 +4256,8 @@
       "sendTechmanConsoleVerb": "send a start/reset/pause console command to a Techman robot",
       "sendUrScript": "send arbitrary URScript to a UR robot",
       "overrideUrHome": "set the home pose of a UR robot from the command",
-      "selfApproveProgramVersion": "approve your own program version"
+      "selfApproveProgramVersion": "approve your own program version",
+      "selfApproveSafetyPlcConfig": "decide on a safety-PLC configuration you created or edited"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4387,7 +4391,9 @@
       "assignmentChanged": "Someone else just changed the assignee. Reload to see the current assignee.",
       "alreadyAssignedToUser": "This item is already assigned to this person.",
       "assignmentStoreMissing": "Assignment is not available yet: the database has not been updated (ask an administrator).",
-      "assigneeInvalid": "The assignee is not valid: this person is not in this item's \"Assign to\" list (does not exist, is disabled, cannot view the item's page, does not share a factory with the item, or — for a run — cannot see every machine or robot the run controls). Pick someone from the list."
+      "assigneeInvalid": "The assignee is not valid: this person is not in this item's \"Assign to\" list (does not exist, is disabled, cannot view the item's page, does not share a factory with the item, or — for a run — cannot see every machine or robot the run controls). Pick someone from the list.",
+      "safetyPlcConfigChanged": "The configuration changed after it was shown to you — reload, review the new content and its digest, then decide again.",
+      "simPlcConfigNeverTrusted": "A simulated (sim) safety-PLC configuration is never trusted — there is nothing to approve."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

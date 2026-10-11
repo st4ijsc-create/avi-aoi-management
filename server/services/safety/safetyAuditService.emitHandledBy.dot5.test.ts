@@ -173,6 +173,15 @@ describe("doc 81 Đợt 8 N2 — census: who may construct / start the backgroun
     expect(refs(/\bnew SafetyPlcPoller\b/)).toEqual(["services/safety/plc/safetyPlcPoller.ts"]);
   });
 
+  // doc 81 Đợt 8 N fix 1 (I1) — config writes go through the AUDITED, scope-checked, maker-checker path only.
+  it("the legacy unaudited writer upsertPlcConfig has no production caller (only its definition)", () => {
+    expect(refs(/\bupsertPlcConfig\b/)).toEqual(["services/safety/plc/safetyPlcAdapter.ts"]);
+  });
+
+  it("no code outside safetyPlcTrust.ts writes the maker-checker table", () => {
+    expect(refs(/\bsafetyPlcConfigTrust\b/)).toEqual(["services/safety/plc/safetyPlcTrust.ts"]);
+  });
+
   it("the poller module is imported only by the server entry (start/stop)", () => {
     expect(refs(/safetyPlcPoller["']/)).toEqual(["_core/index.ts"]);
   });

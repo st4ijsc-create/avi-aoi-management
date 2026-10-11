@@ -32,6 +32,7 @@ import {
   type SafetyPlcBackendReader,
 } from "./safetyPlcAdapter";
 import { safetyAuditEnabled, record, recordFromDeviceIngest, type RecordSafetyEventInput, type RecordResult, type SafetyEventType } from "../safetyAuditService";
+import { isPlcConfigTrustApproved } from "./safetyPlcTrust";
 
 /** Flag — default OFF. */
 export function safetyPlcPollerEnabled(): boolean {
@@ -144,8 +145,13 @@ export interface PollerDeps {
   backendFor: (cfg: SafetyPlcConfig, timeoutMs: number) => { backend: SafetyPlcBackendReader | null; reason?: string };
   /** Plain advisory door (sim / not-trusted events). */
   recordPlain: (input: RecordSafetyEventInput) => Promise<RecordResult>;
-  /** Device-ingest door (real PLC reads). */
+  /** Device-ingest door (real PLC reads of an APPROVED config). */
   recordTrusted: (input: RecordSafetyEventInput) => Promise<RecordResult>;
+  /**
+   * doc 81 Đợt 8 N fix 1 (I1, maker-checker) — is this config's CURRENT content approved by a second person? Asked at
+   * record time for every event of a real backend; false / error ⇒ the PLAIN door (recorded, normal notice, no bypass).
+   */
+  isTrustApproved: (cfg: SafetyPlcConfig) => Promise<boolean>;
 }
 
 interface ConfigState {
@@ -228,6 +234,7 @@ export class SafetyPlcPoller {
       backendFor: deps.backendFor ?? defaultBackendFor,
       recordPlain: deps.recordPlain ?? record,
       recordTrusted: deps.recordTrusted ?? ((i) => recordFromDeviceIngest("safety_plc", i)),
+      isTrustApproved: deps.isTrustApproved ?? isPlcConfigTrustApproved,
     };
   }
 
@@ -423,7 +430,17 @@ export class SafetyPlcPoller {
       factoryId: cfg.factoryId ?? null,
     };
     try {
-      const res = st.trusted ? await this.deps.recordTrusted(input) : await this.deps.recordPlain(input);
+      // I1 — trusted door ONLY for the real OT read class AND a config whose current content a second person approved.
+      let approved = false;
+      if (st.trusted) {
+        try {
+          approved = (await this.deps.isTrustApproved(cfg)) === true;
+        } catch {
+          approved = false; // undecided ⇒ not trusted (the event is still recorded, as a normal notice)
+        }
+        if (!approved) input.notes = `${input.notes} [config not approved by a second person — normal notice]`;
+      }
+      const res = approved ? await this.deps.recordTrusted(input) : await this.deps.recordPlain(input);
       if (res.ok) return true;
       if (res.enabled === false) {
         this.warnLimited("audit-off", "[SafetyPLC] SAFETY_AUDIT_ENABLED is off — poller transitions are not recorded");
