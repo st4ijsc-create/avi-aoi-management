@@ -1,7 +1,9 @@
 /**
  * doc 81 Đợt 9 task T2 — an IN-PROCESS S7comm protocol SIMULATOR for tests (never a real device).
  *
- * Written from the protocol documentation, independently of the product client (it imports nothing from it):
+ * Written from the protocol documentation, independently of the product client (it imports nothing from it). Also
+ * answers read SZL (CPU functions group 4, subfunction 0x01) for 0x0011 module identification (order number) and 0x001C
+ * component identification (module name, serial number), per Wireshark packet-s7comm_szl_ids.c and Snap7 opReadSZL.
  *   • RFC 1006 TPKT (03 00 <len>), ISO 8073 / X.224 class 0 COTP: CR 0xE0 → CC 0xD0 (parameters echoed: 0xC0 TPDU size,
  *     0xC1 calling TSAP, 0xC2 called TSAP), DT 0xF0 + EOT 0x80;
  *   • Wireshark packet-s7comm.c / .h (field definitions): S7 header 0x32, ROSCTR job 1 / ack_data 3 (+ error class /
@@ -18,13 +20,55 @@
  */
 import net from "node:net";
 
-export type SimBlockType = "OB" | "DB" | "FC" | "FB";
+export type SimBlockType = "OB" | "DB" | "SDB" | "FC" | "SFC" | "FB" | "SFB";
 export interface SimBlock {
   type: SimBlockType;
   number: number;
   loadSize: number;
   mc7Size: number;
   checksum: number;
+  /** Optional block-info fields (defaults: simBlockDefaults). */
+  version?: number;
+  flags?: number;
+  language?: number;
+  /** "Block Security": 0 none, 3 know-how protect. */
+  security?: number;
+  codeMs?: number;
+  codeDays?: number;
+  interfaceMs?: number;
+  interfaceDays?: number;
+  ssbSize?: number;
+  addSize?: number;
+  localDataSize?: number;
+  author?: string;
+  family?: string;
+  name?: string;
+}
+
+/** The values the simulator answers for fields a SimBlock leaves out (tests use the same table for their oracle). */
+export const simBlockDefaults = (b: SimBlock): Required<SimBlock> => ({
+  version: 0x01,
+  flags: 0x01,
+  language: 0x05,
+  security: 0,
+  codeMs: 3_600_000,
+  codeDays: 14_000,
+  interfaceMs: 1_800_000,
+  interfaceDays: 13_990,
+  ssbSize: 0,
+  addSize: 0,
+  localDataSize: 0,
+  author: "SIM",
+  family: "TEST",
+  name: `${b.type}${b.number}`.slice(0, 8),
+  ...b,
+});
+
+/** Controller identity answered through SZL 0x0011 (order number) and 0x001C (module name, serial number). */
+export interface SimIdentity {
+  orderNumber: string;
+  serialNumber: string;
+  moduleName: string;
 }
 
 /** Fault modes (all affect block-function userdata only; the COTP / setup / write path keeps answering). */
@@ -40,7 +84,13 @@ export type SimFault =
   | "wrongType" // block info answers with another sub block type (FC instead of the requested one)
   | "wrongRef" // every userdata answer carries another PDU reference than the request
   | "infoLen72" // block info answer of 72 bytes: the checksum field is present but the documented 78 bytes are not
-  | "lenField"; // userdata data part whose length field says 2 bytes more than are sent
+  | "lenField" // userdata data part whose length field says 2 bytes more than are sent
+  | "szlRefuse" // read SZL refused (error code 0xD401) - the identity cannot be read
+  | "szlNoSerial" // SZL 0x001C without the serial-number record (index 0x0005)
+  | "listUnknownType" // the block list names an extra, undocumented type code 0x47 with one block
+  | "szlWrongId" // the SZL answer names another SZL-ID (0x0012) than requested
+  | "szlRecLen30" // SZL 0x0011 answered with 30-byte records (LENTHDR 30) instead of the documented 28
+  | "szlCountWrong"; // SZL 0x001C announces one record more (N_DR) than it sends
 
 export interface S7commSim {
   port: number;
@@ -49,6 +99,9 @@ export interface S7commSim {
   /** Change one block (what a vendor tool would do when downloading a modified block). */
   patchBlock(type: SimBlockType, number: number, patch: Partial<Omit<SimBlock, "type" | "number">>): void;
   setFault(f: SimFault): void;
+  setIdentity(id: SimIdentity): void;
+  /** How many SZL records one telegram carries (forces SZL fragmentation). */
+  setSzlChunk(n: number): void;
   /** How many block numbers one "list blocks of type" telegram carries (forces fragmentation). */
   setListChunk(n: number): void;
   /** The order in which the list-all answer names the block types (tests that the client does not depend on it). */
@@ -62,12 +115,16 @@ export interface S7commSim {
   close(): Promise<void>;
 }
 
-const TYPE_CODE: Record<SimBlockType, number> = { OB: 0x38, DB: 0x41, FC: 0x43, FB: 0x45 }; // Snap7 Block_*
-const SUB_TYPE: Record<SimBlockType, number> = { OB: 0x08, DB: 0x0a, FC: 0x0c, FB: 0x0e }; // Wireshark SUBBLKTYPE_*
+const TYPE_CODE: Record<SimBlockType, number> = { OB: 0x38, DB: 0x41, SDB: 0x42, FC: 0x43, SFC: 0x44, FB: 0x45, SFB: 0x46 }; // Snap7 Block_*
+const SUB_TYPE: Record<SimBlockType, number> = { OB: 0x08, DB: 0x0a, SDB: 0x0b, FC: 0x0c, SFC: 0x0d, FB: 0x0e, SFB: 0x0f }; // Wireshark SUBBLKTYPE_*
 const ALL_TYPES = [0x38, 0x45, 0x43, 0x46, 0x44, 0x41, 0x42]; // OB FB FC SFB SFC DB SDB — 7 entries (Snap7 expects 28 bytes)
 
-export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number; slot?: number; pdu?: number } = {}): Promise<S7commSim> {
+export const SIM_IDENTITY: SimIdentity = { orderNumber: "6ES7 315-2EH14-0AB0", serialNumber: "S C-X4U421302009", moduleName: "CPU 315-2 PN/DP" };
+
+export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number; slot?: number; pdu?: number; identity?: SimIdentity } = {}): Promise<S7commSim> {
   let program: SimBlock[] = (opts.program ?? []).map((b) => ({ ...b }));
+  let identity: SimIdentity = { ...(opts.identity ?? SIM_IDENTITY) };
+  let szlChunk = 100;
   let fault: SimFault = null;
   let listChunk = 50;
   let listAllOrder = ALL_TYPES.slice();
@@ -87,6 +144,8 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
     let buf = Buffer.alloc(0);
     // pending fragmented "list of type" answer of this connection: remaining numbers + the sequence number handed out.
     let pendingList: { numbers: number[]; seq: number } | null = null;
+    let pendingSzl: { bytes: Buffer; seq: number } | null = null;
+    let szlChunkBytes = 0;
     let seqCounter = 0x20;
 
     const send = (payload: Buffer) => {
@@ -99,8 +158,8 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
       send(Buffer.concat([Buffer.from([0x02, 0xf0, 0x80]), Buffer.from(h), param, data]));
     };
     /** userdata answer: 00 01 12 08 12 <0x80|group> <subfn> <seq> <dur> <ldu> <err hi> <err lo> + data part. */
-    const sendUd = (ref: number, subfn: number, seq: number, last: number, errCode: number, ret: number, ts: number, payload: Buffer) => {
-      const param = Buffer.from([0x00, 0x01, 0x12, 0x08, 0x12, 0x80 | 0x03, subfn, seq, 0x00, last, errCode >> 8, errCode & 0xff]);
+    const sendUd = (ref: number, subfn: number, seq: number, last: number, errCode: number, ret: number, ts: number, payload: Buffer, group = 0x03) => {
+      const param = Buffer.from([0x00, 0x01, 0x12, 0x08, 0x12, 0x80 | group, subfn, seq, 0x00, last, errCode >> 8, errCode & 0xff]);
       const declared = fault === "lenField" ? payload.length + 2 : payload.length;
       const data = Buffer.concat([Buffer.from([ret, ts, declared >> 8, declared & 0xff]), payload]);
       sendS7(0x07, fault === "wrongRef" ? (ref + 1) & 0xffff : ref, param, data);
@@ -116,6 +175,57 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
       });
       pendingList = rest.length > 0 ? { numbers: rest, seq } : null;
       sendUd(ref, 0x02, seq, rest.length > 0 ? 0x01 : 0x00, 0, 0xff, 0x09, payload);
+    };
+
+    /** Read SZL (Wireshark S7COMM_UD_SUBF_CPU_READSZL; Snap7 opReadSZL): ID, index, LENTHDR, N_DR, records; fragmented. */
+    const szlRecords = (id: number): { len: number; recs: Buffer[] } | null => {
+      const rec = (len: number, index: number, value: string, width: number) => {
+        const r = Buffer.alloc(len);
+        r.writeUInt16BE(index, 0);
+        r.write(value.slice(0, width), 2, "latin1");
+        return r;
+      };
+      if (id === 0x0011) {
+        // record: index, MlfB (20 ASCII, space padded), BGTyp, Ausbg, Ausbe
+        const l = fault === "szlRecLen30" ? 30 : 28;
+        return { len: l, recs: [rec(l, 0x0001, identity.orderNumber.padEnd(20, " "), 20), rec(l, 0x0006, identity.orderNumber.padEnd(20, " "), 20), rec(l, 0x0007, "", 20)] };
+      }
+      if (id === 0x001c) {
+        const recs = [rec(34, 0x0001, "SIM STATION", 24), rec(34, 0x0002, identity.moduleName, 24), rec(34, 0x0003, "", 32), rec(34, 0x0004, "Original Siemens Equipment", 26)];
+        if (fault !== "szlNoSerial") recs.push(rec(34, 0x0005, identity.serialNumber, 24));
+        recs.push(rec(34, 0x0007, "CPU 315-2 PN/DP", 32));
+        return { len: 34, recs };
+      }
+      return null;
+    };
+    const onSzl = (ref: number, seq: number, followUp: boolean, data: Buffer) => {
+      blockRequests++;
+      if (fault === "hang") return;
+      if (fault === "szlRefuse") return sendUd(ref, 0x01, seq, 0x00, 0xd401, 0x0a, 0x00, Buffer.alloc(0), 0x04);
+      if (followUp) {
+        const pend = pendingSzl as { bytes: Buffer; seq: number } | null;
+        if (!pend || pend.seq !== seq) return sendUd(ref, 0x01, seq, 0x00, 0xd401, 0x0a, 0x00, Buffer.alloc(0), 0x04);
+        const now = pend.bytes.subarray(0, szlChunkBytes);
+        const rest = pend.bytes.subarray(now.length);
+        pendingSzl = rest.length > 0 ? { bytes: rest, seq } : null;
+        return sendUd(ref, 0x01, seq, rest.length > 0 ? 0x01 : 0x00, 0, 0xff, 0x09, now, 0x04);
+      }
+      const id = data.readUInt16BE(4);
+      const index = data.readUInt16BE(6);
+      const sz = szlRecords(id);
+      if (!sz || index !== 0) return sendUd(ref, 0x01, seq, 0x00, 0, 0x0a, 0x00, Buffer.alloc(0), 0x04);
+      const all = Buffer.concat(sz.recs);
+      const head = Buffer.alloc(8);
+      head.writeUInt16BE(fault === "szlWrongId" ? 0x0012 : id, 0);
+      head.writeUInt16BE(index, 2);
+      head.writeUInt16BE(sz.len, 4);
+      head.writeUInt16BE(sz.recs.length + (fault === "szlCountWrong" && id === 0x001c ? 1 : 0), 6);
+      szlChunkBytes = szlChunk * sz.len;
+      const now = all.subarray(0, szlChunkBytes);
+      const rest = all.subarray(now.length);
+      const mySeq = ++seqCounter & 0xff;
+      pendingSzl = rest.length > 0 ? { bytes: rest, seq: mySeq } : null;
+      return sendUd(ref, 0x01, mySeq, rest.length > 0 ? 0x01 : 0x00, 0, 0xff, 0x09, Buffer.concat([head, now]), 0x04);
     };
 
     const onPdu = (s: Buffer) => {
@@ -142,6 +252,7 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
       const group = param[5]! & 0x3f;
       const subfn = param[6]!;
       const seq = param[7]!;
+      if (group === 0x04 && subfn === 0x01) return onSzl(ref, seq, param[3] === 0x08, data);
       if (group !== 0x03) return;
       blockRequests++;
       if (fault === "hang") return;
@@ -155,6 +266,7 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
           payload[i * 4 + 1] = code;
           payload.writeUInt16BE(n, i * 4 + 2);
         });
+        if (fault === "listUnknownType") return sendUd(ref, 0x01, seq, 0x00, 0, 0xff, 0x09, Buffer.concat([payload, Buffer.from([0x30, 0x47, 0x00, 0x01])]));
         return sendUd(ref, 0x01, seq, 0x00, 0, 0xff, 0x09, payload);
       }
       if (subfn === 0x02) {
@@ -177,6 +289,8 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
         const number = Number(data.subarray(6, 11).toString("ascii"));
         const b = program.find((x) => TYPE_CODE[x.type] === code && x.number === number);
         if (!b || fault === "notExist") return sendUd(ref, 0x03, seq, 0x00, 0, 0x0a, 0x00, Buffer.alloc(0));
+        const f = simBlockDefaults(b);
+        // Snap7 TResDataBlockInfo / Wireshark "78 Bytes" layout
         const p = Buffer.alloc(78);
         p[0] = 0x30;
         p[1] = code!;
@@ -184,21 +298,25 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
         p.writeUInt16BE(0x0001, 4);
         p.write("pp", 6, "ascii");
         p[8] = 0x00;
-        p[9] = 0x01; // flags
-        p[10] = 0x05; // language
+        p[9] = f.flags;
+        p[10] = f.language;
         p[11] = fault === "wrongType" ? (b.type === "FC" ? 0x0e : 0x0c) : SUB_TYPE[b.type];
         p.writeUInt16BE(fault === "wrongNumber" ? (b.number + 1) & 0xffff : b.number, 12);
-        p.writeUInt32BE(b.loadSize, 14);
-        // 18..21 security, 22..27 code timestamp, 28..33 interface timestamp: zero
-        p.writeUInt16BE(0, 34); // SSB
-        p.writeUInt16BE(0, 36); // ADD
-        p.writeUInt16BE(0, 38); // local data
-        p.writeUInt16BE(b.mc7Size, 40);
-        p.write("SIM", 42, "ascii"); // author
-        p.write("TEST", 50, "ascii"); // family
-        p.write(`${b.type}${b.number}`.slice(0, 8), 58, "ascii"); // name
-        p[66] = 0x01; // version
-        p.writeUInt16BE(b.checksum, 68);
+        p.writeUInt32BE(f.loadSize, 14);
+        p.writeUInt32BE(f.security, 18);
+        p.writeUInt32BE(f.codeMs, 22);
+        p.writeUInt16BE(f.codeDays, 26);
+        p.writeUInt32BE(f.interfaceMs, 28);
+        p.writeUInt16BE(f.interfaceDays, 32);
+        p.writeUInt16BE(f.ssbSize, 34);
+        p.writeUInt16BE(f.addSize, 36);
+        p.writeUInt16BE(f.localDataSize, 38);
+        p.writeUInt16BE(f.mc7Size, 40);
+        p.write(f.author.slice(0, 8), 42, "latin1");
+        p.write(f.family.slice(0, 8), 50, "latin1");
+        p.write(f.name.slice(0, 8), 58, "latin1");
+        p[66] = f.version;
+        p.writeUInt16BE(f.checksum, 68);
         return sendUd(ref, 0x03, seq, 0x00, 0, 0xff, 0x09, fault === "shortInfo" ? p.subarray(0, 40) : fault === "infoLen72" ? p.subarray(0, 72) : p);
       }
     };
@@ -256,6 +374,12 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
     },
     setFault: (f) => {
       fault = f;
+    },
+    setIdentity: (id) => {
+      identity = { ...id };
+    },
+    setSzlChunk: (n) => {
+      szlChunk = Math.max(1, n);
     },
     setListChunk: (n) => {
       listChunk = Math.max(1, n);

@@ -22,9 +22,13 @@
  *     or the program content; OpenPLC adapters are Modbus adapters and report "unsupported";
  *   • Siemens S7 (doc 81 Đợt 9 task T1) when the adapter's configuration OPTS IN with `programChecksum` (documented value
  *     "blockInfo"; any value other than false / "off" / null counts as opting in, so a typo never silently disables the
- *     check): the checksum of the user program's OB/DB/FC/FB block infos, read through the documented S7comm block
- *     functions (drivers/s7BlockChecksum.ts — sources, formula). Built from the protocol documentation and a simulator,
- *     NOT verified on a real device (the screen says so). Opt-in rather than default because a CPU that does not answer
+ *     check): SHA-256 over the controller's identity (SZL order number, serial number, module name), the adapter's
+ *     endpoint (host, port, rack, slot), the full block list and every reported block-info field of every listed block
+ *     (OB/DB/FC/FB + SDB/SFC/SFB when listed), read through the documented S7comm functions (drivers/s7BlockChecksum.ts —
+ *     sources, formula "s7-blockinfo-v2"); a know-how-protected or unreadable block ⇒ the whole checksum is unreadable.
+ *     Built from the protocol documentation and a simulator, NOT verified on a real device, and CHANGE DETECTION PER
+ *     PROTOCOL DATA — NOT TAMPER-PROOF against an attacker with PLC write access (rulings R-9-a; the screen says both).
+ *     Opt-in rather than default because a CPU that does not answer
  *     block functions (e.g. S7-1200/1500 per vendor docs on optimized access — to be checked at FAT) would otherwise
  *     make every approval on that adapter impossible (fail-closed);
  *   • every other protocol / plugin driver: unsupported.
