@@ -10,7 +10,9 @@
  *   • ROTATE — in ONE transaction: the active row is revoked (reason "rotated"), the new one inserted with rotatedFromId.
  *              No overlap window: the old secret stops working at the commit (the edge must be given the new one).
  *   • REVOKE — terminal (trigger). A node with no active credential cannot authenticate at all.
- * Who: an ACTIVE ADMIN user (checked here — the CLI names the actor; the row records createdBy / revokedBy). Reason ≥ 3 chars.
+ * Who: an ACTIVE ADMIN user (checked here; the row records createdBy / revokedBy). Reason ≥ 3 chars. doc 81 Đợt 9 final wave
+ * F7 — the operator CLI never takes a self-asserted actor id: it PROVES the admin with verifyCredentialAdmin (the web login's
+ * own password check — bcrypt, lockout, audit — plus the account's TOTP when 2FA is on) and passes only that verified id.
  * Every change is recorded twice: in the credential row itself (WORM identity, trigger) and in audit_logs.
  *
  * AUTHENTICATION (authenticateEdgeNodeToken): malformed / unknown prefix / revoked / hash mismatch / node gone / any DB
@@ -84,12 +86,63 @@ export async function authenticateEdgeNodeToken(token: unknown): Promise<EdgeNod
 
 export class EdgeCredentialError extends Error {
   constructor(
-    public readonly code: "notAdmin" | "reasonRequired" | "nodeNotFound" | "activeExists" | "noActive" | "dbUnavailable",
+    public readonly code: "notAdmin" | "notVerified" | "otpRequired" | "reasonRequired" | "nodeNotFound" | "activeExists" | "noActive" | "dbUnavailable",
     message: string,
   ) {
     super(message);
     this.name = "EdgeCredentialError";
   }
+}
+
+/** A login presented to the operator CLI (never from argv: the password / code come from the TTY or the environment). */
+export interface AdminLogin {
+  username: string | null | undefined;
+  password: string | null | undefined;
+  /** the account's current TOTP code — required when its 2FA is on */
+  otp?: string | null;
+}
+
+/**
+ * doc 81 Đợt 9 final wave F7 (final review M7) — PROVE the admin behind a credential change (no self-asserted actor):
+ *   • username + password through `verifyCredentials` — the SAME check `POST /api/auth/login` runs (bcrypt over user_secrets,
+ *     the shared lockout counter, an audit row for every attempt; a disabled / locked / password-less account is refused);
+ *   • 2FA on ⇒ the account's current TOTP code, consumed once (`verifyTotpOnce`, the one TOTP verifier); missing ⇒ "otpRequired",
+ *     wrong / replayed ⇒ "notVerified"; the 2FA state unreadable ⇒ refused (fail-closed);
+ *   • then an ACTIVE ADMIN (role re-checked by id in checkActorAndNode as well).
+ * Every refusal is an EdgeCredentialError; there is no path that returns an id without a proof. Never logs the password / code.
+ */
+export async function verifyCredentialAdmin(login: AdminLogin): Promise<{ userId: number; name: string }> {
+  const username = typeof login.username === "string" ? login.username.trim() : "";
+  const password = typeof login.password === "string" ? login.password : "";
+  if (!username || !password) throw new EdgeCredentialError("notVerified", "An admin username and password are required (the password from the prompt or EDGE_CRED_ADMIN_PASSWORD — never on the command line).");
+  const [{ verifyCredentials, LoginError }, { get2FAStatus }] = await Promise.all([import("../../_core/authService"), import("../../db/auth")]);
+  const req = { ip: "cli:edge-node-credential", socket: { remoteAddress: "cli:edge-node-credential" }, headers: { "user-agent": "edge-node-credential CLI" } };
+  let user: { id: number; role: unknown; isActive?: boolean | null; name?: string | null };
+  try {
+    user = (await verifyCredentials(username, password, req as never)) as typeof user;
+  } catch (err) {
+    if (err instanceof LoginError) throw new EdgeCredentialError("notVerified", `Admin login refused (${err.code}).`);
+    throw new EdgeCredentialError("dbUnavailable", "The admin login could not be checked (database).");
+  }
+  let twoFa: Awaited<ReturnType<typeof get2FAStatus>>;
+  try {
+    twoFa = await get2FAStatus(user.id);
+  } catch {
+    twoFa = null;
+  }
+  if (!twoFa) throw new EdgeCredentialError("dbUnavailable", "The admin's 2FA state could not be read — refused.");
+  if (twoFa.twoFactorEnabled) {
+    const otp = typeof login.otp === "string" ? login.otp.trim() : "";
+    if (!otp) throw new EdgeCredentialError("otpRequired", "This admin has 2FA on: the current authenticator code is required (prompt or EDGE_CRED_ADMIN_OTP).");
+    if (!twoFa.twoFactorSecret) throw new EdgeCredentialError("notVerified", "2FA is on but has no secret — refused.");
+    const { verifyTotpOnce } = await import("../../_core/totpOnce");
+    const r = await verifyTotpOnce({ userId: user.id, secret: twoFa.twoFactorSecret, token: otp });
+    if (!r.hopLe) throw new EdgeCredentialError("notVerified", r.phatLai ? "That 2FA code was already used — wait for the next one." : "Wrong 2FA code.");
+  }
+  if (user.isActive === false || String(user.role) !== "admin") {
+    throw new EdgeCredentialError("notAdmin", "Only an active admin user may issue, rotate or revoke an edge node credential.");
+  }
+  return { userId: user.id, name: user.name ?? `user ${user.id}` };
 }
 
 interface ChangeInput {

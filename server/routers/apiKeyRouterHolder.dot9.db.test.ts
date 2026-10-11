@@ -7,6 +7,13 @@
  *     a key that vanished meanwhile ⇒ NOT_FOUND;
  *   • the list flags a DEACTIVATED holder (#5: holderActive false).
  * The router's `getDb` is the real connection wrapped so that a test can make ONE statement inside the transaction fail.
+ *
+ * ★ `_test` LEFTOVERS, BY DESIGN (doc 81 Đợt 9 final wave F7 / final review M8): `api_key_holder_changes` is APPEND-ONLY (mig
+ *   0369 — WORM history written by a trigger; `avi_app` has SELECT + INSERT only, no FK to api_keys). Every test that creates a
+ *   key and sets / changes its holder (this file, foeApiKeyHolderDispatchers.dot9.db, edgeExecution.s12.dot9.db, …) leaves its
+ *   history rows behind when it deletes the key: measured 1 079 rows for 7 deleted keys after the Đợt 9 runs, growing with every
+ *   run. They are harmless (no key references them; nothing reads history of a missing key) and are NOT cleaned up by the
+ *   tests — removing WORM rows is an owner-role decision, never a test's.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
