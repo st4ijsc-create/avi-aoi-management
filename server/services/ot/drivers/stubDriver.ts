@@ -57,7 +57,8 @@ export class StubDriver implements OtDriver {
    */
   async readProgramChecksum(opts: { signal?: AbortSignal } = {}): Promise<ProgramChecksumResult> {
     if (!this.connected) throw new DeviceUnreachableError("stub");
-    if (this.simProgramFault === "error") throw new Error("sim program checksum read fault (injected)");
+    // final wave: typed (rawErrorCensus) — the simulated controller "did not answer" the checksum read; detail kept
+    if (this.simProgramFault === "error") throw new DeviceUnreachableError("stub", "sim program checksum read fault (injected)");
     if (this.simProgramFault === "hang") {
       // final wave (O M4) — a controller that never answers: the read settles ONLY when the caller aborts it (cancellation
       // contract); counted so a test can prove nothing is left pending.

@@ -27,6 +27,7 @@
  */
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
+import { DbUnavailableError } from "../../../_core/dbErrors";
 import { record, type RecordSafetyEventInput, type RecordResult } from "../safetyAuditService";
 
 /** The background poller's flag — default OFF (the one definition; safetyPlcPoller re-exports it). */
@@ -117,7 +118,7 @@ const DB_NOW_MS = sql`(extract(epoch from clock_timestamp()) * 1000)::bigint`;
 export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & StaleAlarmLease {
   const db = async () => {
     const d = await getDb();
-    if (!d) throw new Error("db unavailable");
+    if (!d) throw new DbUnavailableError(); // final wave: typed (rawErrorCensus "DB không sẵn sàng" family)
     return d;
   };
   const listAt = async (): Promise<{ rows: PollStateRow[]; nowMs: number }> => {
@@ -126,7 +127,7 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & 
       SELECT n.t AS "dbNow", s."configId", s.link, s.flags, s."intervalMs", s."lastAttemptAt", s."lastOkAt", s."staleAlarmEpisode", s."unrecordedSince", s."unrecordedCount"
         FROM (SELECT ${DB_NOW_MS} AS t) n LEFT JOIN safety_plc_poll_state s ON true`)) as unknown as Array<Record<string, unknown>>;
     const nowMs = num(rows[0]?.dbNow);
-    if (nowMs == null) throw new Error("db clock unreadable");
+    if (nowMs == null) throw new DbUnavailableError("db clock unreadable"); // caller ⇒ "unknown" (never ok)
     return { rows: rows.filter((r) => r.configId != null).map(rowOf), nowMs };
   };
   return {
