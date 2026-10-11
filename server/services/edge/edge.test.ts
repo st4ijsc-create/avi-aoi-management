@@ -652,6 +652,25 @@ describe("doc 81 Đợt 7 I1 — edge: central's abort request stops the LOCAL w
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 8 task Q1 — no central transport wired ⇒ an assigned run is NOT started (a central abort could never reach it)", () => {
+  it("★ setCentralSync never called on this host ⇒ the engine is NOT called, a failed result is buffered (fail-closed)", async () => {
+    // reset() → _clearBuffer() also forgets the wired transport (a fresh host)
+    const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    expect(startRunMock).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ ok: false, enabled: true, runId: 1, status: "failed", buffered: true });
+    expect(res.message).toMatch(/no central sync transport/);
+    expect(bufferedCount()).toBe(1);
+  });
+
+  it("control: once the host wires a transport (even one that is unreachable right now), the run starts as before", async () => {
+    setCentralSync(async () => false); // wired, central currently unreachable ⇒ offline execution is allowed (Đợt 7 I1)
+    const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+    expect(startRunMock).toHaveBeenCalledTimes(1);
+    expect(res.ok).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
 describe("flag-off no-op", () => {
   beforeEach(() => { process.env.EDGE_RUNTIME_ENABLED = "false"; });
 
