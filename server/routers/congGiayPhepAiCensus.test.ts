@@ -325,7 +325,16 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. Đo: cây trước lượt = 2298 (khớp ghim), sau = 2299.
  *   `tong` 2299 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2299, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-11 doc 81 Đợt 7 Task I5 (công tắc "tắt tự động hoá" theo robot) — **tong 2299 → 2301, ghim lại ô `tong`**: đúng HAI
+ *   thủ tục MỚI của `robotRouter.ts`: `robot.disableAutomation` (mutation, `protectedProcedure` +
+ *   `requirePermission("machine_control","canEdit")` — tắt chỉ giữ lại chuyển động, không đứng sau sàn vai/2FA) và
+ *   `robot.enableAutomation` (mutation, `actuationProcedure` — sàn vai admin/supervisor/engineer + 2FA — +
+ *   `requirePermission("machine_control","canEdit")`), `module = null` như mọi thủ tục của `robotRouter` (cùng khuôn
+ *   `robot.clearMotionLock`), không phải bề mặt AI ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi.
+ *   Đo: cây trước lượt = 2299 (khớp ghim), sau = 2301. `tong` 2301 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2301, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
