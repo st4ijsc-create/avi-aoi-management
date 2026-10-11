@@ -112,3 +112,15 @@ END $$;
 -- the config's trust digest at write time): a re-targeted / re-created (reused id) config never inherits another
 -- identity's edge (loaded only when the digest matches; otherwise a fresh, untrusted baseline).
 ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "identityDigest" varchar(64);
+
+-- doc 81 Đợt 8 final wave N-R1 / N-R2 (re-review of Group N) — idempotent additions (0368 applied to _test only).
+--   • "unrecordedSince" (epoch ms, DB clock — N-R5) + "unrecordedCount": observed transitions (or an events-lost marker)
+--     still waiting to be RECORDED; waiting beyond the stale bound ⇒ health STALE + alarm (never "ok" while trips are seen but
+--     not recorded). NULL = nothing waiting.
+--   • "staleAlarmClaim" + "staleAlarmClaimAt": the watchdog LEASES an episode (claim) before recording its alarm and marks it
+--     done ("staleAlarmEpisode") only after the record succeeded; a failed record releases the lease, and a lease older than
+--     30 s may be re-claimed (a duplicate alarm is possible, a lost one is not).
+ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "unrecordedSince" bigint;
+ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "unrecordedCount" integer;
+ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "staleAlarmClaim" varchar(200);
+ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "staleAlarmClaimAt" timestamptz;

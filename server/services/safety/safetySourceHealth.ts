@@ -304,7 +304,7 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
   };
 }
 
-/** fix scan 2 — the poller health, scoped to the viewer (no endpoint is ever part of the heartbeat). */
+/** fix scan 2 — the poller health, scoped to the viewer (no endpoint is ever part of it; final wave F4: computed from the durable poll-state rows — the fix-scan-2 heartbeat was removed in R-8-c). */
 function pollerPanel(h: PollerHealth | undefined, ids: number[] | null): SafetySourceHealth["plcPoller"] {
   if (!h) return { state: "off", lastPollAt: null, staleConfigs: 0, configs: [], hiddenConfigs: 0 };
   const iso = (t: number | null | undefined) => (typeof t === "number" && Number.isFinite(t) ? new Date(t).toISOString() : null);
@@ -409,17 +409,23 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem, targetRef?:
   });
 }
 
-/** fix scan 2 — the persisted heartbeat, evaluated now (flags off ⇒ "off"; unreadable ⇒ "unknown"). */
+/** The poller health from the DURABLE poll-state rows (final wave F4: not a heartbeat — removed in R-8-c), evaluated now on the DB clock (flags off ⇒ "off"; unreadable ⇒ "unknown"). */
 async function loadPollerHealth(enabledConfigs: PlcConfigLite[] | null): Promise<PollerHealth> {
   const enabled = safetyPlcPollerEnabled() && safetyPlcAdapterEnabled() && safetyAuditEnabled();
   if (!enabled) return evaluatePollerHealth([], [], Date.now(), { enabled: false });
   // fix scan 3 (R-8-c) — durable rows × ENABLED configs (same answer on every instance; no row ⇒ stale; unreadable ⇒ unknown)
+  // final wave N-R5 — staleness on the DB clock (the rows are on it too): every instance gives the same answer.
   let rows: PollStateRow[] | "error";
+  let now = Date.now();
   try {
-    rows = enabledConfigs ? await pgPollStateStore().list() : "error";
+    if (enabledConfigs) {
+      const snap = await pgPollStateStore().listAt!();
+      rows = snap.rows;
+      now = snap.nowMs;
+    } else rows = "error";
   } catch {
     rows = "error";
   }
   const cfgs = (enabledConfigs ?? []).map((c) => ({ id: c.id, code: c.code, factoryId: c.factoryId ?? null }));
-  return evaluatePollerHealth(cfgs, rows, Date.now(), { enabled: true });
+  return evaluatePollerHealth(cfgs, rows, now, { enabled: true });
 }

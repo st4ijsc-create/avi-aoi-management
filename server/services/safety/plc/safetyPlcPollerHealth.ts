@@ -13,6 +13,14 @@
  *   • WATCHDOG on every instance (independent of the poll chain): ONE "plc_monitor_stale" safety event per config per
  *     stale EPISODE (compare-and-set on the row's staleAlarmEpisode — cluster-wide); "unknown" is logged as an error at
  *     every check (no DB ⇒ no event can be written either). Boot grace for configs that never had an attempt.
+ *   • final wave N-R1 — a config whose observed transitions cannot be RECORDED (event inserts failing / timing out while the
+ *     small state upsert still succeeds) is STALE too: the row carries "unrecordedSince" (when the oldest not-yet-recorded
+ *     transition — or an events-lost marker — started waiting) and "unrecordedCount"; waiting longer than
+ *     configStaleAfterMs(interval) ⇒ stale + one alarm per episode. Undecidable (row unreadable) ⇒ "unknown", as before.
+ *   • final wave N-R5 — every timestamp in the row is on the DATABASE clock: the pg store converts the poller's local times
+ *     to AGES at write time and stores db-now − age; health compares with db-now read in the SAME query (listAt). So every
+ *     instance computes the same staleness whatever its own clock skew. Residual: the "off" state still follows each
+ *     instance's own environment flags (a per-process setting by design — the flag gates what THIS process runs).
  * Residual (documented): if EVERY instance's event loop hangs, nothing in-process can alarm — external monitoring should
  * read safety.sourceHealth (plcPoller.state / lastPollAt).
  * L-7: reads / writes its own rows and records advisory events; never touches a PLC.
@@ -48,13 +56,21 @@ export interface PollStateRow {
   /** fix scan 4 — the config trust digest this edge was written for (another identity ⇒ never applied). */
   identityDigest?: string | null;
   staleAlarmEpisode?: string | null;
+  /** final wave N-R1 — since when transitions wait to be recorded (null = nothing waiting) and how many (queue + lost). */
+  unrecordedSince?: number | null;
+  unrecordedCount?: number | null;
 }
 
-/** Durable poll state. load/save/list THROW on failure (callers decide); claimStaleAlarm never throws. */
+/**
+ * Durable poll state. load/save/list THROW on failure (callers decide); claimStaleAlarm never throws.
+ * `save` takes the poller's LOCAL epoch-ms times; a store may re-base them (the pg store stores them on the DB clock).
+ */
 export interface PollStateStore {
   load(configId: number): Promise<PollStateRow | null>;
   save(row: Omit<PollStateRow, "staleAlarmEpisode">): Promise<void>;
   list(): Promise<PollStateRow[]>;
+  /** final wave N-R5 — the rows AND the clock they are on (the DB's now, same query). Absent ⇒ list() + the local clock. */
+  listAt?(): Promise<{ rows: PollStateRow[]; nowMs: number }>;
   /** true ⇔ THIS caller is the first to claim (configId, episode) cluster-wide. */
   claimStaleAlarm(configId: number, episode: string): Promise<boolean>;
 }
@@ -63,8 +79,22 @@ const num = (v: unknown): number | null => (v == null ? null : Number.isFinite(N
 function rowOf(r: Record<string, unknown>): PollStateRow {
   const link = r.link === "online" || r.link === "offline" ? r.link : "unknown";
   const flags = r.flags && typeof r.flags === "object" ? (r.flags as PollStateRow["flags"]) : {};
-  return { configId: Number(r.configId), link, flags, intervalMs: num(r.intervalMs), lastAttemptAt: num(r.lastAttemptAt), lastOkAt: num(r.lastOkAt), identityDigest: (r.identityDigest as string | null) ?? null, staleAlarmEpisode: (r.staleAlarmEpisode as string | null) ?? null };
+  return {
+    configId: Number(r.configId),
+    link,
+    flags,
+    intervalMs: num(r.intervalMs),
+    lastAttemptAt: num(r.lastAttemptAt),
+    lastOkAt: num(r.lastOkAt),
+    identityDigest: (r.identityDigest as string | null) ?? null,
+    staleAlarmEpisode: (r.staleAlarmEpisode as string | null) ?? null,
+    unrecordedSince: num(r.unrecordedSince),
+    unrecordedCount: num(r.unrecordedCount),
+  };
 }
+
+/** final wave N-R5 — the DB clock in epoch ms (SQL fragment). */
+const DB_NOW_MS = sql`(extract(epoch from clock_timestamp()) * 1000)::bigint`;
 
 /** The production store: table safety_plc_poll_state (migration 0368). */
 export function pgPollStateStore(instance = `${process.pid}`): PollStateStore {
@@ -72,6 +102,15 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore {
     const d = await getDb();
     if (!d) throw new Error("db unavailable");
     return d;
+  };
+  const listAt = async (): Promise<{ rows: PollStateRow[]; nowMs: number }> => {
+    // ONE query: the DB clock + every row (LEFT JOIN keeps the clock when there is no row at all).
+    const rows = (await (await db()).execute(sql`
+      SELECT n.t AS "dbNow", s."configId", s.link, s.flags, s."intervalMs", s."lastAttemptAt", s."lastOkAt", s."staleAlarmEpisode", s."unrecordedSince", s."unrecordedCount"
+        FROM (SELECT ${DB_NOW_MS} AS t) n LEFT JOIN safety_plc_poll_state s ON true`)) as unknown as Array<Record<string, unknown>>;
+    const nowMs = num(rows[0]?.dbNow);
+    if (nowMs == null) throw new Error("db clock unreadable");
+    return { rows: rows.filter((r) => r.configId != null).map(rowOf), nowMs };
   };
   return {
     async load(configId) {
@@ -81,17 +120,22 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore {
       return rows[0] ? rowOf(rows[0]) : null;
     },
     async save(r) {
+      // final wave N-R5 — local times → AGES now → stored as db-now − age (the DB clock; no instance clock skew in the row).
+      const local = Date.now();
+      const age = (t: number | null | undefined): number | null => (typeof t === "number" && Number.isFinite(t) ? Math.max(0, Math.round(local - t)) : null);
+      const onDb = (a: number | null) => (a == null ? sql`NULL::bigint` : sql`(${DB_NOW_MS} - ${a}::bigint)`);
+      const count = typeof r.unrecordedCount === "number" && Number.isFinite(r.unrecordedCount) ? Math.max(0, Math.min(2_000_000_000, Math.round(r.unrecordedCount))) : null;
       await (await db()).execute(sql`
-        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "identityDigest", "writerInstance", "updatedAt")
-        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${r.lastAttemptAt}, ${r.lastOkAt}, ${r.identityDigest ?? null}, ${instance.slice(0, 64)}, now())
+        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "identityDigest", "unrecordedSince", "unrecordedCount", "writerInstance", "updatedAt")
+        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${onDb(age(r.lastAttemptAt))}, ${onDb(age(r.lastOkAt))}, ${r.identityDigest ?? null}, ${onDb(age(r.unrecordedSince))}, ${count}, ${instance.slice(0, 64)}, now())
         ON CONFLICT ("configId") DO UPDATE SET link = EXCLUDED.link, flags = EXCLUDED.flags, "intervalMs" = EXCLUDED."intervalMs",
-          "lastAttemptAt" = EXCLUDED."lastAttemptAt", "lastOkAt" = EXCLUDED."lastOkAt", "identityDigest" = EXCLUDED."identityDigest", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
+          "lastAttemptAt" = EXCLUDED."lastAttemptAt", "lastOkAt" = EXCLUDED."lastOkAt", "identityDigest" = EXCLUDED."identityDigest",
+          "unrecordedSince" = EXCLUDED."unrecordedSince", "unrecordedCount" = EXCLUDED."unrecordedCount", "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
     },
     async list() {
-      const rows = (await (await db()).execute(sql`
-        SELECT "configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "staleAlarmEpisode" FROM safety_plc_poll_state`)) as unknown as Array<Record<string, unknown>>;
-      return rows.map(rowOf);
+      return (await listAt()).rows;
     },
+    listAt,
     async claimStaleAlarm(configId, episode) {
       try {
         const rows = (await (await db()).execute(sql`
@@ -117,7 +161,7 @@ export interface PollerHealth {
   state: PollerHealthState;
   /** The newest attempt of ANY config (what every instance reports as "the leader's last poll"). */
   lastPollAt: number | null;
-  configs: Array<EnabledConfigLite & { link: PollLink; lastAttemptAt: number | null; lastOkAt: number | null; stale: boolean }>;
+  configs: Array<EnabledConfigLite & { link: PollLink; lastAttemptAt: number | null; lastOkAt: number | null; stale: boolean; unrecordedSince: number | null }>;
   staleScopes: Array<{ configId: number; episode: string; reason: string }>;
 }
 
@@ -133,15 +177,27 @@ export function evaluatePollerHealth(enabled: EnabledConfigLite[], rows: PollSta
     const r = byId.get(c.id);
     const last = r?.lastAttemptAt ?? null;
     if (last != null) lastPollAt = lastPollAt == null ? last : Math.max(lastPollAt, last);
-    const stale = last == null || now - last > configStaleAfterMs(r?.intervalMs);
-    if (stale) {
+    const bound = configStaleAfterMs(r?.intervalMs);
+    const notPolled = last == null || now - last > bound;
+    // final wave N-R1 — polled, but transitions wait to be recorded beyond the bound ⇒ trips are seen and NOT recorded / notified.
+    const unrec = r?.unrecordedSince ?? null;
+    const stuck = unrec != null && now - unrec > bound;
+    const stale = notPolled || stuck;
+    const code = String(c.code).slice(0, 64);
+    if (notPolled) {
       staleScopes.push({
         configId: c.id,
         episode: `cfg:${c.id}:${last ?? "never"}`,
-        reason: last == null ? `config "${String(c.code).slice(0, 64)}" has never been polled` : `config "${String(c.code).slice(0, 64)}" not polled for ${Math.round((now - last) / 1000)} s`,
+        reason: last == null ? `config "${code}" has never been polled` : `config "${code}" not polled for ${Math.round((now - last) / 1000)} s`,
+      });
+    } else if (stuck) {
+      staleScopes.push({
+        configId: c.id,
+        episode: `cfg:${c.id}:unrec:${unrec}`,
+        reason: `config "${code}": ${r?.unrecordedCount ?? "?"} observed transition(s) NOT recorded for ${Math.round((now - unrec!) / 1000)} s (event inserts failing) — trips are seen but neither recorded nor notified`,
       });
     }
-    return { ...c, link: r?.link ?? "unknown", lastAttemptAt: last, lastOkAt: r?.lastOkAt ?? null, stale };
+    return { ...c, link: r?.link ?? "unknown", lastAttemptAt: last, lastOkAt: r?.lastOkAt ?? null, stale, unrecordedSince: unrec };
   });
   return { state: staleScopes.length ? "stale" : "ok", lastPollAt, configs, staleScopes };
 }
@@ -157,11 +213,17 @@ export interface WatchdogDeps {
 
 /** One watchdog check: evaluate from durable rows, then claim + record ONE alarm per stale episode. Never throws. */
 export async function runPollerWatchdogOnce(d: WatchdogDeps): Promise<PollerHealth> {
-  const now = d.now();
+  const localNow = d.now();
+  let now = localNow;
   let rows: PollStateRow[] | "error";
   let cfgs: EnabledConfigLite[] = [];
   try {
-    [cfgs, rows] = await Promise.all([d.listConfigs(), d.store.list()]);
+    // final wave N-R5 — staleness on the DB clock when the store provides it (every instance: the same answer).
+    const listed = d.store.listAt ? d.store.listAt() : d.store.list().then((r) => ({ rows: r, nowMs: localNow }));
+    let snap: { rows: PollStateRow[]; nowMs: number };
+    [cfgs, snap] = await Promise.all([d.listConfigs(), listed]);
+    rows = snap.rows;
+    now = snap.nowMs;
   } catch {
     rows = "error";
   }
@@ -170,7 +232,7 @@ export async function runPollerWatchdogOnce(d: WatchdogDeps): Promise<PollerHeal
     console.error("[SafetyPLC] MONITORING STATE UNKNOWN — the poll state cannot be read; treat safety-PLC monitoring as BLIND");
   }
   for (const s of h.staleScopes) {
-    if (s.episode.endsWith(":never") && now - d.startedAt < SAFETY_PLC_WATCHDOG_BOOT_GRACE_MS) continue;
+    if (s.episode.endsWith(":never") && localNow - d.startedAt < SAFETY_PLC_WATCHDOG_BOOT_GRACE_MS) continue; // a local duration
     try {
       if (!(await d.store.claimStaleAlarm(s.configId, s.episode))) continue;
       const cfg = cfgs.find((c) => c.id === s.configId);

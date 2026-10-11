@@ -231,6 +231,11 @@ interface ConfigState {
   since: number;
   lastAttemptAt: number | null;
   lastOkAt: number | null;
+  /**
+   * final wave N-R1 — since when something waits to be RECORDED (the oldest queued transition or an events-lost marker);
+   * null = nothing waiting. Persisted with the durable row: waiting beyond the stale bound ⇒ health STALE + alarm.
+   */
+  unrecordedSince: number | null;
 }
 
 export interface PollerConfigSnapshot {
@@ -410,6 +415,7 @@ export class SafetyPlcPoller {
         since: Date.now(),
         lastAttemptAt: null,
         lastOkAt: null,
+        unrecordedSince: null,
       };
       if (carry && old) {
         st.link = old.link;
@@ -427,6 +433,7 @@ export class SafetyPlcPoller {
         st.since = old.since;
         st.lastAttemptAt = old.lastAttemptAt;
         st.lastOkAt = old.lastOkAt;
+        st.unrecordedSince = old.unrecordedSince; // N-R1 — the wait carries with the queue
         if (old.busy) {
           const b: Promise<void> = old.busy.then(() => undefined, () => undefined).finally(() => {
             if (st.busy === b) st.busy = null;
@@ -566,6 +573,7 @@ export class SafetyPlcPoller {
   /** Queue one transition event (bounded: the OLDEST is dropped and counted beyond SAFETY_PLC_EVENT_QUEUE_MAX). */
   private enqueue(st: ConfigState, eventType: SafetyEventType, info: { transition: string; flag?: PlcFlag; reason?: string }): void {
     st.queue.push({ input: this.eventInput(st, eventType, info), rebaseline: st.rebaseline, after: { link: st.link, flags: { ...st.flags } } });
+    st.unrecordedSince ??= Date.now(); // N-R1 — the wait starts with the first unrecorded transition
     while (st.queue.length > SAFETY_PLC_EVENT_QUEUE_MAX) {
       st.queue.shift();
       st.lostEvents += 1;
@@ -623,6 +631,7 @@ export class SafetyPlcPoller {
     }
     // Nothing unconfirmed ⇒ silent changes (e.g. a zone clearing) are confirmed too.
     st.confirmed = { link: st.link, flags: { ...st.flags } };
+    if (st.lostEvents === 0) st.unrecordedSince = null; // N-R1 — everything recorded: no wait
   }
 
   /**
@@ -641,6 +650,9 @@ export class SafetyPlcPoller {
           lastAttemptAt: st.lastAttemptAt,
           lastOkAt: st.lastOkAt,
           identityDigest: st.identity,
+          // final wave N-R1 — health must not read "ok" while observed transitions are not recorded
+          unrecordedSince: st.queue.length + st.lostEvents > 0 ? (st.unrecordedSince ?? Date.now()) : null,
+          unrecordedCount: st.queue.length + st.lostEvents,
         }),
         this.deps.recordTimeoutMs,
         "poll-state save",

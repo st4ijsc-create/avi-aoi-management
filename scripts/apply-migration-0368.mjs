@@ -175,7 +175,7 @@ async function applyTo(rawUrl, label) {
     // fix scan 3 (R-8-c) — durable poll state: columns, CHECK, grants (catalog) + behaviour in an ALWAYS-rolled-back tx
     const BANG2 = "safety_plc_poll_state";
     const cols2 = await appSql`SELECT column_name AS c, data_type AS t FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${BANG2}`;
-    const need2 = { configId: "integer", link: "character varying", flags: "jsonb", intervalMs: "integer", lastAttemptAt: "bigint", lastOkAt: "bigint", writerInstance: "character varying", staleAlarmEpisode: "character varying", identityDigest: "character varying", updatedAt: "timestamp with time zone" };
+    const need2 = { configId: "integer", link: "character varying", flags: "jsonb", intervalMs: "integer", lastAttemptAt: "bigint", lastOkAt: "bigint", writerInstance: "character varying", staleAlarmEpisode: "character varying", identityDigest: "character varying", updatedAt: "timestamp with time zone", unrecordedSince: "bigint", unrecordedCount: "integer", staleAlarmClaim: "character varying", staleAlarmClaimAt: "timestamp with time zone" }; // + final wave N-R1/N-R2
     for (const [c, t] of Object.entries(need2)) {
       const got = cols2.find((r) => r.c === c);
       if (!got || got.t !== t) throw new Error(`(d) ${BANG2}.${c} thieu/sai kieu: ${got?.t}`);
