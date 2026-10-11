@@ -358,11 +358,17 @@ const CALL_SITE_HARNESS: Record<string, string> = {
  * / aliased — reported as `<reference>`, never covered). Import statements and whole-line comments are not sites.
  */
 export function registerDriverSitesIn(src: string): string[] {
+  const out: string[] = [];
+  // doc 81 Đợt 7 task I4 (Đợt 5 re-review M-3) — an import / re-export that RENAMES the function (`registerDriver as rd`)
+  // would hide every later `rd(…)` call once the import line is dropped below: the alias itself is reported as an
+  // uncovered reference (`<alias rd>`), so a renamed registration can never pass the census unseen.
+  for (const m of src.matchAll(/^(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["'][^"']+["']/gm)) {
+    for (const a of m[1].matchAll(/\bregisterDriver\s+as\s+([\w$]+)/g)) out.push(`<alias ${a[1]}>`);
+  }
   // import statements and brace re-exports (`export { registerDriver } from "…"`) name the function, they do not register.
   const text = src
     .replace(/^import\s+(?:type\s+)?[\w*{}\s,]+\sfrom\s*["'][^"']+["'];?/gm, "")
     .replace(/^export\s*(?:type\s+)?\{[^}]*\}\s*from\s*["'][^"']+["'];?/gm, "");
-  const out: string[] = [];
   const re = /\bregisterDriver\b/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
@@ -429,7 +435,79 @@ afterAll(async () => {
   for (const s of servers) await new Promise<void>((r) => s.close(() => r()));
 });
 
+/**
+ * doc 81 Đợt 7 task I4 — the FACTORY each built-in protocol registers is the very function its harness above exercises
+ * (a function passed as a value): `registerDriver("s7", createS7DriverV2)` — a new factory under an old protocol — would
+ * otherwise inherit the s7 harness without ever being run by it. Per protocol: the factory identifier and the module
+ * ot/index.ts must import it from (no alias). The harnesses import the same functions from the same modules (top of file).
+ */
+const BUILTIN_FACTORY: Record<string, { fn: string; from: string }> = {
+  stub: { fn: "createStubDriver", from: "./drivers/stubDriver" },
+  opcua: { fn: "createOpcuaDriver", from: "./drivers/opcuaDriver" },
+  modbus: { fn: "createModbusDriver", from: "./drivers/modbusDriver" },
+  s7: { fn: "createS7Driver", from: "./drivers/s7Driver" },
+  "mitsubishi-mc": { fn: "createMitsubishiMcDriver", from: "./drivers/mitsubishiMcDriver" },
+  "ethernet-ip": { fn: "createEthernetIpDriver", from: "./drivers/ethernetIpDriver" },
+  slmp: { fn: "createSlmpDriver", from: "./drivers/slmpDriver" },
+};
+
+/** The built-in registrations of ot/index.ts that do NOT register the expected factory from the expected module. */
+export function factoryMismatches(indexSrc: string): string[] {
+  const bad: string[] = [];
+  const imported = new Map<string, string>(); // local name → module
+  for (const m of indexSrc.matchAll(/^import\s+\{([^}]*)\}\s*from\s*["']([^"']+)["']/gm)) {
+    for (const part of m[1].split(",").map((x) => x.trim()).filter(Boolean)) {
+      const [orig, alias] = part.split(/\s+as\s+/).map((x) => x.trim());
+      if (alias) imported.set(alias, `${m[2]}#renamed-from-${orig}`);
+      else imported.set(orig, m[2]);
+    }
+  }
+  for (const args of registerDriverSitesIn(indexSrc)) {
+    const lit = /^"([^"]+)"(?:\s+as\s+OtProtocol)?\s*,\s*(.+)$/.exec(args);
+    if (!lit) continue; // not a literal built-in registration (the census below classifies it)
+    const want = BUILTIN_FACTORY[lit[1]];
+    const fn = lit[2].trim();
+    if (!want) bad.push(`${lit[1]}: no expected factory`);
+    else if (fn !== want.fn) bad.push(`${lit[1]}: registers ${fn}, the harness runs ${want.fn}`);
+    else if (imported.get(fn) !== want.from) bad.push(`${lit[1]}: ${fn} comes from ${imported.get(fn) ?? "?"}, the harness imports ${want.from}`);
+  }
+  return bad;
+}
+
 describe("Đợt 5 F2 — census: every OT driver registered ANYWHERE in server/ has a harness here", () => {
+  it("doc 81 Đợt 7 I4: each built-in protocol registers EXACTLY the factory its harness runs (function passed as a value), from the same module", () => {
+    const src = fs.readFileSync(path.resolve(__dirname, "../index.ts"), "utf8");
+    expect(Object.keys(BUILTIN_FACTORY).sort()).toEqual(Object.keys(HARNESS).filter((k) => k !== "plugin-sidecar").sort());
+    expect(factoryMismatches(src)).toEqual([]);
+    // the instrument sees: another factory under an old protocol, a renamed factory import, a factory from another module
+    expect(factoryMismatches(src.replace('registerDriver("s7", createS7Driver);', 'registerDriver("s7", createS7DriverV2);'))).toEqual([
+      "s7: registers createS7DriverV2, the harness runs createS7Driver",
+    ]);
+    expect(
+      factoryMismatches(
+        src
+          .replace('import { createS7Driver } from "./drivers/s7Driver";', 'import { createS7Driver as s7f } from "./drivers/s7Driver";')
+          .replace('registerDriver("s7", createS7Driver);', 'registerDriver("s7", s7f);'),
+      ),
+    ).toEqual(["s7: registers s7f, the harness runs createS7Driver"]);
+    expect(
+      factoryMismatches(
+        src
+          .replace('import { createS7Driver } from "./drivers/s7Driver";', 'import { createS7DriverV2 as createS7Driver } from "./drivers/s7Driver";'),
+      ),
+    ).toEqual(["s7: createS7Driver comes from ./drivers/s7Driver#renamed-from-createS7DriverV2, the harness imports ./drivers/s7Driver"]);
+    expect(factoryMismatches(src.replace('from "./drivers/s7Driver"', 'from "./drivers/s7DriverNext"'))).toEqual([
+      "s7: createS7Driver comes from ./drivers/s7DriverNext, the harness imports ./drivers/s7Driver",
+    ]);
+  });
+
+  it("doc 81 Đợt 7 I4 (M-3): a RENAMED import / re-export of registerDriver is an uncovered site (its calls cannot hide)", () => {
+    const renamed = `import { registerDriver as rd, listProtocols } from "../ot/driverRegistry";\nrd("x" as OtProtocol, () => createX());`;
+    expect(registerDriverSitesIn(renamed)).toEqual(["<alias rd>"]);
+    expect(registerDriverSitesIn(`export { registerDriver as reg } from "./driverRegistry";`)).toEqual(["<alias reg>"]);
+    expect(registerDriverSitesIn(`import { registerDriver } from "../ot/driverRegistry";\nregisterDriver("x" as OtProtocol, f);`)).toEqual(['"x" as OtProtocol, f']);
+  });
+
   it("built-ins: registerDriver(\"…\") protocols of ot/index.ts == the built-in harness keys", () => {
     const src = fs.readFileSync(path.resolve(__dirname, "../index.ts"), "utf8");
     const registered = [...src.matchAll(/registerDriver\(\s*"([^"]+)"/g)].map((m) => m[1]).sort();

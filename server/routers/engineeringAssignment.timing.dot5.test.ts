@@ -8,7 +8,14 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const rec = vi.hoisted(() => ({ calls: [] as string[], selectRows: [] as unknown[][], factoryRows: [] as unknown[] }));
+const rec = vi.hoisted(() => ({
+  calls: [] as string[],
+  selectRows: [] as unknown[][],
+  factoryRows: [] as unknown[],
+  /** doc 81 Đợt 7 I4 (M-2) — the ROLE each permission check / run check ran with (the engine's admin bypass keys on it). */
+  roles: [] as string[],
+  scopes: [] as string[],
+}));
 vi.mock("../db/connection", () => {
   const NAME = Symbol.for("drizzle:Name");
   /** Answers by TABLE: `users` reads take the queued answers in order; every other table answers its fixed rows. */
@@ -45,15 +52,17 @@ vi.mock("../_core/accessControl", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../_core/accessControl")>();
   return {
     ...orig,
-    checkPermission: vi.fn(async (u: number, _r: string, m: string) => {
+    checkPermission: vi.fn(async (u: number, r: string, m: string) => {
       rec.calls.push(`checkPermission:${m}`);
+      rec.roles.push(r);
       return u !== 901; // account 901 holds NO view permission
     }),
   };
 });
 vi.mock("../services/orchestration/foe/foeEngine", () => ({
-  runIdVisibleTo: vi.fn(async () => {
+  runIdVisibleTo: vi.fn(async (_id: number, scope: unknown) => {
     rec.calls.push("runIdVisibleTo");
+    rec.scopes.push(scope === null ? "unrestricted" : `role:${String((scope as { userRole?: unknown })?.userRole ?? "?")}`);
     return true;
   }),
   visibleRunIds: vi.fn(async () => new Set()),
@@ -85,6 +94,8 @@ beforeEach(() => {
 /** Run one assign with the given answers to the users lookups; returns the recorded lookups and the error shape. */
 async function assignWith(assigneeRow: unknown[], ruleRow: unknown[], type: "ecn" | "orchestration_run", assigneeUserId = 900) {
   rec.calls.length = 0;
+  rec.roles.length = 0;
+  rec.scopes.length = 0;
   rec.selectRows.length = 0; // an early exit leaves answers unread — never carry them into the next call
   rec.factoryRows = [{ id: 55, f: [1] }]; // the item exists, in the assigner's factory 1
   // the procedure middleware reads the CALLER's row first; then the assignee lookup, then the rule query
@@ -92,7 +103,7 @@ async function assignWith(assigneeRow: unknown[], ruleRow: unknown[], type: "ecn
   const err = await caller()
     .assign({ entityType: type, entityId: 55, assigneeUserId, expectedAssigneeUserId: null })
     .then(() => null, (e: { code?: string; cause?: { appParams?: unknown } }) => ({ code: e.code, appParams: e.cause?.appParams }));
-  return { calls: [...rec.calls], err };
+  return { calls: [...rec.calls], roles: [...rec.roles], scopes: [...rec.scopes], err };
 }
 
 describe("final wave P-H1 — assignee: missing / disabled accounts take the SAME lookups as a live account outside the rule", () => {
@@ -113,6 +124,27 @@ describe("final wave P-H1 — assignee: missing / disabled accounts take the SAM
       expect(outOfRule.calls.filter((c) => c.startsWith("checkPermission")).length).toBeGreaterThan(0);
     });
   }
+});
+
+describe("doc 81 Đợt 7 I4 (Đợt 5 re-review M-2) — a DISABLED privileged assignee takes the SAME path as a missing id", () => {
+  for (const type of ["ecn", "orchestration_run"] as const) {
+    it(`★ ${type}: a disabled ADMIN ⇒ the same lookups, the same (non-admin) roles and scope as a missing id — no admin fast path`, async () => {
+      const missing = await assignWith([], [], type);
+      const disabledAdmin = await assignWith([{ id: 900, name: "a", role: "admin", isActive: false }], [], type);
+      expect(disabledAdmin.err).toEqual(missing.err);
+      expect(disabledAdmin.calls).toEqual(missing.calls);
+      expect(disabledAdmin.roles).toEqual(missing.roles);
+      expect(disabledAdmin.roles).not.toContain("admin");
+      expect(disabledAdmin.scopes).toEqual(missing.scopes);
+      expect(disabledAdmin.scopes).not.toContain("role:admin");
+    });
+  }
+  it("control: an ACTIVE admin assignee still checks as admin (its real role)", async () => {
+    const active = await assignWith([{ id: 900, name: "a", role: "admin", isActive: true }], [], "orchestration_run");
+    expect(active.roles.length).toBeGreaterThan(0);
+    expect(active.roles.every((r) => r === "admin")).toBe(true);
+    expect(active.scopes).toEqual(["role:supervisor", "role:admin"]); // the assigner's check, then the assignee's
+  });
 });
 
 describe("final wave P-H1 — item: the assigner's scope is resolved for a MISSING item too", () => {

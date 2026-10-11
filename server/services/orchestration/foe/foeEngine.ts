@@ -1329,11 +1329,42 @@ async function scopeDecisionProbe(d: NonNullable<Awaited<ReturnType<typeof getDb
       d.select({ id: deviceAdapters.id }).from(deviceAdapters).limit(1),
       d.select({ id: deviceTags.id }).from(deviceTags).limit(1),
       d.select({ id: robots.id }).from(robots).limit(1),
+      stopClassifierProbe(d),
     ]);
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * doc 81 Đợt 7 task I4 (Đợt 5 re-review M-1) — the STOP classifier's own dependencies, exercised the SAME way
+ * foeStepClass.makeStopVerifier uses them: its two lazy modules (the OT dispatcher's classifyOtStop +
+ * runningConnectionMatchesAdapterRow, stopPin's stopPinsFromTagRows) and its two batch query shapes (enabled adapters of
+ * machines; enabled + writable stop-pin tags of adapters). When the classification of an existing run fails AS A WHOLE
+ * (a module that does not load, a batch shape that fails), a missing id is now as undecided as that run — the same
+ * "scope not verified" answer, not "not found" (no existence oracle). Throws on any failure.
+ */
+async function stopClassifierProbe(d: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<void> {
+  const [disp, pin] = await Promise.all([import("../../ot/commandDispatcher"), import("../../ot/stopPin")]);
+  if (typeof disp.classifyOtStop !== "function" || typeof disp.runningConnectionMatchesAdapterRow !== "function" || typeof pin.stopPinsFromTagRows !== "function") {
+    throw new Error("stop classifier unavailable");
+  }
+  await Promise.all([
+    d.select().from(deviceAdapters).where(and(inArray(deviceAdapters.machineId, [-1]), eq(deviceAdapters.isEnabled, true))).limit(1),
+    d
+      .select({
+        adapterId: deviceTags.adapterId,
+        tagKey: deviceTags.tagKey,
+        dataType: deviceTags.dataType,
+        stopValue: deviceTags.stopValue,
+        writable: deviceTags.writable,
+        isEnabled: deviceTags.isEnabled,
+      })
+      .from(deviceTags)
+      .where(and(inArray(deviceTags.adapterId, [-1]), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)))
+      .limit(1),
+  ]);
 }
 
 /**
