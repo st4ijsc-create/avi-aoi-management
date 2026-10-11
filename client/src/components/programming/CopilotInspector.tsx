@@ -163,14 +163,23 @@ export function CopilotInspector({ idPrefix, label, tabs, activeTab, onTabChange
  * doc 81 Đợt 7 task L fix 1 (b) — mục Copilot của thanh trạng thái IDE/IR/POU (một bản cho cả ba trang). Kiểm trình duyệt
  * L3: ở màn hẹp chuyển khỏi tab Copilot giữa lượt ⇒ Copilot "đóng" (onInspectorActiveHidden) mà luồng vẫn chạy KHUẤT, thanh
  * trạng thái vẫn ghi "Copilot ○". Nay: một lượt đang chạy (`busy` của context, do engine báo) ⇒ "Copilot đang chạy"
- * (spinner, role=status) — bấm ⇒ mở lại Copilot (màn hẹp: chuyển sang tab của nó). Không chạy ⇒ "Copilot ●/○" như cũ.
+ * (spinner; vùng đọc màn hình riêng — final wave F7) — bấm ⇒ mở lại Copilot (màn hẹp: chuyển sang tab của nó). Không chạy ⇒ "Copilot ●/○" như cũ.
  */
 export function CopilotStatusItem(): React.JSX.Element {
   const { t } = useTranslation();
   const { open, setOpen, busy } = useProgrammingCopilot();
   const label = t("engineering.ws.copilotTab", "Copilot");
+  const runningText = t("progCopilot.stream.running", "Copilot đang chạy");
   return (
-    <span role="status" className="ml-auto inline-flex shrink-0 items-center gap-1">
+    <span className="ml-auto inline-flex shrink-0 items-center gap-1">
+      {/*
+        doc 81 Đợt 7 final wave F7 — the live region is ONLY this always-mounted, visually hidden line, whose text changes
+        when a run starts (announced) and empties when it ends; the visible item (and the idle "Copilot ●/○" open toggle)
+        is not a live region, so opening / closing the Copilot is not announced.
+      */}
+      <span role="status" aria-live="polite" className="sr-only" data-testid="copilot-status-live">
+        {busy ? runningText : ""}
+      </span>
       {busy ? (
         <button
           type="button"
@@ -179,7 +188,7 @@ export function CopilotStatusItem(): React.JSX.Element {
           title={t("progCopilot.stream.runningOpen", "Copilot đang chạy — bấm để xem")}
           className="inline-flex items-center gap-1 rounded px-1 font-medium text-primary hover:bg-accent"
         >
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> {t("progCopilot.stream.running", "Copilot đang chạy")}
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> {runningText}
         </button>
       ) : (
         <span data-testid="copilot-status" className="inline-flex items-center gap-1">

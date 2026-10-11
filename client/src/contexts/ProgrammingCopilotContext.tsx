@@ -66,9 +66,11 @@ interface ProgrammingCopilotContextValue {
   /**
    * doc 81 Đợt 7 task L fix 1 (b) — một lượt Copilot (SSE) đang chạy. Panel báo qua `setBusy`; thanh trạng thái của
    * IDE/IR/POU hiện "Copilot đang chạy" khi tab Copilot đóng/khuất (màn hẹp: chuyển tab giữa lượt ⇒ luồng chạy khuất).
+   * doc 81 Đợt 7 final wave F7 — bận THEO NGUỒN (mỗi lõi Copilot đang mount một `source`): `busy` ⇔ CÒN ít nhất một nguồn
+   * đang chạy. Trước đây một boolean "ai ghi sau thắng": hai panel cùng mount, một cái xong là xoá "đang chạy" của cái kia.
    */
   busy: boolean;
-  setBusy: (v: boolean) => void;
+  setBusy: (source: string, v: boolean) => void;
 }
 
 const Ctx = createContext<ProgrammingCopilotContextValue | null>(null);
@@ -88,8 +90,19 @@ export function ProgrammingCopilotProvider({ children }: { children: ReactNode }
     }
   });
   const [binding, setBindingState] = useState<CopilotBinding | null>(null);
-  const [busy, setBusyState] = useState(false);
-  const setBusy = useCallback((v: boolean) => setBusyState(v), []);
+  const [busySources, setBusySources] = useState<ReadonlySet<string>>(() => new Set());
+  const setBusy = useCallback(
+    (source: string, v: boolean) =>
+      setBusySources((prev) => {
+        if (prev.has(source) === v) return prev; // no change ⇒ no re-render
+        const next = new Set(prev);
+        if (v) next.add(source);
+        else next.delete(source);
+        return next;
+      }),
+    [],
+  );
+  const busy = busySources.size > 0;
 
   const setOpen = useCallback((v: boolean) => {
     setOpenState(v);

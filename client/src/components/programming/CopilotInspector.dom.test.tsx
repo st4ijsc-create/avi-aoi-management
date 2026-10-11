@@ -51,7 +51,7 @@ describe("CopilotInspector — dải tab không cắt tab Copilot", () => {
 });
 
 // doc 81 Đợt 7 task L fix 1 (b) — thanh trạng thái IDE/IR/POU: luồng Copilot đang chạy mà tab Copilot đang đóng/khuất ⇒
-// mục "Copilot đang chạy" (spinner, role=status) bấm được để mở lại Copilot; không chạy ⇒ "Copilot ●/○" như cũ.
+// mục "Copilot đang chạy" (spinner) bấm được để mở lại Copilot; không chạy ⇒ "Copilot ●/○" như cũ.
 import { act, fireEvent } from "@testing-library/react";
 import { CopilotStatusItem } from "./CopilotInspector";
 import { useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
@@ -69,12 +69,11 @@ describe("L fix 1 (b) — CopilotStatusItem", () => {
     expect(screen.getByTestId("copilot-status")).toHaveTextContent("Copilot ●");
   });
 
-  it("đang chạy + Copilot đóng ⇒ 'Copilot đang chạy' (role=status) bấm ⇒ mở Copilot", () => {
+  it("đang chạy + Copilot đóng ⇒ 'Copilot đang chạy' bấm ⇒ mở Copilot", () => {
     setup();
-    act(() => api!.setBusy(true));
+    act(() => api!.setBusy("p1", true));
     const busy = screen.getByTestId("copilot-status-busy");
     expect(busy).toHaveTextContent("Copilot đang chạy");
-    expect(busy.closest("[role=status]")).not.toBeNull();
     expect(api!.open).toBe(false);
     fireEvent.click(busy);
     expect(api!.open).toBe(true);
@@ -82,10 +81,41 @@ describe("L fix 1 (b) — CopilotStatusItem", () => {
 
   it("đang chạy + Copilot mở ⇒ vẫn báo đang chạy; hết chạy ⇒ về '●'", () => {
     setup();
-    act(() => { api!.setOpen(true); api!.setBusy(true); });
+    act(() => { api!.setOpen(true); api!.setBusy("p1", true); });
     expect(screen.getByTestId("copilot-status-busy")).toHaveTextContent("Copilot đang chạy");
-    act(() => api!.setBusy(false));
+    act(() => api!.setBusy("p1", false));
     expect(screen.queryByTestId("copilot-status-busy")).toBeNull();
     expect(screen.getByTestId("copilot-status")).toHaveTextContent("Copilot ●");
+  });
+
+  // doc 81 Đợt 7 final wave F7 — (a) the ONLY live region is a hidden line whose text changes with `busy`: the idle
+  // "Copilot ●/○" toggle is not announced; (b) busy per SOURCE: one panel finishing does not clear another's "running".
+  it("★ F7 (a) — vùng live CHỈ là dòng ẩn đổi chữ theo bận; mục hiển thị (●/○, nút bận) không nằm trong vùng live", () => {
+    setup();
+    const live = () => screen.getByTestId("copilot-status-live");
+    expect(document.querySelectorAll("[role=status], [aria-live]")).toHaveLength(1);
+    expect(live()).toHaveAttribute("role", "status");
+    expect(live()).toHaveTextContent(/^$/);
+    expect(screen.getByTestId("copilot-status").closest("[role=status], [aria-live]")).toBeNull();
+    act(() => api!.setOpen(true)); // mở / đóng Copilot: KHÔNG được đọc
+    expect(live()).toHaveTextContent(/^$/);
+    act(() => api!.setBusy("p1", true)); // bắt đầu chạy: được đọc
+    expect(live()).toHaveTextContent("Copilot đang chạy");
+    expect(screen.getByTestId("copilot-status-busy").closest("[role=status], [aria-live]")).toBeNull();
+    act(() => api!.setBusy("p1", false));
+    expect(live()).toHaveTextContent(/^$/);
+  });
+
+  it("★ F7 (b) — hai panel cùng mount: một panel xong KHÔNG xoá 'đang chạy' của panel kia", () => {
+    setup();
+    act(() => { api!.setBusy("dock", true); api!.setBusy("inspector", true); });
+    act(() => api!.setBusy("inspector", false)); // the LAST one to start finishes first
+    expect(api!.busy).toBe(true);
+    expect(screen.getByTestId("copilot-status-busy")).toBeInTheDocument();
+    act(() => api!.setBusy("inspector", false)); // lặp lại: không đổi gì
+    expect(api!.busy).toBe(true);
+    act(() => api!.setBusy("dock", false));
+    expect(api!.busy).toBe(false);
+    expect(screen.queryByTestId("copilot-status-busy")).toBeNull();
   });
 });
