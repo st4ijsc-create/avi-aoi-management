@@ -202,3 +202,106 @@ describe("final wave F1 — QT handlers are keyed on the run's GLOBAL template r
     expect(svc.cancelOrder.mock.calls.map((c) => c[0])).toEqual([11]);
   });
 });
+
+describe("doc 81 Đợt 8 task Q3 (re-review N3) — a FAILED template lookup never reads as 'no compensation needed'", () => {
+  /** The template lookup (`select({ ref, scopeKey })` on orchestration_workflows) fails — e.g. migration 0367's column missing. */
+  function failTemplateLookup(): () => void {
+    const orig = fake.select.bind(fake);
+    (fake as unknown as { select: (p?: Record<string, unknown>) => unknown }).select = (p?: Record<string, unknown>) => {
+      if (p && Object.keys(p).sort().join(",") === "ref,scopeKey") throw new Error('column "scopeKey" does not exist');
+      return orig(p);
+    };
+    return () => {
+      (fake as unknown as { select: typeof orig }).select = orig;
+    };
+  }
+  const seedRun = (id: number, workflowId: number) => {
+    fake.seed(orchestrationRuns, [
+      ...(((fake.store.get("orchestration_runs") as Row[]) ?? []).filter((r) => r.id !== id)),
+      { id, workflowId, workflowRef: QT1_REF, status: "awaiting_confirm", currentStepId: "qt1-monitor", startedBy: 10, paramsJson: { orderId: 11, lineId: 2 } },
+    ]);
+    fake.seed(orchestrationRunSteps, [
+      ...(((fake.store.get("orchestration_run_steps") as Row[]) ?? []).filter((r) => r.runId !== id)),
+      { id: id * 10, runId: id, stepId: "qt1-allocate", stepType: "hitl_gate", status: "completed", attempt: 1 },
+    ]);
+  };
+
+  it("★ the global QT-1 run, lookup FAILS ⇒ rejected (aborted, L-7), NO compensation guessed, and the run reason + answer say compensation was NOT run (manual)", async () => {
+    process.env.FOE_ENABLED = "true";
+    const { resolveQtGate, QT_COMPENSATION_NOT_RUN } = await import("./qtRunner");
+    seedRun(93, 7); // the global QT-1 template row: cancelOrder WOULD apply (see the F1 control above)
+    svc.cancelOrder.mockClear();
+    const restore = failTemplateLookup();
+    let r: Awaited<ReturnType<typeof resolveQtGate>>;
+    try {
+      r = await resolveQtGate(93, { approved: false, note: "stop" });
+    } finally {
+      restore();
+    }
+    expect(r.status).toBe("aborted");
+    expect(svc.cancelOrder).not.toHaveBeenCalled();
+    expect(r.message).toContain(QT_COMPENSATION_NOT_RUN);
+    expect(r.message).toMatch(/thủ công/);
+    expect(r.notes.some((n) => n.includes(QT_COMPENSATION_NOT_RUN) && n.includes('column "scopeKey" does not exist'))).toBe(true);
+    const row = (fake.store.get("orchestration_runs") as Row[]).find((x) => x.id === 93)!;
+    expect(row.status).toBe("aborted");
+    expect(String(row.error)).toContain(QT_COMPENSATION_NOT_RUN);
+    expect(String(row.error)).not.toContain("không có bước cần bù"); // the old untrue note
+  });
+
+  it("★ the run's workflow ROW is gone ⇒ undetermined too (not 'none'): no compensation, said so", async () => {
+    process.env.FOE_ENABLED = "true";
+    const { resolveQtGate, QT_COMPENSATION_NOT_RUN } = await import("./qtRunner");
+    seedRun(94, 404);
+    svc.cancelOrder.mockClear();
+    const r = await resolveQtGate(94, { approved: false, note: "stop" });
+    expect(r.status).toBe("aborted");
+    expect(svc.cancelOrder).not.toHaveBeenCalled();
+    expect(r.message).toContain(QT_COMPENSATION_NOT_RUN);
+    expect(String((fake.store.get("orchestration_runs") as Row[]).find((x) => x.id === 94)!.error)).toContain(QT_COMPENSATION_NOT_RUN);
+  });
+
+  it("★ decided 'none' (the factory copy of a QT ref) keeps its truthful 'nothing to compensate' answer — no 'NOT run' alarm", async () => {
+    process.env.FOE_ENABLED = "true";
+    const { resolveQtGate, QT_COMPENSATION_NOT_RUN } = await import("./qtRunner");
+    seedRun(95, 6);
+    const r = await resolveQtGate(95, { approved: false, note: "stop" });
+    expect(r.status).toBe("aborted");
+    expect(r.message).toBeUndefined();
+    expect(String((fake.store.get("orchestration_runs") as Row[]).find((x) => x.id === 95)!.error)).not.toContain(QT_COMPENSATION_NOT_RUN);
+  });
+
+  it("★ the pump with a FAILED lookup runs no handler and says why (the gate waits for a person)", async () => {
+    process.env.FOE_ENABLED = "true";
+    const { pumpQtRun } = await import("./qtRunner");
+    fake.seed(orchestrationRuns, [
+      { id: 96, workflowId: 7, workflowRef: QT1_REF, status: "awaiting_confirm", currentStepId: "qt1-allocate", startedBy: 10, paramsJson: {} },
+    ]);
+    const restore = failTemplateLookup();
+    let r: Awaited<ReturnType<typeof pumpQtRun>>;
+    try {
+      r = await pumpQtRun(96);
+    } finally {
+      restore();
+    }
+    expect(r).toMatchObject({ ok: true, status: "waiting_external", pausedStepId: "qt1-allocate" });
+    expect(r.notes).toEqual([]);
+    expect(r.message).toMatch(/không xác định được template của run/);
+  });
+
+  it("resolveQtTemplateOfRun: qt / none / unknown (lookup error, missing row, no DB)", async () => {
+    const { resolveQtTemplateOfRun } = await import("./qtStepHandlers");
+    expect(await resolveQtTemplateOfRun({ workflowId: 7 })).toEqual({ kind: "qt", ref: QT1_REF });
+    expect(await resolveQtTemplateOfRun({ workflowId: 6 })).toEqual({ kind: "none" });
+    expect(await resolveQtTemplateOfRun({ workflowId: 4 })).toEqual({ kind: "none" });
+    expect((await resolveQtTemplateOfRun({ workflowId: 404 })).kind).toBe("unknown");
+    const restore = failTemplateLookup();
+    try {
+      expect((await resolveQtTemplateOfRun({ workflowId: 7 })).kind).toBe("unknown");
+    } finally {
+      restore();
+    }
+    conn.up = false;
+    expect((await resolveQtTemplateOfRun({ workflowId: 7 })).kind).toBe("unknown");
+  });
+});
