@@ -1159,7 +1159,7 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
     programUnreadable:
       "the program checksum of a controller it writes to could not be read now (not connected, no answer in time, or an invalid answer), so it cannot be verified that the program is still the one that was approved. Check the controller connection and start a new run.",
     ownerUnknown:
-      "the run has no attributable owner (started by the system or by an API key with no creating user), so a separate approval cannot be verified. Start the run as a user.",
+      "the run has no attributable owner (started by the system, or by an API key that is issued to nobody active), so a separate approval cannot be verified. Start the run as a user.",
     apiRun:
       "the run was started through an API key that cannot be identified (started before the key-holder record existed, the key was deleted, or a copy of the run without its key), so it cannot be checked that the approver is not the key's holder. Start a new run through the key, or start it as a user in the Orchestration Studio.",
   };

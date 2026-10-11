@@ -6,12 +6,17 @@
  * multiselect + optional expiry) — the PLAINTEXT key is shown ONCE with a copy
  * button + warning and can never be retrieved again — edit scopes/expiry, revoke
  * (disable) and delete. RBAC-gated on `admin_system` (view/create/edit/delete).
+ * doc 81 Đợt 9 task R3 — "Issued to": the user a key is issued to (default = its creator). Only an ADMINISTRATOR can change
+ * it (server: apiKey.setHolder, adminProcedure; every change recorded). Runs this key starts can only actuate after a gate
+ * approved by someone who is not its holder (now or earlier), its creator or the run's starter.
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { UserSelect } from "@/components/patterns/EntityPicker";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, StatusBadge, EmptyState } from "@/components/patterns";
@@ -32,7 +37,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { KeyRound, Plus, Copy, AlertTriangle, Ban, Trash2, Pencil, ShieldCheck, Globe } from "lucide-react";
+import { KeyRound, Plus, Copy, AlertTriangle, Ban, Trash2, Pencil, ShieldCheck, Globe, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 type TenantScopeMode = "factory" | "global";
@@ -50,6 +55,10 @@ type ApiKeyRow = {
   dataScopeMode?: TenantScopeMode | null;
   corporateCode?: string | null;
   factoryCode?: string | null;
+  // doc 81 Đợt 9 R3 — "issued to" (mig 0369). holderRecorded=false ⇔ the server could not read it (migration missing).
+  holderUserId?: number | null;
+  holderName?: string | null;
+  holderRecorded?: boolean;
 };
 
 /** Ba lựa chọn hiện trên giao diện — đúng ba trạng thái của CSDL, không nhiều không ít. */
@@ -169,6 +178,26 @@ export default function ApiKeysPage() {
     onSuccess: () => { invalidate(); toast.success(t("apiKeys.toastRevoked", "Đã thu hồi khoá")); },
     onError: (e) => toastTrpcError(e),
   });
+
+  // ── doc 81 Đợt 9 R3 — change who a key is issued to (admin only; the server enforces it too) ──
+  const { user: me } = useAuth();
+  const isAdmin = me?.role === "admin";
+  const [holderRow, setHolderRow] = useState<ApiKeyRow | null>(null);
+  const [holderPick, setHolderPick] = useState<number | null>(null);
+  const [holderReason, setHolderReason] = useState("");
+  const openHolder = (row: ApiKeyRow) => { setHolderRow(row); setHolderPick(row.holderUserId ?? null); setHolderReason(""); };
+  const setHolderM = trpc.apiKey.setHolder.useMutation({
+    onSuccess: () => { setHolderRow(null); invalidate(); toast.success(t("apiKeys.toastHolderChanged", "Đã đổi người được cấp khoá")); },
+    onError: (e) => toastTrpcError(e),
+  });
+  const holderCell = (r: ApiKeyRow) =>
+    r.holderRecorded === false ? (
+      <span className="text-xs text-amber-700 dark:text-amber-300" data-testid="api-key-holder-unrecorded">{t("apiKeys.holderNotRecorded", "Chưa ghi nhận")}</span>
+    ) : r.holderUserId == null ? (
+      <span className="text-xs text-red-700 dark:text-red-300" data-testid="api-key-holder-none">{t("apiKeys.holderNone", "Không ai — lượt chạy điều phối qua khoá này bị từ chối")}</span>
+    ) : (
+      <span className="text-xs" data-testid="api-key-holder">{r.holderName ?? `#${r.holderUserId}`}</span>
+    );
 
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const deleteM = trpc.apiKey.delete.useMutation({
@@ -319,6 +348,7 @@ export default function ApiKeysPage() {
                   <TableHead>{t("apiKeys.colPrefix", "Tiền tố")}</TableHead>
                   <TableHead>{t("apiKeys.colScopes", "Phạm vi")}</TableHead>
                   <TableHead>{t("apiKeys.colDataScope", "Phạm vi dữ liệu")}</TableHead>
+                  <TableHead>{t("apiKeys.colIssuedTo", "Cấp cho")}</TableHead>
                   <TableHead>{t("apiKeys.colStatus", "Trạng thái")}</TableHead>
                   <TableHead>{t("apiKeys.colExpires", "Hết hạn")}</TableHead>
                   <TableHead>{t("apiKeys.colLastUsed", "Dùng gần nhất")}</TableHead>
@@ -328,7 +358,7 @@ export default function ApiKeysPage() {
               <TableBody>
                 {rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="p-0">
+                    <TableCell colSpan={9} className="p-0">
                       <EmptyState variant="no-data" icon={KeyRound} compact title={t("apiKeys.empty", "Chưa có khoá nào.")} />
                     </TableCell>
                   </TableRow>
@@ -341,6 +371,7 @@ export default function ApiKeysPage() {
                       <TableCell className="font-mono text-xs">{r.keyPrefix ?? "—"}…</TableCell>
                       <TableCell className="max-w-[260px]"><div className="flex flex-wrap">{scopeBadges(r.scopes)}</div></TableCell>
                       <TableCell>{dataScopeCell(r)}</TableCell>
+                      <TableCell>{holderCell(r)}</TableCell>
                       <TableCell>
                         {!r.isActive ? (
                           <StatusBadge status="revoked" tone="warning" label={t("apiKeys.revoked", "Đã thu hồi")} />
@@ -356,6 +387,17 @@ export default function ApiKeysPage() {
                         <div className="flex justify-end gap-1">
                           <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!canEdit} onClick={() => openEdit(r)} title={t("common.edit", "Sửa")}>
                             <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            data-testid="api-key-change-holder"
+                            disabled={!isAdmin}
+                            onClick={() => openHolder(r)}
+                            title={isAdmin ? t("apiKeys.changeHolder", "Đổi người được cấp") : t("apiKeys.changeHolderAdminOnly", "Chỉ quản trị viên mới đổi được người được cấp khoá")}
+                          >
+                            <UserCog className="h-3.5 w-3.5" />
                           </Button>
                           {r.isActive && (
                             <Button size="icon" variant="ghost" className="h-7 w-7 text-warning" disabled={!canEdit} onClick={() => revokeM.mutate({ id: r.id })} title={t("apiKeys.revoke", "Thu hồi")}>
@@ -489,6 +531,38 @@ export default function ApiKeysPage() {
                 isActive: editActive,
                 ...tenantPayload(editScopeMode, editScopeFactory, editScopeCorporate),
               })}
+            >
+              {t("common.save", "Lưu")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── doc 81 Đợt 9 R3 — change "issued to" (admin only) ── */}
+      <Dialog open={holderRow != null} onOpenChange={(o) => !o && setHolderRow(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("apiKeys.changeHolderTitle", "Đổi người được cấp khoá")}</DialogTitle>
+            <DialogDescription>
+              {t("apiKeys.changeHolderDesc", "Người được cấp là người chịu trách nhiệm về khoá. Lượt chạy điều phối khởi động bằng khoá này chỉ gửi lệnh máy/robot sau khi một cổng được duyệt bởi người KHÁC người được cấp (hiện tại hoặc trước đây), người tạo khoá và người khởi động lượt chạy. Đổi người được cấp KHÔNG đổi bí mật của khoá — nếu khoá thực sự đổi tay, hãy thu hồi và tạo khoá mới. Mọi lần đổi đều được ghi lại.")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t("apiKeys.fieldHolder", "Cấp cho *")}</Label>
+              <UserSelect value={holderPick} onChange={(v) => setHolderPick(typeof v === "number" ? v : v == null ? null : Number(v))} aria-label={t("apiKeys.fieldHolder", "Cấp cho *")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t("apiKeys.fieldHolderReason", "Lý do *")}</Label>
+              <Textarea rows={2} value={holderReason} onChange={(e) => setHolderReason(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHolderRow(null)}>{t("common.cancel", "Huỷ")}</Button>
+            <Button
+              data-testid="api-key-holder-save"
+              disabled={!isAdmin || holderPick == null || holderReason.trim().length < 3 || setHolderM.isPending}
+              onClick={() => holderRow && holderPick != null && setHolderM.mutate({ id: holderRow.id, holderUserId: holderPick, reason: holderReason.trim() })}
             >
               {t("common.save", "Lưu")}
             </Button>
