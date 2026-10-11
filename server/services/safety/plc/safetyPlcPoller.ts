@@ -56,7 +56,7 @@ import { isPlcConfigTrustApproved, plcTrustMaterial, plcTrustDigest } from "./sa
 import { pgPollerLeaderGate, type PollerLeaderGate } from "./safetyPlcPollerLeader";
 import { redactEndpoint, safeBackendLabel } from "./plcRedact";
 import { OpcuaSubscriptionSafetyPlcBackend, monotonicNow, type SafetyPlcBatch, type SafetyPlcReadMode } from "./safetyPlcOpcuaSubscription";
-import { pgPollStateStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollStateStore, type PollLink } from "./safetyPlcPollerHealth";
+import { pgPollStateStore, startSafetyPlcWatchdog, stopSafetyPlcWatchdog, safetyPlcPollerEnabled, type PollStateStore, type PollLink, type BlindReason } from "./safetyPlcPollerHealth";
 
 /** Flag — default OFF. (Defined once in the health leaf module so the source-health panel reads the SAME predicate.) */
 export { safetyPlcPollerEnabled } from "./safetyPlcPollerHealth";
@@ -177,7 +177,7 @@ const EVENT_NOTE: Partial<Record<SafetyEventType, string>> = {
 /** One read's outcome. `decided` maps each monitored flag to an observed value, or lists it as unreadable. */
 export type PollRead =
   | { kind: "decided"; flags: Partial<Record<PollFlag, boolean>>; unreadable: PollFlag[]; heartbeat?: SafetyPlcCheckedRead["heartbeat"] }
-  | { kind: "undecidable"; reason: string };
+  | { kind: "undecidable"; reason: string; /** final wave — DISPLAY cause (the PLC heartbeat, not the link) */ cause?: "heartbeat" };
 
 export interface PollerDeps {
   loadConfigs: () => Promise<SafetyPlcConfig[]>;
@@ -288,6 +288,11 @@ interface ConfigState {
    */
   hbValue: string | null;
   hbChangedAt: number | null;
+  /**
+   * doc 81 Đợt 9 final wave — WHY the link is offline, for DISPLAY only ("heartbeat_stale": the heartbeat tag unreadable /
+   * frozen — program stopped?). Persisted with the row while offline; never read by any health / alarm / actuation decision.
+   */
+  blindReason: BlindReason | null;
 }
 
 export interface PollerConfigSnapshot {
@@ -546,6 +551,7 @@ export class SafetyPlcPoller {
         latchSetAt: null,
         hbValue: null,
         hbChangedAt: null,
+        blindReason: null,
       };
       st.readMode = initialReadMode(st);
       if (carry && old) {
@@ -570,6 +576,7 @@ export class SafetyPlcPoller {
         st.latchSetAt = old.latchSetAt;
         st.hbValue = old.hbValue;
         st.hbChangedAt = old.hbChangedAt;
+        st.blindReason = old.blindReason;
         if (old.busy) {
           const b: Promise<void> = old.busy.then(() => undefined, () => undefined).finally(() => {
             if (st.busy === b) st.busy = null;
@@ -702,6 +709,9 @@ export class SafetyPlcPoller {
   private async applyTransitions(id: number, st: ConfigState, read: PollRead, drainNow = true): Promise<void> {
     const fullyDecided = read.kind === "decided" && read.unreadable.length === 0;
     if (fullyDecided) st.lastOkAt = Date.now();
+    // final wave — the DISPLAY reason of the latest undecidable read (heartbeat frozen / unreadable ⇒ "heartbeat_stale"); any other
+    // cause or a fully decided read clears it. Display only: the link transitions below are unchanged.
+    st.blindReason = !fullyDecided && read.kind === "undecidable" && read.cause === "heartbeat" ? "heartbeat_stale" : null;
     if (!fullyDecided) {
       st.goodStreak = 0;
       if (st.link !== "offline") {
@@ -863,11 +873,13 @@ export class SafetyPlcPoller {
       readMode: st.readMode, // doc 81 Đợt 9 U1/U2 — shown on the Safety page
       // U fix 1 (I3) — the CONFIRMED (recorded) latch state: set ⇒ since when
       latchSetAt: st.confirmed.flags.estopLatch === true ? (st.latchSetAt ?? Date.now()) : null,
+      // final wave — why the CONFIRMED offline link is blind (display only); online / unknown ⇒ none
+      blindReason: st.confirmed.link === "offline" ? st.blindReason : null,
     };
     // final wave N-R6 — the row is written when its CONTENT changes (edge, interval, identity, unrecorded wait / count, first
     // decided read) and otherwise at most every SAFETY_PLC_STATE_REFRESH_MS as the liveness proof (the stale bound is ≥ 60 s):
     // ≤ 1 upsert / 5 s / config in steady state instead of one per poll. A failed save forces the next one.
-    const key = JSON.stringify([row.link, row.flags, row.intervalMs, row.identityDigest, row.unrecordedSince, row.unrecordedCount, row.lastOkAt != null, row.readMode, row.latchSetAt != null]);
+    const key = JSON.stringify([row.link, row.flags, row.intervalMs, row.identityDigest, row.unrecordedSince, row.unrecordedCount, row.lastOkAt != null, row.readMode, row.latchSetAt != null, row.blindReason]);
     const now = Date.now();
     if (st.savedKey === key && st.savedAt != null && now - st.savedAt >= 0 && now - st.savedAt < SAFETY_PLC_STATE_REFRESH_MS) return;
     try {
@@ -1011,7 +1023,7 @@ export class SafetyPlcPoller {
   private applyHeartbeat(st: ConfigState, read: PollRead, at: number): PollRead {
     if (read.kind !== "decided" || !heartbeatMapped(st.cfg)) return read;
     const hb = read.heartbeat;
-    if (!hb || hb.unreadable || hb.value === undefined) return { kind: "undecidable", reason: "PLC heartbeat tag unreadable" };
+    if (!hb || hb.unreadable || hb.value === undefined) return { kind: "undecidable", reason: "PLC heartbeat tag unreadable", cause: "heartbeat" };
     const v = JSON.stringify(hb.value);
     if (st.hbChangedAt == null || v !== st.hbValue || (hb.changes ?? 0) > 0) {
       st.hbValue = v;
@@ -1020,7 +1032,7 @@ export class SafetyPlcPoller {
     }
     const silent = at - st.hbChangedAt;
     const bound = heartbeatMaxSilentMs(st.cfg, st.intervalMs);
-    if (silent > bound) return { kind: "undecidable", reason: `PLC heartbeat tag unchanged for ${Math.round(silent / 1000)} s (bound ${Math.round(bound / 1000)} s) — values may be frozen at the source` };
+    if (silent > bound) return { kind: "undecidable", reason: `PLC heartbeat tag unchanged for ${Math.round(silent / 1000)} s (bound ${Math.round(bound / 1000)} s) — values may be frozen at the source`, cause: "heartbeat" };
     return read;
   }
 

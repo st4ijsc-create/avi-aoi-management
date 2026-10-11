@@ -9,7 +9,8 @@
  *   (b) quyền avi_app SELECT/INSERT/UPDATE = true, DELETE/TRUNCATE = false (catalog), rồi ĐO HÀNH VI trong giao dịch LUÔN HOÀN
  *       TÁC: chèn sự kiện dò + hàng tin cậy; tiêu thụ lần 1 ⇒ 1 hàng; lần 2 ⇒ 0 hàng; đưa consumedAt về NULL ⇒ 23514; sửa digest
  *       ⇒ 23514; digest không phải hex-64 ⇒ 23514; origin lạ ⇒ 23514; DELETE ⇒ 42501; 0 hàng dò còn lại;
- *   (d) safety_plc_poll_state."readMode" varchar + CHECK (giá trị lạ ⇒ 23514); "latchSetAt" bigint (U fix 1);
+ *   (d) safety_plc_poll_state."readMode" varchar + CHECK (giá trị lạ ⇒ 23514); "latchSetAt" bigint (U fix 1); "blindReason"
+ *       varchar + CHECK (final wave — lý do HIỂN THỊ "heartbeat_stale"; giá trị lạ ⇒ 23514);
  *   (c) `__applied_migrations` có đúng 1 hàng cho tệp này.
  *
  *   node scripts/apply-migration-0371.mjs --dev-only    # DB dev (chủ dự án quyết — TRƯỚC khi bật SAFETY_PLC_POLLER_ENABLED)
@@ -163,7 +164,10 @@ async function applyTo(rawUrl, label) {
         const [cfg] = await tx`INSERT INTO safety_plc_configs (code, name, backend) VALUES (${NOTE}, 'p', 'sim') RETURNING id`;
         await tx`INSERT INTO safety_plc_poll_state ("configId", "readMode") VALUES (${cfg.id}, 'subscription')`;
         const modeLa = await maLoi(tx, (sp) => sp`UPDATE safety_plc_poll_state SET "readMode" = 'magic' WHERE "configId" = ${cfg.id}`);
-        kq = { sai, lan1, lan2, veNull, doiDigest, digestXau, originLa, doiNoiDungChuaTieuThu, xoa, modeLa };
+        // final wave — blindReason (display only): the known value is accepted, an unknown one ⇒ 23514
+        const blindOk = await maLoi(tx, (sp) => sp`UPDATE safety_plc_poll_state SET "blindReason" = 'heartbeat_stale' WHERE "configId" = ${cfg.id}`);
+        const blindLa = await maLoi(tx, (sp) => sp`UPDATE safety_plc_poll_state SET "blindReason" = 'magic' WHERE "configId" = ${cfg.id}`);
+        kq = { sai, lan1, lan2, veNull, doiDigest, digestXau, originLa, doiNoiDungChuaTieuThu, xoa, modeLa, blindOk, blindLa };
         throw HOAN_TAC; // LUÔN hoàn tác
       });
     } catch (e) {
@@ -171,7 +175,8 @@ async function applyTo(rawUrl, label) {
     }
     if (
       !kq || kq.sai !== 0 || kq.lan1 !== 1 || kq.lan2 !== 0 || kq.veNull !== "23514" || kq.doiDigest !== "23514" ||
-      kq.digestXau !== "23514" || kq.originLa !== "23514" || kq.doiNoiDungChuaTieuThu !== "23514" || kq.xoa !== "42501" || kq.modeLa !== "23514"
+      kq.digestXau !== "23514" || kq.originLa !== "23514" || kq.doiNoiDungChuaTieuThu !== "23514" || kq.xoa !== "42501" || kq.modeLa !== "23514" ||
+      kq.blindOk !== null || kq.blindLa !== "23514"
     ) {
       throw new Error(`(b) hanh vi avi_app sai: ${JSON.stringify(kq)}`);
     }
@@ -185,6 +190,9 @@ async function applyTo(rawUrl, label) {
     // U fix 1 (I3) — latchSetAt
     const [ls] = await appSql`SELECT data_type AS t FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'safety_plc_poll_state' AND column_name = 'latchSetAt'`;
     if (ls?.t !== "bigint") throw new Error(`(d) safety_plc_poll_state.latchSetAt thieu/sai kieu: ${ls?.t}`);
+    // final wave — blindReason (display only)
+    const [br] = await appSql`SELECT data_type AS t FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'safety_plc_poll_state' AND column_name = 'blindReason'`;
+    if (br?.t !== "character varying") throw new Error(`(d) safety_plc_poll_state.blindReason thieu/sai kieu: ${br?.t}`);
 
     // (c)
     await sql`

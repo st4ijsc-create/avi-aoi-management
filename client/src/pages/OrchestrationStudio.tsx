@@ -119,6 +119,7 @@ import {
 } from "@/components/orchestration/workflowTypes";
 import { WorkflowGraphCanvas, WF_DND_MIME } from "@/components/orchestration/WorkflowGraphCanvas";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
+import { SafetyLatchWarning } from "@/components/safety/SafetyLatchWarning"; // doc 81 Đợt 9 final wave (R-9-e)
 // doc 80 Đợt 1 Task 4 (X-01 · ORC-13) — nhãn SEED/DEMO/SIM + DRY-RUN trên run.
 import { ProvenanceBadge, ProvenanceSummary, DispatchModeBadge } from "@/components/common/ProvenanceBadge";
 import { classifyStepDispatch, type RunDispatchSummary } from "@shared/provenance";
@@ -2874,6 +2875,9 @@ function RunRow({
   // fix 3 (R-6-d, M3) — only within ABORT_RESEND_WINDOW_MS of the abort (shared with the server, which decides): past it the
   // button is shown DISABLED with the reason ("too old — use the machine's direct STOP / E-STOP").
   const resendable = status === "aborted";
+  // doc 81 Đợt 9 final wave F2 — a run handed to an edge node that no node claimed in time is held as "edge unreachable".
+  const edgeUnreachableCtx = (run.contextJson as Record<string, unknown> | null | undefined) ?? null;
+  const edgeUnreachable = edgeUnreachableCtx?.edgeUnreachable === true;
   const resendTooOld = resendable && !abortResendAllowed(run.finishedAt as string | Date | null | undefined);
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
@@ -2934,6 +2938,11 @@ function RunRow({
           {/* doc 80 Task 4 — X-01 source label + ORC-13 dry-run/live marker. */}
           <ProvenanceBadge row={run} />
           <DispatchModeBadge dispatch={run.dispatch as RunDispatchSummary | undefined} />
+          {edgeUnreachable && (
+            <Badge variant="outline" data-testid="edge-unreachable" className="border-orange-500/60 text-[10px] text-orange-700 dark:text-orange-400">
+              {t("studio.edgeUnreachable", "edge unreachable")}
+            </Badge>
+          )}
           {assignment && <AssigneeCell row={assignment} className="max-w-[9rem]" />}
         </button>
         {interrupted && canControl && (
@@ -2989,6 +2998,8 @@ function RunRow({
       )}
       {(awaiting || interrupted) && canControl && <ProgramChecksBlock checks={programChecksOf(detailQ.data)} t={t} />}
       {(awaiting || interrupted) && canControl && apiKeyView && <ApiKeyIdentityBlock view={apiKeyView} meId={me?.id ?? null} t={t} />}
+      {/* doc 81 Đợt 9 final wave (R-9-e) — approving / continuing resumes actuation: a set e-stop latch is warned here (non-blocking) */}
+      {awaiting && canControl && <SafetyLatchWarning className="mx-2 my-1" />}
       {bindingChanged && (awaiting || interrupted) && canControl && (
         <div data-testid="binding-changed" role="alert" className="border-t bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-200">
           {t("studio.bindingChangedReload", "The device configuration this approval covers (adapter, tags or robot of its commands, or the program in a controller) changed since you opened it — reload the page and review it before approving.")}
@@ -3000,8 +3011,10 @@ function RunRow({
         </div>
       )}
       {interrupted && (
-        <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground">
-          {t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
+        <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground" data-testid={edgeUnreachable ? "edge-unreachable-hint" : undefined}>
+          {edgeUnreachable
+            ? t("studio.edgeUnreachableHint", "Edge node {{node}} did not claim this run in time (unreachable, or its checks keep refusing it). Continue re-queues it for that node; Cancel run aborts it.", { node: String(edgeUnreachableCtx?.edgeUnreachableNode ?? "?") })
+            : t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
         </div>
       )}
       <AlertDialog open={confirmContinue} onOpenChange={setConfirmContinue}>
@@ -3012,6 +3025,8 @@ function RunRow({
               {t("studio.continueRunDesc", "The run resumes from where it was interrupted and may send real commands to machines. Completed steps are skipped.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* doc 81 Đợt 9 final wave (R-9-e) — Continue resumes actuation: a set e-stop latch is warned (non-blocking) */}
+          <SafetyLatchWarning enabled={confirmContinue} />
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
             <AlertDialogAction disabled={approveBlocked} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash, bindingDigest); }}>

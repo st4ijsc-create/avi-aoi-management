@@ -182,11 +182,14 @@ export interface SafetySourceHealth {
     lastPollAt: string | null;
     staleConfigs: number;
     /** doc 81 Đợt 9 U1/U2 — readMode: "subscription" | "poll_fallback" | "poll" | "poll_latch" | "sim" | null (not reported yet). */
-    configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean; readMode: string | null; latchSetAt: string | null }>;
+    /** final wave — blindReason: why an OFFLINE link is blind, for display ("heartbeat_stale" = PLC heartbeat frozen / unreadable); null = no specific reason. */
+    configs: Array<{ code: string; link: string; lastAttemptAt: string | null; lastOkAt: string | null; stale: boolean; readMode: string | null; latchSetAt: string | null; blindReason: string | null }>;
     /**
      * doc 81 Đợt 9 U fix 1 (I3, ruling R-9-e) — configs (in scope) whose Modbus e-stop LATCH is set: "e-stop latch first seen
      * set at T, not reset" (U fix 2 N4: T = when the poller first SAW it set, not the press time) — further short presses are NOT captured until it is reset. A NON-blocking warning (actuation is not gated by
      * it — owner decision later; STOP always allowed).
+     * Final wave — with a command TARGET (the actuation confirm dialogs), only the configs that guard that target (the gate's own
+     * matcher); without one, every config in the viewer's scope.
      */
     latched: Array<{ code: string; since: string }>;
     hiddenConfigs: number;
@@ -307,12 +310,12 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
       rated: s.estop.rated,
     },
     socket: { serverUp: s.socketServerUp },
-    plcPoller: pollerPanel(s.plcPoller, s.visibleFactoryIds),
+    plcPoller: pollerPanel(s.plcPoller, s.visibleFactoryIds, s.targets ? new Set(configs.map((c) => c.id)) : null),
   };
 }
 
 /** fix scan 2 — the poller health, scoped to the viewer (no endpoint is ever part of it; final wave F4: computed from the durable poll-state rows — the fix-scan-2 heartbeat was removed in R-8-c). */
-function pollerPanel(h: PollerHealth | undefined, ids: number[] | null): SafetySourceHealth["plcPoller"] {
+function pollerPanel(h: PollerHealth | undefined, ids: number[] | null, guarding: Set<number> | null = null): SafetySourceHealth["plcPoller"] {
   if (!h) return { state: "off", lastPollAt: null, staleConfigs: 0, configs: [], hiddenConfigs: 0, latched: [] };
   const iso = (t: number | null | undefined) => (typeof t === "number" && Number.isFinite(t) ? new Date(t).toISOString() : null);
   const shown = h.configs.filter((c) => visible(ids, c.factoryId ?? null));
@@ -320,9 +323,9 @@ function pollerPanel(h: PollerHealth | undefined, ids: number[] | null): SafetyS
     state: h.state,
     lastPollAt: iso(h.lastPollAt),
     staleConfigs: shown.filter((c) => c.stale).length,
-    configs: shown.map((c) => ({ code: c.code, link: c.link, lastAttemptAt: iso(c.lastAttemptAt), lastOkAt: iso(c.lastOkAt), stale: c.stale, readMode: c.readMode ?? null, latchSetAt: iso(c.latchSetAt) })),
+    configs: shown.map((c) => ({ code: c.code, link: c.link, lastAttemptAt: iso(c.lastAttemptAt), lastOkAt: iso(c.lastOkAt), stale: c.stale, readMode: c.readMode ?? null, latchSetAt: iso(c.latchSetAt), blindReason: c.link === "offline" ? (c.blindReason ?? null) : null })),
     hiddenConfigs: h.configs.length - shown.length,
-    latched: shown.filter((c) => c.latchSetAt != null).map((c) => ({ code: c.code, since: iso(c.latchSetAt)! })),
+    latched: shown.filter((c) => c.latchSetAt != null && (guarding === null || guarding.has(c.id))).map((c) => ({ code: c.code, since: iso(c.latchSetAt)! })),
   };
 }
 

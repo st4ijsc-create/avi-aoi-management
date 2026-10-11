@@ -675,3 +675,60 @@ describe("OrchestrationStudio — doc 81 Đợt 9 R fix 1: key revoked / expired
     for (const n of notes) expect(n.textContent).not.toMatch(/Add a gate/);
   });
 });
+
+describe("OrchestrationStudio — doc 81 Đợt 9 final wave: latch warning in the approval / Continue confirm + 'edge unreachable'", () => {
+  const SINCE = "2026-10-12T03:04:05.000Z";
+  const latchedHealth = (latched: unknown[]) => makeQuery({ data: { plcPoller: { state: "ok", lastPollAt: SINCE, staleConfigs: 0, configs: [], hiddenConfigs: 0, latched } } });
+  const AWAITING = { ...run(60, "latch-flow", {}, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "awaiting_confirm", currentStepId: "g1" };
+  const detail = makeQuery({ data: { run: AWAITING, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, steps: [{ stepId: "g1", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "ok?" } }] } });
+
+  it("★ R-9-e: a set e-stop latch is warned next to Approve — NON-blocking (Approve stays enabled and sends as before)", async () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail);
+    setQueryOverride("safety.sourceHealth", latchedHealth([{ code: "MB-7", since: SINCE }]));
+    render(<OrchestrationStudio />);
+    const warn = within(rowOf(60)).getByTestId("safety-latch-confirm-warning");
+    expect(warn.textContent).toMatch(/MB-7: e-stop latch first seen set at .*not reset — later short presses are NOT captured.*Warning only: this command is not blocked/);
+    const approve = within(rowOf(60)).getByRole("button", { name: /^(Approve|studio\.approve)$/i });
+    expect(approve).toBeEnabled();
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(approve);
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 60, approved: true, note: undefined, expectedStepId: "g1", expectedDefHash: DEF_HASH, expectedBindingDigest: BINDING_DIGEST });
+  });
+
+  it("no latch set ⇒ no warning", () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", detail);
+    setQueryOverride("safety.sourceHealth", latchedHealth([]));
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(60)).queryByTestId("safety-latch-confirm-warning")).toBeNull();
+  });
+
+  it("★ F2: a run held because its edge node never claimed it shows 'edge unreachable' (badge + its own hint, not 'server restart'); Continue warns of a set latch", async () => {
+    const HELD = {
+      ...run(61, "edge-flow", { interrupted: true, interruptedFrom: "queued", interruptedBy: "edge unreachable", edgeUnreachable: true, edgeUnreachableNode: "N-LINE7" }, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }),
+      status: "held",
+    };
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [HELD] }));
+    setQueryOverride("orchestration.getRun", makeQuery({ data: { run: HELD, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, steps: [] } }));
+    setQueryOverride("safety.sourceHealth", latchedHealth([{ code: "MB-7", since: SINCE }]));
+    render(<OrchestrationStudio />);
+    const row = rowOf(61);
+    expect(within(row).getByTestId("edge-unreachable").textContent).toMatch(/edge unreachable/);
+    const hint = within(row).getByTestId("edge-unreachable-hint");
+    expect(hint.textContent).toMatch(/Edge node N-LINE7 did not claim this run in time/);
+    expect(hint.textContent).not.toMatch(/server restart/);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(within(row).getByRole("button", { name: /Continue…|studio\.continueRun/ }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByTestId("safety-latch-confirm-warning").textContent).toMatch(/MB-7/);
+  });
+
+  it("a run interrupted by a restart (no edge mark) keeps the restart hint and no badge", () => {
+    const HELD = { ...run(62, "restart-flow", { interrupted: true, interruptedFrom: "running" }, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "held" };
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [HELD] }));
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(62)).queryByTestId("edge-unreachable")).toBeNull();
+    expect(rowOf(62).textContent).toMatch(/server restart/);
+  });
+});

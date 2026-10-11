@@ -78,3 +78,12 @@ ALTER TABLE "safety_plc_poll_state" ADD CONSTRAINT "ck_safety_plc_poll_state_rea
 -- (the latch only rises once) ⇒ the Safety page says so and warns "e-stop latch first seen set at T, not reset" (non-blocking; STOP
 -- always allowed). NULL = latch not set / not mapped. Kept at its FIRST value while the latch stays set.
 ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "latchSetAt" bigint;
+
+-- doc 81 Đợt 9 final wave (U re-review #4/N-display) — idempotent addition (0371 applied to _test only): WHY a config's link is
+-- offline, for DISPLAY only. 'heartbeat_stale' = the PLC heartbeat tag was unreadable / unchanged beyond its bound (values may be
+-- frozen at the source — PLC program stopped?), so the operator's remedy differs from a cable / network fault. The link state
+-- itself (and every alarm / health decision) is unchanged — still 'offline'. NULL = no specific reason (or online).
+ALTER TABLE "safety_plc_poll_state" ADD COLUMN IF NOT EXISTS "blindReason" varchar(32);
+ALTER TABLE "safety_plc_poll_state" DROP CONSTRAINT IF EXISTS "ck_safety_plc_poll_state_blind_reason";
+ALTER TABLE "safety_plc_poll_state" ADD CONSTRAINT "ck_safety_plc_poll_state_blind_reason"
+  CHECK ("blindReason" IS NULL OR "blindReason" IN ('heartbeat_stale'));

@@ -299,8 +299,23 @@ describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
     expect(screen.queryAllByTestId("safety-source-poller-plc")).toHaveLength(0);
   });
 
+  // doc 81 Đợt 9 final wave — an offline PLC whose HEARTBEAT is frozen / unreadable is named as such (display reason; still an alert).
+  it("★ final wave: offline because the PLC heartbeat is stale ⇒ 'offline — PLC heartbeat stale (program stopped?)'; a plain offline keeps 'offline'", () => {
+    const cfg = (code: string, link: string, blindReason: string | null) => ({ code, link, lastAttemptAt: null, lastOkAt: null, stale: false, readMode: "subscription", latchSetAt: null, blindReason });
+    const poller = (configs: unknown[]) => ({ state: "ok", lastPollAt: "2026-10-12T10:00:00.000Z", staleConfigs: 0, configs, hiddenConfigs: 0, latched: [] });
+    setQueryOverride("safety.sourceHealth", makeQuery({ data: health({ plcPoller: poller([cfg("HB-1", "offline", "heartbeat_stale"), cfg("NET-1", "offline", null), cfg("OK-1", "online", null)]) }) }));
+    render(<SafetyWorkforce />);
+    const line = screen.getByTestId("safety-source-poller");
+    expect(line).toHaveAttribute("role", "alert"); // still blind, still an alert
+    expect(line.textContent).toContain("2 PLC(s) offline / unknown");
+    expect(screen.getAllByTestId("safety-source-poller-plc").map((e) => [e.textContent, e.getAttribute("data-link")])).toEqual([
+      ["HB-1: offline — PLC heartbeat stale (program stopped?)", "heartbeat_stale"],
+      ["NET-1: offline", "offline"],
+    ]);
+  });
+
   // doc 81 Đợt 9 U1/U2 — a PLC read by POLLING (Modbus without latch, OPC-UA subscription refused) is said per PLC.
-  it("★ U1/U2: 'polling (short presses may be missed)' per polled PLC; subscription / latch / sim / unknown mode ⇒ nothing", () => {
+  it("★ U1/U2: 'polling (short presses may be missed)' per polled PLC; subscription / latch / sim ⇒ nothing; final wave M10: a NULL mode ⇒ 'unknown'", () => {
     const cfg = (code: string, readMode: string | null) => ({ code, link: "online", lastAttemptAt: null, lastOkAt: null, stale: false, readMode });
     const poller = (configs: unknown[]) => ({ state: "ok", lastPollAt: "2026-10-12T10:00:00.000Z", staleConfigs: 0, configs, hiddenConfigs: 0 });
     setQueryOverride(
@@ -311,6 +326,7 @@ describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
     expect(screen.getAllByTestId("safety-source-poller-mode").map((e) => [e.textContent, e.getAttribute("data-mode")])).toEqual([
       ["UA-2: polling — OPC-UA subscription unavailable (short presses may be missed)", "poll_fallback"],
       ["MB-1: polling (short presses may be missed)", "poll"],
+      ["OLD-1: read mode not reported yet (unknown — short presses may be missed)", "unknown"], // final wave M10 — never silent
     ]);
     expect(screen.getByTestId("safety-source-poller").textContent).toMatch(/● alive/); // a degradation, not blindness
     setQueryOverride("safety.sourceHealth", makeQuery({ data: health({ plcPoller: poller([cfg("UA-1", "subscription"), cfg("MB-2", "poll_latch")]) }) }));

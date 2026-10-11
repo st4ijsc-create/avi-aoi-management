@@ -11886,6 +11886,8 @@
     "fourEyesHint": "启动本次运行的用户不能批准此关卡（包括 admin）。",
     "interruptedRuns": "已中断",
     "interruptedHint": "因服务器重启而中断 — 这不是审批关卡。继续前请检查现场；已完成的步骤不会重新执行。",
+    "edgeUnreachable": "边缘节点不可达",
+    "edgeUnreachableHint": "边缘节点 {{node}} 未及时认领此运行（不可达，或其检查持续拒绝）。“继续”会将其重新排队给该节点；“取消运行”将中止它。",
     "continueRun": "继续…",
     "cancelRun": "取消运行",
     "continueRunTitle": "继续运行 #{{id}}？",
@@ -18136,9 +18138,12 @@
         "linkStale": "过期",
         "modePolling": "轮询中（可能漏掉短促按压）",
         "modePollFallback": "轮询中——OPC-UA 订阅不可用（可能漏掉短促按压）",
-        "latchSet": "锁存位首次发现置位于 {{time}}——复位前后续的短促按压将无法捕获"
+        "latchSet": "锁存位首次发现置位于 {{time}}——复位前后续的短促按压将无法捕获",
+        "linkHeartbeatStale": "离线——PLC 心跳停滞（程序已停止？）",
+        "modeUnknown": "读取模式尚未上报（未知——可能漏掉短促按压）"
       },
-      "latchWarning": "⚠ {{code}}：急停锁存位首次发现置位于 {{time}}，尚未复位——仅为警告：不阻止实际写入/运动；停止指令始终允许"
+      "latchWarning": "⚠ {{code}}：急停锁存位首次发现置位于 {{time}}，尚未复位——仅为警告：不阻止实际写入/运动；停止指令始终允许",
+      "latchConfirm": "⚠ {{code}}：急停锁存位首次发现置位于 {{time}}，尚未复位——复位前之后的短促按压不会被捕获。仅为警告：此指令不会因此被阻止。"
     },
     "advisoryChip": "仅供参考 — 非 SIS",
     "flag": {

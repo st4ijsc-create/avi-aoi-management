@@ -12103,6 +12103,8 @@
     "fourEyesHint": "The user who started the run cannot approve this gate (admin included).",
     "interruptedRuns": "Interrupted",
     "interruptedHint": "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.",
+    "edgeUnreachable": "edge unreachable",
+    "edgeUnreachableHint": "Edge node {{node}} did not claim this run in time (unreachable, or its checks keep refusing it). Continue re-queues it for that node; Cancel run aborts it.",
     "continueRun": "Continue…",
     "cancelRun": "Cancel run",
     "continueRunTitle": "Continue run #{{id}}?",
@@ -17753,9 +17755,12 @@
         "linkStale": "stale",
         "modePolling": "polling (short presses may be missed)",
         "modePollFallback": "polling — OPC-UA subscription unavailable (short presses may be missed)",
-        "latchSet": "latch first seen set at {{time}} — further short presses are NOT captured until it is reset"
+        "latchSet": "latch first seen set at {{time}} — further short presses are NOT captured until it is reset",
+        "linkHeartbeatStale": "offline — PLC heartbeat stale (program stopped?)",
+        "modeUnknown": "read mode not reported yet (unknown — short presses may be missed)"
       },
-      "latchWarning": "⚠ {{code}}: e-stop latch first seen set at {{time}}, not reset — warning only: real writes / motion are not blocked by it; STOP is always allowed"
+      "latchWarning": "⚠ {{code}}: e-stop latch first seen set at {{time}}, not reset — warning only: real writes / motion are not blocked by it; STOP is always allowed",
+      "latchConfirm": "⚠ {{code}}: e-stop latch first seen set at {{time}}, not reset — later short presses are NOT captured until it is reset. Warning only: this command is not blocked by it."
     },
     "advisoryChip": "Advisory — not a SIS",
     "flag": {

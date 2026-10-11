@@ -71,7 +71,17 @@ export interface PollStateRow {
    * While set, further short presses are NOT captured until the latch is reset (shown + warned, never blocking).
    */
   latchSetAt?: number | null;
+  /**
+   * doc 81 Đợt 9 final wave (0371 extended) — WHY the link is offline, for DISPLAY only: "heartbeat_stale" = the PLC heartbeat
+   * tag was unreadable / frozen beyond its bound (program stopped?), not a link fault. null = no specific reason. Never read by
+   * any health / alarm / actuation decision (the link stays "offline").
+   */
+  blindReason?: BlindReason | null;
 }
+
+/** doc 81 Đợt 9 final wave — the display reasons of an offline link (= the 0371 CHECK). */
+export type BlindReason = "heartbeat_stale";
+export const BLIND_REASONS: ReadonlySet<string> = new Set(["heartbeat_stale"]);
 
 /**
  * Durable poll state. load/save/list THROW on failure (callers decide); claimStaleAlarm never throws.
@@ -121,6 +131,7 @@ function rowOf(r: Record<string, unknown>): PollStateRow {
     unrecordedCount: num(r.unrecordedCount),
     readMode: typeof r.readMode === "string" ? r.readMode : null,
     latchSetAt: num(r.latchSetAt),
+    blindReason: typeof r.blindReason === "string" && BLIND_REASONS.has(r.blindReason) ? (r.blindReason as BlindReason) : null,
   };
 }
 
@@ -140,7 +151,7 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & 
   const listAt = async (): Promise<{ rows: PollStateRow[]; nowMs: number }> => {
     // ONE query: the DB clock + every row (LEFT JOIN keeps the clock when there is no row at all).
     const rows = (await (await db()).execute(sql`
-      SELECT n.t AS "dbNow", s."configId", s.link, s.flags, s."intervalMs", s."lastAttemptAt", s."lastOkAt", s."staleAlarmEpisode", s."unrecordedSince", s."unrecordedCount", s."readMode", s."latchSetAt"
+      SELECT n.t AS "dbNow", s."configId", s.link, s.flags, s."intervalMs", s."lastAttemptAt", s."lastOkAt", s."staleAlarmEpisode", s."unrecordedSince", s."unrecordedCount", s."readMode", s."latchSetAt", s."blindReason"
         FROM (SELECT ${DB_NOW_MS} AS t) n LEFT JOIN safety_plc_poll_state s ON true`)) as unknown as Array<Record<string, unknown>>;
     const nowMs = num(rows[0]?.dbNow);
     if (nowMs == null) throw new DbUnavailableError("db clock unreadable"); // caller ⇒ "unknown" (never ok)
@@ -161,9 +172,11 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & 
       const count = typeof r.unrecordedCount === "number" && Number.isFinite(r.unrecordedCount) ? Math.max(0, Math.min(2_000_000_000, Math.round(r.unrecordedCount))) : null;
       // doc 81 Đợt 9 U1/U2 — only the known modes (the column CHECK refuses anything else; unknown ⇒ NULL, never invented)
       const mode = typeof r.readMode === "string" && READ_MODES.has(r.readMode) ? r.readMode : null;
+      // final wave — the display reason of an offline link: only a known value, only while offline (else NULL)
+      const blind = r.link === "offline" && typeof r.blindReason === "string" && BLIND_REASONS.has(r.blindReason) ? r.blindReason : null;
       await (await db()).execute(sql`
-        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "identityDigest", "unrecordedSince", "unrecordedCount", "readMode", "latchSetAt", "writerInstance", "updatedAt")
-        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${onDb(age(r.lastAttemptAt))}, ${onDb(age(r.lastOkAt))}, ${r.identityDigest ?? null}, ${onDb(age(r.unrecordedSince))}, ${count}, ${mode}, ${onDb(age(r.latchSetAt))}, ${instance.slice(0, 64)}, now())
+        INSERT INTO safety_plc_poll_state ("configId", link, flags, "intervalMs", "lastAttemptAt", "lastOkAt", "identityDigest", "unrecordedSince", "unrecordedCount", "readMode", "latchSetAt", "blindReason", "writerInstance", "updatedAt")
+        VALUES (${r.configId}, ${r.link}, ${JSON.stringify(r.flags ?? {})}::jsonb, ${r.intervalMs}, ${onDb(age(r.lastAttemptAt))}, ${onDb(age(r.lastOkAt))}, ${r.identityDigest ?? null}, ${onDb(age(r.unrecordedSince))}, ${count}, ${mode}, ${onDb(age(r.latchSetAt))}, ${blind}, ${instance.slice(0, 64)}, now())
         ON CONFLICT ("configId") DO UPDATE SET link = EXCLUDED.link, flags = EXCLUDED.flags, "intervalMs" = EXCLUDED."intervalMs",
           "lastAttemptAt" = EXCLUDED."lastAttemptAt", "lastOkAt" = EXCLUDED."lastOkAt", "identityDigest" = EXCLUDED."identityDigest",
           -- final wave NF-1/NF-2: a continuing wait keeps its FIRST stored value (no ±latency drift of the episode key,
@@ -173,6 +186,7 @@ export function pgPollStateStore(instance = `${process.pid}`): PollStateStore & 
           "unrecordedCount" = EXCLUDED."unrecordedCount", "readMode" = EXCLUDED."readMode",
           -- U fix 1 (I3): the latch keeps its FIRST "set since" while it stays set; cleared ⇒ NULL
           "latchSetAt" = CASE WHEN EXCLUDED."latchSetAt" IS NULL THEN NULL ELSE COALESCE(safety_plc_poll_state."latchSetAt", EXCLUDED."latchSetAt") END,
+          "blindReason" = EXCLUDED."blindReason",
           "writerInstance" = EXCLUDED."writerInstance", "updatedAt" = now()`);
     },
     async list() {
@@ -219,7 +233,7 @@ export interface PollerHealth {
   state: PollerHealthState;
   /** The newest attempt of ANY config (what every instance reports as "the leader's last poll"). */
   lastPollAt: number | null;
-  configs: Array<EnabledConfigLite & { link: PollLink; lastAttemptAt: number | null; lastOkAt: number | null; stale: boolean; unrecordedSince: number | null; readMode: string | null; latchSetAt: number | null }>;
+  configs: Array<EnabledConfigLite & { link: PollLink; lastAttemptAt: number | null; lastOkAt: number | null; stale: boolean; unrecordedSince: number | null; readMode: string | null; latchSetAt: number | null; blindReason: BlindReason | null }>;
   /** U fix 1 (I3) — configs whose e-stop latch is set: further short presses are NOT captured until it is reset. */
   latchedConfigs: number;
   staleScopes: Array<{ configId: number; episode: string; reason: string }>;
@@ -257,7 +271,7 @@ export function evaluatePollerHealth(enabled: EnabledConfigLite[], rows: PollSta
         reason: `config "${code}": ${r?.unrecordedCount ?? "?"} observed transition(s) NOT recorded for ${Math.round((now - unrec!) / 1000)} s (event inserts failing) — trips are seen but neither recorded nor notified`,
       });
     }
-    return { ...c, link: r?.link ?? "unknown", lastAttemptAt: last, lastOkAt: r?.lastOkAt ?? null, stale, unrecordedSince: unrec, readMode: r?.readMode ?? null, latchSetAt: r?.latchSetAt ?? null };
+    return { ...c, link: r?.link ?? "unknown", lastAttemptAt: last, lastOkAt: r?.lastOkAt ?? null, stale, unrecordedSince: unrec, readMode: r?.readMode ?? null, latchSetAt: r?.latchSetAt ?? null, blindReason: r?.link === "offline" ? (r?.blindReason ?? null) : null };
   });
   return { state: staleScopes.length ? "stale" : "ok", lastPollAt, configs, staleScopes, latchedConfigs: configs.filter((c) => c.latchSetAt != null).length };
 }

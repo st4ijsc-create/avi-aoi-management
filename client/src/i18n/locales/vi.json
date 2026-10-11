@@ -12083,6 +12083,8 @@
     "fourEyesHint": "Người khởi động lượt chạy không được tự duyệt cổng này (kể cả admin).",
     "interruptedRuns": "Bị gián đoạn",
     "interruptedHint": "Lượt chạy bị ngắt do máy chủ khởi động lại — đây KHÔNG phải cổng chờ duyệt. Kiểm tra hiện trường trước khi tiếp tục; các bước đã xong sẽ không chạy lại.",
+    "edgeUnreachable": "không liên lạc được nút biên",
+    "edgeUnreachableHint": "Nút biên {{node}} không nhận lượt chạy này kịp thời (không liên lạc được, hoặc phép kiểm tra của nó liên tục từ chối). Tiếp tục sẽ xếp lại lượt chạy cho nút đó; Huỷ lượt chạy sẽ dừng hẳn.",
     "continueRun": "Tiếp tục…",
     "cancelRun": "Huỷ",
     "continueRunTitle": "Tiếp tục lượt chạy #{{id}}?",
@@ -17733,9 +17735,12 @@
         "linkStale": "quá hạn",
         "modePolling": "đang đọc định kỳ (có thể bỏ sót lần nhấn ngắn)",
         "modePollFallback": "đang đọc định kỳ — không dùng được subscription OPC-UA (có thể bỏ sót lần nhấn ngắn)",
-        "latchSet": "bit chốt được thấy bật lần đầu lúc {{time}} — các lần nhấn ngắn tiếp theo KHÔNG được ghi nhận cho tới khi đặt lại"
+        "latchSet": "bit chốt được thấy bật lần đầu lúc {{time}} — các lần nhấn ngắn tiếp theo KHÔNG được ghi nhận cho tới khi đặt lại",
+        "linkHeartbeatStale": "ngoại tuyến — nhịp tim PLC đứng yên (chương trình đã dừng?)",
+        "modeUnknown": "chưa báo chế độ đọc (không rõ — có thể bỏ sót lần nhấn ngắn)"
       },
-      "latchWarning": "⚠ {{code}}: bit chốt e-stop được thấy bật lần đầu lúc {{time}}, chưa đặt lại — chỉ cảnh báo: không chặn lệnh ghi / chuyển động thật; lệnh DỪNG luôn được phép"
+      "latchWarning": "⚠ {{code}}: bit chốt e-stop được thấy bật lần đầu lúc {{time}}, chưa đặt lại — chỉ cảnh báo: không chặn lệnh ghi / chuyển động thật; lệnh DỪNG luôn được phép",
+      "latchConfirm": "⚠ {{code}}: bit chốt e-stop được thấy bật lần đầu lúc {{time}}, chưa đặt lại — các lần nhấn ngắn sau đó KHÔNG được ghi nhận cho tới khi đặt lại. Chỉ cảnh báo: lệnh này không bị chặn vì nó."
     },
     "advisoryChip": "Tư vấn — không phải SIS",
     "flag": {
