@@ -334,7 +334,13 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `robot.clearMotionLock`), không phải bề mặt AI ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi.
  *   Đo: cây trước lượt = 2299 (khớp ghim), sau = 2301. `tong` 2301 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2301, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-11 doc 81 Đợt 7 I fix 1 (review M-5) — **tong 2301 → 2302 · GHIM_MODULE_KHAC.MOD_ENGINEERING 75 → 76**: đúng MỘT thủ
+ *   tục MỚI `orchestration.runListMeta` (query chỉ đọc — danh sách run có bị cắt không), `protectedProcedure` của
+ *   `orchestrationRouter` đã che bằng `moduleProcedure("MOD_ENGINEERING")` + `requirePermission("machine_monitoring","canView")`
+ *   như `listRuns`. Không phải bề mặt AI. Đo: trước = 2301 / 75 (khớp ghim), sau = 2302 / 76.
+ */
+const GHIM = { tong: 2302, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -355,7 +361,8 @@ const GHIM_MODULE_KHAC = {
   //   đã che bằng `moduleProcedure("MOD_ENGINEERING")`). Cố ý: cùng cổng giấy phép với mọi thủ tục
   //   anh em trong router lập trình. Không thủ tục cũ nào đổi cổng. (Ô `tong` của §2 đỏ TỪ TRƯỚC —
   //   đo HEAD `8d51dc150` = 2283; lượt này +2 → 2285, chính là hai thủ tục này.)
-  MOD_ENGINEERING: 75,
+  // ★ 2026-10-11 doc 81 Đợt 7 I fix 1 — 75 → 76: `orchestration.runListMeta` (query, MOD_ENGINEERING như listRuns).
+  MOD_ENGINEERING: 76,
   MOD_FEDERATION: 8,
   // ★ 2026-09-27 doc 80 Đợt 1 Task 4 (SAF-02) — 105 → 106: thủ tục MỚI `safety.sourceHealth`
   //   (query chỉ đọc) nằm trong `safetyRouter.ts`, nơi `protectedProcedure` đã bị che bằng

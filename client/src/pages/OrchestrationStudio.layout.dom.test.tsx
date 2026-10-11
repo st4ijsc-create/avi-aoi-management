@@ -57,6 +57,8 @@ const srv = vi.hoisted(() => ({
   runs: [] as Array<Record<string, unknown>>,
   versions: {} as Record<number, Array<Record<string, unknown>>>,
   getRun: undefined as unknown,
+  /** doc 81 Đợt 7 I fix 1 — orchestration.runListMeta answer (undefined = not loaded). */
+  runListMeta: undefined as unknown,
   /** doc 81 Đợt 4 fix round 3 (R-4-n) — equipment rows + in-scope robots for the robot picker. */
   equipment: [] as unknown[],
   robots: [] as unknown[],
@@ -108,6 +110,7 @@ vi.mock("@/lib/trpc", () => {
           return q(key, srv.versions[id] ?? []);
         }
         if (key === "orchestration.getRun") return q(key, srv.getRun);
+        if (key === "orchestration.runListMeta") return q(key, srv.runListMeta);
         if (key === "equipment.listEquipment") return q(key, srv.equipment);
         if (key === "fleet.robotPositions") return q(key, srv.robots);
         // doc 81 Đợt 3 Task 4 — phân công run đang hiệu lực + roster.
@@ -223,6 +226,7 @@ beforeEach(() => {
   srv.runs = RUNS_PLAIN.map((r) => ({ ...r }));
   srv.versions = { 11: VERSIONS_11.map((v) => ({ ...v })) };
   srv.getRun = undefined;
+  srv.runListMeta = undefined;
   srv.equipment = [];
   srv.robots = [];
   srv.queryInputs = {};
@@ -1168,6 +1172,16 @@ describe("doc 81 Đợt 4 fix round 3 — robot picker (R-4-n) + hash pinned at 
     const shown = String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0]);
     expect(shown).toContain(VI.errors.reason.bindingChanged);
     expect(shown).not.toContain("RAW server text");
+  });
+
+  it("★ doc 81 Đợt 7 I fix 1 (M-5): a TRUNCATED run list is said in the bar; not truncated ⇒ nothing", () => {
+    srv.runListMeta = { truncated: false };
+    const view = render(<OrchestrationStudio />);
+    expect(screen.queryByTestId("run-list-truncated")).toBeNull();
+    view.unmount();
+    srv.runListMeta = { truncated: true };
+    render(<OrchestrationStudio />);
+    expect(screen.getByTestId("run-list-truncated")).toHaveTextContent(S.runListTruncated);
   });
 
   it("R-4-p: same hash on later polls ⇒ no warning, the approval carries the FIRST-viewed hash", async () => {

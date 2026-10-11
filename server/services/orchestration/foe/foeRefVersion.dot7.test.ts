@@ -5,7 +5,7 @@
  *     definition is re-stamped; an unrestricted scope and the system loader keep plain refs; a visible workflow is updated
  *     in place; an UNDECIDED scope over the existing workflow ⇒ refused `scopeUnverified` (no silent second copy);
  *   • run visibility follows the executed VERSIONS: runVisibilityDefinitions (legacy ⇒ head; recorded ⇒ head or snapshot;
- *     a missing snapshot / workflow ⇒ null), and listVisibleRuns fills a page from growing reads.
+ *     a missing snapshot / workflow ⇒ null).
  * The same rules on the real `_test` database: server/routers/orchestrationScope.dot5.db.test.ts.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -64,7 +64,7 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, orchestrationWorkflows, machines, deviceAdapters, deviceTags } from "../../../../drizzle/schema";
-import { deployWorkflow, startRun, runVisibilityDefinitions, listVisibleRuns, refWithSuffix, runVisibleTo } from "./foeEngine";
+import { deployWorkflow, startRun, runVisibilityDefinitions, refWithSuffix, runVisibleTo } from "./foeEngine";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 
 type Row = Record<string, any>;
@@ -174,26 +174,6 @@ describe("doc 81 Đợt 7 I3 — runVisibilityDefinitions / listVisibleRuns", ()
     expect(await runVisibleTo({ workflowId: 1, paramsJson: null }, scope)).toBe(true); // legacy ⇒ head (A)
   });
 
-  it("★ listVisibleRuns fills a page of VISIBLE runs (newest first) from growing reads; unrestricted reads one page", async () => {
-    seedWf(1, 1, [A_START]); // visible
-    seedWf(2, 1, [B_START]); // not visible
-    const runs: Row[] = [];
-    for (let i = 1; i <= 300; i++) runs.push({ id: i, workflowId: i % 10 === 0 ? 1 : 2, status: "completed", paramsJson: { __foeDefVersions: [1] }, createdAt: new Date(1_700_000_000_000 + i * 1000) });
-    fake.store.set("orchestration_runs", runs);
-    const got = await listVisibleRuns({ limit: 5 }, { userId: 10, userRole: "engineer" } as never);
-    expect(got.map((r) => r.id)).toEqual([300, 290, 280, 270, 260]);
-    // sparse: only every 100th run is visible ⇒ the first read (50 rows) holds 1 ⇒ the reads grow until the page is full
-    fake.store.set("orchestration_runs", runs.map((r) => ({ ...r, workflowId: r.id % 100 === 0 ? 1 : 2 })));
-    expect((await listVisibleRuns({ limit: 3 }, { userId: 10, userRole: "engineer" } as never)).map((r) => r.id)).toEqual([300, 200, 100]);
-    const one = await listVisibleRuns({ limit: 3, workflowId: 2 }, { userId: 10, userRole: "engineer" } as never);
-    expect(one).toEqual([]);
-    judge.mode = "admin";
-    expect((await listVisibleRuns({ limit: 4 }, null)).map((r) => r.id)).toEqual([300, 299, 298, 297]);
-    judge.mode = "scoped";
-    // fix 1 (M-5): beyond any fixed cap — 5 000 runs, the only visible one is the OLDEST ⇒ still listed
-    const many: Row[] = [];
-    for (let i = 1; i <= 5000; i++) many.push({ id: i, workflowId: i === 1 ? 1 : 2, status: "completed", paramsJson: { __foeDefVersions: [1] }, createdAt: new Date(1_700_000_000_000 + i * 1000) });
-    fake.store.set("orchestration_runs", many);
-    expect((await listVisibleRuns({ limit: 10 }, { userId: 10, userRole: "engineer" } as never)).map((r) => r.id)).toEqual([1]);
-  });
+  // listVisibleRuns now filters IN SQL (doc 81 Đợt 7 I fix 1) — measured on the real `_test` database:
+  // server/routers/orchestrationScope.dot5.db.test.ts ("bounded run list").
 });

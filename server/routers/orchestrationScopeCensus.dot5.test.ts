@@ -119,7 +119,8 @@ export function unscopedEngineEntries(src: string, allow: Record<string, string>
     .filter(({ name, params, body }) => {
       if (!/\b(runId|workflowId|workflowRef|runIds)\b/.test(params)) return false;
       // 2026-10-11 doc 81 Đợt 7 I3 — + filterRunsVisibleWith (the judge-taking form of filterRunsVisibleTo)
-      const scoped = /\b(scopeFor|definitionVisibleTo|runVisibleTo|scopeVerdict|boundedRunScopeDecision|filterRunsVisibleTo|filterRunsVisibleWith)\(/.test(body);
+      // I fix 1 — + runVisibilitySql (the SQL form of the same rule: list / hub filter in SQL before LIMIT)
+      const scoped = /\b(scopeFor|definitionVisibleTo|runVisibleTo|scopeVerdict|boundedRunScopeDecision|filterRunsVisibleTo|filterRunsVisibleWith|runVisibilitySql)\(/.test(body);
       return !scoped && !(name in allow);
     })
     .map((e) => e.name);

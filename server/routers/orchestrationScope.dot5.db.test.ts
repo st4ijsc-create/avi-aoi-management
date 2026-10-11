@@ -607,6 +607,51 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     expect(await orchestrationRunWebhookAudience(2_000_000_003)(ownedBy("adm"))).toBe(false); // no such run
   });
 
+  it("★ doc 81 Đợt 7 I fix 1 (M-5 + scan) — bounded run list: the SQL scope filter equals the per-run check; per-call work is capped; definitions left unjudged ⇒ their runs hidden + `truncated`", async () => {
+    const { deployWorkflow, startRun, listVisibleRuns, runIdVisibleTo, lastRunVisibilityStats, RUN_SCOPE_MAX_DEFINITIONS } = await engine();
+    const scopeA = { userId: fx.users.ua, userRole: "engineer" };
+    // legacy runs (no version record, started before Đợt 7): judged on the workflow's HEAD
+    const rLegB = ref("leg-b");
+    const rLegA = ref("leg-a");
+    expect((await deployWorkflow(defOf(rLegB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
+    expect((await deployWorkflow(defOf(rLegA, [otStart("a", A)]), ADMIN)).ok).toBe(true);
+    const legB = (await startRun(rLegB, {}, ADMIN)).runId!;
+    const legA = (await startRun(rLegA, {}, ADMIN)).runId!;
+    await sql`UPDATE orchestration_runs SET "paramsJson" = '{}'::jsonb WHERE id IN ${sql([legA, legB])}`;
+    // (1) parity: every run the SQL page shows is visible by the per-run rule, and every visible recent run is shown
+    const page = await listVisibleRuns({ limit: 500 }, scopeA);
+    for (const r of page.runs) expect(await runIdVisibleTo(r.id, scopeA), `run ${r.id}`).toBe(true);
+    const recent = await sql`SELECT id FROM orchestration_runs ORDER BY "createdAt" DESC, id DESC LIMIT 200`;
+    const shown = new Set(page.runs.map((r) => r.id));
+    for (const row of recent) if (await runIdVisibleTo(Number(row.id), scopeA)) expect(shown.has(Number(row.id)), `run ${row.id}`).toBe(true);
+    expect(page.truncated).toBe(false);
+    expect(shown.has(legA)).toBe(true);
+    expect(shown.has(legB)).toBe(false);
+    // (2) a LARGE fixture: more version snapshots than one call judges — the work stays capped, the answer says truncated,
+    //     and a run of a version beyond the cap is NOT shown (fail-closed), though it is A's
+    const r = ref("big");
+    expect((await deployWorkflow(defOf(r, [otStart("a", A)]), ADMIN)).ok).toBe(true);
+    const wf = await wfRow(r);
+    const run = (await startRun(r, {}, userOf("ua"))).runId!;
+    await sql`UPDATE orchestration_runs SET "paramsJson" = jsonb_set(coalesce("paramsJson", '{}'::jsonb), '{__foeDefVersions}', '[7777]'::jsonb) WHERE id = ${run}`;
+    await sql`UPDATE orchestration_workflow_versions SET "createdAt" = '2000-01-01' WHERE "workflowId" = ${wf.id}`;
+    await sql`INSERT INTO orchestration_workflow_versions ("workflowId", ref, version, name, "definitionJson", "createdAt")
+      VALUES (${wf.id}, ${r}, 7777, 'old', ${sql.json(wf.definitionJson)}, '2000-01-01')`;
+    await sql`INSERT INTO orchestration_workflow_versions ("workflowId", ref, version, name, "definitionJson")
+      SELECT ${wf.id}, ${r}, 10000 + g, 'filler', ${sql.json(wf.definitionJson)} FROM generate_series(1, ${RUN_SCOPE_MAX_DEFINITIONS + 50}) g`;
+    const big = await listVisibleRuns({ limit: 500 }, scopeA);
+    expect(lastRunVisibilityStats.definitionsJudged).toBe(RUN_SCOPE_MAX_DEFINITIONS);
+    expect(lastRunVisibilityStats.definitionsRead).toBeLessThanOrEqual(RUN_SCOPE_MAX_DEFINITIONS + 1);
+    expect(big.truncated).toBe(true);
+    expect(big.runs.map((x) => x.id)).not.toContain(run);
+    expect(await runIdVisibleTo(run, scopeA)).toBe(true); // A's own run, reachable by id
+    expect((await (await router(ctxOf("ua"))).runListMeta()).truncated).toBe(true);
+    // (3) the page size is hard-capped (more than 500 runs exist)
+    await sql`INSERT INTO orchestration_runs ("workflowId", "workflowRef", status, "paramsJson") SELECT ${wf.id}, ${r}, 'completed', '{}'::jsonb FROM generate_series(1, 520)`;
+    expect((await listVisibleRuns({ limit: 100_000 }, null)).runs.length).toBe(500);
+    await sql`DELETE FROM orchestration_workflow_versions WHERE "workflowId" = ${wf.id} AND version >= 7777`;
+  }, 60_000);
+
   it("★ N4: the hub's orchestration scope cannot be decided ⇒ orchestration (and 'mine' orchestration) DEGRADED, not a silent 0", async () => {
     const hub = async () => (await import("./oversightRouter")).oversightRouter.createCaller(ctxOf("ua")).pendingSummary();
     hubFail.on = true;

@@ -242,7 +242,9 @@ export const orchestrationRouter = router({
       // doc 81 Đợt 5 task E2 — only runs the caller may see; a run whose workflow row is gone is visible only to an
       // unrestricted scope. doc 81 Đợt 7 task I3 — by the definition VERSIONS each run executed (not the workflow's current
       // head): foeEngine.listVisibleRuns (a full page, newest first).
-      const runs = await listVisibleRuns({ workflowId: input?.workflowId ?? undefined, limit: input?.limit ?? 100 }, scopeOf(ctx.user));
+      // doc 81 Đợt 7 I fix 1 — bounded: the scope filter is SQL before LIMIT (RUN_LIST_MAX_LIMIT ≥ this input's max 500);
+      // whether definitions were left unjudged is told by `runListMeta` (the Studio shows a notice).
+      const { runs } = await listVisibleRuns({ workflowId: input?.workflowId ?? undefined, limit: input?.limit ?? 100 }, scopeOf(ctx.user));
       // doc 80 Đợt 1 Task 4 (ORC-13) — additive `dispatch`: were this run's commands simulated
       // (DRY-RUN) or really sent? Derived from the step results foeEngine records
       // ({routedTo, status, simulated}); one extra query over the listed run ids.
@@ -259,6 +261,18 @@ export const orchestrationRouter = router({
         else byRun.set(s.runId, [s.resultJson]);
       }
       return runs.map((r) => ({ ...r, dispatch: summarizeRunDispatch(byRun.get(r.id) ?? []) }));
+    }),
+
+  /**
+   * doc 81 Đợt 7 I fix 1 (review M-5) — is the caller's run list TRUNCATED? true ⇔ more workflow definitions exist than one call
+   * judges (foeEngine.RUN_SCOPE_MAX_DEFINITIONS) — the runs of the versions left out are not listed — or the scope could
+   * not be decided. The Studio says so instead of silently showing fewer runs.
+   */
+  runListMeta: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(async ({ ctx }) => {
+      const { truncated } = await listVisibleRuns({ limit: 1 }, scopeOf(ctx.user));
+      return { truncated };
     }),
 
   /** Get a run + its per-step audit. */

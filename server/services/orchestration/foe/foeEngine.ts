@@ -27,7 +27,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../../../_core/appError";
-import { and, desc, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray, sql, type SQL } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
 import {
@@ -1710,55 +1710,127 @@ export async function runVisibleTo(run: { workflowId: number; paramsJson: unknow
 }
 
 /**
- * doc 81 Đợt 7 task I3 — the runs a list shows (newest first, at most `limit`), visible by the versions they executed. An
- * unrestricted scope reads one page in SQL; a restricted one reads growing pages (×4, no cap — fix 1, M-5) and keeps the
- * visible runs until the page is full or the rows run out. Any error ⇒ [] (fail-closed).
+ * doc 81 Đợt 7 I fix 1 (review M-5 + security scan "resource-cap-removal-dos") — HARD bounds of every run-list call:
+ *   • RUN_SCOPE_MAX_DEFINITIONS — at most this many workflow definitions (heads first, then the newest version snapshots) are
+ *     JUDGED per call (one machine load + one batched stop verifier for all of them). More exist ⇒ the runs of the versions
+ *     left out are not shown and the answer says `truncated` (fail-closed: never shown on a guess).
+ *   • RUN_LIST_MAX_LIMIT — the largest page; the scope filter runs IN SQL before LIMIT (no in-memory filtering of runs).
+ *   • RUN_PENDING_MAX — the most pending runs the hub / "mine" takes per call; more ⇒ degraded (not a silent subset).
+ */
+export const RUN_SCOPE_MAX_DEFINITIONS = 2000;
+export const RUN_LIST_MAX_LIMIT = 500;
+export const RUN_PENDING_MAX = 2000;
+
+/** For tests: what the last runVisibilitySql call judged (bounded-work measurement). */
+export const lastRunVisibilityStats = { definitionsRead: 0, definitionsJudged: 0, truncated: false };
+
+/**
+ * doc 81 Đợt 7 I fix 1 — the SQL predicate "this run is visible to `scope`" by the definition VERSIONS it executed (the same
+ * rule as runVisibilityDefinitions / filterRunsVisibleTo, computed ONCE per call over a bounded set of definitions):
+ *   • a run with no version record (legacy) ⇒ its workflow's HEAD must be decided "in";
+ *   • a recorded run ⇒ EVERY recorded version (workflowId:version) must be decided "in" (a non-number element, a version not
+ *     judged — snapshot missing, or beyond RUN_SCOPE_MAX_DEFINITIONS — ⇒ hidden).
+ * `where` undefined ⇔ unrestricted. A failed scope resolution ⇒ FALSE (nothing) + failed. Never throws on a judge failure;
+ * a DB error throws (callers fail closed).
+ */
+export async function runVisibilitySql(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  scope: FoeScope,
+): Promise<{ where: SQL | undefined; truncated: boolean; failed: boolean; scopeFailed: boolean }> {
+  const judge = await makeScopeJudge(scope);
+  if (judge.unrestricted && !judge.failed) return { where: undefined, truncated: false, failed: false, scopeFailed: false };
+  if (judge.failed) return { where: sql`FALSE`, truncated: false, failed: true, scopeFailed: true };
+  const max = RUN_SCOPE_MAX_DEFINITIONS;
+  const heads = await d
+    .select({ id: orchestrationWorkflows.id, version: orchestrationWorkflows.version, definitionJson: orchestrationWorkflows.definitionJson })
+    .from(orchestrationWorkflows)
+    .orderBy(desc(orchestrationWorkflows.updatedAt))
+    .limit(max + 1);
+  const snaps =
+    heads.length < max
+      ? await d
+          .select({ workflowId: orchestrationWorkflowVersions.workflowId, version: orchestrationWorkflowVersions.version, definitionJson: orchestrationWorkflowVersions.definitionJson })
+          .from(orchestrationWorkflowVersions)
+          .orderBy(desc(orchestrationWorkflowVersions.createdAt))
+          .limit(max - heads.length + 1)
+      : [];
+  type Item = { wf: number; version: number; def: WorkflowDefinition | null; head: boolean };
+  const items: Item[] = [
+    ...heads.map((h) => ({ wf: h.id, version: h.version ?? 1, def: h.definitionJson as WorkflowDefinition, head: true })),
+    ...snaps.map((v) => ({ wf: v.workflowId, version: v.version, def: v.definitionJson as WorkflowDefinition, head: false })),
+  ];
+  const truncated = items.length > max;
+  const judged = items.slice(0, max);
+  const r = await filterVisibleWith(judge, judged, (x) => x.def);
+  lastRunVisibilityStats.definitionsRead = items.length;
+  lastRunVisibilityStats.definitionsJudged = judged.length;
+  lastRunVisibilityStats.truncated = truncated;
+  const headIds = [...new Set(r.keep.filter((x) => x.head).map((x) => x.wf))];
+  const pairs = [...new Set(r.keep.map((x) => `${x.wf}:${x.version}`))];
+  const p = orchestrationRuns.paramsJson;
+  const recorded = sql`(jsonb_typeof(${p} -> ${FOE_DEF_VERSIONS_PARAM}) = 'array' AND jsonb_array_length(${p} -> ${FOE_DEF_VERSIONS_PARAM}) > 0)`;
+  const pairArr = pairs.length ? sql`ARRAY[${sql.join(pairs.map((x) => sql`${x}`), sql`, `)}]::text[]` : sql`ARRAY[]::text[]`;
+  const where = sql`(
+    (NOT coalesce(${recorded}, false) AND ${inArray(orchestrationRuns.workflowId, headIds.length ? headIds : [-1])})
+    OR (coalesce(${recorded}, false) AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(${p} -> ${FOE_DEF_VERSIONS_PARAM}) e
+       WHERE jsonb_typeof(e) <> 'number' OR (${orchestrationRuns.workflowId}::text || ':' || (e #>> '{}')) <> ALL(${pairArr})
+    ))
+  )`;
+  return { where, truncated, failed: r.failed, scopeFailed: false };
+}
+
+/**
+ * doc 81 Đợt 7 task I3 + I fix 1 — ONE page of the runs a list shows (newest first, at most min(limit, RUN_LIST_MAX_LIMIT)),
+ * visible by the versions they executed: the scope filter is the SQL predicate of runVisibilitySql, applied BEFORE the LIMIT
+ * (no in-memory filtering, bounded work). `truncated` ⇔ some definitions were left unjudged (their runs are not shown).
+ * Any error ⇒ no runs, truncated (fail-closed, said).
  */
 export async function listVisibleRuns(
   opts: { workflowId?: number; limit: number },
   scope: FoeScope,
-): Promise<Array<typeof orchestrationRuns.$inferSelect>> {
+): Promise<{ runs: Array<typeof orchestrationRuns.$inferSelect>; truncated: boolean }> {
   try {
     const d = await getDb();
-    if (!d) return [];
-    const judge = await makeScopeJudge(scope);
-    const where = opts.workflowId != null ? eq(orchestrationRuns.workflowId, opts.workflowId) : undefined;
-    const page = (n: number) => d.select().from(orchestrationRuns).where(where).orderBy(desc(orchestrationRuns.createdAt)).limit(n);
-    if (judge.unrestricted && !judge.failed) return await page(opts.limit);
-    let n = Math.max(opts.limit * 2, 50);
-    for (;;) {
-      const rows = await page(n);
-      const { keep } = await filterRunsVisibleWith(judge, rows);
-      // fix 1 (review M-5) — no cap: the reads grow (×4) until the page is full or the runs run out, so a restricted user
-      // never silently loses older visible runs (the cost grows only with how sparse the visible runs are).
-      if (keep.length >= opts.limit || rows.length < n) return keep.slice(0, opts.limit);
-      n *= 4;
-    }
+    if (!d) return { runs: [], truncated: true };
+    const vis = await runVisibilitySql(d, scope);
+    const limit = Math.max(1, Math.min(opts.limit, RUN_LIST_MAX_LIMIT));
+    const runs = await d
+      .select()
+      .from(orchestrationRuns)
+      .where(and(opts.workflowId != null ? eq(orchestrationRuns.workflowId, opts.workflowId) : undefined, vis.where))
+      .orderBy(desc(orchestrationRuns.createdAt), desc(orchestrationRuns.id))
+      .limit(limit);
+    return { runs, truncated: vis.truncated || vis.failed };
   } catch {
-    return [];
+    return { runs: [], truncated: true };
   }
 }
 
 /**
- * doc 81 Đợt 7 task I3 — the PENDING runs (held / awaiting a decision) `scope` may see, as run ids for the oversight hub and
- * the "mine" box (null = unrestricted). `ok: false` ⇔ the scope or some run could not be decided (the hub shows degraded;
- * `decidedIds` = the runs decided visible, when the scope itself was resolved).
+ * doc 81 Đợt 7 task I3 + I fix 1 — the PENDING runs (held / awaiting a decision) `scope` may see, as run ids for the oversight
+ * hub and the "mine" box (null = unrestricted), filtered IN SQL (runVisibilitySql), at most RUN_PENDING_MAX. `ok: false` ⇔
+ * the scope or some definition could not be decided, definitions were left unjudged, or more pending runs exist than the cap
+ * (the hub shows degraded; `decidedIds` = the runs decided visible, when the scope itself was resolved).
  */
 export async function resolveVisiblePendingRunIds(
   scope: FoeScope,
 ): Promise<{ ok: true; ids: number[] | null } | { ok: false; decidedIds?: number[] }> {
   try {
-    const judge = await makeScopeJudge(scope);
-    if (judge.unrestricted && !judge.failed) return { ok: true, ids: null };
     const d = await getDb();
     if (!d) return { ok: false };
+    const vis = await runVisibilitySql(d, scope);
+    if (vis.where === undefined) return { ok: true, ids: null };
+    if (vis.scopeFailed) return { ok: false };
     const rows = await d
-      .select({ id: orchestrationRuns.id, workflowId: orchestrationRuns.workflowId, paramsJson: orchestrationRuns.paramsJson })
+      .select({ id: orchestrationRuns.id })
       .from(orchestrationRuns)
-      .where(inArray(orchestrationRuns.status, ["held", "awaiting_confirm"]));
-    const r = await filterRunsVisibleWith(judge, rows);
-    if (r.failed) return judge.failed ? { ok: false } : { ok: false, decidedIds: r.keep.map((x) => x.id) };
-    return { ok: true, ids: r.keep.map((x) => x.id) };
+      .where(and(inArray(orchestrationRuns.status, ["held", "awaiting_confirm"]), vis.where))
+      .orderBy(desc(orchestrationRuns.updatedAt))
+      .limit(RUN_PENDING_MAX + 1);
+    const ids = rows.slice(0, RUN_PENDING_MAX).map((x) => x.id);
+    if (vis.failed || vis.truncated || rows.length > RUN_PENDING_MAX) return { ok: false, decidedIds: ids };
+    return { ok: true, ids };
   } catch {
     return { ok: false };
   }

@@ -1515,6 +1515,11 @@ export default function OrchestrationStudio() {
     },
   );
 
+  // doc 81 Đợt 7 I fix 1 (review M-5) — the server judges a bounded number of workflow definitions per call: when more exist,
+  // the runs of the versions left out are not listed and the bar SAYS so (never a silent shorter list).
+  const runListMetaQ = trpc.orchestration.runListMeta.useQuery(undefined, { staleTime: 60_000 });
+  const runListTruncated = (runListMetaQ.data as { truncated?: boolean } | undefined)?.truncated === true;
+
   // doc 81 Đợt 3 Task 4 — phân công còn sống của ĐÚNG các run đang liệt kê.
   const runIds = useMemo(() => ((runsQ.data ?? []) as Array<Record<string, unknown>>).map((r) => Number(r.id)), [runsQ.data]);
   const { byId: runAssignments } = useAssignments("orchestration_run", runIds, hasPermission("machine_control", "canView"));
@@ -2423,6 +2428,11 @@ export default function OrchestrationStudio() {
   const statusBar = (
     <div className="flex min-w-0 items-center gap-2">
       {statusItem("orch-status-runs", "runs", t("studio.runsTab", "Lần chạy"), runsQ.isLoading ? "…" : allRuns.length, null)}
+      {runListTruncated && (
+        <span data-testid="run-list-truncated" role="status" className="truncate text-[11px] text-amber-700 dark:text-amber-300">
+          {t("studio.runListTruncated", "Some runs are not listed: there are more workflow versions than one view can check. Ask an administrator, or open a run by its id.")}
+        </span>
+      )}
       {statusItem("orch-status-awaiting", "approvals", t("studio.awaitingTab", "Chờ duyệt"), runsQ.isLoading ? "…" : awaitingCount, awaitingCount > 0 ? "warning" : null)}
       {statusItem("orch-status-problems", "problems", t("studio.problemsTab", "Vấn đề"), problemsCount, problemsTone)}
     </div>
