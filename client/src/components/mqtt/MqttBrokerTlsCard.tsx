@@ -5,7 +5,8 @@
  * site certificate. The technician types that fingerprint into each tablet (app ≥ 1.0.18, Settings → MQTT) next
  * to the device password; the tablet then connects ONLY to a broker presenting exactly this certificate.
  * A certificate fault is shown as such (the server never silently regenerates it — that would change the
- * fingerprint and lock every pinned tablet out). Same audience as the password column (settings_factory).
+ * fingerprint and lock every pinned tablet out). Same audience as the password column: shown with settings_factory
+ * canEdit (or admin) — the API `mqttClient.brokerTls` uses the same gate (J fix 1).
  */
 import { useTranslation } from "react-i18next";
 import { Copy, Lock, ShieldAlert } from "lucide-react";

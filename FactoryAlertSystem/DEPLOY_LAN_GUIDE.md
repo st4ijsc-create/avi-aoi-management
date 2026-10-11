@@ -81,7 +81,7 @@ max_connections 100
 ```powershell
 cd "C:\Program Files\mosquitto"
 .\mosquitto_passwd -c passwords.txt factory_user
-# Nhập password: FactoryAlert@2026
+# Nhập password: <tự đặt — KHÔNG ghi vào tài liệu/git>
 ```
 
 #### Bước 4: Cài Đặt Mosquitto Service
@@ -143,7 +143,7 @@ export const DEFAULT_MQTT_CONFIG: MqttConfig = {
   protocol: 'websocket',
   useSSL: false,
   username: 'factory_user',         // Nếu có authentication
-  password: 'FactoryAlert@2026',    // Nếu có authentication
+  password: '<mật khẩu broker — không ghi vào git>',    // Nếu có authentication
   // ⚠ 2026-09-28 (doc 81 Đợt 1C Task 5): broker TỪ CHỐI subscribe `factory/#`, `factory/+/…`, `syn/#`
   // (SUBACK 0x80) — thiết bị chỉ được nhánh máy của CHÍNH nó. Dùng các topic cảnh báo `avi/…`
   // như mặc định trong src/utils/constants.ts:
@@ -281,8 +281,12 @@ Từ app **1.0.17**, Settings → MQTT có ô **"Mật khẩu MQTT của thiết
 
 **Server.** Broker nhúng lắng nghe thêm **MQTT over TLS (MQTTS)** ở cổng `MQTT_TLS_PORT` (mặc định **8884**) — BẬT MẶC
 ĐỊNH (chỉ `MQTT_TLS_ENABLED=false` mới tắt). Lần khởi động đầu, server **tự sinh chứng chỉ site** (tự ký, ECDSA P‑256,
-~20 năm) vào `data/mqtt-tls/broker-tls.pem` (ngoài git; đổi chỗ bằng `MQTT_TLS_DIR`; hoặc dùng chứng chỉ riêng: đặt cả
-`MQTT_TLS_CERT` + `MQTT_TLS_KEY`). **Vân tay SHA‑256** của chứng chỉ hiện ở web: *Kết nối (MQTT / UNS) → Thiết bị* → thẻ
+~20 năm, có subjectAltName = tên máy, `localhost`, `127.0.0.1` và các IPv4 LAN lúc sinh) vào `data/mqtt-tls/broker-tls.pem`
+(ngoài git; đổi chỗ bằng `MQTT_TLS_DIR`; hoặc dùng chứng chỉ riêng: đặt cả `MQTT_TLS_CERT` + `MQTT_TLS_KEY`). Tệp chứa
+**khoá riêng**: trên Windows server tự đặt ACL cho thư mục và tệp (bỏ kế thừa, CHỈ tài khoản chạy server + SYSTEM +
+Administrators — `mode 0600` không có tác dụng trên NTFS); mỗi lần khởi động kiểm lại: nếu Users / Authenticated Users /
+Everyone đọc được thì ghi lỗi và sửa; sửa không được (hoặc không đọc được ACL) ⇒ KHÔNG mở cổng TLS (cổng thường không
+ảnh hưởng). Kiểm tay: `icacls data\mqtt-tls\broker-tls.pem` chỉ được thấy 3 chủ thể trên. Linux: quyền 0600/0700. **Vân tay SHA‑256** của chứng chỉ hiện ở web: *Kết nối (MQTT / UNS) → Thiết bị* → thẻ
 **"TLS của broker nhúng"** (nút Sao chép). Tệp chứng chỉ hỏng ⇒ thẻ báo lỗi, cổng TLS KHÔNG mở và server KHÔNG tự sinh
 lại (sinh lại = đổi vân tay = mọi máy đã ghim bị từ chối); muốn sinh mới thì chuyển tệp đi chỗ khác rồi khởi động lại,
 sau đó nhập lại vân tay mới trên MỌI máy. Mở firewall cho cổng 8884 (TCP).
@@ -300,6 +304,17 @@ sau đó nhập lại vân tay mới trên MỌI máy. Mở firewall cho cổng 
    hợp lệ mới nhập vân tay mới + mật khẩu.
 5. Máy ONLINE lại qua TLS ⇒ xong máy đó. Khi MỌI máy đã chạy TLS, có thể đóng cổng thường bằng `MQTT_PLAIN_ENABLED=false`
    (thiết bị/simulator khác còn dùng 1883/8883 sẽ mất kết nối — kiểm tra trước).
+
+**Thay chứng chỉ có chủ đích / khoá bị lộ (rotation).** Chứng chỉ có hạn ~20 năm và KHÔNG bao giờ tự sinh lại (kể cả để
+thêm subjectAltName cho chứng chỉ cũ) — vì đổi chứng chỉ = đổi vân tay = mọi máy đã ghim bị từ chối. Khi cần thay (nghi
+khoá riêng bị lộ/sao chép, đổi IP/tên máy server và cần SAN mới, hoặc sắp hết hạn):
+1. Báo trước: trong thời gian đổi, máy tính bảng TLS sẽ báo "Chứng chỉ broker đã THAY ĐỔI" và không nhận cảnh báo qua TLS.
+2. Dừng server; **chuyển** (không xoá ngay nếu cần điều tra) `data/mqtt-tls/broker-tls.pem` ra khỏi thư mục — vd đổi tên
+   thành `broker-tls.pem.revoked-<ngày>` ở chỗ khác, ACL như trên; khởi động lại server ⇒ chứng chỉ MỚI được sinh.
+3. Mở thẻ "TLS của broker nhúng" lấy vân tay MỚI; trên TỪNG máy tính bảng nhập vân tay mới **cùng mật khẩu thiết bị** rồi
+   Lưu (đổi vân tay luôn bắt nhập lại mật khẩu). Nếu nghi lộ khoá: đồng thời **xoay mật khẩu** từng thiết bị (Cấp / xoay
+   mật khẩu) — kẻ có khoá cũ có thể đã giả broker và thu mật khẩu.
+4. Kiểm máy ONLINE lại qua TLS; huỷ hẳn tệp cũ khi không còn cần điều tra.
 
 Hạn chế: app 1.0.18 ghim vân tay trên đường **MQTT/TCP + TLS** (module native Android); đường WebSocket `wss://` dùng kho
 CA của hệ thống nên không dùng được với chứng chỉ tự ký — server Đợt 7 không mở wss://. iOS chưa có module ⇒ app từ chối

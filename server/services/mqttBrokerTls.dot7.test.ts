@@ -23,6 +23,7 @@ import {
   mqttTlsDir,
   mqttTlsEnabled,
   resolveBrokerTls,
+  siteSubjectAltNames,
 } from "./mqttBrokerTls";
 
 const dirs: string[] = [];
@@ -50,6 +51,22 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 /** Real handshake; the client accepts the server ONLY if its leaf fingerprint equals `pin`. */
+/** Real handshake with NORMAL validation (CA = the certificate, default hostname/IP check, no pin). */
+async function handshakeByName(keyPem: string, certPem: string, host: string): Promise<{ ok: boolean; err?: string }> {
+  const server = tls.createServer({ key: keyPem, cert: certPem }, (s) => s.end());
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const port = (server.address() as { port: number }).port;
+  try {
+    return await withTimeout(new Promise((resolve) => {
+      const c = tls.connect({ host: "127.0.0.1", port, servername: host === "127.0.0.1" ? undefined : host, ca: certPem });
+      c.once("secureConnect", () => { c.end(); resolve({ ok: true }); });
+      c.once("error", (e: NodeJS.ErrnoException) => resolve({ ok: false, err: e.code ?? e.message }));
+    }), 8000, "handshakeByName");
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}
+
 async function handshake(keyPem: string, certPem: string, pin: string): Promise<{ ok: boolean; err?: string; echoed?: string }> {
   const server = tls.createServer({ key: keyPem, cert: certPem }, (s) => s.pipe(s));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
@@ -221,5 +238,63 @@ describe("resolveBrokerTls — operator certificate wins; half a config refuses"
     const m = resolveBrokerTls({ MQTT_TLS_DIR: dir });
     expect(m.source).toBe("generated");
     expect(m.fingerprintSha256).toBe(fingerprintFromPem(fs.readFileSync(path.join(dir, SITE_TLS_FILE_NAME), "utf8")));
+  });
+});
+
+describe("fix 1 — subjectAltName (hostname, localhost, 127.0.0.1, LAN IPv4)", () => {
+  it("siteSubjectAltNames = localhost + 127.0.0.1 + every non-internal IPv4 of this host (+ the hostname when DNS-valid)", () => {
+    const san = siteSubjectAltNames();
+    const lan = Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a!.address);
+    expect(new Set(san.ips)).toEqual(new Set(["127.0.0.1", ...lan]));
+    expect(san.dns).toContain("localhost");
+    if (/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$/.test(os.hostname())) expect(san.dns).toContain(os.hostname().toLowerCase());
+  });
+
+  it("a certificate WITH the SAN passes a normal (non-pinned) TLS check by IP and by name; WITHOUT it, it does not", async () => {
+    const withSan = mintSiteBrokerCertificate({ commonName: "SAN", days: 30, subjectAltNames: { dns: ["localhost", "broker-host"], ips: ["127.0.0.1", "10.1.2.3"] } });
+    const x = new X509Certificate(withSan.certPem);
+    expect(x.subjectAltName).toBe("DNS:localhost, DNS:broker-host, IP Address:127.0.0.1, IP Address:10.1.2.3");
+    expect(await handshakeByName(withSan.keyPem, withSan.certPem, "127.0.0.1")).toEqual({ ok: true });
+    expect(await handshakeByName(withSan.keyPem, withSan.certPem, "localhost")).toEqual({ ok: true });
+    const bad = await handshakeByName(withSan.keyPem, withSan.certPem, "other-host");
+    expect(bad.ok).toBe(false);
+    const noSan = mintSiteBrokerCertificate({ commonName: "NOSAN", days: 30 });
+    expect(new X509Certificate(noSan.certPem).subjectAltName).toBeUndefined();
+    expect((await handshakeByName(noSan.keyPem, noSan.certPem, "127.0.0.1")).err).toBe("ERR_TLS_CERT_ALTNAME_INVALID");
+  });
+
+  it("invalid names are dropped, never encoded", () => {
+    const c = mintSiteBrokerCertificate({ commonName: "F", days: 30, subjectAltNames: { dns: ["ok-name", "bad name", "x_y"], ips: ["10.0.0.1", "999.1.1.1", "::1"] } });
+    expect(new X509Certificate(c.certPem).subjectAltName).toBe("DNS:ok-name, IP Address:10.0.0.1");
+  });
+
+  it("a generated site certificate carries the host SAN; an EXISTING certificate without SAN is NOT regenerated", () => {
+    const dir = tempDir();
+    const m = loadOrCreateSiteBrokerTls({ dir });
+    expect(new X509Certificate(m.certPem).subjectAltName).toContain("IP Address:127.0.0.1");
+    const dir2 = tempDir();
+    const old = mintSiteBrokerCertificate({ commonName: "OLD-NO-SAN", days: 30 });
+    fs.writeFileSync(path.join(dir2, SITE_TLS_FILE_NAME), old.keyPem + old.certPem);
+    const before = fs.readFileSync(path.join(dir2, SITE_TLS_FILE_NAME), "utf8");
+    const again = loadOrCreateSiteBrokerTls({ dir: dir2 });
+    expect(again.fingerprintSha256).toBe(fingerprintFromPem(old.certPem));
+    expect(new X509Certificate(again.certPem).subjectAltName).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir2, SITE_TLS_FILE_NAME), "utf8")).toBe(before);
+  });
+});
+
+describe("fix 1 — leftover temp key files are swept at start", () => {
+  it("broker-tls.pem.<pid>.<rand>.tmp removed (with or without an existing certificate); unrelated files kept", () => {
+    for (const existing of [true, false]) {
+      const dir = tempDir();
+      if (existing) {
+        const c = mintSiteBrokerCertificate({ commonName: "E", days: 30 });
+        fs.writeFileSync(path.join(dir, SITE_TLS_FILE_NAME), c.keyPem + c.certPem);
+      }
+      fs.writeFileSync(path.join(dir, `${SITE_TLS_FILE_NAME}.4242.deadbeef0000.tmp`), "-----BEGIN PRIVATE KEY----- left");
+      fs.writeFileSync(path.join(dir, "other.tmp"), "keep");
+      loadOrCreateSiteBrokerTls({ dir });
+      expect(fs.readdirSync(dir).sort()).toEqual([SITE_TLS_FILE_NAME, "other.tmp"]);
+    }
   });
 });

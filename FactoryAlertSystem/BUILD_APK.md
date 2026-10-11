@@ -74,7 +74,8 @@ keytool -genkeypair -v -storetype PKCS12 -keystore factory-alert-release.keystor
 ```
 
 **Nhập thông tin:**
-- Keystore password: `FactoryAlert@2026` (hoặc password của bạn)
+- Keystore password: tự đặt khi tạo keystore — KHÔNG ghi vào tài liệu/git. Mật khẩu của keystore phát hành hiện có nằm trong
+  `android/gradle.properties` (gitignored) — hỏi người giữ bản phát hành (release owner).
 - First and Last Name: `Factory Alert System`
 - Organization: `Foxconn`
 - City: `Hanoi`

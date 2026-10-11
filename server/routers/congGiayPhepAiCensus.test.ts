@@ -321,7 +321,7 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 /*
  * ★ 2026-10-11 doc 81 Đợt 7 Task J1 (TLS broker nhúng) — **tong 2298 → 2299, ghim lại ô `tong`**: đúng MỘT thủ tục MỚI
  *   `mqttClient.brokerTls` (query chỉ đọc, `mqttOeeRouters.ts` — trạng thái listener MQTTS + vân tay SHA-256 của chứng chỉ
- *   site), sàn `protectedProcedure` + `requirePermission("settings_factory","canView")`, `module = null`, không phải bề mặt AI
+ *   site), sàn `protectedProcedure` + `requirePermission("settings_factory","canEdit")` (J fix 1: cùng cổng với thẻ admin), `module = null`, không phải bề mặt AI
  *   ⇒ beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. Đo: cây trước lượt = 2298 (khớp ghim), sau = 2299.
  *   `tong` 2299 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */

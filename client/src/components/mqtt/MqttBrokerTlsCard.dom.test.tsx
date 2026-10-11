@@ -15,6 +15,8 @@ type Status = {
 let data: Status | undefined;
 const useQuery = vi.fn((_input: unknown, opts: { enabled: boolean }) => ({ data: opts.enabled ? data : undefined, isError: false }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+// J fix 1 — no i18next instance in this test: translate to the key (same as the fallback) without the stderr warning.
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 vi.mock("@/lib/trpc", () => ({ trpc: { mqttClient: { brokerTls: { useQuery: (i: unknown, o: { enabled: boolean }) => useQuery(i, o) } } } }));
 
 import { MqttBrokerTlsCard } from "./MqttBrokerTlsCard";
