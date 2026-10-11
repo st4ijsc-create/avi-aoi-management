@@ -125,6 +125,8 @@ function onAnomalyDetected(e: DomainEvent): void {
  */
 export async function consumeSafetyCriticalTrust(p: { id?: unknown; eventType?: unknown; robotId?: unknown; stationId?: unknown; lineId?: unknown; isNearMiss?: unknown }): Promise<boolean> {
   if (p.isNearMiss === true) return false;
+  // a type no origin may make safety-critical can never carry trust (the digest binds the stored type): no DB round trip
+  if (!Object.values(TRUSTED_ORIGIN_EVENT_TYPES).some((set) => set.has(String(p.eventType)))) return false;
   const trusted = await consumeTrustedSafetyOrigin({ id: p.id, eventType: p.eventType, robotId: p.robotId, stationId: p.stationId, lineId: p.lineId, isNearMiss: p.isNearMiss });
   if (!trusted) return false;
   return TRUSTED_ORIGIN_EVENT_TYPES[trusted.origin]?.has(trusted.eventType) === true && trusted.eventType === p.eventType;

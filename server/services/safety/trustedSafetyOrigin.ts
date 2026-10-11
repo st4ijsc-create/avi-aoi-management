@@ -140,7 +140,11 @@ export function trustedEventStore(): TrustedEventStore {
  * the durable one there.
  */
 export function _setTrustedEventStoreForTests(s: TrustedEventStore | null): void {
-  if (process.env.NODE_ENV === "production") throw new Error("trusted event store is not replaceable in production");
+  if (process.env.NODE_ENV === "production") {
+    // fail closed: the durable store stays in force (a replacement is ignored, loudly)
+    console.error("[Safety] refused: the trusted-event store is not replaceable in production (the durable store stays in force)");
+    return;
+  }
   store = s ?? pgTrustedEventStore;
 }
 

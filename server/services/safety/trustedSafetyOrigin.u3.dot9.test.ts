@@ -168,12 +168,28 @@ describe("Đợt 9 U3 — consuming: undecidable is never trusted", () => {
     expect(isTrustTableMissing(null)).toBe(false);
   });
 
-  it("the trust store is not replaceable in production", () => {
+  it("the rules engine never asks the DB for a type no origin may make safety-critical (one consume per trusted-type event)", async () => {
+    const { consumeSafetyCriticalTrust } = await import("../orchestration/rulesEngine");
+    const consume = vi.fn(async () => ({ origin: "safety_plc", eventType: "estop_released" }));
+    _setTrustedEventStoreForTests(store({ consume }));
+    for (const t of ["estop_released", "plc_offline", "collision", "muting_active", undefined]) expect(await consumeSafetyCriticalTrust({ ...p, eventType: t })).toBe(false);
+    expect(consume).not.toHaveBeenCalled();
+    consume.mockResolvedValueOnce({ origin: "safety_plc", eventType: "estop" });
+    expect(await consumeSafetyCriticalTrust(p)).toBe(true);
+    expect(consume).toHaveBeenCalledTimes(1);
+  });
+
+  it("the trust store is not replaceable in production (ignored, the durable store stays: fail closed)", async () => {
+    const consume = vi.fn(async () => ({ origin: "safety_plc", eventType: "estop" }));
+    _setTrustedEventStoreForTests(null); // the production (pg) store
     process.env.NODE_ENV = "production";
     try {
-      expect(() => _setTrustedEventStoreForTests(store({}))).toThrow(/production/);
+      _setTrustedEventStoreForTests(store({ consume }));
     } finally {
       process.env.NODE_ENV = saved.env;
     }
+    // the pg store is still in force: here its DB (mocked, no execute) fails ⇒ NOT trusted; the fake was never asked
+    expect(await consumeTrustedSafetyOrigin({ id: 42, eventType: "estop", stationId: 4, isNearMiss: false })).toBeNull();
+    expect(consume).not.toHaveBeenCalled();
   });
 });
