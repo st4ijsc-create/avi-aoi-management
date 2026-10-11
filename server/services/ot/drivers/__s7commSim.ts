@@ -69,6 +69,8 @@ export interface SimIdentity {
   orderNumber: string;
   serialNumber: string;
   moduleName: string;
+  /** SZL 0x0011 record 0x0007 ("basic firmware"): BGTyp, Ausbg, Ausbe (default 0x00C0, 0x5603, 0x0206 as in Snap7 s7_firmware.h). */
+  firmware?: [number, number, number];
 }
 
 /** Fault modes (all affect block-function userdata only; the COTP / setup / write path keeps answering). */
@@ -90,7 +92,11 @@ export type SimFault =
   | "listUnknownType" // the block list names an extra, undocumented type code 0x47 with one block
   | "szlWrongId" // the SZL answer names another SZL-ID (0x0012) than requested
   | "szlRecLen30" // SZL 0x0011 answered with 30-byte records (LENTHDR 30) instead of the documented 28
-  | "szlCountWrong"; // SZL 0x001C announces one record more (N_DR) than it sends
+  | "szlCountWrong" // SZL 0x001C announces one record more (N_DR) than it sends
+  | "listAllMore" // the list-all answer is flagged "last data unit = 0x01" (more follows)
+  | "infoMore" // every block info answer is flagged "more follows"
+  | "followSeqWrong" // every follow-up answer (list of type, SZL) carries another sequence number than the one in flight
+  | "noFirmware"; // SZL 0x0011 without the "basic firmware" record 0x0007
 
 export interface S7commSim {
   port: number;
@@ -164,7 +170,7 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
       const data = Buffer.concat([Buffer.from([ret, ts, declared >> 8, declared & 0xff]), payload]);
       sendS7(0x07, fault === "wrongRef" ? (ref + 1) & 0xffff : ref, param, data);
     };
-    const listFrom = (numbers: number[], ref: number, seq: number) => {
+    const listFrom = (numbers: number[], ref: number, seq: number, followUp = false) => {
       const chunk = numbers.slice(0, listChunk);
       const rest = numbers.slice(listChunk);
       const payload = Buffer.alloc(chunk.length * 4);
@@ -174,7 +180,7 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
         payload[i * 4 + 3] = 0x05; // language
       });
       pendingList = rest.length > 0 ? { numbers: rest, seq } : null;
-      sendUd(ref, 0x02, seq, rest.length > 0 ? 0x01 : 0x00, 0, 0xff, 0x09, payload);
+      sendUd(ref, 0x02, followUp && fault === "followSeqWrong" ? (seq + 1) & 0xff : seq, rest.length > 0 ? 0x01 : 0x00, 0, 0xff, 0x09, payload);
     };
 
     /** Read SZL (Wireshark S7COMM_UD_SUBF_CPU_READSZL; Snap7 opReadSZL): ID, index, LENTHDR, N_DR, records; fragmented. */
@@ -188,7 +194,14 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
       if (id === 0x0011) {
         // record: index, MlfB (20 ASCII, space padded), BGTyp, Ausbg, Ausbe
         const l = fault === "szlRecLen30" ? 30 : 28;
-        return { len: l, recs: [rec(l, 0x0001, identity.orderNumber.padEnd(20, " "), 20), rec(l, 0x0006, identity.orderNumber.padEnd(20, " "), 20), rec(l, 0x0007, "", 20)] };
+        const fwRec = rec(l, 0x0007, "".padEnd(20, " "), 20);
+        const [bg, ausbg, ausbe] = identity.firmware ?? [0x00c0, 0x5603, 0x0206];
+        fwRec.writeUInt16BE(bg, 22);
+        fwRec.writeUInt16BE(ausbg, 24);
+        fwRec.writeUInt16BE(ausbe, 26);
+        const recs = [rec(l, 0x0001, identity.orderNumber.padEnd(20, " "), 20), rec(l, 0x0006, identity.orderNumber.padEnd(20, " "), 20)];
+        if (fault !== "noFirmware") recs.push(fwRec);
+        return { len: l, recs };
       }
       if (id === 0x001c) {
         const recs = [rec(34, 0x0001, "SIM STATION", 24), rec(34, 0x0002, identity.moduleName, 24), rec(34, 0x0003, "", 32), rec(34, 0x0004, "Original Siemens Equipment", 26)];
@@ -208,7 +221,7 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
         const now = pend.bytes.subarray(0, szlChunkBytes);
         const rest = pend.bytes.subarray(now.length);
         pendingSzl = rest.length > 0 ? { bytes: rest, seq } : null;
-        return sendUd(ref, 0x01, seq, rest.length > 0 ? 0x01 : 0x00, 0, 0xff, 0x09, now, 0x04);
+        return sendUd(ref, 0x01, fault === "followSeqWrong" ? (seq + 1) & 0xff : seq, rest.length > 0 ? 0x01 : 0x00, 0, 0xff, 0x09, now, 0x04);
       }
       const id = data.readUInt16BE(4);
       const index = data.readUInt16BE(6);
@@ -267,14 +280,14 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
           payload.writeUInt16BE(n, i * 4 + 2);
         });
         if (fault === "listUnknownType") return sendUd(ref, 0x01, seq, 0x00, 0, 0xff, 0x09, Buffer.concat([payload, Buffer.from([0x30, 0x47, 0x00, 0x01])]));
-        return sendUd(ref, 0x01, seq, 0x00, 0, 0xff, 0x09, payload);
+        return sendUd(ref, 0x01, seq, fault === "listAllMore" ? 0x01 : 0x00, 0, 0xff, 0x09, payload);
       }
       if (subfn === 0x02) {
         const followUp = param[3] === 0x08;
         if (followUp) {
           const pend = pendingList as { numbers: number[]; seq: number } | null;
           if (!pend || pend.seq !== seq) return sendUd(ref, 0x02, seq, 0x00, 0xd401, 0x0a, 0x00, Buffer.alloc(0));
-          return listFrom(pend.numbers, ref, pend.seq);
+          return listFrom(pend.numbers, ref, pend.seq, true);
         }
         const code = data[5];
         const numbers = program.filter((b) => TYPE_CODE[b.type] === code).map((b) => b.number).sort((a, b) => a - b);
@@ -317,7 +330,7 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
         p.write(f.name.slice(0, 8), 58, "latin1");
         p[66] = f.version;
         p.writeUInt16BE(f.checksum, 68);
-        return sendUd(ref, 0x03, seq, 0x00, 0, 0xff, 0x09, fault === "shortInfo" ? p.subarray(0, 40) : fault === "infoLen72" ? p.subarray(0, 72) : p);
+        return sendUd(ref, 0x03, seq, fault === "infoMore" ? 0x01 : 0x00, 0, 0xff, 0x09, fault === "shortInfo" ? p.subarray(0, 40) : fault === "infoLen72" ? p.subarray(0, 72) : p);
       }
     };
 

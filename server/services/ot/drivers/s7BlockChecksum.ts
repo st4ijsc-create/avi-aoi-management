@@ -43,9 +43,18 @@
  *                 sub block types OB 0x08, DB 0x0A, SDB 0x0B, FC 0x0C, SFC 0x0D, FB 0x0E, SFB 0x0F;
  *               • S7COMM_UD_SUBF_CPU_READSZL 0x01: SZL-ID, index, partial list length, partial list count, records;
  *                 SZL 0x0011 "Module identification" record (s7comm_decode_szl_id_0111_idx_0001): index (2), MlfB =
- *                 order number (20 ASCII), BGTyp (2), Ausbg (2), Ausbe (2); SZL 0x001C "Component Identification"
+ *                 order number (20 ASCII), BGTyp (2), Ausbg (2, "Version of the module or release of the operating
+ *                 system"), Ausbe (2); szl_0111_index_names: 0x0001 module, 0x0006 basic hardware, 0x0007 "basic
+ *                 firmware", 0x0081 firmware extension; SZL 0x001C "Component Identification"
  *                 record (s7comm_decode_szl_id_xy1c_idx_000x): index (2) + 32 bytes — index 0x0002 module name (24
  *                 ASCII), 0x0005 serial number of the module (24 ASCII).
+ *  [SNAP7S]   Snap7 SERVER (same author, the side that ANSWERS — independent of this client's offset table), fetched
+ *             2026-10-12: src/core/s7_server.cpp (sha256 a0999b46…3444b5) — BLK_ListAll (one telegram, 7 entries
+ *             OB FB FC DB SDB SFC SFB), BLK_ListBoT (items {number, 0x22/0x12/0x42, language}), BLK_GetBlkInfo /
+ *             BLK_DoBlockInfo (byte 0 "Cst_b" = 0x01, byte 1 = requested type or 0x00 — "XXX a 314C zeroes the type",
+ *             Cst_w1 0x4A00, Cst_w2 0x0022, "pp", SubBlkType, …, always 78 bytes), SZLSetup (answer params
+ *             00 01 12 08 12 84 01 <seq> 00 00 00 00); src/core/s7_firmware.h (sha256 0274b0f4…dbf4a6) — SZL 0x0011 and
+ *             0x001C answers "from a physical CPU" (CPU 315-2 PN/DP): used VERBATIM as golden answer frames in the tests.
  *  [SNAP7]    Snap7 1.3.0 (Davide Nardella), src/core/s7_types.h + s7_micro_client.cpp + s7_isotcp.cpp, fetched
  *             2026-10-11 (sha256 5bdc72ce…bd6e5 / f4f4f190…1a00a / d5630274…0dc0dc):
  *               • Block_OB 0x38, Block_DB 0x41, Block_SDB 0x42, Block_FC 0x43, Block_SFC 0x44, Block_FB 0x45,
@@ -65,24 +74,31 @@
  *               • TIsoTcpSocket::BuildControlPDU: CR = TPDU size 0xC0 + calling TSAP 0xC1 + called TSAP 0xC2;
  *                 remote TSAP = (ConnectionType << 8) + Rack * 0x20 + Slot, ConnectionType PG = 0x01, local 0x0100.
  *
- * ── THE PROGRAM CHECKSUM (formula "s7-blockinfo-v2", rulings R-9-a + "weak-integrity-binding") ───────────────────────
- *   1. Identity: SZL 0x0011 index 0 → the record with index 0x0001 → order number (MlfB); SZL 0x001C index 0 → index
- *      0x0002 module name, index 0x0005 serial number. Each must be present and non-empty, else UNREADABLE.
- *   2. Block list (SFun_ListAll): every listed type with its count. The four program types (OB, DB, FC, FB) must be
- *      listed; SDB / SFC / SFB are covered whenever listed; a type code outside these seven with a count > 0 ⇒
- *      UNREADABLE (it cannot be read and is never skipped).
- *   3. For every listed type with count > 0: the block numbers (SFun_ListBoT, all telegrams) — exactly `count`, unique.
- *   4. For every block: its block info (SFun_BlkInfo) — the answer must name the requested type and number, be ≥ 78
- *      bytes, and report "Block Security" 0 (none). A know-how-protected block (or any other security value), a refused
- *      / missing / short answer ⇒ the WHOLE checksum is UNREADABLE (a block is never skipped).
+ * ── THE PROGRAM CHECKSUM (formula "s7-blockinfo-v3", rulings R-9-a, R-9-b + "weak-integrity-binding") ──────────────
+ *   1. Identity: SZL 0x0011 index 0 → record 0x0001 → order number (MlfB), record 0x0007 ("basic firmware") → firmware
+ *      version = BGTyp, Ausbg, Ausbe as hex ("00c0.5603.0206"; all-zero ⇒ empty); SZL 0x001C index 0 → record 0x0002
+ *      module name, 0x0005 serial number. Each must be present and non-empty, else UNREADABLE.
+ *   2. Block list (SFun_ListAll, ONE telegram — an answer flagged "more follows" is refused: [SNAP7] opListBlocks and
+ *      [SNAP7S] BLK_ListAll define a single 28-byte answer): every listed type with its count. The four program types
+ *      (OB, DB, FC, FB) must be listed; a type code outside the seven documented ones with a count > 0 ⇒ UNREADABLE.
+ *   3. For every listed type with count > 0: the block numbers (SFun_ListBoT, all telegrams; every follow-up answer must
+ *      carry the sequence number in flight) — exactly `count`, unique.
+ *   4. R-9-b: SFC / SFB are FIRMWARE system blocks — covered by the identity (incl. firmware version) and by their
+ *      presence in the block list (count + numbers); they are NOT read per block, so their protection flag never refuses.
+ *      OB / DB / FC / FB / SDB: block info per block (SFun_BlkInfo, one telegram — "more follows" is refused) — the
+ *      answer must name the requested block by sub block type and number, be ≥ 78 bytes ([WS] "78 Bytes"; [SNAP7S]
+ *      always 78), and report "Block Security" 0. Bytes 0..1 are NOT checked: [WS] calls them "block type", but
+ *      [SNAP7S] answers 0x01 / 0x00 there ("a 314C zeroes the type") and [SNAP7] never reads them. A protected block, a
+ *      refused / missing / short answer ⇒ the WHOLE checksum is UNREADABLE (a block is never skipped).
  *   5. Canonical value = JSON.stringify of the array
- *        [ "s7-blockinfo-v2",
+ *        [ "s7-blockinfo-v3",
  *          ["endpoint", host, port, rack, slot],                       ← the adapter's configured endpoint
- *          ["identity", orderNumber, serialNumber, moduleName],
+ *          ["identity", orderNumber, serialNumber, moduleName, firmwareVersion],
  *          ["list", [code, count], …]                                  ← every listed type, ascending type code
+ *          ["system", "SFC" | "SFB", [number, …]], …                   ← SFC then SFB, numbers ascending
  *          ["block", TYPE, number, loadSize, mc7Size, checksum, version, flags, language, security,
  *                    codeMs, codeDays, interfaceMs, interfaceDays, ssbSize, addSize, localDataSize,
- *                    author, family, name], …                          ← ascending type code, then number
+ *                    author, family, name], …                          ← OB DB SDB FC FB: type code, then number
  *        ]
  *      (strings: ASCII / Latin-1 with trailing NUL and spaces removed; JSON quoting makes the encoding unambiguous).
  *   6. Program checksum = "s7:sha256:" + lower-case hex SHA-256 of the canonical value (UTF-8).
@@ -104,19 +120,29 @@ import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 /** Source label ⇒ the screen says "per protocol documentation — not verified on a real device" + "not tamper-proof". */
 export const S7_CHECKSUM_SOURCE = "s7-blockinfo";
 /** Version tag of the canonical value (step 5 of the formula). */
-export const S7_PROGRAM_CHECKSUM_FORMULA = "s7-blockinfo-v2";
-/** Upper bound of one whole read (connect + all requests); equal to programChecksum.PROGRAM_CHECKSUM_READ_DEADLINE_MS. */
+export const S7_PROGRAM_CHECKSUM_FORMULA = "s7-blockinfo-v3";
+/** Default bound of one whole read (connect + all requests) — programChecksum.PROGRAM_CHECKSUM_READ_DEADLINE_MS. */
 export const S7_PROGRAM_CHECKSUM_DEADLINE_MS = 1000;
+/** R-9-b — hard cap of a per-adapter deadline (connectionOptions.programChecksumDeadlineMs). */
+export const S7_PROGRAM_CHECKSUM_DEADLINE_MAX_MS = 10_000;
+/** A requested deadline clamped to [1, S7_PROGRAM_CHECKSUM_DEADLINE_MAX_MS]; anything not a finite number ⇒ the default. */
+export function clampS7Deadline(ms: unknown): number {
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return S7_PROGRAM_CHECKSUM_DEADLINE_MS;
+  return Math.min(S7_PROGRAM_CHECKSUM_DEADLINE_MAX_MS, Math.max(1, Math.floor(ms)));
+}
 
-/** Block types: [SNAP7] Block_*, [WS] S7COMM_BLOCKTYPE_* (low byte) / SUBBLKTYPE_*. `program` ⇒ must be listed. */
+/**
+ * Block types: [SNAP7] Block_*, [WS] S7COMM_BLOCKTYPE_* (low byte) / SUBBLKTYPE_*. `program` ⇒ must be listed;
+ * `perBlock` ⇒ block info read per block (false: firmware system blocks, R-9-b — numbers only).
+ */
 export const S7_BLOCK_TYPES = [
-  { name: "OB", code: 0x38, sub: 0x08, program: true },
-  { name: "DB", code: 0x41, sub: 0x0a, program: true },
-  { name: "SDB", code: 0x42, sub: 0x0b, program: false },
-  { name: "FC", code: 0x43, sub: 0x0c, program: true },
-  { name: "SFC", code: 0x44, sub: 0x0d, program: false },
-  { name: "FB", code: 0x45, sub: 0x0e, program: true },
-  { name: "SFB", code: 0x46, sub: 0x0f, program: false },
+  { name: "OB", code: 0x38, sub: 0x08, program: true, perBlock: true },
+  { name: "DB", code: 0x41, sub: 0x0a, program: true, perBlock: true },
+  { name: "SDB", code: 0x42, sub: 0x0b, program: false, perBlock: true },
+  { name: "FC", code: 0x43, sub: 0x0c, program: true, perBlock: true },
+  { name: "SFC", code: 0x44, sub: 0x0d, program: false, perBlock: false },
+  { name: "FB", code: 0x45, sub: 0x0e, program: true, perBlock: true },
+  { name: "SFB", code: 0x46, sub: 0x0f, program: false, perBlock: false },
 ] as const;
 export type S7BlockTypeName = (typeof S7_BLOCK_TYPES)[number]["name"];
 type S7BlockType = (typeof S7_BLOCK_TYPES)[number];
@@ -150,6 +176,8 @@ export interface S7ControllerIdentity {
   orderNumber: string;
   serialNumber: string;
   moduleName: string;
+  /** SZL 0x0011 record 0x0007 ("basic firmware"): BGTyp.Ausbg.Ausbe as 4-digit hex, e.g. "00c0.5603.0206". */
+  firmwareVersion: string;
 }
 
 export interface S7ChecksumTarget {
@@ -165,6 +193,9 @@ export interface S7ProgramSnapshot {
   identity: S7ControllerIdentity;
   /** The block list as listed: type code → count. */
   listed: Array<{ code: number; count: number }>;
+  /** R-9-b — firmware system blocks: numbers only (no block info). */
+  system: Array<{ type: "SFC" | "SFB"; numbers: number[] }>;
+  /** Block info of every OB / DB / SDB / FC / FB. */
   blocks: S7BlockInfo[];
 }
 
@@ -219,7 +250,7 @@ function text(b: Buffer): string {
  */
 export function combineS7ProgramSnapshot(s: S7ProgramSnapshot): string {
   const typeOf = new Map<string, S7BlockType>(S7_BLOCK_TYPES.map((t) => [t.name, t]));
-  for (const k of ["orderNumber", "serialNumber", "moduleName"] as const) {
+  for (const k of ["orderNumber", "serialNumber", "moduleName", "firmwareVersion"] as const) {
     if (typeof s.identity[k] !== "string" || s.identity[k].length === 0) fail(`controller identity has no ${k}`);
   }
   const listed = [...s.listed].sort((a, b) => a.code - b.code);
@@ -229,10 +260,21 @@ export function combineS7ProgramSnapshot(s: S7ProgramSnapshot): string {
   for (const l of listed) if (l.count > 0 && !S7_BLOCK_TYPES.some((t) => t.code === l.code)) fail(`unknown block type 0x${l.code.toString(16)} listed`);
   const blocks = [...s.blocks].sort((a, b) => (typeOf.get(a.type)?.code ?? 0) - (typeOf.get(b.type)?.code ?? 0) || a.number - b.number);
   const seen = new Map<number, number>();
+  const system: Array<[string, number[]]> = [];
+  for (const sys of [...s.system].sort((a, b) => typeOf.get(a.type)!.code - typeOf.get(b.type)!.code)) {
+    const t = typeOf.get(sys.type);
+    if (!t || t.perBlock) fail(`not a system block type ${String(sys.type)}`);
+    if (seen.has(t!.code)) fail(`duplicate system list ${sys.type}`);
+    const nums = [...sys.numbers].sort((a, b) => a - b);
+    for (let i = 1; i < nums.length; i++) if (nums[i] === nums[i - 1]) fail(`duplicate block ${sys.type} ${nums[i]}`);
+    seen.set(t!.code, nums.length);
+    system.push([sys.type, nums]);
+  }
   let prev = "";
   for (const b of blocks) {
     const t = typeOf.get(b.type);
     if (!t) fail(`unknown block type ${String(b.type)}`);
+    if (!t!.perBlock) fail(`${b.type} is a firmware system block type — covered by identity + list, not per block`);
     const key = `${b.type} ${b.number}`;
     if (key === prev) fail(`duplicate block ${key}`);
     prev = key;
@@ -245,8 +287,9 @@ export function combineS7ProgramSnapshot(s: S7ProgramSnapshot): string {
   const canonical: unknown[] = [
     S7_PROGRAM_CHECKSUM_FORMULA,
     ["endpoint", e.host, e.port, e.rack, e.slot],
-    ["identity", s.identity.orderNumber, s.identity.serialNumber, s.identity.moduleName],
+    ["identity", s.identity.orderNumber, s.identity.serialNumber, s.identity.moduleName, s.identity.firmwareVersion],
     ["list", ...listed.map((l) => [l.code, l.count])],
+    ...system.map(([type, nums]) => ["system", type, nums]),
     ...blocks.map((b) => [
       "block", b.type, b.number, b.loadSize, b.mc7Size, b.checksum, b.version, b.flags, b.language, b.security,
       b.codeMs, b.codeDays, b.interfaceMs, b.interfaceDays, b.ssbSize, b.addSize, b.localDataSize, b.author, b.family, b.name,
@@ -257,12 +300,13 @@ export function combineS7ProgramSnapshot(s: S7ProgramSnapshot): string {
 
 /** Reads the identity, the block list and every listed block's info over one bounded, separate connection. */
 export async function readS7ProgramSnapshot(target: S7ChecksumTarget, opts: S7ChecksumReadOptions = {}): Promise<S7ProgramSnapshot> {
-  const session = new S7InfoSession(target, opts.deadlineMs ?? S7_PROGRAM_CHECKSUM_DEADLINE_MS, opts.signal);
+  const session = new S7InfoSession(target, clampS7Deadline(opts.deadlineMs), opts.signal);
   try {
     await session.open();
     const identity = await session.identity();
     const listed = await session.listAll();
     const blocks: S7BlockInfo[] = [];
+    const system: S7ProgramSnapshot["system"] = [];
     for (const l of [...listed].sort((a, b) => a.code - b.code)) {
       if (l.count === 0) continue;
       const t = S7_BLOCK_TYPES.find((x) => x.code === l.code);
@@ -271,9 +315,13 @@ export async function readS7ProgramSnapshot(target: S7ChecksumTarget, opts: S7Ch
       if (numbers.length !== l.count || new Set(numbers).size !== numbers.length) {
         session.fail(`${t!.name} list inconsistent (listed ${l.count}, received ${numbers.length})`);
       }
+      if (!t!.perBlock) {
+        system.push({ type: t!.name as "SFC" | "SFB", numbers }); // R-9-b — firmware system blocks: numbers only
+        continue;
+      }
       for (const n of numbers) blocks.push(await session.blockInfo(t!, n));
     }
-    return { endpoint: { ...target }, identity, listed, blocks };
+    return { endpoint: { ...target }, identity, listed, system, blocks };
   } finally {
     session.close();
   }
@@ -358,10 +406,16 @@ class S7InfoSession {
       if (v.length === 0) this.fail(`controller identity: empty ${what}`);
       return v;
     };
+    const fw = mod.get(0x0007);
+    if (!fw) this.fail("controller identity: no firmware record");
+    const hex4 = (o: number) => fw!.readUInt16BE(o).toString(16).padStart(4, "0");
+    const firmwareVersion = `${hex4(22)}.${hex4(24)}.${hex4(26)}`;
+    if (fw!.readUInt32BE(22) === 0 && fw!.readUInt16BE(26) === 0) this.fail("controller identity: empty firmware version");
     return {
       orderNumber: field(mod, 0x0001, 2, 20, "order number"),
       serialNumber: field(comp, 0x0005, 2, 24, "serial number"),
       moduleName: field(comp, 0x0002, 2, 24, "module name"),
+      firmwareVersion,
     };
   }
 
@@ -380,7 +434,9 @@ class S7InfoSession {
     const parts = [first.subarray(8)];
     for (let telegrams = 1; r.lastDataUnit !== 0x00; telegrams++) {
       if (telegrams > MAX_TELEGRAMS) this.fail("SZL answer does not end");
-      r = await this.userdata(UD_FUNCGROUP_CPU, SUBF_READSZL, r.seq, 0x12, Buffer.from([0x0a, 0x00, 0x00, 0x00]));
+      const inFlight = r.seq;
+      r = await this.userdata(UD_FUNCGROUP_CPU, SUBF_READSZL, inFlight, 0x12, Buffer.from([0x0a, 0x00, 0x00, 0x00]));
+      if (r.seq !== inFlight) this.fail(`SZL follow-up answer sequence 0x${r.seq.toString(16)} ≠ 0x${inFlight.toString(16)}`);
       parts.push(r.payload);
     }
     const all = Buffer.concat(parts);
@@ -397,6 +453,8 @@ class S7InfoSession {
   /** SFun_ListAll ⇒ every listed type with its count. */
   async listAll(): Promise<Array<{ code: number; count: number }>> {
     const r = await this.userdata(UD_FUNCGROUP_BLOCK, SUBF_LIST, 0x00, null, Buffer.from([0x0a, 0x00, 0x00, 0x00]));
+    // review I1 — the block list is ONE telegram ([SNAP7] opListBlocks, [SNAP7S] BLK_ListAll): "more follows" ⇒ refused
+    if (r.lastDataUnit !== 0x00) this.fail("block list answer flagged 'more follows' (fragmented) — not documented");
     const d = r.payload;
     if (d.length % 4 !== 0) this.fail("block list length invalid");
     const listed: Array<{ code: number; count: number }> = [];
@@ -420,7 +478,9 @@ class S7InfoSession {
       for (let i = 0; i < d.length; i += 4) numbers.push(d.readUInt16BE(i));
       if (r.lastDataUnit === 0x00) break;
       if (telegrams > expected + 1) this.fail("block-of-type list does not end");
-      r = await this.userdata(UD_FUNCGROUP_BLOCK, SUBF_LISTTYPE, r.seq, 0x11, Buffer.from([0x0a, 0x00, 0x00, 0x00]));
+      const inFlight = r.seq;
+      r = await this.userdata(UD_FUNCGROUP_BLOCK, SUBF_LISTTYPE, inFlight, 0x11, Buffer.from([0x0a, 0x00, 0x00, 0x00]));
+      if (r.seq !== inFlight) this.fail(`block-of-type follow-up answer sequence 0x${r.seq.toString(16)} ≠ 0x${inFlight.toString(16)}`);
     }
     return numbers;
   }
@@ -430,9 +490,12 @@ class S7InfoSession {
     if (!Number.isInteger(number) || number < 0 || number > 65535) this.fail("block number out of range");
     const ascii = Buffer.from(String(number).padStart(5, "0"), "ascii");
     const r = await this.userdata(UD_FUNCGROUP_BLOCK, SUBF_BLOCKINFO, 0x00, null, Buffer.concat([Buffer.from([RETVAL_OK, TS_OCTET, 0x00, 0x08, 0x30, t.code]), ascii, Buffer.from([0x41])]));
+    // review I1 — block info is ONE telegram of 78 bytes ([WS], [SNAP7S]): "more follows" ⇒ refused
+    if (r.lastDataUnit !== 0x00) this.fail(`block info of ${t.name} ${number} flagged 'more follows' (fragmented) — not documented`);
     const p = r.payload;
     if (p.length < BLOCKINFO_LEN) this.fail(`block info of ${t.name} ${number} too short`);
-    if (p[0] !== 0x30 || p[1] !== t.code || p[11] !== t.sub || p.readUInt16BE(12) !== number) {
+    // the block is identified by sub block type + number (bytes 0..1 are not reliable: [SNAP7S] "a 314C zeroes the type")
+    if (p[11] !== t.sub || p.readUInt16BE(12) !== number) {
       this.fail(`block info answer does not match ${t.name} ${number}`);
     }
     const security = p.readUInt32BE(18);

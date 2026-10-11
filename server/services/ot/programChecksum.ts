@@ -50,8 +50,17 @@ import type { OtDriver } from "./otDriver";
 import { getActiveDriver } from "./otManager";
 import { withDeadline } from "./drivers/boundedClose";
 
-/** Upper bound of ONE checksum read (all adapters of a digest are read concurrently). */
+/** Default bound of ONE checksum read (all adapters of a digest are read concurrently). */
 export const PROGRAM_CHECKSUM_READ_DEADLINE_MS = 1000;
+/** doc 81 Đợt 9 ruling R-9-b — hard cap of a per-adapter bound (connectionOptions.programChecksumDeadlineMs). */
+export const PROGRAM_CHECKSUM_READ_DEADLINE_MAX_MS = 10_000;
+/**
+ * doc 81 Đợt 9 ruling R-9-b — how long a settled reading may be SHOWN again on the approver's screen (getRun polls every
+ * 1.5 s). DISPLAY ONLY: a reading served from this cache is labelled (`displayCache.readAt`), and no approval-recording,
+ * approval-consuming or dispatch check ever asks for it — they always read fresh (fail-closed: a screen digest built from
+ * a cached reading that no longer matches a fresh one makes the screen-bound approval fail with CONFLICT).
+ */
+export const PROGRAM_CHECK_DISPLAY_CACHE_MS = 5000;
 const MAX_CHECKSUM_LEN = 256;
 
 export type ProgramCheckStatus = "verified" | "unsupported" | "unreadable";
@@ -70,6 +79,8 @@ export interface ProgramCheck {
   source: string;
   /** Present iff status === "unreadable". */
   reason?: ProgramUnreadableReason;
+  /** R-9-b — present iff this entry was served from the DISPLAY-ONLY cache: when the shown reading was taken. */
+  displayCache?: { readAt: string };
 }
 
 export interface AdapterRowLike {
@@ -98,10 +109,25 @@ export function programChecksumCapable(row: Pick<AdapterRowLike, "protocol" | "c
   return false;
 }
 
-/** The program check of ONE OT adapter, bounded by `deadlineMs`. Never throws. */
+/**
+ * R-9-b — the adapter's own bound of one checksum read: connectionOptions.programChecksumDeadlineMs (a finite number,
+ * clamped to [1, PROGRAM_CHECKSUM_READ_DEADLINE_MAX_MS]); absent / not a number ⇒ PROGRAM_CHECKSUM_READ_DEADLINE_MS.
+ * Never on a STOP path (the engine never reads a checksum for a STOP step; pinned / robot stops are never checked).
+ */
+export function programChecksumDeadlineMs(row: Pick<AdapterRowLike, "connectionOptions">): number {
+  const v = (row.connectionOptions as Record<string, unknown> | null | undefined)?.programChecksumDeadlineMs;
+  if (typeof v !== "number" || !Number.isFinite(v)) return PROGRAM_CHECKSUM_READ_DEADLINE_MS;
+  return Math.min(PROGRAM_CHECKSUM_READ_DEADLINE_MAX_MS, Math.max(1, Math.floor(v)));
+}
+
+/**
+ * The program check of ONE OT adapter, bounded by `deadlineMs` (default: the adapter's own bound). Never throws.
+ * `display: true` ONLY for the approver's screen (getRun): a reading settled less than PROGRAM_CHECK_DISPLAY_CACHE_MS ago
+ * for the same driver, adapter and configuration may be shown again, labelled `displayCache`. Every other caller reads.
+ */
 export async function readAdapterProgramCheck(
   row: AdapterRowLike,
-  opts: { deadlineMs?: number; driverOf?: (adapterId: number) => OtDriver | undefined } = {},
+  opts: { deadlineMs?: number; driverOf?: (adapterId: number) => OtDriver | undefined; display?: boolean } = {},
 ): Promise<ProgramCheck> {
   const base = { target: "adapter" as const, id: row.id, label: labelOf(row) };
   const protocolLabel = typeof row.protocol === "string" && row.protocol ? sanitiseSource(row.protocol) : "unknown";
@@ -119,6 +145,15 @@ export async function readAdapterProgramCheck(
   if (!driver) return unreadable("notConnected");
   const read = driver.readProgramChecksum;
   if (typeof read !== "function") return unreadable("inconsistent");
+  const deadlineMs = opts.deadlineMs ?? programChecksumDeadlineMs(row);
+  const configKey = JSON.stringify([row.protocol ?? null, row.connectionOptions ?? null]);
+  // R-9-b — display-only cache (approver's screen polling); never consulted without `display: true`.
+  if (opts.display === true) {
+    const hit = displayCache.get(driver)?.get(row.id);
+    if (hit && hit.configKey === configKey && Date.now() - hit.at < PROGRAM_CHECK_DISPLAY_CACHE_MS) {
+      return { ...hit.check, label: base.label, displayCache: { readAt: new Date(hit.at).toISOString() } };
+    }
+  }
   // M1 — single-flight per (driver, adapter): share the read in progress, never a settled one.
   let perDriver = inflight.get(driver);
   if (!perDriver) inflight.set(driver, (perDriver = new Map()));
@@ -130,8 +165,8 @@ export async function readAdapterProgramCheck(
     let answer: unknown;
     try {
       answer = await withDeadline(
-        Promise.resolve().then(() => read.call(driver, { signal: ac.signal })),
-        opts.deadlineMs ?? PROGRAM_CHECKSUM_READ_DEADLINE_MS,
+        Promise.resolve().then(() => read.call(driver, { signal: ac.signal, deadlineMs })),
+        deadlineMs,
         `program checksum of adapter ${row.id}`,
       );
     } catch (err) {
@@ -146,11 +181,19 @@ export async function readAdapterProgramCheck(
   })();
   perDriver.set(row.id, p);
   try {
-    return await p;
+    const check = await p;
+    // every settled reading (fresh) may be shown again for a short while — display only (see PROGRAM_CHECK_DISPLAY_CACHE_MS)
+    let perDriverCache = displayCache.get(driver);
+    if (!perDriverCache) displayCache.set(driver, (perDriverCache = new Map()));
+    perDriverCache.set(row.id, { at: Date.now(), configKey, check });
+    return check;
   } finally {
     if (perDriver.get(row.id) === p) perDriver.delete(row.id);
   }
 }
+
+/** R-9-b — settled readings for the approver's screen only, per driver instance (weak). */
+const displayCache = new WeakMap<object, Map<number, { at: number; configKey: string; check: ProgramCheck }>>();
 
 /** M1 — reads in progress, per driver instance (weak: a dropped driver takes its entries with it). */
 const inflight = new WeakMap<object, Map<number, Promise<ProgramCheck>>>();

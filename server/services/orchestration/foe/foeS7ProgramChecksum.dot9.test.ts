@@ -10,7 +10,7 @@
  * Sequence (as in foeProgramChecksum.dot8): [g1, g2, cmd] — OTHER approves g1 (the counting approval, digest + program
  * checks recorded), the world changes, OWNER approves g2 (never counts; it only lets the walk reach the command).
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
 
 const { otDispatchMock, robotDispatchMock, live } = vi.hoisted(() => ({
@@ -71,15 +71,18 @@ let driver: S7Driver;
 
 beforeAll(async () => {
   sim = await startS7commSim({ program: PROGRAM, rack: 0, slot: 1 });
-  driver = new S7Driver();
-  await driver.connect({ endpoint: `127.0.0.1:${sim.port}`, options: { rack: 0, slot: 1 }, timeoutMs: 2000 });
 });
 afterAll(async () => {
-  await driver.disconnect();
   await sim.close();
+});
+// a fresh driver per test: no reading of an earlier test (single-flight / the approver-screen display cache) carries over
+afterEach(async () => {
+  await driver?.disconnect();
 });
 
 beforeEach(async () => {
+  driver = new S7Driver();
+  await driver.connect({ endpoint: `127.0.0.1:${sim.port}`, options: { rack: 0, slot: 1 }, timeoutMs: 2000 });
   fake.store.clear();
   resetSeq();
   fake.setUnique(orchestrationRunSteps, [["runId", "stepId"]]);

@@ -14,9 +14,9 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import net from "node:net";
 import { createHash } from "node:crypto";
 import { startS7commSim, simBlockDefaults, SIM_IDENTITY, type S7commSim, type SimBlock, type SimFault, type SimIdentity } from "./__s7commSim";
-import { combineS7ProgramSnapshot, readS7ProgramSnapshot, readS7ProgramChecksum, S7_CHECKSUM_SOURCE, S7_PROGRAM_CHECKSUM_DEADLINE_MS } from "./s7BlockChecksum";
+import { combineS7ProgramSnapshot, clampS7Deadline, readS7ProgramSnapshot, readS7ProgramChecksum, S7_CHECKSUM_SOURCE, S7_PROGRAM_CHECKSUM_DEADLINE_MS, S7_PROGRAM_CHECKSUM_DEADLINE_MAX_MS } from "./s7BlockChecksum";
 import { S7Driver } from "./s7Driver";
-import { programChecksumCapable, readAdapterProgramCheck } from "../programChecksum";
+import { programChecksumCapable, programChecksumDeadlineMs, readAdapterProgramCheck, PROGRAM_CHECK_DISPLAY_CACHE_MS } from "../programChecksum";
 
 const PROGRAM: SimBlock[] = [
   { type: "FB", number: 10, loadSize: 512, mc7Size: 300, checksum: 0x1a2b },
@@ -32,7 +32,7 @@ const PROGRAM: SimBlock[] = [
 const ALL_CODES = [0x38, 0x45, 0x43, 0x46, 0x44, 0x41, 0x42]; // the order the simulator lists by default
 const CODE: Record<string, number> = { OB: 0x38, DB: 0x41, SDB: 0x42, FC: 0x43, SFC: 0x44, FB: 0x45, SFB: 0x46 };
 
-/** The documented formula ("s7-blockinfo-v2"), written out independently of the client. */
+/** The documented formula ("s7-blockinfo-v3"), written out independently of the client. */
 function expectedChecksum(
   blocks: SimBlock[],
   o: { identity?: SimIdentity; port?: number; rack?: number; slot?: number; listedCodes?: number[] } = {},
@@ -40,12 +40,20 @@ function expectedChecksum(
   const strip = (v: string) => v.replace(/[\0 ]+$/, "");
   const codes = [...(o.listedCodes ?? ALL_CODES)].sort((a, b) => a - b);
   const id = o.identity ?? SIM_IDENTITY;
+  const fw = (id.firmware ?? [0x00c0, 0x5603, 0x0206]).map((v) => v.toString(16).padStart(4, "0")).join(".");
+  const SYSTEM = ["SFC", "SFB"]; // R-9-b: numbers only, no block info
   const canonical = [
-    "s7-blockinfo-v2",
+    "s7-blockinfo-v3",
     ["endpoint", "127.0.0.1", o.port ?? sim.port, o.rack ?? 0, o.slot ?? 1],
-    ["identity", strip(id.orderNumber), strip(id.serialNumber), strip(id.moduleName)],
+    ["identity", strip(id.orderNumber), strip(id.serialNumber), strip(id.moduleName), fw],
     ["list", ...codes.map((c) => [c, blocks.filter((b) => CODE[b.type] === c).length])],
+    ...SYSTEM.filter((t) => blocks.some((b) => b.type === t)).map((t) => [
+      "system",
+      t,
+      blocks.filter((b) => b.type === t).map((b) => b.number).sort((a, b) => a - b),
+    ]),
     ...[...blocks]
+      .filter((b) => !SYSTEM.includes(b.type))
       .sort((a, b) => CODE[a.type]! - CODE[b.type]! || a.number - b.number)
       .map((b) => {
         const f = simBlockDefaults(b);
@@ -137,10 +145,11 @@ describe("T1 — the program checksum (documented formula s7-blockinfo-v2)", () 
 
   it("the snapshot holds what the documentation lays out (identity, the full list, every block's fields)", async () => {
     const s = await readS7ProgramSnapshot(target());
-    expect(s.identity).toEqual({ orderNumber: "6ES7 315-2EH14-0AB0", serialNumber: "S C-X4U421302009", moduleName: "CPU 315-2 PN/DP" });
+    expect(s.identity).toEqual({ orderNumber: "6ES7 315-2EH14-0AB0", serialNumber: "S C-X4U421302009", moduleName: "CPU 315-2 PN/DP", firmwareVersion: "00c0.5603.0206" });
     expect(s.endpoint).toEqual(target());
     expect([...s.listed].sort((a, b) => a.code - b.code)).toEqual([0x38, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46].map((c) => ({ code: c, count: PROGRAM.filter((b) => CODE[b.type] === c).length })));
-    expect(s.blocks).toHaveLength(PROGRAM.length);
+    expect(s.blocks).toHaveLength(PROGRAM.length - 2); // R-9-b: SFC / SFB are not read per block
+    expect(s.system).toEqual([{ type: "SFC", numbers: [46] }, { type: "SFB", numbers: [4] }]);
     expect(s.blocks).toContainEqual(simBlockDefaults(PROGRAM[0]!));
     expect(s.blocks).toContainEqual({ ...simBlockDefaults(PROGRAM[6]!), author: "", family: "", name: "" });
   });
@@ -167,13 +176,39 @@ describe("T1 — the program checksum (documented formula s7-blockinfo-v2)", () 
     expect(await readS7ProgramChecksum(target())).not.toBe(base);
   });
 
-  it("★ R-9-a (2) coverage: SDB / SFC / SFB blocks are covered (a change there changes the checksum)", async () => {
+  it("★ R-9-a (2) coverage: an SDB change changes the checksum (read per block)", async () => {
     const base = await readS7ProgramChecksum(target());
-    for (const [type, number] of [["SDB", 0], ["SFC", 46], ["SFB", 4]] as const) {
-      sim.setProgram(PROGRAM);
-      sim.patchBlock(type, number, { checksum: 0x9999 });
-      expect(await readS7ProgramChecksum(target())).not.toBe(base);
-    }
+    sim.patchBlock("SDB", 0, { checksum: 0x9999 });
+    expect(await readS7ProgramChecksum(target())).not.toBe(base);
+  });
+
+  it("★ R-9-b: SFC / SFB (firmware system blocks) are NOT read per block — covered by the list (numbers) and the firmware version", async () => {
+    const base = await readS7ProgramChecksum(target());
+    const infoOf = (code: number) => sim.pdus.filter((x) => x.bytes[1] === 0x07 && x.bytes[15] === 0x43 && x.bytes[16] === 0x03 && x.bytes[23] === code);
+    expect(infoOf(0x44)).toHaveLength(0);
+    expect(infoOf(0x46)).toHaveLength(0);
+    // a per-block value of a system block is not part of the checksum …
+    sim.patchBlock("SFC", 46, { checksum: 0x9999 });
+    expect(await readS7ProgramChecksum(target())).toBe(base);
+    // … its presence is: another SFC number, one SFB more, one SFB less
+    sim.setProgram(PROGRAM.map((b) => (b.type === "SFC" ? { ...b, number: 47 } : b)));
+    expect(await readS7ProgramChecksum(target())).not.toBe(base);
+    sim.setProgram([...PROGRAM, { type: "SFB", number: 5, loadSize: 0, mc7Size: 0, checksum: 0 }]);
+    expect(await readS7ProgramChecksum(target())).not.toBe(base);
+    sim.setProgram(PROGRAM.filter((b) => b.type !== "SFB"));
+    expect(await readS7ProgramChecksum(target())).not.toBe(base);
+    // … and so is the firmware version (identity)
+    sim.setProgram(PROGRAM);
+    sim.setIdentity({ ...SIM_IDENTITY, firmware: [0x00c0, 0x5603, 0x0207] });
+    const fwChanged = await readS7ProgramChecksum(target());
+    expect(fwChanged).not.toBe(base);
+    expect(fwChanged).toBe(expectedChecksum(PROGRAM, { identity: { ...SIM_IDENTITY, firmware: [0x00c0, 0x5603, 0x0207] } }));
+  });
+
+  it("★ R-9-b: a know-how-protected SFC / SFB does NOT refuse (they are never read per block)", async () => {
+    sim.patchBlock("SFC", 46, { security: 3 });
+    sim.patchBlock("SFB", 4, { security: 3 });
+    expect(await readS7ProgramChecksum(target())).toBe(expectedChecksum(PROGRAM));
   });
 
   it("★ R-9-a (3): a block added or deleted ⇒ a different checksum (the list is part of the hash)", async () => {
@@ -220,6 +255,21 @@ describe("T1 — the program checksum (documented formula s7-blockinfo-v2)", () 
 });
 
 describe("T1 — bound to the controller's identity (SZL) and the adapter's endpoint", () => {
+  it("★ R-9-b: another firmware version (SZL 0x0011 record 0x0007: BGTyp / Ausbg / Ausbe) ⇒ a different checksum", async () => {
+    const base = await readS7ProgramChecksum(target());
+    for (const firmware of [[0x00c1, 0x5603, 0x0206], [0x00c0, 0x5604, 0x0206], [0x00c0, 0x5603, 0x0306]] as Array<[number, number, number]>) {
+      sim.setIdentity({ ...SIM_IDENTITY, firmware });
+      const c = await readS7ProgramChecksum(target());
+      expect(c).not.toBe(base);
+      expect(c).toBe(expectedChecksum(PROGRAM, { identity: { ...SIM_IDENTITY, firmware } }));
+    }
+  });
+
+  it("★ R-9-b: an all-zero firmware record ⇒ rejected (empty)", async () => {
+    sim.setIdentity({ ...SIM_IDENTITY, firmware: [0, 0, 0] });
+    await expect(readS7ProgramChecksum(target())).rejects.toThrow(/empty firmware version/);
+  });
+
   for (const field of ["orderNumber", "serialNumber", "moduleName"] as const) {
     it(`★ another controller (${field} differs) with the SAME program ⇒ a different checksum`, async () => {
       const base = await readS7ProgramChecksum(target());
@@ -236,6 +286,7 @@ describe("T1 — bound to the controller's identity (SZL) and the adapter's endp
     ["szlNoSerial", /no serial number record/],
     ["szlWrongId", /SZL answer is not 0x11/],
     ["szlRecLen30", /record length 30/],
+    ["noFirmware", /no firmware record/],
     ["szlCountWrong", /SZL 0x1c length inconsistent/],
   ] as const) {
     it(`★ identity unreadable (${fault}) ⇒ rejected (never a checksum without identity)`, async () => {
@@ -294,6 +345,9 @@ describe("T1 — fail closed: every unexpected answer THROWS (never a checksum, 
     ["infoLen72", /too short/],
     ["lenField", /data length inconsistent/],
     ["listUnknownType", /listed block type 0x47 cannot be read/],
+    // review I1 — answers flagged "more follows" where the documentation defines ONE telegram
+    ["listAllMore", /block list answer flagged 'more follows'/],
+    ["infoMore", /block info of OB 1 flagged 'more follows'/],
   ];
   for (const [fault, why] of faults) {
     it(`★ ${fault} ⇒ rejected, connection released`, async () => {
@@ -303,12 +357,12 @@ describe("T1 — fail closed: every unexpected answer THROWS (never a checksum, 
     });
   }
 
-  for (const [type, number] of [["FB", 10], ["SFC", 46], ["SDB", 0]] as const) {
+  for (const [type, number] of [["FB", 10], ["OB", 100], ["SDB", 0]] as const) {
     it(`★ R-9-a (2): a know-how-protected ${type} ⇒ the WHOLE checksum is rejected (the block is never skipped)`, async () => {
       sim.patchBlock(type, number, { security: 3 });
       await expect(readS7ProgramChecksum(target())).rejects.toThrow(new RegExp(`${type} ${number} is protected \\(block security 3\\)`));
       // refused AT that block: no block info is requested after it (read order: type code, then number)
-      const order = [...PROGRAM].sort((a, b) => CODE[a.type]! - CODE[b.type]! || a.number - b.number);
+      const order = PROGRAM.filter((b) => b.type !== "SFC" && b.type !== "SFB").sort((a, b) => CODE[a.type]! - CODE[b.type]! || a.number - b.number);
       const at = order.findIndex((b) => b.type === type && b.number === number);
       expect(sim.pdus.filter((x) => x.bytes[1] === 0x07 && x.bytes[15] === 0x43 && x.bytes[16] === 0x03)).toHaveLength(at + 1);
     });
@@ -327,11 +381,43 @@ describe("T1 — fail closed: every unexpected answer THROWS (never a checksum, 
     expect(() => combineS7ProgramSnapshot({ ...snap, identity: { ...snap.identity, moduleName: "" } })).toThrow(/identity/);
     expect(() => combineS7ProgramSnapshot({ ...snap, listed: snap.listed.filter((l) => l.code !== 0x45), blocks: snap.blocks.filter((b) => b.type !== "FB") })).toThrow(/snapshot has no FB list entry/);
     expect(() => combineS7ProgramSnapshot({ ...snap, listed: [...snap.listed, { code: 0x47, count: 1 }] })).toThrow(/unknown block type/);
+    // R-9-b: a system block type never appears per block; its list must match the listed count; firmware must be present
+    expect(() => combineS7ProgramSnapshot({ ...snap, blocks: [...snap.blocks, { ...snap.blocks[0]!, type: "SFC" }] })).toThrow(/firmware system block type/);
+    expect(() => combineS7ProgramSnapshot({ ...snap, system: snap.system.map((x) => (x.type === "SFB" ? { ...x, numbers: [] } : x)) })).toThrow(/says 1 of type 0x46, 0 read/);
+    expect(() => combineS7ProgramSnapshot({ ...snap, system: [...snap.system, { type: "SFC", numbers: [1] }] })).toThrow(/duplicate system list/);
+    expect(() => combineS7ProgramSnapshot({ ...snap, system: [...snap.system, { type: "OB" as never, numbers: [1] }] })).toThrow(/not a system block type OB/);
+    expect(() => combineS7ProgramSnapshot({ ...snap, identity: { ...snap.identity, firmwareVersion: "" } })).toThrow(/no firmwareVersion/);
   });
 
   it("a block list without one of the program block types (here FB) ⇒ rejected (never read as 'no FB')", async () => {
     sim.setListAllOrder(ALL_CODES.filter((c) => c !== 0x45));
     await expect(readS7ProgramChecksum(target())).rejects.toThrow(/block list has no FB entry/);
+  });
+
+  it("★ review #5: a follow-up answer with another sequence number than the one in flight ⇒ rejected (list of type)", async () => {
+    sim.setFault("followSeqWrong");
+    sim.setListChunk(1);
+    await expect(readS7ProgramChecksum(target())).rejects.toThrow(/block-of-type follow-up answer sequence/);
+  });
+
+  it("★ review #5: … and for a fragmented SZL answer", async () => {
+    sim.setFault("followSeqWrong");
+    sim.setSzlChunk(1);
+    await expect(readS7ProgramChecksum(target())).rejects.toThrow(/SZL follow-up answer sequence/);
+  });
+
+  it("★ R-9-b: the deadline is the caller's (clamped to ≤ 10 s; not a number ⇒ 1000 ms)", async () => {
+    expect(clampS7Deadline(undefined)).toBe(1000);
+    expect(clampS7Deadline("5000")).toBe(1000);
+    expect(clampS7Deadline(Number.NaN)).toBe(1000);
+    expect(clampS7Deadline(2500)).toBe(2500);
+    expect(clampS7Deadline(60_000)).toBe(S7_PROGRAM_CHECKSUM_DEADLINE_MAX_MS);
+    expect(S7_PROGRAM_CHECKSUM_DEADLINE_MAX_MS).toBe(10_000);
+    expect(clampS7Deadline(0)).toBe(1);
+    sim.setFault("hang");
+    const t0 = Date.now();
+    await expect(readS7ProgramChecksum(target(), { deadlineMs: 1500 })).rejects.toThrow(/timeout after 1500ms/);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(1400);
   });
 
   it("★ a controller that never answers ⇒ rejected at the deadline (bounded), socket destroyed", async () => {
@@ -414,6 +500,84 @@ describe("T1 — S7Driver.readProgramChecksum (real nodes7 session against the s
     ac.abort();
     await expect(read).rejects.toThrow(/aborted/);
     expect(Date.now() - t1).toBeLessThan(300); // the driver passes the caller's signal down (cancelled, not timed out)
+    await driver.disconnect();
+  });
+
+  it("★ R-9-b: the driver uses the caller's deadline (opts.deadlineMs), clamped to ≤ 10 s", async () => {
+    sim.setFault("hang");
+    const t0 = Date.now();
+    await expect(driver.readProgramChecksum({ deadlineMs: 200 })).rejects.toThrow(/timeout after 200ms/);
+    expect(Date.now() - t0).toBeLessThan(800);
+    await driver.disconnect();
+  });
+
+  it("★ R-9-b: the framework passes the ADAPTER's deadline (connectionOptions.programChecksumDeadlineMs) to the driver", async () => {
+    expect(programChecksumDeadlineMs({ connectionOptions: {} })).toBe(1000);
+    expect(programChecksumDeadlineMs({ connectionOptions: { programChecksumDeadlineMs: 4000 } })).toBe(4000);
+    expect(programChecksumDeadlineMs({ connectionOptions: { programChecksumDeadlineMs: 99_999 } })).toBe(10_000);
+    expect(programChecksumDeadlineMs({ connectionOptions: { programChecksumDeadlineMs: "4000" } })).toBe(1000);
+    expect(programChecksumDeadlineMs({ connectionOptions: null })).toBe(1000);
+    const seen: unknown[] = [];
+    const spy = { readProgramChecksum: async (o?: { deadlineMs?: number }) => (seen.push(o?.deadlineMs), { supported: true, checksum: "x", source: "s7-blockinfo" }) };
+    await readAdapterProgramCheck({ id: 21, protocol: "s7", connectionOptions: { programChecksum: "blockInfo", programChecksumDeadlineMs: 2500 } }, { driverOf: () => spy as never });
+    expect(seen).toEqual([2500]);
+    // the framework enforces the adapter's bound itself (a driver that ignores it is still cut off)
+    const deaf = { readProgramChecksum: () => new Promise(() => undefined) };
+    const tDeaf = Date.now();
+    expect(
+      await readAdapterProgramCheck({ id: 25, protocol: "s7", connectionOptions: { programChecksum: "blockInfo", programChecksumDeadlineMs: 200 } }, { driverOf: () => deaf as never }),
+    ).toMatchObject({ status: "unreadable", reason: "timeout" });
+    expect(Date.now() - tDeaf).toBeLessThan(700);
+    // end to end: a hanging controller with a 300 ms adapter deadline ⇒ unreadable (timeout) after ~300 ms, not 1000
+    sim.setFault("hang");
+    const row = { id: 22, protocol: "s7", connectionOptions: { rack: 0, slot: 1, programChecksum: "blockInfo", programChecksumDeadlineMs: 300 } };
+    const t0 = Date.now();
+    expect(await readAdapterProgramCheck(row, { driverOf: () => driver })).toMatchObject({ status: "unreadable", reason: "timeout" });
+    const ms = Date.now() - t0;
+    expect(ms).toBeGreaterThanOrEqual(250);
+    expect(ms).toBeLessThan(900);
+    await driver.disconnect();
+  });
+
+  it("★ R-9-b: display-only cache — the approver's screen may re-show a reading (labelled), every other caller reads fresh", async () => {
+    const row = { id: 23, code: "S7-C", protocol: "s7", connectionOptions: { rack: 0, slot: 1, programChecksum: "blockInfo" } };
+    const fresh = await readAdapterProgramCheck(row, { driverOf: () => driver });
+    expect(fresh.displayCache).toBeUndefined();
+    sim.patchBlock("FC", 3, { checksum: 0x4001 }); // the program changes
+    const before = sim.stats().accepted;
+    const shown = await readAdapterProgramCheck(row, { driverOf: () => driver, display: true });
+    expect(sim.stats().accepted).toBe(before); // no controller read
+    expect(shown.checksum).toBe(fresh.checksum); // the earlier reading …
+    expect(shown.displayCache?.readAt).toMatch(/^\d{4}-\d{2}-\d{2}T/); // … labelled as such
+    const recheck = await readAdapterProgramCheck(row, { driverOf: () => driver }); // approval / dispatch: never cached
+    expect(sim.stats().accepted).toBe(before + 1);
+    expect(recheck.checksum).not.toBe(fresh.checksum);
+    expect(recheck.displayCache).toBeUndefined();
+    // the fresh reading is what the screen shows next
+    expect((await readAdapterProgramCheck(row, { driverOf: () => driver, display: true })).checksum).toBe(recheck.checksum);
+    // another configuration of the same adapter ⇒ never served from the cache
+    const reconfigured = { ...row, connectionOptions: { ...row.connectionOptions, programChecksumDeadlineMs: 900 } };
+    const n = sim.stats().accepted;
+    expect((await readAdapterProgramCheck(reconfigured, { driverOf: () => driver, display: true })).displayCache).toBeUndefined();
+    expect(sim.stats().accepted).toBe(n + 1);
+    expect(PROGRAM_CHECK_DISPLAY_CACHE_MS).toBeGreaterThan(0);
+    expect(PROGRAM_CHECK_DISPLAY_CACHE_MS).toBeLessThanOrEqual(10_000);
+    await driver.disconnect();
+  });
+
+  it("R-9-b: the display cache expires (after PROGRAM_CHECK_DISPLAY_CACHE_MS the screen reads again)", async () => {
+    const row = { id: 24, protocol: "s7", connectionOptions: { rack: 0, slot: 1, programChecksum: "blockInfo" } };
+    await readAdapterProgramCheck(row, { driverOf: () => driver });
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + PROGRAM_CHECK_DISPLAY_CACHE_MS + 1;
+      const n = sim.stats().accepted;
+      const again = await readAdapterProgramCheck(row, { driverOf: () => driver, display: true });
+      expect(again.displayCache).toBeUndefined();
+      expect(sim.stats().accepted).toBe(n + 1);
+    } finally {
+      Date.now = realNow;
+    }
     await driver.disconnect();
   });
 

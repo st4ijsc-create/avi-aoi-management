@@ -221,7 +221,9 @@ export interface OtDriver {
    *     then settle promptly (reject) and release what it holds, so a hung controller leaves no pending read behind. A
    *     driver must never ignore the signal (callers always pass one — programChecksum.readAdapterProgramCheck).
    */
-  readProgramChecksum?(opts?: { signal?: AbortSignal }): Promise<ProgramChecksumResult>;
+  //   • doc 81 Đợt 9 (ruling R-9-b) — `opts.deadlineMs`: the adapter's own bound for this read (the caller's deadline,
+  //     programChecksum.programChecksumDeadlineMs); a driver with its own internal deadline must not exceed it.
+  readProgramChecksum?(opts?: { signal?: AbortSignal; deadlineMs?: number }): Promise<ProgramChecksumResult>;
 }
 
 /** doc 81 Đợt 8 task O1 — answer of OtDriver.readProgramChecksum(). */
