@@ -1,9 +1,11 @@
 /**
- * doc 81 Đợt 7 task J1 — the built-in broker's REAL MQTTS listener.
+ * doc 81 Đợt 7 task J1 / J redesign (round 4) — the built-in broker's REAL MQTTS listener over ADMIN-PROVISIONED material.
  *
  * The broker is started by the product function `initMqttBroker()` on 127.0.0.1 with port 0 for every listener
- * (never :1883/:8883/:8884 of the running :3000, never EMQX :1884) and a temp MQTT_TLS_DIR (never the repo's
- * data/ dir). Clients are the real `mqtt` package. DB = `_test` (forced by vitest.setup).
+ * (never :1883/:8883/:8884 of the running :3000, never EMQX :1884). The TLS files are laid out in a TEMP folder by this
+ * test — on Windows by running the REAL provisioning script (`scripts/provision-mqtt-tls.ps1 -TestUnelevated`), so the
+ * listener verifies exactly what the script produces — and passed through `listen.tls.cert/key`. The server never writes
+ * TLS material (checked: the folder is byte-identical after every start). Clients are the real `mqtt` package. DB = `_test`.
  * Independent oracles:
  *   · the fingerprint is recomputed from the certificate file's PEM (base64 → DER → sha256);
  *   · admission = the CONNACK seen by mqtt.js; the TLS client trusts the broker ONLY by that fingerprint;
@@ -15,16 +17,22 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import mqtt, { type MqttClient } from "mqtt";
 import { like } from "drizzle-orm";
+import { generateEd25519, mintEd25519Cert } from "./security/x509Mint";
+import { TLS_CERT_FILE_NAME, TLS_KEY_FILE_NAME } from "./mqttBrokerTls";
 
 // The broker logs every connect/listen; keep the run output pristine (restored in afterAll).
 const consoleSpies = (["log", "info", "warn", "error"] as const).map((m) => vi.spyOn(console, m).mockImplementation(() => {}));
 
+const WIN = process.platform === "win32";
 const RUN = `J1-${process.pid}-${Date.now().toString(36)}`;
 const DEV = `${RUN}-tablet`;
 const PW = "Zk3n0QxV9u-ra8T_hb1LwYc2sPq4Ee7m";
+const SCRIPT = path.resolve(__dirname, "../../scripts/provision-mqtt-tls.ps1");
+const PS = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 
 type Mod = typeof import("./mqttService");
 let mod: Mod;
@@ -38,17 +46,38 @@ const ENV_KEYS = [
   "MQTT_REQUIRE_PASSWORD", "MQTT_ALLOW_PASSWORDLESS_REGISTERED", "MQTT_ADMISSION_ENFORCE",
 ];
 const savedEnv: Record<string, string | undefined> = {};
-let SAFETY_DIR = "";
 
-/** J fix 3: the site folder must NOT exist yet (first start builds it private-from-birth); an existing,
- * unprotected temp folder would be refused (TLS_KEY_ACL_UNPROTECTED). */
-function siteDir(): string {
-  return path.join(tempDir(), "mqtt-tls");
-}
 function tempDir(): string {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "dot7-j1l-"));
   dirs.push(d);
   return d;
+}
+
+/**
+ * Admin-provisioned material in a temp folder. Windows: the REAL script (test mode: this account stands in for
+ * Administrators and is also the server account ⇒ the server's allow-list accepts it). Elsewhere: files minted by
+ * security/x509Mint with 0600 (the posix verifier reads uid/mode/nlink).
+ */
+function provision(): { dir: string; cert: string; key: string } {
+  const root = tempDir();
+  const dir = path.join(root, "avi-aoi", "mqtt-tls");
+  const cert = path.join(dir, TLS_CERT_FILE_NAME);
+  const key = path.join(dir, TLS_KEY_FILE_NAME);
+  if (WIN) {
+    const me = execFileSync(PS, ["-NoProfile", "-NonInteractive", "-Command", "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value"], { encoding: "utf8", windowsHide: true }).trim();
+    const r = spawnSync(PS, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT, "-ServerAccount", me, "-Dir", dir, "-TestUnelevated"], { encoding: "utf8", windowsHide: true, timeout: 120_000 });
+    if (r.status !== 0) throw new Error(`provisioning script failed (${r.status}): ${r.stderr}\n${r.stdout}`);
+  } else {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const kp = generateEd25519();
+    const m = mintEd25519Cert({ subjectCN: "J1L", issuerCN: "J1L", isCa: false, days: 365, signingKey: kp.privateKey, subjectSpkiDer: kp.publicKey.export({ type: "spki", format: "der" }) as Buffer });
+    fs.writeFileSync(key, kp.privateKeyPem, { mode: 0o600 });
+    fs.writeFileSync(cert, m.pem, { mode: 0o600 });
+  }
+  return { dir, cert, key };
+}
+function snapshot(dir: string): string {
+  return fs.readdirSync(dir).sort().map((n) => { const st = fs.statSync(path.join(dir, n)); return `${n}:${st.size}:${st.mtimeMs}:${st.nlink}`; }).join("|");
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -64,9 +93,6 @@ async function waitFor(cond: () => boolean, ms: number, label: string): Promise<
 function fingerprintFromPem(text: string): string {
   const b64 = text.match(/-----BEGIN CERTIFICATE-----([\s\S]+?)-----END CERTIFICATE-----/)![1].replace(/\s+/g, "");
   return createHash("sha256").update(Buffer.from(b64, "base64")).digest("hex").toUpperCase().match(/../g)!.join(":");
-}
-function certPemOf(text: string): string {
-  return text.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)![0];
 }
 
 type Result = { ok: boolean; code?: number; err?: string };
@@ -136,10 +162,6 @@ beforeAll(async () => {
   process.env.UNS_BRIDGE_ENABLED = "false";
   process.env.UNS_SPARKPLUG_ENABLED = "false";
   process.env.EXTERNAL_MQTT_ENABLED = "false";
-  // Safety net: even a regression that starts TLS without `listen.tls.dir` writes into a temp dir, never the repo's
-  // data/mqtt-tls (a test certificate there would become the site certificate at the next server start).
-  SAFETY_DIR = tempDir();
-  process.env.MQTT_TLS_DIR = SAFETY_DIR;
 
   schema = await import("../../drizzle/schema");
   const { getDb } = await import("../db");
@@ -160,30 +182,35 @@ afterAll(async () => {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
-  for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+  for (const d of dirs) {
+    if (WIN) { try { execFileSync("icacls", [d, "/reset", "/T", "/C", "/Q"], { stdio: "ignore", windowsHide: true }); } catch { /* best effort */ } }
+    fs.rmSync(d, { recursive: true, force: true });
+  }
   consoleSpies.forEach((s) => s.mockRestore());
 });
 
-describe("J1 — MQTTS listener of the built-in broker", () => {
-  it("default: plaintext AND TLS listen; the site certificate is generated in MQTT_TLS_DIR; its fingerprint is reported", async () => {
-    const dir = siteDir();
-    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
+describe("J1 — MQTTS listener of the built-in broker over admin-provisioned material", () => {
+  it("default: plaintext AND TLS listen; the provisioned certificate's fingerprint is reported; the folder is never written", async () => {
+    const p = provision();
+    const before = snapshot(p.dir);
+    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, cert: p.cert, key: p.key } });
     await waitFor(() => !!mod.getMqttListenPorts().tls && !!mod.getMqttListenPorts().tcp, 30_000, "listeners");
     const ports = mod.getMqttListenPorts();
-    for (const p of [ports.tcp, ports.ws, ports.tls]) expect([1883, 1884, 8883, 8884]).not.toContain(p);
+    for (const port of [ports.tcp, ports.ws, ports.tls]) expect([1883, 1884, 8883, 8884]).not.toContain(port);
 
-    const text = fs.readFileSync(path.join(dir, "broker-tls.pem"), "utf8");
-    const fp = fingerprintFromPem(text);
+    const certText = fs.readFileSync(p.cert, "utf8");
+    const fp = fingerprintFromPem(certText);
     const st = mod.getMqttBrokerTlsStatus();
-    expect(st).toMatchObject({ enabled: true, listening: true, port: ports.tls, fingerprintSha256: fp, source: "generated", error: null, plainEnabled: true });
+    expect(st).toMatchObject({ enabled: true, listening: true, port: ports.tls, fingerprintSha256: fp, source: "configured", certPath: p.cert, error: null, plainEnabled: true });
     expect(JSON.stringify(st)).not.toContain("PRIVATE KEY");
+    expect(JSON.stringify(st)).not.toContain(TLS_KEY_FILE_NAME); // the key path is not part of the status either
 
     // the tablet's path: MQTTS, broker trusted by fingerprint only, device password ⇒ admitted
-    expect(await connectMqtts(ports.tls!, certPemOf(text), fp, deviceUser, PW)).toEqual({ ok: true });
+    expect(await connectMqtts(ports.tls!, certText, fp, deviceUser, PW)).toEqual({ ok: true });
     // wrong password over TLS ⇒ CONNACK 4 (the TLS listener has the same admission as plaintext)
-    expect((await connectMqtts(ports.tls!, certPemOf(text), fp, deviceUser, "wrong-password")).code).toBe(4);
+    expect((await connectMqtts(ports.tls!, certText, fp, deviceUser, "wrong-password")).code).toBe(4);
     // a client pinning ANOTHER fingerprint never completes the handshake (so it never sends CONNECT)
-    const other = await connectMqtts(ports.tls!, certPemOf(text), "00:".repeat(31) + "00", deviceUser, PW);
+    const other = await connectMqtts(ports.tls!, certText, "00:".repeat(31) + "00", deviceUser, PW);
     expect(other.ok).toBe(false);
     expect(other.err).toContain("PIN_MISMATCH");
     // the TLS port never speaks plaintext MQTT; the plaintext port still does (kept until migration is done)
@@ -191,57 +218,80 @@ describe("J1 — MQTTS listener of the built-in broker", () => {
     expect(await rawConnectGetsConnack(ports.tcp!)).toBe(true);
     expect(await connectPlain(ports.tcp!, deviceUser, PW)).toEqual({ ok: true });
 
-    // restart: the SAME certificate (fingerprint stable — pinned tablets keep working)
+    // restart: the SAME certificate (fingerprint stable — pinned tablets keep working); nothing written
     await stopBroker();
     expect(mod.getMqttListenPorts().tls).toBeNull();
-    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
+    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, cert: p.cert, key: p.key } });
     await waitFor(() => !!mod.getMqttListenPorts().tls, 30_000, "tls again");
     expect(mod.getMqttBrokerTlsStatus().fingerprintSha256).toBe(fp);
-    expect(fs.readFileSync(path.join(dir, "broker-tls.pem"), "utf8")).toBe(text);
+    expect(snapshot(p.dir)).toBe(before);
     await stopBroker();
-  }, 60_000);
+  }, 120_000);
 
   it("MQTT_PLAIN_ENABLED=false ⇒ MQTTS only (no plaintext TCP/WS listener), and shutdown still closes the broker", async () => {
     process.env.MQTT_PLAIN_ENABLED = "false";
     try {
-      const dir = siteDir();
-      await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
+      const p = provision();
+      await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, cert: p.cert, key: p.key } });
       await waitFor(() => !!mod.getMqttListenPorts().tls, 30_000, "tls");
       const ports = mod.getMqttListenPorts();
       expect(ports.tcp).toBeNull();
       expect(ports.ws).toBeNull();
       expect(mod.getMqttBrokerTlsStatus().plainEnabled).toBe(false);
-      const text = fs.readFileSync(path.join(dir, "broker-tls.pem"), "utf8");
-      expect(await connectMqtts(ports.tls!, certPemOf(text), fingerprintFromPem(text), deviceUser, PW)).toEqual({ ok: true });
+      const certText = fs.readFileSync(p.cert, "utf8");
+      expect(await connectMqtts(ports.tls!, certText, fingerprintFromPem(certText), deviceUser, PW)).toEqual({ ok: true });
       await stopBroker();
       expect(mod.mqttHandlersReady()).toBe(false);
     } finally {
       delete process.env.MQTT_PLAIN_ENABLED;
     }
-  }, 60_000);
+  }, 120_000);
 
-  it("fail-closed: a corrupt certificate file ⇒ NO TLS listener, error shown, file untouched, plaintext broker unaffected", async () => {
-    const dir = siteDir();
-    // a first start creates the private folder + key; then the file content gets damaged (its ACL stays private)
-    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
-    await waitFor(() => !!mod.getMqttListenPorts().tls, 30_000, "tls first");
-    await stopBroker();
-    fs.writeFileSync(path.join(dir, "broker-tls.pem"), "not a pem");
-    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, dir } });
+  it("fail-closed: NOT provisioned ⇒ no TLS listener, TLS_NOT_PROVISIONED + the expected path shown, plaintext broker unaffected, nothing created", async () => {
+    const dir = path.join(tempDir(), "avi-aoi", "mqtt-tls"); // does not exist: the admin has not run the script
+    const cert = path.join(dir, TLS_CERT_FILE_NAME);
+    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, cert, key: path.join(dir, TLS_KEY_FILE_NAME) } });
     await waitFor(() => !!mod.getMqttListenPorts().tcp && mod.getMqttBrokerTlsStatus().error !== null, 30_000, "status");
     expect(mod.getMqttListenPorts().tls).toBeNull();
-    expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ enabled: true, listening: false, fingerprintSha256: null, error: "TLS_FILE_CORRUPT" });
-    expect(fs.readFileSync(path.join(dir, "broker-tls.pem"), "utf8")).toBe("not a pem");
+    expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ enabled: true, listening: false, fingerprintSha256: null, error: "TLS_NOT_PROVISIONED", certPath: cert });
+    expect(fs.existsSync(dir)).toBe(false); // the server did not create anything
     expect(await connectPlain(mod.getMqttListenPorts().tcp!, deviceUser, PW)).toEqual({ ok: true });
     await stopBroker();
   }, 60_000);
+
+  it("fail-closed: a damaged key file ⇒ NO TLS listener, TLS_FILE_CORRUPT, file untouched (never replaced), plaintext unaffected", async () => {
+    const p = provision();
+    fs.writeFileSync(p.key, "not a pem"); // the ACL stays as provisioned; only the bytes are damaged
+    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, cert: p.cert, key: p.key } });
+    await waitFor(() => !!mod.getMqttListenPorts().tcp && mod.getMqttBrokerTlsStatus().error !== null, 30_000, "status");
+    expect(mod.getMqttListenPorts().tls).toBeNull();
+    expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ enabled: true, listening: false, fingerprintSha256: null, error: "TLS_FILE_CORRUPT" });
+    expect(fs.readFileSync(p.key, "utf8")).toBe("not a pem");
+    expect(await connectPlain(mod.getMqttListenPorts().tcp!, deviceUser, PW)).toEqual({ ok: true });
+    await stopBroker();
+  }, 120_000);
+
+  it.runIf(WIN)("fail-closed (real Windows ACL): the key readable by Users ⇒ TLS_KEY_ACL_OPEN, no TLS, the ACL is NOT repaired", async () => {
+    const p = provision();
+    execFileSync("icacls", [p.key, "/grant", "*S-1-5-32-545:(R)"], { stdio: "ignore", windowsHide: true });
+    const before = snapshot(p.dir);
+    await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: 0, cert: p.cert, key: p.key } });
+    await waitFor(() => !!mod.getMqttListenPorts().tcp && mod.getMqttBrokerTlsStatus().error !== null, 30_000, "status");
+    expect(mod.getMqttListenPorts().tls).toBeNull();
+    expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ listening: false, fingerprintSha256: null, error: "TLS_KEY_ACL_OPEN" });
+    expect(snapshot(p.dir)).toBe(before);
+    const sddl = execFileSync(PS, ["-NoProfile", "-NonInteractive", "-Command", "(Get-Acl -LiteralPath $env:J_PATH).Sddl"], { encoding: "utf8", windowsHide: true, env: { ...process.env, J_PATH: p.key } });
+    expect(sddl).toMatch(/;;;BU\)/); // Users still there: the server does not touch access lists
+    await stopBroker();
+  }, 120_000);
 
   it("the TLS port taken ⇒ only TLS is down (error EADDRINUSE shown); the broker keeps serving plaintext", async () => {
     const blocker = net.createServer();
     await new Promise<void>((r) => blocker.listen(0, "127.0.0.1", () => r()));
     const taken = (blocker.address() as { port: number }).port;
     try {
-      await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: taken, dir: siteDir() } });
+      const p = provision();
+      await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0, tls: { port: taken, cert: p.cert, key: p.key } });
       await waitFor(() => !!mod.getMqttListenPorts().tcp && mod.getMqttBrokerTlsStatus().error !== null, 30_000, "status");
       expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ listening: false, error: "EADDRINUSE" });
       expect(mod.getMqttBrokerTlsStatus().fingerprintSha256).toMatch(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
@@ -252,17 +302,15 @@ describe("J1 — MQTTS listener of the built-in broker", () => {
     } finally {
       await new Promise<void>((r) => blocker.close(() => r()));
     }
-  }, 60_000);
+  }, 120_000);
 
-  it("listen overrides WITHOUT `tls` (every older broker test) ⇒ no TLS listener, nothing written", async () => {
-    const before = fs.existsSync(path.resolve(process.cwd(), "data", "mqtt-tls", "broker-tls.pem"));
+  it("listen overrides WITHOUT `tls` (every older broker test) ⇒ no TLS listener, nothing read or written", async () => {
     await startBroker({ host: "127.0.0.1", port: 0, wsPort: 0 });
     await waitFor(() => !!mod.getMqttListenPorts().tcp, 10_000, "tcp");
     await new Promise((r) => setTimeout(r, 200));
     expect(mod.getMqttListenPorts().tls).toBeNull();
-    expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ enabled: false, listening: false });
-    expect(fs.existsSync(path.resolve(process.cwd(), "data", "mqtt-tls", "broker-tls.pem"))).toBe(before);
-    expect(fs.existsSync(path.join(SAFETY_DIR, "broker-tls.pem"))).toBe(false);
+    expect(mod.getMqttBrokerTlsStatus()).toMatchObject({ enabled: false, listening: false, certPath: null });
+    expect(fs.existsSync(path.resolve(process.cwd(), "data", "mqtt-tls"))).toBe(false);
     await stopBroker();
   }, 60_000);
 });

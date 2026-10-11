@@ -37,8 +37,10 @@ import {
   BrokerTlsError,
   type BrokerTlsMaterial,
   type MqttBrokerTlsStatus,
+  legacySiteMaterialNotice,
   mqttPlainEnabled,
   mqttTlsEnabled,
+  mqttTlsPaths,
   resolveBrokerTls,
 } from './mqttBrokerTls';
 import { timingSafeEqual } from 'node:crypto';
@@ -1705,11 +1707,12 @@ export interface MqttListenOptions {
   port?: number;
   wsPort?: number;
   /**
-   * doc 81 Đợt 7 J1 — MQTTS listener override (tests: `{ port: 0, dir: <temp> }`). When a test passes listen
-   * overrides WITHOUT `tls`, NO TLS listener starts (it never binds MQTT_TLS_PORT nor writes the site
-   * certificate under the repo's data dir). Production passes nothing ⇒ TLS per env (on by default).
+   * doc 81 Đợt 7 J1 / J redesign — MQTTS listener override (tests: `{ port: 0, cert: <temp>/broker.crt, key: <temp>/broker.key }`
+   * — admin-provisioned files the test laid out itself). When a test passes listen overrides WITHOUT `tls`, NO TLS
+   * listener starts (it never binds MQTT_TLS_PORT nor reads the host's provisioned material). Production passes
+   * nothing ⇒ TLS per env (on by default). The server never writes TLS material anywhere.
    */
-  tls?: { port?: number; dir?: string };
+  tls?: { port?: number; cert?: string; key?: string };
 }
 
 /** Actually-bound TCP/WS/TLS ports of the embedded broker (null while not listening). */
@@ -1723,9 +1726,10 @@ export function getMqttListenPorts(): { tcp: number | null; ws: number | null; t
 
 // doc 81 Đợt 7 J1 — what the admin screen shows about the MQTTS listener (the fingerprint tablets pin).
 let brokerTlsStatus: MqttBrokerTlsStatus = {
-  enabled: false, listening: false, port: null, fingerprintSha256: null, source: null, notAfter: null, error: null,
-  plainEnabled: true,
+  enabled: false, listening: false, port: null, fingerprintSha256: null, source: null, notAfter: null, certPath: null,
+  error: null, plainEnabled: true,
 };
+let legacyTlsNoticeLogged = false;
 
 /** doc 81 Đợt 7 J1 — MQTTS listener state + the site certificate fingerprint (a copy; never the key). */
 export function getMqttBrokerTlsStatus(): MqttBrokerTlsStatus {
@@ -1772,8 +1776,8 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
   // doc 81 Đợt 7 J1 — TLS per env in production; a test override without `tls` starts no TLS listener.
   const tlsOn = mqttTlsEnabled() && (!isOverride || listen.tls !== undefined);
   brokerTlsStatus = {
-    enabled: tlsOn, listening: false, port: null, fingerprintSha256: null, source: null, notAfter: null, error: null,
-    plainEnabled: plainOn,
+    enabled: tlsOn, listening: false, port: null, fingerprintSha256: null, source: null, notAfter: null, certPath: null,
+    error: null, plainEnabled: plainOn,
   };
 
   if (plainOn) {
@@ -1799,7 +1803,8 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
   // MQTT_TLS_CERT + MQTT_TLS_KEY). doc 44 G5.22 — when MQTT_MTLS_ENABLED, the options gain requestCert + the
   // pinned internal CA (loaded async), so the listener setup is deferred to a helper.
   if (tlsOn) {
-    void startMqttTlsListener(host, listen.tls?.port ?? MQTT_TLS_PORT, listen.tls?.dir);
+    const files = listen.tls?.cert && listen.tls?.key ? { cert: listen.tls.cert, key: listen.tls.key } : undefined;
+    void startMqttTlsListener(host, listen.tls?.port ?? MQTT_TLS_PORT, files);
   }
 
   // If DB was initialized earlier (e.g. in tests), attach handlers now
@@ -1826,15 +1831,25 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
  * add requestCert + rejectUnauthorized:false + the pinned CA (internal CA cert
  * plus an optional external CA bundle from MQTT_MTLS_CA).
  */
-async function startMqttTlsListener(host: string, tlsPort: number, dir?: string): Promise<void> {
+async function startMqttTlsListener(host: string, tlsPort: number, files?: { cert: string; key: string }): Promise<void> {
   if (!aedes) return;
   const broker = aedes;
-  // doc 81 Đợt 7 J1 — the material (and its fingerprint) or a fail-closed error: no TLS listener, error shown,
-  // the stored file untouched; the plaintext listeners are unaffected.
+  // doc 81 Đợt 7 J redesign (round 4) — the ADMIN-provisioned material (scripts/provision-mqtt-tls.ps1) is READ and
+  // VERIFIED (owner, access list, links — through one handle per file); any doubt ⇒ no TLS listener, error + path shown,
+  // nothing written or repaired; the plaintext listeners are unaffected.
+  const env = files ? { ...process.env, MQTT_TLS_CERT: files.cert, MQTT_TLS_KEY: files.key } : process.env;
+  try {
+    brokerTlsStatus = { ...brokerTlsStatus, certPath: mqttTlsPaths(env).certPath };
+  } catch { /* half a config: resolveBrokerTls reports TLS_CONFIG_INCOMPLETE below */ }
+  if (!legacyTlsNoticeLogged) {
+    legacyTlsNoticeLogged = true;
+    const notice = legacySiteMaterialNotice(process.env);
+    if (notice) console.warn(notice);
+  }
   let material: BrokerTlsMaterial;
   try {
-    // doc 81 Đợt 7 J fix 3 (F5): async — the Windows ownership/ACL checks never block the event loop
-    material = await resolveBrokerTls(dir ? { ...process.env, MQTT_TLS_DIR: dir } : process.env);
+    // async — the ownership/ACL inspection never blocks the event loop (bounded by MQTT_TLS_ACL_TIMEOUT_MS per call)
+    material = await resolveBrokerTls(env);
   } catch (err) {
     const code = err instanceof BrokerTlsError ? err.code : 'TLS_SETUP_FAILED';
     brokerTlsStatus = { ...brokerTlsStatus, listening: false, error: code };
@@ -1846,10 +1861,9 @@ async function startMqttTlsListener(host: string, tlsPort: number, dir?: string)
     fingerprintSha256: material.fingerprintSha256,
     source: material.source,
     notAfter: material.notAfter,
+    certPath: material.certPath,
   };
-  if (material.created) {
-    console.log(`[MQTT] Generated the site TLS certificate for the built-in broker: ${material.file}`);
-  }
+  console.log(`[MQTT] TLS material verified: ${material.certPath} + ${material.keyPath} (${material.source})`);
   console.log(`[MQTT] TLS certificate SHA-256 fingerprint (tablets pin this): ${material.fingerprintSha256}`);
   try {
     const base = { key: material.keyPem, cert: material.certPem };
