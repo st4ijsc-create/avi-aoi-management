@@ -61,7 +61,7 @@ import { verifyCrudContentHash } from "../services/auditTrailService";
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `R9F1-${Date.now()}`;
 let sql: ReturnType<typeof postgres>;
-const u = { admin: 0, a: 0, b: 0, off: 0, eng: 0, late: 0 };
+const u = { admin: 0, a: 0, b: 0, off: 0, eng: 0, late: 0, admin2: 0 };
 let keyId = 0;
 const ctx = () => ({ user: { id: u.admin, role: "admin", name: "R9F1 admin", twoFactorEnabled: true } }) as never;
 const holderOf = async () => Number((await sql`SELECT "holderUserId" AS h FROM api_keys WHERE id = ${keyId}`)[0].h);
@@ -72,7 +72,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 R fix 1 #6 — setHolder: one transact
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/);
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
-    for (const [k, role, active] of [["admin", "admin", true], ["a", "engineer", true], ["b", "engineer", true], ["off", "engineer", true], ["eng", "engineer", true], ["late", "engineer", true]] as const) {
+    for (const [k, role, active] of [["admin", "admin", true], ["a", "engineer", true], ["b", "engineer", true], ["off", "engineer", true], ["eng", "engineer", true], ["late", "engineer", true], ["admin2", "admin", true]] as const) {
       u[k] = Number((await sql`INSERT INTO users ("openId", username, name, role, "isActive") VALUES (${`${DAU}-${k}`}, ${`${DAU}-${k}`}, ${`R9F1 ${k}`}, ${role}, ${active}) RETURNING id`)[0].id);
     }
     keyId = Number((await sql`INSERT INTO api_keys (name, "keyHash", scopes, "createdBy", "holderUserId") VALUES (${`${DAU}-k`}, ${`${DAU}-k-hash`}, ${sql.json(["orchestration:write"])}, ${u.admin}, ${u.a}) RETURNING id`)[0].id);
@@ -214,5 +214,115 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 R fix 1 #6 — setHolder: one transact
     await eng.update({ id, isActive: false, name: `${DAU}-k2b` }); // revoke / other fields: allowed
     await apiKeyRouter.createCaller(ctxWithReq(u.admin, "admin")).update({ id, isActive: true }); // an admin re-activates
     expect((await sql`SELECT "isActive" FROM api_keys WHERE id = ${id}`)[0].isActive).toBe(true);
+  });
+
+  // ════════════ doc 81 Đợt 9 R fix scan 2 — authorization TOCTOU, TWO REAL TRANSACTIONS on _test ════════════
+  /**
+   * Opens a second, REAL transaction on its own connection, runs `stmt` in it (taking that row's lock) and keeps it open until
+   * `release()` — then commits. `ready` resolves once the statement has run (the lock is held).
+   */
+  function holdInOtherTx(stmt: (tx: postgres.TransactionSql) => Promise<unknown>) {
+    const other = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let ready!: () => void;
+    const readyP = new Promise<void>((r) => (ready = r));
+    const done = other
+      .begin(async (tx) => {
+        await stmt(tx);
+        ready();
+        await gate;
+      })
+      .finally(() => other.end());
+    return { ready: readyP, release, done };
+  }
+  const settle = <T,>(p: Promise<T>) => p.then((v) => ({ ok: true as const, v }), (e: { code?: string }) => ({ ok: false as const, code: e?.code }));
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it("★ scan 2: a REVOKE committing while a non-admin's update({ isActive: true }) is in flight ⇒ the update decides on the LOCKED (revoked) row ⇒ FORBIDDEN; the key stays revoked", async () => {
+    const [k] = await sql`INSERT INTO api_keys (name, "keyHash", scopes, "createdBy", "holderUserId", "isActive")
+                          VALUES (${`${DAU}-k3`}, ${`${DAU}-k3-hash`}, ${sql.json(["orchestration:write"])}, ${u.admin}, ${u.a}, true) RETURNING id`;
+    const id = Number(k.id);
+    const other = holdInOtherTx((tx) => tx`UPDATE api_keys SET "isActive" = false WHERE id = ${id}`);
+    await other.ready;
+    // a non-admin "re-saves" the key as active — harmless on the row it would have read without a lock (active)
+    const inFlight = settle(apiKeyRouter.createCaller(ctxWithReq(u.eng, "engineer")).update({ id, isActive: true, name: `${DAU}-k3` }));
+    await pause(400); // it must be WAITING on the row lock now
+    other.release();
+    await other.done;
+    const r = await inFlight;
+    expect(r).toEqual({ ok: false, code: "FORBIDDEN" });
+    expect((await sql`SELECT "isActive" FROM api_keys WHERE id = ${id}`)[0].isActive).toBe(false);
+  });
+
+  it("★ scan 2 (the FOR SHARE gap): the new holder is DEACTIVATED by a transaction committing while setHolder is in flight ⇒ refused (BAD_REQUEST), holder unchanged", async () => {
+    await apiKeyRouter.createCaller(ctx()).setHolder({ id: keyId, holderUserId: u.a, reason: "baseline 2" });
+    const other = holdInOtherTx((tx) => tx`UPDATE users SET "isActive" = false WHERE id = ${u.late}`);
+    await other.ready;
+    const inFlight = settle(apiKeyRouter.createCaller(ctx()).setHolder({ id: keyId, holderUserId: u.late, reason: "racing a deactivation" }));
+    await pause(400);
+    other.release();
+    await other.done;
+    try {
+      expect(await inFlight).toEqual({ ok: false, code: "BAD_REQUEST" });
+      expect(await holderOf()).toBe(u.a);
+    } finally {
+      await sql`UPDATE users SET "isActive" = true WHERE id = ${u.late}`;
+    }
+  });
+
+  it("★ scan 2: the ADMIN is demoted by a transaction committing while their setHolder is in flight ⇒ FORBIDDEN (re-checked in the transaction), nothing changed", async () => {
+    const before = await holderOf();
+    const n0 = await histCount();
+    const other = holdInOtherTx((tx) => tx`UPDATE users SET role = 'engineer' WHERE id = ${u.admin2}`);
+    await other.ready;
+    const inFlight = settle(
+      apiKeyRouter.createCaller({ user: { id: u.admin2, role: "admin", name: "R9F1 admin2", twoFactorEnabled: true } } as never).setHolder({ id: keyId, holderUserId: u.b, reason: "demoted meanwhile" }),
+    );
+    await pause(400);
+    other.release();
+    await other.done;
+    try {
+      expect(await inFlight).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect([await holderOf(), await histCount()]).toEqual([before, n0]);
+    } finally {
+      await sql`UPDATE users SET role = 'admin' WHERE id = ${u.admin2}`;
+    }
+  });
+
+  it("★ scan 2: the key is DELETED by a transaction committing while setHolder is in flight ⇒ NOT_FOUND — no holder-change audit row for a change that never happened", async () => {
+    const [k] = await sql`INSERT INTO api_keys (name, "keyHash", scopes, "createdBy", "holderUserId") VALUES (${`${DAU}-k5`}, ${`${DAU}-k5-hash`}, ${sql.json(["orchestration:write"])}, ${u.admin}, ${u.a}) RETURNING id`;
+    const id = Number(k.id);
+    const audits = async () => Number((await sql`SELECT count(*)::int AS n FROM audit_logs WHERE "entityType" = 'api_key' AND "entityId" = ${id} AND details LIKE '%API_KEY_HOLDER_CHANGE%'`)[0].n);
+    const other = holdInOtherTx((tx) => tx`DELETE FROM api_keys WHERE id = ${id}`);
+    await other.ready;
+    let finished = false;
+    const inFlight = settle(apiKeyRouter.createCaller(ctx()).setHolder({ id, holderUserId: u.b, reason: "racing a delete" }).finally(() => (finished = true)));
+    await pause(400);
+    expect(finished).toBe(false); // waiting on the key row lock
+    other.release();
+    await other.done;
+    expect(await inFlight).toEqual({ ok: false, code: "NOT_FOUND" });
+    expect(await audits()).toBe(0);
+  });
+
+  it("★ scan 2: an admin demoted while their update({ isActive: true }) of a revoked key is in flight ⇒ FORBIDDEN, the key stays revoked", async () => {
+    const [k] = await sql`INSERT INTO api_keys (name, "keyHash", scopes, "createdBy", "holderUserId", "isActive")
+                          VALUES (${`${DAU}-k4`}, ${`${DAU}-k4-hash`}, ${sql.json(["orchestration:write"])}, ${u.admin}, ${u.a}, false) RETURNING id`;
+    const id = Number(k.id);
+    const other = holdInOtherTx((tx) => tx`UPDATE users SET role = 'engineer' WHERE id = ${u.admin2}`);
+    await other.ready;
+    const inFlight = settle(
+      apiKeyRouter.createCaller({ user: { id: u.admin2, role: "admin", name: "R9F1 admin2", twoFactorEnabled: true } } as never).update({ id, isActive: true }),
+    );
+    await pause(400);
+    other.release();
+    await other.done;
+    try {
+      expect(await inFlight).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect((await sql`SELECT "isActive" FROM api_keys WHERE id = ${id}`)[0].isActive).toBe(false);
+    } finally {
+      await sql`UPDATE users SET role = 'admin' WHERE id = ${u.admin2}`;
+    }
   });
 });
