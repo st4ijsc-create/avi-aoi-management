@@ -97,9 +97,24 @@ describe("pluginRegistry apiVersion gate", () => {
 });
 
 describe("first-party OT connector seed manifests — conformance", () => {
-  it("all 5 seeds are valid, compatible, signed, and have an auto-form config schema", () => {
+  // Re-pinned 2026-10-11 (doc 81 Dot 8 task Q4): this test pinned "5 seeds" since 096fd0a9c; ad4e2bb64 (2026-07-06, doc 37
+  // Q8) deliberately added the 6th seed `builtin-omron-njnx` (Omron NJ/NX = EtherNet/IP CIP preset) without updating it —
+  // measured: green at ad4e2bb64^, red at ad4e2bb64. The test was stale, not the code. Pinned now by the exact id list, so
+  // the next added/removed seed fails HERE by name: add it to SEED_IDS with a dated note (and its conformance still runs).
+  const SEED_IDS = [
+    "builtin-opcua",
+    "builtin-modbus",
+    "builtin-s7",
+    "builtin-mitsubishi-mc",
+    "builtin-ethernet-ip",
+    "builtin-omron-njnx", // ad4e2bb64 (doc 37 Q8)
+  ];
+  it("all 6 seeds are valid, compatible, signed, and have an auto-form config schema", () => {
     const seeds = buildOtConnectorManifests();
-    expect(seeds).toHaveLength(5);
+    expect(seeds.map((m) => m.id)).toEqual(SEED_IDS);
+    const omron = seeds.find((m) => m.id === "builtin-omron-njnx")!;
+    expect(omron.protocols).toEqual(["ethernet-ip"]); // a preset of the EtherNet/IP driver, not a new protocol
+    expect(((omron.configSchema as { properties?: Record<string, { default?: unknown }> }).properties?.port)?.default).toBe(44818);
     for (const m of seeds) {
       const res = validateManifest(m, { requireSignature: true });
       expect(res.ok, `${m.id}: ${res.errors.join("; ")}`).toBe(true);

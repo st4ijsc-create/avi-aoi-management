@@ -28,7 +28,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { startRun, resumeRun, getRun, foeEnabled, type FoeUser, type GateDecision, type ResumeHooks } from "../foe/foeEngine";
-import { getQtBusinessSteps, findQtBusinessStep, qtTemplateRefOfRun, type QtStepContext } from "./qtStepHandlers";
+import { getQtBusinessSteps, findQtBusinessStep, resolveQtTemplateOfRun, type QtStepContext, type QtTemplateOfRun } from "./qtStepHandlers";
 
 /**
  * Final review fix #6 — resumeRun (doc 80 ORC-02/03) may THROW: CONFLICT when another approver /
@@ -125,12 +125,24 @@ export async function runQtCompensations(
 }
 
 /**
+ * doc 81 Đợt 8 task Q3 (re-review N3) — the note of a rejection whose run's template could NOT be determined (lookup failed):
+ * its compensations were NOT run — never "no step needs compensation". Fail-closed: no compensation is guessed from the ref
+ * string (a factory workflow may carry a QT ref and must never get QT compensations, Đợt 7 F1); the rejection itself still
+ * goes through (stopping a saga is never gated — L-7), and the note says what a person has to undo by hand.
+ */
+export const QT_COMPENSATION_NOT_RUN = "Bù trừ §18.2 KHÔNG chạy";
+function compensationNotRunNote(reason: string): string {
+  return `${QT_COMPENSATION_NOT_RUN}: không xác định được template của run (${reason}) — các bước nghiệp vụ đã làm (vd. giữ chỗ đơn, nhiệm vụ vận chuyển, lệnh tuyến) CHƯA được hoàn tác; cần bù trừ thủ công`;
+}
+
+/**
  * doc 80 Đợt 1 Task 9 — hook bù trừ cho nhánh TỪ CHỐI: engine CHỈ gọi nó sau khi đã giành quyền
  * từ chối (CAS 'awaiting_confirm|held' → 'compensating', ghim đúng gate). Ghi chú bù trừ được đẩy
  * vào `notes` (kết quả pump) và trả về làm lý do cuối của run (persist ở run.error + bước gate).
+ * (Đợt 8 final wave F4: this JSDoc moved back onto the hook it describes.)
  */
 function compensationHook(
-  workflowRef: string,
+  tpl: QtTemplateOfRun,
   runId: number,
   params: Record<string, unknown>,
   failedStepId: string,
@@ -139,7 +151,13 @@ function compensationHook(
 ): ResumeHooks {
   return {
     compensate: async () => {
-      const compNotes = await runQtCompensations(workflowRef, runId, params, failedStepId);
+      if (tpl.kind === "unknown") {
+        const msg = compensationNotRunNote(tpl.reason);
+        note(notes, `bù trừ: ${msg}`);
+        return [headline, msg].join(" · ").slice(0, 1900);
+      }
+      // `none` (decided: not a global QT template run) ⇒ no QT compensation applies; `qt` ⇒ the template's compensations.
+      const compNotes = tpl.kind === "qt" ? await runQtCompensations(tpl.ref, runId, params, failedStepId) : [];
       for (const c of compNotes) note(notes, `bù trừ: ${c}`);
       return [
         headline,
@@ -178,10 +196,14 @@ export async function pumpQtRun(runId: number, user: FoeUser = QT_SYSTEM_USER): 
     if (!stepId) return { ok: false, runId, status, notes, message: "run pause nhưng không có currentStepId" };
 
     // final wave F1 — handlers by the run's WORKFLOW ROW (the global QT template row), never by the ref string alone.
-    const tplRef = await qtTemplateRefOfRun(view.run);
-    const handler = tplRef ? findQtBusinessStep(tplRef, stepId) : null;
+    const tpl = await resolveQtTemplateOfRun(view.run);
+    const handler = tpl.kind === "qt" ? findQtBusinessStep(tpl.ref, stepId) : null;
     if (!handler || handler.mode === "external" || !handler.run) {
       // Gate chờ ngoài (hoặc gate không thuộc registry — để cho người xử lý).
+      // Q3 — template undetermined (lookup failed) ⇒ no handler is run either; said so (the gate waits for a person).
+      if (tpl.kind === "unknown") {
+        return { ok: true, runId, status: "waiting_external", pausedStepId: stepId, notes, message: `không xác định được template của run (${tpl.reason}) — không tự chạy bước nghiệp vụ; gate chờ người` };
+      }
       return { ok: true, runId, status: "waiting_external", pausedStepId: stepId, notes };
     }
 
@@ -216,7 +238,7 @@ export async function pumpQtRun(runId: number, user: FoeUser = QT_SYSTEM_USER): 
       runId,
       { approved: false, note: headline.slice(0, 1900), expectedStepId: stepId },
       user,
-      compensationHook(tplRef ?? "", runId, params, stepId, headline, notes),
+      compensationHook(tpl, runId, params, stepId, headline, notes),
     );
     if (!rejected) {
       const status = await currentStatus(runId);
@@ -285,18 +307,21 @@ export async function resolveQtGate(
   if (!decision.approved) {
     const headline = decision.note ?? `gate '${stepId}' bị từ chối`;
     // final wave F1 — QT compensations only for a run of the global QT template row (a same-ref factory workflow gets none).
-    const tplRef = await qtTemplateRefOfRun(view.run);
+    // Đợt 8 Q3 — a FAILED lookup is not "none": the rejection goes through, its compensations are NOT run, and both the run's
+    // reason and this answer say so (manual compensation needed).
+    const tpl = await resolveQtTemplateOfRun(view.run);
     const rejected = await resumeUnlessClaimed(
       runId,
       { approved: false, note: headline.slice(0, 1900), expectedStepId },
       user,
-      compensationHook(tplRef ?? "", runId, params, stepId, headline, notes),
+      compensationHook(tpl, runId, params, stepId, headline, notes),
     );
     if (!rejected) {
       const current = await currentStatus(runId);
       return { ok: false, runId, status: current, pausedStepId: stepId, notes, message: "gate đã được lượt khác quyết định (CONFLICT)" };
     }
-    return { ok: false, runId, status: "aborted", pausedStepId: stepId, notes };
+    const notRun = tpl.kind === "unknown" && notes.some((n) => n.includes(QT_COMPENSATION_NOT_RUN));
+    return { ok: false, runId, status: "aborted", pausedStepId: stepId, notes, ...(notRun ? { message: compensationNotRunNote(tpl.reason) } : {}) };
   }
 
   const resumed = await resumeUnlessClaimed(runId, { approved: true, note: decision.note ?? "external signal resolved", expectedStepId }, user);

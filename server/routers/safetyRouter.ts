@@ -24,7 +24,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { eq, desc, isNull, and, or, inArray, asc, sql, type SQL } from "drizzle-orm";
-import { router, moduleProcedure } from "../_core/trpc";
+import { router, moduleProcedure, adminProcedure, moduleGate } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
@@ -62,15 +62,16 @@ import type { PersonDetection } from "../services/safety/vision/humanDetectionPr
 import {
   safetyPlcAdapterEnabled,
   listPlcConfigs,
-  upsertPlcConfig,
   readConfigById,
   SimSafetyPlcBackend,
 } from "../services/safety/plc/safetyPlcAdapter";
+// doc 81 Đợt 8 task N fix 1 (I1) — maker-checker + audited, scope-checked config writes.
+import { savePlcConfig, deletePlcConfig, decidePlcConfigTrust, listPlcTrust, plcConfigInScope, type PlcScope } from "../services/safety/plc/safetyPlcTrust";
 // doc 80 Đợt 1 Task 4 (SAF-02) — read-only source-health report for the Safety page.
 import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { resolveTenantFactoryScope } from "../db/reportAggregators";
-import { deviceAdapters, robots } from "../../drizzle/schema";
+import { deviceAdapters, robots, safetyPlcConfigs as safetyPlcConfigsTable } from "../../drizzle/schema";
 
 /**
  * doc 81 Đợt 4 fix round 1 (security scan on 7a0dd5632) — every id of a `safety.sourceHealth` target must resolve
@@ -310,6 +311,51 @@ function requireSafetyVisionFlag() {
     throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyVision" }, "Safety vision disabled (set SAFETY_VISION_ENABLED=true) — ADVISORY only, not SIL; needs a real camera + calibration + exported ONNX model");
   }
 }
+/**
+ * doc 81 Đợt 8 task N fix 1 (I1, R-5-d parity) — the caller's FACTORY scope for safety-PLC configs (null = full scope).
+ * Unresolvable ⇒ [] (nothing reachable — fail closed).
+ */
+async function plcScopeOf(ctx: CoDanhTinh): Promise<PlcScope> {
+  try {
+    return await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true });
+  } catch {
+    return [];
+  }
+}
+/** Map a maker-checker decision result to the API answer (appError keys are in errors.* of vi/en/zh). */
+function plcDecisionAnswer(
+  r: Awaited<ReturnType<typeof decidePlcConfigTrust>>,
+  operation: "approveSafetyPlcConfig" | "rejectSafetyPlcConfig",
+): { ok: true; digest: string; decision: "approve" | "reject"; complete: boolean } {
+  if (r.kind === "ok") return { ok: true, digest: r.digest, decision: r.decision, complete: true };
+  // fix scan (R-8-a) — unknown provenance: the first of two approvals was recorded; NOT trusted until a different admin approves.
+  if (r.kind === "first") return { ok: true, digest: r.digest, decision: "approve", complete: false };
+  if (r.kind === "not_found") plcConfigNotFound();
+  if (r.kind === "migration_missing") plcTrustMigrationMissing(operation);
+  if (r.kind === "first_approver") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "secondApproveOwnSafetyPlcConfig" }, "Two-person rule: the second approval must come from a different admin");
+  if (r.kind === "sim") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation, reason: "simPlcConfigNeverTrusted" }, "A sim safety-PLC config is never trusted — nothing to approve");
+  if (r.kind === "self") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveSafetyPlcConfig" }, "Separation of duties: the maker / a recent author of this config cannot decide on it");
+  throw appError("CONFLICT", "OPERATION_FAILED", { operation, reason: "safetyPlcConfigChanged" }, "The config changed since it was shown — reload and review it again");
+}
+/**
+ * doc 81 Đợt 8 final wave F3 / N-R4 — migration 0368 (maker-checker table) is not applied on this database: a clear
+ * refusal (nothing was written — the transaction rolled back), never a 500. Apply 0368 before enabling safety-PLC writes.
+ */
+function plcTrustMigrationMissing(operation: "upsertSafetyPlcConfig" | "approveSafetyPlcConfig" | "rejectSafetyPlcConfig"): never {
+  throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation, reason: "plcTrustMigrationMissing" }, "Migration 0368 (safety-PLC maker-checker) is not applied on this database — nothing was saved; ask an administrator to apply it");
+}
+/** ONE answer for "missing" and "out of scope" (same code, key, params, message). */
+function plcConfigNotFound(): never {
+  throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "safetyPlcConfig" }, "Safety-PLC config not found");
+}
+/** A config id the caller may act on (read / write / approve): in scope, else the SAME NOT_FOUND as a missing id. */
+async function assertPlcConfigInScope(ctx: CoDanhTinh, id: number): Promise<void> {
+  const scope = await plcScopeOf(ctx);
+  const d = await getDb();
+  const [row] = d ? await d.select({ factoryId: safetyPlcConfigsTable.factoryId }).from(safetyPlcConfigsTable).where(eq(safetyPlcConfigsTable.id, id)).limit(1) : [];
+  if (!row || !plcConfigInScope(scope, row.factoryId)) plcConfigNotFound();
+}
+
 function requireSafetyPlcFlag() {
   if (!safetyPlcAdapterEnabled()) {
     throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyPlcAdapter" }, "Safety-PLC adapter disabled (set SAFETY_PLC_ADAPTER_ENABLED=true) — READ-ONLY monitoring; the certified Safety PLC performs the rated stop itself");
@@ -345,6 +391,20 @@ const simRobotSchema = z.object({
 });
 
 const EVENT_TYPES = ["estop", "collision", "intrusion", "zone_intrusion", "force_limit", "speed_violation", "near_miss"] as const;
+/**
+ * doc 81 Đợt 8 N fix 1 (review M6) — the feed FILTER also accepts the types only the background safety-PLC poller /
+ * its watchdog write. safety.recordEvent keeps EVENT_TYPES (a user can never record a poller type).
+ */
+const FEED_EVENT_TYPES = [
+  ...EVENT_TYPES,
+  "estop_released",
+  "reset_required",
+  "muting_active",
+  "plc_offline",
+  "plc_online",
+  "plc_monitor_stale",
+  "plc_events_lost",
+] as const;
 
 // S2b — a pixel-space person detection bbox (from any detector / test).
 const personDetectionSchema = z.object({
@@ -424,7 +484,7 @@ export const safetyRouter = router({
     .input(
       z
         .object({
-          eventType: z.enum(EVENT_TYPES).optional(),
+          eventType: z.enum(FEED_EVENT_TYPES).optional(),
           robotId: z.number().int().positive().optional(),
           isNearMiss: z.boolean().optional(),
           sinceHours: z.number().int().min(1).max(24 * 90).optional(),
@@ -766,7 +826,20 @@ export const safetyRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => listPlcConfigs(input ?? {})),
+    // doc 81 Đợt 8 N fix 1 — only configs in the caller's factory scope.
+    .query(async ({ ctx, input }) => {
+      const scope = await plcScopeOf(ctx);
+      return (await listPlcConfigs(input ?? {})).filter((c) => plcConfigInScope(scope, c.factoryId));
+    }),
+
+  /**
+   * doc 81 Đợt 8 task N fix 1 (I1) — maker-checker status of every config in scope: sim / approved / pending / rejected,
+   * the server digest of the CURRENT content, and whether the viewer may decide (admins only; never the maker). The
+   * endpoint + tag map (what is being approved) are returned to admins only.
+   */
+  plcTrustList: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(async ({ ctx }) => listPlcTrust(await plcScopeOf(ctx), { id: ctx.user.id, isAdmin: ctx.user.role === "admin" })),
 
   upsertSafetyPlcConfig: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
@@ -785,6 +858,8 @@ export const safetyRouter = router({
             resetRequired: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
             muting: z.object({ address: z.string().optional(), dataType: z.enum(["bool", "int", "float"]).optional(), activeWhen: z.enum(["truthy", "falsy"]).optional() }).optional(),
             simScript: z.array(plcStatusSnapshotSchema).optional(),
+            /** doc 81 Đợt 8 N1 — background poller period (ms) for this config; the poller also clamps it. */
+            pollIntervalMs: z.number().int().min(250).max(60_000).optional(),
           })
           .optional(),
         robotId: z.number().int().positive().optional(),
@@ -797,11 +872,49 @@ export const safetyRouter = router({
         factoryId: z.number().int().positive().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       requireSafetyPlcFlag();
-      const r = await upsertPlcConfig(input);
-      if (!r.ok && r.enabled) throw appError(r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "upsertSafetyPlcConfig" }, r.message ?? "safety-PLC config upsert failed");
-      return r;
+      // doc 81 Đợt 8 N fix 1 (I1) — audited (create / update), scope-checked by id (R-5-d parity), and every edit clears the
+      // maker-checker approval (the editor becomes the maker).
+      const r = await savePlcConfig(input, ctx.user.id, await plcScopeOf(ctx));
+      if (r.kind === "not_found") plcConfigNotFound();
+      if (r.kind === "migration_missing") plcTrustMigrationMissing("upsertSafetyPlcConfig");
+      return { ok: true, enabled: true, config: r.value.config, created: r.value.created };
+    }),
+
+  /** doc 81 Đợt 8 task N fix 1 — delete a config (audited, scope-checked; its approval goes with it). */
+  deleteSafetyPlcConfig: protectedProcedure
+    .use(requirePermission("machine_control", "canDelete"))
+    .input(z.object({ id: z.number().int().positive(), reason: z.string().max(2000).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      requireSafetyPlcFlag();
+      const r = await deletePlcConfig(input.id, ctx.user.id, await plcScopeOf(ctx), input.reason ?? null);
+      if (r.kind === "not_found") plcConfigNotFound();
+      return { ok: true, id: input.id };
+    }),
+
+  /**
+   * doc 81 Đợt 8 task N fix 1 (I1) — APPROVE the current content of a REAL config (maker-checker). Admin (+2FA policy of
+   * adminProcedure); never the last editor / an author since the last approval; expectedDigest = the digest shown (must
+   * equal the server's digest of the row under FOR UPDATE).
+   */
+  approveSafetyPlcConfig: adminProcedure
+    .use(moduleGate("MOD_OT_CONTROL"))
+    .input(z.object({ id: z.number().int().positive(), expectedDigest: z.string().regex(/^[0-9a-f]{64}$/) }))
+    .mutation(async ({ ctx, input }) => {
+      requireSafetyPlcFlag();
+      const r = await decidePlcConfigTrust({ id: input.id, decision: "approve", expectedDigest: input.expectedDigest }, ctx.user.id, await plcScopeOf(ctx));
+      return plcDecisionAnswer(r, "approveSafetyPlcConfig");
+    }),
+
+  /** doc 81 Đợt 8 task N fix 1 (I1) — REJECT the current content (same rules as approve; a reason is required). */
+  rejectSafetyPlcConfig: adminProcedure
+    .use(moduleGate("MOD_OT_CONTROL"))
+    .input(z.object({ id: z.number().int().positive(), expectedDigest: z.string().regex(/^[0-9a-f]{64}$/), reason: z.string().trim().min(3).max(2000) }))
+    .mutation(async ({ ctx, input }) => {
+      requireSafetyPlcFlag();
+      const r = await decidePlcConfigTrust({ id: input.id, decision: "reject", expectedDigest: input.expectedDigest, reason: input.reason }, ctx.user.id, await plcScopeOf(ctx));
+      return plcDecisionAnswer(r, "rejectSafetyPlcConfig");
     }),
 
   /**
@@ -818,8 +931,9 @@ export const safetyRouter = router({
         simStatus: plcStatusSnapshotSchema.optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       requireSafetyPlcFlag();
+      await assertPlcConfigInScope(ctx, input.configId); // doc 81 Đợt 8 N fix 1 — by id ⇒ scope (R-5-d parity)
       const override = input.simStatus ? new SimSafetyPlcBackend([input.simStatus]) : undefined;
       return readConfigById(input.configId, override);
     }),

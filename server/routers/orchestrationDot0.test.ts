@@ -29,7 +29,16 @@ vi.mock("drizzle-orm", async (orig) => {
 });
 vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
+// Re-pinned 2026-10-11 (doc 81 Dot 8 task Q4): this mock exported only `requirePermission`. Since the orchestration factory
+// scope (doc 81 Dot 5 E2, bb636bc9e) the copy's SOURCE must be visible to the caller, which resolves the caller's scope
+// through `resolveDataScope` / `getUserAssignmentCodes` (db/reportAggregators.resolveTenantFactoryScope). Missing from the
+// mock ⇒ the resolver throws ⇒ the scope is UNDECIDED; since 1ed6c55ff (Dot 5 final wave F3, R-5-l) an undecided scope never
+// reads as "visible" ⇒ "Source workflow not found" — correct fail-closed behaviour; measured: green at 1ed6c55ff^, red at
+// 1ed6c55ff. The harness was stale, not the code. The engineer now has a DECIDED scope: no factory assignment (filter 1=0,
+// no codes ⇒ factory ids []), which still sees a machine-less workflow (nothing of it is out of scope).
 vi.mock("../_core/accessControl", () => ({
+  resolveDataScope: async () => ({ filter: { decided: "1=0" }, scopeApplied: true, scopeEmptyReason: null, scopeMessage: null }),
+  getUserAssignmentCodes: async () => ({ corporateCodes: [], factoryCodes: [], isAdmin: false }),
   requirePermission: (moduleName: string, action: string) => async ({ ctx, next }: any) => {
     perm.calls.push(`${moduleName}.${action}`);
     if (perm.deny.has(`${moduleName}.${action}`)) {
@@ -102,6 +111,7 @@ describe("ORC-06 — duplicateWorkflow tạo bản NHÁP không chạy được"
 
     const run = await startRun("line-a-copy", {}, ENGINEER);
     expect(run.ok).toBe(false);
+    expect(run.message).toMatch(/is draft — deploy it before running/); // refused for being a draft, not "not found"
     expect(fake.store.get("orchestration_runs") ?? []).toHaveLength(0);
   });
 

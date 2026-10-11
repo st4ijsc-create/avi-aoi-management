@@ -40,6 +40,7 @@ import { record } from "../safetyAuditService";
 import type { SafetyEventType } from "../safetyAuditService";
 import { createDriver } from "../../ot/driverRegistry";
 import type { OtProtocol, OtTagAddress } from "../../ot/otDriver";
+import { redactEndpoint, safeBackendLabel } from "./plcRedact";
 
 /** Flag — default OFF (mirrors safetyAuditEnabled / safetyZoneSwEnabled). */
 export function safetyPlcAdapterEnabled(): boolean {
@@ -209,7 +210,13 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
           continue;
         }
         const ref = this.statusMap[flag];
-        const truthy = coerceBool(s.value);
+        const truthy = strictBool(s.value);
+        if (truthy === undefined) {
+          // doc 81 Đợt 8 N3 — an unparseable value ("abc", NaN, an object, "") is UNKNOWN, never "clear" (it used to
+          // coerce to false ⇒ a false "released" / a "clean" preflight). Fail toward unknown.
+          unreadable.push(flag);
+          continue;
+        }
         snap[flag] = ref?.activeWhen === "falsy" ? !truthy : truthy;
       }
       return { status: snap, unreadable };
@@ -223,11 +230,19 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
   }
 }
 
-function coerceBool(v: unknown): boolean {
+/**
+ * doc 81 Đợt 8 N3 — a status value as a boolean, or undefined when it cannot be decided: booleans; finite numbers (≠ 0 ⇒
+ * true); the strings "1"/"0"/"true"/"false" (any case, trimmed). Anything else (NaN, "abc", "", null, objects) ⇒ undefined.
+ */
+export function strictBool(v: unknown): boolean | undefined {
   if (typeof v === "boolean") return v;
-  if (typeof v === "number") return v !== 0;
-  if (typeof v === "string") return v === "1" || v.toLowerCase() === "true";
-  return false;
+  if (typeof v === "number") return Number.isFinite(v) ? v !== 0 : undefined;
+  if (typeof v === "string") {
+    const t = v.trim().toLowerCase();
+    if (t === "1" || t === "true") return true;
+    if (t === "0" || t === "false") return false;
+  }
+  return undefined;
 }
 
 /** Build the backend reader for a config (sim by default). */
@@ -287,44 +302,17 @@ export interface UpsertPlcConfigInput {
   factoryId?: number | null;
 }
 
-export interface PlcConfigWriteResult {
-  ok: boolean;
-  enabled: boolean;
-  config?: SafetyPlcConfig;
-  message?: string;
-}
+/**
+ * doc 81 Đợt 8 final wave N-R7 — the legacy UNAUDITED upsert writer of this module was REMOVED (it had no production caller): every
+ * config write goes through safetyPlcTrust.savePlcConfig (audited, scope-checked, clears the maker-checker approval). The
+ * input type above stays (savePlcConfig takes it).
+ */
 
-/** Create or update a safety-PLC config (flag-gated). */
-export async function upsertPlcConfig(input: UpsertPlcConfigInput): Promise<PlcConfigWriteResult> {
-  if (!safetyPlcAdapterEnabled()) return { ok: false, enabled: false, message: "SAFETY_PLC_ADAPTER_ENABLED off" };
+/** final wave N-R6 — ONE enabled config by id (the poller's record-time attribution lookup); null = missing / disabled. */
+export async function loadEnabledPlcConfig(id: number): Promise<SafetyPlcConfig | null> {
   const d = await db();
-  const values = {
-    code: input.code,
-    name: input.name,
-    vendor: input.vendor ?? "generic",
-    backend: input.backend ?? "sim",
-    endpoint: input.endpoint ?? null,
-    statusMap: input.statusMap ?? undefined,
-    robotId: input.robotId ?? null,
-    stationId: input.stationId ?? null,
-    lineId: input.lineId ?? null,
-    enabled: input.enabled ?? true,
-    notes: input.notes ?? null,
-    scope: input.scope ?? null,
-    corporateCode: input.corporateCode ?? null,
-    factoryId: input.factoryId ?? null,
-  };
-  if (input.id != null) {
-    const [config] = await d
-      .update(safetyPlcConfigs)
-      .set({ ...values, updatedAt: new Date() })
-      .where(eq(safetyPlcConfigs.id, input.id))
-      .returning();
-    if (!config) return { ok: false, enabled: true, message: `safety-PLC config ${input.id} not found` };
-    return { ok: true, enabled: true, config };
-  }
-  const [config] = await d.insert(safetyPlcConfigs).values(values).returning();
-  return { ok: true, enabled: true, config };
+  const [cfg] = await d.select().from(safetyPlcConfigs).where(and(eq(safetyPlcConfigs.id, id), eq(safetyPlcConfigs.enabled, true))).limit(1);
+  return cfg ?? null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -366,11 +354,12 @@ export async function readAndRecord(
     // Honest: unreachable/failed read → report the error, fabricate NOTHING.
     return {
       enabled: true,
-      backend: backend.label(),
+      // doc 81 Đợt 8 N fix 1 (M3) — never the endpoint in the answer (label without endpoint, redacted error text)
+      backend: safeBackendLabel(backend),
       status: {},
       findings: [],
       recorded: 0,
-      message: `read failed: ${(err as Error)?.message ?? String(err)}`,
+      message: `read failed: ${redactEndpoint(String((err as Error)?.message ?? err).slice(0, 300), cfg.endpoint)}`,
     };
   }
 
@@ -392,7 +381,7 @@ export async function readAndRecord(
       handledBy: "advisory",
       outcome: "logged_only",
       humanPosition: { plcFlag: f.flag, backend: backend.kind, source },
-      notes: `${f.note} [source ${source}, PLC "${cfg.code}", backend ${backend.label()}]`,
+      notes: `${f.note} [source ${source}, PLC "${cfg.code}", backend ${safeBackendLabel(backend)}]`, // N fix 1 (M3): no endpoint
       scope: cfg.scope ?? null,
       corporateCode: cfg.corporateCode ?? null,
       factoryId: cfg.factoryId ?? null,
@@ -405,7 +394,7 @@ export async function readAndRecord(
     out.push(rec);
   }
 
-  return { enabled: true, backend: backend.label(), status, findings: out, recorded };
+  return { enabled: true, backend: safeBackendLabel(backend), status, findings: out, recorded };
 }
 
 /** Read + record for a config id (loads the config, then readAndRecord). */

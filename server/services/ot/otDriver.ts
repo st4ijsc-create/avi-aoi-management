@@ -207,6 +207,30 @@ export interface OtDriver {
   executeCommand?(cmd: CanonicalCommand): Promise<CanonicalCommandAck>;
   getSafetyStatus?(): Promise<SafetyState>;
   describe?(): Promise<AssetDescriptor>;
+  /**
+   * doc 81 Đợt 8 task O1 — OPTIONAL: the checksum of the program currently loaded in the controller (READ-ONLY).
+   * Contract for a driver that implements it:
+   *   • it only reads — never writes, never changes the controller's mode;
+   *   • it must NOT queue behind or ahead of writeTags (no shared write serialisation): a slow checksum read must never
+   *     delay a STOP write on the same connection (L-7);
+   *   • `supported:false` ONLY when this controller type cannot report a program checksum at all — a failed / slow /
+   *     undecidable read THROWS (callers then fail closed), it never answers `supported:false`.
+   * Whether an adapter is EXPECTED to support it is decided from its configuration row (programChecksum.ts
+   * programChecksumCapable), so a failure can never be read as "unsupported".
+   *   • doc 81 Đợt 8 final wave (review O M4) — CANCELLABLE: `opts.signal` is aborted at the caller's deadline; the read must
+   *     then settle promptly (reject) and release what it holds, so a hung controller leaves no pending read behind. A
+   *     driver must never ignore the signal (callers always pass one — programChecksum.readAdapterProgramCheck).
+   */
+  readProgramChecksum?(opts?: { signal?: AbortSignal }): Promise<ProgramChecksumResult>;
+}
+
+/** doc 81 Đợt 8 task O1 — answer of OtDriver.readProgramChecksum(). */
+export interface ProgramChecksumResult {
+  supported: boolean;
+  /** Present iff supported: an opaque, stable identifier of the loaded program (e.g. "sha256:<hex>"). */
+  checksum?: string;
+  /** Short, non-sensitive label of where the value comes from (e.g. "sim"). Never an endpoint / host. */
+  source: string;
 }
 
 /** Factory tạo một instance driver mới. */

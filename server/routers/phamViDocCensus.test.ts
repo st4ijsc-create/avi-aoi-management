@@ -680,7 +680,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★★ 2026-10-11 (doc 81 Đợt 7 I fix 1, review M-5) — **S 353 → 354 · tong 2301 → 2302.** `orchestration.runListMeta` (query,
 // MỚI, `orchestrationRouter.ts`): danh sách run có bị CẮT không (số định nghĩa vượt trần phán xét mỗi lượt) — đưa phạm vi
 // `scopeOf(ctx.user)` vào lượt đọc ⇒ nhóm S. Đo bằng chính bộ quét này (trước = khớp ghim; sau = S 354).
-const GHIM = { A: 334, B: 8, C: 472, D: 1134, S: 354, tong: 2302 } as const;
+// ★★★ 2026-10-11 (doc 81 Đợt 8 task N fix 1, owner decision I1 — maker-checker of safety-PLC configs) — **A 334 → 333 ·
+// S 354 → 356 · D 1134 → 1137 · tong 2302 → 2306.** `safety.listSafetyPlcConfigs` now filters by the caller's factory scope
+// (`plcScopeOf(ctx)` = `idsTrongPhamVi("factory", phamViCua(ctx), {strict})`) ⇒ A → S, its debt row REMOVED from
+// `phamViDocBaseline.ts` (safetyRouter 8 → 7). NEW: `safety.plcTrustList` (query, scope-filtered ⇒ S), and three mutations
+// `deleteSafetyPlcConfig` / `approveSafetyPlcConfig` / `rejectSafetyPlcConfig` (⇒ D; scope checked by id with NOT_FOUND
+// parity inside safetyPlcTrust.ts). Measured with this scanner (before = pin; after = A 333 · D 1137 · S 356 · tong 2306).
+const GHIM = { A: 333, B: 8, C: 472, D: 1137, S: 356, tong: 2306 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

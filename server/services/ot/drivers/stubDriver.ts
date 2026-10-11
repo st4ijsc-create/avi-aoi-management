@@ -15,7 +15,9 @@ import type {
   OtCommandResult,
   OtHealth,
   OnOtSample,
+  ProgramChecksumResult,
 } from "../otDriver";
+import { createHash } from "node:crypto";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 /** Hash ổn định từ chuỗi để mỗi tagKey có pha riêng. */
@@ -33,11 +35,66 @@ export class StubDriver implements OtDriver {
   private connected = false;
   private connectedAt: Date | null = null;
   private lastError: string | undefined;
+  /**
+   * doc 81 Đợt 8 task O1 — the program "loaded in" the simulated controller: `connectionOptions.simProgram` (a string) at
+   * connect; null ⇔ no simulated program (the sim then reports supported:false, like a controller without the feature).
+   */
+  private simProgram: string | null = null;
+  private simProgramFault: "error" | "hang" | null = null;
 
-  async connect(_cfg: OtConnectionConfig): Promise<void> {
+  async connect(cfg: OtConnectionConfig): Promise<void> {
     this.connected = true;
     this.connectedAt = new Date();
     this.lastError = undefined;
+    const p = cfg?.options?.simProgram;
+    this.simProgram = typeof p === "string" ? p : null;
+  }
+
+  /**
+   * doc 81 Đợt 8 task O1 — READ-ONLY checksum of the simulated program: "sha256:<hex of the program text>". Shares nothing
+   * with writeTags (no queue). Throws when not connected or when a read fault is injected (never answers supported:false
+   * for a failure).
+   */
+  async readProgramChecksum(opts: { signal?: AbortSignal } = {}): Promise<ProgramChecksumResult> {
+    if (!this.connected) throw new DeviceUnreachableError("stub");
+    // final wave: typed (rawErrorCensus) — the simulated controller "did not answer" the checksum read; detail kept
+    if (this.simProgramFault === "error") throw new DeviceUnreachableError("stub", "sim program checksum read fault (injected)");
+    if (this.simProgramFault === "hang") {
+      // final wave (O M4) — a controller that never answers: the read settles ONLY when the caller aborts it (cancellation
+      // contract); counted so a test can prove nothing is left pending.
+      const signal = opts.signal;
+      return new Promise<ProgramChecksumResult>((_, reject) => {
+        if (!signal) {
+          this.simPendingReads += 1; // contract violation by the caller (no signal): stays pending, and is counted
+          return;
+        }
+        if (signal.aborted) return reject(new Error("program checksum read aborted"));
+        this.simPendingReads += 1;
+        signal.addEventListener(
+          "abort",
+          () => {
+            this.simPendingReads -= 1;
+            reject(new Error("program checksum read aborted"));
+          },
+          { once: true },
+        );
+      });
+    }
+    if (this.simProgram === null) return { supported: false, source: "sim" };
+    return { supported: true, checksum: `sha256:${createHash("sha256").update(this.simProgram, "utf8").digest("hex")}`, source: "sim" };
+  }
+
+  /** SIM ONLY — a different program is loaded into the simulated controller (as a vendor tool would, outside this server). */
+  simLoadProgram(program: string | null): void {
+    this.simProgram = program;
+  }
+
+  /** SIM ONLY (final wave O M4) — checksum reads still pending (a "hang" read not yet aborted). */
+  simPendingReads = 0;
+
+  /** SIM ONLY — make the next checksum reads fail ("error"), never answer ("hang"), or work again (null). */
+  simSetProgramReadFault(fault: "error" | "hang" | null): void {
+    this.simProgramFault = fault;
   }
 
   async disconnect(): Promise<void> {

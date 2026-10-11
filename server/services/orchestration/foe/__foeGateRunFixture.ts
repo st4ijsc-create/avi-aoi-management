@@ -23,10 +23,12 @@ export async function makeFoeGateRun(opts: {
   source?: string;
   /** true ⇒ the gate's defHash does not match the deployed definition (a redeploy happened after the approval). */
   stale?: boolean;
+  /** doc 81 Đợt 8 O2 — steps after the gate (e.g. an OT command on a sim adapter whose program checksum the digest covers). */
+  steps?: WorkflowDefinition["steps"];
 }): Promise<FoeGateRunFixture> {
   const d = await getDb();
   if (!d) throw new Error("no db");
-  const def: WorkflowDefinition = { ref: `${opts.tag}-wf`.slice(0, 120), name: opts.tag, steps: [{ id: "g0", type: "hitl_gate", prompt: "fixture" }] };
+  const def: WorkflowDefinition = { ref: `${opts.tag}-wf`.slice(0, 120), name: opts.tag, steps: [{ id: "g0", type: "hitl_gate", prompt: "fixture" }, ...(opts.steps ?? [])] };
   const [wf] = await d.insert(orchestrationWorkflows).values({ ref: def.ref, name: def.name, definitionJson: def, status: "active" }).returning();
   const [run] = await d
     .insert(orchestrationRuns)

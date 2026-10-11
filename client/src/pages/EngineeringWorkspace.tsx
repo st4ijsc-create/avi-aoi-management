@@ -27,7 +27,7 @@
  *  - Deploy = wizard 4 bước (WizardDialog): Build · Đích & canary · Ký duyệt · Xem trước & xác nhận. deployPreview ở
  *    bước cuối TRƯỚC OTP; OTP = stepUp.guard của trang (R-2-q); mỗi lượt xác nhận gửi đúng đích/cổng/expectedProjectId
  *    như hai thẻ cũ (R-2-n, R-2-r). Bỏ card "Trợ lý Lập trình AI" (lối vào AI thứ 3). Tạo dự án / sửa biến / gắn thiết
- *    bị: sheet phải (thay dialog giữa màn). Rollback / xoá biến / bỏ thay đổi: giữ AlertDialog (xác nhận phá huỷ).
+ *    bị: sheet phải (thay dialog giữa màn) — Đợt 8 P1: trên FlyoutHost (`?flyout=ide-*`, F5/Back/deep link, hỏi bỏ thay đổi). Rollback / xoá biến / bỏ thay đổi: giữ AlertDialog (xác nhận phá huỷ).
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { TFunction } from "i18next";
@@ -45,6 +45,11 @@ import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeaderCompact, NoticeStack, featureStatusNoticeItem, WizardDialog, RollbackConfirm } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
+import { FlyoutHost, type FlyoutDefinition } from "@/components/patterns/FlyoutHost";
+import { WithFlyout } from "@/components/engineering/WithFlyout";
+import {
+  IDE_FLYOUT, IdeAttachForm, IdeNewProjectForm, IdeSymbolForm, IdeSymbolEditGate,
+} from "@/components/engineering/workspace/IdeFlyoutForms";
 import { EngineeringShell } from "@/components/engineering/shell";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
@@ -70,9 +75,6 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -167,12 +169,6 @@ function EngineeringWorkspaceView() {
     pendingNav, deleteSymTarget, rollbackTarget, demoCreating,
   } = state;
   const { search: projSearch, kindFilter: projKindFilter } = state.explorer;
-  const {
-    open: symOpen, id: symId, name: symName, addr: symAddr, type: symType,
-    comment: symComment, watchable: symWatchable,
-  } = state.sym;
-  const { open: npOpen, code: npCode, name: npName, kind: npKind, deviceId: npDeviceId } = state.newProject;
-  const { open: attachOpen, deviceId: attachDeviceId } = state.attach;
   const { stage: deployStage, signOff, approverId, reason: deployReason } = state.deploy;
   const {
     deviceIds: fleetDeviceIds, stage: fleetStage, signOff: fleetSignOff, canary: fleetCanary,
@@ -182,8 +178,6 @@ function EngineeringWorkspaceView() {
   // Setter ổn định cho trường form thuần (không thuộc chuỗi reset) — tên giữ như useState cũ.
   const {
     setProjSearch, setProjKindFilter, setCode, setLanguage, setEditorMode, setDiffBaseId, setDiffCompareId,
-    setNpOpen, setNpCode, setNpName, setNpKind, setNpDeviceId, setAttachOpen, setAttachDeviceId,
-    setSymOpen, setSymName, setSymAddr, setSymType, setSymComment, setSymWatchable,
     setDeployStage, setSignOff, setApproverId, setDeployReason,
     setFleetStage, setFleetSignOff, setFleetCanary, setFleetPromoteVerified, setFleetAutoRollback,
     setFleetApproverId, setFleetReason,
@@ -342,23 +336,16 @@ function EngineeringWorkspaceView() {
   );
 
   // ── Mutations ──
+  // Dùng chung cho đường DEMO (mutation của trang) và sheet "Dự án mới" (mutation của form trong FlyoutHost — Đợt 8 P1).
+  const onProjectCreated = (row: { id: number }) => {
+    toast.success(t("engineering.projectCreated", "Đã tạo project"));
+    utils.programming.listProjects.invalidate();
+    // doc 81 Đợt 2 Task 12b (R-2-r) — dự án MỚI mở SẠCH như bấm chọn (kể cả đường DEMO): không
+    // giữ phiên bản/build/mô phỏng/chẩn đoán của dự án trước ⇒ Deploy/Fleet không thể đẩy build cũ.
+    dispatch({ type: "project/select", projectId: row.id });
+  };
   const createProject = trpc.programming.createProject.useMutation({
-    onSuccess: (row) => {
-      toast.success(t("engineering.projectCreated", "Đã tạo project"));
-      utils.programming.listProjects.invalidate();
-      // doc 81 Đợt 2 Task 12b (R-2-r) — dự án MỚI mở SẠCH như bấm chọn (kể cả đường DEMO): không
-      // giữ phiên bản/build/mô phỏng/chẩn đoán của dự án trước ⇒ Deploy/Fleet không thể đẩy build cũ.
-      dispatch({ type: "project/select", projectId: row.id });
-    },
-    onError: (e) => toastTrpcError(e),
-  });
-  // U2 (doc 26) — gắn / đổi thiết bị nguồn cho project đang mở (set project.deviceId).
-  const updateProject = trpc.programming.updateProject.useMutation({
-    onSuccess: () => {
-      toast.success(t("engineering.deviceAttached", "Đã cập nhật thiết bị nguồn"));
-      utils.programming.listProjects.invalidate();
-      dispatch({ type: "attach/set", patch: { open: false } });
-    },
+    onSuccess: onProjectCreated,
     onError: (e) => toastTrpcError(e),
   });
   const createArtifact = trpc.programming.createArtifact.useMutation({
@@ -504,15 +491,7 @@ function EngineeringWorkspaceView() {
     resetFleet();
   }, [projectId, resetFleet]);
 
-  // ── Symbols (tag table) CRUD — feeds Online Monitor ──
-  const upsertSymbol = trpc.programming.upsertSymbol.useMutation({
-    onSuccess: () => {
-      toast.success(t("engineering.symbolSaved", "Đã lưu biến"));
-      utils.programming.listSymbols.invalidate();
-      dispatch({ type: "sym/set", patch: { open: false } });
-    },
-    onError: (e) => toastTrpcError(e),
-  });
+  // ── Symbols (tag table) CRUD — feeds Online Monitor ── (thêm/sửa: sheet `ide-symbol` — IdeFlyoutForms, Đợt 8 P1)
   const deleteSymbol = trpc.programming.deleteSymbol.useMutation({
     onSuccess: () => {
       toast.success(t("engineering.symbolDeleted", "Đã xóa biến"));
@@ -558,18 +537,9 @@ function EngineeringWorkspaceView() {
     watching,
   );
 
-  // ── Symbol editor dialog (thêm/sửa một biến) — state.sym ──
-  const openSymDialog = (s?: {
-    id: number; name: string; address: string | null; dataType: string | null;
-    comment: string | null; watchable: boolean;
-  }) => dispatch({ type: "sym/open", symbol: s });
-
   // U7 (doc 26 §2.1) — cờ đang tạo dự án DEMO một chạm (onboarding KTV mới): state.demoCreating.
-  // Create-project dialog: state.newProject (U2 — deviceId "" = chưa gắn thiết bị nguồn).
-
-  // ── U2: Attach-device dialog (gắn/đổi thiết bị nguồn cho project đang mở) — state.attach ──
-  const openAttachDialog = () =>
-    dispatch({ type: "attach/open", deviceId: project?.deviceId != null ? String(project.deviceId) : "" });
+  // doc 81 Đợt 8 P1 — Dự án mới / Thêm-Sửa biến / Gắn thiết bị nguồn: sheet trên FlyoutHost (`?flyout=ide-*`), form
+  // state cục bộ trong lớp (IdeFlyoutForms) — mỗi lần mở là form mới, F5/Back/deep link dựng lại từ URL.
 
   // ── Deploy form — state.deploy (W2-9: second-approver SoD cho production + lý do bắt buộc) ──
   const approversQ = trpc.programming.listApprovers.useQuery(undefined, { enabled: canView });
@@ -1001,80 +971,13 @@ function EngineeringWorkspaceView() {
           <h2 id="ide-h-projects" className={sectionTitle}>
             <FolderGit2 className="h-3.5 w-3.5" aria-hidden="true" />{t("engineering.projects", "Dự án")}
           </h2>
-          <Sheet open={npOpen} onOpenChange={setNpOpen}>
-            <SheetTrigger asChild>
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" disabled={!canCreate} title={createReason ?? t("engineering.newProject", "Dự án mới")} aria-label={t("engineering.newProject", "Dự án mới")}>
+          <WithFlyout>
+            {(f) => (
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" disabled={!canCreate} title={createReason ?? t("engineering.newProject", "Dự án mới")} aria-label={t("engineering.newProject", "Dự án mới")} aria-haspopup="dialog" onClick={() => f.open(IDE_FLYOUT.newProject)}>
                 <Plus className="h-4 w-4" />
               </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="flex w-[92vw] flex-col gap-0 p-0 sm:max-w-[480px]">
-              <SheetHeader className="border-b px-4 py-3 pr-10">
-                <SheetTitle>{t("engineering.newProject", "Dự án mới")}</SheetTitle>
-                <SheetDescription>{t("engineering.newProjectDesc", "Một workspace lập trình cho một thiết bị/cell")}</SheetDescription>
-              </SheetHeader>
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-                <div>
-                  <Label>{t("engineering.code", "Mã")}</Label>
-                  <Input value={npCode} onChange={(e) => setNpCode(e.target.value)} placeholder="ZMC-CELL-01" />
-                </div>
-                <div>
-                  <Label>{t("engineering.name", "Tên")}</Label>
-                  <Input value={npName} onChange={(e) => setNpName(e.target.value)} />
-                </div>
-                <div>
-                  <Label>{t("engineering.kind", "Loại thiết bị")}</Label>
-                  <Select value={npKind} onValueChange={(v) => setNpKind(v as Kind)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {KINDS.map((k) => (
-                        <SelectItem key={k} value={k}>
-                          {k}{isImplemented(k) ? "" : ` (${t("engineering.planned", "sắp có")})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* U2 — thiết bị nguồn (tùy chọn): gắn ngay để mở khoá Online Monitor sau này. */}
-                <div>
-                  <Label>{t("engineering.sourceDevice", "Thiết bị nguồn")}</Label>
-                  <Select value={npDeviceId} onValueChange={setNpDeviceId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={t("engineering.sourceDevicePh", "Chọn thiết bị (tùy chọn)…")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(machinesQ.data ?? []).map((m) => (
-                        <SelectItem key={m.id} value={String(m.id)}>{m.name} · #{m.id}</SelectItem>
-                      ))}
-                      {(machinesQ.data ?? []).length === 0 && (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                          {t("engineering.noMachines", "Chưa có máy nào — có thể gắn sau ở Online Monitor")}
-                        </div>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("engineering.sourceDeviceHint", "Gắn thiết bị để mở khoá theo dõi trực tiếp (Online Monitor). Có thể để trống rồi gắn sau.")}
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 border-t px-4 py-3">
-                <Button
-                  disabled={!npCode || !npName || createProject.isPending}
-                  onClick={() => {
-                    createProject.mutate({
-                      code: npCode,
-                      name: npName,
-                      kind: npKind,
-                      deviceId: npDeviceId ? Number(npDeviceId) : undefined,
-                    });
-                    dispatch({ type: "newProject/submitted" });
-                  }}
-                >
-                  {t("common.create", "Tạo")}
-                </Button>
-              </div>
-            </SheetContent>
-          </Sheet>
+            )}
+          </WithFlyout>
         </div>
         {/* U13 — ô tìm + lọc theo loại (lọc phía client, không đổi backend). */}
         {(projectsQ.data ?? []).length > 0 && (
@@ -1202,10 +1105,14 @@ function EngineeringWorkspaceView() {
             </div>
             <div className="flex flex-wrap gap-1">
               {/* U2 — gắn/đổi thiết bị nguồn ngay cạnh badge Nguồn (sửa project.deviceId). */}
-              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canEdit} title={editReason} onClick={openAttachDialog}>
-                <Wifi className="mr-1 h-3.5 w-3.5" />
-                {project.deviceId == null ? t("engineering.attachDevice", "Gắn thiết bị") : t("engineering.changeDevice", "Đổi thiết bị")}
-              </Button>
+              <WithFlyout>
+                {(f) => (
+                  <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canEdit} title={editReason} aria-haspopup="dialog" onClick={() => f.open(IDE_FLYOUT.attach, { id: project.id })}>
+                    <Wifi className="mr-1 h-3.5 w-3.5" />
+                    {project.deviceId == null ? t("engineering.attachDevice", "Gắn thiết bị") : t("engineering.changeDevice", "Đổi thiết bị")}
+                  </Button>
+                )}
+              </WithFlyout>
               {watching ? (
                 <Button size="sm" variant="destructive" className="h-7 text-xs" disabled={stopWatchM.isPending} onClick={() => stopWatchM.mutate({ projectId: project.id })}>
                   <WifiOff className="mr-1 h-3.5 w-3.5" /> {t("engineering.stopWatch", "Dừng theo dõi")}
@@ -1365,9 +1272,13 @@ function EngineeringWorkspaceView() {
       <span className="hidden items-center gap-1 text-xs font-medium text-muted-foreground min-[1440px]:flex">
         <Variable className="h-3.5 w-3.5" /> {t("engineering.symbols", "Bảng biến / tag")}
       </span>
-      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canEdit} title={editReason} onClick={() => openSymDialog()}>
-        <Plus className="mr-1 h-3.5 w-3.5" /> {t("engineering.addSymbol", "Thêm biến")}
-      </Button>
+      <WithFlyout>
+        {(f) => (
+          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canEdit} title={editReason} aria-haspopup="dialog" onClick={() => f.open(IDE_FLYOUT.symbol)}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> {t("engineering.addSymbol", "Thêm biến")}
+          </Button>
+        )}
+      </WithFlyout>
     </>
   );
   const tagsView = project && (
@@ -1399,9 +1310,13 @@ function EngineeringWorkspaceView() {
                   <TableCell className="text-xs text-muted-foreground">{live ? new Date(live.ts).toLocaleTimeString() : "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!canEdit} title={editReason} aria-label={t("common.edit", "Sửa")} onClick={() => openSymDialog(s)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
+                      <WithFlyout>
+                        {(f) => (
+                          <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!canEdit} title={editReason} aria-label={t("common.edit", "Sửa")} aria-haspopup="dialog" onClick={() => f.open(IDE_FLYOUT.symbol, { id: s.id })}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </WithFlyout>
                       <Button
                         size="icon" variant="ghost" className="h-7 w-7 text-destructive"
                         disabled={!canDelete || deleteSymbol.isPending}
@@ -2150,8 +2065,54 @@ function EngineeringWorkspaceView() {
       ? { label: t("engineering.requestDeployBtn", "Gửi yêu cầu deploy"), testId: "engineering-request-deploy-button", pending: requestDeployApprovalM.isPending }
       : { label: t("engineering.deployBtn", "Deploy build"), testId: "engineering-deploy-button", pending: deployM.isPending };
 
+  // ═════ doc 81 Đợt 8 P1 — sheet phải trên FlyoutHost (URL `?flyout=&flyoutId=` là nguồn sự thật) ═════
+  const machineOptions = (machinesQ.data ?? []).map((m) => ({ id: m.id, name: m.name }));
+  const sheetNote = (text: string, testId?: string) => <p data-testid={testId} className="text-sm text-muted-foreground">{text}</p>;
+  const projectById = (id: string | null) => (projectsQ.data ?? []).find((p) => String(p.id) === id) ?? null;
+  const flyouts: Record<string, FlyoutDefinition> = {};
+  if (canCreate) {
+    flyouts[IDE_FLYOUT.newProject] = {
+      title: t("engineering.newProject", "Dự án mới"),
+      description: t("engineering.newProjectDesc", "Một workspace lập trình cho một thiết bị/cell"),
+      render: () => (
+        <IdeNewProjectForm machines={machineOptions} isImplemented={isImplemented} canCreate={canCreate} createReason={createReason} onCreated={onProjectCreated} />
+      ),
+    };
+  }
+  if (canEdit) {
+    // Thêm (id rỗng) / sửa biến <id> của DỰ ÁN ĐANG MỞ; id không còn trong bảng tag ⇒ báo, không có nút Lưu.
+    flyouts[IDE_FLYOUT.symbol] = {
+      title: (id) => (id ? t("engineering.editSymbol", "Sửa biến") : t("engineering.addSymbol", "Thêm biến")),
+      description: t("engineering.symbolDesc", "Một tag/biến của thiết bị để theo dõi (watch) trong Online Monitor"),
+      render: (layer) => {
+        if (!project) return sheetNote(t("engineering.selectProject", "Chọn một dự án để bắt đầu"));
+        if (layer.id == null) return <IdeSymbolForm key={`${project.id}:new`} symbol={null} projectId={project.id} canEdit={canEdit} editReason={editReason} />;
+        // review P #1/#2 — mounts only after a FRESH reload of the list (never prefilled from a stale cached row); a load
+        // error says so (not "not found").
+        return <IdeSymbolEditGate key={`${project.id}:${layer.id}`} projectId={project.id} symbolId={layer.id} canEdit={canEdit} editReason={editReason} note={sheetNote} />;
+      },
+    };
+    // U2 — gắn/đổi thiết bị nguồn cho dự án <id> (id trong URL, không phải "dự án đang chọn" lúc F5).
+    flyouts[IDE_FLYOUT.attach] = {
+      size: "sm",
+      title: t("engineering.attachDeviceTitle", "Gắn thiết bị nguồn"),
+      description: (id) =>
+        t("engineering.attachDeviceDesc", "Chọn máy làm nguồn đọc cho \"{{name}}\". Sau khi gắn, badge Nguồn chuyển sang thiết bị và có thể Theo dõi trực tiếp.", { name: projectById(id)?.name ?? "" }),
+      render: (layer) => {
+        const p = projectById(layer.id);
+        if (!p) {
+          return projectsQ.isLoading
+            ? sheetNote(t("common.loading", "Đang tải..."))
+            : sheetNote(t("engineering.attachProjectNotFound", "Không tìm thấy dự án #{{id}}.", { id: layer.id ?? "—" }), "ide-attach-missing");
+        }
+        return <IdeAttachForm key={p.id} project={p} machines={machineOptions} canEdit={canEdit} editReason={editReason} />;
+      },
+    };
+  }
+
   return (
     <DashboardLayout>
+      <FlyoutHost flyouts={flyouts}>
       <div className="flex h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))] min-h-[30rem] min-w-0 flex-col">
         {header}
         <EngineeringShell
@@ -2205,113 +2166,6 @@ function EngineeringWorkspaceView() {
         pending={wizardFinish.pending}
       />
 
-      {/* Symbol editor (thêm/sửa một biến trong bảng tag) — sheet phải */}
-      <Sheet open={symOpen} onOpenChange={setSymOpen}>
-        <SheetContent side="right" className="flex w-[92vw] flex-col gap-0 p-0 sm:max-w-[480px]">
-          <SheetHeader className="border-b px-4 py-3 pr-10">
-            <SheetTitle>{symId ? t("engineering.editSymbol", "Sửa biến") : t("engineering.addSymbol", "Thêm biến")}</SheetTitle>
-            <SheetDescription>{t("engineering.symbolDesc", "Một tag/biến của thiết bị để theo dõi (watch) trong Online Monitor")}</SheetDescription>
-          </SheetHeader>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-            <div>
-              <Label>{t("engineering.symbolName", "Tên")}</Label>
-              <Input value={symName} onChange={(e) => setSymName(e.target.value)} placeholder="X0 / Motor_Speed" />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>{t("engineering.address", "Địa chỉ")}</Label>
-                <Input value={symAddr} onChange={(e) => setSymAddr(e.target.value)} placeholder="D100 / %MW10" />
-              </div>
-              <div>
-                <Label>{t("engineering.dataType", "Kiểu")}</Label>
-                <Input value={symType} onChange={(e) => setSymType(e.target.value)} placeholder="INT / BOOL / REAL" />
-              </div>
-            </div>
-            <div>
-              <Label>{t("engineering.comment", "Ghi chú")}</Label>
-              <Input value={symComment} onChange={(e) => setSymComment(e.target.value)} />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={symWatchable} onCheckedChange={(v) => setSymWatchable(Boolean(v))} />
-              {t("engineering.watchable", "Cho phép theo dõi (watch)")}
-            </label>
-          </div>
-          <div className="flex justify-end gap-2 border-t px-4 py-3">
-            <Button
-              disabled={!project || !canEdit || !symName.trim() || upsertSymbol.isPending}
-              title={editReason}
-              onClick={() =>
-                project &&
-                upsertSymbol.mutate({
-                  projectId: project.id,
-                  name: symName.trim(),
-                  address: symAddr.trim() || undefined,
-                  dataType: symType.trim() || undefined,
-                  comment: symComment.trim() || undefined,
-                  watchable: symWatchable,
-                })
-              }
-            >
-              {t("common.save", "Lưu")}
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {/* U2 — Attach/đổi thiết bị nguồn cho project (mở khoá Online Monitor) — sheet phải */}
-      <Sheet open={attachOpen} onOpenChange={setAttachOpen}>
-        <SheetContent side="right" className="flex w-[92vw] flex-col gap-0 p-0 sm:max-w-[480px]">
-          <SheetHeader className="border-b px-4 py-3 pr-10">
-            <SheetTitle>{t("engineering.attachDeviceTitle", "Gắn thiết bị nguồn")}</SheetTitle>
-            <SheetDescription>
-              {t("engineering.attachDeviceDesc", "Chọn máy làm nguồn đọc cho \"{{name}}\". Sau khi gắn, badge Nguồn chuyển sang thiết bị và có thể Theo dõi trực tiếp.", { name: project?.name ?? "" })}
-            </SheetDescription>
-          </SheetHeader>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-            <div>
-              <Label>{t("engineering.sourceDevice", "Thiết bị nguồn")}</Label>
-              <Select value={attachDeviceId} onValueChange={setAttachDeviceId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t("engineering.sourceDevicePh", "Chọn thiết bị (tùy chọn)…")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(machinesQ.data ?? []).map((m) => (
-                    <SelectItem key={m.id} value={String(m.id)}>{m.name} · #{m.id}</SelectItem>
-                  ))}
-                  {(machinesQ.data ?? []).length === 0 && (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      {t("engineering.noMachines", "Chưa có máy nào — có thể gắn sau ở Online Monitor")}
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            {project?.deviceId != null && (
-              // Cho phép gỡ gắn (đặt lại về chưa gắn thiết bị).
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                disabled={!canEdit || updateProject.isPending}
-                title={editReason}
-                onClick={() => updateProject.mutate({ id: project.id, deviceId: null })}
-              >
-                <WifiOff className="mr-1 h-4 w-4" /> {t("engineering.detachDevice", "Gỡ gắn thiết bị")}
-              </Button>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 border-t px-4 py-3">
-            <Button
-              disabled={!project || !canEdit || !attachDeviceId || updateProject.isPending}
-              title={editReason}
-              onClick={() => project && updateProject.mutate({ id: project.id, deviceId: Number(attachDeviceId) })}
-            >
-              {t("common.save", "Lưu")}
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-
       {/* U11 (doc 26 §3.1) — bỏ thay đổi chưa lưu khi chuyển dự án/phiên bản (thay window.confirm) */}
       <AlertDialog open={pendingNav != null} onOpenChange={(o) => { if (!o) dispatch({ type: "nav/clear" }); }}>
         <AlertDialogContent>
@@ -2361,6 +2215,7 @@ function EngineeringWorkspaceView() {
 
       {/* doc 54 P3.2 — step-up 2FA prompt for deploy/rollback/fleet actuation */}
       {stepUp.dialog}
+      </FlyoutHost>
     </DashboardLayout>
   );
 }

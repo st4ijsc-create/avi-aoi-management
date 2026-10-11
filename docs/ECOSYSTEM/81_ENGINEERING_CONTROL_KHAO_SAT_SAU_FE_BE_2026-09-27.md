@@ -804,3 +804,43 @@ Luồng tự động VDA5050/ROS2 được tự cấp quyền chuyển động c
 6. Báo tích hợp: tên workflow theo phạm vi (có thể trả `refAmbiguous`), webhook chỉ tới người thấy được run, khoá máy mới không có `edge:sync`.
 
 **Còn mở:** bộ đọc nền safety-PLC; checksum chương trình trong bộ điều khiển; danh tính người cầm khoá API; replay sự kiện tin cậy nhiều instance; sheet IDE/IR/POU đồng bộ URL; đổi mật khẩu keystore release (lộ qua lịch sử git); app 1.0.18 chưa thử thiết bị thật; phần edge của huỷ-tới-edge chưa có lối gọi production. Nhỏ: `-Repair` đặt ACL thư mục theo đường dẫn (khe tráo junction khi thư mục đang mở); QT bù trừ bị bỏ qua nếu tra mẫu toàn cục lỗi (chưa có lối production); người xem thấy được tín hiệu tồn tại qua mô phỏng theo tên khi phạm vi không quyết được (đã chấp nhận ở R-7-d).
+
+## 16. Kết quả Đợt 8 (2026-10-11)
+
+Plan `docs/superpowers/plans/2026-10-11-engineering-control-dot8.md`. Migration **0368** (cấu hình safety-PLC: duyệt hai người + trạng thái đọc bền vững) — `_test`; áp dev trước khởi động lại.
+
+### Quyết định của chủ dự án (2026-10-11)
+- Làm bộ đọc nền safety-PLC ngay (backend mô phỏng, cờ tắt mặc định); **duyệt hai người** cho cấu hình đọc PLC thật; **giữ tắt, thử trên bench trước**.
+- Giữ phương án C cho khoá API (run qua API không tác động).
+- Sheet IDE/IR/POU lên FlyoutHost ngay.
+- Khung checksum chương trình bộ điều khiển (OpenPLC/mô phỏng).
+
+### Nhóm N — bộ đọc nền safety-PLC (`SAFETY_PLC_POLLER_ENABLED`, tắt)
+- Chỉ đọc, không bao giờ ghi/tác động PLC; đọc không quyết được ⇒ "không rõ/mất kết nối", không bao giờ "đã nhả"/"ổn". Sửa kèm lỗi có từ trước: giá trị tag không đọc được từng bị coi là `false` (bộ đọc sẽ báo "đã nhả E-stop", kiểm trước lệnh coi PLC sạch) ⇒ nay là "không rõ".
+- Chuyển trạng thái **ghi bền vững trước** khi tiến; mất sự kiện ⇒ có dấu "events lost"; sức khoẻ từ bản ghi DB (giống nhau mọi instance, đồng hồ DB); không có bản ghi ⇒ "stale"; mỗi đợt mất giám sát một cảnh báo, chỉ đánh dấu đã xử lý khi cảnh báo đã ghi bền; màn An toàn hiện từng PLC mất kết nối/không rõ/stale.
+- **Duyệt hai người**: người duyệt khác MỌI người đã sửa trường quan trọng kể từ lần duyệt trước (tạo cũng là sửa); duyệt gắn dấu vân cấu hình hiện tại trong một giao dịch có khoá; cấu hình cũ bắt đầu chưa duyệt; đổi đích/sửa ⇒ mất tin cậy; mọi thao tác ghi audit; phạm vi nhà máy. Chỉ cấu hình đã duyệt + chưa đổi mới sinh sự kiện **vượt "tắt thông báo"**; trần theo người nhận chỉ hạ cấp, không bỏ; cảnh báo "DỪNG chưa xác nhận" (Đợt 3/4) **không bị trần**.
+- Một instance đọc (khoá leader); kiểm thử Modbus và OPC-UA đầu-cuối trên máy chủ giả lập.
+
+### Nhóm O — checksum chương trình bộ điều khiển
+- Khả năng `readProgramChecksum` của adapter; duyệt gắn checksum của mọi adapter run ghi vào khi adapter hỗ trợ; đổi chương trình sau duyệt ⇒ duyệt mất hiệu lực (engine + hai bộ điều phối); không đọc được trên adapter hỗ trợ ⇒ từ chối; màn duyệt ghi rõ "đã kiểm (checksum …, mô phỏng)" hoặc "không kiểm được trên bộ điều khiển này".
+- **OpenPLC không lộ checksum/chương trình** (v3 web, v4 REST) ⇒ "không kiểm được"; hiện chỉ driver mô phỏng hỗ trợ. Bước DỪNG không đọc bộ điều khiển (L-7); lệnh kiểu DỪNG chưa ghim có thể bị từ chối/chậm ≤ 1 s khi checksum không đọc được.
+
+### Nhóm P — sheet IDE/IR/POU
+- 5 sheet (IDE dự án mới / ký hiệu / gắn thiết bị, IR dự án mới, POU lưu) dùng FlyoutHost: URL, F5/Back/link sâu, hỏi "Bỏ thay đổi?", trả tiêu điểm; rộng 560 px như màn khác; bố cục đo 504 phép so — không lệch.
+
+### Nhóm Q — còn lại
+- Ba test đỏ trong module là test cũ (mã đúng) — sửa test, chặt hơn.
+- Từ chối cổng khi không xác định được mẫu QT: vẫn huỷ + gửi DỪNG, ghi rõ "chưa bù trừ — làm tay".
+- Huỷ-tới-edge vẫn tiềm ẩn: edge gateway production không chạy workflow, không có lối kéo run, không có khoá edge.
+- Script cấp khoá TLS `-Repair` khoá thư mục qua handle không theo link, từ chối mục lạ.
+
+### Kiểm
+- Mỗi nhóm review → vòng sửa → review lại (N: 1 vòng + 6 lượt quét bảo mật, thiết kế lại theo hướng "ghi bền trước"); review toàn nhánh → vòng sửa cuối → review lại → vòng NF nhỏ. Vòng cuối: tệp chạm 1.123/1.123, đột biến 72/72 + 8/8; `tsc` sạch; không tệp tracked bị xoá.
+
+### Trước khi bật bộ đọc safety-PLC (trên bench trước)
+1. 0368 đã áp; restart lần đầu với cờ tắt.
+2. Tắt cấu hình mô phỏng; kiểm số kết nối PLC cho phép (bộ đọc + kiểm trước lệnh mở kết nối riêng).
+3. Bật `SAFETY_PLC_ADAPTER_ENABLED`, `SAFETY_AUDIT_ENABLED`, rồi `SAFETY_PLC_POLLER_ENABLED`; chưa duyệt cấu hình nào (cảnh báo đi đường thường); kiểm màn An toàn "● alive" và từng PLC.
+4. Sau khi quan sát ổn: hai admin khác nhau duyệt từng cấu hình PLC thật để bật vượt "tắt thông báo".
+
+**Còn mở:** danh tính người cầm khoá API (giữ C); replay sự kiện tin cậy nhiều instance; reader checksum cho bộ điều khiển thật (theo hãng); huỷ-tới-edge (cần lối kéo run + khoá edge nếu dùng edge chạy workflow); `-Repair` chạy quyền Administrator chưa thử lab; một nhấn-nhả E-stop ngắn hơn chu kỳ đọc không thấy; việc của chủ dự án: cấp khoá TLS, đổi mật khẩu keystore, thử APK 1.0.18.

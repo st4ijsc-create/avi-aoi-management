@@ -93,11 +93,16 @@ export function bufferedCount(): number {
   return buffer.size;
 }
 
-/** Clear the buffer (test/maintenance helper). Also forgets the local-run map of doc 81 Đợt 7 I1. */
+/**
+ * Clear the buffer (test/maintenance helper). Also forgets the local-run map of doc 81 Đợt 7 I1 and (doc 81 Đợt 8 Q1) the
+ * wired central transport — a fresh host.
+ */
 export function _clearBuffer(): void {
   buffer.clear();
   localRunOf.clear();
   centralAborted.clear();
+  centralSync = async () => false;
+  centralSyncWired = false;
 }
 
 // ── central transport (pluggable; default tRPC/HTTP via an injected sender) ────
@@ -120,10 +125,17 @@ export interface CentralSyncAck {
   abortRequested?: boolean;
 }
 let centralSync: CentralSync = async () => false;
+/**
+ * doc 81 Đợt 8 task Q1 — has this host wired a transport at all? Without one a central abort / rejection can NEVER reach a
+ * run executing here (not "central unreachable for now" — never), so executeAssignedRun starts nothing (fail-closed).
+ * Today no production host wires one: the edge half of the central abort is LATENT (edgeRuntimeLatent.dot8.test.ts).
+ */
+let centralSyncWired = false;
 
-/** Wire the transport the edge host uses to reach central. */
+/** Wire the transport the edge host uses to reach central. Must be called BEFORE executeAssignedRun (Đợt 8 Q1). */
 export function setCentralSync(fn: CentralSync): void {
   centralSync = fn;
+  centralSyncWired = true;
 }
 
 /**
@@ -405,6 +417,13 @@ export async function executeAssignedRun(run: AssignedRun): Promise<ExecuteAssig
     let status: string | undefined;
     let localRunId: number | undefined;
     if (run.workflowRef && foeEnabled()) {
+      // doc 81 Đợt 8 Q1 — no central transport wired on this host ⇒ a central abort could never stop the walk ⇒ not started.
+      // (A wired transport that is unreachable right now is different: offline execution is the edge's purpose, Đợt 7 I1.)
+      if (!centralSyncWired) {
+        const message = `Run ${run.id} not started on the edge: no central sync transport is wired on this host (setCentralSync), so a central abort could never reach it.`;
+        await bufferPayload(minimalPayload(run.id, "failed", message)).catch(() => undefined);
+        return { ok: false, enabled: true, runId: run.id, status: "failed", buffered: true, message };
+      }
       // doc 81 Đợt 7 final wave F2 — by the central workflow ID, never by the plain ref; none ⇒ not started (fail-closed).
       const workflowId = run.workflowId;
       if (typeof workflowId !== "number" || !Number.isInteger(workflowId) || workflowId <= 0) {

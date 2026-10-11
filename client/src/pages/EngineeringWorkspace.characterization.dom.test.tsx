@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // doc 81 Đợt 2 Task 13 — trang dựng EngineeringShell/WorkbenchShell ⇒ nạp bản BROWSER thật của react-resizable-panels
 // (layoutKitTestPanels.ts — hạ tầng test, không mock hành vi).
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 
@@ -665,7 +665,7 @@ function expectKhongDungDuocBuildCu() {
 }
 
 describe("Task 12b (a) — tạo dự án mới reset như bấm chọn dự án", () => {
-  it("'+ tạo dự án' khi P1 đang có build/sim/diagnostics ⇒ P2 mở sạch; Deploy/Fleet không dùng được build cũ", () => {
+  it("'+ tạo dự án' khi P1 đang có build/sim/diagnostics ⇒ P2 mở sạch; Deploy/Fleet không dùng được build cũ", async () => {
     seed();
     renderPage();
     armP1();
@@ -678,6 +678,9 @@ describe("Task 12b (a) — tạo dự án mới reset như bấm chọn dự án
     fireEvent.click(within(dlg).getByRole("button", { name: /^(Create|Tạo)$/ }));
     expect(mutateCalls["programming.createProject"]).toHaveLength(1);
     expect(queryInputs["programming.listArtifacts"]).toEqual({ projectId: 2 });
+    // doc 81 Đợt 8 P1 — sheet "Dự án mới" nay là lớp FlyoutHost: tạo xong ⇒ lớp đóng bằng lùi lịch sử (bất đồng bộ) ⇒ đợi
+    // lớp rời DOM trước khi kiểm (khẳng định bên dưới giữ nguyên).
+    await waitFor(() => expect(document.querySelector('[data-flyout-key="ide-new-project"]')).toBeNull());
     expectKhongDungDuocBuildCu();
   });
 

@@ -66,7 +66,10 @@ import { STOP_DB_STEP_DEADLINE_MS, isStopJob } from "../../robot/stopJob"; // fi
 import { withDeadline } from "../../ot/drivers/boundedClose"; // final wave F5 — bounded STOP-step lookups
 import {
   evaluateGateApprovals,
-  computeBindingDigest,
+  computeBindingDetail,
+  evaluateWithPrograms,
+  programChecksRecord,
+  recordedProgramDigests,
   findStepDeep,
   hashWorkflowDefinition,
   FOE_APPROVAL_SOURCE_SERVER,
@@ -77,7 +80,8 @@ import {
   runExecutedVersions,
   runStartedViaApi,
   type GateRequiredReason,
-} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token)
+} from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2
+import type { ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
   allStepsOf,
@@ -323,6 +327,13 @@ export interface RunView {
    * or the workflow row is missing — the Studio then cannot approve (fail-closed).
    */
   bindingDigest: string | null;
+  /**
+   * doc 81 Đợt 8 tasks O2/O3 — the controller program check of every OT adapter / robot the run's commands use, read
+   * together with `bindingDigest` (same reading): "verified" (+ checksum, part of the digest) · "unsupported" (this
+   * controller cannot be verified — shown plainly, never treated as verified) · "unreadable" (supported but not read now ⇒
+   * bindingDigest is null ⇒ no approval). null exactly when bindingDigest is not computed for this read (see getRun).
+   */
+  programChecks: ProgramCheck[] | null;
   steps: Array<{
     stepId: string;
     stepType: string;
@@ -1044,7 +1055,14 @@ export const FOE_GATE_REQUIRED = "FOE_GATE_REQUIRED";
  * owner, bound to the hash of the definition being executed; an owner-less run never counts). Otherwise WHY not.
  * Any DB error ⇒ noGate (fail-closed).
  */
-async function findSeparateGateApproval(rc: RunContext): Promise<{ approval: FoeGateApproval } | { reason: GateRequiredReason }> {
+async function findSeparateGateApproval(
+  rc: RunContext,
+  /**
+   * doc 81 Đợt 8 O2 (L-7) — `stop: true` on a STOP step: NO controller is read; each approval is checked against the
+   * program checksums IT recorded (configuration still read now). See foeGateApproval.recordedProgramDigests.
+   */
+  opts: { stop?: boolean } = {},
+): Promise<{ approval: FoeGateApproval } | { reason: GateRequiredReason }> {
   try {
     // doc 81 Đợt 5 task E1 — an API-started run never has a counting approval (option C). The in-memory flag (read when
     // the walk was built) AND the run row as it is now: either marker ⇒ apiRun (fail-closed).
@@ -1056,7 +1074,12 @@ async function findSeparateGateApproval(rc: RunContext): Promise<{ approval: Foe
     if (runStartedViaApi(runNow)) return { reason: "apiRun" };
     const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, rc.runId));
     // doc 81 Đợt 5 task E3 — recompute the binding digest from the device configuration NOW (server side).
-    const ev = evaluateGateApprovals(rows, rc.def, hashWorkflowDefinition(rc.def), rc.runOwner, await computeBindingDigest(d, rc.def));
+    // doc 81 Đợt 8 O2 — including the program checksum of every supported controller, read now (bounded; unreadable ⇒
+    // programUnreadable). On a STOP step no controller is read (L-7): the approval's own recorded checksums are used.
+    const defHash = hashWorkflowDefinition(rc.def);
+    const ev = opts.stop
+      ? evaluateGateApprovals(rows, rc.def, defHash, rc.runOwner, await recordedProgramDigests(d, rc.def))
+      : evaluateWithPrograms(rows, rc.def, defHash, rc.runOwner, await computeBindingDetail(d, rc.def));
     if (!ev.ok) return { reason: ev.reason };
     const top = ev.approvals[0];
     return { approval: { runId: rc.runId, runOwner: rc.runOwner, approvedBy: top.approvedBy, gateStepId: top.gateStepId } };
@@ -1073,7 +1096,9 @@ function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
     approvedByOwner:
       "the approval gate before it was approved by the user who started the run — that does not count. Start a new run and have another user approve the gate.",
     staleApproval:
-      "the workflow was redeployed, or the adapter / tag / robot configuration its commands use changed, after the gate was approved, so the approval does not cover what would be sent now. Start a new run and have the gate approved again.",
+      "the workflow was redeployed, or the adapter / tag / robot configuration its commands use changed, or the program in a controller it writes to changed, after the gate was approved, so the approval does not cover what would be sent now. Start a new run and have the gate approved again.",
+    programUnreadable:
+      "the program checksum of a controller it writes to could not be read now (not connected, no answer in time, or an invalid answer), so it cannot be verified that the program is still the one that was approved. Check the controller connection and start a new run.",
     ownerUnknown:
       "the run has no attributable owner (started by the system or by an API key with no creating user), so a separate approval cannot be verified. Start the run as a user.",
     apiRun:
@@ -1973,7 +1998,8 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
           return rawArgs;
         },
       ),
-      withDeadline(findSeparateGateApproval(rc), STOP_DB_STEP_DEADLINE_MS, `FOE stop step ${step.id} gate lookup`).catch((err: unknown) => {
+      // Đợt 8 O2 (L-7) — `stop: true`: this lookup never reads a controller's program checksum.
+      withDeadline(findSeparateGateApproval(rc, { stop: true }), STOP_DB_STEP_DEADLINE_MS, `FOE stop step ${step.id} gate lookup`).catch((err: unknown) => {
         console.warn(`[FOE] run ${rc.runId} stop step ${step.id}: gate lookup not answered — sent without a gate approval (L-7, F5): ${(err as Error)?.message ?? err}`);
         return { reason: "noGate" as const };
       }),
@@ -2781,11 +2807,22 @@ export async function startRun(
  * edge progress tick, the QT pump, resolveQtGate, API v1 reads). null never lets an approval through: the Studio cannot
  * approve without a digest, and resumeRun recomputes and compares it server side (fail-closed).
  */
-export async function getRun(runId: number, opts: { bindingDigest?: boolean } = {}): Promise<RunView | null> {
+export async function getRun(
+  runId: number,
+  opts: {
+    bindingDigest?: boolean;
+    /**
+     * doc 81 Đợt 8 final wave (review O M1) — the caller's visibility check, applied to the run row FIRST: false ⇒ null
+     * (nothing else is read — no step rows, no controller checksum read for a run the caller may not see).
+     */
+    visibleTo?: (run: typeof orchestrationRuns.$inferSelect) => Promise<boolean>;
+  } = {},
+): Promise<RunView | null> {
   const d = await getDb();
   if (!d) return null;
   const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
   if (!run) return null;
+  if (opts.visibleTo && (await opts.visibleTo(run).catch(() => false)) !== true) return null;
   const stepRows = await d
     .select()
     .from(orchestrationRunSteps)
@@ -2793,12 +2830,15 @@ export async function getRun(runId: number, opts: { bindingDigest?: boolean } = 
   const [wf] = await d.select(WF_CORE_COLS).from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1); // F8: no "scopeKey"
   const wfDef = wf?.definitionJson as WorkflowDefinition | undefined;
   const usable = wfDef && Array.isArray(wfDef.steps) ? wfDef : null;
+  // doc 81 Đợt 7 I2 (null on a DB error ⇒ cannot approve); final wave F6 — only for an approver's screen of a paused run.
+  // doc 81 Đợt 8 O2/O3 — the program checks come from the SAME reading as the digest.
+  const binding =
+    usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held") ? await computeBindingDetail(d, usable) : null;
   return {
     run,
     defHash: usable ? hashWorkflowDefinition(usable) : null,
-    // doc 81 Đợt 7 I2 (null on a DB error ⇒ cannot approve); final wave F6 — only for an approver's screen of a paused run
-    bindingDigest:
-      usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held") ? await computeBindingDigest(d, usable) : null,
+    bindingDigest: binding ? binding.digest : null,
+    programChecks: binding ? binding.programs : null,
     steps: stepRows.map((s) => ({
       stepId: s.stepId,
       stepType: s.stepType,
@@ -3042,15 +3082,18 @@ export async function resumeRun(
     // commands resolve to — the binding digest the approval will record). Computed ONCE here and recorded below, so the
     // approval covers exactly what was checked. Changed since the screen loaded, not computable now (DB error — cannot
     // decide ⇒ refused), or a screen-bound approval without it ⇒ CONFLICT, nothing changes.
-    let checkedDigest: string | null | undefined;
+    // doc 81 Đợt 8 O2 — the digest includes the program checksum of every supported controller (read now, bounded): a
+    // program changed since the screen loaded, or a supported controller whose checksum cannot be read ⇒ the same CONFLICT.
+    let checked: { digest: string | null; programs: ProgramCheck[] } | undefined;
     if (screenBound && (decision.expectedDefHash !== undefined || decision.expectedBindingDigest !== undefined)) {
-      checkedDigest = await computeBindingDigest(d, def);
+      checked = await computeBindingDetail(d, def);
+      const checkedDigest = checked.digest;
       if (decision.expectedBindingDigest === undefined || checkedDigest === null || checkedDigest !== decision.expectedBindingDigest) {
         throw appError(
           "CONFLICT",
           "OPERATION_FAILED",
           { operation: "resumeOrchestrationRun", reason: "bindingChanged" },
-          `The device configuration of workflow "${wf.ref}" (adapter, tags or robot its commands use) changed after your screen loaded, or could not be read — reload and review it before approving.`,
+          `The device configuration of workflow "${wf.ref}" (adapter, tags or robot its commands use, or the program in a controller it writes to) changed after your screen loaded, or could not be read — reload and review it before approving.`,
         );
       }
     }
@@ -3093,6 +3136,8 @@ export async function resumeRun(
       );
       if (prior?.status !== "completed") {
         const human = Number.isInteger(user.id) && user.id > 0;
+        // Đợt 8 O2 — ONE reading for the digest and the program checks it records (the screen's, else read now).
+        const recorded = checked ?? (await computeBindingDetail(d, def));
         await upsertStep(runId, gateStepId, "hitl_gate", {
           status: "completed",
           result: {
@@ -3104,7 +3149,9 @@ export async function resumeRun(
             // doc 81 Đợt 5 task E3 — the device configuration the approval covers, computed HERE (server side); null
             // (DB error) ⇒ the approval never counts (fail-closed).
             // doc 81 Đợt 7 I2 — the digest the approver's screen was checked against (else computed now, as before).
-            bindingDigest: checkedDigest !== undefined ? checkedDigest : await computeBindingDigest(d, def),
+            bindingDigest: recorded.digest,
+            // doc 81 Đợt 8 O2 — per adapter / robot: verified (+ checksum) · unsupported ("not verifiable") · unreadable.
+            programChecks: programChecksRecord(recorded.programs),
           },
           finishedAt: new Date(),
         });

@@ -16,7 +16,11 @@
  *   5. doc 81 Đợt 5 task E3 (item 25) — bindingDigest = computeBindingDigest() of the CURRENT device configuration the
  *      definition's command steps resolve to (adapter, tags, robot): any change since the approval makes it STALE, and a
  *      digest that cannot be computed (DB error) or is absent (an approval recorded before E3) never counts.
- * Reasons when nothing counts: ownerUnknown › staleApproval › approvedByOwner › noGate.
+ *      doc 81 Đợt 8 task O2 — the digest also covers the PROGRAM CHECKSUM of every OT adapter the commands write through
+ *      when that adapter's controller supports it (ot/programChecksum.ts): a program changed in the controller since the
+ *      approval ⇒ STALE; a supported adapter whose checksum cannot be read now ⇒ no digest ⇒ nothing counts (reason
+ *      programUnreadable); an unsupported controller is recorded as not verifiable (approval.programChecks) and shown so.
+ * Reasons when nothing counts: ownerUnknown › programUnreadable › staleApproval › approvedByOwner › noGate.
  *
  * doc 81 Đợt 5 task E1 (item 24, owner decision option C) — a run started through an API key (runStartedViaApi) never
  * gets a counting approval at all (reason `apiRun`): the person holding a key is invisible to the server, so "approved by
@@ -27,6 +31,11 @@
  * UNPINNED OT stop-typed write — the OT dispatcher already treats that as needing four-eyes (it may write any tag), and
  * an API run cannot provide four-eyes, so it is refused like every other non-STOP write (R-4-x: an exemption for STOP
  * never extends to a write that is not a verified stop).
+ * L-7 statement (doc 81 Đợt 8 final wave, review O M6 — owner-visible): since Đợt 8 O2 an UNPINNED stop-typed OT write
+ * of an orchestration run whose binding includes a checksum-capable controller can be REFUSED (programUnreadable /
+ * staleApproval) or DELAYED by up to PROGRAM_CHECKSUM_READ_DEADLINE_MS (1 s, read before the reservation — M2) by the
+ * program checksum read. This is R-4-x applied (an unpinned stop is a non-STOP write: it may write any tag). A PINNED
+ * stop and every robot stop read no checksum and are never refused or delayed by it; the hardware E-STOP is unaffected.
  */
 import { createHash } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
@@ -34,12 +43,14 @@ import {
   orchestrationRunSteps,
   orchestrationRuns,
   orchestrationWorkflows,
+  aiPendingActions,
   machines,
   deviceAdapters,
   deviceTags,
   robots,
 } from "../../../../drizzle/schema";
 import { getCapabilitiesForMachine } from "../../equipment/capabilityModel";
+import { programChecksumCapable, readAdapterProgramCheck, robotProgramCheck, type ProgramCheck } from "../../ot/programChecksum"; // Đợt 8 O2
 import { allStepsOf } from "./foeStepClass"; // doc 81 Đợt 5 task E fix 1 — THE step walk
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
@@ -50,7 +61,7 @@ export const FOE_APPROVAL_SOURCE_EDGE = "edge";
 /** Written when user 0 (system auto-resume / API) resolves a gate (never counts). */
 export const FOE_APPROVAL_SOURCE_SYSTEM = "system";
 
-export type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun";
+export type GateRequiredReason = "noGate" | "approvedByOwner" | "staleApproval" | "ownerUnknown" | "apiRun" | "programUnreadable";
 
 /**
  * doc 81 Đợt 5 task E1 — the SERVER-ONLY marker of a run started through an API key (or by any non-user principal).
@@ -127,56 +138,168 @@ const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? n
  *   • robot step: the robot row (id, vendor, endpoint, hash of connectionOptions; NOT updatedAt/status, which the
  *     runtime bumps on every connection change).
  * Stored in the gate's resultJson at approval and recomputed by BOTH checks (engine + dispatchers): a different digest ⇒
- * staleApproval. RESIDUAL (documented, doc 81 §14): a program stored INSIDE a robot controller / PLC is invisible here.
+ * staleApproval. RESIDUAL (documented, doc 81 §14): a program stored INSIDE a robot controller / PLC is invisible here —
+ * doc 81 Đợt 8 O2 closes it for controllers that report a program checksum (computeBindingDetail); robots and every other
+ * controller remain "cannot be verified" (shown plainly on the approver's screen).
  * null ⇒ could not be computed (fail-closed: an approval never counts against null).
  */
 export async function computeBindingDigest(db: DbLike, def: Pick<WorkflowDefinition, "steps">): Promise<string | null> {
+  return (await computeBindingDetail(db, def)).digest;
+}
+
+/**
+ * doc 81 Đợt 8 task O2 — the binding digest TOGETHER with the program check of every OT adapter / robot the commands
+ * use (what the approver's screen lists and what an approval records). The checksums of all supported adapters are read
+ * CONCURRENTLY, each bounded by PROGRAM_CHECKSUM_READ_DEADLINE_MS. Any supported adapter "unreadable" ⇒ digest null
+ * (fail-closed). An UNSUPPORTED adapter adds nothing to the digest (its digest is exactly the pre-O2 one) — it is listed
+ * as "unsupported" and recorded so, never treated as verified. DB error ⇒ { digest: null, programs: [] }.
+ */
+export async function computeBindingDetail(
+  db: DbLike,
+  def: Pick<WorkflowDefinition, "steps">,
+  /** final wave (review O M2) — program checks read BEFORE the caller's transaction (adapters missing here are read now). */
+  pre?: PreReadPrograms,
+): Promise<{ digest: string | null; programs: ProgramCheck[] }> {
   try {
-    const cmds = allStepsOf(def?.steps).filter(
-      (s): s is Extract<WorkflowStep, { type: "command" }> => s.type === "command" && posInt((s as { machineId?: unknown }).machineId),
-    );
-    if (cmds.length === 0) return sha([]);
-    const machineIds = [...new Set(cmds.map((s) => s.machineId))];
-    const mRows = (await db.select().from(machines).where(inArray(machines.id, machineIds))) as Array<Record<string, any>>;
-    const mById = new Map(mRows.map((m) => [m.id as number, m] as const));
-    const kindOf = (mid: number): "robot" | "ot" | null => {
-      const m = mById.get(mid);
-      if (!m) return null;
-      const k = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never }).adapterKind;
-      return k === "robot" || k === "vda5050" ? "robot" : "ot";
-    };
-    const otMachines = [...new Set(cmds.filter((s) => kindOf(s.machineId) === "ot").map((s) => s.machineId))];
-    const bound = otMachines.length
-      ? ((await db.select().from(deviceAdapters).where(inArray(deviceAdapters.machineId, otMachines))) as Array<Record<string, any>>)
-      : [];
-    const resolveAdapter = (s: Extract<WorkflowStep, { type: "command" }>): number | null => {
-      const explicit = (s.args ?? {}).adapterId;
-      if (typeof explicit === "number") return explicit;
-      const enabled = bound.filter((a) => a.machineId === s.machineId && a.isEnabled === true);
-      return enabled.length === 1 ? (enabled[0].id as number) : null;
-    };
-    const resolved = new Map(cmds.filter((s) => kindOf(s.machineId) === "ot").map((s) => [s.id, resolveAdapter(s)] as const));
-    const adapterIds = [...new Set([...resolved.values()].filter((v): v is number => posInt(v)))];
-    const aRows = adapterIds.length
-      ? ((await db.select().from(deviceAdapters).where(inArray(deviceAdapters.id, adapterIds))) as Array<Record<string, any>>)
-      : [];
-    const aById = new Map(aRows.map((a) => [a.id as number, a] as const));
-    const tRows = adapterIds.length
-      ? ((await db.select().from(deviceTags).where(inArray(deviceTags.adapterId, adapterIds))) as Array<Record<string, any>>)
-      : [];
-    const robotIds = [
-      ...new Set(cmds.filter((s) => kindOf(s.machineId) === "robot").map((s) => (s.args ?? {}).robotId).filter((v): v is number => posInt(v))),
-    ];
-    const rRows = robotIds.length ? ((await db.select().from(robots).where(inArray(robots.id, robotIds))) as Array<Record<string, any>>) : [];
-    const rById = new Map(rRows.map((r) => [r.id as number, r] as const));
-    const tagKeysOf = (args: Record<string, unknown>): string[] => {
-      const keys = Array.isArray(args.writes)
-        ? (args.writes as Array<{ tagKey?: unknown }>).map((w) => w?.tagKey).filter((k): k is string => typeof k === "string")
-        : typeof args.tagKey === "string"
-          ? [args.tagKey]
-          : [];
-      return [...new Set(keys)].sort();
-    };
+    const b = await loadBinding(db, def);
+    const checks = await Promise.all(b.adapters.map((a) => pre?.get(a.id as number) ?? readAdapterProgramCheck(a as never)));
+    const byId = new Map(checks.map((c) => [c.id, c] as const));
+    const digest = b.digestWith((id) => {
+      const c = byId.get(id);
+      return c?.status === "verified" && typeof c.checksum === "string" ? c.checksum : null;
+    });
+    return { digest, programs: [...checks, ...b.robots.map((r) => robotProgramCheck(r as never))] };
+  } catch {
+    return { digest: null, programs: [] };
+  }
+}
+
+/**
+ * doc 81 Đợt 8 final wave (review O M2) — the controller program checks of an orchestration action's run, read BEFORE the
+ * dispatcher's reservation transaction, so no pool connection / advisory lock / FOR UPDATE row is held while a controller
+ * is read (each read bounded by PROGRAM_CHECKSUM_READ_DEADLINE_MS, concurrent, single-flight).
+ * Re-verification semantics: inside the transaction the binding digest is recomputed from the FRESH, locked DB rows
+ * (machines, adapters, tags, robots) together with THESE checksums; an adapter the fresh rows name that was not pre-read
+ * is read there (bounded, as before). The controller program is never under a DB lock, so reading it inside the
+ * transaction gave no stronger guarantee: in both designs a program change between the read and the device write is
+ * possible within the read deadline + the transaction time (documented residual), and an approval that no longer matches
+ * a checksum read after it was given is refused. Any problem here (no row, not an orchestration action, DB error) ⇒
+ * undefined ⇒ the transaction reads live (the pre-Đợt-8-final behaviour, fail-closed as before).
+ */
+export type PreReadPrograms = ReadonlyMap<number, ProgramCheck>;
+export async function preReadProgramChecksForAction(db: DbLike, actionId: string, engineTool: string): Promise<PreReadPrograms | undefined> {
+  try {
+    const [pending] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
+    if (!pending || (pending as { tool?: unknown }).tool !== engineTool) return undefined;
+    const ptr = ((pending as { previewJson?: unknown }).previewJson as Record<string, unknown> | null)?.["__foeGateApproval"] as { runId?: unknown } | undefined;
+    if (!posInt(ptr?.runId)) return undefined;
+    const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, ptr!.runId as number)).limit(1);
+    if (!run) return undefined;
+    const [wf] = await db.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, (run as { workflowId: number }).workflowId)).limit(1);
+    const def = (wf as { definitionJson?: WorkflowDefinition } | undefined)?.definitionJson;
+    if (!def || !Array.isArray(def.steps)) return undefined;
+    const b = await loadBinding(db, def);
+    const checks = await Promise.all(b.adapters.map((a) => readAdapterProgramCheck(a as never)));
+    return new Map(checks.map((c) => [c.id, c] as const));
+  } catch {
+    return undefined;
+  }
+}
+
+/** doc 81 Đợt 8 O2 — what an approval records of the program checks (ids, status, checksum — no labels / sources). */
+export function programChecksRecord(
+  programs: readonly ProgramCheck[],
+): Array<{ target: ProgramCheck["target"]; id: number; status: ProgramCheck["status"]; checksum?: string }> {
+  return programs.map((p) =>
+    p.status === "verified" && p.checksum ? { target: p.target, id: p.id, status: p.status, checksum: p.checksum } : { target: p.target, id: p.id, status: p.status },
+  );
+}
+
+/**
+ * doc 81 Đợt 8 O2 + L-7 — the binding digest of each gate row computed WITHOUT reading any controller: the configuration
+ * is read now (DB), the program checksums are the ones THAT approval recorded (resultJson.programChecks). Used ONLY by the
+ * engine on a STOP step, so a STOP never waits on a checksum read. Whether the program still matches is decided where a
+ * write that is not a verified stop is sent: the OT dispatcher's foeApprovalDbRefusal reads the controller for an UNPINNED
+ * stop-typed write (R-4-x), and a pinned stop / robot stop is never checked (L-7). A supported adapter without a recorded
+ * verified checksum ⇒ null for that row. DB error ⇒ every row null (no approval counts; the engine still sends the STOP).
+ */
+export async function recordedProgramDigests(db: DbLike, def: Pick<WorkflowDefinition, "steps">): Promise<(row: GateRowLike) => string | null> {
+  let b: LoadedBinding;
+  try {
+    b = await loadBinding(db, def);
+  } catch {
+    return () => null;
+  }
+  return (row) => {
+    const rec = (row.resultJson as { programChecks?: unknown } | null | undefined)?.programChecks;
+    const recorded = new Map<number, string>();
+    if (Array.isArray(rec)) {
+      for (const e of rec as Array<Record<string, unknown> | null>) {
+        if (e && e.target === "adapter" && posInt(e.id) && e.status === "verified" && typeof e.checksum === "string" && e.checksum) recorded.set(e.id, e.checksum);
+      }
+    }
+    return b.digestWith((id) => recorded.get(id) ?? null);
+  };
+}
+
+interface LoadedBinding {
+  /** The resolved, existing OT adapter rows the commands write through (sorted by id). */
+  adapters: Array<Record<string, any>>;
+  /** The existing robot rows the commands use (sorted by id). */
+  robots: Array<Record<string, any>>;
+  /** The digest, given the program checksum of each SUPPORTED adapter (null ⇒ unreadable ⇒ the whole digest is null). */
+  digestWith: (checksumOf: (adapterId: number) => string | null) => string | null;
+}
+
+/** The DB half of the binding digest (Đợt 5 E3): every read, no controller I/O. Throws on a DB error. */
+async function loadBinding(db: DbLike, def: Pick<WorkflowDefinition, "steps">): Promise<LoadedBinding> {
+  const cmds = allStepsOf(def?.steps).filter(
+    (s): s is Extract<WorkflowStep, { type: "command" }> => s.type === "command" && posInt((s as { machineId?: unknown }).machineId),
+  );
+  if (cmds.length === 0) return { adapters: [], robots: [], digestWith: () => sha([]) };
+  const machineIds = [...new Set(cmds.map((s) => s.machineId))];
+  const mRows = (await db.select().from(machines).where(inArray(machines.id, machineIds))) as Array<Record<string, any>>;
+  const mById = new Map(mRows.map((m) => [m.id as number, m] as const));
+  const kindOf = (mid: number): "robot" | "ot" | null => {
+    const m = mById.get(mid);
+    if (!m) return null;
+    const k = getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never }).adapterKind;
+    return k === "robot" || k === "vda5050" ? "robot" : "ot";
+  };
+  const otMachines = [...new Set(cmds.filter((s) => kindOf(s.machineId) === "ot").map((s) => s.machineId))];
+  const bound = otMachines.length
+    ? ((await db.select().from(deviceAdapters).where(inArray(deviceAdapters.machineId, otMachines))) as Array<Record<string, any>>)
+    : [];
+  const resolveAdapter = (s: Extract<WorkflowStep, { type: "command" }>): number | null => {
+    const explicit = (s.args ?? {}).adapterId;
+    if (typeof explicit === "number") return explicit;
+    const enabled = bound.filter((a) => a.machineId === s.machineId && a.isEnabled === true);
+    return enabled.length === 1 ? (enabled[0].id as number) : null;
+  };
+  const resolved = new Map(cmds.filter((s) => kindOf(s.machineId) === "ot").map((s) => [s.id, resolveAdapter(s)] as const));
+  const adapterIds = [...new Set([...resolved.values()].filter((v): v is number => posInt(v)))];
+  const aRows = adapterIds.length
+    ? ((await db.select().from(deviceAdapters).where(inArray(deviceAdapters.id, adapterIds))) as Array<Record<string, any>>)
+    : [];
+  const aById = new Map(aRows.map((a) => [a.id as number, a] as const));
+  const tRows = adapterIds.length
+    ? ((await db.select().from(deviceTags).where(inArray(deviceTags.adapterId, adapterIds))) as Array<Record<string, any>>)
+    : [];
+  const robotIds = [
+    ...new Set(cmds.filter((s) => kindOf(s.machineId) === "robot").map((s) => (s.args ?? {}).robotId).filter((v): v is number => posInt(v))),
+  ];
+  const rRows = robotIds.length ? ((await db.select().from(robots).where(inArray(robots.id, robotIds))) as Array<Record<string, any>>) : [];
+  const rById = new Map(rRows.map((r) => [r.id as number, r] as const));
+  const tagKeysOf = (args: Record<string, unknown>): string[] => {
+    const keys = Array.isArray(args.writes)
+      ? (args.writes as Array<{ tagKey?: unknown }>).map((w) => w?.tagKey).filter((k): k is string => typeof k === "string")
+      : typeof args.tagKey === "string"
+        ? [args.tagKey]
+        : [];
+    return [...new Set(keys)].sort();
+  };
+  const digestWith = (checksumOf: (adapterId: number) => string | null): string | null => {
+    let unreadable = false;
     const entries = cmds
       .map((s) => {
         const m = mById.get(s.machineId);
@@ -191,9 +314,21 @@ export async function computeBindingDigest(db: DbLike, def: Pick<WorkflowDefinit
         if (kind === "ot") {
           const aid = resolved.get(s.id) ?? null;
           const a = aid != null ? aById.get(aid) : undefined;
+          // Đợt 8 O2 — a SUPPORTED controller adds its program checksum; an unsupported one adds nothing (pre-O2 digest).
+          let program: { program?: string } = {};
+          if (a && programChecksumCapable(a)) {
+            const c = checksumOf(a.id as number);
+            if (c === null) unreadable = true;
+            else program = { program: c };
+          }
           return {
             ...base,
-            adapter: aid == null ? null : a ? { id: a.id, machineId: a.machineId ?? null, isEnabled: a.isEnabled === true, updatedAt: iso(a.updatedAt) } : { id: aid, missing: true },
+            adapter:
+              aid == null
+                ? null
+                : a
+                  ? { id: a.id, machineId: a.machineId ?? null, isEnabled: a.isEnabled === true, updatedAt: iso(a.updatedAt), ...program }
+                  : { id: aid, missing: true },
             tags: tagKeysOf(args).map((k) => {
               const t = aid == null ? undefined : tRows.find((r) => r.adapterId === aid && r.tagKey === k);
               return t
@@ -210,10 +345,10 @@ export async function computeBindingDigest(db: DbLike, def: Pick<WorkflowDefinit
         return base;
       })
       .sort((x, y) => (x.stepId < y.stepId ? -1 : x.stepId > y.stepId ? 1 : 0));
-    return sha(entries);
-  } catch {
-    return null;
-  }
+    return unreadable ? null : sha(entries);
+  };
+  const byId = (x: Record<string, any>, y: Record<string, any>) => (x.id as number) - (y.id as number);
+  return { adapters: [...aRows].sort(byId), robots: [...rRows].sort(byId), digestWith };
 }
 
 /** Depth-first lookup of a step by id anywhere in the tree (children, branches, compensation). */
@@ -254,8 +389,11 @@ export function evaluateGateApprovals(
   def: Pick<WorkflowDefinition, "steps">,
   defHash: string,
   runOwner: number | null,
-  /** doc 81 Đợt 5 task E3 — computeBindingDigest() of the definition NOW (null ⇒ not computable ⇒ nothing counts). */
-  bindingDigest: string | null,
+  /**
+   * doc 81 Đợt 5 task E3 — computeBindingDigest() of the definition NOW (null ⇒ not computable ⇒ nothing counts).
+   * doc 81 Đợt 8 O2 — or, on the engine's STOP path only, a per-row digest (recordedProgramDigests).
+   */
+  bindingDigest: string | null | ((row: GateRowLike) => string | null),
 ): GateEvaluation {
   if (!posInt(runOwner)) return { ok: false, reason: "ownerUnknown" };
   let sawStale = false;
@@ -278,7 +416,8 @@ export function evaluateGateApprovals(
       continue;
     }
     // E3 — the definition (R-4-e) AND the device configuration it resolves to must be what the approver approved.
-    if (res.defHash !== defHash || bindingDigest === null || typeof res.bindingDigest !== "string" || res.bindingDigest !== bindingDigest) {
+    const now = typeof bindingDigest === "function" ? bindingDigest(r) : bindingDigest;
+    if (res.defHash !== defHash || now === null || typeof res.bindingDigest !== "string" || res.bindingDigest !== now) {
       sawStale = true;
       continue;
     }
@@ -286,6 +425,23 @@ export function evaluateGateApprovals(
   }
   if (approvals.length > 0) return { ok: true, approvals: approvals.sort((a, b) => b.at - a.at) };
   return { ok: false, reason: sawStale ? "staleApproval" : sawOwner ? "approvedByOwner" : "noGate" };
+}
+
+/**
+ * doc 81 Đợt 8 O2 — evaluateGateApprovals against the digest computed NOW with the controllers' program checksums: an
+ * approval that is stale while a supported adapter's checksum could not be read is reported as `programUnreadable` (the
+ * cause the operator can act on), not as a configuration change.
+ */
+export function evaluateWithPrograms(
+  rows: readonly GateRowLike[],
+  def: Pick<WorkflowDefinition, "steps">,
+  defHash: string,
+  runOwner: number | null,
+  detail: { digest: string | null; programs: readonly ProgramCheck[] },
+): GateEvaluation {
+  const ev = evaluateGateApprovals(rows, def, defHash, runOwner, detail.digest);
+  if (!ev.ok && ev.reason === "staleApproval" && detail.programs.some((p) => p.status === "unreadable")) return { ok: false, reason: "programUnreadable" };
+  return ev;
 }
 
 type DbLike = { select: (...a: any[]) => any };
@@ -300,6 +456,8 @@ export async function foeApprovalDbRefusal(
   db: DbLike,
   pending: { userId: number; previewJson: unknown },
   requestedBy?: number | null,
+  /** final wave (review O M2) — checksums read before the caller's transaction (preReadProgramChecksForAction). */
+  prePrograms?: PreReadPrograms,
 ): Promise<string | null> {
   try {
     const ptr = (pending.previewJson as Record<string, unknown> | null)?.["__foeGateApproval"] as { runId?: unknown } | undefined;
@@ -321,7 +479,8 @@ export async function foeApprovalDbRefusal(
     const def = (wf as { definitionJson?: WorkflowDefinition } | undefined)?.definitionJson;
     if (!def || !Array.isArray(def.steps)) return "orchestration workflow definition not found";
     const rows = (await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))) as GateRowLike[];
-    const ev = evaluateGateApprovals(rows, def, hashWorkflowDefinition(def), owner, await computeBindingDigest(db, def)); // E3
+    // E3 + Đợt 8 O2 — configuration AND controller program checksums read now (bounded); unreadable ⇒ refused.
+    const ev = evaluateWithPrograms(rows, def, hashWorkflowDefinition(def), owner, await computeBindingDetail(db, def, prePrograms));
     if (!ev.ok) return `no counting gate approval for this run (FOE_GATE_REQUIRED ${ev.reason})`;
     if (!ev.approvals.some((a) => a.approvedBy === pending.userId)) {
       return "orchestration action's confirmer is not the approver of a counting gate of its run";

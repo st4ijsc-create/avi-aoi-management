@@ -281,7 +281,18 @@ vi.mock("../ot/driverRegistry", () => ({
 }));
 
 import { produce, upsertCalibration, listCalibrations } from "./vision/humanDetectionProducer";
-import { readAndRecord, upsertPlcConfig } from "./plc/safetyPlcAdapter";
+import { readAndRecord } from "./plc/safetyPlcAdapter";
+import type { SafetyPlcConfig } from "../../../drizzle/schema";
+
+// doc 81 Đợt 8 final wave N-R7 — the unaudited upsertPlcConfig was removed; these read tests only need a config ROW.
+let plcSeq = 0;
+function upsertPlcConfig(input: Partial<SafetyPlcConfig>): { ok: true; config: SafetyPlcConfig } {
+  const config = {
+    id: ++plcSeq, vendor: "generic", backend: "sim", endpoint: null, statusMap: null, robotId: null, stationId: null, lineId: null,
+    enabled: true, notes: null, scope: null, corporateCode: null, factoryId: null, createdAt: new Date(), updatedAt: new Date(), ...input,
+  } as SafetyPlcConfig;
+  return { ok: true, config };
+}
 
 // A ×10 + translate homography (foot pixel maps into the rated band near origin robot).
 const H10: Homography = solveHomography([
@@ -386,7 +397,7 @@ describe("safety-PLC adapter (service)", () => {
   it("sim backend → scripted status emits advisory events (read-only)", async () => {
     process.env.SAFETY_PLC_ADAPTER_ENABLED = "true";
     process.env.SAFETY_AUDIT_ENABLED = "true";
-    const up = await upsertPlcConfig({
+    const up = upsertPlcConfig({
       code: "PLC1",
       name: "Pilz cell",
       vendor: "pilz",
@@ -412,7 +423,7 @@ describe("safety-PLC adapter (service)", () => {
       { tagKey: "estop", value: true, quality: "good", raw: 1, timestamp: new Date() },
       { tagKey: "muting", value: false, quality: "good", raw: 0, timestamp: new Date() },
     ]);
-    const up = await upsertPlcConfig({
+    const up = upsertPlcConfig({
       code: "PLC2",
       name: "Sick Flexi",
       vendor: "sick",
@@ -433,7 +444,7 @@ describe("safety-PLC adapter (service)", () => {
     process.env.SAFETY_PLC_ADAPTER_ENABLED = "true";
     process.env.SAFETY_AUDIT_ENABLED = "true";
     mockReadTags.mockRejectedValue(new Error("connection refused"));
-    const up = await upsertPlcConfig({
+    const up = upsertPlcConfig({
       code: "PLC3",
       name: "unreachable",
       backend: "modbus",

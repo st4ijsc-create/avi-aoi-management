@@ -113,7 +113,7 @@ import {
   type CommandLog,
 } from "../../../drizzle/schema";
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
-import { foeApprovalDbRefusal } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i)
+import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, listActiveAdapters, resetAdapterSession } from "./otManager";
 import { adapterTargetFingerprint } from "./adapterTarget";
@@ -2050,8 +2050,11 @@ function raiseStopUnverifiedAlarm(
         },
         // fix 1 / fix scan (R-5-f, R-5-h) — bypass deduped per OCCURRENCE (type, machine, this STOP's ledger row) and
         // recipient for 60 s; another STOP's alarm is a distinct occurrence and is never merged.
+        // final wave F1 (ruling R-8-d) — exempt from the per-recipient bypass cap: a burst of safety-event trips (correlated
+        // in time with STOPs) must never downgrade this alarm; it is still deduped per occurrence above.
         {
           safetyCritical: true,
+          capExempt: "ot_stop_unverified",
           dedupKey: `ot_stop_unverified:${input.machineId != null ? `machine:${input.machineId}` : `adapter:${input.adapterId}`}:stop:${stopLedger.intentIds[0] ?? "?"}`,
         },
       );
@@ -2293,6 +2296,24 @@ async function reserveRealWrite(
 ): Promise<Reservation> {
   const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
   const intentKeys = resultKeys.map(intentKeyFor);
+  // doc 81 Đợt 8 final wave (review O M2) — an orchestration action's controller program checksums are read HERE, before
+  // the reservation transaction (bounded 1 s, concurrent, single-flight): no pool connection, advisory lock or FOR UPDATE
+  // row is held while a controller is read. A PINNED stop reads nothing (L-7). L-7 statement (O M6): an UNPINNED
+  // stop-typed write of such a run may be refused or delayed ≤ 1 s by this read (R-4-x: it is not a verified stop).
+  // final wave NF-4 — a DUPLICATE costs nothing: a lock-free probe of the same two keys the transaction checks first; a prior
+  // intent / result ⇒ no controller read (the transaction answers cached / DUPLICATE_IN_FLIGHT before any approval check).
+  // The probe is only an optimisation: it decides nothing. Probe error / a race ⇒ the pre-read runs, or the transaction reads
+  // live (bounded) exactly as before — fail-closed semantics unchanged.
+  let prePrograms: PreReadPrograms | undefined;
+  if (input.triggeredBy.kind === "hitl" && input.triggeredBy.actionId && opts.pinnedStop !== true) {
+    const duplicate = await db
+      .select({ id: commandLog.id })
+      .from(commandLog)
+      .where(inArray(commandLog.idempotencyKey, [resultKeys[0], intentKeys[0]]))
+      .limit(1)
+      .then((r) => r.length > 0, () => false);
+    if (!duplicate) prePrograms = await preReadProgramChecksForAction(db, input.triggeredBy.actionId, FOE_ENGINE_TOOL);
+  }
   try {
     return await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${OT_COMMAND_LOCK_NS + input.idempotencyKey}))`);
@@ -2334,7 +2355,7 @@ async function reserveRealWrite(
           // approver from the DB rows (run + gate + workflow) under this transaction; previewJson only points at the run.
           // A PINNED stop is exempt (L-7).
           if (verdict.ok && pending?.tool === FOE_ENGINE_TOOL && opts.pinnedStop !== true) {
-            const refusal = await foeApprovalDbRefusal(tx, pending, t.requestedBy);
+            const refusal = await foeApprovalDbRefusal(tx, pending, t.requestedBy, prePrograms);
             if (refusal) verdict = { ok: false, reason: "NOT_CONFIRMED", detail: refusal };
           }
           if (verdict.ok) {

@@ -27,7 +27,6 @@
  * dưới + ý định mở (R-2-l), wizard deploy (mở/chế độ một máy | đội máy), Copilot đã mount (giữ stream sống), vị trí
  * con trỏ (thanh trạng thái). Các hành động này KHÔNG chạm chuỗi reset, và chuỗi reset KHÔNG chạm chúng.
  */
-import type { Kind } from "./programKinds";
 
 export type Diagnostic = {
   severity: string;
@@ -43,27 +42,6 @@ export type SimResult = { ok: boolean; warnings: string[]; timeline: any[] };
 export type RollbackTarget = { id: number; stage: string; attemptKey: string };
 export type Stage = "staging" | "production";
 
-export interface SymbolForm {
-  open: boolean;
-  id: number | null;
-  name: string;
-  addr: string;
-  type: string;
-  comment: string;
-  watchable: boolean;
-}
-export interface NewProjectForm {
-  open: boolean;
-  code: string;
-  name: string;
-  kind: Kind;
-  /** U2 — thiết bị nguồn (tùy chọn) khi tạo project; "" = chưa gắn. */
-  deviceId: string;
-}
-export interface AttachForm {
-  open: boolean;
-  deviceId: string;
-}
 export interface DeployForm {
   stage: Stage;
   signOff: boolean;
@@ -120,10 +98,7 @@ export interface WorkspaceState {
   rollbackTarget: RollbackTarget | null;
   /** U7 — đang tạo dự án DEMO một chạm. */
   demoCreating: boolean;
-  // ── Hộp thoại / form ──
-  sym: SymbolForm;
-  newProject: NewProjectForm;
-  attach: AttachForm;
+  // ── Hộp thoại / form ── (Thêm/sửa biến, Dự án mới, Gắn thiết bị nguồn: form CỤC BỘ của lớp FlyoutHost — Đợt 8 P1)
   deploy: DeployForm;
   fleet: FleetForm;
   // ── Task 13 — vỏ P1 Workbench ──
@@ -148,9 +123,6 @@ export const initialWorkspaceState: WorkspaceState = {
   deleteSymTarget: null,
   rollbackTarget: null,
   demoCreating: false,
-  sym: { open: false, id: null, name: "", addr: "", type: "", comment: "", watchable: true },
-  newProject: { open: false, code: "", name: "", kind: "stub", deviceId: "" },
-  attach: { open: false, deviceId: "" },
   deploy: { stage: "staging", signOff: false, approverId: "", reason: "" },
   fleet: {
     deviceIds: [],
@@ -170,15 +142,6 @@ export const initialWorkspaceState: WorkspaceState = {
     bottomOpenRequest: 0,
     wizard: { open: false, mode: "single", buildId: null },
   },
-};
-
-export type SymbolRow = {
-  id: number;
-  name: string;
-  address: string | null;
-  dataType: string | null;
-  comment: string | null;
-  watchable: boolean;
 };
 
 export type WorkspaceAction =
@@ -210,12 +173,6 @@ export type WorkspaceAction =
   | { type: "rollback/open"; target: RollbackTarget }
   | { type: "rollback/close" }
   | { type: "demo/creating"; creating: boolean }
-  | { type: "sym/open"; symbol?: SymbolRow }
-  | { type: "sym/set"; patch: Partial<SymbolForm> }
-  | { type: "newProject/set"; patch: Partial<NewProjectForm> }
-  | { type: "newProject/submitted" }
-  | { type: "attach/open"; deviceId: string }
-  | { type: "attach/set"; patch: Partial<AttachForm> }
   | { type: "deploy/set"; patch: Partial<DeployForm> }
   | { type: "fleet/set"; patch: Partial<Omit<FleetForm, "deviceIds">> }
   | { type: "fleet/toggleDevice"; deviceId: number }
@@ -306,31 +263,6 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
       return { ...s, rollbackTarget: null };
     case "demo/creating":
       return { ...s, demoCreating: a.creating };
-    case "sym/open": {
-      const x = a.symbol;
-      return {
-        ...s,
-        sym: {
-          open: true,
-          id: x?.id ?? null,
-          name: x?.name ?? "",
-          addr: x?.address ?? "",
-          type: x?.dataType ?? "",
-          comment: x?.comment ?? "",
-          watchable: x?.watchable ?? true,
-        },
-      };
-    }
-    case "sym/set":
-      return { ...s, sym: { ...s.sym, ...a.patch } };
-    case "newProject/set":
-      return { ...s, newProject: { ...s.newProject, ...a.patch } };
-    case "newProject/submitted":
-      return { ...s, newProject: { ...s.newProject, open: false, code: "", name: "", deviceId: "" } };
-    case "attach/open":
-      return { ...s, attach: { open: true, deviceId: a.deviceId } };
-    case "attach/set":
-      return { ...s, attach: { ...s.attach, ...a.patch } };
     case "deploy/set":
       return { ...s, deploy: { ...s.deploy, ...a.patch } };
     case "fleet/set":
@@ -384,19 +316,6 @@ export function fieldSetters(dispatch: (a: WorkspaceAction) => void) {
     setEditorMode: (v: "code" | "visual") => dispatch({ type: "editorMode/set", mode: v }),
     setDiffBaseId: (v: number) => dispatch({ type: "diff/setBase", artifactId: v }),
     setDiffCompareId: (v: number) => dispatch({ type: "diff/setCompare", artifactId: v }),
-    setNpOpen: (v: boolean) => dispatch({ type: "newProject/set", patch: { open: v } }),
-    setNpCode: (v: string) => dispatch({ type: "newProject/set", patch: { code: v } }),
-    setNpName: (v: string) => dispatch({ type: "newProject/set", patch: { name: v } }),
-    setNpKind: (v: Kind) => dispatch({ type: "newProject/set", patch: { kind: v } }),
-    setNpDeviceId: (v: string) => dispatch({ type: "newProject/set", patch: { deviceId: v } }),
-    setAttachOpen: (v: boolean) => dispatch({ type: "attach/set", patch: { open: v } }),
-    setAttachDeviceId: (v: string) => dispatch({ type: "attach/set", patch: { deviceId: v } }),
-    setSymOpen: (v: boolean) => dispatch({ type: "sym/set", patch: { open: v } }),
-    setSymName: (v: string) => dispatch({ type: "sym/set", patch: { name: v } }),
-    setSymAddr: (v: string) => dispatch({ type: "sym/set", patch: { addr: v } }),
-    setSymType: (v: string) => dispatch({ type: "sym/set", patch: { type: v } }),
-    setSymComment: (v: string) => dispatch({ type: "sym/set", patch: { comment: v } }),
-    setSymWatchable: (v: boolean) => dispatch({ type: "sym/set", patch: { watchable: v } }),
     setDeployStage: (v: Stage) => dispatch({ type: "deploy/set", patch: { stage: v } }),
     setSignOff: (v: boolean) => dispatch({ type: "deploy/set", patch: { signOff: v } }),
     setApproverId: (v: string) => dispatch({ type: "deploy/set", patch: { approverId: v } }),

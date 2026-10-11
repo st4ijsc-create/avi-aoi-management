@@ -572,3 +572,86 @@ describe("H fix 1 — Copilot khi shell gập panel phải vì thiếu chỗ", (
     }
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 8 task P1 — sheet "Lưu POU vào project" lên FlyoutHost: `?flyout=pou-save` (F5/deep link dựng lại), Back
+// đóng, form còn dữ liệu (dự án mới đã gõ mã/tên) ⇒ hỏi "Bỏ thay đổi chưa lưu?"; lưu xong ⇒ lớp đóng, URL sạch.
+describe("Đợt 8 P1 — sheet POU trên FlyoutHost", () => {
+  const params = () => new URLSearchParams(window.location.search);
+  const layer = () => document.querySelector('[data-flyout-key="pou-save"]') as HTMLElement | null;
+  const unsaved = () => document.querySelector("[data-unsaved-confirm]") as HTMLElement | null;
+  const opener = () => within(header()).getByRole("button", { name: /Lưu vào project/ });
+
+  it("mở ⇒ ?flyout=pou-save (giữ ?projectId); Lưu phiên bản ⇒ ĐÚNG MỘT createArtifact, lớp đóng, URL sạch", async () => {
+    seed();
+    mutationResponses["programming.createArtifact"] = () => ({ id: 99, version: 4 });
+    window.history.replaceState({}, "", "/pou-studio?projectId=5");
+    renderPage();
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    expect(params().getAll("flyout")).toEqual(["pou-save"]);
+    expect(params().get("projectId")).toBe("5");
+    await act(async () => { fireEvent.click(within(layer()!).getByRole("button", { name: /^Lưu phiên bản$/ })); });
+    expect(mutateCalls["programming.createArtifact"]).toHaveLength(1);
+    expect(mutateCalls["programming.createArtifact"][0]).toMatchObject({ projectId: 5, branch: "main", language: "pou-json" });
+    await waitFor(() => expect(layer()).toBeNull());
+    expect(unsaved()).toBeNull();
+    expect(params().get("flyout")).toBeNull();
+    expect(params().get("projectId")).toBe("5");
+  });
+
+  it("F5 / deep link ?flyout=pou-save ⇒ lớp dựng lại; Dự án mới + gõ mã ⇒ Esc hỏi; Tiếp tục sửa giữ chữ; Tạo & lưu ⇒ createProject rồi createArtifact, lớp đóng", async () => {
+    seed();
+    mutationResponses["programming.createProject"] = () => ({ id: 12, code: "MC", name: "Motor" });
+    mutationResponses["programming.createArtifact"] = () => ({ id: 100, version: 1 });
+    window.history.replaceState({}, "", "/pou-studio?flyout=pou-save&flyoutId=");
+    renderPage();
+    await waitFor(() => expect(layer()).not.toBeNull());
+    fireEvent.click(within(layer()!).getByRole("button", { name: /^Project mới$/ }));
+    fireEvent.change(within(layer()!).getByLabelText("Mã project"), { target: { value: "MC" } });
+    fireEvent.keyDown(layer()!, { key: "Escape" });
+    await waitFor(() => expect(unsaved()).not.toBeNull());
+    fireEvent.click(within(unsaved()!).getByRole("button", { name: "Tiếp tục sửa" }));
+    await waitFor(() => expect(unsaved()).toBeNull());
+    expect(within(layer()!).getByLabelText("Mã project")).toHaveValue("MC");
+    fireEvent.change(within(layer()!).getByLabelText("Tên project"), { target: { value: "Motor" } });
+    await act(async () => { fireEvent.click(within(layer()!).getByRole("button", { name: /^Tạo project & lưu$/ })); });
+    expect(mutateCalls["programming.createProject"]).toEqual([{ code: "MC", name: "Motor", kind: "iec61131-pou" }]);
+    expect(mutateCalls["programming.createArtifact"]).toHaveLength(1);
+    expect(mutateCalls["programming.createArtifact"][0]).toMatchObject({ projectId: 12 });
+    await waitFor(() => expect(layer()).toBeNull());
+    expect(unsaved()).toBeNull();
+    expect(params().get("flyout")).toBeNull();
+  });
+
+  it("Back đóng lớp không dữ liệu; Esc đóng ⇒ focus về nút đã mở; lưu THẤT BẠI ⇒ lớp GIỮ mở", async () => {
+    seed();
+    renderPage();
+    opener().focus();
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    await act(async () => { window.history.back(); });
+    await waitFor(() => expect(layer()).toBeNull());
+    expect(unsaved()).toBeNull();
+    opener().focus();
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    fireEvent.keyDown(layer()!, { key: "Escape" });
+    await waitFor(() => expect(layer()).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener()));
+    // chưa chọn dự án ⇒ toast lỗi, không gọi server, lớp giữ mở
+    fireEvent.click(opener());
+    await waitFor(() => expect(layer()).not.toBeNull());
+    await act(async () => { fireEvent.click(within(layer()!).getByRole("button", { name: /^Lưu phiên bản$/ })); });
+    expect(mutateCalls["programming.createArtifact"]).toBeUndefined();
+    await nghiP();
+    expect(layer()).not.toBeNull();
+    expect(params().getAll("flyout")).toEqual(["pou-save"]);
+  });
+
+  it("mã nguồn: không còn <Sheet open=…> tự quản trong trang", () => {
+    expect(PAGE_SRC).not.toMatch(/<Sheet\s+open=/);
+    expect(PAGE_SRC).toMatch(/<FlyoutHost\b/);
+  });
+});
+const nghiP = () => act(() => new Promise((r) => setTimeout(r, 30)));

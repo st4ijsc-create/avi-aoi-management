@@ -3859,7 +3859,8 @@
       "workstation": "trạm làm việc",
       "yieldAlertThreshold": "ngưỡng cảnh báo hiệu suất",
       "zone": "vùng (zone)",
-      "kbGoldenSet": "bộ câu hỏi vàng"
+      "kbGoldenSet": "bộ câu hỏi vàng",
+      "safetyPlcConfig": "cấu hình safety-PLC"
     },
     "operation": {
       "softwareStop": "gửi lệnh dừng phần mềm",
@@ -4019,7 +4020,9 @@
       "releaseRecipeVersion": "phát hành phiên bản công thức",
       "rollbackRecipeVersion": "quay lui phiên bản công thức",
       "assignEngineeringItem": "giao việc chờ duyệt",
-      "unassignEngineeringItem": "bỏ giao việc chờ duyệt"
+      "unassignEngineeringItem": "bỏ giao việc chờ duyệt",
+      "approveSafetyPlcConfig": "duyệt cấu hình safety-PLC",
+      "rejectSafetyPlcConfig": "từ chối cấu hình safety-PLC"
     },
     "field": {
       "settingKey": "Khoá cài đặt",
@@ -4253,7 +4256,9 @@
       "sendTechmanConsoleVerb": "gửi lệnh console start/reset/pause tới robot Techman",
       "sendUrScript": "gửi URScript tuỳ ý tới robot UR",
       "overrideUrHome": "tự đặt vị trí home cho robot UR",
-      "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
+      "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình",
+      "selfApproveSafetyPlcConfig": "quyết định trên cấu hình safety-PLC do chính bạn tạo hoặc sửa",
+      "secondApproveOwnSafetyPlcConfig": "duyệt lần hai một cấu hình safety-PLC mà chính bạn đã duyệt lần đầu (cần hai quản trị viên khác nhau)"
     },
     "robotRefusal": {
       "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
@@ -4365,7 +4370,7 @@
       "interlockRuleChanged": "Quy tắc đã bị sửa kể từ lúc bạn mở trang — danh sách đã được tải lại. Xem nội dung mới rồi duyệt/bật lại.",
       "runGateChanged": "Lượt chạy không còn chờ ở bước bạn đang xem (bước đó đã được người khác quyết định). Tải lại để xem bước đang chờ hiện tại.",
       "definitionChanged": "Quy trình đã được triển khai lại sau khi màn hình của bạn được tải — hãy tải lại và xem nội dung hiện tại trước khi duyệt.",
-      "bindingChanged": "Cấu hình thiết bị mà lượt duyệt này bao phủ (adapter, tag hoặc robot của các lệnh) đã thay đổi sau khi màn hình của bạn được tải, hoặc không đọc được — hãy tải lại và xem lại trước khi duyệt.",
+      "bindingChanged": "Cấu hình thiết bị mà lượt duyệt này bao phủ (adapter, tag hoặc robot của các lệnh, hoặc chương trình trong một bộ điều khiển) đã thay đổi sau khi màn hình của bạn được tải, hoặc không đọc được — hãy tải lại và xem lại trước khi duyệt.",
       "workflowTargetsOutOfScope": "Quy trình chạm tới máy hoặc robot nằm ngoài phạm vi nhà máy của bạn (kể cả bước DỪNG) — chỉ người có phạm vi bao gồm chúng mới xoá được.",
       "scopeUnverified": "Chưa xác minh được phạm vi nhà máy của bạn — hãy thử lại sau giây lát. Để dừng thiết bị ngay, dùng nút DỪNG / DỪNG KHẨN trực tiếp của máy.",
       "refAmbiguous": "Nhiều quy trình bạn thấy được cùng dùng ref này (ở các phạm vi nhà máy khác nhau) — mở quy trình từ danh sách rồi thao tác từ đó.",
@@ -4379,7 +4384,10 @@
       "assignmentChanged": "Người được giao vừa bị người khác đổi. Tải lại để xem người được giao hiện tại.",
       "alreadyAssignedToUser": "Mục này đã được giao cho người này.",
       "assignmentStoreMissing": "Chưa bật được giao việc: cơ sở dữ liệu chưa được cập nhật (cần quản trị viên).",
-      "assigneeInvalid": "Người được giao không hợp lệ: người này không có trong danh sách \"Giao cho\" của mục này (không tồn tại, đã bị vô hiệu hoá, không xem được trang của mục, không cùng nhà máy với mục, hoặc — với lần chạy — không xem được mọi máy/robot mà lần chạy điều khiển). Hãy chọn người trong danh sách."
+      "assigneeInvalid": "Người được giao không hợp lệ: người này không có trong danh sách \"Giao cho\" của mục này (không tồn tại, đã bị vô hiệu hoá, không xem được trang của mục, không cùng nhà máy với mục, hoặc — với lần chạy — không xem được mọi máy/robot mà lần chạy điều khiển). Hãy chọn người trong danh sách.",
+      "safetyPlcConfigChanged": "Cấu hình đã bị sửa sau khi hiện cho bạn — tải lại, xem nội dung mới và mã digest rồi quyết định lại.",
+      "simPlcConfigNeverTrusted": "Cấu hình safety-PLC mô phỏng (sim) không bao giờ được tin cậy — không có gì để duyệt.",
+      "plcTrustMigrationMissing": "Cơ sở dữ liệu chưa áp migration 0368 (duyệt hai người cho safety-PLC) — chưa lưu gì. Hãy nhờ quản trị viên áp migration này."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -11941,8 +11949,8 @@
     "deployOutOfScope": "Chưa triển khai: bước {{steps}} chạm tới máy, robot hoặc adapter nằm ngoài phạm vi nhà máy của bạn (triển khai xét MỌI bước, kể cả bước DỪNG). Hãy nhờ người có phạm vi bao gồm chúng triển khai.",
     "runRefusedDefinition": "Chưa chạy — workflow đã triển khai không qua một kiểm tra an toàn:",
     "definitionChangedReload": "Định nghĩa quy trình đã thay đổi kể từ khi bạn mở mục duyệt này — hãy tải lại trang và xem lại trước khi duyệt.",
-    "bindingChangedReload": "Cấu hình thiết bị mà lượt duyệt này bao phủ (adapter, tag hoặc robot của các lệnh) đã thay đổi kể từ khi bạn mở mục duyệt — hãy tải lại trang và xem lại trước khi duyệt.",
-    "bindingUnknown": "Không đọc được cấu hình thiết bị mà lượt duyệt này bao phủ — chưa thể duyệt cho tới khi đọc được. Hãy thử lại sau giây lát.",
+    "bindingChangedReload": "Cấu hình thiết bị mà lượt duyệt này bao phủ (adapter, tag hoặc robot của các lệnh, hoặc chương trình trong một bộ điều khiển) đã thay đổi kể từ khi bạn mở mục duyệt — hãy tải lại trang và xem lại trước khi duyệt.",
+    "bindingUnknown": "Không đọc được cấu hình thiết bị (hoặc checksum chương trình của một bộ điều khiển) mà lượt duyệt này bao phủ — chưa thể duyệt cho tới khi đọc được. Hãy thử lại sau giây lát.",
     "scopeUnverified": "Chưa xác minh được phạm vi nhà máy — hãy thử lại. Để dừng thiết bị ngay, dùng nút DỪNG / DỪNG KHẨN trực tiếp của máy.",
     "abortHint": "Huỷ: các bước KHÔNG phải DỪNG còn lại bị bỏ qua. Nếu lượt chạy đã tác động lên máy, các bước DỪNG còn lại và các bước bù trừ DỪNG đến hạn vẫn được gửi.",
     "abortDone": "Đã huỷ lượt chạy #{{id}}. Đã bỏ qua các bước không phải DỪNG; số bước DỪNG máy đã xác nhận nhận được: {{sent}}.",
@@ -11961,9 +11969,17 @@
     "abortStopsPending": "{{count}} bước DỪNG đã giao cho máy nhưng chưa có trả lời — xem các bước của lượt chạy.",
     "rejectHint": "Từ chối: lượt chạy bị huỷ. Các bước KHÔNG phải DỪNG còn lại bị bỏ qua; nếu lượt chạy đã tác động lên máy, các bước DỪNG còn lại và các bước bù trừ DỪNG đến hạn vẫn được gửi.",
     "gateRequiredOwnerApproved": "Chưa gửi: bước duyệt trước lệnh này do chính người khởi động lượt chạy duyệt nên không được tính. Chạy lượt mới và nhờ người khác duyệt.",
-    "gateRequiredStale": "Chưa gửi: sau khi bước duyệt được duyệt, quy trình đã được triển khai lại hoặc cấu hình adapter, tag hay robot mà các lệnh dùng đã thay đổi, nên lần duyệt đó không áp cho thứ sẽ được gửi bây giờ. Chạy lượt mới và duyệt lại.",
+    "gateRequiredStale": "Chưa gửi: sau khi bước duyệt được duyệt, quy trình đã được triển khai lại, cấu hình adapter, tag hay robot mà các lệnh dùng đã thay đổi, hoặc chương trình trong bộ điều khiển mà lượt chạy ghi tới đã thay đổi, nên lần duyệt đó không áp cho thứ sẽ được gửi bây giờ. Chạy lượt mới và duyệt lại.",
     "gateRequiredOwnerUnknown": "Chưa gửi: lượt chạy không xác định được người sở hữu (do hệ thống hoặc khoá API không rõ người tạo khởi động), nên không kiểm được người duyệt riêng. Hãy khởi động lượt chạy bằng tài khoản người dùng.",
     "gateRequiredApiRun": "Chưa gửi: lượt chạy này được khởi động bằng khoá API. Lượt chạy khởi động bằng khoá API không bao giờ gửi lệnh máy hoặc robot nào ngoài lệnh DỪNG, vì không phân biệt được người cầm khoá với người duyệt. Hãy khởi động lượt chạy bằng tài khoản người dùng trong Studio.",
+    "gateRequiredProgramUnreadable": "Chưa gửi: không đọc được checksum chương trình của một bộ điều khiển mà lượt chạy này ghi tới, nên không kiểm được chương trình có còn là chương trình đã được duyệt hay không. Hãy kiểm tra kết nối bộ điều khiển rồi chạy lượt mới.",
+    "programChecksTitle": "Chương trình bộ điều khiển mà lượt duyệt này bao phủ",
+    "programTargetAdapter": "Adapter {{label}}",
+    "programTargetRobot": "Robot {{label}}",
+    "programVerified": "Đã xác minh chương trình (checksum {{checksum}})",
+    "programSimulation": "(mô phỏng — không phải bộ điều khiển thật)",
+    "programUnverifiable": "Không xác minh được chương trình trên bộ điều khiển này",
+    "programUnreadable": "Không đọc được checksum chương trình — chưa thể duyệt cho tới khi đọc được (hãy kiểm tra kết nối bộ điều khiển).",
     "approverRolesLabel": "Vai trò duyệt",
     "noGatePrompt": "Tác giả không soạn nội dung nhắc cho bước này.",
     "rejectReason": "Lý do từ chối (tùy chọn)",
@@ -15999,6 +16015,8 @@
     "symbolSaved": "Đã lưu biến",
     "symbolDeleted": "Đã xóa biến",
     "symbolDesc": "Một tag/biến của thiết bị để theo dõi (watch) trong Online Monitor",
+    "symbolNotFound": "Không tìm thấy biến #{{id}} trong dự án đang mở.",
+    "symbolLoadError": "Không tải được danh sách biến — thử lại sau (chưa sửa gì).",
     "deleteSymbolConfirm": "Xóa biến này?",
     "deleteSymbolTitle": "Xóa biến khỏi bảng tag?",
     "deleteSymbolDesc": "Biến này sẽ bị gỡ khỏi bảng tag và không còn được theo dõi. Không thể hoàn tác.",
@@ -16028,6 +16046,7 @@
     "detachDevice": "Gỡ gắn thiết bị",
     "attachDeviceTitle": "Gắn thiết bị nguồn",
     "attachDeviceDesc": "Chọn máy làm nguồn đọc cho \"{{name}}\". Sau khi gắn, badge Nguồn chuyển sang thiết bị và có thể Theo dõi trực tiếp.",
+    "attachProjectNotFound": "Không tìm thấy dự án #{{id}}.",
     "deviceAttached": "Đã cập nhật thiết bị nguồn",
     "noVersions": "Chưa có phiên bản — soạn rồi lưu bên dưới",
     "planned": "sắp có",
@@ -17556,10 +17575,18 @@
     "evt": {
       "collision": "Va chạm",
       "estop": "E-stop",
+      "estop_released": "Đã nhả E-stop",
       "force_limit": "Giới hạn lực",
       "intrusion": "Xâm nhập",
       "near_miss": "Suýt sự cố",
-      "speed_violation": "Vi phạm tốc độ"
+      "plc_offline": "PLC an toàn mất kết nối (không rõ trạng thái)",
+      "plc_online": "PLC an toàn kết nối lại",
+      "speed_violation": "Vi phạm tốc độ",
+      "zone_intrusion": "Xâm nhập vùng",
+      "reset_required": "Cần reset (PLC an toàn)",
+      "muting_active": "Đang muting (PLC an toàn)",
+      "plc_monitor_stale": "Giám sát PLC an toàn bị ngưng",
+      "plc_events_lost": "Mất sự kiện PLC an toàn"
     },
     "feedEmpty": "Chưa ghi nhận sự kiện an toàn nào. Luồng này chỉ giám sát tư vấn.",
     "feedTitle": "Luồng sự kiện an toàn",
@@ -17660,6 +17687,20 @@
         "socketDown": "Trực tiếp: máy chủ tắt",
         "socketLost": "Mất kết nối trực tiếp",
         "socketConnecting": "Đang nối trực tiếp"
+      },
+      "poller": {
+        "label": "Giám sát PLC chạy nền",
+        "ok": "● đang chạy",
+        "stale": "⚠ NGƯNG — các lần ngắt của PLC an toàn KHÔNG được quan sát",
+        "unknown": "⚠ không rõ trạng thái — coi như đang mù",
+        "noConfig": "○ không có cấu hình đang bật",
+        "off": "○ tắt",
+        "staleCount": "{{n}} cấu hình bị ngưng",
+        "lastPoll": "lần đọc cuối",
+        "okBlind": "⚠ đang đọc, nhưng {{n}} PLC mất kết nối / chưa rõ — các lần ngắt của chúng KHÔNG được theo dõi",
+        "linkOffline": "mất kết nối",
+        "linkUnknown": "chưa rõ",
+        "linkStale": "quá hạn"
       }
     },
     "advisoryChip": "Tư vấn — không phải SIS",
@@ -17687,7 +17728,52 @@
       "collabCountError": "Không đọc được phiên phối hợp"
     },
     "reportProximityShort": "Báo cáo tiệm cận",
-    "testOnly": "Chỉ thử"
+    "testOnly": "Chỉ thử",
+    "plcTrust": {
+      "title": "Tin cậy PLC an toàn (hai người duyệt)",
+      "rule": "E-stop / ngắt cửa bảo vệ của một cấu hình PLC an toàn THẬT chỉ vượt tuỳ chọn tắt thông báo sau khi một quản trị viên thứ hai đã duyệt đúng nội dung (mã digest). Mọi lần sửa xoá duyệt; nguồn gốc không rõ cần hai quản trị viên khác nhau.",
+      "error": "Không đọc được trạng thái duyệt PLC an toàn — coi mọi cấu hình là KHÔNG tin cậy.",
+      "state": {
+        "sim": "SIM — không bao giờ tin cậy",
+        "approved": "Đã duyệt — tin cậy",
+        "pending": "Chưa duyệt — thông báo thường",
+        "awaitingSecond": "Đã duyệt lần đầu — chờ quản trị viên thứ hai",
+        "rejected": "Bị từ chối — thông báo thường"
+      },
+      "blocked": {
+        "self": "Bạn đã sửa cấu hình này kể từ lần duyệt trước — một quản trị viên khác phải quyết định.",
+        "firstApprover": "Bạn đã duyệt lần đầu — một quản trị viên khác phải duyệt lần hai (bạn vẫn có thể từ chối)."
+      },
+      "needsTwo": "Nguồn gốc không rõ — cần hai quản trị viên khác nhau duyệt.",
+      "digest": "digest",
+      "approve": "Duyệt…",
+      "reject": "Từ chối…",
+      "reviewAria": "Xem lại trước khi quyết định",
+      "reviewDigest": "Bạn đang quyết định trên đúng nội dung này (digest do server tính):",
+      "endpoint": "Địa chỉ",
+      "reasonPlaceholder": "Vì sao từ chối cấu hình này? (bắt buộc)",
+      "reasonAria": "Lý do từ chối",
+      "confirmApprove": "Xác nhận duyệt",
+      "confirmReject": "Xác nhận từ chối",
+      "approvedToast": "Đã duyệt — các lần ngắt thật của PLC này nay được tin cậy",
+      "firstToast": "Đã ghi lần duyệt đầu — một quản trị viên khác cũng phải duyệt",
+      "rejectedToast": "Đã từ chối — các lần ngắt của PLC này vẫn là thông báo thường",
+      "unavailable": {
+        "migrationMissing": "Không duyệt được: cơ sở dữ liệu chưa áp migration 0368. Mọi cấu hình safety-PLC thật đều KHÔNG được tin cậy (thông báo thường) và không thể tạo, sửa hay duyệt cho tới khi quản trị viên áp migration.",
+        "unreadable": "Hiện không đọc được trạng thái duyệt — mọi cấu hình safety-PLC thật được coi là KHÔNG tin cậy; chưa thể quyết định cho tới khi đọc được."
+      },
+      "target": {
+        "label": "Đích (sự kiện được gán vào đây)",
+        "robot": "robot",
+        "station": "trạm",
+        "line": "chuyền",
+        "factory": "nhà máy",
+        "scope": "phạm vi",
+        "corporate": "tập đoàn",
+        "enabled": "đang bật",
+        "disabled": "đang tắt"
+      }
+    }
   },
   "sessionSignoff": {
     "shift": "Ca",

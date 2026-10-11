@@ -167,8 +167,11 @@ describe("Đợt 5 F6 fix 1 — safety-critical bypass dedup throttle (60 s per 
 
   it("★ fix scan (R-5-h): the throttle state is bounded (never above SAFETY_CRITICAL_DEDUP_MAX), and still delivers", async () => {
     DB.prefs = opted;
+    // Re-pinned 2026-10-11 (doc 81 Đợt 8 N fix 1, owner decision I1 item 4): a GLOBAL per-recipient cap (6 bypasses / min)
+    // now downgrades a burst to ONE recipient beyond 6 — by design. The bound of THIS map is measured across distinct
+    // recipients (each within its own cap), so every notice still bypasses and is delivered.
     for (let i = 0; i < SAFETY_CRITICAL_DEDUP_MAX + 50; i++) {
-      expect(await sendNotification(7, alert, sc(`occ:${i}`))).not.toBeNull();
+      expect(await sendNotification(100_000 + i, alert, sc(`occ:${i}`))).not.toBeNull();
       expect(_safetyCriticalDedupSizeForTests()).toBeLessThanOrEqual(SAFETY_CRITICAL_DEDUP_MAX);
     }
   }, 60_000);

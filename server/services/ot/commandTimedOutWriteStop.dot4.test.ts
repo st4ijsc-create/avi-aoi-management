@@ -386,7 +386,7 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
     expect(alarm.events).toHaveLength(1);
     expect(alarm.events[0]).toMatchObject({ kind: "ot_stop_unverified", severity: "critical", source: "ot", machineId: 5 });
     expect(alarm.notes).toEqual([expect.objectContaining({ userId: 1, priority: "URGENT", type: "ALERT" })]); // same confirmer ⇒ one recipient
-    expect(alarm.notes[0].opts).toEqual({ safetyCritical: true, dedupKey: expect.stringMatching(/^ot_stop_unverified:machine:5:stop:[0-9]+$/) }); // Đợt 5 F6 + fix 1 (R-5-f) — bypass, throttled per (type, machine)
+    expect(alarm.notes[0].opts).toEqual({ safetyCritical: true, capExempt: "ot_stop_unverified", dedupKey: expect.stringMatching(/^ot_stop_unverified:machine:5:stop:[0-9]+$/) }); // Đợt 5 F6 + fix 1 (R-5-f) — bypass, throttled per (type, machine); Đợt 8 final wave F1 (R-8-d) — exempt from the per-recipient cap
     expect(unverified()).toHaveLength(1);
     const ev = unverified()[0];
     const oldIntent = cmdLog.find((r) => String(r.idempotencyKey ?? "").startsWith("intent:al-run-"));

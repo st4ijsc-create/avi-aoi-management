@@ -746,10 +746,28 @@ export function findQtBusinessStep(ref: string, stepId: string): QtBusinessStep 
  * Missing row, another namespace, not a QT ref, DB error ⇒ null (no handler: the gate waits for a person — fail-closed).
  */
 export async function qtTemplateRefOfRun(run: { workflowId: number }): Promise<string | null> {
+  const t = await resolveQtTemplateOfRun(run);
+  return t.kind === "qt" ? t.ref : null;
+}
+
+/**
+ * doc 81 Đợt 8 task Q3 (re-review N3) — the same lookup, telling a DECIDED "not a QT template run" from "could not tell":
+ *   • `qt`      — the run's workflow row is the GLOBAL row of a QT template ref;
+ *   • `none`    — decided: the row exists and is another namespace's workflow or not a QT ref (no QT handlers / compensations);
+ *   • `unknown` — the lookup failed (no DB, a DB error, migration 0367's "scopeKey" missing) or the row of a run that still
+ *                 exists is gone: it may well be a QT template run. Callers never read it as `none`: the pump runs no handler
+ *                 (the gate waits for a person) and a rejection says its compensations were NOT run (manual action needed).
+ *   doc 81 Đợt 8 final wave (review Q #4) — row gone BUT the run's own `workflowRef` (copied at start) is a string that is
+ *   NOT a QT template ref ⇒ `none` (decided: such a run can never be a QT template run — no false manual-compensation
+ *   alarm). The run's ref unknown (absent / not a string) or a QT ref ⇒ still `unknown` (cannot tell ⇒ fail closed).
+ */
+export type QtTemplateOfRun = { kind: "qt"; ref: string } | { kind: "none" } | { kind: "unknown"; reason: string };
+
+export async function resolveQtTemplateOfRun(run: { workflowId: number; workflowRef?: unknown }): Promise<QtTemplateOfRun> {
   try {
     const { getDb } = await import("../../../db/connection");
     const db = await getDb();
-    if (!db) return null;
+    if (!db) return { kind: "unknown", reason: "no database connection" };
     const { eq } = await import("drizzle-orm");
     const { orchestrationWorkflows } = await import("../../../../drizzle/schema");
     const [wf] = await db
@@ -757,9 +775,13 @@ export async function qtTemplateRefOfRun(run: { workflowId: number }): Promise<s
       .from(orchestrationWorkflows)
       .where(eq(orchestrationWorkflows.id, run.workflowId))
       .limit(1);
-    if (!wf || wf.scopeKey !== "global" || !Object.prototype.hasOwnProperty.call(QT_BUSINESS_STEPS, wf.ref)) return null;
-    return wf.ref;
-  } catch {
-    return null;
+    if (!wf) {
+      if (typeof run.workflowRef === "string" && !Object.prototype.hasOwnProperty.call(QT_BUSINESS_STEPS, run.workflowRef)) return { kind: "none" };
+      return { kind: "unknown", reason: `workflow row ${run.workflowId} of the run not found` };
+    }
+    if (wf.scopeKey !== "global" || !Object.prototype.hasOwnProperty.call(QT_BUSINESS_STEPS, wf.ref)) return { kind: "none" };
+    return { kind: "qt", ref: wf.ref };
+  } catch (err) {
+    return { kind: "unknown", reason: `lookup failed: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300) };
   }
 }

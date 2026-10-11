@@ -101,6 +101,8 @@ import {
 import { cn } from "@/lib/utils";
 // doc 80 Đợt 1 Task 4 (X-01 · SAF-02) — nhãn nguồn dữ liệu + panel sức khoẻ nguồn an toàn.
 import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
+// doc 81 Đợt 8 N fix 1 (I1 item 5) — maker-checker approval of real safety-PLC configs.
+import { SafetyPlcTrustPanel } from "@/components/safety/SafetyPlcTrustPanel";
 
 // ── Typesafe shapes inferred from the safetyRouter output ─────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -126,7 +128,11 @@ type SafetyLiveEvent = {
 type ProximityInput = { deviceId?: number; stationId?: number; distance: number; confidence: number; source: "vision" | "manual" | "test" };
 type StartCollabInput = { operationCode?: string; humanOperatorId?: number; robotDeviceId?: number; taskId?: number };
 
-const EVENT_TYPES = ["estop", "collision", "intrusion", "force_limit", "speed_violation", "near_miss"] as const;
+// doc 81 Đợt 8 N fix 1 (M6) — the filter also offers the zone evaluator's and the background safety-PLC poller's types.
+const EVENT_TYPES = [
+  "estop", "collision", "intrusion", "zone_intrusion", "force_limit", "speed_violation", "near_miss",
+  "estop_released", "reset_required", "muting_active", "plc_offline", "plc_online", "plc_monitor_stale", "plc_events_lost",
+] as const;
 const COLLAB_PHASES = ["human_prep", "robot_work", "human_verify", "done"] as const;
 const FEED_LIMIT = 200;
 
@@ -149,6 +155,16 @@ function eventTypeBadge(eventType: string, t: (k: string, f: string) => string) 
     force_limit: { cls: "bg-amber-500 text-white", label: t("safety.evt.force_limit", "Force limit") },
     speed_violation: { cls: "bg-yellow-500 text-black", label: t("safety.evt.speed_violation", "Speed violation") },
     near_miss: { cls: "bg-violet-500 text-white", label: t("safety.evt.near_miss", "Near-miss") },
+    // doc 81 Đợt 8 N2 — background safety-PLC poller transitions (+ the existing zone evaluator type, unlabelled until now)
+    // M6 — generic (also raised by the vision zone evaluator); the poller's notes say "guard / light curtain".
+    zone_intrusion: { cls: "bg-orange-600 text-white", label: t("safety.evt.zone_intrusion", "Zone intrusion") },
+    reset_required: { cls: "bg-amber-600 text-white", label: t("safety.evt.reset_required", "Reset required (safety PLC)") },
+    muting_active: { cls: "bg-yellow-600 text-black", label: t("safety.evt.muting_active", "Muting active (safety PLC)") },
+    plc_monitor_stale: { cls: "bg-red-700 text-white", label: t("safety.evt.plc_monitor_stale", "Safety-PLC monitoring stale") },
+    plc_events_lost: { cls: "bg-red-800 text-white", label: t("safety.evt.plc_events_lost", "Safety-PLC events lost") },
+    estop_released: { cls: "bg-emerald-600 text-white", label: t("safety.evt.estop_released", "E-stop released") },
+    plc_offline: { cls: "bg-slate-600 text-white", label: t("safety.evt.plc_offline", "Safety PLC offline (status unknown)") },
+    plc_online: { cls: "bg-sky-600 text-white", label: t("safety.evt.plc_online", "Safety PLC back online") },
   };
   const e = map[eventType] ?? { cls: "", label: eventType };
   return e.cls ? <Badge className={e.cls}>{e.label}</Badge> : <Badge variant="outline">{eventType}</Badge>;
@@ -1037,6 +1053,7 @@ function SidePanel() {
         isError={ctx.sourceError}
         socketConnected={ctx.socketConnected}
       />
+      <SafetyPlcTrustPanel enabled />
       <Tabs value={ctx.sideTab} onValueChange={(v) => ctx.setSideTab(v as SideTab)} className="gap-2">
         <TabsList className="w-full">
           <TabsTrigger value="trend" className="flex-1 text-xs"><ScanLine className="mr-1 h-3.5 w-3.5" />{t("safety.side.trend", "Trend")}</TabsTrigger>
@@ -1314,6 +1331,32 @@ function SafetySourcePanel({
       ? t("safety.source.socketConnected", "● connected")
       : t("safety.source.socketDisconnected", "○ disconnected");
   const plcRisky = RISKY_BASIS.has(plc.basis);
+  // doc 81 Đợt 8 N fix scan 2/3 (R-8-b/c) — background monitoring health (durable rows; stale / unknown never look healthy).
+  const poller = data.plcPoller;
+  // doc 81 Đợt 8 final wave NF-3 — a PLC whose link is offline / unknown (or whose monitoring is stale) is BLIND even while the
+  // poller itself is alive: listed per PLC, and the line is an alert (never "● alive" while one is blind).
+  const blindPlcs = (poller?.configs ?? [])
+    .map((c) => ({ code: c.code, kind: c.stale ? ("stale" as const) : c.link === "online" ? null : c.link === "offline" ? ("offline" as const) : ("unknown" as const) }))
+    .filter((c): c is { code: string; kind: "stale" | "offline" | "unknown" } => c.kind !== null);
+  const pollerBad = poller?.state === "stale" || poller?.state === "unknown" || (poller?.state === "ok" && blindPlcs.length > 0);
+  const linkText = (k: "stale" | "offline" | "unknown") =>
+    k === "stale"
+      ? t("safety.source.poller.linkStale", "stale")
+      : k === "offline"
+        ? t("safety.source.poller.linkOffline", "offline")
+        : t("safety.source.poller.linkUnknown", "unknown");
+  const pollerText = (() => {
+    switch (poller?.state) {
+      case "ok":
+        return blindPlcs.length > 0
+          ? t("safety.source.poller.okBlind", "⚠ polling, but {{n}} PLC(s) offline / unknown — their trips are NOT being observed", { n: blindPlcs.length })
+          : t("safety.source.poller.ok", "● alive");
+      case "stale": return t("safety.source.poller.stale", "⚠ STALE — safety-PLC trips are NOT being observed");
+      case "unknown": return t("safety.source.poller.unknown", "⚠ state unknown — treat monitoring as blind");
+      case "no_config": return t("safety.source.poller.noConfig", "○ no enabled config");
+      default: return t("safety.source.poller.off", "○ off");
+    }
+  })();
 
   return (
     <div
@@ -1346,6 +1389,27 @@ function SafetySourcePanel({
           <span className="text-muted-foreground">+{plc.hiddenConfigs} {t("safety.source.hiddenConfigs", "outside your scope")}</span>
         )}
       </div>
+      {poller && (
+        <div
+          data-testid="safety-source-poller"
+          data-state={poller.state}
+          role={pollerBad ? "alert" : undefined}
+          className={pollerBad ? "font-medium text-destructive" : "text-muted-foreground"}
+        >
+          {t("safety.source.poller.label", "Background PLC monitoring")} {pollerText}
+          {poller.staleConfigs > 0 && <> · {t("safety.source.poller.staleCount", "{{n}} config(s) stale", { n: poller.staleConfigs })}</>}
+          {poller.lastPollAt && <> · {t("safety.source.poller.lastPoll", "last poll")} {new Date(poller.lastPollAt).toLocaleTimeString()}</>}
+          {blindPlcs.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-x-2">
+              {blindPlcs.map((c) => (
+                <span key={c.code} data-testid="safety-source-poller-plc" data-link={c.kind} className="font-mono">
+                  {c.code}: {linkText(c.kind)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div data-testid="safety-source-rule" className="text-muted-foreground">
         {t("safety.source.rule", "Rule: a commissioned target needs a REAL safety PLC with mapped safety tags — SIM or unmapped configs never satisfy the preflight; a bad-quality safety tag counts as unknown.")}
       </div>

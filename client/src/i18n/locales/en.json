@@ -3859,7 +3859,8 @@
       "workstation": "workstation",
       "yieldAlertThreshold": "yield alert threshold",
       "zone": "zone",
-      "kbGoldenSet": "golden question set"
+      "kbGoldenSet": "golden question set",
+      "safetyPlcConfig": "safety-PLC configuration"
     },
     "operation": {
       "softwareStop": "send the software stop",
@@ -4019,7 +4020,9 @@
       "releaseRecipeVersion": "release recipe version",
       "rollbackRecipeVersion": "roll back recipe version",
       "assignEngineeringItem": "assign the pending item",
-      "unassignEngineeringItem": "unassign the pending item"
+      "unassignEngineeringItem": "unassign the pending item",
+      "approveSafetyPlcConfig": "approve safety-PLC configuration",
+      "rejectSafetyPlcConfig": "reject safety-PLC configuration"
     },
     "field": {
       "settingKey": "Setting key",
@@ -4253,7 +4256,9 @@
       "sendTechmanConsoleVerb": "send a start/reset/pause console command to a Techman robot",
       "sendUrScript": "send arbitrary URScript to a UR robot",
       "overrideUrHome": "set the home pose of a UR robot from the command",
-      "selfApproveProgramVersion": "approve your own program version"
+      "selfApproveProgramVersion": "approve your own program version",
+      "selfApproveSafetyPlcConfig": "decide on a safety-PLC configuration you created or edited",
+      "secondApproveOwnSafetyPlcConfig": "give the second approval of a safety-PLC configuration you approved first (two different admins are required)"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4373,7 +4378,7 @@
       "interlockRuleChanged": "The rule was changed after you opened the page — the list has been reloaded. Review the new content, then approve/enable again.",
       "runGateChanged": "The run is no longer waiting at the step you were viewing (someone else already decided it). Reload to see the step it is waiting at now.",
       "definitionChanged": "The workflow was redeployed after your screen loaded — reload and review the current definition before approving.",
-      "bindingChanged": "The device configuration this approval covers (adapter, tags or robot of its commands) changed after your screen loaded, or could not be read — reload and review it before approving.",
+      "bindingChanged": "The device configuration this approval covers (adapter, tags or robot of its commands, or the program in a controller) changed after your screen loaded, or could not be read — reload and review it before approving.",
       "workflowTargetsOutOfScope": "The workflow touches machines or robots outside your factory scope (stop steps included) — only someone whose scope covers them can delete it.",
       "scopeUnverified": "Your factory scope could not be verified — retry in a moment. To stop equipment now, use the machine's direct STOP / E-STOP.",
       "refAmbiguous": "Several workflows you can see use this ref (in different factory scopes) — open the workflow from the list and act on it from there.",
@@ -4387,7 +4392,10 @@
       "assignmentChanged": "Someone else just changed the assignee. Reload to see the current assignee.",
       "alreadyAssignedToUser": "This item is already assigned to this person.",
       "assignmentStoreMissing": "Assignment is not available yet: the database has not been updated (ask an administrator).",
-      "assigneeInvalid": "The assignee is not valid: this person is not in this item's \"Assign to\" list (does not exist, is disabled, cannot view the item's page, does not share a factory with the item, or — for a run — cannot see every machine or robot the run controls). Pick someone from the list."
+      "assigneeInvalid": "The assignee is not valid: this person is not in this item's \"Assign to\" list (does not exist, is disabled, cannot view the item's page, does not share a factory with the item, or — for a run — cannot see every machine or robot the run controls). Pick someone from the list.",
+      "safetyPlcConfigChanged": "The configuration changed after it was shown to you — reload, review the new content and its digest, then decide again.",
+      "simPlcConfigNeverTrusted": "A simulated (sim) safety-PLC configuration is never trusted — there is nothing to approve.",
+      "plcTrustMigrationMissing": "Migration 0368 (safety-PLC maker-checker) is not applied on this database — nothing was saved. Ask an administrator to apply it."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -11961,8 +11969,8 @@
     "deployOutOfScope": "Not deployed: step(s) {{steps}} touch a machine, robot or adapter outside your factory scope (a deploy covers every step, stop steps included). Ask someone whose scope covers them to deploy it.",
     "runRefusedDefinition": "Run not started — the deployed workflow fails a safety check:",
     "definitionChangedReload": "The workflow definition changed since you opened this approval — reload the page and review it before approving.",
-    "bindingChangedReload": "The device configuration this approval covers (adapter, tags or robot of its commands) changed since you opened it — reload the page and review it before approving.",
-    "bindingUnknown": "The device configuration this approval covers could not be read — approval is not possible until it can. Retry in a moment.",
+    "bindingChangedReload": "The device configuration this approval covers (adapter, tags or robot of its commands, or the program in a controller) changed since you opened it — reload the page and review it before approving.",
+    "bindingUnknown": "The device configuration this approval covers (or the program checksum of a controller) could not be read — approval is not possible until it can. Retry in a moment.",
     "scopeUnverified": "Scope not verified — retry. To stop equipment now, use the machine's direct STOP / E-STOP.",
     "abortHint": "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.",
     "abortDone": "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.",
@@ -11981,9 +11989,17 @@
     "abortStopsPending": "{{count}} STOP step(s) handed to the machine, answer not received yet — see the run's steps.",
     "rejectHint": "Reject: the run is aborted. The remaining non-STOP steps are skipped; if the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.",
     "gateRequiredOwnerApproved": "Not sent: the approval gate before this command was approved by the person who started the run, which does not count. Start a new run and have another user approve the gate.",
-    "gateRequiredStale": "Not sent: after the gate was approved, the workflow was redeployed or the adapter, tag or robot configuration its commands use was changed, so that approval does not cover what would be sent now. Start a new run and have the gate approved again.",
+    "gateRequiredStale": "Not sent: after the gate was approved, the workflow was redeployed or the adapter, tag or robot configuration its commands use was changed, or the program in a controller it writes to was changed, so that approval does not cover what would be sent now. Start a new run and have the gate approved again.",
     "gateRequiredOwnerUnknown": "Not sent: this run has no known owner (started by the system or by an API key with no creating user), so a separate approval cannot be checked. Start the run as a user.",
     "gateRequiredApiRun": "Not sent: this run was started through an API key. A run started through an API key never sends machine or robot commands other than a STOP, because the person holding the key cannot be told apart from the approver. Start the run as a user in the Studio.",
+    "gateRequiredProgramUnreadable": "Not sent: the program checksum of a controller this run writes to could not be read, so it cannot be checked that the program is still the one that was approved. Check the controller connection and start a new run.",
+    "programChecksTitle": "Controller programs covered by this approval",
+    "programTargetAdapter": "Adapter {{label}}",
+    "programTargetRobot": "Robot {{label}}",
+    "programVerified": "Program verified (checksum {{checksum}})",
+    "programSimulation": "(simulation — not a real controller)",
+    "programUnverifiable": "Program cannot be verified on this controller",
+    "programUnreadable": "Program checksum could not be read — approval is not possible until it can (check the controller connection).",
     "approverRolesLabel": "Approver roles",
     "noGatePrompt": "The author did not write a prompt for this step.",
     "rejectReason": "Reject reason (optional)",
@@ -16019,6 +16035,8 @@
     "symbolSaved": "Symbol saved",
     "symbolDeleted": "Symbol deleted",
     "symbolDesc": "A device tag/variable to watch in the Online Monitor",
+    "symbolNotFound": "Variable #{{id}} was not found in the open project.",
+    "symbolLoadError": "Could not load the variable list — try again later (nothing was changed).",
     "deleteSymbolConfirm": "Delete this symbol?",
     "deleteSymbolTitle": "Remove symbol from tag table?",
     "deleteSymbolDesc": "This symbol will be removed from the tag table and no longer watched. This cannot be undone.",
@@ -16048,6 +16066,7 @@
     "detachDevice": "Detach device",
     "attachDeviceTitle": "Attach source device",
     "attachDeviceDesc": "Pick a machine as the read source for \"{{name}}\". Once attached, the Source badge switches to the device and you can start live monitoring.",
+    "attachProjectNotFound": "Project #{{id}} was not found.",
     "deviceAttached": "Source device updated",
     "noVersions": "No versions yet — compose then save below",
     "planned": "coming soon",
@@ -17576,10 +17595,18 @@
     "evt": {
       "collision": "Collision",
       "estop": "E-stop",
+      "estop_released": "E-stop released",
       "force_limit": "Force limit",
       "intrusion": "Intrusion",
       "near_miss": "Near-miss",
-      "speed_violation": "Speed violation"
+      "plc_offline": "Safety PLC offline (status unknown)",
+      "plc_online": "Safety PLC back online",
+      "speed_violation": "Speed violation",
+      "zone_intrusion": "Zone intrusion",
+      "reset_required": "Reset required (safety PLC)",
+      "muting_active": "Muting active (safety PLC)",
+      "plc_monitor_stale": "Safety-PLC monitoring stale",
+      "plc_events_lost": "Safety-PLC events lost"
     },
     "feedEmpty": "No safety events recorded. This feed is advisory monitoring only.",
     "feedTitle": "Safety event feed",
@@ -17680,6 +17707,20 @@
         "socketDown": "Live: server down",
         "socketLost": "Live feed lost",
         "socketConnecting": "Live connecting"
+      },
+      "poller": {
+        "label": "Background PLC monitoring",
+        "ok": "● alive",
+        "stale": "⚠ STALE — safety-PLC trips are NOT being observed",
+        "unknown": "⚠ state unknown — treat monitoring as blind",
+        "noConfig": "○ no enabled config",
+        "off": "○ off",
+        "staleCount": "{{n}} config(s) stale",
+        "lastPoll": "last poll",
+        "okBlind": "⚠ polling, but {{n}} PLC(s) offline / unknown — their trips are NOT being observed",
+        "linkOffline": "offline",
+        "linkUnknown": "unknown",
+        "linkStale": "stale"
       }
     },
     "advisoryChip": "Advisory — not a SIS",
@@ -17707,7 +17748,52 @@
       "collabCountError": "Could not read collaboration sessions"
     },
     "reportProximityShort": "Report proximity",
-    "testOnly": "Test only"
+    "testOnly": "Test only",
+    "plcTrust": {
+      "title": "Safety-PLC trust (maker-checker)",
+      "rule": "A REAL safety-PLC config's e-stop / guard trips bypass notification opt-outs only after a second admin approved its exact content (digest). Any edit clears the approval; unknown provenance needs two different admins.",
+      "error": "Could not read the safety-PLC approvals — treat every config as NOT trusted.",
+      "state": {
+        "sim": "SIM — never trusted",
+        "approved": "Approved — trusted",
+        "pending": "Not approved — normal notices",
+        "awaitingSecond": "First approval given — awaiting a second admin",
+        "rejected": "Rejected — normal notices"
+      },
+      "blocked": {
+        "self": "You changed this config since its last approval — another admin must decide.",
+        "firstApprover": "You gave the first approval — a different admin must give the second (you may still reject it)."
+      },
+      "needsTwo": "Unknown provenance — needs approvals from two different admins.",
+      "digest": "digest",
+      "approve": "Approve…",
+      "reject": "Reject…",
+      "reviewAria": "Review before deciding",
+      "reviewDigest": "You are deciding on this exact content (server digest):",
+      "endpoint": "Endpoint",
+      "reasonPlaceholder": "Why is this config rejected? (required)",
+      "reasonAria": "Rejection reason",
+      "confirmApprove": "Confirm approval",
+      "confirmReject": "Confirm rejection",
+      "approvedToast": "Approved — this PLC's real trips are now trusted",
+      "firstToast": "First approval recorded — a different admin must approve too",
+      "rejectedToast": "Rejected — this PLC's trips stay normal notices",
+      "unavailable": {
+        "migrationMissing": "Approvals are unavailable: database migration 0368 is not applied. Every real safety-PLC config is NOT trusted (normal notices) and cannot be created, edited or approved until an administrator applies it.",
+        "unreadable": "The approval state cannot be read right now — every real safety-PLC config is treated as NOT trusted; no decision is possible until it can be read."
+      },
+      "target": {
+        "label": "Target (events are attributed here)",
+        "robot": "robot",
+        "station": "station",
+        "line": "line",
+        "factory": "factory",
+        "scope": "scope",
+        "corporate": "corporate",
+        "enabled": "enabled",
+        "disabled": "disabled"
+      }
+    }
   },
   "sessionSignoff": {
     "shift": "Shift",
