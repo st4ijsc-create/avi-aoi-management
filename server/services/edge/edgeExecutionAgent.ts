@@ -1,41 +1,52 @@
 /**
- * doc 81 Đợt 9 task S3 (owner decision 2026-10-12, "edge workflow execution — do it fully") — the EDGE half: the agent the
- * edge gateway runs (server/edge/edgeGatewayMain.ts → edgeGatewayRuntime, flag EDGE_EXECUTION_ENABLED, default OFF).
+ * doc 81 Đợt 10 task E (design §2.3, §2.8–2.10, §2.14) — the EDGE half of run execution, protocol v2: the edge holds NO
+ * central DB login. Every EDGE_PULL_INTERVAL_MS it asks central (`POST /api/v1/edge/node/pull`, its node credential):
  *
- * Every EDGE_PULL_INTERVAL_MS it asks central (`POST /api/v1/edge/node/pull`, its OWN node credential) for the runs assigned to
- * it, and for each one:
- *   1. checks locally that the snapshot central handed out is the one it will execute: the snapshot's hash = the assignment's
- *      defHash = the hash of the workflow row in ITS database under the same id (ID mapping — an edge whose DB is not the
- *      central DB, or a different workflow under that id, never claims), and reads ITS binding digest of that definition (its
- *      own drivers read the controllers' program checksums) — unreadable ⇒ not claimed. Final wave F2: read only here (right
- *      before the claim), never on every pull; a refused run is retried with a bounded exponential back-off;
- *   2. claims it with that digest (central's compare-and-set; central reads ITS digest fresh at the claim and refuses a
- *      mismatch; a claim token only this walker holds);
- *   3. walks THE CENTRAL RUN through the shared engine (foeEngine.driveEdgeClaimedRun): the SAME gates as central (approval
- *      with the Group R identity rule, binding digest, program checksum, R-4-x, STOP exemptions) through the edge's own
- *      dispatchers; before every NON-STOP command the engine asks the run guard (edgeRunGuard: claim current, credential
- *      active, central has not stopped the run — read from the run row, so it holds even when HTTP is down);
- *   4. reports progress every EDGE_ABORT_POLL_MS (claim-bound, strictly increasing sequence) — an answer with
- *      `abortRequested`, or a run guard reading 'stopped' when central cannot be reached, aborts the LOCAL walker through the
- *      shared engine: its non-STOP steps stop at once, its remaining STOP steps and due STOP compensations are still SENT
- *      (Đợt 6 sweep), a STOP already on its way finishes. A run is never moved out of 'aborted' (the engine's writes are
- *      conditional) — never resurrected;
- *   5. reports the segment's end (`complete`; retried until central takes it). A claim it cannot execute is `release`d.
+ *   1. COMMANDS (signed `typ cmd`, verified with the node's own trust store): `stop` is sent to the owned device at once — even
+ *      when its signature does not verify (L-7: the failure is an anomaly, the STOP still goes), when central sent it UNSIGNED
+ *      because its signer is unavailable (R-10-k: acknowledged), and when it is overdue (never discarded for its age; one
+ *      execution per (requestId, target)); `lock` needs a valid signature;
+ *      `clear` raises energy ⇒ valid signature, not expired, the owner epoch of the config and a generation match
+ *      (compare-and-clear). Every command is acknowledged on the `events` stream.
+ *   2. CLAIMS: `abortRequested` aborts the local walker (non-STOP steps stop, STOPs still sent); a stale claim with no walker
+ *      here is declared interrupted (→ held; a restart forgets every claim token by design).
+ *   3. STOPS UNCONFIRMED: a run central aborted after its segment here, whose STOPs central could not confirm, comes with a
+ *      SIGNED sweep picture; its verified STOPs not yet confirmed are re-sent from HERE (at most once per EDGE_STOP_RESEND_MIN_MS).
+ *      An unverifiable picture still yields STOPs — robot aborts and OT stops with the pins of the VERIFIED config, never pins
+ *      from the unverified message.
+ *   4. RUNS: claim (CAS + token) with this node's latest program checks ⇒ a SIGNED run package, verified (node, run, claim,
+ *      defHash = hash of the shipped definition) ⇒ `driveEdgeRunFromPackage` (group C) with the edge store's IO: the report
+ *      sink (journal → central), single-use consumption, the per-step authorize client. Nothing is claimed without a verified
+ *      config, a walker, room in the journal (a full journal admits no new non-STOP work) or below maxConcurrent.
+ *   5. PROGRESS every EDGE_ABORT_POLL_MS (claim-bound sequence) — `abortRequested` ⇒ local abort, `commands` handled as in 1.
+ *   6. SEGMENT END: the run stream is shipped first, then `complete {outcome, epoch, reportedThrough}` (retried until central
+ *      takes it). A claim it cannot execute is released.
  *
- * OFFLINE (central unreachable): no pull ⇒ NO new run is started (nothing is claimed without central). A run already walking
- * goes on, its non-STOP steps still gated by the run guard: a central abort written to the run row stops them even offline;
- * once the abort is known, only STOP steps and STOP compensations go out. Limits (said in docs/EDGE_GATEWAY.md):
- *   • if the DATABASE is unreachable too, the guard cannot decide ⇒ every further non-STOP command is refused (the run fails
- *     and compensates; its STOPs still go) — the edge cannot act on a run it cannot read;
- *   • a central abort that only lives in central's memory (never written) cannot reach the edge — central's abort always
- *     writes the row first, so this is the DB-unreachable case above;
- *   • the agent restarting mid-walk loses the walker: the claim goes stale and is declared interrupted (→ 'held', a person
- *     may Continue) — the run is never re-walked silently.
- * The credential is never logged; HTTP errors are logged by status code only.
+ * REMOVED (design §1b): the local check of the workflow row (ID mapping), the local binding digest, the local run status and
+ * the run-guard fallback — the edge reads no DB. OFFLINE: no pull ⇒ nothing claimed; a walking run's next non-STOP step cannot
+ * be authorised ⇒ HELD (D5), its STOPs still go. The credential is never logged.
  */
 import { promises as fs } from "node:fs";
-import { createHash } from "node:crypto";
+import type { EdgeAuthorizeClient, EdgeCentralClient, EdgeVerifiedCommand } from "./edgeCentralClient";
+import { edgeTrustAdapter, verifyCommands, verifyRunPackage } from "./edgeCentralClient";
+import type { EdgeConfigSource } from "./edgeConfigSource";
+import type { EdgeJournal } from "./edgeJournal";
 import { EDGE_NODE_TOKEN_RE } from "./edgeNodeCredentials";
+import {
+  EDGE_HELD_REASONS,
+  edgeRunStream,
+  edgeSweepPictureSchema,
+  type EdgeCommand,
+  type EdgeHeldReason,
+  type EdgeProgramCheck,
+  type EdgeRunPackage,
+  type EdgeSweepPicture,
+  type EdgeVerifiedStop,
+} from "./edgeProtocol";
+import { parseEdgeCanonicalJson, type EdgeTrustStore } from "./edgeSigning";
+import type { EdgeJournalConsume, EdgeProgramChecks, EdgeReportSink, EdgeStreamShipper } from "./edgeStreams";
+
+// ── configuration ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 export interface EdgeAgentConfig {
   centralUrl: string;
@@ -46,15 +57,16 @@ export interface EdgeAgentConfig {
   requestTimeoutMs: number;
   /** minimum time between two STOP re-sends of one aborted run (default 10 s) */
   stopResendMinMs: number;
-  /**
-   * doc 81 Đợt 9 final wave F2 — upper bound of the per-run claim back-off (default 120 s): a run this edge could not claim (its
-   * local checks refused it, or central refused the claim) is retried after pullInterval × 2^failures, capped here — never a
-   * full device-configuration read (S7 block info) on every pull.
-   */
+  /** upper bound of the per-run claim back-off (default 120 s) */
   claimBackoffMaxMs?: number;
   fetchImpl?: typeof fetch;
-  /** test seam — the clock of the claim back-off */
+  /** test seam — the clock of the back-off / re-send intervals */
   now?: () => number;
+  /**
+   * false ⇒ COMMANDS-ONLY (EDGE_EXECUTION_ENABLED off): the agent still pulls, so a central STOP / lock / clear of an
+   * edge-owned device and the STOP re-sends reach this node — but it never claims a run.
+   */
+  claimRuns?: boolean;
 }
 
 const clampInt = (raw: string | undefined, dflt: number, min: number, max: number) => {
@@ -63,26 +75,13 @@ const clampInt = (raw: string | undefined, dflt: number, min: number, max: numbe
 };
 
 /**
- * The agent's configuration from the environment, or why it cannot start (it then starts NOTHING — fail-closed).
- * doc 81 Đợt 9 S fix (security scan "secret-exposure") — the node credential is read ONLY from a FILE
- * (EDGE_NODE_CREDENTIAL_FILE — a compose file-based secret, docs/EDGE_GATEWAY.md §8.2), never from an env var, a label or a log.
- * On POSIX the file must not be readable / writable by group or others (mode & 0o077 === 0) — otherwise the gateway REFUSES to
- * start execution. Windows has no POSIX mode: a warning tells the operator to restrict it with an ACL (icacls).
+ * The node credential, read ONLY from a FILE (EDGE_NODE_CREDENTIAL_FILE — a compose file-based secret), never from an env
+ * var, a label or a log. POSIX: the file must not be readable / writable by group or others. Windows: a warning (icacls).
  */
-export async function edgeExecutionConfigFromEnv(
+export async function readEdgeNodeCredential(
   env: NodeJS.ProcessEnv = process.env,
   host: { platform?: NodeJS.Platform; stat?: (p: string) => Promise<{ mode: number; isFile(): boolean }>; warn?: (msg: string) => void } = {},
-): Promise<EdgeAgentConfig | { error: string }> {
-  if (env.EDGE_EXECUTION_ENABLED !== "true" && env.EDGE_EXECUTION_ENABLED !== "1") return { error: "EDGE_EXECUTION_ENABLED is off" };
-  if (env.FOE_ENABLED !== "true" && env.FOE_ENABLED !== "1") return { error: "FOE_ENABLED is off on this edge (the engine is needed to execute runs)" };
-  if (env.EDGE_RUNTIME_ENABLED !== "true" && env.EDGE_RUNTIME_ENABLED !== "1") return { error: "EDGE_RUNTIME_ENABLED is off" };
-  let url: URL;
-  try {
-    url = new URL(String(env.EDGE_CENTRAL_URL ?? ""));
-  } catch {
-    return { error: "EDGE_CENTRAL_URL is not a URL (e.g. https://central.example:3000)" };
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return { error: "EDGE_CENTRAL_URL must be http(s)" };
+): Promise<{ credential: string } | { error: string }> {
   if (env.EDGE_NODE_CREDENTIAL) return { error: "EDGE_NODE_CREDENTIAL (a secret in an environment variable) is not accepted — use EDGE_NODE_CREDENTIAL_FILE" };
   const file = String(env.EDGE_NODE_CREDENTIAL_FILE ?? "").trim();
   if (!file) return { error: "EDGE_NODE_CREDENTIAL_FILE is not set" };
@@ -92,9 +91,7 @@ export async function edgeExecutionConfigFromEnv(
     const st = await (host.stat ?? fs.stat)(file);
     if (!st.isFile()) return { error: "EDGE_NODE_CREDENTIAL_FILE is not a file" };
     if (platform !== "win32") {
-      if ((st.mode & 0o077) !== 0) {
-        return { error: `EDGE_NODE_CREDENTIAL_FILE is readable or writable by group / others (mode ${(st.mode & 0o777).toString(8)}) — chmod 600 it` };
-      }
+      if ((st.mode & 0o077) !== 0) return { error: `EDGE_NODE_CREDENTIAL_FILE is readable or writable by group / others (mode ${(st.mode & 0o777).toString(8)}) — chmod 600 it` };
     } else {
       (host.warn ?? ((m: string) => console.warn(m)))(
         "[EdgeExec] Windows: the node credential file's permissions cannot be checked here — restrict it to the gateway's account (icacls <file> /inheritance:r /grant:r <account>:R)",
@@ -105,9 +102,36 @@ export async function edgeExecutionConfigFromEnv(
     return { error: "EDGE_NODE_CREDENTIAL_FILE cannot be read" };
   }
   if (!EDGE_NODE_TOKEN_RE.test(credential)) return { error: "EDGE_NODE_CREDENTIAL_FILE holds no valid node credential" };
+  return { credential };
+}
+
+/** EDGE_CENTRAL_URL as an http(s) URL without a trailing slash, or why not. */
+export function edgeCentralUrlFromEnv(env: NodeJS.ProcessEnv = process.env): { url: string } | { error: string } {
+  let url: URL;
+  try {
+    url = new URL(String(env.EDGE_CENTRAL_URL ?? ""));
+  } catch {
+    return { error: "EDGE_CENTRAL_URL is not a URL (e.g. https://central.example:3000)" };
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return { error: "EDGE_CENTRAL_URL must be http(s)" };
+  return { url: url.toString().replace(/\/+$/, "") };
+}
+
+/** The agent's configuration from the environment, or why it cannot start (it then starts NOTHING — fail-closed). */
+export async function edgeExecutionConfigFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  host: { platform?: NodeJS.Platform; stat?: (p: string) => Promise<{ mode: number; isFile(): boolean }>; warn?: (msg: string) => void } = {},
+): Promise<EdgeAgentConfig | { error: string }> {
+  if (env.EDGE_EXECUTION_ENABLED !== "true" && env.EDGE_EXECUTION_ENABLED !== "1") return { error: "EDGE_EXECUTION_ENABLED is off" };
+  if (env.FOE_ENABLED !== "true" && env.FOE_ENABLED !== "1") return { error: "FOE_ENABLED is off on this edge (the engine is needed to execute runs)" };
+  if (env.EDGE_RUNTIME_ENABLED !== "true" && env.EDGE_RUNTIME_ENABLED !== "1") return { error: "EDGE_RUNTIME_ENABLED is off" };
+  const u = edgeCentralUrlFromEnv(env);
+  if ("error" in u) return u;
+  const c = await readEdgeNodeCredential(env, host);
+  if ("error" in c) return c;
   return {
-    centralUrl: url.toString().replace(/\/+$/, ""),
-    credential,
+    centralUrl: u.url,
+    credential: c.credential,
     pullIntervalMs: clampInt(env.EDGE_PULL_INTERVAL_MS, 5000, 200, 300_000),
     progressMs: clampInt(env.EDGE_ABORT_POLL_MS, 2000, 50, 60_000),
     maxConcurrent: clampInt(env.EDGE_MAX_CONCURRENT_RUNS, 4, 1, 32),
@@ -120,22 +144,90 @@ export async function edgeExecutionConfigFromEnv(
 /** The principal an edge-side abort is recorded under (never a person). */
 export const EDGE_AGENT_ABORT_USER = { id: 0, role: "system", name: "edge: central abort" } as const;
 
-type Http = { ok: true; status: number; data: any } | { ok: false; status: number; code: string | null; data?: any };
+// ── the ports this agent drives (implemented by groups C and D; fakes in tests) ─────────────────────────────────────
+
+/** Everything the edge run store (group C, edge/edgeRunStore.ts) needs for ONE claimed segment. */
+export interface EdgeRunIo {
+  runId: number;
+  claimSeq: number;
+  claimToken: string;
+  /** journal-backed reports of this run stream + events */
+  sink: EdgeReportSink;
+  /** single use of authorisations (fsynced before the driver call), admission of new non-STOP work */
+  consume: EdgeJournalConsume;
+  /** per non-STOP command step (design §2.5) */
+  authorize: EdgeAuthorizeClient;
+  trust: () => EdgeTrustStore;
+  config: EdgeConfigSource;
+  programChecks: () => EdgeProgramCheck[];
+  /** aborted when central says abortRequested (or the agent stops the run): the walker sweeps locally */
+  signal: AbortSignal;
+}
+
+/** The segment outcome a walker returns (maps 1:1 onto POST complete). */
+export type EdgeSegmentOutcome =
+  | { outcome: "completed" }
+  | { outcome: "failed"; error?: string }
+  | { outcome: "aborted" }
+  | { outcome: "paused"; gateStepId: string }
+  | { outcome: "held"; heldReason: EdgeHeldReason; error?: string }
+  /** the package cannot be executed here: the claim is released, nothing was sent */
+  | { refused: string };
+
+export interface EdgeWalker {
+  /** foeEngine.driveEdgeRunFromPackage(pkg, claim, createEdgeRunStore(io)) — group C */
+  drive(pkg: EdgeRunPackage, io: EdgeRunIo): Promise<EdgeSegmentOutcome>;
+  /** abort the live walker of a run (its STOP sweep runs locally) */
+  abortLive(runId: number): Promise<{ live: boolean }>;
+  /**
+   * the engine's STOP re-send of a VERIFIED sweep picture (foeEngine.resendStopsOfAbortedRun + edgeRunStore's sweep store):
+   * the outcome of each STOP is reported as a `stop` event (no claim exists any more). Absent ⇒ the device port re-sends.
+   */
+  resendStops?(picture: EdgeSweepPicture, sink: EdgeReportSink): Promise<{ sent: number; failed: number }>;
+}
+
+export type EdgeStopOutcome = { outcome: "sent" | "failed" | "simulated"; detail?: string };
+/** Device actions central's commands ask for (group D's edge dispatch implements it; defaultEdgeDevicePort meanwhile). */
+export interface EdgeDevicePort {
+  stopRobot(robotId: number, why: string): Promise<EdgeStopOutcome>;
+  /** pins null ⇒ the STOP pins of the VERIFIED config */
+  stopAdapter(adapterId: number, pins: Array<{ tagKey: string; value: unknown }> | null, why: string): Promise<EdgeStopOutcome>;
+  lockRobot(robotId: number, reason: string): Promise<{ ok: boolean; generation: number | null; detail?: string }>;
+  clearRobot(robotId: number, expectedGeneration: number, clearedBy: number, reason: string): Promise<{ ok: true; generation: number } | { ok: false; reason: "generation_mismatch" | "no_driver" | "error"; generation: number | null }>;
+}
+
+export interface EdgeAgentDeps {
+  client: EdgeCentralClient;
+  config: EdgeConfigSource;
+  journal: EdgeJournal;
+  shipper: EdgeStreamShipper;
+  sink: EdgeReportSink;
+  consume: EdgeJournalConsume;
+  authorize: EdgeAuthorizeClient;
+  programChecks: EdgeProgramChecks;
+  walker: EdgeWalker | null;
+  devices: EdgeDevicePort;
+  /** foeGateApproval.hashWorkflowDefinition (injected: this module stays DB-free) */
+  hashDefinition: (def: Record<string, unknown>) => string;
+}
+
+// ── agent ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 interface Segment {
   runId: number;
   claimSeq: number;
   token: string;
-  tokenHash: string;
   seq: number;
   aborted: boolean;
+  controller: AbortController;
   done: Promise<void>;
 }
 interface PendingComplete {
   runId: number;
   claimSeq: number;
   token: string;
-  status: string;
+  seq: number;
+  outcome: Exclude<EdgeSegmentOutcome, { refused: string }>;
 }
 
 export interface TickReport {
@@ -146,6 +238,7 @@ export interface TickReport {
   skipped: Array<{ runId: number; why: string }>;
   interrupted: number[];
   aborted: number[];
+  commands: Array<{ requestId: number | null; kind: string; outcome: string }>;
 }
 
 export class EdgeExecutionAgent {
@@ -155,15 +248,27 @@ export class EdgeExecutionAgent {
   private readonly pending = new Map<number, PendingComplete>();
   private online: boolean | null = null;
   private readonly warned = new Map<number, string>();
-  /** run id → when this agent last re-sent its unconfirmed STOPs (bounded retry of a STOP central could not confirm). */
   private readonly resentAt = new Map<number, number>();
-  /** doc 81 Đợt 9 final wave F2 — run id → claim back-off after a refused local check / claim (failures, next attempt time). */
   private readonly claimBackoff = new Map<number, { failures: number; nextAt: number }>();
+  /** requestId → kind of commands already executed (central re-delivers until acknowledged) */
+  private readonly handled = new Map<number, string>();
+  /** STOPs already executed, by (requestId, target): a STOP is de-duplicated by its request, never discarded for its age
+   *  (R-10-k), and an unverified copy can never suppress a genuine STOP of ANOTHER device under the same requestId */
+  private readonly stopsDone = new Set<string>();
+  private stopped = false;
 
-  constructor(private readonly cfg: EdgeAgentConfig) {}
+  constructor(
+    private readonly cfg: EdgeAgentConfig,
+    private readonly deps: EdgeAgentDeps,
+  ) {}
+
+  private now(): number {
+    return (this.cfg.now ?? Date.now)();
+  }
 
   start(): void {
     if (this.timer) return;
+    this.stopped = false;
     this.timer = setInterval(() => {
       void this.tick().catch(() => undefined);
     }, this.cfg.pullIntervalMs);
@@ -173,41 +278,18 @@ export class EdgeExecutionAgent {
 
   /** Stops pulling. Walkers already running finish their segment (their runs are not aborted by a shutdown). */
   async stop(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     if (this.ticking) await this.ticking.catch(() => undefined);
   }
 
-  /** Runs walking on this agent now (central run ids). */
   liveRunIds(): number[] {
     return [...this.segments.keys()];
   }
 
-  /** Resolves once every walker started so far has finished its segment and reported (tests / shutdown). */
   async idle(): Promise<void> {
     while (this.segments.size > 0) await Promise.allSettled([...this.segments.values()].map((s) => s.done));
-  }
-
-  private async post(path: string, body: unknown): Promise<Http> {
-    const f = this.cfg.fetchImpl ?? fetch;
-    try {
-      const res = await f(`${this.cfg.centralUrl}/api/v1${path}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${this.cfg.credential}` },
-        body: JSON.stringify(body ?? {}),
-        signal: AbortSignal.timeout(this.cfg.requestTimeoutMs),
-      });
-      let json: any = null;
-      try {
-        json = await res.json();
-      } catch {
-        json = null;
-      }
-      if (res.ok && json?.ok === true) return { ok: true, status: res.status, data: json.data };
-      return { ok: false, status: res.status, code: json?.error?.code ?? null, data: json?.error?.details };
-    } catch {
-      return { ok: false, status: 0, code: null }; // network / timeout — never the credential in a log line
-    }
   }
 
   private warnOnce(runId: number, why: string): void {
@@ -216,7 +298,10 @@ export class EdgeExecutionAgent {
     console.warn(`[EdgeExec] run ${runId}: ${why}`);
   }
 
-  /** One pull + work cycle. Overlapping calls share the cycle in flight. */
+  private anomaly(code: string, runId: number | null, detail: string): void {
+    void this.deps.sink.event({ kind: "anomaly", code, runId, detail: detail.slice(0, 1_000), at: this.now() }).catch(() => undefined);
+  }
+
   tick(): Promise<TickReport> {
     if (this.ticking) return this.ticking;
     this.ticking = this.tickOnce().finally(() => {
@@ -226,11 +311,12 @@ export class EdgeExecutionAgent {
   }
 
   private async tickOnce(): Promise<TickReport> {
-    const report: TickReport = { online: false, claimed: [], stopsResent: [], skipped: [], interrupted: [], aborted: [] };
-    const pulled = await this.post("/edge/node/pull", {});
+    const report: TickReport = { online: false, claimed: [], stopsResent: [], skipped: [], interrupted: [], aborted: [], commands: [] };
+    const { client, config } = this.deps;
+    const pulled = await client.post("pull", {});
     if (!pulled.ok) {
       if (this.online !== false) {
-        console.warn(`[EdgeExec] central not reachable / refused the node (HTTP ${pulled.status || "network"}): no new run is started; runs already walking go on, gated by the run guard`);
+        console.warn(`[EdgeExec] central not reachable / refused the node (HTTP ${pulled.status || "network"}${pulled.code ? ` ${pulled.code}` : ""}): no new run is started; a walking run's next non-STOP step is held (STOPs still go)`);
       }
       this.online = false;
       return report;
@@ -238,157 +324,353 @@ export class EdgeExecutionAgent {
     if (this.online !== true) console.log("[EdgeExec] central reachable — pulling assigned runs");
     this.online = true;
     report.online = true;
-    // 1) segment ends central has not taken yet
-    for (const p of [...this.pending.values()]) await this.sendComplete(p);
-    // 2) the node's current claims: abort live walkers central stopped; declare interrupted the ones with no walker here
-    for (const c of (pulled.data?.claims ?? []) as Array<{ runId: number; claimSeq: number; abortRequested: boolean; stale: boolean }>) {
+    const p = pulled.data;
+    // 0) a newer config / keyset ⇒ fetch + verify it before acting on anything signed
+    if (p.configVersion > config.version() || p.keysetVersion > config.trust().version) await config.refresh();
+    if (p.programCheckRequested) void this.deps.programChecks.report().catch(() => undefined);
+    // 1) commands — STOP first, whatever else happens
+    report.commands.push(...(await this.handleCommands([...p.commands, ...unsignedStopsOf(p)])));
+    // 2) segment ends central has not taken yet
+    for (const pc of [...this.pending.values()]) await this.sendComplete(pc);
+    // 3) the node's current claims
+    for (const c of p.claims) {
       const seg = this.segments.get(c.runId);
       if (seg) {
-        if (c.abortRequested && (await this.applyAbort(seg))) report.aborted.push(c.runId);
+        if (c.abortRequested && (await this.abortSegment(seg))) report.aborted.push(c.runId);
         continue;
       }
       if (this.pending.has(c.runId)) continue;
       if (c.stale) {
-        const r = await this.post(`/edge/node/runs/${c.runId}/interrupted`, { claimSeq: c.claimSeq });
+        const r = await client.post("interrupted", { claimSeq: c.claimSeq }, { runId: c.runId });
         if (r.ok) report.interrupted.push(c.runId);
       }
     }
-    // 2b) L-7 — runs central aborted after their last segment here, with a STOP central could not confirm: re-sent from HERE
-    //     (no walker of them is left, so no signal could reach one). At most once per EDGE_STOP_RESEND_MIN_MS per run.
-    for (const runId of (pulled.data?.stopsUnconfirmed ?? []) as number[]) {
-      if (this.segments.has(runId)) continue;
-      const last = this.resentAt.get(runId);
-      if (last !== undefined && Date.now() - last < this.cfg.stopResendMinMs) continue;
-      this.resentAt.set(runId, Date.now());
-      try {
-        const { resendStopsOfAbortedRun } = await import("../orchestration/foe/foeEngine");
-        const r = await resendStopsOfAbortedRun(runId, { ...EDGE_AGENT_ABORT_USER });
-        report.stopsResent.push(runId);
-        console.warn(`[EdgeExec] run ${runId}: aborted centrally after its segment here — STOPs not confirmed by central re-sent from this node (sent ${r.abortStops?.sent.length ?? 0}, failed ${r.abortStops?.failed.length ?? 0})`);
-      } catch (err) {
-        console.error(`[EdgeExec] run ${runId}: STOP re-send failed — ${(err as Error)?.message ?? err}; use the machine's direct STOP / E-STOP`);
-      }
+    // 4) L-7 — STOPs of runs aborted after their segment here that central could not confirm
+    for (const s of p.stopsUnconfirmed) {
+      if (this.segments.has(s.runId)) continue;
+      const last = this.resentAt.get(s.runId);
+      if (last !== undefined && this.now() - last < this.cfg.stopResendMinMs) continue;
+      this.resentAt.set(s.runId, this.now());
+      await this.resendStops(s.runId, s.picture);
+      report.stopsResent.push(s.runId);
     }
-    // 3) claimable runs
-    // doc 81 Đợt 9 final wave F2 (final review I2) — the device configuration (binding digest: program checksums, an S7 block-info
-    // read per controller) is read ONLY when this edge is about to claim, and a run it could not claim is retried with a bounded
-    // exponential back-off (never every pull). Central holds a run nobody claims within EDGE_UNCLAIMED_HOLD_MS ("edge
-    // unreachable", visible) — so it leaves the pull and the polling ends.
-    const pulledRuns = (pulled.data?.runs ?? []) as Array<Record<string, any>>;
-    const listed = new Set(pulledRuns.map((r) => Number(r.runId)));
+    // 5) claimable runs
+    const listed = new Set(p.runs.map((r) => r.runId));
     for (const id of [...this.claimBackoff.keys()]) if (!listed.has(id)) this.claimBackoff.delete(id);
-    const now = this.cfg.now ?? Date.now;
-    for (const r of pulledRuns) {
+    for (const r of p.runs) {
+      if (this.stopped || this.cfg.claimRuns === false) break;
       if (this.segments.size >= this.cfg.maxConcurrent) break;
-      const runId = Number(r.runId);
-      if (this.segments.has(runId)) continue;
+      const runId = r.runId;
+      if (this.segments.has(runId) || this.pending.has(runId)) continue;
+      const skip = (why: string, backOff = false) => {
+        report.skipped.push({ runId, why });
+        this.warnOnce(runId, `not claimed — ${why}`);
+        if (backOff) this.backOff(runId);
+      };
+      if (r.refused) {
+        skip(`central refused it (${r.refused})`);
+        continue;
+      }
       const back = this.claimBackoff.get(runId);
-      if (back && now() < back.nextAt) {
+      if (back && this.now() < back.nextAt) {
         report.skipped.push({ runId, why: `backing off after ${back.failures} refused attempt(s)` });
         continue;
       }
-      const checked = await this.localCheck(r);
-      if ("why" in checked) {
-        report.skipped.push({ runId, why: checked.why });
-        this.warnOnce(runId, `not claimed — ${checked.why}`);
-        this.backOff(runId);
+      if (!this.deps.walker) {
+        skip("no edge walker is available in this build (driveEdgeRunFromPackage)");
         continue;
       }
-      // the edge's OWN digest, read now; central reads its own fresh at the claim and compares (no digest travels in the pull)
-      const claimed = await this.post(`/edge/node/runs/${runId}/claim`, { claimSeq: r.claimSeq, defHash: r.defHash, bindingDigest: checked.digest });
+      if (config.credentialId() === null) {
+        skip("no verified config yet");
+        continue;
+      }
+      if (!this.deps.consume.admitNonStop()) {
+        skip("the journal is full or unhealthy — no new non-STOP work");
+        continue;
+      }
+      const programChecks = await this.deps.programChecks.readNow().catch(() => [] as EdgeProgramCheck[]);
+      const claimed = await client.post("claim", { claimSeq: r.claimSeq, defHash: r.defHash, programChecks }, { runId });
       if (!claimed.ok) {
-        report.skipped.push({ runId, why: `claim refused (${claimed.code ?? claimed.status})` });
-        this.backOff(runId);
+        skip(`claim refused (${claimed.code ?? claimed.status})`, true);
+        continue;
+      }
+      const v = verifyRunPackage(config.trust(), claimed.data.package, {
+        runId,
+        claimSeq: claimed.data.claimSeq,
+        credentialId: config.credentialId(),
+        defHash: r.defHash,
+        hashDefinition: this.deps.hashDefinition,
+      });
+      if (!v.ok) {
+        this.anomaly("EDGE_RUN_PACKAGE_INVALID", runId, `claim ${claimed.data.claimSeq}: ${v.reason}`);
+        await client.post("release", { claimSeq: claimed.data.claimSeq, claimToken: claimed.data.claimToken, seq: 1, reason: `run package refused (${v.reason})` }, { runId });
+        skip(`run package refused (${v.reason})`, true);
         continue;
       }
       this.claimBackoff.delete(runId);
       this.warned.delete(runId);
       report.claimed.push(runId);
-      this.startSegment(runId, Number(claimed.data.claimSeq), String(claimed.data.claimToken), String(r.defHash));
+      this.startSegment(v.pkg, claimed.data.claimSeq, claimed.data.claimToken);
     }
     return report;
   }
 
-  /** doc 81 Đợt 9 final wave F2 — the next attempt of a refused run: pullInterval × 2^failures, capped (bounded back-off). */
   private backOff(runId: number): void {
-    const now = (this.cfg.now ?? Date.now)();
     const failures = (this.claimBackoff.get(runId)?.failures ?? 0) + 1;
     const cap = this.cfg.claimBackoffMaxMs ?? 120_000;
     const delay = Math.min(cap, this.cfg.pullIntervalMs * 2 ** Math.min(failures, 20));
-    this.claimBackoff.set(runId, { failures, nextAt: now + delay });
+    this.claimBackoff.set(runId, { failures, nextAt: this.now() + delay });
   }
 
-  /** `{ digest }` ⇔ this edge may claim the pulled run (see header, step 1) — its OWN binding digest, read now; else `{ why }`. */
-  private async localCheck(r: Record<string, any>): Promise<{ digest: string } | { why: string }> {
-    const why = (w: string) => ({ why: w });
-    if (r.refused) return why(`central refused it (${r.refused})`);
-    if (!r.definition || typeof r.defHash !== "string") return why("no definition snapshot");
+  // ── commands (design §2.8) ────────────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * R-10-o — every acknowledgement names the device ACTUALLY acted on and the owner epoch the command quoted (central closes
+   * request X only when they are X's), `unsigned: true` for the explicit unsigned-STOP envelope.
+   */
+  private async ack(
+    requestId: number,
+    outcome: "done" | "refused" | "failed" | "expired",
+    generation: number | null,
+    acted: { target: { robotId: number } | { adapterId: number }; ownerEpoch: number; unsigned?: boolean },
+  ): Promise<void> {
+    await this.deps.sink
+      .event({ kind: "command_ack", requestId, outcome, generation, at: this.now(), target: acted.target, ownerEpoch: acted.ownerEpoch, ...(acted.unsigned ? { unsigned: true as const } : {}) })
+      .catch(() => undefined);
+  }
+
+  private async stopTarget(target: { robotId: number } | { adapterId: number }, source: "command" | "anomaly" | "local", requestId: number | null, why: string, pins: Array<{ tagKey: string; value: unknown }> | null = null): Promise<EdgeStopOutcome> {
+    let out: EdgeStopOutcome;
     try {
-      const [{ hashWorkflowDefinition, computeBindingDigest }, { getDb }, { orchestrationWorkflows }, { eq }] = await Promise.all([
-        import("../orchestration/foe/foeGateApproval"),
-        import("../../db/connection"),
-        import("../../../drizzle/schema"),
-        import("drizzle-orm"),
-      ]);
-      if (hashWorkflowDefinition(r.definition) !== r.defHash) return why("the snapshot does not hash to its defHash");
-      const d = await getDb();
-      if (!d) return why("this edge's database is not reachable");
-      const [wf] = await d.select({ id: orchestrationWorkflows.id, definitionJson: orchestrationWorkflows.definitionJson }).from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, Number(r.workflowId))).limit(1);
-      if (!wf || hashWorkflowDefinition(wf.definitionJson as never) !== r.defHash) return why(`workflow ${r.workflowId} in this edge's database is not the assigned snapshot (ID mapping)`);
-      const digest = await computeBindingDigest(d, r.definition);
-      if (digest === null) return why("this edge's view of the device configuration cannot be read");
-      return { digest };
-    } catch {
-      return why("local check failed");
+      out = "robotId" in target ? await this.deps.devices.stopRobot(target.robotId, why) : await this.deps.devices.stopAdapter(target.adapterId, pins, why);
+    } catch (err) {
+      out = { outcome: "failed", detail: (err as Error)?.message ?? String(err) };
     }
+    await this.deps.sink.event({ kind: "stop", target, source, requestId, outcome: out.outcome, at: this.now(), detail: (out.detail ?? why).slice(0, 500) }, { stop: true }).catch(() => undefined);
+    if (out.outcome === "failed") console.error(`[EdgeExec] STOP ${JSON.stringify(target)} FAILED (${why}) — use the machine's direct STOP / E-STOP`);
+    return out;
   }
 
-  private startSegment(runId: number, claimSeq: number, token: string, defHash: string): void {
-    const seg: Segment = { runId, claimSeq, token, tokenHash: createHash("sha256").update(token, "utf8").digest("hex"), seq: 0, aborted: false, done: Promise.resolve() };
+  private ownerEpochOf(c: EdgeCommand): number | null {
+    const cfg = this.deps.config;
+    if (c.kind === "stop") return "robotId" in c.target ? (cfg.robot(c.target.robotId)?.ownerEpoch ?? null) : (cfg.adapter(c.target.adapterId)?.ownerEpoch ?? null);
+    return cfg.robot(c.robotId)?.ownerEpoch ?? null;
+  }
+
+  async handleCommands(envs: readonly unknown[]): Promise<TickReport["commands"]> {
+    const out: TickReport["commands"] = [];
+    if (envs.length === 0) return out;
+    const verified = verifyCommands(this.deps.config.trust(), envs, this.deps.config.credentialId());
+    // STOPs first (L-7): nothing else delays them
+    const order = (v: EdgeVerifiedCommand) => ((v.ok ? v.command.kind : v.unverified?.kind) === "stop" ? 0 : 1);
+    for (const v of [...verified].sort((a, b) => order(a) - order(b))) {
+      try {
+        out.push(await this.handleCommand(v));
+      } catch (err) {
+        console.error(`[EdgeExec] command handling failed: ${(err as Error)?.message ?? err}`);
+      }
+    }
+    return out;
+  }
+
+  private stopKey(requestId: number, target: { robotId: number } | { adapterId: number }): string {
+    return `${requestId}|${"robotId" in target ? `r${target.robotId}` : `a${target.adapterId}`}`;
+  }
+  private rememberStop(key: string): void {
+    this.stopsDone.add(key);
+    if (this.stopsDone.size > 5_000) this.stopsDone.delete(this.stopsDone.values().next().value as string);
+  }
+
+  private async handleCommand(v: EdgeVerifiedCommand): Promise<TickReport["commands"][number]> {
+    if (!v.ok) {
+      const u = v.unverified;
+      const tag = v.unsigned ? "unsigned" : "unverified";
+      if (u?.kind === "stop") {
+        // L-7 / R-10-k: a STOP goes without a valid signature (unsigned on purpose, or a signature that fails) — only to a
+        // device this node owns (its VERIFIED config), once per (requestId, target), whatever its age
+        const owned = "robotId" in u.target ? this.deps.config.ownsRobot(u.target.robotId) : this.deps.config.ownsAdapter(u.target.adapterId);
+        if (!v.unsigned) this.anomaly("EDGE_COMMAND_INVALID", null, `stop command refused by verification (${v.reason}) request ${u.requestId} — STOP sent anyway (L-7)`);
+        if (!owned) return { requestId: null, kind: "stop", outcome: `${tag}:not_owned` };
+        const key = this.stopKey(u.requestId, u.target);
+        if (this.stopsDone.has(key)) return { requestId: v.unsigned ? u.requestId : null, kind: "stop", outcome: "duplicate" };
+        const r = await this.stopTarget(u.target, v.unsigned ? "command" : "anomaly", v.unsigned ? u.requestId : null, `${tag} STOP command (request ${u.requestId})`);
+        // a STOP that could not be executed is NOT remembered: the next delivery retries it (never given up on)
+        if (r.outcome !== "failed") this.rememberStop(key);
+        // only the explicit unsigned-STOP envelope (R-10-p) is acknowledged — with the target ACTUALLY stopped (R-10-o); a STOP
+        // whose signature is missing / fails is evidence only: reported with requestId null, never acknowledged
+        if (v.unsigned && r.outcome !== "failed") await this.ack(u.requestId, "done", null, { target: u.target, ownerEpoch: u.ownerEpoch, unsigned: true });
+        return { requestId: v.unsigned ? u.requestId : null, kind: "stop", outcome: `${tag}:${r.outcome}` };
+      }
+      this.anomaly("EDGE_COMMAND_INVALID", null, `${u?.kind ?? "unparsable"} command refused (${v.reason})${u ? ` request ${u.requestId}` : ""} — only a STOP acts without a valid signature`);
+      return { requestId: null, kind: u?.kind ?? "unknown", outcome: `refused:${v.reason}` };
+    }
+    const c = v.command;
+    const prior = this.handled.get(c.requestId);
+    if (prior !== undefined) return { requestId: c.requestId, kind: c.kind, outcome: "duplicate" };
+    const remember = () => {
+      this.handled.set(c.requestId, c.kind);
+      if (this.handled.size > 2_000) this.handled.delete(this.handled.keys().next().value as number);
+    };
+    const epoch = this.ownerEpochOf(c);
+    if (c.kind === "stop") {
+      // a STOP goes even past its expiry / with a stale owner epoch (L-7, R-10-k: never discarded for its age); the device
+      // must still be this node's
+      if (this.stopsDone.has(this.stopKey(c.requestId, c.target))) {
+        remember();
+        return { requestId: c.requestId, kind: "stop", outcome: "duplicate" };
+      }
+      if (epoch === null) {
+        remember();
+        await this.ack(c.requestId, "refused", null, { target: c.target, ownerEpoch: c.ownerEpoch });
+        return { requestId: c.requestId, kind: "stop", outcome: "refused:not_owned" };
+      }
+      const r = await this.stopTarget(c.target, "command", c.requestId, `central STOP request ${c.requestId}${v.expired ? " (overdue — sent anyway)" : ""}`);
+      if (r.outcome === "failed") return { requestId: c.requestId, kind: "stop", outcome: "failed" }; // not acked: re-delivered, retried
+      this.rememberStop(this.stopKey(c.requestId, c.target));
+      remember();
+      await this.ack(c.requestId, "done", null, { target: c.target, ownerEpoch: c.ownerEpoch });
+      return { requestId: c.requestId, kind: "stop", outcome: r.outcome };
+    }
+    const robotTarget = { robotId: c.robotId };
+    if (epoch === null || epoch !== c.ownerEpoch) {
+      remember();
+      await this.ack(c.requestId, "refused", null, { target: robotTarget, ownerEpoch: c.ownerEpoch });
+      return { requestId: c.requestId, kind: c.kind, outcome: epoch === null ? "refused:not_owned" : "refused:owner_epoch" };
+    }
+    if (c.kind === "lock") {
+      const r = await this.deps.devices.lockRobot(c.robotId, c.reason || `central lock request ${c.requestId}`).catch(() => ({ ok: false, generation: null }));
+      remember();
+      await this.ack(c.requestId, r.ok ? "done" : "failed", r.generation ?? null, { target: robotTarget, ownerEpoch: c.ownerEpoch });
+      return { requestId: c.requestId, kind: "lock", outcome: r.ok ? "done" : "failed" };
+    }
+    // clear — raises energy: valid, in its window, generation match (compare-and-clear)
+    if (v.expired || v.notYetValid) {
+      remember();
+      await this.ack(c.requestId, "expired", null, { target: robotTarget, ownerEpoch: c.ownerEpoch });
+      return { requestId: c.requestId, kind: "clear", outcome: "expired" };
+    }
+    const r = await this.deps.devices.clearRobot(c.robotId, c.expectedGeneration, c.clearedBy, c.reason).catch(() => ({ ok: false as const, reason: "error" as const, generation: null }));
+    remember();
+    if (r.ok) {
+      await this.ack(c.requestId, "done", r.generation, { target: robotTarget, ownerEpoch: c.ownerEpoch });
+      return { requestId: c.requestId, kind: "clear", outcome: "done" };
+    }
+    await this.ack(c.requestId, r.reason === "generation_mismatch" ? "refused" : "failed", r.generation ?? null, { target: robotTarget, ownerEpoch: c.ownerEpoch });
+    return { requestId: c.requestId, kind: "clear", outcome: `refused:${r.reason}` };
+  }
+
+  // ── STOP re-send from the sweep picture (L-7) ─────────────────────────────────────────────────────────────────────
+
+  private async resendStops(runId: number, env: unknown): Promise<void> {
+    const v = edgeTrustAdapter.sweepPicture(this.deps.config.trust(), env, { runId, credentialId: this.deps.config.credentialId() });
+    let stops: EdgeVerifiedStop[];
+    let sentBefore: Set<string>;
+    let verifiedPins = true;
+    if (v.ok && this.deps.walker?.resendStops) {
+      try {
+        const r = await this.deps.walker.resendStops(v.picture, this.deps.sink);
+        console.warn(`[EdgeExec] run ${runId}: aborted centrally after its segment here — STOPs re-sent from this node by the engine sweep (sent ${r.sent}, failed ${r.failed})`);
+        return;
+      } catch (err) {
+        console.error(`[EdgeExec] run ${runId}: engine STOP re-send failed (${(err as Error)?.message ?? err}) — re-sending through the device port`);
+      }
+    }
+    if (v.ok) {
+      stops = v.picture.verifiedStops;
+      sentBefore = new Set(v.picture.prior.abortSentBefore);
+    } else {
+      // unverifiable picture: still STOP — robot aborts, OT stops with the VERIFIED config's pins only (never the message's)
+      this.anomaly("EDGE_SWEEP_PICTURE_INVALID", runId, `sweep picture refused by verification (${v.reason}) — STOPs sent with the config's pins`);
+      verifiedPins = false;
+      let pic: EdgeSweepPicture | null = null;
+      try {
+        const p = edgeSweepPictureSchema.safeParse(parseEdgeCanonicalJson(String((env as { payload?: unknown })?.payload ?? "")));
+        pic = p.success && p.data.runId === runId ? p.data : null;
+      } catch {
+        pic = null;
+      }
+      stops = pic?.verifiedStops ?? [];
+      sentBefore = new Set(pic?.prior.abortSentBefore ?? []);
+    }
+    let sent = 0;
+    let failed = 0;
+    for (const s of stops) {
+      if (sentBefore.has(s.stepId)) continue;
+      const owned = s.kind === "robot" ? this.deps.config.ownsRobot(s.robotId) : this.deps.config.ownsAdapter(s.adapterId);
+      if (!owned) continue;
+      const why = `run ${runId} step ${s.stepId}: STOP re-sent (central could not confirm it)`;
+      const r = s.kind === "robot" ? await this.stopTarget({ robotId: s.robotId }, "local", null, why) : await this.stopTarget({ adapterId: s.adapterId }, "local", null, why, verifiedPins ? s.pins : null);
+      if (r.outcome === "failed") failed++;
+      else sent++;
+    }
+    console.warn(`[EdgeExec] run ${runId}: aborted centrally after its segment here — STOPs re-sent from this node (sent ${sent}, failed ${failed})`);
+  }
+
+  // ── segments ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  private startSegment(pkg: EdgeRunPackage, claimSeq: number, token: string): void {
+    const runId = pkg.runId;
+    const seg: Segment = { runId, claimSeq, token, seq: 1, aborted: false, controller: new AbortController(), done: Promise.resolve() };
     this.segments.set(runId, seg);
-    seg.done = this.runSegment(seg, defHash).finally(() => {
+    this.deps.shipper.setClaim(runId, claimSeq, token);
+    seg.done = this.runSegment(seg, pkg).finally(() => {
       if (this.segments.get(runId) === seg) this.segments.delete(runId);
     });
   }
 
-  private async runSegment(seg: Segment, defHash: string): Promise<void> {
-    const engine = await import("../orchestration/foe/foeEngine");
+  private io(seg: Segment): EdgeRunIo {
+    const d = this.deps;
+    return {
+      runId: seg.runId,
+      claimSeq: seg.claimSeq,
+      claimToken: seg.token,
+      sink: d.sink,
+      consume: d.consume,
+      authorize: d.authorize,
+      trust: () => d.config.trust(),
+      config: d.config,
+      programChecks: () => d.programChecks.latest(),
+      signal: seg.controller.signal,
+    };
+  }
+
+  private async runSegment(seg: Segment, pkg: EdgeRunPackage): Promise<void> {
     const stopWatch = this.watch(seg);
-    let status = "failed";
+    let outcome: EdgeSegmentOutcome;
     try {
-      const out = await engine.driveEdgeClaimedRun(seg.runId, { claimSeq: seg.claimSeq, claimTokenHash: seg.tokenHash, defHash });
-      if (out.refused) {
-        await stopWatch();
-        const r = await this.post(`/edge/node/runs/${seg.runId}/release`, { claimSeq: seg.claimSeq, claimToken: seg.token, seq: ++seg.seq, reason: out.refused });
-        if (!r.ok) console.error(`[EdgeExec] run ${seg.runId}: not executed here (${out.refused}); release not confirmed (HTTP ${r.status || "network"}) — it will be declared interrupted once stale`);
-        return;
-      }
-      status = out.status ?? "failed";
+      outcome = normaliseOutcome(await this.deps.walker!.drive(pkg, this.io(seg)));
     } catch (err) {
       console.error(`[EdgeExec] run ${seg.runId}: walker error — ${(err as Error)?.message ?? err}`);
+      outcome = { outcome: "failed", error: `edge walker error: ${String((err as Error)?.message ?? err).slice(0, 300)}` };
     } finally {
       await stopWatch();
     }
-    await this.sendComplete({ runId: seg.runId, claimSeq: seg.claimSeq, token: seg.token, status }, seg);
+    if ("refused" in outcome) {
+      const r = await this.deps.client.post("release", { claimSeq: seg.claimSeq, claimToken: seg.token, seq: ++seg.seq, reason: outcome.refused.slice(0, 300) }, { runId: seg.runId });
+      if (!r.ok) console.error(`[EdgeExec] run ${seg.runId}: not executed here (${outcome.refused}); release not confirmed (HTTP ${r.status || "network"}) — it will be declared interrupted once stale`);
+      await this.finishStream(seg.runId, seg.claimSeq, "released");
+      return;
+    }
+    await this.sendComplete({ runId: seg.runId, claimSeq: seg.claimSeq, token: seg.token, seq: seg.seq, outcome });
   }
 
-  /** Progress every progressMs; abortRequested (or the run guard reading 'stopped' while central is unreachable) ⇒ local abort. */
+  /** Progress every progressMs (claim-bound sequence); abortRequested ⇒ local abort; commands handled. */
   private watch(seg: Segment): () => Promise<void> {
     let stopped = false;
     let timer: NodeJS.Timeout | null = null;
     let inFlight: Promise<void> | null = null;
     const tick = async () => {
       if (stopped) return;
-      const r = await this.post(`/edge/node/runs/${seg.runId}/progress`, { claimSeq: seg.claimSeq, claimToken: seg.token, seq: ++seg.seq, status: await this.localStatus(seg.runId) });
+      const r = await this.deps.client.post("progress", { claimSeq: seg.claimSeq, claimToken: seg.token, seq: ++seg.seq }, { runId: seg.runId });
       if (stopped) return;
-      if (r.ok ? r.data?.abortRequested === true : r.code === "claim_stale" && r.data?.abortRequested === true) {
-        await this.applyAbort(seg);
-      } else if (!r.ok) {
-        // central unreachable / refusing this node (revoked ⇒ 401, 5xx): the run row still tells (the shared DB) — the walk is
-        // never left blind to an abort written there
-        const { readEdgeRunGuard } = await import("./edgeRunGuard");
-        if ((await readEdgeRunGuard(seg.runId, { claimSeq: seg.claimSeq, claimTokenHash: seg.tokenHash })) === "stopped") await this.applyAbort(seg);
+      if (r.ok) {
+        const cmds = [...r.data.commands, ...unsignedStopsOf(r.data)];
+        if (cmds.length > 0) await this.handleCommands(cmds);
+        if (r.data.abortRequested) await this.abortSegment(seg);
+      } else if (r.code === "claim_stale" && (r.data as { abortRequested?: unknown } | undefined)?.abortRequested === true) {
+        await this.abortSegment(seg);
       }
+      // unreachable: nothing to read locally — the next non-STOP step cannot be authorised (held), STOPs still go
     };
     const schedule = () => {
       if (stopped) return;
@@ -410,58 +692,240 @@ export class EdgeExecutionAgent {
     };
   }
 
-  private async localStatus(runId: number): Promise<string | null> {
-    try {
-      const [{ getDb }, { orchestrationRuns }, { eq }] = await Promise.all([import("../../db/connection"), import("../../../drizzle/schema"), import("drizzle-orm")]);
-      const d = await getDb();
-      if (!d) return null;
-      const [row] = await d.select({ status: orchestrationRuns.status }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
-      return row?.status ?? null;
-    } catch {
-      return null;
-    }
-  }
-
   /** Abort the LOCAL walker once (non-STOP steps stop; STOPs still sent). true ⇔ applied now. */
-  private async applyAbort(seg: Segment): Promise<boolean> {
+  private async abortSegment(seg: Segment): Promise<boolean> {
     if (seg.aborted) return false;
     seg.aborted = true;
+    seg.controller.abort();
     try {
-      const { stopLiveRunForCentralAbort } = await import("../orchestration/foe/foeEngine");
-      const r = await stopLiveRunForCentralAbort(seg.runId, { ...EDGE_AGENT_ABORT_USER });
+      const r = await this.deps.walker!.abortLive(seg.runId);
       console.warn(`[EdgeExec] run ${seg.runId}: central stopped it — local walker ${r.live ? "aborted (non-STOP steps stopped, STOPs sent)" : "already finished"}`);
-      return true;
     } catch (err) {
-      seg.aborted = false; // the next answer retries
       console.error(`[EdgeExec] run ${seg.runId}: local abort failed — ${(err as Error)?.message ?? err}; use the machine's direct STOP / E-STOP`);
-      return false;
     }
+    return true;
   }
 
-  private async sendComplete(p: PendingComplete, seg?: Segment): Promise<void> {
-    const seq = seg ? ++seg.seq : Date.now(); // a retried completion uses a fresh, larger sequence
-    const r = await this.post(`/edge/node/runs/${p.runId}/complete`, { claimSeq: p.claimSeq, claimToken: p.token, seq, status: p.status });
-    if (r.ok || (r.status >= 400 && r.status < 500 && r.code !== "not_finished")) {
-      this.pending.delete(p.runId); // taken — or the claim is gone (stale / not found): nothing left to report
+  /** Ship the run stream; done ⇒ forget the claim token. */
+  private async finishStream(runId: number, claimSeq: number, why: string): Promise<void> {
+    const stream = edgeRunStream(runId, claimSeq);
+    const f = await this.deps.shipper.flush(stream);
+    if (f === "claim_gone") await this.deps.shipper.orphanRunStream(stream, `claim ${why}`);
+    if (this.deps.journal.pending(stream, 1).length === 0) this.deps.shipper.forgetClaim(runId, claimSeq);
+  }
+
+  private async sendComplete(p: PendingComplete): Promise<void> {
+    const stream = edgeRunStream(p.runId, p.claimSeq);
+    const f = await this.deps.shipper.flush(stream);
+    if (f === "claim_gone") {
+      await this.deps.shipper.orphanRunStream(stream, "claim no longer current at segment end");
+      this.pending.delete(p.runId);
+      return;
+    }
+    if (this.deps.journal.pending(stream, 1).length > 0) {
+      this.pending.set(p.runId, p); // reports first: complete only once central holds every record
+      return;
+    }
+    const o = p.outcome;
+    const r = await this.deps.client.post(
+      "complete",
+      {
+        claimSeq: p.claimSeq,
+        claimToken: p.token,
+        seq: ++p.seq,
+        outcome: o.outcome,
+        ...(o.outcome === "paused" ? { gateStepId: o.gateStepId } : {}),
+        ...(o.outcome === "held" ? { heldReason: o.heldReason } : {}),
+        ...((o.outcome === "failed" || o.outcome === "held") && o.error ? { error: o.error.slice(0, 4_000) } : {}),
+        epoch: this.deps.journal.epoch,
+        reportedThrough: this.deps.journal.ackedSeq(stream),
+      },
+      { runId: p.runId },
+    );
+    if (r.ok || (!r.unavailable && r.code !== "gap" && r.code !== "not_finished")) {
+      // taken — or the claim is gone (stale / not found): nothing left to report for this segment
+      this.pending.delete(p.runId);
+      this.deps.shipper.forgetClaim(p.runId, p.claimSeq);
+      if (!r.ok) console.warn(`[EdgeExec] run ${p.runId}: segment end not taken (${r.code ?? r.status}) — the claim is no longer current`);
       return;
     }
     this.pending.set(p.runId, p);
   }
 }
 
+/**
+ * R-10-k / R-10-p — STOP requests central delivers UNSIGNED (its signer unavailable): the answer's `unsignedStops` (group B's
+ * strict envelope, edgeProtocol.edgeUnsignedStopSchema). Only that envelope for THIS node + credential is treated as unsigned
+ * (edgeCentralClient.parseEdgeUnsignedStop); it acts ONLY as a STOP of an owned device.
+ */
+function unsignedStopsOf(answer: unknown): unknown[] {
+  const a = answer as { unsignedStops?: unknown } | null;
+  const out: unknown[] = [];
+  if (Array.isArray(a?.unsignedStops)) out.push(...a.unsignedStops.slice(0, 100));
+  return out;
+}
+
+function normaliseOutcome(o: unknown): EdgeSegmentOutcome {
+  const v = o as Record<string, unknown> | null;
+  if (v && typeof v.refused === "string") return { refused: v.refused };
+  switch (v?.outcome) {
+    case "completed":
+      return { outcome: "completed" };
+    case "aborted":
+      return { outcome: "aborted" };
+    case "failed":
+      return { outcome: "failed", ...(typeof v.error === "string" ? { error: v.error } : {}) };
+    case "paused":
+      if (typeof v.gateStepId === "string" && v.gateStepId) return { outcome: "paused", gateStepId: v.gateStepId };
+      break;
+    case "held":
+      if ((EDGE_HELD_REASONS as readonly unknown[]).includes(v.heldReason)) return { outcome: "held", heldReason: v.heldReason as EdgeHeldReason, ...(typeof v.error === "string" ? { error: v.error } : {}) };
+      break;
+  }
+  // foeEngine.EdgeDriveResult without a segment end: the run status alone
+  if (v?.outcome === undefined && typeof v?.status === "string") {
+    if (v.status === "completed") return { outcome: "completed" };
+    if (v.status === "aborted") return { outcome: "aborted" };
+    if (v.status === "failed") return { outcome: "failed", ...(typeof v.error === "string" ? { error: v.error } : {}) };
+  }
+  return { outcome: "failed", error: "the edge walker returned an unknown outcome" };
+}
+
+// ── default bindings (production) ───────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Group C's walker (e4959fff5): foeEngine.driveEdgeRunFromPackage(pkg, claim, edgeRunStore.createEdgeRunStore(pkg, io)); the
+ * local abort is foeEngine.stopLiveRunForCentralAbort; the STOP re-send of a verified sweep picture is
+ * foeEngine.resendStopsOfAbortedRun(picture, user, edgeRunStore.createEdgeSweepStore(picture, …)).
+ */
+export async function loadDefaultEdgeWalker(): Promise<EdgeWalker> {
+  const [engine, store] = await Promise.all([import("../orchestration/foe/foeEngine"), import("./edgeRunStore")]);
+  return {
+    drive: async (pkg, io) =>
+      normaliseOutcome(await engine.driveEdgeRunFromPackage(pkg, { runId: io.runId, claimSeq: io.claimSeq, claimToken: io.claimToken, defHash: pkg.defHash }, store.createEdgeRunStore(pkg, io))),
+    abortLive: (runId) => engine.stopLiveRunForCentralAbort(runId, { ...EDGE_AGENT_ABORT_USER }),
+    resendStops: async (picture, sink) => {
+      let sent = 0;
+      let failed = 0;
+      const targetOf = (stepId: string) => picture.verifiedStops.find((x) => x.stepId === stepId);
+      const sweep = store.createEdgeSweepStore(picture, {
+        abortStop: async (rec) => {
+          const s = targetOf(rec.stepId);
+          if (rec.status === "completed") sent++;
+          else failed++;
+          if (!s) return;
+          const target = s.kind === "robot" ? { robotId: s.robotId } : { adapterId: s.adapterId };
+          await sink.event({ kind: "stop", target, source: "local", requestId: null, outcome: rec.status === "completed" ? "sent" : "failed", at: rec.at, detail: `run ${picture.runId} step ${rec.stepId}: STOP re-sent (central could not confirm it)` }, { stop: true });
+        },
+        event: (rec) => sink.event(rec),
+      });
+      await engine.resendStopsOfAbortedRun(picture, { ...EDGE_AGENT_ABORT_USER }, sweep);
+      return { sent, failed };
+    },
+  };
+}
+
+/** foeGateApproval.hashWorkflowDefinition — the SAME hash central bound the assignment's defHash to. */
+export async function defaultEdgeHashDefinition(): Promise<(def: Record<string, unknown>) => string> {
+  const { hashWorkflowDefinition } = await import("../orchestration/foe/foeGateApproval");
+  return (def) => hashWorkflowDefinition(def as never);
+}
+
+const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} did not answer within ${ms} ms`)), ms);
+    if (typeof t.unref === "function") t.unref();
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+
+/**
+ * INTERIM device port (until group D's edge dispatch front ends are wired by the integration): the robot STOP is the
+ * driver's abort (a robot the verified config knows to be uncommissioned ⇒ `simulated`, R-1C-d; unknown ⇒ sent); the OT STOP
+ * writes the PINNED stop values of the verified config (or of a verified sweep picture); lock / clear act on the driver's
+ * in-memory MotionLock (compare-and-clear on the generation).
+ */
+export function defaultEdgeDevicePort(config: EdgeConfigSource, opts: { deadlineMs?: number } = {}): EdgeDevicePort {
+  const deadline = opts.deadlineMs ?? 5_000;
+  const robotOf = async (id: number) => (await import("../robot/robotManager")).getActiveRobot(id);
+  return {
+    async stopRobot(robotId, why) {
+      if (config.robot(robotId)?.commissioned === false) return { outcome: "simulated", detail: `robot ${robotId} not commissioned — STOP recorded as simulated (${why})` };
+      const r = await robotOf(robotId);
+      if (!r) return { outcome: "failed", detail: `robot ${robotId} has no driver session on this edge` };
+      try {
+        await withTimeout(r.driver.abort(), deadline, `robot ${robotId} abort`);
+        return { outcome: "sent", detail: why };
+      } catch (err) {
+        return { outcome: "failed", detail: (err as Error)?.message ?? String(err) };
+      }
+    },
+    async stopAdapter(adapterId, pins, why) {
+      const a = config.adapter(adapterId);
+      if (!a) return { outcome: "failed", detail: `adapter ${adapterId} is not this node's` };
+      const usePins = pins ?? a.tags.filter((t) => t.stopValue !== null && t.stopValue !== undefined).map((t) => ({ tagKey: t.tagKey, value: t.stopValue }));
+      const writes = usePins.flatMap((p) => {
+        const t = a.tags.find((x) => x.tagKey === p.tagKey && x.writable);
+        return t ? [{ tagKey: t.tagKey, address: t.address, value: p.value, dataType: t.dataType, scale: t.scale ?? undefined, offset: t.offset ?? undefined }] : [];
+      });
+      if (writes.length === 0) return { outcome: "failed", detail: `adapter ${adapterId} has no pinned STOP tag` };
+      const { getActiveDriver } = await import("../ot/otManager");
+      const d = getActiveDriver(adapterId);
+      if (!d) return { outcome: "failed", detail: `adapter ${adapterId} is not connected` };
+      try {
+        const res = await withTimeout(d.writeTags(writes), deadline, `adapter ${adapterId} STOP write`);
+        const ok = Array.isArray(res) && res.length > 0 && res.every((x) => (x as { ok?: unknown }).ok === true);
+        return { outcome: ok ? "sent" : "failed", detail: why };
+      } catch (err) {
+        return { outcome: "failed", detail: (err as Error)?.message ?? String(err) };
+      }
+    },
+    async lockRobot(robotId, reason) {
+      const lock = (await robotOf(robotId))?.driver.motionLockController?.();
+      if (!lock) return { ok: false, generation: null, detail: "no motion lock on this edge" };
+      lock.lock("centralLock", reason);
+      return { ok: true, generation: lock.snapshot().generation ?? null };
+    },
+    async clearRobot(robotId, expectedGeneration, clearedBy, reason) {
+      const lock = (await robotOf(robotId))?.driver.motionLockController?.();
+      if (!lock) return { ok: false, reason: "no_driver", generation: null };
+      try {
+        const st = lock.clearByOperator({ reason, userId: clearedBy, expectedGeneration });
+        return { ok: true, generation: st.generation ?? expectedGeneration };
+      } catch (err) {
+        if ((err as Error)?.name === "MotionLockConflictError") return { ok: false, reason: "generation_mismatch", generation: lock.snapshot().generation ?? null };
+        return { ok: false, reason: "error", generation: lock.snapshot().generation ?? null };
+      }
+    },
+  };
+}
+
 let agent: EdgeExecutionAgent | null = null;
 
-/** Start the agent from the environment (edge gateway boot). Refuses (starts nothing) on any missing piece. */
-export async function startEdgeExecutionFromEnv(): Promise<EdgeExecutionAgent | null> {
+/** Start the agent (edge gateway boot) with the gateway's runtime; refuses (starts nothing) on any missing piece. */
+export async function startEdgeExecution(cfg: EdgeAgentConfig | { error: string }, deps: EdgeAgentDeps): Promise<EdgeExecutionAgent | null> {
   if (agent) return agent;
-  const cfg = await edgeExecutionConfigFromEnv();
   if ("error" in cfg) {
     console.log(`[EdgeExec] run execution NOT started: ${cfg.error}`);
     return null;
   }
-  agent = new EdgeExecutionAgent(cfg);
+  if (!deps.walker) console.warn("[EdgeExec] no edge walker (driveEdgeRunFromPackage) in this build — runs are NOT claimed; commands and STOP re-sends still work");
+  agent = new EdgeExecutionAgent(cfg, deps);
+  await deps.shipper.orphanUntokened("claim token lost on restart (never journaled) — the claim is declared interrupted");
   agent.start();
   console.log(`[EdgeExec] run execution started (pull every ${cfg.pullIntervalMs} ms, progress every ${cfg.progressMs} ms, at most ${cfg.maxConcurrent} runs)`);
+  return agent;
+}
+
+export function currentEdgeExecutionAgent(): EdgeExecutionAgent | null {
   return agent;
 }
 
