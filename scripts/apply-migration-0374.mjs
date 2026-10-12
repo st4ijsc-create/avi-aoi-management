@@ -22,6 +22,10 @@
  *       stale epoch ⇒ 23514 and a request whose device changed owner is never DELIVERED (23514); program reports carry the
  *       adapter's epoch; history carries from/to epochs; AS OWNER: a node deleted and RE-CREATED under the same id, owning the
  *       robot again, cannot write / clear with the old (authority, epoch);
+ *       fix scan 2 (safety-lock bypass): avi_app cannot DELETE / UPDATE an edge-authority lock row, move a row between
+ *       authorities, or write a central row of an edge-owned robot (23514); edge_motion_lock_apply / _clear work only on the
+ *       matching (robot, node, epoch) with the generation check; central rows of central robots stay writable as before;
+ *       lock requests: done before delivery / delivery in the future or before creation / ackGeneration on a non-done ack ⇒ 23514;
  *   (c) `__applied_migrations` has exactly 1 row for this file.
  *
  *   node scripts/apply-migration-0374.mjs --test-only | --dev-only | --both   (NO flag ⇒ refused — R-3-g)
@@ -34,7 +38,7 @@ const REQ_COLS = ["id", "robotId", "adapterId", "edgeNodeId", "ownerEpoch", "kin
 const HIST_COLS = ["id", "deviceKind", "deviceId", "fromEdgeNodeId", "toEdgeNodeId", "generationFloor", "fromOwnerEpoch", "toOwnerEpoch", "changedBy", "changedAt"];
 const TRIGGERS = [
   "trg_robots_owner_change", "trg_robots_owner_insert", "trg_robots_owner_relock", "trg_adapters_owner_change", "trg_adapters_owner_insert", "trg_device_owner_changes_worm",
-  "trg_device_owner_changes_worm_truncate", "trg_robot_motion_lock_authority", "trg_edge_program_owned", "trg_robot_motion_lock_request_guard",
+  "trg_device_owner_changes_worm_truncate", "trg_robot_motion_lock_authority", "trg_robot_motion_lock_write_guard", "trg_edge_program_owned", "trg_robot_motion_lock_request_guard",
 ];
 
 async function fixtures(tx, code) {
@@ -49,6 +53,8 @@ async function fixtures(tx, code) {
 const reqIns = (sp, o) =>
   sp`INSERT INTO ${sp(REQ)} ("robotId", "adapterId", "edgeNodeId", "ownerEpoch", kind, "expectedGeneration", reason, "requestedBy", "expiresAt", "deliveredAt")
      VALUES (${o.robotId ?? null}, ${o.adapterId ?? null}, ${o.edgeNodeId}, ${o.ownerEpoch ?? 1}, ${o.kind}, ${o.expectedGeneration ?? null}, 'probe', 5, now() + interval '1 minute', ${o.deliveredAt ?? null}) RETURNING id`;
+const apply = (sp, robot, node, epoch, gen) => sp`SELECT edge_motion_lock_apply(${robot}, ${node}, ${epoch}::bigint, ${gen}, 'probe', NULL) AS ok`;
+const clear = (sp, robot, node, epoch, gen) => sp`SELECT edge_motion_lock_clear(${robot}, ${node}, ${epoch}::bigint, ${gen}) AS n`;
 const epochOf = async (tx, t, id) => Number((await tx`SELECT "ownerEpoch" AS e FROM ${tx(t)} WHERE id = ${id}`)[0].e);
 
 await runMigration({
@@ -80,7 +86,7 @@ await runMigration({
     }
     const trg = (await appSql`SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D' AND tgname = ANY(${TRIGGERS})`).map((r) => r.tgname);
     if (trg.length !== TRIGGERS.length) throw new Error(`(a) triggers: ${JSON.stringify(trg)}`);
-    const [sd] = await appSql`SELECT bool_and(prosecdef) AS d FROM pg_proc WHERE proname IN ('device_owner_change_guard', 'device_owner_insert_log', 'robot_owner_relock')`;
+    const [sd] = await appSql`SELECT bool_and(prosecdef) AS d FROM pg_proc WHERE proname IN ('device_owner_change_guard', 'device_owner_insert_log', 'robot_owner_relock', 'edge_motion_lock_apply', 'edge_motion_lock_clear')`;
     if (!sd?.d) throw new Error("(a) owner-change functions must be SECURITY DEFINER");
     log(`(a) columns + FKs RESTRICT + ${REQ} + ${HIST}; triggers ${trg.length}; SECURITY DEFINER logging`);
     // (b) catalog
@@ -124,19 +130,32 @@ await runMigration({
       r.histIns = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(HIST)} ("deviceKind", "deviceId", "changedBy") VALUES ('adapter', 1, 'forged')`);
       r.histUpd = await maLoi(tx, (sp) => sp`UPDATE ${sp(HIST)} SET "changedBy" = 'x' WHERE "deviceId" = ${f.robot.id}`);
       r.histDel = await maLoi(tx, (sp) => sp`DELETE FROM ${sp(HIST)} WHERE "deviceId" = ${f.robot.id}`);
-      r.lockOwner = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET generation = 7 WHERE "robotId" = ${f.robot.id}`);
-      r.lockStaleEpoch = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET generation = 8, "ownerEpoch" = 1 WHERE "robotId" = ${f.robot.id}`);
-      r.lockOther = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET authority = ${"edge:" + f.node2.id}, "authorityNodeId" = ${f.node2.id} WHERE "robotId" = ${f.robot.id}`);
+      r.lockOwner = (await apply(tx, f.robot.id, f.node.id, 2, 7))[0].ok;
+      r.lockLowerGen = (await apply(tx, f.robot.id, f.node.id, 2, 3))[0].ok;
+      r.lockStaleEpoch = await maLoi(tx, (sp) => apply(sp, f.robot.id, f.node.id, 1, 8));
+      r.lockOther = await maLoi(tx, (sp) => apply(sp, f.robot.id, f.node2.id, 2, 8));
+      r.directEdgeUpdate = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET generation = 99 WHERE "robotId" = ${f.robot.id}`);
+      r.directEdgeDelete = await maLoi(tx, (sp) => sp`DELETE FROM robot_motion_locks WHERE "robotId" = ${f.robot.id}`);
+      r.directMoveCentral = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET authority = 'central', "authorityNodeId" = NULL WHERE "robotId" = ${f.robot.id}`);
       r.lockTextMismatch = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET authority = ${"edge:" + f.node2.id} WHERE "robotId" = ${f.robot.id}`);
       r.lockBogus = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET authority = 'bogus', "authorityNodeId" = NULL WHERE "robotId" = ${f.robot.id}`);
       r.lockInsUnowned = await maLoi(tx, (sp) => sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, authority, "authorityNodeId", "ownerEpoch") VALUES (${f.robotBusy.id}, 'probe', 1, ${"edge:" + f.node.id}, ${f.node.id}, 1)`);
+      r.centralDirect = await maLoi(tx, async (sp) => {
+        await sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation) VALUES (${f.robotBusy.id}, 'probe', 2)`;
+        await sp`UPDATE robot_motion_locks SET generation = 3 WHERE "robotId" = ${f.robotBusy.id}`;
+        await sp`DELETE FROM robot_motion_locks WHERE "robotId" = ${f.robotBusy.id} AND generation <= 3`;
+      });
       // away and back to the SAME node: epoch 2 → 3 → 4; the old (authority, epoch 2) can neither write nor clear
       await tx`UPDATE robots SET "edgeNodeId" = NULL WHERE id = ${f.robot.id}`;
       await tx`UPDATE robots SET "edgeNodeId" = ${f.node.id} WHERE id = ${f.robot.id}`;
       r.epochBack = await epochOf(tx, "robots", f.robot.id);
-      r.staleAfterReturn = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET generation = generation + 1, "ownerEpoch" = 2 WHERE "robotId" = ${f.robot.id}`);
-      const cleared = await tx`DELETE FROM robot_motion_locks WHERE "robotId" = ${f.robot.id} AND authority = ${"edge:" + f.node.id} AND "ownerEpoch" = 2 RETURNING "robotId"`;
-      r.staleClearDeleted = cleared.length;
+      r.staleAfterReturn = await maLoi(tx, (sp) => apply(sp, f.robot.id, f.node.id, 2, 100));
+      r.staleClearDeleted = (await clear(tx, f.robot.id, f.node.id, 2, 100))[0].n;
+      const [g4] = await tx`SELECT generation AS g FROM robot_motion_locks WHERE "robotId" = ${f.robot.id}`;
+      r.clearLowGen = (await clear(tx, f.robot.id, f.node.id, 4, g4.g - 1))[0].n;
+      r.clearCurrent = (await clear(tx, f.robot.id, f.node.id, 4, g4.g))[0].n;
+      r.centralRowOnEdgeRobot = await maLoi(tx, (sp) => sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation) VALUES (${f.robot.id}, 'probe', 50)`);
+      r.reapply = (await apply(tx, f.robot.id, f.node.id, 4, g4.g + 1))[0].ok;
       let reqId = null;
       r.reqLock = await maLoi(tx, async (sp) => {
         reqId = (await reqIns(sp, { robotId: f.robot.id, edgeNodeId: f.node.id, ownerEpoch: 4, kind: "lock" }))[0].id;
@@ -151,6 +170,13 @@ await runMigration({
       r.reqBornDelivered = await maLoi(tx, (sp) => reqIns(sp, { robotId: f.robot.id, edgeNodeId: f.node.id, ownerEpoch: 4, kind: "lock", deliveredAt: new Date() }));
       r.deliver1 = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "deliveredAt" = now() WHERE id = ${reqId}`);
       r.deliver2 = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "deliveredAt" = now() + interval '1 second' WHERE id = ${reqId}`);
+      const [q2] = await reqIns(tx, { robotId: f.robot.id, edgeNodeId: f.node.id, ownerEpoch: 4, kind: "lock" });
+      r.doneUndelivered = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "ackedAt" = now(), outcome = 'done' WHERE id = ${q2.id}`);
+      r.deliverFuture = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "deliveredAt" = now() + interval '1 hour' WHERE id = ${q2.id}`);
+      r.deliverBeforeCreate = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "deliveredAt" = "createdAt" - interval '1 second' WHERE id = ${q2.id}`);
+      await tx`UPDATE ${tx(REQ)} SET "deliveredAt" = now() WHERE id = ${q2.id}`;
+      r.genOnRefused = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "ackedAt" = now(), outcome = 'refused', "ackGeneration" = 3 WHERE id = ${q2.id}`);
+      r.expireDeliveredEarly = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "ackedAt" = now(), outcome = 'expired' WHERE id = ${q2.id}`);
       r.outcomeOnly = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET outcome = 'done' WHERE id = ${reqId}`);
       r.ack1 = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "ackedAt" = now(), outcome = 'done', "ackGeneration" = 8 WHERE id = ${reqId}`);
       r.ack2 = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET outcome = 'refused' WHERE id = ${reqId}`);
@@ -171,8 +197,11 @@ await runMigration({
     expectExact("(b) avi_app behaviour", kq, {
       centralRowEpoch: 1, robotOwn: null, floorAfter: 6, epochAfter: 2, relocked: true, robotHist: true, epochManual: "23514", floorDown: "23514",
       robotBusy: "23514", adOwn: null, adEpoch: 2, adBusy: "23514", bornHist: 1, adHist: 1,
-      histIns: "42501", histUpd: "42501", histDel: "42501", lockOwner: null, lockStaleEpoch: "23514", lockOther: "23514", lockTextMismatch: "23514",
-      lockBogus: "23514", lockInsUnowned: "23514", epochBack: 4, staleAfterReturn: "23514", staleClearDeleted: 0,
+      histIns: "42501", histUpd: "42501", histDel: "42501", lockOwner: true, lockLowerGen: false, lockStaleEpoch: "23514", lockOther: "23514",
+      directEdgeUpdate: "23514", directEdgeDelete: "23514", directMoveCentral: "23514", lockTextMismatch: "23514",
+      lockBogus: "23514", lockInsUnowned: "23514", centralDirect: null, epochBack: 4, staleAfterReturn: "23514", staleClearDeleted: 0,
+      clearLowGen: 0, clearCurrent: 1, centralRowOnEdgeRobot: "23514", reapply: true,
+      doneUndelivered: "23514", deliverFuture: "23514", deliverBeforeCreate: "23514", genOnRefused: "23514", expireDeliveredEarly: "23514",
       reqLock: null, reqStaleEpoch: "23514", reqUnowned: "23514", reqTwoTargets: "23514", reqAdapterLock: "23514", reqAdapterStop: null, reqClearNoGen: "23514",
       reqClearGen: null, reqBornDelivered: "23514", deliver1: null, deliver2: "23514", outcomeOnly: "23514", ack1: null, ack2: "23514", reqIdentity: "42501",
       reqDel: "42501", deliverStale: "23514", expireStale: null, prgUnowned: "23514", prgOwned: null, prgEpoch: 2, nodeDel: "23503",

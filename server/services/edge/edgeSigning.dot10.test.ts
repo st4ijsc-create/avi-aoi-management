@@ -13,23 +13,24 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sig
 import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   EDGE_SIGNED_TYPS,
   EDGE_TYP_NAME,
   EdgeCanonicalJsonError,
-  buildEdgeKeyset,
+  buildEdgeKeysetFromKeyring,
+  edgePinFromKeyring,
+  readEdgeKeyring,
+  writeEdgeKeyring,
   edgeCanonicalJson,
   edgeKidOf,
   edgePinnedKeyset,
   edgeSigningInput,
   edgeSigningKeyFromPem,
-  endorseEdgeKey,
   generateEdgeSigningKey,
   loadEdgeSigningKey,
   parseEdgeKeyset,
   signEdgeObject,
-  verifyEdgeKeyEndorsement,
   EdgeTrustStore,
   verifyEdgeObject,
   type EdgeKeyset,
@@ -342,68 +343,65 @@ describe("keyset parse + chain (pinned root kept)", () => {
   });
 });
 
-describe("key endorsement + buildEdgeKeyset (a DB writer alone can never add a trusted key)", () => {
-  const k1 = generateEdgeSigningKey().key;
-  const k2 = generateEdgeSigningKey().key;
-  const k3 = generateEdgeSigningKey().key;
-  const att = generateEdgeSigningKey().key;
-  const att2 = generateEdgeSigningKey().key;
-  const row = (k: EdgeSigningKey, status: "next" | "active" | "retired", by: EdgeSigningKey | null, extra: Partial<{ retiredAt: number }> = {}) => {
-    const base = { kid: k.kid, publicKeyPem: k.publicKeyPem, status, notBefore: T0 - 100_000, retiredAt: extra.retiredAt ?? null };
-    return { ...base, endorsedByKid: by ? by.kid : null, endorsementSig: by ? endorseEdgeKey(by, base) : null };
+describe("central keyring FILES — the only source of the published keyset and the pin (R-10-c)", () => {
+  const k1 = generateEdgeSigningKey();
+  const k2 = generateEdgeSigningKey();
+  const k3 = generateEdgeSigningKey();
+  const ent = (g: { key: EdgeSigningKey }, status: "next" | "active" | "retired", root = false, retiredAt: number | null = null) => ({
+    kid: g.key.kid, publicKeyPem: g.key.publicKeyPem, status, notBefore: T0 - 100_000, retiredAt, root,
+  });
+  function ring(keys: ReturnType<typeof ent>[], files: Array<{ key: EdgeSigningKey; privateKeyPem: string }>, version = 3): string {
+    const dir = mkdtempSync(path.join(tmpdir(), "edge-keyring-"));
+    for (const g of files) writeFileSync(path.join(dir, `${g.key.kid}.pem`), g.privateKeyPem, { mode: 0o600 });
+    writeEdgeKeyring(dir, { v: 1, version, updatedAt: T0, keys });
+    return dir;
+  }
+  const dirs: string[] = [];
+  const mk = (...a: Parameters<typeof ring>) => {
+    const d = ring(...a);
+    dirs.push(d);
+    return d;
   };
-  const byKid = (a: unknown[], b: unknown[]) => (String(a[0]) < String(b[0]) ? -1 : 1);
+  afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
-  it("endorsement verifies only for the endorser's key and the exact row (kid, key, notBefore)", () => {
-    const r = row(k2, "next", k1);
-    expect(verifyEdgeKeyEndorsement(r, k1.publicKeyPem)).toBe(true);
-    expect(verifyEdgeKeyEndorsement(r, att.publicKeyPem)).toBe(false);
-    expect(verifyEdgeKeyEndorsement({ ...r, notBefore: r.notBefore + 1 }, k1.publicKeyPem)).toBe(false);
-    expect(verifyEdgeKeyEndorsement({ ...r, publicKeyPem: att.publicKeyPem }, k1.publicKeyPem)).toBe(false);
-    expect(verifyEdgeKeyEndorsement({ ...r, endorsementSig: null }, k1.publicKeyPem)).toBe(false);
-  });
-
-  it("★ the keyset holds the signer, the pinned root (always active), endorsed descendants — never an unendorsed / self-endorsed / mis-fingerprinted row", () => {
-    const rows = [
-      row(k1, "retired", null, { retiredAt: T0 - 5_000 }), // genesis = provisioning root (its DB status is ignored)
-      row(k2, "active", k1), // the loaded signer
-      row(k3, "next", k2),
-      row(att, "next", null), // a DB writer's row
-      row(att, "next", att), // self-endorsed
-      { ...row(k3, "next", k2), kid: att.kid }, // k3's endorsement under the attacker's kid
-      { ...row(att2, "next", att2), endorsedByKid: k2.kid }, // claims the signer as endorser, signed by itself
-    ];
-    const { keyset, rootKid } = buildEdgeKeyset(rows, k2, { version: 7, nowMs: T0, retiredGraceMs: 40_000 });
-    expect(rootKid).toBe(k1.kid);
-    expect(keyset.version).toBe(7);
-    expect(keyset.keys.map((k) => [k.kid, k.status, k.notAfter]).sort(byKid)).toEqual(
-      [
-        [k1.kid, "active", null],
-        [k2.kid, "active", null],
-        [k3.kid, "next", null],
-      ].sort(byKid),
-    );
-    expect(parseEdgeKeyset(keyset).ok).toBe(true);
-    // an edge pinned on the root accepts this keyset signed by the signer once it trusts the signer
+  it("reads a consistent keyring; the published keyset is a pure function of it (one version ⇒ byte-identical keyset)", () => {
+    const dir = mk([ent(k1, "active", true), ent(k2, "active"), ent(k3, "next")], [k1, k2, k3]);
+    const kr = readEdgeKeyring(dir);
+    expect(kr.keys.map((k) => k.kid)).toEqual([k1.key.kid, k2.key.kid, k3.key.kid]);
+    const a = buildEdgeKeysetFromKeyring(kr, k2.key, { retiredGraceMs: 40_000 });
+    const b = buildEdgeKeysetFromKeyring(readEdgeKeyring(dir), k2.key, { retiredGraceMs: 40_000 });
+    expect(edgeCanonicalJson(a)).toBe(edgeCanonicalJson(b));
+    expect(a.version).toBe(3);
+    expect(a.keys.find((k) => k.kid === k3.key.kid)?.status).toBe("next");
+    // an edge pinned on the root accepts the chain root → (keyset signed by the root) → (keyset signed by k2)
     clock = T0;
-    const store = EdgeTrustStore.fromPinned(pinOf(k1), { nodeId: NODE, now: () => clock });
-    const v2 = { v: 1, version: 2, issuedAt: T0, keys: [...pinOf(k1).keys, entry({ key: k2, notBefore: T0 - 100_000 })] };
-    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v2, k1)).ok).toBe(true);
-    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", keyset, k2))).toEqual({ ok: true, version: 7, changed: true });
+    const pin = edgePinFromKeyring(kr);
+    expect(pin.keys.map((k) => k.kid)).toEqual([k1.key.kid]);
+    const store = EdgeTrustStore.fromPinned(pin, { nodeId: NODE, now: () => clock });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", buildEdgeKeysetFromKeyring(kr, k1.key, { retiredGraceMs: 40_000 }), k1.key))).toMatchObject({ ok: true, changed: true });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", a, k2.key))).toMatchObject({ ok: true, changed: false }); // same version, same bytes
   });
 
-  it("an ancestor is included only through a VERIFIED endorsement of the signer's row (a forged parent link is ignored)", () => {
-    const signerRow = { ...row(k2, "active", null), endorsedByKid: att.kid, endorsementSig: endorseEdgeKey(k1, row(k2, "active", null)) };
-    const { keyset, rootKid } = buildEdgeKeyset([signerRow, row(att, "retired", null, { retiredAt: T0 })], k2, { version: 1, nowMs: T0, retiredGraceMs: 40_000 });
-    expect(keyset.keys.map((k) => k.kid)).toEqual([k2.kid]);
-    expect(rootKid).toBe(k2.kid);
+  it("retired keys stay with notAfter = retiredAt + grace; the signer must be ACTIVE in the keyring", () => {
+    const dir = mk([ent(k1, "active", true), ent(k2, "retired", false, T0 - 5_000), ent(k3, "active")], [k1, k3]); // a retired key's file may be gone
+    const kr = readEdgeKeyring(dir);
+    const ks = buildEdgeKeysetFromKeyring(kr, k3.key, { retiredGraceMs: 40_000 });
+    expect(ks.keys.find((k) => k.kid === k2.key.kid)).toMatchObject({ status: "retired", notAfter: T0 + 35_000 });
+    expect(() => buildEdgeKeysetFromKeyring(kr, k2.key, { retiredGraceMs: 40_000 })).toThrow(/not an ACTIVE key/);
+    const stranger = generateEdgeSigningKey().key;
+    expect(() => buildEdgeKeysetFromKeyring(kr, stranger, { retiredGraceMs: 40_000 })).toThrow(/not an ACTIVE key/);
   });
 
-  it("a retired NON-root key past its grace is dropped; the loaded signer is always present and active", () => {
-    const rows = [row(k1, "active", null), row(k2, "retired", k1, { retiredAt: T0 - 50_000 }), row(k3, "retired", k1, { retiredAt: T0 - 50_000 })];
-    const { keyset } = buildEdgeKeyset(rows, k3, { version: 1, nowMs: T0, retiredGraceMs: 40_000 });
-    expect(keyset.keys.map((k) => [k.kid, k.status]).sort(byKid)).toEqual([[k1.kid, "active"], [k3.kid, "active"]].sort(byKid));
-    expect(buildEdgeKeyset([], k2, { version: 1, nowMs: T0, retiredGraceMs: 40_000 }).keyset.keys.map((k) => k.kid)).toEqual([k2.kid]);
+  it("★ refuses an inconsistent keyring: no key file / a file of another key / two roots / a retired root / kid ≠ fingerprint / retiredAt mismatch", () => {
+    expect(() => readEdgeKeyring(mk([ent(k1, "active", true), ent(k2, "next")], [k1]))).toThrow(/k[^ ]*\.pem|does not hold/);
+    const swapped = mk([ent(k1, "active", true)], []);
+    writeFileSync(path.join(swapped, `${k1.key.kid}.pem`), k2.privateKeyPem, { mode: 0o600 });
+    expect(() => readEdgeKeyring(swapped)).toThrow(/does not hold/);
+    expect(() => readEdgeKeyring(mk([ent(k1, "active", true), ent(k2, "active", true)], [k1, k2]))).toThrow(/exactly one root/);
+    expect(() => readEdgeKeyring(mk([ent(k1, "retired", true, T0)], [k1]))).toThrow(/root/);
+    expect(() => readEdgeKeyring(mk([ent(k1, "active", true), { ...ent(k2, "next"), kid: k3.key.kid }], [k1, k2, k3]))).toThrow(/fingerprint/);
+    expect(() => readEdgeKeyring(mk([ent(k1, "active", true), ent(k2, "retired", false, null)], [k1]))).toThrow(/retiredAt/);
+    expect(() => readEdgeKeyring(mkdtempSync(path.join(tmpdir(), "edge-keyring-empty-")))).toThrow(/missing/);
   });
 });
 

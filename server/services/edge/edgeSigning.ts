@@ -23,12 +23,11 @@
  *   signs a keyset); a `next` key NEVER verifies (it is published ahead, not usable); typ must match exactly; any exception
  *   anywhere ⇒ invalid. Nothing secret is compared (signatures are checked by crypto.verify).
  *
- * KEY CUSTODY (central, the internalCa.ts discipline): the PRIVATE key comes from EDGE_SIGNING_KEY_PEM or
- * EDGE_SIGNING_KEY_FILE (mode 0600 on POSIX) and is NEVER in the DB; scripts/edge-signing-key.ts manages it. Public keys go
- * to `edge_auth_signing_keys` (mig 0373) for audit and distribution. A DB writer alone must never be able to add a trusted
- * key: every non-genesis key row carries an ENDORSEMENT signed by the key that was active when it was generated
- * (endorseEdgeKey), and buildEdgeKeyset includes only the loaded signer, the rows it endorsed (transitively) and the rows that
- * endorsed it (its ancestors, up to the GENESIS = provisioning root).
+ * KEY CUSTODY (central, the internalCa.ts discipline; fix scan 2 ruling R-10-c): the PRIVATE keys are FILES in the keyring
+ * directory (EDGE_SIGNING_KEY_DIR: `<kid>.pem` mode 0600 + `keyring.json`), the signer is EDGE_SIGNING_KEY_FILE (or
+ * EDGE_SIGNING_KEY_PEM); scripts/edge-signing-key.ts manages them. The keyset central publishes and the provisioning pin are
+ * derived ONLY from these files (readEdgeKeyring → buildEdgeKeysetFromKeyring / edgePinFromKeyring). The DB table
+ * `edge_auth_signing_keys` (mig 0373) is an audit / distribution MIRROR, read by nothing here: a planted row is never trusted.
  *
  * TRUST ON THE EDGE (fix scan 2): the ONLY trust anchor is an EdgeTrustStore — LOCAL state built from the keyset PINNED
  * at provisioning (edge-keyset.json, every pinned key active and open-ended) plus the keyset updates it accepted itself,
@@ -50,7 +49,8 @@ import {
   verify as cryptoVerify,
   type KeyObject,
 } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 
 // ── constants ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -555,117 +555,134 @@ export function verifyEdgeObject<T = unknown>(raw: unknown, expectedTyp: EdgeSig
   return { ok: true, payload: r.payload as T, kid: r.kid };
 }
 
-// ── key endorsement + central keyset assembly ──────────────────────────────────────────────────────────────────────
+// ── central keyring: the KEY FILES are the only source of trust (fix scan 2, ruling R-10-c) ─────────────────────────
+//
+// The keyring is a directory on central (EDGE_SIGNING_KEY_DIR, default the directory of EDGE_SIGNING_KEY_FILE) holding one
+// private key file per key, `<kid>.pem` (mode 0600), and `keyring.json` (mode 0600): the status of each key. Only
+// scripts/edge-signing-key.ts writes it. Every keyset central publishes and the provisioning pin are derived from these FILES:
+// each non-retired entry must have its `<kid>.pem` whose public key IS the entry's key. The DB table edge_auth_signing_keys is
+// an audit / distribution MIRROR only — nothing here reads it, so a row planted there (by any DB writer) is never trusted.
 
-/** What an endorsement covers (the key row's identity; mig 0373 keeps these write-once). */
-export interface EdgeKeyRowIdentity {
+export interface EdgeKeyringEntry {
   kid: string;
   publicKeyPem: string;
-  /** epoch ms (a Date from the DB is accepted) */
-  notBefore: number | Date;
-}
-function endorsementText(row: EdgeKeyRowIdentity): string {
-  return edgeCanonicalJson({ kind: "key_endorsement", kid: row.kid, publicKeyPem: row.publicKeyPem, notBefore: new Date(row.notBefore).getTime() });
-}
-
-/** The endorsement (base64url signature) of a new key row by the key active when it was generated (the CLI). */
-export function endorseEdgeKey(endorser: EdgeSigningKey, row: EdgeKeyRowIdentity): string {
-  return cryptoSign(null, edgeSigningInput("keyset", endorser.kid, endorsementText(row)), endorser.privateKey).toString("base64url");
-}
-
-export function verifyEdgeKeyEndorsement(
-  row: EdgeKeyRowIdentity & { endorsedByKid: string | null; endorsementSig: string | null },
-  endorserPublicKeyPem: string,
-): boolean {
-  try {
-    if (!row.endorsedByKid || !row.endorsementSig || !SIG_RE.test(row.endorsementSig)) return false;
-    if (edgeKidOf(endorserPublicKeyPem) !== row.endorsedByKid) return false;
-    if (edgeKidOf(row.publicKeyPem) !== row.kid) return false;
-    const sig = Buffer.from(row.endorsementSig, "base64url");
-    if (sig.length !== 64 || sig.toString("base64url") !== row.endorsementSig) return false;
-    return cryptoVerify(null, edgeSigningInput("keyset", row.endorsedByKid, endorsementText(row)), publicKeyOf(endorserPublicKeyPem), sig) === true;
-  } catch {
-    return false;
-  }
-}
-
-/** A row of `edge_auth_signing_keys` as buildEdgeKeyset reads it. */
-export interface EdgeSigningKeyRow extends EdgeKeyRowIdentity {
   status: EdgeKeyStatus;
-  retiredAt: number | Date | null;
-  endorsedByKid: string | null;
-  endorsementSig: string | null;
+  /** epoch ms */
+  notBefore: number;
+  /** epoch ms when retired; null otherwise */
+  retiredAt: number | null;
+  /** the provisioning root (pinned by every edge): always active, never retired here */
+  root: boolean;
+}
+export interface EdgeKeyring {
+  v: 1;
+  /** bumped by every change — the version of the keyset central publishes */
+  version: number;
+  /** epoch ms of the last change — the published keyset's issuedAt (so one version ⇒ one byte-identical keyset) */
+  updatedAt: number;
+  keys: EdgeKeyringEntry[];
+}
+export const edgeKeyringSchema = z.strictObject({
+  v: z.literal(1),
+  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  updatedAt: epochMs,
+  keys: z
+    .array(
+      z.strictObject({
+        kid: z.string().regex(EDGE_KID_RE),
+        publicKeyPem: z.string().min(40).max(1000).startsWith("-----BEGIN PUBLIC KEY-----"),
+        status: z.enum(["next", "active", "retired"]),
+        notBefore: epochMs,
+        retiredAt: epochMs.nullable(),
+        root: z.boolean(),
+      }),
+    )
+    .min(1)
+    .max(16),
+});
+export const EDGE_KEYRING_FILE = "keyring.json";
+
+/** The keyring directory: EDGE_SIGNING_KEY_DIR, else the directory of EDGE_SIGNING_KEY_FILE, else null. */
+export function edgeKeyDirOf(env: NodeJS.ProcessEnv = process.env): string | null {
+  const dir = env.EDGE_SIGNING_KEY_DIR?.trim();
+  if (dir) return dir;
+  const file = env.EDGE_SIGNING_KEY_FILE?.trim();
+  return file ? path.dirname(file) : null;
 }
 
 /**
- * The keyset central distributes (B signs it with `signEdgeObject("keyset", …)` and ships it in the config). Included:
- *   • the LOADED signer — always, status active, open-ended (whatever its row says: central signs with it right now);
- *   • the PROVISIONING ROOT — the first ancestor of the signer without an endorsement (the genesis key, pinned by every
- *     edge): always active and open-ended, whatever its row says (edges refuse a keyset without it — R-10-a);
- *   • rows it endorsed, transitively, and rows that endorsed it, transitively — each endorsement verified; a row whose kid
- *     is not its key's fingerprint is never included; DB status active ⇒ active (a published second signer), next ⇒ next
- *     (cannot verify yet), retired ⇒ retired until retiredAt + retiredGraceMs (max auth TTL + skew), then dropped.
- * Returns { keyset, rootKid } — rootKid = the provisioning root (to write the pin file: edgePinnedKeyset). Keys ordered by
- * notBefore, then kid. Pure — no DB.
+ * Read + validate the keyring FILES of `dir`. Throws EdgeTrustError on anything inconsistent: bad shape, a kid that is not its
+ * key's fingerprint, duplicate kids, not exactly one root, a root that is not active, a retired key without retiredAt (or the
+ * reverse), and — for every non-retired key — a missing / unreadable / group-or-world-readable `<kid>.pem` or one whose public
+ * key is not the entry's.
  */
-export function buildEdgeKeyset(
-  rows: readonly EdgeSigningKeyRow[],
-  signer: EdgeSigningKey,
-  opts: { version: number; nowMs?: number; retiredGraceMs: number },
-): { keyset: EdgeKeyset; rootKid: string } {
-  const nowMs = opts.nowMs ?? Date.now();
-  const sane = rows.filter((r) => {
+export function readEdgeKeyring(dir: string): EdgeKeyring {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path.join(dir, EDGE_KEYRING_FILE), "utf8"));
+  } catch {
+    throw new EdgeTrustError(`keyring ${path.join(dir, EDGE_KEYRING_FILE)} missing or not JSON`);
+  }
+  const p = edgeKeyringSchema.safeParse(raw);
+  if (!p.success) throw new EdgeTrustError(`keyring shape: ${p.error.issues[0]?.path.join(".") ?? "?"}`);
+  const kr = p.data as EdgeKeyring;
+  const seen = new Set<string>();
+  for (const k of kr.keys) {
+    if (seen.has(k.kid)) throw new EdgeTrustError(`keyring: duplicate kid ${k.kid}`);
+    seen.add(k.kid);
+    let fp: string;
     try {
-      return EDGE_KID_RE.test(r.kid) && edgeKidOf(r.publicKeyPem) === r.kid;
+      fp = edgeKidOf(k.publicKeyPem);
     } catch {
-      return false;
+      throw new EdgeTrustError(`keyring: ${k.kid} is not an Ed25519 public key`);
     }
-  });
-  const byKid = new Map<string, EdgeSigningKeyRow>();
-  for (const r of sane) if (!byKid.has(r.kid)) byKid.set(r.kid, r);
-  const trusted = new Map<string, string>([[signer.kid, signer.publicKeyPem]]);
-  // ancestors: walk back along verified endorsements; the last one reached is the provisioning root
-  let rootKid = signer.kid;
-  let cur = byKid.get(signer.kid);
-  const guard = new Set<string>([signer.kid]);
-  while (cur?.endorsedByKid && !guard.has(cur.endorsedByKid)) {
-    const parent = byKid.get(cur.endorsedByKid);
-    if (!parent || !verifyEdgeKeyEndorsement(cur, parent.publicKeyPem)) break;
-    trusted.set(parent.kid, parent.publicKeyPem);
-    guard.add(parent.kid);
-    rootKid = parent.kid;
-    cur = parent;
-  }
-  // descendants: fixpoint over rows endorsed by a trusted key
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const r of byKid.values()) {
-      if (trusted.has(r.kid) || !r.endorsedByKid) continue;
-      const by = trusted.get(r.endorsedByKid);
-      if (by && verifyEdgeKeyEndorsement(r, by)) {
-        trusted.set(r.kid, r.publicKeyPem);
-        changed = true;
-      }
+    if (fp !== k.kid) throw new EdgeTrustError(`keyring: ${k.kid} is not the fingerprint of its key`);
+    if ((k.status === "retired") !== (k.retiredAt !== null)) throw new EdgeTrustError(`keyring: ${k.kid} retiredAt iff retired`);
+    if (k.root && k.status !== "active") throw new EdgeTrustError(`keyring: the root ${k.kid} must stay active (replace it only by re-provisioning)`);
+    if (k.status !== "retired") {
+      const key = loadEdgeSigningKey({ EDGE_SIGNING_KEY_FILE: path.join(dir, `${k.kid}.pem`) });
+      if (!key || key.kid !== k.kid) throw new EdgeTrustError(`keyring: ${k.kid}.pem does not hold the key ${k.kid}`);
     }
   }
-  const keys: EdgeKeysetKey[] = [];
-  for (const kid of trusted.keys()) {
-    const r = byKid.get(kid);
-    const rowNotBefore = r ? new Date(r.notBefore).getTime() : nowMs;
-    if (kid === signer.kid || kid === rootKid) {
-      keys.push({ kid, publicKeyPem: trusted.get(kid)!, status: "active", notBefore: Math.min(rowNotBefore, nowMs), notAfter: null });
-      continue;
-    }
-    if (!r) continue;
-    if (r.status === "retired") {
-      const retiredAt = r.retiredAt === null ? nowMs : new Date(r.retiredAt).getTime();
-      const notAfter = retiredAt + opts.retiredGraceMs;
-      if (notAfter < nowMs) continue;
-      keys.push({ kid, publicKeyPem: r.publicKeyPem, status: "retired", notBefore: Math.min(rowNotBefore, notAfter), notAfter });
-    } else {
-      keys.push({ kid, publicKeyPem: r.publicKeyPem, status: r.status, notBefore: rowNotBefore, notAfter: null });
-    }
+  if (kr.keys.filter((k) => k.root).length !== 1) throw new EdgeTrustError("keyring: exactly one root key is required");
+  return kr;
+}
+
+/** Write `keyring.json` atomically (temp file 0600 + rename). Callers: the CLI only. */
+export function writeEdgeKeyring(dir: string, keyring: EdgeKeyring): void {
+  const p = edgeKeyringSchema.safeParse(keyring);
+  if (!p.success) throw new EdgeTrustError("writeEdgeKeyring: invalid keyring");
+  const tmp = path.join(dir, `.${EDGE_KEYRING_FILE}.${process.pid}.${Date.now()}.tmp`);
+  writeFileSync(tmp, JSON.stringify(keyring, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+  renameSync(tmp, path.join(dir, EDGE_KEYRING_FILE));
+}
+
+/**
+ * The keyset central publishes, derived ONLY from the keyring files. The signer must be an ACTIVE key of the keyring (else
+ * throws). Deterministic: one keyring version ⇒ one byte-identical keyset (issuedAt = keyring.updatedAt), so a re-sent
+ * keyset is a no-op on the edge. Root: active, open-ended; active / next as recorded; retired: kept with notAfter = retiredAt +
+ * retiredGraceMs (the CLI prunes it later, with a version bump).
+ */
+export function buildEdgeKeysetFromKeyring(keyring: EdgeKeyring, signer: EdgeSigningKey, opts: { retiredGraceMs: number }): EdgeKeyset {
+  const me = keyring.keys.find((k) => k.kid === signer.kid);
+  if (!me || me.status !== "active" || me.publicKeyPem.trim() !== signer.publicKeyPem.trim()) {
+    throw new EdgeTrustError(`the loaded signing key ${signer.kid} is not an ACTIVE key of the keyring`);
   }
+  const keys: EdgeKeysetKey[] = keyring.keys.map((k) =>
+    k.status === "retired"
+      ? { kid: k.kid, publicKeyPem: k.publicKeyPem, status: "retired", notBefore: Math.min(k.notBefore, (k.retiredAt as number) + opts.retiredGraceMs), notAfter: (k.retiredAt as number) + opts.retiredGraceMs }
+      : { kid: k.kid, publicKeyPem: k.publicKeyPem, status: k.root ? "active" : k.status, notBefore: k.notBefore, notAfter: null },
+  );
   keys.sort((a, b) => a.notBefore - b.notBefore || (a.kid < b.kid ? -1 : a.kid > b.kid ? 1 : 0));
-  return { keyset: { v: 1, version: opts.version, issuedAt: nowMs, keys }, rootKid };
+  const ks: EdgeKeyset = { v: 1, version: keyring.version, issuedAt: keyring.updatedAt, keys };
+  const parsed = parseEdgeKeyset(ks);
+  if (!parsed.ok) throw new EdgeTrustError(`keyset from keyring invalid: ${parsed.reason}`);
+  return parsed.keyset;
+}
+
+/** The provisioning pin (edge-keyset.json): the keyring's ROOT only — from the files, never from the DB. */
+export function edgePinFromKeyring(keyring: EdgeKeyring): EdgeKeyset {
+  const root = keyring.keys.find((k) => k.root);
+  if (!root) throw new EdgeTrustError("keyring has no root");
+  return edgePinnedKeyset([{ kid: root.kid, publicKeyPem: root.publicKeyPem, notBefore: root.notBefore }], keyring.updatedAt);
 }

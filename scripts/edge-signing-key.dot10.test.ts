@@ -1,21 +1,23 @@
 /**
- * doc 81 Đợt 10 task A — scripts/edge-signing-key.ts: the private key goes ONLY to a new 0600 file (never printed, never in
- * the DB); public keys + endorsements go to edge_auth_signing_keys; genesis root / next / activate / retire / pin.
- * DB cases run on `_test` inside a transaction that is ROLLED BACK (the CLI takes the transaction as its db).
+ * doc 81 Đợt 10 task A — scripts/edge-signing-key.ts (fix scan 2, ruling R-10-c): TRUST COMES FROM THE KEY FILES. The private
+ * key goes only to `<dir>/<kid>.pem` (new, 0600; never printed, never in the DB); keyring.json holds status / root / version;
+ * generate / rotate / pin read and write ONLY the files; the DB table is a MIRROR written with the owner connection, and a row
+ * PLANTED there is flagged by `list` and never pinned or published.
+ * DB cases run on `_test` with an OWNER connection inside a transaction that is ROLLED BACK.
  */
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
-import { getDb } from "../server/db/connection";
 import { edgeAuthSigningKeys } from "../server/services/edge/edgeControlSchema";
-import { EdgeTrustStore, buildEdgeKeyset, edgeSigningKeyFromPem, parseEdgeKeyset, verifyEdgeKeyEndorsement } from "../server/services/edge/edgeSigning";
+import { EdgeTrustStore, buildEdgeKeysetFromKeyring, generateEdgeSigningKey, loadEdgeSigningKey, readEdgeKeyring, signEdgeObject, verifyEdgeObject } from "../server/services/edge/edgeSigning";
 import { runEdgeSigningKeyCli } from "./edge-signing-key";
 
-const dir = mkdtempSync(path.join(tmpdir(), "edge-signing-key-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
-const f = (n: string) => path.join(dir, n);
+const root = mkdtempSync(path.join(tmpdir(), "edge-signing-key-"));
+afterAll(() => rmSync(root, { recursive: true, force: true }));
+const f = (n: string) => path.join(root, n);
 
 function io() {
   const lines: string[] = [];
@@ -23,124 +25,135 @@ function io() {
   return { lines, errs, io: { out: (l: string) => lines.push(l), err: (l: string) => errs.push(l), env: {} as NodeJS.ProcessEnv } };
 }
 
-describe("edge-signing-key — arguments (no DB touched)", () => {
-  it("refuses bad usage before any DB / file work", async () => {
-    const noDb = { db: { select: () => { throw new Error("DB must not be touched"); } } };
+describe("edge-signing-key — arguments (no DB, no files touched)", () => {
+  it("refuses bad usage", async () => {
+    const deps = { mirrorDb: null };
     for (const [argv, code] of [
       [[], 2],
       [["bogus"], 2],
-      [["generate", "--out", f("x.pem")], 2], // no --by
-      [["generate", "--by", "me"], 2], // no --out
-      [["rotate", "--by", "me"], 2],
-      [["rotate", "--activate", "k", "--retire", "k", "--by", "me"], 2],
-      [["generate", "--out", f("y.pem"), "--by", "me", "--private-key", "x"], 2],
-      [["pin"], 2],
+      [["generate", "--by", "me"], 2], // no --dir
+      [["generate", "--dir", f("a")], 2], // no --by
+      [["rotate", "--dir", f("a"), "--by", "me"], 2],
+      [["rotate", "--dir", f("a"), "--activate", "k", "--retire", "k", "--by", "me"], 2],
+      [["generate", "--dir", f("a"), "--by", "me", "--private-key", "x"], 2],
+      [["pin", "--dir", f("a")], 2],
+      [["list", "--dir", f("nope")], 1], // no keyring
     ] as Array<[string[], number]>) {
       const t = io();
-      expect(await runEdgeSigningKeyCli(argv, t.io, noDb), argv.join(" ")).toBe(code);
+      expect(await runEdgeSigningKeyCli(argv, t.io, deps), argv.join(" ")).toBe(code);
     }
-    writeFileSync(f("exists.pem"), "keep");
-    const t = io();
-    expect(await runEdgeSigningKeyCli(["generate", "--out", f("exists.pem"), "--by", "me"], t.io, noDb)).toBe(1);
-    expect(readFileSync(f("exists.pem"), "utf8")).toBe("keep");
+    expect(existsSync(f("a"))).toBe(false);
+    writeFileSync(f("exists.json"), "keep");
+    expect(await runEdgeSigningKeyCli(["pin", "--dir", f("a"), "--out", f("exists.json")], io().io, deps)).toBe(1);
+    expect(readFileSync(f("exists.json"), "utf8")).toBe("keep");
   });
 });
 
-const onTest = /_test\b/.test(process.env.DATABASE_URL ?? "");
+describe("edge-signing-key — files are the source of trust (no DB)", () => {
+  it("root → next → activate → retire; root never retired; pin from the files; private key never printed; mirror failure never changes the files", async () => {
+    const dir = f("ring1");
+    const deps = { mirrorDb: null };
+    const g = io();
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, "--by", "admin.test"], g.io, deps)).toBe(0);
+    expect(g.lines.join("\n")).not.toMatch(/PRIVATE/);
+    expect(g.errs.join("\n")).toMatch(/WARNING: no mirror DB/);
+    let kr = readEdgeKeyring(dir);
+    const rootKey = kr.keys[0];
+    expect(rootKey).toMatchObject({ root: true, status: "active" });
+    if (process.platform !== "win32") expect(statSync(path.join(dir, `${rootKey.kid}.pem`)).mode & 0o777).toBe(0o600);
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, "--by", "admin.test"], io().io, deps)).toBe(0);
+    kr = readEdgeKeyring(dir);
+    const k2 = kr.keys[1];
+    expect(k2).toMatchObject({ root: false, status: "next" });
+    expect(kr.version).toBe(2);
+    expect(await runEdgeSigningKeyCli(["rotate", "--dir", dir, "--activate", k2.kid, "--by", "admin.test"], io().io, deps)).toBe(0);
+    const v3 = readEdgeKeyring(dir).version;
+    expect(await runEdgeSigningKeyCli(["rotate", "--dir", dir, "--activate", k2.kid, "--by", "admin.test"], io().io, deps)).toBe(1); // not next any more
+    expect(readEdgeKeyring(dir).version).toBe(v3);
+    expect(await runEdgeSigningKeyCli(["rotate", "--dir", dir, "--retire", rootKey.kid, "--by", "admin.test"], io().io, deps)).toBe(1);
+    // the published keyset is derived from the files; an edge pinned on the root accepts it via the root, then the new signer
+    const signer2 = loadEdgeSigningKey({ EDGE_SIGNING_KEY_FILE: path.join(dir, `${k2.kid}.pem`) })!;
+    const ks = buildEdgeKeysetFromKeyring(readEdgeKeyring(dir), signer2, { retiredGraceMs: 40_000 });
+    expect(await runEdgeSigningKeyCli(["pin", "--dir", dir, "--out", f("pin1.json")], io().io, deps)).toBe(0);
+    const pin = JSON.parse(readFileSync(f("pin1.json"), "utf8"));
+    expect(pin.keys.map((k: { kid: string }) => k.kid)).toEqual([rootKey.kid]);
+    const store = EdgeTrustStore.fromPinned(pin, { nodeId: 1 });
+    const rootSigner = loadEdgeSigningKey({ EDGE_SIGNING_KEY_FILE: path.join(dir, `${rootKey.kid}.pem`) })!;
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", ks, rootSigner)).ok).toBe(true);
+    expect(verifyEdgeObject(signEdgeObject("cmd", { kind: "stop" }, signer2), "cmd", store).ok).toBe(true);
+    expect(await runEdgeSigningKeyCli(["rotate", "--dir", dir, "--retire", k2.kid, "--by", "admin.test"], io().io, deps)).toBe(0);
+    expect(readEdgeKeyring(dir).keys.find((k) => k.kid === k2.kid)).toMatchObject({ status: "retired" });
+    // a failing mirror never changes the files
+    const failing = { mirrorDb: { insert: () => ({ values: () => ({ onConflictDoNothing: async () => { throw new Error("db down"); } }) }), select: () => ({ from: async () => [] }) } };
+    const fx = io();
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, "--by", "admin.test"], fx.io, failing)).toBe(0);
+    expect(fx.errs.join("\n")).toMatch(/WARNING: mirror not updated/);
+    expect(readEdgeKeyring(dir).keys).toHaveLength(3);
+  });
+
+  it("★ a tampered keyring (a key entry without its private key file) is refused by every command", async () => {
+    const dir = f("ring2");
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, "--by", "admin.test"], io().io, { mirrorDb: null })).toBe(0);
+    const planted = generateEdgeSigningKey().key;
+    const raw = JSON.parse(readFileSync(path.join(dir, "keyring.json"), "utf8"));
+    raw.keys.push({ kid: planted.kid, publicKeyPem: planted.publicKeyPem, status: "active", notBefore: Date.now(), retiredAt: null, root: false });
+    chmodSync(path.join(dir, "keyring.json"), 0o600);
+    writeFileSync(path.join(dir, "keyring.json"), JSON.stringify(raw));
+    for (const argv of [["list", "--dir", dir], ["pin", "--dir", dir, "--out", f("pin2.json")], ["generate", "--dir", dir, "--by", "x"]]) {
+      const t = io();
+      expect(await runEdgeSigningKeyCli(argv, t.io, { mirrorDb: null }), argv[0]).toBe(1);
+      expect(t.errs.join("\n")).toMatch(/keyring refused/);
+    }
+    expect(existsSync(f("pin2.json"))).toBe(false);
+  });
+});
+
+const DB_URL = process.env.DATABASE_URL ?? "";
+const onTest = /_test\b/.test(DB_URL);
 class Rollback extends Error {}
 
-describe.skipIf(!onTest)("edge-signing-key — lifecycle on _test (rolled back)", () => {
-  it("genesis → next (endorsed) → activate → retire; root never retired; pin; private key never in the DB or on stdout", async () => {
-    const d = (await getDb())!;
+describe.skipIf(!onTest)("edge-signing-key — the DB is a MIRROR only (owner connection, rolled back)", () => {
+  it("★ R-10-c: a key row PLANTED in the DB is flagged by list and is never pinned or published", async () => {
+    const u = new URL(DB_URL);
+    u.username = process.env.MIGRATION_DB_USER ?? "aoi";
+    u.password = process.env.MIGRATION_DB_PASSWORD ?? "aoi";
+    const client = postgres(u.toString(), { max: 1, onnotice: () => {} });
+    const owner = drizzle(client);
     const seen: Record<string, unknown> = {};
     try {
-      await d.transaction(async (tx) => {
-        // start from a clean key table inside this transaction (other rows are retired here and restored by the rollback)
-        await tx.execute(sql`UPDATE edge_auth_signing_keys SET status = 'retired', "retiredAt" = now() WHERE status <> 'retired'`);
-        const deps = { db: tx };
-        const g = io();
-        seen.genesis = await runEdgeSigningKeyCli(["generate", "--out", f("k1.pem"), "--by", "admin.test"], g.io, deps);
-        seen.genesisOut = g.lines.join("\n");
-        const k1 = edgeSigningKeyFromPem(readFileSync(f("k1.pem"), "utf8"));
-        if (process.platform !== "win32") seen.mode = statSync(f("k1.pem")).mode & 0o777;
-        const n0 = io();
-        seen.nextNoEndorser = await runEdgeSigningKeyCli(["generate", "--out", f("k2.pem"), "--by", "admin.test"], n0.io, deps);
-        seen.k2FileAfterRefusal = existsSync(f("k2.pem"));
-        const n1 = io();
-        seen.next = await runEdgeSigningKeyCli(["generate", "--out", f("k2.pem"), "--by", "admin.test", "--endorser-file", f("k1.pem")], n1.io, deps);
-        const k2 = edgeSigningKeyFromPem(readFileSync(f("k2.pem"), "utf8"));
-        const rows1 = await tx.select().from(edgeAuthSigningKeys);
-        const r1 = rows1.find((r) => r.kid === k1.kid)!;
-        const r2 = rows1.find((r) => r.kid === k2.kid)!;
-        seen.r1 = { status: r1.status, endorsedByKid: r1.endorsedByKid };
-        seen.r2 = { status: r2.status, endorsedByKid: r2.endorsedByKid, endorsementVerifies: verifyEdgeKeyEndorsement(r2, r1.publicKeyPem) };
-        seen.privateInDb = JSON.stringify(rows1).includes("PRIVATE KEY");
-        const a = io();
-        seen.activate = await runEdgeSigningKeyCli(["rotate", "--activate", k2.kid, "--by", "admin.test"], a.io, deps);
-        const built = buildEdgeKeyset(await tx.select().from(edgeAuthSigningKeys), k2, { version: 2, retiredGraceMs: 40_000 });
-        seen.built = { root: built.rootKid === k1.kid, kids: built.keyset.keys.map((k) => k.kid).sort() };
-        const rr = io();
-        seen.retireRoot = await runEdgeSigningKeyCli(["rotate", "--retire", k1.kid, "--by", "admin.test"], rr.io, deps);
-        const p = io();
-        seen.pin = await runEdgeSigningKeyCli(["pin", "--out", f("edge-keyset.json"), "--by", "admin.test"], p.io, deps);
-        const pin = JSON.parse(readFileSync(f("edge-keyset.json"), "utf8"));
-        seen.pinParsed = parseEdgeKeyset(pin).ok && pin.keys.length === 1 && pin.keys[0].kid === k1.kid;
-        seen.storeFromPin = EdgeTrustStore.fromPinned(pin, { nodeId: 1 }).version;
-        const r = io();
-        seen.retire2 = await runEdgeSigningKeyCli(["rotate", "--retire", k2.kid, "--by", "admin.test"], r.io, deps);
+      await owner.transaction(async (tx) => {
+        const dir = f("ring3");
+        const deps = { mirrorDb: tx };
+        expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, "--by", "admin.test"], io().io, deps)).toBe(0);
+        const rootKid = readEdgeKeyring(dir).keys[0].kid;
+        seen.mirrored = (await tx.select().from(edgeAuthSigningKeys)).some((r) => r.kid === rootKid);
+        // an attacker with DB write plants an "active" key in the mirror
+        const planted = generateEdgeSigningKey().key;
+        await tx.insert(edgeAuthSigningKeys).values({ kid: planted.kid, publicKeyPem: planted.publicKeyPem, status: "active", createdBy: "attacker" });
         const l = io();
-        seen.list = await runEdgeSigningKeyCli(["list"], l.io, deps);
+        expect(await runEdgeSigningKeyCli(["list", "--dir", dir], l.io, deps)).toBe(0);
         seen.listOut = l.lines.join("\n");
-        const [after2] = (await tx.select().from(edgeAuthSigningKeys)).filter((x) => x.kid === k2.kid);
-        seen.after2 = { status: after2.status, retired: after2.retiredAt !== null };
-        // a RETIRED key cannot endorse a new one
-        const re = io();
-        seen.retiredEndorser = await runEdgeSigningKeyCli(["generate", "--out", f("k3r.pem"), "--by", "admin.test", "--endorser-file", f("k2.pem")], re.io, deps);
-        seen.k3rLeft = existsSync(f("k3r.pem"));
-        // a failed DB insert (with a valid, active endorser) leaves no key file behind
-        const failing = { db: { select: tx.select.bind(tx), insert: () => ({ values: async () => { throw new Error("db down"); } }) } };
-        const fx = io();
-        seen.failedInsert = await runEdgeSigningKeyCli(["generate", "--out", f("k3.pem"), "--by", "admin.test", "--endorser-file", f("k1.pem")], fx.io, failing);
-        seen.failedInsertMsg = fx.errs.join("\n");
-        seen.k3Left = existsSync(f("k3.pem"));
-        // a `next` row whose endorsement does not verify is never activated
-        const k4 = edgeSigningKeyFromPem((await import("../server/services/edge/edgeSigning")).generateEdgeSigningKey().privateKeyPem);
-        const bogusSig = (await import("../server/services/edge/edgeSigning")).endorseEdgeKey(k2, { kid: k4.kid, publicKeyPem: k4.publicKeyPem, notBefore: new Date() });
-        await tx.insert(edgeAuthSigningKeys).values({ kid: k4.kid, publicKeyPem: k4.publicKeyPem, status: "next", createdBy: "admin.test", endorsedByKid: k1.kid, endorsementSig: bogusSig });
-        const bad = io();
-        seen.activateBadEndorsement = await runEdgeSigningKeyCli(["rotate", "--activate", k4.kid, "--by", "admin.test"], bad.io, deps);
+        expect(await runEdgeSigningKeyCli(["pin", "--dir", dir, "--out", f("pin3.json")], io().io, deps)).toBe(0);
+        const pin = JSON.parse(readFileSync(f("pin3.json"), "utf8"));
+        seen.pinKids = pin.keys.map((k: { kid: string }) => k.kid);
+        const signer = loadEdgeSigningKey({ EDGE_SIGNING_KEY_FILE: path.join(dir, `${rootKid}.pem`) })!;
+        seen.publishedKids = buildEdgeKeysetFromKeyring(readEdgeKeyring(dir), signer, { retiredGraceMs: 40_000 }).keys.map((k) => k.kid);
+        // an object signed by the planted key never verifies on an edge pinned from the files
+        const store = EdgeTrustStore.fromPinned(pin, { nodeId: 1 });
+        seen.plantedVerifies = verifyEdgeObject(signEdgeObject("cmd", { kind: "stop" }, planted), "cmd", store).ok;
+        seen.planted = planted.kid;
+        seen.root = rootKid;
         throw new Rollback();
       });
     } catch (e) {
       if (!(e instanceof Rollback)) throw e;
+    } finally {
+      await client.end({ timeout: 5 });
     }
-    expect(seen).toMatchObject({
-      genesis: 0,
-      nextNoEndorser: 2,
-      k2FileAfterRefusal: false,
-      next: 0,
-      r1: { status: "active", endorsedByKid: null },
-      r2: { status: "next", endorsementVerifies: true },
-      privateInDb: false,
-      activate: 0,
-      built: { root: true },
-      retireRoot: 1,
-      pin: 0,
-      pinParsed: true,
-      storeFromPin: 1,
-      retire2: 0,
-      list: 0,
-      after2: { status: "retired", retired: true },
-      retiredEndorser: 1,
-      k3rLeft: false,
-      failedInsert: 1,
-      failedInsertMsg: expect.stringContaining("could not be recorded"),
-      k3Left: false,
-      activateBadEndorsement: 1,
-    });
-    expect((seen.built as { kids: string[] }).kids).toHaveLength(2);
-    expect(seen.genesisOut).not.toMatch(/PRIVATE/);
-    expect(seen.listOut).toMatch(/ROOT \(genesis\)/);
-    if (process.platform !== "win32") expect(seen.mode).toBe(0o600);
+    expect(seen.mirrored).toBe(true);
+    expect(seen.listOut).toContain(`MIRROR-ONLY (untrusted, ignored): ${seen.planted}`);
+    expect(seen.pinKids).toEqual([seen.root]);
+    expect(seen.publishedKids).toEqual([seen.root]);
+    expect(seen.plantedVerifies).toBe(false);
   }, 60_000);
 });

@@ -1,11 +1,16 @@
 /**
- * doc 81 Đợt 10 task A — migrations 0372–0375 on the `_test` DB, measured through the NARROW projections the groups will use
- * (edgeControlSchema.ts) and through the apply scripts themselves:
+ * doc 81 Đợt 10 task A — migrations 0372–0375 on the `_test` DB, measured through the NARROW projections and guarded helpers
+ * the groups will use (edgeControlSchema.ts) and through the apply scripts themselves, as avi_app:
  *   • every projection selects (its columns exist with these names);
- *   • the triggers behave through drizzle as avi_app: ownership change logged WORM with the actor of setEdgeOwnershipActor,
- *     the floor raised, refused while a job runs; cursors start at 0 and never go back; key status one-way;
- *   • the apply scripts re-run idempotently (--test-only, both URLs pinned to _test) and refuse to run without a target flag;
- *   • isEdgeControlSchemaMissing recognises 42703 / 42P01.
+ *   • ownership: WORM history with the actor of setEdgeOwnershipActor, floor raised, refused while a job runs;
+ *   • R-10-b owner epoch: an owner change re-locks the robot under the new authority + epoch IN THE SAME statement; stale-epoch
+ *     lock events are refused / match nothing; a node re-created under the same id cannot touch the old authority;
+ *   • fix scan 2 safety-lock: avi_app cannot UPDATE / DELETE / move an edge-authority row directly — only applyEdgeMotionLock /
+ *     clearEdgeMotionLock (matched, generation-checked); central rows of central robots behave as before;
+ *   • fix scan 2 maker-checker: avi_app cannot write trust approvals directly; an editor since the last approval (the creator
+ *     included) can never approve; an owner change / digest change invalidates the approval;
+ *   • R-10-c: avi_app cannot plant a signing-key row (the mirror is the owner's);
+ *   • cursors start at 0 and never go back; the apply scripts re-run idempotently and refuse without a target flag.
  * Every write happens in a transaction that is rolled back.
  */
 import { spawnSync } from "node:child_process";
@@ -17,6 +22,9 @@ import { getDb } from "../../db/connection";
 import {
   EDGE_CONTROL_MIGRATIONS,
   adapterOwnership,
+  applyEdgeMotionLock,
+  approveEdgeRobotTrust,
+  clearEdgeMotionLock,
   deviceOwnerChanges,
   edgeAuthSigningKeys,
   edgeLockRowMatch,
@@ -27,6 +35,8 @@ import {
   edgeStepAuthorizations,
   isEdgeControlRefusal,
   isEdgeControlSchemaMissing,
+  isEdgeRobotTrustApproved,
+  requestEdgeRobotTrust,
   robotMotionLockAuthority,
   robotMotionLockRequests,
   robotOwnership,
@@ -52,18 +62,24 @@ async function inRolledBackTx<T>(fn: (tx: any) => Promise<T>): Promise<T> {
   }
   return out as T;
 }
-async function codeOf(tx: any, p: Promise<unknown>): Promise<string | null> {
+async function codeOf(tx: any, p: () => Promise<unknown>): Promise<string | null> {
   try {
-    await tx.transaction(async () => p);
+    await tx.transaction(async () => p());
     return null;
   } catch (e) {
-    const c = (e as { code?: string; cause?: { code?: string } }).code ?? (e as { cause?: { code?: string } }).cause?.code;
+    const c = (e as { code?: string }).code ?? (e as { cause?: { code?: string } }).cause?.code;
     return c ?? String((e as Error).message);
   }
 }
+const one = async (tx: any, q: ReturnType<typeof sql>) => ((await tx.execute(q)) as Array<Record<string, any>>)[0];
+async function nodeRobot(tx: any, code: string) {
+  const node = await one(tx, sql`INSERT INTO edge_nodes (code, name, status) VALUES (${code}, ${code}, 'offline') RETURNING id`);
+  const robot = await one(tx, sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${code}, ${code}, 'sim', 'sim://t') RETURNING id`);
+  return { node: node.id as number, robot: robot.id as number };
+}
 
 describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", () => {
-  it("every projection selects (columns exist under these names)", async () => {
+  it("every projection selects (columns exist under these names); the ledger holds the four files", async () => {
     const d = (await getDb())!;
     for (const t of [edgeStepAuthorizations, edgeNodeReportCursors, edgeNodeProgramReports, edgeAuthSigningKeys, edgeNodeProtocol, robotOwnership, adapterOwnership, robotMotionLockAuthority, robotMotionLockRequests, deviceOwnerChanges, edgeRobotTrustApprovals]) {
       await expect(d.select().from(t as never).limit(1)).resolves.toBeInstanceOf(Array);
@@ -74,65 +90,63 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
   });
 
   it("ownership change: WORM history with the named actor, floor raised past the lock generation, refused while a job runs", async () => {
-    const CODE = `__dot10A_own_${Date.now()}`;
     const out = await inRolledBackTx(async (tx) => {
-      const [node] = (await tx.execute(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE}, ${CODE}, 'offline') RETURNING id`)) as Array<{ id: number }>;
-      const [robot] = (await tx.execute(sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${CODE}, ${CODE}, 'sim', 'sim://t') RETURNING id`)) as Array<{ id: number }>;
-      const [busy] = (await tx.execute(sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${CODE + "b"}, ${CODE}, 'sim', 'sim://t') RETURNING id`)) as Array<{ id: number }>;
-      await tx.insert(robotMotionLockAuthority).values({ robotId: robot.id, reasonCode: "t", generation: 9 });
-      await setEdgeOwnershipActor(tx, `admin:${CODE}`);
-      await tx.update(robotOwnership).set({ edgeNodeId: node.id }).where(eq(robotOwnership.id, robot.id));
-      const [own] = await tx.select().from(robotOwnership).where(eq(robotOwnership.id, robot.id));
-      const hist = await tx.select().from(deviceOwnerChanges).where(and(eq(deviceOwnerChanges.deviceKind, "robot"), eq(deviceOwnerChanges.deviceId, robot.id)));
-      await tx.execute(sql`INSERT INTO robot_jobs ("robotId", "jobType", status) VALUES (${busy.id}, 'move', 'running')`);
-      const busyChange = await codeOf(tx, tx.update(robotOwnership).set({ edgeNodeId: node.id }).where(eq(robotOwnership.id, busy.id)));
-      const lockOther = await codeOf(tx, tx.update(robotMotionLockAuthority).set({ authority: `edge:${node.id + 1000000}` }).where(eq(robotMotionLockAuthority.robotId, robot.id)));
-      const lockOwner = await codeOf(tx, tx.update(robotMotionLockAuthority).set({ authority: `edge:${node.id}` }).where(eq(robotMotionLockAuthority.robotId, robot.id)));
-      return { own, hist, busyChange, lockOther, lockOwner };
+      const { node, robot } = await nodeRobot(tx, `__dot10A_own_${Date.now()}`);
+      const busy = (await one(tx, sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${"__dot10A_busy_" + Date.now()}, 'b', 'sim', 'sim://t') RETURNING id`)).id;
+      await tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "t", generation: 9 }); // a central row of a central robot
+      await setEdgeOwnershipActor(tx, `admin:dot10A`);
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot));
+      const [own] = await tx.select().from(robotOwnership).where(eq(robotOwnership.id, robot));
+      const hist = await tx.select().from(deviceOwnerChanges).where(and(eq(deviceOwnerChanges.deviceKind, "robot"), eq(deviceOwnerChanges.deviceId, robot)));
+      await tx.execute(sql`INSERT INTO robot_jobs ("robotId", "jobType", status) VALUES (${busy}, 'move', 'running')`);
+      const busyChange = await codeOf(tx, () => tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, busy)));
+      return { own, hist, busyChange };
     });
     expect(out.own.motionLockGenerationFloor).toBe(10);
     expect(out.hist).toHaveLength(1);
-    expect(out.hist[0]).toMatchObject({ fromEdgeNodeId: null, generationFloor: 10, changedBy: expect.stringContaining("admin:__dot10A_own_") });
+    expect(out.hist[0]).toMatchObject({ fromEdgeNodeId: null, generationFloor: 10, fromOwnerEpoch: 1, toOwnerEpoch: 2, changedBy: "admin:dot10A" });
     expect(out.busyChange).toBe("23514");
-    expect(out.lockOther).toBe("23514");
-    expect(out.lockOwner).toBeNull();
     expect(isEdgeControlRefusal({ code: "23514" })).toBe(true);
   });
 
-  it("★ R-10-b: an owner change re-locks the robot under the new authority + epoch; stale-epoch lock events are refused / match nothing", async () => {
-    const CODE = `__dot10A_epoch_${Date.now()}`;
+  it("★ R-10-b + safety-lock: the owner change locks the robot in the SAME statement; edge rows move only through the guarded path", async () => {
     const out = await inRolledBackTx(async (tx) => {
-      const [node] = (await tx.execute(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE}, ${CODE}, 'offline') RETURNING id`)) as Array<{ id: number }>;
-      const [robot] = (await tx.execute(sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${CODE}, ${CODE}, 'sim', 'sim://t') RETURNING id`)) as Array<{ id: number }>;
-      await tx.update(robotOwnership).set({ edgeNodeId: node.id }).where(eq(robotOwnership.id, robot.id));
-      const [own] = await tx.select().from(robotOwnership).where(eq(robotOwnership.id, robot.id));
-      const [lock] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot.id));
-      const staleApply = await tx.update(robotMotionLockAuthority).set({ generation: 99 }).where(edgeLockRowMatch(robot.id, node.id, own.ownerEpoch - 1)).returning({ id: robotMotionLockAuthority.robotId });
-      const staleWrite = await codeOf(tx, tx.update(robotMotionLockAuthority).set({ ownerEpoch: own.ownerEpoch - 1, generation: lock.generation + 1 }).where(eq(robotMotionLockAuthority.robotId, robot.id)));
-      const currentApply = await tx.update(robotMotionLockAuthority).set({ generation: lock.generation + 1 }).where(edgeLockRowMatch(robot.id, node.id, own.ownerEpoch)).returning({ id: robotMotionLockAuthority.robotId });
-      const manualEpoch = await codeOf(tx, tx.update(robotOwnership).set({ ownerEpoch: own.ownerEpoch + 5 }).where(eq(robotOwnership.id, robot.id)));
-      return { own, lock, staleApply: staleApply.length, staleWrite, currentApply: currentApply.length, manualEpoch };
+      const { node, robot } = await nodeRobot(tx, `__dot10A_lock_${Date.now()}`);
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot));
+      const [lock] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot));
+      const directUpdate = await codeOf(tx, () => tx.update(robotMotionLockAuthority).set({ generation: 99 }).where(eq(robotMotionLockAuthority.robotId, robot)));
+      const directDelete = await codeOf(tx, () => tx.delete(robotMotionLockAuthority).where(edgeLockRowMatch(robot, node, 2)));
+      const directToCentral = await codeOf(tx, () => tx.update(robotMotionLockAuthority).set({ authority: "central", authorityNodeId: null }).where(eq(robotMotionLockAuthority.robotId, robot)));
+      const staleApply = await codeOf(tx, () => applyEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 1, generation: lock.generation + 1, reasonCode: "x" }));
+      const applyNewer = await applyEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: lock.generation + 2, reasonCode: "outcomeUnknown" });
+      const applyLower = await applyEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: lock.generation + 1, reasonCode: "x" });
+      const staleClear = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 1, generation: 1000 });
+      const lowClear = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: lock.generation + 1 });
+      const clear = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: lock.generation + 2 });
+      const centralRowOnEdgeRobot = await codeOf(tx, () => tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "c", generation: 1 }));
+      return { lock, directUpdate, directDelete, directToCentral, staleApply, applyLower, applyNewer, staleClear, lowClear, clear, centralRowOnEdgeRobot };
     });
-    expect(out.own.ownerEpoch).toBe(2);
-    expect(out.lock).toMatchObject({ authority: expect.stringMatching(/^edge:\d+$/), ownerEpoch: 2, reasonCode: "ownerChanged", generation: out.own.motionLockGenerationFloor });
-    expect(out).toMatchObject({ staleApply: 0, staleWrite: "23514", currentApply: 1, manualEpoch: "23514" });
+    expect(out.lock).toMatchObject({ authority: expect.stringMatching(/^edge:\d+$/), ownerEpoch: 2, reasonCode: "ownerChanged" });
+    expect(out).toMatchObject({
+      directUpdate: "23514", directDelete: "23514", directToCentral: "23514", staleApply: "23514", applyLower: false, applyNewer: true,
+      staleClear: 0, lowClear: 0, clear: 1, centralRowOnEdgeRobot: "23514",
+    });
   });
 
   it("★ R-10-b: a node deleted and re-created under the SAME id cannot apply / clear the old (authority, epoch)", async () => {
-    const CODE = `__dot10A_reuse_${Date.now()}`;
     const out = await inRolledBackTx(async (tx) => {
-      const [node] = (await tx.execute(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE}, ${CODE}, 'offline') RETURNING id`)) as Array<{ id: number }>;
-      const [robot] = (await tx.execute(sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${CODE}, ${CODE}, 'sim', 'sim://t') RETURNING id`)) as Array<{ id: number }>;
-      await tx.update(robotOwnership).set({ edgeNodeId: node.id }).where(eq(robotOwnership.id, robot.id)); // epoch 2
-      const nodeDelWhileOwner = await codeOf(tx, tx.execute(sql`DELETE FROM edge_nodes WHERE id = ${node.id}`));
-      await tx.update(robotOwnership).set({ edgeNodeId: null }).where(eq(robotOwnership.id, robot.id)); // epoch 3, row central
-      await tx.execute(sql`DELETE FROM edge_nodes WHERE id = ${node.id}`);
-      await tx.execute(sql`INSERT INTO edge_nodes (id, code, name, status) VALUES (${node.id}, ${CODE + "-reused"}, ${CODE}, 'offline')`);
-      await tx.update(robotOwnership).set({ edgeNodeId: node.id }).where(eq(robotOwnership.id, robot.id)); // epoch 4
-      const oldClear = await tx.delete(robotMotionLockAuthority).where(edgeLockRowMatch(robot.id, node.id, 2)).returning({ id: robotMotionLockAuthority.robotId });
-      const oldApply = await codeOf(tx, tx.update(robotMotionLockAuthority).set({ ownerEpoch: 2 }).where(eq(robotMotionLockAuthority.robotId, robot.id)));
-      const [still] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot.id));
-      return { nodeDelWhileOwner, oldClear: oldClear.length, oldApply, still };
+      const code = `__dot10A_reuse_${Date.now()}`;
+      const { node, robot } = await nodeRobot(tx, code);
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot)); // epoch 2
+      const nodeDelWhileOwner = await codeOf(tx, () => tx.execute(sql`DELETE FROM edge_nodes WHERE id = ${node}`));
+      await tx.update(robotOwnership).set({ edgeNodeId: null }).where(eq(robotOwnership.id, robot)); // epoch 3, row central
+      await tx.execute(sql`DELETE FROM edge_nodes WHERE id = ${node}`);
+      await tx.execute(sql`INSERT INTO edge_nodes (id, code, name, status) VALUES (${node}, ${code + "-reused"}, ${code}, 'offline')`);
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot)); // epoch 4
+      const oldClear = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: 1000 });
+      const oldApply = await codeOf(tx, () => applyEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: 1000, reasonCode: "x" }));
+      const [still] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot));
+      return { nodeDelWhileOwner, oldClear, oldApply, still };
     });
     expect(out.nodeDelWhileOwner).toBe("23503");
     expect(out.oldClear).toBe(0);
@@ -140,22 +154,49 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
     expect(out.still).toMatchObject({ ownerEpoch: 4, reasonCode: "ownerChanged" });
   });
 
-  it("report cursor starts at 0 and never goes back; key status is one-way", async () => {
-    const CODE = `__dot10A_cur_${Date.now()}`;
+  it("★ maker-checker: no direct write; the creator / a later editor never approves; owner or digest change invalidates", async () => {
     const out = await inRolledBackTx(async (tx) => {
-      const [node] = (await tx.execute(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE}, ${CODE}, 'offline') RETURNING id`)) as Array<{ id: number }>;
-      const ep = "a".repeat(32);
-      await tx.insert(edgeNodeReportCursors).values({ edgeNodeId: node.id, stream: "events", epoch: ep });
-      const startHigh = await codeOf(tx, tx.insert(edgeNodeReportCursors).values({ edgeNodeId: node.id, stream: "robot_state", epoch: ep, lastSeq: 3 }));
-      await tx.update(edgeNodeReportCursors).set({ lastSeq: 5 }).where(eq(edgeNodeReportCursors.edgeNodeId, node.id));
-      const back = await codeOf(tx, tx.update(edgeNodeReportCursors).set({ lastSeq: 4 }).where(eq(edgeNodeReportCursors.edgeNodeId, node.id)));
-      const kid = "edk_" + "Q".repeat(22);
-      await tx.insert(edgeAuthSigningKeys).values({ kid, publicKeyPem: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----\n", status: "active", createdBy: CODE });
-      await tx.update(edgeAuthSigningKeys).set({ status: "retired", retiredAt: new Date() }).where(eq(edgeAuthSigningKeys.kid, kid));
-      const unretire = await codeOf(tx, tx.update(edgeAuthSigningKeys).set({ status: "active", retiredAt: null }).where(eq(edgeAuthSigningKeys.kid, kid)));
-      return { startHigh, back, unretire };
+      const code = `__dot10A_trust_${Date.now()}`;
+      const { node, robot } = await nodeRobot(tx, code);
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot));
+      const user = async (tag: string) => (await one(tx, sql`INSERT INTO users ("openId", role, "isActive") VALUES (${code + tag}, 'admin', true) RETURNING id`)).id as number;
+      const [maker, editor2, checker] = [await user("-m"), await user("-e"), await user("-c")];
+      const D = (c: string) => c.repeat(64);
+      const directInsert = await codeOf(tx, () => tx.insert(edgeRobotTrustApprovals).values({ edgeNodeId: node, robotId: robot, digest: D("a"), ownerEpoch: 2, editedBy: maker, editorsSinceApproval: [maker] }));
+      await requestEdgeRobotTrust(tx, { nodeId: node, robotId: robot, digest: D("a"), editorUserId: maker });
+      const byCreator = await codeOf(tx, () => approveEdgeRobotTrust(tx, { nodeId: node, robotId: robot, digest: D("a"), approverUserId: maker }));
+      await requestEdgeRobotTrust(tx, { nodeId: node, robotId: robot, digest: D("a"), editorUserId: editor2 });
+      const byLaterEditor = await codeOf(tx, () => approveEdgeRobotTrust(tx, { nodeId: node, robotId: robot, digest: D("a"), approverUserId: editor2 }));
+      const directApprove = await codeOf(tx, () => tx.update(edgeRobotTrustApprovals).set({ approvedBy: checker }).where(eq(edgeRobotTrustApprovals.robotId, robot)));
+      await approveEdgeRobotTrust(tx, { nodeId: node, robotId: robot, digest: D("a"), approverUserId: checker });
+      const approved = await isEdgeRobotTrustApproved(tx, { nodeId: node, robotId: robot, digest: D("a") });
+      await tx.update(robotOwnership).set({ edgeNodeId: null }).where(eq(robotOwnership.id, robot));
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot));
+      const afterOwnerChange = await isEdgeRobotTrustApproved(tx, { nodeId: node, robotId: robot, digest: D("a") });
+      await requestEdgeRobotTrust(tx, { nodeId: node, robotId: robot, digest: D("b"), editorUserId: maker });
+      await approveEdgeRobotTrust(tx, { nodeId: node, robotId: robot, digest: D("b"), approverUserId: checker });
+      const reApproved = await isEdgeRobotTrustApproved(tx, { nodeId: node, robotId: robot, digest: D("b") });
+      await requestEdgeRobotTrust(tx, { nodeId: node, robotId: robot, digest: D("c"), editorUserId: editor2 });
+      const afterDigestChange = await isEdgeRobotTrustApproved(tx, { nodeId: node, robotId: robot, digest: D("b") });
+      return { directInsert, byCreator, byLaterEditor, directApprove, approved, afterOwnerChange, reApproved, afterDigestChange };
     });
-    expect(out).toEqual({ startHigh: "23514", back: "23514", unretire: "23514" });
+    expect(out).toEqual({ directInsert: "42501", byCreator: "23514", byLaterEditor: "23514", directApprove: "42501", approved: true, afterOwnerChange: false, reApproved: true, afterDigestChange: false });
+  });
+
+  it("report cursor starts at 0 and never goes back; avi_app cannot plant a signing-key row (R-10-c mirror)", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      const { node } = await nodeRobot(tx, `__dot10A_cur_${Date.now()}`);
+      const ep = "a".repeat(32);
+      await tx.insert(edgeNodeReportCursors).values({ edgeNodeId: node, stream: "events", epoch: ep });
+      const startHigh = await codeOf(tx, () => tx.insert(edgeNodeReportCursors).values({ edgeNodeId: node, stream: "robot_state", epoch: ep, lastSeq: 3 }));
+      await tx.update(edgeNodeReportCursors).set({ lastSeq: 5 }).where(eq(edgeNodeReportCursors.edgeNodeId, node));
+      const back = await codeOf(tx, () => tx.update(edgeNodeReportCursors).set({ lastSeq: 4 }).where(eq(edgeNodeReportCursors.edgeNodeId, node)));
+      const plant = await codeOf(tx, () =>
+        tx.insert(edgeAuthSigningKeys).values({ kid: "edk_" + "Q".repeat(22), publicKeyPem: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----\n", status: "active", createdBy: "planted" }),
+      );
+      return { startHigh, back, plant };
+    });
+    expect(out).toEqual({ startHigh: "23514", back: "23514", plant: "42501" });
   });
 
   it("isEdgeControlSchemaMissing recognises an absent column (42703) / table (42P01)", async () => {

@@ -12,12 +12,13 @@
 --   reads an edge-owned controller). Upsert per (node, adapter). status ∈ verified | unsupported | unreadable; checksum iff
 --   verified, reason iff unreadable. (0374 adds: the adapter must be OWNED by the node.)
 --   avi_app: SELECT, INSERT, UPDATE ("status", "checksum", "reason", "readAt", "receivedAt") only.
--- • edge_auth_signing_keys — PUBLIC keys only (the private key is a 0600 file / env PEM, never here). kid = fingerprint
---   (edk_ + 22 b64url). status next → active → retired (retired terminal; active never goes back to next); retiredAt iff
---   retired, written once. A non-genesis key carries an ENDORSEMENT (endorsedByKid + endorsementSig) made by the key active
---   when it was generated — central's keyset builder (edgeSigning.buildEdgeKeyset) includes only rows whose endorsement chain
---   verifies, so a DB writer alone can never add a trusted key. WRITE-ONCE (IS DISTINCT FROM): kid, publicKeyPem, notBefore,
---   createdBy, createdAt, endorsedByKid, endorsementSig. avi_app: SELECT, INSERT, UPDATE ("status", "retiredAt") only.
+-- • edge_auth_signing_keys — an audit / distribution MIRROR of the central keyring FILES (fix scan 2, ruling R-10-c): it is
+--   NEVER a source of trust — the published keyset and the provisioning pin are derived from the key files only
+--   (edgeSigning.readEdgeKeyring / buildEdgeKeysetFromKeyring / edgePinFromKeyring); `edge-signing-key.ts list` flags every row
+--   not backed by the files. PUBLIC keys only. kid = fingerprint (edk_ + 22 b64url). status next → active → retired (retired
+--   terminal; active never goes back to next); retiredAt iff retired, written once. WRITE-ONCE (IS DISTINCT FROM): kid,
+--   publicKeyPem, notBefore, createdBy, createdAt, endorsedByKid, endorsementSig (the endorsement columns are unused since
+--   R-10-c; kept NULL). avi_app: SELECT ONLY — the mirror is written by the owner (the CLI's own connection).
 -- • edge_nodes."protocolVersion" smallint DEFAULT 1 — 1 = Đợt 9 (DB-backed edge), 2 = this protocol; central refuses a v1
 --   call for a v2 node. Read through the narrow projection (edgeControlSchema.ts), never added to the full edge_nodes object.
 --
@@ -142,7 +143,6 @@ BEGIN
     GRANT UPDATE ("lastSeq", "updatedAt") ON "edge_node_report_cursors" TO avi_app;
     GRANT SELECT, INSERT ON "edge_node_program_reports" TO avi_app;
     GRANT UPDATE ("status", "checksum", "reason", "readAt", "receivedAt") ON "edge_node_program_reports" TO avi_app;
-    GRANT SELECT, INSERT ON "edge_auth_signing_keys" TO avi_app;
-    GRANT UPDATE ("status", "retiredAt") ON "edge_auth_signing_keys" TO avi_app;
+    GRANT SELECT ON "edge_auth_signing_keys" TO avi_app; -- R-10-c: a mirror; avi_app can never plant / alter a key row
   END IF;
 END $$;

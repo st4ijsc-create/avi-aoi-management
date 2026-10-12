@@ -11,7 +11,7 @@
  *         same (node, stream) under a new epoch ⇒ ok, DELETE ⇒ 42501;
  *       program reports — verified with checksum ⇒ ok, verified without / unreadable without reason ⇒ 23514, upsert ⇒ ok,
  *         DELETE ⇒ 42501;
- *       keys — a genesis key (active) ⇒ ok, a next key endorsed by it ⇒ ok, a key born retired ⇒ 23514, a bad kid / not a
+ *       keys (R-10-c: avi_app SELECT only — an INSERT / UPDATE by avi_app ⇒ 42501; the rest measured AS OWNER) — a genesis key (active) ⇒ ok, a next key endorsed by it ⇒ ok, a key born retired ⇒ 23514, a bad kid / not a
  *         PEM / an endorsement without a signature ⇒ 23514, self-endorsement ⇒ 23514, next → active ⇒ ok, active → next ⇒
  *         23514, active → retired (with retiredAt) ⇒ ok, retired → active ⇒ 23514, the public key ⇒ 42501, DELETE ⇒ 42501;
  *       protocolVersion — 2 ⇒ ok, 3 ⇒ 23514;
@@ -35,7 +35,7 @@ const COLS = {
 const WANT_UPD = {
   [CUR]: ["lastSeq", "updatedAt"],
   [PRG]: ["checksum", "readAt", "reason", "receivedAt", "status"],
-  [KEYS]: ["retiredAt", "status"],
+  [KEYS]: [],
 };
 const EP = (c) => c.repeat(32);
 function key() {
@@ -76,7 +76,8 @@ await runMigration({
     // (b) catalog
     for (const t of [CUR, PRG, KEYS]) {
       const p = await tablePriv(appSql, t);
-      if (!p.sel || !p.ins || p.upd || p.del || p.trunc || p.refs || p.trig) throw new Error(`(b) table grants on ${t} not exact: ${JSON.stringify(p)}`);
+      const wantIns = t !== KEYS; // R-10-c: the key mirror is SELECT only for avi_app
+      if (!p.sel || p.ins !== wantIns || p.upd || p.del || p.trunc || p.refs || p.trig) throw new Error(`(b) table grants on ${t} not exact: ${JSON.stringify(p)}`);
       const upd = await updatableCols(appSql, t, COLS[t]);
       if (JSON.stringify(upd) !== JSON.stringify(WANT_UPD[t])) throw new Error(`(b) column UPDATE on ${t} not exact: ${JSON.stringify(upd)}`);
     }
@@ -106,6 +107,20 @@ await runMigration({
           ON CONFLICT ("edgeNodeId", "adapterId") DO UPDATE SET status = EXCLUDED.status, checksum = NULL, reason = EXCLUDED.reason, "readAt" = EXCLUDED."readAt", "receivedAt" = now()`,
       );
       r.prgDel = await maLoi(tx, (sp) => sp`DELETE FROM ${sp(PRG)} WHERE "edgeNodeId" = ${node.id}`);
+      r.keyPlantByApp = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(KEYS)} (kid, "publicKeyPem", status, "createdBy") VALUES (${k1.kid}, ${k1.pem}, 'active', ${CODE})`);
+      r.pv2 = await maLoi(tx, (sp) => sp`UPDATE edge_nodes SET "protocolVersion" = 2 WHERE id = ${node.id}`);
+      r.pv3 = await maLoi(tx, (sp) => sp`UPDATE edge_nodes SET "protocolVersion" = 3 WHERE id = ${node.id}`);
+      const [c] = await tx`SELECT "lastSeq"::int AS s FROM ${tx(CUR)} WHERE "edgeNodeId" = ${node.id} AND stream = 'run:9:1' AND epoch = ${EP("a")}`;
+      r.cursorAfter = c?.s ?? null;
+      return r;
+    });
+    expectExact("(b) avi_app behaviour", kq, {
+      curOk: null, curStartHigh: "23514", curBadStream: "23514", curBadEpoch: "23514", curUp: null, curDown: "23514", curKey: "42501", curNewEpoch: null, curDel: "42501",
+      prgOk: null, prgNoSum: "23514", prgNoReason: "23514", prgUpsert: null, prgDel: "42501",
+      keyPlantByApp: "42501", pv2: null, pv3: "23514", cursorAfter: 7,
+    });
+    const kk = await rolledBack(sql, async (tx) => {
+      const r = {};
       const keyIns = (sp, k, status, by = null, sig = null) =>
         sp`INSERT INTO ${sp(KEYS)} (kid, "publicKeyPem", status, "createdBy", "endorsedByKid", "endorsementSig") VALUES (${k.kid}, ${k.pem}, ${status}, ${CODE}, ${by}, ${sig})`;
       r.keyGenesis = await maLoi(tx, (sp) => keyIns(sp, k1, "active"));
@@ -121,17 +136,11 @@ await runMigration({
       r.keyUnretire = await maLoi(tx, (sp) => sp`UPDATE ${sp(KEYS)} SET status = 'active', "retiredAt" = NULL WHERE kid = ${k1.kid}`);
       r.keyPem = await maLoi(tx, (sp) => sp`UPDATE ${sp(KEYS)} SET "publicKeyPem" = ${k3.pem} WHERE kid = ${k2.kid}`);
       r.keyDel = await maLoi(tx, (sp) => sp`DELETE FROM ${sp(KEYS)} WHERE kid = ${k2.kid}`);
-      r.pv2 = await maLoi(tx, (sp) => sp`UPDATE edge_nodes SET "protocolVersion" = 2 WHERE id = ${node.id}`);
-      r.pv3 = await maLoi(tx, (sp) => sp`UPDATE edge_nodes SET "protocolVersion" = 3 WHERE id = ${node.id}`);
-      const [c] = await tx`SELECT "lastSeq"::int AS s FROM ${tx(CUR)} WHERE "edgeNodeId" = ${node.id} AND stream = 'run:9:1' AND epoch = ${EP("a")}`;
-      r.cursorAfter = c?.s ?? null;
       return r;
     });
-    expectExact("(b) avi_app behaviour", kq, {
-      curOk: null, curStartHigh: "23514", curBadStream: "23514", curBadEpoch: "23514", curUp: null, curDown: "23514", curKey: "42501", curNewEpoch: null, curDel: "42501",
-      prgOk: null, prgNoSum: "23514", prgNoReason: "23514", prgUpsert: null, prgDel: "42501",
+    expectExact("(b) owner-level key mirror", kk, {
       keyGenesis: null, keyNext: null, keyBornRetired: "23514", keyBadKid: "23514", keyBadPem: "23514", keyHalfEndorse: "23514", keySelfEndorse: "23514",
-      keyActivate: null, keyBackToNext: "23514", keyRetire: null, keyUnretire: "23514", keyPem: "42501", keyDel: "42501", pv2: null, pv3: "23514", cursorAfter: 7,
+      keyActivate: null, keyBackToNext: "23514", keyRetire: null, keyUnretire: "23514", keyPem: "23514", keyDel: null,
     });
     const ko = await rolledBack(sql, async (tx) => {
       const { node } = await fixtures(tx, CODE + "-o");
@@ -150,6 +159,6 @@ await runMigration({
     const [left] = await appSql`SELECT count(*)::int AS n FROM edge_nodes WHERE code LIKE ${CODE + "%"}`;
     const [leftK] = await appSql`SELECT count(*)::int AS n FROM edge_auth_signing_keys WHERE "createdBy" = ${CODE}`;
     if (left.n !== 0 || leftK.n !== 0) throw new Error(`(b) probe NOT rolled back: ${left.n} nodes / ${leftK.n} keys left`);
-    log(`(b) grants exact; behaviour ${JSON.stringify(kq)}; owner-level ${JSON.stringify(ko)}; ROLLED BACK`);
+    log(`(b) grants exact (key mirror SELECT only); behaviour ${JSON.stringify(kq)}; owner-level keys ${JSON.stringify(kk)}; owner-level ${JSON.stringify(ko)}; ROLLED BACK`);
   },
 });

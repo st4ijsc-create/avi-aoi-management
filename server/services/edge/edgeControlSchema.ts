@@ -11,7 +11,9 @@
  * R-10-b OWNER EPOCH: robots / device_adapters."ownerEpoch" is bumped by every ownership change (never otherwise); an
  * ownership change LOCKS the robot under the new authority + epoch ('ownerChanged'); 'edge:N' lock rows, lock requests,
  * program reports and trust approvals are bound to (device, owner, ownerEpoch) — match ALL of them when applying or clearing
- * (edgeLockRowMatch); a stale epoch is refused (23514) or matches nothing.
+ * (edgeLockRowMatch); a stale epoch is refused (23514) or matches nothing. Edge lock rows are written ONLY through
+ * applyEdgeMotionLock / clearEdgeMotionLock, trust approvals ONLY through request / approve / revokeEdgeRobotTrust (fix scan 2).
+ * edge_auth_signing_keys is a MIRROR of the central key files (R-10-c) — never read for trust.
  */
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { bigint, integer, jsonb, pgTable, serial, smallint, text, timestamp, uuid, varchar, bigserial } from "drizzle-orm/pg-core";
@@ -161,8 +163,12 @@ export const edgeRobotTrustApprovals = pgTable("edge_robot_trust_approvals", {
   ownerEpoch: bigint("ownerEpoch", { mode: "number" }).notNull(),
   editedBy: integer("editedBy").notNull(),
   editedAt: timestamp("editedAt", { withTimezone: true }).defaultNow().notNull(),
+  /** every user who requested / edited since the approval in force (the approver is never one of them) */
+  editorsSinceApproval: integer("editorsSinceApproval").array().notNull(),
   approvedBy: integer("approvedBy"),
   approvedAt: timestamp("approvedAt", { withTimezone: true }),
+  approvedDigest: varchar("approvedDigest", { length: 64 }),
+  approvedOwnerEpoch: bigint("approvedOwnerEpoch", { mode: "number" }),
 });
 export type EdgeRobotTrustApprovalRow = typeof edgeRobotTrustApprovals.$inferSelect;
 
@@ -187,6 +193,41 @@ export function edgeLockRowMatch(robotId: number, nodeId: number, ownerEpoch: nu
     eq(robotMotionLockAuthority.authorityNodeId, nodeId),
     eq(robotMotionLockAuthority.ownerEpoch, ownerEpoch),
   ) as SQL;
+}
+
+type Exec = { execute: (q: SQL) => Promise<unknown> };
+const firstRow = (r: unknown): Record<string, unknown> | undefined => (Array.isArray(r) ? r[0] : (r as { rows?: unknown[] })?.rows?.[0]) as Record<string, unknown> | undefined;
+
+/**
+ * fix scan 2 (safety-lock bypass) — THE only way the app writes an EDGE-authority lock row (avi_app cannot UPDATE / DELETE /
+ * INSERT one directly): an edge `locked` event ⇒ upsert under (robot, 'edge:<node>', ownerEpoch) where the stored generation ≤ g.
+ * true = applied; false = a newer / other-authority row stands. A stale (node, epoch) throws 23514 (isEdgeControlRefusal).
+ */
+export async function applyEdgeMotionLock(tx: Exec, a: { robotId: number; nodeId: number; ownerEpoch: number; generation: number; reasonCode: string; detail?: string | null }): Promise<boolean> {
+  const r = await tx.execute(sql`SELECT edge_motion_lock_apply(${a.robotId}, ${a.nodeId}, ${a.ownerEpoch}::bigint, ${a.generation}, ${a.reasonCode}, ${a.detail ?? null}) AS ok`);
+  return firstRow(r)?.ok === true;
+}
+/** An edge `cleared` event ⇒ delete only (robot, 'edge:<node>', node, ownerEpoch) with generation ≤ g while still owned. Rows removed. */
+export async function clearEdgeMotionLock(tx: Exec, a: { robotId: number; nodeId: number; ownerEpoch: number; generation: number }): Promise<number> {
+  const r = await tx.execute(sql`SELECT edge_motion_lock_clear(${a.robotId}, ${a.nodeId}, ${a.ownerEpoch}::bigint, ${a.generation}) AS n`);
+  return Number(firstRow(r)?.n ?? 0);
+}
+
+/** fix scan 2 (maker-checker, R-8-a) — the guarded path of edge_robot_trust_approvals (avi_app has SELECT only on the table). */
+export async function requestEdgeRobotTrust(tx: Exec, a: { nodeId: number; robotId: number; digest: string; editorUserId: number }): Promise<void> {
+  await tx.execute(sql`SELECT edge_robot_trust_request(${a.nodeId}, ${a.robotId}, ${a.digest}, ${a.editorUserId})`);
+}
+/** Approve the digest the approver SAW; refused (23514) for an editor since the last approval, a non-admin, a stale epoch / digest. */
+export async function approveEdgeRobotTrust(tx: Exec, a: { nodeId: number; robotId: number; digest: string; approverUserId: number }): Promise<void> {
+  await tx.execute(sql`SELECT edge_robot_trust_approve(${a.nodeId}, ${a.robotId}, ${a.digest}, ${a.approverUserId})`);
+}
+export async function revokeEdgeRobotTrust(tx: Exec, a: { nodeId: number; robotId: number; actorUserId: number }): Promise<void> {
+  await tx.execute(sql`SELECT edge_robot_trust_revoke(${a.nodeId}, ${a.robotId}, ${a.actorUserId})`);
+}
+/** THE trust predicate (D6): approved, for this digest, for the robot's CURRENT owner and owner epoch. */
+export async function isEdgeRobotTrustApproved(tx: Exec, a: { nodeId: number; robotId: number; digest: string }): Promise<boolean> {
+  const r = await tx.execute(sql`SELECT edge_robot_trust_is_approved(${a.nodeId}, ${a.robotId}, ${a.digest}) AS ok`);
+  return firstRow(r)?.ok === true;
 }
 
 /** 23514 check_violation — a write refused by a 0372–0375 trigger / CHECK (the caller maps it to its own refusal). */

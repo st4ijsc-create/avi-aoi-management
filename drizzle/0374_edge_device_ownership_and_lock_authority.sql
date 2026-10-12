@@ -29,7 +29,18 @@
 --   The history has no FK to devices / nodes on purpose: it is a log that outlives them (it grants nothing).
 -- • robot_motion_locks."authority" varchar(40) NOT NULL DEFAULT 'central' CHECK ('central' ⇔ authorityNodeId NULL;
 --   'edge:<authorityNodeId>' otherwise). Existing central writes are unchanged: a 'central' row gets its ownerEpoch filled from
---   the robot (trigger) and is not judged otherwise.
+--   the robot (trigger).
+-- • fix scan 2 (safety-lock bypass): avi_app may write a robot_motion_locks row DIRECTLY only while it is a 'central' row of
+--   a CENTRAL-owned robot (or an orphan row — the 0364 rule) and stays 'central' (trigger trg_robot_motion_lock_write_guard;
+--   central's existing upsert / generation-guarded delete keep working unchanged). An EDGE-authority row is applied / cleared
+--   ONLY through the SECURITY DEFINER functions edge_motion_lock_apply / edge_motion_lock_clear (owner aoi): matched on
+--   (robot, 'edge:<node>', node, ownerEpoch) and generation-checked (apply ⇔ stored generation ≤ g; clear ⇔ generation ≤ g).
+--   avi_app can therefore never delete / rewrite an edge lock, move a row between authorities, or lock / unlock a robot it does
+--   not own centrally. The owner-change relock (AFTER UPDATE trigger, SECURITY DEFINER) runs in the SAME statement as the
+--   ownership change, so a plain UPDATE of edgeNodeId always leaves the robot locked under the new authority + epoch.
+-- • lock requests: deliveredAt / ackedAt are write-once AND monotonic — delivered only before expiry and before the ack, not in
+--   the future; acked not before creation / delivery; done / refused / failed only after a delivery; expired only when never
+--   delivered or at / after expiry; ackGeneration only with outcome done.
 -- • robot_motion_lock_requests: central → edge lock / clear / stop requests (signed commands, typ cmd): exactly one target
 --   (robot, or adapter for a stop); clear ⇔ expectedGeneration; identity write-once; deliveredAt written once; the ack
 --   (ackedAt, outcome, ackGeneration) written once together.
@@ -48,7 +59,8 @@
 --   DROP TRIGGER IF EXISTS trg_robots_owner_change ON "robots"; DROP TRIGGER IF EXISTS trg_robots_owner_insert ON "robots";
 --   DROP TRIGGER IF EXISTS trg_robots_owner_relock ON "robots";
 --   DROP TRIGGER IF EXISTS trg_adapters_owner_change ON "device_adapters"; DROP TRIGGER IF EXISTS trg_adapters_owner_insert ON "device_adapters";
---   DROP TRIGGER IF EXISTS trg_robot_motion_lock_authority ON "robot_motion_locks"; DROP TRIGGER IF EXISTS trg_edge_program_owned ON "edge_node_program_reports";
+--   DROP TRIGGER IF EXISTS trg_robot_motion_lock_authority ON "robot_motion_locks"; DROP TRIGGER IF EXISTS trg_robot_motion_lock_write_guard ON "robot_motion_locks";
+--   DROP FUNCTION IF EXISTS edge_motion_lock_apply(integer, integer, bigint, integer, text, text), edge_motion_lock_clear(integer, integer, bigint, integer), robot_motion_lock_write_guard(); DROP TRIGGER IF EXISTS trg_edge_program_owned ON "edge_node_program_reports";
 --   ALTER TABLE "robots" DROP COLUMN IF EXISTS "edgeNodeId", DROP COLUMN IF EXISTS "motionLockGenerationFloor", DROP COLUMN IF EXISTS "ownerEpoch";
 --   ALTER TABLE "device_adapters" DROP COLUMN IF EXISTS "edgeNodeId", DROP COLUMN IF EXISTS "ownerEpoch";
 --   ALTER TABLE "robot_motion_locks" DROP COLUMN IF EXISTS "authority", DROP COLUMN IF EXISTS "authorityNodeId", DROP COLUMN IF EXISTS "ownerEpoch";
@@ -307,8 +319,29 @@ BEGIN
       USING ERRCODE = 'check_violation';
   END IF;
   IF OLD."ackedAt" IS NOT NULL AND (NEW."ackedAt" IS DISTINCT FROM OLD."ackedAt" OR NEW."outcome" IS DISTINCT FROM OLD."outcome"
-     OR NEW."ackGeneration" IS DISTINCT FROM OLD."ackGeneration") THEN
+     OR NEW."ackGeneration" IS DISTINCT FROM OLD."ackGeneration" OR NEW."deliveredAt" IS DISTINCT FROM OLD."deliveredAt") THEN
     RAISE EXCEPTION 'robot_motion_lock_requests: the ack is written once (request %)', OLD."id" USING ERRCODE = 'check_violation';
+  END IF;
+  -- fix scan 2 — monotonic: delivery before expiry, never in the future
+  IF OLD."deliveredAt" IS NULL AND NEW."deliveredAt" IS NOT NULL
+     AND (NEW."deliveredAt" < OLD."createdAt" OR NEW."deliveredAt" > OLD."expiresAt" OR NEW."deliveredAt" > now() + interval '5 seconds') THEN
+    RAISE EXCEPTION 'robot_motion_lock_requests: delivery time of request % out of order', OLD."id" USING ERRCODE = 'check_violation';
+  END IF;
+  -- fix scan 2 — monotonic ack: not before creation / delivery, never in the future; outcomes need the matching history
+  IF OLD."ackedAt" IS NULL AND NEW."ackedAt" IS NOT NULL THEN
+    IF NEW."ackedAt" < OLD."createdAt" OR NEW."ackedAt" > now() + interval '5 seconds'
+       OR (NEW."deliveredAt" IS NOT NULL AND NEW."ackedAt" < NEW."deliveredAt") THEN
+      RAISE EXCEPTION 'robot_motion_lock_requests: ack time of request % out of order', OLD."id" USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW."outcome" IN ('done', 'refused', 'failed') AND NEW."deliveredAt" IS NULL THEN
+      RAISE EXCEPTION 'robot_motion_lock_requests: request % was never delivered — only expired', OLD."id" USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW."outcome" = 'expired' AND NEW."deliveredAt" IS NOT NULL AND NEW."ackedAt" < OLD."expiresAt" THEN
+      RAISE EXCEPTION 'robot_motion_lock_requests: delivered request % expires only at / after its expiry', OLD."id" USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW."ackGeneration" IS NOT NULL AND NEW."outcome" <> 'done' THEN
+      RAISE EXCEPTION 'robot_motion_lock_requests: ackGeneration only with outcome done (request %)', OLD."id" USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   IF OLD."ackedAt" IS NULL AND NEW."ackedAt" IS NULL AND NEW."ackGeneration" IS DISTINCT FROM OLD."ackGeneration" THEN
     RAISE EXCEPTION 'robot_motion_lock_requests: ackGeneration is written with the ack (request %)', OLD."id" USING ERRCODE = 'check_violation';
@@ -319,9 +352,76 @@ DROP TRIGGER IF EXISTS trg_robot_motion_lock_request_guard ON "robot_motion_lock
 CREATE TRIGGER trg_robot_motion_lock_request_guard BEFORE INSERT OR UPDATE ON "robot_motion_lock_requests"
   FOR EACH ROW EXECUTE FUNCTION robot_motion_lock_request_guard();
 
+-- ── fix scan 2 (safety-lock bypass): direct writes only for central rows of central robots; edge rows via the guarded path ──
+CREATE OR REPLACE FUNCTION robot_motion_lock_write_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  tbl_owner name;
+  rid integer := COALESCE(NEW."robotId", OLD."robotId");
+  edge_owned boolean;
+BEGIN
+  SELECT pg_get_userbyid(c.relowner) INTO tbl_owner FROM pg_class c WHERE c.oid = TG_RELID;
+  IF current_user = tbl_owner THEN
+    RETURN COALESCE(NEW, OLD); -- the owner: the migration, or the SECURITY DEFINER guarded path / owner-change relock
+  END IF;
+  edge_owned := EXISTS (SELECT 1 FROM "robots" r WHERE r."id" = rid AND r."edgeNodeId" IS NOT NULL);
+  IF TG_OP IN ('UPDATE', 'DELETE') AND OLD."authority" <> 'central' THEN
+    RAISE EXCEPTION 'robot_motion_locks: the % lock of robot % is applied / cleared only via edge_motion_lock_apply / _clear', OLD."authority", rid
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF TG_OP IN ('INSERT', 'UPDATE') AND (NEW."authority" <> 'central' OR NEW."authorityNodeId" IS NOT NULL) THEN
+    RAISE EXCEPTION 'robot_motion_locks: an edge-authority lock of robot % is written only via edge_motion_lock_apply', rid USING ERRCODE = 'check_violation';
+  END IF;
+  IF edge_owned THEN
+    RAISE EXCEPTION 'robot_motion_locks: robot % is edge-owned — central does not lock / unlock it directly', rid USING ERRCODE = 'check_violation';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD."ownerEpoch" IS NOT NULL AND NEW."ownerEpoch" IS DISTINCT FROM OLD."ownerEpoch" THEN
+    RAISE EXCEPTION 'robot_motion_locks: the owner epoch of a lock row is not rewritten (robot %)', rid USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END $$;
+DROP TRIGGER IF EXISTS trg_robot_motion_lock_write_guard ON "robot_motion_locks";
+CREATE TRIGGER trg_robot_motion_lock_write_guard BEFORE INSERT OR UPDATE OR DELETE ON "robot_motion_locks"
+  FOR EACH ROW EXECUTE FUNCTION robot_motion_lock_write_guard();
+
+-- an edge lock event `locked` (design §2.11): upsert under (robot, 'edge:<node>', ownerEpoch) where the stored generation ≤ g.
+-- Returns true when applied, false when a newer / other-authority row stands; a stale (node, epoch) raises 23514 (authority guard).
+CREATE OR REPLACE FUNCTION edge_motion_lock_apply(p_robot integer, p_node integer, p_epoch bigint, p_generation integer, p_reason text, p_detail text)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  done_ boolean;
+BEGIN
+  INSERT INTO "robot_motion_locks" ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt")
+    VALUES (p_robot, left(p_reason, 64), p_detail, p_generation, 'edge:' || p_node, p_node, p_epoch, now())
+  ON CONFLICT ("robotId") DO UPDATE SET "reasonCode" = EXCLUDED."reasonCode", "detail" = EXCLUDED."detail", "generation" = EXCLUDED."generation",
+    "lockedAt" = EXCLUDED."lockedAt"
+  WHERE "robot_motion_locks"."authority" = EXCLUDED."authority" AND "robot_motion_locks"."authorityNodeId" = EXCLUDED."authorityNodeId"
+    AND "robot_motion_locks"."ownerEpoch" = EXCLUDED."ownerEpoch" AND "robot_motion_locks"."generation" <= EXCLUDED."generation"
+  RETURNING true INTO done_;
+  RETURN COALESCE(done_, false);
+END $$;
+
+-- an edge lock event `cleared`: delete ONLY the row of (robot, 'edge:<node>', node, ownerEpoch) with generation ≤ g, and only
+-- while the robot is still owned by the node at that epoch. Returns the number of rows removed (0 = stale / newer lock).
+CREATE OR REPLACE FUNCTION edge_motion_lock_clear(p_robot integer, p_node integer, p_epoch bigint, p_generation integer)
+RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  n integer;
+BEGIN
+  DELETE FROM "robot_motion_locks" l
+   WHERE l."robotId" = p_robot AND l."authority" = 'edge:' || p_node AND l."authorityNodeId" = p_node AND l."ownerEpoch" = p_epoch
+     AND l."generation" <= p_generation
+     AND EXISTS (SELECT 1 FROM "robots" r WHERE r."id" = p_robot AND r."edgeNodeId" = p_node AND r."ownerEpoch" = p_epoch);
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END $$;
+REVOKE ALL ON FUNCTION edge_motion_lock_apply(integer, integer, bigint, integer, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION edge_motion_lock_clear(integer, integer, bigint, integer) FROM PUBLIC;
+
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'avi_app') THEN
+    GRANT EXECUTE ON FUNCTION edge_motion_lock_apply(integer, integer, bigint, integer, text, text) TO avi_app;
+    GRANT EXECUTE ON FUNCTION edge_motion_lock_clear(integer, integer, bigint, integer) TO avi_app;
     REVOKE ALL ON "robot_motion_lock_requests" FROM avi_app;
     GRANT SELECT, INSERT ON "robot_motion_lock_requests" TO avi_app;
     GRANT UPDATE ("deliveredAt", "ackedAt", "ackGeneration", "outcome") ON "robot_motion_lock_requests" TO avi_app;
