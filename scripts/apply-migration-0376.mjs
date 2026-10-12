@@ -12,6 +12,8 @@
  *       node's credential is refused; an assigned run's workflow stays pinned — and the unshadowed semantics are unchanged
  *       (queued run assignable, pending_epoch bumps on → held, startedViaApiKeyId write-once, credential identity write-once,
  *       a consumed safety_event_trust is frozen); 0 probe rows left;
+ *       fix review 3 (R-10-aa N4): 0316 kiem_xac_thuc_noi_bo too — a user with a password hash cannot switch to 'oauth' even
+ *       with a TEMP user_secrets shadow; 'password' stays allowed;
  *   (c) `__applied_migrations` has exactly 1 row for this file.
  *
  *   node scripts/apply-migration-0376.mjs --test-only | --dev-only | --both   (NO flag ⇒ refused — R-3-g)
@@ -22,6 +24,7 @@ import { expectExact, maLoi, rolledBack, runMigration } from "./apply-migration-
 const FNS = [
   "orchestration_runs_bump_pending_epoch", "api_keys_holder_history", "orch_runs_api_key_write_once", "edge_node_credentials_guard",
   "edge_run_assignment_insert_guard", "edge_run_assignment_guard", "orch_runs_edge_workflow_pinned", "safety_event_trust_guard",
+  "kiem_xac_thuc_noi_bo", // fix review 3 (R-10-aa N4): 0316
 ];
 const TRIGGERS = {
   trg_orchestration_runs_pending_epoch: "orchestration_runs_bump_pending_epoch",
@@ -32,6 +35,8 @@ const TRIGGERS = {
   trg_edge_run_assignment_guard: "edge_run_assignment_guard",
   trg_orch_runs_edge_workflow_pinned: "orch_runs_edge_workflow_pinned",
   trg_safety_event_trust_guard: "safety_event_trust_guard",
+  trg_users_xac_thuc_noi_bo: "kiem_xac_thuc_noi_bo",
+  trg_user_secrets_xac_thuc_noi_bo: "kiem_xac_thuc_noi_bo",
 };
 const RLS_HELPERS = ["app_factory_of_machine_code", "app_factory_of_line_id", "app_factory_of_line_code"];
 const hex = (n) => randomBytes(n).toString("hex");
@@ -60,6 +65,7 @@ await runMigration({
       await tx`CREATE TEMP TABLE orchestration_runs (id integer, "workflowId" integer, status text) ON COMMIT DROP`;
       await tx`CREATE TEMP TABLE edge_node_credentials (id integer, "edgeNodeId" integer) ON COMMIT DROP`;
       await tx`CREATE TEMP TABLE orchestration_run_edge_assignments ("runId" integer) ON COMMIT DROP`;
+      await tx`CREATE TEMP TABLE user_secrets ("userId" integer, "passwordHash" text) ON COMMIT DROP`;
       const out = {};
       const [u1] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${CODE + "-1"}, 'admin', true) RETURNING id`;
       const [u2] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${CODE + "-2"}, 'user', true) RETURNING id`;
@@ -90,11 +96,17 @@ await runMigration({
       out.apiKeyWriteOnce = await maLoi(tx, (sp) => sp`UPDATE public.orchestration_runs SET "startedViaApiKeyId" = ${k.id} WHERE id = ${runR.id}`);
       out.credIdentity = await maLoi(tx, (sp) => sp`UPDATE public.edge_node_credentials SET status = 'revoked', "revokedAt" = now(), "revokedBy" = ${u1.id}, "revokeReason" = 'x' WHERE id = ${cred.id}`);
       out.credRevive = await maLoi(tx, (sp) => sp`UPDATE public.edge_node_credentials SET status = 'active', "revokedAt" = NULL, "revokedBy" = NULL, "revokeReason" = NULL WHERE id = ${cred.id}`);
+      // 0316 (fix review 3 N4): a user WITH a password hash cannot leave internal login, shadow or not
+      const [lu] = await tx`INSERT INTO public.users ("openId", role, "isActive", "loginMethod") VALUES (${CODE + "-l"}, 'user', true, 'local') RETURNING id`;
+      await tx`INSERT INTO public.user_secrets ("userId", "passwordHash") VALUES (${lu.id}, '$2b$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyzABCDE')`;
+      out.loginMethodOauth = await maLoi(tx, (sp) => sp`UPDATE public.users SET "loginMethod" = 'oauth' WHERE id = ${lu.id}`);
+      out.loginMethodPassword = await maLoi(tx, (sp) => sp`UPDATE public.users SET "loginMethod" = 'password' WHERE id = ${lu.id}`);
       return out;
     });
     expectExact("(b) behaviour (shadowed + unchanged semantics)", r, {
       holderHistoryReal: 2, holderHistoryShadow: 0, assignRunning: "23514", assignQueued: null, claimOtherNodeCred: "23514", claimOwnCred: null,
       workflowRepin: "23514", pendingEpochBump: 1, apiKeyWriteOnce: "23514", credIdentity: null, credRevive: "23514",
+      loginMethodOauth: "23514", loginMethodPassword: null,
     });
     const [left] = await appSql`SELECT (SELECT count(*)::int FROM edge_nodes WHERE code LIKE ${CODE + "%"}) + (SELECT count(*)::int FROM api_keys WHERE name LIKE ${CODE + "%"}) AS n`;
     if (left.n !== 0) throw new Error(`(b) probe NOT rolled back: ${left.n} rows left`);

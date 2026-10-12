@@ -26,6 +26,11 @@
 --   0370 edge_run_assignment_guard               — reads edge_node_credentials    (SHADOWABLE)  → qualified + pinned
 --   0370 orch_runs_edge_workflow_pinned          — reads orchestration_run_edge_assignments (SHADOWABLE) → qualified + pinned
 --   0371 safety_event_trust_guard                — row-only                                     → pinned
+-- fix review 3 (ruling R-10-aa N4): `_test` catalog inventory of EVERY trigger or SECURITY DEFINER plpgsql / sql function in
+--   public (37) — the only one without the pin was 0316 kiem_xac_thuc_noi_bo (trigger on users / user_secrets — SHADOWABLE,
+--   measured) → re-created below (same body, public.-qualified, pinned). Backlog (INVOKER, not triggers, not on auth / safety
+--   tables — a shadow only fools its own caller): app_tenant_allows, factory_timezone, db_storage_timezone, to_factory_time,
+--   refresh_qw_caches, ensure_measurement_samples_partition.
 -- OLDER SECURITY DEFINER functions owned by aoi (sweep of drizzle/*.sql < 0363): only 0125's app_factory_of_machine_code /
 --   _line_id / _line_code (RLS scope helpers). They already name every relation `public.` and run with
 --   `search_path = public, pg_temp` (pg_temp last — not shadowable). Cheap + safe: re-pinned to the standard value with
@@ -176,6 +181,39 @@ BEGIN
   RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION public.safety_event_trust_guard() FROM PUBLIC;
+
+-- ── 0316 (fix review 3, ruling R-10-aa N4 — measured: a TEMP user_secrets let avi_app switch a user WITH a password hash to
+--    loginMethod 'oauth'). Same body, relations public.-qualified, pinned; a trigger function: EXECUTE for nobody. ───────────
+CREATE OR REPLACE FUNCTION public.kiem_xac_thuc_noi_bo() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  noi_bo   CONSTANT text[] := ARRAY['local','password'];
+  ph       text;
+  lm       text;
+  uid      integer;
+BEGIN
+  IF TG_TABLE_NAME = 'user_secrets' THEN
+    uid := NEW."userId";
+    ph  := NEW."passwordHash";
+    SELECT u."loginMethod" INTO lm FROM public."users" u WHERE u.id = uid;
+  ELSE
+    uid := NEW.id;
+    lm  := NEW."loginMethod";
+    SELECT s."passwordHash" INTO ph FROM public."user_secrets" s WHERE s."userId" = uid;
+  END IF;
+
+  IF ph IS NOT NULL AND NOT (lm = ANY (noi_bo)) THEN
+    RAISE EXCEPTION
+      'users.id=% có passwordHash nhưng loginMethod=% không được công nhận là xác thực nội bộ; '
+      'chủ tài khoản sẽ KHÔNG đổi được mật khẩu (nhà tù I-4). Tập nội bộ: %',
+      uid, COALESCE(lm,'<NULL>'), array_to_string(noi_bo, ',')
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.kiem_xac_thuc_noi_bo() FROM PUBLIC;
 
 -- ── 0125 SECURITY DEFINER RLS helpers: re-pinned (body and grants untouched; already public.-qualified, pg_temp last) ─
 DO $$

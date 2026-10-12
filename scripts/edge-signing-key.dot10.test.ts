@@ -66,6 +66,13 @@ describe("edge-signing-key — arguments (no DB, no files touched)", () => {
       [["generate", "--dir", f("a"), ...A, "--by", "me"], 2],
       [["generate", "--dir", f("a"), ...A, "--password", PASSWORD], 2], // never on argv
       [["generate", "--dir", f("a"), ...A, "--otp", "123456"], 2],
+      // fix review 3 (R-10-aa N5): the `=` spellings are refused too — a secret never travels on argv
+      [["generate", "--dir", f("a"), ...A, `--password=${PASSWORD}`], 2],
+      [["generate", "--dir", f("a"), ...A, "--otp=123456"], 2],
+      [["generate", "--dir", f("a"), ...A, "--by=me"], 2],
+      [["generate", "--dir", f("a"), "--by=me"], 2],
+      [["generate", "--dir", f("a"), ...A, "--PASSWORD=x"], 2],
+      [["pin", "--dir", f("a"), "--out", f("p.json"), ...A, "--pass=x"], 2],
       [["list", "--dir", f("nope")], 1], // no keyring
     ] as Array<[string[], number]>) {
       const t = io();

@@ -30,6 +30,8 @@ const CALLABLE = new Set([
   "edge_motion_lock_apply",
   "edge_motion_lock_clear",
   "edge_stop_ack_central",
+  "edge_stop_ack_edge",
+  "edge_stop_resolve",
   "edge_robot_trust_request",
   "edge_robot_trust_approve",
   "edge_robot_trust_revoke",
@@ -120,6 +122,19 @@ describe.skipIf(!onTest)("R-10-h — 0363–0371 guards hold against temp-table 
     expect(r).toBe("23514");
   }, 60_000);
 
+  it("★ 0316 kiem_xac_thuc_noi_bo (fix review 3, N4): a shadow `user_secrets` never lets a user WITH a password hash switch to oauth", async () => {
+    const r = await freshSession(async (tx) => {
+      await tx`CREATE TEMP TABLE user_secrets ("userId" integer, "passwordHash" text) ON COMMIT DROP`;
+      const t = tag();
+      const [u] = await tx`INSERT INTO public.users ("openId", role, "isActive", "loginMethod") VALUES (${t}, 'user', true, 'local') RETURNING id`;
+      await tx`INSERT INTO public.user_secrets ("userId", "passwordHash") VALUES (${u.id}, '$2b$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyzABCDE')`;
+      const oauth = await code(tx, (sp) => sp`UPDATE public.users SET "loginMethod" = 'oauth' WHERE id = ${u.id}`);
+      const password = await code(tx, (sp) => sp`UPDATE public.users SET "loginMethod" = 'password' WHERE id = ${u.id}`);
+      return { oauth, password };
+    });
+    expect(r).toEqual({ oauth: "23514", password: null });
+  }, 60_000);
+
   it("★ 0370 orch_runs_edge_workflow_pinned: a shadow (empty) assignments table never unpins the workflow of an assigned run", async () => {
     const r = await freshSession(async (tx) => {
       await tx`CREATE TEMP TABLE orchestration_run_edge_assignments ("runId" integer) ON COMMIT DROP`;
@@ -131,19 +146,68 @@ describe.skipIf(!onTest)("R-10-h — 0363–0371 guards hold against temp-table 
   }, 60_000);
 });
 
-/** The pin state of each function after applying `sources` in order (CREATE [OR REPLACE] FUNCTION, ALTER FUNCTION … SET search_path). */
+const PIN_LIST = "pg_catalog,public,pg_temp";
+/** `SET search_path = …` / `SET search_path TO …` (quoted or not) ⇒ the exact list, normalised; null when no such clause. */
+function searchPathIn(options: string): string | null | "unpinned" {
+  let last: string | null | "unpinned" = null;
+  for (const m of options.matchAll(/\b(RESET\s+(?:search_path|ALL)\b|SET\s+search_path\s+FROM\s+CURRENT\b|SET\s+search_path\s*(?:=|\bTO\b)\s*((?:\s*(?:"[^"]*"|'[^']*'|[A-Za-z_$][\w$]*)\s*,?)+))/gi)) {
+    if (/^RESET|FROM\s+CURRENT/i.test(m[1])) last = "unpinned";
+    else last = m[2].replace(/["'\s]/g, "").replace(/,+$/, "").toLowerCase();
+  }
+  return last;
+}
+/** where a routine body starts (index into `text` from `from`), its kind, and where the statement's trailing options end */
+function bodyOf(text: string, from: number): { headerEnd: number; trailer: string; next: number } {
+  const re = /\bAS\s+(\$([A-Za-z_][A-Za-z0-9_]*)?\$|')|\bBEGIN\s+ATOMIC\b|\bRETURN\s/gi;
+  re.lastIndex = from;
+  const m = re.exec(text);
+  if (!m) return { headerEnd: text.length, trailer: "", next: text.length };
+  if (/^BEGIN|^RETURN/i.test(m[0])) {
+    // SQL-standard body: options must precede it; the statement ends at the END; / ; that closes it
+    const close = /\bEND\s*;|;/gi;
+    close.lastIndex = m.index;
+    const c = close.exec(text);
+    return { headerEnd: m.index, trailer: "", next: c ? c.index + c[0].length : text.length };
+  }
+  let i = m.index + m[0].length;
+  if (m[1] === "'") {
+    for (; i < text.length; i++) {
+      if (text[i] === "'" && text[i + 1] === "'") i++;
+      else if (text[i] === "'") break;
+    }
+    i++;
+  } else {
+    const tag = m[1];
+    const e = text.indexOf(tag, i);
+    i = e < 0 ? text.length : e + tag.length;
+  }
+  const semi = text.indexOf(";", i);
+  const stop = semi < 0 ? text.length : semi;
+  return { headerEnd: m.index, trailer: text.slice(i, stop), next: stop + 1 };
+}
+const nameOf = (raw: string) => (raw.startsWith('"') ? raw.slice(1, -1) : raw.toLowerCase());
+
+/**
+ * The pin state of each routine after applying `sources` in order. fix review 3 (N3 — hardened): CREATE [OR REPLACE] FUNCTION
+ * and PROCEDURE; any dollar tag ($$, $fn$, $body1$), a single-quoted body, a SQL-standard BEGIN ATOMIC / RETURN body; options
+ * before AND after the body; `SET search_path = …` and `SET search_path TO …` (quoted or not) — pinned only when the list is
+ * EXACTLY pg_catalog, public, pg_temp (an extra schema is unpinned); ALTER FUNCTION / PROCEDURE / ROUTINE … SET | RESET
+ * search_path | RESET ALL | SET search_path FROM CURRENT.
+ */
 export function pinStateOf(sources: ReadonlyArray<readonly [file: string, text: string]>): Map<string, { file: string; pinned: boolean }> {
   const last = new Map<string, { file: string; pinned: boolean }>();
+  const NAME = String.raw`(?:public\.|"public"\.)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)`;
   for (const [f, text] of sources) {
     const src = text.replace(/--[^\n]*/g, "");
     const events: Array<{ at: number; name: string; pinned: boolean }> = [];
-    // a CREATE FUNCTION: the header up to its body's opening dollar-quote carries (or not) the pinned SET
-    for (const m of src.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(([\s\S]*?)AS\s+\$([a-z_]*)\$/gi)) {
-      events.push({ at: m.index ?? 0, name: m[1].toLowerCase(), pinned: /SET\s+search_path\s*=\s*pg_catalog\s*,\s*public\s*,\s*pg_temp\b/i.test(m[2]) });
+    for (const m of src.matchAll(new RegExp(String.raw`CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+${NAME}\s*\(`, "gi"))) {
+      const b = bodyOf(src, (m.index ?? 0) + m[0].length);
+      const sp = searchPathIn(src.slice((m.index ?? 0) + m[0].length, b.headerEnd) + " " + b.trailer);
+      events.push({ at: m.index ?? 0, name: nameOf(m[1]), pinned: sp === PIN_LIST });
     }
-    // a later ALTER FUNCTION … SET search_path pins (or unpins) it as well
-    for (const m of src.matchAll(/ALTER\s+FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\([^)]*\)\s+SET\s+search_path\s*=\s*([^;]+);/gi)) {
-      events.push({ at: m.index ?? 0, name: m[1].toLowerCase(), pinned: /^\s*pg_catalog\s*,\s*public\s*,\s*pg_temp\s*$/i.test(m[2]) });
+    for (const m of src.matchAll(new RegExp(String.raw`ALTER\s+(?:FUNCTION|PROCEDURE|ROUTINE)\s+${NAME}\s*(?:\([^)]*\))?([^;]*);`, "gi"))) {
+      const sp = searchPathIn(m[2]);
+      if (sp !== null) events.push({ at: m.index ?? 0, name: nameOf(m[1]), pinned: sp === PIN_LIST });
     }
     for (const e of events.sort((a, b) => a.at - b.at)) last.set(e.name, { file: f, pinned: e.pinned });
   }
@@ -175,6 +239,32 @@ describe("R-10-h — census: every function a migration ≥ 0363 defines ends PI
     expect(parse({ "0363_a.sql": bare, "0376_b.sql": "ALTER FUNCTION public.f() SET search_path = pg_catalog, public, pg_temp;" }).get("f")).toBe(true);
     expect(parse({ "0376_b.sql": pinned, "0377_c.sql": bare }).get("f")).toBe(false);
     expect(parse({ "0376_b.sql": pinned, "0377_c.sql": "ALTER FUNCTION f() SET search_path = public;" }).get("f")).toBe(false);
+  });
+
+  it("★ fix review 3 (N3): each form the re-review listed is parsed — an unpinned one turns the census RED", () => {
+    const st = (sql: string, name = "f") => pinStateOf([["0377_x.sql", sql]]).get(name)?.pinned;
+    const P = "SET search_path = pg_catalog, public, pg_temp";
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS $body1$ BEGIN RETURN 1; END $body1$;`)).toBe(false); // $tag1$
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql ${P} AS $body1$ BEGIN RETURN 1; END $body1$;`)).toBe(true);
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE sql AS 'SELECT 1';`)).toBe(false); // single-quoted body
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE sql AS 'SELECT ''x''' ${P};`)).toBe(true); // pin AFTER a quoted body
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE sql BEGIN ATOMIC SELECT 1; END;`)).toBe(false); // BEGIN ATOMIC
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE sql ${P} BEGIN ATOMIC SELECT 1; END;`)).toBe(true);
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE sql RETURN 1;`)).toBe(false);
+    expect(st(`CREATE PROCEDURE f() LANGUAGE plpgsql AS $$ BEGIN END $$;`)).toBe(false); // procedure
+    expect(st(`CREATE OR REPLACE PROCEDURE public.f() LANGUAGE plpgsql ${P} AS $$ BEGIN END $$;`)).toBe(true);
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql SET search_path TO public AS $$ BEGIN RETURN 1; END $$;`)).toBe(false); // TO form
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$ BEGIN RETURN 1; END $$;`)).toBe(true);
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql SET search_path = 'pg_catalog', 'public', 'pg_temp' AS $$ BEGIN RETURN 1; END $$;`)).toBe(true);
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp, zz AS $$ BEGIN RETURN 1; END $$;`)).toBe(false); // extra schema
+    expect(st(`CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS $$ BEGIN RETURN 1; END $$ ${P};`)).toBe(true); // pin after the body
+    const pinnedThen = (alter: string) => pinStateOf([["0376_a.sql", `CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql ${P} AS $$ BEGIN RETURN 1; END $$;`], ["0377_b.sql", alter]]).get("f")?.pinned;
+    expect(pinnedThen(`ALTER FUNCTION f() RESET search_path;`)).toBe(false); // RESET
+    expect(pinnedThen(`ALTER FUNCTION public.f() RESET ALL;`)).toBe(false);
+    expect(pinnedThen(`ALTER ROUTINE f SET search_path TO public;`)).toBe(false);
+    expect(pinnedThen(`ALTER PROCEDURE f() SET search_path FROM CURRENT;`)).toBe(false);
+    expect(pinnedThen(`ALTER FUNCTION f() OWNER TO aoi;`)).toBe(true); // an unrelated ALTER changes nothing
+    expect(st(`CREATE FUNCTION "MixedCase"() RETURNS int LANGUAGE plpgsql AS $$ BEGIN RETURN 1; END $$;`, "MixedCase")).toBe(false);
   });
 });
 

@@ -118,11 +118,13 @@ export async function runEdgeSigningKeyCli(argv: string[], io: SigningKeyCliIo, 
     io.err("a private key is never taken from the command line");
     return 2;
   }
-  if (argv.includes("--by")) {
-    io.err("--by (a free-text name) is no longer accepted: use --actor <admin username> — the password is asked (or EDGE_SIGNING_ADMIN_PASSWORD)");
+  // fix review 3 (R-10-aa N5): EVERY spelling — `--by X`, `--by=X`, `--password=…`, `--otp=…`, `--pass…` — is refused: a secret
+  // never comes from argv (process list, shell history), and a free-text actor never replaces the proven admin
+  if (argv.some((x) => /^--by(=|$)/i.test(x))) {
+    io.err("--by (a free-text name) is no longer accepted, in any form: use --actor <admin username> — the password is asked (or EDGE_SIGNING_ADMIN_PASSWORD)");
     return 2;
   }
-  if (argv.includes("--password") || argv.includes("--otp")) {
+  if (argv.some((x) => /^--(password|passwd|pass|pwd|otp|totp|2fa|secret)(=|$)/i.test(x))) {
     io.err("a password / 2FA code is never taken from the command line (process list, shell history) — use the prompt or EDGE_SIGNING_ADMIN_PASSWORD / EDGE_SIGNING_ADMIN_OTP");
     return 2;
   }

@@ -34,6 +34,8 @@ const CALLABLE = new Set([
   "edge_motion_lock_apply",
   "edge_motion_lock_clear",
   "edge_stop_ack_central",
+  "edge_stop_ack_edge",
+  "edge_stop_resolve",
   "edge_robot_trust_request",
   "edge_robot_trust_approve",
   "edge_robot_trust_revoke",
@@ -218,7 +220,7 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
     for (const f of FILES) {
       for (const m of readFileSync(path.join(REPO, "drizzle", f), "utf8").matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?([a-z_][a-z0-9_]*)\s*\(/gi)) names.add(m[1]);
     }
-    expect(names.size).toBe(23); // 0372: 2 · 0373: 2 · 0374: 14 · 0375: 5 — a new function must be added here on purpose
+    expect(names.size).toBe(25); // 0372: 2 · 0373: 2 · 0374: 16 · 0375: 5 — a new function must be added here on purpose
     const rows = await freshSession(async (tx) =>
       tx`SELECT p.proname AS name, p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
                 has_function_privilege(current_user, p.oid, 'EXECUTE') AS app
@@ -237,26 +239,94 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
   }, 60_000);
 });
 
-describe("R-10-e — source census: no function body of 0372–0375 names an unqualified relation", () => {
-  it("every FROM / JOIN / UPDATE / INSERT INTO / DELETE FROM inside $$ … $$ is public.* or pg_catalog.*; every CREATE FUNCTION is public.*", () => {
-    const bad: string[] = [];
-    for (const f of FILES) {
-      const src = readFileSync(path.join(SQL_DIR, f), "utf8");
-      for (const m of src.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+([a-z_."]+)\s*\(/gi)) if (!m[1].startsWith("public.")) bad.push(`${f}: CREATE FUNCTION ${m[1]}`);
-      for (const m of src.matchAll(/EXECUTE\s+FUNCTION\s+([a-z_."]+)\s*\(/gi)) if (!m[1].startsWith("public.")) bad.push(`${f}: EXECUTE FUNCTION ${m[1]}`);
-      const bodies = [...src.matchAll(/AS \$\$([\s\S]*?)\$\$/g)].map((m) => m[1]);
-      expect(bodies.length, f).toBeGreaterThan(0);
-      for (const body of bodies) {
-        const code = body.replace(/--[^\n]*/g, "").replace(/'(?:[^']|'')*'/g, "''");
-        const refs = [
-          ...code.matchAll(/\b(?:FROM|JOIN|UPDATE)\s+(?!public\.|pg_catalog\.)("?[A-Za-z_][A-Za-z0-9_]*"?)/gi),
-          ...code.matchAll(/\bINSERT\s+INTO\s+(?!public\.)("?[A-Za-z_][A-Za-z0-9_]*"?)/gi),
-        ]
-          .filter((m) => !/(DISTINCT|DO|FOR)\s+$/i.test(code.slice(Math.max(0, (m.index ?? 0) - 12), m.index)))
-          .map((m) => m[1]);
-        for (const r of refs) bad.push(`${f}: unqualified ${r}`);
+/** fix review 3 (N3): the relation census also covers 0376 (it re-creates the 0316 / 0363–0371 functions) */
+const REL_FILES = [...FILES, "0376_pin_function_search_path.sql"];
+const QUALIFIED = /^(public|pg_catalog|"public"|"pg_catalog")\./i;
+/**
+ * Every relation reference in the routine BODIES of one migration that is not schema-qualified, plus every dynamic `EXECUTE`
+ * (a string built at run time can name anything — banned in these bodies). fix review 3 (N3 — hardened): any dollar tag
+ * ($$, $fn$, $body1$); comma joins (every item of a FROM list); FROM / JOIN / UPDATE / INSERT INTO / DELETE FROM / LOCK TABLE /
+ * TRUNCATE / COPY; `IS DISTINCT FROM`, `ON CONFLICT … DO UPDATE`, `FOR UPDATE / SHARE` are not relations.
+ */
+export function unqualifiedRelationsOf(src: string): string[] {
+  const bad: string[] = [];
+  for (const m of src.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+([A-Za-z_."]+)\s*\(/gi)) if (!/^("?public"?)\./i.test(m[1])) bad.push(`CREATE FUNCTION ${m[1]}`);
+  for (const m of src.matchAll(/EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+([A-Za-z_."]+)\s*\(/gi)) if (!/^("?public"?)\./i.test(m[1])) bad.push(`EXECUTE FUNCTION ${m[1]}`);
+  const bodies = [...src.matchAll(/\bAS\s+(\$([A-Za-z_][A-Za-z0-9_]*)?\$)([\s\S]*?)\1/g)].map((m) => m[3]);
+  for (const body of bodies) {
+    const noComments = body.replace(/--[^\n]*/g, "");
+    const code = noComments.replace(/'(?:[^']|'')*'/g, "''"); // string literals out first (a message may say "execute")
+    for (const m of code.matchAll(/\bEXECUTE\s+(?!FUNCTION\b|PROCEDURE\b)/gi)) bad.push(`dynamic EXECUTE at …${code.slice(m.index ?? 0, (m.index ?? 0) + 40).replace(/\s+/g, " ")}`);
+    const notRel = (at: number) => /(DISTINCT|DO|FOR)\s+$/i.test(code.slice(Math.max(0, at - 12), at));
+    // single-target statements
+    for (const m of code.matchAll(/\b(JOIN|UPDATE|INSERT\s+INTO|DELETE\s+FROM|LOCK\s+TABLE|TRUNCATE(?:\s+TABLE)?|COPY)\s+(?:ONLY\s+)?([^\s(,;]+)/gi)) {
+      if (notRel(m.index ?? 0)) continue;
+      if (/^(UPDATE)$/i.test(m[1]) && /^SET$/i.test(m[2])) continue; // DO UPDATE SET handled by notRel; a bare "UPDATE SET" cannot occur
+      if (!QUALIFIED.test(m[2])) bad.push(`unqualified ${m[2]} (${m[1].toUpperCase()})`);
+    }
+    // FROM lists: EVERY comma-separated item (a comma join hides its 2nd relation from a "next token" check)
+    for (const m of code.matchAll(/\bFROM\b/gi)) {
+      const at = m.index ?? 0;
+      if (notRel(at) || /DELETE\s+$/i.test(code.slice(Math.max(0, at - 8), at))) continue;
+      let i = at + 4;
+      let depth = 0;
+      let item = "";
+      const items: string[] = [];
+      for (; i < code.length; i++) {
+        const ch = code[i];
+        if (ch === "(") depth++;
+        if (ch === ")") {
+          if (depth === 0) break;
+          depth--;
+        }
+        if (depth === 0 && (ch === ";" || /^\s(WHERE|GROUP|ORDER|LIMIT|HAVING|JOIN|LEFT|RIGHT|INNER|FULL|CROSS|ON|UNION|EXCEPT|INTERSECT|FOR|RETURNING|WINDOW|INTO|LOOP|THEN)\b/i.test(code.slice(i, i + 12)))) break;
+        if (depth === 0 && ch === ",") {
+          items.push(item);
+          item = "";
+        } else item += ch;
+      }
+      items.push(item);
+      for (const it of items.map((x) => x.trim()).filter(Boolean)) {
+        if (it.startsWith("(") || /^LATERAL\b/i.test(it)) continue; // sub-query
+        const first = it.split(/\s+/)[0];
+        if (/^[A-Za-z_][\w.]*\(/.test(it) || /^[A-Za-z_][\w]*\s*\(/.test(it)) continue; // a function call (never resolved in pg_temp)
+        if (!QUALIFIED.test(first)) bad.push(`unqualified ${first} (FROM list)`);
       }
     }
+  }
+  return bad;
+}
+
+describe("R-10-e — source census: no function body of 0372–0376 names an unqualified relation", () => {
+  it("every relation in a routine body is public.* or pg_catalog.*; every CREATE / EXECUTE FUNCTION is public.*; no dynamic EXECUTE", () => {
+    const bad: string[] = [];
+    for (const f of REL_FILES) {
+      const src = readFileSync(path.join(SQL_DIR, f), "utf8");
+      expect([...src.matchAll(/\bAS\s+\$([A-Za-z_][A-Za-z0-9_]*)?\$/g)].length, f).toBeGreaterThan(0);
+      for (const b of unqualifiedRelationsOf(src)) bad.push(`${f}: ${b}`);
+    }
     expect(bad).toEqual([]);
+  });
+
+  it("★ fix review 3 (N3): each form the re-review listed turns the census RED; qualified forms stay green", () => {
+    const fn = (body: string, tag = "$$") => `CREATE OR REPLACE FUNCTION public.f() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS ${tag}\nBEGIN\n${body}\nEND ${tag};`;
+    expect(unqualifiedRelationsOf(fn(`PERFORM 1 FROM public."robots" rr, "robot_jobs" j WHERE j."robotId" = rr.id;`))).toEqual(["unqualified \"robot_jobs\" (FROM list)"]); // comma join
+    expect(unqualifiedRelationsOf(fn(`EXECUTE 'LOCK TABLE robot_jobs IN SHARE MODE';`))).toHaveLength(1); // dynamic EXECUTE
+    expect(unqualifiedRelationsOf(fn(`EXECUTE format('SELECT 1 FROM %I', 'robots');`))).toHaveLength(1);
+    expect(unqualifiedRelationsOf(fn(`PERFORM 1 FROM robots;`, "$body1$"))).toEqual(["unqualified robots (FROM list)"]); // $tag1$
+    expect(unqualifiedRelationsOf(fn(`LOCK TABLE robot_jobs IN SHARE MODE;`))).toEqual(["unqualified robot_jobs (LOCK TABLE)"]);
+    expect(unqualifiedRelationsOf(fn(`DELETE FROM robot_jobs WHERE false;`))).toEqual(["unqualified robot_jobs (DELETE FROM)"]);
+    expect(unqualifiedRelationsOf(fn(`UPDATE robot_jobs SET status = 'x';`))).toEqual(["unqualified robot_jobs (UPDATE)"]);
+    expect(unqualifiedRelationsOf(fn(`PERFORM 1 FROM public."a" x JOIN "b" y ON true;`))).toEqual(["unqualified \"b\" (JOIN)"]);
+    expect(unqualifiedRelationsOf(`CREATE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;`)).toEqual(["CREATE FUNCTION f"]);
+    // green: qualified, a function in FROM, a sub-query, IS DISTINCT FROM, ON CONFLICT DO UPDATE, FOR UPDATE / SHARE
+    expect(
+      unqualifiedRelationsOf(
+        fn(
+          `PERFORM 1 FROM public."robots" r, unnest(ARRAY[1]) u, (SELECT 1) s WHERE NEW."a" IS DISTINCT FROM OLD."a";\n` +
+            `INSERT INTO public."t" AS t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET a = 1;\nSELECT 1 INTO x FROM public."robots" WHERE true FOR SHARE;\nPERFORM 1 FROM pg_catalog.pg_class c;`,
+        ),
+      ),
+    ).toEqual([]);
   });
 });
