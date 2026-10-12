@@ -53,7 +53,7 @@ import { MOTION_LOCKED_REASON_CODE } from "./robotDriver";
 import { claimRobotMotionSlot, releaseRobotMotionSlot, runRobotDeviceStage } from "./robotDeviceRun"; // doc 81 Đợt 10 task D — device stage extracted verbatim
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { readRobotEnabledForMotion } from "./robotEnabledGate"; // final wave R-4-x
-import { persistedMotionLockCheckRequired, readCentralMotionAuthority, readPersistedMotionLock, ROBOT_OWNED_BY_EDGE } from "./robotSharedMotionLockGate"; // Đợt 9 final wave F1; Đợt 10 task D (N1)
+import { persistedMotionLockCheckRequired, readCentralMotionAuthority, readPersistedMotionLock, recheckMotionAuthorityInTx, ROBOT_OWNED_BY_EDGE } from "./robotSharedMotionLockGate"; // Đợt 9 final wave F1; Đợt 10 task D (N1)
 import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
@@ -735,6 +735,8 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   //    motion refused until a STOP is confirmed or an authorised operator clears it
   //    (robot.clearMotionLock). Checked BEFORE the connectivity test so the ledger names the cause;
   //    a STOP is never refused on this ground.
+  /** R-10-g (M4) — the robot's owner epoch the authority read saw (re-checked under the reservation's row lock). */
+  let observedOwnerEpoch: number | null = null;
   const robot = getActiveRobot(input.robotId);
   if (!robot) {
     // doc 81 Đợt 10 task D (design §2.11) — central skips edge-owned robots, so a MOTION for one has no session here: say WHY
@@ -793,6 +795,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
       // edge-owned robot ⇒ ROBOT_OWNED_BY_EDGE; a lock row central did not write (an edge authority, or the DB's ownerChanged
       // relock) ⇒ MOTION_LOCKED; unreadable ⇒ MOTION_LOCKED (fail-closed). Bounded. STOP exempt (L-7).
       const auth = await readCentralMotionAuthority(input.robotId);
+      if ("ok" in auth) observedOwnerEpoch = auth.ownerEpoch ?? null;
       if ("ownedByEdge" in auth) return refuseOwnedByEdge(input, auth.ownedByEdge);
       if ("locked" in auth || "error" in auth) {
         if ("locked" in auth && auth.authority === "central") {
@@ -1034,7 +1037,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
     }
   }
   try {
-    return await runRealJob(input, robot.driver, motion, timeoutMs, policyOverride, stopDb, stopNotes, motion ? opts.motionActuator : undefined);
+    return await runRealJob(input, robot.driver, motion, timeoutMs, policyOverride, stopDb, stopNotes, motion ? opts.motionActuator : undefined, observedOwnerEpoch);
   } finally {
     if (motion) releaseRobotMotionSlot(input.robotId);
   }
@@ -1111,11 +1114,33 @@ type RobotReservation = { ok: true; jobId: number } | { ok: false; result: Robot
  *     bound abort row authorises nothing a STOP does not already get (it simply expires).
  * Any throw ⇒ LEDGER_WRITE_FAILED and nothing is sent (the tx rolled back).
  */
-async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record<string, unknown>): Promise<RobotReservation> {
+async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record<string, unknown>, observedOwnerEpoch?: number | null): Promise<RobotReservation> {
   const rejected = (jobId: number | undefined, error: string): RobotReservation => ({
     ok: false,
     result: { ok: false, status: "rejected", jobId, error },
   });
+  // doc 81 Đợt 10 task D (R-10-g, M4) — a MOTION's 'running' row is written in the SAME transaction that locks the robot row FOR
+  // SHARE and re-reads its authority (recheckMotionAuthorityInTx): an ownership change / relock can no longer slip in between
+  // the authority read and the insert. Refused ⇒ a 'rejected' row, nothing sent. A STOP never takes this path (L-7).
+  const recheckRefusal = async (tx: unknown): Promise<RobotReservation | null> => {
+    const re = await recheckMotionAuthorityInTx(tx, input.robotId, observedOwnerEpoch);
+    if (!re) return null;
+    const jobId = await record(input, "rejected", { reasonCode: re.code }, `${re.code}: ${re.detail} — motion refused before any driver call`, { requireDb: true, db: tx as DbOrTx });
+    return rejected(jobId, re.code === "OWNER_CHANGED" ? "MOTION_LOCKED" : re.code);
+  };
+  if (!input.actionId && isMotionJob(input.job)) {
+    const db = await getDb();
+    if (!db) throw new RobotLedgerWriteError("robot ledger unavailable (no DB) at reservation");
+    // capability: every drizzle handle opens transactions (only the in-memory fakes of older suites cannot)
+    if (typeof (db as { transaction?: unknown }).transaction === "function") {
+      return await db.transaction(async (tx): Promise<RobotReservation> => {
+        const refused = await recheckRefusal(tx);
+        if (refused) return refused;
+        const jobId = (await record(input, "running", runningResult, undefined, { requireDb: true, db: tx })) as number;
+        return { ok: true, jobId };
+      });
+    }
+  }
   if (!input.actionId || !isMotionJob(input.job)) {
     const jobId = (await record(input, "running", runningResult, undefined, { requireDb: true })) as number;
     return { ok: true, jobId };
@@ -1127,6 +1152,8 @@ async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record
   // reservation transaction (bounded, no lock held while a controller is read). Motion jobs only — a STOP returned above.
   const prePrograms = await preReadProgramChecksForAction(db, actionId, FOE_ENGINE_TOOL);
   return await db.transaction(async (tx): Promise<RobotReservation> => {
+    const refusedByAuthority = await recheckRefusal(tx); // R-10-g (M4) — before the action is touched (it stays unconsumed)
+    if (refusedByAuthority) return refusedByAuthority;
     const [pending] = await tx.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).for("update");
     let verdict: RobotBindingVerdict = verifyRobotActionBinding(pending, input);
     // doc 81 Đợt 4 fix round 1 (R-4-i) — an orchestration-engine action: re-derive run owner + gate approver from the
@@ -1234,13 +1261,14 @@ async function runRealJob(
   stopDb?: StopDbBudget,
   stopNotes: Record<string, unknown> = {},
   motionActuator?: (job: RobotJobSpec) => Promise<RobotJobResult>,
+  observedOwnerEpoch?: number | null,
 ): Promise<RobotDispatchResult> {
   let jobId: number | undefined;
   /** R-1C-h — a STOP's pre-write that failed or has not landed within its deadline (settled after the send). */
   let prewrite: Promise<number> | undefined;
   if (motion || !stopDb) {
     try {
-      const reserved = await reserveRobotJob(input, policyOverride ? { policyOverride } : undefined);
+      const reserved = await reserveRobotJob(input, policyOverride ? { policyOverride } : undefined, observedOwnerEpoch);
       if (!reserved.ok) return reserved.result;
       jobId = reserved.jobId;
     } catch (err) {

@@ -18,7 +18,7 @@ import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/r
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
 import { MotionLockConflictError, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
-import { edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotEdgeOwner } from "../services/robot/robotEdgeCommandPort"; // doc 81 Đợt 10 task D
+import { edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotEdgeOwner, sendConsoleStopForEdgeRobot } from "../services/robot/robotEdgeCommandPort"; // doc 81 Đợt 10 task D
 
 /**
  * doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — the LIVE state of a robot in THIS process (what
@@ -506,16 +506,21 @@ export const robotRouter = router({
       if (verbToJobType(input.command) === "abort" && !getActiveRobot(input.robotId)) {
         const edgeNodeId = await robotEdgeOwner(input.robotId);
         if (edgeNodeId !== null) {
-          try {
-            const q = await edgeDeviceRequestPort().enqueue({ kind: "stop", robotId: input.robotId, reason: `console ${input.command}`, requestedBy: ctx.user.id });
-            return { ok: true, status: "queued_on_edge" as const, error: undefined as string | undefined, queuedOnEdge: { requestId: q.requestId, edgeNodeId: q.edgeNodeId } };
-          } catch (err) {
-            const code = edgeDeviceRequestErrorCode(err);
-            if (code !== "notEdgeOwned") {
-              console.error(`[Robot] console STOP for edge-owned robot ${input.robotId} (node ${edgeNodeId}) could not be queued (${code}) — use the hardware E-STOP`);
-              return { ok: false, status: "rejected" as const, error: "EDGE_STOP_NOT_QUEUED" };
-            }
+          // R-10-k (L-7) — never a silent no-op: queue for the owner; on failure the central STOP (if a session exists) AND a
+          // re-queue for the current owner; neither ⇒ critical alert + an error the user sees.
+          const stop = await sendConsoleStopForEdgeRobot({
+            robotId: input.robotId,
+            requestedBy: ctx.user.id,
+            reason: `console ${input.command}`,
+            centralStop: async () =>
+              getActiveRobot(input.robotId)
+                ? dispatchRobotJob({ robotId: input.robotId, job: { jobType: "abort", params: {} }, triggerKind: "manual", requestedBy: ctx.user.id, confirmedBy: ctx.user.id })
+                : null,
+          });
+          if (stop.ok) {
+            return { ok: true, status: "queued_on_edge" as const, error: undefined as string | undefined, queuedOnEdge: { requestId: stop.requestId ?? null, edgeNodeId: stop.edgeNodeId ?? edgeNodeId, via: stop.via } };
           }
+          return { ok: false, status: "rejected" as const, error: stop.error as string | undefined, queuedOnEdge: undefined };
         }
       }
       const res = await dispatchRobotJob({

@@ -79,3 +79,73 @@ export async function robotEdgeOwner(robotId: number): Promise<number | null> {
     return null;
   }
 }
+
+/**
+ * doc 81 Đợt 10 task D — ruling R-10-k (L-7): a console STOP for a robot an EDGE node owned when it was looked up. It must NEVER
+ * become a silent no-op:
+ *   1. queue it for the node that owns the robot now (B's edgeNodeCommands);
+ *   2. the queue refused / failed (stale | notEdgeOwned | unavailable | anything) ⇒ BOTH, at once:
+ *        • if central holds a session for the robot ⇒ the STOP goes out through central's path immediately (`centralStop`);
+ *        • the queue is retried ONCE for the CURRENT owner (the owner may have changed between the lookup and the insert);
+ *   3. neither worked ⇒ a CRITICAL operator alert + an error the user sees (use the hardware E-STOP).
+ * Never throws.
+ */
+export interface ConsoleStopOutcome {
+  ok: boolean;
+  via: "edge_queue" | "edge_queue_retry" | "central" | "central+edge_queue_retry" | "none";
+  requestId?: number;
+  edgeNodeId?: number;
+  centralStatus?: string;
+  /** set when ok === false — shown to the user */
+  error?: "EDGE_STOP_NOT_QUEUED";
+  detail?: string;
+}
+export async function sendConsoleStopForEdgeRobot(a: {
+  robotId: number;
+  requestedBy: number;
+  reason: string;
+  /** central's STOP for the robot, evaluated at failure time: resolves null when central holds no session for it */
+  centralStop: () => Promise<{ ok: boolean; status: string } | null>;
+  alert?: (message: string) => void;
+}): Promise<ConsoleStopOutcome> {
+  const enqueue = () => edgeDeviceRequestPort().enqueue({ kind: "stop", robotId: a.robotId, reason: a.reason, requestedBy: a.requestedBy });
+  let firstError: string;
+  try {
+    const q = await enqueue();
+    return { ok: true, via: "edge_queue", requestId: q.requestId, edgeNodeId: q.edgeNodeId };
+  } catch (err) {
+    firstError = edgeDeviceRequestErrorCode(err);
+  }
+  // L-7 — the central STOP (when a session exists) and the re-queue run together; neither waits for the other
+  const central = Promise.resolve()
+    .then(() => a.centralStop())
+    .then(
+      (r) => r,
+      (e) => ({ ok: false, status: String((e as Error)?.message ?? e).slice(0, 120) }),
+    );
+  const retry = enqueue().then(
+    (q) => ({ ok: true as const, q }),
+    (e) => ({ ok: false as const, code: edgeDeviceRequestErrorCode(e) }),
+  );
+  const [c, r] = await Promise.all([central, retry]);
+  const centralOk = c?.ok === true;
+  if (r.ok) {
+    return { ok: true, via: centralOk ? "central+edge_queue_retry" : "edge_queue_retry", requestId: r.q.requestId, edgeNodeId: r.q.edgeNodeId, ...(c ? { centralStatus: c.status } : {}) };
+  }
+  if (centralOk) return { ok: true, via: "central", centralStatus: c!.status };
+  const detail = `console STOP for robot ${a.robotId} could not be delivered: queue ${firstError} then ${r.code}${c ? `, central STOP ${c.status}` : ", central holds no session"}`;
+  const message = `${detail}. Use the hardware E-STOP on the machine now.`;
+  console.error(`[Robot] CRITICAL: ${message}`);
+  try {
+    (a.alert ?? defaultStopAlert)(message);
+  } catch {
+    /* the error below still reaches the user */
+  }
+  return { ok: false, via: "none", error: "EDGE_STOP_NOT_QUEUED", detail };
+}
+
+function defaultStopAlert(message: string): void {
+  void import("../ecosystem/ecosystemEvents")
+    .then(({ publishAnomalyDetected }) => publishAnomalyDetected({ kind: "console_stop_undelivered", severity: "critical", source: "robot", machineId: null, message }, "robot"))
+    .catch(() => undefined);
+}
