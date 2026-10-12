@@ -801,7 +801,7 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   // doc 81 Đợt 10 C fix review 1 — a command an edge SENT but whose result its journal refused (outcome unknown, recorded by
   // central at that segment's end): NEVER sent again — it is a failure (its compensation, if any, follows as for any failure).
   const unknown = outcomeUnknownOf(rc, step.id);
-  if (unknown !== null) outcome = { kind: "failed", error: unknown };
+  if (unknown !== null && !stop) outcome = { kind: "failed", error: unknown }; // R-10-ao N2 — a STOP is never held back as "unknown"
   // retry loop (deterministic; only command/wait steps benefit, others run once)
   // eslint-disable-next-line no-constant-condition
   else while (true) {
@@ -1915,7 +1915,7 @@ async function runCompensation(rc: RunContext, step: WorkflowStep, stepError?: s
     });
     // fix review 2 (R-10-ae) — a compensation an earlier segment SENT without a recorded result is never sent again
     const compUnknown = outcomeUnknownOf(rc, comp.id);
-    if (compUnknown !== null) {
+    if (compUnknown !== null && !compStop) {
       await stopBoundedWrite(compStop, rc.runId, comp.id, "failed row", () =>
         rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "failed", error: compUnknown, finishedAt: new Date() }),
       );
@@ -2687,14 +2687,22 @@ export async function edgeNodeProgramPre(d: NonNullable<Awaited<ReturnType<typeo
  */
 async function edgeResumeStateFor(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, runId: number, def: WorkflowDefinition, hintUnknown: string[]) {
   const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
-  let unreported = new Set<string>();
+  // fix review 3 (R-10-ao N1) — ANY non-superseded authorisation of a step whose row is not final means it MAY have been sent:
+  // the edge journals the ledger result (⇒ resultReportedAt) BEFORE the walker's result row, so "reported" proves nothing.
+  let authorised = new Set<string>();
   try {
-    const auths = (await d.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))) as Array<{ stepId: string; resultReportedAt: unknown; supersededAt: unknown }>;
-    unreported = new Set(auths.filter((a) => a.resultReportedAt == null && a.supersededAt == null).map((a) => a.stepId));
+    const auths = (await d.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))) as Array<{ stepId: string; supersededAt: unknown }>;
+    authorised = new Set(auths.filter((a) => a.supersededAt == null).map((a) => a.stepId));
   } catch (err) {
-    if (!isEdgeControlSchemaMissing(err)) throw err;
+    // N3 — ONLY a missing table (0372 not applied ⇒ no v2 edge ever ran) means "no ledger"; anything else refuses the Continue
+    const code = (err as { code?: unknown; cause?: { code?: unknown } } | null)?.code ?? (err as { cause?: { code?: unknown } } | null)?.cause?.code;
+    if (code !== "42P01") throw err;
   }
-  return edgeResumeStateOf(def, rows, unreported, hintUnknown);
+  // N2 — STOP steps (the walker's own candidates: robot stop job / stop-typed OT) are never outcome-unknown: re-sent (L-7)
+  const map = await loadMachines(validateWorkflow(def, null).referencedMachineIds);
+  const stops = new Set<string>();
+  for (const s of allStepsOf(def.steps)) if (s.type === "command" && (await isStopCandidate(s, map))) stops.add(s.id);
+  return edgeResumeStateOf(def, rows, authorised, hintUnknown, stops);
 }
 
 /** The binding detail of an edge run: its node's program reports (D7). A read error ⇒ no digest (fail-closed). */

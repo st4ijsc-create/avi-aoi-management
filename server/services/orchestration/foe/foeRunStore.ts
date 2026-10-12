@@ -1027,8 +1027,11 @@ export type ResumeStateMap = Record<string, { state: ResumeStepState; error: str
 export function edgeResumeStateOf(
   def: Pick<WorkflowDefinition, "steps">,
   rows: ReadonlyArray<{ stepId: string; status: string; resultJson?: unknown; error?: string | null }>,
-  unreported: ReadonlySet<string>,
+  /** fix review 3 (R-10-ao N1) — the steps central issued ANY (non-superseded) authorisation to, reported or not */
+  authorised: ReadonlySet<string>,
   hintUnknown: readonly string[] = [],
+  /** fix review 3 (R-10-ao N2) — STOP steps (verified / robot / stop-typed candidates): never outcome-unknown — re-sent (L-7) */
+  stops: ReadonlySet<string> = new Set(),
 ): { state: ResumeStateMap; ambiguous: string[] } {
   const all = allStepsOf(def.steps);
   const byId = new Map(rows.filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX)).map((r) => [r.stepId, r] as const));
@@ -1037,10 +1040,10 @@ export function edgeResumeStateOf(
   const ambiguous: string[] = [];
   const sent = (id: string) => {
     const r = byId.get(id);
-    return typeof (r?.resultJson as { routedTo?: unknown } | null | undefined)?.routedTo === "string" || unreported.has(id);
+    return typeof (r?.resultJson as { routedTo?: unknown } | null | undefined)?.routedTo === "string" || authorised.has(id);
   };
   for (const s of all) {
-    if (s.type !== "command") continue;
+    if (s.type !== "command" || stops.has(s.id)) continue; // N2 — a STOP is always sent again on a Continue (L-7)
     const r = byId.get(s.id);
     if (r && FINAL.has(r.status)) continue;
     if (sent(s.id) || hintUnknown.includes(s.id)) {

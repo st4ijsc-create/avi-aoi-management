@@ -23,6 +23,8 @@ const h = vi.hoisted(() => ({
   /** fix review 1 — while an EDGE walk runs, the database THROWS (and every attempt is counted): "reads no DB" is measured */
   dbThrows: false,
   dbCalls: 0,
+  /** fix review 3 — the edge dispatch's LEDGER record (journaled inside sendCommand, BEFORE the walker's result row) */
+  onLedger: null as null | ((cmd: Record<string, any>, ok: boolean) => void),
   telemetry: [] as Array<{ key: string; value: unknown }>,
 }));
 
@@ -45,6 +47,7 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       const stepId = m ? m[1] : "?";
       h.sent.push({ kind, stepId, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl });
       const left = h.failPlan.get(stepId) ?? 0;
+      h.onLedger?.(cmd, left === 0); // the REAL ordering: the ledger result is recorded before the walker writes its result row
       if (left > 0) {
         h.failPlan.set(stepId, left - 1);
         return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `scripted failure of ${stepId}` };
@@ -128,6 +131,13 @@ const resultKind = (r: unknown): string => {
 };
 
 beforeEach(() => {
+  h.onLedger = (cmd, ok) => {
+    const a = cmd.edge?.authorization;
+    if (!a) return;
+    for (const r of fake.store.get("edge_step_authorizations") ?? []) {
+      if (r.runId === a.runId && r.stepId === a.stepId && r.attempt === a.attempt) Object.assign(r, { resultReportedAt: new Date(), resultStatus: ok ? "simulated" : "rejected" });
+    }
+  };
   fake.store.clear();
   resetSeq();
   fake.setUnique(orchestrationRunSteps, [["runId", "stepId"]]);
@@ -1397,5 +1407,78 @@ describe("doc 81 Đợt 10 C fix review 2 — a COMPENSATION sent with an unknow
     expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "c1"]);
     expect(String(stepRows(e.runId).find((s) => s.stepId === "c1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
     expect(runRow(e.runId).status).toBe("failed");
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 3 (R-10-ao) — ANY authorisation on a non-final row means sent; STOPs are always re-sent; only 42P01 means no ledger", () => {
+  it("★ N1 real ordering: the ledger result reached central (resultReportedAt set) but the result row and the prefix were lost ⇒ r1 is never re-sent", async () => {
+    const e = await edgeAssignedRun(def("ao-n1", [gate(), move("r1"), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    e.stripEndUnknown = true;
+    await edgeSegment(e, 2);
+    expect((fake.store.get("edge_step_authorizations") ?? []).find((a) => a.runId === e.runId && a.stepId === "r1")!.resultReportedAt).toBeInstanceOf(Date);
+    e.refuse = undefined;
+    e.stripEndUnknown = false;
+    await approveEdgeGate(e);
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]);
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
+  });
+
+  it("★ N1 compensation + retry: a compensation and a retried attempt whose ledger result is reported are not re-sent either", async () => {
+    const { edgeResumeStateOf } = await import("./foeRunStore");
+    const d = def("x", [move("r1", { maxAttempts: 2, compensation: ot("c1") })]);
+    const row = (stepId: string, status: string) => ({ stepId, status, resultJson: null, error: null });
+    // r1 failed, c1 authorised + its result reported, row still running ⇒ c1 unknown; r1 resumes only the (unknown) compensation
+    expect(edgeResumeStateOf(d, [row("r1", "failed"), row("c1", "running")], new Set(["c1"])).state).toMatchObject({ c1: { state: "outcomeUnknown" }, r1: { state: "compensationHeld" } });
+    // r1 retried: attempt 2 authorised (any result) on a running row ⇒ unknown
+    expect(edgeResumeStateOf(d, [row("r1", "running")], new Set(["r1"])).state).toMatchObject({ r1: { state: "outcomeUnknown" } });
+  });
+
+  it("★ N2 a STOP is never outcome-unknown: on Continue it is SENT again (L-7) — rows, ledger and hints alike", async () => {
+    const e = await edgeAssignedRun(def("ao-n2", [gate(), move("r1"), robotStop("s1"), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    // held at r2; the STOP's FINAL row is lost (its row still 'running' with a dispatch result) and the end names it unknown
+    e.offlineSteps = new Set(["r2"]);
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held" });
+    Object.assign(stepRows(e.runId).find((s) => s.stepId === "s1")!, { status: "running" });
+    runRow(e.runId).contextJson = { ...(runRow(e.runId).contextJson ?? {}), foeOutcomeUnknown: ["s1"] };
+    e.offlineSteps = undefined;
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson.foeResumeState?.s1).toBeUndefined();
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "s1", "s1", "r2"]); // the STOP again; r1 never
+    const { edgeResumeStateOf } = await import("./foeRunStore");
+    const d = def("y", [robotStop("s9")]);
+    expect(edgeResumeStateOf(d, [{ stepId: "s9", status: "running", resultJson: { routedTo: "robot-dispatcher" } }], new Set(["s9"]), ["s9"], new Set(["s9"])).state).toEqual({});
+  });
+
+  it("★ N3 only 42P01 (no table) means 'no ledger'; any other ledger error (42703, 42883, a connection error) refuses the Continue", async () => {
+    for (const [code, refused] of [["42703", true], ["42883", true], ["08006", true], ["42P01", false]] as const) {
+      const e = await edgeAssignedRun(def(`ao-n3-${code}`, [gate(), ot("m1")]));
+      await edgeSegment(e, 1);
+      const sel = FakeDb.prototype.select.bind(fake);
+      (fake as any).select = (p?: unknown) => {
+        const b = sel(p as never);
+        const from = b.from.bind(b);
+        b.from = (t: any) => {
+          if (t?.[Symbol.for("drizzle:Name")] === "edge_step_authorizations") throw Object.assign(new Error("ledger"), { code });
+          return from(t);
+        };
+        return b;
+      };
+      try {
+        const view = (await getRun(e.runId, { bindingDigest: true }))!;
+        const r = await resumeRun(e.runId, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+        if (refused) expect(r, code).toMatchObject({ ok: false, message: expect.stringMatching(/could not be read to continue it safely/) });
+        else expect(r, code).toMatchObject({ ok: true, status: "queued" });
+      } finally {
+        (fake as any).select = sel;
+      }
+    }
   });
 });
