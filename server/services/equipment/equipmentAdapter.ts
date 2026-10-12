@@ -31,6 +31,7 @@ import type { DispatchInput, DispatchTrigger } from "../ot/commandDispatcher";
 import { dispatchRobotJob } from "../robot/robotCommandDispatcher";
 import type { RobotJobSpec } from "../robot/robotDriver";
 import { toRobotJob } from "./robotJobMapping";
+import type { EdgeStepAuthorization } from "../edge/edgeAuthorizationVerifier";
 
 /** Which existing registry/manager a kind delegates to (for discovery/UI). */
 export type DelegateRegistry =
@@ -92,7 +93,31 @@ export interface EquipmentCommand {
    */
   hitl: { actionId: string; requestedBy: number; confirmedBy?: number; tool?: string };
   lang?: "vi" | "en" | "zh";
+  /**
+   * doc 81 Đợt 10 task D (design §2.14) — EDGE MODE only (AVI_PROCESS_ROLE=edge): the signed per-step authorisation of a
+   * non-STOP command (from POST runs/:id/authorize) and the run step it belongs to. On the edge the command is routed to the
+   * edge front ends (otEdgeDispatch / robotEdgeDispatch) — never to the DB dispatchers; a STOP needs no authorisation (L-7).
+   * On central this field is REFUSED (an edge authorisation is never honoured by central's dispatchers).
+   */
+  edge?: {
+    authorization?: EdgeStepAuthorization | null;
+    run?: { runId: number; claimSeq: number; stepId: string; attempt: number } | null;
+    source?: "command" | "anomaly" | "local";
+    requestId?: number | null;
+  };
 }
+
+/**
+ * doc 81 Đợt 10 task D — edge mode = the process role the edge gateway sets before any import (AVI_PROCESS_ROLE=edge). The SAME
+ * predicate as server/db/connection.isEdgeProcessRole, read here directly so suites that replace the DB module with a getDb-only
+ * mock keep working (reading the env never touches a DB).
+ */
+function isEdgeProcessRole(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.AVI_PROCESS_ROLE ?? "").trim().toLowerCase() === "edge";
+}
+
+/** doc 81 Đợt 10 task D — refusal of an edge-mode command reaching central's facade (fail-closed, nothing dispatched). */
+export const EDGE_COMMAND_ON_CENTRAL = "EDGE_COMMAND_ON_CENTRAL" as const;
 
 /** Normalised result of a routed command (whether simulated or real). */
 export interface EquipmentCommandResult {
@@ -204,6 +229,30 @@ class OtEquipmentAdapter implements EquipmentAdapter {
     if (command.adapterId == null) {
       return { ok: false, status: "rejected", routedTo: "ot-dispatcher", error: "adapterId required for OT command" };
     }
+    // doc 81 Đợt 10 task D — edge mode: the edge front end (signed snapshot + signed authorisation, no DB); never central's
+    // DB dispatcher. Central: an edge-mode command is refused (it carries no HITL action central could verify).
+    if (isEdgeProcessRole()) {
+      const { dispatchOtOnEdge } = await import("../ot/otEdgeDispatch");
+      const r = await dispatchOtOnEdge({
+        adapterId: command.adapterId,
+        machineId: command.machineId ?? null,
+        commandType: command.name,
+        writes: (command.writes ?? []).map((w) => ({ tagKey: w.tagKey, value: w.value })),
+        idempotencyKey: command.idempotencyKey,
+        authorization: command.edge?.authorization ?? null,
+        run: command.edge?.run ?? null,
+        source: command.edge?.source,
+        requestId: command.edge?.requestId ?? null,
+      });
+      return {
+        ok: r.ok,
+        status: r.status,
+        routedTo: "ot-dispatcher",
+        detail: { edge: true, stop: r.stop, pinnedStop: r.pinnedStop ?? false, reason: r.reason, ...(r.detail ? { refusal: r.detail } : {}), ...(r.jti ? { jti: r.jti } : {}), results: r.results },
+        ...(r.ok ? {} : { error: r.reason }),
+      };
+    }
+    if (command.edge) return { ok: false, status: "rejected", routedTo: "ot-dispatcher", error: EDGE_COMMAND_ON_CENTRAL };
     const triggeredBy: DispatchTrigger = {
       kind: "hitl",
       actionId: command.hitl.actionId,
@@ -263,6 +312,28 @@ class RobotEquipmentAdapter implements EquipmentAdapter {
         detail: { appError: { appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } } },
       };
     }
+    if (isEdgeProcessRole()) {
+      // doc 81 Đợt 10 task D — edge mode (see the OT adapter): the SAME job mapping as central (toRobotJob), so the hash the
+      // edge recomputes is the one central signed.
+      const { dispatchRobotOnEdge } = await import("../robot/robotEdgeDispatch");
+      const r = await dispatchRobotOnEdge({
+        robotId: command.robotId,
+        job: toRobotJob(command),
+        idempotencyKey: command.idempotencyKey,
+        authorization: command.edge?.authorization ?? null,
+        run: command.edge?.run ?? null,
+        source: command.edge?.source,
+        requestId: command.edge?.requestId ?? null,
+      });
+      return {
+        ok: r.ok,
+        status: r.status,
+        routedTo: "robot-dispatcher",
+        detail: { edge: true, stop: r.stop, reason: r.reason, ...(r.detail ? { refusal: r.detail } : {}), ...(r.jti ? { jti: r.jti } : {}), ...(r.result ? { result: r.result } : {}) },
+        ...(r.ok ? {} : { error: r.reason ?? r.error }),
+      };
+    }
+    if (command.edge) return { ok: false, status: "rejected", routedTo: "robot-dispatcher", error: EDGE_COMMAND_ON_CENTRAL };
     const res = await dispatchRobotJob({
       robotId: command.robotId,
       job: toRobotJob(command),

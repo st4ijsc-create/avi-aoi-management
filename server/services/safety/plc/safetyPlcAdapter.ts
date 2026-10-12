@@ -316,8 +316,29 @@ export interface PlcConfigFilter {
   onlyEnabled?: boolean;
 }
 
+/**
+ * doc 81 Đợt 10 task D — CONFIG-SOURCE SEAM for the EDGE (no DB): when set (edgeDeviceRuntime.installEdgeDeviceRuntime), the
+ * configs are the signed config snapshot's safety-PLC configs instead of a DB read. Central never sets it (null ⇒ the DB, as
+ * before). The filter applies exactly as the SQL below.
+ */
+let plcConfigSource: (() => SafetyPlcConfig[]) | null = null;
+export function setPlcConfigSource(src: (() => SafetyPlcConfig[]) | null): void {
+  plcConfigSource = src;
+}
+
 /** List safety-PLC configs (read — always allowed). */
 export async function listPlcConfigs(filter: PlcConfigFilter = {}): Promise<SafetyPlcConfig[]> {
+  if (plcConfigSource) {
+    return plcConfigSource()
+      .filter(
+        (c) =>
+          (filter.robotId == null || c.robotId === filter.robotId) &&
+          (filter.stationId == null || c.stationId === filter.stationId) &&
+          (filter.lineId == null || c.lineId === filter.lineId) &&
+          (!filter.onlyEnabled || c.enabled === true),
+      )
+      .sort((a, b) => a.id - b.id);
+  }
   const d = await db();
   const conds = [];
   if (filter.robotId != null) conds.push(eq(safetyPlcConfigs.robotId, filter.robotId));

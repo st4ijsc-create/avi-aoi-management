@@ -83,6 +83,16 @@ async function resolveRobot(d: Exec, robotId: number): Promise<SafetyTarget | nu
 }
 
 /**
+ * doc 81 Đợt 10 task D — TARGET-SOURCE SEAM for the EDGE (no DB). When set, resolveSafetyTargets answers from it instead of
+ * the DB; the edge installs one that answers null (every shipped config applies — central already narrowed the snapshot's
+ * configs to the node's owned targets), which can only make the guarding set LARGER (R-4-c). Central never sets it.
+ */
+let targetSource: ((ref: SafetyTargetRef) => Promise<SafetyTarget[] | null>) | null = null;
+export function setSafetyTargetSource(src: ((ref: SafetyTargetRef) => Promise<SafetyTarget[] | null>) | null): void {
+  targetSource = src;
+}
+
+/**
  * doc 81 Đợt 4 fix round 1 (ruling R-4-d) — the targets a safety preflight must cover:
  *   • the target actually WRITTEN, derived SERVER-SIDE from the adapter (device_adapters.machineId => its chain) —
  *     a caller-supplied machineId can never replace it;
@@ -92,6 +102,7 @@ async function resolveRobot(d: Exec, robotId: number): Promise<SafetyTarget | nu
  * Never throws.
  */
 export async function resolveSafetyTargets(ref: SafetyTargetRef): Promise<SafetyTarget[] | null> {
+  if (targetSource) return targetSource(ref); // doc 81 Đợt 10 task D — edge: no DB (see setSafetyTargetSource)
   try {
     const robotId = ref.robotId != null && ref.robotId > 0 ? ref.robotId : null;
     const machineId = ref.machineId != null && ref.machineId > 0 ? ref.machineId : null;
