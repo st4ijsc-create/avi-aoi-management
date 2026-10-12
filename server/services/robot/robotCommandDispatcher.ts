@@ -53,7 +53,7 @@ import { MOTION_LOCKED_REASON_CODE } from "./robotDriver";
 import { claimRobotMotionSlot, releaseRobotMotionSlot, runRobotDeviceStage } from "./robotDeviceRun"; // doc 81 Đợt 10 task D — device stage extracted verbatim
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { readRobotEnabledForMotion } from "./robotEnabledGate"; // final wave R-4-x
-import { persistedMotionLockCheckRequired, readPersistedMotionLock } from "./robotSharedMotionLockGate"; // Đợt 9 final wave F1
+import { persistedMotionLockCheckRequired, readCentralMotionAuthority, readPersistedMotionLock, ROBOT_OWNED_BY_EDGE } from "./robotSharedMotionLockGate"; // Đợt 9 final wave F1; Đợt 10 task D (N1)
 import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
@@ -475,6 +475,7 @@ export const ROBOT_MOTION_IN_PROGRESS = "robot_motion_in_progress" as const;
  */
 // doc 81 Đợt 10 task D — the slot itself lives in robotDeviceRun.ts (shared with the edge front end); re-exported unchanged.
 export { robotMotionInFlight } from "./robotDeviceRun";
+export { ROBOT_OWNED_BY_EDGE } from "./robotSharedMotionLockGate";
 
 /**
  * Age after which a `running` row cannot belong to a live dispatch: the job deadline plus the
@@ -736,6 +737,12 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   //    a STOP is never refused on this ground.
   const robot = getActiveRobot(input.robotId);
   if (!robot) {
+    // doc 81 Đợt 10 task D (design §2.11) — central skips edge-owned robots, so a MOTION for one has no session here: say WHY
+    // (ROBOT_OWNED_BY_EDGE) when the owner read answers; anything else keeps the existing refusal. A STOP never reads it.
+    if (motion && !persistedMotionLockCheckRequired()) {
+      const owner = await readCentralMotionAuthority(input.robotId);
+      if ("ownedByEdge" in owner) return refuseOwnedByEdge(input, owner.ownedByEdge);
+    }
     const jobId = await record(input, "rejected", undefined, "robot not active/connected");
     return { ok: false, status: "rejected", jobId, error: "robot not active/connected" };
   }
@@ -778,6 +785,35 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
           "rejected",
           { reasonCode: MOTION_LOCKED_REASON_CODE, persistedMotionLock: "error" in saved ? { unreadable: saved.error } : saved },
           `MOTION_LOCKED: ${why} — motion refused before any driver call; a confirmed STOP or robot.clearMotionLock on the process holding the lock clears it`,
+        );
+        return { ok: false, status: "rejected", jobId, error: "MOTION_LOCKED" };
+      }
+    } else {
+      // doc 81 Đợt 10 task D (re-review N1, design §2.11/§2.12) — CENTRAL reads the motion authority at motion time: an
+      // edge-owned robot ⇒ ROBOT_OWNED_BY_EDGE; a lock row central did not write (an edge authority, or the DB's ownerChanged
+      // relock) ⇒ MOTION_LOCKED; unreadable ⇒ MOTION_LOCKED (fail-closed). Bounded. STOP exempt (L-7).
+      const auth = await readCentralMotionAuthority(input.robotId);
+      if ("ownedByEdge" in auth) return refuseOwnedByEdge(input, auth.ownedByEdge);
+      if ("locked" in auth || "error" in auth) {
+        if ("locked" in auth && auth.authority === "central") {
+          // the DB's ownerChanged relock of a CENTRAL robot: ADOPT it into the in-memory lock (the authority's source of truth),
+          // so the existing paths clear it — a confirmed STOP or robot.clearMotionLock quoting this generation — and their
+          // persistence hook deletes the row (generation ≤ g). No-op while already locked.
+          try {
+            robot.driver.motionLockController?.()?.restore({ reasonCode: auth.reasonCode, detail: auth.detail, since: auth.since, generation: auth.generation });
+          } catch (err) {
+            console.error(`[Robot] adopting the persisted ownerChanged lock of robot ${input.robotId} failed (motion still refused):`, (err as Error)?.message ?? err);
+          }
+        }
+        const why =
+          "error" in auth
+            ? `the motion authority (owner / persisted lock) could not be read (${auth.error})`
+            : `a persisted motion lock not written by this process is set (${auth.authority}: ${auth.reasonCode} since ${auth.since}, generation ${auth.generation})`;
+        const jobId = await record(
+          input,
+          "rejected",
+          { reasonCode: MOTION_LOCKED_REASON_CODE, persistedMotionLock: "error" in auth ? { unreadable: auth.error } : auth },
+          `MOTION_LOCKED: ${why} — motion refused before any driver call; a confirmed STOP or the operator's clear on the lock's authority clears it`,
         );
         return { ok: false, status: "rejected", jobId, error: "MOTION_LOCKED" };
       }
@@ -1002,6 +1038,17 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   } finally {
     if (motion) releaseRobotMotionSlot(input.robotId);
   }
+}
+
+/** doc 81 Đợt 10 task D — MOTION to a robot an edge node owns: refused + ledgered; central has no session for it (§2.11). */
+async function refuseOwnedByEdge(input: RobotDispatchInput, edgeNodeId: number): Promise<RobotDispatchResult> {
+  const jobId = await record(
+    input,
+    "rejected",
+    { reasonCode: ROBOT_OWNED_BY_EDGE, edgeNodeId },
+    `${ROBOT_OWNED_BY_EDGE}: robot ${input.robotId} is owned by edge node ${edgeNodeId} — central does not move it (motion refused before any driver call; run it on its edge, or STOP / lock it through the node's command channel)`,
+  );
+  return { ok: false, status: "rejected", jobId, error: ROBOT_OWNED_BY_EDGE };
 }
 
 // ─── doc 81 Đợt 1B final wave (item 2) — HITL binding for robot jobs ─────────────────

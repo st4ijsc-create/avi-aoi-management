@@ -5,7 +5,7 @@
  * per-robot try/catch connect + subscribeState(ingest). A vendor scaffold whose
  * connect throws is logged "skipped" and never crashes the process.
  */
-import type { RobotStateHandle } from "./robotDriver";
+import type { MotionLock, RobotState, RobotStateHandle } from "./robotDriver";
 import type { RuntimeRobot, RobotLoadScope } from "./robotAdapter";
 
 let running = false;
@@ -28,10 +28,24 @@ function flagEnabled(): boolean {
 export interface StartRobotsOptions {
   scope?: RobotLoadScope;
   ingest?: boolean;
+  /**
+   * doc 81 Đợt 10 task D (design §2.11 / §2.12) — EDGE v2 (no DB): the node's OWNED robots from the SIGNED config snapshot
+   * (robotAdapter.runtimeRobotsFromConfig). Given ⇒ no DB anywhere in this start: no robot_jobs reconciliation (central owns
+   * the ledger), no DB robot load, no DB motion-lock load / persistence.
+   */
+  configRobots?: RuntimeRobot[];
+  /** EDGE v2 — where each robot state goes (the journal's robot_state stream → central ingest) instead of `ingest`. */
+  stateSink?: (robot: RuntimeRobot, state: RobotState) => void;
+  /**
+   * EDGE v2 — the motion lock's seed + journal-sink persistence (robotMotionLockStore.attachEdgeMotionLockPersistence; N2).
+   * REQUIRED with configRobots: without it every lockable robot starts LOCKED `persistUnknown` (fail-closed).
+   */
+  attachLock?: (robot: RuntimeRobot, lock: MotionLock) => void;
 }
 
 export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolean> {
   if (running) return true;
+  if (opts.configRobots) return startConfigRobots(opts);
   // doc 81 Đợt 1B Task 5 fix round 1 (M1) — reconcile robot_jobs rows a previous process left
   // 'running' (died between the pre-motion row and its finalize). Runs even when the gateway
   // is off: a stale row would otherwise block its idempotency key forever. Never throws.
@@ -93,6 +107,67 @@ export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolea
 
   running = true;
   console.log(`[Robot] started — ${active.length}/${robots.length} robot(s) active${opts.ingest === false ? " (edge: state NOT ingested here — central is the ingest owner)" : ""}`);
+  return true;
+}
+
+/** doc 81 Đợt 10 task D — EDGE v2 start: config-sourced robots, journal-backed lock, state sink. Touches no DB. */
+async function startConfigRobots(opts: StartRobotsOptions): Promise<boolean> {
+  if (!flagEnabled()) {
+    console.log("[Robot] disabled (set ROBOT_GATEWAY_ENABLED=true to enable)");
+    return false;
+  }
+  const robots = opts.configRobots ?? [];
+  if (robots.length === 0) {
+    console.log("[Robot] the signed config names no enabled robot for this node — nothing to start");
+    return false;
+  }
+  const { MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE } = await import("./robotDriver");
+  for (const robot of robots) {
+    // BEFORE any driver can move anything: the seed / persistence of the authority's lock (fail-closed without it).
+    const motionLock = robot.driver.motionLockController?.();
+    if (motionLock) {
+      let why: string | null = "no edge motion-lock persistence supplied";
+      try {
+        if (opts.attachLock) {
+          opts.attachLock(robot, motionLock);
+          why = null;
+        }
+      } catch (err) {
+        why = String((err as Error)?.message ?? err);
+      }
+      if (why !== null) {
+        console.error(`[Robot] "${robot.code}": edge motion lock not attached — starting LOCKED ${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE} (fail-closed): ${why}`);
+        motionLock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, "edge motion-lock persistence unavailable at start");
+      }
+    }
+    try {
+      await robot.driver.connect(robot.connection);
+      const sink = opts.stateSink;
+      const handle = await robot.driver.subscribeState(
+        sink
+          ? (state) => {
+              try {
+                sink(robot, state);
+              } catch (err) {
+                console.error(`[Robot] "${robot.code}": state sink failed:`, (err as Error)?.message ?? err);
+              }
+            }
+          : () => undefined,
+        robot.pollIntervalMs,
+      );
+      active.push({ robot, handle });
+      console.log(`[Robot] "${robot.code}" (${robot.vendor}) started (edge, owned)`);
+    } catch (err) {
+      console.warn(`[Robot] "${robot.code}" (${robot.vendor}) skipped: ${(err as Error)?.message ?? err}`);
+      try {
+        await robot.driver.disconnect();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  running = true;
+  console.log(`[Robot] started — ${active.length}/${robots.length} owned robot(s) active (edge: state → journal, lock authority = this node)`);
   return true;
 }
 

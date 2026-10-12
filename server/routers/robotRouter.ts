@@ -18,6 +18,7 @@ import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/r
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
 import { MotionLockConflictError, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
+import { edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotEdgeOwner } from "../services/robot/robotEdgeCommandPort"; // doc 81 Đợt 10 task D
 
 /**
  * doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — the LIVE state of a robot in THIS process (what
@@ -194,6 +195,36 @@ export const robotRouter = router({
         );
       const rt = getActiveRobot(input.robotId);
       if (!rt) {
+        // doc 81 Đợt 10 task D (design §2.11) — a robot an EDGE node owns has no session here: its lock authority is the node.
+        // The clear goes there as a signed command (compare-and-clear on `expectedGeneration` at the edge); audited first.
+        const edgeNodeId = await robotEdgeOwner(input.robotId);
+        if (edgeNodeId !== null) {
+          await createAuditLog({
+            userId: ctx.user.id,
+            userName: ctx.user.name ?? null,
+            action: "robot.clearMotionLock",
+            entityType: "robot",
+            entityId: input.robotId,
+            ipAddress: ctx.req?.ip ?? null,
+            userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+            details: { reason: input.reason, expectedGeneration: input.expectedGeneration, edgeNodeId, via: "edge_command" },
+          });
+          try {
+            const q = await edgeDeviceRequestPort().enqueue({ kind: "clear", robotId: input.robotId, expectedGeneration: input.expectedGeneration, reason: input.reason, requestedBy: ctx.user.id });
+            return { robotId: input.robotId, changed: false, connected: false, motionLock: null, queuedOnEdge: { requestId: q.requestId, edgeNodeId: q.edgeNodeId } };
+          } catch (err) {
+            const code = edgeDeviceRequestErrorCode(err);
+            if (code !== "notEdgeOwned") {
+              throw appError(
+                "PRECONDITION_FAILED",
+                "OPERATION_FAILED",
+                { operation: "clearRobotMotionLock", reason: "edgeCommandNotQueued" },
+                `robot ${input.robotId} is owned by edge node ${edgeNodeId}; the clear could not be queued for it (${code}) — nothing was cleared`,
+              );
+            }
+            // the owner changed back to central meanwhile — fall through to the central answer
+          }
+        }
         throw appError(
           "PRECONDITION_FAILED",
           "OPERATION_FAILED",
@@ -467,6 +498,24 @@ export const robotRouter = router({
             { action: "overrideUrHome", reason: "urHomeParamForbidden" },
             "ur_home_param_forbidden: the UR home pose comes only from the robot's stored configuration — refused, nothing was sent.",
           );
+        }
+      }
+      // doc 81 Đợt 10 task D (design §2.8 / §2.11) — a console STOP for a robot an EDGE node owns (no session here): queued for
+      // the node as a signed `stop` command, which the edge SENDS at once (even on a failed signature check — L-7). Motion to
+      // such a robot is refused by the dispatcher (ROBOT_OWNED_BY_EDGE). Only when this process has no session for the robot.
+      if (verbToJobType(input.command) === "abort" && !getActiveRobot(input.robotId)) {
+        const edgeNodeId = await robotEdgeOwner(input.robotId);
+        if (edgeNodeId !== null) {
+          try {
+            const q = await edgeDeviceRequestPort().enqueue({ kind: "stop", robotId: input.robotId, reason: `console ${input.command}`, requestedBy: ctx.user.id });
+            return { ok: true, status: "queued_on_edge" as const, error: undefined as string | undefined, queuedOnEdge: { requestId: q.requestId, edgeNodeId: q.edgeNodeId } };
+          } catch (err) {
+            const code = edgeDeviceRequestErrorCode(err);
+            if (code !== "notEdgeOwned") {
+              console.error(`[Robot] console STOP for edge-owned robot ${input.robotId} (node ${edgeNodeId}) could not be queued (${code}) — use the hardware E-STOP`);
+              return { ok: false, status: "rejected" as const, error: "EDGE_STOP_NOT_QUEUED" };
+            }
+          }
         }
       }
       const res = await dispatchRobotJob({

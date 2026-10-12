@@ -49,3 +49,63 @@ export async function readPersistedMotionLock(robotId: number): Promise<Persiste
     return { error: String((err as Error)?.message ?? err).slice(0, 160) };
   }
 }
+
+// ── doc 81 Đợt 10 task D (design §2.11 / §2.12, re-review N1) — CENTRAL's motion-authority read ──────────────────────────
+/**
+ * N1 — the lock was honoured in one direction only: central never read robot_motion_locks, so a lock the EDGE set did not stop
+ * central from moving the robot. Now central reads, at MOTION time (never for a STOP — L-7), bounded like every robot DB step:
+ *   • the robot's OWNER (0374 robots.edgeNodeId): owned by an edge node ⇒ ROBOT_OWNED_BY_EDGE (central has no session for it —
+ *     and must not move it even if a session from before an ownership change is still open);
+ *   • its persisted LOCK ROW of any authority: a row central did NOT write itself — an 'edge:<n>' authority, or the DB's
+ *     'ownerChanged' relock of an ownership change — refuses motion. A 'central' row written by central mirrors central's own
+ *     in-memory lock (robotMotionLockStore), which stays its source of truth: it is not re-read as a gate (a just-cleared lock
+ *     whose DELETE is still in flight would otherwise re-lock the robot after a confirmed STOP).
+ *   • unreadable (no DB, error, timeout) ⇒ `{ error }` ⇒ the caller refuses motion (fail-closed). A DB without 0374
+ *     (42P01 / 42703) has no edge owners and no authority column ⇒ `{ ok: true, schemaMissing: true }` (central unchanged).
+ * Narrow projections (edgeControlSchema), never the full drizzle tables (0368 lesson).
+ */
+export const ROBOT_OWNED_BY_EDGE = "ROBOT_OWNED_BY_EDGE" as const;
+export const OWNER_CHANGED_REASON_CODE = "ownerChanged" as const;
+
+export type CentralMotionAuthorityRead =
+  | { ok: true; schemaMissing?: true; noDb?: true }
+  | { ownedByEdge: number; ownerEpoch: number }
+  | { locked: true; authority: string; reasonCode: string; detail: string | null; since: string; generation: number; ownerEpoch: number | null }
+  | { error: string };
+
+export async function readCentralMotionAuthority(robotId: number): Promise<CentralMotionAuthorityRead> {
+  try {
+    const read = (async (): Promise<CentralMotionAuthorityRead> => {
+      const { robotOwnership, robotMotionLockAuthority, isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
+      const db = await getDb();
+      // No DB configured at all: nothing can move here anyway — the real path's write-ahead ledger row requires the DB and
+      // refuses (LEDGER_WRITE_FAILED), the dry-run path sends nothing. Defer to that gate (its refusal is the existing one).
+      if (!db) return { ok: true, noDb: true };
+      try {
+        const [own] = await db.select().from(robotOwnership).where(eq(robotOwnership.id, robotId)).limit(1);
+        const owner = (own as { edgeNodeId?: unknown } | undefined)?.edgeNodeId;
+        if (typeof owner === "number" && Number.isSafeInteger(owner)) return { ownedByEdge: owner, ownerEpoch: Number((own as { ownerEpoch?: unknown }).ownerEpoch ?? 0) };
+        const [row] = await db.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robotId)).limit(1);
+        const r = row as Partial<typeof robotMotionLockAuthority.$inferSelect> | undefined;
+        if (r && r.robotId === robotId && ((typeof r.authority === "string" && r.authority !== "central") || r.reasonCode === OWNER_CHANGED_REASON_CODE)) {
+          return {
+            locked: true,
+            authority: String(r.authority ?? "central"),
+            reasonCode: String(r.reasonCode),
+            detail: r.detail ?? null,
+            since: new Date(r.lockedAt ?? Date.now()).toISOString(),
+            generation: Number(r.generation ?? 0),
+            ownerEpoch: r.ownerEpoch == null ? null : Number(r.ownerEpoch),
+          };
+        }
+        return { ok: true };
+      } catch (err) {
+        if (isEdgeControlSchemaMissing(err)) return { ok: true, schemaMissing: true };
+        throw err;
+      }
+    })();
+    return await withDeadline(read, STOP_DB_STEP_DEADLINE_MS, `robot ${robotId} motion authority check`);
+  } catch (err) {
+    return { error: String((err as Error)?.message ?? err).slice(0, 160) };
+  }
+}

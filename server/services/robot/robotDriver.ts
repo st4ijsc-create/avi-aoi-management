@@ -216,6 +216,18 @@ export class MotionLock {
     };
   }
 
+  /**
+   * doc 81 Đợt 10 task D (design §2.11) — the edge authority's boot seed: the generation never goes BELOW `min` (journal ⊕
+   * the config's mirrored row ⊕ the ownership floor), so the next lock() is `min + 1` even when the robot starts clear and the
+   * central mirror never sees a generation go backwards. No state change, no persistence hook.
+   */
+  seedGeneration(min: number): void {
+    if (Number.isSafeInteger(min) && min > this.generation) {
+      this.generation = min;
+      this.state = { ...this.state, generation: this.state.locked ? this.state.generation : min };
+    }
+  }
+
   private notify(kind: "locked" | "cleared"): void {
     const p = this.persistence;
     if (!p) return;

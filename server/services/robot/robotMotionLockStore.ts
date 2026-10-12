@@ -21,12 +21,31 @@
  * process exits before the write reaches Postgres — leaves NO row, so the NEXT restart starts UNLOCKED for that lock.
  * That is the "failed write is LOGGED" case above (`not persisted` in the log); this store does not retry it.
  */
-import { and, eq, inArray, lt, lte, or } from "drizzle-orm";
+import { and, eq, inArray, lt, lte, or, type SQL } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { robotMotionLocks } from "../../../drizzle/schema";
 import { withDeadline } from "../ot/drivers/boundedClose";
-import { MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, type MotionLock, type MotionLockState } from "./robotDriver";
+import { MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, type MotionLock, type MotionLockPersistence, type MotionLockState } from "./robotDriver";
+import { isEdgeControlSchemaMissing, robotMotionLockAuthority } from "../edge/edgeControlSchema";
+
+/**
+ * doc 81 Đợt 10 task D (design §2.11, re-review N2) — ONE AUTHORITY PER ROBOT. robot_motion_locks.authority (mig 0374) is
+ * 'central' or 'edge:<node>'. Central's writes here (its own in-memory lock's mirror) touch ONLY 'central' rows: a central upsert
+ * never replaces, and a central delete never removes, an edge authority's row (and the DB refuses edge rows to avi_app anyway).
+ * An edge's lock never comes through these DB writes: on the edge the hooks are the injected journal sink
+ * (attachEdgeMotionLockPersistence), and central applies the edge's `lock` events only through edgeControlSchema's guarded
+ * applyEdgeMotionLock / clearEdgeMotionLock (edgeReportsCentral). A DB without 0374 has no authority column: the write is
+ * retried in its pre-0374 form (42703), so central is unchanged there.
+ */
+async function withCentralAuthority(write: (scope: SQL | undefined) => Promise<unknown>): Promise<void> {
+  try {
+    await write(eq(robotMotionLockAuthority.authority, "central") as SQL);
+  } catch (err) {
+    if (!isEdgeControlSchemaMissing(err)) throw err;
+    await write(undefined); // pre-0374 — no authority column, no edge rows
+  }
+}
 
 /** Upper bound of ONE motion-lock DB step (load at registration, upsert, delete). */
 export const MOTION_LOCK_DB_DEADLINE_MS = 2000;
@@ -73,15 +92,18 @@ export function persistMotionLock(robotId: number, state: MotionLockState): Prom
       generation: Math.max(1, state.generation ?? 1),
       lockedAt: clampToBoot(state.since ? new Date(state.since) : new Date(), bootSinceByRobot.get(robotId)),
     };
-    await db
-      .insert(robotMotionLocks)
-      .values(row)
-      .onConflictDoUpdate({
-        target: robotMotionLocks.robotId,
-        set: { reasonCode: row.reasonCode, detail: row.detail, generation: row.generation, lockedAt: row.lockedAt },
-        // R-4-t — replace only a row this lock supersedes (never a newer one written by a later step).
-        setWhere: supersededBy(row.generation, bootSinceByRobot.get(robotId)),
-      });
+    await withCentralAuthority((scope) =>
+      db
+        .insert(robotMotionLocks)
+        .values(row)
+        .onConflictDoUpdate({
+          target: robotMotionLocks.robotId,
+          set: { reasonCode: row.reasonCode, detail: row.detail, generation: row.generation, lockedAt: row.lockedAt },
+          // R-4-t — replace only a row this lock supersedes (never a newer one written by a later step);
+          // Đợt 10 D — and only a CENTRAL row (never an edge authority's).
+          setWhere: and(supersededBy(row.generation, bootSinceByRobot.get(robotId)), scope),
+        }),
+    );
   });
 }
 
@@ -109,7 +131,7 @@ export function deleteMotionLock(robotId: number, generation: number, bootSince?
   return enqueue(robotId, "delete", async () => {
     const db = await getDb();
     if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
-    await db.delete(robotMotionLocks).where(and(eq(robotMotionLocks.robotId, robotId), supersededBy(generation, bootSince)));
+    await withCentralAuthority((scope) => db.delete(robotMotionLocks).where(and(eq(robotMotionLocks.robotId, robotId), supersededBy(generation, bootSince), scope)));
   });
 }
 
@@ -180,6 +202,41 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
     }
   }
   return outcome;
+}
+
+/**
+ * doc 81 Đợt 10 task D (design §2.11, re-review N2) — the EDGE authority's registration step (robotManager in edge mode): NO DB.
+ *   • the seed (group E's edgeMotionLockSeed: journal ⊕ the signed config's mirrored row ⊕ the ownership floor) fixes the
+ *     generation base (never backwards) and, when it says so, starts the robot LOCKED (restore — persistUnknown when the
+ *     journal knows nothing, ownerChanged across an ownership change);
+ *   • the persistence hooks are INJECTED (the journal / report sink → `lock` events → central mirror via the guarded helpers);
+ *     a hook failure never blocks lock() or a clear (MotionLock logs it);
+ *   • `announce` ⇒ the seeded lock is reported once as a `locked` event (central's mirror does not have it yet).
+ * Returns what happened (logs / tests). Never throws.
+ */
+export function attachEdgeMotionLockPersistence(
+  robotId: number,
+  lock: MotionLock,
+  seed: { locked: null | { reasonCode: string; since: string; generation: number; detail?: string | null }; generationBase: number },
+  persistence: MotionLockPersistence,
+  opts: { announce?: boolean } = {},
+): "restored" | "none" {
+  try {
+    lock.seedGeneration(seed.generationBase);
+    if (seed.locked) lock.restore({ reasonCode: seed.locked.reasonCode, detail: seed.locked.detail ?? null, since: seed.locked.since, generation: seed.locked.generation });
+  } catch (err) {
+    console.error(`[Robot] robot ${robotId}: edge motion-lock seed failed — locking ${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE} (fail-closed):`, errText(err));
+    lock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, "edge motion-lock seed failed");
+  }
+  lock.attachPersistence(persistence);
+  if (opts.announce && lock.isLocked()) {
+    try {
+      persistence.locked(lock.snapshot());
+    } catch (err) {
+      console.error(`[Robot] robot ${robotId}: announcing the seeded edge lock failed (in-memory lock stands):`, errText(err));
+    }
+  }
+  return lock.isLocked() ? "restored" : "none";
 }
 
 /** Test seam — wait until every queued motion-lock write has settled. */
