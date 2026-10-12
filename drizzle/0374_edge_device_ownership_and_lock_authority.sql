@@ -75,6 +75,8 @@
 --   device_pending_stops ("needsResolution") and keep their device undeletable until resolved.
 -- fix review 5 (ruling R-10-ap): robot_motion_locks."writerInstanceId" uuid — NOT NULL for new rows, write-once (changes only
 --   with generation + 1), set by the relock / edge apply too; replaces Group D's random µs tag in lockedAt.
+-- fix review 6 (D re-review NF-1): the adapter owner change is refused only while a write is UNRESOLVED (an intent without
+--   a result row, or a 'timeout' / legacy 'sent' row within a 10-minute stale-write window) — resolved history no longer blocks.
 -- fix review 4 (ruling R-10-ah, re-review F1): edge_stop_ack_edge also requires the device to be owned by the calling node at
 --   the row's epoch NOW; every refused edge ack is kept as WORM evidence in edge_stop_ack_refusals (avi_app SELECT only).
 --
@@ -223,7 +225,23 @@ BEGIN
     END IF;
   ELSE
     IF NEW."edgeNodeId" IS DISTINCT FROM OLD."edgeNodeId" THEN
-      IF EXISTS (SELECT 1 FROM public."command_log" c WHERE c."adapterId" = OLD."id" AND c."status" = 'sent') THEN
+      -- fix review 6 (D re-review NF-1, R-10-at): only an UNRESOLVED write blocks the owner change. Intent rows (status 'sent',
+      -- ackValue.ledger 'intent') are WORM and stay 'sent' forever; a write is resolved by its RESULT row (ackValue.ledger
+      -- 'result', ackValue.intentId = the intent's id — otDeviceWrite / commandDispatcher). In flight (fail-closed):
+      --   • an intent WITHOUT a result, at any age (crashed mid-write ⇒ the result row is what resolves it);
+      --   • a result 'timeout' (outcome unknown — the driver write may still land) within the stale-write window (10 min ≫ the
+      --     bounded write, OT_CONTROL_TIMEOUT_MS 5 s default, per-command deadline capped);
+      --   • a legacy 'sent' row with no ledger marker (pre-intent ledger, nothing can link a result) within the same window.
+      IF EXISTS (SELECT 1 FROM public."command_log" i
+                  WHERE i."adapterId" = OLD."id" AND i."status" = 'sent' AND i."ackValue" ->> 'ledger' = 'intent'
+                    AND NOT EXISTS (SELECT 1 FROM public."command_log" r
+                                     WHERE r."adapterId" = OLD."id" AND r."ackValue" ->> 'ledger' = 'result'
+                                       AND r."ackValue" ->> 'intentId' = i."id"::text))
+         OR EXISTS (SELECT 1 FROM public."command_log" r
+                     WHERE r."adapterId" = OLD."id" AND r."status" = 'timeout' AND r."createdAt" > LOCALTIMESTAMP - interval '10 minutes')
+         OR EXISTS (SELECT 1 FROM public."command_log" l
+                     WHERE l."adapterId" = OLD."id" AND l."status" = 'sent' AND l."ackValue" ->> 'ledger' IS DISTINCT FROM 'intent'
+                       AND l."createdAt" > LOCALTIMESTAMP - interval '10 minutes') THEN
         RAISE EXCEPTION 'device_adapters: adapter % has an in-flight command — ownership cannot change now', OLD."id" USING ERRCODE = 'check_violation';
       END IF;
       NEW."ownerEpoch" := OLD."ownerEpoch" + 1;

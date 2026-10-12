@@ -304,6 +304,47 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
     expect(out).toEqual({ noWriter: "23514", sameWriterSameGen: null, otherWriterSameGen: "23514", cleared: "23514", otherWriterGenPlus1: null, merged: "00000000-0000-4000-8000-00000000000b", relockWriter: true, applied: true, edgeKeepsWriter: true });
   });
 
+  it("★ fix review 6 (NF-1): an adapter changes owner unless a write is UNRESOLVED (intent without result / recent timeout) — resolved history no longer blocks", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      const code = `__dot10Af6_${Date.now()}`;
+      const node = (await one(tx, sql`INSERT INTO edge_nodes (code, name, status) VALUES (${code}, ${code}, 'offline') RETURNING id`)).id as number;
+      const mk = async (k: string) => (await one(tx, sql`INSERT INTO device_adapters (code, name, protocol, endpoint) VALUES (${code + k}, ${code}, 'stub', 'stub://t') RETURNING id`)).id as number;
+      const key = (k: string) => `${code}:${k}:${randomUUID()}`;
+      const intent = async (ad: number, at = sql`now()`) =>
+        (await one(tx, sql`INSERT INTO command_log ("adapterId", "requestedBy", "confirmedBy", status, "ackValue", "idempotencyKey", "createdAt") VALUES (${ad}, 1, 1, 'sent', ${JSON.stringify({ ledger: "intent" })}::jsonb, ${"intent:" + key("i")}, ${at}) RETURNING id`)).id as number;
+      const result = async (ad: number, intentId: number, status: string, at = sql`now()`) =>
+        tx.execute(sql`INSERT INTO command_log ("adapterId", "requestedBy", "confirmedBy", status, "ackValue", "idempotencyKey", "createdAt") VALUES (${ad}, 1, 1, ${status}::commandstatusenum, ${JSON.stringify({ ledger: "result", intentId })}::jsonb, ${key("r")}, ${at})`);
+      const move = (ad: number) => codeOf(tx, () => tx.update(adapterOwnership).set({ edgeNodeId: node }).where(eq(adapterOwnership.id, ad)));
+      const resolved = await mk("-res");
+      await result(resolved, await intent(resolved), "acked");
+      await result(resolved, await intent(resolved), "failed");
+      const inFlight = await mk("-fly");
+      await intent(inFlight);
+      const recentTimeout = await mk("-tmo");
+      await result(recentTimeout, await intent(recentTimeout), "timeout");
+      const oldTimeout = await mk("-old");
+      await result(oldTimeout, await intent(oldTimeout, sql`now() - interval '2 hours'`), "timeout", sql`now() - interval '2 hours'`);
+      const oldIntentNoResult = await mk("-oldi");
+      await intent(oldIntentNoResult, sql`now() - interval '2 hours'`);
+      const legacySentRecent = await mk("-leg");
+      await tx.execute(sql`INSERT INTO command_log ("adapterId", "requestedBy", "confirmedBy", status, "idempotencyKey") VALUES (${legacySentRecent}, 1, 1, 'sent', ${key("l")})`);
+      const legacySentOld = await mk("-lego");
+      await tx.execute(sql`INSERT INTO command_log ("adapterId", "requestedBy", "confirmedBy", status, "idempotencyKey", "createdAt") VALUES (${legacySentOld}, 1, 1, 'sent', ${key("lo")}, now() - interval '2 hours')`);
+      return {
+        resolved: await move(resolved),
+        inFlight: await move(inFlight),
+        recentTimeout: await move(recentTimeout),
+        oldTimeout: await move(oldTimeout),
+        oldIntentNoResult: await move(oldIntentNoResult),
+        legacySentRecent: await move(legacySentRecent),
+        legacySentOld: await move(legacySentOld),
+      };
+    });
+    // an intent WITHOUT a result is in flight at any age (the result row is what resolves it — fail-closed); a timeout result
+    // (the write may still land) and a legacy 'sent' row (no ledger link) block within the stale-write window only
+    expect(out).toEqual({ resolved: null, inFlight: "23514", recentTimeout: "23514", oldTimeout: null, oldIntentNoResult: "23514", legacySentRecent: "23514", legacySentOld: null });
+  });
+
   it("report cursor starts at 0 and never goes back; avi_app cannot plant a signing-key row (R-10-c mirror)", async () => {
     const out = await inRolledBackTx(async (tx) => {
       const { node } = await nodeRobot(tx, `__dot10A_cur_${Date.now()}`);
