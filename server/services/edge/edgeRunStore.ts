@@ -77,7 +77,8 @@ export type EdgeStepAuthorizeOutcome =
       claims: { jti: string; approval: { approvedBy: number; gateStepId: string | null } | null };
       ttlMs: number;
       reqNonce: string;
-      requestSentMonoMs: number;
+      /** informational (group A contract delta I3: the verifier takes the TTL start from the pending-nonce lookup) */
+      requestSentMonoMs?: number;
       expiresAtMonoMs?: number;
     }
   | { ok: false; verdict: "refused" | "stopped" | "stale" | "unavailable"; code: string | null; reason?: string; abortRequested?: boolean };

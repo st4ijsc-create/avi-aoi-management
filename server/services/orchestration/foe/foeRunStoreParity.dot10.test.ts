@@ -897,3 +897,89 @@ describe("doc 81 Đợt 10 C — central's half for edge runs: Continue clears t
     expect(view.programChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 501, status: "unsupported" })]));
   });
 });
+
+describe("doc 81 Đợt 10 C — mutation follow-ups (each pins one rule the first mutation run showed unmeasured)", () => {
+  const okAuth = async (): Promise<EdgeStepAuthorizeOutcome> => ({ ok: true, authorization: {} as never, claims: { jti: randomUUID(), approval: null }, ttlMs: 10_000, reqNonce: "n".repeat(32) });
+  const ioOf = (runId: number, authorize: (i: EdgeStepAuthorizeRequest) => Promise<EdgeStepAuthorizeOutcome>, records: EdgeRunRecordIn[] = []) => ({
+    runId,
+    claimSeq: 1,
+    claimToken: "ect_" + "c".repeat(43),
+    sink: { run: async (_r: number, _c: number, rec: EdgeRunRecordIn) => (records.push(rec), { seq: records.length }) },
+    authorize: { authorize },
+  });
+
+  it("★ D5 inside a PARALLEL: a held branch holds the run (never 'completed' with an unsent step)", async () => {
+    const e = await edgeAssignedRun(def("par-h", [{ id: "p1", type: "parallel", steps: [ot("m1"), move("r1")] } as never]));
+    const pkg = await claimPackage(e, 1);
+    const store = createEdgeRunStore(pkg, ioOf(e.runId, async () => ({ ok: false, verdict: "unavailable", code: "network" })));
+    expect(await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)).toMatchObject({ outcome: "held", heldReason: "centralUnreachable" });
+    expect(h.sent).toEqual([]);
+  });
+
+  it("★ a live sweep never re-sends a STOP an EARLIER segment's sweep confirmed (prior abortSentBefore)", async () => {
+    const e = await edgeAssignedRun(def("prior-s", [move("r1"), { id: "d1", type: "delay", ms: 60_000 } as never, robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    (pkg.prior as { abortSentBefore: string[] }).abortSentBefore = ["s1"];
+    const records: EdgeRunRecordIn[] = [];
+    const store = createEdgeRunStore(pkg, ioOf(e.runId, okAuth, records));
+    const drive = driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store);
+    await waitFor(() => records.some((r: any) => r.kind === "step" && r.stepId === "d1" && r.status === "running"), "d1 running");
+    const live = await stopLiveRunForCentralAbort(e.runId, { id: 0, role: "system", name: "edge: central abort" });
+    await drive;
+    expect(live.abortStops?.sent).toEqual([]);
+    expect(h.sent.map((s) => s.stepId)).toEqual(["r1"]);
+  });
+
+  it("★ a command that names nothing to authorise (no adapter resolved) is refused on the edge without asking central", async () => {
+    const e = await edgeAssignedRun(def("unres", [ot("m1")]));
+    const pkg = await claimPackage(e, 1);
+    (pkg as { resolvedAdapters: unknown[] }).resolvedAdapters = [];
+    const asked: unknown[] = [];
+    const records: EdgeRunRecordIn[] = [];
+    const store = createEdgeRunStore(pkg, ioOf(e.runId, async (i) => (asked.push(i), okAuth()), records));
+    expect(await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)).toMatchObject({ outcome: "failed" });
+    expect(asked).toEqual([]);
+    expect((records.filter((r: any) => r.kind === "step" && r.stepId === "m1").pop() as any).error).toMatch(/^EDGE_AUTHORIZE_REFUSED\(commandUnresolved\)/);
+  });
+
+  it("★ applyEdgeSegmentEnd: 'completed' is refused while ANY non-abort row still runs (also below the top level)", async () => {
+    const e = await edgeAssignedRun(def("ap-run", [ot("m1"), ot("m2", { compensation: ot("c9") })]));
+    runRow(e.runId).status = "running";
+    const d = rows("orchestration_workflows").find((w) => w.id === runRow(e.runId).workflowId)!.definitionJson as WorkflowDefinition;
+    const w = (stepId: string, status: string) => ({ stepId, stepType: "command", status, attempt: 1, startedAt: null, finishedAt: null, error: null, result: undefined });
+    await recordEdgeStepRows(fake as never, e.runId, [w("m1", "completed"), w("m2", "completed"), w("c9", "running")]);
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, { outcome: "completed", nodeCode: "EDGE-A", claimSeq: 1, def: d } as never)).toMatchObject({ ok: false, code: "not_finished" });
+    await recordEdgeStepRows(fake as never, e.runId, [w("abort:x", "running")].map((r) => ({ ...r, stepId: "abort:x" })));
+    await recordEdgeStepRows(fake as never, e.runId, [w("c9", "compensated")]);
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, { outcome: "completed", nodeCode: "EDGE-A", claimSeq: 1, def: d } as never)).toMatchObject({ ok: true, status: "completed" });
+  });
+
+  it("★ applyEdgeSegmentEnd writes only while the run is STILL live when the write lands (a concurrent hold / abort wins)", async () => {
+    const e = await edgeAssignedRun(def("ap-race", [ot("m1")]));
+    runRow(e.runId).status = "held"; // what the row says when the write lands …
+    const d = rows("orchestration_workflows").find((w) => w.id === runRow(e.runId).workflowId)!.definitionJson as WorkflowDefinition;
+    // … while the endpoint's read still saw it 'running' (it changed in between)
+    const sel = fake.select.bind(fake);
+    let once = true;
+    (fake as any).select = (p?: unknown) => {
+      const b = sel(p as never);
+      const from = b.from.bind(b);
+      b.from = (t: any) => {
+        const r = from(t);
+        if (once && t?.[Symbol.for("drizzle:Name")] === "orchestration_runs") {
+          once = false;
+          const then = r.then.bind(r);
+          r.then = (res: any, rej: any) => then((rowsOut: Row[]) => res(rowsOut.map((x) => ({ ...x, status: "running" }))), rej);
+        }
+        return r;
+      };
+      return b;
+    };
+    try {
+      expect(await applyEdgeSegmentEnd(fake as never, e.runId, { outcome: "failed", error: "x", nodeCode: "EDGE-A", claimSeq: 1, def: d } as never)).toMatchObject({ changed: false });
+    } finally {
+      (fake as any).select = sel;
+    }
+    expect(runRow(e.runId).status).toBe("held");
+  });
+});
