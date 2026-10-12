@@ -50,8 +50,12 @@ import {
   type RunStore,
   type RunStoreContext,
   type RunStoreHeldReason,
+  type ResumeStateMap,
   INTERRUPTED_EARLIER_CTX_KEY,
+  RESUME_STATE_CTX_KEY,
+  edgeResumeStateOf,
 } from "./foeRunStore";
+import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // fix review 2 (R-10-ae) — central's authorisation ledger (0372)
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -745,14 +749,20 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     return { kind: "ok" };
   }
 
-  // doc 81 Đợt 10 C fix review 1 (R-10-y, D5) — this step FAILED in an earlier segment and its compensation was HELD (its
-  // authorisation could not be obtained): a Continue resumes THE COMPENSATION — the step itself is never run again — and the
-  // step stays failed (as the walk would have ended had the compensation gone through then).
-  const heldComp = heldCompensationOf(rc, step.id);
-  if (heldComp !== null && step.compensation) {
-    const c = await runCompensation(rc, step);
-    if (c?.kind === "held") return c;
-    return { kind: "failed", error: heldComp };
+  // doc 81 Đợt 10 C fix review 1 (R-10-y, D5) + fix review 2 (R-10-ae) — what an earlier segment of an EDGE run left, as central
+  // derived it from the STEP ROWS at the Continue (resumeRun → edgeResumeStateOf; never an edge context mark):
+  //   • compensationHeld — the step FAILED and its compensation is due: ONLY the compensation runs, the step is never re-run;
+  //   • doneFailed — the step failed and its compensation ended: nothing is redone;
+  //   • outcomeUnknown — handled below: never sent again, a failure.
+  const rs = resumeStateOf(rc, step.id);
+  if (rs && rs.state !== "outcomeUnknown") {
+    rc.settled.add(step.id); // minor (re-review N2) — the abort sweep's picture of this segment knows it is settled
+    if (!rc.prior.startOrder.includes(step.id) && !rc.startOrder.includes(step.id)) rc.startOrder.push(step.id);
+    if (rs.state === "compensationHeld" && step.compensation && !rc.aborting) {
+      const c = await runCompensation(rc, step, rs.error);
+      if (c?.kind === "held") return c;
+    }
+    return { kind: "failed", error: rs.error || `Step "${step.id}" failed in an earlier segment.` };
   }
 
   // doc 81 Đợt 5 task E4 (item 36) + E fix 1 — on a STOP's path (a STOP step, or a container holding one) the step's own
@@ -844,20 +854,18 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   return outcome;
 }
 
-/** doc 81 Đợt 10 C fix review 1 (R-10-y) — run-context key: failed steps whose compensation is HELD (step id → its error). */
-const COMPENSATION_HELD_CTX_KEY = "foeCompensationHeld";
 /** doc 81 Đợt 10 C fix review 1 — run-context key (central-written at an edge segment end): steps whose outcome is unknown. */
 export const OUTCOME_UNKNOWN_CTX_KEY = "foeOutcomeUnknown";
 
-function heldCompensationOf(rc: RunContext, stepId: string): string | null {
-  const m = rc.context[COMPENSATION_HELD_CTX_KEY] as Record<string, unknown> | undefined;
-  return m && typeof m === "object" && typeof m[stepId] === "string" ? (m[stepId] as string) : null;
-}
-/** cleared = null (never a deleted key: an edge's context reaches central as a MERGE patch, which cannot delete a key) */
-function setHeldCompensation(rc: RunContext, stepId: string, error: string | null): void {
-  rc.context[COMPENSATION_HELD_CTX_KEY] = { ...((rc.context[COMPENSATION_HELD_CTX_KEY] as Record<string, unknown> | undefined) ?? {}), [stepId]: error };
+/** fix review 2 (R-10-ae) — the central-written resume state of a step (see edgeResumeStateOf); null on a fresh / central run. */
+function resumeStateOf(rc: RunContext, stepId: string): { state: string; error: string } | null {
+  const m = rc.context[RESUME_STATE_CTX_KEY] as Record<string, unknown> | undefined;
+  const e = m && typeof m === "object" ? (m[stepId] as { state?: unknown; error?: unknown } | undefined) : undefined;
+  return e && typeof e.state === "string" ? { state: e.state, error: typeof e.error === "string" ? e.error : "" } : null;
 }
 function outcomeUnknownOf(rc: RunContext, stepId: string): string | null {
+  const rs = resumeStateOf(rc, stepId);
+  if (rs?.state === "outcomeUnknown") return rs.error;
   const l = rc.context[OUTCOME_UNKNOWN_CTX_KEY];
   // data-raw-ok: the step error is a machine-readable code (EDGE_OUTCOME_UNKNOWN) — never re-sent
   return Array.isArray(l) && l.includes(stepId) ? `EDGE_OUTCOME_UNKNOWN: command step "${stepId}" was sent by the edge node but its result was not recorded — it is NOT sent again; check the equipment.` : null;
@@ -1905,6 +1913,14 @@ async function runCompensation(rc: RunContext, step: WorkflowStep, stepError?: s
       // (failed / completed / awaiting_confirm / held …) it changes nothing (it would leave a finished run "compensating").
       await rc.store.setStatusUnlessAborted(rc.runId, "compensating", {}, ["running", "compensating"]);
     });
+    // fix review 2 (R-10-ae) — a compensation an earlier segment SENT without a recorded result is never sent again
+    const compUnknown = outcomeUnknownOf(rc, comp.id);
+    if (compUnknown !== null) {
+      await stopBoundedWrite(compStop, rc.runId, comp.id, "failed row", () =>
+        rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "failed", error: compUnknown, finishedAt: new Date() }),
+      );
+      return;
+    }
     // run the compensation step body once (no nested compensation cascade)
     await stopBoundedWrite(compStop, rc.runId, comp.id, "running row", () =>
       rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "running", startedAt: new Date() }),
@@ -1912,14 +1928,14 @@ async function runCompensation(rc: RunContext, step: WorkflowStep, stepError?: s
     const out = await runStepBody(rc, comp, 1, compStop);
     if (out.kind === "held") {
       // doc 81 Đợt 10 C fix review 1 (R-10-y, D5) — the compensation could not be authorised: nothing sent, nothing marked
-      // failed; the run is held AT it and a Continue resumes it (heldCompensationOf).
-      setHeldCompensation(rc, step.id, stepError ?? heldCompensationOf(rc, step.id) ?? "");
+      // failed; the run is held AT it. A Continue resumes it: central reads THAT from the rows (step failed + compensation held —
+      // edgeResumeStateOf, R-10-ae), never from a context mark that a filter or a refused journal record could lose.
+      void stepError;
       await stopBoundedWrite(compStop, rc.runId, comp.id, "held row", () =>
         rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "held", error: out.error, finishedAt: new Date() }),
       );
       return out;
     }
-    if (heldCompensationOf(rc, step.id) !== null) setHeldCompensation(rc, step.id, null);
     await stopBoundedWrite(compStop, rc.runId, comp.id, "compensated row", () =>
       rc.store.upsertStep(rc.runId, comp.id, comp.type, {
         status: out.kind === "ok" ? "compensated" : "failed",
@@ -2664,6 +2680,23 @@ export async function edgeNodeProgramPre(d: NonNullable<Awaited<ReturnType<typeo
   return edgeProgramPreOf(edgeNodeId, adapters, reports, { source: "stored", nowMs });
 }
 
+/**
+ * fix review 2 (R-10-ae) — the resume state of an edge run from its STEP ROWS + central's authorisation ledger (0372: an
+ * authorisation issued without a reported result ⇒ the command may have been sent). 0372 missing ⇒ no ledger (no v2 edge
+ * can have run). Throws on a read error (the caller refuses).
+ */
+async function edgeResumeStateFor(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, runId: number, def: WorkflowDefinition, hintUnknown: string[]) {
+  const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+  let unreported = new Set<string>();
+  try {
+    const auths = (await d.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))) as Array<{ stepId: string; resultReportedAt: unknown; supersededAt: unknown }>;
+    unreported = new Set(auths.filter((a) => a.resultReportedAt == null && a.supersededAt == null).map((a) => a.stepId));
+  } catch (err) {
+    if (!isEdgeControlSchemaMissing(err)) throw err;
+  }
+  return edgeResumeStateOf(def, rows, unreported, hintUnknown);
+}
+
 /** The binding detail of an edge run: its node's program reports (D7). A read error ⇒ no digest (fail-closed). */
 async function edgeBindingDetail(
   d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -3040,15 +3073,31 @@ export async function resumeRun(
       // marks of the hold are cleared with the claim (the Studio stops showing the hold); `interruptedEarlier` keeps the doubt
       // the abort sweep needs (storedSweepSource). The run's own context (branch decisions, dispatched steps) is kept.
       const ctx0 = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+      // doc 81 Đợt 10 C fix review 2 (R-10-ae) — what the next segment must NEVER redo, derived from the STEP ROWS central wrote
+      // and its own authorisation ledger (a context mark may only ADD an outcome-unknown step). Ambiguous rows ⇒ the Continue /
+      // approval is REFUSED (never a guess that could re-send motion). A read error ⇒ refused too.
+      let resume: ResumeStateMap;
+      try {
+        const derived = await edgeResumeStateFor(d, runId, def, Array.isArray(ctx0[OUTCOME_UNKNOWN_CTX_KEY]) ? (ctx0[OUTCOME_UNKNOWN_CTX_KEY] as unknown[]).map(String) : []);
+        if (derived.ambiguous.length) {
+          // data-raw-ok: an operator-facing refusal naming the steps (machine-readable prefix EDGE_RESUME_AMBIGUOUS)
+          return { ok: false, enabled: true, runId, status: run.status, message: `EDGE_RESUME_AMBIGUOUS(${derived.ambiguous.join(",")}): the step rows of run ${runId} do not say whether these steps failed before their compensation ran — it is NOT continued (nothing would be re-sent on a guess). Abort the run, or check the equipment.` };
+        }
+        resume = derived.state;
+      } catch {
+        return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId}: its step rows could not be read to continue it safely — retry.` };
+      }
       const marked = EDGE_HOLD_MARK_KEYS.some((k) => k in ctx0);
-      const markPatch = marked
-        ? {
-            contextJson: {
-              ...Object.fromEntries(Object.entries(ctx0).filter(([k]) => !EDGE_HOLD_MARK_KEYS.includes(k))),
-              ...(ctx0.interrupted === true || ctx0[INTERRUPTED_EARLIER_CTX_KEY] === true ? { [INTERRUPTED_EARLIER_CTX_KEY]: true } : {}),
-            },
-          }
-        : {};
+      const markPatch =
+        marked || Object.keys(resume).length || RESUME_STATE_CTX_KEY in ctx0
+          ? {
+              contextJson: {
+                ...Object.fromEntries(Object.entries(ctx0).filter(([k]) => !EDGE_HOLD_MARK_KEYS.includes(k) && k !== RESUME_STATE_CTX_KEY)),
+                ...(ctx0.interrupted === true || ctx0[INTERRUPTED_EARLIER_CTX_KEY] === true ? { [INTERRUPTED_EARLIER_CTX_KEY]: true } : {}),
+                ...(Object.keys(resume).length ? { [RESUME_STATE_CTX_KEY]: resume } : {}),
+              },
+            }
+          : {};
       const out = await d.transaction(async (tx) => {
         const claimedRows = await tx
           .update(orchestrationRuns)

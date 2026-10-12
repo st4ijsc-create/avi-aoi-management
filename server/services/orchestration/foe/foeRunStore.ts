@@ -1005,3 +1005,65 @@ export function edgePriorPictureOf(
     unknown: false,
   };
 }
+
+// ── doc 81 Đợt 10 C fix review 2 (ruling R-10-ae) — what a re-walk of an EDGE run must never redo, from the STEP ROWS ──────
+
+/** The run-context key central writes at a Continue / approval of an edge run (never an edge context patch). */
+export const RESUME_STATE_CTX_KEY = "foeResumeState";
+export type ResumeStepState = "compensationHeld" | "outcomeUnknown" | "doneFailed";
+export type ResumeStateMap = Record<string, { state: ResumeStepState; error: string }>;
+
+/**
+ * R-10-ae — derived ONLY from the rows central wrote (and its own authorisation ledger), never from an edge context mark:
+ *   • outcomeUnknown — a COMMAND step whose row is not final (running / held / none) but which was SENT: its row carries a
+ *     dispatch result (routedTo), or central issued it an authorisation whose result never came back (`unreported`), or the
+ *     segment end named it (`hintUnknown`, only ever ADDS). It is never sent again (a failure on the re-walk).
+ *   • compensationHeld — a step that FAILED (row failed, or running whose final row was lost) whose compensation row is
+ *     `held`, or whose compensation never started / started but was not sent: the re-walk runs ONLY the compensation.
+ *   • doneFailed — a step that failed and whose compensation already ended (compensated / failed): nothing to redo.
+ * `ambiguous` — a compensation row exists but the forward step's row does not say it failed, or a compensation whose own
+ * outcome is not final and not unknown-sent … the Continue is REFUSED (never a guess that could re-send).
+ */
+export function edgeResumeStateOf(
+  def: Pick<WorkflowDefinition, "steps">,
+  rows: ReadonlyArray<{ stepId: string; status: string; resultJson?: unknown; error?: string | null }>,
+  unreported: ReadonlySet<string>,
+  hintUnknown: readonly string[] = [],
+): { state: ResumeStateMap; ambiguous: string[] } {
+  const all = allStepsOf(def.steps);
+  const byId = new Map(rows.filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX)).map((r) => [r.stepId, r] as const));
+  const FINAL = new Set(["completed", "skipped", "compensated", "failed"]);
+  const state: ResumeStateMap = {};
+  const ambiguous: string[] = [];
+  const sent = (id: string) => {
+    const r = byId.get(id);
+    return typeof (r?.resultJson as { routedTo?: unknown } | null | undefined)?.routedTo === "string" || unreported.has(id);
+  };
+  for (const s of all) {
+    if (s.type !== "command") continue;
+    const r = byId.get(s.id);
+    if (r && FINAL.has(r.status)) continue;
+    if (sent(s.id) || hintUnknown.includes(s.id)) {
+      state[s.id] = { state: "outcomeUnknown", error: `EDGE_OUTCOME_UNKNOWN: command step "${s.id}" was sent by the edge node but its result was not recorded — it is NOT sent again; check the equipment.` };
+    }
+  }
+  for (const s of all) {
+    const comp = s.compensation;
+    if (!comp) continue;
+    const r = byId.get(s.id);
+    const c = byId.get(comp.id);
+    const failedForward = r != null && (r.status === "failed" || (r.status === "running" && c != null));
+    const error = r?.error ?? "";
+    if (c == null) {
+      if (r?.status === "failed") state[s.id] = { state: "compensationHeld", error }; // failed, compensation never started
+      continue;
+    }
+    if (!failedForward) {
+      ambiguous.push(s.id); // a compensation row, but the forward step's row does not say it failed
+      continue;
+    }
+    if (c.status === "compensated" || c.status === "failed") state[s.id] = { state: "doneFailed", error };
+    else state[s.id] = { state: "compensationHeld", error }; // held / running (not sent ⇒ resumed; sent ⇒ comp is outcomeUnknown, not re-sent)
+  }
+  return { state, ambiguous };
+}
