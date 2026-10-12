@@ -146,7 +146,7 @@ const SIGNED_PAYLOADS: Record<string, { schema: { safeParse: (v: unknown) => { s
       safetyConfigIds: [1], reqNonce: NONCE, iat: T, ttlMs: 10_000,
     },
   },
-  cmd: { schema: edgeCommandSchema, sample: { kind: "clear", requestId: 5, nodeId: 7, ownerEpoch: 3, issuedAt: T, expiresAt: T + 30_000, robotId: 12, expectedGeneration: 4, clearedBy: 2, reason: "inspected" } },
+  cmd: { schema: edgeCommandSchema, sample: { kind: "clear", requestId: 5, nodeId: 7, credentialId: 31, ownerEpoch: 3, issuedAt: T, expiresAt: T + 30_000, robotId: 12, expectedGeneration: 4, clearedBy: 2, reason: "inspected" } },
   config: {
     schema: edgeConfigSnapshotSchema,
     sample: {
@@ -165,7 +165,7 @@ const SIGNED_PAYLOADS: Record<string, { schema: { safeParse: (v: unknown) => { s
   runpkg: {
     schema: edgeRunPackageSchema,
     sample: {
-      kind: "run_package", runId: 9, nodeId: 7, defHash: H64, definition: { steps: [] }, machines: [{ id: 7, machineType: "plc", capabilities: null }],
+      kind: "run_package", runId: 9, nodeId: 7, credentialId: 31, defHash: H64, definition: { steps: [] }, machines: [{ id: 7, machineType: "plc", capabilities: null }],
       verifiedStops: [{ kind: "ot", stepId: "s1", adapterId: 3, pins: [{ tagKey: "run", value: false }] }, { kind: "robot", stepId: "s2", robotId: 12 }],
       stopsUnsure: [], prior, issuedAt: T, claimSeq: 1, workflowId: 2, workflowVersion: 1, params: {}, context: { foeDispatchedSteps: [] },
       owner: { id: 3, role: "engineer" }, startedViaApi: false, resolvedAdapters: [{ stepId: "m1", adapterId: 3 }], approvals: [{ gateStepId: "g", approvedBy: 4, approvedAt: T }], bindingDigest: null,
@@ -173,7 +173,7 @@ const SIGNED_PAYLOADS: Record<string, { schema: { safeParse: (v: unknown) => { s
   },
   sweep: {
     schema: edgeSweepPictureSchema,
-    sample: { kind: "sweep_picture", runId: 9, nodeId: 7, defHash: H64, definition: { steps: [] }, machines: [], verifiedStops: [], stopsUnsure: ["x"], prior, issuedAt: T },
+    sample: { kind: "sweep_picture", runId: 9, nodeId: 7, credentialId: 31, defHash: H64, definition: { steps: [] }, machines: [], verifiedStops: [], stopsUnsure: ["x"], prior, issuedAt: T },
   },
 };
 
@@ -305,13 +305,23 @@ describe("edge protocol v2 — semantic refinements", () => {
   });
 
   it("commands: a stop names exactly one target; a clear needs expectedGeneration", () => {
-    const base = { requestId: 5, nodeId: 7, ownerEpoch: 3, issuedAt: T, expiresAt: T + 1 };
+    const base = { requestId: 5, nodeId: 7, credentialId: 31, ownerEpoch: 3, issuedAt: T, expiresAt: T + 1 };
     expect(edgeCommandSchema.safeParse({ ...base, ownerEpoch: undefined, kind: "stop", target: { robotId: 1 } }).success).toBe(false);
     expect(edgeCommandSchema.safeParse({ ...base, kind: "stop", target: { robotId: 1 } }).success).toBe(true);
     expect(edgeCommandSchema.safeParse({ ...base, kind: "stop", target: { adapterId: 1 } }).success).toBe(true);
     expect(edgeCommandSchema.safeParse({ ...base, kind: "stop", target: { robotId: 1, adapterId: 1 } }).success).toBe(false);
     expect(edgeCommandSchema.safeParse({ ...base, kind: "stop", target: {} }).success).toBe(false);
     expect(edgeCommandSchema.safeParse({ ...base, kind: "clear", robotId: 1, clearedBy: 2, reason: "x" }).success).toBe(false);
+    // fix review 1 (I4): every command names the node CREDENTIAL it is for — required
+    expect(edgeCommandSchema.safeParse({ ...base, credentialId: undefined, kind: "stop", target: { robotId: 1 } }).success).toBe(false);
+  });
+
+  it("fix review 1 (I4): run package and sweep picture REQUIRE credentialId (a positive id)", () => {
+    for (const sample of [SIGNED_PAYLOADS.runpkg.sample, SIGNED_PAYLOADS.sweep.sample]) {
+      expect(edgeRunPkgPayloadSchema.safeParse(sample).success).toBe(true);
+      expect(edgeRunPkgPayloadSchema.safeParse({ ...sample, credentialId: undefined }).success).toBe(false);
+      expect(edgeRunPkgPayloadSchema.safeParse({ ...sample, credentialId: 0 }).success).toBe(false);
+    }
   });
 
   it("open bags are JSON OBJECTS (never a string / array / null); the run stream schema is exact", () => {

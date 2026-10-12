@@ -2,13 +2,17 @@
  * doc 81 Đợt 10 task A fix scan 2 — the TYPED verifiers of what central signs for an edge node. Each one: verify the envelope
  * against the node's own EdgeTrustStore (edgeSigning.ts — local trust anchor, never a keyset from a message), parse the
  * payload with its STRICT protocol schema, then BIND it:
- *   • to THIS node (nodeId from provisioning — every signed object names its node: auth / cmd / runpkg / config);
+ *   • to THIS node (nodeId from provisioning — every signed object names its node: auth / cmd / runpkg / config) AND to the
+ *     credential this node runs with (fix review 1, I4 — `credentialId` is REQUIRED in every verifier's context and every
+ *     signed payload carries it: auth claims, config node.credentialId, cmd / run package / sweep picture `credentialId`);
  *   • for an authorisation (design §2.13): credential, run, claim, step, attempt, idempotency key, kind, the request nonce
  *     (must be one this process issued and is still waiting on), the jti (never consumed before), the payloadHash (recomputed
  *     by the caller from the EXACT bytes about to be sent), ttlMs ≤ the configured maximum (and ≤ 30 s), iat not in the
  *     future beyond skew and not older than ttl + skew, and the validity window measured on the edge's MONOTONIC clock from
- *     when it SENT the request (neither clock skew nor slow delivery widens it);
- *   • for a run package: run + claim; for a sweep picture: run; for a config: node (+ credential), no version rollback;
+ *     when it FIRST sent the request with that nonce — the start comes from the pending-nonce lookup itself
+ *     (`pendingNonceSentAt`, fix review 1 I3), never from a caller-supplied time, so a retry cannot widen the window;
+ *   • for a run package: run + claim; for a sweep picture: run; for a config: node + credential + NO version rollback
+ *     (`lastConfigVersion` REQUIRED — null only before the first config was ever accepted);
  *   • for a command: node; `expired` / `notYetValid` are reported, and the CALLER decides — a STOP is sent anyway (L-7),
  *     a `clear` (raises energy) requires ok && !expired && a generation match.
  * Times come from the store's clock / the caller's monotonic clock — never from a claim alone. Never throws.
@@ -62,6 +66,12 @@ function verified<T>(
   }
 }
 
+/** I4 — the credential binding (fail closed: a missing / non-positive context id never matches). */
+function credentialMatches(signed: unknown, ctx: Partial<EdgeCredentialContext> | null | undefined): boolean {
+  const want = ctx?.credentialId;
+  return typeof want === "number" && Number.isSafeInteger(want) && want > 0 && signed === want;
+}
+
 /** Not issued in the future beyond skew (store clock). */
 function issuedInFuture(store: EdgeTrustStore, issuedAt: number): boolean {
   return issuedAt > store.now() + store.skewMs;
@@ -69,9 +79,13 @@ function issuedInFuture(store: EdgeTrustStore, issuedAt: number): boolean {
 
 // ── authorisation ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-export interface EdgeAuthorizationContext {
-  /** this node's credential id (from the verified config snapshot) */
+/** fix review 1 (I4): the context every typed verifier needs — this node's credential id (from the provisioning bundle). */
+export interface EdgeCredentialContext {
+  /** this node's credential id (the bundle / the verified config's node.credentialId); every signed object must name it */
   credentialId: number;
+}
+
+export interface EdgeAuthorizationContext extends EdgeCredentialContext {
   runId: number;
   claimSeq: number;
   stepId: string;
@@ -84,11 +98,14 @@ export interface EdgeAuthorizationContext {
   reqNonce: string;
   /** the configured maximum TTL (config limits.authTtlMs); capped at EDGE_AUTH_TTL_MAX_MS */
   maxTtlMs: number;
-  /** monotonic ms (performance.now()) when the /authorize request was SENT, and now */
-  requestSentMonoMs: number;
+  /** monotonic ms (performance.now()) now */
   nowMonoMs: number;
-  /** true ⇔ this process issued the nonce and is still waiting on it (pending set; a restart forgets every nonce) */
-  isNoncePending: (reqNonce: string) => boolean;
+  /**
+   * fix review 1 (I3) — the pending-nonce lookup: the monotonic ms when this process FIRST sent a request with `reqNonce` (a
+   * retry with the same nonce keeps the FIRST time), or undefined ⇔ not issued by this process / no longer pending (a restart
+   * forgets every nonce) ⇒ nonce_not_pending. The TTL window starts there — the caller cannot pass another start.
+   */
+  pendingNonceSentAt: (reqNonce: string) => number | undefined;
   /** true ⇔ the jti was already consumed (journal `auth.consumed`) */
   isJtiConsumed: (jti: string) => boolean;
 }
@@ -104,7 +121,7 @@ export function verifyEdgeAuthorization(store: EdgeTrustStore, env: unknown, ctx
     if (!r.ok) return r;
     const c = r.v;
     if (c.nodeId !== store.nodeId) return { ok: false, reason: "node_mismatch" };
-    if (c.credentialId !== ctx.credentialId) return { ok: false, reason: "credential_mismatch" };
+    if (!credentialMatches(c.credentialId, ctx)) return { ok: false, reason: "credential_mismatch" };
     if (
       c.runId !== ctx.runId ||
       c.claimSeq !== ctx.claimSeq ||
@@ -122,10 +139,11 @@ export function verifyEdgeAuthorization(store: EdgeTrustStore, env: unknown, ctx
     const now = store.now();
     if (c.iat > now + store.skewMs) return { ok: false, reason: "iat_in_future" };
     if (c.iat + c.ttlMs + store.skewMs < now) return { ok: false, reason: "iat_too_old" };
-    if (!Number.isFinite(ctx.requestSentMonoMs) || !Number.isFinite(ctx.nowMonoMs) || ctx.nowMonoMs < ctx.requestSentMonoMs) return { ok: false, reason: "clock" };
-    const expiresAtMonoMs = ctx.requestSentMonoMs + c.ttlMs;
+    const sentAt = ctx.pendingNonceSentAt(c.reqNonce);
+    if (sentAt === undefined || sentAt === null) return { ok: false, reason: "nonce_not_pending" };
+    if (typeof sentAt !== "number" || !Number.isFinite(sentAt) || !Number.isFinite(ctx.nowMonoMs) || ctx.nowMonoMs < sentAt) return { ok: false, reason: "clock" };
+    const expiresAtMonoMs = sentAt + c.ttlMs;
     if (!(ctx.nowMonoMs < expiresAtMonoMs)) return { ok: false, reason: "expired" };
-    if (ctx.isNoncePending(c.reqNonce) !== true) return { ok: false, reason: "nonce_not_pending" };
     if (ctx.isJtiConsumed(c.jti) !== false) return { ok: false, reason: "jti_consumed" };
     return { ok: true, claims: c, expiresAtMonoMs };
   } catch {
@@ -135,35 +153,42 @@ export function verifyEdgeAuthorization(store: EdgeTrustStore, env: unknown, ctx
 
 // ── config / run package / sweep picture / command ──────────────────────────────────────────────────────────────────
 
+export interface EdgeConfigContext extends EdgeCredentialContext {
+  /**
+   * fix review 1 (I4) — REQUIRED: the configVersion of the last config this node accepted (persisted), or null ONLY when it
+   * never accepted one (first boot after provisioning). An older config ⇒ rollback. Anything else (undefined, NaN) ⇒ refused.
+   */
+  lastConfigVersion: number | null;
+}
+
 /**
- * The config snapshot for THIS node. Its embedded `keyset` is NOT trusted by this call — offer it to
- * store.acceptKeysetUpdate (verified with the keys trusted before it). `lastConfigVersion` ⇒ an older config is refused.
+ * The config snapshot for THIS node and credential. Its embedded `keyset` is NOT trusted by this call — offer it to
+ * store.acceptKeysetUpdate (verified with the keys trusted before it). An older config than `lastConfigVersion` is refused.
  */
-export function verifyEdgeConfig(
-  store: EdgeTrustStore,
-  env: unknown,
-  ctx: { credentialId?: number; lastConfigVersion?: number } = {},
-): EdgeTrustResult<{ config: EdgeConfigSnapshot }> {
+export function verifyEdgeConfig(store: EdgeTrustStore, env: unknown, ctx: EdgeConfigContext): EdgeTrustResult<{ config: EdgeConfigSnapshot }> {
   try {
+    const last = ctx?.lastConfigVersion;
+    if (!(last === null || (typeof last === "number" && Number.isSafeInteger(last) && last >= 0))) return { ok: false, reason: "context_mismatch" };
     const r = verified<EdgeConfigSnapshot>(store, env, "config", edgeConfigSnapshotSchema as never);
     if (!r.ok) return r;
     const c = r.v;
     if (c.node.id !== store.nodeId) return { ok: false, reason: "node_mismatch" };
-    if (ctx.credentialId !== undefined && c.node.credentialId !== ctx.credentialId) return { ok: false, reason: "credential_mismatch" };
+    if (!credentialMatches(c.node.credentialId, ctx)) return { ok: false, reason: "credential_mismatch" };
     if (issuedInFuture(store, c.issuedAt)) return { ok: false, reason: "iat_in_future" };
-    if (ctx.lastConfigVersion !== undefined && c.configVersion < ctx.lastConfigVersion) return { ok: false, reason: "rollback" };
+    if (last !== null && c.configVersion < last) return { ok: false, reason: "rollback" };
     return { ok: true, config: c };
   } catch {
     return { ok: false, reason: "malformed" };
   }
 }
 
-export function verifyEdgeRunPackage(store: EdgeTrustStore, env: unknown, ctx: { runId: number; claimSeq: number }): EdgeTrustResult<{ pkg: EdgeRunPackage }> {
+export function verifyEdgeRunPackage(store: EdgeTrustStore, env: unknown, ctx: EdgeCredentialContext & { runId: number; claimSeq: number }): EdgeTrustResult<{ pkg: EdgeRunPackage }> {
   try {
     const r = verified<EdgeRunPackage>(store, env, "runpkg", edgeRunPackageSchema as never);
     if (!r.ok) return r;
     const p = r.v;
     if (p.nodeId !== store.nodeId) return { ok: false, reason: "node_mismatch" };
+    if (!credentialMatches(p.credentialId, ctx)) return { ok: false, reason: "credential_mismatch" };
     if (p.runId !== ctx.runId || p.claimSeq !== ctx.claimSeq) return { ok: false, reason: "context_mismatch" };
     if (issuedInFuture(store, p.issuedAt)) return { ok: false, reason: "iat_in_future" };
     return { ok: true, pkg: p };
@@ -172,12 +197,13 @@ export function verifyEdgeRunPackage(store: EdgeTrustStore, env: unknown, ctx: {
   }
 }
 
-export function verifyEdgeSweepPicture(store: EdgeTrustStore, env: unknown, ctx: { runId: number }): EdgeTrustResult<{ picture: EdgeSweepPicture }> {
+export function verifyEdgeSweepPicture(store: EdgeTrustStore, env: unknown, ctx: EdgeCredentialContext & { runId: number }): EdgeTrustResult<{ picture: EdgeSweepPicture }> {
   try {
     const r = verified<EdgeSweepPicture>(store, env, "runpkg", edgeSweepPictureSchema as never);
     if (!r.ok) return r;
     const p = r.v;
     if (p.nodeId !== store.nodeId) return { ok: false, reason: "node_mismatch" };
+    if (!credentialMatches(p.credentialId, ctx)) return { ok: false, reason: "credential_mismatch" };
     if (p.runId !== ctx.runId) return { ok: false, reason: "context_mismatch" };
     if (issuedInFuture(store, p.issuedAt)) return { ok: false, reason: "iat_in_future" };
     return { ok: true, picture: p };
@@ -187,15 +213,16 @@ export function verifyEdgeSweepPicture(store: EdgeTrustStore, env: unknown, ctx:
 }
 
 /**
- * A central command for THIS node. `expired` / `notYetValid` are facts for the caller: a STOP is sent even when the whole
- * verification fails (L-7 — log an anomaly); a `clear` needs ok && !expired && !notYetValid && the generation match.
+ * A central command for THIS node and credential. `expired` / `notYetValid` are facts for the caller: a STOP is sent even when
+ * the whole verification fails (L-7 — log an anomaly); a `clear` needs ok && !expired && !notYetValid && the generation match.
  */
-export function verifyEdgeCommand(store: EdgeTrustStore, env: unknown): EdgeTrustResult<{ command: EdgeCommand; expired: boolean; notYetValid: boolean }> {
+export function verifyEdgeCommand(store: EdgeTrustStore, env: unknown, ctx: EdgeCredentialContext): EdgeTrustResult<{ command: EdgeCommand; expired: boolean; notYetValid: boolean }> {
   try {
     const r = verified<EdgeCommand>(store, env, "cmd", edgeCommandSchema as never);
     if (!r.ok) return r;
     const c = r.v;
     if (c.nodeId !== store.nodeId) return { ok: false, reason: "node_mismatch" };
+    if (!credentialMatches(c.credentialId, ctx)) return { ok: false, reason: "credential_mismatch" };
     const now = store.now();
     return { ok: true, command: c, expired: now - store.skewMs > c.expiresAt, notYetValid: c.issuedAt > now + store.skewMs };
   } catch {

@@ -322,6 +322,8 @@ const cmdBase = {
   /** robot_motion_lock_requests.id (mig 0374) */
   requestId: zId,
   nodeId: zId,
+  /** fix review 1 (I4) — the node credential the command is for (edgeTrust.verifyEdgeCommand binds it) */
+  credentialId: zId,
   /** R-10-b — the target device's owner epoch the request was made for (mismatch with the config ⇒ not applied, except STOP) */
   ownerEpoch: zId,
   issuedAt: zEpochMs,
@@ -428,6 +430,8 @@ export type EdgeConfigSnapshot = z.infer<typeof edgeConfigSnapshotSchema>;
 const runPicture = {
   runId: zId,
   nodeId: zId,
+  /** fix review 1 (I4) — the node credential the package / picture is for (verifyEdgeRunPackage / verifyEdgeSweepPicture bind it) */
+  credentialId: zId,
   defHash: zHex64,
   /** the WorkflowDefinition — the edge re-checks hashWorkflowDefinition(definition) === defHash */
   definition: zJsonRecord,
