@@ -123,6 +123,9 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
       for (const q of await sql`SELECT id FROM robot_motion_lock_requests WHERE "robotId" = ${r} AND kind = 'stop' AND "ackedAt" IS NULL`) {
         await sql`SELECT public.edge_stop_ack_central(${q.id}, 'failed', ${actor})`.catch(() => undefined);
       }
+      for (const q of await sql`SELECT "requestId" AS id FROM device_pending_stops WHERE "needsResolution" AND "robotId" = ${r}`) {
+        await sql`SELECT public.edge_stop_resolve(${q.id}, ${actor}, 'test cleanup (no device)')`.catch(() => undefined);
+      }
       await sql`DELETE FROM robot_motion_locks WHERE "robotId" = ${r}`.catch(() => undefined);
       await sql`DELETE FROM robots WHERE id = ${r}`.catch(() => undefined);
     }
@@ -130,6 +133,9 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
       await sql`UPDATE device_adapters SET "edgeNodeId" = NULL WHERE id = ${a} AND "edgeNodeId" IS NOT NULL`.catch(() => undefined);
       for (const q of await sql`SELECT id FROM robot_motion_lock_requests WHERE "adapterId" = ${a} AND kind = 'stop' AND "ackedAt" IS NULL`) {
         await sql`SELECT public.edge_stop_ack_central(${q.id}, 'failed', ${actor})`.catch(() => undefined);
+      }
+      for (const q of await sql`SELECT "requestId" AS id FROM device_pending_stops WHERE "needsResolution" AND "adapterId" = ${a}`) {
+        await sql`SELECT public.edge_stop_resolve(${q.id}, ${actor}, 'test cleanup (no device)')`.catch(() => undefined);
       }
       await sql`DELETE FROM device_adapters WHERE id = ${a}`.catch(() => undefined);
     }
