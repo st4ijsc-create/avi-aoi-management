@@ -101,7 +101,7 @@ export class EdgeStreamShipper {
   private timer: NodeJS.Timeout | null = null;
   private readonly log: (m: string) => void;
   private readonly warned = new Set<string>();
-  /** R-10-z — per stream, the highest seq THIS shipper has actually sent (a gap answer never acks beyond it) */
+  /** R-10-z — per (epoch, stream), the highest seq THIS shipper has actually sent (a gap answer never acks beyond it) */
   private readonly highestSent = new Map<string, number>();
 
   constructor(
@@ -112,54 +112,58 @@ export class EdgeStreamShipper {
     this.log = opts.log ?? ((m) => console.warn(m));
   }
 
-  /** The claim of a run stream (memory only — a restart forgets it, by design). */
+  /** The claim of a run stream of the CURRENT epoch (memory only — a restart forgets it, by design). */
   setClaim(runId: number, claimSeq: number, claimToken: string): void {
-    this.tokens.set(edgeRunStream(runId, claimSeq), { claimSeq, claimToken });
+    this.tokens.set(`${this.journal.epoch}|${edgeRunStream(runId, claimSeq)}`, { claimSeq, claimToken });
   }
   forgetClaim(runId: number, claimSeq: number): void {
-    this.tokens.delete(edgeRunStream(runId, claimSeq));
+    this.tokens.delete(`${this.journal.epoch}|${edgeRunStream(runId, claimSeq)}`);
   }
-  hasClaim(stream: string): boolean {
-    return this.tokens.has(stream);
+  hasClaim(stream: string, epoch: string = this.journal.epoch): boolean {
+    return this.tokens.has(`${epoch}|${stream}`);
   }
 
   nudge(stream: string): void {
     void this.flush(stream).catch(() => undefined);
   }
 
-  /** Ship every stream with pending records (tokens known); never throws. */
+  /** Ship every (epoch, stream) with durable un-acknowledged records (run streams only with their claim token); never throws. */
   async flushAll(): Promise<Record<string, EdgeFlushResult>> {
     const out: Record<string, EdgeFlushResult> = {};
-    for (const s of this.journal.streamsWithPending()) {
-      if (parseEdgeStream(s)?.kind === "run" && !this.tokens.has(s)) continue;
-      out[s] = await this.flush(s);
+    for (const r of this.journal.pendingStreams()) {
+      if (parseEdgeStream(r.stream)?.kind === "run" && !this.hasClaim(r.stream, r.epoch)) continue;
+      out[r.epoch === this.journal.epoch ? r.stream : `${r.epoch}|${r.stream}`] = await this.flush(r.stream, r.epoch);
     }
     return out;
   }
 
-  /** Ship one stream until nothing is pending (serialised per stream). */
-  flush(stream: string): Promise<EdgeFlushResult> {
-    const prev = this.inflight.get(stream) ?? Promise.resolve("ok" as EdgeFlushResult);
-    const p: Promise<EdgeFlushResult> = prev.catch(() => "refused" as EdgeFlushResult).then(() => this.flushOnce(stream));
-    this.inflight.set(stream, p);
-    void p.finally(() => {
-      if (this.inflight.get(stream) === p) this.inflight.delete(stream);
-    }).catch(() => undefined);
+  /** Ship one stream until nothing durable is pending (serialised per (epoch, stream)). */
+  flush(stream: string, epoch: string = this.journal.epoch): Promise<EdgeFlushResult> {
+    const k = `${epoch}|${stream}`;
+    const prev = this.inflight.get(k) ?? Promise.resolve("ok" as EdgeFlushResult);
+    const p: Promise<EdgeFlushResult> = prev.catch(() => "refused" as EdgeFlushResult).then(() => this.flushOnce(stream, epoch));
+    this.inflight.set(k, p);
+    void p
+      .finally(() => {
+        if (this.inflight.get(k) === p) this.inflight.delete(k);
+      })
+      .catch(() => undefined);
     return p;
   }
 
-  private async flushOnce(stream: string): Promise<EdgeFlushResult> {
+  private async flushOnce(stream: string, epoch: string): Promise<EdgeFlushResult> {
     const parsed = parseEdgeStream(stream);
     if (!parsed) return "refused";
+    const k = `${epoch}|${stream}`;
     for (let guard = 0; guard < 10_000; guard++) {
-      const batch = this.journal.pending(stream, EDGE_REPORT_BATCH_MAX);
+      // R-10-ag — only DURABLE records (fsynced) are ever sent
+      const batch = this.journal.pending(stream, EDGE_REPORT_BATCH_MAX, epoch);
       if (batch.length === 0) return "ok";
-      const epoch = this.journal.epoch;
       const lastSent = batch[batch.length - 1].seq;
-      this.highestSent.set(stream, Math.max(this.highestSent.get(stream) ?? 0, lastSent));
+      this.highestSent.set(k, Math.max(this.highestSent.get(k) ?? 0, lastSent));
       let r;
       if (parsed.kind === "run") {
-        const tok = this.tokens.get(stream);
+        const tok = this.tokens.get(k);
         if (!tok) return "no_token";
         r = await this.client.post(
           "report",
@@ -172,10 +176,10 @@ export class EdgeStreamShipper {
         r = await this.client.post("robotsState", { epoch, stream: EDGE_STREAM_ROBOT_STATE, records: batch.map((b) => b.record as EdgeRobotStateRecord) });
       }
       if (r.ok) {
-        const before = this.journal.ackedSeq(stream);
-        this.journal.ack(stream, Math.min(r.data.ackedSeq, lastSent));
-        if (this.journal.ackedSeq(stream) <= before) {
-          this.warnOnce(stream, `[EdgeStreams] ${stream}: central acknowledged nothing new (ackedSeq ${r.data.ackedSeq}) — retried later`);
+        const before = this.journal.ackedSeq(stream, epoch);
+        this.journal.ack(stream, Math.min(r.data.ackedSeq, lastSent), epoch);
+        if (this.journal.ackedSeq(stream, epoch) <= before) {
+          this.warnOnce(k, `[EdgeStreams] ${stream}: central acknowledged nothing new (ackedSeq ${r.data.ackedSeq}) — retried later`);
           return "refused";
         }
         continue;
@@ -183,57 +187,68 @@ export class EdgeStreamShipper {
       if (r.unavailable) return "unavailable";
       const data = (r.data ?? {}) as { expectedSeq?: unknown };
       if (r.code === "gap" && typeof data.expectedSeq === "number") {
-        const acked = this.journal.ackedSeq(stream);
+        const acked = this.journal.ackedSeq(stream, epoch);
         if (data.expectedSeq > acked + 1) {
           // R-10-z — central already holds them: ack only what THIS shipper has actually sent; a cursor beyond that claims
-          // records central never received from here ⇒ anomaly, nothing acked, the records are kept (evidence is never lost)
-          const sent = this.highestSent.get(stream) ?? 0;
+          // records central never received from here ⇒ ONE anomaly per (stream, cursor), nothing acked, records kept
+          const sent = this.highestSent.get(k) ?? 0;
           if (data.expectedSeq > sent + 1) {
-            console.error(`[EdgeStreams] ANOMALY: central's cursor for ${stream} (expects ${data.expectedSeq}) is beyond what this edge sent (${sent}) — nothing acknowledged, records kept`);
-            if (parsed.kind !== "events") void this.journal.appendEvent({ kind: "anomaly", code: "EDGE_STREAM_CURSOR_AHEAD", runId: parsed.kind === "run" ? parsed.runId : null, detail: `${stream}: central expects ${data.expectedSeq}, sent ${sent}`, at: Date.now() }, { stop: true });
+            const once = `${k}|ahead|${data.expectedSeq}`;
+            if (!this.warned.has(once)) {
+              this.warned.add(once);
+              console.error(`[EdgeStreams] ANOMALY: central's cursor for ${stream} (expects ${data.expectedSeq}) is beyond what this edge sent (${sent}) — nothing acknowledged, records kept`);
+              if (parsed.kind !== "events") void this.journal.appendEvent({ kind: "anomaly", code: "EDGE_STREAM_CURSOR_AHEAD", runId: parsed.kind === "run" ? parsed.runId : null, detail: `${stream}: central expects ${data.expectedSeq}, sent ${sent}`, at: Date.now() }, { stop: true });
+            }
             return "refused";
           }
-          this.journal.ack(stream, Math.min(data.expectedSeq - 1, sent));
+          this.journal.ack(stream, Math.min(data.expectedSeq - 1, sent), epoch);
           continue;
         }
-        this.warnOnce(stream, `[EdgeStreams] ${stream}: central expects seq ${data.expectedSeq} but this journal already dropped it (acked ${acked}) — stream stuck, see EDGE anomaly`);
+        this.warnOnce(k, `[EdgeStreams] ${stream}: central expects seq ${data.expectedSeq} but this journal already dropped it (acked ${acked}) — stream stuck, see EDGE anomaly`);
+        return "refused";
+      }
+      if (r.code === "replayed" || r.code === "seq_conflict") {
+        // R-10-ag — central holds DIFFERENT content under a seq this edge sent (never expected: only durable records are sent)
+        this.warnOnce(k, `[EdgeStreams] ANOMALY: central refused ${stream} as a same-seq / different-content record (${r.code}) — kept, never acknowledged`);
         return "refused";
       }
       if (parsed.kind === "run" && (r.code === "claim_stale" || r.code === "not_found" || r.status === 404)) return "claim_gone";
       if (parsed.kind === "events") {
         // R-10-o — a refused events batch may hold command acks: every STOP it acknowledges was EXECUTED and stays done
         // locally; the batch is kept and retried, and the refusal is an anomaly an operator must see
-        console.error(`[EdgeStreams] ANOMALY: central refused the events stream (${r.code ?? r.status}) — acks / STOP evidence kept in the journal and retried; executed STOPs stay done`);
+        this.warnOnce(k, `[EdgeStreams] ANOMALY: central refused the events stream (${r.code ?? r.status}) — acks / STOP evidence kept in the journal and retried; executed STOPs stay done`);
       }
-      this.warnOnce(stream, `[EdgeStreams] ${stream}: central refused the report (${r.code ?? r.status}) — kept in the journal, retried later`);
+      this.warnOnce(k, `[EdgeStreams] ${stream}: central refused the report (${r.code ?? r.status}) — kept in the journal, retried later`);
       return "refused";
     }
     return "refused";
   }
 
-  private warnOnce(key: string, msg: string): void {
-    if (this.warned.has(`${key}|${msg}`)) return;
-    this.warned.add(`${key}|${msg}`);
-    this.log(msg);
+  private warnOnce(k: string, msg: string): void {
+    if (this.warned.has(`${k}|${msg}`)) return;
+    this.warned.add(`${k}|${msg}`);
+    if (msg.includes("ANOMALY")) console.error(msg);
+    else this.log(msg);
   }
 
   /**
    * A run stream that cannot be reported any more (no claim token after a restart, or central no longer knows the claim):
-   * its STOP results become `stop` events (evidence central records without a claim), the rest one anomaly; then the stream
-   * is acknowledged locally. Returns the number of records converted.
+   * EVERY ledger record (STOP and non-STOP) becomes an `actuation` event (R-10-z), the other kinds one anomaly. The run stream
+   * is acknowledged locally ONLY when every evidence record was journaled (M-1); else it stays and is retried later.
+   * Returns the number of records converted.
    */
-  async orphanRunStream(stream: string, why: string): Promise<number> {
+  async orphanRunStream(stream: string, why: string, epoch: string = this.journal.epoch): Promise<number> {
     const parsed = parseEdgeStream(stream);
     if (parsed?.kind !== "run") return 0;
-    const recs = this.journal.pending(stream);
+    const recs = this.journal.pending(stream, Number.MAX_SAFE_INTEGER, epoch);
     if (recs.length === 0) return 0;
     const kinds = new Map<string, number>();
+    let allKept = true;
     for (const e of recs) {
       const r = e.record as EdgeRunReportRecord;
       if (r.kind === "ledger") {
-        // R-10-z — EVERY ledger record (STOP and non-STOP) becomes an `actuation` evidence event: central records the actuation
-        // "without a live claim" (audit; never run state). Stop-class: never dropped, bounded wait.
-        await this.journal.appendEvent(
+        // stop-class: never dropped when the journal is full, bounded wait
+        const a = await this.journal.appendEvent(
           {
             kind: "actuation",
             runId: parsed.runId,
@@ -249,25 +264,31 @@ export class EdgeStreamShipper {
           },
           { stop: true },
         );
+        if (a.seq === null) allKept = false;
         continue;
       }
       kinds.set(r.kind, (kinds.get(r.kind) ?? 0) + 1);
     }
     const summary = [...kinds.entries()].map(([k, n]) => `${k}=${n}`).join(", ");
-    await this.journal.appendEvent(
-      { kind: "anomaly", code: "EDGE_RUN_REPORT_ORPHANED", runId: parsed.runId, detail: `claim ${parsed.claimSeq}: ${recs.length} record(s) not reported on the run stream (${summary || "ledger only"}) — every ledger record re-sent as actuation evidence — ${why}`.slice(0, 1_000), at: Date.now() },
+    const an = await this.journal.appendEvent(
+      { kind: "anomaly", code: "EDGE_RUN_REPORT_ORPHANED", runId: parsed.runId, detail: `claim ${parsed.claimSeq} (epoch ${epoch}): ${recs.length} record(s) not reported on the run stream (${summary || "ledger only"}) — every ledger record re-sent as actuation evidence — ${why}`.slice(0, 1_000), at: Date.now() },
       { stop: true },
     );
-    this.journal.ack(stream, recs[recs.length - 1].seq);
-    this.tokens.delete(stream);
+    if (an.seq === null) allKept = false;
+    if (!allKept) {
+      console.error(`[EdgeStreams] ANOMALY: the evidence of ${stream} could not be journaled — the run stream is kept (not acknowledged) and retried`);
+      return 0;
+    }
+    this.journal.ack(stream, recs[recs.length - 1].seq, epoch);
+    this.tokens.delete(`${epoch}|${stream}`);
     this.nudge(EDGE_STREAM_EVENTS);
     return recs.length;
   }
 
-  /** Boot: every pending run stream has lost its claim token (never journaled) ⇒ evidence events. */
+  /** Every pending run stream without a claim token (a restart forgets them — never journaled) ⇒ evidence events. */
   async orphanUntokened(why: string): Promise<number> {
     let n = 0;
-    for (const s of this.journal.streamsWithPending()) if (parseEdgeStream(s)?.kind === "run" && !this.tokens.has(s)) n += await this.orphanRunStream(s, why);
+    for (const r of this.journal.pendingStreams()) if (parseEdgeStream(r.stream)?.kind === "run" && !this.hasClaim(r.stream, r.epoch)) n += await this.orphanRunStream(r.stream, why, r.epoch);
     return n;
   }
 

@@ -16,6 +16,25 @@ import { FakeCentral, KIT_TOKEN } from "./edgeFakeCentral.testkit";
 import { EdgeJournal } from "./edgeJournal";
 import { EdgeCentralUnavailableError, EdgeStreamShipper, createEdgeReportSink, edgeMotionLockPersistence, edgeMotionLockSeed, edgeTelemetryPersistFn, telemetryRowsToSamples } from "./edgeStreams";
 
+/**
+ * fix review 1 (R-10-ag) — only DURABLE records ship. A record appended without awaiting (an anomaly, an ack) becomes durable
+ * at the next group commit; the harness's explicit ship step fsyncs first, as the production loop's next commit would.
+ */
+function shipDurable(journal: EdgeJournal, shipper: EdgeStreamShipper): EdgeStreamShipper {
+  const flushAll = shipper.flushAll.bind(shipper);
+  const flush = shipper.flush.bind(shipper);
+  shipper.flushAll = async () => {
+    await journal.flush();
+    return flushAll();
+  };
+  shipper.flush = async (stream: string, epoch?: string) => {
+    await journal.flush();
+    return flush(stream, epoch);
+  };
+  return shipper;
+}
+
+
 const dirs: string[] = [];
 const journals: EdgeJournal[] = [];
 afterEach(async () => {
@@ -29,7 +48,7 @@ async function setup() {
   const journal = await EdgeJournal.open({ dir, groupCommitMs: 1 });
   journals.push(journal);
   const client = new EdgeCentralClient({ centralUrl: "http://central.test", credential: KIT_TOKEN, requestTimeoutMs: 2_000, fetchImpl: central.fetchImpl, log: () => undefined });
-  const shipper = new EdgeStreamShipper(journal, client, { log: () => undefined });
+  const shipper = shipDurable(journal, new EdgeStreamShipper(journal, client, { log: () => undefined }));
   return { central, journal, client, shipper };
 }
 const step = (stepId: string) => ({ kind: "step" as const, stepId, stepType: "command", status: "completed" as const, attempt: 1, startedAt: 1, finishedAt: 2, error: null, result: null, jti: null });
@@ -80,7 +99,12 @@ describe("doc 81 Đợt 10 E — the stream shipper", () => {
     expect(await shipper.flush("run:9:1")).toBe("refused");
     expect(journal.ackedSeq("run:9:1")).toBe(0);
     expect(journal.pending("run:9:1")).toHaveLength(3);
+    await journal.flush();
     expect(journal.pending("events").map((e) => (e.record as { code?: string }).code)).toEqual(["EDGE_STREAM_CURSOR_AHEAD"]);
+    // M-2 — the same cursor again ⇒ no second anomaly (never an unbounded stream of them)
+    expect(await shipper.flush("run:9:1")).toBe("refused");
+    await journal.flush();
+    expect(journal.pending("events").length).toBe(1);
     // central holds 1..2 of the 3 sent ⇒ ack 2, resend 3
     let first = true;
     central.handlers.report = (b) => {
@@ -126,7 +150,7 @@ describe("doc 81 Đợt 10 E — the stream shipper", () => {
     dirs.push(dir);
     const journal = await EdgeJournal.open({ dir, groupCommitMs: 1, maxBytes: 2_000 });
     journals.push(journal);
-    const shipper = new EdgeStreamShipper(journal, client, { log: () => undefined });
+    const shipper = shipDurable(journal, new EdgeStreamShipper(journal, client, { log: () => undefined }));
     await journal.appendRun(9, 1, { kind: "ledger", stepId: "m1", attempt: 1, idempotencyKey: "k", jti: null, stop: false, target: { robotId: 12, jobType: "move" }, status: "done", result: null, at: 4 });
     while (!journal.isFull()) await journal.appendRun(9, 1, step("fill"));
     expect(journal.admitNonStop()).toBe(false);
@@ -135,6 +159,38 @@ describe("doc 81 Đợt 10 E — the stream shipper", () => {
     expect(ack.seq).not.toBeNull();
     await shipper.flush("events");
     expect(central.received.locksEvents.map((r) => r.kind)).toEqual(["actuation", "anomaly", "command_ack"]);
+  });
+
+  it("★ M-1: when the evidence cannot be journaled, the orphaned run stream is NOT acknowledged (kept, retried)", async () => {
+    const { journal, shipper } = await setup();
+    await journal.appendRun(9, 1, { kind: "ledger", stepId: "m1", attempt: 1, idempotencyKey: "k", jti: null, stop: true, target: { robotId: 12, jobType: "abort" }, status: "done", result: null, at: 4 });
+    const orig = journal.appendEvent.bind(journal);
+    journal.appendEvent = async () => ({ seq: null, dropped: true, reason: "invalid" });
+    expect(await shipper.orphanRunStream("run:9:1", "claim gone")).toBe(0);
+    expect(journal.ackedSeq("run:9:1")).toBe(0);
+    expect(journal.pending("run:9:1")).toHaveLength(1);
+    journal.appendEvent = orig;
+    expect(await shipper.orphanRunStream("run:9:1", "claim gone")).toBe(1);
+    expect(journal.ackedSeq("run:9:1")).toBe(1);
+  });
+
+  it("★ R-10-ag: an earlier epoch's durable records are shipped under THAT epoch (and a run stream of it is orphaned to evidence)", async () => {
+    const { central, client } = await setup();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "edge-streams-epoch-"));
+    dirs.push(dir);
+    const j1 = await EdgeJournal.open({ dir, groupCommitMs: 1 });
+    await j1.appendEvent({ kind: "anomaly", code: "OLD", runId: null, detail: null, at: 1 });
+    await j1.appendRun(9, 1, { kind: "ledger", stepId: "m1", attempt: 1, idempotencyKey: "k", jti: null, stop: true, target: { robotId: 12, jobType: "abort" }, status: "done", result: null, at: 4 });
+    await j1.flush(); // crash: no close
+    const j2 = await EdgeJournal.open({ dir, groupCommitMs: 1 });
+    journals.push(j2);
+    const shipper = shipDurable(j2, new EdgeStreamShipper(j2, client, { log: () => undefined }));
+    expect(await shipper.orphanUntokened("restart")).toBe(1);
+    await shipper.flushAll();
+    const calls = central.callsTo("locksEvents").map((c) => [c.body.epoch === j1.epoch, c.body.records.map((r: { kind: string; code?: string }) => r.code ?? r.kind)]);
+    expect(calls).toContainEqual([true, ["OLD"]]);
+    expect(calls.filter(([old]) => !old).flatMap(([, k]) => k as string[])).toEqual(["EDGE_JOURNAL_UNCLEAN_SHUTDOWN", "actuation", "EDGE_RUN_REPORT_ORPHANED"]);
+    expect(j2.pendingStreams()).toEqual([]);
   });
 
   it("the report sink journals first and nudges the shipper", async () => {

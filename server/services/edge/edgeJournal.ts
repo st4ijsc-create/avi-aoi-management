@@ -1,36 +1,38 @@
 /**
- * doc 81 Đợt 10 task E (design §2.2, D3) — the EDGE JOURNAL: the edge's only durable local state now that it has no central
- * DB login. Append-only JSONL segments (the storeForward idiom, no native dependency — Node 20) plus an atomically renamed
+ * doc 81 Đợt 10 task E (design §2.2, D3; fix review 1 — ruling R-10-ag) — the EDGE JOURNAL: the edge's only durable local state
+ * now that it has no central DB login. APPEND-ONLY JSONL segments (no native dependency — Node 20) plus an atomically renamed
  * `state.json` snapshot, under EDGE_JOURNAL_DIR (a compose volume).
  *
  * RECORDS. Every line is `{e: epoch, s: stream, q: seq, k: kind, t: at, d: data, h: checksum}`:
- *   • epoch — 128-bit random, created with a new journal (a reset opens a new one; central accepts a new epoch only from seq 1);
- *   • streams — `run:<runId>:<claimSeq>` (step / context / abort_stop / ledger → POST runs/:id/report), `events` (lock / stop /
- *     refusal / anomaly / command_ack → POST locks/events), `robot_state` (→ POST robots/state), and the LOCAL stream `auth`
- *     (`auth.consumed` write-ahead of a single-use authorisation; never reported). OT telemetry is NOT here: it reuses the
- *     storeForward WAL with the HTTP insert function (telemetryBus seam);
- *   • seq — strictly increasing per (epoch, stream), starting at 1; never reused (restart, compaction).
+ *   • epoch — 128-bit random. A new epoch opens with a new journal, after a RESET, and after an UNCLEAN shutdown (R-10-ag: the
+ *     seq high-water of a crashed epoch cannot be known, so its seqs are never written again — the new epoch starts every stream
+ *     at 1; central accepts a new epoch only from seq 1). The un-acknowledged DURABLE records of earlier epochs are still shipped
+ *     under THEIR epoch (central keeps one cursor per (node, stream, epoch));
+ *   • streams — `run:<runId>:<claimSeq>` (→ POST runs/:id/report), `events` (→ POST locks/events), `robot_state` (→ POST
+ *     robots/state), and the LOCAL stream `auth` (`auth.consumed`; never reported). OT telemetry is NOT here (storeForward WAL);
+ *   • seq — strictly increasing per (epoch, stream), from 1; never reused.
  *
- * DURABILITY CLASSES.
- *   • `auth.consumed` — fsynced BEFORE consumeAuthorization() resolves (the caller sends to the driver only after). The jti is
- *     marked consumed in memory at once (a concurrent second use is refused). A sync that fails / overruns ⇒ io_error ⇒ the
- *     non-STOP step is not sent (fail-closed) and the jti stays consumed.
- *   • step / context / ledger / lock / stop / refusal / anomaly / ack records — group commit (one fsync per window, default
- *     50 ms). With `{stop: true}` the wait is bounded by STOP_DB_STEP_DEADLINE_MS (the same bound as today's bounded STOP DB
- *     write): a STOP never waits on the disk beyond it (L-7) — the record still sits in memory for the report.
- *   • robot_state — group commit; DROPPED (counted) while the journal is full or unhealthy (telemetry-like).
+ * DURABILITY (R-10-ag: ONLY DURABLE records are shipped). A record is durable once an fsync that started after its write
+ * succeeded; pending() returns only the durable prefix of a stream, so central never holds a record the edge could lose (and a
+ * crash can never make the edge send different content under a seq central already has).
+ *   • `auth.consumed` — fsynced BEFORE consumeAuthorization() resolves (the driver call comes after); a sync that fails / overruns
+ *     ⇒ io_error, the jti stays consumed, the journal unhealthy (fail-closed).
+ *   • `lock` events — fsynced at once (the motion-lock state must survive a crash; a STOP-confirmed clear bounded like a STOP).
+ *   • everything else — group commit (one fsync per window, default 50 ms); `{stop:true}` bounds the wait by
+ *     STOP_DB_STEP_DEADLINE_MS (L-7: a STOP never waits on the disk beyond it — the record becomes durable / shipped later).
+ *   • robot_state — DROPPED (counted) while the journal is full or unhealthy.
  *
- * BOUNDS. `maxBytes` (config limits.journalMaxBytes): when the bytes on disk + queued reach it the journal is FULL —
- * admitNonStop() is false and auth.consumed is refused (no new non-STOP actuation), robot_state is dropped; STOP, step, lock and
- * every other record is still written (never dropped). Compaction (segment size, or explicitly) rewrites only the records central
- * has not acknowledged, then the snapshot, then deletes the old segments — a crash at any point leaves a readable journal
- * (duplicate lines of an interrupted compaction are identical and skipped).
+ * BOUNDS + COMPACTION (R-10-ag). Appends are O(1): they only append to the active segment (rolled at segmentMaxBytes).
+ * Compaction NEVER rewrites a record: it deletes the oldest closed segments whose every reportable record central has
+ * acknowledged (after the snapshot that captures the state they carried). FULL (bytes on disk + queued ≥ maxBytes) ⇒
+ * admitNonStop() false, auth.consumed refused, robot_state dropped; every other record is still appended (never dropped).
  *
- * STARTUP. A truncated LAST line of the last segment (no trailing newline: a torn append) is ignored and cut off (never
- * glued to the next record). Anything else unreadable — the snapshot, a line in the middle, segments without a snapshot — RESETS the journal: the
- * old files are moved aside (`reset-<ts>/`, evidence), a new epoch is opened, every robot's lock state is `unknown` (the caller
- * starts it locked `persistUnknown`, robotMotionLockStore's fail-closed rule) and an EDGE_JOURNAL_RESET anomaly is reported.
- * Claim tokens are never journaled (a restart declares the claim interrupted). Never throws after open().
+ * STARTUP. A torn LAST line (no trailing newline) is cut off. Anything else unreadable — the snapshot, a newline-terminated bad
+ * line, a seq repeated with other content, segments without a snapshot — RESETS the journal: files moved aside (`reset-<ts>/`),
+ * a new epoch, every robot's lock state `unknown` (locked persistUnknown by the caller), an EDGE_JOURNAL_RESET anomaly that
+ * COUNTS the readable records that were never confirmed reported. An unclean shutdown (no clean close) ⇒ new epoch +
+ * EDGE_JOURNAL_UNCLEAN_SHUTDOWN anomaly (records of the last group-commit window may be lost; they were never shipped).
+ * Claim tokens are never journaled. Never throws after open().
  */
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -42,7 +44,6 @@ import {
   EDGE_AUTH_TTL_MAX_MS,
   EDGE_EPOCH_RE,
   EDGE_STREAM_EVENTS,
-  EDGE_STREAM_RE,
   EDGE_STREAM_ROBOT_STATE,
   edgeEventRecordSchema,
   edgeRobotStateRecordSchema,
@@ -119,24 +120,31 @@ export interface EdgeJournalOpened {
   kind: "fresh" | "restored" | "reset";
   /** a torn last line was ignored and cut off */
   truncatedTail: boolean;
-  reset: null | { reason: string; previousEpoch: string | null };
+  /** the previous process did not close the journal (a new epoch was opened) */
+  unclean: boolean;
+  reset: null | { reason: string; previousEpoch: string | null; unreported: number };
 }
 export interface EdgeJournalStats {
   epoch: string;
-  /** reportable records not yet acknowledged by central */
+  /** reportable records not yet acknowledged by central (every epoch) */
   backlog: number;
   bytes: number;
   maxBytes: number;
   full: boolean;
   healthy: boolean;
   droppedRobotStates: number;
+  segments: number;
   opened: EdgeJournalOpened["kind"];
+}
+export interface EdgeStreamRef {
+  epoch: string;
+  stream: string;
 }
 export interface EdgeJournalOptions {
   dir: string;
   /** default 64 MiB; config limits.journalMaxBytes */
   maxBytes?: number;
-  /** compaction trigger (active segment bytes), default 4 MiB */
+  /** active segment roll size, default 4 MiB */
   segmentMaxBytes?: number;
   /** group-commit window, default 50 ms */
   groupCommitMs?: number;
@@ -155,24 +163,35 @@ export const EDGE_JOURNAL_DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 export const EDGE_JOURNAL_STATE_FILE = "state.json";
 export const EDGE_JOURNAL_AUTH_STREAM = "auth";
 export const EDGE_JOURNAL_RESET_CODE = "EDGE_JOURNAL_RESET";
-const SEG_RE = /^seg-([0-9a-f]{32})-(\d{6})\.jsonl$/;
-const segName = (epoch: string, n: number) => `seg-${epoch}-${String(n).padStart(6, "0")}.jsonl`;
+export const EDGE_JOURNAL_UNCLEAN_CODE = "EDGE_JOURNAL_UNCLEAN_SHUTDOWN";
+const SEG_RE = /^seg-(\d{8})\.jsonl$/;
+const LEGACY_SEG_RE = /^seg-[0-9a-f]{32}-\d{6}\.jsonl$/;
+const segName = (n: number) => `seg-${String(n).padStart(8, "0")}.jsonl`;
+const key = (epoch: string, stream: string) => `${epoch}|${stream}`;
+const unkey = (k: string): EdgeStreamRef => {
+  const i = k.indexOf("|");
+  return { epoch: k.slice(0, i), stream: k.slice(i + 1) };
+};
+const REPORTABLE_KINDS = new Set(["step", "context", "abort_stop", "ledger", "lock", "stop", "refusal", "anomaly", "command_ack", "actuation", "robot_state"]);
 
 // ── snapshot ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const zPosInt = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const zN = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const snapshotSchema = z.strictObject({
-  v: z.literal(1),
+  v: z.literal(2),
   epoch: z.string().regex(EDGE_EPOCH_RE),
-  firstSegment: z.number().int().positive().max(999_999),
-  streams: z.record(z.string(), z.strictObject({ nextSeq: z.number().int().positive(), ackedSeq: zPosInt })),
-  jtis: z.array(z.tuple([z.string().min(1).max(64), zPosInt])),
+  firstSegment: z.number().int().positive().max(99_999_999),
+  streams: z.record(z.string(), z.strictObject({ nextSeq: z.number().int().positive(), ackedSeq: zN })),
+  jtis: z.array(z.tuple([z.string().min(1).max(64), zN])),
   locks: z.record(
     z.string().regex(/^[1-9][0-9]*$/),
-    z.strictObject({ state: z.enum(["locked", "cleared"]), generation: zPosInt, reasonCode: z.string().max(64), ownerEpoch: zPosInt, since: zPosInt }),
+    z.strictObject({ state: z.enum(["locked", "cleared"]), generation: zN, reasonCode: z.string().max(64), ownerEpoch: zN, since: zN }),
   ),
   configHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
-  savedAt: zPosInt,
+  configVersion: zN.nullable(),
+  /** true while a process has the journal open — found true at open ⇒ the previous process did not close it (unclean) */
+  open: z.boolean(),
+  savedAt: zN,
 });
 type Snapshot = z.infer<typeof snapshotSchema>;
 type LockRow = Snapshot["locks"][string];
@@ -206,33 +225,37 @@ function parseLine(text: string): Line | null {
 interface Pending {
   seq: number;
   kind: string;
-  at: number;
   data: unknown;
-  line: string;
-  written: boolean;
+  durable: boolean;
 }
 interface StreamState {
   nextSeq: number;
   ackedSeq: number;
   pending: Pending[];
 }
+interface SegmentInfo {
+  n: number;
+  bytes: number;
+  /** highest seq of each reportable stream key written in this segment */
+  maxSeq: Map<string, number>;
+}
 
 class JournalCorrupt extends Error {}
 
 export class EdgeJournal {
   private epochValue = "";
-  private openedValue: EdgeJournalOpened = { kind: "fresh", truncatedTail: false, reset: null };
+  private openedValue: EdgeJournalOpened = { kind: "fresh", truncatedTail: false, unclean: false, reset: null };
   private readonly streams = new Map<string, StreamState>();
   private readonly jtis = new Map<string, number>();
   private readonly locks = new Map<number, LockRow>();
   private configHashValue: string | null = null;
-  private firstSegment = 1;
-  private activeSegment = 1;
+  private configVersionValue: number | null = null;
+  private readonly segments: SegmentInfo[] = [];
   private fh: EdgeJournalFile | null = null;
   private chain: Promise<unknown> = Promise.resolve();
   private group: { started: boolean; promise: Promise<boolean> } | null = null;
-  private bytes = 0;
-  private activeBytes = 0;
+  /** written to the OS but not yet covered by a successful fsync */
+  private unsynced: Pending[] = [];
   private queuedBytes = 0;
   private ioFailed = false;
   private closed = false;
@@ -282,7 +305,7 @@ export class EdgeJournal {
   private async init(): Promise<void> {
     await this.io.mkdir(this.dir);
     const names = await this.io.readdir(this.dir);
-    const segs = names.filter((n) => SEG_RE.test(n));
+    const segs = names.filter((n) => SEG_RE.test(n) || LEGACY_SEG_RE.test(n));
     let snapText: string | null = null;
     let snapUnreadable = false;
     try {
@@ -292,11 +315,11 @@ export class EdgeJournal {
     }
     if (snapText === null && !snapUnreadable) {
       if (segs.length === 0) {
-        await this.startNewEpoch();
-        this.openedValue = { kind: "fresh", truncatedTail: false, reset: null };
+        await this.startFresh(1);
+        this.openedValue = { kind: "fresh", truncatedTail: false, unclean: false, reset: null };
         return;
       }
-      await this.reset(names, "segments without a snapshot (state.json missing)", null);
+      await this.reset(names, "segments without a snapshot (state.json missing)", null, null);
       return;
     }
     let snap: Snapshot | null = null;
@@ -309,16 +332,46 @@ export class EdgeJournal {
       }
     }
     if (!snap) {
-      await this.reset(names, "snapshot unreadable (state.json)", null);
+      await this.reset(names, "snapshot unreadable (state.json)", null, null);
       return;
     }
+    let truncatedTail: boolean;
     try {
-      const truncatedTail = await this.restore(snap, segs);
-      this.openedValue = { kind: "restored", truncatedTail, reset: null };
+      if (segs.some((n) => LEGACY_SEG_RE.test(n))) throw new JournalCorrupt("segment of an older journal format");
+      truncatedTail = await this.restore(snap, segs);
     } catch (err) {
       if (!(err instanceof JournalCorrupt)) throw err;
       this.clearState();
-      await this.reset(await this.io.readdir(this.dir), `corrupt journal: ${err.message}`, snap.epoch);
+      await this.reset(await this.io.readdir(this.dir), `corrupt journal: ${err.message}`, snap.epoch, snap);
+      return;
+    }
+    const unclean = snap.open === true;
+    if (unclean) {
+      // R-10-ag — the crashed epoch's seq high-water is unknowable (records of the last window may be lost): never write it
+      // again. Its durable records stay and are shipped under it; new records go to a NEW epoch from seq 1.
+      const prev = this.epochValue;
+      this.epochValue = newEdgeEpoch();
+      await this.fsyncActive(); // what the crashed process wrote is made durable before anything of it is shipped
+      await this.writeSnapshot(true);
+      this.openedValue = { kind: "restored", truncatedTail, unclean: true, reset: null };
+      await this.appendEvent({
+        kind: "anomaly",
+        code: EDGE_JOURNAL_UNCLEAN_CODE,
+        runId: null,
+        detail: `epoch ${prev} was not closed cleanly: records appended in its last group-commit window may be lost (never shipped — only durable records are); new epoch ${this.epochValue}`,
+        at: this.now(),
+      });
+      return;
+    }
+    await this.writeSnapshot(true);
+    this.openedValue = { kind: "restored", truncatedTail, unclean: false, reset: null };
+  }
+
+  private async fsyncActive(): Promise<void> {
+    try {
+      await this.fh?.sync();
+    } catch (err) {
+      this.fail(err);
     }
   }
 
@@ -326,158 +379,187 @@ export class EdgeJournal {
     this.streams.clear();
     this.jtis.clear();
     this.locks.clear();
+    this.segments.length = 0;
     this.configHashValue = null;
+    this.configVersionValue = null;
   }
 
   /** Replays the snapshot's segments; returns whether a torn tail was cut. Throws JournalCorrupt. */
   private async restore(snap: Snapshot, segNames: string[]): Promise<boolean> {
     this.epochValue = snap.epoch;
-    this.firstSegment = snap.firstSegment;
-    for (const [s, st] of Object.entries(snap.streams)) this.streams.set(s, { nextSeq: st.nextSeq, ackedSeq: st.ackedSeq, pending: [] });
+    for (const [k, st] of Object.entries(snap.streams)) this.streams.set(k, { nextSeq: st.nextSeq, ackedSeq: st.ackedSeq, pending: [] });
     for (const [jti, at] of snap.jtis) this.jtis.set(jti, at);
     for (const [rid, row] of Object.entries(snap.locks)) this.locks.set(Number(rid), { ...row });
     this.configHashValue = snap.configHash;
+    this.configVersionValue = snap.configVersion;
 
-    const mine: Array<{ name: string; n: number }> = [];
+    const mine: number[] = [];
     for (const name of segNames) {
-      const m = SEG_RE.exec(name)!;
-      const n = Number(m[2]);
-      if (m[1] !== snap.epoch) throw new JournalCorrupt(`segment ${name} of another epoch`);
+      const n = Number(SEG_RE.exec(name)![1]);
       if (n < snap.firstSegment) {
-        // superseded by a finished compaction (crash before the old segments were deleted)
-        await this.io.unlink(path.join(this.dir, name)).catch(() => undefined);
+        await this.io.unlink(path.join(this.dir, name)).catch(() => undefined); // dropped by a finished compaction
         continue;
       }
-      mine.push({ name, n });
+      mine.push(n);
     }
-    mine.sort((a, b) => a.n - b.n);
-    if (mine.length > 0 && mine[0].n !== snap.firstSegment) throw new JournalCorrupt(`first segment ${snap.firstSegment} missing`);
+    mine.sort((a, b) => a - b);
+    if (mine.length === 0 || mine[0] !== snap.firstSegment) throw new JournalCorrupt(`first segment ${snap.firstSegment} missing`);
+    for (let i = 1; i < mine.length; i++) if (mine[i] !== mine[i - 1] + 1) throw new JournalCorrupt(`segment ${mine[i - 1] + 1} missing`);
     let truncated = false;
-    const lastSeen = new Map<string, { seq: number; h: Map<number, string> }>();
-    let bytes = 0;
-    let activeBytes = 0;
+    const lastSeen = new Map<string, number>();
     for (let i = 0; i < mine.length; i++) {
-      const file = path.join(this.dir, mine[i].name);
+      const n = mine[i];
+      const file = path.join(this.dir, segName(n));
       let text: string;
       try {
         text = await this.io.readFile(file);
       } catch {
-        throw new JournalCorrupt(`segment ${mine[i].name} unreadable`);
+        throw new JournalCorrupt(`segment ${segName(n)} unreadable`);
       }
-      const isLastSeg = i === mine.length - 1;
+      const isLast = i === mine.length - 1;
       const parts = text.split("\n");
-      const tailPartial = parts[parts.length - 1]; // "" when the file ends with a newline
+      const tail = parts[parts.length - 1];
       const complete = parts.slice(0, -1);
-      let goodBytes = 0;
+      const info: SegmentInfo = { n, bytes: 0, maxSeq: new Map() };
       for (let li = 0; li < complete.length; li++) {
         const raw = complete[li];
         const l = raw.length === 0 ? null : parseLine(raw);
-        // a torn append never ends with its newline (one write of the line + newline): a bad line that DOES is corruption ⇒ reset
-        if (!l) throw new JournalCorrupt(`bad line ${li + 1} of ${mine[i].name}`);
-        if (l.e !== snap.epoch) throw new JournalCorrupt(`line ${li + 1} of ${mine[i].name} has another epoch`);
-        const seen = lastSeen.get(l.s) ?? { seq: 0, h: new Map<number, string>() };
-        if (l.q <= seen.seq) {
-          // an interrupted compaction copies lines verbatim: identical ⇒ skip; anything else ⇒ corrupt
-          if (seen.h.get(l.q) !== l.h) throw new JournalCorrupt(`stream ${l.s} seq ${l.q} out of order`);
-        } else {
-          seen.seq = l.q;
-          seen.h.set(l.q, l.h);
-          lastSeen.set(l.s, seen);
-          this.applyReplayed(l, raw);
-        }
-        goodBytes += Buffer.byteLength(raw, "utf8") + 1;
+        // a torn append never ends with its newline (one write of the line + newline): a bad line that DOES is corruption
+        if (!l) throw new JournalCorrupt(`bad line ${li + 1} of ${segName(n)}`);
+        if (!EDGE_EPOCH_RE.test(l.e)) throw new JournalCorrupt(`line ${li + 1} of ${segName(n)} has no valid epoch`);
+        const k = key(l.e, l.s);
+        if (l.q <= (lastSeen.get(k) ?? 0)) throw new JournalCorrupt(`stream ${l.s} seq ${l.q} out of order`);
+        lastSeen.set(k, l.q);
+        this.applyReplayed(l, info);
+        info.bytes += Buffer.byteLength(raw, "utf8") + 1;
       }
-      if (tailPartial !== "") {
-        if (!isLastSeg) throw new JournalCorrupt(`segment ${mine[i].name} ends without a newline`);
+      if (tail !== "") {
+        if (!isLast) throw new JournalCorrupt(`segment ${segName(n)} ends without a newline`);
         truncated = true;
+        await this.io.truncate(file, info.bytes);
       }
-      if (isLastSeg && truncated) await this.io.truncate(file, goodBytes);
-      bytes += goodBytes;
-      if (isLastSeg) activeBytes = goodBytes;
+      this.segments.push(info);
     }
-    this.activeSegment = mine.length > 0 ? mine[mine.length - 1].n : snap.firstSegment;
-    this.bytes = bytes;
-    this.activeBytes = activeBytes;
-    this.fh = await this.io.openAppend(path.join(this.dir, segName(this.epochValue, this.activeSegment)));
+    this.fh = await this.io.openAppend(path.join(this.dir, segName(mine[mine.length - 1])));
     return truncated;
   }
 
-  private applyReplayed(l: Line, raw: string): void {
-    const st = this.stream(l.s);
+  private applyReplayed(l: Line, seg: SegmentInfo): void {
+    const k = key(l.e, l.s);
+    const st = this.stream(k);
     st.nextSeq = Math.max(st.nextSeq, l.q + 1);
     if (l.s === EDGE_JOURNAL_AUTH_STREAM) {
       const d = l.d as { jti?: unknown };
       if (l.k === "auth.consumed" && typeof d?.jti === "string") this.jtis.set(d.jti, l.t);
       return;
     }
-    if (l.k === "lock") this.applyLock(l.d as Omit<Extract<EdgeEventRecord, { kind: "lock" }>, "seq">);
-    if (l.q > st.ackedSeq) st.pending.push({ seq: l.q, kind: l.k, at: l.t, data: l.d, line: raw + "\n", written: true });
+    seg.maxSeq.set(k, Math.max(seg.maxSeq.get(k) ?? 0, l.q));
+    if (l.k === "lock") this.applyLock(l.d as LockEventData);
+    if (l.q > st.ackedSeq) st.pending.push({ seq: l.q, kind: l.k, data: l.d, durable: true });
   }
 
-  /** Moves every journal file aside, opens a new epoch, reports EDGE_JOURNAL_RESET. */
-  private async reset(names: string[], reason: string, previousEpoch: string | null): Promise<void> {
+  /** Counts the readable, reportable lines of files about to be moved aside (never confirmed reported to central). */
+  private async countUnreported(names: string[], snap: Snapshot | null): Promise<{ total: number; byKind: Map<string, number> }> {
+    const byKind = new Map<string, number>();
+    let total = 0;
+    for (const n of names) {
+      if (!SEG_RE.test(n) && !LEGACY_SEG_RE.test(n)) continue;
+      let text = "";
+      try {
+        text = await this.io.readFile(path.join(this.dir, n));
+      } catch {
+        continue;
+      }
+      for (const raw of text.split("\n")) {
+        const l = raw ? parseLine(raw) : null;
+        if (!l || !REPORTABLE_KINDS.has(l.k)) continue;
+        const acked = snap?.streams[key(l.e, l.s)]?.ackedSeq ?? 0;
+        if (l.q <= acked) continue;
+        total++;
+        byKind.set(l.k, (byKind.get(l.k) ?? 0) + 1);
+      }
+    }
+    return { total, byKind };
+  }
+
+  /** Moves every journal file aside, opens a new epoch, reports EDGE_JOURNAL_RESET with the evidence it could not keep. */
+  private async reset(names: string[], reason: string, previousEpoch: string | null, snap: Snapshot | null): Promise<void> {
     this.log(`[EdgeJournal] RESET — ${reason}: a new epoch is opened; every robot starts locked (persistUnknown) until a confirmed STOP / operator clear`);
+    const lost = await this.countUnreported(names, snap);
     const aside = path.join(this.dir, `reset-${this.now()}-${Math.random().toString(36).slice(2, 8)}`);
     await this.io.mkdir(aside);
     for (const n of names) {
-      if (SEG_RE.test(n) || n === EDGE_JOURNAL_STATE_FILE) await this.io.rename(path.join(this.dir, n), path.join(aside, n)).catch(() => undefined);
+      if (SEG_RE.test(n) || LEGACY_SEG_RE.test(n) || n === EDGE_JOURNAL_STATE_FILE) await this.io.rename(path.join(this.dir, n), path.join(aside, n)).catch(() => undefined);
     }
     this.clearState();
-    await this.startNewEpoch();
-    this.openedValue = { kind: "reset", truncatedTail: false, reset: { reason, previousEpoch } };
-    await this.appendEvent({ kind: "anomaly", code: EDGE_JOURNAL_RESET_CODE, runId: null, detail: `${reason}${previousEpoch ? ` (previous epoch ${previousEpoch})` : ""}`.slice(0, 1_000), at: this.now() });
+    await this.startFresh(1);
+    this.openedValue = { kind: "reset", truncatedTail: false, unclean: false, reset: { reason, previousEpoch, unreported: lost.total } };
+    const kinds = [...lost.byKind.entries()].map(([k, n]) => `${k}=${n}`).join(", ");
+    await this.appendEvent({
+      kind: "anomaly",
+      code: EDGE_JOURNAL_RESET_CODE,
+      runId: null,
+      detail: `${reason}${previousEpoch ? ` (previous epoch ${previousEpoch})` : ""}; ${lost.total} readable record(s) never confirmed reported were moved aside (${kinds || "none"}) — see ${path.basename(aside)}`.slice(0, 1_000),
+      at: this.now(),
+    });
   }
 
-  private async startNewEpoch(): Promise<void> {
+  private async startFresh(n: number): Promise<void> {
     this.epochValue = newEdgeEpoch();
-    this.firstSegment = 1;
-    this.activeSegment = 1;
-    this.bytes = 0;
-    this.activeBytes = 0;
-    await this.io.writeFileAtomic(path.join(this.dir, segName(this.epochValue, 1)), "");
-    await this.writeSnapshot();
-    this.fh = await this.io.openAppend(path.join(this.dir, segName(this.epochValue, 1)));
+    await this.io.writeFileAtomic(path.join(this.dir, segName(n)), "");
+    this.segments.push({ n, bytes: 0, maxSeq: new Map() });
+    await this.writeSnapshot(true);
+    this.fh = await this.io.openAppend(path.join(this.dir, segName(n)));
   }
 
-  private snapshot(): Snapshot {
+  private snapshot(open: boolean): Snapshot {
+    const now = this.now();
+    for (const [jti, at] of this.jtis) if (now - at > this.jtiRetentionMs) this.jtis.delete(jti);
     const streams: Snapshot["streams"] = {};
-    for (const [s, st] of this.streams) streams[s] = { nextSeq: st.nextSeq, ackedSeq: st.ackedSeq };
+    for (const [k, st] of this.streams) streams[k] = { nextSeq: st.nextSeq, ackedSeq: st.ackedSeq };
     const locks: Snapshot["locks"] = {};
     for (const [rid, row] of this.locks) locks[String(rid)] = { ...row };
     return {
-      v: 1,
+      v: 2,
       epoch: this.epochValue,
-      firstSegment: this.firstSegment,
+      firstSegment: this.segments[0]?.n ?? 1,
       streams,
       jtis: [...this.jtis.entries()],
       locks,
       configHash: this.configHashValue,
-      savedAt: Math.max(0, Math.trunc(this.now())),
+      configVersion: this.configVersionValue,
+      open,
+      savedAt: Math.max(0, Math.trunc(now)),
     };
   }
-  private async writeSnapshot(): Promise<void> {
-    await this.io.writeFileAtomic(path.join(this.dir, EDGE_JOURNAL_STATE_FILE), JSON.stringify(this.snapshot()) + "\n");
+  private async writeSnapshot(open: boolean): Promise<void> {
+    await this.io.writeFileAtomic(path.join(this.dir, EDGE_JOURNAL_STATE_FILE), JSON.stringify(this.snapshot(open)) + "\n");
   }
 
   // ── state ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-  private stream(s: string): StreamState {
-    let st = this.streams.get(s);
+  private stream(k: string): StreamState {
+    let st = this.streams.get(k);
     if (!st) {
       st = { nextSeq: 1, ackedSeq: 0, pending: [] };
-      this.streams.set(s, st);
+      this.streams.set(k, st);
     }
     return st;
   }
 
-  private applyLock(d: { robotId: number; event: "locked" | "cleared"; generation: number; ownerEpoch: number; reasonCode: string; since: number }): void {
+  private applyLock(d: LockEventData): void {
     const cur = this.locks.get(d.robotId);
     if (cur && d.generation < cur.generation) return; // never backwards
-    this.locks.set(d.robotId, { state: d.event, generation: d.generation, reasonCode: d.reasonCode.slice(0, 64), ownerEpoch: d.ownerEpoch, since: d.since });
+    this.locks.set(d.robotId, { state: d.event, generation: d.generation, reasonCode: String(d.reasonCode).slice(0, 64), ownerEpoch: d.ownerEpoch, since: d.since });
   }
 
+  private bytesOnDisk(): number {
+    let b = 0;
+    for (const s of this.segments) b += s.bytes;
+    return b;
+  }
   isFull(): boolean {
-    return this.bytes + this.queuedBytes >= this.maxBytes;
+    return this.bytesOnDisk() + this.queuedBytes >= this.maxBytes;
   }
   /** May NEW non-STOP actuation start? false when full, unhealthy (an IO error) or closed. STOP never asks. */
   admitNonStop(): boolean {
@@ -486,8 +568,8 @@ export class EdgeJournal {
   isJtiConsumed(jti: string): boolean {
     return this.jtis.has(jti);
   }
-  ackedSeq(stream: string): number {
-    return this.streams.get(stream)?.ackedSeq ?? 0;
+  ackedSeq(stream: string, epoch: string = this.epochValue): number {
+    return this.streams.get(key(epoch, stream))?.ackedSeq ?? 0;
   }
   /** What the journal knows of a robot's motion lock (`unknown` ⇒ the caller starts it locked persistUnknown). */
   motionLock(robotId: number): EdgeJournalLockState {
@@ -500,37 +582,70 @@ export class EdgeJournal {
   get configHash(): string | null {
     return this.configHashValue;
   }
-  setConfigHash(h: string | null): void {
+  /** The highest config version this node ever accepted (a rollback floor that survives a lost config-state.json). */
+  get configVersion(): number | null {
+    return this.configVersionValue;
+  }
+  setConfigHash(h: string | null, version?: number | null): void {
     if (h === null || /^[0-9a-f]{64}$/.test(h)) this.configHashValue = h;
+    if (typeof version === "number" && Number.isSafeInteger(version) && version > 0) this.configVersionValue = Math.max(this.configVersionValue ?? 0, version);
   }
   stats(): EdgeJournalStats {
     let backlog = 0;
-    for (const [s, st] of this.streams) if (s !== EDGE_JOURNAL_AUTH_STREAM) backlog += st.pending.length;
+    for (const [k, st] of this.streams) if (unkey(k).stream !== EDGE_JOURNAL_AUTH_STREAM) backlog += st.pending.length;
     return {
       epoch: this.epochValue,
       backlog,
-      bytes: this.bytes + this.queuedBytes,
+      bytes: this.bytesOnDisk() + this.queuedBytes,
       maxBytes: this.maxBytes,
       full: this.isFull(),
       healthy: !this.ioFailed && !this.closed,
       droppedRobotStates: this.droppedRobotStates,
+      segments: this.segments.length,
       opened: this.openedValue.kind,
     };
   }
+  /** Streams of the CURRENT epoch with records not yet acknowledged. */
   streamsWithPending(): string[] {
-    return [...this.streams.entries()].filter(([s, st]) => s !== EDGE_JOURNAL_AUTH_STREAM && st.pending.length > 0).map(([s]) => s);
+    return this.pendingStreams()
+      .filter((r) => r.epoch === this.epochValue)
+      .map((r) => r.stream);
   }
-  /** Un-acknowledged records of a stream, oldest first (at most `max`) — the next report batch. */
-  pending(stream: string, max = Number.MAX_SAFE_INTEGER): EdgeJournalEntry[] {
-    const st = this.streams.get(stream);
+  /** Every (epoch, stream) with records not yet acknowledged — earlier epochs first. */
+  pendingStreams(): EdgeStreamRef[] {
+    const out: EdgeStreamRef[] = [];
+    for (const [k, st] of this.streams) {
+      const r = unkey(k);
+      if (r.stream === EDGE_JOURNAL_AUTH_STREAM || st.pending.length === 0) continue;
+      out.push(r);
+    }
+    return out.sort((a, b) => (a.epoch === b.epoch ? 0 : a.epoch === this.epochValue ? 1 : b.epoch === this.epochValue ? -1 : 0));
+  }
+  /**
+   * The next report batch: the DURABLE prefix of a stream's un-acknowledged records, oldest first (at most `max`). A record not
+   * yet fsynced is never returned (R-10-ag) — nor anything after it.
+   */
+  pending(stream: string, max = Number.MAX_SAFE_INTEGER, epoch: string = this.epochValue): EdgeJournalEntry[] {
+    const st = this.streams.get(key(epoch, stream));
     if (!st || stream === EDGE_JOURNAL_AUTH_STREAM) return [];
-    return st.pending.slice(0, Math.max(0, max)).map((p) => ({ epoch: this.epochValue, stream, seq: p.seq, record: { ...(p.data as object), seq: p.seq } as EdgeReportableRecord }));
+    const out: EdgeJournalEntry[] = [];
+    for (const p of st.pending) {
+      if (out.length >= max || !p.durable) break;
+      out.push({ epoch, stream, seq: p.seq, record: { ...(p.data as object), seq: p.seq } as EdgeReportableRecord });
+    }
+    return out;
   }
-  /** Central acknowledged everything up to `seq` of `stream` (monotonic; clamped to what was written). */
-  ack(stream: string, seq: number): void {
-    const st = this.streams.get(stream);
+  /** Records of a stream still waiting for an fsync (not shippable yet). */
+  undurableCount(stream: string, epoch: string = this.epochValue): number {
+    return this.streams.get(key(epoch, stream))?.pending.filter((p) => !p.durable).length ?? 0;
+  }
+  /** Central acknowledged everything up to `seq` (monotonic; clamped to the DURABLE records). */
+  ack(stream: string, seq: number, epoch: string = this.epochValue): void {
+    const st = this.streams.get(key(epoch, stream));
     if (!st || !Number.isSafeInteger(seq)) return;
-    const top = Math.min(seq, st.nextSeq - 1);
+    let top = Math.min(seq, st.nextSeq - 1);
+    const firstUndurable = st.pending.find((p) => !p.durable);
+    if (firstUndurable) top = Math.min(top, firstUndurable.seq - 1);
     if (top <= st.ackedSeq) return;
     st.ackedSeq = top;
     while (st.pending.length > 0 && st.pending[0].seq <= top) st.pending.shift();
@@ -544,15 +659,16 @@ export class EdgeJournal {
     this.ioFailed = true;
   }
 
-  /** Queue a line; seq is assigned synchronously by the caller (order = call order). */
+  /** Queue a line; seq is assigned synchronously by the caller (order = call order). O(1). */
   private enqueue(stream: string, kind: string, data: unknown, reportable: boolean): { seq: number; written: Promise<boolean> } {
-    const st = this.stream(stream);
+    const k = key(this.epochValue, stream);
+    const st = this.stream(k);
     const seq = st.nextSeq++;
     const at = Math.max(0, Math.trunc(this.now()));
     const h = checksum(this.epochValue, stream, seq, kind, at, data);
     const line = JSON.stringify({ e: this.epochValue, s: stream, q: seq, k: kind, t: at, d: data, h }) + "\n";
     const len = Buffer.byteLength(line, "utf8");
-    const entry: Pending = { seq, kind, at, data, line, written: false };
+    const entry: Pending = { seq, kind, data, durable: false };
     if (reportable) st.pending.push(entry);
     this.queuedBytes += len;
     const written = this.chain.then(async () => {
@@ -560,9 +676,11 @@ export class EdgeJournal {
       if (this.ioFailed || !this.fh) return false;
       try {
         await this.fh.write(line);
-        entry.written = true;
-        this.bytes += len;
-        this.activeBytes += len;
+        const seg = this.segments[this.segments.length - 1];
+        seg.bytes += len;
+        if (reportable) seg.maxSeq.set(k, Math.max(seg.maxSeq.get(k) ?? 0, seq));
+        this.unsynced.push(entry);
+        if (seg.bytes >= this.segmentMaxBytes) await this.roll();
         return true;
       } catch (err) {
         this.fail(err);
@@ -573,13 +691,33 @@ export class EdgeJournal {
     return { seq, written };
   }
 
+  /** Inside the chain: fsync + close the active segment, open the next one. */
+  private async roll(): Promise<void> {
+    if (!this.fh) return;
+    await this.fh.sync();
+    this.markDurable(this.unsynced.splice(0));
+    await this.fh.close().catch(() => undefined);
+    const n = this.segments[this.segments.length - 1].n + 1;
+    await this.io.writeFileAtomic(path.join(this.dir, segName(n)), "");
+    this.segments.push({ n, bytes: 0, maxSeq: new Map() });
+    this.fh = await this.io.openAppend(path.join(this.dir, segName(n)));
+    this.maybeCompact();
+  }
+
+  private markDurable(batch: Pending[]): void {
+    for (const p of batch) p.durable = true;
+  }
+
   private syncChained(): Promise<boolean> {
     const p = this.chain.then(async () => {
       if (this.ioFailed || !this.fh) return false;
+      const batch = this.unsynced.splice(0);
       try {
         await this.fh.sync();
+        this.markDurable(batch);
         return true;
       } catch (err) {
+        this.unsynced.unshift(...batch);
         this.fail(err);
         return false;
       }
@@ -604,8 +742,7 @@ export class EdgeJournal {
     return g.promise;
   }
 
-  private async durable(written: Promise<boolean>, boundMs: number | null): Promise<boolean> {
-    const work = (async () => (await written) && (await this.syncSoon()))();
+  private async bounded(work: Promise<boolean>, boundMs: number | null): Promise<boolean> {
     if (boundMs === null) return work;
     let timer: NodeJS.Timeout | null = null;
     const bound = new Promise<boolean>((r) => {
@@ -632,17 +769,7 @@ export class EdgeJournal {
     this.jtis.set(c.jti, Math.max(0, Math.trunc(this.now()))); // at once: a concurrent second use is refused
     const { written } = this.enqueue(EDGE_JOURNAL_AUTH_STREAM, "auth.consumed", { jti: c.jti, runId: c.runId, claimSeq: c.claimSeq, stepId: c.stepId, attempt: c.attempt }, false);
     const synced = (async () => (await written) && (await this.syncChained()))();
-    let timer: NodeJS.Timeout | null = null;
-    const bound = new Promise<boolean>((r) => {
-      timer = setTimeout(() => r(false), this.authSyncTimeoutMs);
-      if (typeof timer.unref === "function") timer.unref();
-    });
-    let ok: boolean;
-    try {
-      ok = await Promise.race([synced, bound]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+    const ok = await this.bounded(synced, this.authSyncTimeoutMs);
     if (!ok) {
       if (!this.ioFailed) this.fail(new Error(`auth.consumed fsync did not finish within ${this.authSyncTimeoutMs} ms`));
       return { ok: false, reason: "io_error" }; // the jti stays consumed (fail-closed)
@@ -650,11 +777,11 @@ export class EdgeJournal {
     return { ok: true };
   }
 
-  private appendReportable(stream: string, kind: string, data: unknown, stop: boolean): Promise<EdgeAppendResult> {
+  private appendReportable(stream: string, kind: string, data: unknown, cls: "group" | "stop" | "now"): Promise<EdgeAppendResult> {
     if (this.closed) return Promise.resolve({ seq: null, dropped: true, reason: "closed" });
     const { seq, written } = this.enqueue(stream, kind, data, true);
-    if (this.isFull() || this.activeBytes > this.segmentMaxBytes) this.maybeCompact();
-    return this.durable(written, stop ? this.stopBoundMs : null).then((durable) => ({ seq, durable }));
+    const work = (async () => (await written) && (await (cls === "now" ? this.syncChained() : this.syncSoon())))();
+    return this.bounded(work, cls === "group" ? null : this.stopBoundMs).then((durable) => ({ seq, durable }));
   }
 
   /** A run-stream record (step / context / abort_stop / ledger). `{stop:true}` ⇒ the wait is bounded (L-7). */
@@ -671,10 +798,10 @@ export class EdgeJournal {
       return Promise.resolve({ seq: null, dropped: true, reason: "invalid" });
     }
     const { seq: _s, ...data } = p.data;
-    return this.appendReportable(stream, data.kind, data, opts.stop === true || data.kind === "abort_stop");
+    return this.appendReportable(stream, data.kind, data, opts.stop === true || data.kind === "abort_stop" ? "stop" : "group");
   }
 
-  /** An `events` record (lock / stop / refusal / anomaly / command_ack). STOP records are bounded (L-7). */
+  /** An `events` record. STOP records are bounded (L-7); lock events are fsynced at once (bounded). */
   appendEvent(rec: EdgeEventRecordInput, opts: { stop?: boolean } = {}): Promise<EdgeAppendResult> {
     const p = edgeEventRecordSchema.safeParse({ ...rec, seq: 1 });
     if (!p.success) {
@@ -682,8 +809,11 @@ export class EdgeJournal {
       return Promise.resolve({ seq: null, dropped: true, reason: "invalid" });
     }
     const { seq: _s, ...data } = p.data;
-    if (data.kind === "lock") this.applyLock(data);
-    return this.appendReportable(EDGE_STREAM_EVENTS, data.kind, data, opts.stop === true || data.kind === "stop");
+    if (data.kind === "lock") {
+      this.applyLock(data);
+      return this.appendReportable(EDGE_STREAM_EVENTS, data.kind, data, "now");
+    }
+    return this.appendReportable(EDGE_STREAM_EVENTS, data.kind, data, opts.stop === true || data.kind === "stop" ? "stop" : "group");
   }
 
   /** A robot state sample — dropped (counted) while the journal is full or unhealthy. */
@@ -699,7 +829,7 @@ export class EdgeJournal {
     const p = edgeRobotStateRecordSchema.safeParse({ ...rec, seq: 1 });
     if (!p.success) return Promise.resolve({ seq: null, dropped: true, reason: "invalid" });
     const { seq: _s, ...data } = p.data;
-    return this.appendReportable(EDGE_STREAM_ROBOT_STATE, "robot_state", data, false);
+    return this.appendReportable(EDGE_STREAM_ROBOT_STATE, "robot_state", data, "group");
   }
 
   /** fsync now (everything queued so far). */
@@ -708,8 +838,7 @@ export class EdgeJournal {
   }
 
   private maybeCompact(): void {
-    if (this.compactScheduled || this.closed) return;
-    if (!(this.activeBytes > this.segmentMaxBytes || this.isFull())) return;
+    if (this.compactScheduled || this.closed || this.segments.length < 2) return;
     this.compactScheduled = true;
     const t = setTimeout(() => {
       this.compactScheduled = false;
@@ -718,36 +847,25 @@ export class EdgeJournal {
     if (typeof t.unref === "function") t.unref();
   }
 
+  /** A closed segment can go when central acknowledged every reportable record in it. */
+  private droppable(seg: SegmentInfo): boolean {
+    for (const [k, maxSeq] of seg.maxSeq) if ((this.streams.get(k)?.ackedSeq ?? 0) < maxSeq) return false;
+    return true;
+  }
+
   /**
-   * Rewrites the un-acknowledged records into a new segment (fsynced), then the snapshot (atomic), then deletes the old
-   * segments. Prunes consumed jtis older than the retention.
+   * Deletes the oldest CLOSED segments that hold only acknowledged records — after a snapshot that carries their state
+   * (consumed jtis, lock states, cursors). Never rewrites a record; O(segments).
    */
   compact(): Promise<void> {
     const run = this.chain.then(async () => {
-      if (this.closed || this.ioFailed || !this.fh) return;
-      const now = this.now();
-      for (const [jti, at] of this.jtis) if (now - at > this.jtiRetentionMs) this.jtis.delete(jti);
-      const next = this.activeSegment + 1;
-      const lines: string[] = [];
-      for (const [s, st] of this.streams) {
-        if (s === EDGE_JOURNAL_AUTH_STREAM) continue;
-        for (const p of st.pending) if (p.written) lines.push(p.line);
-      }
-      const body = lines.join("");
-      const nextFile = path.join(this.dir, segName(this.epochValue, next));
+      if (this.closed || this.ioFailed) return;
+      let drop = 0;
+      while (drop < this.segments.length - 1 && this.droppable(this.segments[drop])) drop++;
       try {
-        await this.io.writeFileAtomic(nextFile, body);
-        const old = this.firstSegment;
-        const oldActive = this.activeSegment;
-        this.firstSegment = next;
-        this.activeSegment = next;
-        await this.writeSnapshot();
-        await this.fh.close().catch(() => undefined);
-        this.fh = await this.io.openAppend(nextFile);
-        for (let n = old; n <= oldActive; n++) await this.io.unlink(path.join(this.dir, segName(this.epochValue, n))).catch(() => undefined);
-        const size = Buffer.byteLength(body, "utf8");
-        this.bytes = size;
-        this.activeBytes = size;
+        const gone = this.segments.splice(0, drop);
+        await this.writeSnapshot(true);
+        for (const s of gone) await this.io.unlink(path.join(this.dir, segName(s.n))).catch(() => undefined);
       } catch (err) {
         this.fail(err);
       }
@@ -756,13 +874,16 @@ export class EdgeJournal {
     return run;
   }
 
-  /** Flush, persist the snapshot, close. Idempotent. */
+  /** Flush, persist the snapshot (clean), close. Idempotent. */
   async close(): Promise<void> {
     if (this.closed) return;
     const run = this.chain.then(async () => {
       try {
-        if (this.fh && !this.ioFailed) await this.fh.sync();
-        if (!this.ioFailed) await this.writeSnapshot();
+        if (this.fh && !this.ioFailed) {
+          await this.fh.sync();
+          this.markDurable(this.unsynced.splice(0));
+        }
+        if (!this.ioFailed) await this.writeSnapshot(false);
       } catch (err) {
         this.fail(err);
       }
@@ -774,3 +895,5 @@ export class EdgeJournal {
     await run;
   }
 }
+
+type LockEventData = { robotId: number; event: "locked" | "cleared"; generation: number; ownerEpoch: number; reasonCode: string; since: number };

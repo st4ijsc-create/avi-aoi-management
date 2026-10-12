@@ -133,7 +133,7 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     await j2.close();
   });
 
-  it("★ a TRUNCATED last line is ignored and cut off — the next record is not glued to it, no reset", async () => {
+  it("★ a TRUNCATED last line is ignored and cut off — never glued to the next record, no reset; the crash opens a NEW epoch", async () => {
     const dir = await tmp();
     const j1 = await EdgeJournal.open({ dir });
     await j1.appendRun(9, 2, step("m1"));
@@ -146,21 +146,46 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     await fs.appendFile(seg, third.slice(0, Math.floor(third.length / 2)));
     // the process died: no close()
     const j2 = await EdgeJournal.open({ dir });
-    expect(j2.opened.kind).toBe("restored");
-    expect(j2.opened.truncatedTail).toBe(true);
-    expect(j2.epoch).toBe(j1.epoch);
-    expect(j2.pending("run:9:2").map((r) => r.seq)).toEqual([1, 2]);
-    expect((await j2.appendRun(9, 2, step("m3"))).seq).toBe(3);
+    expect(j2.opened).toMatchObject({ kind: "restored", truncatedTail: true, unclean: true });
+    expect(j2.epoch).not.toBe(j1.epoch); // R-10-ag — the crashed epoch is never written again
+    expect(j2.pending("run:9:2", 99, j1.epoch).map((r) => r.seq)).toEqual([1, 2]); // still shipped, under ITS epoch
+    expect((await j2.appendRun(9, 2, step("m3"))).seq).toBe(1); // a new epoch starts every stream at 1
     await j2.flush();
     // every line of the segment parses — the partial line is gone
     const lines = (await fs.readFile(await lastSegment(dir), "utf8")).split("\n").filter(Boolean);
-    expect(lines.map((l) => JSON.parse(l).q)).toEqual([1, 2, 3]);
+    expect(lines.map((l) => [JSON.parse(l).e === j1.epoch, JSON.parse(l).q])).toEqual([[true, 1], [true, 2], [false, 1], [false, 1]]);
     await j2.close();
     const j3 = await EdgeJournal.open({ dir });
-    expect(j3.opened.kind).toBe("restored");
-    expect(j3.opened.truncatedTail).toBe(false);
-    expect(j3.pending("run:9:2").map((r) => r.seq)).toEqual([1, 2, 3]);
+    expect(j3.opened).toMatchObject({ kind: "restored", truncatedTail: false, unclean: false });
+    expect(j3.epoch).toBe(j2.epoch); // a CLEAN close keeps the epoch
+    expect(j3.pending("run:9:2").map((r) => r.seq)).toEqual([1]);
+    expect(j3.pendingStreams().map((r) => [r.epoch === j1.epoch, r.stream])).toEqual([[true, "run:9:2"], [false, "events"], [false, "run:9:2"]]);
     await j3.close();
+  });
+
+  it("★ R-10-ag: a crash between append and fsync never reuses a seq for other content, and the possible loss is reported", async () => {
+    const dir = await tmp();
+    const r = recordingIo();
+    const j1 = await EdgeJournal.open({ dir, io: r.io, groupCommitMs: 1 });
+    await j1.appendRun(9, 2, step("m1")); // durable
+    r.hangSync();
+    void j1.appendRun(9, 2, step("m2")); // written, never fsynced
+    await new Promise((res) => setTimeout(res, 30));
+    expect(j1.pending("run:9:2").map((e) => e.seq)).toEqual([1]); // m2 is NOT shippable — central never sees it
+    expect(j1.undurableCount("run:9:2")).toBe(1);
+    // crash; the OS lost m2 (power cut): cut it from the file
+    const seg = await lastSegment(dir);
+    const kept = (await fs.readFile(seg, "utf8")).split("\n")[0] + "\n";
+    await fs.writeFile(seg, kept);
+    const j2 = await EdgeJournal.open({ dir });
+    expect(j2.opened.unclean).toBe(true);
+    expect(j2.epoch).not.toBe(j1.epoch);
+    const next = await j2.appendRun(9, 2, step("other content"));
+    expect(next.seq).toBe(1); // seq 2 of the crashed epoch is never written again: (epoch, stream, seq) stays unique
+    expect(j2.pending("run:9:2", 99, j1.epoch).map((e) => (e.record as { stepId: string }).stepId)).toEqual(["m1"]);
+    const ev = j2.pending("events");
+    expect(ev[0].record).toMatchObject({ kind: "anomaly", code: "EDGE_JOURNAL_UNCLEAN_SHUTDOWN" });
+    await j2.close();
   });
 
   it("★ a torn tail whose JSON parses but whose checksum does not match is treated as torn too (not trusted)", async () => {
@@ -175,7 +200,7 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     await fs.appendFile(seg, JSON.stringify(line)); // no newline, bad checksum
     const j2 = await EdgeJournal.open({ dir });
     expect(j2.opened.truncatedTail).toBe(true);
-    expect(j2.pending("run:9:2").map((r) => (r.record as { stepId: string }).stepId)).toEqual(["m1"]);
+    expect(j2.pending("run:9:2", 99, j1.epoch).map((r) => (r.record as { stepId: string }).stepId)).toEqual(["m1"]);
     await j2.close();
   });
 
@@ -205,12 +230,14 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     const j2 = await EdgeJournal.open({ dir });
     expect(j2.opened.kind).toBe("reset");
     expect(j2.opened.reset?.reason).toMatch(/corrupt/);
+    expect(j2.opened.reset?.unreported).toBe(2); // M-4 — the evidence moved aside is COUNTED (the readable lines: lock + m2)
     expect(j2.epoch).not.toBe(j1.epoch);
     expect(j2.motionLock(12)).toEqual({ kind: "unknown" });
     expect(j2.pending("run:9:2")).toEqual([]);
     const ev = j2.pending("events");
     expect(ev.map((r) => r.seq)).toEqual([1]); // a new epoch starts every stream at 1
     expect(ev[0].record).toMatchObject({ kind: "anomaly", code: "EDGE_JOURNAL_RESET" });
+    expect((ev[0].record as { detail: string }).detail).toMatch(/2 readable record\(s\) never confirmed reported .*lock=1, step=1/);
     const kept = (await fs.readdir(dir)).filter((f) => f.startsWith("reset-"));
     expect(kept.length).toBe(1);
     expect((await fs.readdir(path.join(dir, kept[0]))).some((f) => f.endsWith(".jsonl"))).toBe(true);
@@ -348,6 +375,19 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
     await j.close();
   });
 
+  it("★ fix review 1 (M-5): a lock / clear event is fsynced AT ONCE, not in the group window — it survives a crash right after", async () => {
+    const dir = await tmp();
+    const j1 = await EdgeJournal.open({ dir, groupCommitMs: 60_000 });
+    const t0 = Date.now();
+    expect(await j1.appendEvent(lockEvent(12, "locked", 6))).toMatchObject({ durable: true });
+    expect(await j1.appendEvent(lockEvent(12, "cleared", 6))).toMatchObject({ durable: true });
+    expect(Date.now() - t0).toBeLessThan(5_000); // never the 60 s group window
+    // crash right after (no close): the lock state comes back
+    const j2 = await EdgeJournal.open({ dir });
+    expect(j2.motionLock(12)).toMatchObject({ kind: "clear", generation: 6 });
+    await j2.close();
+  });
+
   it("★ L-7: a STOP record never waits beyond the STOP bound even when the disk hangs; a non-STOP record keeps waiting", async () => {
     const dir = await tmp();
     const r = recordingIo();
@@ -361,7 +401,9 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
     expect(s).toMatchObject({ seq: 1, durable: false });
     expect(took).toBeLessThan(400); // bounded (100 ms + scheduling)
     expect(stepDone).toBe(false);
-    expect(j.pending("events").map((x) => x.record.kind)).toEqual(["stop"]); // recorded for the report all the same
+    // kept, but not shipped until it is durable (R-10-ag)
+    expect(j.pending("events")).toEqual([]);
+    expect(j.undurableCount("events")).toBe(1);
   });
 
   it("★ an auth.consumed fsync that never finishes ⇒ io_error within the bound (never ok), the jti stays consumed, the journal unhealthy", async () => {
@@ -397,9 +439,9 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
 });
 
 describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
-  it("★ a FULL journal blocks only new non-STOP work: auth refused, robot state dropped (counted), STOP / step / lock still written", async () => {
+  it("★ a FULL journal blocks only new non-STOP work: auth refused, robot state dropped (counted), STOP / step / lock still written; acks free whole segments", async () => {
     const dir = await tmp();
-    const j = await EdgeJournal.open({ dir, maxBytes: 4_000, segmentMaxBytes: 1_000_000 });
+    const j = await EdgeJournal.open({ dir, maxBytes: 4_000, segmentMaxBytes: 600, groupCommitMs: 1 });
     let i = 0;
     while (!j.isFull()) await j.appendRun(9, 2, step(`s${i++}`));
     expect(j.admitNonStop()).toBe(false);
@@ -409,13 +451,14 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     const rs = await j.appendRobotState({ robotId: 4, ts: 1, busy: false });
     expect(rs).toMatchObject({ seq: null, dropped: true });
     expect(j.stats().droppedRobotStates).toBe(1);
-    const before = j.pending("events").length;
-    expect((await j.appendEvent(stopEvent(4), { stop: true })).seq).toBe(before + 1);
-    expect((await j.appendEvent(lockEvent(4, "locked", 2))).seq).toBe(before + 2);
+    expect((await j.appendEvent(stopEvent(4), { stop: true })).seq).toBe(1);
+    expect((await j.appendEvent(lockEvent(4, "locked", 2))).seq).toBe(2);
     expect((await j.appendRun(9, 2, step("after-full"))).seq).toBe(i + 1);
-    // central acknowledges ⇒ compaction frees the space ⇒ admission returns
+    // central acknowledges ⇒ compaction drops the fully-acked CLOSED segments ⇒ admission returns
     j.ack("run:9:2", i + 1);
-    j.ack("events", before + 2);
+    j.ack("events", 2);
+    await j.flush();
+    await j.appendEvent(stopEvent(4)); // a fresh record keeps the active segment non-empty
     await j.compact();
     expect(j.isFull()).toBe(false);
     expect(j.admitNonStop()).toBe(true);
@@ -423,22 +466,44 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     await j.close();
   });
 
-  it("★ compaction keeps exactly the un-acknowledged records; a restart afterwards neither loses nor resends acked ones nor reuses a seq", async () => {
+  it("★ R-10-ag: appends on a FULL journal stay O(1) — 10 000 appends, bounded time, nothing rewritten", async () => {
     const dir = await tmp();
-    const j1 = await EdgeJournal.open({ dir });
+    const r = recordingIo();
+    const writes: number[] = [];
+    const io: EdgeJournalIo = { ...r.io, writeFileAtomic: async (f, d) => (writes.push(d.length), nodeEdgeJournalIo.writeFileAtomic(f, d)) };
+    const j = await EdgeJournal.open({ dir, io, maxBytes: 2_000, segmentMaxBytes: 64 * 1024, groupCommitMs: 5 });
+    while (!j.isFull()) await j.appendRun(9, 2, step("fill"));
+    writes.length = 0;
+    const t0 = Date.now();
+    await Promise.all(Array.from({ length: 10_000 }, (_, k) => j.appendEvent({ kind: "anomaly", code: "BENCH", runId: null, detail: String(k), at: 1 })));
+    const took = Date.now() - t0;
+    expect(j.isFull()).toBe(true);
+    expect(took).toBeLessThan(15_000);
+    // nothing un-acknowledged was ever rewritten: only new (empty) segment files + snapshots, never a record body
+    expect(writes.every((len) => len === 0 || len < 20_000)).toBe(true);
+    expect(j.pending("events").length).toBe(10_000);
+    await j.close();
+  }, 30_000);
+
+  it("★ compaction drops only fully-acknowledged segments; a clean restart keeps the epoch, neither loses nor resends acked records", async () => {
+    const dir = await tmp();
+    const j1 = await EdgeJournal.open({ dir, segmentMaxBytes: 300, groupCommitMs: 1 });
     for (let k = 1; k <= 5; k++) await j1.appendRun(9, 2, step(`m${k}`));
     await j1.appendEvent(stopEvent(4));
+    const segsBefore = (await segments(dir)).length;
+    expect(segsBefore).toBeGreaterThan(2);
     const bytesBefore = j1.stats().bytes;
     j1.ack("run:9:2", 3);
     j1.ack("events", 1);
     await j1.compact();
     expect(j1.stats().bytes).toBeLessThan(bytesBefore);
+    expect((await segments(dir)).length).toBeLessThan(segsBefore);
     expect(j1.pending("run:9:2").map((r) => r.seq)).toEqual([4, 5]);
-    expect((await segments(dir)).length).toBe(1);
     await j1.appendRun(9, 2, step("m6"));
-    await j1.flush(); // crash after: no close()
+    await j1.close();
     const j2 = await EdgeJournal.open({ dir });
     expect(j2.epoch).toBe(j1.epoch);
+    expect(j2.opened.unclean).toBe(false);
     expect(j2.pending("run:9:2").map((r) => r.seq)).toEqual([4, 5, 6]);
     expect(j2.pending("events")).toEqual([]);
     expect((await j2.appendRun(9, 2, step("m7"))).seq).toBe(7);
