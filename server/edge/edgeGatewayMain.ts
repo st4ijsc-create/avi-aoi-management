@@ -15,10 +15,15 @@
  * Default topology is UNCHANGED: with EDGE_GATEWAY_MODE unset the all-in-one entry
  * still runs everything in one process and this file is simply never used.
  *
+ * NO CENTRAL DB (doc 81 Đợt 10): the role is set by ./edgeRole before any other import; identity, devices and run
+ * packages come from central over the node protocol (signed, verified), local state lives in the journal.
+ *
  * SINGLE-GATEWAY-PER-LINE ASSUMPTION: run exactly ONE edge gateway process per line
  * (each is a distinct Sparkplug Edge Node). Two gateways for the same adapter set
  * double-poll the devices.
  */
+// doc 81 Đợt 10 task E — FIRST import: AVI_PROCESS_ROLE=edge before anything else is evaluated (the edge has no central DB).
+import "./edgeRole";
 import "dotenv/config";
 import { installConsoleBridge } from "../logger";
 import { runEdgeGateway } from "../services/edge/edgeGatewayRuntime";

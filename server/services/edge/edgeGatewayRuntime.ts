@@ -17,14 +17,18 @@
  *   • AUTONOMY: when the central UNS broker is unreachable, telemetry that would be
  *     published northbound is BUFFERED to the edge store-and-forward (≥24h,
  *     storeForward.ts UNS buffer) and REPLAYED IN ORDER + idempotently on reconnect.
- *   • IDENTITY / HEALTH: registers itself into the edge_nodes registry + heartbeats;
- *     the heartbeat/health reflect a DEGRADED state while central is unreachable or
- *     the buffer is non-empty.
+ *   • IDENTITY / HEALTH (doc 81 Đợt 10 task E, D14): the node identity is CENTRAL-owned (the signed config
+ *     snapshot); the gateway never registers itself and never names its factory / lines. It heartbeats over
+ *     HTTP with its node credential (POST /api/v1/edge/node/heartbeat); health is DEGRADED while central or
+ *     the UNS broker is unreachable, a buffer is non-empty, or the journal is full / unhealthy.
+ *   • NO CENTRAL DB (doc 81 Đợt 10): AVI_PROCESS_ROLE=edge (set by edgeGatewayMain before any import) makes
+ *     every DB accessor refuse. Boot order: config (verified, cached) → sources (adapters, telemetry insert
+ *     function, store-forward) → OT → robots → agent (commands always; runs iff EDGE_EXECUTION_ENABLED).
  *
  * FLAG: EDGE_GATEWAY_MODE (default OFF). The edge entrypoint turns it ON; the
  * all-in-one server NEVER sets it, so this module is completely inert there (every
  * edge-autonomy hook is a zero-cost env check that is false). The heavy modules
- * (otManager, unsPublisher, edgeCoordinator) are loaded LAZILY (dynamic import) so
+ * (otManager, unsPublisher, robotManager, the agent) are loaded LAZILY (dynamic import) so
  * importing this file adds no load-time cost and no static edge→server coupling.
  *
  * HONESTY: this produces NO data of its own — it only forwards/buffers samples a
@@ -39,6 +43,20 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { RuntimeAdapter } from "../ot/deviceAdapter";
+import { EdgeCentralClient, createEdgeAuthorizeClient, type EdgeAuthorizeClient } from "./edgeCentralClient";
+import { EdgeConfigSource, configAdaptersToRuntime } from "./edgeConfigSource";
+import { EdgeJournal } from "./edgeJournal";
+import { EDGE_PROTOCOL_VERSION, type EdgeConfigSnapshot } from "./edgeProtocol";
+import {
+  EdgeProgramChecks,
+  EdgeStreamShipper,
+  createEdgeJournalConsume,
+  createEdgeReportSink,
+  edgeTelemetryPersistFn,
+  type EdgeJournalConsume,
+  type EdgeReportSink,
+} from "./edgeStreams";
+import type { EdgeDevicePort, EdgeWalker } from "./edgeExecutionAgent";
 import type { OtSample } from "../ot/otDriver";
 import type { PendingUnsSample } from "../ot/storeForward";
 
@@ -59,31 +77,13 @@ export function edgeNodeCode(): string {
     `edge-${os.hostname()}`
   );
 }
-function edgeNodeName(): string {
-  return process.env.EDGE_GATEWAY_NODE_NAME?.trim() || edgeNodeCode();
-}
-function edgeFactoryCode(): string | null {
-  return process.env.EDGE_GATEWAY_FACTORY_CODE?.trim() || null;
-}
-function edgeLineCodes(): string[] | null {
-  const raw = process.env.EDGE_GATEWAY_LINE_CODES?.trim();
-  if (!raw) return null;
-  const codes = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  return codes.length ? codes : null;
-}
-/**
- * doc 81 Đợt 9 final wave F1 — how this edge starts its robots: scoped to its own lines (EDGE_GATEWAY_LINE_CODES) and factory
- * (EDGE_GATEWAY_FACTORY_CODE), never every enabled robot; state not ingested (central owns robot ingest).
- */
-export function edgeRobotStartOptions(): { scope: { lineCodes: string[]; factoryCode: string | null }; ingest: false } {
-  return { scope: { lineCodes: edgeLineCodes() ?? [], factoryCode: edgeFactoryCode() }, ingest: false };
+function heartbeatIntervalMs(): number {
+  const n = parseInt(process.env.EDGE_GATEWAY_HEARTBEAT_INTERVAL_MS || "", 10);
+  if (Number.isFinite(n) && n >= 1000) return n;
+  return runtime?.config.limits()?.heartbeatMs ?? 30_000;
 }
 function edgeGatewayVersion(): string {
   return process.env.EDGE_GATEWAY_VERSION?.trim() || process.env.npm_package_version?.trim() || "1.0.0";
-}
-function heartbeatIntervalMs(): number {
-  const n = parseInt(process.env.EDGE_GATEWAY_HEARTBEAT_INTERVAL_MS || "30000", 10);
-  return Number.isFinite(n) && n >= 1000 ? n : 30000;
 }
 function drainIntervalMs(): number {
   const n = parseInt(process.env.EDGE_UNS_STORE_FORWARD_DRAIN_MS || "30000", 10);
@@ -221,27 +221,132 @@ export async function wireUnsStoreForward(): Promise<void> {
   sf.setUnsPublishFn(publishPendingUns);
 }
 
+// ── the node runtime (doc 81 Đợt 10 task E) ────────────────────────────────────────────────────────────────────────
+
+/** Everything the edge process holds instead of a central DB login (groups C / D reach it through getEdgeRuntime()). */
+export interface EdgeRuntime {
+  nodeId: number;
+  client: EdgeCentralClient;
+  config: EdgeConfigSource;
+  journal: EdgeJournal;
+  shipper: EdgeStreamShipper;
+  sink: EdgeReportSink;
+  consume: EdgeJournalConsume;
+  authorize: EdgeAuthorizeClient;
+  programChecks: EdgeProgramChecks;
+  startedAtMs: number;
+  lastHeartbeatOk: boolean | null;
+}
+let runtime: EdgeRuntime | null = null;
+
+/** The live edge runtime (null: not an edge process, or the node is not provisioned). */
+export function getEdgeRuntime(): EdgeRuntime | null {
+  return runtime;
+}
+
+/** What the node needs from the environment (all non-secret but the credential, which only comes from a file). */
+export interface EdgeNodeEnv {
+  centralUrl: string;
+  credential: string;
+  nodeId: number;
+  /** this node's credential id (edge_node_credentials.id, from the provisioning bundle) — R-10-f */
+  credentialId: number;
+  /** the provisioning pin file (EdgeTrustStore.fromPinFile) */
+  pinFile: string;
+  journalDir: string;
+  requestTimeoutMs: number;
+  journalMaxBytes?: number;
+}
+
+/**
+ * EDGE_CENTRAL_URL + EDGE_NODE_CREDENTIAL_FILE + EDGE_CENTRAL_NODE_ID + EDGE_CENTRAL_CREDENTIAL_ID + EDGE_KEYSET_PIN_FILE
+ * (+ EDGE_JOURNAL_DIR, EDGE_JOURNAL_MAX_BYTES, EDGE_REQUEST_TIMEOUT_MS), or why not.
+ */
+export async function edgeNodeEnv(env: NodeJS.ProcessEnv = process.env): Promise<EdgeNodeEnv | { error: string }> {
+  const { edgeCentralUrlFromEnv, readEdgeNodeCredential } = await import("./edgeExecutionAgent");
+  const u = edgeCentralUrlFromEnv(env);
+  if ("error" in u) return u;
+  const c = await readEdgeNodeCredential(env);
+  if ("error" in c) return c;
+  const nodeId = Number.parseInt(String(env.EDGE_CENTRAL_NODE_ID ?? ""), 10);
+  if (!Number.isSafeInteger(nodeId) || nodeId <= 0 || String(nodeId) !== String(env.EDGE_CENTRAL_NODE_ID ?? "").trim()) {
+    return { error: "EDGE_CENTRAL_NODE_ID (this node's edge_nodes id, from the provisioning bundle) is not a positive integer" };
+  }
+  const credRaw = String(env.EDGE_CENTRAL_CREDENTIAL_ID ?? "").trim();
+  const credentialId = Number.parseInt(credRaw, 10);
+  if (!Number.isSafeInteger(credentialId) || credentialId <= 0 || String(credentialId) !== credRaw) {
+    return { error: "EDGE_CENTRAL_CREDENTIAL_ID (the id of this node's credential, from the provisioning bundle) is not a positive integer" };
+  }
+  const pinFile = String(env.EDGE_KEYSET_PIN_FILE ?? "").trim();
+  if (!pinFile) return { error: "EDGE_KEYSET_PIN_FILE (the keyset pin from `edge-signing-key.ts pin`) is not set" };
+  try {
+    await fs.access(pinFile);
+  } catch {
+    return { error: "EDGE_KEYSET_PIN_FILE cannot be read" };
+  }
+  const t = Number.parseInt(String(env.EDGE_REQUEST_TIMEOUT_MS ?? ""), 10);
+  const mb = Number.parseInt(String(env.EDGE_JOURNAL_MAX_BYTES ?? ""), 10);
+  return {
+    centralUrl: u.url,
+    credential: c.credential,
+    nodeId,
+    credentialId,
+    pinFile: path.resolve(pinFile),
+    journalDir: path.resolve(env.EDGE_JOURNAL_DIR?.trim() || "./data/edge-journal"),
+    requestTimeoutMs: Number.isFinite(t) ? Math.min(60_000, Math.max(500, t)) : 10_000,
+    ...(Number.isFinite(mb) && mb > 0 ? { journalMaxBytes: mb } : {}),
+  };
+}
+
+/** Build the runtime: journal → client → trust + config (central, else the verified cache) → ports. Throws on a refused pin. */
+export async function createEdgeRuntime(n: EdgeNodeEnv, opts: { fetchImpl?: typeof fetch } = {}): Promise<EdgeRuntime> {
+  const journal = await EdgeJournal.open({ dir: n.journalDir, maxBytes: n.journalMaxBytes });
+  const client = new EdgeCentralClient({ centralUrl: n.centralUrl, credential: n.credential, requestTimeoutMs: n.requestTimeoutMs, fetchImpl: opts.fetchImpl });
+  const config = await EdgeConfigSource.create({ client, pinFile: n.pinFile, nodeId: n.nodeId, credentialId: n.credentialId, credential: n.credential, dir: n.journalDir });
+  const fetched = await config.refresh();
+  if (!fetched.ok) {
+    console.warn(`[EdgeGateway] config from central not available (${fetched.reason}) — trying the verified cache`);
+    if (!(await config.loadCached())) console.warn("[EdgeGateway] NO verified config: no device is started until central answers");
+  }
+  journal.setConfigHash(config.hash());
+  let shipper: EdgeStreamShipper;
+  const sink = createEdgeReportSink(journal, (s) => shipper.nudge(s));
+  shipper = new EdgeStreamShipper(journal, client);
+  const programChecks = new EdgeProgramChecks({ config, client });
+  const authorize = createEdgeAuthorizeClient({
+    client,
+    trust: () => config.trust(),
+    credentialId: () => config.credentialId(),
+    maxTtlMs: () => config.limits()?.authTtlMs ?? 10_000,
+    isJtiConsumed: (jti) => journal.isJtiConsumed(jti),
+    programChecks: () => programChecks.latest(),
+    anomaly: (code, runId, detail) => void sink.event({ kind: "anomaly", code, runId, detail: detail.slice(0, 1_000), at: Date.now() }),
+  });
+  return { nodeId: n.nodeId, client, config, journal, shipper, sink, consume: createEdgeJournalConsume(journal), authorize, programChecks, startedAtMs: Date.now(), lastHeartbeatOk: null };
+}
+
 // ── health / degraded ──────────────────────────────────────────────────────────
 
 export interface EdgeGatewayHealth {
   nodeCode: string;
-  /** online when central reachable AND nothing buffered; else degraded. */
+  /** online when central + UNS reachable, nothing buffered and the journal healthy; else degraded. */
   status: "online" | "degraded";
+  /** the UNS broker (northbound telemetry publish) */
   centralReachable: boolean;
+  /** the node protocol (last HTTP heartbeat answered); null before the first one / not provisioned */
+  nodeProtocolReachable: boolean | null;
   /** Samples buffered for northbound UNS replay (central-unreachable backlog). */
   unsBuffered: number;
-  /** Rows buffered for the DB store-and-forward (DB-down backlog). */
+  /** Rows buffered by the telemetry store-and-forward (central-unreachable backlog). */
   dbBuffered: number;
   activeAdapters: number;
+  journal: { epoch: string; backlog: number; bytes: number; full: boolean; healthy: boolean } | null;
+  configVersion: number | null;
   version: string;
   ts: string;
 }
 
-/**
- * Compute the current edge-gateway health. DEGRADED when central is unreachable OR
- * either buffer (UNS / DB) has a backlog — so the heartbeat honestly reflects an
- * autonomous-but-degraded edge. Never throws.
- */
+/** Current health. Never throws. */
 export async function getEdgeGatewayHealth(): Promise<EdgeGatewayHealth> {
   let unsBuffered = 0;
   let dbBuffered = 0;
@@ -260,46 +365,30 @@ export async function getEdgeGatewayHealth(): Promise<EdgeGatewayHealth> {
     /* otManager unavailable */
   }
   const reachable = await centralReachable();
-  const degraded = !reachable || unsBuffered > 0 || dbBuffered > 0;
+  const rt = runtime;
+  const j = rt?.journal.stats() ?? null;
+  const degraded = !reachable || unsBuffered > 0 || dbBuffered > 0 || (rt !== null && (rt.lastHeartbeatOk === false || !j?.healthy || j.full || rt.config.current() === null));
   return {
-    nodeCode: edgeNodeCode(),
+    nodeCode: rt?.config.current()?.node.code ?? edgeNodeCode(),
     status: degraded ? "degraded" : "online",
     centralReachable: reachable,
+    nodeProtocolReachable: rt?.lastHeartbeatOk ?? null,
     unsBuffered,
     dbBuffered,
     activeAdapters,
+    journal: j ? { epoch: j.epoch, backlog: j.backlog, bytes: j.bytes, full: j.full, healthy: j.healthy } : null,
+    configVersion: rt?.config.current()?.configVersion ?? null,
     version: edgeGatewayVersion(),
     ts: new Date().toISOString(),
   };
 }
 
-// ── registry + heartbeat + drain loops ─────────────────────────────────────────
+// ── heartbeat (HTTP, node credential) + drain loops ────────────────────────────
 
 let heartbeatTimer: NodeJS.Timeout | null = null;
 let drainTimer: NodeJS.Timeout | null = null;
-let registered = false;
-
-/** Register this gateway into the edge_nodes registry (best-effort, idempotent upsert). */
-export async function registerSelf(): Promise<void> {
-  try {
-    const { registerNode } = await import("./edgeCoordinator");
-    const res = await registerNode({
-      code: edgeNodeCode(),
-      name: edgeNodeName(),
-      factoryCode: edgeFactoryCode(),
-      assignedLineCodes: edgeLineCodes(),
-      version: edgeGatewayVersion(),
-    });
-    registered = res.ok;
-    if (!res.ok) {
-      console.warn(`[EdgeGateway] registerNode not applied: ${res.message ?? "(disabled)"} — heartbeat will retry.`);
-    } else {
-      console.log(`[EdgeGateway] registered as edge node "${edgeNodeCode()}"`);
-    }
-  } catch (err) {
-    console.warn("[EdgeGateway] registerSelf failed:", (err as Error)?.message || err);
-  }
-}
+let programTimer: NodeJS.Timeout | null = null;
+let liveRunsOf: () => { live: number; max: number } = () => ({ live: 0, max: 1 });
 
 /** Write a liveness marker (mtime = last heartbeat) for a no-HTTP container healthcheck. */
 async function writeLiveness(health: EdgeGatewayHealth): Promise<void> {
@@ -312,27 +401,37 @@ async function writeLiveness(health: EdgeGatewayHealth): Promise<void> {
   }
 }
 
-/** One heartbeat: register-if-needed, report health (online/degraded), refresh liveness. */
+/**
+ * One heartbeat: health → POST /edge/node/heartbeat (status, version, capacity, journal, config hash in use, keyset version,
+ * wall clock, uptime). A newer configVersion ⇒ fetch + verify the config; programCheckRequested ⇒ report program checks.
+ * The node cannot rename itself or change its factory / lines (D14). Never throws.
+ */
 export async function sendHeartbeat(): Promise<EdgeGatewayHealth> {
   const health = await getEdgeGatewayHealth();
-  try {
-    if (!registered) await registerSelf();
-    const { heartbeat } = await import("./edgeCoordinator");
-    await heartbeat({
-      code: edgeNodeCode(),
-      status: health.status === "online" ? "online" : "degraded",
-      version: health.version,
-      health: {
-        centralReachable: health.centralReachable,
-        unsBuffered: health.unsBuffered,
-        dbBuffered: health.dbBuffered,
-        activeAdapters: health.activeAdapters,
-        ts: health.ts,
-      },
+  const rt = runtime;
+  if (rt) {
+    const j = rt.journal.stats();
+    const cap = liveRunsOf();
+    const r = await rt.client.post("heartbeat", {
+      protocolVersion: EDGE_PROTOCOL_VERSION,
+      status: health.status,
+      version: health.version.slice(0, 64) || "unknown",
+      capacity: { liveRuns: cap.live, maxRuns: Math.max(1, cap.max) },
+      journal: { epoch: j.epoch, backlog: j.backlog, bytes: j.bytes, full: j.full },
+      configHash: rt.config.hash(),
+      keysetVersion: rt.config.trust().version,
+      wallClockMs: Date.now(),
+      uptimeMs: Math.max(0, Date.now() - rt.startedAtMs),
     });
-  } catch (err) {
-    // Central unreachable → heartbeat fails; that is itself the degraded signal. Never throw.
-    console.warn("[EdgeGateway] heartbeat send failed (central unreachable?):", (err as Error)?.message || err);
+    if (r.ok !== rt.lastHeartbeatOk) console.warn(r.ok ? "[EdgeGateway] heartbeat answered — central reachable" : `[EdgeGateway] heartbeat failed (HTTP ${r.status || "network"}${r.code ? ` ${r.code}` : ""}) — degraded`);
+    rt.lastHeartbeatOk = r.ok;
+    if (r.ok) {
+      if (r.data.configVersion > rt.config.version() || r.data.keysetVersion > rt.config.trust().version) {
+        await rt.config.refresh();
+        rt.journal.setConfigHash(rt.config.hash());
+      }
+      if (r.data.programCheckRequested) void rt.programChecks.report().catch(() => undefined);
+    }
   }
   await writeLiveness(health);
   return health;
@@ -345,7 +444,7 @@ function startHeartbeatLoop(): void {
     void sendHeartbeat();
   }, intervalMs);
   if (typeof heartbeatTimer.unref === "function") heartbeatTimer.unref();
-  console.log(`[EdgeGateway] heartbeat loop started (every ${intervalMs}ms) as "${edgeNodeCode()}"`);
+  console.log(`[EdgeGateway] heartbeat loop started (every ${intervalMs}ms)`);
 }
 
 function startDrainLoop(): void {
@@ -364,115 +463,134 @@ function startDrainLoop(): void {
           if (r.drained > 0)
             console.log(`[EdgeGateway] UNS backfill drained ${r.drained} sample(s); remaining=${r.remaining}`);
         }
+        // doc 81 Đợt 10 E — telemetry buffered while central was down drains through the HTTP insert function
+        if (runtime && sf.storeForwardEnabled() && sf.bufferedCount() > 0) await sf.backfill();
       } catch (err) {
-        console.error("[EdgeGateway] UNS drain failed:", (err as Error)?.message || err);
+        console.error("[EdgeGateway] drain failed:", (err as Error)?.message || err);
       } finally {
         draining = false;
       }
     })();
   }, intervalMs);
   if (typeof drainTimer.unref === "function") drainTimer.unref();
-  console.log(`[EdgeGateway] UNS backfill drain loop started (every ${intervalMs}ms)`);
+  console.log(`[EdgeGateway] backfill drain loop started (every ${intervalMs}ms)`);
 }
 
-// ── config-as-code (GitOps) ─────────────────────────────────────────────────────
-
-export interface EdgeNodeConfig {
-  node?: { code?: string; name?: string; factoryCode?: string; lineCodes?: string[]; version?: string };
-  /** Optional directory of contracts/mappings/*.mapping.yaml to APPLY on start (GitOps). */
-  mappingsDir?: string;
-  /** When true, mapping import runs for real (default false = dry-run/log only). */
-  applyMappings?: boolean;
+function startProgramReportLoop(rt: EdgeRuntime): void {
+  if (programTimer) return;
+  const ms = rt.config.limits()?.programReportMs ?? (Number.parseInt(process.env.EDGE_PROGRAM_REPORT_MS ?? "", 10) || 30_000);
+  programTimer = setInterval(() => void rt.programChecks.report().catch(() => undefined), Math.max(1_000, ms));
+  if (typeof programTimer.unref === "function") programTimer.unref();
 }
 
-/**
- * Load the GitOps edge-node config file (EDGE_GATEWAY_CONFIG_FILE, YAML) and apply
- * its identity/scope to process.env (env still wins if already set). OPTIONAL: with
- * no file this is a no-op (env-only config). Never throws — a bad config file logs +
- * continues with env. The adapter CONNECTION config remains sourced from the DB Asset
- * Registry (spec §6); config-as-code here covers node identity + declarative tag
- * mappings (mappingAsCode, W2-B3).
- */
-export async function loadEdgeConfig(): Promise<EdgeNodeConfig | null> {
-  const file = process.env.EDGE_GATEWAY_CONFIG_FILE?.trim();
-  if (!file) return null;
-  let cfg: EdgeNodeConfig;
-  try {
-    const raw = await fs.readFile(path.resolve(file), "utf8");
-    const { parse } = await import("yaml");
-    const parsed = parse(raw) as EdgeNodeConfig | null;
-    if (!parsed || typeof parsed !== "object") {
-      console.warn(`[EdgeGateway] config file "${file}" is empty/invalid — using env config.`);
-      return null;
-    }
-    cfg = parsed;
-  } catch (err) {
-    console.warn(`[EdgeGateway] failed to read config "${file}":`, (err as Error)?.message || err);
-    return null;
-  }
-  // Identity/scope → env (env already-set wins, so operator overrides hold).
-  const n = cfg.node ?? {};
-  if (n.code && !process.env.EDGE_GATEWAY_NODE_CODE) process.env.EDGE_GATEWAY_NODE_CODE = n.code;
-  if (n.name && !process.env.EDGE_GATEWAY_NODE_NAME) process.env.EDGE_GATEWAY_NODE_NAME = n.name;
-  if (n.factoryCode && !process.env.EDGE_GATEWAY_FACTORY_CODE) process.env.EDGE_GATEWAY_FACTORY_CODE = n.factoryCode;
-  if (n.lineCodes?.length && !process.env.EDGE_GATEWAY_LINE_CODES)
-    process.env.EDGE_GATEWAY_LINE_CODES = n.lineCodes.join(",");
-  if (n.version && !process.env.EDGE_GATEWAY_VERSION) process.env.EDGE_GATEWAY_VERSION = n.version;
-
-  // Declarative tag mappings (GitOps) — reuse mappingAsCode (W2-B3). Best-effort.
-  if (cfg.mappingsDir) {
-    try {
-      await applyMappingDir(cfg.mappingsDir, cfg.applyMappings === true);
-    } catch (err) {
-      console.warn("[EdgeGateway] mapping import failed:", (err as Error)?.message || err);
-    }
-  }
-  console.log(`[EdgeGateway] loaded GitOps config from "${file}"`);
-  return cfg;
+/** Group D's device runtime: the verified config, the journal, the trust inputs of the edge authorisation verifier. */
+async function installDeviceRuntime(rt: EdgeRuntime): Promise<void> {
+  const { installEdgeDeviceRuntime } = await import("./edgeDeviceRuntime");
+  await installEdgeDeviceRuntime({
+    nodeId: rt.nodeId,
+    config: () => rt.config.current(),
+    journal: rt.journal,
+    auth: () =>
+      rt.config.current() === null
+        ? null
+        : {
+            trust: rt.config.trust(),
+            credentialId: rt.config.credentialId(),
+            maxTtlMs: rt.config.limits()?.authTtlMs ?? 10_000,
+            pendingNonce: (n: string) => {
+              const t = rt.authorize.nonceSentAt(n);
+              return t === null ? null : { sentMonoMs: t };
+            },
+            nowMonoMs: () => rt.client.monoNow(),
+          },
+  });
 }
 
-/** Import every *.mapping.yaml from a directory (dry-run unless apply). Best-effort per file. */
-async function applyMappingDir(dir: string, apply: boolean): Promise<void> {
-  const resolved = path.resolve(dir);
-  let names: string[];
-  try {
-    names = await fs.readdir(resolved);
-  } catch {
-    console.warn(`[EdgeGateway] mappingsDir "${dir}" not found — skipping.`);
-    return;
-  }
-  const { importMapping } = await import("../ot/mappingAsCode");
-  for (const name of names.filter((f) => f.endsWith(".mapping.yaml")).sort()) {
-    try {
-      const yamlText = await fs.readFile(path.join(resolved, name), "utf8");
-      const res = await importMapping(yamlText, { dryRun: !apply, source: "system", actorName: "edge-gateway gitops" });
-      console.log(
-        `[EdgeGateway] mapping "${name}": ${res.dryRun ? "dry-run" : "applied"} changeCount=${res.diff.changeCount}` +
-          (res.requiresAdapterRestart ? " (requiresAdapterRestart)" : ""),
-      );
-    } catch (err) {
-      console.warn(`[EdgeGateway] mapping "${name}" import error:`, (err as Error)?.message || err);
-    }
-  }
+/** The node's robots from the VERIFIED config (group D's edge mode of robotManager), lock + state into the journal. */
+async function startEdgeRobots(rt: EdgeRuntime): Promise<void> {
+  const cfg = rt.config.current();
+  if (!cfg) return;
+  await import("../robot"); // registers the robot drivers (side effect), as "../ot" does for OT
+  const [{ startRobots }, { runtimeRobotsFromConfig }, { attachEdgeMotionLockPersistence }, streams] = await Promise.all([
+    import("../robot/robotManager"),
+    import("../robot/robotAdapter"),
+    import("../robot/robotMotionLockStore"),
+    import("./edgeStreams"),
+  ]);
+  await startRobots({
+    configRobots: runtimeRobotsFromConfig(cfg.robots),
+    stateSink: (robot, st) => void rt.sink.robotState(streams.robotStateToRecord(robot.id, st)).catch(() => undefined),
+    attachLock: (robot, lock) => {
+      const row = rt.config.robot(robot.id);
+      if (!row) throw new Error(`robot ${robot.id} is not in the verified config`);
+      const seed = streams.edgeMotionLockSeed(rt.journal, row);
+      const persistence = streams.edgeMotionLockPersistence(rt.sink, robot.id, () => rt.config.robot(robot.id)?.ownerEpoch ?? row.ownerEpoch);
+      attachEdgeMotionLockPersistence(robot.id, lock, seed, persistence, { announce: seed.source === "unknown" || seed.source === "ownerChanged" || seed.source === "config" });
+    },
+  });
+}
+
+/** A stable key of what the OT manager runs (adapter set + their config versions) — a change restarts OT. */
+function adapterKey(c: EdgeConfigSnapshot | null): string {
+  return JSON.stringify((c?.adapters ?? []).map((a) => [a.id, a.updatedAt, a.connectionFingerprint, a.isEnabled, a.ownerEpoch, a.tags.map((t) => [t.id, t.updatedAt])]));
 }
 
 // ── bootstrap / run / stop ──────────────────────────────────────────────────────
 
 export interface EdgeGatewayHandles {
   stop: () => Promise<void>;
+  runtime: EdgeRuntime | null;
+}
+
+export interface EdgeGatewayBootOptions {
+  /** test / integration seam: the walker (default: group C's driveEdgeRunFromPackage, resolved at runtime) */
+  walker?: EdgeWalker | null;
+  /** test / integration seam: the device port of central commands (default: the interim driver port) */
+  devices?: EdgeDevicePort;
+  fetchImpl?: typeof fetch;
 }
 
 /**
- * Wire and start the edge gateway WITHOUT holding the event loop open (testable): load
- * GitOps config, restore the UNS WAL, wire the replay transport, init the UNS publisher
- * (northbound), start OT (southbound), register self, start heartbeat + drain loops.
- * NO HTTP / socket / MQTT-broker bind. Every step is fault-isolated.
+ * Wire and start the edge gateway WITHOUT holding the event loop open (testable). Order (design §4 E):
+ *   config (verified from central, else the verified cache) → sources (adapter source, telemetry insert function +
+ *   store-forward, both HTTP) → UNS publisher → OT → robots → agent (commands always; runs iff EDGE_EXECUTION_ENABLED) →
+ *   heartbeat / shipping / program-check / drain loops.
+ * Not provisioned (no credential / node id / pin) ⇒ NO device is started (fail-closed) — only the UNS bridge and the
+ * liveness marker. No HTTP / socket / MQTT-broker bind; no DB.
  */
-export async function bootstrapEdgeGateway(): Promise<EdgeGatewayHandles> {
+export async function bootstrapEdgeGateway(opts: EdgeGatewayBootOptions = {}): Promise<EdgeGatewayHandles> {
   // The edge entrypoint IS the edge gateway → ensure edge mode unless explicitly off.
   if (process.env.EDGE_GATEWAY_MODE == null) process.env.EDGE_GATEWAY_MODE = "true";
+  if (process.env.EDGE_GATEWAY_CONFIG_FILE?.trim()) {
+    console.warn("[EdgeGateway] EDGE_GATEWAY_CONFIG_FILE is ignored: identity, devices and mappings come from central's signed config (mapping-as-code is a central CLI, D13)");
+  }
 
-  await loadEdgeConfig();
+  // 1) config
+  const n = await edgeNodeEnv();
+  if ("error" in n) {
+    console.error(`[EdgeGateway] node NOT provisioned (${n.error}) — no device is started (fail-closed)`);
+  } else {
+    try {
+      runtime = await createEdgeRuntime(n, { fetchImpl: opts.fetchImpl });
+    } catch (err) {
+      console.error(`[EdgeGateway] edge runtime not started (${(err as Error)?.message ?? err}) — no device is started (fail-closed)`);
+      runtime = null;
+    }
+  }
+  const rt = runtime;
+
+  // 2) sources — the edge's OT adapters + telemetry go through central over HTTP, never a DB
+  if (rt) {
+    const [{ setAdapterSource }, { createDriver }, bus] = await Promise.all([import("../ot/deviceAdapter"), import("../ot/driverRegistry"), import("../telemetryBus")]);
+    setAdapterSource(async () => {
+      const c = rt.config.current();
+      return c ? configAdaptersToRuntime(c, createDriver) : [];
+    });
+    bus.setTelemetryPersistFn(edgeTelemetryPersistFn(rt.client));
+    if (process.env.OT_STORE_FORWARD_ENABLED == null) process.env.OT_STORE_FORWARD_ENABLED = "true";
+    if (process.env.OT_STORE_FORWARD_FILE == null) process.env.OT_STORE_FORWARD_FILE = path.join(rt.journal.dir, "ot-store-forward.jsonl");
+    await bus.wireStoreForward();
+  }
 
   // Restore any UNS backlog persisted before a restart, then wire the replay transport.
   try {
@@ -492,55 +610,104 @@ export async function bootstrapEdgeGateway(): Promise<EdgeGatewayHandles> {
     console.error("[EdgeGateway] UNS publisher init failed:", (err as Error)?.message || err);
   }
 
-  // Southbound: OT adapters (gated by OT_GATEWAY_ENABLED). Reuses otManager verbatim.
-  try {
-    const { startOt } = await import("../ot");
-    await startOt();
-  } catch (err) {
-    console.error("[EdgeGateway] OT start failed:", (err as Error)?.message || err);
+  if (rt) {
+    // the device front ends (group D: otEdgeDispatch / robotEdgeDispatch) + the safety-PLC config sources read THIS runtime
+    try {
+      await installDeviceRuntime(rt);
+    } catch (err) {
+      console.error("[EdgeGateway] edge device runtime not installed (non-STOP edge commands are refused):", (err as Error)?.message || err);
+    }
   }
 
-  await registerSelf();
-  startHeartbeatLoop();
-  startDrainLoop();
-
-  // doc 81 Đợt 9 task S3 — RUN EXECUTION (owner decision 2026-10-12): flag EDGE_EXECUTION_ENABLED (default OFF) + this node's
-  // own credential + the central URL; anything missing ⇒ nothing is started (said once). The robot gateway is started with it
-  // (gated by ROBOT_GATEWAY_ENABLED as everywhere) so the edge's own dispatchers reach this line's robots.
-  // doc 81 Đợt 9 final wave F1 (final review I1) — ONLY this node's robots (its line codes / factory; none configured ⇒ none),
-  // and their state is NOT ingested here (central is the one ingest owner: an e-stop is never recorded twice). Motion on the
-  // edge also honours the motion lock central persisted (robotSharedMotionLockGate, read before every non-STOP motion).
-  if (process.env.EDGE_EXECUTION_ENABLED === "true" || process.env.EDGE_EXECUTION_ENABLED === "1") {
+  if (rt && rt.config.current()) {
+    // 3) OT (gated by OT_GATEWAY_ENABLED) — only this node's adapters, from the verified config
     try {
-      const { startRobots } = await import("../robot/robotManager");
-      await startRobots(edgeRobotStartOptions());
+      const { startOt } = await import("../ot");
+      await startOt();
+    } catch (err) {
+      console.error("[EdgeGateway] OT start failed:", (err as Error)?.message || err);
+    }
+    let otKey = adapterKey(rt.config.current());
+    rt.config.onChange((c) => {
+      const k = adapterKey(c);
+      if (k === otKey) return;
+      otKey = k;
+      void (async () => {
+        console.log("[EdgeGateway] owned adapters changed in the config — restarting OT");
+        const ot = await import("../ot");
+        await ot.stopOt();
+        await ot.startOt();
+      })().catch((err) => console.error("[EdgeGateway] OT restart failed:", (err as Error)?.message || err));
+    });
+    // 4) robots (gated by ROBOT_GATEWAY_ENABLED) — only this node's, from the verified config: lock authority seeded from the
+    //    journal ⊕ the mirrored row ⊕ the floor (never backwards; unknown ⇒ locked persistUnknown), lock transitions and robot
+    //    state go to the journal (→ central), no DB anywhere (group D's robotManager edge mode)
+    try {
+      await startEdgeRobots(rt);
     } catch (err) {
       console.error("[EdgeGateway] robot start failed:", (err as Error)?.message || err);
     }
-    try {
-      const { startEdgeExecutionFromEnv } = await import("./edgeExecutionAgent");
-      await startEdgeExecutionFromEnv();
-    } catch (err) {
-      console.error("[EdgeGateway] run execution not started:", (err as Error)?.message || err);
-    }
   }
 
-  return { stop: stopEdgeGateway };
+  if (rt) {
+    // 5) agent: commands (STOP / lock / clear) always; claims runs only with EDGE_EXECUTION_ENABLED + FOE
+    try {
+      const agentMod = await import("./edgeExecutionAgent");
+      const exec = await agentMod.edgeExecutionConfigFromEnv();
+      const claimRuns = !("error" in exec);
+      if (!claimRuns) console.log(`[EdgeExec] run execution NOT started: ${(exec as { error: string }).error} — central commands (STOP / lock / clear) are still handled`);
+      const cfg = claimRuns
+        ? { ...exec, fetchImpl: opts.fetchImpl }
+        : { centralUrl: n && !("error" in n) ? n.centralUrl : "", credential: "", pullIntervalMs: 5_000, progressMs: 2_000, maxConcurrent: 1, requestTimeoutMs: 10_000, stopResendMinMs: 10_000, claimRuns: false };
+      let walker: EdgeWalker | null = null;
+      if (claimRuns) {
+        if (opts.walker !== undefined) walker = opts.walker;
+        else {
+          try {
+            walker = await agentMod.loadDefaultEdgeWalker();
+          } catch (err) {
+            console.error("[EdgeExec] walker unavailable:", (err as Error)?.message || err);
+          }
+        }
+      }
+      const hashDefinition = await agentMod.defaultEdgeHashDefinition();
+      const a = await agentMod.startEdgeExecution(cfg, {
+        client: rt.client,
+        config: rt.config,
+        journal: rt.journal,
+        shipper: rt.shipper,
+        sink: rt.sink,
+        consume: rt.consume,
+        authorize: rt.authorize,
+        programChecks: rt.programChecks,
+        walker,
+        devices: opts.devices ?? agentMod.defaultEdgeDevicePort(rt.config),
+        hashDefinition,
+      });
+      if (a) liveRunsOf = () => ({ live: a.liveRunIds().length, max: claimRuns ? cfg.maxConcurrent : 1 });
+    } catch (err) {
+      console.error("[EdgeGateway] edge agent not started:", (err as Error)?.message || err);
+    }
+    rt.shipper.start(rt.config.limits()?.pullMs ?? 2_000);
+    startProgramReportLoop(rt);
+  }
+
+  await sendHeartbeat();
+  startHeartbeatLoop();
+  startDrainLoop();
+
+  return { stop: stopEdgeGateway, runtime: rt };
 }
 
 let shuttingDown = false;
 
 /** Stop everything the edge gateway started (idempotent + non-throwing). */
 export async function stopEdgeGateway(): Promise<void> {
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-  }
-  if (drainTimer) {
-    clearInterval(drainTimer);
-    drainTimer = null;
-  }
-  // doc 81 Đợt 9 task S3 — stop pulling new runs (walkers in flight finish their segment; a lost one is declared interrupted).
+  for (const t of [heartbeatTimer, drainTimer, programTimer]) if (t) clearInterval(t);
+  heartbeatTimer = null;
+  drainTimer = null;
+  programTimer = null;
+  // stop pulling new runs (walkers in flight finish their segment; a lost one is declared interrupted).
   try {
     const { stopEdgeExecution } = await import("./edgeExecutionAgent");
     await stopEdgeExecution();
@@ -563,6 +730,20 @@ export async function stopEdgeGateway(): Promise<void> {
   } catch {
     /* best-effort */
   }
+  if (runtime) {
+    try {
+      const { stopRobots } = await import("../robot/robotManager");
+      await stopRobots();
+    } catch {
+      /* best-effort */
+    }
+    try {
+      const { _resetEdgeDeviceRuntimeForTests } = await import("./edgeDeviceRuntime");
+      await _resetEdgeDeviceRuntimeForTests();
+    } catch {
+      /* best-effort */
+    }
+  }
   try {
     const pub = await import("../unsPublisher");
     await pub.publishNdeathGraceful();
@@ -570,7 +751,25 @@ export async function stopEdgeGateway(): Promise<void> {
   } catch {
     /* best-effort */
   }
-  registered = false;
+  const rt = runtime;
+  runtime = null;
+  liveRunsOf = () => ({ live: 0, max: 1 });
+  if (rt) {
+    try {
+      await rt.shipper.stop();
+      await rt.shipper.flushAll();
+    } catch {
+      /* best-effort */
+    }
+    await rt.journal.close().catch(() => undefined);
+    try {
+      const [{ setAdapterSource }, bus] = await Promise.all([import("../ot/deviceAdapter"), import("../telemetryBus")]);
+      setAdapterSource(null);
+      bus.setTelemetryPersistFn(null);
+    } catch {
+      /* best-effort */
+    }
+  }
 }
 
 /**
@@ -578,8 +777,9 @@ export async function stopEdgeGateway(): Promise<void> {
  * the event loop open and installs graceful-shutdown handlers. Mirrors worker.ts.
  */
 export async function runEdgeGateway(): Promise<void> {
-  console.log("[EdgeGateway] Starting edge gateway (SYNAPSE Tầng-1 §5 — no HTTP listener).");
-  console.log(`[EdgeGateway] node="${edgeNodeCode()}" version=${edgeGatewayVersion()} edgeMode=${edgeGatewayModeEnabled()}`);
+  console.log("[EdgeGateway] Starting edge gateway (SYNAPSE Tầng-1 §5 — no HTTP listener, no central DB).");
+  console.log(`[EdgeGateway] version=${edgeGatewayVersion()} edgeMode=${edgeGatewayModeEnabled()} role=${process.env.AVI_PROCESS_ROLE ?? "(unset)"}`);
+  if (process.env.DATABASE_URL) console.warn("[EdgeGateway] DATABASE_URL is set on this edge host — it is NOT used (AVI_PROCESS_ROLE=edge); remove it from the edge environment");
 
   // Observability bootstrap (Sentry/OTel) — no-op unless configured (parity w/ worker).
   try {
@@ -621,15 +821,12 @@ export async function runEdgeGateway(): Promise<void> {
 
 /** Test-only reset of module-level loop/registry state. */
 export function _resetForTests(): void {
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-  }
-  if (drainTimer) {
-    clearInterval(drainTimer);
-    drainTimer = null;
-  }
-  registered = false;
+  for (const t of [heartbeatTimer, drainTimer, programTimer]) if (t) clearInterval(t);
+  heartbeatTimer = null;
+  drainTimer = null;
+  programTimer = null;
   shuttingDown = false;
   reachabilityProbe = null;
+  runtime = null;
+  liveRunsOf = () => ({ live: 0, max: 1 });
 }
