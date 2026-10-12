@@ -5,6 +5,7 @@
  * stream, and records every call. Handlers can be overridden per route; "network" simulates central being unreachable.
  */
 import { createHash, randomUUID } from "node:crypto";
+import { adapterTargetFingerprint } from "../ot/adapterTarget";
 import {
   EDGE_NODE_ROUTES,
   EDGE_PROTOCOL_VERSION,
@@ -88,7 +89,8 @@ export class FakeCentral {
           connectionOptions: null,
           pollIntervalMs: 100,
           isEnabled: true,
-          connectionFingerprint: "f".repeat(64),
+          // the SAME fingerprint rule central uses (adapterTarget) — D's pinned STOP compares it to the running connection
+          connectionFingerprint: adapterTargetFingerprint({ protocol: "stub", endpoint: "stub://plc-21", machineId: 5, connectionOptions: null }),
           ownerEpoch: 2,
           updatedAt: 1,
           tags: [

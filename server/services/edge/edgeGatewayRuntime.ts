@@ -511,19 +511,10 @@ async function installDeviceRuntime(rt: EdgeRuntime): Promise<void> {
   });
 }
 
-/** The node's robots from the VERIFIED config (group D's edge mode of robotManager), lock + state into the journal. */
-async function startEdgeRobots(rt: EdgeRuntime): Promise<void> {
-  const cfg = rt.config.current();
-  if (!cfg) return;
-  await import("../robot"); // registers the robot drivers (side effect), as "../ot" does for OT
-  const [{ startRobots }, { runtimeRobotsFromConfig }, { attachEdgeMotionLockPersistence }, streams] = await Promise.all([
-    import("../robot/robotManager"),
-    import("../robot/robotAdapter"),
-    import("../robot/robotMotionLockStore"),
-    import("./edgeStreams"),
-  ]);
-  await startRobots({
-    configRobots: runtimeRobotsFromConfig(cfg.robots),
+/** The per-robot edge options (group D's robotManager edge mode): robot state + lock transitions into the journal. */
+async function edgeRobotStartExtras(rt: EdgeRuntime): Promise<{ stateSink: (robot: { id: number }, st: import("../robot/robotDriver").RobotState) => void; attachLock: (robot: { id: number }, lock: import("../robot/robotDriver").MotionLock) => void }> {
+  const [{ attachEdgeMotionLockPersistence }, streams] = await Promise.all([import("../robot/robotMotionLockStore"), import("./edgeStreams")]);
+  return {
     stateSink: (robot, st) => void rt.sink.robotState(streams.robotStateToRecord(robot.id, st)).catch(() => undefined),
     attachLock: (robot, lock) => {
       const row = rt.config.robot(robot.id);
@@ -532,107 +523,240 @@ async function startEdgeRobots(rt: EdgeRuntime): Promise<void> {
       const persistence = streams.edgeMotionLockPersistence(rt.sink, robot.id, () => rt.config.robot(robot.id)?.ownerEpoch ?? row.ownerEpoch);
       attachEdgeMotionLockPersistence(robot.id, lock, seed, persistence, { announce: seed.source === "unknown" || seed.source === "ownerChanged" || seed.source === "config" });
     },
-  });
+  };
+}
+
+/** The node's robots from the VERIFIED config (group D's edge mode of robotManager), lock + state into the journal. */
+async function startEdgeRobots(rt: EdgeRuntime): Promise<void> {
+  const cfg = rt.config.current();
+  if (!cfg) return;
+  await import("../robot"); // registers the robot drivers (side effect), as "../ot" does for OT
+  const [{ startRobots }, { runtimeRobotsFromConfig }] = await Promise.all([import("../robot/robotManager"), import("../robot/robotAdapter")]);
+  await startRobots({ configRobots: runtimeRobotsFromConfig(cfg.robots), ...(await edgeRobotStartExtras(rt)) });
 }
 
 /** What runs here now (the reconciler's memory). */
 const devices = {
   started: false,
-  otKey: "",
-  robotKey: "",
-  robotIds: new Set<number>(),
-  /** per robot: what its session was started from (owner epoch, version, endpoint, vendor) */
+  /** per adapter: the VERIFIED config row its session was started from (its STOP pins on release) + its key */
+  adapters: new Map<number, { row: EdgeConfigSnapshot["adapters"][number]; key: string }>(),
+  /** per robot: what its session was started from (owner epoch, endpoint, vendor, options) */
   robotKeys: new Map<number, string>(),
   chain: Promise.resolve() as Promise<unknown>,
+  retry: null as NodeJS.Timeout | null,
   robotCount(): number {
-    return this.robotIds.size;
+    return this.robotKeys.size;
   },
 };
-function robotKey(c: EdgeConfigSnapshot | null): string {
-  return JSON.stringify((c?.robots ?? []).filter((r) => r.isEnabled).map((r) => oneRobotKey(r)));
-}
+/** a robot's SESSION key — what a new session would differ in (never updatedAt alone: a renamed robot keeps its session) */
 function oneRobotKey(r: EdgeConfigSnapshot["robots"][number]): string {
-  return JSON.stringify([r.id, r.ownerEpoch, r.updatedAt, r.endpoint, r.vendor]);
+  return JSON.stringify([r.id, r.ownerEpoch, r.endpoint, r.vendor, r.connectionOptions ?? null, r.pollIntervalMs]);
+}
+function oneAdapterKey(a: EdgeConfigSnapshot["adapters"][number]): string {
+  return JSON.stringify([a.id, a.updatedAt, a.connectionFingerprint, a.ownerEpoch, a.pollIntervalMs, a.tags.map((t) => [t.id, t.updatedAt, t.isEnabled])]);
+}
+export const EDGE_RECONCILE_RETRY_MS = 10_000;
+/** EDGE_RECONCILE_RETRY_MS env (bounded 100 ms – 10 min), default 10 s */
+function reconcileRetryMs(): number {
+  const n = Number.parseInt(process.env.EDGE_RECONCILE_RETRY_MS ?? "", 10);
+  return Number.isFinite(n) ? Math.min(600_000, Math.max(100, n)) : EDGE_RECONCILE_RETRY_MS;
 }
 
 /**
- * Bring the devices in line with the VERIFIED config (serialised). Nothing without a config. OT: (re)started when the set /
- * versions of its adapters changed. Robots (§2.11 — only the authority holds a session): a robot that LEFT this node is LOCKED
- * locally first (ownershipRemoved), STOPPED through the edge dispatch, then its session is closed — never left moving; when
- * robots were added or re-assigned, the robot gateway restarts from the new config (every lock state comes back from the
- * journal). A STOP central sent for a device in the same pull ran BEFORE this (fast path).
+ * Bring the devices in line with the VERIFIED config (serialised; nothing without a config). ONE device at a time
+ * (fix review 2, N-1): an adapter / robot that changed is restarted alone, the others keep their sessions.
+ * RELEASE (R-10-ar, scan #75): a device leaves this node ONLY when a verified config omits it AND it was locked locally (robot)
+ * AND its STOP succeeded (robot abort through D's dispatch / the adapter's PINNED stop of the config it was started from).
+ * Otherwise it stays attached (and locked), a TRUTHFUL alert says what failed, and the release is retried (N-2: every failed
+ * step is retried every EDGE_RECONCILE_RETRY_MS; its key is only recorded once it succeeded). A STOP central sent for the device
+ * in the same pull ran BEFORE this (fast path).
  */
 export function reconcileDevices(rt: EdgeRuntime, why: string): Promise<unknown> {
-  devices.chain = devices.chain.then(() => reconcileOnce(rt, why)).catch((err) => console.error("[EdgeGateway] device reconcile failed:", (err as Error)?.message || err));
+  devices.chain = devices.chain
+    .then(() => reconcileOnce(rt, why))
+    .then((ok) => {
+      if (ok || devices.retry) return;
+      devices.retry = setTimeout(() => {
+        devices.retry = null;
+        if (runtime === rt) void reconcileDevices(rt, "retry");
+      }, reconcileRetryMs());
+      if (typeof devices.retry.unref === "function") devices.retry.unref();
+    })
+    .catch((err) => console.error("[EdgeGateway] device reconcile failed:", (err as Error)?.message || err));
   return devices.chain;
 }
 
-async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<void> {
+/** true ⇔ everything converged (else a retry is scheduled). */
+async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<boolean> {
   const cfg = rt.config.current();
-  if (!cfg) return;
-  const ok = adapterKey(cfg);
-  if (!devices.started || ok !== devices.otKey) {
-    devices.otKey = ok;
-    try {
-      const ot = await import("../ot");
-      if (devices.started) {
-        console.log(`[EdgeGateway] owned adapters changed (${why}) — restarting OT`);
-        await ot.stopOt();
-      }
+  if (!cfg) return true;
+  let ok = true;
+  // ── OT ──
+  try {
+    const [ot, { createDriver }] = await Promise.all([import("../ot"), import("../ot/driverRegistry")]);
+    const want = new Map(cfg.adapters.filter((a) => a.isEnabled).map((a) => [a.id, a] as const));
+    if (!devices.started) {
       await ot.startOt();
-    } catch (err) {
-      console.error("[EdgeGateway] OT start failed:", (err as Error)?.message || err);
-    }
-  }
-  const rk = robotKey(cfg);
-  if (!devices.started || rk !== devices.robotKey) {
-    devices.robotKey = rk;
-    const want = new Set(cfg.robots.filter((r) => r.isEnabled).map((r) => r.id));
-    try {
-      const rm = await import("../robot/robotManager");
-      const removed = [...devices.robotIds].filter((id) => !want.has(id));
-      for (const id of removed) await releaseRobot(rt, id, why);
-      // a robot added, or one kept whose owner epoch / version / endpoint changed ⇒ restart from the new config
-      const changed = cfg.robots.some((r) => want.has(r.id) && devices.robotKeys.get(r.id) !== oneRobotKey(r));
-      if (!devices.started || changed) {
-        if (devices.started) {
-          console.log(`[EdgeGateway] owned robots changed (${why}) — restarting the robot gateway from the new config`);
-          await rm.stopRobots();
-        }
-        await startEdgeRobots(rt);
+      for (const [id, a] of want) devices.adapters.set(id, { row: a, key: oneAdapterKey(a) });
+    } else {
+      const om = await import("../ot/otManager");
+      for (const [id, cur] of [...devices.adapters]) {
+        if (want.has(id)) continue;
+        if (await releaseAdapter(rt, cur.row, why)) devices.adapters.delete(id);
+        else ok = false;
       }
-      devices.robotIds = new Set(rm.activeRobotIds());
-      devices.robotKeys = new Map(cfg.robots.filter((r) => devices.robotIds.has(r.id)).map((r) => [r.id, oneRobotKey(r)] as const));
-    } catch (err) {
-      console.error("[EdgeGateway] robot reconcile failed:", (err as Error)?.message || err);
+      for (const [id, a] of want) {
+        const cur = devices.adapters.get(id);
+        const key = oneAdapterKey(a);
+        if (cur && cur.key === key) continue;
+        if (cur) await om.detachOtAdapter(id); // still owned: a new session from the new row (no STOP needed)
+        const [runtimeAdapter] = configAdaptersToRuntime({ ...cfg, adapters: [a] }, createDriver);
+        await om.attachOtAdapter(runtimeAdapter);
+        devices.adapters.set(id, { row: a, key });
+      }
     }
+  } catch (err) {
+    ok = false;
+    console.error("[EdgeGateway] OT reconcile failed:", (err as Error)?.message || err);
+  }
+  // ── robots ──
+  try {
+    const rm = await import("../robot/robotManager");
+    const want = new Map(cfg.robots.filter((r) => r.isEnabled).map((r) => [r.id, r] as const));
+    if (!devices.started) {
+      await startEdgeRobots(rt);
+      for (const id of rm.activeRobotIds()) if (want.has(id)) devices.robotKeys.set(id, oneRobotKey(want.get(id)!));
+    } else {
+      for (const id of [...devices.robotKeys.keys()]) {
+        if (want.has(id)) continue;
+        if (await releaseRobot(rt, id, why)) devices.robotKeys.delete(id);
+        else ok = false;
+      }
+      const changed = [...want.values()].filter((r) => devices.robotKeys.get(r.id) !== oneRobotKey(r));
+      if (changed.length > 0) {
+        const attach = (rm as unknown as { attachEdgeRobot?: (r: unknown, opts: unknown) => Promise<boolean> }).attachEdgeRobot;
+        if (typeof attach === "function") {
+          // N-1 — one session at a time (group D's per-robot edge attach)
+          for (const r of changed) {
+            if (devices.robotKeys.has(r.id)) await rm.detachRobot(r.id);
+            const [runtimeRobot] = (await import("../robot/robotAdapter")).runtimeRobotsFromConfig([r]);
+            if (runtimeRobot && (await attach(runtimeRobot, await edgeRobotStartExtras(rt)))) devices.robotKeys.set(r.id, oneRobotKey(r));
+            else ok = false;
+          }
+        } else {
+          // robotManager has no per-robot EDGE attach yet: the robot gateway restarts from the new config (each kept robot's
+          // lock state comes back from the journal); reported as a group-D interface need
+          console.warn(`[EdgeGateway] owned robots changed (${why}) — robot gateway restarted from the new config (no per-robot edge attach in robotManager)`);
+          await rm.stopRobots();
+          await startEdgeRobots(rt);
+          devices.robotKeys = new Map(rm.activeRobotIds().filter((id) => want.has(id)).map((id) => [id, oneRobotKey(want.get(id)!)] as const));
+          if (changed.some((r) => !devices.robotKeys.has(r.id))) ok = false;
+        }
+      }
+    }
+  } catch (err) {
+    ok = false;
+    console.error("[EdgeGateway] robot reconcile failed:", (err as Error)?.message || err);
   }
   devices.started = true;
+  return ok;
 }
 
-/** A robot that is no longer this node's: lock it locally, STOP it, close its session (in that order). */
-async function releaseRobot(rt: EdgeRuntime, robotId: number, why: string): Promise<void> {
+function releaseAlert(rt: EdgeRuntime, code: "EDGE_DEVICE_RELEASED" | "EDGE_DEVICE_RELEASE_FAILED", detail: string): void {
+  if (code === "EDGE_DEVICE_RELEASE_FAILED") console.error(`[EdgeGateway] ${detail}`);
+  void rt.sink.event({ kind: "anomaly", code, runId: null, detail: detail.slice(0, 1_000), at: Date.now() }, { stop: true }).catch(() => undefined);
+}
+
+/**
+ * A robot no longer this node's: LOCK it locally, STOP it (D's dispatch), and only if BOTH succeeded close its session.
+ * true ⇔ released (or nothing to release). Never leaves a robot moving: a failure keeps the session (and the lock).
+ */
+async function releaseRobot(rt: EdgeRuntime, robotId: number, why: string): Promise<boolean> {
   const rm = await import("../robot/robotManager");
   const robot = rm.getActiveRobot(robotId);
+  if (!robot) return true; // no session here: nothing can move, nothing to close
+  let lock: string;
+  let lockOk = false;
   try {
-    robot?.driver.motionLockController?.()?.lock("ownershipRemoved", `robot ${robotId} left this node (${why})`);
+    const lc = robot.driver.motionLockController?.();
+    if (!lc) lock = "NOT locked: the driver has no motion lock";
+    else {
+      lc.lock("ownershipRemoved", `robot ${robotId} left this node (${why})`);
+      lockOk = lc.isLocked();
+      lock = lockOk ? `locked (generation ${lc.snapshot().generation ?? "?"})` : "NOT locked: the lock did not take";
+    }
   } catch (err) {
-    console.error(`[EdgeGateway] robot ${robotId}: local lock before release failed:`, (err as Error)?.message || err);
+    lock = `NOT locked: ${(err as Error)?.message ?? err}`;
   }
+  let stop: string;
+  let stopOk = false;
   try {
     const { dispatchRobotOnEdge } = await import("../robot/robotEdgeDispatch");
-    await dispatchRobotOnEdge({ robotId, job: { jobType: "abort" }, idempotencyKey: `edge-release-${robotId}-${Date.now()}`, source: "local", requestId: null });
+    const r = await dispatchRobotOnEdge({ robotId, job: { jobType: "abort" }, idempotencyKey: `edge-release-${robotId}-${Date.now()}`, source: "local", requestId: null });
+    stopOk = r.ok && (r.status === "done" || r.status === "simulated");
+    stop = stopOk ? `STOP ${r.status}` : `STOP FAILED (${r.reason ?? r.error ?? r.status})`;
   } catch (err) {
-    console.error(`[EdgeGateway] robot ${robotId}: STOP before release failed — use the machine's direct STOP / E-STOP:`, (err as Error)?.message || err);
+    stop = `STOP FAILED (${(err as Error)?.message ?? err})`;
   }
-  await rm.detachRobot(robotId);
-  void rt.sink.event({ kind: "anomaly", code: "EDGE_DEVICE_RELEASED", runId: null, detail: `robot ${robotId} no longer owned (${why}): locked, STOP sent, session closed`, at: Date.now() }).catch(() => undefined);
+  if (lockOk && stopOk) {
+    await rm.detachRobot(robotId);
+    releaseAlert(rt, "EDGE_DEVICE_RELEASED", `robot ${robotId} no longer owned (${why}): ${lock}, ${stop}, session closed`);
+    return true;
+  }
+  releaseAlert(rt, "EDGE_DEVICE_RELEASE_FAILED", `robot ${robotId} no longer owned (${why}) but KEPT attached${lockOk ? " and locked" : ""}: ${lock}; ${stop} — retried every ${reconcileRetryMs() / 1_000} s; use the machine's direct STOP / E-STOP if it moves`);
+  return false;
 }
 
-/** A stable key of what the OT manager runs (adapter set + their config versions) — a change restarts OT. */
-function adapterKey(c: EdgeConfigSnapshot | null): string {
-  return JSON.stringify((c?.adapters ?? []).map((a) => [a.id, a.updatedAt, a.connectionFingerprint, a.isEnabled, a.ownerEpoch, a.tags.map((t) => [t.id, t.updatedAt])]));
+/**
+ * An adapter no longer this node's: its PINNED STOP first — the pins of the VERIFIED config row its session was started from
+ * (the new config no longer names it, so D's pinned classification cannot apply), sent only while the running connection is
+ * that row's connection (fingerprint) — then its session closes. A read-only adapter (no writable tag) has nothing to stop. A
+ * writable adapter without a STOP pin, or a STOP write that fails, keeps the session attached + a truthful alert + a retry.
+ */
+async function releaseAdapter(rt: EdgeRuntime, row: EdgeConfigSnapshot["adapters"][number], why: string): Promise<boolean> {
+  const om = await import("../ot/otManager");
+  const driver = om.getActiveDriver(row.id);
+  const writable = row.tags.filter((t) => t.isEnabled && t.writable);
+  const pins = writable.filter((t) => t.stopValue !== null && t.stopValue !== undefined);
+  let stop: string;
+  let stopOk = false;
+  if (!driver) {
+    stopOk = true; // no session here: nothing can be written, nothing to close
+    stop = "no session";
+  } else if (writable.length === 0) {
+    stopOk = true;
+    stop = "read-only adapter (no STOP needed)";
+  } else if (pins.length === 0) {
+    stop = "STOP NOT possible: no pinned STOP tag on a writable adapter";
+  } else if (om.getActiveConnectionFingerprint(row.id) !== undefined && om.getActiveConnectionFingerprint(row.id) !== row.connectionFingerprint) {
+    stop = "STOP NOT sent: the running connection is not the verified row's";
+  } else {
+    try {
+      const res = await Promise.race([
+        driver.writeTags(pins.map((t) => ({ tagKey: t.tagKey, address: t.address, value: t.stopValue, dataType: t.dataType, scale: t.scale ?? undefined, offset: t.offset ?? undefined }))),
+        new Promise<never>((_, rej) => {
+          const tm = setTimeout(() => rej(new Error("STOP write did not answer within 5 s")), 5_000);
+          if (typeof tm.unref === "function") tm.unref();
+        }),
+      ]);
+      stopOk = Array.isArray(res) && res.length > 0 && res.every((x) => (x as { ok?: unknown }).ok === true);
+      stop = stopOk ? `pinned STOP sent (${pins.map((t) => t.tagKey).join(", ")})` : `pinned STOP FAILED (${JSON.stringify(res).slice(0, 200)})`;
+    } catch (err) {
+      stop = `pinned STOP FAILED (${(err as Error)?.message ?? err})`;
+    }
+    void rt.sink
+      .event({ kind: "stop", target: { adapterId: row.id }, source: "local", requestId: null, outcome: stopOk ? "sent" : "failed", at: Date.now(), detail: `release (${why}): ${stop}`.slice(0, 500) }, { stop: true })
+      .catch(() => undefined);
+  }
+  if (stopOk) {
+    await om.detachOtAdapter(row.id);
+    releaseAlert(rt, "EDGE_DEVICE_RELEASED", `adapter ${row.id} no longer owned (${why}): ${stop}, session closed`);
+    return true;
+  }
+  releaseAlert(rt, "EDGE_DEVICE_RELEASE_FAILED", `adapter ${row.id} no longer owned (${why}) but KEPT attached: ${stop} — retried every ${reconcileRetryMs() / 1_000} s`);
+  return false;
 }
+
 
 // ── bootstrap / run / stop ──────────────────────────────────────────────────────
 
@@ -833,10 +957,10 @@ export async function stopEdgeGateway(): Promise<void> {
   runtime = null;
   liveRunsOf = () => ({ live: 0, max: 1 });
   await devices.chain.catch(() => undefined);
+  if (devices.retry) clearTimeout(devices.retry);
+  devices.retry = null;
   devices.started = false;
-  devices.otKey = "";
-  devices.robotKey = "";
-  devices.robotIds = new Set();
+  devices.adapters = new Map();
   devices.robotKeys = new Map();
   if (rt) {
     try {

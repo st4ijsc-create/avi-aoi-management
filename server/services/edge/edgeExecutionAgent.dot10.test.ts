@@ -102,7 +102,7 @@ function fakeWalker(over: Partial<{ hold: () => Promise<void> }> = {}) {
   return w;
 }
 
-async function harness(o: { central?: FakeCentral; walker?: EdgeWalker | null; claimRuns?: boolean; journalMaxBytes?: number; progressMs?: number } = {}) {
+async function harness(o: { central?: FakeCentral; walker?: EdgeWalker | null; claimRuns?: boolean; journalMaxBytes?: number; progressMs?: number; requestTimeoutMs?: number } = {}) {
   const central = o.central ?? new FakeCentral();
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "edge-agent-"));
   dirs.push(dir);
@@ -126,7 +126,7 @@ async function harness(o: { central?: FakeCentral; walker?: EdgeWalker | null; c
   });
   const devices = fakeDevices();
   const w = fakeWalker();
-  const cfg: EdgeAgentConfig = { centralUrl: "http://central.test", credential: KIT_TOKEN, pullIntervalMs: 60_000, progressMs: o.progressMs ?? 60_000, maxConcurrent: 2, requestTimeoutMs: 2_000, stopResendMinMs: 10_000, claimRuns: o.claimRuns };
+  const cfg: EdgeAgentConfig = { centralUrl: "http://central.test", credential: KIT_TOKEN, pullIntervalMs: 60_000, progressMs: o.progressMs ?? 60_000, maxConcurrent: 2, requestTimeoutMs: o.requestTimeoutMs ?? 2_000, stopResendMinMs: 10_000, claimRuns: o.claimRuns };
   const agent = new EdgeExecutionAgent(cfg, {
     client,
     config,
@@ -475,7 +475,7 @@ describe("doc 81 Đợt 10 E — agent v2: central commands (design §2.8)", () 
     expect(acks(h.central).map((r) => [r.requestId, r.outcome])).toEqual([[99, "done"], [100, "done"]]);
   });
 
-  it("★ fix review 1 (I-3): a STOP first executed UNVERIFIED (keyset lag) is ACKED once a verified copy arrives — with the target, once", async () => {
+  it("★ fix review 2 (S-1, R-10-ar): an evidence-only (bad-signature) STOP never satisfies the signed copy — it RE-EXECUTES, then acks with the target, once", async () => {
     const h = await harness({ claimRuns: false });
     const evil = generateEdgeSigningKey().key;
     const payload = h.central.commandPayload({ requestId: 120, kind: "stop", target: { robotId: 12 } });
@@ -483,11 +483,78 @@ describe("doc 81 Đợt 10 E — agent v2: central commands (design §2.8)", () 
     await h.shipper.flushAll();
     expect(acks(h.central)).toEqual([]); // evidence only — never acked from a bad signature
     const good = h.central.sign("cmd", payload);
-    expect((await h.agent.handleCommands([good])).map((c) => c.outcome)).toEqual(["duplicate"]);
+    expect((await h.agent.handleCommands([good])).map((c) => c.outcome)).toEqual(["sent"]); // executed by THIS copy
     expect((await h.agent.handleCommands([good])).map((c) => c.outcome)).toEqual(["duplicate"]);
     await h.shipper.flushAll();
     expect(acks(h.central).map((r) => [r.requestId, r.outcome, r.target, r.ownerEpoch])).toEqual([[120, "done", { robotId: 12 }, 3]]);
-    expect(h.devices.calls).toEqual(["stopRobot:12"]); // executed once
+    expect(h.devices.calls).toEqual(["stopRobot:12", "stopRobot:12"]); // evidence run + the verified run
+    // a pre-emption the other way round: the genuine copy fails at the device ⇒ no ack, retried; never "done" without a send
+    let fail = true;
+    h.devices.port.stopRobot = async () => (h.devices.calls.push("stopRobot:try"), fail ? { outcome: "failed" } : { outcome: "sent" });
+    const p2 = h.central.commandPayload({ requestId: 121, kind: "stop", target: { robotId: 12 } });
+    await h.agent.handleCommands([h.central.sign("cmd", p2, evil)]); // evidence attempt (fails)
+    expect((await h.agent.handleCommands([h.central.sign("cmd", p2)])).map((c) => c.outcome)).toEqual(["failed"]);
+    fail = false;
+    expect((await h.agent.handleCommands([h.central.sign("cmd", p2)])).map((c) => c.outcome)).toEqual(["sent"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((r) => r.requestId)).toEqual([120, 121]);
+  });
+
+  it("★ fix review 2 (S-2): a STOP for a robot assigned in the INCOMING config runs after the refresh and is acked — never refused while the refresh is pending", async () => {
+    const h = await harness({ claimRuns: false });
+    const base = h.central.makeConfig();
+    h.central.setConfig({ robots: [...base.robots, { ...base.robots[0], id: 13, code: "rb-13" }] }); // newer config pending
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 150, kind: "stop", target: { robotId: 13 } }))];
+    const r = await h.agent.tick();
+    expect(r.commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "sent"]); // fast path deferred, work phase ran it
+    expect(h.devices.calls).toEqual(["stopRobot:13"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((x) => [x.requestId, x.outcome, x.target])).toEqual([[150, "done", { robotId: 13 }]]);
+  });
+
+  it("★ fix review 2 (S-2): the refresh FAILS ⇒ the STOP stays pending (no ack), the next pull retries it", async () => {
+    const h = await harness({ claimRuns: false });
+    const base = h.central.makeConfig();
+    h.central.setConfig({ robots: [...base.robots, { ...base.robots[0], id: 13, code: "rb-13" }] });
+    h.central.handlers.config = () => "network";
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 151, kind: "stop", target: { robotId: 13 } }))];
+    const r1 = await h.agent.tick();
+    expect(r1.commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "pending:not_yet_known"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central)).toEqual([]);
+    delete h.central.handlers.config;
+    const r2 = await h.agent.tick();
+    expect(r2.commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "sent"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((x) => [x.requestId, x.outcome])).toEqual([[151, "done"]]);
+  });
+
+  it("★ fix review 2 (S-2): the refresh SUCCEEDS and the new config still omits the device ⇒ refused then (never left pending)", async () => {
+    const h = await harness({ claimRuns: false });
+    h.central.setConfig({}); // newer, still without robot 998
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 153, kind: "stop", target: { robotId: 998 } }))];
+    const r = await h.agent.tick();
+    expect(r.commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "refused:not_owned"]);
+  });
+
+  it("★ fix review 2 (N-4): a pull stuck on a STOP that never settles does not hold the next pull's STOPs (bounded single-flight)", async () => {
+    const h = await harness({ claimRuns: false, requestTimeoutMs: 100 });
+    h.devices.port.stopRobot = async () => new Promise<never>(() => undefined); // the robot STOP hangs forever
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 160, kind: "stop", target: { robotId: 12 } }))];
+    void h.agent.tick();
+    await new Promise((r) => setTimeout(r, 1_400)); // past the bound (2 × 100 ms + 1 s)
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 161, kind: "stop", target: { adapterId: 21 } }))];
+    const r2 = await h.agent.tick();
+    expect(r2.commands.map((c) => [c.requestId, c.outcome])).toEqual([[161, "sent"]]);
+  });
+
+  it("a STOP for a device the CURRENT config omits, with no refresh pending, is acked refused (with the target)", async () => {
+    const h = await harness({ claimRuns: false });
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 152, kind: "stop", target: { robotId: 999 } }))];
+    const r = await h.agent.tick();
+    expect(r.commands.map((c) => c.outcome)).toEqual(["refused:not_owned"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((x) => [x.requestId, x.outcome, x.target])).toEqual([[152, "refused", { robotId: 999 }]]);
   });
 
   it("★ fix review 1 (I-4, L-7): a STOP in the pull runs BEFORE the config refresh — a hanging refresh / work phase never delays it, nor the next pull's STOPs", async () => {

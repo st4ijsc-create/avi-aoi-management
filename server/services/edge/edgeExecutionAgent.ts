@@ -261,12 +261,20 @@ export class EdgeExecutionAgent {
   private readonly claimBackoff = new Map<number, { failures: number; nextAt: number }>();
   /** requestId → kind of commands already executed (central re-delivers until acknowledged) */
   private readonly handled = new Map<number, string>();
-  /** STOPs already executed, by (requestId, target): a STOP is de-duplicated by its request, never discarded for its age
-   *  (R-10-k), and an unverified copy can never suppress a genuine STOP of ANOTHER device under the same requestId */
-  private readonly stopsDone = new Set<string>();
-  /** fix review 1 (I-3) — STOPs whose request central has been acknowledged (a STOP executed unverified first is acked once
-   *  a verified / explicit-unsigned copy arrives) */
+  /**
+   * fix review 2 (S-1, R-10-ar) — two separate memories, by (requestId, target):
+   *   • stopsAcked — executed through a VERIFIED (or explicit-unsigned) copy AND acknowledged: the only thing a later copy of
+   *     the same request is de-duplicated against;
+   *   • stopsEvidence — executed as EVIDENCE only (a missing / failing signature): de-duplicates further evidence copies, and
+   *     NEVER satisfies a verified copy (which re-executes the STOP, then acks — an ack is only ever written after THIS
+   *     execution of a verified STOP).
+   * A STOP is never discarded for its age (R-10-k).
+   */
   private readonly stopsAcked = new Set<string>();
+  private readonly stopsEvidence = new Set<string>();
+  /** fix review 2 (S-2) — the last answer named a newer config / keyset than the one verified here */
+  private refreshPending = false;
+  private pullStartedAt = 0;
   private stopped = false;
 
   constructor(
@@ -332,12 +340,18 @@ export class EdgeExecutionAgent {
     })();
   }
 
+  /**
+   * Single-flight — but BOUNDED (fix review 2, N-4): a pull still running after 2 × requestTimeoutMs + 1 s (a STOP call that never
+   * settles) no longer holds the next one; that next pull's STOPs go (a double STOP is harmless, the ack is de-duplicated).
+   */
   private pullPhase(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null }> {
-    if (this.pulling) return this.pulling;
-    this.pulling = this.pullOnce().finally(() => {
-      this.pulling = null;
+    if (this.pulling && Date.now() - this.pullStartedAt < 2 * this.cfg.requestTimeoutMs + 1_000) return this.pulling;
+    const p = this.pullOnce().finally(() => {
+      if (this.pulling === p) this.pulling = null;
     });
-    return this.pulling;
+    this.pulling = p;
+    this.pullStartedAt = Date.now();
+    return p;
   }
 
   private async pullOnce(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null }> {
@@ -354,12 +368,25 @@ export class EdgeExecutionAgent {
     this.online = true;
     report.online = true;
     const p = pulled.data;
+    this.refreshPending = p.configVersion > this.deps.config.version() || p.keysetVersion > this.deps.config.trust().version;
     // STOP FAST PATH (fix review 1, I-4): every STOP of the answer, against the trust we have NOW (a stale keyset ⇒ the
-    // unverified-STOP path, then acked once a verified copy arrives) — before anything else
+    // unverified-STOP path; the verified copy later re-executes and acks) — before anything else
     const all = [...p.commands, ...unsignedStopsOf(p)];
     const verified = verifyCommands(this.deps.config.trust(), all, this.deps.config.credentialId());
     const isStop = (v: EdgeVerifiedCommand) => (v.ok ? v.command.kind : v.unverified?.kind) === "stop";
-    report.commands.push(...(await this.handleVerified(verified.filter(isStop))));
+    // S-2 — a STOP for a device not in the CURRENT config while a newer config is pending is deferred to the work phase
+    // (after the refresh: executed if the incoming config has the device); never acked `refused` before that
+    const deferred: unknown[] = [];
+    for (let i = 0; i < all.length; i++) {
+      if (!isStop(verified[i])) continue;
+      try {
+        const r = await this.handleCommand(verified[i]);
+        report.commands.push(r);
+        if (r.outcome.startsWith("pending:")) deferred.push(all[i]);
+      } catch (err) {
+        console.error(`[EdgeExec] STOP handling failed: ${(err as Error)?.message ?? err}`);
+      }
+    }
     // L-7 — STOPs of runs aborted after their segment here that central could not confirm (STOP-class: fast path too)
     for (const s of p.stopsUnconfirmed) {
       if (this.segments.has(s.runId)) continue;
@@ -369,7 +396,7 @@ export class EdgeExecutionAgent {
       await this.resendStops(s.runId, s.picture);
       report.stopsResent.push(s.runId);
     }
-    return { report, rest: all.filter((_, i) => !isStop(verified[i])), answer: p };
+    return { report, rest: [...deferred, ...all.filter((_, i) => !isStop(verified[i]))], answer: p };
   }
 
   private workPhase(p: EdgePullAnswer, rest: unknown[], report: TickReport): Promise<void> {
@@ -386,6 +413,7 @@ export class EdgeExecutionAgent {
     const { client, config } = this.deps;
     // a newer config / keyset ⇒ fetch + verify it before acting on anything else signed
     if (p.configVersion > config.version() || p.keysetVersion > config.trust().version) await config.refresh();
+    this.refreshPending = p.configVersion > config.version() || p.keysetVersion > config.trust().version;
     if (p.programCheckRequested) void this.deps.programChecks.report().catch(() => undefined);
     // non-STOP commands (lock / clear …), verified against the (possibly refreshed) trust
     report.commands.push(...(await this.handleCommands(rest)));
@@ -530,84 +558,67 @@ export class EdgeExecutionAgent {
   private stopKey(requestId: number, target: { robotId: number } | { adapterId: number }): string {
     return `${requestId}|${"robotId" in target ? `r${target.robotId}` : `a${target.adapterId}`}`;
   }
-  private rememberStop(key: string): void {
-    this.stopsDone.add(key);
-    if (this.stopsDone.size > 5_000) {
-      const old = this.stopsDone.values().next().value as string;
-      this.stopsDone.delete(old);
-      this.stopsAcked.delete(old);
-    }
+  private remember(set: Set<string>, key: string): void {
+    set.add(key);
+    if (set.size > 5_000) set.delete(set.values().next().value as string);
+  }
+  private owns(target: { robotId: number } | { adapterId: number }): boolean {
+    return "robotId" in target ? this.deps.config.ownsRobot(target.robotId) : this.deps.config.ownsAdapter(target.adapterId);
   }
 
   private async handleCommand(v: EdgeVerifiedCommand): Promise<TickReport["commands"][number]> {
-    if (!v.ok) {
+    if (!v.ok && !(v.unsigned && v.unverified?.kind === "stop")) {
       const u = v.unverified;
-      const tag = v.unsigned ? "unsigned" : "unverified";
       if (u?.kind === "stop") {
-        // L-7 / R-10-k: a STOP goes without a valid signature (unsigned on purpose, or a signature that fails) — only to a
-        // device this node owns (its VERIFIED config), once per (requestId, target), whatever its age
-        const owned = "robotId" in u.target ? this.deps.config.ownsRobot(u.target.robotId) : this.deps.config.ownsAdapter(u.target.adapterId);
-        if (!v.unsigned) this.anomaly("EDGE_COMMAND_INVALID", null, `stop command refused by verification (${v.reason}) request ${u.requestId} — STOP sent anyway (L-7)`);
-        if (!owned) return { requestId: null, kind: "stop", outcome: `${tag}:not_owned` };
+        // L-7: a STOP whose signature is missing / fails is still sent — as EVIDENCE only: to a device this node owns (its
+        // VERIFIED config), reported with requestId null, NEVER acknowledged, and it never satisfies a later verified copy (S-1)
+        this.anomaly("EDGE_COMMAND_INVALID", null, `stop command refused by verification (${v.reason}) request ${u.requestId} — STOP sent anyway as evidence (L-7)`);
+        if (!this.owns(u.target)) return { requestId: null, kind: "stop", outcome: this.refreshPending ? "unverified:pending" : "unverified:not_owned" };
         const key = this.stopKey(u.requestId, u.target);
-        if (this.stopsDone.has(key)) {
-          // I-3 — executed before as evidence only (bad signature); this explicit unsigned copy may close the request
-          if (v.unsigned && !this.stopsAcked.has(key)) {
-            await this.ack(u.requestId, "done", null, { target: u.target, ownerEpoch: u.ownerEpoch, unsigned: true });
-            this.stopsAcked.add(key);
-          }
-          return { requestId: v.unsigned ? u.requestId : null, kind: "stop", outcome: "duplicate" };
-        }
-        const r = await this.stopTarget(u.target, v.unsigned ? "command" : "anomaly", v.unsigned ? u.requestId : null, `${tag} STOP command (request ${u.requestId})`);
-        // a STOP that could not be executed is NOT remembered: the next delivery retries it (never given up on)
-        if (r.outcome !== "failed") this.rememberStop(key);
-        // only the explicit unsigned-STOP envelope (R-10-p) is acknowledged — with the target ACTUALLY stopped (R-10-o); a STOP
-        // whose signature is missing / fails is evidence only: reported with requestId null, never acknowledged
-        if (v.unsigned && r.outcome !== "failed") {
-          await this.ack(u.requestId, "done", null, { target: u.target, ownerEpoch: u.ownerEpoch, unsigned: true });
-          this.stopsAcked.add(key);
-        }
-        return { requestId: v.unsigned ? u.requestId : null, kind: "stop", outcome: `${tag}:${r.outcome}` };
+        if (this.stopsEvidence.has(key)) return { requestId: null, kind: "stop", outcome: "duplicate" };
+        const r = await this.stopTarget(u.target, "anomaly", null, `unverified STOP command (request ${u.requestId})`);
+        if (r.outcome !== "failed") this.remember(this.stopsEvidence, key);
+        return { requestId: null, kind: "stop", outcome: `unverified:${r.outcome}` };
       }
       this.anomaly("EDGE_COMMAND_INVALID", null, `${u?.kind ?? "unparsable"} command refused (${v.reason})${u ? ` request ${u.requestId}` : ""} — only a STOP acts without a valid signature`);
       return { requestId: null, kind: u?.kind ?? "unknown", outcome: `refused:${v.reason}` };
     }
-    const c = v.command;
-    const prior = this.handled.get(c.requestId);
-    if (prior !== undefined) return { requestId: c.requestId, kind: c.kind, outcome: "duplicate" };
+    // a VERIFIED command, or the explicit unsigned-STOP envelope (R-10-k / R-10-p — acked, marked unsigned)
+    const unsigned = !v.ok;
+    const c = (v.ok ? v.command : v.unverified) as EdgeCommand;
+    const tag = unsigned ? "unsigned:" : "";
     const remember = () => {
       this.handled.set(c.requestId, c.kind);
       if (this.handled.size > 2_000) this.handled.delete(this.handled.keys().next().value as number);
     };
-    const epoch = this.ownerEpochOf(c);
     if (c.kind === "stop") {
       // a STOP goes even past its expiry / with a stale owner epoch (L-7, R-10-k: never discarded for its age); the device
-      // must still be this node's
+      // must be this node's
       const sk = this.stopKey(c.requestId, c.target);
-      if (this.stopsDone.has(sk)) {
-        // fix review 1 (I-3) — executed earlier through the unverified path (e.g. keyset rotation lag) and never acknowledged:
-        // this VERIFIED copy acknowledges it, with the target actually stopped (R-10-o)
-        if (!this.stopsAcked.has(sk)) {
-          await this.ack(c.requestId, "done", null, { target: c.target, ownerEpoch: c.ownerEpoch });
-          this.stopsAcked.add(sk);
-        }
-        remember();
-        return { requestId: c.requestId, kind: "stop", outcome: "duplicate" };
-      }
-      if (epoch === null) {
+      if (this.stopsAcked.has(sk)) return { requestId: c.requestId, kind: "stop", outcome: "duplicate" };
+      if (!this.owns(c.target)) {
+        // S-2 — not in the CURRENT config: while a newer config is pending, it stays pending (deferred / re-delivered) —
+        // never acked `refused`; once the config is current and still omits the device ⇒ refused (with the target)
+        if (this.refreshPending) return { requestId: c.requestId, kind: "stop", outcome: `${tag}pending:not_yet_known` };
+        if (unsigned) return { requestId: c.requestId, kind: "stop", outcome: "unsigned:not_owned" };
         remember();
         await this.ack(c.requestId, "refused", null, { target: c.target, ownerEpoch: c.ownerEpoch });
         return { requestId: c.requestId, kind: "stop", outcome: "refused:not_owned" };
       }
-      const r = await this.stopTarget(c.target, "command", c.requestId, `central STOP request ${c.requestId}${v.expired ? " (overdue — sent anyway)" : ""}`);
-      if (r.outcome === "failed") return { requestId: c.requestId, kind: "stop", outcome: "failed" }; // not acked: re-delivered, retried
-      this.rememberStop(sk);
-      remember();
-      await this.ack(c.requestId, "done", null, { target: c.target, ownerEpoch: c.ownerEpoch });
-      this.stopsAcked.add(sk);
-      return { requestId: c.requestId, kind: "stop", outcome: r.outcome };
+      // S-1 — EXECUTED here, by THIS copy, even if an evidence-only copy ran before; only then acknowledged
+      const r = await this.stopTarget(c.target, "command", c.requestId, `${unsigned ? "unsigned " : ""}central STOP request ${c.requestId}${v.ok && v.expired ? " (overdue — sent anyway)" : ""}`);
+      if (r.outcome === "failed") return { requestId: c.requestId, kind: "stop", outcome: `${tag}failed` }; // not acked: re-delivered, retried
+      this.remember(this.stopsAcked, sk);
+      if (!unsigned) remember();
+      await this.ack(c.requestId, "done", null, { target: c.target, ownerEpoch: c.ownerEpoch, ...(unsigned ? { unsigned: true } : {}) });
+      return { requestId: c.requestId, kind: "stop", outcome: `${tag}${r.outcome}` };
     }
+    if (!v.ok) return { requestId: null, kind: c.kind, outcome: "refused:unsigned" };
+    const prior = this.handled.get(c.requestId);
+    if (prior !== undefined) return { requestId: c.requestId, kind: c.kind, outcome: "duplicate" };
+    const epoch = this.ownerEpochOf(c);
     const robotTarget = { robotId: c.robotId };
+    if (epoch === null && this.refreshPending) return { requestId: c.requestId, kind: c.kind, outcome: "pending:not_yet_known" }; // S-2
     if (epoch === null || epoch !== c.ownerEpoch) {
       remember();
       await this.ack(c.requestId, "refused", null, { target: robotTarget, ownerEpoch: c.ownerEpoch });
@@ -792,7 +803,15 @@ export class EdgeExecutionAgent {
 
   private async sendComplete(p: PendingComplete): Promise<void> {
     const stream = edgeRunStream(p.runId, p.claimSeq);
-    await this.deps.journal.flush(); // R-10-ag — only durable records ship: make the segment's records durable first
+    // R-10-ag — only durable records ship: make the segment's records durable first; BOUNDED (fix review 2, N-3) — a hung disk
+    // never wedges the work phase: the records stay un-durable, the segment end stays pending (retried), STOPs never wait here
+    await Promise.race([
+      this.deps.journal.flush(),
+      new Promise<boolean>((r) => {
+        const t = setTimeout(() => r(false), this.cfg.requestTimeoutMs);
+        if (typeof t.unref === "function") t.unref();
+      }),
+    ]);
     const f = await this.deps.shipper.flush(stream);
     if (f === "claim_gone") {
       await this.deps.shipper.orphanRunStream(stream, "claim no longer current at segment end");

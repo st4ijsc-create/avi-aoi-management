@@ -135,8 +135,15 @@ describe("doc 81 Đợt 10 E — the edge gateway boots and runs the production 
     const { SimRobotDriver } = await import("../robot/drivers/simRobotDriver");
     const runJob = vi.spyOn(SimRobotDriver.prototype, "runJob");
     const abort = vi.spyOn(SimRobotDriver.prototype, "abort");
+    // fix review 2 — the sim robot gets a REAL motion lock, so the edge lock authority is exercised end to end: a fresh
+    // journal seeds it LOCKED persistUnknown, D's dispatch would refuse the move, a signed central `clear` releases it
+    const { MotionLock } = await import("../robot/robotDriver");
+    const locks: InstanceType<typeof MotionLock>[] = [];
+    (SimRobotDriver.prototype as unknown as { motionLockController: () => InstanceType<typeof MotionLock> }).motionLockController = function (this: { _ml?: InstanceType<typeof MotionLock> }) {
+      if (!this._ml) locks.push((this._ml = new MotionLock()));
+      return this._ml;
+    };
 
-    central.addRun(9, DEF);
     central.packageOver.set(9, { machines: [{ id: 2, machineType: "ROBOT", capabilities: null }], verifiedStops: [], defHash: kitHashDefinition(DEF) });
     const { bootstrapEdgeGateway, getEdgeGatewayHealth } = await import("./edgeGatewayRuntime");
     const handles = await bootstrapEdgeGateway({ fetchImpl: central.fetchImpl });
@@ -148,6 +155,16 @@ describe("doc 81 Đợt 10 E — the edge gateway boots and runs the production 
     expect(hb).toMatchObject({ protocolVersion: 2, journal: { epoch: handles.runtime!.journal.epoch }, configHash: handles.runtime!.config.hash() });
     const rm = await import("../robot/robotManager");
     expect(rm.activeRobotIds()).toEqual([12]); // the REAL robot manager, from the verified config
+    const lock = rm.getActiveRobot(12)!.driver.motionLockController!();
+    expect(lock.snapshot()).toMatchObject({ locked: true, reasonCode: "persistUnknown" }); // fresh journal ⇒ fail-closed
+    await vi.waitFor(() => expect(central.received.locksEvents.some((r) => r.kind === "lock" && r.event === "locked" && r.reasonCode === "persistUnknown")).toBe(true), { timeout: 5_000, interval: 50 });
+    // central clears it (signed, compare-and-clear on the generation it saw)
+    const gen = lock.snapshot().generation!;
+    central.commands = [central.sign("cmd", central.commandPayload({ requestId: 70, kind: "clear", robotId: 12, expectedGeneration: gen, clearedBy: 4, reason: "commissioning check done" }))];
+    await vi.waitFor(() => expect(central.received.locksEvents.some((r) => r.kind === "command_ack" && r.requestId === 70 && r.outcome === "done")).toBe(true), { timeout: 5_000, interval: 50 });
+    expect(lock.isLocked()).toBe(false);
+    central.commands = [];
+    central.addRun(9, DEF);
 
     // OT: the stub adapter of THIS node polls; samples reach central over HTTP (telemetryBus seam)
     await vi.waitFor(() => expect(central.received.telemetry.length).toBeGreaterThan(0), { timeout: 10_000, interval: 50 });
