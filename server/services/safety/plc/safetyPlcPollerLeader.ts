@@ -9,6 +9,7 @@
  * The lock is released on stop; a crashed leader's lock is freed by Postgres and a standby takes over at its next refresh.
  * L-7: reads only lock state; never touches a PLC.
  */
+import { edgeDbRefused } from "../../../db/edgeDbTrap";
 
 /** Single-arg bigint advisory-lock key. Distinct from LEADER_LOCK_KEY 480_100_927 (workerLeader), AUDIT_CHAIN_LOCK
  *  918_273_645, RUN_EVENT_LOCK_NS 771_004_221, GENEALOGY_CHAIN_LOCK 615_243_870, COMMISSIONING_PIN_LOCK_NS 563_118_407. */
@@ -85,6 +86,8 @@ export function pgPollerLeaderGate(key: number = SAFETY_PLC_POLLER_LOCK_KEY, url
       if (!url) return false;
       try {
         if (!client) {
+          // doc 81 Đợt 10 A fix review 1 (I2): no central DB in an edge process (shared trap; throw mode ⇒ caught ⇒ not leader)
+          if (edgeDbRefused("safetyPlcPollerLeader")) return false;
           const { default: postgres } = await import("postgres");
           client = postgres(url, {
             max: 1,

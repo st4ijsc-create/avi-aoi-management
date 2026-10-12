@@ -18,7 +18,9 @@ vi.mock("postgres", () => ({
   },
 }));
 vi.mock("../queryMonitor", () => ({ instrumentPostgresClient: () => undefined }));
-vi.mock("drizzle-orm/postgres-js", () => ({ drizzle: (c: unknown) => ({ __fakeDb: true, c }) }));
+// importOriginal (hangRaoKhongAiCanh Pha 8 Task 4c): only `drizzle` is replaced; the driver is mocked above, so no real
+// connection can be reached either way
+vi.mock("drizzle-orm/postgres-js", async (orig) => ({ ...(await orig<Record<string, unknown>>()), drizzle: (c: unknown) => ({ __fakeDb: true, c }) }));
 
 const ENV_KEYS = ["AVI_PROCESS_ROLE", "EDGE_DB_TRAP", "DATABASE_URL", "DATABASE_READ_URL"] as const;
 let saved: Record<string, string | undefined> = {};

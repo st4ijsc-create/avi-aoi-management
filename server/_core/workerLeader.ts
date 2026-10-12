@@ -25,6 +25,7 @@
  * prior single-worker behaviour: schedulers start immediately, no lock, no
  * dedicated connection. Turn it on only when running >1 worker replica.
  */
+import { EdgeDbTrapError, edgeDbRefused } from "../db/edgeDbTrap";
 
 // Distinct from AUDIT_CHAIN_LOCK (918_273_645) / RUN_EVENT_LOCK_NS (771_004_221)
 // / GENEALOGY_CHAIN_LOCK (615_243_870). Single-arg bigint advisory-lock key.
@@ -94,6 +95,8 @@ export async function acquireWorkerLeadership(
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("[WorkerLeader] DATABASE_URL required for leader election");
 
+  // doc 81 Đợt 10 A fix review 1 (I2): an edge process never opens the central DB (shared trap) — no leader election there
+  if (edgeDbRefused("workerLeader")) throw new EdgeDbTrapError("workerLeader");
   const { default: postgres } = await import("postgres");
   _sql = postgres(url, {
     max: 1,

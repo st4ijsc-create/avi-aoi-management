@@ -13,6 +13,7 @@ import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { energyReadings, type InsertEnergyReading } from "../../drizzle/schema/g3";
 import { otTelemetry, type InsertOtTelemetry } from "../../drizzle/schema/ot";
+import { edgeDbRefused } from "./edgeDbTrap";
 
 let _tsdb: ReturnType<typeof drizzle> | null = null;
 let _tsClient: ReturnType<typeof postgres> | null = null;
@@ -58,6 +59,9 @@ function degradeTsdb(reason: unknown): void {
  * Lấy drizzle instance tới TimescaleDB. Trả về null nếu không cấu hình TSDB_URL.
  */
 export function getTsdb() {
+  // doc 81 Đợt 10 A fix review 1 (I2): the edge holds no central DB login — TSDB included (otManager → telemetryBus
+  // persistRows → insertOtTelemetryRows reaches here on the edge). Checked on EVERY call, before the init cache.
+  if (edgeDbRefused("getTsdb")) return null;
   if (_degraded) return null;
   if (_initialized) return _tsdb;
   _initialized = true;

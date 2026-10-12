@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { ENV } from '../_core/env';
 import { instrumentPostgresClient } from "../queryMonitor";
+import { edgeDbRefused } from "./edgeDbTrap";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
@@ -26,41 +27,14 @@ export function resolveReadPoolMax(): number {
 
 // ── doc 81 Đợt 10 task A (design §2.15) — EDGE-ROLE DB TRAP ──────────────────────────────────────────────────────────
 // The edge gateway (server/edge/edgeGatewayMain.ts sets AVI_PROCESS_ROLE=edge before any import) holds NO central DB login.
-// In that role getDb / getJobsDb / getReadDb never construct a postgres client, whatever DATABASE_URL says:
+// In that role getDb / getJobsDb / getReadDb never construct a postgres client, whatever DATABASE_URL says (the shared guard
+// ./edgeDbTrap.ts — fix review 1 (I2): the SAME guard now precedes every raw postgres() construction under server/):
 //   • default (production): return null, log loudly ONCE, count every attempt (edgeDbTrapCount — the E2E asserts 0);
 //   • EDGE_DB_TRAP=throw (tests / CI): throw EdgeDbTrapError (code EDGE_DB_TRAP).
 // Any other EDGE_DB_TRAP value is the default (null) — there is no "allow".
-export class EdgeDbTrapError extends Error {
-  readonly code = "EDGE_DB_TRAP";
-  constructor(readonly accessor: string) {
-    super(`EDGE_DB_TRAP: ${accessor}() called in an edge process (AVI_PROCESS_ROLE=edge) — the edge has no central DB`);
-  }
-}
-const _edgeTrap = { count: 0, logged: false, byAccessor: {} as Record<string, number> };
-export function isEdgeProcessRole(env: NodeJS.ProcessEnv = process.env): boolean {
-  return String(env.AVI_PROCESS_ROLE ?? "").trim().toLowerCase() === "edge";
-}
-export function edgeDbTrapCount(): number {
-  return _edgeTrap.count;
-}
-export function edgeDbTrapStats(): { count: number; byAccessor: Record<string, number> } {
-  return { count: _edgeTrap.count, byAccessor: { ..._edgeTrap.byAccessor } };
-}
-/** true ⇔ the caller must return null (edge role, default mode). Throws under EDGE_DB_TRAP=throw. */
-function edgeDbTrapped(accessor: string): boolean {
-  if (!isEdgeProcessRole()) return false;
-  _edgeTrap.count++;
-  _edgeTrap.byAccessor[accessor] = (_edgeTrap.byAccessor[accessor] ?? 0) + 1;
-  if (!_edgeTrap.logged) {
-    _edgeTrap.logged = true;
-    console.error(`[Database] EDGE_DB_TRAP: ${accessor}() called in an edge process — refused (no central DB on the edge). Further attempts are only counted.`);
-  }
-  if (String(process.env.EDGE_DB_TRAP ?? "").trim().toLowerCase() === "throw") throw new EdgeDbTrapError(accessor);
-  return true;
-}
-
+export { EdgeDbTrapError, edgeDbRefused, edgeDbTrapCount, edgeDbTrapStats, isEdgeProcessRole } from "./edgeDbTrap";
 export async function getDb() {
-  if (edgeDbTrapped("getDb")) return null;
+  if (edgeDbRefused("getDb")) return null;
   if (!_db && process.env.DATABASE_URL) {
     try {
       console.log("[Database] Connecting to PostgreSQL...");
@@ -101,7 +75,7 @@ let _jobsDb: ReturnType<typeof drizzle> | null = null;
 let _jobsClient: ReturnType<typeof postgres> | null = null;
 
 export async function getJobsDb() {
-  if (edgeDbTrapped("getJobsDb")) return null;
+  if (edgeDbRefused("getJobsDb")) return null;
   if (!_jobsDb && process.env.DATABASE_URL) {
     try {
       const stmtTimeoutMs = Number(process.env.DB_STATEMENT_TIMEOUT_MS ?? 30000);
@@ -149,7 +123,7 @@ let _readDb: ReturnType<typeof drizzle> | null = null;
 let _readClient: ReturnType<typeof postgres> | null = null;
 
 export async function getReadDb() {
-  if (edgeDbTrapped("getReadDb")) return null;
+  if (edgeDbRefused("getReadDb")) return null;
   // No replica configured → honest-degrade to the primary pool.
   if (!process.env.DATABASE_READ_URL) {
     return getDb();
