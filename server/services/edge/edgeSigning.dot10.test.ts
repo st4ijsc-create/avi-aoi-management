@@ -15,8 +15,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  EDGE_KEYRING_MAX_KEYS,
+  EDGE_PIN_KIND,
   EDGE_SIGNED_TYPS,
   EDGE_TYP_NAME,
+  EdgeTrustError,
+  parseEdgeKeysetPin,
+  pruneEdgeKeyring,
   EdgeCanonicalJsonError,
   buildEdgeKeysetFromKeyring,
   edgePinFromKeyring,
@@ -65,7 +70,7 @@ function storeWith(root: EdgeSigningKey, extra: KeyOpt[] = []): EdgeTrustStore {
   const pin = pinOf(root);
   const s = EdgeTrustStore.fromPinned(pin, { nodeId: NODE, now: () => clock, skewMs: 5_000 });
   if (extra.length) {
-    const r = s.acceptKeysetUpdate(signEdgeObject("keyset", { v: 1, version: 2, issuedAt: T0, keys: [pin.keys[0], ...extra.map(entry)] }, root));
+    const r = s.acceptKeysetUpdate(signEdgeObject("keyset", { v: 1, version: 2, issuedAt: T0, keys: [pin.keyset.keys[0], ...extra.map(entry)] }, root));
     if (!r.ok) throw new Error("storeWith: " + r.reason);
   }
   return s;
@@ -287,20 +292,21 @@ describe("keyset parse + chain (pinned root kept)", () => {
   const k1 = generateEdgeSigningKey().key;
   const k2 = generateEdgeSigningKey().key;
   const k3 = generateEdgeSigningKey().key;
-  const pinned = keysetOf({ key: k1 });
+  const pinnedKs = keysetOf({ key: k1 });
+  const pinned = { kind: EDGE_PIN_KIND, keyset: pinnedKs };
 
   it("parseEdgeKeyset: strict shape; kid must be the fingerprint of its key; unique kids; ≥1 active; retired needs notAfter", () => {
-    expect(parseEdgeKeyset(pinned)).toEqual({ ok: true, keyset: pinned });
+    expect(parseEdgeKeyset(pinnedKs)).toEqual({ ok: true, keyset: pinnedKs });
     const bad = (ks: unknown) => parseEdgeKeyset(ks).ok;
-    expect(bad({ ...pinned, extra: 1 })).toBe(false);
-    expect(bad({ ...pinned, keys: [{ ...pinned.keys[0], kid: k2.kid }] })).toBe(false);
-    expect(bad({ ...pinned, keys: [pinned.keys[0], pinned.keys[0]] })).toBe(false);
-    expect(bad({ ...pinned, keys: [{ ...pinned.keys[0], status: "next" }] })).toBe(false);
-    expect(bad({ ...pinned, keys: [pinned.keys[0], { ...entry({ key: k2 }), status: "retired", notAfter: null }] })).toBe(false);
-    expect(bad({ ...pinned, keys: [{ ...pinned.keys[0], publicKeyPem: "-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----\n" }] })).toBe(false);
-    expect(bad({ ...pinned, keys: [{ ...pinned.keys[0], trusted: true }] })).toBe(false);
-    expect(bad({ ...pinned, v: 2 })).toBe(false);
-    expect(bad({ ...pinned, keys: [] })).toBe(false);
+    expect(bad({ ...pinnedKs, extra: 1 })).toBe(false);
+    expect(bad({ ...pinnedKs, keys: [{ ...pinnedKs.keys[0], kid: k2.kid }] })).toBe(false);
+    expect(bad({ ...pinnedKs, keys: [pinnedKs.keys[0], pinnedKs.keys[0]] })).toBe(false);
+    expect(bad({ ...pinnedKs, keys: [{ ...pinnedKs.keys[0], status: "next" }] })).toBe(false);
+    expect(bad({ ...pinnedKs, keys: [pinnedKs.keys[0], { ...entry({ key: k2 }), status: "retired", notAfter: null }] })).toBe(false);
+    expect(bad({ ...pinnedKs, keys: [{ ...pinnedKs.keys[0], publicKeyPem: "-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----\n" }] })).toBe(false);
+    expect(bad({ ...pinnedKs, keys: [{ ...pinnedKs.keys[0], trusted: true }] })).toBe(false);
+    expect(bad({ ...pinnedKs, v: 2 })).toBe(false);
+    expect(bad({ ...pinnedKs, keys: [] })).toBe(false);
     expect(pinOf(k1)).toEqual(pinned);
   });
 
@@ -331,15 +337,114 @@ describe("keyset parse + chain (pinned root kept)", () => {
   it("chain refusals: unknown signer, rollback, invalid body, wrong typ; a refused update changes nothing", () => {
     clock = T0;
     const v2: EdgeKeyset = { v: 1, version: 2, issuedAt: T0, keys: [entry({ key: k1 }), entry({ key: k2 })] };
-    const store = EdgeTrustStore.fromPinned(pinned, { nodeId: NODE, now: () => clock });
+    const store = EdgeTrustStore.fromPinned({ ...pinned, keyset: { ...pinnedKs, version: 2 } }, { nodeId: NODE, now: () => clock }); // pinned at version 2
     expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v2, k3))).toEqual({ ok: false, reason: "unknown_kid" });
-    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, version: 1 }, k1))).toEqual({ ok: false, reason: "rollback" });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, version: 1 }, k1))).toEqual({ ok: false, reason: "rollback" }); // below the pin
     expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, keys: [] }, k1))).toEqual({ ok: false, reason: "invalid_keyset" });
     expect(store.acceptKeysetUpdate(signEdgeObject("config", v2, k1))).toEqual({ ok: false, reason: "wrong_typ" });
-    expect(store.version).toBe(1);
+    expect(store.version).toBe(2);
     expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, version: 5 }, k1)).ok).toBe(true);
     expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, version: 4 }, k1))).toEqual({ ok: false, reason: "rollback" });
     expect(() => EdgeTrustStore.fromPinned(pinned, { nodeId: NODE, now: () => clock }, [signEdgeObject("keyset", v2, k3)])).toThrow(/refused/);
+  });
+});
+
+describe("fix review 1 — the PIN: its version is a floor (I5); only the pin shape is an anchor (M3)", () => {
+  const k1 = generateEdgeSigningKey().key;
+  const kOld = generateEdgeSigningKey().key;
+  const kNew = generateEdgeSigningKey().key;
+  const root = (v: number) => edgePinnedKeyset([{ kid: k1.kid, publicKeyPem: k1.publicKeyPem, notBefore: T0 - 60_000 }], T0, v);
+
+  it("★ I5: an edge provisioned at keyring version 5 refuses a captured, root-signed OLDER keyset (one that still trusted a since-retired key)", () => {
+    clock = T0;
+    const store = EdgeTrustStore.fromPinned(root(5), { nodeId: NODE, now: () => clock });
+    expect(store.version).toBe(5);
+    // version 3: root + kOld active — genuinely signed by the root back then; kOld has since been retired
+    const captured: EdgeKeyset = { v: 1, version: 3, issuedAt: T0, keys: [entry({ key: k1 }), entry({ key: kOld })] };
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", captured, k1))).toEqual({ ok: false, reason: "rollback" });
+    expect(verifyEdgeObject(signEdgeObject("cmd", { kind: "stop" }, kOld), "cmd", store)).toEqual({ ok: false, reason: "unknown_kid" });
+    // so kOld can never sign a huge-version keyset that would make central's real keysets look like a rollback
+    const hijack: EdgeKeyset = { v: 1, version: Number.MAX_SAFE_INTEGER, issuedAt: T0, keys: [entry({ key: k1 }), entry({ key: kOld })] };
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", hijack, kOld))).toEqual({ ok: false, reason: "unknown_kid" });
+    expect(store.version).toBe(5);
+  });
+
+  it("★ I5: central's keyset AT the pin version is accepted once (the pin is its root-only projection); after that versions strictly increase", () => {
+    clock = T0;
+    const store = EdgeTrustStore.fromPinned(root(5), { nodeId: NODE, now: () => clock });
+    const v5: EdgeKeyset = { v: 1, version: 5, issuedAt: T0, keys: [entry({ key: k1 }), entry({ key: kNew })] };
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v5, k1))).toEqual({ ok: true, version: 5, changed: true });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v5, kNew))).toEqual({ ok: true, version: 5, changed: false }); // re-sent: no-op
+    const v5b: EdgeKeyset = { ...v5, keys: [entry({ key: k1 })] };
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v5b, k1))).toEqual({ ok: false, reason: "rollback" }); // same version, other content
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v5, version: 6 }, kNew))).toEqual({ ok: true, version: 6, changed: true });
+    // restart: the persisted updates replay from the pin
+    const again = EdgeTrustStore.fromPinned(root(5), { nodeId: NODE, now: () => clock }, store.acceptedUpdates());
+    expect(again.version).toBe(6);
+    // a pin at version 7 refuses that history (the persisted updates are older than the pin)
+    expect(() => EdgeTrustStore.fromPinned(root(7), { nodeId: NODE, now: () => clock }, store.acceptedUpdates())).toThrow(/rollback/);
+  });
+
+  it("★ M3: fromPinned accepts ONLY the pin shape — a bare keyset (e.g. lifted from a message), extra keys, a next / time-limited key, non-plain data are refused", () => {
+    const ok = root(1);
+    expect(parseEdgeKeysetPin(ok)).toEqual({ ok: true, pin: ok });
+    const refuse = (x: unknown) => expect(() => EdgeTrustStore.fromPinned(x, { nodeId: NODE }), JSON.stringify(x)?.slice(0, 80)).toThrow(EdgeTrustError);
+    refuse(ok.keyset); // a bare keyset is never an anchor
+    refuse({ ...ok, extra: 1 });
+    refuse({ ...ok, kind: "avi-edge-keyset" });
+    refuse({ ...ok, keyset: { ...ok.keyset, keys: [{ ...ok.keyset.keys[0], status: "next" }] } });
+    refuse({ ...ok, keyset: { ...ok.keyset, keys: [{ ...ok.keyset.keys[0], notAfter: T0 + 1 }] } });
+    refuse(Object.assign(new (class Pin {})(), ok));
+    refuse(JSON.stringify(ok));
+    refuse(null);
+    const getter = { kind: EDGE_PIN_KIND, get keyset() { return ok.keyset; } };
+    expect(parseEdgeKeysetPin(getter).ok).toBe(true); // a getter is read once into plain data — never a live object
+    expect(() => EdgeTrustStore.fromPinned(ok, { nodeId: 0 })).toThrow(EdgeTrustError);
+  });
+
+  it("M3: fromPinFile reads the pin file written at provisioning; a missing / non-JSON file is refused", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "edge-pin-"));
+    try {
+      const file = path.join(dir, "edge-keyset.json");
+      writeFileSync(file, JSON.stringify(root(4), null, 2));
+      expect(EdgeTrustStore.fromPinFile(file, { nodeId: NODE }).version).toBe(4);
+      expect(() => EdgeTrustStore.fromPinFile(path.join(dir, "none.json"), { nodeId: NODE })).toThrow(/pin file/);
+      writeFileSync(path.join(dir, "bad.json"), "{");
+      expect(() => EdgeTrustStore.fromPinFile(path.join(dir, "bad.json"), { nodeId: NODE })).toThrow(/pin file/);
+      writeFileSync(path.join(dir, "bare.json"), JSON.stringify(root(4).keyset));
+      expect(() => EdgeTrustStore.fromPinFile(path.join(dir, "bare.json"), { nodeId: NODE })).toThrow(/pinned keyset refused/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("fix review 1 (M5) — pruning the keyring at its cap never removes the root or an active / next key", () => {
+  const H = 3_600_000;
+  const gen = () => generateEdgeSigningKey().key;
+  const e = (k: EdgeSigningKey, status: "active" | "next" | "retired", rootFlag = false, retiredAt: number | null = null) => ({ kid: k.kid, publicKeyPem: k.publicKeyPem, status, notBefore: T0 - 100 * H, retiredAt, root: rootFlag });
+  it("drops the OLDEST retired keys past the age bound, just enough for the room asked; refuses when not enough", () => {
+    const rootK = gen();
+    const active = gen();
+    const next = gen();
+    const retired = Array.from({ length: 13 }, (_, i) => e(gen(), "retired", false, T0 - (50 - i) * H)); // retired 50 h … 38 h ago
+    const kr = { v: 1 as const, version: 20, updatedAt: T0, keys: [e(rootK, "active", true), e(active, "active"), e(next, "next"), ...retired] };
+    expect(kr.keys).toHaveLength(EDGE_KEYRING_MAX_KEYS);
+    const r = pruneEdgeKeyring(kr, { nowMs: T0, room: 1 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.pruned).toEqual([retired[0].kid]); // the oldest retired only
+    expect(r.keyring.keys).toHaveLength(EDGE_KEYRING_MAX_KEYS - 1);
+    expect(r.keyring.keys.some((k) => k.root)).toBe(true);
+    expect(r.keyring.keys.filter((k) => k.status !== "retired").map((k) => k.kid).sort()).toEqual([rootK.kid, active.kid, next.kid].sort());
+    // below the cap: nothing to do
+    expect(pruneEdgeKeyring(r.keyring, { nowMs: T0, room: 1 })).toEqual({ ok: true, keyring: r.keyring, pruned: [] });
+    // retired too recently (age bound 24 h by default) ⇒ refused, nothing dropped
+    const fresh = { ...kr, keys: [e(rootK, "active", true), e(active, "active"), e(next, "next"), ...retired.map((k) => ({ ...k, retiredAt: T0 - H }))] };
+    expect(pruneEdgeKeyring(fresh, { nowMs: T0, room: 1 })).toMatchObject({ ok: false });
+    // a keyring of only non-retired keys at the cap is never pruned
+    const allLive = { ...kr, keys: [e(rootK, "active", true), ...Array.from({ length: 15 }, () => e(gen(), "active"))] };
+    expect(pruneEdgeKeyring(allLive, { nowMs: T0, room: 1 })).toMatchObject({ ok: false });
   });
 });
 
@@ -376,7 +481,8 @@ describe("central keyring FILES — the only source of the published keyset and 
     // an edge pinned on the root accepts the chain root → (keyset signed by the root) → (keyset signed by k2)
     clock = T0;
     const pin = edgePinFromKeyring(kr);
-    expect(pin.keys.map((k) => k.kid)).toEqual([k1.key.kid]);
+    expect(pin.keyset.keys.map((k) => k.kid)).toEqual([k1.key.kid]);
+    expect(pin.keyset.version).toBe(kr.version); // I5: the pin records the keyring version at provisioning
     const store = EdgeTrustStore.fromPinned(pin, { nodeId: NODE, now: () => clock });
     expect(store.acceptKeysetUpdate(signEdgeObject("keyset", buildEdgeKeysetFromKeyring(kr, k1.key, { retiredGraceMs: 40_000 }), k1.key))).toMatchObject({ ok: true, changed: true });
     expect(store.acceptKeysetUpdate(signEdgeObject("keyset", a, k2.key))).toMatchObject({ ok: true, changed: false }); // same version, same bytes

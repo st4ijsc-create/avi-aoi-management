@@ -37,6 +37,9 @@
  * is never trusted: `untrusted_keyset`). Validity windows use the store's own clock, never a time from a claim. The typed
  * verifiers (node / run / claim / TTL binding) are in edgeTrust.ts. Rotation = add a new signer (generate → next, activate →
  * both active, ≥ 2 config cycles, switch central's key file, retire the previous non-root signer); it never revokes the root.
+ * fix review 1: the pin file is `{ kind: "avi-edge-pin+v1", keyset }` at the keyring VERSION of provisioning (I5 — no keyset
+ * below it is ever accepted); EdgeTrustStore.fromPinned accepts nothing else (M3) and fromPinFile is the boot path; the
+ * keyring records who changed it (history) and is pruned at its 16-key cap without touching the root / active keys (M5).
  *
  * Nothing here touches the DB or the network. Verification never throws: it answers { ok:false, reason }.
  */
@@ -333,12 +336,49 @@ export function parseEdgeKeyset(raw: unknown): { ok: true; keyset: EdgeKeyset } 
   }
 }
 
-/** The pin file content written at provisioning: the provisioning root(s) only, active, open-ended. */
-export function edgePinnedKeyset(roots: ReadonlyArray<{ kid: string; publicKeyPem: string; notBefore: number }>, nowMs = Date.now()): EdgeKeyset {
-  const ks: EdgeKeyset = { v: 1, version: 1, issuedAt: nowMs, keys: roots.map((r) => ({ kid: r.kid, publicKeyPem: r.publicKeyPem, status: "active", notBefore: r.notBefore, notAfter: null })) };
-  const p = parseEdgeKeyset(ks);
+// ── the provisioning PIN (edge-keyset.json) — fix review 1 (I5, M3) ─────────────────────────────────────────────────
+//
+// A pin is NOT a bare keyset: it is `{ kind: "avi-edge-pin+v1", keyset }` (strict), so a keyset lifted from a message (a
+// config's keyset payload, a request body) can never be passed off as a trust anchor — EdgeTrustStore.fromPinned refuses
+// anything but this shape. keyset.version = the keyring version at provisioning (I5): the store refuses every keyset update
+// BELOW it, so a captured, genuinely signed OLDER keyset (one that still trusted a since-retired key) is refused as a rollback.
+// The first update AT the pin version is accepted once (the pin holds the root only; central's keyset of that version holds
+// every published key) — after that, versions must strictly increase.
+export const EDGE_PIN_KIND = "avi-edge-pin+v1" as const;
+export interface EdgeKeysetPin {
+  kind: typeof EDGE_PIN_KIND;
+  keyset: EdgeKeyset;
+}
+export const edgeKeysetPinSchema = z.strictObject({ kind: z.literal(EDGE_PIN_KIND), keyset: edgeKeysetSchema });
+
+/** Strict pin shape (plain JSON data only) + keyset semantics + every pinned key active and open-ended. */
+export function parseEdgeKeysetPin(raw: unknown): { ok: true; pin: EdgeKeysetPin } | { ok: false; reason: string } {
+  try {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, reason: "not an object" };
+    const proto = Object.getPrototypeOf(raw);
+    if (proto !== Object.prototype && proto !== null) return { ok: false, reason: "not plain data" };
+    // plain JSON data only (no getters / class instances / prototype keys): one canonical round-trip
+    const data = parseEdgeCanonicalJson(edgeCanonicalJson(raw));
+    const p = edgeKeysetPinSchema.safeParse(data);
+    if (!p.success) return { ok: false, reason: `shape: ${p.error.issues[0]?.path.join(".") ?? "?"} ${p.error.issues[0]?.message ?? ""}`.trim() };
+    const ks = parseEdgeKeyset(p.data.keyset);
+    if (!ks.ok) return { ok: false, reason: ks.reason };
+    if (!ks.keyset.keys.every((k) => k.status === "active" && k.notAfter === null)) return { ok: false, reason: "every pinned key must be active and open-ended" };
+    return { ok: true, pin: { kind: EDGE_PIN_KIND, keyset: ks.keyset } };
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+}
+
+/**
+ * The pin file content written at provisioning: the provisioning root(s) only, active, open-ended, at keyset VERSION `version`
+ * (I5 — pass the keyring version; edgePinFromKeyring does). The default 1 is for tests / a brand-new keyring only.
+ */
+export function edgePinnedKeyset(roots: ReadonlyArray<{ kid: string; publicKeyPem: string; notBefore: number }>, nowMs = Date.now(), version = 1): EdgeKeysetPin {
+  const ks: EdgeKeyset = { v: 1, version, issuedAt: nowMs, keys: roots.map((r) => ({ kid: r.kid, publicKeyPem: r.publicKeyPem, status: "active", notBefore: r.notBefore, notAfter: null })) };
+  const p = parseEdgeKeysetPin({ kind: EDGE_PIN_KIND, keyset: ks });
   if (!p.ok) throw new Error(`edgePinnedKeyset: ${p.reason}`);
-  return p.keyset;
+  return p.pin;
 }
 
 // ── verification (allow-list, R-10-a; fix scan 2: the trust anchor is LOCAL state, never a request) ─────────────────
@@ -417,6 +457,7 @@ function checkKeysetUpdate(
   update: unknown,
   nowMs: number,
   skewMs: number,
+  atPin: boolean,
 ): { ok: true; keyset: EdgeKeyset; same: boolean } | { ok: false; reason: EdgeKeysetUpdateFailure } {
   try {
     const r = verifyAgainst(update, "keyset", trusted, nowMs, skewMs);
@@ -425,7 +466,9 @@ function checkKeysetUpdate(
     const parsed = parseEdgeKeyset(r.payload);
     if (!parsed.ok) return { ok: false, reason: "invalid_keyset" };
     if (parsed.keyset.version === trusted.version && edgeCanonicalJson(parsed.keyset) === edgeCanonicalJson(trusted)) return { ok: true, keyset: trusted, same: true };
-    if (!(parsed.keyset.version > trusted.version)) return { ok: false, reason: "rollback" };
+    // I5: never below the PIN's version; the first update may be AT it (the pin is the root-only projection of that version)
+    const minVersion = atPin ? pinned.version : trusted.version + 1;
+    if (!(parsed.keyset.version >= minVersion)) return { ok: false, reason: "rollback" };
     for (const pk of pinned.keys) {
       const k = parsed.keyset.keys.find((x) => x.kid === pk.kid);
       if (!k || k.publicKeyPem !== pk.publicKeyPem || k.status !== "active" || k.notAfter !== null) return { ok: false, reason: "pinned_removed" };
@@ -447,6 +490,8 @@ export interface EdgeTrustOptions {
 interface TrustState {
   pinned: EdgeKeyset;
   current: EdgeKeyset;
+  /** no update accepted yet (the current keyset IS the pin) */
+  atPin: boolean;
   updates: EdgeSignedEnvelope[];
   nodeId: number;
   now: () => number;
@@ -465,15 +510,19 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 export class EdgeTrustStore {
   private constructor() {}
 
+  /**
+   * fix review 1 (M3): `pin` must be the PIN shape `{ kind: "avi-edge-pin+v1", keyset }` (parseEdgeKeysetPin — strict, plain
+   * data, every key active + open-ended); a bare keyset (e.g. one taken from a message) is refused. Prefer fromPinFile.
+   */
   static fromPinned(pin: unknown, opts: EdgeTrustOptions, updates: readonly unknown[] = []): EdgeTrustStore {
-    const p = parseEdgeKeyset(pin);
+    const p = parseEdgeKeysetPin(pin);
     if (!p.ok) throw new EdgeTrustError(`pinned keyset refused: ${p.reason}`);
-    if (!p.keyset.keys.every((k) => k.status === "active" && k.notAfter === null)) throw new EdgeTrustError("pinned keyset: every pinned key must be active and open-ended");
-    if (!Number.isSafeInteger(opts.nodeId) || opts.nodeId <= 0) throw new EdgeTrustError("nodeId must be a positive integer");
+    if (!opts || !Number.isSafeInteger(opts.nodeId) || opts.nodeId <= 0) throw new EdgeTrustError("nodeId must be a positive integer");
     const skew = opts.skewMs ?? 5_000;
     const state: TrustState = {
-      pinned: clone(p.keyset),
-      current: clone(p.keyset),
+      pinned: clone(p.pin.keyset),
+      current: clone(p.pin.keyset),
+      atPin: true,
       updates: [],
       nodeId: opts.nodeId,
       now: opts.now ?? Date.now,
@@ -486,6 +535,17 @@ export class EdgeTrustStore {
       if (!r.ok) throw new EdgeTrustError(`persisted keyset update ${i} refused: ${r.reason}`);
     }
     return store;
+  }
+
+  /** THE edge boot path: read the provisioning pin FILE (edge-keyset.json, written by `edge-signing-key.ts pin`), then fromPinned. */
+  static fromPinFile(file: string, opts: EdgeTrustOptions, updates: readonly unknown[] = []): EdgeTrustStore {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      throw new EdgeTrustError(`pin file ${file} missing or not JSON`);
+    }
+    return EdgeTrustStore.fromPinned(raw, opts, updates);
   }
 
   private st(): TrustState {
@@ -515,7 +575,8 @@ export class EdgeTrustStore {
   }
   /**
    * Offer a signed keyset (e.g. config.keyset). Accepted only if signed by a key ACTIVE in the CURRENT trusted keyset, with
-   * a strictly higher version (the same version, identical, is a no-op), keeping every pinned key active and open-ended.
+   * a strictly higher version (the same version, identical, is a no-op) — never below the PIN's version, the first update may
+   * be at it (I5) — keeping every pinned key active and open-ended.
    * The state changes only on success. Never throws.
    */
   acceptKeysetUpdate(update: unknown): { ok: true; version: number; changed: boolean } | { ok: false; reason: EdgeKeysetUpdateFailure } {
@@ -527,10 +588,11 @@ export class EdgeTrustStore {
     } catch {
       return { ok: false, reason: "malformed" };
     }
-    const r = checkKeysetUpdate(s.pinned, s.current, update, now, s.skewMs);
+    const r = checkKeysetUpdate(s.pinned, s.current, update, now, s.skewMs, s.atPin);
     if (!r.ok) return r;
     if (r.same) return { ok: true, version: s.current.version, changed: false };
     s.current = clone(r.keyset);
+    s.atPin = false;
     s.updates.push(clone(update as EdgeSignedEnvelope));
     return { ok: true, version: s.current.version, changed: true };
   }
@@ -574,6 +636,17 @@ export interface EdgeKeyringEntry {
   /** the provisioning root (pinned by every edge): always active, never retired here */
   root: boolean;
 }
+/** fix review 1 (I7) — who changed the keyring: a PROVEN active admin (scripts/edge-signing-key.ts --actor + verifyCredentialAdmin). */
+export interface EdgeKeyringHistoryEntry {
+  /** the keyring version this change produced */
+  version: number;
+  action: "generate" | "activate" | "retire" | "prune";
+  kid: string;
+  actorUserId: number;
+  actorName: string;
+  /** epoch ms */
+  at: number;
+}
 export interface EdgeKeyring {
   v: 1;
   /** bumped by every change — the version of the keyset central publishes */
@@ -581,6 +654,8 @@ export interface EdgeKeyring {
   /** epoch ms of the last change — the published keyset's issuedAt (so one version ⇒ one byte-identical keyset) */
   updatedAt: number;
   keys: EdgeKeyringEntry[];
+  /** every change, oldest first (absent on a keyring written before fix review 1) */
+  history?: EdgeKeyringHistoryEntry[];
 }
 export const edgeKeyringSchema = z.strictObject({
   v: z.literal(1),
@@ -599,6 +674,19 @@ export const edgeKeyringSchema = z.strictObject({
     )
     .min(1)
     .max(16),
+  history: z
+    .array(
+      z.strictObject({
+        version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        action: z.enum(["generate", "activate", "retire", "prune"]),
+        kid: z.string().regex(EDGE_KID_RE),
+        actorUserId: z.number().int().positive(),
+        actorName: z.string().min(1).max(200),
+        at: epochMs,
+      }),
+    )
+    .max(5_000)
+    .optional(),
 });
 export const EDGE_KEYRING_FILE = "keyring.json";
 
@@ -680,9 +768,41 @@ export function buildEdgeKeysetFromKeyring(keyring: EdgeKeyring, signer: EdgeSig
   return parsed.keyset;
 }
 
-/** The provisioning pin (edge-keyset.json): the keyring's ROOT only — from the files, never from the DB. */
-export function edgePinFromKeyring(keyring: EdgeKeyring): EdgeKeyset {
+/**
+ * The provisioning pin (edge-keyset.json): the keyring's ROOT only — from the files, never from the DB — at the keyring's
+ * CURRENT version (I5): the edge refuses every keyset older than the one in force when it was provisioned.
+ */
+export function edgePinFromKeyring(keyring: EdgeKeyring): EdgeKeysetPin {
   const root = keyring.keys.find((k) => k.root);
   if (!root) throw new EdgeTrustError("keyring has no root");
-  return edgePinnedKeyset([{ kid: root.kid, publicKeyPem: root.publicKeyPem, notBefore: root.notBefore }], keyring.updatedAt);
+  return edgePinnedKeyset([{ kid: root.kid, publicKeyPem: root.publicKeyPem, notBefore: root.notBefore }], keyring.updatedAt, keyring.version);
+}
+
+/** fix review 1 (M5): the keyring cap (= the keyset's 16 keys) and how long a retired key is kept before it may be pruned. */
+export const EDGE_KEYRING_MAX_KEYS = 16;
+export const EDGE_RETIRED_PRUNE_AFTER_MS = 24 * 3_600_000;
+/**
+ * fix review 1 (M5) — make room at the keyring cap: drop RETIRED keys retired at least `minRetiredAgeMs` ago (far past auth
+ * TTL + skew), oldest first, until `room` slots are free. NEVER the root, never an active or next key. Returns the pruned
+ * keyring (version unchanged — the caller bumps it) and the kids removed; `ok:false` when not enough retired keys are old
+ * enough (the caller refuses the change).
+ */
+export function pruneEdgeKeyring(
+  keyring: EdgeKeyring,
+  opts: { nowMs: number; room: number; minRetiredAgeMs?: number },
+): { ok: true; keyring: EdgeKeyring; pruned: string[] } | { ok: false; reason: string } {
+  const minAge = opts.minRetiredAgeMs ?? EDGE_RETIRED_PRUNE_AFTER_MS;
+  const need = keyring.keys.length + opts.room - EDGE_KEYRING_MAX_KEYS;
+  if (need <= 0) return { ok: true, keyring, pruned: [] };
+  const candidates = keyring.keys
+    .filter((k) => !k.root && k.status === "retired" && k.retiredAt !== null && k.retiredAt + minAge <= opts.nowMs)
+    .sort((a, b) => (a.retiredAt as number) - (b.retiredAt as number) || (a.kid < b.kid ? -1 : 1));
+  if (candidates.length < need) {
+    return {
+      ok: false,
+      reason: `the keyring is at its cap of ${EDGE_KEYRING_MAX_KEYS} keys and only ${candidates.length} retired key(s) are older than ${Math.round(minAge / 3_600_000)} h — retire one and wait; an active / next key or the root is never dropped`,
+    };
+  }
+  const drop = new Set(candidates.slice(0, need).map((k) => k.kid));
+  return { ok: true, keyring: { ...keyring, keys: keyring.keys.filter((k) => !drop.has(k.kid)) }, pruned: [...drop] };
 }
