@@ -22,6 +22,8 @@ import { getDb } from "../../db/connection";
 import {
   EDGE_CONTROL_MIGRATIONS,
   ackCentralStop,
+  ackEdgeStop,
+  resolveStop,
   devicePendingStops,
   adapterOwnership,
   applyEdgeMotionLock,
@@ -200,7 +202,7 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
       const stopA = await req({ adapterId: ad, kind: "stop", reason: "adapter stop" });
       const ackedStop = await req({ robotId: robot, kind: "stop", reason: "already done" });
       await tx.update(robotMotionLockRequests).set({ deliveredAt: new Date() }).where(eq(robotMotionLockRequests.id, ackedStop));
-      await tx.update(robotMotionLockRequests).set({ ackedAt: new Date(), outcome: "done" }).where(eq(robotMotionLockRequests.id, ackedStop));
+      await ackEdgeStop(tx, { requestId: ackedStop, nodeId: node, robotId: robot, adapterId: null, ownerEpoch: 2, outcome: "done", unsigned: false }); // fix review 3: STOP acks only via the guarded function
       await tx.update(robotOwnership).set({ edgeNodeId: nodeB }).where(eq(robotOwnership.id, robot)); // robot epoch 3, owner B
       await tx.update(adapterOwnership).set({ edgeNodeId: null }).where(eq(adapterOwnership.id, ad)); // adapter → central
       const deliverOldStop = await codeOf(tx, () => tx.update(robotMotionLockRequests).set({ deliveredAt: new Date() }).where(eq(robotMotionLockRequests.id, stopR)));
@@ -227,13 +229,19 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
       const pending = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
       await ackCentralStop(tx, { requestId: q.id, outcome: "failed", actorUserId: 9 });
       const [row] = await tx.select().from(robotMotionLockRequests).where(eq(robotMotionLockRequests.id, q.id));
+      // fix review 3 (R-10-aa N2): a FAILED STOP stays listed (needsResolution) until a person resolves it
+      const failedListed = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
+      const [actor] = (await tx.execute(sql`INSERT INTO users ("openId", role, "isActive") VALUES (${"__dot10Af3_" + Date.now()}, 'admin', true) RETURNING id`)) as unknown as Array<{ id: number }>;
+      await resolveStop(tx, { requestId: q.id, actorUserId: actor.id, resolution: "stopped at the cabinet, verified" });
       const after = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
-      return { whileEdge, pending, row, after: after.length, id: q.id };
+      return { whileEdge, pending, row, failedListed, after: after.length, id: q.id };
     });
     expect(out.whileEdge).toBe("23514");
     expect(out.pending).toHaveLength(1);
     expect(out.pending[0]).toMatchObject({ requestId: out.id, currentEdgeNodeId: null, centralMustExecute: true, stale: true, overdue: false });
     expect(out.row).toMatchObject({ outcome: "failed", ackedBy: 9 });
+    expect(out.failedListed).toHaveLength(1);
+    expect(out.failedListed[0]).toMatchObject({ outcome: "failed", needsResolution: true });
     expect(out.after).toBe(0);
   });
 

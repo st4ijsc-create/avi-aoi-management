@@ -142,6 +142,12 @@ export const robotMotionLockRequests = pgTable("robot_motion_lock_requests", {
   ackedBy: integer("ackedBy"),
   /** fix review 2 (second scan) — the request this STOP was carried to on an owner change (carry only); NULL = chain head */
   carriedToId: integer("carriedToId"),
+  /** fix review 3 — the node acked this STOP over the unsigned-STOP channel (R-10-k / R-10-o) */
+  ackViaUnsigned: boolean("ackViaUnsigned"),
+  /** fix review 3 — resolution of a refused / failed STOP (edge_stop_resolve only), written once */
+  resolvedAt: timestamp("resolvedAt", { withTimezone: true }),
+  resolvedBy: integer("resolvedBy"),
+  resolution: text("resolution"),
 });
 /**
  * fix review 2 (R-10-i, L-7) — VIEW device_pending_stops (SELECT only): every STOP request nobody acknowledged, with the
@@ -170,6 +176,9 @@ export const devicePendingStops = pgTable("device_pending_stops", {
   undeliverable: boolean("undeliverable").notNull(),
   requestNodeStatus: text("requestNodeStatus"),
   requestNodeLastHeartbeatAt: timestamp("requestNodeLastHeartbeatAt"),
+  /** fix review 3 (R-10-aa N2) — refused / failed STOPs stay listed until resolved (edge_stop_resolve) */
+  outcome: varchar("outcome", { length: 16 }).$type<"refused" | "failed">(),
+  needsResolution: boolean("needsResolution").notNull(),
 });
 export type DevicePendingStopRow = typeof devicePendingStops.$inferSelect;
 export type RobotMotionLockRequestRow = typeof robotMotionLockRequests.$inferSelect;
@@ -255,6 +264,26 @@ export async function clearEdgeMotionLock(tx: Exec, a: { robotId: number; nodeId
  */
 export async function ackCentralStop(tx: Exec, a: { requestId: number; outcome: "done" | "failed"; actorUserId: number }): Promise<void> {
   await tx.execute(sql`SELECT public.edge_stop_ack_central(${a.requestId}, ${a.outcome}, ${a.actorUserId})`);
+}
+
+/**
+ * fix review 3 (R-10-aa N2, R-10-o) — THE way a node's STOP ack is recorded (B's ackEdgeCommand, for every STOP — signed or over
+ * the unsigned-STOP channel). true = recorded; false = not a pending STOP of THIS node with exactly this target (robot XOR adapter)
+ * and owner epoch — nothing changed, the request stays pending (record an anomaly). outcome expired / bad arguments ⇒ 23514.
+ * A direct UPDATE of a STOP's ack columns is refused (23514).
+ */
+export async function ackEdgeStop(
+  tx: Exec,
+  a: { requestId: number; nodeId: number; robotId: number | null; adapterId: number | null; ownerEpoch: number; outcome: "done" | "refused" | "failed"; unsigned: boolean; generation?: number | null },
+): Promise<boolean> {
+  const r = await tx.execute(
+    sql`SELECT public.edge_stop_ack_edge(${a.requestId}, ${a.nodeId}, ${a.robotId}::integer, ${a.adapterId}::integer, ${a.ownerEpoch}::bigint, ${a.outcome}, ${a.unsigned}, ${a.generation ?? null}::integer) AS ok`,
+  );
+  return firstRow(r)?.ok === true;
+}
+/** fix review 3 (R-10-aa N2) — a person records how a refused / failed STOP was resolved (active user, ≥ 3 chars); then it leaves device_pending_stops. */
+export async function resolveStop(tx: Exec, a: { requestId: number; actorUserId: number; resolution: string }): Promise<void> {
+  await tx.execute(sql`SELECT public.edge_stop_resolve(${a.requestId}, ${a.actorUserId}, ${a.resolution})`);
 }
 
 /** fix scan 2 (maker-checker, R-8-a) — the guarded path of edge_robot_trust_approvals (avi_app has SELECT only on the table). */

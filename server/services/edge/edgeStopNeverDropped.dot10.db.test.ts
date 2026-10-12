@@ -223,4 +223,65 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
     });
     expect(r).toBe("23514");
   }, 60_000);
+  // ── fix review 3 (R-10-aa N2): every STOP ack through a guarded function; refused / failed stay open until resolved ──────
+  it("★ N2: avi_app can never ack / resolve a STOP by a direct UPDATE (edge-owned done, central-owned refused)", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const s1 = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      await tx`UPDATE public.robot_motion_lock_requests SET "deliveredAt" = now() WHERE id = ${s1}`; // delivery stays direct
+      const directDone = await code(tx, (sp) => sp`UPDATE public.robot_motion_lock_requests SET "ackedAt" = now(), outcome = 'done' WHERE id = ${s1}`);
+      const s2 = await req(tx, { adapterId: f.ad, node: f.a, epoch: 2, kind: "stop" });
+      await tx`UPDATE public.device_adapters SET "edgeNodeId" = NULL WHERE id = ${f.ad}`; // central-owned now
+      const directRefused = await code(tx, (sp) => sp`UPDATE public.robot_motion_lock_requests SET "deliveredAt" = now(), "ackedAt" = now(), outcome = 'refused' WHERE id = ${s2}`);
+      const [n] = await tx`SELECT count(*)::int AS n FROM public.device_pending_stops WHERE "requestId" IN (${s1}, ${s2})`;
+      // a LOCK request is still acked directly (unchanged path for lock / clear)
+      const lock = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "lock" });
+      await tx`UPDATE public.robot_motion_lock_requests SET "deliveredAt" = now() WHERE id = ${lock}`;
+      const lockAck = await code(tx, (sp) => sp`UPDATE public.robot_motion_lock_requests SET "ackedAt" = now(), outcome = 'done' WHERE id = ${lock}`);
+      return { directDone, directRefused, stillListed: n.n, lockAck };
+    });
+    expect(r).toEqual({ directDone: "23514", directRefused: "23514", stillListed: 2, lockAck: null });
+  }, 60_000);
+
+  it("★ N2 / R-10-o: edge_stop_ack_edge records an ack ONLY for this node's pending STOP with the SAME target and owner epoch", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const s = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      const ack = (o: { node?: number; robot?: number | null; adapter?: number | null; epoch?: number; outcome?: string; unsigned?: boolean }) =>
+        code(tx, async (sp) => {
+          const [x] = await sp`SELECT public.edge_stop_ack_edge(${s}, ${o.node ?? f.a}, ${o.robot === undefined ? f.robot : o.robot}::integer, ${o.adapter ?? null}::integer, ${o.epoch ?? 2}::bigint, ${o.outcome ?? "done"}, ${o.unsigned ?? true}, NULL) AS ok`;
+          if (x.ok !== true) throw Object.assign(new Error("refused"), { code: "false" });
+        });
+      const otherNode = await ack({ node: f.b });
+      const otherTarget = await ack({ robot: null, adapter: f.ad });
+      const otherEpoch = await ack({ epoch: 3 });
+      const expired = await ack({ outcome: "expired" });
+      const twoTargets = await ack({ adapter: f.ad });
+      const good = await ack({});
+      const [row] = await tx`SELECT outcome, "ackViaUnsigned" AS u, "deliveredAt" IS NOT NULL AS d FROM public.robot_motion_lock_requests WHERE id = ${s}`;
+      const again = await ack({});
+      return { otherNode, otherTarget, otherEpoch, expired, twoTargets, good, row, again };
+    });
+    expect(r).toEqual({ otherNode: "false", otherTarget: "false", otherEpoch: "false", expired: "23514", twoTargets: "23514", good: null, row: { outcome: "done", u: true, d: true }, again: "false" });
+  }, 60_000);
+
+  it("★ N2: a STOP answered refused / failed STAYS in device_pending_stops (needsResolution) and keeps its device undeletable until a person resolves it", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const s = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      await tx`SELECT public.edge_stop_ack_edge(${s}, ${f.a}, ${f.robot}::integer, NULL::integer, 2::bigint, 'refused', false, NULL)`;
+      const [v] = await tx`SELECT "needsResolution" AS nr, outcome FROM public.device_pending_stops WHERE "requestId" = ${s}`;
+      const del = await code(tx, (sp) => sp`DELETE FROM public.robots WHERE id = ${f.robot}`);
+      const t = tag();
+      const [u] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t}, 'user', true) RETURNING id`;
+      const [off] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t + "x"}, 'user', false) RETURNING id`;
+      const byInactive = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${off.id}, 'checked on site')`);
+      const noNote = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${u.id}, ' ')`);
+      const resolved = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${u.id}, 'robot stopped by hand, verified')`);
+      const twice = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${u.id}, 'again')`);
+      const [after] = await tx`SELECT count(*)::int AS n FROM public.device_pending_stops WHERE "requestId" = ${s}`;
+      return { listed: v ? { nr: v.nr, outcome: v.outcome } : null, del, byInactive, noNote, resolved, twice, after: after.n };
+    });
+    expect(r).toEqual({ listed: { nr: true, outcome: "refused" }, del: "23514", byInactive: "23514", noNote: "23514", resolved: null, twice: "23514", after: 0 });
+  }, 60_000);
 });

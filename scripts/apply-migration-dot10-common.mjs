@@ -101,12 +101,13 @@ export async function columnsOf(appSql, t) {
 export const EDGE_FN_SEARCH_PATH = "search_path=pg_catalog, public, pg_temp";
 /** The functions avi_app may call directly (every other function of 0372–0375 is a trigger function: no EXECUTE for anyone). */
 export const EDGE_FN_CALLABLE = new Set([
-  "edge_motion_lock_apply", "edge_motion_lock_clear", "edge_stop_ack_central",
+  "edge_motion_lock_apply", "edge_motion_lock_clear", "edge_stop_ack_central", "edge_stop_ack_edge", "edge_stop_resolve",
   "edge_robot_trust_request", "edge_robot_trust_approve", "edge_robot_trust_revoke", "edge_robot_trust_is_approved",
 ]);
 /** Names of the functions a migration file defines (`CREATE OR REPLACE FUNCTION public.<name>(`). */
 export function functionsDefinedIn(sqlText) {
-  return [...sqlText.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(public\.)?([a-z_][a-z0-9_]*)\s*\(/gi)].map((m) => ({ qualified: Boolean(m[1]), name: m[2] }));
+  // fix review 3 (re-review nit): quoted names count too (0376 re-creates public."orchestration_runs_bump_pending_epoch")
+  return [...sqlText.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+(public\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\(/gi)].map((m) => ({ qualified: Boolean(m[1]), name: m[2].toLowerCase() }));
 }
 /**
  * fix review 1 (R-10-e) — measured in the catalog as avi_app: every function the file defines is schema-qualified, runs with
