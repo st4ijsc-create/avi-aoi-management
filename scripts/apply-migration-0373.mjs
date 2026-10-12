@@ -73,6 +73,43 @@ await runMigration({
       if (!ct?.c || !/Dot 10 A \(0373\)/.test(ct.c)) throw new Error(`(a) ${t} comment missing`);
     }
     log(`(a) ${CUR} / ${PRG} / ${KEYS} + edge_nodes.protocolVersion; triggers 2`);
+    // fix review 4 (R-10-ag): the per-record content hash table — columns, write-once grants + trigger, behaviour
+    {
+      const REC = "edge_node_report_records";
+      const have = await columnsOf(appSql, REC);
+      for (const c of ["edgeNodeId", "stream", "epoch", "seq", "contentHash", "receivedAt"]) if (!have.includes(c)) throw new Error(`(a) ${REC}.${c} missing`);
+      const [nn] = await appSql`SELECT is_nullable AS n FROM information_schema.columns WHERE table_name = ${REC} AND column_name = 'contentHash'`;
+      if (nn.n !== "NO") throw new Error(`(a) ${REC}.contentHash must be NOT NULL`);
+      const p = await tablePriv(appSql, REC);
+      if (!p.sel || !p.ins || p.upd || p.del || p.trunc || p.refs || p.trig) throw new Error(`(b) table grants on ${REC} not exact: ${JSON.stringify(p)}`);
+      const [w] = await appSql`SELECT count(*)::int AS n FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D' AND tgname = 'trg_edge_report_record_worm'`;
+      if (w.n !== 1) throw new Error("(a) trg_edge_report_record_worm missing");
+      const H = (c) => c.repeat(64);
+      const rr = await rolledBack(appSql, async (tx) => {
+        const { node } = await fixtures(tx, `__probe_0373r_${Date.now()}`);
+        await tx`INSERT INTO ${tx(CUR)} ("edgeNodeId", stream, epoch) VALUES (${node.id}, 'events', ${EP("c")})`;
+        const ins = (sp, seq, h) => sp`INSERT INTO ${sp(REC)} ("edgeNodeId", stream, epoch, seq, "contentHash") VALUES (${node.id}, 'events', ${EP("c")}, ${seq}, ${h})`;
+        return {
+          ok: await maLoi(tx, (sp) => ins(sp, 1, H("a"))),
+          sameSeqAgain: await maLoi(tx, (sp) => ins(sp, 1, H("b"))),
+          noHash: await maLoi(tx, (sp) => ins(sp, 2, null)),
+          badHash: await maLoi(tx, (sp) => ins(sp, 2, "xyz")),
+          seq0: await maLoi(tx, (sp) => ins(sp, 0, H("a"))),
+          noCursor: await maLoi(tx, (sp) => sp`INSERT INTO ${sp(REC)} ("edgeNodeId", stream, epoch, seq, "contentHash") VALUES (${node.id}, 'robot_state', ${EP("c")}, 1, ${H("a")})`),
+          upd: await maLoi(tx, (sp) => sp`UPDATE ${sp(REC)} SET "contentHash" = ${H("c")} WHERE "edgeNodeId" = ${node.id}`),
+          del: await maLoi(tx, (sp) => sp`DELETE FROM ${sp(REC)} WHERE "edgeNodeId" = ${node.id}`),
+        };
+      });
+      expectExact("(b) report records (avi_app)", rr, { ok: null, sameSeqAgain: "23505", noHash: "23502", badHash: "23514", seq0: "23514", noCursor: "23503", upd: "42501", del: "42501" });
+      const ro = await rolledBack(sql, async (tx) => {
+        const { node } = await fixtures(tx, `__probe_0373ro_${Date.now()}`);
+        await tx`INSERT INTO ${tx(CUR)} ("edgeNodeId", stream, epoch) VALUES (${node.id}, 'events', ${EP("d")})`;
+        await tx`INSERT INTO ${tx(REC)} ("edgeNodeId", stream, epoch, seq, "contentHash") VALUES (${node.id}, 'events', ${EP("d")}, 1, ${H("a")})`;
+        return { ownerUpd: await maLoi(tx, (sp) => sp`UPDATE ${sp(REC)} SET "contentHash" = ${H("b")} WHERE "edgeNodeId" = ${node.id}`) };
+      });
+      expectExact("(b) report records (owner, write-once)", ro, { ownerUpd: "23514" });
+      log(`(a/b) ${REC}: contentHash NOT NULL, SELECT/INSERT only, write-once ${JSON.stringify(rr)} ${JSON.stringify(ro)}; ROLLED BACK`);
+    }
     // (b) catalog
     for (const t of [CUR, PRG, KEYS]) {
       const p = await tablePriv(appSql, t);

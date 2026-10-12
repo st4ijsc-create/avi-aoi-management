@@ -73,6 +73,8 @@
 --   is either carried or refused, never stranded); N2 — a STOP's ack / resolution only via edge_stop_ack_edge (node + target +
 --   epoch bound, R-10-o) / edge_stop_ack_central / edge_stop_resolve (direct UPDATE refused); refused / failed STOPs stay in
 --   device_pending_stops ("needsResolution") and keep their device undeletable until resolved.
+-- fix review 4 (ruling R-10-ah, re-review F1): edge_stop_ack_edge also requires the device to be owned by the calling node at
+--   the row's epoch NOW; every refused edge ack is kept as WORM evidence in edge_stop_ack_refusals (avi_app SELECT only).
 --
 -- ⚠ DDL runs as owner `aoi`: `node scripts/apply-migration-0374.mjs --test-only` (dev: `--dev-only`, the owner decides; no
 --   flag ⇒ refused — R-3-g). Requires 0372 + 0373. Idempotent. ⚠ The repo forbids `drizzle-kit push/generate`.
@@ -85,6 +87,7 @@
 --   DROP TRIGGER IF EXISTS trg_robots_keep_pending_stop ON "robots"; DROP TRIGGER IF EXISTS trg_adapters_keep_pending_stop ON "device_adapters";
 --   DROP FUNCTION IF EXISTS device_keep_pending_stop(); ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "carriedToId";
 --   DROP FUNCTION IF EXISTS edge_stop_ack_edge(integer, integer, integer, integer, bigint, text, boolean, integer), edge_stop_resolve(integer, integer, text);
+--   DROP TABLE IF EXISTS "edge_stop_ack_refusals"; DROP FUNCTION IF EXISTS edge_stop_ack_refusals_worm();
 --   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "ackViaUnsigned", DROP COLUMN IF EXISTS "resolvedAt", DROP COLUMN IF EXISTS "resolvedBy", DROP COLUMN IF EXISTS "resolution";
 --   DROP TRIGGER IF EXISTS trg_adapters_owner_change ON "device_adapters"; DROP TRIGGER IF EXISTS trg_adapters_owner_insert ON "device_adapters";
 --   DROP TRIGGER IF EXISTS trg_robot_motion_lock_authority ON "robot_motion_locks"; DROP TRIGGER IF EXISTS trg_robot_motion_lock_write_guard ON "robot_motion_locks";
@@ -602,6 +605,40 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.edge_stop_ack_central(integer, text, integer) FROM PUBLIC;
 
+-- fix review 4 (R-10-ah, re-review F1): EVIDENCE of every edge STOP ack that was NOT accepted (WORM; written only by
+-- edge_stop_ack_edge as owner). Reason: malformed | not_pending | other_node | target_mismatch | epoch_mismatch | not_current_owner.
+CREATE TABLE IF NOT EXISTS "edge_stop_ack_refusals" (
+  "id" bigserial PRIMARY KEY,
+  "requestId" integer,
+  "edgeNodeId" integer,
+  "robotId" integer,
+  "adapterId" integer,
+  "ownerEpoch" bigint,
+  "outcome" varchar(16),
+  "viaUnsigned" boolean,
+  "reason" varchar(32) NOT NULL,
+  "at" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT "ck_edge_stop_ack_refusal_reason" CHECK ("reason" IN ('malformed', 'not_pending', 'other_node', 'target_mismatch', 'epoch_mismatch', 'not_current_owner'))
+);
+CREATE INDEX IF NOT EXISTS "idx_edge_stop_ack_refusals_req" ON "edge_stop_ack_refusals" ("requestId");
+ALTER TABLE "edge_stop_ack_refusals" DROP CONSTRAINT IF EXISTS "ck_edge_stop_ack_refusal_reason";
+ALTER TABLE "edge_stop_ack_refusals" ADD CONSTRAINT "ck_edge_stop_ack_refusal_reason"
+  CHECK ("reason" IN ('malformed', 'not_pending', 'other_node', 'target_mismatch', 'epoch_mismatch', 'not_current_owner'));
+COMMENT ON TABLE "edge_stop_ack_refusals" IS
+  'doc 81 Dot 10 A (0374, fix review 4 R-10-ah): WORM evidence of edge STOP acks that were refused (e.g. a former owner answering for a device it no longer owns). Written only by edge_stop_ack_edge.';
+CREATE OR REPLACE FUNCTION public.edge_stop_ack_refusals_worm() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  RAISE EXCEPTION 'edge_stop_ack_refusals is append-only (WORM)' USING ERRCODE = 'check_violation';
+END $$;
+REVOKE ALL ON FUNCTION public.edge_stop_ack_refusals_worm() FROM PUBLIC;
+DROP TRIGGER IF EXISTS trg_edge_stop_ack_refusals_worm ON "edge_stop_ack_refusals";
+CREATE TRIGGER trg_edge_stop_ack_refusals_worm BEFORE UPDATE OR DELETE ON "edge_stop_ack_refusals"
+  FOR EACH ROW EXECUTE FUNCTION public.edge_stop_ack_refusals_worm();
+DROP TRIGGER IF EXISTS trg_edge_stop_ack_refusals_worm_truncate ON "edge_stop_ack_refusals";
+CREATE TRIGGER trg_edge_stop_ack_refusals_worm_truncate BEFORE TRUNCATE ON "edge_stop_ack_refusals"
+  FOR EACH STATEMENT EXECUTE FUNCTION public.edge_stop_ack_refusals_worm();
+
 -- fix review 3 (R-10-aa N2, R-10-o): THE way a node acknowledges a STOP — B's ackEdgeCommand calls it for every STOP ack (signed
 -- or over the unsigned-STOP channel). Accepted only for a pending STOP bound to THIS node whose target (robot XOR adapter) and
 -- owner epoch equal what the node reports it actually stopped; outcome done | refused | failed (never expired, R-10-k).
@@ -612,16 +649,43 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   q record;
+  cur_owner integer;
+  cur_epoch bigint;
+  why text;
 BEGIN
   IF p_outcome IS NULL OR p_outcome NOT IN ('done', 'refused', 'failed') THEN
     RAISE EXCEPTION 'edge_stop_ack_edge: outcome must be done, refused or failed (got %)', p_outcome USING ERRCODE = 'check_violation';
   END IF;
+  -- fix review 4: a malformed ack (no / two targets, no node / epoch / channel) is REFUSED like any other mismatch — false +
+  -- evidence, the request stays pending (B answers 409); only an outcome outside done | refused | failed is an error
   IF p_node IS NULL OR p_owner_epoch IS NULL OR p_unsigned IS NULL OR ((p_robot IS NULL) = (p_adapter IS NULL)) THEN
-    RAISE EXCEPTION 'edge_stop_ack_edge: node, owner epoch, channel and exactly one target are required' USING ERRCODE = 'check_violation';
+    INSERT INTO public."edge_stop_ack_refusals" ("requestId", "edgeNodeId", "robotId", "adapterId", "ownerEpoch", "outcome", "viaUnsigned", "reason")
+      VALUES (p_request, p_node, p_robot, p_adapter, p_owner_epoch, p_outcome, p_unsigned, 'malformed');
+    RETURN false;
   END IF;
   SELECT * INTO q FROM public."robot_motion_lock_requests" x WHERE x."id" = p_request FOR UPDATE;
-  IF NOT FOUND OR q."kind" <> 'stop' OR q."ackedAt" IS NOT NULL OR q."edgeNodeId" IS DISTINCT FROM p_node
-     OR q."robotId" IS DISTINCT FROM p_robot OR q."adapterId" IS DISTINCT FROM p_adapter OR q."ownerEpoch" IS DISTINCT FROM p_owner_epoch THEN
+  -- fix review 4 (R-10-ah, F1): the device must be owned by THIS node at the row's epoch NOW (locked, so an owner change
+  -- cannot slip in between) — a former owner never answers for a device it no longer controls (a central-must-execute STOP
+  -- stays for central; a carried STOP stays for the new owner)
+  IF NOT FOUND THEN
+    why := 'not_pending';
+  ELSE
+    IF q."robotId" IS NOT NULL THEN
+      SELECT r."edgeNodeId", r."ownerEpoch" INTO cur_owner, cur_epoch FROM public."robots" r WHERE r."id" = q."robotId" FOR SHARE;
+    ELSE
+      SELECT a."edgeNodeId", a."ownerEpoch" INTO cur_owner, cur_epoch FROM public."device_adapters" a WHERE a."id" = q."adapterId" FOR SHARE;
+    END IF;
+    why := CASE
+      WHEN q."kind" <> 'stop' OR q."ackedAt" IS NOT NULL THEN 'not_pending'
+      WHEN q."edgeNodeId" IS DISTINCT FROM p_node THEN 'other_node'
+      WHEN q."robotId" IS DISTINCT FROM p_robot OR q."adapterId" IS DISTINCT FROM p_adapter THEN 'target_mismatch'
+      WHEN q."ownerEpoch" IS DISTINCT FROM p_owner_epoch THEN 'epoch_mismatch'
+      WHEN cur_owner IS DISTINCT FROM p_node OR cur_epoch IS DISTINCT FROM q."ownerEpoch" THEN 'not_current_owner'
+      ELSE NULL END;
+  END IF;
+  IF why IS NOT NULL THEN
+    INSERT INTO public."edge_stop_ack_refusals" ("requestId", "edgeNodeId", "robotId", "adapterId", "ownerEpoch", "outcome", "viaUnsigned", "reason")
+      VALUES (p_request, p_node, p_robot, p_adapter, p_owner_epoch, p_outcome, p_unsigned, why);
     RETURN false;
   END IF;
   UPDATE public."robot_motion_lock_requests"
@@ -740,6 +804,9 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.edge_stop_ack_central(integer, text, integer) TO avi_app; -- fix review 2 (R-10-i)
     GRANT EXECUTE ON FUNCTION public.edge_stop_ack_edge(integer, integer, integer, integer, bigint, text, boolean, integer) TO avi_app; -- fix review 3
     GRANT EXECUTE ON FUNCTION public.edge_stop_resolve(integer, integer, text) TO avi_app; -- fix review 3
+    REVOKE ALL ON "edge_stop_ack_refusals" FROM avi_app; -- fix review 4 (R-10-ah): evidence, read-only for the app
+    GRANT SELECT ON "edge_stop_ack_refusals" TO avi_app;
+    REVOKE ALL ON SEQUENCE "edge_stop_ack_refusals_id_seq" FROM avi_app;
     REVOKE ALL ON public.device_pending_stops FROM avi_app;
     GRANT SELECT ON public.device_pending_stops TO avi_app;
     REVOKE ALL ON "robot_motion_lock_requests" FROM avi_app;

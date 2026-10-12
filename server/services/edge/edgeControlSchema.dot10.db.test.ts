@@ -35,6 +35,7 @@ import {
   edgeNodeProgramReports,
   edgeNodeProtocol,
   edgeNodeReportCursors,
+  edgeNodeReportRecords,
   edgeRobotTrustApprovals,
   edgeStepAuthorizations,
   isEdgeControlRefusal,
@@ -260,6 +261,23 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
       return { f, clearBelow, clearAt, applyBelow, rowsAfterBelow, applyAt };
     });
     expect(out).toEqual({ f: 10, clearBelow: 0, clearAt: 1, applyBelow: false, rowsAfterBelow: 0, applyAt: true });
+  });
+
+  it("★ fix review 4 (R-10-ag): edge_node_report_records keeps the contentHash of every accepted record — write-once, NOT NULL, one per seq", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      const { node } = await nodeRobot(tx, `__dot10Af4_${Date.now()}`);
+      const ep = "e".repeat(32);
+      await tx.insert(edgeNodeReportCursors).values({ edgeNodeId: node, stream: "events", epoch: ep });
+      const h = (c: string) => c.repeat(64);
+      await tx.insert(edgeNodeReportRecords).values({ edgeNodeId: node, stream: "events", epoch: ep, seq: 1, contentHash: h("a") });
+      const [row] = await tx.select().from(edgeNodeReportRecords).where(and(eq(edgeNodeReportRecords.edgeNodeId, node), eq(edgeNodeReportRecords.seq, 1)));
+      const reusedSeqOtherContent = await codeOf(tx, () => tx.insert(edgeNodeReportRecords).values({ edgeNodeId: node, stream: "events", epoch: ep, seq: 1, contentHash: h("b") }));
+      const noHash = await codeOf(tx, () => tx.execute(sql`INSERT INTO edge_node_report_records ("edgeNodeId", stream, epoch, seq, "contentHash") VALUES (${node}, 'events', ${ep}, 2, NULL)`));
+      const rewrite = await codeOf(tx, () => tx.update(edgeNodeReportRecords).set({ contentHash: h("c") }).where(eq(edgeNodeReportRecords.edgeNodeId, node)));
+      const remove = await codeOf(tx, () => tx.delete(edgeNodeReportRecords).where(eq(edgeNodeReportRecords.edgeNodeId, node)));
+      return { hash: row?.contentHash, reusedSeqOtherContent, noHash, rewrite, remove };
+    });
+    expect(out).toEqual({ hash: "a".repeat(64), reusedSeqOtherContent: "23505", noHash: "23502", rewrite: "42501", remove: "42501" });
   });
 
   it("report cursor starts at 0 and never goes back; avi_app cannot plant a signing-key row (R-10-c mirror)", async () => {

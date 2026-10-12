@@ -213,6 +213,30 @@ export function pinStateOf(sources: ReadonlyArray<readonly [file: string, text: 
   }
   return last;
 }
+/**
+ * fix review 4 (re-review R2): every function ANY migration (all numbers, not only ≥ 0363) hooks to a trigger (`EXECUTE
+ * FUNCTION x()`) or creates SECURITY DEFINER — the functions that must stay pinned. Removing the re-creation that pinned one
+ * (e.g. 0376's 0316 block) leaves the LAST state at the old, unpinned definition ⇒ the census turns red.
+ */
+export function requiredPinned(sources: ReadonlyArray<readonly [file: string, text: string]>): Map<string, string> {
+  const need = new Map<string, string>();
+  for (const [f, t] of sources) {
+    const src = t.replace(/--[^\n]*/g, "");
+    for (const m of src.matchAll(/EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+(?:public\.)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\(/gi)) need.set(nameOf(m[1]), f);
+    for (const m of src.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+(?:public\.)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\(/gi)) {
+      const b = bodyOf(src, (m.index ?? 0) + m[0].length);
+      if (/\bSECURITY\s+DEFINER\b/i.test(src.slice((m.index ?? 0) + m[0].length, b.headerEnd) + " " + b.trailer)) need.set(nameOf(m[1]), f);
+    }
+  }
+  return need;
+}
+export function allMigrations(dir: string): Array<readonly [string, string]> {
+  return readdirSync(dir)
+    .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+    .sort()
+    .map((f) => [f, readFileSync(path.join(dir, f), "utf8")] as const);
+}
+
 /** The migrations numbered ≥ 0363 of `dir`, in order, and the pin state of every function they define. */
 export function migrationFunctionCensus(dir: string): { files: string[]; last: Map<string, { file: string; pinned: boolean }> } {
   const files = readdirSync(dir)
@@ -228,6 +252,24 @@ describe("R-10-h — census: every function a migration ≥ 0363 defines ends PI
     expect(last.size).toBeGreaterThanOrEqual(30);
     const unpinned = [...last.entries()].filter(([, v]) => !v.pinned).map(([k, v]) => `${k} (last defined in ${v.file})`);
     expect(unpinned).toEqual([]);
+  });
+
+  it("★ fix review 4 (R2): every trigger / SECURITY DEFINER function of ANY migration ends pinned (a dropped re-pin turns it red)", () => {
+    const srcs = allMigrations(SQL_DIR);
+    const state = pinStateOf(srcs);
+    const need = requiredPinned(srcs);
+    expect(need.size).toBeGreaterThanOrEqual(39);
+    expect(need.has("kiem_xac_thuc_noi_bo")).toBe(true);
+    const unpinned = [...need.entries()].filter(([n]) => !state.get(n)?.pinned).map(([n, f]) => `${n} (needed by ${f}; last ${state.get(n)?.file ?? "never"} )`);
+    expect(unpinned).toEqual([]);
+    // the instrument: the 0316 trigger function re-pinned by a later file, then that re-pin removed
+    const old = ["0316_x.sql", `CREATE OR REPLACE FUNCTION kiem() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;\nCREATE TRIGGER t AFTER INSERT ON users FOR EACH ROW EXECUTE FUNCTION kiem();`] as const;
+    const repin = ["0376_y.sql", `CREATE OR REPLACE FUNCTION public.kiem() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$ BEGIN RETURN NEW; END; $$;`] as const;
+    const ok = (xs: ReadonlyArray<readonly [string, string]>) => [...requiredPinned(xs).keys()].every((n) => pinStateOf(xs).get(n)?.pinned === true);
+    expect(ok([old, repin])).toBe(true);
+    expect(ok([old])).toBe(false); // the 0376 block removed
+    expect(ok([old, ["0376_y.sql", repin[1].replace("kiem()", "kiem_renamed()")]])).toBe(false); // renamed in 0376
+    expect(ok([["0200_d.sql", `CREATE FUNCTION d() RETURNS int LANGUAGE sql SECURITY DEFINER AS $$ SELECT 1 $$;`]])).toBe(false); // an old definer
   });
 
   it("the instrument itself: an unpinned CREATE is caught; a later CREATE / ALTER with the pin repairs it; a later unpin is caught", () => {

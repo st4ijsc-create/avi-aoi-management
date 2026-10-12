@@ -60,6 +60,21 @@ export const edgeNodeReportCursors = pgTable("edge_node_report_cursors", {
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
 });
 export type EdgeNodeReportCursorRow = typeof edgeNodeReportCursors.$inferSelect;
+/**
+ * fix review 4 (R-10-ag) — the contentHash of EVERY accepted stream record (mig 0373). Insert one row per applied record in the
+ * same transaction as the cursor advance; a record with seq ≤ cursor is a duplicate ONLY if its hash equals the stored one,
+ * otherwise a conflict (anomaly + refuse). Write-once: avi_app SELECT / INSERT only; an UPDATE is refused for every writer.
+ * contentHash = sha256 hex (64 lower-case chars) of the record's canonical JSON; the row's cursor must exist (FK); seq ≥ 1.
+ */
+export const edgeNodeReportRecords = pgTable("edge_node_report_records", {
+  edgeNodeId: integer("edgeNodeId").notNull(),
+  stream: varchar("stream", { length: 40 }).notNull(),
+  epoch: varchar("epoch", { length: 32 }).notNull(),
+  seq: bigint("seq", { mode: "number" }).notNull(),
+  contentHash: varchar("contentHash", { length: 64 }).notNull(),
+  receivedAt: timestamp("receivedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+export type EdgeNodeReportRecordRow = typeof edgeNodeReportRecords.$inferSelect;
 
 export const edgeNodeProgramReports = pgTable("edge_node_program_reports", {
   edgeNodeId: integer("edgeNodeId").notNull(),

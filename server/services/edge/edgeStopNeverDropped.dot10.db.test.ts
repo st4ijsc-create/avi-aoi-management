@@ -262,7 +262,7 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       const again = await ack({});
       return { otherNode, otherTarget, otherEpoch, expired, twoTargets, good, row, again };
     });
-    expect(r).toEqual({ otherNode: "false", otherTarget: "false", otherEpoch: "false", expired: "23514", twoTargets: "23514", good: null, row: { outcome: "done", u: true, d: true }, again: "false" });
+    expect(r).toEqual({ otherNode: "false", otherTarget: "false", otherEpoch: "false", expired: "23514", twoTargets: "false", good: null, row: { outcome: "done", u: true, d: true }, again: "false" });
   }, 60_000);
 
   it("★ N2: a STOP answered refused / failed STAYS in device_pending_stops (needsResolution) and keeps its device undeletable until a person resolves it", async () => {
@@ -283,5 +283,24 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       return { listed: v ? { nr: v.nr, outcome: v.outcome } : null, del, byInactive, noNote, resolved, twice, after: after.n };
     });
     expect(r).toEqual({ listed: { nr: true, outcome: "refused" }, del: "23514", byInactive: "23514", noNote: "23514", resolved: null, twice: "23514", after: 0 });
+  }, 60_000);
+  // ── fix review 4 (R-10-ah, re-review F1): the edge ack is accepted only from the device's CURRENT owner at the row's epoch ──
+  it("★ F1: after a move to central (or to another node) the OLD node can no longer ack the STOP — false, still pending, evidence kept", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const s1 = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      const s2 = await req(tx, { adapterId: f.ad, node: f.a, epoch: 2, kind: "stop" });
+      await tx`UPDATE public.robots SET "edgeNodeId" = NULL WHERE id = ${f.robot}`; // central — central must execute s1
+      await tx`UPDATE public.device_adapters SET "edgeNodeId" = ${f.b} WHERE id = ${f.ad}`; // node B now (s2 carried to B@3)
+      const ack = async (id: number, robot: number | null, adapter: number | null) =>
+        (await tx`SELECT public.edge_stop_ack_edge(${id}, ${f.a}, ${robot}::integer, ${adapter}::integer, 2::bigint, 'done', false, NULL) AS ok`)[0].ok;
+      const oldNodeAcksCentralStop = await ack(s1, f.robot, null);
+      const oldNodeAcksMovedAdapter = await ack(s2, null, f.ad);
+      const [p1] = await tx`SELECT "centralMustExecute" AS c FROM public.device_pending_stops WHERE "requestId" = ${s1}`;
+      const [o2] = await tx`SELECT "ackedAt" IS NULL AS pending FROM public.robot_motion_lock_requests WHERE id = ${s2}`;
+      const evidence = (await tx`SELECT "requestId" AS id, reason, outcome FROM public.edge_stop_ack_refusals WHERE "requestId" IN (${s1}, ${s2}) ORDER BY "requestId"`).map((x) => `${x.id === s1 ? "s1" : "s2"}:${x.reason}:${x.outcome}`);
+      return { oldNodeAcksCentralStop, oldNodeAcksMovedAdapter, s1StillForCentral: p1?.c ?? null, s2StillPending: o2.pending, evidence };
+    });
+    expect(r).toEqual({ oldNodeAcksCentralStop: false, oldNodeAcksMovedAdapter: false, s1StillForCentral: true, s2StillPending: true, evidence: ["s1:not_current_owner:done", "s2:not_current_owner:done"] });
   }, 60_000);
 });

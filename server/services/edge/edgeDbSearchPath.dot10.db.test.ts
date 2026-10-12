@@ -220,7 +220,7 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
     for (const f of FILES) {
       for (const m of readFileSync(path.join(REPO, "drizzle", f), "utf8").matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?([a-z_][a-z0-9_]*)\s*\(/gi)) names.add(m[1]);
     }
-    expect(names.size).toBe(25); // 0372: 2 · 0373: 2 · 0374: 16 · 0375: 5 — a new function must be added here on purpose
+    expect(names.size).toBe(27); // 0372: 2 · 0373: 3 · 0374: 17 · 0375: 5 — a new function must be added here on purpose
     const rows = await freshSession(async (tx) =>
       tx`SELECT p.proname AS name, p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
                 has_function_privilege(current_user, p.oid, 'EXECUTE') AS app
@@ -253,6 +253,8 @@ export function unqualifiedRelationsOf(src: string): string[] {
   for (const m of src.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+([A-Za-z_."]+)\s*\(/gi)) if (!/^("?public"?)\./i.test(m[1])) bad.push(`CREATE FUNCTION ${m[1]}`);
   for (const m of src.matchAll(/EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+([A-Za-z_."]+)\s*\(/gi)) if (!/^("?public"?)\./i.test(m[1])) bad.push(`EXECUTE FUNCTION ${m[1]}`);
   const bodies = [...src.matchAll(/\bAS\s+(\$([A-Za-z_][A-Za-z0-9_]*)?\$)([\s\S]*?)\1/g)].map((m) => m[3]);
+  // fix review 4 (re-review R1): a single-quoted body (`AS 'SELECT … FROM users'`) is a body too ('' ⇒ ')
+  for (const m of src.matchAll(/\bAS\s+'((?:[^']|'')*)'/g)) bodies.push(m[1].replace(/''/g, "'"));
   for (const body of bodies) {
     const noComments = body.replace(/--[^\n]*/g, "");
     const code = noComments.replace(/'(?:[^']|'')*'/g, "''"); // string literals out first (a message may say "execute")
@@ -319,6 +321,9 @@ describe("R-10-e — source census: no function body of 0372–0376 names an unq
     expect(unqualifiedRelationsOf(fn(`UPDATE robot_jobs SET status = 'x';`))).toEqual(["unqualified robot_jobs (UPDATE)"]);
     expect(unqualifiedRelationsOf(fn(`PERFORM 1 FROM public."a" x JOIN "b" y ON true;`))).toEqual(["unqualified \"b\" (JOIN)"]);
     expect(unqualifiedRelationsOf(`CREATE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;`)).toEqual(["CREATE FUNCTION f"]);
+    // fix review 4 (R1): a single-quoted body is scanned
+    expect(unqualifiedRelationsOf(`CREATE OR REPLACE FUNCTION public.f() RETURNS int LANGUAGE sql SET search_path = pg_catalog, public, pg_temp AS 'SELECT count(*)::int FROM users';`)).toEqual(["unqualified users (FROM list)"]);
+    expect(unqualifiedRelationsOf(`CREATE OR REPLACE FUNCTION public.f() RETURNS int LANGUAGE sql AS 'SELECT count(*)::int FROM public."users" WHERE x = ''a''';`)).toEqual([]);
     // green: qualified, a function in FROM, a sub-query, IS DISTINCT FROM, ON CONFLICT DO UPDATE, FOR UPDATE / SHARE
     expect(
       unqualifiedRelationsOf(

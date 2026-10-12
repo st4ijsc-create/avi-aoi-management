@@ -27,7 +27,9 @@
 --
 -- ⚠ DDL runs as owner `aoi`: `node scripts/apply-migration-0373.mjs --test-only` (dev: `--dev-only`, the owner decides; no
 --   flag ⇒ refused — R-3-g). ⚠ The repo forbids `drizzle-kit push/generate`.
+-- fix review 4 (R-10-ag): edge_node_report_records — the contentHash of every accepted stream record (see below).
 -- ROLLBACK:
+--   DROP TABLE IF EXISTS "edge_node_report_records"; DROP FUNCTION IF EXISTS edge_report_record_worm();
 --   DROP TABLE IF EXISTS "edge_node_report_cursors"; DROP TABLE IF EXISTS "edge_node_program_reports";
 --   DROP TABLE IF EXISTS "edge_auth_signing_keys"; ALTER TABLE "edge_nodes" DROP COLUMN IF EXISTS "protocolVersion";
 --   DROP FUNCTION IF EXISTS edge_report_cursor_guard(); DROP FUNCTION IF EXISTS edge_auth_signing_keys_guard();
@@ -70,6 +72,40 @@ DROP TRIGGER IF EXISTS trg_edge_report_cursor_guard ON "edge_node_report_cursors
 CREATE TRIGGER trg_edge_report_cursor_guard BEFORE INSERT OR UPDATE ON "edge_node_report_cursors"
   FOR EACH ROW EXECUTE FUNCTION public.edge_report_cursor_guard();
 REVOKE ALL ON FUNCTION public.edge_report_cursor_guard() FROM PUBLIC; -- fix review 1 (R-10-e)
+
+-- ── fix review 4 (ruling R-10-ag): the CONTENT of every accepted stream record ────────────────────────────────────────────
+-- Central deduplicated by (node, stream, epoch, seq) against the cursor alone: after an edge crash a REUSED seq carrying
+-- DIFFERENT content was dropped silently as a "duplicate". One row per accepted record, keyed like the cursor + seq, carries
+-- the record's contentHash (sha256 hex of the record's canonical JSON, computed by central — Group B); a later record with the
+-- same (node, stream, epoch, seq) is a true duplicate only when its hash is EQUAL, otherwise a conflict (B: anomaly + refuse).
+-- WRITE-ONCE: avi_app has SELECT, INSERT only (no UPDATE / DELETE / TRUNCATE), and a trigger refuses any UPDATE for every
+-- writer. The row's cursor must exist (FK, cascades with the cursor / node); seq ≥ 1.
+CREATE TABLE IF NOT EXISTS "edge_node_report_records" (
+  "edgeNodeId" integer NOT NULL,
+  "stream" varchar(40) NOT NULL,
+  "epoch" varchar(32) NOT NULL,
+  "seq" bigint NOT NULL,
+  "contentHash" varchar(64) NOT NULL,
+  "receivedAt" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("edgeNodeId", "stream", "epoch", "seq"),
+  CONSTRAINT "fk_edge_report_records_cursor" FOREIGN KEY ("edgeNodeId", "stream", "epoch")
+    REFERENCES "edge_node_report_cursors" ("edgeNodeId", "stream", "epoch") ON DELETE CASCADE,
+  CONSTRAINT "ck_edge_report_records_seq" CHECK ("seq" >= 1),
+  CONSTRAINT "ck_edge_report_records_hash" CHECK ("contentHash" ~ '^[0-9a-f]{64}$')
+);
+COMMENT ON TABLE "edge_node_report_records" IS
+  'doc 81 Dot 10 A (0373, fix review 4 R-10-ag): contentHash of every accepted edge stream record per (node, stream, epoch, seq). Write-once; a reused seq with a different hash is a conflict, never a duplicate.';
+
+CREATE OR REPLACE FUNCTION public.edge_report_record_worm() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  RAISE EXCEPTION 'edge_node_report_records: a record content hash is write-once (node %, stream %, seq %)', OLD."edgeNodeId", OLD."stream", OLD."seq"
+    USING ERRCODE = 'check_violation';
+END $$;
+DROP TRIGGER IF EXISTS trg_edge_report_record_worm ON "edge_node_report_records";
+CREATE TRIGGER trg_edge_report_record_worm BEFORE UPDATE ON "edge_node_report_records"
+  FOR EACH ROW EXECUTE FUNCTION public.edge_report_record_worm();
+REVOKE ALL ON FUNCTION public.edge_report_record_worm() FROM PUBLIC; -- fix review 1 (R-10-e)
 
 CREATE TABLE IF NOT EXISTS "edge_node_program_reports" (
   "edgeNodeId" integer NOT NULL REFERENCES "edge_nodes"("id") ON DELETE CASCADE,
@@ -144,6 +180,8 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'avi_app') THEN
     REVOKE ALL ON "edge_node_report_cursors" FROM avi_app;
+    REVOKE ALL ON "edge_node_report_records" FROM avi_app;
+    GRANT SELECT, INSERT ON "edge_node_report_records" TO avi_app; -- fix review 4 (R-10-ag): write-once
     REVOKE ALL ON "edge_node_program_reports" FROM avi_app;
     REVOKE ALL ON "edge_auth_signing_keys" FROM avi_app;
     GRANT SELECT, INSERT ON "edge_node_report_cursors" TO avi_app;
