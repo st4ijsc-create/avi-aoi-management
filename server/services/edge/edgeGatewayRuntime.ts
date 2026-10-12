@@ -302,13 +302,14 @@ export async function edgeNodeEnv(env: NodeJS.ProcessEnv = process.env): Promise
 export async function createEdgeRuntime(n: EdgeNodeEnv, opts: { fetchImpl?: typeof fetch } = {}): Promise<EdgeRuntime> {
   const journal = await EdgeJournal.open({ dir: n.journalDir, maxBytes: n.journalMaxBytes });
   const client = new EdgeCentralClient({ centralUrl: n.centralUrl, credential: n.credential, requestTimeoutMs: n.requestTimeoutMs, fetchImpl: opts.fetchImpl });
-  const config = await EdgeConfigSource.create({ client, pinFile: n.pinFile, nodeId: n.nodeId, credentialId: n.credentialId, credential: n.credential, dir: n.journalDir });
+  const config = await EdgeConfigSource.create({ client, pinFile: n.pinFile, nodeId: n.nodeId, credentialId: n.credentialId, credential: n.credential, dir: n.journalDir, floorVersion: journal.configVersion });
   const fetched = await config.refresh();
   if (!fetched.ok) {
     console.warn(`[EdgeGateway] config from central not available (${fetched.reason}) — trying the verified cache`);
     if (!(await config.loadCached())) console.warn("[EdgeGateway] NO verified config: no device is started until central answers");
   }
-  journal.setConfigHash(config.hash());
+  journal.setConfigHash(config.hash(), config.current()?.configVersion ?? null);
+  config.onChange((c) => journal.setConfigHash(config.hash(), c.configVersion));
   let shipper: EdgeStreamShipper;
   const sink = createEdgeReportSink(journal, (s) => shipper.nudge(s));
   shipper = new EdgeStreamShipper(journal, client);
@@ -329,8 +330,9 @@ export async function createEdgeRuntime(n: EdgeNodeEnv, opts: { fetchImpl?: type
 
 export interface EdgeGatewayHealth {
   nodeCode: string;
-  /** online when central + UNS reachable, nothing buffered and the journal healthy; else degraded. */
-  status: "online" | "degraded";
+  /** online when central + UNS reachable, nothing buffered and the journal healthy; unconfigured while no verified config
+   *  is known (no device runs); else degraded */
+  status: "online" | "degraded" | "unconfigured";
   /** the UNS broker (northbound telemetry publish) */
   centralReachable: boolean;
   /** the node protocol (last HTTP heartbeat answered); null before the first one / not provisioned */
@@ -367,10 +369,14 @@ export async function getEdgeGatewayHealth(): Promise<EdgeGatewayHealth> {
   const reachable = await centralReachable();
   const rt = runtime;
   const j = rt?.journal.stats() ?? null;
-  const degraded = !reachable || unsBuffered > 0 || dbBuffered > 0 || (rt !== null && (rt.lastHeartbeatOk === false || !j?.healthy || j.full || rt.config.current() === null));
+  const cfg = rt?.config.current() ?? null;
+  // a configured node whose config names enabled devices but none of them runs here is not "online" either (I-5)
+  const wantsDevices = !!cfg && (cfg.adapters.some((a) => a.isEnabled) || cfg.robots.some((r) => r.isEnabled));
+  const devicesDown = wantsDevices && devices.started && activeAdapters === 0 && devices.robotCount() === 0;
+  const degraded = !reachable || unsBuffered > 0 || dbBuffered > 0 || (rt !== null && (rt.lastHeartbeatOk === false || !j?.healthy || j.full || devicesDown));
   return {
-    nodeCode: rt?.config.current()?.node.code ?? edgeNodeCode(),
-    status: degraded ? "degraded" : "online",
+    nodeCode: cfg?.node.code ?? edgeNodeCode(),
+    status: rt !== null && cfg === null ? "unconfigured" : degraded ? "degraded" : "online",
     centralReachable: reachable,
     nodeProtocolReachable: rt?.lastHeartbeatOk ?? null,
     unsBuffered,
@@ -414,7 +420,7 @@ export async function sendHeartbeat(): Promise<EdgeGatewayHealth> {
     const cap = liveRunsOf();
     const r = await rt.client.post("heartbeat", {
       protocolVersion: EDGE_PROTOCOL_VERSION,
-      status: health.status,
+      status: health.status === "online" ? "online" : "degraded",
       version: health.version.slice(0, 64) || "unknown",
       capacity: { liveRuns: cap.live, maxRuns: Math.max(1, cap.max) },
       journal: { epoch: j.epoch, backlog: j.backlog, bytes: j.bytes, full: j.full },
@@ -428,7 +434,6 @@ export async function sendHeartbeat(): Promise<EdgeGatewayHealth> {
     if (r.ok) {
       if (r.data.configVersion > rt.config.version() || r.data.keysetVersion > rt.config.trust().version) {
         await rt.config.refresh();
-        rt.journal.setConfigHash(rt.config.hash());
       }
       if (r.data.programCheckRequested) void rt.programChecks.report().catch(() => undefined);
     }
@@ -530,6 +535,100 @@ async function startEdgeRobots(rt: EdgeRuntime): Promise<void> {
   });
 }
 
+/** What runs here now (the reconciler's memory). */
+const devices = {
+  started: false,
+  otKey: "",
+  robotKey: "",
+  robotIds: new Set<number>(),
+  /** per robot: what its session was started from (owner epoch, version, endpoint, vendor) */
+  robotKeys: new Map<number, string>(),
+  chain: Promise.resolve() as Promise<unknown>,
+  robotCount(): number {
+    return this.robotIds.size;
+  },
+};
+function robotKey(c: EdgeConfigSnapshot | null): string {
+  return JSON.stringify((c?.robots ?? []).filter((r) => r.isEnabled).map((r) => oneRobotKey(r)));
+}
+function oneRobotKey(r: EdgeConfigSnapshot["robots"][number]): string {
+  return JSON.stringify([r.id, r.ownerEpoch, r.updatedAt, r.endpoint, r.vendor]);
+}
+
+/**
+ * Bring the devices in line with the VERIFIED config (serialised). Nothing without a config. OT: (re)started when the set /
+ * versions of its adapters changed. Robots (§2.11 — only the authority holds a session): a robot that LEFT this node is LOCKED
+ * locally first (ownershipRemoved), STOPPED through the edge dispatch, then its session is closed — never left moving; when
+ * robots were added or re-assigned, the robot gateway restarts from the new config (every lock state comes back from the
+ * journal). A STOP central sent for a device in the same pull ran BEFORE this (fast path).
+ */
+export function reconcileDevices(rt: EdgeRuntime, why: string): Promise<unknown> {
+  devices.chain = devices.chain.then(() => reconcileOnce(rt, why)).catch((err) => console.error("[EdgeGateway] device reconcile failed:", (err as Error)?.message || err));
+  return devices.chain;
+}
+
+async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<void> {
+  const cfg = rt.config.current();
+  if (!cfg) return;
+  const ok = adapterKey(cfg);
+  if (!devices.started || ok !== devices.otKey) {
+    devices.otKey = ok;
+    try {
+      const ot = await import("../ot");
+      if (devices.started) {
+        console.log(`[EdgeGateway] owned adapters changed (${why}) — restarting OT`);
+        await ot.stopOt();
+      }
+      await ot.startOt();
+    } catch (err) {
+      console.error("[EdgeGateway] OT start failed:", (err as Error)?.message || err);
+    }
+  }
+  const rk = robotKey(cfg);
+  if (!devices.started || rk !== devices.robotKey) {
+    devices.robotKey = rk;
+    const want = new Set(cfg.robots.filter((r) => r.isEnabled).map((r) => r.id));
+    try {
+      const rm = await import("../robot/robotManager");
+      const removed = [...devices.robotIds].filter((id) => !want.has(id));
+      for (const id of removed) await releaseRobot(rt, id, why);
+      // a robot added, or one kept whose owner epoch / version / endpoint changed ⇒ restart from the new config
+      const changed = cfg.robots.some((r) => want.has(r.id) && devices.robotKeys.get(r.id) !== oneRobotKey(r));
+      if (!devices.started || changed) {
+        if (devices.started) {
+          console.log(`[EdgeGateway] owned robots changed (${why}) — restarting the robot gateway from the new config`);
+          await rm.stopRobots();
+        }
+        await startEdgeRobots(rt);
+      }
+      devices.robotIds = new Set(rm.activeRobotIds());
+      devices.robotKeys = new Map(cfg.robots.filter((r) => devices.robotIds.has(r.id)).map((r) => [r.id, oneRobotKey(r)] as const));
+    } catch (err) {
+      console.error("[EdgeGateway] robot reconcile failed:", (err as Error)?.message || err);
+    }
+  }
+  devices.started = true;
+}
+
+/** A robot that is no longer this node's: lock it locally, STOP it, close its session (in that order). */
+async function releaseRobot(rt: EdgeRuntime, robotId: number, why: string): Promise<void> {
+  const rm = await import("../robot/robotManager");
+  const robot = rm.getActiveRobot(robotId);
+  try {
+    robot?.driver.motionLockController?.()?.lock("ownershipRemoved", `robot ${robotId} left this node (${why})`);
+  } catch (err) {
+    console.error(`[EdgeGateway] robot ${robotId}: local lock before release failed:`, (err as Error)?.message || err);
+  }
+  try {
+    const { dispatchRobotOnEdge } = await import("../robot/robotEdgeDispatch");
+    await dispatchRobotOnEdge({ robotId, job: { jobType: "abort" }, idempotencyKey: `edge-release-${robotId}-${Date.now()}`, source: "local", requestId: null });
+  } catch (err) {
+    console.error(`[EdgeGateway] robot ${robotId}: STOP before release failed — use the machine's direct STOP / E-STOP:`, (err as Error)?.message || err);
+  }
+  await rm.detachRobot(robotId);
+  void rt.sink.event({ kind: "anomaly", code: "EDGE_DEVICE_RELEASED", runId: null, detail: `robot ${robotId} no longer owned (${why}): locked, STOP sent, session closed`, at: Date.now() }).catch(() => undefined);
+}
+
 /** A stable key of what the OT manager runs (adapter set + their config versions) — a change restarts OT. */
 function adapterKey(c: EdgeConfigSnapshot | null): string {
   return JSON.stringify((c?.adapters ?? []).map((a) => [a.id, a.updatedAt, a.connectionFingerprint, a.isEnabled, a.ownerEpoch, a.tags.map((t) => [t.id, t.updatedAt])]));
@@ -619,34 +718,13 @@ export async function bootstrapEdgeGateway(opts: EdgeGatewayBootOptions = {}): P
     }
   }
 
-  if (rt && rt.config.current()) {
-    // 3) OT (gated by OT_GATEWAY_ENABLED) — only this node's adapters, from the verified config
-    try {
-      const { startOt } = await import("../ot");
-      await startOt();
-    } catch (err) {
-      console.error("[EdgeGateway] OT start failed:", (err as Error)?.message || err);
-    }
-    let otKey = adapterKey(rt.config.current());
-    rt.config.onChange((c) => {
-      const k = adapterKey(c);
-      if (k === otKey) return;
-      otKey = k;
-      void (async () => {
-        console.log("[EdgeGateway] owned adapters changed in the config — restarting OT");
-        const ot = await import("../ot");
-        await ot.stopOt();
-        await ot.startOt();
-      })().catch((err) => console.error("[EdgeGateway] OT restart failed:", (err as Error)?.message || err));
+  if (rt) {
+    // 3) + 4) devices — now if a verified config is known, and AGAIN whenever the config changes (a late first config, an
+    //    ownership change): OT restarts on a change of its adapters; robots are reconciled (fix review 1, I-5)
+    await reconcileDevices(rt, "boot");
+    rt.config.onChange(() => {
+      void reconcileDevices(rt, "config change").catch((err) => console.error("[EdgeGateway] device reconcile failed:", (err as Error)?.message || err));
     });
-    // 4) robots (gated by ROBOT_GATEWAY_ENABLED) — only this node's, from the verified config: lock authority seeded from the
-    //    journal ⊕ the mirrored row ⊕ the floor (never backwards; unknown ⇒ locked persistUnknown), lock transitions and robot
-    //    state go to the journal (→ central), no DB anywhere (group D's robotManager edge mode)
-    try {
-      await startEdgeRobots(rt);
-    } catch (err) {
-      console.error("[EdgeGateway] robot start failed:", (err as Error)?.message || err);
-    }
   }
 
   if (rt) {
@@ -681,7 +759,7 @@ export async function bootstrapEdgeGateway(opts: EdgeGatewayBootOptions = {}): P
         authorize: rt.authorize,
         programChecks: rt.programChecks,
         walker,
-        devices: opts.devices ?? agentMod.defaultEdgeDevicePort(rt.config),
+        devices: opts.devices ?? agentMod.edgeDispatchDevicePort(rt.config),
         hashDefinition,
       });
       if (a) liveRunsOf = () => ({ live: a.liveRunIds().length, max: claimRuns ? cfg.maxConcurrent : 1 });
@@ -754,6 +832,12 @@ export async function stopEdgeGateway(): Promise<void> {
   const rt = runtime;
   runtime = null;
   liveRunsOf = () => ({ live: 0, max: 1 });
+  await devices.chain.catch(() => undefined);
+  devices.started = false;
+  devices.otKey = "";
+  devices.robotKey = "";
+  devices.robotIds = new Set();
+  devices.robotKeys = new Map();
   if (rt) {
     try {
       await rt.shipper.stop();

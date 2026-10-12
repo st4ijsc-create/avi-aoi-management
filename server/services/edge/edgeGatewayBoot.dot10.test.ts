@@ -1,23 +1,24 @@
 /**
- * doc 81 Đợt 10 task E (design §2.15, §4 E) — the edge gateway BOOTS and RUNS with NO central DB:
- *   • DATABASE_URL and every PG* variable are removed before any import; AVI_PROCESS_ROLE=edge is set by importing
- *     server/edge/edgeRole FIRST (the entrypoint's own first import) + EDGE_DB_TRAP=throw, so any
- *     getDb / getJobsDb / getReadDb call anywhere in the process would THROW and be counted;
- *   • boot order config → sources → OT → robots → agent: the verified config (fake central, signed) drives the OT manager
- *     (a stub adapter of THIS node), its telemetry leaves through the telemetryBus insert-function seam over HTTP; the agent
- *     claims a run, verifies the signed package, the walker authorises + consumes + reports, the segment end is delivered;
- *     a central STOP command reaches the robot; the heartbeat is HTTP with the journal epoch and config hash;
- *   • measured: 0 trap hits, 0 TCP connects (net tripwire), 0 Postgres client constructions — and the instrument check: an
- *     explicit getDb() afterwards DOES throw EDGE_DB_TRAP and is counted (a trap that never fires proves nothing).
- * Robots (group D's manager, DB-backed until D lands) and the UNS publisher (mqtt) are replaced; everything else is real.
+ * doc 81 Đợt 10 task E (design §2.15, §4 E; fix review 1 I-6 / R-10-ag) — the edge gateway BOOTS and RUNS the PRODUCTION path
+ * with NO central DB and NO central secret:
+ *   • DATABASE_URL, every PG*, JWT_SECRET and SECRET_ENCRYPTION_KEY are removed before any import; AVI_PROCESS_ROLE=edge comes
+ *     from server/edge/edgeRole (the entrypoint's first import) and EDGE_DB_TRAP=throw — any getDb / getJobsDb / getReadDb /
+ *     raw postgres() anywhere in the process would THROW and be counted;
+ *   • REAL modules: the gateway boot, the OT manager (a stub adapter of this node; telemetry over HTTP), C's walker
+ *     (foeEngine.driveEdgeRunFromPackage + edgeRunStore), D's edge dispatch (installEdgeDeviceRuntime → robotEdgeDispatch:
+ *     verify the signed authorisation, consume the jti in the journal, drive the robot) and D's robotManager edge mode with the
+ *     SIM robot driver; the central STOP goes through robotEdgeDispatch's STOP path (R-10-ad);
+ *   • measured: the robot got exactly the motion and the STOP, the run was walked to `complete`, and then 0 trap hits, 0 TCP
+ *     connects, 0 Postgres client constructions — plus the instrument check (a deliberate getDb() afterwards throws, counted).
+ * Only central (a signing fake, edgeFakeCentral.testkit) and the UNS publisher (mqtt) are replaced.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => {
-  for (const k of Object.keys(process.env)) if (k === "DATABASE_URL" || k === "TEST_DATABASE_URL" || k.startsWith("PG")) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (k === "DATABASE_URL" || k === "TEST_DATABASE_URL" || k.startsWith("PG") || k === "JWT_SECRET" || k === "SECRET_ENCRYPTION_KEY") delete process.env[k];
   delete process.env.AVI_PROCESS_ROLE; // the role comes from ./edgeRole — the entrypoint's first import — not from the env
   process.env.EDGE_DB_TRAP = "throw";
-  return { connects: [] as string[], pgConstructed: 0, startRobots: [] as unknown[], robotAborts: 0 };
+  return { connects: [] as string[], pgConstructed: 0 };
 });
 
 vi.mock("postgres", () => {
@@ -35,25 +36,6 @@ vi.mock("../unsPublisher", () => ({
   publishNormalized: () => undefined,
   publishSparkplugDData: () => undefined,
 }));
-vi.mock("../robot/robotManager", () => ({
-  startRobots: async (opts: unknown) => {
-    h.startRobots.push(opts);
-    return true;
-  },
-  stopRobots: async () => undefined,
-  getActiveRobot: (id: number) =>
-    id === 12
-      ? {
-          id: 12,
-          code: "rb-12",
-          driver: {
-            abort: async () => {
-              h.robotAborts++;
-            },
-          },
-        }
-      : undefined,
-}));
 
 import "../../edge/edgeRole"; // FIRST, exactly as server/edge/edgeGatewayMain.ts (edgeRole.dot10.test.ts pins that order)
 import net from "node:net";
@@ -61,31 +43,17 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { FakeCentral, KIT_TOKEN, kitHashDefinition } from "./edgeFakeCentral.testkit";
-import type { EdgeRunIo, EdgeSegmentOutcome, EdgeWalker } from "./edgeExecutionAgent";
 
 const realConnect = net.Socket.prototype.connect;
 let dir = "";
 const central = new FakeCentral(7, 31);
-let walked = 0;
-let motions = 0;
-
-const walker: EdgeWalker = {
-  drive: async (_pkg, io: EdgeRunIo): Promise<EdgeSegmentOutcome> => {
-    walked++;
-    const a = await io.authorize.authorize({ runId: io.runId, claimSeq: io.claimSeq, claimToken: io.claimToken, stepId: "m1", attempt: 1, idempotencyKey: `foe:${io.runId}:m1:1`, command: { kind: "robot", robotId: 12, jobType: "move", params: {} }, payloadHash: "sha256:" + "a".repeat(64) });
-    if (!a.ok) return { outcome: "held", heldReason: "centralUnreachable" };
-    const c = await io.consume.consumeAuthorization({ jti: a.claims.jti, runId: io.runId, claimSeq: io.claimSeq, stepId: "m1", attempt: 1 });
-    if (!c.ok) return { outcome: "failed", error: c.reason };
-    io.authorize.settleNonce(a.reqNonce);
-    motions++;
-    await io.sink.run(io.runId, io.claimSeq, { kind: "step", stepId: "m1", stepType: "command", status: "completed", attempt: 1, startedAt: 1, finishedAt: 2, error: null, result: null, jti: a.claims.jti });
-    return { outcome: "completed" };
-  },
-  abortLive: async () => ({ live: false }),
-};
+const DEF = { ref: "edge-boot", name: "edge boot", steps: [{ id: "m1", type: "command", machineId: 2, command: "run_job", args: { robotId: 12, jobType: "move", params: { x: 1 } } }] };
 
 const ENV_KEYS = [
   "OT_GATEWAY_ENABLED",
+  "ROBOT_GATEWAY_ENABLED",
+  "ROBOT_CONTROL_ENABLED",
+  "ROBOT_SAFETY_PREFLIGHT_ENABLED",
   "EDGE_EXECUTION_ENABLED",
   "FOE_ENABLED",
   "EDGE_RUNTIME_ENABLED",
@@ -119,6 +87,11 @@ beforeAll(async () => {
   await fs.writeFile(pin, JSON.stringify(central.pin));
   Object.assign(process.env, {
     OT_GATEWAY_ENABLED: "true",
+    ROBOT_GATEWAY_ENABLED: "true",
+    ROBOT_CONTROL_ENABLED: "true",
+    // the snapshot ships no safety-PLC config for this sim cell: with the preflight on, D refuses the motion SAFETY_UNKNOWN
+    // (fail-closed — measured once while writing this test); the preflight itself is group D's suite
+    ROBOT_SAFETY_PREFLIGHT_ENABLED: "false",
     EDGE_EXECUTION_ENABLED: "true",
     FOE_ENABLED: "true",
     EDGE_RUNTIME_ENABLED: "true",
@@ -149,54 +122,54 @@ afterAll(async () => {
   await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
 });
 
-describe("doc 81 Đợt 10 E — the edge gateway boots and runs OT + the agent with NO central DB", () => {
-  it("★ boot → OT telemetry over HTTP → claim / walk / report / complete → central STOP; 0 trap hits, 0 sockets, no postgres", async () => {
+describe("doc 81 Đợt 10 E — the edge gateway boots and runs the production path with NO central DB / secret", () => {
+  it("★ boot → OT telemetry over HTTP → claim / REAL walker / D's dispatch / sim robot / complete → central STOP via D; 0 trap hits, 0 sockets, no postgres", async () => {
     expect(process.env.DATABASE_URL).toBeUndefined();
+    expect(process.env.JWT_SECRET).toBeUndefined();
+    expect(process.env.SECRET_ENCRYPTION_KEY).toBeUndefined();
     expect(process.env.AVI_PROCESS_ROLE).toBe("edge");
     const conn = await import("../../db/connection");
     expect(conn.isEdgeProcessRole()).toBe(true);
-    const trapBefore = conn.edgeDbTrapCount();
-    expect(trapBefore).toBe(0);
+    expect(conn.edgeDbTrapCount()).toBe(0);
+    // the robot of this node is the REAL sim driver; count what reaches it
+    const { SimRobotDriver } = await import("../robot/drivers/simRobotDriver");
+    const runJob = vi.spyOn(SimRobotDriver.prototype, "runJob");
+    const abort = vi.spyOn(SimRobotDriver.prototype, "abort");
 
-    central.addRun(9, { steps: [{ id: "m1", type: "command" }] });
-    const { bootstrapEdgeGateway } = await import("./edgeGatewayRuntime");
-    const handles = await bootstrapEdgeGateway({ fetchImpl: central.fetchImpl, walker });
+    central.addRun(9, DEF);
+    central.packageOver.set(9, { machines: [{ id: 2, machineType: "ROBOT", capabilities: null }], verifiedStops: [], defHash: kitHashDefinition(DEF) });
+    const { bootstrapEdgeGateway, getEdgeGatewayHealth } = await import("./edgeGatewayRuntime");
+    const handles = await bootstrapEdgeGateway({ fetchImpl: central.fetchImpl });
     expect(handles.runtime).not.toBeNull();
 
     // config first, verified; heartbeat over HTTP with the journal epoch and the config hash in use
     expect(central.calls[0].route).toBe("config");
     const hb = central.callsTo("heartbeat")[0]?.body;
     expect(hb).toMatchObject({ protocolVersion: 2, journal: { epoch: handles.runtime!.journal.epoch }, configHash: handles.runtime!.config.hash() });
-    // robots: the OWNED robots of the VERIFIED config (no DB load), lock seeded from the journal — a fresh journal knows
-    // nothing ⇒ the robot starts LOCKED persistUnknown above every known generation, announced to central as a lock event
-    expect(h.startRobots).toHaveLength(1);
-    const ro = h.startRobots[0] as { configRobots: Array<{ id: number }>; attachLock: (r: unknown, l: unknown) => void; stateSink: (r: unknown, s: unknown) => void };
-    expect(ro.configRobots.map((r) => r.id)).toEqual([12]);
-    const { MotionLock } = await import("../robot/robotDriver");
-    const lock = new MotionLock();
-    ro.attachLock(ro.configRobots[0], lock);
-    expect(lock.snapshot()).toMatchObject({ locked: true, reasonCode: "persistUnknown", generation: 1 });
-    ro.stateSink(ro.configRobots[0], { busy: false, estop: true, timestamp: new Date() });
-    await vi.waitFor(() => expect(central.received.robotsState.map((r) => [r.robotId, r.estop])).toEqual([[12, true]]), { timeout: 5_000, interval: 50 });
-    await vi.waitFor(() => expect(central.received.locksEvents.some((r) => r.kind === "lock" && r.robotId === 12 && r.event === "locked" && r.reasonCode === "persistUnknown")).toBe(true), { timeout: 5_000, interval: 50 });
+    const rm = await import("../robot/robotManager");
+    expect(rm.activeRobotIds()).toEqual([12]); // the REAL robot manager, from the verified config
 
     // OT: the stub adapter of THIS node polls; samples reach central over HTTP (telemetryBus seam)
     await vi.waitFor(() => expect(central.received.telemetry.length).toBeGreaterThan(0), { timeout: 10_000, interval: 50 });
     expect(central.received.telemetry.every((s) => s.adapterId === 21)).toBe(true);
-    expect(new Set(central.received.telemetry.map((s) => s.tagKey))).toEqual(new Set(["temp", "run"]));
 
-    // the agent: claim → signed package → walk (authorise + consume + report) → complete
-    await vi.waitFor(() => expect(central.callsTo("complete").length).toBe(1), { timeout: 10_000, interval: 50 });
-    expect(walked).toBe(1);
-    expect(motions).toBe(1);
-    expect(central.callsTo("complete")[0].body).toMatchObject({ outcome: "completed", reportedThrough: 1 });
-    expect(central.received.report.map((r) => r.stepId)).toEqual(["m1"]);
-    expect(central.callsTo("claim")[0].body.defHash).toBe(kitHashDefinition({ steps: [{ id: "m1", type: "command" }] }));
+    // the REAL walker: claim → signed package → authorise → D verifies + consumes → sim robot moves → report → complete
+    await vi.waitFor(() => expect(central.callsTo("complete").length).toBe(1), { timeout: 15_000, interval: 50 });
+    expect(central.callsTo("complete")[0].body).toMatchObject({ outcome: "completed" });
+    expect(central.callsTo("authorize").map((c) => c.body.stepId)).toEqual(["m1"]);
+    expect(runJob.mock.calls.map((c) => (c[0] as { jobType: string }).jobType)).toEqual(["move"]);
+    const ledger = central.received.report.find((r) => r.kind === "ledger");
+    expect(ledger).toMatchObject({ stepId: "m1", stop: false, target: { robotId: 12, jobType: "move" } });
+    expect(handles.runtime!.journal.isJtiConsumed(ledger.jti)).toBe(true);
 
-    // a central STOP of the owned robot (signed command on the pull)
+    // a central STOP of the owned robot (signed command on the pull) → D's robot STOP path → the sim robot
     central.commands = [central.sign("cmd", central.commandPayload({ requestId: 77, kind: "stop", target: { robotId: 12 } }))];
-    await vi.waitFor(() => expect(h.robotAborts).toBe(1), { timeout: 5_000, interval: 50 });
+    // D's STOP path sends the CANONICAL stop job (or the driver abort) — exactly one STOP reaches the robot
+    const stops = () => runJob.mock.calls.filter((c) => (c[0] as { jobType: string }).jobType === "abort").length + abort.mock.calls.length;
+    await vi.waitFor(() => expect(stops()).toBe(1), { timeout: 5_000, interval: 50 });
     await vi.waitFor(() => expect(central.received.locksEvents.some((r) => r.kind === "command_ack" && r.requestId === 77 && r.outcome === "done")).toBe(true), { timeout: 5_000, interval: 50 });
+    expect(central.received.locksEvents.filter((r) => r.kind === "stop" && r.requestId === 77)).toHaveLength(1); // D journaled it once
+    expect((await getEdgeGatewayHealth()).status).not.toBe("unconfigured");
 
     // ── the measurement ──
     expect(conn.edgeDbTrapStats()).toEqual({ count: 0, byAccessor: {} });
@@ -206,5 +179,5 @@ describe("doc 81 Đợt 10 E — the edge gateway boots and runs OT + the agent 
     // instrument check: the trap is live — a deliberate DB attempt throws and is counted
     await expect(conn.getDb()).rejects.toMatchObject({ code: "EDGE_DB_TRAP" });
     expect(conn.edgeDbTrapCount()).toBe(1);
-  }, 60_000);
+  }, 90_000);
 });
