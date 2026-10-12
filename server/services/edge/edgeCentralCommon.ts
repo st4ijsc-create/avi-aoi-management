@@ -1,0 +1,198 @@
+/**
+ * doc 81 Đợt 10 task B — helpers shared by the CENTRAL v2 node endpoints (edgeExecutionCentral, edgeAuthorizeCentral,
+ * edgeReportsCentral, edgeIngestCentral, edgeConfigCentral, edgeNodeCommands). Nothing here is reachable from the edge.
+ *
+ *   • the node's protocol version (edge_nodes."protocolVersion", mig 0373 — narrow projection; missing column ⇒ 1);
+ *   • the ONE 404 for a run that is not the caller's (missing, another node's, outside the node's factory: byte-identical);
+ *   • central's signing key + the keyset it publishes (from the keyring FILES only — R-10-c), or null ⇒ 503;
+ *   • device ownership reads (robots / device_adapters."edgeNodeId" + "ownerEpoch", mig 0374);
+ *   • the audit writer for node actions (never throws, never logs a token).
+ */
+import { createHash } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
+import { getDb } from "../../db/connection";
+import { EDGE_PROTOCOL_VERSION, edgeError, type EdgeAnswer } from "./edgeProtocol";
+import { adapterOwnership, edgeNodeProtocol, isEdgeControlSchemaMissing, robotOwnership } from "./edgeControlSchema";
+import { buildEdgeKeysetFromKeyring, edgeKeyDirOf, getCentralEdgeSigningKey, readEdgeKeyring, signEdgeObject, type EdgeKeyset, type EdgeSignedEnvelope, type EdgeSigningKey } from "./edgeSigning";
+import type { EdgeNodePrincipal } from "./edgeNodeCredentials";
+import { isEdgeSchemaMissing } from "./edgeExecutionSchema";
+
+export type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+/** Internal control-flow signal: the DB is not reachable (mapped to 503 edge_unavailable). */
+export class EdgeCentralUnavailable extends Error {}
+
+export async function centralDb(): Promise<Db> {
+  const d = await getDb();
+  if (!d) throw new EdgeCentralUnavailable("db unavailable");
+  return d;
+}
+
+/** THE 404 of every run route: the same bytes for a missing run and for another node's / out-of-scope run (no oracle). */
+export function runNotFound(runId: number): EdgeAnswer<never> {
+  return edgeError("not_found", `Run ${runId} not found.`);
+}
+export const edgeUnavailable: EdgeAnswer<never> = edgeError("edge_unavailable", "Edge execution is not available (database, migrations 0370–0375, or central's edge signing key).");
+
+/** A 0370 / 0372–0375 table or column missing, or the DB down ⇒ 503 (never a 500 with a DB text). */
+export function isEdgeUnavailableError(err: unknown): boolean {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  // 42883 undefined_function — a 0374 / 0375 guarded function missing (contract delta R-10-f) ⇒ 503 as well
+  const fnMissing = (e?.code ?? e?.cause?.code) === "42883";
+  return err instanceof EdgeCentralUnavailable || fnMissing || isEdgeSchemaMissing(err) || isEdgeControlSchemaMissing(err);
+}
+
+/** Defence in depth: the run's non-STOP targets sit in the NODE's factory (foeEngine.runVisibleTo) — false on any error. */
+export async function runInNodeScope(run: { workflowId: number; paramsJson: unknown }, node: Pick<EdgeNodePrincipal, "factoryCode">): Promise<boolean> {
+  try {
+    const { runVisibleTo } = await import("../orchestration/foe/foeEngine");
+    const { nodeScopeOf } = await import("./edgeExecutionCentral");
+    return (await runVisibleTo(run, nodeScopeOf(node))) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** The node's protocol version (1 = Đợt 9 DB-backed edge, 2 = this protocol). Column missing (0373) ⇒ 1. Throws on other errors. */
+export async function nodeProtocolVersion(d: Db, nodeId: number): Promise<number> {
+  try {
+    const [row] = await d.select({ v: edgeNodeProtocol.protocolVersion }).from(edgeNodeProtocol).where(eq(edgeNodeProtocol.id, nodeId)).limit(1);
+    return row ? Number(row.v) : 1;
+  } catch (err) {
+    if (isEdgeControlSchemaMissing(err)) return 1;
+    throw err;
+  }
+}
+
+export function protocolVersionAnswer(v: number): EdgeAnswer<never> {
+  return edgeError("protocol_version", `This node is on edge protocol v${v}; this route needs v${EDGE_PROTOCOL_VERSION} (an administrator switches the node with scripts/edge-node-credential.ts).`);
+}
+
+// ── signing ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** How long a retired key stays in the published keyset after it was retired (max auth TTL + skew, generous). */
+export function edgeRetiredGraceMs(): number {
+  const n = parseInt(process.env.EDGE_KEY_RETIRED_GRACE_MS || "600000", 10);
+  return Number.isFinite(n) ? Math.min(7 * 86_400_000, Math.max(60_000, n)) : 600_000;
+}
+
+export interface CentralSigner {
+  key: EdgeSigningKey;
+  keyset: EdgeKeyset;
+  /** the signed keyset (typ keyset) shipped in every config */
+  keysetEnvelope: EdgeSignedEnvelope;
+}
+let signerCache: { at: number; signer: CentralSigner } | null = null;
+/**
+ * Central's signer: the key (EDGE_SIGNING_KEY_FILE | _PEM) and the keyset derived ONLY from the keyring FILES (R-10-c). The
+ * loaded key must be an ACTIVE key of the keyring. Anything missing / inconsistent ⇒ null (every v2 route answers 503 — a node
+ * is never handed something it cannot verify). Cached for 5 s (keyring rotation is picked up without a restart).
+ */
+export function centralSigner(): CentralSigner | null {
+  const now = Date.now();
+  if (signerCache && now - signerCache.at < 5_000 && getCentralEdgeSigningKey() === signerCache.signer.key) return signerCache.signer;
+  try {
+    const key = getCentralEdgeSigningKey();
+    const dir = edgeKeyDirOf();
+    if (!key || !dir) return null;
+    const keyset = buildEdgeKeysetFromKeyring(readEdgeKeyring(dir), key, { retiredGraceMs: edgeRetiredGraceMs() });
+    const signer = { key, keyset, keysetEnvelope: signEdgeObject("keyset", keyset, key) };
+    signerCache = { at: now, signer };
+    return signer;
+  } catch (err) {
+    console.error(`[EdgeCentral] edge signing key / keyring unusable: ${(err as Error)?.message ?? err}`);
+    return null;
+  }
+}
+/**
+ * THE one place central signs a node-bound object (contract delta R-10-f isolation): the node's credentialId is added to the
+ * payload whenever the payload's strict protocol schema carries that field (cmd / runpkg / sweep after fix round 1; the
+ * auth claims and the config always). Then the payload is checked against that schema BEFORE signing — central never signs
+ * something the edge's typed verifier would refuse. Throws on a schema failure (a central bug; the route answers 503).
+ */
+export function signForNode(
+  signer: CentralSigner,
+  typ: "auth" | "config" | "runpkg" | "cmd",
+  schema: { safeParse: (v: unknown) => { success: boolean } },
+  payload: Record<string, unknown>,
+  node: Pick<EdgeNodePrincipal, "credentialId">,
+): EdgeSignedEnvelope {
+  let body = payload;
+  if (!("credentialId" in payload) && schema.safeParse({ ...payload, credentialId: node.credentialId }).success) body = { ...payload, credentialId: node.credentialId };
+  if (!schema.safeParse(body).success) throw new Error(`signForNode: central built an invalid ${typ} payload`);
+  return signEdgeObject(typ, body, signer.key);
+}
+
+/** Tests only. */
+export function __resetCentralSignerCacheForTests(): void {
+  signerCache = null;
+}
+
+export const sha256Hex = (s: string): string => createHash("sha256").update(s, "utf8").digest("hex");
+
+// ── ownership (mig 0374) ────────────────────────────────────────────────────────────────────────────────────────────
+
+export interface Ownership {
+  edgeNodeId: number | null;
+  ownerEpoch: number;
+}
+export async function robotOwners(d: Db, ids: readonly number[]): Promise<Map<number, Ownership>> {
+  const out = new Map<number, Ownership>();
+  const want = [...new Set(ids.filter((x) => Number.isSafeInteger(x) && x > 0))];
+  if (want.length === 0) return out;
+  const rows = await d.select({ id: robotOwnership.id, edgeNodeId: robotOwnership.edgeNodeId, ownerEpoch: robotOwnership.ownerEpoch }).from(robotOwnership).where(inArray(robotOwnership.id, want));
+  for (const r of rows) out.set(r.id, { edgeNodeId: r.edgeNodeId ?? null, ownerEpoch: Number(r.ownerEpoch) });
+  return out;
+}
+export async function adapterOwners(d: Db, ids: readonly number[]): Promise<Map<number, Ownership>> {
+  const out = new Map<number, Ownership>();
+  const want = [...new Set(ids.filter((x) => Number.isSafeInteger(x) && x > 0))];
+  if (want.length === 0) return out;
+  const rows = await d.select({ id: adapterOwnership.id, edgeNodeId: adapterOwnership.edgeNodeId, ownerEpoch: adapterOwnership.ownerEpoch }).from(adapterOwnership).where(inArray(adapterOwnership.id, want));
+  for (const r of rows) out.set(r.id, { edgeNodeId: r.edgeNodeId ?? null, ownerEpoch: Number(r.ownerEpoch) });
+  return out;
+}
+/** The ids (among `ids`) the node owns. */
+export async function ownedRobotIds(d: Db, nodeId: number, ids: readonly number[]): Promise<Set<number>> {
+  const m = await robotOwners(d, ids);
+  return new Set([...m].filter(([, o]) => o.edgeNodeId === nodeId).map(([id]) => id));
+}
+export async function ownedAdapterIds(d: Db, nodeId: number, ids: readonly number[]): Promise<Set<number>> {
+  const m = await adapterOwners(d, ids);
+  return new Set([...m].filter(([, o]) => o.edgeNodeId === nodeId).map(([id]) => id));
+}
+/** Every device the node owns (ids only). */
+export async function devicesOfNode(d: Db, nodeId: number): Promise<{ robots: number[]; adapters: number[] }> {
+  const [rs, as] = await Promise.all([
+    d.select({ id: robotOwnership.id }).from(robotOwnership).where(eq(robotOwnership.edgeNodeId, nodeId)),
+    d.select({ id: adapterOwnership.id }).from(adapterOwnership).where(eq(adapterOwnership.edgeNodeId, nodeId)),
+  ]);
+  return { robots: rs.map((r) => r.id).sort((a, b) => a - b), adapters: as.map((r) => r.id).sort((a, b) => a - b) };
+}
+
+// ── audit ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** An audit row of a node action (userName `edge:<code>`). Never throws; `tx` writes it inside a transaction. */
+export async function auditNode(
+  node: Pick<EdgeNodePrincipal, "nodeCode" | "credentialId" | "nodeId">,
+  action: string,
+  entity: { type: string; id: number | null },
+  details: Record<string, unknown>,
+  status: "success" | "failure" = "success",
+): Promise<void> {
+  try {
+    const { createAuditLog } = await import("../../db/system");
+    await createAuditLog({
+      userId: null,
+      userName: `edge:${node.nodeCode}`,
+      action,
+      entityType: entity.type,
+      entityId: entity.id,
+      entityName: node.nodeCode,
+      details: { nodeId: node.nodeId, credentialId: node.credentialId, ...details },
+      status,
+    });
+  } catch (err) {
+    console.error(`[EdgeCentral] audit ${action} not written: ${(err as Error)?.message ?? err}`);
+  }
+}

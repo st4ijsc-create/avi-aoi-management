@@ -377,6 +377,8 @@ export const orchestrationRouter = router({
       if (input.edgeNodeCode !== undefined) {
         const { resolveAssignableNode } = await import("../services/edge/edgeExecutionCentral");
         const n = await resolveAssignableNode(input.edgeNodeCode, scopeOf(ctx.user));
+        // doc 81 Đợt 10 N6 — the edge runtime is off: nothing is started (no node could ever take the run)
+        if (n.kind === "unavailable") return { ok: false as const, enabled: true, message: "Edge execution is disabled on this server (EDGE_RUNTIME_ENABLED) — the run was not started." };
         if (n.kind === "unverified") {
           return { ok: false as const, enabled: true, reason: "scopeUnverified" as const, message: "Your factory scope could not be verified — retry in a moment." };
         }

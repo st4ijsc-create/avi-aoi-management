@@ -44,6 +44,19 @@ export function startEdgeNodeHealthChecker(): void {
         }
       })
       .catch(() => undefined);
+    // doc 81 Đợt 10 task B — central → edge lock / clear / stop requests past their expiry (or stale: owner changed before
+    // delivery) are expired, so the queue never re-delivers them. Migration 0374 missing ⇒ nothing to do (silent).
+    void import("./edgeNodeCommands")
+      .then(async (m) => {
+        const { isEdgeUnavailableError } = await import("./edgeCentralCommon");
+        try {
+          const n = await m.expireEdgeRequests();
+          if (n > 0) console.log(`[EdgeNodeHealth] expired ${n} edge device request(s)`);
+        } catch (err) {
+          if (!isEdgeUnavailableError(err)) console.error("[EdgeNodeHealth] edge request expiry failed:", (err as Error)?.message || err);
+        }
+      })
+      .catch(() => undefined);
   }, intervalMs);
 
   if (typeof timer.unref === "function") timer.unref();

@@ -564,6 +564,7 @@ export function createV1Router(): Router {
         if (typeof body.edgeNodeCode !== "string" || !body.edgeNodeCode.trim()) throw new ApiHttpError(400, "bad_request", "`edgeNodeCode` must be a node code.");
         const { resolveAssignableNode } = await import("../../services/edge/edgeExecutionCentral");
         const n = await resolveAssignableNode(body.edgeNodeCode, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
+        if (n.kind === "unavailable") throw new ApiHttpError(503, "edge_disabled", "Edge runtime is disabled (EDGE_RUNTIME_ENABLED) — a run cannot be handed to an edge node."); // doc 81 Đợt 10 N6
         if (n.kind === "unverified") throw new ApiHttpError(503, "scope_unverified", "The key's factory scope could not be verified — retry.");
         if (n.kind === "none") throw new ApiHttpError(404, "not_found", `Edge node "${body.edgeNodeCode}" not found.`);
         edgeNodeId = n.id;
