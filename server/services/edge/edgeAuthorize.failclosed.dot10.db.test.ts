@@ -13,7 +13,37 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupKit, kitSteps, nonce, type Kit } from "./__edgeCentralKit.dot10";
 
-const sw = vi.hoisted(() => ({ enabled: "real" as "real" | "false" | "error" | "throw", lockReq: false, owners: false, identity: false, digest: false, safety: false }));
+const sw = vi.hoisted(() => ({
+  enabled: "real" as "real" | "false" | "error" | "throw",
+  lockReq: false,
+  owners: false,
+  identity: false,
+  digest: false,
+  safety: false,
+  /** I-1 — what central's safety-PLC facade reads (real mode only); "real" = the module itself */
+  plc: "real" as "real" | "OK" | "BLOCKED" | "UNKNOWN" | "SIM_ONLY" | "throw",
+  plcReads: [] as Array<Record<string, unknown>>,
+}));
+
+vi.mock("../ot/adapterFacade", async (orig) => {
+  const real = (await orig()) as typeof import("../ot/adapterFacade");
+  return {
+    ...real,
+    createAdapterFacade: (ctx: Parameters<typeof real.createAdapterFacade>[0]) => {
+      const f = real.createAdapterFacade(ctx);
+      return {
+        ...f,
+        getSafetyStatus: async (o?: unknown) => {
+          sw.plcReads.push({ ...(ctx as Record<string, unknown>), opts: o });
+          if (sw.plc === "real") return f.getSafetyStatus(o as never);
+          if (sw.plc === "throw") throw new Error("safety read crashed");
+          if (sw.plc === "SIM_ONLY") return { state: "UNKNOWN", basis: "sim_only", source: "sim" } as never;
+          return { state: sw.plc, source: "test" } as never;
+        },
+      };
+    },
+  };
+});
 
 vi.mock("../robot/robotEnabledGate", async (orig) => {
   const real = (await orig()) as typeof import("../robot/robotEnabledGate");
@@ -110,7 +140,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize is fail-closed at ev
     await k?.teardown();
   }, 120_000);
   beforeEach(() => {
-    Object.assign(sw, { enabled: "real", lockReq: false, owners: false, identity: false, digest: false, safety: false });
+    Object.assign(sw, { enabled: "real", lockReq: false, owners: false, identity: false, digest: false, safety: false, plc: "real" });
   });
 
   it("★ robot enabled: false / unreadable / throwing ⇒ the SAME 409 device_refused {robot_disabled}; nothing written", async () => {
@@ -141,9 +171,31 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize is fail-closed at ev
     expect(await rows()).toBe(0);
   });
 
+  it("★ I-1: real mode — central's safety-PLC preflight (facade, forRealActuation, robotId) must read OK: BLOCKED / UNKNOWN / SIM_ONLY / a throw ⇒ device_refused {safety}; OK ⇒ authorised", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
+    try {
+      for (const mode of ["BLOCKED", "UNKNOWN", "SIM_ONLY", "throw"] as const) {
+        sw.plc = mode;
+        sw.plcReads.length = 0;
+        const r = await robotAttempt();
+        expect(r, `${mode}: ${JSON.stringify(r)}`).toMatchObject({ http: 409, code: "device_refused", data: { gate: "safety" } });
+        expect(sw.plcReads[0]).toMatchObject({ adapterId: -1, robotId: k.ids.robotA, opts: { forRealActuation: true } });
+      }
+      expect(await rows()).toBe(0);
+      sw.plc = "OK";
+      const ok = await robotAttempt();
+      expect(ok.http, JSON.stringify(ok)).toBe(200);
+      expect(JSON.parse(ok.data!.authorization.payload).mode).toBe("real");
+    } finally {
+      delete process.env.ROBOT_CONTROL_ENABLED;
+      delete process.env.ROBOT_COMMISSIONING_REQUIRED;
+    }
+  });
+
   it("control: with every read answering, the same attempt is authorised (the switches are the only cause above)", async () => {
     const r = await robotAttempt();
     expect(r.http, JSON.stringify(r)).toBe(200);
-    expect(await rows()).toBe(1);
+    expect(await rows()).toBe(2); // + the OK attempt of the I-1 test
   });
 });

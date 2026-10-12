@@ -40,7 +40,7 @@ import { edgeCanonicalJson, type EdgeSignedEnvelope } from "./edgeSigning";
 import {
   centralDb,
   centralSigner,
-  devicesOfNode,
+  devicesOfNodeInScope,
   edgeUnavailable,
   isEdgeUnavailableError,
   nodeProtocolVersion,
@@ -101,13 +101,37 @@ async function openSecrets(v: unknown): Promise<unknown> {
 
 type Content = Omit<import("./edgeProtocol").EdgeConfigSnapshot, "configVersion" | "issuedAt">;
 
+/**
+ * I-3 — does a safety-PLC config guard the node's devices, EXPLICITLY? Its factory (when set) must be the node's; then it names
+ * an owned robot, a station or a line of an owned device, or — naming no robot / station / line — it is a factory-wide row of
+ * the node's own factory. Nothing else (a null field is never a wildcard; an untargeted row with no factory is not shipped).
+ */
+export function edgePlcConfigGuardsNode(
+  cfg: { robotId?: number | null; stationId?: number | null; lineId?: number | null; factoryId?: number | null },
+  nodeFactoryId: number,
+  ownRobots: ReadonlySet<number>,
+  ownStations: ReadonlySet<number>,
+  ownLines: ReadonlySet<number>,
+): boolean {
+  if (cfg.factoryId != null && cfg.factoryId !== nodeFactoryId) return false;
+  if (cfg.robotId != null) return ownRobots.has(cfg.robotId);
+  if (cfg.stationId != null) return ownStations.has(cfg.stationId);
+  if (cfg.lineId != null) return ownLines.has(cfg.lineId);
+  return cfg.factoryId === nodeFactoryId;
+}
+
 /** Build the node's config CONTENT (deterministic for a given DB state + keyring). Throws on a DB error. */
 export async function buildNodeConfigContent(d: Db, node: EdgeNodePrincipal): Promise<Content> {
   const signer = centralSigner();
   if (!signer) throw new Error("no signer");
   const [nodeRow] = await d.select({ id: edgeNodes.id, code: edgeNodes.code, factoryCode: edgeNodes.factoryCode, lines: edgeNodes.assignedLineCodes }).from(edgeNodes).where(eq(edgeNodes.id, node.nodeId)).limit(1);
   if (!nodeRow) throw new Error("node row missing");
-  const owned = await devicesOfNode(d, node.nodeId);
+  // I-4 — owned AND placed in the node's factory (an unplaced / foreign-factory device is never shipped; logged)
+  const scope = await devicesOfNodeInScope(d, node.nodeId);
+  if (scope.excluded.robots.length || scope.excluded.adapters.length) {
+    console.warn(`[EdgeConfig] node ${node.nodeCode}: devices it owns outside its factory (or unplaced) are NOT in its config — robots ${scope.excluded.robots.join(",") || "-"}, adapters ${scope.excluded.adapters.join(",") || "-"}`);
+  }
+  const owned = { robots: scope.robots.map((p) => p.id), adapters: scope.adapters.map((p) => p.id) };
   const { adapterTargetFingerprint } = await import("../ot/adapterTarget");
 
   // ── adapters + tags ──
@@ -202,20 +226,32 @@ export async function buildNodeConfigContent(d: Db, node: EdgeNodePrincipal): Pr
   const mRows = machineIds.length ? await d.select({ id: machines.id, machineType: machines.machineType, capabilities: machines.capabilities }).from(machines).where(inArray(machines.id, machineIds)) : [];
   const machinesOut = mRows.sort((x, y) => x.id - y.id).map((m) => ({ id: m.id, machineType: m.machineType, capabilities: plain(m.capabilities ?? null) }));
 
-  // ── safety-PLC configs guarding the owned targets (the safetyTarget matcher; unresolvable target ⇒ every config) ──
-  const { resolveSafetyTargets } = await import("../ot/safetyTarget");
-  const { plcConfigAppliesToTargets } = await import("../ot/safetyPreflightPolicy");
+  // ── safety-PLC configs: I-3 — only rows EXPLICITLY guarding an owned device (its robot, its station, its line) or an
+  //    untargeted row of the node's OWN factory; a config of another factory is never shipped; a null machine / station /
+  //    target is never a wildcard. Shipped as a projection (no name / notes / scope / corporateCode).
   const { listPlcConfigs } = await import("../safety/plc/safetyPlcAdapter");
   const { plcTrustDigest, isPlcConfigTrustApproved } = await import("../safety/plc/safetyPlcTrust");
-  const targetSets = [
-    ...(await Promise.all(adapters.map((a) => resolveSafetyTargets({ adapterId: a.id, machineId: a.machineId })))),
-    ...(await Promise.all(robotsOut.map((r) => resolveSafetyTargets({ robotId: r.id })))),
-  ];
+  const ownRobots = new Set(scope.robots.map((p) => p.id));
+  const ownStations = new Set([...scope.robots, ...scope.adapters].map((p) => p.stationId).filter((x): x is number => x != null));
+  const ownLines = new Set([...scope.robots, ...scope.adapters].map((p) => p.lineId).filter((x): x is number => x != null));
   const safetyOut: Content["safetyPlcConfigs"] = [];
-  if (targetSets.length > 0) {
+  if (scope.factoryId !== null && (ownRobots.size > 0 || scope.adapters.length > 0)) {
     for (const cfg of await listPlcConfigs({ onlyEnabled: true })) {
-      if (!targetSets.some((t) => plcConfigAppliesToTargets(cfg as never, t))) continue;
-      const p = edgeConfigSafetyPlcSchema.safeParse({ id: cfg.id, trustDigest: plcTrustDigest(cfg), approved: await isPlcConfigTrustApproved(cfg), config: plain(cfg) });
+      if (!edgePlcConfigGuardsNode(cfg, scope.factoryId, ownRobots, ownStations, ownLines)) continue;
+      const projection = {
+        id: cfg.id,
+        code: cfg.code,
+        vendor: cfg.vendor,
+        backend: cfg.backend,
+        endpoint: cfg.endpoint ?? null,
+        statusMap: plain(cfg.statusMap ?? null),
+        robotId: cfg.robotId ?? null,
+        stationId: cfg.stationId ?? null,
+        lineId: cfg.lineId ?? null,
+        factoryId: cfg.factoryId ?? null,
+        enabled: cfg.enabled === true,
+      };
+      const p = edgeConfigSafetyPlcSchema.safeParse({ id: cfg.id, trustDigest: plcTrustDigest(cfg), approved: await isPlcConfigTrustApproved(cfg), config: projection });
       if (p.success) safetyOut.push(p.data);
     }
   }
@@ -298,6 +334,7 @@ export async function configForNode(node: EdgeNodePrincipal, body: unknown, ifNo
     return { http: 200, data: { config: cfg.envelope, configHash: cfg.configHash } };
   } catch (err) {
     if (!isEdgeUnavailableError(err)) console.error(`[EdgeConfig] config of node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
+    else console.warn(`[EdgeConfig] config of node ${node.nodeCode} unavailable: ${(err as Error)?.message ?? err}`);
     return edgeUnavailable;
   }
 }

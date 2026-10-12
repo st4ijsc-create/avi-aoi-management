@@ -20,8 +20,7 @@
  *     STOPs are reported at error level instead.
  */
 import { and, asc, desc, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
-import { z } from "zod";
-import { EDGE_PULL_COMMANDS_MAX, edgeCommandSchema } from "./edgeProtocol";
+import { EDGE_PULL_COMMANDS_MAX, EDGE_UNSIGNED_STOP_TYP, edgeCommandSchema, edgeUnsignedStopSchema, type EdgeUnsignedStop } from "./edgeProtocol";
 import { ackEdgeStop, robotMotionLockRequests, robotOwnership, adapterOwnership, isEdgeControlRefusal, type RobotMotionLockRequestRow } from "./edgeControlSchema";
 import { auditNode, centralDb, centralSigner, signForNode, type Db } from "./edgeCentralCommon";
 import type { EdgeNodePrincipal } from "./edgeNodeCredentials";
@@ -29,19 +28,11 @@ import type { EdgeSignedEnvelope } from "./edgeSigning";
 
 export type EdgeRequestKind = "lock" | "clear" | "stop";
 
-// ── R-10-p — the ONE unsigned envelope (contract addition: edgeProtocol's pull / progress answers carry it as `unsignedStops`) ──
-export const EDGE_UNSIGNED_STOP_TYP = "cmd-stop-unsigned" as const;
-const zPos = z.number().int().positive().max(2_147_483_647);
-/** A STOP central could not sign (no signer): ONLY kind stop, ONLY these keys. The edge sends it (L-7) and logs an anomaly. */
-export const edgeUnsignedStopSchema = z.strictObject({
-  typ: z.literal(EDGE_UNSIGNED_STOP_TYP),
-  requestId: zPos,
-  nodeId: zPos,
-  credentialId: zPos,
-  ownerEpoch: zPos,
-  target: z.union([z.strictObject({ robotId: zPos }), z.strictObject({ adapterId: zPos })]),
-});
-export type EdgeUnsignedStop = z.infer<typeof edgeUnsignedStopSchema>;
+// R-10-p / M-8 — the ONE unsigned-STOP envelope is edgeProtocol's (`cmd-stop-unsigned`); re-exported for callers of this module.
+export { EDGE_UNSIGNED_STOP_TYP, edgeUnsignedStopSchema, type EdgeUnsignedStop };
+
+/** F2 — a STOP enqueue never waits longer than the STOP DB-step bound (robot/stopJob STOP_DB_STEP_DEADLINE_MS, 1 s) per attempt. */
+const STOP_ENQUEUE_BOUND_MS = 1_000;
 
 /** Default validity of a request: a clear (raises energy) is short-lived; a lock / stop stays deliverable longer. */
 export function edgeRequestTtlMs(kind: EdgeRequestKind): number {
@@ -71,11 +62,12 @@ export class EdgeRequestError extends Error {
   }
 }
 
-async function ownerOf(d: Db, robot: number | null, adapter: number | null): Promise<{ edgeNodeId: number | null; ownerEpoch: number } | null> {
-  const [o] =
-    robot !== null
-      ? await d.select({ edgeNodeId: robotOwnership.edgeNodeId, ownerEpoch: robotOwnership.ownerEpoch }).from(robotOwnership).where(eq(robotOwnership.id, robot)).limit(1)
-      : await d.select({ edgeNodeId: adapterOwnership.edgeNodeId, ownerEpoch: adapterOwnership.ownerEpoch }).from(adapterOwnership).where(eq(adapterOwnership.id, adapter as number)).limit(1);
+async function ownerOf(d: Db, robot: number | null, adapter: number | null, opts: { share?: boolean } = {}): Promise<{ edgeNodeId: number | null; ownerEpoch: number } | null> {
+  // `share` (a STOP enqueue): the device row is read FOR SHARE in the enqueue transaction — the owner read and the insert see
+  // ONE ownership, and a concurrent owner change makes the STOP wait at most lock_timeout (F2), never forever
+  const rq = d.select({ edgeNodeId: robotOwnership.edgeNodeId, ownerEpoch: robotOwnership.ownerEpoch }).from(robotOwnership).where(eq(robotOwnership.id, robot as number)).limit(1);
+  const aq = d.select({ edgeNodeId: adapterOwnership.edgeNodeId, ownerEpoch: adapterOwnership.ownerEpoch }).from(adapterOwnership).where(eq(adapterOwnership.id, adapter as number)).limit(1);
+  const [o] = robot !== null ? await (opts.share ? rq.for("share") : rq) : await (opts.share ? aq.for("share") : aq);
   return o ? { edgeNodeId: o.edgeNodeId ?? null, ownerEpoch: Number(o.ownerEpoch) } : null;
 }
 
@@ -104,6 +96,10 @@ export async function enqueueEdgeDeviceRequest(input: {
     throw fail("invalid", "a clear needs the expected lock generation");
   }
   if (!(Number.isSafeInteger(input.requestedBy) && input.requestedBy > 0)) throw fail("invalid", "requestedBy must be a user");
+  // I-7 — the edge runtime is off: no node can pull anything (every node route answers 503) ⇒ nothing is queued; a STOP gets
+  // the central fallback (never a silent success)
+  const { edgeRuntimeEnabled } = await import("./edgeCoordinator");
+  if (!edgeRuntimeEnabled()) throw fail("unavailable", "the edge runtime is disabled (EDGE_RUNTIME_ENABLED) — no edge node can receive the request");
   let d: Db;
   try {
     d = await centralDb();
@@ -111,34 +107,50 @@ export async function enqueueEdgeDeviceRequest(input: {
     throw fail("unavailable", "database unavailable");
   }
   const attempts = stop ? 3 : 1;
+  const ttl = input.ttlMs ?? edgeRequestTtlMs(input.kind);
+  const insertRequest = (x: Db, owner: { edgeNodeId: number; ownerEpoch: number }) =>
+    x
+      .insert(robotMotionLockRequests)
+      .values({
+        robotId: robot,
+        adapterId: adapter,
+        edgeNodeId: owner.edgeNodeId,
+        ownerEpoch: owner.ownerEpoch,
+        kind: input.kind,
+        expectedGeneration: input.kind === "clear" ? (input.expectedGeneration as number) : null,
+        reason: String(input.reason ?? "").slice(0, 300),
+        requestedBy: input.requestedBy,
+        expiresAt: new Date(Date.now() + Math.max(5_000, ttl)),
+      })
+      .returning({ id: robotMotionLockRequests.id });
+  const one = async (x: Db) => {
+    const owner = await ownerOf(x, robot, adapter, { share: stop });
+    lastOwner = owner;
+    if (!owner || owner.edgeNodeId == null) throw fail("notEdgeOwned", "the device is not owned by an edge node");
+    const [row] = await insertRequest(x, owner as { edgeNodeId: number; ownerEpoch: number });
+    return { requestId: row.id, edgeNodeId: owner.edgeNodeId, ownerEpoch: owner.ownerEpoch };
+  };
+  const { withDeadline } = await import("../ot/drivers/boundedClose");
   for (let i = 0; i < attempts; i++) {
     try {
-      const owner = await ownerOf(d, robot, adapter);
-      lastOwner = owner;
-      if (!owner || owner.edgeNodeId == null) throw fail("notEdgeOwned", "the device is not owned by an edge node");
-      const ttl = input.ttlMs ?? edgeRequestTtlMs(input.kind);
-      const [row] = await d
-        .insert(robotMotionLockRequests)
-        .values({
-          robotId: robot,
-          adapterId: adapter,
-          edgeNodeId: owner.edgeNodeId,
-          ownerEpoch: owner.ownerEpoch,
-          kind: input.kind,
-          expectedGeneration: input.kind === "clear" ? (input.expectedGeneration as number) : null,
-          reason: String(input.reason ?? "").slice(0, 300),
-          requestedBy: input.requestedBy,
-          expiresAt: new Date(Date.now() + Math.max(5_000, ttl)),
-        })
-        .returning({ id: robotMotionLockRequests.id });
-      return { requestId: row.id, edgeNodeId: owner.edgeNodeId, ownerEpoch: owner.ownerEpoch };
+      if (!stop) return await one(d);
+      // F2 — a STOP: lock_timeout + statement_timeout = the STOP DB bound inside the transaction, and the attempt bounded as a
+      // whole (connection wait included); a timeout ⇒ the central fallback, never a hang
+      return await withDeadline(
+        d.transaction(async (tx) => {
+          await tx.execute(sql`SELECT set_config('lock_timeout', ${`${STOP_ENQUEUE_BOUND_MS}ms`}, true), set_config('statement_timeout', ${`${STOP_ENQUEUE_BOUND_MS}ms`}, true)`);
+          return one(tx as unknown as Db);
+        }),
+        STOP_ENQUEUE_BOUND_MS * 2,
+        "edge STOP enqueue",
+      );
     } catch (err) {
       if (err instanceof EdgeRequestError) throw err;
       if (isEdgeControlRefusal(err)) {
         if (i + 1 < attempts) continue; // a STOP: the owner changed between the read and the insert — re-read, re-queue
         throw fail("stale", "the device's owner changed — retry");
       }
-      throw fail("unavailable", "the request could not be queued (database or migration 0374)");
+      throw fail("unavailable", stop ? "the STOP could not be queued within the STOP bound (lock / statement timeout or DB)" : "the request could not be queued (database or migration 0374)");
     }
   }
   throw fail("stale", "the device's owner kept changing");
@@ -175,16 +187,18 @@ export interface NodeCommands {
   signed: EdgeSignedEnvelope[];
   /** R-10-k / R-10-p — ONLY when the signer is unavailable: the node's unacked STOPs, unsigned */
   unsignedStops: EdgeUnsignedStop[];
+  /** M-3 — some row could not be expressed / signed / stamped this time (each logged at error level); the others are here */
+  incomplete: boolean;
 }
 
 /**
  * THIS node's deliverable requests, STOPs first. Each is re-sent until acknowledged (lock / clear also until expired); the edge
- * de-duplicates by requestId. Never throws: a read error ⇒ nothing this time (logged at error level; the next pull — bounded by
- * limits.pullMs ≤ 60 s — retries).
+ * de-duplicates by requestId. M-3 — a READ failure THROWS (pull / progress answer 503: the edge must never take "no commands"
+ * for "none pending"); a failure of ONE row skips that row only, is logged at error level and sets `incomplete`.
  */
 export async function commandsForNode(node: EdgeNodePrincipal): Promise<NodeCommands> {
-  const out: NodeCommands = { signed: [], unsignedStops: [] };
-  try {
+  const out: NodeCommands = { signed: [], unsignedStops: [], incomplete: false };
+  {
     const d = await centralDb();
     const signer = centralSigner();
     const rows = await d
@@ -203,6 +217,7 @@ export async function commandsForNode(node: EdgeNodePrincipal): Promise<NodeComm
       .orderBy(sql`CASE WHEN ${robotMotionLockRequests.kind} = 'stop' THEN 0 ELSE 1 END`, asc(robotMotionLockRequests.createdAt), asc(robotMotionLockRequests.id))
       .limit(EDGE_PULL_COMMANDS_MAX);
     for (const r of rows) {
+      try {
       if (r.edgeNodeId !== node.nodeId) {
         // defence in depth: the WHERE already scopes by node
         await auditNode(node, "EDGE_ANOMALY", { type: "edge_node", id: node.nodeId }, { anomaly: "command_row_of_other_node", requestId: r.id }, "failure");
@@ -233,10 +248,11 @@ export async function commandsForNode(node: EdgeNodePrincipal): Promise<NodeComm
         }
       }
       out.signed.push(signForNode(signer, "cmd", edgeCommandSchema, payload, node));
+      } catch (err) {
+        out.incomplete = true;
+        console.error(`[EdgeCommands] ⚠ request #${r.id} (${r.kind}) for node ${node.nodeCode} not delivered this pull: ${(err as Error)?.message ?? err}`);
+      }
     }
-    return out;
-  } catch (err) {
-    console.error(`[EdgeCommands] commands for node ${node.nodeCode} not read — pending STOPs wait for the next pull: ${(err as Error)?.message ?? err}`);
     return out;
   }
 }
@@ -281,6 +297,19 @@ export async function ackEdgeCommand(tx: Db, nodeId: number, rec: EdgeAckInput):
   // fail-closed: an ack that does not name exactly one target and its owner epoch is never recorded
   if ((robotId === null) === (adapterId === null) || !(typeof rec.ownerEpoch === "number" && Number.isSafeInteger(rec.ownerEpoch) && rec.ownerEpoch > 0)) return false;
   const target = robotId !== null ? { robotId } : { adapterId: adapterId as number };
+  // a STOP ack is recorded OUTSIDE the caller's transaction (A's re-review N2): edge_stop_ack_edge writes its refusal evidence
+  // (edge_stop_ack_refusals) itself, and a later rollback of the stream batch must never erase it — nor the ack
+  const [head] = await tx
+    .select({ kind: robotMotionLockRequests.kind, ackedAt: robotMotionLockRequests.ackedAt, outcome: robotMotionLockRequests.outcome, robotId: robotMotionLockRequests.robotId, adapterId: robotMotionLockRequests.adapterId, ownerEpoch: robotMotionLockRequests.ownerEpoch })
+    .from(robotMotionLockRequests)
+    .where(and(eq(robotMotionLockRequests.id, rec.requestId), eq(robotMotionLockRequests.edgeNodeId, nodeId)))
+    .limit(1);
+  if (head?.kind === "stop") {
+    // the same ack re-applied (its batch was rolled back after the ack committed) is not a second ack
+    const same = head.ackedAt != null && head.outcome === rec.outcome && (head.robotId ?? null) === robotId && (head.adapterId ?? null) === adapterId && Number(head.ownerEpoch) === rec.ownerEpoch;
+    if (same) return true;
+    return ackStopRequest(await centralDb(), nodeId, rec.requestId, target, rec.ownerEpoch as number, rec.outcome, rec.generation, rec.unsigned === true);
+  }
   try {
     return await tx.transaction(async (sp) => {
       const [row] = await sp
@@ -288,8 +317,7 @@ export async function ackEdgeCommand(tx: Db, nodeId: number, rec: EdgeAckInput):
         .from(robotMotionLockRequests)
         .where(and(eq(robotMotionLockRequests.id, rec.requestId), eq(robotMotionLockRequests.edgeNodeId, nodeId)))
         .limit(1);
-      if (!row) return false;
-      if (row.kind === "stop") return ackStopRequest(sp as unknown as Db, nodeId, rec.requestId, target, rec.ownerEpoch as number, rec.outcome, rec.generation, rec.unsigned === true);
+      if (!row || row.kind === "stop") return false;
       if (rec.unsigned === true) return false; // R-10-p — an unsigned ack is for a STOP only
       const rows = await sp
         .update(robotMotionLockRequests)
@@ -354,6 +382,19 @@ export async function lockRequestOutstanding(d: Db, robotId: number, ownerEpoch:
     .orderBy(desc(robotMotionLockRequests.id))
     .limit(1);
   return !!latest && (latest.kind === "lock" || latest.kind === "stop") && latest.outcome !== "done";
+}
+
+/**
+ * M-9 — an OT write is refused while a console STOP of the ADAPTER at its current owner epoch is not acknowledged `done`.
+ */
+export async function adapterStopOutstanding(d: Db, adapterId: number, ownerEpoch: number): Promise<boolean> {
+  const [latest] = await d
+    .select({ outcome: robotMotionLockRequests.outcome })
+    .from(robotMotionLockRequests)
+    .where(and(eq(robotMotionLockRequests.adapterId, adapterId), eq(robotMotionLockRequests.ownerEpoch, ownerEpoch), eq(robotMotionLockRequests.kind, "stop")))
+    .orderBy(desc(robotMotionLockRequests.id))
+    .limit(1);
+  return !!latest && latest.outcome !== "done";
 }
 
 /**

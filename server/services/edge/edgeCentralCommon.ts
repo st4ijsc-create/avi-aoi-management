@@ -9,7 +9,7 @@
  *   • the audit writer for node actions (never throws, never logs a token).
  */
 import { createHash } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { EDGE_PROTOCOL_VERSION, edgeError, type EdgeAnswer } from "./edgeProtocol";
 import { adapterOwnership, edgeNodeProtocol, isEdgeControlSchemaMissing, robotOwnership } from "./edgeControlSchema";
@@ -153,14 +153,92 @@ export async function adapterOwners(d: Db, ids: readonly number[]): Promise<Map<
   return out;
 }
 /** The ids (among `ids`) the node owns. */
+/** The ids (among `ids`) the node owns AND that are placed in the node's factory (I-4 — ownership never crosses a factory). */
 export async function ownedRobotIds(d: Db, nodeId: number, ids: readonly number[]): Promise<Set<number>> {
   const m = await robotOwners(d, ids);
-  return new Set([...m].filter(([, o]) => o.edgeNodeId === nodeId).map(([id]) => id));
+  const mine = [...m].filter(([, o]) => o.edgeNodeId === nodeId).map(([id]) => id);
+  if (mine.length === 0) return new Set();
+  const f = await nodeFactoryId(d, nodeId);
+  const p = await robotPlacements(d, mine);
+  return new Set(mine.filter((id) => f !== null && p.get(id)?.factoryId === f));
 }
 export async function ownedAdapterIds(d: Db, nodeId: number, ids: readonly number[]): Promise<Set<number>> {
   const m = await adapterOwners(d, ids);
-  return new Set([...m].filter(([, o]) => o.edgeNodeId === nodeId).map(([id]) => id));
+  const mine = [...m].filter(([, o]) => o.edgeNodeId === nodeId).map(([id]) => id);
+  if (mine.length === 0) return new Set();
+  const f = await nodeFactoryId(d, nodeId);
+  const p = await adapterPlacements(d, mine);
+  return new Set(mine.filter((id) => f !== null && p.get(id)?.factoryId === f));
 }
+/**
+ * I-4 (R-10-am) — the node's factory and the PLACEMENT of devices: a device counts for a node only when it is owned by the
+ * node AND placed in the node's factory (robot: station → line or line → workshop → factory; adapter: machine → station → line
+ * → workshop → factory). A node without a resolvable factory, or a device without a full placement chain, counts for NOTHING
+ * (fail-closed). The placement (station / line) is returned for the explicit safety-PLC match of the config.
+ */
+export interface DevicePlacement {
+  id: number;
+  stationId: number | null;
+  lineId: number | null;
+  factoryId: number | null;
+}
+const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
+const numOrNull = (v: unknown): number | null => (v == null ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+
+export async function nodeFactoryId(d: Db, nodeId: number): Promise<number | null> {
+  const r = rowsOf(await d.execute(sql`SELECT f.id FROM edge_nodes n JOIN factories f ON f.code = n."factoryCode" WHERE n.id = ${nodeId} LIMIT 1`));
+  return numOrNull(r[0]?.id);
+}
+export async function robotPlacements(d: Db, ids: readonly number[]): Promise<Map<number, DevicePlacement>> {
+  const out = new Map<number, DevicePlacement>();
+  const want = [...new Set(ids.filter((x) => Number.isSafeInteger(x) && x > 0))];
+  if (want.length === 0) return out;
+  const r = rowsOf(
+    await d.execute(sql`SELECT r.id, r."stationId", COALESCE(s."lineId", r."lineId") AS "lineId", w."factoryId"
+      FROM robots r LEFT JOIN stations s ON s.id = r."stationId"
+      LEFT JOIN production_lines l ON l.id = COALESCE(s."lineId", r."lineId")
+      LEFT JOIN workshops w ON w.id = l."workshopId"
+      WHERE r.id IN ${sql.raw(`(${want.join(",")})`)}`),
+  );
+  for (const x of r) out.set(Number(x.id), { id: Number(x.id), stationId: numOrNull(x.stationId), lineId: numOrNull(x.lineId), factoryId: numOrNull(x.factoryId) });
+  return out;
+}
+export async function adapterPlacements(d: Db, ids: readonly number[]): Promise<Map<number, DevicePlacement>> {
+  const out = new Map<number, DevicePlacement>();
+  const want = [...new Set(ids.filter((x) => Number.isSafeInteger(x) && x > 0))];
+  if (want.length === 0) return out;
+  const r = rowsOf(
+    await d.execute(sql`SELECT a.id, s.id AS "stationId", s."lineId", w."factoryId"
+      FROM device_adapters a LEFT JOIN machines m ON m.id = a."machineId"
+      LEFT JOIN stations s ON s.id = m."stationId"
+      LEFT JOIN production_lines l ON l.id = s."lineId"
+      LEFT JOIN workshops w ON w.id = l."workshopId"
+      WHERE a.id IN ${sql.raw(`(${want.join(",")})`)}`),
+  );
+  for (const x of r) out.set(Number(x.id), { id: Number(x.id), stationId: numOrNull(x.stationId), lineId: numOrNull(x.lineId), factoryId: numOrNull(x.factoryId) });
+  return out;
+}
+/** Is this device placed in the node's factory? (owner checked separately). Any unknown ⇒ false. */
+export async function deviceInNodeFactory(d: Db, nodeId: number, kind: "robot" | "adapter", id: number): Promise<boolean> {
+  const f = await nodeFactoryId(d, nodeId);
+  if (f === null) return false;
+  const p = (kind === "robot" ? await robotPlacements(d, [id]) : await adapterPlacements(d, [id])).get(id);
+  return !!p && p.factoryId === f;
+}
+/** The node's devices that count: owned AND placed in its factory, with their placements (I-4). */
+export async function devicesOfNodeInScope(d: Db, nodeId: number): Promise<{ factoryId: number | null; robots: DevicePlacement[]; adapters: DevicePlacement[]; excluded: { robots: number[]; adapters: number[] } }> {
+  const owned = await devicesOfNode(d, nodeId);
+  const factoryId = await nodeFactoryId(d, nodeId);
+  const [rp, ap] = await Promise.all([robotPlacements(d, owned.robots), adapterPlacements(d, owned.adapters)]);
+  const inF = (p: DevicePlacement | undefined) => !!p && factoryId !== null && p.factoryId === factoryId;
+  return {
+    factoryId,
+    robots: owned.robots.map((id) => rp.get(id)).filter((p): p is DevicePlacement => inF(p)),
+    adapters: owned.adapters.map((id) => ap.get(id)).filter((p): p is DevicePlacement => inF(p)),
+    excluded: { robots: owned.robots.filter((id) => !inF(rp.get(id))), adapters: owned.adapters.filter((id) => !inF(ap.get(id))) },
+  };
+}
+
 /** Every device the node owns (ids only). */
 export async function devicesOfNode(d: Db, nodeId: number): Promise<{ robots: number[]; adapters: number[] }> {
   const [rs, as] = await Promise.all([

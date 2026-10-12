@@ -69,6 +69,62 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — config / pull / claim / heartbe
     expect([...(await ownedAdapterIds(d, k.ids.nodeA, [k.ids.adapterA, k.ids.adapterB]))]).toEqual([k.ids.adapterA]);
   });
 
+  it("★ I-3 / I-4 (R-10-am): two factories — only PLC rows EXPLICITLY guarding A's devices (or A's factory-wide row) ship, as a projection; a robot owned by A but placed in ANOTHER factory never ships, cannot be authorised or ingested", async () => {
+    const { configForNode } = await import("./edgeConfigCentral");
+    const { verifyEdgeConfig } = await import("./edgeTrust");
+    const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+    const f2 = await one(k.sql`INSERT INTO factories (code, name, "isActive") VALUES (${`F2-${k.DAU}`}, 'kit other', true) RETURNING id`);
+    const w2 = await one(k.sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${f2}, ${`W2-${k.DAU}`}, 'kit ws2') RETURNING id`);
+    const l2 = await one(k.sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${w2}, ${`L2-${k.DAU}`}, 'kit line2') RETURNING id`);
+    const st2 = await one(k.sql`INSERT INTO stations ("lineId", code, name) VALUES (${l2}, ${`S2-${k.DAU}`}, 'kit st2') RETURNING id`);
+    const foreignRobot = await one(k.sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId", "edgeNodeId", "connectionOptions") VALUES (${`RX-${k.DAU}`}, 'kit foreign robot', 'sim', 'sim://x', true, ${l2}, ${st2}, ${k.ids.nodeA}, ${k.sql.json({ password: "F2-ROBOT-SECRET" })}) RETURNING id`);
+    const plc = (code: string, cols: Record<string, number | null>) =>
+      one(k.sql`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "robotId", "stationId", "lineId", "factoryId", enabled, notes, "corporateCode")
+                VALUES (${`${code}-${k.DAU}`}, ${`name ${code}`}, 'generic', 'sim', ${`tcp://${code}`}, ${cols.robotId ?? null}, ${cols.stationId ?? null}, ${cols.lineId ?? null}, ${cols.factoryId ?? null}, true, 'SECRET NOTE', 'CORP') RETURNING id`);
+    const ids = {
+      robotA: await plc("P-RA", { robotId: k.ids.robotA }),
+      stationA: await plc("P-SA", { stationId: k.ids.st }),
+      factoryA: await plc("P-FA", { factoryId: k.ids.factory }),
+      factory2: await plc("P-F2", { factoryId: f2 }),
+      station2: await plc("P-S2", { stationId: st2 }),
+      robotB: await plc("P-RB", { robotId: k.ids.robotB }),
+      untargeted: await plc("P-UN", {}),
+      foreignRobot: await plc("P-RX", { robotId: foreignRobot }),
+      // names A's robot but is labelled with ANOTHER factory: inconsistent ⇒ never shipped (fail closed)
+      robotAInF2: await plc("P-RAF2", { robotId: k.ids.robotA, factoryId: f2 }),
+    };
+    try {
+      const pA = await k.principal("A");
+      const r = await configForNode(pA, {});
+      expect(r.http, JSON.stringify(r)).toBe(200);
+      const v = verifyEdgeConfig(await k.store(k.ids.nodeA), (r.data as { config: unknown }).config, { credentialId: pA.credentialId, lastConfigVersion: null });
+      expect(v.ok, JSON.stringify(v)).toBe(true);
+      const cfg = (v as { config: Record<string, any> }).config;
+      const shipped = cfg.safetyPlcConfigs.map((c: { id: number }) => c.id).sort((a: number, b: number) => a - b);
+      // robotB's row guards B's robot — but robot B sits on A's station: still not A's device ⇒ only by station row
+      expect(shipped).toEqual([ids.robotA, ids.stationA, ids.factoryA].sort((a, b) => a - b));
+      const text = JSON.stringify(r.data);
+      for (const leak of ["SECRET NOTE", "CORP", `P-RAF2-${k.DAU}`, `P-F2-${k.DAU}`, `P-S2-${k.DAU}`, `P-UN-${k.DAU}`, `RX-${k.DAU}`, "F2-ROBOT-SECRET", "name P-RA"]) expect(text, leak).not.toContain(leak);
+      expect(cfg.robots.map((x: { id: number }) => x.id)).not.toContain(foreignRobot);
+      // the foreign-factory robot: refused at ingest and in ownership scans
+      const { robotStateForNode } = await import("./edgeIngestCentral");
+      const e = Array.from({ length: 32 }, () => "a").join("");
+      expect((await robotStateForNode(pA, { epoch: e, stream: "robot_state", records: [{ seq: 1, robotId: foreignRobot, ts: Date.now(), estop: false }] })).http).toBe(200);
+      expect(Number((await k.sql`SELECT count(*)::int AS n FROM robot_telemetry WHERE "robotId" = ${foreignRobot}`)[0].n)).toBe(0);
+      const { deviceInNodeFactory, centralDb } = await import("./edgeCentralCommon");
+      expect(await deviceInNodeFactory(await centralDb(), k.ids.nodeA, "robot", foreignRobot)).toBe(false);
+      expect(await deviceInNodeFactory(await centralDb(), k.ids.nodeA, "robot", k.ids.robotA)).toBe(true);
+    } finally {
+      await k.sql`DELETE FROM safety_plc_configs WHERE id IN ${k.sql(Object.values(ids))}`;
+      await k.sql`DELETE FROM robot_telemetry WHERE "robotId" = ${foreignRobot}`;
+      await k.sql`DELETE FROM robots WHERE id = ${foreignRobot}`.catch((err) => console.warn(`[test] foreign robot kept: ${(err as Error).message}`));
+      await k.sql`DELETE FROM stations WHERE id = ${st2}`.catch(() => undefined);
+      await k.sql`DELETE FROM production_lines WHERE id = ${l2}`.catch(() => undefined);
+      await k.sql`DELETE FROM workshops WHERE id = ${w2}`.catch(() => undefined);
+      await k.sql`DELETE FROM factories WHERE id = ${f2}`.catch(() => undefined);
+    }
+  });
+
   it("★ claim (v2): a signed run package the edge verifies — verified STOPs (robot abort, pinned OT stop), no server-only context key; foreign target ⇒ not_owned; N5 rate limit", async () => {
     const s = kitSteps(k);
     const c = await import("./edgeExecutionCentral");

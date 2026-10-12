@@ -9,7 +9,7 @@
  *                     CURRENT (else 409 claim_stale {abortRequested}); central stopped it (abort / gate rejection) ⇒ 409
  *                     stopped; the run is running / compensating (else 409 run_not_active). (Protocol v2: the route.)
  *   2. definition   — the head definition is still the assignment's defHash (409 definition_changed); stepId is a command
- *                     step (or a compensation of one) of it; attempt ≤ maxAttempts + 1; the idempotency key is the engine's
+ *                     step (or a compensation of one) of it; attempt ≤ the engine's attempts (maxAttempts + 1 = step.maxAttempts + 1 tries, I-5); the idempotency key is the engine's
  *                     `run<id>-<step>-a<attempt>` (400 step_invalid).
  *   3. payload      — central REBUILDS the command from the definition with its own adapter resolution and hashes it; the
  *                     request's payloadHash must equal both that hash and the hash of the command body the edge sent
@@ -64,6 +64,7 @@ import {
   protocolVersionAnswer,
   robotOwners,
   adapterOwners,
+  deviceInNodeFactory,
   runInNodeScope,
   runNotFound,
   sha256Hex,
@@ -72,7 +73,7 @@ import {
   type Db,
 } from "./edgeCentralCommon";
 import { edgeStepIdempotencyKey, isPinnedOtStop, loadMachineMap, rebuildCommand, requestPayloadHash, stopPinsOf, type RebuiltCommand } from "./edgeRunAnalysis";
-import { lockRequestOutstanding } from "./edgeNodeCommands";
+import { adapterStopOutstanding, lockRequestOutstanding } from "./edgeNodeCommands";
 import type { WorkflowDefinition } from "../orchestration/foe/workflowModel";
 import type { ProgramCheck } from "../ot/programChecksum";
 
@@ -144,16 +145,42 @@ async function safetyConfigIdsFor(ref: { adapterId?: number; machineId?: number 
     .slice(0, 64);
 }
 
+/** M-2 — the role of a user for FIELD_V2 / policy. A read error THROWS (503): an unreadable role is never "user" by default. */
 async function roleOf(d: Db, userId: number): Promise<string> {
-  try {
-    const [u] = await d.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
-    return typeof u?.role === "string" && u.role ? u.role : "user";
-  } catch {
-    return "user";
-  }
+  const [u] = await d.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+  return typeof u?.role === "string" && u.role ? u.role : "user"; // a user with no role is the least-privileged one, as central
 }
 
-/** Step 7 + 8 for a robot attempt. */
+/** The policy refusal text (the dispatchers' codes). */
+const policyRefusal = (v: { effect: string; reason: string }) => `${v.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED"}: ${v.reason}`;
+
+/**
+ * I-1 — central's SAFETY-PLC PREFLIGHT, exactly as the dispatchers run it on their real path (commandDispatcher
+ * readSafetyStateForPreflight / robotCommandDispatcher 4a-safety): the adapter facade's read-only getSafetyStatus with
+ * { forRealActuation: true } under the 5 s deadline; anything but OK (BLOCKED, UNKNOWN, SIM_ONLY, a read error / timeout) refuses.
+ */
+async function safetyPreflight(ref: { adapterId: number; machineId: number | null; robotId?: number }): Promise<Gate | null> {
+  const { safetyPreflightReason } = await import("../ot/safetyPreflightPolicy");
+  const { withDeadline } = await import("../ot/drivers/boundedClose");
+  let state = "UNKNOWN";
+  let basis: Parameters<typeof safetyPreflightReason>[1];
+  try {
+    const { createAdapterFacade } = await import("../ot/adapterFacade");
+    const s = await withDeadline(
+      createAdapterFacade(ref.robotId !== undefined ? { adapterId: ref.adapterId, machineId: null, robotId: ref.robotId } : { adapterId: ref.adapterId, machineId: ref.machineId }).getSafetyStatus({ forRealActuation: true }),
+      5_000,
+      "edge authorize safety-PLC preflight",
+    );
+    state = s?.state ?? "UNKNOWN";
+    basis = s?.basis;
+  } catch {
+    state = "ERROR";
+  }
+  if (state === "OK") return null;
+  return { gate: "safety", detail: `${safetyPreflightReason(state, basis)}: central's safety-PLC preflight read ${state}` };
+}
+
+/** Step 7 + 8 for a robot attempt — the robot dispatcher's order: enabled, lock, FIELD_V2, commissioning ⇒ mode, policy, safety, interlock. */
 async function robotGates(d: Db, rb: Extract<RebuiltCommand, { kind: "robot" }>, approvedBy: number, ownerEpoch: number): Promise<Gate | Verdict> {
   const robotId = rb.robotId as number;
   const { readRobotEnabledForMotion } = await import("../robot/robotEnabledGate");
@@ -174,26 +201,32 @@ async function robotGates(d: Db, rb: Extract<RebuiltCommand, { kind: "robot" }>,
     const authz = await authorizeCommand({ equipmentClass: "ROBOT", verb: "run_job", userId: approvedBy, userRole: role });
     if (!authz.ok) return { gate: "field_v2", detail: authz.reason ?? "command authorization denied" };
   }
-  const { isRobotControlEnabled, isRobotCommissioningRequired, isRobotCommissioned, robotInterlockTarget } = await import("../robot/robotCommandDispatcher");
+  const { isRobotControlEnabled, isRobotCommissioningRequired, isRobotCommissioned, robotInterlockTarget, ROBOT_NO_OT_ADAPTER_ID } = await import("../robot/robotCommandDispatcher");
   const commissioned = isRobotCommissioningRequired() ? await isRobotCommissioned(robotId) : true;
   const real = isRobotControlEnabled() && commissioned;
   let policy = "skipped";
   let interlock = "skipped";
+  // R-10-am — the dispatcher policy in EVERY mode (central evaluates it on its real path; the ruling applies it to sim too)
+  const { evaluateActionPolicy, secPlatformEnabled } = await import("../security/policyGate");
+  if (secPlatformEnabled()) {
+    const verdict = evaluateActionPolicy(`user:${approvedBy}`, `robot.command.${rb.jobType}`, `robot:${robotId}`, {
+      verb: rb.jobType,
+      argsKeys: Object.keys(rb.params ?? {}),
+      robotId,
+      triggerKind: "hitl",
+      role,
+      fat_passed: commissioned,
+      mode: real ? "real" : "simulated",
+      confirmedBy: approvedBy,
+    });
+    if (!verdict.allow) return { gate: "policy", detail: policyRefusal(verdict) };
+    policy = "allow";
+  }
   if (real) {
-    const { evaluateActionPolicy, secPlatformEnabled } = await import("../security/policyGate");
-    if (secPlatformEnabled()) {
-      const verdict = evaluateActionPolicy(`user:${approvedBy}`, `robot.command.${rb.jobType}`, `robot:${robotId}`, {
-        verb: rb.jobType,
-        argsKeys: Object.keys(rb.params ?? {}),
-        robotId,
-        triggerKind: "hitl",
-        role,
-        fat_passed: commissioned,
-        mode: "real",
-        confirmedBy: approvedBy,
-      });
-      if (!verdict.allow) return { gate: "policy", detail: `${verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED"}: ${verdict.reason}` };
-      policy = "allow";
+    const { isRobotSafetyPreflightEnabled } = await import("../ot/safetyPreflightPolicy");
+    if (isRobotSafetyPreflightEnabled()) {
+      const sg = await safetyPreflight({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null, robotId });
+      if (sg) return sg;
     }
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
     const g = await evaluateInterlockGate(robotInterlockTarget(robotId));
@@ -208,12 +241,14 @@ async function robotGates(d: Db, rb: Extract<RebuiltCommand, { kind: "robot" }>,
   };
 }
 
-/** Step 7 + 8 for an OT attempt. */
-async function otGates(d: Db, rb: Extract<RebuiltCommand, { kind: "ot" }>): Promise<Gate | Verdict> {
+/** Step 7 + 8 for an OT attempt — the OT dispatcher's order: adapter, tags, commissioning ⇒ mode, policy, safety, interlock. */
+async function otGates(d: Db, rb: Extract<RebuiltCommand, { kind: "ot" }>, ownerEpoch: number): Promise<Gate | Verdict> {
   const adapterId = rb.adapterId as number;
   const { deviceAdapters, deviceTags } = await import("../../../drizzle/schema");
   const [adapter] = await d.select({ isEnabled: deviceAdapters.isEnabled }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
   if (!adapter || adapter.isEnabled !== true) return { gate: "adapter_disabled", detail: "adapter not found or disabled" };
+  // M-9 — a console STOP of this adapter not acknowledged done ⇒ no write
+  if (await adapterStopOutstanding(d, adapterId, ownerEpoch)) return { gate: "lock_requested", detail: "a central STOP request for this adapter is outstanding" };
   const writes: Array<{ tagKey: string; address: string; dataType: "bool" | "int" | "float" | "string" | "json"; scale: number | null; offset: number | null }> = [];
   for (const w of rb.writes) {
     const [tag] = await d.select().from(deviceTags).where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, w.tagKey))).limit(1);
@@ -228,12 +263,19 @@ async function otGates(d: Db, rb: Extract<RebuiltCommand, { kind: "ot" }>): Prom
   const real = isOtControlEnabled() && commissioned;
   let policy = "skipped";
   let interlock = "skipped";
+  // R-10-am — the dispatcher policy in EVERY mode. M-6: the SAME context central's FOE path gives the OT dispatcher — the
+  // equipment adapter passes no policyContext, so central evaluates exactly { action: ot.command.<type> }, approved false.
+  const { evaluateCommandPolicy, secPlatformEnabled } = await import("../security/policyGate");
+  if (secPlatformEnabled()) {
+    const verdict = evaluateCommandPolicy({ action: `ot.command.${rb.commandType}` }, { enabled: true, approved: false });
+    if (!verdict.allow) return { gate: "policy", detail: policyRefusal(verdict) };
+    policy = "allow";
+  }
   if (real) {
-    const { evaluateCommandPolicy, secPlatformEnabled } = await import("../security/policyGate");
-    if (secPlatformEnabled()) {
-      const verdict = evaluateCommandPolicy({ action: `ot.command.${rb.commandType}` }, { enabled: true, approved: false });
-      if (!verdict.allow) return { gate: "policy", detail: `${verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED"}: ${verdict.reason}` };
-      policy = "allow";
+    const { isOtSafetyPreflightEnabled } = await import("../ot/safetyPreflightPolicy");
+    if (isOtSafetyPreflightEnabled()) {
+      const sg = await safetyPreflight({ adapterId, machineId: rb.machineId });
+      if (sg) return sg;
     }
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
     const g = await evaluateInterlockGate({ adapterId, machineId: rb.machineId, tagKeys: rb.writes.map((w) => w.tagKey) });
@@ -319,7 +361,8 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
     const step = findStepDeep(def.steps, req.stepId);
     if (!step || step.type !== "command") return edgeError("step_invalid", `Step "${req.stepId}" is not a command step of run ${runId}.`);
     const maxAttempts = Math.max(1, (step.maxAttempts ?? 0) + 1);
-    if (req.attempt > maxAttempts + 1) return edgeError("step_invalid", `Attempt ${req.attempt} exceeds the step's attempts (${maxAttempts}).`);
+    // I-5 — exactly the engine's bound (foeEngine: attempt 1 … max(1, step.maxAttempts + 1)); never one more
+    if (req.attempt > maxAttempts) return edgeError("step_invalid", `Attempt ${req.attempt} exceeds the step's attempts (${maxAttempts}).`);
     const idemKey = edgeStepIdempotencyKey(runId, req.stepId, req.attempt);
     if (req.idempotencyKey !== idemKey) return edgeError("step_invalid", `The idempotency key of step "${req.stepId}" attempt ${req.attempt} is not the run's.`);
 
@@ -339,6 +382,10 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
     // ── 4. ownership ──
     const owner = rb.kind === "robot" ? (await robotOwners(d, [rb.robotId as number])).get(rb.robotId as number) : (await adapterOwners(d, [rb.adapterId as number])).get(rb.adapterId as number);
     if (!owner || owner.edgeNodeId !== node.nodeId) return edgeError("not_owned", `Step "${req.stepId}": its ${rb.kind === "robot" ? "robot" : "adapter"} is not owned by this node.`);
+    // I-4 — ownership never crosses the node's factory: a device placed elsewhere (or unplaced) is not this node's to drive
+    if (!(await deviceInNodeFactory(d, node.nodeId, rb.kind === "robot" ? "robot" : "adapter", rb.kind === "robot" ? (rb.robotId as number) : (rb.adapterId as number)))) {
+      return edgeError("not_owned", `Step "${req.stepId}": its ${rb.kind === "robot" ? "robot" : "adapter"} is not placed in this node's factory.`);
+    }
 
     // ── 5. a verified STOP never asks (L-7) ──
     if (rb.kind === "robot" && rb.isStop) return edgeError("stop_needs_no_authorization", `Step "${req.stepId}" is a STOP — send it; a STOP needs no authorisation.`);
@@ -362,8 +409,25 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
     if (!ev.ok) return edgeError("gate_required", `${FOE_GATE_REQUIRED}(${ev.reason}): command step "${req.stepId}" not authorised.`, { reason: ev.reason });
     const approval = { approvedBy: ev.approvals[0].approvedBy, gateStepId: ev.approvals[0].gateStepId };
 
+    // ── 6b. I-2 — the ENGINE's policy (foeEngine.execCommand: `foe.command.<cmd>` on foe-run:<id> / machine:<id>), every mode,
+    //    with the engine's context (the edge walker's user is the run owner from the package)
+    {
+      const { evaluateActionPolicy, secPlatformEnabled } = await import("../security/policyGate");
+      if (secPlatformEnabled()) {
+        const ownerRole = typeof run.startedBy === "number" && run.startedBy > 0 ? await roleOf(d, run.startedBy) : "system";
+        const verdict = evaluateActionPolicy(
+          `foe-run:${runId}`,
+          `foe.command.${step.command}`,
+          `machine:${step.machineId}`,
+          { runId, workflowRef: def.ref, stepId: step.id, stepType: step.type, command: step.command, machineId: step.machineId, role: ownerRole, startedBy: run.startedBy ?? 0, attempt: req.attempt },
+          { requestId: idemKey },
+        );
+        if (!verdict.allow) return edgeError("device_refused", `Step "${req.stepId}": ${policyRefusal(verdict)}${verdict.policyId ? ` (policy ${verdict.policyId})` : ""}.`, { gate: "policy" });
+      }
+    }
+
     // ── 7 + 8. device gates, mode ──
-    const g = rb.kind === "robot" ? await robotGates(d, rb, approval.approvedBy, owner.ownerEpoch) : await otGates(d, rb);
+    const g = rb.kind === "robot" ? await robotGates(d, rb, approval.approvedBy, owner.ownerEpoch) : await otGates(d, rb, owner.ownerEpoch);
     if ("gate" in g) return edgeError("device_refused", `Step "${req.stepId}": ${g.detail}.`, { gate: g.gate });
 
     // ── 9. one transaction ──
@@ -422,7 +486,8 @@ async function insertOrReplay(
   runOwner: number | null,
 ): Promise<{ http: number; replayed: boolean; answer: EdgeAnswer<EdgeAuthorizeAnswer> }> {
   const replayOf = (row: EdgeStepAuthorizationRow) => {
-    if (row.edgeNodeId !== node.nodeId || row.reqNonceHash !== nonceHash) throw new Answer(edgeError("already_authorized", `Step "${req.stepId}" attempt ${req.attempt} of this claim is already authorised.`));
+    // M-1 — a replay is re-signed only for the SAME node, credential and nonce
+    if (row.edgeNodeId !== node.nodeId || row.credentialId !== node.credentialId || row.reqNonceHash !== nonceHash) throw new Answer(edgeError("already_authorized", `Step "${req.stepId}" attempt ${req.attempt} of this claim is already authorised.`));
     if (row.payloadHash !== req.payloadHash) throw new Answer(edgeError("payload_mismatch", `Step "${req.stepId}": the command differs from the one authorised.`));
     if (row.kid !== signer.key.kid) throw new Answer(edgeError("already_authorized", `Step "${req.stepId}" attempt ${req.attempt} was authorised under a key no longer in use — use the next attempt.`));
     return { http: 200, replayed: true, answer: { http: 200, data: signClaims(signer, claimsFromRow(row, req.reqNonce), node) } };
@@ -446,6 +511,13 @@ async function insertOrReplay(
       const { FOE_ENGINE_TOOL, withOtPayloadHash, withFoeGateApproval } = await import("../ot/otActionBinding");
       const actionId = orchestrationActionId(req.idempotencyKey);
       const preview = { ...withFoeGateApproval(withOtPayloadHash(null, rb.payloadHash as string), { runId, runOwner, approvedBy: approval.approvedBy, gateStepId: approval.gateStepId }), __edge: { nodeId: node.nodeId, jti: claims.jti, claimSeq: req.claimSeq } };
+      // M-7 — the inbox / audit row of this attempt left by an EARLIER claim (same run-step-attempt key) is replaced: the row
+      // always names the authorisation in force
+      const [prev] = await tx.select({ previewJson: aiPendingActions.previewJson, tool: aiPendingActions.tool }).from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
+      const prevEdge = ((prev?.previewJson ?? null) as { __edge?: { claimSeq?: unknown } } | null)?.__edge;
+      if (prev && prev.tool === FOE_ENGINE_TOOL && typeof prevEdge?.claimSeq === "number" && prevEdge.claimSeq < req.claimSeq) {
+        await tx.delete(aiPendingActions).where(eq(aiPendingActions.id, actionId));
+      }
       await tx
         .insert(aiPendingActions)
         .values({

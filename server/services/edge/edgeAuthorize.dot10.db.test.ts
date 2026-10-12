@@ -117,7 +117,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize (real _test DB, edge
 
   it("★ idempotent nonce: the SAME nonce returns the IDENTICAL token (no second row); another nonce ⇒ 409 already_authorized", async () => {
     const s = kitSteps(k);
-    const p = await prepared("idem", [s.gate, s.otWrite]);
+    const p = await prepared("idem", [s.gate, { ...s.otWrite, maxAttempts: 1 }]); // two attempts allowed (engine: maxAttempts + 1)
     const body = await otBody(p);
     const a = await (await svc()).authorizeForNode(await k.principal("A"), p.runId, body);
     const b = await (await svc()).authorizeForNode(await k.principal("A"), p.runId, body);
@@ -151,8 +151,8 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize (real _test DB, edge
     const svcA = await svc();
     const wrongToken = await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p, { claimToken: `ect_${"A".repeat(43)}` }));
     expect(wrongToken).toMatchObject({ http: 409, code: "claim_stale", data: { abortRequested: false } });
-    const oldClaim = await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p, { claimSeq: p.claimSeq + 1 }));
-    expect(oldClaim.code).toBe("claim_stale");
+    const futureClaim = await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p, { claimSeq: p.claimSeq + 1 }));
+    expect(futureClaim.code).toBe("claim_stale");
     await k.sql`UPDATE orchestration_runs SET status = 'held' WHERE id = ${p.runId}`;
     expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p))).code).toBe("run_not_active");
     await k.sql`UPDATE orchestration_runs SET status = 'aborted' WHERE id = ${p.runId}`;
@@ -160,12 +160,12 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize (real _test DB, edge
     expect(await count(k.sql`SELECT count(*)::int AS n FROM edge_step_authorizations WHERE "runId" = ${p.runId}`)).toBe(0);
   });
 
-  it("★ definition / step: a redeploy ⇒ definition_changed; a gate step, an attempt beyond the budget, a foreign idempotency key ⇒ step_invalid", async () => {
+  it("★ definition / step: a redeploy ⇒ definition_changed; a gate step, an attempt beyond the ENGINE's budget (I-5: attempt 2 of a step without retries), a foreign idempotency key ⇒ step_invalid", async () => {
     const s = kitSteps(k);
     const p = await prepared("step", [s.gate, s.otWrite]);
     const svcA = await svc();
     expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p, { stepId: "g0", idempotencyKey: `run${p.runId}-g0-a1` }))).code).toBe("step_invalid");
-    expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p, { attempt: 3, idempotencyKey: `run${p.runId}-o1-a3` }))).code).toBe("step_invalid");
+    expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p, { attempt: 2, idempotencyKey: `run${p.runId}-o1-a2` }))).code).toBe("step_invalid");
     expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p, { idempotencyKey: `run${p.runId}-o1-a9` }))).code).toBe("step_invalid");
     await k.sql`UPDATE orchestration_workflows SET "definitionJson" = ${k.sql.json({ ...p.def, name: "redeployed" } as never)} WHERE id = ${p.workflowId}`;
     expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p))).code).toBe("definition_changed");
@@ -263,6 +263,35 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize (real _test DB, edge
     expect(ok.http, JSON.stringify(ok)).toBe(200);
   });
 
+  it("★ I-4 (R-10-am): a robot still owned by A but PLACED in another factory ⇒ not_owned (ownership never crosses the node's factory)", async () => {
+    const s = kitSteps(k);
+    const svcA = await svc();
+    const p = await prepared("xfactory", [s.gate, s.robotMove]);
+    const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+    const f2 = await one(k.sql`INSERT INTO factories (code, name, "isActive") VALUES (${`AF2-${k.DAU}`}, 'kit other', true) RETURNING id`);
+    const w2 = await one(k.sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${f2}, ${`AW2-${k.DAU}`}, 'kit ws2') RETURNING id`);
+    const l2 = await one(k.sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${w2}, ${`AL2-${k.DAU}`}, 'kit line2') RETURNING id`);
+    const st2 = await one(k.sql`INSERT INTO stations ("lineId", code, name) VALUES (${l2}, ${`AS2-${k.DAU}`}, 'kit st2') RETURNING id`);
+    const [was] = await k.sql`SELECT "stationId", "lineId" FROM robots WHERE id = ${k.ids.robotA}`;
+    try {
+      await k.sql`UPDATE robots SET "stationId" = ${st2}, "lineId" = ${l2} WHERE id = ${k.ids.robotA}`;
+      const r = await svcA.authorizeForNode(await k.principal("A"), p.runId, await robotBody(p));
+      // the run's scope check (runVisibleTo, by the definition's devices) already hides the run ⇒ the same 404 as any
+      // out-of-scope run; deviceInNodeFactory (not_owned) is the second, independent check behind it
+      expect(r.code, JSON.stringify(r)).toBe("not_found");
+      expect(Number((await k.sql`SELECT count(*)::int AS n FROM edge_step_authorizations WHERE "runId" = ${p.runId}`)[0].n)).toBe(0);
+    } finally {
+      await k.sql`UPDATE robots SET "stationId" = ${was.stationId}, "lineId" = ${was.lineId} WHERE id = ${k.ids.robotA}`;
+      await k.sql`DELETE FROM stations WHERE id = ${st2}`.catch(() => undefined);
+      await k.sql`DELETE FROM production_lines WHERE id = ${l2}`.catch(() => undefined);
+      await k.sql`DELETE FROM workshops WHERE id = ${w2}`.catch(() => undefined);
+      await k.sql`DELETE FROM factories WHERE id = ${f2}`.catch(() => undefined);
+    }
+    // placed back in A's factory: authorised
+    const back = await svcA.authorizeForNode(await k.principal("A"), p.runId, await robotBody(p));
+    expect(back.http, JSON.stringify(back)).toBe(200);
+  });
+
   it("★ ownership: a target moved to another node ⇒ not_owned; moved back, the owner-change LOCK (any authority) ⇒ motion_locked", async () => {
     const s = kitSteps(k);
     const svcA = await svc();
@@ -284,20 +313,96 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize (real _test DB, edge
   it("★ mode: central's ROBOT_CONTROL_ENABLED (commissioning not required) ⇒ mode real; off ⇒ simulated (the edge applies the stricter)", async () => {
     const s = kitSteps(k);
     const svcA = await svc();
-    const p = await prepared("mode", [s.gate, { ...s.robotMove, maxAttempts: 1 }]);
+    const p = await prepared("mode", [s.gate, { ...s.robotMove, maxAttempts: 2 }]);
     process.env.ROBOT_CONTROL_ENABLED = "true";
     process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
     try {
+      // I-1 — central's own safety-PLC preflight: no real safety PLC configured ⇒ UNKNOWN ⇒ refused (as the robot dispatcher)
+      const b3 = await robotBody(p);
+      const refused = await svcA.authorizeForNode(await k.principal("A"), p.runId, { ...b3, attempt: 3, idempotencyKey: `run${p.runId}-m1-a3` });
+      expect(refused).toMatchObject({ http: 409, code: "device_refused", data: { gate: "safety" } });
+      process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED = "false"; // the documented off value — the other real gates still apply
       const real = await svcA.authorizeForNode(await k.principal("A"), p.runId, await robotBody(p));
       expect(real.http, JSON.stringify(real)).toBe(200);
       expect(JSON.parse(real.data!.authorization.payload)).toMatchObject({ mode: "real", kind: "robot", verdicts: { commissioned: true, interlock: "clear" } });
     } finally {
       delete process.env.ROBOT_CONTROL_ENABLED;
       delete process.env.ROBOT_COMMISSIONING_REQUIRED;
+      delete process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED;
     }
     const b = await robotBody(p);
     const sim = await svcA.authorizeForNode(await k.principal("A"), p.runId, { ...b, attempt: 2, idempotencyKey: `run${p.runId}-m1-a2` });
     expect(JSON.parse(sim.data!.authorization.payload).mode).toBe("simulated");
+  });
+
+  it("★ I-1 (OT): real mode — central's OT safety preflight with no real safety PLC reads UNKNOWN ⇒ device_refused {safety}; preflight off ⇒ real authorisation", async () => {
+    const s = kitSteps(k);
+    const svcA = await svc();
+    const p = await prepared("otsafety", [s.gate, { ...s.otWrite, maxAttempts: 1 }]);
+    process.env.OT_CONTROL_ENABLED = "true";
+    process.env.OT_COMMISSIONING_REQUIRED = "false";
+    try {
+      expect(await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p))).toMatchObject({ http: 409, code: "device_refused", data: { gate: "safety" } });
+      process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false";
+      const ok = await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p, { attempt: 2, idempotencyKey: `run${p.runId}-o1-a2` }));
+      expect(ok.http, JSON.stringify(ok)).toBe(200);
+      expect(JSON.parse(ok.data!.authorization.payload).mode).toBe("real");
+    } finally {
+      delete process.env.OT_CONTROL_ENABLED;
+      delete process.env.OT_COMMISSIONING_REQUIRED;
+      delete process.env.OT_SAFETY_PREFLIGHT_ENABLED;
+    }
+  });
+
+  it("★ I-2: policies in EVERY mode (sim here) — the engine's foe.command.<cmd>, the robot dispatcher's robot.command.*, the OT dispatcher's ot.command.* each refuse (device_refused {policy})", async () => {
+    const s = kitSteps(k);
+    const svcA = await svc();
+    const p = await prepared("policy", [s.gate, { ...s.robotMove, maxAttempts: 5 }, { ...s.otWrite, maxAttempts: 5 }]);
+    process.env.SEC_PLATFORM = "true";
+    try {
+      let n = 0;
+      for (const [deny, kind] of [["foe.command.*", "robot"], ["robot.command.*", "robot"], ["foe.command.*", "ot"], ["ot.command.*", "ot"]] as const) {
+        n++;
+        process.env.POLICY_DEFAULT_DENY_ACTIONS = deny;
+        const body = kind === "robot" ? await robotBody(p) : await otBody(p);
+        const step = kind === "robot" ? "m1" : "o1";
+        const r = await svcA.authorizeForNode(await k.principal("A"), p.runId, { ...body, attempt: n, idempotencyKey: `run${p.runId}-${step}-a${n}` });
+        expect(r, `${deny} ${kind}`).toMatchObject({ http: 409, code: "device_refused", data: { gate: "policy" } });
+      }
+      // control: with the deny group off the same sim attempt is authorised
+      delete process.env.POLICY_DEFAULT_DENY_ACTIONS;
+      const ok = await svcA.authorizeForNode(await k.principal("A"), p.runId, { ...(await robotBody(p)), attempt: 5, idempotencyKey: `run${p.runId}-m1-a5` });
+      expect(ok.http, JSON.stringify(ok)).toBe(200);
+    } finally {
+      delete process.env.SEC_PLATFORM;
+      delete process.env.POLICY_DEFAULT_DENY_ACTIONS;
+    }
+  });
+
+  it("★ M-9: a console STOP of the ADAPTER not acknowledged done refuses an OT write (lock_requested); M-7: a re-claim replaces the attempt's inbox row", async () => {
+    const s = kitSteps(k);
+    const svcA = await svc();
+    const p = await prepared("adapterstop", [s.gate, s.otWrite]);
+    const first = await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p));
+    expect(first.http, JSON.stringify(first)).toBe(200);
+    // M-7 — release, Continue, re-claim: the same attempt under the new claim replaces the inbox row
+    const c = await import("./edgeExecutionCentral");
+    expect((await c.releaseForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, claimToken: p.claimToken, seq: 1, reason: "test" })).http).toBe(200);
+    await k.sql`UPDATE orchestration_runs SET status = 'queued' WHERE id = ${p.runId}`;
+    const re = await c.claimForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, defHash: p.defHash, programChecks: k.readings([k.ids.adapterA]) });
+    expect(re.http, JSON.stringify(re)).toBe(200);
+    const p2 = { ...p, claimSeq: re.data!.claimSeq, claimToken: re.data!.claimToken };
+    const again = await svcA.authorizeForNode(await k.principal("A"), p.runId, await otBody(p2));
+    expect(again.http, JSON.stringify(again)).toBe(200);
+    const rows = await k.sql`SELECT "previewJson" FROM ai_pending_actions WHERE id = ${`foe-run${p.runId}-o1-a1`}`;
+    expect(rows.length).toBe(1);
+    const pv = typeof rows[0].previewJson === "string" ? JSON.parse(rows[0].previewJson) : rows[0].previewJson;
+    expect(pv.__edge.claimSeq).toBe(p2.claimSeq);
+    // M-9
+    const { enqueueEdgeDeviceRequest } = await import("./edgeNodeCommands");
+    await enqueueEdgeDeviceRequest({ kind: "stop", adapterId: k.ids.adapterA, reason: "console STOP", requestedBy: k.u.admin });
+    const p3 = await prepared("adapterstop2", [s.gate, s.otWrite]);
+    expect(await svcA.authorizeForNode(await k.principal("A"), p3.runId, await otBody(p3))).toMatchObject({ code: "device_refused", data: { gate: "lock_requested" } });
   });
 
   it("★ strict body (a trust / identity key ⇒ 400) and protocol v1 node ⇒ 409 protocol_version", async () => {
@@ -308,5 +413,23 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize (real _test DB, edge
       expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, { ...(await otBody(p)), ...extra })).http).toBe(400);
     }
     expect((await svcA.authorizeForNode(await k.principal("V1"), p.runId, await otBody(p))).code).toBe("protocol_version");
+  });
+
+  // LAST in the file: it rotates node A's credential
+  it("★ M-1: a replay (same nonce) is re-signed only for the SAME credential — after a credential rotation it is already_authorized", async () => {
+    const s = kitSteps(k);
+    const svcA = await svc();
+    const p = await prepared("m1cred", [s.gate, s.robotMove]); // (adapter A has the M-9 STOP outstanding)
+    const body = await robotBody(p);
+    const first = await svcA.authorizeForNode(await k.principal("A"), p.runId, body);
+    expect(first.http, JSON.stringify(first)).toBe(200);
+    const pOld = await k.principal("A");
+    const { rotateNodeCredential } = await import("./edgeNodeCredentials");
+    const rot = await rotateNodeCredential({ nodeCode: `NA-${k.DAU}`, actorUserId: k.u.admin, reason: "test rotation M-1" });
+    (k.tokens as { A: string }).A = rot.token;
+    const pNew = await k.principal("A");
+    expect(pNew.credentialId).not.toBe(pOld.credentialId);
+    const replay = await svcA.authorizeForNode(pNew, p.runId, body);
+    expect(replay.code).toBe("already_authorized");
   });
 });

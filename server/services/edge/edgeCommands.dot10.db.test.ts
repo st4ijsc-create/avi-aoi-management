@@ -106,7 +106,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP deliver
     }
   });
 
-  it("★ R-10-o: an ack with a mismatched target / owner epoch ⇒ 409, request PENDING + anomaly; an unsigned ack for a lock ⇒ refused; a matching unsigned STOP ack ⇒ accepted", async () => {
+  it("★ R-10-o / I-6: a refused ack (mismatched target / epoch, no target, unsigned for a lock, B acking A's) is an ANOMALY outcome — 200, the stream ADVANCES, the request stays PENDING; a matching unsigned STOP ack is recorded", async () => {
     const { eventsForNode } = await import("./edgeReportsCentral");
     const { enqueueEdgeDeviceRequest } = await import("./edgeNodeCommands");
     const [o] = await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`;
@@ -118,22 +118,83 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP deliver
     const ev = epoch();
     const send = async (records: unknown[]) => eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records });
     const pending = async (id: number) => (await k.sql`SELECT "ackedAt" FROM robot_motion_lock_requests WHERE id = ${id}`)[0].ackedAt === null;
-    expect(await send([ack(1, stop, { target: { robotId: k.ids.robotB } })])).toMatchObject({ http: 409 });
+    const r = await send([ack(1, stop, { target: { robotId: k.ids.robotB } }), ack(2, stop, { ownerEpoch: ep + 1 }), ack(3, stop, { target: undefined }), ack(4, lock, { unsigned: true })]);
+    expect(r, JSON.stringify(r)).toMatchObject({ http: 200, data: { ackedSeq: 4, applied: 4 } });
+    expect(r.data!.outcomes!.map((x) => [x.seq, x.code])).toEqual([[1, "command_ack_refused"], [2, "command_ack_refused"], [3, "command_ack_refused"], [4, "command_ack_refused"]]);
     expect(await pending(stop)).toBe(true);
-    expect(await send([ack(1, stop, { ownerEpoch: ep + 1 })])).toMatchObject({ http: 409 });
-    expect(await send([ack(1, stop, { target: undefined })])).toMatchObject({ http: 409 }); // no target named ⇒ never accepted
-    expect(await pending(stop)).toBe(true);
-    expect(await send([ack(1, lock, { unsigned: true })])).toMatchObject({ http: 409 });
     expect(await pending(lock)).toBe(true);
     const n = Number((await k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityId" = ${k.ids.nodeA} AND details LIKE '%command_ack_refused%'`)[0].n);
     expect(n).toBeGreaterThanOrEqual(4);
-    expect(await send([ack(1, stop, { unsigned: true })])).toMatchObject({ http: 200 });
+    // A's refusal evidence of the STOP acks (edge_stop_ack_refusals) persisted
+    expect(Number((await k.sql`SELECT count(*)::int AS n FROM edge_stop_ack_refusals WHERE "requestId" = ${stop}`)[0].n)).toBeGreaterThanOrEqual(2);
+    const ok = await send([ack(5, stop, { unsigned: true })]);
+    expect(ok).toMatchObject({ http: 200, data: { ackedSeq: 5, applied: 1 } });
+    expect(ok.data!.outcomes).toBeUndefined();
     expect(await pending(stop)).toBe(false);
-    // B can never ack A's request (even with the right target / epoch)
+    // B can never ack A's request (even with the right target / epoch): anomaly, A's request stays pending
     const lock2 = (await enqueueEdgeDeviceRequest({ kind: "lock", robotId: k.ids.robotA, reason: "op2", requestedBy: k.u.admin })).requestId;
     await k.sql`UPDATE robot_motion_lock_requests SET "deliveredAt" = now() WHERE id = ${lock2}`;
-    expect(await eventsForNode(await k.principal("B"), { epoch: epoch(), stream: "events", records: [ack(1, lock2)] })).toMatchObject({ http: 409 });
+    const b = await eventsForNode(await k.principal("B"), { epoch: epoch(), stream: "events", records: [ack(1, lock2)] });
+    expect(b).toMatchObject({ http: 200, data: { outcomes: [{ seq: 1, outcome: "anomaly", code: "command_ack_refused" }] } });
     expect(await pending(lock2)).toBe(true);
+  });
+
+  it("★ A's re-review N2: a STOP ack's refusal evidence (edge_stop_ack_refusals) survives a rollback of the caller's transaction", async () => {
+    const { enqueueEdgeDeviceRequest, ackEdgeCommand } = await import("./edgeNodeCommands");
+    const { centralDb } = await import("./edgeCentralCommon");
+    const ep = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
+    const stop = (await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console", requestedBy: k.u.admin })).requestId;
+    const before = Number((await k.sql`SELECT count(*)::int AS n FROM edge_stop_ack_refusals WHERE "requestId" = ${stop}`)[0].n);
+    const d = await centralDb();
+    class Rollback extends Error {}
+    await d
+      .transaction(async (tx) => {
+        const okAck = await ackEdgeCommand(tx as never, k.ids.nodeA, { requestId: stop, outcome: "done", generation: null, at: Date.now(), target: { robotId: k.ids.robotB }, ownerEpoch: ep });
+        expect(okAck).toBe(false);
+        throw new Rollback();
+      })
+      .catch((e) => {
+        if (!(e instanceof Rollback)) throw e;
+      });
+    expect(Number((await k.sql`SELECT count(*)::int AS n FROM edge_stop_ack_refusals WHERE "requestId" = ${stop}`)[0].n)).toBe(before + 1);
+    expect((await k.sql`SELECT "ackedAt" FROM robot_motion_lock_requests WHERE id = ${stop}`)[0].ackedAt).toBeNull();
+  });
+
+  it("★ I-7: EDGE_RUNTIME_ENABLED off ⇒ a STOP is NOT queued — EdgeRequestError unavailable WITH fallback.centralStop (a lock: unavailable, no fallback); F2: a STOP whose device row is locked fails within the STOP bound WITH the fallback", async () => {
+    const { enqueueEdgeDeviceRequest } = await import("./edgeNodeCommands");
+    const count = async () => Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "robotId" = ${k.ids.robotA}`)[0].n);
+    const before = await count();
+    process.env.EDGE_RUNTIME_ENABLED = "false";
+    try {
+      await expect(enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console STOP", requestedBy: k.u.admin })).rejects.toMatchObject({ code: "unavailable", fallback: { centralStop: true } });
+      const lockErr = await enqueueEdgeDeviceRequest({ kind: "lock", robotId: k.ids.robotA, reason: "x", requestedBy: k.u.admin }).catch((e) => e);
+      expect(lockErr).toMatchObject({ code: "unavailable" });
+      expect((lockErr as { fallback?: unknown }).fallback).toBeUndefined();
+    } finally {
+      process.env.EDGE_RUNTIME_ENABLED = "true";
+    }
+    expect(await count()).toBe(before);
+    // F2 — another session holds the robot row FOR UPDATE (an owner change in flight): the STOP enqueue gives up within the bound
+    const postgres = (await import("postgres")).default;
+    const other = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const locker = other.begin(async (tx) => {
+        await tx`SELECT id FROM robots WHERE id = ${k.ids.robotA} FOR UPDATE`;
+        await held;
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      const t0 = Date.now();
+      const err = await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console STOP", requestedBy: k.u.admin }).catch((e) => e);
+      const took = Date.now() - t0;
+      release();
+      await locker;
+      expect(err).toMatchObject({ code: "unavailable", fallback: { centralStop: true } });
+      expect(took).toBeLessThan(7_000); // 3 attempts × the 1 s lock_timeout (+ connection), never unbounded
+    } finally {
+      await other.end();
+    }
   });
 
   it("★ R-10-k: a STOP for a device that is central's now ⇒ EdgeRequestError notEdgeOwned WITH fallback.centralStop (never a silent no-op)", async () => {

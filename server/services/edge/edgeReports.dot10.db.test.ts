@@ -220,32 +220,58 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     const fakeRun = 1_900_000_000 + Math.floor(Math.random() * 100_000_000); // a run id no row has (evidence of a lost claim)
     const act = (seq: number, target: Record<string, unknown>) => ({ kind: "actuation", seq, runId: fakeRun, claimSeq: 3, stepId: "m1", attempt: 1, jti: null, stop: false, target, outcome: "done", at: Date.now() });
     expect((await eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records: [act(1, { robotId: k.ids.robotA, jobType: "custom" }), act(2, { robotId: k.ids.robotB, jobType: "custom" })] })).http).toBe(200);
-    expect(await count(k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ACTUATION_WITHOUT_CLAIM' AND "entityId" = ${fakeRun}`)).toBe(1);
+    // M-5 — a run that is not this node's is audited against the NODE (the run id kept in the details)
+    expect(await count(k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ACTUATION_WITHOUT_CLAIM' AND "entityType" = 'edge_node' AND "entityId" = ${k.ids.nodeA} AND details LIKE ${`%${fakeRun}%`}`)).toBe(1);
     expect(await count(k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityId" = ${k.ids.nodeA} AND details LIKE ${`%actuation_not_owned%${fakeRun}%`}`)).toBe(1);
   });
 
-  it("★ stale claim: reports of an EARLIER claim are recorded as evidence, never touching the run row; B's reports on A's run ⇒ 404", async () => {
+  it("★ M-4 stale claim: a report of an EARLIER (released) claim ⇒ 409 claim_stale, NOTHING written; B's reports on A's run ⇒ 404; a claim that never existed ⇒ claim_stale", async () => {
     const s = kitSteps(k);
     const p = await claimed("stale", [s.gate, { id: "w1", type: "delay", ms: 1 }]);
-    // the claim is released (the run is held), a person Continues, the node claims again
     const c = await import("./edgeExecutionCentral");
     expect((await c.releaseForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, claimToken: p.claimToken, seq: 1, reason: "test" })).http).toBe(200);
+    // the token was cleared by the release: even the same claimSeq has no proof of claim any more
+    expect((await report(p, [stepRec(1, "w1", { stepType: "delay", status: "completed" })])).code).toBe("claim_stale");
     await k.sql`UPDATE orchestration_runs SET status = 'queued' WHERE id = ${p.runId}`;
     const re = await c.claimForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, defHash: p.defHash, programChecks: [] });
     expect(re.http, JSON.stringify(re)).toBe(200);
-    const before = await k.sql`SELECT status, "contextJson" FROM orchestration_runs WHERE id = ${p.runId}`;
-    const r = await report(p, [stepRec(1, "w1", { stepType: "delay", status: "completed" }), { kind: "context", seq: 2, patch: { staleSegment: true } }]);
-    expect(r.http, JSON.stringify(r)).toBe(200);
-    const [row] = await k.sql`SELECT status, "resultJson" FROM orchestration_run_steps WHERE "runId" = ${p.runId} AND "stepId" = 'w1'`;
-    expect(row.status).toBe("completed");
-    const after = await k.sql`SELECT status, "contextJson" FROM orchestration_runs WHERE id = ${p.runId}`;
-    expect(JSON.stringify(after)).toBe(JSON.stringify(before)); // run row untouched
-    // stale evidence never rewrites a FINISHED row
-    expect((await report(p, [stepRec(3, "w1", { stepType: "delay", status: "failed", error: "late" })])).http).toBe(200);
-    expect((await k.sql`SELECT status FROM orchestration_run_steps WHERE "runId" = ${p.runId} AND "stepId" = 'w1'`)[0].status).toBe("completed");
+    const r = await report(p, [stepRec(1, "w1", { stepType: "delay", status: "completed" }), { kind: "context", seq: 2, patch: { telemetry: { stale: true } } }]);
+    expect(r).toMatchObject({ http: 409, code: "claim_stale" });
+    expect(await count(k.sql`SELECT count(*)::int AS n FROM orchestration_run_steps WHERE "runId" = ${p.runId} AND "stepId" = 'w1'`)).toBe(0);
     expect((await report(p, [stepRec(4, "w1")], "B")).http).toBe(404);
-    // a claim that never existed ⇒ claim_stale
     expect((await report({ ...p, claimSeq: 9, stream: `run:${p.runId}:9` }, [stepRec(1, "w1")])).code).toBe("claim_stale");
+  });
+
+  it("★ R-10-ag: a seq re-sent with the SAME content is a duplicate; with DIFFERENT content ⇒ 409 seq_conflict + anomaly with both hashes, nothing written", async () => {
+    const s = kitSteps(k);
+    const p = await claimed("seqhash", [s.gate, { id: "w1", type: "delay", ms: 1 }, { id: "w2", type: "delay", ms: 1 }]);
+    const r1 = stepRec(1, "w1", { stepType: "delay", status: "completed", startedAt: 1_000, finishedAt: 2_000 });
+    expect((await report(p, [r1])).http).toBe(200);
+    expect(await report(p, [r1])).toMatchObject({ http: 200, data: { duplicates: 1, applied: 0 } });
+    const forged = { ...r1, stepId: "w2", status: "failed", error: "x" };
+    const c = await report(p, [forged, stepRec(2, "w2", { stepType: "delay", status: "completed" })]);
+    expect(c).toMatchObject({ http: 409, code: "seq_conflict", data: { seq: 1 } });
+    expect(await count(k.sql`SELECT count(*)::int AS n FROM orchestration_run_steps WHERE "runId" = ${p.runId} AND "stepId" = 'w2'`)).toBe(0);
+    const [a] = await k.sql`SELECT details FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityId" = ${k.ids.nodeA} AND details LIKE '%seq_conflict%' ORDER BY id DESC LIMIT 1`;
+    expect(String(a.details)).toMatch(/storedHash.*receivedHash/);
+  });
+
+  it("★ M-5: refusal / anomaly / actuation events naming ANOTHER node's run are audited against the reporting node, never that run", async () => {
+    const { eventsForNode } = await import("./edgeReportsCentral");
+    const s = kitSteps(k);
+    const runB = await k.newRun("m5B", "B", [s.gate, s.otWriteB]);
+    const before = await count(k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE "entityType" = 'orchestration_run' AND "entityId" = ${runB.runId}`);
+    const r = await eventsForNode(await k.principal("A"), {
+      epoch: epoch(),
+      stream: "events",
+      records: [
+        { kind: "refusal", seq: 1, runId: runB.runId, stepId: "b1", reason: "local_gate", at: Date.now() },
+        { kind: "anomaly", seq: 2, code: "X", runId: runB.runId, detail: null, at: Date.now() },
+      ],
+    });
+    expect(r.http).toBe(200);
+    expect(await count(k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE "entityType" = 'orchestration_run' AND "entityId" = ${runB.runId}`)).toBe(before);
+    expect(await count(k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_LOCAL_REFUSAL' AND "entityType" = 'edge_node' AND "entityId" = ${k.ids.nodeA} AND details LIKE ${`%${runB.runId}%`}`)).toBe(1);
   });
 
   it("★ complete: reports missing ⇒ 409 gap; `completed` while a step is not done ⇒ 409 not_finished (nothing changes); `paused` ⇒ awaiting_confirm + gate row", async () => {
@@ -293,7 +319,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     const q = await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console STOP", requestedBy: k.u.admin });
     await k.sql`UPDATE robot_motion_lock_requests SET "deliveredAt" = now() WHERE id = ${q.requestId}`;
     const ack = (seq: number) => ({ kind: "command_ack", seq, requestId: q.requestId, outcome: "done", generation: null, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: ep });
-    expect((await eventsForNode(await k.principal("B"), { epoch: epoch(), stream: "events", records: [ack(1)] })).http).toBe(409); // R-10-o: refused, the request stays pending
+    expect((await eventsForNode(await k.principal("B"), { epoch: epoch(), stream: "events", records: [ack(1)] })).http).toBe(200); // R-10-o / I-6: refused ack = anomaly outcome, the request stays pending
     expect((await k.sql`SELECT outcome FROM robot_motion_lock_requests WHERE id = ${q.requestId}`)[0].outcome).toBeNull();
     expect((await eventsForNode(await k.principal("A"), { epoch: evA, stream: "events", records: [ack(4)] })).http).toBe(200);
     expect((await k.sql`SELECT outcome FROM robot_motion_lock_requests WHERE id = ${q.requestId}`)[0].outcome).toBe("done");

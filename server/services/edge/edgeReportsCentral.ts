@@ -25,7 +25,7 @@
  * acks for the node's own requests; stops / refusals / anomalies audited. A record about a device the node does not own is
  * never applied (anomaly, skipped — it never blocks the stream).
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { commandLog, orchestrationRunSteps, orchestrationRuns, orchestrationWorkflowVersions, orchestrationWorkflows, robotJobs } from "../../../drizzle/schema";
 import {
@@ -40,11 +40,13 @@ import {
   type EdgeRunReportRecord,
   type EdgeStreamAnswer,
 } from "./edgeProtocol";
-import { applyEdgeMotionLock, clearEdgeMotionLock, edgeNodeReportCursors, edgeStepAuthorizations, isEdgeControlRefusal, robotOwnership, type EdgeStepAuthorizationRow } from "./edgeControlSchema";
+import { applyEdgeMotionLock, clearEdgeMotionLock, edgeNodeReportCursors, edgeNodeReportRecords, edgeStepAuthorizations, isEdgeControlRefusal, robotOwnership, type EdgeStepAuthorizationRow } from "./edgeControlSchema";
 import { runEdgeAssignments, type RunEdgeAssignment } from "./edgeExecutionSchema";
 import { hashEdgeSecret, sameDigest, type EdgeNodePrincipal } from "./edgeNodeCredentials";
 import { adapterOwners, auditNode, centralDb, edgeUnavailable, isEdgeUnavailableError, nodeProtocolVersion, protocolVersionAnswer, robotOwners, runInNodeScope, runNotFound, type Db } from "./edgeCentralCommon";
 import { analyseDefinition, loadMachineMap } from "./edgeRunAnalysis";
+import { edgeContextPatchOf } from "./edgeContextPolicy";
+import { edgeCanonicalJson } from "./edgeSigning";
 import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
 import { ackEdgeCommand } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
@@ -57,10 +59,28 @@ export class StreamAnswer extends Error {
 
 type Audit = { action: string; entity: { type: string; id: number | null }; details: Record<string, unknown>; status?: "success" | "failure" };
 
+/** R-10-ag — sha256 hex of a record's canonical JSON (the content a seq stands for). */
+export function edgeRecordHash(rec: unknown): string {
+  let text: string;
+  try {
+    text = edgeCanonicalJson(rec);
+  } catch {
+    text = JSON.stringify(rec ?? null);
+  }
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+/** What `apply` may answer for a record it accepted but did not apply (the cursor still advances — I-6). */
+export type StreamRecordOutcome = void | { anomaly: string };
+
 /**
  * Apply a stream batch under its cursor in ONE transaction. `apply` runs per NEW record (seq > cursor) in order; throwing
- * StreamAnswer refuses the whole batch (rolled back, cursor unchanged). `audits` are written after the outcome (committed or
- * refused) — a refusal's anomaly audit survives its rollback.
+ * StreamAnswer refuses the whole batch (rolled back, cursor unchanged) — reserved for malformed / unauthorised input; a record
+ * that is merely not applicable answers `{ anomaly }` (audited, listed in `outcomes`, the cursor advances: one record never
+ * wedges the stream). R-10-ag — every applied record's content hash is stored (edge_node_report_records); a record with
+ * seq ≤ cursor is a duplicate ONLY when its hash equals the stored one: different content ⇒ 409 seq_conflict + EDGE_ANOMALY
+ * (both hashes), nothing written; no stored hash (accepted before 0373 r4) ⇒ duplicate + anomaly (unverifiable). `audits` are
+ * written after the outcome (committed or refused) — a refusal's anomaly audit survives its rollback.
  */
 export async function applyStream<R extends { seq: number }>(
   d: Db,
@@ -68,7 +88,7 @@ export async function applyStream<R extends { seq: number }>(
   stream: string,
   epoch: string,
   records: readonly R[],
-  apply: (tx: Db, rec: R, audits: Audit[]) => Promise<void>,
+  apply: (tx: Db, rec: R, audits: Audit[]) => Promise<StreamRecordOutcome>,
 ): Promise<EdgeAnswer<EdgeStreamAnswer>> {
   const audits: Audit[] = [];
   let newEpoch = false;
@@ -88,17 +108,38 @@ export async function applyStream<R extends { seq: number }>(
       let applied = 0;
       let duplicates = 0;
       let top = last;
+      const outcomes: Array<{ seq: number; outcome: "anomaly"; code: string }> = [];
+      const old = records.filter((r) => r.seq <= last).map((r) => r.seq);
+      const stored = old.length
+        ? new Map(
+            (
+              await tx
+                .select({ seq: edgeNodeReportRecords.seq, contentHash: edgeNodeReportRecords.contentHash })
+                .from(edgeNodeReportRecords)
+                .where(and(eq(edgeNodeReportRecords.edgeNodeId, node.nodeId), eq(edgeNodeReportRecords.stream, stream), eq(edgeNodeReportRecords.epoch, epoch), inArray(edgeNodeReportRecords.seq, old)))
+            ).map((r) => [Number(r.seq), r.contentHash] as const),
+          )
+        : new Map<number, string>();
       for (const rec of records) {
+        const hash = edgeRecordHash(rec);
         if (rec.seq <= last) {
+          const was = stored.get(rec.seq);
+          if (was !== undefined && was !== hash) {
+            audits.push({ action: "EDGE_ANOMALY", entity: { type: "edge_node", id: node.nodeId }, details: { anomaly: "seq_conflict", stream, epoch, seq: rec.seq, storedHash: was, receivedHash: hash }, status: "failure" });
+            throw new StreamAnswer(edgeError("seq_conflict", `Stream ${stream}: seq ${rec.seq} was received with DIFFERENT content — refused and recorded.`, { seq: rec.seq, storedHash: was, receivedHash: hash }));
+          }
+          if (was === undefined) audits.push({ action: "EDGE_ANOMALY", entity: { type: "edge_node", id: node.nodeId }, details: { anomaly: "duplicate_unverifiable", stream, epoch, seq: rec.seq }, status: "failure" });
           duplicates++;
           continue;
         }
-        await apply(tx, rec, audits);
+        const o = await apply(tx, rec, audits);
+        if (o && typeof o === "object" && "anomaly" in o) outcomes.push({ seq: rec.seq, outcome: "anomaly", code: o.anomaly.slice(0, 64) });
+        await tx.insert(edgeNodeReportRecords).values({ edgeNodeId: node.nodeId, stream, epoch, seq: rec.seq, contentHash: hash });
         applied++;
         top = rec.seq;
       }
       if (top > last) await tx.update(edgeNodeReportCursors).set({ lastSeq: top, updatedAt: new Date() }).where(where);
-      return { ackedSeq: top, applied, duplicates };
+      return { ackedSeq: top, applied, duplicates, ...(outcomes.length ? { outcomes } : {}) };
     });
     if (newEpoch) {
       const others = await d.select({ epoch: edgeNodeReportCursors.epoch }).from(edgeNodeReportCursors).where(and(eq(edgeNodeReportCursors.edgeNodeId, node.nodeId), eq(edgeNodeReportCursors.stream, stream)));
@@ -158,14 +199,8 @@ function findStep(steps: WorkflowStep[] | undefined, id: string): WorkflowStep |
   return undefined;
 }
 
-/**
- * R-10-n — the context keys a WALKER writes (foeEngine / foeRunStore: `branch:<stepId>` decisions, the dispatched-steps
- * record, and persistContext's telemetry / states caches). An ALLOW-list: only these are taken from an edge patch; any other
- * key is never written, and one whose value differs from what central holds is audited (EDGE_ANOMALY context_key_refused) —
- * an edge echoing the package context it was given (e.g. startedViaApi) is not an anomaly.
- */
-// foeCompensationHeld (Group C, R-10-y) is the walker's; foeOutcomeUnknown is central's only (an edge carrying it ⇒ anomaly)
-export const EDGE_CONTEXT_ALLOWED_KEY = /^(branch:[^\s]{1,128}|foeDispatchedSteps|foeCompensationHeld|telemetry|states)$/;
+/** R-10-n / R-10-ae — THE context filter is Group C's (edge/edgeContextPolicy.ts): report endpoint and parity harness share it. */
+export { EDGE_CONTEXT_ALLOWED_KEY } from "./edgeContextPolicy";
 
 const ROBOT_JOB_STATUSES = new Set(["done", "failed", "simulated", "rejected"]);
 const OT_COMMAND_STATUSES = new Set(["simulated", "acked", "failed", "timeout", "rejected", "acked_verified", "acked_unverified"]);
@@ -203,16 +238,12 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
     if (!run || !(await runInNodeScope(run, node))) return runNotFound(runId);
     const st = parseEdgeStream(req.stream);
     if (!st || st.kind !== "run" || st.runId !== runId) return edgeError("bad_request", "Invalid body — stream: must be run:<runId>:<claimSeq> of this run");
-    // the claim: current (token) ⇒ live; an earlier claim of this node ⇒ stale evidence; anything else ⇒ refused
+    // M-4 — proof of claim: only the CURRENT claim with its token reports; a report of an earlier / released / completed claim
+    // ⇒ 409 claim_stale (the edge then turns its ledger into `actuation` evidence events — R-10-z)
     const tokenOk = a.claimTokenHash != null && sameDigest(hashEdgeSecret(req.claimToken), a.claimTokenHash);
-    let live: boolean;
-    if (req.claimSeq === a.claimSeq && a.claimTokenHash != null) {
-      if (!tokenOk) return edgeError("claim_stale", `Run ${runId}: this claim is no longer current — stop walking it.`, { abortRequested: false });
-      live = true;
-    } else if (req.claimSeq <= a.claimSeq) {
-      live = false;
-    } else {
-      return edgeError("claim_stale", `Run ${runId}: claim ${req.claimSeq} does not exist.`, { abortRequested: false });
+    if (req.claimSeq !== a.claimSeq || !tokenOk) {
+      const { centralStopped: stoppedNow } = await import("./edgeCoordinator");
+      return edgeError("claim_stale", `Run ${runId}: this claim is no longer current — stop walking it.`, { abortRequested: stoppedNow(run) });
     }
     const def = await assignedDefinition(d, a);
     if (!def) return edgeError("definition_changed", `Run ${runId}: the assigned definition can no longer be read — reports cannot be checked.`);
@@ -223,7 +254,7 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
     const sink = await resolveEngineSink();
     const { centralStopped } = await import("./edgeCoordinator");
     const stopped = centralStopped(run);
-    const edgeMark = (jti: string | null) => ({ nodeId: node.nodeId, claimSeq: req.claimSeq, ...(jti ? { jti } : {}), ...(live ? {} : { stale: true }) });
+    const edgeMark = (jti: string | null) => ({ nodeId: node.nodeId, claimSeq: req.claimSeq, ...(jti ? { jti } : {}) });
 
     return await applyStream<EdgeRunReportRecord>(d, node, req.stream, req.epoch, req.records, async (tx, rec, audits) => {
       if (rec.kind === "step") {
@@ -249,14 +280,6 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
           error: rec.error,
           result: result === undefined ? undefined : { ...result, approvalSource: "edge", edge: edgeMark(rec.jti) },
         };
-        if (!live) {
-          // STALE-claim evidence never rewrites a row a later segment (or central) already finished
-          const [cur] = await tx.select({ status: orchestrationRunSteps.status }).from(orchestrationRunSteps).where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, step.id))).limit(1);
-          if (cur && ["completed", "skipped", "compensated", "failed"].includes(cur.status as string)) {
-            audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: "stale_overwrite_refused", stepId: step.id, seq: rec.seq, claimSeq: req.claimSeq }, status: "failure" });
-            return;
-          }
-        }
         await sink.recordEdgeStepRows(tx, runId, [write]);
         return;
       }
@@ -282,14 +305,8 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
         return;
       }
       if (rec.kind === "context") {
-        if (!live || stopped) return; // stale evidence / centrally stopped: the run row is not the edge's to change
-        const patch: Record<string, unknown> = {};
-        const held = ((run.contextJson ?? {}) as Record<string, unknown>) ?? {};
-        const refusedKeys: string[] = [];
-        for (const [k, val] of Object.entries(rec.patch)) {
-          if (EDGE_CONTEXT_ALLOWED_KEY.test(k)) patch[k] = val;
-          else if (JSON.stringify(held[k] ?? null) !== JSON.stringify(val ?? null)) refusedKeys.push(k);
-        }
+        if (stopped) return; // centrally stopped: the run row is not the edge's to change
+        const { patch, refusedKeys } = edgeContextPatchOf(rec.patch, (run.contextJson ?? {}) as Record<string, unknown>);
         if (refusedKeys.length) audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: "context_key_refused", keys: refusedKeys.slice(0, 20), seq: rec.seq }, status: "failure" });
         if (Object.keys(patch).length === 0) return;
         await tx
@@ -415,7 +432,16 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
     const v = await nodeProtocolVersion(d, node.nodeId);
     if (v !== EDGE_PROTOCOL_VERSION) return protocolVersionAnswer(v);
     return await applyStream<EdgeEventRecord>(d, node, req.stream, req.epoch, req.records, async (tx, rec, audits) => {
-      const anomaly = (what: string, extra: Record<string, unknown>): void => void audits.push({ action: "EDGE_ANOMALY", entity: { type: "edge_node", id: node.nodeId }, details: { anomaly: what, seq: rec.seq, ...extra }, status: "failure" });
+      const anomaly = (what: string, extra: Record<string, unknown>): { anomaly: string } => {
+        audits.push({ action: "EDGE_ANOMALY", entity: { type: "edge_node", id: node.nodeId }, details: { anomaly: what, seq: rec.seq, ...extra }, status: "failure" });
+        return { anomaly: what };
+      };
+      // M-5 — a run id an edge names is audited against the RUN only when it is this node's (its assignment); else against the node
+      const runEntity = async (runId: number | null): Promise<{ type: string; id: number | null }> => {
+        if (runId == null) return { type: "edge_node", id: node.nodeId };
+        const [mine] = await tx.select({ runId: runEdgeAssignments.runId }).from(runEdgeAssignments).where(and(eq(runEdgeAssignments.runId, runId), eq(runEdgeAssignments.edgeNodeId, node.nodeId))).limit(1);
+        return mine ? { type: "orchestration_run", id: runId } : { type: "edge_node", id: node.nodeId };
+      };
       if (rec.kind === "lock") {
         const [o] = await tx.select({ n: robotOwnership.edgeNodeId, e: robotOwnership.ownerEpoch }).from(robotOwnership).where(eq(robotOwnership.id, rec.robotId)).limit(1);
         if (!o || o.n !== node.nodeId || Number(o.e) !== rec.ownerEpoch) return anomaly("lock_event_not_owned", { robotId: rec.robotId, ownerEpoch: rec.ownerEpoch });
@@ -423,15 +449,15 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
           await tx.transaction(async (sp) => {
             if (rec.event === "locked") {
               const ok = await applyEdgeMotionLock(sp as never, { robotId: rec.robotId, nodeId: node.nodeId, ownerEpoch: rec.ownerEpoch, generation: rec.generation, reasonCode: rec.reasonCode, detail: `edge ${node.nodeCode} since ${new Date(rec.since).toISOString()}` });
-              if (!ok) anomaly("lock_event_superseded", { robotId: rec.robotId, generation: rec.generation });
+              if (!ok) void anomaly("lock_event_superseded", { robotId: rec.robotId, generation: rec.generation });
             } else {
               const n = await clearEdgeMotionLock(sp as never, { robotId: rec.robotId, nodeId: node.nodeId, ownerEpoch: rec.ownerEpoch, generation: rec.generation });
-              if (n === 0) anomaly("lock_clear_matched_nothing", { robotId: rec.robotId, generation: rec.generation });
+              if (n === 0) void anomaly("lock_clear_matched_nothing", { robotId: rec.robotId, generation: rec.generation });
             }
           });
         } catch (err) {
           if (!isEdgeControlRefusal(err)) throw err;
-          anomaly("lock_event_refused", { robotId: rec.robotId, ownerEpoch: rec.ownerEpoch });
+          void anomaly("lock_event_refused", { robotId: rec.robotId, ownerEpoch: rec.ownerEpoch });
         }
         audits.push({ action: rec.event === "locked" ? "EDGE_MOTION_LOCKED" : "EDGE_MOTION_LOCK_CLEARED", entity: { type: "robot", id: rec.robotId }, details: { generation: rec.generation, reasonCode: rec.reasonCode, clearedBy: rec.clearedBy, requestId: rec.requestId } });
         return;
@@ -444,11 +470,11 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
         return;
       }
       if (rec.kind === "refusal") {
-        audits.push({ action: "EDGE_LOCAL_REFUSAL", entity: { type: "orchestration_run", id: rec.runId }, details: { stepId: rec.stepId, reason: rec.reason, at: rec.at } });
+        audits.push({ action: "EDGE_LOCAL_REFUSAL", entity: await runEntity(rec.runId), details: { runId: rec.runId, stepId: rec.stepId, reason: rec.reason, at: rec.at } });
         return;
       }
       if (rec.kind === "anomaly") {
-        audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: rec.runId }, details: { anomaly: rec.code, reportedByEdge: true, detail: rec.detail, at: rec.at }, status: "failure" });
+        audits.push({ action: "EDGE_ANOMALY", entity: await runEntity(rec.runId), details: { anomaly: rec.code, reportedByEdge: true, runId: rec.runId, detail: rec.detail, at: rec.at }, status: "failure" });
         return;
       }
       if ((rec as { kind: string }).kind === "actuation") {
@@ -459,17 +485,17 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
         const [auth] = x.jti ? await tx.select({ node: edgeStepAuthorizations.edgeNodeId, runId: edgeStepAuthorizations.runId, stepId: edgeStepAuthorizations.stepId }).from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.jti, x.jti)).limit(1) : [];
         audits.push({
           action: "EDGE_ACTUATION_WITHOUT_CLAIM",
-          entity: { type: "orchestration_run", id: x.runId },
-          details: { claimSeq: x.claimSeq, stepId: x.stepId, attempt: x.attempt, jti: x.jti, jtiIssuedToThisNode: !!auth && auth.node === node.nodeId && auth.runId === x.runId && auth.stepId === x.stepId, stop: x.stop, target: x.target, ownerEpoch: x.ownerEpoch ?? null, ownerEpochCurrent: x.ownerEpoch === own.ownerEpoch, outcome: x.outcome, at: x.at },
+          entity: await runEntity(x.runId),
+          details: { runId: x.runId, claimSeq: x.claimSeq, stepId: x.stepId, attempt: x.attempt, jti: x.jti, jtiIssuedToThisNode: !!auth && auth.node === node.nodeId && auth.runId === x.runId && auth.stepId === x.stepId, stop: x.stop, target: x.target, ownerEpoch: x.ownerEpoch ?? null, ownerEpochCurrent: x.ownerEpoch === own.ownerEpoch, outcome: x.outcome, at: x.at },
         });
         return;
       }
       // command_ack
       const a = rec as unknown as Extract<EdgeEventRecord, { kind: "command_ack" }> & { target?: { robotId?: number; adapterId?: number }; ownerEpoch?: number; unsigned?: boolean };
       if (!(await ackEdgeCommand(tx, node.nodeId, { requestId: a.requestId, outcome: a.outcome, generation: a.generation, at: a.at, target: a.target ?? null, ownerEpoch: a.ownerEpoch ?? null, unsigned: a.unsigned === true }))) {
-        // R-10-o — refused (409): the request stays PENDING (re-delivered), the attempt is audited
-        anomaly("command_ack_refused", { requestId: a.requestId, outcome: a.outcome, target: a.target ?? null, ownerEpoch: a.ownerEpoch ?? null, unsigned: a.unsigned === true });
-        throw new StreamAnswer(edgeError("not_owned", `Ack of request ${a.requestId} refused: not this node's request, or its target / owner epoch / signature form does not match.`));
+        // R-10-o / I-6 — refused: the request stays PENDING in the DB (re-delivered); the attempt is an anomaly (A's
+        // edge_stop_ack_refusals row for a STOP is written in its OWN transaction — it survives); the stream moves on
+        return anomaly("command_ack_refused", { requestId: a.requestId, outcome: a.outcome, target: a.target ?? null, ownerEpoch: a.ownerEpoch ?? null, unsigned: a.unsigned === true });
       }
     });
   } catch (err) {

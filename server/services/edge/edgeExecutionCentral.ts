@@ -637,9 +637,14 @@ async function v2Gate(d: CentralDbHandle, node: EdgeNodePrincipal, opts: { signe
 }
 
 /** The commands part of a pull / progress answer (unsignedStops only when there are any — i.e. only without a signer). */
-async function commandFields(node: EdgeNodePrincipal): Promise<{ commands: EdgeSignedEnvelope[]; unsignedStops?: EdgeUnsignedStopEnvelope[] }> {
+async function commandFields(node: EdgeNodePrincipal): Promise<{ commands: EdgeSignedEnvelope[]; unsignedStops?: EdgeUnsignedStopEnvelope[]; commandsIncomplete?: true }> {
+  // M-3 — a read failure throws ⇒ the caller answers 503 (never a quiet "no commands")
   const c = await commandsForNode(node);
-  return c.unsignedStops.length > 0 ? { commands: c.signed, unsignedStops: c.unsignedStops } : { commands: c.signed };
+  return {
+    commands: c.signed,
+    ...(c.unsignedStops.length > 0 ? { unsignedStops: c.unsignedStops } : {}),
+    ...(c.incomplete ? { commandsIncomplete: true as const } : {}),
+  };
 }
 
 /** The picture both the run package and a sweep picture carry (runPicture of edgeProtocol). */
