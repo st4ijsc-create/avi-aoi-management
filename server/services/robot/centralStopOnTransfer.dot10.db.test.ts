@@ -77,15 +77,17 @@ let viewExists = false;
 const made = { nodes: [] as number[], robots: [] as number[], adapters: [] as number[] };
 const env: Record<string, string | undefined> = {};
 let actor = 0;
+// fix review 3 (R-10-am) — a device goes only to an edge node of its own factory: one factory chain for the robots / nodes below
+const chain = { factory: 0, workshop: 0, line: 0, code: "" };
 
 async function node(s: string) {
-  const [n] = await sql`INSERT INTO edge_nodes (code, name, status) VALUES (${`${TAG}-N${s}`}, 'n', 'offline') RETURNING id`;
+  const [n] = await sql`INSERT INTO edge_nodes (code, name, status, "factoryCode") VALUES (${`${TAG}-N${s}`}, 'n', 'offline', ${chain.code}) RETURNING id`;
   made.nodes.push(Number(n.id));
   return Number(n.id);
 }
 async function edgeOwnedRobotWithPendingStop(s: string, expiresIn = "1 minute") {
   const n = await node(s);
-  const [r] = await sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled") VALUES (${`${TAG}-R${s}`}, 'r', 'sim', 'sim://t', true) RETURNING id`;
+  const [r] = await sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId") VALUES (${`${TAG}-R${s}`}, 'r', 'sim', 'sim://t', true, ${chain.line}) RETURNING id`;
   made.robots.push(Number(r.id));
   await sql`UPDATE robots SET "edgeNodeId" = ${n} WHERE id = ${r.id}`;
   const [o] = await sql`SELECT "ownerEpoch" FROM robots WHERE id = ${r.id}`;
@@ -107,6 +109,10 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
     viewExists = (await sql`SELECT to_regclass('public.device_pending_stops') IS NOT NULL AS ok`)[0].ok === true;
     const [u] = await sql`SELECT id FROM users ORDER BY id LIMIT 1`;
     actor = Number(u.id);
+    chain.code = `${TAG}-F`;
+    chain.factory = Number((await sql`INSERT INTO factories (code, name) VALUES (${chain.code}, 'f') RETURNING id`)[0].id);
+    chain.workshop = Number((await sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${chain.factory}, ${`${TAG}-W`}, 'w') RETURNING id`)[0].id);
+    chain.line = Number((await sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${chain.workshop}, ${`${TAG}-L`}, 'l') RETURNING id`)[0].id);
     for (const k of ["ROBOT_CONTROL_ENABLED", "ROBOT_COMMISSIONING_REQUIRED", "OT_CONTROL_ENABLED"]) env[k] = process.env[k];
     process.env.ROBOT_CONTROL_ENABLED = "true";
     process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
@@ -140,6 +146,9 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
       await sql`DELETE FROM device_adapters WHERE id = ${a}`.catch(() => undefined);
     }
     for (const n of made.nodes) await sql`DELETE FROM edge_nodes WHERE id = ${n}`.catch(() => undefined);
+    await sql`DELETE FROM production_lines WHERE id = ${chain.line}`.catch(() => undefined);
+    await sql`DELETE FROM workshops WHERE id = ${chain.workshop}`.catch(() => undefined);
+    await sql`DELETE FROM factories WHERE id = ${chain.factory}`.catch(() => undefined);
     await sql.end();
   }, 60_000);
   beforeEach(() => {
@@ -217,7 +226,7 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
 
   it("★ R-10-v — central → edge: the central session is DETACHED at once; a NOTIFY 'device_owner_changed' reaches other replicas", async () => {
     const n = await node("v");
-    const [rr] = await sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled") VALUES (${`${TAG}-Rv`}, 'r', 'sim', 'sim://t', true) RETURNING id`;
+    const [rr] = await sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId") VALUES (${`${TAG}-Rv`}, 'r', 'sim', 'sim://t', true, ${chain.line}) RETURNING id`;
     const robot = Number(rr.id);
     made.robots.push(robot);
     const got: string[] = [];

@@ -52,6 +52,47 @@ export const PENDING_STOP_SWEEP_MS = 10_000;
 const errText = (e: unknown) => String((e as Error)?.message ?? e).replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1***@").slice(0, 240);
 const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? (r as Array<Record<string, unknown>>) : (((r as { rows?: unknown[] })?.rows ?? []) as Array<Record<string, unknown>>));
 
+/**
+ * doc 81 Đợt 10 task D fix review 3 — ruling R-10-am (from B). A device is handed only to an edge node of ITS OWN factory: the
+ * device's factory (robot: COALESCE(its station's line, its own line) → workshop → factory; adapter: machine → station → line →
+ * workshop → factory) must equal the node's factoryCode. Either side NULL / empty ⇒ refused; the chain unreadable ⇒ refused
+ * (fail-closed). Read in the owner-change transaction, the node row FOR SHARE. Returns null when allowed, else the refusal text.
+ * A missing device ⇒ "not found" (thrown as such). Transfers back to central (toEdgeNodeId null) are never gated by this.
+ */
+async function ownerFactoryRefusal(tx: { execute: (q: ReturnType<typeof sql>) => Promise<unknown> }, kind: DeviceKind, deviceId: number, nodeId: number): Promise<string | null> {
+  let node: Array<Record<string, unknown>>;
+  let dev: Array<Record<string, unknown>>;
+  try {
+    node = rowsOf(await tx.execute(sql`SELECT "factoryCode" FROM public.edge_nodes WHERE id = ${nodeId} FOR SHARE`));
+    dev = rowsOf(
+      kind === "robot"
+        ? await tx.execute(sql`SELECT f.code AS "factoryCode" FROM public.robots r
+            LEFT JOIN public.stations s ON s.id = r."stationId"
+            LEFT JOIN public.production_lines l ON l.id = COALESCE(s."lineId", r."lineId")
+            LEFT JOIN public.workshops w ON w.id = l."workshopId"
+            LEFT JOIN public.factories f ON f.id = w."factoryId"
+            WHERE r.id = ${deviceId}`)
+        : await tx.execute(sql`SELECT f.code AS "factoryCode" FROM public.device_adapters a
+            LEFT JOIN public.machines m ON m.id = a."machineId"
+            LEFT JOIN public.stations s ON s.id = m."stationId"
+            LEFT JOIN public.production_lines l ON l.id = s."lineId"
+            LEFT JOIN public.workshops w ON w.id = l."workshopId"
+            LEFT JOIN public.factories f ON f.id = w."factoryId"
+            WHERE a.id = ${deviceId}`),
+    );
+  } catch (err) {
+    return `the factory of ${kind} ${deviceId} / edge node ${nodeId} could not be read (${errText(err)}) — refused (fail-closed)`;
+  }
+  if (dev.length === 0) throw Object.assign(new Error("device not found"), { notFound: true });
+  if (node.length === 0) return `edge node ${nodeId} not found — refused`;
+  const nodeFactory = typeof node[0].factoryCode === "string" ? node[0].factoryCode.trim() : "";
+  const devFactory = typeof dev[0].factoryCode === "string" ? dev[0].factoryCode.trim() : "";
+  if (!nodeFactory) return `edge node ${nodeId} has no factoryCode — a device is handed only to a node of its own factory`;
+  if (!devFactory) return `${kind} ${deviceId} has no factory (station / line / workshop chain incomplete) — refused`;
+  if (nodeFactory !== devFactory) return `${kind} ${deviceId} belongs to factory ${devFactory}; edge node ${nodeId} serves factory ${nodeFactory} — refused`;
+  return null;
+}
+
 export async function changeDeviceOwner(a: { kind: DeviceKind; deviceId: number; toEdgeNodeId: number | null; actorUserId: number; actorName: string }): Promise<ChangeOwnerResult> {
   const db = await getDb();
   if (!db) return { ok: false, reason: "unavailable", detail: "database unavailable" };
@@ -60,6 +101,10 @@ export async function changeDeviceOwner(a: { kind: DeviceKind; deviceId: number;
   try {
     epoch = await db.transaction(async (tx) => {
       await setEdgeOwnershipActor(tx, `${a.actorName} (#${a.actorUserId})`);
+      if (a.toEdgeNodeId !== null) {
+        const refusal = await ownerFactoryRefusal(tx, a.kind, a.deviceId, a.toEdgeNodeId); // R-10-am
+        if (refusal) throw Object.assign(new Error(refusal), { factoryRefusal: true });
+      }
       const r = rowsOf(
         a.kind === "robot"
           ? await tx.execute(sql`UPDATE public.robots SET "edgeNodeId" = ${a.toEdgeNodeId} WHERE id = ${a.deviceId} RETURNING "ownerEpoch"`)
@@ -71,6 +116,7 @@ export async function changeDeviceOwner(a: { kind: DeviceKind; deviceId: number;
       return Number(r[0].ownerEpoch);
     });
   } catch (err) {
+    if ((err as { factoryRefusal?: boolean }).factoryRefusal) return { ok: false, reason: "refused", detail: errText(err) };
     if ((err as { notFound?: boolean }).notFound) return { ok: false, reason: "not_found", detail: `${a.kind} ${a.deviceId} not found` };
     if (isEdgeControlRefusal(err)) return { ok: false, reason: "refused", detail: errText(err) };
     return { ok: false, reason: "unavailable", detail: errText(err) };

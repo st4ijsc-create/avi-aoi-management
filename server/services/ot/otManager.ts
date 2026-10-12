@@ -140,6 +140,14 @@ const legacy = new Map<number, LegacyEntry>();
 let legacyTimer: ReturnType<typeof setInterval> | null = null;
 /** Tăng mỗi lần stopOt: mọi công việc khởi động/nối lại của thế hệ cũ tự huỷ khi xong. */
 let epoch = 0;
+/**
+ * doc 81 Đợt 10 task D fix review 3 (scan #73 "fail-open-state-drift") — bumped by EVERY detachOtAdapter(id), whether or not a
+ * session was found: a start / attach / reconnect of that adapter that began BEFORE the detach (its connect still in flight —
+ * the detach could not see it) never registers its session afterwards: it closes it. Without this an adapter that moved to an
+ * edge node kept a live central session (polling, ingest, getActiveDriver ⇒ dispatcher writes) until the next restart.
+ */
+const detachGen = new Map<number, number>();
+const detachToken = (adapterId: number): number => detachGen.get(adapterId) ?? 0;
 /** startOt đơn chuyến: gọi chồng trong lúc đang khởi động ⇒ nhận cùng promise. */
 let startInFlight: Promise<boolean> | null = null;
 
@@ -234,8 +242,9 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
   }
 
   entry.inflight = false;
-  if (myEpoch !== epoch) {
+  if (myEpoch !== epoch || legacy.get(adapter.adapterId) !== entry) {
     // stopOt đã chạy trong lúc khởi động: không sống lại, hạ ngay kết nối vừa có.
+    // scan #73 — or the adapter was DETACHED meanwhile (moved to an edge node): its entry left `legacy`; never listed again.
     await boundedQuiet(() => handle.close(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "close");
     await boundedQuiet(() => adapter.driver.disconnect(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "disconnect");
     return false;
@@ -664,6 +673,7 @@ async function startOtOnce(): Promise<boolean> {
       try {
         // final wave 1 (R-1D-k) — dấu vân tay chụp TRƯỚC khi supervisor nối (cả hai endpoint nằm trong đích).
         const fingerprint = connectionFingerprintOf(adapter);
+        const tok = detachToken(adapter.adapterId); // scan #73 — a detach during this start wins
         const supervisor = await buildSupervisor(adapter);
         // start() never throws: a failed initial connect schedules a backoff retry
         // rather than crashing the host (preserves the fail-safe behaviour).
@@ -681,8 +691,8 @@ async function startOtOnce(): Promise<boolean> {
             `[OT] adapter "${adapter.code}" (${adapter.protocol}) start: ${errText(err)} — supervisor keeps retrying in background`,
           );
         }
-        if (myEpoch !== epoch) {
-          // stopOt chạy trong lúc khởi động: không đăng ký, hạ supervisor vừa dựng.
+        if (myEpoch !== epoch || detachToken(adapter.adapterId) !== tok) {
+          // stopOt chạy trong lúc khởi động: không đăng ký, hạ supervisor vừa dựng. (scan #73: hoặc adapter đã chuyển sang edge.)
           await supervisor.stop().catch(() => undefined);
           return;
         }
@@ -787,6 +797,9 @@ export async function stopOt(): Promise<void> {
   }
   legacy.clear();
   running = false;
+  // scan #73 — the gateway is OFF: a reconcile / NOTIFY after stopOt never attaches (re-)starts a session; startOt sets it again
+  otGatewayOn = false;
+  otTriedAtStart.clear();
 }
 
 export function isOtRunning(): boolean {
@@ -982,6 +995,7 @@ export function listOtAdapterStatuses(): OtAdapterStatus[] {
  * driver) is removed and closed, bounded — no more polling / ingest / writes here. true ⇔ it was running.
  */
 export async function detachOtAdapter(adapterId: number): Promise<boolean> {
+  detachGen.set(adapterId, detachToken(adapterId) + 1); // scan #73 — an in-flight start / attach of it never registers
   let found = false;
   const sup = supervisors.get(adapterId);
   if (sup) {
@@ -1024,12 +1038,13 @@ export function isOtGatewayOn(): boolean {
 export async function attachOtAdapter(adapter: RuntimeAdapter): Promise<boolean> {
   if (!isOtGatewayOn() || supervisors.has(adapter.adapterId) || legacy.has(adapter.adapterId) || active.some((e) => e.adapter.adapterId === adapter.adapterId)) return false;
   const myEpoch = epoch;
+  const tok = detachToken(adapter.adapterId); // scan #73
   try {
     if (isConnHaEnabled()) {
       const fingerprint = connectionFingerprintOf(adapter);
       const supervisor = await buildSupervisor(adapter);
       await withDeadline(supervisor.start(), effectiveAdapterStartTimeoutMs(adapter.connection, adapter.backupConnection) + OT_ADAPTER_START_CLEANUP_GRACE_MS, `adapter "${adapter.code}" supervisor start`).catch(() => undefined);
-      if (myEpoch !== epoch || supervisors.has(adapter.adapterId)) {
+      if (myEpoch !== epoch || supervisors.has(adapter.adapterId) || detachToken(adapter.adapterId) !== tok) {
         await supervisor.stop().catch(() => undefined);
         return false;
       }
@@ -1038,7 +1053,7 @@ export async function attachOtAdapter(adapter: RuntimeAdapter): Promise<boolean>
       const entry: LegacyEntry = { adapter, handle: null, state: "starting", lastError: null, attempts: 0, failures: 0, nextRetryAt: 0, inflight: false, listed: false };
       legacy.set(adapter.adapterId, entry);
       const ok = await attemptLegacyStart(entry, myEpoch);
-      if (myEpoch !== epoch) return false;
+      if (myEpoch !== epoch || legacy.get(adapter.adapterId) !== entry || detachToken(adapter.adapterId) !== tok) return false; // scan #73
       if (ok) listLegacyEntryIfNeeded(entry);
       else {
         entry.state = "error";

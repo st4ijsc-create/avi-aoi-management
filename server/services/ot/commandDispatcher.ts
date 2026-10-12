@@ -165,6 +165,7 @@ import { evaluateCommandPolicy, secPlatformEnabled } from "../security/policyGat
 // G1.7 (doc 44 W0-D) — correlation backbone (AsyncLocalStorage, opt-in): when the
 // caller did not pass an explicit correlationId we read the ambient one (if any).
 import { getCorrelationId } from "../observability/correlation";
+import { adapterOwnedByEdgeInTx } from "./otAdapterOwnerGate"; // doc 81 Đợt 10 D fix review 3 (scan #73)
 // doc 81 Đợt 1D Task 2 — per-tag pinned STOP values (mig 0362, Task 1).
 import { loadStopPins, matchPinnedStop, stopPinsFromTagRows, validateStopValue, type MatchPinnedStopResult, type StopPin, type StopPinTagRow } from "./stopPin";
 
@@ -1530,6 +1531,18 @@ async function reserveRealWrite(
         return {
           ok: false as const,
           result: { ok: false, simulated: false, status: "rejected" as const, reason: "DUPLICATE_IN_FLIGHT", results: failedResults(input, "DUPLICATE_IN_FLIGHT"), commandLogIds: ids },
+        };
+      }
+
+      // doc 81 Đợt 10 task D fix review 3 (scan #73) — WHO OWNS THE ADAPTER, under this transaction (FOR SHARE), before any
+      // approval is consumed: an edge-owned adapter is never written by central (a session not yet detached is not authority).
+      // L-7: a PINNED stop is never gated (otAdapterOwnerGate returns null without reading).
+      const edgeOwned = await adapterOwnedByEdgeInTx(tx, input.adapterId, { pinnedStop: opts.pinnedStop === true });
+      if (edgeOwned) {
+        const ids = await writeRejected(tx, input, edgeOwned.code, edgeOwned.detail);
+        return {
+          ok: false as const,
+          result: { ok: false, simulated: false, status: "rejected" as const, reason: edgeOwned.code, results: failedResults(input, edgeOwned.code), commandLogIds: ids },
         };
       }
 

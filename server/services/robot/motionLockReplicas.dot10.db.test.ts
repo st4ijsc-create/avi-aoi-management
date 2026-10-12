@@ -33,7 +33,7 @@ vi.mock("./robotManager", () => ({
 }));
 
 import { getDb } from "../../db/connection";
-import { attachMotionLockPersistence, _flushMotionLockWritesForTests } from "./robotMotionLockStore";
+import { attachMotionLockPersistence as attachStore, _flushMotionLockWritesForTests, _setMotionLockWriterForTests } from "./robotMotionLockStore";
 import { readCentralMotionAuthority } from "./robotSharedMotionLockGate";
 import { dispatchRobotJob } from "./robotCommandDispatcher";
 import { MotionLock } from "./robotDriver";
@@ -57,6 +57,12 @@ async function inRolledBackTx(fn: (tx: any) => Promise<void>): Promise<void> {
   } catch (e) {
     if (!(e instanceof Rollback)) throw e;
   }
+}
+// R-10-ap — every MotionLock below stands for ANOTHER process (replica): its own writer instance
+let writerSeq = 1;
+function attachMotionLockPersistence(robot: number, lock: MotionLock, load: Parameters<typeof attachStore>[2]): void {
+  _setMotionLockWriterForTests(lock, writerSeq++);
+  attachStore(robot, lock, load);
 }
 const rows = async (tx: any, q: ReturnType<typeof sql>) => (await tx.execute(q)) as Array<Record<string, any>>;
 const MOTION = (robotId: number) => ({ robotId, job: { jobType: "home" as const, params: {} }, triggerKind: "manual" as const, requestedBy: 1, confirmedBy: 1 });
@@ -105,11 +111,11 @@ describe.skipIf(!onTest)("R-10-u — a central lock set by ANOTHER replica refus
       attachMotionLockPersistence(robot, lockB, { ok: true, rows: new Map() });
       lockA.lock("line_connection_closed");
       await _flushMotionLockWritesForTests();
-      const [saved] = await rows(tx, sql`SELECT "reasonCode", generation, "lockedAt" FROM robot_motion_locks WHERE "robotId" = ${robot}`);
+      const [saved] = await rows(tx, sql`SELECT "reasonCode", generation, "lockedAt", "writerInstanceId" FROM robot_motion_locks WHERE "robotId" = ${robot}`);
       lockA.clearByStop();
       await _flushMotionLockWritesForTests();
       // the DELETE "still in flight": the very row A cleared is present again
-      await tx.execute(sql`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, "lockedAt") VALUES (${robot}, ${saved.reasonCode}, ${saved.generation}, ${saved.lockedAt})`);
+      await tx.execute(sql`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, "lockedAt", "writerInstanceId") VALUES (${robot}, ${saved.reasonCode}, ${saved.generation}, ${saved.lockedAt}, ${saved.writerInstanceId})`);
       // (compared through the gate's own drizzle read — a raw postgres.js read of a naive timestamp is shifted by the TZ offset)
       expect(await readCentralMotionAuthority(robot, lockA)).toMatchObject({ ok: true });
       expect(await readCentralMotionAuthority(robot, lockB)).toMatchObject({ locked: true, authority: "central", generation: 1 });

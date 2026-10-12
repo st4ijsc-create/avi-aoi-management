@@ -11,6 +11,13 @@ import type { RuntimeRobot, RobotLoadScope } from "./robotAdapter";
 let running = false;
 let orphanSweepScheduled = false;
 const active: Array<{ robot: RuntimeRobot; handle: RobotStateHandle }> = [];
+/**
+ * doc 81 Đợt 10 task D fix review 3 (scan #73) — bumped by stopRobots / by every detachRobot(id): a start / attach whose connect
+ * was in flight across a stop or a detach (moved to an edge node) closes its session instead of registering it.
+ */
+let robotEpoch = 0;
+const detachGen = new Map<number, number>();
+const detachToken = (robotId: number): number => detachGen.get(robotId) ?? 0;
 
 function flagEnabled(): boolean {
   return process.env.ROBOT_GATEWAY_ENABLED === "true";
@@ -88,15 +95,24 @@ export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolea
   if (!opts.scope) for (const r of robots) triedAtStart.add(r.id); // R-10-al — the reconcile's first pass skips these
   const lockable = robots.filter((r) => typeof r.driver.motionLockController === "function");
   const savedLocks = await loadMotionLocks(lockable.map((r) => r.id));
+  const ep = robotEpoch;
   for (const robot of robots) {
     const motionLock = robot.driver.motionLockController?.();
     if (motionLock) attachMotionLockPersistence(robot.id, motionLock, savedLocks);
+    const tok = detachToken(robot.id);
     try {
       await robot.driver.connect(robot.connection);
       const handle = await robot.driver.subscribeState(
         opts.ingest === false ? () => undefined : (state) => ingestRobotState(robot, state),
         robot.pollIntervalMs,
       );
+      if (ep !== robotEpoch || detachToken(robot.id) !== tok) {
+        // scan #73 — stopped / moved to an edge node while connecting: never registered
+        await Promise.resolve().then(() => handle.close()).catch(() => undefined);
+        await Promise.resolve().then(() => robot.driver.disconnect()).catch(() => undefined);
+        console.log(`[Robot] "${robot.code}" not started — stopped or detached while connecting`);
+        continue;
+      }
       active.push({ robot, handle });
       console.log(`[Robot] "${robot.code}" (${robot.vendor}) started`);
     } catch (err) {
@@ -176,6 +192,10 @@ async function startConfigRobots(opts: StartRobotsOptions): Promise<boolean> {
 }
 
 export async function stopRobots(): Promise<void> {
+  // scan #73 — the gateway is OFF: no reconcile / NOTIFY attach re-starts a session; an in-flight start / attach closes its own
+  robotEpoch += 1;
+  centralGatewayOn = false;
+  triedAtStart.clear();
   while (active.length > 0) {
     const entry = active.pop()!;
     try {
@@ -209,6 +229,7 @@ export function isRobotGatewayRunning(): boolean {
  * driver disconnects, bounded. The motion lock leaves with the session (the edge is the authority now). true ⇔ it was active.
  */
 export async function detachRobot(robotId: number): Promise<boolean> {
+  detachGen.set(robotId, detachToken(robotId) + 1); // scan #73 — an in-flight start / attach of it never registers
   const i = active.findIndex((a) => a.robot.id === robotId);
   if (i < 0) return false;
   const [entry] = active.splice(i, 1);
@@ -240,6 +261,8 @@ const attaching = new Set<number>();
 export async function attachRobot(robotId: number): Promise<boolean> {
   if (!isCentralRobotGatewayOn() || !flagEnabled() || active.some((a) => a.robot.id === robotId) || attaching.has(robotId)) return false;
   attaching.add(robotId);
+  const tok = detachToken(robotId);
+  const ep = robotEpoch;
   try {
     const { loadEnabledRobots } = await import("./robotAdapter");
     const robot = (await loadEnabledRobots()).find((r) => r.id === robotId);
@@ -250,8 +273,9 @@ export async function attachRobot(robotId: number): Promise<boolean> {
     const { ingestRobotState } = await import("./robotIngest");
     await robot.driver.connect(robot.connection);
     const handle = await robot.driver.subscribeState((state) => ingestRobotState(robot, state), robot.pollIntervalMs);
-    if (active.some((a) => a.robot.id === robotId)) {
-      // N5 — the loser of a race closes AND disconnects (no leaked session)
+    if (active.some((a) => a.robot.id === robotId) || detachToken(robotId) !== tok || ep !== robotEpoch) {
+      // N5 — the loser of a race closes AND disconnects (no leaked session); scan #73 — so does an attach overtaken by a
+      // detach (moved to an edge node meanwhile) or by stopRobots
       await handle.close().catch(() => undefined);
       await robot.driver.disconnect().catch(() => undefined);
       return false;

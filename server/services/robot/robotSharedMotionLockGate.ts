@@ -70,7 +70,7 @@ export const OWNER_CHANGED_REASON_CODE = "ownerChanged" as const;
 export type CentralMotionAuthorityRead =
   | { ok: true; schemaMissing?: true; noDb?: true; ownerEpoch?: number }
   | { ownedByEdge: number; ownerEpoch: number }
-  | { locked: true; authority: string; reasonCode: string; detail: string | null; since: string; generation: number; ownerEpoch: number | null }
+  | { locked: true; authority: string; reasonCode: string; detail: string | null; since: string; generation: number; ownerEpoch: number | null; writerInstanceId: string | null }
   | { error: string };
 
 export async function readCentralMotionAuthority(robotId: number, ownLock?: import("./robotDriver").MotionLock | null): Promise<CentralMotionAuthorityRead> {
@@ -91,7 +91,7 @@ export async function readCentralMotionAuthority(robotId: number, ownLock?: impo
         // another replica (or one this process never held) is not this process's to ignore.
         const { motionLockRowClearedHere } = await import("./robotMotionLockStore");
         const foreignCentral =
-          !!r && r.robotId === robotId && r.authority === "central" && !motionLockRowClearedHere(ownLock ?? null, Number(r.generation), r.lockedAt as Date | undefined);
+          !!r && r.robotId === robotId && r.authority === "central" && !motionLockRowClearedHere(ownLock ?? null, Number(r.generation), r.lockedAt as Date | undefined, r.writerInstanceId ?? null);
         if (r && r.robotId === robotId && ((typeof r.authority === "string" && r.authority !== "central") || r.reasonCode === OWNER_CHANGED_REASON_CODE || foreignCentral)) {
           return {
             locked: true,
@@ -101,6 +101,7 @@ export async function readCentralMotionAuthority(robotId: number, ownLock?: impo
             since: new Date(r.lockedAt ?? Date.now()).toISOString(),
             generation: Number(r.generation ?? 0),
             ownerEpoch: r.ownerEpoch == null ? null : Number(r.ownerEpoch),
+            writerInstanceId: r.writerInstanceId ?? null, // R-10-ap — an adopted clear deletes exactly this writer's row
           };
         }
         const observed = Number((own as { ownerEpoch?: unknown } | undefined)?.ownerEpoch);

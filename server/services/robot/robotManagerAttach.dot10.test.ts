@@ -15,7 +15,7 @@ vi.mock("./robotAdapter", () => ({
 vi.mock("./robotMotionLockStore", () => ({ attachMotionLockPersistence: () => "none", loadMotionLocks: async () => ({ ok: true, rows: new Map() }) }));
 vi.mock("./robotIngest", () => ({ ingestRobotState: () => undefined }));
 
-import { startRobots, stopRobots, attachRobot, activeRobotIds, isCentralRobotGatewayOn } from "./robotManager";
+import { startRobots, stopRobots, attachRobot, detachRobot, activeRobotIds, isCentralRobotGatewayOn } from "./robotManager";
 
 const robot = (id: number) => ({
   id,
@@ -71,5 +71,49 @@ describe("R-10-al / N5 — live attach", () => {
     expect(H.connects).toBe(1); // the second never opened a session
     expect(H.disconnects).toBe(0);
     expect(activeRobotIds()).toEqual([7]);
+  });
+});
+
+describe("scan #73 — robotManager never keeps / re-starts a central session it no longer owns", () => {
+  it("★ stopRobots turns the gateway OFF: a later attach (reconcile / NOTIFY) does not re-start a session", async () => {
+    await startRobots(); // 0 central robots — gateway on (R-10-al)
+    expect(isCentralRobotGatewayOn()).toBe(true);
+    await stopRobots();
+    expect(isCentralRobotGatewayOn()).toBe(false);
+    H.load = [robot(8)];
+    expect(await attachRobot(8)).toBe(false);
+    expect(H.connects).toBe(0);
+    expect(activeRobotIds()).toEqual([]);
+  });
+
+  it("★ a DETACH while the attach is still connecting ⇒ the late session is closed, never registered", async () => {
+    await startRobots();
+    H.load = [robot(9)];
+    const attach = attachRobot(9);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(await detachRobot(9)).toBe(false); // the session is not visible yet
+    expect(await attach).toBe(false);
+    expect(activeRobotIds()).toEqual([]);
+    expect(H.disconnects).toBe(1);
+  });
+
+  it("★ stopRobots while an attach is connecting ⇒ closed, never registered", async () => {
+    await startRobots();
+    H.load = [robot(10)];
+    const attach = attachRobot(10);
+    await new Promise((r) => setTimeout(r, 5));
+    await stopRobots();
+    expect(await attach).toBe(false);
+    expect(activeRobotIds()).toEqual([]);
+  });
+
+  it("★ a DETACH while startRobots is still connecting that robot ⇒ never registered", async () => {
+    H.load = [robot(11)];
+    const start = startRobots();
+    await new Promise((r) => setTimeout(r, 5));
+    await detachRobot(11);
+    await start;
+    expect(activeRobotIds()).toEqual([]);
+    expect(H.disconnects).toBe(1);
   });
 });

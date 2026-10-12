@@ -807,7 +807,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
             const ml = robot.driver.motionLockController?.();
             if (ml) {
               const { adoptPersistedMotionLock } = await import("./robotMotionLockStore");
-              adoptPersistedMotionLock(ml, { reasonCode: auth.reasonCode, detail: auth.detail, since: auth.since, generation: auth.generation });
+              adoptPersistedMotionLock(ml, { reasonCode: auth.reasonCode, detail: auth.detail, since: auth.since, generation: auth.generation, writerInstanceId: auth.writerInstanceId });
             }
           } catch (err) {
             console.error(`[Robot] adopting the persisted ownerChanged lock of robot ${input.robotId} failed (motion still refused):`, (err as Error)?.message ?? err);
