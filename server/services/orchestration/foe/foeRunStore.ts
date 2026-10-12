@@ -39,6 +39,7 @@ import {
   recordedProgramDigests,
   hashWorkflowDefinition,
   deriveRunApprovalIdentity,
+  FOE_REJECT_CLAIM_CTX_KEY,
   type GateRequiredReason,
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
@@ -181,6 +182,11 @@ export interface RunStore {
   appendEvent(runId: number, type: RunEventType, opts: { taskId?: string; ts: number; data?: unknown }): void;
   resolveAdapter(kind: string, machineId: number, args: Record<string, unknown>, stepId: string): Promise<Record<string, unknown>>;
   authorizeCommand(rc: RunStoreContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number, x: AuthorizeInput): Promise<AuthorizeVerdict>;
+  /**
+   * EDGE only (synchronous — never a wait on a STOP's path): binds every abort-sweep STOP command to the run segment for the
+   * edge dispatch (its ledger record). The central store has none.
+   */
+  bindAbortStop?(runId: number, step: Extract<WorkflowStep, { type: "command" }>, cmd: EquipmentCommand): void;
   /** The OT authorisation row of an abort STOP (central: self-confirmed engine row, bounded by D; edge: none — a STOP never asks). */
   authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand): Promise<void>;
   /** The abort sweep's picture: of the live walker (`live`), else of the stored run (`run`). null ⇔ neither is known. */
@@ -282,6 +288,9 @@ export function gateRequiredError(stepId: string, reason: GateRequiredReason): s
 // THE CENTRAL STORE — moved from foeEngine.ts UNCHANGED (doc 81 Đợt 10 task C). Comments are the original ones.
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
+/** A central database handle (the pool, or a transaction of it). */
+export type RunDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
 export async function loadMachines(ids: number[]): Promise<Map<number, MachineForValidation>> {
   const map = new Map<number, MachineForValidation>();
   if (ids.length === 0) return map;
@@ -315,6 +324,17 @@ export async function setRunStatusUnlessAborted(
 ): Promise<boolean> {
   const d = await getDb();
   if (!d) return false;
+  return setRunStatusUnlessAbortedOn(d, runId, status, patch, onlyFrom);
+}
+
+/** doc 81 Đợt 10 C — setRunStatusUnlessAborted on a GIVEN handle (a transaction of central's edge report endpoints). */
+export async function setRunStatusUnlessAbortedOn(
+  d: RunDb,
+  runId: number,
+  status: OrchestrationRun["status"],
+  patch: Partial<OrchestrationRun> = {},
+  onlyFrom?: Array<OrchestrationRun["status"]>,
+): Promise<boolean> {
   const written = await d
     .update(orchestrationRuns)
     .set({ status, updatedAt: new Date(), ...patch })
@@ -347,6 +367,11 @@ export async function upsertStep(
 ): Promise<void> {
   const d = await getDb();
   if (!d) return;
+  await upsertStepOn(d, runId, stepId, stepType, patch);
+}
+
+/** doc 81 Đợt 10 C — upsertStep on a GIVEN handle: THE one row rule for central's walk and the rows an edge reports. */
+export async function upsertStepOn(d: RunDb, runId: number, stepId: string, stepType: string, patch: RunStepPatch): Promise<void> {
   // Upsert on (runId, stepId) — the table has a unique constraint there.
   await d
     .insert(orchestrationRunSteps)
@@ -815,3 +840,147 @@ export const centralRunStore: RunStore = Object.freeze({
   verifyStops: verifyStopsForAbort,
   auditAbort: auditAbortStop,
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 10 C — CENTRAL applies what an EDGE walker reports (group B's report / complete endpoints call these, on their
+// transaction): central stays the ONLY writer of an edge run's rows, with the SAME rules as its own walk.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** One step row an edge reported (group B: edgeEngineSink.EdgeStepRowWrite — structurally identical). */
+export interface EdgeStepRowWrite {
+  stepId: string;
+  stepType: string;
+  status: string;
+  attempt: number;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  error: string | null;
+  /** undefined ⇒ the stored result is KEPT (the upsertStep rule) */
+  result: Record<string, unknown> | undefined;
+}
+
+/**
+ * The reported rows, each with upsertStep's own rule (upsertStepOn): upsert on (runId, stepId); a 'running' write never
+ * overwrites a completed / skipped / compensated row; a 'failed' `abort:` row never overwrites a completed one; no result ⇒
+ * the stored result is kept; the durable RunEvent as upsertStep appends it. The caller (B) has already checked the stream
+ * sequence, the claim, the step and the jti of every non-STOP result.
+ */
+export async function recordEdgeStepRows(db: RunDb, runId: number, rows: ReadonlyArray<EdgeStepRowWrite>): Promise<void> {
+  for (const r of rows) {
+    await upsertStepOn(db, runId, r.stepId, r.stepType, {
+      status: r.status,
+      attempt: r.attempt,
+      ...(r.result !== undefined ? { result: r.result } : {}),
+      error: r.error,
+      startedAt: r.startedAt,
+      finishedAt: r.finishedAt,
+    });
+  }
+}
+
+/** How an edge segment ended (group B: edgeEngineSink.EdgeSegmentEnd — structurally identical). */
+export interface EdgeSegmentEndApply {
+  outcome: "completed" | "failed" | "aborted" | "paused" | "held";
+  gateStepId?: string;
+  heldReason?: string;
+  error?: string;
+  nodeCode: string;
+  claimSeq: number;
+  /** the ASSIGNED definition (the one the edge walked) */
+  def: WorkflowDefinition;
+}
+export type EdgeSegmentEndResult = { ok: true; status: string; changed: boolean } | { ok: false; code: "not_finished"; message: string };
+
+/** The context mark of an edge-held run (central's own key: never taken from an edge context patch). */
+export const EDGE_HELD_CTX_KEY = "edgeHeld";
+
+/**
+ * The end of an edge walk segment, with finishWalk's / setRunStatusUnlessAborted's semantics (design §2.6), on `db` (B's
+ * transaction). Never from 'aborted' or a centrally STOPPED run (a rejection's claim token) — only from 'running' /
+ * 'compensating' (the bound write P-E2 uses), so a late report never regresses a run. The run row decides, never the report:
+ *   • completed — accepted only when the rows show every TOP-LEVEL step completed / skipped and no step row 'running'
+ *                 (else not_finished, nothing written);
+ *   • paused    — at a hitl_gate of the definition: 'awaiting_confirm' + currentStepId + the gate row the walker writes
+ *                 ({prompt, approverRoles}; a completed gate row is never reopened). Not a gate ⇒ held (a person decides);
+ *   • held      — D5: 'held' + the reason; Continue (resumeRun) re-queues it for the node;
+ *   • failed    — 'failed'; `aborted` reported while central did not stop the run is a failure too (an edge never aborts
+ *                 a run by itself).
+ */
+export async function applyEdgeSegmentEnd(db: RunDb, runId: number, end: EdgeSegmentEndApply): Promise<EdgeSegmentEndResult> {
+  const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
+  if (!run) return { ok: true, status: "missing", changed: false };
+  const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+  const stopped = run.status === "aborted" || ctx[FOE_REJECT_CLAIM_CTX_KEY] != null;
+  if (stopped || (run.status !== "running" && run.status !== "compensating")) return { ok: true, status: run.status, changed: false };
+  const LIVE: Array<OrchestrationRun["status"]> = ["running", "compensating"];
+  const write = async (status: OrchestrationRun["status"], patch: Partial<OrchestrationRun>): Promise<EdgeSegmentEndResult> => {
+    const ok = await setRunStatusUnlessAbortedOn(db, runId, status, patch, LIVE);
+    return { ok: true, status: ok ? status : run.status, changed: ok };
+  };
+  const held = (reason: string, error: string | undefined) => {
+    const at = new Date().toISOString();
+    return write("held", {
+      currentStepId: null,
+      // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
+      error: `Edge node ${end.nodeCode} held run ${runId} (${reason})${error ? `: ${error.slice(0, 500)}` : ""} — nothing further was sent; Continue to resume it.`,
+      contextJson: { ...ctx, [EDGE_HELD_CTX_KEY]: reason, edgeHeldAt: at, edgeHeldNode: end.nodeCode, interrupted: true, interruptedAt: at, interruptedFrom: run.status, interruptedBy: `edge held: ${reason}` },
+    });
+  };
+  switch (end.outcome) {
+    case "completed": {
+      const rows = await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+      const by = new Map(rows.map((r) => [r.stepId, r.status as string] as const));
+      const allDone = (end.def.steps ?? []).every((s) => by.get(s.id) === "completed" || by.get(s.id) === "skipped");
+      const anyRunning = rows.some((r) => r.status === "running" && !r.stepId.startsWith(ABORT_ROW_PREFIX));
+      if (!allDone || anyRunning) {
+        return { ok: false, code: "not_finished", message: `Run ${runId}: the reported step rows do not show every top-level step completed / skipped (or a step is still running) — not completed.` };
+      }
+      return write("completed", { finishedAt: new Date() });
+    }
+    case "paused": {
+      const gate = end.gateStepId ? allStepsOf(end.def.steps).find((s) => s.id === end.gateStepId) : undefined;
+      if (!gate || gate.type !== "hitl_gate") return held("pausedAtNonGate", `the edge reported a pause at "${end.gateStepId ?? "?"}", which is not a gate of the assigned definition`);
+      const out = await write("awaiting_confirm", { currentStepId: gate.id });
+      if (out.ok && out.changed) {
+        const [prior] = await db
+          .select()
+          .from(orchestrationRunSteps)
+          .where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, gate.id)))
+          .limit(1);
+        // the walker's own gate row (runStepBody, hitl_gate) — never over an approved (completed) one
+        if (prior?.status !== "completed") {
+          await upsertStepOn(db, runId, gate.id, "hitl_gate", { status: "awaiting_confirm", result: { prompt: gate.prompt, approverRoles: gate.approverRoles ?? null } });
+        }
+      }
+      return out;
+    }
+    case "held":
+      return held(end.heldReason ?? "centralUnreachable", end.error);
+    default: {
+      const why = end.outcome === "failed" ? `failed on edge node ${end.nodeCode}` : `edge node ${end.nodeCode} ended the walk as aborted without a central abort`;
+      // data-raw-ok: the run's error (the walker's own error text, prefixed with the node)
+      return write("failed", { finishedAt: new Date(), error: `${why}${end.error ? `: ${end.error.slice(0, 2000)}` : ""}` });
+    }
+  }
+}
+
+/**
+ * The PRIOR picture of a run for its next edge segment (edgeProtocol.edgePriorPictureSchema), from its step rows — what
+ * central's own walk computes from the same rows (loadCompletedSteps + priorStepsOf + abortSentOf). Pure. Group B ships it in
+ * the run package / sweep picture. `null` rows (not readable) ⇒ `unknown: true` (counted as acted, R-6-c).
+ */
+export function edgePriorPictureOf(
+  rows: ReadonlyArray<{ id?: number; stepId: string; status: string; resultJson?: unknown; startedAt?: Date | null }> | null,
+): { completed: string[]; settled: string[]; attempted: string[]; startOrder: string[]; branches: Array<{ stepId: string; branch: "then" | "else" }>; abortSentBefore: string[]; unknown: boolean } {
+  if (rows === null) return { completed: [], settled: [], attempted: [], startOrder: [], branches: [], abortSentBefore: [], unknown: true };
+  const p = priorStepsOf(rows);
+  return {
+    completed: rows.filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX) && (r.status === "completed" || r.status === "skipped")).map((r) => r.stepId),
+    settled: [...p.settled],
+    attempted: [...p.attempted],
+    startOrder: p.startOrder,
+    branches: [...p.branches.entries()].map(([stepId, branch]) => ({ stepId, branch })),
+    abortSentBefore: [...abortSentOf(rows)],
+    unknown: false,
+  };
+}

@@ -45,11 +45,16 @@ import {
   stopBoundedWrite,
   upsertStep,
   type AbortSweepSource,
+  type EdgeSegmentEnd,
   type PriorSteps,
   type RunStore,
   type RunStoreContext,
+  type RunStoreHeldReason,
 } from "./foeRunStore";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED } from "./foeRunStore";
+// doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
+export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
+import type { EdgeRunPackage, EdgeSweepPicture } from "../../edge/edgeProtocol"; // doc 81 Đợt 10 C — types only (the edge walk)
 import {
   orchestrationWorkflows,
   orchestrationWorkflowVersions,
@@ -538,11 +543,9 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   /** fix 1 (R-6-b) — command steps (compensations included) whose `sendCommand` was CALLED in this walk, whatever came back. */
   attempted: Set<string>;
   /**
-   * doc 81 Đợt 9 task S3 — set ONLY on an EDGE walker (driveEdgeClaimedRun): asked before every NON-STOP command (never for a
-   * STOP — L-7). Anything but 'ok' ⇒ that command is not sent (edgeRunGuard.ts).
+   * doc 81 Đợt 9 task S3 / Đợt 10 C — this EDGE walker lost its claim (the edge store's authorisation answered `stale`): it
+   * writes no run status. (Đợt 10 C removed the DB run guard: the per-step /authorize of the edge store decides.)
    */
-  edgeGuard?: () => Promise<"ok" | "stopped" | "stale" | "revoked" | "unknown">;
-  /** doc 81 Đợt 9 task S3 — this edge walker lost its claim (another segment / nobody owns the run): it writes no run status. */
   edgeDetached?: boolean;
 }
 
@@ -552,7 +555,13 @@ type StepOutcome =
   | { kind: "skipped" }
   | { kind: "paused"; stepId: string } // hitl_gate / held → run pauses
   | { kind: "failed"; error: string }
-  | { kind: "aborted"; error: string };
+  | { kind: "aborted"; error: string }
+  /**
+   * doc 81 Đợt 10 C (design §2.10, D5) — an EDGE store could not obtain the authorisation of a NON-STOP command (central
+   * unreachable, journal full …): nothing was sent, the step is held, NO compensation; the run ends the segment 'held'
+   * (Continue later). The central store never answers it.
+   */
+  | { kind: "held"; stepId: string; reason: RunStoreHeldReason; error: string };
 
 // ── db helpers (fail-safe) ───────────────────────────────────────────────────────
 
@@ -788,6 +797,12 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     );
   } else if (outcome.kind === "paused") {
     // step-level status already set by the body (awaiting_confirm)
+  } else if (outcome.kind === "held") {
+    // doc 81 Đợt 10 C (D5) — nothing was sent: the step waits for a Continue; no compensation (it did not act).
+    const heldOutcome = outcome;
+    await stopBoundedWrite(stop, rc.runId, step.id, "held row", () =>
+      rc.store.upsertStep(rc.runId, step.id, step.type, { status: "held", attempt, error: heldOutcome.error, finishedAt: new Date() }),
+    );
   } else {
     // failed / aborted → run compensation if declared (E4: a STOP's failure row is bounded too). E fix 2 (review N1) — a
     // step whose COMPENSATION holds a STOP: its failed row is on that STOP's path ⇒ bounded as well.
@@ -1710,34 +1725,28 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // doc 81 Đợt 5 task E fix 1 (R-5-j) — the RUN-TIME candidate (foeStepClass.isStopCandidate): the engine only stays
   // out of the way here; the dispatcher re-decides with the real pins (an unpinned stop needs a counting gate there).
   const isStop = await isStopCandidate(step, rc.machineById);
-  // doc 81 Đợt 9 task S3 — an EDGE walker asks the run guard before every NON-STOP command (a STOP never asks — L-7): central
-  // stopped the run ⇒ the local abort (non-STOP steps stop, STOPs still sent); the claim is no longer this walker's ⇒ it lets
-  // go of the run without writing it; the claim's credential revoked / the guard undecidable ⇒ this command is refused.
-  if (!isStop && rc.edgeGuard) {
-    const verdict = await rc.edgeGuard();
-    if (verdict === "stopped") {
-      void stopLiveRunForCentralAbort(rc.runId, EDGE_GUARD_ABORT_USER).catch(() => undefined);
-      return ABORTED_OUTCOME;
-    }
-    if (verdict === "stale") {
-      rc.edgeDetached = true;
-      rc.aborting = true;
-      rc.controller.abort();
-      return { kind: "aborted", error: "Edge claim is no longer current — this walker let go of the run." };
-    }
-    if (verdict !== "ok") {
-      // data-raw-ok: an edge refusal recorded on the step row (machine-to-machine), like FOE_GATE_REQUIRED
-      return { kind: "failed", error: `EDGE_GUARD(${verdict}): step ${step.id} not sent — ${verdict === "revoked" ? "this edge node's credential was revoked" : "the edge could not confirm its claim on the run"}.` };
-    }
-  }
   // doc 81 Đợt 10 task C — the adapter resolution, the separate-gate lookup (FOE_GATE_REQUIRED) and the authorisation row
   // are the STORE's: foeRunStore.centralAuthorizeCommand is the code that stood here, moved unchanged (same statements, same
   // order, the OT STOP's two lookups still concurrent under ONE STOP_DB_STEP_DEADLINE_MS, the row still bounded for a STOP).
+  // The EDGE store (doc 81 Đợt 10 C) answers a NON-STOP command with central's per-step /authorize (a verified STOP never asks —
+  // L-7): stopped ⇒ the local abort (non-STOP steps stop, STOPs still sent); stale ⇒ this walker lets go of the run without
+  // writing it; unavailable ⇒ HELD (D5: nothing sent, no compensation). The central store only ever refuses.
   const auth = await rc.store.authorizeCommand(rc, step, attempt, { isStop, robotKind, rawArgs, descriptor, cap, idempotencyKey });
   if (!auth.ok) {
-    if (auth.verdict === "refused") return { kind: "failed", error: auth.error };
-    // data-raw-ok: a store verdict recorded on the step row (machine-to-machine); the central store never answers it.
-    return { kind: "failed", error: `Step "${step.id}" not sent (${auth.verdict}).` };
+    switch (auth.verdict) {
+      case "refused":
+        return { kind: "failed", error: auth.error };
+      case "stopped":
+        void stopLiveRunForCentralAbort(rc.runId, EDGE_GUARD_ABORT_USER).catch(() => undefined);
+        return ABORTED_OUTCOME;
+      case "stale":
+        rc.edgeDetached = true;
+        rc.aborting = true;
+        rc.controller.abort();
+        return { kind: "aborted", error: "Edge claim is no longer current — this walker let go of the run." };
+      case "unavailable":
+        return { kind: "held", stepId: step.id, reason: auth.heldReason, error: auth.error };
+    }
   }
   const cmd = auth.cmd;
 
@@ -1781,7 +1790,7 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
 async function execSequence(rc: RunContext, steps: WorkflowStep[]): Promise<StepOutcome> {
   for (const child of steps) {
     const out = await execStep(rc, child);
-    if (out.kind === "paused" || out.kind === "failed" || out.kind === "aborted") return out;
+    if (out.kind === "paused" || out.kind === "failed" || out.kind === "aborted" || out.kind === "held") return out;
     // 'ok' / 'skipped' → continue
   }
   return { kind: "ok" };
@@ -1797,6 +1806,8 @@ async function execParallel(rc: RunContext, steps: WorkflowStep[], failFast: boo
   if (paused) return paused;
   const aborted = outcomes.find((o) => o.kind === "aborted");
   if (aborted) return aborted;
+  const held = outcomes.find((o) => o.kind === "held"); // doc 81 Đợt 10 C (D5) — a held branch holds the run
+  if (held) return held;
   const failures = outcomes.filter((o) => o.kind === "failed") as Array<{ kind: "failed"; error: string }>;
   if (failures.length > 0) {
     if (failFast || failures.length === outcomes.length) {
@@ -1928,6 +1939,10 @@ async function finishWalk(rc: RunContext, out: StepOutcome): Promise<Orchestrati
   if (out.kind === "paused") {
     status = "awaiting_confirm";
     patch = { currentStepId: out.stepId };
+  } else if (out.kind === "held") {
+    // doc 81 Đợt 10 C (D5) — an edge segment that could not get an authorisation: held, resumable (Continue)
+    status = "held";
+    patch = { currentStepId: null, error: out.error };
   } else if (out.kind === "aborted" || out.kind === "failed") {
     status = out.kind;
     patch = { finishedAt: new Date(), error: out.error };
@@ -3574,6 +3589,7 @@ async function prepareAbortStop(
     if (robot ? !isStopJob(toRobotJob(cmd)) : !(await isOtStopCommandType(cmd.name))) {
       return { step, error: `"${step.command}" is not a STOP — never sent on an abort` };
     }
+    store.bindAbortStop?.(runId, step, cmd); // doc 81 Đợt 10 C — edge only (synchronous): the run binding for the edge dispatch
     // the SAME policy seam as a run's own command step (SEC_PLATFORM off by default ⇒ nothing)
     const { evaluateActionPolicy, secPlatformEnabled } = await import("../../security/policyGate");
     if (secPlatformEnabled()) {
@@ -4028,67 +4044,91 @@ async function startEdgeAssignedRun(
   return { ok: true, enabled: true, runId: run.id, status: "queued", edgeNodeId: a.edgeNodeId };
 }
 
-/** What the edge's agent holds for the segment it claimed (the token itself never leaves the agent). */
+/** What the edge's agent holds for the segment it claimed (the token itself never leaves the agent's store). */
 export interface EdgeClaim {
+  runId?: number;
   claimSeq: number;
-  claimTokenHash: string;
-  defHash: string;
+  claimToken?: string;
+  /** the snapshot hash the agent claimed for (when given, it must be the package's) */
+  defHash?: string;
 }
 
+/** What an edge walk returns to the agent: `refused` (nothing walked) or how the segment ended (POST complete). */
+export type EdgeDriveResult = { ok: boolean; status?: OrchestrationRun["status"]; refused?: string; detached?: boolean } & Partial<EdgeSegmentEnd>;
+
 /**
- * EDGE: walk the CENTRAL run `runId` for the claim the agent just obtained. Refuses (nothing walked, nothing written) unless
- * THIS process's database shows exactly that claim on that run (ID mapping: same run, same workflow, the head definition =
- * the assigned snapshot = the one the agent checked) and the run's owner is an active user (its real role ⇒ its real scope).
- * Then the run is walked like a resume (completed steps are skipped, an approved gate passes, an unapproved one pauses),
- * every NON-STOP command first asking the run guard (edgeRunGuard). Returns the run status the walk ended in.
+ * doc 81 Đợt 10 task C (design §2.14) — EDGE: walk the run of a VERIFIED, SIGNED run package (edgeTrust.verifyEdgeRunPackage —
+ * the agent verifies it before calling) for the claim the agent holds, against the edge `store` (edge/edgeRunStore.ts). Reads
+ * NO database: the definition, machines, prior picture, context, owner and the adapter of every OT step are the package's.
+ * Refused (nothing walked, nothing written) unless the package is for this claim, its definition hashes to its defHash (= the
+ * one the agent claimed) and the run has an owner (validated active centrally). The walk is a resume (completed steps are
+ * skipped, an approved gate passes, an unapproved one pauses); every NON-STOP command asks central (the store's /authorize), a
+ * STOP never does (L-7). The result carries the segment end the agent reports (POST complete).
  */
-export async function driveEdgeClaimedRun(runId: number, claim: EdgeClaim): Promise<{ ok: boolean; status?: OrchestrationRun["status"]; refused?: string }> {
+export async function driveEdgeRunFromPackage(pkg: EdgeRunPackage, claim: EdgeClaim, store: RunStore): Promise<EdgeDriveResult> {
   if (!foeEnabled()) return { ok: false, refused: "FOE is disabled on this edge" };
-  const d = await db();
-  const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
-  let a: Awaited<ReturnType<typeof readEdgeAssignment>>;
-  try {
-    a = await readEdgeAssignment(d, runId);
-  } catch {
-    return { ok: false, refused: "its edge assignment could not be read" };
+  if (store.kind !== "edge") return { ok: false, refused: "an edge run is walked only against an edge store (no database on the edge)" };
+  if ((claim.runId !== undefined && claim.runId !== pkg.runId) || claim.claimSeq !== pkg.claimSeq) return { ok: false, refused: "the run package is not for this claim" };
+  const def = pkg.definition as unknown as WorkflowDefinition;
+  if (!def || !Array.isArray(def.steps) || hashWorkflowDefinition(def) !== pkg.defHash || (claim.defHash !== undefined && claim.defHash !== pkg.defHash)) {
+    return { ok: false, refused: "the workflow definition is not the assigned snapshot" };
   }
-  const { sameDigest } = await import("../../edge/edgeNodeCredentials");
-  if (!run || !a || run.workflowId !== a.workflowId) return { ok: false, refused: "the run or its edge assignment is not in this edge's database (ID mapping)" };
-  if (a.claimSeq !== claim.claimSeq || !sameDigest(a.claimTokenHash, claim.claimTokenHash)) return { ok: false, refused: "this claim is not the current one in this edge's database" };
-  if (run.status === "aborted" || run.status === "completed" || run.status === "failed") return { ok: false, status: run.status }; // ended before the walk (e.g. aborted right after the claim)
-  if (run.status !== "running") return { ok: false, refused: `the run is ${run.status}, not running under this claim` };
-  const [wf] = await d.select(WF_CORE_COLS).from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, a.workflowId)).limit(1);
-  const def = wf?.definitionJson as WorkflowDefinition | undefined;
-  if (!def || hashWorkflowDefinition(def) !== a.defHash || claim.defHash !== a.defHash) return { ok: false, refused: "the workflow definition is not the assigned snapshot" };
-  const ownerId = run.startedBy;
-  const [owner] = typeof ownerId === "number" && ownerId > 0 ? await d.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, ownerId)).limit(1) : [];
-  if (!owner || owner.isActive === false || typeof owner.role !== "string" || !owner.role) return { ok: false, refused: "the run has no active owner on this edge" };
-  const rc = await buildRunContext(run, def, { id: owner.id, role: owner.role, name: "edge" });
-  const { readEdgeRunGuard } = await import("../../edge/edgeRunGuard");
-  rc.edgeGuard = () => readEdgeRunGuard(runId, { claimSeq: claim.claimSeq, claimTokenHash: claim.claimTokenHash });
+  const owner = pkg.owner;
+  if (!owner || !(Number.isInteger(owner.id) && owner.id > 0) || typeof owner.role !== "string" || !owner.role) return { ok: false, refused: "the run has no active owner" };
+  const context = { ...((pkg.context as Record<string, unknown>) ?? {}) };
+  const p = pkg.prior;
+  const rc: RunContext = {
+    runId: pkg.runId,
+    def,
+    params: (pkg.params as Record<string, unknown>) ?? {},
+    context,
+    user: { id: owner.id, role: owner.role, name: "edge" },
+    store,
+    machineById: new Map(pkg.machines.map((m) => [m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities as never }] as const)),
+    telemetry: new Map<string, unknown>(Object.entries((context.telemetry as Record<string, unknown>) ?? {})),
+    states: new Map<number, string>(Object.entries((context.states as Record<string, string>) ?? {}).map(([k, v]) => [Number(k), v])),
+    completed: new Set(p.completed),
+    runOwner: owner.id,
+    startedViaApi: pkg.startedViaApi === true,
+    aborting: false,
+    controller: new AbortController(),
+    dispatched: new Set(),
+    startOrder: [],
+    settled: new Set(),
+    prior: { settled: new Set(p.settled), startOrder: [...p.startOrder], branches: new Map(p.branches.map((b) => [b.stepId, b.branch] as const)), attempted: new Set(p.attempted), unknown: p.unknown },
+    attempted: new Set(),
+  };
   const status = await driveRunFromResume(rc);
-  return { ok: status !== "failed" && status !== "aborted", status };
+  if (rc.edgeDetached) return { ok: false, status, detached: true, refused: "the claim on this run is no longer this walker's — it let go of the run (nothing more written)" };
+  const end = store.segmentEnd?.() ?? null;
+  return { ok: status !== "failed" && status !== "aborted", status, ...(end ?? {}) };
 }
 
 /**
- * EDGE: central aborted `runId` after its last segment on this node ended (no walker left here) and its own sweep could not
- * confirm some STOP. Re-sends the run's STOPs that are not confirmed through THIS process's dispatchers — the engine's abort
- * re-send (a confirmed STOP is never sent again; refused past ABORT_RESEND_WINDOW_MS). Only for a run the database shows
- * 'aborted': this never aborts (or touches) a run that is not.
+ * doc 81 Đợt 10 task C — EDGE: central aborted a run after its last segment on this node ended (no walker left here) and could
+ * not confirm some of its STOPs: the pull hands a SIGNED sweep picture (verified by the agent — edgeTrust.verifyEdgeSweepPicture).
+ * Re-sends the picture's VERIFIED STOPs not confirmed yet through THIS process's dispatchers — the engine's abort sweep over
+ * the stored picture (a confirmed STOP is never sent again; only STOPs, never motion). No database. Refused when the picture is
+ * older than ABORT_RESEND_WINDOW_MS (an old STOP must never reach a machine restarted since — R-6-d; central only issues
+ * pictures of runs aborted within that window).
  */
-export async function resendStopsOfAbortedRun(runId: number, user: FoeUser): Promise<StartRunResult> {
-  let run: OrchestrationRun | undefined;
-  try {
-    [run] = await withDeadline(
-      (async () => (await db()).select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1))(),
-      STOP_DB_STEP_DEADLINE_MS,
-      `FOE edge resend run ${runId} read`,
-    );
-  } catch {
-    return { ok: false, enabled: foeEnabled(), runId, message: "DB unavailable." };
+export async function resendStopsOfAbortedRun(picture: EdgeSweepPicture, user: FoeUser, store: RunStore): Promise<StartRunResult> {
+  const runId = picture.runId;
+  if (!abortResendAllowed(picture.issuedAt)) {
+    store.auditAbort(user, runId, "abortStopResend", { resend: true, outcome: "refusedTooOld", abortedAt: null, pictureIssuedAt: picture.issuedAt, windowMs: ABORT_RESEND_WINDOW_MS });
+    return {
+      ok: false,
+      enabled: foeEnabled(),
+      runId,
+      status: "aborted",
+      reason: FOE_RESEND_TOO_OLD,
+      resend: true,
+      message: `The STOP picture of run ${runId} is older than ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes — its STOP steps are not sent again. To stop equipment now, use the machine's direct STOP / E-STOP.`,
+    };
   }
-  if (!run || run.status !== "aborted") return { ok: false, enabled: foeEnabled(), runId, status: run?.status, message: `Run ${runId} is not aborted — nothing re-sent.` };
-  return resendAbortStops(runId, run, user, null, true);
+  store.auditAbort(user, runId, "abortStopResend", { resend: true, outcome: "started", pictureIssuedAt: picture.issuedAt });
+  const abortStops = await abortStopSweep(runId, undefined, null, user, null, { resend: true, store });
+  return { ok: true, enabled: foeEnabled(), runId, status: "aborted", resend: true, message: `Run ${runId} was aborted — its STOP steps not yet confirmed were sent again from this edge.`, abortStops };
 }
 
 /**
