@@ -9,6 +9,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import ts from "typescript";
 
@@ -39,6 +40,28 @@ describe("doc 81 Đợt 10 E — AVI_PROCESS_ROLE=edge is set by the edge entryp
     expect(main).toContain("../services/edge/edgeGatewayRuntime");
     expect(importsOf("server/edge/edgeRole.ts")).toEqual([]);
   });
+
+  it("★ fix review 2 (M-9): in the BUILT bundle (the build:server esbuild flags, into a temp dir — never dist/) the role is set before any internal module initialises", async () => {
+    const { build } = await import("esbuild");
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), "edge-bundle-"));
+    try {
+      await build({ entryPoints: [path.join(ROOT, "server/edge/edgeGatewayMain.ts")], platform: "node", packages: "external", bundle: true, format: "esm", outdir: out, logLevel: "silent" });
+      const js = fs.readFileSync(path.join(out, "edgeGatewayMain.js"), "utf8");
+      const role = js.indexOf('process.env.AVI_PROCESS_ROLE = "edge"');
+      expect(role).toBeGreaterThan(0); // instrument check: the assignment is in the bundle
+      // the entry's top-level code: everything after the last lazy module wrapper; the role comes first in it
+      const calls = [...js.matchAll(/^(?:await )?(init_[A-Za-z0-9_]+)\(\);$/gm)].map((m) => ({ name: m[1], at: m.index ?? 0 }));
+      const firstInit = calls.length > 0 ? Math.min(...calls.map((c) => c.at)) : Number.MAX_SAFE_INTEGER;
+      expect(calls.map((c) => c.name)).toEqual(expect.arrayContaining(["init_logger", "init_edgeGatewayRuntime"]));
+      expect(role).toBeLessThan(firstInit); // no internal module (connection, logger, runtime …) initialises before the role
+      // only EXTERNAL packages may be hoisted ahead of it (they construct no DB client at import)
+      const before = js.slice(0, role);
+      const imports = [...before.matchAll(/^import\s.*?from\s+"([^"]+)";|^import\s+"([^"]+)";/gm)].map((m) => m[1] ?? m[2]);
+      expect(imports.every((m) => !m.startsWith(".") && !m.startsWith("/"))).toBe(true);
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   it("★ after edgeRole, every DB accessor refuses — even with a DATABASE_URL and a role of 'central' in the environment", async () => {
     const before = await import("../../db/edgeDbTrap");

@@ -109,7 +109,7 @@ function recordingIo(): { io: EdgeJournalIo; events: string[]; holdSync: () => v
 }
 
 describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
-  it("★ a fresh journal opens a 128-bit epoch; the epoch and every stream's seq survive a restart (no seq reuse)", async () => {
+  it("★ a fresh journal opens a 128-bit epoch; EVERY restart opens a new one (fix review 2) — the old epoch's records stay, no seq is reused", async () => {
     const dir = await tmp();
     const j1 = await EdgeJournal.open({ dir });
     expect(j1.epoch).toMatch(EDGE_EPOCH_RE);
@@ -125,11 +125,11 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     await j1.close();
 
     const j2 = await EdgeJournal.open({ dir });
-    expect(j2.opened.kind).toBe("restored");
-    expect(j2.epoch).toBe(j1.epoch);
-    expect(j2.pending("run:9:2").map((r) => r.seq)).toEqual([1, 2]);
-    expect((await j2.appendRun(9, 2, step("m3"))).seq).toBe(3);
-    expect((await j2.appendEvent(stopEvent(4))).seq).toBe(2);
+    expect(j2.opened).toMatchObject({ kind: "restored", unclean: false });
+    expect(j2.epoch).not.toBe(j1.epoch); // a clean restart too: an epoch is never written by two processes
+    expect(j2.pending("run:9:2", 99, j1.epoch).map((r) => r.seq)).toEqual([1, 2]); // shipped under ITS epoch
+    expect((await j2.appendRun(9, 2, step("m3"))).seq).toBe(1);
+    expect(j2.pending("events")).toEqual([]); // a clean restart reports no anomaly
     await j2.close();
   });
 
@@ -157,9 +157,8 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     await j2.close();
     const j3 = await EdgeJournal.open({ dir });
     expect(j3.opened).toMatchObject({ kind: "restored", truncatedTail: false, unclean: false });
-    expect(j3.epoch).toBe(j2.epoch); // a CLEAN close keeps the epoch
-    expect(j3.pending("run:9:2").map((r) => r.seq)).toEqual([1]);
-    expect(j3.pendingStreams().map((r) => [r.epoch === j1.epoch, r.stream])).toEqual([[true, "run:9:2"], [false, "events"], [false, "run:9:2"]]);
+    expect(j3.pending("run:9:2", 99, j2.epoch).map((r) => r.seq)).toEqual([1]);
+    expect(j3.pendingStreams().map((r) => [r.epoch === j1.epoch ? "e1" : r.epoch === j2.epoch ? "e2" : "e3", r.stream]).sort()).toEqual([["e1", "run:9:2"], ["e2", "events"], ["e2", "run:9:2"]]);
     await j3.close();
   });
 
@@ -258,10 +257,10 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     expect(j2.epoch).not.toBe(j1.epoch);
     expect(j2.motionLock(12)).toEqual({ kind: "unknown" });
     await j2.close();
-    // the reset is itself durable: the next open restores the NEW epoch
+    // the reset is itself durable: the next open RESTORES (no second reset), the reset epoch's records still pending under it
     const j3 = await EdgeJournal.open({ dir });
     expect(j3.opened.kind).toBe("restored");
-    expect(j3.epoch).toBe(j2.epoch);
+    expect(j3.pending("events", 9, j2.epoch).map((e) => (e.record as { code?: string }).code)).toEqual(["EDGE_JOURNAL_RESET"]);
     await j3.close();
   });
 
@@ -418,6 +417,24 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
     expect(j.admitNonStop()).toBe(false);
   });
 
+  it("★ fix review 2: a reopen whose fsync of the previous segment FAILS ships none of the replayed records (they are not durable)", async () => {
+    const dir = await tmp();
+    const j1 = await EdgeJournal.open({ dir, groupCommitMs: 1 });
+    await j1.appendRun(9, 2, step("m1"));
+    // crash; reopen on a disk whose fsync fails
+    const io: EdgeJournalIo = {
+      ...nodeEdgeJournalIo,
+      async openAppend(p) {
+        const f = await nodeEdgeJournalIo.openAppend(p);
+        return { write: (d) => f.write(d), sync: async () => Promise.reject(new Error("EIO")), close: () => f.close() };
+      },
+    };
+    const j2 = await EdgeJournal.open({ dir, io });
+    expect(j2.pending("run:9:2", 9, j1.epoch)).toEqual([]);
+    expect(j2.undurableCount("run:9:2", j1.epoch)).toBe(1);
+    expect(j2.stats().healthy).toBe(false);
+  });
+
   it("an IO failure leaves the journal unable to admit non-STOP work (fail-closed); STOP appends still return", async () => {
     const dir = await tmp();
     const io: EdgeJournalIo = {
@@ -443,7 +460,8 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     const dir = await tmp();
     const j = await EdgeJournal.open({ dir, maxBytes: 4_000, segmentMaxBytes: 600, groupCommitMs: 1 });
     let i = 0;
-    while (!j.isFull()) await j.appendRun(9, 2, step(`s${i++}`));
+    for (let n = 0; n < 5_000 && !j.isFull(); n++) await j.appendRun(9, 2, step(`s${i++}`));
+    expect(j.isFull()).toBe(true); // bounded loop: a compaction that freed un-acked bytes would never get here
     expect(j.admitNonStop()).toBe(false);
     expect(j.stats().full).toBe(true);
     expect(await j.consumeAuthorization({ jti: JTI(5), runId: 9, claimSeq: 2, stepId: "x", attempt: 1 })).toEqual({ ok: false, reason: "journal_full" });
@@ -472,7 +490,8 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     const writes: number[] = [];
     const io: EdgeJournalIo = { ...r.io, writeFileAtomic: async (f, d) => (writes.push(d.length), nodeEdgeJournalIo.writeFileAtomic(f, d)) };
     const j = await EdgeJournal.open({ dir, io, maxBytes: 2_000, segmentMaxBytes: 64 * 1024, groupCommitMs: 5 });
-    while (!j.isFull()) await j.appendRun(9, 2, step("fill"));
+    for (let n = 0; n < 5_000 && !j.isFull(); n++) await j.appendRun(9, 2, step("fill"));
+    expect(j.isFull()).toBe(true);
     writes.length = 0;
     const t0 = Date.now();
     await Promise.all(Array.from({ length: 10_000 }, (_, k) => j.appendEvent({ kind: "anomaly", code: "BENCH", runId: null, detail: String(k), at: 1 })));
@@ -485,7 +504,7 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     await j.close();
   }, 30_000);
 
-  it("★ compaction drops only fully-acknowledged segments; a clean restart keeps the epoch, neither loses nor resends acked records", async () => {
+  it("★ compaction drops only fully-acknowledged segments; a clean restart neither loses nor resends acked records", async () => {
     const dir = await tmp();
     const j1 = await EdgeJournal.open({ dir, segmentMaxBytes: 300, groupCommitMs: 1 });
     for (let k = 1; k <= 5; k++) await j1.appendRun(9, 2, step(`m${k}`));
@@ -502,14 +521,42 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     await j1.appendRun(9, 2, step("m6"));
     await j1.close();
     const j2 = await EdgeJournal.open({ dir });
-    expect(j2.epoch).toBe(j1.epoch);
     expect(j2.opened.unclean).toBe(false);
-    expect(j2.pending("run:9:2").map((r) => r.seq)).toEqual([4, 5, 6]);
-    expect(j2.pending("events")).toEqual([]);
-    expect((await j2.appendRun(9, 2, step("m7"))).seq).toBe(7);
-    expect((await j2.appendEvent(stopEvent(4))).seq).toBe(2);
-    expect(j2.streamsWithPending().sort()).toEqual(["events", "run:9:2"]);
+    expect(j2.pending("run:9:2", 99, j1.epoch).map((r) => r.seq)).toEqual([4, 5, 6]);
+    expect(j2.pending("events", 99, j1.epoch)).toEqual([]);
+    expect((await j2.appendRun(9, 2, step("m7"))).seq).toBe(1);
+    expect(j2.pendingStreams().map((r) => [r.epoch === j1.epoch, r.stream])).toEqual([[true, "run:9:2"], [false, "run:9:2"]]);
     await j2.close();
+  });
+
+  it("★ fix review 2: a CLOSED segment holding an un-acked STOP event and ledger record survives compact() and a reopen", async () => {
+    const dir = await tmp();
+    const j1 = await EdgeJournal.open({ dir, segmentMaxBytes: 400, groupCommitMs: 1 });
+    await j1.appendEvent(stopEvent(4), { stop: true }); // events seq 1 — never acked
+    await j1.appendRun(9, 2, { kind: "ledger", stepId: "abort:s", attempt: 1, idempotencyKey: "k", jti: null, stop: true, target: { robotId: 4, jobType: "abort" }, status: "done", result: null, at: 3 });
+    const firstSeg = (await segments(dir))[0];
+    for (let k = 0; k < 6; k++) await j1.appendEvent({ kind: "anomaly", code: "LATER", runId: null, detail: "x".repeat(80), at: 1 });
+    expect((await segments(dir)).length).toBeGreaterThan(2);
+    j1.ack("events", 1 + 6); // every event acked — only the run stream's ledger record of seg-1 is not
+    await j1.compact();
+    expect(await segments(dir)).toContain(firstSeg); // the ledger record keeps seg-1
+    await j1.close();
+    const j2 = await EdgeJournal.open({ dir });
+    expect(j2.pending("run:9:2", 9, j1.epoch).map((e) => e.record.kind)).toEqual(["ledger"]);
+    await j2.close();
+    // and with the STOP event itself un-acked
+    const dir2 = await tmp();
+    const k1 = await EdgeJournal.open({ dir: dir2, segmentMaxBytes: 400, groupCommitMs: 1 });
+    await k1.appendEvent(stopEvent(4), { stop: true });
+    const seg1 = (await segments(dir2))[0];
+    for (let k = 0; k < 6; k++) await k1.appendRun(9, 2, step(`m${k}`));
+    k1.ack("run:9:2", 6);
+    await k1.compact();
+    expect(await segments(dir2)).toContain(seg1);
+    await k1.close();
+    const k2 = await EdgeJournal.open({ dir: dir2 });
+    expect(k2.pending("events", 9, k1.epoch).map((e) => e.record.kind)).toEqual(["stop"]);
+    await k2.close();
   });
 
   it("acks never move backwards and never past what was written", async () => {

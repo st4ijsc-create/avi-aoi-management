@@ -154,6 +154,33 @@ export interface EdgeCentralClientOptions {
   log?: (msg: string) => void;
 }
 
+/**
+ * fix review 2 (M-10) — the body is read chunk by chunk and abandoned as soon as it passes the cap: a chunked (no
+ * content-length) answer is never buffered whole first.
+ */
+export async function readCappedText(res: Response, cap: number): Promise<string> {
+  const body = res.body as ReadableStream<Uint8Array> | null;
+  if (!body || typeof body.getReader !== "function") {
+    const t = await res.text();
+    if (Buffer.byteLength(t, "utf8") > cap) throw new Error("answer too large");
+    return t;
+  }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > cap) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error("answer too large");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
+}
+
 /** the largest answer body parsed (a config snapshot of 500 adapters × 5 000 tags fits) */
 export const EDGE_ANSWER_MAX_BYTES = 32 * 1024 * 1024;
 const UNAVAILABLE_CODES = new Set(["edge_disabled", "edge_unavailable", "rate_limited", "unauthorized", "bad_answer"]);
@@ -199,9 +226,7 @@ export class EdgeCentralClient {
       // fix review 1 (M-10) — a size cap besides the time bound: a declared or actual body above the cap is not parsed
       const declared = Number(res.headers?.get?.("content-length") ?? NaN);
       if (Number.isFinite(declared) && declared > EDGE_ANSWER_MAX_BYTES) throw new Error("answer too large");
-      const text = await res.text();
-      if (text.length > EDGE_ANSWER_MAX_BYTES) throw new Error("answer too large");
-      json = JSON.parse(text) as Envelope;
+      json = JSON.parse(await readCappedText(res, EDGE_ANSWER_MAX_BYTES)) as Envelope;
     } catch {
       json = null;
     }

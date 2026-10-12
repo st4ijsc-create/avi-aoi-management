@@ -4,9 +4,9 @@
  * `state.json` snapshot, under EDGE_JOURNAL_DIR (a compose volume).
  *
  * RECORDS. Every line is `{e: epoch, s: stream, q: seq, k: kind, t: at, d: data, h: checksum}`:
- *   • epoch — 128-bit random. A new epoch opens with a new journal, after a RESET, and after an UNCLEAN shutdown (R-10-ag: the
- *     seq high-water of a crashed epoch cannot be known, so its seqs are never written again — the new epoch starts every stream
- *     at 1; central accepts a new epoch only from seq 1). The un-acknowledged DURABLE records of earlier epochs are still shipped
+ *   • epoch — 128-bit random. A new epoch opens with EVERY open (fix review 2: clean or not — a crashed epoch's seq
+ *     high-water cannot be known, and on Windows a rolled segment / renamed snapshot is not directory-durable, so an epoch is
+ *     never written by two processes); central accepts a new epoch only from seq 1. The un-acknowledged DURABLE records of earlier epochs are still shipped
  *     under THEIR epoch (central keeps one cursor per (node, stream, epoch));
  *   • streams — `run:<runId>:<claimSeq>` (→ POST runs/:id/report), `events` (→ POST locks/events), `robot_state` (→ POST
  *     robots/state), and the LOCAL stream `auth` (`auth.consumed`; never reported). OT telemetry is NOT here (storeForward WAL);
@@ -345,15 +345,20 @@ export class EdgeJournal {
       await this.reset(await this.io.readdir(this.dir), `corrupt journal: ${err.message}`, snap.epoch, snap);
       return;
     }
+    // fix review 2 (N-5 / N-6) — EVERY start opens a NEW epoch, clean or not. The previous epoch's seq high-water is never
+    // written again, so no (epoch, stream, seq) can be reused even when the directory entries of a rolled segment / the
+    // snapshot rename did not survive a power cut — Windows has no directory fsync (MoveFileEx is used without write-through,
+    // storeForward.writeFileAtomic): directory durability is NOT guaranteed there and this rule does not depend on it.
+    // The previous epochs' durable records stay and are shipped under THEIR epoch.
     const unclean = snap.open === true;
+    const prev = this.epochValue;
+    this.epochValue = newEdgeEpoch();
+    // what the previous process wrote is made durable before anything of it is shipped; if that fsync fails, the replayed
+    // records are NOT durable (never shipped) and the journal is unhealthy (fix review 2, re-review N-4)
+    if (!(await this.fsyncActive())) for (const st of this.streams.values()) for (const p of st.pending) p.durable = false;
+    await this.writeSnapshot(true);
+    this.openedValue = { kind: "restored", truncatedTail, unclean, reset: null };
     if (unclean) {
-      // R-10-ag — the crashed epoch's seq high-water is unknowable (records of the last window may be lost): never write it
-      // again. Its durable records stay and are shipped under it; new records go to a NEW epoch from seq 1.
-      const prev = this.epochValue;
-      this.epochValue = newEdgeEpoch();
-      await this.fsyncActive(); // what the crashed process wrote is made durable before anything of it is shipped
-      await this.writeSnapshot(true);
-      this.openedValue = { kind: "restored", truncatedTail, unclean: true, reset: null };
       await this.appendEvent({
         kind: "anomaly",
         code: EDGE_JOURNAL_UNCLEAN_CODE,
@@ -361,17 +366,16 @@ export class EdgeJournal {
         detail: `epoch ${prev} was not closed cleanly: records appended in its last group-commit window may be lost (never shipped — only durable records are); new epoch ${this.epochValue}`,
         at: this.now(),
       });
-      return;
     }
-    await this.writeSnapshot(true);
-    this.openedValue = { kind: "restored", truncatedTail, unclean: false, reset: null };
   }
 
-  private async fsyncActive(): Promise<void> {
+  private async fsyncActive(): Promise<boolean> {
     try {
       await this.fh?.sync();
+      return true;
     } catch (err) {
       this.fail(err);
+      return false;
     }
   }
 

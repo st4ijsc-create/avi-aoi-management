@@ -203,6 +203,23 @@ describe("doc 81 Đợt 10 E — the stream shipper", () => {
   });
 });
 
+describe("doc 81 Đợt 10 E fix review 2 (M-10) — answer size cap on a chunked body", () => {
+  it("★ a chunked body is abandoned as soon as it passes the cap (never buffered whole first)", async () => {
+    const { readCappedText } = await import("./edgeCentralClient");
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(ctrl) {
+        pulled++;
+        if (pulled > 1_000) return ctrl.close();
+        ctrl.enqueue(new Uint8Array(1_024).fill(65));
+      },
+    });
+    await expect(readCappedText(new Response(body), 10 * 1_024)).rejects.toThrow(/too large/);
+    expect(pulled).toBeLessThan(20); // stopped right after the cap, not after 1 000 chunks
+    expect(await readCappedText(new Response("ok"), 10)).toBe("ok");
+  });
+});
+
 describe("doc 81 Đợt 10 E — telemetry insert function", () => {
   const row = (over: Record<string, unknown> = {}) => ({ ts: new Date(1_790_000_000_000), metric: "temp", numValue: 2.5, textValue: null, boolValue: null, quality: "good", unit: "C", meta: { adapterId: 21, tagKey: "temp" }, ...over }) as never;
 
