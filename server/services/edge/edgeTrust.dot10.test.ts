@@ -133,7 +133,7 @@ describe("config / run package / sweep picture / command — bound to this node"
     expect(s.acceptKeysetUpdate(r.config.keyset)).toEqual({ ok: false, reason: "unknown_kid" });
     expect(s.version).toBe(1);
     // and an object signed by that attacker key stays unverifiable
-    expect(verifyEdgeCommand(s, signEdgeObject("cmd", { kind: "stop", requestId: 1, nodeId: NODE, issuedAt: T0, expiresAt: T0 + 1, target: { robotId: 1 } }, att))).toEqual({ ok: false, reason: "unknown_kid" });
+    expect(verifyEdgeCommand(s, signEdgeObject("cmd", { kind: "stop", requestId: 1, nodeId: NODE, ownerEpoch: 1, issuedAt: T0, expiresAt: T0 + 1, target: { robotId: 1 } }, att))).toEqual({ ok: false, reason: "unknown_kid" });
   });
 
   it("★ a later keyset may not substitute another key under a trusted kid (kid = fingerprint)", () => {
@@ -160,7 +160,7 @@ describe("config / run package / sweep picture / command — bound to this node"
 
   it("★ command: node bound; expiry / not-yet-valid come from the store's clock (the caller sends a STOP anyway)", () => {
     clock = T0;
-    const cmd = (over: Record<string, unknown> = {}) => ({ kind: "clear", requestId: 5, nodeId: NODE, issuedAt: T0, expiresAt: T0 + 30_000, robotId: 12, expectedGeneration: 4, clearedBy: 2, reason: "ok", ...over });
+    const cmd = (over: Record<string, unknown> = {}) => ({ kind: "clear", requestId: 5, nodeId: NODE, ownerEpoch: 2, issuedAt: T0, expiresAt: T0 + 30_000, robotId: 12, expectedGeneration: 4, clearedBy: 2, reason: "ok", ...over });
     expect(verifyEdgeCommand(store(), signEdgeObject("cmd", cmd(), key))).toEqual({ ok: true, command: cmd(), expired: false, notYetValid: false });
     expect(verifyEdgeCommand(store(), signEdgeObject("cmd", cmd({ nodeId: 8 }), key))).toEqual({ ok: false, reason: "node_mismatch" });
     clock = T0 + 40_000;

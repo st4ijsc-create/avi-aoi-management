@@ -9,7 +9,8 @@
  *       unowned robot ⇒ 23514, pre-approved ⇒ 23514; approval by the maker ⇒ 23514; by another admin ⇒ ok; approver swap ⇒
  *       23514; an edit (digest) keeping the approval ⇒ 23514; an edit clearing it ⇒ ok; approvedBy without approvedAt ⇒
  *       23514; the key ⇒ 42501; DELETE ⇒ 42501; a safety_event_trust row with origin 'edge_robot_telemetry' ⇒ ok, 'edge' ⇒
- *       23514; 0 probe rows left;
+ *       23514; fix scan 2 (R-10-b): a request / approval at a stale owner epoch ⇒ 23514 — the robot changing owner (even away and
+ *       back to the same node) leaves the row unapprovable until re-requested at the current epoch; 0 probe rows left;
  *   (c) `__applied_migrations` has exactly 1 row for this file.
  *
  *   node scripts/apply-migration-0375.mjs --test-only | --dev-only | --both   (NO flag ⇒ refused — R-3-g)
@@ -17,7 +18,7 @@
 import { columnsOf, expectExact, maLoi, rolledBack, runMigration, tablePriv, updatableCols } from "./apply-migration-dot10-common.mjs";
 
 const T = "edge_robot_trust_approvals";
-const COLS = ["edgeNodeId", "robotId", "digest", "editedBy", "editedAt", "approvedBy", "approvedAt"];
+const COLS = ["edgeNodeId", "robotId", "digest", "ownerEpoch", "editedBy", "editedAt", "approvedBy", "approvedAt"];
 const H = (c) => c.repeat(64);
 
 await runMigration({
@@ -27,7 +28,7 @@ await runMigration({
     const have = await columnsOf(appSql, T);
     for (const c of COLS) if (!have.includes(c)) throw new Error(`(a) ${T}.${c} missing`);
     const cks = (await appSql`SELECT conname FROM pg_constraint WHERE conrelid = ${"public." + T}::regclass AND contype = 'c'`).map((r) => r.conname).sort();
-    if (JSON.stringify(cks) !== JSON.stringify(["ck_edge_robot_trust_actors", "ck_edge_robot_trust_approved", "ck_edge_robot_trust_digest", "ck_edge_robot_trust_sod"])) throw new Error(`(a) CHECKs: ${JSON.stringify(cks)}`);
+    if (JSON.stringify(cks) !== JSON.stringify(["ck_edge_robot_trust_actors", "ck_edge_robot_trust_approved", "ck_edge_robot_trust_digest", "ck_edge_robot_trust_epoch", "ck_edge_robot_trust_sod"])) throw new Error(`(a) CHECKs: ${JSON.stringify(cks)}`);
     const trg = await appSql`SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D' AND tgname = 'trg_edge_robot_trust_guard'`;
     if (trg.length !== 1) throw new Error("(a) trigger missing");
     const [ct] = await appSql`SELECT obj_description(${"public." + T}::regclass, 'pg_class') AS c`;
@@ -38,7 +39,7 @@ await runMigration({
     const p = await tablePriv(appSql, T);
     if (!p.sel || !p.ins || p.upd || p.del || p.trunc || p.refs || p.trig) throw new Error(`(b) table grants not exact: ${JSON.stringify(p)}`);
     const upd = await updatableCols(appSql, T, COLS);
-    if (JSON.stringify(upd) !== JSON.stringify(["approvedAt", "approvedBy", "digest", "editedAt", "editedBy"])) throw new Error(`(b) column UPDATE: ${JSON.stringify(upd)}`);
+    if (JSON.stringify(upd) !== JSON.stringify(["approvedAt", "approvedBy", "digest", "editedAt", "editedBy", "ownerEpoch"])) throw new Error(`(b) column UPDATE: ${JSON.stringify(upd)}`);
     const CODE = `__probe_0375_${Date.now()}`;
     const kq = await rolledBack(appSql, async (tx) => {
       const [node] = await tx`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE}, ${CODE}, 'offline') RETURNING id`;
@@ -46,9 +47,9 @@ await runMigration({
       const [robot] = await tx`INSERT INTO robots (code, name, vendor, endpoint, "edgeNodeId") VALUES (${CODE + "-r"}, ${CODE}, 'sim', 'sim://probe', ${node.id}) RETURNING id`;
       const key = (sp) => sp`"edgeNodeId" = ${node.id} AND "robotId" = ${robot.id}`;
       const r = {};
-      r.request = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(T)} ("edgeNodeId", "robotId", digest, "editedBy") VALUES (${node.id}, ${robot.id}, ${H("a")}, 10)`);
-      r.unowned = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(T)} ("edgeNodeId", "robotId", digest, "editedBy") VALUES (${node2.id}, ${robot.id}, ${H("a")}, 10)`);
-      r.preApproved = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(T)} ("edgeNodeId", "robotId", digest, "editedBy", "approvedBy", "approvedAt") VALUES (${node2.id}, ${robot.id}, ${H("a")}, 10, 11, now())`);
+      r.request = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(T)} ("edgeNodeId", "robotId", digest, "ownerEpoch", "editedBy") VALUES (${node.id}, ${robot.id}, ${H("a")}, 1, 10)`);
+      r.unowned = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(T)} ("edgeNodeId", "robotId", digest, "ownerEpoch", "editedBy") VALUES (${node2.id}, ${robot.id}, ${H("a")}, 1, 10)`);
+      r.preApproved = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(T)} ("edgeNodeId", "robotId", digest, "ownerEpoch", "editedBy", "approvedBy", "approvedAt") VALUES (${node2.id}, ${robot.id}, ${H("a")}, 1, 10, 11, now())`);
       r.selfApprove = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET "approvedBy" = 10, "approvedAt" = now() WHERE ${key(sp)}`);
       r.halfApprove = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET "approvedBy" = 11 WHERE ${key(sp)}`);
       r.approve = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET "approvedBy" = 11, "approvedAt" = now() WHERE ${key(sp)}`);
@@ -58,6 +59,16 @@ await runMigration({
       r.badDigest = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET digest = 'nothex' WHERE ${key(sp)}`);
       r.keyChange = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET "robotId" = ${robot.id} + 1 WHERE ${key(sp)}`);
       r.del = await maLoi(tx, (sp) => sp`DELETE FROM ${sp(T)} WHERE ${key(sp)}`);
+      // R-10-b — the robot goes away and back to the SAME node (epoch 1 → 2 → 3): the row (epoch 1) cannot be approved
+      const [r2] = await tx`INSERT INTO robots (code, name, vendor, endpoint, "edgeNodeId") VALUES (${CODE + "-r2"}, ${CODE}, 'sim', 'sim://probe', ${node.id}) RETURNING id`;
+      r.staleInsert = await maLoi(tx, (sp) => sp`INSERT INTO ${sp(T)} ("edgeNodeId", "robotId", digest, "ownerEpoch", "editedBy") VALUES (${node.id}, ${r2.id}, ${H("a")}, 2, 10)`);
+      await tx`INSERT INTO ${tx(T)} ("edgeNodeId", "robotId", digest, "ownerEpoch", "editedBy") VALUES (${node.id}, ${r2.id}, ${H("a")}, 1, 10)`;
+      await tx`UPDATE robots SET "edgeNodeId" = NULL WHERE id = ${r2.id}`;
+      await tx`UPDATE robots SET "edgeNodeId" = ${node.id} WHERE id = ${r2.id}`;
+      r.staleApprove = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET "approvedBy" = 11, "approvedAt" = now() WHERE "robotId" = ${r2.id}`);
+      r.reRequest = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET "ownerEpoch" = 3, "editedAt" = now() WHERE "robotId" = ${r2.id}`);
+      r.approveCurrent = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET "approvedBy" = 11, "approvedAt" = now() WHERE "robotId" = ${r2.id}`);
+      r.epochMoveKeepsApproval = await maLoi(tx, (sp) => sp`UPDATE ${sp(T)} SET "ownerEpoch" = 3 + 0 WHERE "robotId" = ${r2.id}`);
       const [ev] = await tx`INSERT INTO safety_events ("eventType", "detectedBy", "handledBy", notes) VALUES ('estop', 'robot', 'advisory', ${CODE}) RETURNING id`;
       r.originEdge = await maLoi(tx, (sp) => sp`INSERT INTO safety_event_trust ("eventId", origin, "eventType", digest) VALUES (${ev.id}, 'edge_robot_telemetry', 'estop', ${H("c")})`);
       const [ev2] = await tx`INSERT INTO safety_events ("eventType", "detectedBy", "handledBy", notes) VALUES ('estop', 'robot', 'advisory', ${CODE}) RETURNING id`;
@@ -66,7 +77,7 @@ await runMigration({
     });
     expectExact("(b) avi_app behaviour", kq, {
       request: null, unowned: "23514", preApproved: "23514", selfApprove: "23514", halfApprove: "23514", approve: null, swap: "23514", editKeep: "23514",
-      editClear: null, badDigest: "23514", keyChange: "42501", del: "42501", originEdge: null, originBogus: "23514",
+      editClear: null, badDigest: "23514", keyChange: "42501", del: "42501", staleInsert: "23514", staleApprove: "23514", reRequest: null, approveCurrent: null, epochMoveKeepsApproval: null, originEdge: null, originBogus: "23514",
     });
     const [left] = await appSql`SELECT count(*)::int AS n FROM edge_nodes WHERE code LIKE ${CODE + "%"}`;
     const [leftE] = await appSql`SELECT count(*)::int AS n FROM safety_events WHERE notes = ${CODE}`;

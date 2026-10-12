@@ -13,9 +13,10 @@
 --     • changing the digest or the maker CLEARS the approval in the same statement — an edit with approvedBy still set is
 --       refused (trigger), so an approval can never outlive what it approved;
 --     • an approval is only ever written onto an unapproved row (no silent approver swap); revoking = clearing it;
---     • the robot must be OWNED by that node when the row is written (trigger) — an ownership change makes the row stale:
---       central treats a row whose node ≠ robots.edgeNodeId as not approved.
---   avi_app: SELECT, INSERT, UPDATE ("digest", "editedBy", "editedAt", "approvedBy", "approvedAt"); no DELETE / TRUNCATE (rows
+--     • fix scan 2 (R-10-b) — bound to the robot's OWNER EPOCH (0374): written / approved only while robots.(edgeNodeId,
+--       ownerEpoch) = (row node, row ownerEpoch); an ownership change (even away and back to the same node) makes the row
+--       stale — central treats it as NOT approved; re-requesting moves it to the current epoch and clears any approval.
+--   avi_app: SELECT, INSERT, UPDATE ("digest", "ownerEpoch", "editedBy", "editedAt", "approvedBy", "approvedAt"); no DELETE / TRUNCATE (rows
 --   go with their node / robot: ON DELETE CASCADE).
 --
 -- ⚠ DDL runs as owner `aoi`: `node scripts/apply-migration-0375.mjs --test-only` (dev: `--dev-only`, the owner decides; no
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS "edge_robot_trust_approvals" (
   "edgeNodeId" integer NOT NULL REFERENCES "edge_nodes"("id") ON DELETE CASCADE,
   "robotId" integer NOT NULL REFERENCES "robots"("id") ON DELETE CASCADE,
   "digest" varchar(64) NOT NULL,
+  "ownerEpoch" bigint NOT NULL,
   "editedBy" integer NOT NULL,
   "editedAt" timestamptz NOT NULL DEFAULT now(),
   "approvedBy" integer,
@@ -43,6 +45,11 @@ CREATE TABLE IF NOT EXISTS "edge_robot_trust_approvals" (
   CONSTRAINT "ck_edge_robot_trust_sod" CHECK ("approvedBy" IS NULL OR "approvedBy" <> "editedBy"),
   CONSTRAINT "ck_edge_robot_trust_approved" CHECK (("approvedBy" IS NULL) = ("approvedAt" IS NULL))
 );
+-- fix scan 2 (R-10-b) — re-apply on a DB where the table predates the epoch (0375 was applied to _test only, empty table)
+ALTER TABLE "edge_robot_trust_approvals" ADD COLUMN IF NOT EXISTS "ownerEpoch" bigint NOT NULL DEFAULT 0;
+ALTER TABLE "edge_robot_trust_approvals" ALTER COLUMN "ownerEpoch" DROP DEFAULT;
+ALTER TABLE "edge_robot_trust_approvals" DROP CONSTRAINT IF EXISTS "ck_edge_robot_trust_epoch";
+ALTER TABLE "edge_robot_trust_approvals" ADD CONSTRAINT "ck_edge_robot_trust_epoch" CHECK ("ownerEpoch" >= 1);
 COMMENT ON TABLE "edge_robot_trust_approvals" IS
   'doc 81 Dot 10 A (0375, D6): maker-checker approval that makes edge-ingested robot e-stops of (node, robot) TRUSTED. approvedBy <> editedBy; an edit clears the approval.';
 
@@ -56,7 +63,8 @@ BEGIN
     IF NEW."edgeNodeId" IS DISTINCT FROM OLD."edgeNodeId" OR NEW."robotId" IS DISTINCT FROM OLD."robotId" THEN
       RAISE EXCEPTION 'edge_robot_trust_approvals: the key is write-once' USING ERRCODE = 'check_violation';
     END IF;
-    IF (NEW."digest" IS DISTINCT FROM OLD."digest" OR NEW."editedBy" IS DISTINCT FROM OLD."editedBy") AND NEW."approvedBy" IS NOT NULL THEN
+    IF (NEW."digest" IS DISTINCT FROM OLD."digest" OR NEW."editedBy" IS DISTINCT FROM OLD."editedBy" OR NEW."ownerEpoch" IS DISTINCT FROM OLD."ownerEpoch")
+       AND NEW."approvedBy" IS NOT NULL THEN
       RAISE EXCEPTION 'edge_robot_trust_approvals: an edit clears the approval (node %, robot %)', OLD."edgeNodeId", OLD."robotId" USING ERRCODE = 'check_violation';
     END IF;
     IF OLD."approvedBy" IS NOT NULL AND NEW."approvedBy" IS NOT NULL
@@ -65,9 +73,10 @@ BEGIN
         USING ERRCODE = 'check_violation';
     END IF;
   END IF;
-  IF (TG_OP = 'INSERT' OR NEW."approvedBy" IS NOT NULL) AND NOT EXISTS (
-       SELECT 1 FROM "robots" r WHERE r."id" = NEW."robotId" AND r."edgeNodeId" = NEW."edgeNodeId") THEN
-    RAISE EXCEPTION 'edge_robot_trust_approvals: robot % is not owned by node %', NEW."robotId", NEW."edgeNodeId" USING ERRCODE = 'check_violation';
+  IF (TG_OP = 'INSERT' OR NEW."approvedBy" IS NOT NULL OR NEW."ownerEpoch" IS DISTINCT FROM OLD."ownerEpoch") AND NOT EXISTS (
+       SELECT 1 FROM "robots" r WHERE r."id" = NEW."robotId" AND r."edgeNodeId" = NEW."edgeNodeId" AND r."ownerEpoch" = NEW."ownerEpoch") THEN
+    RAISE EXCEPTION 'edge_robot_trust_approvals: robot % is not owned by node % at owner epoch %', NEW."robotId", NEW."edgeNodeId", NEW."ownerEpoch"
+      USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END $$;
@@ -80,6 +89,6 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'avi_app') THEN
     REVOKE ALL ON "edge_robot_trust_approvals" FROM avi_app;
     GRANT SELECT, INSERT ON "edge_robot_trust_approvals" TO avi_app;
-    GRANT UPDATE ("digest", "editedBy", "editedAt", "approvedBy", "approvedAt") ON "edge_robot_trust_approvals" TO avi_app;
+    GRANT UPDATE ("digest", "ownerEpoch", "editedBy", "editedAt", "approvedBy", "approvedAt") ON "edge_robot_trust_approvals" TO avi_app;
   END IF;
 END $$;

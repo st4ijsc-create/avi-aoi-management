@@ -99,7 +99,7 @@ const REQUESTS: Record<EdgeNodeRoute, Record<string, unknown>> = {
     epoch: EPOCH,
     stream: "events",
     records: [
-      { kind: "lock", seq: 10, robotId: 12, event: "locked", generation: 4, reasonCode: "outcomeUnknown", since: T, clearedBy: null, requestId: null },
+      { kind: "lock", seq: 10, robotId: 12, event: "locked", generation: 4, ownerEpoch: 3, reasonCode: "outcomeUnknown", since: T, clearedBy: null, requestId: null },
       { kind: "stop", seq: 11, target: { robotId: 12 }, source: "command", requestId: 5, outcome: "sent", at: T, detail: null },
       { kind: "refusal", seq: 12, runId: 9, stepId: "m2", reason: "auth_ttl", at: T },
       { kind: "anomaly", seq: 13, code: "bad_signature", runId: null, detail: "cmd", at: T },
@@ -146,16 +146,16 @@ const SIGNED_PAYLOADS: Record<string, { schema: { safeParse: (v: unknown) => { s
       safetyConfigIds: [1], reqNonce: NONCE, iat: T, ttlMs: 10_000,
     },
   },
-  cmd: { schema: edgeCommandSchema, sample: { kind: "clear", requestId: 5, nodeId: 7, issuedAt: T, expiresAt: T + 30_000, robotId: 12, expectedGeneration: 4, clearedBy: 2, reason: "inspected" } },
+  cmd: { schema: edgeCommandSchema, sample: { kind: "clear", requestId: 5, nodeId: 7, ownerEpoch: 3, issuedAt: T, expiresAt: T + 30_000, robotId: 12, expectedGeneration: 4, clearedBy: 2, reason: "inspected" } },
   config: {
     schema: edgeConfigSnapshotSchema,
     sample: {
       kind: "config_snapshot", protocolVersion: 2, configVersion: 3, issuedAt: T,
       node: { id: 7, code: "edge-a", credentialId: 31, factoryCode: "F1", lineCodes: ["L1"] },
-      adapters: [{ id: 3, code: "plc1", machineId: 7, protocol: "s7", endpoint: "10.0.0.5:102", connectionOptions: { rack: 0 }, pollIntervalMs: 1000, isEnabled: true, connectionFingerprint: H64, updatedAt: T,
+      adapters: [{ id: 3, code: "plc1", machineId: 7, protocol: "s7", endpoint: "10.0.0.5:102", connectionOptions: { rack: 0 }, pollIntervalMs: 1000, isEnabled: true, connectionFingerprint: H64, ownerEpoch: 2, updatedAt: T,
         tags: [{ id: 1, tagKey: "run", address: "DB1.DBX0.0", dataType: "bool", scale: null, offset: null, writable: true, isEnabled: true, stopValue: false, updatedAt: T }] }],
       robots: [{ id: 12, code: "r1", name: "Robot 1", vendor: "sim", model: null, kind: "arm", endpoint: "sim://", connectionOptions: null, pollIntervalMs: 500, isEnabled: true, commissioned: true, lineId: 1, stationId: null,
-        motionLock: { reasonCode: "ownerChanged", generation: 5, authority: "edge:7", lockedAt: T }, motionLockGenerationFloor: 4, updatedAt: T }],
+        motionLock: { reasonCode: "ownerChanged", generation: 5, authority: "edge:7", ownerEpoch: 3, lockedAt: T }, motionLockGenerationFloor: 4, ownerEpoch: 3, updatedAt: T }],
       machines: [{ id: 7, machineType: "plc", capabilities: { x: 1 } }],
       safetyPlcConfigs: [{ id: 2, trustDigest: H64, approved: true, config: { backend: "modbus" } }],
       keyset: ENV,
@@ -305,7 +305,8 @@ describe("edge protocol v2 — semantic refinements", () => {
   });
 
   it("commands: a stop names exactly one target; a clear needs expectedGeneration", () => {
-    const base = { requestId: 5, nodeId: 7, issuedAt: T, expiresAt: T + 1 };
+    const base = { requestId: 5, nodeId: 7, ownerEpoch: 3, issuedAt: T, expiresAt: T + 1 };
+    expect(edgeCommandSchema.safeParse({ ...base, ownerEpoch: undefined, kind: "stop", target: { robotId: 1 } }).success).toBe(false);
     expect(edgeCommandSchema.safeParse({ ...base, kind: "stop", target: { robotId: 1 } }).success).toBe(true);
     expect(edgeCommandSchema.safeParse({ ...base, kind: "stop", target: { adapterId: 1 } }).success).toBe(true);
     expect(edgeCommandSchema.safeParse({ ...base, kind: "stop", target: { robotId: 1, adapterId: 1 } }).success).toBe(false);

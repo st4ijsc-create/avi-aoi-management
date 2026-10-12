@@ -7,10 +7,13 @@
  *
  * Write rules enforced by the DB (see the migrations): write-once identities (IS DISTINCT FROM), one result per jti, cursors
  * start at 0 and never decrease, key status next → active → retired, ownership change refused while a ledger row is in flight
- * (and logged WORM in device_owner_changes with the actor of setEdgeOwnershipActor), 'edge:N' lock rows only for robots N
- * owns, lock requests only for owned devices, maker ≠ checker on trust approvals.
+ * (and logged WORM in device_owner_changes with the actor of setEdgeOwnershipActor), maker ≠ checker on trust approvals.
+ * R-10-b OWNER EPOCH: robots / device_adapters."ownerEpoch" is bumped by every ownership change (never otherwise); an
+ * ownership change LOCKS the robot under the new authority + epoch ('ownerChanged'); 'edge:N' lock rows, lock requests,
+ * program reports and trust approvals are bound to (device, owner, ownerEpoch) — match ALL of them when applying or clearing
+ * (edgeLockRowMatch); a stale epoch is refused (23514) or matches nothing.
  */
-import { sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { bigint, integer, jsonb, pgTable, serial, smallint, text, timestamp, uuid, varchar, bigserial } from "drizzle-orm/pg-core";
 
 /** The migration files of this đợt, in their safe order. */
@@ -64,6 +67,8 @@ export const edgeNodeProgramReports = pgTable("edge_node_program_reports", {
   reason: varchar("reason", { length: 32 }),
   readAt: timestamp("readAt", { withTimezone: true }).notNull(),
   receivedAt: timestamp("receivedAt", { withTimezone: true }).defaultNow().notNull(),
+  /** 0374 — the adapter's owner epoch at write time (stamped by the trigger); a reading of another epoch is stale */
+  ownerEpoch: bigint("ownerEpoch", { mode: "number" }),
 });
 export type EdgeNodeProgramReportRow = typeof edgeNodeProgramReports.$inferSelect;
 
@@ -92,11 +97,14 @@ export const robotOwnership = pgTable("robots", {
   id: integer("id").primaryKey(),
   edgeNodeId: integer("edgeNodeId"),
   motionLockGenerationFloor: integer("motionLockGenerationFloor").notNull(),
+  /** R-10-b — bumped by every ownership change (trigger); never written by the app */
+  ownerEpoch: bigint("ownerEpoch", { mode: "number" }).notNull(),
 });
 /** device_adapters ownership column only (NULL = central). */
 export const adapterOwnership = pgTable("device_adapters", {
   id: integer("id").primaryKey(),
   edgeNodeId: integer("edgeNodeId"),
+  ownerEpoch: bigint("ownerEpoch", { mode: "number" }).notNull(),
 });
 /** robot_motion_locks with the 0374 authority ('central' | 'edge:<id>' — edgeProtocol.edgeLockAuthority). */
 export const robotMotionLockAuthority = pgTable("robot_motion_locks", {
@@ -106,12 +114,18 @@ export const robotMotionLockAuthority = pgTable("robot_motion_locks", {
   generation: integer("generation").notNull(),
   lockedAt: timestamp("lockedAt").defaultNow().notNull(),
   authority: varchar("authority", { length: 40 }).notNull().default("central"),
+  /** NULL for 'central'; the node of 'edge:<id>' (FK edge_nodes ON DELETE RESTRICT) */
+  authorityNodeId: integer("authorityNodeId"),
+  /** the robot's owner epoch the row was written under (a central row is stamped by the trigger) */
+  ownerEpoch: bigint("ownerEpoch", { mode: "number" }),
 });
 export const robotMotionLockRequests = pgTable("robot_motion_lock_requests", {
   id: serial("id").primaryKey(),
   robotId: integer("robotId"),
   adapterId: integer("adapterId"),
   edgeNodeId: integer("edgeNodeId").notNull(),
+  /** the device's owner epoch at request time — delivered only while it still holds */
+  ownerEpoch: bigint("ownerEpoch", { mode: "number" }).notNull(),
   kind: varchar("kind", { length: 8 }).$type<"lock" | "clear" | "stop">().notNull(),
   expectedGeneration: integer("expectedGeneration"),
   reason: text("reason"),
@@ -132,6 +146,8 @@ export const deviceOwnerChanges = pgTable("device_owner_changes", {
   fromEdgeNodeId: integer("fromEdgeNodeId"),
   toEdgeNodeId: integer("toEdgeNodeId"),
   generationFloor: integer("generationFloor"),
+  fromOwnerEpoch: bigint("fromOwnerEpoch", { mode: "number" }),
+  toOwnerEpoch: bigint("toOwnerEpoch", { mode: "number" }),
   changedBy: varchar("changedBy", { length: 128 }).notNull(),
   changedAt: timestamp("changedAt", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -141,6 +157,8 @@ export const edgeRobotTrustApprovals = pgTable("edge_robot_trust_approvals", {
   edgeNodeId: integer("edgeNodeId").notNull(),
   robotId: integer("robotId").notNull(),
   digest: varchar("digest", { length: 64 }).notNull(),
+  /** R-10-b — approved only for this owner epoch of the robot; another epoch ⇒ NOT approved */
+  ownerEpoch: bigint("ownerEpoch", { mode: "number" }).notNull(),
   editedBy: integer("editedBy").notNull(),
   editedAt: timestamp("editedAt", { withTimezone: true }).defaultNow().notNull(),
   approvedBy: integer("approvedBy"),
@@ -155,6 +173,20 @@ export function isEdgeControlSchemaMissing(err: unknown): boolean {
   const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
   const c = e?.code ?? e?.cause?.code;
   return c === "42P01" || c === "42703";
+}
+
+/**
+ * R-10-b — the ONE match of a mirrored lock row of an edge authority: (robotId, authority 'edge:<nodeId>', authorityNodeId,
+ * ownerEpoch). Use it for every apply (UPDATE … WHERE) and clear (DELETE … WHERE) of an edge lock event, so an event from a
+ * previous ownership (or a reused node id) matches nothing.
+ */
+export function edgeLockRowMatch(robotId: number, nodeId: number, ownerEpoch: number): SQL {
+  return and(
+    eq(robotMotionLockAuthority.robotId, robotId),
+    eq(robotMotionLockAuthority.authority, `edge:${nodeId}`),
+    eq(robotMotionLockAuthority.authorityNodeId, nodeId),
+    eq(robotMotionLockAuthority.ownerEpoch, ownerEpoch),
+  ) as SQL;
 }
 
 /** 23514 check_violation — a write refused by a 0372–0375 trigger / CHECK (the caller maps it to its own refusal). */

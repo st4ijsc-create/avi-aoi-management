@@ -19,6 +19,7 @@ import {
   adapterOwnership,
   deviceOwnerChanges,
   edgeAuthSigningKeys,
+  edgeLockRowMatch,
   edgeNodeProgramReports,
   edgeNodeProtocol,
   edgeNodeReportCursors,
@@ -96,6 +97,47 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
     expect(out.lockOther).toBe("23514");
     expect(out.lockOwner).toBeNull();
     expect(isEdgeControlRefusal({ code: "23514" })).toBe(true);
+  });
+
+  it("★ R-10-b: an owner change re-locks the robot under the new authority + epoch; stale-epoch lock events are refused / match nothing", async () => {
+    const CODE = `__dot10A_epoch_${Date.now()}`;
+    const out = await inRolledBackTx(async (tx) => {
+      const [node] = (await tx.execute(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE}, ${CODE}, 'offline') RETURNING id`)) as Array<{ id: number }>;
+      const [robot] = (await tx.execute(sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${CODE}, ${CODE}, 'sim', 'sim://t') RETURNING id`)) as Array<{ id: number }>;
+      await tx.update(robotOwnership).set({ edgeNodeId: node.id }).where(eq(robotOwnership.id, robot.id));
+      const [own] = await tx.select().from(robotOwnership).where(eq(robotOwnership.id, robot.id));
+      const [lock] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot.id));
+      const staleApply = await tx.update(robotMotionLockAuthority).set({ generation: 99 }).where(edgeLockRowMatch(robot.id, node.id, own.ownerEpoch - 1)).returning({ id: robotMotionLockAuthority.robotId });
+      const staleWrite = await codeOf(tx, tx.update(robotMotionLockAuthority).set({ ownerEpoch: own.ownerEpoch - 1, generation: lock.generation + 1 }).where(eq(robotMotionLockAuthority.robotId, robot.id)));
+      const currentApply = await tx.update(robotMotionLockAuthority).set({ generation: lock.generation + 1 }).where(edgeLockRowMatch(robot.id, node.id, own.ownerEpoch)).returning({ id: robotMotionLockAuthority.robotId });
+      const manualEpoch = await codeOf(tx, tx.update(robotOwnership).set({ ownerEpoch: own.ownerEpoch + 5 }).where(eq(robotOwnership.id, robot.id)));
+      return { own, lock, staleApply: staleApply.length, staleWrite, currentApply: currentApply.length, manualEpoch };
+    });
+    expect(out.own.ownerEpoch).toBe(2);
+    expect(out.lock).toMatchObject({ authority: expect.stringMatching(/^edge:\d+$/), ownerEpoch: 2, reasonCode: "ownerChanged", generation: out.own.motionLockGenerationFloor });
+    expect(out).toMatchObject({ staleApply: 0, staleWrite: "23514", currentApply: 1, manualEpoch: "23514" });
+  });
+
+  it("★ R-10-b: a node deleted and re-created under the SAME id cannot apply / clear the old (authority, epoch)", async () => {
+    const CODE = `__dot10A_reuse_${Date.now()}`;
+    const out = await inRolledBackTx(async (tx) => {
+      const [node] = (await tx.execute(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${CODE}, ${CODE}, 'offline') RETURNING id`)) as Array<{ id: number }>;
+      const [robot] = (await tx.execute(sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${CODE}, ${CODE}, 'sim', 'sim://t') RETURNING id`)) as Array<{ id: number }>;
+      await tx.update(robotOwnership).set({ edgeNodeId: node.id }).where(eq(robotOwnership.id, robot.id)); // epoch 2
+      const nodeDelWhileOwner = await codeOf(tx, tx.execute(sql`DELETE FROM edge_nodes WHERE id = ${node.id}`));
+      await tx.update(robotOwnership).set({ edgeNodeId: null }).where(eq(robotOwnership.id, robot.id)); // epoch 3, row central
+      await tx.execute(sql`DELETE FROM edge_nodes WHERE id = ${node.id}`);
+      await tx.execute(sql`INSERT INTO edge_nodes (id, code, name, status) VALUES (${node.id}, ${CODE + "-reused"}, ${CODE}, 'offline')`);
+      await tx.update(robotOwnership).set({ edgeNodeId: node.id }).where(eq(robotOwnership.id, robot.id)); // epoch 4
+      const oldClear = await tx.delete(robotMotionLockAuthority).where(edgeLockRowMatch(robot.id, node.id, 2)).returning({ id: robotMotionLockAuthority.robotId });
+      const oldApply = await codeOf(tx, tx.update(robotMotionLockAuthority).set({ ownerEpoch: 2 }).where(eq(robotMotionLockAuthority.robotId, robot.id)));
+      const [still] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot.id));
+      return { nodeDelWhileOwner, oldClear: oldClear.length, oldApply, still };
+    });
+    expect(out.nodeDelWhileOwner).toBe("23503");
+    expect(out.oldClear).toBe(0);
+    expect(out.oldApply).toBe("23514");
+    expect(out.still).toMatchObject({ ownerEpoch: 4, reasonCode: "ownerChanged" });
   });
 
   it("report cursor starts at 0 and never goes back; key status is one-way", async () => {

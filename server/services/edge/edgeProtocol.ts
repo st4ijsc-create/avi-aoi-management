@@ -322,6 +322,8 @@ const cmdBase = {
   /** robot_motion_lock_requests.id (mig 0374) */
   requestId: zId,
   nodeId: zId,
+  /** R-10-b — the target device's owner epoch the request was made for (mismatch with the config ⇒ not applied, except STOP) */
+  ownerEpoch: zId,
   issuedAt: zEpochMs,
   /** a `clear` past expiresAt is refused; a `stop` is sent anyway (L-7) */
   expiresAt: zEpochMs,
@@ -360,6 +362,8 @@ export const edgeConfigAdapterSchema = z.strictObject({
   isEnabled: z.boolean(),
   /** sha256 of (protocol, endpoint, connectionOptions) — compared before a pinned STOP (replaces runningConnectionMatchesAdapterRow) */
   connectionFingerprint: zHex64,
+  /** R-10-b — the adapter's owner epoch (quoted back in commands / reports) */
+  ownerEpoch: zId,
   updatedAt: zEpochMs,
   tags: z.array(edgeConfigTagSchema).max(5_000),
 });
@@ -378,8 +382,10 @@ export const edgeConfigRobotSchema = z.strictObject({
   commissioned: z.boolean().nullable(),
   lineId: zId.nullable(),
   stationId: zId.nullable(),
-  motionLock: z.strictObject({ reasonCode: zCode(64), generation: zId, authority: zLockAuthority, lockedAt: zEpochMs }).nullable(),
+  motionLock: z.strictObject({ reasonCode: zCode(64), generation: zId, authority: zLockAuthority, ownerEpoch: zId.nullable(), lockedAt: zEpochMs }).nullable(),
   motionLockGenerationFloor: zCount,
+  /** R-10-b — the robot's owner epoch: every lock event / command of this robot quotes it */
+  ownerEpoch: zId,
   updatedAt: zEpochMs,
 });
 export const edgeConfigSafetyPlcSchema = z.strictObject({
@@ -733,6 +739,8 @@ export const edgeLockEventRecordSchema = z.strictObject({
   /** locked ⇒ central upserts authority 'edge:<node>' where stored generation ≤ g; cleared ⇒ deletes WHERE authority = 'edge:<node>' AND generation ≤ g */
   event: z.enum(["locked", "cleared"]),
   generation: zId,
+  /** R-10-b — the robot's owner epoch the event happened under; central refuses a stale one */
+  ownerEpoch: zId,
   reasonCode: zCode(64),
   since: zEpochMs,
   clearedBy: z.enum(["stop", "operator"]).nullable(),
