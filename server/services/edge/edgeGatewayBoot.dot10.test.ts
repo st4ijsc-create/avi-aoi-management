@@ -143,7 +143,12 @@ describe("doc 81 Đợt 10 E — the edge gateway boots and runs the production 
       if (!this._ml) locks.push((this._ml = new MotionLock()));
       return this._ml;
     };
+    // fix review 3 (F-5) — the gate D's dispatch reads before a motion
+    (SimRobotDriver.prototype as unknown as { getMotionLock: () => unknown }).getMotionLock = function (this: { motionLockController: () => InstanceType<typeof MotionLock> }) {
+      return this.motionLockController().snapshot();
+    };
 
+    central.packageOver.set(8, { machines: [{ id: 2, machineType: "ROBOT", capabilities: null }], verifiedStops: [], defHash: kitHashDefinition(DEF) });
     central.packageOver.set(9, { machines: [{ id: 2, machineType: "ROBOT", capabilities: null }], verifiedStops: [], defHash: kitHashDefinition(DEF) });
     const { bootstrapEdgeGateway, getEdgeGatewayHealth } = await import("./edgeGatewayRuntime");
     const handles = await bootstrapEdgeGateway({ fetchImpl: central.fetchImpl });
@@ -158,6 +163,13 @@ describe("doc 81 Đợt 10 E — the edge gateway boots and runs the production 
     const lock = rm.getActiveRobot(12)!.driver.motionLockController!();
     expect(lock.snapshot()).toMatchObject({ locked: true, reasonCode: "persistUnknown" }); // fresh journal ⇒ fail-closed
     await vi.waitFor(() => expect(central.received.locksEvents.some((r) => r.kind === "lock" && r.event === "locked" && r.reasonCode === "persistUnknown")).toBe(true), { timeout: 5_000, interval: 50 });
+    // F-5 — a run walked while the robot is LOCKED: D's dispatch refuses the move (MOTION_LOCKED), the robot never moves
+    central.addRun(8, DEF);
+    await vi.waitFor(() => expect(central.callsTo("complete").filter((c) => c.runId === 8).length).toBe(1), { timeout: 15_000, interval: 50 });
+    expect(central.callsTo("complete").find((c) => c.runId === 8)!.body.outcome).not.toBe("completed");
+    expect(runJob.mock.calls.filter((c) => (c[0] as { jobType: string }).jobType === "move")).toHaveLength(0);
+    expect(JSON.stringify(central.received.report)).toContain("MOTION_LOCKED");
+    central.received.report.length = 0;
     // central clears it (signed, compare-and-clear on the generation it saw)
     const gen = lock.snapshot().generation!;
     central.commands = [central.sign("cmd", central.commandPayload({ requestId: 70, kind: "clear", robotId: 12, expectedGeneration: gen, clearedBy: 4, reason: "commissioning check done" }))];
@@ -171,9 +183,9 @@ describe("doc 81 Đợt 10 E — the edge gateway boots and runs the production 
     expect(central.received.telemetry.every((s) => s.adapterId === 21)).toBe(true);
 
     // the REAL walker: claim → signed package → authorise → D verifies + consumes → sim robot moves → report → complete
-    await vi.waitFor(() => expect(central.callsTo("complete").length).toBe(1), { timeout: 15_000, interval: 50 });
-    expect(central.callsTo("complete")[0].body).toMatchObject({ outcome: "completed" });
-    expect(central.callsTo("authorize").map((c) => c.body.stepId)).toEqual(["m1"]);
+    await vi.waitFor(() => expect(central.callsTo("complete").filter((c) => c.runId === 9).length).toBe(1), { timeout: 15_000, interval: 50 });
+    expect(central.callsTo("complete").find((c) => c.runId === 9)!.body).toMatchObject({ outcome: "completed" });
+    expect(central.callsTo("authorize").map((c) => [c.runId, c.body.stepId])).toEqual([[8, "m1"], [9, "m1"]]);
     expect(runJob.mock.calls.map((c) => (c[0] as { jobType: string }).jobType)).toEqual(["move"]);
     const ledger = central.received.report.find((r) => r.kind === "ledger");
     expect(ledger).toMatchObject({ stepId: "m1", stop: false, target: { robotId: 12, jobType: "move" } });
