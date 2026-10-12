@@ -38,6 +38,7 @@ import {
   edgeSweepPictureSchema,
   type EdgeCommand,
   type EdgeHeldReason,
+  type EdgePullAnswer,
   type EdgeProgramCheck,
   type EdgeRunPackage,
   type EdgeSweepPicture,
@@ -168,7 +169,7 @@ export interface EdgeRunIo {
 export type EdgeSegmentOutcome =
   | { outcome: "completed" }
   | { outcome: "failed"; error?: string }
-  | { outcome: "aborted" }
+  | { outcome: "aborted"; error?: string }
   | { outcome: "paused"; gateStepId: string }
   | { outcome: "held"; heldReason: EdgeHeldReason; error?: string }
   /** the package cannot be executed here: the claim is released, nothing was sent */
@@ -186,12 +187,17 @@ export interface EdgeWalker {
   resendStops?(picture: EdgeSweepPicture, sink: EdgeReportSink): Promise<{ sent: number; failed: number }>;
 }
 
-export type EdgeStopOutcome = { outcome: "sent" | "failed" | "simulated"; detail?: string };
-/** Device actions central's commands ask for (group D's edge dispatch implements it; defaultEdgeDevicePort meanwhile). */
+/** `journaled`: the device front end already wrote the `stop` event (D's edge dispatch) — the agent does not write a second */
+export type EdgeStopOutcome = { outcome: "sent" | "failed" | "simulated"; detail?: string; journaled?: boolean };
+export interface EdgeStopContext {
+  source: "command" | "anomaly" | "local";
+  requestId: number | null;
+}
+/** Device actions central's commands ask for (edgeDispatchDevicePort: group D's edge dispatch, R-10-ad). */
 export interface EdgeDevicePort {
-  stopRobot(robotId: number, why: string): Promise<EdgeStopOutcome>;
+  stopRobot(robotId: number, why: string, ctx: EdgeStopContext): Promise<EdgeStopOutcome>;
   /** pins null ⇒ the STOP pins of the VERIFIED config */
-  stopAdapter(adapterId: number, pins: Array<{ tagKey: string; value: unknown }> | null, why: string): Promise<EdgeStopOutcome>;
+  stopAdapter(adapterId: number, pins: Array<{ tagKey: string; value: unknown }> | null, why: string, ctx: EdgeStopContext): Promise<EdgeStopOutcome>;
   lockRobot(robotId: number, reason: string): Promise<{ ok: boolean; generation: number | null; detail?: string }>;
   clearRobot(robotId: number, expectedGeneration: number, clearedBy: number, reason: string): Promise<{ ok: true; generation: number } | { ok: false; reason: "generation_mismatch" | "no_driver" | "error"; generation: number | null }>;
 }
@@ -243,7 +249,10 @@ export interface TickReport {
 
 export class EdgeExecutionAgent {
   private timer: NodeJS.Timeout | null = null;
-  private ticking: Promise<TickReport> | null = null;
+  /** the PULL (+ STOP fast path) — single-flight, never behind the work phase (L-7) */
+  private pulling: Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null }> | null = null;
+  /** the WORK phase (config refresh, non-STOP commands, segment ends, claims) — single-flight, skipped while busy */
+  private working: Promise<void> | null = null;
   private readonly segments = new Map<number, Segment>();
   private readonly pending = new Map<number, PendingComplete>();
   private online: boolean | null = null;
@@ -255,6 +264,9 @@ export class EdgeExecutionAgent {
   /** STOPs already executed, by (requestId, target): a STOP is de-duplicated by its request, never discarded for its age
    *  (R-10-k), and an unverified copy can never suppress a genuine STOP of ANOTHER device under the same requestId */
   private readonly stopsDone = new Set<string>();
+  /** fix review 1 (I-3) — STOPs whose request central has been acknowledged (a STOP executed unverified first is acked once
+   *  a verified / explicit-unsigned copy arrives) */
+  private readonly stopsAcked = new Set<string>();
   private stopped = false;
 
   constructor(
@@ -281,7 +293,12 @@ export class EdgeExecutionAgent {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    if (this.ticking) await this.ticking.catch(() => undefined);
+    // bounded: a work phase stuck on a central call that never answers must not hold a shutdown
+    const bound = new Promise<void>((r) => {
+      const t = setTimeout(r, this.cfg.requestTimeoutMs + 1_000);
+      if (typeof t.unref === "function") t.unref();
+    });
+    await Promise.race([Promise.allSettled([this.pulling, this.working]), bound]);
   }
 
   liveRunIds(): number[] {
@@ -302,34 +319,76 @@ export class EdgeExecutionAgent {
     void this.deps.sink.event({ kind: "anomaly", code, runId, detail: detail.slice(0, 1_000), at: this.now() }).catch(() => undefined);
   }
 
+  /**
+   * One pull: its STOPs are executed FIRST (fast path, L-7 — before any config refresh, segment end, claim or other call to
+   * central); then the work phase. The pull is single-flight on its own and NEVER waits for a previous work phase: a work
+   * phase stuck on slow central calls cannot delay the STOPs of the next pull.
+   */
   tick(): Promise<TickReport> {
-    if (this.ticking) return this.ticking;
-    this.ticking = this.tickOnce().finally(() => {
-      this.ticking = null;
-    });
-    return this.ticking;
+    return (async () => {
+      const r = await this.pullPhase();
+      if (r.answer && r.rest) await this.workPhase(r.answer, r.rest, r.report);
+      return r.report;
+    })();
   }
 
-  private async tickOnce(): Promise<TickReport> {
+  private pullPhase(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null }> {
+    if (this.pulling) return this.pulling;
+    this.pulling = this.pullOnce().finally(() => {
+      this.pulling = null;
+    });
+    return this.pulling;
+  }
+
+  private async pullOnce(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null }> {
     const report: TickReport = { online: false, claimed: [], stopsResent: [], skipped: [], interrupted: [], aborted: [], commands: [] };
-    const { client, config } = this.deps;
-    const pulled = await client.post("pull", {});
+    const pulled = await this.deps.client.post("pull", {});
     if (!pulled.ok) {
       if (this.online !== false) {
         console.warn(`[EdgeExec] central not reachable / refused the node (HTTP ${pulled.status || "network"}${pulled.code ? ` ${pulled.code}` : ""}): no new run is started; a walking run's next non-STOP step is held (STOPs still go)`);
       }
       this.online = false;
-      return report;
+      return { report, rest: null, answer: null };
     }
     if (this.online !== true) console.log("[EdgeExec] central reachable — pulling assigned runs");
     this.online = true;
     report.online = true;
     const p = pulled.data;
-    // 0) a newer config / keyset ⇒ fetch + verify it before acting on anything signed
+    // STOP FAST PATH (fix review 1, I-4): every STOP of the answer, against the trust we have NOW (a stale keyset ⇒ the
+    // unverified-STOP path, then acked once a verified copy arrives) — before anything else
+    const all = [...p.commands, ...unsignedStopsOf(p)];
+    const verified = verifyCommands(this.deps.config.trust(), all, this.deps.config.credentialId());
+    const isStop = (v: EdgeVerifiedCommand) => (v.ok ? v.command.kind : v.unverified?.kind) === "stop";
+    report.commands.push(...(await this.handleVerified(verified.filter(isStop))));
+    // L-7 — STOPs of runs aborted after their segment here that central could not confirm (STOP-class: fast path too)
+    for (const s of p.stopsUnconfirmed) {
+      if (this.segments.has(s.runId)) continue;
+      const last = this.resentAt.get(s.runId);
+      if (last !== undefined && this.now() - last < this.cfg.stopResendMinMs) continue;
+      this.resentAt.set(s.runId, this.now());
+      await this.resendStops(s.runId, s.picture);
+      report.stopsResent.push(s.runId);
+    }
+    return { report, rest: all.filter((_, i) => !isStop(verified[i])), answer: p };
+  }
+
+  private workPhase(p: EdgePullAnswer, rest: unknown[], report: TickReport): Promise<void> {
+    if (this.working) return Promise.resolve(); // busy: this answer's non-STOP work waits for the next pull (STOPs went already)
+    this.working = this.workOnce(p, rest, report)
+      .catch((err) => console.error(`[EdgeExec] work phase failed: ${(err as Error)?.message ?? err}`))
+      .finally(() => {
+        this.working = null;
+      });
+    return this.working;
+  }
+
+  private async workOnce(p: EdgePullAnswer, rest: unknown[], report: TickReport): Promise<void> {
+    const { client, config } = this.deps;
+    // a newer config / keyset ⇒ fetch + verify it before acting on anything else signed
     if (p.configVersion > config.version() || p.keysetVersion > config.trust().version) await config.refresh();
     if (p.programCheckRequested) void this.deps.programChecks.report().catch(() => undefined);
-    // 1) commands — STOP first, whatever else happens
-    report.commands.push(...(await this.handleCommands([...p.commands, ...unsignedStopsOf(p)])));
+    // non-STOP commands (lock / clear …), verified against the (possibly refreshed) trust
+    report.commands.push(...(await this.handleCommands(rest)));
     // 2) segment ends central has not taken yet
     for (const pc of [...this.pending.values()]) await this.sendComplete(pc);
     // 3) the node's current claims
@@ -344,15 +403,6 @@ export class EdgeExecutionAgent {
         const r = await client.post("interrupted", { claimSeq: c.claimSeq }, { runId: c.runId });
         if (r.ok) report.interrupted.push(c.runId);
       }
-    }
-    // 4) L-7 — STOPs of runs aborted after their segment here that central could not confirm
-    for (const s of p.stopsUnconfirmed) {
-      if (this.segments.has(s.runId)) continue;
-      const last = this.resentAt.get(s.runId);
-      if (last !== undefined && this.now() - last < this.cfg.stopResendMinMs) continue;
-      this.resentAt.set(s.runId, this.now());
-      await this.resendStops(s.runId, s.picture);
-      report.stopsResent.push(s.runId);
     }
     // 5) claimable runs
     const listed = new Set(p.runs.map((r) => r.runId));
@@ -412,7 +462,6 @@ export class EdgeExecutionAgent {
       report.claimed.push(runId);
       this.startSegment(v.pkg, claimed.data.claimSeq, claimed.data.claimToken);
     }
-    return report;
   }
 
   private backOff(runId: number): void {
@@ -443,11 +492,12 @@ export class EdgeExecutionAgent {
   private async stopTarget(target: { robotId: number } | { adapterId: number }, source: "command" | "anomaly" | "local", requestId: number | null, why: string, pins: Array<{ tagKey: string; value: unknown }> | null = null): Promise<EdgeStopOutcome> {
     let out: EdgeStopOutcome;
     try {
-      out = "robotId" in target ? await this.deps.devices.stopRobot(target.robotId, why) : await this.deps.devices.stopAdapter(target.adapterId, pins, why);
+      const ctx = { source, requestId };
+      out = "robotId" in target ? await this.deps.devices.stopRobot(target.robotId, why, ctx) : await this.deps.devices.stopAdapter(target.adapterId, pins, why, ctx);
     } catch (err) {
       out = { outcome: "failed", detail: (err as Error)?.message ?? String(err) };
     }
-    await this.deps.sink.event({ kind: "stop", target, source, requestId, outcome: out.outcome, at: this.now(), detail: (out.detail ?? why).slice(0, 500) }, { stop: true }).catch(() => undefined);
+    if (!out.journaled) await this.deps.sink.event({ kind: "stop", target, source, requestId, outcome: out.outcome, at: this.now(), detail: (out.detail ?? why).slice(0, 500) }, { stop: true }).catch(() => undefined);
     if (out.outcome === "failed") console.error(`[EdgeExec] STOP ${JSON.stringify(target)} FAILED (${why}) — use the machine's direct STOP / E-STOP`);
     return out;
   }
@@ -459,9 +509,12 @@ export class EdgeExecutionAgent {
   }
 
   async handleCommands(envs: readonly unknown[]): Promise<TickReport["commands"]> {
+    if (envs.length === 0) return [];
+    return this.handleVerified(verifyCommands(this.deps.config.trust(), envs, this.deps.config.credentialId()));
+  }
+
+  private async handleVerified(verified: readonly EdgeVerifiedCommand[]): Promise<TickReport["commands"]> {
     const out: TickReport["commands"] = [];
-    if (envs.length === 0) return out;
-    const verified = verifyCommands(this.deps.config.trust(), envs, this.deps.config.credentialId());
     // STOPs first (L-7): nothing else delays them
     const order = (v: EdgeVerifiedCommand) => ((v.ok ? v.command.kind : v.unverified?.kind) === "stop" ? 0 : 1);
     for (const v of [...verified].sort((a, b) => order(a) - order(b))) {
@@ -479,7 +532,11 @@ export class EdgeExecutionAgent {
   }
   private rememberStop(key: string): void {
     this.stopsDone.add(key);
-    if (this.stopsDone.size > 5_000) this.stopsDone.delete(this.stopsDone.values().next().value as string);
+    if (this.stopsDone.size > 5_000) {
+      const old = this.stopsDone.values().next().value as string;
+      this.stopsDone.delete(old);
+      this.stopsAcked.delete(old);
+    }
   }
 
   private async handleCommand(v: EdgeVerifiedCommand): Promise<TickReport["commands"][number]> {
@@ -493,13 +550,23 @@ export class EdgeExecutionAgent {
         if (!v.unsigned) this.anomaly("EDGE_COMMAND_INVALID", null, `stop command refused by verification (${v.reason}) request ${u.requestId} — STOP sent anyway (L-7)`);
         if (!owned) return { requestId: null, kind: "stop", outcome: `${tag}:not_owned` };
         const key = this.stopKey(u.requestId, u.target);
-        if (this.stopsDone.has(key)) return { requestId: v.unsigned ? u.requestId : null, kind: "stop", outcome: "duplicate" };
+        if (this.stopsDone.has(key)) {
+          // I-3 — executed before as evidence only (bad signature); this explicit unsigned copy may close the request
+          if (v.unsigned && !this.stopsAcked.has(key)) {
+            await this.ack(u.requestId, "done", null, { target: u.target, ownerEpoch: u.ownerEpoch, unsigned: true });
+            this.stopsAcked.add(key);
+          }
+          return { requestId: v.unsigned ? u.requestId : null, kind: "stop", outcome: "duplicate" };
+        }
         const r = await this.stopTarget(u.target, v.unsigned ? "command" : "anomaly", v.unsigned ? u.requestId : null, `${tag} STOP command (request ${u.requestId})`);
         // a STOP that could not be executed is NOT remembered: the next delivery retries it (never given up on)
         if (r.outcome !== "failed") this.rememberStop(key);
         // only the explicit unsigned-STOP envelope (R-10-p) is acknowledged — with the target ACTUALLY stopped (R-10-o); a STOP
         // whose signature is missing / fails is evidence only: reported with requestId null, never acknowledged
-        if (v.unsigned && r.outcome !== "failed") await this.ack(u.requestId, "done", null, { target: u.target, ownerEpoch: u.ownerEpoch, unsigned: true });
+        if (v.unsigned && r.outcome !== "failed") {
+          await this.ack(u.requestId, "done", null, { target: u.target, ownerEpoch: u.ownerEpoch, unsigned: true });
+          this.stopsAcked.add(key);
+        }
         return { requestId: v.unsigned ? u.requestId : null, kind: "stop", outcome: `${tag}:${r.outcome}` };
       }
       this.anomaly("EDGE_COMMAND_INVALID", null, `${u?.kind ?? "unparsable"} command refused (${v.reason})${u ? ` request ${u.requestId}` : ""} — only a STOP acts without a valid signature`);
@@ -516,7 +583,14 @@ export class EdgeExecutionAgent {
     if (c.kind === "stop") {
       // a STOP goes even past its expiry / with a stale owner epoch (L-7, R-10-k: never discarded for its age); the device
       // must still be this node's
-      if (this.stopsDone.has(this.stopKey(c.requestId, c.target))) {
+      const sk = this.stopKey(c.requestId, c.target);
+      if (this.stopsDone.has(sk)) {
+        // fix review 1 (I-3) — executed earlier through the unverified path (e.g. keyset rotation lag) and never acknowledged:
+        // this VERIFIED copy acknowledges it, with the target actually stopped (R-10-o)
+        if (!this.stopsAcked.has(sk)) {
+          await this.ack(c.requestId, "done", null, { target: c.target, ownerEpoch: c.ownerEpoch });
+          this.stopsAcked.add(sk);
+        }
         remember();
         return { requestId: c.requestId, kind: "stop", outcome: "duplicate" };
       }
@@ -527,9 +601,10 @@ export class EdgeExecutionAgent {
       }
       const r = await this.stopTarget(c.target, "command", c.requestId, `central STOP request ${c.requestId}${v.expired ? " (overdue — sent anyway)" : ""}`);
       if (r.outcome === "failed") return { requestId: c.requestId, kind: "stop", outcome: "failed" }; // not acked: re-delivered, retried
-      this.rememberStop(this.stopKey(c.requestId, c.target));
+      this.rememberStop(sk);
       remember();
       await this.ack(c.requestId, "done", null, { target: c.target, ownerEpoch: c.ownerEpoch });
+      this.stopsAcked.add(sk);
       return { requestId: c.requestId, kind: "stop", outcome: r.outcome };
     }
     const robotTarget = { robotId: c.robotId };
@@ -591,7 +666,7 @@ export class EdgeExecutionAgent {
         pic = null;
       }
       stops = pic?.verifiedStops ?? [];
-      sentBefore = new Set(pic?.prior.abortSentBefore ?? []);
+      sentBefore = new Set(); // fix review 1 (M-7) — an UNVERIFIED picture never skips a STOP (its "sent before" is not trusted)
     }
     let sent = 0;
     let failed = 0;
@@ -717,13 +792,14 @@ export class EdgeExecutionAgent {
 
   private async sendComplete(p: PendingComplete): Promise<void> {
     const stream = edgeRunStream(p.runId, p.claimSeq);
+    await this.deps.journal.flush(); // R-10-ag — only durable records ship: make the segment's records durable first
     const f = await this.deps.shipper.flush(stream);
     if (f === "claim_gone") {
       await this.deps.shipper.orphanRunStream(stream, "claim no longer current at segment end");
       this.pending.delete(p.runId);
       return;
     }
-    if (this.deps.journal.pending(stream, 1).length > 0) {
+    if (this.deps.journal.pending(stream, 1).length > 0 || this.deps.journal.undurableCount(stream) > 0) {
       this.pending.set(p.runId, p); // reports first: complete only once central holds every record
       return;
     }
@@ -737,7 +813,7 @@ export class EdgeExecutionAgent {
         outcome: o.outcome,
         ...(o.outcome === "paused" ? { gateStepId: o.gateStepId } : {}),
         ...(o.outcome === "held" ? { heldReason: o.heldReason } : {}),
-        ...((o.outcome === "failed" || o.outcome === "held") && o.error ? { error: o.error.slice(0, 4_000) } : {}),
+        ...((o.outcome === "failed" || o.outcome === "held" || o.outcome === "aborted") && o.error ? { error: o.error.slice(0, 4_000) } : {}),
         epoch: this.deps.journal.epoch,
         reportedThrough: this.deps.journal.ackedSeq(stream),
       },
@@ -773,7 +849,7 @@ function normaliseOutcome(o: unknown): EdgeSegmentOutcome {
     case "completed":
       return { outcome: "completed" };
     case "aborted":
-      return { outcome: "aborted" };
+      return { outcome: "aborted", ...(typeof v.error === "string" ? { error: v.error } : {}) };
     case "failed":
       return { outcome: "failed", ...(typeof v.error === "string" ? { error: v.error } : {}) };
     case "paused":
@@ -786,7 +862,7 @@ function normaliseOutcome(o: unknown): EdgeSegmentOutcome {
   // foeEngine.EdgeDriveResult without a segment end: the run status alone
   if (v?.outcome === undefined && typeof v?.status === "string") {
     if (v.status === "completed") return { outcome: "completed" };
-    if (v.status === "aborted") return { outcome: "aborted" };
+    if (v.status === "aborted") return { outcome: "aborted", ...(typeof v.error === "string" ? { error: v.error } : {}) };
     if (v.status === "failed") return { outcome: "failed", ...(typeof v.error === "string" ? { error: v.error } : {}) };
   }
   return { outcome: "failed", error: "the edge walker returned an unknown outcome" };
@@ -832,62 +908,33 @@ export async function defaultEdgeHashDefinition(): Promise<(def: Record<string, 
   return (def) => hashWorkflowDefinition(def as never);
 }
 
-const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} did not answer within ${ms} ms`)), ms);
-    if (typeof t.unref === "function") t.unref();
-    p.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
 
 /**
- * INTERIM device port (until group D's edge dispatch front ends are wired by the integration): the robot STOP is the
- * driver's abort (a robot the verified config knows to be uncommissioned ⇒ `simulated`, R-1C-d; unknown ⇒ sent); the OT STOP
- * writes the PINNED stop values of the verified config (or of a verified sweep picture); lock / clear act on the driver's
- * in-memory MotionLock (compare-and-clear on the generation).
+ * R-10-ad — central STOP / lock / clear of an edge-owned device go through group D's edge dispatch: a robot STOP is
+ * robotEdgeDispatch's canonical abort (no authorisation; a robot the snapshot KNOWS is uncommissioned ⇒ simulated, R-1C-d), an
+ * OT STOP is otEdgeDispatch's verified PINNED stop (pins checked against the signed snapshot + the running connection
+ * fingerprint — never a write the snapshot does not pin). Both journal their own `stop` record. Lock / clear act on the
+ * authority's in-memory MotionLock of D's robotManager (compare-and-clear on the generation).
  */
-export function defaultEdgeDevicePort(config: EdgeConfigSource, opts: { deadlineMs?: number } = {}): EdgeDevicePort {
-  const deadline = opts.deadlineMs ?? 5_000;
+export function edgeDispatchDevicePort(config: EdgeConfigSource): EdgeDevicePort {
   const robotOf = async (id: number) => (await import("../robot/robotManager")).getActiveRobot(id);
+  const idem = (kind: string, id: number, ctx: EdgeStopContext) => `edge-${ctx.source}-${ctx.requestId ?? "local"}-${kind}${id}-${Date.now()}`;
   return {
-    async stopRobot(robotId, why) {
-      if (config.robot(robotId)?.commissioned === false) return { outcome: "simulated", detail: `robot ${robotId} not commissioned — STOP recorded as simulated (${why})` };
-      const r = await robotOf(robotId);
-      if (!r) return { outcome: "failed", detail: `robot ${robotId} has no driver session on this edge` };
-      try {
-        await withTimeout(r.driver.abort(), deadline, `robot ${robotId} abort`);
-        return { outcome: "sent", detail: why };
-      } catch (err) {
-        return { outcome: "failed", detail: (err as Error)?.message ?? String(err) };
-      }
+    async stopRobot(robotId, why, ctx) {
+      const { dispatchRobotOnEdge } = await import("../robot/robotEdgeDispatch");
+      const r = await dispatchRobotOnEdge({ robotId, job: { jobType: "abort" }, idempotencyKey: idem("r", robotId, ctx), source: ctx.source, requestId: ctx.requestId });
+      const outcome = r.ok ? (r.status === "simulated" ? "simulated" : "sent") : "failed";
+      return { outcome, detail: r.reason ?? r.error ?? why, journaled: true };
     },
-    async stopAdapter(adapterId, pins, why) {
+    async stopAdapter(adapterId, pins, why, ctx) {
       const a = config.adapter(adapterId);
-      if (!a) return { outcome: "failed", detail: `adapter ${adapterId} is not this node's` };
-      const usePins = pins ?? a.tags.filter((t) => t.stopValue !== null && t.stopValue !== undefined).map((t) => ({ tagKey: t.tagKey, value: t.stopValue }));
-      const writes = usePins.flatMap((p) => {
-        const t = a.tags.find((x) => x.tagKey === p.tagKey && x.writable);
-        return t ? [{ tagKey: t.tagKey, address: t.address, value: p.value, dataType: t.dataType, scale: t.scale ?? undefined, offset: t.offset ?? undefined }] : [];
-      });
-      if (writes.length === 0) return { outcome: "failed", detail: `adapter ${adapterId} has no pinned STOP tag` };
-      const { getActiveDriver } = await import("../ot/otManager");
-      const d = getActiveDriver(adapterId);
-      if (!d) return { outcome: "failed", detail: `adapter ${adapterId} is not connected` };
-      try {
-        const res = await withTimeout(d.writeTags(writes), deadline, `adapter ${adapterId} STOP write`);
-        const ok = Array.isArray(res) && res.length > 0 && res.every((x) => (x as { ok?: unknown }).ok === true);
-        return { outcome: ok ? "sent" : "failed", detail: why };
-      } catch (err) {
-        return { outcome: "failed", detail: (err as Error)?.message ?? String(err) };
-      }
+      const usePins = pins ?? (a?.tags ?? []).filter((t) => t.stopValue !== null && t.stopValue !== undefined).map((t) => ({ tagKey: t.tagKey, value: t.stopValue }));
+      if (!a || usePins.length === 0) return { outcome: "failed", detail: !a ? `adapter ${adapterId} is not this node's` : `adapter ${adapterId} has no pinned STOP tag` };
+      const { dispatchOtOnEdge } = await import("../ot/otEdgeDispatch");
+      const r = await dispatchOtOnEdge({ adapterId, machineId: a.machineId, commandType: "stop", writes: usePins, idempotencyKey: idem("a", adapterId, ctx), source: ctx.source, requestId: ctx.requestId });
+      if (!r.stop) return { outcome: "failed", detail: r.reason ?? r.detail ?? `not a verified pinned STOP (${why})`, journaled: true };
+      const outcome = r.ok ? (r.status === "simulated" ? "simulated" : "sent") : "failed";
+      return { outcome, detail: r.reason ?? why, journaled: true };
     },
     async lockRobot(robotId, reason) {
       const lock = (await robotOf(robotId))?.driver.motionLockController?.();

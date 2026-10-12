@@ -23,6 +23,7 @@ import { performance } from "node:perf_hooks";
 import type { z } from "zod";
 import {
   EDGE_ANSWER_SCHEMAS,
+  EDGE_AUTH_TTL_MAX_MS,
   EDGE_NODE_ROUTES,
   EDGE_REQUEST_SCHEMAS,
   edgeCommandSchema,
@@ -153,6 +154,8 @@ export interface EdgeCentralClientOptions {
   log?: (msg: string) => void;
 }
 
+/** the largest answer body parsed (a config snapshot of 500 adapters × 5 000 tags fits) */
+export const EDGE_ANSWER_MAX_BYTES = 32 * 1024 * 1024;
 const UNAVAILABLE_CODES = new Set(["edge_disabled", "edge_unavailable", "rate_limited", "unauthorized", "bad_answer"]);
 
 export class EdgeCentralClient {
@@ -193,7 +196,12 @@ export class EdgeCentralClient {
     type Envelope = { ok?: unknown; data?: unknown; error?: { code?: unknown; message?: unknown; details?: unknown } } | null;
     let json: Envelope = null;
     try {
-      json = (await res.json()) as Envelope;
+      // fix review 1 (M-10) — a size cap besides the time bound: a declared or actual body above the cap is not parsed
+      const declared = Number(res.headers?.get?.("content-length") ?? NaN);
+      if (Number.isFinite(declared) && declared > EDGE_ANSWER_MAX_BYTES) throw new Error("answer too large");
+      const text = await res.text();
+      if (text.length > EDGE_ANSWER_MAX_BYTES) throw new Error("answer too large");
+      json = JSON.parse(text) as Envelope;
     } catch {
       json = null;
     }
@@ -296,7 +304,10 @@ export interface EdgeAuthorizeClient {
   isNoncePending(reqNonce: string): boolean;
   /** the authorisation was used (or abandoned) — the nonce is no longer pending */
   settleNonce(reqNonce: string): void;
+  /** nonces currently pending (bounded: settled on use, at TTL lapse, and at EDGE_PENDING_NONCES_MAX) */
+  pendingCount(): number;
 }
+export const EDGE_PENDING_NONCES_MAX = 1_000;
 
 export interface EdgeAuthorizeDeps {
   client: EdgeCentralClient;
@@ -314,7 +325,19 @@ export function newEdgeReqNonce(): string {
 }
 
 export function createEdgeAuthorizeClient(deps: EdgeAuthorizeDeps): EdgeAuthorizeClient {
+  // fix review 1 (M-3) — BOUNDED: a nonce is settled by its user (settleNonce), or at the latest when its authorisation can
+  // no longer be valid (first send + EDGE_AUTH_TTL_MAX_MS: pruned on every authorize, and by an unref'd timer); at most
+  // EDGE_PENDING_NONCES_MAX entries (the oldest goes first — it is the closest to its TTL anyway).
   const pending = new Map<string, number>();
+  const prune = () => {
+    const now = deps.client.monoNow();
+    for (const [n, t] of pending) if (now - t > EDGE_AUTH_TTL_MAX_MS) pending.delete(n);
+    while (pending.size >= EDGE_PENDING_NONCES_MAX) pending.delete(pending.keys().next().value as string);
+  };
+  const settleLater = (n: string) => {
+    const t = setTimeout(() => pending.delete(n), EDGE_AUTH_TTL_MAX_MS + 1_000);
+    if (typeof t.unref === "function") t.unref();
+  };
   const nonceSentAt = (n: string): number | null => (pending.has(n) ? (pending.get(n) as number) : null);
   return {
     nonceSentAt,
@@ -322,6 +345,7 @@ export function createEdgeAuthorizeClient(deps: EdgeAuthorizeDeps): EdgeAuthoriz
     settleNonce: (n) => {
       pending.delete(n);
     },
+    pendingCount: () => pending.size,
     async authorize(input: EdgeAuthorizeInput): Promise<EdgeAuthorizeOutcome> {
       const store = deps.trust();
       const credentialId = deps.credentialId();
@@ -338,7 +362,9 @@ export function createEdgeAuthorizeClient(deps: EdgeAuthorizeDeps): EdgeAuthoriz
         payloadHash: input.payloadHash,
         programChecks: deps.programChecks().slice(0, 256),
       };
+      prune();
       pending.set(reqNonce, deps.client.monoNow()); // the FIRST send time — a retry with the same nonce never extends it
+      settleLater(reqNonce);
       let r = await deps.client.post("authorize", body, { runId: input.runId });
       if (!r.ok && r.status === 0 && r.code === null) r = await deps.client.post("authorize", body, { runId: input.runId }); // one retry: same nonce ⇒ same token
       if (!r.ok) {

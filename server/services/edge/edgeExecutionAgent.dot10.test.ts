@@ -25,6 +25,25 @@ import { EdgeJournal } from "./edgeJournal";
 import { generateEdgeSigningKey } from "./edgeSigning";
 import { EdgeProgramChecks, EdgeStreamShipper, createEdgeJournalConsume, createEdgeReportSink } from "./edgeStreams";
 
+/**
+ * fix review 1 (R-10-ag) — only DURABLE records ship. A record appended without awaiting (an anomaly, an ack) becomes durable
+ * at the next group commit; the harness's explicit ship step fsyncs first, as the production loop's next commit would.
+ */
+function shipDurable(journal: EdgeJournal, shipper: EdgeStreamShipper): EdgeStreamShipper {
+  const flushAll = shipper.flushAll.bind(shipper);
+  const flush = shipper.flush.bind(shipper);
+  shipper.flushAll = async () => {
+    await journal.flush();
+    return flushAll();
+  };
+  shipper.flush = async (stream: string, epoch?: string) => {
+    await journal.flush();
+    return flush(stream, epoch);
+  };
+  return shipper;
+}
+
+
 const PH = "sha256:" + "c".repeat(64);
 const dirs: string[] = [];
 const agents: EdgeExecutionAgent[] = [];
@@ -92,7 +111,7 @@ async function harness(o: { central?: FakeCentral; walker?: EdgeWalker | null; c
   const client = new EdgeCentralClient({ centralUrl: "http://central.test", credential: KIT_TOKEN, requestTimeoutMs: 2_000, fetchImpl: central.fetchImpl });
   const config = await EdgeConfigSource.create({ client, pin: central.pin, nodeId: central.nodeId, credentialId: central.credentialId, credential: KIT_TOKEN, dir });
   expect(await config.refresh()).toMatchObject({ ok: true });
-  const shipper = new EdgeStreamShipper(journal, client);
+  const shipper = shipDurable(journal, new EdgeStreamShipper(journal, client));
   const sink = createEdgeReportSink(journal, (s) => shipper.nudge(s));
   const consume = createEdgeJournalConsume(journal);
   const programChecks = new EdgeProgramChecks({ config, client, read: async () => ({ status: "unsupported", source: "stub" }) });
@@ -456,6 +475,40 @@ describe("doc 81 Đợt 10 E — agent v2: central commands (design §2.8)", () 
     expect(acks(h.central).map((r) => [r.requestId, r.outcome])).toEqual([[99, "done"], [100, "done"]]);
   });
 
+  it("★ fix review 1 (I-3): a STOP first executed UNVERIFIED (keyset lag) is ACKED once a verified copy arrives — with the target, once", async () => {
+    const h = await harness({ claimRuns: false });
+    const evil = generateEdgeSigningKey().key;
+    const payload = h.central.commandPayload({ requestId: 120, kind: "stop", target: { robotId: 12 } });
+    expect((await h.agent.handleCommands([h.central.sign("cmd", payload, evil)])).map((c) => c.outcome)).toEqual(["unverified:sent"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central)).toEqual([]); // evidence only — never acked from a bad signature
+    const good = h.central.sign("cmd", payload);
+    expect((await h.agent.handleCommands([good])).map((c) => c.outcome)).toEqual(["duplicate"]);
+    expect((await h.agent.handleCommands([good])).map((c) => c.outcome)).toEqual(["duplicate"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((r) => [r.requestId, r.outcome, r.target, r.ownerEpoch])).toEqual([[120, "done", { robotId: 12 }, 3]]);
+    expect(h.devices.calls).toEqual(["stopRobot:12"]); // executed once
+  });
+
+  it("★ fix review 1 (I-4, L-7): a STOP in the pull runs BEFORE the config refresh — a hanging refresh / work phase never delays it, nor the next pull's STOPs", async () => {
+    const h = await harness({ claimRuns: false });
+    h.central.setConfig({}); // a newer config ⇒ the work phase refreshes …
+    h.central.handlers.config = () => new Promise<never>(() => undefined); // … and that refresh HANGS (the fake ignores the timeout)
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 130, kind: "stop", target: { robotId: 12 } }))];
+    const t0 = Date.now();
+    void h.agent.tick();
+    await vi.waitFor(() => expect(h.devices.calls).toEqual(["stopRobot:12"]), { timeout: 1_000, interval: 5 });
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    await new Promise((r) => setTimeout(r, 50)); // the first pull is over; its work phase hangs on the refresh
+    // a second pull while the first work phase still hangs: its STOP goes too
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 131, kind: "stop", target: { adapterId: 21 } }))];
+    const t1 = Date.now();
+    const r2 = await h.agent.tick();
+    expect(Date.now() - t1).toBeLessThan(1_000);
+    expect(r2.commands.map((c) => [c.requestId, c.outcome])).toEqual([[131, "sent"]]);
+    expect(h.devices.calls).toEqual(["stopRobot:12", "stopAdapter:21:config"]);
+  });
+
   it("commands piggybacked on a progress answer are handled too (D10)", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -494,6 +547,47 @@ describe("doc 81 Đợt 10 E — agent v2: STOP re-send from the sweep picture (
     expect(h.devices.calls).toEqual(["stopAdapter:21:config"]);
     await h.shipper.flushAll();
     expect(eventKinds(h.central)).toContain("anomaly:EDGE_SWEEP_PICTURE_INVALID");
+  });
+});
+
+describe("doc 81 Đợt 10 E — agent v2: fix review 1 minors", () => {
+  it("★ M-7: an UNVERIFIED sweep picture never skips a STOP — its `abortSentBefore` is not trusted", async () => {
+    const h = await harness({ claimRuns: false });
+    const evil = generateEdgeSigningKey().key;
+    const pic = h.central.sweepPicture(35, { prior: { completed: [], settled: [], attempted: [], startOrder: [], branches: [], abortSentBefore: ["s-r", "s-o", "s-done"], unknown: false } });
+    h.central.stopsUnconfirmed = [{ runId: 35, picture: h.central.sign("runpkg", pic, evil) }];
+    await h.agent.tick();
+    expect(h.devices.calls).toEqual(["stopRobot:12", "stopAdapter:21:config", "stopRobot:12"]);
+  });
+
+  it("★ M-8: the error of an ABORTED segment end reaches central", async () => {
+    const h = await harness({ walker: { drive: async () => ({ outcome: "aborted", error: "EDGE_OUTCOME_UNKNOWN(m1)" }), abortLive: async () => ({ live: false }) } });
+    h.central.addRun(9);
+    await h.agent.tick();
+    await h.agent.idle();
+    expect(h.central.callsTo("complete")[0].body).toMatchObject({ outcome: "aborted", error: "EDGE_OUTCOME_UNKNOWN(m1)" });
+  });
+
+  it("★ M-3: pending nonces are bounded — settled on use, and at the latest at TTL lapse", async () => {
+    let mono = 1_000;
+    const central = new FakeCentral();
+    const client = new EdgeCentralClient({ centralUrl: "http://central.test", credential: KIT_TOKEN, requestTimeoutMs: 2_000, fetchImpl: central.fetchImpl, monoNow: () => mono });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "edge-nonce-"));
+    dirs.push(dir);
+    const config = await EdgeConfigSource.create({ client, pin: central.pin, nodeId: 7, credentialId: 31, credential: KIT_TOKEN, dir });
+    await config.refresh();
+    const az = createEdgeAuthorizeClient({ client, trust: () => config.trust(), credentialId: () => 31, maxTtlMs: () => 10_000, isJtiConsumed: () => false, programChecks: () => [] });
+    const ask = () => az.authorize({ runId: 9, claimSeq: 1, claimToken: `ect_${"A".repeat(43)}`, stepId: "m1", attempt: 1, idempotencyKey: "k", command: { kind: "robot", robotId: 12, jobType: "move", params: {} }, payloadHash: PH });
+    const a = await ask();
+    expect(a.ok).toBe(true);
+    expect(az.pendingCount()).toBe(1);
+    if (a.ok) az.settleNonce(a.reqNonce);
+    expect(az.pendingCount()).toBe(0);
+    for (let i = 0; i < 5; i++) await ask();
+    expect(az.pendingCount()).toBe(5);
+    mono += 31_000; // past the maximum TTL: every earlier nonce is useless and pruned on the next authorize
+    await ask();
+    expect(az.pendingCount()).toBe(1);
   });
 });
 

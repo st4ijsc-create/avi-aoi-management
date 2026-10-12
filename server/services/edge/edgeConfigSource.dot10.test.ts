@@ -79,6 +79,27 @@ describe("doc 81 Đợt 10 E — config source: verification", () => {
   });
 });
 
+describe("doc 81 Đợt 10 E — config source: rollback floor (fix review 1, M-6)", () => {
+  it("★ config-state.json lost ⇒ the floor comes from the VERIFIED cache; the journal's floor is honoured; never lowered", async () => {
+    const { central, src, dir } = await setup();
+    central.setConfig({});
+    central.setConfig({});
+    expect(await src.refresh()).toMatchObject({ ok: true, version: 3 });
+    await fs.unlink(path.join(dir, "config-state.json"));
+    const old = central.sign("config", central.makeConfig({ configVersion: 2 }));
+    const a = await setup(central, dir);
+    central.handlers.config = () => ({ status: 200, data: { config: old, configHash: edgeConfigHash(old) } });
+    expect(await a.src.refresh()).toMatchObject({ ok: false, reason: "rollback" }); // floor 3 from the cache
+    // no cache, no state — but the journal remembers v5
+    await fs.unlink(path.join(dir, EDGE_CONFIG_CACHE_FILE));
+    const client = new EdgeCentralClient({ centralUrl: "http://central.test", credential: KIT_TOKEN, requestTimeoutMs: 2_000, fetchImpl: central.fetchImpl, log: () => undefined });
+    const b = await EdgeConfigSource.create({ client, pin: central.pin, nodeId: 7, credentialId: 31, credential: KIT_TOKEN, dir, floorVersion: 5, log: () => undefined });
+    const v4 = central.sign("config", central.makeConfig({ configVersion: 4 }));
+    central.handlers.config = () => ({ status: 200, data: { config: v4, configHash: edgeConfigHash(v4) } });
+    expect(await b.refresh()).toMatchObject({ ok: false, reason: "rollback" });
+  });
+});
+
 describe("doc 81 Đợt 10 E — config source: cache + keyset chain", () => {
   it("★ restart while central is down: the encrypted cache is loaded and VERIFIED again; a tampered / foreign cache is refused", async () => {
     const { central, src, dir } = await setup();

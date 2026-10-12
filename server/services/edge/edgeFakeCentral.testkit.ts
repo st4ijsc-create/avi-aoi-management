@@ -17,7 +17,10 @@ import {
 import { EDGE_TYP_NAME, edgePinnedKeyset, generateEdgeSigningKey, signEdgeObject, type EdgeSignedEnvelope, type EdgeSignedTyp, type EdgeSigningKey } from "./edgeSigning";
 
 export const KIT_TOKEN = `edn_0123456789ab.${"S".repeat(43)}`;
-export const kitHashDefinition = (def: Record<string, unknown>): string => createHash("sha256").update(JSON.stringify(def)).digest("hex");
+const canon = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(canon) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])])) : v;
+/** the same canonical hash as foeGateApproval.hashWorkflowDefinition (sorted keys, deep) — the real walker re-checks it */
+export const kitHashDefinition = (def: Record<string, unknown>): string => createHash("sha256").update(JSON.stringify(canon(def))).digest("hex");
 
 export type KitAnswer = { status: number; data?: unknown; code?: string; details?: unknown } | "network";
 export type KitHandler = (body: any, runId: number | undefined) => KitAnswer | Promise<KitAnswer>;
@@ -48,6 +51,8 @@ export class FakeCentral {
   configVersion = 1;
   /** definitions by run id */
   readonly definitions = new Map<number, Record<string, unknown>>();
+  /** package overrides by run id (machines, verified stops …) */
+  readonly packageOver = new Map<number, Partial<EdgeRunPackage>>();
   readonly cursors = new Map<string, number>();
   readonly received: Record<string, any[]> = { report: [], locksEvents: [], robotsState: [], telemetry: [] };
   down = false;
@@ -161,6 +166,7 @@ export class FakeCentral {
       resolvedAdapters: [],
       approvals: [],
       bindingDigest: null,
+      ...(this.packageOver.get(runId) ?? {}),
       ...over,
     } as EdgeRunPackage;
   }

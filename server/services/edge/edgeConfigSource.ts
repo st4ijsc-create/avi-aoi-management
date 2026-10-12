@@ -11,6 +11,8 @@
  *     in `config-state.json`, R-10-f) — an unverified config is never used. The answer's configHash must hash the envelope.
  *   • CACHE: the last verified envelope is cached AES-256-GCM under HKDF(node credential) (`config.cache`), so an edge that
  *     restarts while central is down still knows its own devices (STOP pins, robots) — and it is VERIFIED AGAIN when loaded.
+ *     Rotating the node credential makes the cache unreadable (by design: it is bound to the credential) — the next boot then
+ *     needs central (or a fresh cache) before it starts any device.
  *   • SOURCES: runtime adapters for the OT manager (ot/deviceAdapter.setAdapterSource), robots / safety-PLC configs for group
  *     D's seams, `owns*()` lookups. Device secrets exist only for the node's own devices (central decrypts, D4); the edge never
  *     holds SECRET_ENCRYPTION_KEY.
@@ -48,6 +50,8 @@ export interface EdgeConfigSourceOptions {
   credential: string;
   /** where the cache + persisted keyset chain live (the journal volume) */
   dir: string;
+  /** fix review 1 (M-6) — a rollback floor kept elsewhere (the journal's last accepted config version); never lowers it */
+  floorVersion?: number | null;
   now?: () => number;
   skewMs?: number;
   log?: (msg: string) => void;
@@ -138,12 +142,24 @@ export class EdgeConfigSource {
       store = fromPin([]);
     }
     const src = new EdgeConfigSource(opts, store);
+    // the rollback floor (fix review 1, M-6) = the highest of: config-state.json, the journal's floor, the version of the
+    // VERIFIED cache — a lost / corrupt config-state.json never lowers it; null only when none of them knows a config
+    const floors: number[] = [];
     try {
       const st = JSON.parse(await fs.readFile(path.join(opts.dir, EDGE_CONFIG_STATE_FILE), "utf8")) as { lastConfigVersion?: unknown };
-      if (typeof st?.lastConfigVersion === "number" && Number.isSafeInteger(st.lastConfigVersion) && st.lastConfigVersion > 0) src.lastAccepted = st.lastConfigVersion;
+      if (typeof st?.lastConfigVersion === "number" && Number.isSafeInteger(st.lastConfigVersion) && st.lastConfigVersion > 0) floors.push(st.lastConfigVersion);
     } catch {
-      src.lastAccepted = null; // never accepted one (first boot after provisioning)
+      /* missing / corrupt — the other floors decide */
     }
+    if (typeof opts.floorVersion === "number" && Number.isSafeInteger(opts.floorVersion) && opts.floorVersion > 0) floors.push(opts.floorVersion);
+    try {
+      const env = openEdgeConfigCache(opts.credential, await fs.readFile(path.join(opts.dir, EDGE_CONFIG_CACHE_FILE), "utf8"));
+      const v = edgeTrustAdapter.config(store, env, { credentialId: opts.credentialId, lastConfigVersion: null });
+      if (v.ok) floors.push(v.config.configVersion);
+    } catch {
+      /* no cache (or a credential rotation made it unreadable — expected: the cache is bound to the credential) */
+    }
+    src.lastAccepted = floors.length > 0 ? Math.max(...floors) : null;
     return src;
   }
 
@@ -265,8 +281,9 @@ export class EdgeConfigSource {
     try {
       if (this.store.version !== before) await writeFileAtomic(path.join(this.opts.dir, EDGE_KEYSET_UPDATES_FILE), JSON.stringify(this.store.acceptedUpdates()) + "\n");
       if (a.changed && this.envelope) {
-        await writeFileAtomic(path.join(this.opts.dir, EDGE_CONFIG_STATE_FILE), JSON.stringify({ lastConfigVersion: this.lastAccepted }) + "\n");
+        // cache FIRST: a failed state write can then never make the cache refuse itself as a rollback (M-6)
         await writeFileAtomic(path.join(this.opts.dir, EDGE_CONFIG_CACHE_FILE), sealEdgeConfigCache(this.opts.credential, this.envelope));
+        await writeFileAtomic(path.join(this.opts.dir, EDGE_CONFIG_STATE_FILE), JSON.stringify({ lastConfigVersion: this.lastAccepted }) + "\n");
       }
     } catch (err) {
       this.log(`[EdgeConfig] config cache / keyset chain not persisted: ${(err as Error)?.message ?? err}`);
