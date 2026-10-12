@@ -77,6 +77,8 @@
 --   with generation + 1), set by the relock / edge apply too; replaces Group D's random µs tag in lockedAt.
 -- fix review 6 (D re-review NF-1): the adapter owner change is refused only while a write is UNRESOLVED (an intent without
 --   a result row, or a 'timeout' / legacy 'sent' row within a 10-minute stale-write window) — resolved history no longer blocks.
+-- fix review 7 (R-10-au / R-10-k): edge_stop_ack_edge never raises on an outcome — notOwnedHere ⇒ refusal 'not_owned_here'
+--   (STOP stays pending), expired / unknown / NULL ⇒ 'bad_outcome'; both return false.
 -- fix review 4 (ruling R-10-ah, re-review F1): edge_stop_ack_edge also requires the device to be owned by the calling node at
 --   the row's epoch NOW; every refused edge ack is kept as WORM evidence in edge_stop_ack_refusals (avi_app SELECT only).
 --
@@ -662,7 +664,8 @@ END $$;
 REVOKE ALL ON FUNCTION public.edge_stop_ack_central(integer, text, integer) FROM PUBLIC;
 
 -- fix review 4 (R-10-ah, re-review F1): EVIDENCE of every edge STOP ack that was NOT accepted (WORM; written only by
--- edge_stop_ack_edge as owner). Reason: malformed | not_pending | other_node | target_mismatch | epoch_mismatch | not_current_owner.
+-- edge_stop_ack_edge as owner). Reason: malformed | not_pending | other_node | target_mismatch | epoch_mismatch | not_current_owner |
+-- not_owned_here (the node reports it no longer holds the device; non-terminal) | bad_outcome (expired / unknown — R-10-k).
 CREATE TABLE IF NOT EXISTS "edge_stop_ack_refusals" (
   "id" bigserial PRIMARY KEY,
   "requestId" integer,
@@ -674,12 +677,12 @@ CREATE TABLE IF NOT EXISTS "edge_stop_ack_refusals" (
   "viaUnsigned" boolean,
   "reason" varchar(32) NOT NULL,
   "at" timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT "ck_edge_stop_ack_refusal_reason" CHECK ("reason" IN ('malformed', 'not_pending', 'other_node', 'target_mismatch', 'epoch_mismatch', 'not_current_owner'))
+  CONSTRAINT "ck_edge_stop_ack_refusal_reason" CHECK ("reason" IN ('malformed', 'not_pending', 'other_node', 'target_mismatch', 'epoch_mismatch', 'not_current_owner', 'not_owned_here', 'bad_outcome'))
 );
 CREATE INDEX IF NOT EXISTS "idx_edge_stop_ack_refusals_req" ON "edge_stop_ack_refusals" ("requestId");
 ALTER TABLE "edge_stop_ack_refusals" DROP CONSTRAINT IF EXISTS "ck_edge_stop_ack_refusal_reason";
 ALTER TABLE "edge_stop_ack_refusals" ADD CONSTRAINT "ck_edge_stop_ack_refusal_reason"
-  CHECK ("reason" IN ('malformed', 'not_pending', 'other_node', 'target_mismatch', 'epoch_mismatch', 'not_current_owner'));
+  CHECK ("reason" IN ('malformed', 'not_pending', 'other_node', 'target_mismatch', 'epoch_mismatch', 'not_current_owner', 'not_owned_here', 'bad_outcome'));
 COMMENT ON TABLE "edge_stop_ack_refusals" IS
   'doc 81 Dot 10 A (0374, fix review 4 R-10-ah): WORM evidence of edge STOP acks that were refused (e.g. a former owner answering for a device it no longer owns). Written only by edge_stop_ack_edge.';
 CREATE OR REPLACE FUNCTION public.edge_stop_ack_refusals_worm() RETURNS trigger LANGUAGE plpgsql
@@ -709,8 +712,14 @@ DECLARE
   cur_epoch bigint;
   why text;
 BEGIN
+  -- fix review 7 (R-10-au, R-10-k): NO outcome ever raises — every refused ack leaves WORM evidence and returns false:
+  --   • notOwnedHere — the node no longer holds the device: NON-terminal, the STOP stays pending for its current executor;
+  --   • expired / any other unknown / NULL outcome — a STOP is never acked expired.
   IF p_outcome IS NULL OR p_outcome NOT IN ('done', 'refused', 'failed') THEN
-    RAISE EXCEPTION 'edge_stop_ack_edge: outcome must be done, refused or failed (got %)', p_outcome USING ERRCODE = 'check_violation';
+    INSERT INTO public."edge_stop_ack_refusals" ("requestId", "edgeNodeId", "robotId", "adapterId", "ownerEpoch", "outcome", "viaUnsigned", "reason")
+      VALUES (p_request, p_node, p_robot, p_adapter, p_owner_epoch, left(COALESCE(p_outcome, 'null'), 16), p_unsigned,
+              CASE WHEN p_outcome = 'notOwnedHere' THEN 'not_owned_here' ELSE 'bad_outcome' END);
+    RETURN false;
   END IF;
   -- fix review 4: a malformed ack (no / two targets, no node / epoch / channel) is REFUSED like any other mismatch — false +
   -- evidence, the request stays pending (B answers 409); only an outcome outside done | refused | failed is an error

@@ -262,7 +262,7 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       const again = await ack({});
       return { otherNode, otherTarget, otherEpoch, expired, twoTargets, good, row, again };
     });
-    expect(r).toEqual({ otherNode: "false", otherTarget: "false", otherEpoch: "false", expired: "23514", twoTargets: "false", good: null, row: { outcome: "done", u: true, d: true }, again: "false" });
+    expect(r).toEqual({ otherNode: "false", otherTarget: "false", otherEpoch: "false", expired: "false", twoTargets: "false", good: null, row: { outcome: "done", u: true, d: true }, again: "false" });
   }, 60_000);
 
   it("★ N2: a STOP answered refused / failed STAYS in device_pending_stops (needsResolution) and keeps its device undeletable until a person resolves it", async () => {
@@ -302,5 +302,34 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       return { oldNodeAcksCentralStop, oldNodeAcksMovedAdapter, s1StillForCentral: p1?.c ?? null, s2StillPending: o2.pending, evidence };
     });
     expect(r).toEqual({ oldNodeAcksCentralStop: false, oldNodeAcksMovedAdapter: false, s1StillForCentral: true, s2StillPending: true, evidence: ["s1:not_current_owner:done", "s2:not_current_owner:done"] });
+  }, 60_000);
+
+  // ── fix review 7 (B, R-10-au / R-10-k): no outcome ever raises — every refused edge ack leaves WORM evidence ──────────────
+  it("★ R7: notOwnedHere ⇒ false + refusal not_owned_here, the STOP stays PENDING (non-terminal); expired / unknown / NULL ⇒ false + bad_outcome", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const s1 = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      const ack = async (outcome: string | null) =>
+        (await tx`SELECT public.edge_stop_ack_edge(${s1}, ${f.a}, ${f.robot}::integer, NULL::integer, 2::bigint, ${outcome}, true, NULL) AS ok`)[0].ok;
+      const notOwnedHere = await ack("notOwnedHere");
+      const expired = await ack("expired");
+      const bogus = await ack("bogus-outcome-longer-than-sixteen");
+      const none = await ack(null);
+      const [p] = await tx`SELECT "ackedAt" IS NULL AS pending FROM public.robot_motion_lock_requests WHERE id = ${s1}`;
+      const [v] = await tx`SELECT count(*)::int AS n FROM public.device_pending_stops WHERE "requestId" = ${s1}`;
+      const ev = (await tx`SELECT reason, outcome FROM public.edge_stop_ack_refusals WHERE "requestId" = ${s1} ORDER BY id`).map((x) => `${x.reason}:${x.outcome}`);
+      const done = await ack("done"); // the real ack still lands afterwards
+      return { notOwnedHere, expired, bogus, none, stillPending: p.pending, listed: v.n, ev, done };
+    });
+    expect(r).toEqual({
+      notOwnedHere: false,
+      expired: false,
+      bogus: false,
+      none: false,
+      stillPending: true,
+      listed: 1,
+      ev: ["not_owned_here:notOwnedHere", "bad_outcome:expired", "bad_outcome:bogus-outcome-lo", "bad_outcome:null"],
+      done: true,
+    });
   }, 60_000);
 });
