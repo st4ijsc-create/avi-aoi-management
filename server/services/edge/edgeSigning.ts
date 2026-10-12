@@ -30,11 +30,14 @@
  * (endorseEdgeKey), and buildEdgeKeyset includes only the loaded signer, the rows it endorsed (transitively) and the rows that
  * endorsed it (its ancestors, up to the GENESIS = provisioning root).
  *
- * TRUST ON THE EDGE: the keyset PINNED at provisioning (edge-keyset.json — the provisioning root, edgePinnedKeyset);
- * afterwards only keyset updates (verifyEdgeKeysetUpdate / Chain) that are signed by a key that is ACTIVE in the currently
- * trusted keyset, carry a strictly higher version, and keep EVERY pinned key, unchanged and active — the pinned root is only
- * ever replaced by re-provisioning (a new pin file). Rotation therefore = add a new signer (generate → next, activate → both
- * active, ≥ 2 config cycles, switch central's key file, retire the previous non-root signer); it never revokes the root.
+ * TRUST ON THE EDGE (fix scan 2): the ONLY trust anchor is an EdgeTrustStore — LOCAL state built from the keyset PINNED
+ * at provisioning (edge-keyset.json, every pinned key active and open-ended) plus the keyset updates it accepted itself,
+ * each verified with the keys trusted BEFORE it (never the keys the update brings), signed by a key ACTIVE there, with a
+ * strictly higher version, keeping EVERY pinned key unchanged and active — the pinned root is only replaced by
+ * re-provisioning. verifyEdgeObject refuses any other anchor (a plain keyset object, e.g. one carried by the same message,
+ * is never trusted: `untrusted_keyset`). Validity windows use the store's own clock, never a time from a claim. The typed
+ * verifiers (node / run / claim / TTL binding) are in edgeTrust.ts. Rotation = add a new signer (generate → next, activate →
+ * both active, ≥ 2 config cycles, switch central's key file, retire the previous non-root signer); it never revokes the root.
  *
  * Nothing here touches the DB or the network. Verification never throws: it answers { ok:false, reason }.
  */
@@ -338,9 +341,10 @@ export function edgePinnedKeyset(roots: ReadonlyArray<{ kid: string; publicKeyPe
   return p.keyset;
 }
 
-// ── verification (allow-list, R-10-a) ───────────────────────────────────────────────────────────────────────────────
+// ── verification (allow-list, R-10-a; fix scan 2: the trust anchor is LOCAL state, never a request) ─────────────────
 
 export type EdgeVerifyFailure =
+  | "untrusted_keyset"
   | "malformed"
   | "bad_alg"
   | "wrong_typ"
@@ -350,11 +354,10 @@ export type EdgeVerifyFailure =
   | "bad_signature"
   | "claim_mismatch";
 export type EdgeVerifyResult<T = unknown> = { ok: true; payload: T; kid: string } | { ok: false; reason: EdgeVerifyFailure };
-export interface EdgeVerifyOptions {
-  /** wall clock for the key validity window (default Date.now()) */
-  nowMs?: number;
-  /** tolerated clock skew for the key validity window (default 5 s) */
-  skewMs?: number;
+export type EdgeKeysetUpdateFailure = EdgeVerifyFailure | "signer_not_active" | "rollback" | "invalid_keyset" | "pinned_removed";
+
+export class EdgeTrustError extends Error {
+  readonly code = "EDGE_TRUST";
 }
 
 /** May this keyset entry VERIFY now? active or retired, inside [notBefore − skew, notAfter + skew]; next ⇒ never. */
@@ -366,7 +369,7 @@ function keyUsableAt(k: EdgeKeysetKey, nowMs: number, skewMs: number): boolean {
   return true;
 }
 
-function verifyInner(raw: unknown, expectedTyp: EdgeSignedTyp, keyset: EdgeKeyset, opts: EdgeVerifyOptions): EdgeVerifyResult & { key?: EdgeKeysetKey } {
+function verifyInner(raw: unknown, expectedTyp: EdgeSignedTyp, keyset: EdgeKeyset, nowMs: number, skewMs: number): EdgeVerifyResult & { key?: EdgeKeysetKey } {
   if (!(EDGE_SIGNED_TYPS as readonly unknown[]).includes(expectedTyp)) return { ok: false, reason: "wrong_typ" };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, reason: "malformed" };
   if ((raw as Record<string, unknown>).alg !== EDGE_SIG_ALG) return { ok: false, reason: "bad_alg" };
@@ -379,9 +382,12 @@ function verifyInner(raw: unknown, expectedTyp: EdgeSignedTyp, keyset: EdgeKeyse
   const matches = keyset.keys.filter((k) => k.kid === env.kid);
   if (matches.length !== 1) return { ok: false, reason: "unknown_kid" };
   const key = matches[0];
-  if (!keyUsableAt(key, opts.nowMs ?? Date.now(), opts.skewMs ?? 5_000)) return { ok: false, reason: "key_not_valid" };
+  // a kid IS the fingerprint of its key: an entry whose key is not the kid's (collision / substitution) never verifies
+  if (edgeKidOf(key.publicKeyPem) !== env.kid) return { ok: false, reason: "unknown_kid" };
+  if (!keyUsableAt(key, nowMs, skewMs)) return { ok: false, reason: "key_not_valid" };
   let payload: unknown;
   try {
+    // the EXACT received text is what is verified; it must already be canonical (no re-serialisation of a parsed object)
     payload = parseEdgeCanonicalJson(env.payload);
   } catch {
     return { ok: false, reason: "non_canonical" };
@@ -396,67 +402,157 @@ function verifyInner(raw: unknown, expectedTyp: EdgeSignedTyp, keyset: EdgeKeyse
   return { ok: true, payload, kid: env.kid, key };
 }
 
-function verifyWithKey(raw: unknown, expectedTyp: EdgeSignedTyp, keyset: EdgeKeyset, opts: EdgeVerifyOptions): EdgeVerifyResult & { key?: EdgeKeysetKey } {
+function verifyAgainst(raw: unknown, expectedTyp: EdgeSignedTyp, keyset: EdgeKeyset, nowMs: number, skewMs: number): EdgeVerifyResult & { key?: EdgeKeysetKey } {
   try {
-    return verifyInner(raw, expectedTyp, keyset, opts);
+    return verifyInner(raw, expectedTyp, keyset, nowMs, skewMs);
   } catch {
     return { ok: false, reason: "malformed" }; // any exception ⇒ invalid (R-10-a)
   }
 }
 
-/**
- * Verify a signed envelope of the expected typ against an ALREADY-TRUSTED keyset. Never throws. On success the parsed
- * payload is returned — the caller still validates it with its own strict schema (edgeProtocol).
- */
-export function verifyEdgeObject<T = unknown>(raw: unknown, expectedTyp: EdgeSignedTyp, keyset: EdgeKeyset, opts: EdgeVerifyOptions = {}): EdgeVerifyResult<T> {
-  const r = verifyWithKey(raw, expectedTyp, keyset, opts);
-  if (!r.ok) return { ok: false, reason: r.reason };
-  return { ok: true, payload: r.payload as T, kid: r.kid };
-}
-
-export type EdgeKeysetUpdateFailure = EdgeVerifyFailure | "signer_not_active" | "rollback" | "invalid_keyset" | "pinned_removed";
-
-/**
- * One link of the chain (R-10-a): signed (typ keyset) by a key ACTIVE in the currently trusted keyset (never next / retired),
- * a valid keyset with a strictly higher version, keeping every PINNED key (same kid, same public key, status active,
- * open-ended). Never throws.
- */
-export function verifyEdgeKeysetUpdate(
+/** One chain link, verified with the OLD (currently trusted) keyset — never with the keys the update itself brings. */
+function checkKeysetUpdate(
   pinned: EdgeKeyset,
   trusted: EdgeKeyset,
   update: unknown,
-  opts: EdgeVerifyOptions = {},
-): { ok: true; keyset: EdgeKeyset } | { ok: false; reason: EdgeKeysetUpdateFailure } {
+  nowMs: number,
+  skewMs: number,
+): { ok: true; keyset: EdgeKeyset; same: boolean } | { ok: false; reason: EdgeKeysetUpdateFailure } {
   try {
-    const r = verifyWithKey(update, "keyset", trusted, opts);
+    const r = verifyAgainst(update, "keyset", trusted, nowMs, skewMs);
     if (!r.ok) return { ok: false, reason: r.reason };
     if (!r.key || r.key.status !== "active") return { ok: false, reason: "signer_not_active" };
     const parsed = parseEdgeKeyset(r.payload);
     if (!parsed.ok) return { ok: false, reason: "invalid_keyset" };
+    if (parsed.keyset.version === trusted.version && edgeCanonicalJson(parsed.keyset) === edgeCanonicalJson(trusted)) return { ok: true, keyset: trusted, same: true };
     if (!(parsed.keyset.version > trusted.version)) return { ok: false, reason: "rollback" };
     for (const pk of pinned.keys) {
       const k = parsed.keyset.keys.find((x) => x.kid === pk.kid);
       if (!k || k.publicKeyPem !== pk.publicKeyPem || k.status !== "active" || k.notAfter !== null) return { ok: false, reason: "pinned_removed" };
     }
-    return { ok: true, keyset: parsed.keyset };
+    return { ok: true, keyset: parsed.keyset, same: false };
   } catch {
     return { ok: false, reason: "malformed" };
   }
 }
 
-/** Apply updates in order from the pinned keyset; the first broken link stops the chain (its index is returned). */
-export function verifyEdgeKeysetChain(
-  pinned: EdgeKeyset,
-  updates: readonly unknown[],
-  opts: EdgeVerifyOptions = {},
-): { ok: true; keyset: EdgeKeyset } | { ok: false; reason: EdgeKeysetUpdateFailure; index: number } {
-  let cur = pinned;
-  for (let i = 0; i < updates.length; i++) {
-    const r = verifyEdgeKeysetUpdate(pinned, cur, updates[i], opts);
-    if (!r.ok) return { ok: false, reason: r.reason, index: i };
-    cur = r.keyset;
+export interface EdgeTrustOptions {
+  /** this node's id (from the provisioning bundle) — the typed verifiers (edgeTrust.ts) bind every object to it */
+  nodeId: number;
+  /** the verifier's OWN wall clock (default Date.now) — never a time from a claim */
+  now?: () => number;
+  /** tolerated clock skew (default 5 s, bounded to [0, 300 s]) */
+  skewMs?: number;
+}
+interface TrustState {
+  pinned: EdgeKeyset;
+  current: EdgeKeyset;
+  updates: EdgeSignedEnvelope[];
+  nodeId: number;
+  now: () => number;
+  skewMs: number;
+}
+/** The ONLY trust anchors: stores built by EdgeTrustStore.fromPinned (a plain keyset object is never trusted). */
+const TRUST = new WeakMap<object, TrustState>();
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+/**
+ * The edge's trust anchor, kept in LOCAL state (fix scan 2): built only from the keyset PINNED at provisioning
+ * (edge-keyset.json — every pinned key active and open-ended) plus keyset updates it accepted itself, in order (each verified
+ * with the keys trusted BEFORE it). A keyset carried by a message (a config, a package, a request) is never a trust anchor:
+ * it is only ever offered to acceptKeysetUpdate. Persist acceptedUpdates() and pass them back to fromPinned at boot.
+ */
+export class EdgeTrustStore {
+  private constructor() {}
+
+  static fromPinned(pin: unknown, opts: EdgeTrustOptions, updates: readonly unknown[] = []): EdgeTrustStore {
+    const p = parseEdgeKeyset(pin);
+    if (!p.ok) throw new EdgeTrustError(`pinned keyset refused: ${p.reason}`);
+    if (!p.keyset.keys.every((k) => k.status === "active" && k.notAfter === null)) throw new EdgeTrustError("pinned keyset: every pinned key must be active and open-ended");
+    if (!Number.isSafeInteger(opts.nodeId) || opts.nodeId <= 0) throw new EdgeTrustError("nodeId must be a positive integer");
+    const skew = opts.skewMs ?? 5_000;
+    const state: TrustState = {
+      pinned: clone(p.keyset),
+      current: clone(p.keyset),
+      updates: [],
+      nodeId: opts.nodeId,
+      now: opts.now ?? Date.now,
+      skewMs: Number.isFinite(skew) ? Math.min(300_000, Math.max(0, skew)) : 5_000,
+    };
+    const store = new EdgeTrustStore();
+    TRUST.set(store, state);
+    for (let i = 0; i < updates.length; i++) {
+      const r = store.acceptKeysetUpdate(updates[i]);
+      if (!r.ok) throw new EdgeTrustError(`persisted keyset update ${i} refused: ${r.reason}`);
+    }
+    return store;
   }
-  return { ok: true, keyset: cur };
+
+  private st(): TrustState {
+    const s = TRUST.get(this);
+    if (!s) throw new EdgeTrustError("not a genuine EdgeTrustStore");
+    return s;
+  }
+  get nodeId(): number {
+    return this.st().nodeId;
+  }
+  get skewMs(): number {
+    return this.st().skewMs;
+  }
+  now(): number {
+    return this.st().now();
+  }
+  get version(): number {
+    return this.st().current.version;
+  }
+  /** A copy of the currently trusted keyset (changing it changes nothing). */
+  keyset(): EdgeKeyset {
+    return clone(this.st().current);
+  }
+  /** The signed updates accepted since the pin, in order (persist them; replay with fromPinned). */
+  acceptedUpdates(): EdgeSignedEnvelope[] {
+    return clone(this.st().updates);
+  }
+  /**
+   * Offer a signed keyset (e.g. config.keyset). Accepted only if signed by a key ACTIVE in the CURRENT trusted keyset, with
+   * a strictly higher version (the same version, identical, is a no-op), keeping every pinned key active and open-ended.
+   * The state changes only on success. Never throws.
+   */
+  acceptKeysetUpdate(update: unknown): { ok: true; version: number; changed: boolean } | { ok: false; reason: EdgeKeysetUpdateFailure } {
+    const s = TRUST.get(this);
+    if (!s) return { ok: false, reason: "untrusted_keyset" };
+    let now: number;
+    try {
+      now = s.now();
+    } catch {
+      return { ok: false, reason: "malformed" };
+    }
+    const r = checkKeysetUpdate(s.pinned, s.current, update, now, s.skewMs);
+    if (!r.ok) return r;
+    if (r.same) return { ok: true, version: s.current.version, changed: false };
+    s.current = clone(r.keyset);
+    s.updates.push(clone(update as EdgeSignedEnvelope));
+    return { ok: true, version: s.current.version, changed: true };
+  }
+}
+
+/**
+ * Verify a signed envelope of the expected typ against a GENUINE EdgeTrustStore (its current keyset and its own clock).
+ * Anything else as the anchor (a plain keyset object, a forged store) ⇒ untrusted_keyset. Never throws. The returned
+ * payload is NOT bound to this node yet — use the typed verifiers in edgeTrust.ts (node / run / claim / time binding).
+ */
+export function verifyEdgeObject<T = unknown>(raw: unknown, expectedTyp: EdgeSignedTyp, store: EdgeTrustStore): EdgeVerifyResult<T> {
+  const s = store && typeof store === "object" ? TRUST.get(store) : undefined;
+  if (!s) return { ok: false, reason: "untrusted_keyset" };
+  let now: number;
+  try {
+    now = s.now();
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+  const r = verifyAgainst(raw, expectedTyp, s.current, now, s.skewMs);
+  if (!r.ok) return { ok: false, reason: r.reason };
+  return { ok: true, payload: r.payload as T, kid: r.kid };
 }
 
 // ── key endorsement + central keyset assembly ──────────────────────────────────────────────────────────────────────

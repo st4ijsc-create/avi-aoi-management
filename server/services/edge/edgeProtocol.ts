@@ -9,8 +9,9 @@
  *     never name its own node / factory / credential (the identity is the authenticated credential's node — central only);
  *   • open JSON bags exist only where the shape belongs to another module and is covered by a signature or a hash: the
  *     workflow definition (defHash), run params / context, driver connectionOptions, dispatcher results, safety-PLC config;
- *   • signed objects travel as EdgeSignedEnvelope (edgeSigning.ts): the receiver VERIFIES first (verifyEdgeObject with the
- *     expected typ), then parses the payload with the schema below.
+ *   • signed objects travel as EdgeSignedEnvelope (edgeSigning.ts; payload = canonical JSON TEXT): the edge verifies them
+ *     ONLY through the typed verifiers of edgeTrust.ts (its local EdgeTrustStore + the schema below + node / run / claim /
+ *     TTL binding) — never with a keyset taken from a message.
  *
  * Signed payloads (typ → schema):   auth → edgeAuthClaimsSchema · config → edgeConfigSnapshotSchema ·
  *   runpkg → edgeRunPackageSchema | edgeSweepPictureSchema (discriminated by `kind`) · cmd → edgeCommandSchema ·
@@ -403,8 +404,9 @@ export const edgeConfigSnapshotSchema = z.strictObject({
   /** strictly increasing per node */
   configVersion: zId,
   issuedAt: zEpochMs,
-  /** central-owned identity — the node can no longer rename itself or change its factory / lines */
-  node: z.strictObject({ id: zId, code: zCode(128), factoryCode: zText(128).nullable(), lineCodes: z.array(zCode(128)).max(200) }),
+  /** central-owned identity — the node can no longer rename itself or change its factory / lines; credentialId = the
+   *  credential this config was fetched with (the edge binds every authorisation's credentialId to it) */
+  node: z.strictObject({ id: zId, code: zCode(128), credentialId: zId, factoryCode: zText(128).nullable(), lineCodes: z.array(zCode(128)).max(200) }),
   adapters: z.array(edgeConfigAdapterSchema).max(500),
   robots: z.array(edgeConfigRobotSchema).max(500),
   machines: z.array(zMachine).max(1_000),

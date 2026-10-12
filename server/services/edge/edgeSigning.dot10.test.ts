@@ -30,8 +30,7 @@ import {
   parseEdgeKeyset,
   signEdgeObject,
   verifyEdgeKeyEndorsement,
-  verifyEdgeKeysetChain,
-  verifyEdgeKeysetUpdate,
+  EdgeTrustStore,
   verifyEdgeObject,
   type EdgeKeyset,
   type EdgeSigningKey,
@@ -56,6 +55,19 @@ type KeyOpt = { key: EdgeSigningKey; status?: "next" | "active" | "retired"; not
 const entry = (k: KeyOpt) => ({ kid: k.key.kid, publicKeyPem: k.key.publicKeyPem, status: k.status ?? "active", notBefore: k.notBefore ?? T0 - 60_000, notAfter: k.notAfter ?? null });
 function keysetOf(...keys: KeyOpt[]): EdgeKeyset {
   return { v: 1, version: 1, issuedAt: T0, keys: keys.map(entry) };
+}
+let clock = T0;
+const NODE = 7;
+const pinOf = (root: EdgeSigningKey) => edgePinnedKeyset([{ kid: root.kid, publicKeyPem: root.publicKeyPem, notBefore: T0 - 60_000 }], T0);
+/** A genuine trust store pinned on `root`, plus (optionally) one chained update signed by root adding `extra`. */
+function storeWith(root: EdgeSigningKey, extra: KeyOpt[] = []): EdgeTrustStore {
+  const pin = pinOf(root);
+  const s = EdgeTrustStore.fromPinned(pin, { nodeId: NODE, now: () => clock, skewMs: 5_000 });
+  if (extra.length) {
+    const r = s.acceptKeysetUpdate(signEdgeObject("keyset", { v: 1, version: 2, issuedAt: T0, keys: [pin.keys[0], ...extra.map(entry)] }, root));
+    if (!r.ok) throw new Error("storeWith: " + r.reason);
+  }
+  return s;
 }
 /** Re-serialise a signed envelope's payload after an edit (the attacker's view: a canonical but altered payload). */
 function withPayload(env: { payload: string }, edit: (p: Record<string, unknown>) => void) {
@@ -163,13 +175,13 @@ const PINNED_CONFIG_SIG = "p9YjvXk2jxE8MPjvrzUheHZ3kbNvmo5gdyRNvSsLcNwfBPa4M8Vlj
 
 describe("verifyEdgeObject", () => {
   const key = generateEdgeSigningKey().key;
-  const ks = keysetOf({ key });
+  const ks = storeWith(key);
 
   it("round trip through JSON transport (envelope keys reordered) verifies; parsed payload and kid come back", () => {
     const claims = authClaims(key.kid);
     const env = signEdgeObject("auth", claims, key);
     const wire = JSON.parse(JSON.stringify({ sig: env.sig, payload: env.payload, kid: env.kid, alg: env.alg, typ: env.typ }));
-    const r = verifyEdgeObject(wire, "auth", ks, { nowMs: T0 });
+    const r = verifyEdgeObject(wire, "auth", ks);
     expect(r).toEqual({ ok: true, payload: claims, kid: key.kid });
   });
 
@@ -190,73 +202,78 @@ describe("verifyEdgeObject", () => {
         for (const k of p.slice(0, -1)) x = x[k] as Record<string, unknown>;
         x[p[p.length - 1]] = mutate(x[p[p.length - 1]]);
       });
-      expect(verifyEdgeObject(t, "auth", ks, { nowMs: T0 }), p.join(".")).toEqual({ ok: false, reason: "bad_signature" });
+      expect(verifyEdgeObject(t, "auth", ks), p.join(".")).toEqual({ ok: false, reason: "bad_signature" });
     }
-    expect(verifyEdgeObject(withPayload(env, (o) => delete o.ttlMs), "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "bad_signature" });
-    expect(verifyEdgeObject(withPayload(env, (o) => (o.trusted = true)), "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "bad_signature" });
+    expect(verifyEdgeObject(withPayload(env, (o) => delete o.ttlMs), "auth", ks)).toEqual({ ok: false, reason: "bad_signature" });
+    expect(verifyEdgeObject(withPayload(env, (o) => (o.trusted = true)), "auth", ks)).toEqual({ ok: false, reason: "bad_signature" });
   });
 
   it("★ cross-typ confusion: a config (or cmd / runpkg / keyset) signature presented as auth is refused — relabelled or not", () => {
     for (const other of ["config", "runpkg", "cmd", "keyset"] as const) {
       const env = signEdgeObject(other, { ...authClaims(key.kid), typ: undefined }, key);
-      expect(verifyEdgeObject(env, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "wrong_typ" });
+      expect(verifyEdgeObject(env, "auth", ks)).toEqual({ ok: false, reason: "wrong_typ" });
       const relabelled = { ...env, typ: EDGE_TYP_NAME.auth };
-      expect(verifyEdgeObject(relabelled, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "bad_signature" });
+      expect(verifyEdgeObject(relabelled, "auth", ks)).toEqual({ ok: false, reason: "bad_signature" });
     }
   });
 
   it("★ alg none / other alg ⇒ bad_alg; empty / short / non-canonical / missing signature ⇒ malformed", () => {
     const env = signEdgeObject("auth", authClaims(key.kid), key);
     for (const alg of ["none", "NONE", "HS256", "ES256", "", null]) {
-      expect(verifyEdgeObject({ ...env, alg }, "auth", ks, { nowMs: T0 }), String(alg)).toEqual({ ok: false, reason: "bad_alg" });
+      expect(verifyEdgeObject({ ...env, alg }, "auth", ks), String(alg)).toEqual({ ok: false, reason: "bad_alg" });
     }
     const { alg: _drop, ...noAlg } = env;
-    expect(verifyEdgeObject(noAlg, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "bad_alg" });
+    expect(verifyEdgeObject(noAlg, "auth", ks)).toEqual({ ok: false, reason: "bad_alg" });
     for (const sig of ["", "AA", env.sig.slice(0, 85), env.sig + "A", env.sig.slice(0, 85) + "=", Buffer.alloc(64).toString("base64"), null, 0]) {
-      expect(verifyEdgeObject({ ...env, sig }, "auth", ks, { nowMs: T0 }), String(sig)).toEqual({ ok: false, reason: "malformed" });
+      expect(verifyEdgeObject({ ...env, sig }, "auth", ks), String(sig)).toEqual({ ok: false, reason: "malformed" });
     }
     const { sig: _s, ...noSig } = env;
-    expect(verifyEdgeObject(noSig, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "malformed" });
+    expect(verifyEdgeObject(noSig, "auth", ks)).toEqual({ ok: false, reason: "malformed" });
     // a NON-canonical spelling of the SAME 64 bytes (the 4 unused low bits of the last char flipped) ⇒ malformed
     const B64U = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     const alt = env.sig.slice(0, 85) + B64U[B64U.indexOf(env.sig[85]) ^ 1];
     expect(Buffer.from(alt, "base64url").equals(Buffer.from(env.sig, "base64url"))).toBe(true);
-    expect(verifyEdgeObject({ ...env, sig: alt }, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "malformed" });
+    expect(verifyEdgeObject({ ...env, sig: alt }, "auth", ks)).toEqual({ ok: false, reason: "malformed" });
     // an all-zero (well-formed) signature is just wrong
-    expect(verifyEdgeObject({ ...env, sig: Buffer.alloc(64).toString("base64url") }, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "bad_signature" });
+    expect(verifyEdgeObject({ ...env, sig: Buffer.alloc(64).toString("base64url") }, "auth", ks)).toEqual({ ok: false, reason: "bad_signature" });
   });
 
   it("unknown envelope keys, non-object input, an object payload ⇒ malformed; a payload text that is not canonical JSON ⇒ non_canonical", () => {
     const env = signEdgeObject("auth", authClaims(key.kid), key);
-    expect(verifyEdgeObject({ ...env, x5u: "http://evil" }, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "malformed" });
-    for (const raw of [null, undefined, "x", 1, [], [env]]) expect(verifyEdgeObject(raw, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "malformed" });
-    expect(verifyEdgeObject({ ...env, payload: JSON.parse(env.payload) }, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "malformed" });
-    expect(verifyEdgeObject({ ...env, payload: "not json" }, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "non_canonical" });
+    expect(verifyEdgeObject({ ...env, x5u: "http://evil" }, "auth", ks)).toEqual({ ok: false, reason: "malformed" });
+    for (const raw of [null, undefined, "x", 1, [], [env]]) expect(verifyEdgeObject(raw, "auth", ks)).toEqual({ ok: false, reason: "malformed" });
+    expect(verifyEdgeObject({ ...env, payload: JSON.parse(env.payload) }, "auth", ks)).toEqual({ ok: false, reason: "malformed" });
+    expect(verifyEdgeObject({ ...env, payload: "not json" }, "auth", ks)).toEqual({ ok: false, reason: "non_canonical" });
   });
 
   it("★ an attacker key under a VALID kid ⇒ bad_signature; an unknown kid ⇒ unknown_kid", () => {
     const attacker = generateEdgeSigningKey().key;
     const forged = signEdgeObject("auth", authClaims(key.kid), { ...attacker, kid: key.kid });
     expect(forged.kid).toBe(key.kid);
-    expect(verifyEdgeObject(forged, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "bad_signature" });
+    expect(verifyEdgeObject(forged, "auth", ks)).toEqual({ ok: false, reason: "bad_signature" });
     const own = signEdgeObject("auth", authClaims(attacker.kid), attacker);
-    expect(verifyEdgeObject(own, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "unknown_kid" });
+    expect(verifyEdgeObject(own, "auth", ks)).toEqual({ ok: false, reason: "unknown_kid" });
   });
 
   it("claim cross-check: a payload `kid` / `typ` that disagrees with the envelope ⇒ claim_mismatch", () => {
     const wrongKid = signEdgeObject("auth", { ...authClaims(key.kid), kid: "edk_BBBBBBBBBBBBBBBBBBBBBB" }, key);
-    expect(verifyEdgeObject(wrongKid, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "claim_mismatch" });
+    expect(verifyEdgeObject(wrongKid, "auth", ks)).toEqual({ ok: false, reason: "claim_mismatch" });
     const wrongTyp = signEdgeObject("auth", { ...authClaims(key.kid), typ: EDGE_TYP_NAME.cmd }, key);
-    expect(verifyEdgeObject(wrongTyp, "auth", ks, { nowMs: T0 })).toEqual({ ok: false, reason: "claim_mismatch" });
+    expect(verifyEdgeObject(wrongTyp, "auth", ks)).toEqual({ ok: false, reason: "claim_mismatch" });
   });
 
-  it("key validity window (active / retired, ± skew) — outside ⇒ key_not_valid", () => {
+  it("key validity window (active / retired, ± skew, the STORE's clock) — outside ⇒ key_not_valid", () => {
+    const root = generateEdgeSigningKey().key;
     const env = signEdgeObject("cmd", { kind: "stop" }, key);
-    expect(verifyEdgeObject(env, "cmd", keysetOf({ key, notBefore: T0 + 60_000 }), { nowMs: T0, skewMs: 5_000 })).toEqual({ ok: false, reason: "key_not_valid" });
-    expect(verifyEdgeObject(env, "cmd", keysetOf({ key, notBefore: T0 + 4_000 }), { nowMs: T0, skewMs: 5_000 }).ok).toBe(true);
-    const retired = keysetOf({ key, status: "retired", notBefore: T0 - 100_000, notAfter: T0 - 10_000 });
-    expect(verifyEdgeObject(env, "cmd", retired, { nowMs: T0, skewMs: 5_000 })).toEqual({ ok: false, reason: "key_not_valid" });
-    expect(verifyEdgeObject(env, "cmd", keysetOf({ key, status: "retired", notBefore: T0 - 100_000, notAfter: T0 - 1_000 }), { nowMs: T0, skewMs: 5_000 }).ok).toBe(true);
+    clock = T0;
+    expect(verifyEdgeObject(env, "cmd", storeWith(root, [{ key, notBefore: T0 + 60_000 }]))).toEqual({ ok: false, reason: "key_not_valid" });
+    expect(verifyEdgeObject(env, "cmd", storeWith(root, [{ key, notBefore: T0 + 4_000 }])).ok).toBe(true);
+    expect(verifyEdgeObject(env, "cmd", storeWith(root, [{ key, status: "retired", notBefore: T0 - 100_000, notAfter: T0 - 10_000 }]))).toEqual({ ok: false, reason: "key_not_valid" });
+    const inWindow = storeWith(root, [{ key, status: "retired", notBefore: T0 - 100_000, notAfter: T0 - 1_000 }]);
+    expect(verifyEdgeObject(env, "cmd", inWindow).ok).toBe(true);
+    clock = T0 + 10_000; // the store's own clock moves on: the same object is now outside the window
+    expect(verifyEdgeObject(env, "cmd", inWindow)).toEqual({ ok: false, reason: "key_not_valid" });
+    clock = T0;
   });
 
   it("signing refuses a payload without one JSON form, and a bad typ", () => {
@@ -283,35 +300,45 @@ describe("keyset parse + chain (pinned root kept)", () => {
     expect(bad({ ...pinned, keys: [{ ...pinned.keys[0], trusted: true }] })).toBe(false);
     expect(bad({ ...pinned, v: 2 })).toBe(false);
     expect(bad({ ...pinned, keys: [] })).toBe(false);
-    expect(edgePinnedKeyset([{ kid: k1.kid, publicKeyPem: k1.publicKeyPem, notBefore: T0 - 60_000 }], T0)).toEqual(pinned);
+    expect(pinOf(k1)).toEqual(pinned);
   });
 
-  it("★ rotation: pinned {k1} → v2 {k1,k2 active} by k1 → v3 {+k3 next} by k2 → v4 {k1,k3 active, k2 retired} by k2", () => {
+  it("★ rotation: pin {k1} → v2 {k1,k2 active} by k1 → v3 {+k3 next} by k2 → v4 {k1,k3 active, k2 retired} by k2", () => {
+    clock = T0;
     const v2: EdgeKeyset = { v: 1, version: 2, issuedAt: T0, keys: [entry({ key: k1 }), entry({ key: k2 })] };
     const v3: EdgeKeyset = { ...v2, version: 3, keys: [...v2.keys, entry({ key: k3, status: "next" })] };
     const v4: EdgeKeyset = { ...v2, version: 4, keys: [entry({ key: k1 }), entry({ key: k3 }), entry({ key: k2, status: "retired", notAfter: T0 + 30_000 })] };
-    const r3 = verifyEdgeKeysetChain(pinned, [signEdgeObject("keyset", v2, k1), signEdgeObject("keyset", v3, k2)], { nowMs: T0 });
-    expect(r3).toEqual({ ok: true, keyset: v3 });
-    if (!r3.ok) return;
+    const u = [signEdgeObject("keyset", v2, k1), signEdgeObject("keyset", v3, k2)];
+    const store = EdgeTrustStore.fromPinned(pinned, { nodeId: NODE, now: () => clock }, u);
+    expect(store.version).toBe(3);
+    expect(store.keyset()).toEqual(v3);
+    expect(store.acceptedUpdates()).toEqual(u);
     // a next key never verifies
-    expect(verifyEdgeObject(signEdgeObject("cmd", { kind: "stop" }, k3), "cmd", r3.keyset, { nowMs: T0 })).toEqual({ ok: false, reason: "key_not_valid" });
-    const r4 = verifyEdgeKeysetUpdate(pinned, r3.keyset, signEdgeObject("keyset", v4, k2), { nowMs: T0 });
-    expect(r4).toEqual({ ok: true, keyset: v4 });
-    if (!r4.ok) return;
-    expect(verifyEdgeObject(signEdgeObject("auth", authClaims(k3.kid), k3), "auth", r4.keyset, { nowMs: T0 }).ok).toBe(true);
-    expect(verifyEdgeObject(signEdgeObject("auth", authClaims(k2.kid), k2), "auth", r4.keyset, { nowMs: T0 }).ok).toBe(true); // retired, in window
-    expect(verifyEdgeObject(signEdgeObject("auth", authClaims(k2.kid), k2), "auth", r4.keyset, { nowMs: T0 + 40_000 })).toEqual({ ok: false, reason: "key_not_valid" });
+    expect(verifyEdgeObject(signEdgeObject("cmd", { kind: "stop" }, k3), "cmd", store)).toEqual({ ok: false, reason: "key_not_valid" });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v4, k2))).toEqual({ ok: true, version: 4, changed: true });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v4, k3))).toEqual({ ok: true, version: 4, changed: false }); // same keyset re-sent: no-op
+    expect(verifyEdgeObject(signEdgeObject("auth", authClaims(k3.kid), k3), "auth", store).ok).toBe(true);
+    expect(verifyEdgeObject(signEdgeObject("auth", authClaims(k2.kid), k2), "auth", store).ok).toBe(true); // retired, in window
+    clock = T0 + 40_000;
+    expect(verifyEdgeObject(signEdgeObject("auth", authClaims(k2.kid), k2), "auth", store)).toEqual({ ok: false, reason: "key_not_valid" });
+    clock = T0;
+    // restart: the persisted updates replay to the same state
+    const again = EdgeTrustStore.fromPinned(pinned, { nodeId: NODE, now: () => clock }, store.acceptedUpdates());
+    expect(again.keyset()).toEqual(v4);
   });
 
-  it("chain refusals: unknown signer, rollback / same version, invalid keyset body, wrong typ; a broken link stops the chain", () => {
+  it("chain refusals: unknown signer, rollback, invalid body, wrong typ; a refused update changes nothing", () => {
+    clock = T0;
     const v2: EdgeKeyset = { v: 1, version: 2, issuedAt: T0, keys: [entry({ key: k1 }), entry({ key: k2 })] };
-    expect(verifyEdgeKeysetUpdate(pinned, pinned, signEdgeObject("keyset", v2, k3), { nowMs: T0 })).toEqual({ ok: false, reason: "unknown_kid" });
-    expect(verifyEdgeKeysetUpdate(pinned, pinned, signEdgeObject("keyset", { ...v2, version: 1 }, k1), { nowMs: T0 })).toEqual({ ok: false, reason: "rollback" });
-    expect(verifyEdgeKeysetUpdate(pinned, { ...pinned, version: 5 }, signEdgeObject("keyset", { ...v2, version: 4 }, k1), { nowMs: T0 })).toEqual({ ok: false, reason: "rollback" });
-    expect(verifyEdgeKeysetUpdate(pinned, pinned, signEdgeObject("keyset", { ...v2, keys: [] }, k1), { nowMs: T0 })).toEqual({ ok: false, reason: "invalid_keyset" });
-    expect(verifyEdgeKeysetUpdate(pinned, pinned, signEdgeObject("config", v2, k1), { nowMs: T0 })).toEqual({ ok: false, reason: "wrong_typ" });
-    const r = verifyEdgeKeysetChain(pinned, [signEdgeObject("keyset", v2, k3), signEdgeObject("keyset", { ...v2, version: 3 }, k1)], { nowMs: T0 });
-    expect(r).toEqual({ ok: false, reason: "unknown_kid", index: 0 });
+    const store = EdgeTrustStore.fromPinned(pinned, { nodeId: NODE, now: () => clock });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v2, k3))).toEqual({ ok: false, reason: "unknown_kid" });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, version: 1 }, k1))).toEqual({ ok: false, reason: "rollback" });
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, keys: [] }, k1))).toEqual({ ok: false, reason: "invalid_keyset" });
+    expect(store.acceptKeysetUpdate(signEdgeObject("config", v2, k1))).toEqual({ ok: false, reason: "wrong_typ" });
+    expect(store.version).toBe(1);
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, version: 5 }, k1)).ok).toBe(true);
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", { ...v2, version: 4 }, k1))).toEqual({ ok: false, reason: "rollback" });
+    expect(() => EdgeTrustStore.fromPinned(pinned, { nodeId: NODE, now: () => clock }, [signEdgeObject("keyset", v2, k3)])).toThrow(/refused/);
   });
 });
 
@@ -358,11 +385,11 @@ describe("key endorsement + buildEdgeKeyset (a DB writer alone can never add a t
     );
     expect(parseEdgeKeyset(keyset).ok).toBe(true);
     // an edge pinned on the root accepts this keyset signed by the signer once it trusts the signer
-    const pinned = edgePinnedKeyset([{ kid: k1.kid, publicKeyPem: k1.publicKeyPem, notBefore: T0 - 100_000 }], T0);
-    const v2 = { ...pinned, version: 2, keys: [...pinned.keys, entry({ key: k2, notBefore: T0 - 100_000 })] };
-    const trusted = verifyEdgeKeysetUpdate(pinned, pinned, signEdgeObject("keyset", v2, k1), { nowMs: T0 });
-    expect(trusted.ok).toBe(true);
-    if (trusted.ok) expect(verifyEdgeKeysetUpdate(pinned, trusted.keyset, signEdgeObject("keyset", keyset, k2), { nowMs: T0 }).ok).toBe(true);
+    clock = T0;
+    const store = EdgeTrustStore.fromPinned(pinOf(k1), { nodeId: NODE, now: () => clock });
+    const v2 = { v: 1, version: 2, issuedAt: T0, keys: [...pinOf(k1).keys, entry({ key: k2, notBefore: T0 - 100_000 })] };
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", v2, k1)).ok).toBe(true);
+    expect(store.acceptKeysetUpdate(signEdgeObject("keyset", keyset, k2))).toEqual({ ok: true, version: 7, changed: true });
   });
 
   it("an ancestor is included only through a VERIFIED endorsement of the signer's row (a forged parent link is ignored)", () => {

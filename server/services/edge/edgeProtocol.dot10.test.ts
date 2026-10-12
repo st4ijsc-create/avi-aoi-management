@@ -151,7 +151,7 @@ const SIGNED_PAYLOADS: Record<string, { schema: { safeParse: (v: unknown) => { s
     schema: edgeConfigSnapshotSchema,
     sample: {
       kind: "config_snapshot", protocolVersion: 2, configVersion: 3, issuedAt: T,
-      node: { id: 7, code: "edge-a", factoryCode: "F1", lineCodes: ["L1"] },
+      node: { id: 7, code: "edge-a", credentialId: 31, factoryCode: "F1", lineCodes: ["L1"] },
       adapters: [{ id: 3, code: "plc1", machineId: 7, protocol: "s7", endpoint: "10.0.0.5:102", connectionOptions: { rack: 0 }, pollIntervalMs: 1000, isEnabled: true, connectionFingerprint: H64, updatedAt: T,
         tags: [{ id: 1, tagKey: "run", address: "DB1.DBX0.0", dataType: "bool", scale: null, offset: null, writable: true, isEnabled: true, stopValue: false, updatedAt: T }] }],
       robots: [{ id: 12, code: "r1", name: "Robot 1", vendor: "sim", model: null, kind: "arm", endpoint: "sim://", connectionOptions: null, pollIntervalMs: 500, isEnabled: true, commissioned: true, lineId: 1, stationId: null,
