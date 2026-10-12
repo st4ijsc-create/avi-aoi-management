@@ -1,0 +1,166 @@
+/**
+ * doc 81 Đợt 10 task B — the central → edge command queue on the REAL `_test` DB (rulings R-10-k / R-10-o / R-10-p):
+ *   • node scoping: A's pull never carries B's requests — signed, overdue STOP, unsigned STOP;
+ *   • an OVERDUE STOP (past expiresAt) is still delivered, first; the sweeper never expires a STOP (an overdue lock is expired);
+ *   • no signer ⇒ STOPs are delivered as the unsigned envelope `cmd-stop-unsigned` (edgeProtocol's schema) and a lock is not
+ *     delivered at all; the pull still answers (no new run offered);
+ *   • a STOP that cannot be queued for an edge (the device is central's now) tells the caller to fall back to a central STOP;
+ *   • acks (R-10-o): a mismatched target / owner epoch is refused (409, request stays pending), an unsigned ack for a lock is
+ *     refused, a matching unsigned STOP ack is accepted.
+ */
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { setupKit, type Kit } from "./__edgeCentralKit.dot10";
+
+const DB_URL = process.env.DATABASE_URL ?? "";
+const onTest = /_test\b/.test(DB_URL);
+let k: Kit;
+const epoch = () => Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+
+/** a request row inserted with a creation time in the PAST (an overdue one when expiresAt < now) */
+async function oldRequest(kind: "stop" | "lock", robotKey: "robotA" | "robotB", node: "nodeA" | "nodeB", createdAgoS: number, expiresAgoS: number): Promise<number> {
+  const [o] = await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids[robotKey]}`;
+  const [r] = await k.sql`INSERT INTO robot_motion_lock_requests ("robotId", "edgeNodeId", "ownerEpoch", kind, reason, "requestedBy", "createdAt", "expiresAt")
+    VALUES (${k.ids[robotKey]}, ${k.ids[node]}, ${o.ownerEpoch}, ${kind}, 'kit', ${k.u.admin}, now() - (${createdAgoS} * interval '1 second'), now() - (${expiresAgoS} * interval '1 second')) RETURNING id`;
+  return Number(r.id);
+}
+const payloads = (envs: Array<{ payload: string }>) => envs.map((e) => JSON.parse(e.payload) as Record<string, any>);
+
+describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP delivery, node scope, unsigned STOP, acks (real _test DB)", () => {
+  beforeAll(async () => {
+    k = await setupKit("B10CMD");
+  }, 120_000);
+  afterAll(async () => {
+    await k?.teardown();
+  }, 120_000);
+
+  it("★ node scope + L-7: A gets ITS overdue STOP first and its lock; never B's STOP / lock; the sweeper expires the overdue lock, NEVER the STOP", async () => {
+    const { commandsForNode, expireEdgeRequests } = await import("./edgeNodeCommands");
+    const { enqueueEdgeDeviceRequest } = await import("./edgeNodeCommands");
+    const lockA = (await enqueueEdgeDeviceRequest({ kind: "lock", robotId: k.ids.robotA, reason: "op", requestedBy: k.u.admin })).requestId;
+    const overdueStopA = await oldRequest("stop", "robotA", "nodeA", 3600, 1800);
+    const overdueLockA = await oldRequest("lock", "robotA", "nodeA", 3600, 1800);
+    const olderLiveLockA = await oldRequest("lock", "robotA", "nodeA", 7200, -600); // created BEFORE the STOP, still valid
+    const stopB = (await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotB, reason: "op", requestedBy: k.u.admin })).requestId;
+    const overdueStopB = await oldRequest("stop", "robotB", "nodeB", 3600, 1800);
+    const a = await commandsForNode(await k.principal("A"));
+    const ids = payloads(a.signed).map((p) => p.requestId);
+    expect(ids[0]).toBe(overdueStopA); // STOPs first — even before an OLDER lock
+    expect(ids).toContain(olderLiveLockA);
+    expect(ids).toContain(lockA);
+    expect(ids).not.toContain(overdueLockA); // a lock past its expiry is not delivered
+    for (const foreign of [stopB, overdueStopB]) expect(ids).not.toContain(foreign);
+    expect(payloads(a.signed).every((p) => p.nodeId === k.ids.nodeA)).toBe(true);
+    expect(a.unsignedStops).toEqual([]);
+    // the sweeper: the overdue lock is expired, the overdue STOP never
+    await expireEdgeRequests();
+    const rows = await k.sql`SELECT id, outcome, "ackedAt" FROM robot_motion_lock_requests WHERE id IN ${k.sql([overdueStopA, overdueLockA, overdueStopB])} ORDER BY id`;
+    const by = new Map(rows.map((r) => [Number(r.id), r]));
+    expect(by.get(overdueLockA)!.outcome).toBe("expired");
+    expect(by.get(overdueStopA)!.ackedAt).toBeNull();
+    expect(by.get(overdueStopB)!.ackedAt).toBeNull();
+    // and it is delivered again on the next pull
+    expect(payloads((await commandsForNode(await k.principal("A"))).signed).map((p) => p.requestId)).toContain(overdueStopA);
+  });
+
+  it("★ R-10-k / R-10-p: without central's signer the pull still answers — A's STOPs as `cmd-stop-unsigned` (edgeProtocol schema), no lock, nothing of B", async () => {
+    const c = await import("./edgeExecutionCentral");
+    const common = await import("./edgeCentralCommon");
+    const sg = await import("./edgeSigning");
+    const proto = await import("./edgeProtocol");
+    const mine = await import("./edgeNodeCommands");
+    const saved = process.env.EDGE_SIGNING_KEY_FILE;
+    process.env.EDGE_SIGNING_KEY_FILE = `${saved}.missing`;
+    sg.__resetCentralEdgeSigningKeyForTests();
+    common.__resetCentralSignerCacheForTests();
+    try {
+      expect(common.centralSigner()).toBeNull();
+      const pA = await k.principal("A");
+      const r = await c.pullForNodeV2(pA, {});
+      expect(r.http, JSON.stringify(r)).toBe(200);
+      expect(proto.edgePullAnswerSchema.safeParse(r.data).success).toBe(true);
+      expect(r.data!.commands).toEqual([]);
+      expect(r.data!.runs).toEqual([]);
+      const u = r.data!.unsignedStops ?? [];
+      expect(u.length).toBeGreaterThan(0);
+      for (const s of u) {
+        expect(proto.edgeUnsignedStopSchema.safeParse(s).success).toBe(true);
+        expect(mine.edgeUnsignedStopSchema.safeParse(s).success).toBe(true);
+        expect(s).toMatchObject({ typ: "cmd-stop-unsigned", nodeId: k.ids.nodeA, credentialId: pA.credentialId });
+      }
+      const kinds = await k.sql`SELECT id, kind, "edgeNodeId" FROM robot_motion_lock_requests WHERE id IN ${k.sql(u.map((s) => s.requestId))}`;
+      expect(kinds.every((x) => x.kind === "stop" && Number(x.edgeNodeId) === k.ids.nodeA)).toBe(true);
+      // the unsigned schema refuses any other kind / extra key
+      expect(mine.edgeUnsignedStopSchema.safeParse({ ...u[0], kind: "clear" }).success).toBe(false);
+      // a lock is never sent unsigned
+      const lockRow = await k.sql`SELECT id FROM robot_motion_lock_requests WHERE "edgeNodeId" = ${k.ids.nodeA} AND kind = 'lock' AND "ackedAt" IS NULL`;
+      expect(lockRow.length).toBeGreaterThan(0);
+      expect(u.map((s) => s.requestId)).not.toContain(Number(lockRow[0].id));
+      // B, unsigned: never A's
+      const b = await c.pullForNodeV2(await k.principal("B"), {});
+      expect((b.data!.unsignedStops ?? []).every((s) => s.nodeId === k.ids.nodeB)).toBe(true);
+      expect((b.data!.unsignedStops ?? []).map((s) => s.requestId)).not.toContain(u[0].requestId);
+    } finally {
+      process.env.EDGE_SIGNING_KEY_FILE = saved;
+      sg.__resetCentralEdgeSigningKeyForTests();
+      common.__resetCentralSignerCacheForTests();
+    }
+  });
+
+  it("★ R-10-o: an ack with a mismatched target / owner epoch ⇒ 409, request PENDING + anomaly; an unsigned ack for a lock ⇒ refused; a matching unsigned STOP ack ⇒ accepted", async () => {
+    const { eventsForNode } = await import("./edgeReportsCentral");
+    const { enqueueEdgeDeviceRequest } = await import("./edgeNodeCommands");
+    const [o] = await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`;
+    const ep = Number(o.ownerEpoch);
+    const stop = (await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console", requestedBy: k.u.admin })).requestId;
+    const lock = (await enqueueEdgeDeviceRequest({ kind: "lock", robotId: k.ids.robotA, reason: "op", requestedBy: k.u.admin })).requestId;
+    await k.sql`UPDATE robot_motion_lock_requests SET "deliveredAt" = now() WHERE id IN ${k.sql([stop, lock])}`;
+    const ack = (seq: number, requestId: number, over: Record<string, unknown> = {}) => ({ kind: "command_ack", seq, requestId, outcome: "done", generation: null, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: ep, ...over });
+    const ev = epoch();
+    const send = async (records: unknown[]) => eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records });
+    const pending = async (id: number) => (await k.sql`SELECT "ackedAt" FROM robot_motion_lock_requests WHERE id = ${id}`)[0].ackedAt === null;
+    expect(await send([ack(1, stop, { target: { robotId: k.ids.robotB } })])).toMatchObject({ http: 409 });
+    expect(await pending(stop)).toBe(true);
+    expect(await send([ack(1, stop, { ownerEpoch: ep + 1 })])).toMatchObject({ http: 409 });
+    expect(await send([ack(1, stop, { target: undefined })])).toMatchObject({ http: 409 }); // no target named ⇒ never accepted
+    expect(await pending(stop)).toBe(true);
+    expect(await send([ack(1, lock, { unsigned: true })])).toMatchObject({ http: 409 });
+    expect(await pending(lock)).toBe(true);
+    const n = Number((await k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityId" = ${k.ids.nodeA} AND details LIKE '%command_ack_refused%'`)[0].n);
+    expect(n).toBeGreaterThanOrEqual(4);
+    expect(await send([ack(1, stop, { unsigned: true })])).toMatchObject({ http: 200 });
+    expect(await pending(stop)).toBe(false);
+    // B can never ack A's request (even with the right target / epoch)
+    const lock2 = (await enqueueEdgeDeviceRequest({ kind: "lock", robotId: k.ids.robotA, reason: "op2", requestedBy: k.u.admin })).requestId;
+    await k.sql`UPDATE robot_motion_lock_requests SET "deliveredAt" = now() WHERE id = ${lock2}`;
+    expect(await eventsForNode(await k.principal("B"), { epoch: epoch(), stream: "events", records: [ack(1, lock2)] })).toMatchObject({ http: 409 });
+    expect(await pending(lock2)).toBe(true);
+  });
+
+  it("★ R-10-k: a STOP for a device that is central's now ⇒ EdgeRequestError notEdgeOwned WITH fallback.centralStop (never a silent no-op)", async () => {
+    const { enqueueEdgeDeviceRequest, EdgeRequestError } = await import("./edgeNodeCommands");
+    // an adapter that is central-owned (a fresh one) — a console STOP must fall back to central
+    const [row] = await k.sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId") VALUES (${`AC-${k.DAU}`}, 'kit central adapter', 'stub', 'stub://c', true, ${k.ids.mOtB}) RETURNING id`;
+    const central = Number(row.id);
+    try {
+      let err: unknown;
+      try {
+        await enqueueEdgeDeviceRequest({ kind: "stop", adapterId: central, reason: "console STOP", requestedBy: k.u.admin });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(EdgeRequestError);
+      expect(err).toMatchObject({ code: "notEdgeOwned", fallback: { centralStop: true, currentOwner: { edgeNodeId: null } } });
+      // a lock / clear carries no STOP fallback
+      let err2: unknown;
+      try {
+        await enqueueEdgeDeviceRequest({ kind: "lock", robotId: 2_000_000_000, reason: "x", requestedBy: k.u.admin });
+      } catch (e) {
+        err2 = e;
+      }
+      expect(err2).toMatchObject({ code: "notEdgeOwned" });
+      expect((err2 as { fallback?: unknown }).fallback).toBeUndefined();
+    } finally {
+      await k.sql`DELETE FROM device_adapters WHERE id = ${central}`;
+    }
+  });
+});
