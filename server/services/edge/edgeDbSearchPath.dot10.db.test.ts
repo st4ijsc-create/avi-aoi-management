@@ -33,6 +33,7 @@ const SEARCH_PATH = "search_path=pg_catalog, public, pg_temp";
 const CALLABLE = new Set([
   "edge_motion_lock_apply",
   "edge_motion_lock_clear",
+  "edge_stop_ack_central",
   "edge_robot_trust_request",
   "edge_robot_trust_approve",
   "edge_robot_trust_revoke",
@@ -217,7 +218,7 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
     for (const f of FILES) {
       for (const m of readFileSync(path.join(REPO, "drizzle", f), "utf8").matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?([a-z_][a-z0-9_]*)\s*\(/gi)) names.add(m[1]);
     }
-    expect(names.size).toBe(20); // 0372: 2 · 0373: 2 · 0374: 11 · 0375: 5 — a new function must be added here on purpose
+    expect(names.size).toBe(22); // 0372: 2 · 0373: 2 · 0374: 13 · 0375: 5 — a new function must be added here on purpose
     const rows = await freshSession(async (tx) =>
       tx`SELECT p.proname AS name, p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
                 has_function_privilege(current_user, p.oid, 'EXECUTE') AS app

@@ -16,7 +16,7 @@
  * edge_auth_signing_keys is a MIRROR of the central key files (R-10-c) — never read for trust.
  */
 import { and, eq, sql, type SQL } from "drizzle-orm";
-import { bigint, integer, jsonb, pgTable, serial, smallint, text, timestamp, uuid, varchar, bigserial } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, integer, jsonb, pgTable, serial, smallint, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 /** The migration files of this đợt, in their safe order. */
 export const EDGE_CONTROL_MIGRATIONS = Object.freeze([
@@ -138,7 +138,33 @@ export const robotMotionLockRequests = pgTable("robot_motion_lock_requests", {
   ackedAt: timestamp("ackedAt", { withTimezone: true }),
   ackGeneration: integer("ackGeneration"),
   outcome: varchar("outcome", { length: 16 }).$type<"done" | "refused" | "failed" | "expired">(),
+  /** fix review 2 (R-10-i) — the user who acked a STOP central executed (edge_stop_ack_central only); written with the ack */
+  ackedBy: integer("ackedBy"),
 });
+/**
+ * fix review 2 (R-10-i, L-7) — VIEW device_pending_stops (SELECT only): every STOP request nobody acknowledged, with the
+ * device's CURRENT owner. centralMustExecute ⇒ the device is central-owned now: central executes the STOP and acks it with
+ * ackCentralStop. overdue ⇒ past expiresAt and still pending (raise an alert; a STOP never expires). stale ⇒ the request's
+ * (node, epoch) is no longer the device's.
+ */
+export const devicePendingStops = pgTable("device_pending_stops", {
+  requestId: integer("requestId").notNull(),
+  robotId: integer("robotId"),
+  adapterId: integer("adapterId"),
+  requestEdgeNodeId: integer("requestEdgeNodeId").notNull(),
+  requestOwnerEpoch: bigint("requestOwnerEpoch", { mode: "number" }).notNull(),
+  currentEdgeNodeId: integer("currentEdgeNodeId"),
+  currentOwnerEpoch: bigint("currentOwnerEpoch", { mode: "number" }),
+  requestedBy: integer("requestedBy").notNull(),
+  reason: text("reason"),
+  createdAt: timestamp("createdAt", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expiresAt", { withTimezone: true }).notNull(),
+  deliveredAt: timestamp("deliveredAt", { withTimezone: true }),
+  overdue: boolean("overdue").notNull(),
+  centralMustExecute: boolean("centralMustExecute").notNull(),
+  stale: boolean("stale").notNull(),
+});
+export type DevicePendingStopRow = typeof devicePendingStops.$inferSelect;
 export type RobotMotionLockRequestRow = typeof robotMotionLockRequests.$inferSelect;
 /** WORM — written only by the owner-change triggers; read-only for the app. */
 export const deviceOwnerChanges = pgTable("device_owner_changes", {
@@ -214,6 +240,14 @@ export async function applyEdgeMotionLock(tx: Exec, a: { robotId: number; nodeId
 export async function clearEdgeMotionLock(tx: Exec, a: { robotId: number; nodeId: number; ownerEpoch: number; generation: number }): Promise<number> {
   const r = await tx.execute(sql`SELECT public.edge_motion_lock_clear(${a.robotId}, ${a.nodeId}, ${a.ownerEpoch}::bigint, ${a.generation}) AS n`);
   return Number(firstRow(r)?.n ?? 0);
+}
+
+/**
+ * fix review 2 (R-10-i) — THE way central acknowledges a STOP it executed itself (a device now CENTRAL-owned): only a pending
+ * STOP, outcome done | failed, a real actor (> 0). Refused (23514) for an edge-owned device, a lock / clear, an acked request.
+ */
+export async function ackCentralStop(tx: Exec, a: { requestId: number; outcome: "done" | "failed"; actorUserId: number }): Promise<void> {
+  await tx.execute(sql`SELECT public.edge_stop_ack_central(${a.requestId}, ${a.outcome}, ${a.actorUserId})`);
 }
 
 /** fix scan 2 (maker-checker, R-8-a) — the guarded path of edge_robot_trust_approvals (avi_app has SELECT only on the table). */

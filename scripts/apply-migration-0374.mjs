@@ -42,6 +42,7 @@ const TRIGGERS = [
   "trg_robots_owner_change", "trg_robots_owner_insert", "trg_robots_owner_relock", "trg_adapters_owner_change", "trg_adapters_owner_insert", "trg_device_owner_changes_worm",
   "trg_device_owner_changes_worm_truncate", "trg_robot_motion_lock_authority", "trg_robot_motion_lock_write_guard", "trg_edge_program_owned", "trg_robot_motion_lock_request_guard",
   "trg_robots_owner_stop_carry", "trg_adapters_owner_stop_carry", // fix review 1 (M1)
+  "trg_robot_motion_lock_request_keep_stop", // fix review 2 (R-10-i)
 ];
 
 async function fixtures(tx, code) {
@@ -89,7 +90,7 @@ await runMigration({
     }
     const trg = (await appSql`SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D' AND tgname = ANY(${TRIGGERS})`).map((r) => r.tgname);
     if (trg.length !== TRIGGERS.length) throw new Error(`(a) triggers: ${JSON.stringify(trg)}`);
-    const [sd] = await appSql`SELECT bool_and(prosecdef) AS d FROM pg_proc WHERE proname IN ('device_owner_change_guard', 'device_owner_insert_log', 'robot_owner_relock', 'edge_motion_lock_apply', 'edge_motion_lock_clear', 'device_owner_stop_carry')`;
+    const [sd] = await appSql`SELECT bool_and(prosecdef) AS d FROM pg_proc WHERE proname IN ('device_owner_change_guard', 'device_owner_insert_log', 'robot_owner_relock', 'edge_motion_lock_apply', 'edge_motion_lock_clear', 'device_owner_stop_carry', 'edge_stop_ack_central')`;
     if (!sd?.d) throw new Error("(a) owner-change functions must be SECURITY DEFINER");
     log(`(a) columns + FKs RESTRICT + ${REQ} + ${HIST}; triggers ${trg.length}; SECURITY DEFINER logging`);
     // (b) catalog
@@ -216,7 +217,8 @@ await runMigration({
       doneUndelivered: "23514", deliverFuture: "23514", deliverBeforeCreate: "23514", genOnRefused: "23514", expireDeliveredEarly: "23514",
       reqLock: null, reqStaleEpoch: "23514", reqUnowned: "23514", reqTwoTargets: "23514", reqAdapterLock: "23514", reqAdapterStop: null, reqClearNoGen: "23514",
       reqClearGen: null, reqBornDelivered: "23514", deliver1: null, deliver2: "23514", outcomeOnly: "23514", ack1: null, ack2: "23514", reqIdentity: "42501",
-      reqDel: "42501", deliverStale: "23514", expireStale: null, prgUnowned: "23514", prgOwned: null, prgEpoch: 2, nodeDel: "23503",
+      reqDel: "42501", deliverStale: "23514", expireStale: null, prgUnowned: "23514", prgOwned: null, prgEpoch: 2,
+      nodeDel: "23514", // fix review 2 (R-10-i (d)): the node still has an UNACKED STOP (reqAdapterStop) ⇒ refused before the RESTRICT FK
       applyBelowFloor: false, stopStaleDeliver: null, stopCarried: 1,
     });
     const ko = await rolledBack(sql, async (tx) => {

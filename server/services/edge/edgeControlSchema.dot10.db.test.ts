@@ -21,6 +21,8 @@ import { describe, expect, it } from "vitest";
 import { getDb } from "../../db/connection";
 import {
   EDGE_CONTROL_MIGRATIONS,
+  ackCentralStop,
+  devicePendingStops,
   adapterOwnership,
   applyEdgeMotionLock,
   approveEdgeRobotTrust,
@@ -213,6 +215,26 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
     expect(out.carried[0]).toMatchObject({ kind: "stop", ownerEpoch: 3, requestedBy: 7, deliveredAt: null, ackedAt: null });
     expect(out.carried[0].reason).toContain(`carried from request #${out.stopR}`);
     expect(out.carried[0].reason).toContain("operator e-stop");
+  });
+
+  it("★ fix review 2 (R-10-i): the D-facing helpers — devicePendingStops lists a STOP left by a move to central; ackCentralStop closes it", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      const { node, robot } = await nodeRobot(tx, `__dot10Af2_${Date.now()}`);
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot));
+      const [q] = await tx.insert(robotMotionLockRequests).values({ robotId: robot, edgeNodeId: node, ownerEpoch: 2, kind: "stop", requestedBy: 7, expiresAt: new Date(Date.now() + 60_000) }).returning({ id: robotMotionLockRequests.id });
+      const whileEdge = await codeOf(tx, () => ackCentralStop(tx, { requestId: q.id, outcome: "done", actorUserId: 9 }));
+      await tx.update(robotOwnership).set({ edgeNodeId: null }).where(eq(robotOwnership.id, robot));
+      const pending = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
+      await ackCentralStop(tx, { requestId: q.id, outcome: "failed", actorUserId: 9 });
+      const [row] = await tx.select().from(robotMotionLockRequests).where(eq(robotMotionLockRequests.id, q.id));
+      const after = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
+      return { whileEdge, pending, row, after: after.length, id: q.id };
+    });
+    expect(out.whileEdge).toBe("23514");
+    expect(out.pending).toHaveLength(1);
+    expect(out.pending[0]).toMatchObject({ requestId: out.id, currentEdgeNodeId: null, centralMustExecute: true, stale: true, overdue: false });
+    expect(out.row).toMatchObject({ outcome: "failed", ackedBy: 9 });
+    expect(out.after).toBe(0);
   });
 
   it("★ fix review 1 M2: edge_motion_lock_apply / _clear refuse a generation below the robot's motionLockGenerationFloor", async () => {
