@@ -26,8 +26,8 @@
  * has not acknowledged, then the snapshot, then deletes the old segments — a crash at any point leaves a readable journal
  * (duplicate lines of an interrupted compaction are identical and skipped).
  *
- * STARTUP. A truncated or checksum-failing LAST line of the last segment is ignored and cut off (never glued to the next
- * record). Anything else unreadable — the snapshot, a line in the middle, segments without a snapshot — RESETS the journal: the
+ * STARTUP. A truncated LAST line of the last segment (no trailing newline: a torn append) is ignored and cut off (never
+ * glued to the next record). Anything else unreadable — the snapshot, a line in the middle, segments without a snapshot — RESETS the journal: the
  * old files are moved aside (`reset-<ts>/`, evidence), a new epoch is opened, every robot's lock state is `unknown` (the caller
  * starts it locked `persistUnknown`, robotMotionLockStore's fail-closed rule) and an EDGE_JOURNAL_RESET anomaly is reported.
  * Claim tokens are never journaled (a restart declares the claim interrupted). Never throws after open().
@@ -372,14 +372,8 @@ export class EdgeJournal {
       for (let li = 0; li < complete.length; li++) {
         const raw = complete[li];
         const l = raw.length === 0 ? null : parseLine(raw);
-        const isTail = isLastSeg && li === complete.length - 1 && tailPartial === "";
-        if (!l) {
-          if (isTail) {
-            truncated = true;
-            break;
-          }
-          throw new JournalCorrupt(`bad line ${li + 1} of ${mine[i].name}`);
-        }
+        // a torn append never ends with its newline (one write of the line + newline): a bad line that DOES is corruption ⇒ reset
+        if (!l) throw new JournalCorrupt(`bad line ${li + 1} of ${mine[i].name}`);
         if (l.e !== snap.epoch) throw new JournalCorrupt(`line ${li + 1} of ${mine[i].name} has another epoch`);
         const seen = lastSeen.get(l.s) ?? { seq: 0, h: new Map<number, string>() };
         if (l.q <= seen.seq) {

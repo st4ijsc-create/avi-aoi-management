@@ -12,6 +12,7 @@
  *     STOP / step / lock records are still written.
  */
 import { afterEach, describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -178,6 +179,18 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     await j2.close();
   });
 
+  it("★ a bad last line that DOES end with its newline is not a torn append ⇒ reset (fail-closed), never silently skipped", async () => {
+    const dir = await tmp();
+    const j1 = await EdgeJournal.open({ dir });
+    await j1.appendRun(9, 2, step("m1"));
+    await j1.close();
+    await fs.appendFile(await lastSegment(dir), '{"e":"x","s":"run:9:2","q":2}\n');
+    const j2 = await EdgeJournal.open({ dir });
+    expect(j2.opened.kind).toBe("reset");
+    expect(j2.epoch).not.toBe(j1.epoch);
+    await j2.close();
+  });
+
   it("★ a corrupt line that is NOT the tail ⇒ reset: new epoch, robots unknown (persistUnknown), files kept aside, anomaly", async () => {
     const dir = await tmp();
     const j1 = await EdgeJournal.open({ dir });
@@ -225,6 +238,23 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     await j3.close();
   });
 
+  it("★ a well-formed line that REPEATS a seq with different content (not an interrupted compaction copy) ⇒ reset", async () => {
+    const dir = await tmp();
+    const j1 = await EdgeJournal.open({ dir });
+    await j1.appendRun(9, 2, step("m1"));
+    await j1.appendRun(9, 2, step("m2"));
+    await j1.close();
+    const seg = await lastSegment(dir);
+    const first = JSON.parse((await fs.readFile(seg, "utf8")).split("\n")[0]);
+    const d = { ...first.d, stepId: "forged" };
+    const h = createHash("sha256").update(JSON.stringify([first.e, first.s, 1, first.k, first.t, d]), "utf8").digest("hex").slice(0, 16);
+    await fs.appendFile(seg, JSON.stringify({ e: first.e, s: first.s, q: 1, k: first.k, t: first.t, d, h }) + "\n" + (await fs.readFile(seg, "utf8")).split("\n")[1] + "\n");
+    const j2 = await EdgeJournal.open({ dir });
+    expect(j2.opened.kind).toBe("reset");
+    expect(j2.opened.reset?.reason).toMatch(/out of order/);
+    await j2.close();
+  });
+
   it("★ segments without a snapshot (state.json deleted) ⇒ reset, never a silent fresh start", async () => {
     const dir = await tmp();
     const j1 = await EdgeJournal.open({ dir });
@@ -244,7 +274,9 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     await j1.appendEvent(lockEvent(12, "locked", 5));
     expect(j1.motionLock(12)).toMatchObject({ kind: "locked", generation: 5, reasonCode: "linkLost", ownerEpoch: 3 });
     await j1.appendEvent(lockEvent(12, "cleared", 5));
-    j1.ack("events", 2);
+    await j1.appendEvent(lockEvent(12, "locked", 3)); // a late, OLDER generation never moves the state backwards
+    expect(j1.motionLock(12)).toMatchObject({ kind: "clear", generation: 5 });
+    j1.ack("events", 3);
     await j1.compact();
     await j1.close();
     const j2 = await EdgeJournal.open({ dir });
@@ -332,6 +364,18 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
     expect(j.pending("events").map((x) => x.record.kind)).toEqual(["stop"]); // recorded for the report all the same
   });
 
+  it("★ an auth.consumed fsync that never finishes ⇒ io_error within the bound (never ok), the jti stays consumed, the journal unhealthy", async () => {
+    const dir = await tmp();
+    const r = recordingIo();
+    const j = await EdgeJournal.open({ dir, io: r.io, authSyncTimeoutMs: 100 });
+    r.hangSync();
+    const t0 = Date.now();
+    expect(await j.consumeAuthorization({ jti: JTI(7), runId: 9, claimSeq: 2, stepId: "m1", attempt: 1 })).toEqual({ ok: false, reason: "io_error" });
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(j.isJtiConsumed(JTI(7))).toBe(true);
+    expect(j.admitNonStop()).toBe(false);
+  });
+
   it("an IO failure leaves the journal unable to admit non-STOP work (fail-closed); STOP appends still return", async () => {
     const dir = await tmp();
     const io: EdgeJournalIo = {
@@ -343,6 +387,8 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
     };
     const j = await EdgeJournal.open({ dir, io });
     expect(j.admitNonStop()).toBe(true);
+    expect((await j.appendRun(9, 2, step("m1"))).durable).toBe(false); // a failed record write alone …
+    expect(j.admitNonStop()).toBe(false); // … already stops new non-STOP work
     expect(await j.consumeAuthorization({ jti: JTI(4), runId: 9, claimSeq: 2, stepId: "m1", attempt: 1 })).toEqual({ ok: false, reason: "io_error" });
     expect(j.admitNonStop()).toBe(false);
     expect(await j.appendEvent(stopEvent(4), { stop: true })).toMatchObject({ durable: false });
