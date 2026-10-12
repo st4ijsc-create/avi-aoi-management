@@ -174,11 +174,14 @@ export type EdgeRobotTrustApprovalRow = typeof edgeRobotTrustApprovals.$inferSel
 
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** 42P01 undefined_table / 42703 undefined_column — a migration of 0372–0375 is not applied (code on err or err.cause). */
+/**
+ * 42P01 undefined_table / 42703 undefined_column / 42883 undefined_function (fix review 1, I6: the guarded functions of 0374 /
+ * 0375 are absent) — a migration of 0372–0375 is not applied (code on err or err.cause) ⇒ the route answers 503 edge_unavailable.
+ */
 export function isEdgeControlSchemaMissing(err: unknown): boolean {
   const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
   const c = e?.code ?? e?.cause?.code;
-  return c === "42P01" || c === "42703";
+  return c === "42P01" || c === "42703" || c === "42883";
 }
 
 /**
@@ -204,29 +207,29 @@ const firstRow = (r: unknown): Record<string, unknown> | undefined => (Array.isA
  * true = applied; false = a newer / other-authority row stands. A stale (node, epoch) throws 23514 (isEdgeControlRefusal).
  */
 export async function applyEdgeMotionLock(tx: Exec, a: { robotId: number; nodeId: number; ownerEpoch: number; generation: number; reasonCode: string; detail?: string | null }): Promise<boolean> {
-  const r = await tx.execute(sql`SELECT edge_motion_lock_apply(${a.robotId}, ${a.nodeId}, ${a.ownerEpoch}::bigint, ${a.generation}, ${a.reasonCode}, ${a.detail ?? null}) AS ok`);
+  const r = await tx.execute(sql`SELECT public.edge_motion_lock_apply(${a.robotId}, ${a.nodeId}, ${a.ownerEpoch}::bigint, ${a.generation}, ${a.reasonCode}, ${a.detail ?? null}) AS ok`);
   return firstRow(r)?.ok === true;
 }
 /** An edge `cleared` event ⇒ delete only (robot, 'edge:<node>', node, ownerEpoch) with generation ≤ g while still owned. Rows removed. */
 export async function clearEdgeMotionLock(tx: Exec, a: { robotId: number; nodeId: number; ownerEpoch: number; generation: number }): Promise<number> {
-  const r = await tx.execute(sql`SELECT edge_motion_lock_clear(${a.robotId}, ${a.nodeId}, ${a.ownerEpoch}::bigint, ${a.generation}) AS n`);
+  const r = await tx.execute(sql`SELECT public.edge_motion_lock_clear(${a.robotId}, ${a.nodeId}, ${a.ownerEpoch}::bigint, ${a.generation}) AS n`);
   return Number(firstRow(r)?.n ?? 0);
 }
 
 /** fix scan 2 (maker-checker, R-8-a) — the guarded path of edge_robot_trust_approvals (avi_app has SELECT only on the table). */
 export async function requestEdgeRobotTrust(tx: Exec, a: { nodeId: number; robotId: number; digest: string; editorUserId: number }): Promise<void> {
-  await tx.execute(sql`SELECT edge_robot_trust_request(${a.nodeId}, ${a.robotId}, ${a.digest}, ${a.editorUserId})`);
+  await tx.execute(sql`SELECT public.edge_robot_trust_request(${a.nodeId}, ${a.robotId}, ${a.digest}, ${a.editorUserId})`);
 }
 /** Approve the digest the approver SAW; refused (23514) for an editor since the last approval, a non-admin, a stale epoch / digest. */
 export async function approveEdgeRobotTrust(tx: Exec, a: { nodeId: number; robotId: number; digest: string; approverUserId: number }): Promise<void> {
-  await tx.execute(sql`SELECT edge_robot_trust_approve(${a.nodeId}, ${a.robotId}, ${a.digest}, ${a.approverUserId})`);
+  await tx.execute(sql`SELECT public.edge_robot_trust_approve(${a.nodeId}, ${a.robotId}, ${a.digest}, ${a.approverUserId})`);
 }
 export async function revokeEdgeRobotTrust(tx: Exec, a: { nodeId: number; robotId: number; actorUserId: number }): Promise<void> {
-  await tx.execute(sql`SELECT edge_robot_trust_revoke(${a.nodeId}, ${a.robotId}, ${a.actorUserId})`);
+  await tx.execute(sql`SELECT public.edge_robot_trust_revoke(${a.nodeId}, ${a.robotId}, ${a.actorUserId})`);
 }
 /** THE trust predicate (D6): approved, for this digest, for the robot's CURRENT owner and owner epoch. */
 export async function isEdgeRobotTrustApproved(tx: Exec, a: { nodeId: number; robotId: number; digest: string }): Promise<boolean> {
-  const r = await tx.execute(sql`SELECT edge_robot_trust_is_approved(${a.nodeId}, ${a.robotId}, ${a.digest}) AS ok`);
+  const r = await tx.execute(sql`SELECT public.edge_robot_trust_is_approved(${a.nodeId}, ${a.robotId}, ${a.digest}) AS ok`);
   return firstRow(r)?.ok === true;
 }
 

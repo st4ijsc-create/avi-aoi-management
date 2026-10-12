@@ -19,6 +19,12 @@
 --   • WRITE-ONCE (trigger, IS DISTINCT FROM — a change, a clear AND a late first write are all refused): every identity
 --     column; resultReportedAt / resultStatus are written once, together (CHECK), then frozen; supersededAt is written once.
 --
+-- fix review 1 (ruling R-10-e, temp-table shadowing): EVERY function of 0372–0375 — SECURITY DEFINER or not — runs with
+--   `SET search_path = pg_catalog, public, pg_temp` (pg_temp LAST: with `search_path = public` PostgreSQL still searches pg_temp
+--   FIRST for relations, so a session TEMP table named like a real one shadowed it) AND names every relation `public."…"`;
+--   EXECUTE is revoked from PUBLIC (trigger functions need none to fire). TEMP on the database is NOT revoked: the app's
+--   telemetryBus COPY fast path creates a TEMP table (reported) — the qualification alone closes the hole.
+--
 -- avi_app (EXACT set): SELECT, INSERT, and UPDATE ONLY of ("resultReportedAt", "resultStatus", "supersededAt"); no DELETE /
 --   TRUNCATE (rows go with their run: ON DELETE CASCADE; a node with authorisations cannot be deleted: RESTRICT).
 -- Read / written only through the narrow projection in server/services/edge/edgeControlSchema.ts (0368 lesson).
@@ -63,16 +69,17 @@ CREATE INDEX IF NOT EXISTS "idx_edge_step_auth_run" ON "edge_step_authorizations
 COMMENT ON TABLE "edge_step_authorizations" IS
   'doc 81 Dot 10 A (0372): per-step signed edge authorisations (jti). One per (run, claim, step, attempt); identity write-once; one result per jti.';
 
-CREATE OR REPLACE FUNCTION edge_step_auth_insert_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.edge_step_auth_insert_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NOT EXISTS (
-       SELECT 1 FROM "orchestration_run_edge_assignments" a
+       SELECT 1 FROM public."orchestration_run_edge_assignments" a
         WHERE a."runId" = NEW."runId" AND a."edgeNodeId" = NEW."edgeNodeId"
           AND a."claimSeq" = NEW."claimSeq" AND a."claimTokenHash" IS NOT NULL) THEN
     RAISE EXCEPTION 'edge_step_authorizations: run % is not under a current claim % of node %', NEW."runId", NEW."claimSeq", NEW."edgeNodeId"
       USING ERRCODE = 'check_violation';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM "edge_node_credentials" c WHERE c."id" = NEW."credentialId" AND c."edgeNodeId" = NEW."edgeNodeId") THEN
+  IF NOT EXISTS (SELECT 1 FROM public."edge_node_credentials" c WHERE c."id" = NEW."credentialId" AND c."edgeNodeId" = NEW."edgeNodeId") THEN
     RAISE EXCEPTION 'edge_step_authorizations: credential % is not a credential of node %', NEW."credentialId", NEW."edgeNodeId"
       USING ERRCODE = 'check_violation';
   END IF;
@@ -83,9 +90,10 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_edge_step_auth_insert ON "edge_step_authorizations";
 CREATE TRIGGER trg_edge_step_auth_insert BEFORE INSERT ON "edge_step_authorizations"
-  FOR EACH ROW EXECUTE FUNCTION edge_step_auth_insert_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.edge_step_auth_insert_guard();
 
-CREATE OR REPLACE FUNCTION edge_step_auth_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.edge_step_auth_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW."jti" IS DISTINCT FROM OLD."jti" OR NEW."edgeNodeId" IS DISTINCT FROM OLD."edgeNodeId"
      OR NEW."credentialId" IS DISTINCT FROM OLD."credentialId" OR NEW."runId" IS DISTINCT FROM OLD."runId"
@@ -108,7 +116,10 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_edge_step_auth_guard ON "edge_step_authorizations";
 CREATE TRIGGER trg_edge_step_auth_guard BEFORE UPDATE ON "edge_step_authorizations"
-  FOR EACH ROW EXECUTE FUNCTION edge_step_auth_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.edge_step_auth_guard();
+-- fix review 1 (R-10-e): trigger functions are never callable directly (firing a trigger needs no EXECUTE)
+REVOKE ALL ON FUNCTION public.edge_step_auth_insert_guard() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.edge_step_auth_guard() FROM PUBLIC;
 
 DO $$
 BEGIN

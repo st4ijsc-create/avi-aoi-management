@@ -97,6 +97,40 @@ export async function columnsOf(appSql, t) {
   return (await appSql`SELECT column_name AS c FROM information_schema.columns WHERE table_schema='public' AND table_name=${t}`).map((r) => r.c);
 }
 
+/** fix review 1 (ruling R-10-e): the pinned search_path of every function of 0372–0375 (pg_temp LAST). */
+export const EDGE_FN_SEARCH_PATH = "search_path=pg_catalog, public, pg_temp";
+/** The functions avi_app may call directly (every other function of 0372–0375 is a trigger function: no EXECUTE for anyone). */
+export const EDGE_FN_CALLABLE = new Set([
+  "edge_motion_lock_apply", "edge_motion_lock_clear",
+  "edge_robot_trust_request", "edge_robot_trust_approve", "edge_robot_trust_revoke", "edge_robot_trust_is_approved",
+]);
+/** Names of the functions a migration file defines (`CREATE OR REPLACE FUNCTION public.<name>(`). */
+export function functionsDefinedIn(sqlText) {
+  return [...sqlText.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(public\.)?([a-z_][a-z0-9_]*)\s*\(/gi)].map((m) => ({ qualified: Boolean(m[1]), name: m[2] }));
+}
+/**
+ * fix review 1 (R-10-e) — measured in the catalog as avi_app: every function the file defines is schema-qualified, runs with
+ * EXACTLY `search_path = pg_catalog, public, pg_temp`, is not executable by PUBLIC, and avi_app may EXECUTE only the callable set.
+ */
+export async function verifyFunctionHygiene(appSql, sqlText, log) {
+  const fns = functionsDefinedIn(sqlText);
+  if (fns.length === 0) return;
+  const bad = [];
+  for (const f of fns) {
+    if (!f.qualified) bad.push(`${f.name}: CREATE without public.`);
+    const rows = await appSql`
+      SELECT p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub, has_function_privilege(current_user, p.oid, 'EXECUTE') AS app
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = ${f.name}`;
+    if (rows.length !== 1) { bad.push(`${f.name}: ${rows.length} definitions`); continue; }
+    const [r] = rows;
+    if (JSON.stringify(r.cfg) !== JSON.stringify([EDGE_FN_SEARCH_PATH])) bad.push(`${f.name}: proconfig ${JSON.stringify(r.cfg)}`);
+    if (r.pub) bad.push(`${f.name}: PUBLIC may EXECUTE`);
+    if (r.app !== EDGE_FN_CALLABLE.has(f.name)) bad.push(`${f.name}: avi_app EXECUTE=${r.app}`);
+  }
+  if (bad.length) throw new Error(`(R-10-e) function hygiene: ${bad.join("; ")}`);
+  log(`(R-10-e) ${fns.length} function(s): search_path pinned (pg_temp last), no PUBLIC EXECUTE, avi_app EXECUTE only on the callable set`);
+}
+
 /**
  * @param {{ file: string, tag: string, verify: (ctx: { sql: any, appSql: any, label: string, log: (m: string) => void }) => Promise<void> }} m
  */
@@ -149,6 +183,7 @@ export async function runMigration(m) {
         throw e;
       }
       console.log(`${m.tag} ${label}: DDL applied (owner aoi, lock_timeout 5s)`);
+      await verifyFunctionHygiene(appSql, content, (msg) => console.log(`  ${m.tag} ${label} ${msg}`));
       await m.verify({ sql, appSql, label, log: (msg) => console.log(`  ${m.tag} ${label} ${msg}`) });
       await sql`
         CREATE TABLE IF NOT EXISTS "__applied_migrations" (

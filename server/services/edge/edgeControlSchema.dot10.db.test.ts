@@ -183,6 +183,55 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
     expect(out).toEqual({ directInsert: "42501", byCreator: "23514", byLaterEditor: "23514", directApprove: "42501", approved: true, afterOwnerChange: false, reApproved: true, afterDigestChange: false });
   });
 
+  it("★ fix review 1 M1 (L-7): a STOP for the OLD owner stays deliverable and is CARRIED to a new edge owner; lock / clear at a stale epoch stay refused", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      const code = `__dot10Af_stop_${Date.now()}`;
+      const { node, robot } = await nodeRobot(tx, code);
+      const nodeB = (await one(tx, sql`INSERT INTO edge_nodes (code, name, status) VALUES (${code + "-b"}, ${code}, 'offline') RETURNING id`)).id as number;
+      const ad = (await one(tx, sql`INSERT INTO device_adapters (code, name, protocol, endpoint) VALUES (${code + "-a"}, ${code}, 'stub', 'stub://t') RETURNING id`)).id as number;
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot)); // robot epoch 2
+      await tx.update(adapterOwnership).set({ edgeNodeId: node }).where(eq(adapterOwnership.id, ad)); // adapter epoch 2
+      const req = async (o: { robotId?: number; adapterId?: number; kind: "stop" | "lock"; reason: string }) =>
+        (await tx.insert(robotMotionLockRequests).values({ robotId: o.robotId ?? null, adapterId: o.adapterId ?? null, edgeNodeId: node, ownerEpoch: 2, kind: o.kind, reason: o.reason, requestedBy: 7, expiresAt: new Date(Date.now() + 60_000) }).returning({ id: robotMotionLockRequests.id }))[0].id;
+      const stopR = await req({ robotId: robot, kind: "stop", reason: "operator e-stop" });
+      const lockR = await req({ robotId: robot, kind: "lock", reason: "maintenance" });
+      const stopA = await req({ adapterId: ad, kind: "stop", reason: "adapter stop" });
+      const ackedStop = await req({ robotId: robot, kind: "stop", reason: "already done" });
+      await tx.update(robotMotionLockRequests).set({ deliveredAt: new Date() }).where(eq(robotMotionLockRequests.id, ackedStop));
+      await tx.update(robotMotionLockRequests).set({ ackedAt: new Date(), outcome: "done" }).where(eq(robotMotionLockRequests.id, ackedStop));
+      await tx.update(robotOwnership).set({ edgeNodeId: nodeB }).where(eq(robotOwnership.id, robot)); // robot epoch 3, owner B
+      await tx.update(adapterOwnership).set({ edgeNodeId: null }).where(eq(adapterOwnership.id, ad)); // adapter → central
+      const deliverOldStop = await codeOf(tx, () => tx.update(robotMotionLockRequests).set({ deliveredAt: new Date() }).where(eq(robotMotionLockRequests.id, stopR)));
+      const deliverOldLock = await codeOf(tx, () => tx.update(robotMotionLockRequests).set({ deliveredAt: new Date() }).where(eq(robotMotionLockRequests.id, lockR)));
+      const deliverOldAdapterStop = await codeOf(tx, () => tx.update(robotMotionLockRequests).set({ deliveredAt: new Date() }).where(eq(robotMotionLockRequests.id, stopA)));
+      const carried = await tx.select().from(robotMotionLockRequests).where(and(eq(robotMotionLockRequests.robotId, robot), eq(robotMotionLockRequests.edgeNodeId, nodeB)));
+      const adapterCarried = await tx.select().from(robotMotionLockRequests).where(and(eq(robotMotionLockRequests.adapterId, ad), sql`${robotMotionLockRequests.id} <> ${stopA}`));
+      return { stopR, deliverOldStop, deliverOldLock, deliverOldAdapterStop, carried, adapterCarried };
+    });
+    expect(out).toMatchObject({ deliverOldStop: null, deliverOldLock: "23514", deliverOldAdapterStop: null, adapterCarried: [] });
+    expect(out.carried).toHaveLength(1); // the unacked STOP only — never the lock, never the acknowledged STOP
+    expect(out.carried[0]).toMatchObject({ kind: "stop", ownerEpoch: 3, requestedBy: 7, deliveredAt: null, ackedAt: null });
+    expect(out.carried[0].reason).toContain(`carried from request #${out.stopR}`);
+    expect(out.carried[0].reason).toContain("operator e-stop");
+  });
+
+  it("★ fix review 1 M2: edge_motion_lock_apply / _clear refuse a generation below the robot's motionLockGenerationFloor", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      const { node, robot } = await nodeRobot(tx, `__dot10Af_floor_${Date.now()}`);
+      await tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "t", generation: 9 });
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot)); // floor 10, relock row gen 10
+      const [own] = await tx.select().from(robotOwnership).where(eq(robotOwnership.id, robot));
+      const f = own.motionLockGenerationFloor as number;
+      const clearBelow = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: f - 1 });
+      const clearAt = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: f });
+      const applyBelow = await applyEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: f - 1, reasonCode: "x" });
+      const rowsAfterBelow = (await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot))).length;
+      const applyAt = await applyEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: f, reasonCode: "x" });
+      return { f, clearBelow, clearAt, applyBelow, rowsAfterBelow, applyAt };
+    });
+    expect(out).toEqual({ f: 10, clearBelow: 0, clearAt: 1, applyBelow: false, rowsAfterBelow: 0, applyAt: true });
+  });
+
   it("report cursor starts at 0 and never goes back; avi_app cannot plant a signing-key row (R-10-c mirror)", async () => {
     const out = await inRolledBackTx(async (tx) => {
       const { node } = await nodeRobot(tx, `__dot10A_cur_${Date.now()}`);
@@ -207,6 +256,11 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
       const err = await d.select().from(t as never).limit(1).then(() => null, (e: unknown) => e);
       expect(isEdgeControlSchemaMissing(err)).toBe(true);
     }
+    // fix review 1 (I6): a DB without 0374 / 0375 has no guarded function ⇒ 42883 undefined_function ⇒ 503 edge_unavailable
+    const noFn = await d.execute(sql`SELECT public.__dot10_no_such_function(1)`).then(() => null, (e: unknown) => e);
+    expect((noFn as { code?: string; cause?: { code?: string } }).code ?? (noFn as { cause?: { code?: string } }).cause?.code).toBe("42883");
+    expect(isEdgeControlSchemaMissing(noFn)).toBe(true);
+    expect(isEdgeControlSchemaMissing({ cause: { code: "42883" } })).toBe(true);
     expect(isEdgeControlSchemaMissing({ code: "23514" })).toBe(false);
   });
 

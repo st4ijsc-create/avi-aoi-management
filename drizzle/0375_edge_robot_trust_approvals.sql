@@ -18,6 +18,11 @@
 --       edge_robot_trust_request / _approve / _revoke (SECURITY DEFINER, owner aoi) and edge_robot_trust_is_approved;
 --     – legacy rows (an approval without approvedDigest) start UNTRUSTED (cleared below).
 --
+-- fix review 1 (ruling R-10-e, C2 — PROVEN bypass: a session TEMP "users" made an inactive non-admin pass the active-admin check
+--   of the SECURITY DEFINER approve; I1 — a TEMP "robots" fooled the trust trigger): every function pins
+--   `search_path = pg_catalog, public, pg_temp` and names every relation `public."…"`; EXECUTE revoked from PUBLIC and granted
+--   to avi_app on the four guarded functions only.
+--
 -- ⚠ DDL runs as owner `aoi`: `node scripts/apply-migration-0375.mjs --test-only` (dev: `--dev-only`, the owner decides; no
 --   flag ⇒ refused — R-3-g). Requires 0371 + 0374. Idempotent. ⚠ The repo forbids `drizzle-kit push/generate`.
 -- ROLLBACK:
@@ -63,7 +68,8 @@ COMMENT ON TABLE "edge_robot_trust_approvals" IS
   'doc 81 Dot 10 A (0375, D6): maker-checker approval that makes edge-ingested robot e-stops of (node, robot) TRUSTED. Bound to digest + owner epoch; approver outside editorsSinceApproval; written only via guarded functions.';
 
 -- the trigger function (applies to every writer, the owner included)
-CREATE OR REPLACE FUNCTION edge_robot_trust_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.edge_robot_trust_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW."approvedBy" IS NOT NULL OR NEW."approvedAt" IS NOT NULL OR NEW."approvedDigest" IS NOT NULL OR NEW."approvedOwnerEpoch" IS NOT NULL THEN
@@ -106,7 +112,7 @@ BEGIN
     END IF;
   END IF;
   IF (TG_OP = 'INSERT' OR NEW."approvedBy" IS NOT NULL OR NEW."ownerEpoch" IS DISTINCT FROM OLD."ownerEpoch") AND NOT EXISTS (
-       SELECT 1 FROM "robots" r WHERE r."id" = NEW."robotId" AND r."edgeNodeId" = NEW."edgeNodeId" AND r."ownerEpoch" = NEW."ownerEpoch") THEN
+       SELECT 1 FROM public."robots" r WHERE r."id" = NEW."robotId" AND r."edgeNodeId" = NEW."edgeNodeId" AND r."ownerEpoch" = NEW."ownerEpoch") THEN
     RAISE EXCEPTION 'edge_robot_trust_approvals: robot % is not owned by node % at owner epoch %', NEW."robotId", NEW."edgeNodeId", NEW."ownerEpoch"
       USING ERRCODE = 'check_violation';
   END IF;
@@ -114,7 +120,8 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_edge_robot_trust_guard ON "edge_robot_trust_approvals";
 CREATE TRIGGER trg_edge_robot_trust_guard BEFORE INSERT OR UPDATE ON "edge_robot_trust_approvals"
-  FOR EACH ROW EXECUTE FUNCTION edge_robot_trust_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.edge_robot_trust_guard();
+REVOKE ALL ON FUNCTION public.edge_robot_trust_guard() FROM PUBLIC; -- fix review 1 (R-10-e)
 
 -- legacy rows start UNTRUSTED (an approval recorded before approvedDigest existed binds nothing); editor history seeded
 UPDATE "edge_robot_trust_approvals" SET "approvedBy" = NULL, "approvedAt" = NULL, "approvedOwnerEpoch" = NULL
@@ -133,40 +140,42 @@ ALTER TABLE "edge_robot_trust_approvals" ADD CONSTRAINT "ck_edge_robot_trust_bin
 
 -- ── the guarded path (SECURITY DEFINER, owner aoi) ───────────────────────────────────────────────────────────────
 -- request / edit: a real user; the robot must be owned by the node; stamps the CURRENT owner epoch; clears any approval.
-CREATE OR REPLACE FUNCTION edge_robot_trust_request(p_node integer, p_robot integer, p_digest text, p_editor integer) RETURNS void
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+CREATE OR REPLACE FUNCTION public.edge_robot_trust_request(p_node integer, p_robot integer, p_digest text, p_editor integer) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   e bigint;
 BEGIN
-  IF p_editor IS NULL OR p_editor <= 0 OR NOT EXISTS (SELECT 1 FROM "users" u WHERE u."id" = p_editor) THEN
+  IF p_editor IS NULL OR p_editor <= 0 OR NOT EXISTS (SELECT 1 FROM public."users" u WHERE u."id" = p_editor) THEN
     RAISE EXCEPTION 'edge_robot_trust_request: editor % is not a user', p_editor USING ERRCODE = 'check_violation';
   END IF;
-  SELECT r."ownerEpoch" INTO e FROM "robots" r WHERE r."id" = p_robot AND r."edgeNodeId" = p_node;
+  SELECT r."ownerEpoch" INTO e FROM public."robots" r WHERE r."id" = p_robot AND r."edgeNodeId" = p_node;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'edge_robot_trust_request: robot % is not owned by node %', p_robot, p_node USING ERRCODE = 'check_violation';
   END IF;
-  INSERT INTO "edge_robot_trust_approvals" ("edgeNodeId", "robotId", "digest", "ownerEpoch", "editedBy", "editedAt", "editorsSinceApproval")
+  INSERT INTO public."edge_robot_trust_approvals" AS t ("edgeNodeId", "robotId", "digest", "ownerEpoch", "editedBy", "editedAt", "editorsSinceApproval")
     VALUES (p_node, p_robot, p_digest, e, p_editor, now(), ARRAY[p_editor])
   ON CONFLICT ("edgeNodeId", "robotId") DO UPDATE SET "digest" = EXCLUDED."digest", "ownerEpoch" = EXCLUDED."ownerEpoch",
     "editedBy" = EXCLUDED."editedBy", "editedAt" = EXCLUDED."editedAt",
-    "editorsSinceApproval" = CASE WHEN "edge_robot_trust_approvals"."approvedBy" IS NOT NULL THEN ARRAY[p_editor]
-      WHEN p_editor = ANY ("edge_robot_trust_approvals"."editorsSinceApproval") THEN "edge_robot_trust_approvals"."editorsSinceApproval"
-      ELSE array_append("edge_robot_trust_approvals"."editorsSinceApproval", p_editor) END,
+    "editorsSinceApproval" = CASE WHEN t."approvedBy" IS NOT NULL THEN ARRAY[p_editor]
+      WHEN p_editor = ANY (t."editorsSinceApproval") THEN t."editorsSinceApproval"
+      ELSE array_append(t."editorsSinceApproval", p_editor) END,
     "approvedBy" = NULL, "approvedAt" = NULL, "approvedDigest" = NULL, "approvedOwnerEpoch" = NULL;
 END $$;
 
 -- approve: an ACTIVE ADMIN who is not among the editors since the last approval; bound to the digest the approver SAW and to
 -- the robot's CURRENT owner + epoch; only onto an unapproved row.
-CREATE OR REPLACE FUNCTION edge_robot_trust_approve(p_node integer, p_robot integer, p_digest text, p_approver integer) RETURNS void
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+CREATE OR REPLACE FUNCTION public.edge_robot_trust_approve(p_node integer, p_robot integer, p_digest text, p_approver integer) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   row_ record;
 BEGIN
   IF p_approver IS NULL OR p_approver <= 0 OR NOT EXISTS (
-       SELECT 1 FROM "users" u WHERE u."id" = p_approver AND u."role"::text = 'admin' AND u."isActive" = true) THEN
+       SELECT 1 FROM public."users" u WHERE u."id" = p_approver AND u."role"::text = 'admin' AND u."isActive" = true) THEN
     RAISE EXCEPTION 'edge_robot_trust_approve: approver % is not an active admin', p_approver USING ERRCODE = 'check_violation';
   END IF;
-  SELECT * INTO row_ FROM "edge_robot_trust_approvals" a WHERE a."edgeNodeId" = p_node AND a."robotId" = p_robot FOR UPDATE;
+  SELECT * INTO row_ FROM public."edge_robot_trust_approvals" a WHERE a."edgeNodeId" = p_node AND a."robotId" = p_robot FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'edge_robot_trust_approve: nothing requested for node %, robot %', p_node, p_robot USING ERRCODE = 'check_violation';
   END IF;
@@ -176,35 +185,37 @@ BEGIN
   IF row_."digest" IS DISTINCT FROM p_digest THEN
     RAISE EXCEPTION 'edge_robot_trust_approve: the digest changed since it was shown — re-review' USING ERRCODE = 'check_violation';
   END IF;
-  UPDATE "edge_robot_trust_approvals" SET "approvedBy" = p_approver, "approvedAt" = now(), "approvedDigest" = row_."digest",
+  UPDATE public."edge_robot_trust_approvals" SET "approvedBy" = p_approver, "approvedAt" = now(), "approvedDigest" = row_."digest",
     "approvedOwnerEpoch" = row_."ownerEpoch"
   WHERE "edgeNodeId" = p_node AND "robotId" = p_robot;
 END $$;
 
-CREATE OR REPLACE FUNCTION edge_robot_trust_revoke(p_node integer, p_robot integer, p_actor integer) RETURNS void
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+CREATE OR REPLACE FUNCTION public.edge_robot_trust_revoke(p_node integer, p_robot integer, p_actor integer) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF p_actor IS NULL OR p_actor <= 0 THEN
     RAISE EXCEPTION 'edge_robot_trust_revoke: actor % is not a user', p_actor USING ERRCODE = 'check_violation';
   END IF;
-  UPDATE "edge_robot_trust_approvals" SET "approvedBy" = NULL, "approvedAt" = NULL, "approvedDigest" = NULL, "approvedOwnerEpoch" = NULL
+  UPDATE public."edge_robot_trust_approvals" SET "approvedBy" = NULL, "approvedAt" = NULL, "approvedDigest" = NULL, "approvedOwnerEpoch" = NULL
   WHERE "edgeNodeId" = p_node AND "robotId" = p_robot;
 END $$;
 
 -- THE one predicate central uses: approved, for this digest, for the robot's CURRENT owner and epoch.
-CREATE OR REPLACE FUNCTION edge_robot_trust_is_approved(p_node integer, p_robot integer, p_digest text) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+CREATE OR REPLACE FUNCTION public.edge_robot_trust_is_approved(p_node integer, p_robot integer, p_digest text) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT EXISTS (
-    SELECT 1 FROM "edge_robot_trust_approvals" a JOIN "robots" r ON r."id" = a."robotId"
+    SELECT 1 FROM public."edge_robot_trust_approvals" a JOIN public."robots" r ON r."id" = a."robotId"
      WHERE a."edgeNodeId" = p_node AND a."robotId" = p_robot AND a."approvedBy" IS NOT NULL
        AND a."approvedDigest" = p_digest AND a."digest" = p_digest
        AND a."approvedOwnerEpoch" = a."ownerEpoch" AND r."ownerEpoch" = a."ownerEpoch" AND r."edgeNodeId" = p_node)
 $$;
 
-REVOKE ALL ON FUNCTION edge_robot_trust_request(integer, integer, text, integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION edge_robot_trust_approve(integer, integer, text, integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION edge_robot_trust_revoke(integer, integer, integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION edge_robot_trust_is_approved(integer, integer, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.edge_robot_trust_request(integer, integer, text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.edge_robot_trust_approve(integer, integer, text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.edge_robot_trust_revoke(integer, integer, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.edge_robot_trust_is_approved(integer, integer, text) FROM PUBLIC;
 
 DO $$
 BEGIN
@@ -212,9 +223,9 @@ BEGIN
     -- fix scan 2 (R-8-a): NO direct write — every change goes through the guarded functions
     REVOKE ALL ON "edge_robot_trust_approvals" FROM avi_app;
     GRANT SELECT ON "edge_robot_trust_approvals" TO avi_app;
-    GRANT EXECUTE ON FUNCTION edge_robot_trust_request(integer, integer, text, integer) TO avi_app;
-    GRANT EXECUTE ON FUNCTION edge_robot_trust_approve(integer, integer, text, integer) TO avi_app;
-    GRANT EXECUTE ON FUNCTION edge_robot_trust_revoke(integer, integer, integer) TO avi_app;
-    GRANT EXECUTE ON FUNCTION edge_robot_trust_is_approved(integer, integer, text) TO avi_app;
+    GRANT EXECUTE ON FUNCTION public.edge_robot_trust_request(integer, integer, text, integer) TO avi_app;
+    GRANT EXECUTE ON FUNCTION public.edge_robot_trust_approve(integer, integer, text, integer) TO avi_app;
+    GRANT EXECUTE ON FUNCTION public.edge_robot_trust_revoke(integer, integer, integer) TO avi_app;
+    GRANT EXECUTE ON FUNCTION public.edge_robot_trust_is_approved(integer, integer, text) TO avi_app;
   END IF;
 END $$;

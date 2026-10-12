@@ -26,6 +26,8 @@
  *       authorities, or write a central row of an edge-owned robot (23514); edge_motion_lock_apply / _clear work only on the
  *       matching (robot, node, epoch) with the generation check; central rows of central robots stay writable as before;
  *       lock requests: done before delivery / delivery in the future or before creation / ackGeneration on a non-done ack ⇒ 23514;
+ *       fix review 1: R-10-e function hygiene (common runner); M2 apply below the floor ⇒ false; M1 a STOP for the old owner
+ *       stays deliverable after an owner change and is carried to the new edge owner (one request, new epoch);
  *   (c) `__applied_migrations` has exactly 1 row for this file.
  *
  *   node scripts/apply-migration-0374.mjs --test-only | --dev-only | --both   (NO flag ⇒ refused — R-3-g)
@@ -39,6 +41,7 @@ const HIST_COLS = ["id", "deviceKind", "deviceId", "fromEdgeNodeId", "toEdgeNode
 const TRIGGERS = [
   "trg_robots_owner_change", "trg_robots_owner_insert", "trg_robots_owner_relock", "trg_adapters_owner_change", "trg_adapters_owner_insert", "trg_device_owner_changes_worm",
   "trg_device_owner_changes_worm_truncate", "trg_robot_motion_lock_authority", "trg_robot_motion_lock_write_guard", "trg_edge_program_owned", "trg_robot_motion_lock_request_guard",
+  "trg_robots_owner_stop_carry", "trg_adapters_owner_stop_carry", // fix review 1 (M1)
 ];
 
 async function fixtures(tx, code) {
@@ -86,7 +89,7 @@ await runMigration({
     }
     const trg = (await appSql`SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D' AND tgname = ANY(${TRIGGERS})`).map((r) => r.tgname);
     if (trg.length !== TRIGGERS.length) throw new Error(`(a) triggers: ${JSON.stringify(trg)}`);
-    const [sd] = await appSql`SELECT bool_and(prosecdef) AS d FROM pg_proc WHERE proname IN ('device_owner_change_guard', 'device_owner_insert_log', 'robot_owner_relock', 'edge_motion_lock_apply', 'edge_motion_lock_clear')`;
+    const [sd] = await appSql`SELECT bool_and(prosecdef) AS d FROM pg_proc WHERE proname IN ('device_owner_change_guard', 'device_owner_insert_log', 'robot_owner_relock', 'edge_motion_lock_apply', 'edge_motion_lock_clear', 'device_owner_stop_carry')`;
     if (!sd?.d) throw new Error("(a) owner-change functions must be SECURITY DEFINER");
     log(`(a) columns + FKs RESTRICT + ${REQ} + ${HIST}; triggers ${trg.length}; SECURITY DEFINER logging`);
     // (b) catalog
@@ -192,6 +195,15 @@ await runMigration({
       r.prgOwned = hasPrg ? await maLoi(tx, (sp) => sp`INSERT INTO edge_node_program_reports ("edgeNodeId", "adapterId", status, checksum, "readAt", "ownerEpoch") VALUES (${f.node.id}, ${f.ad.id}, 'verified', 'x', now(), 99)`) : null;
       r.prgEpoch = hasPrg ? Number((await tx`SELECT "ownerEpoch" AS e FROM edge_node_program_reports WHERE "adapterId" = ${f.ad.id}`)[0]?.e ?? -1) : 2;
       r.nodeDel = await maLoi(tx, (sp) => sp`DELETE FROM edge_nodes WHERE id = ${f.node.id}`);
+      // fix review 1 (M2): below the floor ⇒ nothing applied / cleared
+      const [fl] = await tx`SELECT "motionLockGenerationFloor" AS f FROM robots WHERE id = ${f.robot.id}`;
+      r.applyBelowFloor = (await apply(tx, f.robot.id, f.node.id, 4, fl.f - 1))[0].ok;
+      // fix review 1 (M1, L-7): a STOP for the old owner stays deliverable and is carried to the new edge owner
+      const [stopReq] = await reqIns(tx, { robotId: f.robot.id, edgeNodeId: f.node.id, ownerEpoch: 4, kind: "stop" });
+      await tx`UPDATE robots SET "edgeNodeId" = ${f.node2.id} WHERE id = ${f.robot.id}`; // epoch 5
+      r.stopStaleDeliver = await maLoi(tx, (sp) => sp`UPDATE ${sp(REQ)} SET "deliveredAt" = now() WHERE id = ${stopReq.id}`);
+      const [cr] = await tx`SELECT count(*)::int AS n FROM ${tx(REQ)} WHERE "robotId" = ${f.robot.id} AND "edgeNodeId" = ${f.node2.id} AND "ownerEpoch" = 5 AND kind = 'stop'`;
+      r.stopCarried = cr.n;
       return r;
     });
     expectExact("(b) avi_app behaviour", kq, {
@@ -205,6 +217,7 @@ await runMigration({
       reqLock: null, reqStaleEpoch: "23514", reqUnowned: "23514", reqTwoTargets: "23514", reqAdapterLock: "23514", reqAdapterStop: null, reqClearNoGen: "23514",
       reqClearGen: null, reqBornDelivered: "23514", deliver1: null, deliver2: "23514", outcomeOnly: "23514", ack1: null, ack2: "23514", reqIdentity: "42501",
       reqDel: "42501", deliverStale: "23514", expireStale: null, prgUnowned: "23514", prgOwned: null, prgEpoch: 2, nodeDel: "23503",
+      applyBelowFloor: false, stopStaleDeliver: null, stopCarried: 1,
     });
     const ko = await rolledBack(sql, async (tx) => {
       const f = await fixtures(tx, CODE + "-o");

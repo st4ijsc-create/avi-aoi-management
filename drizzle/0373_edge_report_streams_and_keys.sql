@@ -22,6 +22,9 @@
 -- • edge_nodes."protocolVersion" smallint DEFAULT 1 — 1 = Đợt 9 (DB-backed edge), 2 = this protocol; central refuses a v1
 --   call for a v2 node. Read through the narrow projection (edgeControlSchema.ts), never added to the full edge_nodes object.
 --
+-- fix review 1 (ruling R-10-e): every function pins `search_path = pg_catalog, public, pg_temp`, names relations `public."…"`,
+--   and has EXECUTE revoked from PUBLIC (see 0372).
+--
 -- ⚠ DDL runs as owner `aoi`: `node scripts/apply-migration-0373.mjs --test-only` (dev: `--dev-only`, the owner decides; no
 --   flag ⇒ refused — R-3-g). ⚠ The repo forbids `drizzle-kit push/generate`.
 -- ROLLBACK:
@@ -44,7 +47,8 @@ CREATE TABLE IF NOT EXISTS "edge_node_report_cursors" (
 COMMENT ON TABLE "edge_node_report_cursors" IS
   'doc 81 Dot 10 A (0373): edge journal replay cursor per (node, stream, epoch). Starts at 0, never decreases.';
 
-CREATE OR REPLACE FUNCTION edge_report_cursor_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.edge_report_cursor_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW."lastSeq" <> 0 THEN
@@ -64,7 +68,8 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_edge_report_cursor_guard ON "edge_node_report_cursors";
 CREATE TRIGGER trg_edge_report_cursor_guard BEFORE INSERT OR UPDATE ON "edge_node_report_cursors"
-  FOR EACH ROW EXECUTE FUNCTION edge_report_cursor_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.edge_report_cursor_guard();
+REVOKE ALL ON FUNCTION public.edge_report_cursor_guard() FROM PUBLIC; -- fix review 1 (R-10-e)
 
 CREATE TABLE IF NOT EXISTS "edge_node_program_reports" (
   "edgeNodeId" integer NOT NULL REFERENCES "edge_nodes"("id") ON DELETE CASCADE,
@@ -103,7 +108,8 @@ CREATE TABLE IF NOT EXISTS "edge_auth_signing_keys" (
 COMMENT ON TABLE "edge_auth_signing_keys" IS
   'doc 81 Dot 10 A (0373): PUBLIC edge signing keys (private key never in the DB). next -> active -> retired; identity + endorsement write-once.';
 
-CREATE OR REPLACE FUNCTION edge_auth_signing_keys_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.edge_auth_signing_keys_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW."status" = 'retired' OR NEW."retiredAt" IS NOT NULL THEN
@@ -127,7 +133,8 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_edge_auth_signing_keys_guard ON "edge_auth_signing_keys";
 CREATE TRIGGER trg_edge_auth_signing_keys_guard BEFORE INSERT OR UPDATE ON "edge_auth_signing_keys"
-  FOR EACH ROW EXECUTE FUNCTION edge_auth_signing_keys_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.edge_auth_signing_keys_guard();
+REVOKE ALL ON FUNCTION public.edge_auth_signing_keys_guard() FROM PUBLIC; -- fix review 1 (R-10-e)
 
 ALTER TABLE "edge_nodes" ADD COLUMN IF NOT EXISTS "protocolVersion" smallint NOT NULL DEFAULT 1;
 ALTER TABLE "edge_nodes" DROP CONSTRAINT IF EXISTS "ck_edge_nodes_protocol_version";

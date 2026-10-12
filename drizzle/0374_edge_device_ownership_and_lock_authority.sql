@@ -52,12 +52,22 @@
 --   columns on robots / device_adapters / robot_motion_locks / edge_node_program_reports follow those tables' grants. All are
 --   read through the narrow projections in server/services/edge/edgeControlSchema.ts — never the full drizzle objects.
 --
+-- fix review 1:
+--   • R-10-e (C1/I1 — PROVEN bypass: a session TEMP robot_jobs / robot_motion_locks / device_owner_changes shadowed the real
+--     tables inside the SECURITY DEFINER owner-change trigger ⇒ owner change while a job ran, NO relock, NO history): every
+--     function pins `search_path = pg_catalog, public, pg_temp` and names every relation `public."…"`; EXECUTE revoked from
+--     PUBLIC; only edge_motion_lock_apply / _clear are granted (to avi_app);
+--   • M1 (L-7): a STOP request at a stale owner epoch stays deliverable to its node, and an unacknowledged STOP of the previous
+--     ownership is carried to a new edge owner (device_owner_stop_carry); lock / clear at a stale epoch are still refused;
+--   • M2: edge_motion_lock_apply / _clear refuse a generation below robots."motionLockGenerationFloor".
+--
 -- ⚠ DDL runs as owner `aoi`: `node scripts/apply-migration-0374.mjs --test-only` (dev: `--dev-only`, the owner decides; no
 --   flag ⇒ refused — R-3-g). Requires 0372 + 0373. Idempotent. ⚠ The repo forbids `drizzle-kit push/generate`.
 -- ROLLBACK:
 --   DROP TABLE IF EXISTS "robot_motion_lock_requests"; DROP TABLE IF EXISTS "device_owner_changes";
 --   DROP TRIGGER IF EXISTS trg_robots_owner_change ON "robots"; DROP TRIGGER IF EXISTS trg_robots_owner_insert ON "robots";
---   DROP TRIGGER IF EXISTS trg_robots_owner_relock ON "robots";
+--   DROP TRIGGER IF EXISTS trg_robots_owner_relock ON "robots"; DROP TRIGGER IF EXISTS trg_robots_owner_stop_carry ON "robots";
+--   DROP TRIGGER IF EXISTS trg_adapters_owner_stop_carry ON "device_adapters";
 --   DROP TRIGGER IF EXISTS trg_adapters_owner_change ON "device_adapters"; DROP TRIGGER IF EXISTS trg_adapters_owner_insert ON "device_adapters";
 --   DROP TRIGGER IF EXISTS trg_robot_motion_lock_authority ON "robot_motion_locks"; DROP TRIGGER IF EXISTS trg_robot_motion_lock_write_guard ON "robot_motion_locks";
 --   DROP FUNCTION IF EXISTS edge_motion_lock_apply(integer, integer, bigint, integer, text, text), edge_motion_lock_clear(integer, integer, bigint, integer), robot_motion_lock_write_guard(); DROP TRIGGER IF EXISTS trg_edge_program_owned ON "edge_node_program_reports";
@@ -66,7 +76,7 @@
 --   ALTER TABLE "robot_motion_locks" DROP COLUMN IF EXISTS "authority", DROP COLUMN IF EXISTS "authorityNodeId", DROP COLUMN IF EXISTS "ownerEpoch";
 --   ALTER TABLE "edge_node_program_reports" DROP COLUMN IF EXISTS "ownerEpoch";
 --   DROP FUNCTION IF EXISTS device_owner_change_guard(), device_owner_insert_log(), robot_owner_relock(), robot_motion_lock_authority_guard(),
---     edge_program_report_owned(), robot_motion_lock_request_guard(), device_owner_changes_worm();
+--     edge_program_report_owned(), robot_motion_lock_request_guard(), device_owner_changes_worm(), device_owner_stop_carry();
 --
 ALTER TABLE "robots" ADD COLUMN IF NOT EXISTS "edgeNodeId" integer;
 ALTER TABLE "robots" ADD COLUMN IF NOT EXISTS "motionLockGenerationFloor" integer NOT NULL DEFAULT 0;
@@ -116,19 +126,22 @@ CREATE INDEX IF NOT EXISTS "idx_device_owner_changes_device" ON "device_owner_ch
 COMMENT ON TABLE "device_owner_changes" IS
   'doc 81 Dot 10 A (0374): WORM history of device ownership (robots / device_adapters edgeNodeId + ownerEpoch). Written only by the owner-change triggers.';
 
-CREATE OR REPLACE FUNCTION device_owner_changes_worm() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.device_owner_changes_worm() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   RAISE EXCEPTION 'device_owner_changes is append-only (WORM)' USING ERRCODE = 'check_violation';
 END $$;
 DROP TRIGGER IF EXISTS trg_device_owner_changes_worm ON "device_owner_changes";
 CREATE TRIGGER trg_device_owner_changes_worm BEFORE UPDATE OR DELETE ON "device_owner_changes"
-  FOR EACH ROW EXECUTE FUNCTION device_owner_changes_worm();
+  FOR EACH ROW EXECUTE FUNCTION public.device_owner_changes_worm();
 DROP TRIGGER IF EXISTS trg_device_owner_changes_worm_truncate ON "device_owner_changes";
 CREATE TRIGGER trg_device_owner_changes_worm_truncate BEFORE TRUNCATE ON "device_owner_changes"
-  FOR EACH STATEMENT EXECUTE FUNCTION device_owner_changes_worm();
+  FOR EACH STATEMENT EXECUTE FUNCTION public.device_owner_changes_worm();
+REVOKE ALL ON FUNCTION public.device_owner_changes_worm() FROM PUBLIC;
 
 -- ── owner change: refused while in flight; bumps the epoch; raises the robot floor; logs (SECURITY DEFINER) ─────────
-CREATE OR REPLACE FUNCTION device_owner_change_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+CREATE OR REPLACE FUNCTION public.device_owner_change_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   actor text := COALESCE(NULLIF(current_setting('avi.actor', true), ''), session_user);
   lockgen integer;
@@ -141,39 +154,40 @@ BEGIN
       RAISE EXCEPTION 'robots: motionLockGenerationFloor never decreases (robot %)', OLD."id" USING ERRCODE = 'check_violation';
     END IF;
     IF NEW."edgeNodeId" IS DISTINCT FROM OLD."edgeNodeId" THEN
-      IF EXISTS (SELECT 1 FROM "robot_jobs" j WHERE j."robotId" = OLD."id" AND j."status" = 'running') THEN
+      IF EXISTS (SELECT 1 FROM public."robot_jobs" j WHERE j."robotId" = OLD."id" AND j."status" = 'running') THEN
         RAISE EXCEPTION 'robots: robot % has a running job — ownership cannot change now', OLD."id" USING ERRCODE = 'check_violation';
       END IF;
       NEW."ownerEpoch" := OLD."ownerEpoch" + 1;
-      SELECT l."generation" INTO lockgen FROM "robot_motion_locks" l WHERE l."robotId" = OLD."id";
+      SELECT l."generation" INTO lockgen FROM public."robot_motion_locks" l WHERE l."robotId" = OLD."id";
       NEW."motionLockGenerationFloor" := GREATEST(OLD."motionLockGenerationFloor", NEW."motionLockGenerationFloor", COALESCE(lockgen, 0)) + 1;
-      INSERT INTO "device_owner_changes" ("deviceKind", "deviceId", "fromEdgeNodeId", "toEdgeNodeId", "generationFloor", "fromOwnerEpoch", "toOwnerEpoch", "changedBy")
+      INSERT INTO public."device_owner_changes" ("deviceKind", "deviceId", "fromEdgeNodeId", "toEdgeNodeId", "generationFloor", "fromOwnerEpoch", "toOwnerEpoch", "changedBy")
         VALUES ('robot', OLD."id", OLD."edgeNodeId", NEW."edgeNodeId", NEW."motionLockGenerationFloor", OLD."ownerEpoch", NEW."ownerEpoch", left(actor, 128));
     END IF;
   ELSE
     IF NEW."edgeNodeId" IS DISTINCT FROM OLD."edgeNodeId" THEN
-      IF EXISTS (SELECT 1 FROM "command_log" c WHERE c."adapterId" = OLD."id" AND c."status" = 'sent') THEN
+      IF EXISTS (SELECT 1 FROM public."command_log" c WHERE c."adapterId" = OLD."id" AND c."status" = 'sent') THEN
         RAISE EXCEPTION 'device_adapters: adapter % has an in-flight command — ownership cannot change now', OLD."id" USING ERRCODE = 'check_violation';
       END IF;
       NEW."ownerEpoch" := OLD."ownerEpoch" + 1;
-      INSERT INTO "device_owner_changes" ("deviceKind", "deviceId", "fromEdgeNodeId", "toEdgeNodeId", "generationFloor", "fromOwnerEpoch", "toOwnerEpoch", "changedBy")
+      INSERT INTO public."device_owner_changes" ("deviceKind", "deviceId", "fromEdgeNodeId", "toEdgeNodeId", "generationFloor", "fromOwnerEpoch", "toOwnerEpoch", "changedBy")
         VALUES ('adapter', OLD."id", OLD."edgeNodeId", NEW."edgeNodeId", NULL, OLD."ownerEpoch", NEW."ownerEpoch", left(actor, 128));
     END IF;
   END IF;
   RETURN NEW;
 END $$;
-REVOKE ALL ON FUNCTION device_owner_change_guard() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.device_owner_change_guard() FROM PUBLIC;
 DROP TRIGGER IF EXISTS trg_robots_owner_change ON "robots";
 CREATE TRIGGER trg_robots_owner_change BEFORE UPDATE OF "edgeNodeId", "motionLockGenerationFloor", "ownerEpoch" ON "robots"
-  FOR EACH ROW EXECUTE FUNCTION device_owner_change_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.device_owner_change_guard();
 DROP TRIGGER IF EXISTS trg_adapters_owner_change ON "device_adapters";
 CREATE TRIGGER trg_adapters_owner_change BEFORE UPDATE OF "edgeNodeId", "ownerEpoch" ON "device_adapters"
-  FOR EACH ROW EXECUTE FUNCTION device_owner_change_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.device_owner_change_guard();
 
 -- the robot is LOCKED under the new authority + epoch at once (design §2.11): replaces the previous authority's row
-CREATE OR REPLACE FUNCTION robot_owner_relock() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+CREATE OR REPLACE FUNCTION public.robot_owner_relock() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-  INSERT INTO "robot_motion_locks" ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt")
+  INSERT INTO public."robot_motion_locks" ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt")
     VALUES (NEW."id", 'ownerChanged', 'ownership changed (owner epoch ' || NEW."ownerEpoch" || ') — locked until a confirmed STOP',
             NEW."motionLockGenerationFloor", CASE WHEN NEW."edgeNodeId" IS NULL THEN 'central' ELSE 'edge:' || NEW."edgeNodeId" END,
             NEW."edgeNodeId", NEW."ownerEpoch", now())
@@ -181,35 +195,37 @@ BEGIN
     "authority" = EXCLUDED."authority", "authorityNodeId" = EXCLUDED."authorityNodeId", "ownerEpoch" = EXCLUDED."ownerEpoch", "lockedAt" = EXCLUDED."lockedAt";
   RETURN NULL;
 END $$;
-REVOKE ALL ON FUNCTION robot_owner_relock() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.robot_owner_relock() FROM PUBLIC;
 DROP TRIGGER IF EXISTS trg_robots_owner_relock ON "robots";
 CREATE TRIGGER trg_robots_owner_relock AFTER UPDATE OF "edgeNodeId" ON "robots"
-  FOR EACH ROW WHEN (OLD."edgeNodeId" IS DISTINCT FROM NEW."edgeNodeId") EXECUTE FUNCTION robot_owner_relock();
+  FOR EACH ROW WHEN (OLD."edgeNodeId" IS DISTINCT FROM NEW."edgeNodeId") EXECUTE FUNCTION public.robot_owner_relock();
 
-CREATE OR REPLACE FUNCTION device_owner_insert_log() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+CREATE OR REPLACE FUNCTION public.device_owner_insert_log() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   actor text := COALESCE(NULLIF(current_setting('avi.actor', true), ''), session_user);
 BEGIN
-  INSERT INTO "device_owner_changes" ("deviceKind", "deviceId", "fromEdgeNodeId", "toEdgeNodeId", "generationFloor", "fromOwnerEpoch", "toOwnerEpoch", "changedBy")
+  INSERT INTO public."device_owner_changes" ("deviceKind", "deviceId", "fromEdgeNodeId", "toEdgeNodeId", "generationFloor", "fromOwnerEpoch", "toOwnerEpoch", "changedBy")
     VALUES (CASE WHEN TG_TABLE_NAME = 'robots' THEN 'robot' ELSE 'adapter' END, NEW."id", NULL, NEW."edgeNodeId",
             CASE WHEN TG_TABLE_NAME = 'robots' THEN (to_jsonb(NEW) ->> 'motionLockGenerationFloor')::integer ELSE NULL END,
             NULL, NEW."ownerEpoch", left(actor, 128));
   RETURN NULL;
 END $$;
-REVOKE ALL ON FUNCTION device_owner_insert_log() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.device_owner_insert_log() FROM PUBLIC;
 DROP TRIGGER IF EXISTS trg_robots_owner_insert ON "robots";
 CREATE TRIGGER trg_robots_owner_insert AFTER INSERT ON "robots"
-  FOR EACH ROW WHEN (NEW."edgeNodeId" IS NOT NULL) EXECUTE FUNCTION device_owner_insert_log();
+  FOR EACH ROW WHEN (NEW."edgeNodeId" IS NOT NULL) EXECUTE FUNCTION public.device_owner_insert_log();
 DROP TRIGGER IF EXISTS trg_adapters_owner_insert ON "device_adapters";
 CREATE TRIGGER trg_adapters_owner_insert AFTER INSERT ON "device_adapters"
-  FOR EACH ROW WHEN (NEW."edgeNodeId" IS NOT NULL) EXECUTE FUNCTION device_owner_insert_log();
+  FOR EACH ROW WHEN (NEW."edgeNodeId" IS NOT NULL) EXECUTE FUNCTION public.device_owner_insert_log();
 
 -- ── lock authority bound to (robot, owner, ownerEpoch) ──────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION robot_motion_lock_authority_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.robot_motion_lock_authority_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   r record;
 BEGIN
-  SELECT "edgeNodeId", "ownerEpoch" INTO r FROM "robots" WHERE "id" = NEW."robotId";
+  SELECT x."edgeNodeId", x."ownerEpoch" INTO r FROM public."robots" x WHERE x."id" = NEW."robotId";
   IF NEW."authority" = 'central' THEN
     -- a central row (existing central code never names an epoch): stamp the robot's current epoch
     IF NEW."ownerEpoch" IS NULL AND FOUND THEN NEW."ownerEpoch" := r."ownerEpoch"; END IF;
@@ -226,14 +242,16 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_robot_motion_lock_authority ON "robot_motion_locks";
 CREATE TRIGGER trg_robot_motion_lock_authority BEFORE INSERT OR UPDATE ON "robot_motion_locks"
-  FOR EACH ROW EXECUTE FUNCTION robot_motion_lock_authority_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.robot_motion_lock_authority_guard();
+REVOKE ALL ON FUNCTION public.robot_motion_lock_authority_guard() FROM PUBLIC;
 
 -- ── program reports: only for adapters the node owns; stamped with the adapter's owner epoch ───────────────────────
-CREATE OR REPLACE FUNCTION edge_program_report_owned() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.edge_program_report_owned() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   e bigint;
 BEGIN
-  SELECT a."ownerEpoch" INTO e FROM "device_adapters" a WHERE a."id" = NEW."adapterId" AND a."edgeNodeId" = NEW."edgeNodeId";
+  SELECT a."ownerEpoch" INTO e FROM public."device_adapters" a WHERE a."id" = NEW."adapterId" AND a."edgeNodeId" = NEW."edgeNodeId";
   IF NOT FOUND THEN
     RAISE EXCEPTION 'edge_node_program_reports: adapter % is not owned by node %', NEW."adapterId", NEW."edgeNodeId" USING ERRCODE = 'check_violation';
   END IF;
@@ -245,7 +263,8 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_edge_program_owned ON "edge_node_program_reports";
 CREATE TRIGGER trg_edge_program_owned BEFORE INSERT OR UPDATE ON "edge_node_program_reports"
-  FOR EACH ROW EXECUTE FUNCTION edge_program_report_owned();
+  FOR EACH ROW EXECUTE FUNCTION public.edge_program_report_owned();
+REVOKE ALL ON FUNCTION public.edge_program_report_owned() FROM PUBLIC;
 
 -- ── central → edge lock / clear / stop requests, bound to (device, owner, ownerEpoch) ──────────────────────────────
 CREATE TABLE IF NOT EXISTS "robot_motion_lock_requests" (
@@ -283,15 +302,16 @@ CREATE INDEX IF NOT EXISTS "idx_lock_req_robot" ON "robot_motion_lock_requests" 
 COMMENT ON TABLE "robot_motion_lock_requests" IS
   'doc 81 Dot 10 A (0374): central -> edge lock / clear / stop requests for edge-owned devices, bound to (device, owner, ownerEpoch); identity write-once, delivered once (only while the epoch holds), acked once.';
 
-CREATE OR REPLACE FUNCTION robot_motion_lock_request_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.robot_motion_lock_request_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   cur_owner integer;
   cur_epoch bigint;
 BEGIN
   IF NEW."robotId" IS NOT NULL THEN
-    SELECT r."edgeNodeId", r."ownerEpoch" INTO cur_owner, cur_epoch FROM "robots" r WHERE r."id" = NEW."robotId";
+    SELECT r."edgeNodeId", r."ownerEpoch" INTO cur_owner, cur_epoch FROM public."robots" r WHERE r."id" = NEW."robotId";
   ELSE
-    SELECT a."edgeNodeId", a."ownerEpoch" INTO cur_owner, cur_epoch FROM "device_adapters" a WHERE a."id" = NEW."adapterId";
+    SELECT a."edgeNodeId", a."ownerEpoch" INTO cur_owner, cur_epoch FROM public."device_adapters" a WHERE a."id" = NEW."adapterId";
   END IF;
   IF TG_OP = 'INSERT' THEN
     IF NEW."deliveredAt" IS NOT NULL OR NEW."ackedAt" IS NOT NULL OR NEW."outcome" IS NOT NULL OR NEW."ackGeneration" IS NOT NULL THEN
@@ -313,7 +333,10 @@ BEGIN
   IF OLD."deliveredAt" IS NOT NULL AND NEW."deliveredAt" IS DISTINCT FROM OLD."deliveredAt" THEN
     RAISE EXCEPTION 'robot_motion_lock_requests: deliveredAt is written once (request %)', OLD."id" USING ERRCODE = 'check_violation';
   END IF;
-  IF OLD."deliveredAt" IS NULL AND NEW."deliveredAt" IS NOT NULL
+  -- fix review 1 (M1, L-7): a STOP is never dropped — a STOP for the OLD owner stays DELIVERABLE to that node (it may still
+  -- hold the device session until it applies the new config; a STOP is never harmful) and is carried to a new edge owner by
+  -- public.device_owner_stop_carry(); lock / clear at a stale epoch are refused (expire them).
+  IF OLD."deliveredAt" IS NULL AND NEW."deliveredAt" IS NOT NULL AND OLD."kind" <> 'stop'
      AND (cur_owner IS DISTINCT FROM OLD."edgeNodeId" OR cur_epoch IS DISTINCT FROM OLD."ownerEpoch") THEN
     RAISE EXCEPTION 'robot_motion_lock_requests: request % is stale (owner / owner epoch changed) — expire it, never deliver it', OLD."id"
       USING ERRCODE = 'check_violation';
@@ -350,20 +373,52 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_robot_motion_lock_request_guard ON "robot_motion_lock_requests";
 CREATE TRIGGER trg_robot_motion_lock_request_guard BEFORE INSERT OR UPDATE ON "robot_motion_lock_requests"
-  FOR EACH ROW EXECUTE FUNCTION robot_motion_lock_request_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.robot_motion_lock_request_guard();
+REVOKE ALL ON FUNCTION public.robot_motion_lock_request_guard() FROM PUBLIC;
+
+-- fix review 1 (M1, L-7 — a STOP is never dropped): when a device changes owner, every STOP request of the PREVIOUS ownership
+-- (ownerEpoch = OLD epoch) that nobody acknowledged is CARRIED to a new EDGE owner as a new request at the new epoch (same
+-- requester; reason names the original). The original stays visible and stays deliverable to the old node (request guard). A
+-- device moved to CENTRAL keeps its pending STOP visible in this table (central holds the session and stops it directly).
+-- Fail-safe direction only: more STOPs, never fewer. SECURITY DEFINER (avi_app cannot forge carried rows).
+CREATE OR REPLACE FUNCTION public.device_owner_stop_carry() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF NEW."edgeNodeId" IS NULL THEN
+    RETURN NULL;
+  END IF;
+  INSERT INTO public."robot_motion_lock_requests" ("robotId", "adapterId", "edgeNodeId", "ownerEpoch", "kind", "reason", "requestedBy", "createdAt", "expiresAt")
+  SELECT q."robotId", q."adapterId", NEW."edgeNodeId", NEW."ownerEpoch", 'stop',
+         'carried from request #' || q."id" || ' (owner change, epoch ' || OLD."ownerEpoch" || ' -> ' || NEW."ownerEpoch" || ')'
+           || COALESCE(': ' || q."reason", ''),
+         q."requestedBy", now(), now() + GREATEST(q."expiresAt" - q."createdAt", interval '60 seconds')
+    FROM public."robot_motion_lock_requests" q
+   WHERE q."kind" = 'stop' AND q."ackedAt" IS NULL AND q."ownerEpoch" = OLD."ownerEpoch"
+     AND (CASE WHEN TG_TABLE_NAME = 'robots' THEN q."robotId" = NEW."id" ELSE q."adapterId" = NEW."id" END)
+   ORDER BY q."id";
+  RETURN NULL;
+END $$;
+REVOKE ALL ON FUNCTION public.device_owner_stop_carry() FROM PUBLIC;
+DROP TRIGGER IF EXISTS trg_robots_owner_stop_carry ON "robots";
+CREATE TRIGGER trg_robots_owner_stop_carry AFTER UPDATE OF "edgeNodeId" ON "robots"
+  FOR EACH ROW WHEN (OLD."edgeNodeId" IS DISTINCT FROM NEW."edgeNodeId") EXECUTE FUNCTION public.device_owner_stop_carry();
+DROP TRIGGER IF EXISTS trg_adapters_owner_stop_carry ON "device_adapters";
+CREATE TRIGGER trg_adapters_owner_stop_carry AFTER UPDATE OF "edgeNodeId" ON "device_adapters"
+  FOR EACH ROW WHEN (OLD."edgeNodeId" IS DISTINCT FROM NEW."edgeNodeId") EXECUTE FUNCTION public.device_owner_stop_carry();
 
 -- ── fix scan 2 (safety-lock bypass): direct writes only for central rows of central robots; edge rows via the guarded path ──
-CREATE OR REPLACE FUNCTION robot_motion_lock_write_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.robot_motion_lock_write_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   tbl_owner name;
   rid integer := COALESCE(NEW."robotId", OLD."robotId");
   edge_owned boolean;
 BEGIN
-  SELECT pg_get_userbyid(c.relowner) INTO tbl_owner FROM pg_class c WHERE c.oid = TG_RELID;
+  SELECT pg_catalog.pg_get_userbyid(c.relowner) INTO tbl_owner FROM pg_catalog.pg_class c WHERE c.oid = TG_RELID;
   IF current_user = tbl_owner THEN
     RETURN COALESCE(NEW, OLD); -- the owner: the migration, or the SECURITY DEFINER guarded path / owner-change relock
   END IF;
-  edge_owned := EXISTS (SELECT 1 FROM "robots" r WHERE r."id" = rid AND r."edgeNodeId" IS NOT NULL);
+  edge_owned := EXISTS (SELECT 1 FROM public."robots" r WHERE r."id" = rid AND r."edgeNodeId" IS NOT NULL);
   IF TG_OP IN ('UPDATE', 'DELETE') AND OLD."authority" <> 'central' THEN
     RAISE EXCEPTION 'robot_motion_locks: the % lock of robot % is applied / cleared only via edge_motion_lock_apply / _clear', OLD."authority", rid
       USING ERRCODE = 'check_violation';
@@ -381,47 +436,58 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS trg_robot_motion_lock_write_guard ON "robot_motion_locks";
 CREATE TRIGGER trg_robot_motion_lock_write_guard BEFORE INSERT OR UPDATE OR DELETE ON "robot_motion_locks"
-  FOR EACH ROW EXECUTE FUNCTION robot_motion_lock_write_guard();
+  FOR EACH ROW EXECUTE FUNCTION public.robot_motion_lock_write_guard();
+REVOKE ALL ON FUNCTION public.robot_motion_lock_write_guard() FROM PUBLIC;
 
 -- an edge lock event `locked` (design §2.11): upsert under (robot, 'edge:<node>', ownerEpoch) where the stored generation ≤ g.
 -- Returns true when applied, false when a newer / other-authority row stands; a stale (node, epoch) raises 23514 (authority guard).
-CREATE OR REPLACE FUNCTION edge_motion_lock_apply(p_robot integer, p_node integer, p_epoch bigint, p_generation integer, p_reason text, p_detail text)
-RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+-- fix review 1 (M2): a generation BELOW the robot's motionLockGenerationFloor is from before the last ownership change ⇒ false.
+CREATE OR REPLACE FUNCTION public.edge_motion_lock_apply(p_robot integer, p_node integer, p_epoch bigint, p_generation integer, p_reason text, p_detail text)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   done_ boolean;
+  floor_ integer;
 BEGIN
-  INSERT INTO "robot_motion_locks" ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt")
+  SELECT r."motionLockGenerationFloor" INTO floor_ FROM public."robots" r WHERE r."id" = p_robot;
+  IF floor_ IS NULL OR p_generation IS NULL OR p_generation < floor_ THEN
+    RETURN false;
+  END IF;
+  INSERT INTO public."robot_motion_locks" AS l ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt")
     VALUES (p_robot, left(p_reason, 64), p_detail, p_generation, 'edge:' || p_node, p_node, p_epoch, now())
   ON CONFLICT ("robotId") DO UPDATE SET "reasonCode" = EXCLUDED."reasonCode", "detail" = EXCLUDED."detail", "generation" = EXCLUDED."generation",
     "lockedAt" = EXCLUDED."lockedAt"
-  WHERE "robot_motion_locks"."authority" = EXCLUDED."authority" AND "robot_motion_locks"."authorityNodeId" = EXCLUDED."authorityNodeId"
-    AND "robot_motion_locks"."ownerEpoch" = EXCLUDED."ownerEpoch" AND "robot_motion_locks"."generation" <= EXCLUDED."generation"
+  WHERE l."authority" = EXCLUDED."authority" AND l."authorityNodeId" = EXCLUDED."authorityNodeId"
+    AND l."ownerEpoch" = EXCLUDED."ownerEpoch" AND l."generation" <= EXCLUDED."generation"
   RETURNING true INTO done_;
   RETURN COALESCE(done_, false);
 END $$;
 
 -- an edge lock event `cleared`: delete ONLY the row of (robot, 'edge:<node>', node, ownerEpoch) with generation ≤ g, and only
 -- while the robot is still owned by the node at that epoch. Returns the number of rows removed (0 = stale / newer lock).
-CREATE OR REPLACE FUNCTION edge_motion_lock_clear(p_robot integer, p_node integer, p_epoch bigint, p_generation integer)
-RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+-- fix review 1 (M2): g must be ≥ the robot's motionLockGenerationFloor (a clear from before the last ownership change ⇒ 0).
+CREATE OR REPLACE FUNCTION public.edge_motion_lock_clear(p_robot integer, p_node integer, p_epoch bigint, p_generation integer)
+RETURNS integer LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   n integer;
 BEGIN
-  DELETE FROM "robot_motion_locks" l
+  DELETE FROM public."robot_motion_locks" l
    WHERE l."robotId" = p_robot AND l."authority" = 'edge:' || p_node AND l."authorityNodeId" = p_node AND l."ownerEpoch" = p_epoch
      AND l."generation" <= p_generation
-     AND EXISTS (SELECT 1 FROM "robots" r WHERE r."id" = p_robot AND r."edgeNodeId" = p_node AND r."ownerEpoch" = p_epoch);
+     AND EXISTS (SELECT 1 FROM public."robots" r WHERE r."id" = p_robot AND r."edgeNodeId" = p_node AND r."ownerEpoch" = p_epoch
+                   AND p_generation >= r."motionLockGenerationFloor");
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
 END $$;
-REVOKE ALL ON FUNCTION edge_motion_lock_apply(integer, integer, bigint, integer, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION edge_motion_lock_clear(integer, integer, bigint, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.edge_motion_lock_apply(integer, integer, bigint, integer, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.edge_motion_lock_clear(integer, integer, bigint, integer) FROM PUBLIC;
 
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'avi_app') THEN
-    GRANT EXECUTE ON FUNCTION edge_motion_lock_apply(integer, integer, bigint, integer, text, text) TO avi_app;
-    GRANT EXECUTE ON FUNCTION edge_motion_lock_clear(integer, integer, bigint, integer) TO avi_app;
+    GRANT EXECUTE ON FUNCTION public.edge_motion_lock_apply(integer, integer, bigint, integer, text, text) TO avi_app;
+    GRANT EXECUTE ON FUNCTION public.edge_motion_lock_clear(integer, integer, bigint, integer) TO avi_app;
     REVOKE ALL ON "robot_motion_lock_requests" FROM avi_app;
     GRANT SELECT, INSERT ON "robot_motion_lock_requests" TO avi_app;
     GRANT UPDATE ("deliveredAt", "ackedAt", "ackGeneration", "outcome") ON "robot_motion_lock_requests" TO avi_app;
