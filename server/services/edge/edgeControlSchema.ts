@@ -135,6 +135,12 @@ export const robotMotionLockAuthority = pgTable("robot_motion_locks", {
   authorityNodeId: integer("authorityNodeId"),
   /** the robot's owner epoch the row was written under (a central row is stamped by the trigger) */
   ownerEpoch: bigint("ownerEpoch", { mode: "number" }),
+  /**
+   * fix review 5 (R-10-ap) — the WRITER INSTANCE of the row (mig 0374): REQUIRED on every new row (trigger 23514); write-once —
+   * another writer takes the row over only with generation ≥ old + 1; never cleared. Legacy rows may be NULL. DB writers use
+   * md5('relock:<robot>:<epoch>') (owner-change relock) and md5('edge:<node>') (edge authority) as uuid.
+   */
+  writerInstanceId: uuid("writerInstanceId"),
 });
 export const robotMotionLockRequests = pgTable("robot_motion_lock_requests", {
   id: serial("id").primaryKey(),

@@ -220,7 +220,7 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
     for (const f of FILES) {
       for (const m of readFileSync(path.join(REPO, "drizzle", f), "utf8").matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?([a-z_][a-z0-9_]*)\s*\(/gi)) names.add(m[1]);
     }
-    expect(names.size).toBe(27); // 0372: 2 · 0373: 3 · 0374: 17 · 0375: 5 — a new function must be added here on purpose
+    expect(names.size).toBe(28); // 0372: 2 · 0373: 3 · 0374: 18 · 0375: 5 — a new function must be added here on purpose
     const rows = await freshSession(async (tx) =>
       tx`SELECT p.proname AS name, p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
                 has_function_privilege(current_user, p.oid, 'EXECUTE') AS app

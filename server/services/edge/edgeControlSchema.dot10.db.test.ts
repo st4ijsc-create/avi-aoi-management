@@ -14,6 +14,7 @@
  * Every write happens in a transaction that is rolled back.
  */
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { and, eq, sql } from "drizzle-orm";
 import { integer, pgTable } from "drizzle-orm/pg-core";
@@ -98,7 +99,7 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
     const out = await inRolledBackTx(async (tx) => {
       const { node, robot } = await nodeRobot(tx, `__dot10A_own_${Date.now()}`);
       const busy = (await one(tx, sql`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${"__dot10A_busy_" + Date.now()}, 'b', 'sim', 'sim://t') RETURNING id`)).id;
-      await tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "t", generation: 9 }); // a central row of a central robot
+      await tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "t", generation: 9, writerInstanceId: randomUUID() }); // a central row of a central robot
       await setEdgeOwnershipActor(tx, `admin:dot10A`);
       await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot));
       const [own] = await tx.select().from(robotOwnership).where(eq(robotOwnership.id, robot));
@@ -128,7 +129,7 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
       const staleClear = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 1, generation: 1000 });
       const lowClear = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: lock.generation + 1 });
       const clear = await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: lock.generation + 2 });
-      const centralRowOnEdgeRobot = await codeOf(tx, () => tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "c", generation: 1 }));
+      const centralRowOnEdgeRobot = await codeOf(tx, () => tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "c", generation: 1, writerInstanceId: randomUUID() }));
       return { lock, directUpdate, directDelete, directToCentral, staleApply, applyLower, applyNewer, staleClear, lowClear, clear, centralRowOnEdgeRobot };
     });
     expect(out.lock).toMatchObject({ authority: expect.stringMatching(/^edge:\d+$/), ownerEpoch: 2, reasonCode: "ownerChanged" });
@@ -249,7 +250,7 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
   it("★ fix review 1 M2: edge_motion_lock_apply / _clear refuse a generation below the robot's motionLockGenerationFloor", async () => {
     const out = await inRolledBackTx(async (tx) => {
       const { node, robot } = await nodeRobot(tx, `__dot10Af_floor_${Date.now()}`);
-      await tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "t", generation: 9 });
+      await tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "t", generation: 9, writerInstanceId: randomUUID() });
       await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot)); // floor 10, relock row gen 10
       const [own] = await tx.select().from(robotOwnership).where(eq(robotOwnership.id, robot));
       const f = own.motionLockGenerationFloor as number;
@@ -278,6 +279,29 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
       return { hash: row?.contentHash, reusedSeqOtherContent, noHash, rewrite, remove };
     });
     expect(out).toEqual({ hash: "a".repeat(64), reusedSeqOtherContent: "23505", noHash: "23502", rewrite: "42501", remove: "42501" });
+  });
+
+  it("★ fix review 5 (R-10-ap): robot_motion_locks.writerInstanceId — required on a new row, write-once (another writer only with generation + 1), set by the DB writers too", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      const { node, robot } = await nodeRobot(tx, `__dot10Af5_${Date.now()}`);
+      const A = "00000000-0000-4000-8000-00000000000a";
+      const B = "00000000-0000-4000-8000-00000000000b";
+      const noWriter = await codeOf(tx, () => tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "t", generation: 2 }));
+      await tx.insert(robotMotionLockAuthority).values({ robotId: robot, reasonCode: "t", generation: 2, writerInstanceId: A });
+      const sameWriterSameGen = await codeOf(tx, () => tx.update(robotMotionLockAuthority).set({ reasonCode: "u" }).where(eq(robotMotionLockAuthority.robotId, robot)));
+      const otherWriterSameGen = await codeOf(tx, () => tx.update(robotMotionLockAuthority).set({ writerInstanceId: B }).where(eq(robotMotionLockAuthority.robotId, robot)));
+      const cleared = await codeOf(tx, () => tx.update(robotMotionLockAuthority).set({ writerInstanceId: null, generation: 3 }).where(eq(robotMotionLockAuthority.robotId, robot)));
+      const otherWriterGenPlus1 = await codeOf(tx, () => tx.update(robotMotionLockAuthority).set({ writerInstanceId: B, generation: 3 }).where(eq(robotMotionLockAuthority.robotId, robot)));
+      const [afterMerge] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot));
+      // the DB writers set it too: the owner-change relock, then an edge lock event
+      await tx.delete(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot));
+      await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot));
+      const [relock] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot));
+      const applied = await applyEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: 2, generation: (relock?.generation ?? 0) + 1, reasonCode: "outcomeUnknown" });
+      const [edge] = await tx.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robot));
+      return { noWriter, sameWriterSameGen, otherWriterSameGen, cleared, otherWriterGenPlus1, merged: afterMerge?.writerInstanceId, relockWriter: Boolean(relock?.writerInstanceId), applied, edgeKeepsWriter: edge?.writerInstanceId === relock?.writerInstanceId };
+    });
+    expect(out).toEqual({ noWriter: "23514", sameWriterSameGen: null, otherWriterSameGen: "23514", cleared: "23514", otherWriterGenPlus1: null, merged: "00000000-0000-4000-8000-00000000000b", relockWriter: true, applied: true, edgeKeepsWriter: true });
   });
 
   it("report cursor starts at 0 and never goes back; avi_app cannot plant a signing-key row (R-10-c mirror)", async () => {

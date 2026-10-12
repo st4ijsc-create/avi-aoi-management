@@ -73,6 +73,8 @@
 --   is either carried or refused, never stranded); N2 — a STOP's ack / resolution only via edge_stop_ack_edge (node + target +
 --   epoch bound, R-10-o) / edge_stop_ack_central / edge_stop_resolve (direct UPDATE refused); refused / failed STOPs stay in
 --   device_pending_stops ("needsResolution") and keep their device undeletable until resolved.
+-- fix review 5 (ruling R-10-ap): robot_motion_locks."writerInstanceId" uuid — NOT NULL for new rows, write-once (changes only
+--   with generation + 1), set by the relock / edge apply too; replaces Group D's random µs tag in lockedAt.
 -- fix review 4 (ruling R-10-ah, re-review F1): edge_stop_ack_edge also requires the device to be owned by the calling node at
 --   the row's epoch NOW; every refused edge ack is kept as WORM evidence in edge_stop_ack_refusals (avi_app SELECT only).
 --
@@ -88,6 +90,8 @@
 --   DROP FUNCTION IF EXISTS device_keep_pending_stop(); ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "carriedToId";
 --   DROP FUNCTION IF EXISTS edge_stop_ack_edge(integer, integer, integer, integer, bigint, text, boolean, integer), edge_stop_resolve(integer, integer, text);
 --   DROP TABLE IF EXISTS "edge_stop_ack_refusals"; DROP FUNCTION IF EXISTS edge_stop_ack_refusals_worm();
+--   DROP TRIGGER IF EXISTS trg_robot_motion_lock_writer_instance ON "robot_motion_locks"; DROP FUNCTION IF EXISTS robot_motion_lock_writer_guard();
+--   ALTER TABLE "robot_motion_locks" DROP COLUMN IF EXISTS "writerInstanceId";
 --   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "ackViaUnsigned", DROP COLUMN IF EXISTS "resolvedAt", DROP COLUMN IF EXISTS "resolvedBy", DROP COLUMN IF EXISTS "resolution";
 --   DROP TRIGGER IF EXISTS trg_adapters_owner_change ON "device_adapters"; DROP TRIGGER IF EXISTS trg_adapters_owner_insert ON "device_adapters";
 --   DROP TRIGGER IF EXISTS trg_robot_motion_lock_authority ON "robot_motion_locks"; DROP TRIGGER IF EXISTS trg_robot_motion_lock_write_guard ON "robot_motion_locks";
@@ -127,6 +131,39 @@ ALTER TABLE "robot_motion_locks" ADD CONSTRAINT "ck_robot_motion_locks_authority
 CREATE INDEX IF NOT EXISTS "idx_robots_edge_node" ON "robots" ("edgeNodeId") WHERE "edgeNodeId" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "idx_device_adapters_edge_node" ON "device_adapters" ("edgeNodeId") WHERE "edgeNodeId" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "idx_robot_motion_locks_authority_node" ON "robot_motion_locks" ("authorityNodeId") WHERE "authorityNodeId" IS NOT NULL;
+
+-- ── fix review 5 (ruling R-10-ap): the WRITER INSTANCE of a lock row ─────────────────────────────────────────────────────────
+-- Central replicas told their rows apart by a random 1..999 tag in the microseconds of lockedAt (1-in-999 collision ⇒ one replica
+-- could silently replace another's safety lock). A real column: "writerInstanceId" uuid — the writing process instance (central:
+-- a per-process uuid; DB-side writers use a deterministic one: the owner-change relock md5('relock:<robot>:<epoch>'), an edge
+-- authority md5('edge:<node>')). NOT NULL for every NEW row (trigger); legacy rows written before this column may stay NULL.
+-- WRITE-ONCE per row: it changes only when the row is rewritten with generation ≥ old + 1 (a merge / supersession); never back to
+-- NULL. 0364 is on dev — this is an ALTER in 0374, 0364 is untouched.
+ALTER TABLE public."robot_motion_locks" ADD COLUMN IF NOT EXISTS "writerInstanceId" uuid;
+CREATE OR REPLACE FUNCTION public.robot_motion_lock_writer_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW."writerInstanceId" IS NULL THEN
+      RAISE EXCEPTION 'robot_motion_locks: a new lock row names its writer instance ("writerInstanceId", robot %)', NEW."robotId"
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF OLD."writerInstanceId" IS NOT NULL AND NEW."writerInstanceId" IS NULL THEN
+    RAISE EXCEPTION 'robot_motion_locks: "writerInstanceId" is never cleared (robot %)', OLD."robotId" USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD."writerInstanceId" IS NOT NULL AND NEW."writerInstanceId" IS DISTINCT FROM OLD."writerInstanceId"
+     AND NEW."generation" < OLD."generation" + 1 THEN
+    RAISE EXCEPTION 'robot_motion_locks: another writer (robot %) takes over a lock row only with generation + 1 (% -> %)', OLD."robotId", OLD."generation", NEW."generation"
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.robot_motion_lock_writer_guard() FROM PUBLIC;
+DROP TRIGGER IF EXISTS trg_robot_motion_lock_writer_instance ON "robot_motion_locks";
+CREATE TRIGGER trg_robot_motion_lock_writer_instance BEFORE INSERT OR UPDATE ON "robot_motion_locks"
+  FOR EACH ROW EXECUTE FUNCTION public.robot_motion_lock_writer_guard();
 
 -- ── WORM ownership history ──────────────────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS "device_owner_changes" (
@@ -208,12 +245,13 @@ CREATE TRIGGER trg_adapters_owner_change BEFORE UPDATE OF "edgeNodeId", "ownerEp
 CREATE OR REPLACE FUNCTION public.robot_owner_relock() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-  INSERT INTO public."robot_motion_locks" ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt")
+  INSERT INTO public."robot_motion_locks" ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt", "writerInstanceId")
     VALUES (NEW."id", 'ownerChanged', 'ownership changed (owner epoch ' || NEW."ownerEpoch" || ') — locked until a confirmed STOP',
             NEW."motionLockGenerationFloor", CASE WHEN NEW."edgeNodeId" IS NULL THEN 'central' ELSE 'edge:' || NEW."edgeNodeId" END,
-            NEW."edgeNodeId", NEW."ownerEpoch", now())
+            NEW."edgeNodeId", NEW."ownerEpoch", now(), md5('relock:' || NEW."id" || ':' || NEW."ownerEpoch")::uuid)
   ON CONFLICT ("robotId") DO UPDATE SET "reasonCode" = EXCLUDED."reasonCode", "detail" = EXCLUDED."detail", "generation" = EXCLUDED."generation",
-    "authority" = EXCLUDED."authority", "authorityNodeId" = EXCLUDED."authorityNodeId", "ownerEpoch" = EXCLUDED."ownerEpoch", "lockedAt" = EXCLUDED."lockedAt";
+    "authority" = EXCLUDED."authority", "authorityNodeId" = EXCLUDED."authorityNodeId", "ownerEpoch" = EXCLUDED."ownerEpoch", "lockedAt" = EXCLUDED."lockedAt",
+    "writerInstanceId" = EXCLUDED."writerInstanceId";
   RETURN NULL;
 END $$;
 REVOKE ALL ON FUNCTION public.robot_owner_relock() FROM PUBLIC;
@@ -766,10 +804,10 @@ BEGIN
   IF floor_ IS NULL OR p_generation IS NULL OR p_generation < floor_ THEN
     RETURN false;
   END IF;
-  INSERT INTO public."robot_motion_locks" AS l ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt")
-    VALUES (p_robot, left(p_reason, 64), p_detail, p_generation, 'edge:' || p_node, p_node, p_epoch, now())
+  INSERT INTO public."robot_motion_locks" AS l ("robotId", "reasonCode", "detail", "generation", "authority", "authorityNodeId", "ownerEpoch", "lockedAt", "writerInstanceId")
+    VALUES (p_robot, left(p_reason, 64), p_detail, p_generation, 'edge:' || p_node, p_node, p_epoch, now(), md5('edge:' || p_node)::uuid)
   ON CONFLICT ("robotId") DO UPDATE SET "reasonCode" = EXCLUDED."reasonCode", "detail" = EXCLUDED."detail", "generation" = EXCLUDED."generation",
-    "lockedAt" = EXCLUDED."lockedAt"
+    "lockedAt" = EXCLUDED."lockedAt", "writerInstanceId" = COALESCE(l."writerInstanceId", EXCLUDED."writerInstanceId")
   WHERE l."authority" = EXCLUDED."authority" AND l."authorityNodeId" = EXCLUDED."authorityNodeId"
     AND l."ownerEpoch" = EXCLUDED."ownerEpoch" AND l."generation" <= EXCLUDED."generation"
   RETURNING true INTO done_;

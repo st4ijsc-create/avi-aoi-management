@@ -44,6 +44,7 @@ const TRIGGERS = [
   "trg_robots_owner_stop_carry", "trg_adapters_owner_stop_carry", // fix review 1 (M1)
   "trg_robot_motion_lock_request_keep_stop", "trg_robots_keep_pending_stop", "trg_adapters_keep_pending_stop", // fix review 2 (R-10-i)
   "trg_edge_stop_ack_refusals_worm", "trg_edge_stop_ack_refusals_worm_truncate", // fix review 4 (R-10-ah)
+  "trg_robot_motion_lock_writer_instance", // fix review 5 (R-10-ap)
 ];
 
 async function fixtures(tx, code) {
@@ -109,7 +110,7 @@ await runMigration({
       const f = await fixtures(tx, CODE);
       await tx`SELECT set_config('avi.actor', ${"probe:" + CODE}, true)`;
       const r = {};
-      await tx`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation) VALUES (${f.robot.id}, 'probe', 5)`;
+      await tx`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, "writerInstanceId") VALUES (${f.robot.id}, 'probe', 5, gen_random_uuid())`;
       r.centralRowEpoch = Number((await tx`SELECT "ownerEpoch" AS e FROM robot_motion_locks WHERE "robotId" = ${f.robot.id}`)[0].e);
       r.robotOwn = await maLoi(tx, (sp) => sp`UPDATE robots SET "edgeNodeId" = ${f.node.id} WHERE id = ${f.robot.id}`);
       const [rf] = await tx`SELECT "motionLockGenerationFloor" AS f, "ownerEpoch" AS e FROM robots WHERE id = ${f.robot.id}`;
@@ -146,7 +147,7 @@ await runMigration({
       r.lockBogus = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET authority = 'bogus', "authorityNodeId" = NULL WHERE "robotId" = ${f.robot.id}`);
       r.lockInsUnowned = await maLoi(tx, (sp) => sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, authority, "authorityNodeId", "ownerEpoch") VALUES (${f.robotBusy.id}, 'probe', 1, ${"edge:" + f.node.id}, ${f.node.id}, 1)`);
       r.centralDirect = await maLoi(tx, async (sp) => {
-        await sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation) VALUES (${f.robotBusy.id}, 'probe', 2)`;
+        await sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, "writerInstanceId") VALUES (${f.robotBusy.id}, 'probe', 2, gen_random_uuid())`;
         await sp`UPDATE robot_motion_locks SET generation = 3 WHERE "robotId" = ${f.robotBusy.id}`;
         await sp`DELETE FROM robot_motion_locks WHERE "robotId" = ${f.robotBusy.id} AND generation <= 3`;
       });
@@ -159,7 +160,7 @@ await runMigration({
       const [g4] = await tx`SELECT generation AS g FROM robot_motion_locks WHERE "robotId" = ${f.robot.id}`;
       r.clearLowGen = (await clear(tx, f.robot.id, f.node.id, 4, g4.g - 1))[0].n;
       r.clearCurrent = (await clear(tx, f.robot.id, f.node.id, 4, g4.g))[0].n;
-      r.centralRowOnEdgeRobot = await maLoi(tx, (sp) => sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation) VALUES (${f.robot.id}, 'probe', 50)`);
+      r.centralRowOnEdgeRobot = await maLoi(tx, (sp) => sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, "writerInstanceId") VALUES (${f.robot.id}, 'probe', 50, gen_random_uuid())`);
       r.reapply = (await apply(tx, f.robot.id, f.node.id, 4, g4.g + 1))[0].ok;
       let reqId = null;
       r.reqLock = await maLoi(tx, async (sp) => {
@@ -197,6 +198,13 @@ await runMigration({
       r.prgOwned = hasPrg ? await maLoi(tx, (sp) => sp`INSERT INTO edge_node_program_reports ("edgeNodeId", "adapterId", status, checksum, "readAt", "ownerEpoch") VALUES (${f.node.id}, ${f.ad.id}, 'verified', 'x', now(), 99)`) : null;
       r.prgEpoch = hasPrg ? Number((await tx`SELECT "ownerEpoch" AS e FROM edge_node_program_reports WHERE "adapterId" = ${f.ad.id}`)[0]?.e ?? -1) : 2;
       r.nodeDel = await maLoi(tx, (sp) => sp`DELETE FROM edge_nodes WHERE id = ${f.node.id}`);
+      // fix review 5 (R-10-ap): writerInstanceId — required on insert, write-once (changes only with generation + 1)
+      const [rw] = await tx`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${CODE + "-rw"}, ${CODE}, 'sim', 'sim://probe') RETURNING id`;
+      r.wNoWriter = await maLoi(tx, (sp) => sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation) VALUES (${rw.id}, 'probe', 3)`);
+      await tx`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, "writerInstanceId") VALUES (${rw.id}, 'probe', 3, '00000000-0000-4000-8000-0000000000a1')`;
+      r.wTakeoverSameGen = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET "writerInstanceId" = '00000000-0000-4000-8000-0000000000b2' WHERE "robotId" = ${rw.id}`);
+      r.wCleared = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET "writerInstanceId" = NULL, generation = 4 WHERE "robotId" = ${rw.id}`);
+      r.wMergeGenPlus1 = await maLoi(tx, (sp) => sp`UPDATE robot_motion_locks SET "writerInstanceId" = '00000000-0000-4000-8000-0000000000b2', generation = 4 WHERE "robotId" = ${rw.id}`);
       // fix review 1 (M2): below the floor ⇒ nothing applied / cleared
       const [fl] = await tx`SELECT "motionLockGenerationFloor" AS f FROM robots WHERE id = ${f.robot.id}`;
       r.applyBelowFloor = (await apply(tx, f.robot.id, f.node.id, 4, fl.f - 1))[0].ok;
@@ -221,6 +229,7 @@ await runMigration({
       reqDel: "42501", deliverStale: "23514", expireStale: null, prgUnowned: "23514", prgOwned: null, prgEpoch: 2,
       nodeDel: "23514", // fix review 2 (R-10-i (d)): the node still has an UNACKED STOP (reqAdapterStop) ⇒ refused before the RESTRICT FK
       applyBelowFloor: false, stopStaleDeliver: null, stopCarried: 1,
+      wNoWriter: "23514", wTakeoverSameGen: "23514", wCleared: "23514", wMergeGenPlus1: null,
     });
     const ko = await rolledBack(sql, async (tx) => {
       const f = await fixtures(tx, CODE + "-o");
