@@ -65,6 +65,10 @@
 --   edge_stop_ack_central (done | failed, central-owned device, real actor, "ackedBy"); (b) a STOP is delivered even after its
 --   expiry (overdue) and is never acked 'expired'; (c) the carry also fires on an epoch-only change; (d) an unacknowledged STOP
 --   is never deleted while its device exists (the node FK cascade wiped it — the scan's path).
+--   Second scan ("STOP orphaned"): (e) a device with a pending STOP is never DELETED (its FK cascade took the STOP); (f/g) the
+--   carry moves every pending HEAD of an earlier epoch (edge → central → edge, several hops) exactly once — carriedToId links
+--   the chain, the view shows heads only; (h) view column "undeliverable" (edge-owned, the request's node has no active
+--   credential) + the node's status / last heartbeat. R-10-k: a STOP is never acked 'expired' by any writer.
 --
 -- ⚠ DDL runs as owner `aoi`: `node scripts/apply-migration-0374.mjs --test-only` (dev: `--dev-only`, the owner decides; no
 --   flag ⇒ refused — R-3-g). Requires 0372 + 0373. Idempotent. ⚠ The repo forbids `drizzle-kit push/generate`.
@@ -74,6 +78,8 @@
 --   DROP TRIGGER IF EXISTS trg_robots_owner_relock ON "robots"; DROP TRIGGER IF EXISTS trg_robots_owner_stop_carry ON "robots";
 --   DROP TRIGGER IF EXISTS trg_adapters_owner_stop_carry ON "device_adapters";
 --   DROP VIEW IF EXISTS device_pending_stops; DROP FUNCTION IF EXISTS edge_stop_ack_central(integer, text, integer), robot_motion_lock_request_keep_stop();
+--   DROP TRIGGER IF EXISTS trg_robots_keep_pending_stop ON "robots"; DROP TRIGGER IF EXISTS trg_adapters_keep_pending_stop ON "device_adapters";
+--   DROP FUNCTION IF EXISTS device_keep_pending_stop(); ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "carriedToId";
 --   DROP TRIGGER IF EXISTS trg_adapters_owner_change ON "device_adapters"; DROP TRIGGER IF EXISTS trg_adapters_owner_insert ON "device_adapters";
 --   DROP TRIGGER IF EXISTS trg_robot_motion_lock_authority ON "robot_motion_locks"; DROP TRIGGER IF EXISTS trg_robot_motion_lock_write_guard ON "robot_motion_locks";
 --   DROP FUNCTION IF EXISTS edge_motion_lock_apply(integer, integer, bigint, integer, text, text), edge_motion_lock_clear(integer, integer, bigint, integer), robot_motion_lock_write_guard(); DROP TRIGGER IF EXISTS trg_edge_program_owned ON "edge_node_program_reports";
@@ -310,6 +316,9 @@ ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "ackedBy" inte
 ALTER TABLE "robot_motion_lock_requests" DROP CONSTRAINT IF EXISTS "ck_lock_req_acked_by";
 ALTER TABLE "robot_motion_lock_requests" ADD CONSTRAINT "ck_lock_req_acked_by" CHECK ("ackedBy" IS NULL OR ("ackedBy" > 0 AND "ackedAt" IS NOT NULL));
 CREATE INDEX IF NOT EXISTS "idx_lock_req_pending_stop" ON "robot_motion_lock_requests" ("robotId", "adapterId") WHERE "kind" = 'stop' AND "ackedAt" IS NULL;
+-- fix review 2 (second scan, "STOP orphaned") — the request this STOP was CARRIED to (written once, by the carry only): a pending
+-- STOP with carriedToId NULL is the HEAD of its chain — the one obligation still open for that device.
+ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "carriedToId" integer;
 COMMENT ON TABLE "robot_motion_lock_requests" IS
   'doc 81 Dot 10 A (0374): central -> edge lock / clear / stop requests for edge-owned devices, bound to (device, owner, ownerEpoch); identity write-once, delivered once (only while the epoch holds), acked once.';
 
@@ -326,7 +335,7 @@ BEGIN
   END IF;
   IF TG_OP = 'INSERT' THEN
     IF NEW."deliveredAt" IS NOT NULL OR NEW."ackedAt" IS NOT NULL OR NEW."outcome" IS NOT NULL OR NEW."ackGeneration" IS NOT NULL
-       OR NEW."ackedBy" IS NOT NULL THEN
+       OR NEW."ackedBy" IS NOT NULL OR NEW."carriedToId" IS NOT NULL THEN
       RAISE EXCEPTION 'robot_motion_lock_requests: a new request is neither delivered nor acked' USING ERRCODE = 'check_violation';
     END IF;
     IF cur_owner IS DISTINCT FROM NEW."edgeNodeId" OR cur_epoch IS DISTINCT FROM NEW."ownerEpoch" THEN
@@ -357,6 +366,9 @@ BEGIN
      OR NEW."ackGeneration" IS DISTINCT FROM OLD."ackGeneration" OR NEW."deliveredAt" IS DISTINCT FROM OLD."deliveredAt"
      OR NEW."ackedBy" IS DISTINCT FROM OLD."ackedBy") THEN
     RAISE EXCEPTION 'robot_motion_lock_requests: the ack is written once (request %)', OLD."id" USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD."carriedToId" IS NOT NULL AND NEW."carriedToId" IS DISTINCT FROM OLD."carriedToId" THEN
+    RAISE EXCEPTION 'robot_motion_lock_requests: carriedToId is written once (request %)', OLD."id" USING ERRCODE = 'check_violation';
   END IF;
   -- fix scan 2 — monotonic: delivery before expiry, never in the future.
   -- fix review 2 (R-10-i (b), L-7): a STOP is delivered EVEN AFTER its expiry — expiry only makes it OVERDUE
@@ -404,19 +416,31 @@ REVOKE ALL ON FUNCTION public.robot_motion_lock_request_guard() FROM PUBLIC;
 -- Fail-safe direction only: more STOPs, never fewer. SECURITY DEFINER (avi_app cannot forge carried rows).
 CREATE OR REPLACE FUNCTION public.device_owner_stop_carry() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  q record;
+  nid integer;
 BEGIN
   IF NEW."edgeNodeId" IS NULL THEN
     RETURN NULL;
   END IF;
-  INSERT INTO public."robot_motion_lock_requests" ("robotId", "adapterId", "edgeNodeId", "ownerEpoch", "kind", "reason", "requestedBy", "createdAt", "expiresAt")
-  SELECT q."robotId", q."adapterId", NEW."edgeNodeId", NEW."ownerEpoch", 'stop',
-         'carried from request #' || q."id" || ' (owner change, epoch ' || OLD."ownerEpoch" || ' -> ' || NEW."ownerEpoch" || ')'
-           || COALESCE(': ' || q."reason", ''),
-         q."requestedBy", now(), now() + GREATEST(q."expiresAt" - q."createdAt", interval '60 seconds')
-    FROM public."robot_motion_lock_requests" q
-   WHERE q."kind" = 'stop' AND q."ackedAt" IS NULL AND q."ownerEpoch" = OLD."ownerEpoch"
-     AND (CASE WHEN TG_TABLE_NAME = 'robots' THEN q."robotId" = NEW."id" ELSE q."adapterId" = NEW."id" END)
-   ORDER BY q."id";
+  -- fix review 2 (second scan): carry EVERY pending HEAD of an EARLIER epoch — not only those of the epoch just left (an
+  -- edge → central → edge move, or several hops, stranded the STOP at the first node) — exactly once (the head is linked to
+  -- its carry through carriedToId, so A → B → C never duplicates).
+  FOR q IN
+    SELECT x.* FROM public."robot_motion_lock_requests" x
+     WHERE x."kind" = 'stop' AND x."ackedAt" IS NULL AND x."carriedToId" IS NULL AND x."ownerEpoch" < NEW."ownerEpoch"
+       AND (CASE WHEN TG_TABLE_NAME = 'robots' THEN x."robotId" = NEW."id" ELSE x."adapterId" = NEW."id" END)
+     ORDER BY x."id"
+     FOR UPDATE
+  LOOP
+    INSERT INTO public."robot_motion_lock_requests" ("robotId", "adapterId", "edgeNodeId", "ownerEpoch", "kind", "reason", "requestedBy", "createdAt", "expiresAt")
+      VALUES (q."robotId", q."adapterId", NEW."edgeNodeId", NEW."ownerEpoch", 'stop',
+              'carried from request #' || q."id" || ' (owner change, epoch ' || q."ownerEpoch" || ' -> ' || NEW."ownerEpoch" || ')'
+                || COALESCE(': ' || q."reason", ''),
+              q."requestedBy", now(), now() + GREATEST(q."expiresAt" - q."createdAt", interval '60 seconds'))
+      RETURNING "id" INTO nid;
+    UPDATE public."robot_motion_lock_requests" SET "carriedToId" = nid WHERE "id" = q."id";
+  END LOOP;
   RETURN NULL;
 END $$;
 REVOKE ALL ON FUNCTION public.device_owner_stop_carry() FROM PUBLIC;
@@ -436,7 +460,7 @@ CREATE TRIGGER trg_adapters_owner_stop_carry AFTER UPDATE OF "edgeNodeId", "owne
 CREATE OR REPLACE FUNCTION public.robot_motion_lock_request_keep_stop() RETURNS trigger LANGUAGE plpgsql
 SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-  IF OLD."kind" = 'stop' AND OLD."ackedAt" IS NULL
+  IF OLD."kind" = 'stop' AND OLD."ackedAt" IS NULL AND OLD."carriedToId" IS NULL
      AND (EXISTS (SELECT 1 FROM public."robots" r WHERE r."id" = OLD."robotId")
           OR EXISTS (SELECT 1 FROM public."device_adapters" a WHERE a."id" = OLD."adapterId")) THEN
     RAISE EXCEPTION 'robot_motion_lock_requests: STOP request % is not acknowledged — it is never deleted (L-7)', OLD."id"
@@ -449,6 +473,28 @@ DROP TRIGGER IF EXISTS trg_robot_motion_lock_request_keep_stop ON "robot_motion_
 CREATE TRIGGER trg_robot_motion_lock_request_keep_stop BEFORE DELETE ON "robot_motion_lock_requests"
   FOR EACH ROW EXECUTE FUNCTION public.robot_motion_lock_request_keep_stop();
 
+-- fix review 2 (second scan, "STOP orphaned" — the measured path): DELETING the device (robot / adapter) cascade-deleted its
+-- pending STOP (the cascade runs after the device row is gone, past the guard above). A device with a pending STOP HEAD is never
+-- deleted: execute + acknowledge the STOP first. Applies to every writer, the owner included.
+CREATE OR REPLACE FUNCTION public.device_keep_pending_stop() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public."robot_motion_lock_requests" q
+              WHERE q."kind" = 'stop' AND q."ackedAt" IS NULL AND q."carriedToId" IS NULL
+                AND (CASE WHEN TG_TABLE_NAME = 'robots' THEN q."robotId" = OLD."id" ELSE q."adapterId" = OLD."id" END)) THEN
+    RAISE EXCEPTION '%: device % has an unacknowledged STOP — execute and acknowledge it before deleting the device (L-7)', TG_TABLE_NAME, OLD."id"
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN OLD;
+END $$;
+REVOKE ALL ON FUNCTION public.device_keep_pending_stop() FROM PUBLIC;
+DROP TRIGGER IF EXISTS trg_robots_keep_pending_stop ON "robots";
+CREATE TRIGGER trg_robots_keep_pending_stop BEFORE DELETE ON "robots"
+  FOR EACH ROW EXECUTE FUNCTION public.device_keep_pending_stop();
+DROP TRIGGER IF EXISTS trg_adapters_keep_pending_stop ON "device_adapters";
+CREATE TRIGGER trg_adapters_keep_pending_stop BEFORE DELETE ON "device_adapters"
+  FOR EACH ROW EXECUTE FUNCTION public.device_keep_pending_stop();
+
 -- fix review 2 (R-10-i (a)): every STOP nobody acknowledged, with where it stands NOW — for central (Group D's ownership-change
 -- service executes those of central-owned devices) and for alerting (overdue = past expiresAt, still pending).
 CREATE OR REPLACE VIEW public.device_pending_stops AS
@@ -460,13 +506,19 @@ SELECT q."id" AS "requestId", q."robotId", q."adapterId",
        (now() > q."expiresAt") AS "overdue",
        (COALESCE(r."edgeNodeId", a."edgeNodeId") IS NULL) AS "centralMustExecute",
        (q."edgeNodeId" IS DISTINCT FROM COALESCE(r."edgeNodeId", a."edgeNodeId")
-        OR q."ownerEpoch" IS DISTINCT FROM COALESCE(r."ownerEpoch", a."ownerEpoch")) AS "stale"
+        OR q."ownerEpoch" IS DISTINCT FROM COALESCE(r."ownerEpoch", a."ownerEpoch")) AS "stale",
+       -- the request's node can never pick it up: the device is edge-owned and that node has no ACTIVE credential (revoked /
+       -- never issued — it cannot pull); central must act (re-own the device, or a person)
+       (COALESCE(r."edgeNodeId", a."edgeNodeId") IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM public."edge_node_credentials" c WHERE c."edgeNodeId" = q."edgeNodeId" AND c."status" = 'active')) AS "undeliverable",
+       n."status"::text AS "requestNodeStatus", n."lastHeartbeatAt" AS "requestNodeLastHeartbeatAt"
   FROM public."robot_motion_lock_requests" q
   LEFT JOIN public."robots" r ON r."id" = q."robotId"
   LEFT JOIN public."device_adapters" a ON a."id" = q."adapterId"
- WHERE q."kind" = 'stop' AND q."ackedAt" IS NULL;
+  LEFT JOIN public."edge_nodes" n ON n."id" = q."edgeNodeId"
+ WHERE q."kind" = 'stop' AND q."ackedAt" IS NULL AND q."carriedToId" IS NULL;
 COMMENT ON VIEW public.device_pending_stops IS
-  'doc 81 Dot 10 A fix review 2 (R-10-i): unacknowledged STOP requests and their device''s CURRENT owner; centralMustExecute = the device is central-owned now; overdue = past expiresAt.';
+  'doc 81 Dot 10 A fix review 2 (R-10-i): the pending STOP HEAD of each chain (unacked, not carried on) and its device''s CURRENT owner; centralMustExecute = central-owned now; overdue = past expiresAt; undeliverable = edge-owned but the request''s node has no active credential.';
 
 -- fix review 2 (R-10-i (a)): the ONE way central acknowledges a STOP it executed itself — only a STOP, only unacknowledged, only
 -- while the device is CENTRAL-owned (an edge-owned device's STOP is acked by its edge), outcome done | failed, a real actor.

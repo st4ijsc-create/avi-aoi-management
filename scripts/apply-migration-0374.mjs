@@ -42,7 +42,7 @@ const TRIGGERS = [
   "trg_robots_owner_change", "trg_robots_owner_insert", "trg_robots_owner_relock", "trg_adapters_owner_change", "trg_adapters_owner_insert", "trg_device_owner_changes_worm",
   "trg_device_owner_changes_worm_truncate", "trg_robot_motion_lock_authority", "trg_robot_motion_lock_write_guard", "trg_edge_program_owned", "trg_robot_motion_lock_request_guard",
   "trg_robots_owner_stop_carry", "trg_adapters_owner_stop_carry", // fix review 1 (M1)
-  "trg_robot_motion_lock_request_keep_stop", // fix review 2 (R-10-i)
+  "trg_robot_motion_lock_request_keep_stop", "trg_robots_keep_pending_stop", "trg_adapters_keep_pending_stop", // fix review 2 (R-10-i)
 ];
 
 async function fixtures(tx, code) {

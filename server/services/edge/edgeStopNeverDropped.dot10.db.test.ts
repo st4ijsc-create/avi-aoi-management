@@ -159,4 +159,68 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
     });
     expect(r).toEqual({ nodeDelete: "23514", still: 1, afterAck: null });
   }, 60_000);
+  // ── second scan ("STOP orphaned", after d030dcb8e) ─────────────────────────────────────────────────────────────────
+  it("★ (e) a device with an unacknowledged STOP cannot be DELETED (the FK cascade would take the STOP with it)", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      await req(tx, { adapterId: f.ad, node: f.a, epoch: 2, kind: "stop" });
+      const delRobot = await code(tx, (sp) => sp`DELETE FROM public.robots WHERE id = ${f.robot}`);
+      const delAdapter = await code(tx, (sp) => sp`DELETE FROM public.device_adapters WHERE id = ${f.ad}`);
+      const [n] = await tx`SELECT count(*)::int AS n FROM public.device_pending_stops WHERE "robotId" = ${f.robot} OR "adapterId" = ${f.ad}`;
+      return { delRobot, delAdapter, listed: n.n };
+    });
+    expect(r).toEqual({ delRobot: "23514", delAdapter: "23514", listed: 2 });
+  }, 60_000);
+
+  it("★ (f) edge → CENTRAL → edge before central acked: the pending STOP reaches the NEW edge owner (never stranded at the first node)", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const stop = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      await tx`UPDATE public.robots SET "edgeNodeId" = NULL WHERE id = ${f.robot}`; // epoch 3, central
+      await tx`UPDATE public.robots SET "edgeNodeId" = ${f.b} WHERE id = ${f.robot}`; // epoch 4, B
+      const atB = (await tx`SELECT "ownerEpoch" AS e FROM public.robot_motion_lock_requests WHERE "robotId" = ${f.robot} AND kind = 'stop' AND "edgeNodeId" = ${f.b} AND "ackedAt" IS NULL`).map((x) => Number(x.e));
+      const view = (await tx`SELECT "requestEdgeNodeId" AS n, "requestOwnerEpoch" AS e, stale FROM public.device_pending_stops WHERE "robotId" = ${f.robot}`).map((x) => `${x.n === f.b ? "B" : x.n === f.a ? "A" : x.n}@${x.e}:${x.stale}`);
+      return { stop: typeof stop, atB, view };
+    });
+    expect(r).toEqual({ stop: "number", atB: [4], view: ["B@4:false"] });
+  }, 60_000);
+
+  it("★ (g) several hops (A → B → C, plus an epoch-only change): exactly ONE pending STOP, at the latest owner and epoch — no duplicates", async () => {
+    const r = await rolledBack(ownerUrl(), async (tx) => {
+      const f = await fixture(tx);
+      const [c] = await tx`INSERT INTO public.edge_nodes (code, name, status) VALUES (${tag()}, 'c', 'offline') RETURNING id`;
+      await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      await tx`UPDATE public.robots SET "edgeNodeId" = ${f.b} WHERE id = ${f.robot}`; // epoch 3
+      await tx`UPDATE public.robots SET "edgeNodeId" = ${c.id} WHERE id = ${f.robot}`; // epoch 4
+      await tx`ALTER TABLE public.robots DISABLE TRIGGER trg_robots_owner_change`;
+      await tx`UPDATE public.robots SET "ownerEpoch" = 5 WHERE id = ${f.robot}`; // epoch-only
+      const view = (await tx`SELECT "requestEdgeNodeId" AS n, "requestOwnerEpoch" AS e FROM public.device_pending_stops WHERE "robotId" = ${f.robot}`).map((x) => `${x.n === c.id ? "C" : x.n}@${x.e}`);
+      const [all] = await tx`SELECT count(*)::int AS n FROM public.robot_motion_lock_requests WHERE "robotId" = ${f.robot} AND kind = 'stop'`;
+      return { view, rows: all.n };
+    });
+    expect(r).toEqual({ view: ["C@5"], rows: 4 }); // original + one carry per hop (B, C, C@5) — one pending HEAD
+  }, 60_000);
+
+  it("★ (h) the owner's node is dead (no active credential — it never pulls): the STOP shows as UNDELIVERABLE for central", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const [cred] = await tx`INSERT INTO public.edge_node_credentials ("edgeNodeId", "keyPrefix", "secretHash") VALUES (${f.a}, ${"edn_" + Math.random().toString(16).slice(2, 14).padEnd(12, "0")}, ${"ab".repeat(32)}) RETURNING id`;
+      const stop = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      const live = (await tx`SELECT undeliverable FROM public.device_pending_stops WHERE "requestId" = ${stop}`)[0]?.undeliverable;
+      await tx`UPDATE public.edge_node_credentials SET status = 'revoked', "revokedAt" = now(), "revokedBy" = 1, "revokeReason" = 'dead' WHERE id = ${cred.id}`;
+      const dead = (await tx`SELECT undeliverable FROM public.device_pending_stops WHERE "requestId" = ${stop}`)[0]?.undeliverable;
+      return { live, dead };
+    });
+    expect(r).toEqual({ live: false, dead: true });
+  }, 60_000);
+
+  it("★ R-10-k: no writer (the owner included) can ack a STOP 'expired'", async () => {
+    const r = await rolledBack(ownerUrl(), async (tx) => {
+      const f = await fixture(tx);
+      const stop = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop", expires: "1 millisecond" });
+      return code(tx, (sp) => sp`UPDATE public.robot_motion_lock_requests SET "ackedAt" = now() + interval '1 second', outcome = 'expired' WHERE id = ${stop}`);
+    });
+    expect(r).toBe("23514");
+  }, 60_000);
 });

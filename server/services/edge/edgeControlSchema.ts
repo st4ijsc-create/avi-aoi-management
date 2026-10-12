@@ -140,12 +140,15 @@ export const robotMotionLockRequests = pgTable("robot_motion_lock_requests", {
   outcome: varchar("outcome", { length: 16 }).$type<"done" | "refused" | "failed" | "expired">(),
   /** fix review 2 (R-10-i) — the user who acked a STOP central executed (edge_stop_ack_central only); written with the ack */
   ackedBy: integer("ackedBy"),
+  /** fix review 2 (second scan) — the request this STOP was carried to on an owner change (carry only); NULL = chain head */
+  carriedToId: integer("carriedToId"),
 });
 /**
  * fix review 2 (R-10-i, L-7) — VIEW device_pending_stops (SELECT only): every STOP request nobody acknowledged, with the
  * device's CURRENT owner. centralMustExecute ⇒ the device is central-owned now: central executes the STOP and acks it with
  * ackCentralStop. overdue ⇒ past expiresAt and still pending (raise an alert; a STOP never expires). stale ⇒ the request's
- * (node, epoch) is no longer the device's.
+ * (node, epoch) is no longer the device's. One row per chain HEAD (a STOP carried on to a new owner is listed as its carry).
+ * undeliverable ⇒ edge-owned, but the request's node has no active credential (it never pulls) — raise it to a person.
  */
 export const devicePendingStops = pgTable("device_pending_stops", {
   requestId: integer("requestId").notNull(),
@@ -163,6 +166,10 @@ export const devicePendingStops = pgTable("device_pending_stops", {
   overdue: boolean("overdue").notNull(),
   centralMustExecute: boolean("centralMustExecute").notNull(),
   stale: boolean("stale").notNull(),
+  /** edge-owned device, but the request's node has no ACTIVE credential — it can never pull this STOP: central must act */
+  undeliverable: boolean("undeliverable").notNull(),
+  requestNodeStatus: text("requestNodeStatus"),
+  requestNodeLastHeartbeatAt: timestamp("requestNodeLastHeartbeatAt"),
 });
 export type DevicePendingStopRow = typeof devicePendingStops.$inferSelect;
 export type RobotMotionLockRequestRow = typeof robotMotionLockRequests.$inferSelect;

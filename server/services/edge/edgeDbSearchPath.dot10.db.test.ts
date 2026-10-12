@@ -218,7 +218,7 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
     for (const f of FILES) {
       for (const m of readFileSync(path.join(REPO, "drizzle", f), "utf8").matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?([a-z_][a-z0-9_]*)\s*\(/gi)) names.add(m[1]);
     }
-    expect(names.size).toBe(22); // 0372: 2 · 0373: 2 · 0374: 13 · 0375: 5 — a new function must be added here on purpose
+    expect(names.size).toBe(23); // 0372: 2 · 0373: 2 · 0374: 14 · 0375: 5 — a new function must be added here on purpose
     const rows = await freshSession(async (tx) =>
       tx`SELECT p.proname AS name, p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
                 has_function_privilege(current_user, p.oid, 'EXECUTE') AS app
@@ -252,7 +252,7 @@ describe("R-10-e — source census: no function body of 0372–0375 names an unq
           ...code.matchAll(/\b(?:FROM|JOIN|UPDATE)\s+(?!public\.|pg_catalog\.)("?[A-Za-z_][A-Za-z0-9_]*"?)/gi),
           ...code.matchAll(/\bINSERT\s+INTO\s+(?!public\.)("?[A-Za-z_][A-Za-z0-9_]*"?)/gi),
         ]
-          .filter((m) => !/(DISTINCT|DO)\s+$/i.test(code.slice(Math.max(0, (m.index ?? 0) - 12), m.index)))
+          .filter((m) => !/(DISTINCT|DO|FOR)\s+$/i.test(code.slice(Math.max(0, (m.index ?? 0) - 12), m.index)))
           .map((m) => m[1]);
         for (const r of refs) bad.push(`${f}: unqualified ${r}`);
       }
