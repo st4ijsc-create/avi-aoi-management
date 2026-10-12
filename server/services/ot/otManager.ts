@@ -972,3 +972,72 @@ export function listOtAdapterStatuses(): OtAdapterStatus[] {
   const ids = [...supervisors.keys(), ...legacy.keys()];
   return ids.map((id) => getOtAdapterStatus(id)).filter((x): x is OtAdapterStatus => !!x);
 }
+
+// ── doc 81 Đợt 10 task D fix review 1 (R-10-v) — ownership applied LIVE, one adapter at a time ─────────────────────────
+
+/**
+ * Stop central's session of ONE adapter now (it moved to an edge node): its supervisor (HA) or legacy entry (subscription +
+ * driver) is removed and closed, bounded — no more polling / ingest / writes here. true ⇔ it was running.
+ */
+export async function detachOtAdapter(adapterId: number): Promise<boolean> {
+  let found = false;
+  const sup = supervisors.get(adapterId);
+  if (sup) {
+    supervisors.delete(adapterId);
+    found = true;
+    await boundedQuiet(() => sup.supervisor.stop(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "detach supervisor");
+  }
+  const entry = legacy.get(adapterId);
+  if (entry) legacy.delete(adapterId);
+  const i = active.findIndex((e) => e.adapter.adapterId === adapterId);
+  if (i >= 0) {
+    const [a] = active.splice(i, 1);
+    found = true;
+    const h = a.handle;
+    a.handle = null;
+    if (h) await boundedQuiet(() => h.close(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "detach close");
+    await boundedQuiet(() => a.adapter.driver.disconnect(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "detach disconnect");
+  } else if (entry) {
+    found = true;
+    await boundedQuiet(() => entry.adapter.driver.disconnect(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "detach disconnect");
+  }
+  if (found) console.log(`[OT] adapter ${adapterId} detached — owned by an edge node now (no polling / ingest / writes here)`);
+  return found;
+}
+
+/**
+ * Start central's session of ONE adapter now (it moved to central), through the SAME start paths as startOt (HA supervisor, or a
+ * legacy entry the reconnect watchdog then keeps alive). No-op when OT is not running here or the adapter is already present.
+ */
+export async function attachOtAdapter(adapter: RuntimeAdapter): Promise<boolean> {
+  if (!running || supervisors.has(adapter.adapterId) || legacy.has(adapter.adapterId) || active.some((e) => e.adapter.adapterId === adapter.adapterId)) return false;
+  const myEpoch = epoch;
+  try {
+    if (isConnHaEnabled()) {
+      const fingerprint = connectionFingerprintOf(adapter);
+      const supervisor = await buildSupervisor(adapter);
+      await withDeadline(supervisor.start(), effectiveAdapterStartTimeoutMs(adapter.connection, adapter.backupConnection) + OT_ADAPTER_START_CLEANUP_GRACE_MS, `adapter "${adapter.code}" supervisor start`).catch(() => undefined);
+      if (myEpoch !== epoch || supervisors.has(adapter.adapterId)) {
+        await supervisor.stop().catch(() => undefined);
+        return false;
+      }
+      supervisors.set(adapter.adapterId, { supervisor, adapter, fingerprint: fingerprint ?? "" });
+    } else {
+      const entry: LegacyEntry = { adapter, handle: null, state: "starting", lastError: null, attempts: 0, failures: 0, nextRetryAt: 0, inflight: false, listed: false };
+      legacy.set(adapter.adapterId, entry);
+      const ok = await attemptLegacyStart(entry, myEpoch);
+      if (myEpoch !== epoch) return false;
+      if (ok) listLegacyEntryIfNeeded(entry);
+      else {
+        entry.state = "error";
+        entry.failures = 1;
+        entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+      }
+    }
+    console.log(`[OT] adapter "${adapter.code}" attached — central owns it now`);
+    return true;
+  } catch (err) {
+    console.warn(`[OT] adapter ${adapter.adapterId} attach failed: ${errText(err)}`);
+    return false;
+  }
+}

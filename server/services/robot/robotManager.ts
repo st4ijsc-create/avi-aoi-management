@@ -192,3 +192,60 @@ export async function stopRobots(): Promise<void> {
 export function getActiveRobot(robotId: number): RuntimeRobot | undefined {
   return active.find((a) => a.robot.id === robotId)?.robot;
 }
+
+// ── doc 81 Đợt 10 task D fix review 1 (R-10-v) — ownership applied LIVE, one robot at a time ────────────────────────────
+
+/** Is the robot gateway running in this process (startRobots done)? */
+export function isRobotGatewayRunning(): boolean {
+  return running;
+}
+
+/**
+ * Stop central's session of ONE robot now (it moved to an edge node): its state subscription (polling + ingest) closes and the
+ * driver disconnects, bounded. The motion lock leaves with the session (the edge is the authority now). true ⇔ it was active.
+ */
+export async function detachRobot(robotId: number): Promise<boolean> {
+  const i = active.findIndex((a) => a.robot.id === robotId);
+  if (i < 0) return false;
+  const [entry] = active.splice(i, 1);
+  const { withDeadline } = await import("../ot/drivers/boundedClose");
+  await withDeadline(Promise.resolve().then(() => entry.handle.close()), 5_000, `robot ${robotId} state close`).catch(() => undefined);
+  await withDeadline(Promise.resolve().then(() => entry.robot.driver.disconnect()), 5_000, `robot ${robotId} disconnect`).catch(() => undefined);
+  console.log(`[Robot] "${entry.robot.code}" detached — owned by an edge node now (no polling / ingest / motion here)`);
+  return true;
+}
+
+/**
+ * Start central's session of ONE robot now (it moved to central): loaded from the DB like startRobots (only if enabled and
+ * central-owned), its persisted motion lock loaded FIRST (an ownerChanged relock ⇒ it starts LOCKED), then connect + state
+ * subscription with ingest. No-op when the gateway is not running in this process or the robot is already active. Never throws.
+ */
+export async function attachRobot(robotId: number): Promise<boolean> {
+  if (!running || !flagEnabled() || active.some((a) => a.robot.id === robotId)) return false;
+  try {
+    const { loadEnabledRobots } = await import("./robotAdapter");
+    const robot = (await loadEnabledRobots()).find((r) => r.id === robotId);
+    if (!robot) return false;
+    const { attachMotionLockPersistence, loadMotionLocks } = await import("./robotMotionLockStore");
+    const lock = robot.driver.motionLockController?.();
+    if (lock) attachMotionLockPersistence(robot.id, lock, await loadMotionLocks([robot.id]));
+    const { ingestRobotState } = await import("./robotIngest");
+    await robot.driver.connect(robot.connection);
+    const handle = await robot.driver.subscribeState((state) => ingestRobotState(robot, state), robot.pollIntervalMs);
+    if (active.some((a) => a.robot.id === robotId)) {
+      await handle.close().catch(() => undefined);
+      return false;
+    }
+    active.push({ robot, handle });
+    console.log(`[Robot] "${robot.code}" attached — central owns it now`);
+    return true;
+  } catch (err) {
+    console.warn(`[Robot] robot ${robotId} attach failed: ${(err as Error)?.message ?? err}`);
+    return false;
+  }
+}
+
+/** The ids of the robots central holds a session for (reconcile). */
+export function activeRobotIds(): number[] {
+  return active.map((a) => a.robot.id);
+}

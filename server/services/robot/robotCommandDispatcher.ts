@@ -794,12 +794,13 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
       // doc 81 Đợt 10 task D (re-review N1, design §2.11/§2.12) — CENTRAL reads the motion authority at motion time: an
       // edge-owned robot ⇒ ROBOT_OWNED_BY_EDGE; a lock row central did not write (an edge authority, or the DB's ownerChanged
       // relock) ⇒ MOTION_LOCKED; unreadable ⇒ MOTION_LOCKED (fail-closed). Bounded. STOP exempt (L-7).
-      const auth = await readCentralMotionAuthority(input.robotId);
+      const auth = await readCentralMotionAuthority(input.robotId, robot.driver.motionLockController?.() ?? null);
       if ("ok" in auth) observedOwnerEpoch = auth.ownerEpoch ?? null;
       if ("ownedByEdge" in auth) return refuseOwnedByEdge(input, auth.ownedByEdge);
       if ("locked" in auth || "error" in auth) {
         if ("locked" in auth && auth.authority === "central") {
-          // the DB's ownerChanged relock of a CENTRAL robot: ADOPT it into the in-memory lock (the authority's source of truth),
+          // a central row this process did not write + clear (the DB's ownerChanged relock, or another replica's lock — R-10-u):
+          // ADOPT it into the in-memory lock (the authority's source of truth),
           // so the existing paths clear it — a confirmed STOP or robot.clearMotionLock quoting this generation — and their
           // persistence hook deletes the row (generation ≤ g). No-op while already locked.
           try {

@@ -419,6 +419,7 @@ async function holdSlotAfterTimedOutWrite(
   input: DispatchInput,
   write: Promise<unknown>,
   ledger: { intentIds: number[]; confirmedBy: number },
+  sink?: OtDeviceEventSink,
 ): Promise<void> {
   try {
     let graceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -472,7 +473,7 @@ async function holdSlotAfterTimedOutWrite(
     console.error(
       `[Dispatch] adapter ${input.adapterId}: overlapRisk — a timed-out write may still be running on the old session and its reset failed (${resetError}); the next command (a STOP) proceeds anyway (L-7, B3)`,
     );
-    auditWriteOverlapRisk(input, ledger, { graceMs: OT_TIMED_OUT_WRITE_GRACE_MS, resetBoundMs, resetError });
+    auditWriteOverlapRisk(input, ledger, { graceMs: OT_TIMED_OUT_WRITE_GRACE_MS, resetBoundMs, resetError }, sink);
   } catch (err) {
     console.error(`[Dispatch] adapter ${input.adapterId}: timed-out write slot hold failed (slot released):`, (err as Error)?.message || err);
   }
@@ -502,6 +503,7 @@ function startStopWatch(
   readTags: OtTagAddress[],
   timeoutMs: number,
   ledger: { intentIds: number[]; confirmedBy: number },
+  sink?: OtDeviceEventSink,
 ): void {
   const token: StopWatch = { cancelled: false, tags: new Set(writes.map((w) => w.tagKey)) };
   registerStopWatch(input.adapterId, token);
@@ -526,7 +528,7 @@ function startStopWatch(
         if (fpNow !== stopFingerprint || (drvNow !== undefined && drvNow !== stopDriver)) {
           // Fix round 1 (R-4-s) — the STOP can no longer be verified on its own target: the same single critical alarm
           // (nothing is read through the new target), then the watch ends.
-          raiseStopUnverifiedAlarm(input, ledger, abandoned, stopRef, [], readTags.filter((t) => token.tags.has(t.tagKey)).map((t) => t.tagKey), "target_changed");
+          raiseStopUnverifiedAlarm(input, ledger, abandoned, stopRef, [], readTags.filter((t) => token.tags.has(t.tagKey)).map((t) => t.tagKey), "target_changed", sink);
           break;
         }
         const tags = readTags.filter((t) => token.tags.has(t.tagKey));
@@ -555,7 +557,7 @@ function startStopWatch(
         }
         if (drift.length === 0 && unread.length === 0) continue;
         // ONE alarm per STOP, then the watch is done (no spam). Nothing is written.
-        raiseStopUnverifiedAlarm(input, ledger, abandoned, stopRef, drift, unread);
+        raiseStopUnverifiedAlarm(input, ledger, abandoned, stopRef, drift, unread, undefined, sink);
         break;
       }
     } catch (err) {
@@ -584,6 +586,7 @@ function raiseStopUnverifiedAlarm(
   drift: Array<{ tagKey: string; expected: unknown; actual: unknown; abandonedValueLanded: boolean }>,
   unread: string[],
   reason: "drift" | "unreadable" | "target_changed" = drift.length > 0 ? "drift" : "unreadable",
+  sink?: OtDeviceEventSink,
 ): void {
   const tags = [...drift.map((d) => d.tagKey), ...unread];
   const what =
@@ -604,6 +607,11 @@ function raiseStopUnverifiedAlarm(
     stop: stopRef,
     abandonedWrite: abandoned ? { idempotencyKey: abandoned.idempotencyKey, intentIds: abandoned.intentIds, commandType: abandoned.commandType, confirmedBy: abandoned.confirmedBy } : null,
   };
+  if (sink) {
+    // R-10-x — edge: ONE critical event through the injected sink (journal → central); no DB, no inbox from here.
+    emitToSink(sink, input, "ot_stop_unverified", true, message, detail);
+    return;
+  }
   auditOtEvent(
     abandoned ? { ...input, commandType: abandoned.commandType, idempotencyKey: abandoned.idempotencyKey ?? input.idempotencyKey } : input,
     abandoned ? { intentIds: abandoned.intentIds, confirmedBy: abandoned.confirmedBy } : stopLedger,
@@ -657,7 +665,12 @@ function auditWriteOverlapRisk(
   input: DispatchInput,
   ledger: { intentIds: number[]; confirmedBy: number },
   detail: { graceMs: number; resetBoundMs: number; resetError: string },
+  sink?: OtDeviceEventSink,
 ): void {
+  if (sink) {
+    emitToSink(sink, input, "ot_write_overlap_risk", true, `adapter ${input.adapterId}: a timed-out write was still pending after its grace and the session could not be reset — the next command (a STOP) proceeded (L-7)`, { overlapRisk: true, ...detail });
+    return;
+  }
   auditOtEvent(
     input,
     ledger,
@@ -715,6 +728,20 @@ function auditOtEvent(
 export const OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS = 10_000;
 
 
+/**
+ * doc 81 Đợt 10 task D fix review 1 (R-10-x) — where the device stage's ALARMS / AUDITS go. Absent (central) ⇒ the existing DB
+ * paths (control_audit_log, the safety-critical inbox, the alert stream) — byte-identical. On the EDGE the front end injects one
+ * that journals an `anomaly` event (E's report sink) — the device stage then never reaches a DB (no trap hit).
+ */
+export type OtDeviceEventSink = (ev: { action: string; critical: boolean; adapterId: number; machineId: number | null; commandType: string; idempotencyKey: string | null; message: string; detail: Record<string, unknown> }) => void;
+function emitToSink(sink: OtDeviceEventSink, input: DispatchInput, action: string, critical: boolean, message: string, detail: Record<string, unknown>): void {
+  try {
+    sink({ action, critical, adapterId: input.adapterId, machineId: input.machineId ?? null, commandType: input.commandType, idempotencyKey: input.idempotencyKey ?? null, message, detail });
+  } catch (err) {
+    console.error(`[Dispatch] device-stage event sink failed (${action}, adapter ${input.adapterId}):`, (err as Error)?.message || err);
+  }
+}
+
 /** One resolved write as the device stage needs it (address / dataType / scale / offset from the tag row or the signed snapshot). */
 export interface OtResolvedWrite {
   write: { tagKey: string; value: unknown };
@@ -737,6 +764,8 @@ export async function executeOtDeviceWrite(a: {
   /** the command TYPE is a stop (stop / e_stop) — selects the B3 read-only STOP watch */
   stopTyped: boolean;
   ledger: { intentIds: number[]; confirmedBy: number };
+  /** R-10-x — the edge's alarm / audit sink; absent ⇒ central's DB paths (unchanged) */
+  sink?: OtDeviceEventSink;
 }): Promise<ExecutedWrite> {
   const { input, driver, resolved, driverWrites, timeoutMs, stopTyped } = a;
   const { intentIds, confirmedBy: ledgerConfirmer } = a.ledger;
@@ -784,7 +813,7 @@ export async function executeOtDeviceWrite(a: {
   // its grace expires and the session is reset; the caller's answer is not delayed by this.
   const slotHold =
     timedOut && writePromise && isCmdSerializeEnabled()
-      ? holdSlotAfterTimedOutWrite(input, writePromise, { intentIds, confirmedBy: ledgerConfirmer })
+      ? holdSlotAfterTimedOutWrite(input, writePromise, { intentIds, confirmedBy: ledgerConfirmer }, a.sink)
       : undefined;
   const resultsArr = Array.isArray(writeResults) ? writeResults : [];
 
@@ -889,6 +918,7 @@ export async function executeOtDeviceWrite(a: {
         })),
         timeoutMs,
         { intentIds, confirmedBy: ledgerConfirmer },
+        a.sink,
       );
     }
   }

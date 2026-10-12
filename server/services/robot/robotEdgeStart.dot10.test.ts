@@ -102,3 +102,20 @@ describe("edge v2 robots — config-sourced, journal-backed lock, no DB", () => 
     expect(events).toEqual(["locked:9", "cleared:9"]);
   });
 });
+
+describe("R-10-v — detachRobot stops a session at once", () => {
+  it("detach closes the state subscription and disconnects; the robot is no longer active here", async () => {
+    let closed = 0;
+    let disconnected = 0;
+    const r = fakeRobot(41, []);
+    (r.driver as any).subscribeState = async () => ({ close: async () => void closed++ });
+    (r.driver as any).disconnect = async () => void disconnected++;
+    await startRobots({ configRobots: [r], attachLock: () => undefined });
+    const { detachRobot, activeRobotIds } = await import("./robotManager");
+    expect(activeRobotIds()).toContain(41);
+    expect(await detachRobot(41)).toBe(true);
+    expect(getActiveRobot(41)).toBeUndefined();
+    expect([closed, disconnected]).toEqual([1, 1]);
+    expect(await detachRobot(41)).toBe(false);
+  });
+});

@@ -80,6 +80,32 @@ function enqueue(robotId: number, what: string, work: () => Promise<void>): Prom
   return next;
 }
 
+/**
+ * doc 81 Đợt 10 task D fix review 1 — ruling R-10-u (N1 across central REPLICAS). Every API process runs the robot gateway with
+ * its own in-memory lock, so a central row may have been written by ANOTHER replica. The rows THIS process wrote and then CLEARED
+ * itself (its DELETE possibly still in flight) are remembered per MotionLock — (generation, lockedAt ms) exactly as persisted —
+ * and the motion gate exempts only those; any other central row refuses motion (fail-closed across replicas) and is adopted.
+ * Bounded: the last CLEARED_KEEP clears per lock.
+ */
+const CLEARED_KEEP = 16;
+const clearedHere = new WeakMap<MotionLock, Array<{ generation: number; lockedAtMs: number }>>();
+function rememberCleared(lock: MotionLock, generation: number, lockedAtMs: number): void {
+  const list = clearedHere.get(lock) ?? [];
+  list.push({ generation, lockedAtMs });
+  if (list.length > CLEARED_KEEP) list.splice(0, list.length - CLEARED_KEEP);
+  clearedHere.set(lock, list);
+}
+/** true ⇔ the persisted row (generation, lockedAt) is one THIS process's lock wrote and has since cleared. */
+export function motionLockRowClearedHere(lock: MotionLock | undefined | null, generation: number, lockedAt: Date | string | number | null | undefined): boolean {
+  if (!lock || lockedAt == null) return false;
+  const t = new Date(lockedAt).getTime();
+  return Number.isFinite(t) && (clearedHere.get(lock) ?? []).some((c) => c.generation === generation && c.lockedAtMs === t);
+}
+/** the lockedAt this process persists for a lock state (the same clamp as the upsert) */
+function persistedLockedAt(robotId: number, state: MotionLockState): Date {
+  return clampToBoot(state.since ? new Date(state.since) : new Date(), bootSinceByRobot.get(robotId));
+}
+
 /** UPSERT the current lock of `robotId` (generation never goes backwards). */
 export function persistMotionLock(robotId: number, state: MotionLockState): Promise<void> {
   return enqueue(robotId, "upsert", async () => {
@@ -182,12 +208,15 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
   } else outcome = "none";
   lock.attachPersistence({
     locked: (state) => void persistMotionLock(robotId, state),
-    cleared: (state) =>
+    cleared: (state) => {
+      // R-10-u — this process clears the row it (or its restore) holds: remember exactly what it persisted
+      rememberCleared(lock, Math.max(1, state.generation ?? 1), persistedLockedAt(robotId, state).getTime());
       void deleteMotionLock(
         robotId,
         state.generation ?? 0,
         state.reasonCode === MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE && state.since ? new Date(state.since) : undefined,
-      ),
+      );
+    },
   });
   if (!load.ok) {
     console.error(`[Robot] robot ${robotId}: persisted motion lock could not be read — starting LOCKED (${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE}, fail-closed, B4): ${load.error}`);

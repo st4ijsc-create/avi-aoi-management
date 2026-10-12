@@ -18,7 +18,7 @@ vi.mock("../db", () => ({
     return { id: 1 };
   }),
 }));
-const own = vi.hoisted(() => ({ owners: new Map<number, number | null>() }));
+const own = vi.hoisted(() => ({ owners: new Map<number, number | null>(), throws: false }));
 vi.mock("../db/connection", async () => {
   const { robotOwnership } = await import("../services/edge/edgeControlSchema");
   return {
@@ -28,6 +28,7 @@ vi.mock("../db/connection", async () => {
           where: () => ({
             limit: async () => {
               if (t !== robotOwnership) return [];
+              if (own.throws) throw new Error("simulated DB timeout on the owner read");
               return [...own.owners.entries()].map(([id, edgeNodeId]) => ({ id, edgeNodeId, ownerEpoch: 2, motionLockGenerationFloor: 0 })).slice(0, 1);
             },
           }),
@@ -36,6 +37,15 @@ vi.mock("../db/connection", async () => {
     }),
   };
 });
+const central = vi.hoisted(() => ({ calls: [] as number[], result: { ok: true, sent: "sent", detail: "abort sent on a transient session" } as { ok: boolean; sent: string; detail: string }, alerts: [] as string[] }));
+vi.mock("../services/robot/deviceOwnershipService", () => ({
+  sendCentralRobotStop: async (id: number) => (central.calls.push(id), central.result),
+}));
+vi.mock("../services/robot/criticalStopAlert", () => ({
+  raiseCriticalStopAlert: async (a: { message: string }) => {
+    central.alerts.push(a.message);
+  },
+}));
 vi.mock("../_core/accessControl", () => ({ requirePermission: () => async ({ ctx, next }: any) => next({ ctx }) }));
 const disp = vi.hoisted(() => ({ calls: [] as any[] }));
 vi.mock("../services/robot/robotCommandDispatcher", () => ({
@@ -45,7 +55,27 @@ vi.mock("../services/robot/robotCommandDispatcher", () => ({
   }),
   robotInterlockTarget: (robotId: number) => ({ adapterId: -1, machineId: robotId, tagKeys: [] }),
 }));
-vi.mock("../services/robot/robotManager", () => ({ getActiveRobot: () => undefined }));
+const stale = vi.hoisted(() => ({ on: false, clears: 0 }));
+vi.mock("../services/robot/robotManager", () => ({
+  // a STALE central session (an ownership change not yet applied in this process) only when stale.on
+  getActiveRobot: () =>
+    stale.on
+      ? {
+          id: 12,
+          code: "R12",
+          vendor: "mitsubishi",
+          driver: {
+            vendor: "mitsubishi",
+            isConnected: () => true,
+            getMotionLock: () => ({ locked: true, generation: 3, reasonCode: "x" }),
+            clearMotionLock: () => {
+              stale.clears++;
+              return { locked: false, generation: 3 };
+            },
+          },
+        }
+      : undefined,
+}));
 
 import { robotRouter } from "./robotRouter";
 import { setEdgeDeviceRequestPort, type EdgeDeviceRequestInput } from "../services/robot/robotEdgeCommandPort";
@@ -60,6 +90,12 @@ beforeEach(() => {
   queued.length = 0;
   queueFails = null;
   own.owners = new Map([[12, 4]]); // robot 12 owned by edge node 4
+  own.throws = false;
+  stale.on = false;
+  stale.clears = 0;
+  central.calls.length = 0;
+  central.alerts.length = 0;
+  central.result = { ok: true, sent: "sent", detail: "abort sent on a transient session" };
   setEdgeDeviceRequestPort({
     async enqueue(i) {
       if (queueFails) throw Object.assign(new Error("queue failed"), { code: queueFails });
@@ -104,5 +140,43 @@ describe("console on an EDGE-owned robot (no central session)", () => {
     expect(r).toMatchObject({ ok: false, error: "ROBOT_OWNED_BY_EDGE" });
     expect(disp.calls).toHaveLength(1);
     expect(queued).toEqual([]);
+  });
+});
+
+describe("fix review 1 — R-10-v / M-2: a console STOP with no central session is never a silent 'robot not active'", () => {
+  it("★ central-owned robot, no session here ⇒ a TRANSIENT-session STOP + a durable alert; the dispatcher is not the answer", async () => {
+    own.owners = new Map([[12, null]]);
+    const r = await engineer.actuate({ robotId: 12, command: "stop" });
+    expect(r).toMatchObject({ ok: true, status: "done" });
+    expect(central.calls).toEqual([12]);
+    expect(queued).toEqual([]);
+    expect(disp.calls).toEqual([]);
+    expect(central.alerts.join("\n")).toMatch(/held no session/);
+  });
+
+  it("★ the transient STOP fails too ⇒ an error the user sees + the alert names the hardware E-STOP", async () => {
+    own.owners = new Map([[12, null]]);
+    central.result = { ok: false, sent: "failed", detail: "connect timed out" };
+    const r = await engineer.actuate({ robotId: 12, command: "abort" });
+    expect(r).toMatchObject({ ok: false, error: "EDGE_STOP_NOT_QUEUED" });
+    expect(central.alerts.join("\n")).toMatch(/hardware E-STOP/);
+  });
+
+  it("★ M-2 — the owner read FAILS ⇒ the central transient STOP AND the edge queue are both tried, and alerted", async () => {
+    own.throws = true;
+    const r = await engineer.actuate({ robotId: 12, command: "stop" });
+    expect(r.ok).toBe(true);
+    expect(central.calls).toEqual([12]);
+    expect(queued.map((q) => [q.kind, q.robotId])).toEqual([["stop", 12]]);
+    expect(central.alerts.join("\n")).toMatch(/owner unreadable/);
+    expect(disp.calls).toEqual([]);
+  });
+
+  it("★ M-3 — an edge-owned robot this process still holds a stale session for: the clear goes to the NODE, the stale lock is not touched", async () => {
+    stale.on = true;
+    const r = await engineer.clearMotionLock({ robotId: 12, reason: "verified on site", expectedGeneration: 3 });
+    expect(r).toMatchObject({ changed: false, queuedOnEdge: { edgeNodeId: 4 } });
+    expect(stale.clears).toBe(0);
+    expect(queued).toEqual([{ kind: "clear", robotId: 12, expectedGeneration: 3, reason: "verified on site", requestedBy: 7 }]);
   });
 });

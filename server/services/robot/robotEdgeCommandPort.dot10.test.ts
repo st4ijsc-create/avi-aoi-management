@@ -69,3 +69,21 @@ describe("R-10-k — console STOP for an edge-owned robot", () => {
     err.mockRestore();
   });
 });
+
+describe("fix review 1 (M-4) — the default alert of an undelivered console STOP is DURABLE", () => {
+  it("no injected alert ⇒ criticalStopAlert (alert stream + safety-critical inbox row to the requester)", async () => {
+    const calls: Array<{ recipients: number[]; message: string }> = [];
+    vi.doMock("./criticalStopAlert", () => ({ raiseCriticalStopAlert: async (a: { recipients: number[]; message: string }) => void calls.push(a) }));
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    script = ["stale", "stale"];
+    const r = await sendConsoleStopForEdgeRobot({ ...base, centralStop: async () => null });
+    expect(r).toMatchObject({ ok: false, error: "EDGE_STOP_NOT_QUEUED" });
+    const t0 = Date.now();
+    while (calls.length === 0 && Date.now() - t0 < 2_000) await new Promise((x) => setTimeout(x, 20));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ recipients: [7] });
+    expect(calls[0].message).toMatch(/hardware E-STOP/);
+    err.mockRestore();
+    vi.doUnmock("./criticalStopAlert");
+  });
+});

@@ -73,7 +73,7 @@ export type CentralMotionAuthorityRead =
   | { locked: true; authority: string; reasonCode: string; detail: string | null; since: string; generation: number; ownerEpoch: number | null }
   | { error: string };
 
-export async function readCentralMotionAuthority(robotId: number): Promise<CentralMotionAuthorityRead> {
+export async function readCentralMotionAuthority(robotId: number, ownLock?: import("./robotDriver").MotionLock | null): Promise<CentralMotionAuthorityRead> {
   try {
     const read = (async (): Promise<CentralMotionAuthorityRead> => {
       const { robotOwnership, robotMotionLockAuthority, isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
@@ -87,7 +87,12 @@ export async function readCentralMotionAuthority(robotId: number): Promise<Centr
         if (typeof owner === "number" && Number.isSafeInteger(owner)) return { ownedByEdge: owner, ownerEpoch: Number((own as { ownerEpoch?: unknown }).ownerEpoch ?? 0) };
         const [row] = await db.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robotId)).limit(1);
         const r = row as Partial<typeof robotMotionLockAuthority.$inferSelect> | undefined;
-        if (r && r.robotId === robotId && ((typeof r.authority === "string" && r.authority !== "central") || r.reasonCode === OWNER_CHANGED_REASON_CODE)) {
+        // R-10-u — a CENTRAL row refuses too unless THIS process wrote and cleared exactly it (its delete in flight); a row of
+        // another replica (or one this process never held) is not this process's to ignore.
+        const { motionLockRowClearedHere } = await import("./robotMotionLockStore");
+        const foreignCentral =
+          !!r && r.robotId === robotId && r.authority === "central" && !motionLockRowClearedHere(ownLock ?? null, Number(r.generation), r.lockedAt as Date | undefined);
+        if (r && r.robotId === robotId && ((typeof r.authority === "string" && r.authority !== "central") || r.reasonCode === OWNER_CHANGED_REASON_CODE || foreignCentral)) {
           return {
             locked: true,
             authority: String(r.authority ?? "central"),

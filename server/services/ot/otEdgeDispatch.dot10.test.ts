@@ -316,15 +316,18 @@ describe("otEdgeDispatch — ★ a PINNED OT STOP never asks (L-7)", () => {
   it("★ the caller's value is canonicalised to the PIN (1 ⇒ false is a value mismatch ⇒ NOT a stop ⇒ needs an authorisation)", async () => {
     const j = journal();
     const r = await dispatchOtOnEdge({ ...STOP, writes: [{ tagKey: "run", value: true }], run }, runtime(j));
-    expect(r).toMatchObject({ ok: false, stop: false, reason: "AUTHORIZATION_REQUIRED" });
+    expect(r).toMatchObject({ ok: false, stop: false, reason: "AUTHORIZATION_REQUIRED", detail: "stop_not_pinned:value_mismatch" });
     expect(H.driver!.writes).toHaveLength(0);
+    // M-1 (fix review 1) — never silent: journaled
+    await new Promise((x) => setTimeout(x, 10));
+    expect(j.events).toMatchObject([{ kind: "anomaly", code: "EDGE_STOP_NOT_PINNED", runId: 9 }]);
   });
 
   it("★ the running connection was made for another device (fingerprint ≠ the signed snapshot's) ⇒ not a verified STOP ⇒ refused without authorisation", async () => {
     const j = journal();
     H.fingerprint = "e".repeat(64);
     const r = await dispatchOtOnEdge({ ...STOP, run }, runtime(j));
-    expect(r).toMatchObject({ ok: false, stop: false, reason: "AUTHORIZATION_REQUIRED" });
+    expect(r).toMatchObject({ ok: false, stop: false, reason: "AUTHORIZATION_REQUIRED", detail: "stop_not_pinned:adapter_connection_stale" });
     expect(H.driver!.writes).toHaveLength(0);
   });
 
@@ -334,5 +337,15 @@ describe("otEdgeDispatch — ★ a PINNED OT STOP never asks (L-7)", () => {
     H.driver = null;
     expect(await dispatchOtOnEdge({ ...STOP, run }, runtime(j))).toMatchObject({ ok: false, status: "failed", reason: "ADAPTER_OFFLINE", stop: true });
     expect(j.runs).toHaveLength(2);
+  });
+
+  it("M-1 — a central console STOP that is not a verified pinned stop ⇒ a FAILED `stop` record on the events stream (requestId kept)", async () => {
+    const j = journal();
+    H.fingerprint = "e".repeat(64);
+    const r = await dispatchOtOnEdge({ ...STOP, source: "command", requestId: 45 }, runtime(j));
+    expect(r).toMatchObject({ ok: false, stop: false });
+    await new Promise((x) => setTimeout(x, 10));
+    expect(j.events).toMatchObject([{ kind: "stop", target: { adapterId: 5 }, source: "command", requestId: 45, outcome: "failed" }]);
+    expect(H.driver!.writes).toHaveLength(0);
   });
 });

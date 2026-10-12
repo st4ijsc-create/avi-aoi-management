@@ -1,21 +1,24 @@
 /**
- * doc 81 Đợt 10 task D (design §2.12, ruling R-10-i, L-7) — the ownership change of a robot / OT adapter, and what CENTRAL owes
- * the device right after it moves to central.
+ * doc 81 Đợt 10 task D (design §2.12, rulings R-10-i / R-10-v / R-10-w, L-7) — the ownership change of a robot / OT adapter, and
+ * what CENTRAL owes the device right after it moves to central.
  *
- * changeDeviceOwner: ONE transaction (the WORM history names the actor — setEdgeOwnershipActor), UPDATE …"edgeNodeId". The DB
- * (mig 0374) does the rest atomically: refuses while a job / command is in flight, bumps the owner epoch, relocks a robot
- * ('ownerChanged' under the new authority + epoch), and CARRIES unacknowledged STOP requests of the previous ownership to a new
- * EDGE owner. A refusal (23514) is answered as `refused`.
+ * changeDeviceOwner: ONE transaction (the WORM history names the actor — setEdgeOwnershipActor), UPDATE …"edgeNodeId", plus
+ * pg NOTIFY 'device_owner_changed' (delivered at COMMIT). The DB (mig 0374) does the rest atomically: refuses while a job /
+ * command is in flight, bumps the owner epoch, relocks a robot ('ownerChanged' under the new authority + epoch), and CARRIES
+ * unacknowledged STOP requests of the previous ownership to a new EDGE owner. A refusal (23514) is answered as `refused`.
  *
- * R-10-i — when the device moves to CENTRAL, a STOP request the old edge never acknowledged must not merely stay visible: central
- * EXECUTES it, right after the transfer commits (nothing is awaited before the STOP but the bounded read of which STOPs are
- * pending): a robot ⇒ the canonical abort through central's robot path (robotManager session ⇒ dispatchRobotJob; no session —
- * central skipped the robot while the edge owned it — ⇒ a transient driver session, abort, disconnect); an adapter ⇒ its PINNED
- * stop values (loadStopPins) through central's OT device stage (running driver, else a transient session to the adapter's
- * current row). One STOP per device answers every pending request of it; each request is then acknowledged through A's guarded
- * helper (ackCentralStop: done | failed). A STOP that could not be sent ⇒ `failed` + a CRITICAL operator alert (the request row
- * stays, with outcome failed — visible, never deleted). Dry-run mode (ROBOT_/OT_CONTROL_ENABLED off) records it simulated (done),
- * as central's dispatchers do.
+ * R-10-i / R-10-w — STOPs owed to a device that is CENTRAL-owned now (device_pending_stops.centralMustExecute) are EXECUTED, not
+ * merely left visible: right after a transfer made here, and by a SWEEP at central boot + every ≤ 10 s (startDeviceOwnershipSync)
+ * that also catches a crash between commit and STOP, a failed ack, and a transfer made by any other path. Per device, ONE
+ * transaction locks its pending requests FOR UPDATE SKIP LOCKED (one replica executes them; another sweep skips, never waits),
+ * sends ONE STOP through central's path (robot: the canonical abort through robotManager's session, else a transient driver
+ * session; adapter: its PINNED stop values through the OT device stage on the running driver, else a transient session), then
+ * acks each request in its own savepoint through A's guarded edge_stop_ack_central (done | failed; actor = the transferring admin,
+ * else the requester). A STOP that could not be sent ⇒ `failed` (the row stays, visible) + a DURABLE critical alert
+ * (criticalStopAlert: alert stream + safety-critical inbox). Dry-run mode records it simulated (done), as central's dispatchers do.
+ *
+ * R-10-v — ownership is applied LIVE: this process attaches / detaches its robotManager / otManager session at once (central → edge
+ * ⇒ its polling, ingest and session stop now); other replicas follow the NOTIFY; a reconcile every ≤ 30 s is the backstop.
  */
 import { eq, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
@@ -28,7 +31,7 @@ export interface CentralStopOutcome {
   outcome: "done" | "failed";
   sent: "sent" | "simulated" | "failed";
   detail: string;
-  /** the acks that could not be written (the request then stays pending — visible to B's surfacing) */
+  /** the acks that could not be written (the request then stays pending — the next sweep retries) */
   ackErrors: number[];
 }
 export type ChangeOwnerResult =
@@ -37,6 +40,14 @@ export type ChangeOwnerResult =
 
 /** Bound of one transient session (connect + stop + disconnect) of a device central did not hold. */
 export const CENTRAL_STOP_SESSION_DEADLINE_MS = 10_000;
+let sessionDeadlineMs = CENTRAL_STOP_SESSION_DEADLINE_MS;
+/** Test seam — a shorter transient-session bound. */
+export function _setCentralStopSessionDeadlineMsForTests(ms: number | null): void {
+  sessionDeadlineMs = ms ?? CENTRAL_STOP_SESSION_DEADLINE_MS;
+}
+export const DEVICE_OWNER_CHANNEL = "device_owner_changed";
+export const DEVICE_OWNER_RECONCILE_MS = 30_000;
+export const PENDING_STOP_SWEEP_MS = 10_000;
 
 const errText = (e: unknown) => String((e as Error)?.message ?? e).replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1***@").slice(0, 240);
 const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? (r as Array<Record<string, unknown>>) : (((r as { rows?: unknown[] })?.rows ?? []) as Array<Record<string, unknown>>));
@@ -55,6 +66,8 @@ export async function changeDeviceOwner(a: { kind: DeviceKind; deviceId: number;
           : await tx.execute(sql`UPDATE public.device_adapters SET "edgeNodeId" = ${a.toEdgeNodeId} WHERE id = ${a.deviceId} RETURNING "ownerEpoch"`),
       );
       if (r.length === 0) throw Object.assign(new Error("device not found"), { notFound: true });
+      // R-10-v — every replica applies it (delivered at COMMIT only)
+      await tx.execute(sql`SELECT pg_notify(${DEVICE_OWNER_CHANNEL}, ${JSON.stringify({ kind: a.kind, id: a.deviceId, to: a.toEdgeNodeId, epoch: Number(r[0].ownerEpoch) })})`);
       return Number(r[0].ownerEpoch);
     });
   } catch (err) {
@@ -62,55 +75,102 @@ export async function changeDeviceOwner(a: { kind: DeviceKind; deviceId: number;
     if (isEdgeControlRefusal(err)) return { ok: false, reason: "refused", detail: errText(err) };
     return { ok: false, reason: "unavailable", detail: errText(err) };
   }
+  // L-7 — the owed STOP first (it never waits for the session attach); then the live session change in this process
   const centralStops = a.toEdgeNodeId === null ? await executePendingCentralStops(a.kind, a.deviceId, a.actorUserId) : null;
+  await applyOwnershipLocally(a.kind, a.deviceId, a.toEdgeNodeId);
   return { ok: true, ownerEpoch: epoch, toEdgeNodeId: a.toEdgeNodeId, centralStops };
 }
 
+/** R-10-i / R-10-w — the owed STOPs of ONE device (null: none pending, or another replica holds them now). Never throws. */
+export async function executePendingCentralStops(kind: DeviceKind, deviceId: number, actorUserId: number | null): Promise<CentralStopOutcome | null> {
+  const out = await sweepPendingCentralStops({ device: { kind, id: deviceId }, actorUserId });
+  return out[0] ?? null;
+}
+
 /**
- * R-10-i — execute the unacknowledged STOP requests of a device that is CENTRAL-owned now (device_pending_stops.centralMustExecute),
- * then acknowledge them. Null when none is pending. Never throws (a failure is the `failed` outcome + an alert).
+ * R-10-w — THE sweep of device_pending_stops where centralMustExecute (every device, or one). The pending-set read failing ⇒ for a
+ * named device the STOP is sent anyway + alert; for the global sweep it is logged (the next pass retries). Never throws.
  */
-export async function executePendingCentralStops(kind: DeviceKind, deviceId: number, actorUserId: number): Promise<CentralStopOutcome | null> {
-  let pending: Array<{ requestId: number; requestedBy: number }> = [];
+export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKind; id: number }; actorUserId?: number | null } = {}): Promise<CentralStopOutcome[]> {
+  const results: CentralStopOutcome[] = [];
+  let devices: Array<{ kind: DeviceKind; id: number }>;
   try {
     const db = await getDb();
     if (!db) throw new Error("database unavailable");
-    const q =
-      kind === "robot"
-        ? sql`SELECT "requestId", "requestedBy" FROM public.device_pending_stops WHERE "robotId" = ${deviceId} AND "centralMustExecute"`
-        : sql`SELECT "requestId", "requestedBy" FROM public.device_pending_stops WHERE "adapterId" = ${deviceId} AND "centralMustExecute"`;
-    pending = rowsOf(await withDeadline(db.execute(q), STOP_DB_STEP_DEADLINE_MS, "pending STOPs read")).map((r) => ({ requestId: Number(r.requestId), requestedBy: Number(r.requestedBy) }));
-  } catch (err) {
-    // the pending set is unknown: send the STOP anyway (energy-reducing, harmless when nothing was pending) and alert
-    const sent = await sendCentralStop(kind, deviceId);
-    raiseCentralStopAlert(kind, deviceId, [], actorUserId, `pending STOP requests could not be read (${errText(err)}); a STOP was ${sent.sent} anyway`);
-    return { requestIds: [], outcome: sent.ok ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [] };
-  }
-  if (pending.length === 0) return null;
-  const sent = await sendCentralStop(kind, deviceId);
-  const outcome: "done" | "failed" = sent.ok ? "done" : "failed";
-  const ackErrors: number[] = [];
-  const { ackCentralStop } = await import("../edge/edgeControlSchema");
-  const db = await getDb();
-  for (const p of pending) {
-    try {
-      if (!db) throw new Error("database unavailable");
-      await withDeadline(ackCentralStop(db as never, { requestId: p.requestId, outcome, actorUserId }), STOP_DB_STEP_DEADLINE_MS, "central STOP ack");
-    } catch (err) {
-      ackErrors.push(p.requestId);
-      console.error(`[DeviceOwner] STOP request #${p.requestId} (${kind} ${deviceId}) was ${sent.sent} but its acknowledgement failed — it stays pending: ${errText(err)}`);
+    if (opts.device) devices = [opts.device];
+    else {
+      const rows = rowsOf(await withDeadline(db.execute(sql`SELECT DISTINCT "robotId", "adapterId" FROM public.device_pending_stops WHERE "centralMustExecute" AND outcome IS NULL`), 5 * STOP_DB_STEP_DEADLINE_MS, "pending STOP devices"));
+      devices = rows.map((r) => (r.robotId != null ? { kind: "robot" as const, id: Number(r.robotId) } : { kind: "adapter" as const, id: Number(r.adapterId) }));
     }
+  } catch (err) {
+    if (opts.device) {
+      const sent = await sendCentralStop(opts.device.kind, opts.device.id);
+      void raiseCentralStopAlert(opts.device.kind, opts.device.id, opts.actorUserId ? [opts.actorUserId] : [], `pending STOP requests could not be read (${errText(err)}); a STOP was ${sent.sent} anyway`);
+      return [{ requestIds: [], outcome: sent.ok ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [] }];
+    }
+    console.error(`[DeviceOwner] pending-STOP sweep could not read device_pending_stops: ${errText(err)}`);
+    return results;
   }
-  if (!sent.ok || ackErrors.length > 0) {
-    raiseCentralStopAlert(
+  for (const dev of devices) {
+    const r = await executeDeviceStopsLocked(dev.kind, dev.id, opts.actorUserId ?? null);
+    if (r) results.push(r);
+  }
+  return results;
+}
+
+async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, actorUserId: number | null): Promise<CentralStopOutcome | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { ackCentralStop } = await import("../edge/edgeControlSchema");
+  let outcome: CentralStopOutcome | null = null;
+  let recipients: number[] = [];
+  try {
+    await db.transaction(async (tx) => {
+      const pick =
+        kind === "robot"
+          ? sql`SELECT q.id, q."requestedBy" FROM public.robot_motion_lock_requests q
+                 WHERE q.id IN (SELECT "requestId" FROM public.device_pending_stops WHERE "robotId" = ${deviceId} AND "centralMustExecute")
+                   AND q."ackedAt" IS NULL ORDER BY q.id FOR UPDATE OF q SKIP LOCKED`
+          : sql`SELECT q.id, q."requestedBy" FROM public.robot_motion_lock_requests q
+                 WHERE q.id IN (SELECT "requestId" FROM public.device_pending_stops WHERE "adapterId" = ${deviceId} AND "centralMustExecute")
+                   AND q."ackedAt" IS NULL ORDER BY q.id FOR UPDATE OF q SKIP LOCKED`;
+      const pending = rowsOf(await tx.execute(pick)).map((r) => ({ requestId: Number(r.id), requestedBy: Number(r.requestedBy) }));
+      if (pending.length === 0) return;
+      const sent = await sendCentralStop(kind, deviceId);
+      const result: "done" | "failed" = sent.ok ? "done" : "failed";
+      const ackErrors: number[] = [];
+      for (const p of pending) {
+        const actor = actorUserId && actorUserId > 0 ? actorUserId : p.requestedBy;
+        try {
+          await tx.transaction(async (sp) => ackCentralStop(sp as never, { requestId: p.requestId, outcome: result, actorUserId: actor }));
+        } catch (err) {
+          ackErrors.push(p.requestId);
+          console.error(`[DeviceOwner] STOP request #${p.requestId} (${kind} ${deviceId}) was ${sent.sent} but its acknowledgement failed — it stays pending: ${errText(err)}`);
+        }
+      }
+      outcome = { requestIds: pending.map((p) => p.requestId), outcome: result, sent: sent.sent, detail: sent.detail, ackErrors };
+      recipients = [...new Set(pending.map((p) => p.requestedBy).concat(actorUserId ? [actorUserId] : []))];
+    });
+  } catch (err) {
+    console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed: ${errText(err)}`);
+  }
+  const o = outcome as CentralStopOutcome | null;
+  if (o && (o.outcome === "failed" || o.ackErrors.length > 0)) {
+    void raiseCentralStopAlert(
       kind,
       deviceId,
-      [...new Set(pending.map((p) => p.requestedBy).concat(actorUserId))],
-      actorUserId,
-      !sent.ok ? `the STOP owed after the transfer to central could NOT be sent (${sent.detail}) — requests ${pending.map((p) => `#${p.requestId}`).join(", ")} marked failed` : `the STOP was sent but requests ${ackErrors.map((i) => `#${i}`).join(", ")} could not be acknowledged`,
+      recipients,
+      o.outcome === "failed"
+        ? `the STOP owed after the transfer to central could NOT be sent (${o.detail}) — requests ${o.requestIds.map((i) => `#${i}`).join(", ")} marked failed`
+        : `the STOP was sent but requests ${o.ackErrors.map((i) => `#${i}`).join(", ")} could not be acknowledged`,
     );
   }
-  return { requestIds: pending.map((p) => p.requestId), outcome, sent: sent.sent, detail: sent.detail, ackErrors };
+  return o;
+}
+
+/** The console / sweep STOP of a robot through central's path (its session, else a transient one, bounded). Never throws. */
+export async function sendCentralRobotStop(robotId: number): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string }> {
+  return sendCentralStop("robot", robotId);
 }
 
 /** One STOP to the device through central's path. Never throws. */
@@ -147,7 +207,7 @@ async function sendRobotStop(robotId: number): Promise<{ ok: boolean; sent: "sen
       await driver.disconnect().catch(() => undefined);
     }
   })();
-  const st = await withDeadline(work, CENTRAL_STOP_SESSION_DEADLINE_MS, `robot ${robotId} transient STOP session`);
+  const st = await withDeadline(work, sessionDeadlineMs, `robot ${robotId} transient STOP session`);
   return st.status === "done" ? { ok: true, sent: "sent", detail: "abort sent on a transient session" } : { ok: false, sent: "failed", detail: st.errorText ?? "abort not confirmed" };
 }
 
@@ -194,27 +254,154 @@ async function sendAdapterStop(adapterId: number): Promise<{ ok: boolean; sent: 
         await driver.disconnect().catch(() => undefined);
       }
     })();
-    executed = await withDeadline(work, CENTRAL_STOP_SESSION_DEADLINE_MS, `adapter ${adapterId} transient STOP session`);
+    executed = await withDeadline(work, sessionDeadlineMs, `adapter ${adapterId} transient STOP session`);
   }
   const allOk = executed.outcomes.length > 0 && executed.outcomes.every((o) => o.ok);
   return allOk ? { ok: true, sent: "sent", detail: `pinned stop written (${pins.map((p) => p.tagKey).join(", ")})` } : { ok: false, sent: "failed", detail: executed.timedOut ? "pinned stop write timed out" : "pinned stop write failed" };
 }
 
-/** CRITICAL operator alert (unified alert stream + safety-critical inbox), fire-and-forget, bounded. */
-function raiseCentralStopAlert(kind: DeviceKind, deviceId: number, recipients: number[], _actor: number, what: string): void {
-  const message = `STOP owed to ${kind} ${deviceId} after its ownership moved to central: ${what}. Check the equipment on site now.`;
-  console.error(`[DeviceOwner] CRITICAL: ${message}`);
-  const work = (async () => {
-    const { publishAnomalyDetected } = await import("../ecosystem/ecosystemEvents");
-    publishAnomalyDetected({ kind: "central_stop_after_transfer", severity: "critical", source: kind === "robot" ? "robot" : "ot", machineId: null, message }, kind === "robot" ? "robot" : "ot");
-    const { sendNotification } = await import("../notificationService");
-    for (const userId of recipients.filter((u) => Number.isSafeInteger(u) && u > 0)) {
-      await sendNotification(
-        userId,
-        { type: "ALERT", priority: "URGENT", title: `STOP owed after transfer — ${kind} ${deviceId}`, message, entityType: kind === "robot" ? "robot" : "ot_command", entityId: deviceId, metadata: { kind, deviceId } },
-        { safetyCritical: true, capExempt: "ot_stop_unverified", dedupKey: `central_stop_after_transfer:${kind}:${deviceId}` },
-      );
+/** Durable CRITICAL operator alert (criticalStopAlert: alert stream + safety-critical inbox). */
+function raiseCentralStopAlert(kind: DeviceKind, deviceId: number, recipients: number[], what: string): Promise<void> {
+  return import("./criticalStopAlert").then(({ raiseCriticalStopAlert }) =>
+    raiseCriticalStopAlert({
+      kind: "central_stop_after_transfer",
+      title: `STOP owed after transfer — ${kind} ${deviceId}`,
+      message: `STOP owed to ${kind} ${deviceId} after its ownership moved to central: ${what}. Check the equipment on site now.`,
+      recipients,
+      dedupKey: `central_stop_after_transfer:${kind}:${deviceId}`,
+      source: kind === "robot" ? "robot" : "ot",
+      entityType: kind === "robot" ? "robot" : "ot_command",
+      entityId: deviceId,
+    }),
+  );
+}
+
+// ── R-10-v — live application of ownership (this process + other replicas) ──────────────────────────────────────────
+
+/** Attach / detach this process's central session of the device. Never throws. */
+export async function applyOwnershipLocally(kind: DeviceKind, deviceId: number, toEdgeNodeId: number | null): Promise<void> {
+  try {
+    if (kind === "robot") {
+      const m = await import("./robotManager");
+      if (toEdgeNodeId === null) await m.attachRobot(deviceId);
+      else await m.detachRobot(deviceId);
+    } else {
+      const m = await import("../ot/otManager");
+      if (toEdgeNodeId === null) {
+        if (!m.isOtRunning() || m.getActiveAdapter(deviceId)) return;
+        const { loadEnabledAdapters } = await import("../ot/deviceAdapter");
+        const a = (await loadEnabledAdapters()).find((x) => x.adapterId === deviceId);
+        if (a) await m.attachOtAdapter(a);
+      } else await m.detachOtAdapter(deviceId);
     }
-  })();
-  void withDeadline(work, 10_000, "central STOP alert").catch((err) => console.error(`[DeviceOwner] alert failed or is stuck: ${errText(err)}`));
+  } catch (err) {
+    console.error(`[DeviceOwner] applying the new owner of ${kind} ${deviceId} in this process failed (the reconcile retries): ${errText(err)}`);
+  }
+}
+
+/** The owner epoch of each enabled device at the last reconcile pass. */
+const seenEpoch = { robot: new Map<number, number>(), adapter: new Map<number, number>() };
+/** Test seam. */
+export function _resetOwnershipReconcileForTests(): void {
+  seenEpoch.robot.clear();
+  seenEpoch.adapter.clear();
+}
+
+/**
+ * R-10-v backstop — this process's sessions vs the ownership columns: a session to an EDGE-owned device is detached; a
+ * central-owned enabled device whose owner epoch CHANGED since the last pass and has no session here is attached. A device that
+ * only failed to connect at boot (epoch unchanged) is not retried by this. Never throws.
+ */
+export async function reconcileDeviceOwnership(): Promise<{ attached: string[]; detached: string[] }> {
+  const out = { attached: [] as string[], detached: [] as string[] };
+  try {
+    const db = await getDb();
+    if (!db) return out;
+    const robotRows = rowsOf(await db.execute(sql`SELECT id, "edgeNodeId", "ownerEpoch" FROM public.robots WHERE "isEnabled" = true`));
+    const adapterRows = rowsOf(await db.execute(sql`SELECT id, "edgeNodeId", "ownerEpoch" FROM public.device_adapters WHERE "isEnabled" = true`));
+    const rm = await import("./robotManager");
+    const om = await import("../ot/otManager");
+    const activeRobots = new Set(rm.activeRobotIds());
+    for (const r of robotRows) {
+      const id = Number(r.id);
+      const ep = Number(r.ownerEpoch);
+      const prev = seenEpoch.robot.get(id);
+      seenEpoch.robot.set(id, ep);
+      if (r.edgeNodeId != null && activeRobots.has(id)) {
+        if (await rm.detachRobot(id)) out.detached.push(`robot:${id}`);
+      } else if (r.edgeNodeId == null && !activeRobots.has(id) && prev !== undefined && prev !== ep) {
+        if (await rm.attachRobot(id)) out.attached.push(`robot:${id}`);
+      }
+    }
+    for (const a of adapterRows) {
+      const id = Number(a.id);
+      const ep = Number(a.ownerEpoch);
+      const prev = seenEpoch.adapter.get(id);
+      seenEpoch.adapter.set(id, ep);
+      const has = om.getActiveAdapter(id) !== undefined;
+      if (a.edgeNodeId != null && has) {
+        if (await om.detachOtAdapter(id)) out.detached.push(`adapter:${id}`);
+      } else if (a.edgeNodeId == null && !has && prev !== undefined && prev !== ep) {
+        await applyOwnershipLocally("adapter", id, null);
+        if (om.getActiveAdapter(id) !== undefined) out.attached.push(`adapter:${id}`);
+      }
+    }
+  } catch (err) {
+    const { isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
+    if (!isEdgeControlSchemaMissing(err)) console.error(`[DeviceOwner] ownership reconcile failed: ${errText(err)}`);
+  }
+  return out;
+}
+
+/**
+ * Central boot (server/_core/index.ts — the controller's integration hunk, after startRobots / startOt): the pending-STOP sweep at
+ * once and every ≤ 10 s (R-10-w), the ownership reconcile every ≤ 30 s (R-10-v), and a LISTEN on 'device_owner_changed' through
+ * the app pool's own postgres client (no new connection) that applies another replica's change at once. Never on the edge.
+ * Returns the stop function.
+ */
+export async function startDeviceOwnershipSync(opts: { sweepMs?: number; reconcileMs?: number } = {}): Promise<() => Promise<void>> {
+  const { isEdgeProcessRole } = await import("../../db/connection");
+  if (isEdgeProcessRole()) return async () => undefined;
+  let sweeping = false;
+  const sweep = () => {
+    if (sweeping) return;
+    sweeping = true;
+    void sweepPendingCentralStops().finally(() => (sweeping = false));
+  };
+  let reconciling = false;
+  const reconcile = () => {
+    if (reconciling) return;
+    reconciling = true;
+    void reconcileDeviceOwnership().finally(() => (reconciling = false));
+  };
+  sweep();
+  reconcile();
+  const t1 = setInterval(sweep, Math.min(PENDING_STOP_SWEEP_MS, opts.sweepMs ?? PENDING_STOP_SWEEP_MS));
+  const t2 = setInterval(reconcile, Math.min(DEVICE_OWNER_RECONCILE_MS, opts.reconcileMs ?? DEVICE_OWNER_RECONCILE_MS));
+  for (const t of [t1, t2]) if (typeof t.unref === "function") t.unref();
+  let unlisten: (() => Promise<void>) | null = null;
+  try {
+    const db = (await getDb()) as unknown as { $client?: { listen?: (ch: string, fn: (payload: string) => void) => Promise<{ unlisten: () => Promise<void> }> } } | null;
+    const client = db?.$client;
+    if (client && typeof client.listen === "function") {
+      const sub = await client.listen(DEVICE_OWNER_CHANNEL, (payload: string) => {
+        try {
+          const m = JSON.parse(payload) as { kind: DeviceKind; id: number; to: number | null };
+          if ((m.kind === "robot" || m.kind === "adapter") && Number.isSafeInteger(m.id)) {
+            void applyOwnershipLocally(m.kind, m.id, m.to ?? null).then(() => (m.to == null ? sweep() : undefined));
+          } else reconcile();
+        } catch {
+          reconcile();
+        }
+      });
+      unlisten = () => sub.unlisten();
+    }
+  } catch (err) {
+    console.warn(`[DeviceOwner] LISTEN ${DEVICE_OWNER_CHANNEL} unavailable — the ${DEVICE_OWNER_RECONCILE_MS / 1000} s reconcile is the path: ${errText(err)}`);
+  }
+  return async () => {
+    clearInterval(t1);
+    clearInterval(t2);
+    if (unlisten) await unlisten().catch(() => undefined);
+  };
 }

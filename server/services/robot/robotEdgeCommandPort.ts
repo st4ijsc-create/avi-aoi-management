@@ -61,6 +61,34 @@ export function edgeDeviceRequestErrorCode(err: unknown): EdgeDeviceRequestError
 }
 
 /**
+ * fix review 1 (R-10-v, M-2) — the owner read as FOUR outcomes, so a STOP never mistakes "could not read" for "central":
+ * edge node id · central (row found, no edge owner) · missing (no robot row / a DB without 0374) · unknown (error / timeout).
+ */
+export type RobotOwnerRead = { edge: number } | { central: true } | { missing: true } | { unknown: string };
+export async function robotOwnerRead(robotId: number): Promise<RobotOwnerRead> {
+  try {
+    const read = (async (): Promise<RobotOwnerRead> => {
+      const { robotOwnership, isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
+      const db = await getDb();
+      if (!db) return { unknown: "database unavailable" };
+      try {
+        const [row] = await db.select().from(robotOwnership).where(eq(robotOwnership.id, robotId)).limit(1);
+        const r = row as { id?: unknown; edgeNodeId?: unknown } | undefined;
+        if (!r || r.id !== robotId) return { missing: true };
+        const owner = r.edgeNodeId;
+        return typeof owner === "number" && Number.isSafeInteger(owner) && owner > 0 ? { edge: owner } : { central: true };
+      } catch (err) {
+        if (isEdgeControlSchemaMissing(err)) return { missing: true };
+        throw err;
+      }
+    })();
+    return await withDeadline(read, STOP_DB_STEP_DEADLINE_MS, `robot ${robotId} owner`);
+  } catch (err) {
+    return { unknown: String((err as Error)?.message ?? err).slice(0, 160) };
+  }
+}
+
+/**
  * The edge node that owns `robotId` now, or null (central-owned, unknown robot, a DB without 0374, or the read failed /
  * timed out — the caller then keeps its central path). Bounded by STOP_DB_STEP_DEADLINE_MS. Never throws.
  */
@@ -137,15 +165,18 @@ export async function sendConsoleStopForEdgeRobot(a: {
   const message = `${detail}. Use the hardware E-STOP on the machine now.`;
   console.error(`[Robot] CRITICAL: ${message}`);
   try {
-    (a.alert ?? defaultStopAlert)(message);
+    (a.alert ?? ((m: string) => defaultStopAlert(m, a.robotId, a.requestedBy)))(message);
   } catch {
     /* the error below still reaches the user */
   }
   return { ok: false, via: "none", error: "EDGE_STOP_NOT_QUEUED", detail };
 }
 
-function defaultStopAlert(message: string): void {
-  void import("../ecosystem/ecosystemEvents")
-    .then(({ publishAnomalyDetected }) => publishAnomalyDetected({ kind: "console_stop_undelivered", severity: "critical", source: "robot", machineId: null, message }, "robot"))
+/** M-4 (fix review 1) — DURABLE: the alert stream AND a safety-critical inbox row to the requester (criticalStopAlert). */
+function defaultStopAlert(message: string, robotId: number, requestedBy: number): void {
+  void import("./criticalStopAlert")
+    .then(({ raiseCriticalStopAlert }) =>
+      raiseCriticalStopAlert({ kind: "console_stop_undelivered", title: `STOP not delivered — robot ${robotId}`, message, recipients: [requestedBy], dedupKey: `console_stop_undelivered:robot:${robotId}:${Date.now()}`, source: "robot", entityType: "robot", entityId: robotId }),
+    )
     .catch(() => undefined);
 }

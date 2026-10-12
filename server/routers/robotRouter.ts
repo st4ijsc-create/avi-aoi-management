@@ -18,7 +18,9 @@ import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/r
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
 import { MotionLockConflictError, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
-import { edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotEdgeOwner, sendConsoleStopForEdgeRobot } from "../services/robot/robotEdgeCommandPort"; // doc 81 Đợt 10 task D
+import { edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotOwnerRead, sendConsoleStopForEdgeRobot } from "../services/robot/robotEdgeCommandPort";
+import { sendCentralRobotStop } from "../services/robot/deviceOwnershipService"; // doc 81 Đợt 10 task D fix review 1
+import { raiseCriticalStopAlert } from "../services/robot/criticalStopAlert"; // doc 81 Đợt 10 task D
 
 /**
  * doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — the LIVE state of a robot in THIS process (what
@@ -194,10 +196,12 @@ export const robotRouter = router({
           `motion lock changed while you were confirming — now generation ${state.generation ?? "?"} (${state.reasonCode ?? "link loss"} since ${state.since ?? "?"}); re-read the robot state and confirm again`,
         );
       const rt = getActiveRobot(input.robotId);
-      if (!rt) {
-        // doc 81 Đợt 10 task D (design §2.11) — a robot an EDGE node owns has no session here: its lock authority is the node.
-        // The clear goes there as a signed command (compare-and-clear on `expectedGeneration` at the edge); audited first.
-        const edgeNodeId = await robotEdgeOwner(input.robotId);
+      // doc 81 Đợt 10 task D (design §2.11) — a robot an EDGE node owns: its lock authority is the node. The clear goes there as a
+      // signed command (compare-and-clear on `expectedGeneration` at the edge); audited first. fix review 1 (M-3): also when this
+      // process still holds a stale session (an ownership change not yet applied here) — its in-memory lock is not the authority.
+      const owner = await robotOwnerRead(input.robotId);
+      if (!rt || "edge" in owner) {
+        const edgeNodeId = "edge" in owner ? owner.edge : null;
         if (edgeNodeId !== null) {
           await createAuditLog({
             userId: ctx.user.id,
@@ -225,6 +229,8 @@ export const robotRouter = router({
             // the owner changed back to central meanwhile — fall through to the central answer
           }
         }
+      }
+      if (!rt) {
         throw appError(
           "PRECONDITION_FAILED",
           "OPERATION_FAILED",
@@ -504,8 +510,8 @@ export const robotRouter = router({
       // the node as a signed `stop` command, which the edge SENDS at once (even on a failed signature check — L-7). Motion to
       // such a robot is refused by the dispatcher (ROBOT_OWNED_BY_EDGE). Only when this process has no session for the robot.
       if (verbToJobType(input.command) === "abort" && !getActiveRobot(input.robotId)) {
-        const edgeNodeId = await robotEdgeOwner(input.robotId);
-        if (edgeNodeId !== null) {
+        const owner = await robotOwnerRead(input.robotId);
+        if ("edge" in owner) {
           // R-10-k (L-7) — never a silent no-op: queue for the owner; on failure the central STOP (if a session exists) AND a
           // re-queue for the current owner; neither ⇒ critical alert + an error the user sees.
           const stop = await sendConsoleStopForEdgeRobot({
@@ -518,10 +524,45 @@ export const robotRouter = router({
                 : null,
           });
           if (stop.ok) {
-            return { ok: true, status: "queued_on_edge" as const, error: undefined as string | undefined, queuedOnEdge: { requestId: stop.requestId ?? null, edgeNodeId: stop.edgeNodeId ?? edgeNodeId, via: stop.via } };
+            return { ok: true, status: "queued_on_edge" as const, error: undefined as string | undefined, queuedOnEdge: { requestId: stop.requestId ?? null, edgeNodeId: stop.edgeNodeId ?? owner.edge, via: stop.via } };
           }
           return { ok: false, status: "rejected" as const, error: stop.error as string | undefined, queuedOnEdge: undefined };
         }
+        if ("central" in owner || "unknown" in owner) {
+          // fix review 1 (R-10-v, M-2) — no session here for a robot central owns (an ownership change not yet applied, a failed
+          // connect) or whose owner could not be read: a TRANSIENT-session STOP now (and, owner unknown, the edge queue too), plus a
+          // durable critical alert — never a silent "robot not active".
+          const [central, queued] = await Promise.all([
+            sendCentralRobotStop(input.robotId),
+            "unknown" in owner
+              ? edgeDeviceRequestPort()
+                  .enqueue({ kind: "stop", robotId: input.robotId, reason: `console ${input.command} (owner unknown)`, requestedBy: ctx.user.id })
+                  .then(
+                    (q) => q,
+                    () => null,
+                  )
+              : Promise.resolve(null),
+          ]);
+          const ok = central.ok || queued !== null;
+          void raiseCriticalStopAlert({
+            kind: "console_stop_no_session",
+            title: `STOP without a session — robot ${input.robotId}`,
+            message: `Console STOP for robot ${input.robotId}: this server held no session for it (${"unknown" in owner ? `owner unreadable: ${owner.unknown}` : "central-owned"}); a transient-session STOP was ${central.sent} (${central.detail})${queued ? `, and a STOP was queued for edge node ${queued.edgeNodeId}` : ""}.${ok ? "" : " Use the hardware E-STOP on the machine now."}`,
+            recipients: [ctx.user.id],
+            dedupKey: `console_stop_no_session:robot:${input.robotId}:${Date.now()}`,
+            source: "robot",
+            entityType: "robot",
+            entityId: input.robotId,
+          });
+          if (!ok) return { ok: false, status: "rejected" as const, error: "EDGE_STOP_NOT_QUEUED" as string | undefined, queuedOnEdge: undefined };
+          return {
+            ok: true,
+            status: (central.ok ? (central.sent === "simulated" ? "simulated" : "done") : "queued_on_edge") as "done",
+            error: undefined as string | undefined,
+            queuedOnEdge: queued ? { requestId: queued.requestId, edgeNodeId: queued.edgeNodeId, via: "edge_queue" } : undefined,
+          };
+        }
+        // no robot row / a DB without 0374 ⇒ the existing path (the dispatcher answers honestly)
       }
       const res = await dispatchRobotJob({
         robotId: input.robotId,

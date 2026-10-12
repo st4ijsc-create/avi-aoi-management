@@ -19,7 +19,7 @@
  * "stop" is NOT a verified stop and takes the non-STOP path (as on central).
  */
 import { classifyOtStop, canonicalisePinnedStop, isStopCommandType, NO_CONFIRMER, type DispatchInput, type DispatchStatus } from "./commandDispatcher";
-import { executeOtDeviceWrite, isCmdSerializeEnabled, isSuperseded, tryEnqueueAdapterCommand, type ExecutedWrite } from "./otDeviceWrite";
+import { executeOtDeviceWrite, isCmdSerializeEnabled, isSuperseded, tryEnqueueAdapterCommand, type ExecutedWrite, type OtDeviceEventSink } from "./otDeviceWrite";
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 import { stopPinsFromTagRows } from "./stopPin";
 import { isOtSafetyPreflightEnabled, safetyPreflightReason } from "./safetyPreflightPolicy";
@@ -116,7 +116,24 @@ export function classifyEdgeOtStop(
   return { pinned: true, resolved: r.resolved };
 }
 
+/**
+ * R-10-x (fix review 1) — the device stage's alarms / audits on the edge: an `anomaly` event through the injected journal
+ * (E's report sink → central), never a DB path. No runtime ⇒ logged only (never the DB either).
+ */
+function deviceEventSink(rt: EdgeDeviceRuntime | null, input: EdgeOtDispatchInput): OtDeviceEventSink {
+  return (ev) => {
+    if (!rt) {
+      console.error(`[EdgeOt] ${ev.critical ? "CRITICAL " : ""}${ev.action}: ${ev.message}`);
+      return;
+    }
+    void Promise.resolve()
+      .then(() => rt.journal.appendEvent({ kind: "anomaly", code: ev.action.slice(0, 64), runId: input.run?.runId ?? null, detail: ev.message.slice(0, 1000), at: Date.now() }, { stop: ev.critical }))
+      .catch((err) => console.error(`[EdgeOt] journaling ${ev.action} failed:`, (err as Error)?.message ?? err));
+  };
+}
+
 async function runDeviceStage(
+  rt: EdgeDeviceRuntime | null,
   input: EdgeOtDispatchInput,
   driver: NonNullable<ReturnType<typeof getActiveDriver>>,
   resolved: Resolved[],
@@ -140,6 +157,7 @@ async function runDeviceStage(
       timeoutMs: commandTimeoutMs(input.deadlineMs),
       stopTyped: isStopCommandType(input.commandType),
       ledger: { intentIds: [], confirmedBy: NO_CONFIRMER },
+      sink: deviceEventSink(rt, input),
     });
   if (!isCmdSerializeEnabled()) return { kind: "done", executed: await body() };
   const enq = tryEnqueueAdapterCommand(input.adapterId, body, {
@@ -220,7 +238,7 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
     } else if (!driver) {
       res = { ok: false, status: "failed", reason: "ADAPTER_OFFLINE", stop: true, pinnedStop: true, results: stopInput.writes.map((w) => ({ tagKey: w.tagKey, ok: false, status: "failed" as DispatchStatus, error: "ADAPTER_OFFLINE" })) };
     } else {
-      const stage = await runDeviceStage(stopInput, driver, stopCls.resolved, true);
+      const stage = await runDeviceStage(rt, stopInput, driver, stopCls.resolved, true);
       if (stage.kind !== "done") {
         // unreachable for a pinned stop (never BUSY, never superseded) — kept total, reported honestly
         res = { ok: false, status: "rejected", reason: stage.kind === "busy" ? "BUSY" : "SUPERSEDED_BY_STOP", stop: true, pinnedStop: true, results: [] };
@@ -238,12 +256,27 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
     return res;
   }
 
+  // M-1 (fix review 1) — a STOP-TYPED command that is not a verified pinned STOP is never silent: it is journaled (a console
+  // STOP from central gets its own failed `stop` record; any other one an anomaly) and every refusal below names why.
+  const unpinnedStop = isStopCommandType(input.commandType) ? (stopCls as { why: string }).why : null;
+  if (unpinnedStop && rt) {
+    const at = Date.now();
+    void Promise.resolve()
+      .then(() =>
+        input.source === "command" && !input.run
+          ? rt.journal.appendEvent({ kind: "stop", target: { adapterId: input.adapterId }, source: "command", requestId: input.requestId ?? null, outcome: "failed", at, detail: `not a verified pinned stop (${unpinnedStop}) — nothing sent without an authorisation` }, { stop: true })
+          : rt.journal.appendEvent({ kind: "anomaly", code: "EDGE_STOP_NOT_PINNED", runId: input.run?.runId ?? null, detail: `adapter ${input.adapterId} ${input.commandType}: not a verified pinned stop (${unpinnedStop})`, at }),
+      )
+      .catch(() => undefined);
+  }
+  const why = unpinnedStop ? { detail: `stop_not_pinned:${unpinnedStop}` } : {};
+
   // ── NON-STOP: verify → local gates → consume → device → report. ──
-  if (!rt) return refusal(input, "EDGE_RUNTIME_UNAVAILABLE");
-  if (!cfg) return refusal(input, "CONFIG_UNKNOWN");
+  if (!rt) return refusal(input, "EDGE_RUNTIME_UNAVAILABLE", why);
+  if (!cfg) return refusal(input, "CONFIG_UNKNOWN", why);
   const deps = rt.auth();
-  if (!deps) return refusal(input, "KEYSET_UNKNOWN");
-  if (!input.authorization) return refusal(input, "AUTHORIZATION_REQUIRED");
+  if (!deps) return refusal(input, "KEYSET_UNKNOWN", why);
+  if (!input.authorization) return refusal(input, "AUTHORIZATION_REQUIRED", why);
   if (!input.run) return refusal(input, "RUN_CONTEXT_REQUIRED");
   if (!adapter) return refusal(input, "NOT_OWNED");
   if (adapter.isEnabled !== true) return refusal(input, "ADAPTER_DISABLED");
@@ -304,7 +337,7 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
   if (simulated) {
     res = { ok: true, status: "simulated", stop: false, jti, results: input.writes.map((w) => ({ tagKey: w.tagKey, ok: true, status: "simulated" as DispatchStatus })) };
   } else {
-    const stage = await runDeviceStage(input, driver, resolved, false);
+    const stage = await runDeviceStage(rt, input, driver, resolved, false);
     if (stage.kind === "busy") res = { ...refusal(input, "BUSY", { detail: stage.detail }), jti };
     else if (stage.kind === "superseded") res = { ...refusal(input, "SUPERSEDED_BY_STOP"), jti };
     else {
