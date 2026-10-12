@@ -777,8 +777,10 @@ async function storedSweepSource(run: OrchestrationRun, hasLiveDriver: (runId: n
   //     'running' / 'compensating' with no driver in this process (another instance, or orphaned): its rows may lag;
   //   • it was interrupted by a restart (rehydrate marks it): a bounded row may never have been written.
   // Plus the commands the walk recorded as dispatched in the run context (persisted, not a bounded write).
+  // doc 81 Đợt 10 C (N4) — a Continue of an edge run clears its `interrupted` mark but sets `interruptedEarlier`: the same
+  // doubt stands for the steps of the interrupted segment.
   const drivenElsewhere = run.edgeNodeId != null || ((run.status === "running" || run.status === "compensating") && !hasLiveDriver(run.id));
-  const undecidable = rows === null || drivenElsewhere || context.interrupted === true;
+  const undecidable = rows === null || drivenElsewhere || context.interrupted === true || context[INTERRUPTED_EARLIER_CTX_KEY] === true;
   const ctxDispatched = new Set(Array.isArray(context[DISPATCHED_CTX_KEY]) ? (context[DISPATCHED_CTX_KEY] as unknown[]).map(String) : []);
   return {
     def: usable,
@@ -817,6 +819,9 @@ export async function verifyStopsForAbort(runId: number, def: WorkflowDefinition
     }
   }
 }
+
+/** doc 81 Đợt 10 C (N4) — set (never cleared) when a Continue clears an edge run's `interrupted` mark (see storedSweepSource). */
+export const INTERRUPTED_EARLIER_CTX_KEY = "interruptedEarlier";
 
 /** THE central store: today's functions, unchanged. */
 export const centralRunStore: RunStore = Object.freeze({

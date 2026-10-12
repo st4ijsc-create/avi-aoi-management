@@ -797,3 +797,103 @@ describe("doc 81 Đợt 10 C — central applies an edge segment end with the wa
     expect(edgePriorPictureOf(null)).toMatchObject({ unknown: true, completed: [] });
   });
 });
+
+describe("doc 81 Đợt 10 C — central's half for edge runs: Continue clears the edge marks (N4); the approval digest from node reports (D7)", () => {
+  const capable = { protocol: "stub", connectionOptions: { simProgram: "P1" } };
+  async function heldEdgeRun(ref: string, mark: Record<string, unknown>) {
+    const e = await edgeAssignedRun(def(ref, [gate(), ot("m1")]));
+    const r = runRow(e.runId);
+    r.status = "held";
+    r.currentStepId = null;
+    r.contextJson = { ...(r.contextJson ?? {}), "branch:b9": "then", ...mark };
+    return e;
+  }
+
+  it("★ N4: Continue of an edge run held 'edge unreachable' / 'edge held' re-queues it and CLEARS the marks (the badge goes); the doubt stays recorded", async () => {
+    const at = new Date().toISOString();
+    for (const [ref, mark] of [
+      ["n4-u", { edgeUnreachable: true, edgeUnreachableAt: at, edgeUnreachableNode: "EDGE-A", interrupted: true, interruptedAt: at, interruptedFrom: "queued", interruptedBy: "edge unreachable" }],
+      ["n4-h", { edgeHeld: "centralUnreachable", edgeHeldAt: at, edgeHeldNode: "EDGE-A", interrupted: true, interruptedAt: at, interruptedFrom: "running", interruptedBy: "edge held: centralUnreachable" }],
+    ] as const) {
+      const e = await heldEdgeRun(ref, mark);
+      const view = (await getRun(e.runId, { bindingDigest: true }))!;
+      const r = await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+      expect(r).toMatchObject({ ok: true, status: "queued" });
+      const ctx = runRow(e.runId).contextJson;
+      for (const k of Object.keys(mark)) expect(ctx).not.toHaveProperty(k);
+      expect(ctx).toMatchObject({ "branch:b9": "then", interruptedEarlier: true }); // the run's own context is kept
+    }
+  });
+
+  it("★ N4: a central (non-edge) Continue is unchanged — its interrupted mark is not touched", async () => {
+    expect((await deployWorkflow(def("n4-c", [gate(), ot("m1")]), OWNER)).ok).toBe(true);
+    const runId = (await startRun("n4-c", {}, OWNER)).runId!;
+    const r = runRow(runId);
+    r.status = "held";
+    r.currentStepId = null;
+    r.contextJson = { interrupted: true, interruptedBy: "restart" };
+    await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, { id: 0, role: "system", name: "FOE auto-resume" });
+    expect(runRow(runId).contextJson).toMatchObject({ interrupted: true, interruptedBy: "restart" });
+  });
+
+  it("★ the abort sweep keeps counting an edge run whose interruption a Continue cleared as possibly acted (interruptedEarlier)", async () => {
+    const e = await heldEdgeRun("n4-s", { interrupted: true, interruptedBy: "edge restart" });
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    expect(runRow(e.runId).contextJson).toMatchObject({ interruptedEarlier: true });
+    // a central abort of a run whose rows say it never acted: its STOPs are "not needed" — UNLESS an earlier interruption
+    // (cleared by a Continue) leaves the doubt, then they count as due (R-6-c)
+    for (const [ref, ctx, expected] of [
+      ["n4-s2", {}, { sent: [], notNeeded: ["s1"] }],
+      ["n4-s3", { interruptedEarlier: true }, { sent: ["s1"], notNeeded: [] }],
+    ] as const) {
+      expect((await deployWorkflow(def(ref, [gate(), move("m1"), robotStop("s1")]), OWNER)).ok).toBe(true);
+      const runId = (await startRun(ref, {}, OWNER)).runId!; // paused at g1, m1 never attempted
+      runRow(runId).contextJson = { ...ctx };
+      const ab = await abortRun(runId, OWNER, "doubt");
+      expect(ab.abortStops).toMatchObject(expected);
+    }
+  });
+
+  it("★ D7: the approver's digest of an EDGE run uses the node's fresh program report of its owned adapter — central never reads that controller", async () => {
+    const e = await edgeAssignedRun(def("d7-e", [gate(), ot("m1")]));
+    await edgeSegment(e, 1); // paused at g1
+    const a = rows("device_adapters").find((x) => x.id === 501)!;
+    Object.assign(a, capable, { edgeNodeId: NODE, ownerEpoch: 3 });
+    // no report ⇒ a capable edge-owned controller is unreadable ⇒ no digest ⇒ cannot be approved (central has no session to read it)
+    let view = (await getRun(e.runId, { bindingDigest: true }))!;
+    expect(view.bindingDigest).toBeNull();
+    expect(view.programChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 501, status: "unreadable" })]));
+    // a fresh report of the node, same owner epoch ⇒ verified with the REPORTED checksum
+    fake.seed({ [Symbol.for("drizzle:Name")]: "edge_node_program_reports" } as never, [{ edgeNodeId: NODE, adapterId: 501, status: "verified", checksum: "sha:abc", reason: null, readAt: new Date(), receivedAt: new Date(), ownerEpoch: 3 }]);
+    view = (await getRun(e.runId, { bindingDigest: true }))!;
+    expect(view.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(view.programChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 501, status: "verified", checksum: "sha:abc", source: "edge" })]));
+    // the approval records exactly that reading
+    await resumeRun(e.runId, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    expect(stepRows(e.runId).find((s) => s.stepId === "g1")!.resultJson).toMatchObject({ bindingDigest: view.bindingDigest, programChecks: expect.arrayContaining([expect.objectContaining({ id: 501, status: "verified", checksum: "sha:abc" })]) });
+  });
+
+  it("★ D7: a stale report, another owner epoch, or another node's report never counts (unreadable ⇒ no digest)", async () => {
+    const e = await edgeAssignedRun(def("d7-x", [gate(), ot("m1")]));
+    await edgeSegment(e, 1);
+    Object.assign(rows("device_adapters").find((x) => x.id === 501)!, capable, { edgeNodeId: NODE, ownerEpoch: 3 });
+    const report = (x: Record<string, unknown>) => fake.seed({ [Symbol.for("drizzle:Name")]: "edge_node_program_reports" } as never, [{ edgeNodeId: NODE, adapterId: 501, status: "verified", checksum: "sha:abc", reason: null, readAt: new Date(), receivedAt: new Date(), ownerEpoch: 3, ...x }]);
+    for (const bad of [{ readAt: new Date(Date.now() - 10 * 60_000) }, { readAt: new Date(Date.now() + 10 * 60_000) }, { ownerEpoch: 2 }, { edgeNodeId: NODE + 1 }]) {
+      report(bad);
+      const view = (await getRun(e.runId, { bindingDigest: true }))!;
+      expect(view.bindingDigest, JSON.stringify(bad)).toBeNull();
+    }
+    // an edge-reported "unsupported" for a controller central's config says is capable is not believed
+    report({ status: "unsupported", checksum: null });
+    expect((await getRun(e.runId, { bindingDigest: true }))!.bindingDigest).toBeNull();
+  });
+
+  it("★ D7: a CENTRAL run is unchanged — its (central-owned) controllers are read as before", async () => {
+    expect((await deployWorkflow(def("d7-c", [gate(), ot("m1")]), OWNER)).ok).toBe(true);
+    const runId = (await startRun("d7-c", {}, OWNER)).runId!;
+    const view = (await getRun(runId, { bindingDigest: true }))!;
+    expect(view.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(view.programChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 501, status: "unsupported" })]));
+  });
+});

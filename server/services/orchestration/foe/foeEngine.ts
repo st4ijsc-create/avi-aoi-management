@@ -50,6 +50,7 @@ import {
   type RunStore,
   type RunStoreContext,
   type RunStoreHeldReason,
+  INTERRUPTED_EARLIER_CTX_KEY,
 } from "./foeRunStore";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
@@ -104,7 +105,8 @@ import {
   excludedApprovers,
 } from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2; Đợt 9 R2
 import { isMigrationMissingError, orchestrationRunsWithApiKey, readApiKeyParties, readRunApiKeyId } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R1/R3 (mig 0369, narrow projections)
-import type { ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list
+import { programChecksumCapable, type ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list; Đợt 10 C (D7)
+import { adapterOwnership, edgeNodeProgramReports, isEdgeControlSchemaMissing } from "../../edge/edgeControlSchema"; // doc 81 Đợt 10 C (D7) — narrow projections (0373/0374)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
   allStepsOf,
@@ -2586,6 +2588,115 @@ export async function startRun(
   }
 }
 
+/** doc 81 Đợt 10 C (N4) — the context marks of a held edge run that a Continue clears (central's own keys). */
+const EDGE_HOLD_MARK_KEYS: readonly string[] = [
+  "edgeUnreachable",
+  "edgeUnreachableAt",
+  "edgeUnreachableNode",
+  "edgeHeld",
+  "edgeHeldAt",
+  "edgeHeldNode",
+  "interrupted",
+  "interruptedAt",
+  "interruptedFrom",
+  "interruptedBy",
+];
+
+function intEnvC(name: string, def: number, min: number, max: number): number {
+  const n = Number.parseInt(String(process.env[name] ?? ""), 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+}
+
+/** The pre-read program checks of an edge run: a Map whose MISSING ids are unreadable (central never reads an edge controller). */
+class EdgeReportedPrograms extends Map<number, ProgramCheck> {
+  override get(id: number): ProgramCheck {
+    return super.get(id) ?? { target: "adapter", id, label: null, status: "unreadable", source: "edge", reason: "notConnected" };
+  }
+}
+
+/**
+ * doc 81 Đợt 10 C (design §2.7, D7; Đợt 9 S Concern 3) — the program checks of the adapters an EDGE NODE owns, from the node's
+ * own reports (edge_node_program_reports, mig 0373): a report counts only when it is FRESH (readAt within
+ * EDGE_PROGRAM_REPORT_MAX_AGE_MS, default 120 s, ± EDGE_MAX_CLOCK_SKEW_MS, default 5 s — the same bounds central's /authorize
+ * applies) and of the adapter's CURRENT owner epoch (R-10-b). Capability is central's (programChecksumCapable of the config
+ * row): a capable controller without a counting report — or one the node calls "unsupported" — is unreadable (no digest ⇒ no
+ * approval); a verified report adds its checksum. Every other adapter id is unreadable: central never reads a controller for
+ * an edge run. undefined ⇔ migrations 0373/0374 are missing (no adapter can be edge-owned ⇒ the pre-Đợt-10 reads). Throws on
+ * any other DB error (callers fail closed).
+ */
+export async function edgeNodeProgramPre(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, edgeNodeId: number, nowMs: number = Date.now()): Promise<ReadonlyMap<number, ProgramCheck> | undefined> {
+  let owned: Array<{ id: number; ownerEpoch: number | null; edgeNodeId: number | null }>;
+  let reports: Array<{ adapterId: number; edgeNodeId: number; status: string; checksum: string | null; reason: string | null; readAt: Date | string | null; ownerEpoch: number | null }>;
+  try {
+    [owned, reports] = await Promise.all([
+      d.select({ id: adapterOwnership.id, ownerEpoch: adapterOwnership.ownerEpoch, edgeNodeId: adapterOwnership.edgeNodeId }).from(adapterOwnership).where(eq(adapterOwnership.edgeNodeId, edgeNodeId)),
+      d.select().from(edgeNodeProgramReports).where(eq(edgeNodeProgramReports.edgeNodeId, edgeNodeId)),
+    ]);
+  } catch (err) {
+    if (isEdgeControlSchemaMissing(err)) return undefined;
+    throw err;
+  }
+  owned = owned.filter((o) => o.edgeNodeId === edgeNodeId);
+  const ids = owned.map((o) => o.id);
+  const rows = ids.length ? await d.select().from(deviceAdapters).where(inArray(deviceAdapters.id, ids)) : [];
+  const maxAge = intEnvC("EDGE_PROGRAM_REPORT_MAX_AGE_MS", 120_000, 1_000, 3_600_000);
+  const skew = intEnvC("EDGE_MAX_CLOCK_SKEW_MS", 5_000, 0, 300_000);
+  const pre = new EdgeReportedPrograms();
+  for (const o of owned) {
+    const row = rows.find((r) => r.id === o.id) as Record<string, unknown> | undefined;
+    const label = typeof row?.code === "string" && row.code ? row.code : typeof row?.name === "string" && row.name ? row.name : null;
+    const base = { target: "adapter" as const, id: o.id, label, source: "edge" };
+    if (!row || !programChecksumCapable(row as never)) {
+      pre.set(o.id, { ...base, status: "unsupported" });
+      continue;
+    }
+    const rep = reports.find((r) => r.adapterId === o.id && r.edgeNodeId === edgeNodeId);
+    const at = rep?.readAt == null ? NaN : new Date(rep.readAt).getTime();
+    const fresh = !!rep && Number.isFinite(at) && at <= nowMs + skew && nowMs - at <= maxAge + skew && rep.ownerEpoch != null && Number(rep.ownerEpoch) === Number(o.ownerEpoch);
+    if (!fresh) pre.set(o.id, { ...base, status: "unreadable", reason: rep ? "timeout" : "notConnected" });
+    else if (rep.status === "verified" && typeof rep.checksum === "string" && rep.checksum) pre.set(o.id, { ...base, status: "verified", checksum: rep.checksum });
+    else if (rep.status === "unreadable") pre.set(o.id, { ...base, status: "unreadable", reason: (["notConnected", "timeout", "error", "invalid", "inconsistent"].includes(String(rep.reason)) ? rep.reason : "error") as never });
+    else pre.set(o.id, { ...base, status: "unreadable", reason: "inconsistent" }); // the node says "unsupported" for a capable controller
+  }
+  return pre;
+}
+
+/** The binding detail of an edge run: its node's program reports (D7). A read error ⇒ no digest (fail-closed). */
+async function edgeBindingDetail(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  edgeNodeId: number,
+  def: WorkflowDefinition,
+  view?: { display?: boolean },
+): Promise<{ digest: string | null; programs: ProgramCheck[] }> {
+  let pre: ReadonlyMap<number, ProgramCheck> | undefined;
+  try {
+    pre = await edgeNodeProgramPre(d, edgeNodeId);
+  } catch {
+    return { digest: null, programs: [] };
+  }
+  return computeBindingDetail(d, def, pre, view);
+}
+
+/**
+ * doc 81 Đợt 10 C — computeBindingDetail of a run: an EDGE run from its node's reports (edgeBindingDetail), any other run as
+ * before (central reads its own controllers). The assignment unreadable ⇒ as before (the caller refuses an undecidable edge
+ * resume on its own; a central read of an edge controller is unreadable anyway — central holds no session for it).
+ */
+async function bindingDetailFor(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  runId: number,
+  def: WorkflowDefinition,
+  view?: { display?: boolean },
+): Promise<{ digest: string | null; programs: ProgramCheck[] }> {
+  let a: Awaited<ReturnType<typeof readEdgeAssignment>> = null;
+  try {
+    a = await readEdgeAssignment(d, runId);
+  } catch {
+    a = null;
+  }
+  return a ? edgeBindingDetail(d, a.edgeNodeId, def, view) : computeBindingDetail(d, def, undefined, view);
+}
+
 /**
  * Fetch a run + its per-step audit (read-only).
  * final wave F6 — `bindingDigest` (computeBindingDigest: adapter / tag / robot reads) is computed only when the caller is an
@@ -2621,7 +2732,7 @@ export async function getRun(
   // doc 81 Đợt 8 O2/O3 — the program checks come from the SAME reading as the digest.
   const binding =
     usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held")
-      ? await computeBindingDetail(d, usable, undefined, { display: true }) // Đợt 9 R-9-b — screen only: display cache allowed
+      ? await bindingDetailFor(d, run.id, usable, { display: true }) // Đợt 9 R-9-b — screen only: display cache allowed; Đợt 10 C — an edge run: its node's reports (D7)
       : null;
   return {
     run,
@@ -2876,7 +2987,7 @@ export async function resumeRun(
     // program changed since the screen loaded, or a supported controller whose checksum cannot be read ⇒ the same CONFLICT.
     let checked: { digest: string | null; programs: ProgramCheck[] } | undefined;
     if (screenBound && (decision.expectedDefHash !== undefined || decision.expectedBindingDigest !== undefined)) {
-      checked = await computeBindingDetail(d, def);
+      checked = await bindingDetailFor(d, runId, def); // doc 81 Đợt 10 C (D7) — an edge run: its node's program reports
       const checkedDigest = checked.digest;
       if (decision.expectedBindingDigest === undefined || checkedDigest === null || checkedDigest !== decision.expectedBindingDigest) {
         throw appError(
@@ -2925,12 +3036,26 @@ export async function resumeRun(
     // is a compare-and-set on 'queued'); an abort landing first wins the CAS below (CONFLICT, nothing written). Nothing is
     // dispatched here, so there is nothing to STOP.
     if (edgeAssigned) {
-      const recordedEdge = gateStepId && pausedAtGate ? checked ?? (await computeBindingDetail(d, def)) : null;
+      // doc 81 Đợt 10 C (D7) — the program checks an edge run's approval records are its NODE's reports (central never reads them)
+      const recordedEdge = gateStepId && pausedAtGate ? checked ?? (await edgeBindingDetail(d, edgeAssigned.edgeNodeId, def)) : null;
       const human = Number.isInteger(user.id) && user.id > 0;
+      // doc 81 Đợt 10 C (N4) — a Continue re-queues the run for its node: the "edge unreachable" / "edge held" / interrupted
+      // marks of the hold are cleared with the claim (the Studio stops showing the hold); `interruptedEarlier` keeps the doubt
+      // the abort sweep needs (storedSweepSource). The run's own context (branch decisions, dispatched steps) is kept.
+      const ctx0 = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+      const marked = EDGE_HOLD_MARK_KEYS.some((k) => k in ctx0);
+      const markPatch = marked
+        ? {
+            contextJson: {
+              ...Object.fromEntries(Object.entries(ctx0).filter(([k]) => !EDGE_HOLD_MARK_KEYS.includes(k))),
+              ...(ctx0.interrupted === true || ctx0[INTERRUPTED_EARLIER_CTX_KEY] === true ? { [INTERRUPTED_EARLIER_CTX_KEY]: true } : {}),
+            },
+          }
+        : {};
       const out = await d.transaction(async (tx) => {
         const claimedRows = await tx
           .update(orchestrationRuns)
-          .set({ status: "queued", updatedAt: new Date(), currentStepId: null, ...versionPatch })
+          .set({ status: "queued", updatedAt: new Date(), currentStepId: null, ...versionPatch, ...markPatch })
           .where(
             and(
               eq(orchestrationRuns.id, runId),
