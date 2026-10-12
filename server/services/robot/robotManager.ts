@@ -67,6 +67,9 @@ export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolea
   const { loadEnabledRobots } = await import("./robotAdapter");
   const { ingestRobotState } = await import("./robotIngest");
 
+  // fix review 2 (R-10-al) — the central gateway is ON from here, whatever the load gives (0 central robots at cutover, a
+  // failed load): a robot moved to central later is attached live (attachRobot) without a restart.
+  if (!opts.scope) centralGatewayOn = true;
   let robots: RuntimeRobot[] = [];
   try {
     robots = await loadEnabledRobots(opts.scope);
@@ -82,6 +85,7 @@ export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolea
   const { attachMotionLockPersistence, loadMotionLocks } = await import("./robotMotionLockStore");
   // doc 81 Đợt 4 Task B4 (QĐ-4c) — BEFORE any driver can move anything: robots locked before the restart start locked
   // (persisted rows restored); unreadable ⇒ locked `persistUnknown` (fail-closed). Fix round 1: ONE query, ONE deadline.
+  if (!opts.scope) for (const r of robots) triedAtStart.add(r.id); // R-10-al — the reconcile's first pass skips these
   const lockable = robots.filter((r) => typeof r.driver.motionLockController === "function");
   const savedLocks = await loadMotionLocks(lockable.map((r) => r.id));
   for (const robot of robots) {
@@ -220,8 +224,22 @@ export async function detachRobot(robotId: number): Promise<boolean> {
  * central-owned), its persisted motion lock loaded FIRST (an ownerChanged relock ⇒ it starts LOCKED), then connect + state
  * subscription with ingest. No-op when the gateway is not running in this process or the robot is already active. Never throws.
  */
+/** R-10-al — set by central's startRobots() as soon as the gateway flag is on (independent of what it loaded). */
+let centralGatewayOn = false;
+/** R-10-al — the robots central's startRobots() loaded (tried to connect) — a first reconcile pass does not retry them. */
+const triedAtStart = new Set<number>();
+export function robotTriedAtStart(robotId: number): boolean {
+  return triedAtStart.has(robotId);
+}
+export function isCentralRobotGatewayOn(): boolean {
+  return centralGatewayOn || running;
+}
+/** N5 — one attach per robot at a time (in-process change + this process's own NOTIFY race) */
+const attaching = new Set<number>();
+
 export async function attachRobot(robotId: number): Promise<boolean> {
-  if (!running || !flagEnabled() || active.some((a) => a.robot.id === robotId)) return false;
+  if (!isCentralRobotGatewayOn() || !flagEnabled() || active.some((a) => a.robot.id === robotId) || attaching.has(robotId)) return false;
+  attaching.add(robotId);
   try {
     const { loadEnabledRobots } = await import("./robotAdapter");
     const robot = (await loadEnabledRobots()).find((r) => r.id === robotId);
@@ -233,15 +251,20 @@ export async function attachRobot(robotId: number): Promise<boolean> {
     await robot.driver.connect(robot.connection);
     const handle = await robot.driver.subscribeState((state) => ingestRobotState(robot, state), robot.pollIntervalMs);
     if (active.some((a) => a.robot.id === robotId)) {
+      // N5 — the loser of a race closes AND disconnects (no leaked session)
       await handle.close().catch(() => undefined);
+      await robot.driver.disconnect().catch(() => undefined);
       return false;
     }
     active.push({ robot, handle });
+    running = true;
     console.log(`[Robot] "${robot.code}" attached — central owns it now`);
     return true;
   } catch (err) {
     console.warn(`[Robot] robot ${robotId} attach failed: ${(err as Error)?.message ?? err}`);
     return false;
+  } finally {
+    attaching.delete(robotId);
   }
 }
 

@@ -804,7 +804,11 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
           // so the existing paths clear it — a confirmed STOP or robot.clearMotionLock quoting this generation — and their
           // persistence hook deletes the row (generation ≤ g). No-op while already locked.
           try {
-            robot.driver.motionLockController?.()?.restore({ reasonCode: auth.reasonCode, detail: auth.detail, since: auth.since, generation: auth.generation });
+            const ml = robot.driver.motionLockController?.();
+            if (ml) {
+              const { adoptPersistedMotionLock } = await import("./robotMotionLockStore");
+              adoptPersistedMotionLock(ml, { reasonCode: auth.reasonCode, detail: auth.detail, since: auth.since, generation: auth.generation });
+            }
           } catch (err) {
             console.error(`[Robot] adopting the persisted ownerChanged lock of robot ${input.robotId} failed (motion still refused):`, (err as Error)?.message ?? err);
           }

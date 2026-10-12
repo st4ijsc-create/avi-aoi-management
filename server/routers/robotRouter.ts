@@ -18,7 +18,7 @@ import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/r
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
 import { MotionLockConflictError, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
-import { edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotOwnerRead, sendConsoleStopForEdgeRobot } from "../services/robot/robotEdgeCommandPort";
+import { edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotOwnerRead, sendConsoleStopForEdgeRobot, sendConsoleStopNoSession } from "../services/robot/robotEdgeCommandPort";
 import { sendCentralRobotStop } from "../services/robot/deviceOwnershipService"; // doc 81 Đợt 10 task D fix review 1
 import { raiseCriticalStopAlert } from "../services/robot/criticalStopAlert"; // doc 81 Đợt 10 task D
 
@@ -529,37 +529,34 @@ export const robotRouter = router({
           return { ok: false, status: "rejected" as const, error: stop.error as string | undefined, queuedOnEdge: undefined };
         }
         if ("central" in owner || "unknown" in owner) {
-          // fix review 1 (R-10-v, M-2) — no session here for a robot central owns (an ownership change not yet applied, a failed
-          // connect) or whose owner could not be read: a TRANSIENT-session STOP now (and, owner unknown, the edge queue too), plus a
-          // durable critical alert — never a silent "robot not active".
-          const [central, queued] = await Promise.all([
-            sendCentralRobotStop(input.robotId),
-            "unknown" in owner
-              ? edgeDeviceRequestPort()
-                  .enqueue({ kind: "stop", robotId: input.robotId, reason: `console ${input.command} (owner unknown)`, requestedBy: ctx.user.id })
-                  .then(
-                    (q) => q,
-                    () => null,
-                  )
-              : Promise.resolve(null),
-          ]);
-          const ok = central.ok || queued !== null;
-          void raiseCriticalStopAlert({
-            kind: "console_stop_no_session",
-            title: `STOP without a session — robot ${input.robotId}`,
-            message: `Console STOP for robot ${input.robotId}: this server held no session for it (${"unknown" in owner ? `owner unreadable: ${owner.unknown}` : "central-owned"}); a transient-session STOP was ${central.sent} (${central.detail})${queued ? `, and a STOP was queued for edge node ${queued.edgeNodeId}` : ""}.${ok ? "" : " Use the hardware E-STOP on the machine now."}`,
-            recipients: [ctx.user.id],
-            dedupKey: `console_stop_no_session:robot:${input.robotId}:${Date.now()}`,
-            source: "robot",
-            entityType: "robot",
-            entityId: input.robotId,
+          // fix review 1/2 (R-10-v, M-2, R-10-ak) — no session here for a robot central owns (an ownership change not yet applied, a
+          // failed connect) or whose owner could not be read: the transient-session STOP starts at once (owner unknown: the edge queue
+          // in parallel, bounded), the answer comes at the STOP bound at the latest (partial), with a durable critical alert.
+          const r = await sendConsoleStopNoSession({
+            robotId: input.robotId,
+            requestedBy: ctx.user.id,
+            reason: `console ${input.command}`,
+            ownerUnknown: "unknown" in owner ? owner.unknown : null,
+            centralStop: (id) => sendCentralRobotStop(id),
+            alert: (message) =>
+              void raiseCriticalStopAlert({
+                kind: "console_stop_no_session",
+                title: `STOP without a session — robot ${input.robotId}`,
+                message,
+                recipients: [ctx.user.id],
+                dedupKey: `console_stop_no_session:robot:${input.robotId}:${Date.now()}`,
+                source: "robot",
+                entityType: "robot",
+                entityId: input.robotId,
+              }),
           });
-          if (!ok) return { ok: false, status: "rejected" as const, error: "EDGE_STOP_NOT_QUEUED" as string | undefined, queuedOnEdge: undefined };
+          if (!r.ok) return { ok: false, status: "rejected" as const, error: r.error as string | undefined, queuedOnEdge: undefined };
+          const centralDone = r.central.state === "done" && r.central.value.ok;
           return {
             ok: true,
-            status: (central.ok ? (central.sent === "simulated" ? "simulated" : "done") : "queued_on_edge") as "done",
+            status: (centralDone ? (r.central.state === "done" && r.central.value.sent === "simulated" ? "simulated" : "done") : r.central.state === "pending" ? "stop_in_progress" : "queued_on_edge") as "done",
             error: undefined as string | undefined,
-            queuedOnEdge: queued ? { requestId: queued.requestId, edgeNodeId: queued.edgeNodeId, via: "edge_queue" } : undefined,
+            queuedOnEdge: r.queued?.state === "done" ? { requestId: r.queued.value.requestId, edgeNodeId: r.queued.value.edgeNodeId, via: "edge_queue" } : undefined,
           };
         }
         // no robot row / a DB without 0374 ⇒ the existing path (the dispatcher answers honestly)

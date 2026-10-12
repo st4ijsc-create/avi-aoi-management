@@ -30,7 +30,7 @@ export function raiseCriticalStopAlert(a: {
       await sendNotification(
         userId,
         { type: "ALERT", priority: "URGENT", title: a.title, message: a.message, entityType: a.entityType ?? "robot", entityId: a.entityId as never, metadata: { kind: a.kind } },
-        { safetyCritical: true, capExempt: "ot_stop_unverified", dedupKey: a.dedupKey },
+        { safetyCritical: true, capExempt: "stop_undelivered", dedupKey: a.dedupKey },
       );
     }
   })();

@@ -638,9 +638,11 @@ async function startOtOnce(): Promise<boolean> {
 
   const { loadEnabledAdapters } = await import("./deviceAdapter");
 
+  otGatewayOn = true; // doc 81 Đợt 10 D fix review 2 (R-10-al) — live attach works whatever the load gives
   let adapters: RuntimeAdapter[] = [];
   try {
     adapters = await loadEnabledAdapters();
+    for (const a of adapters) otTriedAtStart.add(a.adapterId);
   } catch (err) {
     console.error("[OT] loadEnabledAdapters failed:", (err as Error)?.message || err);
     return false;
@@ -1009,8 +1011,18 @@ export async function detachOtAdapter(adapterId: number): Promise<boolean> {
  * Start central's session of ONE adapter now (it moved to central), through the SAME start paths as startOt (HA supervisor, or a
  * legacy entry the reconnect watchdog then keeps alive). No-op when OT is not running here or the adapter is already present.
  */
+/** R-10-al — set by startOt as soon as the OT flag is on (independent of what it loaded). */
+let otGatewayOn = false;
+const otTriedAtStart = new Set<number>();
+export function otAdapterTriedAtStart(adapterId: number): boolean {
+  return otTriedAtStart.has(adapterId);
+}
+export function isOtGatewayOn(): boolean {
+  return otGatewayOn || running;
+}
+
 export async function attachOtAdapter(adapter: RuntimeAdapter): Promise<boolean> {
-  if (!running || supervisors.has(adapter.adapterId) || legacy.has(adapter.adapterId) || active.some((e) => e.adapter.adapterId === adapter.adapterId)) return false;
+  if (!isOtGatewayOn() || supervisors.has(adapter.adapterId) || legacy.has(adapter.adapterId) || active.some((e) => e.adapter.adapterId === adapter.adapterId)) return false;
   const myEpoch = epoch;
   try {
     if (isConnHaEnabled()) {
@@ -1033,7 +1045,9 @@ export async function attachOtAdapter(adapter: RuntimeAdapter): Promise<boolean>
         entry.failures = 1;
         entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
       }
+      if (!legacyTimer) startLegacyWatchdog(myEpoch); // startOt found nothing to start: the reconnect watchdog was never armed
     }
+    running = true;
     console.log(`[OT] adapter "${adapter.code}" attached — central owns it now`);
     return true;
   } catch (err) {

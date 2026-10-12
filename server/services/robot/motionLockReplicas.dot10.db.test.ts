@@ -116,4 +116,37 @@ describe.skipIf(!onTest)("R-10-u — a central lock set by ANOTHER replica refus
       expect(await readCentralMotionAuthority(robot, null)).toMatchObject({ locked: true }); // no lock of its own ⇒ never exempt
     });
   });
+
+  it("★ R-10-aj (re-review N1 probe) — B never REPLACES A's row: A locks motion_outcome_unknown, B locks too ⇒ ONE row, A's reason kept + both listed, generation bumped; the operator's clear via B (B's generation) does NOT remove it; B / C stay refused; B adopts and the clear naming the ROW's generation removes it", async () => {
+    await inRolledBackTx(async (tx) => {
+      const [r] = await rows(tx, sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled") VALUES (${`${TAG}-R3`}, 'r', 'sim', 'sim://t', true) RETURNING id`);
+      const robot = Number(r.id);
+      const [A, B, C] = [new MotionLock(), new MotionLock(), new MotionLock()];
+      for (const l of [A, B, C]) attachMotionLockPersistence(robot, l, { ok: true, rows: new Map() });
+      A.lock("motion_outcome_unknown", "replica A: reply timeout");
+      await _flushMotionLockWritesForTests();
+      B.lock("line_connection_closed", "replica B: peer dropped");
+      await _flushMotionLockWritesForTests();
+      const all = await rows(tx, sql`SELECT "reasonCode", generation, detail FROM robot_motion_locks WHERE "robotId" = ${robot}`);
+      expect(all).toHaveLength(1);
+      expect(all[0].reasonCode).toBe("motion_outcome_unknown"); // the strongest is kept — A's reason not replaced
+      expect(String(all[0].detail)).toMatch(/motion_outcome_unknown[\s\S]*line_connection_closed/); // every reason listed
+      expect(Number(all[0].generation)).toBe(2); // the write incremented the generation
+      // the operator clears via B, quoting what B shows (generation 1) — the row is NOT removed
+      B.clearByOperator({ reason: "checked", userId: 1, expectedGeneration: 1 });
+      await _flushMotionLockWritesForTests();
+      expect(await rows(tx, sql`SELECT 1 FROM robot_motion_locks WHERE "robotId" = ${robot}`)).toHaveLength(1);
+      expect(await readCentralMotionAuthority(robot, B)).toMatchObject({ locked: true, reasonCode: "motion_outcome_unknown", generation: 2 });
+      expect(await readCentralMotionAuthority(robot, C)).toMatchObject({ locked: true });
+      // B adopts the row (motion refused) and shows ALL reasons at the ROW's generation; that clear removes it
+      H.lock = B;
+      expect(await dispatchRobotJob(MOTION(robot))).toMatchObject({ error: "MOTION_LOCKED" });
+      const shown = B.snapshot();
+      expect(shown).toMatchObject({ locked: true, reasonCode: "motion_outcome_unknown" });
+      expect(String(shown.detail)).toMatch(/line_connection_closed/);
+      B.clearByOperator({ reason: "both reasons checked on site", userId: 1, expectedGeneration: shown.generation! });
+      await _flushMotionLockWritesForTests();
+      expect(await rows(tx, sql`SELECT 1 FROM robot_motion_locks WHERE "robotId" = ${robot}`)).toHaveLength(0);
+    });
+  });
 });

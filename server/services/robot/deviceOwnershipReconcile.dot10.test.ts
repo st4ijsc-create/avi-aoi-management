@@ -29,11 +29,15 @@ vi.mock("../../db/connection", () => ({
 }));
 vi.mock("./robotManager", () => ({
   activeRobotIds: () => H.activeRobots,
+  isCentralRobotGatewayOn: () => true,
+  robotTriedAtStart: () => true, // every robot of these fixtures was loaded by startRobots (R-10-al first-pass rule)
   detachRobot: async (id: number) => (H.calls.push(`detach:robot:${id}`), true),
   attachRobot: async (id: number) => (H.calls.push(`attach:robot:${id}`), true),
 }));
 vi.mock("../ot/otManager", () => ({
   isOtRunning: () => true,
+  isOtGatewayOn: () => true,
+  otAdapterTriedAtStart: () => true,
   getActiveAdapter: (id: number) => (H.activeAdapters.includes(id) ? { adapterId: id } : undefined),
   detachOtAdapter: async (id: number) => (H.calls.push(`detach:adapter:${id}`), true),
   attachOtAdapter: async (a: { adapterId: number }) => (H.calls.push(`attach:adapter:${a.adapterId}`), H.activeAdapters.push(a.adapterId), true),

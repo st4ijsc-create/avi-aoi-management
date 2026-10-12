@@ -112,18 +112,30 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
     return results;
   }
   for (const dev of devices) {
-    const r = await executeDeviceStopsLocked(dev.kind, dev.id, opts.actorUserId ?? null);
+    const r = await executeDeviceStopsLocked(dev.kind, dev.id, opts.actorUserId ?? null, opts.device !== undefined);
     if (r) results.push(r);
   }
   return results;
 }
 
-async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, actorUserId: number | null): Promise<CentralStopOutcome | null> {
-  const db = await getDb();
-  if (!db) return null;
+async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, actorUserId: number | null, deviceScoped = false): Promise<CentralStopOutcome | null> {
+  // fix review 2 (N4) — for a NAMED device (a transfer just made here), not knowing the pending set never means "no STOP": the
+  // STOP is sent anyway and alerted (the periodic sweep acks the requests later). The global sweep just retries next pass.
+  const sendAnyway = async (why: string): Promise<CentralStopOutcome | null> => {
+    if (!deviceScoped) {
+      console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed: ${why} (the next sweep retries)`);
+      return null;
+    }
+    const sent = await sendCentralStop(kind, deviceId);
+    void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
+    return { requestIds: [], outcome: sent.ok ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [] };
+  };
+  const db = await getDb().catch(() => null);
+  if (!db) return sendAnyway("database unavailable");
   const { ackCentralStop } = await import("../edge/edgeControlSchema");
   let outcome: CentralStopOutcome | null = null;
   let recipients: number[] = [];
+  let picked = false;
   try {
     await db.transaction(async (tx) => {
       const pick =
@@ -134,7 +146,8 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
           : sql`SELECT q.id, q."requestedBy" FROM public.robot_motion_lock_requests q
                  WHERE q.id IN (SELECT "requestId" FROM public.device_pending_stops WHERE "adapterId" = ${deviceId} AND "centralMustExecute")
                    AND q."ackedAt" IS NULL ORDER BY q.id FOR UPDATE OF q SKIP LOCKED`;
-      const pending = rowsOf(await tx.execute(pick)).map((r) => ({ requestId: Number(r.id), requestedBy: Number(r.requestedBy) }));
+      const pending = rowsOf(await withDeadline(tx.execute(pick), 5 * STOP_DB_STEP_DEADLINE_MS, "pending STOP pick")).map((r) => ({ requestId: Number(r.id), requestedBy: Number(r.requestedBy) }));
+      picked = true;
       if (pending.length === 0) return;
       const sent = await sendCentralStop(kind, deviceId);
       const result: "done" | "failed" = sent.ok ? "done" : "failed";
@@ -152,7 +165,8 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
       recipients = [...new Set(pending.map((p) => p.requestedBy).concat(actorUserId ? [actorUserId] : []))];
     });
   } catch (err) {
-    console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed: ${errText(err)}`);
+    if (!picked) return sendAnyway(errText(err));
+    console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed after the STOP: ${errText(err)}`);
   }
   const o = outcome as CentralStopOutcome | null;
   if (o && (o.outcome === "failed" || o.ackErrors.length > 0)) {
@@ -191,10 +205,22 @@ async function sendRobotStop(robotId: number): Promise<{ ok: boolean; sent: "sen
   }
   // no session (central skipped the robot while an edge owned it): a transient one, bounded
   if (process.env.ROBOT_CONTROL_ENABLED !== "true") return { ok: true, sent: "simulated", detail: "dry-run (ROBOT_CONTROL_ENABLED off) — nothing sent" };
-  const db = await getDb();
-  if (!db) return { ok: false, sent: "failed", detail: "database unavailable (robot row)" };
-  const { robots } = await import("../../../drizzle/schema");
-  const [row] = await db.select().from(robots).where(eq(robots.id, robotId)).limit(1);
+  // R-10-ak — the row read before the send is bounded by the STOP bound; unreadable ⇒ failed (the caller alerts)
+  let row: { vendor: string; endpoint: string; connectionOptions: unknown } | undefined;
+  try {
+    row = await withDeadline(
+      (async () => {
+        const { robots } = await import("../../../drizzle/schema"); // inside the bound (a cold import counts too)
+        const db = await getDb();
+        if (!db) throw new Error("database unavailable (robot row)");
+        return (await db.select().from(robots).where(eq(robots.id, robotId)).limit(1))[0];
+      })(),
+      STOP_DB_STEP_DEADLINE_MS,
+      `robot ${robotId} row for a transient STOP`,
+    );
+  } catch (err) {
+    return { ok: false, sent: "failed", detail: `the robot's connection settings could not be read (${errText(err)}) — no session could be opened` };
+  }
   if (!row) return { ok: false, sent: "failed", detail: "robot row not found" };
   const { createRobotDriver } = await import("./driverRegistry");
   const { runRobotDeviceStage } = await import("./robotDeviceRun");
@@ -288,7 +314,7 @@ export async function applyOwnershipLocally(kind: DeviceKind, deviceId: number, 
     } else {
       const m = await import("../ot/otManager");
       if (toEdgeNodeId === null) {
-        if (!m.isOtRunning() || m.getActiveAdapter(deviceId)) return;
+        if (!m.isOtGatewayOn() || m.getActiveAdapter(deviceId)) return;
         const { loadEnabledAdapters } = await import("../ot/deviceAdapter");
         const a = (await loadEnabledAdapters()).find((x) => x.adapterId === deviceId);
         if (a) await m.attachOtAdapter(a);
@@ -329,7 +355,7 @@ export async function reconcileDeviceOwnership(): Promise<{ attached: string[]; 
       seenEpoch.robot.set(id, ep);
       if (r.edgeNodeId != null && activeRobots.has(id)) {
         if (await rm.detachRobot(id)) out.detached.push(`robot:${id}`);
-      } else if (r.edgeNodeId == null && !activeRobots.has(id) && prev !== undefined && prev !== ep) {
+      } else if (r.edgeNodeId == null && !activeRobots.has(id) && (prev !== undefined ? prev !== ep : rm.isCentralRobotGatewayOn() && !rm.robotTriedAtStart(id))) {
         if (await rm.attachRobot(id)) out.attached.push(`robot:${id}`);
       }
     }
@@ -341,7 +367,7 @@ export async function reconcileDeviceOwnership(): Promise<{ attached: string[]; 
       const has = om.getActiveAdapter(id) !== undefined;
       if (a.edgeNodeId != null && has) {
         if (await om.detachOtAdapter(id)) out.detached.push(`adapter:${id}`);
-      } else if (a.edgeNodeId == null && !has && prev !== undefined && prev !== ep) {
+      } else if (a.edgeNodeId == null && !has && (prev !== undefined ? prev !== ep : om.isOtGatewayOn() && !om.otAdapterTriedAtStart(id))) {
         await applyOwnershipLocally("adapter", id, null);
         if (om.getActiveAdapter(id) !== undefined) out.attached.push(`adapter:${id}`);
       }
@@ -359,49 +385,85 @@ export async function reconcileDeviceOwnership(): Promise<{ attached: string[]; 
  * the app pool's own postgres client (no new connection) that applies another replica's change at once. Never on the edge.
  * Returns the stop function.
  */
-export async function startDeviceOwnershipSync(opts: { sweepMs?: number; reconcileMs?: number } = {}): Promise<() => Promise<void>> {
+/** N6 — the LISTEN registration is bounded and retried in the background. */
+export const DEVICE_OWNER_LISTEN_DEADLINE_MS = 5_000;
+export const DEVICE_OWNER_LISTEN_RETRY_MS = 30_000;
+
+/**
+ * Central boot (server/_core/index.ts — the controller's integration hunk; call it WITHOUT awaiting, it never blocks the server's
+ * listen): LISTEN 'device_owner_changed' first (bounded by DEVICE_OWNER_LISTEN_DEADLINE_MS, retried every 30 s in the background
+ * when it fails), THEN the first reconcile (R-10-al: a change committed between startRobots / startOt and the LISTEN is applied —
+ * devices those never tried are attached) and the first pending-STOP sweep; afterwards the sweep every ≤ 10 s (R-10-w) and the
+ * reconcile every ≤ 30 s (R-10-v). Never on the edge. Returns the stop function.
+ */
+export async function startDeviceOwnershipSync(opts: { sweepMs?: number; reconcileMs?: number; listenDeadlineMs?: number } = {}): Promise<() => Promise<void>> {
   const { isEdgeProcessRole } = await import("../../db/connection");
   if (isEdgeProcessRole()) return async () => undefined;
+  let stopped = false;
   let sweeping = false;
   const sweep = () => {
-    if (sweeping) return;
+    if (sweeping || stopped) return;
     sweeping = true;
     void sweepPendingCentralStops().finally(() => (sweeping = false));
   };
   let reconciling = false;
   const reconcile = () => {
-    if (reconciling) return;
+    if (reconciling || stopped) return;
     reconciling = true;
     void reconcileDeviceOwnership().finally(() => (reconciling = false));
   };
-  sweep();
+  let unlisten: (() => Promise<void>) | null = null;
+  let retry: NodeJS.Timeout | null = null;
+  const listenOnce = async (): Promise<boolean> => {
+    try {
+      const sub = await withDeadline(
+        (async () => {
+          const db = (await getDb()) as unknown as { $client?: { listen?: (ch: string, fn: (payload: string) => void) => Promise<{ unlisten: () => Promise<void> }> } } | null;
+          const client = db?.$client;
+          if (!client || typeof client.listen !== "function") throw new Error("no LISTEN-capable client");
+          return client.listen(DEVICE_OWNER_CHANNEL, (payload: string) => {
+            try {
+              const m = JSON.parse(payload) as { kind: DeviceKind; id: number; to: number | null };
+              if ((m.kind === "robot" || m.kind === "adapter") && Number.isSafeInteger(m.id)) {
+                void applyOwnershipLocally(m.kind, m.id, m.to ?? null).then(() => (m.to == null ? sweep() : undefined));
+              } else reconcile();
+            } catch {
+              reconcile();
+            }
+          });
+        })(),
+        opts.listenDeadlineMs ?? DEVICE_OWNER_LISTEN_DEADLINE_MS,
+        `LISTEN ${DEVICE_OWNER_CHANNEL}`,
+      );
+      if (stopped) {
+        await sub.unlisten().catch(() => undefined);
+        return true;
+      }
+      unlisten = () => sub.unlisten();
+      return true;
+    } catch (err) {
+      console.warn(`[DeviceOwner] LISTEN ${DEVICE_OWNER_CHANNEL} unavailable (${errText(err)}) — retrying in ${DEVICE_OWNER_LISTEN_RETRY_MS / 1000} s; the ${DEVICE_OWNER_RECONCILE_MS / 1000} s reconcile covers the gap`);
+      return false;
+    }
+  };
+  const ensureListen = async () => {
+    if (await listenOnce()) return;
+    retry = setTimeout(() => void ensureListen(), DEVICE_OWNER_LISTEN_RETRY_MS);
+    if (typeof retry.unref === "function") retry.unref();
+  };
+  await ensureListen();
+  // R-10-al — the first reconcile runs right AFTER the LISTEN: nothing committed in between is lost
   reconcile();
+  sweep();
   const t1 = setInterval(sweep, Math.min(PENDING_STOP_SWEEP_MS, opts.sweepMs ?? PENDING_STOP_SWEEP_MS));
   const t2 = setInterval(reconcile, Math.min(DEVICE_OWNER_RECONCILE_MS, opts.reconcileMs ?? DEVICE_OWNER_RECONCILE_MS));
   for (const t of [t1, t2]) if (typeof t.unref === "function") t.unref();
-  let unlisten: (() => Promise<void>) | null = null;
-  try {
-    const db = (await getDb()) as unknown as { $client?: { listen?: (ch: string, fn: (payload: string) => void) => Promise<{ unlisten: () => Promise<void> }> } } | null;
-    const client = db?.$client;
-    if (client && typeof client.listen === "function") {
-      const sub = await client.listen(DEVICE_OWNER_CHANNEL, (payload: string) => {
-        try {
-          const m = JSON.parse(payload) as { kind: DeviceKind; id: number; to: number | null };
-          if ((m.kind === "robot" || m.kind === "adapter") && Number.isSafeInteger(m.id)) {
-            void applyOwnershipLocally(m.kind, m.id, m.to ?? null).then(() => (m.to == null ? sweep() : undefined));
-          } else reconcile();
-        } catch {
-          reconcile();
-        }
-      });
-      unlisten = () => sub.unlisten();
-    }
-  } catch (err) {
-    console.warn(`[DeviceOwner] LISTEN ${DEVICE_OWNER_CHANNEL} unavailable — the ${DEVICE_OWNER_RECONCILE_MS / 1000} s reconcile is the path: ${errText(err)}`);
-  }
   return async () => {
+    stopped = true;
     clearInterval(t1);
     clearInterval(t2);
-    if (unlisten) await unlisten().catch(() => undefined);
+    if (retry) clearTimeout(retry);
+    const u = unlisten as (() => Promise<void>) | null;
+    if (u) await u().catch(() => undefined);
   };
 }

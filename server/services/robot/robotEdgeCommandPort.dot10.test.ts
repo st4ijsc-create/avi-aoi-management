@@ -87,3 +87,43 @@ describe("fix review 1 (M-4) — the default alert of an undelivered console STO
     vi.doUnmock("./criticalStopAlert");
   });
 });
+
+describe("R-10-ak — a console STOP with no session answers at the STOP bound (slow DB)", () => {
+  it("★ owner unknown, the central transient STOP and the enqueue both HANG: the STOP is still ATTEMPTED, the answer comes at the bound (partial) with a durable alert; a late failure alerts again", async () => {
+    const { sendConsoleStopNoSession, CONSOLE_STOP_REPLY_BOUND_MS } = await import("./robotEdgeCommandPort");
+    setEdgeDeviceRequestPort({ enqueue: () => new Promise(() => undefined) }); // a slow DB under B's insert
+    let attempted = 0;
+    let finish!: (v: { ok: boolean; sent: string; detail: string }) => void;
+    const alerts: Array<[string, boolean]> = [];
+    const t0 = Date.now();
+    const r = await sendConsoleStopNoSession({
+      robotId: 12,
+      requestedBy: 7,
+      reason: "console stop",
+      ownerUnknown: "owner read timed out",
+      centralStop: () => {
+        attempted++;
+        return new Promise((x) => (finish = x));
+      },
+      alert: (m, critical) => void alerts.push([m, critical]),
+    });
+    const took = Date.now() - t0;
+    expect(took).toBeLessThan(CONSOLE_STOP_REPLY_BOUND_MS + 500);
+    expect(attempted).toBe(1);
+    expect(r).toMatchObject({ ok: true, central: { state: "pending" }, queued: { state: "failed" } }); // enqueue bounded at the STOP bound
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0][0]).toMatch(/owner unreadable[\s\S]*still in progress/);
+    finish({ ok: false, sent: "failed", detail: "connect timed out" });
+    await new Promise((x) => setTimeout(x, 20));
+    expect(alerts).toHaveLength(2);
+    expect(alerts[1]).toEqual([expect.stringMatching(/WITHOUT confirmation[\s\S]*hardware E-STOP/), true]);
+  });
+
+  it("central-owned (owner known): only the transient STOP; done ⇒ ok, the alert still records the no-session STOP (not critical)", async () => {
+    const { sendConsoleStopNoSession } = await import("./robotEdgeCommandPort");
+    const alerts: Array<[string, boolean]> = [];
+    const r = await sendConsoleStopNoSession({ robotId: 12, requestedBy: 7, reason: "console stop", ownerUnknown: null, centralStop: async () => ({ ok: true, sent: "sent", detail: "abort sent" }), alert: (m, c) => void alerts.push([m, c]) });
+    expect(r).toMatchObject({ ok: true, central: { state: "done" }, queued: null });
+    expect(alerts).toEqual([[expect.stringMatching(/central-owned/), false]]);
+  });
+});

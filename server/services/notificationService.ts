@@ -114,8 +114,11 @@ export interface SendNotificationOptions {
    * downgrade it; it is still deduped per OCCURRENCE (dedupKey). The cap counts only safety-event notices. Any other value
    * (or a value that is not exactly this string) ⇒ NOT exempt (the cap applies). Undecidable (a throw while checking) ⇒
    * the existing rule: the bypass is allowed (fails toward delivering).
+   * doc 81 Đợt 10 task D fix review 2 (N7) — a SECOND exact literal, "stop_undelivered", for the STOP-delivery alarms (a console
+   * STOP with no session / not queued, a STOP owed after a transfer to central could not be sent): same semantics, its own key,
+   * so "ot_stop_unverified" stays reserved for the B3 alarm (R-8-d).
    */
-  capExempt?: "ot_stop_unverified";
+  capExempt?: "ot_stop_unverified" | "stop_undelivered";
 }
 
 export const SAFETY_CRITICAL_DEDUP_MS = 60_000;
@@ -216,7 +219,7 @@ export async function sendNotification(userId: number, payload: NotificationPayl
   // occurrence dedup + P-F4 rate key; a bypass actually granted is charged to the recipient's budget.
   // final wave F1 (R-8-d) — the B3 "STOP not confirmed" alarm is exempt from the cap (never checked, never charged).
   const nowMs = Date.now();
-  const capExempt = opts?.capExempt === "ot_stop_unverified";
+  const capExempt = opts?.capExempt === "ot_stop_unverified" || opts?.capExempt === "stop_undelivered";
   let safetyCritical = false;
   if (opts?.safetyCritical === true && (capExempt || recipientBypassBudgetLeft(userId, nowMs))) {
     safetyCritical = dedupKey || rateKey ? takeSafetyCriticalBypass(userId, dedupKey, rateKey, nowMs) : true;

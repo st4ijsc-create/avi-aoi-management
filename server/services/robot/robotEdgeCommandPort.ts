@@ -136,7 +136,8 @@ export async function sendConsoleStopForEdgeRobot(a: {
   centralStop: () => Promise<{ ok: boolean; status: string } | null>;
   alert?: (message: string) => void;
 }): Promise<ConsoleStopOutcome> {
-  const enqueue = () => edgeDeviceRequestPort().enqueue({ kind: "stop", robotId: a.robotId, reason: a.reason, requestedBy: a.requestedBy });
+  // R-10-ak — every await before the send / the answer is under the STOP bound
+  const enqueue = () => withDeadline(edgeDeviceRequestPort().enqueue({ kind: "stop", robotId: a.robotId, reason: a.reason, requestedBy: a.requestedBy }), STOP_DB_STEP_DEADLINE_MS, `robot ${a.robotId} STOP enqueue`);
   let firstError: string;
   try {
     const q = await enqueue();
@@ -179,4 +180,85 @@ function defaultStopAlert(message: string, robotId: number, requestedBy: number)
       raiseCriticalStopAlert({ kind: "console_stop_undelivered", title: `STOP not delivered — robot ${robotId}`, message, recipients: [requestedBy], dedupKey: `console_stop_undelivered:robot:${robotId}:${Date.now()}`, source: "robot", entityType: "robot", entityId: robotId }),
     )
     .catch(() => undefined);
+}
+
+/**
+ * doc 81 Đợt 10 task D fix review 2 — ruling R-10-ak (L-7): a console STOP for a robot this process holds NO session for (central
+ * owner, or the owner could not be read). Before the send nothing waits longer than the STOP bound:
+ *   • the central transient-session STOP is STARTED at once (its row read is bounded inside; its connect + abort carry the session
+ *     deadline), and — owner unknown — the edge enqueue runs IN PARALLEL under STOP_DB_STEP_DEADLINE_MS;
+ *   • the answer is given at CONSOLE_STOP_REPLY_BOUND_MS at the latest, with a PARTIAL result (each leg: done / failed / pending);
+ *   • a durable critical alert is raised at the answer (the partial state), and again if the central leg later FAILS.
+ * Never throws.
+ */
+export const CONSOLE_STOP_REPLY_BOUND_MS = 2 * STOP_DB_STEP_DEADLINE_MS;
+type Leg<T> = { state: "done"; value: T } | { state: "failed"; error: string } | { state: "pending" };
+export interface NoSessionStopOutcome {
+  ok: boolean;
+  central: Leg<{ ok: boolean; sent: string; detail: string }>;
+  queued: Leg<EdgeDeviceRequestQueued> | null;
+  /** set when ok === false — shown to the user */
+  error?: "EDGE_STOP_NOT_QUEUED";
+}
+export async function sendConsoleStopNoSession(a: {
+  robotId: number;
+  requestedBy: number;
+  reason: string;
+  ownerUnknown: string | null;
+  centralStop: (robotId: number) => Promise<{ ok: boolean; sent: string; detail: string }>;
+  alert?: (message: string, critical: boolean) => void;
+  replyBoundMs?: number;
+}): Promise<NoSessionStopOutcome> {
+  const alert = a.alert ?? ((m: string) => defaultStopAlert(m, a.robotId, a.requestedBy));
+  const track = <T,>(p: Promise<T>) => {
+    const leg: { v: Leg<T> } = { v: { state: "pending" } };
+    const done = p.then(
+      (value) => void (leg.v = { state: "done", value }),
+      (e) => void (leg.v = { state: "failed", error: String((e as Error)?.message ?? e).slice(0, 160) }),
+    );
+    return { leg, done };
+  };
+  const central = track(Promise.resolve().then(() => a.centralStop(a.robotId)));
+  const queued =
+    a.ownerUnknown !== null
+      ? track(withDeadline(edgeDeviceRequestPort().enqueue({ kind: "stop", robotId: a.robotId, reason: `${a.reason} (owner unknown)`, requestedBy: a.requestedBy }), STOP_DB_STEP_DEADLINE_MS, `robot ${a.robotId} STOP enqueue`))
+      : null;
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    Promise.all([central.done, queued?.done]),
+    new Promise<void>((r) => {
+      timer = setTimeout(r, a.replyBoundMs ?? CONSOLE_STOP_REPLY_BOUND_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+  const c = central.leg.v;
+  const q = queued ? queued.leg.v : null;
+  const centralOk = c.state === "done" && c.value.ok;
+  const queuedOk = q?.state === "done";
+  const ok = centralOk || queuedOk || c.state === "pending";
+  const describe = (l: Leg<unknown> | null, name: string) =>
+    l === null ? "" : l.state === "done" ? `${name}: ${JSON.stringify(l.value).slice(0, 160)}` : l.state === "failed" ? `${name}: FAILED (${l.error})` : `${name}: still in progress`;
+  const message =
+    `Console STOP for robot ${a.robotId}: this server held no session for it (${a.ownerUnknown !== null ? `owner unreadable: ${a.ownerUnknown}` : "central-owned"}); ` +
+    [describe(c, "transient-session STOP"), describe(q, "edge queue")].filter(Boolean).join("; ") +
+    (centralOk || queuedOk ? "." : " — use the hardware E-STOP on the machine now if the robot is still moving.");
+  try {
+    alert(message, !(centralOk || queuedOk));
+  } catch {
+    /* the answer below still reaches the user */
+  }
+  if (c.state === "pending") {
+    // the transient session is still running — if it ends badly, a second alert
+    void central.done.then(() => {
+      const late = central.leg.v;
+      if (late.state === "failed" || (late.state === "done" && !late.value.ok)) {
+        try {
+          alert(`Console STOP for robot ${a.robotId}: the transient-session STOP finished WITHOUT confirmation (${late.state === "failed" ? late.error : late.value.detail}). Use the hardware E-STOP on the machine now.`, true);
+        } catch {
+          /* logged by the alert itself */
+        }
+      }
+    });
+  }
+  return { ok, central: c, queued: q, ...(ok ? {} : { error: "EDGE_STOP_NOT_QUEUED" as const }) };
 }

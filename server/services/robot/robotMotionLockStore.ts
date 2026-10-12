@@ -21,12 +21,13 @@
  * process exits before the write reaches Postgres — leaves NO row, so the NEXT restart starts UNLOCKED for that lock.
  * That is the "failed write is LOGGED" case above (`not persisted` in the log); this store does not retry it.
  */
-import { and, eq, inArray, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, eq, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
+import { randomInt } from "node:crypto";
 import { getDb } from "../../db/connection";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { robotMotionLocks } from "../../../drizzle/schema";
 import { withDeadline } from "../ot/drivers/boundedClose";
-import { MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, type MotionLock, type MotionLockPersistence, type MotionLockState } from "./robotDriver";
+import { DISPATCH_DEADLINE_REASON_CODE, MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, MOTION_OUTCOME_UNKNOWN_REASON_CODES, type MotionLock, type MotionLockPersistence, type MotionLockState } from "./robotDriver";
 import { isEdgeControlSchemaMissing, robotMotionLockAuthority } from "../edge/edgeControlSchema";
 
 /**
@@ -106,8 +107,57 @@ function persistedLockedAt(robotId: number, state: MotionLockState): Date {
   return clampToBoot(state.since ? new Date(state.since) : new Date(), bootSinceByRobot.get(robotId));
 }
 
-/** UPSERT the current lock of `robotId` (generation never goes backwards). */
-export function persistMotionLock(robotId: number, state: MotionLockState): Promise<void> {
+/**
+ * doc 81 Đợt 10 task D fix review 2 — ruling R-10-aj (re-review N1). The central lock row is ONE slot per robot shared by every
+ * API replica, and each replica's generation counter is its own. A replica must therefore never REPLACE (nor DELETE) a row
+ * another writer holds:
+ *   • WRITER IDENTITY without a migration: each registered lock (one per robot per process — a "replica") stamps the
+ *     sub-millisecond MICROSECONDS of the lockedAt it writes with its own tag (1..999, random per lock). JS reads lockedAt at ms precision, so nothing that shows / compares the time changes.
+ *     A row whose µs differ (another replica, the DB's ownerChanged relock, a pre-restart process) is FOREIGN.
+ *   • A lock write onto its OWN row keeps R-4-t exactly (replace only what it supersedes). Onto a FOREIGN row it MERGES: the
+ *     generation becomes max(row, mine) + 1, the strongest reason is kept (outcome-unknown > ownerChanged / persistUnknown >
+ *     the rest) and every reason is LISTED in the detail. (A row older than a persistUnknown boot is superseded as before.)
+ *   • A clear deletes only its own lineage (`mine AND generation ≤ g`, R-4-t) — or, for a row this lock ADOPTED (restored at
+ *     boot or adopted by the motion gate), exactly that row's generation. A clear naming an older generation removes nothing:
+ *     the gate then adopts the row, showing every reason, and the operator's clear must quote its generation.
+ *   • Residual: two replicas that drew the same tag (1 in 999) treat each other's rows as their own (R-4-t semantics between them).
+ */
+/** the default writer tag (direct calls without a registered lock); a registered lock draws its own (lockTag) */
+const PROCESS_WRITER_TAG = randomInt(1, 1000);
+const writerTags = new WeakMap<MotionLock, number>();
+function lockTag(lock: MotionLock): number {
+  let t = writerTags.get(lock);
+  if (t === undefined) {
+    t = randomInt(1, 1000);
+    writerTags.set(lock, t);
+  }
+  return t;
+}
+const isMineSql = (tag: number): SQL => sql`(extract(microseconds from ${robotMotionLocks.lockedAt})::bigint % 1000) = ${tag}`;
+function rankSql(code: SQL): SQL {
+  const strongest = [...MOTION_OUTCOME_UNKNOWN_REASON_CODES, DISPATCH_DEADLINE_REASON_CODE, "motion_outcome_unknown"];
+  return sql`(CASE WHEN ${code} IN (${sql.join(strongest.map((c) => sql`${c}`), sql`, `)}) OR ${code} LIKE '%outcome_unknown%' THEN 3 WHEN ${code} IN ('ownerChanged', ${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE}) THEN 2 ELSE 1 END)`;
+}
+/** rows a FOREIGN-row write / clear has ADOPTED: exactly this generation may be deleted by this lock's next clear */
+const adoptedRow = new WeakMap<MotionLock, { generation: number }>();
+/**
+ * Adopt a persisted row this process did not write (the motion gate / boot restore): it becomes this lock's in-memory lock
+ * (every listed reason shown), and this lock's next clear deletes exactly that row's generation.
+ */
+export function adoptPersistedMotionLock(lock: MotionLock, saved: { reasonCode: string; detail?: string | null; since: string; generation: number }): void {
+  if (lock.isLocked()) return;
+  lock.restore(saved);
+  adoptedRow.set(lock, { generation: saved.generation });
+}
+
+/** UPSERT the current lock of `robotId` (generation never goes backwards; a foreign row is MERGED, never replaced — R-10-aj). */
+export function persistMotionLock(
+  robotId: number,
+  state: MotionLockState,
+  tag: number = PROCESS_WRITER_TAG,
+  /** rows this lock already CLEARED (its own or adopted — the operator acknowledged them; a delete may still be in flight) */
+  acknowledged: ReadonlyArray<{ generation: number; lockedAtMs: number }> = [],
+): Promise<void> {
   return enqueue(robotId, "upsert", async () => {
     const db = await getDb();
     if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
@@ -118,16 +168,36 @@ export function persistMotionLock(robotId: number, state: MotionLockState): Prom
       generation: Math.max(1, state.generation ?? 1),
       lockedAt: clampToBoot(state.since ? new Date(state.since) : new Date(), bootSinceByRobot.get(robotId)),
     };
+    const boot = bootSinceByRobot.get(robotId);
+    // R-10-aj — the writer tag in the µs of lockedAt (the same naive-UTC text drizzle writes for a Date)
+    const taggedAt = sql`(${row.lockedAt.toISOString()}::timestamp + ${tag} * interval '1 microsecond')`;
+    const T = robotMotionLocks;
+    // a row this lock already cleared (acknowledged) is superseded by its next lock — exact (generation, lockedAt ms)
+    const ackd = acknowledged.length
+      ? sql.join(
+          acknowledged.map((a) => sql`(${T.generation} = ${a.generation} AND date_trunc('milliseconds', ${T.lockedAt}) = ${new Date(a.lockedAtMs).toISOString()}::timestamp)`),
+          sql` OR `,
+        )
+      : sql`false`;
+    const replace0 = boot ? sql`((${isMineSql(tag)} AND ${T.generation} <= ${row.generation}) OR ${T.lockedAt} < ${boot.toISOString()}::timestamp)` : sql`(${isMineSql(tag)} AND ${T.generation} <= ${row.generation})`;
+    const replace = sql`(${replace0} OR ${ackd})`;
+    const merge = sql`(NOT ${replace})`;
+    const listed = sql`left((CASE WHEN ${T.detail} LIKE 'reasons: %' THEN ${T.detail} ELSE 'reasons: ' || ${T.reasonCode} || ' (' || coalesce(${T.detail}, '') || ')' END) || ' + ' || excluded."reasonCode" || ' (' || coalesce(excluded."detail", '') || ')', ${DETAIL_MAX})`;
     await withCentralAuthority((scope) =>
       db
         .insert(robotMotionLocks)
-        .values(row)
+        .values({ ...row, lockedAt: taggedAt as unknown as Date })
         .onConflictDoUpdate({
           target: robotMotionLocks.robotId,
-          set: { reasonCode: row.reasonCode, detail: row.detail, generation: row.generation, lockedAt: row.lockedAt },
-          // R-4-t — replace only a row this lock supersedes (never a newer one written by a later step);
-          // Đợt 10 D — and only a CENTRAL row (never an edge authority's).
-          setWhere: and(supersededBy(row.generation, bootSinceByRobot.get(robotId)), scope),
+          set: {
+            generation: sql`(CASE WHEN ${replace} THEN excluded."generation" ELSE GREATEST(${T.generation}, excluded."generation") + 1 END)`,
+            reasonCode: sql`(CASE WHEN ${replace} THEN excluded."reasonCode" WHEN ${rankSql(sql`excluded."reasonCode"`)} > ${rankSql(sql`${T.reasonCode}`)} THEN excluded."reasonCode" ELSE ${T.reasonCode} END)`,
+            detail: sql`(CASE WHEN ${replace} THEN excluded."detail" ELSE ${listed} END)`,
+            lockedAt: sql`(CASE WHEN ${replace} THEN excluded."lockedAt" ELSE ${T.lockedAt} END)`,
+          },
+          // R-4-t — replace only a row this lock supersedes (never a newer one written by a later step); R-10-aj — a FOREIGN
+          // row is merged, never replaced; Đợt 10 D — only a CENTRAL row (never an edge authority's).
+          setWhere: and(sql`(${replace} OR ${merge})`, scope), // every conflict is either a replace or a merge
         }),
     );
   });
@@ -153,11 +223,17 @@ function supersededBy(g: number, boot: Date | undefined) {
  * cleared `persistUnknown` lock, whose generation knows nothing of the unread row — `lockedAt < bootSince` (strict). Never
  * unconditional: a late delete cannot erase a NEWER lock's row.
  */
-export function deleteMotionLock(robotId: number, generation: number, bootSince?: Date): Promise<void> {
+export function deleteMotionLock(robotId: number, generation: number, bootSince?: Date, adoptedGeneration?: number, tag: number = PROCESS_WRITER_TAG): Promise<void> {
   return enqueue(robotId, "delete", async () => {
     const db = await getDb();
     if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
-    await withCentralAuthority((scope) => db.delete(robotMotionLocks).where(and(eq(robotMotionLocks.robotId, robotId), supersededBy(generation, bootSince), scope)));
+    // R-10-aj — its own lineage (mine AND generation ≤ g, R-4-t) / the pre-boot rows of a persistUnknown clear / EXACTLY the
+    // row it adopted. Never another writer's row at another generation.
+    const own = sql`(${isMineSql(tag)} AND ${robotMotionLocks.generation} <= ${generation})`;
+    const parts: SQL[] = [own];
+    if (bootSince) parts.push(lt(robotMotionLocks.lockedAt, bootSince) as SQL);
+    if (adoptedGeneration !== undefined) parts.push(eq(robotMotionLocks.generation, adoptedGeneration) as SQL);
+    await withCentralAuthority((scope) => db.delete(robotMotionLocks).where(and(eq(robotMotionLocks.robotId, robotId), or(...parts), scope)));
   });
 }
 
@@ -204,17 +280,22 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
   if (!load.ok) outcome = "persistUnknown";
   else if (saved) {
     lock.restore(saved);
+    adoptedRow.set(lock, { generation: saved.generation }); // R-10-aj — its clear deletes exactly this row (any writer)
     outcome = "restored";
   } else outcome = "none";
   lock.attachPersistence({
-    locked: (state) => void persistMotionLock(robotId, state),
+    locked: (state) => void persistMotionLock(robotId, state, lockTag(lock), clearedHere.get(lock) ?? []),
     cleared: (state) => {
-      // R-10-u — this process clears the row it (or its restore) holds: remember exactly what it persisted
-      rememberCleared(lock, Math.max(1, state.generation ?? 1), persistedLockedAt(robotId, state).getTime());
+      const adopted = adoptedRow.get(lock);
+      adoptedRow.delete(lock);
+      // R-10-u — this process clears the row it holds (its own, or the one it adopted — R-10-aj): remember exactly that row
+      rememberCleared(lock, adopted ? adopted.generation : Math.max(1, state.generation ?? 1), persistedLockedAt(robotId, state).getTime());
       void deleteMotionLock(
         robotId,
         state.generation ?? 0,
         state.reasonCode === MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE && state.since ? new Date(state.since) : undefined,
+        adopted?.generation,
+        lockTag(lock),
       );
     },
   });
