@@ -16,7 +16,6 @@
 import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
-import type { RunEventType } from "../eventSourcing";
 import {
   orchestrationWorkflows,
   orchestrationRuns,
@@ -43,6 +42,7 @@ import {
   type GateRequiredReason,
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
+import { EDGE_HELD_CTX_KEY, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, isRobotKind, makeStopVerifier, orchestrationActionId, type StopVerification } from "./foeStepClass";
 
 // ── the port ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -160,6 +160,8 @@ export interface EdgeSegmentEnd {
   gateStepId?: string;
   heldReason?: RunStoreHeldReason;
   error?: string;
+  /** fix review 1 — commands SENT whose result the journal refused (never sent again); also named in `error` (EDGE_OUTCOME_UNKNOWN(…)) */
+  outcomeUnknown?: string[];
 }
 
 /**
@@ -179,7 +181,6 @@ export interface RunStore {
     onlyFrom?: Array<OrchestrationRun["status"]>,
   ): Promise<boolean>;
   persistContext(rc: RunStoreContext): Promise<void>;
-  appendEvent(runId: number, type: RunEventType, opts: { taskId?: string; ts: number; data?: unknown }): void;
   resolveAdapter(kind: string, machineId: number, args: Record<string, unknown>, stepId: string): Promise<Record<string, unknown>>;
   authorizeCommand(rc: RunStoreContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number, x: AuthorizeInput): Promise<AuthorizeVerdict>;
   /**
@@ -821,7 +822,7 @@ export async function verifyStopsForAbort(runId: number, def: WorkflowDefinition
 }
 
 /** doc 81 Đợt 10 C (N4) — set (never cleared) when a Continue clears an edge run's `interrupted` mark (see storedSweepSource). */
-export const INTERRUPTED_EARLIER_CTX_KEY = "interruptedEarlier";
+export { INTERRUPTED_EARLIER_CTX_KEY };
 
 /** THE central store: today's functions, unchanged. */
 export const centralRunStore: RunStore = Object.freeze({
@@ -829,9 +830,6 @@ export const centralRunStore: RunStore = Object.freeze({
   upsertStep,
   setStatusUnlessAborted: setRunStatusUnlessAborted,
   persistContext,
-  appendEvent(runId: number, type: RunEventType, opts: { taskId?: string; ts: number; data?: unknown }): void {
-    void appendRunEvent(runId, type, opts);
-  },
   resolveAdapter(kind: string, machineId: number, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     return withResolvedAdapter(kind, machineId, args);
   },
@@ -893,11 +891,23 @@ export interface EdgeSegmentEndApply {
   claimSeq: number;
   /** the ASSIGNED definition (the one the edge walked) */
   def: WorkflowDefinition;
+  /** fix review 1 — command steps whose outcome is unknown (the complete request carries them in `error`: EDGE_OUTCOME_UNKNOWN(a,b)) */
+  outcomeUnknown?: string[];
+}
+
+/** fix review 1 — the outcome-unknown steps of a segment end: the structured list, else the `EDGE_OUTCOME_UNKNOWN(a,b)` prefix of its error; only COMMAND steps of the definition. */
+export function edgeOutcomeUnknownOf(end: Pick<EdgeSegmentEndApply, "outcomeUnknown" | "error" | "def">): string[] {
+  const named = end.outcomeUnknown ?? (/^EDGE_OUTCOME_UNKNOWN\(([^)]{1,4000})\)/.exec(end.error ?? "")?.[1].split(",") ?? []);
+  const commands = new Set(allStepsOf(end.def.steps).filter((s) => s.type === "command").map((s) => s.id));
+  return [...new Set(named.map((x) => x.trim()).filter((x) => commands.has(x)))];
 }
 export type EdgeSegmentEndResult = { ok: true; status: string; changed: boolean } | { ok: false; code: "not_finished"; message: string };
 
+/** foeEngine.OUTCOME_UNKNOWN_CTX_KEY (kept here as a literal: foeRunStore never imports the engine). */
+const OUTCOME_UNKNOWN_KEY = "foeOutcomeUnknown";
+
 /** The context mark of an edge-held run (central's own key: never taken from an edge context patch). */
-export const EDGE_HELD_CTX_KEY = "edgeHeld";
+export { EDGE_HELD_CTX_KEY };
 
 /**
  * The end of an edge walk segment, with finishWalk's / setRunStatusUnlessAborted's semantics (design §2.6), on `db` (B's
@@ -924,11 +934,14 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, end: EdgeSeg
   };
   const held = (reason: string, error: string | undefined) => {
     const at = new Date().toISOString();
+    // fix review 1 — a command the edge sent but could not record: never sent again (foeEngine reads the list on the re-walk)
+    const unknown = edgeOutcomeUnknownOf(end);
+    const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
       error: `Edge node ${end.nodeCode} held run ${runId} (${reason})${error ? `: ${error.slice(0, 500)}` : ""} — nothing further was sent; Continue to resume it.`,
-      contextJson: { ...ctx, [EDGE_HELD_CTX_KEY]: reason, edgeHeldAt: at, edgeHeldNode: end.nodeCode, interrupted: true, interruptedAt: at, interruptedFrom: run.status, interruptedBy: `edge held: ${reason}` },
+      contextJson: { ...ctx, [EDGE_HELD_CTX_KEY]: reason, [`${EDGE_HELD_CTX_KEY}At`]: at, [`${EDGE_HELD_CTX_KEY}Node`]: end.nodeCode, interrupted: true, interruptedAt: at, interruptedFrom: run.status, interruptedBy: `edge held: ${reason}`, ...(unknown.length ? { [OUTCOME_UNKNOWN_KEY]: [...new Set([...prevUnknown, ...unknown])] } : {}) },
     });
   };
   switch (end.outcome) {
@@ -961,11 +974,14 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, end: EdgeSeg
     }
     case "held":
       return held(end.heldReason ?? "centralUnreachable", end.error);
-    default: {
-      const why = end.outcome === "failed" ? `failed on edge node ${end.nodeCode}` : `edge node ${end.nodeCode} ended the walk as aborted without a central abort`;
+    case "aborted":
+      // fix review 1 — the walk itself ended aborted (a precondition with onPreconditionFail "abort"): the same terminal status
+      // central's own walk writes (finishWalk). A central abort never reaches here (the run is already 'aborted').
       // data-raw-ok: the run's error (the walker's own error text, prefixed with the node)
-      return write("failed", { finishedAt: new Date(), error: `${why}${end.error ? `: ${end.error.slice(0, 2000)}` : ""}` });
-    }
+      return write("aborted", { finishedAt: new Date(), error: `aborted on edge node ${end.nodeCode}${end.error ? `: ${end.error.slice(0, 2000)}` : ""}` });
+    default:
+      // data-raw-ok: the run's error (the walker's own error text, prefixed with the node)
+      return write("failed", { finishedAt: new Date(), error: `failed on edge node ${end.nodeCode}${end.error ? `: ${end.error.slice(0, 2000)}` : ""}` });
   }
 }
 

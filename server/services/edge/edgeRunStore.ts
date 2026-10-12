@@ -28,7 +28,7 @@ import type { OrchestrationRun } from "../../../drizzle/schema";
 import type { EquipmentCommand } from "../equipment/equipmentAdapter";
 import { toRobotJob } from "../equipment/robotJobMapping";
 import { FOE_ENGINE_TOOL, otPayloadHash, robotPayloadHash, type FoeGateApproval } from "../ot/otActionBinding";
-import { buildEquipmentCommand, isRobotKind, type StopVerification } from "../orchestration/foe/foeStepClass";
+import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, type StopVerification } from "../orchestration/foe/foeStepClass";
 import {
   ABORT_ROW_PREFIX,
   abortSentOf,
@@ -156,6 +156,19 @@ interface LocalRow {
   startedAt: Date | null;
 }
 
+/** The robot STOP steps of a definition by the walker's own classifier (foeStepClass.isRobotStopStep) — no DB. */
+function localRobotStops(p: { definition: unknown; machines: ReadonlyArray<{ id: number; machineType: string; capabilities: unknown }> }): string[] {
+  const def = p.definition as { steps?: WorkflowStep[] } | null;
+  if (!def || !Array.isArray(def.steps)) return [];
+  const map = new Map<number, MachineForValidation>(p.machines.map((m) => [m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities as never }] as const));
+  const out: string[] = [];
+  for (const s of allStepsOf(def.steps)) {
+    const c = commandOf(s, map);
+    if (c && isRobotKind(c.cap.adapterKind) && isRobotStopStep(c)) out.push(s.id);
+  }
+  return out;
+}
+
 /** Shared by the segment store and the sweep-picture store. */
 abstract class EdgeStoreBase implements RunStore {
   readonly kind = "edge" as const;
@@ -169,8 +182,11 @@ abstract class EdgeStoreBase implements RunStore {
     verifiedStops: ReadonlyArray<{ stepId: string }>,
     stopsUnsure: ReadonlyArray<string>,
     resolvedAdapters: ReadonlyArray<{ stepId: string; adapterId: number }>,
+    picture?: { definition: unknown; machines: ReadonlyArray<{ id: number; machineType: string; capabilities: unknown }> },
   ) {
     this.verifiedStopIds = new Set(verifiedStops.map((s) => s.stepId));
+    // fix review 1 — a ROBOT stop job is a STOP whatever the package lists (the local classifier needs no DB): it never asks.
+    if (picture) for (const id of localRobotStops(picture)) this.verifiedStopIds.add(id);
     this.unsureStopIds = new Set(stopsUnsure);
     this.resolvedAdapters = new Map(resolvedAdapters.map((r) => [r.stepId, r.adapterId] as const));
   }
@@ -197,9 +213,6 @@ abstract class EdgeStoreBase implements RunStore {
   abstract authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand): Promise<void>;
   abstract sweepSource(x: { live?: RunStoreContext | null; run?: OrchestrationRun; hasLiveDriver?: (runId: number) => boolean }): Promise<AbortSweepSource | null>;
   protected abstract event(rec: EdgeEventRecordIn): void;
-
-  /** The durable RunEvent log is central's: it is appended when central applies the reported rows. Nothing here. */
-  appendEvent(): void {}
 
   /** The adapter an OT step writes through: explicit args.adapterId, else the one central resolved into the package. */
   async resolveAdapter(kind: string, _machineId: number, args: Record<string, unknown>, stepId: string): Promise<Record<string, unknown>> {
@@ -251,6 +264,12 @@ export class EdgeRunStore extends EdgeStoreBase {
   private heldReason: RunStoreHeldReason | null = null;
   private ended = false;
   private readonly statuses: string[] = [];
+  /** fix review 1 — the journal refused a non-STOP record (its reason): nothing further is authorised; the segment ends held */
+  private journalRefused: string | null = null;
+  /** commands whose dispatch result reached the journal (a later refused record of theirs ⇒ outcome unknown) */
+  private readonly sentSteps = new Set<string>();
+  /** commands SENT whose result could not be recorded — never sent again */
+  private readonly outcomeUnknown = new Set<string>();
   private readonly priorAbortSent: Set<string>;
   /** the authorisation (jti) a NON-STOP command step last ran under — quoted by its rows (central checks it, design §2.6) */
   private readonly jtiByStep = new Map<string, string>();
@@ -259,19 +278,35 @@ export class EdgeRunStore extends EdgeStoreBase {
     readonly pkg: EdgeRunPackage,
     private readonly io: EdgeRunStoreIo,
   ) {
-    super(pkg.verifiedStops, pkg.stopsUnsure, pkg.resolvedAdapters);
+    super(pkg.verifiedStops, pkg.stopsUnsure, pkg.resolvedAdapters, pkg);
     this.priorAbortSent = new Set(pkg.prior.abortSentBefore);
   }
 
-  /** the run stream record; a STOP's records are bounded by the journal (and by the walker's stopBoundedWrite) */
+  /**
+   * the run stream record; a STOP's records are bounded by the journal (and by the walker's stopBoundedWrite).
+   * fix review 1 — a REFUSED record never throws out of the walk: from then on no new non-STOP command is authorised (the next
+   * one is HELD — not sent), a command already SENT whose result could not be recorded is OUTCOME-UNKNOWN (never sent again),
+   * and the segment ends held(journalFull) naming those steps (segmentEnd). A STOP's refused record never holds the STOP.
+   */
   private async journal(rec: EdgeRunRecordIn, stop: boolean): Promise<void> {
-    const r = await this.io.sink.run(this.io.runId, this.io.claimSeq, rec, stop ? { stop: true } : undefined);
-    if (r.seq === null) {
-      const msg = `edge journal refused the ${rec.kind} record of run ${this.io.runId} (${r.reason})`;
-      // a STOP's bookkeeping never holds the STOP (L-7) — logged; anything else stops the walk here (nothing further is sent)
-      if (stop) console.warn(`[EdgeRunStore] ${msg} — the STOP continues (L-7)`);
-      else throw new Error(msg);
+    let r: EdgeAppendLike;
+    try {
+      r = await this.io.sink.run(this.io.runId, this.io.claimSeq, rec, stop ? { stop: true } : undefined);
+    } catch (err) {
+      r = { seq: null, dropped: true, reason: `error: ${(err as Error)?.message ?? err}` };
     }
+    if (r.seq !== null) {
+      if (rec.kind === "step" && typeof (rec.result as { routedTo?: unknown } | null)?.routedTo === "string") this.sentSteps.add(rec.stepId);
+      return;
+    }
+    const msg = `edge journal refused the ${rec.kind} record of run ${this.io.runId} (${r.reason})`;
+    if (stop) {
+      console.warn(`[EdgeRunStore] ${msg} — the STOP continues (L-7)`);
+      return;
+    }
+    console.error(`[EdgeRunStore] ${msg} — no further non-STOP command is sent; the segment ends held`);
+    this.journalRefused ??= r.reason;
+    if (rec.kind === "step" && (this.sentSteps.has(rec.stepId) || typeof (rec.result as { routedTo?: unknown } | null)?.routedTo === "string")) this.outcomeUnknown.add(rec.stepId);
   }
 
   protected event(rec: EdgeEventRecordIn): void {
@@ -336,8 +371,9 @@ export class EdgeRunStore extends EdgeStoreBase {
     const probe = buildEquipmentCommand(x.descriptor, x.cap, step.machineId, args, x.idempotencyKey, rc.user);
     const run = { runId: this.io.runId, claimSeq: this.io.claimSeq, stepId: step.id, attempt };
     // L-7 — a VERIFIED STOP (robot abort / pinned OT stop, verified centrally into the package) never asks anyone.
-    if (this.verifiedStopIds.has(step.id)) return { ok: true, cmd: bindEdge(probe, { authorization: null, run, source: "local" }), args, approval: null };
+    if (this.verifiedStopIds.has(step.id) || (x.robotKind && x.isStop)) return { ok: true, cmd: bindEdge(probe, { authorization: null, run, source: "local" }), args, approval: null };
     // Everything else (an UNPINNED stop-typed write included — not a STOP, R-5-j) needs a fresh, single-use authorisation.
+    if (this.journalRefused !== null || this.outcomeUnknown.has(step.id)) return this.unavailable(step.id, "journalFull");
     if (this.io.consume && this.io.consume.admitNonStop() === false) return this.unavailable(step.id, "journalFull");
     const body = edgeAuthorizeCommandOf(probe);
     if (!body) {
@@ -414,6 +450,14 @@ export class EdgeRunStore extends EdgeStoreBase {
   /** How the segment ended (POST complete); null ⇔ the walk has not ended (or let go of a stale claim). */
   segmentEnd(): EdgeSegmentEnd | null {
     if (!this.ended) return null;
+    if (this.journalRefused !== null && this.status !== "aborted") {
+      const unknown = [...this.outcomeUnknown];
+      // data-raw-ok: machine-readable prefixes (EDGE_OUTCOME_UNKNOWN(<steps>) / EDGE_HELD(journalFull)) — central parses the first
+      const error = unknown.length
+        ? `EDGE_OUTCOME_UNKNOWN(${unknown.join(",")}): sent, but the result could not be recorded (journal: ${this.journalRefused}) — never sent again; the run is held.`
+        : `EDGE_HELD(journalFull): the journal refused a record (${this.journalRefused}) — nothing further was sent; the run is held.`;
+      return { outcome: "held", heldReason: "journalFull", error: clip(error, 4_000) ?? undefined, ...(unknown.length ? { outcomeUnknown: unknown } : {}) };
+    }
     const error = typeof this.lastPatch.error === "string" ? this.lastPatch.error : undefined;
     switch (this.status) {
       case "completed":
@@ -478,7 +522,7 @@ export class EdgeSweepStore extends EdgeStoreBase {
     readonly picture: EdgeSweepPicture,
     private readonly io: EdgeSweepStoreIo,
   ) {
-    super(picture.verifiedStops, picture.stopsUnsure, []);
+    super(picture.verifiedStops, picture.stopsUnsure, [], picture);
   }
 
   protected event(rec: EdgeEventRecordIn): void {

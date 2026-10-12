@@ -105,7 +105,8 @@ import {
   excludedApprovers,
 } from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2; Đợt 9 R2
 import { isMigrationMissingError, orchestrationRunsWithApiKey, readApiKeyParties, readRunApiKeyId } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R1/R3 (mig 0369, narrow projections)
-import { programChecksumCapable, type ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list; Đợt 10 C (D7)
+import type { ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list
+import { EDGE_HOLD_MARK_KEYS, edgeProgramPreOf } from "../../edge/edgeProgramReportRule"; // doc 81 Đợt 10 C fix review 1 (R-10-m) — THE report rule + hold marks
 import { adapterOwnership, edgeNodeProgramReports, isEdgeControlSchemaMissing } from "../../edge/edgeControlSchema"; // doc 81 Đợt 10 C (D7) — narrow projections (0373/0374)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
@@ -744,6 +745,16 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     return { kind: "ok" };
   }
 
+  // doc 81 Đợt 10 C fix review 1 (R-10-y, D5) — this step FAILED in an earlier segment and its compensation was HELD (its
+  // authorisation could not be obtained): a Continue resumes THE COMPENSATION — the step itself is never run again — and the
+  // step stays failed (as the walk would have ended had the compensation gone through then).
+  const heldComp = heldCompensationOf(rc, step.id);
+  if (heldComp !== null && step.compensation) {
+    const c = await runCompensation(rc, step);
+    if (c?.kind === "held") return c;
+    return { kind: "failed", error: heldComp };
+  }
+
   // doc 81 Đợt 5 task E4 (item 36) + E fix 1 — on a STOP's path (a STOP step, or a container holding one) the step's own
   // bookkeeping never waits on a hung DB / device: bounded (L-7). Classified FIRST (no DB).
   const stop = await isStopCommandStep(rc, step);
@@ -777,9 +788,13 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   let outcome: StepOutcome;
   const maxAttempts = Math.max(1, (step.maxAttempts ?? 0) + 1);
   let attempt = 0;
+  // doc 81 Đợt 10 C fix review 1 — a command an edge SENT but whose result its journal refused (outcome unknown, recorded by
+  // central at that segment's end): NEVER sent again — it is a failure (its compensation, if any, follows as for any failure).
+  const unknown = outcomeUnknownOf(rc, step.id);
+  if (unknown !== null) outcome = { kind: "failed", error: unknown };
   // retry loop (deterministic; only command/wait steps benefit, others run once)
   // eslint-disable-next-line no-constant-condition
-  while (true) {
+  else while (true) {
     attempt += 1;
     outcome = await runStepBody(rc, step, attempt, stop);
     if (outcome.kind !== "failed" || attempt >= maxAttempts) break;
@@ -822,10 +837,30 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     // saga compensation (which issues commands) is NOT run while the run is aborting.
     // doc 81 Đợt 6 — the abort's sweep sends the STOP compensations that are due (only those), not this walk.
     if (step.compensation && !rc.aborting) {
-      await runCompensation(rc, step);
+      const c = await runCompensation(rc, step, "error" in failedOutcome ? failedOutcome.error : "");
+      if (c?.kind === "held") return c; // R-10-y — the run is held AT the compensation (Continue resumes it)
     }
   }
   return outcome;
+}
+
+/** doc 81 Đợt 10 C fix review 1 (R-10-y) — run-context key: failed steps whose compensation is HELD (step id → its error). */
+const COMPENSATION_HELD_CTX_KEY = "foeCompensationHeld";
+/** doc 81 Đợt 10 C fix review 1 — run-context key (central-written at an edge segment end): steps whose outcome is unknown. */
+export const OUTCOME_UNKNOWN_CTX_KEY = "foeOutcomeUnknown";
+
+function heldCompensationOf(rc: RunContext, stepId: string): string | null {
+  const m = rc.context[COMPENSATION_HELD_CTX_KEY] as Record<string, unknown> | undefined;
+  return m && typeof m === "object" && typeof m[stepId] === "string" ? (m[stepId] as string) : null;
+}
+/** cleared = null (never a deleted key: an edge's context reaches central as a MERGE patch, which cannot delete a key) */
+function setHeldCompensation(rc: RunContext, stepId: string, error: string | null): void {
+  rc.context[COMPENSATION_HELD_CTX_KEY] = { ...((rc.context[COMPENSATION_HELD_CTX_KEY] as Record<string, unknown> | undefined) ?? {}), [stepId]: error };
+}
+function outcomeUnknownOf(rc: RunContext, stepId: string): string | null {
+  const l = rc.context[OUTCOME_UNKNOWN_CTX_KEY];
+  // data-raw-ok: the step error is a machine-readable code (EDGE_OUTCOME_UNKNOWN) — never re-sent
+  return Array.isArray(l) && l.includes(stepId) ? `EDGE_OUTCOME_UNKNOWN: command step "${stepId}" was sent by the edge node but its result was not recorded — it is NOT sent again; check the equipment.` : null;
 }
 
 /** Run the inner logic of a single step (after precondition + status=running). */
@@ -1858,7 +1893,7 @@ async function execWaitTelemetry(rc: RunContext, step: Extract<WorkflowStep, { t
 }
 
 /** Run a step's compensation (saga undo). Fail-safe — records but never throws. */
-async function runCompensation(rc: RunContext, step: WorkflowStep): Promise<void> {
+async function runCompensation(rc: RunContext, step: WorkflowStep, stepError?: string): Promise<StepOutcome | undefined> {
   if (!step.compensation) return;
   try {
     const comp = step.compensation;
@@ -1875,6 +1910,16 @@ async function runCompensation(rc: RunContext, step: WorkflowStep): Promise<void
       rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "running", startedAt: new Date() }),
     );
     const out = await runStepBody(rc, comp, 1, compStop);
+    if (out.kind === "held") {
+      // doc 81 Đợt 10 C fix review 1 (R-10-y, D5) — the compensation could not be authorised: nothing sent, nothing marked
+      // failed; the run is held AT it and a Continue resumes it (heldCompensationOf).
+      setHeldCompensation(rc, step.id, stepError ?? heldCompensationOf(rc, step.id) ?? "");
+      await stopBoundedWrite(compStop, rc.runId, comp.id, "held row", () =>
+        rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "held", error: out.error, finishedAt: new Date() }),
+      );
+      return out;
+    }
+    if (heldCompensationOf(rc, step.id) !== null) setHeldCompensation(rc, step.id, null);
     await stopBoundedWrite(compStop, rc.runId, comp.id, "compensated row", () =>
       rc.store.upsertStep(rc.runId, comp.id, comp.type, {
         status: out.kind === "ok" ? "compensated" : "failed",
@@ -2588,41 +2633,13 @@ export async function startRun(
   }
 }
 
-/** doc 81 Đợt 10 C (N4) — the context marks of a held edge run that a Continue clears (central's own keys). */
-const EDGE_HOLD_MARK_KEYS: readonly string[] = [
-  "edgeUnreachable",
-  "edgeUnreachableAt",
-  "edgeUnreachableNode",
-  "edgeHeld",
-  "edgeHeldAt",
-  "edgeHeldNode",
-  "interrupted",
-  "interruptedAt",
-  "interruptedFrom",
-  "interruptedBy",
-];
-
-function intEnvC(name: string, def: number, min: number, max: number): number {
-  const n = Number.parseInt(String(process.env[name] ?? ""), 10);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
-}
-
-/** The pre-read program checks of an edge run: a Map whose MISSING ids are unreadable (central never reads an edge controller). */
-class EdgeReportedPrograms extends Map<number, ProgramCheck> {
-  override get(id: number): ProgramCheck {
-    return super.get(id) ?? { target: "adapter", id, label: null, status: "unreadable", source: "edge", reason: "notConnected" };
-  }
-}
-
 /**
- * doc 81 Đợt 10 C (design §2.7, D7; Đợt 9 S Concern 3) — the program checks of the adapters an EDGE NODE owns, from the node's
- * own reports (edge_node_program_reports, mig 0373): a report counts only when it is FRESH (readAt within
- * EDGE_PROGRAM_REPORT_MAX_AGE_MS, default 120 s, ± EDGE_MAX_CLOCK_SKEW_MS, default 5 s — the same bounds central's /authorize
- * applies) and of the adapter's CURRENT owner epoch (R-10-b). Capability is central's (programChecksumCapable of the config
- * row): a capable controller without a counting report — or one the node calls "unsupported" — is unreadable (no digest ⇒ no
- * approval); a verified report adds its checksum. Every other adapter id is unreadable: central never reads a controller for
- * an edge run. undefined ⇔ migrations 0373/0374 are missing (no adapter can be edge-owned ⇒ the pre-Đợt-10 reads). Throws on
- * any other DB error (callers fail closed).
+ * doc 81 Đợt 10 C (design §2.7, D7; Đợt 9 S Concern 3) + fix review 1 (R-10-m) — the program checks of the adapters an EDGE
+ * NODE owns, from the node's own STORED reports (edge_node_program_reports, mig 0373), through THE one rule
+ * (edge/edgeProgramReportRule.edgeProgramCheckOf — key, central capability, owner epoch, freshness; the same rule B's
+ * /authorize applies to the readings of its request). Every other adapter id is unreadable: central never reads a controller
+ * for an edge run. undefined ⇔ migrations 0373/0374 are missing (no adapter can be edge-owned ⇒ the pre-Đợt-10 reads).
+ * Throws on any other DB error (callers fail closed).
  */
 export async function edgeNodeProgramPre(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, edgeNodeId: number, nowMs: number = Date.now()): Promise<ReadonlyMap<number, ProgramCheck> | undefined> {
   let owned: Array<{ id: number; ownerEpoch: number | null; edgeNodeId: number | null }>;
@@ -2636,29 +2653,15 @@ export async function edgeNodeProgramPre(d: NonNullable<Awaited<ReturnType<typeo
     if (isEdgeControlSchemaMissing(err)) return undefined;
     throw err;
   }
-  owned = owned.filter((o) => o.edgeNodeId === edgeNodeId);
-  const ids = owned.map((o) => o.id);
-  const rows = ids.length ? await d.select().from(deviceAdapters).where(inArray(deviceAdapters.id, ids)) : [];
-  const maxAge = intEnvC("EDGE_PROGRAM_REPORT_MAX_AGE_MS", 120_000, 1_000, 3_600_000);
-  const skew = intEnvC("EDGE_MAX_CLOCK_SKEW_MS", 5_000, 0, 300_000);
-  const pre = new EdgeReportedPrograms();
-  for (const o of owned) {
-    const row = rows.find((r) => r.id === o.id) as Record<string, unknown> | undefined;
-    const label = typeof row?.code === "string" && row.code ? row.code : typeof row?.name === "string" && row.name ? row.name : null;
-    const base = { target: "adapter" as const, id: o.id, label, source: "edge" };
-    if (!row || !programChecksumCapable(row as never)) {
-      pre.set(o.id, { ...base, status: "unsupported" });
-      continue;
-    }
-    const rep = reports.find((r) => r.adapterId === o.id && r.edgeNodeId === edgeNodeId);
-    const at = rep?.readAt == null ? NaN : new Date(rep.readAt).getTime();
-    const fresh = !!rep && Number.isFinite(at) && at <= nowMs + skew && nowMs - at <= maxAge + skew && rep.ownerEpoch != null && Number(rep.ownerEpoch) === Number(o.ownerEpoch);
-    if (!fresh) pre.set(o.id, { ...base, status: "unreadable", reason: rep ? "timeout" : "notConnected" });
-    else if (rep.status === "verified" && typeof rep.checksum === "string" && rep.checksum) pre.set(o.id, { ...base, status: "verified", checksum: rep.checksum });
-    else if (rep.status === "unreadable") pre.set(o.id, { ...base, status: "unreadable", reason: (["notConnected", "timeout", "error", "invalid", "inconsistent"].includes(String(rep.reason)) ? rep.reason : "error") as never });
-    else pre.set(o.id, { ...base, status: "unreadable", reason: "inconsistent" }); // the node says "unsupported" for a capable controller
-  }
-  return pre;
+  const ids = owned.filter((o) => o.edgeNodeId === edgeNodeId).map((o) => o.id);
+  const rows = ids.length ? ((await d.select().from(deviceAdapters).where(inArray(deviceAdapters.id, ids))) as Array<Record<string, unknown>>) : [];
+  const adapters = owned
+    .filter((o) => o.edgeNodeId === edgeNodeId)
+    .map((o) => {
+      const row = rows.find((r) => r.id === o.id);
+      return { id: o.id, edgeNodeId: o.edgeNodeId, ownerEpoch: o.ownerEpoch, protocol: row?.protocol, connectionOptions: row?.connectionOptions, code: row?.code, name: row?.name };
+    });
+  return edgeProgramPreOf(edgeNodeId, adapters, reports, { source: "stored", nowMs });
 }
 
 /** The binding detail of an edge run: its node's program reports (D7). A read error ⇒ no digest (fail-closed). */
@@ -2675,26 +2678,6 @@ async function edgeBindingDetail(
     return { digest: null, programs: [] };
   }
   return computeBindingDetail(d, def, pre, view);
-}
-
-/**
- * doc 81 Đợt 10 C — computeBindingDetail of a run: an EDGE run from its node's reports (edgeBindingDetail), any other run as
- * before (central reads its own controllers). The assignment unreadable ⇒ as before (the caller refuses an undecidable edge
- * resume on its own; a central read of an edge controller is unreadable anyway — central holds no session for it).
- */
-async function bindingDetailFor(
-  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-  runId: number,
-  def: WorkflowDefinition,
-  view?: { display?: boolean },
-): Promise<{ digest: string | null; programs: ProgramCheck[] }> {
-  let a: Awaited<ReturnType<typeof readEdgeAssignment>> = null;
-  try {
-    a = await readEdgeAssignment(d, runId);
-  } catch {
-    a = null;
-  }
-  return a ? edgeBindingDetail(d, a.edgeNodeId, def, view) : computeBindingDetail(d, def, undefined, view);
 }
 
 /**
@@ -2730,10 +2713,23 @@ export async function getRun(
   const usable = wfDef && Array.isArray(wfDef.steps) ? wfDef : null;
   // doc 81 Đợt 7 I2 (null on a DB error ⇒ cannot approve); final wave F6 — only for an approver's screen of a paused run.
   // doc 81 Đợt 8 O2/O3 — the program checks come from the SAME reading as the digest.
-  const binding =
-    usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held")
-      ? await bindingDetailFor(d, run.id, usable, { display: true }) // Đợt 9 R-9-b — screen only: display cache allowed; Đợt 10 C — an edge run: its node's reports (D7)
-      : null;
+  // doc 81 Đợt 10 C (D7) — an EDGE run's digest from its node's reports; the assignment unreadable ⇒ no digest (fail-closed,
+  // never a central read of what may be an edge run's controller).
+  let binding: { digest: string | null; programs: ProgramCheck[] } | null = null;
+  if (usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held")) {
+    let onEdge: Awaited<ReturnType<typeof readEdgeAssignment>> | undefined;
+    try {
+      onEdge = await readEdgeAssignment(d, run.id);
+    } catch {
+      onEdge = undefined;
+    }
+    binding =
+      onEdge === undefined
+        ? { digest: null, programs: [] }
+        : onEdge
+          ? await edgeBindingDetail(d, onEdge.edgeNodeId, usable, { display: true })
+          : await computeBindingDetail(d, usable, undefined, { display: true }); // Đợt 9 R-9-b — screen only: display cache allowed
+  }
   return {
     run,
     defHash: usable ? hashWorkflowDefinition(usable) : null,
@@ -2985,9 +2981,18 @@ export async function resumeRun(
     // decide ⇒ refused), or a screen-bound approval without it ⇒ CONFLICT, nothing changes.
     // doc 81 Đợt 8 O2 — the digest includes the program checksum of every supported controller (read now, bounded): a
     // program changed since the screen loaded, or a supported controller whose checksum cannot be read ⇒ the same CONFLICT.
+    // doc 81 Đợt 9 task S2 — is this run executed by an edge node? Read BEFORE the claim (and, Đợt 10 C fix review 1, ONCE,
+    // before the digest: an edge run's digest comes from its node's reports — D7); undecidable ⇒ the approval / Continue is
+    // refused (never urgent: stopping goes through abort / reject / the machines' STOP / E-STOP).
+    let edgeAssigned: Awaited<ReturnType<typeof readEdgeAssignment>> = null;
+    try {
+      edgeAssigned = await readEdgeAssignment(d, runId);
+    } catch {
+      return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId}: whether an edge node executes it could not be read — retry.` };
+    }
     let checked: { digest: string | null; programs: ProgramCheck[] } | undefined;
     if (screenBound && (decision.expectedDefHash !== undefined || decision.expectedBindingDigest !== undefined)) {
-      checked = await bindingDetailFor(d, runId, def); // doc 81 Đợt 10 C (D7) — an edge run: its node's program reports
+      checked = edgeAssigned ? await edgeBindingDetail(d, edgeAssigned.edgeNodeId, def) : await computeBindingDetail(d, def); // D7
       const checkedDigest = checked.digest;
       if (decision.expectedBindingDigest === undefined || checkedDigest === null || checkedDigest !== decision.expectedBindingDigest) {
         throw appError(
@@ -2999,14 +3004,6 @@ export async function resumeRun(
       }
     }
 
-    // doc 81 Đợt 9 task S2 — is this run executed by an edge node? Read BEFORE the claim; undecidable ⇒ the approval / Continue
-    // is refused (never urgent: stopping goes through abort / reject / the machines' STOP / E-STOP).
-    let edgeAssigned: Awaited<ReturnType<typeof readEdgeAssignment>> = null;
-    try {
-      edgeAssigned = await readEdgeAssignment(d, runId);
-    } catch {
-      return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId}: whether an edge node executes it could not be read — retry.` };
-    }
 
     // doc 80 ORC-03 — approving a hitl_gate enforces its approverRoles / fourEyes (FORBIDDEN).
     // Only a run paused AT a gate ('awaiting_confirm'); an interrupted 'held' run has no open gate.
@@ -4239,8 +4236,10 @@ export async function driveEdgeRunFromPackage(pkg: EdgeRunPackage, claim: EdgeCl
  */
 export async function resendStopsOfAbortedRun(picture: EdgeSweepPicture, user: FoeUser, store: RunStore): Promise<StartRunResult> {
   const runId = picture.runId;
-  if (!abortResendAllowed(picture.issuedAt)) {
-    store.auditAbort(user, runId, "abortStopResend", { resend: true, outcome: "refusedTooOld", abortedAt: null, pictureIssuedAt: picture.issuedAt, windowMs: ABORT_RESEND_WINDOW_MS });
+  // fix review 1 — the window counts from the ABORT (central's finishedAt, carried signed in the picture); issuedAt only when absent
+  const abortedAt = (picture as { abortedAt?: number | null }).abortedAt ?? null;
+  if (!abortResendAllowed(abortedAt ?? picture.issuedAt)) {
+    store.auditAbort(user, runId, "abortStopResend", { resend: true, outcome: "refusedTooOld", abortedAt, pictureIssuedAt: picture.issuedAt, windowMs: ABORT_RESEND_WINDOW_MS });
     return {
       ok: false,
       enabled: foeEnabled(),
@@ -4251,7 +4250,7 @@ export async function resendStopsOfAbortedRun(picture: EdgeSweepPicture, user: F
       message: `The STOP picture of run ${runId} is older than ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes — its STOP steps are not sent again. To stop equipment now, use the machine's direct STOP / E-STOP.`,
     };
   }
-  store.auditAbort(user, runId, "abortStopResend", { resend: true, outcome: "started", pictureIssuedAt: picture.issuedAt });
+  store.auditAbort(user, runId, "abortStopResend", { resend: true, outcome: "started", abortedAt, pictureIssuedAt: picture.issuedAt });
   const abortStops = await abortStopSweep(runId, undefined, null, user, null, { resend: true, store });
   return { ok: true, enabled: foeEnabled(), runId, status: "aborted", resend: true, message: `Run ${runId} was aborted — its STOP steps not yet confirmed were sent again from this edge.`, abortStops };
 }
