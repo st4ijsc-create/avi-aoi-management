@@ -72,6 +72,28 @@ describe("doc 81 Đợt 10 E — the stream shipper", () => {
     expect(journal.pending("events")).toHaveLength(1);
   });
 
+  it("★ R-10-z: a gap whose cursor is BEYOND what this shipper sent acks nothing (anomaly), records kept; within it, acks only up to what was sent", async () => {
+    const { central, journal, shipper } = await setup();
+    shipper.setClaim(9, 1, `ect_${"A".repeat(43)}`);
+    for (const s of ["a", "b", "c"]) await journal.appendRun(9, 1, step(s));
+    central.handlers.report = () => ({ status: 409, code: "gap", details: { expectedSeq: 10 } });
+    expect(await shipper.flush("run:9:1")).toBe("refused");
+    expect(journal.ackedSeq("run:9:1")).toBe(0);
+    expect(journal.pending("run:9:1")).toHaveLength(3);
+    expect(journal.pending("events").map((e) => (e.record as { code?: string }).code)).toEqual(["EDGE_STREAM_CURSOR_AHEAD"]);
+    // central holds 1..2 of the 3 sent ⇒ ack 2, resend 3
+    let first = true;
+    central.handlers.report = (b) => {
+      if (first) {
+        first = false;
+        return { status: 409, code: "gap", details: { expectedSeq: 3 } };
+      }
+      return { status: 200, data: { ackedSeq: b.records[b.records.length - 1].seq, applied: b.records.length, duplicates: 0 } };
+    };
+    expect(await shipper.flush("run:9:1")).toBe("ok");
+    expect(central.callsTo("report").slice(-1)[0].body.records.map((r: { seq: number }) => r.seq)).toEqual([3]);
+  });
+
   it("★ central acknowledges only part of a batch ⇒ only that part leaves the journal; the rest is sent again", async () => {
     const { central, journal, shipper } = await setup();
     shipper.setClaim(9, 1, `ect_${"A".repeat(43)}`);
@@ -81,14 +103,38 @@ describe("doc 81 Đợt 10 E — the stream shipper", () => {
     expect(central.callsTo("report").map((c) => c.body.records.map((r: { seq: number }) => r.seq))).toEqual([[1, 2, 3], [2, 3], [3]]);
   });
 
-  it("★ orphaned run stream ⇒ STOP results become `stop` events, the rest one anomaly; the stream is cleared", async () => {
+  it("★ R-10-z: orphaned run stream ⇒ EVERY ledger record (STOP and non-STOP) becomes an `actuation` evidence event; the rest one anomaly", async () => {
     const { central, journal, shipper } = await setup();
+    const JTI = "0b8f3c1e-5d7a-4c1b-9a2e-000000000001";
     await journal.appendRun(9, 1, { kind: "ledger", stepId: "abort:s", attempt: 1, idempotencyKey: "k", jti: null, stop: true, target: { adapterId: 21, commandType: "stop" }, status: "failed", result: null, at: 3 });
+    await journal.appendRun(9, 1, { kind: "ledger", stepId: "m1", attempt: 2, idempotencyKey: "run9-m1-a2", jti: JTI, stop: false, target: { robotId: 12, jobType: "move" }, status: "done", result: null, at: 4 });
     await journal.appendRun(9, 1, step("m1"));
-    expect(await shipper.orphanRunStream("run:9:1", "claim gone")).toBe(2);
+    expect(await shipper.orphanRunStream("run:9:1", "claim gone")).toBe(3);
     await shipper.flush("events");
-    expect(central.received.locksEvents.map((r) => r.kind + (r.kind === "stop" ? `:${r.outcome}:${JSON.stringify(r.target)}` : `:${r.code}`))).toEqual(['stop:failed:{"adapterId":21}', "anomaly:EDGE_RUN_REPORT_ORPHANED"]);
+    const ev = central.received.locksEvents;
+    expect(ev.filter((r) => r.kind === "actuation").map((r) => [r.runId, r.claimSeq, r.stepId, r.attempt, r.jti, r.stop, r.target, r.outcome])).toEqual([
+      [9, 1, "abort:s", 1, null, true, { adapterId: 21, commandType: "stop" }, "failed"],
+      [9, 1, "m1", 2, JTI, false, { robotId: 12, jobType: "move" }, "done"],
+    ]);
+    expect(ev.filter((r) => r.kind === "anomaly").map((r) => r.code)).toEqual(["EDGE_RUN_REPORT_ORPHANED"]);
     expect(journal.pending("run:9:1")).toEqual([]);
+  });
+
+  it("★ R-10-z: with a FULL journal, actuation evidence and command acks are still written (never dropped)", async () => {
+    const { client, central } = await setup();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "edge-streams-full-"));
+    dirs.push(dir);
+    const journal = await EdgeJournal.open({ dir, groupCommitMs: 1, maxBytes: 2_000 });
+    journals.push(journal);
+    const shipper = new EdgeStreamShipper(journal, client, { log: () => undefined });
+    await journal.appendRun(9, 1, { kind: "ledger", stepId: "m1", attempt: 1, idempotencyKey: "k", jti: null, stop: false, target: { robotId: 12, jobType: "move" }, status: "done", result: null, at: 4 });
+    while (!journal.isFull()) await journal.appendRun(9, 1, step("fill"));
+    expect(journal.admitNonStop()).toBe(false);
+    await shipper.orphanRunStream("run:9:1", "claim gone");
+    const ack = await journal.appendEvent({ kind: "command_ack", requestId: 5, outcome: "done", generation: null, at: 1, target: { robotId: 12 }, ownerEpoch: 3 }, { stop: true });
+    expect(ack.seq).not.toBeNull();
+    await shipper.flush("events");
+    expect(central.received.locksEvents.map((r) => r.kind)).toEqual(["actuation", "anomaly", "command_ack"]);
   });
 
   it("the report sink journals first and nudges the shipper", async () => {

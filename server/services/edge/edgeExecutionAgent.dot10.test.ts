@@ -439,6 +439,23 @@ describe("doc 81 Đợt 10 E — agent v2: central commands (design §2.8)", () 
     expect(acks(h.central).map((r) => [r.requestId, r.outcome])).toEqual([[97, "done"], [98, "done"]]);
   });
 
+  it("a re-delivered signed lock runs once; an UNSIGNED STOP the device could not take is retried on re-delivery and acked only once done", async () => {
+    const h = await harness({ claimRuns: false });
+    const lock = h.central.sign("cmd", h.central.commandPayload({ requestId: 99, kind: "lock", robotId: 12, reason: "x" }));
+    expect((await h.agent.handleCommands([lock])).map((c) => c.outcome)).toEqual(["done"]);
+    expect((await h.agent.handleCommands([lock])).map((c) => c.outcome)).toEqual(["duplicate"]);
+    expect(h.devices.calls).toEqual(["lock:12"]);
+    let fail = true;
+    h.devices.port.stopRobot = async () => (h.devices.calls.push("stopRobot:try"), fail ? { outcome: "failed" } : { outcome: "sent" });
+    const u = { typ: "cmd-stop-unsigned", requestId: 100, nodeId: 7, credentialId: 31, ownerEpoch: 3, target: { robotId: 12 } };
+    expect((await h.agent.handleCommands([u])).map((c) => c.outcome)).toEqual(["unsigned:failed"]);
+    fail = false;
+    expect((await h.agent.handleCommands([u])).map((c) => c.outcome)).toEqual(["unsigned:sent"]);
+    expect((await h.agent.handleCommands([u])).map((c) => c.outcome)).toEqual(["duplicate"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((r) => [r.requestId, r.outcome])).toEqual([[99, "done"], [100, "done"]]);
+  });
+
   it("commands piggybacked on a progress answer are handled too (D10)", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -481,14 +498,15 @@ describe("doc 81 Đợt 10 E — agent v2: STOP re-send from the sweep picture (
 });
 
 describe("doc 81 Đợt 10 E — agent v2: restart + hygiene", () => {
-  it("★ after a restart, run records whose claim token was lost become events evidence (STOPs kept), never a stuck stream", async () => {
+  it("★ after a restart, run records whose claim token was lost become events evidence (every ledger record as actuation), never a stuck stream", async () => {
     const h = await harness();
     await h.journal.appendRun(9, 2, { kind: "ledger", stepId: "stop1", attempt: 1, idempotencyKey: "k", jti: null, stop: true, target: { robotId: 12, jobType: "abort" }, status: "done", result: null, at: 5 });
     await h.journal.appendRun(9, 2, { kind: "step", stepId: "m1", stepType: "command", status: "running", attempt: 1, startedAt: 1, finishedAt: null, error: null, result: null, jti: null });
     expect(await h.shipper.orphanUntokened("claim token lost on restart")).toBe(2);
     expect(h.journal.pending("run:9:2")).toEqual([]);
     await h.shipper.flushAll();
-    expect(eventKinds(h.central)).toEqual(['stop:local:{"robotId":12}:sent', "anomaly:EDGE_RUN_REPORT_ORPHANED"]);
+    expect(eventKinds(h.central)).toEqual(["actuation", "anomaly:EDGE_RUN_REPORT_ORPHANED"]);
+    expect(h.central.received.locksEvents[0]).toMatchObject({ kind: "actuation", runId: 9, claimSeq: 2, stepId: "stop1", stop: true, target: { robotId: 12, jobType: "abort" }, outcome: "done" });
   });
 
   it("★ the credential never appears in what the agent logs (offline, refusals, anomalies)", async () => {

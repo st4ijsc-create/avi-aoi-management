@@ -10,7 +10,8 @@
  *     `run:*` → POST runs/:id/report (needs the claim token, kept in memory only), `events` → POST locks/events,
  *     `robot_state` → POST robots/state. A duplicate is acknowledged, a gap is resent from central's expectedSeq. A run stream
  *     that can no longer be reported (claim token lost on restart — tokens are never journaled — or central no longer knows the
- *     claim) is converted into `events` evidence: its STOP results become `stop` events, the rest one anomaly.
+ *     claim) is converted into `events` evidence: EVERY ledger record (STOP and non-STOP) becomes an `actuation` event (target,
+ *     step, attempt, jti, outcome — R-10-z), the other kinds one anomaly. A gap answer never acks beyond what was SENT.
  *   • edgeTelemetryPersistFn — the telemetryBus insert-function seam on the edge (D12): canonical rows → POST telemetry;
  *     a transport failure THROWS so the storeForward WAL buffers the rows and replays them through the same function.
  *   • Motion-lock helpers (for D's robotManager / robotMotionLockStore on the edge): the persistence hooks that turn the
@@ -100,6 +101,8 @@ export class EdgeStreamShipper {
   private timer: NodeJS.Timeout | null = null;
   private readonly log: (m: string) => void;
   private readonly warned = new Set<string>();
+  /** R-10-z — per stream, the highest seq THIS shipper has actually sent (a gap answer never acks beyond it) */
+  private readonly highestSent = new Map<string, number>();
 
   constructor(
     private readonly journal: EdgeJournal,
@@ -153,6 +156,7 @@ export class EdgeStreamShipper {
       if (batch.length === 0) return "ok";
       const epoch = this.journal.epoch;
       const lastSent = batch[batch.length - 1].seq;
+      this.highestSent.set(stream, Math.max(this.highestSent.get(stream) ?? 0, lastSent));
       let r;
       if (parsed.kind === "run") {
         const tok = this.tokens.get(stream);
@@ -181,7 +185,15 @@ export class EdgeStreamShipper {
       if (r.code === "gap" && typeof data.expectedSeq === "number") {
         const acked = this.journal.ackedSeq(stream);
         if (data.expectedSeq > acked + 1) {
-          this.journal.ack(stream, data.expectedSeq - 1); // central already holds them
+          // R-10-z — central already holds them: ack only what THIS shipper has actually sent; a cursor beyond that claims
+          // records central never received from here ⇒ anomaly, nothing acked, the records are kept (evidence is never lost)
+          const sent = this.highestSent.get(stream) ?? 0;
+          if (data.expectedSeq > sent + 1) {
+            console.error(`[EdgeStreams] ANOMALY: central's cursor for ${stream} (expects ${data.expectedSeq}) is beyond what this edge sent (${sent}) — nothing acknowledged, records kept`);
+            if (parsed.kind !== "events") void this.journal.appendEvent({ kind: "anomaly", code: "EDGE_STREAM_CURSOR_AHEAD", runId: parsed.kind === "run" ? parsed.runId : null, detail: `${stream}: central expects ${data.expectedSeq}, sent ${sent}`, at: Date.now() }, { stop: true });
+            return "refused";
+          }
+          this.journal.ack(stream, Math.min(data.expectedSeq - 1, sent));
           continue;
         }
         this.warnOnce(stream, `[EdgeStreams] ${stream}: central expects seq ${data.expectedSeq} but this journal already dropped it (acked ${acked}) — stream stuck, see EDGE anomaly`);
@@ -218,17 +230,34 @@ export class EdgeStreamShipper {
     const kinds = new Map<string, number>();
     for (const e of recs) {
       const r = e.record as EdgeRunReportRecord;
-      kinds.set(r.kind, (kinds.get(r.kind) ?? 0) + 1);
-      if (r.kind === "ledger" && r.stop) {
-        const target = "robotId" in r.target ? { robotId: r.target.robotId } : { adapterId: r.target.adapterId };
+      if (r.kind === "ledger") {
+        // R-10-z — EVERY ledger record (STOP and non-STOP) becomes an `actuation` evidence event: central records the actuation
+        // "without a live claim" (audit; never run state). Stop-class: never dropped, bounded wait.
         await this.journal.appendEvent(
-          { kind: "stop", target, source: "local", requestId: null, outcome: /fail/i.test(r.status) ? "failed" : r.status === "simulated" ? "simulated" : "sent", at: r.at, detail: `run ${parsed.runId} step ${r.stepId} (${why})`.slice(0, 500) },
+          {
+            kind: "actuation",
+            runId: parsed.runId,
+            claimSeq: parsed.claimSeq,
+            stepId: r.stepId,
+            attempt: r.attempt,
+            jti: r.jti,
+            stop: r.stop,
+            target: r.target,
+            ...(r.ownerEpoch !== undefined ? { ownerEpoch: r.ownerEpoch } : {}),
+            outcome: r.status,
+            at: r.at,
+          },
           { stop: true },
         );
+        continue;
       }
+      kinds.set(r.kind, (kinds.get(r.kind) ?? 0) + 1);
     }
     const summary = [...kinds.entries()].map(([k, n]) => `${k}=${n}`).join(", ");
-    await this.journal.appendEvent({ kind: "anomaly", code: "EDGE_RUN_REPORT_ORPHANED", runId: parsed.runId, detail: `claim ${parsed.claimSeq}: ${recs.length} record(s) not reported (${summary}) — ${why}`.slice(0, 1_000), at: Date.now() });
+    await this.journal.appendEvent(
+      { kind: "anomaly", code: "EDGE_RUN_REPORT_ORPHANED", runId: parsed.runId, detail: `claim ${parsed.claimSeq}: ${recs.length} record(s) not reported on the run stream (${summary || "ledger only"}) — every ledger record re-sent as actuation evidence — ${why}`.slice(0, 1_000), at: Date.now() },
+      { stop: true },
+    );
     this.journal.ack(stream, recs[recs.length - 1].seq);
     this.tokens.delete(stream);
     this.nudge(EDGE_STREAM_EVENTS);

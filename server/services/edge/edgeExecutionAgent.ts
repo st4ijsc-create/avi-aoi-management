@@ -435,7 +435,8 @@ export class EdgeExecutionAgent {
     acted: { target: { robotId: number } | { adapterId: number }; ownerEpoch: number; unsigned?: boolean },
   ): Promise<void> {
     await this.deps.sink
-      .event({ kind: "command_ack", requestId, outcome, generation, at: this.now(), target: acted.target, ownerEpoch: acted.ownerEpoch, ...(acted.unsigned ? { unsigned: true as const } : {}) })
+      // R-10-z — stop-class: never dropped when the journal is full, bounded wait
+      .event({ kind: "command_ack", requestId, outcome, generation, at: this.now(), target: acted.target, ownerEpoch: acted.ownerEpoch, ...(acted.unsigned ? { unsigned: true as const } : {}) }, { stop: true })
       .catch(() => undefined);
   }
 
