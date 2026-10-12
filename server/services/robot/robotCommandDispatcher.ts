@@ -49,12 +49,8 @@ import { foeApprovalDbRefusal, preReadProgramChecksForAction } from "../orchestr
 import { isRobotAutomationTool, readRobotAutomationState, auditAutomationRefused } from "./robotAutomationAction"; // doc 81 Đợt 7 I5
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver, RobotJobResult } from "./robotDriver";
-import {
-  MOTION_OUTCOME_UNKNOWN_REASON_CODES,
-  MOTION_LOCKED_REASON_CODE,
-  DISPATCH_DEADLINE_REASON_CODE,
-  RobotAbortUnsupportedError,
-} from "./robotDriver";
+import { MOTION_LOCKED_REASON_CODE } from "./robotDriver";
+import { claimRobotMotionSlot, releaseRobotMotionSlot, runRobotDeviceStage } from "./robotDeviceRun"; // doc 81 Đợt 10 task D — device stage extracted verbatim
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { readRobotEnabledForMotion } from "./robotEnabledGate"; // final wave R-4-x
 import { persistedMotionLockCheckRequired, readPersistedMotionLock } from "./robotSharedMotionLockGate"; // Đợt 9 final wave F1
@@ -422,30 +418,6 @@ async function finalize(
   }
 }
 
-type AbortOutcome =
-  | { abort: "abort_sent" }
-  | { abort: "abort_failed"; abortError: string }
-  | { abort: "abort_unsupported"; abortError: string };
-
-/**
- * doc 81 Đợt 1B Task 5 (BE2 §3 S5) — stop a motion whose outcome is unknown. Goes straight
- * to the driver's stop (NOT through the gates: a stop must never be blocked by them),
- * bounded by `deadlineMs`. Never throws; the outcome is recorded in the ledger.
- */
-async function stopAfterUnknownOutcome(driver: RobotDriver, deadlineMs: number): Promise<AbortOutcome> {
-  if (typeof (driver as Partial<RobotDriver>).abort !== "function") {
-    return { abort: "abort_unsupported", abortError: `${driver.vendor} driver has no abort()` };
-  }
-  try {
-    await withDeadline(driver.abort(), deadlineMs, `${driver.vendor} abort`);
-    return { abort: "abort_sent" };
-  } catch (err) {
-    const msg = (err as Error)?.message ?? String(err);
-    if (err instanceof RobotAbortUnsupportedError) return { abort: "abort_unsupported", abortError: msg };
-    return { abort: "abort_failed", abortError: msg };
-  }
-}
-
 /**
  * doc 81 Đợt 1B Task 5 fix round 1 (M1) — replay of a prior job with the same idempotency
  * key, mapped onto the RobotDispatchResult union (the DB enum also has running / draft /
@@ -501,12 +473,8 @@ export const ROBOT_MOTION_IN_PROGRESS = "robot_motion_in_progress" as const;
  * never claims or checks the slot — it must always reach the robot. The dry-run/simulated path
  * never claims it (nothing moves). Restart drops it (like the driver motion lock).
  */
-const motionInFlight = new Map<number, { jobType: string; since: string }>();
-
-/** Snapshot of the in-flight motion on `robotId` (null when idle) — observability + tests. */
-export function robotMotionInFlight(robotId: number): { jobType: string; since: string } | null {
-  return motionInFlight.get(robotId) ?? null;
-}
+// doc 81 Đợt 10 task D — the slot itself lives in robotDeviceRun.ts (shared with the edge front end); re-exported unchanged.
+export { robotMotionInFlight } from "./robotDeviceRun";
 
 /**
  * Age after which a `running` row cannot belong to a live dispatch: the job deadline plus the
@@ -1018,7 +986,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   //     first await of the real path, so two concurrent motions on one robot cannot both pass.
   //     Refused ⇒ rejected + ROBOT_MOTION_IN_PROGRESS (not queued). A stop never checks it.
   if (motion) {
-    const busy = motionInFlight.get(input.robotId);
+    const busy = claimRobotMotionSlot(input.robotId, input.job.jobType);
     if (busy) {
       const jobId = await record(
         input,
@@ -1028,12 +996,11 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
       );
       return { ok: false, status: "rejected", jobId, error: ROBOT_MOTION_IN_PROGRESS };
     }
-    motionInFlight.set(input.robotId, { jobType: input.job.jobType, since: new Date().toISOString() });
   }
   try {
     return await runRealJob(input, robot.driver, motion, timeoutMs, policyOverride, stopDb, stopNotes, motion ? opts.motionActuator : undefined);
   } finally {
-    if (motion) motionInFlight.delete(input.robotId);
+    if (motion) releaseRobotMotionSlot(input.robotId);
   }
 }
 
@@ -1253,56 +1220,13 @@ async function runRealJob(
     }
   }
 
-  let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<{ kind: "timeout" }>((resolve) => {
-    timer = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
-  });
-  const outcome = await Promise.race([
-    // R-1C-j — exactly ONE channel per job: the motion actuator (ROS2 bridge) OR the driver, never both;
-    // a STOP always takes the driver (the actuator is only ever passed for motion).
-    (motion && motionActuator ? motionActuator(input.job) : driver.runJob(input.job)).then(
-      (r) => ({ kind: "result" as const, r }),
-      (e: unknown) => ({ kind: "error" as const, e }),
-    ),
-    deadline,
-  ]);
-  clearTimeout(timer);
-
-  let status: "done" | "failed";
-  let detail: Record<string, unknown> | undefined;
-  let errorText: string | undefined;
-  // B1 — the driver's own detail, before the dispatcher merges its notes into `detail`.
-  const driverOut = outcome.kind === "result" && outcome.r.detail ? { driverDetail: { ...outcome.r.detail } } : {};
-  if (outcome.kind === "result") {
-    status = outcome.r.ok ? "done" : "failed";
-    detail = outcome.r.detail;
-    errorText = outcome.r.error;
-  } else if (outcome.kind === "error") {
-    status = "failed";
-    errorText = (outcome.e as Error)?.message ?? String(outcome.e);
-  } else {
-    status = "failed";
-    detail = { timeout: true, timeoutMs, reasonCode: DISPATCH_DEADLINE_REASON_CODE };
-    errorText = `robot job timeout after ${timeoutMs}ms`;
-  }
-
-  const reasonCode = typeof detail?.reasonCode === "string" ? detail.reasonCode : undefined;
-  const outcomeUnknown =
-    outcome.kind === "timeout" ||
-    (status === "failed" && reasonCode != null && MOTION_OUTCOME_UNKNOWN_REASON_CODES.has(reasonCode));
-  if (motion && outcomeUnknown) {
-    // Fix round 5 (c) — R13 "lock on outcome-unknown" applied directly: lock the driver BEFORE the
-    // stop goes out (the driver's own timer may not have fired yet when OUR deadline did). A
-    // confirmed stop clears it again; a failed stop leaves it set. Drivers without a lock no-op.
-    try {
-      driver.lockMotion?.(reasonCode ?? DISPATCH_DEADLINE_REASON_CODE, errorText);
-    } catch (err) {
-      console.error(`[Robot] lockMotion failed for robot ${input.robotId} (stop still sent):`, (err as Error)?.message ?? err);
-    }
-    const stop = await stopAfterUnknownOutcome(driver, timeoutMs);
-    detail = { ...(detail ?? {}), ...stop };
-    errorText = `${errorText ?? "motion outcome unknown"} — ${stop.abort}${"abortError" in stop ? `: ${stop.abortError}` : ""}`;
-  }
+  // doc 81 Đợt 10 task D — the race, the outcome mapping and the lock-then-stop of an unknown motion outcome moved VERBATIM to
+  // robotDeviceRun.runRobotDeviceStage (shared with the edge front end).
+  const stage = await runRobotDeviceStage({ robotId: input.robotId, driver, job: input.job, motion, timeoutMs, motionActuator });
+  const status = stage.status;
+  let detail = stage.detail;
+  const errorText = stage.errorText;
+  const driverOut = stage.driverOut;
 
   // fix round 2 (b) — a policy verdict overridden for this STOP stays on the terminal row and is audited.
   // doc 81 Đợt 1C final wave 5 (M1): the audit runs AFTER finalize and is NOT awaited on the STOP's response
