@@ -123,15 +123,23 @@ async function db() {
   return d;
 }
 
-/** The factory scope of a node: its factoryCode, or unrestricted when it has none (only an unrestricted user may assign to it). */
-export function nodeScopeOf(node: { factoryCode?: string | null }): FoeScope {
+/**
+ * The factory scope of a node: its factoryCode. R-10-as N-6 — a node with NO factory code has NO run scope at all (the EMPTY
+ * tenant scope: no factory ⇒ no run is visible to it), never "unrestricted" (fail closed).
+ */
+export function nodeScopeOf(node: { factoryCode?: string | null }): NonNullable<FoeScope> {
   const code = typeof node.factoryCode === "string" ? node.factoryCode.trim() : "";
-  return code ? { tenantScope: { factoryCode: code } } : null;
+  return code ? { tenantScope: { factoryCode: code } } : { tenantScope: {} };
+}
+
+/** True ⇔ the node has a factory code (a node without one can be handed no run — R-10-as N-6). */
+function nodeHasFactory(node: { factoryCode?: string | null }): boolean {
+  return typeof node.factoryCode === "string" && node.factoryCode.trim() !== "";
 }
 
 /**
  * The node a caller may hand a run to: it exists, and its factory is inside the caller's scope (strict). A node with no factory
- * code ⇒ only an unrestricted caller. Missing / outside ⇒ "none" (the same answer); the scope cannot be resolved ⇒ "unverified".
+ * code ⇒ nobody (R-10-as N-6). Missing / outside ⇒ "none" (the same answer); the scope cannot be resolved ⇒ "unverified".
  */
 export async function resolveAssignableNode(
   code: string,
@@ -145,9 +153,10 @@ export async function resolveAssignableNode(
     const [node] = await d.select({ id: edgeNodes.id, factoryCode: edgeNodes.factoryCode }).from(edgeNodes).where(eq(edgeNodes.code, String(code ?? "").trim())).limit(1);
     const callerIds = callerScope === null ? null : await idsTrongPhamVi("factory", callerScope, { strict: true });
     if (!node) return { kind: "none" };
+    // R-10-as N-6 — a node without a factory sees no run: nobody (an unrestricted caller included) may hand it one
+    if (!nodeHasFactory(node)) return { kind: "none" };
     if (callerIds === null) return { kind: "node", id: node.id };
     const ns = nodeScopeOf(node);
-    if (ns === null) return { kind: "none" };
     const nodeIds = await idsTrongPhamVi("factory", ns, { strict: true });
     if (!nodeIds || nodeIds.length === 0) return { kind: "none" };
     return nodeIds.every((id) => callerIds.includes(id)) ? { kind: "node", id: node.id } : { kind: "none" };

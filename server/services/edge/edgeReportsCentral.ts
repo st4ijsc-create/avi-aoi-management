@@ -59,13 +59,17 @@ export class StreamAnswer extends Error {
 
 type Audit = { action: string; entity: { type: string; id: number | null }; details: Record<string, unknown>; status?: "success" | "failure" };
 
-/** R-10-ag — sha256 hex of a record's canonical JSON (the content a seq stands for). */
-export function edgeRecordHash(rec: unknown): string {
+/**
+ * R-10-ag — sha256 hex of a record's canonical JSON (the content a seq stands for). R-10-as — null when the canonical encoder
+ * refuses the record (forbidden key, too deep, …): there is NO fallback encoding (an order-dependent one could fake or hide a
+ * conflict) — the caller refuses that record with an anomaly.
+ */
+export function edgeRecordHash(rec: unknown): string | null {
   let text: string;
   try {
     text = edgeCanonicalJson(rec);
   } catch {
-    text = JSON.stringify(rec ?? null);
+    return null;
   }
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
@@ -122,6 +126,16 @@ export async function applyStream<R extends { seq: number }>(
         : new Map<number, string>();
       for (const rec of records) {
         const hash = edgeRecordHash(rec);
+        if (hash === null) {
+          // R-10-as — no canonical form ⇒ the record is REFUSED (never applied, no hash stored), recorded as an anomaly; the
+          // cursor still moves past it (one record never wedges the stream)
+          audits.push({ action: "EDGE_ANOMALY", entity: { type: "edge_node", id: node.nodeId }, details: { anomaly: "record_unencodable", stream, epoch, seq: rec.seq }, status: "failure" });
+          if (rec.seq > last) {
+            outcomes.push({ seq: rec.seq, outcome: "anomaly", code: "record_unencodable" });
+            top = rec.seq;
+          } else duplicates++;
+          continue;
+        }
         if (rec.seq <= last) {
           const was = stored.get(rec.seq);
           if (was !== undefined && was !== hash) {
@@ -495,7 +509,9 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
       if (!(await ackEdgeCommand(tx, node.nodeId, { requestId: a.requestId, outcome: a.outcome, generation: a.generation, at: a.at, target: a.target ?? null, ownerEpoch: a.ownerEpoch ?? null, unsigned: a.unsigned === true }))) {
         // R-10-o / I-6 — refused: the request stays PENDING in the DB (re-delivered); the attempt is an anomaly (A's
         // edge_stop_ack_refusals row for a STOP is written in its OWN transaction — it survives); the stream moves on
-        return anomaly("command_ack_refused", { requestId: a.requestId, outcome: a.outcome, target: a.target ?? null, ownerEpoch: a.ownerEpoch ?? null, unsigned: a.unsigned === true });
+        // R-10-au — `notOwnedHere` is never terminal: the STOP stays pending (re-delivered while this node's; D carries it to
+        // the current owner / central) — its own anomaly code so an operator tells it from a refused ack
+        return anomaly(a.outcome === "notOwnedHere" ? "ack_not_owned_here" : "command_ack_refused", { requestId: a.requestId, outcome: a.outcome, target: a.target ?? null, ownerEpoch: a.ownerEpoch ?? null, unsigned: a.unsigned === true });
       }
     });
   } catch (err) {

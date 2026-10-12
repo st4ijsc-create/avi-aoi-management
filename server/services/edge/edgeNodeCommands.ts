@@ -23,6 +23,7 @@ import { and, asc, desc, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { EDGE_PULL_COMMANDS_MAX, EDGE_UNSIGNED_STOP_TYP, edgeCommandSchema, edgeUnsignedStopSchema, type EdgeUnsignedStop } from "./edgeProtocol";
 import { ackEdgeStop, robotMotionLockRequests, robotOwnership, adapterOwnership, isEdgeControlRefusal, type RobotMotionLockRequestRow } from "./edgeControlSchema";
 import { auditNode, centralDb, centralSigner, signForNode, type Db } from "./edgeCentralCommon";
+import { STOP_DB_STEP_DEADLINE_MS } from "../robot/stopJob";
 import type { EdgeNodePrincipal } from "./edgeNodeCredentials";
 import type { EdgeSignedEnvelope } from "./edgeSigning";
 
@@ -31,8 +32,8 @@ export type EdgeRequestKind = "lock" | "clear" | "stop";
 // R-10-p / M-8 — the ONE unsigned-STOP envelope is edgeProtocol's (`cmd-stop-unsigned`); re-exported for callers of this module.
 export { EDGE_UNSIGNED_STOP_TYP, edgeUnsignedStopSchema, type EdgeUnsignedStop };
 
-/** F2 — a STOP enqueue never waits longer than the STOP DB-step bound (robot/stopJob STOP_DB_STEP_DEADLINE_MS, 1 s) per attempt. */
-const STOP_ENQUEUE_BOUND_MS = 1_000;
+/** F2 — a STOP enqueue never waits longer than the STOP DB-step bound (robot/stopJob STOP_DB_STEP_DEADLINE_MS) per attempt. */
+export const STOP_ENQUEUE_BOUND_MS = STOP_DB_STEP_DEADLINE_MS;
 
 /** Default validity of a request: a clear (raises energy) is short-lived; a lock / stop stays deliverable longer. */
 export function edgeRequestTtlMs(kind: EdgeRequestKind): number {
@@ -198,6 +199,7 @@ export interface NodeCommands {
  */
 export async function commandsForNode(node: EdgeNodePrincipal): Promise<NodeCommands> {
   const out: NodeCommands = { signed: [], unsignedStops: [], incomplete: false };
+  const stampLater: number[] = [];
   {
     const d = await centralDb();
     const signer = centralSigner();
@@ -237,14 +239,17 @@ export async function commandsForNode(node: EdgeNodePrincipal): Promise<NodeComm
       if (!payload) continue;
       if (r.deliveredAt == null) {
         try {
-          await d.update(robotMotionLockRequests).set({ deliveredAt: new Date() }).where(and(eq(robotMotionLockRequests.id, r.id), eq(robotMotionLockRequests.edgeNodeId, node.nodeId), isNull(robotMotionLockRequests.deliveredAt)));
+          await stampDelivered(d, r.id, node.nodeId);
         } catch (err) {
-          if (!isEdgeControlRefusal(err)) throw err;
-          if (!isStop) {
+          if (isStop) {
+            // R-10-as N-4 (L-7) — the stamp is not needed to sign: a STOP is sent whatever the stamp did (refused, timed out
+            // on a row lock, DB error); it is stamped again after the answer is built, else on the next pull
+            stampLater.push(r.id);
+          } else {
+            if (!isEdgeControlRefusal(err)) throw err;
             await expireOne(d, r.id);
             continue;
           }
-          // a STOP is sent even when its delivery stamp is refused (L-7)
         }
       }
       out.signed.push(signForNode(signer, "cmd", edgeCommandSchema, payload, node));
@@ -253,6 +258,12 @@ export async function commandsForNode(node: EdgeNodePrincipal): Promise<NodeComm
         console.error(`[EdgeCommands] ⚠ request #${r.id} (${r.kind}) for node ${node.nodeCode} not delivered this pull: ${(err as Error)?.message ?? err}`);
       }
     }
+    for (const id of stampLater) {
+      // best effort, bounded: a STOP whose stamp still fails stays undelivered-looking and is stamped on a later pull
+      await stampDelivered(d, id, node.nodeId).catch((err) =>
+        console.warn(`[EdgeCommands] STOP #${id} for node ${node.nodeCode} sent; its delivery stamp failed (${(err as Error)?.message ?? err}) — stamped on a later pull`),
+      );
+    }
     return out;
   }
 }
@@ -260,6 +271,20 @@ export async function commandsForNode(node: EdgeNodePrincipal): Promise<NodeComm
 async function stillOwned(d: Db, r: RobotMotionLockRequestRow): Promise<boolean> {
   const o = await ownerOf(d, r.robotId ?? null, r.adapterId ?? null);
   return !!o && o.edgeNodeId === r.edgeNodeId && o.ownerEpoch === Number(r.ownerEpoch);
+}
+
+/** The bound of one delivery stamp: a row lock held elsewhere (an ack in flight) never stalls a pull. */
+export const DELIVERY_STAMP_LOCK_MS = 250;
+
+/** Stamp `deliveredAt` of ONE request of the node (first delivery only), under a short lock timeout. Throws on any failure. */
+async function stampDelivered(d: Db, id: number, nodeId: number): Promise<void> {
+  await d.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('lock_timeout', ${`${DELIVERY_STAMP_LOCK_MS}ms`}, true)`);
+    await tx
+      .update(robotMotionLockRequests)
+      .set({ deliveredAt: new Date() })
+      .where(and(eq(robotMotionLockRequests.id, id), eq(robotMotionLockRequests.edgeNodeId, nodeId), isNull(robotMotionLockRequests.deliveredAt)));
+  });
 }
 
 /** Expire ONE lock / clear (never a STOP — the WHERE excludes it). */
@@ -276,7 +301,8 @@ async function expireOne(d: Db, id: number): Promise<void> {
 
 export interface EdgeAckInput {
   requestId: number;
-  outcome: "done" | "refused" | "failed" | "expired";
+  /** notOwnedHere (R-10-au) — the edge's VERIFIED config does not list the target: NEVER terminal (see ackEdgeCommand) */
+  outcome: "done" | "refused" | "failed" | "expired" | "notOwnedHere";
   generation: number | null;
   at: number;
   target?: { robotId?: number; adapterId?: number } | null;
@@ -285,43 +311,42 @@ export interface EdgeAckInput {
 }
 
 /**
- * The node's ack of ITS request (events stream `command_ack`). R-10-o / R-10-p — recorded only when the row is this node's,
- * its target and owner epoch equal the ack's, it is unacked, and an `unsigned` ack is for a STOP (all in the write's own WHERE).
- * false ⇒ refused (the request stays PENDING). Runs in a savepoint of the caller's transaction. A lock / clear is acked here;
- * a STOP only through ackStopRequest (R-10-aa: the single switch point to A's guarded function).
+ * The node's ack of a request (events stream `command_ack`). R-10-o / R-10-p — a lock / clear is recorded only when the row is
+ * this node's, its target and owner epoch equal the ack's, it is unacked, and the ack is signed-channel (all in the write's own
+ * WHERE). false ⇒ refused (the request stays PENDING).
+ * R-10-as N-3 — EVERY ack of a STOP (malformed, of another node's STOP, `expired`, …) and every ack of a request central does
+ * not know goes to A's guarded `edge_stop_ack_edge`, which writes the WORM refusal evidence (edge_stop_ack_refusals) itself.
+ * R-10-as N-5 — on the CALLER's transaction (a savepoint of the stream batch): no second pool connection. A batch that rolls back
+ * (503) takes its acks and their evidence with it; its cursor did not move, so the edge re-sends and both are written then.
  */
 export async function ackEdgeCommand(tx: Db, nodeId: number, rec: EdgeAckInput): Promise<boolean> {
   const t = rec.target ?? null;
   const robotId = t && typeof t.robotId === "number" ? t.robotId : null;
   const adapterId = t && typeof t.adapterId === "number" ? t.adapterId : null;
-  // fail-closed: an ack that does not name exactly one target and its owner epoch is never recorded
-  if ((robotId === null) === (adapterId === null) || !(typeof rec.ownerEpoch === "number" && Number.isSafeInteger(rec.ownerEpoch) && rec.ownerEpoch > 0)) return false;
-  const target = robotId !== null ? { robotId } : { adapterId: adapterId as number };
-  // a STOP ack is recorded OUTSIDE the caller's transaction (A's re-review N2): edge_stop_ack_edge writes its refusal evidence
-  // (edge_stop_ack_refusals) itself, and a later rollback of the stream batch must never erase it — nor the ack
+  const epochOk = typeof rec.ownerEpoch === "number" && Number.isSafeInteger(rec.ownerEpoch) && rec.ownerEpoch > 0;
+  const wellFormed = (robotId === null) !== (adapterId === null) && epochOk;
+  // the request of ANY node: another node's STOP is refused by A's function — with evidence (reason other_node)
   const [head] = await tx
-    .select({ kind: robotMotionLockRequests.kind, ackedAt: robotMotionLockRequests.ackedAt, outcome: robotMotionLockRequests.outcome, robotId: robotMotionLockRequests.robotId, adapterId: robotMotionLockRequests.adapterId, ownerEpoch: robotMotionLockRequests.ownerEpoch })
+    .select({ kind: robotMotionLockRequests.kind, edgeNodeId: robotMotionLockRequests.edgeNodeId, ackedAt: robotMotionLockRequests.ackedAt, outcome: robotMotionLockRequests.outcome, robotId: robotMotionLockRequests.robotId, adapterId: robotMotionLockRequests.adapterId, ownerEpoch: robotMotionLockRequests.ownerEpoch })
     .from(robotMotionLockRequests)
-    .where(and(eq(robotMotionLockRequests.id, rec.requestId), eq(robotMotionLockRequests.edgeNodeId, nodeId)))
+    .where(eq(robotMotionLockRequests.id, rec.requestId))
     .limit(1);
-  if (head?.kind === "stop") {
-    // the same ack re-applied (its batch was rolled back after the ack committed) is not a second ack
-    const same = head.ackedAt != null && head.outcome === rec.outcome && (head.robotId ?? null) === robotId && (head.adapterId ?? null) === adapterId && Number(head.ownerEpoch) === rec.ownerEpoch;
+  if (!head || head.kind === "stop") {
+    // the same ack re-sent under a new seq (already recorded) is not a second ack
+    const same = !!head && wellFormed && head.edgeNodeId === nodeId && head.ackedAt != null && head.outcome === rec.outcome && (head.robotId ?? null) === robotId && (head.adapterId ?? null) === adapterId && Number(head.ownerEpoch) === rec.ownerEpoch;
     if (same) return true;
-    return ackStopRequest(await centralDb(), nodeId, rec.requestId, target, rec.ownerEpoch as number, rec.outcome, rec.generation, rec.unsigned === true);
+    return ackStopRequest(tx, { nodeId, requestId: rec.requestId, robotId, adapterId, ownerEpoch: epochOk ? (rec.ownerEpoch as number) : null, outcome: rec.outcome, generation: rec.generation, unsigned: rec.unsigned === true });
   }
+  // fail-closed: a lock / clear ack that does not name exactly one target and its owner epoch is never recorded; R-10-au —
+  // `notOwnedHere` never closes a request (the lock stays pending until delivered to its owner or expired by the sweeper)
+  if (!wellFormed || head.edgeNodeId !== nodeId || rec.outcome === "notOwnedHere") return false;
+  const outcome: "done" | "refused" | "failed" | "expired" = rec.outcome;
   try {
     return await tx.transaction(async (sp) => {
-      const [row] = await sp
-        .select({ kind: robotMotionLockRequests.kind })
-        .from(robotMotionLockRequests)
-        .where(and(eq(robotMotionLockRequests.id, rec.requestId), eq(robotMotionLockRequests.edgeNodeId, nodeId)))
-        .limit(1);
-      if (!row || row.kind === "stop") return false;
       if (rec.unsigned === true) return false; // R-10-p — an unsigned ack is for a STOP only
       const rows = await sp
         .update(robotMotionLockRequests)
-        .set({ ackedAt: new Date(), outcome: rec.outcome, ackGeneration: rec.outcome === "done" ? rec.generation : null })
+        .set({ ackedAt: new Date(), outcome, ackGeneration: outcome === "done" ? rec.generation : null })
         .where(
           and(
             eq(robotMotionLockRequests.id, rec.requestId),
@@ -342,32 +367,44 @@ export async function ackEdgeCommand(tx: Db, nodeId: number, rec: EdgeAckInput):
 }
 
 /**
- * R-10-aa — THE one place a STOP request is acknowledged: A's guarded `public.edge_stop_ack_edge` (fix review 3; a direct UPDATE
- * of a STOP's ack columns is refused by the DB). It records the ack only for a pending STOP of THIS node whose target (robot XOR
- * adapter) and owner epoch equal the node's report, outcome done | refused | failed (never expired), and records whether it
- * came over the unsigned channel. false ⇒ nothing changed (the request stays pending; the caller audits an anomaly).
+ * R-10-aa — THE one place a STOP request is acknowledged: A's guarded `public.edge_stop_ack_edge` (a direct UPDATE of a STOP's ack
+ * columns is refused by the DB). It records the ack only for a pending STOP of THIS node whose target (robot XOR adapter) and
+ * owner epoch equal the node's report, outcome done | refused | failed; ANY other ack (malformed, other node, mismatch, not
+ * pending) ⇒ false + a refusal row. Runs in a SAVEPOINT of `tx` (N-5: the caller's connection), so an error never aborts the batch.
+ * An `expired` outcome is passed through as well (a STOP never expires, R-10-k), and R-10-au `notOwnedHere` (the edge's verified
+ * config does not list the target): NEVER terminal — the STOP stays pending for its current owner / central (D carries it;
+ * centralMustExecute), is re-delivered to this node every pull while it is this node's, and the caller records an anomaly.
+ * 0374 RAISES 23514 for both outcomes instead of writing a refusal row — refused here (false, nothing changed) and logged; the
+ * evidence row needs A's function to record them non-terminally (reported to the coordinator).
  */
 export async function ackStopRequest(
   tx: Db,
-  nodeId: number,
-  requestId: number,
-  target: { robotId: number } | { adapterId: number },
-  ownerEpoch: number,
-  outcome: "done" | "refused" | "failed" | "expired",
-  generation: number | null,
-  unsigned: boolean,
+  a: { nodeId: number; requestId: number; robotId: number | null; adapterId: number | null; ownerEpoch: number | null; outcome: "done" | "refused" | "failed" | "expired" | "notOwnedHere"; generation: number | null; unsigned: boolean },
 ): Promise<boolean> {
-  if (outcome === "expired") return false; // a STOP is never expired (R-10-k)
-  return ackEdgeStop(tx as never, {
-    requestId,
-    nodeId,
-    robotId: "robotId" in target ? target.robotId : null,
-    adapterId: "adapterId" in target ? target.adapterId : null,
-    ownerEpoch,
-    outcome,
-    unsigned,
-    generation: outcome === "done" ? generation : null,
-  });
+  try {
+    return await tx.transaction(async (sp) =>
+      ackEdgeStop(sp as never, {
+        requestId: a.requestId,
+        nodeId: a.nodeId,
+        robotId: a.robotId,
+        adapterId: a.adapterId,
+        ownerEpoch: a.ownerEpoch as number, // null ⇒ A's function records `malformed`
+        outcome: a.outcome as "done",
+        unsigned: a.unsigned,
+        generation: a.outcome === "done" ? a.generation : null,
+      }),
+    );
+  } catch (err) {
+    if ((a.outcome === "expired" || a.outcome === "notOwnedHere") && isEdgeControlRefusal(err)) {
+      console.error(
+        a.outcome === "expired"
+          ? `[EdgeCommands] ANOMALY: node ${a.nodeId} acknowledged STOP request #${a.requestId} as "expired" — refused (a STOP never expires); edge_stop_ack_edge raised instead of recording refusal evidence`
+          : `[EdgeCommands] ANOMALY: node ${a.nodeId} reports STOP request #${a.requestId} as notOwnedHere — kept PENDING (current owner / central); edge_stop_ack_edge cannot record it non-terminally yet`,
+      );
+      return false;
+    }
+    throw err;
+  }
 }
 
 /**

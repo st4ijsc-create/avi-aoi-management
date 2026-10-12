@@ -185,6 +185,16 @@ export interface DevicePlacement {
 const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
 const numOrNull = (v: unknown): number | null => (v == null ? null : Number.isFinite(Number(v)) ? Number(v) : null);
 
+/**
+ * The role of a user for FIELD_V2 / policy (central's resolveRobotAuthzContext reads users.role the same way; a user with no
+ * role is the least-privileged "user"). M-2 — a read error THROWS (the caller answers 503): an unreadable role is never "user".
+ */
+export async function userRoleOf(d: Db, userId: number): Promise<string> {
+  const { users } = await import("../../../drizzle/schema");
+  const [u] = await d.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+  return typeof u?.role === "string" && u.role ? u.role : "user";
+}
+
 export async function nodeFactoryId(d: Db, nodeId: number): Promise<number | null> {
   const r = rowsOf(await d.execute(sql`SELECT f.id FROM edge_nodes n JOIN factories f ON f.code = n."factoryCode" WHERE n.id = ${nodeId} LIMIT 1`));
   return numOrNull(r[0]?.id);

@@ -256,6 +256,31 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     expect(String(a.details)).toMatch(/storedHash.*receivedHash/);
   });
 
+  it("★ R-10-as: no fallback encoding — a record with NO canonical form (prototype key / too deep) is REFUSED: not applied, no hash stored, an anomaly outcome; the cursor moves on", async () => {
+    const { applyStream, edgeRecordHash } = await import("./edgeReportsCentral");
+    const { centralDb } = await import("./edgeCentralCommon");
+    let deep: unknown = 1;
+    for (let i = 0; i < 80; i++) deep = { x: deep };
+    const proto = JSON.parse('{"seq":2,"__proto__":{"a":1}}') as { seq: number };
+    expect(edgeRecordHash({ seq: 1, deep })).toBeNull();
+    expect(edgeRecordHash(proto)).toBeNull();
+    expect(edgeRecordHash({ b: 1, a: 2 })).toBe(edgeRecordHash({ a: 2, b: 1 })); // key order never changes the hash
+    const ep = Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+    const applied: number[] = [];
+    const recs = [{ seq: 1, deep }, proto, { seq: 3, ok: true }] as Array<{ seq: number }>;
+    const r = await applyStream(await centralDb(), await k.principal("A"), "events", ep, recs, async (_tx, rec) => {
+      applied.push(rec.seq);
+    });
+    expect(r, JSON.stringify(r)).toMatchObject({
+      http: 200,
+      data: { ackedSeq: 3, applied: 1, outcomes: [{ seq: 1, outcome: "anomaly", code: "record_unencodable" }, { seq: 2, outcome: "anomaly", code: "record_unencodable" }] },
+    });
+    expect(applied).toEqual([3]);
+    const stored = await k.sql`SELECT seq FROM edge_node_report_records WHERE "edgeNodeId" = ${k.ids.nodeA} AND stream = 'events' AND epoch = ${ep} ORDER BY seq`;
+    expect(stored.map((x) => Number(x.seq))).toEqual([3]);
+    expect(await count(k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityId" = ${k.ids.nodeA} AND details LIKE '%record_unencodable%' AND details LIKE ${`%${ep}%`}`)).toBe(2);
+  });
+
   it("★ M-5: refusal / anomaly / actuation events naming ANOTHER node's run are audited against the reporting node, never that run", async () => {
     const { eventsForNode } = await import("./edgeReportsCentral");
     const s = kitSteps(k);

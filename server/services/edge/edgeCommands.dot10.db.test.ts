@@ -139,25 +139,95 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP deliver
     expect(await pending(lock2)).toBe(true);
   });
 
-  it("★ A's re-review N2: a STOP ack's refusal evidence (edge_stop_ack_refusals) survives a rollback of the caller's transaction", async () => {
+  it("★ R-10-as N-3 + N-5: EVERY STOP ack reaches A's guarded function ON THE CALLER'S TRANSACTION — malformed, another node's, mismatched each leave a refusal row (reason), invisible to other sessions until the batch commits; a rolled-back batch leaves nothing and its re-send writes it", async () => {
     const { enqueueEdgeDeviceRequest, ackEdgeCommand } = await import("./edgeNodeCommands");
     const { centralDb } = await import("./edgeCentralCommon");
     const ep = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
     const stop = (await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console", requestedBy: k.u.admin })).requestId;
-    const before = Number((await k.sql`SELECT count(*)::int AS n FROM edge_stop_ack_refusals WHERE "requestId" = ${stop}`)[0].n);
+    const reasons = async () => (await k.sql`SELECT reason, "edgeNodeId" FROM edge_stop_ack_refusals WHERE "requestId" = ${stop} ORDER BY id`).map((r) => `${r.reason}@${r.edgeNodeId}`);
     const d = await centralDb();
+    const acks = [
+      { node: k.ids.nodeA, rec: { requestId: stop, outcome: "done" as const, generation: null, at: Date.now(), target: null, ownerEpoch: ep } }, // malformed: no target
+      { node: k.ids.nodeA, rec: { requestId: stop, outcome: "done" as const, generation: null, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: null } }, // malformed: no epoch
+      { node: k.ids.nodeB, rec: { requestId: stop, outcome: "done" as const, generation: null, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: ep } }, // another node
+      { node: k.ids.nodeA, rec: { requestId: stop, outcome: "done" as const, generation: null, at: Date.now(), target: { robotId: k.ids.robotB }, ownerEpoch: ep } }, // wrong target
+    ];
+    // (1) rolled back: nothing survives — the evidence lives in the batch's own transaction (no second pool connection)
     class Rollback extends Error {}
     await d
       .transaction(async (tx) => {
-        const okAck = await ackEdgeCommand(tx as never, k.ids.nodeA, { requestId: stop, outcome: "done", generation: null, at: Date.now(), target: { robotId: k.ids.robotB }, ownerEpoch: ep });
-        expect(okAck).toBe(false);
+        for (const a of acks) expect(await ackEdgeCommand(tx as never, a.node, a.rec)).toBe(false);
+        expect(await reasons()).toEqual([]); // another session sees nothing yet: same transaction
         throw new Rollback();
       })
       .catch((e) => {
         if (!(e instanceof Rollback)) throw e;
       });
-    expect(Number((await k.sql`SELECT count(*)::int AS n FROM edge_stop_ack_refusals WHERE "requestId" = ${stop}`)[0].n)).toBe(before + 1);
+    expect(await reasons()).toEqual([]);
+    // (2) the re-sent batch commits: one refusal row per ack, with A's reason
+    await d.transaction(async (tx) => {
+      for (const a of acks) expect(await ackEdgeCommand(tx as never, a.node, a.rec)).toBe(false);
+    });
+    expect(await reasons()).toEqual([`malformed@${k.ids.nodeA}`, `malformed@${k.ids.nodeA}`, `other_node@${k.ids.nodeB}`, `target_mismatch@${k.ids.nodeA}`]);
+    // (3) "expired" for a STOP: refused (a STOP never expires) without aborting the caller's transaction
+    await d.transaction(async (tx) => {
+      expect(await ackEdgeCommand(tx as never, k.ids.nodeA, { requestId: stop, outcome: "expired", generation: null, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: ep })).toBe(false);
+      expect((await tx.execute((await import("drizzle-orm")).sql`SELECT 1 AS ok`)) as unknown).toBeTruthy(); // the transaction is still usable
+    });
     expect((await k.sql`SELECT "ackedAt" FROM robot_motion_lock_requests WHERE id = ${stop}`)[0].ackedAt).toBeNull();
+    // the matching ack closes it
+    await d.transaction(async (tx) => {
+      expect(await ackEdgeCommand(tx as never, k.ids.nodeA, { requestId: stop, outcome: "done", generation: null, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: ep })).toBe(true);
+    });
+    expect((await k.sql`SELECT outcome FROM robot_motion_lock_requests WHERE id = ${stop}`)[0].outcome).toBe("done");
+  });
+
+  it("★ R-10-au: a STOP acked `notOwnedHere` is NEVER terminal — 200 with the anomaly `ack_not_owned_here`, the STOP stays pending and is re-delivered next pull; a lock acked `notOwnedHere` stays pending too", async () => {
+    const { eventsForNode } = await import("./edgeReportsCentral");
+    const { enqueueEdgeDeviceRequest, commandsForNode } = await import("./edgeNodeCommands");
+    const ep = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
+    const stop = (await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console au", requestedBy: k.u.admin })).requestId;
+    const lock = (await enqueueEdgeDeviceRequest({ kind: "lock", robotId: k.ids.robotA, reason: "op au", requestedBy: k.u.admin })).requestId;
+    await k.sql`UPDATE robot_motion_lock_requests SET "deliveredAt" = now() WHERE id IN ${k.sql([stop, lock])}`;
+    const ack = (seq: number, requestId: number) => ({ kind: "command_ack", seq, requestId, outcome: "notOwnedHere", generation: null, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: ep });
+    const r = await eventsForNode(await k.principal("A"), { epoch: epoch(), stream: "events", records: [ack(1, stop), ack(2, lock)] });
+    expect(r, JSON.stringify(r)).toMatchObject({ http: 200, data: { ackedSeq: 2, outcomes: [{ seq: 1, outcome: "anomaly", code: "ack_not_owned_here" }, { seq: 2, outcome: "anomaly", code: "ack_not_owned_here" }] } });
+    const st = async (id: number) => (await k.sql`SELECT "ackedAt", outcome FROM robot_motion_lock_requests WHERE id = ${id}`)[0];
+    expect(await st(stop)).toMatchObject({ ackedAt: null, outcome: null });
+    expect(await st(lock)).toMatchObject({ ackedAt: null, outcome: null });
+    const again = await commandsForNode(await k.principal("A"));
+    expect(payloads(again.signed).map((x) => x.requestId)).toContain(stop);
+    expect(Number((await k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityId" = ${k.ids.nodeA} AND details LIKE '%ack_not_owned_here%'`)[0].n)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("★ R-10-as N-4 (L-7): a STOP whose delivery stamp FAILS (its row locked elsewhere past the stamp bound) is still delivered — signed, in this pull; stamped on a later pull", async () => {
+    const { enqueueEdgeDeviceRequest, commandsForNode } = await import("./edgeNodeCommands");
+    const stop = (await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "console N-4", requestedBy: k.u.admin })).requestId;
+    const postgres = (await import("postgres")).default;
+    const other = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const locker = other.begin(async (tx) => {
+        await tx`SELECT id FROM robot_motion_lock_requests WHERE id = ${stop} FOR UPDATE`;
+        await held;
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      const t0 = Date.now();
+      const c = await commandsForNode(await k.principal("A"));
+      const took = Date.now() - t0;
+      release();
+      await locker;
+      expect(payloads(c.signed).map((x) => x.requestId)).toContain(stop);
+      expect(took).toBeLessThan(5_000); // bounded: the stamp waits at most its lock timeout (twice: in the loop and once after)
+      expect((await k.sql`SELECT "deliveredAt" FROM robot_motion_lock_requests WHERE id = ${stop}`)[0].deliveredAt).toBeNull();
+      // the lock is gone: the next pull delivers it again AND stamps it
+      const c2 = await commandsForNode(await k.principal("A"));
+      expect(payloads(c2.signed).map((x) => x.requestId)).toContain(stop);
+      expect((await k.sql`SELECT "deliveredAt" FROM robot_motion_lock_requests WHERE id = ${stop}`)[0].deliveredAt).not.toBeNull();
+    } finally {
+      await other.end();
+    }
   });
 
   it("★ I-7: EDGE_RUNTIME_ENABLED off ⇒ a STOP is NOT queued — EdgeRequestError unavailable WITH fallback.centralStop (a lock: unavailable, no fallback); F2: a STOP whose device row is locked fails within the STOP bound WITH the fallback", async () => {

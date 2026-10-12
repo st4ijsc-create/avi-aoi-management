@@ -274,11 +274,16 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize (real _test DB, edge
     const st2 = await one(k.sql`INSERT INTO stations ("lineId", code, name) VALUES (${l2}, ${`AS2-${k.DAU}`}, 'kit st2') RETURNING id`);
     const [was] = await k.sql`SELECT "stationId", "lineId" FROM robots WHERE id = ${k.ids.robotA}`;
     try {
+      // (a) robot fully in F2 (station AND line): the run's scope judge (runVisibleTo) already hides the run ⇒ the same 404
       await k.sql`UPDATE robots SET "stationId" = ${st2}, "lineId" = ${l2} WHERE id = ${k.ids.robotA}`;
       const r = await svcA.authorizeForNode(await k.principal("A"), p.runId, await robotBody(p));
-      // the run's scope check (runVisibleTo, by the definition's devices) already hides the run ⇒ the same 404 as any
-      // out-of-scope run; deviceInNodeFactory (not_owned) is the second, independent check behind it
       expect(r.code, JSON.stringify(r)).toBe("not_found");
+      // (b) robot whose LINE is still A's but whose STATION sits in F2: the scope judge passes (line OR station in scope) —
+      //     B's placement chain (the station's line first) puts it in F2 ⇒ not_owned (deviceInNodeFactory is what refuses)
+      await k.sql`UPDATE robots SET "stationId" = ${st2}, "lineId" = ${was.lineId ?? k.ids.line} WHERE id = ${k.ids.robotA}`;
+      const r2 = await svcA.authorizeForNode(await k.principal("A"), p.runId, await robotBody(p));
+      expect(r2.code, JSON.stringify(r2)).toBe("not_owned");
+      expect(r2.message).toMatch(/^Step "m1": its robot is not placed in this node's factory/); // step 4, before any device gate
       expect(Number((await k.sql`SELECT count(*)::int AS n FROM edge_step_authorizations WHERE "runId" = ${p.runId}`)[0].n)).toBe(0);
     } finally {
       await k.sql`UPDATE robots SET "stationId" = ${was.stationId}, "lineId" = ${was.lineId} WHERE id = ${k.ids.robotA}`;
@@ -413,6 +418,62 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize (real _test DB, edge
       expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, { ...(await otBody(p)), ...extra })).http).toBe(400);
     }
     expect((await svcA.authorizeForNode(await k.principal("V1"), p.runId, await otBody(p))).code).toBe("protocol_version");
+  });
+
+  it("★ R-10-as N-2: the token lists ONLY the safety-PLC configs explicitly guarding the target (its robot / station / line, or the node's own factory) — no wildcard, never another factory's", async () => {
+    const s = kitSteps(k);
+    const svcA = await svc();
+    const p = await prepared("n2", [s.gate, s.robotMove]);
+    const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+    const f2 = await one(k.sql`INSERT INTO factories (code, name, "isActive") VALUES (${`NF2-${k.DAU}`}, 'kit other', true) RETURNING id`);
+    const plc = (code: string, cols: Record<string, number | null>) =>
+      one(k.sql`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "robotId", "stationId", "lineId", "factoryId", enabled)
+                VALUES (${`${code}-${k.DAU}`}, ${`n2 ${code}`}, 'generic', 'sim', ${`tcp://${code}`}, ${cols.robotId ?? null}, ${cols.stationId ?? null}, ${cols.lineId ?? null}, ${cols.factoryId ?? null}, true) RETURNING id`);
+    const ids = {
+      robotA: await plc("Q-RA", { robotId: k.ids.robotA }),
+      station: await plc("Q-ST", { stationId: k.ids.st }),
+      line: await plc("Q-LN", { lineId: k.ids.line }),
+      factoryA: await plc("Q-FA", { factoryId: k.ids.factory }),
+      factory2: await plc("Q-F2", { factoryId: f2 }),
+      untargeted: await plc("Q-UN", {}),
+      robotB: await plc("Q-RB", { robotId: k.ids.robotB }),
+      robotAInF2: await plc("Q-RAF2", { robotId: k.ids.robotA, factoryId: f2 }),
+    };
+    try {
+      const r = await svcA.authorizeForNode(await k.principal("A"), p.runId, await robotBody(p));
+      expect(r.http, JSON.stringify(r)).toBe(200);
+      const listed = (JSON.parse(r.data!.authorization.payload) as { safetyConfigIds: number[] }).safetyConfigIds;
+      const mine = [ids.robotA, ids.station, ids.line, ids.factoryA].sort((a, b) => a - b);
+      expect(listed.filter((id) => Object.values(ids).includes(id))).toEqual(mine);
+    } finally {
+      await k.sql`DELETE FROM safety_plc_configs WHERE id IN ${k.sql(Object.values(ids))}`;
+      await k.sql`DELETE FROM factories WHERE id = ${f2}`.catch(() => undefined);
+    }
+  });
+
+  it("★ R-10-as N-6: a node with NO factory code has NO run scope (fail closed) — its run is the same 404, nobody may hand it a run", async () => {
+    const s = kitSteps(k);
+    const svcA = await svc();
+    const p = await prepared("n6", [s.gate, s.robotMove]);
+    const [was] = await k.sql`SELECT "factoryCode" FROM edge_nodes WHERE id = ${k.ids.nodeA}`;
+    const { resolveAssignableNode, nodeScopeOf } = await import("./edgeExecutionCentral");
+    const { runInNodeScope } = await import("./edgeCentralCommon");
+    expect(nodeScopeOf({ factoryCode: null })).toEqual({ tenantScope: {} });
+    expect(nodeScopeOf({ factoryCode: "  " })).toEqual({ tenantScope: {} });
+    try {
+      await k.sql`UPDATE edge_nodes SET "factoryCode" = NULL WHERE id = ${k.ids.nodeA}`;
+      const pA = await k.principal("A");
+      expect(pA.factoryCode ?? null).toBeNull();
+      const [run] = await k.sql`SELECT "workflowId", "paramsJson" FROM orchestration_runs WHERE id = ${p.runId}`;
+      expect(await runInNodeScope({ workflowId: Number(run.workflowId), paramsJson: run.paramsJson }, pA)).toBe(false);
+      const r = await svcA.authorizeForNode(pA, p.runId, await robotBody(p));
+      expect(r, JSON.stringify(r)).toMatchObject({ http: 404, code: "not_found" });
+      expect(await resolveAssignableNode(`NA-${k.DAU}`, null)).toEqual({ kind: "none" }); // not even an unrestricted caller
+    } finally {
+      await k.sql`UPDATE edge_nodes SET "factoryCode" = ${was.factoryCode} WHERE id = ${k.ids.nodeA}`;
+    }
+    expect(await resolveAssignableNode(`NA-${k.DAU}`, null)).toEqual({ kind: "node", id: k.ids.nodeA });
+    expect((await svcA.authorizeForNode(await k.principal("A"), p.runId, await robotBody(p))).http).toBe(200);
   });
 
   // LAST in the file: it rotates node A's credential

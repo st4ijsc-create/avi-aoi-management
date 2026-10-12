@@ -20,7 +20,7 @@
  * previous + 1) — strictly increasing per node within a process and across restarts (wall clock), so the edge's rollback check
  * holds. configHash = edgeProtocol.edgeConfigHash(envelope); a request quoting it gets `notModified`.
  */
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { deviceAdapters, deviceTags, edgeNodes, machines, robots } from "../../../drizzle/schema";
 import {
   EDGE_PROTOCOL_VERSION,
@@ -276,6 +276,8 @@ export async function buildNodeConfigContent(d: Db, node: EdgeNodePrincipal): Pr
 }
 
 interface CachedConfig {
+  /** R-10-au — the node's ownership (device, owner epoch) the config was built for: read LIVE on every call */
+  ownershipKey: string;
   contentHash: string;
   version: number;
   envelope: EdgeSignedEnvelope;
@@ -289,23 +291,40 @@ export function __resetEdgeConfigCacheForTests(): void {
   cache.clear();
 }
 
-/** The node's current signed config (rebuilt when stale; same content ⇒ same envelope). Throws on a DB / signing error. */
+/**
+ * R-10-au — the node's ownership RIGHT NOW: every robot / adapter it owns with its owner epoch (one indexed read). A change
+ * (a device given / taken / its epoch bumped — a STOP carried to a new owner) makes any cached config stale at once, so the
+ * pull's `configVersion` moves in the same answer that carries the STOP. Throws on a DB error.
+ */
+export async function nodeOwnershipKey(d: Db, nodeId: number): Promise<string> {
+  const r = await d.execute(sql`SELECT 'r' AS k, id, "ownerEpoch" AS e FROM robots WHERE "edgeNodeId" = ${nodeId}
+                                UNION ALL SELECT 'a' AS k, id, "ownerEpoch" AS e FROM device_adapters WHERE "edgeNodeId" = ${nodeId}
+                                ORDER BY 1, 2`);
+  const rows = (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Array<{ k: string; id: number | string; e: number | string | null }>;
+  return rows.map((x) => `${x.k}${Number(x.id)}@${x.e == null ? "-" : Number(x.e)}`).join(",");
+}
+
+/**
+ * The node's current signed config (rebuilt when stale; same content ⇒ same envelope). Throws on a DB / signing error.
+ * R-10-au — the cache (EDGE_CONFIG_CACHE_MS) never outlives an ownership change: the ownership key is read live every call.
+ */
 export async function currentNodeConfig(node: EdgeNodePrincipal, opts: { fresh?: boolean } = {}): Promise<CachedConfig> {
   const prev = cache.get(node.nodeId);
-  if (!opts.fresh && prev && prev.credentialId === node.credentialId && Date.now() - prev.builtAt < edgeConfigCacheMs()) return prev;
+  const d = await centralDb();
+  const ownershipKey = await nodeOwnershipKey(d, node.nodeId);
+  if (!opts.fresh && prev && prev.credentialId === node.credentialId && prev.ownershipKey === ownershipKey && Date.now() - prev.builtAt < edgeConfigCacheMs()) return prev;
   const signer = centralSigner();
   if (!signer) throw new Error("no signer");
-  const d = await centralDb();
   const content = await buildNodeConfigContent(d, node);
   const contentHash = sha256Hex(edgeCanonicalJson(content));
   if (prev && prev.contentHash === contentHash && prev.credentialId === node.credentialId) {
-    const kept = { ...prev, builtAt: Date.now() };
+    const kept = { ...prev, ownershipKey, builtAt: Date.now() };
     cache.set(node.nodeId, kept);
     return kept;
   }
   const version = Math.max(Math.floor(Date.now() / 1000), (prev?.version ?? 0) + 1);
   const envelope = signForNode(signer, "config", edgeConfigSnapshotSchema, { ...content, configVersion: version, issuedAt: Date.now() }, node);
-  const out: CachedConfig = { contentHash, version, envelope, configHash: edgeConfigHash(envelope), builtAt: Date.now(), credentialId: node.credentialId };
+  const out: CachedConfig = { ownershipKey, contentHash, version, envelope, configHash: edgeConfigHash(envelope), builtAt: Date.now(), credentialId: node.credentialId };
   cache.set(node.nodeId, out);
   return out;
 }

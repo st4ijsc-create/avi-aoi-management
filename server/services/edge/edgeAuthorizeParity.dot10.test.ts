@@ -66,3 +66,41 @@ describe("doc 81 Đợt 10 B fix review 1 — /authorize gate parity with centra
     });
   }
 });
+
+/**
+ * R-10-as N-1 — the POLICY CONTEXTS: the keys central's object literals pass (robotCommandDispatcher 4a-policy, foeEngine
+ * execCommand) equal the keys /authorize's builders return. The values are measured on `_test` (failclosed "N-1": approver role,
+ * fat_passed = isRobotCommissioned, requestedBy = run owner, from central's own readers).
+ */
+function literalKeys(text: string, from: RegExp, to: RegExp): string[] {
+  const i = text.search(from);
+  expect(i, `${from} not found`).toBeGreaterThan(-1);
+  const rest = text.slice(i);
+  const j = rest.search(to);
+  expect(j, `${to} not found after ${from}`).toBeGreaterThan(-1);
+  const body = rest.slice(0, j);
+  const keys = new Set<string>();
+  for (const m of body.matchAll(/^\s*(?:\.\.\.\([^?]*\?\s*\{\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*(?::|,|\s*\})/gm)) keys.add(m[1]);
+  return [...keys].sort();
+}
+
+describe("doc 81 Đợt 10 B fix review 2 — policy-context parity (R-10-as N-1) and the robot dispatcher's gate list", () => {
+  it("robot.command.* context: central's keys = edgeRobotPolicyContext's keys", async () => {
+    const { edgeRobotPolicyContext } = await import("./edgeAuthorizeCentral");
+    const central = literalKeys(src(ROBOT), /`robot\.command\.\$\{verb\}`,\n\s*`robot:\$\{input\.robotId\}`,\n\s*\{/, /\n\s*\}\s*,?\n\s*\);/);
+    const edge = Object.keys(edgeRobotPolicyContext({ jobType: "x", params: {}, robotId: 1, role: "r", fatPassed: false, real: true, requestedBy: 2, confirmedBy: 3 })).sort();
+    expect(edge).toEqual(central);
+  });
+
+  it("foe.command.* context: central's keys = edgeEnginePolicyContext's keys", async () => {
+    const { edgeEnginePolicyContext } = await import("./edgeAuthorizeCentral");
+    const central = literalKeys(src(ENGINE[0]), /`foe\.command\.\$\{step\.command\}`,\n\s*`machine:\$\{step\.machineId\}`,\n\s*\{/, /\n\s*\},\n\s*\{ requestId: idempotencyKey \}/);
+    const edge = Object.keys(edgeEnginePolicyContext({ runId: 1, workflowRef: "w", step: { id: "s", type: "command", command: "c", machineId: 1 }, approverRole: "r", approvedBy: 2, runOwner: 3, attempt: 1 })).sort();
+    expect(edge).toEqual(central);
+  });
+
+  it("the robot dispatcher's numbered gates are exactly the pinned list (a NEW central gate turns this red until its /authorize twin is decided)", () => {
+    const steps = [...src(ROBOT).matchAll(/^ {2}\/\/ ([0-9]+[a-zA-Z0-9-]*)\) /gm)].map((m) => m[1]);
+    expect(steps).toEqual(["1", "2", "2b", "3", "4", "4a", "4a-policy", "4a-safety", "4b", "5", "5-R14"]);
+  });
+});

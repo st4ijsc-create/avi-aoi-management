@@ -69,6 +69,36 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — config / pull / claim / heartbe
     expect([...(await ownedAdapterIds(d, k.ids.nodeA, [k.ids.adapterA, k.ids.adapterB]))]).toEqual([k.ids.adapterA]);
   });
 
+  it("★ R-10-au: the pull's configVersion is LIVE — with a long config cache, a device given to the node moves the version in the very next pull (unchanged ownership ⇒ the cached version)", async () => {
+    const { pullForNodeV2 } = await import("./edgeExecutionCentral");
+    const { __resetEdgeConfigCacheForTests } = await import("./edgeConfigCentral");
+    const prevMs = process.env.EDGE_CONFIG_CACHE_MS;
+    process.env.EDGE_CONFIG_CACHE_MS = "600000";
+    __resetEdgeConfigCacheForTests();
+    let extra = 0;
+    try {
+      const v = async () => {
+        const r = await pullForNodeV2(await k.principal("A"), {});
+        expect(r.http, JSON.stringify(r)).toBe(200);
+        return (r.data as { configVersion: number }).configVersion;
+      };
+      const v1 = await v();
+      expect(v1).toBeGreaterThan(0);
+      expect(await v()).toBe(v1); // cached: nothing changed
+      extra = Number((await k.sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId", "edgeNodeId") VALUES (${`RAU-${k.DAU}`}, 'kit au robot', 'sim', 'sim://au', true, ${k.ids.line}, ${k.ids.st}, ${k.ids.nodeA}) RETURNING id`)[0].id);
+      const v2 = await v();
+      expect(v2).toBeGreaterThan(v1); // live: the new device moves it at once, the 10-minute cache notwithstanding
+    } finally {
+      if (prevMs === undefined) delete process.env.EDGE_CONFIG_CACHE_MS;
+      else process.env.EDGE_CONFIG_CACHE_MS = prevMs;
+      __resetEdgeConfigCacheForTests();
+      if (extra) {
+        await k.sql`UPDATE robots SET "edgeNodeId" = NULL WHERE id = ${extra}`.catch(() => undefined);
+        await k.sql`DELETE FROM robots WHERE id = ${extra}`.catch((err) => console.warn(`[test] au robot kept: ${(err as Error).message}`));
+      }
+    }
+  });
+
   it("★ I-3 / I-4 (R-10-am): two factories — only PLC rows EXPLICITLY guarding A's devices (or A's factory-wide row) ship, as a projection; a robot owned by A but placed in ANOTHER factory never ships, cannot be authorised or ingested", async () => {
     const { configForNode } = await import("./edgeConfigCentral");
     const { verifyEdgeConfig } = await import("./edgeTrust");
