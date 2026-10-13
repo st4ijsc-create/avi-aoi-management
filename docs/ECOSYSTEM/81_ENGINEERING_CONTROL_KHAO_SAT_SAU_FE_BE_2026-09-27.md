@@ -912,4 +912,6 @@ Plan `docs/superpowers/plans/2026-10-12-engineering-control-dot10.md`; thiết k
 2. Dừng :3000 → áp **0372 → 0376** `--dev-only` (cửa sổ yên tĩnh) → build → khởi động; giữ `EDGE_EXECUTION_ENABLED` tắt.
 3. Cắt chuyển edge (khi bật): tạo khoá ký, đăng ký nút, đánh dấu sở hữu thiết bị, phát bundle, gỡ `DATABASE_URL` khỏi edge, đổi mật khẩu avi_app, chặn :5432.
 
-**Còn mở:** quyết định SIM-SAFETY-PLC-1; chính sách lưu giữ bảng WORM; FAT S7 và thử bench bộ đọc safety-PLC; việc của chủ dự án từ trước (khoá TLS, mật khẩu keystore, APK 1.0.18).
+**Đã thực hiện 2026-10-14 (chủ dự án duyệt):** gộp main `a9c1f40c3` + push; kiểm trước trên dev: kết quả trùng = 0, nhưng **`app_tenant_allows` trên dev đã bị một lần chạy lại 0125 cũ đảo về thân trước 0327** (lệch RLS có từ trước) ⇒ áp lại 0327, rồi 0372 → 0376 `--dev-only` (mỗi tệp tự kiểm + ghi sổ cái), `migrate-standalone` ghi nhận 0057/0066/0125/0234 bằng probe (thân 0327 còn hiệu lực), không còn gì chờ; SIM-SAFETY-PLC-1 gắn SIM-FAC (có dòng audit); build `52c2c1485` + khởi động :3000 — `/readyz` ready, không `persistUnknown`, không dòng "thiếu 0374". CI chạy thêm `pnpm test:serial`.
+
+**Còn mở:** chính sách lưu giữ bảng WORM; FAT S7 và thử bench bộ đọc safety-PLC; việc của chủ dự án từ trước (khoá TLS, mật khẩu keystore, APK 1.0.18).
