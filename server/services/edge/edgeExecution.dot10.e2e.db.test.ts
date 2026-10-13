@@ -162,7 +162,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — central + edge in two processe
   // (edge/edgeReportsCentral.ts:371-375 → EDGE_ANOMALY "stop_ledger_refused", nothing written). Every STOP the edge executes in a
   // run therefore leaves NO robot_jobs / command_log row centrally and a false anomaly — the STOP itself is sent (L-7 holds) and
   // its step row is completed. it.fails: this asserts the CORRECT outcome and turns red (to be flipped to `it`) once fixed.
-  it.fails("BUG F1-1 — an edge STOP's ledger row is written centrally (robot abort + pinned OT stop), no stop_ledger_refused anomaly", async () => {
+  it("BUG F1-1 (fixed: doc 81 dot 10 D fix review 8, R-10-bn) — an edge STOP's ledger row is written centrally (robot abort + pinned OT stop), no stop_ledger_refused anomaly", async () => {
     expect(completeRunId).toBeGreaterThan(0);
     const got = await stopLedger(completeRunId);
     console.log(`[F1] BUG F1-1 measured: ${JSON.stringify(got)}`); // today: { robot: [], ot: [], refused: ["p1", "s1"] }

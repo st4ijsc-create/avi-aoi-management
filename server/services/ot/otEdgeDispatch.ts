@@ -179,6 +179,12 @@ function rollUp(executed: ExecutedWrite): { ok: boolean; status: DispatchStatus 
   return { ok: true, status: "acked" };
 }
 
+/** R-10-bn — `{ ownerEpoch }` of the adapter in the verified config (absent when the config does not name it — central then refuses) */
+function ownerEpochOf(rt: EdgeDeviceRuntime, adapterId: number): { ownerEpoch?: number } {
+  const e = rt.config()?.adapters.find((a) => a.id === adapterId)?.ownerEpoch;
+  return typeof e === "number" ? { ownerEpoch: e } : {};
+}
+
 /** Journal the outcome (bounded for a STOP — never holds it past the bound; a journal failure never flips the result). */
 async function report(rt: EdgeDeviceRuntime | null, input: EdgeOtDispatchInput, stop: boolean, jti: string | null, res: EdgeOtDispatchResult): Promise<void> {
   if (!rt) return;
@@ -196,6 +202,8 @@ async function report(rt: EdgeDeviceRuntime | null, input: EdgeOtDispatchInput, 
           idempotencyKey: input.idempotencyKey,
           jti,
           stop,
+          // fix review 8 (R-10-bn, F1-1) — the adapter's owner epoch from the SIGNED config (central records a STOP ledger only under it)
+          ...ownerEpochOf(rt, input.adapterId),
           target: { adapterId: input.adapterId, commandType: input.commandType },
           status: res.status,
           result: { reason: res.reason ?? null, pinnedStop: res.pinnedStop ?? false, results: res.results },

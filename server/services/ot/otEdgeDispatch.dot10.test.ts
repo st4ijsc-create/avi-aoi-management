@@ -176,7 +176,7 @@ describe("otEdgeDispatch — a non-STOP write needs a valid, fresh, single-use a
     expect(r).toMatchObject({ ok: true, status: "acked", stop: false, jti: JTI });
     expect(H.driver!.writes).toEqual([[{ tagKey: "speed", address: "40001", value: 10, dataType: "int", scale: undefined, offset: undefined }]]);
     expect(order).toEqual(["consume", "write"]);
-    expect(j.runs).toMatchObject([{ runId: 9, claimSeq: 2, kind: "ledger", stepId: "w1", jti: JTI, stop: false, status: "acked", target: { adapterId: 5, commandType: "set_speed" } }]);
+    expect(j.runs).toMatchObject([{ runId: 9, claimSeq: 2, kind: "ledger", stepId: "w1", jti: JTI, stop: false, ownerEpoch: 2, status: "acked", target: { adapterId: 5, commandType: "set_speed" } }]);
     expect(H.dbCalls).toBe(0);
   });
 
@@ -303,7 +303,7 @@ describe("otEdgeDispatch — ★ a PINNED OT STOP never asks (L-7)", () => {
     expect(authCalls.pending).toBe(0);
     expect(j.order).toEqual([]);
     expect(H.safetyReads).toBe(0);
-    expect(j.runs).toMatchObject([{ kind: "ledger", stepId: "w1", jti: null, stop: true, status: "acked" }]);
+    expect(j.runs).toMatchObject([{ kind: "ledger", stepId: "w1", jti: null, stop: true, ownerEpoch: 2 /* R-10-bn */, status: "acked" }]);
   });
 
   it("a console STOP (central command, no run) is journaled on the events stream", async () => {

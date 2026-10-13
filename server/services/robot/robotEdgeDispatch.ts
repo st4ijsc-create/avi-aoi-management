@@ -57,6 +57,12 @@ export interface EdgeRobotDispatchResult {
 const timeoutMs = () => Math.max(1000, Number(process.env.ROBOT_CONTROL_TIMEOUT_MS) || 10_000);
 const refusal = (reason: string, extra: Partial<EdgeRobotDispatchResult> = {}): EdgeRobotDispatchResult => ({ ok: false, status: "rejected", reason, stop: false, ...extra });
 
+/** R-10-bn — `{ ownerEpoch }` of the robot in the verified config (absent when the config does not name it — central then refuses, as it must) */
+function ownerEpochOf(rt: EdgeDeviceRuntime, robotId: number): { ownerEpoch?: number } {
+  const e = rt.config()?.robots.find((r) => r.id === robotId)?.ownerEpoch;
+  return typeof e === "number" ? { ownerEpoch: e } : {};
+}
+
 async function report(rt: EdgeDeviceRuntime | null, input: EdgeRobotDispatchInput, job: RobotJobSpec, stop: boolean, jti: string | null, res: EdgeRobotDispatchResult): Promise<void> {
   if (!rt) return;
   const at = Date.now();
@@ -73,6 +79,9 @@ async function report(rt: EdgeDeviceRuntime | null, input: EdgeRobotDispatchInpu
           idempotencyKey: input.idempotencyKey,
           jti,
           stop,
+          // fix review 8 (R-10-bn, F1-1) — the robot's owner epoch from the SIGNED config: central records a STOP ledger only
+          // under the device's current epoch (a record without it is refused as stop_ledger_refused)
+          ...ownerEpochOf(rt, input.robotId),
           target: { robotId: input.robotId, jobType: job.jobType as never },
           status: res.status,
           result: { ...(res.result ?? {}), ...(res.reason ? { reason: res.reason } : {}), ...(res.error ? { error: String(res.error).slice(0, 1000) } : {}) },

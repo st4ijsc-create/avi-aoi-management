@@ -167,7 +167,7 @@ describe("robotEdgeDispatch — MOTION needs a valid, fresh, single-use authoris
     expect(r).toMatchObject({ ok: true, status: "done", stop: false, jti: JTI });
     expect(jobs).toEqual([MOVE]);
     expect(j.order).toEqual(["consume", "runJob"]);
-    expect(j.runs).toMatchObject([{ kind: "ledger", stepId: "m1", jti: JTI, stop: false, status: "done", target: { robotId: 12, jobType: "move" } }]);
+    expect(j.runs).toMatchObject([{ kind: "ledger", stepId: "m1", jti: JTI, stop: false, ownerEpoch: 3, status: "done", target: { robotId: 12, jobType: "move" } }]);
     expect(robotMotionInFlight(12)).toBeNull();
     expect(H.dbCalls).toBe(0);
   });
@@ -278,7 +278,7 @@ describe("robotEdgeDispatch — ★ a STOP never asks (L-7)", () => {
     expect(pendingCalls).toBe(0);
     expect(j.order).toEqual([]);
     expect(H.safetyReads).toBe(0);
-    expect(j.runs).toMatchObject([{ kind: "ledger", jti: null, stop: true, status: "done", target: { robotId: 12, jobType: "abort" } }]);
+    expect(j.runs).toMatchObject([{ kind: "ledger", jti: null, stop: true, ownerEpoch: 3 /* R-10-bn: from the signed config */, status: "done", target: { robotId: 12, jobType: "abort" } }]);
   });
 
   it("a robot the snapshot KNOWS is uncommissioned ⇒ STOP recorded simulated (R-1C-d); commissioned UNKNOWN (null) ⇒ SENT", async () => {
