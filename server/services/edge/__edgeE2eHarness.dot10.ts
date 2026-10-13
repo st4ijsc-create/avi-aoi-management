@@ -26,8 +26,9 @@
  *   tamper hooks that rewrite an ANSWER of a node route (a hostile network / man in the middle — attack suite);
  *   a delay hook (late answers — the TTL is measured from the request).
  *
- * SHARED _test HYGIENE: the seeded untargeted / factory-less safety-PLC rows (SIM-SAFETY-PLC-1, doc 48 R1) are DISABLED for
- * the suite and restored after it — with them enabled every real-mode, preflight-on authorisation is refused (B fix 2 G5 /
+ * SHARED _test HYGIENE (final fix wave I-6): ONLY the seed SIM-SAFETY-PLC-1 (doc 48 R1) is DISABLED for the suite, through
+ * __edgeSeedGuard (never another suite's untargeted fixture row; the last harness re-enables it; a crash is restored at exit and
+ * caught by the safetySeedIntact census) — with them enabled every real-mode, preflight-on authorisation is refused (B fix 2 G5 /
  * R-10-aw: a row central applies to every target can never be given to an edge). This is the cutover action the owner was
  * asked about; the attack suite measures the refusal while it is enabled.
  */
@@ -342,7 +343,11 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
   ids.plcA = await one(
     sql`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", "stationId", "factoryId", enabled) VALUES (${`SPLC-${DAU}`}, 'F1 safety PLC A', 'pilz', 'modbus', ${`tcp://127.0.0.1:${plc.port}`}, ${sql.json({ estop: { address: "coil:1" } })}, ${ids.stA}, ${ids.factoryA}, true) RETURNING id`,
   );
-  const disabledGlobalPlc = (await sql`UPDATE safety_plc_configs SET enabled = false WHERE enabled AND "robotId" IS NULL AND "stationId" IS NULL AND "lineId" IS NULL AND "factoryId" IS NULL RETURNING id`).map((r) => Number(r.id));
+  // final fix wave I-6 (R-10-br) — ONLY the seed SIM-SAFETY-PLC-1, through the seed guard (shared advisory lock across harnesses,
+  // re-enabled by the last one, crash-restored at exit); never other suites' untargeted fixture rows
+  const { acquireSeedGuard } = await import("./__edgeSeedGuard.dot10");
+  const seedGuard = await acquireSeedGuard(DB_URL);
+  const disabledGlobalPlc = seedGuard.disabledIds;
 
   // ── provisioning through the operator CLIs (proven admin) ──
   const io = (out: string[], err: string[]) => ({ out: (l: string) => out.push(l), err: (l: string) => err.push(l), env: {}, promptSecret: async (label: string) => (/password/i.test(label) ? adminLogin.password : null) });
@@ -685,7 +690,7 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
       await new Promise<void>((r) => srv.close(() => r()));
       await ot.close().catch(() => undefined);
       await plc.close().catch(() => undefined);
-      if (disabledGlobalPlc.length) await sql`UPDATE safety_plc_configs SET enabled = true WHERE id IN ${sql(disabledGlobalPlc)}`.catch((e) => console.warn(`[F1] global PLC rows NOT restored: ${(e as Error).message}`));
+      await seedGuard.release().catch((e) => console.warn(`[F1] seed guard NOT released (the census / the exit hook restores it): ${(e as Error).message}`));
       await cleanupRows(sql, ids, u, wfIds).catch((e) => console.warn(`[F1] cleanup: ${(e as Error).message}`));
       await sql.end();
       for (const [k, v] of Object.entries(saved)) {

@@ -617,7 +617,8 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
     for (const wipe of [false, true]) {
       const capRun = await c.startRun(`cap${wipe ? "W" : "I"}`, [s.gate(), s.move("m1")]);
       await c.approveAtGate(capRun);
-      await waitFor("the capture run completed", async () => (await c.run(capRun)).status === "completed", 30_000);
+      // final fix wave M-9 — 30 s timed out once under parallel load (green alone); the case itself is bounded at 360 s
+      await waitFor("the capture run completed", async () => (await c.run(capRun)).status === "completed", 120_000);
       const captured = answerOf(new RegExp(`^/runs/${capRun}/authorize$`))?.authorization;
       expect(captured?.typ).toBe("avi-edge-auth+v1");
       await edge.kill();
