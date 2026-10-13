@@ -3,6 +3,11 @@
 > doc 44 · Batch W7-1 · gap **G1.14** — "tách edge gateway process thật" (the biggest
 > Tầng-1 architecture gap). SYNAPSE Tầng-1 spec: `Chương 5 Edge Gateway & runtime`,
 > `§5.2 mô hình triển khai`, `§2.1 / §17.2 biên tự chủ`.
+>
+> **doc 81 Đợt 10 (2026-10-13): the edge has NO central DB login any more** — no `DATABASE_URL`, `JWT_SECRET` or
+> `SECRET_ENCRYPTION_KEY` on the edge host. Identity, owned devices and run packages come from central over the signed
+> node protocol; local state is the journal. Sections 1–7 describe the W7-1 telemetry gateway; where they mention the DB,
+> the edge_nodes registry or GitOps config on the edge, **section 8 supersedes them** (provisioning, ownership, cutover).
 
 ## 1. What this is (and the gap it closes)
 
@@ -54,19 +59,19 @@ Files:
 
 ## 3. Deploy — one gateway per line
 
-Each line runs its **own** edge-gateway container (each is a distinct Sparkplug Edge
-Node). Point every gateway at the **central** EMQX and control-plane DB.
+Each node runs its **own** edge-gateway container (each is a distinct Sparkplug Edge
+Node). Point every gateway at the **central** EMQX and the **central HTTPS** node protocol — never at the DB (Đợt 10).
 
 ```bash
 # 1) Build the edge image (from repo root)
 docker build -f deploy/edge/Dockerfile.edge -t synapse-edge-gateway:latest .
 
-# 2) Per line: create .env.edge + config, then bring one stack up
-docker compose -f deploy/edge/docker-compose.edge.yml --env-file .env.edge up -d
+# 2) Per node: .env.edge (from deploy/edge/.env.edge.example) + the node bundle (section 8.3), then one stack up
+docker compose -f deploy/edge/docker-compose.edge.yml --env-file .env.edge --env-file /etc/avi-edge/edge-node.env up -d
 ```
 
-Per-line overrides (env or `deploy/gitops/edge-node.yaml`):
-`EDGE_GATEWAY_NODE_CODE`, `EDGE_GATEWAY_LINE_CODES`, `UNS_SPARKPLUG_EDGE_NODE_ID`.
+Per-node values come from the bundle (`edge-node.env`): `EDGE_GATEWAY_NODE_CODE` (also the Sparkplug edge-node id),
+`EDGE_CENTRAL_URL`, `EDGE_CENTRAL_NODE_ID`, `EDGE_CENTRAL_CREDENTIAL_ID`, the credential and pin host files.
 
 The container binds **no port**. Its Docker `HEALTHCHECK` checks the heartbeat-refreshed
 **liveness marker** (`EDGE_GATEWAY_LIVENESS_FILE`, default `/app/data/edge-gateway.alive`)
@@ -104,11 +109,12 @@ the client), else `0` (batch left buffered) — so an un-sent tail can never be 
 | Env | Default | Purpose |
 |---|---|---|
 | `EDGE_GATEWAY_MODE` | *(entrypoint sets `true`)* | Master switch for edge-autonomy behaviour. The all-in-one server never sets it. |
-| `EDGE_RUNTIME_ENABLED` | `false` | Enables the `edge_nodes` registry + heartbeat writes. Set `true` at the edge. |
-| `EDGE_GATEWAY_NODE_CODE` | `edge-<hostname>` | Identity this gateway registers/heartbeats as (falls back to `EDGE_NODE_CODE`). |
-| `EDGE_GATEWAY_NODE_NAME` / `_FACTORY_CODE` / `_LINE_CODES` | — | Registry metadata (ISA-95 scope). |
+| `EDGE_RUNTIME_ENABLED` | `false` | Node protocol (HTTP heartbeat, signed config, commands). Set `true` at the edge (compose does). |
+| `EDGE_GATEWAY_NODE_CODE` | `edge-<hostname>` | Sparkplug edge-node id. The node's IDENTITY is central's signed config (Đợt 10). |
+| `EDGE_GATEWAY_NODE_NAME` / `_FACTORY_CODE` / `_LINE_CODES` | — | **Ignored since Đợt 10** (identity / scope / devices come from central). |
 | `EDGE_GATEWAY_HEARTBEAT_INTERVAL_MS` | `30000` | Heartbeat cadence. |
-| `EDGE_GATEWAY_CONFIG_FILE` | — | GitOps `edge-node.yaml` (identity/scope + optional mappings). |
+| `EDGE_GATEWAY_CONFIG_FILE` | — | **Ignored on the edge since Đợt 10** (warns at boot); mapping-as-code is a central CLI (D13). |
+| node protocol + journal | — | See section 8.5 (`EDGE_CENTRAL_*`, `EDGE_NODE_CREDENTIAL_FILE`, `EDGE_KEYSET_PIN_FILE`, `EDGE_JOURNAL_*`). |
 | `EDGE_GATEWAY_LIVENESS_FILE` | `./data/edge-gateway.alive` | Heartbeat-refreshed marker for the no-HTTP healthcheck. |
 | `EDGE_UNS_STORE_FORWARD_FILE` | `./data/edge-uns-store-forward.jsonl` | UNS backlog WAL. |
 | `EDGE_UNS_STORE_FORWARD_MAX` | `500000` | Max buffered UNS samples (overflow drops oldest, counted). |
@@ -138,6 +144,9 @@ The adapter **connection** config (endpoint/credentials) stays in the DB **Asset
 The two run **side by side without conflict** — but the same adapter set must be polled by
 **exactly one** of them (two pollers double-poll the device).
 
+0. **Đợt 10:** device ownership is now an explicit column — assign the adapters / robots to the node with
+   `scripts/edge-device-owner.ts` (section 8.4); central then skips them (no double polling). Steps 2–3 below that mention
+   the DB / `OT_GATEWAY_ENABLED` per adapter are the W7-1 procedure; follow section 8.6 for the Đợt 10 cutover.
 1. **Prepare** — stand up the central EMQX (`deploy/emqx`) and confirm the central server
    already publishes to UNS (`UNS_BRIDGE_ENABLED=true`).
 2. **Deploy the edge gateway** for a pilot line (§3), pointed at the central broker + DB.
@@ -166,148 +175,221 @@ The edge tests assert: buffer-when-central-down, ordered idempotent backfill (no
 dup), degraded heartbeat, the UNS-failure store-forward path, and a **source guard** that the
 entrypoint imports no `express` / `socket.io` / aedes / `_core/index` and calls no `.listen(`.
 
-## 8. Run execution on the edge (doc 81 Đợt 9 task S — owner decision 2026-10-12)
+## 8. The edge without a central DB login (doc 81 Đợt 10 — owner decisions 2026-10-12)
 
-By default the gateway only reads, publishes and buffers. With **`EDGE_EXECUTION_ENABLED=true`** it also **executes the
-orchestration runs central hands to this node** — through the same engine, the same gates and its own device connections.
-Everything below is OFF until an operator turns it on, and nothing starts without the node's own credential.
+Since Đợt 10 the edge host holds **no `DATABASE_URL`, no `JWT_SECRET` and no `SECRET_ENCRYPTION_KEY`**. Central is the only
+writer of run state, approvals, safety events, ledgers and audit. The edge drives only the devices it OWNS, and every
+non-STOP actuation needs a fresh authorisation that central signed. **STOP is never gated (L-7).**
 
-### 8.1 How it works (what is decided where)
+The Đợt 9 v1 path (the edge walking the central run row over its own DB login) is gone: a v1 node no longer executes runs
+(ruling R-10-l — edge execution was OFF in production, so nothing is lost).
 
-- **Topology.** The gateway's `DATABASE_URL` is the **central control-plane DB** (§3, compose file). The node therefore
-  executes **the central run row itself** — same run id, same workflow id (the *ID mapping*, migration 0370). No copy run
-  is ever created on the edge.
-- **Assignment.** A run is handed to a node when it is started: tRPC `orchestration.startRun({ …, edgeNodeCode })` or
-  API v1 `POST /api/v1/orchestration/runs { workflowRef, params, edgeNodeCode }`. The node must be inside the starter's
-  factory scope (a node with no `factoryCode` only for an unrestricted user / global key). The run is created `queued`
-  with its edge assignment in one transaction; **central never walks it**.
-- **Pull → claim → walk → report** (`/api/v1/edge/node/*`, authenticated **only** by the node's credential):
-  1. `pull` — the node's claimable runs, each with the **definition snapshot** (no device reading: a pull never reads a
-     controller — final wave F2);
-  2. the node checks locally: snapshot hash = assignment = the workflow row in its DB, then reads **its own** binding digest
-     (its drivers read the controllers' program checksums — for S7 a block-info read per controller) **only now, right
-     before claiming**. Unreadable ⇒ it does not claim. A run it could not claim (its checks failed, or central refused the
-     claim) is retried with a bounded back-off (`EDGE_PULL_INTERVAL_MS` × 2ⁿ, capped at `EDGE_CLAIM_BACKOFF_MAX_MS`), never on
-     every pull;
-  3. `claim` — central reads **its** digest fresh and refuses a mismatch (409 `binding_changed`), then compare-and-set
-     `queued → running` and a fresh claim token (only its SHA-256 is stored). A run **no node claims within
-     `EDGE_UNCLAIMED_HOLD_MS`** (default 10 min) goes to `held` with the reason "edge node X did not claim run N … (edge
-     unreachable …)" — shown in the Studio under *Interrupted* with an **edge unreachable** badge; Continue re-queues it for
-     the node (a fresh window), Cancel aborts it. Checked on every pull and by central's edge health sweep (a node that is
-     down never pulls);
-  4. the node walks the run with the shared engine: **approval with the API-key identity rule, binding digest, program
-     checksum, R-4-x and the STOP exemptions are the same code over the same rows as central.** Before every **non-STOP**
-     command it asks the run guard (claim current, credential active, central has not stopped the run). A STOP never asks;
-  5. `progress` every `EDGE_ABORT_POLL_MS` (claim-bound, strictly increasing sequence; a replay is refused) — the answer
-     carries `abortRequested`; `complete` when the segment ends (decided by the run row, never by the report).
-- **Gates.** An un-approved `hitl_gate` pauses the run (`awaiting_confirm`); the approver approves it in the Studio as
-  usual (screen-bound to central's digest). The approval row and the hand-back to `queued` are ONE transaction (final wave
-  F4 — a crash can no longer leave the run `running` without a claim); the node claims the next segment.
-- **Robots on the edge (final wave F1).** The gateway starts **only the robots of its own lines**: `robots.lineId` (or the
-  robot's station's line) must be one of `EDGE_GATEWAY_LINE_CODES`, in the factory `EDGE_GATEWAY_FACTORY_CODE` when set.
-  **No line codes ⇒ no robot.** Robot state is **not ingested on the edge** — central stays the one ingest owner
-  (`robot_telemetry`, the trusted e-stop `safety_events`), so a physical e-stop is never recorded twice. Before every
-  **non-STOP** motion the edge also reads the robot's **persisted motion lock** (`robot_motion_locks`): a lock central set
-  (an outcome-unknown motion, a link loss) refuses the edge's motion too (`MOTION_LOCKED`); an unreadable row refuses it
-  (fail-closed). Clear such a lock where it was set (central's robot page: a confirmed STOP or *Clear motion lock*). STOP is
-  never checked.
-- **Abort / reject (L-7).** Central's abort writes `aborted` and runs its own STOP sweep (central usually cannot reach the
-  line's devices — those STOPs are recorded as failed there). The node learns it from the next protocol answer **or from
-  the run row** (run guard / progress fallback): its walker stops at once — no further non-STOP step — and the node's own
-  sweep **sends the remaining STOP steps and due STOP compensations** through its dispatchers. A STOP confirmed sent by
-  either side is never shown as failed by the other. A run is never moved out of `aborted`.
-- **Abort while no walker is left** (the run was paused at a gate, or between segments, when central aborted it): the next
-  `pull` lists it under `stopsUnconfirmed` when central's own sweep could not confirm a STOP; the node re-sends exactly those
-  STOPs through its dispatchers (the engine's re-send: never a STOP already confirmed, only within the 15-minute re-send
-  window, at most once per `EDGE_STOP_RESEND_MIN_MS`).
+### 8.1 What is decided where
 
-### 8.2 Provision a node credential (on the CENTRAL host)
+- **Central decides**, at a per-step `POST /api/v1/edge/node/runs/:id/authorize`: approval identity, binding digest,
+  robot enabled / commissioning / policy / interlock, motion lock, ownership and revocation. The answer is a signed
+  authorisation (Ed25519, `typ auth`), single use (`jti`), bound to (run, claim, step, attempt), to the exact payload hash
+  of the command and to a nonce the edge issued; it is valid for **10 s measured from the edge's own request** (3–30 s,
+  `EDGE_AUTH_TTL_MS` on central).
+- **The edge decides** what only it can see: driver connected, its in-memory motion lock and slot, the safety-PLC
+  preflight (from the safety configs in its signed config), readback and stop-watch — and it verifies the signed
+  authorisation right before the driver call (signature, kid, `typ`, node, run / claim / step / attempt, payload hash, nonce
+  pending, TTL, `jti` unused).
+- **Everything the edge knows comes signed**: its identity, the devices it owns (with their connection secrets, sealed for
+  this node), the safety configs, run packages, commands and keyset updates. A config signed for another node, a run package
+  presented as an authorisation, an unknown kid or a rolled-back keyset is refused.
+- **Local state is the journal** (§8.7), never a database.
+- **One owner per device** (`robots."edgeNodeId"`, `device_adapters."edgeNodeId"`, mig 0374; NULL = central): the owner
+  connects, ingests, controls and holds the motion lock. Central's `otManager` / `robotManager` skip edge-owned devices;
+  central console motion on an edge-owned robot answers `ROBOT_OWNED_BY_EDGE`; central's STOP / lock / clear of an
+  edge-owned device are queued to the node as signed commands.
 
-1. Apply migration 0370 to the target DB (`node scripts/apply-migration-0370.mjs --dev-only` — owner decision).
-2. Make sure the node is registered (it registers itself on its first heartbeat, or `edgeRuntime.registerNode`) with its
-   `factoryCode` set — runs are only handed to nodes inside the starter's factories.
-3. Issue the credential as an **active admin** — PROVEN, not named (final wave F7): `--actor <admin username>`, then the
-   account's password at a hidden prompt (or `EDGE_CRED_ADMIN_PASSWORD`; never on the command line) and, when the account has
-   2FA on, its current authenticator code (prompt, or `EDGE_CRED_ADMIN_OTP`) — the web login's own checks (lockout, audit).
-   The old `--actor-user-id` is refused; the proven admin is recorded. Write the secret to a NEW file
-   **outside the repo checkout** (never into the repository — `*.cred` and `deploy/edge/secrets/*` are git-ignored as a
-   safety net only):
+### 8.2 Provision the signing key (CENTRAL host)
 
-   ```bash
-   npx tsx scripts/edge-node-credential.ts issue --node edge-line1 --actor <admin username> \
-       --reason "commission line 1 gateway" --out /root/edge-line1.cred
-   ```
+Central signs with a private key that lives in FILES only — never in the DB, never on argv. The DB table
+`edge_auth_signing_keys` is an audit / distribution mirror (avi_app may only read it; a row planted there is never trusted).
 
-   The secret (`edn_<12 hex>.<43 chars>`) exists **only** in that file (created mode 0600; an existing file is refused).
-   The DB keeps its SHA-256; audit rows keep the prefix only.
-4. Move the file to the edge host, **outside any repo checkout**, readable only by the gateway's account, then delete the
-   central copy:
-   - Linux: `sudo install -d -m 700 /etc/avi-edge && sudo install -m 600 -o <app uid> edge-line1.cred /etc/avi-edge/edge-node.cred`
-     (the container's `app` uid: `docker compose -f deploy/edge/docker-compose.edge.yml run --rm --entrypoint id edge-gateway`);
-   - Windows: `icacls C:\avi-edge\edge-node.cred /inheritance:r /grant:r "<gateway account>:R"`.
-
-   The gateway reads it ONLY as a file (`EDGE_NODE_CREDENTIAL_FILE`; a secret in an environment variable is refused) and
-   **refuses to start execution if the file is readable or writable by group / others** (POSIX). On Windows it cannot check
-   and logs a warning naming the `icacls` command.
-5. **Rotate** (no overlap — the old secret stops at once; update the edge right after):
-   `npx tsx scripts/edge-node-credential.ts rotate --node edge-line1 --actor <admin username> --reason "…" --out /root/new.cred`
-6. **Revoke** (terminal; the node can no longer pull, claim or report, and its in-flight non-STOP steps are refused):
-   `npx tsx scripts/edge-node-credential.ts revoke --node edge-line1 --actor <admin username> --reason "…"`
-7. **List** (never shows a hash): `npx tsx scripts/edge-node-credential.ts list --node edge-line1`.
-   A node that executed runs cannot be deleted — revoke its credential instead.
-
-### 8.3 Run the gateway with execution on
-
-Add the overlay — it turns execution on and hands the credential to the container as a compose **file-based secret**
-(`/run/secrets/edge_node_credential`; only its PATH is in the environment):
+Every write below is made by a **proven** active admin: `--actor <username>`, then the password at a hidden prompt (or
+`EDGE_SIGNING_ADMIN_PASSWORD`) and, with 2FA on, the current code (prompt, or `EDGE_SIGNING_ADMIN_OTP`). `--by`, and any
+`--password…` / `--otp…` spelling on the command line, are refused.
 
 ```bash
-export EDGE_NODE_CREDENTIAL_HOST_FILE=/etc/avi-edge/edge-node.cred EDGE_CENTRAL_URL=https://central.example:3000
-docker compose -f deploy/edge/docker-compose.edge.yml -f deploy/edge/docker-compose.edge.execution.yml --env-file .env.edge up -d
+# 1. GENERATE the first key — it becomes the ROOT (active). Keyring dir mode 700, <kid>.pem mode 600.
+npx tsx scripts/edge-signing-key.ts generate --dir /etc/avi/edge-keys --actor <admin>
+# 2. Point EVERY central instance at it, then restart central:
+#      EDGE_SIGNING_KEY_DIR=/etc/avi/edge-keys   EDGE_SIGNING_KEY_FILE=/etc/avi/edge-keys/<kid>.pem
+# 3. PIN — the provisioning pin each edge trusts (the ROOT, at the current keyring version; file mode 444):
+npx tsx scripts/edge-signing-key.ts pin --dir /etc/avi/edge-keys --out /root/edge-keyset.json --actor <admin>
+#    (the node bundle, §8.3, writes the same pin for you)
+# LIST — the files and the mirror side by side; every difference is printed ("the FILES are authoritative"):
+npx tsx scripts/edge-signing-key.ts list --dir /etc/avi/edge-keys
+```
+
+**Rotate** (no edge re-provisioning — keyset updates are chained from the pinned root):
+1. `generate` again ⇒ a `next` key (published to the edges in the next config cycles);
+2. `rotate --activate <new kid>` ⇒ both active; wait **≥ 2 config cycles** so every edge has the new keyset;
+3. point `EDGE_SIGNING_KEY_FILE` of every central instance at `<dir>/<new kid>.pem` and restart central;
+4. `rotate --retire <old kid>` ⇒ kept in the keyset for `EDGE_KEY_RETIRED_GRACE_MS` (default 10 min ≫ auth TTL + skew),
+   pruned later (the keyring holds at most 16 keys).
+
+The ROOT is never retired: replacing it (e.g. after a compromise) means a new keyring and **re-provisioning every edge**
+with a new pin. A compromised signing key can forge authorisations for every node — keep the key directory on central only,
+mode 700, readable by central's service account.
+
+### 8.3 Register a node, issue its credential and its bundle (CENTRAL host)
+
+1. Apply migrations 0372 → 0375 and 0376 on the central DB (`node scripts/apply-migration-03xx.mjs --dev-only`, owner).
+   ⚠ R-10-t: re-applying 0316 / 0363 / 0369 / 0370 / 0371 (or 0125 through `migrate-standalone`) after 0376 would un-pin
+   its functions — those runners refuse unless given `--then-0376`, which re-applies 0376 right after.
+2. Register the node with its `factoryCode` (tRPC `edgeRuntime.registerNode`, machine_control:canCreate — the admin-only
+   `register-node` CLI of decision D14 is not built yet): a node without a factory is given no device and no run.
+3. Issue the credential AND the bundle in one step, as a proven admin:
+
+   ```bash
+   npx tsx scripts/edge-node-credential.ts issue --node edge-line1 --actor <admin> --reason "commission line 1" \
+       --bundle /root/edge-line1-bundle --keyring-dir /etc/avi/edge-keys \
+       --central-url https://central.example:3000 [--edge-dir /etc/avi-edge] [--journal-max-bytes 67108864]
+   ```
+
+   It creates a NEW directory (an existing one is refused; nothing is changed then) holding:
+   - `edge-node.cred` — the credential `edn_…` (mode 600, its ONLY copy — never on stdout, never in the DB: only its SHA-256);
+   - `edge-keyset.json` — the keyset pin, built from the keyring FILES (mode 444);
+   - `edge-node.env` — `EDGE_GATEWAY_NODE_CODE`, `EDGE_CENTRAL_URL`, `EDGE_CENTRAL_NODE_ID`, `EDGE_CENTRAL_CREDENTIAL_ID`,
+     `EDGE_NODE_CREDENTIAL_HOST_FILE`, `EDGE_KEYSET_PIN_HOST_FILE`, `EDGE_JOURNAL_MAX_BYTES` — and nothing secret.
+   The keyring is read and the pin built BEFORE anything is issued; a refused issue leaves no directory.
+4. Move the bundle to the edge host under `/etc/avi-edge` (dir mode 700; `edge-node.cred` mode 600 and owned by the container's
+   `app` uid: `docker compose -f deploy/edge/docker-compose.edge.yml run --rm --entrypoint id edge-gateway`; Windows:
+   `icacls C:\avi-edge\edge-node.cred /inheritance:r /grant:r "<gateway account>:R"`), then delete the central copy.
+5. **Rotate** the credential: `issue` → `rotate` with a new `--bundle` (no overlap: the old secret stops at the commit; copy
+   the new `edge-node.cred` and `edge-node.env` to the edge right after). **Revoke**: `revoke --node … --reason …` (terminal).
+
+### 8.4 Mark device ownership (CENTRAL host)
+
+```bash
+npx tsx scripts/edge-device-owner.ts assign  --robot 12  --node edge-line1 --actor <admin> --reason "commission line 1"
+npx tsx scripts/edge-device-owner.ts assign  --adapter 7 --node edge-line1 --actor <admin> --reason "commission line 1"
+npx tsx scripts/edge-device-owner.ts release --robot 12  --actor <admin> --reason "gateway replaced"      # back to central
+npx tsx scripts/edge-device-owner.ts list    [--node edge-line1]
+```
+
+- Proven admin (same proof as §8.2; `EDGE_OWNER_ADMIN_PASSWORD` / `EDGE_OWNER_ADMIN_OTP` or the prompt); a reason is required;
+  every assign / release — done or refused — is an `audit_logs` row, and the WORM history `device_owner_changes` names the
+  admin and the reason.
+- A device goes only to a node of **its own factory** (robot: its station's line, else its own line → workshop → factory;
+  adapter: machine → station → line → workshop → factory). Otherwise: `refused (cross-factory, R-10-am)` — fix the chain or
+  the node's `factoryCode`.
+- Refused while a robot job is running, or while an adapter has an UNRESOLVED write (an intent without a result, at any age;
+  a `timeout` result or a legacy `sent` row younger than 10 min) — see §8.9 for an orphaned intent.
+- The change bumps the owner epoch and **locks the robot** (`ownerChanged`) under its new owner: clear it there after
+  checking the robot. Unacknowledged STOPs of the previous ownership are carried to the new edge owner; on a release to
+  central, central executes them (in the CLI process when its control flags allow, and in any case by the server's sweep
+  within 10 s). The running server applies the change live (NOTIFY `device_owner_changed`, reconcile ≤ 30 s).
+
+### 8.5 Run the gateway
+
+```bash
+# .env.edge from deploy/edge/.env.edge.example (broker, journal size); edge-node.env from the bundle
+docker compose -f deploy/edge/docker-compose.edge.yml --env-file .env.edge --env-file /etc/avi-edge/edge-node.env up -d
+# run execution (non-STOP actuation under per-step authorisation) on top — only after the dot10 E2E + attack suites are green:
+docker compose -f deploy/edge/docker-compose.edge.yml -f deploy/edge/docker-compose.edge.execution.yml \
+    --env-file .env.edge --env-file /etc/avi-edge/edge-node.env up -d
 ```
 
 | Env (edge) | Default | Purpose |
 |---|---|---|
-| `EDGE_EXECUTION_ENABLED` | `false` | Turns run execution on. Off ⇒ the gateway is read + publish + buffer only. |
-| `EDGE_CENTRAL_URL` | — | Central server base URL (`https://…`; use TLS — the abort signal travels in its answers). |
-| `EDGE_NODE_CREDENTIAL_FILE` | — | PATH of the node secret file (mode 600 on POSIX, else refused). `EDGE_NODE_CREDENTIAL` (the secret in the env) is refused. |
-| `FOE_ENABLED` | `false` | Must be `true` on the edge (the engine executes the runs). |
-| `EDGE_RUNTIME_ENABLED` | `false` | Must be `true` (also on central — the node routes answer 503 otherwise). |
-| `ROBOT_GATEWAY_ENABLED` / `OT_GATEWAY_ENABLED` | `false` | The edge's own device connections (its dispatchers). |
-| `EDGE_PULL_INTERVAL_MS` | `5000` | How often the node asks for work. |
-| `EDGE_ABORT_POLL_MS` | `2000` | Progress / abort-signal cadence while a run walks (50 ms – 60 s). |
-| `EDGE_MAX_CONCURRENT_RUNS` | `4` | Runs walked at once. |
-| `EDGE_REQUEST_TIMEOUT_MS` | `10000` | Per-request bound. |
-| `EDGE_STOP_RESEND_MIN_MS` | `10000` | Minimum time between two re-sends of the unconfirmed STOPs of one aborted run. |
-| `EDGE_GUARD_DEADLINE_MS` | `2000` | Bound of the run-guard read before a non-STOP command (past it ⇒ that command is refused). |
-| `EDGE_CLAIM_STALE_MS` (central) | `30000` | A claim with no progress for this long may be declared interrupted by its node. |
-| `EDGE_CLAIM_BACKOFF_MAX_MS` | `120000` | Cap of the per-run back-off after a refused local check / claim (1 s – 1 h). |
-| `EDGE_UNCLAIMED_HOLD_MS` (central) | `600000` | A run assigned to a node and not claimed for this long goes to `held` ("edge unreachable") (5 s – 24 h). |
-| `EDGE_GATEWAY_LINE_CODES` / `EDGE_GATEWAY_FACTORY_CODE` | — | The robots this edge starts (its lines / factory). Empty ⇒ none. |
+| `AVI_PROCESS_ROLE` | `edge` (entrypoint + image) | Every central-DB accessor refuses (counted, logged once; `EDGE_DB_TRAP=throw` in tests). |
+| `EDGE_CENTRAL_URL` | — (required) | Central base URL. Use TLS. |
+| `EDGE_CENTRAL_NODE_ID` / `EDGE_CENTRAL_CREDENTIAL_ID` | — (required) | This node's `edge_nodes.id` and credential id (from the bundle). |
+| `EDGE_NODE_CREDENTIAL_FILE` | `/run/secrets/edge_node_credential` | PATH of the credential (compose file-based secret; mode 600 on POSIX or refused). The secret in an env var (`EDGE_NODE_CREDENTIAL`) is refused. |
+| `EDGE_KEYSET_PIN_FILE` | `/run/secrets/edge_keyset_pin` | PATH of the keyset pin. Missing / unreadable ⇒ no device starts. |
+| `EDGE_JOURNAL_DIR` | `/app/data/edge-journal` | The journal (on the `edgedata` volume). |
+| `EDGE_JOURNAL_MAX_BYTES` | `67108864` (64 MiB) | Journal bound (§8.7). |
+| `EDGE_EXECUTION_ENABLED` / `FOE_ENABLED` | `false` | Run execution (overlay). |
+| `EDGE_RUNTIME_ENABLED` | `true` (compose) | Node protocol on (also needed on central). |
+| `EDGE_AUTH_TTL_MS` (central) | `10000` | Authorisation TTL (3–30 s). |
+| `EDGE_KEY_RETIRED_GRACE_MS` (central) | `600000` | How long a retired key stays in the keyset. |
 
-Any missing piece (flag, URL, credential, `FOE_ENABLED`) ⇒ the agent starts **nothing** and says why once in the log.
-Run **exactly one** executing gateway per node code.
+Any missing piece ⇒ the gateway starts **no device** and says why once (fail-closed). `EDGE_GATEWAY_CONFIG_FILE`,
+`EDGE_GATEWAY_FACTORY_CODE` / `_LINE_CODES` are ignored: identity, devices and mappings come from central's signed config
+(mapping-as-code is a central CLI, D13).
 
-### 8.4 Offline behaviour and limits (said plainly)
+### 8.6 Cutover from Đợt 9 v1 (a node that still has the DB login)
 
-- **Central unreachable ⇒ no new run is started** (nothing is claimed without central). A run already walking goes on; its
-  non-STOP steps are still gated by the run guard, which reads the run row: a central abort written while the HTTP link is
-  down still stops them, and from then on only STOP steps and STOP compensations go out.
-- **Database unreachable too** ⇒ the guard cannot decide ⇒ every further non-STOP command is refused (the step fails, the
-  run fails and compensates; STOPs still go). The edge cannot act on a run it cannot read.
-- **Gateway restart mid-walk** ⇒ the walker is gone; once the claim has had no progress for `EDGE_CLAIM_STALE_MS` the node
-  declares it interrupted ⇒ the run is `held` (a person may Continue — the node then claims a new segment). It is never
-  re-walked silently.
-- **Program checksum.** The claim compares the node's binding digest with central's: a checksum-capable controller that
-  central cannot read (no route from central to the line) makes the digest unreadable ⇒ such a run is not claimed — and
-  could not be approved either (the approver's screen needs central's reading). Give central read access to those
-  controllers, or leave checksum verification off for them.
-- **Trust boundary.** The node credential binds the protocol to ONE node (scope, claims, reports). It is **not** a boundary
-  against a compromised edge host: that host holds the control-plane `DATABASE_URL` (pre-existing in this topology).
-  Restricting the edge's DB role is a separate step, not in this đợt.
-- **Two gateways with the same node code** are a misconfiguration: the run guard makes a walker whose claim was taken over
-  let go without writing, but both would poll the same devices (§6).
-- A run handed to a node that never comes back is held after `EDGE_UNCLAIMED_HOLD_MS` ("edge unreachable"); a run it was
-  WALKING when it went away stays `running` until its claim goes stale and the node declares it — abort it centrally (STOPs
-  from central, if it can reach the devices) and use the machines' direct STOP / E-STOP.
-- The Studio has no "run on edge node" picker yet: assign through the tRPC / API v1 `edgeNodeCode` field.
+1. Central: migrations 0372 → 0376 (`--dev-only`); generate the signing key and set `EDGE_SIGNING_KEY_DIR` /
+   `EDGE_SIGNING_KEY_FILE` on every central instance; restart central.
+2. Give the global seed row **`SIM-SAFETY-PLC-1`** (mig 0270: enabled, `scope 'sim'`, no factory, no target) a factory /
+   targets, or **disable it**. While it is enabled, central applies it to every target but can never hand it to an edge
+   (an untargeted row without a factory is never shipped), so **every real-mode, preflight-on edge authorisation is refused**
+   (`device_refused {safety}`, R-10-aw).
+3. Mark device ownership (§8.4). Re-issue each node's credential with `--bundle` (§8.3).
+4. On each edge host: replace `.env.edge` from the template; **remove `DATABASE_URL`, `JWT_SECRET` and
+   `SECRET_ENCRYPTION_KEY`** (from `.env.edge`, the shell, any override file). The gateway warns at boot while
+   `DATABASE_URL` is still set — even unused, it is a live password on that host.
+5. **Rotate the `avi_app` password** on the central DB and update central's `DATABASE_URL`: removing the variable does not
+   revoke what the edge hosts already know.
+6. **Firewall `:5432`** (the central Postgres) from the edge / OT subnet.
+7. Turn `EDGE_EXECUTION_ENABLED` on only after the dot10 E2E and attack suites are green.
+
+### 8.7 The journal: sizing, durability, Windows
+
+- Append-only JSONL segments + an atomically renamed `state.json`. `auth.consumed` is fsynced BEFORE the driver call; lock
+  events at once; the rest by group commit (≤ 50 ms; a STOP never waits past its DB step bound). Only DURABLE records are
+  shipped; central dedupes by (epoch, stream, seq) + content hash and refuses a same-seq different-content record (409).
+- **Full** (bytes on disk + queued ≥ `EDGE_JOURNAL_MAX_BYTES`): no new non-STOP actuation, `auth.consumed` refused,
+  robot_state dropped (counted); step / STOP / lock / event records are still appended — **never dropped** — and health
+  reports degraded. STOP is unaffected. Compaction deletes only closed segments every record of which central acknowledged.
+- **Sizing**: records are a few hundred bytes; size for the longest central outage you must ride with runs active
+  (step + event records accumulate until central acknowledges them) plus robot-state samples (dropped first). 64 MiB holds
+  on the order of 100 000 records; raise it for many robots or long outages, and watch the degraded health.
+- **Windows hosts**: there is no directory fsync (renames use MoveFileEx without write-through), so a rolled segment or the
+  snapshot rename may not survive a power cut. The journal does not depend on it: EVERY start opens a new epoch (seq never
+  reused), un-acknowledged durable records of earlier epochs are shipped under their own epoch, an unreadable journal is
+  moved aside and every robot starts LOCKED (`persistUnknown`). Prefer Linux hosts with a journaling FS for edge gateways.
+
+### 8.8 Degraded STOP authentication on central (R-10-bb / R-10-be) — and its limits
+
+The console STOP (`robot.consoleStop`, the ONLY user of it) verifies the session JWT statelessly first, then runs the session
+/ permission / factory-scope reads in parallel under 300 ms. If the DB does not answer in time, a valid unexpired token whose
+**remembered** identity (from a full authentication of the same session in the last 15 min — memory, per session, LRU 5000)
+passes the actuation role floor + 2FA and carries machine_control may still **STOP** — audited (retried) with a durable
+critical alert "STOP accepted on degraded auth". Limits, said plainly:
+- **STOP only — never MOVE**; motion keeps the full chain and refuses when the DB is unreachable.
+- **Nothing remembered ⇒ refused** (a user who has not used the app in the last 15 min, or right after a central restart).
+- A logout / revoke / disable / role-permission-scope change invalidates the memory **of this process** (per user / session,
+  with a tombstone against late writes); another replica keeps its own memory until its TTL (≤ 15 min).
+- Factory scope: the DB scope when readable, else the remembered scope + robotManager's robot → factory map; refused only
+  when both are known and differ; unknown ⇒ allowed with an anomaly audit (L-7: a STOP is never lost to a scope read).
+- A robot with no live session here and a dead DB: no STOP can be sent from central (truthful alert) — use the machine's own
+  E-STOP. The certified safety-PLC remains the safety function.
+
+### 8.9 Resolve a STOP / an orphaned write (admin or supervisor)
+
+Robot Control → **"Pending STOPs and orphaned writes"** (tRPC `edgeResolution.*`; admin / supervisor with 2FA +
+machine_control:canEdit; your factory scope; the audit row is written in the same transaction as the change):
+- The panel lists every unacknowledged STOP (`device_pending_stops`) with its flags: **needs resolution** (refused / failed —
+  never retried automatically), **owner cannot list** (the edge owner cannot reach the device; central executes it),
+  **overdue** (a STOP never expires — still owed), **undeliverable** (its node has no active credential).
+- **Record resolution** (refused / failed STOPs only): only after the device was stopped another way and checked on site.
+  A's guarded `edge_stop_resolve` records who and why; the STOP stays listed as resolved by a person. A pending STOP cannot be
+  closed by hand — it is executed.
+- **Orphaned OT write intent** (a write-ahead intent with no result: the process died mid-write) blocks the adapter's
+  ownership change for ever. Once it is ≥ 10 min old, **Record unknown outcome** appends its RESULT row (status `timeout` =
+  outcome unknown, linked by `intentId`, nothing edited or deleted) with your reason. The owner change is possible again
+  after the DB's 10-minute stale-write window. Check the real value on the device first.
+
+### 8.10 Retention of the Đợt 10 WORM tables (R-10-an)
+
+None yet. `edge_node_report_records` (one row per accepted record: (node, stream, epoch, seq) + content hash),
+`edge_stop_ack_refusals`, `central_stop_executions`, `device_owner_changes` and `edge_step_authorizations` are append-only
+and are not pruned in this đợt — volume is bounded by edge traffic. Watch their size; a retention job (partition + drop by
+age, kept ≥ the audit horizon) is backlog.
+
+### 8.11 What this does NOT protect (said plainly)
+
+- A compromised edge host still controls **its own** devices directly and can misreport its own telemetry and its own
+  controllers' program checksums (change detection, not tamper-proofing). It can no longer read or write any central row,
+  approvals, runs or devices of other nodes, users, API keys, or forge a trusted safety event.
+- Central down ⇒ non-STOP steps are **held** (D5); STOPs still go out. The interlock evaluated on central sees edge telemetry
+  a few seconds late.
+- Robot e-stops ingested from an edge are plain safety events (no `safety_event_trust`) unless a maker-checker approval per
+  (node, robot) exists (D6, mig 0375).
