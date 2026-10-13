@@ -121,6 +121,12 @@ export const EDGE_UNREACHABLE_CTX_KEY = "edgeUnreachable";
 export const EDGE_WAITING_CTX_KEY = "edgeWaiting";
 /** held by its node at a segment end (D5: centralUnreachable / journalFull …) — foeRunStore.applyEdgeSegmentEnd */
 export const EDGE_HELD_CTX_KEY = "edgeHeld";
+/**
+ * fix review 4 (B F-B2-1) — `{ userId, at }` of the user who CONTINUED a held edge run last (foeEngine.resumeRun, central-only;
+ * edgeContextPolicy refuses it from an edge patch). B's /authorize (edgeAuthorizeCentral.EDGE_RESUMED_BY_CTX_KEY, the same name)
+ * uses that user's role for the engine policy on the held path.
+ */
+export const EDGE_RESUMED_BY_CTX_KEY = "edgeResumedBy";
 /** set (never cleared) when a Continue clears an `interrupted` mark: the abort sweep keeps counting the run as possibly acted */
 export const INTERRUPTED_EARLIER_CTX_KEY = "interruptedEarlier";
 

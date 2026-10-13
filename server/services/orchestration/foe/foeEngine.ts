@@ -110,7 +110,7 @@ import {
 } from "./foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-e … R-4-i); Đợt 5 E1 (apiRun); Đợt 7 I6 (reject claim token); Đợt 8 O2; Đợt 9 R2
 import { isMigrationMissingError, orchestrationRunsWithApiKey, readApiKeyParties, readRunApiKeyId } from "./runApiKeyIdentity"; // doc 81 Đợt 9 R1/R3 (mig 0369, narrow projections)
 import type { ProgramCheck } from "../../ot/programChecksum"; // doc 81 Đợt 8 O2/O3 — the approver's screen list
-import { EDGE_HOLD_MARK_KEYS, edgeProgramPreOf } from "../../edge/edgeProgramReportRule"; // doc 81 Đợt 10 C fix review 1 (R-10-m) — THE report rule + hold marks
+import { EDGE_HOLD_MARK_KEYS, EDGE_RESUMED_BY_CTX_KEY, edgeProgramPreOf } from "../../edge/edgeProgramReportRule"; // doc 81 Đợt 10 C fix review 1 (R-10-m) — THE report rule + hold marks
 import { adapterOwnership, edgeNodeProgramReports, isEdgeControlSchemaMissing } from "../../edge/edgeControlSchema"; // doc 81 Đợt 10 C (D7) — narrow projections (0373/0374)
 import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 import {
@@ -3096,13 +3096,18 @@ export async function resumeRun(
         return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId}: its step rows could not be read to continue it safely — retry.` };
       }
       const marked = EDGE_HOLD_MARK_KEYS.some((k) => k in ctx0);
+      // fix review 4 (B F-B2-1) — a Continue of a HELD edge run records WHO continued it (central-only key — the edge context
+      // filter refuses it): central's /authorize evaluates the engine policy with that user's role, as central's own resumed walk
+      // would (rc.user = the resumer). A gate approval records nothing here (the approver is the gate row's).
+      const resumedBy = !pausedAtGate ? { [EDGE_RESUMED_BY_CTX_KEY]: { userId: Number.isInteger(user.id) && user.id > 0 ? user.id : 0, at: Date.now() } } : {};
       const markPatch =
-        marked || Object.keys(resume).length || RESUME_STATE_CTX_KEY in ctx0
+        marked || Object.keys(resume).length || RESUME_STATE_CTX_KEY in ctx0 || Object.keys(resumedBy).length
           ? {
               contextJson: {
                 ...Object.fromEntries(Object.entries(ctx0).filter(([k]) => !EDGE_HOLD_MARK_KEYS.includes(k) && k !== RESUME_STATE_CTX_KEY)),
                 ...(ctx0.interrupted === true || ctx0[INTERRUPTED_EARLIER_CTX_KEY] === true ? { [INTERRUPTED_EARLIER_CTX_KEY]: true } : {}),
                 ...(Object.keys(resume).length ? { [RESUME_STATE_CTX_KEY]: resume } : {}),
+                ...resumedBy,
               },
             }
           : {};

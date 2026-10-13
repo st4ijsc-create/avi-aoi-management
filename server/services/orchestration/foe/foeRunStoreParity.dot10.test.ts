@@ -1201,7 +1201,7 @@ describe("doc 81 Đợt 10 C fix review 1 — THE edge program-report rule (R-10
     Object.assign(r, { status: "held", currentStepId: null, contextJson: { edgeWaiting: "capacity", edgeWaitingAt: "x", edgeWaitingNode: "EDGE-A", interrupted: true } });
     const view = (await getRun(e.runId, { bindingDigest: true }))!;
     await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
-    expect(runRow(e.runId).contextJson).toEqual({ interruptedEarlier: true });
+    expect(runRow(e.runId).contextJson).toEqual({ interruptedEarlier: true, edgeResumedBy: { userId: OTHER.id, at: expect.any(Number) } });
   });
 
   it("★ the edge's resend window counts from the ABORT (abortedAt), issuedAt only when it is absent", async () => {
@@ -1480,5 +1480,46 @@ describe("doc 81 Đợt 10 C fix review 3 (R-10-ao) — ANY authorisation on a n
         (fake as any).select = sel;
       }
     }
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 4 (B F-B2-1) — a Continue of a held edge run records the RESUMER; /authorize uses that role", () => {
+  it("★ Continue records edgeResumedBy {userId, at} (central-only); a gate approval does not; an edge patch can never set it; B's actor rule then takes the resumer", async () => {
+    const { EDGE_RESUMED_BY_CTX_KEY, edgeEngineActorOf } = await import("../../edge/edgeAuthorizeCentral");
+    const e = await edgeAssignedRun(def("rb-e", [gate(), move("r1"), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e); // gate path: OTHER approves g1
+    expect(runRow(e.runId).contextJson?.[EDGE_RESUMED_BY_CTX_KEY]).toBeUndefined();
+    const gateAt = new Date(stepRows(e.runId).find((s) => s.stepId === "g1")!.finishedAt).getTime();
+    expect(edgeEngineActorOf(runRow(e.runId).contextJson, { approvedBy: OTHER.id, at: gateAt })).toEqual({ userId: OTHER.id, path: "gate" });
+    e.offlineSteps = new Set(["r2"]);
+    await edgeSegment(e, 2); // held at r2
+    expect(runRow(e.runId).status).toBe("held");
+    e.offlineSteps = undefined;
+    const RESUMER = { id: 14, role: "supervisor", name: "resumer" };
+    const t0 = Date.now();
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    expect((await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, RESUMER)).status).toBe("queued");
+    const rec = runRow(e.runId).contextJson[EDGE_RESUMED_BY_CTX_KEY];
+    expect(rec).toMatchObject({ userId: RESUMER.id });
+    expect(rec.at).toBeGreaterThanOrEqual(t0);
+    // B's /authorize rule: the held path ⇒ the RESUMER (its role is then read for the engine policy)
+    expect(edgeEngineActorOf(runRow(e.runId).contextJson, { approvedBy: OTHER.id, at: gateAt })).toEqual({ userId: RESUMER.id, path: "held" });
+    // an edge context patch can never set (or overwrite) it
+    const forged = edgeContextPatchOf({ [EDGE_RESUMED_BY_CTX_KEY]: { userId: OTHER.id, at: Date.now() + 1 }, "branch:x": "then" }, runRow(e.runId).contextJson);
+    expect(forged.patch).toEqual({ "branch:x": "then" });
+    expect(forged.refusedKeys).toEqual([EDGE_RESUMED_BY_CTX_KEY]);
+  });
+
+  it("★ the key is the same name B reads; a CENTRAL (non-edge) Continue writes nothing new", async () => {
+    const rule = await import("../../edge/edgeProgramReportRule");
+    const b = await import("../../edge/edgeAuthorizeCentral");
+    expect(rule.EDGE_RESUMED_BY_CTX_KEY).toBe(b.EDGE_RESUMED_BY_CTX_KEY);
+    expect((await deployWorkflow(def("rb-c", [gate(), ot("m1")]), OWNER)).ok).toBe(true);
+    const runId = (await startRun("rb-c", {}, OWNER)).runId!;
+    Object.assign(runRow(runId), { status: "held", currentStepId: null, contextJson: { interrupted: true } });
+    await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, { id: 0, role: "system", name: "FOE auto-resume" });
+    expect(runRow(runId).contextJson).toMatchObject({ interrupted: true });
+    expect(runRow(runId).contextJson).not.toHaveProperty("edgeResumedBy");
   });
 });
