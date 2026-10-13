@@ -608,19 +608,130 @@ describe("doc 81 Đợt 10 E — agent v2: central commands (design §2.8)", () 
     expect(r2.commands.map((c) => c.outcome)).toEqual(["done"]);
   });
 
-  it("★ fix review 3 (F-3): an UNSIGNED execution never dedupes the signed copy — it re-runs, then acks; the bounded re-ack ends in one anomaly", async () => {
+  it("★ fix review 3/4 (F-3, M-3): an UNSIGNED execution never dedupes the signed copy; re-acks follow a TIME back-off (never the re-delivery count), one anomaly after the cap, then every 5 min; memories pruned by age", async () => {
+    let now = 1_000_000;
     const h = await harness({ claimRuns: false });
+    (h.agent as unknown as { cfg: { now: () => number } }).cfg.now = () => now;
     const u = { typ: "cmd-stop-unsigned", requestId: 170, nodeId: 7, credentialId: 31, ownerEpoch: 3, target: { robotId: 12 } };
     expect((await h.agent.handleCommands([u])).map((c) => c.outcome)).toEqual(["unsigned:sent"]);
     const signed = h.central.sign("cmd", h.central.commandPayload({ requestId: 170, kind: "stop", target: { robotId: 12 } }));
     expect((await h.agent.handleCommands([signed])).map((c) => c.outcome)).toEqual(["sent"]); // executed by the verified copy
     expect(h.devices.calls).toEqual(["stopRobot:12", "stopRobot:12"]);
-    for (let i = 0; i < 12; i++) await h.agent.handleCommands([signed]); // central keeps re-delivering (its ack refused)
-    await h.shipper.flushAll();
-    const a170 = acks(h.central).filter((x) => x.requestId === 170);
-    expect(a170.length).toBe(2 + 10); // unsigned ack + signed ack + 10 re-acks, then no more
+    const reacks = async () => {
+      await h.shipper.flushAll();
+      return acks(h.central).filter((x) => x.requestId === 170).length - 2; // minus the unsigned ack + the signed ack
+    };
+    // a burst of 12 re-deliveries at the same instant: ONE re-ack (M-3 — the cadence of pulls never consumes the budget)
+    for (let i = 0; i < 12; i++) await h.agent.handleCommands([signed]);
+    expect(await reacks()).toBe(1);
+    expect(eventKinds(h.central)).not.toContain("anomaly:EDGE_STOP_ACK_UNCONFIRMED");
+    // the back-off: 2 s after the first re-ack (not 1 999 ms), then 4 s …
+    now += 1_999;
+    await h.agent.handleCommands([signed]);
+    expect(await reacks()).toBe(1);
+    now += 1;
+    await h.agent.handleCommands([signed]);
+    expect(await reacks()).toBe(2);
+    now += 3_999;
+    await h.agent.handleCommands([signed]);
+    expect(await reacks()).toBe(2);
+    now += 1;
+    await h.agent.handleCommands([signed]);
+    expect(await reacks()).toBe(3);
+    // central keeps losing / refusing the ack: past the cap ONE anomaly, and the re-acks go on at most every 5 min
+    for (let i = 0; i < 12; i++) {
+      now += 300_000;
+      await h.agent.handleCommands([signed]);
+      await h.agent.handleCommands([signed]); // a re-delivery in the same instant: rate-limited
+    }
+    expect(await reacks()).toBe(15);
     expect(eventKinds(h.central).filter((e) => e === "anomaly:EDGE_STOP_ACK_UNCONFIRMED")).toHaveLength(1);
     expect(h.devices.calls).toHaveLength(2);
+    // a STOP that stopped arriving: its memory is dropped after an hour (bounded), at the next pull
+    const mem = h.agent as unknown as { reacks: Map<string, unknown>; notOwnedSent: Map<string, unknown> };
+    expect(mem.reacks.size).toBe(1);
+    now += 3_600_001;
+    await h.agent.tick();
+    expect(mem.reacks.size).toBe(0);
+  });
+
+  it("★ fix review 4 (M-2): notOwnedHere is rate-limited per STOP request (one answer a minute), one alert", async () => {
+    let now = 1_000_000;
+    const h = await harness({ claimRuns: false });
+    (h.agent as unknown as { cfg: { now: () => number } }).cfg.now = () => now;
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 180, kind: "stop", target: { robotId: 996 } }))];
+    expect((await h.agent.tick()).commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "notOwnedHere"]);
+    now += 59_999;
+    expect((await h.agent.tick()).commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "notOwnedHere:rate_limited"]);
+    now += 1;
+    expect((await h.agent.tick()).commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "notOwnedHere"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((x) => [x.requestId, x.outcome])).toEqual([[180, "notOwnedHere"], [180, "notOwnedHere"]]);
+    expect(eventKinds(h.central).filter((e) => e === "anomaly:EDGE_STOP_NOT_OWNED_HERE")).toHaveLength(1);
+    expect(h.devices.calls).toEqual([]);
+  });
+
+  it("★ fix review 4 (F-2 leftover): an OWNED device with no session on this edge ⇒ its STOP is answered notOwnedHere at once (central's fallback runs it)", async () => {
+    const h = await harness({ claimRuns: false });
+    let attached = false;
+    (h.agent as unknown as { deps: { hasSession: (t: { robotId: number } | { adapterId: number }) => boolean } }).deps.hasSession = (t) => !("robotId" in t) || attached;
+    const s1 = h.central.sign("cmd", h.central.commandPayload({ requestId: 190, kind: "stop", target: { robotId: 12 } }));
+    expect((await h.agent.handleCommands([s1])).map((c) => c.outcome)).toEqual(["notOwnedHere"]); // no pending, no refresh needed
+    expect(h.devices.calls).toEqual([]);
+    attached = true;
+    const s2 = h.central.sign("cmd", h.central.commandPayload({ requestId: 191, kind: "stop", target: { robotId: 12 } }));
+    expect((await h.agent.handleCommands([s2])).map((c) => c.outcome)).toEqual(["sent"]);
+    const s3 = h.central.sign("cmd", h.central.commandPayload({ requestId: 192, kind: "stop", target: { adapterId: 21 } }));
+    expect((await h.agent.handleCommands([s3])).map((c) => c.outcome)).toEqual(["sent"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((x) => [x.requestId, x.outcome, x.target])).toEqual([
+      [190, "notOwnedHere", { robotId: 12 }],
+      [191, "done", { robotId: 12 }],
+      [192, "done", { adapterId: 21 }],
+    ]);
+  });
+
+  it("★ fix review 4 (M-1): an OLDER pull's refresh finishing during a newer pull's STOPs never makes a target \"not ours\" — refresh state is per pull", async () => {
+    const h = await harness({ claimRuns: false });
+    const base = h.central.makeConfig();
+    h.central.setConfig({}); // newer ⇒ pull A's work phase refreshes …
+    let releaseCfg!: () => void;
+    const gate = new Promise<void>((r) => (releaseCfg = r));
+    const kit = h.central as unknown as { defaults: (route: string, body: unknown, runId?: number) => unknown };
+    h.central.handlers.config = async (body) => {
+      const old = kit.defaults("config", body); // … with the config of THAT moment (robot 13 not in it)
+      await gate;
+      return old as never;
+    };
+    const configCalls = h.central.callsTo("config").length;
+    const tickA = h.agent.tick();
+    await vi.waitFor(() => expect(h.central.callsTo("config").length).toBe(configCalls + 1), { timeout: 2_000, interval: 5 });
+    // robot 13 is assigned meanwhile; pull B carries a STOP for robot 12 (owned) THEN one for robot 13
+    h.central.setConfig({ robots: [...base.robots, { ...base.robots[0], id: 13, code: "rb-13" }] });
+    h.central.commands = [
+      h.central.sign("cmd", h.central.commandPayload({ requestId: 200, kind: "stop", target: { robotId: 12 } })),
+      h.central.sign("cmd", h.central.commandPayload({ requestId: 201, kind: "stop", target: { robotId: 13 } })),
+    ];
+    h.devices.port.stopRobot = async (id) => {
+      h.devices.calls.push(`stopRobot:${id}`);
+      if (id === 12) {
+        releaseCfg(); // pull A's refresh (without robot 13) completes WHILE pull B handles its STOPs
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return { outcome: "sent" };
+    };
+    delete h.central.handlers.config;
+    const rB = await h.agent.tick();
+    await tickA;
+    const b = rB.commands.filter((c) => c.requestId === 201).map((c) => c.outcome);
+    expect(b[0]).toBe("pending:not_yet_known"); // never notOwnedHere on the strength of pull A's refresh
+    expect(b).not.toContain("notOwnedHere");
+    await h.agent.tick(); // B's / the next refresh brings robot 13 ⇒ executed
+    await vi.waitFor(() => expect(h.devices.calls).toContain("stopRobot:13"), { timeout: 2_000, interval: 5 });
+    await h.shipper.flushAll();
+    const a201 = acks(h.central).filter((x) => x.requestId === 201).map((x) => x.outcome);
+    expect(a201[0]).toBe("done"); // (re-acked "done" on its re-delivery — never notOwnedHere)
+    expect(new Set(a201)).toEqual(new Set(["done"]));
   });
 
   it("★ fix review 1 (I-4, L-7): a STOP in the pull runs BEFORE the config refresh — a hanging refresh / work phase never delays it, nor the next pull's STOPs", async () => {

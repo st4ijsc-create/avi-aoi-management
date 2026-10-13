@@ -142,8 +142,14 @@ export async function edgeExecutionConfigFromEnv(
   };
 }
 
-/** fix review 3 (F-3) — re-acks of one executed STOP request before an anomaly */
+/** fix review 3/4 (F-3, M-3) — re-acks of one executed STOP request before an anomaly; their time back-off */
 export const EDGE_STOP_REACK_MAX = 10;
+export const EDGE_STOP_REACK_BACKOFF_MS = 2_000;
+export const EDGE_STOP_REACK_BACKOFF_MAX_MS = 300_000;
+/** fix review 4 (M-2) — at most one notOwnedHere answer per STOP request per minute */
+export const EDGE_NOT_OWNED_HERE_MIN_MS = 60_000;
+/** fix review 4 (M-3) — STOP memories older than this are dropped */
+export const EDGE_STOP_MEMORY_MAX_AGE_MS = 3_600_000;
 /** fix review 3 (F-1) — a STOP pending on an unknown target this long ⇒ an edge alert */
 export const EDGE_STOP_PENDING_ALERT_MS = 30_000;
 
@@ -218,6 +224,11 @@ export interface EdgeAgentDeps {
   programChecks: EdgeProgramChecks;
   walker: EdgeWalker | null;
   devices: EdgeDevicePort;
+  /**
+   * fix review 4 (F-2 leftover) — does this edge hold a SESSION for the (owned) device? false ⇒ its STOPs are answered
+   * notOwnedHere (central's fallback executes them, R-10-ay). Absent ⇒ assumed yes.
+   */
+  hasSession?: (target: { robotId: number } | { adapterId: number }) => boolean;
   /** foeGateApproval.hashWorkflowDefinition (injected: this module stays DB-free) */
   hashDefinition: (def: Record<string, unknown>) => string;
 }
@@ -255,7 +266,7 @@ export interface TickReport {
 export class EdgeExecutionAgent {
   private timer: NodeJS.Timeout | null = null;
   /** the PULL (+ STOP fast path) — single-flight, never behind the work phase (L-7) */
-  private pulling: Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null }> | null = null;
+  private pulling: Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number }> | null = null;
   /** the WORK phase (config refresh, non-STOP commands, segment ends, claims) — single-flight, skipped while busy */
   private working: Promise<void> | null = null;
   private readonly segments = new Map<number, Segment>();
@@ -278,12 +289,18 @@ export class EdgeExecutionAgent {
   /** fix review 3 (F-3) — executed by the explicit UNSIGNED envelope: de-duplicates unsigned copies only, NEVER a signed one */
   private readonly stopsUnsigned = new Set<string>();
   private readonly stopsEvidence = new Set<string>();
-  /** fix review 3 (F-3) — re-acks per STOP request (a lost / refused ack is re-sent on each re-delivery, bounded) */
-  private readonly reacks = new Map<string, number>();
+  /** fix review 3/4 (F-3, M-3) — re-acks per STOP request: a time back-off (never a re-delivery count), pruned by age */
+  private readonly reacks = new Map<string, { count: number; next: number; at: number }>();
   /** fix review 2 (S-2) — the last answer named a newer config / keyset than the one verified here */
   private refreshPending = false;
-  /** fix review 3 (F-1) — a refresh of THIS cycle succeeded (verified): only then is a device "not ours" */
-  private refreshedThisCycle = false;
+  /**
+   * fix review 4 (M-1) — refresh state PER PULL: every pull gets a cycle id; a device is "not ours" only after a verified
+   * refresh made for THAT cycle (an overlapping work phase of an older pull can never vouch for a newer pull's STOPs)
+   */
+  private cycleSeq = 0;
+  private lastRefreshedCycle = -1;
+  /** fix review 4 (M-2) — notOwnedHere answers per STOP request: rate-limited, one alert */
+  private readonly notOwnedSent = new Map<string, number>();
   /** fix review 3 (F-1) — an unknown target asks for a refresh now, whatever the answer's version says */
   private forceRefresh = false;
   /** fix review 3 (F-1) — STOPs waiting for a verified refresh to know their target, since when (alert after a bound) */
@@ -350,7 +367,7 @@ export class EdgeExecutionAgent {
   tick(): Promise<TickReport> {
     return (async () => {
       const r = await this.pullPhase();
-      if (r.answer && r.rest) await this.workPhase(r.answer, r.rest, r.report);
+      if (r.answer && r.rest) await this.workPhase(r.answer, r.rest, r.report, r.cycle);
       return r.report;
     })();
   }
@@ -359,7 +376,7 @@ export class EdgeExecutionAgent {
    * Single-flight — but BOUNDED (fix review 2, N-4): a pull still running after 2 × requestTimeoutMs + 1 s (a STOP call that never
    * settles) no longer holds the next one; that next pull's STOPs go (a double STOP is harmless, the ack is de-duplicated).
    */
-  private pullPhase(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null }> {
+  private pullPhase(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number }> {
     if (this.pulling && Date.now() - this.pullStartedAt < 2 * this.cfg.requestTimeoutMs + 1_000) return this.pulling;
     const p = this.pullOnce().finally(() => {
       if (this.pulling === p) this.pulling = null;
@@ -369,7 +386,9 @@ export class EdgeExecutionAgent {
     return p;
   }
 
-  private async pullOnce(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null }> {
+  private async pullOnce(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number }> {
+    const cycle = ++this.cycleSeq;
+    this.pruneMemories();
     const report: TickReport = { online: false, claimed: [], stopsResent: [], skipped: [], interrupted: [], aborted: [], commands: [] };
     const pulled = await this.deps.client.post("pull", {});
     if (!pulled.ok) {
@@ -377,14 +396,13 @@ export class EdgeExecutionAgent {
         console.warn(`[EdgeExec] central not reachable / refused the node (HTTP ${pulled.status || "network"}${pulled.code ? ` ${pulled.code}` : ""}): no new run is started; a walking run's next non-STOP step is held (STOPs still go)`);
       }
       this.online = false;
-      return { report, rest: null, answer: null };
+      return { report, rest: null, answer: null, cycle };
     }
     if (this.online !== true) console.log("[EdgeExec] central reachable — pulling assigned runs");
     this.online = true;
     report.online = true;
     const p = pulled.data;
     this.refreshPending = p.configVersion > this.deps.config.version() || p.keysetVersion > this.deps.config.trust().version;
-    this.refreshedThisCycle = false; // a target unknown NOW is never "not ours" before a refresh of this cycle (F-1)
     // STOP FAST PATH (fix review 1, I-4): every STOP of the answer, against the trust we have NOW (a stale keyset ⇒ the
     // unverified-STOP path; the verified copy later re-executes and acks) — before anything else
     const all = [...p.commands, ...unsignedStopsOf(p)];
@@ -396,7 +414,7 @@ export class EdgeExecutionAgent {
     for (let i = 0; i < all.length; i++) {
       if (!isStop(verified[i])) continue;
       try {
-        const r = await this.handleCommand(verified[i]);
+        const r = await this.handleCommand(verified[i], cycle);
         report.commands.push(r);
         if (r.outcome.includes("pending:")) deferred.push(all[i]); // signed, unsigned and evidence alike
       } catch (err) {
@@ -412,12 +430,12 @@ export class EdgeExecutionAgent {
       await this.resendStops(s.runId, s.picture);
       report.stopsResent.push(s.runId);
     }
-    return { report, rest: [...deferred, ...all.filter((_, i) => !isStop(verified[i]))], answer: p };
+    return { report, rest: [...deferred, ...all.filter((_, i) => !isStop(verified[i]))], answer: p, cycle };
   }
 
-  private workPhase(p: EdgePullAnswer, rest: unknown[], report: TickReport): Promise<void> {
+  private workPhase(p: EdgePullAnswer, rest: unknown[], report: TickReport, cycle: number): Promise<void> {
     if (this.working) return Promise.resolve(); // busy: this answer's non-STOP work waits for the next pull (STOPs went already)
-    this.working = this.workOnce(p, rest, report)
+    this.working = this.workOnce(p, rest, report, cycle)
       .catch((err) => console.error(`[EdgeExec] work phase failed: ${(err as Error)?.message ?? err}`))
       .finally(() => {
         this.working = null;
@@ -425,20 +443,20 @@ export class EdgeExecutionAgent {
     return this.working;
   }
 
-  private async workOnce(p: EdgePullAnswer, rest: unknown[], report: TickReport): Promise<void> {
+  private async workOnce(p: EdgePullAnswer, rest: unknown[], report: TickReport, cycle: number): Promise<void> {
     const { client, config } = this.deps;
     // a newer config / keyset — or a STOP / command for a device this config does not know (F-1: the answer's version may be
     // a cached one) ⇒ fetch + verify NOW, before acting on anything else signed
     if (this.forceRefresh || p.configVersion > config.version() || p.keysetVersion > config.trust().version) {
       this.forceRefresh = false;
       const r = await config.refresh();
-      this.refreshedThisCycle = r.ok;
+      if (r.ok) this.lastRefreshedCycle = Math.max(this.lastRefreshedCycle, cycle);
       if (!r.ok) console.warn(`[EdgeExec] config refresh failed (${r.reason}) — commands for devices it would name stay pending`);
     }
-    this.refreshPending = !this.refreshedThisCycle && (p.configVersion > config.version() || p.keysetVersion > config.trust().version);
+    this.refreshPending = this.lastRefreshedCycle !== cycle && (p.configVersion > config.version() || p.keysetVersion > config.trust().version);
     if (p.programCheckRequested) void this.deps.programChecks.report().catch(() => undefined);
     // non-STOP commands (lock / clear …), verified against the (possibly refreshed) trust
-    report.commands.push(...(await this.handleCommands(rest)));
+    report.commands.push(...(await this.handleCommands(rest, cycle)));
     // 2) segment ends central has not taken yet
     for (const pc of [...this.pending.values()]) await this.sendComplete(pc);
     // 3) the node's current claims
@@ -541,19 +559,48 @@ export class EdgeExecutionAgent {
   }
 
   /**
-   * F-3 — central re-delivers a STOP until it holds its ack: a re-delivered STOP already executed here is RE-ACKED (central's
-   * ack is idempotent), at most EDGE_STOP_REACK_MAX times per request; then one anomaly (central keeps refusing the ack).
+   * F-3 / M-3 — central re-delivers a STOP until it holds its ack: a re-delivered STOP already executed here is RE-ACKED
+   * (central's ack is idempotent) on a TIME back-off (2 s doubling, at most every 5 min) — never consumed by the pull cadence;
+   * after EDGE_STOP_REACK_MAX re-sends, one anomaly (central keeps refusing / losing the ack), and the 5-min re-acks go on.
    */
   private async reack(sk: string, requestId: number, acted: { target: { robotId: number } | { adapterId: number }; ownerEpoch: number; unsigned?: boolean }): Promise<void> {
-    const n = (this.reacks.get(sk) ?? 0) + 1;
-    this.reacks.set(sk, n);
-    if (this.reacks.size > 5_000) this.reacks.delete(this.reacks.keys().next().value as string);
-    if (n <= EDGE_STOP_REACK_MAX) {
-      await this.ack(requestId, "done", null, acted);
-      return;
+    const now = this.now();
+    const st = this.reacks.get(sk) ?? { count: 0, next: 0, at: now };
+    if (this.reacks.size > 5_000 && !this.reacks.has(sk)) this.reacks.delete(this.reacks.keys().next().value as string);
+    if (now < st.next) return;
+    st.count++;
+    st.at = now;
+    st.next = now + Math.min(EDGE_STOP_REACK_BACKOFF_MAX_MS, EDGE_STOP_REACK_BACKOFF_MS * 2 ** Math.min(st.count - 1, 20));
+    this.reacks.set(sk, st);
+    await this.ack(requestId, "done", null, acted);
+    if (st.count === EDGE_STOP_REACK_MAX) {
+      this.anomaly("EDGE_STOP_ACK_UNCONFIRMED", null, `STOP request ${requestId} (${JSON.stringify(acted.target)}) was executed here but central still re-delivers it after ${EDGE_STOP_REACK_MAX} acks — re-acked every ${EDGE_STOP_REACK_BACKOFF_MAX_MS / 60_000} min; check the request at central`);
     }
-    if (n === EDGE_STOP_REACK_MAX + 1) {
-      this.anomaly("EDGE_STOP_ACK_UNCONFIRMED", null, `STOP request ${requestId} (${JSON.stringify(acted.target)}) was executed here but central still re-delivers it after ${EDGE_STOP_REACK_MAX} acks — not re-acked any more; check the request at central`);
+  }
+
+  /**
+   * M-2 — `notOwnedHere` (central's fallback executes it, R-10-ay): answered at most once per EDGE_NOT_OWNED_HERE_MIN_MS per
+   * STOP request, one alert the first time.
+   */
+  private async answerNotOwnedHere(sk: string, requestId: number, ackWith: { target: { robotId: number } | { adapterId: number }; ownerEpoch: number; unsigned?: boolean }, tag: string, why: string): Promise<TickReport["commands"][number]> {
+    const last = this.notOwnedSent.get(sk);
+    if (last !== undefined && this.now() - last < EDGE_NOT_OWNED_HERE_MIN_MS) return { requestId, kind: "stop", outcome: `${tag}notOwnedHere:rate_limited` };
+    if (last === undefined) this.anomaly("EDGE_STOP_NOT_OWNED_HERE", null, `STOP request ${requestId} (${JSON.stringify(ackWith.target)}): ${why} — answered notOwnedHere so central's fallback executes it`);
+    this.notOwnedSent.set(sk, this.now());
+    await this.ack(requestId, "notOwnedHere", null, ackWith);
+    return { requestId, kind: "stop", outcome: `${tag}notOwnedHere` };
+  }
+
+  /** M-3 — memories of STOPs that stopped arriving are pruned by age (bounded memory). */
+  private pruneMemories(): void {
+    const old = this.now() - EDGE_STOP_MEMORY_MAX_AGE_MS;
+    for (const [k, v] of this.reacks) if (v.at < old) this.reacks.delete(k);
+    for (const [k, t] of this.notOwnedSent) if (t < old) this.notOwnedSent.delete(k);
+    for (const [k, t] of this.pendingSince) {
+      if (t < old) {
+        this.pendingSince.delete(k);
+        this.pendingAlerted.delete(k);
+      }
     }
   }
 
@@ -587,18 +634,19 @@ export class EdgeExecutionAgent {
     return cfg.robot(c.robotId)?.ownerEpoch ?? null;
   }
 
-  async handleCommands(envs: readonly unknown[]): Promise<TickReport["commands"]> {
+  /** `cycle`: the pull these commands came with (-1 = none: no refresh of its own ⇒ an unknown target stays pending) */
+  async handleCommands(envs: readonly unknown[], cycle = -1): Promise<TickReport["commands"]> {
     if (envs.length === 0) return [];
-    return this.handleVerified(verifyCommands(this.deps.config.trust(), envs, this.deps.config.credentialId()));
+    return this.handleVerified(verifyCommands(this.deps.config.trust(), envs, this.deps.config.credentialId()), cycle);
   }
 
-  private async handleVerified(verified: readonly EdgeVerifiedCommand[]): Promise<TickReport["commands"]> {
+  private async handleVerified(verified: readonly EdgeVerifiedCommand[], cycle = -1): Promise<TickReport["commands"]> {
     const out: TickReport["commands"] = [];
     // STOPs first (L-7): nothing else delays them
     const order = (v: EdgeVerifiedCommand) => ((v.ok ? v.command.kind : v.unverified?.kind) === "stop" ? 0 : 1);
     for (const v of [...verified].sort((a, b) => order(a) - order(b))) {
       try {
-        out.push(await this.handleCommand(v));
+        out.push(await this.handleCommand(v, cycle));
       } catch (err) {
         console.error(`[EdgeExec] command handling failed: ${(err as Error)?.message ?? err}`);
       }
@@ -617,7 +665,8 @@ export class EdgeExecutionAgent {
     return "robotId" in target ? this.deps.config.ownsRobot(target.robotId) : this.deps.config.ownsAdapter(target.adapterId);
   }
 
-  private async handleCommand(v: EdgeVerifiedCommand): Promise<TickReport["commands"][number]> {
+  private async handleCommand(v: EdgeVerifiedCommand, cycle = -1): Promise<TickReport["commands"][number]> {
+    const refreshed = cycle >= 0 && this.lastRefreshedCycle === cycle;
     if (!v.ok && !(v.unsigned && v.unverified?.kind === "stop")) {
       const u = v.unverified;
       if (u?.kind === "stop") {
@@ -625,7 +674,7 @@ export class EdgeExecutionAgent {
         // VERIFIED config), reported with requestId null, NEVER acknowledged, and it never satisfies a later verified copy (S-1)
         this.anomaly("EDGE_COMMAND_INVALID", null, `stop command refused by verification (${v.reason}) request ${u.requestId} — STOP sent anyway as evidence (L-7)`);
         if (!this.owns(u.target)) {
-          if (this.refreshedThisCycle) return { requestId: null, kind: "stop", outcome: "unverified:not_owned" };
+          if (refreshed) return { requestId: null, kind: "stop", outcome: "unverified:not_owned" };
           this.forceRefresh = true;
           return { requestId: null, kind: "stop", outcome: "unverified:pending:not_yet_known" };
         }
@@ -656,18 +705,20 @@ export class EdgeExecutionAgent {
         await this.reack(sk, c.requestId, ackWith); // a lost / refused ack is re-sent on each re-delivery (bounded)
         return { requestId: c.requestId, kind: "stop", outcome: "duplicate" };
       }
-      if (!this.owns(c.target)) {
+      const sessionless = this.owns(c.target) && this.deps.hasSession !== undefined && !this.deps.hasSession(c.target);
+      if (!this.owns(c.target) || sessionless) {
         // F-1 (R-10-au) — NEVER refused for ownership. Unknown here ⇒ a forced refresh, the STOP stays pending (an alert after
         // a bound); only a VERIFIED refresh of this cycle that still omits the device ⇒ ack `notOwnedHere` (central keeps it
         // pending and routes it to the current owner / its central fallback — never terminal)
-        if (!this.refreshedThisCycle) {
+        // F-2 leftover (R-10-az / R-10-ay) — owned, but this edge holds NO session for it (not attached): no executor here ⇒
+        // notOwnedHere at once, so central's fallback executes it — never a STOP left to fail forever
+        if (!refreshed && !sessionless) {
           this.forceRefresh = true;
           this.notePending(sk, c.requestId);
           return { requestId: c.requestId, kind: "stop", outcome: `${tag}pending:not_yet_known` };
         }
         this.pendingSince.delete(sk);
-        await this.ack(c.requestId, "notOwnedHere", null, ackWith);
-        return { requestId: c.requestId, kind: "stop", outcome: `${tag}notOwnedHere` };
+        return this.answerNotOwnedHere(sk, c.requestId, ackWith, tag, sessionless ? "owned but not attached on this edge (no session)" : "a verified refresh still does not list it");
       }
       this.pendingSince.delete(sk);
       // S-1 / F-3 — EXECUTED here, by THIS copy (even after an evidence or unsigned run); only then acknowledged
@@ -683,7 +734,7 @@ export class EdgeExecutionAgent {
     if (prior !== undefined) return { requestId: c.requestId, kind: c.kind, outcome: "duplicate" };
     const epoch = this.ownerEpochOf(c);
     const robotTarget = { robotId: c.robotId };
-    if (epoch === null && !this.refreshedThisCycle) {
+    if (epoch === null && !refreshed) {
       this.forceRefresh = true;
       return { requestId: c.requestId, kind: c.kind, outcome: "pending:not_yet_known" }; // F-1 — never refused before a verified refresh
     }

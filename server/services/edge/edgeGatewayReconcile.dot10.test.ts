@@ -41,7 +41,7 @@ const BOOT = {
 };
 central.setConfig(BOOT);
 let dir = "";
-const KEYS = ["EDGE_RECONCILE_RETRY_MS", "ROBOT_GATEWAY_ENABLED", "ROBOT_CONTROL_ENABLED", "OT_GATEWAY_ENABLED", "OT_CONTROL_ENABLED", "OT_CONN_HA_ENABLED", "EDGE_EXECUTION_ENABLED", "EDGE_CENTRAL_URL", "EDGE_NODE_CREDENTIAL_FILE", "EDGE_CENTRAL_NODE_ID", "EDGE_CENTRAL_CREDENTIAL_ID", "EDGE_KEYSET_PIN_FILE", "EDGE_JOURNAL_DIR", "EDGE_GATEWAY_LIVENESS_FILE", "EDGE_UNS_STORE_FORWARD_FILE", "OT_STORE_FORWARD_ENABLED", "OT_STORE_FORWARD_FILE"] as const;
+const KEYS = ["EDGE_RECONCILE_RETRY_MS", "EDGE_ATTACH_ALERT_EVERY_MS", "ROBOT_GATEWAY_ENABLED", "ROBOT_CONTROL_ENABLED", "OT_GATEWAY_ENABLED", "OT_CONTROL_ENABLED", "OT_CONN_HA_ENABLED", "EDGE_EXECUTION_ENABLED", "EDGE_CENTRAL_URL", "EDGE_NODE_CREDENTIAL_FILE", "EDGE_CENTRAL_NODE_ID", "EDGE_CENTRAL_CREDENTIAL_ID", "EDGE_KEYSET_PIN_FILE", "EDGE_JOURNAL_DIR", "EDGE_GATEWAY_LIVENESS_FILE", "EDGE_UNS_STORE_FORWARD_FILE", "OT_STORE_FORWARD_ENABLED", "OT_STORE_FORWARD_FILE"] as const;
 const saved: Record<string, string | undefined> = {};
 
 beforeAll(async () => {
@@ -55,6 +55,7 @@ beforeAll(async () => {
     OT_GATEWAY_ENABLED: "true",
     OT_CONTROL_ENABLED: "true",
     EDGE_RECONCILE_RETRY_MS: "300",
+    EDGE_ATTACH_ALERT_EVERY_MS: "1500",
     EDGE_CENTRAL_URL: "http://central.test",
     EDGE_NODE_CREDENTIAL_FILE: path.join(dir, "node.cred"),
     EDGE_CENTRAL_NODE_ID: "7",
@@ -103,21 +104,21 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     const rm = await import("../robot/robotManager");
     const om = await import("../ot/otManager");
     const gw = await import("./edgeGatewayRuntime");
-    // F-2 — group D's per-robot attach / detach (a FAKE until D ships attachEdgeRobot / detachEdgeRobot): detach is the real
-    // single-session close; attach records the call — robot 14 never connects
-    const attaches: number[] = [];
-    gw.setEdgeRobotLifecycle({
-      attach: async (row) => {
-        attaches.push(row.id);
-        return row.id !== 14;
-      },
-      detach: (id) => rm.detachRobot(id),
+    // G-2 (R-10-az) — group D's REAL per-robot lifecycle (ab252ccaa): attachEdgeRobot(row) / detachEdgeRobot(id) → {ok, reason?};
+    // the connects are counted per endpoint — robot 14 (sim://14) never connects
+    rm._setEdgeRobotBackoffBaseMsForTests(100);
+    const connects: string[] = [];
+    const realConnect = SimRobotDriver.prototype.connect;
+    vi.spyOn(SimRobotDriver.prototype, "connect").mockImplementation(async function (this: InstanceType<typeof SimRobotDriver>, c: { endpoint: string }) {
+      connects.push(c.endpoint);
+      if (c.endpoint === "sim://14") throw new Error("sim://14 unreachable");
+      return realConnect.call(this, c as never);
     });
     const conn = await import("../../db/connection");
     const alerts = async () => {
       await rt.journal.flush();
       await rt.shipper.flushAll();
-      return central.received.locksEvents.filter((r) => r.kind === "anomaly" && String(r.code).startsWith("EDGE_DEVICE_RELEASE")).map((r) => `${r.code}: ${r.detail}`);
+      return central.received.locksEvents.filter((r) => r.kind === "anomaly" && String(r.code).startsWith("EDGE_DEVICE_")).map((r) => `${r.code}: ${r.detail}`);
     };
 
     central.down = true;
@@ -163,7 +164,8 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     expect(failed.some((a) => a.startsWith("EDGE_DEVICE_RELEASE_FAILED: robot 12") && /KEPT attached and locked/.test(a) && /STOP FAILED/.test(a))).toBe(true);
     expect(failed.some((a) => a.startsWith("EDGE_DEVICE_RELEASE_FAILED: adapter 21") && /KEPT attached/.test(a) && /pinned STOP NOT sent \/ FAILED/.test(a))).toBe(true);
     // F-4 — adapter 22's running connection is not its verified row's: D's pipeline refuses the pinned STOP (fail-closed), no write
-    expect(failed.some((a) => a.startsWith("EDGE_DEVICE_RELEASE_FAILED: adapter 22") && /adapter_connection_stale|not a verified pinned|STOP NOT sent/.test(a))).toBe(true);
+    // M-4 — the alert names the REAL cause (D's `detail`), not a generic refusal code
+    expect(failed.some((a) => a.startsWith("EDGE_DEVICE_RELEASE_FAILED: adapter 22") && /pinned STOP NOT sent \/ FAILED \(stop_not_pinned:adapter_connection_stale\)/.test(a))).toBe(true);
     expect(order.filter((o) => o.startsWith("ot:")).every((o) => o.startsWith("ot:run"))).toBe(true);
     expect(failed.some((a) => a.startsWith("EDGE_DEVICE_RELEASED"))).toBe(false); // never a false "released"
 
@@ -186,7 +188,7 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     expect(writes).toHaveBeenCalled();
     expect(central.received.locksEvents.filter((r) => r.kind === "command_ack" && r.requestId === 140).map((r) => r.outcome)).toEqual(["done"]);
 
-    // ── F-2: robot 12 comes back and robot 14 is added (it never connects) — each through the per-robot attach; the healthy
+    // ── F-2: robot 12 comes back and robot 14 is added (it never connects) — each through D's per-robot attach; the healthy
     //    robot 13 keeps its session the whole time (no gateway restart, no cycling), robot 14 is retried with a back-off
     // adapter 21 comes back too: its first attach FAILS ⇒ not recorded, retried (fix review 3)
     const otAttaches: number[] = [];
@@ -197,29 +199,105 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
       },
       detach: (id) => om.detachOtAdapter(id),
     });
-    central.setConfig({ robots: [...base.robots, { ...base.robots[0], id: 14, code: "rb-14", endpoint: "sim://14" }], adapters: base.adapters.filter((a) => a.id === 21) });
+    const ROBOT14 = { ...base.robots[0], id: 14, code: "rb-14", endpoint: "sim://14" };
+    const c12 = connects.filter((e) => e === "sim://12").length; // its boot connect
+    central.setConfig({ robots: [...base.robots, ROBOT14], adapters: base.adapters.filter((a) => a.id === 21) });
     await gw.sendHeartbeat();
     await gw.reconcileDevices(rt, "barrier");
-    expect(attaches).toEqual(expect.arrayContaining([12, 14]));
+    await vi.waitFor(() => expect(rm.getActiveRobot(12)).toBeDefined(), { timeout: 5_000, interval: 50 });
+    expect(rm.getActiveRobot(12)).not.toBe(robot12); // a NEW session built by D from the verified row
+    expect(rm.getActiveRobot(14)).toBeUndefined();
     await vi.waitFor(() => expect(otAttaches.filter((id) => id === 21).length).toBeGreaterThanOrEqual(2), { timeout: 5_000, interval: 50 });
     await vi.waitFor(() => expect(om.getActiveDriver(21)).toBeDefined(), { timeout: 5_000, interval: 50 });
     gw.setEdgeOtLifecycle(null);
     expect(rm.getActiveRobot(13)).toBe(robot13);
-    await new Promise((r) => setTimeout(r, 1_500)); // several retry windows (EDGE_RECONCILE_RETRY_MS=300, back-off doubling)
-    const tries14 = attaches.filter((id) => id === 14).length;
+    const alerts14At = (await alerts()).filter((x) => x.startsWith("EDGE_DEVICE_ATTACH_FAILED: robot 14")).length;
+    await new Promise((r) => setTimeout(r, 2_500)); // several retry windows (EDGE_RECONCILE_RETRY_MS=300, back-off doubling)
+    const tries14 = connects.filter((e) => e === "sim://14").length;
     expect(tries14).toBeGreaterThan(1); // retried …
-    expect(tries14).toBeLessThan(6); // … with a back-off, not every pass
-    expect(attaches.filter((id) => id === 12)).toHaveLength(1); // the robot that attached is not touched again
+    expect(tries14).toBeLessThan(9); // … with a back-off, not every pass
+    expect(connects.filter((e) => e === "sim://12")).toHaveLength(c12 + 1); // ONE re-attach; then not touched again
     expect(rm.getActiveRobot(13)).toBe(robot13); // never cycled by the robot that cannot connect
+    // F-2 leftover — the attach failure is alerted AGAIN on a bounded interval (EDGE_ATTACH_ALERT_EVERY_MS=1500), never per
+    // attempt (attempts at ~0 / 0.3 / 0.9 / 2.1 s ⇒ alerts at ~0 and ~2.1 s only)
+    const a14 = (await alerts()).filter((x) => x.startsWith("EDGE_DEVICE_ATTACH_FAILED: robot 14"));
+    expect(alerts14At).toBeGreaterThanOrEqual(1);
+    expect(a14.length).toBeGreaterThan(alerts14At);
+    expect(a14.length).toBeLessThan(tries14 + 1);
+    expect(a14.length).toBeLessThanOrEqual(2);
+    expect(a14[0]).toMatch(/owned but NOT attached on this edge \((connect_failed|backoff)/);
+    // … and a central STOP for it is answered notOwnedHere (no session here ⇒ central's fallback executes it, R-10-ay)
+    central.commands = [central.sign("cmd", central.commandPayload({ requestId: 141, kind: "stop", target: { robotId: 14 } }))];
+    const t14 = await agent.tick();
+    expect(t14.commands.map((c) => [c.requestId, c.outcome])).toEqual([[141, "notOwnedHere"]]);
+    central.commands = [];
+    await rt.journal.flush();
+    await rt.shipper.flushAll();
+    expect(central.received.locksEvents.filter((r) => r.kind === "command_ack" && r.requestId === 141).map((r) => r.outcome)).toEqual(["notOwnedHere"]);
+
     // a rename keeps a session (no attach / detach)
-    const n = attaches.length;
+    const nConnects = connects.filter((e) => e !== "sim://14").length;
     central.setConfig({ robots: base.robots.map((r) => ({ ...r, name: "renamed", updatedAt: 99 })), adapters: base.adapters.filter((a) => a.id === 21) });
     await gw.sendHeartbeat();
     await gw.reconcileDevices(rt, "barrier");
     expect(rm.getActiveRobot(13)).toBe(robot13);
-    expect(attaches.slice(n).filter((id) => id !== 14)).toEqual([]);
-    gw.setEdgeRobotLifecycle(null);
+    expect(connects.filter((e) => e !== "sim://14")).toHaveLength(nConnects);
 
+    // ── G-1 (R-10-az): robot 13's SETTINGS change while still owned ⇒ lock → STOP (D's dispatch) → detach (checked) → attach.
+    //    (a) the STOP fails ⇒ the OLD session is kept, locked, alert, nothing detached / attached
+    const robot12b = rm.getActiveRobot(12)!;
+    order.length = 0;
+    robotStopFails = true;
+    const changed = (poll: number) => ({ robots: base.robots.map((r) => (r.id === 13 ? { ...r, pollIntervalMs: poll } : r)), adapters: base.adapters.filter((a) => a.id === 21) });
+    central.setConfig(changed(777));
+    await gw.sendHeartbeat();
+    await gw.reconcileDevices(rt, "settings");
+    expect(order).toContain("robot:abort:fail");
+    expect(rm.getActiveRobot(13)).toBe(robot13);
+    expect(robot13.driver.motionLockController!().isLocked()).toBe(true);
+    expect((await alerts()).some((x) => /^EDGE_DEVICE_ATTACH_FAILED: robot 13 settings changed .*OLD session is KEPT \(locked\): locked .*STOP FAILED .*session not detached/.test(x))).toBe(true);
+    //    (b) the STOP works but D's detach REFUSES (`not_locked`: it sees the lock released) ⇒ the old session is kept, no attach
+    robotStopFails = false;
+    const lc13 = robot13.driver.motionLockController!();
+    const realIsLocked = lc13.isLocked.bind(lc13);
+    let refuseOnce = true;
+    lc13.isLocked = () => {
+      // our check right after the lock passes; the check inside D's detachEdgeRobot is refused once
+      if (refuseOnce && (new Error().stack ?? "").includes("detachEdgeRobot")) {
+        refuseOnce = false;
+        return false;
+      }
+      return realIsLocked();
+    };
+    await new Promise((r) => setTimeout(r, 750)); // past robot 13's back-off (a NEW cause is alerted at once)
+    const connectsBefore = connects.length;
+    await gw.reconcileDevices(rt, "settings");
+    expect(refuseOnce).toBe(false);
+    expect(rm.getActiveRobot(13)).toBe(robot13);
+    expect(connects.filter((e) => e !== "sim://14").length).toBe(connectsBefore - connects.slice(0, connectsBefore).filter((e) => e === "sim://14").length);
+    //    (c) the retry: every step succeeds ⇒ a NEW session from the new row; robot 12 never touched
+    await vi.waitFor(() => expect(rm.getActiveRobot(13)).not.toBe(robot13), { timeout: 5_000, interval: 50 });
+    lc13.isLocked = realIsLocked;
+    expect(rm.getActiveRobot(13)!.pollIntervalMs).toBe(777);
+    // the lock taken for the reconfigure is persisted (journal) ⇒ the NEW session starts LOCKED: fail-closed, a signed clear resumes motion
+    expect(rm.getActiveRobot(13)!.driver.motionLockController!().isLocked()).toBe(true);
+    expect(rm.getActiveRobot(12)).toBe(robot12b);
+    const g1 = await alerts();
+    expect(g1.some((x) => /^EDGE_DEVICE_ATTACH_FAILED: robot 13 settings changed .*detach REFUSED \(not_locked\) — session kept/.test(x))).toBe(true);
+    // the whole run: D was never asked to detach an UNLOCKED robot except the forced refusal above
+    expect(g1.filter((x) => /detach REFUSED/.test(x))).toHaveLength(1);
+
+    rm._setEdgeRobotBackoffBaseMsForTests(null);
     expect(conn.edgeDbTrapCount()).toBe(0);
   }, 90_000);
+
+  it("★ G-2 (R-10-az): only `{ ok: true }` from D's lifecycle is ok — a bare true, a truthy non-boolean, undefined are NOT; reason + detail carried", async () => {
+    const { lifecycleResult } = await import("./edgeGatewayRuntime");
+    expect(lifecycleResult({ ok: true }, "x")).toEqual({ ok: true });
+    expect(lifecycleResult(true, "outside")).toEqual({ ok: false, reason: "outside" });
+    expect(lifecycleResult({ ok: "yes" }, "outside")).toEqual({ ok: false, reason: "outside" });
+    expect(lifecycleResult(undefined, "outside")).toEqual({ ok: false, reason: "outside" });
+    expect(lifecycleResult({ ok: false, reason: "not_locked" }, "x")).toEqual({ ok: false, reason: "not_locked" });
+    expect(lifecycleResult({ ok: false, reason: "error", detail: "boom" }, "x")).toEqual({ ok: false, reason: "error: boom" });
+  });
 });

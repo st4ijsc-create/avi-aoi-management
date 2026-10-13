@@ -97,9 +97,12 @@ describe("doc 81 Đợt 10 E — adapter source seam + central filtering", () =>
     const fake = [{ adapterId: 21 } as RuntimeAdapter];
     setAdapterSource(async () => fake);
     expect(await loadEnabledAdapters()).toBe(fake);
+    // D fix review 4 (R-10-ay) — central's `includeEdgeOwned` never widens the edge: the source (its own verified config) answers
+    expect(await loadEnabledAdapters({ includeEdgeOwned: true })).toBe(fake);
     setAdapterSource(null);
     process.env.AVI_PROCESS_ROLE = "edge";
     expect(await loadEnabledAdapters()).toEqual([]);
+    expect(await loadEnabledAdapters({ includeEdgeOwned: true })).toEqual([]);
     expect(h.getDbCalls).toBe(0);
   });
 });

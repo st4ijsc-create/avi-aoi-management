@@ -544,13 +544,18 @@ const devices = {
   robotKeys: new Map<number, string>(),
   /** per robot that could not be attached: failures + next attempt (only that robot is retried) */
   robotBackoff: new Map<number, { failures: number; nextAt: number }>(),
-  attachUnavailableAlerted: false,
+  /** per robot: when its attach / reconfigure failure was last alerted, and for which cause (bounded interval per cause) */
+  attachAlertAt: new Map<number, { at: number; cause: string }>(),
   chain: Promise.resolve() as Promise<unknown>,
   retry: null as NodeJS.Timeout | null,
   robotCount(): number {
     return this.robotKeys.size;
   },
 };
+/** does this edge hold a live session for the device? (robot: robotManager's active set; adapter: attached by the reconciler) */
+function edgeHasSession(rm: { getActiveRobot(id: number): unknown }): (t: { robotId: number } | { adapterId: number }) => boolean {
+  return (t) => ("robotId" in t ? rm.getActiveRobot(t.robotId) != null : devices.adapters.has(t.adapterId));
+}
 /** a robot's SESSION key — what a new session would differ in (never updatedAt alone: a renamed robot keeps its session) */
 function oneRobotKey(r: EdgeConfigSnapshot["robots"][number]): string {
   return JSON.stringify([r.id, r.ownerEpoch, r.endpoint, r.vendor, r.connectionOptions ?? null, r.pollIntervalMs]);
@@ -630,21 +635,26 @@ async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<boolean> {
   // ── robots — one at a time (F-2, R-10-au): never a whole-gateway restart ──
   try {
     const rm = await import("../robot/robotManager");
-    const life = await edgeRobotLifecycle(rt);
+    const life = await edgeRobotLifecycle();
     const want = new Map(cfg.robots.filter((r) => r.isEnabled).map((r) => [r.id, r] as const));
     if (!devices.started) {
       await startEdgeRobots(rt);
       for (const id of rm.activeRobotIds()) if (want.has(id)) devices.robotKeys.set(id, oneRobotKey(want.get(id)!));
     } else {
-      // a robot that left: lock + STOP + then detach (a failed release stays attached — and is never touched by the rest)
+      // a robot that left: lock + STOP + then detach (checked) — a failed release stays attached + locked, never touched by the rest
       for (const id of [...devices.robotKeys.keys()]) {
         if (want.has(id)) continue;
-        if (await releaseRobot(rt, id, why)) devices.robotKeys.delete(id);
-        else ok = false;
+        const q = await quiesceRobot(rt, id, `no longer owned (${why})`);
+        if (q.ok) {
+          devices.robotKeys.delete(id);
+          releaseAlert(rt, "EDGE_DEVICE_RELEASED", `robot ${id} no longer owned (${why}): ${q.detail}`);
+        } else {
+          ok = false;
+          releaseAlert(rt, "EDGE_DEVICE_RELEASE_FAILED", `robot ${id} no longer owned (${why}) but KEPT attached${q.locked ? " and locked" : ""}: ${q.detail} — retried every ${reconcileRetryMs() / 1_000} s; use the machine's direct STOP / E-STOP if it moves`);
+        }
       }
     }
-    // a robot added / re-connected (or one that never connected): ITS session only, with a per-robot back-off — a robot that
-    // never connects never cycles the healthy ones
+    // a robot added / reconfigured / never connected: ITS session only, with a per-robot back-off — never the healthy ones
     for (const r of want.values()) {
       if (devices.robotKeys.get(r.id) === oneRobotKey(r)) continue;
       if (!devices.started && rm.activeRobotIds().includes(r.id)) continue;
@@ -653,15 +663,29 @@ async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<boolean> {
         ok = false;
         continue;
       }
-      if (devices.robotKeys.has(r.id)) await life.detach(r.id); // still owned: a new session from the new row
-      devices.robotKeys.delete(r.id);
-      if (await life.attach(r)) {
-        devices.robotKeys.set(r.id, oneRobotKey(r));
-        devices.robotBackoff.delete(r.id);
-      } else {
+      const fail = (cause: string, detail: string) => {
         const failures = (back?.failures ?? 0) + 1;
         devices.robotBackoff.set(r.id, { failures, nextAt: Date.now() + Math.min(300_000, reconcileRetryMs() * 2 ** Math.min(failures - 1, 10)) });
         ok = false;
+        attachAlert(rt, r.id, cause, detail);
+      };
+      if (devices.robotKeys.has(r.id)) {
+        // G-1 (R-10-az) — a settings change of a STILL-OWNED robot: lock → STOP (D's dispatch) → detach (checked) → attach the
+        // new row (checked). Any failure before the detach keeps the OLD session (locked) + alert + retry.
+        const q = await quiesceRobot(rt, r.id, `reconfigured (${why})`);
+        if (!q.ok) {
+          fail(`reconfigure:${q.cause}`, `robot ${r.id} settings changed (${why}) but its OLD session is KEPT${q.locked ? " (locked)" : ""}: ${q.detail} — retried`);
+          continue;
+        }
+        devices.robotKeys.delete(r.id);
+      }
+      const at = await life.attach(r);
+      if (at.ok) {
+        devices.robotKeys.set(r.id, oneRobotKey(r));
+        devices.robotBackoff.delete(r.id);
+        devices.attachAlertAt.delete(r.id);
+      } else {
+        fail("attach", `robot ${r.id} is owned but NOT attached on this edge (${at.reason ?? "attach refused"}) — retried with a back-off; its STOPs are answered notOwnedHere so central's fallback executes them`);
       }
     }
   } catch (err) {
@@ -672,67 +696,87 @@ async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<boolean> {
   return ok;
 }
 
+/** R-10-az — the ONE result shape of group D's per-robot edge lifecycle (callers check `.ok`, never truthiness) */
+export type EdgeLifecycleResult = { ok: true } | { ok: false; reason?: string };
 /**
- * F-2 (R-10-au) — the per-robot EDGE lifecycle of group D's robotManager: `attachEdgeRobot(robotConfig, extras)` (connect ONE
- * robot of the verified config: lock seed from the journal, state sink) and `detachEdgeRobot(robotId)`. Coded against those
- * names; until D ships them an addition is NOT attached (alert, retried with a back-off) — never a whole-gateway restart —
- * and a detach uses robotManager.detachRobot (closes that one session).
+ * G-2 (R-10-az) — group D's robotManager contract (ab252ccaa): `attachEdgeRobot(robotConfigRow)` (D builds the driver from the
+ * VERIFIED config row; the lock seeded first through the boot's extras) and `detachEdgeRobot(robotId)` (REFUSES `not_locked`
+ * unless the robot is locked; never throws), both resolving `{ ok, reason?, detail? }`. Only `ok === true` is ok; anything
+ * else (a boolean, undefined, a throw …) is NOT ok (fail-closed).
  */
 export interface EdgeRobotLifecycle {
-  attach(row: EdgeConfigSnapshot["robots"][number]): Promise<boolean>;
-  detach(robotId: number): Promise<boolean>;
+  attach(row: EdgeConfigSnapshot["robots"][number]): Promise<EdgeLifecycleResult>;
+  detach(robotId: number): Promise<EdgeLifecycleResult>;
 }
-let robotLifecycleOverride: EdgeRobotLifecycle | null = null;
 /** test seam — the per-adapter attach / detach (default: otManager.attachOtAdapter / detachOtAdapter) */
 let otLifecycleOverride: { attach(a: RuntimeAdapter): Promise<boolean>; detach(id: number): Promise<boolean> } | null = null;
 export function setEdgeOtLifecycle(l: typeof otLifecycleOverride): void {
   otLifecycleOverride = l;
 }
-/** test seam (and the integration's wiring, if D's names differ) */
-export function setEdgeRobotLifecycle(l: EdgeRobotLifecycle | null): void {
-  robotLifecycleOverride = l;
+/** exported for tests: D's answer → the contract (only `{ ok: true }` is ok; a bare `true`, `{ok:"yes"}`, undefined … are NOT) */
+export function lifecycleResult(r: unknown, missing: string): EdgeLifecycleResult {
+  if (r && typeof r === "object" && (r as { ok?: unknown }).ok === true) return { ok: true };
+  const o = r && typeof r === "object" ? (r as { reason?: unknown; detail?: unknown }) : {};
+  const reason = typeof o.reason === "string" ? o.reason : missing;
+  return { ok: false, reason: typeof o.detail === "string" && o.detail ? `${reason}: ${o.detail}` : reason };
 }
-async function edgeRobotLifecycle(rt: EdgeRuntime): Promise<EdgeRobotLifecycle> {
-  if (robotLifecycleOverride) return robotLifecycleOverride;
+async function edgeRobotLifecycle(): Promise<EdgeRobotLifecycle> {
   await import("../robot"); // drivers registered
-  const rm = (await import("../robot/robotManager")) as unknown as {
-    attachEdgeRobot?: (row: EdgeConfigSnapshot["robots"][number], extras?: unknown) => Promise<boolean>;
-    detachEdgeRobot?: (robotId: number) => Promise<boolean>;
-    detachRobot: (robotId: number) => Promise<boolean>;
-  };
+  const rm = await import("../robot/robotManager");
   return {
     attach: async (row) => {
-      if (typeof rm.attachEdgeRobot === "function") return rm.attachEdgeRobot(row, await edgeRobotStartExtras(rt));
-      if (!devices.attachUnavailableAlerted) {
-        devices.attachUnavailableAlerted = true;
-        releaseAlert(rt, "EDGE_DEVICE_ATTACH_UNAVAILABLE", `robot ${row.id} cannot be attached on this edge: robotManager.attachEdgeRobot is not available in this build — it is retried; the other robots keep their sessions`);
+      try {
+        return lifecycleResult(await rm.attachEdgeRobot(row), "attach answered outside the {ok} contract");
+      } catch (err) {
+        return { ok: false, reason: `attach threw: ${(err as Error)?.message ?? err}` };
       }
-      return false;
     },
-    detach: (id) => (typeof rm.detachEdgeRobot === "function" ? rm.detachEdgeRobot(id) : rm.detachRobot(id)),
+    detach: async (id) => {
+      try {
+        return lifecycleResult(await rm.detachEdgeRobot(id), "detach answered outside the {ok} contract");
+      } catch (err) {
+        return { ok: false, reason: `detach threw: ${(err as Error)?.message ?? err}` };
+      }
+    },
   };
 }
 
-function releaseAlert(rt: EdgeRuntime, code: "EDGE_DEVICE_RELEASED" | "EDGE_DEVICE_RELEASE_FAILED" | "EDGE_DEVICE_ATTACH_UNAVAILABLE", detail: string): void {
+/** F-2 leftover — an owned robot without a session alerts on a bounded interval (per robot), not once per process. */
+export const EDGE_ATTACH_ALERT_EVERY_MS = 300_000;
+/** EDGE_ATTACH_ALERT_EVERY_MS env (bounded 100 ms – 1 h), default 5 min */
+function attachAlertEveryMs(): number {
+  const n = Number.parseInt(process.env.EDGE_ATTACH_ALERT_EVERY_MS ?? "", 10);
+  return Number.isFinite(n) ? Math.min(3_600_000, Math.max(100, n)) : EDGE_ATTACH_ALERT_EVERY_MS;
+}
+function attachAlert(rt: EdgeRuntime, robotId: number, cause: string, detail: string): void {
+  const last = devices.attachAlertAt.get(robotId);
+  // the SAME cause repeats at most once per interval; a NEW cause (e.g. the STOP now works but the detach is refused) at once
+  if (last !== undefined && last.cause === cause && Date.now() - last.at < attachAlertEveryMs()) return;
+  devices.attachAlertAt.set(robotId, { at: Date.now(), cause });
+  releaseAlert(rt, "EDGE_DEVICE_ATTACH_FAILED", detail);
+}
+
+function releaseAlert(rt: EdgeRuntime, code: "EDGE_DEVICE_RELEASED" | "EDGE_DEVICE_RELEASE_FAILED" | "EDGE_DEVICE_ATTACH_FAILED", detail: string): void {
   if (code !== "EDGE_DEVICE_RELEASED") console.error(`[EdgeGateway] ${detail}`);
   void rt.sink.event({ kind: "anomaly", code, runId: null, detail: detail.slice(0, 1_000), at: Date.now() }, { stop: true }).catch(() => undefined);
 }
 
 /**
- * A robot no longer this node's: LOCK it locally, STOP it (D's dispatch), and only if BOTH succeeded close its session.
- * true ⇔ released (or nothing to release). Never leaves a robot moving: a failure keeps the session (and the lock).
+ * G-1 (R-10-az) — take ONE robot's session down safely (it left the node, or its settings changed): LOCK it locally, STOP it
+ * (D's dispatch), then D's detach — checked: `{ok:false}` (e.g. `not_locked`, `not_active`) is a failure. Only all three ⇒
+ * ok. Otherwise the session is KEPT (and stays locked when the lock took); `detail` says exactly what happened.
  */
-async function releaseRobot(rt: EdgeRuntime, robotId: number, why: string): Promise<boolean> {
+async function quiesceRobot(rt: EdgeRuntime, robotId: number, why: string): Promise<{ ok: boolean; locked: boolean; detail: string; cause: string }> {
   const rm = await import("../robot/robotManager");
   const robot = rm.getActiveRobot(robotId);
-  if (!robot) return true; // no session here: nothing can move, nothing to close
+  if (!robot) return { ok: true, locked: false, detail: "no session here (nothing can move, nothing to close)", cause: "none" };
   let lock: string;
   let lockOk = false;
   try {
     const lc = robot.driver.motionLockController?.();
     if (!lc) lock = "NOT locked: the driver has no motion lock";
     else {
-      lc.lock("ownershipRemoved", `robot ${robotId} left this node (${why})`);
+      lc.lock("ownershipRemoved", `robot ${robotId} ${why}`);
       lockOk = lc.isLocked();
       lock = lockOk ? `locked (generation ${lc.snapshot().generation ?? "?"})` : "NOT locked: the lock did not take";
     }
@@ -743,19 +787,16 @@ async function releaseRobot(rt: EdgeRuntime, robotId: number, why: string): Prom
   let stopOk = false;
   try {
     const { dispatchRobotOnEdge } = await import("../robot/robotEdgeDispatch");
-    const r = await dispatchRobotOnEdge({ robotId, job: { jobType: "abort" }, idempotencyKey: `edge-release-${robotId}-${Date.now()}`, source: "local", requestId: null });
+    const r = await dispatchRobotOnEdge({ robotId, job: { jobType: "abort" }, idempotencyKey: `edge-quiesce-${robotId}-${Date.now()}`, source: "local", requestId: null });
     stopOk = r.ok && (r.status === "done" || r.status === "simulated");
     stop = stopOk ? `STOP ${r.status}` : `STOP FAILED (${r.reason ?? r.error ?? r.status})`;
   } catch (err) {
     stop = `STOP FAILED (${(err as Error)?.message ?? err})`;
   }
-  if (lockOk && stopOk) {
-    await (await edgeRobotLifecycle(rt)).detach(robotId);
-    releaseAlert(rt, "EDGE_DEVICE_RELEASED", `robot ${robotId} no longer owned (${why}): ${lock}, ${stop}, session closed`);
-    return true;
-  }
-  releaseAlert(rt, "EDGE_DEVICE_RELEASE_FAILED", `robot ${robotId} no longer owned (${why}) but KEPT attached${lockOk ? " and locked" : ""}: ${lock}; ${stop} — retried every ${reconcileRetryMs() / 1_000} s; use the machine's direct STOP / E-STOP if it moves`);
-  return false;
+  if (!lockOk || !stopOk) return { ok: false, locked: lockOk, detail: `${lock}; ${stop}; session not detached`, cause: !lockOk ? "lock" : "stop" };
+  const d = await (await edgeRobotLifecycle()).detach(robotId);
+  if (!d.ok) return { ok: false, locked: lockOk, detail: `${lock}; ${stop}; detach REFUSED (${d.reason ?? "?"}) — session kept`, cause: `detach:${(d.reason ?? "?").split(":")[0]}` };
+  return { ok: true, locked: lockOk, detail: `${lock}, ${stop}, session closed`, cause: "none" };
 }
 
 /**
@@ -793,7 +834,9 @@ async function releaseAdapter(rt: EdgeRuntime, row: EdgeConfigSnapshot["adapters
         releaseRt,
       );
       stopOk = r.stop === true && r.ok === true; // D's pinned STOP ran and the device stage reported success (or simulated)
-      stop = stopOk ? `pinned STOP ${r.status} (${pins.map((t) => t.tagKey).join(", ")})` : `pinned STOP NOT sent / FAILED (${r.reason ?? r.detail ?? r.status})`;
+      // M-4 — the real cause: a STOP D did not classify as pinned names it in `detail` (e.g. stop_not_pinned:adapter_connection_stale)
+      const cause = r.stop !== true ? (r.detail ?? r.reason ?? r.status) : (r.reason ?? r.detail ?? r.status);
+      stop = stopOk ? `pinned STOP ${r.status} (${pins.map((t) => t.tagKey).join(", ")})` : `pinned STOP NOT sent / FAILED (${cause})`;
     } catch (err) {
       stop = `pinned STOP FAILED (${(err as Error)?.message ?? err})`;
     }
@@ -820,6 +863,8 @@ export interface EdgeGatewayBootOptions {
   walker?: EdgeWalker | null;
   /** test / integration seam: the device port of central commands (default: the interim driver port) */
   devices?: EdgeDevicePort;
+  /** test seam — does this edge hold a session for the device (default: robotManager active set / attached adapters) */
+  hasSession?: (target: { robotId: number } | { adapterId: number }) => boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -935,6 +980,8 @@ export async function bootstrapEdgeGateway(opts: EdgeGatewayBootOptions = {}): P
         walker,
         devices: opts.devices ?? agentMod.edgeDispatchDevicePort(rt.config),
         hashDefinition,
+        // F-2 leftover (R-10-az) — an owned device with NO session here: its STOPs are answered notOwnedHere (central's fallback)
+        hasSession: opts.hasSession ?? edgeHasSession(await import("../robot/robotManager")),
       });
       if (a) liveRunsOf = () => ({ live: a.liveRunIds().length, max: claimRuns ? cfg.maxConcurrent : 1 });
     } catch (err) {
@@ -1013,7 +1060,7 @@ export async function stopEdgeGateway(): Promise<void> {
   devices.adapters = new Map();
   devices.robotKeys = new Map();
   devices.robotBackoff = new Map();
-  devices.attachUnavailableAlerted = false;
+  devices.attachAlertAt = new Map();
   if (rt) {
     try {
       await rt.shipper.stop();
