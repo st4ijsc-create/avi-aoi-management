@@ -166,12 +166,12 @@ jobs:
         run: pnpm run test:e2e
 
       - name: Stop server
-        if: ${{ !cancelled() }}
+        if: always()
         run: |
           if [ -f .server.pid ]; then kill "$(cat .server.pid)" 2>/dev/null || true; fi
 
       - name: Upload Playwright report
-        if: ${{ !cancelled() }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
