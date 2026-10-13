@@ -23,6 +23,10 @@ const h = vi.hoisted(() => ({
   /** fix review 1 — while an EDGE walk runs, the database THROWS (and every attempt is counted): "reads no DB" is measured */
   dbThrows: false,
   dbCalls: 0,
+  /** fix review 5 — device ownership as central reads it (B's edgeCentralCommon; raw SQL there ⇒ modelled here) */
+  foreignRobots: new Set<number>(),
+  foreignAdapters: new Set<number>(),
+  ownershipThrows: false,
   /** fix review 3 — the edge dispatch's LEDGER record (journaled inside sendCommand, BEFORE the walker's result row) */
   onLedger: null as null | ((cmd: Record<string, any>, ok: boolean) => void),
   telemetry: [] as Array<{ key: string; value: unknown }>,
@@ -33,6 +37,14 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
   return { isStopCommandType: orig.isStopCommandType, classifyOtStop: orig.classifyOtStop, runningConnectionMatchesAdapterRow: async () => true, dispatch: vi.fn() };
 });
 vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: vi.fn() }));
+vi.mock("../../edge/edgeCentralCommon", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../edge/edgeCentralCommon")>();
+  const owned = (foreign: Set<number>) => async (_d: unknown, _node: number, ids: readonly number[]) => {
+    if (h.ownershipThrows) throw new Error("ownership unreadable");
+    return new Set(ids.filter((id) => !foreign.has(id)));
+  };
+  return { ...orig, ownedRobotIds: owned(h.foreignRobots), ownedAdapterIds: owned(h.foreignAdapters) };
+});
 vi.mock("../../auditTrailService", () => ({ createAuditContext: (x: unknown) => x, logCrudOperation: vi.fn(async () => ({ id: 1 })) }));
 vi.mock("./foeScope", async (importOriginal) => {
   const orig = await importOriginal<typeof import("./foeScope")>();
@@ -131,6 +143,9 @@ const resultKind = (r: unknown): string => {
 };
 
 beforeEach(() => {
+  h.foreignRobots.clear();
+  h.foreignAdapters.clear();
+  h.ownershipThrows = false;
   h.onLedger = (cmd, ok) => {
     const a = cmd.edge?.authorization;
     if (!a) return;
@@ -1521,5 +1536,40 @@ describe("doc 81 Đợt 10 C fix review 4 (B F-B2-1) — a Continue of a held ed
     await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, { id: 0, role: "system", name: "FOE auto-resume" });
     expect(runRow(runId).contextJson).toMatchObject({ interrupted: true });
     expect(runRow(runId).contextJson).not.toHaveProperty("edgeResumedBy");
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 5 (R-10-bn) — an edge assignment names only devices the node owns", () => {
+  it("★ a robot / adapter the node does not own, an unresolvable device, or unreadable ownership ⇒ the run is NOT created; owned ⇒ created; central runs unaffected", async () => {
+    const runsBefore = () => rows("orchestration_runs").length;
+    expect((await deployWorkflow(def("own-r", [gate(), move("m1")]), OWNER)).ok).toBe(true);
+    h.foreignRobots.add(2);
+    let n = runsBefore();
+    const r1 = await startRun("own-r", {}, OWNER, { edgeNodeId: NODE });
+    expect(r1).toMatchObject({ ok: false, message: expect.stringMatching(/does not own \(robot 2\)/) });
+    expect(runsBefore()).toBe(n);
+    expect(rows("orchestration_run_edge_assignments")).toEqual([]);
+    // the same definition walked centrally is unaffected
+    expect((await startRun("own-r", {}, OWNER)).status).toBe("awaiting_confirm");
+    h.foreignRobots.clear();
+    expect(await startRun("own-r", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: true, status: "queued" });
+    // an OT adapter it does not own — a STOP step's target counts too
+    expect((await deployWorkflow(def("own-a", [gate(), robotStop("s0"), ot("m1")]), OWNER)).ok).toBe(true);
+    h.foreignAdapters.add(501);
+    n = runsBefore();
+    expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, message: expect.stringMatching(/adapter 501/) });
+    h.foreignAdapters.clear();
+    h.foreignRobots.add(2);
+    expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, message: expect.stringMatching(/robot 2/) }); // the STOP's robot
+    h.foreignRobots.clear();
+    expect(runsBefore()).toBe(n);
+    // ownership unreadable ⇒ refused (fail closed)
+    h.ownershipThrows = true;
+    expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, message: expect.stringMatching(/could not be verified/) });
+    h.ownershipThrows = false;
+    // an OT step whose adapter cannot be resolved (two enabled adapters on its machine) ⇒ refused
+    fake.seed(deviceAdapters, [...rows("device_adapters"), { id: 502, machineId: 1, isEnabled: true, updatedAt: T0, protocol: "stub", code: "A502" }]);
+    expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, stepIds: ["m1"], message: expect.stringMatching(/cannot be resolved \(m1\)/) });
+    expect(runsBefore()).toBe(n);
   });
 });

@@ -4196,6 +4196,11 @@ async function startEdgeAssignedRun(
   const apiKeyId = viaApi && typeof opts.apiKeyId === "number" && Number.isInteger(opts.apiKeyId) && opts.apiKeyId > 0 ? opts.apiKeyId : null;
   const a = { wf, def, runValues, apiKeyId, edgeNodeId: opts.edgeNodeId as number, user, stopOnlyOut: x.stopOnlyOut, onStarted: opts.onStarted };
   if (!Number.isInteger(a.edgeNodeId) || a.edgeNodeId <= 0) return { ok: false, enabled: true, message: "A valid edge node is required." };
+  // doc 81 Đợt 10 C fix review 5 (R-10-bn, design §2.12) — the node must OWN every device the definition binds (robots and OT
+  // adapters, STOP steps included — an edge drives only its own devices), now; a target that cannot be resolved, or an
+  // ownership that cannot be read, refuses the assignment (fail-closed). B's claim re-checks it (edgeExecutionCentral).
+  const notOwned = await edgeAssignmentOwnershipRefusal(d, a.edgeNodeId, a.def);
+  if (notOwned) return { ok: false, enabled: true, stepIds: notOwned.stepIds, message: notOwned.message };
   let run: OrchestrationRun;
   try {
     run = await d.transaction(async (tx) => {
@@ -4226,6 +4231,44 @@ async function startEdgeAssignedRun(
   auditStopOutOfScope(a.user, a.def, run.id, "start", a.stopOnlyOut);
   void appendRunEvent(run.id, "RUN_CREATED", { ts: Date.now(), data: { workflowRef: a.wf.ref, edgeNodeId: a.edgeNodeId } });
   return { ok: true, enabled: true, runId: run.id, status: "queued", edgeNodeId: a.edgeNodeId };
+}
+
+/**
+ * fix review 5 (R-10-bn) — why `def` cannot be assigned to edge node `nodeId` (null ⇔ it can): the devices are resolved with
+ * central's own rule for edge runs (edgeRunAnalysis.analyseDefinition — the one B's claim uses) and must be OWNED by the node
+ * and placed in its factory (edgeCentralCommon.ownedRobotIds / ownedAdapterIds — the claim's predicate). A command step whose
+ * device cannot be resolved (no adapter, no robot id, unknown machine / command) or any read error ⇒ refused.
+ */
+async function edgeAssignmentOwnershipRefusal(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  nodeId: number,
+  def: WorkflowDefinition,
+): Promise<{ message: string; stepIds: string[] } | null> {
+  try {
+    const { analyseDefinition, loadMachineMap } = await import("../../edge/edgeRunAnalysis");
+    const { ownedRobotIds, ownedAdapterIds } = await import("../../edge/edgeCentralCommon");
+    const map = await loadMachineMap(d as never, def);
+    const an = await analyseDefinition(d as never, 0, def, map);
+    const unresolved = new Set(an.unresolved);
+    for (const s of allStepsOf(def.steps)) {
+      if (s.type !== "command") continue;
+      const c = commandOf(s, map);
+      if (!c) unresolved.add(s.id);
+      else if (isRobotKind(c.cap.adapterKind)) {
+        const rid = (s.args ?? {}).robotId;
+        if (!(typeof rid === "number" && Number.isInteger(rid) && rid > 0)) unresolved.add(s.id);
+      }
+    }
+    const [ownR, ownA] = await Promise.all([ownedRobotIds(d as never, nodeId, an.robotIds), ownedAdapterIds(d as never, nodeId, an.adapterIds)]);
+    const foreign = [...an.robotIds.filter((id) => !ownR.has(id)).map((id) => `robot ${id}`), ...an.adapterIds.filter((id) => !ownA.has(id)).map((id) => `adapter ${id}`)];
+    if (unresolved.size === 0 && foreign.length === 0) return null;
+    const what = [foreign.length ? `devices it does not own (${foreign.slice(0, 5).join(", ")})` : "", unresolved.size ? `steps whose device cannot be resolved (${[...unresolved].slice(0, 5).join(", ")})` : ""].filter(Boolean).join("; ");
+    // data-raw-ok: an operator-facing refusal naming the devices / steps (nothing was created)
+    return { message: `The run cannot be handed to edge node ${nodeId}: ${what} — an edge node drives only the devices it owns. Nothing was started.`, stepIds: [...unresolved] };
+  } catch (err) {
+    console.error(`[FOE] edge assignment to node ${nodeId}: device ownership not verified — ${(err as Error)?.message ?? err}`);
+    return { message: `The run cannot be handed to edge node ${nodeId}: device ownership could not be verified — nothing was started; retry.`, stepIds: [] };
+  }
 }
 
 /** What the edge's agent holds for the segment it claimed (the token itself never leaves the agent's store). */
