@@ -95,7 +95,7 @@ beforeAll(async () => {
     EDGE_EXECUTION_ENABLED: "true",
     FOE_ENABLED: "true",
     EDGE_RUNTIME_ENABLED: "true",
-    EDGE_CENTRAL_URL: "http://central.test",
+    EDGE_CENTRAL_URL: "https://central.test", // final fix wave M-4: plain http to a non-loopback host is refused
     EDGE_NODE_CREDENTIAL_FILE: cred,
     EDGE_CENTRAL_NODE_ID: "7",
     EDGE_CENTRAL_CREDENTIAL_ID: "31",

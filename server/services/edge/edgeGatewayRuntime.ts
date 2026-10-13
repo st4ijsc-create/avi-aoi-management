@@ -966,7 +966,7 @@ export async function bootstrapEdgeGateway(opts: EdgeGatewayBootOptions = {}): P
       if (!claimRuns) console.log(`[EdgeExec] run execution NOT started: ${(exec as { error: string }).error} — central commands (STOP / lock / clear) are still handled`);
       const cfg = claimRuns
         ? { ...exec, fetchImpl: opts.fetchImpl }
-        : { centralUrl: n && !("error" in n) ? n.centralUrl : "", credential: "", pullIntervalMs: 5_000, progressMs: 2_000, maxConcurrent: 1, requestTimeoutMs: 10_000, stopResendMinMs: 10_000, claimRuns: false };
+        : { centralUrl: n && !("error" in n) ? n.centralUrl : "", credential: "", pullIntervalMs: agentMod.edgePullIntervalBoundFromEnv(), progressMs: 2_000, maxConcurrent: 1, requestTimeoutMs: 10_000, stopResendMinMs: 10_000, claimRuns: false };
       let walker: EdgeWalker | null = null;
       if (claimRuns) {
         if (opts.walker !== undefined) walker = opts.walker;

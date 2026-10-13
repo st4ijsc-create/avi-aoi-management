@@ -57,7 +57,7 @@ beforeAll(async () => {
     OT_CONTROL_ENABLED: "true",
     EDGE_RECONCILE_RETRY_MS: "300",
     EDGE_ATTACH_ALERT_EVERY_MS: "1500",
-    EDGE_CENTRAL_URL: "http://central.test",
+    EDGE_CENTRAL_URL: "https://central.test", // final fix wave M-4: plain http to a non-loopback host is refused
     EDGE_NODE_CREDENTIAL_FILE: path.join(dir, "node.cred"),
     EDGE_CENTRAL_NODE_ID: "7",
     EDGE_CENTRAL_CREDENTIAL_ID: "31",

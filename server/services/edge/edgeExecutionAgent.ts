@@ -52,6 +52,7 @@ import type { EdgeJournalConsume, EdgeProgramChecks, EdgeReportSink, EdgeStreamS
 export interface EdgeAgentConfig {
   centralUrl: string;
   credential: string;
+  /** final fix wave (I-2) — the UPPER bound of the pull interval; the interval used is central's signed limits.pullMs ≤ this */
   pullIntervalMs: number;
   progressMs: number;
   maxConcurrent: number;
@@ -106,7 +107,18 @@ export async function readEdgeNodeCredential(
   return { credential };
 }
 
-/** EDGE_CENTRAL_URL as an http(s) URL without a trailing slash, or why not. */
+/** doc 81 Đợt 10 final fix wave (M-4) — a loopback host (the same machine): plain http never leaves it. */
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return h === "localhost" || h === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
+/**
+ * EDGE_CENTRAL_URL as an http(s) URL without a trailing slash, or why not.
+ * doc 81 Đợt 10 final fix wave (M-4) — plain `http://` is refused unless the host is loopback: the signed config carries the node's
+ * DECRYPTED device secrets (D4) and every request the bearer node credential — signatures protect integrity, not confidentiality.
+ * EDGE_ALLOW_INSECURE_CENTRAL=1 accepts it for a lab only, with a loud warning on every start.
+ */
 export function edgeCentralUrlFromEnv(env: NodeJS.ProcessEnv = process.env): { url: string } | { error: string } {
   let url: URL;
   try {
@@ -115,7 +127,28 @@ export function edgeCentralUrlFromEnv(env: NodeJS.ProcessEnv = process.env): { u
     return { error: "EDGE_CENTRAL_URL is not a URL (e.g. https://central.example:3000)" };
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return { error: "EDGE_CENTRAL_URL must be http(s)" };
+  if (url.protocol === "http:" && !isLoopbackHost(url.hostname)) {
+    if (env.EDGE_ALLOW_INSECURE_CENTRAL !== "1" && env.EDGE_ALLOW_INSECURE_CENTRAL !== "true") {
+      return {
+        error:
+          "EDGE_CENTRAL_URL uses plain http:// to a non-loopback host — refused: the config carries this node's decrypted device secrets and every request its node credential; use https:// (EDGE_ALLOW_INSECURE_CENTRAL=1 accepts it for a lab only)",
+      };
+    }
+    console.warn(
+      `[EdgeExec] ⚠ INSECURE: EDGE_CENTRAL_URL ${url.origin} is plain http (EDGE_ALLOW_INSECURE_CENTRAL=1) — device secrets and the node credential cross the network UNENCRYPTED. Never in production.`,
+    );
+  }
   return { url: url.toString().replace(/\/+$/, "") };
+}
+
+/** doc 81 Đợt 10 final fix wave (I-2) — the design's pull interval (§2.8: commands reach the edge within 2 s). */
+export const EDGE_DEFAULT_PULL_INTERVAL_MS = 2_000;
+/**
+ * EDGE_PULL_INTERVAL_MS — the UPPER bound of the agent's pull interval (default 2 s, 200 ms … 300 s). The interval actually used
+ * is central's signed limits.pullMs (verified config), never above this bound: the env can make the pull faster, never slower.
+ */
+export function edgePullIntervalBoundFromEnv(env: NodeJS.ProcessEnv = process.env): number {
+  return clampInt(env.EDGE_PULL_INTERVAL_MS, EDGE_DEFAULT_PULL_INTERVAL_MS, 200, 300_000);
 }
 
 /** The agent's configuration from the environment, or why it cannot start (it then starts NOTHING — fail-closed). */
@@ -133,7 +166,7 @@ export async function edgeExecutionConfigFromEnv(
   return {
     centralUrl: u.url,
     credential: c.credential,
-    pullIntervalMs: clampInt(env.EDGE_PULL_INTERVAL_MS, 5000, 200, 300_000),
+    pullIntervalMs: edgePullIntervalBoundFromEnv(env),
     progressMs: clampInt(env.EDGE_ABORT_POLL_MS, 2000, 50, 60_000),
     maxConcurrent: clampInt(env.EDGE_MAX_CONCURRENT_RUNS, 4, 1, 32),
     requestTimeoutMs: clampInt(env.EDGE_REQUEST_TIMEOUT_MS, 10_000, 500, 60_000),
@@ -290,7 +323,7 @@ export interface TickReport {
 export class EdgeExecutionAgent {
   private timer: NodeJS.Timeout | null = null;
   /** the PULL (+ STOP fast path) — single-flight, never behind the work phase (L-7) */
-  private pulling: Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number }> | null = null;
+  private pulling: Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number; deferred?: unknown[] }> | null = null;
   /** the WORK phase (config refresh, non-STOP commands, segment ends, claims) — single-flight, skipped while busy */
   private working: Promise<void> | null = null;
   private readonly segments = new Map<number, Segment>();
@@ -343,20 +376,42 @@ export class EdgeExecutionAgent {
     return (this.cfg.now ?? Date.now)();
   }
 
+  /**
+   * doc 81 Đợt 10 final fix wave (I-2, R-10-br) — the pull interval NOW: central's SIGNED limits.pullMs from the verified config
+   * (design §2.8: 2 s), 2 s while no config is verified; never above the configured bound (EDGE_PULL_INTERVAL_MS), never below
+   * 200 ms. Read before every pull, so a new config takes effect at the next one.
+   */
+  pullIntervalNowMs(): number {
+    const cfgSrc = this.deps.config as { limits?: () => { pullMs?: number } | null };
+    let signed: number | undefined;
+    try {
+      signed = typeof cfgSrc.limits === "function" ? cfgSrc.limits()?.pullMs : undefined;
+    } catch {
+      signed = undefined;
+    }
+    const base = typeof signed === "number" && Number.isFinite(signed) && signed > 0 ? signed : EDGE_DEFAULT_PULL_INTERVAL_MS;
+    return Math.max(200, Math.min(base, this.cfg.pullIntervalMs));
+  }
+
   start(): void {
     if (this.timer) return;
     this.stopped = false;
-    this.timer = setInterval(() => {
-      void this.tick().catch(() => undefined);
-    }, this.cfg.pullIntervalMs);
-    if (typeof this.timer.unref === "function") this.timer.unref();
+    const schedule = () => {
+      if (this.stopped) return;
+      this.timer = setTimeout(() => {
+        void this.tick().catch(() => undefined);
+        schedule();
+      }, this.pullIntervalNowMs());
+      if (typeof this.timer.unref === "function") this.timer.unref();
+    };
+    schedule();
     void this.tick().catch(() => undefined);
   }
 
   /** Stops pulling. Walkers already running finish their segment (their runs are not aborted by a shutdown). */
   async stop(): Promise<void> {
     this.stopped = true;
-    if (this.timer) clearInterval(this.timer);
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     // bounded: a work phase stuck on a central call that never answers must not hold a shutdown
     const bound = new Promise<void>((r) => {
@@ -392,7 +447,7 @@ export class EdgeExecutionAgent {
   tick(): Promise<TickReport> {
     return (async () => {
       const r = await this.pullPhase();
-      if (r.answer && r.rest) await this.workPhase(r.answer, r.rest, r.report, r.cycle);
+      if (r.answer && r.rest) await this.workPhase(r.answer, r.rest, r.report, r.cycle, r.deferred);
       return r.report;
     })();
   }
@@ -401,7 +456,7 @@ export class EdgeExecutionAgent {
    * Single-flight — but BOUNDED (fix review 2, N-4): a pull still running after 2 × requestTimeoutMs + 1 s (a STOP call that never
    * settles) no longer holds the next one; that next pull's STOPs go (a double STOP is harmless, the ack is de-duplicated).
    */
-  private pullPhase(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number }> {
+  private pullPhase(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number; deferred?: unknown[] }> {
     if (this.pulling && Date.now() - this.pullStartedAt < 2 * this.cfg.requestTimeoutMs + 1_000) return this.pulling;
     const p = this.pullOnce().finally(() => {
       if (this.pulling === p) this.pulling = null;
@@ -411,7 +466,7 @@ export class EdgeExecutionAgent {
     return p;
   }
 
-  private async pullOnce(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number }> {
+  private async pullOnce(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number; deferred?: unknown[] }> {
     const cycle = ++this.cycleSeq;
     this.pruneMemories();
     const report: TickReport = { online: false, claimed: [], stopsResent: [], skipped: [], interrupted: [], aborted: [], commands: [] };
@@ -450,7 +505,8 @@ export class EdgeExecutionAgent {
     // R-10-bn (F1-4) — central confirms a re-sent STOP (bound to its picture) ⇒ the run leaves `stopsUnconfirmed` ⇒ no more
     // re-sends; until then the re-send BACKS OFF per run: stopResendMinMs (1 s) doubling, at most EDGE_SWEEP_RESEND_MAX_MS
     const listed = new Set(p.stopsUnconfirmed.map((s) => s.runId));
-    for (const id of [...this.resentAt.keys()]) if (!listed.has(id)) this.resentAt.delete(id); // confirmed / window over
+    // final fix wave (I-1) — a PARTIAL answer may omit a run whose picture could not be built: nothing is inferred from that
+    if (!p.partial) for (const id of [...this.resentAt.keys()]) if (!listed.has(id)) this.resentAt.delete(id); // confirmed / window over
     for (const s of p.stopsUnconfirmed) {
       if (this.segments.has(s.runId)) continue;
       const st = this.resentAt.get(s.runId);
@@ -461,17 +517,43 @@ export class EdgeExecutionAgent {
       await this.resendStops(s.runId, s.picture);
       report.stopsResent.push(s.runId);
     }
-    return { report, rest: [...deferred, ...all.filter((_, i) => !isStop(verified[i]))], answer: p, cycle };
+    return { report, rest: [...deferred, ...all.filter((_, i) => !isStop(verified[i]))], answer: p, cycle, deferred };
   }
 
-  private workPhase(p: EdgePullAnswer, rest: unknown[], report: TickReport, cycle: number): Promise<void> {
-    if (this.working) return Promise.resolve(); // busy: this answer's non-STOP work waits for the next pull (STOPs went already)
+  /** final fix wave (M-8) — the deferred-STOP phase run while a work phase is busy (single-flight, bounded like the pull) */
+  private deferring: Promise<void> | null = null;
+  private deferringSince = 0;
+
+  private workPhase(p: EdgePullAnswer, rest: unknown[], report: TickReport, cycle: number, deferred: unknown[] = []): Promise<void> {
+    if (this.working) {
+      // busy: this answer's non-STOP work waits for the next pull (STOPs went already) — but the STOPs the fast path DEFERRED
+      // (target unknown until a refresh) run NOW, in this pull (M-8): a refresh made for THIS cycle, then those STOPs only
+      return deferred.length === 0 ? Promise.resolve() : this.deferredStopPhase(deferred, report, cycle);
+    }
     this.working = this.workOnce(p, rest, report, cycle)
       .catch((err) => console.error(`[EdgeExec] work phase failed: ${(err as Error)?.message ?? err}`))
       .finally(() => {
         this.working = null;
       });
     return this.working;
+  }
+
+  private deferredStopPhase(deferred: unknown[], report: TickReport, cycle: number): Promise<void> {
+    if (this.deferring && Date.now() - this.deferringSince < 2 * this.cfg.requestTimeoutMs + 1_000) return this.deferring;
+    const p = (async () => {
+      this.forceRefresh = false;
+      const r = await this.deps.config.refresh();
+      if (r.ok) this.lastRefreshedCycle = Math.max(this.lastRefreshedCycle, cycle);
+      else console.warn(`[EdgeExec] config refresh for deferred STOPs failed (${r.reason}) — they stay pending (re-delivered)`);
+      report.commands.push(...(await this.handleCommands(deferred, cycle)));
+    })()
+      .catch((err) => console.error(`[EdgeExec] deferred STOP phase failed: ${(err as Error)?.message ?? err}`))
+      .finally(() => {
+        if (this.deferring === p) this.deferring = null;
+      });
+    this.deferring = p;
+    this.deferringSince = Date.now();
+    return p;
   }
 
   private async workOnce(p: EdgePullAnswer, rest: unknown[], report: TickReport, cycle: number): Promise<void> {
@@ -1154,7 +1236,7 @@ export async function startEdgeExecution(cfg: EdgeAgentConfig | { error: string 
   agent = new EdgeExecutionAgent(cfg, deps);
   await deps.shipper.orphanUntokened("claim token lost on restart (never journaled) — the claim is declared interrupted");
   agent.start();
-  console.log(`[EdgeExec] run execution started (pull every ${cfg.pullIntervalMs} ms, progress every ${cfg.progressMs} ms, at most ${cfg.maxConcurrent} runs)`);
+  console.log(`[EdgeExec] run execution started (pull every ${agent.pullIntervalNowMs()} ms — central's limits.pullMs, at most ${cfg.pullIntervalMs} ms; progress every ${cfg.progressMs} ms, at most ${cfg.maxConcurrent} runs)`);
   return agent;
 }
 
