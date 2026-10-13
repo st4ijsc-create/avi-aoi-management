@@ -4,7 +4,8 @@
  * `--out` it is printed once; rotate / revoke / list follow the rows; a non-admin actor and bad arguments are refused.
  *
  * doc 81 Đợt 9 final wave F7 (final review M7) — the admin is PROVEN, never self-asserted: `--actor <username>` + the account's
- * password (prompt / EDGE_CRED_ADMIN_PASSWORD, never argv) through the web login's own check, + its TOTP code when 2FA is on.
+ * password (TTY prompt / piped stdin — Đợt 10 F2 round 2 N7: never argv, never an env var) through the web login's own check,
+ * + its TOTP code when 2FA is on (a wrong code is audited and counted into the lockout — N8).
  * `--actor-user-id` (anyone holding DATABASE_URL could name any admin) is refused; a wrong password / no password / a missing or
  * wrong 2FA code / a non-admin ⇒ refused before anything is written.
  */
@@ -32,7 +33,9 @@ async function cli(argv: string[], io: Partial<CliIo> = {}) {
   const code = await runEdgeCredentialCli(argv, { out: (l) => out.push(l), err: (l) => err.push(l), env: {}, ...io });
   return { code, out: out.join("\n"), err: err.join("\n") };
 }
-const asAdmin = { env: { EDGE_CRED_ADMIN_PASSWORD: PW.admin } };
+/** N7 (Đợt 10 F2 round 2): the password is PIPED on stdin (line 1), the 2FA code on line 2 — never an env var */
+const pipe = (...lines: string[]) => ({ readStdin: async () => lines.join("\n") + "\n" });
+const asAdmin = pipe(PW.admin);
 const credCount = async () => Number((await sql`SELECT count(*)::int AS n FROM edge_node_credentials WHERE "edgeNodeId" = ${ids.node}`)[0].n);
 
 describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S5 — edge node credential CLI (_test)", () => {
@@ -64,7 +67,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S5 — edge node credential CLI (_t
     expect((await cli(["issue", "--node", `N-${DAU}`, "--reason", "no actor"])).code).toBe(2);
     const old = await cli(["issue", "--node", `N-${DAU}`, "--actor-user-id", String(ids.admin), "--reason", "self-asserted"], asAdmin);
     expect(old.code).toBe(2);
-    expect(old.err).toMatch(/--actor-user-id is no longer accepted/);
+    expect(old.err).toMatch(/self-asserted actor/);
     expect((await cli(["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-a`, "--password", PW.admin, "--reason", "argv pw"])).code).toBe(2);
     expect(await credCount()).toBe(0);
   });
@@ -74,14 +77,14 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S5 — edge node credential CLI (_t
     const none = await cli(["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-a`, "--reason", "no password", "--out", f]);
     expect(none.code).toBe(1);
     expect(none.err).toMatch(/notVerified/);
-    const wrong = await cli(["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-a`, "--reason", "wrong password", "--out", f], { env: { EDGE_CRED_ADMIN_PASSWORD: "not-it" } });
+    const wrong = await cli(["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-a`, "--reason", "wrong password", "--out", f], pipe("not-it"));
     expect(wrong.code).toBe(1);
     expect(wrong.err).toMatch(/notVerified.*INVALID_CREDENTIALS/);
-    const eng = await cli(["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-e`, "--reason", "engineer tries", "--out", f], { env: { EDGE_CRED_ADMIN_PASSWORD: PW.eng } });
+    const eng = await cli(["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-e`, "--reason", "engineer tries", "--out", f], pipe(PW.eng));
     expect(eng.code).toBe(1);
     expect(eng.err).toMatch(/notAdmin/);
     // the admin's id with the ENGINEER's password (the old way to "be" an admin) proves nothing
-    const borrowed = await cli(["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-a`, "--reason", "borrowed id", "--out", f], { env: { EDGE_CRED_ADMIN_PASSWORD: PW.eng } });
+    const borrowed = await cli(["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-a`, "--reason", "borrowed id", "--out", f], pipe(PW.eng));
     expect(borrowed.code).toBe(1);
     expect(existsSync(f)).toBe(false);
     expect(await credCount()).toBe(0);
@@ -94,24 +97,22 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 9 S1/S5 — edge node credential CLI (_t
 
   it("★ F7: an admin with 2FA on — no code ⇒ otpRequired, a wrong code ⇒ refused, the current code (prompt) ⇒ accepted", async () => {
     const base = ["issue", "--node", `N-${DAU}`, "--actor", `${DAU}-t`, "--reason", "2fa admin"];
-    const env = { EDGE_CRED_ADMIN_PASSWORD: PW.admin2fa };
-    const noCode = await cli(base, { env });
+    const noCode = await cli(base, pipe(PW.admin2fa)); // piped, no code line ⇒ refused (never prompts on a pipe)
     expect(noCode.code).toBe(1);
     expect(noCode.err).toMatch(/otpRequired/);
-    const bad = await cli(base, { env: { ...env, EDGE_CRED_ADMIN_OTP: "000000" === speakeasy.totp({ secret: secret2fa, encoding: "base32" }) ? "111111" : "000000" } });
+    const bad = await cli(base, pipe(PW.admin2fa, "000000" === speakeasy.totp({ secret: secret2fa, encoding: "base32" }) ? "111111" : "000000"));
     expect(bad.code).toBe(1);
     expect(bad.err).toMatch(/notVerified/);
     expect(await credCount()).toBe(0);
     const asked: string[] = [];
     const ok = await cli(base, {
-      env,
       promptSecret: async (label) => {
         asked.push(label);
-        return speakeasy.totp({ secret: secret2fa, encoding: "base32" });
+        return label.startsWith("password") ? PW.admin2fa : speakeasy.totp({ secret: secret2fa, encoding: "base32" });
       },
     });
     expect(ok.code).toBe(0);
-    expect(asked).toEqual(["2FA code: "]);
+    expect(asked).toEqual([`password of ${DAU}-t: `, "2FA code: "]); // TTY: password, then the code asked once
     expect(ok.out).toMatch(new RegExp(`admin verified: cli t \\(user ${ids.admin2fa}\\)`));
     const [row] = await sql`SELECT "createdBy" FROM edge_node_credentials WHERE "edgeNodeId" = ${ids.node} AND status = 'active'`;
     expect(row.createdBy).toBe(ids.admin2fa); // the PROVEN admin is the one recorded

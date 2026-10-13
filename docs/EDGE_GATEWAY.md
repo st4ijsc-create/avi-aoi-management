@@ -241,8 +241,24 @@ mode 700, readable by central's service account.
 1. Apply migrations 0372 → 0375 and 0376 on the central DB (`node scripts/apply-migration-03xx.mjs --dev-only`, owner).
    ⚠ R-10-t: re-applying 0316 / 0363 / 0369 / 0370 / 0371 (or 0125 through `migrate-standalone`) after 0376 would un-pin
    its functions — those runners refuse unless given `--then-0376`, which re-applies 0376 right after.
-2. Register the node with its `factoryCode` (tRPC `edgeRuntime.registerNode`, machine_control:canCreate — the admin-only
-   `register-node` CLI of decision D14 is not built yet): a node without a factory is given no device and no run.
+2. Register the node (decision D14 — a proven admin only; the v2 gateway never registers itself):
+
+   ```bash
+   npx tsx scripts/edge-node-credential.ts register-node --node edge-line1 --factory FB --lines LINE1,LINE2        [--name "Line 1 gateway"] --actor <admin> --reason "commission line 1"
+   ```
+
+   The factory must exist and every line must be a production line OF THAT FACTORY; a node without a factory is given no
+   device and no run. Re-running with the same factory / lines is a no-op ("unchanged"); a different factory or lines is
+   refused (release the node's devices first, then change it deliberately). Audited `EDGE_NODE_REGISTER` (success / failure).
+
+   **How the operator CLIs take the admin's secret (N7):** a hidden prompt on a terminal; without a terminal, PIPED STDIN —
+   line 1 the password, line 2 the current 2FA code (`printf '%s
+%s
+' "$PW" "$CODE" | npx tsx scripts/…`, or `< file` with a
+   0600 file). Never on the command line (any `--password…` / `--otp…` spelling is refused) and never in an environment
+   variable: `EDGE_CRED_ADMIN_PASSWORD` / `_OTP` and `EDGE_OWNER_ADMIN_PASSWORD` / `_OTP` are REFUSED (exit 2). A wrong or
+   replayed 2FA code is audited (`login_2fa` failure) and counted into the account lockout (N8): 5 wrong codes ⇒ the account
+   is locked 15 min, exactly like 5 wrong passwords. (`scripts/edge-signing-key.ts` still reads `EDGE_SIGNING_ADMIN_*`.)
 3. Issue the credential AND the bundle in one step, as a proven admin:
 
    ```bash
@@ -272,7 +288,7 @@ npx tsx scripts/edge-device-owner.ts release --robot 12  --actor <admin> --reaso
 npx tsx scripts/edge-device-owner.ts list    [--node edge-line1]
 ```
 
-- Proven admin (same proof as §8.2; `EDGE_OWNER_ADMIN_PASSWORD` / `EDGE_OWNER_ADMIN_OTP` or the prompt); a reason is required;
+- Proven admin (prompt or piped stdin, §8.3 N7 — the environment variables are refused); a reason is required;
   every assign / release — done or refused — is an `audit_logs` row, and the WORM history `device_owner_changes` names the
   admin and the reason.
 - A device goes only to a node of **its own factory** (robot: its station's line, else its own line → workshop → factory;

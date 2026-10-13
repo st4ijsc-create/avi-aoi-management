@@ -6,9 +6,9 @@
  * while a job / write is in flight; R-10-am: a device is handed only to a node of ITS OWN factory).
  *
  * The admin is PROVEN, never self-asserted (the Đợt 9 F7 pattern of edge-node-credential.ts / edge-signing-key.ts):
- * `--actor <username>`, the account's password from a hidden prompt (or EDGE_OWNER_ADMIN_PASSWORD) and, with 2FA on, its current
- * code (prompt, or EDGE_OWNER_ADMIN_OTP) — verifyCredentialAdmin (bcrypt, lockout, audit, TOTP in the shared DB ledger, active
- * admin) BEFORE any write. A secret is NEVER taken from argv in any spelling (`--password=…`, `--otp …`, `--pass`, `--totp`,
+ * `--actor <username>`, the account's password from a hidden TTY prompt or PIPED STDIN (line 1 password, line 2 the 2FA code; round 2
+ * N7 — EDGE_OWNER_ADMIN_PASSWORD / _OTP are REFUSED, exit 2) — verifyCredentialAdmin (bcrypt, lockout, audit, TOTP in the shared DB
+ * ledger, a wrong code counted into the lockout, active admin) BEFORE any write. A secret is NEVER taken from argv in any spelling (`--password=…`, `--otp …`, `--pass`, `--totp`,
  * `--secret`, …) and a free-text actor (`--by`, `--actor-user-id`) is refused. Every assign / release — done or refused — is an
  * audit_logs row (EDGE_DEVICE_OWNER_ASSIGN / _RELEASE, status success | failure) with the reason.
  *
@@ -22,15 +22,20 @@
  * owner live (pg NOTIFY device_owner_changed, reconcile ≤ 30 s). Exit codes: 0 done · 1 refused · 2 bad arguments.
  */
 import { pathToFileURL } from "node:url";
+import { proveAdminWith, readAdminSecrets, setSecretEnv, stdinReader } from "./edgeAdminLogin";
 
 export interface OwnerCliIo {
   out: (line: string) => void;
   err: (line: string) => void;
   /** a hidden prompt (password / 2FA code); null ⇒ no terminal to ask on */
   promptSecret?: (label: string) => Promise<string | null>;
-  /** where EDGE_OWNER_ADMIN_PASSWORD / EDGE_OWNER_ADMIN_OTP are read (default process.env) */
+  /** N7: piped stdin — line 1 password, line 2 optional 2FA code; null ⇒ stdin is a terminal */
+  readStdin?: () => Promise<string | null>;
+  /** the environment (default process.env) — the refused secret variables are checked here */
   env?: NodeJS.ProcessEnv;
 }
+/** N7 — a secret in an environment variable is REFUSED (exit 2), not read. */
+export const REFUSED_SECRET_ENV = ["EDGE_OWNER_ADMIN_PASSWORD", "EDGE_OWNER_ADMIN_OTP"] as const;
 export type DeviceKind = "robot" | "adapter";
 export interface OwnedDeviceRow {
   kind: DeviceKind;
@@ -100,11 +105,16 @@ export async function runEdgeDeviceOwnerCli(argv: string[], io: OwnerCliIo, deps
     return 2;
   }
   if (argv.some((a) => SECRET_ARG.test(a))) {
-    io.err("a password / 2FA code is never taken from the command line (process list, shell history) — use the prompt or EDGE_OWNER_ADMIN_PASSWORD / EDGE_OWNER_ADMIN_OTP");
+    io.err("a password / 2FA code is never taken from the command line (process list, shell history) — type it at the prompt, or pipe it on stdin (line 1 password, line 2 2FA code)");
+    return 2;
+  }
+  const leaked = setSecretEnv(io.env ?? process.env, REFUSED_SECRET_ENV);
+  if (leaked.length) {
+    io.err(`${leaked.join(" / ")} is set — a secret in an environment variable is refused (unset it): type the password at the prompt, or pipe it on stdin (line 1 password, line 2 2FA code)`);
     return 2;
   }
   if (argv.some((a) => FREE_ACTOR_ARG.test(a))) {
-    io.err("a self-asserted actor (--by / --actor-user-id) is refused: use --actor <admin username> — the password is asked (or EDGE_OWNER_ADMIN_PASSWORD)");
+    io.err("a self-asserted actor (--by / --actor-user-id) is refused: use --actor <admin username> — the password is asked on the terminal or read from piped stdin");
     return 2;
   }
   const unknown = argv.slice(1).filter((a, i, all) => a.startsWith("--") && !KNOWN.has(a) && !(i > 0 && KNOWN.has(all[i - 1])));
@@ -153,21 +163,11 @@ export async function runEdgeDeviceOwnerCli(argv: string[], io: OwnerCliIo, deps
   }
 
   // ── prove the admin BEFORE anything is read for a write or written (a refused login changes nothing) ─────────────
-  const env = io.env ?? process.env;
   let actor: { userId: number; name: string };
   try {
-    const password = env.EDGE_OWNER_ADMIN_PASSWORD || (io.promptSecret ? await io.promptSecret(`password of ${actorName}: `) : null);
-    const otp = env.EDGE_OWNER_ADMIN_OTP || null;
-    if (deps.verifyAdmin) actor = await deps.verifyAdmin({ username: actorName, password, otp });
-    else {
-      const m = await import("../server/services/edge/edgeNodeCredentials");
-      try {
-        actor = await m.verifyCredentialAdmin({ username: actorName, password, otp });
-      } catch (err) {
-        if (!(err instanceof m.EdgeCredentialError) || err.code !== "otpRequired" || otp || !io.promptSecret) throw err;
-        actor = await m.verifyCredentialAdmin({ username: actorName, password, otp: await io.promptSecret("2FA code: ") });
-      }
-    }
+    const secrets = await readAdminSecrets(io, actorName);
+    const verify = deps.verifyAdmin ?? (async (l: { username: string; password: string | null; otp: string | null }) => (await import("../server/services/edge/edgeNodeCredentials")).verifyCredentialAdmin(l));
+    actor = await proveAdminWith(verify, io, actorName, secrets);
   } catch (err) {
     const code = (err as { code?: string })?.code;
     io.err(`refused${code ? ` (${code})` : ""}: ${(err as Error)?.message ?? err} — nothing was changed`);
@@ -263,7 +263,7 @@ function ttyHiddenPrompt(label: string): Promise<string | null> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   import("dotenv/config") // the central host's DATABASE_URL (only when run as a program — never when imported by a test)
-    .then(() => runEdgeDeviceOwnerCli(process.argv.slice(2), { out: (l) => console.log(l), err: (l) => console.error(l), promptSecret: ttyHiddenPrompt }))
+    .then(() => runEdgeDeviceOwnerCli(process.argv.slice(2), { out: (l) => console.log(l), err: (l) => console.error(l), promptSecret: ttyHiddenPrompt, readStdin: stdinReader() }))
     .then((code) => process.exit(code))
     .catch((err) => {
       console.error(`edge-device-owner: ${(err as Error)?.message ?? err}`);

@@ -28,7 +28,7 @@ let keyring = "";
 async function cli(argv: string[], io: Partial<CliIo> = {}) {
   const out: string[] = [];
   const err: string[] = [];
-  const code = await runEdgeCredentialCli(argv, { out: (l) => out.push(l), err: (l) => err.push(l), env: { EDGE_CRED_ADMIN_PASSWORD: PW }, ...io });
+  const code = await runEdgeCredentialCli(argv, { out: (l) => out.push(l), err: (l) => err.push(l), env: {}, readStdin: async () => `${PW}\n`, ...io });
   return { code, out: out.join("\n"), err: err.join("\n") };
 }
 const credCount = async () => Number((await sql`SELECT count(*)::int AS n FROM edge_node_credentials WHERE "edgeNodeId" = ${ids.node}`)[0].n);

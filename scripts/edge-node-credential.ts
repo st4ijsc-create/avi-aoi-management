@@ -5,9 +5,12 @@
  * the credential row itself (WORM identity) and in audit_logs — never with the secret.
  *
  * doc 81 Đợt 9 final wave F7 — the admin is PROVEN, never self-asserted: `--actor <username>`, then the account's password
- * (hidden prompt on a terminal, else EDGE_CRED_ADMIN_PASSWORD — never on the command line) and, when the account has 2FA on,
- * its current authenticator code (prompt, else EDGE_CRED_ADMIN_OTP) — the web login's own checks (lockout, audit). The old
+ * and, when the account has 2FA on, its current authenticator code — the web login's own checks (lockout, audit). The old
  * `--actor-user-id N` (anyone holding DATABASE_URL could name any admin) is refused.
+ * doc 81 Đợt 10 F2 round 2 (N7, N8, D14): the password / code come ONLY from a hidden TTY prompt or PIPED STDIN (line 1 password,
+ * line 2 the 2FA code) — EDGE_CRED_ADMIN_PASSWORD / _OTP are REFUSED (exit 2), argv spellings too; a wrong / replayed 2FA code
+ * is audited `login_2fa` and counted into the account lockout (verifyCredentialAdmin); `register-node --node CODE --factory CODE
+ * [--lines L1,L2] [--name TEXT]` registers a node (admin only — no self-registration, D14), factory and lines validated.
  *
  *   npx tsx scripts/edge-node-credential.ts issue  --node edge-line1 --actor admin.nguyen --reason "commission line 1" --out /root/edge-line1.cred
  *   npx tsx scripts/edge-node-credential.ts rotate --node edge-line1 --actor admin.nguyen --reason "quarterly rotation" --out /root/edge-line1.cred
@@ -37,15 +40,20 @@
 import { openSync, writeSync, closeSync, unlinkSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { proveAdminWith, readAdminSecrets, setSecretEnv, stdinReader } from "./edgeAdminLogin";
 
 export interface CliIo {
   out: (line: string) => void;
   err: (line: string) => void;
   /** a hidden prompt (password / 2FA code); null ⇒ no terminal to ask on */
   promptSecret?: (label: string) => Promise<string | null>;
-  /** where EDGE_CRED_ADMIN_PASSWORD / EDGE_CRED_ADMIN_OTP are read (default process.env) */
+  /** Đợt 10 F2 round 2 (N7): piped stdin — line 1 password, line 2 optional 2FA code; null ⇒ stdin is a terminal */
+  readStdin?: () => Promise<string | null>;
+  /** the environment (default process.env): EDGE_SIGNING_KEY_DIR; the refused secret variables are checked here */
   env?: NodeJS.ProcessEnv;
 }
+/** N7 — a secret in an environment variable is REFUSED (exit 2), not read. */
+export const REFUSED_SECRET_ENV = ["EDGE_CRED_ADMIN_PASSWORD", "EDGE_CRED_ADMIN_OTP"] as const;
 
 function argOf(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(name);
@@ -65,16 +73,16 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
   const actorName = argOf(argv, "--actor");
   const reason = argOf(argv, "--reason") ?? "";
   const outFile = argOf(argv, "--out");
-  if (!["issue", "rotate", "revoke", "list"].includes(cmd ?? "") || !node) {
-    io.err("usage: edge-node-credential.ts <issue|rotate|revoke|list> --node CODE [--actor ADMIN_USERNAME --reason TEXT] [--out FILE | --bundle DIR --keyring-dir DIR [--central-url URL] [--edge-dir PATH] [--journal-max-bytes N]]");
+  if (!["issue", "rotate", "revoke", "list", "register-node"].includes(cmd ?? "") || !node) {
+    io.err("usage: edge-node-credential.ts <issue|rotate|revoke|list|register-node> --node CODE [--actor ADMIN_USERNAME --reason TEXT] [--out FILE | --bundle DIR --keyring-dir DIR [--central-url URL] [--edge-dir PATH] [--journal-max-bytes N]] | register-node --node CODE --factory CODE [--lines L1,L2] [--name TEXT] --actor ADMIN --reason TEXT");
     return 2;
   }
-  if (argv.includes("--actor-user-id")) {
-    io.err("--actor-user-id is no longer accepted (a self-asserted id): use --actor <admin username> — the password is asked (or EDGE_CRED_ADMIN_PASSWORD)");
+  if (argv.some((a) => /^--(actor-user-id|actor-id|user-id|by)(=|$)/i.test(a))) {
+    io.err("a self-asserted actor (--actor-user-id / --by) is not accepted: use --actor <admin username> — the password is asked on the terminal or read from piped stdin");
     return 2;
   }
   if (argv.some((a) => SECRET_ARG.test(a))) {
-    io.err("a password / 2FA code is never taken from the command line (process list, shell history) — use the prompt or EDGE_CRED_ADMIN_PASSWORD / EDGE_CRED_ADMIN_OTP");
+    io.err("a password / 2FA code is never taken from the command line (process list, shell history) — type it at the prompt, or pipe it on stdin (line 1 password, line 2 2FA code)");
     return 2;
   }
   if (cmd !== "list" && !actorName) {
@@ -82,6 +90,19 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
     return 2;
   }
   const env = io.env ?? process.env;
+  // Đợt 10 F2 round 2 (N7): the password / code never come from an environment variable (shell history, child processes, .env)
+  const leaked = setSecretEnv(env, REFUSED_SECRET_ENV);
+  if (leaked.length) {
+    io.err(`${leaked.join(" / ")} is set — a secret in an environment variable is refused (unset it): type the password at the prompt, or pipe it on stdin (line 1 password, line 2 2FA code)`);
+    return 2;
+  }
+  // D14 — register-node: its own arguments, validated before the admin proof
+  const factory = argOf(argv, "--factory")?.trim() ?? "";
+  const lineCodes = (argOf(argv, "--lines") ?? "").split(",").map((l) => l.trim()).filter(Boolean);
+  if (cmd === "register-node" && (!factory || factory.startsWith("--"))) {
+    io.err("register-node needs --factory CODE (a node without a factory is given no device and no run)");
+    return 2;
+  }
   // ── doc 81 Đợt 10 F2 — the node bundle: validated and its pin BUILT before anything else (no write, no DB) ─────────────
   const bundleDir = argOf(argv, "--bundle");
   let bundle: { dir: string; pinText: string; pinInfo: string; centralUrl: string | null; edgeDir: string; journalMaxBytes: number } | null = null;
@@ -139,18 +160,16 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
     // final wave F7 — prove the admin BEFORE anything else (a refused login changes nothing, leaves no file)
     let actor = 0;
     if (cmd !== "list") {
-      const password = env.EDGE_CRED_ADMIN_PASSWORD || (io.promptSecret ? await io.promptSecret(`password of ${actorName}: `) : null);
-      let verified: { userId: number; name: string };
-      try {
-        verified = await m.verifyCredentialAdmin({ username: actorName, password, otp: env.EDGE_CRED_ADMIN_OTP || null });
-      } catch (err) {
-        if (!(err instanceof m.EdgeCredentialError) || err.code !== "otpRequired" || env.EDGE_CRED_ADMIN_OTP || !io.promptSecret) throw err;
-        // 2FA on and no code given yet: ask once (the password is checked again with it — one proof, one call)
-        const otp = await io.promptSecret("2FA code: ");
-        verified = await m.verifyCredentialAdmin({ username: actorName, password, otp });
-      }
+      // N7 — TTY prompt, else piped stdin (line 1 password, line 2 2FA code); a missing code is asked once on a TTY only
+      const secrets = await readAdminSecrets(io, actorName!);
+      const verified = await proveAdminWith((l) => m.verifyCredentialAdmin(l), io, actorName!, secrets);
       actor = verified.userId;
       io.out(`admin verified: ${verified.name} (user ${verified.userId})`);
+    }
+    if (cmd === "register-node") {
+      const r = await m.registerEdgeNode({ nodeCode: node, factoryCode: factory, lineCodes, name: argOf(argv, "--name") ?? null, actorUserId: actor, reason });
+      io.out(r.created ? `registered edge node "${node}" (id ${r.nodeId}) in factory ${factory}${lineCodes.length ? `, lines ${lineCodes.join(",")}` : ""} — issue its credential + bundle next` : `edge node "${node}" (id ${r.nodeId}) is already registered with exactly this factory and lines — unchanged`);
+      return 0;
     }
     if (cmd === "list") {
       for (const c of await m.listNodeCredentials(node)) {
@@ -269,7 +288,7 @@ function ttyHiddenPrompt(label: string): Promise<string | null> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   import("dotenv/config") // the central host's DATABASE_URL (only when run as a program — never when imported by a test)
-    .then(() => runEdgeCredentialCli(process.argv.slice(2), { out: (l) => console.log(l), err: (l) => console.error(l), promptSecret: ttyHiddenPrompt }))
+    .then(() => runEdgeCredentialCli(process.argv.slice(2), { out: (l) => console.log(l), err: (l) => console.error(l), promptSecret: ttyHiddenPrompt, readStdin: stdinReader() }))
     .then((code) => process.exit(code))
     .catch((err) => {
       console.error(`failed: ${(err as Error)?.message ?? err}`);

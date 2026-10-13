@@ -26,10 +26,21 @@ vi.mock("../server/services/edge/edgeNodeCredentials", () => {
 
 import { runEdgeDeviceOwnerCli, type OwnerCliDeps } from "./edge-device-owner";
 
-function io(env: Record<string, string> = { EDGE_OWNER_ADMIN_PASSWORD: "pw" }, prompts: string[] = []) {
+/** N7 (round 2): the password comes from piped stdin (default "pw\n") or a TTY prompt — never from the environment */
+function io(stdin: string | null = "pw\n", prompts: string[] | null = null, env: Record<string, string> = {}) {
   const out: string[] = [];
   const err: string[] = [];
-  return { out, err, io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l), env, promptSecret: async () => prompts.shift() ?? null } };
+  return {
+    out,
+    err,
+    io: {
+      out: (l: string) => out.push(l),
+      err: (l: string) => err.push(l),
+      env,
+      ...(prompts ? { promptSecret: async () => prompts.shift() ?? null } : {}),
+      readStdin: async () => stdin,
+    },
+  };
 }
 function deps(over: Partial<OwnerCliDeps> = {}) {
   const calls = { change: [] as unknown[], audit: [] as Array<{ action: string; status: string; details: Record<string, unknown> }>, nodeIdOf: [] as string[] };
@@ -88,8 +99,8 @@ describe("R-10-s — argv: no secret and no self-asserted actor, in any spelling
 });
 
 describe("R-10-s — the admin is PROVEN (verifyCredentialAdmin) before any write", () => {
-  it("default path: verifyCredentialAdmin({username, password from env, otp from env}) then changeDeviceOwner with the PROVEN id", async () => {
-    const t = io({ EDGE_OWNER_ADMIN_PASSWORD: "pw", EDGE_OWNER_ADMIN_OTP: "123456" });
+  it("default path: verifyCredentialAdmin({username, password + otp from PIPED STDIN lines 1-2}) then changeDeviceOwner with the PROVEN id", async () => {
+    const t = io("pw\n123456\n");
     const { d, calls } = deps();
     const { verifyAdmin: _omit, ...noVerify } = d;
     expect(await runEdgeDeviceOwnerCli(["assign", "--robot", "12", "--node", "edge-line1", "--actor", "admin.nguyen", "--reason", "commission line 1"], t.io, noVerify)).toBe(0);
@@ -97,14 +108,44 @@ describe("R-10-s — the admin is PROVEN (verifyCredentialAdmin) before any writ
     expect(calls.change).toEqual([{ kind: "robot", deviceId: 12, toEdgeNodeId: 7, actorUserId: 42, actorName: "Admin Nguyen — commission line 1" }]);
     expect(t.out.join("\n")).toMatch(/robot 12 is now owned by edge node "edge-line1" \(owner epoch 3\)/);
   });
-  it("2FA on, no code in env ⇒ asked once on the terminal, then proven", async () => {
+  it("2FA on, TTY, no code yet ⇒ password then code asked once on the terminal, then proven", async () => {
     H.otpThenOk = true;
-    const t = io({ EDGE_OWNER_ADMIN_PASSWORD: "pw" }, ["654321"]);
+    const t = io(null, ["pw", "654321"]);
     const { d, calls } = deps();
     const { verifyAdmin: _o, ...noVerify } = d;
     expect(await runEdgeDeviceOwnerCli(["release", "--adapter", "5", "--actor", "a", "--reason", "replaced"], t.io, noVerify)).toBe(0);
     expect((H.verifyCalls as Array<{ otp: string | null }>).map((c) => c.otp)).toEqual([null, "654321"]);
+    expect((H.verifyCalls as Array<{ password: string | null }>).map((c) => c.password)).toEqual(["pw", "pw"]);
     expect(calls.change).toHaveLength(1);
+  });
+  it("N7: 2FA on, PIPED stdin without a code ⇒ refused (never prompts on a pipe), nothing changed", async () => {
+    H.otpThenOk = true;
+    const t = io("pw\n");
+    const { d, calls } = deps();
+    const { verifyAdmin: _o, ...noVerify } = d;
+    expect(await runEdgeDeviceOwnerCli(["release", "--adapter", "5", "--actor", "a", "--reason", "replaced"], t.io, noVerify)).toBe(1);
+    expect(t.err.join(" | ")).toMatch(/otpRequired/);
+    expect(calls.change).toHaveLength(0);
+  });
+  for (const v of ["EDGE_OWNER_ADMIN_PASSWORD", "EDGE_OWNER_ADMIN_OTP"]) {
+    it(`N7: ${v} set ⇒ exit 2 (a secret in the environment is refused, not read), nothing proven`, async () => {
+      const t = io("pw\n", null, { [v]: "x" });
+      const { d, calls } = deps();
+      const { verifyAdmin: _o, ...noVerify } = d;
+      expect(await runEdgeDeviceOwnerCli(["release", "--robot", "1", "--actor", "a", "--reason", "abc"], t.io, noVerify)).toBe(2);
+      expect(t.err.join(" | ")).toMatch(new RegExp(`${v} is set`));
+      expect(H.verifyCalls).toHaveLength(0);
+      expect(calls.change).toHaveLength(0);
+    });
+  }
+  it("N7: no TTY and nothing piped ⇒ the proof gets no password (refused)", async () => {
+    const t = io(null);
+    const { d, calls } = deps();
+    const { verifyAdmin: _o, ...noVerify } = d;
+    H.verifyThrows = { code: "notVerified", message: "An admin username and password are required" };
+    expect(await runEdgeDeviceOwnerCli(["release", "--robot", "1", "--actor", "a", "--reason", "abc"], t.io, noVerify)).toBe(1);
+    expect(H.verifyCalls).toEqual([{ username: "a", password: null, otp: null }]);
+    expect(calls.change).toHaveLength(0);
   });
   it("refused login ⇒ exit 1, NO node read, NO change, NO audit by this CLI (the login itself is audited by verifyCredentials)", async () => {
     H.verifyThrows = { code: "notVerified", message: "Admin login refused (invalid)." };
@@ -174,7 +215,7 @@ describe("R-10-s — outcomes are audited and the cross-factory refusal is named
     expect(t.err.join("\n")).toMatch(/WARNING: audit row not written/);
   });
   it("list needs no admin and prints the owned devices", async () => {
-    const t = io({});
+    const t = io(null);
     const { d } = deps();
     expect(await runEdgeDeviceOwnerCli(["list", "--node", "edge-line1"], t.io, d)).toBe(0);
     expect(t.out).toEqual(["robot\t12\tR12\tnode=edge-line1\townerEpoch=3"]);
