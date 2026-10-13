@@ -18,6 +18,11 @@ import {
   rememberedFactoryScope,
   rememberedIdentity,
   rememberedMachineControlGrant,
+  beginStopAuthWarm,
+  invalidateStopAuthForUser,
+  invalidateStopAuthForSession,
+  noteMachineControlGrant,
+  noteFactoryScope,
 } from "./robotStopAuthMemo";
 
 const user = (id: number, role = "engineer") => ({ id, openId: `oid-${id}`, role, name: `u${id}`, twoFactorEnabled: true, isActive: true }) as never;
@@ -76,5 +81,56 @@ describe("robotStopAuthMemo — bounded, per user", () => {
     expect(rememberedMachineControlGrant("t1", 1)).toBe(true);
     invalidateForAuthorizationChange({}); // no user named ⇒ everyone
     expect(rememberedMachineControlGrant("t1", 1)).toBe(false);
+  });
+});
+
+describe("R-10-bg — an in-flight warm write never resurrects what an invalidation removed (deterministic interleavings)", () => {
+  it("★ auth STARTS → user invalidated (disable / role change / revoke-all) → the auth FINISHES: its identity is dropped", () => {
+    const ticket = beginStopAuthWarm(); // request start
+    invalidateStopAuthForUser(1); // the invalidation lands while the auth is in flight
+    noteAuthenticatedUser(user(1), "t1", ticket); // the in-flight auth finishes with the OLD row
+    expect(rememberedIdentity("t1")).toBeNull();
+    noteAuthenticatedUser(user(1), "t1", beginStopAuthWarm()); // a request that STARTED after it re-warms normally
+    expect(rememberedIdentity("t1")).toMatchObject({ id: 1 });
+  });
+
+  it("★ session revoked (logout) mid-flight: the session is not resurrected; the late grant / scope of that user are dropped too", () => {
+    noteAuthenticatedUser(user(1), "t1", beginStopAuthWarm());
+    const ticket = beginStopAuthWarm();
+    invalidateStopAuthForSession("t1");
+    noteAuthenticatedUser(user(1), "t1", ticket);
+    noteMachineControlGrant("t1", 1, "engineer", ticket);
+    noteFactoryScope("t1", 1, [7], ticket);
+    expect(rememberedIdentity("t1")).toBeNull();
+    expect(rememberedMachineControlGrant("t1", 1)).toBe(false);
+  });
+
+  it("★ a late grant / scope from an older request after a user invalidation is dropped; a 'false' always lands", () => {
+    noteAuthenticatedUser(user(1), "t1", beginStopAuthWarm());
+    const ticket = beginStopAuthWarm();
+    invalidateStopAuthForUser(1);
+    noteAuthenticatedUser(user(1), "t1", beginStopAuthWarm()); // fresh identity (new request)
+    noteMachineControlRow(1, "engineer", true, ticket); // the OLD request's grant
+    noteUserFactoryScope(1, "engineer", null, ticket);
+    expect(rememberedMachineControlGrant("t1", 1)).toBe(false);
+    expect(rememberedFactoryScope("t1", 1)).toBeUndefined();
+  });
+
+  it("★ clear-all mid-flight: nothing from before it lands", () => {
+    const ticket = beginStopAuthWarm();
+    invalidateForAuthorizationChange({});
+    noteAuthenticatedUser(user(3), "t3", ticket);
+    expect(rememberedIdentity("t3")).toBeNull();
+  });
+
+  it("★ the TOMBSTONE: a warm write that cannot say when it started is dropped while the tombstone lives (≥ the PRODUCTION memo TTL)", async () => {
+    invalidateStopAuthForUser(1);
+    noteAuthenticatedUser(user(1), "t1"); // no ticket
+    expect(rememberedIdentity("t1")).toBeNull();
+    _setStopAuthMemoTtlMsForTests(30);
+    // the tombstone TTL is at least the PRODUCTION memo TTL: still dropped after the (seam) memo TTL
+    await new Promise((r) => setTimeout(r, 50));
+    noteAuthenticatedUser(user(1), "t1");
+    expect(rememberedIdentity("t1")).toBeNull();
   });
 });

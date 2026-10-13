@@ -35,6 +35,7 @@ import {
   rememberedFactoryScope,
   rememberedIdentity,
   rememberedMachineControlGrant,
+  beginStopAuthWarm,
   type RememberedUser,
 } from "./robotStopAuthMemo";
 
@@ -136,6 +137,8 @@ function refusalAsTrpc(err: unknown): unknown {
 const stopAuthMiddleware = async (opts: any) => {
   const { ctx, next } = opts;
   const startedAt = Date.now();
+  // R-10-bg — the invalidation generation at the START of this request: its warm writes are dropped if one landed meanwhile
+  const warmTicket = beginStopAuthWarm();
   const { sdk } = await import("../../_core/sdk");
   const token = (ctx as { sessionToken?: string | null }).sessionToken ?? null;
   // 1. stateless: signature + expiry
@@ -202,7 +205,7 @@ const stopAuthMiddleware = async (opts: any) => {
   if (a.state === "done") {
     user = a.value as unknown as RememberedUser;
     fresh = true;
-    noteAuthenticatedUser(a.value as never, token);
+    noteAuthenticatedUser(a.value as never, token, warmTicket);
     // FRESH WINS: a permission / scope computed for a remembered identity that is not exactly this user + role is discarded and
     // redone for the fresh user within what is left of the bound
     if (!permFor || permFor.id !== user.id || permFor.role !== user.role) {
@@ -239,7 +242,7 @@ const stopAuthMiddleware = async (opts: any) => {
   const s = scope ? scope.leg.v : ({ state: "pending" } as Leg<number[] | null>);
   const rf = robotFactory.leg.v;
   if (rf.state === "done" && robotId !== null && rf.value !== undefined) await noteRobotFactoryInMemory(robotId, rf.value);
-  if (s.state === "done") noteFactoryScope(token, user.id, s.value);
+  if (s.state === "done") noteFactoryScope(token, user.id, s.value, warmTicket);
   const inMemory = await robotFactoryFromMemory();
   const verdict = decideStopScope({
     robotId: robotId ?? -1,
@@ -250,7 +253,7 @@ const stopAuthMiddleware = async (opts: any) => {
   if (!verdict.allowed) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
 
   const degraded = reasons.length > 0;
-  if (fresh && p.state === "done" && p.value === true) noteMachineControlGrant(token, user.id, String(user.role));
+  if (fresh && p.state === "done" && p.value === true) noteMachineControlGrant(token, user.id, String(user.role), warmTicket);
   if (degraded) {
     const what = `STOP accepted on degraded auth: user #${user.id} (${user.role}), robot ${robotId ?? "?"} — ${reasons.join("; ")}`;
     void raiseDegradedAlert(user, robotId, what);

@@ -17,7 +17,7 @@ vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 vi.hoisted(() => {
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "dot10-stop-degraded-auth-test-secret-0123456789";
 });
-const H = vi.hoisted(() => ({ audits: [] as Array<{ action: string; entityType: string; at: number }>, mode: "ok" as "ok" | "hang" | "dead" | "slow", sent: [] as Array<{ robot: number; jobType: string; at: number }>, t0: 0, alerts: [] as string[], live: new Set<number>() }));
+const H = vi.hoisted(() => ({ audits: [] as Array<{ action: string; entityType: string; at: number }>, mode: "ok" as "ok" | "hang" | "dead" | "slow" | "delay", sent: [] as Array<{ robot: number; jobType: string; at: number }>, t0: 0, alerts: [] as string[], live: new Set<number>() }));
 vi.mock("../db/connection", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db/connection")>();
   return {
@@ -26,6 +26,7 @@ vi.mock("../db/connection", async (importOriginal) => {
       if (H.mode === "hang") return new Promise<never>(() => undefined);
       if (H.mode === "dead") throw new Error("connect ECONNREFUSED 127.0.0.1:5434");
       if (H.mode === "slow") await new Promise((r) => setTimeout(r, 450));
+      if (H.mode === "delay") await new Promise((r) => setTimeout(r, 35));
       return (actual.getDb as (...a: unknown[]) => unknown)(...args);
     },
   };
@@ -370,5 +371,17 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     const t0 = Date.now();
     await expect(probe.createCaller(ctx as never).any({ robotId: ids.robot, command: "home" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(Date.now() - t0).toBeLessThan(150); // refused before the 300 ms auth bundle
+  });
+  it("★ R-10-bg — through the real chain: a session revoked WHILE its STOP's full auth is in flight is not re-warmed by that auth", async () => {
+    const tok = await token();
+    await warm(tok);
+    H.mode = "delay"; // each DB step 35 ms: the full auth finishes INSIDE the 300 ms bound, after the revoke below
+    const inflight = stop(tok);
+    await new Promise((r) => setTimeout(r, 10));
+    await invalidateAuthSession(tok); // the product's logout / revoke lands mid-flight
+    const r = await inflight;
+    expect((r as { degradedAuth?: boolean }).degradedAuth).toBe(false); // the in-flight FULL auth did finish — its warm write was attempted
+    H.mode = "hang";
+    await expect(stop(tok)).rejects.toMatchObject({ code: "UNAUTHORIZED" }); // the in-flight auth did NOT resurrect the session
   });
 });

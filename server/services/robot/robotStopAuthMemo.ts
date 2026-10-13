@@ -58,6 +58,43 @@ const facts = new Map<number, Facts>();
 /** sessions whose last definite answer was a refusal (key → at); pruned after the TTL */
 const refused = new Map<string, number>();
 const live = (at: number | undefined) => at !== undefined && Date.now() - at <= ttlMs;
+
+/**
+ * fix review 7 — ruling R-10-bg: a warm write must never resurrect what an invalidation removed. The race: a full authentication
+ * STARTS, an invalidation lands (revoke / disable / role change), then the in-flight authentication FINISHES and writes the old
+ * identity back. Every invalidation bumps a monotonic GENERATION and leaves a TOMBSTONE (the generation it was made at) per
+ * session, per user, or globally, kept TOMBSTONE_TTL_MS (≥ the memo TTL). A warm write carries the generation read at its
+ * request's START (a ticket — beginStopAuthWarm): it is DROPPED if a tombstone of its session, its user or the global one is
+ * newer than its ticket. A warm write WITHOUT a ticket (a caller that cannot say when its request started) is dropped while ANY
+ * such tombstone is alive (conservative: the degraded STOP is then unavailable to that user until it expires — never stale).
+ * Refusals are never dropped.
+ */
+let generation = 0;
+const tombSession = new Map<string, { gen: number; at: number }>();
+const tombUser = new Map<number, { gen: number; at: number }>();
+let tombAll: { gen: number; at: number } | null = null;
+const tombTtl = () => Math.max(ttlMs, STOP_AUTH_MEMO_TTL_MS);
+const tombLive = (t: { at: number } | null | undefined): t is { gen: number; at: number } => !!t && Date.now() - t.at <= tombTtl();
+export type StopAuthWarmTicket = { gen: number; at: number };
+/** read at a request's START; pass to the warm writes of that request */
+export function beginStopAuthWarm(): StopAuthWarmTicket {
+  return { gen: generation, at: Date.now() };
+}
+function tombstone(kind: "session" | "user" | "all", key?: string | number): void {
+  const t = { gen: ++generation, at: Date.now() };
+  if (kind === "all") tombAll = t;
+  else if (kind === "session") lruSet(tombSession, key as string, t);
+  else lruSet(tombUser, key as number, t);
+}
+/** may a warm write of (session?, user) carrying `ticket` land? */
+function warmAllowed(sessionKey: string | null, userId: number | null, ticket?: StopAuthWarmTicket): boolean {
+  if (ticket && Date.now() - ticket.at > tombTtl()) return false; // older than any tombstone we still keep
+  const newer = (t: { gen: number; at: number } | null | undefined) => tombLive(t) && (ticket === undefined || t.gen > ticket.gen);
+  if (newer(tombAll)) return false;
+  if (sessionKey !== null && newer(tombSession.get(sessionKey))) return false;
+  if (userId !== null && newer(tombUser.get(userId))) return false;
+  return true;
+}
 function lruSet<K, V>(m: Map<K, V>, k: K, v: V): void {
   m.delete(k);
   m.set(k, v);
@@ -77,9 +114,10 @@ const isRefused = (key: string): boolean => {
 };
 
 /** EVERY successful full authentication (createContext): the session's identity. */
-export function noteAuthenticatedUser(user: User | null | undefined, token: string | null | undefined): void {
+export function noteAuthenticatedUser(user: User | null | undefined, token: string | null | undefined, ticket?: StopAuthWarmTicket): void {
   const key = stopSessionKey(token);
   if (!user || !key || typeof user.openId !== "string") return;
+  if (!warmAllowed(key, user.id, ticket)) return; // R-10-bg — an older request never resurrects an invalidated identity
   refused.delete(key);
   lruSet(entries, key, {
     user: { id: user.id, openId: user.openId, role: user.role, name: user.name, twoFactorEnabled: user.twoFactorEnabled, isActive: (user as { isActive?: boolean | null }).isActive ?? null },
@@ -106,14 +144,17 @@ function factsFor(userId: number, role: string): Facts {
  * fix review 6 (NF5-1) — the machine_control row the FULL permission chain just read for this user (accessControl.checkPermission,
  * whatever action it was asked: the row carries canEdit too — no extra DB read). true / false both remembered (false revokes).
  */
-export function noteMachineControlRow(userId: number, role: string, canEdit: boolean): void {
+export function noteMachineControlRow(userId: number, role: string, canEdit: boolean, ticket?: StopAuthWarmTicket): void {
+  if (canEdit && !warmAllowed(null, userId, ticket)) return; // R-10-bg (a "false" always lands: it only narrows)
   lruSet(facts, userId, { ...factsFor(userId, role), grant: { value: canEdit, at: Date.now() } });
 }
 /** a full machine_control:canEdit grant proved on this request (actuate / consoleStop) */
-export function noteMachineControlGrant(_token: string | null | undefined, userId: number, role?: string): void {
-  const e = entries.get(stopSessionKey(_token) ?? "");
+export function noteMachineControlGrant(_token: string | null | undefined, userId: number, role?: string, ticket?: StopAuthWarmTicket): void {
+  const key = stopSessionKey(_token);
+  if (!warmAllowed(key, userId, ticket)) return; // R-10-bg
+  const e = entries.get(key ?? "");
   const r = role ?? (e && e.user.id === userId ? String(e.user.role) : undefined);
-  if (r !== undefined) noteMachineControlRow(userId, r, true);
+  if (r !== undefined) noteMachineControlRow(userId, r, true, ticket);
 }
 export function rememberedMachineControlGrant(token: string | null | undefined, userId: number): boolean {
   const who = rememberedIdentity(token);
@@ -122,12 +163,15 @@ export function rememberedMachineControlGrant(token: string | null | undefined, 
   return !!f && f.role === who.role && !!f.grant && f.grant.value === true && live(f.grant.at);
 }
 /** fix review 6 (NF5-1) — the factory scope a full scoped read just resolved for this user (reportAggregators) */
-export function noteUserFactoryScope(userId: number, role: string, factoryIds: number[] | null): void {
+export function noteUserFactoryScope(userId: number, role: string, factoryIds: number[] | null, ticket?: StopAuthWarmTicket): void {
+  if (!warmAllowed(null, userId, ticket)) return; // R-10-bg
   lruSet(facts, userId, { ...factsFor(userId, role), scope: { value: factoryIds, at: Date.now() } });
 }
-export function noteFactoryScope(token: string | null | undefined, userId: number, factoryIds: number[] | null): void {
-  const e = entries.get(stopSessionKey(token) ?? "");
-  if (e && e.user.id === userId) noteUserFactoryScope(userId, String(e.user.role), factoryIds);
+export function noteFactoryScope(token: string | null | undefined, userId: number, factoryIds: number[] | null, ticket?: StopAuthWarmTicket): void {
+  const key = stopSessionKey(token);
+  if (!warmAllowed(key, userId, ticket)) return; // R-10-bg
+  const e = entries.get(key ?? "");
+  if (e && e.user.id === userId) noteUserFactoryScope(userId, String(e.user.role), factoryIds, ticket);
 }
 /** undefined = not known (within the TTL); null = unrestricted; [] / ids = restricted */
 export function rememberedFactoryScope(token: string | null | undefined, userId: number): number[] | null | undefined {
@@ -147,14 +191,21 @@ export function noteDefiniteRefusal(token: string | null | undefined): void {
 /** logout / targeted revoke */
 export function invalidateStopAuthForSession(token: string | null | undefined): void {
   const key = stopSessionKey(token);
-  if (key) entries.delete(key);
+  if (!key) return;
+  const e = entries.get(key);
+  entries.delete(key);
+  tombstone("session", key); // R-10-bg
+  if (e) tombstone("user", e.user.id);
 }
 /** account disable / role change / password / 2FA / revoke-all / its permissions or assignments — every session + fact of the user */
 export function invalidateStopAuthForUser(userId?: number, openId?: string): void {
+  if (userId !== undefined) tombstone("user", userId); // R-10-bg
   for (const [k, e] of entries) {
     if ((userId !== undefined && e.user.id === userId) || (openId !== undefined && e.user.openId === openId)) {
       entries.delete(k);
       facts.delete(e.user.id);
+      tombstone("session", k);
+      tombstone("user", e.user.id);
     }
   }
   if (userId !== undefined) facts.delete(userId);
@@ -163,6 +214,7 @@ export function invalidateStopAuthForUser(userId?: number, openId?: string): voi
 export function clearAllStopAuthMemo(): void {
   entries.clear();
   facts.clear();
+  tombstone("all"); // R-10-bg
 }
 /**
  * fix review 6 (NF5-1) — tRPC mutation routers that administer OTHER users' authorization (permissions, assignments). Their raw
@@ -190,6 +242,9 @@ export function _resetStopAuthMemoForTests(): void {
   entries.clear();
   facts.clear();
   refused.clear();
+  tombSession.clear();
+  tombUser.clear();
+  tombAll = null;
 }
 /** Test seam (NF5-9). */
 export function _stopAuthMemoSizesForTests(): { sessions: number; users: number; refused: number } {
