@@ -419,6 +419,10 @@ export function createEdgeAuthorizeClient(deps: EdgeAuthorizeDeps): EdgeAuthoriz
       if (!v.ok) {
         pending.delete(reqNonce);
         deps.anomaly?.("EDGE_AUTH_INVALID", input.runId, `step ${input.stepId} attempt ${input.attempt}: ${v.reason}`);
+        // fix review 6 (R-10-bn, F1-3) — a token that lapsed before it could be used (central hung longer than the TTL, the
+        // answer came late): NEVER used (A2(d) — the same verification refused it), but it is not central refusing the step: no
+        // authorisation could be obtained in time ⇒ `unavailable` ⇒ the run is HELD (D5, no compensation), Continue later
+        if (v.reason === "expired") return { ok: false, verdict: "unavailable", code: "auth_expired", reason: "the authorisation arrived after its TTL (central unreachable / too slow) — not used" };
         return { ok: false, verdict: "refused", code: "auth_invalid", reason: v.reason };
       }
       return {

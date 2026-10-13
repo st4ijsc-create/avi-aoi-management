@@ -146,6 +146,8 @@ export async function edgeExecutionConfigFromEnv(
 export const EDGE_STOP_REACK_MAX = 10;
 export const EDGE_STOP_REACK_BACKOFF_MS = 2_000;
 export const EDGE_STOP_REACK_BACKOFF_MAX_MS = 300_000;
+/** R-10-bn (F1-4) — the longest interval between two STOP re-sends of one unconfirmed sweep picture */
+export const EDGE_SWEEP_RESEND_MAX_MS = 30_000;
 /** fix review 4 (M-2) — at most one notOwnedHere answer per STOP request per minute */
 export const EDGE_NOT_OWNED_HERE_MIN_MS = 60_000;
 /** fix review 4 (M-3) — STOP memories older than this are dropped */
@@ -186,6 +188,28 @@ export type EdgeSegmentOutcome =
   /** the package cannot be executed here: the claim is released, nothing was sent */
   | { refused: string };
 
+/** the owner epoch of a device in the edge's VERIFIED config (null: the config does not name it) */
+export type EdgeOwnerEpochOf = (target: { robotId: number } | { adapterId: number }) => number | null;
+
+/**
+ * R-10-bn (F1-4) — the `sweep_stop` record (B's shape, edgeSweepStopEventRecordSchema) of a STOP re-sent from a VERIFIED sweep
+ * picture: bound to the picture (run, its verified STOP step, that step's target, the device's owner epoch from the verified
+ * config, the picture's issuedAt). Central records it as the step's STOP ledger row and, unless `failed`, confirms abort:<step>
+ * (the run leaves stopsUnconfirmed ⇒ no more re-sends). null ⇒ no owner epoch known (central could not record it anyway).
+ */
+export function edgeSweepStopRecord(
+  picture: EdgeSweepPicture,
+  stepId: string,
+  target: { robotId: number } | { adapterId: number },
+  status: "completed" | "failed" | "simulated",
+  at: number,
+  ownerEpochOf: EdgeOwnerEpochOf | undefined,
+): { kind: "sweep_stop"; runId: number; stepId: string; target: { robotId: number } | { adapterId: number }; ownerEpoch: number; pictureIssuedAt: number; status: "completed" | "failed" | "simulated"; at: number } | null {
+  const ownerEpoch = ownerEpochOf?.(target) ?? null;
+  if (ownerEpoch === null) return null;
+  return { kind: "sweep_stop", runId: picture.runId, stepId, target, ownerEpoch, pictureIssuedAt: picture.issuedAt, status, at };
+}
+
 export interface EdgeWalker {
   /** foeEngine.driveEdgeRunFromPackage(pkg, claim, createEdgeRunStore(io)) — group C */
   drive(pkg: EdgeRunPackage, io: EdgeRunIo): Promise<EdgeSegmentOutcome>;
@@ -195,7 +219,7 @@ export interface EdgeWalker {
    * the engine's STOP re-send of a VERIFIED sweep picture (foeEngine.resendStopsOfAbortedRun + edgeRunStore's sweep store):
    * the outcome of each STOP is reported as a `stop` event (no claim exists any more). Absent ⇒ the device port re-sends.
    */
-  resendStops?(picture: EdgeSweepPicture, sink: EdgeReportSink): Promise<{ sent: number; failed: number }>;
+  resendStops?(picture: EdgeSweepPicture, sink: EdgeReportSink, ownerEpochOf?: EdgeOwnerEpochOf): Promise<{ sent: number; failed: number }>;
 }
 
 /** `journaled`: the device front end already wrote the `stop` event (D's edge dispatch) — the agent does not write a second */
@@ -273,7 +297,8 @@ export class EdgeExecutionAgent {
   private readonly pending = new Map<number, PendingComplete>();
   private online: boolean | null = null;
   private readonly warned = new Map<number, string>();
-  private readonly resentAt = new Map<number, number>();
+  /** R-10-bn (F1-4) — per run of `stopsUnconfirmed`: re-sends so far + the next one allowed (back-off) */
+  private readonly resentAt = new Map<number, { n: number; next: number }>();
   private readonly claimBackoff = new Map<number, { failures: number; nextAt: number }>();
   /** requestId → kind of commands already executed (central re-delivers until acknowledged) */
   private readonly handled = new Map<number, string>();
@@ -422,11 +447,17 @@ export class EdgeExecutionAgent {
       }
     }
     // L-7 — STOPs of runs aborted after their segment here that central could not confirm (STOP-class: fast path too)
+    // R-10-bn (F1-4) — central confirms a re-sent STOP (bound to its picture) ⇒ the run leaves `stopsUnconfirmed` ⇒ no more
+    // re-sends; until then the re-send BACKS OFF per run: stopResendMinMs (1 s) doubling, at most EDGE_SWEEP_RESEND_MAX_MS
+    const listed = new Set(p.stopsUnconfirmed.map((s) => s.runId));
+    for (const id of [...this.resentAt.keys()]) if (!listed.has(id)) this.resentAt.delete(id); // confirmed / window over
     for (const s of p.stopsUnconfirmed) {
       if (this.segments.has(s.runId)) continue;
-      const last = this.resentAt.get(s.runId);
-      if (last !== undefined && this.now() - last < this.cfg.stopResendMinMs) continue;
-      this.resentAt.set(s.runId, this.now());
+      const st = this.resentAt.get(s.runId);
+      if (st !== undefined && this.now() < st.next) continue;
+      const n = (st?.n ?? 0) + 1;
+      const base = Math.max(1, this.cfg.stopResendMinMs);
+      this.resentAt.set(s.runId, { n, next: this.now() + Math.min(Math.max(base, EDGE_SWEEP_RESEND_MAX_MS), base * 2 ** Math.min(n - 1, 20)) });
       await this.resendStops(s.runId, s.picture);
       report.stopsResent.push(s.runId);
     }
@@ -629,6 +660,9 @@ export class EdgeExecutionAgent {
     return out;
   }
 
+  private readonly ownerEpochOfTarget: EdgeOwnerEpochOf = (t) =>
+    "robotId" in t ? (this.deps.config.robot(t.robotId)?.ownerEpoch ?? null) : (this.deps.config.adapter(t.adapterId)?.ownerEpoch ?? null);
+
   private ownerEpochOf(c: EdgeCommand): number | null {
     const cfg = this.deps.config;
     if (c.kind === "stop") return "robotId" in c.target ? (cfg.robot(c.target.robotId)?.ownerEpoch ?? null) : (cfg.adapter(c.target.adapterId)?.ownerEpoch ?? null);
@@ -777,7 +811,7 @@ export class EdgeExecutionAgent {
     let verifiedPins = true;
     if (v.ok && this.deps.walker?.resendStops) {
       try {
-        const r = await this.deps.walker.resendStops(v.picture, this.deps.sink);
+        const r = await this.deps.walker.resendStops(v.picture, this.deps.sink, this.ownerEpochOfTarget);
         console.warn(`[EdgeExec] run ${runId}: aborted centrally after its segment here — STOPs re-sent from this node by the engine sweep (sent ${r.sent}, failed ${r.failed})`);
         return;
       } catch (err) {
@@ -808,9 +842,14 @@ export class EdgeExecutionAgent {
       const owned = s.kind === "robot" ? this.deps.config.ownsRobot(s.robotId) : this.deps.config.ownsAdapter(s.adapterId);
       if (!owned) continue;
       const why = `run ${runId} step ${s.stepId}: STOP re-sent (central could not confirm it)`;
-      const r = s.kind === "robot" ? await this.stopTarget({ robotId: s.robotId }, "local", null, why) : await this.stopTarget({ adapterId: s.adapterId }, "local", null, why, verifiedPins ? s.pins : null);
+      const target = s.kind === "robot" ? { robotId: s.robotId } : { adapterId: s.adapterId };
+      const r = s.kind === "robot" ? await this.stopTarget(target, "local", null, why) : await this.stopTarget(target, "local", null, why, verifiedPins ? s.pins : null);
       if (r.outcome === "failed") failed++;
       else sent++;
+      // R-10-bn (F1-4) — a VERIFIED picture's re-send is reported bound to it (central confirms the step's STOP from it)
+      const sweep = v.ok ? edgeSweepStopRecord(v.picture, s.stepId, target, r.outcome === "failed" ? "failed" : r.outcome === "simulated" ? "simulated" : "completed", this.now(), this.ownerEpochOfTarget) : null;
+      if (sweep) await this.deps.sink.event(sweep, { stop: true }).catch(() => undefined);
+      else if (v.ok) this.anomaly("EDGE_SWEEP_STOP_UNBOUND", runId, `step ${s.stepId}: no owner epoch for ${JSON.stringify(target)} in the verified config — central cannot confirm this re-send`);
     }
     console.warn(`[EdgeExec] run ${runId}: aborted centrally after its segment here — STOPs re-sent from this node (sent ${sent}, failed ${failed})`);
   }
@@ -1022,7 +1061,7 @@ export async function loadDefaultEdgeWalker(): Promise<EdgeWalker> {
     drive: async (pkg, io) =>
       normaliseOutcome(await engine.driveEdgeRunFromPackage(pkg, { runId: io.runId, claimSeq: io.claimSeq, claimToken: io.claimToken, defHash: pkg.defHash }, store.createEdgeRunStore(pkg, io))),
     abortLive: (runId) => engine.stopLiveRunForCentralAbort(runId, { ...EDGE_AGENT_ABORT_USER }),
-    resendStops: async (picture, sink) => {
+    resendStops: async (picture, sink, ownerEpochOf) => {
       let sent = 0;
       let failed = 0;
       const targetOf = (stepId: string) => picture.verifiedStops.find((x) => x.stepId === stepId);
@@ -1034,6 +1073,11 @@ export async function loadDefaultEdgeWalker(): Promise<EdgeWalker> {
           if (!s) return;
           const target = s.kind === "robot" ? { robotId: s.robotId } : { adapterId: s.adapterId };
           await sink.event({ kind: "stop", target, source: "local", requestId: null, outcome: rec.status === "completed" ? "sent" : "failed", at: rec.at, detail: `run ${picture.runId} step ${rec.stepId}: STOP re-sent (central could not confirm it)` }, { stop: true });
+          // R-10-bn (F1-4) — bound to the VERIFIED picture: central confirms it as the step's STOP ledger row
+          const res = rec.result as { status?: unknown; simulated?: unknown } | null;
+          const simulated = res?.status === "simulated" || res?.simulated === true;
+          const sweep = edgeSweepStopRecord(picture, s.stepId, target, rec.status === "completed" ? (simulated ? "simulated" : "completed") : "failed", rec.at, ownerEpochOf);
+          if (sweep) await sink.event(sweep, { stop: true });
         },
         event: (rec) => sink.event(rec),
       });

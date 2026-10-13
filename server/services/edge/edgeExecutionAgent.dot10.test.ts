@@ -846,6 +846,42 @@ describe("doc 81 Đợt 10 E — agent v2: STOP re-send from the sweep picture (
     expect(h.devices.calls).toHaveLength(2);
   });
 
+  it("★ fix review 6 (R-10-bn, F1-4): a re-sent STOP is reported BOUND to its verified picture (run, step, target, owner epoch); re-sends back off 1 s → 30 s, and stop once central confirms (the run leaves stopsUnconfirmed)", async () => {
+    let now = 1_000_000;
+    const h = await harness({ claimRuns: false });
+    (h.agent as unknown as { cfg: { now: () => number; stopResendMinMs: number } }).cfg.now = () => now;
+    (h.agent as unknown as { cfg: { stopResendMinMs: number } }).cfg.stopResendMinMs = 1_000;
+    const pic = h.central.sweepPicture(35);
+    h.central.stopsUnconfirmed = [{ runId: 35, picture: h.central.sign("runpkg", pic) }];
+    expect((await h.agent.tick()).stopsResent).toEqual([35]);
+    await h.shipper.flushAll();
+    const bound = h.central.received.locksEvents.filter((r) => r.kind === "sweep_stop");
+    expect(bound.map((r) => [r.runId, r.stepId, r.target, r.ownerEpoch, r.pictureIssuedAt, r.status])).toEqual([
+      [35, "s-r", { robotId: 12 }, 3, pic.issuedAt, "completed"],
+      [35, "s-o", { adapterId: 21 }, 2, pic.issuedAt, "completed"],
+    ]);
+    // the back-off: 1 s, 2 s, 4 s … capped at 30 s (never every pull)
+    const resendsAt: number[] = [];
+    for (let t = 0; t < 200; t++) {
+      now += 500;
+      if ((await h.agent.tick()).stopsResent.length) resendsAt.push(t);
+    }
+    const gaps = resendsAt.slice(1).map((x, i) => (x - resendsAt[i]) * 500);
+    expect(resendsAt[0]).toBe(1); // first re-send 1 s after the first
+    expect(gaps.slice(0, 4)).toEqual([2_000, 4_000, 8_000, 16_000]);
+    expect(gaps.length).toBeGreaterThanOrEqual(6);
+    expect(gaps.slice(4).every((g) => g === 30_000)).toBe(true);
+    // central confirms ⇒ the run is no longer listed ⇒ never re-sent again (and its back-off state is dropped)
+    const calls = h.devices.calls.length;
+    h.central.stopsUnconfirmed = [];
+    for (let t = 0; t < 70; t++) {
+      now += 500;
+      expect((await h.agent.tick()).stopsResent).toEqual([]);
+    }
+    expect(h.devices.calls).toHaveLength(calls);
+    expect((h.agent as unknown as { resentAt: Map<number, unknown> }).resentAt.size).toBe(0);
+  });
+
   it("★ a FORGED picture still STOPs owned devices — OT with the verified CONFIG's pins, never the message's; anomaly", async () => {
     const h = await harness({ claimRuns: false });
     const evil = generateEdgeSigningKey().key;
@@ -860,6 +896,7 @@ describe("doc 81 Đợt 10 E — agent v2: STOP re-send from the sweep picture (
     expect(h.devices.calls).toEqual(["stopAdapter:21:config"]);
     await h.shipper.flushAll();
     expect(eventKinds(h.central)).toContain("anomaly:EDGE_SWEEP_PICTURE_INVALID");
+    expect(eventKinds(h.central)).not.toContain("sweep_stop"); // R-10-bn — a forged picture's re-send is never offered for confirmation
   });
 });
 
@@ -901,6 +938,35 @@ describe("doc 81 Đợt 10 E — agent v2: fix review 1 minors", () => {
     mono += 31_000; // past the maximum TTL: every earlier nonce is useless and pruned on the next authorize
     await ask();
     expect(az.pendingCount()).toBe(1);
+  });
+
+  it("★ fix review 6 (R-10-bn, F1-3): a token that arrives AFTER its TTL (central hung) is never used — verdict `unavailable` (the run is HELD, D5), not `refused`; a tampered token stays `refused`", async () => {
+    let mono = 1_000;
+    const central = new FakeCentral();
+    const client = new EdgeCentralClient({ centralUrl: "http://central.test", credential: KIT_TOKEN, requestTimeoutMs: 2_000, fetchImpl: central.fetchImpl, monoNow: () => mono });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "edge-late-"));
+    dirs.push(dir);
+    const config = await EdgeConfigSource.create({ client, pin: central.pin, nodeId: 7, credentialId: 31, credential: KIT_TOKEN, dir });
+    await config.refresh();
+    const anomalies: string[] = [];
+    const az = createEdgeAuthorizeClient({ client, trust: () => config.trust(), credentialId: () => 31, maxTtlMs: () => 10_000, isJtiConsumed: () => false, programChecks: () => [], anomaly: (code, _r, d) => anomalies.push(`${code}: ${d}`) });
+    const ask = () => az.authorize({ runId: 9, claimSeq: 1, claimToken: `ect_${"A".repeat(43)}`, stepId: "m1", attempt: 1, idempotencyKey: "k", command: { kind: "robot", robotId: 12, jobType: "move", params: {} }, payloadHash: PH });
+    const kit = central as unknown as { defaults: (route: string, body: unknown, runId?: number) => unknown };
+    central.handlers.authorize = (b, runId) => {
+      const genuine = kit.defaults("authorize", b, runId);
+      mono += 10_001; // central answered only after the token's TTL (10 s from the FIRST send) had lapsed
+      return genuine as never;
+    };
+    const late = await ask();
+    expect(late).toMatchObject({ ok: false, verdict: "unavailable", code: "auth_expired" }); // never `ok` ⇒ never used (A2(d))
+    expect(az.pendingCount()).toBe(0);
+    expect(anomalies).toEqual([expect.stringMatching(/^EDGE_AUTH_INVALID: step m1 attempt 1: expired$/)]);
+    // in time but TAMPERED: still refused
+    central.handlers.authorize = (b, runId) => {
+      const g = kit.defaults("authorize", b, runId) as { data: { authorization: { sig: string } } };
+      return { ...g, data: { ...g.data, authorization: { ...g.data.authorization, sig: g.data.authorization.sig.slice(0, -4) + "AAAA" } } } as never;
+    };
+    expect(await ask()).toMatchObject({ ok: false, verdict: "refused", code: "auth_invalid" });
   });
 });
 

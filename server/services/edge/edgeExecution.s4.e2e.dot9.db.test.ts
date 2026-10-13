@@ -138,14 +138,11 @@ describe.skipIf(!onTest)("doc 81 Đợt 9 S4 (v2) — central + edge in two proc
     expect((await c.run(id)).status).toBe("aborted");
     pausedAbortRun = { id, s0 };
   }, 120_000);
-  // BUG F1-4 (found here, NOT fixed — routed). Đợt 9 proved "re-sent once, then confirmed: not again". In v2 a STOP the edge
-  // re-sends from a sweep picture (run aborted while PAUSED: no claim, no run stream) is reported only as an `events` record
-  // `{kind:"stop", source:"local", requestId:null}` (edge/edgeExecutionAgent.ts:1030-1036), which central only audits
-  // (edge/edgeReportsCentral.ts:482-487, EDGE_STOP_SENT) — nothing ever confirms abort:<step>. Measured: abort:s1 stays
-  // `failed` ("robot not active/connected", central's own attempt), the pull keeps listing the run in stopsUnconfirmed and the edge
-  // re-sends the STOP every EDGE_STOP_RESEND_MIN_MS (20 STOPs in 20 s at 1 s), until the picture window ends. L-7 holds (the STOP
-  // goes out), but the operator sees the STOP as failed and the robot gets a STOP storm. it.fails asserts the Đợt 9 outcome.
-  it.fails("BUG F1-4 — a STOP re-sent from a sweep picture is confirmed centrally (abort:s1 completed) and not sent again", async () => {
+  // F1-4 — FIXED (R-10-bn, 2026-10-13): the edge reports a STOP it re-sent from a VERIFIED sweep picture as a `sweep_stop`
+  // record bound to the picture (run, verified STOP step, target, owner epoch, picture issuedAt — E fix review 6); central (B fix
+  // review 4) records it as the step's STOP ledger row and confirms abort:<step>, so the run leaves stopsUnconfirmed and the edge
+  // stops re-sending (until then it backs off 1 s → 30 s). Was it.fails; flipped.
+  it("F1-4 — a STOP re-sent from a sweep picture is confirmed centrally (abort:s1 completed) and not sent again", async () => {
     expect(pausedAbortRun.id).toBeGreaterThan(0);
     await waitFor("abort:s1 confirmed", async () => (await c.stepRows(pausedAbortRun.id)).find((r) => r.stepId === "abort:s1")?.status === "completed", 10_000);
     await sleep(2_000);
