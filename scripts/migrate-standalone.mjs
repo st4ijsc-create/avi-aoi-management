@@ -172,6 +172,24 @@ if (pending.length === 0) {
   process.exit(0);
 }
 
+// ─── doc 81 Đợt 10 F2 — ruling R-10-t: never revert 0376's search_path pins ───
+// 0125 / 0316 / 0363 / 0369–0371 CREATE OR REPLACE functions that 0376 re-pins; running one of them (pending here — e.g. 0125
+// left success=false on _test) after 0376 would restore the unpinned body. Refused unless 0376 runs after them in this same
+// pass (--force) or --then-0376 is given (0376 is then appended and re-applied last).
+{
+  const { decide0376, is0376Applied, FILE_0376 } = await import('./migration0376Guard.mjs');
+  const d = decide0376({ files: pending, applied0376: await is0376Applied(sql), args });
+  if (d.action === 'refuse') {
+    console.error(`\nREFUSED: ${d.message}`);
+    await sql.end();
+    process.exit(1);
+  }
+  if (d.action === 'then-0376') {
+    pending.push(FILE_0376);
+    console.log(`\n  R-10-t: ${d.reverting.join(', ')} pending after 0376 — 0376 will be re-applied last (--then-0376)`);
+  }
+}
+
 console.log(`\n  ${applied.size} migrations already applied`);
 console.log(`  ${pending.length} migrations pending:\n`);
 

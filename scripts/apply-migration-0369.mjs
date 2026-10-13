@@ -24,6 +24,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import postgres from "postgres";
+import { guard0376BeforeDdl, reapply0376 } from "./migration0376Guard.mjs"; // R-10-t (doc 81 dot 10 F2)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATION_FILE = "0369_api_key_holder_identity.sql";
@@ -93,6 +94,8 @@ async function applyTo(rawUrl, label) {
       SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='api_keys' AND column_name='holderUserId') AS co`;
     console.log(`  ${TAG} ${label} BEFORE: api_keys."holderUserId" ${truoc.co ? "present" : "absent"}`);
 
+    // R-10-t — 0376 re-pins functions this file CREATE OR REPLACEs unpinned: refused after 0376 unless --then-0376
+    const then0376 = await guard0376BeforeDdl({ sql, file: MIGRATION_FILE, args: process.argv.slice(2) });
     const content = fs.readFileSync(MIGRATION_PATH, "utf-8");
     // pattern 0362 (#6) — ALTER TABLE on api_keys / orchestration_runs takes an ACCESS EXCLUSIVE lock: wait at most 5 s.
     await sql`SET lock_timeout = '5s'`;
@@ -204,6 +207,7 @@ async function applyTo(rawUrl, label) {
     if (rows.n !== 1) throw new Error(`__applied_migrations has ${rows.n} rows (must be 1)`);
 
     console.log(`${TAG} ${label}: applied + verified (columns · history · triggers · grants · behaviour · backfill · ledger)`);
+    if (then0376) reapply0376(label); // R-10-t — right after, same target
   } finally {
     await sql.end();
     await appSql.end();

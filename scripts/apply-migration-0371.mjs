@@ -21,6 +21,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import postgres from "postgres";
+import { guard0376BeforeDdl, reapply0376 } from "./migration0376Guard.mjs"; // R-10-t (doc 81 dot 10 F2)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATION_FILE = "0371_safety_event_trust_and_read_mode.sql";
@@ -92,6 +93,8 @@ async function applyTo(rawUrl, label) {
     const [truoc] = await appSql`SELECT to_regclass(${"public." + BANG}) IS NOT NULL AS co`;
     console.log(`  ${TAG} ${label} TRƯỚC: bảng ${BANG} ${truoc.co ? "ĐÃ có" : "chưa có"}`);
 
+    // R-10-t — 0376 re-pins functions this file CREATE OR REPLACEs unpinned: refused after 0376 unless --then-0376
+    const then0376 = await guard0376BeforeDdl({ sql, file: MIGRATION_FILE, args: process.argv.slice(2) });
     const content = fs.readFileSync(MIGRATION_PATH, "utf-8");
     // Khuôn 0362 (#6) — REFERENCES safety_events / ALTER safety_plc_poll_state lấy khoá: chờ tối đa 5 s (+ trần 60 s).
     await sql`SET lock_timeout = '5s'`;
@@ -212,6 +215,7 @@ async function applyTo(rawUrl, label) {
     if (rows.n !== 1) throw new Error(`__applied_migrations co ${rows.n} hang (phai la 1)`);
 
     console.log(`${TAG} ${label}: applied + verified (bảng · khoá · CHECK · trigger một chiều · quyền · hành vi · readMode · sổ migration)`);
+    if (then0376) reapply0376(label); // R-10-t — right after, same target
   } finally {
     await sql.end();
     await appSql.end();
