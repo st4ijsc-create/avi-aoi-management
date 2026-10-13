@@ -29,13 +29,15 @@ vi.mock("../db/connection", async () => {
       select: () => ({
         from: (t: unknown) => ({
           where: () => ({
-            limit: async () => (t !== robotOwnership ? [] : [...own.owners.entries()].map(([id, edgeNodeId]) => ({ id, edgeNodeId, ownerEpoch: 2, motionLockGenerationFloor: 0 })).slice(0, 1)),
+            // the robot row (line / station — the factory scope; the caller here is unrestricted) or its owner
+            limit: async () => (t !== robotOwnership ? [{ lineId: 1, stationId: null }] : [...own.owners.entries()].map(([id, edgeNodeId]) => ({ id, edgeNodeId, ownerEpoch: 2, motionLockGenerationFloor: 0 })).slice(0, 1)),
           }),
         }),
       }),
     }),
   };
 });
+vi.mock("../db/hierarchy", async (importOriginal) => ({ ...(await importOriginal<typeof import("../db/hierarchy")>()), idsTrongPhamVi: async () => null })); // unrestricted caller (scope: robotRouterScope.finalfix)
 vi.mock("../_core/accessControl", () => ({ requirePermission: () => async ({ ctx, next }: any) => next({ ctx }) }));
 const session = vi.hoisted(() => ({ lock: null as null | import("../services/robot/robotDriver").MotionLock }));
 vi.mock("../services/robot/robotManager", () => ({

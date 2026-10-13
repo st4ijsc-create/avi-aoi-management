@@ -251,8 +251,16 @@ export class MotionLock {
   lock(reasonCode: string, detail?: string): void {
     const operator = reasonCode === OPERATOR_MOTION_LOCK_REASON_CODE;
     if (this.state.locked) {
-      // M-5 — keeps the FIRST cause, but an operator's lock on top of it makes it an operator hold (a STOP will not clear it)
-      if (operator && !this.state.operatorHold) this.state = { ...this.state, operatorHold: true };
+      // M-5 — a repeated lock keeps the FIRST cause (no write). An OPERATOR's lock on top of it becomes an operator hold (a STOP
+      // will not clear it) — as a NEW generation with the operator reason, the first cause listed in its detail, and PERSISTED
+      // like any lock (scan: an in-memory-only upgrade let the row stay less restrictive than memory ⇒ lost at a restart)
+      if (operator && !this.state.operatorHold) {
+        const prev = this.state;
+        this.generation++;
+        const why = `operator hold over ${prev.reasonCode ?? "lock"}${prev.detail ? ` (${prev.detail})` : ""}${detail ? `: ${detail}` : ""}`;
+        this.state = { locked: true, reasonCode, detail: why.slice(0, 900), since: prev.since ?? new Date().toISOString(), generation: this.generation, operatorHold: true };
+        this.notify("locked");
+      }
       return;
     }
     this.generation++;

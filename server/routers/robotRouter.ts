@@ -423,6 +423,7 @@ export const robotRouter = router({
     }),
 
   // doc 81 Đợt 10 final fix wave (M-5, R-10-br) — THE central "lock" route (design §2.11): an operator HOLDS a robot's motion.
+  // Factory scope (R-10-bc): the caller's scope must contain the robot, read strictly — fail-closed (scan follow-up).
   // Locking only withholds motion ⇒ machine_control:canEdit (never behind the actuation floor, like disableAutomation); a reason
   // is required and the audit row is written FIRST (no audit ⇒ nothing locked). The lock is an OPERATOR hold (`centralLock`):
   // a confirmed STOP does not clear it — only the audited robot.clearMotionLock does.
@@ -433,6 +434,13 @@ export const robotRouter = router({
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({ robotId: z.number().int().positive(), reason: z.string().trim().min(3).max(300) }))
     .mutation(async ({ ctx, input }) => {
+      // scan (R-10-bc, fail-closed like motion) — the robot must exist AND be inside the caller's factory scope (strict resolver: an
+      // unresolvable scope throws ⇒ refused); outside it or missing ⇒ the SAME NOT_FOUND (M-4). Nothing is audited / queued / locked.
+      const db = await getDb();
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable — lock refused (factory scope unverifiable)");
+      const [row] = await db.select({ lineId: robots.lineId, stationId: robots.stationId }).from(robots).where(eq(robots.id, input.robotId)).limit(1);
+      const inScope = await robotInCallerScope(ctx, { lineId: row?.lineId ?? null, stationId: row?.stationId ?? null });
+      if (!row || !inScope) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
       const owner = await robotOwnerRead(input.robotId);
       const auditBase = {
         userId: ctx.user.id,
