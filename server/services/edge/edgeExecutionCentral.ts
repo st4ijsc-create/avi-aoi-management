@@ -714,8 +714,9 @@ function sweepPayload(picture: Record<string, unknown>, finishedAt: Date | strin
  * failure there is still 503 (M-3: "no commands" is never said for "none pending"), and F-B2-2 holds (the commands are read
  * BEFORE the config version). Every RUN section after that (offered runs, claims, aborted runs + their signed sweep pictures)
  * is isolated: a throw in one section — or in one run of a section — is logged, that part is left out and the answer says
- * `partial: true`; it never fails the answer, so a run-side failure (an unsignable picture, a transient analysis read) can
- * never hold back a STOP. The edge never infers anything from what a partial answer leaves out.
+ * `runStateUnavailable: true` (R-10-bs); it never fails the answer, so a run-side failure (an unsignable picture, a transient
+ * analysis read) can never hold back a STOP. The edge then HOLDS every non-STOP work and never reads a missing section as
+ * "no abort" (a run central aborted is never walked on because its claim row could not be read).
  */
 export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Promise<EdgeAnswer<EdgePullAnswer>> {
   const parsed = parseEdgeBody(edgePullRequestSchema, body);
@@ -738,12 +739,12 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
     return edgeUnavailableV2;
   }
   const signer = centralSigner();
-  let partial = false;
+  let runSideFailed = false;
   const section = async <T>(what: string, fallback: T, work: () => Promise<T>): Promise<T> => {
     try {
       return await work();
     } catch (err) {
-      partial = true;
+      runSideFailed = true;
       console.error(`[EdgeExec] v2 pull for node ${node.nodeCode}: ${what} left out of this answer (its commands are delivered): ${(err as Error)?.message ?? err}`);
       return fallback;
     }
@@ -786,7 +787,7 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
       });
   });
   // L-7 — aborted runs of this node whose STOPs central could not confirm: a SIGNED sweep picture each (the node re-sends);
-  // one run whose picture cannot be built / signed is left out (logged, partial) — never the others, never the commands
+  // one run whose picture cannot be built / signed is left out (logged, runStateUnavailable) — never the others, never the commands
   const stopsUnconfirmed = await section("unconfirmed STOPs of aborted runs", [] as Array<{ runId: number; picture: EdgeSignedEnvelope }>, async () => {
     const abortedRows = await d
       .select({ a: runEdgeAssignments, finishedAt: orchestrationRuns.finishedAt })
@@ -830,7 +831,7 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
       claims,
       stopsUnconfirmed,
       ...commands,
-      ...(partial ? { partial: true as const } : {}),
+      ...(runSideFailed ? { runStateUnavailable: true as const } : {}),
     },
   };
 }

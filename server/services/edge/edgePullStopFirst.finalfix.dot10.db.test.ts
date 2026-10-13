@@ -2,7 +2,8 @@
  * doc 81 Đợt 10 final fix wave — I-1 (ruling R-10-br): the v2 pull serves the node's STOP commands FIRST and independently of the
  * run / sweep work. A run whose sweep picture cannot be built or signed (the review's case: > 64 pins, or a transient read error in
  * the run analysis) must never turn the pull into a 503 — the STOP queued for that node is delivered, the bad run is left out and
- * the answer says `partial: true`; another aborted run's picture is still there. A failure of the COMMANDS read itself is still
+ * the answer says `runStateUnavailable: true` (R-10-bs: the edge then HOLDS every non-STOP work — a missing run section is never
+ * read as "no abort"); another aborted run's picture is still there. A failure of the COMMANDS read itself is still
  * 503 (M-3: "no commands" is never said for "none pending").
  * Real `_test` DB (central kit); the fault is injected into edgeRunAnalysis.analyseDefinition for ONE run id only.
  */
@@ -53,7 +54,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-1 — pull: STOPs fi
     return run.runId;
   }
 
-  it("★ an aborted run whose sweep picture cannot be built ⇒ the pull still answers 200, the node's pending STOP IS delivered, the bad run is left out (partial), another aborted run is still listed", async () => {
+  it("★ an aborted run whose sweep picture cannot be built ⇒ the pull still answers 200, the node's pending STOP IS delivered, the bad run is left out, runStateUnavailable (R-10-bs), another aborted run is still listed", async () => {
     const c = await import("./edgeExecutionCentral");
     const { enqueueEdgeDeviceRequest } = await import("./edgeNodeCommands");
     const bad = await abortedWithFailedStop("poisoned");
@@ -64,7 +65,8 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-1 — pull: STOPs fi
     expect(r.http, JSON.stringify(r).slice(0, 400)).toBe(200);
     const payloads = r.data!.commands.map((e) => JSON.parse(e.payload) as { requestId: number; kind: string });
     expect(payloads.find((p) => p.requestId === stop)?.kind).toBe("stop");
-    expect(r.data!.partial).toBe(true);
+    expect(r.data!.runStateUnavailable).toBe(true); // R-10-bs — the edge must HOLD non-STOP work, never read "no abort"
+    expect((r.data as Record<string, unknown>).partial).toBeUndefined();
     const listed = r.data!.stopsUnconfirmed.map((x) => x.runId);
     expect(listed).not.toContain(bad);
     expect(listed).toContain(good);
@@ -75,7 +77,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-1 — pull: STOPs fi
     fault.poisonedRuns.delete(bad);
     const r2 = await c.pullForNodeV2(await k.principal("A"), {});
     expect(r2.http).toBe(200);
-    expect(r2.data!.partial).toBeUndefined();
+    expect(r2.data!.runStateUnavailable).toBeUndefined();
     expect(r2.data!.stopsUnconfirmed.map((x) => x.runId)).toEqual(expect.arrayContaining([bad, good]));
   });
 

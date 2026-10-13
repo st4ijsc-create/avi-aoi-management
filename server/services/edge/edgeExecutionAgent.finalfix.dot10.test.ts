@@ -5,8 +5,10 @@
  *   • M-4 — EDGE_CENTRAL_URL over plain http:// is refused unless the host is loopback or EDGE_ALLOW_INSECURE_CENTRAL=1 (loud);
  *   • M-8 — a STOP deferred by the fast path (its target needs a config refresh) runs in the SAME pull even while an older work
  *     phase is still busy (it used to wait for the next pull);
- *   • I-1 (edge half) — a `partial` pull answer: nothing is inferred from what it omits (the STOP re-send back-off of a run
- *     missing from a partial `stopsUnconfirmed` is kept, not reset).
+ *   • I-1 (edge half) + R-10-bs — a pull answer with `runStateUnavailable` (central's run side failed): its STOPs are executed,
+ *     every NON-STOP work is HELD (no non-STOP command, no claim, a walking run's next non-STOP step gets `unavailable` ⇒ held)
+ *     and nothing is inferred from what it omits (missing claims are never "no abort"; a re-send back-off is kept); the next
+ *     good pull resumes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promises as fs, readFileSync } from "node:fs";
@@ -155,8 +157,8 @@ describe("final fix wave M-8 — deferred STOPs run in the same pull even while 
   });
 });
 
-describe("final fix wave I-1 (edge half) — a partial pull answer", () => {
-  it("★ a run missing from a PARTIAL stopsUnconfirmed keeps its re-send back-off (nothing is inferred from an omission)", async () => {
+describe("final fix wave I-1 (edge half) + R-10-bs — a pull answer whose run state is unavailable", () => {
+  it("★ a run missing from a runStateUnavailable answer's stopsUnconfirmed keeps its re-send back-off (nothing is inferred from an omission)", async () => {
     let now = 5_000_000;
     const h = await harness();
     (h.agent as unknown as { cfg: { now: () => number } }).cfg.now = () => now;
@@ -164,11 +166,11 @@ describe("final fix wave I-1 (edge half) — a partial pull answer", () => {
     const kit = h.central as unknown as { defaults: (route: string, body: unknown, runId?: number) => { status: number; data: Record<string, unknown> } };
     h.central.stopsUnconfirmed = listed;
     expect((await h.agent.tick()).stopsResent).toEqual([41]);
-    // a PARTIAL answer leaves run 41 out (its picture could not be built this time)
+    // the run side failed centrally: run 41 is left out (its picture could not be built this time)
     h.central.stopsUnconfirmed = [];
     h.central.handlers.pull = (b) => {
       const a = kit.defaults("pull", b);
-      return { status: 200, data: { ...a.data, partial: true } };
+      return { status: 200, data: { ...a.data, runStateUnavailable: true } };
     };
     now += 1_000;
     expect((await h.agent.tick()).stopsResent).toEqual([]);
@@ -177,5 +179,46 @@ describe("final fix wave I-1 (edge half) — a partial pull answer", () => {
     now += 1_000; // still inside the 10 s back-off of the first re-send
     expect((await h.agent.tick()).stopsResent).toEqual([]);
     expect((h.agent as unknown as { resentAt: Map<number, unknown> }).resentAt.has(41)).toBe(true);
+  });
+  it("★ R-10-bs: runStateUnavailable ⇒ STOPs executed, non-STOP commands / claims / a walking run's next non-STOP step HELD; the next good pull resumes", async () => {
+    const h = await harness();
+    (h.agent as unknown as { cfg: EdgeAgentConfig }).cfg.claimRuns = true;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const walked: Array<{ ok: boolean; verdict?: string }> = [];
+    (h.agent as unknown as { deps: { walker: unknown } }).deps.walker = {
+      drive: async (_pkg: unknown, io: { runId: number; claimSeq: number; claimToken: string; authorize: { authorize: (x: unknown) => Promise<{ ok: boolean; verdict?: string }> } }) => {
+        await gate;
+        const a = await io.authorize.authorize({ runId: io.runId, claimSeq: io.claimSeq, claimToken: io.claimToken, stepId: "m1", attempt: 1, idempotencyKey: `foe:${io.runId}:m1:1`, command: { kind: "robot", robotId: 12, jobType: "move", params: {} }, payloadHash: "sha256:" + "c".repeat(64) });
+        walked.push(a);
+        return a.ok ? { outcome: "completed" } : { outcome: "held", heldReason: "centralUnreachable" };
+      },
+      abortLive: async () => ({ live: false }),
+    };
+    h.central.addRun(9);
+    expect((await h.agent.tick()).claimed).toEqual([9]); // walking, waiting at its gate
+    // the run side fails centrally: the answer carries a STOP, a lock, a new run — and runStateUnavailable
+    const kit = h.central as unknown as { defaults: (route: string, body: unknown, runId?: number) => { status: number; data: Record<string, unknown> } };
+    h.central.addRun(10);
+    h.central.commands = [
+      h.central.sign("cmd", h.central.commandPayload({ requestId: 400, kind: "stop", target: { adapterId: 21 } })),
+      h.central.sign("cmd", h.central.commandPayload({ requestId: 401, kind: "lock", robotId: 12, reason: "x" })),
+    ];
+    h.central.handlers.pull = (b) => ({ status: 200, data: { ...kit.defaults("pull", b).data, claims: [], runStateUnavailable: true } });
+    const held = await h.agent.tick();
+    expect(h.calls).toContain("stopAdapter:21"); // the STOP went
+    expect(h.calls).not.toContain("lock:12"); // non-STOP command held
+    expect(held.claimed).toEqual([]); // no new run claimed
+    expect(h.central.callsTo("claim")).toHaveLength(1);
+    const authBefore = h.central.callsTo("authorize").length;
+    release();
+    await vi.waitFor(() => expect(walked).toHaveLength(1), { timeout: 2_000, interval: 5 });
+    expect(walked[0]).toMatchObject({ ok: false, verdict: "unavailable" }); // the walking run's non-STOP step is HELD …
+    expect(h.central.callsTo("authorize").length).toBe(authBefore); // … central was not even asked
+    // the next GOOD pull resumes normal work
+    delete h.central.handlers.pull;
+    const ok = await h.agent.tick();
+    expect(h.calls).toContain("lock:12");
+    expect(ok.claimed).toEqual([10]);
   });
 });

@@ -366,6 +366,12 @@ export class EdgeExecutionAgent {
   private readonly pendingAlerted = new Set<string>();
   private pullStartedAt = 0;
   private stopped = false;
+  /**
+   * R-10-bs — the LAST pull answer said central's run side is unavailable (`runStateUnavailable`): every NON-STOP work is held
+   * (no non-STOP command, no claim / interrupted, a walking run's next non-STOP step answered `unavailable` ⇒ held) until a pull
+   * answer without it. STOPs, aborts named by central and STOP re-sends still go. Missing run data is never read as "no abort".
+   */
+  private runStateHold = false;
 
   constructor(
     private readonly cfg: EdgeAgentConfig,
@@ -483,6 +489,10 @@ export class EdgeExecutionAgent {
     report.online = true;
     const p = pulled.data;
     this.refreshPending = p.configVersion > this.deps.config.version() || p.keysetVersion > this.deps.config.trust().version;
+    const hold = p.runStateUnavailable === true;
+    if (hold && !this.runStateHold) console.warn("[EdgeExec] central's run state is UNAVAILABLE (runStateUnavailable) — every non-STOP work is held; STOPs still go");
+    if (!hold && this.runStateHold) console.log("[EdgeExec] central's run state is available again — non-STOP work resumes");
+    this.runStateHold = hold;
     // STOP FAST PATH (fix review 1, I-4): every STOP of the answer, against the trust we have NOW (a stale keyset ⇒ the
     // unverified-STOP path; the verified copy later re-executes and acks) — before anything else
     const all = [...p.commands, ...unsignedStopsOf(p)];
@@ -506,7 +516,7 @@ export class EdgeExecutionAgent {
     // re-sends; until then the re-send BACKS OFF per run: stopResendMinMs (1 s) doubling, at most EDGE_SWEEP_RESEND_MAX_MS
     const listed = new Set(p.stopsUnconfirmed.map((s) => s.runId));
     // final fix wave (I-1) — a PARTIAL answer may omit a run whose picture could not be built: nothing is inferred from that
-    if (!p.partial) for (const id of [...this.resentAt.keys()]) if (!listed.has(id)) this.resentAt.delete(id); // confirmed / window over
+    if (!p.runStateUnavailable) for (const id of [...this.resentAt.keys()]) if (!listed.has(id)) this.resentAt.delete(id); // confirmed / window over
     for (const s of p.stopsUnconfirmed) {
       if (this.segments.has(s.runId)) continue;
       const st = this.resentAt.get(s.runId);
@@ -530,7 +540,7 @@ export class EdgeExecutionAgent {
       // (target unknown until a refresh) run NOW, in this pull (M-8): a refresh made for THIS cycle, then those STOPs only
       return deferred.length === 0 ? Promise.resolve() : this.deferredStopPhase(deferred, report, cycle);
     }
-    this.working = this.workOnce(p, rest, report, cycle)
+    this.working = this.workOnce(p, rest, report, cycle, deferred)
       .catch((err) => console.error(`[EdgeExec] work phase failed: ${(err as Error)?.message ?? err}`))
       .finally(() => {
         this.working = null;
@@ -556,7 +566,8 @@ export class EdgeExecutionAgent {
     return p;
   }
 
-  private async workOnce(p: EdgePullAnswer, rest: unknown[], report: TickReport, cycle: number): Promise<void> {
+  private async workOnce(p: EdgePullAnswer, rest: unknown[], report: TickReport, cycle: number, deferred: unknown[] = []): Promise<void> {
+    const held = p.runStateUnavailable === true; // R-10-bs — only the deferred STOPs of this answer run; nothing else non-STOP
     const { client, config } = this.deps;
     // a newer config / keyset — or a STOP / command for a device this config does not know (F-1: the answer's version may be
     // a cached one) ⇒ fetch + verify NOW, before acting on anything else signed
@@ -568,8 +579,8 @@ export class EdgeExecutionAgent {
     }
     this.refreshPending = this.lastRefreshedCycle !== cycle && (p.configVersion > config.version() || p.keysetVersion > config.trust().version);
     if (p.programCheckRequested) void this.deps.programChecks.report().catch(() => undefined);
-    // non-STOP commands (lock / clear …), verified against the (possibly refreshed) trust
-    report.commands.push(...(await this.handleCommands(rest, cycle)));
+    // non-STOP commands (lock / clear …), verified against the (possibly refreshed) trust — held while the run state is unavailable
+    report.commands.push(...(await this.handleCommands(held ? deferred : rest, cycle)));
     // 2) segment ends central has not taken yet
     for (const pc of [...this.pending.values()]) await this.sendComplete(pc);
     // 3) the node's current claims
@@ -580,12 +591,13 @@ export class EdgeExecutionAgent {
         continue;
       }
       if (this.pending.has(c.runId)) continue;
-      if (c.stale) {
+      if (c.stale && !held) {
         const r = await client.post("interrupted", { claimSeq: c.claimSeq }, { runId: c.runId });
         if (r.ok) report.interrupted.push(c.runId);
       }
     }
-    // 5) claimable runs
+    // 5) claimable runs (none while central's run state is unavailable — R-10-bs)
+    if (held) return;
     const listed = new Set(p.runs.map((r) => r.runId));
     for (const id of [...this.claimBackoff.keys()]) if (!listed.has(id)) this.claimBackoff.delete(id);
     for (const r of p.runs) {
@@ -956,7 +968,14 @@ export class EdgeExecutionAgent {
       claimToken: seg.token,
       sink: d.sink,
       consume: d.consume,
-      authorize: d.authorize,
+      // R-10-bs — while central's run state is unavailable, a non-STOP step is never authorised (held, D5); STOPs never ask
+      authorize: {
+        authorize: async (x) => (this.runStateHold ? { ok: false as const, verdict: "unavailable" as const, code: "run_state_unavailable", reason: "central's run state is unavailable (runStateUnavailable) — non-STOP step held" } : d.authorize.authorize(x)),
+        nonceSentAt: (n) => d.authorize.nonceSentAt(n),
+        isNoncePending: (n) => d.authorize.isNoncePending(n),
+        settleNonce: (n) => d.authorize.settleNonce(n),
+        pendingCount: () => d.authorize.pendingCount(),
+      },
       trust: () => d.config.trust(),
       config: d.config,
       programChecks: () => d.programChecks.latest(),

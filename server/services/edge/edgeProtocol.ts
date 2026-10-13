@@ -562,11 +562,12 @@ export const edgePullAnswerSchema = z.strictObject({
   /** B (R-10-am M-3) — true ⇔ some request row could not be expressed / signed this time (logged); the rest are here */
   commandsIncomplete: z.literal(true).optional(),
   /**
-   * doc 81 Đợt 10 final fix wave (I-1) — true ⇔ a RUN section (offered runs, claims, unconfirmed STOPs of aborted runs) or one
-   * run of it could not be built this time and was left out (logged centrally). The commands are always complete-or-503. The
-   * edge never concludes anything from what a partial answer omits (e.g. a run missing from stopsUnconfirmed is NOT confirmed).
+   * doc 81 Đợt 10 final fix wave (I-1 + R-10-bs) — true ⇔ central's RUN side failed for this answer (a section — offered runs,
+   * claims, unconfirmed STOPs of aborted runs — or one run of it could not be built; logged centrally). The commands (STOPs) are
+   * always complete-or-503. While it is set the edge HOLDS every non-STOP work (no non-STOP command, no claim, a walking run's
+   * next non-STOP step is held) and never reads what the answer omits as "no abort" / "confirmed". Strict: only `true`.
    */
-  partial: z.literal(true).optional(),
+  runStateUnavailable: z.literal(true).optional(),
 });
 export type EdgePulledRun = z.infer<typeof edgePulledRunSchema>;
 export type EdgeNodeClaim = z.infer<typeof edgeNodeClaimSchema>;
