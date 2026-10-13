@@ -330,6 +330,18 @@ async function sendRobotStop(robotId: number, prefetched?: Promise<import("./rob
   return st.status === "done" ? { ok: true, sent: "sent", detail: "abort sent on a transient session" } : { ok: false, sent: "failed", detail: st.errorText ?? "abort not confirmed" };
 }
 
+/**
+ * doc 81 Đợt 10 final fix wave (I-4, R-10-ay) — central's fallback STOP of an adapter (its PINNED stop values; the running driver,
+ * else a transient session, bounded) for the OT dispatcher when a STOP for an EDGE-owned adapter could not be queued. Never throws.
+ */
+export async function sendCentralAdapterStop(adapterId: number): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string }> {
+  try {
+    return await sendAdapterStop(adapterId);
+  } catch (err) {
+    return { ok: false, sent: "failed", detail: errText(err) };
+  }
+}
+
 async function sendAdapterStop(adapterId: number): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string }> {
   const db = await getDb();
   if (!db) return { ok: false, sent: "failed", detail: "database unavailable (stop pins)" };

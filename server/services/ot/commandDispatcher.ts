@@ -454,6 +454,8 @@ export interface DispatchResult {
    * every other command (byte-identical).
    */
   pinnedStop?: boolean;
+  /** doc 81 Đợt 10 final fix wave (I-4) — the adapter is EDGE-owned: the STOP was queued for its node as this request */
+  edgeStopRequest?: { requestId: number; edgeNodeId: number };
 }
 
 /**
@@ -820,6 +822,11 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── (4) Resolve a connected driver. ─────────────────────────────────────────
   const driver = getActiveDriver(input.adapterId);
   if (!driver) {
+    // doc 81 Đợt 10 final fix wave (I-4, R-10-br, L-7) — no driver here because an EDGE node owns the adapter: a stop-typed
+    // command is routed to that node (queued adapter STOP + alert; the queue failing ⇒ central's fallback STOP + critical
+    // alert); any other write is refused ADAPTER_OWNED_BY_EDGE. A central-owned adapter keeps ADAPTER_OFFLINE (unchanged).
+    const routed = await routeEdgeOwnedAdapterCommand(db, input);
+    if (routed) return routed;
     const ids = await writeFailed(db, input, "ADAPTER_OFFLINE", "No connected driver for adapter");
     return { ok: false, simulated: false, status: "failed", reason: "ADAPTER_OFFLINE", results: failedResults(input, "ADAPTER_OFFLINE", "failed"), commandLogIds: ids };
   }
@@ -1893,6 +1900,78 @@ async function writeAll(
     ids.push(row.id);
   }
   return ids;
+}
+
+/**
+ * doc 81 Đợt 10 final fix wave (I-4, R-10-br) — the dispatcher found NO driver for the adapter. If an EDGE node owns it (mig 0374,
+ * read with otAdapterOwnerGate's reader — a DB without 0374 has no edge owners ⇒ null), central never answers ADAPTER_OFFLINE:
+ *   • a STOP-typed command (stop / e_stop: console, interlock F5b auto-block, a central run's abort) ⇒ an adapter STOP request
+ *     QUEUED for the owning node (edgeNodeCommands, delivered on its next pull; never expired; the undelivered-STOP sweep alerts
+ *     past the ack bound) + a durable alert now; the queue refusing / failing ⇒ central's fallback STOP of the adapter's PINNED
+ *     values on a transient session (R-10-ay, deviceOwnershipService.sendCentralAdapterStop) + a critical alert;
+ *   • any other write ⇒ refused with the explicit ADAPTER_OWNED_BY_EDGE (the edge node is the only writer).
+ * The result is never ok (central did not execute THIS command); the ledger row names the request / the fallback. null ⇒ not
+ * edge-owned (or the owner could not be read: the caller's ADAPTER_OFFLINE stands, a STOP is alerted).
+ */
+async function routeEdgeOwnedAdapterCommand(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<DispatchResult | null> {
+  const stop = isStopCommandType(input.commandType);
+  let owner: Awaited<ReturnType<typeof adapterOwnedByEdgeInTx>>;
+  try {
+    owner = await adapterOwnedByEdgeInTx(db, input.adapterId);
+  } catch (err) {
+    if (stop) {
+      void raiseOtStopAlert("ot_stop_owner_unknown", input, `OT ${input.commandType} for adapter ${input.adapterId}: central holds no driver and the adapter's owner could not be read (${String((err as Error)?.message ?? err).slice(0, 160)}) — the STOP was NOT routed. Use the machine's E-STOP if it is still running.`);
+    }
+    return null;
+  }
+  if (!owner) return null;
+  if (!stop) {
+    const ids = await writeRejected(db, input, owner.code, owner.detail);
+    return { ok: false, simulated: false, status: "rejected", reason: owner.code, results: failedResults(input, owner.code), commandLogIds: ids, message: owner.detail };
+  }
+  const who = actors(input);
+  const via = input.triggeredBy.kind === "interlock" ? `interlock rule #${input.triggeredBy.ruleId}` : "console / run";
+  try {
+    const { enqueueEdgeDeviceRequest } = await import("../edge/edgeNodeCommands");
+    const q = await enqueueEdgeDeviceRequest({ kind: "stop", adapterId: input.adapterId, reason: `central OT ${input.commandType} (${via})`, requestedBy: who.requestedBy });
+    const detail = `adapter ${input.adapterId} is owned by edge node ${q.edgeNodeId}: STOP queued for it as request #${q.requestId} (delivered on its next pull — central holds no driver)`;
+    const ids = await writeRejected(db, input, owner.code, detail);
+    void raiseOtStopAlert("ot_stop_routed_to_edge", input, `OT ${input.commandType} for adapter ${input.adapterId} (${via}) was NOT executed by central: ${detail}. Confirm it on the edge node; an unacknowledged STOP raises a further alert.`, [who.requestedBy], `ot_stop_routed_to_edge:request:${q.requestId}`);
+    return { ok: false, simulated: false, status: "rejected", reason: owner.code, results: failedResults(input, owner.code), commandLogIds: ids, message: detail, edgeStopRequest: { requestId: q.requestId, edgeNodeId: q.edgeNodeId } };
+  } catch (err) {
+    // R-10-ay — never silence: central's fallback STOP (the adapter's PINNED values, transient session, bounded) + critical alert
+    const why = String((err as Error)?.message ?? err).slice(0, 200);
+    let fb: { ok: boolean; sent: string; detail: string };
+    try {
+      const { sendCentralAdapterStop } = await import("../robot/deviceOwnershipService");
+      fb = await sendCentralAdapterStop(input.adapterId);
+    } catch (e) {
+      fb = { ok: false, sent: "failed", detail: String((e as Error)?.message ?? e).slice(0, 160) };
+    }
+    const detail = `adapter ${input.adapterId} is owned by edge node ${owner.edgeNodeId} but the STOP could not be queued for it (${why}); central fallback STOP: ${fb.ok && fb.sent === "sent" ? "sent" : `${fb.sent} (${fb.detail})`}`;
+    const ids = await writeRejected(db, input, owner.code, detail);
+    void raiseOtStopAlert("ot_stop_not_queued", input, `OT ${input.commandType} for adapter ${input.adapterId} (${via}): ${detail}.${fb.ok && fb.sent === "sent" ? "" : " Use the machine's E-STOP if it is still running."}`, [who.requestedBy]);
+    return { ok: false, simulated: false, status: "rejected", reason: owner.code, results: failedResults(input, owner.code), commandLogIds: ids, message: detail };
+  }
+}
+
+/** I-4 — the durable critical alert of an OT STOP central could not execute itself (criticalStopAlert; never throws). */
+function raiseOtStopAlert(kind: string, input: DispatchInput, message: string, recipients: number[] = [], dedupKey?: string): Promise<void> {
+  return import("../robot/criticalStopAlert")
+    .then(({ raiseCriticalStopAlert }) =>
+      raiseCriticalStopAlert({
+        kind,
+        title: `OT STOP not executed by central — adapter ${input.adapterId}`,
+        message,
+        recipients: recipients.filter((u) => Number.isSafeInteger(u) && u > 0),
+        dedupKey: dedupKey ?? `${kind}:${input.adapterId}:${input.idempotencyKey}`,
+        source: "ot",
+        entityType: "ot_command",
+        entityId: input.adapterId,
+        retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
+      }),
+    )
+    .catch(() => undefined);
 }
 
 function failedResults(input: DispatchInput, reason: string, status: DispatchStatus = "rejected"): DispatchPerWrite[] {
