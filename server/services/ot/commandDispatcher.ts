@@ -1914,6 +1914,7 @@ async function writeAll(
  * edge-owned (or the owner could not be read: the caller's ADAPTER_OFFLINE stands, a STOP is alerted).
  */
 async function routeEdgeOwnedAdapterCommand(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<DispatchResult | null> {
+  const routedAt = Date.now(); // residual 2 — the reply bound counts from here
   const stop = isStopCommandType(input.commandType);
   let owner: Awaited<ReturnType<typeof adapterOwnedByEdgeInTx>>;
   try {
@@ -1936,20 +1937,45 @@ async function routeEdgeOwnedAdapterCommand(db: NonNullable<Awaited<ReturnType<t
     const { enqueueEdgeDeviceRequest } = cmds;
     const q = await enqueueEdgeDeviceRequest({ kind: "stop", adapterId: input.adapterId, reason: `central OT ${input.commandType} (${via})`, requestedBy: who.requestedBy });
     const detail = `adapter ${input.adapterId} is owned by edge node ${q.edgeNodeId}: STOP queued for it as request #${q.requestId} (delivered on its next pull — central holds no driver)`;
-    // residual MIN-2 (R-10-bt, I-3 parity) — the owning node is UNREACHABLE (no pull / stale heartbeat / unreadable) ⇒ central's
-    // fallback STOP (the adapter's PINNED values, transient session) AT ONCE + the stop_undelivered alert of that request
+    // residual MIN-2 (R-10-bt, I-3 parity) + residual 2 (R-10-bu) — the owning node is UNREACHABLE (no pull / stale heartbeat /
+    // unreadable) ⇒ central's fallback STOP (the adapter's PINNED values, transient session) AT ONCE + the stop_undelivered alert.
+    // Both under the 2 s reply bound of a console STOP (from routing entry): the reachability read ≤ STOP_DB_STEP_DEADLINE_MS
+    // (slower / failed ⇒ unreadable ⇒ unreachable); a fallback still running at the bound continues in the BACKGROUND and the
+    // answer says so (partial); a late failure of it is alerted again.
     let fallbackText = "";
-    const reach = await cmds.edgeNodeReachability(q.edgeNodeId).catch(() => ({ reachable: false, basis: "unreadable" as const, ageMs: null }));
+    const { STOP_DB_STEP_DEADLINE_MS } = await import("../robot/stopJob");
+    const replyBoundMs = 2 * STOP_DB_STEP_DEADLINE_MS;
+    const reach = await withDeadline(Promise.resolve().then(() => cmds.edgeNodeReachability(q.edgeNodeId)), STOP_DB_STEP_DEADLINE_MS, `edge node ${q.edgeNodeId} reachability`).catch(
+      () => ({ reachable: false, basis: "unreadable" as const, ageMs: null }),
+    );
     if (!reach.reachable) {
-      let fb: { ok: boolean; sent: string; detail: string };
-      try {
-        const { sendCentralAdapterStop } = await import("../robot/deviceOwnershipService");
-        fb = await sendCentralAdapterStop(input.adapterId);
-      } catch (e) {
-        fb = { ok: false, sent: "failed", detail: String((e as Error)?.message ?? e).slice(0, 160) };
+      type Fb = { ok: boolean; sent: string; detail: string };
+      const leg: { v: { state: "pending" } | { state: "done"; value: Fb } } = { v: { state: "pending" } };
+      const run = (async (): Promise<Fb> => {
+        try {
+          const { sendCentralAdapterStop } = await import("../robot/deviceOwnershipService");
+          return await sendCentralAdapterStop(input.adapterId);
+        } catch (e) {
+          return { ok: false, sent: "failed", detail: String((e as Error)?.message ?? e).slice(0, 160) };
+        }
+      })().then((value) => {
+        leg.v = { state: "done", value };
+        return value;
+      });
+      let t: NodeJS.Timeout | undefined;
+      await Promise.race([run, new Promise<void>((r) => (t = setTimeout(r, Math.max(0, replyBoundMs - (Date.now() - routedAt)))))]);
+      clearTimeout(t);
+      const lv = leg.v;
+      const fbText = lv.state === "done" ? (lv.value.ok && lv.value.sent === "sent" ? "sent" : `${lv.value.sent} (${lv.value.detail})`) : "still in progress (continues in the background)";
+      fallbackText = `; edge node ${q.edgeNodeId} is UNREACHABLE from central (${reach.basis}) — central fallback STOP: ${fbText}`;
+      void raiseOtStopAlert("stop_undelivered", input, `STOP request #${q.requestId} for adapter ${input.adapterId} is queued for edge node ${q.edgeNodeId}, which is UNREACHABLE from central (${reach.basis}) — central fallback STOP: ${fbText}. Use the machine's E-STOP if it is still running.`, [who.requestedBy], `stop_undelivered:request:${q.requestId}`);
+      if (lv.state === "pending") {
+        void run.then((late) => {
+          if (late.ok && late.sent === "sent") return;
+          console.error(`[Dispatch] CRITICAL: the central fallback STOP of adapter ${input.adapterId} (edge node ${q.edgeNodeId} unreachable) finished WITHOUT success: ${late.sent} (${late.detail})`);
+          void raiseOtStopAlert("stop_undelivered", input, `STOP request #${q.requestId} for adapter ${input.adapterId}: the central fallback STOP finished WITHOUT success (${late.sent}: ${late.detail}). Use the machine's E-STOP now.`, [who.requestedBy], `stop_undelivered:request:${q.requestId}:late`);
+        });
       }
-      fallbackText = `; edge node ${q.edgeNodeId} is UNREACHABLE from central (${reach.basis}) — central fallback STOP: ${fb.ok && fb.sent === "sent" ? "sent" : `${fb.sent} (${fb.detail})`}`;
-      void raiseOtStopAlert("stop_undelivered", input, `STOP request #${q.requestId} for adapter ${input.adapterId} is queued for edge node ${q.edgeNodeId}, which is UNREACHABLE from central${fallbackText.slice(fallbackText.indexOf(" — "))}. Use the machine's E-STOP if it is still running.`, [who.requestedBy], `stop_undelivered:request:${q.requestId}`);
     }
     const ids = await writeRejected(db, input, owner.code, detail + fallbackText);
     void raiseOtStopAlert("ot_stop_routed_to_edge", input, `OT ${input.commandType} for adapter ${input.adapterId} (${via}) was NOT executed by central: ${detail}${fallbackText}. Confirm it on the edge node; an unacknowledged STOP raises a further alert.`, [who.requestedBy], `ot_stop_routed_to_edge:request:${q.requestId}`);

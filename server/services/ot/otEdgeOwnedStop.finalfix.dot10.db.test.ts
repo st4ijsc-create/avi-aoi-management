@@ -12,7 +12,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupKit, type Kit } from "../edge/__edgeCentralKit.dot10";
 
-const rec = vi.hoisted(() => ({ alerts: [] as Array<{ kind: string; message: string; dedupKey: string }>, fallback: [] as number[] }));
+const rec = vi.hoisted(() => ({ alerts: [] as Array<{ kind: string; message: string; dedupKey: string }>, fallback: [] as number[], reachHang: false, fallbackHang: false }));
+vi.mock("../edge/edgeNodeCommands", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../edge/edgeNodeCommands")>();
+  return {
+    ...orig,
+    edgeNodeReachability: (async (...a: Parameters<typeof orig.edgeNodeReachability>) =>
+      rec.reachHang ? new Promise<never>(() => undefined) : orig.edgeNodeReachability(...a)) as typeof orig.edgeNodeReachability,
+  };
+});
 vi.mock("../robot/criticalStopAlert", () => ({
   raiseCriticalStopAlert: async (a: { kind: string; message: string; dedupKey: string }) => {
     rec.alerts.push(a);
@@ -24,6 +32,7 @@ vi.mock("../robot/deviceOwnershipService", async (importOriginal) => {
     ...orig,
     sendCentralAdapterStop: async (adapterId: number) => {
       rec.fallback.push(adapterId);
+      if (rec.fallbackHang) await new Promise((r) => setTimeout(r, 6_000)); // a slow transient session
       return { ok: true, sent: "sent" as const, detail: "pinned stop written on a transient session (recorded)" };
     },
   };
@@ -54,6 +63,8 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-4 — central OT com
   beforeEach(() => {
     rec.alerts.length = 0;
     rec.fallback.length = 0;
+    rec.reachHang = false;
+    rec.fallbackHang = false;
   });
 
   const hitl = () => ({ kind: "hitl" as const, requestedBy: k.u.admin, confirmedBy: k.u.admin });
@@ -87,6 +98,32 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-4 — central OT com
     await new Promise((x) => setTimeout(x, 20));
     expect(rec.alerts.some((a) => a.kind === "stop_undelivered" && a.dedupKey === `stop_undelivered:request:${r.edgeStopRequest!.requestId}` && /UNREACHABLE/.test(a.message))).toBe(true);
   });
+
+  it("★ residual 2 (R-10-bu): the reachability read HANGS ⇒ answered within the 2 s reply bound as unreachable: the pinned fallback STARTS, a durable stop_undelivered alert", async () => {
+    const { dispatch } = await import("./commandDispatcher");
+    rec.reachHang = true;
+    const t0 = Date.now();
+    const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "stop", writes: [{ tagKey: "stop_cmd", value: true }], triggeredBy: hitl(), idempotencyKey: `ffi4-hang-${++seq}-${k.DAU}` });
+    expect(Date.now() - t0).toBeLessThan(2_900); // the DB writes of the ledger row included
+    expect(r).toMatchObject({ reason: "ADAPTER_OWNED_BY_EDGE", edgeStopRequest: { edgeNodeId: k.ids.nodeA } });
+    expect(rec.fallback).toEqual([k.ids.adapterA]);
+    await new Promise((x) => setTimeout(x, 20));
+    expect(rec.alerts.some((a) => a.kind === "stop_undelivered" && /unreadable/.test(a.message))).toBe(true);
+  }, 30_000);
+
+  it("★ residual 2: a fallback slower than the bound ⇒ a PARTIAL answer (in progress) at the bound; it keeps going in the background; alert", async () => {
+    const { dispatch } = await import("./commandDispatcher");
+    (await import("../edge/edgeNodeCommands")).__resetEdgeNodePullsForTests();
+    await k.sql`UPDATE edge_nodes SET "lastHeartbeatAt" = NULL WHERE id = ${k.ids.nodeA}`;
+    rec.fallbackHang = true;
+    const t0 = Date.now();
+    const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "e_stop", writes: [{ tagKey: "stop_cmd", value: true }], triggeredBy: hitl(), idempotencyKey: `ffi4-slow-${++seq}-${k.DAU}` });
+    expect(Date.now() - t0).toBeLessThan(2_900);
+    expect(r.message).toMatch(/still in progress/);
+    expect(rec.fallback).toEqual([k.ids.adapterA]);
+    await new Promise((x) => setTimeout(x, 20));
+    expect(rec.alerts.some((a) => a.kind === "stop_undelivered")).toBe(true);
+  }, 30_000);
 
   it("★ the queue cannot take it (edge runtime off) ⇒ central's fallback STOP (transient session) + a critical alert — never silence", async () => {
     const { dispatch } = await import("./commandDispatcher");
