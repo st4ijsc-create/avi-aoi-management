@@ -133,7 +133,15 @@ export interface MotionLockState {
   clearedAt?: string;
   clearedByUserId?: number;
   clearReason?: string;
+  /**
+   * doc 81 Đợt 10 final fix wave (M-5) — an OPERATOR holds this lock (robot.requestMotionLock / the edge `lock` command): a
+   * confirmed STOP does not clear it; only the audited operator clear does.
+   */
+  operatorHold?: true;
 }
+
+/** doc 81 Đợt 10 final fix wave (M-5) — the reason code of a lock an OPERATOR asked for (central console / edge `lock` command). */
+export const OPERATOR_MOTION_LOCK_REASON_CODE = "centralLock" as const;
 
 /** doc 81 Đợt 4 Task B4 — persistence hooks of a MotionLock (fire-and-forget; must not throw or block). */
 export interface MotionLockPersistence {
@@ -213,6 +221,7 @@ export class MotionLock {
       ...(saved.detail != null ? { detail: saved.detail } : {}),
       since: saved.since,
       generation: this.generation,
+      ...(saved.reasonCode === OPERATOR_MOTION_LOCK_REASON_CODE ? { operatorHold: true as const } : {}),
     };
   }
 
@@ -240,14 +249,20 @@ export class MotionLock {
   }
 
   lock(reasonCode: string, detail?: string): void {
-    if (this.state.locked) return;
+    const operator = reasonCode === OPERATOR_MOTION_LOCK_REASON_CODE;
+    if (this.state.locked) {
+      // M-5 — keeps the FIRST cause, but an operator's lock on top of it makes it an operator hold (a STOP will not clear it)
+      if (operator && !this.state.operatorHold) this.state = { ...this.state, operatorHold: true };
+      return;
+    }
     this.generation++;
-    this.state = { locked: true, reasonCode, detail, since: new Date().toISOString(), generation: this.generation };
+    this.state = { locked: true, reasonCode, detail, since: new Date().toISOString(), generation: this.generation, ...(operator ? { operatorHold: true as const } : {}) };
     this.notify("locked");
   }
 
+  /** Cleared by a CONFIRMED STOP — except an operator's hold (M-5): only clearByOperator removes that. */
   clearByStop(): void {
-    if (!this.state.locked) return;
+    if (!this.state.locked || this.state.operatorHold) return;
     this.state = {
       locked: false,
       reasonCode: this.state.reasonCode,

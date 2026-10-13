@@ -17,7 +17,7 @@ import { eq, desc } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
-import { MotionLockConflictError, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
+import { MotionLockConflictError, OPERATOR_MOTION_LOCK_REASON_CODE, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
 import { CONSOLE_STOP_REPLY_BOUND_MS, edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotOwnerRead, sendConsoleStopForEdgeRobot, sendConsoleStopNoSession } from "../services/robot/robotEdgeCommandPort";
 import { sendCentralRobotStop } from "../services/robot/deviceOwnershipService"; // doc 81 Đợt 10 task D fix review 1
 import { sendLiveSessionStopFirst } from "../services/robot/robotLiveSessionStop"; // doc 81 Đợt 10 task D fix review 4 (R-10-av)
@@ -420,6 +420,56 @@ export const robotRouter = router({
       }
       console.warn(`[Robot] motion lock cleared by user ${ctx.user.id} on robot ${input.robotId} (${rt.code}): ${input.reason}`);
       return { robotId: input.robotId, changed: true, connected: connectedNow(), motionLock: after };
+    }),
+
+  // doc 81 Đợt 10 final fix wave (M-5, R-10-br) — THE central "lock" route (design §2.11): an operator HOLDS a robot's motion.
+  // Locking only withholds motion ⇒ machine_control:canEdit (never behind the actuation floor, like disableAutomation); a reason
+  // is required and the audit row is written FIRST (no audit ⇒ nothing locked). The lock is an OPERATOR hold (`centralLock`):
+  // a confirmed STOP does not clear it — only the audited robot.clearMotionLock does.
+  //   • EDGE-owned robot ⇒ a signed `lock` command queued for its node (the edge locks with `centralLock`);
+  //   • a robot this process holds a session for ⇒ its in-memory lock (persisted like any lock);
+  //   • neither ⇒ PRECONDITION_FAILED robotNotActive.
+  requestMotionLock: protectedProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({ robotId: z.number().int().positive(), reason: z.string().trim().min(3).max(300) }))
+    .mutation(async ({ ctx, input }) => {
+      const owner = await robotOwnerRead(input.robotId);
+      const auditBase = {
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? null,
+        action: "robot.requestMotionLock",
+        entityType: "robot",
+        entityId: input.robotId,
+        ipAddress: ctx.req?.ip ?? null,
+        userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+      };
+      if ("edge" in owner) {
+        await createAuditLog({ ...auditBase, details: { reason: input.reason, edgeNodeId: owner.edge, via: "edge_command" } });
+        try {
+          const q = await edgeDeviceRequestPort().enqueue({ kind: "lock", robotId: input.robotId, reason: input.reason, requestedBy: ctx.user.id });
+          return { robotId: input.robotId, changed: false, motionLock: null, queuedOnEdge: { requestId: q.requestId, edgeNodeId: q.edgeNodeId } };
+        } catch (err) {
+          throw appError(
+            "PRECONDITION_FAILED",
+            "OPERATION_FAILED",
+            { operation: "lockRobotMotion", reason: "edgeCommandNotQueued" },
+            `robot ${input.robotId} is owned by edge node ${owner.edge}; the lock could not be queued for it (${edgeDeviceRequestErrorCode(err)}) — nothing was locked`,
+          );
+        }
+      }
+      const lock = getActiveRobot(input.robotId)?.driver.motionLockController?.();
+      if (!lock) {
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "lockRobotMotion", reason: "robotNotActive" },
+          `robot ${input.robotId} is not active in this process and no edge node owns it — there is no motion lock to set here`,
+        );
+      }
+      await createAuditLog({ ...auditBase, details: { reason: input.reason, via: "central_session", before: lock.snapshot() } });
+      lock.lock(OPERATOR_MOTION_LOCK_REASON_CODE, input.reason);
+      console.warn(`[Robot] motion of robot ${input.robotId} HELD by user ${ctx.user.id} (operator lock): ${input.reason}`);
+      return { robotId: input.robotId, changed: true, motionLock: lock.snapshot(), queuedOnEdge: null };
     }),
 
   // doc 81 Đợt 7 task I5 — PER-ROBOT AUTOMATION SWITCH (owner decision 2026-10-11). OFF ⇒ the VDA5050 / ROS2 automation

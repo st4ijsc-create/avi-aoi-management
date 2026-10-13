@@ -386,7 +386,13 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   (supervisorProcedure + machine_control:canEdit). `module = null` — không phải bề mặt AI; mọi SKU không đổi. Trùng
  *   `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2312, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-13 doc 81 Đợt 10 final fix wave (M-5, R-10-br) — **tong 2312 → 2313** (đo trước rồi mới ghim): `robot.requestMotionLock`
+ *   (protectedProcedure + machine_control:canEdit, cùng chuỗi với `robot.disableAutomation`; route khoá chuyển động của người vận
+ *   hành, design §2.11). `module = null` như các anh em robotRouter — không phải bề mặt AI; mọi SKU không đổi. Trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2313, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

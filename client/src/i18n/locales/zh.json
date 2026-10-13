@@ -3862,6 +3862,7 @@
       "changeApiKeyHolder": "更改 API 密钥的发放对象",
       "softwareStop": "发送软件停止命令",
       "clearRobotMotionLock": "解除机器人的运动锁定",
+      "lockRobotMotion": "锁定机器人的运动（操作员锁定）",
       "deployBuild": "部署程序构建",
       "requestDeployApproval": "提交部署审批请求",
       "approveDeployment": "审批程序部署",

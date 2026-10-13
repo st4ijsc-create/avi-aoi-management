@@ -3870,6 +3870,7 @@
       "changeApiKeyHolder": "đổi người được cấp khoá API",
       "softwareStop": "gửi lệnh dừng phần mềm",
       "clearRobotMotionLock": "gỡ khoá chuyển động của robot",
+      "lockRobotMotion": "giữ chuyển động của robot (khoá của người vận hành)",
       "deployBuild": "deploy build chương trình",
       "requestDeployApproval": "gửi yêu cầu duyệt deploy",
       "approveDeployment": "duyệt deploy chương trình",

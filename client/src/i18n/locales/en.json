@@ -3870,6 +3870,7 @@
       "changeApiKeyHolder": "change who the API key is issued to",
       "softwareStop": "send the software stop",
       "clearRobotMotionLock": "clear the robot's motion lock",
+      "lockRobotMotion": "hold the robot's motion (operator lock)",
       "deployBuild": "deploy the program build",
       "requestDeployApproval": "request deploy approval",
       "approveDeployment": "approve the program deployment",

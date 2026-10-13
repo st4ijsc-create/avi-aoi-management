@@ -708,7 +708,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // `edgeResolution.reviewLateResult` (mutation, supervisorProcedure + machine_control/canEdit; factory scope applied in the service —
 // out of scope ⇒ the same NOT_FOUND as a missing row) ⇒ D by definition. `edgeRuntime.registerNode` moved protectedProcedure →
 // adminProcedure (still D, count unchanged). Measured with this scanner (before = this pin; after = D 1142 · tong 2312).
-const GHIM = { A: 333, B: 8, C: 472, D: 1142, S: 357, tong: 2312 } as const;
+// ★★★ 2026-10-13 (doc 81 Đợt 10 final fix wave — M-5, R-10-br) — **D 1142 → 1143 · tong 2312 → 2313 · A/B/C/S unchanged.** NEW
+// `robot.requestMotionLock` (mutation, protectedProcedure + machine_control/canEdit — the same chain as its robotRouter siblings
+// robot.disableAutomation / robot.clearMotionLock) ⇒ D like them. Measured with this scanner (before = this pin; after = D 1143 ·
+// tong 2313).
+const GHIM = { A: 333, B: 8, C: 472, D: 1143, S: 357, tong: 2313 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
