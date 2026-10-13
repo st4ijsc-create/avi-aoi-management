@@ -972,9 +972,12 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     }
   });
 
-  it("1E đối chứng: stop KHÔNG ghim (giá trị khác ghim) cùng thiết lập ⇒ max=1 BUSY; max=3 xếp FIFO sau W2, KHÔNG huỷ W2 (thiết bị nhận W1, W2, stop)", async () => {
+  // doc 81 Đợt 11 K-fix (2026-10-14, ruling R-11-c, defect D-1 of Group K): this control USED TO pin the L-7 gap — an UNPINNED
+  // stop answered BUSY with max=1 and queued FIFO behind W2. The ruling makes every stop-typed command never BUSY and front of
+  // the line (cancelling the waiting non-stop commands), so the control now asserts that. Still NOT a pinned stop (no pinnedStop).
+  it("1E đối chứng → K-fix R-11-c: stop KHÔNG ghim (giá trị khác ghim) ⇒ KHÔNG BUSY dù max=1; huỷ W2 đang chờ; chạy ngay sau W1 (thiết bị nhận W1, stop)", async () => {
     process.env.OT_CMD_SERIALIZE_ENABLED = "true";
-    process.env.OT_CMD_QUEUE_MAX = "1";
+    process.env.OT_CMD_QUEUE_MAX = "3";
     process.env.OT_CONTROL_TIMEOUT_MS = "30000";
     _resetAdapterCommandQueuesForTests();
     const h = heldFirstWriteDriver();
@@ -983,26 +986,22 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
       await withPlcConfigs([realMapped()], async () => {
         const p1 = dispatch(await writeCmd(111));
         await within(h.firstStarted, 15_000, "W1 tới thiết bị");
-
-        const rBusy = await run(await stopInput([{ tagKey: "cmd_stop", value: false }]));
-        expect(rBusy).toMatchObject({ ok: false, status: "rejected", reason: "BUSY" });
-        expect(rBusy.pinnedStop).toBeUndefined(); // không phải DỪNG ghim
-
-        process.env.OT_CMD_QUEUE_MAX = "3";
         const p2 = dispatch(await writeCmd(333));
         await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 2, 15_000, "W2 vào hàng chờ");
+
+        process.env.OT_CMD_QUEUE_MAX = "1"; // hàng ĐẦY (độ sâu 2 ≥ 1): trước K-fix stop không ghim bị BUSY
         const pU = dispatch(await stopInput([{ tagKey: "cmd_stop", value: false }]));
-        await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 3, 15_000, "stop không ghim vào hàng chờ");
+        const r2 = await within(p2, 15_000, "W2 bị huỷ");
+        expect(r2).toMatchObject({ ok: false, status: "rejected", reason: "SUPERSEDED_BY_STOP" });
         expect(received).toEqual([[{ tagKey: "speed_sp", value: 111 }]]);
 
         h.release();
-        const [r1, r2, rU] = await within(Promise.all([p1, p2, pU]), 15_000, "W1/W2/stop");
+        const [r1, rU] = await within(Promise.all([p1, pU]), 15_000, "W1/stop");
         expect(r1.status).toBe("acked");
-        expect(r2.status).toBe("acked"); // KHÔNG bị huỷ
         expect(rU.status).toBe("acked");
+        expect(rU.pinnedStop).toBeUndefined(); // không phải DỪNG ghim
         expect(received).toEqual([
           [{ tagKey: "speed_sp", value: 111 }],
-          [{ tagKey: "speed_sp", value: 333 }],
           [{ tagKey: "cmd_stop", value: false }],
         ]);
       });
