@@ -11,8 +11,9 @@
  * failure never changes the files (a warning; `list` shows the gap).
  *
  * fix review 1 (I7) — every change is made by a PROVEN active admin, never a free-text name: `--actor <admin username>`, the
- * account's password from a hidden prompt (or EDGE_SIGNING_ADMIN_PASSWORD — never on the command line) and, with 2FA on, its
- * current code (prompt, or EDGE_SIGNING_ADMIN_OTP) — verifyCredentialAdmin (the web login's own checks: bcrypt, lockout,
+ * account's password and, with 2FA on, its current code — doc 81 Đợt 10 F2 round 3 (R-10-bl, N7): ONLY from a hidden TTY prompt
+ * or PIPED STDIN (line 1 password, line 2 the 2FA code) through scripts/edgeAdminLogin.ts; EDGE_SIGNING_ADMIN_PASSWORD / _OTP are
+ * REFUSED (exit 2), never read — verifyCredentialAdmin (the web login's own checks: bcrypt, lockout,
  * audit, TOTP, active admin), the Đợt 9 F7 pattern of edge-node-credential.ts. The proof comes BEFORE any file is written; a
  * refused login changes nothing. The actor is recorded in keyring.json `history` ({version, action, kid, actorUserId,
  * actorName, at}) on generate AND rotate (and prune), and as an audit_logs row through the owner connection. `--by` is gone.
@@ -34,15 +35,20 @@
 import { closeSync, existsSync, mkdirSync, openSync, writeSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { proveAdminWith, readAdminSecrets, setSecretEnv, stdinReader } from "./edgeAdminLogin";
 
 export interface SigningKeyCliIo {
   out: (line: string) => void;
   err: (line: string) => void;
   /** a hidden prompt (password / 2FA code); null ⇒ no terminal to ask on */
   promptSecret?: (label: string) => Promise<string | null>;
-  /** where EDGE_SIGNING_ADMIN_PASSWORD / EDGE_SIGNING_ADMIN_OTP / EDGE_SIGNING_KEY_DIR are read (default process.env) */
+  /** Đợt 10 F2 round 3 (N7): piped stdin — line 1 password, line 2 optional 2FA code; null ⇒ stdin is a terminal */
+  readStdin?: () => Promise<string | null>;
+  /** where EDGE_SIGNING_KEY_DIR is read (default process.env); the refused secret variables are checked here */
   env?: NodeJS.ProcessEnv;
 }
+/** N7 — a secret in an environment variable is REFUSED (exit 2), not read. */
+export const REFUSED_SECRET_ENV = ["EDGE_SIGNING_ADMIN_PASSWORD", "EDGE_SIGNING_ADMIN_OTP"] as const;
 export interface AdminProof {
   userId: number;
   name: string;
@@ -92,18 +98,11 @@ async function defaultMirrorDb(env: NodeJS.ProcessEnv): Promise<{ db: any; end: 
   return { db: drizzle(client), end: () => client.end({ timeout: 5 }) };
 }
 
-/** The Đợt 9 F7 proof (verifyCredentialAdmin); 2FA on and no code given ⇒ ask once on the terminal. */
-async function proveAdmin(actorName: string, io: SigningKeyCliIo, env: NodeJS.ProcessEnv, deps: SigningKeyCliDeps): Promise<AdminProof> {
-  const password = env.EDGE_SIGNING_ADMIN_PASSWORD || (io.promptSecret ? await io.promptSecret(`password of ${actorName}: `) : null);
-  const otp = env.EDGE_SIGNING_ADMIN_OTP || null;
-  if (deps.verifyAdmin) return deps.verifyAdmin({ username: actorName, password, otp });
-  const m = await import("../server/services/edge/edgeNodeCredentials");
-  try {
-    return await m.verifyCredentialAdmin({ username: actorName, password, otp });
-  } catch (err) {
-    if (!(err instanceof m.EdgeCredentialError) || err.code !== "otpRequired" || otp || !io.promptSecret) throw err;
-    return m.verifyCredentialAdmin({ username: actorName, password, otp: await io.promptSecret("2FA code: ") });
-  }
+/** The Đợt 9 F7 proof (verifyCredentialAdmin); secrets from the TTY prompt or piped stdin only (N7); a missing 2FA code is asked once on a TTY. */
+async function proveAdmin(actorName: string, io: SigningKeyCliIo, deps: SigningKeyCliDeps): Promise<AdminProof> {
+  const secrets = await readAdminSecrets(io, actorName);
+  const verify = deps.verifyAdmin ?? (async (l: { username: string; password: string | null; otp: string | null }) => (await import("../server/services/edge/edgeNodeCredentials")).verifyCredentialAdmin(l));
+  return proveAdminWith(verify, io, actorName, secrets);
 }
 
 export async function runEdgeSigningKeyCli(argv: string[], io: SigningKeyCliIo, deps: SigningKeyCliDeps = {}): Promise<number> {
@@ -121,11 +120,16 @@ export async function runEdgeSigningKeyCli(argv: string[], io: SigningKeyCliIo, 
   // fix review 3 (R-10-aa N5): EVERY spelling — `--by X`, `--by=X`, `--password=…`, `--otp=…`, `--pass…` — is refused: a secret
   // never comes from argv (process list, shell history), and a free-text actor never replaces the proven admin
   if (argv.some((x) => /^--by(=|$)/i.test(x))) {
-    io.err("--by (a free-text name) is no longer accepted, in any form: use --actor <admin username> — the password is asked (or EDGE_SIGNING_ADMIN_PASSWORD)");
+    io.err("--by (a free-text name) is no longer accepted, in any form: use --actor <admin username> — the password is asked on the terminal or read from piped stdin");
     return 2;
   }
   if (argv.some((x) => /^--(password|passwd|pass|pwd|otp|totp|2fa|secret)(=|$)/i.test(x))) {
-    io.err("a password / 2FA code is never taken from the command line (process list, shell history) — use the prompt or EDGE_SIGNING_ADMIN_PASSWORD / EDGE_SIGNING_ADMIN_OTP");
+    io.err("a password / 2FA code is never taken from the command line (process list, shell history) — type it at the prompt, or pipe it on stdin (line 1 password, line 2 2FA code)");
+    return 2;
+  }
+  const leaked = setSecretEnv(env, REFUSED_SECRET_ENV);
+  if (leaked.length) {
+    io.err(`${leaked.join(" / ")} is set — a secret in an environment variable is refused (unset it): type the password at the prompt, or pipe it on stdin (line 1 password, line 2 2FA code)`);
     return 2;
   }
   const dir = argOf(argv, "--dir") ?? env.EDGE_SIGNING_KEY_DIR;
@@ -174,7 +178,7 @@ export async function runEdgeSigningKeyCli(argv: string[], io: SigningKeyCliIo, 
   let actor: AdminProof | null = null;
   if (writes) {
     try {
-      actor = await proveAdmin(actorName, io, env, deps);
+      actor = await proveAdmin(actorName, io, deps);
     } catch (err) {
       const code = (err as { code?: string })?.code;
       io.err(`refused${code ? ` (${code})` : ""}: ${(err as Error)?.message ?? err} — nothing was changed`);
@@ -377,7 +381,7 @@ function ttyHiddenPrompt(label: string): Promise<string | null> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   import("dotenv/config") // the central host's DATABASE_URL (only when run as a program — never when imported by a test)
-    .then(() => runEdgeSigningKeyCli(process.argv.slice(2), { out: (l) => console.log(l), err: (l) => console.error(l), promptSecret: ttyHiddenPrompt }))
+    .then(() => runEdgeSigningKeyCli(process.argv.slice(2), { out: (l) => console.log(l), err: (l) => console.error(l), promptSecret: ttyHiddenPrompt, readStdin: stdinReader() }))
     .then((code) => process.exit(code))
     .catch((err) => {
       console.error(`edge-signing-key: ${(err as Error)?.message ?? err}`);

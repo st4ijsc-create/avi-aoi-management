@@ -42,10 +42,11 @@ function deps(over: Partial<SigningKeyCliDeps> = {}) {
   };
   return { d, logins, audits };
 }
-function io(env: NodeJS.ProcessEnv = { EDGE_SIGNING_ADMIN_PASSWORD: PASSWORD }) {
+/** Đợt 10 F2 round 3 (N7): the admin secret is PIPED on stdin (line 1 password, line 2 code) or typed at a TTY prompt — never env */
+function io(stdin: string | null = `${PASSWORD}\n`, env: NodeJS.ProcessEnv = {}) {
   const lines: string[] = [];
   const errs: string[] = [];
-  return { lines, errs, io: { out: (l: string) => lines.push(l), err: (l: string) => errs.push(l), env } };
+  return { lines, errs, io: { out: (l: string) => lines.push(l), err: (l: string) => errs.push(l), env, readStdin: async () => stdin } };
 }
 const A = ["--actor", "admin.test"];
 
@@ -88,12 +89,12 @@ describe("edge-signing-key — arguments (no DB, no files touched)", () => {
 describe("fix review 1 (I7) — the admin is PROVEN before any file write; the actor is recorded", () => {
   it("★ a refused login (wrong password / not an admin / no password at all) writes NOTHING: no directory, no key file, no keyring change", async () => {
     const dir = f("ring-refused");
-    for (const [env, actor] of [
-      [{ EDGE_SIGNING_ADMIN_PASSWORD: "wrong" }, "admin.test"],
-      [{ EDGE_SIGNING_ADMIN_PASSWORD: PASSWORD }, "someone.else"],
-      [{}, "admin.test"], // no password from env and no terminal
-    ] as Array<[NodeJS.ProcessEnv, string]>) {
-      const t = io(env);
+    for (const [stdin, actor] of [
+      ["wrong\n", "admin.test"],
+      [`${PASSWORD}\n`, "someone.else"],
+      [null, "admin.test"], // nothing piped and no terminal
+    ] as Array<[string | null, string]>) {
+      const t = io(stdin);
       expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, "--actor", actor], t.io, deps().d)).toBe(1);
       expect(t.errs.join("\n")).toMatch(/refused.*nothing was changed/);
     }
@@ -104,9 +105,9 @@ describe("fix review 1 (I7) — the admin is PROVEN before any file write; the a
     const before = readFileSync(path.join(dir, "keyring.json"), "utf8");
     const filesBefore = readdirSync(dir).sort();
     const next = readEdgeKeyring(dir).keys[1].kid;
-    expect(await runEdgeSigningKeyCli(["rotate", "--dir", dir, "--activate", next, ...A], io({ EDGE_SIGNING_ADMIN_PASSWORD: "wrong" }).io, deps().d)).toBe(1);
-    expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, ...A], io({ EDGE_SIGNING_ADMIN_PASSWORD: "wrong" }).io, deps().d)).toBe(1);
-    expect(await runEdgeSigningKeyCli(["pin", "--dir", dir, "--out", f("pin-refused.json"), ...A], io({ EDGE_SIGNING_ADMIN_PASSWORD: "wrong" }).io, deps().d)).toBe(1);
+    expect(await runEdgeSigningKeyCli(["rotate", "--dir", dir, "--activate", next, ...A], io("wrong\n").io, deps().d)).toBe(1);
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, ...A], io("wrong\n").io, deps().d)).toBe(1);
+    expect(await runEdgeSigningKeyCli(["pin", "--dir", dir, "--out", f("pin-refused.json"), ...A], io("wrong\n").io, deps().d)).toBe(1);
     expect(readFileSync(path.join(dir, "keyring.json"), "utf8")).toBe(before);
     expect(readdirSync(dir).sort()).toEqual(filesBefore);
     expect(existsSync(f("pin-refused.json"))).toBe(false);
@@ -116,16 +117,31 @@ describe("fix review 1 (I7) — the admin is PROVEN before any file write; the a
     expect(existsSync(f("ring-ghost"))).toBe(false);
   });
 
-  it("★ the password comes from EDGE_SIGNING_ADMIN_PASSWORD or the hidden prompt (and the 2FA code from EDGE_SIGNING_ADMIN_OTP) — never argv", async () => {
+  it("★ N7 (Đợt 10 F2 round 3): the secret comes from the hidden TTY prompt, else PIPED STDIN (line 1 password, line 2 2FA code) — never argv, never env", async () => {
     const dir = f("ring-prompt");
     const x = deps();
     const asked: string[] = [];
-    const t = io({ EDGE_SIGNING_ADMIN_OTP: "654321" });
+    const t = io(null);
     const viaPrompt = { ...t.io, promptSecret: async (label: string) => (asked.push(label), PASSWORD) };
     expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, ...A], viaPrompt, x.d)).toBe(0);
     expect(asked).toEqual(["password of admin.test: "]);
-    expect(x.logins).toEqual([{ username: "admin.test", password: PASSWORD, otp: "654321" }]);
+    expect(x.logins).toEqual([{ username: "admin.test", password: PASSWORD, otp: null }]);
     expect(t.lines[0]).toBe("admin verified: Admin Test (user 41)");
+    const y = deps();
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", f("ring-piped"), ...A], io(`${PASSWORD}\n654321\n`).io, y.d)).toBe(0);
+    expect(y.logins).toEqual([{ username: "admin.test", password: PASSWORD, otp: "654321" }]);
+  });
+
+  it("★ N7: EDGE_SIGNING_ADMIN_PASSWORD / _OTP set ⇒ exit 2 (refused, not read), nothing proven, nothing written", async () => {
+    for (const v of ["EDGE_SIGNING_ADMIN_PASSWORD", "EDGE_SIGNING_ADMIN_OTP"]) {
+      const dir = f(`ring-env-${v}`);
+      const x = deps();
+      const t = io(`${PASSWORD}\n`, { [v]: PASSWORD });
+      expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, ...A], t.io, x.d)).toBe(2);
+      expect(t.errs.join("\n")).toMatch(new RegExp(`${v} is set`));
+      expect(x.logins).toEqual([]);
+      expect(existsSync(dir)).toBe(false);
+    }
   });
 
   it("★ keyring.json history names the PROVEN actor on generate AND rotate (activate / retire); every change is audited with it", async () => {
@@ -338,7 +354,7 @@ describe.skipIf(!onTest)("edge-signing-key — the DB is a MIRROR only (owner co
 
   it("★ I7 wiring: without an injected verifier the REAL verifyCredentialAdmin runs (on _test) — an unknown admin is refused and nothing is written", async () => {
     const dir = f("ring-real");
-    const t = io({ EDGE_SIGNING_ADMIN_PASSWORD: "definitely-not-a-password" });
+    const t = io("definitely-not-a-password\n");
     expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, "--actor", `__dot10Afix_no_such_admin_${Date.now()}`], t.io, { mirrorDb: null, audit: null })).toBe(1);
     expect(t.errs.join("\n")).toMatch(/refused \((notVerified|dbUnavailable)\)/);
     expect(existsSync(dir)).toBe(false);

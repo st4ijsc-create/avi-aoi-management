@@ -209,9 +209,10 @@ The Đợt 9 v1 path (the edge walking the central run row over its own DB login
 Central signs with a private key that lives in FILES only — never in the DB, never on argv. The DB table
 `edge_auth_signing_keys` is an audit / distribution mirror (avi_app may only read it; a row planted there is never trusted).
 
-Every write below is made by a **proven** active admin: `--actor <username>`, then the password at a hidden prompt (or
-`EDGE_SIGNING_ADMIN_PASSWORD`) and, with 2FA on, the current code (prompt, or `EDGE_SIGNING_ADMIN_OTP`). `--by`, and any
-`--password…` / `--otp…` spelling on the command line, are refused.
+Every write below is made by a **proven** active admin: `--actor <username>`, then the password and, with 2FA on, the
+current code — at a hidden prompt, or PIPED on stdin (line 1 password, line 2 code), exactly as for the other operator CLIs
+(§8.3, N7). `EDGE_SIGNING_ADMIN_PASSWORD` / `_OTP` are REFUSED (exit 2); `--by`, and any `--password…` / `--otp…` spelling on
+the command line, are refused.
 
 ```bash
 # 1. GENERATE the first key — it becomes the ROOT (active). Keyring dir mode 700, <kid>.pem mode 600.
@@ -258,7 +259,7 @@ mode 700, readable by central's service account.
    0600 file). Never on the command line (any `--password…` / `--otp…` spelling is refused) and never in an environment
    variable: `EDGE_CRED_ADMIN_PASSWORD` / `_OTP` and `EDGE_OWNER_ADMIN_PASSWORD` / `_OTP` are REFUSED (exit 2). A wrong or
    replayed 2FA code is audited (`login_2fa` failure) and counted into the account lockout (N8): 5 wrong codes ⇒ the account
-   is locked 15 min, exactly like 5 wrong passwords. (`scripts/edge-signing-key.ts` still reads `EDGE_SIGNING_ADMIN_*`.)
+   is locked 15 min, exactly like 5 wrong passwords. `edge-signing-key.ts` follows the same rule (`EDGE_SIGNING_ADMIN_*` refused).
 3. Issue the credential AND the bundle in one step, as a proven admin:
 
    ```bash
