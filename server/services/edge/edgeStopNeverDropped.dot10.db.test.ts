@@ -64,6 +64,9 @@ async function fixture(tx: Tx) {
   await tx`UPDATE public.device_adapters SET "edgeNodeId" = ${a.id} WHERE id = ${ad.id}`; // epoch 2
   return { a: a.id as number, b: b.id as number, robot: robot.id as number, ad: ad.id as number };
 }
+/** fix review 9 (R-10-ba): the STOP sweep records its central execution attempt; a central ack must reference it */
+const exec = async (tx: Tx, kind: "robot" | "adapter", device: number, ok = true) =>
+  Number((await tx`SELECT public.edge_stop_record_central_execution(${kind}, ${device}, ${ok}, 'test sweep') AS id`)[0].id);
 const req = async (tx: Tx, o: { robotId?: number; adapterId?: number; node: number; epoch: number; kind: "stop" | "lock"; expires?: string }) =>
   (
     await tx`INSERT INTO public.robot_motion_lock_requests ("robotId", "adapterId", "edgeNodeId", "ownerEpoch", kind, reason, "requestedBy", "expiresAt")
@@ -76,15 +79,16 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       const f = await fixture(tx);
       const stop = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
       const lock = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "lock" });
-      const ackWhileEdgeOwned = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'done', 41)`);
+      const ackWhileEdgeOwned = await code(tx, async (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'done', ${await exec(sp, "robot", f.robot)}::bigint)`);
       await tx`UPDATE public.robots SET "edgeNodeId" = NULL WHERE id = ${f.robot}`; // → central, epoch 3
       const [pending] = await tx`SELECT "requestId" AS id, "currentEdgeNodeId" AS cur, "centralMustExecute" AS c, overdue FROM public.device_pending_stops WHERE "robotId" = ${f.robot}`;
-      const ackLock = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${lock}, 'done', 41)`);
-      const ackBadOutcome = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'expired', 41)`);
-      const ackNoActor = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'done', 0)`);
-      const ack = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'done', 41)`);
-      const [row] = await tx`SELECT outcome, "ackedBy" AS by, "deliveredAt" IS NOT NULL AS delivered FROM public.robot_motion_lock_requests WHERE id = ${stop}`;
-      const again = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'failed', 41)`);
+      const ex = await exec(tx, "robot", f.robot);
+      const ackLock = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${lock}, 'done', ${ex}::bigint)`);
+      const ackBadOutcome = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'expired', ${ex}::bigint)`);
+      const ackNoActor = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'done', NULL::bigint)`); // no execution evidence
+      const ack = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'done', ${ex}::bigint)`);
+      const [row] = await tx`SELECT outcome, ("centralExecutionId" = ${ex}) AS by, "deliveredAt" IS NOT NULL AS delivered FROM public.robot_motion_lock_requests WHERE id = ${stop}`;
+      const again = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${stop}, 'failed', ${ex}::bigint)`);
       const [left] = await tx`SELECT count(*)::int AS n FROM public.device_pending_stops WHERE "robotId" = ${f.robot}`;
       return { ackWhileEdgeOwned, pending: pending ? { id: pending.id, cur: pending.cur, c: pending.c, overdue: pending.overdue } : null, stop, ackLock, ackBadOutcome, ackNoActor, ack, row, again, left: left.n };
     });
@@ -96,7 +100,7 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       ackBadOutcome: "23514",
       ackNoActor: "23514",
       ack: null,
-      row: { outcome: "done", by: 41, delivered: true },
+      row: { outcome: "done", by: true, delivered: true },
       again: "23514",
       left: 0,
     });
@@ -153,7 +157,7 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       const nodeDelete = await code(tx, (sp) => sp`DELETE FROM public.edge_nodes WHERE id = ${f.a}`);
       const [still] = await tx`SELECT count(*)::int AS n FROM public.robot_motion_lock_requests WHERE id = ${stop}`;
       // once acknowledged, the node (and the history row with it) may go
-      await tx`SELECT public.edge_stop_ack_central(${stop}, 'done', 41)`;
+      await tx`SELECT public.edge_stop_ack_central(${stop}, 'done', ${await exec(tx, "robot", f.robot)}::bigint)`;
       const afterAck = await code(tx, (sp) => sp`DELETE FROM public.edge_nodes WHERE id = ${f.a}`);
       return { nodeDelete, still: still.n, afterAck };
     });
@@ -279,7 +283,7 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       const noNote = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${u.id}, ' ')`);
       const resolved = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${u.id}, 'robot stopped by hand, verified')`);
       const twice = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${u.id}, 'again')`);
-      const [after] = await tx`SELECT count(*)::int AS n FROM public.device_pending_stops WHERE "requestId" = ${s}`;
+      const [after] = await tx`SELECT count(*)::int AS n FROM public.device_pending_stops WHERE "requestId" = ${s} AND NOT "resolvedByHuman"`; // fix review 9: stays visible as resolved-by-human
       return { listed: v ? { nr: v.nr, outcome: v.outcome } : null, del, byInactive, noNote, resolved, twice, after: after.n };
     });
     expect(r).toEqual({ listed: { nr: true, outcome: "refused" }, del: "23514", byInactive: "23514", noNote: "23514", resolved: null, twice: "23514", after: 0 });
@@ -361,7 +365,7 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       const t = tag();
       const [u] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t}, 'user', true) RETURNING id`;
       const [off] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t + "x"}, 'user', false) RETURNING id`;
-      const central = (id: number, actor: number) => code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${id}, 'done', ${actor})`);
+      const central = (id: number, _actor: number) => code(tx, async (sp) => sp`SELECT public.edge_stop_ack_central(${id}, 'done', ${await exec(sp, "robot", f.robot)}::bigint)`);
       return {
         before,
         owner: await flags(sOwner),
@@ -372,15 +376,87 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
         ackOtherReason: await central(sBadOutcome, u.id),
         badOutcome: await flags(sBadOutcome),
         ackInactive: await central(sOwner, off.id),
-        ackExpired: await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${sOwner}, 'expired', ${u.id})`),
+        ackExpired: await code(tx, async (sp) => sp`SELECT public.edge_stop_ack_central(${sOwner}, 'expired', ${await exec(sp, "robot", f.robot)}::bigint)`),
         ackActive: await central(sOwner, u.id),
         ackRequester: await central(sSweep, 7), // the sweep acts for the STOP's requester (requestedBy 7)
         afterAck: await flags(sOwner),
       };
     });
     expect(r).toEqual({
-      before: "false/false", owner: "true/true", other: "false/false", stale: "false/false", later: "false/false",
-      ackNotFlagged: "23514", ackOtherReason: "23514", badOutcome: "false/false", ackInactive: "23514", ackExpired: "23514", ackActive: null, ackRequester: null, afterAck: "gone",
+      // fix review 9: the flag is STICKY (a later answer no longer clears it); no actor any more — the execution evidence decides
+      before: "false/false", owner: "true/true", other: "false/false", stale: "false/false", later: "true/true",
+      ackNotFlagged: "23514", ackOtherReason: "23514", badOutcome: "false/false", ackInactive: null, ackExpired: "23514", ackActive: "23514", ackRequester: null, afterAck: "gone",
     });
+  }, 60_000);
+
+  // ── fix review 9 (R-10-ba; scan "safety-state suppression" on 098155f76) ────────────────────────────────────────────────────
+  it("★ R9a: no user acks a STOP — a central ack needs a RECORDED central execution of THIS device, after the request, matching the outcome", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const s1 = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      await tx`SELECT public.edge_stop_ack_edge(${s1}, ${f.a}, ${f.robot}::integer, NULL::integer, 2::bigint, 'notOwnedHere', false, NULL)`; // flagged
+      const [usr] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${tag()}, 'admin', true) RETURNING id`;
+      const ack = (id: number, outcome: string, ex: number | null) => code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${id}, ${outcome}, ${ex}::bigint)`);
+      const userAsEvidence = await ack(s1, "done", usr.id); // a user id is not an execution
+      const otherDevice = await ack(s1, "done", await exec(tx, "adapter", f.ad));
+      const doneButFailed = await ack(s1, "done", await exec(tx, "robot", f.robot, false));
+      const failedButOk = await ack(s1, "failed", await exec(tx, "robot", f.robot, true));
+      const directExecWrite = await code(tx, (sp) => sp`INSERT INTO public.central_stop_executions ("deviceKind", "deviceId", ok, executor) VALUES ('robot', ${f.robot}, true, 'forged')`);
+      const ok = await ack(s1, "done", await exec(tx, "robot", f.robot, true));
+      const [row] = await tx`SELECT outcome, "ackedBy" AS by, "centralExecutionId" IS NOT NULL AS ev FROM public.robot_motion_lock_requests WHERE id = ${s1}`;
+      return { userAsEvidence, otherDevice, doneButFailed, failedButOk, directExecWrite, ok, row };
+    });
+    expect(r).toEqual({ userAsEvidence: "23514", otherDevice: "23514", doneButFailed: "23514", failedButOk: "23514", directExecWrite: "42501", ok: null, row: { outcome: "done", by: null, ev: true } });
+  }, 60_000);
+
+  it("★ R9a': an execution recorded BEFORE the request (or > 10 min ago) is not evidence for it", async () => {
+    const r = await rolledBack(ownerUrl(), async (tx) => {
+      const f = await fixture(tx);
+      const [q] = await tx`INSERT INTO public.robot_motion_lock_requests ("robotId", "edgeNodeId", "ownerEpoch", kind, "requestedBy", "createdAt", "expiresAt") VALUES (${f.robot}, ${f.a}, 2, 'stop', 7, now() - interval '2 hours', now() + interval '1 minute') RETURNING id`;
+      await tx`UPDATE public.robots SET "edgeNodeId" = NULL WHERE id = ${f.robot}`; // central-owned
+      const [e1] = await tx`INSERT INTO public.central_stop_executions ("deviceKind", "deviceId", ok, executor, "executedAt") VALUES ('robot', ${f.robot}, true, 'central-stop-sweep', now() - interval '1 hour') RETURNING id`;
+      const [e0] = await tx`INSERT INTO public.central_stop_executions ("deviceKind", "deviceId", ok, executor, "executedAt") VALUES ('robot', ${f.robot}, true, 'central-stop-sweep', now() - interval '3 hours') RETURNING id`;
+      const tooOld = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${q.id}, 'done', ${e1.id}::bigint)`);
+      const beforeRequest = await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${q.id}, 'done', ${e0.id}::bigint)`);
+      return { tooOld, beforeRequest };
+    });
+    expect(r).toEqual({ tooOld: "23514", beforeRequest: "23514" });
+  }, 60_000);
+
+  it("★ R9b: ownerCannotList is STICKY — the edge answering something else later does not switch centralMustExecute off", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const s1 = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      const ea = (o: string, ep = 2) => tx`SELECT public.edge_stop_ack_edge(${s1}, ${f.a}, ${f.robot}::integer, NULL::integer, ${ep}::bigint, ${o}, false, NULL)`;
+      const fl = async () => {
+        const [v] = await tx`SELECT "ownerCannotList" AS o, "centralMustExecute" AS c FROM public.device_pending_stops WHERE "requestId" = ${s1}`;
+        return `${v.o}/${v.c}`;
+      };
+      await ea("notOwnedHere");
+      const a1 = await fl();
+      await ea("expired");
+      const a2 = await fl();
+      await ea("done", 7); // epoch mismatch ⇒ a refusal
+      const a3 = await fl();
+      const direct = await code(tx, (sp) => sp`UPDATE public.robot_motion_lock_requests SET "ownerCannotListAt" = NULL, "ownerCannotListBy" = NULL WHERE id = ${s1}`);
+      return { a1, a2, a3, direct };
+    });
+    expect(r).toEqual({ a1: "true/true", a2: "true/true", a3: "true/true", direct: "42501" });
+  }, 60_000);
+
+  it("★ R9c: a FAILED central ack keeps the STOP listed (needsResolution); only a person's resolve closes it — and it stays visible as resolved-by-human", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const s1 = await req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      await tx`UPDATE public.robots SET "edgeNodeId" = NULL WHERE id = ${f.robot}`; // central must execute
+      const [h] = await tx`SELECT "requestId" AS id FROM public.device_pending_stops WHERE "robotId" = ${f.robot} AND outcome IS NULL`;
+      await tx`SELECT public.edge_stop_ack_central(${h.id}, 'failed', ${await exec(tx, "robot", f.robot, false)}::bigint)`;
+      const [v1] = await tx`SELECT "needsResolution" AS nr, "centralMustExecute" AS c, "resolvedByHuman" AS h FROM public.device_pending_stops WHERE "requestId" = ${h.id}`;
+      const [usr] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${tag()}, 'user', true) RETURNING id`;
+      await tx`SELECT public.edge_stop_resolve(${h.id}, ${usr.id}, 'stopped by hand at the cabinet')`;
+      const [v2] = await tx`SELECT "needsResolution" AS nr, "centralMustExecute" AS c, "resolvedByHuman" AS h FROM public.device_pending_stops WHERE "requestId" = ${h.id}`;
+      return { failed: v1 ? `${v1.nr}/${v1.c}/${v1.h}` : "gone", resolved: v2 ? `${v2.nr}/${v2.c}/${v2.h}` : "gone", s1: typeof s1 };
+    });
+    expect(r).toEqual({ failed: "true/true/false", resolved: "false/false/true", s1: "number" });
   }, 60_000);
 });

@@ -82,6 +82,10 @@
 -- fix review 8 (R-10-ay, L-7): device_pending_stops."ownerCannotList" (and centralMustExecute) for an unacked STOP of an
 --   EDGE-owned device whose latest edge ack refusal is 'not_owned_here' from its CURRENT owner at the current epoch;
 --   edge_stop_ack_central acks exactly those (done | failed; an active user or the STOP's requester), besides central-owned ones.
+-- fix review 9 (ruling R-10-ba; scan "safety-state suppression" on 098155f76): edge_stop_ack_central(request, outcome, execution)
+--   — no actor; only the STOP sweep after a recorded central execution (central_stop_executions, WORM, via
+--   edge_stop_record_central_execution); done ⇔ the attempt was ok. ownerCannotList is STICKY (ownerCannotListAt, set by
+--   edge_stop_ack_edge). A person closes a STOP only via edge_stop_resolve; resolved rows stay visible (resolvedByHuman).
 -- fix review 4 (ruling R-10-ah, re-review F1): edge_stop_ack_edge also requires the device to be owned by the calling node at
 --   the row's epoch NOW; every refused edge ack is kept as WORM evidence in edge_stop_ack_refusals (avi_app SELECT only).
 --
@@ -97,6 +101,8 @@
 --   DROP FUNCTION IF EXISTS device_keep_pending_stop(); ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "carriedToId";
 --   DROP FUNCTION IF EXISTS edge_stop_ack_edge(integer, integer, integer, integer, bigint, text, boolean, integer), edge_stop_resolve(integer, integer, text);
 --   DROP TABLE IF EXISTS "edge_stop_ack_refusals"; DROP FUNCTION IF EXISTS edge_stop_ack_refusals_worm();
+--   DROP TABLE IF EXISTS "central_stop_executions"; DROP FUNCTION IF EXISTS central_stop_executions_worm(), edge_stop_record_central_execution(text, integer, boolean, text);
+--   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "centralExecutionId", DROP COLUMN IF EXISTS "ownerCannotListAt", DROP COLUMN IF EXISTS "ownerCannotListBy";
 --   DROP TRIGGER IF EXISTS trg_robot_motion_lock_writer_instance ON "robot_motion_locks"; DROP FUNCTION IF EXISTS robot_motion_lock_writer_guard();
 --   ALTER TABLE "robot_motion_locks" DROP COLUMN IF EXISTS "writerInstanceId";
 --   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "ackViaUnsigned", DROP COLUMN IF EXISTS "resolvedAt", DROP COLUMN IF EXISTS "resolvedBy", DROP COLUMN IF EXISTS "resolution";
@@ -396,6 +402,44 @@ ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "ackViaUnsigne
 ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "resolvedAt" timestamptz;
 ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "resolvedBy" integer;
 ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "resolution" text;
+-- fix review 9 (ruling R-10-ba): a central ack names the central EXECUTION it reports (central_stop_executions.id, written
+-- once with the ack); "ownerCannotListAt / By" make the R-10-ay flag STICKY — set once (by edge_stop_ack_edge, when the
+-- device's CURRENT owner at the current epoch answers notOwnedHere) and kept whatever the edge answers later.
+ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "centralExecutionId" bigint;
+ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "ownerCannotListAt" timestamptz;
+ALTER TABLE "robot_motion_lock_requests" ADD COLUMN IF NOT EXISTS "ownerCannotListBy" integer;
+ALTER TABLE "robot_motion_lock_requests" DROP CONSTRAINT IF EXISTS "ck_lock_req_owner_cannot_list";
+ALTER TABLE "robot_motion_lock_requests" ADD CONSTRAINT "ck_lock_req_owner_cannot_list" CHECK (
+  (("ownerCannotListAt" IS NULL) = ("ownerCannotListBy" IS NULL)) AND ("ownerCannotListAt" IS NULL OR "kind" = 'stop')
+  AND ("centralExecutionId" IS NULL OR ("kind" = 'stop' AND "ackedAt" IS NOT NULL)));
+
+-- fix review 9 (R-10-ba): the WORM record of every CENTRAL STOP execution attempt (the server's STOP sweep only, through
+-- edge_stop_record_central_execution). A central STOP ack must reference one for the same device, made after the request.
+CREATE TABLE IF NOT EXISTS "central_stop_executions" (
+  "id" bigserial PRIMARY KEY,
+  "deviceKind" varchar(8) NOT NULL,
+  "deviceId" integer NOT NULL,
+  "ok" boolean NOT NULL,
+  "detail" text,
+  "executor" varchar(64) NOT NULL,
+  "executedAt" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT "ck_central_stop_exec_kind" CHECK ("deviceKind" IN ('robot', 'adapter'))
+);
+CREATE INDEX IF NOT EXISTS "idx_central_stop_exec_device" ON "central_stop_executions" ("deviceKind", "deviceId", "executedAt");
+COMMENT ON TABLE "central_stop_executions" IS
+  'doc 81 Dot 10 A (0374, fix review 9 R-10-ba): WORM record of every central STOP execution attempt by the server STOP sweep; the evidence a central STOP ack must reference.';
+CREATE OR REPLACE FUNCTION public.central_stop_executions_worm() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  RAISE EXCEPTION 'central_stop_executions is append-only (WORM)' USING ERRCODE = 'check_violation';
+END $$;
+REVOKE ALL ON FUNCTION public.central_stop_executions_worm() FROM PUBLIC;
+DROP TRIGGER IF EXISTS trg_central_stop_executions_worm ON "central_stop_executions";
+CREATE TRIGGER trg_central_stop_executions_worm BEFORE UPDATE OR DELETE ON "central_stop_executions"
+  FOR EACH ROW EXECUTE FUNCTION public.central_stop_executions_worm();
+DROP TRIGGER IF EXISTS trg_central_stop_executions_worm_truncate ON "central_stop_executions";
+CREATE TRIGGER trg_central_stop_executions_worm_truncate BEFORE TRUNCATE ON "central_stop_executions"
+  FOR EACH STATEMENT EXECUTE FUNCTION public.central_stop_executions_worm();
 ALTER TABLE "robot_motion_lock_requests" DROP CONSTRAINT IF EXISTS "ck_lock_req_resolved";
 ALTER TABLE "robot_motion_lock_requests" ADD CONSTRAINT "ck_lock_req_resolved" CHECK (
   (("resolvedAt" IS NULL) = ("resolvedBy" IS NULL)) AND (("resolvedAt" IS NULL) = ("resolution" IS NULL))
@@ -427,7 +471,8 @@ BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW."deliveredAt" IS NOT NULL OR NEW."ackedAt" IS NOT NULL OR NEW."outcome" IS NOT NULL OR NEW."ackGeneration" IS NOT NULL
        OR NEW."ackedBy" IS NOT NULL OR NEW."carriedToId" IS NOT NULL OR NEW."ackViaUnsigned" IS NOT NULL OR NEW."resolvedAt" IS NOT NULL
-       OR NEW."resolvedBy" IS NOT NULL OR NEW."resolution" IS NOT NULL THEN
+       OR NEW."resolvedBy" IS NOT NULL OR NEW."resolution" IS NOT NULL OR NEW."centralExecutionId" IS NOT NULL
+       OR NEW."ownerCannotListAt" IS NOT NULL OR NEW."ownerCannotListBy" IS NOT NULL THEN
       RAISE EXCEPTION 'robot_motion_lock_requests: a new request is neither delivered nor acked' USING ERRCODE = 'check_violation';
     END IF;
     IF cur_owner IS DISTINCT FROM NEW."edgeNodeId" OR cur_epoch IS DISTINCT FROM NEW."ownerEpoch" THEN
@@ -468,12 +513,20 @@ BEGIN
      AND (NEW."ackedAt" IS DISTINCT FROM OLD."ackedAt" OR NEW."outcome" IS DISTINCT FROM OLD."outcome"
           OR NEW."ackGeneration" IS DISTINCT FROM OLD."ackGeneration" OR NEW."ackedBy" IS DISTINCT FROM OLD."ackedBy"
           OR NEW."ackViaUnsigned" IS DISTINCT FROM OLD."ackViaUnsigned" OR NEW."resolvedAt" IS DISTINCT FROM OLD."resolvedAt"
-          OR NEW."resolvedBy" IS DISTINCT FROM OLD."resolvedBy" OR NEW."resolution" IS DISTINCT FROM OLD."resolution") THEN
+          OR NEW."resolvedBy" IS DISTINCT FROM OLD."resolvedBy" OR NEW."resolution" IS DISTINCT FROM OLD."resolution"
+          OR NEW."centralExecutionId" IS DISTINCT FROM OLD."centralExecutionId" OR NEW."ownerCannotListAt" IS DISTINCT FROM OLD."ownerCannotListAt"
+          OR NEW."ownerCannotListBy" IS DISTINCT FROM OLD."ownerCannotListBy") THEN
     SELECT pg_catalog.pg_get_userbyid(c.relowner) INTO tbl_owner FROM pg_catalog.pg_class c WHERE c.oid = TG_RELID;
     IF current_user IS DISTINCT FROM tbl_owner THEN
       RAISE EXCEPTION 'robot_motion_lock_requests: a STOP (request %) is acknowledged / resolved only via edge_stop_ack_edge / edge_stop_ack_central / edge_stop_resolve', OLD."id"
         USING ERRCODE = 'check_violation';
     END IF;
+  END IF;
+  IF (OLD."centralExecutionId" IS NOT NULL AND NEW."centralExecutionId" IS DISTINCT FROM OLD."centralExecutionId")
+     OR (OLD."ownerCannotListAt" IS NOT NULL AND (NEW."ownerCannotListAt" IS DISTINCT FROM OLD."ownerCannotListAt"
+         OR NEW."ownerCannotListBy" IS DISTINCT FROM OLD."ownerCannotListBy")) THEN
+    RAISE EXCEPTION 'robot_motion_lock_requests: centralExecutionId / ownerCannotList are written once (request %)', OLD."id"
+      USING ERRCODE = 'check_violation';
   END IF;
   IF OLD."ackViaUnsigned" IS NOT NULL AND NEW."ackViaUnsigned" IS DISTINCT FROM OLD."ackViaUnsigned" THEN
     RAISE EXCEPTION 'robot_motion_lock_requests: the ack is written once (request %)', OLD."id" USING ERRCODE = 'check_violation';
@@ -656,8 +709,8 @@ SELECT q."id" AS "requestId", q."robotId", q."adapterId",
        -- fix review 8 (R-10-ay): central also executes the STOP of an EDGE-owned device whose CURRENT owner (at the current epoch)
        -- answered its latest ack "notOwnedHere" — it owns the device but cannot list / reach it (e.g. factory moved / cleared)
        (COALESCE(r."edgeNodeId", a."edgeNodeId") IS NULL
-        OR COALESCE(q."ackedAt" IS NULL AND COALESCE(r."edgeNodeId", a."edgeNodeId") IS NOT NULL AND lr."reason" = 'not_owned_here'
-            AND lr."edgeNodeId" = COALESCE(r."edgeNodeId", a."edgeNodeId") AND lr."ownerEpoch" = COALESCE(r."ownerEpoch", a."ownerEpoch"), false)) AS "centralMustExecute",
+        OR (q."ackedAt" IS NULL AND q."ownerCannotListAt" IS NOT NULL AND COALESCE(r."edgeNodeId", a."edgeNodeId") IS NOT NULL))
+       AND q."resolvedAt" IS NULL AS "centralMustExecute",
        (q."edgeNodeId" IS DISTINCT FROM COALESCE(r."edgeNodeId", a."edgeNodeId")
         OR q."ownerEpoch" IS DISTINCT FROM COALESCE(r."ownerEpoch", a."ownerEpoch")) AS "stale",
        -- the request's node can never pick it up: the device is edge-owned and that node has no ACTIVE credential (revoked /
@@ -666,71 +719,90 @@ SELECT q."id" AS "requestId", q."robotId", q."adapterId",
         AND NOT EXISTS (SELECT 1 FROM public."edge_node_credentials" c WHERE c."edgeNodeId" = q."edgeNodeId" AND c."status" = 'active')) AS "undeliverable",
        n."status"::text AS "requestNodeStatus", n."lastHeartbeatAt" AS "requestNodeLastHeartbeatAt",
        -- fix review 3 (R-10-aa N2): a STOP the edge / central answered refused or failed is NOT closed — a person resolves it
-       q."outcome" AS "outcome", (q."ackedAt" IS NOT NULL) AS "needsResolution",
-       COALESCE(q."ackedAt" IS NULL AND COALESCE(r."edgeNodeId", a."edgeNodeId") IS NOT NULL AND lr."reason" = 'not_owned_here'
-        AND lr."edgeNodeId" = COALESCE(r."edgeNodeId", a."edgeNodeId") AND lr."ownerEpoch" = COALESCE(r."ownerEpoch", a."ownerEpoch"), false) AS "ownerCannotList"
+       q."outcome" AS "outcome", (q."ackedAt" IS NOT NULL AND q."resolvedAt" IS NULL) AS "needsResolution",
+       (q."ackedAt" IS NULL AND q."resolvedAt" IS NULL AND q."ownerCannotListAt" IS NOT NULL AND COALESCE(r."edgeNodeId", a."edgeNodeId") IS NOT NULL) AS "ownerCannotList",
+       -- fix review 9 (R-10-ba): a STOP a person closed (edge_stop_resolve) stays VISIBLE, marked resolved-by-human
+       (q."resolvedAt" IS NOT NULL) AS "resolvedByHuman"
   FROM public."robot_motion_lock_requests" q
   LEFT JOIN public."robots" r ON r."id" = q."robotId"
   LEFT JOIN public."device_adapters" a ON a."id" = q."adapterId"
   LEFT JOIN public."edge_nodes" n ON n."id" = q."edgeNodeId"
-  -- fix review 8: the LATEST edge ack refusal of this request (WORM evidence)
-  LEFT JOIN LATERAL (SELECT f."reason", f."edgeNodeId", f."ownerEpoch" FROM public."edge_stop_ack_refusals" f
-                      WHERE f."requestId" = q."id" ORDER BY f."id" DESC LIMIT 1) lr ON true
  WHERE q."kind" = 'stop' AND q."carriedToId" IS NULL
-   AND (q."ackedAt" IS NULL OR (q."outcome" IN ('refused', 'failed') AND q."resolvedAt" IS NULL));
+   AND (q."ackedAt" IS NULL OR q."outcome" IN ('refused', 'failed'));
 COMMENT ON VIEW public.device_pending_stops IS
   'doc 81 Dot 10 A fix review 2 (R-10-i): the pending STOP HEAD of each chain (unacked, not carried on) and its device''s CURRENT owner; centralMustExecute = central-owned now; overdue = past expiresAt; undeliverable = edge-owned but the request''s node has no active credential.';
 
--- fix review 2 (R-10-i (a)): the ONE way central acknowledges a STOP it executed itself — only a STOP, only unacknowledged, only
--- while the device is CENTRAL-owned (an edge-owned device's STOP is acked by its edge), outcome done | failed, a real actor.
-CREATE OR REPLACE FUNCTION public.edge_stop_ack_central(p_request integer, p_outcome text, p_actor integer) RETURNS void
+-- fix review 9 (ruling R-10-ba): the server's STOP SWEEP records each central STOP execution attempt (WORM) and gets its id —
+-- the evidence a central STOP ack must reference. ok = the STOP reached the device (sent / simulated as configured).
+CREATE OR REPLACE FUNCTION public.edge_stop_record_central_execution(p_kind text, p_device integer, p_ok boolean, p_detail text) RETURNS bigint
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  nid bigint;
+BEGIN
+  IF p_kind IS NULL OR p_kind NOT IN ('robot', 'adapter') OR p_device IS NULL OR p_ok IS NULL THEN
+    RAISE EXCEPTION 'edge_stop_record_central_execution: kind robot | adapter, a device and an ok flag are required' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT ((p_kind = 'robot' AND EXISTS (SELECT 1 FROM public."robots" r WHERE r."id" = p_device))
+          OR (p_kind = 'adapter' AND EXISTS (SELECT 1 FROM public."device_adapters" a WHERE a."id" = p_device))) THEN
+    RAISE EXCEPTION 'edge_stop_record_central_execution: % % does not exist', p_kind, p_device USING ERRCODE = 'check_violation';
+  END IF;
+  INSERT INTO public."central_stop_executions" ("deviceKind", "deviceId", "ok", "detail", "executor")
+    VALUES (p_kind, p_device, p_ok, left(p_detail, 2000), 'central-stop-sweep') RETURNING "id" INTO nid;
+  RETURN nid;
+END $$;
+REVOKE ALL ON FUNCTION public.edge_stop_record_central_execution(text, integer, boolean, text) FROM PUBLIC;
+
+-- fix review 2 (R-10-i (a)) + fix review 9 (R-10-ba): the ONE way central acknowledges a STOP — ONLY the server's STOP sweep,
+-- AFTER a central execution attempt it recorded (p_execution: central_stop_executions.id of the SAME device, made after the
+-- request, at most 10 minutes ago; done ⇔ that attempt ok, failed ⇔ not ok). No user ever acks (a person closes a STOP only
+-- through edge_stop_resolve). Allowed for a pending, unresolved STOP whose device is CENTRAL-owned now, or EDGE-owned with the
+-- sticky "ownerCannotList" flag (R-10-ay). A failed ack keeps the row listed (needsResolution).
+DROP FUNCTION IF EXISTS public.edge_stop_ack_central(integer, text, integer);
+CREATE OR REPLACE FUNCTION public.edge_stop_ack_central(p_request integer, p_outcome text, p_execution bigint) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   q record;
-  lr record;
+  ex record;
   cur_owner integer;
-  cur_epoch bigint;
+  found_device boolean;
 BEGIN
-  IF p_actor IS NULL OR p_actor <= 0 THEN
-    RAISE EXCEPTION 'edge_stop_ack_central: actor % is not a user', p_actor USING ERRCODE = 'check_violation';
-  END IF;
   IF p_outcome IS NULL OR p_outcome NOT IN ('done', 'failed') THEN
     RAISE EXCEPTION 'edge_stop_ack_central: outcome must be done or failed (got %)', p_outcome USING ERRCODE = 'check_violation';
   END IF;
   SELECT * INTO q FROM public."robot_motion_lock_requests" x WHERE x."id" = p_request FOR UPDATE;
-  IF NOT FOUND OR q."kind" <> 'stop' OR q."ackedAt" IS NOT NULL THEN
+  IF NOT FOUND OR q."kind" <> 'stop' OR q."ackedAt" IS NOT NULL OR q."resolvedAt" IS NOT NULL THEN
     RAISE EXCEPTION 'edge_stop_ack_central: request % is not a pending STOP', p_request USING ERRCODE = 'check_violation';
   END IF;
   IF q."robotId" IS NOT NULL THEN
-    SELECT r."edgeNodeId", r."ownerEpoch" INTO cur_owner, cur_epoch FROM public."robots" r WHERE r."id" = q."robotId" FOR SHARE;
+    SELECT r."edgeNodeId" INTO cur_owner FROM public."robots" r WHERE r."id" = q."robotId" FOR SHARE;
   ELSE
-    SELECT a."edgeNodeId", a."ownerEpoch" INTO cur_owner, cur_epoch FROM public."device_adapters" a WHERE a."id" = q."adapterId" FOR SHARE;
+    SELECT a."edgeNodeId" INTO cur_owner FROM public."device_adapters" a WHERE a."id" = q."adapterId" FOR SHARE;
   END IF;
-  IF NOT FOUND THEN
+  found_device := FOUND;
+  IF NOT found_device THEN
     RAISE EXCEPTION 'edge_stop_ack_central: the device of request % does not exist', p_request USING ERRCODE = 'check_violation';
   END IF;
-  IF cur_owner IS NOT NULL THEN
-    -- fix review 8 (R-10-ay): an EDGE-owned device only when its CURRENT owner, at the current epoch, declared in its latest
-    -- ack that it cannot list / reach the device (refusal 'not_owned_here') — exactly the rows device_pending_stops flags
-    -- ownerCannotList; acked by a real ACTIVE user or the sweep acting for the STOP's requester
-    SELECT f."reason", f."edgeNodeId", f."ownerEpoch" INTO lr FROM public."edge_stop_ack_refusals" f
-     WHERE f."requestId" = p_request ORDER BY f."id" DESC LIMIT 1;
-    IF NOT FOUND OR lr."reason" IS DISTINCT FROM 'not_owned_here' OR lr."edgeNodeId" IS DISTINCT FROM cur_owner
-       OR lr."ownerEpoch" IS DISTINCT FROM cur_epoch THEN
-      RAISE EXCEPTION 'edge_stop_ack_central: the device of request % is edge-owned and its owner has not declared it cannot list it — its edge acknowledges it', p_request
-        USING ERRCODE = 'check_violation';
-    END IF;
-    IF NOT (p_actor = q."requestedBy" OR EXISTS (SELECT 1 FROM public."users" u WHERE u."id" = p_actor AND u."isActive" = true)) THEN
-      RAISE EXCEPTION 'edge_stop_ack_central: actor % is neither an active user nor the requester of STOP %', p_actor, p_request
-        USING ERRCODE = 'check_violation';
-    END IF;
+  IF cur_owner IS NOT NULL AND q."ownerCannotListAt" IS NULL THEN
+    RAISE EXCEPTION 'edge_stop_ack_central: the device of request % is edge-owned and its owner has not declared it cannot list it — its edge acknowledges it', p_request
+      USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT * INTO ex FROM public."central_stop_executions" e WHERE e."id" = p_execution;
+  IF NOT FOUND
+     OR ex."deviceKind" IS DISTINCT FROM (CASE WHEN q."robotId" IS NOT NULL THEN 'robot' ELSE 'adapter' END)
+     OR ex."deviceId" IS DISTINCT FROM COALESCE(q."robotId", q."adapterId")
+     OR ex."executedAt" < q."createdAt" OR ex."executedAt" < now() - interval '10 minutes'
+     OR (p_outcome = 'done') IS DISTINCT FROM ex."ok" THEN
+    RAISE EXCEPTION 'edge_stop_ack_central: execution % is not a recent central STOP attempt of this device matching outcome % (request %)', p_execution, p_outcome, p_request
+      USING ERRCODE = 'check_violation';
   END IF;
   UPDATE public."robot_motion_lock_requests"
-     SET "deliveredAt" = COALESCE("deliveredAt", now()), "ackedAt" = GREATEST(now(), COALESCE("deliveredAt", now())), "outcome" = p_outcome, "ackedBy" = p_actor
+     SET "deliveredAt" = COALESCE("deliveredAt", now()), "ackedAt" = GREATEST(now(), COALESCE("deliveredAt", now())), "outcome" = p_outcome,
+         "centralExecutionId" = p_execution
    WHERE "id" = p_request;
 END $$;
-REVOKE ALL ON FUNCTION public.edge_stop_ack_central(integer, text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.edge_stop_ack_central(integer, text, bigint) FROM PUBLIC;
 
 -- fix review 3 (R-10-aa N2, R-10-o): THE way a node acknowledges a STOP — B's ackEdgeCommand calls it for every STOP ack (signed
 -- or over the unsigned-STOP channel). Accepted only for a pending STOP bound to THIS node whose target (robot XOR adapter) and
@@ -750,6 +822,22 @@ BEGIN
   --   • notOwnedHere — the node no longer holds the device: NON-terminal, the STOP stays pending for its current executor;
   --   • expired / any other unknown / NULL outcome — a STOP is never acked expired.
   IF p_outcome IS NULL OR p_outcome NOT IN ('done', 'refused', 'failed') THEN
+    -- fix review 9 (R-10-ba): notOwnedHere from the device's CURRENT owner at the current epoch, for exactly the request's target,
+    -- sets the STICKY ownerCannotList flag of a pending STOP (once; nothing the edge answers later clears it)
+    IF p_outcome = 'notOwnedHere' AND p_node IS NOT NULL AND p_owner_epoch IS NOT NULL AND ((p_robot IS NULL) <> (p_adapter IS NULL)) THEN
+      SELECT * INTO q FROM public."robot_motion_lock_requests" x WHERE x."id" = p_request FOR UPDATE;
+      IF FOUND AND q."kind" = 'stop' AND q."ackedAt" IS NULL AND q."resolvedAt" IS NULL AND q."ownerCannotListAt" IS NULL
+         AND q."robotId" IS NOT DISTINCT FROM p_robot AND q."adapterId" IS NOT DISTINCT FROM p_adapter THEN
+        IF q."robotId" IS NOT NULL THEN
+          SELECT r."edgeNodeId", r."ownerEpoch" INTO cur_owner, cur_epoch FROM public."robots" r WHERE r."id" = q."robotId" FOR SHARE;
+        ELSE
+          SELECT a."edgeNodeId", a."ownerEpoch" INTO cur_owner, cur_epoch FROM public."device_adapters" a WHERE a."id" = q."adapterId" FOR SHARE;
+        END IF;
+        IF cur_owner = p_node AND cur_epoch = p_owner_epoch THEN
+          UPDATE public."robot_motion_lock_requests" SET "ownerCannotListAt" = now(), "ownerCannotListBy" = p_node WHERE "id" = p_request;
+        END IF;
+      END IF;
+    END IF;
     INSERT INTO public."edge_stop_ack_refusals" ("requestId", "edgeNodeId", "robotId", "adapterId", "ownerEpoch", "outcome", "viaUnsigned", "reason")
       VALUES (p_request, p_node, p_robot, p_adapter, p_owner_epoch, left(COALESCE(p_outcome, 'null'), 16), p_unsigned,
               CASE WHEN p_outcome = 'notOwnedHere' THEN 'not_owned_here' ELSE 'bad_outcome' END);
@@ -900,7 +988,11 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'avi_app') THEN
     GRANT EXECUTE ON FUNCTION public.edge_motion_lock_apply(integer, integer, bigint, integer, text, text) TO avi_app;
     GRANT EXECUTE ON FUNCTION public.edge_motion_lock_clear(integer, integer, bigint, integer) TO avi_app;
-    GRANT EXECUTE ON FUNCTION public.edge_stop_ack_central(integer, text, integer) TO avi_app; -- fix review 2 (R-10-i)
+    GRANT EXECUTE ON FUNCTION public.edge_stop_ack_central(integer, text, bigint) TO avi_app; -- fix review 9 (R-10-ba): (request, outcome, execution)
+    GRANT EXECUTE ON FUNCTION public.edge_stop_record_central_execution(text, integer, boolean, text) TO avi_app; -- fix review 9
+    REVOKE ALL ON "central_stop_executions" FROM avi_app;
+    GRANT SELECT ON "central_stop_executions" TO avi_app;
+    REVOKE ALL ON SEQUENCE "central_stop_executions_id_seq" FROM avi_app;
     GRANT EXECUTE ON FUNCTION public.edge_stop_ack_edge(integer, integer, integer, integer, bigint, text, boolean, integer) TO avi_app; -- fix review 3
     GRANT EXECUTE ON FUNCTION public.edge_stop_resolve(integer, integer, text) TO avi_app; -- fix review 3
     REVOKE ALL ON "edge_stop_ack_refusals" FROM avi_app; -- fix review 4 (R-10-ah): evidence, read-only for the app

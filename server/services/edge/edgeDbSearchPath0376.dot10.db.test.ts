@@ -30,6 +30,7 @@ const CALLABLE = new Set([
   "edge_motion_lock_apply",
   "edge_motion_lock_clear",
   "edge_stop_ack_central",
+  "edge_stop_record_central_execution",
   "edge_stop_ack_edge",
   "edge_stop_resolve",
   "edge_robot_trust_request",

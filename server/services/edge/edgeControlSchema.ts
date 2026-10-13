@@ -159,8 +159,13 @@ export const robotMotionLockRequests = pgTable("robot_motion_lock_requests", {
   ackedAt: timestamp("ackedAt", { withTimezone: true }),
   ackGeneration: integer("ackGeneration"),
   outcome: varchar("outcome", { length: 16 }).$type<"done" | "refused" | "failed" | "expired">(),
-  /** fix review 2 (R-10-i) — the user who acked a STOP central executed (edge_stop_ack_central only); written with the ack */
+  /** fix review 2 (R-10-i) — legacy: the user of a round-2 central ack. Since fix review 9 (R-10-ba) no user acks; always NULL for new acks */
   ackedBy: integer("ackedBy"),
+  /** fix review 9 (R-10-ba) — the central STOP execution a central ack reports (central_stop_executions.id), written with the ack */
+  centralExecutionId: bigint("centralExecutionId", { mode: "number" }),
+  /** fix review 9 (R-10-ba) — STICKY R-10-ay flag: the device's current owner (this node, at the current epoch) answered notOwnedHere */
+  ownerCannotListAt: timestamp("ownerCannotListAt", { withTimezone: true }),
+  ownerCannotListBy: integer("ownerCannotListBy"),
   /** fix review 2 (second scan) — the request this STOP was carried to on an owner change (carry only); NULL = chain head */
   carriedToId: integer("carriedToId"),
   /** fix review 3 — the node acked this STOP over the unsigned-STOP channel (R-10-k / R-10-o) */
@@ -203,10 +208,24 @@ export const devicePendingStops = pgTable("device_pending_stops", {
   /**
    * fix review 8 (R-10-ay, L-7) — the device is EDGE-owned but its CURRENT owner, at the current epoch, answered its latest ack
    * of this STOP "notOwnedHere" (it owns the device yet cannot list / reach it). centralMustExecute is then true as well:
-   * central executes the STOP and acks it with ackCentralStop (actor: an active user or the STOP's requester).
+   * central executes the STOP and acks it with ackCentralStop. fix review 9 (R-10-ba): STICKY — set once from the request's
+   * ownerCannotListAt, kept whatever the edge answers later, until the STOP is acked or resolved.
    */
   ownerCannotList: boolean("ownerCannotList").notNull(),
+  /** fix review 9 (R-10-ba) — a person closed this STOP through edge_stop_resolve; the row stays visible (never executed by the sweep) */
+  resolvedByHuman: boolean("resolvedByHuman").notNull(),
 });
+/** fix review 9 (R-10-ba) — WORM record of every central STOP execution attempt (the server's STOP sweep). SELECT only. */
+export const centralStopExecutions = pgTable("central_stop_executions", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  deviceKind: varchar("deviceKind", { length: 8 }).$type<"robot" | "adapter">().notNull(),
+  deviceId: integer("deviceId").notNull(),
+  ok: boolean("ok").notNull(),
+  detail: text("detail"),
+  executor: varchar("executor", { length: 64 }).notNull(),
+  executedAt: timestamp("executedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+export type CentralStopExecutionRow = typeof centralStopExecutions.$inferSelect;
 export type DevicePendingStopRow = typeof devicePendingStops.$inferSelect;
 export type RobotMotionLockRequestRow = typeof robotMotionLockRequests.$inferSelect;
 /** WORM — written only by the owner-change triggers; read-only for the app. */
@@ -289,8 +308,16 @@ export async function clearEdgeMotionLock(tx: Exec, a: { robotId: number; nodeId
  * fix review 2 (R-10-i) — THE way central acknowledges a STOP it executed itself (a device now CENTRAL-owned): only a pending
  * STOP, outcome done | failed, a real actor (> 0). Refused (23514) for an edge-owned device, a lock / clear, an acked request.
  */
-export async function ackCentralStop(tx: Exec, a: { requestId: number; outcome: "done" | "failed"; actorUserId: number }): Promise<void> {
-  await tx.execute(sql`SELECT public.edge_stop_ack_central(${a.requestId}, ${a.outcome}, ${a.actorUserId})`);
+export async function ackCentralStop(tx: Exec, a: { requestId: number; outcome: "done" | "failed"; executionId: number }): Promise<void> {
+  await tx.execute(sql`SELECT public.edge_stop_ack_central(${a.requestId}, ${a.outcome}, ${a.executionId}::bigint)`);
+}
+/**
+ * fix review 9 (R-10-ba) — the server's STOP sweep records ONE central STOP execution attempt of a device (WORM) BEFORE it acks the
+ * device's pending STOPs with ackCentralStop(…, executionId). ok = the STOP reached the device; done ⇔ ok, failed ⇔ !ok.
+ */
+export async function recordCentralStopExecution(tx: Exec, a: { kind: "robot" | "adapter"; deviceId: number; ok: boolean; detail?: string | null }): Promise<number> {
+  const r = await tx.execute(sql`SELECT public.edge_stop_record_central_execution(${a.kind}, ${a.deviceId}, ${a.ok}, ${a.detail ?? null}) AS id`);
+  return Number(firstRow(r)?.id);
 }
 
 /**

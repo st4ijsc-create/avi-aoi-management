@@ -23,6 +23,7 @@ import { getDb } from "../../db/connection";
 import {
   EDGE_CONTROL_MIGRATIONS,
   ackCentralStop,
+  recordCentralStopExecution,
   ackEdgeStop,
   resolveStop,
   devicePendingStops,
@@ -226,25 +227,28 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
       const { node, robot } = await nodeRobot(tx, `__dot10Af2_${Date.now()}`);
       await tx.update(robotOwnership).set({ edgeNodeId: node }).where(eq(robotOwnership.id, robot));
       const [q] = await tx.insert(robotMotionLockRequests).values({ robotId: robot, edgeNodeId: node, ownerEpoch: 2, kind: "stop", requestedBy: 7, expiresAt: new Date(Date.now() + 60_000) }).returning({ id: robotMotionLockRequests.id });
-      const whileEdge = await codeOf(tx, () => ackCentralStop(tx, { requestId: q.id, outcome: "done", actorUserId: 9 }));
+      const exEdge = await recordCentralStopExecution(tx, { kind: "robot", deviceId: robot, ok: true, detail: "test" });
+      const whileEdge = await codeOf(tx, () => ackCentralStop(tx, { requestId: q.id, outcome: "done", executionId: exEdge }));
       await tx.update(robotOwnership).set({ edgeNodeId: null }).where(eq(robotOwnership.id, robot));
       const pending = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
-      await ackCentralStop(tx, { requestId: q.id, outcome: "failed", actorUserId: 9 });
+      const exFail = await recordCentralStopExecution(tx, { kind: "robot", deviceId: robot, ok: false, detail: "no session" });
+      await ackCentralStop(tx, { requestId: q.id, outcome: "failed", executionId: exFail });
       const [row] = await tx.select().from(robotMotionLockRequests).where(eq(robotMotionLockRequests.id, q.id));
       // fix review 3 (R-10-aa N2): a FAILED STOP stays listed (needsResolution) until a person resolves it
       const failedListed = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
       const [actor] = (await tx.execute(sql`INSERT INTO users ("openId", role, "isActive") VALUES (${"__dot10Af3_" + Date.now()}, 'admin', true) RETURNING id`)) as unknown as Array<{ id: number }>;
       await resolveStop(tx, { requestId: q.id, actorUserId: actor.id, resolution: "stopped at the cabinet, verified" });
       const after = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
-      return { whileEdge, pending, row, failedListed, after: after.length, id: q.id };
+      return { whileEdge, pending, row, failedListed, after: after.map((x) => ({ resolvedByHuman: x.resolvedByHuman, needsResolution: x.needsResolution, centralMustExecute: x.centralMustExecute })), id: q.id };
     });
     expect(out.whileEdge).toBe("23514");
     expect(out.pending).toHaveLength(1);
     expect(out.pending[0]).toMatchObject({ requestId: out.id, currentEdgeNodeId: null, centralMustExecute: true, stale: true, overdue: false });
-    expect(out.row).toMatchObject({ outcome: "failed", ackedBy: 9 });
+    expect(out.row).toMatchObject({ outcome: "failed", ackedBy: null, centralExecutionId: expect.any(Number) });
     expect(out.failedListed).toHaveLength(1);
     expect(out.failedListed[0]).toMatchObject({ outcome: "failed", needsResolution: true });
-    expect(out.after).toBe(0);
+    // fix review 9 (R-10-ba): a STOP a person resolved stays VISIBLE, marked resolved-by-human, never executed again
+    expect(out.after).toEqual([{ resolvedByHuman: true, needsResolution: false, centralMustExecute: false }]);
   });
 
   it("★ fix review 1 M2: edge_motion_lock_apply / _clear refuse a generation below the robot's motionLockGenerationFloor", async () => {

@@ -27,8 +27,10 @@ afterAll(async () => {
   try {
     for (const robot of robots) {
       await c`UPDATE public.robots SET "edgeNodeId" = NULL WHERE id = ${robot} AND "edgeNodeId" IS NOT NULL`;
-      for (const r of await c`SELECT "requestId" FROM public.device_pending_stops WHERE "robotId" = ${robot}`) {
-        await c`SELECT public.edge_stop_ack_central(${r.requestId}, 'done', 1)`.catch(() => undefined);
+      const pend = await c`SELECT "requestId" FROM public.device_pending_stops WHERE "robotId" = ${robot} AND outcome IS NULL`;
+      if (pend.length) {
+        const [ex] = await c`SELECT public.edge_stop_record_central_execution('robot', ${robot}, true, 'test cleanup') AS id`;
+        for (const r of pend) await c`SELECT public.edge_stop_ack_central(${r.requestId}, 'done', ${ex.id}::bigint)`.catch(() => undefined);
       }
       await c`DELETE FROM public.robots WHERE id = ${robot}`.catch(() => undefined);
     }
