@@ -13,18 +13,20 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const F = vi.hoisted(() => ({ dbUp: true, alerts: [] as Array<{ kind: string; message: string }> }));
+const F = vi.hoisted(() => ({ dbUp: true, alerts: [] as Array<{ kind: string; message: string; recipients: number[]; retryUntilPersisted?: unknown }> }));
 vi.mock("../../db/connection", () => ({
   getDb: async () =>
     F.dbUp
       ? {
           insert: () => ({ values: () => ({ onConflictDoUpdate: async () => undefined }) }),
           delete: () => ({ where: async () => undefined }),
+          // residual 2 — the recipients of the durable alert: active admins / supervisors
+          execute: async () => [{ id: 901 }, { id: 902 }],
         }
       : null,
 }));
 vi.mock("./criticalStopAlert", () => ({
-  raiseCriticalStopAlert: async (a: { kind: string; message: string }) => void F.alerts.push(a),
+  raiseCriticalStopAlert: async (a: { kind: string; message: string; recipients: number[]; retryUntilPersisted?: unknown }) => void F.alerts.push(a),
 }));
 
 const ROOT = mkdtempSync(path.join(os.tmpdir(), "rml-durability-"));
@@ -34,7 +36,7 @@ writeFileSync(FILE, "not a directory");
 const BAD = path.join(FILE, "markers"); // a directory under a FILE: never writable
 process.env.ROBOT_MOTION_LOCK_PENDING_DIR = GOOD;
 
-import { attachMotionLockPersistence, _flushMotionLockWritesForTests } from "./robotMotionLockStore";
+import { attachMotionLockPersistence, _flushMotionLockWritesForTests, _setNotDurableRecipientRetryMsForTests } from "./robotMotionLockStore";
 import { MotionLock, MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE } from "./robotDriver";
 
 const noRows = { ok: true as const, rows: new Map() };
@@ -90,5 +92,30 @@ describe("residual MIN-3 — a lock that cannot be made durable never lets the r
     lock.clearByStop();
     await _flushMotionLockWritesForTests();
     expect(lock.isLocked()).toBe(false);
+  });
+});
+
+describe("residual 2 (R-10-bu, P-3) — motion_lock_not_durable goes through the DURABLE alert path", () => {
+  it("★ recipients = the active admins / supervisors, with retryUntilPersisted (an inbox row, retried) — not a log line only", async () => {
+    process.env.ROBOT_MOTION_LOCK_PENDING_DIR = BAD;
+    attachMotionLockPersistence(64, new MotionLock(), noRows);
+    await vi.waitFor(() => expect(F.alerts.find((a) => a.kind === "motion_lock_not_durable" && a.recipients.length > 0)).toBeTruthy(), { timeout: 2_000, interval: 10 });
+    const a = F.alerts.find((x) => x.kind === "motion_lock_not_durable" && x.recipients.length > 0)!;
+    expect(a.recipients).toEqual([901, 902]);
+    expect(a.retryUntilPersisted).toMatchObject({ attempts: expect.any(Number) });
+  });
+  it("★ the DB is down when it is raised ⇒ the recipients are read again later, then the durable alert goes out", async () => {
+    _setNotDurableRecipientRetryMsForTests(20);
+    try {
+      process.env.ROBOT_MOTION_LOCK_PENDING_DIR = BAD;
+      F.dbUp = false;
+      attachMotionLockPersistence(65, new MotionLock(), noRows);
+      await new Promise((r) => setTimeout(r, 60));
+      expect(F.alerts.some((a) => a.kind === "motion_lock_not_durable" && a.recipients.length > 0)).toBe(false);
+      F.dbUp = true;
+      await vi.waitFor(() => expect(F.alerts.some((a) => a.kind === "motion_lock_not_durable" && a.recipients.length > 0)).toBe(true), { timeout: 2_000, interval: 10 });
+    } finally {
+      _setNotDurableRecipientRetryMsForTests(null);
+    }
   });
 });

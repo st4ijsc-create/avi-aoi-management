@@ -214,21 +214,58 @@ function pendingDirWritable(): { ok: true } | { ok: false; error: string } {
   }
 }
 /** MIN-3 — the durable alert of a motion lock that cannot be made durable (alert stream + log; never throws). */
+/** residual 2 (R-10-bu, P-3) — how long between two reads of the alert's recipients while the DB is down (test seam). */
+const NOT_DURABLE_RECIPIENT_RETRY_MS = 30_000;
+let notDurableRecipientRetryMs = NOT_DURABLE_RECIPIENT_RETRY_MS;
+export function _setNotDurableRecipientRetryMsForTests(ms: number | null): void {
+  notDurableRecipientRetryMs = ms ?? NOT_DURABLE_RECIPIENT_RETRY_MS;
+}
+/** The recipients of a robot-wide durable alert: the active admins / supervisors (the deviceOwnershipService pattern). */
+async function notDurableRecipients(): Promise<number[]> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError("DB unavailable (alert recipients)");
+  const r = (await withDeadline(Promise.resolve(db.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role IN ('admin', 'supervisor')`)), 1_000, "motion-lock alert recipients")) as unknown;
+  const rows = (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<{ id: unknown }>;
+  return rows.map((x) => Number(x.id)).filter((x) => Number.isSafeInteger(x) && x > 0);
+}
+/**
+ * MIN-3 + residual 2 (P-3) — the DURABLE alert of a motion lock that cannot be made durable: the same path as the other durable
+ * STOP / lock alerts (criticalStopAlert: alert stream + a safety-critical inbox row to every active admin / supervisor, retried
+ * until persisted). The DB may be down exactly now (that is often why): the log line + stream go at once, and the recipients are
+ * read again every 30 s (≤ 20 times) until the inbox rows can be written. Never throws.
+ */
 function alertNotDurable(robotId: number, why: string): void {
-  void import("./criticalStopAlert")
-    .then(({ raiseCriticalStopAlert }) =>
-      raiseCriticalStopAlert({
-        kind: "motion_lock_not_durable",
-        title: `Motion lock not durable — robot ${robotId}`,
-        message: `Robot ${robotId}: its motion lock cannot be made durable (${why}) — motion stays REFUSED until the lock or its clear is persisted (check ROBOT_MOTION_LOCK_PENDING_DIR and the database).`,
-        recipients: [],
-        dedupKey: `motion_lock_not_durable:${robotId}:${Math.floor(Date.now() / 60_000)}`,
-        source: "robot",
-        entityType: "robot",
-        entityId: robotId,
-      }),
-    )
-    .catch(() => undefined);
+  const dedupKey = `motion_lock_not_durable:${robotId}:${Math.floor(Date.now() / 60_000)}`;
+  const raise = (recipients: number[]) =>
+    import("./criticalStopAlert")
+      .then(({ raiseCriticalStopAlert }) =>
+        raiseCriticalStopAlert({
+          kind: "motion_lock_not_durable",
+          title: `Motion lock not durable — robot ${robotId}`,
+          message: `Robot ${robotId}: its motion lock cannot be made durable (${why}) — motion stays REFUSED until the lock or its clear is persisted (check ROBOT_MOTION_LOCK_PENDING_DIR and the database).`,
+          recipients,
+          dedupKey,
+          source: "robot",
+          entityType: "robot",
+          entityId: robotId,
+          retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
+        }),
+      )
+      .catch(() => undefined);
+  const attempt = (n: number) => {
+    void notDurableRecipients()
+      .then((ids) => {
+        if (ids.length > 0) return void raise(ids);
+        throw new Error("no active admin / supervisor");
+      })
+      .catch((err) => {
+        if (n === 0) void raise([]); // at once: the log line + the alert stream, even without recipients
+        if (n >= 20) return console.error(`[Robot] robot ${robotId}: motion_lock_not_durable alert has no recipient after ${n} reads (${errText(err)}) — the log line and the alert stream carried it`);
+        const t = setTimeout(() => attempt(n + 1), notDurableRecipientRetryMs);
+        if (typeof t.unref === "function") t.unref();
+      });
+  };
+  attempt(0);
 }
 
 /** Write the marker; true ⇔ it is durable (temp file + fsync + rename + directory fsync where the OS has one). Never throws. */
