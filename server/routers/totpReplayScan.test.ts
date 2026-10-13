@@ -54,8 +54,14 @@ const CORE_TRPC = join(GOC_REPO, "server", "_core", "trpc.ts");
  * `verify2FA` · `disable2FA`).
  * ⚠ Ghim để một lượt **xoá** phép xác minh (bản vá "chặn hết") và một lượt **thêm** cửa mới đều
  * phải **NÓI RA**, thay vì trôi qua trong im lặng.
+ *
+ * 2026-10-13 (doc 81 Đợt 10 F2) — 8 → **9**: `server/services/edge/edgeNodeCredentials.ts`
+ * `verifyCredentialAdmin` (Đợt 9 F7, `10e1f7037`) — bằng chứng admin của các CLI vận hành
+ * (`scripts/edge-node-credential.ts`, `edge-signing-key.ts`, `edge-device-owner.ts`). Nó KHÔNG phải
+ * bề mặt request ⇒ nó được KHAI ở `NGOAI_REQUEST_DA_KHAI` (§2) và chỉ đứng được khi hai điều kiện
+ * của chính lưới này còn đúng: sổ ở DB (dùng chung mọi tiến trình) và chỉ `scripts/**` gọi nó.
  */
-const SO_DIEM_GOI_SO = 8;
+const SO_DIEM_GOI_SO = 9;
 /** Tên hàm cổng của sổ. */
 const TEN_HAM_SO = "verifyTotpOnce";
 
@@ -301,11 +307,55 @@ function dangKyRouteExpress(f: FileNguon): boolean {
   return co;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// 2b. 2026-10-13 (doc 81 Đợt 10 F2, census này tự nói lời giải: "chuyển sổ xuống DB") — ĐIỂM GỌI
+//     NGOÀI REQUEST ĐƯỢC KHAI, VÀ ĐIỀU KIỆN CỦA LỜI KHAI ĐƯỢC CANH.
+//
+// Lý do gốc của §2 là "HAI cuốn sổ trong hai tiến trình". Từ Pha 7 (mig 0313) sổ đã ở DB —
+// `tieuMaTrongSo` là MỘT câu `INSERT … ON CONFLICT DO UPDATE` vào `totp_consumed`, khoá
+// (userId, sha256(userId:mã)), đồng hồ của Postgres (Pha 9) — nên một tiến trình CLI tiêu mã vào
+// CÙNG cuốn sổ với web: mã đã tiêu ở CLI bị web từ chối và ngược lại. Lời giải mà §2 nêu ĐÃ CÓ,
+// không cần DDL mới. Nhưng một lời khai chỉ đứng trên điều kiện của nó, nên điều kiện được canh:
+//   (i)  sổ là bảng DB dùng chung (tieuMaTrongSo chèn vào `totpConsumed`, ON CONFLICT, không Map);
+//   (ii) ∀ file nhắc tới hàm được khai của file khai: nằm dưới `scripts/` (không route/worker/cron);
+//   (iii) chốt `ROLE=worker` của sổ vẫn sống (ô §2 thứ hai) — CLI chạy với ROLE=worker ⇒ từ chối.
+// Một điểm gọi ngoài request MỚI ⇒ vẫn ĐỎ (phải khai ở đây, có lý do).
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+const NGOAI_REQUEST_DA_KHAI: Readonly<Record<string, { ham: string; lyDo: string }>> = {
+  "server/services/edge/edgeNodeCredentials.ts": {
+    ham: "verifyCredentialAdmin",
+    lyDo: "Đợt 9 F7 — bằng chứng admin (mật khẩu + TOTP) của CLI vận hành edge chạy trên máy trung tâm; sổ DB dùng chung",
+  },
+};
+
 describe("★★★ Task 6 — sổ trong bộ nhớ: điều kiện của nó ĐƯỢC CANH", () => {
-  it("★★★ ∀ file gọi `verifyTotpOnce`: nó là một BỀ MẶT REQUEST (tRPC hoặc route express)", () => {
+  it("★★★ (i) điều kiện của lời khai: sổ là bảng DB DÙNG CHUNG mọi tiến trình", () => {
+    const ma = readFileSync(FILE_SO, "utf8");
+    expect(ma, "sổ phải chèn vào bảng `totpConsumed` (mig 0313)").toMatch(/\.insert\(totpConsumed\)/);
+    expect(ma, "một câu duy nhất ON CONFLICT (không SELECT rồi INSERT)").toContain(".onConflictDoUpdate(");
+    expect(ma, "sổ quay về bộ nhớ ⇒ lời khai NGOAI_REQUEST_DA_KHAI mất điều kiện").not.toMatch(/new Map/);
+    expect(readFileSync(join(GOC_REPO, "drizzle", "schema", "auth.ts"), "utf8")).toContain('pgTable("totp_consumed"');
+  });
+
+  it("★★★ (ii) điều kiện của lời khai: hàm được khai CHỈ được gọi từ `scripts/**`", () => {
+    const sai: string[] = [];
+    for (const [duong, { ham }] of Object.entries(NGOAI_REQUEST_DA_KHAI)) {
+      const dich = join(GOC_REPO, ...duong.split("/"));
+      for (const f of MOI_FILE_BON_CAY) {
+        if (f.duong === duong || laFileTest(f.duong)) continue;
+        if (!moiDuongNhap(f).some((s) => phanGiaiToi(f.that, s, dich))) continue;
+        if (!new RegExp(`\\b${ham}\\b`).test(f.ma)) continue;
+        if (!f.duong.startsWith("scripts/")) sai.push(f.duong);
+      }
+    }
+    expect(sai.join(" · "), "hàm xác minh TOTP ngoài request bị nối vào một bề mặt KHÔNG phải CLI vận hành ⇒ khai lại / đưa về request").toBe("");
+  });
+
+  it("★★★ ∀ file gọi `verifyTotpOnce`: nó là một BỀ MẶT REQUEST (tRPC hoặc route express) — hoặc ĐÃ KHAI ở §2b", () => {
     const ngoai: string[] = [];
     for (const f of SAN_XUAT) {
       if (f.duong === TEN_SO || loiGoiSo(f).length === 0) continue;
+      if (Object.prototype.hasOwnProperty.call(NGOAI_REQUEST_DA_KHAI, f.duong)) continue; // điều kiện canh ở (i)/(ii)
       const laTrpc = f.that === CORE_TRPC || moiDuongNhap(f).some((s) => phanGiaiToi(f.that, s, CORE_TRPC));
       if (!laTrpc && !dangKyRouteExpress(f)) ngoai.push(f.duong);
     }
