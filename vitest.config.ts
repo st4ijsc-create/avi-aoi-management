@@ -57,7 +57,7 @@ export default defineConfig({
       "vscode-extension/src/**/*.unit.test.ts",
     ],
     // doc 81 Đợt 10 final fix wave residual (I-6 / MIN-5, R-10-bt) — the suites that change SHARED `_test` state for minutes run in
-    // the SERIAL project only (vitest.serial.config.ts, one file at a time; `npm test` runs both): never beside the others.
+    // the SERIAL project only (vitest.serial.config.ts, one file at a time; `npm run test:serial`, both: `npm run test:all`).
     exclude: [
       "**/node_modules/**",
       "**/dist/**",

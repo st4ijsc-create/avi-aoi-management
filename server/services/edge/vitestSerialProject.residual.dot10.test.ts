@@ -35,8 +35,23 @@ describe("residual I-6 / MIN-5 — the shared-state suites run in a serial proje
     expect(serial.test?.fileParallelism).toBe(false);
     expect(serial.test?.exclude ?? []).not.toEqual(expect.arrayContaining([...SERIAL_SUITES]));
   });
-  it("★ `npm test` runs the default run AND the serial run", () => {
+  it("★ residual 2 (R-10-bu): `test` is plain `vitest run` again (file arguments keep working); `test:serial` and `test:all` exist", () => {
     const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")) as { scripts: Record<string, string> };
-    expect(pkg.scripts.test).toBe("vitest run && vitest run --config vitest.serial.config.ts");
+    expect(pkg.scripts.test).toBe("vitest run");
+    expect(pkg.scripts["test:serial"]).toBe("vitest run --config vitest.serial.config.ts");
+    expect(pkg.scripts["test:all"]).toBe("node scripts/test-all.mjs");
+  });
+
+  it("★ residual 2: test:all runs the serial project EVEN IF the default run fails, and exits non-zero if either failed", async () => {
+    const { runAll } = await import("../../../scripts/test-all.mjs");
+    const ran: string[][] = [];
+    const fake = (codes: number[]) => (args: string[]) => (ran.push(args), codes[ran.length - 1]);
+    expect(await runAll(fake([1, 0]))).toBe(1);
+    expect(ran).toEqual([["vitest", "run"], ["vitest", "run", "--config", "vitest.serial.config.ts"]]);
+    ran.length = 0;
+    expect(await runAll(fake([0, 2]))).toBe(2);
+    expect(ran).toHaveLength(2);
+    ran.length = 0;
+    expect(await runAll(fake([0, 0]))).toBe(0);
   });
 });

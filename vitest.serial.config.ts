@@ -9,7 +9,8 @@
  *   • the seed-guard census (safetySeedIntact) — it toggles that seed;
  *   • edgeControlSchema.dot10.db — its apply-script re-run (DDL) deadlocks under parallel DB load (14/14 alone).
  * The default config (vitest.config.ts) EXCLUDES exactly this list; this config runs exactly it, ONE FILE AT A TIME.
- * `npm test` = `vitest run && vitest run --config vitest.serial.config.ts`. A single serial file:
+ * `npm test` = the default run only; `npm run test:serial` = this project; `npm run test:all` = both (scripts/test-all.mjs: the
+ * serial run goes even if the default one fails; non-zero if either failed). A single serial file:
  *     npx vitest run --config vitest.serial.config.ts server/services/edge/edgeAttack.dot10.e2e.db.test.ts
  */
 import { defineConfig, mergeConfig } from "vitest/config";
