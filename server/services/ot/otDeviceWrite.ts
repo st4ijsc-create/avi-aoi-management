@@ -203,9 +203,12 @@ export type ExecutedWrite = {
 /**
  * final wave F7 — listeners told when a PINNED stop is queued for an adapter: an in-flight pre-write safety re-check of a
  * non-stop command gives way to it at once (L-7). Returns the unsubscribe function.
+ * doc 81 Đợt 11 K-fix (R-11-c) — also told when an UNPINNED stop-typed command is queued (`info.pinned === false`); the
+ * listener decides (central: a non-stop re-check gives way to any STOP, a stop-typed re-check only to a PINNED one).
  */
-const pinnedStopQueuedListeners = new Map<number, Set<(stopRef?: Record<string, unknown>) => void>>();
-export function onPinnedStopQueued(adapterId: number, fn: (stopRef?: Record<string, unknown>) => void): () => void {
+export type StopQueuedListener = (stopRef?: Record<string, unknown>, info?: { pinned: boolean }) => void;
+const pinnedStopQueuedListeners = new Map<number, Set<StopQueuedListener>>();
+export function onPinnedStopQueued(adapterId: number, fn: StopQueuedListener): () => void {
   let set = pinnedStopQueuedListeners.get(adapterId);
   if (!set) {
     set = new Set();
@@ -233,12 +236,65 @@ export function isSuperseded(x: unknown): x is Superseded {
   return typeof x === "object" && x !== null && (x as Superseded).superseded === true && (x as Superseded).byStop === true;
 }
 
+/**
+ * doc 81 Đợt 11 K-fix (ruling R-11-d) — the per-adapter STOP EPOCH. Closes the pre-queue race of Group K (D-2): a non-STOP write
+ * submitted BEFORE a STOP but still in its gates (DB reservation, preflight, interlock …) when the STOP is issued used to reach
+ * the device AFTER the STOP (flag ON: it entered the queue behind the STOP and was not superseded; flag OFF: it simply ran).
+ *   • Every STOP — any stop-typed command (stop / e_stop, pinned or not), central or edge, incl. central's fallback / sweep STOP
+ *     through the device stage — BUMPS its adapter's epoch when it is issued (bumpAdapterStopEpoch).
+ *   • A non-STOP write records the epoch when its gates begin; right before the device write it is compared
+ *     (executeOtDeviceWriteUnlessStopped): moved ⇒ the write is CANCELLED (`StoppedBeforeWrite`, reason STOPPED_BEFORE_WRITE),
+ *     nothing reaches the device, the caller ledgers the refusal. Flag ON and OFF alike.
+ *   • A write whose gates begin AFTER the bump is the operator's newer intent and runs (after the STOP when serialized).
+ * Values come from ONE process-wide counter (strictly increasing, never reused) so an equal value means "no STOP since";
+ * the map holds one entry per adapter ever stopped (bounded by the adapter count).
+ * PER PROCESS: a STOP handled by another replica / process (another central replica, an edge gateway) does not move this
+ * process's epoch — see the K-fix report (each process also has its own queue and its own driver sessions).
+ */
+let stopEpochSeq = 0;
+const adapterStopEpochs = new Map<number, { epoch: number; stop: Record<string, unknown> | null }>();
+
+/** R-11-d — a STOP for `adapterId` is issued: move the epoch (returns the new value). Never throws. */
+export function bumpAdapterStopEpoch(adapterId: number, stop?: Record<string, unknown> | null): number {
+  stopEpochSeq += 1;
+  adapterStopEpochs.set(adapterId, { epoch: stopEpochSeq, stop: stop ?? null });
+  return stopEpochSeq;
+}
+
+/** R-11-d — the adapter's current STOP epoch (0 = never stopped in this process). */
+export function adapterStopEpoch(adapterId: number): number {
+  return adapterStopEpochs.get(adapterId)?.epoch ?? 0;
+}
+
+/** R-11-d — a non-STOP write cancelled right before its device write because a STOP was issued after its gates began. */
+export type StoppedBeforeWrite = {
+  stoppedBeforeWrite: true;
+  epochAtGates: number;
+  epochNow: number;
+  /** identity of the latest STOP (idempotencyKey / commandType / pinned …) as its issuer supplied it; null if none */
+  stop: Record<string, unknown> | null;
+};
+
+export function isStoppedBeforeWrite(x: unknown): x is StoppedBeforeWrite {
+  return typeof x === "object" && x !== null && (x as StoppedBeforeWrite).stoppedBeforeWrite === true;
+}
+
+/** R-11-d — null when no STOP was issued for the adapter since `epochAtGates`, else the cancellation. */
+export function stopIssuedSince(adapterId: number, epochAtGates: number): StoppedBeforeWrite | null {
+  const cur = adapterStopEpochs.get(adapterId);
+  const epochNow = cur?.epoch ?? 0;
+  if (epochNow === epochAtGates) return null;
+  return { stoppedBeforeWrite: true, epochAtGates, epochNow, stop: cur?.stop ?? null };
+}
+
 interface PendingAdapterCommand {
   /** Bắt đầu chạy lệnh (chỉ khi không có lệnh nào đang bay). */
   run: () => void;
   /** Huỷ lệnh đang CHỜ: người gọi nhận `Superseded` (mang danh tính DỪNG `byStop`); `fn` không bao giờ được gọi. */
   cancel: (byStop?: Record<string, unknown>) => void;
   priorityStop: boolean;
+  /** doc 81 Đợt 11 K-fix (R-11-c) — a stop-typed command (pinned OR not): never BUSY, ahead of every waiting non-stop command. */
+  stopTyped: boolean;
 }
 
 interface AdapterCommandQueue {
@@ -299,6 +355,14 @@ export function tryEnqueueAdapterCommand<T>(
   fn: () => Promise<T>,
   opts?: {
     priorityStop?: boolean;
+    /**
+     * doc 81 Đợt 11 K-fix (R-11-c, D-1, L-7) — a stop-typed command that is NOT the pinned stop (no pins, values differ,
+     * stale fingerprint). Like the pin it is never BUSY, cancels the non-stop commands still WAITING (SUPERSEDED_BY_STOP
+     * naming it) and stands right after the stops already waiting, so it waits at most for the ONE command in flight. Unlike
+     * the pin it never cancels a waiting stop-typed command, and a later PINNED stop still cancels IT (R-1E-b unchanged).
+     * Implied by `priorityStop`.
+     */
+    stopTyped?: boolean;
     stopRef?: Record<string, unknown>;
     /**
      * doc 81 Đợt 4 Task B3 — given `fn`'s result, a promise the queue SLOT waits on before the next command runs
@@ -310,8 +374,9 @@ export function tryEnqueueAdapterCommand<T>(
 ): EnqueueOutcome<T> {
   const max = cmdQueueMax();
   const priorityStop = opts?.priorityStop === true;
+  const stopTyped = priorityStop || opts?.stopTyped === true;
   let q = adapterCommandQueues.get(adapterId);
-  if (!priorityStop && q && q.depth >= max) return { accepted: false, depth: q.depth, max };
+  if (!stopTyped && q && q.depth >= max) return { accepted: false, depth: q.depth, max };
   if (!q) {
     q = { inFlight: false, pending: [], depth: 0 };
     adapterCommandQueues.set(adapterId, q);
@@ -324,6 +389,7 @@ export function tryEnqueueAdapterCommand<T>(
   });
   const job: PendingAdapterCommand = {
     priorityStop,
+    stopTyped,
     run: () => {
       queue.inFlight = true;
       let p: Promise<T>;
@@ -380,10 +446,24 @@ export function tryEnqueueAdapterCommand<T>(
     }
     queue.pending = kept;
     // final wave F7 — an in-flight pre-write safety re-check gives way too (it has not written yet).
-    for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(opts?.stopRef);
+    for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(opts?.stopRef, { pinned: true });
     // Đứng sau DỪNG ghim cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng.
     let at = 0;
     for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].priorityStop) at = i + 1;
+    queue.pending.splice(at, 0, job);
+  } else if (stopTyped) {
+    // doc 81 Đợt 11 K-fix (R-11-c) — an UNPINNED stop-typed command: cancels every waiting NON-stop command (a write waiting
+    // behind a STOP would re-energise after it), keeps the waiting stops (pinned or not), tells an in-flight re-check
+    // (pinned: false) and stands right after the last waiting stop — never behind a write, never BUSY.
+    const kept: PendingAdapterCommand[] = [];
+    for (const j of queue.pending) {
+      if (j.stopTyped) kept.push(j);
+      else j.cancel(opts?.stopRef);
+    }
+    queue.pending = kept;
+    for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(opts?.stopRef, { pinned: false });
+    let at = 0;
+    for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].stopTyped) at = i + 1;
     queue.pending.splice(at, 0, job);
   } else {
     queue.pending.push(job);
@@ -752,6 +832,23 @@ export interface OtResolvedWrite {
 }
 
 /**
+ * doc 81 Đợt 11 K-fix (R-11-d) — the device stage behind the STOP-epoch check: a NON-STOP write (`stopTyped` false) whose gates
+ * began at `stopEpochAtGates` is cancelled when a STOP was issued for its adapter since (nothing written, `StoppedBeforeWrite`
+ * returned); otherwise executeOtDeviceWrite runs. Deliberately NOT async: the check and the call happen in one tick, and
+ * executeOtDeviceWrite reaches driver.writeTags without an await — no STOP can be issued in between.
+ * `stopEpochAtGates` null ⇒ no check (stop-typed commands; interlock safety actions — see commandDispatcher).
+ */
+export function executeOtDeviceWriteUnlessStopped(
+  a: Parameters<typeof executeOtDeviceWrite>[0] & { stopEpochAtGates: number | null },
+): Promise<ExecutedWrite | StoppedBeforeWrite> {
+  if (!a.stopTyped && a.stopEpochAtGates !== null) {
+    const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates);
+    if (stopped) return Promise.resolve(stopped);
+  }
+  return executeOtDeviceWrite(a);
+}
+
+/**
  * The write + verify body of ONE command (moved unchanged from dispatchCore's executeWriteAndVerify, minus the pre-write safety
  * re-check, which stays a dispatcher gate). Never throws for expected failure modes (driver errors are caught).
  */
@@ -766,9 +863,17 @@ export async function executeOtDeviceWrite(a: {
   ledger: { intentIds: number[]; confirmedBy: number };
   /** R-10-x — the edge's alarm / audit sink; absent ⇒ central's DB paths (unchanged) */
   sink?: OtDeviceEventSink;
+  /**
+   * doc 81 Đợt 11 K-fix (R-11-d) — true when the caller already bumped the adapter's STOP epoch when the STOP was ISSUED (central
+   * dispatch, edge dispatch). Absent on a stop-typed write (central's fallback / sweep STOP) ⇒ the epoch is bumped here, before the write.
+   */
+  stopEpochBumped?: boolean;
 }): Promise<ExecutedWrite> {
   const { input, driver, resolved, driverWrites, timeoutMs, stopTyped } = a;
   const { intentIds, confirmedBy: ledgerConfirmer } = a.ledger;
+  if (stopTyped && a.stopEpochBumped !== true) bumpAdapterStopEpoch(input.adapterId, { idempotencyKey: input.idempotencyKey ?? null, commandType: input.commandType });
+  // R-11-d — NO await may precede driver.writeTags below: executeOtDeviceWriteUnlessStopped checks the STOP epoch in the same
+  // tick as this call, which is what makes its check "right before the device write".
   const TIMEOUT = Symbol("timeout");
   // Pre-insert outcome per resolved write. `ok` is fixed by the WRITE result;
   // read-back only refines an acked write's status (verified/unverified) and

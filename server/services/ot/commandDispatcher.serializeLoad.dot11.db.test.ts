@@ -469,10 +469,10 @@ describe.skipIf(!DB_URL)("Đợt 11 K — OT_CMD_SERIALIZE_ENABLED load + STOP b
     }
   }
 
-  // L-7 candidate defect (measured E2): with the flag ON a STOP-typed command whose values are not the pins (unpinned) is answered
-  // BUSY when the adapter queue is full, and otherwise waits FIFO behind every queued write. Only a PINNED stop is exempt
-  // (commandDispatcher.ts:1193-1211, otDeviceWrite.ts:tryEnqueueAdapterCommand). Committed as it.fails: flips to a failure when fixed.
-  it.fails("L-7: with the flag ON a stop-typed command is never answered BUSY because the queue is full", async () => {
+  // L-7 defect D-1 (measured E2): with the flag ON a STOP-typed command whose values are not the pins (unpinned) was answered
+  // BUSY when the adapter queue was full, and otherwise waited FIFO behind every queued write. Fixed by K-fix (ruling R-11-c):
+  // every stop-typed command is never BUSY and goes to the front (tryEnqueueAdapterCommand `stopTyped`). Was it.fails.
+  it("L-7: with the flag ON a stop-typed command is never answered BUSY because the queue is full", async () => {
     setEnv(true, { OT_CMD_QUEUE_MAX: "3" });
     const a = adapters[2];
     reset(a, 200, 10);
