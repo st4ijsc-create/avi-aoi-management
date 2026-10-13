@@ -208,12 +208,12 @@ describe("§0d — ★★★ commit ↔ metaJsonSchema: GIỚI HẠN THẬT, đo
 // chạy tay và bắt được: "xoá metaJsonSchema.parse(...) ⇒ VẪN true".
 // ════════════════════════════════════════════════════════════════════════════
 describe("§0d2 — ĐỘT BIẾN: xoá .parse() thật, GIỮ type query z.infer<typeof metaJsonSchema>", () => {
-  const NEO = "metaData = metaJsonSchema.parse(JSON.parse(metaContent));";
+  const NEO = "metaData = metaJsonSchema.parse(metaRaw);";
   const viTri = NOI_DUNG_AOI_PACKAGE_GOC.indexOf(NEO);
   const maDotBien =
     viTri > -1
       ? NOI_DUNG_AOI_PACKAGE_GOC.slice(0, viTri) +
-        "metaData = JSON.parse(metaContent) as z.infer<typeof metaJsonSchema>; // BỎ QUA VALIDATION — chỉ ép kiểu" +
+        "metaData = metaRaw as z.infer<typeof metaJsonSchema>; // BỎ QUA VALIDATION — chỉ ép kiểu" +
         NOI_DUNG_AOI_PACKAGE_GOC.slice(viTri + NEO.length)
       : NOI_DUNG_AOI_PACKAGE_GOC;
 
@@ -266,12 +266,12 @@ describe("§0d3 — ★★★ commit CÓ lời gọi metaJsonSchema.parse(...)/.
   });
 
   it("★ ĐỐI CHỨNG — đổi lời gọi sang MỘT SCHEMA KHÁC (không phải metaJsonSchema) ⇒ coLoiGoiParseTrenSchema('metaJsonSchema') phải ĐỎ (chống 'vá quá tay' — hàm không được trả true cho BẤT KỲ .parse() nào, chỉ cho đúng schema hỏi tới)", () => {
-    const NEO = "metaJsonSchema.parse(JSON.parse(metaContent))";
+    const NEO = "metaJsonSchema.parse(metaRaw)";
     const viTri = NOI_DUNG_AOI_PACKAGE_GOC.indexOf(NEO);
     expect(viTri, "không tìm thấy điểm neo — bộ suy đã đổi neo?").toBeGreaterThan(-1);
     const maDotBien =
       NOI_DUNG_AOI_PACKAGE_GOC.slice(0, viTri) +
-      "schemaKhongLienQuanGiCa.parse(JSON.parse(metaContent))" +
+      "schemaKhongLienQuanGiCa.parse(metaRaw)" +
       NOI_DUNG_AOI_PACKAGE_GOC.slice(viTri + NEO.length);
 
     expect(
@@ -285,12 +285,12 @@ describe("§0d3 — ★★★ commit CÓ lời gọi metaJsonSchema.parse(...)/.
   });
 
   it("★ ĐỐI CHỨNG — safeParse() cũng được nhận diện (không chỉ parse())", () => {
-    const NEO = "metaData = metaJsonSchema.parse(JSON.parse(metaContent));";
+    const NEO = "metaData = metaJsonSchema.parse(metaRaw);";
     const viTri = NOI_DUNG_AOI_PACKAGE_GOC.indexOf(NEO);
     expect(viTri).toBeGreaterThan(-1);
     const maDotBien =
       NOI_DUNG_AOI_PACKAGE_GOC.slice(0, viTri) +
-      "{ const r = metaJsonSchema.safeParse(JSON.parse(metaContent)); if (r.success) metaData = r.data; }" +
+      "{ const r = metaJsonSchema.safeParse(metaRaw); if (r.success) metaData = r.data; }" +
       NOI_DUNG_AOI_PACKAGE_GOC.slice(viTri + NEO.length);
 
     expect(
