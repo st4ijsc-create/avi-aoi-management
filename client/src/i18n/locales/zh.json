@@ -19712,6 +19712,8 @@
     }
   },
   "console": {
+    "queuedOnEdge": "STOP 已发送到机器人的边缘节点 — 正在等待其确认（见作业日志）。",
+    "queuedEdgeUnreachable": "STOP 已排队，但机器人的边缘节点无法连接 — 中心已尝试自行发送 STOP 并发出严重告警。如机器人仍在运动，请使用硬件急停 (E-STOP)。",
     "rejected": "命令未执行：{{status}}",
     "pickRobot": "请先选择机器人。"
   },

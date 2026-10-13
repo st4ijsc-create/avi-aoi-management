@@ -561,6 +561,12 @@ export const edgePullAnswerSchema = z.strictObject({
   unsignedStops: z.array(edgeUnsignedStopSchema).max(EDGE_PULL_COMMANDS_MAX).optional(),
   /** B (R-10-am M-3) — true ⇔ some request row could not be expressed / signed this time (logged); the rest are here */
   commandsIncomplete: z.literal(true).optional(),
+  /**
+   * doc 81 Đợt 10 final fix wave (I-1) — true ⇔ a RUN section (offered runs, claims, unconfirmed STOPs of aborted runs) or one
+   * run of it could not be built this time and was left out (logged centrally). The commands are always complete-or-503. The
+   * edge never concludes anything from what a partial answer omits (e.g. a run missing from stopsUnconfirmed is NOT confirmed).
+   */
+  partial: z.literal(true).optional(),
 });
 export type EdgePulledRun = z.infer<typeof edgePulledRunSchema>;
 export type EdgeNodeClaim = z.infer<typeof edgeNodeClaimSchema>;

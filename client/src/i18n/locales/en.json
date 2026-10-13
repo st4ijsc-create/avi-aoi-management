@@ -19704,6 +19704,8 @@
     }
   },
   "console": {
+    "queuedOnEdge": "STOP sent to the robot's edge node — waiting for its confirmation (see the job log).",
+    "queuedEdgeUnreachable": "STOP queued, but the robot's edge node is UNREACHABLE — central attempted its own STOP and raised a critical alert. Use the hardware E-STOP if the robot is still moving.",
     "rejected": "Command not executed: {{status}}",
     "pickRobot": "Select a robot first."
   },

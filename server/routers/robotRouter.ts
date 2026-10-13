@@ -201,7 +201,21 @@ async function consoleStopNoSessionPath(
         getActiveRobot(robotId)
           ? dispatchRobotJob({ robotId: robotId, job: { jobType: "abort", params: {} }, triggerKind: "manual", requestedBy: userId, confirmedBy: userId })
           : null,
+      // final fix wave (I-3, R-10-br) — the owning node is unreachable ⇒ central's fallback STOP at once (session, else transient)
+      fallbackStop: () => sendCentralRobotStop(robotId, { row: stopRow }),
+      replyBoundMs: Math.max(0, CONSOLE_STOP_REPLY_BOUND_MS - (Date.now() - enteredAt)),
     });
+    if (stop.ok && stop.edgeUnreachable) {
+      // a WARNING, not ok-green: queued, but the node is not reachable; the fallback leg and the alert are said truthfully
+      const fb = stop.centralFallback;
+      return {
+        ok: true,
+        status: "queued_edge_unreachable" as const,
+        error: undefined as string | undefined,
+        queuedOnEdge: { requestId: stop.requestId ?? null, edgeNodeId: stop.edgeNodeId ?? owner.edge, via: stop.via },
+        centralFallback: (!fb ? "none" : fb.state === "pending" ? "in_progress" : fb.state === "done" && fb.value.ok ? (fb.value.sent === "simulated" ? "simulated" : "done") : "failed") as "done" | "simulated" | "failed" | "in_progress" | "none",
+      };
+    }
     if (stop.ok) {
       return { ok: true, status: "queued_on_edge" as const, error: undefined as string | undefined, queuedOnEdge: { requestId: stop.requestId ?? null, edgeNodeId: stop.edgeNodeId ?? owner.edge, via: stop.via } };
     }

@@ -31,9 +31,17 @@ export interface EdgeDeviceRequestQueued {
 }
 /** Failure codes of the queue (B's EdgeRequestError.code): the device is not edge-owned / bad input / owner changed / DB. */
 export type EdgeDeviceRequestErrorCode = "notEdgeOwned" | "invalid" | "stale" | "unavailable";
+/** final fix wave (I-3) — is the owning node reachable for a STOP, as central sees it (its pulls / heartbeat)? */
+export interface EdgeNodeReachRead {
+  reachable: boolean;
+  basis: "pull" | "heartbeat" | "none" | "unreadable";
+  ageMs: number | null;
+}
 export interface EdgeDeviceRequestPort {
   /** queue one request for the node that owns the device NOW; throws an error carrying `code` (EdgeDeviceRequestErrorCode) */
   enqueue(input: EdgeDeviceRequestInput): Promise<EdgeDeviceRequestQueued>;
+  /** final fix wave (I-3) — the owning node's reachability; absent ⇒ group B's edgeNodeCommands.edgeNodeReachability */
+  reachable?(edgeNodeId: number): Promise<EdgeNodeReachRead>;
 }
 
 let port: EdgeDeviceRequestPort | null = null;
@@ -41,9 +49,14 @@ export function setEdgeDeviceRequestPort(p: EdgeDeviceRequestPort | null): void 
   port = p;
 }
 
+async function defaultReachable(edgeNodeId: number): Promise<EdgeNodeReachRead> {
+  const mod = (await import("../edge/edgeNodeCommands")) as unknown as { edgeNodeReachability: (id: number) => Promise<EdgeNodeReachRead> };
+  return mod.edgeNodeReachability(edgeNodeId);
+}
+
 /** The queue: the installed port, else the adapter over group B's edgeNodeCommands.enqueueEdgeDeviceRequest. */
 export function edgeDeviceRequestPort(): EdgeDeviceRequestPort {
-  if (port) return port;
+  if (port) return port.reachable ? port : { enqueue: (i) => port!.enqueue(i), reachable: defaultReachable };
   return {
     async enqueue(input) {
       const mod = (await import("../edge/edgeNodeCommands")) as unknown as {
@@ -51,7 +64,21 @@ export function edgeDeviceRequestPort(): EdgeDeviceRequestPort {
       };
       return mod.enqueueEdgeDeviceRequest(input);
     },
+    reachable: defaultReachable,
   };
+}
+
+/**
+ * final fix wave (I-3) — the owning node's reachability, bounded by STOP_DB_STEP_DEADLINE_MS. Never throws: a failed / slow read
+ * is "unreadable" ⇒ NOT reachable (the STOP is then treated as possibly undelivered — warning, fallback, alert).
+ */
+export async function edgeOwnerReachability(edgeNodeId: number): Promise<EdgeNodeReachRead> {
+  try {
+    const p = edgeDeviceRequestPort();
+    return await withDeadline(Promise.resolve().then(() => p.reachable!(edgeNodeId)), STOP_DB_STEP_DEADLINE_MS, `edge node ${edgeNodeId} reachability`);
+  } catch {
+    return { reachable: false, basis: "unreadable", ageMs: null };
+  }
 }
 
 /** The error code of a queue failure (unknown ⇒ "unavailable"). */
@@ -124,6 +151,14 @@ export interface ConsoleStopOutcome {
   requestId?: number;
   edgeNodeId?: number;
   centralStatus?: string;
+  /**
+   * final fix wave (I-3, R-10-br) — queued, but central cannot reach the owning node (stale pulls / heartbeat, or unreadable): the
+   * answer is a WARNING (`queued_edge_unreachable`), a central fallback STOP was attempted at once, a durable alert raised
+   */
+  edgeUnreachable?: true;
+  reach?: EdgeNodeReachRead;
+  /** the central fallback STOP attempted because the node is unreachable (pending ⇒ still running at the reply bound) */
+  centralFallback?: Leg<{ ok: boolean; sent: string; detail: string }>;
   /** set when ok === false — shown to the user */
   error?: "EDGE_STOP_NOT_QUEUED";
   detail?: string;
@@ -135,13 +170,56 @@ export async function sendConsoleStopForEdgeRobot(a: {
   /** central's STOP for the robot, evaluated at failure time: resolves null when central holds no session for it */
   centralStop: () => Promise<{ ok: boolean; status: string } | null>;
   alert?: (message: string) => void;
+  /**
+   * final fix wave (I-3) — central's fallback STOP for a robot whose owning node is UNREACHABLE (deviceOwnershipService
+   * sendCentralRobotStop: its session, else a transient one, bounded). Absent ⇒ no fallback attempt (the alert still goes).
+   */
+  fallbackStop?: () => Promise<{ ok: boolean; sent: string; detail: string }>;
+  /** the answer is given at this bound at the latest when the fallback is still running (default CONSOLE_STOP_REPLY_BOUND_MS) */
+  replyBoundMs?: number;
 }): Promise<ConsoleStopOutcome> {
   // R-10-ak — every await before the send / the answer is under the STOP bound
   const enqueue = () => withDeadline(edgeDeviceRequestPort().enqueue({ kind: "stop", robotId: a.robotId, reason: a.reason, requestedBy: a.requestedBy }), STOP_DB_STEP_DEADLINE_MS, `robot ${a.robotId} STOP enqueue`);
   let firstError: string;
   try {
     const q = await enqueue();
-    return { ok: true, via: "edge_queue", requestId: q.requestId, edgeNodeId: q.edgeNodeId };
+    const reach = await edgeOwnerReachability(q.edgeNodeId);
+    if (reach.reachable) return { ok: true, via: "edge_queue", requestId: q.requestId, edgeNodeId: q.edgeNodeId };
+    // I-3 (L-7) — queued for a node central cannot reach: never a plain "accepted". Central's fallback STOP NOW (bounded by the
+    // reply bound) + a durable critical alert keyed by the request (the undelivered-STOP sweep uses the same key: one inbox row)
+    const fallback: { v: Leg<{ ok: boolean; sent: string; detail: string }> } = { v: { state: "pending" } };
+    let done: Promise<void> = Promise.resolve();
+    if (a.fallbackStop) {
+      const fb = a.fallbackStop;
+      done = Promise.resolve()
+        .then(() => fb())
+        .then(
+          (value) => void (fallback.v = { state: "done", value }),
+          (e) => void (fallback.v = { state: "failed", error: String((e as Error)?.message ?? e).slice(0, 160) }),
+        );
+      let t: NodeJS.Timeout | undefined;
+      await Promise.race([done, new Promise<void>((r) => (t = setTimeout(r, a.replyBoundMs ?? CONSOLE_STOP_REPLY_BOUND_MS)))]);
+      clearTimeout(t);
+    }
+    const f = fallback.v;
+    const why = reach.basis === "unreadable" ? "its reachability could not be read" : reach.basis === "none" ? "it has never been seen" : `last seen ${Math.round((reach.ageMs ?? 0) / 1000)} s ago (${reach.basis})`;
+    const fbText = !a.fallbackStop ? "no central fallback STOP is possible" : f.state === "done" ? `central fallback STOP: ${f.value.ok ? f.value.sent : `FAILED (${f.value.detail})`}` : f.state === "failed" ? `central fallback STOP FAILED (${f.error})` : "central fallback STOP still in progress";
+    const message = `Console STOP for robot ${a.robotId} is queued (request #${q.requestId}) for edge node ${q.edgeNodeId}, which is UNREACHABLE from central — ${why}; ${fbText}. The STOP stays queued and is delivered when the node pulls. Use the machine's hardware E-STOP if the robot is still moving.`;
+    console.error(`[Robot] CRITICAL: ${message}`);
+    void import("./criticalStopAlert")
+      .then(({ raiseCriticalStopAlert }) =>
+        raiseCriticalStopAlert({ kind: "stop_undelivered", title: `STOP queued for an unreachable edge node — robot ${a.robotId}`, message, recipients: [a.requestedBy], dedupKey: `stop_undelivered:request:${q.requestId}`, source: "robot", entityType: "robot", entityId: a.robotId, retryUntilPersisted: { everyMs: 30_000, attempts: 20 } }),
+      )
+      .catch(() => undefined);
+    if (a.fallbackStop && f.state === "pending") {
+      void done.then(() => {
+        const late = fallback.v;
+        if (late.state === "failed" || (late.state === "done" && !late.value.ok)) {
+          console.error(`[Robot] CRITICAL: console STOP for robot ${a.robotId}: the central fallback STOP (edge node ${q.edgeNodeId} unreachable) finished WITHOUT confirmation — use the hardware E-STOP`);
+        }
+      });
+    }
+    return { ok: true, via: "edge_queue", requestId: q.requestId, edgeNodeId: q.edgeNodeId, edgeUnreachable: true, reach, ...(a.fallbackStop ? { centralFallback: f } : {}) };
   } catch (err) {
     firstError = edgeDeviceRequestErrorCode(err);
   }

@@ -43,6 +43,71 @@ export function edgeRequestTtlMs(kind: EdgeRequestKind): number {
   return Number.isFinite(n) ? Math.min(86_400_000, Math.max(5_000, n)) : def;
 }
 
+// ── doc 81 Đợt 10 final fix wave (I-3, R-10-br) — is the owning node reachable for a STOP, as central sees it? ──────────
+/** Pulls (v2) seen by THIS process, per node (ms). The precise evidence: commands travel on the pull. */
+const lastPullAt = new Map<number, number>();
+/** Pull evidence older than this is forgotten (the node then counts by its heartbeat only). */
+const PULL_EVIDENCE_KEEP_MS = 10 * 60_000;
+export function noteEdgeNodePull(nodeId: number, at: number = Date.now()): void {
+  if (!Number.isSafeInteger(nodeId) || nodeId <= 0) return;
+  lastPullAt.set(nodeId, at);
+  if (lastPullAt.size > 5_000) for (const [k, t] of lastPullAt) if (at - t > PULL_EVIDENCE_KEEP_MS) lastPullAt.delete(k);
+}
+/** Tests only. */
+export function __resetEdgeNodePullsForTests(): void {
+  lastPullAt.clear();
+}
+const envInt = (name: string, def: number, min: number, max: number): number => {
+  const n = parseInt(process.env[name] || String(def), 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+};
+/** The pull interval central tells its nodes (edgeConfigCentral limits.pullMs, EDGE_PULL_MS — same bounds). */
+export function edgeNodePullMs(): number {
+  return envInt("EDGE_PULL_MS", 2_000, 500, 60_000);
+}
+/** The heartbeat interval central tells its nodes (limits.heartbeatMs, EDGE_HEARTBEAT_MS — same bounds). */
+function edgeNodeHeartbeatMs(): number {
+  return envInt("EDGE_HEARTBEAT_MS", 10_000, 1_000, 600_000);
+}
+/**
+ * The bound within which a queued STOP must be acknowledged by its node: 3 pull intervals + the round trip / shipping slack
+ * (EDGE_STOP_ACK_SLACK_MS, default 2 s). Past it ⇒ a DURABLE critical alert (alertUndeliveredStops), once per request.
+ */
+export function edgeStopAckDeadlineMs(): number {
+  return 3 * edgeNodePullMs() + envInt("EDGE_STOP_ACK_SLACK_MS", 2_000, 0, 60_000);
+}
+export interface EdgeNodeReach {
+  reachable: boolean;
+  /** pull: a pull seen by THIS process; heartbeat: the node's DB heartbeat; none: never seen; unreadable: the read failed */
+  basis: "pull" | "heartbeat" | "none" | "unreadable";
+  ageMs: number | null;
+}
+/**
+ * Reachable ⇔ the node pulled THIS process within 3 × pullMs; with no pull evidence here (another replica serves it, or this
+ * process just started) ⇔ its heartbeat is younger than max(3 × pullMs, 2 × heartbeatMs). Unreadable ⇒ NOT reachable (the
+ * caller then treats the STOP as possibly undelivered: warning + central fallback + alert — never a false "accepted").
+ */
+export async function edgeNodeReachability(nodeId: number, now: number = Date.now()): Promise<EdgeNodeReach> {
+  const pulled = lastPullAt.get(nodeId);
+  if (pulled !== undefined && now - pulled <= PULL_EVIDENCE_KEEP_MS) {
+    const ageMs = Math.max(0, now - pulled);
+    return { reachable: ageMs <= 3 * edgeNodePullMs(), basis: "pull", ageMs };
+  }
+  try {
+    const d = await centralDb();
+    const { edgeNodes } = await import("../../../drizzle/schema");
+    // drizzle's own timestamp mapping (the app writes this naive column through drizzle, in UTC — never a raw read)
+    const [row] = await d.select({ at: edgeNodes.lastHeartbeatAt }).from(edgeNodes).where(eq(edgeNodes.id, nodeId)).limit(1);
+    const at = row?.at;
+    const t = at == null ? NaN : new Date(at).getTime();
+    if (!Number.isFinite(t)) return { reachable: false, basis: "none", ageMs: null };
+    const ageMs = Math.max(0, now - t);
+    return { reachable: ageMs <= Math.max(3 * edgeNodePullMs(), 2 * edgeNodeHeartbeatMs()), basis: "heartbeat", ageMs };
+  } catch {
+    return { reachable: false, basis: "unreadable", ageMs: null };
+  }
+}
+
 /** What a caller must do when a STOP could not be queued for an edge (R-10-k): send it centrally, never drop it. */
 export interface EdgeStopFallback {
   /** true for every failed STOP: the caller sends a central STOP now (when it has a session) and alerts otherwise */
@@ -464,6 +529,70 @@ export async function expireEdgeRequests(): Promise<number> {
     console.error(`[EdgeCommands] ⚠ ${overdue.length} STOP request(s) past their expiry and NOT acknowledged (still delivered every pull): ${overdue.slice(0, 20).map((o) => `#${o.id}→node ${o.edgeNodeId}`).join(", ")}`);
   }
   return n;
+}
+
+/** STOP requests already alerted as undelivered by THIS process (one alert per request; bounded). */
+const undeliveredAlerted = new Map<number, number>();
+/** Tests only. */
+export function __resetUndeliveredStopAlertsForTests(): void {
+  undeliveredAlerted.clear();
+}
+/** How often the health checker runs alertUndeliveredStops (EDGE_STOP_DELIVERY_CHECK_MS; default = the pull interval). */
+export function edgeStopDeliveryCheckMs(): number {
+  return envInt("EDGE_STOP_DELIVERY_CHECK_MS", edgeNodePullMs(), 500, 60_000);
+}
+
+/**
+ * doc 81 Đợt 10 final fix wave (I-3, R-10-br, L-7) — the sweep of STOP requests the owning edge has NOT acknowledged within the ack
+ * deadline (edgeStopAckDeadlineMs: 3 × pullMs + slack): each gets ONE durable critical alert (alert stream + a safety-critical
+ * inbox row to the requester, retried until persisted; dedup key `stop_undelivered:request:<id>` — the same key the console uses
+ * when it already knew the node was unreachable, so one inbox row per request). The STOP stays pending and is still delivered
+ * every pull (never expired, R-10-k). Returns how many alerts this pass raised. A read failure throws (the caller logs it).
+ */
+export async function alertUndeliveredStops(now: number = Date.now()): Promise<number> {
+  const d = await centralDb();
+  const deadlineMs = edgeStopAckDeadlineMs();
+  const rows = await d
+    .select({ id: robotMotionLockRequests.id, edgeNodeId: robotMotionLockRequests.edgeNodeId, robotId: robotMotionLockRequests.robotId, adapterId: robotMotionLockRequests.adapterId, requestedBy: robotMotionLockRequests.requestedBy, createdAt: robotMotionLockRequests.createdAt, deliveredAt: robotMotionLockRequests.deliveredAt })
+    .from(robotMotionLockRequests)
+    .where(
+      and(
+        eq(robotMotionLockRequests.kind, "stop"),
+        isNull(robotMotionLockRequests.ackedAt),
+        isNull(robotMotionLockRequests.carriedToId),
+        lte(robotMotionLockRequests.createdAt, new Date(now - deadlineMs)),
+        sql`${robotMotionLockRequests.createdAt} > now() - interval '24 hours'`,
+      ),
+    )
+    .orderBy(asc(robotMotionLockRequests.id))
+    .limit(200);
+  for (const [id, at] of undeliveredAlerted) if (now - at > 48 * 3_600_000) undeliveredAlerted.delete(id);
+  let raised = 0;
+  for (const r of rows) {
+    if (undeliveredAlerted.has(r.id)) continue;
+    undeliveredAlerted.set(r.id, now);
+    if (undeliveredAlerted.size > 20_000) undeliveredAlerted.delete(undeliveredAlerted.keys().next().value as number);
+    const target = r.robotId != null ? `robot ${r.robotId}` : `adapter ${r.adapterId}`;
+    const ageS = Math.round((now - new Date(r.createdAt).getTime()) / 1000);
+    const message =
+      `STOP request #${r.id} for ${target} is NOT acknowledged by its edge node ${r.edgeNodeId} after ${ageS} s (bound ${Math.round(deadlineMs / 1000)} s; ` +
+      `${r.deliveredAt ? "delivered, no acknowledgement" : "never picked up — the node is not pulling"}). It stays queued and is re-delivered every pull. ` +
+      `Check the edge node and the device; use the machine's E-STOP if it is still moving.`;
+    const { raiseCriticalStopAlert } = await import("../robot/criticalStopAlert");
+    void raiseCriticalStopAlert({
+      kind: "stop_undelivered",
+      title: `STOP not acknowledged — ${target}`,
+      message,
+      recipients: [r.requestedBy],
+      dedupKey: `stop_undelivered:request:${r.id}`,
+      source: r.robotId != null ? "robot" : "ot",
+      entityType: r.robotId != null ? "robot" : "ot_command",
+      entityId: (r.robotId ?? r.adapterId) as number,
+      retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
+    });
+    raised++;
+  }
+  return raised;
 }
 
 /** Unacked STOP heads past their expiry (still delivered; reported, never expired). */

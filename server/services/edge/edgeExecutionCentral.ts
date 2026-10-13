@@ -89,7 +89,7 @@ import { edgeNodeProgramReports } from "./edgeControlSchema";
 import { analyseDefinition, loadMachineMap, readPriorPicture } from "./edgeRunAnalysis";
 import { assignedDefinition, cursorLastSeq } from "./edgeReportsCentral";
 import { resolveEngineSink } from "./edgeEngineSink";
-import { commandsForNode, type EdgeUnsignedStop as EdgeUnsignedStopEnvelope } from "./edgeNodeCommands";
+import { commandsForNode, noteEdgeNodePull, type EdgeUnsignedStop as EdgeUnsignedStopEnvelope } from "./edgeNodeCommands";
 import type { EdgeSignedEnvelope } from "./edgeSigning";
 
 export const EDGE_PULL_LIMIT = 20;
@@ -708,16 +708,48 @@ function sweepPayload(picture: Record<string, unknown>, finishedAt: Date | strin
   return "abortedAt" in (edgeSweepPictureSchema as unknown as { shape: Record<string, unknown> }).shape && Number.isFinite(at) ? { ...base, abortedAt: at } : base;
 }
 
-/** POST /edge/node/pull (v2). */
+/**
+ * POST /edge/node/pull (v2).
+ * doc 81 Dot 10 final fix wave (I-1, R-10-br) — the node's COMMANDS (its STOPs first) are read FIRST and on their own: a read
+ * failure there is still 503 (M-3: "no commands" is never said for "none pending"), and F-B2-2 holds (the commands are read
+ * BEFORE the config version). Every RUN section after that (offered runs, claims, aborted runs + their signed sweep pictures)
+ * is isolated: a throw in one section — or in one run of a section — is logged, that part is left out and the answer says
+ * `partial: true`; it never fails the answer, so a run-side failure (an unsignable picture, a transient analysis read) can
+ * never hold back a STOP. The edge never infers anything from what a partial answer leaves out.
+ */
 export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Promise<EdgeAnswer<EdgePullAnswer>> {
   const parsed = parseEdgeBody(edgePullRequestSchema, body);
   if (!parsed.ok) return parsed.answer;
+  let d: CentralDbHandle;
+  let commands: Awaited<ReturnType<typeof commandFields>>;
+  let configVersion: number;
   try {
-    const d = await db();
+    d = await db();
     const refused = await v2Gate(d, node, { signerOptional: true });
     if (refused) return refused;
-    const signer = centralSigner();
-    await holdUnclaimedEdgeRuns(node.nodeId).catch(() => undefined);
+    noteEdgeNodePull(node.nodeId); // I-3 — the node's liveness as central sees it (its pulls)
+    const { currentConfigVersion } = await import("./edgeConfigCentral");
+    // F-B2-2 — the commands are read BEFORE the config version: an ownership change committed in between can only move the
+    // version forward, so a carried STOP never ships with a version older than the ownership it was carried under
+    commands = await commandFields(node);
+    configVersion = await currentConfigVersion(node);
+  } catch (err) {
+    if (!isEdgeUnavailableError(err) && !(err instanceof EdgeDbUnavailable)) console.error(`[EdgeExec] v2 pull for node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
+    return edgeUnavailableV2;
+  }
+  const signer = centralSigner();
+  let partial = false;
+  const section = async <T>(what: string, fallback: T, work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (err) {
+      partial = true;
+      console.error(`[EdgeExec] v2 pull for node ${node.nodeCode}: ${what} left out of this answer (its commands are delivered): ${(err as Error)?.message ?? err}`);
+      return fallback;
+    }
+  };
+  await holdUnclaimedEdgeRuns(node.nodeId).catch(() => undefined);
+  const runs = await section("offered runs", [] as EdgePulledRun[], async () => {
     const queued = await d
       .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, workflowId: orchestrationRuns.workflowId, workflowRef: orchestrationRuns.workflowRef, paramsJson: orchestrationRuns.paramsJson } })
       .from(runEdgeAssignments)
@@ -725,15 +757,20 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
       .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), eq(orchestrationRuns.status, "queued")))
       .orderBy(asc(runEdgeAssignments.assignedAt))
       .limit(EDGE_PULL_LIMIT);
-    const runs: EdgePulledRun[] = [];
+    const out: EdgePulledRun[] = [];
     for (const { a, run } of signer ? queued : []) {
       // (no signer ⇒ no run can be claimed now: none is offered)
-      if (!(await runInNodeScope(run, node))) continue;
-      const base = { runId: a.runId, workflowId: a.workflowId, workflowRef: run.workflowRef ?? null, workflowVersion: a.workflowVersion, defHash: a.defHash, claimSeq: a.claimSeq };
-      const wf = await workflowHead(d, a.workflowId);
-      const def = wf?.definitionJson as WorkflowDefinition | undefined;
-      runs.push(!wf || !def || hashWorkflowDefinition(def) !== a.defHash ? { ...base, refused: "definitionChanged" as const } : base);
+      await section(`offered run ${a.runId}`, undefined, async () => {
+        if (!(await runInNodeScope(run, node))) return;
+        const base = { runId: a.runId, workflowId: a.workflowId, workflowRef: run.workflowRef ?? null, workflowVersion: a.workflowVersion, defHash: a.defHash, claimSeq: a.claimSeq };
+        const wf = await workflowHead(d, a.workflowId);
+        const def = wf?.definitionJson as WorkflowDefinition | undefined;
+        out.push(!wf || !def || hashWorkflowDefinition(def) !== a.defHash ? { ...base, refused: "definitionChanged" as const } : base);
+      });
     }
+    return out;
+  });
+  const claims = await section("claims", [] as EdgeNodeClaim[], async () => {
     const claimedRows = await d
       .select({ a: runEdgeAssignments, run: { status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson } })
       .from(runEdgeAssignments)
@@ -741,13 +778,16 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
       .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), isNotNull(runEdgeAssignments.claimTokenHash)))
       .limit(200);
     const staleBefore = Date.now() - edgeClaimStaleMs();
-    const claims: EdgeNodeClaim[] = claimedRows
+    return claimedRows
       .filter(({ a }) => a.claimSeq > 0)
       .map(({ a, run }) => {
         const last = (a.lastProgressAt ?? a.claimedAt) as Date | null;
         return { runId: a.runId, claimSeq: a.claimSeq, status: run.status as EdgeNodeClaim["status"], abortRequested: centralStopped(run), stale: !last || new Date(last).getTime() < staleBefore };
       });
-    // L-7 — aborted runs of this node whose STOPs central could not confirm: a SIGNED sweep picture each (the node re-sends)
+  });
+  // L-7 — aborted runs of this node whose STOPs central could not confirm: a SIGNED sweep picture each (the node re-sends);
+  // one run whose picture cannot be built / signed is left out (logged, partial) — never the others, never the commands
+  const stopsUnconfirmed = await section("unconfirmed STOPs of aborted runs", [] as Array<{ runId: number; picture: EdgeSignedEnvelope }>, async () => {
     const abortedRows = await d
       .select({ a: runEdgeAssignments, finishedAt: orchestrationRuns.finishedAt })
       .from(runEdgeAssignments)
@@ -766,37 +806,33 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
           ).map((r) => r.runId),
         )
       : new Set<number>();
-    const stopsUnconfirmed: Array<{ runId: number; picture: EdgeSignedEnvelope }> = [];
+    const out: Array<{ runId: number; picture: EdgeSignedEnvelope }> = [];
     for (const r of signer ? recent : []) {
       if (!failedIds.has(r.a.runId)) continue;
-      const def = await assignedDefinition(d, r.a);
-      if (!def) continue;
-      const { picture } = await runPicture(d, node, r.a.runId, r.a.defHash, def);
-      stopsUnconfirmed.push({ runId: r.a.runId, picture: signForNode(signer!, "runpkg", edgeSweepPictureSchema, sweepPayload(picture, r.finishedAt), node) });
+      await section(`sweep picture of aborted run ${r.a.runId}`, undefined, async () => {
+        const def = await assignedDefinition(d, r.a);
+        if (!def) return;
+        const { picture } = await runPicture(d, node, r.a.runId, r.a.defHash, def);
+        out.push({ runId: r.a.runId, picture: signForNode(signer!, "runpkg", edgeSweepPictureSchema, sweepPayload(picture, r.finishedAt), node) });
+      });
     }
-    const { currentConfigVersion } = await import("./edgeConfigCentral");
-    // F-B2-2 — the commands are read BEFORE the config version: an ownership change committed in between can only move the
-    // version forward, so a carried STOP never ships with a version older than the ownership it was carried under
-    const commands = await commandFields(node);
-    const configVersion = await currentConfigVersion(node);
-    return {
-      http: 200,
-      data: {
-        node: node.nodeCode,
-        protocolVersion: EDGE_PROTOCOL_VERSION,
-        configVersion,
-        keysetVersion: signer ? signer.keyset.version : 0,
-        programCheckRequested: await programCheckWanted(d, node),
-        runs,
-        claims,
-        stopsUnconfirmed,
-        ...commands,
-      },
-    };
-  } catch (err) {
-    if (!isEdgeUnavailableError(err) && !(err instanceof EdgeDbUnavailable)) console.error(`[EdgeExec] v2 pull for node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
-    return edgeUnavailableV2;
-  }
+    return out;
+  });
+  return {
+    http: 200,
+    data: {
+      node: node.nodeCode,
+      protocolVersion: EDGE_PROTOCOL_VERSION,
+      configVersion,
+      keysetVersion: signer ? signer.keyset.version : 0,
+      programCheckRequested: await programCheckWanted(d, node),
+      runs,
+      claims,
+      stopsUnconfirmed,
+      ...commands,
+      ...(partial ? { partial: true as const } : {}),
+    },
+  };
 }
 
 /**

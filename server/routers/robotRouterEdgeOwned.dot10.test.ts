@@ -100,14 +100,20 @@ beforeEach(() => {
   central.calls.length = 0;
   central.alerts.length = 0;
   central.result = { ok: true, sent: "sent", detail: "abort sent on a transient session" };
+  reachable = true;
   setEdgeDeviceRequestPort({
     async enqueue(i) {
       if (queueFails) throw Object.assign(new Error("queue failed"), { code: queueFails });
       queued.push(i);
       return { requestId: 77, edgeNodeId: 4, ownerEpoch: 2 };
     },
+    // final fix wave (I-3) — the owning node's reachability (central's view: its pulls / heartbeat)
+    async reachable() {
+      return { reachable, basis: "pull" as const, ageMs: reachable ? 100 : 60_000 };
+    },
   });
 });
+let reachable = true;
 
 describe("console on an EDGE-owned robot (no central session)", () => {
   it("★ clearMotionLock ⇒ audit FIRST, then a `clear` for the owning node carrying the operator's generation; nothing cleared here", async () => {
@@ -136,6 +142,17 @@ describe("console on an EDGE-owned robot (no central session)", () => {
       expect(r).toMatchObject({ ok: true, status: "queued_on_edge", queuedOnEdge: { requestId: 77, edgeNodeId: 4 } });
     }
     expect(queued.map((q) => [q.kind, q.robotId])).toEqual([["stop", 12], ["stop", 12]]);
+    expect(disp.calls).toEqual([]);
+  });
+
+  it("★ final fix wave I-3 — the owning node is UNREACHABLE ⇒ `queued_edge_unreachable` (a warning, not ok-green), the central fallback STOP goes at once, a durable alert", async () => {
+    reachable = false;
+    const r = await engineer.actuate({ robotId: 12, command: "stop" });
+    expect(r).toMatchObject({ ok: true, status: "queued_edge_unreachable", queuedOnEdge: { requestId: 77, edgeNodeId: 4 }, centralFallback: "done" });
+    expect(queued.map((q) => [q.kind, q.robotId])).toEqual([["stop", 12]]);
+    expect(central.calls).toEqual([12]);
+    await new Promise((x) => setTimeout(x, 10));
+    expect(central.alerts.join(" | ")).toMatch(/unreachable/i);
     expect(disp.calls).toEqual([]);
   });
 

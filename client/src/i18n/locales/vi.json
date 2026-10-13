@@ -19684,6 +19684,8 @@
     }
   },
   "console": {
+    "queuedOnEdge": "Đã gửi lệnh STOP tới nút biên của robot — đang chờ nút biên xác nhận (xem nhật ký lệnh).",
+    "queuedEdgeUnreachable": "Lệnh STOP đã xếp hàng nhưng KHÔNG LIÊN LẠC ĐƯỢC nút biên của robot — trung tâm đã thử tự gửi STOP và phát cảnh báo nghiêm trọng. Dùng nút E-STOP phần cứng nếu robot vẫn chuyển động.",
     "rejected": "Lệnh không thực thi: {{status}}",
     "pickRobot": "Chọn robot trước."
   },

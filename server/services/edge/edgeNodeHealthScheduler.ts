@@ -12,6 +12,40 @@
 import { markStaleNodesOffline, edgeRuntimeEnabled } from "./edgeCoordinator";
 
 let timer: NodeJS.Timeout | null = null;
+/** doc 81 Đợt 10 final fix wave (I-3) — the undelivered-STOP sweep runs on its own short timer (≈ the pull interval) */
+let stopTimer: NodeJS.Timeout | null = null;
+let stopSweepBusy = false;
+let stopSweepSchemaMissingLogged = false;
+
+function startUndeliveredStopSweep(): void {
+  if (stopTimer) return;
+  void import("./edgeNodeCommands").then((m) => {
+    if (stopTimer) return;
+    const every = m.edgeStopDeliveryCheckMs();
+    stopTimer = setInterval(() => {
+      if (stopSweepBusy) return;
+      stopSweepBusy = true;
+      void m
+        .alertUndeliveredStops()
+        .then((n) => {
+          stopSweepSchemaMissingLogged = false;
+          if (n > 0) console.error(`[EdgeNodeHealth] ${n} STOP request(s) not acknowledged by their edge node within the bound — critical alert raised`);
+        })
+        .catch(async (err) => {
+          const { isEdgeUnavailableError } = await import("./edgeCentralCommon");
+          if (!isEdgeUnavailableError(err)) console.error("[EdgeNodeHealth] undelivered-STOP sweep failed:", (err as Error)?.message || err);
+          else if (!stopSweepSchemaMissingLogged) {
+            stopSweepSchemaMissingLogged = true;
+            console.warn("[EdgeNodeHealth] undelivered-STOP sweep: edge control schema (0374) not available — retried silently until it is");
+          }
+        })
+        .finally(() => {
+          stopSweepBusy = false;
+        });
+    }, every);
+    if (typeof stopTimer.unref === "function") stopTimer.unref();
+  }).catch(() => undefined);
+}
 
 export function startEdgeNodeHealthChecker(): void {
   if (!edgeRuntimeEnabled()) {
@@ -60,6 +94,7 @@ export function startEdgeNodeHealthChecker(): void {
   }, intervalMs);
 
   if (typeof timer.unref === "function") timer.unref();
+  startUndeliveredStopSweep(); // alertUndeliveredStops() every edgeStopDeliveryCheckMs()
   console.log(`[EdgeNodeHealth] checker started (every ${intervalMs}ms, threshold ${thresholdMin}min)`);
 }
 
@@ -67,5 +102,9 @@ export function stopEdgeNodeHealthChecker(): void {
   if (timer) {
     clearInterval(timer);
     timer = null;
+  }
+  if (stopTimer) {
+    clearInterval(stopTimer);
+    stopTimer = null;
   }
 }

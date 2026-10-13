@@ -38,6 +38,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { consoleOutcomeTone } from "@/lib/consoleOutcome"; // doc 81 Đợt 10 final fix wave (I-3)
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { translateRobotRefusal } from "@/lib/errorCodes";
 import { SafetyLatchWarning } from "@/components/safety/SafetyLatchWarning";
@@ -154,8 +155,14 @@ export default function CommandConsole() {
   // and never blocked by a slow database); every other verb stays on robot.actuate.
   const onActuated = (res: { status: string; ok: boolean; error?: string | null }) => {
       const status = res.status;
-      if (status === "simulated") {
+      // doc 81 Đợt 10 final fix wave (I-3) — a STOP queued for an edge node is pending / a warning, never a green "accepted"
+      const tone = consoleOutcomeTone(res);
+      if (tone === "simulated") {
         toast.info(t("console.simulated", "Recorded SIMULATED (dry-run). No real motion — control disabled or robot not commissioned."));
+      } else if (tone === "warning") {
+        toast.warning(t("console.queuedEdgeUnreachable", "STOP queued, but the robot's edge node is UNREACHABLE — central attempted its own STOP and raised a critical alert. Use the hardware E-STOP if the robot is still moving."), { duration: 15_000 });
+      } else if (tone === "pending") {
+        toast.info(t("console.queuedOnEdge", "STOP sent to the robot's edge node — waiting for its confirmation (see the job log)."));
       } else if (res.ok) {
         toast.success(t("console.sent", "Command accepted: {{status}}").replace("{{status}}", status));
       } else {
