@@ -18787,7 +18787,19 @@
       "totalQueries": "Total queries",
       "walDelta": "backfilled {{b}} · dead-letter {{d}}",
       "walDepth": "Inspection WAL depth",
-      "walOff": "off (passthrough)"
+      "walOff": "off (passthrough)",
+      "wormColLevel": "Level",
+      "wormColRows": "Rows (estimate)",
+      "wormColSize": "Size",
+      "wormColTable": "Table",
+      "wormDesc": "Append-only safety evidence tables are kept forever (never deleted). A durable alert goes to the admins when a table crosses the warn / critical threshold (checked hourly).",
+      "wormEmpty": "No WORM table exists on this database.",
+      "wormLevelCritical": "critical",
+      "wormLevelOk": "ok",
+      "wormLevelWarn": "warn",
+      "wormThresholds": "Warn at {{warnSize}} or {{warnRows}} rows · critical at {{critSize}} or {{critRows}} rows",
+      "wormTitle": "Append-only (WORM) tables - size",
+      "wormUnavailable": "The WORM table sizes could not be read."
     },
     "export": {
       "desc": "Export the factory scene graph to USDA (Omniverse/Isaac) or DTDL v3 (twin graph) — read-only, no device write. Downloads directly to your machine.",

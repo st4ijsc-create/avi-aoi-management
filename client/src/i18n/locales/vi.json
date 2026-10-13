@@ -18767,7 +18767,19 @@
       "totalQueries": "Tổng truy vấn",
       "walDelta": "backfill {{b}} · dead-letter {{d}}",
       "walDepth": "WAL ingest kiểm tra",
-      "walOff": "tắt (passthrough)"
+      "walOff": "tắt (passthrough)",
+      "wormColLevel": "Mức",
+      "wormColRows": "Số dòng (ước tính)",
+      "wormColSize": "Dung lượng",
+      "wormColTable": "Bảng",
+      "wormDesc": "Các bảng bằng chứng an toàn chỉ-thêm giữ vĩnh viễn (không xoá). Cảnh báo bền tới admin khi một bảng vượt ngưỡng cảnh báo / nghiêm trọng (kiểm mỗi giờ).",
+      "wormEmpty": "Chưa có bảng WORM nào trên DB này.",
+      "wormLevelCritical": "nghiêm trọng",
+      "wormLevelOk": "bình thường",
+      "wormLevelWarn": "cảnh báo",
+      "wormThresholds": "Ngưỡng cảnh báo: {{warnSize}} hoặc {{warnRows}} dòng · nghiêm trọng: {{critSize}} hoặc {{critRows}} dòng",
+      "wormTitle": "Bảng chỉ-thêm (WORM) — dung lượng",
+      "wormUnavailable": "Không đọc được dung lượng các bảng WORM."
     },
     "export": {
       "desc": "Xuất scene-graph nhà máy ra USDA (Omniverse/Isaac) hoặc DTDL v3 (twin graph) — chỉ đọc, không ghi thiết bị. Tải trực tiếp về máy.",
