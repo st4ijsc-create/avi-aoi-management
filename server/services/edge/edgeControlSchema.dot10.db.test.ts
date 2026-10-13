@@ -383,7 +383,8 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
 
   it("the apply scripts re-run idempotently on _test and refuse without exactly one target flag", () => {
     for (const n of ["0372", "0373", "0374", "0375"]) {
-      const r = spawnSync(process.execPath, [path.join(REPO, "scripts", `apply-migration-${n}.mjs`), "--test-only"], {
+      // doc 81 Đợt 11 H (2026-10-14): 0374 after 0377 is refused unless --then-0377 (0377 is then re-applied right after it)
+      const r = spawnSync(process.execPath, [path.join(REPO, "scripts", `apply-migration-${n}.mjs`), "--test-only", ...(n === "0374" ? ["--then-0377"] : [])], {
         env: { ...process.env, DATABASE_URL: DB_URL, TEST_DATABASE_URL: DB_URL },
         encoding: "utf8",
         timeout: 120_000,

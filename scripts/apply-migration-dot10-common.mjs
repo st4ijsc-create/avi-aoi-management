@@ -112,28 +112,44 @@ export function functionsDefinedIn(sqlText) {
 /**
  * fix review 1 (R-10-e) — measured in the catalog as avi_app: every function the file defines is schema-qualified, runs with
  * EXACTLY `search_path = pg_catalog, public, pg_temp`, is not executable by PUBLIC, and avi_app may EXECUTE only the callable set.
+ * doc 81 Đợt 11 task H (0377) — two explicit, per-migration exceptions (`opts`; the defaults keep 0372–0376 unchanged):
+ *   • publicByDesign: functions that stay PUBLIC-executable on purpose (RLS predicates / app helpers whose ACL 0377 keeps);
+ *   • inlineByDesign: LANGUAGE sql INVOKER functions kept WITHOUT a SET clause (a SET stops the planner inlining them) — they
+ *     must have NO proconfig, be sql and not SECURITY DEFINER (their bodies are qualified instead).
  */
-export async function verifyFunctionHygiene(appSql, sqlText, log) {
+export async function verifyFunctionHygiene(appSql, sqlText, log, opts = {}) {
+  const publicByDesign = opts.publicByDesign ?? new Set();
+  const inlineByDesign = opts.inlineByDesign ?? new Set();
   const fns = functionsDefinedIn(sqlText);
   if (fns.length === 0) return;
   const bad = [];
   for (const f of fns) {
     if (!f.qualified) bad.push(`${f.name}: CREATE without public.`);
     const rows = await appSql`
-      SELECT p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub, has_function_privilege(current_user, p.oid, 'EXECUTE') AS app
-        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = ${f.name}`;
+      SELECT p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub, has_function_privilege(current_user, p.oid, 'EXECUTE') AS app,
+             l.lanname AS lang, p.prosecdef AS definer
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang WHERE n.nspname = 'public' AND p.proname = ${f.name}`;
     if (rows.length !== 1) { bad.push(`${f.name}: ${rows.length} definitions`); continue; }
     const [r] = rows;
-    if (JSON.stringify(r.cfg) !== JSON.stringify([EDGE_FN_SEARCH_PATH])) bad.push(`${f.name}: proconfig ${JSON.stringify(r.cfg)}`);
+    if (inlineByDesign.has(f.name)) {
+      if (r.cfg !== null || r.lang !== "sql" || r.definer) bad.push(`${f.name}: inline-by-design needs sql, INVOKER, no SET (${r.lang}, definer=${r.definer}, ${JSON.stringify(r.cfg)})`);
+    } else if (JSON.stringify(r.cfg) !== JSON.stringify([EDGE_FN_SEARCH_PATH])) bad.push(`${f.name}: proconfig ${JSON.stringify(r.cfg)}`);
+    if (publicByDesign.has(f.name)) {
+      if (!r.pub || !r.app) bad.push(`${f.name}: public-by-design lost EXECUTE (PUBLIC=${r.pub}, avi_app=${r.app})`);
+      continue;
+    }
     if (r.pub) bad.push(`${f.name}: PUBLIC may EXECUTE`);
     if (r.app !== EDGE_FN_CALLABLE.has(f.name)) bad.push(`${f.name}: avi_app EXECUTE=${r.app}`);
   }
   if (bad.length) throw new Error(`(R-10-e) function hygiene: ${bad.join("; ")}`);
-  log(`(R-10-e) ${fns.length} function(s): search_path pinned (pg_temp last), no PUBLIC EXECUTE, avi_app EXECUTE only on the callable set`);
+  const extra = publicByDesign.size || inlineByDesign.size ? ` (${publicByDesign.size} PUBLIC by design, ${inlineByDesign.size} inlinable sql without SET by design)` : "";
+  log(`(R-10-e) ${fns.length} function(s): search_path pinned (pg_temp last), no PUBLIC EXECUTE, avi_app EXECUTE only on the callable set${extra}`);
 }
 
 /**
- * @param {{ file: string, tag: string, verify: (ctx: { sql: any, appSql: any, label: string, log: (m: string) => void }) => Promise<void> }} m
+ * @param {{ file: string, tag: string, hygiene?: { publicByDesign?: Set<string>, inlineByDesign?: Set<string> }, guard?: { before: (ctx: { sql: any, label: string, args: string[] }) => Promise<boolean>, after: (ctx: { label: string }) => void }, verify: (ctx: { sql: any, appSql: any, label: string, log: (m: string) => void }) => Promise<void> }} m
+ *   guard (doc 81 Đợt 11 H, migration0377Guard.mjs): `before` runs before any DDL on each target (throws = refused, nothing run;
+ *   true = a later migration must be re-applied afterwards), `after` re-applies it once this file is applied + verified.
  */
 export async function runMigration(m) {
   loadEnvFile(path.join(__dirname, "..", ".env"));
@@ -176,6 +192,7 @@ export async function runMigration(m) {
       const content = fs.readFileSync(MIGRATION_PATH, "utf-8");
       await sql`SET lock_timeout = '5s'`;
       await sql`SET statement_timeout = '60s'`;
+      const reapplyAfter = m.guard ? await m.guard.before({ sql, label, args }) : false;
       try {
         await sql.unsafe(content);
       } catch (e) {
@@ -184,7 +201,7 @@ export async function runMigration(m) {
         throw e;
       }
       console.log(`${m.tag} ${label}: DDL applied (owner aoi, lock_timeout 5s)`);
-      await verifyFunctionHygiene(appSql, content, (msg) => console.log(`  ${m.tag} ${label} ${msg}`));
+      await verifyFunctionHygiene(appSql, content, (msg) => console.log(`  ${m.tag} ${label} ${msg}`), m.hygiene);
       await m.verify({ sql, appSql, label, log: (msg) => console.log(`  ${m.tag} ${label} ${msg}`) });
       await sql`
         CREATE TABLE IF NOT EXISTS "__applied_migrations" (
@@ -202,6 +219,7 @@ export async function runMigration(m) {
       const [rows] = await sql`SELECT count(*)::int AS n FROM "__applied_migrations" WHERE filename = ${m.file}`;
       if (rows.n !== 1) throw new Error(`__applied_migrations has ${rows.n} rows (must be 1)`);
       console.log(`${m.tag} ${label}: applied + verified (structure · grants · behaviour (rolled back) · ledger)`);
+      if (reapplyAfter) m.guard.after({ label });
     } catch (e) {
       failed = true;
       console.error(`${m.tag} ${label} FAILED:`, e?.message ?? e);

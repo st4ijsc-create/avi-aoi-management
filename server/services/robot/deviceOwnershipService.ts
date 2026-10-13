@@ -10,7 +10,8 @@
  * R-10-i / R-10-w — STOPs owed to a device that is CENTRAL-owned now (device_pending_stops.centralMustExecute) are EXECUTED, not
  * merely left visible: right after a transfer made here, and by a SWEEP at central boot + every ≤ 10 s (startDeviceOwnershipSync)
  * that also catches a crash between commit and STOP, a failed ack, and a transfer made by any other path. Per device, ONE
- * transaction locks its pending requests FOR UPDATE SKIP LOCKED (one replica executes them; another sweep skips, never waits),
+ * transaction locks the device row FOR SHARE, then its pending requests FOR UPDATE SKIP LOCKED (Đợt 11 H — device before request,
+ * the one lock order of mig 0377; one replica executes them; another sweep skips, never waits),
  * sends ONE STOP through central's path (robot: the canonical abort through robotManager's session, else a transient driver
  * session; adapter: its PINNED stop values through the OT device stage on the running driver, else a transient session), then
  * acks each request in its own savepoint through A's guarded edge_stop_ack_central (done | failed; actor = the transferring admin,
@@ -210,6 +211,14 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
           : sql`SELECT q.id, q."requestedBy", (SELECT bool_or(v."ownerCannotList") FROM public.device_pending_stops v WHERE v."requestId" = q.id) AS "cannotList" FROM public.robot_motion_lock_requests q
                  WHERE q.id IN (SELECT "requestId" FROM public.device_pending_stops WHERE "adapterId" = ${deviceId} AND "centralMustExecute")
                    AND q."ackedAt" IS NULL ORDER BY q.id FOR UPDATE OF q SKIP LOCKED`;
+      // doc 81 Đợt 11 task H (mig 0377, one lock order): the DEVICE row FOR SHARE before its request rows — an owner change locks
+      // device → requests, and edge_stop_ack_central below takes the device; holding the requests while waiting for the device
+      // deadlocked with it (40P01). FOR SHARE waits only on a writer of that row (the bounded owner change / a status write).
+      await withDeadline(
+        tx.execute(kind === "robot" ? sql`SELECT 1 FROM public.robots WHERE id = ${deviceId} FOR SHARE` : sql`SELECT 1 FROM public.device_adapters WHERE id = ${deviceId} FOR SHARE`),
+        5 * STOP_DB_STEP_DEADLINE_MS,
+        "pending STOP device lock",
+      );
       const pending = rowsOf(await withDeadline(tx.execute(pick), 5 * STOP_DB_STEP_DEADLINE_MS, "pending STOP pick")).map((r) => ({ requestId: Number(r.id), requestedBy: Number(r.requestedBy), cannotList: r.cannotList === true }));
       picked = true;
       if (pending.length === 0) return;

@@ -21,7 +21,7 @@
  */
 import { and, asc, desc, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { EDGE_PULL_COMMANDS_MAX, EDGE_UNSIGNED_STOP_TYP, edgeCommandSchema, edgeUnsignedStopSchema, type EdgeUnsignedStop } from "./edgeProtocol";
-import { ackEdgeStop, robotMotionLockRequests, robotOwnership, adapterOwnership, isEdgeControlRefusal, type RobotMotionLockRequestRow } from "./edgeControlSchema";
+import { ackEdgeStop, robotMotionLockRequests, robotOwnership, adapterOwnership, isEdgeControlRefusal, lockStopRequestDevices, type RobotMotionLockRequestRow } from "./edgeControlSchema";
 import { auditNode, centralDb, centralSigner, signForNode, type Db } from "./edgeCentralCommon";
 import { STOP_DB_STEP_DEADLINE_MS } from "../robot/stopJob";
 import type { EdgeNodePrincipal } from "./edgeNodeCredentials";
@@ -439,8 +439,9 @@ export async function ackEdgeCommand(tx: Db, nodeId: number, rec: EdgeAckInput):
  * Every outcome goes through it (A fix review 7: it never raises on an outcome): `expired` ⇒ refusal row `bad_outcome` (a STOP
  * never expires, R-10-k); R-10-au `notOwnedHere` ⇒ refusal row `not_owned_here`, NEVER terminal — the STOP stays pending for its
  * current owner / central, is re-delivered to this node every pull while it is this node's, and the caller records an anomaly.
- * The row locks it takes (request FOR UPDATE, device FOR SHARE) are held until the batch commits (N-5); the events batch takes
- * the request rows in ascending id order first (F-B2-4, eventsForNode), so two batches never lock them in opposite orders.
+ * The row locks it takes (device FOR SHARE, then request FOR UPDATE — 0377's one lock order) are held until the batch commits (N-5);
+ * the events batch takes the devices, then the request rows in ascending id order first (F-B2-4 + Đợt 11 H, eventsForNode), so two
+ * batches never lock them in opposite orders and an owner change never deadlocks with them.
  */
 export async function ackStopRequest(
   tx: Db,
@@ -463,10 +464,13 @@ export async function ackStopRequest(
 /**
  * F-B2-4 — the request rows a batch's acks will lock, locked FIRST in ascending id order (a no-op for rows already held): two
  * batches naming the same requests in opposite orders queue instead of deadlocking. Unknown ids lock nothing.
+ * doc 81 Đợt 11 task H (mig 0377, one lock order): their DEVICE rows are locked FOR SHARE before them (lockStopRequestDevices) —
+ * an owner change locks device → requests, so a batch holding a request while its ack waited for the device deadlocked (40P01).
  */
 export async function lockAckRequestsInOrder(tx: Db, requestIds: readonly number[]): Promise<void> {
   const ids = [...new Set(requestIds.filter((x) => Number.isSafeInteger(x) && x > 0))].sort((a, b) => a - b);
   if (ids.length === 0) return;
+  await lockStopRequestDevices(tx as never, ids);
   await tx.execute(sql`SELECT id FROM robot_motion_lock_requests WHERE id IN ${sql.raw(`(${ids.join(",")})`)} ORDER BY id FOR UPDATE`);
 }
 

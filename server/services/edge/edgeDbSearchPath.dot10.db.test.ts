@@ -243,7 +243,14 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
 });
 
 /** fix review 3 (N3): the relation census also covers 0376 (it re-creates the 0316 / 0363–0371 functions) */
-const REL_FILES = [...FILES, "0376_pin_function_search_path.sql"];
+/** doc 81 Đợt 11 task H (2026-10-14): and 0377 (the six INVOKER functions + the STOP ack functions in the one lock order) */
+const REL_FILES = [...FILES, "0376_pin_function_search_path.sql", "0377_pin_invoker_functions_and_stop_lock_order.sql"];
+/**
+ * doc 81 Đợt 11 task H (2026-10-14) — the ONE dynamic DDL a census-covered body may run: 0377's
+ * ensure_measurement_samples_partition (0092's body: a partition named by month cannot be created without EXECUTE). Its four
+ * format() literals name only `public.%I` / `public.measurement_samples` — pinned by functionSearchPath0377.dot11.db.test.ts (5).
+ */
+const DYNAMIC_DDL_BY_DESIGN: Record<string, number> = { "0377_pin_invoker_functions_and_stop_lock_order.sql": 4 };
 const QUALIFIED = /^(public|pg_catalog|"public"|"pg_catalog")\./i;
 /**
  * Every relation reference in the routine BODIES of one migration that is not schema-qualified, plus every dynamic `EXECUTE`
@@ -308,7 +315,11 @@ describe("R-10-e — source census: no function body of 0372–0376 names an unq
     for (const f of REL_FILES) {
       const src = readFileSync(path.join(SQL_DIR, f), "utf8");
       expect([...src.matchAll(/\bAS\s+\$([A-Za-z_][A-Za-z0-9_]*)?\$/g)].length, f).toBeGreaterThan(0);
-      for (const b of unqualifiedRelationsOf(src)) bad.push(`${f}: ${b}`);
+      const found = unqualifiedRelationsOf(src);
+      const dynamic = found.filter((b) => b.startsWith("dynamic EXECUTE"));
+      // exactly the allowed number of dynamic DDL statements in that file (one more, or one in another file, stays red)
+      const allowed = DYNAMIC_DDL_BY_DESIGN[f] !== undefined && dynamic.length === DYNAMIC_DDL_BY_DESIGN[f];
+      for (const b of found) if (!(allowed && b.startsWith("dynamic EXECUTE"))) bad.push(`${f}: ${b}`);
     }
     expect(bad).toEqual([]);
   });

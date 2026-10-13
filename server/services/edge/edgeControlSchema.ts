@@ -335,6 +335,22 @@ export async function ackEdgeStop(
   );
   return firstRow(r)?.ok === true;
 }
+/**
+ * doc 81 Đợt 11 task H (mig 0377) — THE lock order of every writer of a STOP request: the DEVICE rows first (FOR SHARE — robots in
+ * ascending id, then device_adapters in ascending id), only then the request rows (FOR UPDATE, ascending id). An owner change
+ * (UPDATE of the device row) locks the device before its carry locks the device's pending requests and cannot do otherwise, so a
+ * writer that held a request while waiting for its device deadlocked with it (40P01, Đợt 10 N3 / F-B2-4). 0377's
+ * edge_stop_ack_edge / edge_stop_ack_central / edge_stop_resolve follow the same order; a caller that locks request rows ITSELF
+ * (an edge batch prelock, resolvePendingStop) calls this first. FOR SHARE waits only on a writer of the device row itself (the
+ * bounded owner change, a status write) — never on a request row (L-7). Unknown ids lock nothing.
+ */
+export async function lockStopRequestDevices(tx: Exec, requestIds: readonly number[]): Promise<void> {
+  const ids = [...new Set(requestIds.filter((x) => Number.isSafeInteger(x) && x > 0))].sort((a, b) => a - b);
+  if (ids.length === 0) return;
+  const list = sql.raw(`(${ids.join(",")})`);
+  await tx.execute(sql`SELECT r.id FROM public.robots r WHERE r.id IN (SELECT q."robotId" FROM public.robot_motion_lock_requests q WHERE q.id IN ${list}) ORDER BY r.id FOR SHARE OF r`);
+  await tx.execute(sql`SELECT a.id FROM public.device_adapters a WHERE a.id IN (SELECT q."adapterId" FROM public.robot_motion_lock_requests q WHERE q.id IN ${list}) ORDER BY a.id FOR SHARE OF a`);
+}
 /** fix review 3 (R-10-aa N2) — a person records how a refused / failed STOP was resolved (active user, ≥ 3 chars); then it leaves device_pending_stops. */
 export async function resolveStop(tx: Exec, a: { requestId: number; actorUserId: number; resolution: string }): Promise<void> {
   await tx.execute(sql`SELECT public.edge_stop_resolve(${a.requestId}, ${a.actorUserId}, ${a.resolution})`);
