@@ -39,7 +39,7 @@ vi.mock("../../db/system", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { listEdgeResolutionItems, resolveOrphanedIntent, resolvePendingStop, INTENT_RESOLVE_MIN_AGE_MINUTES } from "./edgeResolutionService";
+import { listEdgeResolutionItems, resolveOrphanedIntent, resolvePendingStop, INTENT_RESOLVE_MIN_AGE_MINUTES, mapIntentResolveRefusal } from "./edgeResolutionService";
 
 const onTest = /_test\b/.test(process.env.DATABASE_URL ?? "");
 const TAG = `F2RES-${Date.now()}`;
@@ -224,5 +224,25 @@ describe.skipIf(!onTest)("R-10-af / R-10-ax — edge resolution service (_test, 
       H.auditFails = false;
       expect(await rows(tx, sql`SELECT id FROM command_log WHERE "ackValue" ->> 'intentId' = ${String(f.iOld)}`)).toEqual([]);
     });
+  });
+
+  it("R-10-bj: the result row comes from A's guarded ot_write_intent_resolve — it re-checks what the pre-checks passed (inactive actor ⇒ refused, nothing written), and a direct manual-resolution INSERT is refused", async () => {
+    await inRolledBackTx(async (tx) => {
+      const f = await fixture(tx);
+      const off = Number((await one(tx, sql`INSERT INTO users ("openId", role, "isActive") VALUES (${`${TAG}-off${seq++}`}, 'supervisor', false) RETURNING id`)).id);
+      const r = await resolveOrphanedIntent({ intentId: f.iOld, reason: "gateway crashed", actor: { id: off, name: "off" }, scope: null });
+      expect(r).toMatchObject({ ok: false, reason: "notResolvable", detail: expect.stringMatching(/not an active user/) });
+      expect(await rows(tx, sql`SELECT id FROM command_log WHERE "ackValue" ->> 'intentId' = ${String(f.iOld)}`)).toEqual([]);
+      const direct = await tx.transaction(async (sp: any) => sp.execute(sql`INSERT INTO command_log ("adapterId", "requestedBy", "confirmedBy", status, "ackValue") VALUES (${f.adapter}, ${f.user}, ${f.user}, 'timeout', ${JSON.stringify({ ledger: "result", intentId: f.iOld, outcome: "unknown", resolvedByOperator: f.user })}::jsonb)`)).then(() => "ok", (e: any) => String(e?.cause?.code ?? e?.code));
+      expect(direct).toBe("23514");
+    });
+  });
+
+  it("mapIntentResolveRefusal: the guarded function's messages ⇒ the service's reasons", () => {
+    expect(mapIntentResolveRefusal("ot_write_intent_resolve: write intent 5 is younger than 10 minutes — it may still be in flight", 5).reason).toBe("tooRecent");
+    expect(mapIntentResolveRefusal("ot_write_intent_resolve: write intent 5 already has a result", 5).reason).toBe("alreadyResolved");
+    expect(mapIntentResolveRefusal("command_log: write intent 5 already has a result", 5).reason).toBe("alreadyResolved");
+    expect(mapIntentResolveRefusal("ot_write_intent_resolve: 5 is not a write intent", 5).reason).toBe("notFound");
+    expect(mapIntentResolveRefusal("ot_write_intent_resolve: actor 9 is not an active user", 5)).toEqual({ reason: "notResolvable", detail: "ot_write_intent_resolve: actor 9 is not an active user" });
   });
 });

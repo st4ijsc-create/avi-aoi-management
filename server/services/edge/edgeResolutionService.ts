@@ -16,8 +16,9 @@
  * WRITE 1 (`resolvePendingStop`, R-10-af) — A's guarded `edge_stop_resolve(request, actor, resolution)` (SECURITY DEFINER,
  *   pinned): only a refused / failed STOP (needsResolution) that is not resolved yet; active user; ≥ 3 chars. The audit row and
  *   the resolution are written in ONE transaction (no audit ⇒ no resolution). The STOP stays visible as resolvedByHuman.
- * WRITE 2 (`resolveOrphanedIntent`, R-10-ax) — the RESULT row of the intent, the same append-only shape the OT dispatcher writes
- *   (command_log is INSERT+SELECT for avi_app — 0279 WORM; nothing is updated or deleted): status 'timeout' (the ledger's
+ * WRITE 2 (`resolveOrphanedIntent`, R-10-ax / R-10-bj) — the RESULT row of the intent, written ONLY by A's guarded
+ *   public.ot_write_intent_resolve(intent, actor, reason) (SECURITY DEFINER, pinned; a trigger refuses any other writer of a
+ *   manual-resolution result and any second result of an intent): status 'timeout' (the ledger's
  *   "outcome unknown": the write may or may not have reached the device), ackValue {ledger:'result', intentId, outcome:'unknown',
  *   resolvedByOperator, resolution}, idempotencyKey = the intent's own per-write result key (so a retry of that command key is
  *   answered from this result, never re-sent). Guards, all inside one transaction with a per-intent advisory lock:
@@ -26,8 +27,8 @@
  *       clock: a younger intent may still be in flight in a live dispatcher;
  *     – the adapter is in the caller's factory scope; reason ≥ 3 chars; audit row in the same transaction.
  *   Consequence (truthful, fail-safe): a 'timeout' result keeps the adapter's owner change refused for the 10-minute stale-write
- *   window after the resolution (0374), then it is free. There is NO guarded DB function for this write (A's 0374 trusts any
- *   result row linked by intentId) — the hardening an owner may want is listed in group-F2-report.md.
+ *   window after the resolution (0374), then it is free. The DB re-checks every guard itself (ot_write_intent_resolve) — the
+ *   pre-checks here only give clear answers and the factory-scope NOT_FOUND parity; a 23514 is mapped by mapIntentResolveRefusal.
  */
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
@@ -251,13 +252,24 @@ export async function resolvePendingStop(a: { requestId: number; resolution: str
   }
 }
 
+/**
+ * A refusal (23514) of public.ot_write_intent_resolve ⇒ the service's own reasons (the pre-checks above normally answer first;
+ * this covers a race — another resolver, the device stage writing its own result, the actor disabled meanwhile).
+ */
+export function mapIntentResolveRefusal(message: string, intentId: number): { reason: "notResolvable" | "tooRecent" | "alreadyResolved" | "notFound"; detail: string } {
+  const m = message.toLowerCase();
+  if (/younger|too recent|10 min/.test(m)) return { reason: "tooRecent", detail: `write intent ${intentId} is younger than ${INTENT_RESOLVE_MIN_AGE_MINUTES} minutes — it may still be in flight; wait` };
+  if (/already|has a result|second result/.test(m)) return { reason: "alreadyResolved", detail: `write intent ${intentId} already has a result row` };
+  if (/not a write intent|no write intent|not an intent/.test(m)) return { reason: "notFound", detail: `write intent ${intentId} not found` };
+  return { reason: "notResolvable", detail: message.slice(0, 300) || `write intent ${intentId} could not be resolved` };
+}
+
 /** R-10-ax — a person records "outcome unknown" for a crash-orphaned OT write intent (the RESULT row), audited in the same tx. */
 export async function resolveOrphanedIntent(a: { intentId: number; reason: string; actor: Actor; scope: FactoryScope }): Promise<ResolveResult> {
   const reason = a.reason.trim();
   if (reason.length < 3) return { ok: false, reason: "notResolvable", detail: "a reason of at least 3 characters is required" };
   const d = await db();
   const { createAuditLog } = await import("../../db/system");
-  const { commandLog } = await import("../../../drizzle/schema");
   return d.transaction(async (tx) => {
     // one resolver per intent at a time; the existence of a linked result is re-checked under it
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`ot.intent.resolve:${a.intentId}`}))`);
@@ -277,42 +289,25 @@ export async function resolveOrphanedIntent(a: { intentId: number; reason: strin
     if (i.oldEnough !== true) {
       return { ok: false as const, reason: "tooRecent" as const, detail: `write intent ${a.intentId} is younger than ${INTENT_RESOLVE_MIN_AGE_MINUTES} minutes — it may still be in flight; wait` };
     }
-    const intentKey = typeof i.idempotencyKey === "string" ? i.idempotencyKey : "";
-    const resultKey = intentKey.startsWith("intent:") ? intentKey.slice("intent:".length) : `resolve:${a.intentId}`;
     let resultId: number;
     try {
-      // a SAVEPOINT: a duplicate key (23505) must not poison the transaction — nothing is written then, not even the audit row
+      // R-10-bj (A fix round 10): the result row is written ONLY by the guarded SECURITY DEFINER function — it re-checks the
+      // actor, the reason, intent-ness, no result yet and the 10-minute age under FOR UPDATE, and a trigger refuses any other
+      // writer of a manual-resolution result. In a SAVEPOINT: its refusal (23514) must not poison the transaction.
       resultId = await tx.transaction(async (sp) => {
-        const [row] = await sp
-          .insert(commandLog)
-          .values({
-            actionId: (i.actionId as string | null) ?? null,
-            adapterId: Number(i.adapterId),
-            machineId: i.machineId == null ? null : Number(i.machineId),
-            tagKey: (i.tagKey as string | null) ?? null,
-            address: (i.address as string | null) ?? null,
-            commandType: (i.commandType as string | null) ?? null,
-            requestedValue: (i.requestedValue ?? null) as never,
-            requestedBy: Number(i.requestedBy),
-            confirmedBy: a.actor.id,
-            status: "timeout",
-            triggerKind: i.triggerKind as never,
-            interlockRuleId: i.interlockRuleId == null ? null : Number(i.interlockRuleId),
-            interlockEventId: i.interlockEventId == null ? null : Number(i.interlockEventId),
-            approvedBy: i.approvedBy == null ? null : Number(i.approvedBy),
-            correlationId: (i.correlation_id as string | null) ?? null,
-            errorText: `OUTCOME_UNKNOWN_RESOLVED_BY_OPERATOR: ${reason}`.slice(0, 2000),
-            ackValue: { ledger: "result", intentId: a.intentId, outcome: "unknown", resolvedByOperator: a.actor.id, resolution: reason } as never,
-            idempotencyKey: resultKey.slice(0, 128),
-          })
-          .returning({ id: commandLog.id });
-        return row.id;
+        const [row] = rowsOf(await sp.execute(sql`SELECT public.ot_write_intent_resolve(${a.intentId}, ${a.actor.id}, ${reason}) AS id`));
+        return Number(row?.id);
       });
     } catch (err) {
-      const code = (err as { code?: string })?.code ?? (err as { cause?: { code?: string } })?.cause?.code;
-      if (code === "23505") return { ok: false as const, reason: "alreadyResolved" as const, detail: `a result row for write intent ${a.intentId} already exists (key ${resultKey})` };
+      const e = err as { code?: string; message?: string; cause?: { code?: string; message?: string } };
+      const code = e?.cause?.code ?? e?.code;
+      const msg = String(e?.cause?.message ?? e?.message ?? "");
+      if (code === "23514") return { ok: false as const, ...mapIntentResolveRefusal(msg, a.intentId) };
+      const { isEdgeControlSchemaMissing } = await import("./edgeControlSchema");
+      if (isEdgeControlSchemaMissing(err)) return { ok: false as const, reason: "unavailable" as const, detail: "ot_write_intent_resolve is missing (0374 fix round 10 not applied)" };
       throw err;
     }
+    if (!Number.isSafeInteger(resultId) || resultId <= 0) throw new Error(`ot_write_intent_resolve returned no result row for intent ${a.intentId}`);
     // the audit row in the SAME transaction: it fails ⇒ the result row is rolled back too (no unaudited resolution)
     await createAuditLog(
       {
