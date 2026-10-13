@@ -3854,7 +3854,8 @@
       "kbGoldenSet": "黄金问题集",
       "safetyPlcConfig": "安全PLC配置",
       "edgePendingStop": "待处理的停止指令",
-      "orphanedWriteIntent": "孤立的 OT 写入意图"
+      "orphanedWriteIntent": "孤立的 OT 写入意图",
+      "lateWriteResult": "迟到的写入结果"
     },
     "operation": {
       "updateApiKey": "更新 API 密钥",
@@ -4021,7 +4022,8 @@
       "rejectSafetyPlcConfig": "驳回安全PLC配置",
       "resolveEdgeStop": "记录停止指令的处理方式",
       "resolveWriteIntent": "为孤立写入记录未知结果",
-      "listEdgeResolution": "查看待处理的停止指令和孤立写入"
+      "listEdgeResolution": "查看待处理的停止指令和孤立写入",
+      "reviewLateWriteResult": "记录已审阅迟到的写入结果"
     },
     "field": {
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
@@ -4404,7 +4406,8 @@
       "writeIntentTooRecent": "该写入太新——可能仍在进行中。请等待 10 分钟后再记录。",
       "alreadyResolved": "该项已被处理（他人已处理，或已有结果）。请刷新列表。",
       "edgeControlUnavailable": "数据库中没有边缘控制结构（未应用迁移 0374）——未执行任何操作。",
-      "factoryScopeUnavailable": "无法读取您的工厂范围——为安全起见已拒绝。请稍后重试。"
+      "factoryScopeUnavailable": "无法读取您的工厂范围——为安全起见已拒绝。请稍后重试。",
+      "lateResultNotReviewable": "无法记录对该迟到结果的审阅（用户已停用、备注过短，或这不是迟到结果）。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -22179,6 +22182,13 @@
     "reasonLabel": "原因 / 处理方式（必填，至少 3 个字符）",
     "confirm": "确认并记录审计",
     "stopResolved": "已记录停止指令的处理方式",
-    "intentResolved": "已为孤立写入记录未知结果"
+    "intentResolved": "已为孤立写入记录未知结果",
+    "lateHeading": "在记录“结果未知”之后才到达的写入结果（{{shown}}/{{total}}）",
+    "colStatus": "设备结果",
+    "lateFlag": "审阅之前阻止所有权变更",
+    "reviewLate": "标记为已审阅",
+    "lateDialogTitle": "将迟到的写入结果 #{{id}} 标记为已审阅？",
+    "lateDialogDesc": "设备在该写入被记录为“结果未知”之后才返回了真实结果。该结果作为证据保留（不修改、不删除）。请在设备上核对实际值；审阅连同备注一起审计，并解除适配器的所有权变更阻止。",
+    "lateReviewed": "已记录迟到结果的审阅"
   }
 }

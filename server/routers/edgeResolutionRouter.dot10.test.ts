@@ -33,6 +33,7 @@ vi.mock("../services/edge/edgeResolutionService", () => ({
   listEdgeResolutionItems: vi.fn(async (scope: unknown, filter: unknown) => (H.calls.push({ fn: "list", arg: { scope, filter } }), { available: true, stops: [], intents: [], stopTotal: 0, intentTotal: 0, intentMinAgeMinutes: 10 })),
   resolvePendingStop: vi.fn(async (a: unknown) => (H.calls.push({ fn: "resolveStop", arg: a }), H.result)),
   resolveOrphanedIntent: vi.fn(async (a: unknown) => (H.calls.push({ fn: "resolveIntent", arg: a }), H.result)),
+  reviewLateResult: vi.fn(async (a: unknown) => (H.calls.push({ fn: "reviewLate", arg: a }), H.result)),
 }));
 
 import { edgeResolutionRouter } from "./edgeResolutionRouter";
@@ -112,5 +113,33 @@ describe("edgeResolution — service refusals become coded errors", () => {
     expect(await appCodeOf(caller("admin").resolveIntent({ intentId: 1, reason: "checked" }))).toMatchObject({ code: "PRECONDITION_FAILED", params: { operation: "resolveWriteIntent", reason: "writeIntentTooRecent" } });
     H.result = { ok: false, reason: "notFound", detail: "x" };
     expect(await appCodeOf(caller("admin").resolveIntent({ intentId: 1, reason: "checked" }))).toMatchObject({ code: "NOT_FOUND", params: { entity: "orphanedWriteIntent" } });
+  });
+});
+
+describe("round 3 (R-10-bl) — edgeResolution.reviewLateResult", () => {
+  for (const role of ["engineer", "operator", "viewer"]) {
+    it(`${role} ⇒ FORBIDDEN, service never called`, async () => {
+      expect(await codeOf(caller(role).reviewLateResult({ lateResultId: 1, note: "checked" }))).toBe("FORBIDDEN");
+      expect(H.calls).toEqual([]);
+    });
+  }
+  it("supervisor + 2FA + canEdit ⇒ the service gets the proven actor + scope; note < 3 ⇒ BAD_REQUEST; canEdit denied ⇒ FORBIDDEN", async () => {
+    expect(await codeOf(caller("supervisor").reviewLateResult({ lateResultId: 5, note: "  value applied  " }))).toBe("ok");
+    expect(H.calls).toEqual([{ fn: "reviewLate", arg: { lateResultId: 5, note: "value applied", actor: { id: 7, name: "U", ip: "10.0.0.1", userAgent: "t" }, scope: [3] } }]);
+    expect(H.perms).toEqual(["machine_control/canEdit"]);
+    expect(await codeOf(caller("admin").reviewLateResult({ lateResultId: 5, note: "ab" }))).toBe("BAD_REQUEST");
+    H.deny = "machine_control/canEdit";
+    expect(await codeOf(caller("admin").reviewLateResult({ lateResultId: 5, note: "checked" }))).toBe("FORBIDDEN");
+    expect(H.calls).toHaveLength(1);
+  });
+  it("refusals ⇒ coded errors (entity lateWriteResult, reason lateResultNotReviewable, CONFLICT alreadyResolved); scope unreadable ⇒ SERVICE_UNAVAILABLE", async () => {
+    H.result = { ok: false, reason: "notFound", detail: "x" };
+    expect(await appCodeOf(caller("admin").reviewLateResult({ lateResultId: 1, note: "checked" }))).toMatchObject({ code: "NOT_FOUND", params: { entity: "lateWriteResult" } });
+    H.result = { ok: false, reason: "notResolvable", detail: "x" };
+    expect(await appCodeOf(caller("admin").reviewLateResult({ lateResultId: 1, note: "checked" }))).toMatchObject({ code: "PRECONDITION_FAILED", params: { operation: "reviewLateWriteResult", reason: "lateResultNotReviewable" } });
+    H.result = { ok: false, reason: "alreadyResolved", detail: "x" };
+    expect(await appCodeOf(caller("admin").reviewLateResult({ lateResultId: 1, note: "checked" }))).toMatchObject({ code: "CONFLICT", params: { operation: "reviewLateWriteResult", reason: "alreadyResolved" } });
+    H.scopeThrows = true;
+    expect(await appCodeOf(caller("admin").reviewLateResult({ lateResultId: 1, note: "checked" }))).toMatchObject({ code: "SERVICE_UNAVAILABLE", params: { operation: "reviewLateWriteResult", reason: "factoryScopeUnavailable" } });
   });
 });

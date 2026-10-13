@@ -392,7 +392,16 @@ machine_control:canEdit; your factory scope; the audit row is written in the sam
 - **Orphaned OT write intent** (a write-ahead intent with no result: the process died mid-write) blocks the adapter's
   ownership change for ever. Once it is ≥ 10 min old, **Record unknown outcome** appends its RESULT row (status `timeout` =
   outcome unknown, linked by `intentId`, nothing edited or deleted) with your reason. The owner change is possible again
-  after the DB's 10-minute stale-write window. Check the real value on the device first.
+  after the DB's 10-minute stale-write window (that `timeout` result holds it like any other). Check the real value on the
+  device first. The result row is written ONLY by the guarded `ot_write_intent_resolve` (it re-checks the actor, the reason,
+  the 10-minute age and "no result yet"; a direct INSERT of such a row is refused).
+- **Late device result** (A fix round 11, R-10-bl): if the device's REAL result arrives after that manual resolution, the DB
+  keeps it as evidence (`command_log` ledger `late_result`, never lost, its own key `late:<id>:<key>`) and **holds the adapter's
+  ownership change until a person reviews it** — independent of the 10-minute window. The panel lists it under "Write results
+  that arrived AFTER an 'outcome unknown' resolution"; **Mark reviewed** (admin / supervisor + 2FA, machine_control:canEdit,
+  your factory scope, a note ≥ 3 characters, audited in the same transaction) calls the guarded `ot_write_late_result_review`
+  (WORM `ot_write_late_result_reviews`, once per row). Compare the device's real value with what the run assumed before
+  marking it.
 
 ### 8.10 Retention of the Đợt 10 WORM tables (R-10-an)
 

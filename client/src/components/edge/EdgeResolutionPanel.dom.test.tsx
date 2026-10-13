@@ -58,8 +58,10 @@ beforeEach(() => {
       { intentId: 50, adapterId: 7, adapterCode: "PLC-7", commandType: "setpoint", tagKey: "speed", createdAt: "2026-10-13T00:00:00.000Z", ageMinutes: 42, resolvable: true },
       { intentId: 51, adapterId: 7, adapterCode: "PLC-7", commandType: "setpoint", tagKey: "speed", createdAt: "2026-10-13T01:00:00.000Z", ageMinutes: 2, resolvable: false },
     ],
+    lateResults: [{ lateResultId: 77, intentId: 50, adapterId: 7, adapterCode: "PLC-7", status: "acked", commandType: "setpoint", tagKey: "speed", createdAt: "2026-10-13T02:00:00.000Z" }],
     stopTotal: 4,
     intentTotal: 2,
+    lateResultTotal: 1,
     intentMinAgeMinutes: 10,
   };
 });
@@ -124,5 +126,22 @@ describe("EdgeResolutionPanel", () => {
     render(<EdgeResolutionPanel canResolve robotId={9} />);
     expect(screen.getByTestId("edge-resolution-panel")).toBeInTheDocument();
     expect(srv.queryInput.at(-1)).toEqual({ robotId: 9 });
+  });
+});
+
+describe("EdgeResolutionPanel — round 3 late results", () => {
+  it("lists the late result with its device status + the hold, and 'Mark reviewed' calls reviewLateResult({lateResultId, note})", () => {
+    render(<EdgeResolutionPanel canResolve />);
+    expect(screen.getByText("Kết quả ghi đến SAU khi đã ghi nhận 'kết cục không rõ' (1/1)")).toBeInTheDocument();
+    expect(screen.getByText("Chặn đổi chủ tới khi có người xem xét")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận đã xem" }));
+    expect(screen.getByText("Xác nhận đã xem kết quả ghi đến muộn #77?")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Lý do \/ cách đã xử lý/), { target: { value: "value applied, checked" } });
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận và ghi kiểm toán" }));
+    expect(srv.calls["edgeResolution.reviewLateResult"]).toEqual([{ lateResultId: 77, note: "value applied, checked" }]);
+  });
+  it("no button without canResolve", () => {
+    render(<EdgeResolutionPanel canResolve={false} />);
+    expect(screen.queryByRole("button", { name: "Xác nhận đã xem" })).toBeNull();
   });
 });

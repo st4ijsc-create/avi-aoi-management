@@ -75,9 +75,27 @@ export interface OrphanedIntentItem {
   /** old enough to be resolved (≥ INTENT_RESOLVE_MIN_AGE_MINUTES) */
   resolvable: boolean;
 }
+/**
+ * Round 3 (R-10-bl, A fix round 11): a REAL device result that landed AFTER a manual "outcome unknown" resolution — kept by the
+ * DB as `command_log` ledger 'late_result' (never lost). It holds the adapter's owner change until a person reviews it
+ * (ot_write_late_result_review → WORM ot_write_late_result_reviews). Listed until reviewed.
+ */
+export interface LateResultItem {
+  lateResultId: number;
+  intentId: number | null;
+  lateAfterResolutionId: number | null;
+  adapterId: number;
+  adapterCode: string | null;
+  factoryId: number | null;
+  status: string;
+  commandType: string | null;
+  tagKey: string | null;
+  requestedValue: unknown;
+  createdAt: string;
+}
 export type EdgeResolutionList =
-  | { available: true; stops: EdgePendingStopItem[]; intents: OrphanedIntentItem[]; stopTotal: number; intentTotal: number; intentMinAgeMinutes: number }
-  | { available: false; stops: []; intents: []; stopTotal: 0; intentTotal: 0; intentMinAgeMinutes: number };
+  | { available: true; stops: EdgePendingStopItem[]; intents: OrphanedIntentItem[]; lateResults: LateResultItem[]; stopTotal: number; intentTotal: number; lateResultTotal: number; intentMinAgeMinutes: number }
+  | { available: false; stops: []; intents: []; lateResults: []; stopTotal: 0; intentTotal: 0; lateResultTotal: 0; intentMinAgeMinutes: number };
 /** Optional narrowing to one device (the panel of a robot / adapter). */
 export interface EdgeResolutionFilter {
   robotId?: number;
@@ -133,7 +151,7 @@ export async function listEdgeResolutionItems(scope: FactoryScope, filter: EdgeR
     );
   } catch (err) {
     const { isEdgeControlSchemaMissing } = await import("./edgeControlSchema");
-    if (isEdgeControlSchemaMissing(err)) return { available: false, stops: [], intents: [], stopTotal: 0, intentTotal: 0, intentMinAgeMinutes: INTENT_RESOLVE_MIN_AGE_MINUTES };
+    if (isEdgeControlSchemaMissing(err)) return { available: false, stops: [], intents: [], lateResults: [], stopTotal: 0, intentTotal: 0, lateResultTotal: 0, intentMinAgeMinutes: INTENT_RESOLVE_MIN_AGE_MINUTES };
     throw err;
   }
   const intentRows = rowsOf(
@@ -192,7 +210,55 @@ export async function listEdgeResolutionItems(scope: FactoryScope, filter: EdgeR
     }))
     .filter((i) => inScope(scope, i.factoryId));
   const totalOf = (r: Array<Record<string, unknown>>) => (r.length ? Number(r[0].total) : 0);
-  return { available: true, stops, intents, stopTotal: totalOf(stopRows), intentTotal: totalOf(intentRows), intentMinAgeMinutes: INTENT_RESOLVE_MIN_AGE_MINUTES };
+  // round 3 — unreviewed late results (A fix round 11). The review table missing (round 11 not applied) ⇒ none listed.
+  let lateRows: Array<Record<string, unknown>> = [];
+  if (filter.robotId == null) {
+    try {
+      lateRows = rowsOf(
+        await d.execute(sql`
+          SELECT count(*) OVER () AS "total", lr.id, lr."adapterId", lr.status, lr."commandType", lr."tagKey", lr."requestedValue", lr."createdAt",
+                 lr."ackValue" ->> 'intentId' AS "intentId", lr."ackValue" ->> 'lateAfterResolutionId' AS "lateAfterResolutionId",
+                 (SELECT a.code FROM public.device_adapters a WHERE a.id = lr."adapterId") AS "adapterCode",
+                 ${ADAPTER_FACTORY(sql`lr."adapterId"`)} AS "factoryId"
+            FROM public.command_log lr
+           WHERE lr."ackValue" ->> 'ledger' = 'late_result'
+             AND ${filter.adapterId != null ? sql`lr."adapterId" = ${Math.trunc(filter.adapterId)}` : sql`TRUE`}
+             AND NOT EXISTS (SELECT 1 FROM public.ot_write_late_result_reviews v WHERE v."lateResultId" = lr.id)
+             AND ${scopeSql(scope, ADAPTER_FACTORY(sql`lr."adapterId"`))}
+           ORDER BY lr."createdAt" DESC
+           LIMIT ${EDGE_RESOLUTION_LIST_LIMIT}`),
+      );
+    } catch (err) {
+      const { isEdgeControlSchemaMissing } = await import("./edgeControlSchema");
+      if (!isEdgeControlSchemaMissing(err)) throw err;
+    }
+  }
+  const numOrNull = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+  const lateResults: LateResultItem[] = lateRows
+    .map((r) => ({
+      lateResultId: Number(r.id),
+      intentId: numOrNull(r.intentId),
+      lateAfterResolutionId: numOrNull(r.lateAfterResolutionId),
+      adapterId: Number(r.adapterId),
+      adapterCode: (r.adapterCode as string | null) ?? null,
+      factoryId: num(r.factoryId),
+      status: String(r.status),
+      commandType: (r.commandType as string | null) ?? null,
+      tagKey: (r.tagKey as string | null) ?? null,
+      requestedValue: r.requestedValue ?? null,
+      createdAt: iso(r.createdAt)!,
+    }))
+    .filter((l) => inScope(scope, l.factoryId));
+  return {
+    available: true,
+    stops,
+    intents,
+    lateResults,
+    stopTotal: totalOf(stopRows),
+    intentTotal: totalOf(intentRows),
+    lateResultTotal: totalOf(lateRows),
+    intentMinAgeMinutes: INTENT_RESOLVE_MIN_AGE_MINUTES,
+  };
 }
 
 export interface Actor {
@@ -325,4 +391,65 @@ export async function resolveOrphanedIntent(a: { intentId: number; reason: strin
     );
     return { ok: true as const, id: a.intentId, deviceKind: "adapter" as const, deviceId: Number(i.adapterId), resultId };
   });
+}
+
+/** A refusal (23514) of public.ot_write_late_result_review ⇒ the service's reasons. */
+export function mapLateReviewRefusal(message: string, lateResultId: number): { reason: "notResolvable" | "alreadyResolved" | "notFound"; detail: string } {
+  const m = message.toLowerCase();
+  if (/already/.test(m)) return { reason: "alreadyResolved", detail: `late result ${lateResultId} was already reviewed` };
+  if (/not a late|no late|not a late_result/.test(m)) return { reason: "notFound", detail: `late result ${lateResultId} not found` };
+  return { reason: "notResolvable", detail: message.slice(0, 300) || `late result ${lateResultId} could not be reviewed` };
+}
+
+/**
+ * Round 3 (R-10-bl) — a person records that they SAW a device result that landed after a manual resolution (A's guarded
+ * ot_write_late_result_review → WORM ot_write_late_result_reviews), which releases the adapter's owner-change hold. Audit row in
+ * the same transaction (no audit ⇒ no review). Out of the caller's factory scope ⇒ the same notFound as a missing row.
+ */
+export async function reviewLateResult(a: { lateResultId: number; note: string; actor: Actor; scope: FactoryScope }): Promise<ResolveResult> {
+  const note = a.note.trim();
+  if (note.length < 3) return { ok: false, reason: "notResolvable", detail: "a note of at least 3 characters is required" };
+  const d = await db();
+  const { createAuditLog } = await import("../../db/system");
+  try {
+    return await d.transaction(async (tx) => {
+      const [l] = rowsOf(
+        await tx.execute(sql`
+          SELECT lr.id, lr."adapterId", lr.status, lr."ackValue", ${ADAPTER_FACTORY(sql`lr."adapterId"`)} AS "factoryId",
+                 EXISTS (SELECT 1 FROM public.ot_write_late_result_reviews v WHERE v."lateResultId" = lr.id) AS "reviewed"
+            FROM public.command_log lr WHERE lr.id = ${a.lateResultId}`),
+      );
+      const ack = (l?.ackValue ?? null) as { ledger?: unknown; intentId?: unknown } | null;
+      if (!l || ack?.ledger !== "late_result" || !inScope(a.scope, l.factoryId == null ? null : Number(l.factoryId))) {
+        return { ok: false as const, reason: "notFound" as const, detail: `late result ${a.lateResultId} not found` };
+      }
+      if (l.reviewed === true) return { ok: false as const, reason: "alreadyResolved" as const, detail: `late result ${a.lateResultId} was already reviewed` };
+      try {
+        await tx.transaction(async (sp) => sp.execute(sql`SELECT public.ot_write_late_result_review(${a.lateResultId}, ${a.actor.id}, ${note}) AS id`));
+      } catch (err) {
+        const e = err as { code?: string; message?: string; cause?: { code?: string; message?: string } };
+        if ((e?.cause?.code ?? e?.code) === "23514") return { ok: false as const, ...mapLateReviewRefusal(String(e?.cause?.message ?? e?.message ?? ""), a.lateResultId) };
+        throw err;
+      }
+      await createAuditLog(
+        {
+          userId: a.actor.id,
+          userName: a.actor.name,
+          action: "ot.reviewLateWriteResult",
+          entityType: "device_adapter",
+          entityId: Number(l.adapterId),
+          entityName: `late-result:${a.lateResultId}`,
+          ipAddress: a.actor.ip ?? null,
+          userAgent: a.actor.userAgent ?? null,
+          details: { lateResultId: a.lateResultId, intentId: ack?.intentId ?? null, status: l.status, note },
+        },
+        tx,
+      );
+      return { ok: true as const, id: a.lateResultId, deviceKind: "adapter" as const, deviceId: Number(l.adapterId) };
+    });
+  } catch (err) {
+    const { isEdgeControlSchemaMissing } = await import("./edgeControlSchema");
+    if (isEdgeControlSchemaMissing(err)) return { ok: false, reason: "unavailable", detail: "ot_write_late_result_review is missing (0374 fix round 11 not applied)" };
+    throw err;
+  }
 }

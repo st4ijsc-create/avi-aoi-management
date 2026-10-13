@@ -3862,7 +3862,8 @@
       "kbGoldenSet": "golden question set",
       "safetyPlcConfig": "safety-PLC configuration",
       "edgePendingStop": "pending STOP",
-      "orphanedWriteIntent": "orphaned OT write intent"
+      "orphanedWriteIntent": "orphaned OT write intent",
+      "lateWriteResult": "late write result"
     },
     "operation": {
       "updateApiKey": "update the API key",
@@ -4029,7 +4030,8 @@
       "rejectSafetyPlcConfig": "reject safety-PLC configuration",
       "resolveEdgeStop": "record how the STOP was resolved",
       "resolveWriteIntent": "record an unknown outcome for the orphaned write",
-      "listEdgeResolution": "list pending STOPs and orphaned writes"
+      "listEdgeResolution": "list pending STOPs and orphaned writes",
+      "reviewLateWriteResult": "record that the late write result was reviewed"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",
@@ -4412,7 +4414,8 @@
       "writeIntentTooRecent": "This write is too recent — it may still be in flight. Wait 10 minutes and record it again.",
       "alreadyResolved": "This item was already resolved (by someone else, or it already has a result). Reload the list.",
       "edgeControlUnavailable": "The edge control schema is not in the database (migration 0374 not applied) — nothing was done.",
-      "factoryScopeUnavailable": "Your factory scope could not be read — refused for safety. Try again later."
+      "factoryScopeUnavailable": "Your factory scope could not be read — refused for safety. Try again later.",
+      "lateResultNotReviewable": "The review of this late result could not be recorded (inactive user, note too short, or it is not a late result)."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -22177,6 +22180,13 @@
     "reasonLabel": "Reason / how it was handled (required, at least 3 characters)",
     "confirm": "Confirm and audit",
     "stopResolved": "STOP resolution recorded",
-    "intentResolved": "Unknown outcome recorded for the orphaned write"
+    "intentResolved": "Unknown outcome recorded for the orphaned write",
+    "lateHeading": "Write results that arrived AFTER an 'outcome unknown' resolution ({{shown}}/{{total}})",
+    "colStatus": "Device result",
+    "lateFlag": "Blocks ownership change until reviewed",
+    "reviewLate": "Mark reviewed",
+    "lateDialogTitle": "Mark late write result #{{id}} as reviewed?",
+    "lateDialogDesc": "The device returned a REAL result for this write AFTER it was recorded as 'outcome unknown'. The result is kept as evidence (nothing is edited or deleted). Check the real value on the device; the review is audited with your note and releases the adapter's ownership-change hold.",
+    "lateReviewed": "Late result review recorded"
   }
 }

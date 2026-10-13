@@ -704,7 +704,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // (mutations, supervisorProcedure + machine_control/canEdit, scope applied in the service — out of scope ⇒ the same NOT_FOUND as a
 // missing row) ⇒ D by definition. Measured with this scanner (before = this pin; after = D 1141 · S 357 · tong 2311). F1's
 // untracked `__edgeE2eHarness.dot10.ts` adds nothing to any group (it is the §1 blind-cell line, F1's to fix). No baseline row.
-const GHIM = { A: 333, B: 8, C: 472, D: 1141, S: 357, tong: 2311 } as const;
+// ★★★ 2026-10-13 (doc 81 Đợt 10 task F2 round 3 — ruling R-10-bl) — **D 1141 → 1142 · tong 2311 → 2312 · A/B/C/S unchanged.** NEW
+// `edgeResolution.reviewLateResult` (mutation, supervisorProcedure + machine_control/canEdit; factory scope applied in the service —
+// out of scope ⇒ the same NOT_FOUND as a missing row) ⇒ D by definition. `edgeRuntime.registerNode` moved protectedProcedure →
+// adminProcedure (still D, count unchanged). Measured with this scanner (before = this pin; after = D 1142 · tong 2312).
+const GHIM = { A: 333, B: 8, C: 472, D: 1142, S: 357, tong: 2312 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

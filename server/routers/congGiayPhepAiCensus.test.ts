@@ -381,7 +381,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `resolveStop` / `resolveIntent` (supervisorProcedure + machine_control:canEdit). `module = null` như robotRouter — không phải bề
  *   mặt AI; beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong và mọi SKU KHÔNG đổi. `tong` 2311 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2311, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-13 doc 81 Đợt 10 task F2 round 3 — **tong 2311 → 2312** (đo trước rồi mới ghim): `edgeResolution.reviewLateResult`
+ *   (supervisorProcedure + machine_control:canEdit). `module = null` — không phải bề mặt AI; mọi SKU không đổi. Trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2312, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

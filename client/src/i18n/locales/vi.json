@@ -3862,7 +3862,8 @@
       "kbGoldenSet": "bộ câu hỏi vàng",
       "safetyPlcConfig": "cấu hình safety-PLC",
       "edgePendingStop": "lệnh DỪNG chờ xử lý",
-      "orphanedWriteIntent": "lệnh ghi OT mồ côi"
+      "orphanedWriteIntent": "lệnh ghi OT mồ côi",
+      "lateWriteResult": "kết quả ghi đến muộn"
     },
     "operation": {
       "updateApiKey": "cập nhật khoá API",
@@ -4029,7 +4030,8 @@
       "rejectSafetyPlcConfig": "từ chối cấu hình safety-PLC",
       "resolveEdgeStop": "ghi nhận cách xử lý lệnh DỪNG",
       "resolveWriteIntent": "ghi nhận kết cục không rõ cho lệnh ghi mồ côi",
-      "listEdgeResolution": "xem lệnh DỪNG chờ và lệnh ghi mồ côi"
+      "listEdgeResolution": "xem lệnh DỪNG chờ và lệnh ghi mồ côi",
+      "reviewLateWriteResult": "xác nhận đã xem kết quả ghi đến muộn"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -4404,7 +4406,8 @@
       "writeIntentTooRecent": "Lệnh ghi này còn quá mới — có thể vẫn đang ghi. Chờ đủ 10 phút rồi ghi nhận lại.",
       "alreadyResolved": "Mục này đã được xử lý (bởi người khác hoặc đã có kết quả). Tải lại danh sách.",
       "edgeControlUnavailable": "Lược đồ điều khiển edge chưa có trên CSDL (migration 0374 chưa áp) — không làm gì cả.",
-      "factoryScopeUnavailable": "Không đọc được phạm vi nhà máy của bạn — từ chối để an toàn. Thử lại sau."
+      "factoryScopeUnavailable": "Không đọc được phạm vi nhà máy của bạn — từ chối để an toàn. Thử lại sau.",
+      "lateResultNotReviewable": "Không ghi nhận được việc xem xét kết quả đến muộn này (người dùng không còn hoạt động, ghi chú quá ngắn, hoặc đây không phải kết quả đến muộn)."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -22151,6 +22154,13 @@
     "reasonLabel": "Lý do / cách đã xử lý (bắt buộc, ít nhất 3 ký tự)",
     "confirm": "Xác nhận và ghi kiểm toán",
     "stopResolved": "Đã ghi nhận cách xử lý lệnh DỪNG",
-    "intentResolved": "Đã ghi nhận kết cục KHÔNG RÕ cho lệnh ghi mồ côi"
+    "intentResolved": "Đã ghi nhận kết cục KHÔNG RÕ cho lệnh ghi mồ côi",
+    "lateHeading": "Kết quả ghi đến SAU khi đã ghi nhận 'kết cục không rõ' ({{shown}}/{{total}})",
+    "colStatus": "Kết quả thiết bị",
+    "lateFlag": "Chặn đổi chủ tới khi có người xem xét",
+    "reviewLate": "Xác nhận đã xem",
+    "lateDialogTitle": "Xác nhận đã xem kết quả ghi đến muộn #{{id}}?",
+    "lateDialogDesc": "Thiết bị đã trả kết quả THẬT cho lệnh ghi này SAU khi lệnh được ghi nhận 'kết cục không rõ'. Kết quả được giữ nguyên làm bằng chứng (không sửa, không xoá). Hãy đối chiếu giá trị thật trên thiết bị; xác nhận được kiểm toán kèm ghi chú và gỡ việc chặn đổi chủ của bộ chuyển đổi.",
+    "lateReviewed": "Đã ghi nhận việc xem xét kết quả đến muộn"
   }
 }

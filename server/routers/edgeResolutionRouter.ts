@@ -6,6 +6,7 @@
  *                                  machine_control/canView.
  *   edgeResolution.resolveStop   — close a REFUSED / FAILED STOP with a resolution (A's guarded edge_stop_resolve).
  *   edgeResolution.resolveIntent — record "outcome unknown" for a crash-orphaned write intent (its RESULT row).
+ *   edgeResolution.reviewLateResult — round 3: review a device result that landed after such a resolution (releases the hold).
  * Both writes: admin / supervisor (+ 2FA, supervisorProcedure) AND machine_control/canEdit; a reason ≥ 3 chars; the caller's
  * factory scope (strict — unreadable ⇒ refused; out of scope ⇒ the same NOT_FOUND as a missing row); the audit row is written in
  * the same transaction as the change (no audit ⇒ no change). Neither sends anything to a device.
@@ -14,10 +15,12 @@ import { z } from "zod";
 import { router, protectedProcedure, supervisorProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
-import { listEdgeResolutionItems, resolveOrphanedIntent, resolvePendingStop, type FactoryScope, type ResolveResult } from "../services/edge/edgeResolutionService";
+import { listEdgeResolutionItems, resolveOrphanedIntent, resolvePendingStop, reviewLateResult, type FactoryScope, type ResolveResult } from "../services/edge/edgeResolutionService";
+
+type Op = "listEdgeResolution" | "resolveEdgeStop" | "resolveWriteIntent" | "reviewLateWriteResult";
 
 /** The caller's factory scope (null = unrestricted), STRICT: an unreadable scope refuses instead of widening. */
-async function scopeOf(user: { id: number; role?: string | null }, operation: "listEdgeResolution" | "resolveEdgeStop" | "resolveWriteIntent"): Promise<FactoryScope> {
+async function scopeOf(user: { id: number; role?: string | null }, operation: Op): Promise<FactoryScope> {
   const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
   try {
     return (await resolveTenantFactoryScope({ userId: user.id, userRole: String(user.role ?? "") }, { strict: true })).factoryIds;
@@ -26,11 +29,13 @@ async function scopeOf(user: { id: number; role?: string | null }, operation: "l
   }
 }
 
-function fail(r: Extract<ResolveResult, { ok: false }>, operation: "resolveEdgeStop" | "resolveWriteIntent"): never {
-  if (r.reason === "notFound") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: operation === "resolveEdgeStop" ? "edgePendingStop" : "orphanedWriteIntent" }, r.detail);
+function fail(r: Extract<ResolveResult, { ok: false }>, operation: Exclude<Op, "listEdgeResolution">): never {
+  const entity = operation === "resolveEdgeStop" ? "edgePendingStop" : operation === "resolveWriteIntent" ? "orphanedWriteIntent" : "lateWriteResult";
+  if (r.reason === "notFound") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity }, r.detail);
   if (r.reason === "unavailable") throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation, reason: "edgeControlUnavailable" }, r.detail);
   if (r.reason === "tooRecent") throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation, reason: "writeIntentTooRecent" }, r.detail);
   if (r.reason === "alreadyResolved") throw appError("CONFLICT", "OPERATION_FAILED", { operation, reason: "alreadyResolved" }, r.detail);
+  if (operation === "reviewLateWriteResult") throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation, reason: "lateResultNotReviewable" }, r.detail);
   throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation, reason: "stopNotResolvable" }, r.detail);
 }
 
@@ -62,6 +67,19 @@ export const edgeResolutionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const r = await resolveOrphanedIntent({ intentId: input.intentId, reason: input.reason, actor: actorOf(ctx), scope: await scopeOf(ctx.user, "resolveWriteIntent") });
       if (!r.ok) fail(r, "resolveWriteIntent");
+      return r;
+    }),
+
+  /**
+   * Round 3 (R-10-bl): a person records that they saw a device write result that landed AFTER a manual "outcome unknown"
+   * resolution (A's guarded ot_write_late_result_review). Until then the adapter's ownership cannot change.
+   */
+  reviewLateResult: supervisorProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(z.object({ lateResultId: z.number().int().positive(), note: z.string().trim().min(3).max(2000) }))
+    .mutation(async ({ ctx, input }) => {
+      const r = await reviewLateResult({ lateResultId: input.lateResultId, note: input.note, actor: actorOf(ctx), scope: await scopeOf(ctx.user, "reviewLateWriteResult") });
+      if (!r.ok) fail(r, "reviewLateWriteResult");
       return r;
     }),
 });

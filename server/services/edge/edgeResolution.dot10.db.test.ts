@@ -39,7 +39,7 @@ vi.mock("../../db/system", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { listEdgeResolutionItems, resolveOrphanedIntent, resolvePendingStop, INTENT_RESOLVE_MIN_AGE_MINUTES, mapIntentResolveRefusal } from "./edgeResolutionService";
+import { listEdgeResolutionItems, resolveOrphanedIntent, resolvePendingStop, INTENT_RESOLVE_MIN_AGE_MINUTES, mapIntentResolveRefusal, mapLateReviewRefusal, reviewLateResult } from "./edgeResolutionService";
 
 const onTest = /_test\b/.test(process.env.DATABASE_URL ?? "");
 const TAG = `F2RES-${Date.now()}`;
@@ -75,7 +75,7 @@ async function fixture(tx: any) {
   };
   const A = await chain("a");
   const B = await chain("b");
-  const user = Number((await one(tx, sql`INSERT INTO users ("openId", role, "isActive", name) VALUES (${`${TAG}-u${seq++}`}, 'supervisor', true, 'F2 supervisor') RETURNING id`)).id);
+  const user = Number((await one(tx, sql`INSERT INTO users ("openId", role, "isActive", name) VALUES (${`${TAG}-u${seq++}`}, 'admin', true, 'F2 supervisor') RETURNING id`)).id);
   const node = Number((await one(tx, sql`INSERT INTO edge_nodes (code, name, status) VALUES (${`${TAG}-N${seq++}`}, 'n', 'offline') RETURNING id`)).id);
   const robotIn = async (line: number) => Number((await one(tx, sql`INSERT INTO robots (code, name, vendor, endpoint, "lineId") VALUES (${`${TAG}-R${seq++}`}, 'r', 'sim', 'sim://t', ${line}) RETURNING id`)).id);
   const rA = await robotIn(A.line);
@@ -244,5 +244,52 @@ describe.skipIf(!onTest)("R-10-af / R-10-ax — edge resolution service (_test, 
     expect(mapIntentResolveRefusal("command_log: write intent 5 already has a result", 5).reason).toBe("alreadyResolved");
     expect(mapIntentResolveRefusal("ot_write_intent_resolve: 5 is not a write intent", 5).reason).toBe("notFound");
     expect(mapIntentResolveRefusal("ot_write_intent_resolve: actor 9 is not an active user", 5)).toEqual({ reason: "notResolvable", detail: "ot_write_intent_resolve: actor 9 is not an active user" });
+  });
+  it("round 3 (R-10-bl): a REAL device result after a manual resolution is kept as late_result, listed, holds the owner change until reviewed (scoped, audited, once)", async () => {
+    await inRolledBackTx(async (tx) => {
+      const f = await fixture(tx);
+      const res = await resolveOrphanedIntent({ intentId: f.iOld, reason: "gateway crashed", actor: actor(f.user), scope: null });
+      expect(res).toMatchObject({ ok: true });
+      // the device stage writes its real result late (the normal writer: a plain avi_app INSERT; the DB keeps it as late_result)
+      const late = Number((await one(tx, sql`INSERT INTO command_log ("adapterId", "requestedBy", "confirmedBy", status, "ackValue", "idempotencyKey")
+        VALUES (${f.adapter}, ${f.user}, ${f.user}, 'acked', ${JSON.stringify({ ledger: "result", intentId: f.iOld })}::jsonb, ${`${TAG}-k1:speed:0`}) RETURNING id`)).id);
+      const listed = await listEdgeResolutionItems(null, { adapterId: f.adapter });
+      expect(listed.available && listed.lateResults.map((l) => [l.lateResultId, l.intentId, l.status, l.lateAfterResolutionId])).toEqual([[late, f.iOld, "acked", (res as { resultId: number }).resultId]]);
+      expect((await listEdgeResolutionItems([f.B.f], { adapterId: f.adapter })).lateResults).toEqual([]);
+      const tryOwner = () => tx.transaction(async (sp: any) => sp.execute(sql`UPDATE device_adapters SET "edgeNodeId" = ${f.node} WHERE id = ${f.adapter}`)).then(() => "ok", (e: any) => String(e?.cause?.message ?? e?.message));
+      expect(await tryOwner()).toMatch(/landed after a manual resolution — a person must review it/);
+      expect(await reviewLateResult({ lateResultId: late, note: "checked the valve: value applied", actor: actor(f.user), scope: [f.B.f] })).toMatchObject({ ok: false, reason: "notFound" });
+      expect(await reviewLateResult({ lateResultId: f.iNew, note: "not a late result", actor: actor(f.user), scope: null })).toMatchObject({ ok: false, reason: "notFound" });
+      expect(await reviewLateResult({ lateResultId: late, note: "  ", actor: actor(f.user), scope: null })).toMatchObject({ ok: false, reason: "notResolvable" });
+      // the guarded function re-checks the actor itself (A round 12 also checks role / scope): an inactive actor ⇒ 23514 ⇒ mapped, nothing written
+      const off = Number((await one(tx, sql`INSERT INTO users ("openId", role, "isActive") VALUES (${`${TAG}-loff${seq++}`}, 'admin', false) RETURNING id`)).id);
+      expect(await reviewLateResult({ lateResultId: late, note: "checked", actor: actor(off), scope: null })).toMatchObject({ ok: false, reason: "notResolvable", detail: expect.stringMatching(/not an active user/) });
+      expect(await rows(tx, sql`SELECT 1 FROM ot_write_late_result_reviews WHERE "lateResultId" = ${late}`)).toEqual([]);
+      expect(await reviewLateResult({ lateResultId: late, note: "checked the valve: value applied", actor: actor(f.user), scope: [f.A.f] })).toEqual({ ok: true, id: late, deviceKind: "adapter", deviceId: f.adapter });
+      expect(await rows(tx, sql`SELECT "reviewedBy", note FROM ot_write_late_result_reviews WHERE "lateResultId" = ${late}`)).toEqual([{ reviewedBy: f.user, note: "checked the valve: value applied" }]);
+      expect(await rows(tx, sql`SELECT action, "userId", "entityId" FROM audit_logs WHERE "entityName" = ${`late-result:${late}`}`)).toEqual([{ action: "ot.reviewLateWriteResult", userId: f.user, entityId: f.adapter }]);
+      expect((await listEdgeResolutionItems(null, { adapterId: f.adapter })).lateResults).toEqual([]);
+      expect(await reviewLateResult({ lateResultId: late, note: "again", actor: actor(f.user), scope: null })).toMatchObject({ ok: false, reason: "alreadyResolved" });
+      // the late hold is gone; the manual 'timeout' result is still inside the DB's 10-minute stale-write window (A round 11: unchanged)
+      expect(await tryOwner()).toMatch(/in-flight command/);
+    });
+  });
+
+  it("round 3: reviewing a late result — the audit row cannot be written ⇒ no review row", async () => {
+    await inRolledBackTx(async (tx) => {
+      const f = await fixture(tx);
+      await resolveOrphanedIntent({ intentId: f.iOld, reason: "gateway crashed", actor: actor(f.user), scope: null });
+      const late = Number((await one(tx, sql`INSERT INTO command_log ("adapterId", "requestedBy", "confirmedBy", status, "ackValue") VALUES (${f.adapter}, ${f.user}, ${f.user}, 'failed', ${JSON.stringify({ ledger: "result", intentId: f.iOld })}::jsonb) RETURNING id`)).id);
+      H.auditFails = true;
+      await expect(reviewLateResult({ lateResultId: late, note: "checked on site", actor: actor(f.user), scope: null })).rejects.toThrow(/audit insert failed/);
+      H.auditFails = false;
+      expect(await rows(tx, sql`SELECT 1 FROM ot_write_late_result_reviews WHERE "lateResultId" = ${late}`)).toEqual([]);
+    });
+  });
+
+  it("mapLateReviewRefusal: the guarded function's messages ⇒ the service's reasons", () => {
+    expect(mapLateReviewRefusal("ot_write_late_result_review: 5 was already reviewed", 5).reason).toBe("alreadyResolved");
+    expect(mapLateReviewRefusal("ot_write_late_result_review: 5 is not a late device write result", 5).reason).toBe("notFound");
+    expect(mapLateReviewRefusal("ot_write_late_result_review: actor 9 is not an active user", 5)).toEqual({ reason: "notResolvable", detail: "ot_write_late_result_review: actor 9 is not an active user" });
   });
 });

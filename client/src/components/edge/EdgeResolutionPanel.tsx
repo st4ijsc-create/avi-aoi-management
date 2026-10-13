@@ -6,7 +6,10 @@
  *     edge owner cannot reach the device — central executes it), overdue (a STOP never expires; it is still owed), undeliverable
  *     (its node has no active credential — it will never pull it).
  *   • Orphaned OT write intents: a write-ahead intent with no result (the process died mid-write). It blocks the adapter's
- *     ownership change until a result exists; a person records "outcome unknown" once it is ≥ 10 minutes old.
+ *     ownership change until a result exists; a person records "outcome unknown" once it is ≥ 10 minutes old (that 'timeout'
+ *     result itself holds the owner change for the DB's 10-minute stale-write window).
+ *   • Late results (round 3, R-10-bl): a REAL device result that arrived after such a resolution — kept as evidence; it holds the
+ *     adapter's owner change until a person marks it reviewed.
  * The server is the wall (edgeResolution.* — admin / supervisor + 2FA + machine_control/canEdit, factory scope, audit in the
  * same transaction); `canResolve` only hides buttons that would end in FORBIDDEN.
  */
@@ -53,7 +56,8 @@ type IntentItem = {
   ageMinutes: number;
   resolvable: boolean;
 };
-type ListData = { available: boolean; stops: StopItem[]; intents: IntentItem[]; stopTotal: number; intentTotal: number; intentMinAgeMinutes: number };
+type LateItem = { lateResultId: number; intentId: number | null; adapterId: number; adapterCode: string | null; status: string; commandType: string | null; tagKey: string | null; createdAt: string };
+type ListData = { available: boolean; stops: StopItem[]; intents: IntentItem[]; lateResults: LateItem[]; stopTotal: number; intentTotal: number; lateResultTotal: number; intentMinAgeMinutes: number };
 
 const fmt = (v?: string | null) => (v ? new Date(v).toLocaleString() : "—");
 
@@ -67,16 +71,24 @@ export default function EdgeResolutionPanel(props: { robotId?: number; adapterId
     available: raw?.available !== false,
     stops: Array.isArray(raw?.stops) ? (raw!.stops as StopItem[]) : [],
     intents: Array.isArray(raw?.intents) ? (raw!.intents as IntentItem[]) : [],
+    lateResults: Array.isArray(raw?.lateResults) ? (raw!.lateResults as LateItem[]) : [],
     stopTotal: Number(raw?.stopTotal ?? 0),
     intentTotal: Number(raw?.intentTotal ?? 0),
+    lateResultTotal: Number(raw?.lateResultTotal ?? 0),
     intentMinAgeMinutes: Number(raw?.intentMinAgeMinutes ?? 10),
   };
 
-  const [target, setTarget] = useState<{ kind: "stop"; item: StopItem } | { kind: "intent"; item: IntentItem } | null>(null);
+  const [target, setTarget] = useState<{ kind: "stop"; item: StopItem } | { kind: "intent"; item: IntentItem } | { kind: "late"; item: LateItem } | null>(null);
   const [reason, setReason] = useState("");
   const done = {
     onSuccess: () => {
-      toast.success(target?.kind === "intent" ? t("edgeResolution.intentResolved", "Đã ghi nhận kết cục KHÔNG RÕ cho lệnh ghi mồ côi") : t("edgeResolution.stopResolved", "Đã ghi nhận cách xử lý lệnh DỪNG"));
+      toast.success(
+        target?.kind === "intent"
+          ? t("edgeResolution.intentResolved", "Đã ghi nhận kết cục KHÔNG RÕ cho lệnh ghi mồ côi")
+          : target?.kind === "late"
+            ? t("edgeResolution.lateReviewed", "Đã ghi nhận việc xem xét kết quả đến muộn")
+            : t("edgeResolution.stopResolved", "Đã ghi nhận cách xử lý lệnh DỪNG"),
+      );
       setTarget(null);
       setReason("");
       void utils.edgeResolution.list.invalidate();
@@ -90,7 +102,8 @@ export default function EdgeResolutionPanel(props: { robotId?: number; adapterId
   };
   const resolveStopM = trpc.edgeResolution.resolveStop.useMutation(done);
   const resolveIntentM = trpc.edgeResolution.resolveIntent.useMutation(done);
-  const pending = resolveStopM.isPending || resolveIntentM.isPending;
+  const reviewLateM = trpc.edgeResolution.reviewLateResult.useMutation(done);
+  const pending = resolveStopM.isPending || resolveIntentM.isPending || reviewLateM.isPending;
   const deviceLabel = (s: StopItem) => `${s.deviceKind === "robot" ? t("edgeResolution.robot", "Robot") : t("edgeResolution.adapter", "Bộ chuyển đổi")} ${s.deviceCode ?? `#${s.deviceId}`}`;
 
   return (
@@ -105,7 +118,7 @@ export default function EdgeResolutionPanel(props: { robotId?: number; adapterId
         {!data.available && (
           <p className="text-sm text-muted-foreground">{t("edgeResolution.unavailable", "Chưa có lược đồ điều khiển edge (migration 0374 chưa áp) — không có gì để hiển thị.")}</p>
         )}
-        {data.available && data.stops.length === 0 && data.intents.length === 0 && (
+        {data.available && data.stops.length === 0 && data.intents.length === 0 && data.lateResults.length === 0 && (
           <p className="text-sm text-muted-foreground">{t("edgeResolution.empty", "Không có lệnh DỪNG nào đang chờ và không có lệnh ghi mồ côi trong phạm vi của bạn.")}</p>
         )}
 
@@ -193,16 +206,59 @@ export default function EdgeResolutionPanel(props: { robotId?: number; adapterId
           </div>
         )}
 
+        {data.lateResults.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-sm font-medium">
+              {t("edgeResolution.lateHeading", { defaultValue: "Kết quả ghi đến SAU khi đã ghi nhận 'kết cục không rõ' ({{shown}}/{{total}})", shown: data.lateResults.length, total: data.lateResultTotal })}
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("edgeResolution.colAdapter", "Bộ chuyển đổi")}</TableHead>
+                  <TableHead>{t("edgeResolution.colCommand", "Lệnh / tag")}</TableHead>
+                  <TableHead>{t("edgeResolution.colStatus", "Kết quả thiết bị")}</TableHead>
+                  <TableHead>{t("edgeResolution.colCreated", "Tạo lúc")}</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.lateResults.map((l) => (
+                  <TableRow key={l.lateResultId}>
+                    <TableCell className="font-mono text-xs">{l.adapterCode ?? `#${l.adapterId}`}</TableCell>
+                    <TableCell className="font-mono text-xs">{l.commandType ?? "—"} / {l.tagKey ?? "—"}</TableCell>
+                    <TableCell className="space-x-1 text-xs">
+                      <Badge variant="outline">{l.status}</Badge>
+                      <Badge variant="destructive">{t("edgeResolution.lateFlag", "Chặn đổi chủ tới khi có người xem xét")}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">{fmt(l.createdAt)}</TableCell>
+                    <TableCell className="text-right">
+                      {props.canResolve && (
+                        <Button size="sm" variant="outline" disabled={pending} onClick={() => setTarget({ kind: "late", item: l })}>
+                          {t("edgeResolution.reviewLate", "Xác nhận đã xem")}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
         <AlertDialog open={target != null} onOpenChange={(open) => { if (!open) setTarget(null); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {target?.kind === "intent"
                   ? t("edgeResolution.intentDialogTitle", { defaultValue: "Ghi nhận kết cục KHÔNG RÕ cho lệnh ghi #{{id}}?", id: target.item.intentId })
-                  : t("edgeResolution.stopDialogTitle", { defaultValue: "Ghi nhận cách xử lý lệnh DỪNG #{{id}}?", id: target?.kind === "stop" ? target.item.requestId : "" })}
+                  : target?.kind === "late"
+                    ? t("edgeResolution.lateDialogTitle", { defaultValue: "Xác nhận đã xem kết quả ghi đến muộn #{{id}}?", id: target.item.lateResultId })
+                    : t("edgeResolution.stopDialogTitle", { defaultValue: "Ghi nhận cách xử lý lệnh DỪNG #{{id}}?", id: target?.kind === "stop" ? target.item.requestId : "" })}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {target?.kind === "intent"
+                {target?.kind === "late"
+                  ? t("edgeResolution.lateDialogDesc", "Thiết bị đã trả kết quả THẬT cho lệnh ghi này SAU khi lệnh được ghi nhận 'kết cục không rõ'. Kết quả được giữ nguyên làm bằng chứng (không sửa, không xoá). Hãy đối chiếu giá trị thật trên thiết bị; xác nhận được kiểm toán kèm ghi chú và gỡ việc chặn đổi chủ của bộ chuyển đổi.")
+                  : target?.kind === "intent"
                   ? t("edgeResolution.intentDialogDesc", "Tiến trình đã dừng giữa lúc ghi: lệnh có thể đã hoặc chưa tới thiết bị. Hãy kiểm tra giá trị thật tại chỗ trước. Thao tác ghi một dòng KẾT QUẢ 'kết cục không rõ' vào sổ lệnh (không sửa, không xoá gì), được kiểm toán kèm lý do; không gửi gì tới thiết bị. Việc đổi chủ của bộ chuyển đổi vẫn bị chặn thêm 10 phút sau đó.")
                   : t("edgeResolution.stopDialogDesc", "Lệnh DỪNG này đã bị từ chối hoặc thất bại — nó KHÔNG được thực thi tự động nữa. Chỉ ghi nhận khi thiết bị đã được dừng bằng cách khác và đã kiểm tra tại chỗ. Thao tác được kiểm toán kèm lý do; lệnh vẫn hiển thị là 'đã xử lý bởi người'.")}
               </AlertDialogDescription>
@@ -221,6 +277,7 @@ export default function EdgeResolutionPanel(props: { robotId?: number; adapterId
                   e.preventDefault();
                   if (!target) return;
                   if (target.kind === "stop") resolveStopM.mutate({ requestId: target.item.requestId, resolution: reason.trim() });
+                  else if (target.kind === "late") reviewLateM.mutate({ lateResultId: target.item.lateResultId, note: reason.trim() });
                   else resolveIntentM.mutate({ intentId: target.item.intentId, reason: reason.trim() });
                 }}
               >
