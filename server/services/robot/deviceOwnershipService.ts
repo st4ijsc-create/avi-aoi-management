@@ -15,7 +15,7 @@
  * session; adapter: its PINNED stop values through the OT device stage on the running driver, else a transient session), then
  * acks each request in its own savepoint through A's guarded edge_stop_ack_central (done | failed; actor = the transferring admin,
  * else the requester). A STOP that could not be sent ⇒ `failed` (the row stays, visible) + a DURABLE critical alert
- * (criticalStopAlert: alert stream + safety-critical inbox). Dry-run mode records it simulated (done), as central's dispatchers do.
+ * (criticalStopAlert: alert stream + safety-critical inbox). Dry-run (central control off) is NEVER reported done: the attempt is recorded NOT sent, the requests stay pending, and a truthful alert says so (R-10-bd, NF5-5).
  *
  * R-10-v — ownership is applied LIVE: this process attaches / detaches its robotManager / otManager session at once (central → edge
  * ⇒ its polling, ingest and session stop now); other replicas follow the NOTIFY; a reconcile every ≤ 30 s is the backstop.
@@ -155,8 +155,9 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
   } catch (err) {
     if (opts.device) {
       const sent = await sendCentralStop(opts.device.kind, opts.device.id);
-      void raiseCentralStopAlert(opts.device.kind, opts.device.id, opts.actorUserId ? [opts.actorUserId] : [], `pending STOP requests could not be read (${errText(err)}); a STOP was ${sent.sent} anyway`);
-      return [{ requestIds: [], outcome: sent.ok ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [] }];
+      const notSent = sent.sent === "simulated"; // fix review 6 (NF5-5)
+      void raiseCentralStopAlert(opts.device.kind, opts.device.id, opts.actorUserId ? [opts.actorUserId] : [], notSent ? `pending STOP requests could not be read (${errText(err)}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `pending STOP requests could not be read (${errText(err)}); a STOP was ${sent.sent} anyway`);
+      return [{ requestIds: [], outcome: sent.ok && sent.sent === "sent" ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [], ...(notSent ? { notSent: true as const } : {}) }];
     }
     console.error(`[DeviceOwner] pending-STOP sweep could not read device_pending_stops: ${errText(err)}`);
     return results;
@@ -177,8 +178,10 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
       return null;
     }
     const sent = await sendCentralStop(kind, deviceId);
-    void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
-    return { requestIds: [], outcome: sent.ok ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [] };
+    // fix review 6 (NF5-5) — a simulated STOP (central control off) is NOT done: reported failed + notSent, and said so
+    const notSent = sent.sent === "simulated";
+    void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], notSent ? `the pending STOP requests could not be read/locked (${why}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
+    return { requestIds: [], outcome: sent.ok && sent.sent === "sent" ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [], ...(notSent ? { notSent: true as const } : {}) };
   };
   const db = await getDb().catch(() => null);
   if (!db) return sendAnyway("database unavailable");

@@ -121,7 +121,19 @@ async function auditLater(entry: { userId: number | null; userName: string | nul
  * The middleware. Built on `publicProcedure` (the forced-password-change gate stays the FIRST middleware of the chain — census
  * buocDoiMatKhau §1; with the STOP-only context its user is null there, and the same gate runs INSIDE authenticateRequest here).
  */
-export const robotStopProcedure = publicProcedure.use(async (opts) => {
+/** fix review 6 (NF5-6) — the ONLY verbs this procedure ever lets through (checked on the raw input, before anything else) */
+export const STOP_ONLY_VERBS: ReadonlySet<string> = new Set(["stop", "abort"]);
+
+/** fix review 6 (NF5-4) — a definite auth refusal as a tRPC answer (401 / 403), never INTERNAL_SERVER_ERROR */
+function refusalAsTrpc(err: unknown): unknown {
+  if (err instanceof TRPCError) return err;
+  const msg = String((err as Error)?.message ?? err);
+  if (/MUST_CHANGE_PASSWORD/.test(msg)) return appError("FORBIDDEN", "MUST_CHANGE_PASSWORD", undefined, msg);
+  return appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, `STOP refused: ${msg}`);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const stopAuthMiddleware = async (opts: any) => {
   const { ctx, next } = opts;
   const startedAt = Date.now();
   const { sdk } = await import("../../_core/sdk");
@@ -129,7 +141,11 @@ export const robotStopProcedure = publicProcedure.use(async (opts) => {
   // 1. stateless: signature + expiry
   const jwt = token ? await sdk.verifySession(token) : null;
   if (!jwt) throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "STOP refused: no valid, unexpired session token");
-  const raw = (await (opts as unknown as { getRawInput?: () => Promise<unknown> }).getRawInput?.().catch(() => undefined)) as { robotId?: unknown } | undefined;
+  const raw = (await (opts as unknown as { getRawInput?: () => Promise<unknown> }).getRawInput?.().catch(() => undefined)) as { robotId?: unknown; command?: unknown } | undefined;
+  // NF5-6 — STOP verbs only, whatever route is ever built on this procedure
+  if (typeof raw?.command !== "string" || !STOP_ONLY_VERBS.has(raw.command)) {
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "command", reason: "stopOnly" }, "this route accepts STOP verbs only (stop / abort)");
+  }
   const robotId = Number.isSafeInteger(raw?.robotId) ? Number(raw!.robotId) : null;
   // R-10-be — the memo of THIS session (jti), ≤ 15 min, never a refused / invalidated one
   const remembered = rememberedIdentity(token);
@@ -145,6 +161,10 @@ export const robotStopProcedure = publicProcedure.use(async (opts) => {
   const auth = track(Promise.resolve().then(() => sdk.authenticateRequest(ctx.req as never)));
   const freshUser = auth.done.then(() => (auth.leg.v.state === "done" ? (auth.leg.v.value as unknown as RememberedUser) : Promise.reject(new Error("identity not resolved"))));
   freshUser.catch(() => undefined); // observed: its rejection is an answer handled below, never an unhandled one
+  // NF5-3 — a definite refusal is remembered EVEN when it arrives after the bound (a slow DB that says "revoked")
+  void auth.done.then(() => {
+    if (auth.leg.v.state === "failed" && isDefiniteRefusal(auth.leg.v.error)) noteDefiniteRefusal(token);
+  });
   const startPerm = (u: RememberedUser) =>
     track(
       (async () => {
@@ -175,7 +195,7 @@ export const robotStopProcedure = publicProcedure.use(async (opts) => {
   const a = auth.leg.v;
   if (a.state === "failed" && isDefiniteRefusal(a.error)) {
     noteDefiniteRefusal(token);
-    throw a.error;
+    throw refusalAsTrpc(a.error);
   }
   let user: RememberedUser | null = null;
   let fresh = false;
@@ -230,7 +250,7 @@ export const robotStopProcedure = publicProcedure.use(async (opts) => {
   if (!verdict.allowed) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
 
   const degraded = reasons.length > 0;
-  if (fresh && p.state === "done" && p.value === true) noteMachineControlGrant(token, user.id);
+  if (fresh && p.state === "done" && p.value === true) noteMachineControlGrant(token, user.id, String(user.role));
   if (degraded) {
     const what = `STOP accepted on degraded auth: user #${user.id} (${user.role}), robot ${robotId ?? "?"} — ${reasons.join("; ")}`;
     void raiseDegradedAlert(user, robotId, what);
@@ -243,7 +263,42 @@ export const robotStopProcedure = publicProcedure.use(async (opts) => {
   }
   const info: StopAuthInfo = { degraded, reasons, scope: verdict };
   return next({ ctx: { ...ctx, user: user as never, stopAuth: info } });
-});
+};
+
+/**
+ * fix review 6 (NF5-7) — robot.consoleStop is audited like every other mutation (a trpc_mutation row, success | failure), but only
+ * AFTER the procedure has run — the STOP is sent first, the audit never delays it (L-7). Fire-and-forget.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const auditAfterStopMiddleware = async (opts: any) => {
+  const { ctx, next, path } = opts;
+  const startedAt = Date.now();
+  const result = await next();
+  try {
+    const u = ctx.user as { id?: number; name?: string } | null;
+    const errorCode = result.ok ? undefined : (result as { error?: { code?: string } }).error?.code;
+    const degraded = (ctx as { stopAuth?: StopAuthInfo }).stopAuth?.degraded;
+    void import("../auditTrailService")
+      .then(({ logCrudOperation }) =>
+        logCrudOperation(
+          { userId: u?.id ?? null, userName: u?.name ?? null, ipAddress: ctx.req?.ip ?? null, userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null, source: "trpc" } as never,
+          {
+            action: path,
+            entityType: "trpc_mutation",
+            details: { operation: "mutation", duration: Date.now() - startedAt, metadata: { path, ok: result.ok, ...(degraded ? { degradedAuth: true } : {}) }, ...(errorCode ? { errorMessage: errorCode } : {}) },
+            status: result.ok ? "success" : "failure",
+          } as never,
+        ),
+      )
+      .catch(() => undefined);
+  } catch {
+    /* auditing never affects the STOP */
+  }
+  return result;
+};
+
+/** THE STOP-only procedure (census: robot.consoleStop is its ONLY user — robotStopProcedureCensus.dot10.test.ts). */
+export const robotStopProcedure = publicProcedure.use(stopAuthMiddleware).use(auditAfterStopMiddleware);
 
 /** robotManager's robot → factory map, read defensively: an unreadable map is "unknown", never an error on the STOP path */
 export async function robotFactoryFromMemory(): Promise<(robotId: number) => number | null | undefined> {

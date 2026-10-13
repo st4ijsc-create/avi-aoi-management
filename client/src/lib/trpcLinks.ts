@@ -44,6 +44,14 @@ export function isLicenseOp(op: { path: string }): boolean {
   return op.path.startsWith("license.");
 }
 
+/**
+ * doc 81 Đợt 10 D fix review 6 (NF5-8, R-10-bb) — the STOP-only route is sent ALONE (never batched): a batch mixing it with any
+ * other call is authenticated the normal, unbounded way, so a STOP would wait behind a slow DB.
+ */
+export function isStopOnlyOp(op: { path: string }): boolean {
+  return op.path === "robot.consoleStop";
+}
+
 /** Chỉ QUERY có input > ngưỡng mới đi nhánh POST; mutation vốn đã POST, subscription không đổi. */
 export function shouldSendAsPost(op: { type: string; input: unknown }): boolean {
   if (op.type !== "query") return false;
@@ -58,7 +66,7 @@ export function createAppTrpcLinks(opts: {
   const common = { url: opts.url, transformer: superjson, headers: opts.headers, fetch: opts.fetch };
   return [
     splitLink<AppRouter>({
-      condition: (op) => isLicenseOp(op),
+      condition: (op) => isLicenseOp(op) || isStopOnlyOp(op),
       true: httpLink<AppRouter>({ ...common }),
       false: splitLink<AppRouter>({
         condition: (op) => shouldSendAsPost(op),

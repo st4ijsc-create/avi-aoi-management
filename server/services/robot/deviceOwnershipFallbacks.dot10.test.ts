@@ -90,6 +90,21 @@ describe("R-10-ak / N4 — no wait before a STOP longer than the STOP bound", ()
     await new Promise((x) => setTimeout(x, 20));
     expect(H.alerts.join("\n")).toMatch(/could not be read\/locked/);
   });
+
+  it("★ NF5-5 — the pending set unreadable AND central control off: the simulated STOP is reported failed + notSent (never \"done\"), and said so", async () => {
+    H.mode = "txfail";
+    H.active = false; // no session: the transient path, which answers "simulated" with control off
+    const saved = process.env.ROBOT_CONTROL_ENABLED;
+    process.env.ROBOT_CONTROL_ENABLED = "false";
+    try {
+      const r = await executePendingCentralStops("robot", 7, 3);
+      expect(r).toMatchObject({ outcome: "failed", sent: "simulated", notSent: true });
+      await new Promise((x) => setTimeout(x, 20));
+      expect(H.alerts.join("\n")).toMatch(/NOT SENT: central control is off/);
+    } finally {
+      process.env.ROBOT_CONTROL_ENABLED = saved;
+    }
+  });
 });
 
 describe("R-10-al / N6 — LISTEN first, then the first reconcile; bounded; untried central robots attached", () => {

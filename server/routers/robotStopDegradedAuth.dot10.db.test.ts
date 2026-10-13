@@ -17,7 +17,7 @@ vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 vi.hoisted(() => {
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "dot10-stop-degraded-auth-test-secret-0123456789";
 });
-const H = vi.hoisted(() => ({ mode: "ok" as "ok" | "hang" | "dead", sent: [] as Array<{ robot: number; jobType: string; at: number }>, t0: 0, alerts: [] as string[], live: new Set<number>() }));
+const H = vi.hoisted(() => ({ audits: [] as Array<{ action: string; entityType: string; at: number }>, mode: "ok" as "ok" | "hang" | "dead" | "slow", sent: [] as Array<{ robot: number; jobType: string; at: number }>, t0: 0, alerts: [] as string[], live: new Set<number>() }));
 vi.mock("../db/connection", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db/connection")>();
   return {
@@ -25,6 +25,7 @@ vi.mock("../db/connection", async (importOriginal) => {
     getDb: async (...args: unknown[]) => {
       if (H.mode === "hang") return new Promise<never>(() => undefined);
       if (H.mode === "dead") throw new Error("connect ECONNREFUSED 127.0.0.1:5434");
+      if (H.mode === "slow") await new Promise((r) => setTimeout(r, 450));
       return (actual.getDb as (...a: unknown[]) => unknown)(...args);
     },
   };
@@ -48,6 +49,17 @@ vi.mock("../services/robot/robotManager", async (importOriginal) => {
         : undefined,
   };
 });
+vi.mock("../services/auditTrailService", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/auditTrailService")>();
+  return {
+    ...actual,
+    logCrudOperation: async (...a: Parameters<typeof actual.logCrudOperation>) => {
+      const e = a[1] as unknown as { action: string; entityType: string };
+      H.audits.push({ action: e.action, entityType: e.entityType, at: Date.now() - H.t0 });
+      return actual.logCrudOperation(...a);
+    },
+  };
+});
 vi.mock("../services/robot/criticalStopAlert", () => ({
   raiseCriticalStopAlert: async (a: { message: string }) => void H.alerts.push(a.message),
 }));
@@ -57,7 +69,7 @@ import { sdk } from "../_core/sdk";
 import { COOKIE_NAME } from "@shared/const";
 import { robotRouter } from "./robotRouter";
 import { invalidateAuthSession, invalidateAuthUser, clearAuthSessionCache } from "../services/authSessionCache";
-import { _resetStopAuthMemoForTests, _setStopAuthMemoTtlMsForTests, invalidatesStopAuthMemo, clearAllStopAuthMemo } from "../services/robot/robotStopAuthMemo";
+import { _resetStopAuthMemoForTests, _setStopAuthMemoTtlMsForTests, invalidatesStopAuthMemo, clearAllStopAuthMemo, invalidateForAuthorizationChange } from "../services/robot/robotStopAuthMemo";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -72,7 +84,7 @@ async function token(expiresInMs = 60 * 60 * 1000): Promise<string> {
   await sql`INSERT INTO user_sessions ("userId", "sessionToken", "expiresAt", "isActive") VALUES (${ids.user}, ${t}, now() + interval '1 hour', true)`;
   return t;
 }
-async function call(tok: string, path: "robot.consoleStop" | "robot.actuate") {
+async function call(tok: string, path: "robot.consoleStop" | "robot.actuate" | "robot.list") {
   const req = { headers: { cookie: `${COOKIE_NAME}=${tok}` }, ip: "127.0.0.1" } as never;
   const ctx = await createContext({ req, res: {} as never, info: { calls: [{ path }] } as never });
   return robotRouter.createCaller(ctx as never);
@@ -202,7 +214,7 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     await warm(tok2);
     await sql`UPDATE user_sessions SET "isActive" = false WHERE "sessionToken" = ${tok2}`; // revoked behind the product's back
     H.mode = "ok";
-    await expect(stop(tok2)).rejects.toBeTruthy(); // the DB answers: revoked
+    await expect(stop(tok2)).rejects.toMatchObject({ code: "UNAUTHORIZED" }); // the DB answers: revoked (NF5-4: 401)
     H.mode = "hang";
     await expect(stop(tok2)).rejects.toMatchObject({ code: "UNAUTHORIZED" }); // remembered AS refused
     expect(H.sent).toEqual([]);
@@ -239,6 +251,7 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     const tok2 = await token();
     await warm(tok2);
     expect(invalidatesStopAuthMemo("permissions.updateUserPermission")).toBe(true);
+    expect(invalidatesStopAuthMemo("user.updateProfile")).toBe(false); // self-service: per user, in the db layer (NF5-1)
     expect(invalidatesStopAuthMemo("robot.consoleStop")).toBe(false);
     clearAllStopAuthMemo(); // what the tRPC audit middleware does for such a path
     H.mode = "hang";
@@ -276,5 +289,86 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     } finally {
       await sql`UPDATE permissions SET "canEdit" = true WHERE "userId" = ${ids.user} AND "moduleName" = 'machine_control'`;
     }
+  });
+  // ── fix review 6 (R-10-bf) ─────────────────────────────────────────────────────────────────────────────────────────────────
+  it("★ NF5-1 — an engineer who has only BROWSED (robot list) can STOP with the DB hanging AND dead; the grant came from the read the chain already did", async () => {
+    const tok = await token();
+    H.mode = "ok";
+    await (await call(tok, "robot.list" as never)).list(); // requirePermission(machine_control, canView): the row carries canEdit
+    await new Promise((r) => setTimeout(r, 50)); // the memo is warmed fire-and-forget
+    H.mode = "hang";
+    expect(await stop(tok)).toMatchObject({ ok: true, degradedAuth: true });
+    H.mode = "dead";
+    expect(await stop(tok)).toMatchObject({ ok: true, degradedAuth: true });
+    expect(H.sent.map((s) => s.jobType)).toEqual(["abort", "abort"]);
+  });
+
+  it("★ NF5-1 — invalidation is PER USER: a viewer editing their own profile (and a permissions change for that viewer) leaves the engineer's memory", async () => {
+    const tok = await token();
+    await warm(tok);
+    const viewerOpenId = `${TAG}-viewer-${Date.now()}`;
+    const viewer = Number((await sql`INSERT INTO users ("openId", name, role, "isActive", two_factor_enabled, "loginMethod") VALUES (${viewerOpenId}, 'dot10 viewer', 'viewer', true, false, 'local') RETURNING id`)[0].id);
+    try {
+      const vt = await sdk.signSession({ openId: viewerOpenId, appId: "dot10-test", name: "dot10 viewer" }, { expiresInMs: 3_600_000 });
+      await sql`INSERT INTO user_sessions ("userId", "sessionToken", "expiresAt", "isActive") VALUES (${viewer}, ${vt}, now() + interval '1 hour', true)`;
+      const { appRouter } = await import("../routers");
+      const req = { headers: { cookie: `${COOKIE_NAME}=${vt}` }, ip: "127.0.0.1" } as never;
+      const vctx = await createContext({ req, res: {} as never, info: { calls: [{ path: "user.updateProfile" }] } as never });
+      await appRouter.createCaller(vctx as never).user.updateProfile({ name: "dot10 viewer renamed" }); // through the real audit middleware
+      invalidateForAuthorizationChange({ userId: viewer }); // what a permissions.* / userAssignment.* mutation for the viewer does
+      H.mode = "hang";
+      expect(await stop(tok)).toMatchObject({ ok: true, degradedAuth: true }); // the engineer is untouched
+    } finally {
+      H.mode = "ok";
+      await sql`DELETE FROM user_sessions WHERE "userId" = ${viewer}`.catch(() => undefined);
+      await sql`DELETE FROM users WHERE id = ${viewer}`.catch(() => undefined);
+    }
+    invalidateForAuthorizationChange({}); // no affected user named ⇒ every user (fail-closed)
+    H.mode = "hang";
+    await expect(stop(tok)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("★ NF5-3 — a 'revoked' answer that arrives AFTER the bound is remembered: the next STOP from memory is refused", async () => {
+    const tok = await token();
+    await warm(tok);
+    await sql`UPDATE user_sessions SET "isActive" = false WHERE "sessionToken" = ${tok}`; // another replica's revoke
+    H.mode = "slow"; // every query 450 ms: the answer lands after the 300 ms bound
+    expect(await stop(tok)).toMatchObject({ ok: true, degradedAuth: true }); // the first STOP cannot know yet (bounded)
+    await new Promise((r) => setTimeout(r, 1_200)); // the late "revoked" lands
+    H.mode = "hang";
+    await expect(stop(tok)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("★ NF5-4 — a revoked session gets UNAUTHORIZED (401), never INTERNAL_SERVER_ERROR", async () => {
+    const tok = await token();
+    await sql`UPDATE user_sessions SET "isActive" = false WHERE "sessionToken" = ${tok}`;
+    H.mode = "ok";
+    await expect(stop(tok)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("★ NF5-7 — robot.consoleStop is audited (trpc_mutation) AFTER the send, never before", async () => {
+    const tok = await token();
+    await warm(tok);
+    H.audits.length = 0;
+    await stop(tok);
+    const t0 = Date.now();
+    while (!H.audits.some((a) => /consoleStop$/.test(a.action)) && Date.now() - t0 < 2_000) await new Promise((r) => setTimeout(r, 20));
+    const a = H.audits.find((x) => /consoleStop$/.test(x.action) /* robot.consoleStop on appRouter */);
+    expect(a).toMatchObject({ entityType: "trpc_mutation" });
+    expect(a!.at).toBeGreaterThanOrEqual(H.sent[0].at); // after the STOP reached the driver
+  });
+  it("★ NF5-6 — the STOP-only procedure itself refuses a non-STOP verb (any route built on it), before any DB read", async () => {
+    const { z } = await import("zod");
+    const { router } = await import("../_core/trpc");
+    const { robotStopProcedure } = await import("../services/robot/robotStopAuth");
+    const probe = router({ any: robotStopProcedure.input(z.any()).mutation(() => "RAN") });
+    const tok = await token();
+    await warm(tok);
+    H.mode = "hang";
+    const req = { headers: { cookie: `${COOKIE_NAME}=${tok}` }, ip: "127.0.0.1" } as never;
+    const ctx = await createContext({ req, res: {} as never, info: { calls: [{ path: "robot.consoleStop" }] } as never });
+    const t0 = Date.now();
+    await expect(probe.createCaller(ctx as never).any({ robotId: ids.robot, command: "home" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(Date.now() - t0).toBeLessThan(150); // refused before the 300 ms auth bundle
   });
 });
