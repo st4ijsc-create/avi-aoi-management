@@ -347,9 +347,11 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
     expect(r.ok).toBe(false);
     expect(JSON.stringify(r)).toMatch(/factory/i);
     expect((await c.sql`SELECT "edgeNodeId" FROM robots WHERE id = ${c.ids.robotA}`)[0].edgeNodeId).toBe(c.ids.nodeA);
-    // the start is NOT refused today (BUG F1-2 below) — but node B can never take it: not in its pull, claim ⇒ 404
+    // the start for node B is refused (F1-2, fixed in C fix review 5); a run naming A's robot exists only for node A — node B can
+    // never take it: not in its pull, claim ⇒ the same 404 as a missing run (B's claim also re-checks ownership: not_owned)
     const m0 = motions(c.ids.robotA);
-    xfactoryRun = await c.startRun("xfactory", [c.steps.gate(), c.steps.move("m1", c.ids.robotA)], "B");
+    await expect(c.startRun("xfactory", [c.steps.gate(), c.steps.move("m1", c.ids.robotA)], "B")).rejects.toThrow(/does not own/);
+    xfactoryRun = await c.startRun("xfactoryA", [c.steps.gate(), c.steps.move("m1", c.ids.robotA)], "A");
     const pull = await B.post("/edge/node/pull", {});
     expect(pull.json.data.runs.map((x: { runId: number }) => x.runId)).not.toContain(xfactoryRun);
     const realHash = String((await c.assignment(xfactoryRun)).defHash);
@@ -358,14 +360,13 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
     expect(cl.status, cl.text).toBe(404);
     expect(cl.text.split(String(xfactoryRun)).join("N")).toBe(missing.text.split("2000000000").join("N"));
     await sleep(1_000);
-    expect((await c.assignment(xfactoryRun)).claimSeq).toBe(0);
-    expect(motions(c.ids.robotA)).toBe(m0);
+    expect((await c.assignment(xfactoryRun)).edgeNodeId).toBe(c.ids.nodeA); // never node B's
+    expect(motions(c.ids.robotA)).toBe(m0); // paused at its gate on node A: nothing moved
+    await c.abort(xfactoryRun);
   });
-  // BUG F1-2 (found here, NOT fixed — routed): design §2.12 "an assignment must name only targets owned by the node — checked at
-  // startEdgeAssignedRun and again at /authorize". startEdgeAssignedRun (orchestration/foe/foeEngine.ts:4183-4223) inserts the
-  // run + assignment without that check, so a run for node B naming factory A's robot is CREATED ('queued') and only later held
-  // as unclaimable (fail-closed: B never sees it, /authorize would refuse not_owned). it.fails asserts the designed refusal.
-  it.fails("BUG F1-2 — startRun for a node refuses a definition whose targets that node does not own (design §2.12)", async () => {
+  // F1-2 — FIXED in Group C fix review 5 (R-10-bn, 2026-10-13): startEdgeAssignedRun refuses a definition naming a device the
+  // node does not own (and B's claim re-checks it — measured above). Was it.fails; flipped.
+  it("F1-2 — startRun for a node refuses a definition whose targets that node does not own (design §2.12)", async () => {
     await expect(c.startRun("xfactory2", [c.steps.gate(), c.steps.move("m1", c.ids.robotA)], "B")).rejects.toThrow();
   });
 
@@ -408,7 +409,6 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
       ["a signed CONFIG presented as an authorisation", () => cfgEnv],
       ["an earlier run's valid authorisation (replay)", () => prevAuth],
       ["node B's valid authorisation", () => bAuth],
-      ["the genuine token, delivered after its TTL (measured from the request)", async (g) => (await sleep(TTL_MS + 600), g)],
     ];
     const id = await c.startRun("a1", [s.gate(), { ...s.move("m1"), maxAttempts: variants.length }]);
     const used: string[] = [];
@@ -436,8 +436,27 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
       return rows.length >= variants.length ? rows.map((r) => String((JSON.parse(String(r.details)) as { detail: string }).detail)) : null;
     }, 20_000);
     const reasons = anomalies.map((d) => d.replace(/^.*: /, "")).sort();
-    expect(reasons).toEqual(expect.arrayContaining(["bad_signature", "wrong_typ", "expired"]));
+    expect(reasons).toEqual(expect.arrayContaining(["bad_signature", "wrong_typ"]));
     expect(reasons.some((r) => /mismatch|consumed|nonce/.test(r))).toBe(true);
+    // A2(d) — the GENUINE token delivered after its TTL (measured from the request) is never used; since E fix review 6
+    // (R-10-bn, F1-3) that is `unavailable` (no authorisation could be obtained in time) ⇒ the run is HELD (D5), not failed
+    const late = await c.startRun("a1late", [s.gate(), s.move("m1")]);
+    c.front.tamper.set(`^/runs/${late}/authorize$`, async (answer) => (answer?.ok === true ? (await sleep(TTL_MS + 600), answer) : undefined));
+    const mLate = motions(c.ids.robotA);
+    try {
+      await c.approveAtGate(late);
+      await waitFor(`run ${late} ended`, async () => ["completed", "failed", "held"].includes((await c.run(late)).status) && (await c.assignment(late)).claimTokenHash === null, 60_000);
+    } finally {
+      c.front.tamper.clear();
+    }
+    expect((await c.run(late)).status).toBe("held");
+    expect(motions(c.ids.robotA)).toBe(mLate); // never used
+    const lateReasons = await waitFor("the late token audited", async () => {
+      const rows = await c.sql`SELECT details FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityType" = 'orchestration_run' AND "entityId" = ${late} AND details LIKE '%"anomaly":"EDGE_AUTH_INVALID"%'`;
+      return rows.length >= 1 ? rows.map((r) => String((JSON.parse(String(r.details)) as { detail: string }).detail).replace(/^.*: /, "")) : null;
+    }, 20_000);
+    expect(lateReasons).toEqual(["expired"]);
+    await c.abort(late);
     await c.abort(bRun.runId);
   }, 240_000);
 
@@ -571,17 +590,27 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
     expect(late.every((m) => m.at >= upAt)).toBe(true);
     a7RunId = id;
   }, 120_000);
-  // BUG F1-3 (found here, NOT fixed — routed; design conflict to rule on): central hung for longer than the authorisation TTL
-  // while m2's /authorize was in flight; at reconnect the client's same-nonce retry (edge/edgeCentralClient.ts:394) got a token
-  // whose TTL — correctly measured from the FIRST send — had already lapsed, and the client returns that as verdict "refused"
-  // (edgeCentralClient.ts:419-422, code auth_invalid / "expired"), so the walker FAILS the step and the RUN (with failure /
-  // compensation semantics) instead of HOLDING it (D5: "the authorisation cannot be fetched ⇒ held, Continue later"). Fail-safe
-  // (nothing sent), but an outage longer than the TTL now fails runs, and the step row says "central refused its authorisation".
-  // it.fails asserts the D5 outcome (held, Continue possible).
-  it.fails("BUG F1-3 — a non-STOP step whose authorisation lapsed while central was unreachable is HELD (D5), not failed", async () => {
+  // F1-3 — FIXED in Group E fix review 6 (R-10-bn, 2026-10-13): an authorisation that arrives after its TTL (central hung longer
+  // than the TTL; the same-nonce retry at reconnect) is still never used (A2(d)), but the authorize client answers it as
+  // `unavailable`, not `refused` ⇒ the step + run are HELD (D5), never failed with compensation. Was it.fails; flipped.
+  it("F1-3 (fixed, E fix review 6 / R-10-bn; Continue: E fix review 7 / R-10-bp) — a non-STOP step whose authorisation lapsed while central was unreachable is HELD (D5), not failed; the late token is reported UNUSED (central supersedes it) ⇒ a Continue re-authorises the step and the run completes with exactly ONE motion", async () => {
     expect(a7RunId).toBeGreaterThan(0);
     expect((await c.run(a7RunId)).status).toBe("held");
-  });
+    // R-10-bp — the late authorisation of m2: journaled unused on the edge, reported `auth_unused`, superseded centrally
+    const late = await waitFor("m2's late authorisation superseded", async () => {
+      const rows = await c.sql`SELECT jti, "supersededAt" IS NOT NULL AS superseded, "resultReportedAt" IS NOT NULL AS reported FROM edge_step_authorizations WHERE "runId" = ${a7RunId} AND "stepId" = 'm2' ORDER BY "issuedAt"`;
+      return rows.length > 0 && rows.every((r) => r.superseded && !r.reported) ? rows : null;
+    }, 20_000);
+    expect(late.length).toBeGreaterThan(0);
+    const m0 = motions(c.ids.robotA);
+    await c.continueHeld(a7RunId);
+    await waitFor(`run ${a7RunId} completed after Continue`, async () => ["completed", "failed", "held"].includes((await c.run(a7RunId)).status) && (await c.assignment(a7RunId)).claimTokenHash === null, 60_000);
+    expect((await c.run(a7RunId)).status, JSON.stringify(await c.stepRows(a7RunId))).toBe("completed");
+    expect(motions(c.ids.robotA) - m0).toBe(1); // m2 moved exactly once (re-authorised; the late token never used)
+    const used = await c.sql`SELECT jti FROM edge_step_authorizations WHERE "runId" = ${a7RunId} AND "stepId" = 'm2' AND "resultReportedAt" IS NOT NULL`;
+    expect(used.length).toBe(1);
+    expect(late.map((r) => r.jti)).not.toContain(used[0].jti);
+  }, 120_000);
 
   it("★ A2(b,c) — a token captured before an edge RESTART is refused after it (journal intact: jti / nonce; journal WIPED: the nonce is not pending in the new process)", async () => {
     const s = c.steps;

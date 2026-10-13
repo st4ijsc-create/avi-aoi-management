@@ -669,7 +669,22 @@ export const edgeLedgerRecordSchema = z.strictObject({
   result: zJsonRecord.nullable(),
   at: zEpochMs,
 });
-export const edgeRunReportRecordSchema = z.discriminatedUnion("kind", [edgeStepRecordSchema, edgeContextRecordSchema, edgeAbortStopRecordSchema, edgeLedgerRecordSchema]);
+/**
+ * R-10-bp (doc 81 Đợt 10 E fix review 7) — an authorisation the edge received but NEVER used: it arrived after its TTL
+ * (`expired_before_use`). Journaled (fsync, the jti consumed-as-unused: it can never be used later) BEFORE this record exists.
+ * Central (B) marks that authorisation superseded, so a Continue re-authorises the step (C's resume ignores superseded ones)
+ * instead of failing it EDGE_OUTCOME_UNKNOWN. A jti the edge journaled as USED is never reported unused.
+ */
+export const edgeAuthUnusedRecordSchema = z.strictObject({
+  kind: z.literal("auth_unused"),
+  seq: zSeq,
+  stepId: zStepId,
+  attempt: z.number().int().nonnegative().max(EDGE_ATTEMPT_MAX),
+  jti: zJti,
+  reason: z.literal("expired_before_use"),
+  at: zEpochMs,
+});
+export const edgeRunReportRecordSchema = z.discriminatedUnion("kind", [edgeStepRecordSchema, edgeContextRecordSchema, edgeAbortStopRecordSchema, edgeLedgerRecordSchema, edgeAuthUnusedRecordSchema]);
 
 /** records must be in strictly consecutive seq order (the cursor rule is applied per record). */
 function consecutive(records: ReadonlyArray<{ seq: number }>): boolean {
@@ -861,9 +876,30 @@ export const edgeActuationEventRecordSchema = z.strictObject({
   outcome: zCode(32),
   at: zEpochMs,
 });
+/**
+ * B fix review 4 (R-10-bn, F1-4) — the result of a STOP the edge re-sent from a SIGNED sweep picture (a run aborted while no
+ * claim was open: no run stream). Bound to the picture: the run, its verified STOP step and that step's target exactly as the
+ * picture names them (verifiedStops), plus the device's owner epoch the STOP went out under (R-10-o). Central records it as the
+ * step's STOP ledger row and, for `completed` / `simulated`, confirms abort:<step> — the run leaves stopsUnconfirmed and the
+ * edge stops re-sending. Anything not matching ⇒ anomaly, nothing written (the stream still advances).
+ */
+export const edgeSweepStopEventRecordSchema = z.strictObject({
+  kind: z.literal("sweep_stop"),
+  seq: zSeq,
+  runId: zId,
+  /** the verified STOP step of the picture (not the abort:<step> row id) */
+  stepId: zStepId,
+  target: z.union([zRobotTarget, zAdapterTarget]),
+  ownerEpoch: zId,
+  /** the signed picture's issuedAt (the picture this re-send came from) */
+  pictureIssuedAt: zEpochMs,
+  status: z.enum(["completed", "failed", "simulated"]),
+  at: zEpochMs,
+});
 export const edgeEventRecordSchema = z.discriminatedUnion("kind", [
   edgeLockEventRecordSchema,
   edgeStopEventRecordSchema,
+  edgeSweepStopEventRecordSchema,
   edgeRefusalEventRecordSchema,
   edgeAnomalyEventRecordSchema,
   edgeCommandAckRecordSchema,
