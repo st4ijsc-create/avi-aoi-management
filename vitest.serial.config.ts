@@ -24,7 +24,8 @@ export const SERIAL_SUITES = [
   "server/services/edge/edgeControlSchema.dot10.db.test.ts",
 ] as const;
 
-const merged = mergeConfig(base, defineConfig({ test: { fileParallelism: false, poolOptions: { forks: { singleFork: true } } } }));
+// one file at a time, each in its own fork (NOT singleFork: vitest.setup derives the _test URL from the process env per file)
+const merged = mergeConfig(base, defineConfig({ test: { fileParallelism: false } }));
 // include / exclude are REPLACED (not merged): exactly the serial list, nothing excluded from it
 export default {
   ...merged,
