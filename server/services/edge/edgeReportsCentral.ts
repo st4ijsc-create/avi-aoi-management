@@ -439,6 +439,75 @@ async function applyLedger(
   }
 }
 
+/**
+ * B fix review 4 (R-10-bn, F1-4) — a STOP the edge re-sent from a signed sweep picture. Accepted only when it matches what
+ * central signs as that picture NOW: the run is this node's assignment and centrally stopped (aborted), the step is a VERIFIED
+ * STOP of the assigned definition with exactly that target (R-10-o), the device is this node's at the reported owner epoch,
+ * and the picture's issuedAt is not before the abort nor in the future. Then: the step's STOP ledger row (robot_jobs abort /
+ * command_log of the step's command; one confirmed row per (node, run, step) — re-sends add none; a failed one is its own row), and `completed` /
+ * `simulated` confirm abort:<step> (the pull stops listing the run, the edge stops re-sending). `failed` writes the ledger row
+ * only (abort:<step> stays failed; the edge keeps re-sending inside the window). Anything else ⇒ anomaly, nothing written.
+ */
+async function applySweepStop(tx: Db, node: EdgeNodePrincipal, rec: Extract<EdgeEventRecord, { kind: "sweep_stop" }>, audits: Audit[]): Promise<StreamRecordOutcome> {
+  const refuse = (why: string, extra: Record<string, unknown> = {}): StreamRecordOutcome => {
+    audits.push({ action: "EDGE_ANOMALY", entity: { type: "edge_node", id: node.nodeId }, details: { anomaly: "sweep_stop_refused", why, runId: rec.runId, stepId: rec.stepId, target: rec.target, ownerEpoch: rec.ownerEpoch, seq: rec.seq, ...extra }, status: "failure" });
+    return { anomaly: "sweep_stop_refused" };
+  };
+  const [a] = await tx.select().from(runEdgeAssignments).where(and(eq(runEdgeAssignments.runId, rec.runId), eq(runEdgeAssignments.edgeNodeId, node.nodeId))).limit(1);
+  if (!a) return refuse("not_assigned");
+  const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, rec.runId)).limit(1);
+  if (!run || run.status !== "aborted") return refuse("run_not_aborted");
+  const abortedAt = run.finishedAt ? new Date(run.finishedAt).getTime() : null;
+  if (rec.pictureIssuedAt > Date.now() + 60_000 || (abortedAt !== null && rec.pictureIssuedAt + 60_000 < abortedAt)) return refuse("picture_time", { abortedAt });
+  const def = await assignedDefinition(tx, a);
+  if (!def) return refuse("definition_unreadable");
+  const analysis = await analyseDefinition(tx, rec.runId, def, await loadMachineMap(tx, def));
+  const vs = analysis.verifiedStops.find((s) => s.stepId === rec.stepId);
+  const robotId = "robotId" in rec.target ? rec.target.robotId : null;
+  const adapterId = "adapterId" in rec.target ? rec.target.adapterId : null;
+  if (!vs || (vs.kind === "robot" ? vs.robotId !== robotId : vs.adapterId !== adapterId)) return refuse("not_the_pictures_stop", { verifiedStep: !!vs });
+  const owner = robotId !== null ? (await robotOwners(tx, [robotId])).get(robotId) : (await adapterOwners(tx, [adapterId as number])).get(adapterId as number);
+  if (!owner || owner.edgeNodeId !== node.nodeId || owner.ownerEpoch !== rec.ownerEpoch) return refuse("not_owned_at_epoch", { currentEpoch: owner?.ownerEpoch ?? null });
+  const step = findStep(def.steps, rec.stepId);
+  const at = new Date(rec.at);
+  // one confirmed row per (node, run, step); a FAILED re-send is evidence of its own (keyed by its seq)
+  const key = boundedKey(`edge-sweep-stop:${node.nodeId}:${rec.runId}:${rec.stepId}${rec.status === "failed" ? `:failed:${rec.seq}` : ""}`);
+  const result = { edge: { nodeId: node.nodeId, sweep: true, stop: true, pictureIssuedAt: rec.pictureIssuedAt, reportedStatus: rec.status, ownerEpoch: rec.ownerEpoch, runId: rec.runId, stepId: rec.stepId } };
+  if (robotId !== null) {
+    const status = rec.status === "completed" ? "done" : rec.status;
+    await tx
+      .insert(robotJobs)
+      .values({ robotId, jobType: "abort" as never, params: null, status: status as never, triggerKind: "hitl", actionId: null, requestedBy: run.startedBy ?? null, confirmedBy: null, idempotencyKey: key, result, errorText: status === "failed" ? "edge reported the re-sent STOP failed" : null, startedAt: at, completedAt: at })
+      .onConflictDoNothing();
+  } else {
+    const status = rec.status === "completed" ? "acked" : rec.status;
+    const commandType = String((step as { command?: unknown } | undefined)?.command ?? "stop").slice(0, 64);
+    await tx
+      .insert(commandLog)
+      .values({ actionId: null, adapterId: adapterId as number, commandType, requestedValue: (vs as { pins?: unknown }).pins ?? null, requestedBy: run.startedBy ?? 0, confirmedBy: run.startedBy ?? 0, status: status as never, triggerKind: "hitl", approvedBy: null, ackValue: result, errorText: status === "failed" ? "edge reported the re-sent STOP failed" : null, idempotencyKey: key, sentAt: at, ackedAt: at })
+      .onConflictDoNothing();
+  }
+  if (rec.status !== "failed") {
+    const sink = await resolveEngineSink();
+    const [row] = await tx.select({ status: orchestrationRunSteps.status }).from(orchestrationRunSteps).where(and(eq(orchestrationRunSteps.runId, rec.runId), eq(orchestrationRunSteps.stepId, abortRowIdOf(rec.stepId)))).limit(1);
+    if (row?.status !== "completed") {
+      await sink.recordEdgeStepRows(tx, rec.runId, [
+        {
+          stepId: abortRowIdOf(rec.stepId),
+          stepType: "command",
+          status: "completed",
+          attempt: 0,
+          startedAt: at,
+          finishedAt: at,
+          error: null,
+          result: { abortStop: rec.status === "simulated" ? "simulated" : "sent", stepId: rec.stepId, source: `edge:${node.nodeId}`, via: "sweep_picture", pictureIssuedAt: rec.pictureIssuedAt, approvalSource: "edge", edge: { nodeId: node.nodeId, sweep: true } },
+        },
+      ]);
+    }
+  }
+  audits.push({ action: "EDGE_STOP_SENT", entity: { type: "orchestration_run", id: rec.runId }, details: { source: "sweep_picture", stepId: rec.stepId, target: rec.target, status: rec.status, ownerEpoch: rec.ownerEpoch, at: rec.at } });
+}
+
 /** POST /edge/node/locks/events (the `events` stream). */
 export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Promise<EdgeAnswer<EdgeStreamAnswer>> {
   const parsed = parseEdgeBody(edgeEventsRequestSchema, body);
@@ -486,6 +555,7 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
         audits.push({ action: "EDGE_STOP_SENT", entity: "robotId" in rec.target ? { type: "robot", id: rec.target.robotId } : { type: "device_adapter", id: rec.target.adapterId }, details: { source: rec.source, outcome: rec.outcome, requestId: rec.requestId, at: rec.at, detail: rec.detail } });
         return;
       }
+      if (rec.kind === "sweep_stop") return applySweepStop(tx, node, rec, audits);
       if (rec.kind === "refusal") {
         audits.push({ action: "EDGE_LOCAL_REFUSAL", entity: await runEntity(rec.runId), details: { runId: rec.runId, stepId: rec.stepId, reason: rec.reason, at: rec.at } });
         return;

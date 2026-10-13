@@ -281,6 +281,77 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     expect(await count(k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityId" = ${k.ids.nodeA} AND details LIKE '%record_unencodable%' AND details LIKE ${`%${ep}%`}`)).toBe(2);
   });
 
+  it("★ R-10-bn (F1-4): a STOP re-sent from a SIGNED sweep picture is recorded as the step's STOP ledger row and confirms abort:<step> — only when run, step, target and owner epoch match the picture; anything else ⇒ anomaly, nothing written", async () => {
+    const s = kitSteps(k);
+    const { eventsForNode } = await import("./edgeReportsCentral");
+    const run = await k.newRun("sweep", "A", [s.gate, s.robotMove, s.robotStop, s.otPinnedStop]);
+    const id = run.runId;
+    await k.sql`UPDATE orchestration_runs SET status = 'aborted', "finishedAt" = now() WHERE id = ${id}`;
+    for (const st of ["abort:s1", "abort:p1"]) {
+      await k.sql`INSERT INTO orchestration_run_steps ("runId", "stepId", "stepType", status, attempt, error) VALUES (${id}, ${st}, 'command', 'failed', 0, 'robot not active/connected')`;
+    }
+    const queued = await k.newRun("sweepq", "A", [s.gate, s.robotStop]); // not aborted
+    const epR = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
+    const epA = Number((await k.sql`SELECT "ownerEpoch" FROM device_adapters WHERE id = ${k.ids.adapterA}`)[0].ownerEpoch);
+    const issued = Date.now();
+    const sw = (seq: number, over: Record<string, unknown> = {}) => ({ kind: "sweep_stop", seq, runId: id, stepId: "s1", target: { robotId: k.ids.robotA }, ownerEpoch: epR, pictureIssuedAt: issued, status: "completed", at: Date.now(), ...over });
+    const abortRow = async (st: string) => (await k.sql`SELECT status FROM orchestration_run_steps WHERE "runId" = ${id} AND "stepId" = ${st}`)[0]?.status;
+    const robotRows = async () => (await k.sql`SELECT status FROM robot_jobs WHERE "idempotencyKey" LIKE ${`edge-sweep-stop:%:${id}:%`} ORDER BY id`).map((r) => r.status);
+    // ── refused: B's report of A's run, a non-STOP step, another target, a stale epoch, a run not aborted, a picture from the future ──
+    const rb = await eventsForNode(await k.principal("B"), { epoch: epoch(), stream: "events", records: [sw(1)] });
+    expect(rb, JSON.stringify(rb)).toMatchObject({ http: 200, data: { outcomes: [{ seq: 1, code: "sweep_stop_refused" }] } });
+    const ev = epoch();
+    const bad = await eventsForNode(await k.principal("A"), {
+      epoch: ev,
+      stream: "events",
+      records: [sw(1, { stepId: "m1" }), sw(2, { target: { adapterId: k.ids.adapterA }, ownerEpoch: epA }), sw(3, { ownerEpoch: epR + 7 }), sw(4, { runId: queued.runId }), sw(5, { pictureIssuedAt: Date.now() + 3_600_000 })],
+    });
+    expect(bad, JSON.stringify(bad)).toMatchObject({ http: 200, data: { ackedSeq: 5 } });
+    expect(bad.data!.outcomes!.map((o) => o.code)).toEqual(Array(5).fill("sweep_stop_refused"));
+    expect(await robotRows()).toEqual([]);
+    expect(await abortRow("abort:s1")).toBe("failed");
+    // the robot handed to node B: B owns it now, but the picture (run, assignment) is A's ⇒ B's report is refused
+    await k.sql`UPDATE robots SET "edgeNodeId" = ${k.ids.nodeB} WHERE id = ${k.ids.robotA}`;
+    try {
+      const epB = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
+      const rb2 = await eventsForNode(await k.principal("B"), { epoch: epoch(), stream: "events", records: [sw(1, { ownerEpoch: epB })] });
+      expect(rb2, JSON.stringify(rb2)).toMatchObject({ http: 200, data: { outcomes: [{ seq: 1, code: "sweep_stop_refused" }] } });
+      expect(await robotRows()).toEqual([]);
+    } finally {
+      await k.sql`UPDATE robots SET "edgeNodeId" = ${k.ids.nodeA} WHERE id = ${k.ids.robotA}`;
+    }
+    const epR2 = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
+    const sw2 = (seq: number, over: Record<string, unknown> = {}) => sw(seq, { ownerEpoch: epR2, ...over });
+    // ── a FAILED re-send: its own ledger row, abort:s1 stays failed (the edge keeps re-sending) ──
+    const f = await eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records: [sw2(6, { status: "failed" })] });
+    expect(f.data!.outcomes).toBeUndefined();
+    expect(await robotRows()).toEqual(["failed"]);
+    expect(await abortRow("abort:s1")).toBe("failed");
+    const { pullForNodeV2 } = await import("./edgeExecutionCentral");
+    const listed = async () => {
+      const pl = await pullForNodeV2(await k.principal("A"), {});
+      expect(pl.http, JSON.stringify(pl)).toBe(200);
+      return (pl.data as { stopsUnconfirmed: Array<{ runId: number }> }).stopsUnconfirmed.map((u) => u.runId);
+    };
+    expect(await listed()).toContain(id); // unconfirmed: the edge is told to re-send
+    // ── the matching re-send: the STOP ledger row (abort) + abort:s1 confirmed; re-sent again ⇒ no second row ──
+    const ok = await eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records: [sw2(7), sw2(8)] });
+    expect(ok, JSON.stringify(ok)).toMatchObject({ http: 200, data: { ackedSeq: 8, applied: 2 } });
+    expect(ok.data!.outcomes).toBeUndefined();
+    expect(await robotRows()).toEqual(["failed", "done"]);
+    expect(await abortRow("abort:s1")).toBe("completed");
+    const [job] = await k.sql`SELECT "jobType", result FROM robot_jobs WHERE "idempotencyKey" LIKE ${`edge-sweep-stop:%:${id}:s1`}`;
+    expect(job.jobType).toBe("abort");
+    expect(JSON.stringify(job.result)).toContain('"sweep":true');
+    // ── the pinned OT STOP of the same picture: command_log row + abort:p1 confirmed ──
+    const ot = await eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records: [sw(9, { stepId: "p1", target: { adapterId: k.ids.adapterA }, ownerEpoch: epA })] });
+    expect(ot.data!.outcomes).toBeUndefined();
+    expect((await k.sql`SELECT status FROM command_log WHERE "idempotencyKey" LIKE ${`edge-sweep-stop:%:${id}:p1`}`).map((r) => r.status)).toEqual(["acked"]);
+    expect(await abortRow("abort:p1")).toBe("completed");
+    // ── the pull no longer lists the run among the unconfirmed STOPs: the edge stops re-sending ──
+    expect(await listed()).not.toContain(id);
+  });
+
   it("★ M-5: refusal / anomaly / actuation events naming ANOTHER node's run are audited against the reporting node, never that run", async () => {
     const { eventsForNode } = await import("./edgeReportsCentral");
     const s = kitSteps(k);
