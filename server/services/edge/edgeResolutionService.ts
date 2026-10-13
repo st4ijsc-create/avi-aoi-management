@@ -307,7 +307,7 @@ export async function resolveOrphanedIntent(a: { intentId: number; reason: strin
       if (isEdgeControlSchemaMissing(err)) return { ok: false as const, reason: "unavailable" as const, detail: "ot_write_intent_resolve is missing (0374 fix round 10 not applied)" };
       throw err;
     }
-    if (!Number.isSafeInteger(resultId) || resultId <= 0) throw new Error(`ot_write_intent_resolve returned no result row for intent ${a.intentId}`);
+    if (!Number.isSafeInteger(resultId) || resultId <= 0) return { ok: false as const, reason: "notResolvable" as const, detail: `ot_write_intent_resolve returned no result row for intent ${a.intentId}` };
     // the audit row in the SAME transaction: it fails ⇒ the result row is rolled back too (no unaudited resolution)
     await createAuditLog(
       {
