@@ -22,6 +22,7 @@ vi.mock("../../db/connection", async (importOriginal) => {
 import { getDb } from "../../db/connection";
 import * as store from "./robotMotionLockStore";
 import { MotionLock } from "./robotDriver";
+import { recheckMotionAuthorityInTx } from "./robotSharedMotionLockGate";
 
 const onTest = /_test\b/.test(process.env.DATABASE_URL ?? "");
 const TAG = `D10S-${Date.now()}`;
@@ -137,6 +138,34 @@ describe.skipIf(!onTest)("scan #71 / #72 — motion-lock store paths (_test, rol
         expect(await lockRow(tx, robot)).toBeTruthy();
         await tx.execute(sql`DELETE FROM robot_motion_locks WHERE "robotId" = ${robot}`); // next round starts clean
       }
+    });
+  });
+  it("★ fix review 4 (NF-5) — the in-transaction recheck refuses a FOREIGN central row and a MERGED row; only the row this lock cleared (delete in flight) passes", async () => {
+    await inRolledBackTx(async (tx) => {
+      const robot = await robotRow(tx, "nf5");
+      const A = writer(robot);
+      const B = writer(robot);
+      expect(await recheckMotionAuthorityInTx(tx, robot, null, A)).toBeNull(); // no row
+      B.lock("door_open", "B: another replica's lock");
+      await store._flushMotionLockWritesForTests();
+      expect(await recheckMotionAuthorityInTx(tx, robot, null, A)).toMatchObject({ code: "MOTION_LOCKED" }); // foreign central row
+      A.lock("door_open", "A");
+      await store._flushMotionLockWritesForTests(); // ⇒ MERGED row
+      expect((await q(tx, sql`SELECT "writerInstanceId" AS w FROM robot_motion_locks WHERE "robotId" = ${robot}`))[0].w).toBe(store.MERGED_WRITER);
+      expect(await recheckMotionAuthorityInTx(tx, robot, null, A)).toMatchObject({ code: "MOTION_LOCKED" });
+      expect(await recheckMotionAuthorityInTx(tx, robot, null, B)).toMatchObject({ code: "MOTION_LOCKED" });
+      await tx.execute(sql`DELETE FROM robot_motion_locks WHERE "robotId" = ${robot}`);
+      // A's own row, cleared by A, its DELETE "still in flight" (the very row re-appears) ⇒ exempt for A only
+      const C = writer(robot);
+      C.lock("door_open", "C");
+      await store._flushMotionLockWritesForTests();
+      const [saved] = await q(tx, sql`SELECT "reasonCode", generation, "lockedAt", "writerInstanceId" FROM robot_motion_locks WHERE "robotId" = ${robot}`);
+      C.clearByStop();
+      await store._flushMotionLockWritesForTests();
+      await tx.execute(sql`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation, "lockedAt", "writerInstanceId") VALUES (${robot}, ${saved.reasonCode}, ${saved.generation}, ${saved.lockedAt}, ${saved.writerInstanceId})`);
+      expect(await recheckMotionAuthorityInTx(tx, robot, null, C)).toBeNull();
+      expect(await recheckMotionAuthorityInTx(tx, robot, null, A)).toMatchObject({ code: "MOTION_LOCKED" });
+      expect(await recheckMotionAuthorityInTx(tx, robot, null, null)).toMatchObject({ code: "MOTION_LOCKED" });
     });
   });
 });

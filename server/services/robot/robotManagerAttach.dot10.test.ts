@@ -15,7 +15,7 @@ vi.mock("./robotAdapter", () => ({
 vi.mock("./robotMotionLockStore", () => ({ attachMotionLockPersistence: () => "none", loadMotionLocks: async () => ({ ok: true, rows: new Map() }) }));
 vi.mock("./robotIngest", () => ({ ingestRobotState: () => undefined }));
 
-import { startRobots, stopRobots, attachRobot, detachRobot, activeRobotIds, isCentralRobotGatewayOn } from "./robotManager";
+import { startRobots, stopRobots, attachRobot, detachRobot, activeRobotIds, isCentralRobotGatewayOn, isRobotGatewayRunning } from "./robotManager";
 
 const robot = (id: number) => ({
   id,
@@ -115,5 +115,22 @@ describe("scan #73 — robotManager never keeps / re-starts a central session it
     await start;
     expect(activeRobotIds()).toEqual([]);
     expect(H.disconnects).toBe(1);
+  });
+});
+
+describe("fix review 4 (NF-4) — a stop that overtakes a start", () => {
+  it("★ stopRobots while startRobots is still connecting ⇒ running stays FALSE, the gateway is off, and a later attach opens nothing", async () => {
+    H.load = [robot(12)];
+    const start = startRobots();
+    await new Promise((r) => setTimeout(r, 5));
+    await stopRobots();
+    expect(await start).toBe(false);
+    expect(isRobotGatewayRunning()).toBe(false);
+    expect(isCentralRobotGatewayOn()).toBe(false);
+    H.load = [robot(13)];
+    const connects = H.connects;
+    expect(await attachRobot(13)).toBe(false);
+    expect(H.connects).toBe(connects);
+    expect(activeRobotIds()).toEqual([]);
   });
 });

@@ -18,8 +18,10 @@ import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/r
 import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
 import { MotionLockConflictError, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
-import { edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotOwnerRead, sendConsoleStopForEdgeRobot, sendConsoleStopNoSession } from "../services/robot/robotEdgeCommandPort";
+import { CONSOLE_STOP_REPLY_BOUND_MS, edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotOwnerRead, sendConsoleStopForEdgeRobot, sendConsoleStopNoSession } from "../services/robot/robotEdgeCommandPort";
 import { sendCentralRobotStop } from "../services/robot/deviceOwnershipService"; // doc 81 Đợt 10 task D fix review 1
+import { sendLiveSessionStopFirst } from "../services/robot/robotLiveSessionStop"; // doc 81 Đợt 10 task D fix review 4 (R-10-av)
+import { prefetchRobotStopRow } from "../services/robot/robotStopRow"; // fix review 4 (NF-2)
 import { raiseCriticalStopAlert } from "../services/robot/criticalStopAlert"; // doc 81 Đợt 10 task D
 
 /**
@@ -451,6 +453,13 @@ export const robotRouter = router({
       idempotencyKey: z.string().min(1).max(128).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // doc 81 Đợt 10 task D fix review 4 (R-10-av, L-7) — a STOP for a robot this process holds a LIVE session for is SENT FIRST,
+      // before any database read (ledger after the send, bounded): a hung / dead DB never delays the STOP of an attached robot.
+      const enteredAt = Date.now();
+      if (verbToJobType(input.command) === "abort") {
+        const live = await sendLiveSessionStopFirst({ robotId: input.robotId, requestedBy: ctx.user.id, idempotencyKey: input.idempotencyKey, command: input.command });
+        if (live) return live;
+      }
       // doc 81 Đợt 1B Task 4 (BE2 T1-G) — `params` được trải thẳng vào job và TechmanDriver đặt
       // nguyên văn `params.script` vào khung TMSCT ⇒ trước đây gửi được BẤT KỲ TM script nào.
       // Có khoá `script` ⇒ tra vendor; Techman chỉ nhận đúng TECHMAN_SCRIPT_ALLOWLIST. Driver còn
@@ -510,6 +519,9 @@ export const robotRouter = router({
       // the node as a signed `stop` command, which the edge SENDS at once (even on a failed signature check — L-7). Motion to
       // such a robot is refused by the dispatcher (ROBOT_OWNED_BY_EDGE). Only when this process has no session for the robot.
       if (verbToJobType(input.command) === "abort" && !getActiveRobot(input.robotId)) {
+        // fix review 4 (NF-2) — the two reads before the send run IN PARALLEL under one STOP bound (owner + the robot row a transient
+        // STOP needs); the 2 s reply bound counts from request entry
+        const stopRow = prefetchRobotStopRow(input.robotId);
         const owner = await robotOwnerRead(input.robotId);
         if ("edge" in owner) {
           // R-10-k (L-7) — never a silent no-op: queue for the owner; on failure the central STOP (if a session exists) AND a
@@ -537,9 +549,11 @@ export const robotRouter = router({
             requestedBy: ctx.user.id,
             reason: `console ${input.command}`,
             ownerUnknown: "unknown" in owner ? owner.unknown : null,
-            centralStop: (id) => sendCentralRobotStop(id),
+            centralStop: (id) => sendCentralRobotStop(id, { row: stopRow }),
+            replyBoundMs: Math.max(0, CONSOLE_STOP_REPLY_BOUND_MS - (Date.now() - enteredAt)),
             alert: (message) =>
               void raiseCriticalStopAlert({
+                retryUntilPersisted: { everyMs: 30_000, attempts: 20 }, // R-10-av — durable even when the DB is down right now
                 kind: "console_stop_no_session",
                 title: `STOP without a session — robot ${input.robotId}`,
                 message,

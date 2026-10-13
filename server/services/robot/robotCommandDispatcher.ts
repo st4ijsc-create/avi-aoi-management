@@ -1128,7 +1128,7 @@ async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record
   // SHARE and re-reads its authority (recheckMotionAuthorityInTx): an ownership change / relock can no longer slip in between
   // the authority read and the insert. Refused ⇒ a 'rejected' row, nothing sent. A STOP never takes this path (L-7).
   const recheckRefusal = async (tx: unknown): Promise<RobotReservation | null> => {
-    const re = await recheckMotionAuthorityInTx(tx, input.robotId, observedOwnerEpoch);
+    const re = await recheckMotionAuthorityInTx(tx, input.robotId, observedOwnerEpoch, getActiveRobot(input.robotId)?.driver.motionLockController?.() ?? null); // NF-5
     if (!re) return null;
     const jobId = await record(input, "rejected", { reasonCode: re.code }, `${re.code}: ${re.detail} — motion refused before any driver call`, { requireDb: true, db: tx as DbOrTx });
     return rejected(jobId, re.code === "OWNER_CHANGED" ? "MOTION_LOCKED" : re.code);
@@ -1250,6 +1250,20 @@ async function stopLedgerAfterSend(
     lost(err);
     return { ledgerError: "LEDGER_WRITE_FAILED_AFTER_STOP" };
   }
+}
+
+/**
+ * doc 81 Đợt 10 task D fix review 4 (R-10-av) — the ledger of a console STOP that robotLiveSessionStop ALREADY SENT on the live
+ * session with zero DB reads before it: ONE terminal row after the send (best-effort, bounded like every STOP DB step — the same
+ * stopLedgerAfterSend as a STOP whose pre-write failed). Never throws for a DB failure (reported as ledgerError).
+ */
+export async function recordLiveSessionStop(
+  input: RobotDispatchInput,
+  stage: { status: "done" | "failed"; detail: Record<string, unknown> | undefined; errorText: string | undefined; driverOut: { driverDetail?: Readonly<Record<string, unknown>> } },
+  notes: Record<string, unknown>,
+): Promise<RobotDispatchResult> {
+  const ledger = await stopLedgerAfterSend(input, undefined, stage.status, { ...(stage.detail ?? {}), ...notes }, stage.errorText);
+  return { ok: stage.status === "done", status: stage.status, jobId: ledger.jobId, error: stage.errorText, ...(ledger.ledgerError ? { ledgerError: ledger.ledgerError } : {}), ...stage.driverOut };
 }
 
 /**

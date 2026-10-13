@@ -53,6 +53,8 @@ export interface StartRobotsOptions {
 export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolean> {
   if (running) return true;
   if (opts.configRobots) return startConfigRobots(opts);
+  // fix review 4 (NF-4) — a stopRobots() overtaking this start (any await below) wins: nothing registered, never marked running
+  const ep = robotEpoch;
   // doc 81 Đợt 1B Task 5 fix round 1 (M1) — reconcile robot_jobs rows a previous process left
   // 'running' (died between the pre-motion row and its finalize). Runs even when the gateway
   // is off: a stale row would otherwise block its idempotency key forever. Never throws.
@@ -76,7 +78,7 @@ export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolea
 
   // fix review 2 (R-10-al) — the central gateway is ON from here, whatever the load gives (0 central robots at cutover, a
   // failed load): a robot moved to central later is attached live (attachRobot) without a restart.
-  if (!opts.scope) centralGatewayOn = true;
+  if (!opts.scope && ep === robotEpoch) centralGatewayOn = true;
   let robots: RuntimeRobot[] = [];
   try {
     robots = await loadEnabledRobots(opts.scope);
@@ -95,7 +97,6 @@ export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolea
   if (!opts.scope) for (const r of robots) triedAtStart.add(r.id); // R-10-al — the reconcile's first pass skips these
   const lockable = robots.filter((r) => typeof r.driver.motionLockController === "function");
   const savedLocks = await loadMotionLocks(lockable.map((r) => r.id));
-  const ep = robotEpoch;
   for (const robot of robots) {
     const motionLock = robot.driver.motionLockController?.();
     if (motionLock) attachMotionLockPersistence(robot.id, motionLock, savedLocks);
@@ -125,70 +126,204 @@ export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolea
     }
   }
 
+  if (ep !== robotEpoch) return false; // NF-4 — stopped meanwhile
   running = true;
   console.log(`[Robot] started — ${active.length}/${robots.length} robot(s) active${opts.ingest === false ? " (edge: state NOT ingested here — central is the ingest owner)" : ""}`);
   return true;
 }
 
-/** doc 81 Đợt 10 task D — EDGE v2 start: config-sourced robots, journal-backed lock, state sink. Touches no DB. */
+/**
+ * doc 81 Đợt 10 task D — EDGE v2 start: config-sourced robots, journal-backed lock, state sink. Touches no DB.
+ * fix review 4 (R-10-au, for E) — every robot is started by the SAME per-robot step as attachEdgeRobot, all at once and each under
+ * its own connect bound (EDGE_ROBOT_CONNECT_DEADLINE_MS): a robot that never connects never delays or disturbs the others.
+ * The options (sink, lock persistence) are kept for attachEdgeRobot. A stopRobots() overtaking this start wins (NF-4).
+ */
 async function startConfigRobots(opts: StartRobotsOptions): Promise<boolean> {
   if (!flagEnabled()) {
     console.log("[Robot] disabled (set ROBOT_GATEWAY_ENABLED=true to enable)");
     return false;
   }
+  const ep = robotEpoch;
+  edgeStartOpts = { stateSink: opts.stateSink, attachLock: opts.attachLock };
   const robots = opts.configRobots ?? [];
   if (robots.length === 0) {
     console.log("[Robot] the signed config names no enabled robot for this node — nothing to start");
     return false;
   }
-  const { MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE } = await import("./robotDriver");
-  for (const robot of robots) {
-    // BEFORE any driver can move anything: the seed / persistence of the authority's lock (fail-closed without it).
-    const motionLock = robot.driver.motionLockController?.();
-    if (motionLock) {
-      let why: string | null = "no edge motion-lock persistence supplied";
-      try {
-        if (opts.attachLock) {
-          opts.attachLock(robot, motionLock);
-          why = null;
-        }
-      } catch (err) {
-        why = String((err as Error)?.message ?? err);
-      }
-      if (why !== null) {
-        console.error(`[Robot] "${robot.code}": edge motion lock not attached — starting LOCKED ${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE} (fail-closed): ${why}`);
-        motionLock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, "edge motion-lock persistence unavailable at start");
-      }
-    }
-    try {
-      await robot.driver.connect(robot.connection);
-      const sink = opts.stateSink;
-      const handle = await robot.driver.subscribeState(
-        sink
-          ? (state) => {
-              try {
-                sink(robot, state);
-              } catch (err) {
-                console.error(`[Robot] "${robot.code}": state sink failed:`, (err as Error)?.message ?? err);
-              }
-            }
-          : () => undefined,
-        robot.pollIntervalMs,
-      );
-      active.push({ robot, handle });
-      console.log(`[Robot] "${robot.code}" (${robot.vendor}) started (edge, owned)`);
-    } catch (err) {
-      console.warn(`[Robot] "${robot.code}" (${robot.vendor}) skipped: ${(err as Error)?.message ?? err}`);
-      try {
-        await robot.driver.disconnect();
-      } catch {
-        /* ignore */
-      }
-    }
-  }
+  const started = await Promise.all(robots.map((robot) => startOneEdgeRobot(robot, ep)));
+  if (ep !== robotEpoch) return false; // NF-4 — stopped meanwhile: never marked running
+  for (const s of started) if (s) active.push(s);
   running = true;
   console.log(`[Robot] started — ${active.length}/${robots.length} owned robot(s) active (edge: state → journal, lock authority = this node)`);
   return true;
+}
+
+/** R-10-au — the bound of ONE edge robot's connect + state subscription (the robot is skipped, the others are not affected). */
+export const EDGE_ROBOT_CONNECT_DEADLINE_MS = 15_000;
+let edgeConnectDeadlineMs = EDGE_ROBOT_CONNECT_DEADLINE_MS;
+/** Test seam. */
+export function _setEdgeRobotConnectDeadlineMsForTests(ms: number | null): void {
+  edgeConnectDeadlineMs = ms ?? EDGE_ROBOT_CONNECT_DEADLINE_MS;
+}
+/** the options of the edge start (sink, lock persistence) — attachEdgeRobot uses the same */
+let edgeStartOpts: Pick<StartRobotsOptions, "stateSink" | "attachLock"> | null = null;
+
+/** ONE edge robot: lock seed / persistence FIRST, then connect + subscribe, bounded. Returns the session, or null (skipped). */
+async function startOneEdgeRobot(robot: RuntimeRobot, ep: number, given?: Pick<StartRobotsOptions, "stateSink" | "attachLock">): Promise<{ robot: RuntimeRobot; handle: RobotStateHandle } | null> {
+  const opts = given ?? edgeStartOpts ?? {};
+  const { MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE } = await import("./robotDriver");
+  // BEFORE any driver can move anything: the seed / persistence of the authority's lock (fail-closed without it).
+  const motionLock = robot.driver.motionLockController?.();
+  if (motionLock) {
+    let why: string | null = "no edge motion-lock persistence supplied";
+    try {
+      if (opts.attachLock) {
+        opts.attachLock(robot, motionLock);
+        why = null;
+      }
+    } catch (err) {
+      why = String((err as Error)?.message ?? err);
+    }
+    if (why !== null) {
+      console.error(`[Robot] "${robot.code}": edge motion lock not attached — starting LOCKED ${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE} (fail-closed): ${why}`);
+      motionLock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, "edge motion-lock persistence unavailable at start");
+    }
+  }
+  const tok = detachToken(robot.id);
+  const sink = opts.stateSink;
+  let handle: RobotStateHandle | null = null;
+  const work = (async () => {
+    await robot.driver.connect(robot.connection);
+    handle = await robot.driver.subscribeState(
+      sink
+        ? (state) => {
+            try {
+              sink(robot, state);
+            } catch (err) {
+              console.error(`[Robot] "${robot.code}": state sink failed:`, (err as Error)?.message ?? err);
+            }
+          }
+        : () => undefined,
+      robot.pollIntervalMs,
+    );
+    return handle;
+  })();
+  const { withDeadline } = await import("../ot/drivers/boundedClose");
+  try {
+    const h = await withDeadline(work, edgeConnectDeadlineMs, `robot "${robot.code}" edge connect`);
+    if (ep !== robotEpoch || detachToken(robot.id) !== tok) {
+      // stopped / detached while connecting: never registered (scan #73)
+      await Promise.resolve().then(() => h.close()).catch(() => undefined);
+      await Promise.resolve().then(() => robot.driver.disconnect()).catch(() => undefined);
+      return null;
+    }
+    console.log(`[Robot] "${robot.code}" (${robot.vendor}) started (edge, owned)`);
+    return { robot, handle: h };
+  } catch (err) {
+    console.warn(`[Robot] "${robot.code}" (${robot.vendor}) skipped: ${(err as Error)?.message ?? err}`);
+    // a late connect (past the bound) is torn down when it lands; the driver is disconnected now
+    void work.then((late) => Promise.resolve().then(() => late.close()).catch(() => undefined), () => undefined);
+    await withDeadline(Promise.resolve().then(() => robot.driver.disconnect()), 5_000, `robot "${robot.code}" disconnect`).catch(() => undefined);
+    return null;
+  }
+}
+
+/**
+ * doc 81 Đợt 10 task D fix reviews 4 — rulings R-10-au / R-10-az (the contract E codes against). The EDGE's per-robot lifecycle,
+ * never a whole-gateway restart.
+ *
+ * attachEdgeRobot(row, extras?) — `row` is the VERIFIED config row exactly as E receives it (EdgeRobotConfigRow ⊆ edgeProtocol's
+ * edgeConfigRobotSchema). robotManager builds the driver + RuntimeRobot from it (robotAdapter.runtimeRobotsFromConfig). The motion
+ * lock is seeded + persisted FIRST through `extras.attachLock` (E: from the journal, else the config's motionLock — R-10-x), else the
+ * one given to the edge start; with neither the robot starts LOCKED `persistUnknown` (fail-closed): it starts locked unless a clear
+ * is known. Connect + subscribe are bounded (EDGE_ROBOT_CONNECT_DEADLINE_MS). A robot that does not connect BACKS OFF: a new attach
+ * of it inside its back-off window answers { ok:false, reason:"backoff" } without touching the device (2 s, 4 s … ≤ 60 s); no
+ * other robot is ever delayed or touched. Never throws.
+ *
+ * detachEdgeRobot(robotId) — REFUSED { ok:false, reason:"not_locked" } unless the robot's motion lock is held (E calls it only after
+ * a successful STOP, then locks): nothing can be dispatched to it between the STOP and the detach. A driver with no motion lock
+ * cannot be proven locked ⇒ refused too. Never throws.
+ */
+export interface EdgeRobotConfigRow {
+  id: number;
+  code: string;
+  vendor: string;
+  endpoint: string;
+  connectionOptions: Record<string, unknown> | null;
+  pollIntervalMs: number;
+  isEnabled: boolean;
+  [k: string]: unknown;
+}
+export type EdgeRobotAttachExtras = Pick<StartRobotsOptions, "stateSink" | "attachLock">;
+export type EdgeAttachReason = "gateway_disabled" | "not_edge" | "already_active" | "in_progress" | "not_buildable" | "backoff" | "connect_failed" | "stopped" | "error";
+export type EdgeAttachResult = { ok: boolean; reason?: EdgeAttachReason; detail?: string };
+export type EdgeDetachReason = "not_edge" | "not_active" | "not_locked" | "error";
+export type EdgeDetachResult = { ok: boolean; reason?: EdgeDetachReason; detail?: string };
+
+export const EDGE_ROBOT_BACKOFF_BASE_MS = 2_000;
+export const EDGE_ROBOT_BACKOFF_MAX_MS = 60_000;
+let backoffBaseMs = EDGE_ROBOT_BACKOFF_BASE_MS;
+/** Test seam. */
+export function _setEdgeRobotBackoffBaseMsForTests(ms: number | null): void {
+  backoffBaseMs = ms ?? EDGE_ROBOT_BACKOFF_BASE_MS;
+}
+const edgeBackoff = new Map<number, { failures: number; until: number }>();
+
+export async function attachEdgeRobot(row: EdgeRobotConfigRow, extras?: EdgeRobotAttachExtras): Promise<EdgeAttachResult> {
+  try {
+    const id = Number(row?.id);
+    if (!flagEnabled()) return { ok: false, reason: "gateway_disabled" };
+    const opts = extras ?? edgeStartOpts;
+    if (!opts) return { ok: false, reason: "not_edge" };
+    if (active.some((a) => a.robot.id === id)) return { ok: false, reason: "already_active" };
+    if (attaching.has(id)) return { ok: false, reason: "in_progress" };
+    const bo = edgeBackoff.get(id);
+    if (bo && Date.now() < bo.until) return { ok: false, reason: "backoff", detail: `retry after ${new Date(bo.until).toISOString()}` };
+    attaching.add(id);
+    try {
+      await import("./index"); // the robot drivers are registered (side effect), as E's start does
+      const { runtimeRobotsFromConfig } = await import("./robotAdapter");
+      const [robot] = runtimeRobotsFromConfig([row as never]);
+      if (!robot) return { ok: false, reason: "not_buildable", detail: "disabled, or no driver for its vendor" };
+      const ep = robotEpoch;
+      const s = await startOneEdgeRobot(robot, ep, opts);
+      if (!s) {
+        if (ep !== robotEpoch) return { ok: false, reason: "stopped" };
+        const failures = (bo?.failures ?? 0) + 1;
+        edgeBackoff.set(id, { failures, until: Date.now() + Math.min(EDGE_ROBOT_BACKOFF_MAX_MS, backoffBaseMs * 2 ** (failures - 1)) });
+        return { ok: false, reason: "connect_failed" };
+      }
+      if (active.some((a) => a.robot.id === id) || ep !== robotEpoch) {
+        await Promise.resolve().then(() => s.handle.close()).catch(() => undefined);
+        await Promise.resolve().then(() => robot.driver.disconnect()).catch(() => undefined);
+        return { ok: false, reason: ep !== robotEpoch ? "stopped" : "already_active" };
+      }
+      edgeBackoff.delete(id);
+      active.push(s);
+      running = true;
+      return { ok: true };
+    } finally {
+      attaching.delete(id);
+    }
+  } catch (err) {
+    console.warn(`[Robot] edge attach of robot ${String(row?.id)} failed: ${(err as Error)?.message ?? err}`);
+    return { ok: false, reason: "error", detail: String((err as Error)?.message ?? err).slice(0, 200) };
+  }
+}
+
+export async function detachEdgeRobot(robotId: number): Promise<EdgeDetachResult> {
+  try {
+    if (!edgeStartOpts && !active.some((a) => a.robot.id === robotId)) return { ok: false, reason: "not_edge" };
+    const entry = active.find((a) => a.robot.id === robotId);
+    if (!entry) return { ok: false, reason: "not_active" };
+    const lock = entry.robot.driver.motionLockController?.();
+    if (!lock || !lock.isLocked()) return { ok: false, reason: "not_locked" };
+    await detachRobot(robotId);
+    edgeBackoff.delete(robotId);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: "error", detail: String((err as Error)?.message ?? err).slice(0, 200) };
+  }
 }
 
 export async function stopRobots(): Promise<void> {
@@ -196,6 +331,8 @@ export async function stopRobots(): Promise<void> {
   robotEpoch += 1;
   centralGatewayOn = false;
   triedAtStart.clear();
+  edgeStartOpts = null; // R-10-au — no edge attach after a stop
+  edgeBackoff.clear();
   while (active.length > 0) {
     const entry = active.pop()!;
     try {

@@ -63,7 +63,10 @@ export function setAdapterSource(src: AdapterSource | null): void {
  * Central: adapters OWNED by an edge node (device_adapters."edgeNodeId", mig 0374) are skipped — one owner connects, polls and
  * controls a device (fixes the duplicate poll of final-review I1). Before 0374 is applied nothing is skipped (unchanged).
  */
-export async function loadEnabledAdapters(): Promise<RuntimeAdapter[]> {
+export async function loadEnabledAdapters(
+  /** doc 81 Đợt 10 D fix review 4 (R-10-ay) — central's transient STOP of an edge-owned adapter whose owner cannot list it */
+  opts: { includeEdgeOwned?: boolean } = {},
+): Promise<RuntimeAdapter[]> {
   if (adapterSource) return adapterSource();
   if (String(process.env.AVI_PROCESS_ROLE ?? "").trim().toLowerCase() === "edge") return [];
   const { getDb } = await import("../../db/connection");
@@ -75,7 +78,7 @@ export async function loadEnabledAdapters(): Promise<RuntimeAdapter[]> {
 
   let adapters = await db.select().from(deviceAdapters).where(eq(deviceAdapters.isEnabled, true));
   if (adapters.length === 0) return [];
-  const edgeOwned = await edgeOwnedAdapterIds(db);
+  const edgeOwned = opts.includeEdgeOwned ? new Set<number>() : await edgeOwnedAdapterIds(db);
   if (edgeOwned.size > 0) adapters = adapters.filter((a) => !edgeOwned.has(a.id));
   if (adapters.length === 0) return [];
 

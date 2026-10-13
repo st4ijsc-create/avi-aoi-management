@@ -626,6 +626,17 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
  * khoảng ⌈n / concurrency⌉ × (hạn + biên dọn dẹp) — không bao giờ treo vì một thiết bị.
  * Gọi chồng trong lúc đang khởi động ⇒ nhận cùng promise (không khởi động hai lần).
  */
+/**
+ * doc 81 Đợt 10 task D fix review 4 (NF-3) — called once startOt has FINISHED with the gateway on (whatever its load gave, a failed
+ * load included): the ownership reconcile then runs its first OT pass with the gateway on, so an adapter the initial load never
+ * tried (the load failed / central-owned since) is attached. Returns the unsubscribe function.
+ */
+const gatewayStartedListeners = new Set<() => void>();
+export function onOtGatewayStarted(fn: () => void): () => void {
+  gatewayStartedListeners.add(fn);
+  return () => void gatewayStartedListeners.delete(fn);
+}
+
 export async function startOt(): Promise<boolean> {
   if (running) return true;
   if (startInFlight) return startInFlight;
@@ -635,6 +646,15 @@ export async function startOt(): Promise<boolean> {
     return await p;
   } finally {
     if (startInFlight === p) startInFlight = null;
+    if (otGatewayOn) {
+      for (const fn of [...gatewayStartedListeners]) {
+        try {
+          fn();
+        } catch (err) {
+          console.warn(`[OT] gateway-started listener failed: ${errText(err)}`);
+        }
+      }
+    }
   }
 }
 
@@ -647,6 +667,7 @@ async function startOtOnce(): Promise<boolean> {
 
   const { loadEnabledAdapters } = await import("./deviceAdapter");
 
+  if (myEpoch !== epoch) return false; // fix review 4 — a stopOt during the import: the gateway stays off
   otGatewayOn = true; // doc 81 Đợt 10 D fix review 2 (R-10-al) — live attach works whatever the load gives
   let adapters: RuntimeAdapter[] = [];
   try {

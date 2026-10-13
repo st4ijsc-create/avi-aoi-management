@@ -134,13 +134,24 @@ export type MotionAuthorityRecheck = { code: typeof ROBOT_OWNED_BY_EDGE | "MOTIO
 type SqlTx = { execute: (q: ReturnType<typeof sql>) => Promise<unknown>; transaction?: <T>(fn: (sp: SqlTx) => Promise<T>) => Promise<T> };
 const firstRows = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? (r as Array<Record<string, unknown>>) : (((r as { rows?: unknown[] })?.rows ?? []) as Array<Record<string, unknown>>));
 
-export async function recheckMotionAuthorityInTx(tx: unknown, robotId: number, observedOwnerEpoch?: number | null): Promise<MotionAuthorityRecheck | null> {
+export async function recheckMotionAuthorityInTx(
+  tx: unknown,
+  robotId: number,
+  observedOwnerEpoch?: number | null,
+  /** fix review 4 (NF-5) — this process's in-memory lock of the robot: the ONLY exemption for a central row (R-10-u) */
+  ownLock?: import("./robotDriver").MotionLock | null,
+): Promise<MotionAuthorityRecheck | null> {
   const t = tx as SqlTx;
   if (!t || typeof t.execute !== "function") return null;
   const { isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
   const read = async (h: SqlTx) => {
     const own = firstRows(await h.execute(sql`SELECT "edgeNodeId", "ownerEpoch" FROM public.robots WHERE id = ${robotId} FOR SHARE`));
-    const lock = firstRows(await h.execute(sql`SELECT authority, "reasonCode", generation FROM public.robot_motion_locks WHERE "robotId" = ${robotId}`));
+    // NF-5 — the row's identity too (writer via to_jsonb: a DB before fix review 5 has no column — then null, i.e. foreign)
+    const lock = firstRows(
+      await h.execute(
+        sql`SELECT l.authority, l."reasonCode", l.generation, to_jsonb(l) ->> 'writerInstanceId' AS writer, round(extract(epoch FROM date_trunc('milliseconds', l."lockedAt")) * 1000)::float8 AS "lockedAtMs" FROM public.robot_motion_locks l WHERE l."robotId" = ${robotId}`,
+      ),
+    );
     return { own: own[0], lock: lock[0] };
   };
   let got: { own?: Record<string, unknown>; lock?: Record<string, unknown> };
@@ -160,8 +171,15 @@ export async function recheckMotionAuthorityInTx(tx: unknown, robotId: number, o
     return { code: "OWNER_CHANGED", detail: `robot ${robotId}: owner epoch ${observedOwnerEpoch} → ${epoch} since the authority read` };
   }
   const l = got.lock;
-  if (l && ((typeof l.authority === "string" && l.authority !== "central") || l.reasonCode === OWNER_CHANGED_REASON_CODE)) {
-    return { code: "MOTION_LOCKED", detail: `robot ${robotId}: a lock not written by this process stands (${String(l.authority)}: ${String(l.reasonCode)}, generation ${String(l.generation)})` };
+  if (l) {
+    const edgeOrRelock = (typeof l.authority === "string" && l.authority !== "central") || l.reasonCode === OWNER_CHANGED_REASON_CODE;
+    // fix review 4 (NF-5, R-10-u under the lock) — ANY central row (another replica's, a MERGED row, a legacy one) refuses too,
+    // unless it is exactly the row THIS process's lock wrote / adopted and then cleared (its delete in flight)
+    const { motionLockRowClearedHere } = await import("./robotMotionLockStore");
+    const clearedHere = motionLockRowClearedHere(ownLock ?? null, Number(l.generation), Number(l.lockedAtMs), (l.writer as string | null) ?? null);
+    if (edgeOrRelock || !clearedHere) {
+      return { code: "MOTION_LOCKED", detail: `robot ${robotId}: a lock not written by this process stands (${String(l.authority)}: ${String(l.reasonCode)}, generation ${String(l.generation)})` };
+    }
   }
   return null;
 }

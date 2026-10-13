@@ -67,7 +67,7 @@ vi.mock("./driverRegistry", () => ({
 vi.mock("../ecosystem/ecosystemEvents", () => ({ publishAnomalyDetected: (p: { message: string }) => H.alerts.push(p.message) }));
 vi.mock("../notificationService", () => ({ sendNotification: async () => undefined }));
 
-import { changeDeviceOwner, sweepPendingCentralStops, _setCentralStopSessionDeadlineMsForTests, DEVICE_OWNER_CHANNEL } from "./deviceOwnershipService";
+import { changeDeviceOwner, sweepPendingCentralStops, checkEdgeOwnedFactoryDrift, _resetFactoryDriftAlertsForTests, _setCentralStopSessionDeadlineMsForTests, DEVICE_OWNER_CHANNEL } from "./deviceOwnershipService";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -101,7 +101,7 @@ const alerted = async () => {
   while (H.alerts.length === 0 && Date.now() - t0 < 3_000) await new Promise((r) => setTimeout(r, 25));
   return H.alerts.join("\n");
 };
-const reqRow = async (id: number) => (await sql`SELECT "ackedAt", outcome, "ackedBy" FROM robot_motion_lock_requests WHERE id = ${id}`)[0];
+const reqRow = async (id: number) => (await sql`SELECT "ackedAt", outcome, "centralExecutionId" IS NOT NULL AS "byExecution" FROM robot_motion_lock_requests WHERE id = ${id}`)[0];
 
 describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transfer to central; live ownership (_test)", () => {
   beforeAll(async () => {
@@ -126,8 +126,9 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
       await sql`DELETE FROM robot_jobs WHERE "robotId" = ${r}`.catch(() => undefined);
       await sql`UPDATE robots SET "edgeNodeId" = NULL WHERE id = ${r} AND "edgeNodeId" IS NOT NULL`.catch(() => undefined);
       // a device with an unacknowledged STOP cannot be deleted (L-7 guard): the test's own leftovers are acked through the guard
+      // R-10-ba — only the sweep acks: a recorded (failed) central attempt, then the ack against it
       for (const q of await sql`SELECT id FROM robot_motion_lock_requests WHERE "robotId" = ${r} AND kind = 'stop' AND "ackedAt" IS NULL`) {
-        await sql`SELECT public.edge_stop_ack_central(${q.id}, 'failed', ${actor})`.catch(() => undefined);
+        await sql`SELECT public.edge_stop_ack_central(${q.id}, 'failed', public.edge_stop_record_central_execution('robot', ${r}, false, 'test cleanup'))`.catch(() => undefined);
       }
       for (const q of await sql`SELECT "requestId" AS id FROM device_pending_stops WHERE "needsResolution" AND "robotId" = ${r}`) {
         await sql`SELECT public.edge_stop_resolve(${q.id}, ${actor}, 'test cleanup (no device)')`.catch(() => undefined);
@@ -137,8 +138,9 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
     }
     for (const a of made.adapters) {
       await sql`UPDATE device_adapters SET "edgeNodeId" = NULL WHERE id = ${a} AND "edgeNodeId" IS NOT NULL`.catch(() => undefined);
+      // R-10-ba — only the sweep acks: a recorded (failed) central attempt, then the ack against it
       for (const q of await sql`SELECT id FROM robot_motion_lock_requests WHERE "adapterId" = ${a} AND kind = 'stop' AND "ackedAt" IS NULL`) {
-        await sql`SELECT public.edge_stop_ack_central(${q.id}, 'failed', ${actor})`.catch(() => undefined);
+        await sql`SELECT public.edge_stop_ack_central(${q.id}, 'failed', public.edge_stop_record_central_execution('adapter', ${a}, false, 'test cleanup'))`.catch(() => undefined);
       }
       for (const q of await sql`SELECT "requestId" AS id FROM device_pending_stops WHERE "needsResolution" AND "adapterId" = ${a}`) {
         await sql`SELECT public.edge_stop_resolve(${q.id}, ${actor}, 'test cleanup (no device)')`.catch(() => undefined);
@@ -170,7 +172,7 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
     const r = await changeDeviceOwner({ kind: "robot", deviceId: robot, toEdgeNodeId: null, actorUserId: actor, actorName: "test" });
     expect(r).toMatchObject({ ok: true, toEdgeNodeId: null, centralStops: { requestIds: [request], outcome: "done", sent: "sent", ackErrors: [] } });
     expect(H.jobs.map((j) => j.jobType)).toEqual(["abort"]);
-    expect(await reqRow(request)).toMatchObject({ outcome: "done", ackedBy: actor });
+    expect(await reqRow(request)).toMatchObject({ outcome: "done", byExecution: true });
     expect(H.alerts).toEqual([]);
     expect(H.attached).toEqual([robot]); // R-10-v — applied in this process at once
   });
@@ -180,7 +182,7 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
     H.fail = true;
     const r = await changeDeviceOwner({ kind: "robot", deviceId: robot, toEdgeNodeId: null, actorUserId: actor, actorName: "test" });
     expect(r).toMatchObject({ ok: true, centralStops: { outcome: "failed", sent: "failed" } });
-    expect(await reqRow(request)).toMatchObject({ outcome: "failed", ackedBy: actor });
+    expect(await reqRow(request)).toMatchObject({ outcome: "failed", byExecution: true });
     expect(await alerted()).toMatch(/could NOT be sent/);
   });
 
@@ -251,7 +253,7 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
     expect(H.jobs.map((j) => j.jobType)).toEqual(["abort"]);
     expect([...a, ...b]).toHaveLength(1);
     expect([...a, ...b][0]).toMatchObject({ requestIds: [request], outcome: "done" });
-    expect(await reqRow(request)).toMatchObject({ outcome: "done", ackedBy: actor }); // actor = the requester (system sweep)
+    expect(await reqRow(request)).toMatchObject({ outcome: "done", byExecution: true }); // actor = the requester (system sweep)
     expect(await sweepPendingCentralStops({ device: { kind: "robot", id: robot } })).toEqual([]);
     expect(H.jobs).toHaveLength(1);
   });
@@ -267,5 +269,41 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
     const back = await changeDeviceOwner({ kind: "robot", deviceId: robot, toEdgeNodeId: null, actorUserId: actor, actorName: "test" });
     expect(back.ok).toBe(true);
     expect(H.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+  });
+  it("★ R-10-ay — the EDGE owner answered notOwnedHere ⇒ the sweep executes the STOP centrally (transient session), acks it via edge_stop_ack_central, and alerts 'edge owner cannot list'", async () => {
+    const { robot, request, node: n } = await edgeOwnedRobotWithPendingStop("ay");
+    const [o] = await sql`SELECT "ownerEpoch" FROM robots WHERE id = ${robot}`;
+    const [ack] = await sql`SELECT public.edge_stop_ack_edge(${request}, ${n}, ${robot}::integer, NULL::integer, ${o.ownerEpoch}::bigint, 'notOwnedHere', false, NULL) AS ok`;
+    expect(ack.ok).toBe(false); // non-terminal: still pending
+    expect((await sql`SELECT "centralMustExecute" AS c, "ownerCannotList" AS l FROM device_pending_stops WHERE "requestId" = ${request}`)[0]).toMatchObject({ c: true, l: true });
+    H.active = false; // central holds no session for an edge-owned robot
+    const out = await sweepPendingCentralStops({ device: { kind: "robot", id: robot } });
+    expect(H.jobs.map((j) => j.jobType)).toEqual(["transient:abort"]); // R-10-ak path: a bounded transient session
+    expect(out[0]).toMatchObject({ requestIds: [request], outcome: "done" });
+    expect(await reqRow(request)).toMatchObject({ outcome: "done", byExecution: true });
+    expect((await sql`SELECT "edgeNodeId" FROM robots WHERE id = ${robot}`)[0].edgeNodeId).toBe(n); // ownership untouched
+    expect(await alerted()).toMatch(new RegExp(`edge owner cannot list robot ${robot}`));
+  });
+
+  it("★ R-10-ay — a device's factory changes while an edge node owns it ⇒ a durable alert (once per change)", async () => {
+    _resetFactoryDriftAlertsForTests();
+    const n = await node("fd");
+    const [rr] = await sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId") VALUES (${`${TAG}-Rfd`}, 'r', 'sim', 'sim://t', true, ${chain.line}) RETURNING id`;
+    const robot = Number(rr.id);
+    made.robots.push(robot);
+    expect(await changeDeviceOwner({ kind: "robot", deviceId: robot, toEdgeNodeId: n, actorUserId: actor, actorName: "test" })).toMatchObject({ ok: true });
+    expect((await checkEdgeOwnedFactoryDrift()).filter((d) => d.id === robot)).toEqual([]); // same factory: nothing
+    await sql`UPDATE robots SET "lineId" = NULL WHERE id = ${robot}`; // its factory is cleared while the node owns it
+    const drift = (await checkEdgeOwnedFactoryDrift()).filter((d) => d.id === robot);
+    expect(drift).toEqual([{ kind: "robot", id: robot, edgeNodeId: n, deviceFactory: null, nodeFactory: chain.code }]);
+    const mine = () => H.alerts.filter((m) => m.startsWith(`robot ${robot} is owned by edge node ${n}`));
+    const t0 = Date.now();
+    while (mine().length === 0 && Date.now() - t0 < 3_000) await new Promise((r) => setTimeout(r, 25));
+    expect(mine()).toHaveLength(1);
+    expect(mine()[0]).toMatch(/now belongs to factory NONE/);
+    await checkEdgeOwnedFactoryDrift();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(mine()).toHaveLength(1); // once per change, not every pass
+    await sql`UPDATE robots SET "lineId" = ${chain.line} WHERE id = ${robot}`;
   });
 });
