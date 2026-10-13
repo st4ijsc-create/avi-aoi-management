@@ -86,6 +86,9 @@
 --   — no actor; only the STOP sweep after a recorded central execution (central_stop_executions, WORM, via
 --   edge_stop_record_central_execution); done ⇔ the attempt was ok. ownerCannotList is STICKY (ownerCannotListAt, set by
 --   edge_stop_ack_edge). A person closes a STOP only via edge_stop_resolve; resolved rows stay visible (resolvedByHuman).
+-- fix review 10 (ruling R-10-bj): ot_write_intent_resolve(intent, actor, reason) — the guarded, exactly-once outcome-unknown
+--   result of a crash-orphaned OT write intent (active user, reason, intent ≥ 10 min old); trg_command_log_result_guard refuses a
+--   direct manual-resolution INSERT and any second result row of an intent.
 -- fix review 4 (ruling R-10-ah, re-review F1): edge_stop_ack_edge also requires the device to be owned by the calling node at
 --   the row's epoch NOW; every refused edge ack is kept as WORM evidence in edge_stop_ack_refusals (avi_app SELECT only).
 --
@@ -103,6 +106,7 @@
 --   DROP TABLE IF EXISTS "edge_stop_ack_refusals"; DROP FUNCTION IF EXISTS edge_stop_ack_refusals_worm();
 --   DROP TABLE IF EXISTS "central_stop_executions"; DROP FUNCTION IF EXISTS central_stop_executions_worm(), edge_stop_record_central_execution(text, integer, boolean, text);
 --   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "centralExecutionId", DROP COLUMN IF EXISTS "ownerCannotListAt", DROP COLUMN IF EXISTS "ownerCannotListBy";
+--   DROP TRIGGER IF EXISTS trg_command_log_result_guard ON "command_log"; DROP FUNCTION IF EXISTS command_log_result_guard(), ot_write_intent_resolve(integer, integer, text);
 --   DROP TRIGGER IF EXISTS trg_robot_motion_lock_writer_instance ON "robot_motion_locks"; DROP FUNCTION IF EXISTS robot_motion_lock_writer_guard();
 --   ALTER TABLE "robot_motion_locks" DROP COLUMN IF EXISTS "writerInstanceId";
 --   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "ackViaUnsigned", DROP COLUMN IF EXISTS "resolvedAt", DROP COLUMN IF EXISTS "resolvedBy", DROP COLUMN IF EXISTS "resolution";
@@ -983,6 +987,75 @@ END $$;
 REVOKE ALL ON FUNCTION public.edge_motion_lock_apply(integer, integer, bigint, integer, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.edge_motion_lock_clear(integer, integer, bigint, integer) FROM PUBLIC;
 
+-- ── fix review 10 (ruling R-10-bj): resolving a crash-ORPHANED OT write intent ─────────────────────────────────────────────
+-- A write intent (command_log status 'sent', ackValue.ledger 'intent') whose process crashed mid-write has no RESULT row, so
+-- it stays "in flight" forever (the owner-change guard above keeps blocking — fail-closed). ot_write_intent_resolve writes its
+-- outcome-UNKNOWN result ('timeout', ackValue {ledger 'result', intentId, outcome 'unknown', resolvedByOperator, resolution})
+-- EXACTLY once, for an ACTIVE user with a reason, only when the intent is at least 10 minutes old (a younger one may still be
+-- in flight — the bound of Group F's admin action, INTENT_RESOLVE_MIN_AGE_MINUTES). avi_app KEEPS its INSERT on command_log
+-- (the device-stage writer, otDeviceWrite / commandDispatcher, writes intents and results directly); a trigger refuses a
+-- direct (non-owner) INSERT of a manual-resolution row and, for every writer, a SECOND result row of the same intent.
+CREATE OR REPLACE FUNCTION public.ot_write_intent_resolve(p_intent integer, p_actor integer, p_reason text) RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  i record;
+  why text := NULLIF(btrim(COALESCE(p_reason, '')), '');
+  rid integer;
+BEGIN
+  IF p_actor IS NULL OR p_actor <= 0 OR NOT EXISTS (SELECT 1 FROM public."users" u WHERE u."id" = p_actor AND u."isActive" = true) THEN
+    RAISE EXCEPTION 'ot_write_intent_resolve: actor % is not an active user', p_actor USING ERRCODE = 'check_violation';
+  END IF;
+  IF why IS NULL OR length(why) < 3 THEN
+    RAISE EXCEPTION 'ot_write_intent_resolve: a reason (at least 3 characters) is required' USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT * INTO i FROM public."command_log" c WHERE c."id" = p_intent FOR UPDATE;
+  IF NOT FOUND OR i."status"::text <> 'sent' OR i."ackValue" ->> 'ledger' IS DISTINCT FROM 'intent' THEN
+    RAISE EXCEPTION 'ot_write_intent_resolve: % is not a write intent', p_intent USING ERRCODE = 'check_violation';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public."command_log" r WHERE r."adapterId" = i."adapterId" AND r."ackValue" ->> 'ledger' = 'result'
+              AND r."ackValue" ->> 'intentId' = i."id"::text) THEN
+    RAISE EXCEPTION 'ot_write_intent_resolve: write intent % already has a result', p_intent USING ERRCODE = 'check_violation';
+  END IF;
+  IF i."createdAt" > LOCALTIMESTAMP - interval '10 minutes' THEN
+    RAISE EXCEPTION 'ot_write_intent_resolve: write intent % is younger than 10 minutes — it may still be in flight', p_intent USING ERRCODE = 'check_violation';
+  END IF;
+  INSERT INTO public."command_log" ("actionId", "adapterId", "machineId", "tagKey", "address", "commandType", "requestedValue", "requestedBy",
+      "confirmedBy", "status", "triggerKind", "interlockRuleId", "interlockEventId", "approvedBy", "correlation_id", "errorText", "ackValue", "idempotencyKey")
+    VALUES (i."actionId", i."adapterId", i."machineId", i."tagKey", i."address", i."commandType", i."requestedValue", i."requestedBy",
+      p_actor, 'timeout', i."triggerKind", i."interlockRuleId", i."interlockEventId", i."approvedBy", i."correlation_id",
+      left('OUTCOME_UNKNOWN_RESOLVED_BY_OPERATOR: ' || why, 2000),
+      jsonb_build_object('ledger', 'result', 'intentId', i."id", 'outcome', 'unknown', 'resolvedByOperator', p_actor, 'resolution', left(why, 2000)),
+      left(CASE WHEN i."idempotencyKey" LIKE 'intent:%' THEN substr(i."idempotencyKey", 8) ELSE 'resolve:' || i."id" END, 128))
+  RETURNING "id" INTO rid;
+  RETURN rid;
+END $$;
+REVOKE ALL ON FUNCTION public.ot_write_intent_resolve(integer, integer, text) FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION public.command_log_result_guard() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  tbl_owner name;
+BEGIN
+  IF NEW."ackValue" IS NULL OR NEW."ackValue" ->> 'ledger' IS DISTINCT FROM 'result' THEN
+    RETURN NEW;
+  END IF;
+  SELECT pg_catalog.pg_get_userbyid(c.relowner) INTO tbl_owner FROM pg_catalog.pg_class c WHERE c.oid = TG_RELID;
+  IF current_user IS DISTINCT FROM tbl_owner AND (NEW."ackValue" ? 'resolvedByOperator' OR NEW."ackValue" ->> 'outcome' = 'unknown') THEN
+    RAISE EXCEPTION 'command_log: an orphaned write intent is resolved only via ot_write_intent_resolve' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW."ackValue" ? 'intentId' AND EXISTS (
+       SELECT 1 FROM public."command_log" r WHERE r."adapterId" = NEW."adapterId" AND r."ackValue" ->> 'ledger' = 'result'
+          AND r."ackValue" ->> 'intentId' = NEW."ackValue" ->> 'intentId') THEN
+    RAISE EXCEPTION 'command_log: write intent % already has a result', NEW."ackValue" ->> 'intentId' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.command_log_result_guard() FROM PUBLIC;
+DROP TRIGGER IF EXISTS trg_command_log_result_guard ON "command_log";
+CREATE TRIGGER trg_command_log_result_guard BEFORE INSERT ON "command_log"
+  FOR EACH ROW EXECUTE FUNCTION public.command_log_result_guard();
+
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'avi_app') THEN
@@ -990,6 +1063,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.edge_motion_lock_clear(integer, integer, bigint, integer) TO avi_app;
     GRANT EXECUTE ON FUNCTION public.edge_stop_ack_central(integer, text, bigint) TO avi_app; -- fix review 9 (R-10-ba): (request, outcome, execution)
     GRANT EXECUTE ON FUNCTION public.edge_stop_record_central_execution(text, integer, boolean, text) TO avi_app; -- fix review 9
+    GRANT EXECUTE ON FUNCTION public.ot_write_intent_resolve(integer, integer, text) TO avi_app; -- fix review 10 (R-10-bj)
     REVOKE ALL ON "central_stop_executions" FROM avi_app;
     GRANT SELECT ON "central_stop_executions" TO avi_app;
     REVOKE ALL ON SEQUENCE "central_stop_executions_id_seq" FROM avi_app;
