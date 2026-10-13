@@ -17,8 +17,25 @@
  * The secret is shown ONCE: with `--out FILE` it is written to that file only (created new, mode 0600 — an existing file is
  * refused, never overwritten), otherwise printed once on stdout. Write it OUTSIDE the repo checkout, move it to the edge host
  * (outside any checkout, mode 600 — docs/EDGE_GATEWAY.md section 8.2) and delete the local copy. Exit codes: 0 done · 1 refused (not admin, node unknown, already active, …) · 2 bad arguments.
+ *
+ * doc 81 Đợt 10 task F2 — the NODE BUNDLE (design §2.13 "the bundle writes the keyset pin"; R-10-ad env): with
+ * `--bundle DIR` (issue / rotate) the CLI creates a NEW directory DIR (mode 0700, never an existing one) holding everything one
+ * edge node needs and nothing else — no DATABASE_URL, no JWT_SECRET, no SECRET_ENCRYPTION_KEY:
+ *   edge-node.cred   the credential (0600, the secret's only copy),
+ *   edge-keyset.json the keyset PIN (0444) built from the central KEYRING FILES (--keyring-dir or EDGE_SIGNING_KEY_DIR; R-10-c:
+ *                    trust from the files only, never from the DB),
+ *   edge-node.env    the non-secret environment for deploy/edge/docker-compose.edge.yml: EDGE_GATEWAY_NODE_CODE, EDGE_CENTRAL_URL
+ *                    (--central-url), EDGE_CENTRAL_NODE_ID, EDGE_CENTRAL_CREDENTIAL_ID, EDGE_NODE_CREDENTIAL_HOST_FILE +
+ *                    EDGE_KEYSET_PIN_HOST_FILE (where the two files will live ON THE EDGE HOST: --edge-dir, default /etc/avi-edge),
+ *                    EDGE_JOURNAL_MAX_BYTES (--journal-max-bytes, default 64 MiB; EDGE_JOURNAL_DIR is fixed in the compose file).
+ * The keyring is read and the pin built BEFORE the admin proof and the issue (a bad keyring changes nothing); a refused issue
+ * removes the empty directory.
+ *   npx tsx scripts/edge-node-credential.ts issue --node edge-line1 --actor admin.nguyen --reason "commission line 1" \
+ *       --bundle /root/edge-line1-bundle --keyring-dir /etc/avi/edge-keys --central-url https://central.example:3000
+ * A secret is never taken from argv in ANY spelling (`--password=…`, `--otp …`, `--pass`, `--totp`, …) — Đợt 10 F2 (N7, part).
  */
-import { openSync, writeSync, closeSync, unlinkSync } from "node:fs";
+import { openSync, writeSync, closeSync, unlinkSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 export interface CliIo {
@@ -35,6 +52,13 @@ function argOf(argv: string[], name: string): string | undefined {
   return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
 }
 
+/** The bundle file names (inside --bundle DIR); the compose file maps them to /run/secrets/*. */
+export const BUNDLE_FILES = { credential: "edge-node.cred", pin: "edge-keyset.json", env: "edge-node.env" } as const;
+const DEFAULT_EDGE_DIR = "/etc/avi-edge";
+const DEFAULT_JOURNAL_MAX_BYTES = 64 * 1024 * 1024;
+/** Every argv spelling that would carry a secret (refused before anything else). */
+const SECRET_ARG = /^--(password|passwd|pass|pwd|otp|totp|2fa|secret|token|credential)(=|$)/i;
+
 export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<number> {
   const cmd = argv[0];
   const node = argOf(argv, "--node");
@@ -42,14 +66,14 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
   const reason = argOf(argv, "--reason") ?? "";
   const outFile = argOf(argv, "--out");
   if (!["issue", "rotate", "revoke", "list"].includes(cmd ?? "") || !node) {
-    io.err("usage: edge-node-credential.ts <issue|rotate|revoke|list> --node CODE [--actor ADMIN_USERNAME --reason TEXT] [--out FILE]");
+    io.err("usage: edge-node-credential.ts <issue|rotate|revoke|list> --node CODE [--actor ADMIN_USERNAME --reason TEXT] [--out FILE | --bundle DIR --keyring-dir DIR [--central-url URL] [--edge-dir PATH] [--journal-max-bytes N]]");
     return 2;
   }
   if (argv.includes("--actor-user-id")) {
     io.err("--actor-user-id is no longer accepted (a self-asserted id): use --actor <admin username> — the password is asked (or EDGE_CRED_ADMIN_PASSWORD)");
     return 2;
   }
-  if (argv.includes("--password") || argv.includes("--otp")) {
+  if (argv.some((a) => SECRET_ARG.test(a))) {
     io.err("a password / 2FA code is never taken from the command line (process list, shell history) — use the prompt or EDGE_CRED_ADMIN_PASSWORD / EDGE_CRED_ADMIN_OTP");
     return 2;
   }
@@ -57,9 +81,60 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
     io.err("--actor (an active admin's username) is required");
     return 2;
   }
-  const m = await import("../server/services/edge/edgeNodeCredentials");
   const env = io.env ?? process.env;
+  // ── doc 81 Đợt 10 F2 — the node bundle: validated and its pin BUILT before anything else (no write, no DB) ─────────────
+  const bundleDir = argOf(argv, "--bundle");
+  let bundle: { dir: string; pinText: string; pinInfo: string; centralUrl: string | null; edgeDir: string; journalMaxBytes: number } | null = null;
+  if (bundleDir !== undefined) {
+    if (cmd !== "issue" && cmd !== "rotate") {
+      io.err("--bundle is for issue / rotate only");
+      return 2;
+    }
+    if (outFile) {
+      io.err("--bundle and --out are exclusive (the bundle holds the credential file)");
+      return 2;
+    }
+    const keyringDir = argOf(argv, "--keyring-dir") ?? env.EDGE_SIGNING_KEY_DIR;
+    if (!keyringDir) {
+      io.err("--bundle needs the central signing KEYRING directory (--keyring-dir DIR or EDGE_SIGNING_KEY_DIR) — the pin comes from the keyring files only");
+      return 2;
+    }
+    const centralUrl = argOf(argv, "--central-url") ?? null;
+    if (centralUrl !== null) {
+      let u: URL | null = null;
+      try {
+        u = new URL(centralUrl);
+      } catch {
+        u = null;
+      }
+      if (!u || (u.protocol !== "https:" && u.protocol !== "http:") || u.username || u.password) {
+        io.err("--central-url must be an http(s) URL without credentials (e.g. https://central.example:3000)");
+        return 2;
+      }
+    }
+    const edgeDir = (argOf(argv, "--edge-dir") ?? DEFAULT_EDGE_DIR).replace(/[\\/]+$/, "");
+    if (!edgeDir || /[\s"'$`]/.test(edgeDir)) {
+      io.err("--edge-dir must be a plain absolute path on the edge host (no spaces / quotes)");
+      return 2;
+    }
+    const jm = argOf(argv, "--journal-max-bytes");
+    const journalMaxBytes = jm === undefined ? DEFAULT_JOURNAL_MAX_BYTES : Number(jm);
+    if (!Number.isSafeInteger(journalMaxBytes) || journalMaxBytes < 1024 * 1024) {
+      io.err("--journal-max-bytes must be an integer ≥ 1048576 (1 MiB)");
+      return 2;
+    }
+    try {
+      const sg = await import("../server/services/edge/edgeSigning");
+      const pin = sg.edgePinFromKeyring(sg.readEdgeKeyring(keyringDir));
+      bundle = { dir: bundleDir, pinText: JSON.stringify(pin, null, 2) + "\n", pinInfo: `root ${pin.keyset.keys[0].kid}, keyring version ${pin.keyset.version}`, centralUrl, edgeDir, journalMaxBytes };
+    } catch (err) {
+      io.err(`keyring refused (${(err as Error)?.message ?? err}) — nothing was changed`);
+      return 1;
+    }
+  }
+  const m = await import("../server/services/edge/edgeNodeCredentials");
   let fd: number | null = null;
+  let bundleCreated = false;
   try {
     // final wave F7 — prove the admin BEFORE anything else (a refused login changes nothing, leaves no file)
     let actor = 0;
@@ -88,6 +163,18 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
       io.out(`revoked credential ${r.credentialId} of node "${node}" — the node can no longer pull, claim or report`);
       return 0;
     }
+    // the bundle directory is created NEW (never an existing one) BEFORE the credential is issued
+    if (bundle) {
+      try {
+        mkdirSync(bundle.dir, { mode: 0o700 });
+        bundleCreated = true;
+        fd = openSync(path.join(bundle.dir, BUNDLE_FILES.credential), "wx", 0o600);
+      } catch {
+        io.err(`--bundle ${bundle.dir}: cannot create it (it exists, or the parent is not writable) — nothing was changed`);
+        if (bundleCreated) rmSync(bundle.dir, { recursive: true, force: true });
+        return 1;
+      }
+    }
     // refuse an existing --out BEFORE changing anything (the secret would otherwise exist nowhere)
     if (outFile) {
       try {
@@ -98,7 +185,30 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
       }
     }
     const issued = cmd === "issue" ? await m.issueNodeCredential({ nodeCode: node, actorUserId: actor, reason }) : await m.rotateNodeCredential({ nodeCode: node, actorUserId: actor, reason });
-    if (fd !== null) {
+    if (fd !== null && bundle) {
+      const written = fd;
+      fd = null;
+      bundleCreated = false; // issued: the bundle now holds the secret's only copy — never deleted by the error path
+      writeSync(written, `${issued.token}\n`);
+      closeSync(written);
+      writeFileSync(path.join(bundle.dir, BUNDLE_FILES.pin), bundle.pinText, { mode: 0o444, flag: "wx" });
+      const envLines = [
+        `# edge node bundle — node "${node}", credential ${issued.credentialId} (${issued.keyPrefix}), keyset pin: ${bundle.pinInfo}`,
+        "# generated by scripts/edge-node-credential.ts (doc 81 Dot 10). NO secret in this file: the credential is edge-node.cred.",
+        "# The edge holds no DATABASE_URL, JWT_SECRET or SECRET_ENCRYPTION_KEY (docs/EDGE_GATEWAY.md section 8).",
+        `EDGE_GATEWAY_NODE_CODE=${node}`,
+        bundle.centralUrl ? `EDGE_CENTRAL_URL=${bundle.centralUrl}` : "# EDGE_CENTRAL_URL=https://central.example:3000   (set it: --central-url was not given)",
+        `EDGE_CENTRAL_NODE_ID=${issued.nodeId}`,
+        `EDGE_CENTRAL_CREDENTIAL_ID=${issued.credentialId}`,
+        `EDGE_NODE_CREDENTIAL_HOST_FILE=${bundle.edgeDir}/${BUNDLE_FILES.credential}`,
+        `EDGE_KEYSET_PIN_HOST_FILE=${bundle.edgeDir}/${BUNDLE_FILES.pin}`,
+        `EDGE_JOURNAL_MAX_BYTES=${bundle.journalMaxBytes}`,
+        "",
+      ];
+      writeFileSync(path.join(bundle.dir, BUNDLE_FILES.env), envLines.join("\n"), { mode: 0o644, flag: "wx" });
+      io.out(`${cmd === "issue" ? "issued" : "rotated"} credential ${issued.credentialId} (${issued.keyPrefix}) of node "${node}" — bundle written to ${bundle.dir}: ${BUNDLE_FILES.credential} (secret, 0600), ${BUNDLE_FILES.pin} (${bundle.pinInfo}), ${BUNDLE_FILES.env}`);
+      io.out(`move the bundle to the edge host under ${bundle.edgeDir} (mode 700, owned by the gateway's user), then delete it here`);
+    } else if (fd !== null) {
       const written = fd;
       fd = null; // issued: from here on the file is the secret's only copy — never deleted by the error path
       writeSync(written, `${issued.token}\n`);
@@ -110,6 +220,11 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
     }
     return 0;
   } catch (err) {
+    if (fd !== null && bundle) {
+      closeSync(fd);
+      fd = null;
+    }
+    if (bundleCreated && bundle) rmSync(bundle.dir, { recursive: true, force: true }); // nothing was issued: no empty bundle left
     if (fd !== null && outFile) {
       closeSync(fd);
       unlinkSync(outFile); // nothing was issued: no empty secret file is left behind

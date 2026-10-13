@@ -36,7 +36,9 @@ WORKDIR /app
 ENV NODE_ENV=production \
     NODE_LLAMA_CPP_SKIP_DOWNLOAD=true \
     EDGE_GATEWAY_MODE=true \
+    AVI_PROCESS_ROLE=edge \
     EDGE_UNS_STORE_FORWARD_FILE=/app/data/edge-uns-store-forward.jsonl \
+    EDGE_JOURNAL_DIR=/app/data/edge-journal \
     EDGE_GATEWAY_LIVENESS_FILE=/app/data/edge-gateway.alive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       tini ca-certificates \
@@ -51,7 +53,8 @@ RUN pnpm install --frozen-lockfile --prod && pnpm store prune
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 
-# Durable store-and-forward WAL + liveness marker live under /app/data (mount a volume).
+# Durable store-and-forward WAL + journal + liveness marker live under /app/data (mount a volume).
+# doc 81 Dot 10: this image carries NO DATABASE_URL / JWT_SECRET / SECRET_ENCRYPTION_KEY and the edge never needs them.
 RUN mkdir -p /app/data && chown -R app:app /app
 USER app
 
