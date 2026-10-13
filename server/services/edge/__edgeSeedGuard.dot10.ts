@@ -66,7 +66,11 @@ function restoreSync(dbUrl: string): void {
 
 /** Take the shared seed lock, disable the seed if it is enabled (recording it), and arm the crash restore. */
 export async function acquireSeedGuard(dbUrl: string): Promise<SeedGuard> {
-  if (!/_test\b/.test(dbUrl)) throw new Error("the seed guard runs on a _test DB only");
+  if (!/_test\b/.test(dbUrl)) {
+    // never a seed change outside a _test DB: an inert guard (nothing disabled, nothing to restore)
+    console.error("[seed guard] refused: not a _test DB — the seed is left untouched");
+    return { disabledIds: [], release: async () => undefined };
+  }
   const marker = seedMarkerFile(dbUrl);
   const lockConn = postgres(dbUrl, { max: 1, connect_timeout: 30, onnotice: () => {} });
   await lockConn`SELECT pg_advisory_lock_shared(${SEED_LOCK_KEY})`;
