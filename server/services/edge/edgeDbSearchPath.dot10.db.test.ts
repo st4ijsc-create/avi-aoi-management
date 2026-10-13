@@ -36,6 +36,7 @@ const CALLABLE = new Set([
   "edge_stop_ack_central",
   "edge_stop_record_central_execution",
   "ot_write_intent_resolve",
+  "ot_write_late_result_review",
   "edge_stop_ack_edge",
   "edge_stop_resolve",
   "edge_robot_trust_request",
@@ -222,7 +223,7 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
     for (const f of FILES) {
       for (const m of readFileSync(path.join(REPO, "drizzle", f), "utf8").matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?([a-z_][a-z0-9_]*)\s*\(/gi)) names.add(m[1]);
     }
-    expect(names.size).toBe(32); // 0372: 2 · 0373: 3 · 0374: 22 · 0375: 5 — a new function must be added here on purpose
+    expect(names.size).toBe(34); // 0372: 2 · 0373: 3 · 0374: 24 · 0375: 5 — a new function must be added here on purpose
     const rows = await freshSession(async (tx) =>
       tx`SELECT p.proname AS name, p.proconfig AS cfg, has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
                 has_function_privilege(current_user, p.oid, 'EXECUTE') AS app

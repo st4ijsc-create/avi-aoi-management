@@ -101,7 +101,7 @@ export async function columnsOf(appSql, t) {
 export const EDGE_FN_SEARCH_PATH = "search_path=pg_catalog, public, pg_temp";
 /** The functions avi_app may call directly (every other function of 0372–0375 is a trigger function: no EXECUTE for anyone). */
 export const EDGE_FN_CALLABLE = new Set([
-  "edge_motion_lock_apply", "edge_motion_lock_clear", "edge_stop_ack_central", "edge_stop_ack_edge", "edge_stop_resolve", "edge_stop_record_central_execution", "ot_write_intent_resolve",
+  "edge_motion_lock_apply", "edge_motion_lock_clear", "edge_stop_ack_central", "edge_stop_ack_edge", "edge_stop_resolve", "edge_stop_record_central_execution", "ot_write_intent_resolve", "ot_write_late_result_review",
   "edge_robot_trust_request", "edge_robot_trust_approve", "edge_robot_trust_revoke", "edge_robot_trust_is_approved",
 ]);
 /** Names of the functions a migration file defines (`CREATE OR REPLACE FUNCTION public.<name>(`). */

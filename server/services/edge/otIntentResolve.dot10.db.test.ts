@@ -77,7 +77,9 @@ describe.skipIf(!onTest)("R-10-bj — ot_write_intent_resolve (guarded, exactly 
     });
     expect(r).toEqual({
       actor0: "23514", inactive: "23514", noActor: "23514", emptyReason: "23514", tooYoung: "23514", notAnIntent: "23514",
-      directManualInsert: "23514", good: null, again: "23514", secondDeviceResult: "23514",
+      // fix review 11 (R-10-bk): a device result AFTER the manual resolution is kept as 'late_result' evidence (not a second
+      // 'result'); exactly-once concurrency + the late path: otIntentResultRace.dot10.db.test.ts.
+      directManualInsert: "23514", good: null, again: "23514", secondDeviceResult: null,
       rows: [{ s: "timeout", byActor: true, o: "unknown", op: true, e: true }],
     });
   }, 60_000);

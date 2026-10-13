@@ -32,6 +32,7 @@ const CALLABLE = new Set([
   "edge_stop_ack_central",
   "edge_stop_record_central_execution",
   "ot_write_intent_resolve",
+  "ot_write_late_result_review",
   "edge_stop_ack_edge",
   "edge_stop_resolve",
   "edge_robot_trust_request",

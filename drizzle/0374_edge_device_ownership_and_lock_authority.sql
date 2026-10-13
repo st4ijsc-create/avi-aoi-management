@@ -89,6 +89,11 @@
 -- fix review 10 (ruling R-10-bj): ot_write_intent_resolve(intent, actor, reason) — the guarded, exactly-once outcome-unknown
 --   result of a crash-orphaned OT write intent (active user, reason, intent ≥ 10 min old); trg_command_log_result_guard refuses a
 --   direct manual-resolution INSERT and any second result row of an intent.
+-- fix review 11 (ruling R-10-bk): exactly one result per intent under concurrency — a per-intent advisory xact lock in BOTH
+--   writer paths + the partial UNIQUE index ux_command_log_one_result_per_intent (backstop). A REAL device result landing after a
+--   manual resolution is kept (ledger 'late_result', lateAfterResolutionId, key 'late:<id>:<key>'); it holds the adapter's owner
+--   change until a person calls ot_write_late_result_review (WORM ot_write_late_result_reviews), on top of the 10-minute
+--   timeout window every 'timeout' result (manual included) already holds.
 -- fix review 4 (ruling R-10-ah, re-review F1): edge_stop_ack_edge also requires the device to be owned by the calling node at
 --   the row's epoch NOW; every refused edge ack is kept as WORM evidence in edge_stop_ack_refusals (avi_app SELECT only).
 --
@@ -107,6 +112,8 @@
 --   DROP TABLE IF EXISTS "central_stop_executions"; DROP FUNCTION IF EXISTS central_stop_executions_worm(), edge_stop_record_central_execution(text, integer, boolean, text);
 --   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "centralExecutionId", DROP COLUMN IF EXISTS "ownerCannotListAt", DROP COLUMN IF EXISTS "ownerCannotListBy";
 --   DROP TRIGGER IF EXISTS trg_command_log_result_guard ON "command_log"; DROP FUNCTION IF EXISTS command_log_result_guard(), ot_write_intent_resolve(integer, integer, text);
+--   DROP FUNCTION IF EXISTS ot_write_late_result_review(integer, integer, text); DROP TABLE IF EXISTS "ot_write_late_result_reviews";
+--   DROP FUNCTION IF EXISTS ot_write_late_result_reviews_worm(); DROP INDEX IF EXISTS "ux_command_log_one_result_per_intent";
 --   DROP TRIGGER IF EXISTS trg_robot_motion_lock_writer_instance ON "robot_motion_locks"; DROP FUNCTION IF EXISTS robot_motion_lock_writer_guard();
 --   ALTER TABLE "robot_motion_locks" DROP COLUMN IF EXISTS "writerInstanceId";
 --   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "ackViaUnsigned", DROP COLUMN IF EXISTS "resolvedAt", DROP COLUMN IF EXISTS "resolvedBy", DROP COLUMN IF EXISTS "resolution";
@@ -247,6 +254,13 @@ BEGIN
       --   • a result 'timeout' (outcome unknown — the driver write may still land) within the stale-write window (10 min ≫ the
       --     bounded write, OT_CONTROL_TIMEOUT_MS 5 s default, per-command deadline capped);
       --   • a legacy 'sent' row with no ledger marker (pre-intent ledger, nothing can link a result) within the same window.
+      -- fix review 11 (R-10-bk): a REAL device result that landed AFTER a manual "outcome unknown" resolution (ledger
+      -- 'late_result') holds the owner change until a person has reviewed it (ot_write_late_result_review) — fail-closed; checked first so the refusal names it.
+      IF EXISTS (SELECT 1 FROM public."command_log" l
+                  WHERE l."adapterId" = OLD."id" AND l."ackValue" ->> 'ledger' = 'late_result'
+                    AND NOT EXISTS (SELECT 1 FROM public."ot_write_late_result_reviews" v WHERE v."lateResultId" = l."id")) THEN
+        RAISE EXCEPTION 'device_adapters: adapter % has a device write result that landed after a manual resolution — a person must review it (ot_write_late_result_review) before ownership can change', OLD."id" USING ERRCODE = 'check_violation';
+      END IF;
       IF EXISTS (SELECT 1 FROM public."command_log" i
                   WHERE i."adapterId" = OLD."id" AND i."status" = 'sent' AND i."ackValue" ->> 'ledger' = 'intent'
                     AND NOT EXISTS (SELECT 1 FROM public."command_log" r
@@ -1013,7 +1027,10 @@ BEGIN
   IF NOT FOUND OR i."status"::text <> 'sent' OR i."ackValue" ->> 'ledger' IS DISTINCT FROM 'intent' THEN
     RAISE EXCEPTION 'ot_write_intent_resolve: % is not a write intent', p_intent USING ERRCODE = 'check_violation';
   END IF;
-  IF EXISTS (SELECT 1 FROM public."command_log" r WHERE r."adapterId" = i."adapterId" AND r."ackValue" ->> 'ledger' = 'result'
+  -- fix review 11 (R-10-bk): the SAME per-intent lock every result INSERT takes (trg_command_log_result_guard) ⇒ a device-stage
+  -- result in flight is waited for, then seen (READ COMMITTED: the next query takes a fresh snapshot).
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('ot.intent.result'), i."id");
+  IF EXISTS (SELECT 1 FROM public."command_log" r WHERE r."ackValue" ->> 'ledger' = 'result'
               AND r."ackValue" ->> 'intentId' = i."id"::text) THEN
     RAISE EXCEPTION 'ot_write_intent_resolve: write intent % already has a result', p_intent USING ERRCODE = 'check_violation';
   END IF;
@@ -1036,18 +1053,45 @@ CREATE OR REPLACE FUNCTION public.command_log_result_guard() RETURNS trigger LAN
 SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   tbl_owner name;
+  iid integer;
+  prior record;
 BEGIN
-  IF NEW."ackValue" IS NULL OR NEW."ackValue" ->> 'ledger' IS DISTINCT FROM 'result' THEN
+  IF NEW."ackValue" IS NULL THEN
     RETURN NEW;
   END IF;
   SELECT pg_catalog.pg_get_userbyid(c.relowner) INTO tbl_owner FROM pg_catalog.pg_class c WHERE c.oid = TG_RELID;
+  -- fix review 11: evidence of a late result is made only below (from a real result row), never inserted directly.
+  IF NEW."ackValue" ->> 'ledger' = 'late_result' AND current_user IS DISTINCT FROM tbl_owner THEN
+    RAISE EXCEPTION 'command_log: a late_result row is recorded only by the result guard' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW."ackValue" ->> 'ledger' IS DISTINCT FROM 'result' THEN
+    RETURN NEW;
+  END IF;
   IF current_user IS DISTINCT FROM tbl_owner AND (NEW."ackValue" ? 'resolvedByOperator' OR NEW."ackValue" ->> 'outcome' = 'unknown') THEN
     RAISE EXCEPTION 'command_log: an orphaned write intent is resolved only via ot_write_intent_resolve' USING ERRCODE = 'check_violation';
   END IF;
-  IF NEW."ackValue" ? 'intentId' AND EXISTS (
-       SELECT 1 FROM public."command_log" r WHERE r."adapterId" = NEW."adapterId" AND r."ackValue" ->> 'ledger' = 'result'
-          AND r."ackValue" ->> 'intentId' = NEW."ackValue" ->> 'intentId') THEN
-    RAISE EXCEPTION 'command_log: write intent % already has a result', NEW."ackValue" ->> 'intentId' USING ERRCODE = 'check_violation';
+  IF NOT (NEW."ackValue" ? 'intentId') THEN
+    RETURN NEW;
+  END IF;
+  IF (NEW."ackValue" ->> 'intentId') IS NULL OR (NEW."ackValue" ->> 'intentId') !~ '^[0-9]{1,9}$' THEN
+    RAISE EXCEPTION 'command_log: ackValue.intentId must be a command_log id' USING ERRCODE = 'check_violation';
+  END IF;
+  iid := (NEW."ackValue" ->> 'intentId')::integer;
+  -- fix review 11 (R-10-bk): every writer of a result of this intent (device stage, ot_write_intent_resolve) serializes here;
+  -- after the lock the query below sees the other writer's committed row. ux_command_log_one_result_per_intent is the backstop.
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('ot.intent.result'), iid);
+  SELECT r."id", (r."ackValue" ? 'resolvedByOperator') AS manual INTO prior
+    FROM public."command_log" r WHERE r."ackValue" ->> 'ledger' = 'result' AND r."ackValue" ->> 'intentId' = iid::text
+   ORDER BY r."id" LIMIT 1;
+  IF FOUND THEN
+    IF prior.manual AND NOT (NEW."ackValue" ? 'resolvedByOperator') THEN
+      -- a REAL result after a manual "outcome unknown" resolution: never lost — kept as evidence (the INSERT succeeds, so the
+      -- device-stage writer is unchanged), linked to the resolution; it holds the adapter's owner change until reviewed.
+      NEW."ackValue" := NEW."ackValue" || jsonb_build_object('ledger', 'late_result', 'lateAfterResolutionId', prior."id");
+      NEW."idempotencyKey" := left('late:' || NEW."id" || ':' || COALESCE(NEW."idempotencyKey", ''), 128);
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'command_log: write intent % already has a result', iid USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END $$;
@@ -1055,6 +1099,57 @@ REVOKE ALL ON FUNCTION public.command_log_result_guard() FROM PUBLIC;
 DROP TRIGGER IF EXISTS trg_command_log_result_guard ON "command_log";
 CREATE TRIGGER trg_command_log_result_guard BEFORE INSERT ON "command_log"
   FOR EACH ROW EXECUTE FUNCTION public.command_log_result_guard();
+
+-- ── fix review 11 (ruling R-10-bk): exactly ONE result per intent, in the DB; a late real result is reviewed by a person ───
+-- The backstop of the per-intent lock above (e.g. a REPEATABLE READ writer that cannot see the other's row). Refused if the
+-- table already holds two results of one intent — find them first (none on _test when this was written).
+CREATE UNIQUE INDEX IF NOT EXISTS "ux_command_log_one_result_per_intent" ON "command_log" (("ackValue" ->> 'intentId'))
+  WHERE "ackValue" ->> 'ledger' = 'result' AND "ackValue" ? 'intentId';
+
+CREATE TABLE IF NOT EXISTS "ot_write_late_result_reviews" (
+  "lateResultId" integer PRIMARY KEY REFERENCES "command_log"("id"),
+  "reviewedBy" integer NOT NULL REFERENCES "users"("id"),
+  "note" text NOT NULL,
+  "reviewedAt" timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE "ot_write_late_result_reviews" IS
+  'doc 81 Dot 10 A (0374, fix review 11 R-10-bk): WORM - a person saw a device write result (command_log ledger late_result) that landed after a manual outcome-unknown resolution; until then the adapter owner change is refused.';
+CREATE OR REPLACE FUNCTION public.ot_write_late_result_reviews_worm() RETURNS trigger LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  RAISE EXCEPTION 'ot_write_late_result_reviews is append-only (WORM)' USING ERRCODE = 'check_violation';
+END $$;
+REVOKE ALL ON FUNCTION public.ot_write_late_result_reviews_worm() FROM PUBLIC;
+DROP TRIGGER IF EXISTS trg_ot_write_late_result_reviews_worm ON "ot_write_late_result_reviews";
+CREATE TRIGGER trg_ot_write_late_result_reviews_worm BEFORE UPDATE OR DELETE ON "ot_write_late_result_reviews"
+  FOR EACH ROW EXECUTE FUNCTION public.ot_write_late_result_reviews_worm();
+DROP TRIGGER IF EXISTS trg_ot_write_late_result_reviews_worm_truncate ON "ot_write_late_result_reviews";
+CREATE TRIGGER trg_ot_write_late_result_reviews_worm_truncate BEFORE TRUNCATE ON "ot_write_late_result_reviews"
+  FOR EACH STATEMENT EXECUTE FUNCTION public.ot_write_late_result_reviews_worm();
+
+CREATE OR REPLACE FUNCTION public.ot_write_late_result_review(p_late_result integer, p_actor integer, p_note text) RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  why text := NULLIF(btrim(COALESCE(p_note, '')), '');
+BEGIN
+  IF p_actor IS NULL OR p_actor <= 0 OR NOT EXISTS (SELECT 1 FROM public."users" u WHERE u."id" = p_actor AND u."isActive" = true) THEN
+    RAISE EXCEPTION 'ot_write_late_result_review: actor % is not an active user', p_actor USING ERRCODE = 'check_violation';
+  END IF;
+  IF why IS NULL OR length(why) < 3 THEN
+    RAISE EXCEPTION 'ot_write_late_result_review: a note (at least 3 characters) is required' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public."command_log" c WHERE c."id" = p_late_result AND c."ackValue" ->> 'ledger' = 'late_result') THEN
+    RAISE EXCEPTION 'ot_write_late_result_review: % is not a late device write result', p_late_result USING ERRCODE = 'check_violation';
+  END IF;
+  INSERT INTO public."ot_write_late_result_reviews" ("lateResultId", "reviewedBy", "note")
+    VALUES (p_late_result, p_actor, left(why, 2000)) ON CONFLICT ("lateResultId") DO NOTHING;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ot_write_late_result_review: % was already reviewed', p_late_result USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN p_late_result;
+END $$;
+REVOKE ALL ON FUNCTION public.ot_write_late_result_review(integer, integer, text) FROM PUBLIC;
 
 DO $$
 BEGIN
@@ -1064,6 +1159,9 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.edge_stop_ack_central(integer, text, bigint) TO avi_app; -- fix review 9 (R-10-ba): (request, outcome, execution)
     GRANT EXECUTE ON FUNCTION public.edge_stop_record_central_execution(text, integer, boolean, text) TO avi_app; -- fix review 9
     GRANT EXECUTE ON FUNCTION public.ot_write_intent_resolve(integer, integer, text) TO avi_app; -- fix review 10 (R-10-bj)
+    GRANT EXECUTE ON FUNCTION public.ot_write_late_result_review(integer, integer, text) TO avi_app; -- fix review 11 (R-10-bk)
+    REVOKE ALL ON "ot_write_late_result_reviews" FROM avi_app; -- evidence of a person's review: read-only for the app
+    GRANT SELECT ON "ot_write_late_result_reviews" TO avi_app;
     REVOKE ALL ON "central_stop_executions" FROM avi_app;
     GRANT SELECT ON "central_stop_executions" TO avi_app;
     REVOKE ALL ON SEQUENCE "central_stop_executions_id_seq" FROM avi_app;
