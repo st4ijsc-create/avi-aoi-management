@@ -68,7 +68,7 @@ async function harness(o: { pullIntervalMs?: number; limitsPullMs?: number } = {
     stopRobot: async (id) => (calls.push(`stopRobot:${id}`), { outcome: "sent" }),
     stopAdapter: async (id) => (calls.push(`stopAdapter:${id}`), { outcome: "sent" }),
     lockRobot: async (id) => (calls.push(`lock:${id}`), { ok: true, generation: 4 }),
-    clearRobot: async () => ({ ok: false as const, reason: "error" as const, generation: null }),
+    clearRobot: async (id, g) => (calls.push(`clear:${id}:${g}`), { ok: true as const, generation: g }),
   };
   const cfg: EdgeAgentConfig = { centralUrl: "http://central.test", credential: KIT_TOKEN, pullIntervalMs: o.pullIntervalMs ?? 60_000, progressMs: 60_000, maxConcurrent: 2, requestTimeoutMs: 2_000, stopResendMinMs: 10_000, claimRuns: false };
   const agent = new EdgeExecutionAgent(cfg, { client, config, journal, shipper, sink, consume: createEdgeJournalConsume(journal), authorize, programChecks, walker: null, devices, hashDefinition: kitHashDefinition });
@@ -180,7 +180,7 @@ describe("final fix wave I-1 (edge half) + R-10-bs — a pull answer whose run s
     expect((await h.agent.tick()).stopsResent).toEqual([]);
     expect((h.agent as unknown as { resentAt: Map<number, unknown> }).resentAt.has(41)).toBe(true);
   });
-  it("★ R-10-bs: runStateUnavailable ⇒ STOPs executed, non-STOP commands / claims / a walking run's next non-STOP step HELD; the next good pull resumes", async () => {
+  it("★ R-10-bs + residual MIN-1: runStateUnavailable ⇒ STOPs and LOCKS executed, clears / claims / a walking run's next non-STOP step HELD; the next good pull resumes", async () => {
     const h = await harness();
     (h.agent as unknown as { cfg: EdgeAgentConfig }).cfg.claimRuns = true;
     let release!: () => void;
@@ -203,11 +203,14 @@ describe("final fix wave I-1 (edge half) + R-10-bs — a pull answer whose run s
     h.central.commands = [
       h.central.sign("cmd", h.central.commandPayload({ requestId: 400, kind: "stop", target: { adapterId: 21 } })),
       h.central.sign("cmd", h.central.commandPayload({ requestId: 401, kind: "lock", robotId: 12, reason: "x" })),
+      h.central.sign("cmd", h.central.commandPayload({ requestId: 402, kind: "clear", robotId: 12, expectedGeneration: 4, clearedBy: 7, reason: "y" })),
     ];
     h.central.handlers.pull = (b) => ({ status: 200, data: { ...kit.defaults("pull", b).data, claims: [], runStateUnavailable: true } });
     const held = await h.agent.tick();
     expect(h.calls).toContain("stopAdapter:21"); // the STOP went
-    expect(h.calls).not.toContain("lock:12"); // non-STOP command held
+    // residual MIN-1 (R-10-bt): a LOCK is the safe direction — applied even while the run state is unavailable; a CLEAR is held
+    expect(h.calls).toContain("lock:12");
+    expect(h.calls.filter((c) => c.startsWith("clear:"))).toEqual([]);
     expect(held.claimed).toEqual([]); // no new run claimed
     expect(h.central.callsTo("claim")).toHaveLength(1);
     const authBefore = h.central.callsTo("authorize").length;
@@ -218,7 +221,7 @@ describe("final fix wave I-1 (edge half) + R-10-bs — a pull answer whose run s
     // the next GOOD pull resumes normal work
     delete h.central.handlers.pull;
     const ok = await h.agent.tick();
-    expect(h.calls).toContain("lock:12");
+    expect(h.calls.filter((c) => c.startsWith("clear:"))).toHaveLength(1); // the held clear runs once the run state is back
     expect(ok.claimed).toEqual([10]);
   });
 });

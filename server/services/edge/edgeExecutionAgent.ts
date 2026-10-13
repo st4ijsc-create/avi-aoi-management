@@ -548,6 +548,13 @@ export class EdgeExecutionAgent {
     return this.working;
   }
 
+  /** residual MIN-1 — the envelopes that are NOT energy-raising (everything but a `clear`); unverifiable ones keep their own handling */
+  private withoutEnergyRaising(envs: readonly unknown[]): unknown[] {
+    if (envs.length === 0) return [];
+    const v = verifyCommands(this.deps.config.trust(), envs, this.deps.config.credentialId());
+    return envs.filter((_, i) => (v[i].ok ? v[i].command.kind : v[i].unverified?.kind) !== "clear");
+  }
+
   private deferredStopPhase(deferred: unknown[], report: TickReport, cycle: number): Promise<void> {
     if (this.deferring && Date.now() - this.deferringSince < 2 * this.cfg.requestTimeoutMs + 1_000) return this.deferring;
     const p = (async () => {
@@ -580,7 +587,8 @@ export class EdgeExecutionAgent {
     this.refreshPending = this.lastRefreshedCycle !== cycle && (p.configVersion > config.version() || p.keysetVersion > config.trust().version);
     if (p.programCheckRequested) void this.deps.programChecks.report().catch(() => undefined);
     // non-STOP commands (lock / clear …), verified against the (possibly refreshed) trust — held while the run state is unavailable
-    report.commands.push(...(await this.handleCommands(held ? deferred : rest, cycle)));
+    // residual MIN-1 (R-10-bt): while held, only ENERGY-RAISING commands wait (a `clear`); STOPs and LOCKS (the safe direction) go
+    report.commands.push(...(await this.handleCommands(held ? [...deferred, ...this.withoutEnergyRaising(rest.slice(deferred.length))] : rest, cycle)));
     // 2) segment ends central has not taken yet
     for (const pc of [...this.pending.values()]) await this.sendComplete(pc);
     // 3) the node's current claims

@@ -60,6 +60,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-4 — central OT com
 
   it("★ STOP to an edge-owned adapter ⇒ an adapter STOP request queued for its owner + a durable alert; never ADAPTER_OFFLINE", async () => {
     const { dispatch } = await import("./commandDispatcher");
+    (await import("../edge/edgeNodeCommands")).noteEdgeNodePull(k.ids.nodeA); // the owner is pulling (reachable)
     const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "stop", writes: [{ tagKey: "stop_cmd", value: true }], triggeredBy: hitl(), idempotencyKey: `ffi4-stop-${++seq}-${k.DAU}` });
     expect(r.reason).not.toBe("ADAPTER_OFFLINE");
     expect(r).toMatchObject({ reason: "ADAPTER_OWNED_BY_EDGE", edgeStopRequest: { edgeNodeId: k.ids.nodeA } });
@@ -73,6 +74,18 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-4 — central OT com
     const led = await k.sql`SELECT status, "errorText" FROM command_log WHERE "adapterId" = ${k.ids.adapterA} AND "idempotencyKey" LIKE ${`ffi4-stop-${seq}-%`}`;
     expect(led.length).toBeGreaterThan(0);
     expect(String(led[0].errorText ?? "")).toMatch(new RegExp(`#${id}`));
+  });
+
+  it("★ residual MIN-2 (R-10-bt): the owning node is UNREACHABLE ⇒ queued AND central's pinned fallback STOP at once + a stop_undelivered alert (I-3 parity)", async () => {
+    const { dispatch } = await import("./commandDispatcher");
+    const cmds = await import("../edge/edgeNodeCommands");
+    cmds.__resetEdgeNodePullsForTests();
+    await k.sql`UPDATE edge_nodes SET "lastHeartbeatAt" = NULL WHERE id = ${k.ids.nodeA}`;
+    const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "stop", writes: [{ tagKey: "stop_cmd", value: true }], triggeredBy: hitl(), idempotencyKey: `ffi4-unr-${++seq}-${k.DAU}` });
+    expect(r).toMatchObject({ reason: "ADAPTER_OWNED_BY_EDGE", edgeStopRequest: { edgeNodeId: k.ids.nodeA } });
+    expect(rec.fallback).toEqual([k.ids.adapterA]);
+    await new Promise((x) => setTimeout(x, 20));
+    expect(rec.alerts.some((a) => a.kind === "stop_undelivered" && a.dedupKey === `stop_undelivered:request:${r.edgeStopRequest!.requestId}` && /UNREACHABLE/.test(a.message))).toBe(true);
   });
 
   it("★ the queue cannot take it (edge runtime off) ⇒ central's fallback STOP (transient session) + a critical alert — never silence", async () => {
