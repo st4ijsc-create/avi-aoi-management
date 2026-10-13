@@ -164,7 +164,19 @@ if (!FORCE) {
 }
 
 // ─── Filter pending migrations ───────────────────────────────
-const pending = sqlFiles.filter(f => !applied.has(f));
+let pending = sqlFiles.filter(f => !applied.has(f));
+
+// ─── doc 81 Đợt 10 F2 round 2 — files whose effect is PROVEN present but that can never run to success (0125 / 0057 / 0066 /
+// 0234: see migrationEffectiveProbes.mjs) are recorded success=true WITHOUT being executed; re-running 0125 reverts 0327.
+// Not with --force (that re-runs everything in order, 0327 / 0376 after 0125).
+if (!FORCE) {
+  const { recordEffectiveMigrations } = await import('./migrationEffectiveProbes.mjs');
+  const r = await recordEffectiveMigrations(sql, pending, {
+    dryRun: DRY_RUN,
+    checksumOf: (f) => simpleHash(fs.readFileSync(path.join(DRIZZLE_DIR, f), 'utf-8').trim()),
+  });
+  pending = r.pending;
+}
 
 if (pending.length === 0) {
   console.log('\n  All migrations are already applied. Database is up to date! ✓');
