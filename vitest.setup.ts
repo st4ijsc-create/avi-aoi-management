@@ -21,7 +21,8 @@
  * SAFETY GUARD: the resolved test db name MUST contain "test" and MUST differ from the dev
  * db — otherwise we throw and abort the run rather than risk wiping dev data.
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 /** Read a SINGLE key from a .env file without injecting anything else into process.env. */
@@ -67,6 +68,13 @@ if (devUrl) {
 // Minimal non-fatal defaults (only set when unset — never override a flag the test sets).
 process.env.EXTERNAL_MQTT_ENABLED ??= "false";
 process.env.NODE_ENV ??= "test";
+
+/**
+ * doc 81 Đợt 10 final fix wave (I-5) — the central motion-lock "persist pending" markers (robotMotionLockStore) default to
+ * ./data/robot-motion-lock-pending: a test must NEVER write under data/. Every test worker gets its own temp directory instead
+ * (a test that measures the markers sets its own).
+ */
+process.env.ROBOT_MOTION_LOCK_PENDING_DIR ??= mkdtempSync(resolve(tmpdir(), "vitest-rml-pending-"));
 
 /**
  * VRAM Pha 2A Task 3 — KHÔNG test đơn vị nào được sinh `powershell.exe`.

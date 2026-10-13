@@ -17,12 +17,18 @@
  * A late DELETE therefore never matches a NEWER lock's row (higher generation, lockedAt ≥ B — clamped to B if the wall
  * clock stepped back after boot, final wave G5): a late delete can at worst leave a restart LOCKED (fail-closed), never
  * unlocked. There is no unconditional delete.
- * RESIDUAL (final wave G6, stated plainly): a lock whose UPSERT never lands — the DB is down past the deadline, or the
- * process exits before the write reaches Postgres — leaves NO row, so the NEXT restart starts UNLOCKED for that lock.
- * That is the "failed write is LOGGED" case above (`not persisted` in the log); this store does not retry it.
+ * RESIDUAL (final wave G6) — CLOSED by doc 81 Đợt 10 final fix wave (I-5, R-10-br): a lock whose UPSERT never lands (the DB is
+ * down past the deadline, a trigger refuses the row — 0374's writer guard against a stale build — or the process exits before
+ * the write reaches Postgres) used to leave NO row, so the next restart started UNLOCKED. Now lock() first writes a durable
+ * local MARKER (ROBOT_MOTION_LOCK_PENDING_DIR, one fsynced file per robot), removed only when its upsert LANDS or the lock is
+ * cleared; at registration a marker left by ANOTHER process with no row to restore ⇒ the robot starts LOCKED `persistUnknown`
+ * (an unreadable marker too). A deploy that applies 0374 under a still-running pre-Đợt-10 build is a runbook matter
+ * (EDGE_GATEWAY.md §8.12: stop :3000 first) — that build writes no marker.
  */
 import { and, eq, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import path from "node:path";
 import { getDb } from "../../db/connection";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { robotMotionLocks } from "../../../drizzle/schema";
@@ -155,6 +161,72 @@ export function adoptPersistedMotionLock(lock: MotionLock, saved: { reasonCode: 
   adoptedRow.set(lock, { generation: saved.generation, lockedAtMs: new Date(saved.since).getTime(), writer: saved.writerInstanceId ?? null });
 }
 
+// ── doc 81 Đợt 10 final fix wave (I-5, R-10-br) — the "persist pending" marker of a lock ───────────────────────────────────
+
+/** The marker directory (central): ROBOT_MOTION_LOCK_PENDING_DIR, default ./data/robot-motion-lock-pending (tests: a temp dir). */
+export function motionLockPendingDir(): string {
+  const d = process.env.ROBOT_MOTION_LOCK_PENDING_DIR;
+  return path.resolve(d && d.trim() ? d : "./data/robot-motion-lock-pending");
+}
+const markerFile = (robotId: number) => path.join(motionLockPendingDir(), `${robotId}.json`);
+interface PendingMarker {
+  robotId: number;
+  generation: number;
+  reasonCode: string;
+  since: string | null;
+  writer: string;
+  at: string;
+}
+/** Write the marker durably (temp file + fsync + rename) BEFORE the upsert is queued. Never throws (a failure is logged loudly). */
+function markLockPersistPending(robotId: number, state: MotionLockState, writer: string): void {
+  try {
+    mkdirSync(motionLockPendingDir(), { recursive: true });
+    const m: PendingMarker = { robotId, generation: Math.max(1, state.generation ?? 1), reasonCode: String(state.reasonCode ?? "unknown").slice(0, REASON_MAX), since: state.since ?? null, writer, at: new Date().toISOString() };
+    const f = markerFile(robotId);
+    const tmp = `${f}.${process.pid}.tmp`;
+    const fd = openSync(tmp, "w", 0o600);
+    try {
+      writeSync(fd, JSON.stringify(m));
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tmp, f);
+  } catch (err) {
+    console.error(`[Robot] robot ${robotId}: the motion-lock pending marker could not be written (${errText(err)}) — if this lock's DB write also fails, a restart would not know it`);
+  }
+}
+/**
+ * Remove the marker of `robotId` when it is this writer's at a generation ≤ `generation` (a later lock's marker is kept).
+ * SYNCHRONOUS on purpose: the read-check-unlink must not interleave with a lock() that writes a NEWER marker in between.
+ */
+function clearLockPersistPending(robotId: number, generation: number, writer: string): void {
+  try {
+    const m = JSON.parse(readFileSync(markerFile(robotId), "utf8")) as PendingMarker;
+    if (m.writer !== writer || !(m.generation <= generation)) return;
+    unlinkSync(markerFile(robotId));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") console.warn(`[Robot] robot ${robotId}: motion-lock pending marker not removed (${errText(err)})`);
+  }
+}
+/** The marker at registration: none · a valid one · unreadable (counts as a lock that may not have been persisted). */
+function readLockPersistPending(robotId: number): { kind: "none" } | { kind: "marker"; m: PendingMarker } | { kind: "unreadable"; error: string } {
+  let raw: string;
+  try {
+    raw = readFileSync(markerFile(robotId), "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return { kind: "none" };
+    return { kind: "unreadable", error: errText(err) };
+  }
+  try {
+    const m = JSON.parse(raw) as PendingMarker;
+    if (typeof m !== "object" || m === null || typeof m.writer !== "string" || !Number.isFinite(m.generation)) return { kind: "unreadable", error: "malformed marker" };
+    return { kind: "marker", m };
+  } catch (err) {
+    return { kind: "unreadable", error: errText(err) };
+  }
+}
+
 /** UPSERT the current lock of `robotId` (generation never goes backwards; a foreign row is MERGED, never replaced). */
 export function persistMotionLock(
   robotId: number,
@@ -162,8 +234,17 @@ export function persistMotionLock(
   writer: string = PROCESS_WRITER,
   /** rows this lock already CLEARED (its own or adopted — the operator acknowledged them; a delete may still be in flight) */
   acknowledged: ReadonlyArray<RowIdentity> = [],
+  /** I-5 — called once the upsert LANDED (the pending marker of this lock is then removed) */
+  onLanded?: () => void | Promise<void>,
 ): Promise<void> {
   return enqueue(robotId, "upsert", async () => {
+    await upsertMotionLockRow(robotId, state, writer, acknowledged);
+    if (onLanded) await onLanded();
+  });
+}
+
+async function upsertMotionLockRow(robotId: number, state: MotionLockState, writer: string, acknowledged: ReadonlyArray<RowIdentity>): Promise<void> {
+  {
     const db = await getDb();
     if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
     const row = {
@@ -209,7 +290,7 @@ export function persistMotionLock(
           setWhere: supersededBy(row.generation, boot),
         });
     }
-  });
+  }
 }
 
 /**
@@ -295,16 +376,38 @@ export async function loadMotionLocks(robotIds: number[]): Promise<MotionLockLoa
 export function attachMotionLockPersistence(robotId: number, lock: MotionLock, load: MotionLockLoad): "restored" | "none" | "persistUnknown" {
   let outcome: "restored" | "none" | "persistUnknown";
   const saved = load.ok ? load.rows.get(robotId) : undefined;
+  // I-5 — a lock of ANOTHER process (a previous run) whose DB write never landed, or a marker that cannot be read
+  const pending = readLockPersistPending(robotId);
+  const foreignPending = pending.kind === "unreadable" || (pending.kind === "marker" && pending.m.writer !== writerOf(lock));
+  let unpersisted: string | null = null;
   if (!load.ok) outcome = "persistUnknown";
   else if (saved) {
     lock.restore(saved);
     // R-10-aj / scan #71 — its clear deletes exactly this row (generation, lockedAt, writer)
     adoptedRow.set(lock, { generation: saved.generation, lockedAtMs: new Date(saved.since).getTime(), writer: saved.writerInstanceId ?? null });
     outcome = "restored";
+  } else if (foreignPending) {
+    outcome = "persistUnknown";
+    unpersisted =
+      pending.kind === "marker"
+        ? `the motion lock taken before the restart (${pending.m.reasonCode}, generation ${pending.m.generation}, since ${pending.m.since ?? "?"}) was never persisted`
+        : `its motion-lock pending marker is unreadable (${(pending as { error: string }).error})`;
   } else outcome = "none";
+  if (foreignPending && outcome === "restored") {
+    try {
+      unlinkSync(markerFile(robotId)); // the restored row is the evidence now
+    } catch {
+      /* removed by the next clear */
+    }
+  }
   lock.attachPersistence({
-    locked: (state) => void persistMotionLock(robotId, state, writerOf(lock), clearedHere.get(lock) ?? []),
+    locked: (state) => {
+      const w = writerOf(lock);
+      markLockPersistPending(robotId, state, w); // I-5 — durable BEFORE the upsert is even queued
+      void persistMotionLock(robotId, state, w, clearedHere.get(lock) ?? [], () => clearLockPersistPending(robotId, Math.max(1, state.generation ?? 1), w));
+    },
     cleared: (state) => {
+      clearLockPersistPending(robotId, Number.MAX_SAFE_INTEGER, writerOf(lock)); // I-5 — decided: no restart lock for it
       const adopted = adoptedRow.get(lock);
       adoptedRow.delete(lock);
       // R-10-u — this process clears the row it holds (its own, or the one it adopted — R-10-aj): remember exactly that row
@@ -323,9 +426,10 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
       );
     },
   });
-  if (!load.ok) {
-    console.error(`[Robot] robot ${robotId}: persisted motion lock could not be read — starting LOCKED (${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE}, fail-closed, B4): ${load.error}`);
-    lock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, `persisted motion lock unreadable at registration: ${load.error}`);
+  if (!load.ok || unpersisted !== null) {
+    const why = !load.ok ? `persisted motion lock unreadable at registration: ${load.error}` : `${unpersisted} (I-5)`;
+    console.error(`[Robot] robot ${robotId}: ${why} — starting LOCKED (${MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE}, fail-closed)`);
+    lock.lock(MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, why);
     const since = lock.snapshot().since;
     if (since) bootSinceByRobot.set(robotId, new Date(since)); // R-4-t — read lazily by the queued upserts
   } else {
