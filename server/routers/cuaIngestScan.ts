@@ -59,6 +59,15 @@
  */
 import ts from "typescript";
 
+/**
+ * Lỗi CÓ KIỂU của bộ quét (công cụ tĩnh cho test/census, không nằm trên đường request).
+ * Tách khỏi `Error` trơn để cổng appErrorCoverage (đo `throw new Error`) chỉ canh thứ
+ * có thể tới mắt người dùng.
+ */
+export class BoSuyMatMucTieuError extends Error {
+  override readonly name = "BoSuyMatMucTieuError";
+}
+
 /** Tên hàm quyết định phiên bản ingest DÙNG CHUNG, khai ở `machineApiRouters.ts`. */
 export const TEN_HAM_QUYET_DINH = "quyetDinhPhienBanIngest";
 
@@ -529,7 +538,7 @@ export function coLoiGoiParseTrenSchema(
     }
   }
   if (routerObj === null) {
-    throw new Error(`${duong} — không tìm thấy \`const ${tenBienRouter} = router({…})\` — bộ suy mất mục tiêu`);
+    throw new BoSuyMatMucTieuError(`${duong} — không tìm thấy \`const ${tenBienRouter} = router({…})\` — bộ suy mất mục tiêu`);
   }
 
   let target: ts.Node | null = null;
@@ -542,7 +551,7 @@ export function coLoiGoiParseTrenSchema(
     }
   }
   if (target === null) {
-    throw new Error(`${duong} — không tìm thấy cửa "${tenCua}" trong \`${tenBienRouter}\` — bộ suy mất mục tiêu`);
+    throw new BoSuyMatMucTieuError(`${duong} — không tìm thấy cửa "${tenCua}" trong \`${tenBienRouter}\` — bộ suy mất mục tiêu`);
   }
 
   const daTham = new Set<string>();
