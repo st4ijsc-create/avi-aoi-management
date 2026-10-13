@@ -3852,7 +3852,9 @@
       "yieldAlertThreshold": "良率告警阈值",
       "zone": "区域(zone)",
       "kbGoldenSet": "黄金问题集",
-      "safetyPlcConfig": "安全PLC配置"
+      "safetyPlcConfig": "安全PLC配置",
+      "edgePendingStop": "待处理的停止指令",
+      "orphanedWriteIntent": "孤立的 OT 写入意图"
     },
     "operation": {
       "updateApiKey": "更新 API 密钥",
@@ -4016,7 +4018,10 @@
       "assignEngineeringItem": "分配待审批事项",
       "unassignEngineeringItem": "取消分配待审批事项",
       "approveSafetyPlcConfig": "批准安全PLC配置",
-      "rejectSafetyPlcConfig": "驳回安全PLC配置"
+      "rejectSafetyPlcConfig": "驳回安全PLC配置",
+      "resolveEdgeStop": "记录停止指令的处理方式",
+      "resolveWriteIntent": "为孤立写入记录未知结果",
+      "listEdgeResolution": "查看待处理的停止指令和孤立写入"
     },
     "field": {
       "holderUserId": "密钥的发放对象（必须是现有的在职用户）",
@@ -4394,7 +4399,12 @@
       "assigneeInvalid": "被分配人无效：此人不在该事项的\"分配给\"列表中（不存在、已停用、无权查看该事项的页面、与该事项不属于同一工厂，或——对于运行——无法查看该运行控制的所有设备或机器人）。请从列表中选择人员。",
       "safetyPlcConfigChanged": "该配置在显示给您之后已被修改——请重新加载，查看新内容及其摘要后再作决定。",
       "simPlcConfigNeverTrusted": "模拟（sim）安全PLC配置永远不被信任——没有可批准的内容。",
-      "plcTrustMigrationMissing": "此数据库尚未应用迁移 0368（安全PLC双人审核）——未保存任何内容。请管理员应用该迁移。"
+      "plcTrustMigrationMissing": "此数据库尚未应用迁移 0368（安全PLC双人审核）——未保存任何内容。请管理员应用该迁移。",
+      "stopNotResolvable": "只有被拒绝或失败的停止指令才能由人员结案；仍在等待的停止指令会被执行，不能手动关闭。",
+      "writeIntentTooRecent": "该写入太新——可能仍在进行中。请等待 10 分钟后再记录。",
+      "alreadyResolved": "该项已被处理（他人已处理，或已有结果）。请刷新列表。",
+      "edgeControlUnavailable": "数据库中没有边缘控制结构（未应用迁移 0374）——未执行任何操作。",
+      "factoryScopeUnavailable": "无法读取您的工厂范围——为安全起见已拒绝。请稍后重试。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -22134,5 +22144,41 @@
     "userFallback": "用户 #{{id}}",
     "noApprovalRight": "被分配不授予审批权限。",
     "needs2fa": "分配需要为您的账户启用两步验证（2FA）。请前往 设置 > 安全 进行设置。"
+  },
+  "edgeResolution": {
+    "title": "待处理的停止指令和孤立写入",
+    "unavailable": "边缘控制结构不可用（未应用迁移 0374）——无可显示内容。",
+    "empty": "您的范围内没有待处理的停止指令，也没有孤立写入。",
+    "stopsHeading": "未确认的停止指令（{{shown}}/{{total}}）",
+    "intentsHeading": "孤立的 OT 写入——尚无结果（{{shown}}/{{total}}）",
+    "colDevice": "设备",
+    "colOwner": "请求节点 / 当前所有者",
+    "colCreated": "创建时间",
+    "colState": "状态",
+    "colAdapter": "适配器",
+    "colCommand": "指令 / 标签",
+    "colAge": "时长（分钟）",
+    "robot": "机器人",
+    "adapter": "适配器",
+    "central": "中心",
+    "flag": {
+      "failed": "失败——需要人员处理",
+      "refused": "被拒绝——需要人员处理",
+      "ownerCannotList": "边缘节点看不到该设备——由中心执行",
+      "overdue": "已逾期——仍须停止",
+      "undeliverable": "无法送达——节点没有有效凭据",
+      "pending": "等待执行"
+    },
+    "resolveStop": "记录处理结果",
+    "resolveIntent": "记录未知结果",
+    "intentTooRecent": "可能仍在写入——请等待 {{min}} 分钟",
+    "stopDialogTitle": "记录停止指令 #{{id}} 的处理方式？",
+    "stopDialogDesc": "该停止指令已被拒绝或失败——不会再自动执行。仅在设备已通过其他方式停止并经现场检查后再记录。此操作连同原因一起审计；该指令仍显示为“已由人员处理”。",
+    "intentDialogTitle": "为写入 #{{id}} 记录“结果未知”？",
+    "intentDialogDesc": "进程在写入过程中停止：指令可能已到达设备，也可能没有。请先在现场检查实际值。此操作在指令台账中追加一行“结果未知”的结果记录（不修改、不删除任何内容），并连同原因审计；不会向设备发送任何内容。此后适配器的所有权变更仍会被阻止 10 分钟。",
+    "reasonLabel": "原因 / 处理方式（必填，至少 3 个字符）",
+    "confirm": "确认并记录审计",
+    "stopResolved": "已记录停止指令的处理方式",
+    "intentResolved": "已为孤立写入记录未知结果"
   }
 }

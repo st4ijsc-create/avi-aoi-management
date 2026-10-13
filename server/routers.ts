@@ -165,6 +165,7 @@ import { commissioningRouter } from "./routers/commissioningRouter"; // C2 (doc 
 import { unsMappingRouter } from "./routers/unsMappingRouter"; // Doc 24 (Connectivity): no-code Tag → UNS mapping designer (config + pure preview; UNS_MAPPING_ENABLED, default OFF; read-direction only, no device write path)
 import { systemHealthRouter } from "./routers/systemHealthRouter"; // Tier-1b (doc 24): READ-ONLY health getters — OT store-and-forward buffer + connection HA supervisors + DINOv2 model tier
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
+import { edgeResolutionRouter } from "./routers/edgeResolutionRouter"; // doc 81 Dot 10 F2 (R-10-af / R-10-ax): resolve STOP / orphaned write intent
 import { secsGemRouter } from "./routers/secsGemRouter"; // P3a: SECS/GEM framework (SECS_GEM_ENABLED)
 import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AMR framework (VDA5050_ENABLED)
 import { simTargetsRouter } from "./routers/simTargetsRouter"; // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
@@ -569,6 +570,7 @@ export const appRouter = router({
   systemHealth: systemHealthRouter, // Tier-1b (doc 24): READ-ONLY health getters — OT store-and-forward + connection HA supervisors + DINOv2 model tier
   readiness: readinessRouter, // doc 40 Wave 3A (§11): READ-ONLY Control/Trust readiness matrix (gate/flag runtime state; RBAC admin_system|machine_control)
   robot: robotRouter,
+  edgeResolution: edgeResolutionRouter, // doc 81 Dot 10 F2: pending STOPs + orphaned OT write intents (list / resolve, audited)
   secsGem: secsGemRouter,
   vda5050: vda5050Router,
   simTargets: simTargetsRouter, // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)

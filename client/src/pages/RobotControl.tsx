@@ -23,6 +23,7 @@ import { withParams } from "@/lib/engineeringDeepLink";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import { canClearMotionLock } from "@/lib/robotMotionLock";
+import EdgeResolutionPanel from "@/components/edge/EdgeResolutionPanel";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
@@ -114,6 +115,9 @@ export default function RobotControl() {
   // in FORBIDDEN. Advisory only; the server stays the wall.
   const { role: actuationRole } = useActuationReadiness();
   const canClearLock = canClearMotionLock(actuationRole, canControl);
+  // doc 81 Đợt 10 F2 (R-10-af / R-10-ax) — resolving a refused STOP / an orphaned write intent is admin / supervisor (+ 2FA)
+  // AND machine_control/canEdit on the server (edgeResolution.*): hide the buttons that would end in FORBIDDEN.
+  const canResolveEdge = canControl && (actuationRole === "admin" || actuationRole === "supervisor");
   // doc 54 Wave B — the enable-toggle + connection-test SERVER procedures (setEnabled/
   // testConnection) are adminProcedure (admin-only), so a non-admin with machine_control
   // would see the affordance but hit a 403. Gate THESE two controls on isAdmin to match the
@@ -424,6 +428,9 @@ export default function RobotControl() {
             </Table>
           </CardContent>
         </Card>
+
+        {/* doc 81 Đợt 10 F2 — lệnh DỪNG chờ (device_pending_stops) + lệnh ghi OT mồ côi: chỉ người mới đóng được, có kiểm toán */}
+        <EdgeResolutionPanel canResolve={canResolveEdge} />
 
         {/* Detail: telemetry + job log (điều khiển ở /command-console) */}
         {selected && (

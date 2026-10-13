@@ -698,7 +698,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // robotManager's robot → factory map; another factory's robot ⇒ NOT_FOUND exactly like a missing one) ⇒ the scanner files it under
 // D (scope applied in a helper, not a direct call in the procedure body — same as `robot.disableAutomation` above). Measured with
 // this scanner on the integration tree (before = D 1138 at the Đợt 10 base; after = D 1139 · tong 2308). No baseline row added.
-const GHIM = { A: 333, B: 8, C: 472, D: 1139, S: 356, tong: 2308 } as const;
+// ★★★ 2026-10-13 (doc 81 Đợt 10 task F2 — rulings R-10-af / R-10-ax) — **D 1139 → 1141 · S 356 → 357 · tong 2308 → 2311 ·
+// A/B/C unchanged.** NEW `edgeResolution` router (`edgeResolutionRouter.ts`): `list` (query, machine_control/canView) passes the
+// caller's STRICT factory scope (`resolveTenantFactoryScope(...strict)`) into the read ⇒ S; `resolveStop` / `resolveIntent`
+// (mutations, supervisorProcedure + machine_control/canEdit, scope applied in the service — out of scope ⇒ the same NOT_FOUND as a
+// missing row) ⇒ D by definition. Measured with this scanner (before = this pin; after = D 1141 · S 357 · tong 2311). F1's
+// untracked `__edgeE2eHarness.dot10.ts` adds nothing to any group (it is the §1 blind-cell line, F1's to fix). No baseline row.
+const GHIM = { A: 333, B: 8, C: 472, D: 1141, S: 357, tong: 2311 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
