@@ -13,14 +13,14 @@
  *     server if the process dies); the first one that finds the seed ENABLED disables it and records that in a marker file;
  *   • at teardown the harness drops its shared lock and, only if it can then take the lock EXCLUSIVELY (no other harness
  *     running), re-enables the seed and removes the marker — a harness never re-enables it under another one;
- *   • a crash: process.on('exit') runs the same restore synchronously (a child node process, bounded); a marker found with the
- *     lock free at the next start / by the census (safetySeedIntact.finalfix.dot10.db) is a leftover — the census fails.
+ *   • a crash: NO exit hook (residual R-10-bt — the dying process still holds its shared lock, a restore there can never run): a
+ *     marker found with the lock free is a leftover — reported at the next harness start and restored by its release; the census
+ *     (safetySeedIntact.finalfix.dot10.db) fails with the way out (seedLeftover).
  * Not a test file: imported by the E2E harness and its census.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import postgres from "postgres";
 
 export const SIM_SAFETY_SEED_CODE = "SIM-SAFETY-PLC-1";
@@ -36,35 +36,33 @@ export interface SeedGuard {
   /** the seed row ids the harnesses disabled (the marker's ids) — what the attack suite toggles to measure R-10-aw */
   disabledIds: number[];
   release(): Promise<void>;
+  __abandonForTests?(): Promise<void>;
 }
 
-const exitHooks = new Set<string>();
-
-/** Restore synchronously (exit handler): a child process takes the exclusive lock (retried ≤ 5 s) and re-enables the seed. */
-function restoreSync(dbUrl: string): void {
+/** The leftover of a harness that died between disable and restore (the census's wording), read without changing anything. */
+export async function seedLeftover(dbUrl: string): Promise<{ leftover: boolean; message: string }> {
   const marker = seedMarkerFile(dbUrl);
-  if (!existsSync(marker)) return;
-  const script = `
-    import postgres from "postgres";
-    import { readFileSync, rmSync } from "node:fs";
-    const sql = postgres(process.env.SEED_DB, { max: 1, connect_timeout: 10, onnotice: () => {} });
-    try {
-      for (let i = 0; i < 50; i++) {
-        const [r] = await sql\`SELECT pg_try_advisory_lock(${SEED_LOCK_KEY}) AS ok\`;
-        if (r.ok) {
-          const m = JSON.parse(readFileSync(process.env.SEED_MARKER, "utf8"));
-          await sql\`UPDATE safety_plc_configs SET enabled = true WHERE code = ${JSON.stringify(SIM_SAFETY_SEED_CODE)} AND id IN \${sql(m.ids)}\`;
-          rmSync(process.env.SEED_MARKER, { force: true });
-          await sql\`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})\`;
-          break;
-        }
-        await new Promise((x) => setTimeout(x, 100));
-      }
-    } finally { await sql.end({ timeout: 2 }); }`;
-  spawnSync(process.execPath, ["--input-type=module", "-e", script], { cwd: process.cwd(), env: { ...process.env, SEED_DB: dbUrl, SEED_MARKER: marker }, timeout: 15_000, stdio: "ignore" });
+  if (!existsSync(marker)) return { leftover: false, message: "no seed marker" };
+  const conn = postgres(dbUrl, { max: 1, connect_timeout: 30, onnotice: () => {} });
+  try {
+    const [r] = await conn`SELECT pg_try_advisory_lock(${SEED_LOCK_KEY}) AS ok`;
+    if (!r.ok) return { leftover: false, message: "a harness is running (its marker is live)" };
+    await conn`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`;
+    return {
+      leftover: true,
+      message:
+        `${SIM_SAFETY_SEED_CODE} was left DISABLED by a harness that did not finish (marker ${marker}, no harness running). It is restored at the next harness start/release ` +
+        "(run any F1 E2E suite through vitest.serial.config.ts), or by hand: UPDATE safety_plc_configs SET enabled = true WHERE code = 'SIM-SAFETY-PLC-1' on _test, then delete the marker.",
+    };
+  } finally {
+    await conn.end({ timeout: 5 });
+  }
 }
 
-/** Take the shared seed lock, disable the seed if it is enabled (recording it), and arm the crash restore. */
+/**
+ * Take the shared seed lock and disable the seed if it is enabled (recording it). A leftover of a harness that died is reported
+ * here and restored by THIS guard's release (residual R-10-bt: no exit hook — a dying process still holds its shared lock).
+ */
 export async function acquireSeedGuard(dbUrl: string): Promise<SeedGuard> {
   if (!/_test\b/.test(dbUrl)) {
     // never a seed change outside a _test DB: an inert guard (nothing disabled, nothing to restore)
@@ -73,6 +71,13 @@ export async function acquireSeedGuard(dbUrl: string): Promise<SeedGuard> {
   }
   const marker = seedMarkerFile(dbUrl);
   const lockConn = postgres(dbUrl, { max: 1, connect_timeout: 30, onnotice: () => {} });
+  if (existsSync(marker)) {
+    const [r] = await lockConn`SELECT pg_try_advisory_lock(${SEED_LOCK_KEY}) AS ok`;
+    if (r.ok) {
+      await lockConn`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`;
+      console.warn(`[seed guard] ${SIM_SAFETY_SEED_CODE} was left disabled by a harness that did not finish (marker ${marker}) — it stays off for this run and is restored at this harness's release`);
+    }
+  }
   await lockConn`SELECT pg_advisory_lock_shared(${SEED_LOCK_KEY})`;
   const turned = (await lockConn`UPDATE safety_plc_configs SET enabled = false WHERE code = ${SIM_SAFETY_SEED_CODE} AND enabled RETURNING id`).map((r) => Number(r.id));
   if (turned.length > 0) {
@@ -80,13 +85,14 @@ export async function acquireSeedGuard(dbUrl: string): Promise<SeedGuard> {
     writeFileSync(marker, JSON.stringify({ ids: [...new Set([...prev, ...turned])], at: new Date().toISOString(), pid: process.pid }));
   }
   const disabledIds = existsSync(marker) ? (JSON.parse(readFileSync(marker, "utf8")) as { ids: number[] }).ids : [];
-  if (!exitHooks.has(dbUrl)) {
-    exitHooks.add(dbUrl);
-    process.on("exit", () => restoreSync(dbUrl));
-  }
   let released = false;
   return {
     disabledIds,
+    /** tests only — the process "dies": the connection closes (its shared lock goes), nothing is restored */
+    async __abandonForTests() {
+      released = true;
+      await lockConn.end({ timeout: 5 });
+    },
     async release() {
       if (released) return;
       released = true;

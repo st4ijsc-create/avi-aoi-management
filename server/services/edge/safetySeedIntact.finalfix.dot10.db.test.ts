@@ -7,11 +7,11 @@
  *   • CENSUS — when no harness is running (the exclusive seed lock is free) the seed is ENABLED and no marker is left behind
  *     (a crash between disable and restore would show here).
  */
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
-import { SEED_LOCK_KEY, SIM_SAFETY_SEED_CODE, acquireSeedGuard, seedMarkerFile } from "./__edgeSeedGuard.dot10";
+import { SEED_LOCK_KEY, SIM_SAFETY_SEED_CODE, acquireSeedGuard, seedLeftover, seedMarkerFile } from "./__edgeSeedGuard.dot10";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -50,6 +50,32 @@ describe.skipIf(!onTest)("final fix wave I-6 — the seed guard on _test", () =>
     }
   }, 60_000);
 
+  it("★ residual (R-10-bt): a harness that DIES between disable and restore leaves the seed off — the census names it with the way out, and the NEXT harness start/release restores it (no exit hook pretends otherwise)", async () => {
+    const [seed] = await sql`SELECT id, enabled FROM safety_plc_configs WHERE code = ${SIM_SAFETY_SEED_CODE}`;
+    if (!seed || !seed.enabled) return;
+    const dead = await acquireSeedGuard(DB_URL);
+    await dead.__abandonForTests(); // the process "dies": its connection closes, nothing restores
+    const left = await seedLeftover(DB_URL);
+    expect(left).toMatchObject({ leftover: true });
+    expect(left.message).toMatch(/restored at the next harness start/);
+    const warns: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => void warns.push(a.map(String).join(" ")));
+    try {
+      const next = await acquireSeedGuard(DB_URL);
+      expect(warns.join(" | ")).toMatch(/left .*disabled by a harness that did not finish/);
+      await next.release();
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await sql`SELECT enabled FROM safety_plc_configs WHERE id = ${seed.id}`)[0].enabled).toBe(true);
+    expect(await seedLeftover(DB_URL)).toMatchObject({ leftover: false });
+  }, 60_000);
+
+  it("★ the guard installs NO process exit hook (a dying process still holds its shared lock — such a restore can never run)", () => {
+    const src = readFileSync(path.join(process.cwd(), "server/services/edge/__edgeSeedGuard.dot10.ts"), "utf8");
+    expect(src).not.toMatch(/process\.on\(\s*["']exit["']/);
+  });
+
   it("★ CENSUS: no harness running ⇒ the seed is enabled and no marker is left behind", async () => {
     const conn = await sql.reserve();
     try {
@@ -57,7 +83,8 @@ describe.skipIf(!onTest)("final fix wave I-6 — the seed guard on _test", () =>
       if (!r.ok) return; // an E2E harness is running right now — measured by its own teardown
       try {
         const rows = await conn`SELECT enabled FROM safety_plc_configs WHERE code = ${SIM_SAFETY_SEED_CODE}`;
-        expect(existsSync(seedMarkerFile(DB_URL)), `leftover seed marker ${seedMarkerFile(DB_URL)} — a harness crashed between disable and restore`).toBe(false);
+        const left = await seedLeftover(DB_URL);
+        expect(existsSync(seedMarkerFile(DB_URL)), left.message).toBe(false);
         for (const row of rows) expect(row.enabled, "SIM-SAFETY-PLC-1 left DISABLED on _test").toBe(true);
       } finally {
         await conn`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`;
