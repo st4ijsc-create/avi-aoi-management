@@ -208,6 +208,8 @@ const CLASSIFIED: Record<string, Kind> = {
   "server/services/edge/edgeCentralCommon.ts": { kind: "allow", reason: "the node scope predicate (runInNodeScope → foeEngine.runVisibleTo with the NODE's factory); no run id from a caller" },
   "server/services/edge/edgeRunAnalysis.ts": { kind: "allow", reason: "reads the step rows of a run id given by central's node endpoints after their assignment + scope check" },
   "server/services/edge/__edgeCentralKit.dot10.ts": { kind: "allow", reason: "test fixture of the Đợt 10 B suites (_test only)" },
+  // 2026-10-13 doc 81 Đợt 10 task F1 — classified (new file of the population): the two-process E2E / attack harness
+  "server/services/edge/__edgeE2eHarness.dot10.ts": { kind: "allow", reason: "test fixture of the Đợt 10 F1 two-process suites (_test only, refuses any other DB); not imported by product code" },
   "server/services/edge/edgeExecutionAgent.ts": { kind: "allow", reason: "runs ON the edge (no caller identity): executes only runs central handed THIS node under a claim (doc 81 Đợt 10 C: foeEngine.driveEdgeRunFromPackage walks the SIGNED run package of that claim, no DB; every non-STOP step asks central's /authorize)" },
   "server/services/edge/edgeCoordinator.ts": { kind: "allow", reason: "service: run-id entries (assignRun / syncRunResult / listRunsForNode) are reached only through edgeRuntimeRouter + api/v1 /edge/sync, both checked here" },
   "server/services/edge/edgeRuntime.ts": { kind: "allow", reason: "runs ON an edge host (no caller identity); executeAssignedRun has no production caller" },

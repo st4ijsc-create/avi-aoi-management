@@ -1,331 +1,285 @@
 /**
- * doc 81 Đợt 9 task S3 — the EDGE walker (foeEngine.driveEdgeClaimedRun + the run guard + stopLiveRunForCentralAbort) on the
- * REAL `_test` DB with the REAL engine and the REAL robot dispatcher (the robot is an in-process counting fake driver):
- *   • it walks THE CENTRAL RUN (ID mapping) only under the claim its database shows — a wrong token / seq, a redeploy, an
- *     inactive owner ⇒ refused, nothing walked, nothing written;
- *   • the SAME gates as central: an un-approved gate pauses the run (no motion); after a central approval by someone else the
- *     next segment actuates; STOP steps are sent;
- *   • a central abort mid-run reaches the walker through the run guard (no HTTP) or the signal: the non-STOP step after the
- *     abort point is NEVER sent, the run's STOP step is still SENT, the run stays 'aborted' (never resurrected);
- *   • a revoked node credential stops the non-STOP steps; a STOP never asks the guard (it is still sent);
- *   • a stale claim (re-claimed elsewhere) ⇒ the walker lets go without writing the run row.
+ * doc 81 Đợt 9 task S3 — the EDGE walker of the central run: ID mapping, the same gates as central, a central abort reaching a
+ * walking run, the signal during a wait, a revoked credential, the L-7 STOP re-send, a stale claim.
+ *
+ * ★ ADAPTED TO THE v2 FLOW 2026-10-13 (doc 81 Đợt 10 task F1, ruling R-10-bi). The Đợt 9 version drove
+ *   foeEngine.driveEdgeClaimedRun (removed by Đợt 10 C) IN THIS PROCESS against the central DB, with a run guard reading the DB.
+ *   v2 has no such walker: the edge walks a SIGNED run package (driveEdgeRunFromPackage) with no DB, every non-STOP step asks
+ *   central's /authorize, and the device front ends exist only in an edge-role process. So each proof is restated for v2 and
+ *   measured either in-process where no device is involved (the package / claim refusals) or through the two-process harness
+ *   (__edgeE2eHarness.dot10: central here, edgeGatewayMain in a spawned no-DB process):
+ *     1 ID mapping              — central refuses a wrong claim seq / a redeployed definition; an inactive owner is signed as
+ *                                  `owner: null` and the walker refuses that package (v2: the check moved to the package); the walker
+ *                                  refuses a package that is not for its claim or whose definition is not the signed hash; the
+ *                                  edge's verifier refuses a package of another run / node — nothing walked, nothing written;
+ *     2 same gates              — an un-approved gate pauses (no authorisation, no motion); /authorize before approval ⇒
+ *                                  gate_required; after a central approval by ANOTHER person the next segment actuates;
+ *     3 abort, no run guard     — v2 has no run guard: with every progress / pull answer of the run LOST (the network drops the
+ *                                  abort flag), the walker still learns the abort from /authorize (409 stopped) — the next
+ *                                  non-STOP step is never sent, the STOP is sent, the run stays aborted;
+ *     4 the signal during a wait— a progress answer with abortRequested wakes the walker from a 20 s wait at once;
+ *     5 L-7 re-send             — a run that is NOT aborted (paused / failed) is never touched; aborted while paused after
+ *                                  actuating ⇒ the edge re-sends the STOP (its central confirmation: BUG F1-4, s4 suite);
+ *     6 stale claim             — re-claimed elsewhere ⇒ /authorize answers claim_stale, the walker lets go: no non-STOP step,
+ *                                  no run-level write;
+ *     7 revoked credential      — v2 (D5): the next non-STOP step cannot be authorised (401) ⇒ never sent; a STOP never asks and
+ *                                  is sent.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { createHash } from "node:crypto";
-import postgres from "postgres";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
-const h = vi.hoisted(() => ({
-  robotId: 0,
-  motions: 0,
-  stops: 0,
-}));
-
-vi.mock("../robot/robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
-vi.mock("../robot/robotManager", () => ({
-  getActiveRobot: (id: number) =>
-    id === h.robotId
-      ? {
-          driver: {
-            vendor: "sim",
-            isConnected: () => true,
-            runJob: async (job: { jobType: string }) => {
-              if (job.jobType === "abort") h.stops++;
-              else h.motions++;
-              return { ok: true, status: "done", detail: { fake: true } };
-            },
-            abort: async () => {
-              h.stops++;
-            },
-            health: async () => ({ vendor: "sim", connected: true }),
-          },
-        }
-      : undefined,
-}));
-vi.mock("../safety/plc/safetyPlcAdapter", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("../safety/plc/safetyPlcAdapter")>();
-  return {
-    ...orig,
-    safetyPlcAdapterEnabled: () => true,
-    listPlcConfigs: async () => [{ code: "S9-SPLC", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } }],
-    backendForConfig: () => ({
-      kind: "modbus" as const,
-      label: () => "fake real PLC",
-      read: async () => ({ estop: false }),
-      readChecked: async () => ({ status: { estop: false }, unreadable: [] }),
-    }),
-  };
+vi.hoisted(() => {
+  if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "f1-dot9-s3-v2-session-secret-0123456789abcdef";
 });
 
-const DB_URL = process.env.DATABASE_URL;
-const DAU = `S9E-${Date.now()}`;
-const ENV: Record<string, string | undefined> = {
-  EDGE_RUNTIME_ENABLED: "true",
-  FOE_ENABLED: "true",
-  FOE_SIM_GATE_REQUIRED: "false",
-  ROBOT_CONTROL_ENABLED: "true",
-  ROBOT_COMMISSIONING_REQUIRED: "false",
-  ROBOT_CONTROL_TIMEOUT_MS: "5000",
-  SEC_PLATFORM: undefined,
-  FIELD_V2_ENABLED: undefined,
-  // the robot safety preflight is measured by its own suites; under a full parallel run on one dev box its bounded read was
-  // measured to answer UNKNOWN (SAFETY_UNKNOWN — correctly refused) on the first motion — off here so these tests measure the
-  // edge gates. Exactly "false" is the documented off value (safetyPreflightPolicy).
-  ROBOT_SAFETY_PREFLIGHT_ENABLED: "false",
-  // the run guard's read bound (default 2 s): a full parallel suite on one dev DB can exceed it — then the guard is 'unknown'
-  // and the non-STOP step is (correctly) refused. Widened here so the gate tests measure the gates, not the machine's load.
-  EDGE_GUARD_DEADLINE_MS: "10000",
+import { createHash, randomBytes } from "node:crypto";
+import { setupCentral, waitFor, sleep, type Central, type EdgeProc, type CentralTestHooks } from "./__edgeE2eHarness.dot10";
+
+const DB_URL = process.env.DATABASE_URL ?? "";
+const onTest = /_test\b/.test(DB_URL);
+let c: Central;
+let edge: EdgeProc;
+
+const motions = () => (edge.counts()?.motions ?? []).filter((m) => m.robotId === c.ids.robotA).length;
+const stops = () => (edge.counts()?.stops ?? []).filter((m) => m.robotId === c.ids.robotA).length;
+const n = async (q: Promise<Array<{ n: number }>>) => Number((await q)[0].n);
+
+/** test-only central pieces (CentralTestHooks): the console's tRPC router and a real engineer session */
+const hooks: CentralTestHooks = {
+  async trpcRouter() {
+    const [{ router }, { robotRouter }] = await Promise.all([import("../../_core/trpc"), import("../../routers/robotRouter")]);
+    return router({ robot: robotRouter });
+  },
+  async mintSession(sql, userId, openId) {
+    const { sdk } = await import("../../_core/sdk");
+    const t = await sdk.signSession({ openId, appId: "f1-e2e", name: "F1 engineer" }, { expiresInMs: 60 * 60 * 1000 });
+    await sql`INSERT INTO user_sessions ("userId", "sessionToken", "expiresAt", "isActive") VALUES (${userId}, ${t}, now() + interval '1 hour', true)`;
+    return t;
+  },
 };
-const saved: Record<string, string | undefined> = {};
-const ids: Record<string, number> = {};
-const u = { owner: 0, approver: 0, admin: 0 };
-let sql: ReturnType<typeof postgres>;
-let token = "";
-const wfIds: number[] = [];
-const sha = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const motion = (id: string) => ({ id, type: "command", machineId: ids.robotMachine, command: "start", args: { robotId: h.robotId } });
-const stop = (id: string) => ({ id, type: "command", machineId: ids.robotMachine, command: "abort", args: { robotId: h.robotId } });
-
-async function node() {
-  const { authenticateEdgeNodeToken } = await import("./edgeNodeCredentials");
-  const p = await authenticateEdgeNodeToken(token);
-  if (!p) throw new Error("node credential not accepted");
-  return p;
-}
-async function runStatus(id: number) {
-  return String((await sql`SELECT status FROM orchestration_runs WHERE id = ${id}`)[0].status);
-}
-async function stepRow(id: number, stepId: string) {
-  return (await sql`SELECT status, error, "resultJson" FROM orchestration_run_steps WHERE "runId" = ${id} AND "stepId" = ${stepId}`)[0];
-}
-/** Deploy, start for the node, claim (central functions, the node's own principal). */
-async function startAndClaim(tag: string, steps: unknown[]) {
-  const ref = `${DAU}-${tag}`;
-  const def = { ref, name: ref, steps };
-  const [wf] = await sql`INSERT INTO orchestration_workflows (ref, name, "definitionJson", status, "scopeKey") VALUES (${ref}, ${ref}, ${sql.json(def as never)}, 'active', 'global') RETURNING id`;
-  wfIds.push(Number(wf.id));
-  const { startRun } = await import("../orchestration/foe/foeEngine");
-  const r = await startRun(ref, {}, { id: u.owner, role: "admin", name: "owner" }, { edgeNodeId: ids.node });
-  expect(r).toMatchObject({ ok: true, status: "queued" });
-  return { runId: r.runId!, def, ...(await claim(r.runId!)) };
-}
-async function claim(runId: number) {
-  const c = await import("./edgeExecutionCentral");
-  const n = await node();
-  const p = (await c.pullForNode(n)).data!.runs.find((x) => x.runId === runId)!;
-  // final wave F2 — the pull carries no digest: the edge reads its OWN (here: the same DB) and central compares it fresh at the claim
-  const { computeBindingDigest } = await import("../orchestration/foe/foeGateApproval");
-  const { getDb } = await import("../../db/connection");
-  const edgeDigest = await computeBindingDigest((await getDb())!, p.definition!);
-  const got = await c.claimForNode(n, runId, { claimSeq: p.claimSeq, defHash: p.defHash, bindingDigest: edgeDigest });
-  expect(got.http).toBe(200);
-  return { claimSeq: got.data!.claimSeq, token: got.data!.claimToken, tokenHash: sha(got.data!.claimToken), defHash: p.defHash };
-}
-async function drive(c: { runId: number; claimSeq: number; tokenHash: string; defHash: string }) {
-  const { driveEdgeClaimedRun } = await import("../orchestration/foe/foeEngine");
-  return driveEdgeClaimedRun(c.runId, { claimSeq: c.claimSeq, claimTokenHash: c.tokenHash, defHash: c.defHash });
-}
-/** The segment ended at the gate: report it, approve centrally (another person), claim the next segment. */
-async function approveAndReclaim(c: { runId: number; claimSeq: number; token: string }, gateId: string) {
-  const central = await import("./edgeExecutionCentral");
-  expect((await central.completeForNode(await node(), c.runId, { claimSeq: c.claimSeq, claimToken: c.token, seq: 1, status: "awaiting_confirm" })).http).toBe(200);
-  const { getRun, resumeRun } = await import("../orchestration/foe/foeEngine");
-  const view = await getRun(c.runId, { bindingDigest: true });
-  const res = await resumeRun(c.runId, { approved: true, expectedStepId: gateId, expectedDefHash: view!.defHash!, expectedBindingDigest: view!.bindingDigest! }, { id: u.approver, role: "admin", name: "approver" });
-  expect(res).toMatchObject({ ok: true, status: "queued" });
-  return claim(c.runId);
-}
-
-describe.skipIf(!DB_URL)("doc 81 Đợt 9 S3 — the edge walker of the central run (real engine, real robot dispatcher, _test)", () => {
+describe.skipIf(!onTest)("doc 81 Đợt 9 S3 (v2) — the edge walker of the central run (signed package, per-step authorize, no DB on the edge)", () => {
   beforeAll(async () => {
-    expect(DB_URL).toMatch(/_test/); // never the dev DB
-    for (const [k, v] of Object.entries(ENV)) {
-      saved[k] = process.env[k];
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-    await import("../ot/adapterFacade");
-    await import("../ot/safetyTarget");
-    sql = postgres(DB_URL!, { max: 2, connect_timeout: 30, onnotice: () => {} });
-    const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
-    for (const [k, role] of [["owner", "admin"], ["approver", "admin"], ["admin", "admin"]] as const) {
-      u[k] = await one(sql`INSERT INTO users ("openId", username, name, role, "isActive") VALUES (${`${DAU}-${k}`}, ${`${DAU}-${k}`}, ${`S9 ${k}`}, ${role}, true) RETURNING id`);
-    }
-    ids.factory = await one(sql`INSERT INTO factories (code, name, "isActive") VALUES (${"F-" + DAU}, 'S9E factory', true) RETURNING id`);
-    ids.ws = await one(sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${ids.factory}, ${"W-" + DAU}, 'S9E ws') RETURNING id`);
-    ids.line = await one(sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${ids.ws}, ${"L-" + DAU}, 'S9E line') RETURNING id`);
-    ids.st = await one(sql`INSERT INTO stations ("lineId", code, name) VALUES (${ids.line}, ${"S-" + DAU}, 'S9E st') RETURNING id`);
-    ids.robotMachine = await one(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${ids.st}, ${"MR-" + DAU}, 'S9E robot cell', 'ROBOT', true) RETURNING id`);
-    h.robotId = await one(sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId") VALUES (${"R-" + DAU}, 'S9E robot', 'sim', 'sim://s9e', true, ${ids.line}, ${ids.st}) RETURNING id`);
-    ids.node = await one(sql`INSERT INTO edge_nodes (code, name, "factoryCode", status) VALUES (${"N-" + DAU}, 'S9E node', ${"F-" + DAU}, 'online') RETURNING id`);
-    const { issueNodeCredential } = await import("./edgeNodeCredentials");
-    token = (await issueNodeCredential({ nodeCode: `N-${DAU}`, actorUserId: u.admin, reason: "provision S3" })).token;
-  }, 90_000);
-
+    c = await setupCentral("S3V2", { hooks });
+    edge = await c.spawnEdge("s3");
+    await c.clearEdgeLock(c.ids.robotA, edge);
+  }, 300_000);
   afterAll(async () => {
-    for (const w of wfIds) {
-      const runs = await sql`SELECT id FROM orchestration_runs WHERE "workflowId" = ${w}`;
-      for (const r of runs) {
-        await sql`DELETE FROM ai_pending_actions WHERE id LIKE ${`foe-run${r.id}-%`}`.catch(() => undefined);
-        await sql`DELETE FROM orchestration_run_steps WHERE "runId" = ${r.id}`;
-        await sql`DELETE FROM orchestration_runs WHERE id = ${r.id}`;
+    c?.front.tamper.clear();
+    await c?.teardown();
+  }, 240_000);
+
+  it("★ ID mapping: a wrong claim seq / a redeploy ⇒ the claim is refused; an inactive owner ⇒ a package with no owner the walker refuses; a package not for the claim / not the signed definition / of another run ⇒ refused; nothing walked, nothing written", async () => {
+    const s = c.steps;
+    const tokenB = c.tokens.B; // node B has no honest process: this test drives its claims by hand
+    const id = await c.startRun("idmap", [s.gate(), s.move("m1", c.ids.robotB)], "B");
+    const pull = await c.post("/edge/node/pull", {}, tokenB);
+    const p = pull.json.data.runs.find((r: { runId: number }) => r.runId === id);
+    const claim = (body: Record<string, unknown>) => c.post(`/edge/node/runs/${id}/claim`, { claimSeq: p.claimSeq, defHash: p.defHash, programChecks: [], ...body }, tokenB);
+    expect((await claim({ claimSeq: p.claimSeq + 1 })).status).toBe(409);
+    expect((await claim({ defHash: "0".repeat(64) })).status).toBe(409);
+    expect((await c.assignment(id)).claimSeq).toBe(0);
+    // a REDEPLOY after the assignment: the pull marks it, the claim is refused (the snapshot is pinned)
+    const wfRef = `${c.DAU}-idmap`;
+    const [orig] = await c.sql`SELECT "definitionJson"::text AS d FROM orchestration_workflows WHERE ref = ${wfRef}`;
+    await c.sql`UPDATE orchestration_workflows SET "definitionJson" = jsonb_set("definitionJson"::jsonb, '{name}', '"redeployed"')::json WHERE ref = ${wfRef}`;
+    const pulled2 = (await c.post("/edge/node/pull", {}, tokenB)).json.data.runs.find((r: { runId: number }) => r.runId === id);
+    expect(pulled2.refused).toBe("definitionChanged");
+    expect((await claim({})).status).toBe(409);
+    expect(await n(c.sql`SELECT count(*)::int AS n FROM orchestration_run_steps WHERE "runId" = ${id}`)).toBe(0);
+    await c.sql`UPDATE orchestration_workflows SET "definitionJson" = ${orig.d}::json WHERE ref = ${wfRef}`;
+    // the claim that IS accepted: its signed package, verified by the EDGE's trust path (pin from the provisioning CLI)
+    const ok = await claim({});
+    expect(ok.status, ok.text).toBe(200);
+    const env = ok.json.data.package;
+    const { EdgeTrustStore } = await import("./edgeSigning");
+    const { verifyEdgeRunPackage } = await import("./edgeTrust");
+    const store = EdgeTrustStore.fromPinFile(c.pinFile, { nodeId: c.ids.nodeB });
+    const v = verifyEdgeRunPackage(store, env, { credentialId: c.credentialIds.B, runId: id, claimSeq: ok.json.data.claimSeq });
+    expect(v.ok).toBe(true);
+    expect(verifyEdgeRunPackage(store, env, { credentialId: c.credentialIds.B, runId: id + 1, claimSeq: ok.json.data.claimSeq }).ok).toBe(false); // another run
+    expect(verifyEdgeRunPackage(store, env, { credentialId: c.credentialIds.B, runId: id, claimSeq: ok.json.data.claimSeq + 1 }).ok).toBe(false); // another claim
+    expect(verifyEdgeRunPackage(EdgeTrustStore.fromPinFile(c.pinFile, { nodeId: c.ids.nodeA }), env, { credentialId: c.credentialIds.A, runId: id, claimSeq: ok.json.data.claimSeq }).ok).toBe(false); // another node
+    // the walker (driveEdgeRunFromPackage) on the verified package: a different claim / a definition that is not the signed hash
+    const pkg = (v as { pkg: any }).pkg;
+    const calls: string[] = [];
+    const { createEdgeRunStore } = await import("./edgeRunStore");
+    const io = {
+      runId: id,
+      claimSeq: pkg.claimSeq,
+      claimToken: ok.json.data.claimToken,
+      sink: { run: async () => (calls.push("record"), { seq: 1, durable: true }), event: async () => (calls.push("event"), { seq: 1, durable: true }) },
+      authorize: { authorize: async () => (calls.push("authorize"), { ok: false as const, verdict: "unavailable" as const }) },
+    };
+    const { driveEdgeRunFromPackage } = await import("../orchestration/foe/foeEngine");
+    expect((await driveEdgeRunFromPackage(pkg, { runId: id, claimSeq: pkg.claimSeq + 1 }, createEdgeRunStore(pkg, io as never))).refused).toMatch(/claim/);
+    expect((await driveEdgeRunFromPackage({ ...pkg, definition: { ...pkg.definition, name: "tampered" } }, { runId: id, claimSeq: pkg.claimSeq }, createEdgeRunStore(pkg, io as never))).refused).toMatch(/snapshot/);
+    expect(() => createEdgeRunStore(pkg, { ...io, runId: id + 1 } as never)).toThrow();
+    expect(calls).toEqual([]); // nothing walked, nothing reported
+    expect(await n(c.sql`SELECT count(*)::int AS n FROM orchestration_run_steps WHERE "runId" = ${id}`)).toBe(0);
+    await c.abort(id);
+    // an INACTIVE owner: v2 signs the package with owner = null (central validates the owner) and the walker refuses it
+    const id2 = await c.startRun("idmapOwner", [s.gate(), s.move("m1", c.ids.robotB)], "B");
+    const p2 = (await c.post("/edge/node/pull", {}, tokenB)).json.data.runs.find((r: { runId: number }) => r.runId === id2);
+    await c.sql`UPDATE users SET "isActive" = false WHERE id = ${c.u.owner}`;
+    let cl2: any;
+    try {
+      cl2 = await c.post(`/edge/node/runs/${id2}/claim`, { claimSeq: p2.claimSeq, defHash: p2.defHash, programChecks: [] }, tokenB);
+    } finally {
+      await c.sql`UPDATE users SET "isActive" = true WHERE id = ${c.u.owner}`;
+    }
+    expect(cl2.status, cl2.text).toBe(200);
+    const v2 = verifyEdgeRunPackage(store, cl2.json.data.package, { credentialId: c.credentialIds.B, runId: id2, claimSeq: cl2.json.data.claimSeq });
+    const pkg2 = (v2 as { pkg: any }).pkg;
+    expect(pkg2.owner).toBeNull();
+    const io2 = { ...io, runId: id2, claimSeq: pkg2.claimSeq, claimToken: cl2.json.data.claimToken };
+    expect((await driveEdgeRunFromPackage(pkg2, { runId: id2, claimSeq: pkg2.claimSeq }, createEdgeRunStore(pkg2, io2 as never))).refused).toMatch(/owner/);
+    expect(calls).toEqual([]);
+    expect(await n(c.sql`SELECT count(*)::int AS n FROM orchestration_run_steps WHERE "runId" = ${id2}`)).toBe(0);
+    await c.abort(id2);
+  }, 120_000);
+
+  it("★ same gates as central: an un-approved gate pauses (no authorisation, no motion; /authorize ⇒ gate_required); after a central approval by ANOTHER person the next segment actuates", async () => {
+    const s = c.steps;
+    const m0 = motions();
+    const s0 = stops();
+    const id = await c.startRun("gate", [s.gate(), s.move("m1"), s.stop("s1")]);
+    await waitFor("paused at the gate on the edge", async () => (await c.run(id)).status === "awaiting_confirm" && (await c.assignment(id)).claimTokenHash === null, 30_000);
+    await sleep(500);
+    expect(motions()).toBe(m0);
+    expect(await n(c.sql`SELECT count(*)::int AS n FROM edge_step_authorizations WHERE "runId" = ${id}`)).toBe(0);
+    // a node asking for the motion BEFORE the approval (B on its own run): central refuses — the gate is central's
+    const bRun = await c.startRun("gateB", [s.gate(), s.move("m1", c.ids.robotB)], "B");
+    const pulled = (await c.post("/edge/node/pull", {}, c.tokens.B)).json.data.runs.find((r: { runId: number }) => r.runId === bRun);
+    const cl = await c.post(`/edge/node/runs/${bRun}/claim`, { claimSeq: pulled.claimSeq, defHash: pulled.defHash, programChecks: [] }, c.tokens.B);
+    const { robotPayloadHash } = await import("../ot/otActionBinding");
+    const early = await c.post(
+      `/edge/node/runs/${bRun}/authorize`,
+      { claimSeq: cl.json.data.claimSeq, claimToken: cl.json.data.claimToken, stepId: "m1", attempt: 1, idempotencyKey: `run${bRun}-m1-a1`, reqNonce: randomBytes(18).toString("base64url"), command: { kind: "robot", robotId: c.ids.robotB, jobType: "custom", params: {} }, payloadHash: robotPayloadHash({ robotId: c.ids.robotB, jobType: "custom", params: {} } as never), programChecks: [] },
+      c.tokens.B,
+    );
+    expect(early.status, early.text).toBe(409);
+    expect(early.json.error.code).toBe("gate_required");
+    await c.abort(bRun);
+    // approved by another person (not the run owner) ⇒ the next segment actuates
+    await c.approveAtGate(id);
+    await waitFor("completed", async () => (await c.run(id)).status === "completed", 60_000);
+    expect([motions() - m0, stops() - s0]).toEqual([1, 1]);
+    const g0 = (await c.stepRows(id)).find((r) => r.stepId === "g0")!;
+    expect(g0.resultJson.approvedBy).toBe(c.u.approver);
+    expect(g0.resultJson.approvedBy).not.toBe(c.u.owner);
+  }, 120_000);
+
+  it("★ central abort mid-run with the abort flag LOST on every progress / pull answer: the walker learns it from /authorize (409 stopped) — the next non-STOP step is never sent, the STOP is sent, the run stays aborted", async () => {
+    const s = c.steps;
+    const m0 = motions();
+    const s0 = stops();
+    const id = await c.startRun("abortAuth", [s.gate(), s.move("m1"), s.delay("d1", 1500), s.move("m2"), s.stop("s1")]);
+    let hidden = 0;
+    const hide = (answer: any) => {
+      if (answer?.ok !== true) return undefined;
+      const d = answer.data;
+      if (d.abortRequested === true) {
+        hidden++;
+        return { ...answer, data: { ...d, abortRequested: false, status: "running" } };
       }
-      await sql`DELETE FROM orchestration_workflow_versions WHERE "workflowId" = ${w}`.catch(() => undefined);
-      await sql`DELETE FROM orchestration_workflows WHERE id = ${w}`;
-    }
-    await sql`DELETE FROM robot_jobs WHERE "robotId" = ${h.robotId}`.catch(() => undefined);
-    await sql`DELETE FROM robot_motion_locks WHERE "robotId" = ${h.robotId}`.catch(() => undefined);
-    if (ids.node) await sql`DELETE FROM edge_nodes WHERE id = ${ids.node}`;
-    if (h.robotId) await sql`DELETE FROM robots WHERE id = ${h.robotId}`.catch(() => undefined);
-    if (ids.robotMachine) await sql`DELETE FROM machines WHERE id = ${ids.robotMachine}`;
-    if (ids.st) await sql`DELETE FROM stations WHERE id = ${ids.st}`;
-    if (ids.line) await sql`DELETE FROM production_lines WHERE id = ${ids.line}`;
-    if (ids.ws) await sql`DELETE FROM workshops WHERE id = ${ids.ws}`;
-    if (ids.factory) await sql`DELETE FROM factories WHERE id = ${ids.factory}`;
-    await sql`DELETE FROM users WHERE id IN ${sql(Object.values(u).filter(Boolean))}`.catch(() => undefined);
-    await sql.end();
-    for (const [k, v] of Object.entries(saved)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-  }, 90_000);
-
-  beforeEach(() => {
-    h.motions = 0;
-    h.stops = 0;
-  });
-
-  it("★ ID mapping: a wrong claim token / seq, a redeploy, an inactive owner ⇒ refused; nothing walked, nothing written", async () => {
-    const c = await startAndClaim("refuse", [{ id: "g0", type: "hitl_gate", prompt: "go?" }, motion("m1")]);
-    const { driveEdgeClaimedRun } = await import("../orchestration/foe/foeEngine");
-    expect((await driveEdgeClaimedRun(c.runId, { ...c, claimTokenHash: sha("ect_other") })).refused).toMatch(/claim/);
-    expect((await driveEdgeClaimedRun(c.runId, { ...c, claimTokenHash: c.tokenHash, claimSeq: c.claimSeq + 1 })).refused).toMatch(/claim/);
-    expect((await driveEdgeClaimedRun(c.runId, { ...c, claimTokenHash: c.tokenHash, defHash: "0".repeat(64) })).refused).toMatch(/snapshot/);
-    expect((await driveEdgeClaimedRun(2_000_000_000, { ...c, claimTokenHash: c.tokenHash })).refused).toMatch(/ID mapping/);
-    await sql`UPDATE users SET "isActive" = false WHERE id = ${u.owner}`;
+      if (Array.isArray(d.claims) && d.claims.some((x: { runId: number; abortRequested: boolean }) => x.runId === id && x.abortRequested)) {
+        hidden++;
+        return { ...answer, data: { ...d, claims: d.claims.map((x: any) => (x.runId === id ? { ...x, abortRequested: false, status: "running" } : x)), stopsUnconfirmed: d.stopsUnconfirmed.filter((u: { runId: number }) => u.runId !== id) } };
+      }
+      return undefined;
+    };
+    c.front.tamper.set(`^/runs/${id}/progress$`, hide);
+    c.front.tamper.set("^/pull$", hide);
     try {
-      expect((await drive(c)).refused).toMatch(/owner/);
+      await c.approveAtGate(id);
+      await edge.waitCounts("m1 sent", () => motions() === m0 + 1);
+      await c.abort(id);
+      await edge.waitCounts("the STOP sent by the edge's local sweep", () => stops() >= s0 + 1, 15_000);
+      const authAnswers = c.front.captured.filter((x) => x.path === `/runs/${id}/authorize`).map((x) => [x.body.stepId, x.status, x.answer?.error?.code ?? "ok"]);
+      expect(authAnswers).toEqual([
+        ["m1", 200, "ok"],
+        ["m2", 409, "stopped"],
+      ]);
     } finally {
-      await sql`UPDATE users SET "isActive" = true WHERE id = ${u.owner}`;
+      c.front.tamper.clear();
     }
-    expect((await sql`SELECT count(*)::int AS n FROM orchestration_run_steps WHERE "runId" = ${c.runId}`)[0].n).toBe(0);
-    expect(await runStatus(c.runId)).toBe("running");
-    expect(h.motions + h.stops).toBe(0);
-  });
+    expect(motions()).toBe(m0 + 1); // m2 NEVER sent
+    expect((await c.run(id)).status).toBe("aborted");
+    expect((await c.stepRows(id)).find((r) => r.stepId === "m2")?.status).not.toBe("completed");
+  }, 120_000);
 
-  it("★ same gates as central: an un-approved gate pauses (no motion); after a central approval by ANOTHER person the next segment actuates", async () => {
-    const c = await startAndClaim("gate", [{ id: "g0", type: "hitl_gate", prompt: "go?" }, motion("m1"), stop("s1")]);
-    const seg1 = await drive(c);
-    expect(seg1.status).toBe("awaiting_confirm");
-    expect(h.motions).toBe(0);
-    const c2 = await approveAndReclaim({ runId: c.runId, claimSeq: c.claimSeq, token: c.token }, "g0");
-    const seg2 = await drive({ runId: c.runId, ...c2 });
-    expect(seg2, JSON.stringify(await sql`SELECT "stepId", status, error FROM orchestration_run_steps WHERE "runId" = ${c.runId}`)).toMatchObject({ ok: true, status: "completed" });
-    expect(h.motions).toBe(1);
-    expect(h.stops).toBe(1);
-    expect((await stepRow(c.runId, "m1")).status).toBe("completed");
-  });
-
-  it("★ central abort mid-run, learned through the RUN GUARD (no HTTP): the next non-STOP step is never sent, the STOP is SENT, the run stays aborted", async () => {
-    const c = await startAndClaim("abortGuard", [{ id: "g0", type: "hitl_gate", prompt: "go?" }, motion("m1"), { id: "d1", type: "delay", ms: 1500 }, motion("m2"), stop("s1")]);
-    await drive(c);
-    const c2 = await approveAndReclaim({ runId: c.runId, claimSeq: c.claimSeq, token: c.token }, "g0");
-    const walking = drive({ runId: c.runId, ...c2 });
-    for (let i = 0; i < 100 && h.motions < 1; i++) await sleep(20);
-    expect(h.motions).toBe(1); // m1 sent, now in the delay
-    // central is ANOTHER process: its abort reaches this walker only as the row it writes (no in-memory flag, no HTTP here)
-    await sql`UPDATE orchestration_runs SET status = 'aborted', "finishedAt" = ${new Date()}, error = 'Aborted by central' WHERE id = ${c.runId}`;
-    const out = await walking;
-    expect(out.status).toBe("aborted");
-    for (let i = 0; i < 100 && h.stops < 1; i++) await sleep(20);
-    expect(h.motions).toBe(1); // m2 NEVER sent
-    expect(h.stops).toBeGreaterThanOrEqual(1); // s1 SENT by the edge's sweep
-    expect((await stepRow(c.runId, "m2"))?.status).not.toBe("completed");
-    expect(await runStatus(c.runId)).toBe("aborted"); // never resurrected
-  });
-
-  it("★ central abort learned from the SIGNAL during a wait: the walker wakes at once, no further non-STOP step, the STOP is sent", async () => {
-    const c = await startAndClaim("abortSignal", [{ id: "g0", type: "hitl_gate", prompt: "go?" }, motion("m1"), { id: "d1", type: "delay", ms: 20_000 }, motion("m2"), stop("s1")]);
-    await drive(c);
-    const c2 = await approveAndReclaim({ runId: c.runId, claimSeq: c.claimSeq, token: c.token }, "g0");
+  it("★ central abort learned from the SIGNAL during a wait (progress abortRequested): the walker wakes at once, no further non-STOP step, the STOP is sent", async () => {
+    const s = c.steps;
+    const m0 = motions();
+    const s0 = stops();
+    const id = await c.startRun("abortSignal", [s.gate(), s.move("m1"), s.delay("d1", 20_000), s.move("m2"), s.stop("s1")]);
+    await c.approveAtGate(id);
+    await edge.waitCounts("m1 sent", () => motions() === m0 + 1);
     const t0 = Date.now();
-    const walking = drive({ runId: c.runId, ...c2 });
-    for (let i = 0; i < 100 && h.motions < 1; i++) await sleep(20);
-    const { stopLiveRunForCentralAbort } = await import("../orchestration/foe/foeEngine");
-    // central is ANOTHER process: its abort is the row it writes (its own in-memory flag never reaches this walker)
-    await sql`UPDATE orchestration_runs SET status = 'aborted', "finishedAt" = now(), error = 'Aborted by central' WHERE id = ${c.runId}`;
-    const applied = await stopLiveRunForCentralAbort(c.runId, { id: 0, role: "system", name: "edge: central abort" });
-    expect(applied.live).toBe(true);
-    expect((await walking).status).toBe("aborted");
-    expect(Date.now() - t0).toBeLessThan(15_000); // the 20 s delay was cut short
-    expect(h.motions).toBe(1);
-    expect(h.stops).toBeGreaterThanOrEqual(1);
-    expect(applied.abortStops?.sent ?? []).toContain("s1");
-  });
+    await c.abort(id);
+    await edge.waitCounts("the STOP sent", () => stops() >= s0 + 1, 15_000);
+    expect(Date.now() - t0).toBeLessThan(10_000); // the 20 s delay was cut short
+    await waitFor("segment end reported", async () => (await c.assignment(id)).claimTokenHash === null, 15_000);
+    expect(motions()).toBe(m0 + 1);
+    expect((await c.run(id)).status).toBe("aborted");
+  }, 120_000);
 
-  it("★ revoked node credential: the next NON-STOP step is refused (EDGE_GUARD(revoked)); a STOP never asks the guard and is sent", async () => {
-    const c = await startAndClaim("revoked", [{ id: "g0", type: "hitl_gate", prompt: "go?" }, motion("m1"), { id: "d1", type: "delay", ms: 400 }, stop("s1"), motion("m2")]);
-    await drive(c);
-    const c2 = await approveAndReclaim({ runId: c.runId, claimSeq: c.claimSeq, token: c.token }, "g0");
-    const walking = drive({ runId: c.runId, ...c2 });
-    for (let i = 0; i < 100 && h.motions < 1; i++) await sleep(20);
-    await sql`UPDATE edge_node_credentials SET status = 'revoked', "revokedAt" = now(), "revokeReason" = 'test' WHERE "edgeNodeId" = ${ids.node} AND status = 'active'`;
-    try {
-      const out = await walking;
-      expect(out.status).toBe("failed");
-      expect(h.motions).toBe(1); // m2 refused
-      expect(h.stops).toBe(1); // s1 (a STOP) went out although the credential is revoked
-      expect((await stepRow(c.runId, "m2")).error).toMatch(/EDGE_GUARD\(revoked\)/);
-    } finally {
-      const { issueNodeCredential } = await import("./edgeNodeCredentials");
-      token = (await issueNodeCredential({ nodeCode: `N-${DAU}`, actorUserId: u.admin, reason: "re-provision" })).token;
-    }
-  });
+  it("★ L-7: a run that is NOT aborted (paused, or failed) is never touched; aborted while PAUSED after actuating ⇒ the edge re-sends the STOP central could not send", async () => {
+    const s = c.steps;
+    const m0 = motions();
+    const s0 = stops();
+    const id = await c.startRun("resend", [s.gate(), s.move("m1"), s.gate("g1"), s.stop("s1")]);
+    await c.approveAtGate(id);
+    await waitFor("m1 sent, paused at g1", async () => (await c.run(id)).status === "awaiting_confirm" && motions() === m0 + 1 && (await c.assignment(id)).claimTokenHash === null, 30_000);
+    await sleep(1_500); // paused: no STOP re-sent, no sweep picture for it
+    expect(stops()).toBe(s0);
+    expect(c.front.captured.some((x) => x.path === "/pull" && x.answer?.data?.stopsUnconfirmed?.some((u: { runId: number }) => u.runId === id))).toBe(false);
+    await c.sql`UPDATE orchestration_runs SET status = 'failed', "finishedAt" = now() WHERE id = ${id}`;
+    await sleep(1_500); // failed (not aborted): still never touched
+    expect(stops()).toBe(s0);
+    await c.sql`UPDATE orchestration_runs SET status = 'awaiting_confirm', "finishedAt" = NULL WHERE id = ${id}`;
+    await c.abort(id);
+    await edge.waitCounts("the STOP re-sent by the edge", () => stops() >= s0 + 1, 20_000);
+    expect(motions()).toBe(m0 + 1);
+    expect((await c.run(id)).status).toBe("aborted");
+  }, 120_000);
 
-  it("★ L-7: aborted centrally while PAUSED after actuating (no walker left): the node re-sends the STOP central could not confirm; a run that is not aborted is never touched", async () => {
-    const c = await startAndClaim("resend", [{ id: "g0", type: "hitl_gate", prompt: "go?" }, motion("m1"), { id: "g1", type: "hitl_gate", prompt: "more?" }, stop("s1")]);
-    await drive(c);
-    const c2 = await approveAndReclaim({ runId: c.runId, claimSeq: c.claimSeq, token: c.token }, "g0");
-    expect((await drive({ runId: c.runId, ...c2 })).status).toBe("awaiting_confirm"); // m1 sent, paused at g1
-    expect(h.motions).toBe(1);
-    const { resendStopsOfAbortedRun } = await import("../orchestration/foe/foeEngine");
-    // not aborted ⇒ nothing (never aborts a run itself) — paused, and even a run that FAILED a moment ago
-    expect((await resendStopsOfAbortedRun(c.runId, { id: 0, role: "system", name: "edge" })).ok).toBe(false);
-    expect(await runStatus(c.runId)).toBe("awaiting_confirm");
-    await sql`UPDATE orchestration_runs SET status = 'failed', "finishedAt" = ${new Date()} WHERE id = ${c.runId}`;
-    expect((await resendStopsOfAbortedRun(c.runId, { id: 0, role: "system", name: "edge" })).ok).toBe(false);
-    await sleep(200);
-    expect(h.stops).toBe(0);
-    // central (another process) aborted it; its sweep could not reach the robot ⇒ a FAILED abort:s1 row
-    await sql`UPDATE orchestration_runs SET status = 'aborted', "finishedAt" = ${new Date()}, error = 'Aborted by central' WHERE id = ${c.runId}`;
-    await sql`INSERT INTO orchestration_run_steps ("runId", "stepId", "stepType", status, attempt, error) VALUES (${c.runId}, 'abort:s1', 'command', 'failed', 0, 'robot not reachable from central')`;
-    const pulled = await (await import("./edgeExecutionCentral")).pullForNode(await node());
-    expect(pulled.data!.stopsUnconfirmed).toContain(c.runId);
-    const r = await resendStopsOfAbortedRun(c.runId, { id: 0, role: "system", name: "edge" });
-    expect(r.abortStops?.sent).toEqual(["s1"]);
-    expect(h.stops).toBe(1);
-    expect(h.motions).toBe(1);
-    for (let i = 0; i < 100 && (await stepRow(c.runId, "abort:s1")).status !== "completed"; i++) await sleep(20); // the row write is not awaited by a STOP
-    expect((await stepRow(c.runId, "abort:s1")).status).toBe("completed");
-    expect(await runStatus(c.runId)).toBe("aborted");
-    const again = await (await import("./edgeExecutionCentral")).pullForNode(await node());
-    expect(again.data!.stopsUnconfirmed).not.toContain(c.runId); // confirmed: no longer listed
-  });
+  it("★ stale claim (re-claimed elsewhere): /authorize answers claim_stale and the walker lets go — no non-STOP step, NO run-level write", async () => {
+    const s = c.steps;
+    const m0 = motions();
+    const id = await c.startRun("stale", [s.gate(), s.move("m1"), s.delay("d1", 1500), s.move("m2")]);
+    await c.approveAtGate(id);
+    await edge.waitCounts("m1 sent", () => motions() === m0 + 1);
+    // another segment took the run (as a release + Continue + claim would): new seq + token, and its marker on the run row
+    await c.sql`UPDATE orchestration_run_edge_assignments SET "claimSeq" = "claimSeq" + 1, "claimTokenHash" = ${createHash("sha256").update("ect_someone_else").digest("hex")}, "progressSeq" = 0 WHERE "runId" = ${id}`;
+    await c.sql`UPDATE orchestration_runs SET "currentStepId" = 'marker-of-the-new-owner' WHERE id = ${id}`;
+    await waitFor("m2's authorize answered claim_stale (or the claim went stale on progress)", () => c.front.captured.some((x) => x.path.startsWith(`/runs/${id}/`) && x.answer?.error?.code === "claim_stale"), 15_000);
+    await sleep(2_000);
+    expect(motions()).toBe(m0 + 1);
+    expect(await c.run(id)).toMatchObject({ status: "running", currentStepId: "marker-of-the-new-owner" }); // untouched by the old walker
+    await c.abort(id);
+  }, 120_000);
 
-  it("★ stale claim (re-claimed elsewhere): the walker lets go — no non-STOP step, NO run-level write", async () => {
-    const c = await startAndClaim("stale", [{ id: "g0", type: "hitl_gate", prompt: "go?" }, motion("m1"), { id: "d1", type: "delay", ms: 400 }, motion("m2")]);
-    await drive(c);
-    const c2 = await approveAndReclaim({ runId: c.runId, claimSeq: c.claimSeq, token: c.token }, "g0");
-    const walking = drive({ runId: c.runId, ...c2 });
-    for (let i = 0; i < 100 && h.motions < 1; i++) await sleep(20);
-    // another segment took the run (as a release + Continue + claim would): new seq + token
-    await sql`UPDATE orchestration_run_edge_assignments SET "claimSeq" = "claimSeq" + 1, "claimTokenHash" = ${sha("ect_someone_else")}, "progressSeq" = 0 WHERE "runId" = ${c.runId}`;
-    await sql`UPDATE orchestration_runs SET "currentStepId" = 'marker-of-the-new-owner' WHERE id = ${c.runId}`;
-    const out = await walking;
-    expect(out.status).toBe("held");
-    expect(h.motions).toBe(1);
-    const row = (await sql`SELECT status, "currentStepId" FROM orchestration_runs WHERE id = ${c.runId}`)[0];
-    expect(row).toMatchObject({ status: "running", currentStepId: "marker-of-the-new-owner" }); // untouched by the old walker
-  });
+  it("★ revoked node credential: the next NON-STOP step cannot be authorised (never sent, D5); a STOP never asks and is sent", async () => {
+    const s = c.steps;
+    const m0 = motions();
+    const s0 = stops();
+    const id = await c.startRun("revoked", [s.gate(), s.move("m1"), s.delay("d1", 1500), s.stop("s1"), s.move("m2")]);
+    await c.approveAtGate(id);
+    await edge.waitCounts("m1 sent", () => motions() === m0 + 1);
+    const err: string[] = [];
+    const { runEdgeCredentialCli } = await import("../../../scripts/edge-node-credential");
+    const code = await runEdgeCredentialCli(["revoke", "--node", c.codes.nodeA, "--actor", c.adminLogin.username, "--reason", "S3 v2: revoke mid-run"], {
+      out: () => undefined,
+      err: (l) => err.push(l),
+      env: {},
+      promptSecret: async (label) => (/password/i.test(label) ? c.adminLogin.password : null),
+    });
+    expect(code, err.join(" | ")).toBe(0);
+    await edge.waitCounts("s1 (a STOP) sent although the credential is revoked", () => stops() >= s0 + 1, 15_000);
+    await sleep(4_000);
+    expect(motions()).toBe(m0 + 1); // m2 never sent
+    expect((await c.sql`SELECT "stepId" FROM edge_step_authorizations WHERE "runId" = ${id} ORDER BY 1`).map((r) => r.stepId)).toEqual(["m1"]);
+    expect(c.front.captured.filter((x) => x.path === `/runs/${id}/authorize` && x.status === 401).length).toBeGreaterThan(0);
+  }, 120_000);
 });
