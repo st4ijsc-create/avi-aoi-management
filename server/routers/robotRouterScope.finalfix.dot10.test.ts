@@ -19,7 +19,7 @@ vi.mock("../db", () => ({
     return { id: 1 };
   }),
 }));
-const W = vi.hoisted(() => ({ robotsRow: { lineId: 1, stationId: null as number | null } as null | { lineId: number | null; stationId: number | null }, scopeLines: null as null | number[], scopeThrows: false, userFactories: null as null | number[], robotFactory: null as null | number }));
+const W = vi.hoisted(() => ({ robotsRow: { lineId: 1, stationId: null as number | null } as null | { lineId: number | null; stationId: number | null }, scopeLines: null as null | number[], scopeThrows: false, userFactories: null as null | number[], robotFactory: null as null | number, owner: 4 as number | null, session: false, cleared: 0 }));
 vi.mock("../db/connection", async () => {
   const { robotOwnership } = await import("../services/edge/edgeControlSchema");
   return {
@@ -27,7 +27,7 @@ vi.mock("../db/connection", async () => {
       select: () => ({
         from: (t: unknown) => ({
           where: () => ({
-            limit: async () => (t === robotOwnership ? [{ id: 12, edgeNodeId: 4, ownerEpoch: 2, motionLockGenerationFloor: 0 }] : W.robotsRow ? [{ id: 12, ...W.robotsRow }] : []),
+            limit: async () => (t === robotOwnership ? [{ id: 12, edgeNodeId: W.owner, ownerEpoch: 2, motionLockGenerationFloor: 0 }] : W.robotsRow ? [{ id: 12, ...W.robotsRow }] : []),
           }),
         }),
       }),
@@ -54,7 +54,22 @@ vi.mock("../services/robot/deviceOwnershipService", () => ({
   sendCentralRobotStop: async (id: number) => (central.calls.push(id), { ok: true, sent: "sent", detail: "x" }),
 }));
 vi.mock("../services/robot/criticalStopAlert", () => ({ raiseCriticalStopAlert: async () => undefined }));
-vi.mock("../services/robot/robotManager", () => ({ getActiveRobot: () => undefined }));
+vi.mock("../services/robot/robotManager", () => ({
+  getActiveRobot: () =>
+    W.session
+      ? {
+          id: 12,
+          code: "R12",
+          vendor: "mitsubishi",
+          driver: {
+            vendor: "mitsubishi",
+            isConnected: () => true,
+            getMotionLock: () => ({ locked: true, generation: 3, reasonCode: "centralLock" }),
+            clearMotionLock: () => (W.cleared++, { locked: false, generation: 3 }),
+          },
+        }
+      : undefined,
+}));
 vi.mock("../services/robot/robotCommandDispatcher", () => ({
   dispatchRobotJob: vi.fn(async () => ({ ok: false, status: "rejected", error: "ROBOT_OWNED_BY_EDGE" })),
   robotInterlockTarget: (robotId: number) => ({ adapterId: -1, machineId: robotId, tagKeys: [] }),
@@ -74,6 +89,9 @@ beforeEach(() => {
   W.scopeThrows = false;
   W.userFactories = null;
   W.robotFactory = null;
+  W.owner = 4;
+  W.session = false;
+  W.cleared = 0;
   setEdgeDeviceRequestPort({
     async enqueue(i) {
       queued.push(i);
@@ -124,5 +142,40 @@ describe("scan: robot.actuate STOP to an UNREACHABLE edge-owned robot keeps R-10
     W.robotFactory = null;
     await expect(engineer.actuate({ robotId: 12, command: "abort" })).resolves.toMatchObject({ status: "queued_edge_unreachable" });
     expect(central.calls).toEqual([12, 12]);
+  });
+});
+
+describe("residual NEW-1 (R-10-bt): robot.clearMotionLock applies the caller's factory scope — fail-closed, NEVER on an unknown scope", () => {
+  it("★ edge-owned robot of ANOTHER factory ⇒ the same NOT_FOUND; no signed clear queued, nothing audited", async () => {
+    W.scopeLines = [99];
+    await expect(engineer.clearMotionLock({ robotId: 12, reason: "verified on site", expectedGeneration: 3 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(queued).toEqual([]);
+    expect(audit.calls).toEqual([]);
+  });
+  it("★ central robot with a session here, ANOTHER factory ⇒ NOT_FOUND; its (operator) lock is NOT lifted", async () => {
+    W.owner = null;
+    W.session = true;
+    W.scopeLines = [99];
+    await expect(engineer.clearMotionLock({ robotId: 12, reason: "verified on site", expectedGeneration: 3 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(W.cleared).toBe(0);
+    expect(audit.calls).toEqual([]);
+  });
+  it("★ the scope cannot be resolved ⇒ refused; missing robot ⇒ NOT_FOUND; nothing queued / cleared", async () => {
+    W.scopeThrows = true;
+    await expect(engineer.clearMotionLock({ robotId: 12, reason: "verified on site", expectedGeneration: 3 })).rejects.toThrow();
+    W.scopeThrows = false;
+    W.scopeLines = [1]; // a RESTRICTED caller: the robot row is required
+    W.robotsRow = null;
+    await expect(engineer.clearMotionLock({ robotId: 12, reason: "verified on site", expectedGeneration: 3 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(queued).toEqual([]);
+    expect(W.cleared).toBe(0);
+  });
+  it("in scope ⇒ unchanged: edge-owned ⇒ the clear is queued; central session ⇒ cleared", async () => {
+    W.scopeLines = [1];
+    await expect(engineer.clearMotionLock({ robotId: 12, reason: "verified on site", expectedGeneration: 3 })).resolves.toMatchObject({ queuedOnEdge: { requestId: 90 } });
+    W.owner = null;
+    W.session = true;
+    await expect(engineer.clearMotionLock({ robotId: 12, reason: "verified on site", expectedGeneration: 3 })).resolves.toMatchObject({ changed: true });
+    expect(W.cleared).toBe(1);
   });
 });

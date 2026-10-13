@@ -118,6 +118,9 @@ vi.mock("../ot/adapterFacade", () => ({
 }));
 vi.mock("../interlock/interlockGate", () => ({ evaluateInterlockGate: async () => ({ blocked: false, failClosed: false, violations: [] }) }));
 vi.mock("../../_core/accessControl", () => ({ requirePermission: () => async ({ ctx, next }: any) => next({ ctx }) }));
+// 2026-10-13 doc 81 Đợt 10 final fix wave residual (NEW-1, R-10-bt): clearMotionLock checks the caller's factory scope first; this
+// suite's caller is UNRESTRICTED (the scope is pinned in robotRouterScope.finalfix.dot10). Assertions unchanged.
+vi.mock("../../db/hierarchy", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../db/hierarchy")>()), idsTrongPhamVi: async () => null }));
 
 import { getDb } from "../../db/connection";
 import { robotMotionLocks, auditLogs } from "../../../drizzle/schema";

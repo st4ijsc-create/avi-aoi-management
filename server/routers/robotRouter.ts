@@ -320,6 +320,21 @@ export const robotRouter = router({
           { operation: "clearRobotMotionLock", reason: "motionLockChanged" },
           `motion lock changed while you were confirming — now generation ${state.generation ?? "?"} (${state.reasonCode ?? "link loss"} since ${state.since ?? "?"}); re-read the robot state and confirm again`,
         );
+      // doc 81 Đợt 10 final fix wave residual (NEW-1, R-10-bt) — a clear RAISES energy: the robot must exist AND be inside the
+      // caller's factory scope (strict resolver: unresolvable ⇒ throws ⇒ refused — NEVER allowed on an unknown scope); out of scope
+      // or missing ⇒ the SAME NOT_FOUND (M-4). Checked before anything is audited, queued or cleared (operator hold included).
+      // (the R-10-bc MOTION pattern: an UNRESTRICTED caller needs no row read; a restricted one needs the row inside its scope)
+      {
+        const scope = phamViCua(ctx as never);
+        const [lines, stations] = await Promise.all([idsTrongPhamVi("line", scope, { strict: true }), idsTrongPhamVi("station", scope, { strict: true })]);
+        if (lines !== null) {
+          const db = await getDb();
+          if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable — clear refused (factory scope unverifiable)");
+          const [row] = await db.select({ lineId: robots.lineId, stationId: robots.stationId }).from(robots).where(eq(robots.id, input.robotId)).limit(1);
+          const inScope = !!row && ((row.lineId != null && lines.includes(row.lineId)) || (row.stationId != null && (stations ?? []).includes(row.stationId)));
+          if (!inScope) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
+        }
+      }
       const rt = getActiveRobot(input.robotId);
       // doc 81 Đợt 10 task D (design §2.11) — a robot an EDGE node owns: its lock authority is the node. The clear goes there as a
       // signed command (compare-and-clear on `expectedGeneration` at the edge); audited first. fix review 1 (M-3): also when this
