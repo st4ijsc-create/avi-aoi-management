@@ -237,12 +237,26 @@ export class MotionLock {
     }
   }
 
+  /**
+   * doc 81 Đợt 10 final fix wave residual (MIN-3, R-10-bt) — a DURABILITY HOLD: the lock could be made durable nowhere (no pending
+   * marker, its DB write not landed). Motion stays refused — even after a clear — until the persistence layer reports a persisted
+   * lock (upsert landed) or a persisted clear (delete landed). STOPs are never refused.
+   */
+  private durabilityHold: string | null = null;
+  holdUntilDurable(why: string): void {
+    this.durabilityHold = why;
+  }
+  releaseDurabilityHold(): void {
+    this.durabilityHold = null;
+  }
+
   private notify(kind: "locked" | "cleared"): void {
     const p = this.persistence;
     if (!p) return;
     try {
-      if (kind === "locked") p.locked(this.snapshot());
-      else p.cleared(this.snapshot());
+      // the RAW lock state (a durability hold is not a lock of its own: it is never persisted as one)
+      if (kind === "locked") p.locked({ ...this.state });
+      else p.cleared({ ...this.state });
     } catch (err) {
       console.error(`[Robot] motion lock persistence hook (${kind}) failed — in-memory lock unchanged:`, (err as Error)?.message ?? err);
     }
@@ -306,10 +320,14 @@ export class MotionLock {
   }
 
   isLocked(): boolean {
-    return this.state.locked;
+    return this.state.locked || this.durabilityHold !== null;
   }
 
   snapshot(): MotionLockState {
+    if (!this.state.locked && this.durabilityHold !== null) {
+      // MIN-3 — cleared in memory, but nothing durable yet: still shown (and enforced) as locked
+      return { ...this.state, locked: true, reasonCode: MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, detail: this.durabilityHold };
+    }
     return { ...this.state };
   }
 
@@ -321,13 +339,13 @@ export class MotionLock {
   guard(job: RobotJobSpec, inner: () => void): () => void {
     return () => {
       inner();
-      if (this.state.locked && !isStopJob(job)) throw new RobotMotionLockedError(this.snapshot());
+      if (this.isLocked() && !isStopJob(job)) throw new RobotMotionLockedError(this.snapshot());
     };
   }
 
   /** The RobotJobResult a driver returns for a MOTION job while locked; null when the job may proceed. */
   refusal(job: RobotJobSpec): RobotJobResult | null {
-    if (!this.state.locked || isStopJob(job)) return null; // residual round 2 — shared classifier
+    if (!this.isLocked() || isStopJob(job)) return null; // residual round 2 — shared classifier (MIN-3: a durability hold refuses too)
     const err = new RobotMotionLockedError(this.snapshot());
     return {
       ok: false,

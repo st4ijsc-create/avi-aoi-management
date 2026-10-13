@@ -178,7 +178,61 @@ interface PendingMarker {
   at: string;
 }
 /** Write the marker durably (temp file + fsync + rename) BEFORE the upsert is queued. Never throws (a failure is logged loudly). */
-function markLockPersistPending(robotId: number, state: MotionLockState, writer: string): void {
+/**
+ * MIN-3 (residual, R-10-bt) — the directory entry of a renamed marker is made durable too (POSIX: fsync the directory). Windows
+ * has no directory fsync (MoveFileEx without write-through): best effort only, documented (EDGE_GATEWAY.md §8.5).
+ */
+function fsyncDirBestEffort(dir: string): void {
+  if (process.platform === "win32") return;
+  try {
+    const dfd = openSync(dir, "r");
+    try {
+      fsyncSync(dfd);
+    } finally {
+      closeSync(dfd);
+    }
+  } catch {
+    /* best effort */
+  }
+}
+/** MIN-3 — can a marker be written durably in the marker directory right now (write + fsync + remove a probe)? */
+function pendingDirWritable(): { ok: true } | { ok: false; error: string } {
+  try {
+    mkdirSync(motionLockPendingDir(), { recursive: true });
+    const probe = path.join(motionLockPendingDir(), `.probe-${process.pid}-${Date.now()}`);
+    const fd = openSync(probe, "w", 0o600);
+    try {
+      writeSync(fd, "probe");
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    unlinkSync(probe);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: errText(err) };
+  }
+}
+/** MIN-3 — the durable alert of a motion lock that cannot be made durable (alert stream + log; never throws). */
+function alertNotDurable(robotId: number, why: string): void {
+  void import("./criticalStopAlert")
+    .then(({ raiseCriticalStopAlert }) =>
+      raiseCriticalStopAlert({
+        kind: "motion_lock_not_durable",
+        title: `Motion lock not durable — robot ${robotId}`,
+        message: `Robot ${robotId}: its motion lock cannot be made durable (${why}) — motion stays REFUSED until the lock or its clear is persisted (check ROBOT_MOTION_LOCK_PENDING_DIR and the database).`,
+        recipients: [],
+        dedupKey: `motion_lock_not_durable:${robotId}:${Math.floor(Date.now() / 60_000)}`,
+        source: "robot",
+        entityType: "robot",
+        entityId: robotId,
+      }),
+    )
+    .catch(() => undefined);
+}
+
+/** Write the marker; true ⇔ it is durable (temp file + fsync + rename + directory fsync where the OS has one). Never throws. */
+function markLockPersistPending(robotId: number, state: MotionLockState, writer: string): boolean {
   try {
     mkdirSync(motionLockPendingDir(), { recursive: true });
     const m: PendingMarker = { robotId, generation: Math.max(1, state.generation ?? 1), reasonCode: String(state.reasonCode ?? "unknown").slice(0, REASON_MAX), since: state.since ?? null, writer, at: new Date().toISOString() };
@@ -192,8 +246,11 @@ function markLockPersistPending(robotId: number, state: MotionLockState, writer:
       closeSync(fd);
     }
     renameSync(tmp, f);
+    fsyncDirBestEffort(motionLockPendingDir());
+    return true;
   } catch (err) {
-    console.error(`[Robot] robot ${robotId}: the motion-lock pending marker could not be written (${errText(err)}) — if this lock's DB write also fails, a restart would not know it`);
+    console.error(`[Robot] robot ${robotId}: the motion-lock pending marker could not be written (${errText(err)}) — motion is HELD until this lock (or its clear) is persisted in the DB (MIN-3)`);
+    return false;
   }
 }
 /**
@@ -312,8 +369,15 @@ function supersededBy(g: number, boot: Date | undefined) {
  * DELETE what the cleared lock may remove: its OWN lineage (`mine AND generation ≤ g`, plus — for a cleared persistUnknown lock —
  * its own rows from before the boot, strict) or EXACTLY the row it adopted. Never another writer's row, never unconditional.
  */
-export function deleteMotionLock(robotId: number, generation: number, bootSince?: Date, adopted?: RowIdentity, writer: string = PROCESS_WRITER): Promise<void> {
+export function deleteMotionLock(robotId: number, generation: number, bootSince?: Date, adopted?: RowIdentity, writer: string = PROCESS_WRITER, onLanded?: () => void): Promise<void> {
   return enqueue(robotId, "delete", async () => {
+    await deleteMotionLockRow(robotId, generation, bootSince, adopted, writer);
+    if (onLanded) onLanded(); // MIN-3 — a PERSISTED clear
+  });
+}
+
+async function deleteMotionLockRow(robotId: number, generation: number, bootSince: Date | undefined, adopted: RowIdentity | undefined, writer: string): Promise<void> {
+  {
     const db = await getDb();
     if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
     const T = robotMotionLockAuthority;
@@ -326,7 +390,7 @@ export function deleteMotionLock(robotId: number, generation: number, bootSince?
       if (!isEdgeControlSchemaMissing(err)) throw err;
       await db.delete(robotMotionLocks).where(and(eq(robotMotionLocks.robotId, robotId), supersededBy(generation, bootSince))); // pre-0374
     }
-  });
+  }
 }
 
 export interface SavedMotionLock {
@@ -380,6 +444,9 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
   const pending = readLockPersistPending(robotId);
   const foreignPending = pending.kind === "unreadable" || (pending.kind === "marker" && pending.m.writer !== writerOf(lock));
   let unpersisted: string | null = null;
+  // MIN-3 — no durable marker can be written here ⇒ a lock taken now could not survive a restart if its DB write failed
+  const writable = pendingDirWritable();
+  if (!writable.ok) alertNotDurable(robotId, `the pending-marker directory ${motionLockPendingDir()} is not writable: ${writable.error}`);
   if (!load.ok) outcome = "persistUnknown";
   else if (saved) {
     lock.restore(saved);
@@ -392,6 +459,9 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
       pending.kind === "marker"
         ? `the motion lock taken before the restart (${pending.m.reasonCode}, generation ${pending.m.generation}, since ${pending.m.since ?? "?"}) was never persisted`
         : `its motion-lock pending marker is unreadable (${(pending as { error: string }).error})`;
+  } else if (!writable.ok) {
+    outcome = "persistUnknown";
+    unpersisted = `the motion-lock pending-marker directory is not writable (${writable.error}) — a lock could not be made durable`;
   } else outcome = "none";
   if (foreignPending && outcome === "restored") {
     try {
@@ -403,8 +473,15 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
   lock.attachPersistence({
     locked: (state) => {
       const w = writerOf(lock);
-      markLockPersistPending(robotId, state, w); // I-5 — durable BEFORE the upsert is even queued
-      void persistMotionLock(robotId, state, w, clearedHere.get(lock) ?? [], () => clearLockPersistPending(robotId, Math.max(1, state.generation ?? 1), w));
+      // I-5 — durable BEFORE the upsert is even queued; MIN-3 — not durable ⇒ motion HELD until the upsert (or a clear) lands
+      if (!markLockPersistPending(robotId, state, w)) {
+        lock.holdUntilDurable(`the motion lock (${state.reasonCode ?? "lock"}, generation ${state.generation ?? "?"}) is not persisted yet and its pending marker could not be written`);
+        alertNotDurable(robotId, "its pending marker could not be written");
+      }
+      void persistMotionLock(robotId, state, w, clearedHere.get(lock) ?? [], () => {
+        clearLockPersistPending(robotId, Math.max(1, state.generation ?? 1), w);
+        lock.releaseDurabilityHold(); // a PERSISTED lock
+      });
     },
     cleared: (state) => {
       clearLockPersistPending(robotId, Number.MAX_SAFE_INTEGER, writerOf(lock)); // I-5 — decided: no restart lock for it
@@ -423,6 +500,7 @@ export function attachMotionLockPersistence(robotId: number, lock: MotionLock, l
         state.reasonCode === MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE && state.since ? new Date(state.since) : undefined,
         adopted,
         writerOf(lock),
+        () => lock.releaseDurabilityHold(), // MIN-3 — a PERSISTED clear releases a durability hold
       );
     },
   });

@@ -330,7 +330,7 @@ docker compose -f deploy/edge/docker-compose.edge.yml -f deploy/edge/docker-comp
 | `EDGE_PULL_MS` (central) | `2000` | The pull interval signed into every node's config (`limits.pullMs`, 0.5–60 s). |
 | `EDGE_STOP_ACK_SLACK_MS` (central) | `2000` | A queued STOP not acknowledged within 3 × pullMs + this ⇒ a durable critical alert `stop_undelivered` (once per request). |
 | `EDGE_STOP_DELIVERY_CHECK_MS` (central) | = `EDGE_PULL_MS` | How often central sweeps for unacknowledged STOPs. |
-| `ROBOT_MOTION_LOCK_PENDING_DIR` (central) | `./data/robot-motion-lock-pending` | One fsynced marker per robot whose motion lock is not yet persisted (I-5): a restart with a marker and no DB row starts that robot LOCKED (`persistUnknown`). Keep it on persistent storage. |
+| `ROBOT_MOTION_LOCK_PENDING_DIR` (central) | `./data/robot-motion-lock-pending` | One fsynced marker per robot whose motion lock is not yet persisted (I-5): a restart with a marker and no DB row starts that robot LOCKED (`persistUnknown`). Keep it on persistent storage. Marker file AND directory are fsynced (POSIX; Windows has no directory fsync — best effort). Not writable ⇒ the robot starts LOCKED and a lock that cannot be made durable HOLDS motion (even after a clear) until its DB write or the clear's delete lands, with an alert `motion_lock_not_durable` (residual MIN-3). |
 | `EDGE_KEY_RETIRED_GRACE_MS` (central) | `600000` | How long a retired key stays in the keyset. |
 
 Any missing piece ⇒ the gateway starts **no device** and says why once (fail-closed). `EDGE_GATEWAY_CONFIG_FILE`,
