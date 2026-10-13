@@ -100,6 +100,10 @@ vi.mock("./edgeCentralCommon", async (orig) => {
       if (sw.owners) throw new Error("ownership read failed");
       return real.robotOwners(...a);
     },
+    ownedRobotIds: async (...a: Parameters<typeof real.ownedRobotIds>) => {
+      if (sw.owners) throw new Error("ownership read failed");
+      return real.ownedRobotIds(...a);
+    },
     userRoleOf: async (...a: Parameters<typeof real.userRoleOf>) => {
       if (sw.role) throw new Error("role read failed");
       return real.userRoleOf(...a);
@@ -229,6 +233,18 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize is fail-closed at ev
       delete process.env.ROBOT_CONTROL_ENABLED;
       delete process.env.ROBOT_COMMISSIONING_REQUIRED;
     }
+  });
+
+  it("★ F1-2 / R-10-bn: the claim-time ownership read fails ⇒ the claim is refused (503), nothing claimed; the read answering ⇒ claimed", async () => {
+    const s = kitSteps(k);
+    const { claimForNodeV2 } = await import("./edgeExecutionCentral");
+    const run = await k.newRun("fcclaim", "A", [s.gate, s.robotStop]);
+    sw.owners = true;
+    const r = await claimForNodeV2(await k.principal("A"), run.runId, { claimSeq: 0, defHash: run.defHash, programChecks: k.readings([k.ids.adapterA]) });
+    expect(r, JSON.stringify(r)).toMatchObject({ http: 503 });
+    expect(Number((await k.sql`SELECT "claimSeq" FROM orchestration_run_edge_assignments WHERE "runId" = ${run.runId}`)[0].claimSeq)).toBe(0);
+    sw.owners = false;
+    expect((await claimForNodeV2(await k.principal("A"), run.runId, { claimSeq: 0, defHash: run.defHash, programChecks: k.readings([k.ids.adapterA]) })).http).toBe(200);
   });
 
   it("★ R-10-as (M-3): the node's command read fails ⇒ pull 503 AND progress 503 — never an empty \"no commands\" 200", async () => {

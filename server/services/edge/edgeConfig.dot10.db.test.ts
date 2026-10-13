@@ -155,6 +155,31 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — config / pull / claim / heartbe
     }
   });
 
+  it("★ F1-2 / R-10-bn: the claim is fail-closed on a command step whose device cannot be resolved — an OT STOP on a machine with no adapter, a robot STOP with no robot id, a command its machine does not have ⇒ 409 not_owned naming the step, nothing claimed", async () => {
+    const s = kitSteps(k);
+    const c = await import("./edgeExecutionCentral");
+    const mNoAd = Number((await k.sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${k.ids.st}, ${`MN-${k.DAU}`}, 'kit no adapter', 'AUTOMATION', true) RETURNING id`)[0].id);
+    try {
+      const cases: Array<[string, unknown]> = [
+        ["q1", { id: "q1", type: "command", machineId: mNoAd, command: "stop", args: { writes: [{ tagKey: "stop_cmd", value: true }] } }],
+        ["s9", { id: "s9", type: "command", machineId: k.ids.mRobot, command: "abort", args: {} }],
+        ["u1", { id: "u1", type: "command", machineId: k.ids.mOtA, command: "no_such_command", args: { adapterId: k.ids.adapterA } }], // unknown command
+      ];
+      for (const [stepId, step] of cases) {
+        const run = await k.newRun(`unres-${stepId}`, "A", [s.gate, step]);
+        const r = await c.claimForNodeV2(await k.principal("A"), run.runId, { claimSeq: 0, defHash: run.defHash, programChecks: k.readings([k.ids.adapterA]) });
+        expect(r, `${stepId}: ${JSON.stringify(r)}`).toMatchObject({ http: 409, code: "not_owned" });
+        expect(r.message).toContain(stepId);
+        expect(Number((await k.sql`SELECT "claimSeq" FROM orchestration_run_edge_assignments WHERE "runId" = ${run.runId}`)[0].claimSeq)).toBe(0);
+      }
+      // control: the same shape with resolvable devices is claimed
+      const ok = await k.newRun("unres-ok", "A", [s.gate, s.robotStop]);
+      expect((await c.claimForNodeV2(await k.principal("A"), ok.runId, { claimSeq: 0, defHash: ok.defHash, programChecks: k.readings([k.ids.adapterA]) })).http).toBe(200);
+    } finally {
+      await k.sql`DELETE FROM machines WHERE id = ${mNoAd}`.catch(() => undefined);
+    }
+  });
+
   it("★ claim (v2): a signed run package the edge verifies — verified STOPs (robot abort, pinned OT stop), no server-only context key; foreign target ⇒ not_owned; N5 rate limit", async () => {
     const s = kitSteps(k);
     const c = await import("./edgeExecutionCentral");

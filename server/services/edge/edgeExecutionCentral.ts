@@ -836,6 +836,9 @@ export async function claimForNodeV2(node: EdgeNodePrincipal, runId: number, bod
     const [ownR, ownA] = await Promise.all([ownedRobotIds(d, node.nodeId, analysis.robotIds), ownedAdapterIds(d, node.nodeId, analysis.adapterIds)]);
     const foreign = [...analysis.robotIds.filter((id) => !ownR.has(id)).map((id) => `robot ${id}`), ...analysis.adapterIds.filter((id) => !ownA.has(id)).map((id) => `adapter ${id}`)];
     if (foreign.length) return edgeError("not_owned", `Run ${runId} targets devices this node does not own (${foreign.slice(0, 5).join(", ")}) — not claimed.`);
+    // fail closed (F1-2 / R-10-bn, STOP steps included): a command step whose bound device cannot be resolved cannot be shown
+    // to be this node's ⇒ the run is not claimed (an unreadable ownership throws ⇒ 503, not claimed either)
+    if (analysis.unresolved.length) return edgeError("not_owned", `Run ${runId} has command step(s) whose device cannot be resolved (${analysis.unresolved.slice(0, 5).join(", ")}) — not claimed.`);
     // D7 — the node's readings of its adapters (fresh for this claim) are stored; central never reads them itself
     const { edgeProgramPreFor } = await import("./edgeAuthorizeCentral");
     const detail = await computeBindingDetail(d, def, await edgeProgramPreFor(d, node, req.programChecks)); // R-10-m — the one rule

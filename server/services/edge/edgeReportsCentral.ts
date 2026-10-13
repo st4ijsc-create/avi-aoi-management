@@ -332,6 +332,7 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
           .where(and(eq(orchestrationRuns.id, runId), sql`${orchestrationRuns.status} IN ('running', 'compensating')`));
         return;
       }
+      if (rec.kind === "auth_unused") return applyAuthUnused(tx, node, runId, req.claimSeq, rec, audits);
       // ledger
       await applyLedger(tx, node, runId, req.claimSeq, run.startedBy ?? null, rec, audits, edgeMark, verifiedStops);
     });
@@ -340,6 +341,39 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
     if (!isEdgeUnavailableError(err)) console.error(`[EdgeReports] report of run ${runId} by node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
     return edgeUnavailable;
   }
+}
+
+/**
+ * R-10-bp (F1-3) — the edge never used authorisation `jti` (it expired before use). Accepted only for THIS node's authorisation
+ * of THIS claim (the report already proved the claim token), same step and attempt, with no reported result; then
+ * supersededAt is written (once — 0372's guard; avi_app may UPDATE that column). Already superseded ⇒ nothing to do. A result
+ * on record, or any mismatch ⇒ anomaly, nothing written.
+ */
+async function applyAuthUnused(
+  tx: Db,
+  node: EdgeNodePrincipal,
+  runId: number,
+  claimSeq: number,
+  rec: Extract<EdgeRunReportRecord, { kind: "auth_unused" }>,
+  audits: Audit[],
+): Promise<StreamRecordOutcome> {
+  const refuse = (code: string, extra: Record<string, unknown> = {}): StreamRecordOutcome => {
+    audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: code, jti: rec.jti, stepId: rec.stepId, attempt: rec.attempt, seq: rec.seq, ...extra }, status: "failure" });
+    return { anomaly: code };
+  };
+  const [auth] = await tx.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.jti, rec.jti)).limit(1);
+  if (!auth || auth.edgeNodeId !== node.nodeId || auth.runId !== runId || auth.claimSeq !== claimSeq || auth.stepId !== rec.stepId || auth.attempt !== rec.attempt) {
+    return refuse("auth_unused_mismatch", { known: !!auth });
+  }
+  if (auth.resultReportedAt != null) return refuse("auth_unused_after_result", { resultStatus: auth.resultStatus });
+  if (auth.supersededAt != null) return;
+  const done = await tx
+    .update(edgeStepAuthorizations)
+    .set({ supersededAt: new Date() })
+    .where(and(eq(edgeStepAuthorizations.jti, rec.jti), sql`${edgeStepAuthorizations.resultReportedAt} IS NULL`, sql`${edgeStepAuthorizations.supersededAt} IS NULL`))
+    .returning({ jti: edgeStepAuthorizations.jti });
+  if (done.length === 0) return refuse("auth_unused_after_result", { race: true });
+  audits.push({ action: "EDGE_AUTH_UNUSED", entity: { type: "orchestration_run", id: runId }, details: { jti: rec.jti, stepId: rec.stepId, attempt: rec.attempt, reason: rec.reason, at: rec.at } });
 }
 
 async function applyLedger(
@@ -389,8 +423,13 @@ async function applyLedger(
   const at = new Date(rec.at);
   const key = boundedKey(auth ? `edge:${auth.jti}` : `edge-stop:${node.nodeId}:${rec.idempotencyKey}:${rec.seq}`);
   const result = { ...(rec.result ?? {}), edge: { ...edgeMark(auth?.jti ?? null), stop: isStop, reportedStatus: rec.status } };
+  // R-10-bo — a STOP ledger row says what the STOP really was: "simulated" only where central runs the target simulated
+  let stopNote: string | null = null;
+  if (isStop && rec.status === "simulated" && !(await centralRunsTargetSimulated(robot ? { robotId: robot.robotId } : { adapterId: ot!.adapterId }))) {
+    stopNote = "the edge reported the STOP as simulated, but central runs this device for real — not a STOP";
+  }
   if (robot) {
-    const status = ROBOT_JOB_STATUSES.has(rec.status) ? rec.status : "failed";
+    const status = stopNote ? "failed" : ROBOT_JOB_STATUSES.has(rec.status) ? rec.status : "failed";
     await tx
       .insert(robotJobs)
       .values({
@@ -404,13 +443,13 @@ async function applyLedger(
         confirmedBy: approval?.approvedBy ?? null,
         idempotencyKey: key,
         result,
-        errorText: status === "failed" && rec.status !== "failed" ? `edge reported status "${rec.status}"` : null,
+        errorText: stopNote ?? (status === "failed" && rec.status !== "failed" ? `edge reported status "${rec.status}"` : null),
         startedAt: at,
         completedAt: at,
       })
       .onConflictDoNothing();
   } else {
-    const status = OT_COMMAND_STATUSES.has(rec.status) ? rec.status : "failed";
+    const status = stopNote ? "failed" : OT_COMMAND_STATUSES.has(rec.status) ? rec.status : "failed";
     await tx
       .insert(commandLog)
       .values({
@@ -424,7 +463,7 @@ async function applyLedger(
         triggerKind: "hitl",
         approvedBy: approval?.approvedBy ?? null,
         ackValue: result,
-        errorText: status === "failed" && rec.status !== "failed" ? `edge reported status "${rec.status}"` : null,
+        errorText: stopNote ?? (status === "failed" && rec.status !== "failed" ? `edge reported status "${rec.status}"` : null),
         idempotencyKey: key,
         sentAt: at,
         ackedAt: at,
@@ -440,10 +479,47 @@ async function applyLedger(
 }
 
 /**
+ * R-10-bo — does CENTRAL run this target simulated (its own config: control flag + commissioning, the dispatchers' `real`)?
+ * Only then is an edge "simulated" STOP what central itself would have done. Unreadable ⇒ false (never a confirmation on a guess).
+ */
+export async function centralRunsTargetSimulated(target: { robotId: number } | { adapterId: number }): Promise<boolean> {
+  try {
+    if ("robotId" in target) {
+      const { isRobotControlEnabled, isRobotCommissioningRequired, isRobotCommissioned } = await import("../robot/robotCommandDispatcher");
+      const real = isRobotControlEnabled() && (isRobotCommissioningRequired() ? await isRobotCommissioned(target.robotId) : true);
+      return !real;
+    }
+    const { isOtControlEnabled } = await import("../ot/commandDispatcher");
+    const { isCommissioningRequired, isCommissioned } = await import("../ot/commissioningService");
+    const real = isOtControlEnabled() && (isCommissioningRequired() ? await isCommissioned(target.adapterId) : true);
+    return !real;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * R-10-bo — the STOP result central records for an edge report: `completed` stays completed; `simulated` stays simulated ONLY
+ * when central runs the target simulated, else it is a FAILED STOP (the edge did not stop a real device); `failed` is failed.
+ * Only `completed` and a central-simulated `simulated` ever confirm anything.
+ */
+async function effectiveStopStatus(reported: string, target: { robotId: number } | { adapterId: number }): Promise<{ status: "completed" | "simulated" | "failed"; note: string | null }> {
+  if (reported === "completed") return { status: "completed", note: null };
+  if (reported === "simulated") {
+    return (await centralRunsTargetSimulated(target))
+      ? { status: "simulated", note: null }
+      : { status: "failed", note: "the edge reported the STOP as simulated, but central runs this device for real — not a STOP" };
+  }
+  return { status: "failed", note: "the edge reported the re-sent STOP failed" };
+}
+
+/**
  * B fix review 4 (R-10-bn, F1-4) — a STOP the edge re-sent from a signed sweep picture. Accepted only when it matches what
  * central signs as that picture NOW: the run is this node's assignment and centrally stopped (aborted), the step is a VERIFIED
  * STOP of the assigned definition with exactly that target (R-10-o), the device is this node's at the reported owner epoch,
- * and the picture's issuedAt is not before the abort nor in the future. Then: the step's STOP ledger row (robot_jobs abort /
+ * and the picture's issuedAt is not before the abort nor in the future. R-10-bo — ONLY `completed` (or `simulated` where central
+ * itself runs the target simulated) confirms; anything else is a FAILED STOP (row + durable alert, run stays unconfirmed). Then:
+ * the step's STOP ledger row (robot_jobs abort /
  * command_log of the step's command; one confirmed row per (node, run, step) — re-sends add none; a failed one is its own row), and `completed` /
  * `simulated` confirm abort:<step> (the pull stops listing the run, the edge stops re-sending). `failed` writes the ledger row
  * only (abort:<step> stays failed; the edge keeps re-sending inside the window). Anything else ⇒ anomaly, nothing written.
@@ -470,24 +546,40 @@ async function applySweepStop(tx: Db, node: EdgeNodePrincipal, rec: Extract<Edge
   if (!owner || owner.edgeNodeId !== node.nodeId || owner.ownerEpoch !== rec.ownerEpoch) return refuse("not_owned_at_epoch", { currentEpoch: owner?.ownerEpoch ?? null });
   const step = findStep(def.steps, rec.stepId);
   const at = new Date(rec.at);
+  // R-10-bo — only `completed` (or `simulated` where CENTRAL runs the target simulated) is a STOP; anything else is a failed one
+  const eff = await effectiveStopStatus(rec.status, robotId !== null ? { robotId } : { adapterId: adapterId as number });
   // one confirmed row per (node, run, step); a FAILED re-send is evidence of its own (keyed by its seq)
-  const key = boundedKey(`edge-sweep-stop:${node.nodeId}:${rec.runId}:${rec.stepId}${rec.status === "failed" ? `:failed:${rec.seq}` : ""}`);
+  const key = boundedKey(`edge-sweep-stop:${node.nodeId}:${rec.runId}:${rec.stepId}${eff.status === "failed" ? `:failed:${rec.seq}` : ""}`);
   const result = { edge: { nodeId: node.nodeId, sweep: true, stop: true, pictureIssuedAt: rec.pictureIssuedAt, reportedStatus: rec.status, ownerEpoch: rec.ownerEpoch, runId: rec.runId, stepId: rec.stepId } };
   if (robotId !== null) {
-    const status = rec.status === "completed" ? "done" : rec.status;
+    const status = eff.status === "completed" ? "done" : eff.status;
     await tx
       .insert(robotJobs)
-      .values({ robotId, jobType: "abort" as never, params: null, status: status as never, triggerKind: "hitl", actionId: null, requestedBy: run.startedBy ?? null, confirmedBy: null, idempotencyKey: key, result, errorText: status === "failed" ? "edge reported the re-sent STOP failed" : null, startedAt: at, completedAt: at })
+      .values({ robotId, jobType: "abort" as never, params: null, status: status as never, triggerKind: "hitl", actionId: null, requestedBy: run.startedBy ?? null, confirmedBy: null, idempotencyKey: key, result, errorText: eff.note, startedAt: at, completedAt: at })
       .onConflictDoNothing();
   } else {
-    const status = rec.status === "completed" ? "acked" : rec.status;
+    const status = eff.status === "completed" ? "acked" : eff.status;
     const commandType = String((step as { command?: unknown } | undefined)?.command ?? "stop").slice(0, 64);
     await tx
       .insert(commandLog)
-      .values({ actionId: null, adapterId: adapterId as number, commandType, requestedValue: (vs as { pins?: unknown }).pins ?? null, requestedBy: run.startedBy ?? 0, confirmedBy: run.startedBy ?? 0, status: status as never, triggerKind: "hitl", approvedBy: null, ackValue: result, errorText: status === "failed" ? "edge reported the re-sent STOP failed" : null, idempotencyKey: key, sentAt: at, ackedAt: at })
+      .values({ actionId: null, adapterId: adapterId as number, commandType, requestedValue: (vs as { pins?: unknown }).pins ?? null, requestedBy: run.startedBy ?? 0, confirmedBy: run.startedBy ?? 0, status: status as never, triggerKind: "hitl", approvedBy: null, ackValue: result, errorText: eff.note, idempotencyKey: key, sentAt: at, ackedAt: at })
       .onConflictDoNothing();
   }
-  if (rec.status !== "failed") {
+  if (eff.status === "failed") {
+    // R-10-bo — the run stays in stopsUnconfirmed (the edge re-sends with back-off); a person is told, durably
+    const { raiseCriticalStopAlert } = await import("../robot/criticalStopAlert");
+    const admins = await tx.execute(sql`SELECT id FROM users WHERE role = 'admin' AND "isActive" = true ORDER BY id LIMIT 10`).then((r) => ((Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Array<{ id: number }>).map((x) => Number(x.id))).catch(() => [] as number[]);
+    void raiseCriticalStopAlert({
+      kind: "edge_sweep_stop_failed",
+      title: `STOP not confirmed — run ${rec.runId} step ${rec.stepId}`,
+      message: `edge node ${node.nodeCode}: the STOP of aborted run ${rec.runId} step ${rec.stepId} (${robotId !== null ? `robot ${robotId}` : `adapter ${adapterId}`}) was re-sent and is NOT confirmed (${eff.note}). The edge keeps re-sending; check the equipment (hardware E-STOP if needed).`,
+      recipients: [...new Set([...(run.startedBy ? [run.startedBy] : []), ...admins])],
+      dedupKey: `edge-sweep-stop-failed:${node.nodeId}:${rec.runId}:${rec.stepId}:${rec.seq}`,
+      source: robotId !== null ? "robot" : "ot",
+      entityType: "orchestration_run",
+      entityId: rec.runId,
+    });
+  } else {
     const sink = await resolveEngineSink();
     const [row] = await tx.select({ status: orchestrationRunSteps.status }).from(orchestrationRunSteps).where(and(eq(orchestrationRunSteps.runId, rec.runId), eq(orchestrationRunSteps.stepId, abortRowIdOf(rec.stepId)))).limit(1);
     if (row?.status !== "completed") {

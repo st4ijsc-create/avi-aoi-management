@@ -154,8 +154,21 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     expect(stop.http, JSON.stringify(stop)).toBe(200);
     const [job] = await k.sql`SELECT "jobType", status, result FROM robot_jobs WHERE "robotId" = ${k.ids.robotA} AND "idempotencyKey" LIKE ${`edge-stop:${k.ids.nodeA}:%`}`;
     expect(job).toMatchObject({ jobType: "abort", status: "done" });
+    // R-10-bo — a STOP ledger "simulated" while CENTRAL runs the robot for real is recorded as a FAILED STOP, never "simulated"
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
+    try {
+      const sim = await report(p, [{ kind: "ledger", seq: 3, stepId: "s1", attempt: 2, idempotencyKey: `run${p.runId}-s1-a2`, jti: null, stop: true, target: { robotId: k.ids.robotA, jobType: "abort" }, ownerEpoch: ep, status: "simulated", result: null, at: Date.now() }]);
+      expect(sim.http, JSON.stringify(sim)).toBe(200);
+    } finally {
+      delete process.env.ROBOT_CONTROL_ENABLED;
+      delete process.env.ROBOT_COMMISSIONING_REQUIRED;
+    }
+    const [simJob] = await k.sql`SELECT status, "errorText" FROM robot_jobs WHERE "robotId" = ${k.ids.robotA} AND "idempotencyKey" = ${`edge-stop:${k.ids.nodeA}:run${p.runId}-s1-a2:3`}`;
+    expect(simJob).toMatchObject({ status: "failed" });
+    expect(String(simJob.errorText)).toMatch(/simulated, but central runs this device for real/);
     // abort_stop ⇒ the abort:<id> row central keeps
-    expect((await report(p, [{ kind: "abort_stop", seq: 3, stepId: "s1", status: "completed", result: { routedTo: "robot" }, at: Date.now() }])).http).toBe(200);
+    expect((await report(p, [{ kind: "abort_stop", seq: 4, stepId: "s1", status: "completed", result: { routedTo: "robot" }, at: Date.now() }])).http).toBe(200);
     const [ab] = await k.sql`SELECT status, "resultJson" FROM orchestration_run_steps WHERE "runId" = ${p.runId} AND "stepId" = 'abort:s1'`;
     expect(ab.status).toBe("completed");
   });
@@ -350,6 +363,98 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     expect(await abortRow("abort:p1")).toBe("completed");
     // ── the pull no longer lists the run among the unconfirmed STOPs: the edge stops re-sending ──
     expect(await listed()).not.toContain(id);
+  });
+
+  it("★ R-10-bo (scan on 63aad9a23): ONLY `completed` confirms a sweep STOP — `simulated` confirms only when CENTRAL runs that target simulated (else it is a failed STOP); `failed` never confirms, raises a durable alert, the run stays unconfirmed", async () => {
+    const s = kitSteps(k);
+    const { eventsForNode } = await import("./edgeReportsCentral");
+    const { pullForNodeV2 } = await import("./edgeExecutionCentral");
+    const run = await k.newRun("sweepbo", "A", [s.gate, s.robotMove, s.robotStop]);
+    const id = run.runId;
+    await k.sql`UPDATE orchestration_runs SET status = 'aborted', "finishedAt" = now() WHERE id = ${id}`;
+    await k.sql`INSERT INTO orchestration_run_steps ("runId", "stepId", "stepType", status, attempt, error) VALUES (${id}, 'abort:s1', 'command', 'failed', 0, 'robot not active/connected')`;
+    const epR = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
+    const sw = (seq: number, status: string) => ({ kind: "sweep_stop", seq, runId: id, stepId: "s1", target: { robotId: k.ids.robotA }, ownerEpoch: epR, pictureIssuedAt: Date.now(), status, at: Date.now() });
+    const abortRow = async () => (await k.sql`SELECT status FROM orchestration_run_steps WHERE "runId" = ${id} AND "stepId" = 'abort:s1'`)[0]?.status;
+    const rows = async () => (await k.sql`SELECT status, "errorText" FROM robot_jobs WHERE "idempotencyKey" LIKE ${`edge-sweep-stop:%:${id}:%`} ORDER BY id`).map((r) => r.status);
+    const listed = async () => ((await pullForNodeV2(await k.principal("A"), {})).data as { stopsUnconfirmed: Array<{ runId: number }> }).stopsUnconfirmed.map((u) => u.runId);
+    const ev = epoch();
+    // central runs robot A REAL (control on, commissioning not required): an edge "simulated" STOP is NOT a STOP
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
+    try {
+      const r1 = await eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records: [sw(1, "simulated")] });
+      expect(r1.http, JSON.stringify(r1)).toBe(200);
+      expect(await abortRow()).toBe("failed");
+      expect(await rows()).toEqual(["failed"]);
+      expect(await listed()).toContain(id);
+      // failed: never confirms; a durable alert (URGENT inbox row) for the run owner
+      const r2 = await eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records: [sw(2, "failed")] });
+      expect(r2.http).toBe(200);
+      expect(await abortRow()).toBe("failed");
+      expect(await rows()).toEqual(["failed", "failed"]);
+      expect(await listed()).toContain(id);
+      let alerts = 0;
+      for (let i = 0; i < 50 && alerts === 0; i++) {
+        alerts = Number((await k.sql`SELECT count(*)::int AS n FROM notifications WHERE "userId" = ${k.u.owner} AND title LIKE ${`%run ${id}%`}`)[0].n);
+        if (alerts === 0) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(alerts).toBeGreaterThan(0);
+    } finally {
+      delete process.env.ROBOT_CONTROL_ENABLED;
+      delete process.env.ROBOT_COMMISSIONING_REQUIRED;
+    }
+    // central runs robot A SIMULATED (control off): the edge's "simulated" STOP is what central would do ⇒ confirms
+    const r3 = await eventsForNode(await k.principal("A"), { epoch: ev, stream: "events", records: [sw(3, "simulated")] });
+    expect(r3.http).toBe(200);
+    expect(await abortRow()).toBe("completed");
+    expect(await listed()).not.toContain(id);
+  });
+
+  it("★ R-10-bp (F1-3): `auth_unused` (a late token, never used) marks THIS node's authorisation of THIS claim superseded — a Continue then re-authorises the step (no outcome-unknown); forged by another node / after a result ⇒ anomaly, nothing written", async () => {
+    const s = kitSteps(k);
+    const c = await import("./edgeExecutionCentral");
+    const unused = (seq: number, jti: string, over: Record<string, unknown> = {}) => ({ kind: "auth_unused", seq, jti, stepId: "o1", attempt: 1, reason: "expired_before_use", at: Date.now(), ...over });
+    const superseded = async (jti: string) => (await k.sql`SELECT "supersededAt" FROM edge_step_authorizations WHERE jti = ${jti}`)[0].supersededAt;
+    // ── A's run: o1 authorised, the token expired before use ──
+    const p = await claimed("aunused", [s.gate, s.otWrite]);
+    const jti = await authorizeO1(p);
+    // forged by node B (its own claim, A's jti) ⇒ anomaly, A's authorisation untouched
+    const runB = await k.newRun("aunusedB", "B", [s.gate, s.otWriteB]);
+    const cb = await c.claimForNodeV2(await k.principal("B"), runB.runId, { claimSeq: 0, defHash: runB.defHash, programChecks: k.readings([k.ids.adapterB]) });
+    expect(cb.http, JSON.stringify(cb)).toBe(200);
+    const pB = { runId: runB.runId, claimSeq: cb.data!.claimSeq, claimToken: cb.data!.claimToken, stream: `run:${runB.runId}:${cb.data!.claimSeq}`, epoch: epoch() };
+    const forged = await report(pB, [unused(1, jti)], "B");
+    expect(forged, JSON.stringify(forged)).toMatchObject({ http: 200, data: { outcomes: [{ seq: 1, code: "auth_unused_mismatch" }] } });
+    expect(await superseded(jti)).toBeNull();
+    // A, wrong attempt ⇒ mismatch; then the true report ⇒ superseded; repeated ⇒ nothing more
+    const wrong = await report(p, [unused(1, jti, { attempt: 2 })]);
+    expect(wrong.data!.outcomes).toEqual([{ seq: 1, outcome: "anomaly", code: "auth_unused_mismatch" }]);
+    expect(await superseded(jti)).toBeNull();
+    const ok = await report(p, [unused(2, jti), unused(3, jti)]);
+    expect(ok, JSON.stringify(ok)).toMatchObject({ http: 200, data: { ackedSeq: 3 } });
+    expect(ok.data!.outcomes).toBeUndefined();
+    expect(await superseded(jti)).not.toBeNull();
+    // ── the segment ends HELD; a Continue re-queues WITHOUT counting o1 as possibly sent; the next claim re-authorises o1 ──
+    const done = await c.completeForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, claimToken: p.claimToken, seq: 1, outcome: "held", heldReason: "centralUnreachable", epoch: p.epoch, reportedThrough: 3 });
+    expect(done.http, JSON.stringify(done)).toBe(200);
+    const { getRun, resumeRun } = await import("../orchestration/foe/foeEngine");
+    const view = await getRun(p.runId, { bindingDigest: true });
+    const res = await resumeRun(p.runId, { approved: true, expectedStepId: null, expectedDefHash: view!.defHash!, expectedBindingDigest: view!.bindingDigest! }, { id: k.u.admin2, role: "admin", name: "continuer" });
+    expect(res, JSON.stringify(res)).toMatchObject({ ok: true, status: "queued" });
+    const [ctx] = await k.sql`SELECT "contextJson" FROM orchestration_runs WHERE id = ${p.runId}`;
+    expect(JSON.stringify((ctx.contextJson as Record<string, unknown>)?.foeResumeState ?? {})).not.toContain("o1");
+    const re = await c.claimForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, defHash: p.defHash, programChecks: k.readings([k.ids.adapterA]) });
+    expect(re.http, JSON.stringify(re)).toBe(200);
+    const jti2 = await authorizeO1({ runId: p.runId, claimSeq: re.data!.claimSeq, claimToken: re.data!.claimToken });
+    expect(jti2).not.toBe(jti);
+    // ── after a result exists ⇒ anomaly, ignored ──
+    const led = { kind: "ledger", seq: 1, stepId: "o1", attempt: 1, idempotencyKey: `run${p.runId}-o1-a1`, jti: jti2, stop: false, target: { adapterId: k.ids.adapterA, commandType: "write_tag" }, status: "simulated", result: { writes: [{ tagKey: "speed_sp", value: 7 }] }, at: Date.now() };
+    const p2 = { runId: p.runId, claimSeq: re.data!.claimSeq, claimToken: re.data!.claimToken, stream: `run:${p.runId}:${re.data!.claimSeq}`, epoch: epoch() };
+    expect((await report(p2, [led])).http).toBe(200);
+    const late = await report(p2, [unused(2, jti2)]);
+    expect(late.data!.outcomes).toEqual([{ seq: 2, outcome: "anomaly", code: "auth_unused_after_result" }]);
+    expect(await superseded(jti2)).toBeNull();
   });
 
   it("★ M-5: refusal / anomaly / actuation events naming ANOTHER node's run are audited against the reporting node, never that run", async () => {

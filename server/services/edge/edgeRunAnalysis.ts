@@ -134,7 +134,8 @@ export interface EdgeStopAnalysis {
   /** every device the definition's command steps target */
   robotIds: number[];
   adapterIds: number[];
-  /** OT command steps whose adapter does not resolve (the edge cannot send them; listed for the ownership check) */
+  /** command steps whose bound device does not resolve — an OT step without an adapter, a robot step without a robot id, a
+   *  command of an unknown machine / command (the edge cannot send them; the ownership checks refuse them — fail closed) */
   unresolved: string[];
 }
 
@@ -145,6 +146,7 @@ export async function analyseDefinition(d: Db, runId: number, def: Pick<Workflow
   for (const s of allStepsOf(def?.steps)) {
     const rb = await rebuildCommand(d, s, machineMap, edgeStepIdempotencyKey(runId, s.id, 1));
     if (rb) rebuilt.push(rb);
+    else if (s.type === "command") out.unresolved.push(s.id);
   }
   let pins: Map<number, Array<{ tagKey: string; value: unknown }>> | null = null;
   const otAdapters = rebuilt.filter((r): r is Extract<RebuiltCommand, { kind: "ot" }> => r.kind === "ot" && r.adapterId !== null).map((r) => r.adapterId as number);
@@ -156,6 +158,7 @@ export async function analyseDefinition(d: Db, runId: number, def: Pick<Workflow
   for (const rb of rebuilt) {
     if (rb.kind === "robot") {
       if (rb.robotId !== null) out.robotIds.push(rb.robotId);
+      else out.unresolved.push(rb.step.id);
       if (rb.isStop && rb.robotId !== null) out.verifiedStops.push({ kind: "robot", stepId: rb.step.id, robotId: rb.robotId });
       continue;
     }
