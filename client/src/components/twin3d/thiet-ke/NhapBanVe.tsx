@@ -203,7 +203,8 @@ export default function NhapBanVe({ onXacNhan }: NhapBanVeProps) {
           setCauHinh((c) => ({ ...c, donViNguon: donViDeNghi(tt.bbox) }));
         }
       } catch (e) {
-        setLoiKyThuat(e instanceof Error ? e.message : String(e));
+        console.error("[NhapBanVe] đọc bản vẽ thất bại", e);
+        setLoiKyThuat("docThatBai"); // mã khoá i18n, không phải chuỗi thô
         setTomTat(null);
       } finally {
         setDangDoc(false);
