@@ -427,13 +427,13 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     const forged = await report(pB, [unused(1, jti)], "B");
     expect(forged, JSON.stringify(forged)).toMatchObject({ http: 200, data: { outcomes: [{ seq: 1, code: "auth_unused_mismatch" }] } });
     expect(await superseded(jti)).toBeNull();
-    // A, wrong attempt ⇒ mismatch; then the true report ⇒ superseded; repeated ⇒ nothing more
+    // A, wrong attempt ⇒ mismatch; then the true report ⇒ superseded; repeated ⇒ anomaly, nothing more
     const wrong = await report(p, [unused(1, jti, { attempt: 2 })]);
     expect(wrong.data!.outcomes).toEqual([{ seq: 1, outcome: "anomaly", code: "auth_unused_mismatch" }]);
     expect(await superseded(jti)).toBeNull();
     const ok = await report(p, [unused(2, jti), unused(3, jti)]);
     expect(ok, JSON.stringify(ok)).toMatchObject({ http: 200, data: { ackedSeq: 3 } });
-    expect(ok.data!.outcomes).toBeUndefined();
+    expect(ok.data!.outcomes).toEqual([{ seq: 3, outcome: "anomaly", code: "auth_unused_repeat" }]); // R-10-bq: once per jti
     expect(await superseded(jti)).not.toBeNull();
     // ── the segment ends HELD; a Continue re-queues WITHOUT counting o1 as possibly sent; the next claim re-authorises o1 ──
     const done = await c.completeForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, claimToken: p.claimToken, seq: 1, outcome: "held", heldReason: "centralUnreachable", epoch: p.epoch, reportedThrough: 3 });
@@ -455,6 +455,51 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     const late = await report(p2, [unused(2, jti2)]);
     expect(late.data!.outcomes).toEqual([{ seq: 2, outcome: "anomaly", code: "auth_unused_after_result" }]);
     expect(await superseded(jti2)).toBeNull();
+  });
+
+  it("★ R-10-bq (scan on 202960fde): `auth_unused` is REFUSED whenever central holds evidence the jti WAS used — a step row past dispatch citing it, an actuation event citing it — and is accepted once only; the outcome stays unknown (supersededAt NULL)", async () => {
+    const s = kitSteps(k);
+    const { eventsForNode } = await import("./edgeReportsCentral");
+    const unused = (seq: number, jti: string, over: Record<string, unknown> = {}) => ({ kind: "auth_unused", seq, jti, stepId: "o1", attempt: 1, reason: "expired_before_use", at: Date.now(), ...over });
+    const superseded = async (jti: string) => (await k.sql`SELECT "supersededAt" FROM edge_step_authorizations WHERE jti = ${jti}`)[0].supersededAt;
+    // (a) the edge's step row says o1 was DISPATCHED under this jti (routedTo), no ledger yet ⇒ auth_unused refused
+    const p1 = await claimed("bqstep", [s.gate, s.otWrite]);
+    const j1 = await authorizeO1(p1);
+    const dispatched = stepRec(1, "o1", { status: "running", attempt: 1, jti: j1, result: { routedTo: "ot-dispatcher" } });
+    expect((await report(p1, [dispatched])).http).toBe(200);
+    const r1 = await report(p1, [unused(2, j1)]);
+    expect(r1.data!.outcomes).toEqual([{ seq: 2, outcome: "anomaly", code: "auth_unused_evidence_of_use" }]);
+    expect(await superseded(j1)).toBeNull();
+    // (b) an actuation evidence event citing the jti (the edge's ledger of a lost claim) ⇒ refused
+    const p2 = await claimed("bqact", [s.gate, s.otWrite]);
+    const j2 = await authorizeO1(p2);
+    const act = { kind: "actuation", seq: 1, runId: p2.runId, claimSeq: p2.claimSeq, stepId: "o1", attempt: 1, jti: j2, stop: false, target: { adapterId: k.ids.adapterA, commandType: "write_tag" }, ownerEpoch: Number((await k.sql`SELECT "ownerEpoch" FROM device_adapters WHERE id = ${k.ids.adapterA}`)[0].ownerEpoch), outcome: "acked", at: Date.now() };
+    expect((await eventsForNode(await k.principal("A"), { epoch: epoch(), stream: "events", records: [act] })).http).toBe(200);
+    const r2 = await report(p2, [unused(1, j2)]);
+    expect(r2.data!.outcomes).toEqual([{ seq: 1, outcome: "anomaly", code: "auth_unused_evidence_of_use" }]);
+    expect(await superseded(j2)).toBeNull();
+    // (c) no evidence ⇒ accepted ONCE; a second report ⇒ anomaly (nothing more written)
+    const p3 = await claimed("bqonce", [s.gate, s.otWrite]);
+    const j3 = await authorizeO1(p3);
+    expect((await report(p3, [unused(1, j3)])).data!.outcomes).toBeUndefined();
+    const at3 = await superseded(j3);
+    expect(at3).not.toBeNull();
+    const again = await report(p3, [unused(2, j3)]);
+    expect(again.data!.outcomes).toEqual([{ seq: 2, outcome: "anomaly", code: "auth_unused_repeat" }]);
+    expect(String(await superseded(j3))).toBe(String(at3));
+  });
+
+  it("★ R-10-bq: a step record never RELAXES a dispatched step — a completed / dispatched row is not taken back to pending / skipped / running by a later record of the same or an earlier attempt (Continue would redo it)", async () => {
+    const s = kitSteps(k);
+    const p = await claimed("bqregress", [s.gate, s.otWrite]);
+    const j = await authorizeO1(p);
+    const row = async () => (await k.sql`SELECT status, attempt FROM orchestration_run_steps WHERE "runId" = ${p.runId} AND "stepId" = 'o1'`)[0];
+    expect((await report(p, [stepRec(1, "o1", { status: "completed", attempt: 1, jti: j, result: { routedTo: "ot-dispatcher" }, finishedAt: Date.now() })])).http).toBe(200);
+    for (const [seq, status] of [[2, "pending"], [3, "skipped"], [4, "running"], [5, "failed"]] as const) {
+      const r = await report(p, [stepRec(seq, "o1", { status, attempt: 1, jti: null, result: null })]);
+      expect(r.data!.outcomes, status).toEqual([{ seq, outcome: "anomaly", code: "step_regression" }]);
+      expect(await row()).toMatchObject({ status: "completed", attempt: 1 });
+    }
   });
 
   it("★ M-5: refusal / anomaly / actuation events naming ANOTHER node's run are audited against the reporting node, never that run", async () => {
@@ -526,5 +571,18 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     expect((await k.sql`SELECT outcome FROM robot_motion_lock_requests WHERE id = ${q.requestId}`)[0].outcome).toBe("done");
     // strict: a trust / identity key in a record ⇒ 400
     expect((await eventsForNode(await k.principal("A"), { epoch: evA, stream: "events", records: [{ ...lock(5, "locked"), authority: "central" }] })).http).toBe(400);
+  });
+
+  // LAST in the file: it rotates node A's credential
+  it("★ R-10-bq: auth_unused is bound to the CREDENTIAL the authorisation was issued to — after a rotation the same node's report is refused (outcome stays unknown)", async () => {
+    const s = kitSteps(k);
+    const p = await claimed("bqcred", [s.gate, s.otWrite]);
+    const jti = await authorizeO1(p);
+    const { rotateNodeCredential } = await import("./edgeNodeCredentials");
+    const rot = await rotateNodeCredential({ nodeCode: `NA-${k.DAU}`, actorUserId: k.u.admin, reason: "test rotation R-10-bq" });
+    (k.tokens as { A: string }).A = rot.token;
+    const r = await report(p, [{ kind: "auth_unused", seq: 1, jti, stepId: "o1", attempt: 1, reason: "expired_before_use", at: Date.now() }]);
+    expect(r, JSON.stringify(r)).toMatchObject({ http: 200, data: { outcomes: [{ seq: 1, code: "auth_unused_mismatch" }] } });
+    expect((await k.sql`SELECT "supersededAt" FROM edge_step_authorizations WHERE jti = ${jti}`)[0].supersededAt).toBeNull();
   });
 });

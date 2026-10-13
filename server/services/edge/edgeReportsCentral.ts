@@ -282,6 +282,13 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
         }
         const result = rec.result ?? undefined;
         const isCommand = step.type === "command";
+        if (isCommand) {
+          const regress = await stepRegression(tx, runId, step.id, rec.attempt, rec.status);
+          if (regress) {
+            audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: "step_regression", stepId: step.id, attempt: rec.attempt, change: regress, seq: rec.seq }, status: "failure" });
+            return { anomaly: "step_regression" };
+          }
+        }
         const actuated = rec.status === "completed" || typeof (result as { routedTo?: unknown } | undefined)?.routedTo === "string";
         if (isCommand && !verifiedStopIds.has(step.id) && actuated) {
           const row = await jtiFor(tx, node, runId, req.claimSeq, step.id, rec.attempt, rec.jti);
@@ -361,12 +368,17 @@ async function applyAuthUnused(
     audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: code, jti: rec.jti, stepId: rec.stepId, attempt: rec.attempt, seq: rec.seq, ...extra }, status: "failure" });
     return { anomaly: code };
   };
-  const [auth] = await tx.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.jti, rec.jti)).limit(1);
-  if (!auth || auth.edgeNodeId !== node.nodeId || auth.runId !== runId || auth.claimSeq !== claimSeq || auth.stepId !== rec.stepId || auth.attempt !== rec.attempt) {
+  // FOR UPDATE: a ledger / step record of a concurrent batch cannot slip in between the evidence reads and the write
+  const [auth] = await tx.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.jti, rec.jti)).for("update").limit(1);
+  // the binding: THIS node, THIS credential, THIS run, THIS claim (the report proved its token on this stream / epoch), step + attempt
+  if (!auth || auth.edgeNodeId !== node.nodeId || auth.credentialId !== node.credentialId || auth.runId !== runId || auth.claimSeq !== claimSeq || auth.stepId !== rec.stepId || auth.attempt !== rec.attempt) {
     return refuse("auth_unused_mismatch", { known: !!auth });
   }
+  if (auth.supersededAt != null) return refuse("auth_unused_repeat"); // accepted once per jti
   if (auth.resultReportedAt != null) return refuse("auth_unused_after_result", { resultStatus: auth.resultStatus });
-  if (auth.supersededAt != null) return;
+  // R-10-bq — ANY evidence the jti was used keeps the outcome unknown (never superseded)
+  const evidence = await authUseEvidence(tx, runId, rec.jti, rec.stepId, rec.attempt);
+  if (evidence) return refuse("auth_unused_evidence_of_use", { evidence });
   const done = await tx
     .update(edgeStepAuthorizations)
     .set({ supersededAt: new Date() })
@@ -374,6 +386,45 @@ async function applyAuthUnused(
     .returning({ jti: edgeStepAuthorizations.jti });
   if (done.length === 0) return refuse("auth_unused_after_result", { race: true });
   audits.push({ action: "EDGE_AUTH_UNUSED", entity: { type: "orchestration_run", id: runId }, details: { jti: rec.jti, stepId: rec.stepId, attempt: rec.attempt, reason: rec.reason, at: rec.at } });
+}
+
+/**
+ * R-10-bq — central's evidence that authorisation `jti` (step, attempt) WAS used; null ⇔ none:
+ *   • a ledger row written under it (robot_jobs / command_log `edge:<jti>`);
+ *   • the step row past dispatch for that attempt: it cites the jti, says `routedTo`, or is completed;
+ *   • an actuation evidence event citing it (EDGE_ACTUATION_WITHOUT_CLAIM, R-10-z) or any other edge audit naming the jti.
+ * A read error throws (the batch answers 503: never a supersede on a guess).
+ */
+async function authUseEvidence(tx: Db, runId: number, jti: string, stepId: string, attempt: number): Promise<string | null> {
+  const key = `edge:${jti}`;
+  const [rj] = await tx.select({ id: robotJobs.id }).from(robotJobs).where(eq(robotJobs.idempotencyKey, key)).limit(1);
+  if (rj) return "robot_jobs";
+  const [cl] = await tx.select({ id: commandLog.id }).from(commandLog).where(eq(commandLog.idempotencyKey, key)).limit(1);
+  if (cl) return "command_log";
+  const [row] = await tx.select({ status: orchestrationRunSteps.status, attempt: orchestrationRunSteps.attempt, result: orchestrationRunSteps.resultJson }).from(orchestrationRunSteps).where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, stepId))).limit(1);
+  if (row) {
+    const r = (row.result ?? {}) as { routedTo?: unknown; edge?: { jti?: unknown } };
+    if (r.edge?.jti === jti) return "step_row_jti";
+    if (Number(row.attempt) === attempt && (row.status === "completed" || typeof r.routedTo === "string")) return "step_row_dispatched";
+  }
+  const audits = await tx.execute(sql`SELECT id FROM audit_logs WHERE action IN ('EDGE_ACTUATION_WITHOUT_CLAIM', 'EDGE_STEP_RESULT', 'EDGE_STOP_SENT') AND details LIKE ${`%${jti}%`} LIMIT 1`);
+  if ((Array.isArray(audits) ? audits : ((audits as { rows?: unknown[] }).rows ?? [])).length > 0) return "actuation_event";
+  return null;
+}
+
+/**
+ * R-10-bq — a step record never RELAXES a dispatched step: when the step's row is completed, or past dispatch (routedTo / a
+ * jti) at the same or a later attempt, a record of the same or an earlier attempt that would take it back (pending / skipped /
+ * running / held / awaiting_confirm, or anything but completed over a completed row) is refused — a Continue would redo it.
+ */
+async function stepRegression(tx: Db, runId: number, stepId: string, attempt: number, status: string): Promise<string | null> {
+  const [row] = await tx.select({ status: orchestrationRunSteps.status, attempt: orchestrationRunSteps.attempt, result: orchestrationRunSteps.resultJson }).from(orchestrationRunSteps).where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, stepId))).limit(1);
+  if (!row || Number(row.attempt) < attempt) return null;
+  const r = (row.result ?? {}) as { routedTo?: unknown; edge?: { jti?: unknown } };
+  if (row.status === "completed") return status === "completed" ? null : `completed→${status}`;
+  const dispatched = typeof r.routedTo === "string" || typeof r.edge?.jti === "string";
+  if (dispatched && ["pending", "skipped", "running", "held", "awaiting_confirm"].includes(status)) return `dispatched→${status}`;
+  return null;
 }
 
 async function applyLedger(
