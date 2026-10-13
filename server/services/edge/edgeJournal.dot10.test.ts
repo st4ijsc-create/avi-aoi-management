@@ -334,6 +334,39 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
     await j.close();
   });
 
+  it("★ fix review 7 (R-10-bp): auth.unused is fsynced BEFORE it resolves; the jti is consumed-as-unused (never usable, also after a restart); a USED jti is never marked unused", async () => {
+    const dir = await tmp();
+    const r = recordingIo();
+    const j = await EdgeJournal.open({ dir, io: r.io });
+    r.events.length = 0;
+    r.holdSync();
+    let resolved = false;
+    const p = j.markAuthorizationUnused({ jti: JTI(7), runId: 9, claimSeq: 2, stepId: "m1", attempt: 1, reason: "expired_before_use" }).then((v) => ((resolved = true), v));
+    await new Promise((res) => setTimeout(res, 30));
+    expect(resolved).toBe(false); // held while the fsync is held: nothing may report it yet
+    expect(r.events).toEqual(["write:auth.unused", "sync:start"]);
+    expect(j.isJtiConsumed(JTI(7))).toBe(true); // at once: never usable
+    r.releaseSync();
+    expect(await p).toEqual({ ok: true });
+    expect(await j.consumeAuthorization({ jti: JTI(7), runId: 9, claimSeq: 2, stepId: "m1", attempt: 1 })).toEqual({ ok: false, reason: "jti_consumed" });
+    expect(await j.markAuthorizationUnused({ jti: JTI(7), runId: 9, claimSeq: 2, stepId: "m1", attempt: 1, reason: "expired_before_use" })).toEqual({ ok: false, reason: "jti_consumed" }); // reported once
+    // a jti journaled as USED can never be reported unused
+    expect(await j.consumeAuthorization({ jti: JTI(8), runId: 9, claimSeq: 2, stepId: "m2", attempt: 1 })).toEqual({ ok: true });
+    expect(await j.markAuthorizationUnused({ jti: JTI(8), runId: 9, claimSeq: 2, stepId: "m2", attempt: 1, reason: "expired_before_use" })).toEqual({ ok: false, reason: "jti_consumed" });
+    await j.close();
+    const j2 = await EdgeJournal.open({ dir });
+    expect(j2.isJtiConsumed(JTI(7))).toBe(true); // replayed: still never usable
+    expect(await j2.consumeAuthorization({ jti: JTI(7), runId: 9, claimSeq: 2, stepId: "m1", attempt: 1 })).toEqual({ ok: false, reason: "jti_consumed" });
+    expect(await j2.markAuthorizationUnused({ jti: JTI(8), runId: 9, claimSeq: 2, stepId: "m2", attempt: 1, reason: "expired_before_use" })).toEqual({ ok: false, reason: "jti_consumed" });
+    expect(await j2.markAuthorizationUnused({ jti: JTI(9), runId: 9, claimSeq: 2, stepId: "m3", attempt: 1, reason: "expired_before_use" })).toEqual({ ok: true });
+    // the process dies (no close(), no snapshot): the fsynced auth.unused LINE alone keeps the jti unusable
+    const j3 = await EdgeJournal.open({ dir });
+    expect(j3.opened).toMatchObject({ unclean: true });
+    expect(j3.isJtiConsumed(JTI(9))).toBe(true);
+    expect(await j3.consumeAuthorization({ jti: JTI(9), runId: 9, claimSeq: 2, stepId: "m3", attempt: 1 })).toEqual({ ok: false, reason: "jti_consumed" });
+    await j3.close();
+  });
+
   it("★ a consumed jti is never consumed twice — not in this process, not after a restart", async () => {
     const dir = await tmp();
     const j1 = await EdgeJournal.open({ dir });

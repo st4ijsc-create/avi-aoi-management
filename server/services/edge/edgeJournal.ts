@@ -112,6 +112,8 @@ export interface EdgeJournalEntry<R = EdgeReportableRecord> {
 }
 export type EdgeAppendResult = { seq: number; durable: boolean } | { seq: null; dropped: true; reason: "journal_full" | "unhealthy" | "invalid" | "closed" };
 export type EdgeConsumeResult = { ok: true } | { ok: false; reason: "journal_full" | "jti_consumed" | "io_error" | "closed" };
+/** R-10-bp — `auth.unused`: the answer of markAuthorizationUnused (refused ⇒ the token must not be reported unused) */
+export type EdgeUnusedResult = { ok: true } | { ok: false; reason: "jti_consumed" | "io_error" | "closed" | "invalid" };
 export type EdgeJournalLockState =
   | { kind: "unknown" }
   | { kind: "locked"; generation: number; reasonCode: string; ownerEpoch: number; since: number }
@@ -454,7 +456,8 @@ export class EdgeJournal {
     st.nextSeq = Math.max(st.nextSeq, l.q + 1);
     if (l.s === EDGE_JOURNAL_AUTH_STREAM) {
       const d = l.d as { jti?: unknown };
-      if (l.k === "auth.consumed" && typeof d?.jti === "string") this.jtis.set(d.jti, l.t);
+      // R-10-bp — a jti journaled unused is consumed too (never usable after a restart)
+      if ((l.k === "auth.consumed" || l.k === "auth.unused") && typeof d?.jti === "string") this.jtis.set(d.jti, l.t);
       return;
     }
     seg.maxSeq.set(k, Math.max(seg.maxSeq.get(k) ?? 0, l.q));
@@ -777,6 +780,29 @@ export class EdgeJournal {
     if (!ok) {
       if (!this.ioFailed) this.fail(new Error(`auth.consumed fsync did not finish within ${this.authSyncTimeoutMs} ms`));
       return { ok: false, reason: "io_error" }; // the jti stays consumed (fail-closed)
+    }
+    return { ok: true };
+  }
+
+  /**
+   * R-10-bp (fix review 7) — an authorisation received but NEVER used (it arrived after its TTL): the jti is consumed-as-unused
+   * at once (consumeAuthorization refuses it from now on, also after a restart) and `auth.unused` is fsynced before this
+   * resolves `{ok:true}` — only then may the edge REPORT it unused (central supersedes it). A jti already consumed (USED, or
+   * reported unused before) is refused: a used token is never reported unused. A full journal does not refuse (the record is
+   * tiny, and it only ever lowers what can move); an IO failure does (fail-closed: not reported ⇒ central keeps it as sent).
+   */
+  async markAuthorizationUnused(c: { jti: string; runId: number; claimSeq: number; stepId: string; attempt: number; reason: "expired_before_use" }): Promise<EdgeUnusedResult> {
+    if (this.closed) return { ok: false, reason: "closed" };
+    if (typeof c?.jti !== "string" || c.jti.length === 0 || c.jti.length > 64) return { ok: false, reason: "invalid" };
+    if (this.jtis.has(c.jti)) return { ok: false, reason: "jti_consumed" };
+    if (this.ioFailed) return { ok: false, reason: "io_error" };
+    this.jtis.set(c.jti, Math.max(0, Math.trunc(this.now()))); // at once: a concurrent use is refused
+    const { written } = this.enqueue(EDGE_JOURNAL_AUTH_STREAM, "auth.unused", { jti: c.jti, runId: c.runId, claimSeq: c.claimSeq, stepId: c.stepId, attempt: c.attempt, reason: c.reason }, false);
+    const synced = (async () => (await written) && (await this.syncChained()))();
+    const ok = await this.bounded(synced, this.authSyncTimeoutMs);
+    if (!ok) {
+      if (!this.ioFailed) this.fail(new Error(`auth.unused fsync did not finish within ${this.authSyncTimeoutMs} ms`));
+      return { ok: false, reason: "io_error" }; // the jti stays consumed (never usable)
     }
     return { ok: true };
   }

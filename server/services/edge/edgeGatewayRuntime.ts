@@ -51,6 +51,7 @@ import { EdgeContractError } from "./edgeSigning";
 import {
   EdgeProgramChecks,
   EdgeStreamShipper,
+  createEdgeAuthUnusedReporter,
   createEdgeJournalConsume,
   createEdgeReportSink,
   edgeTelemetryPersistFn,
@@ -323,6 +324,7 @@ export async function createEdgeRuntime(n: EdgeNodeEnv, opts: { fetchImpl?: type
     isJtiConsumed: (jti) => journal.isJtiConsumed(jti),
     programChecks: () => programChecks.latest(),
     anomaly: (code, runId, detail) => void sink.event({ kind: "anomaly", code, runId, detail: detail.slice(0, 1_000), at: Date.now() }),
+    unused: createEdgeAuthUnusedReporter(journal, sink), // R-10-bp
   });
   return { nodeId: n.nodeId, client, config, journal, shipper, sink, consume: createEdgeJournalConsume(journal), authorize, programChecks, startedAtMs: Date.now(), lastHeartbeatOk: null };
 }

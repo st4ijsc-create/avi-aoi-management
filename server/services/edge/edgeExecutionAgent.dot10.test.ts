@@ -22,8 +22,9 @@ import { EdgeConfigSource } from "./edgeConfigSource";
 import { EdgeExecutionAgent, type EdgeAgentConfig, type EdgeDevicePort, type EdgeRunIo, type EdgeSegmentOutcome, type EdgeWalker } from "./edgeExecutionAgent";
 import { FakeCentral, KIT_TOKEN, kitHashDefinition } from "./edgeFakeCentral.testkit";
 import { EdgeJournal } from "./edgeJournal";
-import { generateEdgeSigningKey } from "./edgeSigning";
-import { EdgeProgramChecks, EdgeStreamShipper, createEdgeJournalConsume, createEdgeReportSink } from "./edgeStreams";
+import { EDGE_AUTH_TTL_MIN_MS } from "./edgeProtocol";
+import { generateEdgeSigningKey, parseEdgeCanonicalJson } from "./edgeSigning";
+import { EdgeProgramChecks, EdgeStreamShipper, createEdgeAuthUnusedReporter, createEdgeJournalConsume, createEdgeReportSink } from "./edgeStreams";
 
 /**
  * fix review 1 (R-10-ag) — only DURABLE records ship. A record appended without awaiting (an anomaly, an ack) becomes durable
@@ -123,6 +124,7 @@ async function harness(o: { central?: FakeCentral; walker?: EdgeWalker | null; c
     isJtiConsumed: (j) => journal.isJtiConsumed(j),
     programChecks: () => programChecks.latest(),
     anomaly: (code, runId, detail) => void sink.event({ kind: "anomaly", code, runId, detail, at: Date.now() }),
+    unused: createEdgeAuthUnusedReporter(journal, sink),
   });
   const devices = fakeDevices();
   const w = fakeWalker();
@@ -256,6 +258,49 @@ describe("doc 81 Đợt 10 E — agent v2: claim → signed package → walk →
     await h2.agent.idle();
     expect(h2.w.lastAuth).toMatchObject({ ok: false, verdict: "refused", reason: "approval missing" });
     expect(h2.w.motions).toBe(0);
+  });
+
+  it("★ fix review 7 (R-10-bp): a late authorisation is journaled UNUSED (fsync) and THEN reported on the run stream as `auth_unused`; never used; the step is held", async () => {
+    const h = await harness();
+    h.central.addRun(9);
+    const kit = h.central as unknown as { defaults: (route: string, body: unknown, runId?: number) => { data: { authorization: { payload: string } } } };
+    let lateJti = "";
+    h.central.handlers.authorize = async (b, runId) => {
+      const g = kit.defaults("authorize", b, runId);
+      const claims = parseEdgeCanonicalJson(g.data.authorization.payload) as { jti: string; ttlMs: number };
+      lateJti = claims.jti;
+      const short = { ...claims, ttlMs: EDGE_AUTH_TTL_MIN_MS }; // the shortest token …
+      await new Promise((r) => setTimeout(r, EDGE_AUTH_TTL_MIN_MS + 100)); // … answered after it lapsed (central slow)
+      return { status: 200, data: { authorization: h.central.sign("auth", short), ttlMs: EDGE_AUTH_TTL_MIN_MS } };
+    };
+    const order: string[] = [];
+    const markUnused = h.journal.markAuthorizationUnused.bind(h.journal);
+    h.journal.markAuthorizationUnused = async (u) => (order.push("journal:auth.unused"), markUnused(u));
+    const appendRun = h.journal.appendRun.bind(h.journal);
+    h.journal.appendRun = (runId, claimSeq, rec, opts) => (order.push(`run:${rec.kind}`), appendRun(runId, claimSeq, rec, opts));
+    await h.agent.tick();
+    await h.agent.idle();
+    expect(h.w.motions).toBe(0);
+    expect(h.w.lastAuth).toMatchObject({ ok: false, verdict: "unavailable", code: "auth_expired" });
+    expect(order.slice(0, 2)).toEqual(["journal:auth.unused", "run:auth_unused"]); // journaled first, reported second
+    expect(h.journal.isJtiConsumed(lateJti)).toBe(true);
+    expect(await h.journal.consumeAuthorization({ jti: lateJti, runId: 9, claimSeq: 1, stepId: "m1", attempt: 1 })).toEqual({ ok: false, reason: "jti_consumed" });
+    await h.shipper.flushAll();
+    const reported = h.central.received.report.filter((r: { kind: string }) => r.kind === "auth_unused");
+    expect(reported).toEqual([{ kind: "auth_unused", seq: expect.any(Number), stepId: "m1", attempt: 1, jti: lateJti, reason: "expired_before_use", at: expect.any(Number) }]);
+  });
+
+  it("★ fix review 7 (R-10-bp): a late token whose jti was journaled as USED is never reported unused (no record on the run stream)", async () => {
+    const h = await harness();
+    const sink = createEdgeReportSink(h.journal);
+    const report = createEdgeAuthUnusedReporter(h.journal, sink);
+    const jti = "0a0b0c0d-0000-4000-8000-000000000001";
+    expect(await h.journal.consumeAuthorization({ jti, runId: 9, claimSeq: 1, stepId: "m1", attempt: 1 })).toEqual({ ok: true });
+    expect(await report({ runId: 9, claimSeq: 1, jti, stepId: "m1", attempt: 1, reason: "expired_before_use" })).toBe(false);
+    expect(h.journal.pending("run:9:1").filter((p) => p.record.kind === "auth_unused")).toEqual([]);
+    const fresh = "0a0b0c0d-0000-4000-8000-000000000002";
+    expect(await report({ runId: 9, claimSeq: 1, jti: fresh, stepId: "m1", attempt: 2, reason: "expired_before_use" })).toBe(true);
+    expect(h.journal.pending("run:9:1").filter((p) => p.record.kind === "auth_unused").map((p) => (p.record as { jti: string }).jti)).toEqual([fresh]);
   });
 
   it("★ nothing is claimed with a FULL journal, in commands-only mode, or without a walker", async () => {

@@ -63,6 +63,23 @@ export function createEdgeJournalConsume(journal: EdgeJournal): EdgeJournalConsu
   };
 }
 
+/**
+ * R-10-bp (fix review 7) — an authorisation that arrived after its TTL and was NOT used: `auth.unused` journaled (fsync, the
+ * jti consumed-as-unused) FIRST, only then the run-stream record `auth_unused` (central supersedes the authorisation). A jti
+ * already consumed (used) is refused by the journal ⇒ never reported unused. true ⇔ both landed.
+ */
+export function createEdgeAuthUnusedReporter(journal: EdgeJournal, sink: EdgeReportSink): (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: "expired_before_use" }) => Promise<boolean> {
+  return async (u) => {
+    const j = await journal.markAuthorizationUnused(u);
+    if (!j.ok) {
+      console.warn(`[EdgeJournal] late authorisation of run ${u.runId} step ${u.stepId} NOT reported unused (${j.reason})`);
+      return false;
+    }
+    const r = await sink.run(u.runId, u.claimSeq, { kind: "auth_unused", stepId: u.stepId, attempt: u.attempt, jti: u.jti, reason: u.reason, at: Date.now() });
+    return r.seq !== null;
+  };
+}
+
 /** The sink: journal first, then a (non-awaited) nudge of the shipper. */
 export function createEdgeReportSink(journal: EdgeJournal, nudge?: (stream: string) => void): EdgeReportSink {
   const kick = (stream: string) => {

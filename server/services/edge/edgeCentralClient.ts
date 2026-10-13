@@ -26,6 +26,7 @@ import {
   EDGE_AUTH_TTL_MAX_MS,
   EDGE_NODE_ROUTES,
   EDGE_REQUEST_SCHEMAS,
+  edgeAuthClaimsSchema,
   edgeCommandSchema,
   edgeUnsignedStopSchema,
   type EdgeAuthClaims,
@@ -103,6 +104,18 @@ export const edgeTrustAdapter = {
     });
   },
 };
+
+/** R-10-bp — the jti of an authorisation that failed verification ONLY on time (its signature + context were verified). */
+function lateJtiOf(env: unknown): string | null {
+  try {
+    const text = (env as { payload?: unknown } | null)?.payload;
+    if (typeof text !== "string" || text.length > 100_000) return null;
+    const p = edgeAuthClaimsSchema.safeParse(parseEdgeCanonicalJson(text));
+    return p.success ? p.data.jti : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The payload of a signed envelope that did NOT verify, parsed WITHOUT verification — only for the STOP fallback (L-7). */
 function unverifiedCommand(env: unknown): EdgeCommand | null {
@@ -341,6 +354,11 @@ export interface EdgeAuthorizeDeps {
   maxTtlMs: () => number;
   isJtiConsumed: (jti: string) => boolean;
   programChecks: () => EdgeProgramCheck[];
+  /**
+   * R-10-bp (fix review 7) — an authorisation that arrived after its TTL and was NOT used: journal it unused (fsync, the jti
+   * consumed-as-unused) and THEN report it on the run stream (`auth_unused`). Resolves true only when both happened.
+   */
+  unused?: (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: "expired_before_use" }) => Promise<boolean>;
   /** an answer that failed verification is reported as an anomaly (events stream) */
   anomaly?: (code: string, runId: number, detail: string) => void;
 }
@@ -422,7 +440,14 @@ export function createEdgeAuthorizeClient(deps: EdgeAuthorizeDeps): EdgeAuthoriz
         // fix review 6 (R-10-bn, F1-3) — a token that lapsed before it could be used (central hung longer than the TTL, the
         // answer came late): NEVER used (A2(d) — the same verification refused it), but it is not central refusing the step: no
         // authorisation could be obtained in time ⇒ `unavailable` ⇒ the run is HELD (D5, no compensation), Continue later
-        if (v.reason === "expired") return { ok: false, verdict: "unavailable", code: "auth_expired", reason: "the authorisation arrived after its TTL (central unreachable / too slow) — not used" };
+        if (v.reason === "expired" || v.reason === "iat_too_old") {
+          // R-10-bp — the token passed every check but time (signature, node, credential, run, claim, step, attempt, nonce,
+          // payload): its jti is the one central issued for THIS request ⇒ journaled unused, then reported (central supersedes it,
+          // a Continue re-authorises the step). Never used either way.
+          const jti = lateJtiOf(r.data.authorization);
+          const reported = jti !== null && deps.unused ? await deps.unused({ runId: input.runId, claimSeq: input.claimSeq, jti, stepId: input.stepId, attempt: input.attempt, reason: "expired_before_use" }).catch(() => false) : false;
+          return { ok: false, verdict: "unavailable", code: "auth_expired", reason: `the authorisation arrived after its TTL (central unreachable / too slow) — not used${reported ? "; reported unused" : "; NOT reported unused (a Continue treats the step as sent)"}` };
+        }
         return { ok: false, verdict: "refused", code: "auth_invalid", reason: v.reason };
       }
       return {
