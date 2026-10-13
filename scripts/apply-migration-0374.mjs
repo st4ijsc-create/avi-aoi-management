@@ -198,6 +198,11 @@ await runMigration({
       r.prgOwned = hasPrg ? await maLoi(tx, (sp) => sp`INSERT INTO edge_node_program_reports ("edgeNodeId", "adapterId", status, checksum, "readAt", "ownerEpoch") VALUES (${f.node.id}, ${f.ad.id}, 'verified', 'x', now(), 99)`) : null;
       r.prgEpoch = hasPrg ? Number((await tx`SELECT "ownerEpoch" AS e FROM edge_node_program_reports WHERE "adapterId" = ${f.ad.id}`)[0]?.e ?? -1) : 2;
       r.nodeDel = await maLoi(tx, (sp) => sp`DELETE FROM edge_nodes WHERE id = ${f.node.id}`);
+      // doc 81 Đợt 10 final fix wave (I-7, measured): the node still owns devices (RESTRICT FKs) AND has an unacked STOP
+      // (cascade ⇒ the STOP guard): WHICH refusal fires first is the order of the RI triggers on edge_nodes — named after the
+      // constraints' OIDs, so it differs per database (23514 on the `_test` clone, 23503 on a FRESH apply of the final 0374).
+      // Both REFUSE the delete; the probe pins the refusal, not the order.
+      r.nodeDelRefused = r.nodeDel === "23514" || r.nodeDel === "23503";
       // fix review 5 (R-10-ap): writerInstanceId — required on insert, write-once (changes only with generation + 1)
       const [rw] = await tx`INSERT INTO robots (code, name, vendor, endpoint) VALUES (${CODE + "-rw"}, ${CODE}, 'sim', 'sim://probe') RETURNING id`;
       r.wNoWriter = await maLoi(tx, (sp) => sp`INSERT INTO robot_motion_locks ("robotId", "reasonCode", generation) VALUES (${rw.id}, 'probe', 3)`);
@@ -227,7 +232,7 @@ await runMigration({
       reqLock: null, reqStaleEpoch: "23514", reqUnowned: "23514", reqTwoTargets: "23514", reqAdapterLock: "23514", reqAdapterStop: null, reqClearNoGen: "23514",
       reqClearGen: null, reqBornDelivered: "23514", deliver1: null, deliver2: "23514", outcomeOnly: "23514", ack1: null, ack2: "23514", reqIdentity: "42501",
       reqDel: "42501", deliverStale: "23514", expireStale: null, prgUnowned: "23514", prgOwned: null, prgEpoch: 2,
-      nodeDel: "23514", // fix review 2 (R-10-i (d)): the node still has an UNACKED STOP (reqAdapterStop) ⇒ refused before the RESTRICT FK
+      nodeDelRefused: true, // fix review 2 (R-10-i (d)) + final fix wave I-7: an UNACKED STOP / owned devices ⇒ the node delete is REFUSED (23514 or 23503 — RI trigger order is per-DB)
       applyBelowFloor: false, stopStaleDeliver: null, stopCarried: 1,
       wNoWriter: "23514", wTakeoverSameGen: "23514", wCleared: "23514", wMergeGenPlus1: null,
     });

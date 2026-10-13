@@ -239,7 +239,8 @@ mode 700, readable by central's service account.
 
 ### 8.3 Register a node, issue its credential and its bundle (CENTRAL host)
 
-1. Apply migrations 0372 → 0375 and 0376 on the central DB (`node scripts/apply-migration-03xx.mjs --dev-only`, owner).
+1. Apply migrations 0372 → 0375 and 0376 on the central DB (`node scripts/apply-migration-03xx.mjs --dev-only`, owner) —
+   **only in the order of the cutover runbook (§8.13)**: the running pre-Đợt-10 build is stopped FIRST.
    ⚠ R-10-t: re-applying 0316 / 0363 / 0369 / 0370 / 0371 (or 0125 through `migrate-standalone`) after 0376 would un-pin
    its functions — those runners refuse unless given `--then-0376`, which re-applies 0376 right after.
 2. Register the node (decision D14 — a proven admin only; the v2 gateway never registers itself):
@@ -315,7 +316,9 @@ docker compose -f deploy/edge/docker-compose.edge.yml -f deploy/edge/docker-comp
 | Env (edge) | Default | Purpose |
 |---|---|---|
 | `AVI_PROCESS_ROLE` | `edge` (entrypoint + image) | Every central-DB accessor refuses (counted, logged once; `EDGE_DB_TRAP=throw` in tests). |
-| `EDGE_CENTRAL_URL` | — (required) | Central base URL. Use TLS. |
+| `EDGE_CENTRAL_URL` | — (required) | Central base URL. **https://** — plain `http://` is REFUSED unless the host is loopback (final fix wave M-4: the signed config carries this node's DECRYPTED device secrets and every request its node credential; signatures protect integrity, not confidentiality). |
+| `EDGE_ALLOW_INSECURE_CENTRAL` | unset | `1` accepts plain `http://` to a non-loopback central — a LAB only; a loud warning at every start. Never in production. |
+| `EDGE_PULL_INTERVAL_MS` | `2000` | UPPER bound of the agent's pull (200 ms … 300 s). The interval used is central's signed `limits.pullMs` (`EDGE_PULL_MS` on central, default 2 s), never above this bound: the env can make the pull faster, never slower. Commands (STOPs) reach the edge within one pull (design §2.8). |
 | `EDGE_CENTRAL_NODE_ID` / `EDGE_CENTRAL_CREDENTIAL_ID` | — (required) | This node's `edge_nodes.id` and credential id (from the bundle). |
 | `EDGE_NODE_CREDENTIAL_FILE` | `/run/secrets/edge_node_credential` | PATH of the credential (compose file-based secret; mode 600 on POSIX or refused). The secret in an env var (`EDGE_NODE_CREDENTIAL`) is refused. |
 | `EDGE_KEYSET_PIN_FILE` | `/run/secrets/edge_keyset_pin` | PATH of the keyset pin. Missing / unreadable ⇒ no device starts. |
@@ -324,16 +327,25 @@ docker compose -f deploy/edge/docker-compose.edge.yml -f deploy/edge/docker-comp
 | `EDGE_EXECUTION_ENABLED` / `FOE_ENABLED` | `false` | Run execution (overlay). |
 | `EDGE_RUNTIME_ENABLED` | `true` (compose) | Node protocol on (also needed on central). |
 | `EDGE_AUTH_TTL_MS` (central) | `10000` | Authorisation TTL (3–30 s). |
+| `EDGE_PULL_MS` (central) | `2000` | The pull interval signed into every node's config (`limits.pullMs`, 0.5–60 s). |
+| `EDGE_STOP_ACK_SLACK_MS` (central) | `2000` | A queued STOP not acknowledged within 3 × pullMs + this ⇒ a durable critical alert `stop_undelivered` (once per request). |
+| `EDGE_STOP_DELIVERY_CHECK_MS` (central) | = `EDGE_PULL_MS` | How often central sweeps for unacknowledged STOPs. |
+| `ROBOT_MOTION_LOCK_PENDING_DIR` (central) | `./data/robot-motion-lock-pending` | One fsynced marker per robot whose motion lock is not yet persisted (I-5): a restart with a marker and no DB row starts that robot LOCKED (`persistUnknown`). Keep it on persistent storage. |
 | `EDGE_KEY_RETIRED_GRACE_MS` (central) | `600000` | How long a retired key stays in the keyset. |
 
 Any missing piece ⇒ the gateway starts **no device** and says why once (fail-closed). `EDGE_GATEWAY_CONFIG_FILE`,
 `EDGE_GATEWAY_FACTORY_CODE` / `_LINE_CODES` are ignored: identity, devices and mappings come from central's signed config
 (mapping-as-code is a central CLI, D13).
 
+**Device secrets in the config (D4, M-4).** The signed config snapshot carries the node's OWN devices' connection secrets,
+decrypted centrally (`enc:v1:` values opened only for that node's devices). On the wire they are protected only by TLS — hence the
+`https://` rule above; on the edge the cached config is sealed with the node credential (`EDGE_JOURNAL_DIR`, mode 600). A node
+never receives another node's devices. Rotating a device password = change it centrally; the next config cycle ships it.
+
 ### 8.6 Cutover from Đợt 9 v1 (a node that still has the DB login)
 
-1. Central: migrations 0372 → 0376 (`--dev-only`); generate the signing key and set `EDGE_SIGNING_KEY_DIR` /
-   `EDGE_SIGNING_KEY_FILE` on every central instance; restart central.
+1. Central: follow the **cutover runbook (§8.13)** — stop the running build, apply 0372 → 0376 (`--dev-only`), build, start;
+   generate the signing key and set `EDGE_SIGNING_KEY_DIR` / `EDGE_SIGNING_KEY_FILE` on every central instance before the start.
 2. Give the global seed row **`SIM-SAFETY-PLC-1`** (mig 0270: enabled, `scope 'sim'`, no factory, no target) a factory /
    targets, or **disable it**. While it is enabled, central applies it to every target but can never hand it to an edge
    (an untargeted row without a factory is never shipped), so **every real-mode, preflight-on edge authorisation is refused**
@@ -419,3 +431,72 @@ age, kept ≥ the audit horizon) is backlog.
   a few seconds late.
 - Robot e-stops ingested from an edge are plain safety events (no `safety_event_trust`) unless a maker-checker approval per
   (node, robot) exists (D6, mig 0375).
+
+### 8.12 STOP delivery and the console (doc 81 Đợt 10 final fix wave)
+
+- **Pull, STOPs first (I-1, R-10-bs).** Central reads a node's commands (STOPs first) BEFORE any run work; a failure there is 503.
+  A failure in the run side (an unsignable sweep picture, a transient analysis read) never fails the pull: the STOPs are
+  delivered and the answer says `runStateUnavailable: true`. While it is set the edge HOLDS every non-STOP work — no lock / clear
+  command, no claim, a walking run's next non-STOP step is held (not even asked) — and never reads a missing section as "no abort".
+- **Cadence (I-2, M-8).** The agent pulls every `limits.pullMs` (2 s). A STOP whose target needs a config refresh runs in the SAME
+  pull, even while an older work phase is still busy.
+- **Console STOP to an edge-owned robot (I-3).** Queued for the owning node. If central cannot reach that node (no pull seen here
+  within 3 × pullMs, else a heartbeat older than max(3 × pullMs, 2 × heartbeatMs), or unreadable), the answer is
+  `queued_edge_unreachable` — a WARNING in the console, never a green "accepted" — central's fallback STOP is sent at once
+  (its session, else a transient one), and a durable critical alert is raised. Any STOP not acknowledged within 3 × pullMs + 2 s
+  raises the same alert (one per request); it stays queued and is delivered when the node pulls. `queued_on_edge` shows as
+  pending, not as done.
+- **OT STOP to an edge-owned adapter (I-4).** Central's OT dispatcher (console, interlock auto-block, a central run's abort) no
+  longer answers `ADAPTER_OFFLINE` for it: a stop / e_stop is QUEUED for the owning node (result `ADAPTER_OWNED_BY_EDGE` +
+  `edgeStopRequest`, durable alert); if it cannot be queued, central writes the adapter's PINNED stop values on a transient
+  session (R-10-ay) + a critical alert. A non-STOP write is refused `ADAPTER_OWNED_BY_EDGE`. There is no separate OT console STOP
+  button: the OT console STOP goes through the same dispatcher and is routed this way.
+- **Operator lock (M-5).** `robot.requestMotionLock` (machine_control:canEdit, a reason, audited first, the caller's factory
+  scope — fail-closed) holds a robot: queued as a signed `lock` for an edge-owned robot, set in memory (and persisted) for a robot
+  with a session here. An operator lock (`centralLock`, also when added on top of an existing lock) is NOT cleared by a
+  confirmed STOP — only by the audited `robot.clearMotionLock`.
+- **Central connect (M-1).** If the robots' edge ownership cannot be read, central connects to NONE of them (an alert; the
+  ownership reconcile attaches the central-owned ones within 30 s).
+
+### 8.13 Cutover runbook — central build + migrations 0372–0376 (owner, in this order)
+
+**Why the order (I-5).** 0374's `robot_motion_lock_writer_guard` refuses every `robot_motion_locks` INSERT without a writer
+instance id — `INSERT … ON CONFLICT DO UPDATE` included. The pre-Đợt-10 build (today on :3000) writes none: under 0374 its lock
+persist FAILS (logged) and an outcome-unknown lock taken then would be gone after the restart. The Đợt 10 build tolerates a DB
+without 0372–0376 (narrow projections, `isEdgeControlSchemaMissing`; only log noise, M-2: said once), and it never starts a robot
+unlocked after a persist that did not land (I-5: the pending marker ⇒ `persistUnknown`).
+
+**Before (read-only, on dev):**
+1. Duplicate RESULT rows per OT intent must be **0** — `0374` builds `CREATE UNIQUE INDEX` on that link and would abort the
+   whole file otherwise:
+   ```sql
+   SELECT "ackValue"->>'intentId' FROM command_log
+   WHERE "ackValue"->>'ledger'='result' AND "ackValue" ? 'intentId'
+   GROUP BY 1 HAVING count(*)>1;   -- must return no row
+   ```
+   Any row: resolve those intents first (keep the evidence; do not delete ledger rows) — then re-run the query.
+2. **0125 / 0327 (M-3).** On dev `0125` is `success = false`. Do NOT just record it: `migrate-standalone` now proves the 0327
+   body of `app_tenant_allows` (the NULL/NULL shared-data branch) before recording 0125, and REFUSES (exit 1, nothing applied)
+   when a past 0125 re-run reverted it. Then: `node scripts/apply-migration-0327.mjs` (owner) and afterwards 0376
+   (`--then-0376` / `apply-migration-0376.mjs --dev-only`), and run `migrate-standalone` again.
+3. **SIM-SAFETY-PLC-1** (mig 0270: enabled, `scope 'sim'`, no factory, no target) — owner decision before any preflight-on edge
+   execution: give it a factory / targets, or disable it. While it is enabled central applies it to EVERY target and can never ship
+   it to an edge ⇒ every real-mode, preflight-on edge authorisation is refused `device_refused {gate: safety}` (R-10-aw).
+   (The test harnesses disable only this row, only on `_test`, through `__edgeSeedGuard.dot10.ts`.)
+
+**The cutover (a quiet window — M-6):**
+1. **Stop :3000** (the running pre-Đợt-10 build). Nothing may write `robot_motion_locks` between step 2 and step 4 with the old code.
+2. **Apply 0372 → 0373 → 0374 → 0375 → 0376** in that order, each `node scripts/apply-migration-03xx.mjs --dev-only` (owner `aoi`,
+   `lock_timeout` 5 s, `statement_timeout` 60 s, one implicit transaction per file; every file verifies itself as avi_app and
+   writes exactly one ledger row; re-running a file is idempotent). **M-6:** 0374's unique index on `command_log` is built
+   NON-concurrently inside that transaction — it holds a SHARE lock that blocks OT ledger writes until it is done (bounded by the
+   60 s statement timeout; on a timeout everything rolls back and nothing changed). Apply in the quiet window, with :3000 stopped.
+   ⚠ R-10-t: never re-apply 0316 / 0363 / 0369–0371 (or 0125) after 0376 without `--then-0376`.
+3. **Build** the Đợt 10 code (`npm run build` — it stops nothing that is still running once :3000 is down).
+4. **Start** central; check the log: no `persistUnknown` storm (a robot that starts LOCKED `persistUnknown` had a lock whose
+   persist did not land — check it, then clear it with the audited action), no `0374 not applied` line.
+5. Then §8.3 (keys, nodes, bundles) and §8.4 (ownership). Keep `EDGE_EXECUTION_ENABLED` off until the dot10 E2E + attack suites are
+   green on the release.
+
+**Rehearsed (I-7, 2026-10-13):** the final 0372–0376 applied in order onto a scratch database brought to the 0371 state by the
+repo's own runner, then re-applied (idempotent) — see `.superpowers/sdd/2026-10-12-engineering-control-dot10/final-fix-wave-report.md`.

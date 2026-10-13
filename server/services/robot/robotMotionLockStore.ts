@@ -23,7 +23,7 @@
  * local MARKER (ROBOT_MOTION_LOCK_PENDING_DIR, one fsynced file per robot), removed only when its upsert LANDS or the lock is
  * cleared; at registration a marker left by ANOTHER process with no row to restore ⇒ the robot starts LOCKED `persistUnknown`
  * (an unreadable marker too). A deploy that applies 0374 under a still-running pre-Đợt-10 build is a runbook matter
- * (EDGE_GATEWAY.md §8.12: stop :3000 first) — that build writes no marker.
+ * (EDGE_GATEWAY.md §8.13: stop :3000 first) — that build writes no marker.
  */
 import { and, eq, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
