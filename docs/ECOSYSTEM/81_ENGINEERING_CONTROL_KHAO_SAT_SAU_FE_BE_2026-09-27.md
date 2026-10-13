@@ -874,3 +874,42 @@ Plan `docs/superpowers/plans/2026-10-12-engineering-control-dot9.md` — chủ d
 2. Build + restart; giữ `EDGE_EXECUTION_ENABLED` và `SAFETY_PLC_POLLER_ENABLED` tắt.
 
 **Còn mở:** edge bỏ đăng nhập DB trung tâm (lớn ~1 đợt) hoặc vai trò Postgres theo node (vừa); trung tâm chưa đọc khoá chuyển động do edge đặt và bộ đếm thế hệ khoá dùng chung; robot chỉ edge tới được không có ghi trạng thái; vài điểm nhỏ (node bận bị coi "không liên lạc", CLI đọc mật khẩu từ biến môi trường, đếm sai TOTP); S7 cần FAT; việc của chủ dự án: cấp khoá TLS, đổi mật khẩu keystore, thử APK 1.0.18.
+
+## 18. Kết quả Đợt 10 — edge không còn đăng nhập DB trung tâm (2026-10-12 → 10-13)
+
+Plan `docs/superpowers/plans/2026-10-12-engineering-control-dot10.md`; thiết kế + sổ phán quyết (R-10-a … R-10-bs) trong `.superpowers/sdd/2026-10-12-engineering-control-dot10/`. Migration **0372–0376** — chỉ `_test`; áp dev theo **runbook cắt chuyển `docs/EDGE_GATEWAY.md` §8.13**.
+
+### Quyết định của chủ dự án (2026-10-12)
+- D1–D14 theo khuyến nghị; D5 (edge mất trung tâm ⇒ GIỮ việc không phải STOP) giữ; D6 telemetry robot edge mặc định thường + duyệt hai người mới được tin cậy.
+
+### Kết quả theo nhóm
+- **A — hợp đồng, ký, migration, bẫy DB:** Ed25519 trên payload chuẩn hoá, tách theo `typ`, chuỗi keyset ký bởi khoá đang tin, ghim phiên bản; tin cậy chỉ từ TỆP khoá (bảng DB là bản sao); mọi envelope gắn node + credential + nonce/jti + TTL tính từ lần gửi đầu. 0372–0376: uỷ quyền từng bước, con trỏ báo cáo + bản ghi nội dung (băm, chống tái dùng seq), sở hữu thiết bị theo **kỷ nguyên chủ bất biến**, khoá chuyển động có `writerInstanceId`, duyệt tin cậy hai người trong DB, mọi hàm ghim `search_path = pg_catalog, public, pg_temp` (0376 ghim lại 9 hàm cũ, 4 hàm từng khai thác được bằng bảng TEMP che bóng). STOP không bao giờ bị xoá / hết hạn / mồ côi: chuyển theo chủ mới, `device_pending_stops`, ack chỉ qua hàm bảo vệ (edge: khớp nút + đích + kỷ nguyên; trung tâm: chỉ sau bản ghi thực thi thật); ý định ghi OT mồ côi giải quyết qua hàm bảo vệ, đúng một kết quả, kết quả thật đến muộn được giữ làm bằng chứng. Bẫy DB trên edge phủ mọi `postgres(` (census).
+- **B — điểm thẩm quyền trung tâm:** cấu hình ký (chỉ thiết bị của nút trong nhà máy của nút), claim + gói chạy ký, `/authorize` từng bước với **chẵn lẻ cổng đầy đủ** với trung tâm (chính sách, preflight safety-PLC — tập trung tâm ⊆ tập ký, sở hữu, phạm vi nhà máy, khoá, duyệt), báo cáo theo seq (xung đột nội dung ⇒ 409), hàng lệnh lock/clear/STOP (STOP không bao giờ hết hạn/giữ lại; thiếu chữ ký ⇒ `cmd-stop-unsigned` riêng), mọi báo cáo NỚI trạng thái phải gắn đủ + bị từ chối khi có bằng chứng ngược.
+- **C — engine một walker hai kho:** `RunStore` (trung tâm nguyên văn, edge không đọc DB); trạng thái tiếp tục suy từ HÀNG bước + sổ uỷ quyền (không bao giờ gửi lại bước đã gửi; STOP luôn gửi lại); kiểm chẵn lẻ trung tâm = edge 59/59.
+- **D — phía thiết bị:** tách giai đoạn thiết bị không đổi hành vi; front-end edge (xác minh → cổng cục bộ → tiêu thụ sổ nhật ký → thiết bị → báo cáo); sở hữu thiết bị (chỉ cùng nhà máy), khoá chuyển động nhiều bản sao, quét STOP còn nợ; **STOP console qua `robot.consoleStop`** với xác thực suy giảm chỉ cho STOP (JWT + bộ nhớ phiên ≤ 15 phút, vô hiệu theo thế hệ) khi DB treo/chết.
+- **E — runtime edge:** sổ nhật ký JSONL segment (chỉ gửi bản ghi đã fsync, kỷ nguyên mới khi tắt không sạch), client nút, nguồn cấu hình ghim, STOP đi đường nhanh trước mọi việc, gắn/tháo robot từng cái (khoá → STOP → tháo, có kiểm), khởi động không DB (0 lần chạm bẫy).
+- **F — kiểm + vận hành:** E2E hai tiến trình (edge không `DATABASE_URL`/`JWT_SECRET`/`SECRET_ENCRYPTION_KEY`, preflight bật) 12/12; bộ tấn công 20/20 (nút B giả nút A, replay, đổi payload, claim cũ, tin cậy giả, STOP chữ ký hỏng che bản ký, ack giả đích, lùi cấu hình, khác nhà máy, tái dùng seq); CLI đăng ký nút / sở hữu thiết bị / khoá ký (chứng minh admin trước khi ghi, mật khẩu chỉ từ TTY/stdin, 2FA sai tính vào khoá tài khoản); hành động "giải quyết STOP / ý định ghi / kết quả muộn"; compose edge không bí mật trung tâm; hướng dẫn `EDGE_GATEWAY.md` §8.
+
+### Kiểm
+- Mỗi nhóm review → vòng sửa (A 12, B 6, C 5, D 8, E 7, F2 3) → ~98 cờ quét bảo mật, mỗi cờ được phán quyết; hai commit tích hợp tệp dùng chung; review toàn nhánh (0 Critical, 7 Important, 9 Minor) → một vòng sửa cuối (đã sửa hết) → review lại (thêm 1 Important: gỡ khoá chuyển động thiếu phạm vi nhà máy — đã sửa) → hai đợt sửa dư nhỏ.
+- Cuối cùng: `tsc` sạch; foe/robot/OT/edge 2.790, 0 lỗi; project nối tiếp (E2E 12/12, tấn công 20/20, s3/s4, census seed) 65/65; ~90 đột biến của vòng cuối đều bị diệt. Bộ test dùng chung trạng thái `_test` chạy bằng `pnpm test:serial` (`pnpm test:all` chạy cả hai) — **CI `ci.yml` hiện chỉ chạy `pnpm test` nên chưa chạy bộ nối tiếp.** **Diễn tập áp mới 0372–0376** trên DB nháp dựng từ chuỗi migration tới 0371: áp hai lần, 10/10 kiểm, bộ DB nhóm A 73/73 — bắt được một lỗi thật (bước kiểm của 0374 ghim mã lỗi phụ thuộc thứ tự trigger ⇒ trên dev sẽ báo FAILED), đã sửa.
+
+### Thay đổi hành vi trung tâm được chấp thuận (ghi chú phát hành)
+- Lệnh CHUYỂN ĐỘNG robot cần phạm vi nhà máy đọc từ DB (thất bại đóng) ⇒ robot chưa đặt chỗ không còn được người dùng bị giới hạn phạm vi di chuyển; STOP chỉ từ chối khi cả hai nhà máy đều biết và khác nhau (R-10-bc).
+- Chuyển động trung tâm đọc chủ sở hữu + khoá đã lưu (thất bại đóng); lệnh OT tới adapter do edge sở hữu: STOP được xếp cho nút, ghi khác ⇒ `ADAPTER_OWNED_BY_EDGE`; khoá của người vận hành (`robot.requestMotionLock`) không bị STOP xác nhận gỡ; đọc chủ sở hữu lỗi ⇒ trung tâm không kết nối robot nào.
+- Nút edge v1 (đăng nhập DB) không còn chạy workflow (R-10-l — cờ edge execution vẫn tắt ở production).
+- `EDGE_CENTRAL_URL` phải là https (http chỉ loopback hoặc cờ lab).
+
+### Giới hạn được chấp nhận (nói thẳng)
+- Edge bị chiếm vẫn điều khiển được thiết bị CỦA CHÍNH nó; các kiểm ở trung tâm chống nhầm lẫn và mạng thù địch, không chống edge bị chiếm.
+- avi_app vẫn ghi được hàng quyền/phân công ⇒ kiểm vai trò trong DB là phòng thủ chiều sâu; 2FA không kiểm được trong DB.
+- STOP console khi KHÔNG có phiên robot và DB chết ⇒ không gửi được (cảnh báo thật "KHÔNG GỬI STOP"); xác thực suy giảm: bản sao khác chỉ hết hạn sau ≤ 15 phút.
+- Hai bảng WORM mới chưa có chính sách lưu giữ (R-10-an); đảo thứ tự khoá ack STOP ↔ đổi chủ (bộ phát hiện deadlock + thử lại).
+- Hàng seed `SIM-SAFETY-PLC-1` (không gắn nhà máy) chặn mọi uỷ quyền edge ở chế độ thật cho tới khi gắn nhà máy hoặc tắt.
+
+### Trước khởi động lại (runbook `EDGE_GATEWAY.md` §8.13)
+1. Truy vấn kết quả trùng theo ý định ghi = 0; kiểm 0125/0327.
+2. Dừng :3000 → áp **0372 → 0376** `--dev-only` (cửa sổ yên tĩnh) → build → khởi động; giữ `EDGE_EXECUTION_ENABLED` tắt.
+3. Cắt chuyển edge (khi bật): tạo khoá ký, đăng ký nút, đánh dấu sở hữu thiết bị, phát bundle, gỡ `DATABASE_URL` khỏi edge, đổi mật khẩu avi_app, chặn :5432.
+
+**Còn mở:** quyết định SIM-SAFETY-PLC-1; chính sách lưu giữ bảng WORM; FAT S7 và thử bench bộ đọc safety-PLC; việc của chủ dự án từ trước (khoá TLS, mật khẩu keystore, APK 1.0.18).

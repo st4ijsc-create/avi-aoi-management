@@ -369,3 +369,7 @@ Bộ đọc nền safety-PLC (chỉ đọc, cờ tắt, ghi bền trước, sứ
 ## 23. Đợt 9 (2026-10-12) — xem doc 81 §17
 
 Danh tính người cầm khoá API (mig 0369), edge chạy workflow có khoá node (mig 0370, cờ tắt), checksum S7 theo tài liệu, OPC-UA subscription + bit chốt Modbus + tin cậy tiêu thụ một lần (mig 0371). **Edge chưa bật được ngoài vùng tin cậy trung tâm (edge vẫn giữ đăng nhập DB) — doc 81 §17.**
+
+## 24. Đợt 10 (2026-10-12 → 10-13) — xem doc 81 §18
+
+Edge không còn đăng nhập DB trung tâm: trung tâm là nơi ghi duy nhất, edge chỉ điều khiển thiết bị của nó dưới uỷ quyền ký một lần theo từng bước, STOP không bao giờ bị chặn (mig 0372–0376, chỉ `_test`). **Áp dev theo runbook `docs/EDGE_GATEWAY.md` §8.13; edge execution vẫn tắt — doc 81 §18.**
