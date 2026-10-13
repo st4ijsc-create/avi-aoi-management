@@ -47,7 +47,22 @@ export const EFFECTIVE_PROBES = {
       const fns = ["app_tenant_allows", "app_factory_of_machine_code", "app_factory_of_line_id", "app_factory_of_line_code"];
       const [f] = await sql`SELECT count(DISTINCT p.proname)::int AS n FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace WHERE s.nspname = 'public' AND p.proname = ANY(${fns})`;
       const [l] = await sql`SELECT count(*)::int AS n FROM "__applied_migrations" WHERE filename = '0328_tenant_rls_bang_nong_cai_lam_duoc.sql' AND success = true`;
-      return { ok: f.n === fns.length && l.n === 1, detail: `functions ${f.n}/${fns.length}, 0328 applied ${l.n === 1}` };
+      const base = f.n === fns.length && l.n === 1;
+      if (!base) return { ok: false, detail: `functions ${f.n}/${fns.length}, 0328 applied ${l.n === 1}` };
+      // doc 81 Đợt 10 final fix wave (M-3) — the 0327 BODY must be in force: a past 0125 re-run reverts it (the `_test` drift of
+      // 2026-09-05; dev's 0125 is success=false). Recording 0125 over a reverted body would hide that drift for good ⇒ REFUSE.
+      const rows = await sql`SELECT pg_get_functiondef(p.oid) AS d FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace WHERE s.nspname = 'public' AND p.proname = 'app_tenant_allows' LIMIT 1`;
+      const body = String(rows?.[0]?.d ?? "");
+      if (!/p_factory\s+IS\s+NULL\s+AND\s+p_corporate\s+IS\s+NULL/i.test(body)) {
+        return {
+          ok: false,
+          refuse: true,
+          detail:
+            `app_tenant_allows does NOT have the 0327 body (the NULL/NULL shared-data branch${body ? "" : " — body unreadable"}): a past 0125 run reverted it. ` +
+            "Re-apply 0327 (node scripts/apply-migration-0327.mjs, owner role) and then 0376 (node scripts/apply-migration-0376.mjs) on this DB, then run migrate-standalone again — 0125 is recorded only over the 0327 body",
+        };
+      }
+      return { ok: true, detail: `functions ${f.n}/${fns.length}, 0328 applied, 0327 body in force` };
     },
   },
   "0234_perf_indexes.sql": {
@@ -69,6 +84,8 @@ export const EFFECTIVE_PROBES = {
 export async function recordEffectiveMigrations(sql, pending, { checksumOf, dryRun = false, log = console.log } = {}) {
   const still = [];
   const recorded = [];
+  /** M-3 — a probe that proves the DB is in a state that must be repaired by hand first: nothing may run */
+  const refused = [];
   for (const file of pending) {
     const p = EFFECTIVE_PROBES[file];
     if (!p) {
@@ -80,6 +97,12 @@ export async function recordEffectiveMigrations(sql, pending, { checksumOf, dryR
       res = await p.probe(sql);
     } catch (e) {
       res = { ok: false, detail: `probe error: ${e?.message ?? e}` };
+    }
+    if (!res.ok && res.refuse) {
+      refused.push({ file, detail: res.detail });
+      log(`    [REFUSED] ${file} — ${res.detail}`);
+      still.push(file);
+      continue;
     }
     if (!res.ok) {
       log(`    [PROBE-NO] ${file} — not effective (${res.detail}); it runs as before`);
@@ -96,5 +119,5 @@ export async function recordEffectiveMigrations(sql, pending, { checksumOf, dryR
     recorded.push(file);
     log(`    [EFFECTIVE${dryRun ? " (dry-run, not recorded)" : ""}] ${file} — ${p.why} (${res.detail}); NOT executed`);
   }
-  return { pending: still, recorded };
+  return refused.length > 0 ? { pending: still, recorded, refused } : { pending: still, recorded };
 }

@@ -175,6 +175,14 @@ if (!FORCE) {
     dryRun: DRY_RUN,
     checksumOf: (f) => simpleHash(fs.readFileSync(path.join(DRIZZLE_DIR, f), 'utf-8').trim()),
   });
+  // doc 81 Đợt 10 final fix wave (M-3) — a probe that found a state to repair by hand first (0125 over a reverted 0327 body):
+  // NOTHING runs (no record, no apply) — the operator re-applies 0327 then 0376 and runs this again
+  if (r.refused && r.refused.length > 0) {
+    for (const x of r.refused) console.error(`
+REFUSED: ${x.file} — ${x.detail}`);
+    await sql.end();
+    process.exit(1);
+  }
   pending = r.pending;
 }
 

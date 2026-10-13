@@ -46,7 +46,8 @@ describe("R-10-bj — recordEffectiveMigrations", () => {
     expect((await recordEffectiveMigrations(no0328.fn, ["0125_tenant_rls_hot_tables.sql"], { checksumOf: () => "x", log: () => {} })).pending).toEqual(["0125_tenant_rls_hot_tables.sql"]);
     const three = fakeSql({ "count(DISTINCT p.proname)": [{ n: 3 }], "0328_tenant_rls": [{ n: 1 }] });
     expect((await recordEffectiveMigrations(three.fn, ["0125_tenant_rls_hot_tables.sql"], { checksumOf: () => "x", log: () => {} })).pending).toEqual(["0125_tenant_rls_hot_tables.sql"]);
-    const ok = fakeSql({ "count(DISTINCT p.proname)": [{ n: 4 }], "0328_tenant_rls": [{ n: 1 }] });
+    // final fix wave M-3 — the 0327 body is proven too (pg_get_functiondef); its refusals: migrationEffectiveProbes.finalfix.dot10
+    const ok = fakeSql({ "count(DISTINCT p.proname)": [{ n: 4 }], "0328_tenant_rls": [{ n: 1 }], pg_get_functiondef: [{ d: "OR (p_factory IS NULL AND p_corporate IS NULL)" }] });
     expect((await recordEffectiveMigrations(ok.fn, ["0125_tenant_rls_hot_tables.sql"], { checksumOf: () => "x", log: () => {} })).recorded).toEqual(["0125_tenant_rls_hot_tables.sql"]);
     const boom = () => Promise.reject(new Error("db down"));
     expect((await recordEffectiveMigrations(boom, ["0066_spc_quality_gate.sql"], { checksumOf: () => "x", log: () => {} })).pending).toEqual(["0066_spc_quality_gate.sql"]);
