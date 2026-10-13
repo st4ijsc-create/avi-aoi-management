@@ -200,6 +200,12 @@ export const devicePendingStops = pgTable("device_pending_stops", {
   /** fix review 3 (R-10-aa N2) — refused / failed STOPs stay listed until resolved (edge_stop_resolve) */
   outcome: varchar("outcome", { length: 16 }).$type<"refused" | "failed">(),
   needsResolution: boolean("needsResolution").notNull(),
+  /**
+   * fix review 8 (R-10-ay, L-7) — the device is EDGE-owned but its CURRENT owner, at the current epoch, answered its latest ack
+   * of this STOP "notOwnedHere" (it owns the device yet cannot list / reach it). centralMustExecute is then true as well:
+   * central executes the STOP and acks it with ackCentralStop (actor: an active user or the STOP's requester).
+   */
+  ownerCannotList: boolean("ownerCannotList").notNull(),
 });
 export type DevicePendingStopRow = typeof devicePendingStops.$inferSelect;
 export type RobotMotionLockRequestRow = typeof robotMotionLockRequests.$inferSelect;

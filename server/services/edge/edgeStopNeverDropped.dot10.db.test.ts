@@ -332,4 +332,55 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       done: true,
     });
   }, 60_000);
+
+  // ── fix review 8 (R-10-ay, L-7): an owner that cannot list its device ⇒ central executes the STOP ───────────────────────────
+  it("★ R8: the CURRENT owner's latest 'notOwnedHere' at the current epoch flags ownerCannotList + centralMustExecute; central acks exactly those (active user / requester)", async () => {
+    const r = await asApp(async (tx) => {
+      const f = await fixture(tx);
+      const mk = () => req(tx, { robotId: f.robot, node: f.a, epoch: 2, kind: "stop" });
+      const edgeAck = (id: number, node: number, epoch: number, outcome: string) =>
+        tx`SELECT public.edge_stop_ack_edge(${id}, ${node}, ${f.robot}::integer, NULL::integer, ${epoch}::bigint, ${outcome}, false, NULL)`;
+      const flags = async (id: number) => {
+        const [v] = await tx`SELECT "ownerCannotList" AS o, "centralMustExecute" AS c FROM public.device_pending_stops WHERE "requestId" = ${id}`;
+        return v ? `${v.o}/${v.c}` : "gone";
+      };
+      const sOwner = await mk();
+      const before = await flags(sOwner);
+      await edgeAck(sOwner, f.a, 2, "notOwnedHere"); // the current owner A at epoch 2
+      const sOther = await mk();
+      await edgeAck(sOther, f.b, 2, "notOwnedHere"); // B is not the owner
+      const sStale = await mk();
+      await edgeAck(sStale, f.a, 1, "notOwnedHere"); // A, but an old epoch
+      const sLater = await mk();
+      await edgeAck(sLater, f.a, 2, "notOwnedHere");
+      await edgeAck(sLater, f.a, 3, "done"); // a LATER refusal (epoch_mismatch) supersedes it
+      const sSweep = await mk();
+      await edgeAck(sSweep, f.a, 2, "notOwnedHere");
+      const sBadOutcome = await mk();
+      await edgeAck(sBadOutcome, f.a, 2, "expired"); // the owner's latest refusal is bad_outcome, not not_owned_here
+      const t = tag();
+      const [u] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t}, 'user', true) RETURNING id`;
+      const [off] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t + "x"}, 'user', false) RETURNING id`;
+      const central = (id: number, actor: number) => code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${id}, 'done', ${actor})`);
+      return {
+        before,
+        owner: await flags(sOwner),
+        other: await flags(sOther),
+        stale: await flags(sStale),
+        later: await flags(sLater),
+        ackNotFlagged: await central(sOther, u.id),
+        ackOtherReason: await central(sBadOutcome, u.id),
+        badOutcome: await flags(sBadOutcome),
+        ackInactive: await central(sOwner, off.id),
+        ackExpired: await code(tx, (sp) => sp`SELECT public.edge_stop_ack_central(${sOwner}, 'expired', ${u.id})`),
+        ackActive: await central(sOwner, u.id),
+        ackRequester: await central(sSweep, 7), // the sweep acts for the STOP's requester (requestedBy 7)
+        afterAck: await flags(sOwner),
+      };
+    });
+    expect(r).toEqual({
+      before: "false/false", owner: "true/true", other: "false/false", stale: "false/false", later: "false/false",
+      ackNotFlagged: "23514", ackOtherReason: "23514", badOutcome: "false/false", ackInactive: "23514", ackExpired: "23514", ackActive: null, ackRequester: null, afterAck: "gone",
+    });
+  }, 60_000);
 });
