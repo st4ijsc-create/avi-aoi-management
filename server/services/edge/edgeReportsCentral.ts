@@ -48,7 +48,7 @@ import { analyseDefinition, loadMachineMap } from "./edgeRunAnalysis";
 import { edgeContextPatchOf } from "./edgeContextPolicy";
 import { edgeCanonicalJson } from "./edgeSigning";
 import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
-import { ackEdgeCommand } from "./edgeNodeCommands";
+import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 
 export class StreamAnswer extends Error {
@@ -93,6 +93,8 @@ export async function applyStream<R extends { seq: number }>(
   epoch: string,
   records: readonly R[],
   apply: (tx: Db, rec: R, audits: Audit[]) => Promise<StreamRecordOutcome>,
+  /** runs once in the batch's transaction after the cursor row is locked, before any record (F-B2-4: ordered row locks) */
+  prelock?: (tx: Db) => Promise<void>,
 ): Promise<EdgeAnswer<EdgeStreamAnswer>> {
   const audits: Audit[] = [];
   let newEpoch = false;
@@ -109,6 +111,7 @@ export async function applyStream<R extends { seq: number }>(
       }
       const last = Number(cur.lastSeq);
       if (records[0].seq > last + 1) throw new StreamAnswer(edgeError("gap", `Stream ${stream}: expected seq ${last + 1}, got ${records[0].seq} — resend from the cursor.`, { expectedSeq: last + 1 }));
+      if (prelock) await prelock(tx);
       let applied = 0;
       let duplicates = 0;
       let top = last;
@@ -507,13 +510,17 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
       // command_ack
       const a = rec as unknown as Extract<EdgeEventRecord, { kind: "command_ack" }> & { target?: { robotId?: number; adapterId?: number }; ownerEpoch?: number; unsigned?: boolean };
       if (!(await ackEdgeCommand(tx, node.nodeId, { requestId: a.requestId, outcome: a.outcome, generation: a.generation, at: a.at, target: a.target ?? null, ownerEpoch: a.ownerEpoch ?? null, unsigned: a.unsigned === true }))) {
-        // R-10-o / I-6 — refused: the request stays PENDING in the DB (re-delivered); the attempt is an anomaly (A's
-        // edge_stop_ack_refusals row for a STOP is written in its OWN transaction — it survives); the stream moves on
+        // R-10-o / I-6 — refused: the request stays PENDING in the DB (re-delivered); the attempt is an anomaly; A's
+        // edge_stop_ack_refusals row for a STOP is written in THIS batch's transaction (N-5 — a batch rolled back takes it with
+        // it; its cursor did not move, the edge re-sends and it is written then); the stream moves on
         // R-10-au — `notOwnedHere` is never terminal: the STOP stays pending (re-delivered while this node's; D carries it to
         // the current owner / central) — its own anomaly code so an operator tells it from a refused ack
         return anomaly(a.outcome === "notOwnedHere" ? "ack_not_owned_here" : "command_ack_refused", { requestId: a.requestId, outcome: a.outcome, target: a.target ?? null, ownerEpoch: a.ownerEpoch ?? null, unsigned: a.unsigned === true });
       }
-    });
+    }, (tx) =>
+      // F-B2-4 — every request this batch acks, locked first in ascending id order (then each ack re-takes its own lock)
+      lockAckRequestsInOrder(tx, req.records.filter((r) => r.kind === "command_ack").map((r) => (r as { requestId: number }).requestId)),
+    );
   } catch (err) {
     if (err instanceof StreamAnswer) return err.answer;
     if (!isEdgeUnavailableError(err)) console.error(`[EdgeReports] events of node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);

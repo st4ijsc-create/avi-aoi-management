@@ -99,6 +99,20 @@ describe("doc 81 Đợt 10 B fix review 2 — policy-context parity (R-10-as N-1
     expect(edge).toEqual(central);
   });
 
+  it("F-B2-1: central's engine role is rc.user's (the resumer of THIS resume) — /authorize takes it from the approver (gate path) or the recorded resumer (held path)", async () => {
+    const eng = src(ENGINE[0]);
+    expect(eng).toMatch(/`foe\.command\.\$\{step\.command\}`[\s\S]{0,600}role: rc\.user\.role,/);
+    expect(eng).toMatch(/const rc = await buildRunContext\(run, def, user\);/);
+    expect(src(AUTH)).toMatch(/approverRole: await roleOf\(d, actor\.userId\)/);
+    const { edgeEngineActorOf } = await import("./edgeAuthorizeCentral");
+    const appr = { approvedBy: 7, at: 1_000 };
+    expect(edgeEngineActorOf({}, appr)).toEqual({ userId: 7, path: "gate" });
+    expect(edgeEngineActorOf({ edgeResumedBy: { userId: 9, at: 500 } }, appr)).toEqual({ userId: 7, path: "gate" });
+    expect(edgeEngineActorOf({ edgeResumedBy: { userId: 9, at: 2_000 }, interruptedEarlier: true }, appr)).toEqual({ userId: 9, path: "held" });
+    expect(edgeEngineActorOf({ interruptedEarlier: true }, appr)).toEqual({ unknown: true });
+    expect(edgeEngineActorOf({ interruptedEarlier: true, edgeResumedBy: { userId: 0, at: 2_000 } }, appr)).toEqual({ unknown: true });
+  });
+
   it("the robot dispatcher's numbered gates are exactly the pinned list (a NEW central gate turns this red until its /authorize twin is decided)", () => {
     const steps = [...src(ROBOT).matchAll(/^ {2}\/\/ ([0-9]+[a-zA-Z0-9-]*)\) /gm)].map((m) => m[1]);
     expect(steps).toEqual(["1", "2", "2b", "3", "4", "4a", "4a-policy", "4a-safety", "4b", "5", "5-R14"]);

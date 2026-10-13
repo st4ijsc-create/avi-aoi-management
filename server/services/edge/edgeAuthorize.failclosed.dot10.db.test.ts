@@ -277,6 +277,44 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize is fail-closed at ev
     }
   });
 
+  it("★ F-B2-1: the engine policy's role is central's rc.user on EACH path — the approver on the gate path, the RESUMER on a held resume after it, refused when a held resume's user is not recorded", async () => {
+    const { getUserById } = await import("../../db/auth");
+    const [ctxWas] = await k.sql`SELECT "contextJson" FROM orchestration_runs WHERE id = ${p.runId}`;
+    const was = await k.sql`SELECT id, role FROM users WHERE id IN ${k.sql([k.u.approver, k.u.admin2])}`;
+    await k.sql`UPDATE users SET role = 'engineer' WHERE id = ${k.u.approver}`;
+    await k.sql`UPDATE users SET role = 'supervisor' WHERE id = ${k.u.admin2}`;
+    // the approval's time as central reads it (drizzle; postgres.js reads a naive timestamp in local time — memory note)
+    const { getDb } = await import("../../db/connection");
+    const { orchestrationRunSteps } = await import("../../../drizzle/schema");
+    const { and, eq } = await import("drizzle-orm");
+    const [g] = await (await getDb())!.select({ f: orchestrationRunSteps.finishedAt }).from(orchestrationRunSteps).where(and(eq(orchestrationRunSteps.runId, p.runId), eq(orchestrationRunSteps.stepId, "g0")));
+    const gateAt = new Date(g.f as Date).getTime();
+    const setCtx = (extra: Record<string, unknown>) => k.sql`UPDATE orchestration_runs SET "contextJson" = ${k.sql.json({ ...((ctxWas.contextJson as Record<string, unknown>) ?? {}), ...extra } as never)} WHERE id = ${p.runId}`;
+    const engineRole = () => sw.policyCalls.filter((c) => c.action.startsWith("foe.command.")).at(-1)?.ctx.role;
+    process.env.SEC_PLATFORM = "true";
+    try {
+      // gate path: a resume record OLDER than the approval ⇒ the approver
+      await setCtx({ edgeResumedBy: { userId: k.u.admin2, at: gateAt - 60_000 } });
+      expect((await robotAttempt()).http).toBe(200);
+      expect(engineRole()).toBe((await getUserById(k.u.approver))!.role);
+      // held resume AFTER the approval ⇒ the resumer
+      await setCtx({ edgeResumedBy: { userId: k.u.admin2, at: gateAt + 60_000 }, interruptedEarlier: true });
+      expect((await robotAttempt()).http).toBe(200);
+      expect(engineRole()).toBe((await getUserById(k.u.admin2))!.role);
+      expect(engineRole()).toBe("supervisor");
+      // held and continued, the resumer not recorded ⇒ refused (fail closed), nothing signed
+      await setCtx({ interruptedEarlier: true });
+      const before = await rows();
+      const r = await robotAttempt();
+      expect(r, JSON.stringify(r)).toMatchObject({ http: 409, code: "device_refused", data: { gate: "policy" } });
+      expect(await rows()).toBe(before);
+    } finally {
+      delete process.env.SEC_PLATFORM;
+      await k.sql`UPDATE orchestration_runs SET "contextJson" = ${k.sql.json((ctxWas.contextJson ?? {}) as never)} WHERE id = ${p.runId}`;
+      for (const w of was) await k.sql`UPDATE users SET role = ${w.role} WHERE id = ${w.id}`;
+    }
+  });
+
   it("★ scan (fix round 2): an EMPTY safety list is never signed by default — a placement outside the node's factory / no node factory ⇒ not_owned; real mode with central guarding the robot by a config the edge cannot get ⇒ device_refused {safety}; an explicit config ⇒ listed", async () => {
     const { edgeAuthorizeSafetyConfigIds } = await import("./edgeAuthorizeCentral");
     const { centralDb } = await import("./edgeCentralCommon");
@@ -368,6 +406,6 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize is fail-closed at ev
   it("control: with every read answering, the same attempt is authorised (the switches are the only cause above)", async () => {
     const r = await robotAttempt();
     expect(r.http, JSON.stringify(r)).toBe(200);
-    expect(await rows()).toBe(5); // + the OK attempts of the I-1, N-1, empty-safety-list and R-10-aw tests
+    expect(await rows()).toBe(7); // + the OK attempts of the I-1, N-1, F-B2-1 (×2), empty-safety-list and R-10-aw tests
   });
 });

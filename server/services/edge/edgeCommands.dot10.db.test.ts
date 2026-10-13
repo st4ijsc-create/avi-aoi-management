@@ -175,6 +175,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP deliver
       expect((await tx.execute((await import("drizzle-orm")).sql`SELECT 1 AS ok`)) as unknown).toBeTruthy(); // the transaction is still usable
     });
     expect((await k.sql`SELECT "ackedAt" FROM robot_motion_lock_requests WHERE id = ${stop}`)[0].ackedAt).toBeNull();
+    expect((await reasons()).at(-1)).toBe(`bad_outcome@${k.ids.nodeA}`); // A fix review 7: evidence for "expired" too
     // the matching ack closes it
     await d.transaction(async (tx) => {
       expect(await ackEdgeCommand(tx as never, k.ids.nodeA, { requestId: stop, outcome: "done", generation: null, at: Date.now(), target: { robotId: k.ids.robotA }, ownerEpoch: ep })).toBe(true);
@@ -197,7 +198,47 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — command queue: L-7 STOP deliver
     expect(await st(lock)).toMatchObject({ ackedAt: null, outcome: null });
     const again = await commandsForNode(await k.principal("A"));
     expect(payloads(again.signed).map((x) => x.requestId)).toContain(stop);
+    expect((await k.sql`SELECT reason FROM edge_stop_ack_refusals WHERE "requestId" = ${stop}`).map((x) => x.reason)).toEqual(["not_owned_here"]);
     expect(Number((await k.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND "entityId" = ${k.ids.nodeA} AND details LIKE '%ack_not_owned_here%'`)[0].n)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("★ F-B2-4: an events batch locks the requests it acks in ASCENDING id order before any ack — with s1 held elsewhere, a batch acking [s2, s1] waits on s1 WITHOUT holding s2 (two opposite-order batches queue, never deadlock)", async () => {
+    const { eventsForNode } = await import("./edgeReportsCentral");
+    const { enqueueEdgeDeviceRequest } = await import("./edgeNodeCommands");
+    const ep = Number((await k.sql`SELECT "ownerEpoch" FROM robots WHERE id = ${k.ids.robotA}`)[0].ownerEpoch);
+    const s1 = (await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "order 1", requestedBy: k.u.admin })).requestId;
+    const s2 = (await enqueueEdgeDeviceRequest({ kind: "stop", robotId: k.ids.robotA, reason: "order 2", requestedBy: k.u.admin })).requestId;
+    const bad = (seq: number, id: number) => ({ kind: "command_ack", seq, requestId: id, outcome: "done", generation: null, at: Date.now(), target: { robotId: k.ids.robotB }, ownerEpoch: ep });
+    const postgres = (await import("postgres")).default;
+    const holder = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    const probe = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const isLocked = new Promise<void>((r) => (locked = r));
+      const h = holder.begin(async (tx) => {
+        await tx`SELECT id FROM robot_motion_lock_requests WHERE id = ${s1} FOR UPDATE`;
+        locked();
+        await held;
+      });
+      await isLocked;
+      const batch = eventsForNode(await k.principal("A"), { epoch: epoch(), stream: "events", records: [bad(1, s2), bad(2, s1)] });
+      await new Promise((r) => setTimeout(r, 500));
+      // ascending order ⇒ the batch is queued on s1 and has NOT taken s2 (in record order it would hold s2 already)
+      const free = await probe.begin(async (tx) => {
+        await tx`SELECT set_config('lock_timeout', '200ms', true)`;
+        await tx`SELECT id FROM robot_motion_lock_requests WHERE id = ${s2} FOR UPDATE`;
+        return true;
+      }).catch(() => false);
+      release();
+      await h;
+      expect(free).toBe(true);
+      expect(await batch).toMatchObject({ http: 200, data: { ackedSeq: 2 } });
+    } finally {
+      await holder.end();
+      await probe.end();
+    }
   });
 
   it("★ R-10-as N-4 (L-7): a STOP whose delivery stamp FAILS (its row locked elsewhere past the stamp bound) is still delivered — signed, in this pull; stamped on a later pull", async () => {

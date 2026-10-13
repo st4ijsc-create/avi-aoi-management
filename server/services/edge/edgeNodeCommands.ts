@@ -371,40 +371,38 @@ export async function ackEdgeCommand(tx: Db, nodeId: number, rec: EdgeAckInput):
  * columns is refused by the DB). It records the ack only for a pending STOP of THIS node whose target (robot XOR adapter) and
  * owner epoch equal the node's report, outcome done | refused | failed; ANY other ack (malformed, other node, mismatch, not
  * pending) ⇒ false + a refusal row. Runs in a SAVEPOINT of `tx` (N-5: the caller's connection), so an error never aborts the batch.
- * An `expired` outcome is passed through as well (a STOP never expires, R-10-k), and R-10-au `notOwnedHere` (the edge's verified
- * config does not list the target): NEVER terminal — the STOP stays pending for its current owner / central (D carries it;
- * centralMustExecute), is re-delivered to this node every pull while it is this node's, and the caller records an anomaly.
- * 0374 RAISES 23514 for both outcomes instead of writing a refusal row — refused here (false, nothing changed) and logged; the
- * evidence row needs A's function to record them non-terminally (reported to the coordinator).
+ * Every outcome goes through it (A fix review 7: it never raises on an outcome): `expired` ⇒ refusal row `bad_outcome` (a STOP
+ * never expires, R-10-k); R-10-au `notOwnedHere` ⇒ refusal row `not_owned_here`, NEVER terminal — the STOP stays pending for its
+ * current owner / central, is re-delivered to this node every pull while it is this node's, and the caller records an anomaly.
+ * The row locks it takes (request FOR UPDATE, device FOR SHARE) are held until the batch commits (N-5); the events batch takes
+ * the request rows in ascending id order first (F-B2-4, eventsForNode), so two batches never lock them in opposite orders.
  */
 export async function ackStopRequest(
   tx: Db,
   a: { nodeId: number; requestId: number; robotId: number | null; adapterId: number | null; ownerEpoch: number | null; outcome: "done" | "refused" | "failed" | "expired" | "notOwnedHere"; generation: number | null; unsigned: boolean },
 ): Promise<boolean> {
-  try {
-    return await tx.transaction(async (sp) =>
-      ackEdgeStop(sp as never, {
-        requestId: a.requestId,
-        nodeId: a.nodeId,
-        robotId: a.robotId,
-        adapterId: a.adapterId,
-        ownerEpoch: a.ownerEpoch as number, // null ⇒ A's function records `malformed`
-        outcome: a.outcome as "done",
-        unsigned: a.unsigned,
-        generation: a.outcome === "done" ? a.generation : null,
-      }),
-    );
-  } catch (err) {
-    if ((a.outcome === "expired" || a.outcome === "notOwnedHere") && isEdgeControlRefusal(err)) {
-      console.error(
-        a.outcome === "expired"
-          ? `[EdgeCommands] ANOMALY: node ${a.nodeId} acknowledged STOP request #${a.requestId} as "expired" — refused (a STOP never expires); edge_stop_ack_edge raised instead of recording refusal evidence`
-          : `[EdgeCommands] ANOMALY: node ${a.nodeId} reports STOP request #${a.requestId} as notOwnedHere — kept PENDING (current owner / central); edge_stop_ack_edge cannot record it non-terminally yet`,
-      );
-      return false;
-    }
-    throw err;
-  }
+  return tx.transaction(async (sp) =>
+    ackEdgeStop(sp as never, {
+      requestId: a.requestId,
+      nodeId: a.nodeId,
+      robotId: a.robotId,
+      adapterId: a.adapterId,
+      ownerEpoch: a.ownerEpoch as number, // null ⇒ A's function records `malformed`
+      outcome: a.outcome as "done", // any outcome: A's function refuses (with evidence) what it does not accept
+      unsigned: a.unsigned,
+      generation: a.outcome === "done" ? a.generation : null,
+    }),
+  );
+}
+
+/**
+ * F-B2-4 — the request rows a batch's acks will lock, locked FIRST in ascending id order (a no-op for rows already held): two
+ * batches naming the same requests in opposite orders queue instead of deadlocking. Unknown ids lock nothing.
+ */
+export async function lockAckRequestsInOrder(tx: Db, requestIds: readonly number[]): Promise<void> {
+  const ids = [...new Set(requestIds.filter((x) => Number.isSafeInteger(x) && x > 0))].sort((a, b) => a - b);
+  if (ids.length === 0) return;
+  await tx.execute(sql`SELECT id FROM robot_motion_lock_requests WHERE id IN ${sql.raw(`(${ids.join(",")})`)} ORDER BY id FOR UPDATE`);
 }
 
 /**

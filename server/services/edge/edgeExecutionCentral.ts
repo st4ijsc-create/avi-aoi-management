@@ -775,18 +775,22 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
       stopsUnconfirmed.push({ runId: r.a.runId, picture: signForNode(signer!, "runpkg", edgeSweepPictureSchema, sweepPayload(picture, r.finishedAt), node) });
     }
     const { currentConfigVersion } = await import("./edgeConfigCentral");
+    // F-B2-2 — the commands are read BEFORE the config version: an ownership change committed in between can only move the
+    // version forward, so a carried STOP never ships with a version older than the ownership it was carried under
+    const commands = await commandFields(node);
+    const configVersion = await currentConfigVersion(node);
     return {
       http: 200,
       data: {
         node: node.nodeCode,
         protocolVersion: EDGE_PROTOCOL_VERSION,
-        configVersion: await currentConfigVersion(node),
+        configVersion,
         keysetVersion: signer ? signer.keyset.version : 0,
         programCheckRequested: await programCheckWanted(d, node),
         runs,
         claims,
         stopsUnconfirmed,
-        ...(await commandFields(node)),
+        ...commands,
       },
     };
   } catch (err) {

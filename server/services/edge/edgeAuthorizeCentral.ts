@@ -278,6 +278,29 @@ export function edgeEnginePolicyContext(i: {
   };
 }
 
+/**
+ * F-B2-1 — the run context key a central Continue of an edge run records: `{ userId, at }` of the user who resumed it LAST
+ * (resumeRun's `user` — central's `rc.user` on that resume). Written by the engine's edge Continue (C); never by the edge (the
+ * R-10-n context allow-list does not carry it).
+ */
+export const EDGE_RESUMED_BY_CTX_KEY = "edgeResumedBy";
+
+/**
+ * F-B2-1 — whose role central's engine policy (foeEngine.execCommand: `role: rc.user.role`) would use for this attempt:
+ *   • the gate path (the newest resume is the gate approval) ⇒ the APPROVER;
+ *   • a held / interrupted resume AFTER the newest approval ⇒ the RESUMER (recorded under EDGE_RESUMED_BY_CTX_KEY);
+ *   • the run was held and continued but who continued it is not recorded ⇒ unknown (the caller refuses: fail closed).
+ */
+export function edgeEngineActorOf(contextJson: unknown, newestApproval: { approvedBy: number; at: number }): { userId: number; path: "gate" | "held" } | { unknown: true } {
+  const ctx = (contextJson && typeof contextJson === "object" ? contextJson : {}) as Record<string, unknown>;
+  const r = ctx[EDGE_RESUMED_BY_CTX_KEY] as { userId?: unknown; at?: unknown } | undefined;
+  const userId = r && typeof r.userId === "number" && Number.isInteger(r.userId) && r.userId > 0 ? r.userId : null;
+  const at = r && typeof r.at === "number" && Number.isFinite(r.at) ? r.at : null;
+  if (userId !== null && at !== null) return at > newestApproval.at ? { userId, path: "held" } : { userId: newestApproval.approvedBy, path: "gate" };
+  if (ctx.interruptedEarlier === true) return { unknown: true };
+  return { userId: newestApproval.approvedBy, path: "gate" };
+}
+
 /** Step 7 + 8 for a robot attempt — the robot dispatcher's order: enabled, lock, FIELD_V2, commissioning ⇒ mode, policy, safety, interlock. */
 async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind: "robot" }>, approvedBy: number, runOwner: number, ownerEpoch: number): Promise<Gate | Verdict> {
   const robotId = rb.robotId as number;
@@ -502,18 +525,23 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
     const ev = evaluateWithPrograms(rows, def, a.defHash, idr.identity, await computeBindingDetail(d, def, pre));
     if (!ev.ok) return edgeError("gate_required", `${FOE_GATE_REQUIRED}(${ev.reason}): command step "${req.stepId}" not authorised.`, { reason: ev.reason });
     const approval = { approvedBy: ev.approvals[0].approvedBy, gateStepId: ev.approvals[0].gateStepId };
+    const newestApproval = { approvedBy: ev.approvals[0].approvedBy, at: ev.approvals[0].at };
 
     // ── 6b. I-2 — the ENGINE's policy (foeEngine.execCommand: `foe.command.<cmd>` on foe-run:<id> / machine:<id>), every mode,
-    //    with the engine's context (N-1: the approver's role — central's rc.user on the resume after the gate)
+    //    with the engine's context: central's rc.user (F-B2-1 — the approver on the gate path, the resumer on a held resume)
     const runOwner = typeof run.startedBy === "number" && run.startedBy > 0 ? run.startedBy : 0;
     {
       const { evaluateActionPolicy, secPlatformEnabled } = await import("../security/policyGate");
       if (secPlatformEnabled()) {
+        const actor = edgeEngineActorOf(run.contextJson, newestApproval);
+        if ("unknown" in actor) {
+          return edgeError("device_refused", `Step "${req.stepId}": this run was continued after a hold and who continued it is not recorded — the engine policy cannot be evaluated with central's user; refused.`, { gate: "policy" });
+        }
         const verdict = evaluateActionPolicy(
           `foe-run:${runId}`,
           `foe.command.${step.command}`,
           `machine:${step.machineId}`,
-          edgeEnginePolicyContext({ runId, workflowRef: def.ref, step: step as never, approverRole: await roleOf(d, approval.approvedBy), approvedBy: approval.approvedBy, runOwner: runOwner || null, attempt: req.attempt }),
+          edgeEnginePolicyContext({ runId, workflowRef: def.ref, step: step as never, approverRole: await roleOf(d, actor.userId), approvedBy: actor.userId, runOwner: runOwner || null, attempt: req.attempt }),
           { requestId: idemKey },
         );
         if (!verdict.allow) return edgeError("device_refused", `Step "${req.stepId}": ${policyRefusal(verdict)}${verdict.policyId ? ` (policy ${verdict.policyId})` : ""}.`, { gate: "policy" });
