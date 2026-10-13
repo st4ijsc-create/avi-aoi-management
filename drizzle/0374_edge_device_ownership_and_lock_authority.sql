@@ -94,6 +94,9 @@
 --   manual resolution is kept (ledger 'late_result', lateAfterResolutionId, key 'late:<id>:<key>'); it holds the adapter's owner
 --   change until a person calls ot_write_late_result_review (WORM ot_write_late_result_reviews), on top of the 10-minute
 --   timeout window every 'timeout' result (manual included) already holds.
+-- fix review 12 (ruling R-10-bm): edge_stop_resolve / ot_write_intent_resolve / ot_write_late_result_review authorize the actor
+--   IN THE DB (edge_human_resolver_authorize: active, admin | supervisor, machine_control canEdit — stricter of both
+--   RBAC_SCOPED_ADMIN modes; edge_actor_in_factory_scope over edge_device_factory_id for a non-admin) ⇒ 23514, nothing written.
 -- fix review 4 (ruling R-10-ah, re-review F1): edge_stop_ack_edge also requires the device to be owned by the calling node at
 --   the row's epoch NOW; every refused edge ack is kept as WORM evidence in edge_stop_ack_refusals (avi_app SELECT only).
 --
@@ -114,6 +117,7 @@
 --   DROP TRIGGER IF EXISTS trg_command_log_result_guard ON "command_log"; DROP FUNCTION IF EXISTS command_log_result_guard(), ot_write_intent_resolve(integer, integer, text);
 --   DROP FUNCTION IF EXISTS ot_write_late_result_review(integer, integer, text); DROP TABLE IF EXISTS "ot_write_late_result_reviews";
 --   DROP FUNCTION IF EXISTS ot_write_late_result_reviews_worm(); DROP INDEX IF EXISTS "ux_command_log_one_result_per_intent";
+--   DROP FUNCTION IF EXISTS edge_human_resolver_authorize(integer, text), edge_actor_in_factory_scope(integer, integer), edge_device_factory_id(integer, integer);
 --   DROP TRIGGER IF EXISTS trg_robot_motion_lock_writer_instance ON "robot_motion_locks"; DROP FUNCTION IF EXISTS robot_motion_lock_writer_guard();
 --   ALTER TABLE "robot_motion_locks" DROP COLUMN IF EXISTS "writerInstanceId";
 --   ALTER TABLE "robot_motion_lock_requests" DROP COLUMN IF EXISTS "ackViaUnsigned", DROP COLUMN IF EXISTS "resolvedAt", DROP COLUMN IF EXISTS "resolvedBy", DROP COLUMN IF EXISTS "resolution";
@@ -903,21 +907,112 @@ REVOKE ALL ON FUNCTION public.edge_stop_ack_edge(integer, integer, integer, inte
 
 -- fix review 3 (R-10-aa N2): a STOP answered refused / failed stays in device_pending_stops until a REAL, ACTIVE user records
 -- how it was resolved (written once). Nothing else closes it.
+-- ── fix review 12 (ruling R-10-bm): WHO may resolve — checked in the DB, not only in the router ───────────────────────────
+-- The human-resolution functions (edge_stop_resolve, ot_write_intent_resolve, ot_write_late_result_review) are SECURITY
+-- DEFINER and avi_app may call them with any actor id; the rule below is the router's (F2 edgeResolutionRouter:
+-- supervisorProcedure = admin | supervisor, requirePermission('machine_control', 'canEdit'), resolveTenantFactoryScope strict),
+-- read from the same tables (users, permissions, user_factory_assignments, user_corporate_assignments, factories; read-only).
+-- Insufficient or unknown ⇒ 23514 before anything is written. Not checkable here: the session's 2FA (router only).
+-- The device's factory — the same chain as F2's ROBOT_FACTORY / ADAPTER_FACTORY (robot: station → line, else its line;
+-- adapter: machine → station → line; line → workshop → factory). NULL = no chain (only an unrestricted caller may resolve).
+CREATE OR REPLACE FUNCTION public.edge_device_factory_id(p_robot integer, p_adapter integer) RETURNS integer
+LANGUAGE plpgsql STABLE
+SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  fid integer;
+BEGIN
+  IF p_robot IS NOT NULL THEN
+    SELECT w."factoryId" INTO fid FROM public."robots" r
+      LEFT JOIN public."stations" s ON s."id" = r."stationId"
+      LEFT JOIN public."production_lines" l ON l."id" = COALESCE(s."lineId", r."lineId")
+      LEFT JOIN public."workshops" w ON w."id" = l."workshopId"
+     WHERE r."id" = p_robot;
+  END IF;
+  IF fid IS NULL AND p_adapter IS NOT NULL THEN
+    SELECT w."factoryId" INTO fid FROM public."device_adapters" a
+      LEFT JOIN public."machines" m ON m."id" = a."machineId"
+      LEFT JOIN public."stations" s ON s."id" = m."stationId"
+      LEFT JOIN public."production_lines" l ON l."id" = s."lineId"
+      LEFT JOIN public."workshops" w ON w."id" = l."workshopId"
+     WHERE a."id" = p_adapter;
+  END IF;
+  RETURN fid;
+END $$;
+REVOKE ALL ON FUNCTION public.edge_device_factory_id(integer, integer) FROM PUBLIC;
+
+-- The actor: active, not 0; role admin | supervisor; machine_control canEdit as accessControl.checkPermission reads it. The DB
+-- cannot see RBAC_SCOPED_ADMIN, so it takes the STRICTER of both modes: an admin passes unless an explicit machine_control row
+-- still in force says canEdit is not true; a supervisor needs a row in force with canEdit = true. "In force" is fail-closed
+-- across the naive-timestamp reading (postgres.js writes UTC wall time into timestamp-without-tz): a grant must be unexpired in
+-- BOTH readings, a denial counts if unexpired in EITHER. Returns true for an unrestricted (admin) actor.
+CREATE OR REPLACE FUNCTION public.edge_human_resolver_authorize(p_actor integer, p_what text) RETURNS boolean
+LANGUAGE plpgsql STABLE
+SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  u record;
+BEGIN
+  IF p_actor IS NULL OR p_actor <= 0 THEN
+    RAISE EXCEPTION '%: actor % is not an active user', p_what, p_actor USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT x."role"::text AS role, x."isActive" AS active INTO u FROM public."users" x WHERE x."id" = p_actor;
+  IF NOT FOUND OR u.active IS NOT TRUE THEN
+    RAISE EXCEPTION '%: actor % is not an active user', p_what, p_actor USING ERRCODE = 'check_violation';
+  END IF;
+  IF u.role IS NULL OR u.role NOT IN ('admin', 'supervisor') THEN
+    RAISE EXCEPTION '%: actor % (role %) may not resolve — admin or supervisor only', p_what, p_actor, u.role USING ERRCODE = 'check_violation';
+  END IF;
+  IF u.role = 'admin' THEN
+    IF EXISTS (SELECT 1 FROM public."permissions" pm
+                WHERE pm."userId" = p_actor AND pm."moduleName" = 'machine_control' AND pm."canEdit" IS NOT TRUE
+                  AND (pm."expiresAt" IS NULL OR pm."expiresAt" > LEAST(LOCALTIMESTAMP, (now() AT TIME ZONE 'UTC')))) THEN
+      RAISE EXCEPTION '%: actor % has machine_control edit explicitly withheld', p_what, p_actor USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN true;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public."permissions" pm
+                  WHERE pm."userId" = p_actor AND pm."moduleName" = 'machine_control' AND pm."canEdit" = true
+                    AND (pm."expiresAt" IS NULL OR pm."expiresAt" > GREATEST(LOCALTIMESTAMP, (now() AT TIME ZONE 'UTC')))) THEN
+    RAISE EXCEPTION '%: actor % holds no machine_control edit grant in force', p_what, p_actor USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN false;
+END $$;
+REVOKE ALL ON FUNCTION public.edge_human_resolver_authorize(integer, text) FROM PUBLIC;
+
+-- The factory scope of a scoped (non-admin) actor — resolveTenantFactoryScope: factories whose code is one of the actor's
+-- factory assignments or whose corporateCode is one of the actor's corporate assignments. A device with no factory chain is
+-- outside every scope.
+CREATE OR REPLACE FUNCTION public.edge_actor_in_factory_scope(p_actor integer, p_factory integer) RETURNS boolean
+LANGUAGE plpgsql STABLE
+SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF p_factory IS NULL THEN
+    RETURN false;
+  END IF;
+  RETURN EXISTS (SELECT 1 FROM public."factories" f
+                  WHERE f."id" = p_factory
+                    AND (EXISTS (SELECT 1 FROM public."user_factory_assignments" ufa WHERE ufa."userId" = p_actor AND ufa."factoryCode" = f."code")
+                         OR (f."corporateCode" IS NOT NULL
+                             AND EXISTS (SELECT 1 FROM public."user_corporate_assignments" uca WHERE uca."userId" = p_actor AND uca."corporateCode" = f."corporateCode"))));
+END $$;
+REVOKE ALL ON FUNCTION public.edge_actor_in_factory_scope(integer, integer) FROM PUBLIC;
+
 CREATE OR REPLACE FUNCTION public.edge_stop_resolve(p_request integer, p_actor integer, p_resolution text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   q record;
+  unrestricted boolean;
 BEGIN
-  IF p_actor IS NULL OR p_actor <= 0 OR NOT EXISTS (SELECT 1 FROM public."users" u WHERE u."id" = p_actor AND u."isActive" = true) THEN
-    RAISE EXCEPTION 'edge_stop_resolve: actor % is not an active user', p_actor USING ERRCODE = 'check_violation';
-  END IF;
+  unrestricted := public.edge_human_resolver_authorize(p_actor, 'edge_stop_resolve'); -- fix review 12 (R-10-bm)
   IF p_resolution IS NULL OR length(btrim(p_resolution)) < 3 THEN
     RAISE EXCEPTION 'edge_stop_resolve: a resolution (at least 3 characters) is required' USING ERRCODE = 'check_violation';
   END IF;
   SELECT * INTO q FROM public."robot_motion_lock_requests" x WHERE x."id" = p_request FOR UPDATE;
   IF NOT FOUND OR q."kind" <> 'stop' OR q."outcome" IS NULL OR q."outcome" NOT IN ('refused', 'failed') OR q."resolvedAt" IS NOT NULL THEN
     RAISE EXCEPTION 'edge_stop_resolve: request % is not an unresolved refused / failed STOP', p_request USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT unrestricted AND NOT public.edge_actor_in_factory_scope(p_actor, public.edge_device_factory_id(q."robotId", q."adapterId")) THEN
+    RAISE EXCEPTION 'edge_stop_resolve: request % is outside actor %''s factory scope', p_request, p_actor USING ERRCODE = 'check_violation';
   END IF;
   UPDATE public."robot_motion_lock_requests" SET "resolvedAt" = now(), "resolvedBy" = p_actor, "resolution" = left(btrim(p_resolution), 2000)
    WHERE "id" = p_request;
@@ -1016,16 +1111,18 @@ DECLARE
   i record;
   why text := NULLIF(btrim(COALESCE(p_reason, '')), '');
   rid integer;
+  unrestricted boolean;
 BEGIN
-  IF p_actor IS NULL OR p_actor <= 0 OR NOT EXISTS (SELECT 1 FROM public."users" u WHERE u."id" = p_actor AND u."isActive" = true) THEN
-    RAISE EXCEPTION 'ot_write_intent_resolve: actor % is not an active user', p_actor USING ERRCODE = 'check_violation';
-  END IF;
+  unrestricted := public.edge_human_resolver_authorize(p_actor, 'ot_write_intent_resolve'); -- fix review 12 (R-10-bm)
   IF why IS NULL OR length(why) < 3 THEN
     RAISE EXCEPTION 'ot_write_intent_resolve: a reason (at least 3 characters) is required' USING ERRCODE = 'check_violation';
   END IF;
   SELECT * INTO i FROM public."command_log" c WHERE c."id" = p_intent FOR UPDATE;
   IF NOT FOUND OR i."status"::text <> 'sent' OR i."ackValue" ->> 'ledger' IS DISTINCT FROM 'intent' THEN
     RAISE EXCEPTION 'ot_write_intent_resolve: % is not a write intent', p_intent USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT unrestricted AND NOT public.edge_actor_in_factory_scope(p_actor, public.edge_device_factory_id(NULL, i."adapterId")) THEN
+    RAISE EXCEPTION 'ot_write_intent_resolve: write intent % is outside actor %''s factory scope', p_intent, p_actor USING ERRCODE = 'check_violation';
   END IF;
   -- fix review 11 (R-10-bk): the SAME per-intent lock every result INSERT takes (trg_command_log_result_guard) ⇒ a device-stage
   -- result in flight is waited for, then seen (READ COMMITTED: the next query takes a fresh snapshot).
@@ -1132,15 +1229,19 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   why text := NULLIF(btrim(COALESCE(p_note, '')), '');
+  unrestricted boolean;
+  lr record;
 BEGIN
-  IF p_actor IS NULL OR p_actor <= 0 OR NOT EXISTS (SELECT 1 FROM public."users" u WHERE u."id" = p_actor AND u."isActive" = true) THEN
-    RAISE EXCEPTION 'ot_write_late_result_review: actor % is not an active user', p_actor USING ERRCODE = 'check_violation';
-  END IF;
+  unrestricted := public.edge_human_resolver_authorize(p_actor, 'ot_write_late_result_review'); -- fix review 12 (R-10-bm)
   IF why IS NULL OR length(why) < 3 THEN
     RAISE EXCEPTION 'ot_write_late_result_review: a note (at least 3 characters) is required' USING ERRCODE = 'check_violation';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM public."command_log" c WHERE c."id" = p_late_result AND c."ackValue" ->> 'ledger' = 'late_result') THEN
+  SELECT c."adapterId" AS "adapterId" INTO lr FROM public."command_log" c WHERE c."id" = p_late_result AND c."ackValue" ->> 'ledger' = 'late_result';
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'ot_write_late_result_review: % is not a late device write result', p_late_result USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT unrestricted AND NOT public.edge_actor_in_factory_scope(p_actor, public.edge_device_factory_id(NULL, lr."adapterId")) THEN
+    RAISE EXCEPTION 'ot_write_late_result_review: % is outside actor %''s factory scope', p_late_result, p_actor USING ERRCODE = 'check_violation';
   END IF;
   INSERT INTO public."ot_write_late_result_reviews" ("lateResultId", "reviewedBy", "note")
     VALUES (p_late_result, p_actor, left(why, 2000)) ON CONFLICT ("lateResultId") DO NOTHING;

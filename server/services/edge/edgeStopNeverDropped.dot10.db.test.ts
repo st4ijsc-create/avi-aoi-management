@@ -277,7 +277,7 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       const [v] = await tx`SELECT "needsResolution" AS nr, outcome FROM public.device_pending_stops WHERE "requestId" = ${s}`;
       const del = await code(tx, (sp) => sp`DELETE FROM public.robots WHERE id = ${f.robot}`);
       const t = tag();
-      const [u] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t}, 'user', true) RETURNING id`;
+      const [u] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t}, 'admin', true) RETURNING id`; // R-10-bm: a resolver is admin | supervisor (+ grant, scope)
       const [off] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${t + "x"}, 'user', false) RETURNING id`;
       const byInactive = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${off.id}, 'checked on site')`);
       const noNote = await code(tx, (sp) => sp`SELECT public.edge_stop_resolve(${s}, ${u.id}, ' ')`);
@@ -452,7 +452,7 @@ describe.skipIf(!onTest)("R-10-i — a pending STOP is never dropped (0374)", ()
       const [h] = await tx`SELECT "requestId" AS id FROM public.device_pending_stops WHERE "robotId" = ${f.robot} AND outcome IS NULL`;
       await tx`SELECT public.edge_stop_ack_central(${h.id}, 'failed', ${await exec(tx, "robot", f.robot, false)}::bigint)`;
       const [v1] = await tx`SELECT "needsResolution" AS nr, "centralMustExecute" AS c, "resolvedByHuman" AS h FROM public.device_pending_stops WHERE "requestId" = ${h.id}`;
-      const [usr] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${tag()}, 'user', true) RETURNING id`;
+      const [usr] = await tx`INSERT INTO public.users ("openId", role, "isActive") VALUES (${tag()}, 'admin', true) RETURNING id`; // R-10-bm
       await tx`SELECT public.edge_stop_resolve(${h.id}, ${usr.id}, 'stopped by hand at the cabinet')`;
       const [v2] = await tx`SELECT "needsResolution" AS nr, "centralMustExecute" AS c, "resolvedByHuman" AS h FROM public.device_pending_stops WHERE "requestId" = ${h.id}`;
       return { failed: v1 ? `${v1.nr}/${v1.c}/${v1.h}` : "gone", resolved: v2 ? `${v2.nr}/${v2.c}/${v2.h}` : "gone", s1: typeof s1 };
