@@ -31,8 +31,10 @@ export interface RobotLoadScope {
 /**
  * doc 81 Đợt 10 task D (design §2.12) — central does not connect to robots an edge node OWNS (robots.edgeNodeId, mig 0374,
  * narrow projection): one owner per device = one session, one ingest, one lock authority. A DB without 0374 has no edge owners.
- * Any other read error keeps the rows (logged loudly): central's dispatcher still refuses MOTION to an edge-owned robot
- * (ROBOT_OWNED_BY_EDGE, read at command time, fail-closed), so the residual is a second session, never a second mover.
+ * doc 81 Đợt 10 final fix wave (M-1, R-10-br) — any OTHER read error ⇒ NO robot (fail-closed): a second session on a
+ * single-client controller could starve the edge's own session (its local STOPs would then fail). Logged + an alert; the
+ * ownership reconcile (deviceOwnershipService, ≤ 30 s) attaches the central-owned robots once the read works (they were not
+ * tried at start, so its first pass picks them up).
  */
 async function excludeEdgeOwnedRobots(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, rows: Robot[]): Promise<Robot[]> {
   if (rows.length === 0) return rows;
@@ -47,10 +49,16 @@ async function excludeEdgeOwnedRobots(db: NonNullable<Awaited<ReturnType<typeof 
     for (const r of rows) if (skip.has(r.id)) console.log(`[Robot] "${r.code}" is owned by an edge node — central does not connect to it`);
     return rows.filter((r) => !skip.has(r.id));
   } catch (err) {
-    if (!isEdgeControlSchemaMissing(err)) {
-      console.error(`[Robot] edge ownership of the enabled robots could not be read — central connects to all of them; motion to an edge-owned one is still refused at command time:`, (err as Error)?.message ?? err);
+    if (isEdgeControlSchemaMissing(err)) return rows; // a DB without 0374: no edge owners (central unchanged)
+    const msg = String((err as Error)?.message ?? err).slice(0, 200);
+    console.error(`[Robot] edge ownership of the enabled robots could not be read — central connects to NONE of them (fail-closed, M-1); the ownership reconcile retries: ${msg}`);
+    try {
+      const { publishAnomalyDetected } = await import("../ecosystem/ecosystemEvents");
+      publishAnomalyDetected({ kind: "robot_owner_unreadable", severity: "warning", source: "robot", machineId: null, message: `Robot ownership could not be read (${msg}) — central connected to no robot; retried by the ownership reconcile (≤ 30 s)` }, "robot");
+    } catch {
+      /* the log line above carries it */
     }
-    return rows;
+    return [];
   }
 }
 

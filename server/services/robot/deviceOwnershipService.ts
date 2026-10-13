@@ -51,6 +51,8 @@ export function _setCentralStopSessionDeadlineMsForTests(ms: number | null): voi
 export const DEVICE_OWNER_CHANNEL = "device_owner_changed";
 export const DEVICE_OWNER_RECONCILE_MS = 30_000;
 export const PENDING_STOP_SWEEP_MS = 10_000;
+/** final fix wave (M-2) — "0374 missing" was already logged by the sweep (reset once the pending set reads again) */
+let pendingSchemaMissingLogged = false;
 
 const errText = (e: unknown) => String((e as Error)?.message ?? e).replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1***@").slice(0, 240);
 const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? (r as Array<Record<string, unknown>>) : (((r as { rows?: unknown[] })?.rows ?? []) as Array<Record<string, unknown>>));
@@ -159,9 +161,16 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
       void raiseCentralStopAlert(opts.device.kind, opts.device.id, opts.actorUserId ? [opts.actorUserId] : [], notSent ? `pending STOP requests could not be read (${errText(err)}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `pending STOP requests could not be read (${errText(err)}); a STOP was ${sent.sent} anyway`);
       return [{ requestIds: [], outcome: sent.ok && sent.sent === "sent" ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [], ...(notSent ? { notSent: true as const } : {}) }];
     }
-    console.error(`[DeviceOwner] pending-STOP sweep could not read device_pending_stops: ${errText(err)}`);
+    // final fix wave (M-2) — a DB without 0374 (the new build deployed before the migrations) is said ONCE, not every 10 s
+    const { isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
+    if (!isEdgeControlSchemaMissing(err)) console.error(`[DeviceOwner] pending-STOP sweep could not read device_pending_stops: ${errText(err)}`);
+    else if (!pendingSchemaMissingLogged) {
+      pendingSchemaMissingLogged = true;
+      console.warn(`[DeviceOwner] pending-STOP sweep: device_pending_stops is not there (migration 0374 not applied yet) — retried silently every pass until it is: ${errText(err)}`);
+    }
     return results;
   }
+  pendingSchemaMissingLogged = false;
   for (const dev of devices) {
     const r = await executeDeviceStopsLocked(dev.kind, dev.id, opts.actorUserId ?? null, opts.device !== undefined);
     if (r) results.push(r);
