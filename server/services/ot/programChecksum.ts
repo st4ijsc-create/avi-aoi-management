@@ -40,6 +40,12 @@
  * which by contract shares no queue with writes. The orchestration engine never reads a checksum on a STOP step, and the
  * dispatchers never check approvals of a pinned OT stop or of a robot stop.
  *
+ * CHECK-TO-WRITE GAP (documented residual; doc 81 Đợt 9 T re-review N5, Đợt 10 F2): a dispatcher reads the checksum BEFORE its
+ * reservation transaction, and the device write follows. A program changed on the controller between that read and the
+ * write is not seen by THIS write (the next one reads again — no cache). The gap is bounded by the read's deadline plus the
+ * transaction: ≈ 1 s by default, up to PROGRAM_CHECKSUM_READ_DEADLINE_MAX_MS (10 s) for an adapter that opts into a longer
+ * per-adapter deadline (R-9-b). Change detection, not tamper-proofing — see the S7 FAT checklist (s7BlockChecksum.ts F4).
+ *
  * Final wave (doc 81 Đợt 8, review O M3 / M4 / M1):
  *   • M4 — a read is CANCELLED at its deadline: the driver receives an AbortSignal and must settle (reject) on abort, so a
  *     hung controller leaves no pending promise behind (no leak per poll / dispatch);

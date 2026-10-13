@@ -2,19 +2,23 @@
  * doc 81 Đợt 9 task T fix 1 (review #3) — GOLDEN ANSWER FRAMES that do not come from this group's offset table.
  *
  * No Snap7 server binary and no S7comm capture exist offline in the repo or the npm cache (searched node_modules + the
- * npm cache index: only `nodes7`). The answers below are therefore transcribed BY HAND, byte for byte, from the Snap7
- * SERVER source — the side that answers, written by another author than this client — fetched 2026-10-12:
+ * npm cache index: only `nodes7`). The answers below are therefore transcribed BY HAND, byte for byte, from a Snap7
+ * SERVER source — the SCADACS FORK of Snap7 (it carries the FragmentMap / DURN code; not a release by the Snap7 author) —
+ * the side that answers, independent of this client — fetched 2026-10-12:
  *   • src/core/s7_firmware.h (sha256 0274b0f4…dbf4a6): SZL_ID_0011_IDX_XXXX[124] and SZL_ID_001C_IDX_XXXX[352], the data
  *     parts Snap7 answers "from a physical CPU" (CPU 315-2 PN/DP) — copied VERBATIM (the arrays below);
  *   • src/core/s7_server.cpp (sha256 a0999b46…3444b5):
  *       – SZLSetup: answer params 00 01 12 08 12 84 01 <seq> + resvd + err;
  *       – SZLSendAnswer / SZLPrepareAnswerHeader: with PDU 240 a long answer is split — first telegram data
  *         FF 09 <len> ID Index + first (240-22-8)=210 bytes from LENTHDR on, "more follows"; follow-ups FF 09 <len> + the
- *         next ≤ (240-22-4)=214 bytes, same sequence number (GetNextSeqNr);
+ *         next ≤ (240-22-4)=214 bytes, same sequence number (GetNextSeqNr); every telegram of a FRAGMENTED answer carries
+ *         resvd = 0x01<<8 | DURN (Đợt 10 F2, re-review N2): params byte 8 = the data-unit reference number (non-zero,
+ *         DURN_FRAGMENTED below), byte 9 = "more follows" — this client ignores byte 8 (the test proves it does);
  *       – BLK_ListAll: one telegram, params 00 01 12 08 12 83 01 <seq> 0000 0000, data FF 09 00 1C + 7 entries in the
  *         order OB FB FC DB SDB SFC SFB;
  *       – BLK_ListBoT: data FF 09 <len> + {number, 0x12 (DB), BlockLangDB 0x05};
- *       – BLK_DoBlockInfo (the DB answer): Cst_b 0x01, BlkType 0x00, Cst_w1 = 0x4A00 / Cst_w2 = 0x0022 / SbbLen = 0x1400
+ *       – the LIVE BLK_GetBlkInfo (the DB answer; `BLK_DoBlockInfo_GetBlkInfo`, which answers BlkType 0x00, is dead code in
+ *         that file — re-review N1): Cst_b 0x01, BlkType = the requested type 0x41, Cst_w1 = 0x4A00 / Cst_w2 = 0x0022 / SbbLen = 0x1400
  *         stored WITHOUT SwapWord (little-endian host ⇒ wire bytes 00 4A / 22 00 / 00 14), Cst_pp 0x7070, Unknown_1 0x01,
  *         BlkFlags 0x01, BlkLang 0x05, SubBlkType 0x0A, CodeTime_dy = IntfTime_dy = SwapWord(5800), BlkNumber,
  *         MC7Len = Size, LenLoadMem = Size + 92, Version 0x01, checksum 0x0000; always 78 bytes;
@@ -64,9 +68,11 @@ const SZL_ID_001C_IDX_XXXX = bytes([
 ]);
 
 /** One S7 userdata answer (Snap7 TS7ResHeader17 + TS7Params7 / TResFunGetBlockInfo): 10-byte header, 12-byte params. */
-function udAnswer(group: number, subfn: number, seq: number, last: number, data: Buffer): Buffer {
+/** Snap7 (SCADACS fork) SZLPrepareAnswerHeader — a fragmented answer's params byte 8 is its data-unit reference number. */
+const DURN_FRAGMENTED = 0x01;
+function udAnswer(group: number, subfn: number, seq: number, last: number, data: Buffer, durn = 0x00): Buffer {
   const header = h(`32 07 0000 0000 000C ${data.length.toString(16).padStart(4, "0")}`);
-  const params = Buffer.from([0x00, 0x01, 0x12, 0x08, 0x12, 0x80 | group, subfn, seq, 0x00, last, 0x00, 0x00]);
+  const params = Buffer.from([0x00, 0x01, 0x12, 0x08, 0x12, 0x80 | group, subfn, seq, durn, last, 0x00, 0x00]);
   return Buffer.concat([h("02 F0 80"), header, params, data]);
 }
 const tpkt = (payload: Buffer) => Buffer.concat([Buffer.from([0x03, 0x00, (payload.length + 4) >> 8, (payload.length + 4) & 0xff]), payload]);
@@ -83,7 +89,7 @@ const LIST_DB = udAnswer(0x03, 0x02, 0x00, 0x00, h("FF 09 0004 0001 12 05"));
 const DB1_INFO = udAnswer(
   0x03, 0x03, 0x00, 0x00,
   h(`FF 09 004E
-     01 00 004A 2200 7070 01 01 05 0A 0001
+     01 41 004A 2200 7070 01 01 05 0A 0001
      000000C0 00000000 00000000 16A8 00000000 16A8
      0014 0000 0000 0064
      0000000000000000 0000000000000000 0000000000000000
@@ -100,11 +106,11 @@ function szlTelegrams(array: Buffer, seq: number): Buffer[] {
   const out: Buffer[] = [];
   const firstData = buffer.subarray(0, first);
   let rest = buffer.subarray(first);
-  out.push(udAnswer(0x04, 0x01, seq, 0x01, Buffer.concat([h("FF 09"), Buffer.from([(firstData.length + 4) >> 8, (firstData.length + 4) & 0xff]), idIndex, firstData])));
+  out.push(udAnswer(0x04, 0x01, seq, 0x01, Buffer.concat([h("FF 09"), Buffer.from([(firstData.length + 4) >> 8, (firstData.length + 4) & 0xff]), idIndex, firstData]), DURN_FRAGMENTED));
   while (rest.length > 0) {
     const part = rest.subarray(0, follow);
     rest = rest.subarray(part.length);
-    out.push(udAnswer(0x04, 0x01, seq, rest.length > 0 ? 0x01 : 0x00, Buffer.concat([h("FF 09"), Buffer.from([part.length >> 8, part.length & 0xff]), part])));
+    out.push(udAnswer(0x04, 0x01, seq, rest.length > 0 ? 0x01 : 0x00, Buffer.concat([h("FF 09"), Buffer.from([part.length >> 8, part.length & 0xff]), part]), DURN_FRAGMENTED));
   }
   return out;
 }

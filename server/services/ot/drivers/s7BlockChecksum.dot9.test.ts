@@ -386,6 +386,8 @@ describe("T1 — fail closed: every unexpected answer THROWS (never a checksum, 
     expect(() => combineS7ProgramSnapshot({ ...snap, system: snap.system.map((x) => (x.type === "SFB" ? { ...x, numbers: [] } : x)) })).toThrow(/says 1 of type 0x46, 0 read/);
     expect(() => combineS7ProgramSnapshot({ ...snap, system: [...snap.system, { type: "SFC", numbers: [1] }] })).toThrow(/duplicate system list/);
     expect(() => combineS7ProgramSnapshot({ ...snap, system: [...snap.system, { type: "OB" as never, numbers: [1] }] })).toThrow(/not a system block type OB/);
+    // Đợt 10 F2 (Đợt 9 T re-review N4): an UNKNOWN type is refused with the intended message, not a TypeError from the sort
+    expect(() => combineS7ProgramSnapshot({ ...snap, system: [{ type: "XYZ" as never, numbers: [1] }, ...snap.system] })).toThrow(/not a system block type XYZ/);
     expect(() => combineS7ProgramSnapshot({ ...snap, identity: { ...snap.identity, firmwareVersion: "" } })).toThrow(/no firmwareVersion/);
   });
 

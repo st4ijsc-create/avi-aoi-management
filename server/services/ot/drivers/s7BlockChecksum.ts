@@ -14,6 +14,20 @@
  *     length, timestamps or the block list), a different controller (identity), and a re-pointed adapter (endpoint).
  *   The approval screen shows both statements next to every S7 checksum (source label `S7_CHECKSUM_SOURCE`).
  *
+ * ── FAT CHECKLIST (doc 81 Đợt 9 T re-review, closed in Đợt 10 F2 as notes — measure each on a real CPU) ─────────────
+ *   F1  Round-trip time and block count N on the real S7-300 / 400: one read = identity (2 SZL) + list + N block infos;
+ *       set connectionOptions.programChecksumDeadlineMs (≤ 10 s) from the measurement (default 1 s).
+ *   F2  SZL fragment SEQUENCE (re-review N3): readSzl / listOfType refuse a follow-up answer whose sequence number differs
+ *       from the one in flight. That is STRICTER than the Snap7 client (it re-adopts ResParams->Seq from every answer). SZL
+ *       0x001C (352 B) ALWAYS fragments at PDU 240, so this runs on every S7-300 read: if a real CPU changed the sequence per
+ *       fragment, EVERY read would be "unreadable" — availability only (fail-closed), never a false pass. The evidence
+ *       favours the same sequence (Snap7 server GetCurrentSeqNr; Snap7 client "every next telegram must have this number").
+ *   F3  A know-how-protected SDB still refuses (fail-closed) — check the real CPU's SDBs.
+ *   F4  Check-to-write gap (re-review N5): the dispatchers read the checksum BEFORE their reservation transaction and the
+ *       device write follows; with a per-adapter deadline up to 10 s the documented residual window (a program change
+ *       between that read and the write is not seen by THIS write) widens from ≈ 1 s to ≤ 10 s. Opt-in per adapter; keep
+ *       the deadline as small as the measurement (F1) allows. See programChecksum.ts.
+ *
  * ── SOURCES (T3) ─────────────────────────────────────────────────────────────────────────────────────────────────────
  *  [RFC1006]  RFC 1006 "ISO Transport Service on top of the TCP" — TPKT header: version 0x03, reserved 0x00, 16-bit
  *             big-endian length of the whole packet (header included). TCP port 102.
@@ -48,10 +62,12 @@
  *                 firmware", 0x0081 firmware extension; SZL 0x001C "Component Identification"
  *                 record (s7comm_decode_szl_id_xy1c_idx_000x): index (2) + 32 bytes — index 0x0002 module name (24
  *                 ASCII), 0x0005 serial number of the module (24 ASCII).
- *  [SNAP7S]   Snap7 SERVER (same author, the side that ANSWERS — independent of this client's offset table), fetched
- *             2026-10-12: src/core/s7_server.cpp (sha256 a0999b46…3444b5) — BLK_ListAll (one telegram, 7 entries
- *             OB FB FC DB SDB SFC SFB), BLK_ListBoT (items {number, 0x22/0x12/0x42, language}), BLK_GetBlkInfo /
- *             BLK_DoBlockInfo (byte 0 "Cst_b" = 0x01, byte 1 = requested type or 0x00 — "XXX a 314C zeroes the type",
+ *  [SNAP7S]   a Snap7 SERVER source — the SCADACS FORK (it carries the FragmentMap / DURN code; NOT a release by the Snap7
+ *             author) — the side that ANSWERS, independent of this client's offset table, fetched 2026-10-12:
+ *             src/core/s7_server.cpp (sha256 a0999b46…3444b5) — BLK_ListAll (one telegram, 7 entries OB FB FC DB SDB SFC
+ *             SFB), BLK_ListBoT (items {number, 0x22/0x12/0x42, language}), the LIVE BLK_GetBlkInfo (byte 0 "Cst_b" = 0x01,
+ *             byte 1 = the REQUESTED type, e.g. 0x41 for a DB — its "XXX a 314C zeroes the type" line is overwritten; the
+ *             `BLK_DoBlockInfo_GetBlkInfo` variant answering 01 00 is DEAD CODE in that file, defined, never called),
  *             Cst_w1 0x4A00, Cst_w2 0x0022, "pp", SubBlkType, …, always 78 bytes), SZLSetup (answer params
  *             00 01 12 08 12 84 01 <seq> 00 00 00 00); src/core/s7_firmware.h (sha256 0274b0f4…dbf4a6) — SZL 0x0011 and
  *             0x001C answers "from a physical CPU" (CPU 315-2 PN/DP): used VERBATIM as golden answer frames in the tests.
@@ -88,7 +104,7 @@
  *      OB / DB / FC / FB / SDB: block info per block (SFun_BlkInfo, one telegram — "more follows" is refused) — the
  *      answer must name the requested block by sub block type and number, be ≥ 78 bytes ([WS] "78 Bytes"; [SNAP7S]
  *      always 78), and report "Block Security" 0. Bytes 0..1 are NOT checked: [WS] calls them "block type", but
- *      [SNAP7S] answers 0x01 / 0x00 there ("a 314C zeroes the type") and [SNAP7] never reads them. A protected block, a
+ *      [SNAP7S] answers 0x01 / <requested type> there (byte 0 is never 0x30) and [SNAP7] never reads them. A protected block, a
  *      refused / missing / short answer ⇒ the WHOLE checksum is UNREADABLE (a block is never skipped).
  *   5. Canonical value = JSON.stringify of the array
  *        [ "s7-blockinfo-v3",
@@ -261,9 +277,14 @@ export function combineS7ProgramSnapshot(s: S7ProgramSnapshot): string {
   const blocks = [...s.blocks].sort((a, b) => (typeOf.get(a.type)?.code ?? 0) - (typeOf.get(b.type)?.code ?? 0) || a.number - b.number);
   const seen = new Map<number, number>();
   const system: Array<[string, number[]]> = [];
-  for (const sys of [...s.system].sort((a, b) => typeOf.get(a.type)!.code - typeOf.get(b.type)!.code)) {
+  // Đợt 9 T re-review N4 — every system type is validated BEFORE the sort (an unknown type used to throw a TypeError from the
+  // comparator before the intended refusal: still fail-closed, but with the wrong message)
+  for (const sys of s.system) {
     const t = typeOf.get(sys.type);
     if (!t || t.perBlock) fail(`not a system block type ${String(sys.type)}`);
+  }
+  for (const sys of [...s.system].sort((a, b) => typeOf.get(a.type)!.code - typeOf.get(b.type)!.code)) {
+    const t = typeOf.get(sys.type);
     if (seen.has(t!.code)) fail(`duplicate system list ${sys.type}`);
     const nums = [...sys.numbers].sort((a, b) => a - b);
     for (let i = 1; i < nums.length; i++) if (nums[i] === nums[i - 1]) fail(`duplicate block ${sys.type} ${nums[i]}`);
