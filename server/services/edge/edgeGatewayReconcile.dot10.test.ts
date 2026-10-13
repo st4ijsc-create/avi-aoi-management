@@ -41,6 +41,7 @@ const BOOT = {
 };
 central.setConfig(BOOT);
 let dir = "";
+const shared: { rt?: import("./edgeGatewayRuntime").EdgeRuntime } = {};
 const KEYS = ["EDGE_RECONCILE_RETRY_MS", "EDGE_ATTACH_ALERT_EVERY_MS", "ROBOT_GATEWAY_ENABLED", "ROBOT_CONTROL_ENABLED", "OT_GATEWAY_ENABLED", "OT_CONTROL_ENABLED", "OT_CONN_HA_ENABLED", "EDGE_EXECUTION_ENABLED", "EDGE_CENTRAL_URL", "EDGE_NODE_CREDENTIAL_FILE", "EDGE_CENTRAL_NODE_ID", "EDGE_CENTRAL_CREDENTIAL_ID", "EDGE_KEYSET_PIN_FILE", "EDGE_JOURNAL_DIR", "EDGE_GATEWAY_LIVENESS_FILE", "EDGE_UNS_STORE_FORWARD_FILE", "OT_STORE_FORWARD_ENABLED", "OT_STORE_FORWARD_FILE"] as const;
 const saved: Record<string, string | undefined> = {};
 
@@ -124,6 +125,7 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     central.down = true;
     const handles = await gw.bootstrapEdgeGateway({ fetchImpl: central.fetchImpl });
     const rt = handles.runtime!;
+    shared.rt = rt;
     expect(rt.config.current()).toBeNull();
     expect((await gw.getEdgeGatewayHealth()).status).toBe("unconfigured");
     expect(rm.activeRobotIds()).toEqual([]);
@@ -290,6 +292,64 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     rm._setEdgeRobotBackoffBaseMsForTests(null);
     expect(conn.edgeDbTrapCount()).toBe(0);
   }, 90_000);
+
+  it("★ fix review 5 (N4-1): a live robot session the reconciler did not record is tracked — not wanted ⇒ lock + STOP + detach; wanted ⇒ re-attached from the verified row, no false alert (N4-2): an owned adapter with NO live session ⇒ its STOP is notOwnedHere", async () => {
+    const rt = shared.rt!;
+    const rm = await import("../robot/robotManager");
+    const om = await import("../ot/otManager");
+    const gw = await import("./edgeGatewayRuntime");
+    const agent = (await import("./edgeExecutionAgent")).currentEdgeExecutionAgent()!;
+    process.env.EDGE_RECONCILE_RETRY_MS = "600000"; // no retry timer races this test (the next one is scheduled 10 min out)
+    await new Promise((r) => setTimeout(r, 400));
+    await gw.reconcileDevices(rt, "settle");
+    const anomalies = async () => {
+      await rt.journal.flush();
+      await rt.shipper.flushAll();
+      return central.received.locksEvents.filter((r) => r.kind === "anomaly" && String(r.code).startsWith("EDGE_DEVICE_")).map((r) => `${r.code}: ${r.detail}`);
+    };
+    const before = (await anomalies()).length;
+    const cur = central.makeConfig();
+    // the drift N4-1 describes (a session started from a NEWER snapshot than the reconciler's `want`): robots 15 and 16 have
+    // live sessions this reconciler never recorded
+    const row = (id: number) => ({ ...cur.robots[0], id, code: `rb-${id}`, endpoint: `sim://${id}` });
+    expect(await rm.attachEdgeRobot(row(15))).toMatchObject({ ok: true });
+    expect(await rm.attachEdgeRobot(row(16))).toMatchObject({ ok: true });
+    const s16 = rm.getActiveRobot(16)!;
+    central.setConfig({ robots: [...cur.robots, row(16)], adapters: cur.adapters });
+    await gw.sendHeartbeat();
+    await gw.reconcileDevices(rt, "barrier");
+    // 15 (not wanted): released through the checked path — locked, STOPped, detached
+    expect(rm.getActiveRobot(15)).toBeUndefined();
+    const after = (await anomalies()).slice(before);
+    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 15 .*locked \(generation \d+\), STOP done, session closed/.test(a))).toBe(true);
+    // 16 (wanted): quiesced + re-attached from the verified row — tracked, never a false "NOT attached" alert
+    expect(rm.getActiveRobot(16)).toBeDefined();
+    expect(rm.getActiveRobot(16)).not.toBe(s16);
+    expect(after.some((a) => /robot 16/.test(a) && /NOT attached|KEPT/.test(a))).toBe(false);
+    // … so when 16 leaves the node it IS released (lock + STOP + detach), never left connected
+    central.setConfig({ robots: cur.robots, adapters: cur.adapters });
+    await gw.sendHeartbeat();
+    await gw.reconcileDevices(rt, "barrier");
+    expect(rm.getActiveRobot(16)).toBeUndefined();
+    expect((await anomalies()).some((a) => /^EDGE_DEVICE_RELEASED: robot 16 .*STOP done, session closed/.test(a))).toBe(true);
+
+    // N4-2 — adapter 21 is owned and recorded by the reconciler, but its driver has dropped: no LIVE session ⇒ notOwnedHere
+    const d21 = om.getActiveAdapter(21)!.driver;
+    const conn = vi.spyOn(d21, "isConnected").mockReturnValue(false);
+    central.commands = [central.sign("cmd", central.commandPayload({ requestId: 142, kind: "stop", target: { adapterId: 21 } }))];
+    expect((await agent.tick()).commands.map((c) => [c.requestId, c.outcome])).toEqual([[142, "notOwnedHere"]]);
+    conn.mockRestore();
+    central.commands = [central.sign("cmd", central.commandPayload({ requestId: 143, kind: "stop", target: { adapterId: 21 } }))];
+    expect((await agent.tick()).commands.map((c) => [c.requestId, c.outcome])).toEqual([[143, "sent"]]);
+    central.commands = [];
+    await rt.journal.flush();
+    await rt.shipper.flushAll();
+    expect(central.received.locksEvents.filter((r) => r.kind === "command_ack" && (r.requestId === 142 || r.requestId === 143)).map((r) => [r.requestId, r.outcome])).toEqual([
+      [142, "notOwnedHere"],
+      [143, "done"],
+    ]);
+    expect((await import("../../db/connection")).edgeDbTrapCount()).toBe(0);
+  }, 60_000);
 
   it("★ G-2 (R-10-az): only `{ ok: true }` from D's lifecycle is ok — a bare true, a truthy non-boolean, undefined are NOT; reason + detail carried", async () => {
     const { lifecycleResult } = await import("./edgeGatewayRuntime");

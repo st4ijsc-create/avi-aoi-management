@@ -586,8 +586,9 @@ export class EdgeExecutionAgent {
     const last = this.notOwnedSent.get(sk);
     if (last !== undefined && this.now() - last < EDGE_NOT_OWNED_HERE_MIN_MS) return { requestId, kind: "stop", outcome: `${tag}notOwnedHere:rate_limited` };
     if (last === undefined) this.anomaly("EDGE_STOP_NOT_OWNED_HERE", null, `STOP request ${requestId} (${JSON.stringify(ackWith.target)}): ${why} — answered notOwnedHere so central's fallback executes it`);
-    this.notOwnedSent.set(sk, this.now());
-    await this.ack(requestId, "notOwnedHere", null, ackWith);
+    // fix review 5 (nit) — the rate limit starts only once the ack is JOURNALED: a failed append is retried on the next delivery
+    if (await this.ack(requestId, "notOwnedHere", null, ackWith)) this.notOwnedSent.set(sk, this.now());
+    else return { requestId, kind: "stop", outcome: `${tag}notOwnedHere:ack_not_journaled` };
     return { requestId, kind: "stop", outcome: `${tag}notOwnedHere` };
   }
 

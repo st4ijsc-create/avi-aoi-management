@@ -671,6 +671,25 @@ describe("doc 81 Đợt 10 E — agent v2: central commands (design §2.8)", () 
     expect(h.devices.calls).toEqual([]);
   });
 
+  it("★ fix review 5 (nit): the notOwnedHere rate limit starts only once the ack is JOURNALED — a failed append is answered again on the next delivery", async () => {
+    let now = 1_000_000;
+    const h = await harness({ claimRuns: false });
+    (h.agent as unknown as { cfg: { now: () => number } }).cfg.now = () => now;
+    const sink = (h.agent as unknown as { deps: { sink: { event: (r: { kind: string }, o?: unknown) => Promise<{ seq: number | null }> } } }).deps.sink;
+    const real = sink.event.bind(sink);
+    let failAck = true;
+    sink.event = async (r, o) => (failAck && r.kind === "command_ack" ? Promise.reject(new Error("journal append failed")) : real(r, o));
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 185, kind: "stop", target: { robotId: 995 } }))];
+    expect((await h.agent.tick()).commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "notOwnedHere:ack_not_journaled"]);
+    failAck = false;
+    now += 1_000; // well inside the 60 s window
+    expect((await h.agent.tick()).commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "notOwnedHere"]);
+    now += 1_000;
+    expect((await h.agent.tick()).commands.map((c) => c.outcome)).toEqual(["pending:not_yet_known", "notOwnedHere:rate_limited"]);
+    await h.shipper.flushAll();
+    expect(acks(h.central).map((x) => [x.requestId, x.outcome])).toEqual([[185, "notOwnedHere"]]);
+  });
+
   it("★ fix review 4 (F-2 leftover): an OWNED device with no session on this edge ⇒ its STOP is answered notOwnedHere at once (central's fallback runs it)", async () => {
     const h = await harness({ claimRuns: false });
     let attached = false;

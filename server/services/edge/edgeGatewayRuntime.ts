@@ -527,9 +527,7 @@ async function edgeRobotStartExtras(rt: EdgeRuntime): Promise<{ stateSink: (robo
 }
 
 /** The node's robots from the VERIFIED config (group D's edge mode of robotManager), lock + state into the journal. */
-async function startEdgeRobots(rt: EdgeRuntime): Promise<void> {
-  const cfg = rt.config.current();
-  if (!cfg) return;
+async function startEdgeRobots(rt: EdgeRuntime, cfg: EdgeConfigSnapshot): Promise<void> {
   await import("../robot"); // registers the robot drivers (side effect), as "../ot" does for OT
   const [{ startRobots }, { runtimeRobotsFromConfig }] = await Promise.all([import("../robot/robotManager"), import("../robot/robotAdapter")]);
   await startRobots({ configRobots: runtimeRobotsFromConfig(cfg.robots), ...(await edgeRobotStartExtras(rt)) });
@@ -553,9 +551,17 @@ const devices = {
   },
 };
 /** does this edge hold a live session for the device? (robot: robotManager's active set; adapter: attached by the reconciler) */
-function edgeHasSession(rm: { getActiveRobot(id: number): unknown }): (t: { robotId: number } | { adapterId: number }) => boolean {
-  return (t) => ("robotId" in t ? rm.getActiveRobot(t.robotId) != null : devices.adapters.has(t.adapterId));
+/**
+ * does this edge hold a LIVE session for the device? robot: robotManager's active set; adapter (fix review 5, N4-2):
+ * otManager's live set — a connected driver (supervised: the supervisor's active driver), never the reconciler's memory
+ * (a row recorded at boot that startOt could not build / a dropped connection has no session ⇒ notOwnedHere ⇒ central's
+ * fallback, instead of an ADAPTER_OFFLINE failure re-delivered forever)
+ */
+function edgeHasSession(rm: { getActiveRobot(id: number): unknown }, om: { getActiveDriver(id: number): unknown }): (t: { robotId: number } | { adapterId: number }) => boolean {
+  return (t) => ("robotId" in t ? rm.getActiveRobot(t.robotId) != null : om.getActiveDriver(t.adapterId) != null);
 }
+/** the key of a live robot session this reconciler did not start (never equal to a real row's key) */
+const UNTRACKED_ROBOT_KEY = "untracked";
 /** a robot's SESSION key — what a new session would differ in (never updatedAt alone: a renamed robot keeps its session) */
 function oneRobotKey(r: EdgeConfigSnapshot["robots"][number]): string {
   return JSON.stringify([r.id, r.ownerEpoch, r.endpoint, r.vendor, r.connectionOptions ?? null, r.pollIntervalMs]);
@@ -637,27 +643,29 @@ async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<boolean> {
     const rm = await import("../robot/robotManager");
     const life = await edgeRobotLifecycle();
     const want = new Map(cfg.robots.filter((r) => r.isEnabled).map((r) => [r.id, r] as const));
-    if (!devices.started) {
-      await startEdgeRobots(rt);
-      for (const id of rm.activeRobotIds()) if (want.has(id)) devices.robotKeys.set(id, oneRobotKey(want.get(id)!));
-    } else {
-      // a robot that left: lock + STOP + then detach (checked) — a failed release stays attached + locked, never touched by the rest
-      for (const id of [...devices.robotKeys.keys()]) {
-        if (want.has(id)) continue;
-        const q = await quiesceRobot(rt, id, `no longer owned (${why})`);
-        if (q.ok) {
-          devices.robotKeys.delete(id);
-          releaseAlert(rt, "EDGE_DEVICE_RELEASED", `robot ${id} no longer owned (${why}): ${q.detail}`);
-        } else {
-          ok = false;
-          releaseAlert(rt, "EDGE_DEVICE_RELEASE_FAILED", `robot ${id} no longer owned (${why}) but KEPT attached${q.locked ? " and locked" : ""}: ${q.detail} — retried every ${reconcileRetryMs() / 1_000} s; use the machine's direct STOP / E-STOP if it moves`);
-        }
+    // fix review 5 (N4-1) — robots start from the SAME snapshot as `want` (never a config re-read after startOt's awaits)
+    if (!devices.started) await startEdgeRobots(rt, cfg);
+    // … and EVERY live session is tracked: one this reconciler did not record (a drift of any kind) is keyed "untracked" —
+    // wanted ⇒ its key differs ⇒ quiesced + re-attached from the verified row; not wanted ⇒ released (lock + STOP + detach)
+    for (const id of rm.activeRobotIds()) {
+      if (devices.robotKeys.has(id)) continue;
+      devices.robotKeys.set(id, !devices.started && want.has(id) ? oneRobotKey(want.get(id)!) : UNTRACKED_ROBOT_KEY);
+    }
+    // a robot that left: lock + STOP + then detach (checked) — a failed release stays attached + locked, never touched by the rest
+    for (const id of [...devices.robotKeys.keys()]) {
+      if (want.has(id)) continue;
+      const q = await quiesceRobot(rt, id, `no longer owned (${why})`);
+      if (q.ok) {
+        devices.robotKeys.delete(id);
+        releaseAlert(rt, "EDGE_DEVICE_RELEASED", `robot ${id} no longer owned (${why}): ${q.detail}`);
+      } else {
+        ok = false;
+        releaseAlert(rt, "EDGE_DEVICE_RELEASE_FAILED", `robot ${id} no longer owned (${why}) but KEPT attached${q.locked ? " and locked" : ""}: ${q.detail} — retried every ${reconcileRetryMs() / 1_000} s; use the machine's direct STOP / E-STOP if it moves`);
       }
     }
     // a robot added / reconfigured / never connected: ITS session only, with a per-robot back-off — never the healthy ones
     for (const r of want.values()) {
       if (devices.robotKeys.get(r.id) === oneRobotKey(r)) continue;
-      if (!devices.started && rm.activeRobotIds().includes(r.id)) continue;
       const back = devices.robotBackoff.get(r.id);
       if (back && Date.now() < back.nextAt) {
         ok = false;
@@ -981,7 +989,7 @@ export async function bootstrapEdgeGateway(opts: EdgeGatewayBootOptions = {}): P
         devices: opts.devices ?? agentMod.edgeDispatchDevicePort(rt.config),
         hashDefinition,
         // F-2 leftover (R-10-az) — an owned device with NO session here: its STOPs are answered notOwnedHere (central's fallback)
-        hasSession: opts.hasSession ?? edgeHasSession(await import("../robot/robotManager")),
+        hasSession: opts.hasSession ?? edgeHasSession(await import("../robot/robotManager"), await import("../ot/otManager")),
       });
       if (a) liveRunsOf = () => ({ live: a.liveRunIds().length, max: claimRuns ? cfg.maxConcurrent : 1 });
     } catch (err) {
