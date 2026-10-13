@@ -23,6 +23,7 @@
 import { eq, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { withDeadline } from "../ot/drivers/boundedClose";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { STOP_DB_STEP_DEADLINE_MS } from "./stopJob";
 
 export type DeviceKind = "robot" | "adapter";
@@ -33,6 +34,8 @@ export interface CentralStopOutcome {
   detail: string;
   /** the acks that could not be written (the request then stays pending — the next sweep retries) */
   ackErrors: number[];
+  /** fix review 5 (R-10-bd) — nothing reached the device (central control off / dry-run): recorded NOT sent, requests left PENDING */
+  notSent?: true;
 }
 export type ChangeOwnerResult =
   | { ok: true; ownerEpoch: number; toEdgeNodeId: number | null; centralStops: CentralStopOutcome | null }
@@ -143,7 +146,7 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
   let devices: Array<{ kind: DeviceKind; id: number }>;
   try {
     const db = await getDb();
-    if (!db) throw new Error("database unavailable");
+    if (!db) throw new DbUnavailableError("database unavailable (pending STOP devices)");
     if (opts.device) devices = [opts.device];
     else {
       const rows = rowsOf(await withDeadline(db.execute(sql`SELECT DISTINCT "robotId", "adapterId" FROM public.device_pending_stops WHERE "centralMustExecute" AND outcome IS NULL`), 5 * STOP_DB_STEP_DEADLINE_MS, "pending STOP devices"));
@@ -184,6 +187,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
   let picked = false;
   /** R-10-ay — requests central executes because the device's EDGE owner answered notOwnedHere (it cannot list the device) */
   let cannotList: number[] = [];
+  let notSentAlert = false;
   try {
     await db.transaction(async (tx) => {
       const pick =
@@ -198,18 +202,37 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
       picked = true;
       if (pending.length === 0) return;
       const sent = await sendCentralStop(kind, deviceId);
-      const result: "done" | "failed" = sent.ok ? "done" : "failed";
+      // fix review 5 (R-10-bd) — "simulated" (central control OFF / dry-run) is NOT a STOP: the attempt is recorded NOT sent, the
+      // requests stay PENDING (never acked done — their owner / a person still has to act) and a truthful alert is raised (rate-limited)
+      if (sent.sent === "simulated") {
+        const key = `${kind}:${deviceId}`;
+        if (rateLimited(notSentRecorded, key, NOT_SENT_RECORD_EVERY_MS)) {
+          outcome = { requestIds: pending.map((p) => p.requestId), outcome: "failed", sent: "simulated", detail: sent.detail, ackErrors: [], notSent: true };
+          return;
+        }
+        try {
+          await tx.transaction(async (sp) => recordCentralStopAttempt(sp, { kind, deviceId, ok: false, detail: `NOT SENT — central control is off (${sent.detail})` }));
+        } catch (err) {
+          console.error(`[DeviceOwner] the not-sent central STOP attempt on ${kind} ${deviceId} could not be recorded: ${errText(err)}`);
+        }
+        outcome = { requestIds: pending.map((p) => p.requestId), outcome: "failed", sent: "simulated", detail: sent.detail, ackErrors: [], notSent: true };
+        recipients = [...new Set(pending.map((p) => p.requestedBy).concat(actorUserId ? [actorUserId] : []))];
+        cannotList = pending.filter((p) => p.cannotList).map((p) => p.requestId);
+        notSentAlert = true;
+        return;
+      }
+      const result: "done" | "failed" = sent.ok && sent.sent === "sent" ? "done" : "failed";
       const ackErrors: number[] = [];
       // R-10-ba — the attempt is recorded ONCE (WORM evidence), then every pending request is acked against it
       let executionId: number | null = null;
       try {
-        executionId = await tx.transaction(async (sp) => recordCentralStopAttempt(sp, { kind, deviceId, ok: sent.ok, detail: `${sent.sent}: ${sent.detail}` }));
+        executionId = await tx.transaction(async (sp) => recordCentralStopAttempt(sp, { kind, deviceId, ok: result === "done", detail: `${sent.sent}: ${sent.detail}` }));
       } catch (err) {
         console.error(`[DeviceOwner] the central STOP attempt on ${kind} ${deviceId} (${sent.sent}) could not be recorded — its requests stay pending: ${errText(err)}`);
       }
       for (const p of pending) {
         try {
-          if (executionId === null) throw new Error("no recorded central STOP execution");
+          if (executionId === null) throw new CentralStopNotRecordedError(p.requestId);
           const ex = executionId;
           await tx.transaction(async (sp) => ackStopExecutedCentrally(sp, { requestId: p.requestId, outcome: result, executionId: ex }));
         } catch (err) {
@@ -226,7 +249,13 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
     console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed after the STOP: ${errText(err)}`);
   }
   const o = outcome as CentralStopOutcome | null;
-  if (o && cannotList.length > 0) {
+  if (o && notSentAlert) {
+    void raiseCentralStopAlert(kind, deviceId, recipients, `the STOP was NOT SENT: central control is off (${o.detail}) — requests ${o.requestIds.map((i) => `#${i}`).join(", ")} stay PENDING${cannotList.length > 0 ? " (its edge owner cannot list the device)" : ""}. Stop the equipment on site (hardware E-STOP) or enable central control`);
+    return o;
+  }
+  if (o?.notSent) return o; // rate-limited repeat of the not-sent case (recorded + alerted within the last window)
+  // fix review 5 (NF4-5 b) — the cannot-list alert is rate-limited per device (it used to repeat on every ≤ 10 s pass)
+  if (o && cannotList.length > 0 && !rateLimited(cannotListAlerted, `${kind}:${deviceId}`, CANNOT_LIST_ALERT_EVERY_MS)) {
     // fix review 4 (R-10-ay, L-7) — central executed the STOP of a device its EDGE owner cannot list: always a durable alert
     void raiseEdgeCannotListAlert(kind, deviceId, recipients, `edge owner cannot list ${kind} ${deviceId}: its owner answered "notOwnedHere" to STOP request(s) ${cannotList.map((i) => `#${i}`).join(", ")}; central executed the STOP on a transient session (${o.outcome}: ${o.detail}). Fix the device's factory / line assignment or move its ownership.`);
   }
@@ -362,6 +391,31 @@ async function recordCentralStopAttempt(tx: unknown, a: { kind: DeviceKind; devi
 async function ackStopExecutedCentrally(tx: unknown, a: { requestId: number; outcome: "done" | "failed"; executionId: number }): Promise<void> {
   const { ackCentralStop } = await import("../edge/edgeControlSchema");
   await ackCentralStop(tx as never, a);
+}
+
+/** fix review 5 — per-key rate limit (true = already done within `everyMs`; otherwise marks it now). */
+const notSentRecorded = new Map<string, number>();
+const cannotListAlerted = new Map<string, number>();
+export const NOT_SENT_RECORD_EVERY_MS = 10 * 60_000;
+export const CANNOT_LIST_ALERT_EVERY_MS = 10 * 60_000;
+function rateLimited(m: Map<string, number>, key: string, everyMs: number): boolean {
+  const last = m.get(key);
+  if (last !== undefined && Date.now() - last < everyMs) return true;
+  m.set(key, Date.now());
+  return false;
+}
+/** Test seam. */
+export function _resetSweepRateLimitsForTests(): void {
+  notSentRecorded.clear();
+  cannotListAlerted.clear();
+}
+
+/** R-10-ba — a request is never acked without a recorded central STOP execution. */
+class CentralStopNotRecordedError extends Error {
+  constructor(requestId: number) {
+    super(`no recorded central STOP execution for request #${requestId} — it stays pending`);
+    this.name = "CentralStopNotRecordedError";
+  }
 }
 
 /** R-10-ay — "edge owner cannot list device X" (durable, critical). */
@@ -512,6 +566,9 @@ export async function checkEdgeOwnedFactoryDrift(): Promise<Array<{ kind: Device
       ),
     );
     let recipients: number[] | null = null;
+    // fix review 5 (NF4-5 a) — a drift that CLEARED re-arms: a new drift of that device alerts again
+    const nowDrifting = new Set(rows.filter((r) => r.factoryDrift === true).map((r) => `${r.kind === "adapter" ? "adapter" : "robot"}:${Number(r.id)}:`));
+    for (const k of [...factoryDriftAlerted]) if (![...nowDrifting].some((p) => k.startsWith(p))) factoryDriftAlerted.delete(k);
     for (const r of rows) {
       if (r.factoryDrift !== true) continue;
       const d = { kind: (r.kind === "adapter" ? "adapter" : "robot") as DeviceKind, id: Number(r.id), edgeNodeId: Number(r.edgeNodeId), deviceFactory: (r.deviceFactory as string | null) ?? null, nodeFactory: (r.nodeFactory as string | null) ?? null };
@@ -520,7 +577,7 @@ export async function checkEdgeOwnedFactoryDrift(): Promise<Array<{ kind: Device
       if (factoryDriftAlerted.has(key)) continue;
       factoryDriftAlerted.add(key);
       // durable = an inbox row for the people who can act (active admins / supervisors)
-      recipients ??= rowsOf(await Promise.resolve(db.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role IN ('admin', 'supervisor')`)).catch(() => [])).map((u) => Number(u.id));
+      recipients ??= rowsOf(await withDeadline(Promise.resolve(db.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role IN ('admin', 'supervisor')`)), STOP_DB_STEP_DEADLINE_MS, "drift alert recipients").catch(() => [])).map((u) => Number(u.id));
       const to = recipients;
       void import("./criticalStopAlert").then(({ raiseCriticalStopAlert }) =>
         raiseCriticalStopAlert({
@@ -541,6 +598,10 @@ export async function checkEdgeOwnedFactoryDrift(): Promise<Array<{ kind: Device
     if (!isEdgeControlSchemaMissing(err)) console.error(`[DeviceOwner] factory-drift check failed: ${errText(err)}`);
   }
   return out;
+}
+/** Test seam — the (device, owner, factories) keys currently alerted (a key leaves when its drift clears: re-armed). */
+export function _factoryDriftAlertedKeysForTests(): string[] {
+  return [...factoryDriftAlerted];
 }
 /** Test seam. */
 export function _resetFactoryDriftAlertsForTests(): void {
@@ -590,7 +651,7 @@ export async function startDeviceOwnershipSync(opts: { sweepMs?: number; reconci
         (async () => {
           const db = (await getDb()) as unknown as { $client?: { listen?: (ch: string, fn: (payload: string) => void) => Promise<{ unlisten: () => Promise<void> }> } } | null;
           const client = db?.$client;
-          if (!client || typeof client.listen !== "function") throw new Error("no LISTEN-capable client");
+          if (!client || typeof client.listen !== "function") throw new DbUnavailableError("no LISTEN-capable client");
           return client.listen(DEVICE_OWNER_CHANNEL, (payload: string) => {
             try {
               const m = JSON.parse(payload) as { kind: DeviceKind; id: number; to: number | null };

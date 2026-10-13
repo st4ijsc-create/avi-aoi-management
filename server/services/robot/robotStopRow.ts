@@ -6,6 +6,7 @@
  */
 import { eq } from "drizzle-orm";
 import { getDb } from "../../db/connection";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { STOP_DB_STEP_DEADLINE_MS } from "./stopJob";
 
@@ -17,7 +18,7 @@ export function prefetchRobotStopRow(robotId: number, boundMs: number = STOP_DB_
     (async () => {
       const { robots } = await import("../../../drizzle/schema"); // inside the bound (a cold import counts too)
       const db = await getDb();
-      if (!db) throw new Error("database unavailable (robot row)");
+      if (!db) throw new DbUnavailableError("database unavailable (robot row)");
       const [r] = await db.select().from(robots).where(eq(robots.id, robotId)).limit(1);
       return r ? { vendor: String(r.vendor), endpoint: String(r.endpoint), connectionOptions: r.connectionOptions } : undefined;
     })(),

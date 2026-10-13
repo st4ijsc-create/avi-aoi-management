@@ -99,16 +99,15 @@ afterEach(() => {
 });
 
 describe("R-10-av — console STOP bound", () => {
-  it("★ LIVE session + the DB HANGING ⇒ the abort reaches the driver with ZERO DB reads before it; the reply comes within the bound", async () => {
+  it("★ LIVE session + the DB HANGING ⇒ the abort reaches the driver within the STOP auth / scope bound (R-10-bb / R-10-bc: 300 ms); the reply comes within the bound", async () => {
     H.t0 = Date.now();
     const r = await engineer.actuate({ robotId: 21, command: "stop" });
     const took = Date.now() - H.t0;
     expect(H.sent.map((s) => s.jobType)).toEqual(["abort"]);
-    expect(H.dbCallsAtSend).toBe(0); // nothing touched the DB before the STOP
-    expect(H.sent[0].at).toBeLessThan(200);
+    expect(H.sent[0].at).toBeLessThan(450); // fix review 5: the scope reads before it are bounded (300 ms), never the STOP
     expect(r).toMatchObject({ ok: true, status: "done" });
     expect((r as { ledgerError?: string }).ledgerError).toBeTruthy(); // the row after the send could not be written — said so
-    expect(took).toBeLessThan(1_600); // the send + ONE bounded ledger step (1 s)
+    expect(took).toBeLessThan(1_900); // scope bound (0.3 s) + the send + ONE bounded ledger step (1 s)
   });
 
   it("★ NF-2 — no session, DB 450 ms per query: the two reads run in parallel, the send starts ≤ ~0.6 s, the reply comes at ≤ 2 s from entry", async () => {

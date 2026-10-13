@@ -19,6 +19,40 @@ let robotEpoch = 0;
 const detachGen = new Map<number, number>();
 const detachToken = (robotId: number): number => detachGen.get(robotId) ?? 0;
 
+/**
+ * doc 81 Đợt 10 task D fix review 5 (R-10-bc) — the robot → factory map held in MEMORY (factory id; null = the robot has no
+ * factory): what a STOP's scope check falls back on when the database does not answer. Filled best-effort (bounded, never
+ * blocking) when central starts / attaches robots, and by every STOP-route DB read.
+ */
+const robotFactory = new Map<number, number | null>();
+export function robotFactoryIdInMemory(robotId: number): number | null | undefined {
+  return robotFactory.has(robotId) ? robotFactory.get(robotId)! : undefined;
+}
+export function noteRobotFactory(robotId: number, factoryId: number | null): void {
+  robotFactory.set(robotId, factoryId);
+}
+async function refreshRobotFactories(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  try {
+    const [{ getDb }, { sql }, { withDeadline }] = await Promise.all([import("../../db/connection"), import("drizzle-orm"), import("../ot/drivers/boundedClose")]);
+    const db = await getDb();
+    if (!db) return;
+    const res = (await withDeadline(
+      db.execute(sql`SELECT r.id, w."factoryId" AS f FROM public.robots r
+          LEFT JOIN public.stations s ON s.id = r."stationId"
+          LEFT JOIN public.production_lines l ON l.id = COALESCE(s."lineId", r."lineId")
+          LEFT JOIN public.workshops w ON w.id = l."workshopId"
+         WHERE r.id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`),
+      5_000,
+      "robot factory map",
+    )) as unknown;
+    const rows = (Array.isArray(res) ? res : ((res as { rows?: unknown[] })?.rows ?? [])) as Array<{ id: number; f: number | null }>;
+    for (const r of rows) robotFactory.set(Number(r.id), r.f == null ? null : Number(r.f));
+  } catch (err) {
+    console.warn(`[Robot] robot → factory map not refreshed (${(err as Error)?.message ?? err}) — a STOP's scope falls back to "unknown"`);
+  }
+}
+
 function flagEnabled(): boolean {
   return process.env.ROBOT_GATEWAY_ENABLED === "true";
 }
@@ -127,6 +161,7 @@ export async function startRobots(opts: StartRobotsOptions = {}): Promise<boolea
   }
 
   if (ep !== robotEpoch) return false; // NF-4 — stopped meanwhile
+  if (!opts.scope) void refreshRobotFactories(robots.map((r) => r.id)); // R-10-bc — the STOP scope's memory fallback
   running = true;
   console.log(`[Robot] started — ${active.length}/${robots.length} robot(s) active${opts.ingest === false ? " (edge: state NOT ingested here — central is the ingest owner)" : ""}`);
   return true;
@@ -222,7 +257,14 @@ async function startOneEdgeRobot(robot: RuntimeRobot, ep: number, given?: Pick<S
   } catch (err) {
     console.warn(`[Robot] "${robot.code}" (${robot.vendor}) skipped: ${(err as Error)?.message ?? err}`);
     // a late connect (past the bound) is torn down when it lands; the driver is disconnected now
-    void work.then((late) => Promise.resolve().then(() => late.close()).catch(() => undefined), () => undefined);
+    // fix review 5 (NF4-4) — a connect that lands AFTER the bound: close its state handle AND disconnect the driver (no leaked slot)
+    void work.then(
+      async (late) => {
+        await Promise.resolve().then(() => late.close()).catch(() => undefined);
+        await Promise.resolve().then(() => robot.driver.disconnect()).catch(() => undefined);
+      },
+      () => void Promise.resolve().then(() => robot.driver.disconnect()).catch(() => undefined),
+    );
     await withDeadline(Promise.resolve().then(() => robot.driver.disconnect()), 5_000, `robot "${robot.code}" disconnect`).catch(() => undefined);
     return null;
   }
@@ -419,6 +461,7 @@ export async function attachRobot(robotId: number): Promise<boolean> {
     }
     active.push({ robot, handle });
     running = true;
+    void refreshRobotFactories([robot.id]); // R-10-bc
     console.log(`[Robot] "${robot.code}" attached — central owns it now`);
     return true;
   } catch (err) {

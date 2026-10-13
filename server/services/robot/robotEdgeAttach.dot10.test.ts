@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const D = vi.hoisted(() => ({ built: [] as string[], connects: new Map<number, number>(), disconnects: [] as number[], locks: new Map<number, unknown>() }));
+const D = vi.hoisted(() => ({ connected: new Set<number>(), built: [] as string[], connects: new Map<number, number>(), disconnects: [] as number[], locks: new Map<number, unknown>() }));
 vi.mock("../../db/connection", () => ({
   getDb: async () => {
     throw new Error("EDGE_DB_TRAP");
@@ -31,9 +31,11 @@ vi.mock("./driverRegistry", async (importOriginal) => {
           id = Number(c.endpoint.split("#")[1]);
           D.locks.set(id, lock);
           D.connects.set(id, (D.connects.get(id) ?? 0) + 1);
+          if (c.endpoint.startsWith("late://")) return new Promise<void>((r) => setTimeout(() => (D.connected.add(id), r()), 300));
+          if (!c.endpoint.startsWith("hang://")) D.connected.add(id);
           return c.endpoint.startsWith("hang://") ? new Promise<void>(() => undefined) : Promise.resolve();
         },
-        disconnect: async () => void D.disconnects.push(id),
+        disconnect: async () => void (D.disconnects.push(id), D.connected.delete(id)),
         isConnected: () => true,
         motionLockController: () => lock,
         getMotionLock: () => lock.snapshot(),
@@ -142,5 +144,12 @@ describe("R-10-az — attachEdgeRobot / detachEdgeRobot contract", () => {
     await stopRobots();
     expect(await attachEdgeRobot(row(9))).toEqual({ ok: false, reason: "not_edge" });
     expect(D.built).toEqual([]);
+  });
+
+  it("★ NF4-4 — a connect that lands AFTER the bound: the driver is disconnected (no leaked controller slot)", async () => {
+    expect(await attachEdgeRobot(row(12, "late://x#12"), extras)).toEqual({ ok: false, reason: "connect_failed" });
+    await new Promise((r) => setTimeout(r, 450)); // the late connect lands at 300 ms
+    expect(D.connected.has(12)).toBe(false);
+    expect(activeRobotIds()).toEqual([]);
   });
 });

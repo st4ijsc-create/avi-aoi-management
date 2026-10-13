@@ -150,8 +150,9 @@ export default function CommandConsole() {
   );
 
   const utils = trpc.useUtils();
-  const actuate = trpc.robot.actuate.useMutation({
-    onSuccess: (res) => {
+  // doc 81 Đợt 10 D fix review 5 (R-10-bb) — STOP / abort go through robot.consoleStop (the STOP-only route whose auth is bounded
+  // and never blocked by a slow database); every other verb stays on robot.actuate.
+  const onActuated = (res: { status: string; ok: boolean; error?: string | null }) => {
       const status = res.status;
       if (status === "simulated") {
         toast.info(t("console.simulated", "Recorded SIMULATED (dry-run). No real motion — control disabled or robot not commissioned."));
@@ -168,14 +169,14 @@ export default function CommandConsole() {
         );
       }
       void utils.robot.jobs.invalidate();
-    },
-    onError: (err) => toastTrpcError(err),
-  });
+  };
+  const actuate = trpc.robot.actuate.useMutation({ onSuccess: onActuated, onError: (err) => toastTrpcError(err) });
+  const consoleStop = trpc.robot.consoleStop.useMutation({ onSuccess: onActuated, onError: (err) => toastTrpcError(err) });
 
   const chosenRisk = command ? (gatedByName.get(command)?.riskLevel ?? COMMAND_META[command].defaultRisk) : "high";
   const interlockBlocked = interlockQ.data?.blocked === true;
   const confirmMatches = !!robot && confirmText.trim() === robot.code;
-  const canSend = canControl && !!robot && !!command && confirmMatches && !actuate.isPending;
+  const canSend = canControl && !!robot && !!command && confirmMatches && !actuate.isPending && !consoleStop.isPending;
 
   function openConfirm(cmd: ConsoleCommand) {
     if (!robot) {
@@ -189,7 +190,8 @@ export default function CommandConsole() {
 
   function doSend() {
     if (!robot || !command || !confirmMatches) return;
-    actuate.mutate({ robotId: robot.id, command });
+    if (command === "stop" || command === "abort") consoleStop.mutate({ robotId: robot.id, command });
+    else actuate.mutate({ robotId: robot.id, command });
     setDialogOpen(false);
     setConfirmText("");
   }

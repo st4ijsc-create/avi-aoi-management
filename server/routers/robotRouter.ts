@@ -23,6 +23,8 @@ import { sendCentralRobotStop } from "../services/robot/deviceOwnershipService";
 import { sendLiveSessionStopFirst } from "../services/robot/robotLiveSessionStop"; // doc 81 Đợt 10 task D fix review 4 (R-10-av)
 import { prefetchRobotStopRow } from "../services/robot/robotStopRow"; // fix review 4 (NF-2)
 import { raiseCriticalStopAlert } from "../services/robot/criticalStopAlert"; // doc 81 Đợt 10 task D
+import { robotStopProcedure, decideStopScope, robotFactoryIdFromDb, userFactoryIds, robotFactoryFromMemory, noteRobotFactoryInMemory, type StopScopeVerdict } from "../services/robot/robotStopAuth"; // fix review 5 (R-10-bb / R-10-bc)
+import { STOP_AUTH_BOUND_MS, noteMachineControlGrant, noteFactoryScope, rememberedFactoryScope } from "../services/robot/robotStopAuthMemo";
 
 /**
  * doc 81 Đợt 1B Task 5 fix round 4 (ruling R13) — the LIVE state of a robot in THIS process (what
@@ -132,6 +134,113 @@ async function setRobotAutomation(
   const after = await readRobotAutomationState(db, robotId);
   console.warn(`[Robot] automation of robot ${robotId} (${r.code}) turned ${enabled ? "ON" : "OFF"} by user ${ctx.user.id}: ${reason}`);
   return { robotId, automation: after, changed: before !== after };
+}
+
+/**
+ * doc 81 Đợt 10 task D (R-10-k / R-10-ak / NF-2) — a console STOP for a robot this process holds NO session for: edge-owned ⇒
+ * queued for the node; central-owned / owner unreadable ⇒ the transient-session STOP (+ the edge queue when unknown), answered at
+ * the 2 s bound from request entry. null ⇒ no robot row / a DB without 0374: the caller's dispatcher path answers.
+ * (fix review 5: shared by robot.actuate and robot.consoleStop.)
+ */
+/**
+ * doc 81 Đợt 10 task D fix review 5 (R-10-bc) — the factory scope of a STOP sent through robot.actuate (full auth chain): the DB
+ * scope (caller's factories + the robot's factory) read under STOP_AUTH_BOUND_MS; otherwise the caller's last known scope with the
+ * robot → factory map in robotManager's memory; refused only when both are known and differ; unknown ⇒ allowed + anomaly audit.
+ */
+async function stopScopeForActuate(user: { id: number; role?: string | null; name?: string | null }, robotId: number, token: string | null): Promise<StopScopeVerdict> {
+  type L<T> = { done: boolean; value?: T };
+  const leg = <T,>(p: Promise<T>) => {
+    const l: L<T> = { done: false };
+    const d = p.then((v) => void Object.assign(l, { done: true, value: v }), () => undefined);
+    return { l, d };
+  };
+  const scope = leg(userFactoryIds({ id: user.id, role: user.role }));
+  const rf = leg(robotFactoryIdFromDb(robotId));
+  let t: NodeJS.Timeout | undefined;
+  await Promise.race([Promise.all([scope.d, rf.d]), new Promise<void>((r) => (t = setTimeout(r, STOP_AUTH_BOUND_MS)))]);
+  clearTimeout(t);
+  const robotFactoryIdInMemory = await robotFactoryFromMemory();
+  if (rf.l.done) await noteRobotFactoryInMemory(robotId, rf.l.value ?? null);
+  if (scope.l.done) noteFactoryScope(token, user.id, scope.l.value ?? null);
+  const verdict =
+    scope.l.done && rf.l.done
+      ? decideStopScope({ robotId, userScope: scope.l.value ?? null, robotFactory: rf.l.value ?? null, basis: "db" })
+      : decideStopScope({ robotId, userScope: scope.l.done ? (scope.l.value ?? null) : rememberedFactoryScope(token, user.id), robotFactory: rf.l.done ? (rf.l.value ?? null) : robotFactoryIdInMemory(robotId), basis: "memory" });
+  if (verdict.allowed && verdict.unknown) {
+    // R-10-be — allowed (L-7) with a durable alert + an anomaly audit
+    void raiseCriticalStopAlert({ kind: "stop_scope_unknown", title: `STOP with an unknown factory scope — robot ${robotId}`, message: `STOP accepted with an UNKNOWN factory scope: ${verdict.unknown} (user #${user.id}, robot ${robotId})`, recipients: [user.id], dedupKey: `stop_scope_unknown:${robotId}:${Date.now()}`, source: "robot", entityType: "robot", entityId: robotId, retryUntilPersisted: { everyMs: 30_000, attempts: 20 } });
+    void import("../services/auditTrailService")
+      .then(({ logCrudOperation }) =>
+        logCrudOperation({ userId: user.id, userName: user.name ?? null, ipAddress: null, userAgent: null, source: "trpc" } as never, { action: "robot.stop.scopeUnknown", entityType: "robot", entityId: robotId, details: { anomaly: verdict.unknown, basis: verdict.basis, ruling: "R-10-bc" }, status: "success" } as never),
+      )
+      .catch((err) => console.error(`[Robot] STOP scope-unknown audit for robot ${robotId} not written: ${(err as Error)?.message ?? err}`));
+  }
+  return verdict;
+}
+
+async function consoleStopNoSessionPath(
+  robotId: number,
+  command: string,
+  userId: number,
+  enteredAt: number,
+  /** fix review 5 — the reads the caller STARTED at request entry (in parallel with its scope check) */
+  pre?: { stopRow: ReturnType<typeof prefetchRobotStopRow>; owner: ReturnType<typeof robotOwnerRead> },
+) {
+  // fix review 4 (NF-2) — the two reads before the send run IN PARALLEL under one STOP bound (owner + the robot row a transient
+  // STOP needs); the 2 s reply bound counts from request entry
+  const stopRow = pre?.stopRow ?? prefetchRobotStopRow(robotId);
+  const owner = await (pre?.owner ?? robotOwnerRead(robotId));
+  if ("edge" in owner) {
+    // R-10-k (L-7) — never a silent no-op: queue for the owner; on failure the central STOP (if a session exists) AND a
+    // re-queue for the current owner; neither ⇒ critical alert + an error the user sees.
+    const stop = await sendConsoleStopForEdgeRobot({
+      robotId: robotId,
+      requestedBy: userId,
+      reason: `console ${command}`,
+      centralStop: async () =>
+        getActiveRobot(robotId)
+          ? dispatchRobotJob({ robotId: robotId, job: { jobType: "abort", params: {} }, triggerKind: "manual", requestedBy: userId, confirmedBy: userId })
+          : null,
+    });
+    if (stop.ok) {
+      return { ok: true, status: "queued_on_edge" as const, error: undefined as string | undefined, queuedOnEdge: { requestId: stop.requestId ?? null, edgeNodeId: stop.edgeNodeId ?? owner.edge, via: stop.via } };
+    }
+    return { ok: false, status: "rejected" as const, error: stop.error as string | undefined, queuedOnEdge: undefined };
+  }
+  if ("central" in owner || "unknown" in owner) {
+    // fix review 1/2 (R-10-v, M-2, R-10-ak) — no session here for a robot central owns (an ownership change not yet applied, a
+    // failed connect) or whose owner could not be read: the transient-session STOP starts at once (owner unknown: the edge queue
+    // in parallel, bounded), the answer comes at the STOP bound at the latest (partial), with a durable critical alert.
+    const r = await sendConsoleStopNoSession({
+      robotId: robotId,
+      requestedBy: userId,
+      reason: `console ${command}`,
+      ownerUnknown: "unknown" in owner ? owner.unknown : null,
+      centralStop: (id) => sendCentralRobotStop(id, { row: stopRow }),
+      replyBoundMs: Math.max(0, CONSOLE_STOP_REPLY_BOUND_MS - (Date.now() - enteredAt)),
+      alert: (message) =>
+        void raiseCriticalStopAlert({
+          retryUntilPersisted: { everyMs: 30_000, attempts: 20 }, // R-10-av — durable even when the DB is down right now
+          kind: "console_stop_no_session",
+          title: `STOP without a session — robot ${robotId}`,
+          message,
+          recipients: [userId],
+          dedupKey: `console_stop_no_session:robot:${robotId}:${Date.now()}`,
+          source: "robot",
+          entityType: "robot",
+          entityId: robotId,
+        }),
+    });
+    if (!r.ok) return { ok: false, status: "rejected" as const, error: r.error as string | undefined, queuedOnEdge: undefined };
+    const centralDone = r.central.state === "done" && r.central.value.ok;
+    return {
+      ok: true,
+      status: (centralDone ? (r.central.state === "done" && r.central.value.sent === "simulated" ? "simulated" : "done") : r.central.state === "pending" ? "stop_in_progress" : "queued_on_edge") as "done",
+      error: undefined as string | undefined,
+      queuedOnEdge: r.queued?.state === "done" ? { requestId: r.queued.value.requestId, edgeNodeId: r.queued.value.edgeNodeId, via: "edge_queue" } : undefined,
+    };
+  }
+  return null;
 }
 
 export const robotRouter = router({
@@ -444,6 +553,27 @@ export const robotRouter = router({
   // doc 40 QA-3 (blocker): actuate là đường real-motion → PHẢI qua actuationProcedure
   // (role-floor admin/supervisor/engineer + 2FA) như mọi actuation khác, không chỉ
   // protectedProcedure+bit. Dispatcher không kiểm 2FA nên gate phải nằm ở procedure.
+  /**
+   * doc 81 Đợt 10 task D fix review 5 — ruling R-10-bb (L-7): THE console STOP route. STOP verbs only (its input schema — never
+   * motion). Authentication = robotStopProcedure: stateless JWT first, then session / user / permission / factory scope in
+   * parallel under 300 ms; on a DB timeout / failure a valid token whose last known identity carries machine_control may still
+   * STOP (audited + durable alert "STOP accepted on degraded auth"). Then the same STOP as robot.actuate: the live session first
+   * (R-10-av), else the no-session path, else the dispatcher's canonical abort.
+   */
+  consoleStop: robotStopProcedure
+    .input(z.object({ robotId: z.number().int(), command: z.enum(["stop", "abort"]), idempotencyKey: z.string().min(1).max(128).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const enteredAt = Date.now();
+      const user = (ctx as unknown as { user: { id: number } }).user;
+      const live = await sendLiveSessionStopFirst({ robotId: input.robotId, requestedBy: user.id, idempotencyKey: input.idempotencyKey, command: input.command });
+      if (live) return { ...live, degradedAuth: (ctx as unknown as { stopAuth?: { degraded: boolean } }).stopAuth?.degraded === true };
+      if (!getActiveRobot(input.robotId)) {
+        const r = await consoleStopNoSessionPath(input.robotId, input.command, user.id, enteredAt);
+        if (r) return r;
+      }
+      return dispatchRobotJob({ robotId: input.robotId, job: { jobType: "abort", params: { command: input.command } }, triggerKind: "manual", requestedBy: user.id, confirmedBy: user.id, idempotencyKey: input.idempotencyKey });
+    }),
+
   actuate: actuationProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
@@ -456,7 +586,14 @@ export const robotRouter = router({
       // doc 81 Đợt 10 task D fix review 4 (R-10-av, L-7) — a STOP for a robot this process holds a LIVE session for is SENT FIRST,
       // before any database read (ledger after the send, bounded): a hung / dead DB never delays the STOP of an attached robot.
       const enteredAt = Date.now();
+      let noSessionPre: Parameters<typeof consoleStopNoSessionPath>[4];
+      noteMachineControlGrant(ctx.sessionToken ?? null, ctx.user.id); // R-10-bb — this user passed the full machine_control:canEdit chain just now
       if (verbToJobType(input.command) === "abort") {
+        // NF-2 — a no-session STOP's owner + robot-row reads start NOW, in parallel with the scope check below (one bound)
+        noSessionPre = getActiveRobot(input.robotId) ? undefined : { stopRow: prefetchRobotStopRow(input.robotId), owner: robotOwnerRead(input.robotId) };
+        // fix review 5 (R-10-bc) — another factory's robot is refused when the scope is KNOWN (DB within the bound, else memory)
+        const sc = await stopScopeForActuate(ctx.user, input.robotId, ctx.sessionToken ?? null);
+        if (!sc.allowed) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
         const live = await sendLiveSessionStopFirst({ robotId: input.robotId, requestedBy: ctx.user.id, idempotencyKey: input.idempotencyKey, command: input.command });
         if (live) return live;
       }
@@ -518,61 +655,23 @@ export const robotRouter = router({
       // doc 81 Đợt 10 task D (design §2.8 / §2.11) — a console STOP for a robot an EDGE node owns (no session here): queued for
       // the node as a signed `stop` command, which the edge SENDS at once (even on a failed signature check — L-7). Motion to
       // such a robot is refused by the dispatcher (ROBOT_OWNED_BY_EDGE). Only when this process has no session for the robot.
+      if (verbToJobType(input.command) !== "abort") {
+        // fix review 5 (R-10-bc) — MOTION requires the caller's factory scope, read from the DB, fail-closed: unreadable ⇒ refused;
+        // another factory's robot (or a missing one) ⇒ the SAME NOT_FOUND (M-4)
+        const scope = phamViCua(ctx as never);
+        const [lines, stations] = await Promise.all([idsTrongPhamVi("line", scope, { strict: true }), idsTrongPhamVi("station", scope, { strict: true })]);
+        if (lines !== null) {
+          // a RESTRICTED caller: the robot's line / station must be inside the scope (an unrestricted caller needs no row read)
+          const db = await getDb();
+          if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable — motion refused (factory scope unverifiable)");
+          const [row] = await db.select({ lineId: robots.lineId, stationId: robots.stationId }).from(robots).where(eq(robots.id, input.robotId)).limit(1);
+          const inScope = !!row && ((row.lineId != null && lines.includes(row.lineId)) || (row.stationId != null && (stations ?? []).includes(row.stationId)));
+          if (!inScope) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
+        }
+      }
       if (verbToJobType(input.command) === "abort" && !getActiveRobot(input.robotId)) {
-        // fix review 4 (NF-2) — the two reads before the send run IN PARALLEL under one STOP bound (owner + the robot row a transient
-        // STOP needs); the 2 s reply bound counts from request entry
-        const stopRow = prefetchRobotStopRow(input.robotId);
-        const owner = await robotOwnerRead(input.robotId);
-        if ("edge" in owner) {
-          // R-10-k (L-7) — never a silent no-op: queue for the owner; on failure the central STOP (if a session exists) AND a
-          // re-queue for the current owner; neither ⇒ critical alert + an error the user sees.
-          const stop = await sendConsoleStopForEdgeRobot({
-            robotId: input.robotId,
-            requestedBy: ctx.user.id,
-            reason: `console ${input.command}`,
-            centralStop: async () =>
-              getActiveRobot(input.robotId)
-                ? dispatchRobotJob({ robotId: input.robotId, job: { jobType: "abort", params: {} }, triggerKind: "manual", requestedBy: ctx.user.id, confirmedBy: ctx.user.id })
-                : null,
-          });
-          if (stop.ok) {
-            return { ok: true, status: "queued_on_edge" as const, error: undefined as string | undefined, queuedOnEdge: { requestId: stop.requestId ?? null, edgeNodeId: stop.edgeNodeId ?? owner.edge, via: stop.via } };
-          }
-          return { ok: false, status: "rejected" as const, error: stop.error as string | undefined, queuedOnEdge: undefined };
-        }
-        if ("central" in owner || "unknown" in owner) {
-          // fix review 1/2 (R-10-v, M-2, R-10-ak) — no session here for a robot central owns (an ownership change not yet applied, a
-          // failed connect) or whose owner could not be read: the transient-session STOP starts at once (owner unknown: the edge queue
-          // in parallel, bounded), the answer comes at the STOP bound at the latest (partial), with a durable critical alert.
-          const r = await sendConsoleStopNoSession({
-            robotId: input.robotId,
-            requestedBy: ctx.user.id,
-            reason: `console ${input.command}`,
-            ownerUnknown: "unknown" in owner ? owner.unknown : null,
-            centralStop: (id) => sendCentralRobotStop(id, { row: stopRow }),
-            replyBoundMs: Math.max(0, CONSOLE_STOP_REPLY_BOUND_MS - (Date.now() - enteredAt)),
-            alert: (message) =>
-              void raiseCriticalStopAlert({
-                retryUntilPersisted: { everyMs: 30_000, attempts: 20 }, // R-10-av — durable even when the DB is down right now
-                kind: "console_stop_no_session",
-                title: `STOP without a session — robot ${input.robotId}`,
-                message,
-                recipients: [ctx.user.id],
-                dedupKey: `console_stop_no_session:robot:${input.robotId}:${Date.now()}`,
-                source: "robot",
-                entityType: "robot",
-                entityId: input.robotId,
-              }),
-          });
-          if (!r.ok) return { ok: false, status: "rejected" as const, error: r.error as string | undefined, queuedOnEdge: undefined };
-          const centralDone = r.central.state === "done" && r.central.value.ok;
-          return {
-            ok: true,
-            status: (centralDone ? (r.central.state === "done" && r.central.value.sent === "simulated" ? "simulated" : "done") : r.central.state === "pending" ? "stop_in_progress" : "queued_on_edge") as "done",
-            error: undefined as string | undefined,
-            queuedOnEdge: r.queued?.state === "done" ? { requestId: r.queued.value.requestId, edgeNodeId: r.queued.value.edgeNodeId, via: "edge_queue" } : undefined,
-          };
-        }
+        const r = await consoleStopNoSessionPath(input.robotId, input.command, ctx.user.id, enteredAt, noSessionPre);
+        if (r) return r;
         // no robot row / a DB without 0374 ⇒ the existing path (the dispatcher answers honestly)
       }
       const res = await dispatchRobotJob({

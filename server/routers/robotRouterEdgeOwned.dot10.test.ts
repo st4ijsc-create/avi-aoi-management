@@ -77,6 +77,10 @@ vi.mock("../services/robot/robotManager", () => ({
       : undefined,
 }));
 
+// doc 81 Đợt 10 D fix review 5 (R-10-bc) — robot.actuate MOTION now requires the caller's factory scope (DB, fail-closed):
+// this suite's caller is UNRESTRICTED (the scope resolver answers "all factories"); refusals are pinned in robotStopDegradedAuth.dot10.db
+vi.mock("../db/hierarchy", async (importOriginal) => ({ ...(await importOriginal<typeof import("../db/hierarchy")>()), idsTrongPhamVi: async () => null }));
+
 import { robotRouter } from "./robotRouter";
 import { setEdgeDeviceRequestPort, type EdgeDeviceRequestInput } from "../services/robot/robotEdgeCommandPort";
 
