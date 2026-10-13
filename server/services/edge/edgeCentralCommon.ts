@@ -13,7 +13,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { EDGE_PROTOCOL_VERSION, edgeError, type EdgeAnswer } from "./edgeProtocol";
 import { adapterOwnership, edgeNodeProtocol, isEdgeControlSchemaMissing, robotOwnership } from "./edgeControlSchema";
-import { buildEdgeKeysetFromKeyring, edgeKeyDirOf, getCentralEdgeSigningKey, readEdgeKeyring, signEdgeObject, type EdgeKeyset, type EdgeSignedEnvelope, type EdgeSigningKey } from "./edgeSigning";
+import { EdgeContractError, buildEdgeKeysetFromKeyring, edgeKeyDirOf, getCentralEdgeSigningKey, readEdgeKeyring, signEdgeObject, type EdgeKeyset, type EdgeSignedEnvelope, type EdgeSigningKey } from "./edgeSigning";
 import type { EdgeNodePrincipal } from "./edgeNodeCredentials";
 import { isEdgeSchemaMissing } from "./edgeExecutionSchema";
 
@@ -119,7 +119,7 @@ export function signForNode(
 ): EdgeSignedEnvelope {
   let body = payload;
   if (!("credentialId" in payload) && schema.safeParse({ ...payload, credentialId: node.credentialId }).success) body = { ...payload, credentialId: node.credentialId };
-  if (!schema.safeParse(body).success) throw new Error(`signForNode: central built an invalid ${typ} payload`);
+  if (!schema.safeParse(body).success) throw new EdgeContractError("invalid_payload", `signForNode: central built an invalid ${typ} payload`);
   return signEdgeObject(typ, body, signer.key);
 }
 

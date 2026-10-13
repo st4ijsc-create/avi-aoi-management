@@ -25,7 +25,7 @@ import { parseBackupConnection, type RuntimeAdapter } from "../ot/deviceAdapter"
 import type { OtProtocol, OtTagAddress } from "../ot/otDriver";
 import { edgeTrustAdapter, type EdgeCentralClient } from "./edgeCentralClient";
 import { edgeConfigHash, type EdgeConfigSnapshot } from "./edgeProtocol";
-import { EdgeTrustStore, parseEdgeCanonicalJson, type EdgeSignedEnvelope } from "./edgeSigning";
+import { EdgeContractError, EdgeTrustStore, parseEdgeCanonicalJson, type EdgeSignedEnvelope } from "./edgeSigning";
 
 export type EdgeConfigAdapter = EdgeConfigSnapshot["adapters"][number];
 export type EdgeConfigRobot = EdgeConfigSnapshot["robots"][number];
@@ -70,7 +70,7 @@ export function sealEdgeConfigCache(credential: string, envelope: EdgeSignedEnve
 }
 export function openEdgeConfigCache(credential: string, text: string): unknown {
   const o = JSON.parse(text) as { v?: unknown; iv?: unknown; tag?: unknown; ct?: unknown };
-  if (o?.v !== 1 || typeof o.iv !== "string" || typeof o.tag !== "string" || typeof o.ct !== "string") throw new Error("cache format");
+  if (o?.v !== 1 || typeof o.iv !== "string" || typeof o.tag !== "string" || typeof o.ct !== "string") throw new EdgeContractError("cache_format", "cache format");
   const d = createDecipheriv("aes-256-gcm", cacheKey(credential), Buffer.from(o.iv, "base64"));
   d.setAuthTag(Buffer.from(o.tag, "base64"));
   return JSON.parse(Buffer.concat([d.update(Buffer.from(o.ct, "base64")), d.final()]).toString("utf8"));

@@ -369,13 +369,19 @@ export async function resolveTenantFactoryScope(
   const resolved = await resolveDataScope(args.userId, userRole);
   // ⚠ `scopeLabelsOf` chép ĐÚNG BA ô — `filter` không có đường lọt ra ngoài hàm này.
   const labels = scopeLabelsOf(resolved);
+  // doc 81 Đợt 10 D fix review 6 (NF5-1) — a scope this full read DEFINITELY resolved warms the STOP-only degraded-auth memory
+  // (robotStopAuthMemo, per user, ≤ 15 min, invalidated with the user's assignments) — no extra DB read
+  const warmStopMemo = (ids: number[] | null) =>
+    void import("../services/robot/robotStopAuthMemo").then((m) => m.noteUserFactoryScope(args.userId!, userRole, ids)).catch(() => undefined);
   if (!resolved.filter) {
     // Vai toàn quyền theo MÃ (không phải theo tên vai) — giữ đối xứng với `resolveDataScope`.
+    warmStopMemo(null);
     return { factoryIds: null, labels };
   }
 
   const { corporateCodes, factoryCodes } = await getUserAssignmentCodes(args.userId, userRole);
   if (corporateCodes.length === 0 && factoryCodes.length === 0) {
+    if (opts.strict) warmStopMemo([]); // only a strict read is a definite "no factory"
     return { factoryIds: [], labels };
   }
 
@@ -392,8 +398,10 @@ export async function resolveTenantFactoryScope(
     .select({ id: factories.id })
     .from(factories)
     .where(codeConds.length === 1 ? codeConds[0] : or(...codeConds));
+  const factoryIds = (rows as any[]).map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+  warmStopMemo(factoryIds);
   return {
-    factoryIds: (rows as any[]).map((r) => Number(r.id)).filter((id) => Number.isFinite(id)),
+    factoryIds,
     labels,
   };
 }

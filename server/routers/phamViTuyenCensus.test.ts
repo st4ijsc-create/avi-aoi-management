@@ -112,7 +112,17 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 // (`orchestration_run_edge_assignments.edgeNodeId`) VÀ phạm vi nhà máy của nút (`runInNodeScope`) — run của nút khác / ngoài
 // nhà máy / không tồn tại ⇒ CÙNG một 404; (3) tuyến không trả dữ liệu tenant nào ngoài định nghĩa run đã giao cho nút.
 // Lưới hành vi: `server/services/edge/edgeExecution.s12.dot9.db.test.ts` + `edgeExecution.s4.e2e.dot9.db.test.ts`.
-const GHIM = { A: 80, C: 37, D: 79, S: 19, U: 16, tong: 231 } as const;
+// ★★★ 2026-10-13 (doc 81 Đợt 10 integration, task B) — **D 79 → 87 · tong 231 → 239.** Tám tuyến MỚI, đều POST, đều trong
+// `server/api/v1/edgeNodeRoutes.ts` (giao thức v2 của nút biên, chỉ-v2): `/edge/node/{config,heartbeat,program-checks,telemetry,
+// robots/state,locks/events}` + `/edge/node/runs/:runId/{authorize,report}`. Đo: bộ suy chạy trên cây làm việc tích hợp — chỉ D
+// đổi (+8); A/C/S/U giữ nguyên (sáu tuyến Đợt 9 chỉ đổi thân sang `byVersion`, không thêm tuyến). Vì sao không phải lỗ phạm vi mới:
+// (1) danh tính là KHOÁ CỦA NÚT (`requireEdgeNode`, cùng Đợt 9); (2) authorize / report: run id phải là của PHÂN CÔNG của chính
+// nút VÀ trong phạm vi nhà máy của nút (`runInNodeScope`) — census `orchestrationScopeCensus.dot5` ghim đúng hai điều kiện đó
+// cho `edgeAuthorizeCentral` / `edgeReportsCentral`; (3) config chỉ mang thiết bị nút SỞ HỮU ∩ nhà máy của nút (R-10-am),
+// telemetry / robots/state / program-checks / locks/events chỉ nhận bản ghi của thiết bị nút sở hữu (khác ⇒ đếm notOwned +
+// EDGE_ANOMALY), heartbeat chỉ ghi bản ghi của chính nút; không tuyến nào trả dữ liệu tenant ngoài thiết bị đã giao cho nút.
+// Lưới hành vi: `server/services/edge/edge{Config,Authorize,Authorize.failclosed,Reports,Ingest,Commands}.dot10.db.test.ts`.
+const GHIM = { A: 80, C: 37, D: 87, S: 19, U: 16, tong: 239 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {

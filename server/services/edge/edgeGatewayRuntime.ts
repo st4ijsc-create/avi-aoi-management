@@ -47,6 +47,7 @@ import { EdgeCentralClient, createEdgeAuthorizeClient, type EdgeAuthorizeClient 
 import { EdgeConfigSource, configAdaptersToRuntime } from "./edgeConfigSource";
 import { EdgeJournal } from "./edgeJournal";
 import { EDGE_PROTOCOL_VERSION, type EdgeConfigSnapshot } from "./edgeProtocol";
+import { EdgeContractError } from "./edgeSigning";
 import {
   EdgeProgramChecks,
   EdgeStreamShipper,
@@ -518,7 +519,7 @@ async function edgeRobotStartExtras(rt: EdgeRuntime): Promise<{ stateSink: (robo
     stateSink: (robot, st) => void rt.sink.robotState(streams.robotStateToRecord(robot.id, st)).catch(() => undefined),
     attachLock: (robot, lock) => {
       const row = rt.config.robot(robot.id);
-      if (!row) throw new Error(`robot ${robot.id} is not in the verified config`);
+      if (!row) throw new EdgeContractError("not_in_config", `robot ${robot.id} is not in the verified config`);
       const seed = streams.edgeMotionLockSeed(rt.journal, row);
       const persistence = streams.edgeMotionLockPersistence(rt.sink, robot.id, () => rt.config.robot(robot.id)?.ownerEpoch ?? row.ownerEpoch);
       attachEdgeMotionLockPersistence(robot.id, lock, seed, persistence, { announce: seed.source === "unknown" || seed.source === "ownerChanged" || seed.source === "config" });

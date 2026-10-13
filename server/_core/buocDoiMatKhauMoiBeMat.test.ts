@@ -114,6 +114,16 @@ const GOC = join(TEST_DIR, "..", "..");
  */
 const BE_MAT_TU_CANH: { duong: string; vi_sao: string; canh_boi: string }[] = [
   {
+    duong: "server/services/robot/robotStopAuth.ts",
+    vi_sao:
+      "doc 81 Đợt 10 D fix review 5 — ruling R-10-bb (L-7): the STOP-only route verifies the JWT STATELESSLY (verifySession) so a STOP is " +
+      "never blocked by a hung / dead DB; the forced-password gate is inside the parallel authenticateRequest.",
+    canh_boi:
+      "robotStopAuth.robotStopProcedure: the FULL sdk.authenticateRequest (ledger + isActive + password gate) runs in PARALLEL and any " +
+      "definite refusal wins; the degraded fallback only uses a SESSION-bound ≤ 15 min memory dropped on logout / revoke / disable / role " +
+      "/ permission / scope change (robotStopAuthMemo, R-10-be), STOP verbs only — server/routers/robotStopDegradedAuth.dot10.db.test.ts",
+  },
+  {
     duong: "server/_core/context.ts",
     vi_sao:
       "tRPC PHẢI dựng được `ctx.user` cho người ĐANG bị chặn, nếu không `auth.me` trả null ⇒ client " +
@@ -334,7 +344,7 @@ describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: c�
     expect(
       BE_MAT_TU_CANH.map((b) => b.duong),
       "tập bề mặt được phép vòng qua điểm chung đã đổi — đây là một quyết định an ninh",
-    ).toEqual(["server/_core/context.ts"]);
+    ).toEqual(["server/services/robot/robotStopAuth.ts", "server/_core/context.ts"]);
     expect(BE_MAT_TU_CANH.every((b) => b.canh_boi.length > 0), "mỗi mục phải nêu cơ chế canh THAY THẾ").toBe(true);
   });
 

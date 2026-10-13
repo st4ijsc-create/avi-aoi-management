@@ -50,7 +50,7 @@ import {
   type EdgeDeviceGate,
   type EdgeProgramCheck,
 } from "./edgeProtocol";
-import { EDGE_TYP_NAME } from "./edgeSigning";
+import { EDGE_TYP_NAME, EdgeContractError } from "./edgeSigning";
 import { edgeStepAuthorizations, robotMotionLockAuthority, type EdgeStepAuthorizationRow } from "./edgeControlSchema";
 import { runEdgeAssignments, type RunEdgeAssignment } from "./edgeExecutionSchema";
 import { hashEdgeSecret, sameDigest, type EdgeNodePrincipal } from "./edgeNodeCredentials";
@@ -579,7 +579,7 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
       iat: issuedAt.getTime(),
       ttlMs,
     };
-    if (!edgeAuthClaimsSchema.safeParse(claims).success) throw new Error("authorize: central built invalid claims");
+    if (!edgeAuthClaimsSchema.safeParse(claims).success) throw new EdgeContractError("invalid_payload", "authorize: central built invalid claims");
     const out = await insertOrReplay(d, node, signer, runId, req, tokenHash, nonceHash, claims, rb, issuedAt, ttlMs, approval, run.startedBy ?? null);
     if (out.http === 200 && !out.replayed) {
       await auditNode(node, "EDGE_STEP_AUTHORIZED", { type: "orchestration_run", id: runId }, { jti, claimSeq: req.claimSeq, stepId: req.stepId, attempt: req.attempt, kind: rb.kind, payloadHash: rb.payloadHash, approvedBy: approval.approvedBy, mode: g.mode });

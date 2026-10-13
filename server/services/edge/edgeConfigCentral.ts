@@ -36,7 +36,8 @@ import {
   type EdgeConfigAnswer,
 } from "./edgeProtocol";
 import { adapterOwnership, robotMotionLockAuthority, robotOwnership } from "./edgeControlSchema";
-import { edgeCanonicalJson, type EdgeSignedEnvelope } from "./edgeSigning";
+import { EdgeContractError, edgeCanonicalJson, type EdgeSignedEnvelope } from "./edgeSigning";
+import { edgeMaxClockSkewMs, edgeProgramReportMaxAgeMs } from "./edgeProgramReportRule";
 import {
   centralDb,
   centralSigner,
@@ -62,7 +63,7 @@ export function edgeConfigCacheMs(): number {
 export function edgeNodeLimits() {
   return {
     authTtlMs: clampEdgeAuthTtlMs(process.env.EDGE_AUTH_TTL_MS),
-    maxClockSkewMs: intEnv("EDGE_MAX_CLOCK_SKEW_MS", 5_000, 0, 300_000),
+    maxClockSkewMs: edgeMaxClockSkewMs(),
     journalMaxBytes: intEnv("EDGE_JOURNAL_MAX_BYTES", 256 * 1024 * 1024, 1024 * 1024, 2_000_000_000),
     programReportMs: intEnv("EDGE_PROGRAM_REPORT_MS", 30_000, 1_000, 3_600_000),
     programReportMaxAgeMs: edgeProgramReportMaxAgeMs(),
@@ -70,10 +71,11 @@ export function edgeNodeLimits() {
     pullMs: intEnv("EDGE_PULL_MS", 2_000, 500, 60_000),
   };
 }
-/** The max age the node is told (limits.programReportMaxAgeMs); the RULE that judges a reading is Group C's (R-10-m). */
-export function edgeProgramReportMaxAgeMs(): number {
-  return intEnv("EDGE_PROGRAM_REPORT_MAX_AGE_MS", 120_000, 1_000, 3_600_000);
-}
+/**
+ * The max age the node is told (limits.programReportMaxAgeMs). doc 81 Đợt 10 integration (R-10-m): the bound AND the skew come
+ * from the ONE shared rule (edgeProgramReportRule) that judges a reading — the node is told exactly what approval / authorize use.
+ */
+export { edgeProgramReportMaxAgeMs };
 
 const ms = (v: unknown): number => {
   const t = v instanceof Date ? v.getTime() : v == null ? 0 : new Date(String(v)).getTime();
@@ -123,9 +125,9 @@ export function edgePlcConfigGuardsNode(
 /** Build the node's config CONTENT (deterministic for a given DB state + keyring). Throws on a DB error. */
 export async function buildNodeConfigContent(d: Db, node: EdgeNodePrincipal): Promise<Content> {
   const signer = centralSigner();
-  if (!signer) throw new Error("no signer");
+  if (!signer) throw new EdgeContractError("no_signer", "no signer");
   const [nodeRow] = await d.select({ id: edgeNodes.id, code: edgeNodes.code, factoryCode: edgeNodes.factoryCode, lines: edgeNodes.assignedLineCodes }).from(edgeNodes).where(eq(edgeNodes.id, node.nodeId)).limit(1);
-  if (!nodeRow) throw new Error("node row missing");
+  if (!nodeRow) throw new EdgeContractError("node_missing", "node row missing");
   // I-4 — owned AND placed in the node's factory (an unplaced / foreign-factory device is never shipped; logged)
   const scope = await devicesOfNodeInScope(d, node.nodeId);
   if (scope.excluded.robots.length || scope.excluded.adapters.length) {
@@ -314,7 +316,7 @@ export async function currentNodeConfig(node: EdgeNodePrincipal, opts: { fresh?:
   const ownershipKey = await nodeOwnershipKey(d, node.nodeId);
   if (!opts.fresh && prev && prev.credentialId === node.credentialId && prev.ownershipKey === ownershipKey && Date.now() - prev.builtAt < edgeConfigCacheMs()) return prev;
   const signer = centralSigner();
-  if (!signer) throw new Error("no signer");
+  if (!signer) throw new EdgeContractError("no_signer", "no signer");
   const content = await buildNodeConfigContent(d, node);
   const contentHash = sha256Hex(edgeCanonicalJson(content));
   if (prev && prev.contentHash === contentHash && prev.credentialId === node.credentialId) {

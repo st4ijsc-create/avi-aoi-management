@@ -140,6 +140,15 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   `whoami`) mà không đo lại. Thiết kế lại J4 (quản trị viên cấp khoá; server CHỈ đọc + kiểm) viết lại module: mọi chỗ ném
  *   nay là `BrokerTlsError` / `InspectError` có mã, bị bắt trong `startMqttTlsListener` (không bao giờ tới tRPC). ĐO trên cây
  *   làm việc sau khi viết lại ra **462** — đúng số ghim: 474 − 12 = 462, không nới, không dư.
+ *
+ * 462 GIỮ NGUYÊN (2026-10-13, doc 81 Đợt 10 integration): ĐO trên cây làm việc trước tích hợp ra **478** — Đợt 10 (mốc
+ *   `8bebe458d`, khi ấy 462) đã thêm **16** chỗ `throw new Error(` ở `services/edge/*`: edgeSigning ×3 · edgeConfigCentral ×3 ·
+ *   edgeCentralClient ×3 · edgeProtocol ×2 · edgeRunStore · edgeGatewayRuntime · edgeConfigSource · edgeCentralCommon ·
+ *   edgeAuthorizeCentral (×1 mỗi tệp; `__edgeCentralKit.dot10` ×2 là chỉ-test, không đếm). D đã tự trả 5 chỗ của mình. Cả 16 là
+ *   bất biến của hợp đồng giao thức biên (typ/kid sai, central dựng payload sai schema, không có signer, gói/cache/câu trả lời sai
+ *   hợp đồng) — KHÔNG tới tRPC (trả lời HTTP của nút biên / tiến trình biên), nên theo đúng luật (a)+(b): không đẻ mã appError,
+ *   đổi sang lớp có mã `EdgeContractError` (edgeSigning.ts; `code` theo họ), message GIỮ NGUYÊN VĂN, mọi nơi bắt vẫn thấy một
+ *   `Error`. ĐO sau vá ra **462** — 478 − 16 = 462, không nới, không dư.
  */
 const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 462;
 

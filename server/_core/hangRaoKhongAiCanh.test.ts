@@ -134,8 +134,19 @@ function diemGoiNgoaiThuTuc(): string[] {
  *   • giá trị trả về chỉ mang `{ userId, role, ten }` — không trường nào từ `user_secrets`.
  * ⇒ Nâng ghim là ghi nhận một điểm đọc AN TOÀN, không phải nới lỏng. Cái thứ BẢY vẫn
  *   phải qua đúng nghi thức này.
+ *
+ * `6 → 7` (2026-10-13, doc 81 Đợt 10 integration): điểm thứ bảy là
+ * `services/edge/edgeNodeCredentials.ts:129` — `verifyCredentialAdmin` (CLI cấp / xoay / thu hồi khoá nút biên) gọi
+ * `get2FAStatus(user.id)`. Điểm này có từ Đợt 9 final wave F7 (commit `10e1f7037`, TRƯỚC mốc Đợt 10 `8bebe458d`; Đợt 10
+ * không sửa tệp này) — lưới đỏ từ đó mà chưa ai ghim. ĐÃ XEM XÉT theo đúng nghi thức ở trên:
+ *   • bí mật KHÔNG rời hàm: `twoFactorSecret` chỉ được trao cho `verifyTotpOnce` (bộ kiểm TOTP DUY NHẤT, cùng bộ đăng nhập
+ *     web dùng) để kiểm mã người quản trị vừa gõ; ngoài ra chỉ đọc boolean `twoFactorEnabled`;
+ *   • fail-CLOSED: đọc hỏng ⇒ `null` ⇒ `EdgeCredentialError("dbUnavailable")` TỪ CHỐI; 2FA bật mà không có bí mật ⇒ từ chối;
+ *     không nhánh nào "coi như không bật";
+ *   • giá trị trả về chỉ mang `{ userId, name }`; mọi thông điệp lỗi không chứa bí mật / mã; hàm không ghi log mật khẩu / mã.
+ * ⇒ Ghi nhận một điểm đọc AN TOÀN (không phải nới lỏng). Cái thứ TÁM vẫn phải qua đúng nghi thức này.
  */
-const SO_DIEM_NGOAI = 6;
+const SO_DIEM_NGOAI = 7;
 
 describe("★★★ Pha 8 Task 4a — ∀ thủ tục đọc `user_secrets` PHẢI KHAI phân loại (`KhongMangBiMat`)", () => {
   it("★★★ cầu chì — tập cột bí mật và tập NGƯỜI ĐỌC đều KHÁC RỖNG (rỗng ⇒ mọi ô dưới là chân lý rỗng)", () => {

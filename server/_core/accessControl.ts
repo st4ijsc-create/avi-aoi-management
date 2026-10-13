@@ -222,6 +222,13 @@ export async function checkPermission(
     ))
     .limit(1);
 
+  // doc 81 Đợt 10 D fix review 6 (NF5-1) — the machine_control row this full check just read carries canEdit whatever action was
+  // asked: it warms the STOP-only degraded-auth memory (per user, ≤ 15 min, true AND false) — no extra DB read
+  if (!isAdmin && resolvedModule === 'machine_control') {
+    const grant = !!perm && !(perm.expiresAt && perm.expiresAt < new Date()) && perm.canEdit === true;
+    void import('../services/robot/robotStopAuthMemo').then((m) => m.noteMachineControlRow(userId, userRole, grant)).catch(() => undefined);
+  }
+
   // No explicit grant: non-admin denied (unchanged); scoped-admin still passes
   // (unconfigured module must never lock an admin out).
   if (!perm) return isAdmin;

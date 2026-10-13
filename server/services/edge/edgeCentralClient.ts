@@ -37,7 +37,7 @@ import {
   type EdgeRunPackage,
   type EdgeSweepPicture,
 } from "./edgeProtocol";
-import { parseEdgeCanonicalJson, type EdgeSignedEnvelope, type EdgeTrustStore } from "./edgeSigning";
+import { EdgeContractError, parseEdgeCanonicalJson, type EdgeSignedEnvelope, type EdgeTrustStore } from "./edgeSigning";
 import { verifyEdgeAuthorization, verifyEdgeCommand, verifyEdgeConfig, verifyEdgeRunPackage, verifyEdgeSweepPicture } from "./edgeTrust";
 
 // ── the edgeTrust adapter (R-10-f: the only place that calls edgeTrust / the keyset store) ──────────────────────────────
@@ -162,7 +162,7 @@ export async function readCappedText(res: Response, cap: number): Promise<string
   const body = res.body as ReadableStream<Uint8Array> | null;
   if (!body || typeof body.getReader !== "function") {
     const t = await res.text();
-    if (Buffer.byteLength(t, "utf8") > cap) throw new Error("answer too large");
+    if (Buffer.byteLength(t, "utf8") > cap) throw new EdgeContractError("answer_too_large", "answer too large");
     return t;
   }
   const reader = body.getReader();
@@ -174,7 +174,7 @@ export async function readCappedText(res: Response, cap: number): Promise<string
     n += value.byteLength;
     if (n > cap) {
       await reader.cancel().catch(() => undefined);
-      throw new Error("answer too large");
+      throw new EdgeContractError("answer_too_large", "answer too large");
     }
     chunks.push(value);
   }
@@ -225,7 +225,7 @@ export class EdgeCentralClient {
     try {
       // fix review 1 (M-10) — a size cap besides the time bound: a declared or actual body above the cap is not parsed
       const declared = Number(res.headers?.get?.("content-length") ?? NaN);
-      if (Number.isFinite(declared) && declared > EDGE_ANSWER_MAX_BYTES) throw new Error("answer too large");
+      if (Number.isFinite(declared) && declared > EDGE_ANSWER_MAX_BYTES) throw new EdgeContractError("answer_too_large", "answer too large");
       json = JSON.parse(await readCappedText(res, EDGE_ANSWER_MAX_BYTES)) as Envelope;
     } catch {
       json = null;

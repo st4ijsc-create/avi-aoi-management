@@ -98,7 +98,18 @@ const DAU = "p8c1-thuhoi-mobemat";
  * lý do và tên cơ chế canh thay thế. Hôm nay tập này **RỖNG** — mọi điểm hoặc đi qua điểm chung,
  * hoặc **tự** gọi phép chặn. Chốt một con số đang bằng 0 thì rẻ.
  */
-const BE_MAT_MIEN_TRU: { duong: string; vi_sao: string; canh_boi: string }[] = [];
+const BE_MAT_MIEN_TRU: { duong: string; vi_sao: string; canh_boi: string }[] = [
+  {
+    duong: "server/services/robot/robotStopAuth.ts",
+    vi_sao:
+      "doc 81 Đợt 10 D fix review 5 — ruling R-10-bb (L-7): the STOP-only route verifies the JWT STATELESSLY (verifySession) so a STOP is " +
+      "never blocked by a hung / dead DB; the session-ledger check is inside the parallel authenticateRequest.",
+    canh_boi:
+      "robotStopAuth.robotStopProcedure: the FULL sdk.authenticateRequest (ledger + isActive + password gate) runs in PARALLEL and any " +
+      "definite refusal wins; the degraded fallback only uses a SESSION-bound <= 15 min memory dropped on logout / revoke / disable / role " +
+      "/ permission / scope change (robotStopAuthMemo, R-10-be), STOP verbs only — server/routers/robotStopDegradedAuth.dot10.db.test.ts",
+  },
+];
 
 const MOI_FILE_SX = moiFileDuoi(GOC, "server", [".ts", ".tsx"]).filter((f) => !laFileTest(f.duong));
 const MOI_DIEM: DiemXacThuc[] = MOI_FILE_SX.flatMap((f) =>
@@ -320,7 +331,7 @@ describe("★★★★ Review TOÀN NHÁNH Pha 8 C-1 — ∀ điểm xác thực
     expect(
       BE_MAT_MIEN_TRU.map((b) => b.duong),
       "tập bề mặt được tha đã đổi — đây là một quyết định an ninh, phải viết ra",
-    ).toEqual([]);
+    ).toEqual(["server/services/robot/robotStopAuth.ts"]);
     const ma = BE_MAT_MIEN_TRU.filter((b) => !MOI_DIEM.some((d) => d.duong === b.duong));
     expect(ma.map((b) => b.duong), "mục ma vẫn tiếp tục THA cho một điểm mới trùng đường dẫn").toEqual([]);
   });

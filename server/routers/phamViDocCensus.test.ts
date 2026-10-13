@@ -691,7 +691,14 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // (api_keys."holderUserId", mig 0369; trigger-recorded history + audit_logs) ⇒ group D. `apiKey.list` stays A (its debt row is
 // unchanged: it now also reads the holder's name). Measured with this scanner (before = pin; after = D 1138 · tong 2307),
 // with Groups T/U's uncommitted work in the same tree adding nothing to any group at the time of measuring.
-const GHIM = { A: 333, B: 8, C: 472, D: 1138, S: 356, tong: 2307 } as const;
+// ★★★ 2026-10-13 (doc 81 Đợt 10 integration, task D fix reviews 5–7 — rulings R-10-bb / R-10-bc) — **D 1138 → 1139 ·
+// tong 2307 → 2308 · A/B/C/S unchanged.** NEW `robot.consoleStop` (mutation, `robotRouter.ts`, built on `robotStopProcedure` =
+// `publicProcedure` + the STOP-only auth middleware of `services/robot/robotStopAuth.ts`): STOP / abort verbs only; the caller's
+// factory scope is applied INSIDE the middleware (`decideStopScope`: DB scope within 300 ms, else the session's remembered scope +
+// robotManager's robot → factory map; another factory's robot ⇒ NOT_FOUND exactly like a missing one) ⇒ the scanner files it under
+// D (scope applied in a helper, not a direct call in the procedure body — same as `robot.disableAutomation` above). Measured with
+// this scanner on the integration tree (before = D 1138 at the Đợt 10 base; after = D 1139 · tong 2308). No baseline row added.
+const GHIM = { A: 333, B: 8, C: 472, D: 1139, S: 356, tong: 2308 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

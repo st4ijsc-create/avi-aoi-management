@@ -224,15 +224,12 @@ const requireUser = t.middleware(async opts => {
  */
 const auditAllMutations = process.env.AUDIT_ALL_MUTATIONS !== "false";
 
-const auditMutationMiddleware = t.middleware(async (opts) => {
-  const { ctx, next, type, path } = opts;
-  if (!auditAllMutations || type !== "mutation") {
-    return next();
-  }
-
-  const startedAt = Date.now();
-  const result = await next();
-
+function auditMutationResult(
+  ctx: { user?: unknown; req?: { ip?: string; headers?: Record<string, unknown> } },
+  path: string,
+  result: { ok: boolean },
+  startedAt: number,
+): void {
   // Fire-and-forget; dynamic import avoids module load-order coupling.
   try {
     const u = ctx.user as { id?: number; username?: string; name?: string } | null;
@@ -266,7 +263,25 @@ const auditMutationMiddleware = t.middleware(async (opts) => {
   } catch {
     /* swallow */
   }
+}
 
+const auditMutationMiddleware = t.middleware(async (opts) => {
+  const { ctx, next, type, path } = opts;
+  if (!auditAllMutations || type !== "mutation") {
+    // doc 81 Đợt 10 D fix reviews 5–6 (R-10-be / NF5-1) — see below; the per-user STOP-memo invalidation runs for every mutation
+    if (type !== "mutation") return next();
+  }
+  const startedAt = Date.now();
+  // doc 81 Đợt 10 task D fix reviews 5–6 (R-10-be / NF5-1) — a permissions / userAssignment mutation drops the STOP-only
+  // degraded-auth memory of the AFFECTED user (input.userId; none ⇒ every user), before AND after it runs (fail-closed both sides).
+  // Self-service user.* / auth.* / session.* changes invalidate per user / session in the db layer (invalidateAuthUser / -Session).
+  const stopMemo = await import("../services/robot/robotStopAuthMemo");
+  const adminOfAuth = stopMemo.invalidatesStopAuthMemo(path);
+  const rawInput = adminOfAuth ? await (opts as unknown as { getRawInput: () => Promise<unknown> }).getRawInput().catch(() => undefined) : undefined;
+  if (adminOfAuth) stopMemo.invalidateForAuthorizationChange(rawInput);
+  const result = await next();
+  if (adminOfAuth) stopMemo.invalidateForAuthorizationChange(rawInput);
+  if (auditAllMutations) auditMutationResult(ctx, path, result, startedAt);
   return result;
 });
 

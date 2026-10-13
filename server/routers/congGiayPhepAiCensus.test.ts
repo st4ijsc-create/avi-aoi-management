@@ -367,7 +367,15 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *     giao dịch, `module = null` như mọi thủ tục anh em của apiKeyRouter (không phải bề mặt AI).
  *   Cả năm đã được kiểm cổng (đọc mã, final review Đợt 9 + lượt này). `tong` 2307 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2307, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-13 doc 81 Đợt 10 integration — **tong 2307 → 2308, GHIM LẠI** (đo trước, đọc cổng của thủ tục mới, rồi mới ghim).
+ *   Đúng MỘT thủ tục mới: `robot.consoleStop` (mutation, `robotRouter.ts`, task D fix reviews 5–7, R-10-bb): `robotStopProcedure`
+ *   = `publicProcedure` + middleware STOP-only (`robotStopAuth.ts`: JWT xác minh không trạng thái, rồi authenticateRequest /
+ *   machine_control:canEdit / phạm vi nhà máy song song ≤ 300 ms; chỉ stop / abort). `module = null` như mọi thủ tục anh em của
+ *   robotRouter (`protectedProcedure` / `actuationProcedure` trần) — không phải bề mặt AI; beMatAi / aiCoCong / aiMienTru /
+ *   ngoaiAiCoCong và mọi SKU KHÔNG đổi. `tong` 2308 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2308, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

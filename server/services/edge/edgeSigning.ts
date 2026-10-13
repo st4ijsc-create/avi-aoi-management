@@ -79,6 +79,33 @@ const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 // ── canonical JSON ──────────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * doc 81 Đợt 10 integration (rawErrorCensus F3, sanctioned way: a CODED error class, message verbatim) — a broken invariant of
+ * the edge protocol contract: central built a payload outside its own schema, a caller passed a bad typ / kid / id, a package
+ * / cache / answer that is not what the contract says. Never reaches a tRPC user (edge node HTTP answers / the edge process);
+ * every caller treats it as "refused / unavailable", as the plain Error it replaces.
+ */
+export class EdgeContractError extends Error {
+  constructor(
+    readonly code:
+      | "bad_typ"
+      | "bad_kid"
+      | "invalid_pin"
+      | "invalid_payload"
+      | "no_signer"
+      | "node_missing"
+      | "answer_too_large"
+      | "bad_argument"
+      | "package_mismatch"
+      | "not_in_config"
+      | "cache_format",
+    message: string,
+  ) {
+    super(message);
+    this.name = "EdgeContractError";
+  }
+}
+
 export class EdgeCanonicalJsonError extends Error {
   readonly code = "EDGE_CANONICAL_JSON";
 }
@@ -141,13 +168,13 @@ export function parseEdgeCanonicalJson(text: string): unknown {
 }
 
 function assertTyp(typ: unknown): asserts typ is EdgeSignedTyp {
-  if (!(EDGE_SIGNED_TYPS as readonly unknown[]).includes(typ)) throw new Error(`edgeSigning: unknown typ ${String(typ)}`);
+  if (!(EDGE_SIGNED_TYPS as readonly unknown[]).includes(typ)) throw new EdgeContractError("bad_typ", `edgeSigning: unknown typ ${String(typ)}`);
 }
 
 /** The exact bytes signed for (typ, kid, canonical payload text). Throws on a bad typ / kid or a non-canonical text. */
 export function edgeSigningInput(typ: EdgeSignedTyp, kid: string, payloadText: string): Buffer {
   assertTyp(typ);
-  if (!EDGE_KID_RE.test(kid)) throw new Error("edgeSigning: bad kid");
+  if (!EDGE_KID_RE.test(kid)) throw new EdgeContractError("bad_kid", "edgeSigning: bad kid");
   parseEdgeCanonicalJson(payloadText);
   return Buffer.from(`${EDGE_SIGNING_DOMAIN}\n${typ}\n${kid}\n${payloadText}`, "utf8");
 }
@@ -377,7 +404,7 @@ export function parseEdgeKeysetPin(raw: unknown): { ok: true; pin: EdgeKeysetPin
 export function edgePinnedKeyset(roots: ReadonlyArray<{ kid: string; publicKeyPem: string; notBefore: number }>, nowMs = Date.now(), version = 1): EdgeKeysetPin {
   const ks: EdgeKeyset = { v: 1, version, issuedAt: nowMs, keys: roots.map((r) => ({ kid: r.kid, publicKeyPem: r.publicKeyPem, status: "active", notBefore: r.notBefore, notAfter: null })) };
   const p = parseEdgeKeysetPin({ kind: EDGE_PIN_KIND, keyset: ks });
-  if (!p.ok) throw new Error(`edgePinnedKeyset: ${p.reason}`);
+  if (!p.ok) throw new EdgeContractError("invalid_pin", `edgePinnedKeyset: ${p.reason}`);
   return p.pin;
 }
 

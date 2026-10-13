@@ -13,6 +13,12 @@ import postgres from "postgres";
 
 // the loader only BUILDS a driver per row (never connects); a stub keeps the sim vendor out of the registry question
 vi.mock("./driverRegistry", () => ({ createRobotDriver: () => ({ vendor: "sim" }) }));
+// Đợt 10 integration — counts DB-ingest calls (the edge must never make one); the real module is kept otherwise
+const INGEST = vi.hoisted(() => ({ calls: 0 }));
+vi.mock("./robotIngest", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./robotIngest")>();
+  return { ...real, ingestRobotState: async (...a: Parameters<typeof real.ingestRobotState>) => { INGEST.calls++; return real.ingestRobotState(...a); } };
+});
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `FW1-${Date.now()}`;
@@ -68,9 +74,14 @@ describe.skipIf(!DB_URL)("Đợt 9 final wave F1 — the edge's robot set is its
     expect(mine(rs)).toEqual(tags("onLine", "onStation"));
   });
 
-  it("★ a line code shared by two factories: without a factory code both lines' robots match the code; with it only the node's", async () => {
+  // Re-pinned 2026-10-13 (doc 81 Đợt 10 integration, ruling R-10-r). The Đợt 9 assertion here was "without a factory code both
+  // factories' robots match the shared line code" — that IS the N3 defect the Đợt 10 D re-review cited (a scope with no factory
+  // loaded another factory's robots). D (c68a0a573) made N3 literal: a scope WITHOUT its factory loads NOTHING (+ a warning) and
+  // the SQL always filters on the factory. The second half (with the other factory's code ⇒ only that factory's robot) is kept.
+  it("★ a line code shared by two factories: without a factory code NOTHING is loaded (N3, fail-closed); with it only that factory's", async () => {
     const { loadEnabledRobots } = await import("./robotAdapter");
-    expect(mine(await loadEnabledRobots({ lineCodes: [`${DAU}-L1`], factoryCode: null }))).toEqual(tags("onLine", "onStation", "otherFactory"));
+    expect(mine(await loadEnabledRobots({ lineCodes: [`${DAU}-L1`], factoryCode: null }))).toEqual([]);
+    expect(mine(await loadEnabledRobots({ lineCodes: [`${DAU}-L1`], factoryCode: "  " }))).toEqual([]);
     expect(mine(await loadEnabledRobots({ lineCodes: [`${DAU}-L1`], factoryCode: `${DAU}-FB` }))).toEqual(tags("otherFactory"));
   });
 
@@ -86,23 +97,65 @@ describe.skipIf(!DB_URL)("Đợt 9 final wave F1 — the edge's robot set is its
   });
 });
 
-describe("Đợt 9 final wave F1 — the edge gateway passes its own scope (env) and turns ingest off", () => {
-  const keys = ["EDGE_GATEWAY_LINE_CODES", "EDGE_GATEWAY_FACTORY_CODE"] as const;
+// Adapted 2026-10-13 (doc 81 Đợt 10 integration). Đợt 10 E (e8de9a115) removed `edgeRobotStartOptions()` (env line / factory
+// codes ⇒ a DB-scoped `startRobots({scope, ingest:false})`): a v2 edge has NO DB, its robots are the OWNED robots of the VERIFIED
+// config snapshot (`startRobots({configRobots: runtimeRobotsFromConfig(cfg.robots), stateSink, attachLock})`). The two claims
+// this test guarded are re-measured on the new API, not dropped:
+//   (1) the edge's robot set is ITS node's only — now: exactly the enabled robots of its verified config; the env codes cannot
+//       widen (or narrow) it, and no `scope` (DB load) is ever passed by the gateway;
+//   (2) ingest is always off on the edge — now: robot state goes to the injected journal sink, the DB ingest is never called.
+// (The not-provisioned ⇒ no robot case is edgeGatewayRobotStart.dot9fw; the full boot is edgeGatewayBoot.dot10.)
+describe("Đợt 9 final wave F1 (re-measured for Đợt 10 v2) — the edge gateway starts its VERIFIED config's robots, ingest off", () => {
+  const keys = ["EDGE_GATEWAY_LINE_CODES", "EDGE_GATEWAY_FACTORY_CODE", "ROBOT_GATEWAY_ENABLED"] as const;
   const saved: Record<string, string | undefined> = {};
-  afterEach(() => {
+  afterEach(async () => {
+    const { stopRobots } = await import("./robotManager");
+    await stopRobots();
     for (const k of keys) {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
   });
-  it("EDGE_GATEWAY_LINE_CODES / _FACTORY_CODE ⇒ the scope; unset ⇒ no line codes (nothing loaded); ingest is always off on the edge", async () => {
+
+  it("★ the gateway's ONLY startRobots call passes configRobots from the verified config — never a DB scope, never ingest, never the env codes", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const src = readFileSync(fileURLToPath(new URL("../edge/edgeGatewayRuntime.ts", import.meta.url)), "utf8");
+    const calls = src.match(/\bstartRobots\(\{[^\n]*\}\)/g) ?? [];
+    expect(calls).toEqual(["startRobots({ configRobots: runtimeRobotsFromConfig(cfg.robots), ...(await edgeRobotStartExtras(rt)) })"]);
+    expect(src.match(/\bstartRobots\(/g)?.length, "every startRobots( call of the gateway is the one above").toBe(1);
+    expect(src).not.toMatch(/EDGE_GATEWAY_LINE_CODES|EDGE_GATEWAY_FACTORY_CODE|loadEnabledRobots|ingest:\s*true/);
+  });
+
+  it("★ the robots are exactly the ENABLED robots of the config (env line / factory codes change nothing); their state goes to the sink, never the DB ingest", async () => {
     for (const k of keys) saved[k] = process.env[k];
-    const { edgeRobotStartOptions } = await import("../edge/edgeGatewayRuntime");
-    process.env.EDGE_GATEWAY_LINE_CODES = " L1, L2 ,";
-    process.env.EDGE_GATEWAY_FACTORY_CODE = "F1";
-    expect(edgeRobotStartOptions()).toEqual({ scope: { lineCodes: ["L1", "L2"], factoryCode: "F1" }, ingest: false });
-    delete process.env.EDGE_GATEWAY_LINE_CODES;
-    delete process.env.EDGE_GATEWAY_FACTORY_CODE;
-    expect(edgeRobotStartOptions()).toEqual({ scope: { lineCodes: [], factoryCode: null }, ingest: false });
+    process.env.EDGE_GATEWAY_LINE_CODES = "SOME-OTHER-LINE";
+    process.env.EDGE_GATEWAY_FACTORY_CODE = "SOME-OTHER-FACTORY";
+    process.env.ROBOT_GATEWAY_ENABLED = "true";
+    INGEST.calls = 0;
+    const { runtimeRobotsFromConfig } = await import("./robotAdapter");
+    const row = (id: number, isEnabled: boolean) => ({ id, code: `cfg-${id}`, vendor: "sim", endpoint: `sim://${id}`, connectionOptions: null, pollIntervalMs: 1000, isEnabled });
+    const rt = runtimeRobotsFromConfig([row(901, true), row(902, false), row(903, true)]);
+    expect(rt.map((r) => r.id)).toEqual([901, 903]); // disabled config row ⇒ not a robot here; env codes irrelevant
+    const st = { link: "connected", mode: "auto" } as never;
+    const states: Array<[number, unknown]> = [];
+    // the loader's driver is a stub (driverRegistry mock above): give each a minimal live driver, no motion lock
+    for (const r of rt) {
+      r.driver = {
+        vendor: "sim",
+        connect: async () => undefined,
+        disconnect: async () => undefined,
+        isConnected: () => true,
+        subscribeState: async (cb: (s: unknown) => void) => {
+          cb(st);
+          return { close: async () => undefined };
+        },
+      } as never;
+    }
+    const { startRobots, getActiveRobot } = await import("./robotManager");
+    expect(await startRobots({ configRobots: rt, stateSink: (robot, s) => states.push([robot.id, s]), attachLock: () => undefined })).toBe(true);
+    expect([901, 902, 903].map((id) => getActiveRobot(id) != null)).toEqual([true, false, true]);
+    expect(states.sort((a, b) => a[0] - b[0])).toEqual([[901, st], [903, st]]);
+    expect(INGEST.calls, "ingest is always off on the edge").toBe(0);
   });
 });

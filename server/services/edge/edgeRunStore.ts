@@ -49,6 +49,7 @@ import {
 import type { GateRequiredReason } from "../orchestration/foe/foeGateApproval";
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
+import { EdgeContractError } from "./edgeSigning";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 /** A run-stream record before the journal numbers it (edgeJournal.EdgeRunRecordInput). */
@@ -498,7 +499,7 @@ function refusalError(stepId: string, code: string | null, reason: string | unde
 
 /** Group E's agent: the store of one claimed segment, from the VERIFIED run package (edgeTrust.verifyEdgeRunPackage). */
 export function createEdgeRunStore(pkg: EdgeRunPackage, io: EdgeRunStoreIo): EdgeRunStore {
-  if (pkg.runId !== io.runId || pkg.claimSeq !== io.claimSeq) throw new Error(`edge run store: the package (run ${pkg.runId}, claim ${pkg.claimSeq}) is not for run ${io.runId} claim ${io.claimSeq}`);
+  if (pkg.runId !== io.runId || pkg.claimSeq !== io.claimSeq) throw new EdgeContractError("package_mismatch", `edge run store: the package (run ${pkg.runId}, claim ${pkg.claimSeq}) is not for run ${io.runId} claim ${io.claimSeq}`);
   return new EdgeRunStore(pkg, io);
 }
 

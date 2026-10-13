@@ -26,7 +26,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
-import { EDGE_TYP_NAME, edgeCanonicalJson, edgeSignedEnvelopeSchema, type EdgeSignedEnvelope } from "./edgeSigning";
+import { EDGE_TYP_NAME, EdgeContractError, edgeCanonicalJson, edgeSignedEnvelopeSchema, type EdgeSignedEnvelope } from "./edgeSigning";
 
 export { edgeSignedEnvelopeSchema, type EdgeSignedEnvelope };
 
@@ -112,6 +112,8 @@ export const EDGE_ERROR_HTTP = Object.freeze({
   epoch_rejected: 409,
   /** a non-STOP result without a jti issued for that (run, claim, step, attempt) — audited EDGE_ANOMALY */
   unauthorised_actuation: 409,
+  /** B (R-10-ag) — a seq central already holds arrived with DIFFERENT content (data: { seq, storedHash, receivedHash }) */
+  seq_conflict: 409,
 } as const);
 export type EdgeErrorCode = keyof typeof EDGE_ERROR_HTTP;
 export const EDGE_ERROR_CODES = Object.freeze(Object.keys(EDGE_ERROR_HTTP) as EdgeErrorCode[]);
@@ -128,6 +130,8 @@ export const EDGE_DEVICE_GATES = [
   "adapter_disabled",
   "tag_disabled",
   "tag_not_writable",
+  /** B (R-10-am) — central's safety-PLC preflight (real mode) did not read OK */
+  "safety",
 ] as const;
 export type EdgeDeviceGate = (typeof EDGE_DEVICE_GATES)[number];
 
@@ -167,7 +171,7 @@ export const EDGE_STREAM_ROBOT_STATE = "robot_state" as const;
 export const EDGE_STREAM_RE = /^(events|robot_state|run:[1-9][0-9]{0,9}:[1-9][0-9]{0,9})$/;
 const RUN_STREAM_RE = /^run:([1-9][0-9]{0,9}):([1-9][0-9]{0,9})$/;
 export function edgeRunStream(runId: number, claimSeq: number): string {
-  if (!Number.isSafeInteger(runId) || runId <= 0 || !Number.isSafeInteger(claimSeq) || claimSeq <= 0) throw new Error("edgeRunStream: positive integers required");
+  if (!Number.isSafeInteger(runId) || runId <= 0 || !Number.isSafeInteger(claimSeq) || claimSeq <= 0) throw new EdgeContractError("bad_argument", "edgeRunStream: positive integers required");
   return `run:${runId}:${claimSeq}`;
 }
 export type EdgeStream = { kind: "events" } | { kind: "robot_state" } | { kind: "run"; runId: number; claimSeq: number };
@@ -191,7 +195,7 @@ export function newEdgeEpoch(): string {
 export const EDGE_LOCK_AUTHORITY_RE = /^(central|edge:[1-9][0-9]{0,9})$/;
 export function edgeLockAuthority(nodeId: number | null): string {
   if (nodeId === null) return "central";
-  if (!Number.isSafeInteger(nodeId) || nodeId <= 0) throw new Error("edgeLockAuthority: positive node id required");
+  if (!Number.isSafeInteger(nodeId) || nodeId <= 0) throw new EdgeContractError("bad_argument", "edgeLockAuthority: positive node id required");
   return `edge:${nodeId}`;
 }
 
@@ -336,6 +340,21 @@ export const edgeCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({ ...cmdBase, kind: z.literal("clear"), robotId: zId, expectedGeneration: zId, clearedBy: zId, reason: zText(300) }),
 ]);
 export type EdgeCommand = z.infer<typeof edgeCommandSchema>;
+/**
+ * doc 81 Đợt 10 B (R-10-k / R-10-p) — the ONE unsigned envelope: a STOP central could not sign (its signer unavailable), sent
+ * over the authenticated node channel ONLY for kind stop. The edge sends it (L-7) and records an anomaly; never a lock / clear.
+ * (edgeNodeCommands.edgeUnsignedStopSchema is the same shape — B's test pins they agree.)
+ */
+export const EDGE_UNSIGNED_STOP_TYP = "cmd-stop-unsigned" as const;
+export const edgeUnsignedStopSchema = z.strictObject({
+  typ: z.literal(EDGE_UNSIGNED_STOP_TYP),
+  requestId: zId,
+  nodeId: zId,
+  credentialId: zId,
+  ownerEpoch: zId,
+  target: z.union([zRobotTarget, zAdapterTarget]),
+});
+export type EdgeUnsignedStop = z.infer<typeof edgeUnsignedStopSchema>;
 
 // ── signed: config snapshot (typ config, design §2.4) ───────────────────────────────────────────────────────────────
 
@@ -463,7 +482,13 @@ export const edgeRunPackageSchema = z.strictObject({
 });
 export type EdgeRunPackage = z.infer<typeof edgeRunPackageSchema>;
 /** The stored picture of an ABORTED run whose STOPs central could not confirm (pull `stopsUnconfirmed`) — the edge re-sends. */
-export const edgeSweepPictureSchema = z.strictObject({ kind: z.literal("sweep_picture"), ...runPicture });
+export const edgeSweepPictureSchema = z.strictObject({
+  kind: z.literal("sweep_picture"),
+  ...runPicture,
+  /** doc 81 Đợt 10 C fix review 1 — when central aborted the run (its finishedAt): the edge's re-send window (R-6-d) counts from
+   *  it; null / absent ⇒ issuedAt is the fallback. Central (B) fills it. */
+  abortedAt: zEpochMs.nullable().optional(),
+});
 export type EdgeSweepPicture = z.infer<typeof edgeSweepPictureSchema>;
 export const edgeRunPkgPayloadSchema = z.discriminatedUnion("kind", [edgeRunPackageSchema, edgeSweepPictureSchema]);
 
@@ -532,6 +557,10 @@ export const edgePullAnswerSchema = z.strictObject({
   stopsUnconfirmed: z.array(z.strictObject({ runId: zId, picture: edgeSignedEnvelopeSchema })).max(50),
   /** signed commands (typ cmd) */
   commands: zSignedList(EDGE_PULL_COMMANDS_MAX),
+  /** B (R-10-k / R-10-p) — present ONLY when central's signer is unavailable: the node's unacked STOPs, unsigned */
+  unsignedStops: z.array(edgeUnsignedStopSchema).max(EDGE_PULL_COMMANDS_MAX).optional(),
+  /** B (R-10-am M-3) — true ⇔ some request row could not be expressed / signed this time (logged); the rest are here */
+  commandsIncomplete: z.literal(true).optional(),
 });
 export type EdgePulledRun = z.infer<typeof edgePulledRunSchema>;
 export type EdgeNodeClaim = z.infer<typeof edgeNodeClaimSchema>;
@@ -553,7 +582,16 @@ export type EdgeClaimAnswer = z.infer<typeof edgeClaimAnswerSchema>;
 // ── POST runs/:id/progress ──────────────────────────────────────────────────────────────────────────────────────────
 
 export const edgeProgressRequestSchema = z.strictObject({ ...zClaimRef, seq: zSeq, status: zRunStatus.optional(), currentStepId: zStepId.nullable().optional() });
-export const edgeProgressAnswerSchema = z.strictObject({ abortRequested: z.boolean(), status: zRunStatus, consistent: z.boolean(), commands: zSignedList(EDGE_PULL_COMMANDS_MAX) });
+export const edgeProgressAnswerSchema = z.strictObject({
+  abortRequested: z.boolean(),
+  status: zRunStatus,
+  consistent: z.boolean(),
+  commands: zSignedList(EDGE_PULL_COMMANDS_MAX),
+  /** B (R-10-k / R-10-p) — see the pull answer */
+  unsignedStops: z.array(edgeUnsignedStopSchema).max(EDGE_PULL_COMMANDS_MAX).optional(),
+  /** B (R-10-am M-3) — true ⇔ some request row could not be expressed / signed this time (logged); the rest are here */
+  commandsIncomplete: z.literal(true).optional(),
+});
 export type EdgeProgressRequest = z.infer<typeof edgeProgressRequestSchema>;
 export type EdgeProgressAnswer = z.infer<typeof edgeProgressAnswerSchema>;
 
@@ -624,6 +662,8 @@ export const edgeLedgerRecordSchema = z.strictObject({
   /** required for a non-STOP result (else 409 unauthorised_actuation); null only for a STOP */
   jti: zJti.nullable(),
   stop: z.boolean(),
+  /** B (ledger-scope ruling) — the device's owner epoch the record happened under; a STOP record without it is not recorded */
+  ownerEpoch: zId.optional(),
   target: z.union([z.strictObject({ robotId: zId, jobType: zRobotJobType }), z.strictObject({ adapterId: zId, commandType: zCode(64) })]),
   status: zCode(32),
   result: zJsonRecord.nullable(),
@@ -649,7 +689,17 @@ export const edgeReportRequestSchema = z
     path: ["stream"],
   });
 /** Cursor answer of every stream route. A duplicate (seq ≤ cursor) is acknowledged (counted), a gap is 409 gap {expectedSeq}. */
-export const edgeStreamAnswerSchema = z.strictObject({ ackedSeq: zCount, applied: zCount, duplicates: zCount });
+export const edgeStreamAnswerSchema = z.strictObject({
+  ackedSeq: zCount,
+  applied: zCount,
+  duplicates: zCount,
+  /**
+   * B (R-10-am I-6) — events stream only: the records central accepted but did NOT apply (the cursor still advances past them —
+   * one record never wedges the stream). `anomaly` = recorded as an EDGE_ANOMALY audit (e.g. a refused command_ack: the request
+   * stays PENDING in the DB and is re-delivered); `code` names why. Absent ⇔ every new record was applied.
+   */
+  outcomes: z.array(z.strictObject({ seq: zSeq, outcome: z.literal("anomaly"), code: zCode(64) })).max(EDGE_REPORT_BATCH_MAX).optional(),
+});
 export type EdgeRunReportRecord = z.infer<typeof edgeRunReportRecordSchema>;
 export type EdgeReportRequest = z.infer<typeof edgeReportRequestSchema>;
 export type EdgeStreamAnswer = z.infer<typeof edgeStreamAnswerSchema>;
@@ -781,8 +831,34 @@ export const edgeCommandAckRecordSchema = z.strictObject({
   kind: z.literal("command_ack"),
   seq: zSeq,
   requestId: zId,
-  outcome: z.enum(["done", "refused", "failed", "expired"]),
+  /** notOwnedHere (R-10-au, group E fix review 3): a VERIFIED refresh of the edge's config does not list the target — central
+   *  keeps the request pending and routes it to the current owner / its central fallback (never terminal) */
+  outcome: z.enum(["done", "refused", "failed", "expired", "notOwnedHere"]),
   generation: zId.nullable(),
+  at: zEpochMs,
+  /** R-10-o (doc 81 Đợt 10 task E) — the device the edge ACTUALLY acted on and the owner epoch the command quoted: central
+   *  closes request X only if they are X's (a tampered delivery can never get X acknowledged by stopping device Y) */
+  target: z.union([zRobotTarget, zAdapterTarget]).optional(),
+  ownerEpoch: zId.optional(),
+  /** R-10-o — the request arrived as the explicit UNSIGNED STOP envelope (R-10-k / R-10-p: central's signer unavailable) */
+  unsigned: z.literal(true).optional(),
+});
+/**
+ * B (R-10-z) — a ledger record of a run stream that lost its claim, re-sent by the edge as EVIDENCE ("actuation reported
+ * without a live claim"): audited centrally for an OWNED device only (else an anomaly); never changes run state.
+ */
+export const edgeActuationEventRecordSchema = z.strictObject({
+  kind: z.literal("actuation"),
+  seq: zSeq,
+  runId: zId,
+  claimSeq: zClaimSeq,
+  stepId: zStepId,
+  attempt: z.number().int().nonnegative().max(EDGE_ATTEMPT_MAX),
+  jti: zJti.nullable(),
+  stop: z.boolean(),
+  target: z.union([z.strictObject({ robotId: zId, jobType: zRobotJobType }), z.strictObject({ adapterId: zId, commandType: zCode(64) })]),
+  ownerEpoch: zId.optional(),
+  outcome: zCode(32),
   at: zEpochMs,
 });
 export const edgeEventRecordSchema = z.discriminatedUnion("kind", [
@@ -791,6 +867,7 @@ export const edgeEventRecordSchema = z.discriminatedUnion("kind", [
   edgeRefusalEventRecordSchema,
   edgeAnomalyEventRecordSchema,
   edgeCommandAckRecordSchema,
+  edgeActuationEventRecordSchema,
 ]);
 export const edgeEventsRequestSchema = z
   .strictObject({ epoch: zEpoch, stream: z.literal(EDGE_STREAM_EVENTS), records: z.array(edgeEventRecordSchema).min(1).max(EDGE_REPORT_BATCH_MAX) })

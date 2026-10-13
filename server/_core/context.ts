@@ -3,6 +3,7 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 import { parse as parseCookieHeader } from "cookie";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
+import { beginStopAuthWarm, isStopOnlyCall, noteAuthenticatedUser } from "../services/robot/robotStopAuthMemo"; // doc 81 Đợt 10 D fix review 5 (R-10-bb) + 7 (R-10-bg/bh)
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -49,6 +50,13 @@ export async function createContext(
 ): Promise<TrpcContext> {
   let user: User | null = null;
 
+  // doc 81 Đợt 10 task D fix review 5 — ruling R-10-bb (L-7): a request made ONLY of the STOP-only procedure (robot.consoleStop)
+  // skips the unbounded auth reads here; its own middleware (services/robot/robotStopAuth) verifies the JWT statelessly, then runs
+  // session / user / permission / scope in parallel under 300 ms. Any other request (a batch mixing anything else) is unchanged.
+  if (isStopOnlyCall(opts.info)) {
+    return { req: opts.req, res: opts.res, user: null, sessionToken: extractSessionToken(opts.req) };
+  }
+
   try {
     /**
      * 🔴🔴 Pha 8 Task 1 — **NGƯỜI GỌI DUY NHẤT được tắt cổng buộc-đổi-mật-khẩu ở biên xác thực.**
@@ -64,7 +72,9 @@ export async function createContext(
      *   `server/_core/buocDoiMatKhauMoiBeMat.test.ts` §5 (`BE_MAT_TU_CANH`) — thêm phần tử thứ hai
      *   là ĐỎ, không phải một dòng lặng lẽ.
      */
+    const warmTicket = beginStopAuthWarm(); // R-10-bh — the invalidation generation at the START of this authentication (before its reads)
     user = await sdk.authenticateRequest(opts.req, { boQuaCongDoiMatKhau: true });
+    noteAuthenticatedUser(user, extractSessionToken(opts.req), warmTicket); // R-10-bb / R-10-be (bound to the session) — the last identity a FULL authentication resolved (the degraded STOP's only fallback)
   } catch (error) {
     // Authentication is optional for public procedures.
     user = null;
