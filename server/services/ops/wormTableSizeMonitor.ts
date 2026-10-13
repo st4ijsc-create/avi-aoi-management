@@ -3,10 +3,9 @@
  *
  * Owner decision (2026-10-14): these tables are kept FOREVER; nothing deletes, truncates or archives them. The only thing that
  * can be done about growth is to SEE it: this module measures each table (pg_total_relation_size + the planner row estimate
- * reltuples) once an hour (WORM_SIZE_CHECK_INTERVAL_MS) and raises a DURABLE alert (criticalStopAlert: alert stream + a
- * safety-critical inbox row to every active admin, retried until persisted) the first time a table crosses a level - "warn",
- * then "critical" - once per table per level per process (the inbox dedup key is stable per table+level, so a restart does not
- * raise it twice either). READ-ONLY: only SELECTs on the catalog; no DDL, no DML on the tables, no delete path anywhere.
+ * reltuples) once an hour (WORM_SIZE_CHECK_INTERVAL_MS) and raises an alert of its own kind (worm_table_size: alert stream + a
+ * normal / high-priority inbox row per active admin, NOT safety-critical, NOT cap-exempt - R-11-b) the first time a table crosses a
+ * level - "warn", then "critical"; delivery is remembered in the inbox rows themselves, so a restart never re-raises. READ-ONLY: only SELECTs on the catalog; no DDL, no DML on the tables, no delete path anywhere.
  */
 import { sql } from "drizzle-orm";
 
@@ -101,23 +100,40 @@ export async function readWormTableSizes(db: Executor, t: WormThresholds = wormT
   return out;
 }
 
-const raised = new Map<string, WormLevel>();
-export function __resetWormAlertStateForTests(): void {
-  raised.clear();
-}
-
 export function formatBytes(n: number): string {
   if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(2)} GiB`;
   if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MiB`;
   return `${Math.round(n / 1024)} KiB`;
 }
 
-/** The sizes that crossed a level NOT yet alerted in this process (a level is alerted once; a higher level alerts again). */
-export function newCrossings(sizes: ReadonlyArray<WormTableSize>): WormTableSize[] {
-  return sizes.filter((s) => s.level > (raised.get(s.table) ?? 0));
+/**
+ * R-11-b - dedup is PERSISTENT and derived from the existing alert rows (notifications.metadata {kind:"worm_table_size", table,
+ * level}), per (recipient, table): the highest level already delivered. A restart therefore never re-raises; a recipient whose row
+ * could not be written is simply tried again at the next check.
+ */
+export async function readDeliveredLevels(db: Executor): Promise<Map<string, WormLevel>> {
+  const r = rowsOf(
+    await db.execute(sql`
+      SELECT "userId" AS uid, metadata->>'table' AS tbl, max((metadata->>'level')::int) AS lvl
+        FROM public.notifications
+       WHERE metadata->>'kind' = 'worm_table_size'
+       GROUP BY "userId", metadata->>'table'`),
+  );
+  const m = new Map<string, WormLevel>();
+  for (const x of r) m.set(`${Number(x.uid)}:${String(x.tbl)}`, Math.min(2, Math.max(0, Number(x.lvl) || 0)) as WormLevel);
+  return m;
 }
 
-export type WormAlertSink = (a: { kind: string; title: string; message: string; recipients: number[]; dedupKey: string; entityType: string; entityId: string }) => Promise<void>;
+export interface WormAlert {
+  kind: "worm_table_size";
+  table: string;
+  level: 1 | 2;
+  title: string;
+  message: string;
+  /** only the recipients that do not yet hold this level (or a higher one) */
+  recipients: number[];
+}
+export type WormAlertSink = (a: WormAlert) => Promise<void>;
 
 async function adminRecipients(db: Executor): Promise<number[]> {
   return rowsOf(await db.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role = 'admin'`))
@@ -125,33 +141,53 @@ async function adminRecipients(db: Executor): Promise<number[]> {
     .filter((x) => Number.isSafeInteger(x) && x > 0);
 }
 
-async function defaultSink(a: Parameters<WormAlertSink>[0]): Promise<void> {
-  const { raiseCriticalStopAlert } = await import("../robot/criticalStopAlert");
-  await raiseCriticalStopAlert({ ...a, source: "ot", retryUntilPersisted: { everyMs: 30_000, attempts: 20 } });
+/**
+ * Own kind, plain notifications: warn = NORMAL, critical = HIGH priority. NO safetyCritical, NO capExempt (R-8-d reserves the
+ * exemptions for alarms where a STOP is at stake) - the recipient's preferences and the normal caps apply.
+ */
+export async function defaultWormSink(a: WormAlert): Promise<void> {
+  console.error(`[WormSize] ${a.level === 2 ? "CRITICAL" : "WARN"}: ${a.message}`);
+  try {
+    const { publishAnomalyDetected } = await import("../ecosystem/ecosystemEvents");
+    publishAnomalyDetected({ kind: "worm_table_size", severity: a.level === 2 ? "critical" : "warning", source: "ot", machineId: null, message: a.message }, "ot");
+  } catch {
+    /* the notification rows below are the durable part */
+  }
+  const { sendNotification } = await import("../notificationService");
+  for (const userId of a.recipients) {
+    await sendNotification(userId, {
+      type: "ALERT",
+      priority: a.level === 2 ? "HIGH" : "NORMAL",
+      title: a.title,
+      message: a.message,
+      entityType: "db_table",
+      metadata: { kind: "worm_table_size", table: a.table, level: a.level },
+    }).catch(() => null);
+  }
 }
 
-/** One check: measure, alert each new crossing once. Never throws, never writes to a WORM table. */
+/** One check: measure, alert each new (recipient, table, level) crossing once. Never throws, never writes to a WORM table. */
 export async function checkWormTableSizes(opts: { db?: Executor; thresholds?: WormThresholds; sink?: WormAlertSink; tables?: ReadonlyArray<string> } = {}): Promise<WormTableSize[]> {
   try {
     const db = opts.db ?? ((await (await import("../../db/connection")).getDb()) as unknown as Executor | null);
     if (!db) return [];
     const thresholds = opts.thresholds ?? wormThresholdsFromEnv();
     const sizes = await readWormTableSizes(db, thresholds, opts.tables);
-    const crossed = newCrossings(sizes);
-    if (crossed.length > 0) {
-      const recipients = await adminRecipients(db);
-      const sink = opts.sink ?? defaultSink;
-      for (const s of crossed) {
-        raised.set(s.table, s.level);
+    const over = sizes.filter((s) => s.level > 0);
+    if (over.length > 0) {
+      const [recipients, delivered] = [await adminRecipients(db), await readDeliveredLevels(db)];
+      const sink = opts.sink ?? defaultWormSink;
+      for (const s of over) {
+        const need = recipients.filter((u) => (delivered.get(`${u}:${s.table}`) ?? 0) < s.level);
+        if (need.length === 0) continue;
         const lvl = s.level === 2 ? "critical" : "warn";
         await sink({
-          kind: `worm_table_size_${lvl}`,
+          kind: "worm_table_size",
+          table: s.table,
+          level: s.level as 1 | 2,
           title: `Append-only table ${s.table} is large (${lvl})`,
           message: `Append-only table ${s.table}: ${formatBytes(s.bytes)}, about ${s.rowsEstimate} rows (${lvl} threshold crossed). The table is kept forever and is never deleted automatically - plan storage / archiving with the owner.`,
-          recipients,
-          dedupKey: `worm_table_size:${s.table}:${lvl}`,
-          entityType: "db_table",
-          entityId: s.table,
+          recipients: need,
         }).catch((e) => console.error(`[WormSize] alert for ${s.table} failed: ${String((e as Error)?.message ?? e).slice(0, 200)}`));
       }
     }

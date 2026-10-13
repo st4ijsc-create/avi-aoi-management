@@ -1,8 +1,9 @@
 /** doc 81 Dot 11 task G - threshold logic + alert-once behaviour of the WORM size monitor (no DB: a fake executor). */
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_WORM_THRESHOLDS,
-  __resetWormAlertStateForTests,
+  defaultWormSink,
+  type WormAlert,
   checkWormTableSizes,
   wormCheckIntervalMs,
   wormLevel,
@@ -42,41 +43,94 @@ describe("env configuration", () => {
   });
 });
 
-/** A fake executor: the size query returns what `sizes[table]` says; the recipients query returns two admins. */
-function fakeDb(sizes: Record<string, { bytes: number; rows: number }>) {
+const sent = vi.hoisted(() => ({ calls: [] as Array<{ userId: number; payload: Record<string, any>; opts: unknown[] }> }));
+vi.mock("../notificationService", () => ({
+  sendNotification: async (userId: number, payload: Record<string, any>, ...opts: unknown[]) => {
+    sent.calls.push({ userId, payload, opts });
+    return { id: sent.calls.length };
+  },
+}));
+vi.mock("../ecosystem/ecosystemEvents", () => ({ publishAnomalyDetected: () => undefined }));
+
+/**
+ * A fake executor with PERSISTENT state (the notifications rows): sizes per table, two admins, and the delivered rows that the
+ * sink writes - so "a restart" is simply another call with the same store and no in-process memory.
+ */
+function fakeDb(sizes: Record<string, { bytes: number; rows: number }>, store: Array<{ uid: number; tbl: string; lvl: number }>) {
   return {
     execute: async (q: unknown) => {
       const params = ((q as { queryChunks?: unknown[] }).queryChunks ?? []).filter((c) => typeof c === "string") as string[];
       const text = JSON.stringify(q);
       if (text.includes("FROM public.users")) return [{ id: 1 }, { id: 2 }];
+      if (text.includes("public.notifications")) {
+        const best = new Map<string, { uid: number; tbl: string; lvl: number }>();
+        for (const r of store) {
+          const k = `${r.uid}:${r.tbl}`;
+          if (!best.has(k) || best.get(k)!.lvl < r.lvl) best.set(k, r);
+        }
+        return [...best.values()];
+      }
       const tbl = (params.find((p) => p.startsWith("public.")) ?? "").slice(7);
       const s = sizes[tbl];
       return s ? [{ bytes: s.bytes, rows: s.rows }] : [];
     },
   };
 }
+const storingSink = (store: Array<{ uid: number; tbl: string; lvl: number }>, got: WormAlert[]) => async (a: WormAlert) => {
+  got.push(a);
+  for (const u of a.recipients) store.push({ uid: u, tbl: a.table, lvl: a.level });
+};
 
-describe("checkWormTableSizes - alert once per crossing level", () => {
-  beforeEach(() => __resetWormAlertStateForTests());
-  it("alerts warn once, nothing on the repeat, critical once more, missing tables skipped", async () => {
-    const got: Array<{ kind: string; dedupKey: string; recipients: number[] }> = [];
-    const sink = async (a: { kind: string; dedupKey: string; recipients: number[] }) => void got.push(a);
+describe("checkWormTableSizes - alert once per crossing level, persistently", () => {
+  const tables = ["device_owner_changes", "edge_stop_ack_refusals", "no_such_table"];
+  it("alerts warn once, nothing on the repeat or after a restart, critical once more, missing tables skipped", async () => {
+    const store: Array<{ uid: number; tbl: string; lvl: number }> = [];
+    const got: WormAlert[] = [];
+    const sink = storingSink(store, got);
     const sizes = { device_owner_changes: { bytes: 150, rows: 1 }, edge_stop_ack_refusals: { bytes: 1, rows: 1 } };
-    const tables = ["device_owner_changes", "edge_stop_ack_refusals", "no_such_table"];
-    await checkWormTableSizes({ db: fakeDb(sizes) as never, thresholds: T, sink, tables });
+    await checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink, tables });
     expect(got).toHaveLength(1);
-    expect(got[0]).toMatchObject({ kind: "worm_table_size_warn", dedupKey: "worm_table_size:device_owner_changes:warn", recipients: [1, 2] });
-    await checkWormTableSizes({ db: fakeDb(sizes) as never, thresholds: T, sink, tables });
+    expect(got[0]).toMatchObject({ kind: "worm_table_size", table: "device_owner_changes", level: 1, recipients: [1, 2] });
+    await checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink, tables });
     expect(got).toHaveLength(1); // no spam
+    // "restart": vi.resetModules gives a fresh module instance (no in-process memory); the persisted rows are all that remain
+    vi.resetModules();
+    const fresh = await import("./wormTableSizeMonitor");
+    await fresh.checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink, tables });
+    expect(got).toHaveLength(1);
     sizes.device_owner_changes = { bytes: 5000, rows: 1 };
-    await checkWormTableSizes({ db: fakeDb(sizes) as never, thresholds: T, sink, tables });
+    await fresh.checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink, tables });
     expect(got).toHaveLength(2);
-    expect(got[1].kind).toBe("worm_table_size_critical");
-    await checkWormTableSizes({ db: fakeDb(sizes) as never, thresholds: T, sink, tables });
+    expect(got[1]).toMatchObject({ level: 2 });
+    await fresh.checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink, tables });
     expect(got).toHaveLength(2);
+  });
+  it("a recipient whose row did not land is tried again; the others are not", async () => {
+    const store = [{ uid: 1, tbl: "device_owner_changes", lvl: 1 }];
+    const got: WormAlert[] = [];
+    await checkWormTableSizes({ db: fakeDb({ device_owner_changes: { bytes: 150, rows: 1 } }, store) as never, thresholds: T, sink: storingSink(store, got), tables });
+    expect(got).toHaveLength(1);
+    expect(got[0].recipients).toEqual([2]);
   });
   it("a check never throws when the DB fails", async () => {
     const bad = { execute: async () => { throw new Error("db down"); } };
     await expect(checkWormTableSizes({ db: bad as never, thresholds: T, sink: async () => undefined })).resolves.toEqual([]);
+  });
+});
+
+describe("defaultWormSink - R-11-b: no safety-critical bypass, no cap exemption", () => {
+  const base = { kind: "worm_table_size" as const, table: "t", title: "x", message: "y", recipients: [7] };
+  it("warn: NORMAL priority, own kind, no options at all (no capExempt, no safetyCritical)", async () => {
+    sent.calls.length = 0;
+    await defaultWormSink({ ...base, level: 1 });
+    expect(sent.calls).toHaveLength(1);
+    expect(sent.calls[0].payload).toMatchObject({ priority: "NORMAL", metadata: { kind: "worm_table_size", table: "t", level: 1 } });
+    expect(sent.calls[0].opts).toEqual([]);
+  });
+  it("critical: HIGH priority, still no capExempt / safetyCritical", async () => {
+    sent.calls.length = 0;
+    await defaultWormSink({ ...base, level: 2 });
+    expect(sent.calls[0].payload).toMatchObject({ priority: "HIGH", metadata: { level: 2 } });
+    expect(sent.calls[0].opts).toEqual([]);
   });
 });
