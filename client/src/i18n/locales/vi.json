@@ -3860,13 +3860,17 @@
       "yieldAlertThreshold": "ngưỡng cảnh báo hiệu suất",
       "zone": "vùng (zone)",
       "kbGoldenSet": "bộ câu hỏi vàng",
-      "safetyPlcConfig": "cấu hình safety-PLC"
+      "safetyPlcConfig": "cấu hình safety-PLC",
+      "edgePendingStop": "lệnh DỪNG chờ xử lý",
+      "orphanedWriteIntent": "lệnh ghi OT mồ côi",
+      "lateWriteResult": "kết quả ghi đến muộn"
     },
     "operation": {
       "updateApiKey": "cập nhật khoá API",
       "changeApiKeyHolder": "đổi người được cấp khoá API",
       "softwareStop": "gửi lệnh dừng phần mềm",
       "clearRobotMotionLock": "gỡ khoá chuyển động của robot",
+      "lockRobotMotion": "giữ chuyển động của robot (khoá của người vận hành)",
       "deployBuild": "deploy build chương trình",
       "requestDeployApproval": "gửi yêu cầu duyệt deploy",
       "approveDeployment": "duyệt deploy chương trình",
@@ -4024,7 +4028,11 @@
       "assignEngineeringItem": "giao việc chờ duyệt",
       "unassignEngineeringItem": "bỏ giao việc chờ duyệt",
       "approveSafetyPlcConfig": "duyệt cấu hình safety-PLC",
-      "rejectSafetyPlcConfig": "từ chối cấu hình safety-PLC"
+      "rejectSafetyPlcConfig": "từ chối cấu hình safety-PLC",
+      "resolveEdgeStop": "ghi nhận cách xử lý lệnh DỪNG",
+      "resolveWriteIntent": "ghi nhận kết cục không rõ cho lệnh ghi mồ côi",
+      "listEdgeResolution": "xem lệnh DỪNG chờ và lệnh ghi mồ côi",
+      "reviewLateWriteResult": "xác nhận đã xem kết quả ghi đến muộn"
     },
     "field": {
       "holderUserId": "người được cấp khoá (phải là người dùng đang hoạt động)",
@@ -4033,6 +4041,7 @@
       "shiftConfigId": "ca (shiftConfigId)",
       "robotId": "robot (robotId)",
       "stopValue": "giá trị dừng ghim (stopValue)",
+      "command": "lệnh (command)",
       "inspectionTime": "thời điểm kiểm tra (inspectionTime)",
       "completedAt": "thời điểm hoàn tất (completedAt)",
       "startedAt": "thời điểm bắt đầu (startedAt)",
@@ -4306,6 +4315,8 @@
       "secretReentryRequired": "Bạn vừa đổi {{field}} — tức nơi gửi hoặc cách bảo vệ mật khẩu đã lưu — nên hệ thống không dùng lại mật khẩu cũ. Hãy nhập lại mật khẩu/bí mật rồi lưu; chưa có gì được thay đổi.",
       "motionLockUnsupported": "Driver của hãng này dùng kết nối một lần cho mỗi lệnh nên không có khoá chuyển động; không có gì để gỡ.",
       "motionLockChanged": "Khoá chuyển động đã thay đổi trong lúc bạn xác nhận (có lần mất kết nối mới). Không gỡ gì cả; hãy đọc lại trạng thái robot rồi xác nhận lại.",
+      "edgeCommandNotQueued": "Robot này thuộc một nút edge; lệnh không xếp được vào hàng lệnh của nút đó (chủ sở hữu vừa đổi, hoặc cơ sở dữ liệu / migration 0374 không sẵn). Chưa có gì được gỡ; hãy thử lại sau.",
+      "stopOnly": "Đường STOP khẩn chỉ nhận lệnh dừng (stop / abort); lệnh chuyển động phải đi qua bảng điều khiển thường. Chưa có gì được gửi.",
       "deploymentNotAwaitingApproval": "Yêu cầu này không còn ở trạng thái chờ duyệt (đã được người khác duyệt/từ chối hoặc đang xử lý). Tải lại danh sách để xem trạng thái hiện tại.",
       "deployApprovalRecordMissing": "Không tìm thấy bản ghi phê duyệt gắn với yêu cầu này — không thể duyệt; hãy gửi lại yêu cầu deploy.",
       "deployApprovalRecordInvalid": "Bản ghi phê duyệt đã hết hiệu lực (đã thực thi, bị huỷ hoặc hết hạn) — không thể duyệt lại.",
@@ -4391,7 +4402,13 @@
       "assigneeInvalid": "Người được giao không hợp lệ: người này không có trong danh sách \"Giao cho\" của mục này (không tồn tại, đã bị vô hiệu hoá, không xem được trang của mục, không cùng nhà máy với mục, hoặc — với lần chạy — không xem được mọi máy/robot mà lần chạy điều khiển). Hãy chọn người trong danh sách.",
       "safetyPlcConfigChanged": "Cấu hình đã bị sửa sau khi hiện cho bạn — tải lại, xem nội dung mới và mã digest rồi quyết định lại.",
       "simPlcConfigNeverTrusted": "Cấu hình safety-PLC mô phỏng (sim) không bao giờ được tin cậy — không có gì để duyệt.",
-      "plcTrustMigrationMissing": "Cơ sở dữ liệu chưa áp migration 0368 (duyệt hai người cho safety-PLC) — chưa lưu gì. Hãy nhờ quản trị viên áp migration này."
+      "plcTrustMigrationMissing": "Cơ sở dữ liệu chưa áp migration 0368 (duyệt hai người cho safety-PLC) — chưa lưu gì. Hãy nhờ quản trị viên áp migration này.",
+      "stopNotResolvable": "Chỉ lệnh DỪNG đã bị TỪ CHỐI hoặc THẤT BẠI mới được người ghi nhận xử lý; lệnh còn đang chờ sẽ được thực thi, không đóng bằng tay.",
+      "writeIntentTooRecent": "Lệnh ghi này còn quá mới — có thể vẫn đang ghi. Chờ đủ 10 phút rồi ghi nhận lại.",
+      "alreadyResolved": "Mục này đã được xử lý (bởi người khác hoặc đã có kết quả). Tải lại danh sách.",
+      "edgeControlUnavailable": "Lược đồ điều khiển edge chưa có trên CSDL (migration 0374 chưa áp) — không làm gì cả.",
+      "factoryScopeUnavailable": "Không đọc được phạm vi nhà máy của bạn — từ chối để an toàn. Thử lại sau.",
+      "lateResultNotReviewable": "Không ghi nhận được việc xem xét kết quả đến muộn này (người dùng không còn hoạt động, ghi chú quá ngắn, hoặc đây không phải kết quả đến muộn)."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -19668,6 +19685,8 @@
     }
   },
   "console": {
+    "queuedOnEdge": "Đã gửi lệnh STOP tới nút biên của robot — đang chờ nút biên xác nhận (xem nhật ký lệnh).",
+    "queuedEdgeUnreachable": "Lệnh STOP đã xếp hàng nhưng KHÔNG LIÊN LẠC ĐƯỢC nút biên của robot — trung tâm đã thử tự gửi STOP và phát cảnh báo nghiêm trọng. Dùng nút E-STOP phần cứng nếu robot vẫn chuyển động.",
     "rejected": "Lệnh không thực thi: {{status}}",
     "pickRobot": "Chọn robot trước."
   },
@@ -22103,5 +22122,48 @@
     "userFallback": "Người dùng #{{id}}",
     "noApprovalRight": "Được giao không cấp quyền duyệt.",
     "needs2fa": "Giao việc cần bật xác thực 2 bước (2FA) cho tài khoản của bạn. Vào Cài đặt > Bảo mật để thiết lập."
+  },
+  "edgeResolution": {
+    "title": "Lệnh DỪNG chờ xử lý và lệnh ghi mồ côi",
+    "unavailable": "Chưa có lược đồ điều khiển edge (migration 0374 chưa áp) — không có gì để hiển thị.",
+    "empty": "Không có lệnh DỪNG nào đang chờ và không có lệnh ghi mồ côi trong phạm vi của bạn.",
+    "stopsHeading": "Lệnh DỪNG chưa được xác nhận ({{shown}}/{{total}})",
+    "intentsHeading": "Lệnh ghi OT mồ côi — chưa có kết quả ({{shown}}/{{total}})",
+    "colDevice": "Thiết bị",
+    "colOwner": "Nút gửi / chủ hiện tại",
+    "colCreated": "Tạo lúc",
+    "colState": "Tình trạng",
+    "colAdapter": "Bộ chuyển đổi",
+    "colCommand": "Lệnh / tag",
+    "colAge": "Tuổi (phút)",
+    "robot": "Robot",
+    "adapter": "Bộ chuyển đổi",
+    "central": "trung tâm",
+    "flag": {
+      "failed": "Thất bại — cần người xử lý",
+      "refused": "Bị từ chối — cần người xử lý",
+      "ownerCannotList": "Nút edge không thấy thiết bị — trung tâm thực thi",
+      "overdue": "Quá hạn — vẫn phải DỪNG",
+      "undeliverable": "Không giao được — nút không còn thông tin xác thực",
+      "pending": "Đang chờ thực thi"
+    },
+    "resolveStop": "Ghi nhận xử lý",
+    "resolveIntent": "Ghi nhận kết cục không rõ",
+    "intentTooRecent": "Có thể vẫn đang ghi — chờ đủ {{min}} phút",
+    "stopDialogTitle": "Ghi nhận cách xử lý lệnh DỪNG #{{id}}?",
+    "stopDialogDesc": "Lệnh DỪNG này đã bị từ chối hoặc thất bại — nó KHÔNG được thực thi tự động nữa. Chỉ ghi nhận khi thiết bị đã được dừng bằng cách khác và đã kiểm tra tại chỗ. Thao tác được kiểm toán kèm lý do; lệnh vẫn hiển thị là 'đã xử lý bởi người'.",
+    "intentDialogTitle": "Ghi nhận kết cục KHÔNG RÕ cho lệnh ghi #{{id}}?",
+    "intentDialogDesc": "Tiến trình đã dừng giữa lúc ghi: lệnh có thể đã hoặc chưa tới thiết bị. Hãy kiểm tra giá trị thật tại chỗ trước. Thao tác ghi một dòng KẾT QUẢ 'kết cục không rõ' vào sổ lệnh (không sửa, không xoá gì), được kiểm toán kèm lý do; không gửi gì tới thiết bị. Việc đổi chủ của bộ chuyển đổi vẫn bị chặn thêm 10 phút sau đó.",
+    "reasonLabel": "Lý do / cách đã xử lý (bắt buộc, ít nhất 3 ký tự)",
+    "confirm": "Xác nhận và ghi kiểm toán",
+    "stopResolved": "Đã ghi nhận cách xử lý lệnh DỪNG",
+    "intentResolved": "Đã ghi nhận kết cục KHÔNG RÕ cho lệnh ghi mồ côi",
+    "lateHeading": "Kết quả ghi đến SAU khi đã ghi nhận 'kết cục không rõ' ({{shown}}/{{total}})",
+    "colStatus": "Kết quả thiết bị",
+    "lateFlag": "Chặn đổi chủ tới khi có người xem xét",
+    "reviewLate": "Xác nhận đã xem",
+    "lateDialogTitle": "Xác nhận đã xem kết quả ghi đến muộn #{{id}}?",
+    "lateDialogDesc": "Thiết bị đã trả kết quả THẬT cho lệnh ghi này SAU khi lệnh được ghi nhận 'kết cục không rõ'. Kết quả được giữ nguyên làm bằng chứng (không sửa, không xoá). Hãy đối chiếu giá trị thật trên thiết bị; xác nhận được kiểm toán kèm ghi chú và gỡ việc chặn đổi chủ của bộ chuyển đổi.",
+    "lateReviewed": "Đã ghi nhận việc xem xét kết quả đến muộn"
   }
 }

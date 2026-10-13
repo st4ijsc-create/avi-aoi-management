@@ -150,8 +150,12 @@ describe("Đợt 5 F fix scan — census: the trusted door and the mark are reac
 
   // Re-pinned 2026-10-11 (doc 81 Đợt 8 N2, owner decision "background safety-PLC poller produces trusted events"): the
   // poller is the second device-ingest door user. It takes no request input (configs from the DB, its own timer).
-  it("recordFromDeviceIngest is referenced only by robotIngest.ts + the background safety-PLC poller (and defined in safetyAuditService.ts)", () => {
+  // Re-pinned 2026-10-12 (doc 81 Đợt 10 task B, D6): + edgeIngestCentral.ts — central derives an EDGE-owned robot's e-stop
+  // transition from the node's reported states and uses the trusted door ONLY while the (node, robot) maker-checker approval
+  // (mig 0375) holds for the current digest and the vendor is trusted; the edge itself never names a trust (strict schema).
+  it("recordFromDeviceIngest is referenced only by robotIngest.ts + the background safety-PLC poller + central's edge ingest (and defined in safetyAuditService.ts)", () => {
     expect(referencers("recordFromDeviceIngest")).toEqual([
+      "services/edge/edgeIngestCentral.ts",
       "services/robot/robotIngest.ts",
       "services/safety/plc/safetyPlcPoller.ts",
       "services/safety/safetyAuditService.ts",

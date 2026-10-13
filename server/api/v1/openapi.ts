@@ -832,6 +832,168 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           },
         },
       },
+      "/api/v1/edge/node/config": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node (v2): its signed config snapshot (doc 81 Đợt 10)",
+          description:
+            "Body `{ configHash? }` (or `If-None-Match`) ⇒ `{ notModified }` when unchanged; else `{ config, configHash }` — an Ed25519-signed snapshot of ONLY the node's own adapters / robots (device secrets decrypted centrally), safety-PLC configs, keyset and limits." +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run / device that is not the calling node's ⇒ the SAME 404 / nothing written.",
+          security: [{ bearerAuth: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Invalid body (strict schema)", content: jsonErr() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (protocol_version (a v1 node))", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migrations 0370–0375 or central's edge signing key)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/heartbeat": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node (v2): heartbeat from its credential",
+          description:
+            'Status, version, capacity, journal, config hash, keyset version, wall clock. The node can never rename itself or change its factory / lines. Answer: server time, config / keyset version, programCheckRequested.' +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run / device that is not the calling node's ⇒ the SAME 404 / nothing written.",
+          security: [{ bearerAuth: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Invalid body (strict schema)", content: jsonErr() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (protocol_version)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migrations 0370–0375 or central's edge signing key)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/program-checks": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node (v2): program-checksum readings of its own adapters (D7)",
+          description:
+            'Upserted per (node, adapter); a reading of an adapter the node does not own is refused (listed in `refused`).' +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run / device that is not the calling node's ⇒ the SAME 404 / nothing written.",
+          security: [{ bearerAuth: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Invalid body (strict schema)", content: jsonErr() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (protocol_version)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migrations 0370–0375 or central's edge signing key)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/runs/{runId}/authorize": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node (v2): per-step signed authorisation of a NON-STOP command",
+          description:
+            'Central rebuilds the command from the definition and compares payload hashes, checks ownership, approval (gate) and device gates, then signs a single-use, short-lived authorisation. A STOP needs none (400 stop_needs_no_authorization). Same nonce ⇒ same token.' +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run / device that is not the calling node's ⇒ the SAME 404 / nothing written.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "runId", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Invalid body (strict schema)", content: jsonErr() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (claim_stale / stopped / run_not_active / definition_changed / payload_mismatch / not_owned / gate_required / device_refused / already_authorized / protocol_version; 400 step_invalid / stop_needs_no_authorization)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migrations 0370–0375 or central's edge signing key)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/runs/{runId}/report": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node (v2): journal replay of a run stream",
+          description:
+            '`{ claimSeq, claimToken, epoch, stream: run:<id>:<claim>, records[] }` (step / context / abort_stop / ledger); strict sequence per (node, stream, epoch). A non-STOP result without its jti ⇒ 409 unauthorised_actuation (audited).' +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run / device that is not the calling node's ⇒ the SAME 404 / nothing written.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "runId", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Invalid body (strict schema)", content: jsonErr() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (gap / epoch_rejected / claim_stale / unauthorised_actuation / replayed / protocol_version)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migrations 0370–0375 or central's edge signing key)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/telemetry": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node (v2): OT telemetry of its own adapters",
+          description:
+            'Samples of adapters the node does not own are refused (counted).' +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run / device that is not the calling node's ⇒ the SAME 404 / nothing written.",
+          security: [{ bearerAuth: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Invalid body (strict schema)", content: jsonErr() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (protocol_version)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migrations 0370–0375 or central's edge signing key)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/robots/state": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node (v2): robot states of its own robots (robot_state stream)",
+          description:
+            'No trust field exists; e-stop transitions and their trust (maker-checker per node + robot, mig 0375) are decided centrally.' +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run / device that is not the calling node's ⇒ the SAME 404 / nothing written.",
+          security: [{ bearerAuth: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Invalid body (strict schema)", content: jsonErr() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (gap / epoch_rejected / protocol_version)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migrations 0370–0375 or central's edge signing key)", content: jsonErr() },
+          },
+        },
+      },
+      "/api/v1/edge/node/locks/events": {
+        post: {
+          tags: ["Edge"],
+          summary: "Edge node (v2): the events stream (motion-lock events, STOPs, refusals, anomalies, command acks)",
+          description:
+            'Lock events are applied only through the guarded authority functions (edge:<node> + owner epoch + generation).' +
+            " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
+            "A run / device that is not the calling node's ⇒ the SAME 404 / nothing written.",
+          security: [{ bearerAuth: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false } } } },
+          responses: {
+            "200": { description: "OK", content: jsonOk() },
+            "400": { description: "Invalid body (strict schema)", content: jsonErr() },
+            "401": { description: "Node credential missing, unknown or revoked", content: jsonErr() },
+            "404": { description: "Not this node's run (or missing)", content: jsonErr() },
+            "409": { description: "Refused (gap / epoch_rejected / protocol_version)", content: jsonErr() },
+            "503": { description: "Edge runtime disabled / edge execution unavailable (migrations 0370–0375 or central's edge signing key)", content: jsonErr() },
+          },
+        },
+      },
       "/api/v1/orchestration/runs/{id}": {
         get: {
           tags: ["Orchestration"],

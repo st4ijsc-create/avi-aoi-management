@@ -1,0 +1,1575 @@
+/**
+ * doc 81 Đợt 10 task C — ONE WALKER, TWO STORES: PARITY.
+ *
+ * The same definitions are walked twice by the SAME engine code:
+ *   • CENTRAL — startRun / resumeRun / abortRun against the (fake) database (foeRunStore.centralRunStore, the pre-Đợt-10 code);
+ *   • EDGE    — driveEdgeRunFromPackage against an in-memory edge store (edge/edgeRunStore.ts): a package built from the same
+ *               database rows, a fake journal (the run-stream records it would ship) and a fake /authorize that decides exactly
+ *               like central (findSeparateGateApproval over the same rows). Central then APPLIES the edge's records and its
+ *               segment end with the exports group B calls (recordEdgeStepRows / applyEdgeSegmentEnd), and approves gates with
+ *               the real resumeRun (edge branch: hand back to 'queued').
+ * Required identical: the step-row sequence (stepId, status, attempt, result kind) the walker writes, the run outcome
+ * sequence, the commands that reach the equipment, and the FINAL rows central holds for the two runs. Cases: gate pause,
+ * branch, parallel, retry, compensation, abort sweep (+ the gate refusal text, the STOP that never asks, D5 held).
+ * The equipment registry is replaced by a recording fake (the walker is under test, not the dispatchers — group D).
+ */
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { randomUUID } from "node:crypto";
+import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
+
+const h = vi.hoisted(() => ({
+  sent: [] as Array<Record<string, unknown>>,
+  failPlan: new Map<string, number>(), // stepId → how many attempts fail (Infinity ⇒ always)
+  /** fix review 1 — while an EDGE walk runs, the database THROWS (and every attempt is counted): "reads no DB" is measured */
+  dbThrows: false,
+  dbCalls: 0,
+  /** fix review 5 — device ownership as central reads it (B's edgeCentralCommon; raw SQL there ⇒ modelled here) */
+  foreignRobots: new Set<number>(),
+  foreignAdapters: new Set<number>(),
+  ownershipThrows: false,
+  /** fix review 3 — the edge dispatch's LEDGER record (journaled inside sendCommand, BEFORE the walker's result row) */
+  onLedger: null as null | ((cmd: Record<string, any>, ok: boolean) => void),
+  telemetry: [] as Array<{ key: string; value: unknown }>,
+}));
+
+vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../ot/commandDispatcher")>();
+  return { isStopCommandType: orig.isStopCommandType, classifyOtStop: orig.classifyOtStop, runningConnectionMatchesAdapterRow: async () => true, dispatch: vi.fn() };
+});
+vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: vi.fn() }));
+vi.mock("../../edge/edgeCentralCommon", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../edge/edgeCentralCommon")>();
+  const owned = (foreign: Set<number>) => async (_d: unknown, _node: number, ids: readonly number[]) => {
+    if (h.ownershipThrows) throw new Error("ownership unreadable");
+    return new Set(ids.filter((id) => !foreign.has(id)));
+  };
+  return { ...orig, ownedRobotIds: owned(h.foreignRobots), ownedAdapterIds: owned(h.foreignAdapters) };
+});
+vi.mock("../../auditTrailService", () => ({ createAuditContext: (x: unknown) => x, logCrudOperation: vi.fn(async () => ({ id: 1 })) }));
+vi.mock("./foeScope", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./foeScope")>();
+  return { ...orig, resolveUserFoeScope: () => null };
+});
+/** the equipment: a recording fake (per-step failure plan; the idempotency key names the step and attempt) */
+vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../equipment/equipmentAdapter")>();
+  const adapter = (kind: string) => ({
+    async sendCommand(cmd: Record<string, any>) {
+      const m = /^run\d+-(.+)-a(\d+)$/.exec(String(cmd.idempotencyKey)) ?? /^run\d+-abort-[^-]+-(.+)$/.exec(String(cmd.idempotencyKey));
+      const stepId = m ? m[1] : "?";
+      h.sent.push({ kind, stepId, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl });
+      const left = h.failPlan.get(stepId) ?? 0;
+      h.onLedger?.(cmd, left === 0); // the REAL ordering: the ledger result is recorded before the walker writes its result row
+      if (left > 0) {
+        h.failPlan.set(stepId, left - 1);
+        return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `scripted failure of ${stepId}` };
+      }
+      return { ok: true, status: "simulated", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", detail: { simulated: true } };
+    },
+    async getState() {
+      return { state: "EXECUTE" };
+    },
+    async readTelemetry() {
+      return h.telemetry;
+    },
+  });
+  return { ...orig, equipmentRegistry: { getAdapter: (kind: string) => adapter(kind) } };
+});
+
+const fake = new FakeDb();
+vi.mock("drizzle-orm", async (orig) => {
+  const actual = await orig<typeof import("drizzle-orm")>();
+  const ne = (col: { name: string }, v: unknown) => (row: Record<string, unknown>) => row[col.name] !== v;
+  const inArray = (col: { name: string }, vs: unknown[]) => (row: Record<string, unknown>) => vs.includes(row[col.name]);
+  const notInArray = (col: { name: string }, vs: unknown[]) => (row: Record<string, unknown>) => !vs.includes(row[col.name]);
+  const isNull = (col: { name: string }) => (row: Record<string, unknown>) => row[col.name] == null;
+  return { ...actual, eq: makeEq, and: makeAnd, ne, inArray, notInArray, isNull };
+});
+vi.mock("../../../db/connection", () => ({
+  getDb: vi.fn(async () => {
+    if (h.dbThrows) {
+      h.dbCalls++;
+      throw new Error("EDGE: this process has no database");
+    }
+    return fake;
+  }),
+}));
+
+import { orchestrationRunSteps, orchestrationRuns, orchestrationWorkflows, machines, deviceAdapters, deviceTags, robots } from "../../../../drizzle/schema";
+import { runEdgeAssignments } from "../../edge/edgeExecutionSchema";
+import {
+  deployWorkflow,
+  startRun,
+  resumeRun,
+  abortRun,
+  getRun,
+  hashWorkflowDefinition,
+  driveEdgeRunFromPackage,
+  stopLiveRunForCentralAbort,
+  recordEdgeStepRows,
+  applyEdgeSegmentEnd,
+  edgePriorPictureOf,
+  FOE_GATE_REQUIRED,
+} from "./foeEngine";
+import { findSeparateGateApproval, withResolvedAdapter } from "./foeRunStore";
+import { verifiedStopStepIds } from "./foeStepClass";
+import { edgeContextPatchOf } from "../../edge/edgeContextPolicy";
+import { createEdgeRunStore, type EdgeRunRecordIn, type EdgeStepAuthorizeOutcome, type EdgeStepAuthorizeRequest } from "../../edge/edgeRunStore";
+import type { EdgeRunPackage } from "../../edge/edgeProtocol";
+import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "./workflowModel";
+
+type Row = Record<string, any>;
+const OWNER = { id: 10, role: "engineer", name: "owner" };
+const OTHER = { id: 12, role: "supervisor", name: "other" };
+const T0 = new Date("2026-10-01T00:00:00Z");
+const NODE = 7;
+
+const rows = (t: string): Row[] => fake.store.get(t) ?? [];
+const runRow = (id: number): Row => rows("orchestration_runs").find((r) => r.id === id)!;
+const stepRows = (id: number): Row[] => rows("orchestration_run_steps").filter((s) => s.runId === id);
+
+/** the central step-row WRITES (upsertStep ⇔ insert … onConflictDoUpdate on orchestration_run_steps), per run, in order */
+const centralWrites = new Map<number, Array<{ stepId: string; status: string; attempt: number; result: string }>>();
+const statusWrites = new Map<number, string[]>();
+const resultKind = (r: unknown): string => {
+  const v = r as Record<string, unknown> | null | undefined;
+  if (v == null) return "-";
+  if (typeof v.branch === "string") return `branch:${v.branch}`;
+  if (typeof v.abortStop === "string") return `abort:${v.abortStop}`;
+  if (typeof v.routedTo === "string") return `dispatch:${v.accepted === true ? "ok" : "refused"}`;
+  if ("prompt" in v) return "gate";
+  if ("approved" in v) return "approval";
+  return Object.keys(v).sort().join(",");
+};
+
+beforeEach(() => {
+  h.foreignRobots.clear();
+  h.foreignAdapters.clear();
+  h.ownershipThrows = false;
+  h.onLedger = (cmd, ok) => {
+    const a = cmd.edge?.authorization;
+    if (!a) return;
+    for (const r of fake.store.get("edge_step_authorizations") ?? []) {
+      if (r.runId === a.runId && r.stepId === a.stepId && r.attempt === a.attempt) Object.assign(r, { resultReportedAt: new Date(), resultStatus: ok ? "simulated" : "rejected" });
+    }
+  };
+  fake.store.clear();
+  resetSeq();
+  fake.setUnique(orchestrationRunSteps, [["runId", "stepId"]]);
+  fake.seed(machines, [
+    { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "Auto-1", operationStatus: "stopped", stationId: 1 },
+    { id: 2, machineType: "ROBOT", capabilities: null, code: "R1", name: "Robot-1", operationStatus: "stopped", stationId: 1 },
+  ]);
+  fake.seed(deviceAdapters, [{ id: 501, machineId: 1, isEnabled: true, updatedAt: T0, protocol: "stub", code: "A501" }]);
+  fake.seed(deviceTags, [
+    { id: 71, adapterId: 501, tagKey: "run", address: "40001", dataType: "int16", scale: "1", offset: "0", updatedAt: T0, writable: true, isEnabled: true },
+    { id: 72, adapterId: 501, tagKey: "speed", address: "40002", dataType: "int16", scale: "1", offset: "0", updatedAt: T0, writable: true, isEnabled: true },
+  ]);
+  fake.seed(robots, [{ id: 2, code: "R2", vendor: "sim", endpoint: "tcp://10.0.0.2:1", connectionOptions: { port: 1 }, isEnabled: true, status: "online", updatedAt: T0 }]);
+  h.sent.length = 0;
+  h.failPlan.clear();
+  h.telemetry = [{ key: "temp", value: 80 }];
+  centralWrites.clear();
+  statusWrites.clear();
+  // record every central step-row write and run-status write (the walker's store calls on the central side)
+  const insert = FakeDb.prototype.insert.bind(fake);
+  (fake as any).insert = (t: any) => {
+    const b = insert(t);
+    if (t?.[Symbol.for("drizzle:Name")] !== "orchestration_run_steps") return b;
+    const values = b.values.bind(b);
+    b.values = (v: Row) => {
+      const list = centralWrites.get(v.runId) ?? [];
+      list.push({ stepId: v.stepId, status: v.status, attempt: v.attempt ?? 0, result: resultKind(v.resultJson) });
+      centralWrites.set(v.runId, list);
+      return values(v);
+    };
+    return b;
+  };
+  const update = FakeDb.prototype.update.bind(fake);
+  (fake as any).update = (t: any) => {
+    const b = update(t);
+    if (t?.[Symbol.for("drizzle:Name")] !== "orchestration_runs") return b;
+    let status: unknown;
+    const set = b.set.bind(b);
+    b.set = (v: Row) => {
+      status = v.status;
+      set(v);
+      return b;
+    };
+    const where = b.where.bind(b);
+    b.where = (c: any) => {
+      if (typeof status === "string") {
+        for (const r of rows("orchestration_runs").filter((x) => (typeof c === "function" ? c(x) : true))) statusWrites.set(r.id, [...(statusWrites.get(r.id) ?? []), status as string]);
+      }
+      return where(c);
+    };
+    return b;
+  };
+  process.env.FOE_ENABLED = "true";
+  process.env.OT_CONTROL_ENABLED = "";
+  delete process.env.FOE_SIM_GATE_REQUIRED;
+  delete process.env.SEC_PLATFORM;
+  delete process.env.AVI_PROCESS_ROLE;
+});
+
+// ── definitions ─────────────────────────────────────────────────────────────────────────────────────────────────────
+const gate = (id = "g1"): WorkflowStep => ({ id, type: "hitl_gate", prompt: `approve ${id}` }) as never;
+const ot = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "start", args: { tagKey: "run", value: 1 }, ...extra }) as never;
+const move = (id: string, extra: Record<string, unknown> = {}): WorkflowStep =>
+  ({ id, type: "command", machineId: 2, command: "run_job", args: { robotId: 2, jobType: "move", params: { x: 1 } }, ...extra }) as never;
+const robotStop = (id: string): WorkflowStep => ({ id, type: "command", machineId: 2, command: "abort", args: { robotId: 2 } }) as never;
+const def = (ref: string, steps: WorkflowStep[]): WorkflowDefinition => ({ ref, name: ref, steps }) as never;
+
+// ── the central walk ────────────────────────────────────────────────────────────────────────────────────────────────
+async function centralRun(d: WorkflowDefinition, approveGates: number): Promise<number> {
+  expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+  const s = await startRun(d.ref, {}, OWNER);
+  const runId = s.runId!;
+  for (let i = 0; i < approveGates && runRow(runId).status === "awaiting_confirm"; i++) {
+    const view = (await getRun(runId, { bindingDigest: true }))!;
+    await resumeRun(runId, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+  }
+  return runId;
+}
+
+// ── the edge walk ───────────────────────────────────────────────────────────────────────────────────────────────────
+interface EdgeHarness {
+  runId: number;
+  /** fix review 2 — the complete request lost its outcome-unknown list / prefix (E did not forward it) */
+  stripEndUnknown?: boolean;
+  /** fix review 1 — the journal refuses the record matching this (once refused, every later non-STOP record too) */
+  refuse?: (rec: EdgeRunRecordIn) => boolean;
+  /** the walker's run-status calls on the edge stores of every segment (central only applies the segment END) */
+  statuses: string[];
+  records: EdgeRunRecordIn[];
+  authorizeCalls: EdgeStepAuthorizeRequest[];
+  /** unavailable from this authorize call on (D5) */
+  offline: boolean;
+  /** fix review 1 — central unreachable for these steps' authorisations only */
+  offlineSteps?: Set<string>;
+  /** "stopped" answered by central from now on */
+  stopped: boolean;
+}
+
+/** central's edge assignment (startRun with edgeNodeId) — created 'queued' + its assignment row */
+async function edgeAssignedRun(d: WorkflowDefinition): Promise<EdgeHarness> {
+  expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+  const s = await startRun(d.ref, {}, OWNER, { edgeNodeId: NODE });
+  expect(s.ok).toBe(true);
+  return { runId: s.runId!, statuses: [], records: [], authorizeCalls: [], offline: false, stopped: false };
+}
+
+/** B's claim: 'queued' → 'running' + the signed package (built here from the same rows — no signature in a unit test) */
+async function claimPackage(x: EdgeHarness, claimSeq: number): Promise<EdgeRunPackage> {
+  const run = runRow(x.runId);
+  run.status = "running";
+  const [a] = rows("orchestration_run_edge_assignments").filter((r) => r.runId === x.runId);
+  a.claimSeq = claimSeq;
+  const wf = rows("orchestration_workflows").find((w) => w.id === run.workflowId)!;
+  const d = wf.definitionJson as WorkflowDefinition;
+  const mrows = rows("machines");
+  const machineMap = new Map<number, MachineForValidation>(mrows.map((m) => [m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities }] as const));
+  const all = (steps: WorkflowStep[] | undefined): WorkflowStep[] => (steps ?? []).flatMap((s) => [s, ...all((s as any).steps), ...all((s as any).then), ...all((s as any).else), ...(s.compensation ? all([s.compensation]) : [])]);
+  const v = await verifiedStopStepIds(d, machineMap, fake as never); // central's classifier (B: edgeRunAnalysis) — pins from the rows
+  const resolved: Array<{ stepId: string; adapterId: number }> = [];
+  for (const s of all(d.steps)) {
+    if (s.type !== "command" || s.machineId !== 1) continue;
+    const args = await withResolvedAdapter("ot-opcua", 1, (s.args ?? {}) as Record<string, unknown>);
+    if (typeof args.adapterId === "number") resolved.push({ stepId: s.id, adapterId: args.adapterId });
+  }
+  return {
+    kind: "run_package",
+    runId: x.runId,
+    nodeId: NODE,
+    credentialId: 1,
+    defHash: hashWorkflowDefinition(d),
+    definition: d as never,
+    machines: mrows.map((m) => ({ id: m.id, machineType: m.machineType, capabilities: m.capabilities })),
+    verifiedStops: [...v.ids].map((stepId) => {
+      const st = all(d.steps).find((x) => x.id === stepId) as { machineId: number; args?: Record<string, unknown> };
+      if (st.machineId === 2) return { kind: "robot" as const, stepId, robotId: 2 };
+      const pins = rows("device_tags").filter((t) => t.adapterId === 501 && t.stopValue != null).map((t) => ({ tagKey: t.tagKey, value: t.stopValue }));
+      return { kind: "ot" as const, stepId, adapterId: 501, pins };
+    }),
+    stopsUnsure: [...v.unsure],
+    prior: edgePriorPictureOf(stepRows(x.runId)),
+    issuedAt: Date.now(),
+    claimSeq,
+    workflowId: run.workflowId,
+    workflowVersion: wf.version ?? 1,
+    params: (run.paramsJson as Record<string, unknown>) ?? {},
+    context: (run.contextJson as Record<string, unknown>) ?? {},
+    owner: { id: OWNER.id, role: OWNER.role },
+    startedViaApi: false,
+    resolvedAdapters: resolved,
+    approvals: [],
+    bindingDigest: null,
+  } as unknown as EdgeRunPackage;
+}
+
+/** the fake /authorize: central's own gate rule over the same rows (B's edgeAuthorizeCentral decides with it too) */
+function fakeAuthorize(x: EdgeHarness, d: WorkflowDefinition, primed?: Awaited<ReturnType<typeof findSeparateGateApproval>>) {
+  return {
+    async authorize(input: EdgeStepAuthorizeRequest): Promise<EdgeStepAuthorizeOutcome> {
+      x.authorizeCalls.push(input);
+      if (x.offline || x.offlineSteps?.has(input.stepId)) return { ok: false, verdict: "unavailable", code: "network" };
+      if (x.stopped) return { ok: false, verdict: "stopped", code: "stopped" };
+      const found = primed ?? (await findSeparateGateApproval({ runId: x.runId, def: d, startedViaApi: false }));
+      if ("reason" in found) return { ok: false, verdict: "refused", code: "gate_required", reason: found.reason };
+      // central's authorisation ledger (0372) — B's /authorize writes it; resultReportedAt stays null until a result is applied
+      const jti = randomUUID();
+      fake.store.set("edge_step_authorizations", [...(fake.store.get("edge_step_authorizations") ?? []), { jti, runId: x.runId, claimSeq: input.claimSeq, stepId: input.stepId, attempt: input.attempt, resultReportedAt: null, supersededAt: null }]);
+      return {
+        ok: true,
+        authorization: { typ: "avi-edge-auth+v1", alg: "EdDSA", kid: "edk_test", payload: "{}", sig: "x" } as never,
+        claims: { jti, approval: { approvedBy: found.approval.approvedBy, gateStepId: found.approval.gateStepId } },
+        ttlMs: 10_000,
+        reqNonce: randomUUID().replace(/-/g, ""),
+        requestSentMonoMs: performance.now(),
+      };
+    },
+  };
+}
+
+/** one segment on the edge, then central applies its records + its end (group B's endpoints call exactly these) */
+async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?: (drive: Promise<unknown>) => Promise<void> } = {}) {
+  const pkg = await claimPackage(x, claimSeq);
+  const d = pkg.definition as unknown as WorkflowDefinition;
+  const from = x.records.length;
+  // central's gate decision for this segment (B's /authorize decides it on central — the edge never reads it)
+  const primed = await findSeparateGateApproval({ runId: x.runId, def: d, startedViaApi: false });
+  let refusing = false;
+  const store = createEdgeRunStore(pkg, {
+    runId: x.runId,
+    claimSeq,
+    claimToken: "ect_" + "a".repeat(43),
+    sink: {
+      async run(_runId, _claim, rec, o) {
+        if (x.refuse && (refusing || x.refuse(rec)) && !o?.stop) {
+          refusing = true;
+          return { seq: null, dropped: true, reason: "journal_full" };
+        }
+        x.records.push(rec);
+        return { seq: x.records.length, durable: true };
+      },
+      async event() {
+        return { seq: 1, durable: true };
+      },
+    },
+    consume: { admitNonStop: () => true },
+    authorize: fakeAuthorize(x, d, primed),
+  });
+  // ★ the edge walk (and a local abort sweep) run against a database that THROWS — and is never even asked
+  h.dbThrows = true;
+  h.dbCalls = 0;
+  let out: Record<string, any>;
+  try {
+    const drive = driveEdgeRunFromPackage(pkg, { runId: x.runId, claimSeq, claimToken: "ect_" + "a".repeat(43) }, store);
+    if (opts.beforeEnd) await opts.beforeEnd(drive);
+    out = (await drive) as Record<string, any>;
+  } finally {
+    h.dbThrows = false;
+  }
+  expect(h.dbCalls, "the edge walk asked for a database").toBe(0);
+  x.statuses.push(...store.statusLog());
+  // central applies the reported rows (step / abort_stop / context) — as edgeReportsCentral does — and the segment end
+  const seg = x.records.slice(from);
+  const write = seg.filter((r) => r.kind === "step" || r.kind === "abort_stop").map((r: any) =>
+    r.kind === "step"
+      ? { stepId: r.stepId, stepType: r.stepType, status: r.status, attempt: r.attempt, startedAt: r.startedAt == null ? null : new Date(r.startedAt), finishedAt: r.finishedAt == null ? null : new Date(r.finishedAt), error: r.error, result: r.result ?? undefined }
+      : { stepId: `abort:${r.stepId}`, stepType: "command", status: r.status, attempt: 0, startedAt: new Date(r.at), finishedAt: new Date(r.at), error: null, result: { ...(r.result ?? {}), stepId: r.stepId } },
+  );
+  await recordEdgeStepRows(fake as never, x.runId, write);
+  // fix review 2 — through THE context filter (edgeContextPolicy — the one B's report endpoint uses), and only while the run is
+  // live (as edgeReportsCentral: a context record of a stopped / ended run is evidence only)
+  for (const r of seg) {
+    if (r.kind !== "context") continue;
+    const row = runRow(x.runId);
+    if (row.status !== "running" && row.status !== "compensating") continue;
+    row.contextJson = { ...(row.contextJson ?? {}), ...edgeContextPatchOf(r.patch, row.contextJson).patch };
+  }
+  const end = x.stripEndUnknown && out.outcome ? { ...out, outcomeUnknown: undefined, error: undefined } : out;
+  if (end.outcome) await applyEdgeSegmentEnd(fake as never, x.runId, { ...(end as any), nodeCode: "EDGE-A", claimSeq, def: d });
+  return { out, segment: seg };
+}
+
+async function approveEdgeGate(x: EdgeHarness) {
+  const view = (await getRun(x.runId, { bindingDigest: true }))!;
+  const r = await resumeRun(x.runId, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+  expect(r.status).toBe("queued"); // the edge branch hands the run back to its node
+}
+
+// ── comparison helpers ──────────────────────────────────────────────────────────────────────────────────────────────
+/** the walker's own step-row writes, comparable: (stepId, status, attempt, result kind); gate rows are central's on both sides */
+const walkerWritesCentral = (runId: number) => (centralWrites.get(runId) ?? []).filter((w) => !rows("orchestration_run_steps").some((s) => s.runId === runId && s.stepId === w.stepId && s.stepType === "hitl_gate"));
+const walkerWritesEdge = (x: EdgeHarness) =>
+  x.records
+    .filter((r) => r.kind === "step" || r.kind === "abort_stop")
+    .map((r: any) => (r.kind === "step" ? { stepId: r.stepId, status: r.status, attempt: r.attempt, result: resultKind(r.result) } : { stepId: `abort:${r.stepId}`, status: r.status, attempt: 0, result: resultKind(r.result) }));
+const finalRows = (runId: number) =>
+  Object.fromEntries(
+    stepRows(runId)
+      .map((s) => [s.stepId, { status: s.status, attempt: s.attempt, type: s.stepType, result: resultKind(s.resultJson), error: s.error ? String(s.error).replace(/run\d+/g, "run#") : null }] as const)
+      .sort(([a], [b]) => (a < b ? -1 : 1)),
+  );
+/**
+ * The commands that reached the equipment. The HITL provenance of a command WITH an approval (requestedBy = the run owner,
+ * confirmedBy = the gate approver) is compared; a STOP has none: its provenance is the walker's principal — on central the
+ * user who resumed the run (the approver), on the edge the run's owner (as in Đợt 9 S3) — informational only (a STOP is never
+ * verified against it), so it is left out (recorded in group-C-report.md).
+ */
+const sentCommands = (from = 0, to?: number) =>
+  h.sent.slice(from, to).map((c) => {
+    const stop = c.name === "abort" || c.name === "e_stop" || c.name === "stop";
+    return { kind: c.kind, stepId: c.stepId, name: c.name, adapterId: c.adapterId, robotId: c.robotId, writes: c.writes, job: c.job, ...(stop ? {} : { confirmedBy: (c.hitl as any)?.confirmedBy, requestedBy: (c.hitl as any)?.requestedBy }) };
+  });
+const outcomeTransitions = (list: string[]) => list.filter((s) => s !== "running" && s !== "queued");
+const perStep = (ws: Array<{ stepId: string }>) => {
+  const m = new Map<string, unknown[]>();
+  for (const w of ws) m.set(w.stepId, [...(m.get(w.stepId) ?? []), w]);
+  return Object.fromEntries([...m.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
+};
+
+async function waitFor(fn: () => boolean, label: string, ms = 5_000) {
+  const until = Date.now() + ms;
+  while (!fn()) {
+    if (Date.now() > until) throw new Error(`timed out waiting for: ${label}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("doc 81 Đợt 10 C — one walker, two stores: central and edge produce the same rows and outcomes", () => {
+  it("★ gate pause → approval → motion (OT + robot) → completed: identical walker writes, outcomes, commands and final rows", async () => {
+    const d = (ref: string) => def(ref, [gate(), ot("m1"), move("r1"), robotStop("s1")]);
+    const c = await centralRun(d("gp-c"), 1);
+    const cSent = sentCommands();
+    const n0 = h.sent.length;
+
+    const e = await edgeAssignedRun(d("gp-e"));
+    const s1 = await edgeSegment(e, 1);
+    expect(s1.out).toMatchObject({ outcome: "paused", gateStepId: "g1" });
+    expect(runRow(e.runId).status).toBe("awaiting_confirm");
+    expect(runRow(e.runId).currentStepId).toBe("g1");
+    // the gate row central writes for a paused edge segment is the walker's own gate row
+    expect(stepRows(e.runId).find((s) => s.stepId === "g1")).toMatchObject({ status: "awaiting_confirm", resultJson: { prompt: "approve g1", approverRoles: null } });
+    await approveEdgeGate(e);
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ ok: true, outcome: "completed", status: "completed" });
+
+    expect(runRow(c).status).toBe("completed");
+    expect(runRow(e.runId).status).toBe("completed");
+    expect(walkerWritesEdge(e)).toEqual(walkerWritesCentral(c));
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    expect(sentCommands(n0)).toEqual(cSent);
+    expect(outcomeTransitions(statusWrites.get(e.runId) ?? [])).toEqual(outcomeTransitions(statusWrites.get(c) ?? []));
+    expect(outcomeTransitions(e.statuses)).toEqual(outcomeTransitions(statusWrites.get(c) ?? []));
+    // ★ L-7 — the STOP (s1) never asked central; m1 / r1 asked once each, with the payload hash of the exact command
+    expect(e.authorizeCalls.map((a) => a.stepId)).toEqual(["m1", "r1"]);
+    // the edge commands carry their signed authorisation (D verifies it); the STOP carries none
+    const edgeSent = h.sent.slice(n0);
+    expect((edgeSent.find((s) => s.stepId === "m1")!.edge as any).authorization.stepId).toBe("m1");
+    expect((edgeSent.find((s) => s.stepId === "s1")!.edge as any).authorization).toBeNull();
+    // every non-STOP result row quotes the jti it ran under; the STOP's quotes none
+    const resultRow = (id: string) => e.records.filter((r: any) => r.kind === "step" && r.stepId === id && r.status === "completed")[0] as any;
+    expect(resultRow("m1").jti).toMatch(/^[0-9a-f-]{36}$/);
+    expect(resultRow("s1").jti).toBeNull();
+  });
+
+  it("★ a non-STOP step with no counting gate: the SAME FOE_GATE_REQUIRED(noGate) refusal on both stores, nothing sent", async () => {
+    const d = (ref: string) => def(ref, [ot("m1")]);
+    const c = await centralRun(d("ng-c"), 0);
+    const e = await edgeAssignedRun(d("ng-e"));
+    const s1 = await edgeSegment(e, 1);
+    expect(s1.out).toMatchObject({ outcome: "failed" });
+    expect(String(runRow(c).error)).toMatch(new RegExp(`^${FOE_GATE_REQUIRED}\\(noGate\\)`));
+    expect(stepRows(e.runId).find((s) => s.stepId === "m1")!.error).toBe(stepRows(c).find((s) => s.stepId === "m1")!.error);
+    expect(h.sent).toEqual([]);
+    expect(walkerWritesEdge(e)).toEqual(walkerWritesCentral(c));
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+  });
+
+  it("★ branch: the condition read the same way, the same path taken, the decision recorded on both", async () => {
+    const br = (ref: string) =>
+      def(ref, [gate(), { id: "b1", type: "branch", condition: { source: "telemetry", machineId: 1, key: "temp", op: "gt", value: 50 }, then: [ot("t1")], else: [move("e1")] } as never]);
+    const c = await centralRun(br("br-c"), 1);
+    const n0 = h.sent.length;
+    const e = await edgeAssignedRun(br("br-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    expect(stepRows(c).find((s) => s.stepId === "b1")!.resultJson).toEqual({ branch: "then" });
+    expect(walkerWritesEdge(e)).toEqual(walkerWritesCentral(c));
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    expect(sentCommands(n0)).toEqual(sentCommands(0, n0));
+    expect(runRow(e.runId).contextJson["branch:b1"]).toBe("then");
+  });
+
+  it("★ parallel: per-step write sequences, final rows and the command set are identical", async () => {
+    const par = (ref: string) => def(ref, [gate(), { id: "p1", type: "parallel", steps: [ot("m1"), move("r1"), ot("m2", { args: { tagKey: "speed", value: 5 } })] } as never]);
+    const c = await centralRun(par("par-c"), 1);
+    const n0 = h.sent.length;
+    const e = await edgeAssignedRun(par("par-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    expect(perStep(walkerWritesEdge(e))).toEqual(perStep(walkerWritesCentral(c)));
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    const sortSent = (l: ReturnType<typeof sentCommands>) => [...l].sort((a, b) => (a.stepId < b.stepId ? -1 : 1));
+    expect(sortSent(sentCommands(n0))).toEqual(sortSent(sentCommands(0, n0)));
+    expect(runRow(e.runId).status).toBe("completed");
+  });
+
+  it("★ retry: a refused first attempt is retried — attempt 2 authorised separately on the edge, rows identical", async () => {
+    const rt = (ref: string) => def(ref, [gate(), ot("m1", { maxAttempts: 2 })]);
+    h.failPlan.set("m1", 1);
+    const c = await centralRun(rt("rt-c"), 1);
+    const n0 = h.sent.length;
+    h.failPlan.set("m1", 1);
+    const e = await edgeAssignedRun(rt("rt-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    expect(stepRows(c).find((s) => s.stepId === "m1")).toMatchObject({ status: "completed", attempt: 2 });
+    expect(walkerWritesEdge(e)).toEqual(walkerWritesCentral(c));
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    expect(sentCommands(n0)).toEqual(sentCommands(0, n0));
+    expect(e.authorizeCalls.map((a) => `${a.stepId}#${a.attempt}`)).toEqual(["m1#1", "m1#2"]);
+    expect(new Set(e.authorizeCalls.map((a) => a.idempotencyKey)).size).toBe(2);
+  });
+
+  it("★ compensation: the failing step's compensation runs (compensating → failed) — rows, outcomes and commands identical", async () => {
+    const cp = (ref: string) => def(ref, [gate(), move("r1", { compensation: ot("c1", { args: { tagKey: "speed", value: 0 } }) })]);
+    h.failPlan.set("r1", Infinity);
+    const c = await centralRun(cp("cp-c"), 1);
+    const n0 = h.sent.length;
+    const e = await edgeAssignedRun(cp("cp-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "failed" });
+    expect(runRow(c).status).toBe("failed");
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(stepRows(c).find((s) => s.stepId === "c1")!.status).toBe("compensated");
+    expect(walkerWritesEdge(e)).toEqual(walkerWritesCentral(c));
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    expect(sentCommands(n0)).toEqual(sentCommands(0, n0));
+    expect(outcomeTransitions(statusWrites.get(c) ?? [])).toEqual(["awaiting_confirm", "compensating", "failed"]);
+    // the walker's run-status sequence is the same on the edge (central sees the END of the segment: failed)
+    expect(outcomeTransitions(e.statuses)).toEqual(["awaiting_confirm", "compensating", "failed"]);
+  });
+
+  it("★ abort sweep: aborted mid-delay ⇒ the next motion is never sent, the remaining STOP is sent once — same rows on both", async () => {
+    const ab = (ref: string) => def(ref, [gate(), move("r1"), { id: "d1", type: "delay", ms: 60_000 } as never, move("r2"), robotStop("s1")]);
+    // central: the walk resumes in the background, is aborted while it sleeps in d1
+    const cRef = "ab-c";
+    expect((await deployWorkflow(ab(cRef), OWNER)).ok).toBe(true);
+    const c = (await startRun(cRef, {}, OWNER)).runId!;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const resuming = resumeRun(c, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => stepRows(c).some((s) => s.stepId === "d1" && s.status === "running"), "central d1 running");
+    const ar = await abortRun(c, OWNER, "parity");
+    await resuming;
+    expect(ar.abortStops).toMatchObject({ sent: ["s1"], failed: [], unverified: [], notNeeded: [] });
+    const n0 = h.sent.length;
+
+    // edge: the same walk, stopped by central while it sleeps in d1 (the agent's abortLive ⇒ stopLiveRunForCentralAbort)
+    const e = await edgeAssignedRun(ab("ab-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2, {
+      beforeEnd: async () => {
+        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "d1" && r.status === "running"), "edge d1 running");
+        runRow(e.runId).status = "aborted"; // central's abort (its own sweep cannot reach the edge's devices)
+        const live = await stopLiveRunForCentralAbort(e.runId, { id: 0, role: "system", name: "edge: central abort" });
+        expect(live.live).toBe(true);
+        expect(live.abortStops).toMatchObject({ sent: ["s1"], failed: [], unverified: [], notNeeded: [] });
+      },
+    });
+    expect(h.sent.filter((s) => s.stepId === "r2")).toEqual([]); // never sent, on either side
+    expect(sentCommands(n0).map((s) => s.stepId)).toEqual(sentCommands(0, n0).map((s) => s.stepId));
+    expect(sentCommands(n0).map((s) => s.stepId)).toEqual(["r1", "s1"]);
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    // fix review 1 — the abort sweep's write sequence is the walk's too (per step: the sweep row is written concurrently)
+    expect(perStep(walkerWritesEdge(e))).toEqual(perStep(walkerWritesCentral(c)));
+    expect(stepRows(e.runId).find((s) => s.stepId === "abort:s1")).toMatchObject({ status: "completed" });
+    expect(runRow(e.runId).status).toBe("aborted");
+  });
+});
+
+describe("doc 81 Đợt 10 C — the edge store's own verdicts (no central counterpart)", () => {
+  it("★ D5: central unreachable at a non-STOP step ⇒ HELD (nothing sent, no compensation); a STOP before it still goes out", async () => {
+    const hd = (ref: string) => def(ref, [gate(), robotStop("s0"), move("r1", { compensation: ot("c1") })]);
+    const e = await edgeAssignedRun(hd("hd-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.offline = true;
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "centralUnreachable" });
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["s0"]); // the STOP never asked; r1 / c1 never sent
+    expect(stepRows(e.runId).find((s) => s.stepId === "r1")).toMatchObject({ status: "held" });
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_HELD\(centralUnreachable\)/);
+    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toBeUndefined();
+    expect(runRow(e.runId).status).toBe("held");
+  });
+
+  it("★ central says 'stopped' at authorize ⇒ the walker aborts locally (no non-STOP sent) and sweeps its STOPs", async () => {
+    const st = (ref: string) => def(ref, [gate(), move("r1"), move("r2"), robotStop("s1")]);
+    const e = await edgeAssignedRun(st("st-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    // r1 goes; central stops the run before r2's authorisation
+    const pkg2 = await claimPackage(e, 2);
+    const central = fakeAuthorize(e, pkg2.definition as never);
+    let calls = 0;
+    const store = createEdgeRunStore(pkg2, {
+      runId: e.runId,
+      claimSeq: 2,
+      claimToken: "ect_" + "a".repeat(43),
+      sink: { run: async (_r, _c, rec) => (e.records.push(rec), { seq: e.records.length }) },
+      authorize: { authorize: async (i) => (++calls === 2 ? { ok: false as const, verdict: "stopped" as const, code: "stopped" } : central.authorize(i)) },
+    });
+    const s2 = (await driveEdgeRunFromPackage(pkg2, { runId: e.runId, claimSeq: 2 }, store)) as Record<string, any>;
+    await waitFor(() => h.sent.slice(n0).some((s) => s.stepId === "s1"), "sweep sent s1");
+    expect(s2).toMatchObject({ outcome: "aborted" });
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r1", "s1"]);
+  });
+
+  it("★ the walker refuses a package that is not the assigned snapshot / not this claim (nothing walked)", async () => {
+    const e = await edgeAssignedRun(def("rf-e", [gate(), ot("m1")]));
+    const pkg = await claimPackage(e, 1);
+    const store = createEdgeRunStore(pkg, { runId: e.runId, claimSeq: 1, claimToken: "ect_" + "a".repeat(43), sink: { run: async () => ({ seq: 1 }) }, authorize: fakeAuthorize(e, pkg.definition as never) });
+    expect(((await driveEdgeRunFromPackage({ ...pkg, defHash: "0".repeat(64) }, { runId: e.runId, claimSeq: 1 }, store)) as any).refused).toMatch(/snapshot/);
+    expect(((await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 2 }, store)) as any).refused).toMatch(/claim/);
+    expect(((await driveEdgeRunFromPackage({ ...pkg, owner: null }, { runId: e.runId, claimSeq: 1 }, store)) as any).refused).toMatch(/owner/);
+    expect(h.sent).toEqual([]);
+  });
+});
+
+describe("doc 81 Đợt 10 C — the edge store in detail (no DB, fail-closed)", () => {
+  const io = (x: Partial<{ records: EdgeRunRecordIn[]; authorize: (i: EdgeStepAuthorizeRequest) => Promise<EdgeStepAuthorizeOutcome>; admit: boolean; dropped: boolean }> = {}) => {
+    const records = x.records ?? [];
+    return {
+      records,
+      io: {
+        runId: 0,
+        claimSeq: 1,
+        claimToken: "ect_" + "b".repeat(43),
+        sink: {
+          run: async (_r: number, _c: number, rec: EdgeRunRecordIn) => {
+            if (x.dropped) return { seq: null, dropped: true as const, reason: "journal_full" };
+            records.push(rec);
+            return { seq: records.length };
+          },
+        },
+        consume: { admitNonStop: () => x.admit ?? true },
+        authorize: { authorize: x.authorize ?? (async (): Promise<EdgeStepAuthorizeOutcome> => ({ ok: false, verdict: "unavailable", code: "network" })) },
+      },
+    };
+  };
+  async function pkgOf(steps: WorkflowStep[], ref: string) {
+    const e = await edgeAssignedRun(def(ref, steps));
+    return { e, pkg: await claimPackage(e, 1) };
+  }
+
+  it("★ the authorise request carries the EXACT command and the canonical payload hash central binds (OT and robot)", async () => {
+    const e = await edgeAssignedRun(def("hash-e", [gate(), ot("m1"), move("r1")]));
+    await edgeSegment(e, 1); // paused at g1
+    await approveEdgeGate(e);
+    const pkg2 = await claimPackage(e, 2);
+    const t = io();
+    const seen: EdgeStepAuthorizeRequest[] = [];
+    const central = fakeAuthorize(e, pkg2.definition as never);
+    const store = createEdgeRunStore(pkg2, { ...t.io, runId: e.runId, claimSeq: 2, authorize: { authorize: async (i) => (seen.push(i), central.authorize(i)) } });
+    await driveEdgeRunFromPackage(pkg2, { runId: e.runId, claimSeq: 2 }, store);
+    const { otPayloadHash, robotPayloadHash, FOE_ENGINE_TOOL } = await import("../../ot/otActionBinding");
+    expect(seen[0]).toMatchObject({ stepId: "m1", attempt: 1, idempotencyKey: `run${e.runId}-m1-a1`, command: { kind: "ot", adapterId: 501, machineId: 1, commandType: "start", writes: [{ tagKey: "run", value: 1 }] } });
+    expect(seen[0].payloadHash).toBe(otPayloadHash({ tool: FOE_ENGINE_TOOL, adapterId: 501, machineId: 1, commandType: "start", writes: [{ tagKey: "run", value: 1 }] }));
+    expect(seen[1]).toMatchObject({ stepId: "r1", command: { kind: "robot", robotId: 2, jobType: "move", params: { x: 1 } } });
+    expect(seen[1].payloadHash).toBe(robotPayloadHash({ robotId: 2, jobType: "move", params: { x: 1 } }));
+    expect(seen.every((s) => s.claimSeq === 2 && s.claimToken === t.io.claimToken && s.runId === e.runId)).toBe(true);
+    // the approval central signed is the command's HITL provenance (requestedBy = owner, confirmedBy = approver)
+    expect(h.sent.find((s) => s.stepId === "m1")!.hitl).toMatchObject({ requestedBy: OWNER.id, confirmedBy: OTHER.id });
+  });
+
+  it("★ verdict mapping: device refusal / payload mismatch fail the step with a machine-readable code; journal full and no config HOLD", async () => {
+    const { e, pkg } = await pkgOf([ot("m1")], "map-e");
+    const run = async (out: EdgeStepAuthorizeOutcome, opts: { admit?: boolean } = {}) => {
+      const t = io({ authorize: async () => out, admit: opts.admit });
+      const store = createEdgeRunStore(pkg, { ...t.io, runId: e.runId });
+      const r = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)) as Record<string, any>;
+      const row = t.records.filter((x: any) => x.kind === "step" && x.stepId === "m1").pop() as any;
+      return { r, row };
+    };
+    const dev = await run({ ok: false, verdict: "refused", code: "device_refused", reason: "motion_locked" });
+    expect(dev.r).toMatchObject({ outcome: "failed" });
+    expect(dev.row).toMatchObject({ status: "failed" });
+    expect(dev.row.error).toMatch(/^EDGE_DEVICE_REFUSED\(motion_locked\): command step "m1" was not sent/);
+    const pm = await run({ ok: false, verdict: "refused", code: "payload_mismatch" });
+    expect(pm.row.error).toMatch(/^EDGE_AUTHORIZE_REFUSED\(payload_mismatch\)/);
+    const gr = await run({ ok: false, verdict: "refused", code: "gate_required", reason: "staleApproval" });
+    expect(gr.row.error).toMatch(new RegExp(`^${FOE_GATE_REQUIRED}\\(staleApproval\\)`));
+    const full = await run({ ok: false, verdict: "refused", code: "x" }, { admit: false });
+    expect(full.r).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+    expect(full.row.error).toMatch(/^EDGE_HELD\(journalFull\)/);
+    const nocfg = await run({ ok: false, verdict: "unavailable", code: "no_config" });
+    expect(nocfg.r).toMatchObject({ outcome: "held", heldReason: "configStale" });
+    const thrown = createEdgeRunStore(pkg, {
+      ...io().io,
+      runId: e.runId,
+      authorize: {
+        authorize: async () => {
+          throw new Error("socket hang up");
+        },
+      },
+    });
+    expect(await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, thrown)).toMatchObject({ outcome: "held", heldReason: "centralUnreachable" });
+    expect(h.sent).toEqual([]); // ★ nothing reached the equipment in any of them
+  });
+
+  it("★ stale claim ⇒ the walker lets go: nothing more sent, no segment end (refused + detached)", async () => {
+    const { e, pkg } = await pkgOf([ot("m1"), robotStop("s1")], "stale-e");
+    const t = io({ authorize: async () => ({ ok: false, verdict: "stale", code: "claim_stale", abortRequested: false }) });
+    const store = createEdgeRunStore(pkg, { ...t.io, runId: e.runId });
+    const r = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)) as Record<string, any>;
+    expect(r).toMatchObject({ ok: false, detached: true });
+    expect(r.refused).toMatch(/no longer this walker's/);
+    expect(r.outcome).toBeUndefined();
+    expect(h.sent).toEqual([]);
+    expect(store.segmentEnd()).toBeNull();
+  });
+
+  it("★ a stale claim WITH abortRequested ⇒ stopped: the local sweep (the walk never actuated ⇒ its STOP is not needed, said)", async () => {
+    const { e, pkg } = await pkgOf([ot("m1"), robotStop("s1")], "stale2-e");
+    const t = io({ authorize: async () => ({ ok: false, verdict: "stale", code: "claim_stale", abortRequested: true }) });
+    const store = createEdgeRunStore(pkg, { ...t.io, runId: e.runId });
+    const r = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)) as Record<string, any>;
+    expect(r).toMatchObject({ outcome: "aborted" });
+    expect(h.sent).toEqual([]);
+  });
+
+  it("★ a journal that refuses a NON-STOP record stops the walk (nothing sent after it); a STOP's refused record never holds the STOP", async () => {
+    const { e, pkg } = await pkgOf([robotStop("s1"), ot("m1")], "jr-e");
+    const t = io({
+      dropped: true,
+      authorize: async () => ({ ok: true, authorization: {} as never, claims: { jti: randomUUID(), approval: null }, ttlMs: 10_000, reqNonce: "n".repeat(32), requestSentMonoMs: 0 }),
+    });
+    const store = createEdgeRunStore(pkg, { ...t.io, runId: e.runId });
+    await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store).catch(() => undefined);
+    expect(h.sent.map((s) => s.stepId)).toEqual(["s1"]);
+  });
+
+  it("★ createEdgeRunStore refuses a package of another run / claim; a central store never walks an edge package", async () => {
+    const { e, pkg } = await pkgOf([ot("m1")], "cs-e");
+    expect(() => createEdgeRunStore(pkg, { ...io().io, runId: e.runId + 1 })).toThrow(/not for run/);
+    expect(() => createEdgeRunStore(pkg, { ...io().io, runId: e.runId, claimSeq: 2 })).toThrow(/claim/);
+    const { centralRunStore } = await import("./foeRunStore");
+    expect(((await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, centralRunStore)) as any).refused).toMatch(/edge store/);
+    expect(h.sent).toEqual([]);
+  });
+
+  it("★ STOP re-send from a signed sweep picture: only the VERIFIED STOPs not confirmed are sent, never motion; too old ⇒ refused", async () => {
+    const { resendStopsOfAbortedRun } = await import("./foeEngine");
+    const { createEdgeSweepStore } = await import("../../edge/edgeRunStore");
+    const { pkg } = await pkgOf([move("r1"), robotStop("s1"), robotStop("s2")], "rs-e");
+    const picture = { ...pkg, kind: "sweep_picture", prior: { ...pkg.prior, abortSentBefore: ["s2"], settled: ["r1"], attempted: ["r1"], startOrder: ["r1"] } } as unknown as import("../../edge/edgeProtocol").EdgeSweepPicture;
+    const outcomes: unknown[] = [];
+    const store = createEdgeSweepStore(picture, { abortStop: (rec) => void outcomes.push(rec) });
+    const r = await resendStopsOfAbortedRun(picture, { id: 0, role: "system", name: "edge" }, store);
+    expect(r).toMatchObject({ ok: true, resend: true, abortStops: { sent: ["s1"], failed: [] } });
+    expect(h.sent.map((s) => s.stepId)).toEqual(["s1"]); // s2 was confirmed before; r1 is motion
+    expect(h.sent[0].edge as any).toMatchObject({ authorization: null });
+    expect(outcomes).toEqual([expect.objectContaining({ kind: "abort_stop", stepId: "s1", status: "completed" })]);
+    const old = { ...picture, issuedAt: Date.now() - 16 * 60_000 } as typeof picture;
+    const r2 = await resendStopsOfAbortedRun(old, { id: 0, role: "system", name: "edge" }, createEdgeSweepStore(old, { abortStop: () => undefined }));
+    expect(r2).toMatchObject({ ok: false, reason: "resendTooOld" });
+    expect(h.sent.length).toBe(1);
+  });
+});
+
+describe("doc 81 Đợt 10 C — central applies an edge segment end with the walk's rules (group B's sink)", () => {
+  async function liveEdgeRun(steps: WorkflowStep[], ref: string) {
+    const e = await edgeAssignedRun(def(ref, steps));
+    runRow(e.runId).status = "running";
+    return { e, d: rows("orchestration_workflows").find((w) => w.id === runRow(e.runId).workflowId)!.definitionJson as WorkflowDefinition };
+  }
+  const end = (d: WorkflowDefinition, x: Record<string, unknown>) => ({ nodeCode: "EDGE-A", claimSeq: 1, def: d, ...x }) as never;
+  const w = (x: Partial<Row>) => ({ stepId: "m1", stepType: "command", status: "running", attempt: 0, startedAt: null, finishedAt: null, error: null, result: undefined, ...x }) as never;
+
+  it("★ completed only when every top-level step row is completed / skipped and nothing runs — else not_finished, nothing written", async () => {
+    const { e, d } = await liveEdgeRun([ot("m1"), ot("m2")], "ap-c");
+    await recordEdgeStepRows(fake as never, e.runId, [w({ status: "completed", attempt: 1 })]);
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, end(d, { outcome: "completed" }))).toMatchObject({ ok: false, code: "not_finished" });
+    expect(runRow(e.runId).status).toBe("running");
+    await recordEdgeStepRows(fake as never, e.runId, [w({ stepId: "m2", status: "running" })]);
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, end(d, { outcome: "completed" }))).toMatchObject({ ok: false, code: "not_finished" });
+    await recordEdgeStepRows(fake as never, e.runId, [w({ stepId: "m2", status: "skipped" })]);
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, end(d, { outcome: "completed" }))).toMatchObject({ ok: true, status: "completed", changed: true });
+    expect(runRow(e.runId).status).toBe("completed");
+    // a late report never regresses a finished run
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, end(d, { outcome: "failed", error: "late" }))).toMatchObject({ ok: true, status: "completed", changed: false });
+  });
+
+  it("★ a stopped run (aborted, or a rejection's claim) is never changed; the walk's own 'aborted' (precondition) ends aborted as on central; held marks the run", async () => {
+    const a = await liveEdgeRun([ot("m1")], "ap-a");
+    runRow(a.e.runId).status = "aborted";
+    expect(await applyEdgeSegmentEnd(fake as never, a.e.runId, end(a.d, { outcome: "completed" }))).toMatchObject({ changed: false, status: "aborted" });
+    const { FOE_REJECT_CLAIM_CTX_KEY } = await import("./foeGateApproval");
+    const r = await liveEdgeRun([ot("m1")], "ap-r");
+    runRow(r.e.runId).contextJson = { [FOE_REJECT_CLAIM_CTX_KEY]: "tok" };
+    expect(await applyEdgeSegmentEnd(fake as never, r.e.runId, end(r.d, { outcome: "failed" }))).toMatchObject({ changed: false, status: "running" });
+    const f = await liveEdgeRun([ot("m1")], "ap-f");
+    expect(await applyEdgeSegmentEnd(fake as never, f.e.runId, end(f.d, { outcome: "aborted", error: "Precondition failed" }))).toMatchObject({ status: "aborted", changed: true });
+    expect(String(runRow(f.e.runId).error)).toMatch(/^aborted on edge node EDGE-A: Precondition failed/);
+    const hl = await liveEdgeRun([ot("m1")], "ap-h");
+    expect(await applyEdgeSegmentEnd(fake as never, hl.e.runId, end(hl.d, { outcome: "held", heldReason: "centralUnreachable" }))).toMatchObject({ status: "held", changed: true });
+    expect(runRow(hl.e.runId).contextJson).toMatchObject({ edgeHeld: "centralUnreachable", interrupted: true, edgeHeldNode: "EDGE-A" });
+    expect(runRow(hl.e.runId).currentStepId).toBeNull();
+    const q = await liveEdgeRun([ot("m1")], "ap-q");
+    runRow(q.e.runId).status = "queued";
+    expect(await applyEdgeSegmentEnd(fake as never, q.e.runId, end(q.d, { outcome: "failed" }))).toMatchObject({ changed: false, status: "queued" });
+  });
+
+  it("★ paused at a step that is not a gate ⇒ held (a person decides), never awaiting_confirm; an approved gate row is never reopened", async () => {
+    const p = await liveEdgeRun([gate(), ot("m1")], "ap-p");
+    expect(await applyEdgeSegmentEnd(fake as never, p.e.runId, end(p.d, { outcome: "paused", gateStepId: "m1" }))).toMatchObject({ status: "held" });
+    expect(runRow(p.e.runId).contextJson).toMatchObject({ edgeHeld: "pausedAtNonGate" });
+    const q = await liveEdgeRun([gate(), ot("m1")], "ap-q2");
+    await recordEdgeStepRows(fake as never, q.e.runId, [w({ stepId: "g1", stepType: "hitl_gate", status: "completed", result: { approved: true } })]);
+    expect(await applyEdgeSegmentEnd(fake as never, q.e.runId, end(q.d, { outcome: "paused", gateStepId: "g1" }))).toMatchObject({ status: "awaiting_confirm" });
+    expect(runRow(q.e.runId).currentStepId).toBe("g1");
+    expect(stepRows(q.e.runId).find((s) => s.stepId === "g1")).toMatchObject({ status: "completed", resultJson: { approved: true } });
+  });
+
+  it("★ recordEdgeStepRows keeps upsertStep's rules: running never regresses a finished row; a failed abort row never a completed one; no result keeps it", async () => {
+    const { e } = await liveEdgeRun([ot("m1")], "rows-e");
+    await recordEdgeStepRows(fake as never, e.runId, [w({ result: { routedTo: "ot-dispatcher", accepted: true } }), w({ status: "completed", attempt: 1 }), w({ status: "running" })]);
+    expect(stepRows(e.runId).find((s) => s.stepId === "m1")).toMatchObject({ status: "completed", attempt: 1, resultJson: { routedTo: "ot-dispatcher", accepted: true } });
+    await recordEdgeStepRows(fake as never, e.runId, [w({ stepId: "abort:s1", status: "completed", result: { abortStop: "sent" } }), w({ stepId: "abort:s1", status: "failed", result: { abortStop: "failed" } })]);
+    expect(stepRows(e.runId).find((s) => s.stepId === "abort:s1")).toMatchObject({ status: "completed", resultJson: { abortStop: "sent" } });
+    await recordEdgeStepRows(fake as never, e.runId, [w({ stepId: "abort:s2", status: "failed", result: { abortStop: "failed" } }), w({ stepId: "abort:s2", status: "completed", result: { abortStop: "sent" } })]);
+    expect(stepRows(e.runId).find((s) => s.stepId === "abort:s2")).toMatchObject({ status: "completed" });
+  });
+
+  it("★ edgePriorPictureOf = the walk's own reading of the rows (completed set, settled, attempted, order, branches, confirmed STOPs)", () => {
+    const t = (n: number) => new Date(T0.getTime() + n);
+    const p = edgePriorPictureOf([
+      { id: 1, stepId: "g1", status: "completed", resultJson: { approved: true }, startedAt: null },
+      { id: 2, stepId: "m1", status: "completed", resultJson: { routedTo: "ot-dispatcher" }, startedAt: t(2) },
+      { id: 3, stepId: "b1", status: "running", resultJson: { branch: "else" }, startedAt: t(1) },
+      { id: 4, stepId: "x1", status: "skipped", resultJson: null, startedAt: null },
+      { id: 5, stepId: "abort:s1", status: "completed", resultJson: { stepId: "s1" }, startedAt: t(3) },
+    ]);
+    expect(p).toEqual({
+      completed: ["g1", "m1", "x1"],
+      settled: ["g1", "m1", "x1"],
+      attempted: ["g1", "m1", "b1"],
+      startOrder: ["b1", "m1", "g1"],
+      branches: [{ stepId: "b1", branch: "else" }],
+      abortSentBefore: ["s1"],
+      unknown: false,
+    });
+    expect(edgePriorPictureOf(null)).toMatchObject({ unknown: true, completed: [] });
+  });
+});
+
+describe("doc 81 Đợt 10 C — central's half for edge runs: Continue clears the edge marks (N4); the approval digest from node reports (D7)", () => {
+  const capable = { protocol: "stub", connectionOptions: { simProgram: "P1" } };
+  async function heldEdgeRun(ref: string, mark: Record<string, unknown>) {
+    const e = await edgeAssignedRun(def(ref, [gate(), ot("m1")]));
+    const r = runRow(e.runId);
+    r.status = "held";
+    r.currentStepId = null;
+    r.contextJson = { ...(r.contextJson ?? {}), "branch:b9": "then", ...mark };
+    return e;
+  }
+
+  it("★ N4: Continue of an edge run held 'edge unreachable' / 'edge held' re-queues it and CLEARS the marks (the badge goes); the doubt stays recorded", async () => {
+    const at = new Date().toISOString();
+    for (const [ref, mark] of [
+      ["n4-u", { edgeUnreachable: true, edgeUnreachableAt: at, edgeUnreachableNode: "EDGE-A", interrupted: true, interruptedAt: at, interruptedFrom: "queued", interruptedBy: "edge unreachable" }],
+      ["n4-h", { edgeHeld: "centralUnreachable", edgeHeldAt: at, edgeHeldNode: "EDGE-A", interrupted: true, interruptedAt: at, interruptedFrom: "running", interruptedBy: "edge held: centralUnreachable" }],
+    ] as const) {
+      const e = await heldEdgeRun(ref, mark);
+      const view = (await getRun(e.runId, { bindingDigest: true }))!;
+      const r = await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+      expect(r).toMatchObject({ ok: true, status: "queued" });
+      const ctx = runRow(e.runId).contextJson;
+      for (const k of Object.keys(mark)) expect(ctx).not.toHaveProperty(k);
+      expect(ctx).toMatchObject({ "branch:b9": "then", interruptedEarlier: true }); // the run's own context is kept
+    }
+  });
+
+  it("★ N4: a central (non-edge) Continue is unchanged — its interrupted mark is not touched", async () => {
+    expect((await deployWorkflow(def("n4-c", [gate(), ot("m1")]), OWNER)).ok).toBe(true);
+    const runId = (await startRun("n4-c", {}, OWNER)).runId!;
+    const r = runRow(runId);
+    r.status = "held";
+    r.currentStepId = null;
+    r.contextJson = { interrupted: true, interruptedBy: "restart" };
+    await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, { id: 0, role: "system", name: "FOE auto-resume" });
+    expect(runRow(runId).contextJson).toMatchObject({ interrupted: true, interruptedBy: "restart" });
+  });
+
+  it("★ the abort sweep keeps counting an edge run whose interruption a Continue cleared as possibly acted (interruptedEarlier)", async () => {
+    const e = await heldEdgeRun("n4-s", { interrupted: true, interruptedBy: "edge restart" });
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    expect(runRow(e.runId).contextJson).toMatchObject({ interruptedEarlier: true });
+    // a central abort of a run whose rows say it never acted: its STOPs are "not needed" — UNLESS an earlier interruption
+    // (cleared by a Continue) leaves the doubt, then they count as due (R-6-c)
+    for (const [ref, ctx, expected] of [
+      ["n4-s2", {}, { sent: [], notNeeded: ["s1"] }],
+      ["n4-s3", { interruptedEarlier: true }, { sent: ["s1"], notNeeded: [] }],
+    ] as const) {
+      expect((await deployWorkflow(def(ref, [gate(), move("m1"), robotStop("s1")]), OWNER)).ok).toBe(true);
+      const runId = (await startRun(ref, {}, OWNER)).runId!; // paused at g1, m1 never attempted
+      runRow(runId).contextJson = { ...ctx };
+      const ab = await abortRun(runId, OWNER, "doubt");
+      expect(ab.abortStops).toMatchObject(expected);
+    }
+  });
+
+  it("★ D7: the approver's digest of an EDGE run uses the node's fresh program report of its owned adapter — central never reads that controller", async () => {
+    const e = await edgeAssignedRun(def("d7-e", [gate(), ot("m1")]));
+    await edgeSegment(e, 1); // paused at g1
+    const a = rows("device_adapters").find((x) => x.id === 501)!;
+    Object.assign(a, capable, { edgeNodeId: NODE, ownerEpoch: 3 });
+    // no report ⇒ a capable edge-owned controller is unreadable ⇒ no digest ⇒ cannot be approved (central has no session to read it)
+    let view = (await getRun(e.runId, { bindingDigest: true }))!;
+    expect(view.bindingDigest).toBeNull();
+    expect(view.programChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 501, status: "unreadable" })]));
+    // a fresh report of the node, same owner epoch ⇒ verified with the REPORTED checksum
+    fake.seed({ [Symbol.for("drizzle:Name")]: "edge_node_program_reports" } as never, [{ edgeNodeId: NODE, adapterId: 501, status: "verified", checksum: "sha:abc", reason: null, readAt: new Date(), receivedAt: new Date(), ownerEpoch: 3 }]);
+    view = (await getRun(e.runId, { bindingDigest: true }))!;
+    expect(view.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(view.programChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 501, status: "verified", checksum: "sha:abc", source: "edge" })]));
+    // the approval records exactly that reading
+    await resumeRun(e.runId, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    expect(stepRows(e.runId).find((s) => s.stepId === "g1")!.resultJson).toMatchObject({ bindingDigest: view.bindingDigest, programChecks: expect.arrayContaining([expect.objectContaining({ id: 501, status: "verified", checksum: "sha:abc" })]) });
+  });
+
+  it("★ D7: a stale report, another owner epoch, or another node's report never counts (unreadable ⇒ no digest)", async () => {
+    const e = await edgeAssignedRun(def("d7-x", [gate(), ot("m1")]));
+    await edgeSegment(e, 1);
+    Object.assign(rows("device_adapters").find((x) => x.id === 501)!, capable, { edgeNodeId: NODE, ownerEpoch: 3 });
+    const report = (x: Record<string, unknown>) => fake.seed({ [Symbol.for("drizzle:Name")]: "edge_node_program_reports" } as never, [{ edgeNodeId: NODE, adapterId: 501, status: "verified", checksum: "sha:abc", reason: null, readAt: new Date(), receivedAt: new Date(), ownerEpoch: 3, ...x }]);
+    for (const bad of [{ readAt: new Date(Date.now() - 10 * 60_000) }, { readAt: new Date(Date.now() + 10 * 60_000) }, { ownerEpoch: 2 }, { edgeNodeId: NODE + 1 }]) {
+      report(bad);
+      const view = (await getRun(e.runId, { bindingDigest: true }))!;
+      expect(view.bindingDigest, JSON.stringify(bad)).toBeNull();
+    }
+    // an edge-reported "unsupported" for a controller central's config says is capable is not believed
+    report({ status: "unsupported", checksum: null });
+    expect((await getRun(e.runId, { bindingDigest: true }))!.bindingDigest).toBeNull();
+  });
+
+  it("★ D7: a CENTRAL run is unchanged — its (central-owned) controllers are read as before", async () => {
+    expect((await deployWorkflow(def("d7-c", [gate(), ot("m1")]), OWNER)).ok).toBe(true);
+    const runId = (await startRun("d7-c", {}, OWNER)).runId!;
+    const view = (await getRun(runId, { bindingDigest: true }))!;
+    expect(view.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(view.programChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: 501, status: "unsupported" })]));
+  });
+});
+
+describe("doc 81 Đợt 10 C — mutation follow-ups (each pins one rule the first mutation run showed unmeasured)", () => {
+  const okAuth = async (): Promise<EdgeStepAuthorizeOutcome> => ({ ok: true, authorization: {} as never, claims: { jti: randomUUID(), approval: null }, ttlMs: 10_000, reqNonce: "n".repeat(32) });
+  const ioOf = (runId: number, authorize: (i: EdgeStepAuthorizeRequest) => Promise<EdgeStepAuthorizeOutcome>, records: EdgeRunRecordIn[] = []) => ({
+    runId,
+    claimSeq: 1,
+    claimToken: "ect_" + "c".repeat(43),
+    sink: { run: async (_r: number, _c: number, rec: EdgeRunRecordIn) => (records.push(rec), { seq: records.length }) },
+    authorize: { authorize },
+  });
+
+  it("★ D5 inside a PARALLEL: a held branch holds the run (never 'completed' with an unsent step)", async () => {
+    const e = await edgeAssignedRun(def("par-h", [{ id: "p1", type: "parallel", steps: [ot("m1"), move("r1")] } as never]));
+    const pkg = await claimPackage(e, 1);
+    const store = createEdgeRunStore(pkg, ioOf(e.runId, async () => ({ ok: false, verdict: "unavailable", code: "network" })));
+    expect(await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)).toMatchObject({ outcome: "held", heldReason: "centralUnreachable" });
+    expect(h.sent).toEqual([]);
+  });
+
+  it("★ a live sweep never re-sends a STOP an EARLIER segment's sweep confirmed (prior abortSentBefore)", async () => {
+    const e = await edgeAssignedRun(def("prior-s", [move("r1"), { id: "d1", type: "delay", ms: 60_000 } as never, robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    (pkg.prior as { abortSentBefore: string[] }).abortSentBefore = ["s1"];
+    const records: EdgeRunRecordIn[] = [];
+    const store = createEdgeRunStore(pkg, ioOf(e.runId, okAuth, records));
+    const drive = driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store);
+    await waitFor(() => records.some((r: any) => r.kind === "step" && r.stepId === "d1" && r.status === "running"), "d1 running");
+    const live = await stopLiveRunForCentralAbort(e.runId, { id: 0, role: "system", name: "edge: central abort" });
+    await drive;
+    expect(live.abortStops?.sent).toEqual([]);
+    expect(h.sent.map((s) => s.stepId)).toEqual(["r1"]);
+  });
+
+  it("★ a command that names nothing to authorise (no adapter resolved) is refused on the edge without asking central", async () => {
+    const e = await edgeAssignedRun(def("unres", [ot("m1")]));
+    const pkg = await claimPackage(e, 1);
+    (pkg as { resolvedAdapters: unknown[] }).resolvedAdapters = [];
+    const asked: unknown[] = [];
+    const records: EdgeRunRecordIn[] = [];
+    const store = createEdgeRunStore(pkg, ioOf(e.runId, async (i) => (asked.push(i), okAuth()), records));
+    expect(await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)).toMatchObject({ outcome: "failed" });
+    expect(asked).toEqual([]);
+    expect((records.filter((r: any) => r.kind === "step" && r.stepId === "m1").pop() as any).error).toMatch(/^EDGE_AUTHORIZE_REFUSED\(commandUnresolved\)/);
+  });
+
+  it("★ applyEdgeSegmentEnd: 'completed' is refused while ANY non-abort row still runs (also below the top level)", async () => {
+    const e = await edgeAssignedRun(def("ap-run", [ot("m1"), ot("m2", { compensation: ot("c9") })]));
+    runRow(e.runId).status = "running";
+    const d = rows("orchestration_workflows").find((w) => w.id === runRow(e.runId).workflowId)!.definitionJson as WorkflowDefinition;
+    const w = (stepId: string, status: string) => ({ stepId, stepType: "command", status, attempt: 1, startedAt: null, finishedAt: null, error: null, result: undefined });
+    await recordEdgeStepRows(fake as never, e.runId, [w("m1", "completed"), w("m2", "completed"), w("c9", "running")]);
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, { outcome: "completed", nodeCode: "EDGE-A", claimSeq: 1, def: d } as never)).toMatchObject({ ok: false, code: "not_finished" });
+    await recordEdgeStepRows(fake as never, e.runId, [w("abort:x", "running")].map((r) => ({ ...r, stepId: "abort:x" })));
+    await recordEdgeStepRows(fake as never, e.runId, [w("c9", "compensated")]);
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, { outcome: "completed", nodeCode: "EDGE-A", claimSeq: 1, def: d } as never)).toMatchObject({ ok: true, status: "completed" });
+  });
+
+  it("★ applyEdgeSegmentEnd writes only while the run is STILL live when the write lands (a concurrent hold / abort wins)", async () => {
+    const e = await edgeAssignedRun(def("ap-race", [ot("m1")]));
+    runRow(e.runId).status = "held"; // what the row says when the write lands …
+    const d = rows("orchestration_workflows").find((w) => w.id === runRow(e.runId).workflowId)!.definitionJson as WorkflowDefinition;
+    // … while the endpoint's read still saw it 'running' (it changed in between)
+    const sel = fake.select.bind(fake);
+    let once = true;
+    (fake as any).select = (p?: unknown) => {
+      const b = sel(p as never);
+      const from = b.from.bind(b);
+      b.from = (t: any) => {
+        const r = from(t);
+        if (once && t?.[Symbol.for("drizzle:Name")] === "orchestration_runs") {
+          once = false;
+          const then = r.then.bind(r);
+          r.then = (res: any, rej: any) => then((rowsOut: Row[]) => res(rowsOut.map((x) => ({ ...x, status: "running" }))), rej);
+        }
+        return r;
+      };
+      return b;
+    };
+    try {
+      expect(await applyEdgeSegmentEnd(fake as never, e.runId, { outcome: "failed", error: "x", nodeCode: "EDGE-A", claimSeq: 1, def: d } as never)).toMatchObject({ changed: false });
+    } finally {
+      (fake as any).select = sel;
+    }
+    expect(runRow(e.runId).status).toBe("held");
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journal refusal, robot STOP, precondition abort, OT pinned STOP", () => {
+  it("★ R-10-y parity: a compensation whose authorisation is unavailable HOLDS the run at it (nothing sent, nothing failed); Continue resumes the COMPENSATION — final rows = central's", async () => {
+    const cp = (ref: string) => def(ref, [gate(), move("r1", { compensation: ot("c1", { args: { tagKey: "speed", value: 0 } }) })]);
+    h.failPlan.set("r1", Infinity);
+    const c = await centralRun(cp("ch-c"), 1);
+    const n0 = h.sent.length;
+    const e = await edgeAssignedRun(cp("ch-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    // r1 is authorised and fails; central is unreachable for c1's authorisation
+    e.offlineSteps = new Set(["c1"]);
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "centralUnreachable" });
+    expect(runRow(e.runId).status).toBe("held");
+    expect(stepRows(e.runId).find((s) => s.stepId === "r1")).toMatchObject({ status: "failed" });
+    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toMatchObject({ status: "held" });
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "c1")!.error)).toMatch(/^EDGE_HELD\(centralUnreachable\)/);
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // c1 NOT sent
+    // Continue: the compensation is resumed — r1 is never run again
+    e.offlineSteps = undefined;
+    await approveEdgeGate(e);
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1", "c1"]);
+    expect(e.authorizeCalls.map((a) => a.stepId).filter((x) => x === "r1")).toHaveLength(1);
+    expect(runRow(c).status).toBe("failed");
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    expect(sentCommands(n0)).toEqual(sentCommands(0, n0));
+    expect(runRow(e.runId).contextJson.foeCompensationHeld).toBeUndefined(); // R-10-ae — no context mark: the ROWS decided
+  });
+
+  it("★ journal refuses a record BEFORE the send: the step is not sent, it is HELD; the segment ends held(journalFull)", async () => {
+    const e = await edgeAssignedRun(def("jb-e", [gate(), move("r1"), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && rec.status === "running";
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+    expect(s2.out.error).toMatch(/^EDGE_HELD\(journalFull\)/);
+    expect(h.sent.slice(n0)).toEqual([]);
+    expect(e.authorizeCalls.filter((a) => a.claimSeq === 2)).toEqual([]); // nothing even asked
+    expect(runRow(e.runId).status).toBe("held");
+  });
+
+  it("★ journal refuses the POST-SEND result: the step is OUTCOME-UNKNOWN — never sent again (no retry, not on Continue either); run held, then the step counts as failed", async () => {
+    const e = await edgeAssignedRun(def("ja-e", [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    h.failPlan.set("r1", 1); // the first send is refused by the device ⇒ the walker would retry …
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "journalFull", outcomeUnknown: ["r1"] });
+    expect(s2.out.error).toMatch(/^EDGE_OUTCOME_UNKNOWN\(r1\)/);
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // … but never re-sends it; r2 / c1 never sent
+    expect(runRow(e.runId).status).toBe("held");
+    expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toEqual(["r1"]);
+    // Continue: r1 is NOT sent again — it is a failure (its compensation runs)
+    e.refuse = undefined;
+    await approveEdgeGate(e);
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1", "c1"]);
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
+    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toMatchObject({ status: "compensated" });
+  });
+
+  it("★ a robot STOP job is a STOP for the edge even when the package does not list it (local classifier): it never asks, also offline", async () => {
+    const e = await edgeAssignedRun(def("rs-local", [robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    (pkg as { verifiedStops: unknown[] }).verifiedStops = [];
+    const asked: unknown[] = [];
+    const store = createEdgeRunStore(pkg, {
+      runId: e.runId,
+      claimSeq: 1,
+      claimToken: "ect_" + "d".repeat(43),
+      sink: { run: async () => ({ seq: 1 }) },
+      authorize: { authorize: async (i) => (asked.push(i), { ok: false, verdict: "unavailable", code: "network" }) },
+    });
+    expect(await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)).toMatchObject({ outcome: "completed" });
+    expect(asked).toEqual([]);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["s1"]);
+  });
+
+  it("★ precondition abort: the edge segment ends ABORTED and central applies 'aborted' — as central's own walk", async () => {
+    const pa = (ref: string) => def(ref, [gate(), move("r1", { precondition: { source: "telemetry", machineId: 1, key: "temp", op: "lt", value: 0 }, onPreconditionFail: "abort" }), move("r2")]);
+    const c = await centralRun(pa("pa-c"), 1);
+    const e = await edgeAssignedRun(pa("pa-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "aborted" });
+    expect(runRow(c).status).toBe("aborted");
+    expect(runRow(e.runId).status).toBe("aborted");
+    expect(walkerWritesEdge(e)).toEqual(walkerWritesCentral(c));
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    expect(h.sent).toEqual([]);
+  });
+
+  it("★ OT PINNED STOP on the edge: never asks (L-7), sent with the package's pins — rows, commands and outcome = central's", async () => {
+    fake.seed(deviceTags, [
+      ...rows("device_tags"),
+      { id: 73, adapterId: 501, tagKey: "halt", address: "00001", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: true },
+    ]);
+    const ps = (ref: string) => def(ref, [gate(), ot("m1"), { id: "st", type: "command", machineId: 1, command: "stop", args: { tagKey: "halt", value: true } } as never]);
+    const c = await centralRun(ps("ps-c"), 1);
+    const n0 = h.sent.length;
+    const e = await edgeAssignedRun(ps("ps-e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["m1", "st"]);
+    expect(e.authorizeCalls.map((a) => a.stepId)).toEqual(["m1"]); // ★ the pinned STOP never asked
+    expect((h.sent.slice(n0).find((x) => x.stepId === "st")!.edge as any).authorization).toBeNull();
+    expect(walkerWritesEdge(e)).toEqual(walkerWritesCentral(c));
+    expect(finalRows(e.runId)).toEqual(finalRows(c));
+    expect(sentCommands(n0)).toEqual(sentCommands(0, n0));
+    expect(runRow(e.runId).status).toBe("completed");
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 1 — THE edge program-report rule (R-10-m) and the resend window from abortedAt", () => {
+  it("★ one predicate: key, central capability, owner epoch (stored only), freshness — anything else is unreadable", async () => {
+    const { edgeProgramCheckOf, edgeProgramPreOf, EDGE_HOLD_MARK_KEYS } = await import("../../edge/edgeProgramReportRule");
+    const now = 1_800_000_000_000;
+    const capable = { id: 501, edgeNodeId: 7, ownerEpoch: 3, protocol: "stub", connectionOptions: { simProgram: "P" }, code: "A501" };
+    const r = (x: Record<string, unknown> = {}) => ({ adapterId: 501, edgeNodeId: 7, status: "verified", checksum: "c1", readAt: now - 1_000, ownerEpoch: 3, ...x });
+    const S = { source: "stored" as const, nowMs: now, maxAgeMs: 120_000, skewMs: 5_000 };
+    expect(edgeProgramCheckOf(7, capable, r(), S)).toMatchObject({ status: "verified", checksum: "c1", label: "A501", source: "edge" });
+    expect(edgeProgramCheckOf(8, capable, r({ edgeNodeId: 8 }), S)).toMatchObject({ status: "unreadable" }); // not the owner
+    expect(edgeProgramCheckOf(7, capable, r({ edgeNodeId: 8 }), S)).toMatchObject({ status: "unreadable" }); // another node's reading
+    expect(edgeProgramCheckOf(7, capable, r({ adapterId: 502 }), S)).toMatchObject({ status: "unreadable" });
+    expect(edgeProgramCheckOf(7, capable, r({ ownerEpoch: 2 }), S)).toMatchObject({ status: "unreadable", reason: "inconsistent" });
+    expect(edgeProgramCheckOf(7, capable, r({ ownerEpoch: null }), S)).toMatchObject({ status: "unreadable" });
+    expect(edgeProgramCheckOf(7, capable, r({ ownerEpoch: undefined }), { ...S, source: "live" })).toMatchObject({ status: "verified" }); // a live request reading
+    expect(edgeProgramCheckOf(7, capable, r({ readAt: now - 126_000 }), S)).toMatchObject({ status: "unreadable", reason: "timeout" });
+    expect(edgeProgramCheckOf(7, capable, r({ readAt: now - 124_000 }), S)).toMatchObject({ status: "verified" }); // within age + skew
+    expect(edgeProgramCheckOf(7, capable, r({ readAt: now + 6_000 }), S)).toMatchObject({ status: "unreadable", reason: "timeout" });
+    expect(edgeProgramCheckOf(7, capable, r({ status: "unsupported", checksum: null }), S)).toMatchObject({ status: "unreadable", reason: "inconsistent" });
+    expect(edgeProgramCheckOf(7, capable, r({ status: "unreadable", checksum: null, reason: "notConnected" }), S)).toMatchObject({ status: "unreadable", reason: "notConnected" });
+    expect(edgeProgramCheckOf(7, { ...capable, protocol: "modbus", connectionOptions: {} }, r(), S)).toMatchObject({ status: "unsupported" }); // central's capability
+    const pre = edgeProgramPreOf(7, [capable, { ...capable, id: 9, edgeNodeId: 8 }], [r()], S);
+    expect([...pre.keys()]).toEqual([501]);
+    expect(pre.get(9)).toMatchObject({ status: "unreadable" }); // an unknown id is never read centrally
+    expect(EDGE_HOLD_MARK_KEYS).toEqual(expect.arrayContaining(["edgeUnreachable", "edgeWaiting", "edgeWaitingAt", "edgeWaitingNode", "edgeHeld", "interrupted"]));
+  });
+
+  it("★ N4: Continue clears B's 'waiting' marks too", async () => {
+    const e = await edgeAssignedRun(def("n4-w", [gate(), ot("m1")]));
+    const r = runRow(e.runId);
+    Object.assign(r, { status: "held", currentStepId: null, contextJson: { edgeWaiting: "capacity", edgeWaitingAt: "x", edgeWaitingNode: "EDGE-A", interrupted: true } });
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    expect(runRow(e.runId).contextJson).toEqual({ interruptedEarlier: true, edgeResumedBy: { userId: OTHER.id, at: expect.any(Number) } });
+  });
+
+  it("★ the edge's resend window counts from the ABORT (abortedAt), issuedAt only when it is absent", async () => {
+    const { resendStopsOfAbortedRun } = await import("./foeEngine");
+    const { createEdgeSweepStore } = await import("../../edge/edgeRunStore");
+    const e = await edgeAssignedRun(def("rw-e", [move("r1"), robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const pic = (x: Record<string, unknown>) => ({ ...pkg, kind: "sweep_picture", prior: { ...pkg.prior, settled: ["r1"], attempted: ["r1"] }, issuedAt: Date.now(), ...x }) as unknown as import("../../edge/edgeProtocol").EdgeSweepPicture;
+    const user = { id: 0, role: "system", name: "edge" };
+    const old = pic({ abortedAt: Date.now() - 16 * 60_000 }); // a fresh picture of an OLD abort
+    expect(await resendStopsOfAbortedRun(old, user, createEdgeSweepStore(old, { abortStop: () => undefined }))).toMatchObject({ ok: false, reason: "resendTooOld" });
+    expect(h.sent).toEqual([]);
+    const recent = pic({ abortedAt: Date.now() - 60_000, issuedAt: Date.now() - 60 * 60_000 }); // abort recent ⇒ allowed
+    expect(await resendStopsOfAbortedRun(recent, user, createEdgeSweepStore(recent, { abortStop: () => undefined }))).toMatchObject({ ok: true });
+    expect(h.sent.map((x) => x.stepId)).toEqual(["s1"]);
+    const { edgeSweepPictureSchema } = await import("../../edge/edgeProtocol");
+    expect(edgeSweepPictureSchema.shape.abortedAt).toBeDefined(); // the signed picture can carry it
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 1 — the edge assignment is read once and its read error is never swallowed", () => {
+  it("★ assignment unreadable ⇒ the approver's screen gets NO digest (never a central controller read) and an approval is refused 'retry'", async () => {
+    expect((await deployWorkflow(def("ae-c", [gate(), ot("m1")]), OWNER)).ok).toBe(true);
+    const runId = (await startRun("ae-c", {}, OWNER)).runId!;
+    const ok = (await getRun(runId, { bindingDigest: true }))!;
+    expect(ok.bindingDigest).toMatch(/^[0-9a-f]{64}$/);
+    const sel = FakeDb.prototype.select.bind(fake);
+    (fake as any).select = (p?: unknown) => {
+      const b = sel(p as never);
+      const from = b.from.bind(b);
+      b.from = (t: any) => {
+        if (t?.[Symbol.for("drizzle:Name")] === "orchestration_run_edge_assignments") throw Object.assign(new Error("connection reset"), { code: "08006" });
+        return from(t);
+      };
+      return b;
+    };
+    try {
+      expect((await getRun(runId, { bindingDigest: true }))!.bindingDigest).toBeNull();
+      const r = await resumeRun(runId, { approved: true, expectedStepId: "g1", expectedDefHash: ok.defHash!, expectedBindingDigest: ok.bindingDigest! }, OTHER);
+      expect(r).toMatchObject({ ok: false, message: expect.stringMatching(/could not be read — retry/) });
+    } finally {
+      (fake as any).select = sel;
+    }
+    expect(runRow(runId).status).toBe("awaiting_confirm");
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 1 — the robot STOP classifier also feeds the local abort sweep", () => {
+  it("★ a robot STOP the package does not list is still SENT by a local abort sweep (never left as a non-STOP)", async () => {
+    const e = await edgeAssignedRun(def("rs-sweep", [move("r1"), { id: "d1", type: "delay", ms: 60_000 } as never, robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    (pkg as { verifiedStops: unknown[] }).verifiedStops = [];
+    const records: EdgeRunRecordIn[] = [];
+    const store = createEdgeRunStore(pkg, {
+      runId: e.runId,
+      claimSeq: 1,
+      claimToken: "ect_" + "e".repeat(43),
+      sink: { run: async (_r, _c, rec) => (records.push(rec), { seq: records.length }) },
+      authorize: { authorize: async () => ({ ok: true, authorization: {} as never, claims: { jti: randomUUID(), approval: null }, ttlMs: 10_000, reqNonce: "n".repeat(32) }) },
+    });
+    const drive = driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store);
+    await waitFor(() => records.some((r: any) => r.kind === "step" && r.stepId === "d1" && r.status === "running"), "d1 running");
+    const live = await stopLiveRunForCentralAbort(e.runId, { id: 0, role: "system", name: "edge: central abort" });
+    await drive;
+    expect(live.abortStops).toMatchObject({ sent: ["s1"] });
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "s1"]);
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 2 (R-10-ae) — what a Continue must never redo is read from the STEP ROWS", () => {
+  const cp = (ref: string) => def(ref, [gate(), move("r1", { compensation: ot("c1", { args: { tagKey: "speed", value: 0 } }) })]);
+  async function heldAtCompensation(ref: string, opts: { refuseContext?: boolean } = {}) {
+    h.failPlan.set("r1", Infinity);
+    const e = await edgeAssignedRun(cp(ref));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.offlineSteps = new Set(["c1"]);
+    if (opts.refuseContext) e.refuse = (rec) => rec.kind === "context";
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held" });
+    expect(runRow(e.runId).status).toBe("held");
+    e.offlineSteps = undefined;
+    e.refuse = undefined;
+    return e;
+  }
+
+  it("★ the context mark STRIPPED (whatever a filter keeps): Continue still runs ONLY the compensation — r1 is never re-sent", async () => {
+    const e = await heldAtCompensation("ae-strip");
+    const ctx = runRow(e.runId).contextJson ?? {};
+    delete ctx.foeCompensationHeld;
+    delete ctx.foeOutcomeUnknown;
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r1: { state: "compensationHeld" } }); // central-written, from the rows
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "c1"]);
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+
+  it("★ the journal REFUSES the context record of the held segment: Continue still never re-sends r1", async () => {
+    const e = await heldAtCompensation("ae-ctxref", { refuseContext: true });
+    expect(runRow(e.runId).contextJson.foeCompensationHeld).toBeUndefined();
+    await approveEdgeGate(e);
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "c1"]);
+    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toMatchObject({ status: "compensated" });
+  });
+
+  it("★ a forged / stale context mark never decides: rows win (a 'held compensation' mark for a step the rows show completed changes nothing)", async () => {
+    const e = await edgeAssignedRun(def("ae-forge", [gate(), ot("m1", { compensation: ot("c1") }), move("r2")]));
+    await edgeSegment(e, 1);
+    runRow(e.runId).contextJson = { ...(runRow(e.runId).contextJson ?? {}), foeCompensationHeld: { m1: "forged" }, foeResumeState: { m1: { state: "doneFailed", error: "forged" } } };
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson.foeResumeState).toBeUndefined(); // replaced by the rows' (empty) state
+    await edgeSegment(e, 2);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["m1", "r2"]);
+    expect(runRow(e.runId).status).toBe("completed");
+  });
+
+  it("★ ambiguous rows (a compensation row, but the forward step's row does not say it failed) ⇒ the Continue is REFUSED, nothing changes", async () => {
+    const e = await heldAtCompensation("ae-amb");
+    stepRows(e.runId).find((s) => s.stepId === "r1")!.status = "held";
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    const r = await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    expect(r).toMatchObject({ ok: false, message: expect.stringMatching(/^EDGE_RESUME_AMBIGUOUS\(r1\)/) });
+    expect(runRow(e.runId).status).toBe("held");
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]);
+  });
+
+  it("★ outcome unknown WITHOUT the prefix (the complete lost it): the authorisation ledger shows r1 issued with no result ⇒ never re-sent", async () => {
+    const e = await edgeAssignedRun(def("ae-nopfx", [gate(), move("r1", { compensation: ot("c1") }), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    e.stripEndUnknown = true;
+    await edgeSegment(e, 2);
+    expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toBeUndefined(); // the hint never arrived
+    e.refuse = undefined;
+    e.stripEndUnknown = false;
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r1: { state: "outcomeUnknown" } });
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "c1"]); // r1 once; its compensation follows the unknown outcome
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
+  });
+
+  it("★ edgeResumeStateOf: the rows' rule (sent ⇒ unknown, failed + comp held / running / absent ⇒ compensation, comp ended ⇒ done, else ambiguous)", async () => {
+    const { edgeResumeStateOf } = await import("./foeRunStore");
+    const d = def("x", [ot("a"), ot("b", { compensation: ot("bc") }), ot("c", { compensation: ot("cc") }), ot("e", { compensation: ot("ec") }), ot("f", { compensation: ot("fc") }), ot("g"), ot("h")]);
+    const row = (stepId: string, status: string, x: Record<string, unknown> = {}) => ({ stepId, status, resultJson: null, error: null, ...x });
+    const out = edgeResumeStateOf(
+      d,
+      [
+        row("a", "running", { resultJson: { routedTo: "ot-dispatcher" } }), // sent, no final ⇒ unknown
+        row("b", "failed", { error: "boom" }),
+        row("bc", "held"), // ⇒ compensation resumed
+        row("c", "failed"),
+        row("cc", "compensated"), // ⇒ done
+        row("e", "completed"),
+        row("ec", "held"), // forward completed but its compensation held ⇒ ambiguous
+        row("f", "failed"), // compensation never started ⇒ resumed
+        row("g", "running"), // authorised, no result ⇒ unknown (ledger)
+        row("h", "completed"),
+        row("abort:a", "completed"),
+      ],
+      new Set(["g", "h"]),
+    );
+    expect(out.state).toEqual({
+      a: expect.objectContaining({ state: "outcomeUnknown" }),
+      g: expect.objectContaining({ state: "outcomeUnknown" }),
+      b: { state: "compensationHeld", error: "boom" },
+      c: { state: "doneFailed", error: "" },
+      f: { state: "compensationHeld", error: "" },
+    });
+    expect(out.ambiguous).toEqual(["e"]);
+    expect(edgeResumeStateOf(d, [row("a", "held")], new Set(), ["a"]).state).toMatchObject({ a: { state: "outcomeUnknown" } }); // a hint only ADDS
+  });
+
+  it("★ the real context filter: only the walker's own keys pass; central's keys are refused (and reported when they would change)", () => {
+    const r = edgeContextPatchOf(
+      { "branch:b1": "then", foeDispatchedSteps: ["m1"], telemetry: {}, states: {}, foeResumeState: { r1: { state: "doneFailed" } }, foeOutcomeUnknown: [], interrupted: false, startedViaApi: false },
+      { foeOutcomeUnknown: [] },
+    );
+    expect(Object.keys(r.patch).sort()).toEqual(["branch:b1", "foeDispatchedSteps", "states", "telemetry"]);
+    expect(r.refusedKeys.sort()).toEqual(["foeResumeState", "interrupted", "startedViaApi"]);
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 2 — a COMPENSATION sent with an unknown outcome is never sent again", () => {
+  it("★ c1 sent, its result refused by the journal ⇒ held; Continue: neither r1 nor c1 is sent again, the run fails", async () => {
+    h.failPlan.set("r1", Infinity);
+    const e = await edgeAssignedRun(def("ae-cu", [gate(), move("r1", { compensation: ot("c1") })]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "c1" && typeof (rec.result as any)?.routedTo === "string";
+    e.stripEndUnknown = true; // and the prefix is lost too: the rows + the ledger alone decide
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held" });
+    e.refuse = undefined;
+    e.stripEndUnknown = false;
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r1: { state: "compensationHeld" }, c1: { state: "outcomeUnknown" } });
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "c1"]);
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "c1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 3 (R-10-ao) — ANY authorisation on a non-final row means sent; STOPs are always re-sent; only 42P01 means no ledger", () => {
+  it("★ N1 real ordering: the ledger result reached central (resultReportedAt set) but the result row and the prefix were lost ⇒ r1 is never re-sent", async () => {
+    const e = await edgeAssignedRun(def("ao-n1", [gate(), move("r1"), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    e.stripEndUnknown = true;
+    await edgeSegment(e, 2);
+    expect((fake.store.get("edge_step_authorizations") ?? []).find((a) => a.runId === e.runId && a.stepId === "r1")!.resultReportedAt).toBeInstanceOf(Date);
+    e.refuse = undefined;
+    e.stripEndUnknown = false;
+    await approveEdgeGate(e);
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]);
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
+  });
+
+  it("★ N1 compensation + retry: a compensation and a retried attempt whose ledger result is reported are not re-sent either", async () => {
+    const { edgeResumeStateOf } = await import("./foeRunStore");
+    const d = def("x", [move("r1", { maxAttempts: 2, compensation: ot("c1") })]);
+    const row = (stepId: string, status: string) => ({ stepId, status, resultJson: null, error: null });
+    // r1 failed, c1 authorised + its result reported, row still running ⇒ c1 unknown; r1 resumes only the (unknown) compensation
+    expect(edgeResumeStateOf(d, [row("r1", "failed"), row("c1", "running")], new Set(["c1"])).state).toMatchObject({ c1: { state: "outcomeUnknown" }, r1: { state: "compensationHeld" } });
+    // r1 retried: attempt 2 authorised (any result) on a running row ⇒ unknown
+    expect(edgeResumeStateOf(d, [row("r1", "running")], new Set(["r1"])).state).toMatchObject({ r1: { state: "outcomeUnknown" } });
+  });
+
+  it("★ N2 a STOP is never outcome-unknown: on Continue it is SENT again (L-7) — rows, ledger and hints alike", async () => {
+    const e = await edgeAssignedRun(def("ao-n2", [gate(), move("r1"), robotStop("s1"), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    // held at r2; the STOP's FINAL row is lost (its row still 'running' with a dispatch result) and the end names it unknown
+    e.offlineSteps = new Set(["r2"]);
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held" });
+    Object.assign(stepRows(e.runId).find((s) => s.stepId === "s1")!, { status: "running" });
+    runRow(e.runId).contextJson = { ...(runRow(e.runId).contextJson ?? {}), foeOutcomeUnknown: ["s1"] };
+    e.offlineSteps = undefined;
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson.foeResumeState?.s1).toBeUndefined();
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "s1", "s1", "r2"]); // the STOP again; r1 never
+    const { edgeResumeStateOf } = await import("./foeRunStore");
+    const d = def("y", [robotStop("s9")]);
+    expect(edgeResumeStateOf(d, [{ stepId: "s9", status: "running", resultJson: { routedTo: "robot-dispatcher" } }], new Set(["s9"]), ["s9"], new Set(["s9"])).state).toEqual({});
+  });
+
+  it("★ N3 only 42P01 (no table) means 'no ledger'; any other ledger error (42703, 42883, a connection error) refuses the Continue", async () => {
+    for (const [code, refused] of [["42703", true], ["42883", true], ["08006", true], ["42P01", false]] as const) {
+      const e = await edgeAssignedRun(def(`ao-n3-${code}`, [gate(), ot("m1")]));
+      await edgeSegment(e, 1);
+      const sel = FakeDb.prototype.select.bind(fake);
+      (fake as any).select = (p?: unknown) => {
+        const b = sel(p as never);
+        const from = b.from.bind(b);
+        b.from = (t: any) => {
+          if (t?.[Symbol.for("drizzle:Name")] === "edge_step_authorizations") throw Object.assign(new Error("ledger"), { code });
+          return from(t);
+        };
+        return b;
+      };
+      try {
+        const view = (await getRun(e.runId, { bindingDigest: true }))!;
+        const r = await resumeRun(e.runId, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+        if (refused) expect(r, code).toMatchObject({ ok: false, message: expect.stringMatching(/could not be read to continue it safely/) });
+        else expect(r, code).toMatchObject({ ok: true, status: "queued" });
+      } finally {
+        (fake as any).select = sel;
+      }
+    }
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 4 (B F-B2-1) — a Continue of a held edge run records the RESUMER; /authorize uses that role", () => {
+  it("★ Continue records edgeResumedBy {userId, at} (central-only); a gate approval does not; an edge patch can never set it; B's actor rule then takes the resumer", async () => {
+    const { EDGE_RESUMED_BY_CTX_KEY, edgeEngineActorOf } = await import("../../edge/edgeAuthorizeCentral");
+    const e = await edgeAssignedRun(def("rb-e", [gate(), move("r1"), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e); // gate path: OTHER approves g1
+    expect(runRow(e.runId).contextJson?.[EDGE_RESUMED_BY_CTX_KEY]).toBeUndefined();
+    const gateAt = new Date(stepRows(e.runId).find((s) => s.stepId === "g1")!.finishedAt).getTime();
+    expect(edgeEngineActorOf(runRow(e.runId).contextJson, { approvedBy: OTHER.id, at: gateAt })).toEqual({ userId: OTHER.id, path: "gate" });
+    e.offlineSteps = new Set(["r2"]);
+    await edgeSegment(e, 2); // held at r2
+    expect(runRow(e.runId).status).toBe("held");
+    e.offlineSteps = undefined;
+    const RESUMER = { id: 14, role: "supervisor", name: "resumer" };
+    const t0 = Date.now();
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    expect((await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, RESUMER)).status).toBe("queued");
+    const rec = runRow(e.runId).contextJson[EDGE_RESUMED_BY_CTX_KEY];
+    expect(rec).toMatchObject({ userId: RESUMER.id });
+    expect(rec.at).toBeGreaterThanOrEqual(t0);
+    // B's /authorize rule: the held path ⇒ the RESUMER (its role is then read for the engine policy)
+    expect(edgeEngineActorOf(runRow(e.runId).contextJson, { approvedBy: OTHER.id, at: gateAt })).toEqual({ userId: RESUMER.id, path: "held" });
+    // an edge context patch can never set (or overwrite) it
+    const forged = edgeContextPatchOf({ [EDGE_RESUMED_BY_CTX_KEY]: { userId: OTHER.id, at: Date.now() + 1 }, "branch:x": "then" }, runRow(e.runId).contextJson);
+    expect(forged.patch).toEqual({ "branch:x": "then" });
+    expect(forged.refusedKeys).toEqual([EDGE_RESUMED_BY_CTX_KEY]);
+  });
+
+  it("★ the key is the same name B reads; a CENTRAL (non-edge) Continue writes nothing new", async () => {
+    const rule = await import("../../edge/edgeProgramReportRule");
+    const b = await import("../../edge/edgeAuthorizeCentral");
+    expect(rule.EDGE_RESUMED_BY_CTX_KEY).toBe(b.EDGE_RESUMED_BY_CTX_KEY);
+    expect((await deployWorkflow(def("rb-c", [gate(), ot("m1")]), OWNER)).ok).toBe(true);
+    const runId = (await startRun("rb-c", {}, OWNER)).runId!;
+    Object.assign(runRow(runId), { status: "held", currentStepId: null, contextJson: { interrupted: true } });
+    await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, { id: 0, role: "system", name: "FOE auto-resume" });
+    expect(runRow(runId).contextJson).toMatchObject({ interrupted: true });
+    expect(runRow(runId).contextJson).not.toHaveProperty("edgeResumedBy");
+  });
+});
+
+describe("doc 81 Đợt 10 C fix review 5 (R-10-bn) — an edge assignment names only devices the node owns", () => {
+  it("★ a robot / adapter the node does not own, an unresolvable device, or unreadable ownership ⇒ the run is NOT created; owned ⇒ created; central runs unaffected", async () => {
+    const runsBefore = () => rows("orchestration_runs").length;
+    expect((await deployWorkflow(def("own-r", [gate(), move("m1")]), OWNER)).ok).toBe(true);
+    h.foreignRobots.add(2);
+    let n = runsBefore();
+    const r1 = await startRun("own-r", {}, OWNER, { edgeNodeId: NODE });
+    expect(r1).toMatchObject({ ok: false, message: expect.stringMatching(/does not own \(robot 2\)/) });
+    expect(runsBefore()).toBe(n);
+    expect(rows("orchestration_run_edge_assignments")).toEqual([]);
+    // the same definition walked centrally is unaffected
+    expect((await startRun("own-r", {}, OWNER)).status).toBe("awaiting_confirm");
+    h.foreignRobots.clear();
+    expect(await startRun("own-r", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: true, status: "queued" });
+    // an OT adapter it does not own — a STOP step's target counts too
+    expect((await deployWorkflow(def("own-a", [gate(), robotStop("s0"), ot("m1")]), OWNER)).ok).toBe(true);
+    h.foreignAdapters.add(501);
+    n = runsBefore();
+    expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, message: expect.stringMatching(/adapter 501/) });
+    h.foreignAdapters.clear();
+    h.foreignRobots.add(2);
+    expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, message: expect.stringMatching(/robot 2/) }); // the STOP's robot
+    h.foreignRobots.clear();
+    expect(runsBefore()).toBe(n);
+    // ownership unreadable ⇒ refused (fail closed)
+    h.ownershipThrows = true;
+    expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, message: expect.stringMatching(/could not be verified/) });
+    h.ownershipThrows = false;
+    // an OT step whose adapter cannot be resolved (two enabled adapters on its machine) ⇒ refused
+    fake.seed(deviceAdapters, [...rows("device_adapters"), { id: 502, machineId: 1, isEnabled: true, updatedAt: T0, protocol: "stub", code: "A502" }]);
+    expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, stepIds: ["m1"], message: expect.stringMatching(/cannot be resolved \(m1\)/) });
+    expect(runsBefore()).toBe(n);
+  });
+});

@@ -23,6 +23,7 @@ import { catTheoTranCot } from './catTheoTranCot';
 // this instance (cross-instance propagation: Redis broadcast when available,
 // otherwise bounded by the ≤TTL staleness window).
 import { invalidateAuthSession, invalidateAuthUser } from '../services/authSessionCache';
+import { invalidateStopAuthForUser } from '../services/robot/robotStopAuthMemo'; // doc 81 Đợt 10 D fix review 5 (R-10-be)
 
 export type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'engineer' | 'viewer' | 'user';
 
@@ -879,6 +880,7 @@ export async function getUserFactoryAssignments(userId: number) {
 }
 
 export async function createCorporateAssignment(data: InsertUserCorporateAssignment) {
+  invalidateStopAuthForUser(data.userId); // doc 81 Đợt 10 D fix reviews 5–6 (R-10-be / NF5-1) — this user's scope changes: their STOP-only auth memory only
   const db = await getDb();
   if (!db) return null;
   
@@ -887,6 +889,7 @@ export async function createCorporateAssignment(data: InsertUserCorporateAssignm
 }
 
 export async function createFactoryAssignment(data: InsertUserFactoryAssignment) {
+  invalidateStopAuthForUser(data.userId); // doc 81 Đợt 10 D fix reviews 5–6 (R-10-be / NF5-1) — this user's scope changes: their STOP-only auth memory only
   const db = await getDb();
   if (!db) return null;
   
@@ -895,6 +898,7 @@ export async function createFactoryAssignment(data: InsertUserFactoryAssignment)
 }
 
 export async function deleteCorporateAssignment(userId: number, corporateCode: string) {
+  invalidateStopAuthForUser(userId); // doc 81 Đợt 10 D fix reviews 5–6 (R-10-be / NF5-1) — this user's scope changes: their STOP-only auth memory only
   const db = await getDb();
   if (!db) return null;
   
@@ -907,6 +911,7 @@ export async function deleteCorporateAssignment(userId: number, corporateCode: s
 }
 
 export async function deleteFactoryAssignment(userId: number, factoryCode: string) {
+  invalidateStopAuthForUser(userId); // doc 81 Đợt 10 D fix reviews 5–6 (R-10-be / NF5-1) — this user's scope changes: their STOP-only auth memory only
   const db = await getDb();
   if (!db) return null;
   
@@ -919,6 +924,7 @@ export async function deleteFactoryAssignment(userId: number, factoryCode: strin
 }
 
 export async function reassignCorporate(userId: number, oldCorporateCode: string, newCorporateCode: string, assignedBy: number) {
+  invalidateStopAuthForUser(userId); // doc 81 Đợt 10 D fix reviews 5–6 (R-10-be / NF5-1) — this user's scope changes: their STOP-only auth memory only
   const db = await getDb();
   if (!db) return null;
   
@@ -936,6 +942,7 @@ export async function reassignCorporate(userId: number, oldCorporateCode: string
 }
 
 export async function reassignFactory(userId: number, oldFactoryCode: string, newFactoryCode: string, assignedBy: number) {
+  invalidateStopAuthForUser(userId); // doc 81 Đợt 10 D fix reviews 5–6 (R-10-be / NF5-1) — this user's scope changes: their STOP-only auth memory only
   const db = await getDb();
   if (!db) return null;
   

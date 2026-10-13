@@ -195,8 +195,22 @@ const CLASSIFIED: Record<string, Kind> = {
       /if \(!run0 \|\| !\(await runInNodeScope\(run0, node\)\)\) return notFound\(runId\);/,
     ],
   },
-  "server/services/edge/edgeExecutionAgent.ts": { kind: "allow", reason: "runs ON the edge (no caller identity): executes only runs central handed THIS node under a claim (foeEngine.driveEdgeClaimedRun re-verifies the claim in the DB)" },
-  "server/services/edge/edgeRunGuard.ts": { kind: "allow", reason: "reads ONE run's status + its assignment for the edge walker that holds the claim; returns a verdict, no run to anyone" },
+  // 2026-10-12 doc 81 Đợt 10 task B — the CENTRAL v2 node endpoints: a run id is the node's only through ITS assignment row,
+  // and the run's targets inside the node's factory (the same 404 otherwise)
+  "server/services/edge/edgeAuthorizeCentral.ts": {
+    kind: "service",
+    requires: [/and\(eq\(runEdgeAssignments\.runId, runId\), eq\(runEdgeAssignments\.edgeNodeId, node\.nodeId\)\)/, /if \(!run \|\| !\(await runInNodeScope\(run, node\)\)\) return runNotFound\(runId\);/],
+  },
+  "server/services/edge/edgeReportsCentral.ts": {
+    kind: "service",
+    requires: [/and\(eq\(runEdgeAssignments\.runId, runId\), eq\(runEdgeAssignments\.edgeNodeId, node\.nodeId\)\)/, /if \(!run \|\| !\(await runInNodeScope\(run, node\)\)\) return runNotFound\(runId\);/],
+  },
+  "server/services/edge/edgeCentralCommon.ts": { kind: "allow", reason: "the node scope predicate (runInNodeScope → foeEngine.runVisibleTo with the NODE's factory); no run id from a caller" },
+  "server/services/edge/edgeRunAnalysis.ts": { kind: "allow", reason: "reads the step rows of a run id given by central's node endpoints after their assignment + scope check" },
+  "server/services/edge/__edgeCentralKit.dot10.ts": { kind: "allow", reason: "test fixture of the Đợt 10 B suites (_test only)" },
+  // 2026-10-13 doc 81 Đợt 10 task F1 — classified (new file of the population): the two-process E2E / attack harness
+  "server/services/edge/__edgeE2eHarness.dot10.ts": { kind: "allow", reason: "test fixture of the Đợt 10 F1 two-process suites (_test only, refuses any other DB); not imported by product code" },
+  "server/services/edge/edgeExecutionAgent.ts": { kind: "allow", reason: "runs ON the edge (no caller identity): executes only runs central handed THIS node under a claim (doc 81 Đợt 10 C: foeEngine.driveEdgeRunFromPackage walks the SIGNED run package of that claim, no DB; every non-STOP step asks central's /authorize)" },
   "server/services/edge/edgeCoordinator.ts": { kind: "allow", reason: "service: run-id entries (assignRun / syncRunResult / listRunsForNode) are reached only through edgeRuntimeRouter + api/v1 /edge/sync, both checked here" },
   "server/services/edge/edgeRuntime.ts": { kind: "allow", reason: "runs ON an edge host (no caller identity); executeAssignedRun has no production caller" },
   "server/services/engineeringAssignment/assignmentService.ts": {
@@ -217,6 +231,10 @@ const CLASSIFIED: Record<string, Kind> = {
   },
   "server/services/orchestration/foe/__foeGateRunFixture.ts": { kind: "allow", reason: "test fixture (_test only), not imported by product code" },
   "server/services/orchestration/foe/foeEngine.ts": { kind: "engine" },
+  // 2026-10-12 doc 81 Đợt 10 task C — the engine's CENTRAL RunStore (persistence / gate functions moved out of foeEngine unchanged)
+  // + the appliers of an edge segment (recordEdgeStepRows / applyEdgeSegmentEnd, called by B's node endpoints after their
+  // assignment + node-scope check). edgeRunGuard.ts was deleted (the per-step /authorize replaces it).
+  "server/services/orchestration/foe/foeRunStore.ts": { kind: "allow", reason: "the walker's central store: writes / reads the rows of the run the engine (or B's node endpoint, after its assignment + scope check) already holds; no caller identity, returns no run to anyone" },
   "server/services/orchestration/foe/foeGateApproval.ts": { kind: "allow", reason: "dispatcher DB layer: reads the run named by an engine-written action inside the reservation tx (no caller-supplied id, no caller identity)" },
   // 2026-10-12 doc 81 Đợt 9 task R1 — new file of the population (narrow projection of orchestration_runs, mig 0369).
   "server/services/orchestration/foe/runApiKeyIdentity.ts": {
@@ -238,8 +256,8 @@ const ALLOW_ENGINE: Record<string, string> = {
   runVisibilityDefinitions:
     "a LOADER of the definitions a run executed (no caller identity, returns no run to anyone): its callers are the shared checks above (filterRunsVisibleTo / runScopeDecision) and rosterScope.runAssigneeVisibilitySql, reached only after the router's runIdVisibleTo",
   // 2026-10-12 doc 81 Đợt 9 task S3 — the EDGE half (no caller identity on an edge host)
-  driveEdgeClaimedRun:
-    "EDGE only (edgeExecutionAgent): walks a run only under the claim central minted for THIS node, re-verified in the DB (claimSeq + token hash + workflow id + snapshot); the node's scope was decided by central at assignment (resolveAssignableNode) and at pull / claim (runInNodeScope)",
+  driveEdgeRunFromPackage:
+    "EDGE only (edgeExecutionAgent, doc 81 Đợt 10 C): walks the SIGNED run package central minted for THIS node's claim (no DB); every non-STOP command asks central's /authorize; the node's scope was decided by central at assignment (resolveAssignableNode) and at pull / claim (runInNodeScope)",
   stopLiveRunForCentralAbort:
     "EDGE only: acts on a walker alive in THIS process (liveRuns) on central's stop signal, and only STOPS (L-7) — nothing to see, nothing new to start",
   resendStopsOfAbortedRun:

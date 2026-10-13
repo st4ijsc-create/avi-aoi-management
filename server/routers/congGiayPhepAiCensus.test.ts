@@ -367,7 +367,32 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *     giao dịch, `module = null` như mọi thủ tục anh em của apiKeyRouter (không phải bề mặt AI).
  *   Cả năm đã được kiểm cổng (đọc mã, final review Đợt 9 + lượt này). `tong` 2307 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2307, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-13 doc 81 Đợt 10 integration — **tong 2307 → 2308, GHIM LẠI** (đo trước, đọc cổng của thủ tục mới, rồi mới ghim).
+ *   Đúng MỘT thủ tục mới: `robot.consoleStop` (mutation, `robotRouter.ts`, task D fix reviews 5–7, R-10-bb): `robotStopProcedure`
+ *   = `publicProcedure` + middleware STOP-only (`robotStopAuth.ts`: JWT xác minh không trạng thái, rồi authenticateRequest /
+ *   machine_control:canEdit / phạm vi nhà máy song song ≤ 300 ms; chỉ stop / abort). `module = null` như mọi thủ tục anh em của
+ *   robotRouter (`protectedProcedure` / `actuationProcedure` trần) — không phải bề mặt AI; beMatAi / aiCoCong / aiMienTru /
+ *   ngoaiAiCoCong và mọi SKU KHÔNG đổi. `tong` 2308 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-13 doc 81 Đợt 10 task F2 — **tong 2308 → 2311, GHIM LẠI** (đo trước rồi mới ghim). Ba thủ tục mới của router
+ *   `edgeResolution` (`edgeResolutionRouter.ts`, R-10-af / R-10-ax): `list` (protectedProcedure + machine_control:canView),
+ *   `resolveStop` / `resolveIntent` (supervisorProcedure + machine_control:canEdit). `module = null` như robotRouter — không phải bề
+ *   mặt AI; beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong và mọi SKU KHÔNG đổi. `tong` 2311 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-13 doc 81 Đợt 10 task F2 round 3 — **tong 2311 → 2312** (đo trước rồi mới ghim): `edgeResolution.reviewLateResult`
+ *   (supervisorProcedure + machine_control:canEdit). `module = null` — không phải bề mặt AI; mọi SKU không đổi. Trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-13 doc 81 Đợt 10 final fix wave (M-5, R-10-br) — **tong 2312 → 2313** (đo trước rồi mới ghim): `robot.requestMotionLock`
+ *   (protectedProcedure + machine_control:canEdit, cùng chuỗi với `robot.disableAutomation`; route khoá chuyển động của người vận
+ *   hành, design §2.11). `module = null` như các anh em robotRouter — không phải bề mặt AI; mọi SKU không đổi. Trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2313, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

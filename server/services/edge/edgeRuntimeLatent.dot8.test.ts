@@ -23,6 +23,15 @@
  *   would break the S1 ID mapping and bypass the claim. So WIRED stays [] and the tests below now pin the NEW shape: the
  *   gateway loads only the agent (behind its flag), never edgeRuntime / foeEngine directly, and central's edge routes are
  *   /edge/sync + exactly the six node-protocol routes, each behind the node credential.
+ *
+ * ★ RE-PIN 2026-10-13 (doc 81 Đợt 10 task F1, per the PROCEDURE above; WIRED stays []): the v2 edge has NO central DB
+ *   (design §2): the gateway no longer registers through edgeCoordinator (D14: admin-only node registration) — it is configured
+ *   from central's SIGNED config over the node protocol; the node agent is now loaded ALWAYS (central STOP / lock / clear
+ *   commands are handled even with run execution off) and claims runs only when edgeExecutionConfigFromEnv accepts
+ *   EDGE_EXECUTION_ENABLED; the walk is foeEngine.driveEdgeRunFromPackage over a signed run package, reached only through the
+ *   agent (never imported by the gateway itself). Central's node protocol grew from six to fourteen routes (Đợt 10 B: config,
+ *   heartbeat, program-checks, authorize, report, telemetry, robots/state, locks/events), every one still behind the node
+ *   credential. The two-process no-DB E2E (edgeExecution.dot10.e2e.db) measures this wiring end to end.
  */
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
@@ -97,18 +106,27 @@ describe("doc 81 Đợt 8 Q1 — the edge half of the central abort is LATENT (m
     const gatewayImports = ["server/edge/edgeGatewayMain.ts", "server/services/edge/edgeGatewayRuntime.ts"].flatMap((f) =>
       importsOf(fs.readFileSync(path.join(ROOT, f), "utf8")),
     );
-    expect(gatewayImports).toContain("./edgeCoordinator"); // instrument check: its real (registry / heartbeat) imports are seen
+    // instrument check: the gateway's real v2 imports are seen (2026-10-13 re-pin — it no longer imports edgeCoordinator: D14)
+    expect(gatewayImports).toEqual(expect.arrayContaining(["./edgeCentralClient", "./edgeConfigSource", "./edgeJournal", "./edgeDeviceRuntime"]));
+    expect(gatewayImports).not.toContain("./edgeCoordinator"); // no self-registration / DB heartbeat on the edge any more
     expect(gatewayImports.filter((m) => /(^|\/)edgeRuntime$|foeEngine|orchestration\//.test(m))).toEqual([]);
-    // 2026-10-12 doc 81 Đợt 9 S — the ONE execution door of the gateway: the node agent, loaded only behind its flag
-    expect(gatewayImports.filter((m) => /edgeExecution/.test(m)).sort()).toEqual(["./edgeExecutionAgent", "./edgeExecutionAgent"]); // start + stop
+    // the ONE execution door of the gateway: the node agent (type import + node env + start + stop)
+    expect([...new Set(gatewayImports.filter((m) => /edgeExecution/.test(m)))]).toEqual(["./edgeExecutionAgent"]);
     const rt = fs.readFileSync(path.join(ROOT, "server/services/edge/edgeGatewayRuntime.ts"), "utf8");
-    expect(rt).toMatch(/if \(process\.env\.EDGE_EXECUTION_ENABLED === "true" \|\| process\.env\.EDGE_EXECUTION_ENABLED === "1"\) \{[\s\S]*?startEdgeExecutionFromEnv\(\)/);
+    // runs are claimed only when the agent's env check accepts EDGE_EXECUTION_ENABLED (commands-only otherwise)
+    expect(rt).toMatch(/const exec = await agentMod\.edgeExecutionConfigFromEnv\(\);\s*const claimRuns = !\("error" in exec\);/);
+    const agent = fs.readFileSync(path.join(ROOT, "server/services/edge/edgeExecutionAgent.ts"), "utf8");
+    expect(agent).toMatch(/if \(env\.EDGE_EXECUTION_ENABLED !== "true" && env\.EDGE_EXECUTION_ENABLED !== "1"\) return \{ error: "EDGE_EXECUTION_ENABLED is off" \};/);
+    // the walker the agent loads is the package walker (no DB), never the removed v1 walker
+    expect(agent).toMatch(/engine\.driveEdgeRunFromPackage\(/);
+    expect(identifiersOf(agent).has("driveEdgeClaimedRun")).toBe(false);
   });
 
   // 2026-10-12 doc 81 Đợt 9 S — re-pinned (was: "only POST /edge/sync"): the node protocol now exists, in its own file, and EVERY
   // one of its routes is behind the node credential (requireEdgeNode — never an API key). Scans BOTH files (the old pin read
   // router.ts only and would have stayed green while edgeNodeRoutes.ts opened routes).
-  it("★ central's edge routes: POST /edge/sync (API key) + exactly the six node-protocol routes, each behind the node credential", () => {
+  // 2026-10-13 doc 81 Đợt 10 F1 — re-pinned: six → fourteen node routes (Đợt 10 B), each still behind the node credential.
+  it("★ central's edge routes: POST /edge/sync (API key) + exactly the fourteen node-protocol routes, each behind the node credential", () => {
     const routesOf = (rel: string) => {
       const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
       return [...src.matchAll(/\.(get|post|put|patch|delete)\(\s*["'](\/edge\/[^"']*)["'],\s*([\w.]+)/g)].map((m) => ({ route: `${m[1].toUpperCase()} ${m[2]}`, first: m[3] }));
@@ -122,6 +140,14 @@ describe("doc 81 Đợt 8 Q1 — the edge half of the central abort is LATENT (m
       "POST /edge/node/runs/:runId/complete",
       "POST /edge/node/runs/:runId/release",
       "POST /edge/node/runs/:runId/interrupted",
+      "POST /edge/node/config",
+      "POST /edge/node/heartbeat",
+      "POST /edge/node/program-checks",
+      "POST /edge/node/runs/:runId/authorize",
+      "POST /edge/node/runs/:runId/report",
+      "POST /edge/node/telemetry",
+      "POST /edge/node/robots/state",
+      "POST /edge/node/locks/events",
     ]);
     expect(node.every((r) => r.first === "auth")).toBe(true);
     expect(fs.readFileSync(path.join(ROOT, "server/api/v1/edgeNodeRoutes.ts"), "utf8")).toMatch(/const auth = requireEdgeNode\(\);/);

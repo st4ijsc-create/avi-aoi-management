@@ -133,7 +133,15 @@ export interface MotionLockState {
   clearedAt?: string;
   clearedByUserId?: number;
   clearReason?: string;
+  /**
+   * doc 81 Đợt 10 final fix wave (M-5) — an OPERATOR holds this lock (robot.requestMotionLock / the edge `lock` command): a
+   * confirmed STOP does not clear it; only the audited operator clear does.
+   */
+  operatorHold?: true;
 }
+
+/** doc 81 Đợt 10 final fix wave (M-5) — the reason code of a lock an OPERATOR asked for (central console / edge `lock` command). */
+export const OPERATOR_MOTION_LOCK_REASON_CODE = "centralLock" as const;
 
 /** doc 81 Đợt 4 Task B4 — persistence hooks of a MotionLock (fire-and-forget; must not throw or block). */
 export interface MotionLockPersistence {
@@ -213,29 +221,70 @@ export class MotionLock {
       ...(saved.detail != null ? { detail: saved.detail } : {}),
       since: saved.since,
       generation: this.generation,
+      ...(saved.reasonCode === OPERATOR_MOTION_LOCK_REASON_CODE ? { operatorHold: true as const } : {}),
     };
+  }
+
+  /**
+   * doc 81 Đợt 10 task D (design §2.11) — the edge authority's boot seed: the generation never goes BELOW `min` (journal ⊕
+   * the config's mirrored row ⊕ the ownership floor), so the next lock() is `min + 1` even when the robot starts clear and the
+   * central mirror never sees a generation go backwards. No state change, no persistence hook.
+   */
+  seedGeneration(min: number): void {
+    if (Number.isSafeInteger(min) && min > this.generation) {
+      this.generation = min;
+      this.state = { ...this.state, generation: this.state.locked ? this.state.generation : min };
+    }
+  }
+
+  /**
+   * doc 81 Đợt 10 final fix wave residual (MIN-3, R-10-bt) — a DURABILITY HOLD: the lock could be made durable nowhere (no pending
+   * marker, its DB write not landed). Motion stays refused — even after a clear — until the persistence layer reports a persisted
+   * lock (upsert landed) or a persisted clear (delete landed). STOPs are never refused.
+   */
+  private durabilityHold: string | null = null;
+  holdUntilDurable(why: string): void {
+    this.durabilityHold = why;
+  }
+  releaseDurabilityHold(): void {
+    this.durabilityHold = null;
   }
 
   private notify(kind: "locked" | "cleared"): void {
     const p = this.persistence;
     if (!p) return;
     try {
-      if (kind === "locked") p.locked(this.snapshot());
-      else p.cleared(this.snapshot());
+      // the RAW lock state (a durability hold is not a lock of its own: it is never persisted as one)
+      if (kind === "locked") p.locked({ ...this.state });
+      else p.cleared({ ...this.state });
     } catch (err) {
       console.error(`[Robot] motion lock persistence hook (${kind}) failed — in-memory lock unchanged:`, (err as Error)?.message ?? err);
     }
   }
 
   lock(reasonCode: string, detail?: string): void {
-    if (this.state.locked) return;
+    const operator = reasonCode === OPERATOR_MOTION_LOCK_REASON_CODE;
+    if (this.state.locked) {
+      // M-5 — a repeated lock keeps the FIRST cause (no write). An OPERATOR's lock on top of it becomes an operator hold (a STOP
+      // will not clear it) — as a NEW generation with the operator reason, the first cause listed in its detail, and PERSISTED
+      // like any lock (scan: an in-memory-only upgrade let the row stay less restrictive than memory ⇒ lost at a restart)
+      if (operator && !this.state.operatorHold) {
+        const prev = this.state;
+        this.generation++;
+        const why = `operator hold over ${prev.reasonCode ?? "lock"}${prev.detail ? ` (${prev.detail})` : ""}${detail ? `: ${detail}` : ""}`;
+        this.state = { locked: true, reasonCode, detail: why.slice(0, 900), since: prev.since ?? new Date().toISOString(), generation: this.generation, operatorHold: true };
+        this.notify("locked");
+      }
+      return;
+    }
     this.generation++;
-    this.state = { locked: true, reasonCode, detail, since: new Date().toISOString(), generation: this.generation };
+    this.state = { locked: true, reasonCode, detail, since: new Date().toISOString(), generation: this.generation, ...(operator ? { operatorHold: true as const } : {}) };
     this.notify("locked");
   }
 
+  /** Cleared by a CONFIRMED STOP — except an operator's hold (M-5): only clearByOperator removes that. */
   clearByStop(): void {
-    if (!this.state.locked) return;
+    if (!this.state.locked || this.state.operatorHold) return;
     this.state = {
       locked: false,
       reasonCode: this.state.reasonCode,
@@ -271,10 +320,14 @@ export class MotionLock {
   }
 
   isLocked(): boolean {
-    return this.state.locked;
+    return this.state.locked || this.durabilityHold !== null;
   }
 
   snapshot(): MotionLockState {
+    if (!this.state.locked && this.durabilityHold !== null) {
+      // MIN-3 — cleared in memory, but nothing durable yet: still shown (and enforced) as locked
+      return { ...this.state, locked: true, reasonCode: MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, detail: this.durabilityHold };
+    }
     return { ...this.state };
   }
 
@@ -286,13 +339,13 @@ export class MotionLock {
   guard(job: RobotJobSpec, inner: () => void): () => void {
     return () => {
       inner();
-      if (this.state.locked && !isStopJob(job)) throw new RobotMotionLockedError(this.snapshot());
+      if (this.isLocked() && !isStopJob(job)) throw new RobotMotionLockedError(this.snapshot());
     };
   }
 
   /** The RobotJobResult a driver returns for a MOTION job while locked; null when the job may proceed. */
   refusal(job: RobotJobSpec): RobotJobResult | null {
-    if (!this.state.locked || isStopJob(job)) return null; // residual round 2 — shared classifier
+    if (!this.isLocked() || isStopJob(job)) return null; // residual round 2 — shared classifier (MIN-3: a durability hold refuses too)
     const err = new RobotMotionLockedError(this.snapshot());
     return {
       ok: false,

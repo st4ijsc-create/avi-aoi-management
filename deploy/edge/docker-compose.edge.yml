@@ -9,11 +9,17 @@
 #   • autonomy:   store-and-forward WAL (≥24h) when the central broker is unreachable
 # It binds NO HTTP API / Socket.IO and, by default, NO local broker.
 #
-# Deploy one stack PER LINE (override EDGE_GATEWAY_NODE_CODE / _LINE_CODES / the
-# broker URL per line). Point UNS_BROKER_URL at the central EMQX (deploy/emqx).
+# Deploy one stack PER NODE. Point UNS_BROKER_URL at the central EMQX (deploy/emqx).
+#
+# doc 81 Dot 10 — NO CENTRAL DB ON THE EDGE: this host holds no DATABASE_URL, no JWT_SECRET and no
+# SECRET_ENCRYPTION_KEY. Identity, owned devices (with their secrets, sealed for this node) and run packages
+# come from CENTRAL over the node protocol (/api/v1/edge/node/*), SIGNED and verified against the keyset PIN;
+# local state lives in the journal (EDGE_JOURNAL_DIR, on the edgedata volume). The node bundle
+# (scripts/edge-node-credential.ts issue --bundle DIR) gives the credential file, the pin and edge-node.env.
 #
 # Run:
-#   docker compose -f deploy/edge/docker-compose.edge.yml --env-file .env.edge up -d
+#   docker compose -f deploy/edge/docker-compose.edge.yml --env-file .env.edge --env-file edge-node.env up -d
+#   (.env.edge from deploy/edge/.env.edge.example; edge-node.env from the bundle)
 #
 # ⚠️ SAFETY: with THIS file alone the gateway is READ + publish + buffer only.
 #    With the execution overlay (docker-compose.edge.execution.yml, doc 81 Dot 9 S —
@@ -48,7 +54,7 @@ services:
       dockerfile: deploy/edge/Dockerfile.edge
     image: synapse-edge-gateway:latest
     restart: unless-stopped
-    # No ports published — the gateway binds no HTTP/socket. Egress only (UNS + DB).
+    # No ports published — the gateway binds no HTTP/socket. Egress only: UNS broker + central HTTPS (no DB).
     env_file:
       - ../../.env.edge
     environment:
@@ -56,19 +62,26 @@ services:
 
       # ── Edge-gateway mode (activates the autonomous-edge behaviours) ──
       EDGE_GATEWAY_MODE: "true"
-      EDGE_RUNTIME_ENABLED: "true"                 # edge_nodes registry + heartbeat
-      EDGE_GATEWAY_NODE_CODE: ${EDGE_GATEWAY_NODE_CODE:-edge-line1}
-      EDGE_GATEWAY_NODE_NAME: ${EDGE_GATEWAY_NODE_NAME:-Edge Gateway Line 1}
-      EDGE_GATEWAY_FACTORY_CODE: ${EDGE_GATEWAY_FACTORY_CODE:-}
-      EDGE_GATEWAY_LINE_CODES: ${EDGE_GATEWAY_LINE_CODES:-LINE1}
+      AVI_PROCESS_ROLE: edge                       # every central-DB accessor refuses (doc 81 Dot 10 §2.15)
+      EDGE_RUNTIME_ENABLED: "true"                 # node protocol: heartbeat, config, commands (STOPs)
+      EDGE_GATEWAY_NODE_CODE: ${EDGE_GATEWAY_NODE_CODE:-edge-line1}   # Sparkplug edge-node id only; identity is central's
       EDGE_GATEWAY_HEARTBEAT_INTERVAL_MS: "30000"
-      # Config-as-code (GitOps): identity/scope + declarative tag mappings.
-      EDGE_GATEWAY_CONFIG_FILE: /app/config/edge-node.yaml
 
-      # ── Southbound (OT adapters — sourced from the Asset Registry / DB) ──
+      # ── Node protocol (doc 81 Dot 10) — from the node bundle (edge-node.env). Missing ⇒ the gateway starts NO device. ──
+      EDGE_CENTRAL_URL: ${EDGE_CENTRAL_URL:?set EDGE_CENTRAL_URL to the central server (https://...)}
+      EDGE_CENTRAL_NODE_ID: ${EDGE_CENTRAL_NODE_ID:?set EDGE_CENTRAL_NODE_ID (edge_nodes id, from the node bundle)}
+      EDGE_CENTRAL_CREDENTIAL_ID: ${EDGE_CENTRAL_CREDENTIAL_ID:?set EDGE_CENTRAL_CREDENTIAL_ID (from the node bundle)}
+      # only the PATHS of the two files — the credential never goes into the environment
+      EDGE_NODE_CREDENTIAL_FILE: /run/secrets/edge_node_credential
+      EDGE_KEYSET_PIN_FILE: /run/secrets/edge_keyset_pin
+      # local journal (append-only JSONL + fsync; auth / step / STOP / lock records are never dropped — size it, §8)
+      EDGE_JOURNAL_DIR: /app/data/edge-journal
+      EDGE_JOURNAL_MAX_BYTES: ${EDGE_JOURNAL_MAX_BYTES:-67108864}
+
+      # ── Southbound (OT adapters — the devices central's signed config says this node OWNS) ──
       OT_GATEWAY_ENABLED: "true"
       OT_CONN_HA_ENABLED: "true"                   # reconnect + dual-endpoint failover
-      OT_STORE_FORWARD_ENABLED: "true"             # DB-down buffer (local persist path)
+      OT_STORE_FORWARD_ENABLED: "true"             # telemetry buffer while central is unreachable (local persist path)
       OT_INGEST_TO_UNS: "true"                     # publish samples northbound to UNS
 
       # ── Northbound (central UNS broker) ──
@@ -85,17 +98,25 @@ services:
       EDGE_UNS_STORE_FORWARD_DRAIN_MS: "30000"
       EDGE_GATEWAY_LIVENESS_FILE: /app/data/edge-gateway.alive
 
-      # ── Run EXECUTION (doc 81 Dot 9 S) is OFF in this file. To turn it on, add the overlay
-      #    docker-compose.edge.execution.yml (a compose file-based SECRET outside the repo — docs/EDGE_GATEWAY.md section 8).
-
-      # ── Control-plane DB (Asset Registry + edge_nodes registry). Point at the
-      #    central DB reachable from the edge; the DB store-forward rides DB-down. ──
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the central control-plane DB}
+      # ── Run EXECUTION (non-STOP actuation under central's per-step signed authorisation) is OFF in this file.
+      #    To turn it on, add the overlay docker-compose.edge.execution.yml (docs/EDGE_GATEWAY.md section 8).
+      # NO DATABASE_URL / JWT_SECRET / SECRET_ENCRYPTION_KEY here or in .env.edge (Dot 10 cutover: remove them, rotate the
+      # avi_app password, firewall :5432 from the edge subnet — docs/EDGE_GATEWAY.md section 8.6).
+    secrets:
+      - edge_node_credential
+      - edge_keyset_pin
     volumes:
-      # Durable WAL + liveness marker survive restarts (≥24h backlog).
+      # Durable WAL + journal + liveness marker survive restarts (≥24h backlog).
       - edgedata:/app/data
-      # GitOps config (edge-node.yaml + contracts/mappings) mounted read-only.
-      - ./config:/app/config:ro
+
+# Compose FILE-BASED secrets: both files live OUTSIDE the repo checkout (e.g. /etc/avi-edge/, mode 700 dir), owned by the
+# container's `app` user. The credential must be mode 600 (the gateway refuses a group / world-readable one); the pin is
+# public data but its INTEGRITY is the root of trust (mode 444, never writable by the gateway).
+secrets:
+  edge_node_credential:
+    file: ${EDGE_NODE_CREDENTIAL_HOST_FILE:?set EDGE_NODE_CREDENTIAL_HOST_FILE to the node credential file OUTSIDE the repo checkout (mode 600)}
+  edge_keyset_pin:
+    file: ${EDGE_KEYSET_PIN_HOST_FILE:?set EDGE_KEYSET_PIN_HOST_FILE to edge-keyset.json from the node bundle (mode 444)}
 
 volumes:
   edgedata:

@@ -132,6 +132,11 @@ export async function registerNode(input: RegisterNodeInput): Promise<EdgeResult
     const d = await db();
     const now = new Date();
     const [existing] = await d.select().from(edgeNodes).where(eq(edgeNodes.code, code)).limit(1);
+    // doc 81 Đợt 10 D14 — a protocol-v2 node is registered by an administrator only (register-node): it can never rename
+    // itself or change its factory / lines through this path (its identity is the credential's node — edgeConfigCentral).
+    if (existing && (await isV2Node(d, existing.id))) {
+      return { ok: false, enabled: true, message: `Edge node "${code}" is on edge protocol v2 — it is registered and changed by an administrator only.` };
+    }
     if (existing) {
       const [row] = await d
         .update(edgeNodes)
@@ -212,6 +217,10 @@ export async function heartbeat(input: HeartbeatInput): Promise<EdgeResult<EdgeN
     if (!existing) {
       return { ok: false, enabled: true, message: `Edge node "${code}" is not registered.` };
     }
+    // doc 81 Đợt 10 — a v2 node's liveness comes ONLY from its own credential (heartbeatFromNode), never from a code in a body
+    if (await isV2Node(d, existing.id)) {
+      return { ok: false, enabled: true, message: `Edge node "${code}" is on edge protocol v2 — its heartbeat is POST /api/v1/edge/node/heartbeat with its node credential.` };
+    }
     const [row] = await d
       .update(edgeNodes)
       .set({
@@ -227,6 +236,62 @@ export async function heartbeat(input: HeartbeatInput): Promise<EdgeResult<EdgeN
   } catch (err) {
     // data-raw-ok: nhịp tim từ node biên — khách là MÁY, xem ghi chú ở `registerNode`.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** doc 81 Đợt 10 — is the node on edge protocol v2 (edge_nodes."protocolVersion", mig 0373; column missing ⇒ v1)? */
+async function isV2Node(d: Awaited<ReturnType<typeof db>>, nodeId: number): Promise<boolean> {
+  const { nodeProtocolVersion } = await import("./edgeCentralCommon");
+  return (await nodeProtocolVersion(d as never, nodeId)) === 2;
+}
+
+/**
+ * doc 81 Đợt 10 task B (design §2.3, D14) — POST /api/v1/edge/node/heartbeat: the v2 heartbeat, from the AUTHENTICATED node
+ * (its credential — never a code in the body). Records status, version, capacity, journal backlog, config hash, keyset
+ * version, protocol version, the node's wall clock (skew) and uptime; it can NEVER rename the node or change its factory /
+ * lines. Answer: central's time, the node's current config version, keyset version and whether a program check is wanted.
+ */
+export async function heartbeatFromNode(
+  node: import("./edgeNodeCredentials").EdgeNodePrincipal,
+  body: unknown,
+): Promise<import("./edgeProtocol").EdgeAnswer<import("./edgeProtocol").EdgeHeartbeatAnswer>> {
+  const { parseEdgeBody, edgeHeartbeatRequestSchema } = await import("./edgeProtocol");
+  const parsed = parseEdgeBody(edgeHeartbeatRequestSchema, body);
+  if (!parsed.ok) return parsed.answer;
+  const hb = parsed.data;
+  const common = await import("./edgeCentralCommon");
+  try {
+    const d = await db();
+    const v = await common.nodeProtocolVersion(d as never, node.nodeId);
+    if (v !== 2) return common.protocolVersionAnswer(v);
+    const signer = common.centralSigner();
+    if (!signer) return common.edgeUnavailable;
+    const now = Date.now();
+    const health = {
+      protocolVersion: hb.protocolVersion,
+      capacity: hb.capacity,
+      journal: hb.journal,
+      configHash: hb.configHash,
+      keysetVersion: hb.keysetVersion,
+      wallClockMs: hb.wallClockMs,
+      clockSkewMs: hb.wallClockMs - now,
+      uptimeMs: hb.uptimeMs,
+      credentialId: node.credentialId,
+      receivedAt: new Date(now).toISOString(),
+    };
+    await d
+      .update(edgeNodes)
+      .set({ status: hb.status === "degraded" || hb.journal.full ? "degraded" : "online", version: hb.version, healthJson: health, lastHeartbeatAt: new Date(now), updatedAt: new Date(now) })
+      .where(eq(edgeNodes.id, node.nodeId));
+    const { currentConfigVersion } = await import("./edgeConfigCentral");
+    const { programCheckRequestedFor } = await import("./edgeExecutionCentral");
+    return {
+      http: 200,
+      data: { serverTimeMs: now, configVersion: await currentConfigVersion(node), keysetVersion: signer.keyset.version, programCheckRequested: await programCheckRequestedFor(node) },
+    };
+  } catch (err) {
+    if (!common.isEdgeUnavailableError(err) && !(err instanceof DbUnavailableError)) console.error(`[EdgeCoordinator] heartbeat of node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
+    return common.edgeUnavailable;
   }
 }
 

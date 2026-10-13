@@ -43,12 +43,19 @@ import { DbUnavailableError } from "../../_core/dbErrors";
  * vision/zone evaluation (detections are injected through safety.evaluateZones),
  * the interlock engine's advisory mapping, the Andon dispatch, field-health lost_connection, safety.recordEvent.
  */
-export type TrustedSafetyOrigin = "robot_telemetry" | "safety_plc";
+/**
+ * doc 81 Đợt 10 task B (D6, mig 0375) — "edge_robot_telemetry": an e-stop transition CENTRAL derived from the robot states an
+ * EDGE NODE reported for a robot it owns, recorded trusted ONLY while edge_robot_trust_is_approved(node, robot, digest)
+ * (maker-checker per (node, robot)) and the vendor is in TRUSTED_ROBOT_TELEMETRY_VENDORS (edgeIngestCentral). The edge
+ * itself never names an origin or a trust (strict protocol schemas).
+ */
+export type TrustedSafetyOrigin = "robot_telemetry" | "safety_plc" | "edge_robot_telemetry";
 
 /** Which event TYPES each origin may make safety-critical (physical types only). */
 export const TRUSTED_ORIGIN_EVENT_TYPES: Readonly<Record<TrustedSafetyOrigin, ReadonlySet<string>>> = {
   robot_telemetry: new Set(["estop"]),
   safety_plc: new Set(["estop", "zone_intrusion"]),
+  edge_robot_telemetry: new Set(["estop"]),
 };
 
 /** Robot vendors whose telemetry the server polls itself from a configured controller endpoint (see "robot_telemetry"). */
@@ -192,7 +199,7 @@ export async function consumeTrustedSafetyOrigin(e: TrustedEventContent): Promis
       }),
     ]);
     if (!got) return null;
-    if (got.origin !== "robot_telemetry" && got.origin !== "safety_plc") return null;
+    if (got.origin !== "robot_telemetry" && got.origin !== "safety_plc" && got.origin !== "edge_robot_telemetry") return null;
     return { origin: got.origin, eventType: got.eventType };
   } catch (err) {
     console.warn("[Safety] trusted-origin consume failed (normal notice):", (err as Error)?.message ?? err);

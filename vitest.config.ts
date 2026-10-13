@@ -56,6 +56,18 @@ export default defineConfig({
       "scripts/**/*.test.ts",
       "vscode-extension/src/**/*.unit.test.ts",
     ],
+    // doc 81 Đợt 10 final fix wave residual (I-6 / MIN-5, R-10-bt) — the suites that change SHARED `_test` state for minutes run in
+    // the SERIAL project only (vitest.serial.config.ts, one file at a time; `npm run test:serial`, both: `npm run test:all`).
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "server/services/edge/edgeExecution.dot10.e2e.db.test.ts",
+      "server/services/edge/edgeAttack.dot10.e2e.db.test.ts",
+      "server/services/edge/edgeExecution.s3.dot9.db.test.ts",
+      "server/services/edge/edgeExecution.s4.e2e.dot9.db.test.ts",
+      "server/services/edge/safetySeedIntact.finalfix.dot10.db.test.ts",
+      "server/services/edge/edgeControlSchema.dot10.db.test.ts",
+    ],
     // Loads .env + forces DATABASE_URL to an ISOLATED test DB (see vitest.setup.ts).
     // Provision once: `node scripts/setup-test-db.mjs`.
     setupFiles: ["./vitest.setup.ts"],

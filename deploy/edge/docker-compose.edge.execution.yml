@@ -4,22 +4,14 @@
 #   docker compose -f deploy/edge/docker-compose.edge.yml -f deploy/edge/docker-compose.edge.execution.yml \
 #     --env-file .env.edge up -d
 #
-# The node credential is a compose FILE-BASED SECRET: the file lives OUTSIDE the repo checkout (e.g.
-# /etc/avi-edge/edge-node.cred), mode 600, owned by the container's `app` user — never in this repo, an env var, a label
-# or a log. The gateway refuses to start execution when the file is readable by group / others (POSIX).
+# doc 81 Dot 10: the node credential + keyset pin secrets, EDGE_CENTRAL_URL / node id / credential id and the journal are in
+# the BASE file now (every v2 edge speaks the node protocol, run execution or not). This overlay only turns execution on.
+# Every non-STOP step is authorised by central (signed, single-use, 10 s TTL from the edge's own request); central down ⇒
+# non-STOP steps are HELD (D5), STOPs still go out (L-7). Turn it on only after the dot10 E2E + attack suites are green.
 # ─────────────────────────────────────────────────────────────────────────────
 services:
   edge-gateway:
     environment:
       EDGE_EXECUTION_ENABLED: "true"
       FOE_ENABLED: "true"
-      EDGE_CENTRAL_URL: ${EDGE_CENTRAL_URL:?set EDGE_CENTRAL_URL to the central server (https://...)}
-      # only the PATH of the secret — the secret itself never goes into the environment
-      EDGE_NODE_CREDENTIAL_FILE: /run/secrets/edge_node_credential
       ROBOT_GATEWAY_ENABLED: ${ROBOT_GATEWAY_ENABLED:-false}
-    secrets:
-      - edge_node_credential
-
-secrets:
-  edge_node_credential:
-    file: ${EDGE_NODE_CREDENTIAL_HOST_FILE:?set EDGE_NODE_CREDENTIAL_HOST_FILE to the node credential file OUTSIDE the repo checkout (mode 600)}

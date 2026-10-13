@@ -6261,6 +6261,11 @@ async function startServer() {
   } catch (err) {
     console.error("[Robot] init failed:", (err as any)?.message || err);
   }
+  // doc 81 Đợt 10 task D fix review 1/2 (R-10-v / R-10-w / R-10-al, N6) — live ownership (LISTEN + ≤30 s reconcile) and the ≤10 s
+  // sweep executing STOPs owed to central-owned devices. NOT awaited (never blocks listen); its own try; central only.
+  void import("../services/robot/deviceOwnershipService")
+    .then(({ startDeviceOwnershipSync }) => startDeviceOwnershipSync())
+    .catch((err) => console.error("[DeviceOwner] ownership sync failed to start:", (err as any)?.message || err));
 
   // VDA 5050 — AGV/AMR fleet connectivity framework (MQTT). Importing the module
   // registers the `vda5050` robot driver. Disabled by default; opt in via

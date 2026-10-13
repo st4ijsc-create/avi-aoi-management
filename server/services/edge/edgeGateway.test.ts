@@ -175,14 +175,15 @@ describe("edge gateway — degraded health + heartbeat", () => {
     expect(h.status).toBe("degraded");
   });
 
-  it("sendHeartbeat reports the degraded status to the registry", async () => {
+  it("sendHeartbeat never self-registers (doc 81 Đợt 10 E, D14): not provisioned ⇒ no registry call, liveness marker only", async () => {
     setReachabilityProbe(() => false);
     const h = await sendHeartbeat();
     expect(h.status).toBe("degraded");
-    expect(registerCalls.length).toBeGreaterThanOrEqual(1); // registers on first beat
-    expect(heartbeatCalls.length).toBe(1);
-    expect(heartbeatCalls[0].status).toBe("degraded");
-    expect(heartbeatCalls[0].code).toBe("edge-test");
+    expect(h.nodeProtocolReachable).toBe(null);
+    expect(registerCalls).toEqual([]); // the node identity is central-owned — never registered from the edge
+    expect(heartbeatCalls).toEqual([]); // the heartbeat is HTTP with the node credential (edgeGatewayBoot.dot10), never the DB registry
+    const alive = JSON.parse(await fs.readFile(livenessPath, "utf8"));
+    expect(alive.status).toBe("degraded");
   });
 
   it("centralReachable falls back to the UNS publisher connection when no probe", async () => {

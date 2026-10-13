@@ -45,10 +45,52 @@ import { orchestrationRuns, orchestrationRunSteps, orchestrationWorkflows } from
 import { computeBindingDigest, hashWorkflowDefinition } from "../orchestration/foe/foeGateApproval";
 import type { WorkflowDefinition } from "../orchestration/foe/workflowModel";
 import type { FoeScope } from "../orchestration/foe/foeScope";
-import { centralStopped } from "./edgeCoordinator";
+import { centralStopped, edgeRuntimeEnabled as edgeRuntimeEnabledNow } from "./edgeCoordinator";
 import { runEdgeAssignments, isEdgeSchemaMissing, type RunEdgeAssignment } from "./edgeExecutionSchema";
 export { readEdgeAssignment, edgeAssignedRunIdsAmong } from "./edgeExecutionSchema";
 import { hashEdgeSecret, sameDigest, type EdgeNodePrincipal } from "./edgeNodeCredentials";
+// doc 81 Đợt 10 task B — protocol v2
+import { users } from "../../../drizzle/schema";
+import { computeBindingDetail, findStepDeep, runStartedViaApi, FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval";
+import {
+  EDGE_PROTOCOL_VERSION,
+  edgeClaimRequestSchema,
+  edgeCompleteRequestSchema,
+  edgeError,
+  edgeInterruptedRequestSchema,
+  edgePullRequestSchema,
+  edgeProgressRequestSchema,
+  edgeReleaseRequestSchema,
+  edgeRunPackageSchema,
+  edgeSweepPictureSchema,
+  edgeRunStream,
+  parseEdgeBody,
+  type EdgeClaimAnswer,
+  type EdgeCompleteAnswer,
+  type EdgeNodeClaim,
+  type EdgeProgressAnswer,
+  type EdgePullAnswer,
+  type EdgePulledRun,
+} from "./edgeProtocol";
+import {
+  centralSigner,
+  devicesOfNode,
+  isEdgeUnavailableError,
+  nodeProtocolVersion,
+  ownedAdapterIds,
+  ownedRobotIds,
+  protocolVersionAnswer,
+  signForNode,
+  edgeUnavailable as edgeUnavailableV2,
+  runNotFound,
+  type Db as CentralDbHandle,
+} from "./edgeCentralCommon";
+import { edgeNodeProgramReports } from "./edgeControlSchema";
+import { analyseDefinition, loadMachineMap, readPriorPicture } from "./edgeRunAnalysis";
+import { assignedDefinition, cursorLastSeq } from "./edgeReportsCentral";
+import { resolveEngineSink } from "./edgeEngineSink";
+import { commandsForNode, noteEdgeNodePull, type EdgeUnsignedStop as EdgeUnsignedStopEnvelope } from "./edgeNodeCommands";
+import type { EdgeSignedEnvelope } from "./edgeSigning";
 
 export const EDGE_PULL_LIMIT = 20;
 /** A run status at which an execution segment on the edge has ENDED (the engine's walk returned). */
@@ -81,26 +123,40 @@ async function db() {
   return d;
 }
 
-/** The factory scope of a node: its factoryCode, or unrestricted when it has none (only an unrestricted user may assign to it). */
-export function nodeScopeOf(node: { factoryCode?: string | null }): FoeScope {
+/**
+ * The factory scope of a node: its factoryCode. R-10-as N-6 — a node with NO factory code has NO run scope at all (the EMPTY
+ * tenant scope: no factory ⇒ no run is visible to it), never "unrestricted" (fail closed).
+ */
+export function nodeScopeOf(node: { factoryCode?: string | null }): NonNullable<FoeScope> {
   const code = typeof node.factoryCode === "string" ? node.factoryCode.trim() : "";
-  return code ? { tenantScope: { factoryCode: code } } : null;
+  return code ? { tenantScope: { factoryCode: code } } : { tenantScope: {} };
+}
+
+/** True ⇔ the node has a factory code (a node without one can be handed no run — R-10-as N-6). */
+function nodeHasFactory(node: { factoryCode?: string | null }): boolean {
+  return typeof node.factoryCode === "string" && node.factoryCode.trim() !== "";
 }
 
 /**
  * The node a caller may hand a run to: it exists, and its factory is inside the caller's scope (strict). A node with no factory
- * code ⇒ only an unrestricted caller. Missing / outside ⇒ "none" (the same answer); the scope cannot be resolved ⇒ "unverified".
+ * code ⇒ nobody (R-10-as N-6). Missing / outside ⇒ "none" (the same answer); the scope cannot be resolved ⇒ "unverified".
  */
-export async function resolveAssignableNode(code: string, callerScope: FoeScope): Promise<{ kind: "node"; id: number } | { kind: "none" } | { kind: "unverified" }> {
+export async function resolveAssignableNode(
+  code: string,
+  callerScope: FoeScope,
+): Promise<{ kind: "node"; id: number } | { kind: "none" } | { kind: "unverified" } | { kind: "unavailable" }> {
+  // doc 81 Đợt 10 N6 — the edge runtime is off: no node could ever pull the run ⇒ the start is refused (nothing created).
+  if (!edgeRuntimeEnabledNow()) return { kind: "unavailable" };
   try {
     const [{ edgeNodes }, { idsTrongPhamVi }] = await Promise.all([import("../../../drizzle/schema"), import("../../db/hierarchy")]);
     const d = await db();
     const [node] = await d.select({ id: edgeNodes.id, factoryCode: edgeNodes.factoryCode }).from(edgeNodes).where(eq(edgeNodes.code, String(code ?? "").trim())).limit(1);
     const callerIds = callerScope === null ? null : await idsTrongPhamVi("factory", callerScope, { strict: true });
     if (!node) return { kind: "none" };
+    // R-10-as N-6 — a node without a factory sees no run: nobody (an unrestricted caller included) may hand it one
+    if (!nodeHasFactory(node)) return { kind: "none" };
     if (callerIds === null) return { kind: "node", id: node.id };
     const ns = nodeScopeOf(node);
-    if (ns === null) return { kind: "none" };
     const nodeIds = await idsTrongPhamVi("factory", ns, { strict: true });
     if (!nodeIds || nodeIds.length === 0) return { kind: "none" };
     return nodeIds.every((id) => callerIds.includes(id)) ? { kind: "node", id: node.id } : { kind: "none" };
@@ -249,6 +305,10 @@ export function edgeUnclaimedHoldMs(): number {
 
 /** The context mark of a run held because its node never claimed it (read by the run view / Studio). */
 export const EDGE_UNREACHABLE_CTX_KEY = "edgeUnreachable";
+/** doc 81 Đợt 10 N4 — the context mark of a queued run whose (alive) node has not claimed it yet ("capacity" | "node"); the
+ *  key constants live in edgeProgramReportRule.ts (one set, cleared together by a Continue). */
+export { EDGE_WAITING_CTX_KEY } from "./edgeProgramReportRule";
+import { EDGE_WAITING_CTX_KEY } from "./edgeProgramReportRule";
 
 /**
  * doc 81 Đợt 9 final wave F2 (final review I2) — every run assigned to a node (`nodeId`, or every node — the central health
@@ -263,7 +323,7 @@ export async function holdUnclaimedEdgeRuns(nodeId?: number): Promise<number[]> 
   const bound = edgeUnclaimedHoldMs();
   const { edgeNodes } = await import("../../../drizzle/schema");
   const due = await d
-    .select({ runId: runEdgeAssignments.runId, nodeCode: edgeNodes.code })
+    .select({ runId: runEdgeAssignments.runId, nodeCode: edgeNodes.code, lastHeartbeatAt: edgeNodes.lastHeartbeatAt, healthJson: edgeNodes.healthJson })
     .from(runEdgeAssignments)
     .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
     .innerJoin(edgeNodes, eq(edgeNodes.id, runEdgeAssignments.edgeNodeId))
@@ -279,6 +339,21 @@ export async function holdUnclaimedEdgeRuns(nodeId?: number): Promise<number[]> 
     .limit(100);
   const held: number[] = [];
   for (const r of due) {
+    // doc 81 Đợt 10 N4 — a node whose heartbeat is FRESH is alive: its runs are never held as "unreachable". At its run
+    // capacity (heartbeat capacity.liveRuns ≥ maxRuns) the run is marked "waiting for edge capacity"; otherwise "waiting for
+    // the edge node" (it is up but has not claimed — its own checks may be refusing it). Only a STALE heartbeat holds.
+    const hb = r.lastHeartbeatAt ? new Date(r.lastHeartbeatAt).getTime() : NaN;
+    if (Number.isFinite(hb) && Date.now() - hb < edgeHeartbeatStaleMs()) {
+      const cap = ((r.healthJson ?? {}) as { capacity?: { liveRuns?: unknown; maxRuns?: unknown } }).capacity;
+      const atCapacity = typeof cap?.liveRuns === "number" && typeof cap?.maxRuns === "number" && cap.maxRuns > 0 && cap.liveRuns >= cap.maxRuns;
+      const reason = atCapacity ? "capacity" : "node";
+      const mark = { [EDGE_WAITING_CTX_KEY]: reason, edgeWaitingAt: new Date().toISOString(), edgeWaitingNode: r.nodeCode };
+      await d
+        .update(orchestrationRuns)
+        .set({ contextJson: sql`COALESCE(${orchestrationRuns.contextJson}, '{}'::jsonb) || ${JSON.stringify(mark)}::jsonb` })
+        .where(and(eq(orchestrationRuns.id, r.runId), eq(orchestrationRuns.status, "queued"), sql`COALESCE(${orchestrationRuns.contextJson} ->> ${EDGE_WAITING_CTX_KEY}, '') <> ${reason}`));
+      continue;
+    }
     const minutes = Math.round(bound / 60_000);
     const error = `Edge node ${r.nodeCode} did not claim run ${r.runId} within ${minutes} min (edge unreachable, or its checks keep refusing it — e.g. its device configuration differs from central's); held — Continue to re-queue it for the node, or abort it.`;
     const mark = { [EDGE_UNREACHABLE_CTX_KEY]: true, edgeUnreachableAt: new Date().toISOString(), edgeUnreachableNode: r.nodeCode, interrupted: true, interruptedAt: new Date().toISOString(), interruptedFrom: "queued", interruptedBy: "edge unreachable" };
@@ -526,5 +601,431 @@ export async function interruptedForNode(node: EdgeNodePrincipal, runId: number,
   } catch (err) {
     if (!isEdgeSchemaMissing(err)) console.error(`[EdgeExec] interrupted of run ${runId} by node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
     return unavailable as EdgeAnswer<never>;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 10 task B — PROTOCOL v2 (design §2.3–2.8): the edge holds NO database login. Central is the only writer of the
+// run row, its step rows, approvals, ledgers and audit; the edge gets SIGNED objects (edgeSigning / edgeProtocol): the run
+// package at the claim, sweep pictures and commands on the pull / progress. Every body is parsed with its STRICT schema.
+// The v1 handlers above stay for v1 nodes (D11, one release); a v2 node is served ONLY by these (the route decides by the
+// node's protocolVersion — a v1 claim is never accepted for a v2 node).
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** N4 — a node whose last heartbeat is older than this is stale (only then are its unclaimed runs held as unreachable). */
+export function edgeHeartbeatStaleMs(): number {
+  const n = parseInt(process.env.EDGE_HEARTBEAT_STALE_MS || "60000", 10);
+  return Number.isFinite(n) ? Math.min(3_600_000, Math.max(5_000, n)) : 60_000;
+}
+/** N5 — the minimum interval between two claim attempts of one node on one run. */
+export function edgeClaimMinIntervalMs(): number {
+  const n = parseInt(process.env.EDGE_CLAIM_MIN_INTERVAL_MS || "1000", 10);
+  return Number.isFinite(n) ? Math.min(60_000, Math.max(0, n)) : 1_000;
+}
+const lastClaimAttempt = new Map<string, number>();
+/** Tests only. */
+export function __resetClaimRateForTests(): void {
+  lastClaimAttempt.clear();
+}
+
+/** The run context shipped in a package: the server-only rejection claim token is never shipped. */
+function packageContext(ctx: unknown): Record<string, unknown> {
+  const src = (ctx ?? {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(src)) if (k !== FOE_REJECT_CLAIM_CTX_KEY) out[k] = v;
+  return JSON.parse(JSON.stringify(out)) as Record<string, unknown>;
+}
+const plainJson = <T>(v: T): T => JSON.parse(JSON.stringify(v ?? null)) as T;
+
+async function v2Gate(d: CentralDbHandle, node: EdgeNodePrincipal, opts: { signerOptional?: boolean } = {}): Promise<EdgeAnswer<never> | null> {
+  const v = await nodeProtocolVersion(d, node.nodeId);
+  if (v !== EDGE_PROTOCOL_VERSION) return protocolVersionAnswer(v);
+  // R-10-k — pull and progress still answer without the signer: they carry the node's pending STOPs (unsigned)
+  if (!opts.signerOptional && !centralSigner()) return edgeUnavailableV2;
+  return null;
+}
+
+/** The commands part of a pull / progress answer (unsignedStops only when there are any — i.e. only without a signer). */
+async function commandFields(node: EdgeNodePrincipal): Promise<{ commands: EdgeSignedEnvelope[]; unsignedStops?: EdgeUnsignedStopEnvelope[]; commandsIncomplete?: true }> {
+  // M-3 — a read failure throws ⇒ the caller answers 503 (never a quiet "no commands")
+  const c = await commandsForNode(node);
+  return {
+    commands: c.signed,
+    ...(c.unsignedStops.length > 0 ? { unsignedStops: c.unsignedStops } : {}),
+    ...(c.incomplete ? { commandsIncomplete: true as const } : {}),
+  };
+}
+
+/** The picture both the run package and a sweep picture carry (runPicture of edgeProtocol). */
+async function runPicture(d: CentralDbHandle, node: EdgeNodePrincipal, runId: number, defHash: string, def: WorkflowDefinition) {
+  const machineMap = await loadMachineMap(d, def);
+  const analysis = await analyseDefinition(d, runId, def, machineMap);
+  const prior = await readPriorPicture(d, runId);
+  return {
+    analysis,
+    picture: {
+      runId,
+      nodeId: node.nodeId,
+      defHash,
+      definition: plainJson(def) as unknown as Record<string, unknown>,
+      machines: [...machineMap.values()].sort((a, b) => a.id - b.id).map((m) => ({ id: m.id, machineType: m.machineType, capabilities: plainJson(m.capabilities ?? null) })),
+      verifiedStops: analysis.verifiedStops,
+      stopsUnsure: analysis.stopsUnsure,
+      prior,
+      issuedAt: Date.now(),
+    },
+  };
+}
+
+/** Is a fresh program reading wanted from the node (a run of it is queued / awaiting approval and an owned adapter has none)? */
+async function programCheckWanted(d: CentralDbHandle, node: EdgeNodePrincipal): Promise<boolean> {
+  try {
+    const waiting = await d
+      .select({ runId: runEdgeAssignments.runId })
+      .from(runEdgeAssignments)
+      .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
+      .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), inArray(orchestrationRuns.status, ["queued", "awaiting_confirm"])))
+      .limit(1);
+    if (waiting.length === 0) return false;
+    const { edgeProgramReportMaxAgeMs } = await import("./edgeConfigCentral");
+    const owned = await devicesOfNode(d, node.nodeId);
+    if (owned.adapters.length === 0) return false;
+    const fresh = await d
+      .select({ adapterId: edgeNodeProgramReports.adapterId })
+      .from(edgeNodeProgramReports)
+      .where(and(eq(edgeNodeProgramReports.edgeNodeId, node.nodeId), sql`${edgeNodeProgramReports.receivedAt} > now() - (${Math.floor(edgeProgramReportMaxAgeMs() / 2)} * interval '1 millisecond')`));
+    const have = new Set(fresh.map((r) => r.adapterId));
+    return owned.adapters.some((id) => !have.has(id));
+  } catch {
+    return false;
+  }
+}
+
+/** The sweep picture payload; `abortedAt` (Group C's addition to the schema) is carried once the schema has it. */
+function sweepPayload(picture: Record<string, unknown>, finishedAt: Date | string | null | undefined): Record<string, unknown> {
+  const base = { kind: "sweep_picture", ...picture };
+  const at = finishedAt == null ? NaN : new Date(finishedAt).getTime();
+  return "abortedAt" in (edgeSweepPictureSchema as unknown as { shape: Record<string, unknown> }).shape && Number.isFinite(at) ? { ...base, abortedAt: at } : base;
+}
+
+/**
+ * POST /edge/node/pull (v2).
+ * doc 81 Dot 10 final fix wave (I-1, R-10-br) — the node's COMMANDS (its STOPs first) are read FIRST and on their own: a read
+ * failure there is still 503 (M-3: "no commands" is never said for "none pending"), and F-B2-2 holds (the commands are read
+ * BEFORE the config version). Every RUN section after that (offered runs, claims, aborted runs + their signed sweep pictures)
+ * is isolated: a throw in one section — or in one run of a section — is logged, that part is left out and the answer says
+ * `runStateUnavailable: true` (R-10-bs); it never fails the answer, so a run-side failure (an unsignable picture, a transient
+ * analysis read) can never hold back a STOP. The edge then HOLDS every non-STOP work and never reads a missing section as
+ * "no abort" (a run central aborted is never walked on because its claim row could not be read).
+ */
+export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Promise<EdgeAnswer<EdgePullAnswer>> {
+  const parsed = parseEdgeBody(edgePullRequestSchema, body);
+  if (!parsed.ok) return parsed.answer;
+  let d: CentralDbHandle;
+  let commands: Awaited<ReturnType<typeof commandFields>>;
+  let configVersion: number;
+  try {
+    d = await db();
+    const refused = await v2Gate(d, node, { signerOptional: true });
+    if (refused) return refused;
+    noteEdgeNodePull(node.nodeId); // I-3 — the node's liveness as central sees it (its pulls)
+    const { currentConfigVersion } = await import("./edgeConfigCentral");
+    // F-B2-2 — the commands are read BEFORE the config version: an ownership change committed in between can only move the
+    // version forward, so a carried STOP never ships with a version older than the ownership it was carried under
+    commands = await commandFields(node);
+    configVersion = await currentConfigVersion(node);
+  } catch (err) {
+    if (!isEdgeUnavailableError(err) && !(err instanceof EdgeDbUnavailable)) console.error(`[EdgeExec] v2 pull for node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
+    return edgeUnavailableV2;
+  }
+  const signer = centralSigner();
+  let runSideFailed = false;
+  const section = async <T>(what: string, fallback: T, work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (err) {
+      runSideFailed = true;
+      console.error(`[EdgeExec] v2 pull for node ${node.nodeCode}: ${what} left out of this answer (its commands are delivered): ${(err as Error)?.message ?? err}`);
+      return fallback;
+    }
+  };
+  await holdUnclaimedEdgeRuns(node.nodeId).catch(() => undefined);
+  const runs = await section("offered runs", [] as EdgePulledRun[], async () => {
+    const queued = await d
+      .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, workflowId: orchestrationRuns.workflowId, workflowRef: orchestrationRuns.workflowRef, paramsJson: orchestrationRuns.paramsJson } })
+      .from(runEdgeAssignments)
+      .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
+      .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), eq(orchestrationRuns.status, "queued")))
+      .orderBy(asc(runEdgeAssignments.assignedAt))
+      .limit(EDGE_PULL_LIMIT);
+    const out: EdgePulledRun[] = [];
+    for (const { a, run } of signer ? queued : []) {
+      // (no signer ⇒ no run can be claimed now: none is offered)
+      await section(`offered run ${a.runId}`, undefined, async () => {
+        if (!(await runInNodeScope(run, node))) return;
+        const base = { runId: a.runId, workflowId: a.workflowId, workflowRef: run.workflowRef ?? null, workflowVersion: a.workflowVersion, defHash: a.defHash, claimSeq: a.claimSeq };
+        const wf = await workflowHead(d, a.workflowId);
+        const def = wf?.definitionJson as WorkflowDefinition | undefined;
+        out.push(!wf || !def || hashWorkflowDefinition(def) !== a.defHash ? { ...base, refused: "definitionChanged" as const } : base);
+      });
+    }
+    return out;
+  });
+  const claims = await section("claims", [] as EdgeNodeClaim[], async () => {
+    const claimedRows = await d
+      .select({ a: runEdgeAssignments, run: { status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson } })
+      .from(runEdgeAssignments)
+      .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
+      .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), isNotNull(runEdgeAssignments.claimTokenHash)))
+      .limit(200);
+    const staleBefore = Date.now() - edgeClaimStaleMs();
+    return claimedRows
+      .filter(({ a }) => a.claimSeq > 0)
+      .map(({ a, run }) => {
+        const last = (a.lastProgressAt ?? a.claimedAt) as Date | null;
+        return { runId: a.runId, claimSeq: a.claimSeq, status: run.status as EdgeNodeClaim["status"], abortRequested: centralStopped(run), stale: !last || new Date(last).getTime() < staleBefore };
+      });
+  });
+  // L-7 — aborted runs of this node whose STOPs central could not confirm: a SIGNED sweep picture each (the node re-sends);
+  // one run whose picture cannot be built / signed is left out (logged, runStateUnavailable) — never the others, never the commands
+  const stopsUnconfirmed = await section("unconfirmed STOPs of aborted runs", [] as Array<{ runId: number; picture: EdgeSignedEnvelope }>, async () => {
+    const abortedRows = await d
+      .select({ a: runEdgeAssignments, finishedAt: orchestrationRuns.finishedAt })
+      .from(runEdgeAssignments)
+      .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
+      .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), eq(orchestrationRuns.status, "aborted")))
+      .orderBy(desc(orchestrationRuns.finishedAt))
+      .limit(50);
+    const recent = abortedRows.filter((r) => abortResendAllowed(r.finishedAt));
+    const failedIds = recent.length
+      ? new Set(
+          (
+            await d
+              .select({ runId: orchestrationRunSteps.runId })
+              .from(orchestrationRunSteps)
+              .where(and(inArray(orchestrationRunSteps.runId, recent.map((r) => r.a.runId)), like(orchestrationRunSteps.stepId, "abort:%"), eq(orchestrationRunSteps.status, "failed")))
+          ).map((r) => r.runId),
+        )
+      : new Set<number>();
+    const out: Array<{ runId: number; picture: EdgeSignedEnvelope }> = [];
+    for (const r of signer ? recent : []) {
+      if (!failedIds.has(r.a.runId)) continue;
+      await section(`sweep picture of aborted run ${r.a.runId}`, undefined, async () => {
+        const def = await assignedDefinition(d, r.a);
+        if (!def) return;
+        const { picture } = await runPicture(d, node, r.a.runId, r.a.defHash, def);
+        out.push({ runId: r.a.runId, picture: signForNode(signer!, "runpkg", edgeSweepPictureSchema, sweepPayload(picture, r.finishedAt), node) });
+      });
+    }
+    return out;
+  });
+  return {
+    http: 200,
+    data: {
+      node: node.nodeCode,
+      protocolVersion: EDGE_PROTOCOL_VERSION,
+      configVersion,
+      keysetVersion: signer ? signer.keyset.version : 0,
+      programCheckRequested: await programCheckWanted(d, node),
+      runs,
+      claims,
+      stopsUnconfirmed,
+      ...commands,
+      ...(runSideFailed ? { runStateUnavailable: true as const } : {}),
+    },
+  };
+}
+
+/**
+ * POST /edge/node/runs/:runId/claim (v2). N5 — cheapest first: the per-(node, run) minimum interval, then the assignment, the
+ * claim sequence, the run status and the snapshot (no device / digest work before these); then the scope, the device
+ * OWNERSHIP of every target (409 not_owned), the node's program readings (stored — D7), and the SIGNED run package is built
+ * BEFORE the compare-and-set so a committed claim always comes with its package.
+ */
+export async function claimForNodeV2(node: EdgeNodePrincipal, runId: number, body: unknown): Promise<EdgeAnswer<EdgeClaimAnswer>> {
+  const key = `${node.nodeId}:${runId}`;
+  const now = Date.now();
+  const prev = lastClaimAttempt.get(key);
+  if (prev !== undefined && now - prev < edgeClaimMinIntervalMs()) return edgeError("rate_limited", `Claim attempts on run ${runId} are limited to one per ${edgeClaimMinIntervalMs()} ms.`);
+  lastClaimAttempt.set(key, now);
+  if (lastClaimAttempt.size > 10_000) for (const [k, t] of lastClaimAttempt) if (now - t > 60_000) lastClaimAttempt.delete(k);
+  const parsed = parseEdgeBody(edgeClaimRequestSchema, body);
+  if (!parsed.ok) return parsed.answer;
+  const req = parsed.data;
+  try {
+    const d = await db();
+    const refused = await v2Gate(d, node);
+    if (refused) return refused;
+    const signer = centralSigner()!;
+    const a0 = await assignmentForNode(d, node, runId);
+    if (!a0) return runNotFound(runId);
+    const [run0] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+    if (!run0) return runNotFound(runId);
+    if (a0.claimSeq !== req.claimSeq) return edgeError("claim_conflict", `Run ${runId}: claim ${req.claimSeq} is not the next claim (now ${a0.claimSeq}).`);
+    if (run0.status !== "queued") return edgeError("claim_conflict", `Run ${runId} is not waiting to be claimed.`);
+    if (req.defHash !== a0.defHash) return edgeError("definition_changed", `Run ${runId}: the edge holds another snapshot than the assignment — it cannot be claimed.`);
+    const wf = await workflowHead(d, a0.workflowId);
+    const def = wf?.definitionJson as WorkflowDefinition | undefined;
+    if (!wf || !def || hashWorkflowDefinition(def) !== a0.defHash) return edgeError("definition_changed", `Run ${runId}: the workflow was redeployed after the assignment — it cannot be claimed.`);
+    if (!(await runInNodeScope(run0, node))) return runNotFound(runId);
+    // ownership of every target (design §2.12 — checked at the start and again at every /authorize)
+    const { picture, analysis } = await runPicture(d, node, runId, a0.defHash, def);
+    const [ownR, ownA] = await Promise.all([ownedRobotIds(d, node.nodeId, analysis.robotIds), ownedAdapterIds(d, node.nodeId, analysis.adapterIds)]);
+    const foreign = [...analysis.robotIds.filter((id) => !ownR.has(id)).map((id) => `robot ${id}`), ...analysis.adapterIds.filter((id) => !ownA.has(id)).map((id) => `adapter ${id}`)];
+    if (foreign.length) return edgeError("not_owned", `Run ${runId} targets devices this node does not own (${foreign.slice(0, 5).join(", ")}) — not claimed.`);
+    // fail closed (F1-2 / R-10-bn, STOP steps included): a command step whose bound device cannot be resolved cannot be shown
+    // to be this node's ⇒ the run is not claimed (an unreadable ownership throws ⇒ 503, not claimed either)
+    if (analysis.unresolved.length) return edgeError("not_owned", `Run ${runId} has command step(s) whose device cannot be resolved (${analysis.unresolved.slice(0, 5).join(", ")}) — not claimed.`);
+    // D7 — the node's readings of its adapters (fresh for this claim) are stored; central never reads them itself
+    const { edgeProgramPreFor } = await import("./edgeAuthorizeCentral");
+    const detail = await computeBindingDetail(d, def, await edgeProgramPreFor(d, node, req.programChecks)); // R-10-m — the one rule
+    const [owner] = typeof run0.startedBy === "number" && run0.startedBy > 0 ? await d.select({ id: users.id, role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, run0.startedBy)).limit(1) : [];
+    const stepRows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+    const approvals = stepRows
+      .filter((r) => r.status === "completed" && typeof (r.resultJson as { approvedBy?: unknown } | null)?.approvedBy === "number" && (r.resultJson as { approvalSource?: unknown }).approvalSource === "server")
+      .map((r) => ({ gateStepId: r.stepId, approvedBy: (r.resultJson as { approvedBy: number }).approvedBy, approvedAt: r.finishedAt ? new Date(r.finishedAt).getTime() : 0 }))
+      .slice(0, 200);
+    const claimSeq = req.claimSeq + 1;
+    const pkg = signForNode(
+      signer,
+      "runpkg",
+      edgeRunPackageSchema,
+      {
+        kind: "run_package",
+        ...picture,
+        claimSeq,
+        workflowId: a0.workflowId,
+        workflowVersion: a0.workflowVersion,
+        params: plainJson((run0.paramsJson ?? {}) as Record<string, unknown>),
+        context: packageContext(run0.contextJson),
+        owner: owner && owner.isActive !== false && typeof owner.role === "string" && owner.role ? { id: owner.id, role: owner.role } : null,
+        startedViaApi: runStartedViaApi(run0),
+        resolvedAdapters: analysis.resolvedAdapters,
+        approvals,
+        bindingDigest: detail.digest,
+      },
+      node,
+    );
+    const token = `ect_${randomBytes(32).toString("base64url")}`;
+    const out = await d.transaction(async (tx) => {
+      const [a] = await tx.select().from(runEdgeAssignments).where(and(eq(runEdgeAssignments.runId, runId), eq(runEdgeAssignments.edgeNodeId, node.nodeId))).for("update").limit(1);
+      if (!a) return runNotFound(runId) as EdgeAnswer;
+      if (a.claimSeq !== req.claimSeq) return edgeError("claim_conflict", `Run ${runId}: claim ${req.claimSeq} is not the next claim (now ${a.claimSeq}).`) as EdgeAnswer;
+      const moved = await tx
+        .update(orchestrationRuns)
+        .set({ status: "running", startedAt: sql`COALESCE(${orchestrationRuns.startedAt}, now())`, updatedAt: new Date() })
+        .where(and(eq(orchestrationRuns.id, runId), eq(orchestrationRuns.status, "queued")))
+        .returning({ id: orchestrationRuns.id });
+      if (moved.length === 0) return edgeError("claim_conflict", `Run ${runId} is not waiting to be claimed.`) as EdgeAnswer;
+      await tx
+        .update(runEdgeAssignments)
+        .set({ claimSeq, claimTokenHash: hashEdgeSecret(token), claimedByCredentialId: node.credentialId, claimedAt: new Date(), progressSeq: 0, lastProgressAt: new Date() })
+        .where(and(eq(runEdgeAssignments.runId, runId), eq(runEdgeAssignments.claimSeq, a.claimSeq)));
+      return { http: 200, data: { runId, claimSeq, claimToken: token, package: pkg } } as EdgeAnswer<EdgeClaimAnswer>;
+    });
+    if (out.http === 200) await auditEdge(node, "EDGE_RUN_CLAIM", runId, { claimSeq, protocolVersion: EDGE_PROTOCOL_VERSION, bindingDigest: detail.digest });
+    return out as EdgeAnswer<EdgeClaimAnswer>;
+  } catch (err) {
+    if (!isEdgeUnavailableError(err) && !(err instanceof EdgeDbUnavailable)) console.error(`[EdgeExec] v2 claim of run ${runId} by node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
+    return edgeUnavailableV2;
+  }
+}
+
+/** POST /edge/node/runs/:runId/progress (v2) — liveness + abortRequested + the node's signed commands. */
+export async function progressForNodeV2(node: EdgeNodePrincipal, runId: number, body: unknown): Promise<EdgeAnswer<EdgeProgressAnswer>> {
+  const parsed = parseEdgeBody(edgeProgressRequestSchema, body);
+  if (!parsed.ok) return parsed.answer;
+  try {
+    const d = await db();
+    const refused = await v2Gate(d, node, { signerOptional: true });
+    if (refused) return refused;
+    const r = await progressForNode(node, runId, parsed.data);
+    if (r.http !== 200 || !r.data) return r as EdgeAnswer<never>;
+    return { http: 200, data: { abortRequested: r.data.abortRequested, status: r.data.status as EdgeProgressAnswer["status"], consistent: r.data.consistent, ...(await commandFields(node)) } };
+  } catch (err) {
+    if (!isEdgeUnavailableError(err) && !(err instanceof EdgeDbUnavailable)) console.error(`[EdgeExec] v2 progress of run ${runId} failed: ${(err as Error)?.message ?? err}`);
+    return edgeUnavailableV2;
+  }
+}
+
+/**
+ * POST /edge/node/runs/:runId/complete (v2) — the edge's segment outcome. The claim must be current and its run stream must be
+ * reported through `reportedThrough` (else 409 gap); central applies the outcome with the engine's rules (edgeEngineSink —
+ * `completed` only when the rows show every top-level step done; `paused` at a hitl_gate of the definition) and clears the
+ * claim token, in ONE transaction. A centrally stopped run keeps its status.
+ */
+export async function completeForNodeV2(node: EdgeNodePrincipal, runId: number, body: unknown): Promise<EdgeAnswer<EdgeCompleteAnswer>> {
+  const parsed = parseEdgeBody(edgeCompleteRequestSchema, body);
+  if (!parsed.ok) return parsed.answer;
+  const req = parsed.data;
+  try {
+    const d = await db();
+    const refused = await v2Gate(d, node);
+    if (refused) return refused;
+    const c = await checkCurrentClaim(d, node, runId, req);
+    if (!c.ok) return c.answer as EdgeAnswer<never>;
+    const last = await cursorLastSeq(d, node.nodeId, edgeRunStream(runId, req.claimSeq), req.epoch);
+    if (last < req.reportedThrough) return edgeError("gap", `Run ${runId}: reports through ${req.reportedThrough} are not all received (cursor ${last}) — resend them first.`, { expectedSeq: last + 1 });
+    const def = await assignedDefinition(d, c.a);
+    if (!def) return edgeError("definition_changed", `Run ${runId}: the assigned definition can no longer be read.`);
+    if (req.outcome === "paused") {
+      const gate = findStepDeep(def.steps, req.gateStepId as string);
+      if (!gate || gate.type !== "hitl_gate") return edgeError("step_invalid", `"${req.gateStepId}" is not an approval gate of run ${runId}.`);
+    }
+    const sink = await resolveEngineSink();
+    const out = await d.transaction(async (tx) => {
+      const r = await sink.applyEdgeSegmentEnd(tx as unknown as CentralDbHandle, runId, {
+        outcome: req.outcome,
+        gateStepId: req.gateStepId,
+        heldReason: req.heldReason,
+        error: req.error,
+        nodeCode: node.nodeCode,
+        claimSeq: req.claimSeq,
+        def,
+      });
+      if (!r.ok) return edgeError("not_finished", r.message) as EdgeAnswer;
+      if (!(await advance(tx as unknown as Awaited<ReturnType<typeof db>>, runId, c, true))) throw new EdgeReplayed("replayed");
+      const [run] = await tx.select({ status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+      return { http: 200, data: { abortRequested: run ? centralStopped(run) : true, status: (run?.status ?? r.status) as EdgeCompleteAnswer["status"] } } as EdgeAnswer<EdgeCompleteAnswer>;
+    });
+    if (out.http === 200) await auditEdge(node, "EDGE_RUN_SEGMENT_DONE", runId, { claimSeq: req.claimSeq, outcome: req.outcome, status: (out.data as EdgeCompleteAnswer).status, ...(req.heldReason ? { heldReason: req.heldReason } : {}) });
+    return out as EdgeAnswer<EdgeCompleteAnswer>;
+  } catch (err) {
+    if (err instanceof EdgeReplayed) return edgeError("replayed", `Run ${runId}: report already received — refused.`);
+    if (!isEdgeUnavailableError(err) && !(err instanceof EdgeDbUnavailable)) console.error(`[EdgeExec] v2 complete of run ${runId} failed: ${(err as Error)?.message ?? err}`);
+    return edgeUnavailableV2;
+  }
+}
+
+/** POST release / interrupted (v2): strict bodies, then the shared handlers (unchanged semantics). */
+export async function releaseForNodeV2(node: EdgeNodePrincipal, runId: number, body: unknown): Promise<EdgeAnswer<{ status: string }>> {
+  const parsed = parseEdgeBody(edgeReleaseRequestSchema, body);
+  if (!parsed.ok) return parsed.answer;
+  try {
+    const refused = await v2Gate(await db(), node);
+    if (refused) return refused;
+  } catch {
+    return edgeUnavailableV2;
+  }
+  return releaseForNode(node, runId, parsed.data);
+}
+export async function interruptedForNodeV2(node: EdgeNodePrincipal, runId: number, body: unknown): Promise<EdgeAnswer<{ status: string }>> {
+  const parsed = parseEdgeBody(edgeInterruptedRequestSchema, body);
+  if (!parsed.ok) return parsed.answer;
+  try {
+    const refused = await v2Gate(await db(), node);
+    if (refused) return refused;
+  } catch {
+    return edgeUnavailableV2;
+  }
+  return interruptedForNode(node, runId, parsed.data);
+}
+
+/** heartbeat answer — whether a fresh program reading is wanted from the node (never throws). */
+export async function programCheckRequestedFor(node: EdgeNodePrincipal): Promise<boolean> {
+  try {
+    return await programCheckWanted(await db(), node);
+  } catch {
+    return false;
   }
 }

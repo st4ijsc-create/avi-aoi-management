@@ -13,6 +13,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import * as zlib from "zlib";
 import { pipeline } from "stream/promises";
+import { EdgeDbTrapError, edgeDbRefused } from "../db/edgeDbTrap";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -351,6 +352,8 @@ export async function createPgDump(opts: {
   tables?: string[];        // specific tables; omit for full DB
   label?: string;
 }): Promise<BackupResult> {
+  // doc 81 Đợt 10 A fix review 1 (I2): pg_dump with DATABASE_URL is a central-DB access too — never on an edge process
+  if (edgeDbRefused("backupService.createPgDump")) throw new EdgeDbTrapError("backupService.createPgDump");
   ensureBackupDir();
 
   const { databaseUrl, tables, label } = opts;
@@ -466,6 +469,8 @@ async function createCustomJsonBackup(opts: {
   tables?: string[];
   label?: string;
 }): Promise<BackupResult> {
+  // doc 81 Đợt 10 A fix review 1 (I2): never on an edge process (shared trap)
+  if (edgeDbRefused("backupService.jsonBackup")) throw new EdgeDbTrapError("backupService.jsonBackup");
   const { default: postgres } = await import("postgres");
   const sql = postgres(opts.databaseUrl, { max: 1 });
   const t0 = Date.now();
@@ -543,6 +548,8 @@ export async function restoreFromBackup(opts: {
   filePath: string;
   tables?: string[];         // subset of tables to restore; null = all in file
 }): Promise<RestoreResult> {
+  // doc 81 Đợt 10 A fix review 1 (I2): psql / restore with DATABASE_URL — never on an edge process
+  if (edgeDbRefused("backupService.restoreFromBackup")) throw new EdgeDbTrapError("backupService.restoreFromBackup");
   const { databaseUrl, filePath, tables } = opts;
   const t0 = Date.now();
 
@@ -609,6 +616,8 @@ async function restoreFromSqlGz(opts: {
 async function restoreFromJsonlGz(opts: {
   databaseUrl: string; filePath: string; tables?: string[]; t0: number;
 }): Promise<RestoreResult> {
+  // doc 81 Đợt 10 A fix review 1 (I2): never on an edge process (shared trap)
+  if (edgeDbRefused("backupService.jsonRestore")) throw new EdgeDbTrapError("backupService.jsonRestore");
   const { default: postgres } = await import("postgres");
   const sql = postgres(opts.databaseUrl, { max: 1 });
   const restoredTables: string[] = [];

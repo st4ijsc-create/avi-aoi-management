@@ -192,6 +192,10 @@ async function resolveMachineIds(
     }
   }
   if (misses.length === 0) return out;
+  if (persistOverride) {
+    for (const code of misses) out.set(code, null); // the edge: central resolves the machine from ITS adapter row
+    return out;
+  }
   try {
     const { getDb } = await import("../db/connection");
     const db = await getDb();
@@ -466,6 +470,18 @@ async function copyPersistRows(client: CopyClient, rows: InsertOtTelemetry[]): P
 }
 
 /**
+ * doc 81 Đợt 10 task E (design §2.2 / §2.7, D12) — the INSERT-FUNCTION SEAM. The edge gateway (no central DB) sets it to
+ * POST its rows to central (`/api/v1/edge/node/telemetry`, edgeStreams.ts); central never sets it. Same contract as the DB
+ * path: returns the rows persisted, THROWS on a transport failure (⇒ db_error ⇒ the storeForward WAL buffers them and the
+ * backfill replays them through this same function). With it set, no DB / TSDB is ever touched (machine ids included).
+ */
+export type TelemetryPersistFn = (rows: InsertOtTelemetry[]) => Promise<number>;
+let persistOverride: TelemetryPersistFn | null = null;
+export function setTelemetryPersistFn(fn: TelemetryPersistFn | null): void {
+  persistOverride = fn;
+}
+
+/**
  * Bulk-persist canonical rows. PRIMARY path = the dedicated TimescaleDB hypertable
  * (mirrors energy_readings). When TSDB is disabled/degraded the helper returns null
  * and we FALL BACK to the main-DB ot_telemetry table (the plain table from 0132).
@@ -476,6 +492,7 @@ async function copyPersistRows(client: CopyClient, rows: InsertOtTelemetry[]): P
  */
 async function persistRows(rows: InsertOtTelemetry[]): Promise<number> {
   if (rows.length === 0) return 0;
+  if (persistOverride) return persistOverride(rows); // doc 81 Đợt 10 E — the edge: HTTP to central, never a DB / TSDB
   const { insertOtTelemetryRows } = await import("../db/timescale");
   const tsdbPersisted = await insertOtTelemetryRows(rows);
   if (tsdbPersisted !== null) {

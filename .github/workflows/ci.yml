@@ -119,6 +119,13 @@ jobs:
       - name: Unit tests (vitest)
         run: pnpm test
 
+      # doc 81 Đợt 10 (R-10-bt/bu) — các bộ dùng chung trạng thái _test nhiều phút (E2E edge hai tiến trình,
+      # bộ tấn công, s3/s4 dot9, census seed, edgeControlSchema) bị loại khỏi `pnpm test` và chạy NỐI TIẾP ở đây.
+      # `if: !cancelled()` để bước này vẫn chạy khi bước trên đỏ (không giấu kết quả của bộ nối tiếp).
+      - name: Serial tests (vitest.serial.config.ts)
+        if: ${{ !cancelled() }}
+        run: pnpm test:serial
+
   e2e:
     name: E2E smoke (Playwright)
     runs-on: ubuntu-latest

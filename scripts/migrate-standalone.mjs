@@ -164,12 +164,50 @@ if (!FORCE) {
 }
 
 // ─── Filter pending migrations ───────────────────────────────
-const pending = sqlFiles.filter(f => !applied.has(f));
+let pending = sqlFiles.filter(f => !applied.has(f));
+
+// ─── doc 81 Đợt 10 F2 round 2 — files whose effect is PROVEN present but that can never run to success (0125 / 0057 / 0066 /
+// 0234: see migrationEffectiveProbes.mjs) are recorded success=true WITHOUT being executed; re-running 0125 reverts 0327.
+// Not with --force (that re-runs everything in order, 0327 / 0376 after 0125).
+if (!FORCE) {
+  const { recordEffectiveMigrations } = await import('./migrationEffectiveProbes.mjs');
+  const r = await recordEffectiveMigrations(sql, pending, {
+    dryRun: DRY_RUN,
+    checksumOf: (f) => simpleHash(fs.readFileSync(path.join(DRIZZLE_DIR, f), 'utf-8').trim()),
+  });
+  // doc 81 Đợt 10 final fix wave (M-3) — a probe that found a state to repair by hand first (0125 over a reverted 0327 body):
+  // NOTHING runs (no record, no apply) — the operator re-applies 0327 then 0376 and runs this again
+  if (r.refused && r.refused.length > 0) {
+    for (const x of r.refused) console.error(`
+REFUSED: ${x.file} — ${x.detail}`);
+    await sql.end();
+    process.exit(1);
+  }
+  pending = r.pending;
+}
 
 if (pending.length === 0) {
   console.log('\n  All migrations are already applied. Database is up to date! ✓');
   await sql.end();
   process.exit(0);
+}
+
+// ─── doc 81 Đợt 10 F2 — ruling R-10-t: never revert 0376's search_path pins ───
+// 0125 / 0316 / 0363 / 0369–0371 CREATE OR REPLACE functions that 0376 re-pins; running one of them (pending here — e.g. 0125
+// left success=false on _test) after 0376 would restore the unpinned body. Refused unless 0376 runs after them in this same
+// pass (--force) or --then-0376 is given (0376 is then appended and re-applied last).
+{
+  const { decide0376, is0376Applied, FILE_0376 } = await import('./migration0376Guard.mjs');
+  const d = decide0376({ files: pending, applied0376: await is0376Applied(sql), args });
+  if (d.action === 'refuse') {
+    console.error(`\nREFUSED: ${d.message}`);
+    await sql.end();
+    process.exit(1);
+  }
+  if (d.action === 'then-0376') {
+    pending.push(FILE_0376);
+    console.log(`\n  R-10-t: ${d.reverting.join(', ')} pending after 0376 — 0376 will be re-applied last (--then-0376)`);
+  }
 }
 
 console.log(`\n  ${applied.size} migrations already applied`);

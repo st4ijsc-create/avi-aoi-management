@@ -59,14 +59,24 @@ describe("doc 81 Đợt 9 S — the node credential never lives in the repositor
     expect(hits).toEqual([]);
   });
 
-  it("★ compose: the base file carries no credential; the overlay passes only the PATH of a file-based secret", () => {
+  /**
+   * ★ RE-PIN 2026-10-13 (doc 81 Đợt 10 task F2, R-10-ad): every v2 edge speaks the node protocol (config, heartbeat, STOP
+   * commands) whether or not it executes runs — a gateway without the credential starts NO device (fail-closed). So the
+   * file-based credential secret (and the keyset-pin secret) moved from the execution overlay to the BASE file, and the
+   * overlay now only flips execution on. The property measured is unchanged: the secret is passed ONLY as the PATH of a
+   * compose file-based secret, never `EDGE_NODE_CREDENTIAL`, never a bind mount of a credential, in either file.
+   */
+  it("★ compose: the credential is passed ONLY as the PATH of a file-based secret (base file); the overlay carries none", () => {
     const base = readFileSync(path.join(ROOT, "deploy/edge/docker-compose.edge.yml"), "utf8");
     const overlay = readFileSync(path.join(ROOT, "deploy/edge/docker-compose.edge.execution.yml"), "utf8");
-    const code = (s: string) => s.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
-    expect(code(base)).not.toMatch(/EDGE_NODE_CREDENTIAL|\.cred\b|secrets\//);
-    expect(code(overlay)).not.toMatch(/EDGE_NODE_CREDENTIAL\s*:/);
-    expect(code(overlay)).toMatch(/EDGE_NODE_CREDENTIAL_FILE: \/run\/secrets\/edge_node_credential/);
-    expect(code(overlay)).toMatch(/\nsecrets:\n\s+edge_node_credential:\n\s+file: \$\{EDGE_NODE_CREDENTIAL_HOST_FILE:\?/);
-    expect(code(overlay)).not.toMatch(/volumes:/); // no bind mount of a credential
+    const code = (s: string) => s.replace(/\r\n/g, "\n").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"); // CRLF working copies (autocrlf)
+    for (const f of [base, overlay]) {
+      expect(code(f)).not.toMatch(/EDGE_NODE_CREDENTIAL\s*:/);
+      expect(code(f)).not.toMatch(/\.cred\b|deploy\/edge\/secrets|\.\/secrets\//);
+    }
+    expect(code(base)).toMatch(/EDGE_NODE_CREDENTIAL_FILE: \/run\/secrets\/edge_node_credential/);
+    expect(code(base)).toMatch(/\nsecrets:\n\s+edge_node_credential:\n\s+file: \$\{EDGE_NODE_CREDENTIAL_HOST_FILE:\?/);
+    expect(code(base)).not.toMatch(/volumes:\n(\s+- [^\n]*\n)*\s+- [^\n]*(cred|secret)/i); // no bind mount of a credential
+    expect(code(overlay)).not.toMatch(/EDGE_NODE_CREDENTIAL|secrets:|volumes:/);
   });
 });

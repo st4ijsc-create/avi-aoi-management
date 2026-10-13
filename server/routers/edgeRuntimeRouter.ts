@@ -19,7 +19,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
   registerNode,
@@ -78,8 +78,12 @@ export const edgeRuntimeRouter = router({
       return { node, runs };
     }),
 
-  /** Register (upsert) an edge node. Flag-gated. */
-  registerNode: protectedProcedure
+  /**
+   * Register (upsert) an edge node. Flag-gated. doc 81 Đợt 10 F2 round 3 (R-10-bl, decision D14): ADMIN ONLY, like the
+   * `edge-node-credential.ts register-node` CLI — a node's factory decides which devices and runs it may get. The
+   * machine_control:canCreate grant is still required on top (never a widening).
+   */
+  registerNode: adminProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z.object({

@@ -33,6 +33,7 @@
  */
 import type { Request, Response } from "express";
 import { sql } from "drizzle-orm";
+import { edgeDbRefused } from "../db/edgeDbTrap";
 
 /** Hạn một lượt `SELECT 1` (brief T11: "vd 1500 ms"; nghiệm thu: 503 trong ≤ 2 s). */
 export const DB_PING_TIMEOUT_MS = 1500;
@@ -97,6 +98,8 @@ async function layClientPing(): Promise<ClientPing | null> {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
   if (!_clientPing) {
+    // doc 81 Đợt 10 A fix review 1 (I2): no central DB in an edge process (shared trap) ⇒ "not configured"
+    if (edgeDbRefused("healthProbes.ping")) return null;
     const { default: postgres } = await import("postgres");
     _clientPing = postgres(url, {
       max: 1,

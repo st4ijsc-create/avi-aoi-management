@@ -691,7 +691,28 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // (api_keys."holderUserId", mig 0369; trigger-recorded history + audit_logs) ⇒ group D. `apiKey.list` stays A (its debt row is
 // unchanged: it now also reads the holder's name). Measured with this scanner (before = pin; after = D 1138 · tong 2307),
 // with Groups T/U's uncommitted work in the same tree adding nothing to any group at the time of measuring.
-const GHIM = { A: 333, B: 8, C: 472, D: 1138, S: 356, tong: 2307 } as const;
+// ★★★ 2026-10-13 (doc 81 Đợt 10 integration, task D fix reviews 5–7 — rulings R-10-bb / R-10-bc) — **D 1138 → 1139 ·
+// tong 2307 → 2308 · A/B/C/S unchanged.** NEW `robot.consoleStop` (mutation, `robotRouter.ts`, built on `robotStopProcedure` =
+// `publicProcedure` + the STOP-only auth middleware of `services/robot/robotStopAuth.ts`): STOP / abort verbs only; the caller's
+// factory scope is applied INSIDE the middleware (`decideStopScope`: DB scope within 300 ms, else the session's remembered scope +
+// robotManager's robot → factory map; another factory's robot ⇒ NOT_FOUND exactly like a missing one) ⇒ the scanner files it under
+// D (scope applied in a helper, not a direct call in the procedure body — same as `robot.disableAutomation` above). Measured with
+// this scanner on the integration tree (before = D 1138 at the Đợt 10 base; after = D 1139 · tong 2308). No baseline row added.
+// ★★★ 2026-10-13 (doc 81 Đợt 10 task F2 — rulings R-10-af / R-10-ax) — **D 1139 → 1141 · S 356 → 357 · tong 2308 → 2311 ·
+// A/B/C unchanged.** NEW `edgeResolution` router (`edgeResolutionRouter.ts`): `list` (query, machine_control/canView) passes the
+// caller's STRICT factory scope (`resolveTenantFactoryScope(...strict)`) into the read ⇒ S; `resolveStop` / `resolveIntent`
+// (mutations, supervisorProcedure + machine_control/canEdit, scope applied in the service — out of scope ⇒ the same NOT_FOUND as a
+// missing row) ⇒ D by definition. Measured with this scanner (before = this pin; after = D 1141 · S 357 · tong 2311). F1's
+// untracked `__edgeE2eHarness.dot10.ts` adds nothing to any group (it is the §1 blind-cell line, F1's to fix). No baseline row.
+// ★★★ 2026-10-13 (doc 81 Đợt 10 task F2 round 3 — ruling R-10-bl) — **D 1141 → 1142 · tong 2311 → 2312 · A/B/C/S unchanged.** NEW
+// `edgeResolution.reviewLateResult` (mutation, supervisorProcedure + machine_control/canEdit; factory scope applied in the service —
+// out of scope ⇒ the same NOT_FOUND as a missing row) ⇒ D by definition. `edgeRuntime.registerNode` moved protectedProcedure →
+// adminProcedure (still D, count unchanged). Measured with this scanner (before = this pin; after = D 1142 · tong 2312).
+// ★★★ 2026-10-13 (doc 81 Đợt 10 final fix wave — M-5, R-10-br) — **D 1142 → 1143 · tong 2312 → 2313 · A/B/C/S unchanged.** NEW
+// `robot.requestMotionLock` (mutation, protectedProcedure + machine_control/canEdit — the same chain as its robotRouter siblings
+// robot.disableAutomation / robot.clearMotionLock) ⇒ D like them. Measured with this scanner (before = this pin; after = D 1143 ·
+// tong 2313).
+const GHIM = { A: 333, B: 8, C: 472, D: 1143, S: 357, tong: 2313 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

@@ -15,7 +15,7 @@
  * (central's page for a central lock). A STOP sent from the edge never needs this check.
  * Central keeps its own in-memory lock as the source of truth (unchanged): it is the process that wrote its rows.
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { robotMotionLocks } from "../../../drizzle/schema";
 import { DbUnavailableError } from "../../_core/dbErrors";
@@ -48,4 +48,138 @@ export async function readPersistedMotionLock(robotId: number): Promise<Persiste
   } catch (err) {
     return { error: String((err as Error)?.message ?? err).slice(0, 160) };
   }
+}
+
+// ── doc 81 Đợt 10 task D (design §2.11 / §2.12, re-review N1) — CENTRAL's motion-authority read ──────────────────────────
+/**
+ * N1 — the lock was honoured in one direction only: central never read robot_motion_locks, so a lock the EDGE set did not stop
+ * central from moving the robot. Now central reads, at MOTION time (never for a STOP — L-7), bounded like every robot DB step:
+ *   • the robot's OWNER (0374 robots.edgeNodeId): owned by an edge node ⇒ ROBOT_OWNED_BY_EDGE (central has no session for it —
+ *     and must not move it even if a session from before an ownership change is still open);
+ *   • its persisted LOCK ROW of any authority: a row central did NOT write itself — an 'edge:<n>' authority, or the DB's
+ *     'ownerChanged' relock of an ownership change — refuses motion. A 'central' row written by central mirrors central's own
+ *     in-memory lock (robotMotionLockStore), which stays its source of truth: it is not re-read as a gate (a just-cleared lock
+ *     whose DELETE is still in flight would otherwise re-lock the robot after a confirmed STOP).
+ *   • unreadable (no DB, error, timeout) ⇒ `{ error }` ⇒ the caller refuses motion (fail-closed). A DB without 0374
+ *     (42P01 / 42703) has no edge owners and no authority column ⇒ `{ ok: true, schemaMissing: true }` (central unchanged).
+ * Narrow projections (edgeControlSchema), never the full drizzle tables (0368 lesson).
+ */
+export const ROBOT_OWNED_BY_EDGE = "ROBOT_OWNED_BY_EDGE" as const;
+export const OWNER_CHANGED_REASON_CODE = "ownerChanged" as const;
+
+export type CentralMotionAuthorityRead =
+  | { ok: true; schemaMissing?: true; noDb?: true; ownerEpoch?: number }
+  | { ownedByEdge: number; ownerEpoch: number }
+  | { locked: true; authority: string; reasonCode: string; detail: string | null; since: string; generation: number; ownerEpoch: number | null; writerInstanceId: string | null }
+  | { error: string };
+
+export async function readCentralMotionAuthority(robotId: number, ownLock?: import("./robotDriver").MotionLock | null): Promise<CentralMotionAuthorityRead> {
+  try {
+    const read = (async (): Promise<CentralMotionAuthorityRead> => {
+      const { robotOwnership, robotMotionLockAuthority, isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
+      const db = await getDb();
+      // No DB configured at all: nothing can move here anyway — the real path's write-ahead ledger row requires the DB and
+      // refuses (LEDGER_WRITE_FAILED), the dry-run path sends nothing. Defer to that gate (its refusal is the existing one).
+      if (!db) return { ok: true, noDb: true };
+      try {
+        const [own] = await db.select().from(robotOwnership).where(eq(robotOwnership.id, robotId)).limit(1);
+        const owner = (own as { edgeNodeId?: unknown } | undefined)?.edgeNodeId;
+        if (typeof owner === "number" && Number.isSafeInteger(owner)) return { ownedByEdge: owner, ownerEpoch: Number((own as { ownerEpoch?: unknown }).ownerEpoch ?? 0) };
+        const [row] = await db.select().from(robotMotionLockAuthority).where(eq(robotMotionLockAuthority.robotId, robotId)).limit(1);
+        const r = row as Partial<typeof robotMotionLockAuthority.$inferSelect> | undefined;
+        // R-10-u — a CENTRAL row refuses too unless THIS process wrote and cleared exactly it (its delete in flight); a row of
+        // another replica (or one this process never held) is not this process's to ignore.
+        const { motionLockRowClearedHere } = await import("./robotMotionLockStore");
+        const foreignCentral =
+          !!r && r.robotId === robotId && r.authority === "central" && !motionLockRowClearedHere(ownLock ?? null, Number(r.generation), r.lockedAt as Date | undefined, r.writerInstanceId ?? null);
+        if (r && r.robotId === robotId && ((typeof r.authority === "string" && r.authority !== "central") || r.reasonCode === OWNER_CHANGED_REASON_CODE || foreignCentral)) {
+          return {
+            locked: true,
+            authority: String(r.authority ?? "central"),
+            reasonCode: String(r.reasonCode),
+            detail: r.detail ?? null,
+            since: new Date(r.lockedAt ?? Date.now()).toISOString(),
+            generation: Number(r.generation ?? 0),
+            ownerEpoch: r.ownerEpoch == null ? null : Number(r.ownerEpoch),
+            writerInstanceId: r.writerInstanceId ?? null, // R-10-ap — an adopted clear deletes exactly this writer's row
+          };
+        }
+        const observed = Number((own as { ownerEpoch?: unknown } | undefined)?.ownerEpoch);
+        return Number.isSafeInteger(observed) ? { ok: true, ownerEpoch: observed } : { ok: true };
+      } catch (err) {
+        if (isEdgeControlSchemaMissing(err)) return { ok: true, schemaMissing: true };
+        throw err;
+      }
+    })();
+    return await withDeadline(read, STOP_DB_STEP_DEADLINE_MS, `robot ${robotId} motion authority check`);
+  } catch (err) {
+    return { error: String((err as Error)?.message ?? err).slice(0, 160) };
+  }
+}
+
+/**
+ * doc 81 Đợt 10 task D — ruling R-10-g (M4). `robot_jobs` has no FK to `robots`, so a motion whose authority read (above) passed
+ * could still insert its 'running' row at the same moment as an ownership change / relock committed, slipping past 0374's
+ * "no owner change while a job runs" guard. Closed on the INSERT side: in the SAME transaction as the 'running' row, the robot
+ * row is locked `FOR SHARE` (an owner change — an UPDATE of the row — now waits for this transaction and then sees the running
+ * job and is refused; one that committed first is seen here), and the authority is re-read under that lock:
+ *   • edge-owned now ⇒ ROBOT_OWNED_BY_EDGE; owner epoch ≠ the one observed at the authority read ⇒ OWNER_CHANGED;
+ *   • a lock row central did not write (edge authority, or the ownerChanged relock) ⇒ MOTION_LOCKED.
+ * Any error other than "0374 not applied" (42P01 / 42703, savepoint-contained) is THROWN ⇒ the caller's reservation fails ⇒
+ * nothing is sent (fail-closed). Returns null when the motion may proceed.
+ * Capability: only a handle that cannot run SQL (`execute` absent — the in-memory test fakes of the dispatcher suites) skips
+ * the re-read; every drizzle / postgres handle has it.
+ */
+export type MotionAuthorityRecheck = { code: typeof ROBOT_OWNED_BY_EDGE | "MOTION_LOCKED" | "OWNER_CHANGED"; detail: string };
+type SqlTx = { execute: (q: ReturnType<typeof sql>) => Promise<unknown>; transaction?: <T>(fn: (sp: SqlTx) => Promise<T>) => Promise<T> };
+const firstRows = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? (r as Array<Record<string, unknown>>) : (((r as { rows?: unknown[] })?.rows ?? []) as Array<Record<string, unknown>>));
+
+export async function recheckMotionAuthorityInTx(
+  tx: unknown,
+  robotId: number,
+  observedOwnerEpoch?: number | null,
+  /** fix review 4 (NF-5) — this process's in-memory lock of the robot: the ONLY exemption for a central row (R-10-u) */
+  ownLock?: import("./robotDriver").MotionLock | null,
+): Promise<MotionAuthorityRecheck | null> {
+  const t = tx as SqlTx;
+  if (!t || typeof t.execute !== "function") return null;
+  const { isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
+  const read = async (h: SqlTx) => {
+    const own = firstRows(await h.execute(sql`SELECT "edgeNodeId", "ownerEpoch" FROM public.robots WHERE id = ${robotId} FOR SHARE`));
+    // NF-5 — the row's identity too (writer via to_jsonb: a DB before fix review 5 has no column — then null, i.e. foreign)
+    const lock = firstRows(
+      await h.execute(
+        sql`SELECT l.authority, l."reasonCode", l.generation, to_jsonb(l) ->> 'writerInstanceId' AS writer, round(extract(epoch FROM date_trunc('milliseconds', l."lockedAt")) * 1000)::float8 AS "lockedAtMs" FROM public.robot_motion_locks l WHERE l."robotId" = ${robotId}`,
+      ),
+    );
+    return { own: own[0], lock: lock[0] };
+  };
+  let got: { own?: Record<string, unknown>; lock?: Record<string, unknown> };
+  try {
+    // a savepoint keeps a "0374 missing" error from aborting the reservation transaction
+    got = typeof t.transaction === "function" ? await t.transaction((sp) => read(sp)) : await read(t);
+  } catch (err) {
+    if (isEdgeControlSchemaMissing(err)) return null; // no edge owners / authority column before 0374 — central unchanged
+    throw err;
+  }
+  // no robot row: nothing owns it and no owner change can race on it (the enabled gate refuses a missing row at motion time)
+  if (!got.own) return null;
+  const owner = got.own.edgeNodeId;
+  if (owner !== null && owner !== undefined) return { code: ROBOT_OWNED_BY_EDGE, detail: `robot ${robotId} became owned by edge node ${String(owner)} before the motion was reserved` };
+  const epoch = Number(got.own.ownerEpoch);
+  if (observedOwnerEpoch != null && Number.isFinite(epoch) && epoch !== observedOwnerEpoch) {
+    return { code: "OWNER_CHANGED", detail: `robot ${robotId}: owner epoch ${observedOwnerEpoch} → ${epoch} since the authority read` };
+  }
+  const l = got.lock;
+  if (l) {
+    const edgeOrRelock = (typeof l.authority === "string" && l.authority !== "central") || l.reasonCode === OWNER_CHANGED_REASON_CODE;
+    // fix review 4 (NF-5, R-10-u under the lock) — ANY central row (another replica's, a MERGED row, a legacy one) refuses too,
+    // unless it is exactly the row THIS process's lock wrote / adopted and then cleared (its delete in flight)
+    const { motionLockRowClearedHere } = await import("./robotMotionLockStore");
+    const clearedHere = motionLockRowClearedHere(ownLock ?? null, Number(l.generation), Number(l.lockedAtMs), (l.writer as string | null) ?? null);
+    if (edgeOrRelock || !clearedHere) {
+      return { code: "MOTION_LOCKED", detail: `robot ${robotId}: a lock not written by this process stands (${String(l.authority)}: ${String(l.reasonCode)}, generation ${String(l.generation)})` };
+    }
+  }
+  return null;
 }

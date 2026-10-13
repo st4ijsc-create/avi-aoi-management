@@ -36,6 +36,8 @@ vi.mock("../db/connection", async () => {
   return { getDb: async () => ({ select: () => ({ from: q }) }) };
 });
 
+// 2026-10-13 Đợt 10 residual (R-10-bt) — an UNRESTRICTED caller (the factory scope itself is pinned in robotRouterScope.finalfix.dot10)
+vi.mock("../db/hierarchy", async (importOriginal) => ({ ...(await importOriginal<typeof import("../db/hierarchy")>()), idsTrongPhamVi: async () => null }));
 vi.mock("../_core/accessControl", () => ({
   requirePermission: () => async ({ ctx, next }: any) => next({ ctx }),
 }));

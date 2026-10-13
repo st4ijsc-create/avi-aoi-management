@@ -18,6 +18,8 @@
     "format": "prettier --write .",
     "lint:tokens": "node scripts/lint-frontend-tokens.mjs",
     "test": "vitest run",
+    "test:serial": "vitest run --config vitest.serial.config.ts",
+    "test:all": "node scripts/test-all.mjs",
     "test:db:setup": "node scripts/setup-test-db.mjs",
     "vision:validate": "tsx scripts/run-vision-validation.mjs",
     "i18n:audit": "node scripts/i18n-audit.mjs",

@@ -144,6 +144,7 @@ export async function setCachedAuthUser(sessionToken: string, user: User): Promi
 
 /** Invalidate a single session's cached auth (logout / targeted revoke). */
 export async function invalidateAuthSession(sessionToken: string): Promise<void> {
+  (await import("./robot/robotStopAuthMemo")).invalidateStopAuthForSession(sessionToken); // doc 81 Đợt 10 D fix review 5 (R-10-be)
   try {
     const key = keyFor(sessionToken);
     stats.invalidations++;
@@ -162,6 +163,7 @@ export async function invalidateAuthSession(sessionToken: string): Promise<void>
  * otherwise by the ≤TTL staleness window documented above.
  */
 export async function invalidateAuthUser(userId?: number, openId?: string): Promise<void> {
+  (await import("./robot/robotStopAuthMemo")).invalidateStopAuthForUser(userId, openId); // doc 81 Đợt 10 D fix review 5 (R-10-be)
   const keys = new Set<string>();
   if (userId !== undefined) {
     for (const k of keysByUserId.get(userId) ?? []) keys.add(k);

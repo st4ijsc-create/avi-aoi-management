@@ -22,6 +22,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import postgres from "postgres";
+import { guard0376BeforeDdl, reapply0376 } from "./migration0376Guard.mjs"; // R-10-t (doc 81 dot 10 F2)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATION_FILE = "0363_engineering_assignments.sql";
@@ -109,6 +110,8 @@ async function applyTo(rawUrl, label) {
     const [truoc] = await appSql`SELECT to_regclass(${"public." + BANG}) IS NOT NULL AS co`;
     console.log(`  ${TAG} ${label} TRƯỚC: bảng ${BANG} ${truoc.co ? "ĐÃ có" : "chưa có"}`);
 
+    // R-10-t — 0376 re-pins functions this file CREATE OR REPLACEs unpinned: refused after 0376 unless --then-0376
+    const then0376 = await guard0376BeforeDdl({ sql, file: MIGRATION_FILE, args: process.argv.slice(2) });
     const content = fs.readFileSync(MIGRATION_PATH, "utf-8");
     // Khuôn 0362 (#6) — DDL là bảng MỚI nên không chờ khoá bảng nóng nào, nhưng `REVOKE/GRANT` và
     // `COMMENT` vẫn lấy khoá trên chính bảng; giữ cùng giới hạn chờ khoá 5 s (+ trần 60 s cho cả câu) trên
@@ -264,6 +267,7 @@ async function applyTo(rawUrl, label) {
     if (rows.n !== 1) throw new Error(`__applied_migrations co ${rows.n} hang (phai la 1)`);
 
     console.log(`${TAG} ${label}: applied + verified (cột · chỉ mục · quyền · sổ migration)`);
+    if (then0376) reapply0376(label); // R-10-t — right after, same target
   } finally {
     await sql.end();
     await appSql.end();

@@ -47,9 +47,28 @@ export function parseBackupConnection(
 }
 
 /**
- * Tải mọi adapter đang bật cùng tag đang bật của chúng. Trả [] nếu không có DB.
+ * doc 81 Đợt 10 task E (design §2.12, D2) — the ADAPTER SOURCE seam. On the edge (no central DB) the gateway sets a source
+ * that builds the runtime adapters from its VERIFIED config snapshot (edgeConfigSource — only the node's own adapters, with
+ * their centrally decrypted connection options); loadEnabledAdapters() then never touches a database. Central never sets it.
  */
-export async function loadEnabledAdapters(): Promise<RuntimeAdapter[]> {
+export type AdapterSource = () => Promise<RuntimeAdapter[]>;
+let adapterSource: AdapterSource | null = null;
+export function setAdapterSource(src: AdapterSource | null): void {
+  adapterSource = src;
+}
+
+/**
+ * Tải mọi adapter đang bật cùng tag đang bật của chúng. Trả [] nếu không có DB.
+ * doc 81 Đợt 10 task E — an adapter source set (edge) ⇒ it alone answers; an edge process without one ⇒ [] (never the DB).
+ * Central: adapters OWNED by an edge node (device_adapters."edgeNodeId", mig 0374) are skipped — one owner connects, polls and
+ * controls a device (fixes the duplicate poll of final-review I1). Before 0374 is applied nothing is skipped (unchanged).
+ */
+export async function loadEnabledAdapters(
+  /** doc 81 Đợt 10 D fix review 4 (R-10-ay) — central's transient STOP of an edge-owned adapter whose owner cannot list it */
+  opts: { includeEdgeOwned?: boolean } = {},
+): Promise<RuntimeAdapter[]> {
+  if (adapterSource) return adapterSource();
+  if (String(process.env.AVI_PROCESS_ROLE ?? "").trim().toLowerCase() === "edge") return [];
   const { getDb } = await import("../../db/connection");
   const db = await getDb();
   if (!db) return [];
@@ -57,7 +76,10 @@ export async function loadEnabledAdapters(): Promise<RuntimeAdapter[]> {
   const { deviceAdapters, deviceTags } = await import("../../../drizzle/schema");
   const { eq } = await import("drizzle-orm");
 
-  const adapters = await db.select().from(deviceAdapters).where(eq(deviceAdapters.isEnabled, true));
+  let adapters = await db.select().from(deviceAdapters).where(eq(deviceAdapters.isEnabled, true));
+  if (adapters.length === 0) return [];
+  const edgeOwned = opts.includeEdgeOwned ? new Set<number>() : await edgeOwnedAdapterIds(db);
+  if (edgeOwned.size > 0) adapters = adapters.filter((a) => !edgeOwned.has(a.id));
   if (adapters.length === 0) return [];
 
   const runtime: RuntimeAdapter[] = [];
@@ -103,4 +125,17 @@ export async function loadEnabledAdapters(): Promise<RuntimeAdapter[]> {
   }
 
   return runtime;
+}
+
+/** Ids of adapters owned by an edge node (0374). Schema missing ⇒ none (central unchanged); any other error is thrown. */
+async function edgeOwnedAdapterIds(db: NonNullable<Awaited<ReturnType<typeof import("../../db/connection").getDb>>>): Promise<Set<number>> {
+  const { adapterOwnership, isEdgeControlSchemaMissing } = await import("../edge/edgeControlSchema");
+  const { isNotNull } = await import("drizzle-orm");
+  try {
+    const rows = await db.select({ id: adapterOwnership.id }).from(adapterOwnership).where(isNotNull(adapterOwnership.edgeNodeId));
+    return new Set(rows.map((r) => r.id));
+  } catch (err) {
+    if (isEdgeControlSchemaMissing(err)) return new Set();
+    throw err;
+  }
 }

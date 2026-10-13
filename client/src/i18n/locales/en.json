@@ -3860,13 +3860,17 @@
       "yieldAlertThreshold": "yield alert threshold",
       "zone": "zone",
       "kbGoldenSet": "golden question set",
-      "safetyPlcConfig": "safety-PLC configuration"
+      "safetyPlcConfig": "safety-PLC configuration",
+      "edgePendingStop": "pending STOP",
+      "orphanedWriteIntent": "orphaned OT write intent",
+      "lateWriteResult": "late write result"
     },
     "operation": {
       "updateApiKey": "update the API key",
       "changeApiKeyHolder": "change who the API key is issued to",
       "softwareStop": "send the software stop",
       "clearRobotMotionLock": "clear the robot's motion lock",
+      "lockRobotMotion": "hold the robot's motion (operator lock)",
       "deployBuild": "deploy the program build",
       "requestDeployApproval": "request deploy approval",
       "approveDeployment": "approve the program deployment",
@@ -4024,7 +4028,11 @@
       "assignEngineeringItem": "assign the pending item",
       "unassignEngineeringItem": "unassign the pending item",
       "approveSafetyPlcConfig": "approve safety-PLC configuration",
-      "rejectSafetyPlcConfig": "reject safety-PLC configuration"
+      "rejectSafetyPlcConfig": "reject safety-PLC configuration",
+      "resolveEdgeStop": "record how the STOP was resolved",
+      "resolveWriteIntent": "record an unknown outcome for the orphaned write",
+      "listEdgeResolution": "list pending STOPs and orphaned writes",
+      "reviewLateWriteResult": "record that the late write result was reviewed"
     },
     "field": {
       "holderUserId": "the user the key is issued to (an existing, active user)",
@@ -4033,6 +4041,7 @@
       "shiftConfigId": "shift (shiftConfigId)",
       "robotId": "robot (robotId)",
       "stopValue": "pinned stop value (stopValue)",
+      "command": "command (command)",
       "inspectionTime": "inspection time (inspectionTime)",
       "completedAt": "completion time (completedAt)",
       "startedAt": "start time (startedAt)",
@@ -4314,6 +4323,8 @@
       "secretReentryRequired": "You changed {{field}} — where or how the stored secret is sent — so the saved password/secret is not reused. Re-enter the password/secret and save again; nothing has been changed yet.",
       "motionLockUnsupported": "This vendor's driver opens one connection per command and has no motion lock; there is nothing to clear.",
       "motionLockChanged": "The motion lock changed while you were confirming (a new link loss). Nothing was cleared; re-read the robot state and confirm again.",
+      "edgeCommandNotQueued": "This robot is owned by an edge node, and the command could not be queued for that node (the owner just changed, or the database / migration 0374 is unavailable). Nothing was cleared; try again.",
+      "stopOnly": "The emergency STOP route accepts stop verbs only (stop / abort); a motion command must go through the normal console. Nothing was sent.",
       "deploymentNotAwaitingApproval": "This request is no longer awaiting approval (someone else approved/rejected it or it is being processed). Reload the list to see its current status.",
       "deployApprovalRecordMissing": "The approval record for this request was not found — it cannot be approved; submit the deploy request again.",
       "deployApprovalRecordInvalid": "The approval record is no longer valid (executed, cancelled or expired) — it cannot be approved again.",
@@ -4399,7 +4410,13 @@
       "assigneeInvalid": "The assignee is not valid: this person is not in this item's \"Assign to\" list (does not exist, is disabled, cannot view the item's page, does not share a factory with the item, or — for a run — cannot see every machine or robot the run controls). Pick someone from the list.",
       "safetyPlcConfigChanged": "The configuration changed after it was shown to you — reload, review the new content and its digest, then decide again.",
       "simPlcConfigNeverTrusted": "A simulated (sim) safety-PLC configuration is never trusted — there is nothing to approve.",
-      "plcTrustMigrationMissing": "Migration 0368 (safety-PLC maker-checker) is not applied on this database — nothing was saved. Ask an administrator to apply it."
+      "plcTrustMigrationMissing": "Migration 0368 (safety-PLC maker-checker) is not applied on this database — nothing was saved. Ask an administrator to apply it.",
+      "stopNotResolvable": "Only a REFUSED or FAILED STOP can be closed by a person; a STOP that is still pending is executed, never closed by hand.",
+      "writeIntentTooRecent": "This write is too recent — it may still be in flight. Wait 10 minutes and record it again.",
+      "alreadyResolved": "This item was already resolved (by someone else, or it already has a result). Reload the list.",
+      "edgeControlUnavailable": "The edge control schema is not in the database (migration 0374 not applied) — nothing was done.",
+      "factoryScopeUnavailable": "Your factory scope could not be read — refused for safety. Try again later.",
+      "lateResultNotReviewable": "The review of this late result could not be recorded (inactive user, note too short, or it is not a late result)."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -19688,6 +19705,8 @@
     }
   },
   "console": {
+    "queuedOnEdge": "STOP sent to the robot's edge node — waiting for its confirmation (see the job log).",
+    "queuedEdgeUnreachable": "STOP queued, but the robot's edge node is UNREACHABLE — central attempted its own STOP and raised a critical alert. Use the hardware E-STOP if the robot is still moving.",
     "rejected": "Command not executed: {{status}}",
     "pickRobot": "Select a robot first."
   },
@@ -22129,5 +22148,48 @@
     "userFallback": "User #{{id}}",
     "noApprovalRight": "Being assigned does not grant approval rights.",
     "needs2fa": "Assigning requires two-step verification (2FA) on your account. Set it up in Settings > Security."
+  },
+  "edgeResolution": {
+    "title": "Pending STOPs and orphaned writes",
+    "unavailable": "The edge control schema is not available (migration 0374 not applied) — nothing to show.",
+    "empty": "No pending STOP and no orphaned write in your scope.",
+    "stopsHeading": "Unacknowledged STOPs ({{shown}}/{{total}})",
+    "intentsHeading": "Orphaned OT writes — no result yet ({{shown}}/{{total}})",
+    "colDevice": "Device",
+    "colOwner": "Request node / current owner",
+    "colCreated": "Created",
+    "colState": "State",
+    "colAdapter": "Adapter",
+    "colCommand": "Command / tag",
+    "colAge": "Age (min)",
+    "robot": "Robot",
+    "adapter": "Adapter",
+    "central": "central",
+    "flag": {
+      "failed": "Failed — needs a person",
+      "refused": "Refused — needs a person",
+      "ownerCannotList": "Edge node cannot see the device — central executes it",
+      "overdue": "Overdue — still owed",
+      "undeliverable": "Undeliverable — the node has no active credential",
+      "pending": "Waiting to be executed"
+    },
+    "resolveStop": "Record resolution",
+    "resolveIntent": "Record unknown outcome",
+    "intentTooRecent": "May still be in flight — wait {{min}} minutes",
+    "stopDialogTitle": "Record how STOP #{{id}} was resolved?",
+    "stopDialogDesc": "This STOP was refused or failed — it is NOT executed automatically any more. Record it only after the device was stopped another way and checked on site. The action is audited with your reason; the STOP stays listed as resolved by a person.",
+    "intentDialogTitle": "Record an UNKNOWN outcome for write #{{id}}?",
+    "intentDialogDesc": "The process stopped in the middle of the write: it may or may not have reached the device. Check the real value on site first. This appends a RESULT row 'outcome unknown' to the command ledger (nothing is edited or deleted), audited with your reason; nothing is sent to the device. The adapter's ownership change stays blocked for 10 more minutes.",
+    "reasonLabel": "Reason / how it was handled (required, at least 3 characters)",
+    "confirm": "Confirm and audit",
+    "stopResolved": "STOP resolution recorded",
+    "intentResolved": "Unknown outcome recorded for the orphaned write",
+    "lateHeading": "Write results that arrived AFTER an 'outcome unknown' resolution ({{shown}}/{{total}})",
+    "colStatus": "Device result",
+    "lateFlag": "Blocks ownership change until reviewed",
+    "reviewLate": "Mark reviewed",
+    "lateDialogTitle": "Mark late write result #{{id}} as reviewed?",
+    "lateDialogDesc": "The device returned a REAL result for this write AFTER it was recorded as 'outcome unknown'. The result is kept as evidence (nothing is edited or deleted). Check the real value on the device; the review is audited with your note and releases the adapter's ownership-change hold.",
+    "lateReviewed": "Late result review recorded"
   }
 }

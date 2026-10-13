@@ -86,7 +86,7 @@ export async function authenticateEdgeNodeToken(token: unknown): Promise<EdgeNod
 
 export class EdgeCredentialError extends Error {
   constructor(
-    public readonly code: "notAdmin" | "notVerified" | "otpRequired" | "reasonRequired" | "nodeNotFound" | "activeExists" | "noActive" | "dbUnavailable",
+    public readonly code: "notAdmin" | "notVerified" | "otpRequired" | "reasonRequired" | "nodeNotFound" | "activeExists" | "noActive" | "dbUnavailable" | "invalidInput",
     message: string,
   ) {
     super(message);
@@ -137,12 +137,106 @@ export async function verifyCredentialAdmin(login: AdminLogin): Promise<{ userId
     if (!twoFa.twoFactorSecret) throw new EdgeCredentialError("notVerified", "2FA is on but has no secret — refused.");
     const { verifyTotpOnce } = await import("../../_core/totpOnce");
     const r = await verifyTotpOnce({ userId: user.id, secret: twoFa.twoFactorSecret, token: otp });
-    if (!r.hopLe) throw new EdgeCredentialError("notVerified", r.phatLai ? "That 2FA code was already used — wait for the next one." : "Wrong 2FA code.");
+    if (!r.hopLe) {
+      await recordCliTotpFailure(user as { id: number; name?: string | null; loginAttempts?: number | null }, r.phatLai ? "replayed_code" : "wrong_code");
+      throw new EdgeCredentialError("notVerified", r.phatLai ? "That 2FA code was already used — wait for the next one." : "Wrong 2FA code.");
+    }
   }
   if (user.isActive === false || String(user.role) !== "admin") {
     throw new EdgeCredentialError("notAdmin", "Only an active admin user may issue, rotate or revoke an edge node credential.");
   }
   return { userId: user.id, name: user.name ?? `user ${user.id}` };
+}
+
+/**
+ * doc 81 Đợt 10 F2 round 2 — Đợt 9 final-wave N8: a WRONG / REPLAYED TOTP at the operator CLI is (1) audited `login_2fa` failure,
+ * like the web 2FA step, and (2) COUNTED INTO THE ACCOUNT LOCKOUT. verifyCredentials resets the counter on a correct password, so
+ * without this every invocation was a fresh, unbounded TOTP guess for someone holding the password. The count continues from the
+ * value read BEFORE that reset (the returned user row): attempts = previous + 1; at MAX_LOGIN_ATTEMPTS the account is locked for
+ * LOCKOUT_MINUTES — the same constants as the password check. Best effort (a failed write never turns the refusal into a pass).
+ */
+async function recordCliTotpFailure(user: { id: number; name?: string | null; loginAttempts?: number | null }, reason: "wrong_code" | "replayed_code"): Promise<void> {
+  const [{ MAX_LOGIN_ATTEMPTS, LOCKOUT_MINUTES }, { updateUserLoginAttempts }, { createAuditLog }] = await Promise.all([
+    import("../../_core/authService"),
+    import("../../db/auth"),
+    import("../../db/system"),
+  ]);
+  const attempts = Math.max(0, Number(user.loginAttempts ?? 0)) + 1;
+  const lockedUntil = attempts >= MAX_LOGIN_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000) : null;
+  try {
+    await updateUserLoginAttempts(user.id, attempts, lockedUntil);
+  } catch (err) {
+    console.error(`[EdgeCredential] could not count a failed CLI 2FA attempt for user ${user.id}: ${(err as Error)?.message ?? err}`);
+  }
+  try {
+    await createAuditLog({
+      userId: user.id,
+      userName: user.name ?? null,
+      action: "login_2fa",
+      entityType: "auth",
+      status: "failure",
+      ipAddress: "cli:edge-operator",
+      userAgent: "edge operator CLI",
+      details: { reason, channel: "cli", attempt: attempts, locked: lockedUntil !== null },
+    });
+  } catch (err) {
+    console.error(`[EdgeCredential] could not audit a failed CLI 2FA attempt for user ${user.id}: ${(err as Error)?.message ?? err}`);
+  }
+}
+
+/**
+ * doc 81 Đợt 10 F2 round 2 — decision D14: an edge node is REGISTERED by a proven admin only (no self-registration; the v2 gateway
+ * never registers itself). Creates the edge_nodes row with its factory and lines, validated against the hierarchy: the factory
+ * code must exist; every line code must be a production line OF THAT FACTORY. An existing node with the SAME factory and lines
+ * ⇒ "unchanged" (idempotent); with a different one ⇒ refused (a factory / line change of a node that may own devices is not made
+ * here — release its devices first, then change it deliberately). Audited (EDGE_NODE_REGISTER, success / failure).
+ */
+export async function registerEdgeNode(input: { nodeCode: string; factoryCode: string; lineCodes: string[]; name?: string | null; actorUserId: number; reason: string }): Promise<{ nodeId: number; created: boolean }> {
+  const reason = String(input.reason ?? "").trim();
+  if (reason.length < 3) throw new EdgeCredentialError("reasonRequired", "A reason (at least 3 characters) is required.");
+  const code = String(input.nodeCode ?? "").trim();
+  const factoryCode = String(input.factoryCode ?? "").trim();
+  const lines = [...new Set((input.lineCodes ?? []).map((l) => String(l).trim()).filter(Boolean))].sort();
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(code)) throw new EdgeCredentialError("invalidInput", "The node code must be 1–128 characters of letters, digits, '.', '_' or '-'.");
+  if (!factoryCode) throw new EdgeCredentialError("invalidInput", "A factory code is required (a node without a factory is given no device and no run).");
+  const d = await db();
+  const [actor] = await d.select({ id: users.id, role: users.role, isActive: users.isActive, name: users.name }).from(users).where(eq(users.id, Number(input.actorUserId))).limit(1);
+  if (!actor || actor.isActive === false || String(actor.role) !== "admin") throw new EdgeCredentialError("notAdmin", "Only an active admin user may register an edge node.");
+  const actorName = actor.name ?? `user ${actor.id}`;
+  const auditRow = async (status: "success" | "failure", details: Record<string, unknown>) => {
+    const { createAuditLog } = await import("../../db/system");
+    await createAuditLog({ userId: actor.id, userName: actorName, action: "EDGE_NODE_REGISTER", entityType: "edge_node", entityName: code, status, details: { factoryCode, lineCodes: lines, reason, ...details } });
+  };
+  const { sql: q } = await import("drizzle-orm");
+  const rowsOf = (r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
+  const fac = rowsOf(await d.execute(q`SELECT id FROM public.factories WHERE code = ${factoryCode}`));
+  if (fac.length !== 1) {
+    await auditRow("failure", { outcome: "unknownFactory" });
+    throw new EdgeCredentialError("invalidInput", `Factory "${factoryCode}" does not exist.`);
+  }
+  if (lines.length > 0) {
+    const found = rowsOf(
+      await d.execute(q`SELECT l.code FROM public.production_lines l JOIN public.workshops w ON w.id = l."workshopId"
+                         WHERE w."factoryId" = ${Number(fac[0].id)} AND l.code IN (${q.join(lines.map((l) => q`${l}`), q`, `)})`),
+    ).map((r) => String(r.code));
+    const missing = lines.filter((l) => !found.includes(l));
+    if (missing.length) {
+      await auditRow("failure", { outcome: "linesNotInFactory", missing });
+      throw new EdgeCredentialError("invalidInput", `Line(s) ${missing.join(", ")} are not production lines of factory "${factoryCode}".`);
+    }
+  }
+  const [existing] = await d.select({ id: edgeNodes.id, factoryCode: edgeNodes.factoryCode, lines: edgeNodes.assignedLineCodes }).from(edgeNodes).where(eq(edgeNodes.code, code)).limit(1);
+  if (existing) {
+    const same = (existing.factoryCode ?? "") === factoryCode && JSON.stringify([...(existing.lines ?? [])].sort()) === JSON.stringify(lines);
+    if (!same) {
+      await auditRow("failure", { outcome: "registeredDifferently", nodeId: existing.id });
+      throw new EdgeCredentialError("activeExists", `Edge node "${code}" is already registered (factory ${existing.factoryCode ?? "none"}, lines ${(existing.lines ?? []).join(",") || "none"}) — not changed here.`);
+    }
+    return { nodeId: existing.id, created: false };
+  }
+  const [ins] = await d.insert(edgeNodes).values({ code, name: (input.name ?? "").trim() || code, factoryCode, assignedLineCodes: lines, status: "offline" }).returning({ id: edgeNodes.id });
+  await auditRow("success", { outcome: "created", nodeId: ins.id });
+  return { nodeId: ins.id, created: true };
 }
 
 interface ChangeInput {

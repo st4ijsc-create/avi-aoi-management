@@ -61,9 +61,10 @@ function heartbeatStale(v?: string | Date | null): boolean {
 
 export default function EdgeNodesPage() {
   const { t } = useTranslation();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, isAdmin } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
-  const canCreate = hasPermission("machine_control", "canCreate");
+  // doc 81 Đợt 10 F2 round 3 (D14): registering / editing a node is ADMIN ONLY on the server (edgeRuntime.registerNode)
+  const canCreate = isAdmin && hasPermission("machine_control", "canCreate");
   const canDelete = hasPermission("machine_control", "canDelete");
 
   const utils = trpc.useUtils();
