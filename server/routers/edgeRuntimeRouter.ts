@@ -122,6 +122,8 @@ export const edgeRuntimeRouter = router({
         if (err.code === "nodeRetired") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "retireEdgeNode", reason: "edgeNodeAlreadyRetired" }, err.message);
         // fix 1 (O-R3) — the node row was held by another change past the retirement's lock_timeout: retry
         if (err.code === "nodeBusy") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "retireEdgeNode", reason: "edgeNodeBusy" }, err.message);
+        // doc 81 Đợt 12 final fix wave (R-12-e M-7) — migration 0378 not applied: a precondition of the database, not "database unavailable"
+        if (err.code === "migrationMissing") throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "retireEdgeNode", reason: "edgeNodeRetireMigrationMissing" }, err.message);
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "retireEdgeNode" }, err.message);
       }
     }),

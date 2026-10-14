@@ -90,7 +90,7 @@ export async function authenticateEdgeNodeToken(token: unknown): Promise<EdgeNod
 
 export class EdgeCredentialError extends Error {
   constructor(
-    public readonly code: "notAdmin" | "notVerified" | "otpRequired" | "reasonRequired" | "nodeNotFound" | "activeExists" | "noActive" | "dbUnavailable" | "invalidInput" | "nodeRetired" | "retireBlocked" | "nodeBusy",
+    public readonly code: "notAdmin" | "notVerified" | "otpRequired" | "reasonRequired" | "nodeNotFound" | "activeExists" | "noActive" | "dbUnavailable" | "invalidInput" | "nodeRetired" | "retireBlocked" | "nodeBusy" | "migrationMissing",
     message: string,
     /** doc 81 Đợt 12 O — retireBlocked: the DB guard's list of blockers (ids), for a caller that shows it apart from the message */
     public readonly blockers?: string,
@@ -474,7 +474,7 @@ export interface RetiredNode {
  *      rolled back: nothing changes.
  * The row is never deleted. Audited EDGE_NODE_RETIRE — success and EVERY refusal (fix 1, O-R6: notAdmin and dbUnavailable too).
  * Refusals: EdgeCredentialError notAdmin · reasonRequired · nodeNotFound · nodeRetired (already) · retireBlocked (the DB's own
- * refusal text) · nodeBusy · dbUnavailable.
+ * refusal text) · nodeBusy · dbUnavailable · migrationMissing (R-12-e M-7: mig 0378 not applied).
  */
 export async function retireEdgeNode(input: ChangeInput): Promise<RetiredNode> {
   const reason = String(input.reason ?? "").trim();
@@ -554,7 +554,8 @@ export async function retireEdgeNode(input: ChangeInput): Promise<RetiredNode> {
       throw busy;
     }
     if (sqlCode === "42703") {
-      const missing = new EdgeCredentialError("dbUnavailable", "Edge node retirement needs migration 0378 (edge_nodes.retiredAt) — not applied on this database. Nothing was changed.");
+      // doc 81 Đợt 12 final fix wave (R-12-e M-7) — its OWN code: the database is up, a migration is missing (never "dbUnavailable")
+      const missing = new EdgeCredentialError("migrationMissing", "Edge node retirement needs migration 0378 (edge_nodes.retiredAt) — not applied on this database. Nothing was changed.");
       await auditRetire("failure", { outcome: missing.code, refusal: missing.message });
       throw missing;
     }

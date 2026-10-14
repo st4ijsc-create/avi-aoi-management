@@ -189,13 +189,32 @@ describe.skipIf(!DB_URL)("Đợt 12 O — retire an edge node (CLI retire-node, 
     await fixUnchanged();
   });
 
-  it("fix 1 — WITHOUT mig 0378 (asserted only on such a DB — the rehearsal at the 0377 state): retire fails closed (dbUnavailable), AUDITED, nothing changed", async () => {
+  it("fix 1 / R-12-e M-7 — WITHOUT mig 0378 (asserted only on such a DB — the rehearsal at the 0377 state): retire fails closed (migrationMissing, not dbUnavailable), AUDITED, nothing changed", async () => {
     if (has0378) return;
     const r = await retire(FIX.code);
     expect(r.code).toBe(1);
-    expect(r.err).toMatch(/dbUnavailable/);
-    expect((await audits(FIX.code)).at(-1)).toMatchObject({ status: "failure", details: { outcome: "dbUnavailable" } });
+    expect(r.err).toMatch(/migrationMissing/);
+    expect((await audits(FIX.code)).at(-1)).toMatchObject({ status: "failure", details: { outcome: "migrationMissing" } });
     expect(await activeCreds(FIX.nodeId)).toBe(1);
+  });
+
+  it("★ R-12-e M-7: the retirement statements answer 42703 (a database without 0378) ⇒ the specific code migrationMissing — never dbUnavailable (the DB is up) — audited, nothing changed", async () => {
+    const svc = await import("../server/services/edge/edgeNodeCredentials");
+    svc._setRetirePauseForTests(async () => {
+      throw Object.assign(new Error('column "retiredAt" of relation "edge_nodes" does not exist'), { code: "42703" });
+    });
+    try {
+      const e = await svc.retireEdgeNode({ nodeCode: FIX.code, actorUserId: ids.admin, reason: "no 0378 here" }).then(
+        () => null,
+        (x: { code?: string; message?: string }) => x,
+      );
+      expect(e?.code).toBe("migrationMissing");
+      expect(e?.message).toMatch(/migration 0378/);
+    } finally {
+      svc._setRetirePauseForTests(null);
+    }
+    expect((await audits(FIX.code)).at(-1)).toMatchObject({ status: "failure", details: { outcome: "migrationMissing" } });
+    await fixUnchanged();
   });
 
   it("★ refused while the node owns a ROBOT / an ADAPTER — the refusal names them; nothing changed; audited failure", async () => {

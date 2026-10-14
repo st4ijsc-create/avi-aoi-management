@@ -79,5 +79,9 @@ describe("Đợt 12 O — edgeRuntime.retireNode is admin-only, audited by the s
     expect(busy?.trpc).toBe("CONFLICT");
     expect(busy?.meta).toMatchObject({ appCode: "OPERATION_FAILED", appParams: { operation: "retireEdgeNode", reason: "edgeNodeBusy" } });
     expect((await err("notAdmin", "no"))?.trpc).toBe("FORBIDDEN");
+    // R-12-e M-7 — a database without migration 0378: its own code (the UI must not say "database unavailable")
+    const mig = await err("migrationMissing", "needs migration 0378");
+    expect(mig?.trpc).toBe("PRECONDITION_FAILED");
+    expect(mig?.meta).toMatchObject({ appCode: "OPERATION_FAILED", appParams: { operation: "retireEdgeNode", reason: "edgeNodeRetireMigrationMissing" } });
   });
 });
