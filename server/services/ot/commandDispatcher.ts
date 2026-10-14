@@ -1233,7 +1233,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   let adapterHasNoStopPins: boolean | (() => boolean) = false;
   if (unverifiedStop && stopEpochAtGates !== null) {
     const known = cachedStopPinPresence(input.adapterId);
-    if (known !== null) adapterHasNoStopPins = known === "none";
+    // R-12-g (defence in depth) — this command's own step-3 tag rows (read now) show a pin ⇒ the adapter HAS pins, whatever a cache says
+    if (stopPinsFromTagRows(step3TagRows).length > 0) adapterHasNoStopPins = false;
+    else if (known !== null) adapterHasNoStopPins = known === "none";
     else if (!otStopEpochSyncSeesPeers()) {
       const id = input.adapterId;
       adapterHasNoStopPins = () => cachedStopPinPresence(id) === "none";

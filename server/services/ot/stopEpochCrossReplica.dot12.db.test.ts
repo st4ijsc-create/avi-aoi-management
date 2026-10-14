@@ -26,17 +26,11 @@ const H = vi.hoisted(() => ({
   pinReadDelayMs: 0,
 }));
 
-vi.mock("./stopPin", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("./stopPin")>();
-  return {
-    ...orig,
-    loadStopPins: async (db: Parameters<typeof orig.loadStopPins>[0], adapterId: number) => {
-      H.pinReads.push(adapterId);
-      if (H.pinReadDelayMs > 0) await new Promise((r) => setTimeout(r, H.pinReadDelayMs));
-      return orig.loadStopPins(db, adapterId);
-    },
-  };
-});
+/** R-12-f — every replica's stopPin module counts its pin reads here (and can make them slow) */
+async function pinProbe(adapterId: number) {
+  H.pinReads.push(adapterId);
+  if (H.pinReadDelayMs > 0) await new Promise((r) => setTimeout(r, H.pinReadDelayMs));
+}
 
 vi.mock("./otManager", async (importOriginal) => {
   const orig = await importOriginal<typeof import("./otManager")>();
@@ -92,6 +86,7 @@ async function loadReplica(name: string): Promise<Replica> {
   const sync = await import("./otStopEpochSync");
   const conn = await import("../../db/connection");
   const sp = await import("./stopPin");
+  sp._setPinReadProbeForTests(pinProbe);
   const pp = await import("./stopPinPresence");
   return { name, cd, dw, sync, conn, sp, pp, stopSync: null, alerts: [] };
 }
@@ -109,6 +104,10 @@ let B: Replica;
 let adapterId = 0;
 /** doc 81 Đợt 12 final fix wave (R-12-e I-1) — a second adapter with NO stop pin at all (only `w1`): the I-2 positive control */
 let adapterNoPins = 0;
+/** doc 81 Đợt 12 final fix wave residual 2 (R-12-g) — an adapter that gets its FIRST pin during a test (on replica A) */
+let adapterLatePin = 0;
+const LP_STOP = "lp_stop";
+const LP_RUN = "lp_run";
 const device = { regs: new Map<string, unknown>(), log: [] as string[] };
 let seq = 0;
 
@@ -180,11 +179,17 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     const [rowNp] = await x.insert(deviceAdapters).values({ code: `${DAU}-NP`, name: `${DAU} no pins`, protocol: "modbus", endpoint: "tcp://127.0.0.1:2", isEnabled: true, machineId: MACHINE }).returning();
     adapterNoPins = rowNp!.id;
     await x.insert(deviceTags).values([{ adapterId: adapterNoPins, tagKey: TAG_W, address: "holding:40001", dataType: "int", writable: true }]);
-    for (const id of [adapterId, adapterNoPins]) {
+    const [rowLp] = await x.insert(deviceAdapters).values({ code: `${DAU}-LP`, name: `${DAU} late pin`, protocol: "modbus", endpoint: "tcp://127.0.0.1:3", isEnabled: true, machineId: MACHINE }).returning();
+    adapterLatePin = rowLp!.id;
+    await x.insert(deviceTags).values([
+      { adapterId: adapterLatePin, tagKey: LP_STOP, address: "holding:40030", dataType: "int", writable: true },
+      { adapterId: adapterLatePin, tagKey: LP_RUN, address: "holding:40031", dataType: "int", writable: true },
+    ]);
+    for (const id of [adapterId, adapterNoPins, adapterLatePin]) {
       H.drivers.set(id, {
         isConnected: () => true,
         writeTags: async (w: Array<{ tagKey: string; value: unknown }>) => {
-          for (const v of w) device.log.push(`${id === adapterNoPins ? "np:" : ""}${v.tagKey}=${String(v.value)}`);
+          for (const v of w) device.log.push(`${id === adapterNoPins ? "np:" : id === adapterLatePin ? "lp:" : ""}${v.tagKey}=${String(v.value)}`);
           for (const v of w) device.regs.set(v.tagKey, v.value);
           return w.map((v) => ({ tagKey: v.tagKey, ok: true }));
         },
@@ -203,7 +208,7 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     H.fps.clear();
     if (sql) {
       await sql`DELETE FROM ai_pending_actions WHERE id LIKE ${DAU + "%"}`;
-      for (const id of [adapterId, adapterNoPins].filter((v) => v > 0)) {
+      for (const id of [adapterId, adapterNoPins, adapterLatePin].filter((v) => v > 0)) {
         await sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`;
         await sql`DELETE FROM device_adapters WHERE id = ${id}`.catch(() => undefined); // command_log rows (WORM) may pin it
       }
@@ -368,7 +373,7 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     }
   });
 
-  it("★ R-12-f: on a PINNED adapter an unverified stop skips the pin read while no peer is seen; with a peer seen it reads once, then the cached presence answers; a pin change invalidates it", async () => {
+  it("★ R-12-f: on a PINNED adapter an unverified stop that writes a pinned tag never reads the adapter pins (its own step-3 rows show one), with or without peers; a pin change invalidates the cached presence", async () => {
     setEnv(false);
     const C = await replicaC();
     try {
@@ -382,9 +387,9 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
       expect(await once(C)).toBe(0); // no peer: never read
       expect(await once(C)).toBe(0);
       B.pp._resetStopPinPresenceForTests();
-      expect(await once(B)).toBe(1); // a peer seen: read …
-      expect(await once(B)).toBe(0); // … then cached
-      expect(B.pp.cachedStopPinPresence(adapterId)).toBe("pins");
+      // a peer seen: R-12-g — the command's own step-3 rows already show a pin it writes ⇒ "has pins", no read either
+      expect(await once(B)).toBe(0);
+      expect(await once(B)).toBe(0);
       // a pin change on this replica invalidates the cached presence (both directions)
       const who = { id: OWNER, name: "R-12-f" };
       expect((await B.cd.dispatch(await prep("stop", [{ tagKey: TAG_W, value: 0 }], adapterNoPins))).ok).toBe(true);
@@ -398,6 +403,83 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
       expect(B.pp.cachedStopPinPresence(adapterNoPins)).toBeNull();
     } finally {
       await closeReplica(C);
+    }
+  });
+
+  // ── doc 81 Đợt 12 final fix wave residual 2 (R-12-g, scan "fail-open-state-drift"): a pin ADDED on replica A while B holds a cached
+  //    "no pins" for that adapter. Before: B kept granting the peer-STOP exemption for up to the 10 s TTL.
+  const who = { id: OWNER, name: "R-12-g" };
+  const unpinLate = async () => {
+    await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: null, reason: "R-12-g restore", nguoiSua: who, phamViMay: null }).catch(() => undefined);
+  };
+  it("★ R-12-g: a pin ADDED on replica A while B caches 'no pins': a peer STOP then cancels B's stop that writes an unpinned tag (never written after the STOP); B's stale answer is dropped by A's signed broadcast", async () => {
+    setEnv(false);
+    await unpinLate();
+    // B learns "no pins" for the adapter (its label read)
+    expect((await B.cd.dispatch(await prep("stop", [{ tagKey: LP_RUN, value: 0 }], adapterLatePin))).ok).toBe(true);
+    expect(B.pp.cachedStopPinPresence(adapterLatePin)).toBe("none");
+    // replica A pins lp_stop = 0 (the adapter's FIRST pin)
+    await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: 0, reason: "R-12-g late pin", nguoiSua: who, phamViMay: null });
+    try {
+      await until(() => B.pp.cachedStopPinPresence(adapterLatePin) === null, 2_000);
+      device.log.length = 0;
+      // B: an unverified stop writing an UNPINNED tag (lp_run) besides the new pin's tag, held in its gates
+      const h = holdGatesOf(LP_RUN, adapterLatePin);
+      const p = B.cd.dispatch(await prep("stop", [{ tagKey: LP_STOP, value: 1 }, { tagKey: LP_RUN, value: 1 }], adapterLatePin));
+      await h.entered;
+      const e0 = B.dw.adapterStopEpoch(adapterLatePin);
+      // A sends the now-possible verified pinned STOP; B learns of it through the channel
+      expect(await A.cd.dispatch(await prep("stop", [{ tagKey: LP_STOP, value: 0 }], adapterLatePin))).toMatchObject({ ok: true, pinnedStop: true });
+      expect(await until(() => B.dw.adapterStopEpoch(adapterLatePin) !== e0, 3_000)).toBe(true);
+      h.release();
+      const r = await p;
+      expect(device.log).toEqual([`lp:${LP_STOP}=0`]); // L-7: nothing written after A's STOP
+      expect(r).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+      expect(B.pp.cachedStopPinPresence(adapterLatePin)).not.toBe("none");
+    } finally {
+      await unpinLate();
+    }
+  });
+
+  it("R-12-g: A's pin change is broadcast SIGNED and invalidates B's cached presence (add and remove); a forged / unsigned pin message changes nothing", async () => {
+    await unpinLate();
+    for (const stopValue of [0, null] as const) {
+      B.pp._resetStopPinPresenceForTests();
+      expect((await B.cd.dispatch(await prep("stop", [{ tagKey: LP_RUN, value: 0 }], adapterLatePin))).ok).toBe(true);
+      expect(B.pp.cachedStopPinPresence(adapterLatePin)).not.toBeNull();
+      await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue, reason: "R-12-g broadcast", nguoiSua: who, phamViMay: null });
+      expect(await until(() => B.pp.cachedStopPinPresence(adapterLatePin) === null, 3_000)).toBe(true);
+    }
+    // forged: unsigned / wrong key ⇒ rejected, the cached answer stays
+    expect((await B.cd.dispatch(await prep("stop", [{ tagKey: LP_RUN, value: 0 }], adapterLatePin))).ok).toBe(true);
+    expect(B.pp.cachedStopPinPresence(adapterLatePin)).toBe("none");
+    const rej0 = status(B).rejected as number;
+    await sql`SELECT pg_notify(${CHANNEL}, ${JSON.stringify({ v: 2, kind: "pins", replicaId: "forger-replica-09", seq: 1, issuedAt: Date.now(), adapterId: adapterLatePin, mac: "0".repeat(64) })})`;
+    expect(await until(() => (status(B).rejected as number) > rej0, 3_000)).toBe(true);
+    expect(B.pp.cachedStopPinPresence(adapterLatePin)).toBe("none");
+  });
+
+  it("R-12-g defence in depth: B never hears of the pin (its LISTEN is down) — the fresh step-3 tag rows of the command show a pin, so a cached 'no pins' is not used: a peer move cancels the stop", async () => {
+    setEnv(false);
+    await unpinLate();
+    expect((await B.cd.dispatch(await prep("stop", [{ tagKey: LP_RUN, value: 0 }], adapterLatePin))).ok).toBe(true);
+    expect(B.pp.cachedStopPinPresence(adapterLatePin)).toBe("none");
+    await stopSync(B);
+    try {
+      await A.sp.datStopPin({ adapterId: adapterLatePin, tagKey: LP_STOP, stopValue: 0, reason: "R-12-g no broadcast", nguoiSua: who, phamViMay: null });
+      await new Promise((r) => setTimeout(r, 200));
+      expect(B.pp.cachedStopPinPresence(adapterLatePin)).toBe("none"); // stale here: nothing arrived
+      device.log.length = 0;
+      const h = holdGatesOf(LP_RUN, adapterLatePin);
+      const p = B.cd.dispatch(await prep("stop", [{ tagKey: LP_STOP, value: 1 }, { tagKey: LP_RUN, value: 1 }], adapterLatePin));
+      await h.entered;
+      B.dw.bumpAdapterStopEpochFromPeer(adapterLatePin, { peer: true, origin: "peer-direct-0001" });
+      h.release();
+      expect(await p).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+      expect(device.log).toEqual([]);
+    } finally {
+      await startSync(B);
+      await unpinLate();
     }
   });
 

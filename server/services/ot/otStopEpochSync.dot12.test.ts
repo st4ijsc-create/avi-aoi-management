@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { bumpAdapterStopEpoch, adapterStopEpoch, setStopEpochBroadcaster } from "./otDeviceWrite";
+import { cachedStopPinPresence, rememberStopPinPresence, stopPinChanged, stopPinReadToken } from "./stopPinPresence";
 import {
   startOtStopEpochSync,
   otStopEpochSyncStatus,
@@ -17,6 +18,8 @@ import {
   signHelloMessage,
   macOf,
   otStopEpochSyncSeesPeers,
+  parsePinChangePayload,
+  signPinChangeMessage,
   OT_STOP_EPOCH_REPLICA_ID,
   OT_STOP_EPOCH_CHANNEL,
   OT_STOP_EPOCH_MAX_AGE_MS,
@@ -381,6 +384,64 @@ describe("R-12-e M-2 — a signed HELLO at start proves the key before the first
     expect(macOf(KEY, { v: 2, kind: "stop", replicaId: PEER, seq: 3, issuedAt: 1_700_000_000_000, adapterId: 0 })).not.toBe(ok.mac);
     const asStop = parseStopEpochPayload(JSON.stringify({ ...ok, kind: "stop", adapterId: 1 }))!;
     expect(asStop.mac).not.toBe(signStopEpochMessage(KEY, { replicaId: PEER, seq: 3, issuedAt: 1_700_000_000_000, adapterId: 1 }).mac); // … a hello MAC never verifies as a STOP
+  });
+});
+
+describe("R-12-g — stop-pin changes are broadcast signed and invalidate every replica's cached pin presence", () => {
+  it("★ a local pin change is NOTIFYed signed (kind pins); a peer's signed one invalidates the cached presence here; a forged one is rejected; its own is ignored", async () => {
+    const c = bus();
+    const alerts: StopEpochSyncAlert[] = [];
+    await start(c, alerts);
+    await tick();
+    const before = c.notified.length;
+    stopPinChanged(990_300);
+    await tick();
+    await tick();
+    const sent = c.notified.slice(before).map((p) => parsePinChangePayload(p)).filter(Boolean);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ v: 2, kind: "pins", replicaId: OT_STOP_EPOCH_REPLICA_ID, adapterId: 990_300 });
+    expect(sent[0]!.mac).toBe(signPinChangeMessage(KEY, { replicaId: sent[0]!.replicaId, seq: sent[0]!.seq, issuedAt: sent[0]!.issuedAt, adapterId: 990_300 }).mac);
+    expect(parseStopEpochPayload(JSON.stringify(sent[0]))).toBeNull(); // never a STOP
+    // a peer's signed pin change: the cached "none" here is gone
+    rememberStopPinPresence(990_301, false, stopPinReadToken(990_301));
+    expect(cachedStopPinPresence(990_301)).toBe("none");
+    c.deliver(JSON.stringify(signPinChangeMessage(KEY, { replicaId: PEER, seq: 1, issuedAt: Date.now(), adapterId: 990_301 })));
+    expect(cachedStopPinPresence(990_301)).toBeNull();
+    expect(otStopEpochSyncSeesPeers()).toBe(true);
+    // forged (another key) ⇒ rejected, nothing forgotten
+    rememberStopPinPresence(990_302, false, stopPinReadToken(990_302));
+    const r0 = otStopEpochSyncStatus().rejectedBy.bad_mac;
+    c.deliver(JSON.stringify(signPinChangeMessage(Buffer.alloc(32, 6), { replicaId: PEER, seq: 2, issuedAt: Date.now(), adapterId: 990_302 })));
+    expect(cachedStopPinPresence(990_302)).toBe("none");
+    expect(otStopEpochSyncStatus().rejectedBy.bad_mac).toBe(r0 + 1);
+    // its own message (delivered back by the bus) is ignored — counted neither received nor rejected
+    expect(otStopEpochSyncStatus().pinChanges).toMatchObject({ sent: 1, received: 1 });
+  });
+
+  it("★ the broadcast cannot be sent ⇒ the SENDER alerts (once per 30 min, every failure counted)", async () => {
+    const c = bus();
+    c.notifyImpl = async (p: string) => {
+      if (p.includes('"pins"')) throw new Error("notify down");
+      return [];
+    };
+    const alerts: StopEpochSyncAlert[] = [];
+    await start(c, alerts);
+    const n0 = otStopEpochSyncStatus().pinChanges.notSent;
+    stopPinChanged(990_310);
+    stopPinChanged(990_311);
+    expect(await until(() => otStopEpochSyncStatus().pinChanges.notSent >= n0 + 2)).toBe(true);
+    expect(alerts.filter((a) => a.kind === "pin_broadcast_failed")).toHaveLength(1);
+    expect(alerts.find((a) => a.kind === "pin_broadcast_failed")!.reason).toMatch(/990310/);
+  });
+
+  it("without a key (sync disabled) a pin change is only forgotten locally — nothing sent", async () => {
+    const c = bus();
+    await start(c, [], { env: {} as NodeJS.ProcessEnv });
+    rememberStopPinPresence(990_320, false, stopPinReadToken(990_320));
+    stopPinChanged(990_320);
+    await tick();
+    expect(cachedStopPinPresence(990_320)).toBeNull();
+    expect(c.notified).toEqual([]);
   });
 });
 

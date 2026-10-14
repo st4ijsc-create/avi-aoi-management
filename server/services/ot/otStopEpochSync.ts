@@ -36,6 +36,7 @@ import { createHmac, hkdfSync, randomUUID, timingSafeEqual } from "node:crypto";
 import { bumpAdapterStopEpochFromPeer, peerStopEpochStats, setStopEpochBroadcaster, type StopEpochBroadcast } from "./otDeviceWrite";
 import { isEdgeProcessRole } from "../../db/connection";
 import { NO_KEY_FIX, defaultKeyEpisodeIo, settleKeyEpisode, type KeyEpisodeIo, type KeyEpisodeOutcome } from "./otStopEpochKeyEpisode";
+import { STOP_PIN_PRESENCE_TTL_MS, invalidateStopPinPresence, setStopPinChangeBroadcaster } from "./stopPinPresence"; // R-12-g
 import { withDeadline } from "./drivers/boundedClose";
 import {
   startChannelListener,
@@ -92,9 +93,11 @@ export function resolveStopEpochKey(env: NodeJS.ProcessEnv = process.env): StopE
 }
 
 // the kind is signed: a hello MAC (adapterId 0, kind hello) never verifies as a STOP
-const canonical = (m: Omit<StopEpochMessage, "mac"> | Omit<StopEpochHello, "mac">) =>
+const canonical = (m: Omit<StopEpochMessage, "mac"> | Omit<StopEpochHello, "mac"> | Omit<StopPinChangeMessage, "mac">) =>
   `${OT_STOP_EPOCH_CHANNEL}\nv${m.v}\n${m.kind}\n${m.replicaId}\n${m.seq}\n${m.issuedAt}\n${"adapterId" in m ? m.adapterId : 0}`;
-export function macOf(key: Buffer, m: Omit<StopEpochMessage, "mac"> | Omit<StopEpochHello, "mac">): string {
+/** R-12-g — "a stop pin of this adapter changed on the sending replica" (same shape as a stop; the kind is signed) */
+export type StopPinChangeMessage = Omit<StopEpochMessage, "kind"> & { kind: "pins" };
+export function macOf(key: Buffer, m: Omit<StopEpochMessage, "mac"> | Omit<StopEpochHello, "mac"> | Omit<StopPinChangeMessage, "mac">): string {
   return createHmac("sha256", key).update(canonical(m), "utf8").digest("hex");
 }
 /** R-12-e M-2 — build a signed hello (tests / the start). */
@@ -102,12 +105,17 @@ export function signHelloMessage(key: Buffer, m: Omit<StopEpochHello, "mac" | "v
   const base = { v: 2 as const, kind: "hello" as const, ...m };
   return { ...base, mac: macOf(key, base) };
 }
+/** R-12-g — build a signed pin-change message (tests / the broadcaster). */
+export function signPinChangeMessage(key: Buffer, m: Omit<StopPinChangeMessage, "mac" | "v" | "kind">): StopPinChangeMessage {
+  const base = { v: 2 as const, kind: "pins" as const, ...m };
+  return { ...base, mac: macOf(key, base) };
+}
 /** Build a signed message (tests / the broadcaster). */
 export function signStopEpochMessage(key: Buffer, m: Omit<StopEpochMessage, "mac" | "v" | "kind">): StopEpochMessage {
   const base = { v: 2 as const, kind: "stop" as const, ...m };
   return { ...base, mac: macOf(key, base) };
 }
-function macOk(key: Buffer, m: StopEpochMessage | StopEpochHello): boolean {
+function macOk(key: Buffer, m: StopEpochMessage | StopEpochHello | StopPinChangeMessage): boolean {
   const want = Buffer.from(macOf(key, m), "hex");
   const got = Buffer.from(m.mac, "hex");
   return got.length === want.length && timingSafeEqual(got, want);
@@ -137,6 +145,21 @@ export function parseStopEpochPayload(raw: unknown): StopEpochMessage | null {
   return { v: 2, kind: "stop", replicaId: o.replicaId, seq: o.seq, issuedAt: o.issuedAt, adapterId: o.adapterId, mac: o.mac };
 }
 
+/** R-12-g — STRICT parse of a pin-change message (exactly the stop shape with kind "pins"). */
+export function parsePinChangePayload(raw: unknown): StopPinChangeMessage | null {
+  if (typeof raw !== "string" || !raw.includes('"pins"')) return null;
+  let o: Record<string, unknown>;
+  try {
+    o = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (typeof o !== "object" || o === null || Array.isArray(o) || o.kind !== "pins") return null;
+  const asStop = parseStopEpochPayload(JSON.stringify({ ...o, kind: "stop" }));
+  if (!asStop || raw.length > OT_STOP_EPOCH_MAX_PAYLOAD) return null;
+  return { ...asStop, kind: "pins" };
+}
+
 const HELLO_KEYS = "issuedAt,kind,mac,replicaId,seq,v";
 /** R-12-e M-2 — STRICT parse of a hello; null for anything else (the MAC is checked separately). */
 export function parseHelloPayload(raw: unknown): StopEpochHello | null {
@@ -160,7 +183,7 @@ export function parseHelloPayload(raw: unknown): StopEpochHello | null {
 // ── status ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export type StopEpochSyncAlert =
   | ChannelListenerAlert
-  | { kind: "no_key" | "rejected" | "peer_overflow" | "replica_overflow" | "key_mismatch"; channel: string; reason: string; at: number };
+  | { kind: "no_key" | "rejected" | "peer_overflow" | "replica_overflow" | "key_mismatch" | "pin_broadcast_failed"; channel: string; reason: string; at: number };
 export type RejectReason = "malformed" | "no_key" | "bad_mac" | "stale" | "replay";
 const LAT_RING = 512;
 const st = {
@@ -178,6 +201,10 @@ const st = {
   helloPeers: new Map<string, { lastSeenAt: number; verified: boolean }>(),
   /** R-12-f — a peer replica proved itself since this start (a verified hello or an applied peer STOP) */
   peerSeen: false,
+  /** R-12-g — pin changes broadcast / received / not sent */
+  pinChangesSent: 0,
+  pinChangesReceived: 0,
+  pinChangesNotSent: 0,
   peerStops: 0,
   ignoredOwn: 0,
   rejected: { malformed: 0, no_key: 0, bad_mac: 0, stale: 0, replay: 0 } as Record<RejectReason, number>,
@@ -229,6 +256,7 @@ export function otStopEpochSyncStatus() {
     notifyFailed: st.notifyFailed,
     unsignedNotSent: st.unsignedNotSent,
     peerLatencyMs: { count: s.length, p50: pct(s, 50), p95: pct(s, 95), p99: pct(s, 99), max: s.length ? s[s.length - 1] : 0 },
+    pinChanges: { sent: st.pinChangesSent, received: st.pinChangesReceived, notSent: st.pinChangesNotSent },
   };
 }
 /**
@@ -418,6 +446,40 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
     }
   };
 
+  // ── PIN CHANGES (R-12-g) — every local stop-pin change is broadcast signed; every replica forgets its cached presence for it
+  let pinFailAlertAt = 0;
+  const removePinBroadcaster = key
+    ? setStopPinChangeBroadcaster((adapterId: number) => {
+        seq += 1;
+        const pm = signPinChangeMessage(key, { replicaId: OT_STOP_EPOCH_REPLICA_ID, seq, issuedAt: Date.now(), adapterId });
+        void notifyBounded(notifyClient, OT_STOP_EPOCH_CHANNEL, JSON.stringify(pm), opts.notifyDeadlineMs).then((r) => {
+          if (r.ok) {
+            st.pinChangesSent += 1;
+            return;
+          }
+          st.pinChangesNotSent += 1;
+          const now = Date.now();
+          if (pinFailAlertAt === 0 || now - pinFailAlertAt >= OT_STOP_EPOCH_KEY_MISMATCH_ALERT_MS) {
+            pinFailAlertAt = now;
+            alert({
+              kind: "pin_broadcast_failed",
+              channel: OT_STOP_EPOCH_CHANNEL,
+              reason: `a stop-pin change of adapter ${adapterId} could NOT be broadcast to the other central replicas (${r.error}): until their cached pin presence expires (${STOP_PIN_PRESENCE_TTL_MS / 1000} s) they may still treat the adapter as having no pin — a command's own tag rows still show a pin it writes. Further failures within ${OT_STOP_EPOCH_KEY_MISMATCH_ALERT_MS / 60_000} min are only counted.`,
+              at: now,
+            });
+          }
+        });
+      })
+    : () => undefined;
+  const onPinChange = (pm: StopPinChangeMessage) => {
+    if (!key) return;
+    if (!macOk(key, pm)) return reject("bad_mac", `pin change of adapter ${pm.adapterId}`);
+    if (pm.replicaId === OT_STOP_EPOCH_REPLICA_ID) return; // forgotten locally already
+    invalidateStopPinPresence(pm.adapterId); // forgetting is always the safe direction: no freshness / replay check needed
+    st.pinChangesReceived += 1;
+    st.peerSeen = true;
+  };
+
   // ── RECEIVE
   const replicas = new Map<string, { seen: Map<number, number>; lastSeen: number }>();
   const onPayload = (raw: string) => {
@@ -425,6 +487,8 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
     if (!m) {
       const h = parseHelloPayload(raw);
       if (h) return onHello(h);
+      const pc = parsePinChangePayload(raw);
+      if (pc) return onPinChange(pc);
       return reject("malformed", `${String(raw).length} chars`);
     }
     if (!key) return reject("no_key", "no HMAC key on this replica");
@@ -512,6 +576,7 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
     if (stopped) return;
     stopped = true;
     removeBroadcaster();
+    removePinBroadcaster();
     const l = listener;
     listener = null;
     st.running = false;

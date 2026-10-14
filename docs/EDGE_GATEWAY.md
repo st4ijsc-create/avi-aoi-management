@@ -551,7 +551,11 @@ central pending-STOP sweep and the edge-fallback STOP send real STOPs with the g
   channel can supersede it. Final fix wave (R-12-e I-1, scan #113): on an adapter WITH pins (a verified STOP exists there), a
   stop-LABELLED command that is not a verified STOP (an unpinned tag, the pin value plus an unpinned tag, a non-pin value) is
   superseded by a peer STOP exactly as by a local one — the replica the load balancer picked changes nothing. The adapter's pins
-  are read once (bounded 1 s); a read failure ⇒ not exempt.
+  are read once (bounded 1 s); a read failure ⇒ not exempt. Residual (R-12-f): a pin-presence cache (TTL 10 s) answers in the
+  common case; with no peer replica seen nothing is read. Residual 2 (R-12-g): every stop-pin change is broadcast as a signed
+  `{kind:"pins"}` message on this channel and drops the cached presence on every replica (a cached "no pins" older than the last
+  change learnt is never used); a broadcast that cannot be sent alerts on the sender; a command whose own tag rows show a pin is
+  never treated as pin-less.
 
 **Who can send on the channel — and why the messages are signed.** PostgreSQL has no privilege for NOTIFY: any role that can
 connect to the database can NOTIFY any channel (proven on `_test` with the app role `avi_app`, not superuser, no CREATEROLE).

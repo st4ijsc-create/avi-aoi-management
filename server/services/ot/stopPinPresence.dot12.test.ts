@@ -8,6 +8,8 @@ import {
   rememberStopPinPresence,
   invalidateStopPinPresence,
   stopPinReadToken,
+  stopPinChanged,
+  setStopPinChangeBroadcaster,
   _resetStopPinPresenceForTests,
   STOP_PIN_PRESENCE_TTL_MS,
   STOP_PIN_PRESENCE_MAX,
@@ -48,6 +50,38 @@ describe("stopPinPresence", () => {
     invalidateStopPinPresence(8);
     expect(cachedStopPinPresence(7)).toBe("none");
   });
+  it("R-12-g: a cached 'none' NOT NEWER than the last pin change learnt is never used; a 'pins' answer is kept (the safe side)", () => {
+    const t = Date.now();
+    rememberStopPinPresence(40, false, stopPinReadToken(40), t - 5);
+    rememberStopPinPresence(41, true, stopPinReadToken(41), t - 5);
+    // a change learnt now, but the entries were written with an earlier timestamp by a read that kept its token (gen of 40/41 not bumped)
+    invalidateStopPinPresence(42); // another adapter: no effect
+    expect(cachedStopPinPresence(40)).toBe("none");
+    const tok40 = stopPinReadToken(40);
+    invalidateStopPinPresence(40);
+    rememberStopPinPresence(40, false, stopPinReadToken(40), t - 1_000); // an answer stamped BEFORE the change
+    expect(cachedStopPinPresence(40)).toBeNull();
+    rememberStopPinPresence(40, false, tok40); // the in-flight read of the old generation: ignored
+    expect(cachedStopPinPresence(40)).toBeNull();
+    expect(cachedStopPinPresence(41)).toBe("pins");
+  });
+  it("R-12-g: stopPinChanged forgets locally and calls the broadcaster (a throwing one never reaches the caller); removed ⇒ not called", () => {
+    const calls: number[] = [];
+    const off = setStopPinChangeBroadcaster((id) => void calls.push(id));
+    rememberStopPinPresence(50, false, stopPinReadToken(50));
+    stopPinChanged(50);
+    expect(cachedStopPinPresence(50)).toBeNull();
+    expect(calls).toEqual([50]);
+    off();
+    stopPinChanged(51);
+    expect(calls).toEqual([50]);
+    const off2 = setStopPinChangeBroadcaster(() => {
+      throw new Error("boom");
+    });
+    expect(() => stopPinChanged(52)).not.toThrow();
+    off2();
+  });
+
   it("bounded: the oldest entry is evicted at the cap", () => {
     for (let i = 1; i <= STOP_PIN_PRESENCE_MAX + 1; i++) rememberStopPinPresence(i, false, stopPinReadToken(i));
     expect(cachedStopPinPresence(1)).toBeNull();

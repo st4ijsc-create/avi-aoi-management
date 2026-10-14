@@ -11,20 +11,23 @@
 export const STOP_PIN_PRESENCE_TTL_MS = 10_000;
 export const STOP_PIN_PRESENCE_MAX = 10_000;
 
-// ONE cache per PROCESS (globalThis-keyed): pins are database state, and a module loaded twice in one process (a test's
-// vi.resetModules, a dynamic import graph) must not read one copy and invalidate another.
-type PresenceState = { cache: Map<number, { hasPins: boolean; at: number }>; gens: Map<number, number>; globalGen: number };
-const KEY = Symbol.for("avi.ot.stopPinPresence.v1");
-const g = globalThis as unknown as Record<symbol, PresenceState | undefined>;
-const state: PresenceState = (g[KEY] ??= { cache: new Map(), gens: new Map(), globalGen: 0 });
-const cache = state.cache;
-const gens = state.gens;
+// One cache per module instance (= per process in production; per simulated replica in the two-replica tests).
+const state = { globalGen: 0 };
+const cache = new Map<number, { hasPins: boolean; at: number }>();
+const gens = new Map<number, number>();
+/** R-12-g — when a pin change of the adapter was last learnt here (local or broadcast): an older "none" is never used */
+const changedAt = new Map<number, number>();
 
 /** "pins" | "none" while a fresh answer is known; null when unknown / expired. */
 export function cachedStopPinPresence(adapterId: number, now = Date.now()): "pins" | "none" | null {
   const e = cache.get(adapterId);
   if (!e) return null;
   if (now - e.at > STOP_PIN_PRESENCE_TTL_MS || now < e.at) {
+    cache.delete(adapterId);
+    return null;
+  }
+  // R-12-g — a "no pins" not newer than the last pin change learnt for this adapter is never used (fail closed)
+  if (!e.hasPins && e.at <= (changedAt.get(adapterId) ?? -Infinity)) {
     cache.delete(adapterId);
     return null;
   }
@@ -55,7 +58,31 @@ export function invalidateStopPinPresence(adapterId?: number): void {
     return;
   }
   gens.set(adapterId, (gens.get(adapterId) ?? 0) + 1);
+  changedAt.set(adapterId, Date.now());
   cache.delete(adapterId);
+}
+
+/**
+ * doc 81 Đợt 12 final fix wave residual 2 (ruling R-12-g) — a pin of `adapterId` changed ON THIS REPLICA (set, removed, changed):
+ * forget it here AND tell every other central replica (the signed `pins` message of otStopEpochSync — installed only while the sync
+ * runs with a key; without it no peer STOP can arrive, so no other replica's exemption depends on this cache). Never throws.
+ */
+let pinChangeBroadcaster: ((adapterId: number) => void) | null = null;
+export function setStopPinChangeBroadcaster(fn: ((adapterId: number) => void) | null): () => void {
+  pinChangeBroadcaster = fn;
+  return () => {
+    if (pinChangeBroadcaster === fn) pinChangeBroadcaster = null;
+  };
+}
+export function stopPinChanged(adapterId: number): void {
+  invalidateStopPinPresence(adapterId);
+  const b = pinChangeBroadcaster;
+  if (!b) return;
+  try {
+    b(adapterId);
+  } catch {
+    /* the broadcaster alerts on its own failures */
+  }
 }
 
 /** Test seam. */
