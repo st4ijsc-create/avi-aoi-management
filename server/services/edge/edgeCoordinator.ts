@@ -132,6 +132,9 @@ export async function registerNode(input: RegisterNodeInput): Promise<EdgeResult
     const d = await db();
     const now = new Date();
     const [existing] = await d.select().from(edgeNodes).where(eq(edgeNodes.code, code)).limit(1);
+    // doc 81 Đợt 12 O — a retired node's code is never registered again (mig 0378 freezes its row)
+    const retiredAt = existing ? await retiredAtOf(d, existing.id) : null;
+    if (retiredAt) return { ok: false, enabled: true, message: `Edge node "${code}" was retired on ${retiredAt} — its code is never registered again.` };
     // doc 81 Đợt 10 D14 — a protocol-v2 node is registered by an administrator only (register-node): it can never rename
     // itself or change its factory / lines through this path (its identity is the credential's node — edgeConfigCentral).
     if (existing && (await isV2Node(d, existing.id))) {
@@ -220,6 +223,8 @@ export async function heartbeat(input: HeartbeatInput): Promise<EdgeResult<EdgeN
     if (!existing) {
       return { ok: false, enabled: true, message: `Edge node "${code}" is not registered.` };
     }
+    const retiredAt = await retiredAtOf(d, existing.id); // doc 81 Đợt 12 O — a retired node never comes online again
+    if (retiredAt) return { ok: false, enabled: true, message: `Edge node "${code}" was retired on ${retiredAt} — it sends no heartbeat.` };
     // doc 81 Đợt 10 — a v2 node's liveness comes ONLY from its own credential (heartbeatFromNode), never from a code in a body
     if (await isV2Node(d, existing.id)) {
       return { ok: false, enabled: true, message: `Edge node "${code}" is on edge protocol v2 — its heartbeat is POST /api/v1/edge/node/heartbeat with its node credential.` };
@@ -240,6 +245,12 @@ export async function heartbeat(input: HeartbeatInput): Promise<EdgeResult<EdgeN
     // data-raw-ok: nhịp tim từ node biên — khách là MÁY, xem ghi chú ở `registerNode`.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** doc 81 Đợt 12 O — when the node was retired (mig 0378; ISO), null = not retired (or 0378 missing — read via to_jsonb). */
+async function retiredAtOf(d: Awaited<ReturnType<typeof db>>, nodeId: number): Promise<string | null> {
+  const { readNodeRetirement } = await import("./edgeNodeCredentials");
+  return (await readNodeRetirement(d as never, { id: nodeId }))?.retiredAt ?? null;
 }
 
 /** doc 81 Đợt 10 — is the node on edge protocol v2 (edge_nodes."protocolVersion", mig 0373; column missing ⇒ v1)? */
@@ -352,6 +363,9 @@ export async function deleteNode(id: number): Promise<EdgeResult<{ id: number }>
     const d = await db();
     const [node] = await d.select().from(edgeNodes).where(eq(edgeNodes.id, id)).limit(1);
     if (!node) return { ok: false, enabled: true, message: `Edge node ${id} not found.` };
+    // doc 81 Đợt 12 O — a retired node is kept for good (evidence references it; mig 0378 refuses the delete too)
+    const retiredAt = await retiredAtOf(d, id);
+    if (retiredAt) return { ok: false, enabled: true, message: `Node "${node.code}" was retired on ${retiredAt} — a retired node is kept as evidence and never deleted.` };
 
     // Guard: any non-terminal run still delegated here would be orphaned.
     const assigned = await d
@@ -432,6 +446,8 @@ export async function assignRun(runId: number, edgeNodeId: number): Promise<Edge
     if (nodeRun !== null) return { ok: false, enabled: true, message: `Run ${runId} is assigned to an edge node for execution; it cannot be re-delegated.` };
     const [node] = await d.select().from(edgeNodes).where(eq(edgeNodes.id, edgeNodeId)).limit(1);
     if (!node) return { ok: false, enabled: true, message: `Edge node ${edgeNodeId} not found.` };
+    const retiredAt = await retiredAtOf(d, edgeNodeId); // doc 81 Đợt 12 O — a retired node is given no run (mig 0378 too)
+    if (retiredAt) return { ok: false, enabled: true, message: `Edge node "${node.code}" was retired on ${retiredAt} — it is given no run.` };
 
     await d
       .update(orchestrationRuns)
@@ -528,6 +544,8 @@ export async function syncRunResult(
     if (node && run.edgeNodeId != null && run.edgeNodeId !== node.id) {
       return { ok: false, enabled: true, message: `Run ${payload.runId} is not assigned to node "${payload.edgeNodeCode}".` };
     }
+    const retiredAt = node ? await retiredAtOf(d, node.id) : null; // doc 81 Đợt 12 O — a retired node reports nothing
+    if (retiredAt) return { ok: false, enabled: true, message: `Edge node "${payload.edgeNodeCode}" was retired on ${retiredAt} — its reports are refused.` };
 
     // fix 1 (review I-1) — a NON-terminal payload for a run central already holds as finished / aborted is STALE (a progress
     // snapshot that lost the race with the final sync): nothing of it is applied, step rows included.

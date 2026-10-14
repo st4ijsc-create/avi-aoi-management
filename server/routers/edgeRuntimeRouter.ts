@@ -21,6 +21,7 @@
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { appError } from "../_core/appError";
 import {
   registerNode,
   listNodes,
@@ -95,6 +96,33 @@ export const edgeRuntimeRouter = router({
       }),
     )
     .mutation(async ({ input }) => registerNode(input)),
+
+  /**
+   * doc 81 Đợt 12 task O — RETIRE an edge node for good (mig 0378): ADMIN ONLY (like `edge-node-credential.ts retire-node`), plus
+   * machine_control:canDelete on top (never a widening). The actor is the SESSION admin, never an id from the input. Refused —
+   * naming what blocks it, nothing changed — while the node owns a device, has an unacknowledged STOP / lock request or a
+   * non-terminal run; otherwise every active credential is revoked and the node marked retired in one transaction (never
+   * deleted). Audited EDGE_NODE_RETIRE by the service. Not flag-gated: a teardown must work with the edge runtime off.
+   */
+  retireNode: adminProcedure
+    .use(requirePermission("machine_control", "canDelete"))
+    .input(z.object({ code: z.string().trim().min(1).max(128), reason: z.string().trim().min(3).max(500) }).strict())
+    .mutation(async ({ input, ctx }) => {
+      const { retireEdgeNode, EdgeCredentialError } = await import("../services/edge/edgeNodeCredentials");
+      try {
+        const r = await retireEdgeNode({ nodeCode: input.code, actorUserId: ctx.user!.id, reason: input.reason });
+        return { ok: true as const, ...r };
+      } catch (err) {
+        if (!(err instanceof EdgeCredentialError)) throw err;
+        if (err.code === "nodeNotFound") throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeNode" }, err.message);
+        if (err.code === "notAdmin") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess" }, err.message);
+        if (err.code === "dbUnavailable") throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, err.message);
+        // the blockers (ids, from the DB guard) travel as a param of their own; the message stays the full technical detail
+        if (err.code === "retireBlocked") throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "retireEdgeNode", reason: "edgeNodeRetireBlocked", blockers: err.blockers ?? "" }, err.message);
+        if (err.code === "nodeRetired") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "retireEdgeNode", reason: "edgeNodeAlreadyRetired" }, err.message);
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "retireEdgeNode" }, err.message);
+      }
+    }),
 
   /** Heartbeat from an edge node. Flag-gated. */
   heartbeat: protectedProcedure

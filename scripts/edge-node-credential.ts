@@ -36,6 +36,13 @@
  *   npx tsx scripts/edge-node-credential.ts issue --node edge-line1 --actor admin.nguyen --reason "commission line 1" \
  *       --bundle /root/edge-line1-bundle --keyring-dir /etc/avi/edge-keys --central-url https://central.example:3000
  * A secret is never taken from argv in ANY spelling (`--password=…`, `--otp …`, `--pass`, `--totp`, …) — Đợt 10 F2 (N7, part).
+ *
+ * doc 81 Đợt 12 task O — RETIRE a node for good (mig 0378), as a proven admin with a reason:
+ *   npx tsx scripts/edge-node-credential.ts retire-node --node edge-line1 --actor admin.nguyen --reason "line 1 gateway decommissioned"
+ * Refused (exit 1, naming what blocks it, nothing changed) while the node owns a robot / adapter, has an unacknowledged STOP or
+ * lock / clear request, or a non-terminal run. Otherwise, in ONE transaction: every active credential revoked, the node marked
+ * retired (its row and every piece of evidence stay — never deleted). A retired node can never pull, claim, report, be given a
+ * credential, a device or a run again, and its code is never registered again (the DB refuses all of it). Audited EDGE_NODE_RETIRE.
  */
 import { openSync, writeSync, closeSync, unlinkSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -73,8 +80,8 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
   const actorName = argOf(argv, "--actor");
   const reason = argOf(argv, "--reason") ?? "";
   const outFile = argOf(argv, "--out");
-  if (!["issue", "rotate", "revoke", "list", "register-node"].includes(cmd ?? "") || !node) {
-    io.err("usage: edge-node-credential.ts <issue|rotate|revoke|list|register-node> --node CODE [--actor ADMIN_USERNAME --reason TEXT] [--out FILE | --bundle DIR --keyring-dir DIR [--central-url URL] [--edge-dir PATH] [--journal-max-bytes N]] | register-node --node CODE --factory CODE [--lines L1,L2] [--name TEXT] [--protocol 2] --actor ADMIN --reason TEXT");
+  if (!["issue", "rotate", "revoke", "list", "register-node", "retire-node"].includes(cmd ?? "") || !node) {
+    io.err("usage: edge-node-credential.ts <issue|rotate|revoke|list|register-node|retire-node> --node CODE [--actor ADMIN_USERNAME --reason TEXT] [--out FILE | --bundle DIR --keyring-dir DIR [--central-url URL] [--edge-dir PATH] [--journal-max-bytes N]] | register-node --node CODE --factory CODE [--lines L1,L2] [--name TEXT] [--protocol 2] --actor ADMIN --reason TEXT | retire-node --node CODE --actor ADMIN --reason TEXT");
     return 2;
   }
   if (argv.some((a) => /^--(actor-user-id|actor-id|user-id|by)(=|$)/i.test(a))) {
@@ -87,6 +94,11 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
   }
   if (cmd !== "list" && !actorName) {
     io.err("--actor (an active admin's username) is required");
+    return 2;
+  }
+  // Đợt 12 O — a retirement is final: its reason is required up front (recorded on the node, the credentials and the audit row)
+  if (cmd === "retire-node" && (reason.trim().length < 3 || reason.startsWith("--"))) {
+    io.err("retire-node needs --reason TEXT (at least 3 characters) — it is recorded on the node, its revoked credentials and the audit log");
     return 2;
   }
   const env = io.env ?? process.env;
@@ -185,7 +197,15 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
       io.out(r.created ? `registered edge node "${node}" (id ${r.nodeId}) in factory ${factory}${lineCodes.length ? `, lines ${lineCodes.join(",")}` : ""} — issue its credential + bundle next` : `edge node "${node}" (id ${r.nodeId}) is already registered with exactly this factory and lines — unchanged`);
       return 0;
     }
+    if (cmd === "retire-node") {
+      const r = await m.retireEdgeNode({ nodeCode: node, actorUserId: actor, reason });
+      io.out(`retired edge node "${node}" (id ${r.nodeId}) at ${r.retiredAt} — revoked credential(s) ${r.revokedCredentialIds.length ? r.revokedCredentialIds.join(", ") : "none (none was active)"}`);
+      io.out("it can never pull, claim, report, or be given a credential, a device or a run again; its code is never registered again; its row and evidence stay — audited");
+      return 0;
+    }
     if (cmd === "list") {
+      const ret = await m.nodeRetirementByCode(node);
+      if (ret?.retiredAt) io.out(`node "${node}" is retired since ${ret.retiredAt} by user ${ret.retiredBy ?? "-"}: ${ret.retireReason ?? ""}`);
       for (const c of await m.listNodeCredentials(node)) {
         io.out(`${c.id}\t${c.keyPrefix}\t${c.status}\tcreatedBy=${c.createdBy ?? "-"}\t${c.createdAt?.toISOString?.() ?? c.createdAt}\trevokedAt=${c.revokedAt ? new Date(c.revokedAt).toISOString() : "-"}\t${c.revokeReason ?? ""}`);
       }
