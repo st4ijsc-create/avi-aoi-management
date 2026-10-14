@@ -252,11 +252,10 @@ mode 700, readable by central's service account.
    The factory must exist and every line must be a production line OF THAT FACTORY; a node without a factory is given no
    device and no run. Re-running with the same factory / lines is a no-op ("unchanged"); a different factory or lines is
    refused (release the node's devices first, then change it deliberately). Audited `EDGE_NODE_REGISTER` (success / failure).
+   A node is created on edge protocol v2 (the tRPC `registerNode` too); `--protocol 1` is refused (v1 nodes cannot execute since Đợt 10); re-running on an existing v1 node with an explicit `--protocol 2` upgrades it (audited `upgradedToV2`). Central needs `EDGE_SIGNING_KEY_FILE` in its environment to sign anything (§8.2).
 
    **How the operator CLIs take the admin's secret (N7):** a hidden prompt on a terminal; without a terminal, PIPED STDIN —
-   line 1 the password, line 2 the current 2FA code (`printf '%s
-%s
-' "$PW" "$CODE" | npx tsx scripts/…`, or `< file` with a
+   line 1 the password, line 2 the current 2FA code (`printf '%s\n%s\n' "$PW" "$CODE" | npx tsx scripts/…`, or `< file` with a
    0600 file). Never on the command line (any `--password…` / `--otp…` spelling is refused) and never in an environment
    variable: `EDGE_CRED_ADMIN_PASSWORD` / `_OTP` and `EDGE_OWNER_ADMIN_PASSWORD` / `_OTP` are REFUSED (exit 2). A wrong or
    replayed 2FA code is audited (`login_2fa` failure) and counted into the account lockout (N8): 5 wrong codes ⇒ the account
@@ -280,6 +279,37 @@ mode 700, readable by central's service account.
    `icacls C:\avi-edge\edge-node.cred /inheritance:r /grant:r "<gateway account>:R"`), then delete the central copy.
 5. **Rotate** the credential: `issue` → `rotate` with a new `--bundle` (no overlap: the old secret stops at the commit; copy
    the new `edge-node.cred` and `edge-node.env` to the edge right after). **Revoke**: `revoke --node … --reason …` (terminal).
+6. **Retire** a node for good (doc 81 Đợt 12 O, migration **0378**) — a proven admin, a reason:
+
+   ```bash
+   npx tsx scripts/edge-node-credential.ts retire-node --node edge-line1 --actor <admin> --reason "line 1 gateway decommissioned"
+   ```
+
+   (or tRPC `edgeRuntime.retireNode {code, reason}` — admin only, plus `machine_control:canDelete`; the actor is the session
+   admin.) It is **refused, naming what blocks it, and nothing changes** (exit 1, `retireBlocked`) while the node:
+   owns a robot or an adapter · has an unacknowledged STOP (pending, or refused / failed and not resolved by a person) · has an
+   unacknowledged lock / clear request · has a non-terminal run (an edge assignment, claimed or not, or a legacy delegation).
+   Otherwise, in ONE transaction, every active credential is revoked (`retired: <reason>`) and the node is marked retired
+   (`retiredAt` / `retiredBy` / `retireReason`, status `offline`). Audited `EDGE_NODE_RETIRE` (success and every refusal).
+   The row is **never deleted**: WORM evidence references it (FK `ON DELETE RESTRICT`) — `deleteNode` and a direct `DELETE`
+   are refused. From then on the DATABASE refuses (23514), whoever writes: a new credential for it, a device assigned to it
+   (`edge-device-owner.ts assign` answers `refused: … is retired`), a run assigned or delegated to it, a new claim, un-retiring
+   it, changing its code / factory / lines / protocol, bringing it online. Every v2 route answers it the same 401 (its
+   credentials are dead); re-registering its code is refused (`nodeRetired` — register a NEW code). `list --node` shows
+   `node "…" is retired since …`; the node list and the fleet status show it as **retired** (counted apart, never an offline
+   endpoint), and starting a run on it is refused by name (`edgeNodeRetired`, REST 409 `edge_node_retired`). A node is never
+   *created* retired (the DB refuses such an INSERT) and the DB stamps `retiredAt` itself. The retirement waits for the node
+   row at most 5 s (another assignment / rotation in flight ⇒ `nodeBusy`, nothing changed, retry). Every refusal is audited.
+   Without 0378 applied the CLI answers `dbUnavailable` (audited) and changes nothing.
+
+   **Teardown, in this order** (stop the gateway first, so nothing on the edge still holds a device session):
+   1. `edge-device-owner.ts release --robot … / --adapter …` for every device (`list --node` ⇒ none owned). Central executes
+      any STOP still owed to a released device (CLI or the server sweep, ≤ 10 s);
+   2. check §8.9: no pending / refused STOP of the node (`device_pending_stops`), lock requests acknowledged or expired (the
+      central sweeper expires them), no running / held run of the node (finish or abort it);
+   3. `retire-node` (it revokes the credential itself — a separate `revoke` is not needed); `list --node` ⇒ retired;
+   4. delete the bundle on the edge host (`edge-node.cred` is dead, but it is still a secret-shaped file) and the gateway's
+      journal volume once its reports are confirmed on central.
 
 ### 8.4 Mark device ownership (CENTRAL host)
 
@@ -500,3 +530,81 @@ unlocked after a persist that did not land (I-5: the pending marker ⇒ `persist
 
 **Rehearsed (I-7, 2026-10-13):** the final 0372–0376 applied in order onto a scratch database brought to the 0371 state by the
 repo's own runner, then re-applied (idempotent) — see `.superpowers/sdd/2026-10-12-engineering-control-dot10/final-fix-wave-report.md`.
+
+### 8.14 OT STOP epoch across central replicas (doc 81 Đợt 12 task P, fix 1)
+
+**What it closes.** Since Đợt 11 (R-11-d) a non-STOP OT write whose checks began before a verified STOP was SENT on its adapter
+is cancelled right before its device write (`STOPPED_BEFORE_WRITE`, nothing written, ledgered). That epoch lives in ONE process.
+With several central replicas, a write in replica B's checks was not cancelled by a STOP sent from replica A.
+
+**How.** `server/services/ot/otStopEpochSync.ts`, started on EVERY central process (whatever `OT_GATEWAY_ENABLED` says — the
+central pending-STOP sweep and the edge-fallback STOP send real STOPs with the gateway off), never on the edge:
+- When a verified STOP is actually sent (the point where the epoch moves), the replica NOTIFYs `ot_stop_epoch` with a SIGNED
+  message `{v:2, kind:"stop", replicaId, seq, issuedAt, adapterId, mac}`. The NOTIFY is scheduled after the STOP's driver call,
+  never awaited, bounded (2 s), and goes through a DEDICATED connection (`connection.getNotifyClient`, outside the app pool), so
+  neither the STOP nor the broadcast waits for a busy pool (L-7).
+- Every central replica LISTENs on `ot_stop_epoch` (the dedicated client's own LISTEN connection) and, for a message that passes
+  every check, moves its PEER epoch for that adapter: every NON-STOP write in its checks since before that moment is cancelled
+  `STOPPED_BEFORE_WRITE` (ledger names the STOP `{peer: true, origin, peerSeq, at}`).
+- **A peer STOP never cancels a STOP** (L-7): a verified STOP is never cancelled by anything. On an adapter WITHOUT pinned stop
+  values an unverified stop is the only software STOP: it consults only the STOPs sent by its own process; nothing from the
+  channel can supersede it. Final fix wave (R-12-e I-1, scan #113): on an adapter WITH pins (a verified STOP exists there), a
+  stop-LABELLED command that is not a verified STOP (an unpinned tag, the pin value plus an unpinned tag, a non-pin value) is
+  superseded by a peer STOP exactly as by a local one — the replica the load balancer picked changes nothing. The adapter's pins
+  are read once (bounded 1 s); a read failure ⇒ not exempt. Residual (R-12-f): a pin-presence cache (TTL 10 s) answers in the
+  common case; with no peer replica seen nothing is read. Residual 2 (R-12-g): every stop-pin change is broadcast as a signed
+  `{kind:"pins"}` message on this channel and drops the cached presence on every replica (a cached "no pins" older than the last
+  change learnt is never used); a broadcast that cannot be sent alerts on the sender; a command whose own tag rows show a pin is
+  never treated as pin-less.
+
+**Who can send on the channel — and why the messages are signed.** PostgreSQL has no privilege for NOTIFY: any role that can
+connect to the database can NOTIFY any channel (proven on `_test` with the app role `avi_app`, not superuser, no CREATEROLE).
+Every message therefore carries an HMAC-SHA256 over (channel, v, kind, replicaId, seq, issuedAt, adapterId):
+- **Key:** HKDF-SHA256 subkey (info `ot_stop_epoch/hmac/v1`) of `OT_STOP_EPOCH_HMAC_KEY` if set (≥ 32 characters), else of
+  `SECRET_ENCRYPTION_KEY` — which every central replica already shares and which the edge and the DB never hold. Never
+  `JWT_SECRET` / `SESSION_SECRET`. **Neither set ⇒ the sync is DISABLED (fail closed):** no LISTEN, nothing sent, nothing
+  applied; the replica runs per process; the status says "disabled: no HMAC key" (env names only). R-12-e M-1: ONE alert per
+  key-missing EPISODE, remembered across boots in the admin alert rows (`notifications.metadata` `{kind: ot_stop_epoch_sync,
+  problem: no_key}`) — a restart without a key is silent; a boot with a key closes the episode (`key_restored`). The key is never
+  logged nor shown in the status. Harmless with ONE central process; set `OT_STOP_EPOCH_HMAC_KEY` before adding a replica.
+- **Hello (R-12-e M-2):** once listening, each replica NOTIFYs a signed `{v:2, kind:"hello", replicaId, seq, issuedAt, mac}`;
+  a hello from a new replica is answered once (rate-limited), so the earlier replica checks the later one too. A hello this
+  replica cannot verify ⇒ a `key_mismatch` alert (at most every 30 min, every one counted): a key that differs between
+  replicas shows at boot, not at the first real STOP. A hello never moves an epoch; the kind is inside the MAC.
+- **Checks, in order:** strict shape (exact keys, ≤ 512 bytes) → MAC (constant-time) → own replica (ignored) → freshness
+  `|now − issuedAt| ≤ 30 s` (future-dated included; clock skew between replicas beyond that rejects every message — the
+  rejection alert says so) → replay WINDOW per `replicaId` (seqs seen within the freshness window; not a strict sequence: a
+  stop-all can commit out of order). `replicaId` is random per boot. Bounded state: 64 replicas × 4 096 seqs; overflow evicts
+  (a replay of an evicted seq can only cancel writes) and alerts.
+- Rejections are counted per reason; ONE alert per rejection episode (an episode ends after 5 quiet minutes).
+- **Peer map cap without failing open:** 100 000 adapters; when full the least recently moved entry is evicted and a floor rises
+  to its epoch — an adapter without an entry reads the floor, so an eviction only ever moves epochs forward (cancels), a real
+  peer STOP is never dropped; an overflow alerts once.
+
+**Liveness and degraded mode** (shared helper `server/services/ops/pgChannelListener.ts`, also used by `device_owner_changed`
+since fix 1 — R-12-b):
+- The LISTEN is bounded (5 s) and retried in the background; boot is never blocked.
+- Heartbeat: every 10 s each listener NOTIFYs a ping on its channel (dedicated connection) that only it accepts; the 5 s deadline
+  starts once the ping has been SENT. Not back in time ⇒ "lost": alert, the old subscription is made inert, a fresh LISTEN; the
+  episode ends only when the own ping comes back. A ping that cannot be sent ⇒ alert, no re-LISTEN. postgres.js's own automatic
+  re-LISTEN after a dropped connection is reported as a lost + recovered episode (notifications in the gap were lost); a FAILED
+  automatic re-LISTEN (postgres.js then drops the channel silently) is caught by the heartbeat.
+- Alerts: console + alert stream every episode; admin inbox at most every 30 min (normal priority, no cap exemption).
+- While lost / without key the replica falls back to per-process behaviour (Đợt 11). Writes are not blocked for it.
+- Status: `systemHealth.crossReplicaChannels` (admin) — state, key source, rejections by reason, peer map, latency, hello
+  (verified peers, mismatches), and the `device_owner_changed` listener; shown on the System Health page (R-12-e M-3). After
+  that listener recovers from a lost episode it reconciles at once (R-12-e M-4), not at the next 30 s pass.
+
+**The remaining window (measured on `_test`, two dispatcher instances in one Node process, each with its own pools and dedicated
+LISTEN/NOTIFY connections, local PostgreSQL, 2026-10-14).** The window is the NOTIFY latency: from A sending the STOP to B's
+handler moving B's epoch. A write in B whose device write starts inside it still reaches the device after A's STOP.
+- Idle, 200 sends: p50 2–3 ms, p99 5–6 ms, max 6–7 ms.
+- A's app pool saturated (25 × `pg_sleep(300 ms)`): 11–25 ms (round 1, through the pool: ~270 ms). The STOP call took 0 ms.
+- Add network latency between the replicas and the DB in production. A write whose checks begin after A's STOP but before B
+  handles the message is also cancelled (the safe direction; at most this latency, ≤ 30 s by the freshness bound).
+
+**Not covered.**
+- The edge. It has no DB login, so its epoch stays per process. An edge-owned adapter is written only by its edge gateway, and
+  central refuses non-STOP writes to it (`ADAPTER_OWNED_BY_EDGE`).
+- A write already on the wire when the STOP is sent. That was never cancellable.
+- A DB role can still terminate the LISTEN backend (needs `pg_signal_backend`): the heartbeat alerts and reconnects.

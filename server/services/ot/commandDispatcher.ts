@@ -178,6 +178,8 @@ import { getCorrelationId } from "../observability/correlation";
 import { adapterOwnedByEdgeInTx } from "./otAdapterOwnerGate"; // doc 81 Đợt 10 D fix review 3 (scan #73)
 // doc 81 Đợt 1D Task 2 — per-tag pinned STOP values (mig 0362, Task 1).
 import { loadStopPins, matchPinnedStop, stopPinsFromTagRows, validateStopValue, type MatchPinnedStopResult, type StopPin, type StopPinTagRow } from "./stopPin";
+import { cachedStopPinPresence } from "./stopPinPresence"; // doc 81 Đợt 12 final fix wave residual (R-12-f item 1)
+import { otStopEpochSyncSeesPeers } from "./otStopEpochSync"; // R-12-f item 1
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -735,6 +737,28 @@ export function stopEpochAtGatesFor(
   return opts.epochAtGates;
 }
 
+/** doc 81 Đợt 12 final fix wave (R-12-e I-1) — bound of the adapter-wide pin read deciding the peer-move exemption */
+export const PEER_EXEMPT_PIN_READ_MS = 1_000;
+/**
+ * doc 81 Đợt 12 final fix wave (ruling R-12-e I-1, scan #113) — true ONLY when the adapter's pins were read and there are none. A read
+ * error or no answer within PEER_EXEMPT_PIN_READ_MS ⇒ false (not exempt: fail toward cancelling on a peer STOP). Never throws.
+ */
+export async function adapterHasNoStopPinsBounded(db: Parameters<typeof loadStopPins>[0], adapterId: number, ms = PEER_EXEMPT_PIN_READ_MS): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<null>((r) => {
+      timer = setTimeout(() => r(null), ms);
+    });
+    const pins = await Promise.race([loadStopPins(db, adapterId), timeout]);
+    return pins !== null && pins.length === 0;
+  } catch (err) {
+    console.warn(`[Dispatch] stop-pin read for the peer-move exemption failed (adapter ${adapterId}) — not exempt:`, (err as Error)?.message || err);
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * doc 81 Đợt 11 final fix wave (R-11-k 3) — does this command write a PINNED stop tag with a value other than its pin (by the same
  * match rule as the pinned stop)? e.g. a reduce_speed interlock writing speed_sp = 30 where speed_sp's stop pin is 0. Pure.
@@ -1199,6 +1223,24 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // by a verified STOP (an ordinary write records its epoch anyway)
   const overridesStopPin = writesOverrideStopPin(input.writes, stopPinsFromTagRows(step3TagRows));
   const stopEpochAtGates = stopEpochAtGatesFor(input, { trueStop, epochAtGates, overridesStopPin });
+  // doc 81 Đợt 12 final fix wave (ruling R-12-e I-1, scan #113) — the PEER-move exemption of a stop-typed command that is not a verified
+  // STOP is decided by the ADAPTER's pins (all of them, not only the written tags): none ⇒ exempt (I-2: a peer never denies the only
+  // software STOP there is); any pin, or the read failing / not answering ⇒ not exempt (a peer STOP cancels it as a local one does).
+  // Final fix wave residual (R-12-f item 1, L-7) — the unverified stop does not wait on that read in the common case: a fresh cached
+  // presence answers (stopPinPresence: TTL, invalidated on a pin change, seeded by every full pin read — e.g. the label read just
+  // above); with no peer replica seen (single process / sync disabled) nothing is read at all and the answer is taken LAZILY at the
+  // epoch check (cached "none" ⇒ exempt, anything else ⇒ not exempt); only a peer-seen cache miss reads (bounded 1 s).
+  let adapterHasNoStopPins: boolean | (() => boolean) = false;
+  if (unverifiedStop && stopEpochAtGates !== null) {
+    const known = cachedStopPinPresence(input.adapterId);
+    // R-12-g (defence in depth) — this command's own step-3 tag rows (read now) show a pin ⇒ the adapter HAS pins, whatever a cache says
+    if (stopPinsFromTagRows(step3TagRows).length > 0) adapterHasNoStopPins = false;
+    else if (known !== null) adapterHasNoStopPins = known === "none";
+    else if (!otStopEpochSyncSeesPeers()) {
+      const id = input.adapterId;
+      adapterHasNoStopPins = () => cachedStopPinPresence(id) === "none";
+    } else adapterHasNoStopPins = await adapterHasNoStopPinsBounded(db, input.adapterId);
+  }
 
   // ── final wave F7 (final review M5) — the check-then-act gap. The safety preflight ran BEFORE the write-ahead
   //    reservation and the queue; a write queued behind a slow / timed-out one (B3 hold: up to ~11.25 s) reached the
@@ -1262,6 +1304,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       stopTyped: isStopCommandType(input.commandType),
       ledger: { intentIds: deviceLedgerIntents, confirmedBy: ledgerConfirmer },
       stopEpochAtGates,
+      adapterHasNoStopPins, // doc 81 Đợt 12 final fix wave (R-12-e I-1) — only an adapter without pins exempts a stop from peer moves
       bumpStopEpoch: trueStop,
       onWriteAnswered: ctl?.writeAnswered, // R-11-o (M-2) — an identical STOP shares this write only until the device answered it
     });

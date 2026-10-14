@@ -553,8 +553,16 @@ export async function applyOwnershipLocally(kind: DeviceKind, deviceId: number, 
 
 /** The owner epoch of each enabled device at the last reconcile pass. */
 const seenEpoch = { robot: new Map<number, number>(), adapter: new Map<number, number>() };
+/**
+ * doc 81 Đợt 12 N fix 1 (M-3) — robots whose attach THIS reconcile tried and that FAILED (e.g. released from an edge while its
+ * driver could not connect): retried on every later pass while still central-owned, enabled and without a session — no restart
+ * needed (its persisted ownerChanged lock becomes live — shown + clearable — once attached). Dropped when it succeeds, goes to an
+ * edge or is disabled. (A robot that only failed at BOOT is still not retried here.)
+ */
+const robotAttachRetry = new Set<number>();
 /** Test seam. */
 export function _resetOwnershipReconcileForTests(): void {
+  robotAttachRetry.clear();
   seenEpoch.robot.clear();
   seenEpoch.adapter.clear();
   busyEpisodeAlerted.clear();
@@ -575,6 +583,9 @@ export async function reconcileDeviceOwnership(): Promise<{ attached: string[]; 
     const rm = await import("./robotManager");
     const om = await import("../ot/otManager");
     const activeRobots = new Set(rm.activeRobotIds());
+    // M-3 — a robot no longer listed (disabled / deleted) leaves the retry set
+    const listed = new Set(robotRows.map((r) => Number(r.id)));
+    for (const id of [...robotAttachRetry]) if (!listed.has(id)) robotAttachRetry.delete(id);
     for (const r of robotRows) {
       const id = Number(r.id);
       const ep = Number(r.ownerEpoch);
@@ -582,11 +593,19 @@ export async function reconcileDeviceOwnership(): Promise<{ attached: string[]; 
       // fix review 4 (NF-3) — epochs are only SEEN while the gateway is on: a pass that ran before startRobots / startOt never
       // turns the first-pass rule ("not tried at start ⇒ attach") off for the pass after the gateway came on
       if (rm.isCentralRobotGatewayOn()) seenEpoch.robot.set(id, ep);
+      if (r.edgeNodeId != null) robotAttachRetry.delete(id); // M-3 — an edge's now
       if (r.edgeNodeId != null && activeRobots.has(id)) {
         if (await rm.detachRobot(id)) out.detached.push(`robot:${id}`);
-      } else if (r.edgeNodeId == null && !activeRobots.has(id) && (prev !== undefined ? prev !== ep : rm.isCentralRobotGatewayOn() && !rm.robotTriedAtStart(id))) {
-        if (await rm.attachRobot(id)) out.attached.push(`robot:${id}`);
-      }
+      } else if (
+        r.edgeNodeId == null &&
+        !activeRobots.has(id) &&
+        (robotAttachRetry.has(id) || (prev !== undefined ? prev !== ep : rm.isCentralRobotGatewayOn() && !rm.robotTriedAtStart(id)))
+      ) {
+        if (await rm.attachRobot(id)) {
+          robotAttachRetry.delete(id);
+          out.attached.push(`robot:${id}`);
+        } else if (rm.isCentralRobotGatewayOn()) robotAttachRetry.add(id); // M-3 — retried on the next pass
+      } else if (activeRobots.has(id)) robotAttachRetry.delete(id);
     }
     for (const a of adapterRows) {
       const id = Number(a.id);
@@ -703,7 +722,20 @@ export const DEVICE_OWNER_LISTEN_RETRY_MS = 30_000;
  * devices those never tried are attached) and the first pending-STOP sweep; afterwards the sweep every ≤ 10 s (R-10-w) and the
  * reconcile every ≤ 30 s (R-10-v). Never on the edge. Returns the stop function.
  */
-export async function startDeviceOwnershipSync(opts: { sweepMs?: number; reconcileMs?: number; listenDeadlineMs?: number } = {}): Promise<() => Promise<void>> {
+export async function startDeviceOwnershipSync(
+  opts: {
+    sweepMs?: number;
+    reconcileMs?: number;
+    listenDeadlineMs?: number;
+    /** doc 81 Đợt 12 task P fix 1 (R-12-b) — channel-listener seams (tests) */
+    listenClient?: () => Promise<import("../ops/pgChannelListener").PgListenClient | null>;
+    notifyClient?: () => Promise<import("../ops/pgChannelListener").PgNotifyClient | null>;
+    listenRetryMs?: number;
+    pingMs?: number;
+    pingDeadlineMs?: number;
+    listenAlert?: (a: import("../ops/pgChannelListener").ChannelListenerAlert) => void;
+  } = {},
+): Promise<() => Promise<void>> {
   const { isEdgeProcessRole } = await import("../../db/connection");
   if (isEdgeProcessRole()) return async () => undefined;
   let stopped = false;
@@ -721,46 +753,44 @@ export async function startDeviceOwnershipSync(opts: { sweepMs?: number; reconci
       .then(() => checkEdgeOwnedFactoryDrift()) // R-10-ay — the root cause, alerted
       .finally(() => (reconciling = false));
   };
-  let unlisten: (() => Promise<void>) | null = null;
-  let retry: NodeJS.Timeout | null = null;
-  const listenOnce = async (): Promise<boolean> => {
-    try {
-      const sub = await withDeadline(
-        (async () => {
-          const db = (await getDb()) as unknown as { $client?: { listen?: (ch: string, fn: (payload: string) => void) => Promise<{ unlisten: () => Promise<void> }> } } | null;
-          const client = db?.$client;
-          if (!client || typeof client.listen !== "function") throw new DbUnavailableError("no LISTEN-capable client");
-          return client.listen(DEVICE_OWNER_CHANNEL, (payload: string) => {
-            try {
-              const m = JSON.parse(payload) as { kind: DeviceKind; id: number; to: number | null };
-              if ((m.kind === "robot" || m.kind === "adapter") && Number.isSafeInteger(m.id)) {
-                void applyOwnershipLocally(m.kind, m.id, m.to ?? null).then(() => (m.to == null ? sweep() : undefined));
-              } else reconcile();
-            } catch {
-              reconcile();
-            }
-          });
-        })(),
-        opts.listenDeadlineMs ?? DEVICE_OWNER_LISTEN_DEADLINE_MS,
-        `LISTEN ${DEVICE_OWNER_CHANNEL}`,
-      );
-      if (stopped) {
-        await sub.unlisten().catch(() => undefined);
-        return true;
+  // doc 81 Đợt 12 task P fix 1 (R-12-b) — the shared channel listener: bounded LISTEN retried in the background, a HEARTBEAT (a
+  // failed postgres.js auto re-LISTEN drops the channel silently — now detected), an alert per lost episode, a reconnect.
+  const { startChannelListener } = await import("../ops/pgChannelListener");
+  const chan = await startChannelListener({
+    channel: DEVICE_OWNER_CHANNEL,
+    tag: "DeviceOwner",
+    onPayload: (payload: string) => {
+      try {
+        const m = JSON.parse(payload) as { kind: DeviceKind; id: number; to: number | null };
+        if ((m.kind === "robot" || m.kind === "adapter") && Number.isSafeInteger(m.id)) {
+          void applyOwnershipLocally(m.kind, m.id, m.to ?? null).then(() => (m.to == null ? sweep() : undefined));
+        } else reconcile();
+      } catch {
+        reconcile();
       }
-      unlisten = () => sub.unlisten();
-      return true;
-    } catch (err) {
-      console.warn(`[DeviceOwner] LISTEN ${DEVICE_OWNER_CHANNEL} unavailable (${errText(err)}) — retrying in ${DEVICE_OWNER_LISTEN_RETRY_MS / 1000} s; the ${DEVICE_OWNER_RECONCILE_MS / 1000} s reconcile covers the gap`);
-      return false;
-    }
-  };
-  const ensureListen = async () => {
-    if (await listenOnce()) return;
-    retry = setTimeout(() => void ensureListen(), DEVICE_OWNER_LISTEN_RETRY_MS);
-    if (typeof retry.unref === "function") retry.unref();
-  };
-  await ensureListen();
+    },
+    // the app pool's postgres client (its LISTEN runs on postgres.js's own dedicated connection); heartbeats go through the
+    // dedicated notify client (connection.getNotifyClient), never the app pool
+    listenClient: opts.listenClient ?? (async () => {
+      const db = (await getDb()) as unknown as { $client?: { listen?: (ch: string, fn: (payload: string) => void, onlisten?: () => void) => Promise<{ unlisten: () => Promise<void> }> } } | null;
+      const client = db?.$client;
+      if (!client || typeof client.listen !== "function") throw new DbUnavailableError("no LISTEN-capable client");
+      return client as { listen: NonNullable<typeof client.listen> };
+    }),
+    notifyClient: opts.notifyClient,
+    listenDeadlineMs: opts.listenDeadlineMs ?? DEVICE_OWNER_LISTEN_DEADLINE_MS,
+    retryMs: opts.listenRetryMs ?? DEVICE_OWNER_LISTEN_RETRY_MS,
+    pingMs: opts.pingMs,
+    pingDeadlineMs: opts.pingDeadlineMs,
+    alert: opts.listenAlert,
+    lostMeaning: `Until it reconnects, ownership changes made by OTHER replicas reach this one only through the ${DEVICE_OWNER_RECONCILE_MS / 1000} s reconcile.`,
+    // doc 81 Đợt 12 final fix wave (R-12-e M-4) — the gap's notifications were lost: reconcile now, not at the next 30 s pass
+    onRecovered: () => {
+      if (!reconciling) reconcile();
+      else setTimeout(reconcile, 1_000).unref?.();
+    },
+  });
+  deviceOwnerListener = chan;
   // R-10-al — the first reconcile runs right AFTER the LISTEN: nothing committed in between is lost
   reconcile();
   // fix review 4 (NF-3) — and again once startOt has finished (central starts OT only after the HTTP listen): adapters its load
@@ -784,8 +814,13 @@ export async function startDeviceOwnershipSync(opts: { sweepMs?: number; reconci
     offOt();
     clearInterval(t1);
     clearInterval(t2);
-    if (retry) clearTimeout(retry);
-    const u = unlisten as (() => Promise<void>) | null;
-    if (u) await u().catch(() => undefined);
+    if (deviceOwnerListener === chan) deviceOwnerListener = null;
+    await chan.stop();
   };
+}
+
+/** doc 81 Đợt 12 task P fix 1 (R-12-b, M-3) — the `device_owner_changed` listener's status (system health); null when not started. */
+let deviceOwnerListener: import("../ops/pgChannelListener").ChannelListener | null = null;
+export function deviceOwnerListenerStatus(): import("../ops/pgChannelListener").ChannelListenerStatus | null {
+  return deviceOwnerListener?.status() ?? null;
 }

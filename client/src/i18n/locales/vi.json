@@ -3685,6 +3685,7 @@
       "queued-for-shared-ledger": "Bản sao đọc đã sạch NGAY (dư địa thấy đúng ngay lập tức), nhưng hàng chỉ thật sự RỜI DATABASE ở lượt đồng bộ sổ chung KẾ TIẾP — xem unsyncedWritesAfter để biết còn bao nhiêu ý định ghi chưa gửi."
     },
     "entity": {
+      "edgeNode": "node biên (edge)",
       "mqttClient": "thiết bị MQTT",
       "abTestExperiment": "thử nghiệm A/B",
       "adapter": "bộ chuyển đổi thiết bị",
@@ -3866,6 +3867,7 @@
       "lateWriteResult": "kết quả ghi đến muộn"
     },
     "operation": {
+      "retireEdgeNode": "cho node biên ngừng hoạt động vĩnh viễn",
       "updateApiKey": "cập nhật khoá API",
       "changeApiKeyHolder": "đổi người được cấp khoá API",
       "softwareStop": "gửi lệnh dừng phần mềm",
@@ -4298,6 +4300,10 @@
       "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
     },
     "reason": {
+      "edgeNodeBusy": "Node đang được một thao tác khác thay đổi (gán thiết bị, xoay vòng thông tin xác thực…). Chưa có gì thay đổi — thử lại sau giây lát.",
+      "edgeNodeRetireBlocked": "Node vẫn còn: {{blockers}}. Trả thiết bị về trung tâm, chờ các lệnh DỪNG / yêu cầu khoá được xác nhận (hoặc xử lý), kết thúc các lượt chạy, rồi thử lại. Chưa có gì thay đổi.",
+      "edgeNodeAlreadyRetired": "Node này đã ngừng hoạt động vĩnh viễn.",
+      "edgeNodeRetireMigrationMissing": "Cho node ngừng hoạt động cần bản cập nhật cơ sở dữ liệu 0378, máy chủ này chưa áp dụng. Chưa có gì thay đổi — hãy nhờ quản trị viên áp dụng.",
       "reservedSettingKey": "Cài đặt này chỉ đổi được ở màn riêng của nó (công tắc tự động hoá robot: màn Điều khiển Robot) — cần lý do và được ghi kiểm toán.",
       "stopPinTagNotWritable": "Chỉ ghim giá trị dừng cho tag đang BẬT và cho phép GHI. Bật ghi (writable) và bật tag trước, rồi ghim lại.",
       "stopPinTypeMismatch": "Giá trị dừng không đúng kiểu dữ liệu của tag: tag bool cần true/false (hoặc 1/0), tag int cần số nguyên, tag float cần số, tag string cần chuỗi; tag json không ghim được.",
@@ -4316,6 +4322,8 @@
       "factoryRequired": "Bạn thuộc nhiều nhà máy — chọn chuyền, trạm hoặc nhà máy cho phân công này (nếu không, chính bạn cũng không thấy lại được nó).",
       "secretReentryRequired": "Bạn vừa đổi {{field}} — tức nơi gửi hoặc cách bảo vệ mật khẩu đã lưu — nên hệ thống không dùng lại mật khẩu cũ. Hãy nhập lại mật khẩu/bí mật rồi lưu; chưa có gì được thay đổi.",
       "motionLockUnsupported": "Driver của hãng này dùng kết nối một lần cho mỗi lệnh nên không có khoá chuyển động; không có gì để gỡ.",
+      "clearNotApplied": "Khoá chuyển động CHƯA được gỡ: CSDL từ chối hoặc hết thời gian khi gỡ (đã hoàn tác). Robot vẫn bị khoá; hãy thử lại.",
+      "clearOutcomeUnknown": "Không biết thao tác gỡ khoá đã có hiệu lực hay chưa (CSDL không trả lời kịp). Hãy tải lại trạng thái robot trước khi làm tiếp.",
       "motionLockChanged": "Khoá chuyển động đã thay đổi trong lúc bạn xác nhận (có lần mất kết nối mới). Không gỡ gì cả; hãy đọc lại trạng thái robot rồi xác nhận lại.",
       "edgeCommandNotQueued": "Robot này thuộc một nút edge; lệnh không xếp được vào hàng lệnh của nút đó (chủ sở hữu vừa đổi, hoặc cơ sở dữ liệu / migration 0374 không sẵn). Chưa có gì được gỡ; hãy thử lại sau.",
       "stopOnly": "Đường STOP khẩn chỉ nhận lệnh dừng (stop / abort); lệnh chuyển động phải đi qua bảng điều khiển thường. Chưa có gì được gửi.",
@@ -14284,6 +14292,7 @@
     "deleteDesc": "Watcher của thư mục này sẽ dừng. File đã archive và sổ cái xử lý được giữ nguyên."
   },
   "edgeNodes": {
+    "retired": "Đã ngừng vĩnh viễn",
     "title": "Node biên (Edge)",
     "subtitle": "Đăng ký & theo dõi các runtime điều phối biên gần dây chuyền",
     "noPermission": "Bạn không có quyền xem node biên.",
@@ -14942,9 +14951,13 @@
       "reasonPlaceholder": "Ví dụ: đã kiểm tra tại chỗ, robot đứng yên, khu vực trống",
       "confirm": "Xác nhận gỡ khoá",
       "cleared": "Đã gỡ khoá chuyển động cho {{code}}",
+      "tipPersisted": "Chuyển động bị khoá ({{reason}}, từ {{since}}). Khoá này được lưu trong CSDL: lệnh DỪNG không gỡ nó; chỉ thao tác gỡ khoá có kiểm soát (có lý do, ghi kiểm toán) mới mở lại.",
+      "inactiveCannotClear": "Robot chưa được cổng robot nạp (không kết nối được — hệ thống tự thử lại), nên chưa gỡ khoá được; gỡ được ngay khi robot được nạp.",
       "notLocked": "Robot {{code}} không bị khoá chuyển động",
       "reason": {
-        "persistUnknown": "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn"
+        "persistUnknown": "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn",
+        "ownerChanged": "đổi quyền sở hữu (trả về từ nút biên) — một lệnh DỪNG được robot xác nhận hoặc thao tác gỡ khoá có kiểm soát sẽ gỡ",
+        "ownerChangedPersisted": "đổi quyền sở hữu (trả về từ nút biên) — lệnh DỪNG không gỡ được; chỉ thao tác gỡ khoá có kiểm soát, có lý do, mới gỡ"
       }
     }
   },
@@ -15406,7 +15419,8 @@
         "step4Body": "Mở tab \"Đánh giá\": bộ câu hỏi vàng knowledge/studio-golden/<corpus>.jsonl được chấm bằng MÁY — tài liệu có nằm trong top‑K không, có qua ngưỡng không, có tới được trợ lý không (checklist ở trên hiện điểm lượt mới nhất). Chưa có bộ vàng thì hỏi trợ lý một câu MÌNH BIẾT TRƯỚC đáp án và xem nó có dẫn đúng tên tệp vừa nạp không.",
         "scanWarningTitle": "Cảnh báo PDF quét ảnh (scan):",
         "scanWarningBody": "các trang là ẢNH, không có lớp chữ. Khi OCR chưa chạy được, hệ thống nay tự gắn huy hiệu đỏ \"PDF quét ảnh — chưa OCR\" kèm lý do (vd chưa khai PDFTOPPM_BIN) ngay dưới tên tệp và ở tab \"Tác vụ\" — không còn nạp một corpus rỗng mà không biết.",
-        "resultNote": "Kết quả sau khi nạp: số đoạn (chunk) hiện ngay dưới mỗi tệp bên dưới sau khi xong. Xem lại đầy đủ (tên tài liệu, corpus, số đoạn, trạng thái, lỗi nếu có) ở tab \"Tác vụ\"."
+        "resultNote": "Kết quả sau khi nạp: số đoạn (chunk) hiện ngay dưới mỗi tệp bên dưới sau khi xong. Xem lại đầy đủ (tên tài liệu, corpus, số đoạn, trạng thái, lỗi nếu có) ở tab \"Tác vụ\".",
+        "subtitleCollapsed": "Đã gấp — bấm để mở lại bốn bước nạp tài liệu."
       }
     },
     "jobs": {
@@ -15492,7 +15506,7 @@
         "broken": "{{n}} câu có ĐỀ HỎNG (tệp nguồn có trong corpus nhưng đáp án kỳ vọng không khớp đoạn nào) — đã loại khỏi mọi tỷ lệ; sửa bộ vàng.",
         "detail": "Chi tiết lượt #{{id}}"
       },
-      "noGoldenForCorpus": "Corpus \"{{corpus}}\" chưa có bộ câu hỏi vàng riêng. Tạo knowledge/studio-golden/{{corpus}}.jsonl (mỗi dòng: id, cauHoi, nguon, dapAn.regex), hoặc chọn một bộ khác ở trên.",
+      "noGoldenForCorpus": "Corpus \"{{corpus}}\" chưa có bộ câu hỏi vàng riêng. Tạo trong knowledge/studio-golden/ một tệp .jsonl mang đúng tên corpus này (mỗi dòng: id, cauHoi, nguon, dapAn.regex), hoặc chọn một bộ khác ở trên.",
       "goldenBroken": "Bộ vàng này có {{n}} dòng lỗi — không chạy được cho tới khi sửa.",
       "tableUnavailable": "Sổ lượt eval chưa được migrate (0359).",
       "noRuns": "Corpus này chưa có lượt đánh giá nào.",
@@ -18745,6 +18759,30 @@
       "title": "Commissioning phần cứng (cổng FAT)",
       "wouldSimulate": "Sẽ bị ép mô phỏng"
     },
+    "crossReplica": {
+      "desc": "Trạng thái của bản sao trung tâm này: đồng bộ lệnh DỪNG OT (một lệnh DỪNG gửi ở bản sao khác huỷ các lệnh ghi đang chờ ở đây) và kênh báo đổi chủ sở hữu thiết bị. Chỉ đọc.",
+      "disabledHint": "Đặt {{envKey}} (ít nhất 32 ký tự, giống nhau trên mọi bản sao trung tâm) hoặc {{envSecret}} rồi khởi động lại. Không hại khi chỉ có MỘT tiến trình trung tâm.",
+      "epochTitle": "Đồng bộ DỪNG OT giữa các bản sao",
+      "helloPeers": "Bản sao đã xác minh cùng khoá",
+      "keyMismatch": "Bản sao ký bằng khoá KHÁC",
+      "keySource": "Nguồn khoá",
+      "latency": "Độ trễ NOTIFY (p99)",
+      "lostEpisodes": "Số đợt mất kênh",
+      "ownerOk": "Đang nghe",
+      "ownerTitle": "Kênh đổi chủ sở hữu thiết bị",
+      "peerStops": "Lệnh DỪNG nhận từ bản sao khác",
+      "pingRtt": "Nhịp tim gần nhất",
+      "reconnects": "Số lần kết nối lại",
+      "rejected": "Thông báo bị từ chối",
+      "state": "Trạng thái",
+      "stateConnecting": "Đang kết nối",
+      "stateDegraded": "Suy giảm",
+      "stateDisabledNoKey": "Tắt: chưa có khoá HMAC",
+      "stateOff": "Chưa chạy",
+      "stateOk": "Đang đồng bộ",
+      "title": "Kênh giữa các bản sao trung tâm",
+      "unavailable": "Không đọc được trạng thái các kênh."
+    },
     "db": {
       "avgMs": "TB {{a}}ms · max {{m}}ms",
       "col": {
@@ -20682,7 +20720,9 @@
       "cmdRejected": "Lệnh KHÔNG hoàn thành [{{ma}}] — chi tiết:",
       "cmdRejectedToast": "Lệnh bị chặn [{{ma}}] — xem chi tiết trong hội thoại.",
       "rejectedGeneric": "Bị từ chối [{{ma}}] — xem chi tiết trong hội thoại.",
-      "jumpTitle": "Mở {{tep}}"
+      "jumpTitle": "Mở {{tep}}",
+      "sendAria": "Gửi câu hỏi cho tác nhân",
+      "stopAria": "Dừng lượt đang chạy"
     },
     "toolLoop": {
       "running": "Vòng đọc mã — lượt {{round}}/{{tran}}"
@@ -20783,7 +20823,14 @@
       "clearHint": "Chỉ xoá hiển thị ở đây — sổ kiểm toán server giữ nguyên.",
       "copyOut": "Chép đầu ra",
       "rerun": "Chạy lại (qua cửa duyệt)",
-      "rerunPrompt": "chạy {{lenh}}"
+      "rerunPrompt": "chạy {{lenh}}",
+      "hideList": "ẩn danh sách",
+      "notAShell": "Đây KHÔNG phải shell tự do: server chỉ nhận 11 khuôn lệnh và mọi lượt đều phải bấm Duyệt. Gõ được — nhưng lệnh đi qua đúng cửa duyệt ấy.",
+      "send": "Gửi duyệt",
+      "showList": "xem {{n}} lệnh gõ được",
+      "typeAria": "Gõ một lệnh trong danh sách trắng",
+      "typePlaceholder": "vd: dotnet test CalculatorDemo.sln — Enter để gửi đi duyệt",
+      "writesDisk": "⚠ ghi đè tệp"
     },
     "pane": {
       "tablist": "Chọn khung",

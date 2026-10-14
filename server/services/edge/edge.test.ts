@@ -84,6 +84,7 @@ function makeSelect(tableName: string) {
 }
 
 const fakeDb = {
+  async execute() { return []; }, // R-11-p: registerNode sets "protocolVersion" = 2 through raw SQL
   select() {
     const c: any = { from(t: any) { return makeSelect(tbl(t)).from(); } };
     return c;

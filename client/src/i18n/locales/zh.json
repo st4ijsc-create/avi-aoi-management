@@ -3677,6 +3677,7 @@
       "queued-for-shared-ledger": "读取副本已立即清理（余量会立刻反映出来），但该行要到下一次共享台账同步时才会真正从数据库中移除——查看 unsyncedWritesAfter 了解还有多少写入尚未发送。"
     },
     "entity": {
+      "edgeNode": "边缘节点",
       "mqttClient": "MQTT设备",
       "abTestExperiment": "A/B测试实验",
       "adapter": "设备适配器",
@@ -3858,6 +3859,7 @@
       "lateWriteResult": "迟到的写入结果"
     },
     "operation": {
+      "retireEdgeNode": "永久停用边缘节点",
       "updateApiKey": "更新 API 密钥",
       "changeApiKeyHolder": "更改 API 密钥的发放对象",
       "softwareStop": "发送软件停止命令",
@@ -4298,6 +4300,10 @@
       "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。"
     },
     "reason": {
+      "edgeNodeBusy": "该节点正被其他操作修改（设备分配、凭据轮换等）。未做任何更改——请稍后重试。",
+      "edgeNodeRetireBlocked": "该节点仍有：{{blockers}}。请先将其设备交还中央、等待其停止指令 / 锁定请求被确认（或处理）、结束其运行，然后重试。未做任何更改。",
+      "edgeNodeAlreadyRetired": "该节点已永久停用。",
+      "edgeNodeRetireMigrationMissing": "停用边缘节点需要数据库迁移 0378，本服务器尚未应用。未做任何更改——请联系管理员应用该迁移。",
       "reservedSettingKey": "此设置只能在其专用页面更改（机器人自动化开关：机器人控制页面）——需要填写原因并会被审计。",
       "stopPinTagNotWritable": "只能为已启用且可写的标签固定停止值。请先启用该标签并设为可写，然后重新固定。",
       "stopPinTypeMismatch": "停止值与标签数据类型不符：bool 标签需要 true/false（或 1/0），int 标签需要整数，float 标签需要数字，string 标签需要文本；json 标签不能固定停止值。",
@@ -4316,6 +4322,8 @@
       "factoryRequired": "您属于多个工厂——请为此分配选择产线、工位或工厂（否则连您自己也无法再看到它）。",
       "secretReentryRequired": "您更改了 {{field}}（已保存密钥的发送位置或保护方式），因此不会复用已保存的密码/密钥。请重新输入密码/密钥后再保存；目前尚未更改任何内容。",
       "motionLockUnsupported": "该厂商的驱动每条指令使用一次性连接，没有运动锁定；无可解除内容。",
+      "clearNotApplied": "运动锁定未解除：数据库拒绝或超时（已回滚）。机器人仍处于锁定状态，请重试。",
+      "clearOutcomeUnknown": "无法确定解除是否已生效（数据库未及时响应）。请先重新加载机器人状态再继续操作。",
       "motionLockChanged": "您确认期间运动锁定已发生变化（出现了新的连接丢失）。未解除任何内容；请重新读取机器人状态后再确认。",
       "edgeCommandNotQueued": "该机器人归边缘节点所有，命令无法加入该节点的命令队列（所有者刚刚变更，或数据库 / 迁移 0374 不可用）。未解除任何内容；请重试。",
       "stopOnly": "紧急停止通道只接受停止指令（stop / abort）；运动指令须通过常规控制台发送。未发送任何内容。",
@@ -14087,6 +14095,7 @@
     "deleteDesc": "此文件夹的监视器将停止。已归档文件与处理台账将保留。"
   },
   "edgeNodes": {
+    "retired": "已永久停用",
     "title": "边缘节点",
     "subtitle": "注册并监控靠近产线的边缘协调运行时",
     "noPermission": "您无权查看边缘节点。",
@@ -14745,9 +14754,13 @@
       "reasonPlaceholder": "例如：已现场检查，机器人静止，区域无人",
       "confirm": "确认解除",
       "cleared": "已解除 {{code}} 的运动锁定",
+      "tipPersisted": "运动已锁定（{{reason}}，自 {{since}}）。该锁保存在数据库中：停止指令不会解除它；只有受控解除（需填写原因并记入审计）才能恢复运动。",
+      "inactiveCannotClear": "机器人网关尚未加载该机器人（无法连接——系统会自动重试），因此暂时无法解除锁定；机器人加载后即可解除。",
       "notLocked": "机器人 {{code}} 未被运动锁定",
       "reason": {
-        "persistUnknown": "启动时无法读取已保存的锁定（数据库无响应）——为安全起见已锁定"
+        "persistUnknown": "启动时无法读取已保存的锁定（数据库无响应）——为安全起见已锁定",
+        "ownerChanged": "所有权已变更（从边缘节点交回）——机器人确认的停止指令或受控解除可将其解除",
+        "ownerChangedPersisted": "所有权已变更（从边缘节点交回）——停止指令无法解除；只有填写原因的受控解除才能解除"
       }
     }
   },
@@ -14814,6 +14827,30 @@
     "noTarget": "缺少用于附加缺陷的 inspection/measurement 引用"
   },
   "systemHealth": {
+    "crossReplica": {
+      "desc": "本中央副本的状态：OT 停止同步（另一副本发出的停止指令会取消此处仍在等待的写入）以及设备归属变更通道。只读。",
+      "disabledHint": "请设置 {{envKey}}（至少 32 个字符，所有中央副本相同）或 {{envSecret}}，然后重启。只有一个中央进程时无影响。",
+      "epochTitle": "副本间 OT 停止同步",
+      "helloPeers": "已验证使用相同密钥的副本",
+      "keyMismatch": "使用不同密钥签名的副本",
+      "keySource": "密钥来源",
+      "latency": "NOTIFY 延迟（p99）",
+      "lostEpisodes": "通道丢失次数",
+      "ownerOk": "监听中",
+      "ownerTitle": "设备归属变更通道",
+      "peerStops": "收到其他副本的停止指令",
+      "pingRtt": "最近一次心跳",
+      "reconnects": "重新连接次数",
+      "rejected": "被拒绝的通知",
+      "state": "状态",
+      "stateConnecting": "连接中",
+      "stateDegraded": "降级",
+      "stateDisabledNoKey": "已停用：没有 HMAC 密钥",
+      "stateOff": "未运行",
+      "stateOk": "同步中",
+      "title": "中央副本之间的通道",
+      "unavailable": "无法读取通道状态。"
+    },
     "db": {
       "avgMs": "平均 {{a}}ms · 最大 {{m}}ms",
       "col": {
@@ -16036,7 +16073,8 @@
         "step4Body": "打开“评估”页：黄金问题集 knowledge/studio-golden/<corpus>.jsonl 由机器评分——文档是否在 top‑K、是否超过阈值、是否到达助手（上方清单显示最新分数）。还没有黄金集？向助手问一个你已知答案的问题，看它是否引用刚导入的文件。",
         "scanWarningTitle": "扫描版 PDF 警告：",
         "scanWarningBody": "页面是图像、没有文字层。OCR 无法运行时，系统会在文件名下方和“任务”页自动标注红色“扫描 PDF——未 OCR”徽章并附原因（如未设置 PDFTOPPM_BIN）——不会再在不知情时导入空语料。",
-        "resultNote": "导入完成后：每个文件下方会立即显示片段（chunk）数量。完整记录（文档名称、语料库、片段数、状态、错误信息）可在「任务」标签页查看。"
+        "resultNote": "导入完成后：每个文件下方会立即显示片段（chunk）数量。完整记录（文档名称、语料库、片段数、状态、错误信息）可在「任务」标签页查看。",
+        "subtitleCollapsed": "已折叠——点击重新展开导入文档的四个步骤。"
       }
     },
     "jobs": {
@@ -16122,7 +16160,7 @@
         "broken": "{{n}} 题的题目有误（来源文件在语料中，但期望答案不匹配任何段落）——已从所有比率中排除；请修正黄金集。",
         "detail": "第 #{{id}} 轮详情"
       },
-      "noGoldenForCorpus": "语料 \"{{corpus}}\" 还没有自己的黄金问题集。请创建 knowledge/studio-golden/{{corpus}}.jsonl（每行：id、cauHoi、nguon、dapAn.regex），或在上方选择其他集。",
+      "noGoldenForCorpus": "语料 \"{{corpus}}\" 还没有自己的黄金问题集。请在 knowledge/studio-golden/ 中创建一个以该语料命名的 .jsonl 文件（每行：id、cauHoi、nguon、dapAn.regex），或在上方选择其他集。",
       "goldenBroken": "该黄金集有 {{n}} 行错误——修复前无法运行。",
       "tableUnavailable": "评估记录表尚未迁移（0359）。",
       "noRuns": "该语料尚无评估记录。",
@@ -20710,7 +20748,9 @@
       "cmdRejected": "命令未完成 [{{ma}}]——详情：",
       "cmdRejectedToast": "命令被拦截 [{{ma}}]——详情见对话。",
       "rejectedGeneric": "被拒绝 [{{ma}}]——详情见对话。",
-      "jumpTitle": "打开 {{tep}}"
+      "jumpTitle": "打开 {{tep}}",
+      "sendAria": "将问题发送给代理",
+      "stopAria": "停止正在运行的这一轮"
     },
     "toolLoop": {
       "running": "读码循环 — 第 {{round}}/{{tran}} 轮"
@@ -20811,7 +20851,14 @@
       "clearHint": "仅清除此处显示——服务器审计日志不变。",
       "copyOut": "复制输出",
       "rerun": "重新运行（经审批门）",
-      "rerunPrompt": "运行 {{lenh}}"
+      "rerunPrompt": "运行 {{lenh}}",
+      "hideList": "隐藏列表",
+      "notAShell": "这不是自由的 shell：服务器只接受 11 种命令模板，每次运行都必须点击批准。可以输入——但命令仍要经过同一道审批。",
+      "send": "提交审批",
+      "showList": "查看 {{n}} 条可输入的命令",
+      "typeAria": "输入白名单中的一条命令",
+      "typePlaceholder": "例如：dotnet test CalculatorDemo.sln —— 按 Enter 提交审批",
+      "writesDisk": "⚠ 会覆盖文件"
     },
     "pane": {
       "tablist": "选择面板",

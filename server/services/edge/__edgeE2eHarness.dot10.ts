@@ -339,15 +339,17 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
   // commissioned cell (commissioning ON by default)
   for (const r of ["robotA", "robotB", "robotC"]) await sql`INSERT INTO robot_commissioning_records ("robotId", status, "fatReference", "signedBy") VALUES (${ids[r]}, 'active', ${`FAT-${DAU}`}, ${u.admin})`;
   await sql`INSERT INTO commissioning_records ("adapterId", status, "fatReference", "signedBy") VALUES (${ids.adapterA}, 'active', ${`FAT-${DAU}`}, ${u.admin})`;
-  // the safety PLC guarding node A's station (factory A) — read by central's preflight AND, from the signed config, the edge's
-  ids.plcA = await one(
-    sql`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", "stationId", "factoryId", enabled) VALUES (${`SPLC-${DAU}`}, 'F1 safety PLC A', 'pilz', 'modbus', ${`tcp://127.0.0.1:${plc.port}`}, ${sql.json({ estop: { address: "coil:1" } })}, ${ids.stA}, ${ids.factoryA}, true) RETURNING id`,
-  );
   // final fix wave I-6 (R-10-br) — ONLY the seed SIM-SAFETY-PLC-1, through the seed guard (shared advisory lock across harnesses,
   // re-enabled by the last one, crash-restored at exit); never other suites' untargeted fixture rows
   const { acquireSeedGuard } = await import("./__edgeSeedGuard.dot10");
   const seedGuard = await acquireSeedGuard(DB_URL);
   const disabledGlobalPlc = seedGuard.disabledIds;
+  // the safety PLC guarding node A's station (factory A) — read by central's preflight AND, from the signed config, the edge's.
+  // doc 81 Đợt 12 final fix wave (R-12-e open item b): inserted only AFTER the seed guard is held — a suite holding the seed lock
+  // EXCLUSIVELY (safetySimOnly.dot1c, acquireSeedExclusive) never sees this foreign real row
+  ids.plcA = await one(
+    sql`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", "stationId", "factoryId", enabled) VALUES (${`SPLC-${DAU}`}, 'F1 safety PLC A', 'pilz', 'modbus', ${`tcp://127.0.0.1:${plc.port}`}, ${sql.json({ estop: { address: "coil:1" } })}, ${ids.stA}, ${ids.factoryA}, true) RETURNING id`,
+  );
 
   // ── provisioning through the operator CLIs (proven admin) ──
   const io = (out: string[], err: string[]) => ({ out: (l: string) => out.push(l), err: (l: string) => err.push(l), env: {}, promptSecret: async (label: string) => (/password/i.test(label) ? adminLogin.password : null) });
@@ -690,6 +692,9 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
       await new Promise<void>((r) => srv.close(() => r()));
       await ot.close().catch(() => undefined);
       await plc.close().catch(() => undefined);
+      // doc 81 Đợt 12 final fix wave residual (R-12-f item 2) — this harness's own safety-PLC row(s) go BEFORE the seed lock is
+      // released: a suite holding the lock EXCLUSIVELY next (safetySimOnly.dot1c) never sees them
+      await removeHarnessPlcRows(sql, ids).catch((e) => console.warn(`[F1] safety-PLC rows not removed before the seed release: ${(e as Error).message}`));
       await seedGuard.release().catch((e) => console.warn(`[F1] seed guard NOT released (the census / the exit hook restores it): ${(e as Error).message}`));
       await cleanupRows(sql, ids, u, wfIds).catch((e) => console.warn(`[F1] cleanup: ${(e as Error).message}`));
       await sql.end();
@@ -702,6 +707,13 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
     },
   };
   return c;
+}
+
+/** R-12-f item 2 — the harness's safety-PLC rows (its SPLC-* config and any row naming its robots), removed before the seed release. */
+async function removeHarnessPlcRows(sql: ReturnType<typeof postgres>, ids: Record<string, number>): Promise<void> {
+  if (ids.plcA) await sql`DELETE FROM safety_plc_configs WHERE id = ${ids.plcA}`;
+  const robotsAll = [ids.robotA, ids.robotB, ids.robotC].filter(Boolean);
+  if (robotsAll.length) await sql`DELETE FROM safety_plc_configs WHERE "robotId" IN ${sql(robotsAll)}`;
 }
 
 async function cleanupRows(sql: ReturnType<typeof postgres>, ids: Record<string, number>, u: Central["u"], wfIds: number[]): Promise<void> {

@@ -3685,6 +3685,7 @@
       "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
+      "edgeNode": "edge node",
       "mqttClient": "MQTT device",
       "abTestExperiment": "A/B test experiment",
       "adapter": "device adapter",
@@ -3866,6 +3867,7 @@
       "lateWriteResult": "late write result"
     },
     "operation": {
+      "retireEdgeNode": "retire the edge node",
       "updateApiKey": "update the API key",
       "changeApiKeyHolder": "change who the API key is issued to",
       "softwareStop": "send the software stop",
@@ -4306,6 +4308,10 @@
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
+      "edgeNodeBusy": "The node is being changed by another operation (a device assignment, a credential rotation…). Nothing was changed — retry in a moment.",
+      "edgeNodeRetireBlocked": "The node still has: {{blockers}}. Release its devices to central, let its STOPs / lock requests be acknowledged (or resolved) and finish its runs, then retry. Nothing was changed.",
+      "edgeNodeAlreadyRetired": "This node is already retired.",
+      "edgeNodeRetireMigrationMissing": "Retiring an edge node needs database migration 0378, which is not applied on this server yet. Nothing was changed — ask the administrator to apply it.",
       "reservedSettingKey": "This setting can only be changed on its own screen (robot automation switch: Robot Control) — it needs a reason and is audited.",
       "stopPinTagNotWritable": "A stop value can only be pinned on a tag that is ENABLED and WRITABLE. Make the tag writable and enabled first, then pin it again.",
       "stopPinTypeMismatch": "The stop value does not match the tag data type: a bool tag needs true/false (or 1/0), an int tag a whole number, a float tag a number, a string tag text; json tags cannot be pinned.",
@@ -4324,6 +4330,8 @@
       "factoryRequired": "You belong to more than one factory — pick a line, station or factory for this assignment (otherwise not even you could see it again).",
       "secretReentryRequired": "You changed {{field}} — where or how the stored secret is sent — so the saved password/secret is not reused. Re-enter the password/secret and save again; nothing has been changed yet.",
       "motionLockUnsupported": "This vendor's driver opens one connection per command and has no motion lock; there is nothing to clear.",
+      "clearNotApplied": "The motion lock was NOT cleared: the database refused or timed out the clear (rolled back). The robot is still locked; try again.",
+      "clearOutcomeUnknown": "It is unknown whether the clear took effect (the database did not answer in time). Reload the robot state before doing anything else.",
       "motionLockChanged": "The motion lock changed while you were confirming (a new link loss). Nothing was cleared; re-read the robot state and confirm again.",
       "edgeCommandNotQueued": "This robot is owned by an edge node, and the command could not be queued for that node (the owner just changed, or the database / migration 0374 is unavailable). Nothing was cleared; try again.",
       "stopOnly": "The emergency STOP route accepts stop verbs only (stop / abort); a motion command must go through the normal console. Nothing was sent.",
@@ -14304,6 +14312,7 @@
     "deleteDesc": "The watcher for this folder stops. Archived files and the processing ledger are kept."
   },
   "edgeNodes": {
+    "retired": "Retired",
     "title": "Edge Nodes",
     "subtitle": "Register & monitor edge coordination runtimes near the line",
     "noPermission": "You do not have permission to view edge nodes.",
@@ -14962,9 +14971,13 @@
       "reasonPlaceholder": "e.g. checked on site, robot stationary, area clear",
       "confirm": "Confirm clear",
       "cleared": "Motion lock cleared on {{code}}",
+      "tipPersisted": "Motion is locked ({{reason}}, since {{since}}). This lock is held in the database: a STOP does not clear it; only the controlled clear (with a reason, audited) re-enables motion.",
+      "inactiveCannotClear": "This robot is not loaded by the robot gateway (it could not connect — the system keeps retrying), so its lock cannot be cleared yet; it can be as soon as the robot is loaded.",
       "notLocked": "Robot {{code}} is not motion-locked",
       "reason": {
-        "persistUnknown": "the saved lock could not be read at startup (database did not answer) — locked to be safe"
+        "persistUnknown": "the saved lock could not be read at startup (database did not answer) — locked to be safe",
+        "ownerChanged": "ownership changed (returned from an edge node) — a STOP confirmed by the robot or the controlled clear removes it",
+        "ownerChangedPersisted": "ownership changed (returned from an edge node) — a STOP does not remove it; only the controlled clear with a reason does"
       }
     }
   },
@@ -15426,7 +15439,8 @@
         "step4Body": "Open the \"Evaluation\" tab: the golden set knowledge/studio-golden/<corpus>.jsonl is MACHINE-graded — is the document in the top‑K, does it clear the threshold, does it reach the assistant (the checklist above shows the latest score). No golden set yet? Ask the assistant a question whose answer you already know and check it cites the file you just ingested.",
         "scanWarningTitle": "Scanned-image PDF warning:",
         "scanWarningBody": "the pages are IMAGES with no text layer. When OCR cannot run, the system now tags a red \"Scanned PDF — no OCR\" badge with the reason (e.g. PDFTOPPM_BIN not set) right under the file name and in the \"Jobs\" tab — no more silently ingesting an empty corpus.",
-        "resultNote": "Result after ingesting: the chunk count appears right under each file below once done. See the full picture (document name, corpus, chunk count, status, error if any) on the \"Jobs\" tab."
+        "resultNote": "Result after ingesting: the chunk count appears right under each file below once done. See the full picture (document name, corpus, chunk count, status, error if any) on the \"Jobs\" tab.",
+        "subtitleCollapsed": "Collapsed — click to reopen the four steps for loading documents."
       }
     },
     "jobs": {
@@ -15512,7 +15526,7 @@
         "broken": "{{n}} question(s) have a BROKEN spec (source file is in the corpus but the expected answer matches no chunk) — excluded from every rate; fix the golden set.",
         "detail": "Run #{{id}} detail"
       },
-      "noGoldenForCorpus": "Corpus \"{{corpus}}\" has no golden set of its own. Create knowledge/studio-golden/{{corpus}}.jsonl (one line each: id, cauHoi, nguon, dapAn.regex), or pick another set above.",
+      "noGoldenForCorpus": "Corpus \"{{corpus}}\" has no golden set of its own. Create a .jsonl file named after this corpus in knowledge/studio-golden/ (one line each: id, cauHoi, nguon, dapAn.regex), or pick another set above.",
       "goldenBroken": "This golden set has {{n}} invalid line(s) — it cannot run until fixed.",
       "tableUnavailable": "The eval run log is not migrated yet (0359).",
       "noRuns": "No evaluation runs for this corpus yet.",
@@ -18765,6 +18779,30 @@
       "title": "Hardware commissioning (FAT gate)",
       "wouldSimulate": "Would be forced to simulate"
     },
+    "crossReplica": {
+      "desc": "This central replica's state: the OT STOP sync (a STOP sent by another replica cancels writes still waiting here) and the device-owner change channel. Read-only.",
+      "disabledHint": "Set {{envKey}} (at least 32 characters, the same on every central replica) or {{envSecret}}, then restart. Harmless with ONE central process.",
+      "epochTitle": "OT STOP sync between replicas",
+      "helloPeers": "Replicas verified with the same key",
+      "keyMismatch": "Replicas signing with ANOTHER key",
+      "keySource": "Key source",
+      "latency": "NOTIFY latency (p99)",
+      "lostEpisodes": "Lost episodes",
+      "ownerOk": "Listening",
+      "ownerTitle": "Device-owner change channel",
+      "peerStops": "STOPs received from other replicas",
+      "pingRtt": "Last heartbeat",
+      "reconnects": "Reconnects",
+      "rejected": "Rejected notifications",
+      "state": "State",
+      "stateConnecting": "Connecting",
+      "stateDegraded": "Degraded",
+      "stateDisabledNoKey": "Disabled: no HMAC key",
+      "stateOff": "Not running",
+      "stateOk": "In sync",
+      "title": "Channels between central replicas",
+      "unavailable": "The channel status could not be read."
+    },
     "db": {
       "avgMs": "avg {{a}}ms · max {{m}}ms",
       "col": {
@@ -20702,7 +20740,9 @@
       "cmdRejected": "The command did NOT complete [{{ma}}] — details:",
       "cmdRejectedToast": "Command blocked [{{ma}}] — see the conversation for details.",
       "rejectedGeneric": "Refused [{{ma}}] — see the conversation for details.",
-      "jumpTitle": "Open {{tep}}"
+      "jumpTitle": "Open {{tep}}",
+      "sendAria": "Send the question to the agent",
+      "stopAria": "Stop the running turn"
     },
     "toolLoop": {
       "running": "Code-reading loop — round {{round}}/{{tran}}"
@@ -20803,7 +20843,14 @@
       "clearHint": "Clears this view only — the server audit log is unchanged.",
       "copyOut": "Copy output",
       "rerun": "Re-run (via approval gate)",
-      "rerunPrompt": "run {{lenh}}"
+      "rerunPrompt": "run {{lenh}}",
+      "hideList": "hide the list",
+      "notAShell": "This is NOT a free shell: the server accepts only 11 command patterns and every run must be approved. You can type — but the command goes through that same approval gate.",
+      "send": "Send for approval",
+      "showList": "show the {{n}} commands you can type",
+      "typeAria": "Type a command from the allow-list",
+      "typePlaceholder": "e.g. dotnet test CalculatorDemo.sln — press Enter to send it for approval",
+      "writesDisk": "⚠ overwrites files"
     },
     "pane": {
       "tablist": "Choose pane",

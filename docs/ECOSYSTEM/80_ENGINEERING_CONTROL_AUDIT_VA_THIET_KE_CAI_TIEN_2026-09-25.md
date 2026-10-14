@@ -377,3 +377,7 @@ Edge không còn đăng nhập DB trung tâm: trung tâm là nơi ghi duy nhất
 ## 25. Đợt 11 (2026-10-14) — xem doc 81 §19
 
 Cảnh báo dung lượng bảng WORM (giữ vĩnh viễn), mig 0377 (ghim/định danh hàm + một thứ tự khoá STOP, chỉ `_test`), 6 census đỏ xanh, đo hàng đợi ghi OT và đơn giản hoá đường STOP khi bật cờ (bộ đếm STOP huỷ ghi phát trước STOP), script bench safety-PLC (máy chưa có OpenPLC). **Sẵn sàng gộp; `OT_CMD_SERIALIZE_ENABLED` vẫn tắt tới khi chủ dự án bật — doc 81 §19.**
+
+## 26. Đợt 12 (2026-10-15) — xem doc 81 §20
+
+Robot mô phỏng có khoá chuyển động thật + gỡ khoá có audit cho robot trả từ edge; nút edge nghỉ hưu (mig 0378, chỉ `_test`) + đăng ký nút tạo giao thức v2; STOP chia sẻ giữa nhiều máy chủ trung tâm (NOTIFY ký HMAC, không bao giờ huỷ STOP). **Sẵn sàng gộp; cần khoá HMAC trước khi chạy hơn một máy chủ trung tâm — doc 81 §20.**

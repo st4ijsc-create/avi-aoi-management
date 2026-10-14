@@ -256,22 +256,92 @@ export function isSuperseded(x: unknown): x is Superseded {
  *   • A write whose gates begin AFTER the STOP was sent is the operator's newer intent and runs.
  * Values come from ONE process-wide counter (strictly increasing, never reused) so an equal value means "no STOP since";
  * the map holds one entry per adapter ever stopped (bounded by the adapter count).
- * PER PROCESS: a STOP handled by another replica / process (another central replica, an edge gateway) does not move this
- * process's epoch — see the K-fix report (each process also has its own queue and its own driver sessions).
+ * PER PROCESS, plus a best-effort CROSS-REPLICA signal (doc 81 Đợt 12 task P): when a central process runs otStopEpochSync, every
+ * local bump is broadcast AFTER the send (setStopEpochBroadcaster — scheduled with setImmediate, never awaited, never on the STOP's
+ * path) and every other central replica bumps its own epoch for that adapter on receipt (bumpAdapterStopEpochFromPeer — no
+ * re-broadcast). Remaining window = the NOTIFY latency (docs/EDGE_GATEWAY.md §8.14). The edge has no DB: its epoch stays per process.
  */
 let stopEpochSeq = 0;
 const adapterStopEpochs = new Map<number, { epoch: number; stop: Record<string, unknown> | null }>();
 
-/** R-11-d — a TRUE STOP for `adapterId` is being SENT: move the epoch (returns the new value). Never throws. */
-export function bumpAdapterStopEpoch(adapterId: number, stop?: Record<string, unknown> | null): number {
-  stopEpochSeq += 1;
-  adapterStopEpochs.set(adapterId, { epoch: stopEpochSeq, stop: stop ?? null });
-  return stopEpochSeq;
+/** doc 81 Đợt 12 task P — the cross-replica broadcaster (otStopEpochSync, central only); null ⇒ per process (edge, tests). */
+export type StopEpochBroadcast = { adapterId: number; epoch: number; at: number };
+let stopEpochBroadcaster: ((m: StopEpochBroadcast) => void) | null = null;
+/** Task P — install (or with null remove) the broadcaster. Returns a function that removes THIS broadcaster if still installed. */
+export function setStopEpochBroadcaster(fn: ((m: StopEpochBroadcast) => void) | null): () => void {
+  stopEpochBroadcaster = fn;
+  return () => {
+    if (stopEpochBroadcaster === fn) stopEpochBroadcaster = null;
+  };
 }
 
-/** R-11-d — the adapter's current STOP epoch (0 = never stopped in this process). */
+/**
+ * R-11-d — a TRUE STOP for `adapterId` is being SENT: move the epoch (returns the new value). Never throws.
+ * Task P — then, when a broadcaster is installed, the bump is announced to the other replicas on the NEXT macrotask (setImmediate):
+ * the device stage (executeOtDeviceWrite) reaches driver.writeTags in this same synchronous section, so the NOTIFY starts only after
+ * the STOP's device call was made (the identical-STOP join in tryEnqueueAdapterCommand bumps for a STOP already on the wire), and
+ * nothing on the STOP's path ever waits for it (L-7).
+ */
+export function bumpAdapterStopEpoch(adapterId: number, stop?: Record<string, unknown> | null): number {
+  stopEpochSeq += 1;
+  const epoch = stopEpochSeq;
+  adapterStopEpochs.set(adapterId, { epoch, stop: stop ?? null });
+  const b = stopEpochBroadcaster;
+  if (b) {
+    const m: StopEpochBroadcast = { adapterId, epoch, at: Date.now() };
+    setImmediate(() => {
+      try {
+        b(m);
+      } catch {
+        /* best effort — a broadcaster failure never reaches the STOP */
+      }
+    });
+  }
+  return epoch;
+}
+
+/**
+ * doc 81 Đợt 12 task P fix 1 — PEER epochs live in their OWN map (another central replica SENT a verified STOP), apart from the
+ * LOCAL map above (STOPs sent by this process, bounded by the real adapter count):
+ *   • I-2 (L-7): a peer move never supersedes a stop-typed command on an adapter WITHOUT stop pins (the only software STOP there) —
+ *     stopIssuedSince(…, {localOnly}) for those; final fix wave R-12-e I-1: on an adapter WITH pins it cancels a stop-labelled command
+ *     that is not a verified STOP like any write (a verified STOP never records an epoch, so it is never cancelled).
+ *   • I-3 (scan #111): the peer map is CAPPED without failing open — a new adapter always gets its entry; when full, the least
+ *     recently moved entry is EVICTED and the PEER FLOOR rises to its epoch: an adapter without a peer entry reads the floor, so an
+ *     eviction can only move an epoch FORWARD (the cancel direction), never back, and a real peer STOP is never dropped.
+ */
+export const OT_STOP_EPOCH_PEER_ADAPTERS_MAX = 100_000;
+const peerStopEpochs = new Map<number, { epoch: number; stop: Record<string, unknown> | null }>();
+let peerFloor: { epoch: number; stop: Record<string, unknown> | null } | null = null;
+function peerEpochOf(adapterId: number): { epoch: number; stop: Record<string, unknown> | null } | null {
+  return peerStopEpochs.get(adapterId) ?? peerFloor;
+}
+/**
+ * doc 81 Đợt 12 task P — another central replica SENT a verified STOP for `adapterId`: move this process's PEER epoch for it (non-STOP
+ * writes in this process's gates since before now are cancelled STOPPED_BEFORE_WRITE). Never broadcast again. `evicted`: the adapter
+ * whose entry made room (the floor rose to its epoch), null when nothing was evicted — the caller alerts on it.
+ */
+export function bumpAdapterStopEpochFromPeer(adapterId: number, stop: Record<string, unknown>): { epoch: number; evicted: number | null } {
+  stopEpochSeq += 1;
+  let evicted: number | null = null;
+  if (peerStopEpochs.has(adapterId)) peerStopEpochs.delete(adapterId); // re-inserted below: most recently moved last (LRU order)
+  else if (peerStopEpochs.size >= OT_STOP_EPOCH_PEER_ADAPTERS_MAX) {
+    const first = peerStopEpochs.entries().next().value as [number, { epoch: number; stop: Record<string, unknown> | null }];
+    peerStopEpochs.delete(first[0]);
+    evicted = first[0];
+    if (!peerFloor || first[1].epoch > peerFloor.epoch) peerFloor = { epoch: first[1].epoch, stop: { ...(first[1].stop ?? {}), peerFloor: true } };
+  }
+  peerStopEpochs.set(adapterId, { epoch: stopEpochSeq, stop });
+  return { epoch: stopEpochSeq, evicted };
+}
+/** Task P fix 1 — size of the peer map + floor (status / tests). */
+export function peerStopEpochStats(): { size: number; max: number; floor: number } {
+  return { size: peerStopEpochs.size, max: OT_STOP_EPOCH_PEER_ADAPTERS_MAX, floor: peerFloor?.epoch ?? 0 };
+}
+
+/** R-11-d — the adapter's current STOP epoch, local or peer (0 = never stopped in this process). Only ever moves forward. */
 export function adapterStopEpoch(adapterId: number): number {
-  return adapterStopEpochs.get(adapterId)?.epoch ?? 0;
+  return Math.max(adapterStopEpochs.get(adapterId)?.epoch ?? 0, peerEpochOf(adapterId)?.epoch ?? 0);
 }
 
 /** R-11-d — a non-STOP write cancelled right before its device write because a STOP was issued after its gates began. */
@@ -287,11 +357,17 @@ export function isStoppedBeforeWrite(x: unknown): x is StoppedBeforeWrite {
   return typeof x === "object" && x !== null && (x as StoppedBeforeWrite).stoppedBeforeWrite === true;
 }
 
-/** R-11-d — null when no STOP was issued for the adapter since `epochAtGates`, else the cancellation. */
-export function stopIssuedSince(adapterId: number, epochAtGates: number): StoppedBeforeWrite | null {
-  const cur = adapterStopEpochs.get(adapterId);
+/**
+ * R-11-d — null when no STOP was issued for the adapter since `epochAtGates`, else the cancellation (the latest STOP named).
+ * Task P fix 1 (I-2, L-7): `localOnly` (a stop-typed command on an adapter without pins, R-12-e I-1) — only a STOP SENT BY THIS
+ * PROCESS counts; a peer move never denies the only software STOP of an unpinned adapter.
+ */
+export function stopIssuedSince(adapterId: number, epochAtGates: number, opts?: { localOnly?: boolean }): StoppedBeforeWrite | null {
+  const local = adapterStopEpochs.get(adapterId) ?? null;
+  const peer = opts?.localOnly ? null : peerEpochOf(adapterId);
+  const cur = (peer?.epoch ?? 0) > (local?.epoch ?? 0) ? peer : local;
   const epochNow = cur?.epoch ?? 0;
-  if (epochNow === epochAtGates) return null;
+  if (epochNow <= epochAtGates) return null;
   return { stoppedBeforeWrite: true, epochAtGates, epochNow, stop: cur?.stop ?? null };
 }
 
@@ -998,10 +1074,31 @@ export interface OtResolvedWrite {
  * A stop-LABELLED command with arbitrary writes is not a true stop: it records an epoch and is checked like any write.
  */
 export function executeOtDeviceWriteUnlessStopped(
-  a: Parameters<typeof executeOtDeviceWrite>[0] & { stopEpochAtGates: number | null },
+  a: Parameters<typeof executeOtDeviceWrite>[0] & {
+    stopEpochAtGates: number | null;
+    /**
+     * doc 81 Đợt 12 final fix wave (ruling R-12-e I-1, scan #113) — the adapter has NO stop pin at all (the caller read the adapter's
+     * pins and found none). A stop-TYPED command is exempt from PEER moves (I-2: a peer never denies the only software STOP there is)
+     * ONLY when this is explicitly true. On an adapter WITH pins a verified STOP exists, so a peer STOP cancels a stop-labelled command
+     * that is not a verified STOP (an unpinned tag, the pin value plus an unpinned tag, a non-pin value) exactly as a local STOP does —
+     * the replica the load balancer picked changes nothing. Absent (a pin read failure, the edge) ⇒ not exempt.
+     * (Was, P fix 1 + scan #112: exempt when `overridesStopPin === false` — still decided by the label for writes that touch no pin.)
+     */
+    adapterHasNoStopPins?: boolean | (() => boolean);
+  },
 ): Promise<ExecutedWrite | StoppedBeforeWrite> {
   if (a.stopEpochAtGates !== null) {
-    const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates);
+    // I-2 / R-12-e I-1 — peer moves ignored only where no pin exists. R-12-f item 1: the answer may be LAZY (a synchronous cache
+    // lookup, taken here at the check — no await before the device write); a throw / anything but true ⇒ not exempt.
+    const x = a.adapterHasNoStopPins;
+    let noPins = false;
+    try {
+      noPins = typeof x === "function" ? x() === true : x === true;
+    } catch {
+      noPins = false;
+    }
+    const localOnly = a.stopTyped && noPins;
+    const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates, { localOnly });
     if (stopped) return Promise.resolve(stopped);
   }
   return executeOtDeviceWrite(a);

@@ -138,6 +138,12 @@ export interface MotionLockState {
    * confirmed STOP does not clear it; only the audited operator clear does.
    */
   operatorHold?: true;
+  /**
+   * doc 81 Đợt 12 N fix 1 (M-3 / M-4) — DISPLAY ONLY (robot.list / robot.get `live`): this is the robot's PERSISTED central lock
+   * row, held by no live lock of this process (the robot is inactive here, or its driver has no motion lock). A STOP does not
+   * clear it; only the audited robot.clearMotionLock does, and only once the robot is active in this process.
+   */
+  persisted?: true;
 }
 
 /** doc 81 Đợt 10 final fix wave (M-5) — the reason code of a lock an OPERATOR asked for (central console / edge `lock` command). */
@@ -250,6 +256,21 @@ export class MotionLock {
     this.durabilityHold = null;
   }
 
+  /**
+   * doc 81 Đợt 12 final fix wave (ruling R-12-e I-2) — a QUIESCE HOLD: this session is being taken down on the edge (it left the
+   * node, or its settings changed — edgeGatewayRuntime.quiesceRobot, after robotQuiesce.markSessionQuiescing). A confirmed STOP does
+   * NOT clear it (as an operator hold), nor does any clear: motion stays refused until the session itself ends (the detach drops the
+   * driver and this lock with it; a re-attach builds a new session). In memory only, never restored from a row. STOPs never refused.
+   */
+  private quiesceHold: string | null = null;
+  holdForQuiesce(why: string): void {
+    this.quiesceHold = String(why || "quiescing").slice(0, 300);
+  }
+  /** R-12-e I-2 — the quiesce hold of this session, or null */
+  quiesceHoldReason(): string | null {
+    return this.quiesceHold;
+  }
+
   private notify(kind: "locked" | "cleared"): void {
     const p = this.persistence;
     if (!p) return;
@@ -282,9 +303,12 @@ export class MotionLock {
     this.notify("locked");
   }
 
-  /** Cleared by a CONFIRMED STOP — except an operator's hold (M-5): only clearByOperator removes that. */
+  /**
+   * Cleared by a CONFIRMED STOP — except an operator's hold (M-5): only clearByOperator removes that; and except a QUIESCE hold
+   * (R-12-e I-2): only the detach (the session ends) removes that.
+   */
   clearByStop(): void {
-    if (!this.state.locked || this.state.operatorHold) return;
+    if (!this.state.locked || this.state.operatorHold || this.quiesceHold !== null) return;
     this.state = {
       locked: false,
       reasonCode: this.state.reasonCode,
@@ -320,10 +344,14 @@ export class MotionLock {
   }
 
   isLocked(): boolean {
-    return this.state.locked || this.durabilityHold !== null;
+    return this.state.locked || this.durabilityHold !== null || this.quiesceHold !== null;
   }
 
   snapshot(): MotionLockState {
+    if (!this.state.locked && this.quiesceHold !== null) {
+      // R-12-e I-2 — cleared by an operator meanwhile, but the session is quiescing: still shown (and enforced) as locked
+      return { ...this.state, locked: true, reasonCode: "ownershipRemoved", detail: this.quiesceHold };
+    }
     if (!this.state.locked && this.durabilityHold !== null) {
       // MIN-3 — cleared in memory, but nothing durable yet: still shown (and enforced) as locked
       return { ...this.state, locked: true, reasonCode: MOTION_LOCK_PERSIST_UNKNOWN_REASON_CODE, detail: this.durabilityHold };

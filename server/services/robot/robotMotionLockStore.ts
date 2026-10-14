@@ -49,6 +49,11 @@ import { isEdgeControlSchemaMissing, robotMotionLockAuthority } from "../edge/ed
 /** Upper bound of ONE motion-lock DB step (load at registration, upsert, delete). */
 export const MOTION_LOCK_DB_DEADLINE_MS = 2000;
 /** Column caps of robot_motion_locks (varchar(64) reasonCode; detail kept short). */
+/** doc 81 dot 12 integration (rawErrorCensus F3, coded class, message verbatim) — the not-durable alert found no recipient yet
+ *  (caught right below: the alert is raised without recipients and the read retried). Never reaches a tRPC user. */
+class NoAlertRecipientError extends Error {
+  readonly code = "NO_ALERT_RECIPIENT" as const;
+}
 const REASON_MAX = 64;
 const DETAIL_MAX = 1000;
 
@@ -256,7 +261,7 @@ function alertNotDurable(robotId: number, why: string): void {
     void notDurableRecipients()
       .then((ids) => {
         if (ids.length > 0) return void raise(ids);
-        throw new Error("no active admin / supervisor");
+        throw new NoAlertRecipientError("no active admin / supervisor");
       })
       .catch((err) => {
         if (n === 0) void raise([]); // at once: the log line + the alert stream, even without recipients
@@ -590,6 +595,164 @@ export function attachEdgeMotionLockPersistence(
     }
   }
   return lock.isLocked() ? "restored" : "none";
+}
+
+// ── doc 81 Đợt 12 task N (OWNER-SETUP B2) — the persisted lock of a robot whose DRIVER HAS NO MOTION LOCK ─────────────────
+/**
+ * A one-shot driver (Techman / UR / VDA5050) has no in-memory lock, so a robot_motion_locks row of such a robot — typically the
+ * DB's `ownerChanged` relock written when the robot is released from an edge (0374 robot_owner_relock) — could be neither
+ * adopted nor cleared: central refused its motion for ever. These two helpers are the ONLY way that row goes away, and only
+ * from the audited operator clear (robot.clearMotionLock: scope, permission, reason, generation; audit row FIRST). Nothing calls
+ * them automatically (no STOP, no reconcile, no restart).
+ */
+export interface PersistedMotionLockRow {
+  robotId: number;
+  authority: string;
+  reasonCode: string;
+  detail: string | null;
+  /** ISO of lockedAt (as the boot restore / the motion gate read it) */
+  since: string;
+  /** lockedAt in ms — part of the row's identity (rowMatchSql truncates to ms) */
+  lockedAtMs: number;
+  generation: number;
+  ownerEpoch: number | null;
+  writerInstanceId: string | null;
+}
+
+/** The persisted motion-lock row of `robotId` now (bounded, any authority). Never throws; `{ error }` ⇒ the caller refuses. */
+export async function readPersistedMotionLockRow(robotId: number): Promise<{ row: PersistedMotionLockRow | null } | { error: string }> {
+  try {
+    const read = (async () => {
+      const db = await getDb();
+      if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
+      const T = robotMotionLockAuthority;
+      const [r] = await db.select().from(T).where(eq(T.robotId, robotId)).limit(1);
+      if (!r || r.robotId !== robotId) return { row: null };
+      const lockedAt = new Date(r.lockedAt);
+      return {
+        row: {
+          robotId,
+          authority: String(r.authority ?? "central"),
+          reasonCode: String(r.reasonCode),
+          detail: r.detail ?? null,
+          since: lockedAt.toISOString(),
+          lockedAtMs: lockedAt.getTime(),
+          generation: Number(r.generation),
+          ownerEpoch: r.ownerEpoch == null ? null : Number(r.ownerEpoch),
+          writerInstanceId: r.writerInstanceId ?? null,
+        } satisfies PersistedMotionLockRow,
+      };
+    })();
+    return await withDeadline(read, MOTION_LOCK_DB_DEADLINE_MS, `robot ${robotId} persisted motion lock read`);
+  } catch (err) {
+    return { error: errText(err) };
+  }
+}
+
+/**
+ * doc 81 Đợt 12 N fix 1 (M-3 / M-4) — the persisted CENTRAL lock rows of `robotIds` (one batched read, bounded), for DISPLAY only:
+ * the robot panel shows the lock of a robot with no live lock in this process (inactive, or a lockless driver). An edge
+ * authority's row is not central's (never shown as such). Never throws; a failed read gives an empty map (display only — the
+ * motion gate still reads the row itself and refuses, fail-closed).
+ */
+export async function loadCentralPersistedLocks(robotIds: number[]): Promise<Map<number, PersistedMotionLockRow>> {
+  const out = new Map<number, PersistedMotionLockRow>();
+  if (robotIds.length === 0) return out;
+  try {
+    const read = (async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const T = robotMotionLockAuthority;
+      return db.select().from(T).where(and(inArray(T.robotId, robotIds), eq(T.authority, "central")));
+    })();
+    for (const r of await withDeadline(read, MOTION_LOCK_DB_DEADLINE_MS, `persisted motion locks (${robotIds.length} robot(s))`)) {
+      if (r.authority !== "central" || !robotIds.includes(r.robotId)) continue;
+      const lockedAt = new Date(r.lockedAt);
+      out.set(r.robotId, {
+        robotId: r.robotId,
+        authority: "central",
+        reasonCode: String(r.reasonCode),
+        detail: r.detail ?? null,
+        since: lockedAt.toISOString(),
+        lockedAtMs: lockedAt.getTime(),
+        generation: Number(r.generation),
+        ownerEpoch: r.ownerEpoch == null ? null : Number(r.ownerEpoch),
+        writerInstanceId: r.writerInstanceId ?? null,
+      });
+    }
+  } catch (err) {
+    console.warn(`[Robot] persisted motion locks not shown (display only): ${errText(err)}`);
+  }
+  return out;
+}
+
+/**
+ * doc 81 Đợt 12 N fix 1 (M-1) — a clear that did not land. `not_cleared`: the DB answered with an error (refused, statement /
+ * lock timeout) ⇒ its transaction was rolled back, the row stands. `unknown`: no answer within the client bound (the connection
+ * hung, or the COMMIT's answer was lost) ⇒ the caller must re-read the row before telling anyone it is (not) cleared.
+ */
+export class PersistedLockClearError extends Error {
+  constructor(
+    readonly outcome: "not_cleared" | "unknown",
+    message: string,
+  ) {
+    super(message);
+    this.name = "PersistedLockClearError";
+  }
+}
+/** M-1 — the server-side bounds of the clear's transaction (statement / lock), and the client's own bound beyond them */
+export const PERSISTED_LOCK_CLEAR_STATEMENT_MS = MOTION_LOCK_DB_DEADLINE_MS;
+export const PERSISTED_LOCK_CLEAR_LOCK_MS = 1_000;
+const PERSISTED_LOCK_CLEAR_CLIENT_MS = PERSISTED_LOCK_CLEAR_STATEMENT_MS + 3_000;
+
+/**
+ * Delete EXACTLY the row the operator decided about: same robot, authority 'central', same generation, same lockedAt (ms), same
+ * writer (rowMatchSql — the R-10-aj / R-10-ap identity of an adopted row) and same owner epoch, and only while the robot is
+ * central-owned (an edge-owned robot's row is its edge authority's: never touched here — the 0374 write guard refuses it too).
+ * A row re-created, replaced or merged since the read (new generation, new writer, new epoch) matches nothing. Returns the
+ * number of rows deleted (0 or 1).
+ * M-1 — ONE transaction bounded BY THE SERVER (SET LOCAL statement_timeout + lock_timeout): a DELETE that waits on a held row lock
+ * or runs long is cancelled by Postgres and its transaction rolls back, so a clear reported as failed can never commit later (a
+ * client-side deadline alone abandoned a DELETE that still landed when the lock was released). Throws PersistedLockClearError.
+ */
+export async function clearPersistedCentralMotionLock(
+  robotId: number,
+  id: { generation: number; lockedAtMs: number; writerInstanceId: string | null; ownerEpoch: number | null },
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new PersistedLockClearError("not_cleared", "DB unavailable (getDb returned null)");
+  const T = robotMotionLockAuthority;
+  let settled = false;
+  const work = db
+    .transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT set_config('statement_timeout', ${String(PERSISTED_LOCK_CLEAR_STATEMENT_MS)}, true), set_config('lock_timeout', ${String(PERSISTED_LOCK_CLEAR_LOCK_MS)}, true)`,
+      );
+      const deleted = await tx
+        .delete(T)
+        .where(
+          and(
+            eq(T.robotId, robotId),
+            eq(T.authority, "central"),
+            rowMatchSql({ generation: id.generation, lockedAtMs: id.lockedAtMs, writer: id.writerInstanceId }),
+            sql`${T.ownerEpoch} IS NOT DISTINCT FROM ${id.ownerEpoch}::bigint`,
+            sql`NOT EXISTS (SELECT 1 FROM public.robots r WHERE r.id = ${robotId} AND r."edgeNodeId" IS NOT NULL)`,
+          ),
+        )
+        .returning({ robotId: T.robotId });
+      return deleted.length;
+    })
+    .finally(() => {
+      settled = true;
+    });
+  try {
+    return await withDeadline(work, PERSISTED_LOCK_CLEAR_CLIENT_MS, `robot ${robotId} persisted motion lock clear`);
+  } catch (err) {
+    // the DB answered (an SQLSTATE) ⇒ rolled back; no answer in the client bound, or a transport failure ⇒ unknown
+    const sqlState = (err as { code?: unknown; cause?: { code?: unknown } })?.code ?? (err as { cause?: { code?: unknown } })?.cause?.code;
+    const answered = settled && typeof sqlState === "string" && /^[0-9A-Z]{5}$/.test(sqlState);
+    throw new PersistedLockClearError(answered ? "not_cleared" : "unknown", errText(err));
+  }
 }
 
 /** Test seam — wait until every queued motion-lock write has settled. */

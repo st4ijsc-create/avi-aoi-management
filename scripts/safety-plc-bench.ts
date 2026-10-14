@@ -25,9 +25,9 @@ export interface BenchOptions { endpoint?: string; estopCoil: number; zoneCoil: 
 export interface BenchStep { step: string; expected: string; got: string; ok: boolean; ms: number }
 export interface BenchResult { mode: string; steps: BenchStep[]; events: Array<{ door: string; eventType: string; transition: unknown }>; serverWrites: number | string; ok: boolean }
 
-interface Plc { set(addr0: number, v: boolean): Promise<void>; offline(): Promise<void>; online(): Promise<void>; endpoint: string; writes(): number | null; close(): Promise<void> }
+export interface Plc { set(addr0: number, v: boolean): Promise<void>; offline(): Promise<void>; online(): Promise<void>; endpoint: string; writes(): number | null; close(): Promise<void> }
 
-async function selfServer(): Promise<Plc> {
+export async function selfServer(): Promise<Plc> {
   const coils = new Map<number, boolean>();
   let writes = 0;
   let srv: any;
@@ -51,7 +51,29 @@ async function selfServer(): Promise<Plc> {
 const waitEnter = () => new Promise<void>((r) => process.stdin.once("data", () => r()));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function externalPlc(endpoint: string): Promise<Plc> {
+/** Optional automation of the offline/online steps for a Dockerised OpenPLC (env BENCH_PLC_CONTAINER, BENCH_PLC_WEB). */
+async function dockerCycle(kind: "stop" | "start"): Promise<boolean> {
+  const name = process.env.BENCH_PLC_CONTAINER;
+  if (!name) return false;
+  const { execFileSync } = await import("node:child_process");
+  execFileSync("docker", [kind, name], { stdio: "ignore", timeout: 60_000 });
+  if (kind === "start") {
+    const web = process.env.BENCH_PLC_WEB; // e.g. http://127.0.0.1:18080 - OpenPLC v3 web UI (default credentials, local only)
+    for (let i = 0; i < 40; i++) {
+      try {
+        if (!web) break;
+        const r = await fetch(web + "/login", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "username=openplc&password=openplc", redirect: "manual" });
+        const cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+        await fetch(web + "/start_plc", { headers: { cookie }, redirect: "manual" });
+        break;
+      } catch { await sleep(1000); }
+    }
+    await sleep(3000);
+  }
+  return true;
+}
+
+export async function externalPlc(endpoint: string): Promise<Plc> {
   const u = new URL(endpoint.replace(/^tcp:/, "http:"));
   const c = new ModbusRTU();
   await c.connectTCP(u.hostname, { port: Number(u.port || 502) });
@@ -59,8 +81,8 @@ async function externalPlc(endpoint: string): Promise<Plc> {
   c.setTimeout(3000);
   return {
     set: async (a, v) => { await c.writeCoil(a, v); },
-    offline: async () => { console.log("  >>> take the PLC offline now (stop the OpenPLC runtime / container), then press Enter"); await waitEnter(); },
-    online: async () => { console.log("  >>> bring the PLC back online, then press Enter"); await waitEnter(); },
+    offline: async () => { if (await dockerCycle("stop")) return; console.log("  >>> take the PLC offline now (stop the OpenPLC runtime / container), then press Enter"); await waitEnter(); },
+    online: async () => { if (await dockerCycle("start")) { try { c.close(() => undefined); } catch { /* ignore */ } await c.connectTCP(u.hostname, { port: Number(u.port || 502) }); c.setID(1); return; } console.log("  >>> bring the PLC back online, then press Enter"); await waitEnter(); },
     endpoint, writes: () => null, close: async () => { try { c.close(() => undefined); } catch { /* ignore */ } },
   };
 }

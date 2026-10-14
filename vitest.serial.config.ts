@@ -23,6 +23,7 @@ export const SERIAL_SUITES = [
   "server/services/edge/edgeExecution.s4.e2e.dot9.db.test.ts",
   "server/services/edge/safetySeedIntact.finalfix.dot10.db.test.ts",
   "server/services/edge/edgeControlSchema.dot10.db.test.ts",
+  "server/services/edge/edgeSimRobotLock.dot12.e2e.db.test.ts", // doc 81 Dot 12 task N (the F1 harness)
 ] as const;
 
 // one file at a time, each in its own fork (NOT singleFork: vitest.setup derives the _test URL from the process env per file)

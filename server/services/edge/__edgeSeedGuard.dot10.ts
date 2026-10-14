@@ -39,6 +39,71 @@ export interface SeedGuard {
   __abandonForTests?(): Promise<void>;
 }
 
+/**
+ * doc 81 Đợt 12 final fix wave (ruling R-12-e open item b) — for a suite that reads EVERY enabled safety-PLC config of `_test`
+ * (safetySimOnly.dot1c): hold the seed lock EXCLUSIVELY for its life — no F1 E2E harness runs meanwhile (each holds the lock SHARED
+ * for its whole life, and inserts its own real safety-PLC row only after it holds it), so the suite never sees the seed disabled by
+ * a harness nor a harness's foreign row. Bounded wait (`waitMs`): refused with a clear message while a harness keeps running. The
+ * seed row itself is never touched here. `_test` only (throws elsewhere).
+ */
+/** R-12-e open item b — a coded refusal of acquireSeedExclusive (rawErrorCensus: no raw Error) */
+export class SeedGuardRefusal extends Error {
+  constructor(
+    readonly code: "notTestDb" | "harnessRunning" | "aborted",
+    message: string,
+  ) {
+    super(message);
+    this.name = "SeedGuardRefusal";
+  }
+}
+/**
+ * R-12-f item 3 — `signal`: the caller gave up (its hook timed out): the wait stops at once (`aborted`), and a lock won after the
+ * abort is released right away — an abandoned acquisition never keeps the seed lock (harnesses would wait on it for good).
+ */
+export async function acquireSeedExclusive(dbUrl: string, opts: { waitMs?: number; signal?: AbortSignal } = {}): Promise<{ release(): Promise<void> }> {
+  if (!/_test\b/.test(dbUrl)) throw new SeedGuardRefusal("notTestDb", "[seed guard] acquireSeedExclusive refused: not a _test DB");
+  const waitMs = Math.max(0, opts.waitMs ?? 45_000);
+  const conn = postgres(dbUrl, { max: 1, connect_timeout: 30, onnotice: () => {} });
+  const t0 = Date.now();
+  const aborted = () => new SeedGuardRefusal("aborted", "[seed guard] acquireSeedExclusive aborted by its caller — the seed lock is not held");
+  try {
+    for (;;) {
+      if (opts.signal?.aborted) throw aborted();
+      const [r] = await conn`SELECT pg_try_advisory_lock(${SEED_LOCK_KEY}) AS ok`;
+      if (r.ok) {
+        if (opts.signal?.aborted) {
+          // won AFTER the caller gave up: release at once
+          await conn`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`;
+          throw aborted();
+        }
+        break;
+      }
+      if (Date.now() - t0 >= waitMs) {
+        throw new SeedGuardRefusal(
+          "harnessRunning",
+          `[seed guard] the seed lock (${SEED_LOCK_KEY}) is held by a running F1 E2E harness for more than ${waitMs} ms — this suite reads every safety-PLC config and would see the harness's rows; run it when no harness runs (or through the serial project)`,
+        );
+      }
+      await new Promise((res) => setTimeout(res, 100)); // an abort is seen at the next pass (≤ 100 ms)
+    }
+  } catch (err) {
+    await conn.end({ timeout: 5 }).catch(() => undefined);
+    throw err;
+  }
+  let released = false;
+  return {
+    async release() {
+      if (released) return;
+      released = true;
+      try {
+        await conn`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`;
+      } finally {
+        await conn.end({ timeout: 5 });
+      }
+    },
+  };
+}
+
 /** The leftover of a harness that died between disable and restore (the census's wording), read without changing anything. */
 export async function seedLeftover(dbUrl: string): Promise<{ leftover: boolean; message: string }> {
   const marker = seedMarkerFile(dbUrl);

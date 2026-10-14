@@ -55,6 +55,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+// doc 81 Đợt 12 final fix wave (R-12-e M-3) — the cross-replica channels of this central replica (admin only)
+import { CrossReplicaChannelsPanel } from "@/components/systemHealth/CrossReplicaChannelsPanel";
 
 // ── typed router outputs (avoid ReturnType<useQuery> overload collapse to {}) ──
 type SysOut = inferRouterOutputs<AppRouter>["systemHealth"];
@@ -150,6 +152,7 @@ export default function SystemHealth() {
         <StoreForwardSection query={sfQuery} />
         <DbIngestHealthSection />
         <WormTableSizesSection />
+        <CrossReplicaChannelsPanel />
         <ConnectionSupervisorsSection query={supQuery} />
         <AiModelHealthSection query={aiQuery} />
         <TwinExportSection />

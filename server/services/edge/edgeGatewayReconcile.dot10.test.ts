@@ -86,16 +86,15 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
   it("★ no config ⇒ unconfigured; late config starts devices; release: lock + STOP first, a failed STOP keeps the device attached (truthful alert) and is retried; adapters get their pinned STOP", async () => {
     const { SimRobotDriver } = await import("../robot/drivers/simRobotDriver");
     const { StubDriver } = await import("../ot/drivers/stubDriver");
-    const { MotionLock } = await import("../robot/robotDriver");
-    type ML = InstanceType<typeof MotionLock>;
-    (SimRobotDriver.prototype as unknown as { motionLockController: () => ML }).motionLockController = function (this: { _ml?: ML }) {
-      return (this._ml ??= new MotionLock());
-    };
+    // doc 81 Đợt 12 N fix 1 (M-2) — the PRODUCT sim lock (no prototype patch); a STOP that succeeds goes through the product
+    // driver, so its confirmed-STOP clear (and the quiesce's re-lock + quiescing state) are exercised
     const order: string[] = [];
     let robotStopFails = false;
-    vi.spyOn(SimRobotDriver.prototype, "runJob").mockImplementation(async (job: { jobType: string }) => {
+    const realRunJob = SimRobotDriver.prototype.runJob;
+    vi.spyOn(SimRobotDriver.prototype, "runJob").mockImplementation(async function (this: InstanceType<typeof SimRobotDriver>, job: { jobType: string }) {
       order.push(`robot:${job.jobType}${robotStopFails ? ":fail" : ""}`);
-      return robotStopFails ? { ok: false, status: "failed" as const, error: "controller rejected" } : { ok: true, status: "done" as const };
+      if (robotStopFails) return { ok: false, status: "failed" as const, error: "controller rejected" };
+      return job.jobType === "abort" ? realRunJob.call(this, job as never) : { ok: true, status: "done" as const };
     });
     let otStopFails = true;
     const writes = vi.spyOn(StubDriver.prototype, "writeTags").mockImplementation(async (w: Array<{ tagKey: string }>) => {
@@ -139,6 +138,8 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     const robot13 = rm.getActiveRobot(13)!; // the HEALTHY robot: its session must never be cycled below
     expect((await gw.getEdgeGatewayHealth()).status).not.toBe("unconfigured");
     const robot12 = rm.getActiveRobot(12)!;
+    // doc 81 Đợt 12 N fix 1 (M-2) — ONE lock: the reconciler's lock is the product driver's own (no split-brain test double)
+    expect((robot12.driver as unknown as { motionLock: unknown }).motionLock).toBe(robot12.driver.motionLockController!());
 
     // ── ownership change: robot 12 AND adapter 21 leave; the SAME pull carries a central STOP for robot 12; the robot's
     //    release STOP fails at first, the adapter's pinned STOP write fails at first
@@ -153,6 +154,9 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     await vi.waitFor(() => expect(order).toContain("robot:abort"), { timeout: 5_000, interval: 5 });
     robotStopFails = true; // the command STOP went; the release STOP that follows the refresh fails
     await firstTick;
+    // Đợt 12 N fix 1 (M-2) — central holds the ack now: it stops re-delivering request 140 (a re-delivery is re-acked by design on
+    // a 2 s back-off; the product sim STOP's 200 ms run made this flow outlast that back-off)
+    central.commands = [];
     await gw.reconcileDevices(rt, "test barrier");
     expect(order.slice(0, 2)).toEqual(["tick", "robot:abort"]); // the central STOP ran FIRST (fast path)
     expect(order).toContain("robot:abort:fail");
@@ -185,7 +189,10 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     await vi.waitFor(() => expect(om.getActiveDriver(21)).toBeUndefined(), { timeout: 5_000, interval: 50 });
     expect(om.getActiveDriver(22)).toBeDefined(); // the stale-connection adapter stays attached (fail-closed)
     const after = await alerts();
-    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*locked \(generation \d+\), STOP done, session closed/.test(a))).toBe(true);
+    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*locked \(generation \d+[^)]*\), STOP done, session closed/.test(a))).toBe(true);
+    // M-2 (Đợt 12 N) — the quiesce's lock reaches the detach. Final fix wave R-12-e I-2: a confirmed STOP no longer clears a QUIESCE
+    // lock (it was cleared, then re-taken after the STOP's journal write — a window for a signed motion): kept, never re-taken
+    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*re-taken after the STOP/.test(a))).toBe(false);
     expect(after.some((a) => /^EDGE_DEVICE_RELEASED: adapter 21 .*pinned STOP \w+ \(run\), session closed/.test(a))).toBe(true);
     expect(writes).toHaveBeenCalled();
     expect(central.received.locksEvents.filter((r) => r.kind === "command_ack" && r.requestId === 140).map((r) => r.outcome)).toEqual(["done"]);
@@ -321,7 +328,7 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     // 15 (not wanted): released through the checked path — locked, STOPped, detached
     expect(rm.getActiveRobot(15)).toBeUndefined();
     const after = (await anomalies()).slice(before);
-    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 15 .*locked \(generation \d+\), STOP done, session closed/.test(a))).toBe(true);
+    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 15 .*locked \(generation \d+[^)]*\), STOP done, session closed/.test(a))).toBe(true);
     // 16 (wanted): quiesced + re-attached from the verified row — tracked, never a false "NOT attached" alert
     expect(rm.getActiveRobot(16)).toBeDefined();
     expect(rm.getActiveRobot(16)).not.toBe(s16);
@@ -349,6 +356,43 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
       [143, "done"],
     ]);
     expect((await import("../../db/connection")).edgeDbTrapCount()).toBe(0);
+  }, 60_000);
+
+  it("★ R-12-e M-5: a reconfigure whose quiesce FAILED leaves the old session quiescing (durable alert, listed in the node health); the settings REVERTED meanwhile (the key matches again) ⇒ the next pass still takes it down and re-attaches — never stuck refusing motion until an edge restart", async () => {
+    const rt = shared.rt!;
+    const rm = await import("../robot/robotManager");
+    const gw = await import("./edgeGatewayRuntime");
+    process.env.EDGE_RECONCILE_RETRY_MS = "100";
+    const cur = central.makeConfig();
+    central.setConfig({ robots: cur.robots, adapters: cur.adapters });
+    await gw.sendHeartbeat();
+    await gw.reconcileDevices(rt, "settle");
+    const id = cur.robots[0].id;
+    const s0 = rm.getActiveRobot(id)!;
+    expect(s0).toBeDefined();
+    const orig = s0.driver.runJob.bind(s0.driver);
+    let stopFails = true;
+    s0.driver.runJob = async (j: { jobType: string }) => (j.jobType === "abort" && stopFails ? { ok: false, status: "failed" as const, error: "controller rejected" } : orig(j as never));
+    central.setConfig({ robots: cur.robots.map((r) => (r.id === id ? { ...r, pollIntervalMs: 888 } : r)), adapters: cur.adapters });
+    await gw.sendHeartbeat();
+    await gw.reconcileDevices(rt, "settings");
+    expect(rm.getActiveRobot(id)).toBe(s0); // the quiesce failed: the OLD session is kept …
+    expect(rm.robotQuiescing(id)).not.toBeNull(); // … quiescing (refuses motion)
+    expect((await gw.getEdgeGatewayHealth()).robotsQuiescing.map((q) => q.robotId)).toContain(id); // visible
+    await rt.journal.flush();
+    await rt.shipper.flushAll();
+    expect(central.received.locksEvents.some((r) => r.kind === "anomaly" && String(r.code) === "EDGE_DEVICE_ATTACH_FAILED" && new RegExp(`robot ${id} settings changed .*QUIESCING`).test(String(r.detail)))).toBe(true); // durable
+    // the owner REVERTS the settings: the session key matches again — the quiescing session must still be taken down
+    central.setConfig({ robots: cur.robots, adapters: cur.adapters });
+    await gw.sendHeartbeat();
+    stopFails = false;
+    await new Promise((r) => setTimeout(r, 400)); // past the per-robot back-off
+    await gw.reconcileDevices(rt, "reverted");
+    await vi.waitFor(() => expect(rm.getActiveRobot(id)).not.toBe(s0), { timeout: 5_000, interval: 50 });
+    expect(rm.getActiveRobot(id)).toBeDefined(); // re-attached from the verified row
+    expect(rm.robotQuiescing(id)).toBeNull();
+    expect((await gw.getEdgeGatewayHealth()).robotsQuiescing).toEqual([]);
+    process.env.EDGE_RECONCILE_RETRY_MS = "600000";
   }, 60_000);
 
   it("★ G-2 (R-10-az): only `{ ok: true }` from D's lifecycle is ok — a bare true, a truthy non-boolean, undefined are NOT; reason + detail carried", async () => {

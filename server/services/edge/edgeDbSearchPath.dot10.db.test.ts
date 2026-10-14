@@ -244,7 +244,8 @@ describe.skipIf(!onTest)("R-10-e — catalog census of every function 0372–037
 
 /** fix review 3 (N3): the relation census also covers 0376 (it re-creates the 0316 / 0363–0371 functions) */
 /** doc 81 Đợt 11 task H (2026-10-14): and 0377 (the six INVOKER functions + the STOP ack functions in the one lock order) */
-const REL_FILES = [...FILES, "0376_pin_function_search_path.sql", "0377_pin_invoker_functions_and_stop_lock_order.sql"];
+/** doc 81 Đợt 12 task O (2026-10-15): and 0378 (edge node retirement: the retire guard + the retired-target guard) */
+const REL_FILES = [...FILES, "0376_pin_function_search_path.sql", "0377_pin_invoker_functions_and_stop_lock_order.sql", "0378_edge_node_retirement.sql"];
 /**
  * doc 81 Đợt 11 task H (2026-10-14) — the ONE dynamic DDL a census-covered body may run: 0377's
  * ensure_measurement_samples_partition (0092's body: a partition named by month cannot be created without EXECUTE). Its four

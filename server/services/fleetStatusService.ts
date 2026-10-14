@@ -20,13 +20,17 @@
 import { getDb } from "../db";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { edgeNodes, deviceAdapters } from "../../drizzle/schema";
+import { sql } from "drizzle-orm";
 import { getFleetOverview, type FleetOverview } from "./aiEdgeEnhanced";
 
 export interface EdgeNodesPlane {
+  /** live (not retired) nodes = online + offline + degraded — the endpoints counted in the summary */
   total: number;
   online: number;
   offline: number;
   degraded: number;
+  /** doc 81 Đợt 12 O fix 1 (O-R4) — RETIRED nodes (mig 0378): listed with status "retired", counted apart, never an endpoint */
+  retired: number;
   nodes: Array<{
     id: number;
     code: string;
@@ -36,6 +40,8 @@ export interface EdgeNodesPlane {
     version: string | null;
     lastHeartbeatAt: Date | null;
     assignedLineCodes: string[] | null;
+    /** ISO time of the retirement; null = live */
+    retiredAt: string | null;
   }>;
 }
 
@@ -75,9 +81,10 @@ export interface UnifiedFleetStatus {
   };
 }
 
-async function loadEdgeNodesPlane(): Promise<EdgeNodesPlane> {
+/** exported for tests (doc 81 Đợt 12 O fix 1) — the edge-node plane of the unified fleet status */
+export async function loadEdgeNodesPlane(): Promise<EdgeNodesPlane> {
   const db = await getDb();
-  if (!db) return { total: 0, online: 0, offline: 0, degraded: 0, nodes: [] };
+  if (!db) return { total: 0, online: 0, offline: 0, degraded: 0, retired: 0, nodes: [] };
   const rows = await db
     .select({
       id: edgeNodes.id,
@@ -88,6 +95,8 @@ async function loadEdgeNodesPlane(): Promise<EdgeNodesPlane> {
       version: edgeNodes.version,
       lastHeartbeatAt: edgeNodes.lastHeartbeatAt,
       assignedLineCodes: edgeNodes.assignedLineCodes,
+      // read through to_jsonb: works with or without mig 0378 (the edge_nodes object never carries the column — 0368 lesson)
+      retiredAt: sql<string | null>`(to_jsonb(${edgeNodes}) ->> 'retiredAt')`,
     })
     .from(edgeNodes)
     .orderBy(edgeNodes.code);
@@ -95,12 +104,18 @@ async function loadEdgeNodesPlane(): Promise<EdgeNodesPlane> {
   let online = 0;
   let offline = 0;
   let degraded = 0;
-  for (const r of rows) {
-    if (r.status === "online") online++;
+  let retired = 0;
+  const nodes = rows.map((r) => {
+    const retiredAt = r.retiredAt ? new Date(r.retiredAt).toISOString() : null;
+    return { ...r, retiredAt, status: retiredAt ? "retired" : r.status };
+  });
+  for (const r of nodes) {
+    if (r.status === "retired") retired++;
+    else if (r.status === "online") online++;
     else if (r.status === "degraded") degraded++;
     else offline++;
   }
-  return { total: rows.length, online, offline, degraded, nodes: rows };
+  return { total: online + offline + degraded, online, offline, degraded, retired, nodes };
 }
 
 async function loadDeviceAdaptersPlane(): Promise<DeviceAdaptersPlane> {

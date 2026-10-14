@@ -6267,6 +6267,14 @@ async function startServer() {
     .then(({ startDeviceOwnershipSync }) => startDeviceOwnershipSync())
     .catch((err) => console.error("[DeviceOwner] ownership sync failed to start:", (err as any)?.message || err));
 
+  // doc 81 Đợt 12 task P (+ fix 1 I-1) — cross-replica STOP epoch (pg NOTIFY 'ot_stop_epoch', HMAC-signed): this replica's verified
+  // STOP sends are broadcast, other replicas' are applied to this process's epoch. On EVERY central process, whatever
+  // OT_GATEWAY_ENABLED says (the central sweep / fallback STOPs run with the gateway off). NOT awaited (bounded LISTEN, retried in
+  // the background, heartbeat + alert on loss); a no-op on the edge.
+  void import("../services/ot/otStopEpochSync")
+    .then(({ startOtStopEpochSync }) => startOtStopEpochSync())
+    .catch((err) => console.error("[OtStopEpochSync] failed to start:", (err as any)?.message || err));
+
   // doc 81 Dot 11 task G — hourly size watch of the append-only (WORM) tables; read-only, alerts admins once per crossed level.
   // Central only (the edge has no DB login). Interval WORM_SIZE_CHECK_INTERVAL_MS; thresholds WORM_SIZE_*/WORM_ROWS_*.
   void import("../services/ops/wormTableSizeMonitor")

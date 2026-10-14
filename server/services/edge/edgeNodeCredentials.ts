@@ -15,6 +15,10 @@
  * own password check — bcrypt, lockout, audit — plus the account's TOTP when 2FA is on) and passes only that verified id.
  * Every change is recorded twice: in the credential row itself (WORM identity, trigger) and in audit_logs.
  *
+ *   • RETIRE (doc 81 Đợt 12 O, mig 0378 — retireEdgeNode) — terminal for the NODE: every active credential revoked and the node
+ *              marked retired in one transaction, refused while it still owns a device / has an open STOP or lock request / a
+ *              non-terminal run; the DB then refuses any new credential, device, run or claim for it. Never deleted.
+ *
  * AUTHENTICATION (authenticateEdgeNodeToken): malformed / unknown prefix / revoked / hash mismatch / node gone / any DB
  * error ⇒ null (the route answers the SAME 401 for all of them — no oracle about which prefixes exist). The comparison is
  * constant-time over the two hashes. Never throws.
@@ -86,8 +90,10 @@ export async function authenticateEdgeNodeToken(token: unknown): Promise<EdgeNod
 
 export class EdgeCredentialError extends Error {
   constructor(
-    public readonly code: "notAdmin" | "notVerified" | "otpRequired" | "reasonRequired" | "nodeNotFound" | "activeExists" | "noActive" | "dbUnavailable" | "invalidInput",
+    public readonly code: "notAdmin" | "notVerified" | "otpRequired" | "reasonRequired" | "nodeNotFound" | "activeExists" | "noActive" | "dbUnavailable" | "invalidInput" | "nodeRetired" | "retireBlocked" | "nodeBusy" | "migrationMissing",
     message: string,
+    /** doc 81 Đợt 12 O — retireBlocked: the DB guard's list of blockers (ids), for a caller that shows it apart from the message */
+    public readonly blockers?: string,
   ) {
     super(message);
     this.name = "EdgeCredentialError";
@@ -191,7 +197,7 @@ async function recordCliTotpFailure(user: { id: number; name?: string | null; lo
  * ⇒ "unchanged" (idempotent); with a different one ⇒ refused (a factory / line change of a node that may own devices is not made
  * here — release its devices first, then change it deliberately). Audited (EDGE_NODE_REGISTER, success / failure).
  */
-export async function registerEdgeNode(input: { nodeCode: string; factoryCode: string; lineCodes: string[]; name?: string | null; actorUserId: number; reason: string }): Promise<{ nodeId: number; created: boolean }> {
+export async function registerEdgeNode(input: { nodeCode: string; factoryCode: string; lineCodes: string[]; name?: string | null; actorUserId: number; reason: string; protocolVersion?: number }): Promise<{ nodeId: number; created: boolean; upgraded?: boolean }> {
   const reason = String(input.reason ?? "").trim();
   if (reason.length < 3) throw new EdgeCredentialError("reasonRequired", "A reason (at least 3 characters) is required.");
   const code = String(input.nodeCode ?? "").trim();
@@ -199,6 +205,8 @@ export async function registerEdgeNode(input: { nodeCode: string; factoryCode: s
   const lines = [...new Set((input.lineCodes ?? []).map((l) => String(l).trim()).filter(Boolean))].sort();
   if (!/^[A-Za-z0-9._-]{1,128}$/.test(code)) throw new EdgeCredentialError("invalidInput", "The node code must be 1–128 characters of letters, digits, '.', '_' or '-'.");
   if (!factoryCode) throw new EdgeCredentialError("invalidInput", "A factory code is required (a node without a factory is given no device and no run).");
+  // doc 81 Đợt 11 R-11-p — a node is created on protocol v2; v1 cannot execute since Đợt 10 (R-10-l); an EXPLICIT protocolVersion 2 upgrades an existing v1 node
+  if (input.protocolVersion !== undefined && input.protocolVersion !== 2) throw new EdgeCredentialError("invalidInput", "Protocol 1 is refused: v1 nodes cannot execute since Đợt 10 (R-10-l) — nodes are registered on protocol 2.");
   const d = await db();
   const [actor] = await d.select({ id: users.id, role: users.role, isActive: users.isActive, name: users.name }).from(users).where(eq(users.id, Number(input.actorUserId))).limit(1);
   if (!actor || actor.isActive === false || String(actor.role) !== "admin") throw new EdgeCredentialError("notAdmin", "Only an active admin user may register an edge node.");
@@ -227,15 +235,29 @@ export async function registerEdgeNode(input: { nodeCode: string; factoryCode: s
   }
   const [existing] = await d.select({ id: edgeNodes.id, factoryCode: edgeNodes.factoryCode, lines: edgeNodes.assignedLineCodes }).from(edgeNodes).where(eq(edgeNodes.code, code)).limit(1);
   if (existing) {
+    // doc 81 Đợt 12 O — a RETIRED node's code is never registered again (its row stays as evidence; mig 0378 freezes it)
+    const retired = await readNodeRetirement(d as unknown as RawExec, { id: existing.id });
+    if (retired?.retiredAt) {
+      await auditRow("failure", { outcome: "retired", nodeId: existing.id, retiredAt: retired.retiredAt });
+      throw new EdgeCredentialError("nodeRetired", `Edge node "${code}" was retired on ${retired.retiredAt} — its code is never registered again (register a new code).`);
+    }
     const same = (existing.factoryCode ?? "") === factoryCode && JSON.stringify([...(existing.lines ?? [])].sort()) === JSON.stringify(lines);
     if (!same) {
       await auditRow("failure", { outcome: "registeredDifferently", nodeId: existing.id });
       throw new EdgeCredentialError("activeExists", `Edge node "${code}" is already registered (factory ${existing.factoryCode ?? "none"}, lines ${(existing.lines ?? []).join(",") || "none"}) — not changed here.`);
     }
+    if (input.protocolVersion === 2) {
+      const upd = rowsOf(await d.execute(q`UPDATE public.edge_nodes SET "protocolVersion" = 2 WHERE id = ${existing.id} AND "protocolVersion" = 1 RETURNING id`));
+      if (upd.length === 1) {
+        await auditRow("success", { outcome: "upgradedToV2", nodeId: existing.id, from: 1, to: 2 });
+        return { nodeId: existing.id, created: false, upgraded: true };
+      }
+    }
     return { nodeId: existing.id, created: false };
   }
   const [ins] = await d.insert(edgeNodes).values({ code, name: (input.name ?? "").trim() || code, factoryCode, assignedLineCodes: lines, status: "offline" }).returning({ id: edgeNodes.id });
-  await auditRow("success", { outcome: "created", nodeId: ins.id });
+  await d.execute(q`UPDATE public.edge_nodes SET "protocolVersion" = 2 WHERE id = ${ins.id}`);
+  await auditRow("success", { outcome: "created", nodeId: ins.id, protocolVersion: 2 });
   return { nodeId: ins.id, created: true };
 }
 
@@ -264,6 +286,9 @@ async function checkActorAndNode(input: ChangeInput): Promise<{ nodeId: number; 
   }
   const [node] = await d.select({ id: edgeNodes.id }).from(edgeNodes).where(eq(edgeNodes.code, String(input.nodeCode ?? "").trim())).limit(1);
   if (!node) throw new EdgeCredentialError("nodeNotFound", `Edge node "${input.nodeCode}" is not registered.`);
+  // doc 81 Đợt 12 O — a retired node is given no credential again (the DB refuses it too: mig 0378)
+  const retired = await readNodeRetirement(d as unknown as RawExec, { id: node.id });
+  if (retired?.retiredAt) throw new EdgeCredentialError("nodeRetired", `Edge node "${input.nodeCode}" was retired on ${retired.retiredAt} — it is given no credential again.`);
   return { nodeId: node.id, actorName: actor.name ?? `user ${actor.id}` };
 }
 
@@ -370,4 +395,172 @@ export async function listNodeCredentials(nodeCode: string) {
     .innerJoin(edgeNodes, eq(edgeNodes.id, edgeNodeCredentials.edgeNodeId))
     .where(eq(edgeNodes.code, nodeCode))
     .orderBy(desc(edgeNodeCredentials.id));
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 12 task O — RETIRE a node (mig 0378). Never a delete: WORM evidence references the row (FK ON DELETE RESTRICT).
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+type RawExec = { execute: (q: import("drizzle-orm").SQL) => Promise<unknown> };
+const rowsOfRaw = (r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
+const isoOf = (v: unknown): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : new Date(String(v)).toISOString());
+
+export interface NodeRetirement {
+  nodeId: number;
+  code: string;
+  /** ISO time of the retirement; null = not retired (or mig 0378 not applied: the columns are read through to_jsonb) */
+  retiredAt: string | null;
+  retiredBy: number | null;
+  retireReason: string | null;
+}
+
+/**
+ * The retirement state of ONE node (by id or code); null = no such node. Read through to_jsonb(row) so it answers "not retired"
+ * on a DB without mig 0378 instead of failing (the edge_nodes drizzle object never carries these columns — 0368 lesson).
+ */
+export async function readNodeRetirement(d: RawExec, where: { id?: number; code?: string }): Promise<NodeRetirement | null> {
+  const { sql: q } = await import("drizzle-orm");
+  const cond = where.id !== undefined ? q`n.id = ${Number(where.id)}` : q`n.code = ${String(where.code ?? "").trim()}`;
+  const [r] = rowsOfRaw(
+    await d.execute(q`SELECT n.id, n.code, to_jsonb(n) ->> 'retiredAt' AS "retiredAt", to_jsonb(n) ->> 'retiredBy' AS "retiredBy", to_jsonb(n) ->> 'retireReason' AS "retireReason"
+                        FROM public.edge_nodes n WHERE ${cond} LIMIT 1`),
+  );
+  if (!r) return null;
+  return {
+    nodeId: Number(r.id),
+    code: String(r.code),
+    retiredAt: r.retiredAt ? isoOf(r.retiredAt) : null,
+    retiredBy: r.retiredBy != null ? Number(r.retiredBy) : null,
+    retireReason: r.retireReason != null ? String(r.retireReason) : null,
+  };
+}
+
+/** The retirement of a node by code (operator CLI `list`); null = unknown node. */
+export async function nodeRetirementByCode(nodeCode: string): Promise<NodeRetirement | null> {
+  return readNodeRetirement((await db()) as unknown as RawExec, { code: nodeCode });
+}
+
+let retirePauseForTests: (() => Promise<void>) | null = null;
+/** TEST ONLY — called inside the retirement transaction right after the node row is locked (L-7 / race tests). */
+export function _setRetirePauseForTests(fn: (() => Promise<void>) | null): void {
+  retirePauseForTests = fn;
+}
+
+/** fix 1 (review O-R3) — how long a retirement waits for a row lock (node / credential) before it answers nodeBusy. */
+export const RETIRE_LOCK_TIMEOUT_MS = 5000;
+let retireLockTimeoutMs: number | null = null;
+/** TEST ONLY — a shorter lock_timeout for the retirement transaction (null = RETIRE_LOCK_TIMEOUT_MS). */
+export function _setRetireLockTimeoutMsForTests(ms: number | null): void {
+  retireLockTimeoutMs = ms;
+}
+
+export interface RetiredNode {
+  nodeId: number;
+  revokedCredentialIds: number[];
+  retiredAt: string;
+}
+
+/**
+ * RETIRE an edge node, as an ACTIVE ADMIN with a reason (the CLI proves the admin — verifyCredentialAdmin; the tRPC procedure is
+ * admin-only and passes the session user). ONE transaction, under `SET LOCAL lock_timeout` (RETIRE_LOCK_TIMEOUT_MS — it never
+ * hangs behind a device assignment or a rotation in flight: 55P03 ⇒ nodeBusy, nothing changed):
+ *   1. lock the node's ACTIVE credential rows, then the node row — both FOR NO KEY UPDATE (fix 1, O-R3): the same order as
+ *      rotate (credential, then node), so the two never deadlock; NO KEY so the FK KEY SHARE of a claim / step authorisation on
+ *      the credential, and of a STOP request on the node (L-7), is never delayed;
+ *   2. revoke EVERY active credential (reason "retired: <reason>");
+ *   3. set retiredBy / retireReason (the DB stamps retiredAt itself; status offline). The DB guard (mig 0378,
+ *      edge_node_retire_guard) REFUSES that while the node owns a robot / adapter, has an unacknowledged STOP or lock / clear
+ *      request, or a non-terminal run — its message NAMES every blocker; the whole transaction (the revocations too) is then
+ *      rolled back: nothing changes.
+ * The row is never deleted. Audited EDGE_NODE_RETIRE — success and EVERY refusal (fix 1, O-R6: notAdmin and dbUnavailable too).
+ * Refusals: EdgeCredentialError notAdmin · reasonRequired · nodeNotFound · nodeRetired (already) · retireBlocked (the DB's own
+ * refusal text) · nodeBusy · dbUnavailable · migrationMissing (R-12-e M-7: mig 0378 not applied).
+ */
+export async function retireEdgeNode(input: ChangeInput): Promise<RetiredNode> {
+  const reason = String(input.reason ?? "").trim();
+  if (reason.length < 3) throw new EdgeCredentialError("reasonRequired", "A reason (at least 3 characters) is required.");
+  const code = String(input.nodeCode ?? "").trim();
+  const d = await db();
+  const actorId = Number(input.actorUserId);
+  const [actor] = Number.isInteger(actorId) && actorId > 0
+    ? await d.select({ id: users.id, role: users.role, isActive: users.isActive, name: users.name }).from(users).where(eq(users.id, actorId)).limit(1)
+    : [];
+  // the audit row names whoever asked — the refused actor too (fix 1, O-R6)
+  const auditRetire = async (status: "success" | "failure", details: Record<string, unknown>) => {
+    try {
+      const { createAuditLog } = await import("../../db/system");
+      await createAuditLog({
+        userId: actor?.id ?? null,
+        userName: actor ? (actor.name ?? `user ${actor.id}`) : null,
+        action: "EDGE_NODE_RETIRE",
+        entityType: "edge_node",
+        entityName: code,
+        status,
+        details: { ...details, reason },
+      });
+    } catch (err) {
+      console.error(`[EdgeCredential] could not audit the retirement of node "${code}" (${status}): ${(err as Error)?.message ?? err}`);
+    }
+  };
+  if (!actor || actor.isActive === false || String(actor.role) !== "admin") {
+    const err = new EdgeCredentialError("notAdmin", "Only an active admin user may retire an edge node.");
+    await auditRetire("failure", { outcome: err.code, refusal: err.message, actorUserId: Number.isFinite(actorId) ? actorId : null });
+    throw err;
+  }
+  const { sql: q } = await import("drizzle-orm");
+  const { isEdgeControlRefusal } = await import("./edgeControlSchema");
+  const lockMs = Math.max(50, Math.floor(retireLockTimeoutMs ?? RETIRE_LOCK_TIMEOUT_MS));
+  let out: RetiredNode;
+  try {
+    out = await d.transaction(async (tx) => {
+      await tx.execute(q`SELECT set_config('lock_timeout', ${`${lockMs}ms`}, true)`);
+      const [node] = rowsOfRaw(await tx.execute(q`SELECT id FROM public.edge_nodes WHERE code = ${code}`));
+      if (!node) throw new EdgeCredentialError("nodeNotFound", `Edge node "${code}" is not registered.`);
+      const nodeId = Number(node.id);
+      await tx.execute(q`SELECT id FROM public.edge_node_credentials WHERE "edgeNodeId" = ${nodeId} AND status = 'active' ORDER BY id FOR NO KEY UPDATE`);
+      const [locked] = rowsOfRaw(await tx.execute(q`SELECT to_jsonb(n) ->> 'retiredAt' AS "retiredAt" FROM public.edge_nodes n WHERE n.id = ${nodeId} FOR NO KEY UPDATE`));
+      if (locked?.retiredAt) throw new EdgeCredentialError("nodeRetired", `Edge node "${code}" is already retired (since ${isoOf(locked.retiredAt)}).`);
+      if (retirePauseForTests) await retirePauseForTests();
+      const revoked = rowsOfRaw(
+        await tx.execute(q`UPDATE public.edge_node_credentials SET status = 'revoked', "revokedAt" = now(), "revokedBy" = ${actor.id}, "revokeReason" = ${`retired: ${reason}`}
+                           WHERE "edgeNodeId" = ${nodeId} AND status = 'active' RETURNING id`),
+      ).map((r) => Number(r.id));
+      const [row] = rowsOfRaw(
+        await tx.execute(q`UPDATE public.edge_nodes SET "retiredAt" = now(), "retiredBy" = ${actor.id}, "retireReason" = ${reason}, status = 'offline', "updatedAt" = now()
+                           WHERE id = ${nodeId} RETURNING "retiredAt"`),
+      );
+      return { nodeId, revokedCredentialIds: revoked.sort((a, b) => a - b), retiredAt: isoOf(row.retiredAt)! };
+    });
+  } catch (err) {
+    if (err instanceof EdgeCredentialError) {
+      await auditRetire("failure", { outcome: err.code, refusal: err.message });
+      throw err;
+    }
+    const cause = (err as { cause?: unknown })?.cause ?? err;
+    const sqlCode = (cause as { code?: unknown })?.code ?? (err as { code?: unknown })?.code;
+    if (isEdgeControlRefusal(err)) {
+      // the DB guard (mig 0378) names every blocker; nothing was changed (the revocations were rolled back with it)
+      const named = String((cause as Error)?.message ?? cause).replace(/^edge_nodes: /, "");
+      await auditRetire("failure", { outcome: "retireBlocked", refusal: named });
+      throw new EdgeCredentialError(
+        "retireBlocked",
+        `${named} — release its devices (edge-device-owner.ts release), let central execute / acknowledge its STOPs (or resolve them, docs/EDGE_GATEWAY.md §8.9), let its lock / clear requests be acknowledged or expire, finish or abort its runs, then retry. Nothing was changed.`,
+        named.replace(/^.*cannot be retired: /, ""),
+      );
+    }
+    if (sqlCode === "55P03") {
+      const busy = new EdgeCredentialError("nodeBusy", `Edge node "${code}" is being changed by another operation (a device assignment, a credential rotation …) — its row was not free within ${lockMs} ms. Nothing was changed; retry.`);
+      await auditRetire("failure", { outcome: busy.code, refusal: busy.message });
+      throw busy;
+    }
+    if (sqlCode === "42703") {
+      // doc 81 Đợt 12 final fix wave (R-12-e M-7) — its OWN code: the database is up, a migration is missing (never "dbUnavailable")
+      const missing = new EdgeCredentialError("migrationMissing", "Edge node retirement needs migration 0378 (edge_nodes.retiredAt) — not applied on this database. Nothing was changed.");
+      await auditRetire("failure", { outcome: missing.code, refusal: missing.message });
+      throw missing;
+    }
+    throw err;
+  }
+  await auditRetire("success", { outcome: "retired", nodeId: out.nodeId, revokedCredentialIds: out.revokedCredentialIds });
+  return out;
 }

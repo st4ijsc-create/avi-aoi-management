@@ -135,18 +135,9 @@ describe("doc 81 Đợt 10 E — the edge gateway boots and runs the production 
     const { SimRobotDriver } = await import("../robot/drivers/simRobotDriver");
     const runJob = vi.spyOn(SimRobotDriver.prototype, "runJob");
     const abort = vi.spyOn(SimRobotDriver.prototype, "abort");
-    // fix review 2 — the sim robot gets a REAL motion lock, so the edge lock authority is exercised end to end: a fresh
-    // journal seeds it LOCKED persistUnknown, D's dispatch would refuse the move, a signed central `clear` releases it
-    const { MotionLock } = await import("../robot/robotDriver");
-    const locks: InstanceType<typeof MotionLock>[] = [];
-    (SimRobotDriver.prototype as unknown as { motionLockController: () => InstanceType<typeof MotionLock> }).motionLockController = function (this: { _ml?: InstanceType<typeof MotionLock> }) {
-      if (!this._ml) locks.push((this._ml = new MotionLock()));
-      return this._ml;
-    };
-    // fix review 3 (F-5) — the gate D's dispatch reads before a motion
-    (SimRobotDriver.prototype as unknown as { getMotionLock: () => unknown }).getMotionLock = function (this: { motionLockController: () => InstanceType<typeof MotionLock> }) {
-      return this.motionLockController().snapshot();
-    };
+    // fix review 2 — the sim robot has a REAL motion lock (the PRODUCT driver's own since doc 81 Đợt 12 N; fix 1 M-2 removed
+    // the prototype patch), so the edge lock authority is exercised end to end: a fresh journal seeds it LOCKED persistUnknown,
+    // D's dispatch refuses the move, a signed central `clear` releases it
 
     central.packageOver.set(8, { machines: [{ id: 2, machineType: "ROBOT", capabilities: null }], verifiedStops: [], defHash: kitHashDefinition(DEF) });
     central.packageOver.set(9, { machines: [{ id: 2, machineType: "ROBOT", capabilities: null }], verifiedStops: [], defHash: kitHashDefinition(DEF) });
@@ -161,6 +152,8 @@ describe("doc 81 Đợt 10 E — the edge gateway boots and runs the production 
     const rm = await import("../robot/robotManager");
     expect(rm.activeRobotIds()).toEqual([12]); // the REAL robot manager, from the verified config
     const lock = rm.getActiveRobot(12)!.driver.motionLockController!();
+    // doc 81 Đợt 12 N fix 1 (M-2) — ONE lock: the one the edge seeds / clears is the one the product driver's own gates use
+    expect((rm.getActiveRobot(12)!.driver as unknown as { motionLock: unknown }).motionLock).toBe(lock);
     expect(lock.snapshot()).toMatchObject({ locked: true, reasonCode: "persistUnknown" }); // fresh journal ⇒ fail-closed
     await vi.waitFor(() => expect(central.received.locksEvents.some((r) => r.kind === "lock" && r.event === "locked" && r.reasonCode === "persistUnknown")).toBe(true), { timeout: 5_000, interval: 50 });
     // F-5 — a run walked while the robot is LOCKED: D's dispatch refuses the move (MOTION_LOCKED), the robot never moves
