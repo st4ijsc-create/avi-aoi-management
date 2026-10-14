@@ -21,7 +21,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-const H = vi.hoisted(() => ({ tx: null as any, robotId: 0, lines: null as null | number[], stops: 0, auditFail: false, relockBeforeDelete: false, readError: false }));
+const H = vi.hoisted(() => ({ tx: null as any, robotId: 0, lines: null as null | number[], stops: 0, auditFail: false, relockBeforeDelete: false, readError: false, deleteThrows: null as null | "not_cleared" | "unknown" }));
 // the real guarded delete — with a NEW relock landing just before it on demand (the row read is no longer the row stored)
 vi.mock("../services/robot/robotMotionLockStore", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../services/robot/robotMotionLockStore")>();
@@ -30,6 +30,7 @@ vi.mock("../services/robot/robotMotionLockStore", async (importOriginal) => {
     readPersistedMotionLockRow: async (...a: Parameters<typeof actual.readPersistedMotionLockRow>) =>
       H.readError ? { error: "simulated read failure" } : actual.readPersistedMotionLockRow(...a),
     clearPersistedCentralMotionLock: async (...a: Parameters<typeof actual.clearPersistedCentralMotionLock>) => {
+      if (H.deleteThrows) throw new (actual as any).PersistedLockClearError(H.deleteThrows, `simulated ${H.deleteThrows}`);
       if (H.relockBeforeDelete) {
         const { sql: q } = await import("drizzle-orm");
         await H.tx.execute(q`UPDATE robot_motion_locks SET generation = generation + 1, "lockedAt" = now() + interval '1 second' WHERE "robotId" = ${a[0]}`);
@@ -142,6 +143,7 @@ beforeEach(() => {
   H.auditFail = false;
   H.relockBeforeDelete = false;
   H.readError = false;
+  H.deleteThrows = null;
   delete process.env.ROBOT_CONTROL_ENABLED; // dry-run: a motion that passes every gate ends 'simulated'
   delete process.env.EDGE_EXECUTION_ENABLED;
   delete process.env.EDGE_GATEWAY_MODE;
@@ -162,7 +164,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 12 N — clearing a persisted lock of a 
 
       // the UI reads the lock (and its generation) where it reads every lock: live.motionLock
       const listed = ((await engineer().list()) as any[]).find((r) => r.id === robot);
-      expect(listed.live).toMatchObject({ active: true, connected: true, motionLock: { locked: true, reasonCode: "ownerChanged", generation: row!.generation } });
+      expect(listed.live).toMatchObject({ active: true, connected: true, motionLock: { locked: true, reasonCode: "ownerChanged", generation: row!.generation, persisted: true } });
       expect(((await engineer().get({ id: robot })) as any).live.motionLock).toMatchObject({ locked: true, generation: row!.generation });
 
       H.lines = [line];
@@ -294,6 +296,47 @@ describe.skipIf(!onTest)("doc 81 Đợt 12 N — clearing a persisted lock of a 
     });
   });
 
+  it("★ fix 1 (M-1) — the delete FAILS (the DB refused / timed it out ⇒ rolled back) or its outcome is UNKNOWN: a 'failure' audit row with the truthful outcome follows the first; the answer says which; nothing is reported cleared", async () => {
+    for (const outcome of ["not_cleared", "unknown"] as const) {
+      await inRolledBackTx(async (tx) => {
+        const { robot } = await releasedRobot(tx, `m1${outcome[0]}`);
+        const row = await lockRow(tx, robot);
+        H.deleteThrows = outcome;
+        const e = await errOf(engineer().clearMotionLock({ robotId: robot, reason: "Dot 12 N delete fails", expectedGeneration: row!.generation }));
+        expect(e.code).toBe("INTERNAL_SERVER_ERROR");
+        expect((e.cause as any)?.appParams).toMatchObject({ operation: "clearRobotMotionLock", reason: outcome === "unknown" ? "clearOutcomeUnknown" : "clearNotApplied" });
+        const a = await audits(tx, robot);
+        expect(a.map((x) => x.status)).toEqual(["success", "failure"]);
+        expect(a[1].details).toMatchObject({ via: "persisted_row", outcome, reason: "Dot 12 N delete fails" });
+        expect(await lockRow(tx, robot)).toEqual(row);
+        H.deleteThrows = null;
+      });
+    }
+  });
+
+  it("★ fix 1 (M-3/M-4) — an INACTIVE central robot's lock row is SHOWN (persisted, with its reason) but not clearable yet (robotNotActive, nothing audited); a lockless active one is marked persisted; an edge authority's row is not shown as central's", async () => {
+    await inRolledBackTx(async (tx) => {
+      const { robot } = await releasedRobot(tx, "j");
+      const row = await lockRow(tx, robot);
+      H.robotId = 0; // no session in this process (the gateway could not attach it)
+      const listed = ((await engineer().list()) as any[]).find((r) => r.id === robot);
+      expect(listed.live).toEqual({ active: false, connected: false, motionLock: expect.objectContaining({ locked: true, reasonCode: "ownerChanged", generation: row!.generation, persisted: true }) });
+      expect(((await engineer().get({ id: robot })) as any).live.motionLock).toMatchObject({ locked: true, persisted: true });
+      const e = await errOf(engineer().clearMotionLock({ robotId: robot, reason: "Dot 12 N inactive", expectedGeneration: row!.generation }));
+      expect((e.cause as any)?.appParams).toMatchObject({ operation: "clearRobotMotionLock", reason: "robotNotActive" });
+      expect(await audits(tx, robot)).toEqual([]);
+      expect(await lockRow(tx, robot)).toEqual(row);
+      // active, lockless ⇒ the same row, marked persisted
+      H.robotId = robot;
+      expect(((await engineer().get({ id: robot })) as any).live).toMatchObject({ active: true, motionLock: { locked: true, persisted: true } });
+      // owned by an edge again ⇒ its row is the EDGE authority's: not shown as a central lock
+      H.robotId = 0;
+      const [n] = await rows(tx, sql`INSERT INTO edge_nodes (code, name, status) VALUES (${`${TAG}-Nj2`}, 'n', 'offline') RETURNING id`);
+      await tx.execute(sql`UPDATE robots SET "edgeNodeId" = ${Number(n.id)} WHERE id = ${robot}`);
+      expect(((await engineer().get({ id: robot })) as any).live).toEqual({ active: false, connected: false, motionLock: null });
+    });
+  });
+
   it("control: a lockless robot with NO row still answers motionLockUnsupported (unchanged)", async () => {
     await inRolledBackTx(async (tx) => {
       const { robot } = await releasedRobot(tx, "f");
@@ -304,4 +347,54 @@ describe.skipIf(!onTest)("doc 81 Đợt 12 N — clearing a persisted lock of a 
       expect(await audits(tx, robot)).toEqual([]);
     });
   });
+});
+
+describe.skipIf(!onTest)("doc 81 Đợt 12 N fix 1 (M-1) — a timed-out clear can NEVER commit later (statement / lock timeout inside its transaction; committed _test fixture)", () => {
+  it("★ the lock row is held by another session past the bound ⇒ the clear fails (not_cleared) — and when the holder lets go, the row is STILL there", async () => {
+    const { default: postgres } = await import("postgres");
+    const app = postgres(DB_URL, { max: 2 });
+    const holder = postgres(DB_URL, { max: 1 });
+    const code = `${TAG}-RM1`;
+    let robot = 0;
+    let release: () => void = () => undefined;
+    let held: Promise<unknown> = Promise.resolve();
+    try {
+      const [r] = await app`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled") VALUES (${code}, 'r', 'techman', 'tcp://127.0.0.1:1', true) RETURNING id`;
+      robot = Number(r.id);
+      await app`INSERT INTO robot_motion_locks ("robotId", "reasonCode", detail, generation, "lockedAt", "writerInstanceId") VALUES (${robot}, 'ownerChanged', 'm1 fixture', 4, now(), ${"00000000-0000-4000-8000-0000000000m1".replace("m1", "01")})`;
+      const read = await readPersistedMotionLockRow(robot);
+      const row = (read as { row: NonNullable<Extract<typeof read, { row: unknown }>["row"]> }).row;
+      expect(row).toMatchObject({ generation: 4, authority: "central" });
+      const gate = new Promise<void>((res) => (release = res));
+      let locked!: () => void;
+      const isLocked = new Promise<void>((res) => (locked = res));
+      held = holder.begin(async (t) => {
+        await t`SELECT 1 FROM robot_motion_locks WHERE "robotId" = ${robot} FOR UPDATE`;
+        locked();
+        await gate;
+      });
+      await isLocked;
+      const t0 = Date.now();
+      const err = await clearPersistedCentralMotionLock(robot, { generation: row.generation, lockedAtMs: row.lockedAtMs, writerInstanceId: row.writerInstanceId, ownerEpoch: row.ownerEpoch }).then(
+        () => null,
+        (e) => e,
+      );
+      expect(err).toBeTruthy();
+      expect((err as { outcome?: string }).outcome).toBe("not_cleared"); // the DB itself gave up ⇒ its transaction rolled back
+      expect(Date.now() - t0).toBeLessThan(6_000);
+      release();
+      await held;
+      await new Promise((r) => setTimeout(r, 1_500)); // a DELETE still queued on the row would land now
+      expect((await app`SELECT generation FROM robot_motion_locks WHERE "robotId" = ${robot}`).map((x) => Number(x.generation))).toEqual([4]);
+    } finally {
+      release();
+      await held.catch(() => undefined);
+      if (robot) {
+        await app`DELETE FROM robot_motion_locks WHERE "robotId" = ${robot}`.catch(() => undefined);
+        await app`DELETE FROM robots WHERE id = ${robot}`.catch(() => undefined);
+      }
+      await holder.end({ timeout: 2 }).catch(() => undefined);
+      await app.end({ timeout: 2 }).catch(() => undefined);
+    }
+  }, 30_000);
 });

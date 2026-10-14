@@ -46,6 +46,7 @@ import type { RuntimeAdapter } from "../ot/deviceAdapter";
 import { EdgeCentralClient, createEdgeAuthorizeClient, type EdgeAuthorizeClient } from "./edgeCentralClient";
 import { EdgeConfigSource, configAdaptersToRuntime } from "./edgeConfigSource";
 import { EdgeJournal } from "./edgeJournal";
+import { markSessionQuiescing } from "../robot/robotQuiesce"; // doc 81 Đợt 12 N fix 1 (R-12-d)
 import { EDGE_PROTOCOL_VERSION, type EdgeConfigSnapshot } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
 import {
@@ -781,6 +782,10 @@ async function quiesceRobot(rt: EdgeRuntime, robotId: number, why: string): Prom
   const rm = await import("../robot/robotManager");
   const robot = rm.getActiveRobot(robotId);
   if (!robot) return { ok: true, locked: false, detail: "no session here (nothing can move, nothing to close)", cause: "none" };
+  // doc 81 Đợt 12 N fix 1 (I-1, R-12-d) — QUIESCING first, before the lock and the STOP (synchronous: the STOP is not delayed).
+  // The edge motion path refuses this session from now on; a confirmed STOP (which clears the motion lock below) or a signed
+  // clear does not lift it — only the detach does.
+  markSessionQuiescing(robot.driver, why);
   let lock: string;
   let lockOk = false;
   try {
@@ -1151,6 +1156,11 @@ export async function runEdgeGateway(): Promise<void> {
   });
 
   console.log("[EdgeGateway] Ready.");
+}
+
+/** doc 81 Đợt 12 N fix 1 — test seam: ONE robot's quiesce (lock → STOP → detach), as the reconciler runs it. */
+export function _quiesceRobotForTests(robotId: number, why: string): Promise<{ ok: boolean; locked: boolean; detail: string; cause: string }> {
+  return quiesceRobot(runtime as EdgeRuntime, robotId, why);
 }
 
 /** Test-only reset of module-level loop/registry state. */

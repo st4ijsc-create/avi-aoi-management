@@ -21,6 +21,7 @@
 import { CANONICAL_STOP_JOB, ROBOT_DISABLED_REASON_CODE, ROBOT_MOTION_IN_PROGRESS, ROBOT_NO_OT_ADAPTER_ID } from "./robotCommandDispatcher";
 import { claimRobotMotionSlot, releaseRobotMotionSlot, runRobotDeviceStage } from "./robotDeviceRun";
 import { getActiveRobot } from "./robotManager";
+import { sessionQuiescing } from "./robotQuiesce"; // doc 81 Đợt 12 N fix 1 (R-12-d)
 import { isStopJob } from "./stopJob";
 import { STOP_DB_STEP_DEADLINE_MS } from "./stopJob";
 import type { RobotJobSpec } from "./robotDriver";
@@ -55,6 +56,8 @@ export interface EdgeRobotDispatchResult {
 }
 
 const timeoutMs = () => Math.max(1000, Number(process.env.ROBOT_CONTROL_TIMEOUT_MS) || 10_000);
+/** doc 81 Đợt 12 N fix 1 (R-12-d) — the robot's session is being taken down on this edge (quiesce): no motion. */
+export const ROBOT_QUIESCING = "ROBOT_QUIESCING" as const;
 const refusal = (reason: string, extra: Partial<EdgeRobotDispatchResult> = {}): EdgeRobotDispatchResult => ({ ok: false, status: "rejected", reason, stop: false, ...extra });
 
 /** R-10-bn — `{ ownerEpoch }` of the robot in the verified config (absent when the config does not name it — central then refuses, as it must) */
@@ -156,6 +159,9 @@ export async function dispatchRobotOnEdge(input: EdgeRobotDispatchInput, rt: Edg
 
   const robot = getActiveRobot(input.robotId);
   if (!robot) return refusal("ROBOT_NOT_ACTIVE");
+  // doc 81 Đợt 12 N fix 1 (I-1, R-12-d) — a session being taken down (left the node / settings changed) moves nothing more
+  const quiesce = sessionQuiescing(robot.driver);
+  if (quiesce) return refusal(ROBOT_QUIESCING, { detail: quiesce.why });
   const lock = robot.driver.getMotionLock?.();
   if (lock?.locked) return refusal("MOTION_LOCKED", { result: { motionLock: lock } });
   if (!robot.driver.isConnected()) return refusal("ROBOT_NOT_CONNECTED");
@@ -186,6 +192,12 @@ export async function dispatchRobotOnEdge(input: EdgeRobotDispatchInput, rt: Edg
     if (busy) return refusal(ROBOT_MOTION_IN_PROGRESS, { result: { inFlight: busy } });
   }
   try {
+    // R-12-d — the preflight above awaited: re-check the session (quiescing / replaced) and its lock right before the consume
+    if (getActiveRobot(input.robotId) !== robot) return refusal("ROBOT_NOT_ACTIVE");
+    const q2 = sessionQuiescing(robot.driver);
+    if (q2) return refusal(ROBOT_QUIESCING, { detail: q2.why });
+    const lock2 = robot.driver.getMotionLock?.();
+    if (lock2?.locked) return refusal("MOTION_LOCKED", { result: { motionLock: lock2 } });
     if (!edgeAuthorizationStillValid(deps, verdict.expiresAtMonoMs)) return refusal("AUTHORIZATION_INVALID", { detail: "expired" });
     const consumed = await rt.journal.consumeAuthorization({ jti: verdict.claims.jti, runId: a.runId, claimSeq: a.claimSeq, stepId: a.stepId, attempt: a.attempt });
     if (!consumed.ok) return refusal("JOURNAL_CONSUME_FAILED", { detail: consumed.reason });

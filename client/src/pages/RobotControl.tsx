@@ -22,7 +22,7 @@ import { trpc } from "@/lib/trpc";
 import { withParams } from "@/lib/engineeringDeepLink";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
-import { canClearMotionLock } from "@/lib/robotMotionLock";
+import { canClearMotionLock, motionLockClearBlocked, motionLockReasonText, motionLockTipText, type PanelMotionLock } from "@/lib/robotMotionLock";
 import EdgeResolutionPanel from "@/components/edge/EdgeResolutionPanel";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -52,7 +52,7 @@ import { toastTrpcError } from "@/lib/trpcErrors";
 type RobotLive = {
   active: boolean;
   connected: boolean;
-  motionLock: { locked: boolean; reasonCode?: string; since?: string; detail?: string; generation?: number } | null;
+  motionLock: { locked: boolean; reasonCode?: string; since?: string; detail?: string; generation?: number; persisted?: boolean } | null;
 };
 
 type RobotRow = {
@@ -99,10 +99,15 @@ function jobStatusBadge(status: string, t: (k: string, f: string) => string) {
 export default function RobotControl() {
   const { t } = useTranslation();
   // doc 81 Đợt 4 Task B4 — a lock restored as `persistUnknown` (saved lock unreadable at startup) gets a sentence, not a code.
-  const lockReason = (code?: string): string =>
-    code === "persistUnknown"
-      ? t("robot.motionLock.reason.persistUnknown", "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn")
-      : (code ?? "link loss");
+  // doc 81 Đợt 12 N fix 1 (M-4) — the reason in words (vi/en/zh): persistUnknown, and ownerChanged told apart by WHO can clear it
+  // (a lock held only in the DB is not cleared by a STOP); any other code as is.
+  const lockReason = (lock: PanelMotionLock): string => {
+    if (lock?.reasonCode === "persistUnknown") {
+      return t("robot.motionLock.reason.persistUnknown", "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn");
+    }
+    const x = motionLockReasonText(lock);
+    return x ? t(x.key, x.defaultValue) : (lock?.reasonCode ?? "link loss");
+  };
   const [, setLocation] = useLocation();
   const search = useSearch();
   const { hasPermission, isAdmin } = usePermissions();
@@ -344,9 +349,9 @@ export default function RobotControl() {
                         )}
                         {r.live?.motionLock?.locked && (
                           <span
-                            title={t("robot.motionLock.tip", {
-                              defaultValue: "Chuyển động bị khoá sau khi mất kết nối / kết cục lệnh không rõ ({{reason}}, từ {{since}}). Chỉ một lệnh DỪNG được robot xác nhận hoặc thao tác gỡ khoá có kiểm soát mới mở lại.",
-                              reason: lockReason(r.live.motionLock.reasonCode),
+                            title={t(motionLockTipText(r.live.motionLock).key, {
+                              defaultValue: motionLockTipText(r.live.motionLock).defaultValue,
+                              reason: lockReason(r.live.motionLock),
                               since: fmt(r.live.motionLock.since),
                             })}
                           >
@@ -356,6 +361,11 @@ export default function RobotControl() {
                             />
                           </span>
                         )}
+                        {/* doc 81 Đợt 12 N fix 1 (M-3) — a locked robot not loaded by the gateway: why it cannot be cleared yet */}
+                        {(() => {
+                          const blocked = motionLockClearBlocked(r.live);
+                          return blocked ? <span className="max-w-[16rem] text-[11px] text-muted-foreground" data-testid="robot-lock-inactive">{t(blocked.key, blocked.defaultValue)}</span> : null;
+                        })()}
                       </div>
                     </TableCell>
                     <TableCell className="text-xs">{fmt(r.lastSeenAt)}</TableCell>
@@ -364,9 +374,17 @@ export default function RobotControl() {
                         {r.live?.motionLock?.locked && (
                           <Button
                             size="sm" variant="destructive" className="h-7"
-                            disabled={!canClearLock || clearLockM.isPending}
+                            disabled={!canClearLock || clearLockM.isPending || motionLockClearBlocked(r.live) !== null}
                             onClick={() => { setClearTarget(r); setClearReason(""); }}
-                            title={!canClearLock ? t("robot.motionLock.roleRequired", "Cần vai admin/supervisor/engineer và quyền điều khiển máy (machine_control)") : t("robot.motionLock.badge", "Khoá chuyển động")}
+                            title={
+                              !canClearLock
+                                ? t("robot.motionLock.roleRequired", "Cần vai admin/supervisor/engineer và quyền điều khiển máy (machine_control)")
+                                : (() => {
+                                    // doc 81 Đợt 12 N fix 1 (M-3) — an inactive robot: say why the clear cannot act yet
+                                    const blocked = motionLockClearBlocked(r.live);
+                                    return blocked ? t(blocked.key, blocked.defaultValue) : t("robot.motionLock.badge", "Khoá chuyển động");
+                                  })()
+                            }
                           >
                             <Unlock className="mr-1 h-3.5 w-3.5" />{t("robot.motionLock.clear", "Gỡ khoá")}
                           </Button>
@@ -564,7 +582,7 @@ export default function RobotControl() {
               <AlertDialogDescription>
                 {t("robot.motionLock.clearDesc", {
                   defaultValue: "Khoá được đặt vì {{reason}} (từ {{since}}). Trước khi gỡ, hãy xác nhận tại chỗ rằng robot đã dừng và khu vực an toàn. Thao tác này được ghi vào nhật ký kiểm toán kèm lý do của bạn; không có byte nào được gửi tới robot.",
-                  reason: lockReason(clearTarget?.live?.motionLock?.reasonCode),
+                  reason: lockReason(clearTarget?.live?.motionLock),
                   since: fmt(clearTarget?.live?.motionLock?.since),
                 })}
               </AlertDialogDescription>

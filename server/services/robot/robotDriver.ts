@@ -138,6 +138,12 @@ export interface MotionLockState {
    * confirmed STOP does not clear it; only the audited operator clear does.
    */
   operatorHold?: true;
+  /**
+   * doc 81 Đợt 12 N fix 1 (M-3 / M-4) — DISPLAY ONLY (robot.list / robot.get `live`): this is the robot's PERSISTED central lock
+   * row, held by no live lock of this process (the robot is inactive here, or its driver has no motion lock). A STOP does not
+   * clear it; only the audited robot.clearMotionLock does, and only once the robot is active in this process.
+   */
+  persisted?: true;
 }
 
 /** doc 81 Đợt 10 final fix wave (M-5) — the reason code of a lock an OPERATOR asked for (central console / edge `lock` command). */

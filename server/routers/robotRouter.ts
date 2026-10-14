@@ -39,7 +39,9 @@ export interface RobotLiveState {
 }
 function robotLiveState(robotId: number, persisted?: ReadonlyMap<number, MotionLockState>): RobotLiveState {
   const rt = getActiveRobot(robotId);
-  if (!rt) return { active: false, connected: false, motionLock: null };
+  // doc 81 Đợt 12 N fix 1 (M-3) — no session here: its PERSISTED central lock row (if any) is still shown, with its reason, so
+  // the operator sees why the robot cannot move — and that it cannot be cleared before the gateway attaches it
+  if (!rt) return { active: false, connected: false, motionLock: persisted?.get(robotId) ?? null };
   let connected = false;
   try {
     connected = rt.driver.isConnected();
@@ -52,21 +54,20 @@ function robotLiveState(robotId: number, persisted?: ReadonlyMap<number, MotionL
 }
 
 /**
- * doc 81 Đợt 12 N — the persisted lock rows of the active robots whose driver has no motion lock (one batched, bounded read;
- * only when there is such a robot). A failed read shows nothing (as before) — the motion gate still refuses on the row.
+ * doc 81 Đợt 12 N (+ fix 1 M-3/M-4) — the persisted CENTRAL lock rows of the robots with no live lock in this process (inactive
+ * here, or a lockless driver): one batched, bounded read, only when there is such a robot. Marked `persisted` (display: a STOP
+ * does not clear it). A failed read shows nothing (as before) — the motion gate still refuses on the row.
  */
 async function persistedLocksOfLocklessRobots(robotIds: number[]): Promise<Map<number, MotionLockState>> {
   const out = new Map<number, MotionLockState>();
   const ids = robotIds.filter((id) => {
     const rt = getActiveRobot(id);
-    return !!rt && typeof rt.driver.getMotionLock !== "function";
+    return !rt || typeof rt.driver.getMotionLock !== "function";
   });
   if (ids.length === 0) return out;
-  const { loadMotionLocks } = await import("../services/robot/robotMotionLockStore");
-  const load = await loadMotionLocks(ids);
-  if (!load.ok) return out;
-  for (const [id, row] of load.rows) {
-    out.set(id, { locked: true, reasonCode: row.reasonCode, ...(row.detail != null ? { detail: row.detail } : {}), since: row.since, generation: row.generation });
+  const { loadCentralPersistedLocks } = await import("../services/robot/robotMotionLockStore");
+  for (const [id, row] of await loadCentralPersistedLocks(ids)) {
+    out.set(id, { locked: true, reasonCode: row.reasonCode, ...(row.detail != null ? { detail: row.detail } : {}), since: row.since, generation: row.generation, persisted: true });
   }
   return out;
 }
@@ -122,7 +123,28 @@ async function clearPersistedLockOfLocklessDriver(a: {
   };
   // Audit FIRST: if the trail cannot be written the row stays.
   await createAuditLog({ ...auditBase, details: { reason: input.reason, vendor: rt.vendor, via: "persisted_row", before, expectedGeneration: input.expectedGeneration } });
-  const deleted = await clearPersistedCentralMotionLock(input.robotId, { generation: row.generation, lockedAtMs: row.lockedAtMs, writerInstanceId: row.writerInstanceId, ownerEpoch: row.ownerEpoch });
+  let deleted: number;
+  try {
+    deleted = await clearPersistedCentralMotionLock(input.robotId, { generation: row.generation, lockedAtMs: row.lockedAtMs, writerInstanceId: row.writerInstanceId, ownerEpoch: row.ownerEpoch });
+  } catch (err) {
+    // fix 1 (M-1) — the delete did not land (the DB refused / timed it out ⇒ rolled back) or its outcome is unknown: the trail
+    // says so after the up-front row, and the operator is told exactly that (never "cleared")
+    const outcome = (err as { outcome?: unknown })?.outcome === "not_cleared" ? "not_cleared" : "unknown";
+    const why = String((err as Error)?.message ?? err).slice(0, 300);
+    try {
+      await createAuditLog({ ...auditBase, status: "failure", details: { reason: input.reason, vendor: rt.vendor, via: "persisted_row", before, expectedGeneration: input.expectedGeneration, outcome, error: why } });
+    } catch (auditErr) {
+      console.error(`[Robot] audit of a failed persisted motion-lock clear failed (robot ${input.robotId}):`, (auditErr as Error)?.message ?? auditErr);
+    }
+    throw appError(
+      "INTERNAL_SERVER_ERROR",
+      "OPERATION_FAILED",
+      { operation: "clearRobotMotionLock", reason: outcome === "not_cleared" ? "clearNotApplied" : "clearOutcomeUnknown" },
+      outcome === "not_cleared"
+        ? `the motion lock of robot ${input.robotId} was NOT cleared: the database refused or timed out the clear (${why}) — it is still locked; try again`
+        : `the outcome of clearing the motion lock of robot ${input.robotId} is UNKNOWN (${why}) — re-read the robot state before acting`,
+    );
+  }
   if (deleted !== 1) {
     // the row changed between the read and the delete (a new relock / another writer / a new owner): nothing was cleared
     const now = await readPersistedMotionLockRow(input.robotId);

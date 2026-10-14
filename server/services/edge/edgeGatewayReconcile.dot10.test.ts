@@ -86,16 +86,15 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
   it("★ no config ⇒ unconfigured; late config starts devices; release: lock + STOP first, a failed STOP keeps the device attached (truthful alert) and is retried; adapters get their pinned STOP", async () => {
     const { SimRobotDriver } = await import("../robot/drivers/simRobotDriver");
     const { StubDriver } = await import("../ot/drivers/stubDriver");
-    const { MotionLock } = await import("../robot/robotDriver");
-    type ML = InstanceType<typeof MotionLock>;
-    (SimRobotDriver.prototype as unknown as { motionLockController: () => ML }).motionLockController = function (this: { _ml?: ML }) {
-      return (this._ml ??= new MotionLock());
-    };
+    // doc 81 Đợt 12 N fix 1 (M-2) — the PRODUCT sim lock (no prototype patch); a STOP that succeeds goes through the product
+    // driver, so its confirmed-STOP clear (and the quiesce's re-lock + quiescing state) are exercised
     const order: string[] = [];
     let robotStopFails = false;
-    vi.spyOn(SimRobotDriver.prototype, "runJob").mockImplementation(async (job: { jobType: string }) => {
+    const realRunJob = SimRobotDriver.prototype.runJob;
+    vi.spyOn(SimRobotDriver.prototype, "runJob").mockImplementation(async function (this: InstanceType<typeof SimRobotDriver>, job: { jobType: string }) {
       order.push(`robot:${job.jobType}${robotStopFails ? ":fail" : ""}`);
-      return robotStopFails ? { ok: false, status: "failed" as const, error: "controller rejected" } : { ok: true, status: "done" as const };
+      if (robotStopFails) return { ok: false, status: "failed" as const, error: "controller rejected" };
+      return job.jobType === "abort" ? realRunJob.call(this, job as never) : { ok: true, status: "done" as const };
     });
     let otStopFails = true;
     const writes = vi.spyOn(StubDriver.prototype, "writeTags").mockImplementation(async (w: Array<{ tagKey: string }>) => {
@@ -139,6 +138,8 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     const robot13 = rm.getActiveRobot(13)!; // the HEALTHY robot: its session must never be cycled below
     expect((await gw.getEdgeGatewayHealth()).status).not.toBe("unconfigured");
     const robot12 = rm.getActiveRobot(12)!;
+    // doc 81 Đợt 12 N fix 1 (M-2) — ONE lock: the reconciler's lock is the product driver's own (no split-brain test double)
+    expect((robot12.driver as unknown as { motionLock: unknown }).motionLock).toBe(robot12.driver.motionLockController!());
 
     // ── ownership change: robot 12 AND adapter 21 leave; the SAME pull carries a central STOP for robot 12; the robot's
     //    release STOP fails at first, the adapter's pinned STOP write fails at first
@@ -153,6 +154,9 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     await vi.waitFor(() => expect(order).toContain("robot:abort"), { timeout: 5_000, interval: 5 });
     robotStopFails = true; // the command STOP went; the release STOP that follows the refresh fails
     await firstTick;
+    // Đợt 12 N fix 1 (M-2) — central holds the ack now: it stops re-delivering request 140 (a re-delivery is re-acked by design on
+    // a 2 s back-off; the product sim STOP's 200 ms run made this flow outlast that back-off)
+    central.commands = [];
     await gw.reconcileDevices(rt, "test barrier");
     expect(order.slice(0, 2)).toEqual(["tick", "robot:abort"]); // the central STOP ran FIRST (fast path)
     expect(order).toContain("robot:abort:fail");
@@ -185,7 +189,9 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     await vi.waitFor(() => expect(om.getActiveDriver(21)).toBeUndefined(), { timeout: 5_000, interval: 50 });
     expect(om.getActiveDriver(22)).toBeDefined(); // the stale-connection adapter stays attached (fail-closed)
     const after = await alerts();
-    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*locked \(generation \d+\), STOP done, session closed/.test(a))).toBe(true);
+    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*locked \(generation \d+[^)]*\), STOP done, session closed/.test(a))).toBe(true);
+    // M-2 — the confirmed STOP cleared the product lock, so the quiesce took it again before the detach (Đợt 12 N)
+    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*re-taken after the STOP/.test(a))).toBe(true);
     expect(after.some((a) => /^EDGE_DEVICE_RELEASED: adapter 21 .*pinned STOP \w+ \(run\), session closed/.test(a))).toBe(true);
     expect(writes).toHaveBeenCalled();
     expect(central.received.locksEvents.filter((r) => r.kind === "command_ack" && r.requestId === 140).map((r) => r.outcome)).toEqual(["done"]);
@@ -321,7 +327,7 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     // 15 (not wanted): released through the checked path — locked, STOPped, detached
     expect(rm.getActiveRobot(15)).toBeUndefined();
     const after = (await anomalies()).slice(before);
-    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 15 .*locked \(generation \d+\), STOP done, session closed/.test(a))).toBe(true);
+    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 15 .*locked \(generation \d+[^)]*\), STOP done, session closed/.test(a))).toBe(true);
     // 16 (wanted): quiesced + re-attached from the verified row — tracked, never a false "NOT attached" alert
     expect(rm.getActiveRobot(16)).toBeDefined();
     expect(rm.getActiveRobot(16)).not.toBe(s16);

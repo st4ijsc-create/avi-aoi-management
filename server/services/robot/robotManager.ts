@@ -5,6 +5,7 @@
  * per-robot try/catch connect + subscribeState(ingest). A vendor scaffold whose
  * connect throws is logged "skipped" and never crashes the process.
  */
+import { endSessionQuiescing, sessionQuiescing } from "./robotQuiesce"; // doc 81 Đợt 12 N fix 1 (R-12-d)
 import type { MotionLock, RobotState, RobotStateHandle } from "./robotDriver";
 import type { RuntimeRobot, RobotLoadScope } from "./robotAdapter";
 
@@ -353,6 +354,11 @@ export async function attachEdgeRobot(row: EdgeRobotConfigRow, extras?: EdgeRobo
   }
 }
 
+/** doc 81 Đợt 12 N fix 1 (R-12-d) — the quiescing state of robot `robotId`'s live session (robotQuiesce.ts), or null. */
+export function robotQuiescing(robotId: number): { since: string; why: string } | null {
+  return sessionQuiescing(active.find((a) => a.robot.id === robotId)?.robot.driver);
+}
+
 export async function detachEdgeRobot(robotId: number): Promise<EdgeDetachResult> {
   try {
     if (!edgeStartOpts && !active.some((a) => a.robot.id === robotId)) return { ok: false, reason: "not_edge" };
@@ -412,6 +418,7 @@ export async function detachRobot(robotId: number): Promise<boolean> {
   const i = active.findIndex((a) => a.robot.id === robotId);
   if (i < 0) return false;
   const [entry] = active.splice(i, 1);
+  endSessionQuiescing(entry.robot.driver); // R-12-d — the session is gone: its quiescing state with it
   const { withDeadline } = await import("../ot/drivers/boundedClose");
   await withDeadline(Promise.resolve().then(() => entry.handle.close()), 5_000, `robot ${robotId} state close`).catch(() => undefined);
   await withDeadline(Promise.resolve().then(() => entry.robot.driver.disconnect()), 5_000, `robot ${robotId} disconnect`).catch(() => undefined);
