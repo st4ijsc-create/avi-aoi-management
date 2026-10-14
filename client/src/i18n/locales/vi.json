@@ -4440,7 +4440,8 @@
     "DEVICE_UNREACHABLE": "Không kết nối được tới thiết bị {{entity}}. Hãy kiểm tra nguồn, dây mạng và địa chỉ IP.",
     "DEVICE_PROTOCOL_UNSUPPORTED": "Bản dựng này chưa hỗ trợ giao thức {{entity}}.",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG ({{stopKey}}) — gửi lại nếu cần.",
-    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần."
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần.",
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "Lệnh dừng này không phải DỪNG ghim đã xác minh và đã có quá nhiều lệnh như vậy đang chờ cho thiết bị này — lệnh bị từ chối, không gửi gì. Hãy dùng DỪNG ghim (hoặc nút E-STOP của máy)."
   },
   "export": {
     "reportMenu": {

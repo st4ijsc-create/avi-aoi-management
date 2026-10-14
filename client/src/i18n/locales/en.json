@@ -4448,7 +4448,8 @@
     "DEVICE_UNREACHABLE": "Could not reach the {{entity}} device. Check power, cabling and IP address.",
     "DEVICE_PROTOCOL_UNSUPPORTED": "This build does not support the {{entity}} protocol.",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command ({{stopKey}}) was issued — resend it if still needed.",
-    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed."
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed.",
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "This stop is not a verified (pinned) STOP and too many such stops are already waiting for this device — it was refused and nothing was sent. Use the pinned STOP (or the machine's E-STOP)."
   },
   "export": {
     "reportMenu": {
