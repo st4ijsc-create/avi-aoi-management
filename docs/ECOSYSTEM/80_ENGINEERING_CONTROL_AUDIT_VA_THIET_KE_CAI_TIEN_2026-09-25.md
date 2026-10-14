@@ -373,3 +373,7 @@ Danh tính người cầm khoá API (mig 0369), edge chạy workflow có khoá n
 ## 24. Đợt 10 (2026-10-12 → 10-13) — xem doc 81 §18
 
 Edge không còn đăng nhập DB trung tâm: trung tâm là nơi ghi duy nhất, edge chỉ điều khiển thiết bị của nó dưới uỷ quyền ký một lần theo từng bước, STOP không bao giờ bị chặn (mig 0372–0376, chỉ `_test`). **Áp dev theo runbook `docs/EDGE_GATEWAY.md` §8.13; edge execution vẫn tắt — doc 81 §18.**
+
+## 25. Đợt 11 (2026-10-14) — xem doc 81 §19
+
+Cảnh báo dung lượng bảng WORM (giữ vĩnh viễn), mig 0377 (ghim/định danh hàm + một thứ tự khoá STOP, chỉ `_test`), 6 census đỏ xanh, đo hàng đợi ghi OT và đơn giản hoá đường STOP khi bật cờ (bộ đếm STOP huỷ ghi phát trước STOP), script bench safety-PLC (máy chưa có OpenPLC). **Sẵn sàng gộp; `OT_CMD_SERIALIZE_ENABLED` vẫn tắt tới khi chủ dự án bật — doc 81 §19.**
