@@ -102,6 +102,48 @@ describe.skipIf(!DB_URL)("Đợt 10 F2 round 2 — N7 / N8 / D14 on the edge-nod
     await sql`UPDATE users SET "loginAttempts" = 0, "lockedUntil" = NULL WHERE id = ${ids.tfa}`;
   });
 
+  it("★ R-11-p: register-node creates protocolVersion 2 by default; --protocol 1 refused (exit 2, nothing written); the tRPC registerNode creates v2 too", async () => {
+    const node = `${DAU}-v2`;
+    const base = ["register-node", "--node", node, "--factory", `${DAU}-F`, "--actor", `${DAU}-a`, "--reason", "v2 default"];
+    const refused = await cli([...base, "--protocol", "1"], pipe(PW.admin));
+    expect(refused.code).toBe(2);
+    expect(refused.err).toMatch(/v1 nodes cannot execute/);
+    expect((await sql`SELECT count(*)::int AS n FROM edge_nodes WHERE code = ${node}`)[0].n).toBe(0);
+    const ok = await cli(base, pipe(PW.admin));
+    expect(ok.code, ok.err).toBe(0);
+    expect((await sql`SELECT "protocolVersion" AS v FROM edge_nodes WHERE code = ${node}`)[0].v).toBe(2);
+    const prev = process.env.EDGE_RUNTIME_ENABLED;
+    process.env.EDGE_RUNTIME_ENABLED = "true";
+    try {
+      const { registerNode } = await import("../server/services/edge/edgeCoordinator");
+      const r = await registerNode({ code: `${DAU}-trpc`, factoryCode: `${DAU}-F` });
+      expect(r.ok).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.EDGE_RUNTIME_ENABLED;
+      else process.env.EDGE_RUNTIME_ENABLED = prev;
+    }
+    expect((await sql`SELECT "protocolVersion" AS v FROM edge_nodes WHERE code = ${`${DAU}-trpc`}`)[0].v).toBe(2);
+  });
+
+  it("★ R-11-p: re-registering an existing v1 node upgrades it to v2 ONLY with an explicit --protocol 2, audited; without it stays v1", async () => {
+    const node = `${DAU}-up`;
+    await sql`INSERT INTO edge_nodes (code, name, "factoryCode", "assignedLineCodes", status) VALUES (${node}, 'old', ${`${DAU}-F`}, ${sql.array([])}, 'offline')`;
+    expect((await sql`SELECT "protocolVersion" AS v FROM edge_nodes WHERE code = ${node}`)[0].v).toBe(1);
+    const base = ["register-node", "--node", node, "--factory", `${DAU}-F`, "--actor", `${DAU}-a`];
+    const plain = await cli([...base, "--reason", "no flag"], pipe(PW.admin));
+    expect(plain.code, plain.err).toBe(0);
+    expect(plain.out).toMatch(/unchanged/);
+    expect((await sql`SELECT "protocolVersion" AS v FROM edge_nodes WHERE code = ${node}`)[0].v).toBe(1);
+    const up = await cli([...base, "--protocol", "2", "--reason", "cutover"], pipe(PW.admin));
+    expect(up.code, up.err).toBe(0);
+    expect(up.out).toMatch(/upgraded.*v2/i);
+    expect((await sql`SELECT "protocolVersion" AS v FROM edge_nodes WHERE code = ${node}`)[0].v).toBe(2);
+    const aud = await sql`SELECT status, details FROM audit_logs WHERE action = 'EDGE_NODE_REGISTER' AND "entityName" = ${node} ORDER BY id`;
+    expect(aud.map((a) => (typeof a.details === "string" ? JSON.parse(a.details) : a.details).outcome)).toEqual(["upgradedToV2"]);
+    const again = await cli([...base, "--protocol", "2", "--reason", "again"], pipe(PW.admin));
+    expect(again.out).toMatch(/unchanged/);
+  });
+
   it("★ D14: register-node — admin only, factory must exist, lines must be the factory's, audited; idempotent; a different factory refused", async () => {
     const node = `${DAU}-node`;
     const eng = await cli(["register-node", "--node", node, "--factory", `${DAU}-F`, "--actor", `${DAU}-e`, "--reason", "engineer"], pipe(PW.eng));

@@ -74,7 +74,7 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
   const reason = argOf(argv, "--reason") ?? "";
   const outFile = argOf(argv, "--out");
   if (!["issue", "rotate", "revoke", "list", "register-node"].includes(cmd ?? "") || !node) {
-    io.err("usage: edge-node-credential.ts <issue|rotate|revoke|list|register-node> --node CODE [--actor ADMIN_USERNAME --reason TEXT] [--out FILE | --bundle DIR --keyring-dir DIR [--central-url URL] [--edge-dir PATH] [--journal-max-bytes N]] | register-node --node CODE --factory CODE [--lines L1,L2] [--name TEXT] --actor ADMIN --reason TEXT");
+    io.err("usage: edge-node-credential.ts <issue|rotate|revoke|list|register-node> --node CODE [--actor ADMIN_USERNAME --reason TEXT] [--out FILE | --bundle DIR --keyring-dir DIR [--central-url URL] [--edge-dir PATH] [--journal-max-bytes N]] | register-node --node CODE --factory CODE [--lines L1,L2] [--name TEXT] [--protocol 2] --actor ADMIN --reason TEXT");
     return 2;
   }
   if (argv.some((a) => /^--(actor-user-id|actor-id|user-id|by)(=|$)/i.test(a))) {
@@ -101,6 +101,16 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
   const lineCodes = (argOf(argv, "--lines") ?? "").split(",").map((l) => l.trim()).filter(Boolean);
   if (cmd === "register-node" && (!factory || factory.startsWith("--"))) {
     io.err("register-node needs --factory CODE (a node without a factory is given no device and no run)");
+    return 2;
+  }
+  // R-11-p — --protocol: only 2 is accepted (v1 nodes cannot execute since Đợt 10); 2 on an existing v1 node upgrades it
+  const protoArg = argOf(argv, "--protocol");
+  if (protoArg !== undefined && cmd !== "register-node") {
+    io.err("--protocol is for register-node only");
+    return 2;
+  }
+  if (protoArg !== undefined && protoArg.trim() !== "2") {
+    io.err(`--protocol ${protoArg}: refused — v1 nodes cannot execute since Đợt 10 (R-10-l); nodes are registered on protocol 2 (the default)`);
     return 2;
   }
   // ── doc 81 Đợt 10 F2 — the node bundle: validated and its pin BUILT before anything else (no write, no DB) ─────────────
@@ -167,7 +177,11 @@ export async function runEdgeCredentialCli(argv: string[], io: CliIo): Promise<n
       io.out(`admin verified: ${verified.name} (user ${verified.userId})`);
     }
     if (cmd === "register-node") {
-      const r = await m.registerEdgeNode({ nodeCode: node, factoryCode: factory, lineCodes, name: argOf(argv, "--name") ?? null, actorUserId: actor, reason });
+      const r = await m.registerEdgeNode({ nodeCode: node, factoryCode: factory, lineCodes, name: argOf(argv, "--name") ?? null, actorUserId: actor, reason, protocolVersion: protoArg !== undefined ? 2 : undefined });
+      if (r.upgraded) {
+        io.out(`edge node "${node}" (id ${r.nodeId}) upgraded from protocol v1 to v2 — audited`);
+        return 0;
+      }
       io.out(r.created ? `registered edge node "${node}" (id ${r.nodeId}) in factory ${factory}${lineCodes.length ? `, lines ${lineCodes.join(",")}` : ""} — issue its credential + bundle next` : `edge node "${node}" (id ${r.nodeId}) is already registered with exactly this factory and lines — unchanged`);
       return 0;
     }

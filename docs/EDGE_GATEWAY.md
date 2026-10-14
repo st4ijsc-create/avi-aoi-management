@@ -252,6 +252,7 @@ mode 700, readable by central's service account.
    The factory must exist and every line must be a production line OF THAT FACTORY; a node without a factory is given no
    device and no run. Re-running with the same factory / lines is a no-op ("unchanged"); a different factory or lines is
    refused (release the node's devices first, then change it deliberately). Audited `EDGE_NODE_REGISTER` (success / failure).
+   A node is created on edge protocol v2 (the tRPC `registerNode` too); `--protocol 1` is refused (v1 nodes cannot execute since Đợt 10); re-running on an existing v1 node with an explicit `--protocol 2` upgrades it (audited `upgradedToV2`). Central needs `EDGE_SIGNING_KEY_FILE` in its environment to sign anything (§8.2).
 
    **How the operator CLIs take the admin's secret (N7):** a hidden prompt on a terminal; without a terminal, PIPED STDIN —
    line 1 the password, line 2 the current 2FA code (`printf '%s

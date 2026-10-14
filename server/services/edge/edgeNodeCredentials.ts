@@ -191,7 +191,7 @@ async function recordCliTotpFailure(user: { id: number; name?: string | null; lo
  * ⇒ "unchanged" (idempotent); with a different one ⇒ refused (a factory / line change of a node that may own devices is not made
  * here — release its devices first, then change it deliberately). Audited (EDGE_NODE_REGISTER, success / failure).
  */
-export async function registerEdgeNode(input: { nodeCode: string; factoryCode: string; lineCodes: string[]; name?: string | null; actorUserId: number; reason: string }): Promise<{ nodeId: number; created: boolean }> {
+export async function registerEdgeNode(input: { nodeCode: string; factoryCode: string; lineCodes: string[]; name?: string | null; actorUserId: number; reason: string; protocolVersion?: number }): Promise<{ nodeId: number; created: boolean; upgraded?: boolean }> {
   const reason = String(input.reason ?? "").trim();
   if (reason.length < 3) throw new EdgeCredentialError("reasonRequired", "A reason (at least 3 characters) is required.");
   const code = String(input.nodeCode ?? "").trim();
@@ -199,6 +199,8 @@ export async function registerEdgeNode(input: { nodeCode: string; factoryCode: s
   const lines = [...new Set((input.lineCodes ?? []).map((l) => String(l).trim()).filter(Boolean))].sort();
   if (!/^[A-Za-z0-9._-]{1,128}$/.test(code)) throw new EdgeCredentialError("invalidInput", "The node code must be 1–128 characters of letters, digits, '.', '_' or '-'.");
   if (!factoryCode) throw new EdgeCredentialError("invalidInput", "A factory code is required (a node without a factory is given no device and no run).");
+  // doc 81 Đợt 11 R-11-p — a node is created on protocol v2; v1 cannot execute since Đợt 10 (R-10-l); an EXPLICIT protocolVersion 2 upgrades an existing v1 node
+  if (input.protocolVersion !== undefined && input.protocolVersion !== 2) throw new EdgeCredentialError("invalidInput", "Protocol 1 is refused: v1 nodes cannot execute since Đợt 10 (R-10-l) — nodes are registered on protocol 2.");
   const d = await db();
   const [actor] = await d.select({ id: users.id, role: users.role, isActive: users.isActive, name: users.name }).from(users).where(eq(users.id, Number(input.actorUserId))).limit(1);
   if (!actor || actor.isActive === false || String(actor.role) !== "admin") throw new EdgeCredentialError("notAdmin", "Only an active admin user may register an edge node.");
@@ -232,10 +234,18 @@ export async function registerEdgeNode(input: { nodeCode: string; factoryCode: s
       await auditRow("failure", { outcome: "registeredDifferently", nodeId: existing.id });
       throw new EdgeCredentialError("activeExists", `Edge node "${code}" is already registered (factory ${existing.factoryCode ?? "none"}, lines ${(existing.lines ?? []).join(",") || "none"}) — not changed here.`);
     }
+    if (input.protocolVersion === 2) {
+      const upd = rowsOf(await d.execute(q`UPDATE public.edge_nodes SET "protocolVersion" = 2 WHERE id = ${existing.id} AND "protocolVersion" = 1 RETURNING id`));
+      if (upd.length === 1) {
+        await auditRow("success", { outcome: "upgradedToV2", nodeId: existing.id, from: 1, to: 2 });
+        return { nodeId: existing.id, created: false, upgraded: true };
+      }
+    }
     return { nodeId: existing.id, created: false };
   }
   const [ins] = await d.insert(edgeNodes).values({ code, name: (input.name ?? "").trim() || code, factoryCode, assignedLineCodes: lines, status: "offline" }).returning({ id: edgeNodes.id });
-  await auditRow("success", { outcome: "created", nodeId: ins.id });
+  await d.execute(q`UPDATE public.edge_nodes SET "protocolVersion" = 2 WHERE id = ${ins.id}`);
+  await auditRow("success", { outcome: "created", nodeId: ins.id, protocolVersion: 2 });
   return { nodeId: ins.id, created: true };
 }
 

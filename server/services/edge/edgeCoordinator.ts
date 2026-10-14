@@ -165,6 +165,9 @@ export async function registerNode(input: RegisterNodeInput): Promise<EdgeResult
         lastHeartbeatAt: now,
       })
       .returning();
+    // doc 81 Đợt 11 R-11-p — a node created here (admin-only tRPC) is on protocol v2 (v1 cannot execute since Đợt 10)
+    const { sql: rawSql } = await import("drizzle-orm");
+    await d.execute(rawSql`UPDATE public.edge_nodes SET "protocolVersion" = 2 WHERE id = ${row.id}`);
     return { ok: true, enabled: true, data: row };
   } catch (err) {
     // data-raw-ok: `registerNode` được NODE BIÊN headless gọi qua `/api/v1/edge/sync` bằng
