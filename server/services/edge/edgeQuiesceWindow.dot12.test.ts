@@ -80,16 +80,25 @@ function auth(stepId: string): { authorization: EdgeStepAuthorization; run: { ru
 
 /** the journal; `onStopRecord` runs INSIDE the STOP's journal write (the window between the driver's STOP and the re-lock) */
 let onStopRecord: null | (() => Promise<void>) = null;
+/** R-12-e I-2 — runs INSIDE a motion's journal consume (the fsync, up to 5 s on a real journal): the consume resolves when it does */
+let onConsume: null | (() => Promise<void>) = null;
 const consumed: string[] = [];
+const runRecords: Array<Record<string, unknown>> = [];
 const journal: EdgeDispatchJournal = {
   async consumeAuthorization(c) {
     if (consumed.includes(c.jti)) return { ok: false, reason: "jti_consumed" };
     consumed.push(c.jti);
+    if (onConsume) {
+      const f = onConsume;
+      onConsume = null;
+      await f();
+    }
     return { ok: true };
   },
   isJtiConsumed: (jti) => consumed.includes(jti),
   admitNonStop: () => true,
-  async appendRun() {
+  async appendRun(_runId, _claimSeq, rec) {
+    runRecords.push(rec as Record<string, unknown>);
     return { seq: 1, durable: true };
   },
   async appendEvent(rec) {
@@ -135,12 +144,14 @@ afterAll(async () => {
 });
 
 /** attach robot 12 on this edge (the product sim driver), its lock persisted to a no-op sink, starting UNLOCKED */
+/** what the lock's persistence sink was told (the journal / row of the lock) */
+const persisted: string[] = [];
 async function attach() {
   const rm = await import("../robot/robotManager");
   const { attachEdgeMotionLockPersistence } = await import("../robot/robotMotionLockStore");
   const r = await rm.attachEdgeRobot(ROW as never, {
     attachLock: (robot, lock) => {
-      attachEdgeMotionLockPersistence(robot.id, lock, { locked: null, generationBase: 0 }, { locked: () => undefined, cleared: () => undefined });
+      attachEdgeMotionLockPersistence(robot.id, lock, { locked: null, generationBase: 0 }, { locked: () => void persisted.push("locked"), cleared: () => void persisted.push("cleared") });
     },
   });
   expect(r).toMatchObject({ ok: true });
@@ -159,6 +170,7 @@ function counted(robot: { driver: { runJob: (j: RobotJobSpec) => Promise<unknown
 
 beforeEach(async () => {
   onStopRecord = null;
+  onConsume = null;
   H.duringPreflight = null;
   const rm = await import("../robot/robotManager");
   if (rm.getActiveRobot(12)) await rm.detachRobot(12);
@@ -189,7 +201,8 @@ describe("doc 81 Đợt 12 N fix 1 (I-1, R-12-d) — the edge quiesce window", (
       safetyReadsInWindow = H.safetyReads - r0;
     };
     const q = await _quiesceRobotForTests(12, "reconfigured (test)");
-    expect(lockInWindow).toBe(false); // the window is real: the STOP cleared the raw lock
+    // R-12-e I-2 — a confirmed STOP no longer clears the lock a quiesce took (was: false, the STOP cleared the raw lock)
+    expect(lockInWindow).toBe(true);
     expect(inWindow).toMatchObject({ ok: false, status: "rejected", reason: "ROBOT_QUIESCING" });
     expect(jobs).toEqual(["abort"]); // the STOP reached the robot; the motion never did
     expect(consumed).not.toContain(`2b8f3c1e-5d7a-4c1b-9a2e-${String(jtiN).padStart(12, "0")}`); // its authorisation unused
@@ -231,6 +244,116 @@ describe("doc 81 Đợt 12 N fix 1 (I-1, R-12-d) — the edge quiesce window", (
     await attach();
     expect(rm.robotQuiescing(12)).toBeNull();
     expect(await dispatchRobotOnEdge({ robotId: 12, job: MOVE, ...auth("n1") })).toMatchObject({ ok: true, status: "done" });
+  });
+
+  it("★ R-12-e I-2: a signed motion WAITING on its journal consume while the quiesce STOP completes is refused after the consume (ROBOT_QUIESCING) — the robot gets only the STOP; the jti is consumed and reported unused; the confirmed STOP did not clear the quiesce lock", async () => {
+    const { dispatchRobotOnEdge } = await import("../robot/robotEdgeDispatch");
+    const { _quiesceRobotForTests } = await import("./edgeGatewayRuntime");
+    const robot = await attach();
+    const jobs = counted(robot as never);
+    let consumeEntered!: () => void;
+    let releaseConsume!: () => void;
+    const entered = new Promise<void>((r) => (consumeEntered = r));
+    onConsume = () => {
+      consumeEntered();
+      return new Promise<void>((r) => (releaseConsume = r));
+    };
+    const a = auth("i2");
+    const jti = `2b8f3c1e-5d7a-4c1b-9a2e-${String(jtiN).padStart(12, "0")}`;
+    const pMotion = dispatchRobotOnEdge({ robotId: 12, job: MOVE, ...a });
+    await entered; // the motion passed every gate and its re-check; it now waits on the consume
+    let motion: Awaited<typeof pMotion> | null = null;
+    let lockAfterStop: boolean | null = null;
+    onStopRecord = async () => {
+      // the quiesce STOP was CONFIRMED by the robot; its journal write is in progress (the old re-lock waited behind it): NOW the consume resolves
+      lockAfterStop = robot.driver.motionLockController!().snapshot().locked;
+      releaseConsume();
+      motion = await pMotion;
+    };
+    const q = await _quiesceRobotForTests(12, "reconfigured (test)");
+    expect(motion).toMatchObject({ ok: false, status: "rejected", reason: "ROBOT_QUIESCING", jti });
+    expect(jobs).toEqual(["abort"]); // no runJob(motion): the STOP only
+    expect(consumed).toContain(jti); // consumed …
+    expect(runRecords.filter((r) => r.jti === jti)).toEqual([expect.objectContaining({ jti, stop: false, status: "rejected", result: expect.objectContaining({ reason: "ROBOT_QUIESCING" }) })]); // … and reported unused
+    expect(lockAfterStop).toBe(true); // (a) the confirmed STOP did not clear the quiesce lock
+    expect(q).toMatchObject({ ok: true }); // the session was still released (detach)
+  });
+
+  it("R-12-e I-2 (b): the post-consume re-check also refuses a LOCK taken (MOTION_LOCKED) or a session REPLACED (ROBOT_NOT_ACTIVE) while the motion awaited its consume — nothing sent, the jti reported unused", async () => {
+    const { dispatchRobotOnEdge } = await import("../robot/robotEdgeDispatch");
+    const rm = await import("../robot/robotManager");
+    for (const what of ["lock", "replace"] as const) {
+      const robot = await attach();
+      const jobs = counted(robot as never);
+      onConsume = async () => {
+        if (what === "lock") robot.driver.lockMotion!("line_connection_closed", "during the consume");
+        else {
+          await rm.detachRobot(12);
+          await attach();
+        }
+      };
+      const a = auth(`b-${what}`);
+      const jti = `2b8f3c1e-5d7a-4c1b-9a2e-${String(jtiN).padStart(12, "0")}`;
+      const r = await dispatchRobotOnEdge({ robotId: 12, job: MOVE, ...a });
+      expect(r).toMatchObject({ ok: false, status: "rejected", reason: what === "lock" ? "MOTION_LOCKED" : "ROBOT_NOT_ACTIVE", jti });
+      expect(jobs).toEqual([]);
+      expect(runRecords.filter((x) => x.jti === jti)).toEqual([expect.objectContaining({ status: "rejected" })]);
+      await rm.detachRobot(12);
+    }
+  });
+
+  it("R-12-e I-2 (a): a confirmed STOP does not clear a quiesce lock even when the quiesce never completes (failed detach) — only the detach ends the session; a lock that is NOT a quiesce lock is still cleared by a confirmed STOP", async () => {
+    const { dispatchRobotOnEdge } = await import("../robot/robotEdgeDispatch");
+    const rm = await import("../robot/robotManager");
+    let robot = await attach();
+    // control: an ordinary lock (link loss) is cleared by a confirmed STOP, as before
+    robot.driver.lockMotion!("line_connection_closed", "test");
+    expect(await dispatchRobotOnEdge({ robotId: 12, job: { jobType: "abort", params: {} }, idempotencyKey: "stop-c1", source: "local" })).toMatchObject({ ok: true, stop: true });
+    expect(robot.driver.motionLockController!().snapshot().locked).toBe(false);
+    // a quiesce lock survives a confirmed STOP — in memory AND in its persisted record (never "cleared" by the STOP)
+    const lc = robot.driver.motionLockController!();
+    lc.lock("ownershipRemoved", "test");
+    lc.holdForQuiesce("test quiesce");
+    persisted.length = 0;
+    expect(await dispatchRobotOnEdge({ robotId: 12, job: { jobType: "abort", params: {} }, idempotencyKey: "stop-c2", source: "local" })).toMatchObject({ ok: true, stop: true }); // L-7: the STOP is sent
+    expect(lc.snapshot().locked).toBe(true);
+    expect(lc.isLocked()).toBe(true);
+    expect(persisted).toEqual([]); // the STOP did not clear the persisted lock either
+    // not even an operator clear of the old session lifts the quiesce hold (motion stays refused; only the detach ends it)
+    lc.clearByOperator({ reason: "signed clear", userId: 1, expectedGeneration: lc.snapshot().generation ?? 0 });
+    expect(lc.isLocked()).toBe(true);
+    expect(lc.snapshot()).toMatchObject({ locked: true, reasonCode: "ownershipRemoved" });
+    await rm.detachRobot(12);
+    robot = await attach(); // the new session starts without the hold
+    expect(robot.driver.motionLockController!().isLocked()).toBe(false);
+  });
+
+  it("★ R-12-e M-5: a FAILED quiesce is VISIBLE (edge health lists the robot as quiescing and reports degraded) and is RETRIED even when the settings were reverted meanwhile (the session key matches again)", async () => {
+    const { _quiesceRobotForTests, edgeRobotsQuiescing, edgeRobotSessionUpToDate, getEdgeGatewayHealth, setReachabilityProbe } = await import("./edgeGatewayRuntime");
+    const rm = await import("../robot/robotManager");
+    setReachabilityProbe(() => true);
+    try {
+      const robot = await attach();
+      expect(await edgeRobotsQuiescing()).toEqual([]);
+      expect((await getEdgeGatewayHealth()).robotsQuiescing).toEqual([]);
+      const orig = robot.driver.runJob.bind(robot.driver);
+      robot.driver.runJob = async (j: RobotJobSpec) => (j.jobType === "abort" ? { ok: false, status: "failed" as const, error: "controller rejected" } : orig(j));
+      expect(await _quiesceRobotForTests(12, "reconfigured (test)")).toMatchObject({ ok: false, cause: "stop" });
+      // visible: the node health (shipped as the heartbeat status) names the robot and is degraded
+      expect(await edgeRobotsQuiescing()).toEqual([{ robotId: 12, since: expect.any(String), why: expect.stringMatching(/reconfigured/) }]);
+      const h = await getEdgeGatewayHealth();
+      expect(h.robotsQuiescing).toEqual([expect.objectContaining({ robotId: 12 })]);
+      expect(h.status).toBe("degraded");
+      // retried: the session counts as NOT up to date while it is quiescing, even with the same key (reverted settings)
+      expect(edgeRobotSessionUpToDate("k1", "k1", rm.robotQuiescing(12) !== null)).toBe(false);
+      expect(edgeRobotSessionUpToDate("k1", "k1", false)).toBe(true);
+      expect(edgeRobotSessionUpToDate("k1", "k2", false)).toBe(false);
+      expect(edgeRobotSessionUpToDate(undefined, "k1", false)).toBe(false);
+      await rm.detachRobot(12);
+      expect(await edgeRobotsQuiescing()).toEqual([]);
+    } finally {
+      setReachabilityProbe(null);
+    }
   });
 
   it("★ the gate is RE-CHECKED after the motion's own awaits: quiescing (or a lock) that starts while it awaits its safety preflight ⇒ refused before the consume, nothing sent", async () => {

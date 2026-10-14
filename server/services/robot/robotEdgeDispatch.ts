@@ -202,6 +202,21 @@ export async function dispatchRobotOnEdge(input: EdgeRobotDispatchInput, rt: Edg
     const consumed = await rt.journal.consumeAuthorization({ jti: verdict.claims.jti, runId: a.runId, claimSeq: a.claimSeq, stepId: a.stepId, attempt: a.attempt });
     if (!consumed.ok) return refusal("JOURNAL_CONSUME_FAILED", { detail: consumed.reason });
     const jti = verdict.claims.jti;
+    // doc 81 Đợt 12 final fix wave (R-12-e I-2) — the consume awaited (a journal fsync, up to seconds): the session may have started
+    // quiescing, been replaced or locked meanwhile (a quiesce STOP confirmed in that time). Re-checked SYNCHRONOUSLY here — no await
+    // between this check and the driver call in runRobotDeviceStage. Refused ⇒ nothing sent; the consumed jti is reported unused.
+    const late =
+      getActiveRobot(input.robotId) !== robot
+        ? refusal("ROBOT_NOT_ACTIVE", { jti })
+        : sessionQuiescing(robot.driver)
+          ? refusal(ROBOT_QUIESCING, { jti, detail: sessionQuiescing(robot.driver)!.why })
+          : robot.driver.getMotionLock?.()?.locked
+            ? refusal("MOTION_LOCKED", { jti, result: { motionLock: robot.driver.getMotionLock!() } })
+            : null;
+    if (late) {
+      await report(rt, input, input.job, false, jti, late);
+      return late;
+    }
     let res: EdgeRobotDispatchResult;
     if (simulated) {
       res = { ok: true, status: "simulated", stop: false, jti, result: { dryRun: true, ...(verdict.claims.verdicts.commissioned !== true ? { notCommissioned: true } : {}) } };

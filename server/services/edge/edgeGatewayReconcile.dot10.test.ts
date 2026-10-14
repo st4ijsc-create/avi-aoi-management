@@ -190,8 +190,9 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
     expect(om.getActiveDriver(22)).toBeDefined(); // the stale-connection adapter stays attached (fail-closed)
     const after = await alerts();
     expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*locked \(generation \d+[^)]*\), STOP done, session closed/.test(a))).toBe(true);
-    // M-2 — the confirmed STOP cleared the product lock, so the quiesce took it again before the detach (Đợt 12 N)
-    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*re-taken after the STOP/.test(a))).toBe(true);
+    // M-2 (Đợt 12 N) — the quiesce's lock reaches the detach. Final fix wave R-12-e I-2: a confirmed STOP no longer clears a QUIESCE
+    // lock (it was cleared, then re-taken after the STOP's journal write — a window for a signed motion): kept, never re-taken
+    expect(after.some((a) => /^EDGE_DEVICE_RELEASED: robot 12 .*re-taken after the STOP/.test(a))).toBe(false);
     expect(after.some((a) => /^EDGE_DEVICE_RELEASED: adapter 21 .*pinned STOP \w+ \(run\), session closed/.test(a))).toBe(true);
     expect(writes).toHaveBeenCalled();
     expect(central.received.locksEvents.filter((r) => r.kind === "command_ack" && r.requestId === 140).map((r) => r.outcome)).toEqual(["done"]);
@@ -355,6 +356,43 @@ describe("doc 81 Đợt 10 E fix reviews 1-3 — devices follow the verified con
       [143, "done"],
     ]);
     expect((await import("../../db/connection")).edgeDbTrapCount()).toBe(0);
+  }, 60_000);
+
+  it("★ R-12-e M-5: a reconfigure whose quiesce FAILED leaves the old session quiescing (durable alert, listed in the node health); the settings REVERTED meanwhile (the key matches again) ⇒ the next pass still takes it down and re-attaches — never stuck refusing motion until an edge restart", async () => {
+    const rt = shared.rt!;
+    const rm = await import("../robot/robotManager");
+    const gw = await import("./edgeGatewayRuntime");
+    process.env.EDGE_RECONCILE_RETRY_MS = "100";
+    const cur = central.makeConfig();
+    central.setConfig({ robots: cur.robots, adapters: cur.adapters });
+    await gw.sendHeartbeat();
+    await gw.reconcileDevices(rt, "settle");
+    const id = cur.robots[0].id;
+    const s0 = rm.getActiveRobot(id)!;
+    expect(s0).toBeDefined();
+    const orig = s0.driver.runJob.bind(s0.driver);
+    let stopFails = true;
+    s0.driver.runJob = async (j: { jobType: string }) => (j.jobType === "abort" && stopFails ? { ok: false, status: "failed" as const, error: "controller rejected" } : orig(j as never));
+    central.setConfig({ robots: cur.robots.map((r) => (r.id === id ? { ...r, pollIntervalMs: 888 } : r)), adapters: cur.adapters });
+    await gw.sendHeartbeat();
+    await gw.reconcileDevices(rt, "settings");
+    expect(rm.getActiveRobot(id)).toBe(s0); // the quiesce failed: the OLD session is kept …
+    expect(rm.robotQuiescing(id)).not.toBeNull(); // … quiescing (refuses motion)
+    expect((await gw.getEdgeGatewayHealth()).robotsQuiescing.map((q) => q.robotId)).toContain(id); // visible
+    await rt.journal.flush();
+    await rt.shipper.flushAll();
+    expect(central.received.locksEvents.some((r) => r.kind === "anomaly" && String(r.code) === "EDGE_DEVICE_ATTACH_FAILED" && new RegExp(`robot ${id} settings changed .*QUIESCING`).test(String(r.detail)))).toBe(true); // durable
+    // the owner REVERTS the settings: the session key matches again — the quiescing session must still be taken down
+    central.setConfig({ robots: cur.robots, adapters: cur.adapters });
+    await gw.sendHeartbeat();
+    stopFails = false;
+    await new Promise((r) => setTimeout(r, 400)); // past the per-robot back-off
+    await gw.reconcileDevices(rt, "reverted");
+    await vi.waitFor(() => expect(rm.getActiveRobot(id)).not.toBe(s0), { timeout: 5_000, interval: 50 });
+    expect(rm.getActiveRobot(id)).toBeDefined(); // re-attached from the verified row
+    expect(rm.robotQuiescing(id)).toBeNull();
+    expect((await gw.getEdgeGatewayHealth()).robotsQuiescing).toEqual([]);
+    process.env.EDGE_RECONCILE_RETRY_MS = "600000";
   }, 60_000);
 
   it("★ G-2 (R-10-az): only `{ ok: true }` from D's lifecycle is ok — a bare true, a truthy non-boolean, undefined are NOT; reason + detail carried", async () => {

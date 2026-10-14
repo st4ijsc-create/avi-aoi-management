@@ -350,6 +350,26 @@ export interface EdgeGatewayHealth {
   configVersion: number | null;
   version: string;
   ts: string;
+  /**
+   * doc 81 Đợt 12 final fix wave (R-12-e M-5) — robot sessions stuck QUIESCING (a quiesce whose STOP / detach failed): each refuses
+   * every motion (ROBOT_QUIESCING) until its quiesce completes (retried by the reconciler). Any ⇒ the node reports degraded.
+   */
+  robotsQuiescing: Array<{ robotId: number; since: string; why: string }>;
+}
+
+/** R-12-e M-5 — the robot sessions of this edge that are quiescing (a failed / unfinished quiesce). Never throws. */
+export async function edgeRobotsQuiescing(): Promise<Array<{ robotId: number; since: string; why: string }>> {
+  try {
+    const rm = await import("../robot/robotManager");
+    const out: Array<{ robotId: number; since: string; why: string }> = [];
+    for (const id of rm.activeRobotIds()) {
+      const q = rm.robotQuiescing(id);
+      if (q) out.push({ robotId: id, since: q.since, why: q.why });
+    }
+    return out.sort((a, b) => a.robotId - b.robotId);
+  } catch {
+    return [];
+  }
 }
 
 /** Current health. Never throws. */
@@ -371,13 +391,14 @@ export async function getEdgeGatewayHealth(): Promise<EdgeGatewayHealth> {
     /* otManager unavailable */
   }
   const reachable = await centralReachable();
+  const robotsQuiescing = await edgeRobotsQuiescing(); // R-12-e M-5
   const rt = runtime;
   const j = rt?.journal.stats() ?? null;
   const cfg = rt?.config.current() ?? null;
   // a configured node whose config names enabled devices but none of them runs here is not "online" either (I-5)
   const wantsDevices = !!cfg && (cfg.adapters.some((a) => a.isEnabled) || cfg.robots.some((r) => r.isEnabled));
   const devicesDown = wantsDevices && devices.started && activeAdapters === 0 && devices.robotCount() === 0;
-  const degraded = !reachable || unsBuffered > 0 || dbBuffered > 0 || (rt !== null && (rt.lastHeartbeatOk === false || !j?.healthy || j.full || devicesDown));
+  const degraded = !reachable || unsBuffered > 0 || dbBuffered > 0 || robotsQuiescing.length > 0 || (rt !== null && (rt.lastHeartbeatOk === false || !j?.healthy || j.full || devicesDown));
   return {
     nodeCode: cfg?.node.code ?? edgeNodeCode(),
     status: rt !== null && cfg === null ? "unconfigured" : degraded ? "degraded" : "online",
@@ -390,6 +411,7 @@ export async function getEdgeGatewayHealth(): Promise<EdgeGatewayHealth> {
     configVersion: rt?.config.current()?.configVersion ?? null,
     version: edgeGatewayVersion(),
     ts: new Date().toISOString(),
+    robotsQuiescing,
   };
 }
 
@@ -570,10 +592,20 @@ const UNTRACKED_ROBOT_KEY = "untracked";
 function oneRobotKey(r: EdgeConfigSnapshot["robots"][number]): string {
   return JSON.stringify([r.id, r.ownerEpoch, r.endpoint, r.vendor, r.connectionOptions ?? null, r.pollIntervalMs]);
 }
+/**
+ * doc 81 Đợt 12 final fix wave (R-12-e M-5) — is the robot's live session up to date? Its recorded key equals the wanted row's AND
+ * it is not quiescing: a session left quiescing by a failed quiesce is taken down again (quiesce → detach → attach) on the next pass
+ * even when the settings were reverted meanwhile and the key matches again — otherwise it refused motion until an edge restart.
+ */
+export function edgeRobotSessionUpToDate(recordedKey: string | undefined, wantKey: string, quiescing: boolean): boolean {
+  return recordedKey === wantKey && !quiescing;
+}
 function oneAdapterKey(a: EdgeConfigSnapshot["adapters"][number]): string {
   return JSON.stringify([a.id, a.updatedAt, a.connectionFingerprint, a.ownerEpoch, a.pollIntervalMs, a.tags.map((t) => [t.id, t.updatedAt, t.isEnabled])]);
 }
 export const EDGE_RECONCILE_RETRY_MS = 10_000;
+/** R-12-e M-5 — what a failed quiesce leaves (said in its durable alert) */
+const QUIESCING_NOTE = "The session is QUIESCING: it refuses every motion until the quiesce completes (listed in the node health, robotsQuiescing; the node reports degraded).";
 /** EDGE_RECONCILE_RETRY_MS env (bounded 100 ms – 10 min), default 10 s */
 function reconcileRetryMs(): number {
   const n = Number.parseInt(process.env.EDGE_RECONCILE_RETRY_MS ?? "", 10);
@@ -664,12 +696,12 @@ async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<boolean> {
         releaseAlert(rt, "EDGE_DEVICE_RELEASED", `robot ${id} no longer owned (${why}): ${q.detail}`);
       } else {
         ok = false;
-        releaseAlert(rt, "EDGE_DEVICE_RELEASE_FAILED", `robot ${id} no longer owned (${why}) but KEPT attached${q.locked ? " and locked" : ""}: ${q.detail} — retried every ${reconcileRetryMs() / 1_000} s; use the machine's direct STOP / E-STOP if it moves`);
+        releaseAlert(rt, "EDGE_DEVICE_RELEASE_FAILED", `robot ${id} no longer owned (${why}) but KEPT attached${q.locked ? " and locked" : ""}: ${q.detail} — retried every ${reconcileRetryMs() / 1_000} s; use the machine's direct STOP / E-STOP if it moves. ${QUIESCING_NOTE}`);
       }
     }
     // a robot added / reconfigured / never connected: ITS session only, with a per-robot back-off — never the healthy ones
     for (const r of want.values()) {
-      if (devices.robotKeys.get(r.id) === oneRobotKey(r)) continue;
+      if (edgeRobotSessionUpToDate(devices.robotKeys.get(r.id), oneRobotKey(r), rm.robotQuiescing(r.id) !== null)) continue; // R-12-e M-5
       const back = devices.robotBackoff.get(r.id);
       if (back && Date.now() < back.nextAt) {
         ok = false;
@@ -686,7 +718,7 @@ async function reconcileOnce(rt: EdgeRuntime, why: string): Promise<boolean> {
         // new row (checked). Any failure before the detach keeps the OLD session (locked) + alert + retry.
         const q = await quiesceRobot(rt, r.id, `reconfigured (${why})`);
         if (!q.ok) {
-          fail(`reconfigure:${q.cause}`, `robot ${r.id} settings changed (${why}) but its OLD session is KEPT${q.locked ? " (locked)" : ""}: ${q.detail} — retried`);
+          fail(`reconfigure:${q.cause}`, `robot ${r.id} settings changed (${why}) but its OLD session is KEPT${q.locked ? " (locked)" : ""}: ${q.detail} — retried (also if the settings are reverted meanwhile). ${QUIESCING_NOTE}`);
           continue;
         }
         devices.robotKeys.delete(r.id);
@@ -793,6 +825,9 @@ async function quiesceRobot(rt: EdgeRuntime, robotId: number, why: string): Prom
     if (!lc) lock = "NOT locked: the driver has no motion lock";
     else {
       lc.lock("ownershipRemoved", `robot ${robotId} ${why}`);
+      // doc 81 Đợt 12 final fix wave (R-12-e I-2) — a QUIESCE hold: the confirmed STOP below does not clear this lock (no window
+      // between the STOP and a re-lock in which a signed motion could reach the robot); only the detach ends the session
+      (lc as { holdForQuiesce?: (why: string) => void }).holdForQuiesce?.(`robot ${robotId} ${why}`);
       lockOk = lc.isLocked();
       lock = lockOk ? `locked (generation ${lc.snapshot().generation ?? "?"})` : "NOT locked: the lock did not take";
     }
@@ -812,6 +847,8 @@ async function quiesceRobot(rt: EdgeRuntime, robotId: number, why: string): Prom
   // doc 81 Đợt 12 task N — a CONFIRMED STOP clears a lock that is not an operator hold (R13: every session driver, and the SIM
   // driver since Đợt 12), so the lock taken above is gone once the STOP was done: re-take it — the robot leaves this node LOCKED
   // (detachEdgeRobot refuses `not_locked`; before Đợt 12 the release was kept for ever with "detach REFUSED (not_locked)").
+  // R-12-e I-2: with the quiesce hold the lock is never cleared by the STOP; this stays as a second layer for a lock controller
+  // without the hold.
   if (lockOk && stopOk) {
     try {
       const lc = robot.driver.motionLockController?.();
