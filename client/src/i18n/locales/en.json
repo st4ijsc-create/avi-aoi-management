@@ -3884,6 +3884,7 @@
       "encryptApiKey": "encrypt API key",
       "downloadPackageZip": "download AOI package ZIP",
       "processAoiPackage": "process AOI package",
+      "taiModelMay": "upload machine 3D model",
       "restoreBackup": "restore backup",
       "activateInterlockRule": "activate interlock rule",
       "createProgramArtifactVersion": "create program artifact version",
@@ -4065,6 +4066,7 @@
       "conversationId": "conversation ID",
       "importData": "import data",
       "fileName": "file name",
+      "noiDungBase64": "model file content (base64)",
       "machineCredentials": "machine credentials",
       "expiresAt": "expiration date",
       "dashboardImport": "dashboard import content",
@@ -4446,7 +4448,8 @@
     "DEVICE_UNREACHABLE": "Could not reach the {{entity}} device. Check power, cabling and IP address.",
     "DEVICE_PROTOCOL_UNSUPPORTED": "This build does not support the {{entity}} protocol.",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command ({{stopKey}}) was issued — resend it if still needed.",
-    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed."
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed.",
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "This stop is not a verified (pinned) STOP and too many such stops are already waiting for this device — it was refused and nothing was sent. Use the pinned STOP (or the machine's E-STOP)."
   },
   "export": {
     "reportMenu": {
@@ -18787,7 +18790,19 @@
       "totalQueries": "Total queries",
       "walDelta": "backfilled {{b}} · dead-letter {{d}}",
       "walDepth": "Inspection WAL depth",
-      "walOff": "off (passthrough)"
+      "walOff": "off (passthrough)",
+      "wormColLevel": "Level",
+      "wormColRows": "Rows (estimate)",
+      "wormColSize": "Size",
+      "wormColTable": "Table",
+      "wormDesc": "Append-only safety evidence tables are kept forever (never deleted). A durable alert goes to the admins when a table crosses the warn / critical threshold (checked hourly).",
+      "wormEmpty": "No WORM table exists on this database.",
+      "wormLevelCritical": "critical",
+      "wormLevelOk": "ok",
+      "wormLevelWarn": "warn",
+      "wormThresholds": "Warn at {{warnSize}} or {{warnRows}} rows · critical at {{critSize}} or {{critRows}} rows",
+      "wormTitle": "Append-only (WORM) tables - size",
+      "wormUnavailable": "The WORM table sizes could not be read."
     },
     "export": {
       "desc": "Export the factory scene graph to USDA (Omniverse/Isaac) or DTDL v3 (twin graph) — read-only, no device write. Downloads directly to your machine.",

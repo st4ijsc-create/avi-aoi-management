@@ -208,6 +208,9 @@ function resGia() {
   const manh: string[] = [];
   const res: any = {
     destroyed: false,
+    // `huyKhiClientBoDi` (doc 80 Dot 1 final wave 2) gọi `res.on("close")` + đọc `writableFinished`.
+    writableFinished: false,
+    on: () => res,
     headersSent: false,
     status: () => res,
     setHeader: () => res,

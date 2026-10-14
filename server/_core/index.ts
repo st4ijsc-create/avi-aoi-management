@@ -6267,6 +6267,15 @@ async function startServer() {
     .then(({ startDeviceOwnershipSync }) => startDeviceOwnershipSync())
     .catch((err) => console.error("[DeviceOwner] ownership sync failed to start:", (err as any)?.message || err));
 
+  // doc 81 Dot 11 task G — hourly size watch of the append-only (WORM) tables; read-only, alerts admins once per crossed level.
+  // Central only (the edge has no DB login). Interval WORM_SIZE_CHECK_INTERVAL_MS; thresholds WORM_SIZE_*/WORM_ROWS_*.
+  void import("../services/ops/wormTableSizeMonitor")
+    .then(async ({ startWormSizeMonitor }) => {
+      const { isEdgeProcessRole } = await import("../db/connection");
+      if (!isEdgeProcessRole()) startWormSizeMonitor();
+    })
+    .catch((err) => console.error("[WormSize] monitor failed to start:", (err as any)?.message || err));
+
   // VDA 5050 — AGV/AMR fleet connectivity framework (MQTT). Importing the module
   // registers the `vda5050` robot driver. Disabled by default; opt in via
   // VDA5050_ENABLED=true. AGV commands are HITL + dry-run unless ROBOT_CONTROL_ENABLED=true.

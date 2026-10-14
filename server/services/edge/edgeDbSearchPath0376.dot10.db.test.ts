@@ -8,6 +8,7 @@
  *     Everything inside one transaction that is ROLLED BACK. `_test` only.
  * (2) CATALOG: every function defined by a drizzle/*.sql numbered ≥ 0363 runs with EXACTLY
  *     `search_path = pg_catalog, public, pg_temp` and is not executable by PUBLIC (unless it is in the callable set).
+ *     doc 81 Đợt 11 task H (2026-10-14, mig 0377): two dated, listed exceptions — PUBLIC_BY_DESIGN (+6) and INLINE_BY_DESIGN (4).
  * (3) SOURCE CENSUS: for every function a drizzle/*.sql numbered ≥ 0363 defines, its LAST definition in migration order
  *     (CREATE OR REPLACE, or a later ALTER FUNCTION … SET search_path) carries `SET search_path = pg_catalog, public, pg_temp`.
  *     A new migration defining a function without it fails here. (0363–0371 are already on dev — 0376 re-creates their
@@ -45,7 +46,26 @@ const CALLABLE = new Set([
  * 0125's SECURITY DEFINER RLS helpers, re-pinned by 0376 with ALTER FUNCTION: RLS policies call them as WHICHEVER role reads the
  * hot tables, so they stay PUBLIC-executable on purpose (body already public.-qualified; pg_temp last).
  */
-const PUBLIC_BY_DESIGN = new Set(["app_factory_of_machine_code", "app_factory_of_line_id", "app_factory_of_line_code"]);
+const PUBLIC_BY_DESIGN = new Set([
+  "app_factory_of_machine_code",
+  "app_factory_of_line_id",
+  "app_factory_of_line_code",
+  // doc 81 Đợt 11 task H (2026-10-14, mig 0377 — the Đợt 10 N4 backlog): re-created with their ACL untouched (PUBLIC EXECUTE):
+  // app_tenant_allows is evaluated by 82 RLS policies as whichever role reads; avi_app calls the other five
+  "app_tenant_allows",
+  "factory_timezone",
+  "db_storage_timezone",
+  "to_factory_time",
+  "refresh_qw_caches",
+  "ensure_measurement_samples_partition",
+]);
+/**
+ * doc 81 Đợt 11 task H (2026-10-14, mig 0377): inlinable LANGUAGE sql INVOKER functions kept WITHOUT a SET clause on purpose — a
+ * SET stops the planner inlining them (measured: app_tenant_allows ×5, to_factory_time ×48 per row). Their bodies are qualified
+ * instead (pg_catalog. / OPERATOR(pg_catalog.…)); the census of that, of the inlining and of the hostile-search_path behaviour
+ * is functionSearchPath0377.dot11.db.test.ts (INLINE_BY_DESIGN there — keep both lists equal).
+ */
+const INLINE_BY_DESIGN = new Set(["app_tenant_allows", "factory_timezone", "db_storage_timezone", "to_factory_time"]);
 
 class Rollback extends Error {}
 type Tx = postgres.TransactionSql;
@@ -253,8 +273,10 @@ describe("R-10-h — census: every function a migration ≥ 0363 defines ends PI
     const { files, last } = migrationFunctionCensus(SQL_DIR);
     expect(files.length).toBeGreaterThanOrEqual(14); // 0363 … 0376 — 0 files ⇒ the instrument is blind
     expect(last.size).toBeGreaterThanOrEqual(30);
-    const unpinned = [...last.entries()].filter(([, v]) => !v.pinned).map(([k, v]) => `${k} (last defined in ${v.file})`);
+    const unpinned = [...last.entries()].filter(([k, v]) => !v.pinned && !INLINE_BY_DESIGN.has(k)).map(([k, v]) => `${k} (last defined in ${v.file})`);
     expect(unpinned).toEqual([]);
+    // Đợt 11 H: an inline-by-design function must NOT carry the pin (a SET clause stops inlining)
+    expect([...INLINE_BY_DESIGN].filter((k) => last.get(k)?.pinned !== false)).toEqual([]);
   });
 
   it("★ fix review 4 (R2): every trigger / SECURITY DEFINER function of ANY migration ends pinned (a dropped re-pin turns it red)", () => {
@@ -324,7 +346,9 @@ describe.skipIf(!onTest)("R-10-h — catalog: every function of the migrations �
       const r = rows.filter((x) => x.name === name);
       if (r.length !== 1) return [`${name}: ${r.length} definitions`];
       const out: string[] = [];
-      if (JSON.stringify(r[0].cfg) !== JSON.stringify([PIN])) out.push(`${name}: proconfig ${JSON.stringify(r[0].cfg)}`);
+      if (INLINE_BY_DESIGN.has(name)) {
+        if (r[0].cfg !== null) out.push(`${name}: inline-by-design must have no SET (proconfig ${JSON.stringify(r[0].cfg)})`);
+      } else if (JSON.stringify(r[0].cfg) !== JSON.stringify([PIN])) out.push(`${name}: proconfig ${JSON.stringify(r[0].cfg)}`);
       if (PUBLIC_BY_DESIGN.has(name)) {
         if (!r[0].pub) out.push(`${name}: RLS helper lost PUBLIC EXECUTE`);
         return out;

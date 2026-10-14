@@ -972,27 +972,29 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     }
   });
 
-  it("1E đối chứng: stop KHÔNG ghim (giá trị khác ghim) cùng thiết lập ⇒ max=1 BUSY; max=3 xếp FIFO sau W2, KHÔNG huỷ W2 (thiết bị nhận W1, W2, stop)", async () => {
+  // doc 81 Đợt 11 simplify (owner ruling R-11-n, 2026-10-14; edit under R-11-g, which covers this control): the ORIGINAL control asserted
+  // (a) an UNPINNED stop is BUSY with max=1 (Group K's L-7 gap D-1) and (b) with room it queues FIFO after W2 and does not cancel W2.
+  // R-11-n keeps (b) and replaces (a): a stop-typed command is never refused BUSY — on a full queue it waits for a slot. It is still NOT a
+  // pinned stop (no pinnedStop, no epoch bump, no gate exemption). (The final fix wave's version — stop lane, W2 cancelled — is gone.)
+  it("1E đối chứng → R-11-n: stop KHÔNG ghim ⇒ KHÔNG BUSY dù hàng đầy (chờ chỗ trống); xếp FIFO sau W2, KHÔNG huỷ W2 (thiết bị nhận W1, W2, stop)", async () => {
     process.env.OT_CMD_SERIALIZE_ENABLED = "true";
-    process.env.OT_CMD_QUEUE_MAX = "1";
+    process.env.OT_CMD_QUEUE_MAX = "3";
     process.env.OT_CONTROL_TIMEOUT_MS = "30000";
     _resetAdapterCommandQueuesForTests();
     const h = heldFirstWriteDriver();
     fake.otDrivers.set(adapterPinned, h.driver);
     try {
       await withPlcConfigs([realMapped()], async () => {
+        const { _adapterSlotWaitersForTests } = await import("./otDeviceWrite");
         const p1 = dispatch(await writeCmd(111));
         await within(h.firstStarted, 15_000, "W1 tới thiết bị");
-
-        const rBusy = await run(await stopInput([{ tagKey: "cmd_stop", value: false }]));
-        expect(rBusy).toMatchObject({ ok: false, status: "rejected", reason: "BUSY" });
-        expect(rBusy.pinnedStop).toBeUndefined(); // không phải DỪNG ghim
-
-        process.env.OT_CMD_QUEUE_MAX = "3";
         const p2 = dispatch(await writeCmd(333));
         await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 2, 15_000, "W2 vào hàng chờ");
+
+        process.env.OT_CMD_QUEUE_MAX = "1"; // hàng ĐẦY (độ sâu 2 ≥ 1): trước Đợt 11 stop không ghim bị BUSY
         const pU = dispatch(await stopInput([{ tagKey: "cmd_stop", value: false }]));
-        await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 3, 15_000, "stop không ghim vào hàng chờ");
+        await until(() => _adapterSlotWaitersForTests(adapterPinned) === 1, 15_000, "stop không ghim chờ chỗ trống (không BUSY)");
+        expect(_adapterCommandQueueDepthForTests(adapterPinned)).toBe(2); // W2 KHÔNG bị huỷ
         expect(received).toEqual([[{ tagKey: "speed_sp", value: 111 }]]);
 
         h.release();
@@ -1000,6 +1002,7 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
         expect(r1.status).toBe("acked");
         expect(r2.status).toBe("acked"); // KHÔNG bị huỷ
         expect(rU.status).toBe("acked");
+        expect(rU.pinnedStop).toBeUndefined(); // không phải DỪNG ghim
         expect(received).toEqual([
           [{ tagKey: "speed_sp", value: 111 }],
           [{ tagKey: "speed_sp", value: 333 }],

@@ -1219,7 +1219,10 @@ export const aoiPackageRouter = router({
           // bằng ĐÚNG vị từ đường trực tiếp v2.0 dùng — Bước 6 (đường di trú)
           // cấm thêm vị từ thứ hai.
           if (metaData && !laHinhDangCayV2(metaData)) {
-            throw new Error(
+            throw appError(
+              "INTERNAL_SERVER_ERROR",
+              "OPERATION_FAILED",
+              { operation: "processAoiPackage" },
               "BẤT THƯỜNG: metaJsonSchema.parse() thành công nhưng laHinhDangCayV2()===false " +
                 "— hợp đồng đã đổi hình dạng theo cách chỗ này chưa cập nhật kịp.",
             );

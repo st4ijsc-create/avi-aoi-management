@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { finalYield } from "@shared/kpiYield";
 import { Play, Pause, RotateCcw, Radio, Bot, Cpu, CheckCircle2, XCircle, Activity, Info, Waves, Download, ExternalLink } from "lucide-react";
 
 // ── Station model (inline — self-contained, no DB seeding needed) ─────────────────
@@ -405,7 +406,7 @@ export function RfTestCellSimContent() {
   const cycleSec = sim ? sim.totalDurationMs / 1000 : 0;
   const uph = cycleSec > 0 ? Math.round(3600 / cycleSec) : 0;
   const total = view.ok + view.ng;
-  const yieldPct = total > 0 ? ((view.ok / total) * 100).toFixed(1) : "—";
+  const yieldPct = total > 0 ? finalYield({ ok: view.ok, ntf: 0, total }).toFixed(1) : "—";
 
   const act = sim ? activeStep(sim, view.t) : undefined;
   const token = sim ? tokenAt(sim, view.t, view.variant) : null;

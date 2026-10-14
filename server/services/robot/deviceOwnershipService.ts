@@ -10,7 +10,8 @@
  * R-10-i / R-10-w — STOPs owed to a device that is CENTRAL-owned now (device_pending_stops.centralMustExecute) are EXECUTED, not
  * merely left visible: right after a transfer made here, and by a SWEEP at central boot + every ≤ 10 s (startDeviceOwnershipSync)
  * that also catches a crash between commit and STOP, a failed ack, and a transfer made by any other path. Per device, ONE
- * transaction locks its pending requests FOR UPDATE SKIP LOCKED (one replica executes them; another sweep skips, never waits),
+ * transaction locks the device row FOR SHARE, then its pending requests FOR UPDATE SKIP LOCKED (Đợt 11 H — device before request,
+ * the one lock order of mig 0377; one replica executes them; another sweep skips, never waits),
  * sends ONE STOP through central's path (robot: the canonical abort through robotManager's session, else a transient driver
  * session; adapter: its PINNED stop values through the OT device stage on the running driver, else a transient session), then
  * acks each request in its own savepoint through A's guarded edge_stop_ack_central (done | failed; actor = the transferring admin,
@@ -41,6 +42,17 @@ export type ChangeOwnerResult =
   | { ok: true; ownerEpoch: number; toEdgeNodeId: number | null; centralStops: CentralStopOutcome | null }
   | { ok: false; reason: "refused" | "not_found" | "unavailable"; detail: string };
 
+/**
+ * doc 81 Đợt 11 H fix 1 (review H-R1, L-7) — the longest the sweep waits for the device row lock (SET LOCAL lock_timeout: the
+ * SERVER cancels the wait with 55P03, so the transaction ends at once — a JS deadline alone left the ROLLBACK queued behind the
+ * blocked statement). Not obtained ⇒ the central STOP is sent anyway; only its record / ack waits for a later sweep.
+ */
+export const CENTRAL_STOP_DEVICE_LOCK_TIMEOUT_MS = STOP_DB_STEP_DEADLINE_MS;
+const isLockNotAvailable = (e: unknown): boolean => {
+  const x = e as { code?: string; cause?: { code?: string } } | null;
+  return x?.code === "55P03" || x?.cause?.code === "55P03";
+};
+
 /** Bound of one transient session (connect + stop + disconnect) of a device central did not hold. */
 export const CENTRAL_STOP_SESSION_DEADLINE_MS = 10_000;
 let sessionDeadlineMs = CENTRAL_STOP_SESSION_DEADLINE_MS;
@@ -53,6 +65,17 @@ export const DEVICE_OWNER_RECONCILE_MS = 30_000;
 export const PENDING_STOP_SWEEP_MS = 10_000;
 /** final fix wave (M-2) — "0374 missing" was already logged by the sweep (reset once the pending set reads again) */
 let pendingSchemaMissingLogged = false;
+/**
+ * doc 81 Đợt 11 final fix wave (R-11-k 4, final review M-3) — the GLOBAL sweep's "device row busy ⇒ STOP sent anyway" branch: the
+ * STOP is still sent EVERY pass (idempotent, L-7), but its operator alert is raised ONCE per device per lock EPISODE (and again only
+ * when the send outcome changes). An episode ends when a pass obtains the device lock, or when the device has no pending STOP left.
+ * Key `${kind}:${id}` → the outcome already alerted ("sent" | "simulated" | "failed").
+ */
+const busyEpisodeAlerted = new Map<string, string>();
+/** test seam — the devices whose busy-episode alert was raised (R-11-k 4) */
+export function _busyEpisodeAlertsForTests(): string[] {
+  return [...busyEpisodeAlerted.keys()];
+}
 
 const errText = (e: unknown) => String((e as Error)?.message ?? e).replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1***@").slice(0, 240);
 const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? (r as Array<Record<string, unknown>>) : (((r as { rows?: unknown[] })?.rows ?? []) as Array<Record<string, unknown>>));
@@ -171,6 +194,11 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
     return results;
   }
   pendingSchemaMissingLogged = false;
+  if (!opts.device) {
+    // R-11-k (4) — a device with no pending STOP left ends its busy episode (a later episode alerts again)
+    const live = new Set(devices.map((d) => `${d.kind}:${d.id}`));
+    for (const k of [...busyEpisodeAlerted.keys()]) if (!live.has(k)) busyEpisodeAlerted.delete(k);
+  }
   for (const dev of devices) {
     const r = await executeDeviceStopsLocked(dev.kind, dev.id, opts.actorUserId ?? null, opts.device !== undefined);
     if (r) results.push(r);
@@ -181,15 +209,20 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
 async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, actorUserId: number | null, deviceScoped = false): Promise<CentralStopOutcome | null> {
   // fix review 2 (N4) — for a NAMED device (a transfer just made here), not knowing the pending set never means "no STOP": the
   // STOP is sent anyway and alerted (the periodic sweep acks the requests later). The global sweep just retries next pass.
-  const sendAnyway = async (why: string): Promise<CentralStopOutcome | null> => {
-    if (!deviceScoped) {
+  // fix 1 (H-R1): `force` — the device row lock was not obtained within its bound: the STOP is sent for the global sweep too
+  const sendAnyway = async (why: string, force = false): Promise<CentralStopOutcome | null> => {
+    if (!deviceScoped && !force) {
       console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed: ${why} (the next sweep retries)`);
       return null;
     }
     const sent = await sendCentralStop(kind, deviceId);
     // fix review 6 (NF5-5) — a simulated STOP (central control off) is NOT done: reported failed + notSent, and said so
     const notSent = sent.sent === "simulated";
-    void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], notSent ? `the pending STOP requests could not be read/locked (${why}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
+    // R-11-k (4) — the global sweep's busy-device branch: the STOP above is sent every pass; the alert once per lock episode
+    const episodeKey = `${kind}:${deviceId}`;
+    const repeat = force && !deviceScoped && busyEpisodeAlerted.get(episodeKey) === sent.sent;
+    if (force && !deviceScoped) busyEpisodeAlerted.set(episodeKey, sent.sent);
+    if (!repeat) void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], notSent ? `the pending STOP requests could not be read/locked (${why}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
     return { requestIds: [], outcome: sent.ok && sent.sent === "sent" ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [], ...(notSent ? { notSent: true as const } : {}) };
   };
   const db = await getDb().catch(() => null);
@@ -200,6 +233,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
   /** R-10-ay — requests central executes because the device's EDGE owner answered notOwnedHere (it cannot list the device) */
   let cannotList: number[] = [];
   let notSentAlert = false;
+  let deviceBusy = false;
   try {
     await db.transaction(async (tx) => {
       const pick =
@@ -210,6 +244,23 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
           : sql`SELECT q.id, q."requestedBy", (SELECT bool_or(v."ownerCannotList") FROM public.device_pending_stops v WHERE v."requestId" = q.id) AS "cannotList" FROM public.robot_motion_lock_requests q
                  WHERE q.id IN (SELECT "requestId" FROM public.device_pending_stops WHERE "adapterId" = ${deviceId} AND "centralMustExecute")
                    AND q."ackedAt" IS NULL ORDER BY q.id FOR UPDATE OF q SKIP LOCKED`;
+      // doc 81 Đợt 11 task H (mig 0377, one lock order): the DEVICE row FOR SHARE before its request rows — an owner change locks
+      // device → requests, and edge_stop_ack_central below takes the device; holding the requests while waiting for the device
+      // deadlocked with it (40P01). FOR SHARE waits only on a writer of that row (the bounded owner change / a status write).
+      // fix 1 (review H-R1, L-7): bounded by the SERVER (lock_timeout ⇒ 55P03), never by a JS deadline alone
+      await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${CENTRAL_STOP_DEVICE_LOCK_TIMEOUT_MS}ms'`));
+      try {
+        await withDeadline(
+          tx.execute(kind === "robot" ? sql`SELECT 1 FROM public.robots WHERE id = ${deviceId} FOR SHARE` : sql`SELECT 1 FROM public.device_adapters WHERE id = ${deviceId} FOR SHARE`),
+          5 * STOP_DB_STEP_DEADLINE_MS,
+          "pending STOP device lock",
+        );
+      } catch (err) {
+        if (isLockNotAvailable(err)) deviceBusy = true;
+        throw err;
+      }
+      await tx.execute(sql`SET LOCAL lock_timeout TO DEFAULT`);
+      busyEpisodeAlerted.delete(`${kind}:${deviceId}`); // R-11-k (4) — the device row lock was obtained: its busy episode (if any) ended
       const pending = rowsOf(await withDeadline(tx.execute(pick), 5 * STOP_DB_STEP_DEADLINE_MS, "pending STOP pick")).map((r) => ({ requestId: Number(r.id), requestedBy: Number(r.requestedBy), cannotList: r.cannotList === true }));
       picked = true;
       if (pending.length === 0) return;
@@ -257,7 +308,9 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
       cannotList = pending.filter((p) => p.cannotList).map((p) => p.requestId);
     });
   } catch (err) {
-    if (!picked) return sendAnyway(errText(err));
+    // fix 1 (H-R1): the device row was held beyond its bound ⇒ the STOP is SENT now (named device AND global sweep); the
+    // requests stay pending — the next sweep records the attempt and acks them
+    if (!picked) return sendAnyway(deviceBusy ? `the device row was busy beyond ${CENTRAL_STOP_DEVICE_LOCK_TIMEOUT_MS} ms (${errText(err)})` : errText(err), deviceBusy);
     console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed after the STOP: ${errText(err)}`);
   }
   const o = outcome as CentralStopOutcome | null;
@@ -504,6 +557,7 @@ const seenEpoch = { robot: new Map<number, number>(), adapter: new Map<number, n
 export function _resetOwnershipReconcileForTests(): void {
   seenEpoch.robot.clear();
   seenEpoch.adapter.clear();
+  busyEpisodeAlerted.clear();
 }
 
 /**

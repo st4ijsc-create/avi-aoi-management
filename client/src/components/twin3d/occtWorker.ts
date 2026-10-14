@@ -85,9 +85,10 @@ self.onmessage = async (ev: MessageEvent<YeuCauOcct>) => {
     const phanHoi: PhanHoiOcct = { ok: true, ketQua };
     (self as unknown as { postMessage: (m: PhanHoiOcct) => void }).postMessage(phanHoi);
   } catch (e) {
+    console.error("[occtWorker] đọc bản vẽ thất bại", e);
     const phanHoi: PhanHoiOcct = {
       ok: false,
-      loi: e instanceof Error ? e.message : String(e),
+      loi: "docThatBai", // mã khoá i18n (twin3d.banVe.chan.docThatBai) — KHÔNG đẩy chuỗi thô của OCCT tới UI; chi tiết ở console worker.
     };
     (self as unknown as { postMessage: (m: PhanHoiOcct) => void }).postMessage(phanHoi);
   }

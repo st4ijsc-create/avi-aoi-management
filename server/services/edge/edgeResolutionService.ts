@@ -273,11 +273,13 @@ export async function resolvePendingStop(a: { requestId: number; resolution: str
   const resolution = a.resolution.trim();
   if (resolution.length < 3) return { ok: false, reason: "notResolvable", detail: "a resolution of at least 3 characters is required" };
   const d = await db();
-  const { resolveStop, isEdgeControlSchemaMissing, isEdgeControlRefusal } = await import("./edgeControlSchema");
+  const { resolveStop, isEdgeControlSchemaMissing, isEdgeControlRefusal, lockStopRequestDevices } = await import("./edgeControlSchema");
   const { createAuditLog } = await import("../../db/system");
   try {
     return await d.transaction(async (tx) => {
-      // the request row FOR UPDATE (edge_stop_resolve locks it too — same order: no deadlock) + its device's factory
+      // doc 81 Đợt 11 task H (0377, one lock order): the device row FOR SHARE first, then the request row FOR UPDATE
+      // (edge_stop_resolve takes them in the same order — no deadlock with an owner change) + its device's factory
+      await lockStopRequestDevices(tx as never, [a.requestId]);
       const [q] = rowsOf(
         await tx.execute(sql`
           SELECT v.id, v.kind, v."robotId", v."adapterId", v.outcome, v."resolvedAt",

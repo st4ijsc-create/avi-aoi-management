@@ -59,7 +59,7 @@ export const EFFECTIVE_PROBES = {
           refuse: true,
           detail:
             `app_tenant_allows does NOT have the 0327 body (the NULL/NULL shared-data branch${body ? "" : " — body unreadable"}): a past 0125 run reverted it. ` +
-            "Re-apply 0327 (node scripts/apply-migration-0327.mjs, owner role) and then 0376 (node scripts/apply-migration-0376.mjs) on this DB, then run migrate-standalone again — 0125 is recorded only over the 0327 body",
+            "Re-apply 0327 (node scripts/apply-migration-0327.mjs, owner role; --then-0377 where 0377 is applied), then 0376 (node scripts/apply-migration-0376.mjs), then 0377 (node scripts/apply-migration-0377.mjs) on this DB, then run migrate-standalone again — 0125 is recorded only over the 0327 body",
         };
       }
       return { ok: true, detail: `functions ${f.n}/${fns.length}, 0328 applied, 0327 body in force` };

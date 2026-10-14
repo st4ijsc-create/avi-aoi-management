@@ -89,7 +89,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 
 import { gocTuQuatTrucDung, metSangMm, mmSangMet, quatXoayQuanhTrucDung } from "../heToaDo";
@@ -590,7 +590,7 @@ export function XuongThietKe({
       return true;
     } catch (e) {
       toast.error(
-        t("twin3d.studioUi.loiLuu", { loi: e instanceof Error ? e.message : String(e) }),
+        t("twin3d.studioUi.loiLuu", { loi: mapTrpcError(e) }),
       );
       return false;
     }

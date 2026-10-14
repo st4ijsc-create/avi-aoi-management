@@ -915,3 +915,36 @@ Plan `docs/superpowers/plans/2026-10-12-engineering-control-dot10.md`; thiết k
 **Đã thực hiện 2026-10-14 (chủ dự án duyệt):** gộp main `a9c1f40c3` + push; kiểm trước trên dev: kết quả trùng = 0, nhưng **`app_tenant_allows` trên dev đã bị một lần chạy lại 0125 cũ đảo về thân trước 0327** (lệch RLS có từ trước) ⇒ áp lại 0327, rồi 0372 → 0376 `--dev-only` (mỗi tệp tự kiểm + ghi sổ cái), `migrate-standalone` ghi nhận 0057/0066/0125/0234 bằng probe (thân 0327 còn hiệu lực), không còn gì chờ; SIM-SAFETY-PLC-1 gắn SIM-FAC (có dòng audit); build `52c2c1485` + khởi động :3000 — `/readyz` ready, không `persistUnknown`, không dòng "thiếu 0374". CI chạy thêm `pnpm test:serial`.
 
 **Còn mở:** chính sách lưu giữ bảng WORM; FAT S7 và thử bench bộ đọc safety-PLC; việc của chủ dự án từ trước (khoá TLS, mật khẩu keystore, APK 1.0.18).
+
+## 19. Kết quả Đợt 11 — phần còn mở sau Đợt 10 (2026-10-14)
+
+Plan `docs/superpowers/plans/2026-10-14-engineering-control-dot11.md`; sổ phán quyết R-11-a … R-11-o trong `.superpowers/sdd/2026-10-14-engineering-control-dot11/`. Migration **0377** — chỉ `_test`.
+
+### Quyết định của chủ dự án (2026-10-14)
+- Bảng chỉ-ghi-thêm (WORM) của Đợt 10: **giữ vĩnh viễn, chỉ cảnh báo dung lượng**.
+- Edge: chuẩn bị + thử MỘT nút mô phỏng trên máy này, nút thật vẫn tắt.
+- `OT_CMD_SERIALIZE_ENABLED`: đo trên `_test` rồi đề xuất.
+- Dọn tồn đọng: 6 census đỏ có từ trước, ghim 6 hàm còn lại + thứ tự khoá, test lệch giờ truy vấn thô, bench bộ đọc safety-PLC.
+- Giữa đợt: cơ chế "làn ưu tiên STOP" khi bật hàng đợi ghi OT đẻ lỗ mới 4 vòng liền ⇒ chủ dự án chọn **đơn giản hoá** (R-11-n).
+
+### Kết quả theo nhóm
+- **G — cảnh báo dung lượng bảng WORM:** 13 bảng (báo cáo/bằng chứng/tin cậy 0363–0376 + `command_log`, `control_audit_log`), kiểm mỗi giờ, ngưỡng cảnh báo/nghiêm trọng (mặc định 2/10 GiB, 20/100 triệu hàng, chỉnh bằng env), cảnh báo bền vững loại riêng `worm_table_size` (tôn trọng giới hạn + tuỳ chọn người nhận, không lặp sau khởi động lại), bảng dung lượng ở trang sức khoẻ hệ thống; không xoá gì.
+- **H — mig 0377:** 2 hàm plpgsql ghim `search_path`; 4 hàm SQL lõi (`app_tenant_allows`, `factory_timezone`, `db_storage_timezone`, `to_factory_time`) **định danh đầy đủ** thay vì ghim vì ghim chặn nội tuyến (đo 105 ms → 5 s / 300k hàng trên 82 chính sách RLS) — reviewer chứng minh không còn tên nào che bóng được; một thứ tự khoá thiết bị → yêu cầu cho mọi đường ack/giải quyết/quét STOP (deadlock 22–24/25 → 0); quét STOP trung tâm khoá thiết bị có hạn 1 s rồi vẫn gửi STOP (8 s → ≤1,6 s khi hàng bị giữ); các trình áp migration cũ từ chối chạy sau 0377 trừ khi áp lại 0377 ngay sau.
+- **I — census đỏ:** 6 census xanh (thông điệp thô client twin3d/AOIPackages → mã i18n, khoá i18n twinCanh, `appError` ở router gói AOI, test luồng KB, công thức yield dùng chung cho RF test cell; fakeUtc chỉ đỏ do tải) + một mỏ neo đột biến cũ; test lệch giờ truy vấn thô chạy lần đầu 10/10, không lệch.
+- **K — đo hàng đợi ghi OT:** bật cờ: đọc-lại nhất quán 8/8 (tắt: 1/8), p99 2,6 s ở 40 lệnh đồng thời một thiết bị (thông lượng 178 → 15/s), thiết bị khác nhau độc lập. Phát hiện và sửa: lệnh dừng không ghim từng bị xếp sau/BUSY; ghi phát trước STOP có thể tới thiết bị SAU STOP (cả khi tắt cờ) ⇒ **bộ đếm STOP theo thiết bị** huỷ ghi phát trước STOP đã xác minh (`STOPPED_BEFORE_WRITE`).
+- **Đơn giản hoá (R-11-n, R-11-o):** bật cờ ⇒ STOP ghim/đã xác minh gửi thẳng như khi tắt, chỉ chờ lệnh đang trên dây; STOP giống hệt đang gửi thì dùng chung kết quả thật; bỏ ~570 dòng làn/nhóm/gộp. Lệnh nhãn "stop" giá trị chưa xác minh đi đường thường với mọi cổng; tối đa 2 chờ/thiết bị, quá thì từ chối `STOP_UNVERIFIED_QUEUE_FULL` + cảnh báo (chỉ người dùng STOP ghim); hành động interlock có danh sách chờ riêng, được nhận trước; STOP đã xác minh huỷ lệnh có thể khởi động lại máy (ghi giá trị khác giá trị ghim vào thẻ dừng).
+- **L — bench safety-PLC:** máy này KHÔNG có OpenPLC (không cài gì). Script `scripts/safety-plc-bench.ts` chạy bộ đọc thật qua driver Modbus thật với điểm Modbus bất kỳ; tự kiểm với server Modbus trong repo 11/11 (nhấn/nhả e-stop, nhấn ngắn bắt được khi có bit chốt, cửa an toàn, mất/có PLC, 0 lần ghi).
+
+### Thời gian STOP (tắt cờ / bật cờ)
+- STOP ghim sau 6 lệnh ghi: 16–20 ms / chỉ chờ lệnh đang trên dây (≈50 / 240 / 1.035 ms cho lệnh 20 / 200 / 1.000 ms); đọc-lại treo 18–22 ms / 4,97 s.
+- Lệnh dừng chưa xác minh sau 6 lệnh: 0,27 s / 1,64 s; hàng đầy: 0,29 s / 0,94 s.
+
+### Kiểm
+- Mỗi nhóm review → vòng sửa; ~11 cờ quét bảo mật trên làn STOP ⇒ đơn giản hoá; review toàn nhánh (2 Critical + 2 Important, cờ bật) → vòng sửa cuối → đơn giản hoá → review lại: **sẵn sàng gộp khi cờ `OT_CMD_SERIALIZE_ENABLED` tắt**. Cuối: 4.008 test OT/edge/robot/điều phối xanh cả tắt và bật cờ; project nối tiếp 65/65; `tsc` sạch; đột biến đều bị diệt.
+
+### Thay đổi hành vi khi TẮT cờ (production, ghi chú phát hành)
+- Lệnh ghi phát ngay trước một STOP đã xác minh bị huỷ (`STOPPED_BEFORE_WRITE` — người vận hành thấy "gửi lại nếu cần"); lệnh nhãn "stop" chưa xác minh còn đang qua cổng bị STOP đã xác minh thay thế (`SUPERSEDED_BY_STOP`).
+- Quét STOP trung tâm gửi STOP ngay cả khi hàng thiết bị đang bị giữ (cảnh báo một lần mỗi đợt giữ); ghi trạng thái robot đăng ký không chặn và không bao giờ bị ghi đè bởi trạng thái cũ hơn kém an toàn hơn.
+- Một test cũ (`pinnedStop.dot1d` "1E đối chứng") được sửa vì khẳng định hành vi BUSY đã bỏ có chủ đích (R-11-g).
+
+**Còn mở:** áp 0377 lên dev (ngoài giờ — bước kiểm làm mới 2 materialized view, có thể chặn dashboard tới 60 s); bật `OT_CMD_SERIALIZE_ENABLED` (đề xuất: được, giờ đã sạch); cài OpenPLC để bench thật; thử nút edge mô phỏng (cần chủ dự án nhập mật khẩu admin + 2FA); bộ đếm STOP theo tiến trình (nhiều bản sao: chỉ trong tiến trình); FAT S7; việc của chủ dự án (khoá TLS, mật khẩu keystore, APK 1.0.18).

@@ -33,6 +33,7 @@
  *   node scripts/apply-migration-0374.mjs --test-only | --dev-only | --both   (NO flag ⇒ refused — R-3-g)
  */
 import { columnsOf, expectExact, maLoi, rolledBack, runMigration, tablePriv, updatableCols } from "./apply-migration-dot10-common.mjs";
+import { guard0377Hooks } from "./migration0377Guard.mjs"; // doc 81 Đợt 11 H — re-applying 0374 after 0377 reverts the lock order
 
 const REQ = "robot_motion_lock_requests";
 const HIST = "device_owner_changes";
@@ -64,6 +65,7 @@ const clear = (sp, robot, node, epoch, gen) => sp`SELECT edge_motion_lock_clear(
 const epochOf = async (tx, t, id) => Number((await tx`SELECT "ownerEpoch" AS e FROM ${tx(t)} WHERE id = ${id}`)[0].e);
 
 await runMigration({
+  guard: guard0377Hooks("0374_edge_device_ownership_and_lock_authority.sql"), // refused after 0377 unless --then-0377
   file: "0374_edge_device_ownership_and_lock_authority.sql",
   tag: "[0374]",
   async verify({ sql, appSql, log }) {

@@ -149,6 +149,7 @@ export default function SystemHealth() {
 
         <StoreForwardSection query={sfQuery} />
         <DbIngestHealthSection />
+        <WormTableSizesSection />
         <ConnectionSupervisorsSection query={supQuery} />
         <AiModelHealthSection query={aiQuery} />
         <TwinExportSection />
@@ -402,6 +403,85 @@ function DbIngestHealthSection() {
               </div>
             )}
           </div>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1b) doc 81 Dot 11 task G - append-only (WORM) table sizes (admin only, read-only)
+// ════════════════════════════════════════════════════════════════════════════
+
+function formatWormBytes(n: number): string {
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(2)} GiB`;
+  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MiB`;
+  return `${Math.round(n / 1024)} KiB`;
+}
+
+export function WormTableSizesSection() {
+  const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const canView = hasPermission("admin_system", "canView");
+  const query = trpc.systemHealth.wormTableSizes.useQuery(undefined, { refetchInterval: 60_000, enabled: canView });
+  if (!canView) return null;
+  const d = query.data;
+  const levelTone: Record<number, StatusMapEntry["tone"]> = { 0: "success", 1: "warning", 2: "error" };
+  const levelLabel = (l: number) =>
+    l === 2 ? t("systemHealth.db.wormLevelCritical", "nghiêm trọng") : l === 1 ? t("systemHealth.db.wormLevelWarn", "cảnh báo") : t("systemHealth.db.wormLevelOk", "bình thường");
+  return (
+    <SectionCard
+      icon={<Database className="h-5 w-5 text-primary" />}
+      title={t("systemHealth.db.wormTitle", "Bảng chỉ-thêm (WORM) — dung lượng")}
+      description={t(
+        "systemHealth.db.wormDesc",
+        "Các bảng bằng chứng an toàn chỉ-thêm giữ vĩnh viễn (không xoá). Cảnh báo bền tới admin khi một bảng vượt ngưỡng cảnh báo / nghiêm trọng (kiểm mỗi giờ).",
+      )}
+    >
+      {query.isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+          <Loader2 className="h-4 w-4 animate-spin" /> {t("common.loading", "Đang tải…")}
+        </div>
+      ) : query.isError ? (
+        <div className="flex items-center gap-2 text-sm text-destructive py-6">
+          <AlertTriangle className="h-4 w-4" /> {mapTrpcError(query.error)}
+        </div>
+      ) : !d || !d.available ? (
+        <p className="text-sm text-muted-foreground">{t("systemHealth.db.wormUnavailable", "Không đọc được dung lượng các bảng WORM.")}</p>
+      ) : d.tables.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t("systemHealth.db.wormEmpty", "Chưa có bảng WORM nào trên DB này.")}</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("systemHealth.db.wormColTable", "Bảng")}</TableHead>
+                  <TableHead className="text-right">{t("systemHealth.db.wormColSize", "Dung lượng")}</TableHead>
+                  <TableHead className="text-right">{t("systemHealth.db.wormColRows", "Số dòng (ước tính)")}</TableHead>
+                  <TableHead>{t("systemHealth.db.wormColLevel", "Mức")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {d.tables.map((row) => (
+                  <TableRow key={row.table}>
+                    <TableCell><code className="text-xs">{row.table}</code></TableCell>
+                    <TableCell className="text-right tabular-nums">{formatWormBytes(row.bytes)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.rowsEstimate.toLocaleString()}</TableCell>
+                    <TableCell><StatusBadge status={String(row.level)} tone={levelTone[row.level] ?? "default"} label={levelLabel(row.level)} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t("systemHealth.db.wormThresholds", "Ngưỡng cảnh báo: {{warnSize}} hoặc {{warnRows}} dòng · nghiêm trọng: {{critSize}} hoặc {{critRows}} dòng", {
+              warnSize: formatWormBytes(d.thresholds.warnBytes),
+              warnRows: d.thresholds.warnRows.toLocaleString(),
+              critSize: formatWormBytes(d.thresholds.criticalBytes),
+              critRows: d.thresholds.criticalRows.toLocaleString(),
+            })}
+          </p>
         </div>
       )}
     </SectionCard>

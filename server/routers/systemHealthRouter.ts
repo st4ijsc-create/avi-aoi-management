@@ -125,4 +125,23 @@ export const systemHealthRouter = router({
         dbFeatures,
       };
     }),
+  /**
+   * doc 81 Dot 11 task G - size of the append-only (WORM) safety / evidence tables (kept forever; the hourly monitor alerts when
+   * one grows too large). READ-ONLY: catalog sizes only. Admin only.
+   */
+  wormTableSizes: protectedProcedure
+    .use(requirePermission("admin_system", "canView"))
+    .query(async () => {
+      const { getDb } = await import("../db/connection");
+      const { readWormTableSizes, wormThresholdsFromEnv } = await import("../services/ops/wormTableSizeMonitor");
+      const thresholds = wormThresholdsFromEnv();
+      try {
+        const db = await getDb();
+        if (!db) return { available: false as const, thresholds, tables: [] };
+        const tables = await readWormTableSizes(db as never, thresholds);
+        return { available: true as const, thresholds, tables };
+      } catch {
+        return { available: false as const, thresholds, tables: [] };
+      }
+    }),
 });

@@ -159,6 +159,10 @@ export const APP_ERROR_CODES = [
                           // = khoá idempotency của lệnh DỪNG (truy vết; câu i18n không nội suy nó).
   "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY", // no params — doc 81 Đợt 4 final wave G9: như trên nhưng lệnh DỪNG
                           // KHÔNG có khoá idempotency ⇒ câu không có phần "(khoá)" (trước: chữ "unknown" lọt vào câu vi/zh).
+  "OT_STOP_UNVERIFIED_QUEUE_FULL", // no params — doc 81 Đợt 11 ruling R-11-o (I-1): KHÔNG ném: `DispatchResult.appError` của
+                          // một lệnh "stop" CHƯA XÁC MINH (không phải DỪNG ghim) bị TỪ CHỐI vì danh sách chờ chỗ của adapter đã đủ
+                          // (hàng đợi đầy + đã có OT_STOP_UNVERIFIED_WAIT_MAX lệnh như vậy chờ). Không gửi gì; người vận hành phải
+                          // dùng DỪNG ghim (hoặc E-STOP của máy). KHÁC BUSY (một DỪNG không bao giờ được bảo "thử lại sau").
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

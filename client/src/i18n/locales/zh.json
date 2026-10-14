@@ -3876,6 +3876,7 @@
       "encryptApiKey": "加密API密钥",
       "downloadPackageZip": "下载AOI数据包ZIP",
       "processAoiPackage": "处理AOI数据包",
+      "taiModelMay": "上传设备3D模型",
       "restoreBackup": "恢复备份",
       "activateInterlockRule": "启用联锁规则",
       "createProgramArtifactVersion": "创建程序工件版本",
@@ -4057,6 +4058,7 @@
       "conversationId": "对话ID",
       "importData": "导入数据",
       "fileName": "文件名",
+      "noiDungBase64": "模型文件内容（base64）",
       "machineCredentials": "设备凭证",
       "expiresAt": "过期日期",
       "dashboardImport": "仪表板导入内容",
@@ -4438,7 +4440,8 @@
     "DEVICE_UNREACHABLE": "无法连接到 {{entity}} 设备。请检查电源、网线和 IP 地址。",
     "DEVICE_PROTOCOL_UNSUPPORTED": "此版本不支持 {{entity}} 协议。",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "等待中的命令已因停止（STOP）命令（{{stopKey}}）而被取消——如仍需要，请重新发送。",
-    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "等待中的命令已因停止（STOP）命令而被取消——如仍需要，请重新发送。"
+    "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "等待中的命令已因停止（STOP）命令而被取消——如仍需要，请重新发送。",
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "此停止命令不是已验证的（固定）停止（STOP），且该设备已有过多此类命令在等待——已被拒绝，未发送任何内容。请使用固定停止（STOP）（或机器的急停 E-STOP）。"
   },
   "export": {
     "reportMenu": {
@@ -14836,7 +14839,19 @@
       "totalQueries": "查询总数",
       "walDelta": "已回填 {{b}} · 死信 {{d}}",
       "walDepth": "检测 WAL 深度",
-      "walOff": "关闭（直通）"
+      "walOff": "关闭（直通）",
+      "wormColLevel": "级别",
+      "wormColRows": "行数（估算）",
+      "wormColSize": "大小",
+      "wormColTable": "表",
+      "wormDesc": "仅追加的安全证据表永久保留（从不删除）。当某表超过警告/严重阈值时（每小时检查），会向管理员发送持久告警。",
+      "wormEmpty": "此数据库中没有 WORM 表。",
+      "wormLevelCritical": "严重",
+      "wormLevelOk": "正常",
+      "wormLevelWarn": "警告",
+      "wormThresholds": "警告阈值：{{warnSize}} 或 {{warnRows}} 行 · 严重阈值：{{critSize}} 或 {{critRows}} 行",
+      "wormTitle": "仅追加（WORM）表 - 大小",
+      "wormUnavailable": "无法读取 WORM 表的大小。"
     },
     "title": "系统健康",
     "subtitle": "实时内部状态：OT 遥测存储转发缓冲、按适配器的 HA 连接监管，以及 DINOv2 视觉模型状态。只读 — 不打开任何设备写入路径。",

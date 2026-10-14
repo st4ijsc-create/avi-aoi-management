@@ -21,6 +21,7 @@ import { Link } from "wouter";
 import { format } from "date-fns";
 import { useCanWrite } from "@/components/PermissionGate";
 import { PACKAGE_STATUS_BADGE_VARIANTS, PACKAGE_STATUS_FILTER_OPTIONS } from "./aoiPackagesStatusPresentation";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { locIngestLienQuan, laLoiTuChoiQuyen } from "./ingestIntegrityScanPresentation";
 import {
   Package,
@@ -158,7 +159,7 @@ export default function AOIPackages() {
       integrityScanQuery.refetch();
     },
     onError: (err) => {
-      toast.error(err.message || t('packages.integrityScanRunError'));
+      toast.error(mapTrpcError(err) || t('packages.integrityScanRunError'));
     },
   });
 
