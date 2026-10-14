@@ -101,6 +101,21 @@ describe("R-12-b — device_owner_changed: heartbeat, alert, reconnect", () => {
     }
   });
 
+  it("★ R-12-e M-4: after a lost-then-recovered episode (notifications of the gap are lost) the replica RECONCILES at once — not 30 s later", async () => {
+    const c = bus();
+    const stop = await startDeviceOwnershipSync({ listenClient: async () => c, notifyClient: async () => c, pingMs: 60_000, reconcileMs: 600_000, sweepMs: 600_000 } as never);
+    try {
+      await sleep(100); // the boot reconcile + sweep settle
+      const n0 = H.executes;
+      await sleep(50);
+      expect(H.executes).toBe(n0); // nothing periodic within the window
+      c.reconnect(); // postgres re-LISTENed after a dropped connection: lost + recovered
+      expect(await until(() => H.executes > n0)).toBe(true);
+    } finally {
+      await stop();
+    }
+  });
+
   it("heartbeats on the channel (any replica's) never trigger a reconcile; an unknown payload still does (control)", async () => {
     const c = bus();
     const stop = await startDeviceOwnershipSync({ listenClient: async () => c, notifyClient: async () => c, pingMs: 60_000, reconcileMs: 600_000, sweepMs: 600_000 } as never);

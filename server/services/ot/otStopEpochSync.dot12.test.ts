@@ -11,8 +11,11 @@ import {
   startOtStopEpochSync,
   otStopEpochSyncStatus,
   parseStopEpochPayload,
+  parseHelloPayload,
   resolveStopEpochKey,
   signStopEpochMessage,
+  signHelloMessage,
+  macOf,
   OT_STOP_EPOCH_REPLICA_ID,
   OT_STOP_EPOCH_CHANNEL,
   OT_STOP_EPOCH_MAX_AGE_MS,
@@ -75,8 +78,29 @@ afterEach(async () => {
   setStopEpochBroadcaster(null);
   vi.restoreAllMocks();
 });
+/**
+ * R-12-e M-1 — an in-memory "notifications" store: the key episode's PERSISTED state (rows survive a "restart" = a fresh module
+ * instance through vi.resetModules); two active admins by default.
+ */
+function episodeStore(admins: number[] = [1, 2]) {
+  const rows: Array<{ uid: number; problem: "no_key" | "key_restored" }> = [];
+  const io = {
+    rows,
+    admins,
+    failRead: false,
+    recipients: async () => [...io.admins],
+    latest: async () => {
+      if (io.failRead) throw new Error("db down");
+      const m = new Map<number, "no_key" | "key_restored">();
+      for (const r of rows) m.set(r.uid, r.problem); // later rows win (newest per admin)
+      return m;
+    },
+    write: async (uids: number[], problem: "no_key" | "key_restored") => void uids.forEach((uid) => rows.push({ uid, problem })),
+  };
+  return io;
+}
 async function start(c: ReturnType<typeof bus>, alerts: StopEpochSyncAlert[], o: Record<string, unknown> = {}) {
-  stopFn = await startOtStopEpochSync({ listenClient: () => c, notifyClient: () => c, env: ENV, pingMs: 60_000, alert: (a) => void alerts.push(a), ...o });
+  stopFn = await startOtStopEpochSync({ listenClient: () => c, notifyClient: () => c, env: ENV, pingMs: 60_000, alert: (a: StopEpochSyncAlert) => void alerts.push(a), keyEpisodeIo: episodeStore(), ...o } as never);
   return stopFn;
 }
 
@@ -93,18 +117,50 @@ describe("key (R-12-c): HKDF subkey, optional override, fail closed", () => {
     expect(resolveStopEpochKey({ OT_STOP_EPOCH_HMAC_KEY: "short", SECRET_ENCRYPTION_KEY: SECRET } as NodeJS.ProcessEnv).key).toBeNull(); // weak override: fail closed
   });
 
-  it("★ no key: nothing is sent, nothing is accepted, ONE no_key alert — and the key never appears in status, alerts or the console", async () => {
+  it("★ R-12-e M-1: no key ⇒ the sync is DISABLED: no LISTEN, nothing sent, nothing accepted; status 'disabled' (no_hmac_key, env names only); ONE no_key alert", async () => {
     const c = bus();
     const alerts: StopEpochSyncAlert[] = [];
     await start(c, alerts, { env: {} as NodeJS.ProcessEnv });
+    expect(await until(() => alerts.length > 0)).toBe(true);
     expect(alerts.map((a) => a.kind)).toEqual(["no_key"]);
+    expect(c.listenCalls).toBe(0); // disabled: not even listening
     bumpAdapterStopEpoch(990_100, null);
     await tick();
-    expect(c.notified.filter((p) => p.includes('"kind":"stop"'))).toEqual([]);
+    expect(c.notified).toEqual([]); // no stop, no hello
     expect(otStopEpochSyncStatus().unsignedNotSent).toBeGreaterThan(0);
     c.deliver(signed(990_101));
     expect(adapterStopEpoch(990_101)).toBe(0);
-    expect(otStopEpochSyncStatus().state).toBe("degraded");
+    const st = otStopEpochSyncStatus();
+    expect(st).toMatchObject({ state: "disabled", disabled: "no_hmac_key", keySource: null });
+    expect(st.keyProblem).toMatch(/OT_STOP_EPOCH_HMAC_KEY/);
+  });
+
+  it("★ R-12-e M-1: ONE alert per key-missing EPISODE, persisted across boots — a restart without a key is silent; a boot WITH a key closes the episode; the next boot without one alerts again", async () => {
+    const io = episodeStore([1, 2]);
+    const boot = async (env: NodeJS.ProcessEnv) => {
+      vi.resetModules(); // a "restart": no in-process memory survives, only the store's rows
+      const sync = await import("./otStopEpochSync");
+      const c = bus();
+      const alerts: StopEpochSyncAlert[] = [];
+      const stop = await sync.startOtStopEpochSync({ listenClient: () => c, notifyClient: () => c, env, pingMs: 60_000, alert: (a: StopEpochSyncAlert) => void alerts.push(a), keyEpisodeIo: io } as never);
+      await until(() => (sync.otStopEpochSyncStatus() as { keyEpisode?: string | null }).keyEpisode != null);
+      await stop();
+      return { alerts: alerts.filter((a) => a.kind === "no_key"), episode: (sync.otStopEpochSyncStatus() as { keyEpisode?: string | null }).keyEpisode };
+    };
+    expect(await boot({} as NodeJS.ProcessEnv)).toEqual({ alerts: [expect.objectContaining({ kind: "no_key" })], episode: "new_episode" });
+    expect(io.rows).toEqual([{ uid: 1, problem: "no_key" }, { uid: 2, problem: "no_key" }]);
+    expect(await boot({} as NodeJS.ProcessEnv)).toEqual({ alerts: [], episode: "episode_continues" }); // restart: not repeated
+    expect(await boot({} as NodeJS.ProcessEnv)).toEqual({ alerts: [], episode: "episode_continues" });
+    expect(io.rows).toHaveLength(2);
+    io.admins.push(3); // an admin added meanwhile gets the row, the alert is not repeated
+    expect(await boot({} as NodeJS.ProcessEnv)).toEqual({ alerts: [], episode: "episode_continues" });
+    expect(io.rows.filter((r) => r.uid === 3)).toEqual([{ uid: 3, problem: "no_key" }]);
+    expect(await boot(ENV)).toEqual({ alerts: [], episode: "episode_closed" }); // a key: the episode ends (one key_restored row each)
+    expect(io.rows.filter((r) => r.problem === "key_restored").map((r) => r.uid).sort()).toEqual([1, 2, 3]);
+    expect(await boot(ENV)).toEqual({ alerts: [], episode: "nothing" });
+    expect(await boot({} as NodeJS.ProcessEnv)).toMatchObject({ alerts: [expect.objectContaining({ kind: "no_key" })], episode: "new_episode" }); // a NEW episode
+    io.failRead = true; // the episode cannot be read ⇒ alert (fail toward telling)
+    expect((await boot({} as NodeJS.ProcessEnv)).alerts).toHaveLength(1);
   });
 
   it("the key material never reaches the status, an alert or the console", async () => {
@@ -127,8 +183,10 @@ describe("send side — never on the STOP's path (L-7), signed", () => {
     const c = bus();
     await start(c, []);
     const at0 = Date.now();
+    await tick();
+    const before = c.notified.length; // the start's hello (R-12-e M-2)
     bumpAdapterStopEpoch(990_001, { idempotencyKey: "k" });
-    expect(c.notified.length).toBe(0);
+    expect(c.notified.length).toBe(before);
     await tick();
     await tick();
     const m = parseStopEpochPayload(c.notified.find((p) => p.includes('"kind":"stop"')));
@@ -257,6 +315,56 @@ describe("receive side (R-12-c)", () => {
     expect(c.notified.length).toBe(sent);
     expect(c.subs.every((s) => !s.active)).toBe(true);
     expect(otStopEpochSyncStatus().state).toBe("off");
+  });
+});
+
+describe("R-12-e M-2 — a signed HELLO at start proves the key before the first real STOP", () => {
+  it("★ start sends ONE signed hello; a hello from a peer with the SAME key is verified (status lists it, no alert) and answered once; a hello signed with ANOTHER key ⇒ ONE key_mismatch alert (rate-limited), counted; a hello never moves an epoch", async () => {
+    const c = bus();
+    const alerts: StopEpochSyncAlert[] = [];
+    await start(c, alerts);
+    const s0 = otStopEpochSyncStatus();
+    const hellos = () => c.notified.filter((p) => p.includes('"kind":"hello"'));
+    expect(await until(() => hellos().length > 0)).toBe(true);
+    const mine = parseHelloPayload(hellos()[0]);
+    expect(mine).toMatchObject({ v: 2, kind: "hello", replicaId: OT_STOP_EPOCH_REPLICA_ID });
+    expect(mine!.mac).toBe(signHelloMessage(KEY, { replicaId: mine!.replicaId, seq: mine!.seq, issuedAt: mine!.issuedAt }).mac);
+    await sleep(20);
+    const sent0 = hellos().length;
+    expect(sent0).toBe(1); // its own hello came back: ignored, not answered
+    // a peer with the same key
+    c.deliver(JSON.stringify(signHelloMessage(KEY, { replicaId: "good-peer-0001", seq: 1, issuedAt: Date.now() })));
+    expect(await until(() => hellos().length === sent0 + 1)).toBe(true); // answered once
+    c.deliver(JSON.stringify(signHelloMessage(KEY, { replicaId: "good-peer-0001", seq: 2, issuedAt: Date.now() })));
+    await sleep(20);
+    expect(hellos().length).toBe(sent0 + 1); // not answered twice
+    let st = otStopEpochSyncStatus();
+    expect(st.hello).toMatchObject({ verifiedPeers: 1, mismatches: 0 });
+    expect(alerts.filter((a) => a.kind === "key_mismatch")).toEqual([]);
+    // peers with ANOTHER key: alert once, counted every time
+    const other = Buffer.alloc(32, 3);
+    for (let i = 1; i <= 3; i++) c.deliver(JSON.stringify(signHelloMessage(other, { replicaId: "bad-peer-000" + i, seq: i, issuedAt: Date.now() })));
+    st = otStopEpochSyncStatus();
+    expect(st.hello).toMatchObject({ verifiedPeers: 1, mismatches: 3 });
+    expect(alerts.filter((a) => a.kind === "key_mismatch")).toHaveLength(1);
+    expect(alerts.find((a) => a.kind === "key_mismatch")!.reason).toMatch(/another key/);
+    expect(JSON.stringify(alerts) + JSON.stringify(st)).not.toContain(KEY.toString("hex"));
+    expect(st.peerStops).toBe(s0.peerStops); // a hello is not a STOP
+    expect(st.rejectedBy.malformed).toBe(s0.rejectedBy.malformed); // and is not "malformed"
+  });
+
+  it("parseHelloPayload is strict: exact keys, v2, kind hello", () => {
+    const ok = signHelloMessage(KEY, { replicaId: PEER, seq: 3, issuedAt: 1_700_000_000_000 });
+    expect(parseHelloPayload(JSON.stringify(ok))).toEqual(ok);
+    expect(parseHelloPayload(JSON.stringify({ ...ok, adapterId: 5 }))).toBeNull();
+    expect(parseHelloPayload(JSON.stringify({ ...ok, kind: "stop" }))).toBeNull();
+    expect(parseHelloPayload(JSON.stringify({ ...ok, v: 1 }))).toBeNull();
+    expect(parseHelloPayload(JSON.stringify({ ...ok, replicaId: "x" }))).toBeNull();
+    expect(parseStopEpochPayload(JSON.stringify({ ...ok, kind: "stop", adapterId: 1 }))).not.toBeNull(); // shape only …
+    // the kind is inside the MAC: the same fields signed as a "stop" give another MAC
+    expect(macOf(KEY, { v: 2, kind: "stop", replicaId: PEER, seq: 3, issuedAt: 1_700_000_000_000, adapterId: 0 })).not.toBe(ok.mac);
+    const asStop = parseStopEpochPayload(JSON.stringify({ ...ok, kind: "stop", adapterId: 1 }))!;
+    expect(asStop.mac).not.toBe(signStopEpochMessage(KEY, { replicaId: PEER, seq: 3, issuedAt: 1_700_000_000_000, adapterId: 1 }).mac); // … a hello MAC never verifies as a STOP
   });
 });
 

@@ -784,6 +784,11 @@ export async function startDeviceOwnershipSync(
     pingDeadlineMs: opts.pingDeadlineMs,
     alert: opts.listenAlert,
     lostMeaning: `Until it reconnects, ownership changes made by OTHER replicas reach this one only through the ${DEVICE_OWNER_RECONCILE_MS / 1000} s reconcile.`,
+    // doc 81 Đợt 12 final fix wave (R-12-e M-4) — the gap's notifications were lost: reconcile now, not at the next 30 s pass
+    onRecovered: () => {
+      if (!reconciling) reconcile();
+      else setTimeout(reconcile, 1_000).unref?.();
+    },
   });
   deviceOwnerListener = chan;
   // R-10-al — the first reconcile runs right AFTER the LISTEN: nothing committed in between is lost

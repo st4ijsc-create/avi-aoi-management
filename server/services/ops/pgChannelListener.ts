@@ -147,6 +147,11 @@ export async function startChannelListener(o: {
   alert?: (a: ChannelListenerAlert) => void | Promise<void>;
   /** what a lost episode means for this channel (alert text) */
   lostMeaning: string;
+  /**
+   * doc 81 Đợt 12 final fix wave (R-12-e M-4) — called once a lost episode has ENDED (the listener delivers again): notifications
+   * sent in the gap were never delivered, so the owner re-reads its state (e.g. a reconcile). Never awaited; a throw is contained.
+   */
+  onRecovered?: () => void;
 }): Promise<ChannelListener> {
   const id = randomUUID();
   const listenClient = o.listenClient ?? defaultListenClient;
@@ -193,7 +198,14 @@ export async function startChannelListener(o: {
     st.state = "ok";
     st.since = Date.now();
     st.reason = null;
-    if (was === "degraded") alert("recovered", reason);
+    if (was === "degraded") {
+      alert("recovered", reason);
+      try {
+        o.onRecovered?.(); // R-12-e M-4
+      } catch (e) {
+        console.warn(`[${o.tag}] onRecovered failed: ${String((e as Error)?.message ?? e).slice(0, 200)}`);
+      }
+    }
   };
 
   let pending: { nonce: string; sentAt: number; timer: NodeJS.Timeout | null } | null = null;

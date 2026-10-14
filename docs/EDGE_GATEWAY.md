@@ -546,17 +546,27 @@ central pending-STOP sweep and the edge-fallback STOP send real STOPs with the g
 - Every central replica LISTENs on `ot_stop_epoch` (the dedicated client's own LISTEN connection) and, for a message that passes
   every check, moves its PEER epoch for that adapter: every NON-STOP write in its checks since before that moment is cancelled
   `STOPPED_BEFORE_WRITE` (ledger names the STOP `{peer: true, origin, peerSeq, at}`).
-- **A peer STOP never cancels a STOP** (L-7): stop-typed commands — verified or not — consult only the STOPs sent by their own
-  process. On an adapter without pinned stop values an unverified stop is the only software STOP; nothing from the channel can
-  supersede it.
+- **A peer STOP never cancels a STOP** (L-7): a verified STOP is never cancelled by anything. On an adapter WITHOUT pinned stop
+  values an unverified stop is the only software STOP: it consults only the STOPs sent by its own process; nothing from the
+  channel can supersede it. Final fix wave (R-12-e I-1, scan #113): on an adapter WITH pins (a verified STOP exists there), a
+  stop-LABELLED command that is not a verified STOP (an unpinned tag, the pin value plus an unpinned tag, a non-pin value) is
+  superseded by a peer STOP exactly as by a local one — the replica the load balancer picked changes nothing. The adapter's pins
+  are read once (bounded 1 s); a read failure ⇒ not exempt.
 
 **Who can send on the channel — and why the messages are signed.** PostgreSQL has no privilege for NOTIFY: any role that can
 connect to the database can NOTIFY any channel (proven on `_test` with the app role `avi_app`, not superuser, no CREATEROLE).
 Every message therefore carries an HMAC-SHA256 over (channel, v, kind, replicaId, seq, issuedAt, adapterId):
 - **Key:** HKDF-SHA256 subkey (info `ot_stop_epoch/hmac/v1`) of `OT_STOP_EPOCH_HMAC_KEY` if set (≥ 32 characters), else of
   `SECRET_ENCRYPTION_KEY` — which every central replica already shares and which the edge and the DB never hold. Never
-  `JWT_SECRET` / `SESSION_SECRET`. **Neither set ⇒ fail closed:** nothing is sent, nothing is accepted, an alert says so, the
-  replica runs per process. The key is never logged nor shown in the status.
+  `JWT_SECRET` / `SESSION_SECRET`. **Neither set ⇒ the sync is DISABLED (fail closed):** no LISTEN, nothing sent, nothing
+  applied; the replica runs per process; the status says "disabled: no HMAC key" (env names only). R-12-e M-1: ONE alert per
+  key-missing EPISODE, remembered across boots in the admin alert rows (`notifications.metadata` `{kind: ot_stop_epoch_sync,
+  problem: no_key}`) — a restart without a key is silent; a boot with a key closes the episode (`key_restored`). The key is never
+  logged nor shown in the status. Harmless with ONE central process; set `OT_STOP_EPOCH_HMAC_KEY` before adding a replica.
+- **Hello (R-12-e M-2):** once listening, each replica NOTIFYs a signed `{v:2, kind:"hello", replicaId, seq, issuedAt, mac}`;
+  a hello from a new replica is answered once (rate-limited), so the earlier replica checks the later one too. A hello this
+  replica cannot verify ⇒ a `key_mismatch` alert (at most every 30 min, every one counted): a key that differs between
+  replicas shows at boot, not at the first real STOP. A hello never moves an epoch; the kind is inside the MAC.
 - **Checks, in order:** strict shape (exact keys, ≤ 512 bytes) → MAC (constant-time) → own replica (ignored) → freshness
   `|now − issuedAt| ≤ 30 s` (future-dated included; clock skew between replicas beyond that rejects every message — the
   rejection alert says so) → replay WINDOW per `replicaId` (seqs seen within the freshness window; not a strict sequence: a
@@ -577,8 +587,9 @@ since fix 1 — R-12-b):
   automatic re-LISTEN (postgres.js then drops the channel silently) is caught by the heartbeat.
 - Alerts: console + alert stream every episode; admin inbox at most every 30 min (normal priority, no cap exemption).
 - While lost / without key the replica falls back to per-process behaviour (Đợt 11). Writes are not blocked for it.
-- Status: `systemHealth.crossReplicaChannels` (admin) — state, key source, rejections by reason, peer map, latency, and the
-  `device_owner_changed` listener.
+- Status: `systemHealth.crossReplicaChannels` (admin) — state, key source, rejections by reason, peer map, latency, hello
+  (verified peers, mismatches), and the `device_owner_changed` listener; shown on the System Health page (R-12-e M-3). After
+  that listener recovers from a lost episode it reconciles at once (R-12-e M-4), not at the next 30 s pass.
 
 **The remaining window (measured on `_test`, two dispatcher instances in one Node process, each with its own pools and dedicated
 LISTEN/NOTIFY connections, local PostgreSQL, 2026-10-14).** The window is the NOTIFY latency: from A sending the STOP to B's

@@ -21,13 +21,22 @@
  *     strict seq) → apply. replicaId is random per boot (seq needs no persistence). Rejections are counted; ONE alert per rejection
  *     episode (an episode ends after 5 quiet minutes). Receive state is bounded (64 replicas, 4096 seqs each; overflow evicts — a
  *     replay of an evicted seq can only cancel writes — and alerts).
- *   • DEGRADED = per process (the Đợt 11 behaviour) — LISTEN lost, no key, or a rejected message.
+ *   • NO KEY (final fix wave R-12-e M-1) ⇒ the sync is DISABLED on this replica: no LISTEN, nothing sent or applied; status
+ *     "disabled: no HMAC key" (env NAMES only); ONE alert per key-missing EPISODE, remembered across boots in the alert rows
+ *     (otStopEpochKeyEpisode — a restart without a key is silent; a boot with a key closes the episode).
+ *   • HELLO (R-12-e M-2) — at start each replica NOTIFYs a signed `{v:2, kind:"hello", replicaId, seq, issuedAt, mac}`; a replica
+ *     that cannot verify a hello raises a key_mismatch alert (rate-limited, counted) — a key that differs between replicas shows at
+ *     boot, not at the first real STOP. A hello from a new replica is answered once (so the earlier replica checks the later one
+ *     too); a hello never moves an epoch.
+ *   • DEGRADED = per process (the Đợt 11 behaviour) — LISTEN lost, or a rejected message.
  *   • REMAINING WINDOW = the NOTIFY latency (docs/EDGE_GATEWAY.md §8.14).
  *   • The EDGE has no DB: never started there (its epoch stays per process).
  */
 import { createHmac, hkdfSync, randomUUID, timingSafeEqual } from "node:crypto";
 import { bumpAdapterStopEpochFromPeer, peerStopEpochStats, setStopEpochBroadcaster, type StopEpochBroadcast } from "./otDeviceWrite";
 import { isEdgeProcessRole } from "../../db/connection";
+import { NO_KEY_FIX, defaultKeyEpisodeIo, settleKeyEpisode, type KeyEpisodeIo, type KeyEpisodeOutcome } from "./otStopEpochKeyEpisode";
+import { withDeadline } from "./drivers/boundedClose";
 import {
   startChannelListener,
   notifyBounded,
@@ -55,6 +64,14 @@ export const OT_STOP_EPOCH_REPLICA_ID = randomUUID();
 export const OT_STOP_EPOCH_ORIGIN = OT_STOP_EPOCH_REPLICA_ID;
 
 export type StopEpochMessage = { v: 2; kind: "stop"; replicaId: string; seq: number; issuedAt: number; adapterId: number; mac: string };
+/** R-12-e M-2 — the start handshake: proves (to every replica that can verify it) that this replica signs with the same key */
+export type StopEpochHello = { v: 2; kind: "hello"; replicaId: string; seq: number; issuedAt: number; mac: string };
+/** R-12-e M-2 — at most one key_mismatch alert per this interval (every mismatch is counted) */
+export const OT_STOP_EPOCH_KEY_MISMATCH_ALERT_MS = 30 * 60_000;
+/** R-12-e M-2 — replicas remembered for the hello status / the one-time answer (bounded) */
+export const OT_STOP_EPOCH_HELLO_PEERS_MAX = 64;
+/** R-12-e M-2 — answers to hellos at most this often (a flood of forged hellos cannot make this replica NOTIFY in a loop) */
+export const OT_STOP_EPOCH_HELLO_REPLY_MIN_MS = 1_000;
 
 // ── key ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export type StopEpochKey = { key: Buffer; source: "OT_STOP_EPOCH_HMAC_KEY" | "SECRET_ENCRYPTION_KEY" } | { key: null; source: null; reason: string };
@@ -74,16 +91,23 @@ export function resolveStopEpochKey(env: NodeJS.ProcessEnv = process.env): StopE
   return { key: null, source: null, reason: "neither OT_STOP_EPOCH_HMAC_KEY nor SECRET_ENCRYPTION_KEY is set" };
 }
 
-const canonical = (m: Omit<StopEpochMessage, "mac">) => `${OT_STOP_EPOCH_CHANNEL}\nv${m.v}\n${m.kind}\n${m.replicaId}\n${m.seq}\n${m.issuedAt}\n${m.adapterId}`;
-export function macOf(key: Buffer, m: Omit<StopEpochMessage, "mac">): string {
+// the kind is signed: a hello MAC (adapterId 0, kind hello) never verifies as a STOP
+const canonical = (m: Omit<StopEpochMessage, "mac"> | Omit<StopEpochHello, "mac">) =>
+  `${OT_STOP_EPOCH_CHANNEL}\nv${m.v}\n${m.kind}\n${m.replicaId}\n${m.seq}\n${m.issuedAt}\n${"adapterId" in m ? m.adapterId : 0}`;
+export function macOf(key: Buffer, m: Omit<StopEpochMessage, "mac"> | Omit<StopEpochHello, "mac">): string {
   return createHmac("sha256", key).update(canonical(m), "utf8").digest("hex");
+}
+/** R-12-e M-2 — build a signed hello (tests / the start). */
+export function signHelloMessage(key: Buffer, m: Omit<StopEpochHello, "mac" | "v" | "kind">): StopEpochHello {
+  const base = { v: 2 as const, kind: "hello" as const, ...m };
+  return { ...base, mac: macOf(key, base) };
 }
 /** Build a signed message (tests / the broadcaster). */
 export function signStopEpochMessage(key: Buffer, m: Omit<StopEpochMessage, "mac" | "v" | "kind">): StopEpochMessage {
   const base = { v: 2 as const, kind: "stop" as const, ...m };
   return { ...base, mac: macOf(key, base) };
 }
-function macOk(key: Buffer, m: StopEpochMessage): boolean {
+function macOk(key: Buffer, m: StopEpochMessage | StopEpochHello): boolean {
   const want = Buffer.from(macOf(key, m), "hex");
   const got = Buffer.from(m.mac, "hex");
   return got.length === want.length && timingSafeEqual(got, want);
@@ -113,16 +137,45 @@ export function parseStopEpochPayload(raw: unknown): StopEpochMessage | null {
   return { v: 2, kind: "stop", replicaId: o.replicaId, seq: o.seq, issuedAt: o.issuedAt, adapterId: o.adapterId, mac: o.mac };
 }
 
+const HELLO_KEYS = "issuedAt,kind,mac,replicaId,seq,v";
+/** R-12-e M-2 — STRICT parse of a hello; null for anything else (the MAC is checked separately). */
+export function parseHelloPayload(raw: unknown): StopEpochHello | null {
+  if (typeof raw !== "string" || raw.length === 0 || raw.length > OT_STOP_EPOCH_MAX_PAYLOAD) return null;
+  let m: unknown;
+  try {
+    m = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof m !== "object" || m === null || Array.isArray(m)) return null;
+  const o = m as Record<string, unknown>;
+  if (Object.keys(o).sort().join(",") !== HELLO_KEYS) return null;
+  if (o.v !== 2 || o.kind !== "hello") return null;
+  if (typeof o.replicaId !== "string" || !ID_RE.test(o.replicaId)) return null;
+  if (!posInt(o.seq) || !posInt(o.issuedAt)) return null;
+  if (typeof o.mac !== "string" || !MAC_RE.test(o.mac)) return null;
+  return { v: 2, kind: "hello", replicaId: o.replicaId, seq: o.seq, issuedAt: o.issuedAt, mac: o.mac };
+}
+
 // ── status ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export type StopEpochSyncAlert =
   | ChannelListenerAlert
-  | { kind: "no_key" | "rejected" | "peer_overflow" | "replica_overflow"; channel: string; reason: string; at: number };
+  | { kind: "no_key" | "rejected" | "peer_overflow" | "replica_overflow" | "key_mismatch"; channel: string; reason: string; at: number };
 export type RejectReason = "malformed" | "no_key" | "bad_mac" | "stale" | "replay";
 const LAT_RING = 512;
 const st = {
   running: false,
   keySource: null as string | null,
   keyProblem: null as string | null,
+  /** R-12-e M-1 — "no_hmac_key": the sync is disabled on this replica (null: enabled) */
+  disabled: null as "no_hmac_key" | null,
+  /** R-12-e M-1 — how this boot settled the persisted key episode (null until settled) */
+  keyEpisode: null as KeyEpisodeOutcome | null,
+  /** R-12-e M-2 — the start handshake */
+  helloSent: 0,
+  helloMismatches: 0,
+  helloLastMismatchAt: null as number | null,
+  helloPeers: new Map<string, { lastSeenAt: number; verified: boolean }>(),
   peerStops: 0,
   ignoredOwn: 0,
   rejected: { malformed: 0, no_key: 0, bad_mac: 0, stale: 0, replay: 0 } as Record<RejectReason, number>,
@@ -147,10 +200,20 @@ export function otStopEpochSyncStatus() {
   const rejectedTotal = Object.values(st.rejected).reduce((a, b) => a + b, 0);
   return {
     running: st.running,
-    state: !st.running ? "off" : st.keyProblem ? "degraded" : (l?.state ?? "connecting"),
+    state: !st.running ? "off" : st.disabled ? "disabled" : st.keyProblem ? "degraded" : (l?.state ?? "connecting"),
     origin: OT_STOP_EPOCH_REPLICA_ID,
     keySource: st.keySource,
     keyProblem: st.keyProblem,
+    disabled: st.disabled,
+    keyEpisode: st.keyEpisode,
+    hello: {
+      sent: st.helloSent,
+      verifiedPeers: [...st.helloPeers.values()].filter((p) => p.verified).length,
+      mismatches: st.helloMismatches,
+      lastMismatchAt: st.helloLastMismatchAt,
+      // replica ids are random per boot; shortened for display
+      peers: [...st.helloPeers].filter(([, p]) => p.verified).map(([id, p]) => ({ replica: `${id.slice(0, 8)}…`, lastSeenAt: p.lastSeenAt })),
+    },
     listen: l,
     reconnects: l?.reconnects ?? 0,
     peerStops: st.peerStops,
@@ -196,6 +259,8 @@ export function startOtStopEpochSync(
     retryMs?: number;
     notifyDeadlineMs?: number;
     alert?: (a: StopEpochSyncAlert) => void | Promise<void>;
+    /** R-12-e M-1 — the persisted key episode (default: the notification rows of the app DB) */
+    keyEpisodeIo?: KeyEpisodeIo;
   } = {},
 ): Promise<() => Promise<void>> {
   if (isEdgeProcessRole()) return Promise.resolve(async () => undefined);
@@ -217,9 +282,10 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
             key: `ot_stop_epoch:${x.kind}`,
             kind: "ot_stop_epoch_sync",
             severity: "high",
-            title: "OT STOP sync between central replicas degraded",
+            title: x.kind === "no_key" ? "OT STOP sync between central replicas DISABLED: no HMAC key" : x.kind === "key_mismatch" ? "OT STOP sync: a central replica signs with another key" : "OT STOP sync between central replicas degraded",
             message: `[OtStopEpochSync] ${x.reason}`,
-            inbox: true,
+            // R-12-e M-1 — the no_key inbox rows are written once per EPISODE by otStopEpochKeyEpisode (never on every boot)
+            inbox: x.kind !== "no_key",
             metadata: { problem: x.kind },
           });
         });
@@ -233,14 +299,35 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
   const k = resolveStopEpochKey(opts.env);
   st.keySource = k.source;
   st.keyProblem = k.key ? null : k.reason;
-  if (!k.key) {
-    alert({
-      kind: "no_key",
-      channel: OT_STOP_EPOCH_CHANNEL,
-      reason: `cross-replica STOP sync DISABLED on this replica (${k.reason}): its STOPs are not broadcast and other replicas' STOPs are not applied here (per-process behaviour). Set SECRET_ENCRYPTION_KEY (shared by every central replica) or OT_STOP_EPOCH_HMAC_KEY.`,
-      at: Date.now(),
-    });
-  }
+  st.disabled = k.key ? null : "no_hmac_key";
+  st.keyEpisode = null;
+  // R-12-e M-1 — settle the persisted key episode (boot only, never awaited, bounded): ONE alert per key-missing episode
+  const episodeIo = opts.keyEpisodeIo ?? defaultKeyEpisodeIo();
+  void (async () => {
+    let outcome: KeyEpisodeOutcome;
+    try {
+      outcome = (await withDeadline(settleKeyEpisode(k.key !== null, k.key ? null : k.reason, episodeIo), 10_000, "OT STOP sync key episode")).outcome;
+    } catch (e) {
+      // unreadable ⇒ tell (fail toward alerting); nothing is remembered for this boot
+      console.warn(`[OtStopEpochSync] the key episode could not be read (${String((e as Error)?.message ?? e).slice(0, 200)})`);
+      outcome = k.key ? "nothing" : "new_episode";
+    }
+    st.keyEpisode = outcome;
+    if (k.key) {
+      if (outcome === "episode_closed") console.warn("[OtStopEpochSync] an HMAC key is configured: cross-replica STOP sync enabled (the 'no HMAC key' episode is closed)");
+      return;
+    }
+    if (outcome === "new_episode") {
+      alert({
+        kind: "no_key",
+        channel: OT_STOP_EPOCH_CHANNEL,
+        reason: `cross-replica STOP sync DISABLED on this replica (${k.reason}): its STOPs are not broadcast and other replicas' STOPs are not applied here (per-process behaviour; harmless with ONE central process). ${NO_KEY_FIX}`,
+        at: Date.now(),
+      });
+    } else {
+      console.warn(`[OtStopEpochSync] cross-replica STOP sync disabled on this replica (${k.reason}) — this episode was already alerted; not repeated on restart`);
+    }
+  })();
   const key = k.key;
 
   // ── rejection episodes (one alert per episode)
@@ -273,11 +360,61 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
     });
   });
 
+  // ── HELLO (R-12-e M-2)
+  st.helloPeers.clear();
+  let mismatchAlertAt = 0;
+  let lastReplyAt = 0;
+  const sendHello = () => {
+    if (!key || stopped) return;
+    seq += 1;
+    const h = signHelloMessage(key, { replicaId: OT_STOP_EPOCH_REPLICA_ID, seq, issuedAt: Date.now() });
+    void notifyBounded(notifyClient, OT_STOP_EPOCH_CHANNEL, JSON.stringify(h), opts.notifyDeadlineMs).then((r) => {
+      if (r.ok) st.helloSent += 1;
+      else warnRateLimited(`hello on ${OT_STOP_EPOCH_CHANNEL} not sent (${r.error})`);
+    });
+  };
+  const onHello = (h: StopEpochHello) => {
+    if (!key) return;
+    if (h.replicaId === OT_STOP_EPOCH_REPLICA_ID && macOk(key, h)) return; // its own hello
+    const verified = macOk(key, h);
+    const now = Date.now();
+    const known = st.helloPeers.has(h.replicaId);
+    if (!known && st.helloPeers.size >= OT_STOP_EPOCH_HELLO_PEERS_MAX) {
+      let oldest: string | null = null;
+      let t = Infinity;
+      for (const [id, x] of st.helloPeers) if (x.lastSeenAt < t) ((t = x.lastSeenAt), (oldest = id));
+      if (oldest) st.helloPeers.delete(oldest);
+    }
+    st.helloPeers.set(h.replicaId, { lastSeenAt: now, verified: verified || (st.helloPeers.get(h.replicaId)?.verified ?? false) });
+    if (!verified) {
+      st.helloMismatches += 1;
+      st.helloLastMismatchAt = now;
+      if (now - mismatchAlertAt >= OT_STOP_EPOCH_KEY_MISMATCH_ALERT_MS || mismatchAlertAt === 0) {
+        mismatchAlertAt = now;
+        alert({
+          kind: "key_mismatch",
+          channel: OT_STOP_EPOCH_CHANNEL,
+          reason: `a central replica (${h.replicaId.slice(0, 8)}…) announced itself on ${OT_STOP_EPOCH_CHANNEL} signed with another key (or the hello is forged): STOPs between it and this replica are rejected (bad MAC) — writes there are not cancelled by STOPs sent here and vice versa. ${NO_KEY_FIX} Further mismatches within ${OT_STOP_EPOCH_KEY_MISMATCH_ALERT_MS / 60_000} min are only counted.`,
+          at: now,
+        });
+      }
+    }
+    // answer a NEW replica once (it booted after us: it must check OUR key too), rate-limited
+    if (!known && now - lastReplyAt >= OT_STOP_EPOCH_HELLO_REPLY_MIN_MS) {
+      lastReplyAt = now;
+      sendHello();
+    }
+  };
+
   // ── RECEIVE
   const replicas = new Map<string, { seen: Map<number, number>; lastSeen: number }>();
   const onPayload = (raw: string) => {
     const m = parseStopEpochPayload(raw);
-    if (!m) return reject("malformed", `${String(raw).length} chars`);
+    if (!m) {
+      const h = parseHelloPayload(raw);
+      if (h) return onHello(h);
+      return reject("malformed", `${String(raw).length} chars`);
+    }
     if (!key) return reject("no_key", "no HMAC key on this replica");
     if (!macOk(key, m)) return reject("bad_mac", `adapter ${m.adapterId}`);
     if (m.replicaId === OT_STOP_EPOCH_REPLICA_ID) {
@@ -332,6 +469,16 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
   };
 
   st.running = true;
+  if (!key) {
+    // R-12-e M-1 — DISABLED: no LISTEN (nothing could be verified), nothing sent (the broadcaster above only counts)
+    return async () => {
+      if (stopped) return;
+      stopped = true;
+      removeBroadcaster();
+      st.running = false;
+      active = null;
+    };
+  }
   listener = await startChannelListener({
     channel: OT_STOP_EPOCH_CHANNEL,
     tag: "OtStopEpochSync",
@@ -346,6 +493,7 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
     alert: opts.alert ? (a) => opts.alert!(a) : undefined,
     lostMeaning: "Until it reconnects, a STOP sent by ANOTHER replica does not cancel writes still in this replica's checks (per-process behaviour).",
   });
+  sendHello(); // R-12-e M-2 — once listening: the replicas already up verify this one (and answer, so this one verifies them)
 
   return async () => {
     if (stopped) return;
