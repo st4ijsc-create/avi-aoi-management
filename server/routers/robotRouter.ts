@@ -37,7 +37,7 @@ export interface RobotLiveState {
   connected: boolean;
   motionLock: MotionLockState | null;
 }
-function robotLiveState(robotId: number): RobotLiveState {
+function robotLiveState(robotId: number, persisted?: ReadonlyMap<number, MotionLockState>): RobotLiveState {
   const rt = getActiveRobot(robotId);
   if (!rt) return { active: false, connected: false, motionLock: null };
   let connected = false;
@@ -46,7 +46,106 @@ function robotLiveState(robotId: number): RobotLiveState {
   } catch {
     connected = false;
   }
-  return { active: true, connected, motionLock: rt.driver.getMotionLock?.() ?? null };
+  // doc 81 Đợt 12 N — a driver with no motion lock: its robot's PERSISTED lock row (what refuses its motion), if any
+  const motionLock = typeof rt.driver.getMotionLock === "function" ? rt.driver.getMotionLock() : (persisted?.get(robotId) ?? null);
+  return { active: true, connected, motionLock };
+}
+
+/**
+ * doc 81 Đợt 12 N — the persisted lock rows of the active robots whose driver has no motion lock (one batched, bounded read;
+ * only when there is such a robot). A failed read shows nothing (as before) — the motion gate still refuses on the row.
+ */
+async function persistedLocksOfLocklessRobots(robotIds: number[]): Promise<Map<number, MotionLockState>> {
+  const out = new Map<number, MotionLockState>();
+  const ids = robotIds.filter((id) => {
+    const rt = getActiveRobot(id);
+    return !!rt && typeof rt.driver.getMotionLock !== "function";
+  });
+  if (ids.length === 0) return out;
+  const { loadMotionLocks } = await import("../services/robot/robotMotionLockStore");
+  const load = await loadMotionLocks(ids);
+  if (!load.ok) return out;
+  for (const [id, row] of load.rows) {
+    out.set(id, { locked: true, reasonCode: row.reasonCode, ...(row.detail != null ? { detail: row.detail } : {}), since: row.since, generation: row.generation });
+  }
+  return out;
+}
+
+/**
+ * doc 81 Đợt 12 N — robot.clearMotionLock for a robot whose driver has NO motion lock but whose persisted row locks it (see the
+ * call site). The caller already checked the factory scope and that no edge node owns the robot. Fail-closed at every step.
+ */
+async function clearPersistedLockOfLocklessDriver(a: {
+  ctx: { user: { id: number; name?: string | null }; req?: { ip?: string; headers?: Record<string, unknown> } };
+  input: { robotId: number; reason: string; expectedGeneration: number };
+  rt: { code: string; vendor: string };
+  connected: boolean;
+  conflict: (state: MotionLockState) => Error;
+}) {
+  const { ctx, input, rt, connected, conflict } = a;
+  const { readPersistedMotionLockRow, clearPersistedCentralMotionLock } = await import("../services/robot/robotMotionLockStore");
+  const read = await readPersistedMotionLockRow(input.robotId);
+  if ("error" in read) {
+    throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, `the persisted motion lock of robot ${input.robotId} could not be read (${read.error}) — nothing was cleared`);
+  }
+  const row = read.row;
+  if (!row) {
+    throw appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: "clearRobotMotionLock", reason: "motionLockUnsupported" },
+      `${rt.vendor} driver has no motion lock (one-shot transport) — nothing to clear`,
+    );
+  }
+  const before: MotionLockState & { authority: string; ownerEpoch: number | null; writerInstanceId: string | null } = {
+    locked: true,
+    reasonCode: row.reasonCode,
+    ...(row.detail != null ? { detail: row.detail } : {}),
+    since: row.since,
+    generation: row.generation,
+    authority: row.authority,
+    ownerEpoch: row.ownerEpoch,
+    writerInstanceId: row.writerInstanceId,
+  };
+  // an edge authority's row is never central's to clear (the robot changed owner meanwhile); a generation the operator did not
+  // see ⇒ the same CONFLICT as a live lock (re-read and decide again). Both before anything is audited.
+  if (row.authority !== "central" || row.generation !== input.expectedGeneration) throw conflict(before);
+  const auditBase = {
+    userId: ctx.user.id,
+    userName: ctx.user.name ?? null,
+    action: "robot.clearMotionLock",
+    entityType: "robot",
+    entityId: input.robotId,
+    entityName: rt.code,
+    ipAddress: ctx.req?.ip ?? null,
+    userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+  };
+  // Audit FIRST: if the trail cannot be written the row stays.
+  await createAuditLog({ ...auditBase, details: { reason: input.reason, vendor: rt.vendor, via: "persisted_row", before, expectedGeneration: input.expectedGeneration } });
+  const deleted = await clearPersistedCentralMotionLock(input.robotId, { generation: row.generation, lockedAtMs: row.lockedAtMs, writerInstanceId: row.writerInstanceId, ownerEpoch: row.ownerEpoch });
+  if (deleted !== 1) {
+    // the row changed between the read and the delete (a new relock / another writer / a new owner): nothing was cleared
+    const now = await readPersistedMotionLockRow(input.robotId);
+    const state: MotionLockState = "row" in now && now.row ? { locked: true, reasonCode: now.row.reasonCode, since: now.row.since, generation: now.row.generation } : before;
+    try {
+      await createAuditLog({ ...auditBase, status: "failure", details: { reason: input.reason, vendor: rt.vendor, via: "persisted_row", before, expectedGeneration: input.expectedGeneration, conflict: state } });
+    } catch (auditErr) {
+      console.error(`[Robot] audit of a refused persisted motion-lock clear failed (robot ${input.robotId}):`, (auditErr as Error)?.message ?? auditErr);
+    }
+    throw conflict(state);
+  }
+  console.warn(`[Robot] persisted motion lock (${row.reasonCode}, generation ${row.generation}) of robot ${input.robotId} (${rt.code}, ${rt.vendor}: no driver lock) cleared by user ${ctx.user.id}: ${input.reason}`);
+  const after: MotionLockState = {
+    locked: false,
+    reasonCode: row.reasonCode,
+    since: row.since,
+    generation: row.generation,
+    clearedBy: "operator",
+    clearedAt: new Date().toISOString(),
+    clearedByUserId: ctx.user.id,
+    clearReason: input.reason,
+  };
+  return { robotId: input.robotId, changed: true, connected, motionLock: after };
 }
 import {
   isTechmanScriptAllowed,
@@ -269,12 +368,13 @@ export const robotRouter = router({
       const rows = await db.select().from(robots).orderBy(desc(robots.updatedAt));
       // doc 81 Đợt 7 I5 — the per-robot automation switch ("unknown" = unreadable: automation is refused then).
       const automation = await readRobotAutomationStates(db, rows.map((r) => r.id));
+      const persisted = await persistedLocksOfLocklessRobots(rows.map((r) => r.id)); // doc 81 Đợt 12 N
       // CTL-05 — kèm validationStatus per-vendor để UI badge (spec-verified/assumed/mock).
       // Fix round 4 (R13) — kèm `live` (kết nối + khoá chuyển động của tiến trình này).
       return rows.map((r) => ({
         ...r,
         validationStatus: getRobotVendorValidation(r.vendor),
-        live: robotLiveState(r.id),
+        live: robotLiveState(r.id, persisted),
         automation: (automation.get(r.id) ?? "unknown") as RobotAutomationState,
       }));
     }),
@@ -290,7 +390,7 @@ export const robotRouter = router({
       return {
         ...row,
         validationStatus: getRobotVendorValidation(row.vendor),
-        live: robotLiveState(row.id),
+        live: robotLiveState(row.id, await persistedLocksOfLocklessRobots([row.id])), // doc 81 Đợt 12 N
         automation: await readRobotAutomationState(db, row.id), // doc 81 Đợt 7 I5
       };
     }),
@@ -379,14 +479,6 @@ export const robotRouter = router({
         );
       }
       const driver = rt.driver;
-      if (typeof driver.getMotionLock !== "function" || typeof driver.clearMotionLock !== "function") {
-        throw appError(
-          "PRECONDITION_FAILED",
-          "OPERATION_FAILED",
-          { operation: "clearRobotMotionLock", reason: "motionLockUnsupported" },
-          `${rt.vendor} driver has no motion lock (one-shot transport) — nothing to clear`,
-        );
-      }
       const connectedNow = () => {
         try {
           return driver.isConnected();
@@ -394,6 +486,14 @@ export const robotRouter = router({
           return false;
         }
       };
+      if (typeof driver.getMotionLock !== "function" || typeof driver.clearMotionLock !== "function") {
+        // doc 81 Đợt 12 task N (OWNER-SETUP B2) — a driver with NO motion lock (one-shot transport) whose robot carries a PERSISTED
+        // lock row (e.g. the DB's ownerChanged relock after a release from an edge): central refuses its motion on that row and
+        // nothing else can ever remove it. Cleared HERE only — the scope check above, this procedure's role + permission, the
+        // required reason, the generation the operator saw, the audit row FIRST, then exactly that row (generation, lockedAt,
+        // writer, owner epoch, central authority, central-owned robot). No row ⇒ the pre-Đợt-12 answer.
+        return clearPersistedLockOfLocklessDriver({ ctx, input, rt, connected: connectedNow(), conflict });
+      }
       const before = driver.getMotionLock();
       if (!before.locked) {
         return { robotId: input.robotId, changed: false, connected: connectedNow(), motionLock: before };

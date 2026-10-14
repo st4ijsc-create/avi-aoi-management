@@ -16,8 +16,8 @@
  *   • driver tripwire: `postgres` is mocked to throw when constructed — asserted never constructed;
  *   • explicit probe at the end: a deliberate getDb() must throw EDGE_DB_TRAP (and is then counted — the instrument check).
  *
- * The only harness additions (device simulation, not product behaviour): the SIM robot driver gets a REAL MotionLock (it has
- * none; E's boot test does the same) and every runJob / abort reaching it is counted with a wall-clock timestamp. The counts
+ * The only harness addition (device simulation, not product behaviour): every runJob / abort reaching the SIM robot driver is
+ * counted with a wall-clock timestamp (its MotionLock is the product driver's own since doc 81 Đợt 12 task N). The counts
  * and the runtime's state are written to <dir>/counts.json every 100 ms; the final measurement to <dir>/report.json.
  */
 import { describe, it, expect, vi } from "vitest";
@@ -69,19 +69,11 @@ describe.skipIf(!process.env.F1_EDGE_CHILD)("doc 81 Đợt 10 F1 — child: the 
       return (realConnect as (...x: unknown[]) => net.Socket).apply(this, args);
     } as typeof net.Socket.prototype.connect;
 
-    // ── the SIM robot: a real MotionLock (as edgeGatewayBoot.dot10) + counted calls ──
+    // ── the SIM robot: counted calls. Its MotionLock is the PRODUCT driver's own since doc 81 Đợt 12 task N (no patch) ──
     const { SimRobotDriver } = await import("../robot/drivers/simRobotDriver");
     const { MotionLock } = await import("../robot/robotDriver");
     const motions: Ev[] = [];
     const stops: Ev[] = [];
-    const proto = SimRobotDriver.prototype as unknown as Record<string, unknown> & { _robotId?: number };
-    proto.motionLockController = function (this: { _ml?: InstanceType<typeof MotionLock> }) {
-      if (!this._ml) this._ml = new MotionLock();
-      return this._ml;
-    };
-    proto.getMotionLock = function (this: { motionLockController: () => InstanceType<typeof MotionLock> }) {
-      return this.motionLockController().snapshot();
-    };
     const origConnect = SimRobotDriver.prototype.connect;
     SimRobotDriver.prototype.connect = async function (this: { _endpoint?: string }, cfg: { endpoint?: string }) {
       this._endpoint = String(cfg?.endpoint ?? "");

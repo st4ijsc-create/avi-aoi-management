@@ -804,6 +804,22 @@ async function quiesceRobot(rt: EdgeRuntime, robotId: number, why: string): Prom
   } catch (err) {
     stop = `STOP FAILED (${(err as Error)?.message ?? err})`;
   }
+  // doc 81 Đợt 12 task N — a CONFIRMED STOP clears a lock that is not an operator hold (R13: every session driver, and the SIM
+  // driver since Đợt 12), so the lock taken above is gone once the STOP was done: re-take it — the robot leaves this node LOCKED
+  // (detachEdgeRobot refuses `not_locked`; before Đợt 12 the release was kept for ever with "detach REFUSED (not_locked)").
+  if (lockOk && stopOk) {
+    try {
+      const lc = robot.driver.motionLockController?.();
+      if (lc && !lc.isLocked()) {
+        lc.lock("ownershipRemoved", `robot ${robotId} ${why} (re-locked after its confirmed STOP)`);
+        lockOk = lc.isLocked();
+        lock = lockOk ? `locked (generation ${lc.snapshot().generation ?? "?"}, re-taken after the STOP)` : "NOT locked after the STOP: the lock did not take";
+      }
+    } catch (err) {
+      lockOk = false;
+      lock = `NOT locked after the STOP: ${(err as Error)?.message ?? err}`;
+    }
+  }
   if (!lockOk || !stopOk) return { ok: false, locked: lockOk, detail: `${lock}; ${stop}; session not detached`, cause: !lockOk ? "lock" : "stop" };
   const d = await (await edgeRobotLifecycle()).detach(robotId);
   if (!d.ok) return { ok: false, locked: lockOk, detail: `${lock}; ${stop}; detach REFUSED (${d.reason ?? "?"}) — session kept`, cause: `detach:${(d.reason ?? "?").split(":")[0]}` };

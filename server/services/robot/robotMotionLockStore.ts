@@ -592,6 +592,88 @@ export function attachEdgeMotionLockPersistence(
   return lock.isLocked() ? "restored" : "none";
 }
 
+// ── doc 81 Đợt 12 task N (OWNER-SETUP B2) — the persisted lock of a robot whose DRIVER HAS NO MOTION LOCK ─────────────────
+/**
+ * A one-shot driver (Techman / UR / VDA5050) has no in-memory lock, so a robot_motion_locks row of such a robot — typically the
+ * DB's `ownerChanged` relock written when the robot is released from an edge (0374 robot_owner_relock) — could be neither
+ * adopted nor cleared: central refused its motion for ever. These two helpers are the ONLY way that row goes away, and only
+ * from the audited operator clear (robot.clearMotionLock: scope, permission, reason, generation; audit row FIRST). Nothing calls
+ * them automatically (no STOP, no reconcile, no restart).
+ */
+export interface PersistedMotionLockRow {
+  robotId: number;
+  authority: string;
+  reasonCode: string;
+  detail: string | null;
+  /** ISO of lockedAt (as the boot restore / the motion gate read it) */
+  since: string;
+  /** lockedAt in ms — part of the row's identity (rowMatchSql truncates to ms) */
+  lockedAtMs: number;
+  generation: number;
+  ownerEpoch: number | null;
+  writerInstanceId: string | null;
+}
+
+/** The persisted motion-lock row of `robotId` now (bounded, any authority). Never throws; `{ error }` ⇒ the caller refuses. */
+export async function readPersistedMotionLockRow(robotId: number): Promise<{ row: PersistedMotionLockRow | null } | { error: string }> {
+  try {
+    const read = (async () => {
+      const db = await getDb();
+      if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
+      const T = robotMotionLockAuthority;
+      const [r] = await db.select().from(T).where(eq(T.robotId, robotId)).limit(1);
+      if (!r || r.robotId !== robotId) return { row: null };
+      const lockedAt = new Date(r.lockedAt);
+      return {
+        row: {
+          robotId,
+          authority: String(r.authority ?? "central"),
+          reasonCode: String(r.reasonCode),
+          detail: r.detail ?? null,
+          since: lockedAt.toISOString(),
+          lockedAtMs: lockedAt.getTime(),
+          generation: Number(r.generation),
+          ownerEpoch: r.ownerEpoch == null ? null : Number(r.ownerEpoch),
+          writerInstanceId: r.writerInstanceId ?? null,
+        } satisfies PersistedMotionLockRow,
+      };
+    })();
+    return await withDeadline(read, MOTION_LOCK_DB_DEADLINE_MS, `robot ${robotId} persisted motion lock read`);
+  } catch (err) {
+    return { error: errText(err) };
+  }
+}
+
+/**
+ * Delete EXACTLY the row the operator decided about: same robot, authority 'central', same generation, same lockedAt (ms), same
+ * writer (rowMatchSql — the R-10-aj / R-10-ap identity of an adopted row) and same owner epoch, and only while the robot is
+ * central-owned (an edge-owned robot's row is its edge authority's: never touched here — the 0374 write guard refuses it too).
+ * A row re-created, replaced or merged since the read (new generation, new writer, new epoch) matches nothing. Returns the
+ * number of rows deleted (0 or 1). Throws on a DB error (the caller refuses; nothing was deleted).
+ */
+export async function clearPersistedCentralMotionLock(
+  robotId: number,
+  id: { generation: number; lockedAtMs: number; writerInstanceId: string | null; ownerEpoch: number | null },
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError("DB unavailable (getDb returned null)");
+  const T = robotMotionLockAuthority;
+  const work = db
+    .delete(T)
+    .where(
+      and(
+        eq(T.robotId, robotId),
+        eq(T.authority, "central"),
+        rowMatchSql({ generation: id.generation, lockedAtMs: id.lockedAtMs, writer: id.writerInstanceId }),
+        sql`${T.ownerEpoch} IS NOT DISTINCT FROM ${id.ownerEpoch}::bigint`,
+        sql`NOT EXISTS (SELECT 1 FROM public.robots r WHERE r.id = ${robotId} AND r."edgeNodeId" IS NOT NULL)`,
+      ),
+    )
+    .returning({ robotId: T.robotId });
+  const deleted = await withDeadline(Promise.resolve(work), MOTION_LOCK_DB_DEADLINE_MS, `robot ${robotId} persisted motion lock clear`);
+  return deleted.length;
+}
+
 /** Test seam — wait until every queued motion-lock write has settled. */
 export async function _flushMotionLockWritesForTests(): Promise<void> {
   while (chains.size > 0) await Promise.all([...chains.values()]);

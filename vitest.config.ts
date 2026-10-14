@@ -67,6 +67,7 @@ export default defineConfig({
       "server/services/edge/edgeExecution.s4.e2e.dot9.db.test.ts",
       "server/services/edge/safetySeedIntact.finalfix.dot10.db.test.ts",
       "server/services/edge/edgeControlSchema.dot10.db.test.ts",
+      "server/services/edge/edgeSimRobotLock.dot12.e2e.db.test.ts",
     ],
     // Loads .env + forces DATABASE_URL to an ISOLATED test DB (see vitest.setup.ts).
     // Provision once: `node scripts/setup-test-db.mjs`.
