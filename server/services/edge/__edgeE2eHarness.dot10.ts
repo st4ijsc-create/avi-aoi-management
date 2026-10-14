@@ -692,6 +692,9 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
       await new Promise<void>((r) => srv.close(() => r()));
       await ot.close().catch(() => undefined);
       await plc.close().catch(() => undefined);
+      // doc 81 Đợt 12 final fix wave residual (R-12-f item 2) — this harness's own safety-PLC row(s) go BEFORE the seed lock is
+      // released: a suite holding the lock EXCLUSIVELY next (safetySimOnly.dot1c) never sees them
+      await removeHarnessPlcRows(sql, ids).catch((e) => console.warn(`[F1] safety-PLC rows not removed before the seed release: ${(e as Error).message}`));
       await seedGuard.release().catch((e) => console.warn(`[F1] seed guard NOT released (the census / the exit hook restores it): ${(e as Error).message}`));
       await cleanupRows(sql, ids, u, wfIds).catch((e) => console.warn(`[F1] cleanup: ${(e as Error).message}`));
       await sql.end();
@@ -704,6 +707,13 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
     },
   };
   return c;
+}
+
+/** R-12-f item 2 — the harness's safety-PLC rows (its SPLC-* config and any row naming its robots), removed before the seed release. */
+async function removeHarnessPlcRows(sql: ReturnType<typeof postgres>, ids: Record<string, number>): Promise<void> {
+  if (ids.plcA) await sql`DELETE FROM safety_plc_configs WHERE id = ${ids.plcA}`;
+  const robotsAll = [ids.robotA, ids.robotB, ids.robotC].filter(Boolean);
+  if (robotsAll.length) await sql`DELETE FROM safety_plc_configs WHERE "robotId" IN ${sql(robotsAll)}`;
 }
 
 async function cleanupRows(sql: ReturnType<typeof postgres>, ids: Record<string, number>, u: Central["u"], wfIds: number[]): Promise<void> {

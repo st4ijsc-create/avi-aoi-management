@@ -1084,11 +1084,20 @@ export function executeOtDeviceWriteUnlessStopped(
      * the replica the load balancer picked changes nothing. Absent (a pin read failure, the edge) ⇒ not exempt.
      * (Was, P fix 1 + scan #112: exempt when `overridesStopPin === false` — still decided by the label for writes that touch no pin.)
      */
-    adapterHasNoStopPins?: boolean;
+    adapterHasNoStopPins?: boolean | (() => boolean);
   },
 ): Promise<ExecutedWrite | StoppedBeforeWrite> {
   if (a.stopEpochAtGates !== null) {
-    const localOnly = a.stopTyped && a.adapterHasNoStopPins === true; // I-2 / R-12-e I-1 — peer moves ignored only where no pin exists
+    // I-2 / R-12-e I-1 — peer moves ignored only where no pin exists. R-12-f item 1: the answer may be LAZY (a synchronous cache
+    // lookup, taken here at the check — no await before the device write); a throw / anything but true ⇒ not exempt.
+    const x = a.adapterHasNoStopPins;
+    let noPins = false;
+    try {
+      noPins = typeof x === "function" ? x() === true : x === true;
+    } catch {
+      noPins = false;
+    }
+    const localOnly = a.stopTyped && noPins;
     const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates, { localOnly });
     if (stopped) return Promise.resolve(stopped);
   }

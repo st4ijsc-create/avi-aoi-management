@@ -174,6 +174,21 @@ describe("L-7 — the broadcast follows the REAL device write", () => {
   });
 });
 
+describe("R-12-f item 1 — a LAZY exemption answer (a synchronous cache lookup taken at the check)", () => {
+  it("() => true exempts, () => false and a throwing function do not", async () => {
+    const A = 812_020;
+    const log: string[] = [];
+    const atGates = adapterStopEpoch(A);
+    bumpAdapterStopEpochFromPeer(A, { peer: true, origin: "peer-replica-0001" });
+    const run = (f: unknown) => executeOtDeviceWriteUnlessStopped({ ...stage(A, log, { commandType: "stop", value: 0, stopEpochAtGates: atGates, bumpStopEpoch: false }), adapterHasNoStopPins: f as never });
+    expect(isStoppedBeforeWrite(await run(() => true))).toBe(false);
+    expect(isStoppedBeforeWrite(await run(() => false))).toBe(true);
+    expect(isStoppedBeforeWrite(await run(() => { throw new Error("boom"); }))).toBe(true);
+    expect(isStoppedBeforeWrite(await run(() => "yes"))).toBe(true);
+    expect(log).toEqual(["writeTags t=0"]);
+  });
+});
+
 describe("R-12-e I-1 — the adapter-wide pin read that decides the peer-move exemption (fail closed)", () => {
   const fakeDb = (rows: unknown[] | Error | "hang") =>
     ({

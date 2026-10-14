@@ -49,29 +49,42 @@ export interface SeedGuard {
 /** R-12-e open item b — a coded refusal of acquireSeedExclusive (rawErrorCensus: no raw Error) */
 export class SeedGuardRefusal extends Error {
   constructor(
-    readonly code: "notTestDb" | "harnessRunning",
+    readonly code: "notTestDb" | "harnessRunning" | "aborted",
     message: string,
   ) {
     super(message);
     this.name = "SeedGuardRefusal";
   }
 }
-export async function acquireSeedExclusive(dbUrl: string, opts: { waitMs?: number } = {}): Promise<{ release(): Promise<void> }> {
+/**
+ * R-12-f item 3 — `signal`: the caller gave up (its hook timed out): the wait stops at once (`aborted`), and a lock won after the
+ * abort is released right away — an abandoned acquisition never keeps the seed lock (harnesses would wait on it for good).
+ */
+export async function acquireSeedExclusive(dbUrl: string, opts: { waitMs?: number; signal?: AbortSignal } = {}): Promise<{ release(): Promise<void> }> {
   if (!/_test\b/.test(dbUrl)) throw new SeedGuardRefusal("notTestDb", "[seed guard] acquireSeedExclusive refused: not a _test DB");
   const waitMs = Math.max(0, opts.waitMs ?? 45_000);
   const conn = postgres(dbUrl, { max: 1, connect_timeout: 30, onnotice: () => {} });
   const t0 = Date.now();
+  const aborted = () => new SeedGuardRefusal("aborted", "[seed guard] acquireSeedExclusive aborted by its caller — the seed lock is not held");
   try {
     for (;;) {
+      if (opts.signal?.aborted) throw aborted();
       const [r] = await conn`SELECT pg_try_advisory_lock(${SEED_LOCK_KEY}) AS ok`;
-      if (r.ok) break;
+      if (r.ok) {
+        if (opts.signal?.aborted) {
+          // won AFTER the caller gave up: release at once
+          await conn`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`;
+          throw aborted();
+        }
+        break;
+      }
       if (Date.now() - t0 >= waitMs) {
         throw new SeedGuardRefusal(
           "harnessRunning",
           `[seed guard] the seed lock (${SEED_LOCK_KEY}) is held by a running F1 E2E harness for more than ${waitMs} ms — this suite reads every safety-PLC config and would see the harness's rows; run it when no harness runs (or through the serial project)`,
         );
       }
-      await new Promise((res) => setTimeout(res, 100));
+      await new Promise((res) => setTimeout(res, 100)); // an abort is seen at the next pass (≤ 100 ms)
     }
   } catch (err) {
     await conn.end({ timeout: 5 }).catch(() => undefined);

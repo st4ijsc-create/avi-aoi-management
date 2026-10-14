@@ -178,6 +178,8 @@ import { getCorrelationId } from "../observability/correlation";
 import { adapterOwnedByEdgeInTx } from "./otAdapterOwnerGate"; // doc 81 Đợt 10 D fix review 3 (scan #73)
 // doc 81 Đợt 1D Task 2 — per-tag pinned STOP values (mig 0362, Task 1).
 import { loadStopPins, matchPinnedStop, stopPinsFromTagRows, validateStopValue, type MatchPinnedStopResult, type StopPin, type StopPinTagRow } from "./stopPin";
+import { cachedStopPinPresence } from "./stopPinPresence"; // doc 81 Đợt 12 final fix wave residual (R-12-f item 1)
+import { otStopEpochSyncSeesPeers } from "./otStopEpochSync"; // R-12-f item 1
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -1224,7 +1226,19 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // doc 81 Đợt 12 final fix wave (ruling R-12-e I-1, scan #113) — the PEER-move exemption of a stop-typed command that is not a verified
   // STOP is decided by the ADAPTER's pins (all of them, not only the written tags): none ⇒ exempt (I-2: a peer never denies the only
   // software STOP there is); any pin, or the read failing / not answering ⇒ not exempt (a peer STOP cancels it as a local one does).
-  const adapterHasNoStopPins = unverifiedStop && stopEpochAtGates !== null ? await adapterHasNoStopPinsBounded(db, input.adapterId) : false;
+  // Final fix wave residual (R-12-f item 1, L-7) — the unverified stop does not wait on that read in the common case: a fresh cached
+  // presence answers (stopPinPresence: TTL, invalidated on a pin change, seeded by every full pin read — e.g. the label read just
+  // above); with no peer replica seen (single process / sync disabled) nothing is read at all and the answer is taken LAZILY at the
+  // epoch check (cached "none" ⇒ exempt, anything else ⇒ not exempt); only a peer-seen cache miss reads (bounded 1 s).
+  let adapterHasNoStopPins: boolean | (() => boolean) = false;
+  if (unverifiedStop && stopEpochAtGates !== null) {
+    const known = cachedStopPinPresence(input.adapterId);
+    if (known !== null) adapterHasNoStopPins = known === "none";
+    else if (!otStopEpochSyncSeesPeers()) {
+      const id = input.adapterId;
+      adapterHasNoStopPins = () => cachedStopPinPresence(id) === "none";
+    } else adapterHasNoStopPins = await adapterHasNoStopPinsBounded(db, input.adapterId);
+  }
 
   // ── final wave F7 (final review M5) — the check-then-act gap. The safety preflight ran BEFORE the write-ahead
   //    reservation and the queue; a write queued behind a slow / timed-out one (B3 hold: up to ~11.25 s) reached the

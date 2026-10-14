@@ -25,10 +25,34 @@ describe("R-12-e open item b — the harness inserts its safety-PLC row only aft
     expect(insert).toBeGreaterThan(0);
     expect(insert).toBeGreaterThan(guard);
   });
+  it("★ R-12-f item 2: at teardown the harness deletes its own safety-PLC row(s) BEFORE it releases the seed lock (an exclusive holder that wins the lock next never sees them)", () => {
+    const src = readFileSync(path.join(__dirname, "__edgeE2eHarness.dot10.ts"), "utf8");
+    const t = src.indexOf("async teardown()");
+    expect(t).toBeGreaterThan(0);
+    const body = src.slice(t);
+    const del = body.search(/removeHarnessPlcRows\(|DELETE FROM safety_plc_configs/);
+    const rel = body.indexOf("seedGuard.release(");
+    expect(del).toBeGreaterThan(0);
+    expect(rel).toBeGreaterThan(0);
+    expect(del).toBeLessThan(rel);
+  });
+
+  it("★ R-12-f item 3: safetySimOnly.dot1c waits for the seed lock for LESS than its hook timeout, and a lock won late (after the hook gave up) is released (abort + await the pending acquisition in afterAll)", () => {
+    const src = readFileSync(path.join(__dirname, "../ot/safetySimOnly.dot1c.db.test.ts"), "utf8");
+    const hook = Number(/hookTimeout:\s*([\d_]+)/.exec(src)?.[1]?.replace(/_/g, ""));
+    const wait = Number(/const SEED_WAIT_MS\s*=\s*([\d_]+)/.exec(src)?.[1]?.replace(/_/g, ""));
+    expect(hook).toBeGreaterThan(0);
+    expect(wait).toBeGreaterThan(0);
+    expect(wait).toBeLessThanOrEqual(hook / 2); // the rest of beforeAll still fits
+    expect(src).toMatch(/acquireSeedExclusive\(DB_URL!?, \{ waitMs: SEED_WAIT_MS, signal: seedAbort\.signal \}\)/);
+    expect(src).toMatch(/seedAbort\.abort\(\)/);
+    expect(src).toMatch(/await pendingSeed/);
+  });
+
   it("safetySimOnly.dot1c takes the seed lock exclusively in beforeAll and releases it in afterAll", () => {
     const src = readFileSync(path.join(__dirname, "../ot/safetySimOnly.dot1c.db.test.ts"), "utf8");
     expect(src).toMatch(/acquireSeedExclusive\(/);
-    expect(src).toMatch(/seedExclusive\??\.release\(\)/);
+    expect(src).toMatch(/(seedExclusive|late)\??\.release\(\)/);
     expect(src).not.toMatch(/seed SIM-SAFETY-PLC-1 sạch luôn có mặt/); // the header no longer assumes the seed is always there
   });
 });
@@ -58,6 +82,40 @@ describe.skipIf(!/_test\b/.test(DB_URL))("R-12-e open item b — acquireSeedExcl
       const [y] = await other`SELECT pg_try_advisory_lock_shared(${SEED_LOCK_KEY}) AS ok`;
       expect(y.ok).toBe(true);
       await other`SELECT pg_advisory_unlock_shared(${SEED_LOCK_KEY})`;
+    } finally {
+      await harness.end({ timeout: 5 });
+      await other.end({ timeout: 5 });
+    }
+  }, 60_000);
+
+  it("★ R-12-f item 3: an ABORTED acquisition stops waiting at once (code aborted), holds nothing; an already-aborted one never takes the lock even when it is free", async () => {
+    const harness = postgres(DB_URL, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    const other = postgres(DB_URL, { max: 1, connect_timeout: 30, onnotice: () => {} });
+    try {
+      await harness`SELECT pg_advisory_lock_shared(${SEED_LOCK_KEY})`;
+      const ac = new AbortController();
+      const t0 = Date.now();
+      const p = acquireSeedExclusive(DB_URL, { waitMs: 20_000, signal: ac.signal }).then(
+        () => null,
+        (e: { code?: string }) => e,
+      );
+      await new Promise((r) => setTimeout(r, 300));
+      ac.abort();
+      const e = await p;
+      expect(e?.code).toBe("aborted");
+      expect(Date.now() - t0).toBeLessThan(3_000); // not the 20 s wait
+      await harness`SELECT pg_advisory_unlock_shared(${SEED_LOCK_KEY})`;
+      // the lock is free now: an already-aborted acquisition still takes nothing
+      const pre = new AbortController();
+      pre.abort();
+      const e2 = await acquireSeedExclusive(DB_URL, { waitMs: 1_000, signal: pre.signal }).then(
+        () => null,
+        (x: { code?: string }) => x,
+      );
+      expect(e2?.code).toBe("aborted");
+      const [x] = await other`SELECT pg_try_advisory_lock(${SEED_LOCK_KEY}) AS ok`; // nobody holds it
+      expect(x.ok).toBe(true);
+      await other`SELECT pg_advisory_unlock(${SEED_LOCK_KEY})`;
     } finally {
       await harness.end({ timeout: 5 });
       await other.end({ timeout: 5 });

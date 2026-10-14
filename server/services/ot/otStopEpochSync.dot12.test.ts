@@ -16,6 +16,7 @@ import {
   signStopEpochMessage,
   signHelloMessage,
   macOf,
+  otStopEpochSyncSeesPeers,
   OT_STOP_EPOCH_REPLICA_ID,
   OT_STOP_EPOCH_CHANNEL,
   OT_STOP_EPOCH_MAX_AGE_MS,
@@ -351,6 +352,21 @@ describe("R-12-e M-2 — a signed HELLO at start proves the key before the first
     expect(JSON.stringify(alerts) + JSON.stringify(st)).not.toContain(KEY.toString("hex"));
     expect(st.peerStops).toBe(s0.peerStops); // a hello is not a STOP
     expect(st.rejectedBy.malformed).toBe(s0.rejectedBy.malformed); // and is not "malformed"
+  });
+
+  it("R-12-f: otStopEpochSyncSeesPeers — false while not running / disabled / alone; true once a peer's hello verified", async () => {
+    expect(otStopEpochSyncSeesPeers()).toBe(false); // not running
+    const c = bus();
+    await start(c, []);
+    await sleep(20); // its own hello came back: still alone
+    expect(otStopEpochSyncSeesPeers()).toBe(false);
+    c.deliver(JSON.stringify(signHelloMessage(Buffer.alloc(32, 4), { replicaId: "other-key-peer-1", seq: 1, issuedAt: Date.now() })));
+    expect(otStopEpochSyncSeesPeers()).toBe(false); // an unverifiable hello is not a peer
+    c.deliver(JSON.stringify(signHelloMessage(KEY, { replicaId: "seen-peer-0001", seq: 1, issuedAt: Date.now() })));
+    expect(otStopEpochSyncSeesPeers()).toBe(true);
+    await stopFn!();
+    stopFn = null;
+    expect(otStopEpochSyncSeesPeers()).toBe(false);
   });
 
   it("parseHelloPayload is strict: exact keys, v2, kind hello", () => {

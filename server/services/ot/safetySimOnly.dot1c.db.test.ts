@@ -32,6 +32,11 @@ import postgres from "postgres";
 import * as ModbusSerialNs from "modbus-serial";
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+/**
+ * doc 81 Đợt 12 final fix wave residual (R-12-f item 3) — the seed-lock wait is at most HALF the hook timeout (the rest of beforeAll
+ * still fits), and a lock won late (after beforeAll gave up) is released by afterAll (abort + await the pending acquisition).
+ */
+const SEED_WAIT_MS = 30_000;
 
 const fake = vi.hoisted(() => ({
   otDrivers: new Map<number, unknown>(),
@@ -142,6 +147,8 @@ const ZONE_COIL = "coil:2"; // coil 1
 let sql: ReturnType<typeof postgres>;
 /** R-12-e open item b — the seed lock held EXCLUSIVELY for this suite's life (no F1 E2E harness runs meanwhile) */
 let seedExclusive: { release(): Promise<void> } | null = null;
+const seedAbort = new AbortController();
+let pendingSeed: Promise<{ release(): Promise<void> } | null> | null = null;
 let adapterCommissioned = 0;
 let adapterUncommissioned = 0;
 let adapterSelfReport = 0; // fix round 1 #3 — driver TỰ báo getSafetyStatus = OK
@@ -283,7 +290,9 @@ const savedEnv: Record<string, string | undefined> = {};
 describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả preflight cho đích đã commission (CSDL _test)", () => {
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/); // cầu chì: không bao giờ chạy trên DB dev
-    seedExclusive = await acquireSeedExclusive(DB_URL!, { waitMs: 45_000 }); // R-12-e open item b — before any read of the configs
+    // R-12-e open item b / R-12-f item 3 — before any read of the configs; bounded below the hook timeout, abortable
+    pendingSeed = acquireSeedExclusive(DB_URL!, { waitMs: SEED_WAIT_MS, signal: seedAbort.signal });
+    seedExclusive = await pendingSeed;
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     // Đợt 1D Task 2 fix round 1 (R-1D-h) — nạp NÓNG facade + nguồn safety-PLC: dispatcher nạp chúng bằng import
     // động BÊN TRONG hạn preflight 5 s; chạy gộp ~150 tệp thì lượt nạp nguội đầu tiên vượt hạn ⇒ UNKNOWN (ĐO: ~5,2 s).
@@ -367,7 +376,10 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả pref
       await sql`DELETE FROM robot_jobs WHERE "robotId" IN (${ROBOT_OK}, ${ROBOT_UNCOMMISSIONED})`.catch(() => undefined);
       await sql.end();
     }
-    await seedExclusive?.release(); // R-12-e open item b
+    // R-12-e open item b / R-12-f item 3 — also a lock won AFTER beforeAll gave up: abort the wait, await it, release what it got
+    seedAbort.abort();
+    const late = seedExclusive ?? (pendingSeed ? await pendingSeed.catch(() => null) : null);
+    await late?.release();
     seedExclusive = null;
     for (const k of ENV_KEYS) {
       if (savedEnv[k] === undefined) delete process.env[k];

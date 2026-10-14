@@ -35,6 +35,8 @@ import { secPlatformEnabled } from "../security/policyGate";
 import { currentSignatureId, lockAdapterCommissioningTx } from "./commissioningService";
 import { adapterTargetCanonical, type AdapterTarget } from "./adapterTarget";
 import { lyDoGoStopPinKhiSuaTag } from "@shared/stopPinTagRule";
+// doc 81 Đợt 12 final fix wave residual (R-12-f item 1) — the cached "adapter has any pin" answer: seeded here, invalidated on a change
+import { invalidateStopPinPresence, rememberStopPinPresence, stopPinReadToken } from "./stopPinPresence";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -150,6 +152,7 @@ export function stopPinsFromTagRows(rows: ReadonlyArray<StopPinTagRow>): StopPin
  * đổi lỗi thành "không miễn").
  */
 export async function loadStopPins(db: StopPinDb, adapterId: number): Promise<StopPin[]> {
+  const token = stopPinReadToken(adapterId); // R-12-f — taken BEFORE the read: a pin change meanwhile discards this answer
   const rows = await db
     .select({
       tagKey: deviceTags.tagKey,
@@ -161,7 +164,9 @@ export async function loadStopPins(db: StopPinDb, adapterId: number): Promise<St
     .from(deviceTags)
     .where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)))
     .orderBy(deviceTags.tagKey);
-  return stopPinsFromTagRows(rows);
+  const pins = stopPinsFromTagRows(rows);
+  rememberStopPinPresence(adapterId, pins.length > 0, token);
+  return pins;
 }
 
 // ─── Đặt / gỡ ghim (router deviceAdapter.tags.setStopPin) ──────────────────────────────────────────
@@ -305,6 +310,19 @@ export async function datStopPin(input: {
   if (!db) throw new DbUnavailableError();
   const mayOk = (id: number | null) => input.phamViMay === null || (id != null && input.phamViMay.includes(id));
 
+  // R-12-f — the cached pin presence of the adapter is forgotten when the change COMMITS (and on a refusal: harmless)
+  try {
+    return await datStopPinTx(db, input, mayOk);
+  } finally {
+    invalidateStopPinPresence(input.adapterId);
+  }
+}
+
+async function datStopPinTx(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  input: Parameters<typeof datStopPin>[0],
+  mayOk: (id: number | null) => boolean,
+): Promise<KetQuaStopPin> {
   return db.transaction(async (tx) => {
     const [adapter] = await tx
       .select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId })
@@ -387,6 +405,7 @@ export async function ghiAuditGoStopPinTx(
   tx: Tx,
   e: { tag: DongTag; nguon: Exclude<NguonGo, "manual">; nguoiSua: NguoiSuaStopPin; thaoTac: string },
 ): Promise<{ commissioningRecheckRequired: boolean }> {
+  invalidateStopPinPresence(e.tag.adapterId); // R-12-f — an automatic unpin (removing a pin: a stale answer is only "pins", the safe side)
   // doc 81 Đợt 5 task F7 — same per-adapter lock as createRecord (callers hold the tag row locks already).
   await lockAdapterCommissioningTx(tx, e.tag.adapterId);
   const signatureId = await currentSignatureId(e.tag.adapterId, tx);

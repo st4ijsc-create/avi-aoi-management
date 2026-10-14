@@ -176,6 +176,8 @@ const st = {
   helloMismatches: 0,
   helloLastMismatchAt: null as number | null,
   helloPeers: new Map<string, { lastSeenAt: number; verified: boolean }>(),
+  /** R-12-f — a peer replica proved itself since this start (a verified hello or an applied peer STOP) */
+  peerSeen: false,
   peerStops: 0,
   ignoredOwn: 0,
   rejected: { malformed: 0, no_key: 0, bad_mac: 0, stale: 0, replay: 0 } as Record<RejectReason, number>,
@@ -228,6 +230,14 @@ export function otStopEpochSyncStatus() {
     unsignedNotSent: st.unsignedNotSent,
     peerLatencyMs: { count: s.length, p50: pct(s, 50), p95: pct(s, 95), p99: pct(s, 99), max: s.length ? s[s.length - 1] : 0 },
   };
+}
+/**
+ * doc 81 Đợt 12 final fix wave residual (R-12-f item 1) — can a PEER replica move this process's STOP epochs at all? Only while the
+ * sync runs with a key AND another replica has been seen (a verified hello, or a peer STOP applied). False on a single central
+ * process — the dispatcher then skips the adapter pin read of the peer-STOP exemption (no peer move can happen to exempt from).
+ */
+export function otStopEpochSyncSeesPeers(): boolean {
+  return st.running && !st.disabled && st.peerSeen;
 }
 /** Test seam. */
 export function _resetLatencyStatsForTests(): void {
@@ -362,6 +372,7 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
 
   // ── HELLO (R-12-e M-2)
   st.helloPeers.clear();
+  st.peerSeen = false;
   let mismatchAlertAt = 0;
   let lastReplyAt = 0;
   const sendHello = () => {
@@ -386,6 +397,7 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
       if (oldest) st.helloPeers.delete(oldest);
     }
     st.helloPeers.set(h.replicaId, { lastSeenAt: now, verified: verified || (st.helloPeers.get(h.replicaId)?.verified ?? false) });
+    if (verified) st.peerSeen = true; // R-12-f
     if (!verified) {
       st.helloMismatches += 1;
       st.helloLastMismatchAt = now;
@@ -454,6 +466,7 @@ async function start(opts: Parameters<typeof startOtStopEpochSync>[0] & object):
 
     const b = bumpAdapterStopEpochFromPeer(m.adapterId, { peer: true, origin: m.replicaId, peerSeq: m.seq, at: m.issuedAt });
     st.peerStops += 1;
+    st.peerSeen = true; // R-12-f
     if (b.evicted !== null) {
       st.peerEvictions += 1;
       if (!peerOverflowAlerted) {
