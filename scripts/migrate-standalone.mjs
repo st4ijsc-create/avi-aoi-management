@@ -176,7 +176,7 @@ if (!FORCE) {
     checksumOf: (f) => simpleHash(fs.readFileSync(path.join(DRIZZLE_DIR, f), 'utf-8').trim()),
   });
   // doc 81 Đợt 10 final fix wave (M-3) — a probe that found a state to repair by hand first (0125 over a reverted 0327 body):
-  // NOTHING runs (no record, no apply) — the operator re-applies 0327 then 0376 and runs this again
+  // NOTHING runs (no record, no apply) — the operator re-applies 0327, then 0376, then 0377 (Đợt 11 H) and runs this again
   if (r.refused && r.refused.length > 0) {
     for (const x of r.refused) console.error(`
 REFUSED: ${x.file} — ${x.detail}`);
@@ -207,6 +207,24 @@ if (pending.length === 0) {
   if (d.action === 'then-0376') {
     pending.push(FILE_0376);
     console.log(`\n  R-10-t: ${d.reverting.join(', ')} pending after 0376 — 0376 will be re-applied last (--then-0376)`);
+  }
+}
+
+// ─── doc 81 Đợt 11 H fix 1 (R-11-f): never revert 0377 ───
+// 0092 / 0111 / 0122 / 0125 / 0142–0148 / 0150 / 0153 / 0154 / 0156 / 0159 / 0169 / 0174 / 0327 / 0374 CREATE OR REPLACE a
+// function 0377 re-creates (qualified / pinned / device-first lock order). Running one of them after 0377 is refused unless 0377
+// runs after it in this same pass (--force) or --then-0377 / --then-0376 is given (0377 is then appended and re-applied last).
+{
+  const { decide0377, is0377Applied, FILE_0377, THEN_0377_FLAG } = await import('./migration0377Guard.mjs');
+  const d = decide0377({ files: pending, applied0377: await is0377Applied(sql), args, thenFlags: [THEN_0377_FLAG, '--then-0376'] });
+  if (d.action === 'refuse') {
+    console.error(`\nREFUSED: ${d.message}`);
+    await sql.end();
+    process.exit(1);
+  }
+  if (d.action === 'then-0377') {
+    pending.push(FILE_0377);
+    console.log(`\n  Đợt 11 H: ${d.reverting.join(', ')} pending after 0377 — 0377 will be re-applied last`);
   }
 }
 

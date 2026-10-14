@@ -19,6 +19,7 @@
  *   node scripts/apply-migration-0377.mjs --test-only | --dev-only | --both   (NO flag ⇒ refused — R-3-g)
  */
 import { expectExact, maLoi, rolledBack, runMigration } from "./apply-migration-dot10-common.mjs";
+import { stopLockOrderViolations } from "./migration0377Guard.mjs";
 
 const PIN = "search_path=pg_catalog, public, pg_temp";
 const INLINE = ["app_tenant_allows", "factory_timezone", "db_storage_timezone", "to_factory_time"];
@@ -50,10 +51,9 @@ await runMigration({
     if (!/p_factory\s+IS\s+NULL\s+AND\s+p_corporate\s+IS\s+NULL/i.test(def.d)) throw new Error("(a) app_tenant_allows lost the 0327 branch");
     for (const f of STOP_FNS) {
       const [{ d }] = await appSql`SELECT pg_get_functiondef(p.oid) AS d FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = ${f}`;
-      // every request lock FOR UPDATE is preceded (in the source) by a device FOR SHARE
-      const share = d.indexOf("FOR SHARE");
-      const update = d.indexOf("FOR UPDATE");
-      if (share < 0 || update < 0 || share > update) throw new Error(`(a) ${f}: the device row is not locked before the request (FOR SHARE at ${share}, FOR UPDATE at ${update})`);
+      // fix 1 (review H-R8): EVERY request lock (each branch — ack_edge has two) follows a device lock in its branch
+      const v = stopLockOrderViolations(d);
+      if (v.length || !/FOR UPDATE/.test(d)) throw new Error(`(a) ${f}: the device row is not locked before the request — ${v.join("; ") || "no request lock"}`);
     }
     log(`(a) census ${census.length} functions: pinned or inline-by-design (${INLINE.length}, inlined); 0327 branch kept; STOP functions lock device → request`);
 

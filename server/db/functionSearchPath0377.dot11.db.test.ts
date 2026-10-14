@@ -207,9 +207,24 @@ describe.skipIf(!onTest)("0377 — the two plpgsql INVOKER functions are pinned:
 export function unqualifiedInSqlBody(body: string): string[] {
   const code = body.replace(/--[^\n]*/g, "").replace(/'(?:[^']|'')*'/g, "''");
   const bad: string[] = [];
-  const SYNTAX = new Set(["select", "coalesce", "any", "all", "in", "exists", "case", "when", "then", "else", "end", "and", "or", "not", "is", "null", "from", "where", "operator", "array", "cast", "as"]);
-  for (const m of code.matchAll(/(?<![\w."$])([A-Za-z_][\w$]*)\s*\(/g)) if (!SYNTAX.has(m[1].toLowerCase())) bad.push(`unqualified call ${m[1]}(`);
+  const SYNTAX = new Set(["select", "coalesce", "any", "all", "exists", "case", "when", "then", "else", "end", "and", "or", "not", "is", "null", "from", "where", "operator", "array", "cast", "as", "on"]);
+  for (const m of code.matchAll(/(?<![\w."$])([A-Za-z_][\w$]*)\s*\(/g)) {
+    const w = m[1].toLowerCase();
+    if (w === "in") bad.push("IN ( (its = is resolved through the search_path — use OPERATOR(pg_catalog.=) ANY (ARRAY[…]))");
+    else if (!SYNTAX.has(w)) bad.push(`unqualified call ${m[1]}(`);
+  }
   for (const m of code.matchAll(/\b(nullif)\s*\(/gi)) bad.push(`${m[1]} (its = is resolved through the search_path)`);
+  // fix 1 (review H-R7): the other names a body resolves through the caller's search_path
+  const QUAL = /^"?(pg_catalog|public)"?$/i;
+  for (const m of code.matchAll(/::\s*("?[A-Za-z_][\w$]*"?)(\s*\.\s*"?[A-Za-z_][\w$]*"?)?/g)) if (!m[2] || !QUAL.test(m[1])) bad.push(`cast ::${m[1]}${m[2] ?? ""} (a type name — qualify it pg_catalog.)`);
+  for (const m of code.matchAll(/\bCAST\s*\([\s\S]*?\bAS\s+("?[A-Za-z_][\w$]*"?)(\s*\.\s*"?[A-Za-z_][\w$]*"?)?/gi)) if (!m[2] || !QUAL.test(m[1])) bad.push(`cast AS ${m[1]}${m[2] ?? ""} (a type name — qualify it pg_catalog.)`);
+  for (const m of code.matchAll(/\b(FROM|JOIN)\s+(?!\()("?[A-Za-z_][\w$]*"?)(\s*\.)?/gi)) {
+    if (/^(SELECT|LATERAL)$/i.test(m[2]) || /DISTINCT\s+$/i.test(code.slice(Math.max(0, (m.index ?? 0) - 12), m.index))) continue;
+    if (!m[3]) bad.push(`relation ${m[2]} unqualified (${m[1].toUpperCase()}; pg_temp is searched first)`);
+    else if (!QUAL.test(m[2])) bad.push(`relation in schema ${m[2]} (${m[1].toUpperCase()})`);
+  }
+  for (const m of code.matchAll(/\bIS\s+(?:NOT\s+)?DISTINCT\s+FROM\b/gi)) bad.push(`${m[0].replace(/\s+/g, " ")} → IS DISTINCT FROM (its = is resolved through the search_path)`);
+  for (const m of code.matchAll(/\b(I?LIKE)\b/gi)) bad.push(`${m[1]} → LIKE (~~ is resolved through the search_path)`);
   const noOps = code.replace(/OPERATOR\s*\(\s*pg_catalog\.[^)]+\)/gi, " ");
   for (const m of noOps.matchAll(/(<>|!=|<=|>=|\|\||[=<>+\-*/%~])/g)) bad.push(`bare operator ${m[1]}`);
   return [...new Set(bad)];
@@ -258,5 +273,25 @@ describe("0377 — source census of the migration (no DB)", () => {
     expect(unqualifiedInSqlBody(`SELECT x = ANY (pg_catalog.string_to_array(y, ','))`)).toEqual(["bare operator ="]);
     expect(unqualifiedInSqlBody(`SELECT coalesce(pg_catalog.current_setting('a', true), 'off') OPERATOR(pg_catalog.<>) 'on' OR p IS NULL`)).toEqual([]);
     expect(unqualifiedInSqlBody(`SELECT (ts AT TIME ZONE public.db_storage_timezone()) AT TIME ZONE public.factory_timezone()`)).toEqual([]);
+  });
+
+  it("★ fix 1 (review H-R7): casts, relations, IN, IS DISTINCT FROM and LIKE are caught too (what a TEMP object / a schema can shadow)", () => {
+    const has = (body: string, re: RegExp) => unqualifiedInSqlBody(body).some((x) => re.test(x));
+    // casts: a type name resolves through the search_path (a TEMP table's row type shadows it)
+    expect(has(`SELECT p_factory::text`, /cast ::text/)).toBe(true);
+    expect(has(`SELECT CAST(p_factory AS text)`, /cast AS text/)).toBe(true);
+    expect(has(`SELECT p_factory::pg_catalog.text`, /cast/)).toBe(false);
+    expect(has(`SELECT CAST(p_factory AS pg_catalog.text)`, /cast/)).toBe(false);
+    // relations: FROM / JOIN an unqualified relation (pg_temp is searched first for relations)
+    expect(has(`SELECT 1 FROM program_deployments d`, /relation program_deployments/)).toBe(true);
+    expect(has(`SELECT 1 FROM public.a x JOIN b y ON true`, /relation b/)).toBe(true);
+    expect(has(`SELECT 1 FROM public.program_deployments d JOIN pg_catalog.pg_class c ON true`, /relation/)).toBe(false);
+    // IN / IS DISTINCT FROM / LIKE: operator lookups (= / <> / ~~) through the search_path
+    expect(has(`SELECT p IN ('a', 'b')`, /IN \(/)).toBe(true);
+    expect(has(`SELECT p IS DISTINCT FROM q`, /IS DISTINCT FROM/)).toBe(true);
+    expect(has(`SELECT p IS NOT DISTINCT FROM q`, /IS DISTINCT FROM/)).toBe(true);
+    expect(has(`SELECT p LIKE 'a%'`, /LIKE/)).toBe(true);
+    expect(has(`SELECT p ILIKE 'a%'`, /LIKE/)).toBe(true);
+    expect(has(`SELECT p OPERATOR(pg_catalog.=) ANY (ARRAY['a', 'b'])`, /IN \(|LIKE|DISTINCT/)).toBe(false);
   });
 });

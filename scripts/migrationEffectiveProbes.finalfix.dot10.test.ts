@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { EFFECTIVE_PROBES, recordEffectiveMigrations } from "./migrationEffectiveProbes.mjs";
+// DOT11_H_PROBES (mutation runs only — doc 81 Đợt 11 H fix 1): an untracked copy of the module
+const { EFFECTIVE_PROBES, recordEffectiveMigrations } = (await import(process.env.DOT11_H_PROBES || "./migrationEffectiveProbes.mjs")) as typeof import("./migrationEffectiveProbes.mjs");
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const BODY_0327 = "SELECT coalesce(current_setting('app.tenant_rls_active', true), 'off') <> 'on' OR (p_factory IS NULL AND p_corporate IS NULL) OR (p_factory IS NOT NULL AND …)";
@@ -45,6 +46,8 @@ describe("final fix wave M-3 — the 0125 probe checks the 0327 body", () => {
     expect(r.recorded).toEqual([]);
     expect(s.writes).toEqual([]);
     expect(r.refused).toEqual([{ file: "0125_tenant_rls_hot_tables.sql", detail: expect.stringMatching(/0327.*0376/) }]);
+    // doc 81 Đợt 11 H fix 1 (review H-R4): after 0377 the repair must end with 0377 (0327 re-creates app_tenant_allows unqualified)
+    expect(r.refused[0].detail).toMatch(/0327 .*--then-0377.*then 0376 .*then 0377 \(node scripts\/apply-migration-0377\.mjs\)/);
     expect(logs.join("\n")).toMatch(/REFUSED/);
   });
 

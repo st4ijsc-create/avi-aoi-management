@@ -46,8 +46,9 @@
 -- ⚠ DDL runs as owner `aoi`: `node scripts/apply-migration-0377.mjs --test-only` (dev: `--dev-only`, the owner decides; no flag ⇒
 --   refused — R-3-g). Requires 0374 (+ 0376). Idempotent. ⚠ Re-applying 0374 AFTER this file would put the request-first ack
 --   bodies back: apply-migration-0374 refuses that unless --then-0377 (scripts/migration0377Guard.mjs — measured: a test:serial
---   run re-applying 0374 reverted the lock order on _test); re-applying 0092 / 0111 / 0122 / 0125 / 0142–0156 / 0169 / 0174 / 0327 puts an unpinned / unqualified body back —
---   re-apply 0377 afterwards (the catalog census functionSearchPath0377.dot11 and stopAckLockOrder.dot11 turn red).
+--   run re-applying 0374 reverted the lock order on _test); re-applying 0092 / 0111 / 0122 / 0125 / 0142–0148 / 0150 / 0153 / 0154 / 0156 / 0159 / 0169 / 0174 / 0327
+--   puts an unpinned / unqualified body back — refused the same way by apply-migration-0327 and migrate-standalone (fix 1,
+--   R-11-f; migrate-standalone also re-appends 0377 for --then-0376); otherwise re-apply 0377 afterwards (the catalog census functionSearchPath0377.dot11 and stopAckLockOrder.dot11 turn red).
 -- ROLLBACK: re-apply 0374 (ack functions) and 0327 / 0174 / 0111 / 0092 (the six bodies).
 --
 

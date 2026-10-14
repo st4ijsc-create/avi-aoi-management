@@ -42,6 +42,17 @@ export type ChangeOwnerResult =
   | { ok: true; ownerEpoch: number; toEdgeNodeId: number | null; centralStops: CentralStopOutcome | null }
   | { ok: false; reason: "refused" | "not_found" | "unavailable"; detail: string };
 
+/**
+ * doc 81 Đợt 11 H fix 1 (review H-R1, L-7) — the longest the sweep waits for the device row lock (SET LOCAL lock_timeout: the
+ * SERVER cancels the wait with 55P03, so the transaction ends at once — a JS deadline alone left the ROLLBACK queued behind the
+ * blocked statement). Not obtained ⇒ the central STOP is sent anyway; only its record / ack waits for a later sweep.
+ */
+export const CENTRAL_STOP_DEVICE_LOCK_TIMEOUT_MS = STOP_DB_STEP_DEADLINE_MS;
+const isLockNotAvailable = (e: unknown): boolean => {
+  const x = e as { code?: string; cause?: { code?: string } } | null;
+  return x?.code === "55P03" || x?.cause?.code === "55P03";
+};
+
 /** Bound of one transient session (connect + stop + disconnect) of a device central did not hold. */
 export const CENTRAL_STOP_SESSION_DEADLINE_MS = 10_000;
 let sessionDeadlineMs = CENTRAL_STOP_SESSION_DEADLINE_MS;
@@ -182,8 +193,9 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
 async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, actorUserId: number | null, deviceScoped = false): Promise<CentralStopOutcome | null> {
   // fix review 2 (N4) — for a NAMED device (a transfer just made here), not knowing the pending set never means "no STOP": the
   // STOP is sent anyway and alerted (the periodic sweep acks the requests later). The global sweep just retries next pass.
-  const sendAnyway = async (why: string): Promise<CentralStopOutcome | null> => {
-    if (!deviceScoped) {
+  // fix 1 (H-R1): `force` — the device row lock was not obtained within its bound: the STOP is sent for the global sweep too
+  const sendAnyway = async (why: string, force = false): Promise<CentralStopOutcome | null> => {
+    if (!deviceScoped && !force) {
       console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed: ${why} (the next sweep retries)`);
       return null;
     }
@@ -201,6 +213,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
   /** R-10-ay — requests central executes because the device's EDGE owner answered notOwnedHere (it cannot list the device) */
   let cannotList: number[] = [];
   let notSentAlert = false;
+  let deviceBusy = false;
   try {
     await db.transaction(async (tx) => {
       const pick =
@@ -214,11 +227,19 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
       // doc 81 Đợt 11 task H (mig 0377, one lock order): the DEVICE row FOR SHARE before its request rows — an owner change locks
       // device → requests, and edge_stop_ack_central below takes the device; holding the requests while waiting for the device
       // deadlocked with it (40P01). FOR SHARE waits only on a writer of that row (the bounded owner change / a status write).
-      await withDeadline(
-        tx.execute(kind === "robot" ? sql`SELECT 1 FROM public.robots WHERE id = ${deviceId} FOR SHARE` : sql`SELECT 1 FROM public.device_adapters WHERE id = ${deviceId} FOR SHARE`),
-        5 * STOP_DB_STEP_DEADLINE_MS,
-        "pending STOP device lock",
-      );
+      // fix 1 (review H-R1, L-7): bounded by the SERVER (lock_timeout ⇒ 55P03), never by a JS deadline alone
+      await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${CENTRAL_STOP_DEVICE_LOCK_TIMEOUT_MS}ms'`));
+      try {
+        await withDeadline(
+          tx.execute(kind === "robot" ? sql`SELECT 1 FROM public.robots WHERE id = ${deviceId} FOR SHARE` : sql`SELECT 1 FROM public.device_adapters WHERE id = ${deviceId} FOR SHARE`),
+          5 * STOP_DB_STEP_DEADLINE_MS,
+          "pending STOP device lock",
+        );
+      } catch (err) {
+        if (isLockNotAvailable(err)) deviceBusy = true;
+        throw err;
+      }
+      await tx.execute(sql`SET LOCAL lock_timeout TO DEFAULT`);
       const pending = rowsOf(await withDeadline(tx.execute(pick), 5 * STOP_DB_STEP_DEADLINE_MS, "pending STOP pick")).map((r) => ({ requestId: Number(r.id), requestedBy: Number(r.requestedBy), cannotList: r.cannotList === true }));
       picked = true;
       if (pending.length === 0) return;
@@ -266,7 +287,9 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
       cannotList = pending.filter((p) => p.cannotList).map((p) => p.requestId);
     });
   } catch (err) {
-    if (!picked) return sendAnyway(errText(err));
+    // fix 1 (H-R1): the device row was held beyond its bound ⇒ the STOP is SENT now (named device AND global sweep); the
+    // requests stay pending — the next sweep records the attempt and acks them
+    if (!picked) return sendAnyway(deviceBusy ? `the device row was busy beyond ${CENTRAL_STOP_DEVICE_LOCK_TIMEOUT_MS} ms (${errText(err)})` : errText(err), deviceBusy);
     console.error(`[DeviceOwner] pending-STOP execution for ${kind} ${deviceId} failed after the STOP: ${errText(err)}`);
   }
   const o = outcome as CentralStopOutcome | null;

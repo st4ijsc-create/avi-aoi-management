@@ -14,11 +14,13 @@
  *   node scripts/apply-migration-0327.mjs            # dev + test
  *   node scripts/apply-migration-0327.mjs --dev-only
  *   node scripts/apply-migration-0327.mjs --test-only
+ *   … --then-0377   (doc 81 Đợt 11 H: REQUIRED on a DB where 0377 is applied — re-applies 0377 right after; refused otherwise)
  */
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import postgres from "postgres";
+import { guard0377BeforeDdl, reapply0377 } from "./migration0377Guard.mjs"; // doc 81 Đợt 11 H fix 1 (R-11-f): never revert 0377
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATION_FILE = "0327_tenant_rls_null_la_du_lieu_dung_chung.sql";
@@ -79,6 +81,9 @@ async function applyTo(rawUrl, label) {
   const appSql = postgres(rawUrl, { max: 1, onnotice: () => {} });
   try {
     const content = fs.readFileSync(MIGRATION_PATH, "utf8");
+    // doc 81 Đợt 11 H fix 1 (R-11-f): this file re-creates app_tenant_allows UNQUALIFIED — after 0377 it is refused (per target,
+    // before any DDL) unless --then-0377, which re-applies 0377 right after it on the same target
+    const then0377 = await guard0377BeforeDdl({ sql, file: MIGRATION_FILE, args });
     await sql.unsafe(content);
 
     // ── 0) Vai nghiệm thu PHẢI thực sự chịu RLS. Nếu không, mọi ô dưới đây vô nghĩa.
@@ -172,6 +177,7 @@ async function applyTo(rawUrl, label) {
     if (rows.n !== 1) throw new Error(`__applied_migrations co ${rows.n} hang cho ${MIGRATION_FILE} (phai la 1)`);
 
     console.log(`[0327] ${label}: applied + verified (min da go, hang rao van bit, bypass van mo)`);
+    if (then0377) reapply0377(label); // Đợt 11 H fix 1 — right after, same target
   } finally {
     await sql.end();
     await appSql.end();

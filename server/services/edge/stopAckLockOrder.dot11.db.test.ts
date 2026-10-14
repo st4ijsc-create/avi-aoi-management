@@ -25,12 +25,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
 const TAG = `__lo11_${Date.now()}`;
-const conns: Array<ReturnType<typeof postgres>> = [];
-const open = () => {
-  const c = postgres(DB_URL, { max: 1, onnotice: () => {} });
-  conns.push(c);
-  return c;
-};
+/**
+ * fix 1 (review H-R5): ONE pool for the whole file, capped at 10 backends (was a new 1-connection pool per open() kept until
+ * afterAll — measured peak 40 avi_app backends of max_connections 100, feeding "remaining connection slots" in parallel runs).
+ * Sessions are reserve()d from it and released after each scenario.
+ */
+const POOL_MAX = 10;
+let pool: ReturnType<typeof postgres> | null = null;
+const open = () => (pool ??= postgres(DB_URL, { max: POOL_MAX, onnotice: () => {}, connection: { application_name: "stopAckLockOrder.dot11" } }));
 const made = { robots: [] as number[], adapters: [] as number[], nodes: [] as number[], users: [] as number[] };
 let C: ReturnType<typeof postgres>;
 let admin = 0;
@@ -123,6 +125,12 @@ const execution = async (f: Fx, ok = true) => Number((await C`SELECT public.edge
 beforeAll(async () => {
   if (!onTest) return;
   C = open();
+  // fix 1 (review H-R5) — fuse: these tests measure 0377's SQL bodies; a `_test` where 0377 was reverted (e.g. 0374 re-applied
+  // without --then-0377) fails HERE, once, with the remedy — not as 10 confusing lock-order failures
+  const [f] = await C`SELECT count(*)::int AS n FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
+                       WHERE s.nspname = 'public' AND p.proname IN ('edge_stop_ack_edge', 'edge_stop_ack_central', 'edge_stop_resolve')
+                         AND position('0377 lock order' in p.prosrc) > 0`;
+  if (f.n !== 3) throw new Error(`0377 is NOT in force on this _test DB (${f.n}/3 STOP functions carry its device-first body) — re-apply it: node scripts/apply-migration-0377.mjs --test-only`);
   const [u] = await C`INSERT INTO public.users ("openId", role, "isActive") VALUES (${TAG + "-admin"}, 'admin', true) RETURNING id`;
   admin = u.id;
   made.users.push(admin);
@@ -146,8 +154,11 @@ afterAll(async () => {
       }
     }
     if (made.nodes.length) await C`DELETE FROM public.edge_nodes WHERE id = ANY(${made.nodes})`.catch(() => undefined);
+    // fix 1 (review: leftover robot 13162) — the cleanup must leave no test device behind
+    const [left] = await C`SELECT (SELECT count(*)::int FROM public.robots WHERE id = ANY(${made.robots})) + (SELECT count(*)::int FROM public.device_adapters WHERE id = ANY(${made.adapters})) AS n`;
+    if (left.n !== 0) throw new Error(`cleanup left ${left.n} test device(s) on _test`);
   } finally {
-    for (const x of conns) await x.end({ timeout: 5 }).catch(() => undefined);
+    await pool?.end({ timeout: 5 }).catch(() => undefined);
   }
 }, 120_000);
 
