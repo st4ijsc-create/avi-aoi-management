@@ -24,7 +24,7 @@
  * sent again — its caller gets that STOP's outcome); an authorised stop-TYPED command that is not a verified stop is an ordinary queued
  * command that is never BUSY (a full queue ⇒ it waits for a slot), moves no epoch and cancels nothing.
  */
-import { classifyOtStop, canonicalisePinnedStop, isStopCommandType, NO_CONFIRMER, writesOverrideStopPin, type DispatchInput, type DispatchStatus } from "./commandDispatcher";
+import { classifyOtStop, canonicalisePinnedStop, isStopCommandType, NO_CONFIRMER, type DispatchInput, type DispatchStatus } from "./commandDispatcher";
 import {
   adapterStopEpoch,
   executeOtDeviceWriteUnlessStopped,
@@ -33,8 +33,10 @@ import {
   isStoppedBeforeWrite,
   isSuperseded,
   tryEnqueueAdapterCommand,
+  OT_STOP_UNVERIFIED_WAIT_MAX,
   type ExecutedWrite,
   type OtDeviceEventSink,
+  type QueueJobCtl,
 } from "./otDeviceWrite";
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 import { stopPinsFromTagRows } from "./stopPin";
@@ -161,9 +163,9 @@ async function runDeviceStage(
    * never cancelled).
    */
   opts: { stop: "pinned" | "verified" | "unverified" | null; stopEpochAtGates: number | null },
-): Promise<{ kind: "done"; executed: ExecutedWrite } | { kind: "busy"; detail: string } | { kind: "superseded" } | { kind: "stopped"; detail: string }> {
+): Promise<{ kind: "done"; executed: ExecutedWrite } | { kind: "busy"; detail: string; reason?: "STOP_UNVERIFIED_QUEUE_FULL" } | { kind: "superseded" } | { kind: "stopped"; detail: string }> {
   const verifiedStop = opts.stop === "pinned" || opts.stop === "verified";
-  const body = () =>
+  const body = (ctl?: QueueJobCtl) =>
     executeOtDeviceWriteUnlessStopped({
       input: {
         adapterId: input.adapterId,
@@ -182,6 +184,7 @@ async function runDeviceStage(
       sink: deviceEventSink(rt, input),
       stopEpochAtGates: opts.stopEpochAtGates,
       bumpStopEpoch: verifiedStop, // K-fix 2 (R-11-i b) — moved when a VERIFIED STOP is SENT (after verification / under L-7)
+      onWriteAnswered: ctl?.writeAnswered, // R-11-o (M-2) — an identical STOP shares this write only until the device answered it
     });
   const stoppedDetail = (s: { stop: Record<string, unknown> | null }) => {
     const k = typeof s.stop?.idempotencyKey === "string" && s.stop.idempotencyKey ? ` (${s.stop.idempotencyKey})` : "";
@@ -195,10 +198,14 @@ async function runDeviceStage(
       ? tryEnqueueAdapterCommand(input.adapterId, body, {
           priorityStop: true,
           stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, edge: true, ...(opts.stop === "pinned" ? {} : { contentStop: true }) },
-          identicalStopKey: opts.stop === "pinned" ? identicalStopKey(input.adapterId, resolved) : null,
+          identicalStopKey: opts.stop === "pinned" ? identicalStopKey(input.adapterId, resolved, commandTimeoutMs(input.deadlineMs)) : null, // R-11-o (M-2): same deadline too
           holdSlot,
         })
-      : tryEnqueueAdapterCommand(input.adapterId, body, { waitForSlot: opts.stop === "unverified", holdSlot });
+      : tryEnqueueAdapterCommand(input.adapterId, body, { waitForSlot: opts.stop === "unverified" ? "unverified" : undefined, holdSlot });
+    if (!enq.accepted && enq.reason === "STOP_UNVERIFIED_QUEUE_FULL") {
+      // R-11-o (I-1) — the waiting list for unverified stops is full: refused; the caller journals it and tells the operator
+      return { kind: "busy", reason: enq.reason, detail: `${OT_STOP_UNVERIFIED_WAIT_MAX} stops that are not a verified (pinned) STOP already wait for adapter ${input.adapterId}'s full command queue — refused, nothing sent; use the pinned STOP (or the machine's E-STOP)` };
+    }
     if (!enq.accepted) return { kind: "busy", detail: `adapter command queue full (depth ${enq.depth} >= max ${enq.max})` };
     queued = await enq.result;
   }
@@ -390,16 +397,17 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
     // K-fix 2 (R-11-i a) — STOP by CONTENT (label ignored): writes exactly the snapshot's pinned stop values on the snapshot's
     // connection ⇒ a verified STOP (never cancelled); anything else — a "stop"-labelled command with arbitrary writes too — is not.
     const contentStop = classifyEdgeOtStop({ commandType: "stop", writes: input.writes }, adapter, getActiveConnectionFingerprint(input.adapterId)).pinned;
-    // R-11-j / R-11-n — an authorised stop-TYPED command that is not a verified stop is an UNVERIFIED stop: the ordinary queue, never
-    // BUSY, never epoch-cancelled (flag ON or OFF), no epoch bump; it kept every gate above (authorisation, preflight, consume).
+    // R-11-j / R-11-n — an authorised stop-TYPED command that is not a verified stop is an UNVERIFIED stop: the ordinary queue (a full
+    // queue ⇒ it waits for a slot, capped — R-11-o), no epoch bump; it kept every gate above (authorisation, preflight, consume).
     const stop = contentStop ? ("verified" as const) : unpinnedStop ? ("unverified" as const) : null;
-    // R-11-m — an unverified stop that writes a pinned stop tag with a non-pin value records its epoch: a verified STOP sent while it is
-    // in its gates supersedes it (it must not restart motion after the STOP); any other unverified stop is never cancelled (R-11-j)
-    const snapPins = stopPinsFromTagRows(adapter.tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue ?? null, writable: t.writable, isEnabled: t.isEnabled })));
-    const unverifiedOverrides = stop === "unverified" && writesOverrideStopPin(input.writes, snapPins);
-    const stopEpochAtGates = stop === null || unverifiedOverrides ? epochAtGates : null;
+    // R-11-o (M-3, was R-11-m) — every command but a verified STOP records its epoch: a verified STOP sent while an unverified stop is in
+    // its gates supersedes it (SUPERSEDED_BY_STOP), exactly as when it waits in the queue (R-1E-b)
+    const stopEpochAtGates = stop === "verified" ? null : epochAtGates;
     const stage = await runDeviceStage(rt, input, driver, resolved, { stop, stopEpochAtGates });
-    if (stage.kind === "busy") res = { ...refusal(input, "BUSY", { detail: stage.detail }), jti };
+    if (stage.kind === "busy" && stage.reason) {
+      anomaly(rt, input, stage.reason, stage.detail); // R-11-o (I-1) — durable: the journal carries it to central
+      res = { ...refusal(input, stage.reason, { detail: stage.detail }), jti };
+    } else if (stage.kind === "busy") res = { ...refusal(input, "BUSY", { detail: stage.detail }), jti };
     else if (stage.kind === "superseded") res = { ...refusal(input, "SUPERSEDED_BY_STOP"), jti };
     else if (stage.kind === "stopped") res = { ...refusal(input, "STOPPED_BEFORE_WRITE", { detail: stage.detail }), jti }; // K-fix R-11-d
     else {

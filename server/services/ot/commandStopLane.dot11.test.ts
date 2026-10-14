@@ -115,10 +115,16 @@ const D = vi.hoisted(() => ({
   fingerprint: undefined as string | undefined,
   /** K-fix 2 — the NEXT write stays on the wire until the test resolves this (deterministic in-flight command) */
   hold: null as null | Promise<void>,
+  readHold: null as null | Promise<void>,
 }));
 const driver = {
   isConnected: () => true,
-  readTags: async () => [],
+  readTags: async () => {
+    const h = D.readHold; // R-11-o (M-2) — the NEXT read-back stays pending until the test resolves this
+    D.readHold = null;
+    if (h) await h;
+    return [];
+  },
   writeTags: (writes: Array<{ tagKey: string; value?: unknown }>) => {
     D.log.push({ tag: writes[0].tagKey, value: writes[0].value, start: Date.now() });
     const hold = D.hold;
@@ -203,6 +209,7 @@ beforeEach(() => {
   D.log.length = 0;
   D.plan.clear();
   D.hold = null;
+  D.readHold = null;
   G.holdNext = null;
   S.state = "OK";
   S.hangNext = false;
@@ -317,13 +324,43 @@ describe("K-fix 2 — R-11-h: a protective interlock action is never cancelled b
     expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed", "cmd_run"]);
   });
 
-  it("control: an interlock action that is NOT a stop by content is capped like any command (BUSY when the queue is full) — every gate stays", async () => {
+  it("★ R-11-o I-1: an interlock action on a FULL queue is not refused BUSY — it waits in its own list (admitted first) and is written after the in-flight write; every gate stays", async () => {
     process.env.OT_CMD_QUEUE_MAX = "1";
     const { pA, release } = await inFlight();
-    const rL = await within(dispatch(interlockInput("block_downstream", "cmd_block", true)), 5000);
-    expect(rL).toMatchObject({ ok: false, reason: "BUSY" });
+    const pL = dispatch(interlockInput("block_downstream", "cmd_block", true));
+    const pX = dispatch(input("cmd_stop", "stop", true)); // an unverified stop waiting too: admitted AFTER the interlock action
+    expect(await until(() => _adapterSlotWaitersForTests(10) === 2, 5000)).toBe(true);
     release();
+    const [rL, rX] = await within(Promise.all([pL, pX]), 5000);
+    expect(rL).toMatchObject({ ok: true, status: "acked" });
+    expect(rX).toMatchObject({ ok: true, status: "acked" });
+    expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed", "cmd_block", "cmd_stop"]);
     await within(pA, 3000);
+  });
+
+  it("★ R-11-o I-1: a THIRD unverified stop on a full queue is refused STOP_UNVERIFIED_QUEUE_FULL — ledgered, a durable alert (no cap exemption), the operator is told to use the pinned STOP; nothing written", async () => {
+    process.env.OT_CMD_QUEUE_MAX = "1";
+    const { sendNotification } = await import("../notificationService");
+    (sendNotification as unknown as ReturnType<typeof vi.fn>).mockClear();
+    const { pA, release } = await inFlight();
+    const p1 = dispatch(input("cmd_stop", "stop", true));
+    expect(await until(() => _adapterSlotWaitersForTests(10) === 1, 5000)).toBe(true); // one at a time: the safety reads are not concurrent
+    const p2 = dispatch(input("cmd_jog", "stop", true));
+    expect(await until(() => _adapterSlotWaitersForTests(10) === 2, 5000)).toBe(true);
+    const u3 = input("cmd_block", "stop", true);
+    const r3 = await within(dispatch(u3), 5000);
+    expect(r3).toMatchObject({ ok: false, status: "rejected", reason: "STOP_UNVERIFIED_QUEUE_FULL", appError: { appCode: "OT_STOP_UNVERIFIED_QUEUE_FULL" } });
+    expect(r3.message).toMatch(/pinned STOP/);
+    expect(r3.pinnedStop).not.toBe(true);
+    const row = cmdLog.find((r) => r.status === "rejected" && String(r.errorText).startsWith("STOP_UNVERIFIED_QUEUE_FULL"));
+    expect(row).toBeDefined();
+    expect(await until(() => (sendNotification as unknown as ReturnType<typeof vi.fn>).mock.calls.length > 0, 3000)).toBe(true);
+    const [, payload, opts] = (sendNotification as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(payload).toMatchObject({ type: "ALERT", metadata: { kind: "stop_unverified_queue_full" } });
+    expect(opts?.capExempt).toBeUndefined();
+    release();
+    await within(Promise.all([pA, p1, p2]), 5000);
+    expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed", "cmd_stop", "cmd_jog"]);
   });
 });
 
@@ -434,15 +471,19 @@ describe("K-fix 2 — R-11-i (a): the content test needs the same evidence as th
     await within(pA, 3000);
   });
 
-  it("★ C-1 (R-11-k 2 → R-11-n): a verified STOP is NEVER re-checked — content stop C waits past the threshold behind a slow write, a pinned P arrives, the safety PLC turns BLOCKED: C then P (arrival order, each its own write), nothing refused, no safety read", async () => {
+  it("★ C-1 (R-11-k 2 → R-11-n, R-11-o M-1): a verified STOP is NEVER re-checked — content stop C waits past the threshold behind a slow write, a pinned P arrives, the safety PLC turns BLOCKED: P goes AHEAD of C, each its own write, nothing refused, no safety read", async () => {
     const { pA, pB: pC } = await slowWriteThen("cmd_run", "set_run", false); // C = a content stop (not labelled), waits past the re-check threshold
     const pP = dispatch(input("cmd_run", "stop", false)); // the pinned STOP: never shares C's write (only pinned STOPs are shared)
     expect(await until(() => _stopCallersForTests(10) === 2, 2000)).toBe(true);
     expect(_adapterQueueLineForTests(10)).toEqual([{ cls: "stop", callers: 1 }, { cls: "stop", callers: 1 }]);
     S.state = "BLOCKED"; // what people pressing STOP typically see
     const readsBefore = S.reads.length;
+    const answered: string[] = [];
+    void pP.then(() => answered.push("P"));
+    void pC.then(() => answered.push("C"));
     await within(pA, BOUND);
     const [rP, rC] = await within(Promise.all([pP, pC]), 3000);
+    expect(answered).toEqual(["P", "C"]); // M-1: the pinned STOP first
     expect(rP).toMatchObject({ ok: true, status: "acked", pinnedStop: true });
     expect(rC).toMatchObject({ ok: true, status: "acked" });
     expect(S.reads.length).toBe(readsBefore); // no safety re-check of a verified STOP
@@ -463,7 +504,7 @@ async function heldInGates(inp: Parameters<typeof dispatch>[0]) {
 
 describe("final fix wave — C-2 (R-11-j): an unverified stop is never cancelled STOPPED_BEFORE_WRITE (flag OFF and ON)", () => {
   for (const flag of [false, true]) {
-    it(`[flag ${flag ? "ON" : "OFF"}] ★ an unverified stop held in its gates while a pinned STOP is sent is still written (not STOPPED_BEFORE_WRITE)`, async () => {
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ R-11-o M-3: an unverified stop held in its gates while a pinned STOP is sent is SUPERSEDED_BY_STOP (never STOPPED_BEFORE_WRITE) — the same as when it waits in the queue`, async () => {
       process.env.OT_CMD_SERIALIZE_ENABLED = flag ? "true" : "false";
       const x = await heldInGates(input("cmd_stop", "stop", true));
       const rS = await within(dispatch(input("cmd_run", "stop", false)), 5000);
@@ -471,8 +512,8 @@ describe("final fix wave — C-2 (R-11-j): an unverified stop is never cancelled
       x.release();
       const rX = await within(x.p, 5000);
       expect(rX.reason).not.toBe("STOPPED_BEFORE_WRITE");
-      expect(rX).toMatchObject({ ok: true, status: "acked" });
-      expect(D.log.map((w) => w.tag)).toEqual(["cmd_run", "cmd_stop"]);
+      expect(rX).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+      expect(D.log.map((w) => w.tag)).toEqual(["cmd_run"]);
     });
     it(`[flag ${flag ? "ON" : "OFF"}] control: an ordinary write held in its gates while the pinned STOP is sent IS cancelled (STOPPED_BEFORE_WRITE)`, async () => {
       process.env.OT_CMD_SERIALIZE_ENABLED = flag ? "true" : "false";
@@ -566,6 +607,22 @@ describe("R-11-n: nothing is re-valued at send time; every caller keeps its own 
     expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed", "cmd_run", "cmd_jog"]);
   });
 
+  it("★ R-11-o (M-2): an identical pinned STOP pressed after the first STOP's write was ACKED (its read-back still running) is a fresh device write, not shared", async () => {
+    process.env.OT_READBACK_ENABLED = "true";
+    let releaseRead!: () => void;
+    D.readHold = new Promise<void>((r) => (releaseRead = r));
+    const p1 = dispatch(input("cmd_run", "stop", false));
+    expect(await until(() => D.log.length === 1, 5000)).toBe(true); // the write went out and was acked at once; its read-back hangs
+    await new Promise((r) => setTimeout(r, 30));
+    const p2 = dispatch(input("cmd_run", "stop", false));
+    await new Promise((r) => setTimeout(r, 200));
+    releaseRead();
+    const [r1, r2] = await within(Promise.all([p1, p2]), 5000);
+    expect(r1).toMatchObject({ pinnedStop: true, ok: true });
+    expect(r2).toMatchObject({ pinnedStop: true, ok: true });
+    expect(D.log.map((w) => [w.tag, w.value])).toEqual([["cmd_run", false], ["cmd_run", false]]); // two device writes
+  });
+
   it("★ C-1 (3) → R-11-n: an identical STOP dropped onto a STOP whose write TIMES OUT is in the late-result review (stale-write risk) too, not only the first STOP's intent", async () => {
     process.env.OT_CONTROL_TIMEOUT_MS = "300";
     const { pA, release } = await inFlight();
@@ -620,13 +677,13 @@ describe("final fix wave residual — R-11-m: an UNVERIFIED stop that writes a p
   });
 
   for (const flag of [false, true]) {
-    it(`[flag ${flag ? "ON" : "OFF"}] control: an unverified stop that writes only NON-pinned tags, held in its gates while the pinned STOP is sent, is still written`, async () => {
+    it(`[flag ${flag ? "ON" : "OFF"}] R-11-o M-3 (was a control): an unverified stop that writes only NON-pinned tags, held in its gates while the pinned STOP is sent, is superseded too — not by its label`, async () => {
       process.env.OT_CMD_SERIALIZE_ENABLED = flag ? "true" : "false";
-      const u = await heldInGates(input("cmd_stop", "stop", true));
+      const u = await heldInGates(input("cmd_jog", "e_stop", true));
       expect(await within(dispatch(input("cmd_run", "stop", false)), 5000)).toMatchObject({ status: "acked", pinnedStop: true });
       u.release();
-      expect(await within(u.p, 5000)).toMatchObject({ ok: true, status: "acked" });
-      expect(D.log.map((w) => w.tag)).toEqual(["cmd_run", "cmd_stop"]);
+      expect(await within(u.p, 5000)).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+      expect(D.log.map((w) => w.tag)).toEqual(["cmd_run"]);
     });
     it(`[flag ${flag ? "ON" : "OFF"}] control: the overriding unverified stop issued AFTER the STOP was sent is the operator's newer intent and is written`, async () => {
       process.env.OT_CMD_SERIALIZE_ENABLED = flag ? "true" : "false";

@@ -329,7 +329,7 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
   });
 
   for (const flag of [false, true]) {
-    it(`[flag ${flag ? "ON" : "OFF"}] ★ C-2 (R-11-j): an authorised UNVERIFIED stop held in its consume gate while a pinned STOP completes is still written — never STOPPED_BEFORE_WRITE`, async () => {
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ R-11-o M-3: an authorised UNVERIFIED stop held in its consume gate while a pinned STOP completes is SUPERSEDED_BY_STOP — never STOPPED_BEFORE_WRITE, nothing written`, async () => {
       if (flag) process.env.OT_CMD_SERIALIZE_ENABLED = "true";
       else delete process.env.OT_CMD_SERIALIZE_ENABLED;
       try {
@@ -353,8 +353,8 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
         release();
         const r = await pArb;
         expect(r.reason).not.toBe("STOPPED_BEFORE_WRITE");
-        expect(r).toMatchObject({ ok: true, status: "acked" });
-        expect(H.driver!.writes.map((w) => w[0].tagKey)).toEqual(["run", "speed"]);
+        expect(r).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+        expect(H.driver!.writes.map((w) => w[0].tagKey)).toEqual(["run"]);
       } finally {
         delete process.env.OT_CMD_SERIALIZE_ENABLED;
       }
@@ -404,6 +404,38 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
       expect(r.reason).not.toBe("BUSY");
       expect(r).toMatchObject({ ok: true, status: "acked" });
       expect(H.driver!.writes.map((w) => w[0].tagKey)).toEqual(["speed"]);
+    } finally {
+      delete process.env.OT_CMD_SERIALIZE_ENABLED;
+      delete process.env.OT_CMD_QUEUE_MAX;
+    }
+  });
+
+  it("★ R-11-o I-1: a THIRD authorised unverified stop on a full queue is refused STOP_UNVERIFIED_QUEUE_FULL and journaled as an anomaly; the two waiting ones are written", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    process.env.OT_CMD_QUEUE_MAX = "1";
+    try {
+      let releaseA!: () => void;
+      const held = new Promise<string>((r) => (releaseA = () => r("held")));
+      const { tryEnqueueAdapterCommand, _adapterSlotWaitersForTests } = await import("./otDeviceWrite");
+      expect(tryEnqueueAdapterCommand(5, () => held).accepted).toBe(true); // FULL
+      const ARB = { adapterId: 5, machineId: 50, commandType: "stop", writes: [{ tagKey: "speed", value: 0 }] };
+      const send = (jti: string, j: Journal) =>
+        dispatchOtOnEdge({ ...ARB, idempotencyKey: "foe:9:w1:1", authorization: { envelope: signEdgeObject("auth", claims({ jti }, ARB), key), runId: 9, claimSeq: 2, stepId: "w1", attempt: 1, idempotencyKey: "foe:9:w1:1", reqNonce: NONCE }, run }, runtime(j));
+      const p1 = send("7b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a81", journal());
+      for (let t = 0; t < 400 && _adapterSlotWaitersForTests(5) < 1; t++) await new Promise((r) => setTimeout(r, 5));
+      const p2 = send("8b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a81", journal());
+      for (let t = 0; t < 400 && _adapterSlotWaitersForTests(5) < 2; t++) await new Promise((r) => setTimeout(r, 5));
+      expect(_adapterSlotWaitersForTests(5)).toBe(2);
+      const j3 = journal();
+      const r3 = await send("9b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a81", j3);
+      expect(r3).toMatchObject({ ok: false, status: "rejected", reason: "STOP_UNVERIFIED_QUEUE_FULL" });
+      expect(r3.detail).toMatch(/pinned STOP/);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(j3.events).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "anomaly", code: "STOP_UNVERIFIED_QUEUE_FULL" })]));
+      expect(j3.runs).toMatchObject([{ kind: "ledger", status: "rejected", result: { reason: "STOP_UNVERIFIED_QUEUE_FULL" } }]);
+      releaseA();
+      expect(await Promise.all([p1, p2])).toMatchObject([{ ok: true, status: "acked" }, { ok: true, status: "acked" }]);
+      expect(H.driver!.writes).toHaveLength(2);
     } finally {
       delete process.env.OT_CMD_SERIALIZE_ENABLED;
       delete process.env.OT_CMD_QUEUE_MAX;

@@ -267,9 +267,10 @@ describe.skipIf(!DB_URL)("Đợt 11 K-fix R-11-d — a STOP cancels a write stil
       expect(device.log).toEqual([`${TAG_W}=9`]);
     });
 
-    // doc 81 Đợt 11 final fix wave (R-11-j, final review C-2) — an UNVERIFIED stop (stop-typed, value not the pin) is a stop too: never
-    // cancelled STOPPED_BEFORE_WRITE by another STOP, flag ON or OFF (before: cancelled "resend" while another operator's pinned STOP ran).
-    it(`[flag ${flag ? "ON" : "OFF"}] ★ C-2: an UNVERIFIED stop held in its gates while a pinned STOP is sent is still written — never STOPPED_BEFORE_WRITE (ledger: acked)`, async () => {
+    // doc 81 Đợt 11 final fix wave (R-11-j, final review C-2) — an UNVERIFIED stop was never cancelled by another STOP in its gates.
+    // Ruling R-11-o (M-3): a verified STOP supersedes an unverified stop CONSISTENTLY — in its gates as when it waits in the queue (R-1E-b):
+    // SUPERSEDED_BY_STOP (never STOPPED_BEFORE_WRITE), nothing written, ledgered rejected; flag ON and OFF.
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ R-11-o M-3: an UNVERIFIED stop held in its gates while a pinned STOP is sent is SUPERSEDED_BY_STOP — never STOPPED_BEFORE_WRITE, nothing written (ledger: rejected)`, async () => {
       setEnv(flag);
       const unverified = await prep("stop", [{ tagKey: TAG_W, value: 0 }]); // stop-typed, w1 has no pin
       const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);
@@ -280,11 +281,11 @@ describe.skipIf(!DB_URL)("Đợt 11 K-fix R-11-d — a STOP cancels a write stil
       h.release();
       const rU = await pU;
       expect(rU.reason).not.toBe("STOPPED_BEFORE_WRITE");
-      expect(rU).toMatchObject({ ok: true });
+      expect(rU).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
       expect(rU.pinnedStop).not.toBe(true);
-      expect(device.log).toEqual([`${TAG_STOP}=0`, `${TAG_W}=0`]);
+      expect(device.log).toEqual([`${TAG_STOP}=0`]);
       const rows = await sql<{ status: string }[]>`SELECT status FROM command_log WHERE id IN ${sql(rU.commandLogIds)} AND "ackValue"->>'ledger' = 'result'`;
-      expect(rows.map((r) => r.status)).toEqual(["acked"]);
+      expect(rows.map((r) => r.status)).toEqual(["rejected"]);
     });
   }
 });

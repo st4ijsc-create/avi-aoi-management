@@ -180,8 +180,8 @@ describe("R-11-n — a verified STOP waits only for the in-flight command; no la
     process.env.OT_CMD_QUEUE_MAX = "1";
     accepted(tryEnqueueAdapterCommand(A, job("A"))); // FULL
     expect(tryEnqueueAdapterCommand(A, job("X")).accepted).toBe(false);
-    const rU1 = accepted(tryEnqueueAdapterCommand(A, job("U1"), { waitForSlot: true }));
-    const rU2 = accepted(tryEnqueueAdapterCommand(A, job("U2"), { waitForSlot: true }));
+    const rU1 = accepted(tryEnqueueAdapterCommand(A, job("U1"), { waitForSlot: "unverified" }));
+    const rU2 = accepted(tryEnqueueAdapterCommand(A, job("U2"), { waitForSlot: "unverified" }));
     expect(dw._adapterSlotWaitersForTests(A)).toBe(2);
     expect(_adapterCommandQueueDepthForTests(A)).toBe(1); // the cap holds: waiting for a slot is not a queue entry
     process.env.OT_CMD_QUEUE_MAX = "10";
@@ -207,7 +207,7 @@ describe("R-11-n — a verified STOP waits only for the in-flight command; no la
     accepted(tryEnqueueAdapterCommand(A, job("A")));
     const rW = accepted(tryEnqueueAdapterCommand(A, job("W")));
     const rL = accepted(tryEnqueueAdapterCommand(A, job("L"), { protective: true, overridesStopPin: true }));
-    const rU = accepted(tryEnqueueAdapterCommand(A, job("U"), { waitForSlot: true }));
+    const rU = accepted(tryEnqueueAdapterCommand(A, job("U"), { waitForSlot: "unverified" }));
     off();
     for (const n of ["A", "W", "L", "U"]) {
       await flush();
@@ -222,13 +222,13 @@ describe("R-11-n — a verified STOP waits only for the in-flight command; no la
     const { log, ctl, job } = makeJobs();
     process.env.OT_CMD_QUEUE_MAX = "2";
     accepted(tryEnqueueAdapterCommand(A, job("A")));
-    const rU1 = accepted(tryEnqueueAdapterCommand(A, job("U1"), { waitForSlot: true })); // in the queue (depth 2 = FULL)
-    const rU2 = accepted(tryEnqueueAdapterCommand(A, job("U2"), { waitForSlot: true })); // waits for a slot
+    const rU1 = accepted(tryEnqueueAdapterCommand(A, job("U1"), { waitForSlot: "unverified" })); // in the queue (depth 2 = FULL)
+    const rU2 = accepted(tryEnqueueAdapterCommand(A, job("U2"), { waitForSlot: "unverified" })); // waits for a slot
     const rS = accepted(tryEnqueueAdapterCommand(A, job("S"), { priorityStop: true, stopRef: { k: "S" } }));
     expect(await rU1).toEqual({ ...SUPERSEDED, stop: { k: "S" } });
     expect(await rU2).toEqual({ ...SUPERSEDED, stop: { k: "S" } });
     expect(dw._adapterSlotWaitersForTests(A)).toBe(0);
-    const rU3 = accepted(tryEnqueueAdapterCommand(A, job("U3"), { waitForSlot: true }));
+    const rU3 = accepted(tryEnqueueAdapterCommand(A, job("U3"), { waitForSlot: "unverified" }));
     for (const n of ["A", "S", "U3"]) {
       await flush();
       ctl.get(n)!.resolve(n);
@@ -271,7 +271,7 @@ describe("R-11-n — a verified STOP waits only for the in-flight command; no la
     tryEnqueueAdapterCommand(A, job("C"), { priorityStop: true, stopRef: { k: "C", contentStop: true } });
     tryEnqueueAdapterCommand(A, job("P"), { priorityStop: true, identicalStopKey: "K", stopRef: { k: "P" } });
     tryEnqueueAdapterCommand(A, job("P2"), { priorityStop: true, identicalStopKey: "K", stopRef: { k: "P2" } });
-    tryEnqueueAdapterCommand(A, job("U"), { waitForSlot: true });
+    tryEnqueueAdapterCommand(A, job("U"), { waitForSlot: "unverified" });
     off();
     expect(seen).toEqual([
       { ref: { k: "C", contentStop: true }, info: { pinned: false } },
@@ -308,11 +308,11 @@ describe("R-11-d / R-11-i (b) — the per-adapter STOP epoch", () => {
     ...over,
   });
 
-  it("★ who records it (R-11-j, R-11-k 3): an ordinary write does; a TRUE stop, ANY stop-typed command (unverified too) and an interlock action that keeps the pins do not; an interlock action overriding a pin does", () => {
+  it("★ who records it (R-11-k 3, R-11-o M-3): an ordinary write and an UNVERIFIED stop do; a TRUE stop and an interlock action that keeps the pins do not; an interlock action overriding a pin does", () => {
     const il = { kind: "interlock" as const, ruleId: 1, eventId: 1, approvedBy: 1 };
     expect(stopEpochAtGatesFor(base({}), { trueStop: false, epochAtGates: 7 })).toBe(7);
-    expect(stopEpochAtGatesFor(base({ commandType: "stop" }), { trueStop: false, epochAtGates: 7 })).toBeNull(); // unverified stop: never epoch-cancelled
-    expect(stopEpochAtGatesFor(base({ commandType: "e_stop" }), { trueStop: false, epochAtGates: 7 })).toBeNull();
+    expect(stopEpochAtGatesFor(base({ commandType: "stop" }), { trueStop: false, epochAtGates: 7 })).toBe(7); // M-3: superseded by a verified STOP sent while in its gates
+    expect(stopEpochAtGatesFor(base({ commandType: "e_stop" }), { trueStop: false, epochAtGates: 7 })).toBe(7);
     expect(stopEpochAtGatesFor(base({ commandType: "stop" }), { trueStop: true, epochAtGates: 7 })).toBeNull();
     expect(stopEpochAtGatesFor(base({ commandType: "stop_line", triggeredBy: il }), { trueStop: false, epochAtGates: 7 })).toBeNull();
     expect(stopEpochAtGatesFor(base({ commandType: "reduce_speed", triggeredBy: il }), { trueStop: false, epochAtGates: 7, overridesStopPin: true })).toBe(7);
@@ -397,11 +397,166 @@ describe("R-11-d / R-11-i (b) — the per-adapter STOP epoch", () => {
     expect(adapterStopEpoch(A)).toBe(e2);
   });
 
+  it("★ R-11-o (M-2): onWriteAnswered fires when the device WRITE answers — before the read-back has finished", async () => {
+    const saved = process.env.OT_READBACK_ENABLED;
+    process.env.OT_READBACK_ENABLED = "true";
+    try {
+      const rb = deferred<Array<{ tagKey: string; value: unknown }>>();
+      const driver = { writeTags: async (w: Array<{ tagKey: string }>) => w.map((x) => ({ tagKey: x.tagKey, ok: true })), readTags: () => rb.promise } as never;
+      let answered = false;
+      let done = false;
+      const p = executeOtDeviceWrite({ ...stage(driver, { stopTyped: true, stopEpochAtGates: null }), onWriteAnswered: () => (answered = true) }).then(() => (done = true));
+      await flush();
+      expect(answered).toBe(true);
+      expect(done).toBe(false); // the read-back is still running
+      rb.resolve([{ tagKey: "t", value: 1 }]);
+      await p;
+    } finally {
+      if (saved === undefined) delete process.env.OT_READBACK_ENABLED;
+      else process.env.OT_READBACK_ENABLED = saved;
+    }
+  });
+
   it("a cancelled write (epoch moved) does not bump, even if marked as a stop", async () => {
     const { driver } = fakeDriver();
     const atGates = adapterStopEpoch(A);
     const now = bumpAdapterStopEpoch(A);
     await executeOtDeviceWriteUnlessStopped(stage(driver, { stopTyped: false, stopEpochAtGates: atGates, bumpStopEpoch: true }));
     expect(adapterStopEpoch(A)).toBe(now);
+  });
+});
+
+describe("R-11-o — bounded waits on the flag-ON queue: unverified stops capped, interlock actions never starved; pinned STOP first; share window = the write", () => {
+  const B = 8181;
+  const stopJob = (wire: string[], name: string, outcome: unknown = name) => () => {
+    wire.push(name);
+    return Promise.resolve(outcome);
+  };
+
+  it("★ I-1 (reviewer's probe): a full queue + 500 unverified stops ⇒ 2 wait, 498 are refused STOP_UNVERIFIED_QUEUE_FULL (depth unchanged); 200 interlock attempts: the first 4 WAIT (never BUSY while there is room in their list), the rest BUSY", () => {
+    const { job } = makeJobs();
+    process.env.OT_CMD_QUEUE_MAX = "3";
+    for (const n of ["A", "B", "C"]) accepted(tryEnqueueAdapterCommand(B, job(n))); // FULL
+    let waiting = 0;
+    const refused: string[] = [];
+    for (let i = 0; i < 500; i++) {
+      const o = tryEnqueueAdapterCommand(B, job(`U${i}`), { waitForSlot: "unverified" });
+      if (o.accepted) waiting++;
+      else refused.push(o.reason ?? "BUSY");
+    }
+    expect(waiting).toBe(dw.OT_STOP_UNVERIFIED_WAIT_MAX);
+    expect(dw.OT_STOP_UNVERIFIED_WAIT_MAX).toBe(2);
+    expect(refused).toHaveLength(498);
+    expect(new Set(refused)).toEqual(new Set(["STOP_UNVERIFIED_QUEUE_FULL"]));
+    expect(_adapterCommandQueueDepthForTests(B)).toBe(3);
+    let interlockAccepted = 0;
+    let interlockBusy = 0;
+    for (let i = 0; i < 200; i++) {
+      const o = tryEnqueueAdapterCommand(B, job(`L${i}`), { protective: true, waitForSlot: "interlock" });
+      if (o.accepted) interlockAccepted++;
+      else {
+        expect(o.reason ?? "BUSY").toBe("BUSY");
+        interlockBusy++;
+      }
+      if (i === 0) expect(o.accepted).toBe(true); // the first one is never refused
+    }
+    expect(interlockAccepted).toBe(dw.OT_INTERLOCK_WAIT_MAX);
+    expect(dw.OT_INTERLOCK_WAIT_MAX).toBe(4);
+    expect(interlockBusy).toBe(196);
+    expect(tryEnqueueAdapterCommand(B, job("W")).accepted).toBe(false); // an ordinary write: BUSY as before
+  });
+
+  it("★ I-1: interlock waiters are admitted BEFORE the unverified waiters, FIFO among themselves; an interlock with room goes straight in even while unverified stops wait", async () => {
+    const { log, ctl, job } = makeJobs();
+    process.env.OT_CMD_QUEUE_MAX = "1";
+    accepted(tryEnqueueAdapterCommand(B, job("A")));
+    const rU1 = accepted(tryEnqueueAdapterCommand(B, job("U1"), { waitForSlot: "unverified" }));
+    const rL1 = accepted(tryEnqueueAdapterCommand(B, job("L1"), { protective: true, waitForSlot: "interlock" }));
+    const rL2 = accepted(tryEnqueueAdapterCommand(B, job("L2"), { protective: true, waitForSlot: "interlock" }));
+    for (const n of ["A", "L1", "L2", "U1"]) {
+      await flush();
+      ctl.get(n)!.resolve(n);
+    }
+    expect([await rL1, await rL2, await rU1]).toEqual(["L1", "L2", "U1"]);
+    expect(log).toEqual(["A", "L1", "L2", "U1"]);
+    process.env.OT_CMD_QUEUE_MAX = "2";
+    accepted(tryEnqueueAdapterCommand(B, job("X")));
+    accepted(tryEnqueueAdapterCommand(B, job("Y"))); // full again
+    accepted(tryEnqueueAdapterCommand(B, job("U2"), { waitForSlot: "unverified" }));
+    process.env.OT_CMD_QUEUE_MAX = "3"; // room again, an unverified stop still waits
+    const o = tryEnqueueAdapterCommand(B, job("L3"), { protective: true, waitForSlot: "interlock" });
+    expect(o.accepted).toBe(true);
+    expect(dw._adapterQueueLineForTests(B).map((x) => x.cls)).toEqual(["ordinary", "protective"]); // L3 queued, not waiting
+  });
+
+  it("★ I-1: a verified STOP cancels the unverified waiters and an interlock waiter that overrides a pin; it keeps the other interlock waiters", async () => {
+    const { log, ctl, job } = makeJobs();
+    process.env.OT_CMD_QUEUE_MAX = "1";
+    accepted(tryEnqueueAdapterCommand(B, job("A")));
+    const rU = accepted(tryEnqueueAdapterCommand(B, job("U"), { waitForSlot: "unverified" }));
+    const rL = accepted(tryEnqueueAdapterCommand(B, job("L"), { protective: true, waitForSlot: "interlock" }));
+    const rO = accepted(tryEnqueueAdapterCommand(B, job("O"), { protective: true, overridesStopPin: true, waitForSlot: "interlock" }));
+    const rS = accepted(tryEnqueueAdapterCommand(B, job("S"), { priorityStop: true, stopRef: { k: "S" } }));
+    expect(await rU).toEqual({ ...SUPERSEDED, stop: { k: "S" } });
+    expect(await rO).toEqual({ ...SUPERSEDED, stop: { k: "S" } });
+    for (const n of ["A", "S", "L"]) {
+      await flush();
+      ctl.get(n)!.resolve(n);
+    }
+    expect([await rS, await rL]).toEqual(["S", "L"]);
+    expect(log).toEqual(["A", "S", "L"]);
+  });
+
+  it("★ M-1: a PINNED STOP always goes ahead of waiting content stops (content stops keep their order behind it)", async () => {
+    const { log, ctl, job } = makeJobs();
+    accepted(tryEnqueueAdapterCommand(B, job("A")));
+    const rC1 = accepted(tryEnqueueAdapterCommand(B, job("C1"), { priorityStop: true, stopRef: { k: "C1", contentStop: true } }));
+    const rC2 = accepted(tryEnqueueAdapterCommand(B, job("C2"), { priorityStop: true, stopRef: { k: "C2", contentStop: true } }));
+    const rP1 = accepted(tryEnqueueAdapterCommand(B, job("P1"), { priorityStop: true, stopRef: { k: "P1" } }));
+    const rP2 = accepted(tryEnqueueAdapterCommand(B, job("P2"), { priorityStop: true, stopRef: { k: "P2" } }));
+    for (const n of ["A", "P1", "P2", "C1", "C2"]) {
+      await flush();
+      ctl.get(n)!.resolve(n);
+    }
+    expect(await Promise.all([rP1, rP2, rC1, rC2])).toEqual(["P1", "P2", "C1", "C2"]);
+    expect(log).toEqual(["A", "P1", "P2", "C1", "C2"]);
+  });
+
+  it("★ M-2: the share window ends when the STOP's WRITE answers (writeAnswered), not when its read-back ends", async () => {
+    const wire: string[] = [];
+    const readBack = deferred<string>();
+    let answered!: () => void;
+    const p1 = accepted(tryEnqueueAdapterCommand(B, (ctl) => (wire.push("P1"), (answered = ctl!.writeAnswered), readBack.promise), { priorityStop: true, identicalStopKey: "K" }));
+    const o2 = tryEnqueueAdapterCommand(B, stopJob(wire, "P2"), { priorityStop: true, identicalStopKey: "K" });
+    expect(o2.accepted && o2.joined).toBe(true); // the write is on the wire, no answer yet
+    answered(); // the device answered the write; the read-back is still running
+    const o3 = tryEnqueueAdapterCommand(B, stopJob(wire, "P3"), { priorityStop: true, identicalStopKey: "K" });
+    expect(o3.accepted && o3.joined).toBeFalsy(); // a press after the write answered is a fresh STOP
+    readBack.resolve("P1 outcome");
+    expect([await p1, await accepted(o2), await accepted(o3)]).toEqual(["P1 outcome", "P1 outcome", "P3"]);
+    expect(wire).toEqual(["P1", "P3"]);
+  });
+
+  it("★ M-2: a STOP with another deadline is never shared (the key carries the timeout) — the joiner's own deadlineMs is honoured", () => {
+    const w = [rw("run", 0)];
+    expect(dw.identicalStopKey(B, w, 5000)).toBe(dw.identicalStopKey(B, w, 5000));
+    expect(dw.identicalStopKey(B, w, 1000)).not.toBe(dw.identicalStopKey(B, w, 5000));
+  });
+
+  it("★ M-4: a STOP that JOINS a waiting identical STOP cancels an ordinary write queued after that STOP (and before the join)", async () => {
+    const { log, ctl, job } = makeJobs();
+    process.env.OT_CMD_QUEUE_MAX = "10";
+    accepted(tryEnqueueAdapterCommand(B, job("A")));
+    const rP1 = accepted(tryEnqueueAdapterCommand(B, job("P1"), { priorityStop: true, identicalStopKey: "K", stopRef: { k: "P1" } }));
+    const rW = accepted(tryEnqueueAdapterCommand(B, job("W")));
+    const o2 = tryEnqueueAdapterCommand(B, job("P2"), { priorityStop: true, identicalStopKey: "K", stopRef: { k: "P2" } });
+    expect(o2.accepted && o2.joined).toBe(true);
+    expect(await rW).toEqual({ ...SUPERSEDED, stop: { k: "P2" } });
+    for (const n of ["A", "P1"]) {
+      await flush();
+      ctl.get(n)!.resolve(n);
+    }
+    expect([await rP1, await accepted(o2)]).toEqual(["P1", "P1"]);
+    expect(log).toEqual(["A", "P1"]);
   });
 });

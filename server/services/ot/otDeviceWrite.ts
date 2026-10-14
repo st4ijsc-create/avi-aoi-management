@@ -302,6 +302,8 @@ interface PendingAdapterCommand {
   cancel: (byStop?: Record<string, unknown>) => void;
   /** a VERIFIED STOP (the pinned stop, or a stop by content): never BUSY, waits only for the in-flight command, never cancelled */
   priorityStop: boolean;
+  /** R-11-o (M-1) — a verified STOP that is NOT the pinned stop (a stop by content): every pinned STOP goes ahead of it */
+  contentStop: boolean;
   /**
    * doc 81 Đợt 11 K-fix 2 (ruling R-11-h) — a PROTECTIVE interlock action (stop_line / block / reduce): never cancelled by a STOP —
    * final fix wave (R-11-k 3): unless `overridesStopPin`, see below. It keeps every gate.
@@ -321,11 +323,14 @@ interface PendingAdapterCommand {
   result?: Promise<unknown>;
   /** R-11-n — this STOP's ledger intents (the array its device write was given): an identical STOP's intents are added to it */
   intentIds?: number[];
-  /** R-11-n — the outcome is in (the write answered or timed out): from then on an identical STOP is sent anew */
+  /** R-11-n / R-11-o (M-2) — the WRITE has answered (or timed out / failed): from then on an identical STOP is sent anew */
   settled: boolean;
   /** R-11-n — callers sharing this job (1 + identical STOPs dropped onto it) — test seam only */
   callers: number;
 }
+
+/** R-11-o — a command waiting for a slot of a FULL queue (not counted in `depth`). */
+type SlotWaiter = { admit: () => void; cancel: (byStop?: Record<string, unknown>) => void; overridesStopPin: boolean };
 
 interface AdapterCommandQueue {
   /** Có một lệnh đang thực thi (write+verify) hay không. */
@@ -337,11 +342,18 @@ interface AdapterCommandQueue {
   /** Số lệnh trong hàng = lệnh đang bay (0/1) + lệnh đang chờ. */
   depth: number;
   /**
-   * doc 81 Đợt 11 simplify (ruling R-11-n) — stop-typed commands that found the queue FULL: never BUSY, they wait (FIFO) for a slot and
-   * are admitted before any newer command. Not counted in `depth`.
+   * doc 81 Đợt 11 ruling R-11-o (I-1) — commands that found the queue FULL and wait (FIFO) for a slot instead of BUSY, admitted before any
+   * newer command: first the INTERLOCK actions (at most OT_INTERLOCK_WAIT_MAX), then the UNVERIFIED stops (at most
+   * OT_STOP_UNVERIFIED_WAIT_MAX; beyond it STOP_UNVERIFIED_QUEUE_FULL). Not counted in `depth`.
    */
-  slotWaiters: Array<{ admit: () => void; cancel: (byStop?: Record<string, unknown>) => void }>;
+  interlockWaiters: SlotWaiter[];
+  unverifiedWaiters: SlotWaiter[];
 }
+
+/** R-11-o (I-1) — at most this many unverified stops wait for a slot per adapter; more ⇒ refused STOP_UNVERIFIED_QUEUE_FULL (+ alert). */
+export const OT_STOP_UNVERIFIED_WAIT_MAX = 2;
+/** R-11-o (I-1) — at most this many interlock actions wait for a slot per adapter (admitted before the unverified stops); more ⇒ BUSY. */
+export const OT_INTERLOCK_WAIT_MAX = 4;
 
 const adapterCommandQueues = new Map<number, AdapterCommandQueue>();
 
@@ -363,9 +375,10 @@ export function _adapterCommandQueueDepthForTests(adapterId: number): number {
   return adapterCommandQueues.get(adapterId)?.depth ?? 0;
 }
 
-/** R-11-n — test seam: stop-typed commands waiting for a slot of the adapter's full queue. */
+/** R-11-n / R-11-o — test seam: commands waiting for a slot of the adapter's full queue (interlock + unverified). */
 export function _adapterSlotWaitersForTests(adapterId: number): number {
-  return adapterCommandQueues.get(adapterId)?.slotWaiters.length ?? 0;
+  const q = adapterCommandQueues.get(adapterId);
+  return q ? q.interlockWaiters.length + q.unverifiedWaiters.length : 0;
 }
 
 /** R-11-n — test seam: the WAITING entries in line order (`stop` with its callers, `protective`, `ordinary`). */
@@ -383,12 +396,16 @@ export function _stopCallersForTests(adapterId: number): number {
 
 export type EnqueueOutcome<T> =
   | { accepted: true; result: Promise<T | Superseded>; /** R-11-n — an identical STOP was already waiting / in flight: this is ITS outcome */ joined?: boolean }
-  | { accepted: false; depth: number; max: number };
+  | { accepted: false; depth: number; max: number; /** R-11-o — absent ⇒ BUSY */ reason?: "BUSY" | "STOP_UNVERIFIED_QUEUE_FULL" };
 
-/** R-11-n — admit the waiting stop-typed commands (FIFO) while the queue has room. */
+/** R-11-o — admit the waiting commands while the queue has room: interlock actions first, then unverified stops (each FIFO). */
 function admitSlotWaiters(queue: AdapterCommandQueue): void {
   const max = cmdQueueMax();
-  while (queue.slotWaiters.length > 0 && queue.depth < max) queue.slotWaiters.shift()!.admit();
+  while (queue.depth < max) {
+    const w = queue.interlockWaiters.shift() ?? queue.unverifiedWaiters.shift();
+    if (!w) return;
+    w.admit();
+  }
 }
 
 /** Chạy lệnh chờ kế tiếp nếu không có lệnh nào đang bay; hàng cạn ⇒ xoá entry khỏi map. */
@@ -400,19 +417,25 @@ function pumpAdapterQueue(adapterId: number, queue: AdapterCommandQueue): void {
     next.run();
     return;
   }
-  if (queue.depth === 0 && queue.slotWaiters.length === 0 && adapterCommandQueues.get(adapterId) === queue) {
+  if (queue.depth === 0 && queue.interlockWaiters.length === 0 && queue.unverifiedWaiters.length === 0 && adapterCommandQueues.get(adapterId) === queue) {
     adapterCommandQueues.delete(adapterId);
   }
 }
 
 /**
  * A VERIFIED STOP arrives (R-1E-a): cancel every WAITING command that is neither a STOP nor a protective interlock action
- * (SUPERSEDED_BY_STOP naming the STOP), every stop-typed command still waiting for a slot (R-1E-b — its unproven values must not run
- * after the STOP and undo it), a protective action only when it writes a pinned stop tag with a non-pin value (R-11-k 3), and tell an
- * in-flight pre-write safety re-check (it gives way — final wave F7). The command in flight is never touched.
+ * (SUPERSEDED_BY_STOP naming the STOP), every unverified stop waiting for a slot (R-1E-b — its unproven values must not run after the
+ * STOP and undo it), a protective action — queued or waiting for a slot — only when it writes a pinned stop tag with a non-pin value
+ * (R-11-k 3), and tell an in-flight pre-write safety re-check (it gives way — final wave F7). The command in flight is never touched.
  */
 function cancelWaitingForStop(adapterId: number, queue: AdapterCommandQueue, stopRef: Record<string, unknown> | undefined): void {
-  for (const w of queue.slotWaiters.splice(0)) w.cancel(stopRef);
+  for (const w of queue.unverifiedWaiters.splice(0)) w.cancel(stopRef);
+  const keptWaiters: SlotWaiter[] = [];
+  for (const w of queue.interlockWaiters) {
+    if (w.overridesStopPin) w.cancel(stopRef);
+    else keptWaiters.push(w);
+  }
+  queue.interlockWaiters = keptWaiters;
   const kept: PendingAdapterCommand[] = [];
   for (const j of queue.pending) {
     if (j.priorityStop || (j.protective && !j.overridesStopPin)) kept.push(j);
@@ -424,41 +447,48 @@ function cancelWaitingForStop(adapterId: number, queue: AdapterCommandQueue, sto
 
 /**
  * doc 81 Đợt 11 simplify (ruling R-11-n) — the identity of a PINNED STOP's device write: the running connection + every write's tag,
- * address, dataType, scale, offset and canonical value, IN ORDER (so the shared outcome's per-write indexes are the caller's own). Two
+ * address, dataType, scale, offset and canonical value, IN ORDER (so the shared outcome's per-write indexes are the caller's own), and —
+ * R-11-o (M-2) — the command's timeout (a STOP with another deadline never shares a write: each caller's own deadlineMs holds). Two
  * STOPs share one write only when this is equal. Never throws: anything it cannot read ⇒ null (never shared, sent on its own).
  */
-export function identicalStopKey(adapterId: number, writes: ReadonlyArray<OtResolvedWrite>): string | null {
+export function identicalStopKey(adapterId: number, writes: ReadonlyArray<OtResolvedWrite>, timeoutMs?: number): string | null {
   try {
     const conn = getActiveConnectionFingerprint(adapterId) ?? null;
-    return JSON.stringify([conn, writes.map((w) => [w.write.tagKey, w.address, w.dataType ?? null, w.scale ?? null, w.offset ?? null, canonicalOtValue(w.write.value)])]);
+    return JSON.stringify([conn, timeoutMs ?? null, writes.map((w) => [w.write.tagKey, w.address, w.dataType ?? null, w.scale ?? null, w.offset ?? null, canonicalOtValue(w.write.value)])]);
   } catch {
     return null;
   }
 }
 
+/** R-11-o (M-2) — what the queue hands the job it runs: call `writeAnswered` as soon as the device WRITE has answered (or timed out). */
+export type QueueJobCtl = { writeAnswered: () => void };
+
 /**
  * Xếp `fn` vào hàng đợi tuần tự của adapter (G1.9; entry dọn khỏi map khi hàng cạn). `fn` chỉ chạy sau khi mọi lệnh xếp trước nó đã
  * kết thúc (kể cả khi lệnh trước lỗi).
  *   • Lệnh thường: trả {accepted:false} NGAY (không side-effect) khi hàng đã đầy (BUSY).
- *   • `waitForSlot` (doc 81 Đợt 11 R-11-n — a stop-TYPED command that is not a verified stop): never BUSY; a full queue ⇒ it waits for a
- *     slot (FIFO, before any newer command), then queues like any command, with every gate of its caller.
+ *   • `waitForSlot` (doc 81 Đợt 11 R-11-n → R-11-o): `"interlock"` (a protective interlock action) or `"unverified"` (a stop-TYPED command
+ *     that is not a verified stop): a full queue ⇒ it waits for a slot (FIFO, interlock actions first, before any newer command), then
+ *     queues like any command, with every gate of its caller. Each list is capped (OT_INTERLOCK_WAIT_MAX ⇒ BUSY beyond it;
+ *     OT_STOP_UNVERIFIED_WAIT_MAX ⇒ STOP_UNVERIFIED_QUEUE_FULL beyond it).
  *   • `priorityStop` (a VERIFIED STOP — the pinned stop, R-1E-a, or a stop by content, R-11-n): never BUSY; cancels the waiting commands
- *     (cancelWaitingForStop), then stands after the last waiting STOP — it waits only for the command in flight (and earlier STOPs).
- *     `identicalStopKey` (a pinned STOP): an identical STOP already waiting, or in flight with no answer yet, is not queued again — the
- *     caller gets THAT STOP's real outcome (`joined`); its `shareIntentIds` join that STOP's ledger intents, and when that STOP's write is
- *     already in flight the adapter's STOP epoch moves now (R-11-d: this STOP is executed by that write).
+ *     (cancelWaitingForStop), then stands after the last waiting STOP — a pinned STOP after the last waiting PINNED STOP, ahead of every
+ *     content stop (R-11-o M-1) — it waits only for the command in flight (and earlier STOPs).
+ *     `identicalStopKey` (a pinned STOP): an identical STOP already waiting, or in flight whose WRITE has not answered yet, is not queued
+ *     again — the caller gets THAT STOP's real outcome (`joined`); its `shareIntentIds` join that STOP's ledger intents, and when that
+ *     STOP's write is already in flight the adapter's STOP epoch moves now (R-11-d: this STOP is executed by that write).
  */
 export function tryEnqueueAdapterCommand<T>(
   adapterId: number,
-  fn: () => Promise<T>,
+  fn: (ctl?: QueueJobCtl) => Promise<T>,
   opts?: {
     priorityStop?: boolean;
     /** doc 81 Đợt 11 K-fix 2 (R-11-h) — a protective interlock action: never cancelled by a STOP; queued and capped like any command. */
     protective?: boolean;
     /** R-11-k (3) — the protective action writes a pinned stop tag with a non-pin value: a VERIFIED stop cancels it. */
     overridesStopPin?: boolean;
-    /** R-11-n — a stop-typed command that is not a verified stop: a full queue ⇒ wait for a slot, never BUSY. */
-    waitForSlot?: boolean;
+    /** R-11-n / R-11-o — a full queue ⇒ wait for a slot in this (capped) list instead of BUSY. */
+    waitForSlot?: "interlock" | "unverified";
     /** R-11-n — a pinned STOP's identicalStopKey (null / absent: never shared). */
     identicalStopKey?: string | null;
     /** R-11-n — the (mutable) intents array this STOP's device write records; an identical STOP's intents are appended to it. */
@@ -474,11 +504,20 @@ export function tryEnqueueAdapterCommand<T>(
 ): EnqueueOutcome<T> {
   const max = cmdQueueMax();
   const priorityStop = opts?.priorityStop === true;
+  const waitList = priorityStop ? undefined : opts?.waitForSlot;
   let q = adapterCommandQueues.get(adapterId);
-  // full = no room, or stop-typed commands already wait for a slot (they go first)
-  if (!priorityStop && opts?.waitForSlot !== true && q && (q.depth >= max || q.slotWaiters.length > 0)) return { accepted: false, depth: q.depth, max };
+  if (q && !priorityStop) {
+    // full = no room, or commands of this kind or of a kind admitted earlier already wait for a slot (they go first)
+    const full =
+      q.depth >= max || q.interlockWaiters.length > 0 || (waitList !== "interlock" && q.unverifiedWaiters.length > 0);
+    if (full) {
+      if (waitList === undefined) return { accepted: false, depth: q.depth, max };
+      if (waitList === "interlock" && q.interlockWaiters.length >= OT_INTERLOCK_WAIT_MAX) return { accepted: false, depth: q.depth, max };
+      if (waitList === "unverified" && q.unverifiedWaiters.length >= OT_STOP_UNVERIFIED_WAIT_MAX) return { accepted: false, depth: q.depth, max, reason: "STOP_UNVERIFIED_QUEUE_FULL" };
+    }
+  }
   if (!q) {
-    q = { inFlight: false, running: null, pending: [], depth: 0, slotWaiters: [] };
+    q = { inFlight: false, running: null, pending: [], depth: 0, interlockWaiters: [], unverifiedWaiters: [] };
     adapterCommandQueues.set(adapterId, q);
   }
   const queue = q;
@@ -502,6 +541,7 @@ export function tryEnqueueAdapterCommand<T>(
   });
   const job: PendingAdapterCommand = {
     priorityStop,
+    contentStop: priorityStop && opts?.stopRef?.contentStop === true,
     protective: opts?.protective === true,
     overridesStopPin: opts?.overridesStopPin === true,
     identicalStopKey: key,
@@ -511,9 +551,14 @@ export function tryEnqueueAdapterCommand<T>(
     run: () => {
       queue.inFlight = true;
       queue.running = job;
+      const ctl: QueueJobCtl = {
+        writeAnswered: () => {
+          job.settled = true;
+        },
+      };
       let p: Promise<T>;
       try {
-        p = Promise.resolve(fn());
+        p = Promise.resolve(fn(ctl));
       } catch (err) {
         p = Promise.reject(err);
       }
@@ -557,9 +602,12 @@ export function tryEnqueueAdapterCommand<T>(
 
   const enqueue = (): void => {
     if (priorityStop) {
-      // Đứng sau DỪNG cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng.
+      // Đứng sau DỪNG cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng; R-11-o (M-1): DỪNG ghim đứng trước mọi DỪNG theo nội dung.
       let at = 0;
-      for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].priorityStop) at = i + 1;
+      for (let i = 0; i < queue.pending.length; i++) {
+        const j = queue.pending[i];
+        if (j.priorityStop && (job.contentStop || !j.contentStop)) at = i + 1;
+      }
       queue.pending.splice(at, 0, job);
     } else queue.pending.push(job);
     queue.depth += 1;
@@ -569,11 +617,12 @@ export function tryEnqueueAdapterCommand<T>(
     // (R-11-h) không ghi đè ghim (R-11-k 3). R-1E-b — CỐ Ý gồm cả lệnh "stop" chưa xác minh đang chờ (trong hàng hoặc chờ chỗ).
     cancelWaitingForStop(adapterId, queue, opts?.stopRef);
     enqueue();
-  } else if (queue.depth >= max || queue.slotWaiters.length > 0) {
-    // R-11-n — a stop-typed command on a full queue: never BUSY, it waits for a slot
-    queue.slotWaiters.push({
+  } else if (waitList !== undefined && (queue.depth >= max || queue.interlockWaiters.length > 0 || (waitList === "unverified" && queue.unverifiedWaiters.length > 0))) {
+    // R-11-n / R-11-o — wait for a slot (the caps were checked above)
+    (waitList === "interlock" ? queue.interlockWaiters : queue.unverifiedWaiters).push({
       admit: enqueue,
       cancel: (byStop) => settle.resolve(byStop ? { superseded: true, byStop: true, stop: byStop } : { superseded: true, byStop: true }),
+      overridesStopPin: opts?.overridesStopPin === true,
     });
     return { accepted: true, result };
   } else enqueue();
@@ -979,6 +1028,8 @@ export async function executeOtDeviceWrite(a: {
    * stop; absent ⇒ `stopTyped` (central's fallback / sweep STOP, which writes only the adapter's pinned stop values).
    */
   bumpStopEpoch?: boolean;
+  /** doc 81 Đợt 11 R-11-o (M-2) — called once the device WRITE has answered, failed or timed out (before the read-back): the queue's share window ends */
+  onWriteAnswered?: () => void;
 }): Promise<ExecutedWrite> {
   const { input, driver, resolved, driverWrites, timeoutMs, stopTyped } = a;
   const { intentIds, confirmedBy: ledgerConfirmer } = a.ledger;
@@ -1021,6 +1072,11 @@ export async function executeOtDeviceWrite(a: {
     writeResults = [];
   } finally {
     clearTimeout(writeTimer);
+    try {
+      a.onWriteAnswered?.();
+    } catch {
+      /* a queue bookkeeping hook never fails the write */
+    }
   }
 
   // Decide a per-write outcome from the write result (status BEFORE read-back).
