@@ -154,3 +154,29 @@ export async function getReadDb() {
   }
   return _readDb;
 }
+
+// ── doc 81 Đợt 12 task P fix 1 (M-1) — the DEDICATED LISTEN / NOTIFY client ────────────────────────────────────────────────────
+// One postgres client OUTSIDE the app pool for the pg channels (`ot_stop_epoch`, `device_owner_changed`): its NOTIFY connection
+// (max 1) carries the cross-replica STOP broadcast and the listeners' heartbeats, and its own LISTEN connection (postgres.js opens one
+// per client) carries the subscriptions. A saturated app pool therefore neither delays a broadcast nor fakes a lost heartbeat.
+// Short statement timeout (a NOTIFY is one tiny statement). Never on the edge (no DB login there).
+let _notifyClient: ReturnType<typeof postgres> | null = null;
+export function getNotifyClient(): ReturnType<typeof postgres> | null {
+  if (edgeDbRefused("getNotifyClient")) return null;
+  if (!_notifyClient && process.env.DATABASE_URL) {
+    try {
+      _notifyClient = postgres(process.env.DATABASE_URL, {
+        max: 1,
+        idle_timeout: 0,
+        connect_timeout: 10,
+        max_lifetime: null,
+        connection: { statement_timeout: 5_000, application_name: "avi-notify" },
+        onnotice: () => undefined,
+      });
+    } catch (error) {
+      console.error("[Database] LISTEN/NOTIFY client failed:", (error as Error)?.message ?? error);
+      _notifyClient = null;
+    }
+  }
+  return _notifyClient;
+}

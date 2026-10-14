@@ -1,12 +1,27 @@
 /**
- * doc 81 Đợt 12 task P — otStopEpochSync without a database: an in-memory LISTEN/NOTIFY bus stands in for the postgres client
- * (the real NOTIFY path is stopEpochCrossReplica.dot12.db.test.ts). Covers: strict payloads, own-origin ignore, the broadcast never
- * on the STOP's path (synchronous bump, hanging NOTIFY bounded), LISTEN failure / hang at boot (bounded, alert, retry), heartbeat
- * loss (alert, re-LISTEN, old subscription inert), a postgres re-LISTEN after a dropped connection (gap alert), the edge role, stop().
+ * doc 81 Đợt 12 task P (+ fix 1) — otStopEpochSync without a database: an in-memory LISTEN/NOTIFY bus stands in for the postgres
+ * client (the real NOTIFY path is stopEpochCrossReplica.dot12.db.test.ts; the listener liveness is pgChannelListener.dot12.test.ts).
+ * Covers: the broadcast never on the STOP's path; R-12-c — HMAC (key from HKDF of SECRET_ENCRYPTION_KEY or OT_STOP_EPOCH_HMAC_KEY,
+ * fail closed without one, never printed), strict shape, own replica ignored, freshness, replay WINDOW (reordering accepted),
+ * one alert per rejection episode; I-3 overflow alert; the edge role; stop().
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { bumpAdapterStopEpoch, adapterStopEpoch, setStopEpochBroadcaster } from "./otDeviceWrite";
-import { startOtStopEpochSync, otStopEpochSyncStatus, parseStopEpochPayload, OT_STOP_EPOCH_ORIGIN, OT_STOP_EPOCH_CHANNEL, type StopEpochSyncAlert } from "./otStopEpochSync";
+import {
+  startOtStopEpochSync,
+  otStopEpochSyncStatus,
+  parseStopEpochPayload,
+  resolveStopEpochKey,
+  signStopEpochMessage,
+  OT_STOP_EPOCH_REPLICA_ID,
+  OT_STOP_EPOCH_CHANNEL,
+  OT_STOP_EPOCH_MAX_AGE_MS,
+  type StopEpochSyncAlert,
+} from "./otStopEpochSync";
+
+const SECRET = "test-secret-encryption-key-0123456789abcdef";
+const ENV = { SECRET_ENCRYPTION_KEY: SECRET } as NodeJS.ProcessEnv;
+const KEY = (resolveStopEpochKey(ENV) as { key: Buffer }).key;
 
 type Sub = { fn: (p: string) => void; onlisten?: () => void; active: boolean };
 function bus() {
@@ -15,39 +30,24 @@ function bus() {
     subs,
     listenCalls: 0,
     notified: [] as string[],
-    /** null ⇒ succeed; else awaited before the LISTEN registers (reject = fail, never-settling = hang) */
-    listenGate: null as null | (() => Promise<void>),
     notifyImpl: null as null | ((p: string) => Promise<unknown>),
-    loopback: true,
-    /** postgres.js-like: unlisten of a subscription that was re-registered after a reconnect does nothing */
-    unlistenNoop: false,
     async listen(ch: string, fn: (p: string) => void, onlisten?: () => void) {
       expect(ch).toBe(OT_STOP_EPOCH_CHANNEL);
       c.listenCalls += 1;
-      const g = c.listenGate;
-      if (g) await g();
       const s: Sub = { fn, onlisten, active: true };
       subs.push(s);
       onlisten?.();
-      return {
-        unlisten: async () => {
-          if (!c.unlistenNoop) s.active = false;
-        },
-      };
+      return { unlisten: async () => void (s.active = false) };
     },
     async notify(ch: string, payload: string) {
       expect(ch).toBe(OT_STOP_EPOCH_CHANNEL);
       c.notified.push(payload);
       if (c.notifyImpl) return c.notifyImpl(payload);
-      if (c.loopback) setTimeout(() => c.deliver(payload), 1);
+      setTimeout(() => c.deliver(payload), 1);
       return [];
     },
     deliver(p: string) {
       for (const s of subs) if (s.active) s.fn(p);
-    },
-    /** postgres.js re-LISTENs every channel after its LISTEN connection dropped, calling onlisten again */
-    reconnect() {
-      for (const s of subs) if (s.active) s.onlisten?.();
     },
   };
   return c;
@@ -62,8 +62,10 @@ async function until(cond: () => boolean, ms = 2_000) {
   }
   return true;
 }
-const peer = (adapterId: number, extra: Record<string, unknown> = {}) =>
-  JSON.stringify({ v: 1, kind: "stop", origin: "peer-replica-0001", adapterId, epoch: 7, at: Date.now(), ...extra });
+let peerSeq = 0;
+const PEER = "peer-replica-0001";
+const signed = (adapterId: number, over: Partial<{ replicaId: string; seq: number; issuedAt: number; key: Buffer }> = {}) =>
+  JSON.stringify(signStopEpochMessage(over.key ?? KEY, { replicaId: over.replicaId ?? PEER, seq: over.seq ?? ++peerSeq + 1_000, issuedAt: over.issuedAt ?? Date.now(), adapterId }));
 
 let stopFn: (() => Promise<void>) | null = null;
 afterEach(async () => {
@@ -71,57 +73,68 @@ afterEach(async () => {
   stopFn = null;
   delete process.env.AVI_PROCESS_ROLE;
   setStopEpochBroadcaster(null);
+  vi.restoreAllMocks();
 });
 async function start(c: ReturnType<typeof bus>, alerts: StopEpochSyncAlert[], o: Record<string, unknown> = {}) {
-  stopFn = await startOtStopEpochSync({ client: c, pingMs: 60_000, alert: (a) => void alerts.push(a), ...o });
+  stopFn = await startOtStopEpochSync({ listenClient: () => c, notifyClient: () => c, env: ENV, pingMs: 60_000, alert: (a) => void alerts.push(a), ...o });
   return stopFn;
 }
 
-describe("parseStopEpochPayload — strict", () => {
-  const ok = { v: 1, kind: "stop", origin: "peer-replica-0001", adapterId: 5, epoch: 3, at: 1_700_000_000_000 };
-  it("accepts exactly a v1 stop and a v1 ping", () => {
-    expect(parseStopEpochPayload(JSON.stringify(ok))).toEqual(ok);
-    const p = { v: 1, kind: "ping", origin: "peer-replica-0001", nonce: "abcdefgh-1234", at: 1 };
-    expect(parseStopEpochPayload(JSON.stringify(p))).toEqual(p);
+describe("key (R-12-c): HKDF subkey, optional override, fail closed", () => {
+  it("derives a 32-byte subkey from SECRET_ENCRYPTION_KEY (never the raw secret); OT_STOP_EPOCH_HMAC_KEY overrides; neither ⇒ null", () => {
+    const a = resolveStopEpochKey({ SECRET_ENCRYPTION_KEY: SECRET } as NodeJS.ProcessEnv);
+    expect(a.source).toBe("SECRET_ENCRYPTION_KEY");
+    expect(a.key?.length).toBe(32);
+    expect(a.key?.toString("utf8")).not.toContain(SECRET.slice(0, 16));
+    const b = resolveStopEpochKey({ SECRET_ENCRYPTION_KEY: SECRET, OT_STOP_EPOCH_HMAC_KEY: "x".repeat(40) } as NodeJS.ProcessEnv);
+    expect(b.source).toBe("OT_STOP_EPOCH_HMAC_KEY");
+    expect(b.key?.equals(a.key!)).toBe(false);
+    expect(resolveStopEpochKey({ JWT_SECRET: "a".repeat(64), SESSION_SECRET: "b".repeat(64) } as NodeJS.ProcessEnv).key).toBeNull(); // no JWT fallback
+    expect(resolveStopEpochKey({ OT_STOP_EPOCH_HMAC_KEY: "short", SECRET_ENCRYPTION_KEY: SECRET } as NodeJS.ProcessEnv).key).toBeNull(); // weak override: fail closed
   });
-  const bad: Array<[string, unknown]> = [
-    ["not a string", 5],
-    ["empty", ""],
-    ["not JSON", "{"],
-    ["array", JSON.stringify([ok])],
-    ["null", "null"],
-    ["extra key", JSON.stringify({ ...ok, x: 1 })],
-    ["missing key", JSON.stringify({ v: 1, kind: "stop", origin: ok.origin, adapterId: 5, at: 1 })],
-    ["v 2", JSON.stringify({ ...ok, v: 2 })],
-    ["v '1'", JSON.stringify({ ...ok, v: "1" })],
-    ["unknown kind", JSON.stringify({ ...ok, kind: "clear" })],
-    ["adapterId string", JSON.stringify({ ...ok, adapterId: "5" })],
-    ["adapterId 0", JSON.stringify({ ...ok, adapterId: 0 })],
-    ["adapterId negative", JSON.stringify({ ...ok, adapterId: -5 })],
-    ["adapterId float", JSON.stringify({ ...ok, adapterId: 5.5 })],
-    ["adapterId > int4", JSON.stringify({ ...ok, adapterId: 2_147_483_648 })],
-    ["epoch 0", JSON.stringify({ ...ok, epoch: 0 })],
-    ["at missing value", JSON.stringify({ ...ok, at: null })],
-    ["origin short", JSON.stringify({ ...ok, origin: "abc" })],
-    ["origin bad chars", JSON.stringify({ ...ok, origin: "peer replica 01" })],
-    ["origin too long", JSON.stringify({ ...ok, origin: "a".repeat(65) })],
-    ["too long payload", JSON.stringify({ ...ok, origin: ok.origin }) + " ".repeat(600)],
-    ["ping with adapterId", JSON.stringify({ v: 1, kind: "ping", origin: ok.origin, nonce: "abcdefgh", at: 1, adapterId: 5 })],
-    ["ping bad nonce", JSON.stringify({ v: 1, kind: "ping", origin: ok.origin, nonce: "a b", at: 1 })],
-    ["__proto__ key", '{"v":1,"kind":"stop","origin":"peer-replica-0001","adapterId":5,"epoch":3,"at":1,"__proto__":{}}'],
-  ];
-  for (const [name, raw] of bad) it(`rejects: ${name}`, () => expect(parseStopEpochPayload(raw)).toBeNull());
+
+  it("★ no key: nothing is sent, nothing is accepted, ONE no_key alert — and the key never appears in status, alerts or the console", async () => {
+    const c = bus();
+    const alerts: StopEpochSyncAlert[] = [];
+    await start(c, alerts, { env: {} as NodeJS.ProcessEnv });
+    expect(alerts.map((a) => a.kind)).toEqual(["no_key"]);
+    bumpAdapterStopEpoch(990_100, null);
+    await tick();
+    expect(c.notified.filter((p) => p.includes('"kind":"stop"'))).toEqual([]);
+    expect(otStopEpochSyncStatus().unsignedNotSent).toBeGreaterThan(0);
+    c.deliver(signed(990_101));
+    expect(adapterStopEpoch(990_101)).toBe(0);
+    expect(otStopEpochSyncStatus().state).toBe("degraded");
+  });
+
+  it("the key material never reaches the status, an alert or the console", async () => {
+    const logs: string[] = [];
+    for (const m of ["log", "warn", "error"] as const) vi.spyOn(console, m).mockImplementation((...a: unknown[]) => void logs.push(a.map(String).join(" ")));
+    const c = bus();
+    const alerts: StopEpochSyncAlert[] = [];
+    await start(c, alerts);
+    c.deliver(signed(990_102, { key: Buffer.alloc(32, 7) })); // bad MAC ⇒ rejection alert
+    c.deliver("garbage");
+    const everything = JSON.stringify(otStopEpochSyncStatus()) + JSON.stringify(alerts) + logs.join("\n");
+    expect(everything).not.toContain(SECRET);
+    expect(everything).not.toContain(KEY.toString("hex"));
+    expect(everything).not.toContain(KEY.toString("base64"));
+  });
 });
 
-describe("otStopEpochSync — send side never on the STOP's path (L-7)", () => {
-  it("the bump is synchronous; the NOTIFY starts only on the next macrotask (after the STOP's driver call) and carries {adapterId, epoch, at}", async () => {
+describe("send side — never on the STOP's path (L-7), signed", () => {
+  it("the bump is synchronous; the signed NOTIFY starts only on the next macrotask and verifies", async () => {
     const c = bus();
     await start(c, []);
-    const e = bumpAdapterStopEpoch(990_001, { idempotencyKey: "k" });
-    expect(c.notified.length).toBe(0); // nothing sent inside the bump
+    const at0 = Date.now();
+    bumpAdapterStopEpoch(990_001, { idempotencyKey: "k" });
+    expect(c.notified.length).toBe(0);
     await tick();
-    expect(c.notified.length).toBe(1);
-    expect(JSON.parse(c.notified[0])).toMatchObject({ v: 1, kind: "stop", origin: OT_STOP_EPOCH_ORIGIN, adapterId: 990_001, epoch: e });
+    await tick();
+    const m = parseStopEpochPayload(c.notified.find((p) => p.includes('"kind":"stop"')));
+    expect(m).toMatchObject({ v: 2, kind: "stop", replicaId: OT_STOP_EPOCH_REPLICA_ID, adapterId: 990_001 });
+    expect(m!.issuedAt).toBeGreaterThanOrEqual(at0);
+    expect(m!.mac).toBe(signStopEpochMessage(KEY, { replicaId: m!.replicaId, seq: m!.seq, issuedAt: m!.issuedAt, adapterId: m!.adapterId }).mac);
   });
 
   it("a NOTIFY that never answers: the bump still returns at once; the send gives up after its deadline (counted)", async () => {
@@ -135,17 +148,14 @@ describe("otStopEpochSync — send side never on the STOP's path (L-7)", () => {
     expect(await until(() => otStopEpochSyncStatus().notifyFailed > failed0, 1_000)).toBe(true);
   });
 
-  it("the broadcaster itself is never called inside the bump (only on the next macrotask)", async () => {
+  it("the broadcaster itself is never called inside the bump; a throwing one never reaches the caller", async () => {
     const calls: unknown[] = [];
     setStopEpochBroadcaster((m) => void calls.push(m));
     const e = bumpAdapterStopEpoch(990_004, null);
-    await Promise.resolve(); // microtasks drained: still not called
+    await Promise.resolve();
     expect(calls).toEqual([]);
     await tick();
     expect(calls).toEqual([{ adapterId: 990_004, epoch: e, at: expect.any(Number) }]);
-  });
-
-  it("a throwing broadcaster never reaches the caller", async () => {
     setStopEpochBroadcaster(() => {
       throw new Error("boom");
     });
@@ -154,127 +164,76 @@ describe("otStopEpochSync — send side never on the STOP's path (L-7)", () => {
   });
 });
 
-describe("otStopEpochSync — receive side", () => {
-  it("a peer STOP bumps this process's epoch once; its own STOP is ignored; malformed payloads are counted and move nothing", async () => {
+describe("receive side (R-12-c)", () => {
+  it("a signed peer STOP moves this process's epoch once; its own (signed) STOP is ignored", async () => {
     const c = bus();
     await start(c, []);
     const s0 = otStopEpochSyncStatus();
-    const before = adapterStopEpoch(990_010);
-    c.deliver(peer(990_010));
-    expect(adapterStopEpoch(990_010)).toBeGreaterThan(before);
+    c.deliver(signed(990_010));
+    expect(adapterStopEpoch(990_010)).toBeGreaterThan(0);
     expect(otStopEpochSyncStatus().peerStops).toBe(s0.peerStops + 1);
-
-    const e = bumpAdapterStopEpoch(990_011, null); // own STOP: loops back through the bus
+    const e = bumpAdapterStopEpoch(990_011, null);
     expect(await until(() => otStopEpochSyncStatus().ignoredOwn > s0.ignoredOwn)).toBe(true);
     expect(adapterStopEpoch(990_011)).toBe(e);
-
-    c.deliver(peer(990_012, { adapterId: "990012" }));
-    c.deliver("garbage");
-    expect(adapterStopEpoch(990_012)).toBe(0);
-    expect(otStopEpochSyncStatus().rejected).toBe(s0.rejected + 2);
   });
 
-  it("a peer STOP carries its identity into the epoch record (ledger: peer, origin) — never a key the peer chose", async () => {
-    const c = bus();
-    await start(c, []);
-    c.deliver(peer(990_013));
-    const { stopIssuedSince } = await import("./otDeviceWrite");
-    expect(stopIssuedSince(990_013, 0)?.stop).toEqual({ peer: true, origin: "peer-replica-0001", peerEpoch: 7, at: expect.any(Number) });
-  });
-});
-
-describe("otStopEpochSync — liveness (bounded, alert, reconnect; boot never blocked)", () => {
-  it("LISTEN fails at boot: start returns, degraded + ONE lost alert, background retry succeeds → ok + recovered; peer STOPs apply again", async () => {
-    const c = bus();
-    let n = 0;
-    c.listenGate = async () => {
-      if (++n <= 2) throw new Error("connection refused");
-    };
-    const alerts: StopEpochSyncAlert[] = [];
-    await start(c, alerts, { retryMs: 20 });
-    expect(otStopEpochSyncStatus().state).toBe("degraded");
-    expect(alerts.map((a) => a.kind)).toEqual(["lost"]);
-    c.deliver(peer(990_020));
-    expect(adapterStopEpoch(990_020)).toBe(0); // nothing listens yet: per process
-    expect(await until(() => otStopEpochSyncStatus().state === "ok")).toBe(true);
-    expect(alerts.map((a) => a.kind)).toEqual(["lost", "recovered"]); // one alert per episode, not per retry
-    c.deliver(peer(990_020));
-    expect(adapterStopEpoch(990_020)).toBeGreaterThan(0);
-  });
-
-  it("LISTEN hangs at boot: start returns within the LISTEN deadline (boot never blocked)", async () => {
-    const c = bus();
-    let n = 0;
-    c.listenGate = () => (++n === 1 ? new Promise<void>(() => undefined) : Promise.resolve());
-    const alerts: StopEpochSyncAlert[] = [];
-    const t0 = Date.now();
-    await start(c, alerts, { listenDeadlineMs: 40, retryMs: 20 });
-    expect(Date.now() - t0).toBeLessThan(500);
-    expect(alerts[0]?.kind).toBe("lost");
-    expect(await until(() => otStopEpochSyncStatus().state === "ok")).toBe(true);
-  });
-
-  it("heartbeat not received: lost alert, a fresh LISTEN, the old subscription is INERT (no double bump); heartbeat back → recovered", async () => {
-    const c = bus();
-    c.unlistenNoop = true; // like postgres.js after a reconnect: the old registration cannot be removed
-    const alerts: StopEpochSyncAlert[] = [];
-    await start(c, alerts, { pingMs: 15, pingDeadlineMs: 25, retryMs: 20 });
-    expect(await until(() => otStopEpochSyncStatus().lastPingRttMs !== null)).toBe(true);
-    c.loopback = false; // the LISTEN stops receiving
-    expect(await until(() => alerts.some((a) => a.kind === "lost"))).toBe(true);
-    expect(await until(() => c.listenCalls >= 2)).toBe(true);
-    await sleep(60);
-    expect(alerts.some((a) => a.kind === "recovered")).toBe(false); // a fresh LISTEN is not proof: the own ping must come back
-    expect(otStopEpochSyncStatus().state).toBe("degraded");
-    c.loopback = true;
-    expect(await until(() => alerts.some((a) => a.kind === "recovered"))).toBe(true);
-    const p0 = otStopEpochSyncStatus().peerStops;
-    c.deliver(peer(990_030)); // reaches BOTH registrations (old one could not be removed)
-    expect(otStopEpochSyncStatus().peerStops).toBe(p0 + 1);
-  });
-
-  it("another replica's ping, or a ping with another nonce, is NOT this LISTEN's heartbeat", async () => {
-    const c = bus();
-    c.loopback = false; // this replica's own pings never come back
-    const alerts: StopEpochSyncAlert[] = [];
-    await start(c, alerts, { pingMs: 15, pingDeadlineMs: 40, retryMs: 1_000 });
-    const t = setInterval(() => {
-      c.deliver(JSON.stringify({ v: 1, kind: "ping", origin: "peer-replica-0001", nonce: "nonce-of-peer", at: Date.now() }));
-      c.deliver(JSON.stringify({ v: 1, kind: "ping", origin: OT_STOP_EPOCH_ORIGIN, nonce: "not-the-pending-one", at: Date.now() }));
-    }, 3);
-    try {
-      expect(await until(() => alerts.some((a) => a.kind === "lost"))).toBe(true);
-    } finally {
-      clearInterval(t);
-    }
-  });
-
-  it("postgres re-LISTENs after a dropped connection (onlisten again): lost + recovered alerts (the gap), reconnects counted", async () => {
+  it("★ rejected and counted, nothing moves: unsigned v1, bad MAC, tampered adapterId, stale, future-dated, replayed", async () => {
     const c = bus();
     const alerts: StopEpochSyncAlert[] = [];
     await start(c, alerts);
-    const r0 = otStopEpochSyncStatus().reconnects;
-    c.reconnect();
-    expect(otStopEpochSyncStatus().reconnects).toBe(r0 + 1);
-    expect(alerts.map((a) => a.kind)).toEqual(["lost", "recovered"]);
-    expect(alerts[0].reason).toMatch(/dropped/);
+    const r0 = otStopEpochSyncStatus().rejectedBy;
+    c.deliver(JSON.stringify({ v: 1, kind: "stop", origin: PEER, adapterId: 990_020, epoch: 7, at: Date.now() })); // the old unsigned shape
+    c.deliver(signed(990_021, { key: Buffer.alloc(32, 9) }));
+    const t = JSON.parse(signed(990_022));
+    c.deliver(JSON.stringify({ ...t, adapterId: 990_023 })); // tampered
+    c.deliver(signed(990_024, { issuedAt: Date.now() - OT_STOP_EPOCH_MAX_AGE_MS - 1_000 }));
+    c.deliver(signed(990_025, { issuedAt: Date.now() + OT_STOP_EPOCH_MAX_AGE_MS + 1_000 }));
+    const once = signed(990_026, { seq: 77 });
+    c.deliver(once);
+    const e26 = adapterStopEpoch(990_026);
+    expect(e26).toBeGreaterThan(0);
+    c.deliver(once); // replay
+    for (const a of [990_020, 990_021, 990_022, 990_023, 990_024, 990_025]) expect(adapterStopEpoch(a)).toBe(0);
+    expect(adapterStopEpoch(990_026)).toBe(e26);
+    const r = otStopEpochSyncStatus().rejectedBy;
+    expect(r.malformed - r0.malformed).toBe(1);
+    expect(r.bad_mac - r0.bad_mac).toBe(2);
+    expect(r.stale - r0.stale).toBe(2);
+    expect(r.replay - r0.replay).toBe(1);
+    expect(alerts.filter((a) => a.kind === "rejected")).toHaveLength(1); // ONE alert for the episode
   });
 
-  it("stop(): broadcaster removed, LISTEN removed, no more pings", async () => {
+  it("★ replay WINDOW, not strict seq: messages reordered by the pool are all accepted (seq 5 after seq 9)", async () => {
     const c = bus();
-    const stop = await start(c, [], { pingMs: 10 });
-    await sleep(30);
-    await stop();
-    stopFn = null;
-    const sent = c.notified.length;
-    bumpAdapterStopEpoch(990_040, null);
-    await sleep(40);
-    expect(c.notified.length).toBe(sent);
-    expect(c.subs.every((s) => !s.active)).toBe(true);
-    expect(otStopEpochSyncStatus().state).toBe("off");
+    await start(c, []);
+    const R = "reorder-replica-01";
+    c.deliver(signed(990_030, { replicaId: R, seq: 9 }));
+    c.deliver(signed(990_031, { replicaId: R, seq: 5 }));
+    c.deliver(signed(990_032, { replicaId: R, seq: 7 }));
+    expect([990_030, 990_031, 990_032].every((a) => adapterStopEpoch(a) > 0)).toBe(true);
   });
 
-  it("the EDGE role: nothing starts (no LISTEN, no broadcast) — the edge has no DB, its epoch stays per process", async () => {
+  it("I-3: the peer map overflow raises ONE peer_overflow alert (and every signed STOP still lands)", async () => {
+    vi.resetModules();
+    const dw = await import("./otDeviceWrite");
+    const sync = await import("./otStopEpochSync");
+    const c = bus();
+    const alerts: StopEpochSyncAlert[] = [];
+    const stop = await sync.startOtStopEpochSync({ listenClient: () => c, notifyClient: () => c, env: ENV, pingMs: 60_000, alert: (a) => void alerts.push(a) });
+    try {
+      for (let i = 1; i <= dw.OT_STOP_EPOCH_PEER_ADAPTERS_MAX; i++) dw.bumpAdapterStopEpochFromPeer(i, { peer: true });
+      const key = (sync.resolveStopEpochKey(ENV) as { key: Buffer }).key;
+      for (const [n, a] of [[1, 3_000_000_001], [2, 3_000_000_002]] as const) c.deliver(JSON.stringify(sync.signStopEpochMessage(key, { replicaId: PEER, seq: n, issuedAt: Date.now(), adapterId: a - 1_000_000_000 })));
+      expect(dw.adapterStopEpoch(2_000_000_001)).toBeGreaterThan(0);
+      expect(dw.adapterStopEpoch(2_000_000_002)).toBeGreaterThan(0);
+      expect(alerts.filter((a) => a.kind === "peer_overflow")).toHaveLength(1);
+      expect(sync.otStopEpochSyncStatus().peerEvictions).toBe(2);
+    } finally {
+      await stop();
+    }
+  });
+
+  it("the EDGE role: nothing starts (no LISTEN, no broadcast)", async () => {
     process.env.AVI_PROCESS_ROLE = "edge";
     const c = bus();
     await start(c, []);
@@ -283,15 +242,42 @@ describe("otStopEpochSync — liveness (bounded, alert, reconnect; boot never bl
     expect(c.listenCalls).toBe(0);
     expect(c.notified.length).toBe(0);
   });
+
+  it("stop(): broadcaster removed, LISTEN removed; a second start while running returns the same instance", async () => {
+    const c = bus();
+    const s1 = await start(c, []);
+    const s2 = await startOtStopEpochSync({ listenClient: () => c, notifyClient: () => c, env: ENV });
+    expect(s2).toBe(s1);
+    expect(c.listenCalls).toBe(1);
+    await s1();
+    stopFn = null;
+    const sent = c.notified.length;
+    bumpAdapterStopEpoch(990_040, null);
+    await sleep(20);
+    expect(c.notified.length).toBe(sent);
+    expect(c.subs.every((s) => !s.active)).toBe(true);
+    expect(otStopEpochSyncStatus().state).toBe("off");
+  });
 });
 
-describe("otDeviceWrite — the peer adapter cap", () => {
-  it("adapters first seen through peers are capped (a NOTIFY flood cannot grow the map without bound); known adapters always bump", async () => {
-    vi.resetModules();
-    const dw = await import("./otDeviceWrite");
-    for (let i = 1; i <= dw.OT_STOP_EPOCH_PEER_ADAPTERS_MAX; i++) expect(dw.bumpAdapterStopEpochFromPeer(i, { peer: true })).not.toBeNull();
-    expect(dw.bumpAdapterStopEpochFromPeer(dw.OT_STOP_EPOCH_PEER_ADAPTERS_MAX + 1, { peer: true })).toBeNull();
-    const e = dw.adapterStopEpoch(5);
-    expect(dw.bumpAdapterStopEpochFromPeer(5, { peer: true })).toBeGreaterThan(e);
-  });
+describe("parseStopEpochPayload — strict v2", () => {
+  const ok = signStopEpochMessage(KEY, { replicaId: PEER, seq: 3, issuedAt: 1_700_000_000_000, adapterId: 5 });
+  it("accepts exactly a v2 stop", () => expect(parseStopEpochPayload(JSON.stringify(ok))).toEqual(ok));
+  const bad: Array<[string, unknown]> = [
+    ["not a string", 5],
+    ["not JSON", "{"],
+    ["array", JSON.stringify([ok])],
+    ["extra key", JSON.stringify({ ...ok, x: 1 })],
+    ["v 1", JSON.stringify({ ...ok, v: 1 })],
+    ["kind ping", JSON.stringify({ ...ok, kind: "ping" })],
+    ["adapterId string", JSON.stringify({ ...ok, adapterId: "5" })],
+    ["adapterId > int4", JSON.stringify({ ...ok, adapterId: 2_147_483_648 })],
+    ["seq 0", JSON.stringify({ ...ok, seq: 0 })],
+    ["issuedAt float", JSON.stringify({ ...ok, issuedAt: 1.5 })],
+    ["replicaId bad chars", JSON.stringify({ ...ok, replicaId: "peer replica 01" })],
+    ["mac short", JSON.stringify({ ...ok, mac: "ab" })],
+    ["mac upper", JSON.stringify({ ...ok, mac: ok.mac.toUpperCase() })],
+    ["too long", JSON.stringify(ok) + " ".repeat(600)],
+  ];
+  for (const [name, raw] of bad) it(`rejects: ${name}`, () => expect(parseStopEpochPayload(raw)).toBeNull());
 });

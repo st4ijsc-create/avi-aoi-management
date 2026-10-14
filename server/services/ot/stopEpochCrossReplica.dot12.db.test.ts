@@ -52,6 +52,8 @@ const DAU = `D12P-${Date.now()}`;
 const OWNER = 990_912_301;
 const MACHINE = 990_912_310;
 const TAG_STOP = "speed_sp"; // pinned stop value 0
+const TAG_W = "w1"; // NO pin: an unverified stop-typed command writing it is the only software STOP for it
+const HMAC_ENV = { OT_STOP_EPOCH_HMAC_KEY: "dot12-task-p-fix1-test-hmac-key-0123456789" } as NodeJS.ProcessEnv;
 const TOOL = "set_machine_param";
 const CHANNEL = "ot_stop_epoch";
 const ENV = ["OT_CONTROL_ENABLED", "OT_COMMISSIONING_REQUIRED", "OT_SAFETY_PREFLIGHT_ENABLED", "OT_READBACK_ENABLED", "OT_CMD_SERIALIZE_ENABLED", "SEC_PLATFORM", "UNS_CMD_ACK_ENABLED"] as const;
@@ -75,7 +77,7 @@ async function loadReplica(name: string): Promise<Replica> {
   return { name, cd, dw, sync, conn, stopSync: null, alerts: [] };
 }
 async function startSync(r: Replica, extra: Record<string, unknown> = {}) {
-  r.stopSync = await r.sync.startOtStopEpochSync({ pingMs: 60_000, alert: (a: Record<string, unknown>) => void r.alerts.push(a), ...extra });
+  r.stopSync = await r.sync.startOtStopEpochSync({ pingMs: 60_000, env: HMAC_ENV, alert: (a: Record<string, unknown>) => void r.alerts.push(a), ...extra } as never);
 }
 async function stopSync(r: Replica) {
   if (r.stopSync) await r.stopSync();
@@ -149,7 +151,10 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     const x = (await A.conn.getDb())!;
     const [row] = await x.insert(deviceAdapters).values({ code: `${DAU}-A`, name: `${DAU} A`, protocol: "modbus", endpoint: "tcp://127.0.0.1:1", isEnabled: true, machineId: MACHINE }).returning();
     adapterId = row!.id;
-    await x.insert(deviceTags).values([{ adapterId, tagKey: TAG_STOP, address: "holding:40020", dataType: "int", writable: true }]);
+    await x.insert(deviceTags).values([
+      { adapterId, tagKey: TAG_STOP, address: "holding:40020", dataType: "int", writable: true },
+      { adapterId, tagKey: TAG_W, address: "holding:40001", dataType: "int", writable: true },
+    ]);
     await sql`UPDATE device_tags SET stop_value = ${sql.json(0)}, stop_pinned_by = ${String(OWNER)}, stop_pinned_at = now() WHERE "adapterId" = ${adapterId} AND "tagKey" = ${TAG_STOP}`;
     H.drivers.set(adapterId, {
       isConnected: () => true,
@@ -179,6 +184,8 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     for (const r of [A, B]) {
       const db = r ? ((await r.conn.getDb()) as unknown as { $client?: { end: (o: { timeout: number }) => Promise<void> } } | null) : null;
       await db?.$client?.end({ timeout: 1 }).catch(() => undefined);
+      const n = r ? ((r.conn as unknown as { getNotifyClient?: () => { end: (o: { timeout: number }) => Promise<void> } | null }).getNotifyClient?.() ?? null) : null;
+      await n?.end({ timeout: 1 }).catch(() => undefined);
     }
     for (const k of ENV) {
       if (saved[k] === undefined) delete process.env[k];
@@ -254,39 +261,70 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     expect(B.dw.adapterStopEpoch(dummy)).toBe(eB);
   });
 
-  it("strict payloads: malformed / foreign-shaped notifications move nothing; a well-formed one from ANY connection (any role) bumps — the safe direction", async () => {
+  it("★ R-12-c: unsigned / badly signed / stale / replayed notifications move nothing (counted); a SIGNED one bumps — and ANY role can NOTIFY (why the MAC)", async () => {
     const base = 1_910_000_000 + (Date.now() % 1_000_000);
     const now = Date.now();
+    const key = (B.sync.resolveStopEpochKey(HMAC_ENV) as { key: Buffer }).key;
+    const sign = (adapterId: number, o: { seq: number; issuedAt?: number; key?: Buffer }) =>
+      JSON.stringify(B.sync.signStopEpochMessage(o.key ?? key, { replicaId: "forger-replica-01", seq: o.seq, issuedAt: o.issuedAt ?? now, adapterId }));
+    const replayed = sign(base + 7, { seq: 900 });
     const bad: Array<[number, string]> = [
       [base + 1, "not json"],
-      [base + 2, JSON.stringify({ v: 1, kind: "stop", origin: "forged-origin-1", adapterId: String(base + 2), epoch: 1, at: now })],
-      [base + 3, JSON.stringify({ v: 1, kind: "stop", origin: "forged-origin-1", adapterId: base + 3, epoch: 1, at: now, extra: true })],
-      [base + 4, JSON.stringify({ v: 2, kind: "stop", origin: "forged-origin-1", adapterId: base + 4, epoch: 1, at: now })],
-      [base + 5, JSON.stringify({ v: 1, kind: "stop", adapterId: base + 5, epoch: 1, at: now })],
-      [base + 6, JSON.stringify({ v: 1, kind: "stop", origin: "forged-origin-1", adapterId: base + 6 + 0.5, epoch: 1, at: now })],
-      [base + 7, JSON.stringify({ v: 1, kind: "stop", origin: "x".repeat(600), adapterId: base + 7, epoch: 1, at: now })],
-      [base + 8, JSON.stringify([{ v: 1, kind: "stop", origin: "forged-origin-1", adapterId: base + 8, epoch: 1, at: now }])],
+      [base + 2, JSON.stringify({ v: 1, kind: "stop", origin: "forged-origin-1", adapterId: base + 2, epoch: 1, at: now })], // the round-1 unsigned shape
+      [base + 3, sign(base + 3, { seq: 901, key: Buffer.alloc(32, 1) })], // wrong key
+      [base + 4, JSON.stringify({ ...JSON.parse(sign(base + 99, { seq: 902 })), adapterId: base + 4 })], // tampered
+      [base + 5, sign(base + 5, { seq: 903, issuedAt: now - 60_000 })], // stale
+      [base + 6, sign(base + 6, { seq: 904, issuedAt: now + 60_000 })], // future-dated
     ];
     const rejBefore = status(B).rejected as number;
     for (const [, p] of bad) await sql`SELECT pg_notify(${CHANNEL}, ${p})`;
-    const good = base + 9;
-    // ANY role may NOTIFY on any channel (PostgreSQL has no privilege for it): prove it with the least-privileged role we can assume
+    await sql`SELECT pg_notify(${CHANNEL}, ${replayed})`;
+    expect(await until(() => B.dw.adapterStopEpoch(base + 7) > 0, 3_000)).toBe(true);
+    const e7 = B.dw.adapterStopEpoch(base + 7);
+    await sql`SELECT pg_notify(${CHANNEL}, ${replayed})`; // replay
+    // ANY role may NOTIFY on any channel (PostgreSQL has no privilege for it) — the test role is the app role
     const who = await sql<{ su: boolean; u: string; cr: boolean }[]>`SELECT rolsuper AS su, rolcreaterole AS cr, current_user AS u FROM pg_roles WHERE rolname = current_user`;
-    const goodPayload = JSON.stringify({ v: 1, kind: "stop", origin: "forged-origin-1", adapterId: good, epoch: 1, at: Date.now() });
-    if (who[0]?.su) {
-      await sql.begin(async (tx) => {
-        await tx`SET LOCAL ROLE pg_monitor`; // a predefined role with no table privilege at all
-        const [r] = await tx<{ u: string }[]>`SELECT current_user AS u`;
-        expect(r.u).toBe("pg_monitor");
-        await tx`SELECT pg_notify(${CHANNEL}, ${goodPayload})`;
-      });
-    } else {
-      await sql`SELECT pg_notify(${CHANNEL}, ${goodPayload})`;
-    }
+    const good = base + 9;
+    await sql`SELECT pg_notify(${CHANNEL}, ${sign(good, { seq: 905, issuedAt: Date.now() })})`;
     expect(await until(() => B.dw.adapterStopEpoch(good) > 0, 3_000)).toBe(true);
     for (const [id] of bad) expect(B.dw.adapterStopEpoch(id)).toBe(0);
-    expect((status(B).rejected as number) - rejBefore).toBe(bad.length);
-    console.log(`[task P] NOTIFY by ${who[0]?.su ? "SET ROLE pg_monitor (no privileges)" : `role ${who[0]?.u} (superuser ${who[0]?.su}, createrole ${who[0]?.cr})`} delivered and applied`);
+    expect(B.dw.adapterStopEpoch(base + 7)).toBe(e7);
+    expect((status(B).rejected as number) - rejBefore).toBe(bad.length + 1);
+    console.log(`[task P] NOTIFY by role ${who[0]?.u} (superuser ${who[0]?.su}, createrole ${who[0]?.cr}) delivered; only the signed one applied`);
+  });
+
+  it("★ I-2 (L-7): a forged / peer NOTIFY cannot deny a STOP on an adapter WITHOUT pins — the unverified stop in B's gates is written", async () => {
+    setEnv(false);
+    const stop = await prep("stop", [{ tagKey: TAG_W, value: 0 }]); // stop-typed, w1 unpinned ⇒ unverified: the only STOP there is
+    const h = holdGatesOf(TAG_W);
+    const pStop = B.cd.dispatch(stop);
+    await h.entered;
+    const e0 = B.dw.adapterStopEpoch(adapterId);
+    // a forger: the round-1 unsigned shape, and a correctly SIGNED message (a forger holding the key, or a real peer STOP)
+    await sql`SELECT pg_notify(${CHANNEL}, ${JSON.stringify({ v: 1, kind: "stop", origin: "forged-origin-1", adapterId, epoch: 1, at: Date.now() })})`;
+    if (typeof B.sync.signStopEpochMessage === "function") {
+      const key = (B.sync.resolveStopEpochKey(HMAC_ENV) as { key: Buffer }).key;
+      await sql`SELECT pg_notify(${CHANNEL}, ${JSON.stringify(B.sync.signStopEpochMessage(key, { replicaId: "forger-replica-02", seq: 1, issuedAt: Date.now(), adapterId }))})`;
+    }
+    await until(() => B.dw.adapterStopEpoch(adapterId) !== e0, 2_000);
+    await new Promise((r) => setTimeout(r, 100));
+    h.release();
+    const r = await pStop;
+    expect(device.log).toEqual([`${TAG_W}=0`]); // the STOP reached the device
+    expect(r.reason).not.toBe("SUPERSEDED_BY_STOP");
+    expect(r.ok).toBe(true);
+  });
+
+  it("control: a write whose gates begin AFTER B learned of A's STOP is written (the newer intent)", async () => {
+    setEnv(false);
+    const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);
+    const e0 = B.dw.adapterStopEpoch(adapterId);
+    expect((await A.cd.dispatch(stop)).ok).toBe(true);
+    expect(await until(() => B.dw.adapterStopEpoch(adapterId) !== e0, 3_000)).toBe(true);
+    const write = await prep("set", [{ tagKey: TAG_STOP, value: 42 }]);
+    const r = await B.cd.dispatch(write);
+    expect(r.ok).toBe(true);
+    expect(device.log).toEqual([`${TAG_STOP}=0`, `${TAG_STOP}=42`]);
   });
 
   it("★ a LOST LISTEN connection: alert, back to per-process meanwhile, reconnect — then A's STOPs reach B again", async () => {
@@ -318,7 +356,7 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     expect(lat.p99).toBeLessThan(1_000);
   });
 
-  it("measure: the same with replica A's app pool SATURATED (the NOTIFY queues behind busy pool connections — part of the window)", async () => {
+  it("★ measure: replica A's app pool SATURATED — the broadcast (dedicated connection) is not delayed by it", async () => {
     const client = ((await A.conn.getDb()) as unknown as { $client: ReturnType<typeof postgres> }).$client;
     const max = A.conn.resolvePoolMax();
     const busy = Promise.all(Array.from({ length: max }, () => client`SELECT pg_sleep(0.3)`));
@@ -333,5 +371,6 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     const lat = status(B).peerLatencyMs as { max: number };
     console.log(`[task P] saturated pool (${max} × pg_sleep 300 ms): bump call ${bumpCallMs} ms, NOTIFY latency ${lat.max} ms`);
     expect(bumpCallMs).toBeLessThan(5); // the STOP's side never waits for the pool
+    expect(lat.max).toBeLessThan(150); // fix 1 M-1: the broadcast goes through the DEDICATED notify connection, not behind the pool (was ~270 ms)
   });
 });

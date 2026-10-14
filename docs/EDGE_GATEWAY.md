@@ -531,47 +531,65 @@ unlocked after a persist that did not land (I-5: the pending marker ⇒ `persist
 **Rehearsed (I-7, 2026-10-13):** the final 0372–0376 applied in order onto a scratch database brought to the 0371 state by the
 repo's own runner, then re-applied (idempotent) — see `.superpowers/sdd/2026-10-12-engineering-control-dot10/final-fix-wave-report.md`.
 
-### 8.14 OT STOP epoch across central replicas (doc 81 Đợt 12 task P)
+### 8.14 OT STOP epoch across central replicas (doc 81 Đợt 12 task P, fix 1)
 
 **What it closes.** Since Đợt 11 (R-11-d) a non-STOP OT write whose checks began before a verified STOP was SENT on its adapter
 is cancelled right before its device write (`STOPPED_BEFORE_WRITE`, nothing written, ledgered). That epoch lives in ONE process.
-With two central replicas running the OT gateway, a write in replica B's checks was not cancelled by a STOP sent from replica A.
+With several central replicas, a write in replica B's checks was not cancelled by a STOP sent from replica A.
 
-**How.** `server/services/ot/otStopEpochSync.ts`, started on central boot when `OT_GATEWAY_ENABLED=true` (never on the edge):
-- When a verified STOP is actually sent (the point where the epoch moves), the replica NOTIFYs `ot_stop_epoch` with
-  `{v:1, kind:"stop", origin, adapterId, epoch, at}`. The NOTIFY is scheduled after the STOP's driver call, never awaited, and
-  bounded (2 s), so the STOP never waits for it (L-7). The NOTIFY goes through the app pool.
-- Every central replica LISTENs on `ot_stop_epoch` (the app pool's single LISTEN connection, shared with `device_owner_changed`).
-  It moves its own epoch for that adapter, so every write in its checks since before that moment is cancelled
-  `STOPPED_BEFORE_WRITE`. The ledger names the STOP as `{peer: true, origin, peerEpoch, at}`.
-- Its own notifications are ignored. Payloads are validated strictly: exactly those keys, `v = 1`, positive integers, an origin
-  `[A-Za-z0-9-]{8,64}`, at most 512 bytes. Anything else is counted and dropped.
+**How.** `server/services/ot/otStopEpochSync.ts`, started on EVERY central process (whatever `OT_GATEWAY_ENABLED` says — the
+central pending-STOP sweep and the edge-fallback STOP send real STOPs with the gateway off), never on the edge:
+- When a verified STOP is actually sent (the point where the epoch moves), the replica NOTIFYs `ot_stop_epoch` with a SIGNED
+  message `{v:2, kind:"stop", replicaId, seq, issuedAt, adapterId, mac}`. The NOTIFY is scheduled after the STOP's driver call,
+  never awaited, bounded (2 s), and goes through a DEDICATED connection (`connection.getNotifyClient`, outside the app pool), so
+  neither the STOP nor the broadcast waits for a busy pool (L-7).
+- Every central replica LISTENs on `ot_stop_epoch` (the dedicated client's own LISTEN connection) and, for a message that passes
+  every check, moves its PEER epoch for that adapter: every NON-STOP write in its checks since before that moment is cancelled
+  `STOPPED_BEFORE_WRITE` (ledger names the STOP `{peer: true, origin, peerSeq, at}`).
+- **A peer STOP never cancels a STOP** (L-7): stop-typed commands — verified or not — consult only the STOPs sent by their own
+  process. On an adapter without pinned stop values an unverified stop is the only software STOP; nothing from the channel can
+  supersede it.
 
-**Who can send on the channel.** PostgreSQL has no privilege for NOTIFY: any role that can connect to the database can NOTIFY any
-channel. This was proven on `_test` with the app role `avi_app` (not superuser, no CREATEROLE). A forged but well-formed
-notification can only cancel writes still in their checks. That is the safe direction (availability, not safety), and the
-operator sees "cancelled because a STOP was issued, resend". Adapters first seen through notifications are capped at 100 000, so a
-flood cannot grow memory without bound.
+**Who can send on the channel — and why the messages are signed.** PostgreSQL has no privilege for NOTIFY: any role that can
+connect to the database can NOTIFY any channel (proven on `_test` with the app role `avi_app`, not superuser, no CREATEROLE).
+Every message therefore carries an HMAC-SHA256 over (channel, v, kind, replicaId, seq, issuedAt, adapterId):
+- **Key:** HKDF-SHA256 subkey (info `ot_stop_epoch/hmac/v1`) of `OT_STOP_EPOCH_HMAC_KEY` if set (≥ 32 characters), else of
+  `SECRET_ENCRYPTION_KEY` — which every central replica already shares and which the edge and the DB never hold. Never
+  `JWT_SECRET` / `SESSION_SECRET`. **Neither set ⇒ fail closed:** nothing is sent, nothing is accepted, an alert says so, the
+  replica runs per process. The key is never logged nor shown in the status.
+- **Checks, in order:** strict shape (exact keys, ≤ 512 bytes) → MAC (constant-time) → own replica (ignored) → freshness
+  `|now − issuedAt| ≤ 30 s` (future-dated included; clock skew between replicas beyond that rejects every message — the
+  rejection alert says so) → replay WINDOW per `replicaId` (seqs seen within the freshness window; not a strict sequence: a
+  stop-all can commit out of order). `replicaId` is random per boot. Bounded state: 64 replicas × 4 096 seqs; overflow evicts
+  (a replay of an evicted seq can only cancel writes) and alerts.
+- Rejections are counted per reason; ONE alert per rejection episode (an episode ends after 5 quiet minutes).
+- **Peer map cap without failing open:** 100 000 adapters; when full the least recently moved entry is evicted and a floor rises
+  to its epoch — an adapter without an entry reads the floor, so an eviction only ever moves epochs forward (cancels), a real
+  peer STOP is never dropped; an overflow alerts once.
 
-**Liveness and degraded mode.**
-- The LISTEN is bounded (5 s) and retried every 10 s in the background; boot is never blocked.
-- Heartbeat: every 10 s the replica NOTIFYs a ping that only it accepts. If the ping is not back within 5 s, the LISTEN is
-  considered lost. The replica then raises an alert (console + alert stream every episode; admin inbox at most every 30 min,
-  normal priority, no cap exemption), makes the old subscription inert and LISTENs again.
-- postgres.js re-LISTENs by itself after a dropped connection. That reconnect is reported as a lost + recovered episode, because
-  notifications sent in the gap were never delivered.
-- While the LISTEN is lost the replica falls back to per-process behaviour (Đợt 11). Writes are not blocked for it.
-- `otStopEpochSyncStatus()` reports the state, counters and latency.
+**Liveness and degraded mode** (shared helper `server/services/ops/pgChannelListener.ts`, also used by `device_owner_changed`
+since fix 1 — R-12-b):
+- The LISTEN is bounded (5 s) and retried in the background; boot is never blocked.
+- Heartbeat: every 10 s each listener NOTIFYs a ping on its channel (dedicated connection) that only it accepts; the 5 s deadline
+  starts once the ping has been SENT. Not back in time ⇒ "lost": alert, the old subscription is made inert, a fresh LISTEN; the
+  episode ends only when the own ping comes back. A ping that cannot be sent ⇒ alert, no re-LISTEN. postgres.js's own automatic
+  re-LISTEN after a dropped connection is reported as a lost + recovered episode (notifications in the gap were lost); a FAILED
+  automatic re-LISTEN (postgres.js then drops the channel silently) is caught by the heartbeat.
+- Alerts: console + alert stream every episode; admin inbox at most every 30 min (normal priority, no cap exemption).
+- While lost / without key the replica falls back to per-process behaviour (Đợt 11). Writes are not blocked for it.
+- Status: `systemHealth.crossReplicaChannels` (admin) — state, key source, rejections by reason, peer map, latency, and the
+  `device_owner_changed` listener.
 
-**The remaining window (measured on `_test`, two dispatcher instances in one Node process with separate pools and LISTEN
-connections, local PostgreSQL, 2026-10-14).** The window is the NOTIFY latency: from the moment A sends the STOP to the moment
-B's handler moves B's epoch. A write in B whose device write starts inside that window still reaches the device after A's STOP.
-- Idle, 200 sends × 3 runs: p50 2 ms, p95 5–6 ms, p99 6–10 ms, max 8–14 ms.
-- A's app pool saturated (25 × `pg_sleep(300 ms)`): about 272 ms. The NOTIFY queues behind the busy pool connections. The STOP
-  call itself still took 0 ms.
-- Add network latency between the replicas and the DB in production.
+**The remaining window (measured on `_test`, two dispatcher instances in one Node process, each with its own pools and dedicated
+LISTEN/NOTIFY connections, local PostgreSQL, 2026-10-14).** The window is the NOTIFY latency: from A sending the STOP to B's
+handler moving B's epoch. A write in B whose device write starts inside it still reaches the device after A's STOP.
+- Idle, 200 sends: p50 2–3 ms, p99 5–6 ms, max 6–7 ms.
+- A's app pool saturated (25 × `pg_sleep(300 ms)`): 11–25 ms (round 1, through the pool: ~270 ms). The STOP call took 0 ms.
+- Add network latency between the replicas and the DB in production. A write whose checks begin after A's STOP but before B
+  handles the message is also cancelled (the safe direction; at most this latency, ≤ 30 s by the freshness bound).
 
 **Not covered.**
 - The edge. It has no DB login, so its epoch stays per process. An edge-owned adapter is written only by its edge gateway, and
   central refuses non-STOP writes to it (`ADAPTER_OWNED_BY_EDGE`).
 - A write already on the wire when the STOP is sent. That was never cancellable.
+- A DB role can still terminate the LISTEN backend (needs `pg_signal_backend`): the heartbeat alerts and reconnects.

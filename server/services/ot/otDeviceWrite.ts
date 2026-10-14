@@ -300,23 +300,47 @@ export function bumpAdapterStopEpoch(adapterId: number, stop?: Record<string, un
   return epoch;
 }
 
-/** Task P — a cap on adapters first seen through a PEER notification (a forged NOTIFY flood cannot grow the map without bound). */
-export const OT_STOP_EPOCH_PEER_ADAPTERS_MAX = 100_000;
 /**
- * doc 81 Đợt 12 task P — another central replica SENT a verified STOP for `adapterId`: move this process's epoch for it (writes in
- * this process's gates since before now are cancelled STOPPED_BEFORE_WRITE). Never broadcast again. Returns the new epoch, or null
- * when the adapter is unknown here and the map already holds OT_STOP_EPOCH_PEER_ADAPTERS_MAX adapters (logged by the caller).
+ * doc 81 Đợt 12 task P fix 1 — PEER epochs live in their OWN map (another central replica SENT a verified STOP), apart from the
+ * LOCAL map above (STOPs sent by this process, bounded by the real adapter count):
+ *   • I-2 (L-7): a peer move NEVER supersedes a stop-typed command (verified or not) — stopIssuedSince(…, {localOnly}) for those;
+ *     it cancels only non-STOP writes.
+ *   • I-3 (scan #111): the peer map is CAPPED without failing open — a new adapter always gets its entry; when full, the least
+ *     recently moved entry is EVICTED and the PEER FLOOR rises to its epoch: an adapter without a peer entry reads the floor, so an
+ *     eviction can only move an epoch FORWARD (the cancel direction), never back, and a real peer STOP is never dropped.
  */
-export function bumpAdapterStopEpochFromPeer(adapterId: number, stop: Record<string, unknown>): number | null {
-  if (!adapterStopEpochs.has(adapterId) && adapterStopEpochs.size >= OT_STOP_EPOCH_PEER_ADAPTERS_MAX) return null;
+export const OT_STOP_EPOCH_PEER_ADAPTERS_MAX = 100_000;
+const peerStopEpochs = new Map<number, { epoch: number; stop: Record<string, unknown> | null }>();
+let peerFloor: { epoch: number; stop: Record<string, unknown> | null } | null = null;
+function peerEpochOf(adapterId: number): { epoch: number; stop: Record<string, unknown> | null } | null {
+  return peerStopEpochs.get(adapterId) ?? peerFloor;
+}
+/**
+ * doc 81 Đợt 12 task P — another central replica SENT a verified STOP for `adapterId`: move this process's PEER epoch for it (non-STOP
+ * writes in this process's gates since before now are cancelled STOPPED_BEFORE_WRITE). Never broadcast again. `evicted`: the adapter
+ * whose entry made room (the floor rose to its epoch), null when nothing was evicted — the caller alerts on it.
+ */
+export function bumpAdapterStopEpochFromPeer(adapterId: number, stop: Record<string, unknown>): { epoch: number; evicted: number | null } {
   stopEpochSeq += 1;
-  adapterStopEpochs.set(adapterId, { epoch: stopEpochSeq, stop });
-  return stopEpochSeq;
+  let evicted: number | null = null;
+  if (peerStopEpochs.has(adapterId)) peerStopEpochs.delete(adapterId); // re-inserted below: most recently moved last (LRU order)
+  else if (peerStopEpochs.size >= OT_STOP_EPOCH_PEER_ADAPTERS_MAX) {
+    const first = peerStopEpochs.entries().next().value as [number, { epoch: number; stop: Record<string, unknown> | null }];
+    peerStopEpochs.delete(first[0]);
+    evicted = first[0];
+    if (!peerFloor || first[1].epoch > peerFloor.epoch) peerFloor = { epoch: first[1].epoch, stop: { ...(first[1].stop ?? {}), peerFloor: true } };
+  }
+  peerStopEpochs.set(adapterId, { epoch: stopEpochSeq, stop });
+  return { epoch: stopEpochSeq, evicted };
+}
+/** Task P fix 1 — size of the peer map + floor (status / tests). */
+export function peerStopEpochStats(): { size: number; max: number; floor: number } {
+  return { size: peerStopEpochs.size, max: OT_STOP_EPOCH_PEER_ADAPTERS_MAX, floor: peerFloor?.epoch ?? 0 };
 }
 
-/** R-11-d — the adapter's current STOP epoch (0 = never stopped in this process). */
+/** R-11-d — the adapter's current STOP epoch, local or peer (0 = never stopped in this process). Only ever moves forward. */
 export function adapterStopEpoch(adapterId: number): number {
-  return adapterStopEpochs.get(adapterId)?.epoch ?? 0;
+  return Math.max(adapterStopEpochs.get(adapterId)?.epoch ?? 0, peerEpochOf(adapterId)?.epoch ?? 0);
 }
 
 /** R-11-d — a non-STOP write cancelled right before its device write because a STOP was issued after its gates began. */
@@ -332,11 +356,16 @@ export function isStoppedBeforeWrite(x: unknown): x is StoppedBeforeWrite {
   return typeof x === "object" && x !== null && (x as StoppedBeforeWrite).stoppedBeforeWrite === true;
 }
 
-/** R-11-d — null when no STOP was issued for the adapter since `epochAtGates`, else the cancellation. */
-export function stopIssuedSince(adapterId: number, epochAtGates: number): StoppedBeforeWrite | null {
-  const cur = adapterStopEpochs.get(adapterId);
+/**
+ * R-11-d — null when no STOP was issued for the adapter since `epochAtGates`, else the cancellation (the latest STOP named).
+ * Task P fix 1 (I-2, L-7): `localOnly` (a stop-typed command) — only a STOP SENT BY THIS PROCESS counts; a peer move never denies a STOP.
+ */
+export function stopIssuedSince(adapterId: number, epochAtGates: number, opts?: { localOnly?: boolean }): StoppedBeforeWrite | null {
+  const local = adapterStopEpochs.get(adapterId) ?? null;
+  const peer = opts?.localOnly ? null : peerEpochOf(adapterId);
+  const cur = (peer?.epoch ?? 0) > (local?.epoch ?? 0) ? peer : local;
   const epochNow = cur?.epoch ?? 0;
-  if (epochNow === epochAtGates) return null;
+  if (epochNow <= epochAtGates) return null;
   return { stoppedBeforeWrite: true, epochAtGates, epochNow, stop: cur?.stop ?? null };
 }
 
@@ -1046,7 +1075,7 @@ export function executeOtDeviceWriteUnlessStopped(
   a: Parameters<typeof executeOtDeviceWrite>[0] & { stopEpochAtGates: number | null },
 ): Promise<ExecutedWrite | StoppedBeforeWrite> {
   if (a.stopEpochAtGates !== null) {
-    const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates);
+    const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates, { localOnly: a.stopTyped }); // I-2: a peer move never denies a STOP
     if (stopped) return Promise.resolve(stopped);
   }
   return executeOtDeviceWrite(a);
