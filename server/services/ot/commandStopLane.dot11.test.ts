@@ -83,6 +83,8 @@ const S = vi.hoisted(() => ({
   state: "OK" as "OK" | "BLOCKED" | "UNKNOWN",
   /** the NEXT safety read never answers (the dispatcher's own OT_SAFETY_PREFLIGHT_DEADLINE_MS bounds it) */
   hangNext: false,
+  /** final fix wave residual — the NEXT safety read answers only when this resolves */
+  gateNext: null as null | Promise<void>,
   reads: [] as number[],
 }));
 vi.mock("./adapterFacade", () => ({
@@ -92,6 +94,11 @@ vi.mock("./adapterFacade", () => ({
       if (S.hangNext) {
         S.hangNext = false;
         return new Promise(() => undefined);
+      }
+      if (S.gateNext) {
+        const g = S.gateNext;
+        S.gateNext = null;
+        await g;
       }
       return { state: S.state, source: "test", ts: new Date().toISOString(), ...(S.state === "OK" ? {} : { basis: "unreadable" }) };
     },
@@ -195,6 +202,7 @@ beforeEach(() => {
   G.holdNext = null;
   S.state = "OK";
   S.hangNext = false;
+  S.gateNext = null;
   S.reads.length = 0;
   _resetAdapterCommandQueuesForTests();
   process.env.OT_CONTROL_ENABLED = "true";
@@ -571,4 +579,70 @@ describe("final fix wave — C-1 (R-11-k 2): the pin is read at SEND time; every
     expect([..._staleWriteRiskIntentIdsForTests(10)!].sort()).toEqual([...intents].sort());
     expect(D.log.filter((w) => w.tag === "cmd_run")).toHaveLength(1);
   }, 20_000);
+});
+
+describe("final fix wave residual — R-11-m: an UNVERIFIED stop that writes a pinned stop tag with a non-pin value is superseded by a verified STOP sent after its gates began", () => {
+  for (const flag of [false, true]) {
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ held in its gates while the pinned STOP is sent ⇒ SUPERSEDED_BY_STOP, nothing written — the STOP's pin stays the last word`, async () => {
+      process.env.OT_CMD_SERIALIZE_ENABLED = flag ? "true" : "false";
+      const u = await heldInGates(input("cmd_run", "stop", true)); // stop-typed, cmd_run's pin is false ⇒ unverified AND overriding
+      const rS = await within(dispatch(input("cmd_run", "stop", false)), 5000);
+      expect(rS).toMatchObject({ status: "acked", pinnedStop: true });
+      u.release();
+      const rU = await within(u.p, 5000);
+      expect(rU).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+      expect(rU.reason).not.toBe("STOPPED_BEFORE_WRITE");
+      expect(D.log.map((w) => [w.tag, w.value])).toEqual([["cmd_run", false]]);
+      const row = cmdLog.find((r) => r.tagKey === "cmd_run" && r.status === "rejected")!;
+      expect(String(row.errorText)).toMatch(/^SUPERSEDED_BY_STOP/);
+    });
+  }
+
+  it("[flag ON] ★ issued while the pinned STOP waits behind the in-flight write (its gates began BEFORE the STOP was sent) ⇒ superseded at its turn, never written after the STOP", async () => {
+    const { pA, release } = await inFlight();
+    const pS = dispatch(input("cmd_run", "stop", false));
+    expect(await until(() => _stopLaneWaitingMembersForTests(10) === 1, 5000)).toBe(true);
+    const pU = dispatch(input("cmd_run", "stop", true));
+    expect(await until(() => _stopLaneWaitingMembersForTests(10) === 2, 5000)).toBe(true);
+    expect(_adapterQueueLineForTests(10).map((x) => x.cls)).toEqual(["pinned", "unverified"]);
+    release();
+    const [rS, rU] = await within(Promise.all([pS, pU]), 5000);
+    await within(pA, 3000);
+    expect(rS).toMatchObject({ status: "acked", pinnedStop: true });
+    expect(rU).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+    expect(D.log.map((w) => [w.tag, w.value])).toEqual([["cmd_speed", true], ["cmd_run", false]]);
+  });
+
+  for (const flag of [false, true]) {
+    it(`[flag ${flag ? "ON" : "OFF"}] control: an unverified stop that writes only NON-pinned tags, held in its gates while the pinned STOP is sent, is still written`, async () => {
+      process.env.OT_CMD_SERIALIZE_ENABLED = flag ? "true" : "false";
+      const u = await heldInGates(input("cmd_stop", "stop", true));
+      expect(await within(dispatch(input("cmd_run", "stop", false)), 5000)).toMatchObject({ status: "acked", pinnedStop: true });
+      u.release();
+      expect(await within(u.p, 5000)).toMatchObject({ ok: true, status: "acked" });
+      expect(D.log.map((w) => w.tag)).toEqual(["cmd_run", "cmd_stop"]);
+    });
+    it(`[flag ${flag ? "ON" : "OFF"}] control: the overriding unverified stop issued AFTER the STOP was sent is the operator's newer intent and is written`, async () => {
+      process.env.OT_CMD_SERIALIZE_ENABLED = flag ? "true" : "false";
+      expect(await within(dispatch(input("cmd_run", "stop", false)), 5000)).toMatchObject({ status: "acked", pinnedStop: true });
+      expect(await within(dispatch(input("cmd_run", "stop", true)), 5000)).toMatchObject({ ok: true, status: "acked" });
+      expect(D.log.map((w) => [w.tag, w.value])).toEqual([["cmd_run", false], ["cmd_run", true]]);
+    });
+  }
+});
+
+describe("final fix wave residual — R-11-m: the check right before the unverified group's device write", () => {
+  it("[flag ON] ★ a STOP sent OUTSIDE the queue (central fallback / sweep STOP) while the overriding unverified stop's re-check is running ⇒ superseded right before its write", async () => {
+    const { pA, pB: pU } = await slowWriteThen("cmd_run", "stop", true); // U: unverified, overrides cmd_run's pin; waits past the re-check threshold
+    let open!: () => void;
+    S.gateNext = new Promise<void>((r) => (open = r)); // U's re-check read waits
+    await within(pA, BOUND);
+    expect(await until(() => S.reads.length === 3, 2000)).toBe(true); // U's re-check is in flight
+    const { bumpAdapterStopEpoch } = await import("./otDeviceWrite");
+    bumpAdapterStopEpoch(10, { idempotencyKey: "sweep-stop" }); // a verified STOP executed out of the queue (sendCentralAdapterStop)
+    open(); // the re-check answers OK
+    const rU = await within(pU, 3000);
+    expect(rU).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+    expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed"]); // U never reached the driver
+  }, 30_000);
 });

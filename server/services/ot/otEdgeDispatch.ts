@@ -22,7 +22,7 @@
  * command with arbitrary writes is ordinary everywhere (capped queue, cancellable, no epoch bump). The epoch moves only when a
  * true STOP is SENT (device stage), never on receipt or before authorisation.
  */
-import { classifyOtStop, canonicalisePinnedStop, isStopCommandType, NO_CONFIRMER, type DispatchInput, type DispatchStatus } from "./commandDispatcher";
+import { classifyOtStop, canonicalisePinnedStop, isStopCommandType, NO_CONFIRMER, writesOverrideStopPin, type DispatchInput, type DispatchStatus } from "./commandDispatcher";
 import {
   adapterStopEpoch,
   applyPinsAtSend,
@@ -195,6 +195,8 @@ async function runDeviceStage(
   const groupBody = async (writes: Resolved[], g: StopLaneGroupCtx): Promise<ExecutedWrite> => {
     let send = writes;
     let pinAtSend: Array<{ tagKey: string; requested: unknown; sent: unknown }> = [];
+    // R-11-m — right before the device write (same tick): members a verified STOP sent since their gates began are superseded
+    if (g.cls === "unverified" && g.dropStopped() === 0) return { superseded: true, byStop: true } as never;
     if (g.cls !== "unverified") {
       const snap = rt?.config()?.adapters.find((a) => a.id === input.adapterId);
       const pins = snap ? stopPinsFromTagRows(snap.tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue ?? null, writable: t.writable, isEnabled: t.isEnabled }))) : null;
@@ -224,6 +226,8 @@ async function runDeviceStage(
   };
   if (!isCmdSerializeEnabled()) {
     const direct = await body();
+    // R-11-m — an unverified stop overriding a pin, in its gates while a verified STOP was sent: superseded (never "stopped")
+    if (isStoppedBeforeWrite(direct) && opts.laneCls === "unverified") return { kind: "superseded" };
     return isStoppedBeforeWrite(direct) ? { kind: "stopped", detail: stoppedDetail(direct) } : { kind: "done", executed: direct };
   }
   let queued: unknown;
@@ -234,7 +238,7 @@ async function runDeviceStage(
     queued = await enqueueStopLane(input.adapterId, resolved, groupBody, projectExecutedForMember, {
       cls: opts.laneCls,
       connKey: connectionKeyOf(input.adapterId),
-      member: { timeoutMs: commandTimeoutMs(input.deadlineMs) },
+      member: { timeoutMs: commandTimeoutMs(input.deadlineMs), stopEpochAtGates: opts.laneCls === "unverified" ? opts.stopEpochAtGates : null },
       stopRef,
       holdSlot: (v) => ("slotHold" in v ? v.slotHold : undefined),
     }).result;
@@ -441,7 +445,12 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
     // final fix wave (R-11-j, R-11-k 1) — an authorised stop-TYPED command that is not a verified stop is an UNVERIFIED stop: the lane,
     // never BUSY, never epoch-cancelled (flag ON or OFF), no epoch bump; it kept every gate above (authorisation, preflight, consume).
     const laneCls: StopLaneClass | null = contentStop ? "verified" : unpinnedStop ? "unverified" : null;
-    const stage = await runDeviceStage(rt, input, driver, resolved, { laneCls, stopEpochAtGates: laneCls ? null : epochAtGates });
+    // R-11-m — an unverified stop that writes a pinned stop tag with a non-pin value records its epoch: a verified STOP sent while it is
+    // in its gates supersedes it (it must not restart motion after the STOP); any other unverified stop is never cancelled (R-11-j)
+    const snapPins = stopPinsFromTagRows(adapter.tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue ?? null, writable: t.writable, isEnabled: t.isEnabled })));
+    const unverifiedOverrides = laneCls === "unverified" && writesOverrideStopPin(input.writes, snapPins);
+    const stopEpochAtGates = laneCls === null || unverifiedOverrides ? epochAtGates : null;
+    const stage = await runDeviceStage(rt, input, driver, resolved, { laneCls, stopEpochAtGates });
     if (stage.kind === "busy") res = { ...refusal(input, "BUSY", { detail: stage.detail }), jti };
     else if (stage.kind === "superseded") res = { ...refusal(input, "SUPERSEDED_BY_STOP"), jti };
     else if (stage.kind === "stopped") res = { ...refusal(input, "STOPPED_BEFORE_WRITE", { detail: stage.detail }), jti }; // K-fix R-11-d

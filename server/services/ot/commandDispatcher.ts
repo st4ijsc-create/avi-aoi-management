@@ -736,7 +736,9 @@ export function stopEpochAtGatesFor(
   opts: { trueStop: boolean; epochAtGates: number; overridesStopPin?: boolean },
 ): number | null {
   if (opts.trueStop) return null;
-  if (isStopCommandType(input.commandType)) return null;
+  // R-11-j: an unverified stop is never cancelled STOPPED_BEFORE_WRITE — final fix wave residual (R-11-m): unless it writes a pinned
+  // stop tag with a non-pin value; then a verified STOP sent while it is in its gates supersedes it (SUPERSEDED_BY_STOP, not restarted)
+  if (isStopCommandType(input.commandType)) return opts.overridesStopPin === true ? opts.epochAtGates : null;
   if (input.triggeredBy.kind === "interlock" && opts.overridesStopPin !== true) return null;
   return opts.epochAtGates;
 }
@@ -1209,8 +1211,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // doc 81 Đợt 11 final fix wave (R-11-j, R-11-k) — EVERY stop-typed command takes the stop lane: `pinned` / `verified` (a stop by
   // content) / `unverified` (stop-typed, values not proven: lane, no epoch bump, cancels no protective action, keeps its preflight).
   const laneCls: StopLaneClass | null = stopCls.pinnedStop ? "pinned" : trueStop ? "verified" : isStopCommandType(input.commandType) ? "unverified" : null;
-  // R-11-k (3) — a protective interlock action that would override a pinned stop value can be cancelled by a verified STOP
-  const overridesStopPin = input.triggeredBy.kind === "interlock" && writesOverrideStopPin(input.writes, stopPinsFromTagRows(step3TagRows));
+  // R-11-k (3) / R-11-m — a protective interlock action or an UNVERIFIED stop that would override a pinned stop value can be cancelled
+  // by a verified STOP (an ordinary write records its epoch anyway)
+  const overridesStopPin = writesOverrideStopPin(input.writes, stopPinsFromTagRows(step3TagRows));
   const stopEpochAtGates = stopEpochAtGatesFor(input, { trueStop, epochAtGates, overridesStopPin });
 
   // ── final wave F7 (final review M5) — the check-then-act gap. The safety preflight ran BEFORE the write-ahead
@@ -1291,6 +1294,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     if (g.cls === "unverified") {
       const recheck = await recheckSafetyIfStale(); // Đợt 5 F4 / F fix 1: ≤ OT_SAFETY_PREFLIGHT_DEADLINE_MS; gives way to a verified STOP
       if (recheck) return recheck;
+      // R-11-m — right before the device write (same tick as executeOtDeviceWrite → driver.writeTags): members a verified STOP sent
+      // since their gates began have been superseded; nobody left ⇒ nothing is written
+      if (g.dropStopped() === 0) return { superseded: true, byStop: true };
     }
     let send = writes;
     let pinAtSend: Array<{ tagKey: string; requested: unknown; sent: unknown }> = [];
@@ -1341,7 +1347,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       queued = await enqueueStopLane(input.adapterId, resolved, executeStopGroup, projectExecutedForMember, {
         cls: laneCls,
         connKey: connectionKeyOf(input.adapterId),
-        member: { intentIds, timeoutMs },
+        member: { intentIds, timeoutMs, stopEpochAtGates: laneCls === "unverified" ? stopEpochAtGates : null },
         stopRef,
         holdSlot: slotHoldOf,
       }).result;
@@ -1399,6 +1405,30 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       return { ok: false, simulated: false, status: "rejected", reason: "SUPERSEDED_BY_STOP", results: failedResults(input, "SUPERSEDED_BY_STOP"), commandLogIds: ids };
     }
     executed = direct;
+  }
+  if (isStoppedBeforeWrite(executed) && laneCls === "unverified") {
+    // doc 81 Đợt 11 final fix wave residual (R-11-m) — an UNVERIFIED stop writing a pinned stop tag with a non-pin value, in its gates
+    // while a verified STOP was sent: superseded by that STOP (a stop is never "STOPPED_BEFORE_WRITE" — R-11-j), nothing written.
+    const stopKey = typeof executed.stop?.idempotencyKey === "string" && executed.stop.idempotencyKey ? executed.stop.idempotencyKey : null;
+    const ids = await writeRejected(
+      db,
+      input,
+      "SUPERSEDED_BY_STOP",
+      `superseded right before its device write: a verified STOP${stopKey ? ` (${stopKey})` : ""} was sent for adapter ${input.adapterId} after this command's checks began, and this command writes a pinned stop tag with another value — not sent to the device`,
+      undefined,
+      undefined,
+      { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, supersededByStop: executed.stop ?? null } },
+    );
+    return {
+      ok: false,
+      simulated: false,
+      status: "rejected",
+      reason: "SUPERSEDED_BY_STOP",
+      results: failedResults(input, "SUPERSEDED_BY_STOP"),
+      commandLogIds: ids,
+      appError: stopKey ? { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey } } : { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY", appParams: {} },
+      message: "This command was cancelled because a STOP command was issued for the same device before it was sent — it was not sent to the device; resend it if still needed.",
+    };
   }
   if (isStoppedBeforeWrite(executed)) {
     // doc 81 Đợt 11 K-fix (R-11-d) — a STOP was issued for this adapter after this write's gates began: cancelled right before

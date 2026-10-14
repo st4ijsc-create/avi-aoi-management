@@ -438,4 +438,37 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
       delete process.env.OT_CMD_SERIALIZE_ENABLED;
     }
   });
+
+  for (const flag of [false, true]) {
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ R-11-m: an authorised UNVERIFIED stop writing the pinned tag with a NON-pin value, held in its consume gate while a pinned STOP completes ⇒ SUPERSEDED_BY_STOP, nothing written`, async () => {
+      if (flag) process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+      else delete process.env.OT_CMD_SERIALIZE_ENABLED;
+      try {
+        const j = journal();
+        let entered!: () => void;
+        let release!: () => void;
+        const inGate = new Promise<void>((r) => (entered = r));
+        const gate = new Promise<void>((r) => (release = r));
+        const consume = j.consumeAuthorization.bind(j);
+        j.consumeAuthorization = async (c) => {
+          entered();
+          await gate;
+          return consume(c);
+        };
+        const rt = runtime(j);
+        const OVR = { adapterId: 5, machineId: 50, commandType: "stop", writes: [{ tagKey: "run", value: true }] }; // run's pin is false
+        const target = { adapterId: 5, writes: [{ tagKey: "run", address: "00001", dataType: "bool", scale: null, offset: null }] };
+        const aO: EdgeStepAuthorization = { envelope: signEdgeObject("auth", claims({ target, jti: "5b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a81" }, OVR as unknown as typeof SPEED_CMD), key), runId: 9, claimSeq: 2, stepId: "w1", attempt: 1, idempotencyKey: "foe:9:w1:1", reqNonce: NONCE };
+        const pO = dispatchOtOnEdge({ ...OVR, idempotencyKey: "foe:9:w1:1", authorization: aO, run }, rt);
+        await inGate;
+        expect(await dispatchOtOnEdge({ ...STOP }, rt)).toMatchObject({ ok: true, stop: true, pinnedStop: true });
+        release();
+        const r = await pO;
+        expect(r).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+        expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined }]]);
+      } finally {
+        delete process.env.OT_CMD_SERIALIZE_ENABLED;
+      }
+    });
+  }
 });

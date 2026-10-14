@@ -127,6 +127,24 @@ describe("R-11-k (1)(2) — the STOP lane: every stop, identical writes only, pi
     expect(log).toEqual(["A"]);
   });
 
+  it("★ R-11-m: at the group's turn, a member whose epoch moved (a verified STOP was SENT after its gates began) is superseded; others in the group are written; all superseded ⇒ no device write", async () => {
+    const { ctl, job } = makeJobs();
+    accepted(tryEnqueueAdapterCommand(A, job("A")));
+    const wire: string[] = [];
+    const e0 = adapterStopEpoch(A);
+    const u1 = enqueueStopLane(A, [rw("run", 1)], laneExec(wire), projectExecutedForMember, { cls: "unverified", member: { stopEpochAtGates: e0 } });
+    const u2 = enqueueStopLane(A, [rw("run", 1)], laneExec(wire), projectExecutedForMember, { cls: "unverified", member: { stopEpochAtGates: null } });
+    const u3 = enqueueStopLane(A, [rw("jog", 1)], laneExec(wire), projectExecutedForMember, { cls: "unverified", member: { stopEpochAtGates: e0 } });
+    bumpAdapterStopEpoch(A, { idempotencyKey: "P" }); // the verified STOP is SENT (e.g. central's fallback) while they wait
+    ctl.get("A")!.resolve("a");
+    expect(await u1.result).toEqual({ ...SUPERSEDED, stop: { idempotencyKey: "P" } });
+    expect((await u2.result) as ExecutedWrite).toMatchObject({ outcomes: [{ ok: true, status: "acked" }] });
+    expect(await u3.result).toEqual({ ...SUPERSEDED, stop: { idempotencyKey: "P" } });
+    expect(wire).toEqual(["run=1"]); // u3's group wrote nothing
+    await flush();
+    expect(_adapterCommandQueueDepthForTests(A)).toBe(0);
+  });
+
   it("★ C-1/I-2: stops with DIFFERENT device writes never coalesce — each gets its own write and that write's TRUE outcome (a failed write ⇒ failed)", async () => {
     const { ctl, job } = makeJobs();
     accepted(tryEnqueueAdapterCommand(A, job("A")));
@@ -300,7 +318,9 @@ describe("R-11-k (1)(2) — the STOP lane: every stop, identical writes only, pi
     const m3 = enqueueStopLane(A, [rw("speed", 0)], exec, projectExecutedForMember, { cls: "pinned", member: { intentIds: [31] } });
     ctl.get("A")!.resolve("a");
     await Promise.all([m1.result, m2.result, m3.result]);
-    expect(seen).toEqual([{ cls: "pinned", intentIds: [11, 12, 21, 31], timeoutMs: 1500, members: 3 }]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ cls: "pinned", intentIds: [11, 12, 21, 31], timeoutMs: 1500, members: 3 });
+    expect(typeof seen[0].dropStopped).toBe("function");
   });
 
   it("tells the in-flight re-check listeners about VERIFIED stops only (pinned:false for a content stop, true for the pin)", () => {

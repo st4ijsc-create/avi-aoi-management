@@ -344,6 +344,12 @@ const ORDINARY_RANK = 3;
 export interface StopLaneMemberCtx {
   intentIds?: number[];
   timeoutMs?: number;
+  /**
+   * doc 81 Đợt 11 final fix wave residual (R-11-m) — the STOP epoch this member read when its gates began, or null/absent when a STOP
+   * never cancels it. Set only for an UNVERIFIED stop that writes a pinned stop tag with a non-pin value: a VERIFIED STOP sent after its
+   * gates began supersedes it (SUPERSEDED_BY_STOP) right before the group's device write — it must not restart motion after the STOP.
+   */
+  stopEpochAtGates?: number | null;
 }
 /** R-11-k (2) — the group's execution context: EVERY member's intents (slot hold, late-result review, STOP watch) and the strictest timeout. */
 export interface StopLaneGroupCtx {
@@ -352,6 +358,11 @@ export interface StopLaneGroupCtx {
   /** the smallest timeout any member asked for; undefined when none did */
   timeoutMs: number | undefined;
   members: number;
+  /**
+   * R-11-m — supersede (SUPERSEDED_BY_STOP, naming the STOP) every member whose `stopEpochAtGates` moved, and answer how many members
+   * are still live. NOT async: the executor calls it right before its device write, in the same tick. 0 ⇒ do not write.
+   */
+  dropStopped: () => number;
 }
 
 /**
@@ -680,23 +691,41 @@ export function enqueueStopLane<T>(
       job.lane = undefined; // running: no longer joinable (the member list is frozen)
       const writes = group.writes.map((u) => ({ ...u, write: { ...u.write } }));
       const timeouts = group.members.map((m) => m.ctx.timeoutMs).filter((t): t is number => typeof t === "number" && Number.isFinite(t) && t > 0);
+      // R-11-m — members a verified STOP sent since their gates began has superseded (answered at once, never written for)
+      const live = new Set(group.members);
+      const dropStopped = (): number => {
+        for (const m of [...live]) {
+          const e = m.ctx.stopEpochAtGates;
+          if (e === null || e === undefined) continue;
+          const st = stopIssuedSince(adapterId, e);
+          if (!st) continue;
+          live.delete(m);
+          m.resolve(st.stop ? { superseded: true, byStop: true, stop: st.stop } : { superseded: true, byStop: true });
+        }
+        return live.size;
+      };
       const ctx: StopLaneGroupCtx = {
         cls,
         intentIds: group.members.flatMap((m) => m.ctx.intentIds ?? []),
         timeoutMs: timeouts.length > 0 ? Math.min(...timeouts) : undefined,
         members: group.members.length,
+        dropStopped,
       };
+      const done = (): void => {
+        queue.inFlight = false;
+        queue.depth -= 1;
+        pumpAdapterQueue(adapterId, queue);
+      };
+      if (dropStopped() === 0) {
+        done(); // every member was superseded: nothing to write
+        return;
+      }
       let p: Promise<T>;
       try {
         p = Promise.resolve(execGroup(writes, ctx));
       } catch (err) {
         p = Promise.reject(err);
       }
-      const done = (): void => {
-        queue.inFlight = false;
-        queue.depth -= 1;
-        pumpAdapterQueue(adapterId, queue);
-      };
       p.then(
         (v) => {
           let hold: Promise<void> | undefined;
@@ -707,7 +736,7 @@ export function enqueueStopLane<T>(
           }
           if (hold) hold.then(done, done);
           else done();
-          for (const m of group.members) {
+          for (const m of live) {
             try {
               m.resolve(project(v, writes, m.own));
             } catch (err) {
@@ -717,7 +746,7 @@ export function enqueueStopLane<T>(
         },
         (err) => {
           done();
-          for (const m of group.members) m.reject(err);
+          for (const m of live) m.reject(err);
         },
       );
     },
