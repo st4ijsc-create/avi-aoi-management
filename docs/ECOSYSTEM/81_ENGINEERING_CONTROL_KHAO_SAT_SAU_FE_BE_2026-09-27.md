@@ -966,4 +966,6 @@ Plan `docs/superpowers/plans/2026-10-15-engineering-control-dot12.md`; sổ phá
 - Dev hiện chưa có `SECRET_ENCRYPTION_KEY` / `OT_STOP_EPOCH_HMAC_KEY` ⇒ sau khởi động lại, đồng bộ STOP giữa máy chủ TẮT kèm một cảnh báo (dev chạy một máy chủ nên không mất gì); phải đặt khoá trước khi thêm máy chủ trung tâm thứ hai.
 - Áp 0378 lúc yên tĩnh (chờ khoá có thể giữ yêu cầu STOP tới edge ≤ 5 s); app vẫn chạy khi chưa có 0378 (nghỉ hưu nút trả "thiếu migration 0378").
 
+**Đã thực hiện 2026-10-14 (chủ dự án duyệt):** gộp main `632378be6` + push; áp 0378 lên dev (tự kiểm đạt); build `3ef20885a` + khởi động :3000 (ready). Đồng bộ STOP giữa máy chủ đang TẮT vì `.env` chưa có khoá (một cảnh báo; dev một máy chủ).
+
 **Còn mở:** thử nút edge mô phỏng trên dev (chờ chủ dự án nhập thông tin admin — `scratchpad/edge-trial/OWNER-SETUP.md`); khoá HMAC cho nhiều máy chủ; 223 nút nghỉ hưu của test trên `_test` (không xoá được, theo thiết kế); +2 kết nối DB mỗi máy chủ; nợ cũ ngoài module (35 chuỗi tiếng Việt twin3d, 115 lỗi kiểu ở tệp test); việc phần cứng/chủ dự án (FAT S7, PLC an toàn thật, khoá TLS, mật khẩu keystore, APK 1.0.18, bật hàng đợi ghi OT).
