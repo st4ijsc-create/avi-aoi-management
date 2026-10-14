@@ -11,6 +11,7 @@ import { getDb } from "../../db/connection";
 import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, listActiveAdapters, resetAdapterSession } from "./otManager";
 import type { OtDriver, OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
+import { canonicalOtValue } from "./otActionBinding";
 import { withDeadline } from "./drivers/boundedClose";
 import type { DispatchInput, DispatchStatus } from "./commandDispatcher";
 
@@ -203,8 +204,8 @@ export type ExecutedWrite = {
 /**
  * final wave F7 — listeners told when a PINNED stop is queued for an adapter: an in-flight pre-write safety re-check of a
  * non-stop command gives way to it at once (L-7). Returns the unsubscribe function.
- * doc 81 Đợt 11 K-fix (R-11-c) — also told when an UNPINNED stop-typed command is queued (`info.pinned === false`); the
- * listener decides (central: a non-stop re-check gives way to any STOP, a stop-typed re-check only to a PINNED one).
+ * doc 81 Đợt 11 K-fix 2 (R-11-i a) — told for every TRUE stop (by content) queued in the stop lane; `info.pinned` false for a
+ * content stop that is not the pinned stop command. A stop-LABELLED command with arbitrary writes never tells anyone.
  */
 export type StopQueuedListener = (stopRef?: Record<string, unknown>, info?: { pinned: boolean }) => void;
 const pinnedStopQueuedListeners = new Map<number, Set<StopQueuedListener>>();
@@ -240,12 +241,15 @@ export function isSuperseded(x: unknown): x is Superseded {
  * doc 81 Đợt 11 K-fix (ruling R-11-d) — the per-adapter STOP EPOCH. Closes the pre-queue race of Group K (D-2): a non-STOP write
  * submitted BEFORE a STOP but still in its gates (DB reservation, preflight, interlock …) when the STOP is issued used to reach
  * the device AFTER the STOP (flag ON: it entered the queue behind the STOP and was not superseded; flag OFF: it simply ran).
- *   • Every STOP — any stop-typed command (stop / e_stop, pinned or not), central or edge, incl. central's fallback / sweep STOP
- *     through the device stage — BUMPS its adapter's epoch when it is issued (bumpAdapterStopEpoch).
- *   • A non-STOP write records the epoch when its gates begin; right before the device write it is compared
+ *   • K-fix 2 (R-11-i a/b): only a TRUE STOP — by CONTENT (the pinned stop, or writes that are exactly pinned stop tags with
+ *     their pinned values), never by label — BUMPS its adapter's epoch, and only when it is EXECUTED: in the device stage right
+ *     before driver.writeTags (central: when sent; edge: after verification, or when a pinned STOP runs unverified under L-7;
+ *     central's fallback / sweep STOP too). Never on receipt, never before authorisation (bumpAdapterStopEpoch).
+ *   • Every other write records the epoch when its gates begin; right before the device write it is compared
  *     (executeOtDeviceWriteUnlessStopped): moved ⇒ the write is CANCELLED (`StoppedBeforeWrite`, reason STOPPED_BEFORE_WRITE),
- *     nothing reaches the device, the caller ledgers the refusal. Flag ON and OFF alike.
- *   • A write whose gates begin AFTER the bump is the operator's newer intent and runs (after the STOP when serialized).
+ *     nothing reaches the device, the caller ledgers the refusal. Flag ON and OFF alike. A protective interlock action (R-11-h)
+ *     records nothing and is never cancelled.
+ *   • A write whose gates begin AFTER the STOP was sent is the operator's newer intent and runs.
  * Values come from ONE process-wide counter (strictly increasing, never reused) so an equal value means "no STOP since";
  * the map holds one entry per adapter ever stopped (bounded by the adapter count).
  * PER PROCESS: a STOP handled by another replica / process (another central replica, an edge gateway) does not move this
@@ -254,7 +258,7 @@ export function isSuperseded(x: unknown): x is Superseded {
 let stopEpochSeq = 0;
 const adapterStopEpochs = new Map<number, { epoch: number; stop: Record<string, unknown> | null }>();
 
-/** R-11-d — a STOP for `adapterId` is issued: move the epoch (returns the new value). Never throws. */
+/** R-11-d — a TRUE STOP for `adapterId` is being SENT: move the epoch (returns the new value). Never throws. */
 export function bumpAdapterStopEpoch(adapterId: number, stop?: Record<string, unknown> | null): number {
   stopEpochSeq += 1;
   adapterStopEpochs.set(adapterId, { epoch: stopEpochSeq, stop: stop ?? null });
@@ -293,8 +297,24 @@ interface PendingAdapterCommand {
   /** Huỷ lệnh đang CHỜ: người gọi nhận `Superseded` (mang danh tính DỪNG `byStop`); `fn` không bao giờ được gọi. */
   cancel: (byStop?: Record<string, unknown>) => void;
   priorityStop: boolean;
-  /** doc 81 Đợt 11 K-fix (R-11-c) — a stop-typed command (pinned OR not): never BUSY, ahead of every waiting non-stop command. */
-  stopTyped: boolean;
+  /**
+   * doc 81 Đợt 11 K-fix 2 (ruling R-11-h) — a PROTECTIVE interlock action (stop_line / block / reduce): never cancelled by a STOP.
+   * It keeps its place in the queue and every gate; it gets STOP priority only when it IS a stop by content (then it is in the lane).
+   */
+  protective: boolean;
+  /** doc 81 Đợt 11 K-fix 2 (R-11-i c) — the coalescing STOP group of the bounded fast lane, present only while it is WAITING. */
+  lane?: StopLaneGroup;
+}
+
+/**
+ * doc 81 Đợt 11 K-fix 2 (R-11-i c) — the ONE waiting STOP of an adapter's fast lane. Every true STOP (by content) arriving while it waits
+ * JOINS it: its writes are merged into `union` (first write of a tag wins; all are pinned stop values, so they agree — a different
+ * value for the same tag, i.e. a pin changed between the two STOPs, is NOT sent and that member's tag answers failed), and all
+ * members' results resolve together from the single execution of the union.
+ */
+interface StopLaneGroup {
+  union: OtResolvedWrite[];
+  members: Array<{ own: OtResolvedWrite[]; conflicts: string[]; resolve: (v: unknown) => void; reject: (e: unknown) => void }>;
 }
 
 interface AdapterCommandQueue {
@@ -326,6 +346,11 @@ export function _adapterCommandQueueDepthForTests(adapterId: number): number {
   return adapterCommandQueues.get(adapterId)?.depth ?? 0;
 }
 
+/** K-fix 2 — test seam: members of the adapter's WAITING stop-lane group (0 when none waits). */
+export function _stopLaneWaitingMembersForTests(adapterId: number): number {
+  return adapterCommandQueues.get(adapterId)?.pending.find((j) => j.lane)?.lane?.members.length ?? 0;
+}
+
 export type EnqueueOutcome<T> =
   | { accepted: true; result: Promise<T | Superseded> }
   | { accepted: false; depth: number; max: number };
@@ -344,25 +369,37 @@ function pumpAdapterQueue(adapterId: number, queue: AdapterCommandQueue): void {
 }
 
 /**
+ * A STOP is queued: cancel every WAITING command that is neither a stop nor a protective interlock action (SUPERSEDED_BY_STOP naming
+ * the STOP) and tell an in-flight pre-write safety re-check (it gives way — final wave F7).
+ * R-1E-a / R-1E-b — a waiting stop-LABELLED command that is not a true stop is an ordinary command and is cancelled too.
+ * K-fix 2 (R-11-h) — a protective interlock action is NEVER cancelled.
+ */
+function cancelWaitingForStop(adapterId: number, queue: AdapterCommandQueue, stopRef: Record<string, unknown> | undefined): void {
+  const kept: PendingAdapterCommand[] = [];
+  for (const j of queue.pending) {
+    if (j.priorityStop || j.protective) kept.push(j);
+    else j.cancel(stopRef);
+  }
+  queue.pending = kept;
+  for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(stopRef, { pinned: stopRef?.contentStop !== true });
+}
+
+/**
  * Xếp `fn` vào hàng đợi tuần tự của adapter. Lệnh thường: trả {accepted:false} NGAY (không side-effect) khi hàng
  * đã đầy; `fn` chỉ chạy sau khi mọi lệnh xếp trước nó đã kết thúc (kể cả khi lệnh trước lỗi). Lệnh
  * `priorityStop` (DỪNG ghim, R-1E-a): không bao giờ bị từ chối; huỷ mọi lệnh không-ưu-tiên đang CHỜ (chúng trả
  * `Superseded`), rồi đứng sau DỪNG ghim cuối cùng đang chờ (hoặc đầu hàng). Entry của adapter được dọn khỏi map
  * khi hàng cạn (không rò rỉ theo số adapter đã từng dùng).
+ * doc 81 Đợt 11 K-fix 2: the dispatchers no longer use `priorityStop` — a true STOP goes through the BOUNDED lane
+ * (enqueueStopLane); `priorityStop` stays for its existing callers / suites. Neither path cancels a `protective` command (R-11-h).
  */
 export function tryEnqueueAdapterCommand<T>(
   adapterId: number,
   fn: () => Promise<T>,
   opts?: {
     priorityStop?: boolean;
-    /**
-     * doc 81 Đợt 11 K-fix (R-11-c, D-1, L-7) — a stop-typed command that is NOT the pinned stop (no pins, values differ,
-     * stale fingerprint). Like the pin it is never BUSY, cancels the non-stop commands still WAITING (SUPERSEDED_BY_STOP
-     * naming it) and stands right after the stops already waiting, so it waits at most for the ONE command in flight. Unlike
-     * the pin it never cancels a waiting stop-typed command, and a later PINNED stop still cancels IT (R-1E-b unchanged).
-     * Implied by `priorityStop`.
-     */
-    stopTyped?: boolean;
+    /** doc 81 Đợt 11 K-fix 2 (R-11-h) — a protective interlock action: never cancelled by a STOP; queued and capped like any command. */
+    protective?: boolean;
     stopRef?: Record<string, unknown>;
     /**
      * doc 81 Đợt 4 Task B3 — given `fn`'s result, a promise the queue SLOT waits on before the next command runs
@@ -374,9 +411,8 @@ export function tryEnqueueAdapterCommand<T>(
 ): EnqueueOutcome<T> {
   const max = cmdQueueMax();
   const priorityStop = opts?.priorityStop === true;
-  const stopTyped = priorityStop || opts?.stopTyped === true;
   let q = adapterCommandQueues.get(adapterId);
-  if (!stopTyped && q && q.depth >= max) return { accepted: false, depth: q.depth, max };
+  if (!priorityStop && q && q.depth >= max) return { accepted: false, depth: q.depth, max };
   if (!q) {
     q = { inFlight: false, pending: [], depth: 0 };
     adapterCommandQueues.set(adapterId, q);
@@ -389,7 +425,7 @@ export function tryEnqueueAdapterCommand<T>(
   });
   const job: PendingAdapterCommand = {
     priorityStop,
-    stopTyped,
+    protective: opts?.protective === true,
     run: () => {
       queue.inFlight = true;
       let p: Promise<T>;
@@ -434,36 +470,12 @@ export function tryEnqueueAdapterCommand<T>(
   };
 
   if (priorityStop) {
-    // R-1E-a — huỷ mọi lệnh KHÔNG phải DỪNG ghim còn đang CHỜ (lệnh đang bay không nằm trong `pending`).
-    // R-1E-b (review M-1) — CỐ Ý gồm cả một lệnh "stop" KHÔNG ghim đang chờ (commandType stop/e_stop nhưng giá trị
-    // không khớp ghim ⇒ priorityStop false): DỪNG ghim thay thế nó, chiều năng lượng không đổi (vẫn là dừng, bằng
-    // ĐÚNG giá trị đã ghim), còn giữ nó lại thì sau DỪNG ghim sẽ ghi một giá trị chưa được chứng minh là an toàn.
-    // Lệnh bị huỷ nhận SUPERSEDED_BY_STOP như mọi lệnh khác (test pinnedStop.dot1d "1E M-1").
-    const kept: PendingAdapterCommand[] = [];
-    for (const j of queue.pending) {
-      if (j.priorityStop) kept.push(j);
-      else j.cancel(opts?.stopRef);
-    }
-    queue.pending = kept;
-    // final wave F7 — an in-flight pre-write safety re-check gives way too (it has not written yet).
-    for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(opts?.stopRef, { pinned: true });
+    // R-1E-a — huỷ mọi lệnh KHÔNG phải DỪNG ghim còn đang CHỜ (lệnh đang bay không nằm trong `pending`) — trừ hành động
+    // interlock bảo vệ (K-fix 2, R-11-h). R-1E-b (review M-1) — CỐ Ý gồm cả một lệnh "stop" KHÔNG ghim đang chờ.
+    cancelWaitingForStop(adapterId, queue, opts?.stopRef);
     // Đứng sau DỪNG ghim cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng.
     let at = 0;
     for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].priorityStop) at = i + 1;
-    queue.pending.splice(at, 0, job);
-  } else if (stopTyped) {
-    // doc 81 Đợt 11 K-fix (R-11-c) — an UNPINNED stop-typed command: cancels every waiting NON-stop command (a write waiting
-    // behind a STOP would re-energise after it), keeps the waiting stops (pinned or not), tells an in-flight re-check
-    // (pinned: false) and stands right after the last waiting stop — never behind a write, never BUSY.
-    const kept: PendingAdapterCommand[] = [];
-    for (const j of queue.pending) {
-      if (j.stopTyped) kept.push(j);
-      else j.cancel(opts?.stopRef);
-    }
-    queue.pending = kept;
-    for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(opts?.stopRef, { pinned: false });
-    let at = 0;
-    for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].stopTyped) at = i + 1;
     queue.pending.splice(at, 0, job);
   } else {
     queue.pending.push(job);
@@ -471,6 +483,135 @@ export function tryEnqueueAdapterCommand<T>(
   queue.depth += 1;
   pumpAdapterQueue(adapterId, queue);
   return { accepted: true, result };
+}
+
+function sameOtValue(a: unknown, b: unknown): boolean {
+  try {
+    return canonicalOtValue(a) === canonicalOtValue(b);
+  } catch {
+    return false;
+  }
+}
+
+function joinStopLane(group: StopLaneGroup, member: StopLaneGroup["members"][number]): void {
+  for (const w of member.own) {
+    const have = group.union.find((u) => u.write.tagKey === w.write.tagKey);
+    if (!have) group.union.push({ ...w, write: { ...w.write } });
+    else if (!sameOtValue(have.write.value, w.write.value)) member.conflicts.push(w.write.tagKey);
+  }
+  group.members.push(member);
+}
+
+/**
+ * doc 81 Đợt 11 K-fix 2 (ruling R-11-i (a)(c)) — the BOUNDED STOP fast lane of an adapter, for TRUE stops only (classified by the
+ * caller by CONTENT: the pinned stop, or a command whose writes are exactly pinned stop tags with their pinned values — never by
+ * the command's label). Per adapter at most ONE stop in flight plus ONE waiting group:
+ *   • no waiting group ⇒ a new group: it cancels the waiting ordinary commands (not protective interlock actions — R-11-h), stands
+ *     ahead of every waiting command (after a legacy priorityStop job, if any) and counts ONE in the queue depth; never BUSY;
+ *   • a waiting group exists ⇒ this STOP JOINS it (no new queue entry, no new execution): its writes join the group's union, and its
+ *     caller gets the same execution's result projected onto its own writes (`project`). A flood of STOPs therefore costs one
+ *     queue entry and one device write, whatever its size.
+ * `execUnion` of the FIRST member runs the group (its gates' result for the union). A group never is cancelled.
+ */
+export function enqueueStopLane<T>(
+  adapterId: number,
+  own: OtResolvedWrite[],
+  execUnion: (union: OtResolvedWrite[]) => Promise<T>,
+  project: (shared: T, union: OtResolvedWrite[], own: OtResolvedWrite[], conflicts: string[]) => T,
+  opts: { stopRef?: Record<string, unknown>; holdSlot?: (v: T) => Promise<void> | undefined } = {},
+): { joined: boolean; result: Promise<T> } {
+  let q = adapterCommandQueues.get(adapterId);
+  if (!q) {
+    q = { inFlight: false, pending: [], depth: 0 };
+    adapterCommandQueues.set(adapterId, q);
+  }
+  const queue = q;
+  let resolve!: (v: unknown) => void;
+  let reject!: (e: unknown) => void;
+  const result = new Promise<T>((res, rej) => {
+    resolve = res as (v: unknown) => void;
+    reject = rej;
+  });
+  const member = { own, conflicts: [] as string[], resolve, reject };
+  const waiting = queue.pending.find((j) => j.lane);
+  if (waiting?.lane) {
+    joinStopLane(waiting.lane, member);
+    for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(opts.stopRef, { pinned: opts.stopRef?.contentStop !== true });
+    return { joined: true, result };
+  }
+  const group: StopLaneGroup = { union: [], members: [] };
+  joinStopLane(group, member);
+  const job: PendingAdapterCommand = {
+    priorityStop: true,
+    protective: false,
+    lane: group,
+    run: () => {
+      queue.inFlight = true;
+      job.lane = undefined; // running: no longer joinable (the union is frozen)
+      const union = group.union.map((u) => ({ ...u, write: { ...u.write } }));
+      let p: Promise<T>;
+      try {
+        p = Promise.resolve(execUnion(union));
+      } catch (err) {
+        p = Promise.reject(err);
+      }
+      const done = (): void => {
+        queue.inFlight = false;
+        queue.depth -= 1;
+        pumpAdapterQueue(adapterId, queue);
+      };
+      p.then(
+        (v) => {
+          let hold: Promise<void> | undefined;
+          try {
+            hold = opts.holdSlot?.(v);
+          } catch {
+            hold = undefined;
+          }
+          if (hold) hold.then(done, done);
+          else done();
+          for (const m of group.members) {
+            try {
+              m.resolve(project(v, union, m.own, m.conflicts));
+            } catch (err) {
+              m.reject(err);
+            }
+          }
+        },
+        (err) => {
+          done();
+          for (const m of group.members) m.reject(err);
+        },
+      );
+    },
+    cancel: () => undefined, // a STOP group is never cancelled
+  };
+  cancelWaitingForStop(adapterId, queue, opts.stopRef);
+  let at = 0;
+  for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].priorityStop) at = i + 1;
+  queue.pending.splice(at, 0, job);
+  queue.depth += 1;
+  pumpAdapterQueue(adapterId, queue);
+  return { joined: false, result };
+}
+
+/**
+ * K-fix 2 (R-11-i c) — a member's view of the shared execution of its stop-lane group: each of its own writes gets the outcome of
+ * the same tag in the union (re-indexed to its own list); a conflicting tag (not sent) answers failed. Any other result (a refusal,
+ * a cancellation) is shared as is.
+ */
+export function projectExecutedForMember<T>(shared: T, union: OtResolvedWrite[], own: OtResolvedWrite[], conflicts: string[]): T {
+  const ex = shared as unknown as ExecutedWrite;
+  if (!ex || typeof ex !== "object" || !Array.isArray((ex as { outcomes?: unknown }).outcomes)) return shared;
+  const outcomes = own.map((r, i) => {
+    if (conflicts.includes(r.write.tagKey)) {
+      return { idx: i, ok: false, status: "failed" as DispatchStatus, errorText: "coalesced STOP: a STOP for this adapter carried another value for this tag (its pin changed in between) — this value was NOT sent; resend", readBackValue: null };
+    }
+    const u = union.findIndex((x) => x.write.tagKey === r.write.tagKey);
+    const o = ex.outcomes.find((x) => x.idx === u);
+    return o ? { ...o, idx: i } : { idx: i, ok: false, status: "failed" as DispatchStatus, errorText: "no result", readBackValue: null };
+  });
+  return { sentAt: ex.sentAt, timedOut: ex.timedOut, outcomes, ...(ex.slotHold ? { slotHold: ex.slotHold } : {}) } as unknown as T;
 }
 
 
@@ -832,16 +973,17 @@ export interface OtResolvedWrite {
 }
 
 /**
- * doc 81 Đợt 11 K-fix (R-11-d) — the device stage behind the STOP-epoch check: a NON-STOP write (`stopTyped` false) whose gates
- * began at `stopEpochAtGates` is cancelled when a STOP was issued for its adapter since (nothing written, `StoppedBeforeWrite`
- * returned); otherwise executeOtDeviceWrite runs. Deliberately NOT async: the check and the call happen in one tick, and
- * executeOtDeviceWrite reaches driver.writeTags without an await — no STOP can be issued in between.
- * `stopEpochAtGates` null ⇒ no check (stop-typed commands; interlock safety actions — see commandDispatcher).
+ * doc 81 Đợt 11 K-fix (R-11-d) — the device stage behind the STOP-epoch check: a write whose gates began at `stopEpochAtGates` is
+ * cancelled when a STOP was EXECUTED on its adapter since (nothing written, `StoppedBeforeWrite` returned); otherwise
+ * executeOtDeviceWrite runs. Deliberately NOT async: the check and the call happen in one tick, and executeOtDeviceWrite reaches
+ * driver.writeTags without an await — no STOP can be executed in between.
+ * `stopEpochAtGates` null ⇒ no check: a TRUE stop (by content — K-fix 2, R-11-i a) and a protective interlock action (R-11-h).
+ * A stop-LABELLED command with arbitrary writes is not a true stop: it records an epoch and is checked like any write.
  */
 export function executeOtDeviceWriteUnlessStopped(
   a: Parameters<typeof executeOtDeviceWrite>[0] & { stopEpochAtGates: number | null },
 ): Promise<ExecutedWrite | StoppedBeforeWrite> {
-  if (!a.stopTyped && a.stopEpochAtGates !== null) {
+  if (a.stopEpochAtGates !== null) {
     const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates);
     if (stopped) return Promise.resolve(stopped);
   }
@@ -864,16 +1006,17 @@ export async function executeOtDeviceWrite(a: {
   /** R-10-x — the edge's alarm / audit sink; absent ⇒ central's DB paths (unchanged) */
   sink?: OtDeviceEventSink;
   /**
-   * doc 81 Đợt 11 K-fix (R-11-d) — true when the caller already bumped the adapter's STOP epoch when the STOP was ISSUED (central
-   * dispatch, edge dispatch). Absent on a stop-typed write (central's fallback / sweep STOP) ⇒ the epoch is bumped here, before the write.
+   * doc 81 Đợt 11 K-fix 2 (R-11-i b) — this write IS a STOP (by content) and moves the adapter's STOP epoch when it is SENT (here,
+   * right before driver.writeTags) — never on receipt, never before authorisation. Central / edge pass whether the command is a true
+   * stop; absent ⇒ `stopTyped` (central's fallback / sweep STOP, which writes only the adapter's pinned stop values).
    */
-  stopEpochBumped?: boolean;
+  bumpStopEpoch?: boolean;
 }): Promise<ExecutedWrite> {
   const { input, driver, resolved, driverWrites, timeoutMs, stopTyped } = a;
   const { intentIds, confirmedBy: ledgerConfirmer } = a.ledger;
-  if (stopTyped && a.stopEpochBumped !== true) bumpAdapterStopEpoch(input.adapterId, { idempotencyKey: input.idempotencyKey ?? null, commandType: input.commandType });
   // R-11-d — NO await may precede driver.writeTags below: executeOtDeviceWriteUnlessStopped checks the STOP epoch in the same
-  // tick as this call, which is what makes its check "right before the device write".
+  // tick as this call (its check is "right before the device write"), and this bump is "when the STOP is sent" (K-fix 2, R-11-i b).
+  if (a.bumpStopEpoch ?? stopTyped) bumpAdapterStopEpoch(input.adapterId, { idempotencyKey: input.idempotencyKey ?? null, commandType: input.commandType });
   const TIMEOUT = Symbol("timeout");
   // Pre-insert outcome per resolved write. `ok` is fixed by the WRITE result;
   // read-back only refines an acked write's status (verified/unverified) and

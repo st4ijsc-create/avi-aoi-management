@@ -469,18 +469,31 @@ describe.skipIf(!DB_URL)("Đợt 11 K — OT_CMD_SERIALIZE_ENABLED load + STOP b
     }
   }
 
-  // L-7 defect D-1 (measured E2): with the flag ON a STOP-typed command whose values are not the pins (unpinned) was answered
-  // BUSY when the adapter queue was full, and otherwise waited FIFO behind every queued write. Fixed by K-fix (ruling R-11-c):
-  // every stop-typed command is never BUSY and goes to the front (tryEnqueueAdapterCommand `stopTyped`). Was it.fails.
-  it("L-7: with the flag ON a stop-typed command is never answered BUSY because the queue is full", async () => {
-    setEnv(true, { OT_CMD_QUEUE_MAX: "3" });
+  // L-7 defect D-1 (measured E2): with the flag ON a STOP-typed command whose values are not the pins was answered BUSY when the
+  // adapter queue was full. Ruling R-11-i (K-fix 2, 2026-10-14) settles it BY CONTENT, not label: a TRUE stop (the pinned stop, or
+  // writes that are exactly pinned stop values) is never BUSY (bounded stop lane); a stop-LABELLED command with arbitrary writes
+  // is an ordinary command — capped, BUSY when full. (Was it.fails, then it under R-11-c, now R-11-i.)
+  it("L-7 (R-11-i): with the flag ON a TRUE stop is never answered BUSY on a full queue; a stop-LABELLED command with arbitrary writes is", async () => {
+    setEnv(true, { OT_CMD_QUEUE_MAX: "3", OT_CONTROL_TIMEOUT_MS: "30000" });
     const a = adapters[2];
-    reset(a, 200, 10);
+    reset(a, 20, 10);
+    a.dev.hangNext = 1; // the first write stays on the wire until released: the queue is deterministically full
     const inputs: DispatchInput[] = [];
     for (let v = 1; v <= 3; v++) inputs.push(await prep(a, "set", [{ tagKey: TAG_W, value: v }]));
-    inputs.push(await prep(a, "stop", [{ tagKey: TAG_W, value: 0 }])); // stop-typed, value is not the pin
-    const r = await burst(inputs, [a.id], [0, 0, 0, 60]);
-    expect(r.recs[3].reason).not.toBe("BUSY");
+    const arbitrary = await prep(a, "stop", [{ tagKey: TAG_W, value: 0 }]); // labelled stop, value is not a pin ⇒ NOT a stop by content
+    const pinned = await prep(a, "stop", [{ tagKey: TAG_STOP, value: 0 }]); // the pinned stop
+    const writes = inputs.map((i) => dispatch(i));
+    const t0 = now();
+    while (_adapterCommandQueueDepthForTests(a.id) < 3 && now() - t0 < 5000) await sleep(1);
+    const rArb = await dispatch(arbitrary); // the queue is full (3 = max)
+    expect(rArb.reason).toBe("BUSY");
+    const pPin = dispatch(pinned);
+    while (_adapterCommandQueueDepthForTests(a.id) === 3 && now() - t0 < 10_000) await sleep(1); // the STOP cancelled the 2 waiting writes
+    for (const f of a.dev.hung.splice(0)) f();
+    const rPin = await pPin;
+    expect(rPin.reason).not.toBe("BUSY");
+    expect(rPin).toMatchObject({ ok: true, pinnedStop: true });
+    await Promise.all(writes);
   });
 
   it("G — edge/offline interplay: a driver-less adapter never touches the queue", async () => {

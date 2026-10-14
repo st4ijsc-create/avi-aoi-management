@@ -158,7 +158,7 @@ describe.skipIf(!DB_URL)("Đợt 11 K-fix R-11-d — a STOP cancels a write stil
     H.hold = null;
   });
 
-  it("[flag ON] control: a write issued AFTER a STOP that is still waiting behind the in-flight write runs after the STOP (newer intent — the STOP does not bump again when it executes)", async () => {
+  it("[flag ON] K-fix 2 (R-11-i b): a write whose gates began before the STOP was SENT is cancelled even if it was issued after the STOP (the STOP waited behind the in-flight write)", async () => {
     setEnv(true);
     const w1 = await prep("set", [{ tagKey: TAG_W, value: 1 }]);
     const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);
@@ -170,37 +170,37 @@ describe.skipIf(!DB_URL)("Đợt 11 K-fix R-11-d — a STOP cancels a write stil
     while (!device.log.includes(`${TAG_W}=1`) && Date.now() - t0 < 10_000) await new Promise((r) => setTimeout(r, 5));
     const pS = dispatch(stop);
     while (_adapterCommandQueueDepthForTests(adapterId) < 2 && Date.now() - t0 < 10_000) await new Promise((r) => setTimeout(r, 5));
-    const p3 = dispatch(w3); // its gates begin AFTER the STOP was issued
+    const p3 = dispatch(w3); // issued after the STOP, but BEFORE the STOP is sent (it waits behind w1)
     while (_adapterCommandQueueDepthForTests(adapterId) < 3 && Date.now() - t0 < 10_000) await new Promise((r) => setTimeout(r, 5));
     expect(_adapterCommandQueueDepthForTests(adapterId)).toBe(3);
     release();
     const [r1, rS, r3] = await Promise.all([p1, pS, p3]);
     expect(r1.ok).toBe(true);
     expect(rS).toMatchObject({ ok: true, pinnedStop: true });
-    expect(r3.ok).toBe(true);
-    expect(device.log).toEqual([`${TAG_W}=1`, `${TAG_STOP}=0`, `${TAG_STOP}=5`]);
+    expect(r3).toMatchObject({ ok: false, reason: "STOPPED_BEFORE_WRITE" });
+    expect(device.log).toEqual([`${TAG_W}=1`, `${TAG_STOP}=0`]);
   });
 
   for (const flag of [false, true]) {
-    for (const pinned of [true, false]) {
-      const F = `flag ${flag ? "ON" : "OFF"}, ${pinned ? "pinned" : "UNPINNED"} STOP`;
-      it(`[${F}] a write held in its gates while the STOP completes is cancelled before its device write (STOPPED_BEFORE_WRITE, ledgered)`, async () => {
+    for (const kind of ["pinned", "content"] as const) {
+      const F = `flag ${flag ? "ON" : "OFF"}, ${kind === "pinned" ? "pinned STOP" : "CONTENT stop (a 'set' writing the pinned value)"}`;
+      it(`[${F}] a write held in its gates while the STOP is sent is cancelled before its device write (STOPPED_BEFORE_WRITE, ledgered)`, async () => {
         setEnv(flag);
         const write = await prep("set", [{ tagKey: TAG_STOP, value: 77 }]);
-        const stop = pinned ? await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]) : await prep("stop", [{ tagKey: TAG_W, value: 0 }]);
+        const stop = kind === "pinned" ? await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]) : await prep("set", [{ tagKey: TAG_STOP, value: 0 }]);
         const h = holdGatesOf(TAG_STOP);
         const pWrite = dispatch(write); // gates begin now; held inside the interlock gate
         await h.entered;
-        const rStop = await dispatch(stop); // issued AFTER the write's gates began; completes while the write is held
+        const rStop = await dispatch(stop); // sent while the write is held
         expect(rStop.ok).toBe(true);
-        expect(rStop.pinnedStop === true).toBe(pinned);
+        expect(rStop.pinnedStop === true).toBe(kind === "pinned");
         h.release();
         const rWrite = await pWrite;
 
         expect(rWrite).toMatchObject({ ok: false, status: "rejected", reason: "STOPPED_BEFORE_WRITE" });
         expect(rWrite.appError?.appCode).toBe("OT_COMMAND_SUPERSEDED_BY_STOP");
         expect(device.log).not.toContain(`${TAG_STOP}=77`); // L-7: nothing of the cancelled write reached the device
-        if (pinned) expect(device.regs.get(TAG_STOP)).toBe(0);
+        expect(device.regs.get(TAG_STOP)).toBe(0);
         // ledger: the intent row + its RESULT row (rejected, names the STOP)
         expect(rWrite.commandLogIds.length).toBeGreaterThan(0);
         const rows = await sql<{ status: string; errorText: string | null; ackValue: Record<string, unknown> | null }[]>`
@@ -212,6 +212,37 @@ describe.skipIf(!DB_URL)("Đợt 11 K-fix R-11-d — a STOP cancels a write stil
         expect((result?.ackValue as { stoppedBeforeWrite?: { stop?: { idempotencyKey?: string } } })?.stoppedBeforeWrite?.stop?.idempotencyKey).toBe(stop.idempotencyKey);
       });
     }
+
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ K-fix 2 (R-11-i a): a stop-LABELLED command with ARBITRARY writes is not a STOP — it does not cancel a write in its gates`, async () => {
+      setEnv(flag);
+      const write = await prep("set", [{ tagKey: TAG_STOP, value: 77 }]);
+      const fake = await prep("stop", [{ tagKey: TAG_W, value: 0 }]); // labelled "stop", writes an unpinned tag
+      const h = holdGatesOf(TAG_STOP);
+      const pWrite = dispatch(write);
+      await h.entered;
+      const rFake = await dispatch(fake);
+      expect(rFake.ok).toBe(true);
+      expect(rFake.pinnedStop).not.toBe(true);
+      h.release();
+      expect((await pWrite).ok).toBe(true);
+      expect(device.log).toEqual([`${TAG_W}=0`, `${TAG_STOP}=77`]);
+    });
+
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ K-fix 2 (R-11-i b): a STOP refused before authorisation (HITL action not confirmed) moves nothing — the write in its gates is written`, async () => {
+      setEnv(flag);
+      const write = await prep("set", [{ tagKey: TAG_STOP, value: 77 }]);
+      const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);
+      const actionId = (stop.triggeredBy as { actionId: string }).actionId;
+      await sql`UPDATE ai_pending_actions SET status = 'denied' WHERE id = ${actionId}`;
+      const h = holdGatesOf(TAG_STOP);
+      const pWrite = dispatch(write);
+      await h.entered;
+      const rStop = await dispatch(stop);
+      expect(rStop).toMatchObject({ ok: false, status: "rejected" });
+      h.release();
+      expect((await pWrite).ok).toBe(true);
+      expect(device.log).toEqual([`${TAG_STOP}=77`]);
+    });
 
     it(`[flag ${flag ? "ON" : "OFF"}] control: a write whose gates begin AFTER the STOP is the newer intent and IS written`, async () => {
       setEnv(flag);

@@ -120,13 +120,14 @@ import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 // public name it used to export from here is re-exported below, unchanged.
 import {
   adapterStopEpoch,
-  bumpAdapterStopEpoch,
+  enqueueStopLane,
   executeOtDeviceWriteUnlessStopped,
   isCmdSerializeEnabled,
   isStoppedBeforeWrite,
   isSuperseded,
   onPinnedStopQueued,
   OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS,
+  projectExecutedForMember,
   tryEnqueueAdapterCommand,
   type ExecutedWrite,
   type StoppedBeforeWrite,
@@ -156,6 +157,8 @@ export {
   adapterStopEpoch,
   bumpAdapterStopEpoch,
   isStoppedBeforeWrite,
+  enqueueStopLane,
+  _stopLaneWaitingMembersForTests,
   type Superseded,
   type EnqueueOutcome,
   type StoppedBeforeWrite,
@@ -715,23 +718,48 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
 }
 
 /**
- * doc 81 Đợt 11 K-fix (R-11-d) — the STOP epoch a command records when its gates begin, or null when a later STOP never cancels
- * it: a stop-typed command (it IS a STOP), and an INTERLOCK-triggered command (rule actions block_downstream / stop_line /
- * reduce_speed — an energy-reducing safety response; cancelling it because an operator STOP was issued, which may itself still
- * be refused by its gates, would leave neither in effect).
+ * doc 81 Đợt 11 K-fix (R-11-d) / K-fix 2 (R-11-i, R-11-h) — the STOP epoch a command checks right before its device write (the value
+ * it read when its gates began), or null when a STOP never cancels it:
+ *   • a TRUE stop by content (`trueStop`: the pinned stop, or writes that are exactly pinned stop tags with their pinned values) —
+ *     it IS a STOP; a stop-LABELLED command with arbitrary writes is NOT and is checked like any write;
+ *   • an INTERLOCK-triggered command (block_downstream / stop_line / reduce_speed) — a protective action is never cancelled (R-11-h).
  */
-export function stopEpochAtGatesFor(input: Pick<DispatchInput, "adapterId" | "commandType" | "triggeredBy">): number | null {
-  if (isStopCommandType(input.commandType)) return null;
+export function stopEpochAtGatesFor(input: Pick<DispatchInput, "triggeredBy">, opts: { trueStop: boolean; epochAtGates: number }): number | null {
+  if (opts.trueStop) return null;
   if (input.triggeredBy.kind === "interlock") return null;
-  return adapterStopEpoch(input.adapterId);
+  return opts.epochAtGates;
+}
+
+/**
+ * doc 81 Đợt 11 K-fix 2 (ruling R-11-i a) — is this command a STOP by CONTENT (never by its label)? The pinned stop (5a-stop:
+ * stop-typed + exact pins + step-3 rows + current connection), or — whatever its commandType, HITL or interlock — a command whose
+ * writes are exactly pinned stop tags with their pinned values, fitting the step-3 rows, on a connection made for the adapter's
+ * CURRENT target (the same evidence as the pin, minus the label). Only this decides the STOP lane and the STOP epoch; it never skips
+ * a gate (the gate exemptions stay the pinned stop's alone). Any read failure ⇒ false (fail closed: the normal queue).
+ */
+async function isStopByContent(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  input: DispatchInput,
+  resolved: Array<{ write: DispatchWrite; dataType?: string }>,
+  step3TagRows: StopPinTagRow[],
+  stopCls: OtStopClassification,
+): Promise<boolean> {
+  if (stopCls.pinnedStop) return true;
+  if (isStopCommandType(input.commandType)) return false; // stop-labelled but not the pin: the same content test already failed
+  const c = classifyOtStop("stop", input.writes, stopPinsFromTagRows(step3TagRows)); // the label is ignored: content only
+  if (!c.isStop || !c.pinnedStop) return false;
+  if (!canonicalisePinnedStop(resolved, c.writes).ok) return false;
+  try {
+    return await runningConnectionMatchesAdapterRow(db, input.adapterId);
+  } catch {
+    return false;
+  }
 }
 
 async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
-  // doc 81 Đợt 11 K-fix (R-11-d) — FIRST, before any await: a non-STOP write records its adapter's STOP epoch (its gates begin
-  // now); a STOP of any stop-typed kind moves it (issued now), so every write still in its gates is cancelled right before its
-  // device write (executeOtDeviceWriteUnlessStopped). Flag OT_CMD_SERIALIZE_ENABLED ON and OFF alike.
-  const stopEpochAtGates = stopEpochAtGatesFor(input);
-  if (isStopCommandType(input.commandType)) bumpAdapterStopEpoch(input.adapterId, { idempotencyKey: input.idempotencyKey ?? null, commandType: input.commandType });
+  // doc 81 Đợt 11 K-fix (R-11-d) — FIRST, before any await: the adapter's STOP epoch as this command's gates begin. Read-only;
+  // K-fix 2 (R-11-i b): nothing here moves it — only a TRUE stop does, when it is SENT (device stage).
+  const epochAtGates = adapterStopEpoch(input.adapterId);
   const db = await getDb();
   if (!db) {
     return { ok: false, simulated: false, status: "failed", reason: "DB_UNAVAILABLE", results: [], commandLogIds: [] };
@@ -1147,6 +1175,11 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // for THIS command; absent → OT_CONTROL_TIMEOUT_MS (default 5000ms) as before.
   const timeoutMs = effectiveTimeoutMs(input.deadlineMs);
 
+  // doc 81 Đợt 11 K-fix 2 (R-11-i a, R-11-h) — STOP by CONTENT decides the STOP lane and the epoch; a protective interlock action
+  // is never cancelled (no epoch check, `protective` in the queue) and gets the lane only when it is a stop by content.
+  const trueStop = await isStopByContent(db, input, resolved, step3TagRows, stopCls);
+  const stopEpochAtGates = stopEpochAtGatesFor(input, { trueStop, epochAtGates });
+
   // ── final wave F7 (final review M5) — the check-then-act gap. The safety preflight ran BEFORE the write-ahead
   //    reservation and the queue; a write queued behind a slow / timed-out one (B3 hold: up to ~11.25 s) reached the
   //    device on a verdict that old. A NON-STOP write whose preflight passed more than OT_SAFETY_PREFLIGHT_DEADLINE_MS
@@ -1168,10 +1201,11 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     if (waitedMs <= OT_SAFETY_PREFLIGHT_DEADLINE_MS) return null;
     let unsubscribe: (() => void) | undefined;
     const stopQueued = new Promise<Superseded>((resolve) => {
-      unsubscribe = onPinnedStopQueued(input.adapterId, (stopRef, info) => {
-        // doc 81 Đợt 11 K-fix (R-11-c) — a non-stop re-check gives way to ANY stop-typed command queued meanwhile; an (unpinned)
-        // stop-typed re-check only to a PINNED one (stops never cancel each other, except the pin replacing an unpinned stop).
-        if (info?.pinned === false && isStopCommandType(input.commandType)) return;
+      unsubscribe = onPinnedStopQueued(input.adapterId, (stopRef) => {
+        // doc 81 Đợt 11 K-fix 2 (R-11-i a) — only TRUE stops (by content) are announced; a re-checking command that is itself
+        // a true stop (a content stop that is not the pin) does not give way (STOPs never cancel each other); a protective
+        // interlock action never re-checks (no preflight on that path).
+        if (trueStop) return;
         resolve(stopRef ? { superseded: true, byStop: true, stop: stopRef } : { superseded: true, byStop: true });
       });
     });
@@ -1193,21 +1227,24 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── G1.9 — the write+verify body, extracted UNCHANGED so it can run either
   //    immediately (flag OFF — prior behaviour) or under the per-adapter queue.
   //    It never throws for expected failure modes (driver errors are caught).
-  const executeWriteAndVerify = async (): Promise<ExecutedWrite | Superseded | SafetyRecheckRefusal | StoppedBeforeWrite> => {
+  //    K-fix 2 (R-11-i c) — `res` is the stop lane's UNION when this command leads a coalesced STOP group (all pinned values).
+  const executeWriteAndVerify = async (res: typeof resolved = resolved): Promise<ExecutedWrite | Superseded | SafetyRecheckRefusal | StoppedBeforeWrite> => {
     const recheck = await recheckSafetyIfStale(); // final wave F7 — null => no re-check needed / still OK
     if (recheck) return recheck;
     // doc 81 Đợt 10 task D — the write + read-back + STOP-watch + slot-hold body moved VERBATIM to otDeviceWrite.executeOtDeviceWrite.
-    // doc 81 Đợt 11 K-fix (R-11-d) — behind the STOP-epoch check: a STOP issued since this write's gates began cancels it here.
+    // doc 81 Đợt 11 K-fix (R-11-d) — behind the STOP-epoch check: a STOP executed since this write's gates began cancels it here;
+    // K-fix 2 (R-11-i b) — a TRUE stop moves the epoch when it is sent (bumpStopEpoch), nothing else does.
+    const own = res === resolved;
     return executeOtDeviceWriteUnlessStopped({
-      input,
+      input: own ? input : { ...input, writes: res.map((r) => ({ ...r.write })) },
       driver,
-      resolved,
-      driverWrites,
+      resolved: res,
+      driverWrites: own ? driverWrites : res.map((r) => ({ tagKey: r.write.tagKey, address: r.address, value: r.write.value, dataType: r.dataType as any, scale: r.scale, offset: r.offset })),
       timeoutMs,
       stopTyped: isStopCommandType(input.commandType),
       ledger: { intentIds, confirmedBy: ledgerConfirmer },
       stopEpochAtGates,
-      stopEpochBumped: true,
+      bumpStopEpoch: trueStop,
     });
   };
 
@@ -1219,38 +1256,38 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    doc 81 Đợt 1E Task 1 (R-1E-a) — a PINNED stop (stopCls.pinnedStop, Đợt 1D: exact pin match + step-3 row +
   //    connection fingerprint) is never BUSY: it runs right after the in-flight write and cancels the non-stop
   //    commands still WAITING ahead of it; each cancelled caller ledgers SUPERSEDED_BY_STOP naming the stop.
-  //    doc 81 Đợt 11 K-fix (R-11-c, D-1, L-7) — EVERY stop-typed command (not only the pin) is never BUSY and goes to the front:
-  //    it waits at most for the one command in flight and cancels the non-stop commands waiting (stopRef.pinned = false names it).
+  //    doc 81 Đợt 11 K-fix 2 (ruling R-11-i, R-11-h) — the front-of-line, never-BUSY treatment is for TRUE stops only, by CONTENT
+  //    (trueStop), never by label: they go through the BOUNDED stop lane (one in flight + one waiting group per adapter; more STOPs
+  //    JOIN the waiting group and share its single execution). Everything else — a stop-labelled command with arbitrary writes too —
+  //    is an ordinary queued command (capped, BUSY when full). A protective interlock action is never cancelled by a STOP.
   let executed: ExecutedWrite | SafetyRecheckRefusal | StoppedBeforeWrite;
   const slotHoldOf = (v: ExecutedWrite | Superseded | SafetyRecheckRefusal | StoppedBeforeWrite): Promise<void> | undefined => ("slotHold" in v ? v.slotHold : undefined);
   if (isCmdSerializeEnabled()) {
-    const enq = tryEnqueueAdapterCommand(
-      input.adapterId,
-      executeWriteAndVerify,
-      stopCls.pinnedStop === true
-        ? { priorityStop: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds }, holdSlot: slotHoldOf }
-        : isStopCommandType(input.commandType)
-          ? { priorityStop: false, stopTyped: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds, pinned: false }, holdSlot: slotHoldOf }
-          : { priorityStop: false, holdSlot: slotHoldOf },
-    );
-    if (!enq.accepted) {
-      const ids = await writeRejected(
-        db,
-        input,
-        "BUSY",
-        `adapter command queue full (depth ${enq.depth} >= max ${enq.max}) — command rejected, retry later`,
-        undefined,
-        undefined,
-        { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra }, // Task 6 — the RESULT row of the intent
-      );
-      return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids, ...(stopCls.pinnedStop ? { pinnedStop: true } : {}) };
+    let queued: ExecutedWrite | Superseded | SafetyRecheckRefusal | StoppedBeforeWrite;
+    if (trueStop) {
+      const stopRef = { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds, ...(stopCls.pinnedStop ? {} : { contentStop: true }) };
+      queued = await enqueueStopLane(input.adapterId, resolved, (union) => executeWriteAndVerify(union as typeof resolved), projectExecutedForMember, { stopRef, holdSlot: slotHoldOf }).result;
+    } else {
+      const enq = tryEnqueueAdapterCommand(input.adapterId, () => executeWriteAndVerify(), { priorityStop: false, protective: input.triggeredBy.kind === "interlock", holdSlot: slotHoldOf });
+      if (!enq.accepted) {
+        const ids = await writeRejected(
+          db,
+          input,
+          "BUSY",
+          `adapter command queue full (depth ${enq.depth} >= max ${enq.max}) — command rejected, retry later`,
+          undefined,
+          undefined,
+          { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra }, // Task 6 — the RESULT row of the intent
+        );
+        return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids, ...(stopCls.pinnedStop ? { pinnedStop: true } : {}) };
+      }
+      queued = await enq.result;
     }
-    const queued = await enq.result;
     if (isSuperseded(queued)) {
       // R-1E-a — cancelled while WAITING: never reached driver.writeTags. RESULT row of the intent, like BUSY.
       // final wave G9 — a STOP without an idempotency key: its own localisable code, never the literal "unknown".
       const stopKey = typeof queued.stop?.idempotencyKey === "string" && queued.stop.idempotencyKey ? queued.stop.idempotencyKey : null;
-      const stopWord = queued.stop?.pinned === false ? "STOP" : "pinned STOP"; // K-fix R-11-c — an unpinned stop-typed command says so
+      const stopWord = queued.stop?.contentStop === true ? "STOP" : "pinned STOP"; // K-fix 2 — a content stop that is not the pin says so
       const ids = await writeRejected(
         db,
         input,

@@ -160,7 +160,7 @@ beforeEach(() => {
   delete process.env.OT_READBACK_ENABLED;
 });
 
-describe("Đợt 11 K-fix R-11-d — edge: a pinned STOP cancels a write still in its gates", () => {
+describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STOP is sent), STOP by content, bounded lane", () => {
   for (const flag of [false, true]) {
     it(`[flag ${flag ? "ON" : "OFF"}] the write held in its consume gate while the STOP completes ⇒ STOPPED_BEFORE_WRITE, only the STOP on the wire`, async () => {
       if (flag) process.env.OT_CMD_SERIALIZE_ENABLED = "true";
@@ -195,28 +195,115 @@ describe("Đợt 11 K-fix R-11-d — edge: a pinned STOP cancels a write still i
     });
   }
 
-  it("R-11-c on the edge: an UNPINNED stop-typed command (authorised, non-STOP path) is never BUSY on a full queue — it runs right after the in-flight command", async () => {
+  for (const flag of [false, true]) {
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ K-fix 2 (R-11-i b, pre-auth-state-change): a STOP-labelled command REFUSED before authorisation moves nothing — the write in its gate is written`, async () => {
+      if (flag) process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+      else delete process.env.OT_CMD_SERIALIZE_ENABLED;
+      try {
+        const j = journal();
+        let entered!: () => void;
+        let release!: () => void;
+        const inGate = new Promise<void>((r) => (entered = r));
+        const gate = new Promise<void>((r) => (release = r));
+        const consume = j.consumeAuthorization.bind(j);
+        j.consumeAuthorization = async (c) => {
+          entered();
+          await gate;
+          return consume(c);
+        };
+        const rt = runtime(j);
+        const pWrite = dispatchOtOnEdge({ ...SPEED_CMD, idempotencyKey: "foe:9:w1:1", authorization: auth(), run }, rt);
+        await inGate;
+        // an UNAUTHORISED "stop" with arbitrary writes (not the snapshot's pins) — refused before anything
+        const rFake = await dispatchOtOnEdge({ adapterId: 5, machineId: 50, commandType: "stop", writes: [{ tagKey: "speed", value: 0 }], idempotencyKey: "x:1", authorization: null, run }, rt);
+        expect(rFake).toMatchObject({ ok: false, reason: "AUTHORIZATION_REQUIRED" });
+        release();
+        const r = await pWrite;
+        expect(r).toMatchObject({ ok: true, status: "acked" });
+        expect(H.driver!.writes).toHaveLength(1);
+      } finally {
+        delete process.env.OT_CMD_SERIALIZE_ENABLED;
+      }
+    });
+  }
+
+  it("★ K-fix 2 (R-11-i a/b): an AUTHORISED stop-labelled command with ARBITRARY writes, executed while a write waits in its gate, does not move the epoch — the write is written", async () => {
+    const j = journal();
+    let entered!: () => void;
+    let release!: () => void;
+    const inGate = new Promise<void>((r) => (entered = r));
+    const gate = new Promise<void>((r) => (release = r));
+    const consume = j.consumeAuthorization.bind(j);
+    let first = true;
+    j.consumeAuthorization = async (c) => {
+      if (first) {
+        first = false;
+        entered();
+        await gate;
+      }
+      return consume(c);
+    };
+    const rt = runtime(j);
+    const pWrite = dispatchOtOnEdge({ ...SPEED_CMD, idempotencyKey: "foe:9:w1:1", authorization: auth(), run }, rt);
+    await inGate;
+    const ARB = { adapterId: 5, machineId: 50, commandType: "stop", writes: [{ tagKey: "speed", value: 0 }] };
+    const aArb: EdgeStepAuthorization = { envelope: signEdgeObject("auth", claims({ jti: "3b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a81" }, ARB), key), runId: 9, claimSeq: 2, stepId: "w1", attempt: 1, idempotencyKey: "foe:9:w1:1", reqNonce: NONCE };
+    const rArb = await dispatchOtOnEdge({ ...ARB, idempotencyKey: "foe:9:w1:1", authorization: aArb, run }, rt);
+    expect(rArb).toMatchObject({ ok: true, status: "acked" });
+    release();
+    expect(await pWrite).toMatchObject({ ok: true, status: "acked" });
+    expect(H.driver!.writes.map((w) => w[0].value)).toEqual([0, 10]);
+  });
+
+  it("★ K-fix 2 (R-11-i a): an authorised stop-LABELLED command with ARBITRARY writes is ordinary — BUSY on a full queue; a content stop (authorised 'set' of the pinned value) is not", async () => {
     process.env.OT_CMD_SERIALIZE_ENABLED = "true";
     process.env.OT_CMD_QUEUE_MAX = "1";
     try {
-      let release!: () => void;
-      const held = new Promise<string>((r) => (release = () => r("held")));
+      let releaseA!: () => void;
+      const held = new Promise<string>((r) => (releaseA = () => r("held")));
       const { tryEnqueueAdapterCommand } = await import("./otDeviceWrite");
-      const inFlight = tryEnqueueAdapterCommand(5, () => held); // the queue is FULL (depth 1 = max)
-      expect(inFlight.accepted).toBe(true);
-      const UNPINNED = { adapterId: 5, machineId: 50, commandType: "stop", writes: [{ tagKey: "speed", value: 0 }] }; // speed has no pin
-      const a: EdgeStepAuthorization = { envelope: signEdgeObject("auth", claims({}, UNPINNED), key), runId: 9, claimSeq: 2, stepId: "w1", attempt: 1, idempotencyKey: "foe:9:w1:1", reqNonce: NONCE };
-      const p = dispatchOtOnEdge({ ...UNPINNED, idempotencyKey: "foe:9:w1:1", authorization: a, run }, runtime(journal()));
+      expect(tryEnqueueAdapterCommand(5, () => held).accepted).toBe(true); // the queue is FULL (depth 1 = max)
+      const ARB = { adapterId: 5, machineId: 50, commandType: "stop", writes: [{ tagKey: "speed", value: 0 }] }; // speed has no pin
+      const aArb: EdgeStepAuthorization = { envelope: signEdgeObject("auth", claims({}, ARB), key), runId: 9, claimSeq: 2, stepId: "w1", attempt: 1, idempotencyKey: "foe:9:w1:1", reqNonce: NONCE };
+      const rArb = await dispatchOtOnEdge({ ...ARB, idempotencyKey: "foe:9:w1:1", authorization: aArb, run }, runtime(journal()));
+      expect(rArb).toMatchObject({ ok: false, reason: "BUSY" });
+      const CONTENT = { adapterId: 5, machineId: 50, commandType: "set_run", writes: [{ tagKey: "run", value: false }] }; // the pinned value
+      const target = { adapterId: 5, writes: [{ tagKey: "run", address: "00001", dataType: "bool", scale: null, offset: null }] };
+      const aC: EdgeStepAuthorization = { envelope: signEdgeObject("auth", claims({ target, jti: "2b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a81" }, CONTENT as unknown as typeof SPEED_CMD), key), runId: 9, claimSeq: 2, stepId: "w1", attempt: 1, idempotencyKey: "foe:9:w1:1", reqNonce: NONCE };
+      const pC = dispatchOtOnEdge({ ...CONTENT, idempotencyKey: "foe:9:w1:1", authorization: aC, run }, runtime(journal()));
       await new Promise((r) => setTimeout(r, 30));
       expect(H.driver!.writes).toHaveLength(0); // waits for the in-flight command, not refused
-      release();
-      const r = await p;
-      expect(r.reason).not.toBe("BUSY");
-      expect(r).toMatchObject({ ok: true, status: "acked", stop: false });
-      expect(H.driver!.writes).toEqual([[{ tagKey: "speed", address: "40001", value: 0, dataType: "int", scale: undefined, offset: undefined }]]);
+      releaseA();
+      const rC = await pC;
+      expect(rC.reason).not.toBe("BUSY");
+      expect(rC).toMatchObject({ ok: true, status: "acked" });
+      expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined }]]);
     } finally {
       delete process.env.OT_CMD_SERIALIZE_ENABLED;
       delete process.env.OT_CMD_QUEUE_MAX;
+    }
+  });
+
+  it("★ K-fix 2 (R-11-i c): a pinned-STOP flood on the edge ⇒ one waiting group, ONE device write, every STOP answered and journaled", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    try {
+      let releaseA!: () => void;
+      const held = new Promise<string>((r) => (releaseA = () => r("held")));
+      const { tryEnqueueAdapterCommand, _adapterCommandQueueDepthForTests, _stopLaneWaitingMembersForTests } = await import("./otDeviceWrite");
+      tryEnqueueAdapterCommand(5, () => held);
+      const j = journal();
+      const rt = runtime(j);
+      const ps = Array.from({ length: 12 }, (_, i) => dispatchOtOnEdge({ ...STOP, idempotencyKey: `abort:${i}` }, rt));
+      for (let t = 0; t < 200 && _stopLaneWaitingMembersForTests(5) < 12; t++) await new Promise((r) => setTimeout(r, 5));
+      expect(_stopLaneWaitingMembersForTests(5)).toBe(12);
+      expect(_adapterCommandQueueDepthForTests(5)).toBe(2);
+      releaseA();
+      const rs = await Promise.all(ps);
+      expect(rs.every((r) => r.ok && r.stop && r.pinnedStop)).toBe(true);
+      expect(H.driver!.writes).toHaveLength(1);
+      expect(j.events.filter((e) => (e as { kind?: string }).kind === "stop")).toHaveLength(12);
+    } finally {
+      delete process.env.OT_CMD_SERIALIZE_ENABLED;
     }
   });
 
