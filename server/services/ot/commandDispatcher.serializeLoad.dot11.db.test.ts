@@ -470,30 +470,42 @@ describe.skipIf(!DB_URL)("Đợt 11 K — OT_CMD_SERIALIZE_ENABLED load + STOP b
   }
 
   // L-7 defect D-1 (measured E2): with the flag ON a STOP-typed command whose values are not the pins was answered BUSY when the
-  // adapter queue was full. Ruling R-11-i (K-fix 2, 2026-10-14) settles it BY CONTENT, not label: a TRUE stop (the pinned stop, or
-  // writes that are exactly pinned stop values) is never BUSY (bounded stop lane); a stop-LABELLED command with arbitrary writes
-  // is an ordinary command — capped, BUSY when full. (Was it.fails, then it under R-11-c, now R-11-i.)
-  it("L-7 (R-11-i): with the flag ON a TRUE stop is never answered BUSY on a full queue; a stop-LABELLED command with arbitrary writes is", async () => {
+  // adapter queue was full. Ruling R-11-i (K-fix 2) made a stop-LABELLED command with arbitrary writes ordinary (BUSY when full);
+  // rulings R-11-j / R-11-k (final fix wave, 2026-10-14) reverse that: EVERY stop-typed command takes the stop lane — never BUSY,
+  // never behind ordinary writes — while only a verified stop (the pinned stop / exact pinned values) is ahead of it, moves the epoch
+  // and has precedence over interlock actions. (Was it.fails, then it under R-11-c, then R-11-i, now R-11-j.)
+  it("L-7 (R-11-j): with the flag ON NO stop-typed command is answered BUSY on a full queue — an unverified stop neither; a pinned STOP arriving meanwhile supersedes it (R-1E-b) and is the last word", async () => {
     setEnv(true, { OT_CMD_QUEUE_MAX: "3", OT_CONTROL_TIMEOUT_MS: "30000" });
     const a = adapters[2];
     reset(a, 20, 10);
     a.dev.hangNext = 1; // the first write stays on the wire until released: the queue is deterministically full
     const inputs: DispatchInput[] = [];
     for (let v = 1; v <= 3; v++) inputs.push(await prep(a, "set", [{ tagKey: TAG_W, value: v }]));
-    const arbitrary = await prep(a, "stop", [{ tagKey: TAG_W, value: 0 }]); // labelled stop, value is not a pin ⇒ NOT a stop by content
+    const arbitrary = await prep(a, "stop", [{ tagKey: TAG_W, value: 0 }]); // labelled stop, value is not a pin ⇒ an UNVERIFIED stop
     const pinned = await prep(a, "stop", [{ tagKey: TAG_STOP, value: 0 }]); // the pinned stop
     const writes = inputs.map((i) => dispatch(i));
     const t0 = now();
     while (_adapterCommandQueueDepthForTests(a.id) < 3 && now() - t0 < 5000) await sleep(1);
-    const rArb = await dispatch(arbitrary); // the queue is full (3 = max)
-    expect(rArb.reason).toBe("BUSY");
+    expect(_adapterCommandQueueDepthForTests(a.id)).toBe(3); // FULL (3 = max)
+    const pArb = dispatch(arbitrary);
+    while (_adapterCommandQueueDepthForTests(a.id) !== 2 && now() - t0 < 10_000) await sleep(1); // in the lane; the 2 waiting writes cancelled
     const pPin = dispatch(pinned);
-    while (_adapterCommandQueueDepthForTests(a.id) === 3 && now() - t0 < 10_000) await sleep(1); // the STOP cancelled the 2 waiting writes
+    const rArb = await pArb; // R-1E-b: the pinned STOP supersedes the WAITING unverified stop (its value must not run after the STOP)
+    expect(rArb.reason).not.toBe("BUSY");
+    expect(rArb).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+    expect(rArb.pinnedStop).not.toBe(true);
     for (const f of a.dev.hung.splice(0)) f();
     const rPin = await pPin;
     expect(rPin.reason).not.toBe("BUSY");
     expect(rPin).toMatchObject({ ok: true, pinnedStop: true });
-    await Promise.all(writes);
+    const rs = await Promise.all(writes);
+    // the wire order is the order commands REACH the queue (their gates take variable time): whichever write is in flight
+    // stays; the other two (waiting) are cancelled
+    expect(rs.filter((r) => r.reason === "SUPERSEDED_BY_STOP")).toHaveLength(2);
+    const order = fake.driverWrites.filter((w) => w.adapterId === a.id).map((w) => w.tags);
+    expect(order).toHaveLength(2);
+    expect(order[0]).toMatch(new RegExp(`^${TAG_W}=[123]$`));
+    expect(order[1]).toBe(`${TAG_STOP}=0`); // then the pinned STOP — nothing after it
   });
 
   it("G — edge/offline interplay: a driver-less adapter never touches the queue", async () => {

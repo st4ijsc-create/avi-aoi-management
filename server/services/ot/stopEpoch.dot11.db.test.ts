@@ -266,5 +266,25 @@ describe.skipIf(!DB_URL)("Đợt 11 K-fix R-11-d — a STOP cancels a write stil
       expect((await p).ok).toBe(true);
       expect(device.log).toEqual([`${TAG_W}=9`]);
     });
+
+    // doc 81 Đợt 11 final fix wave (R-11-j, final review C-2) — an UNVERIFIED stop (stop-typed, value not the pin) is a stop too: never
+    // cancelled STOPPED_BEFORE_WRITE by another STOP, flag ON or OFF (before: cancelled "resend" while another operator's pinned STOP ran).
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ C-2: an UNVERIFIED stop held in its gates while a pinned STOP is sent is still written — never STOPPED_BEFORE_WRITE (ledger: acked)`, async () => {
+      setEnv(flag);
+      const unverified = await prep("stop", [{ tagKey: TAG_W, value: 0 }]); // stop-typed, w1 has no pin
+      const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);
+      const h = holdGatesOf(TAG_W);
+      const pU = dispatch(unverified);
+      await h.entered;
+      expect(await dispatch(stop)).toMatchObject({ ok: true, pinnedStop: true });
+      h.release();
+      const rU = await pU;
+      expect(rU.reason).not.toBe("STOPPED_BEFORE_WRITE");
+      expect(rU).toMatchObject({ ok: true });
+      expect(rU.pinnedStop).not.toBe(true);
+      expect(device.log).toEqual([`${TAG_STOP}=0`, `${TAG_W}=0`]);
+      const rows = await sql<{ status: string }[]>`SELECT status FROM command_log WHERE id IN ${sql(rU.commandLogIds)} AND "ackValue"->>'ledger' = 'result'`;
+      expect(rows.map((r) => r.status)).toEqual(["acked"]);
+    });
   }
 });
