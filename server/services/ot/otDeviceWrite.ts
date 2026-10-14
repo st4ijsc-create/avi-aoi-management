@@ -256,16 +256,61 @@ export function isSuperseded(x: unknown): x is Superseded {
  *   • A write whose gates begin AFTER the STOP was sent is the operator's newer intent and runs.
  * Values come from ONE process-wide counter (strictly increasing, never reused) so an equal value means "no STOP since";
  * the map holds one entry per adapter ever stopped (bounded by the adapter count).
- * PER PROCESS: a STOP handled by another replica / process (another central replica, an edge gateway) does not move this
- * process's epoch — see the K-fix report (each process also has its own queue and its own driver sessions).
+ * PER PROCESS, plus a best-effort CROSS-REPLICA signal (doc 81 Đợt 12 task P): when a central process runs otStopEpochSync, every
+ * local bump is broadcast AFTER the send (setStopEpochBroadcaster — scheduled with setImmediate, never awaited, never on the STOP's
+ * path) and every other central replica bumps its own epoch for that adapter on receipt (bumpAdapterStopEpochFromPeer — no
+ * re-broadcast). Remaining window = the NOTIFY latency (docs/EDGE_GATEWAY.md §8.14). The edge has no DB: its epoch stays per process.
  */
 let stopEpochSeq = 0;
 const adapterStopEpochs = new Map<number, { epoch: number; stop: Record<string, unknown> | null }>();
 
-/** R-11-d — a TRUE STOP for `adapterId` is being SENT: move the epoch (returns the new value). Never throws. */
+/** doc 81 Đợt 12 task P — the cross-replica broadcaster (otStopEpochSync, central only); null ⇒ per process (edge, tests). */
+export type StopEpochBroadcast = { adapterId: number; epoch: number; at: number };
+let stopEpochBroadcaster: ((m: StopEpochBroadcast) => void) | null = null;
+/** Task P — install (or with null remove) the broadcaster. Returns a function that removes THIS broadcaster if still installed. */
+export function setStopEpochBroadcaster(fn: ((m: StopEpochBroadcast) => void) | null): () => void {
+  stopEpochBroadcaster = fn;
+  return () => {
+    if (stopEpochBroadcaster === fn) stopEpochBroadcaster = null;
+  };
+}
+
+/**
+ * R-11-d — a TRUE STOP for `adapterId` is being SENT: move the epoch (returns the new value). Never throws.
+ * Task P — then, when a broadcaster is installed, the bump is announced to the other replicas on the NEXT macrotask (setImmediate):
+ * the device stage (executeOtDeviceWrite) reaches driver.writeTags in this same synchronous section, so the NOTIFY starts only after
+ * the STOP's device call was made (the identical-STOP join in tryEnqueueAdapterCommand bumps for a STOP already on the wire), and
+ * nothing on the STOP's path ever waits for it (L-7).
+ */
 export function bumpAdapterStopEpoch(adapterId: number, stop?: Record<string, unknown> | null): number {
   stopEpochSeq += 1;
-  adapterStopEpochs.set(adapterId, { epoch: stopEpochSeq, stop: stop ?? null });
+  const epoch = stopEpochSeq;
+  adapterStopEpochs.set(adapterId, { epoch, stop: stop ?? null });
+  const b = stopEpochBroadcaster;
+  if (b) {
+    const m: StopEpochBroadcast = { adapterId, epoch, at: Date.now() };
+    setImmediate(() => {
+      try {
+        b(m);
+      } catch {
+        /* best effort — a broadcaster failure never reaches the STOP */
+      }
+    });
+  }
+  return epoch;
+}
+
+/** Task P — a cap on adapters first seen through a PEER notification (a forged NOTIFY flood cannot grow the map without bound). */
+export const OT_STOP_EPOCH_PEER_ADAPTERS_MAX = 100_000;
+/**
+ * doc 81 Đợt 12 task P — another central replica SENT a verified STOP for `adapterId`: move this process's epoch for it (writes in
+ * this process's gates since before now are cancelled STOPPED_BEFORE_WRITE). Never broadcast again. Returns the new epoch, or null
+ * when the adapter is unknown here and the map already holds OT_STOP_EPOCH_PEER_ADAPTERS_MAX adapters (logged by the caller).
+ */
+export function bumpAdapterStopEpochFromPeer(adapterId: number, stop: Record<string, unknown>): number | null {
+  if (!adapterStopEpochs.has(adapterId) && adapterStopEpochs.size >= OT_STOP_EPOCH_PEER_ADAPTERS_MAX) return null;
+  stopEpochSeq += 1;
+  adapterStopEpochs.set(adapterId, { epoch: stopEpochSeq, stop });
   return stopEpochSeq;
 }
 
