@@ -49,6 +49,11 @@ import { isEdgeControlSchemaMissing, robotMotionLockAuthority } from "../edge/ed
 /** Upper bound of ONE motion-lock DB step (load at registration, upsert, delete). */
 export const MOTION_LOCK_DB_DEADLINE_MS = 2000;
 /** Column caps of robot_motion_locks (varchar(64) reasonCode; detail kept short). */
+/** doc 81 dot 12 integration (rawErrorCensus F3, coded class, message verbatim) — the not-durable alert found no recipient yet
+ *  (caught right below: the alert is raised without recipients and the read retried). Never reaches a tRPC user. */
+class NoAlertRecipientError extends Error {
+  readonly code = "NO_ALERT_RECIPIENT" as const;
+}
 const REASON_MAX = 64;
 const DETAIL_MAX = 1000;
 
@@ -256,7 +261,7 @@ function alertNotDurable(robotId: number, why: string): void {
     void notDurableRecipients()
       .then((ids) => {
         if (ids.length > 0) return void raise(ids);
-        throw new Error("no active admin / supervisor");
+        throw new NoAlertRecipientError("no active admin / supervisor");
       })
       .catch((err) => {
         if (n === 0) void raise([]); // at once: the log line + the alert stream, even without recipients

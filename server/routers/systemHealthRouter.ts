@@ -144,4 +144,17 @@ export const systemHealthRouter = router({
         return { available: false as const, thresholds, tables: [] };
       }
     }),
+  /**
+   * doc 81 Đợt 12 task P fix 1 (M-3) — the cross-replica pg channels of THIS central replica: the OT STOP epoch sync
+   * (`ot_stop_epoch`: state, key source — never the key —, rejections, peer map, latency) and the `device_owner_changed` listener
+   * (state, reconnects, lost episodes, heartbeat RTT). READ-ONLY in-process snapshots (dynamic imports: no dispatch path loaded
+   * at module load). Admin only.
+   */
+  crossReplicaChannels: protectedProcedure
+    .use(requirePermission("admin_system", "canView"))
+    .query(async () => {
+      const { otStopEpochSyncStatus } = await import("../services/ot/otStopEpochSync");
+      const { deviceOwnerListenerStatus } = await import("../services/robot/deviceOwnershipService");
+      return { otStopEpoch: otStopEpochSyncStatus(), deviceOwner: deviceOwnerListenerStatus() };
+    }),
 });

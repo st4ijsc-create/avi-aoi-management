@@ -712,7 +712,17 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // `robot.requestMotionLock` (mutation, protectedProcedure + machine_control/canEdit — the same chain as its robotRouter siblings
 // robot.disableAutomation / robot.clearMotionLock) ⇒ D like them. Measured with this scanner (before = this pin; after = D 1143 ·
 // tong 2313).
-const GHIM = { A: 333, B: 8, C: 472, D: 1143, S: 357, tong: 2313 } as const;
+// ★★★ 2026-10-14 (doc 81 Đợt 12 integration) — **C 472 → 474 · D 1143 → 1144 · tong 2313 → 2316 · A/B/S unchanged.** Three NEW
+// procedures since the last pin (`6c2a48ac3`), found by `git diff 6c2a48ac3 -- server` and measured with this scanner (C 474 ·
+// D 1144 · tong 2316):
+//   • `systemHealth.wormTableSizes` (query, Đợt 11 task G `bfb4547da` — left unpinned then): `admin_system:canView`; reads pg_class
+//     size / row estimates of the fixed WORM table list only (no tenant rows) ⇒ C;
+//   • `systemHealth.crossReplicaChannels` (query, Đợt 12 P fix 1 M-3): `admin_system:canView`; in-process status snapshots of the
+//     two pg channel listeners (no table, never the key) ⇒ C;
+//   • `edgeRuntime.retireNode` (mutation, Đợt 12 O `f0a7c6f0a`): `adminProcedure` + `machine_control:canDelete`; the service
+//     re-checks an active admin in the DB, locks the node FOR NO KEY UPDATE (5 s lock_timeout) and refuses while it still owns
+//     devices / pending STOPs / runs; audited ⇒ D (edge nodes carry no factory scope of a caller). No baseline row added.
+const GHIM = { A: 333, B: 8, C: 474, D: 1144, S: 357, tong: 2316 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

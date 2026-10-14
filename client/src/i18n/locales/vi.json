@@ -3685,6 +3685,7 @@
       "queued-for-shared-ledger": "Bản sao đọc đã sạch NGAY (dư địa thấy đúng ngay lập tức), nhưng hàng chỉ thật sự RỜI DATABASE ở lượt đồng bộ sổ chung KẾ TIẾP — xem unsyncedWritesAfter để biết còn bao nhiêu ý định ghi chưa gửi."
     },
     "entity": {
+      "edgeNode": "node biên (edge)",
       "mqttClient": "thiết bị MQTT",
       "abTestExperiment": "thử nghiệm A/B",
       "adapter": "bộ chuyển đổi thiết bị",
@@ -3866,6 +3867,7 @@
       "lateWriteResult": "kết quả ghi đến muộn"
     },
     "operation": {
+      "retireEdgeNode": "cho node biên ngừng hoạt động vĩnh viễn",
       "updateApiKey": "cập nhật khoá API",
       "changeApiKeyHolder": "đổi người được cấp khoá API",
       "softwareStop": "gửi lệnh dừng phần mềm",
@@ -4298,6 +4300,9 @@
       "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
     },
     "reason": {
+      "edgeNodeBusy": "Node đang được một thao tác khác thay đổi (gán thiết bị, xoay vòng thông tin xác thực…). Chưa có gì thay đổi — thử lại sau giây lát.",
+      "edgeNodeRetireBlocked": "Node vẫn còn: {{blockers}}. Trả thiết bị về trung tâm, chờ các lệnh DỪNG / yêu cầu khoá được xác nhận (hoặc xử lý), kết thúc các lượt chạy, rồi thử lại. Chưa có gì thay đổi.",
+      "edgeNodeAlreadyRetired": "Node này đã ngừng hoạt động vĩnh viễn.",
       "reservedSettingKey": "Cài đặt này chỉ đổi được ở màn riêng của nó (công tắc tự động hoá robot: màn Điều khiển Robot) — cần lý do và được ghi kiểm toán.",
       "stopPinTagNotWritable": "Chỉ ghim giá trị dừng cho tag đang BẬT và cho phép GHI. Bật ghi (writable) và bật tag trước, rồi ghim lại.",
       "stopPinTypeMismatch": "Giá trị dừng không đúng kiểu dữ liệu của tag: tag bool cần true/false (hoặc 1/0), tag int cần số nguyên, tag float cần số, tag string cần chuỗi; tag json không ghim được.",
@@ -4316,6 +4321,8 @@
       "factoryRequired": "Bạn thuộc nhiều nhà máy — chọn chuyền, trạm hoặc nhà máy cho phân công này (nếu không, chính bạn cũng không thấy lại được nó).",
       "secretReentryRequired": "Bạn vừa đổi {{field}} — tức nơi gửi hoặc cách bảo vệ mật khẩu đã lưu — nên hệ thống không dùng lại mật khẩu cũ. Hãy nhập lại mật khẩu/bí mật rồi lưu; chưa có gì được thay đổi.",
       "motionLockUnsupported": "Driver của hãng này dùng kết nối một lần cho mỗi lệnh nên không có khoá chuyển động; không có gì để gỡ.",
+      "clearNotApplied": "Khoá chuyển động CHƯA được gỡ: CSDL từ chối hoặc hết thời gian khi gỡ (đã hoàn tác). Robot vẫn bị khoá; hãy thử lại.",
+      "clearOutcomeUnknown": "Không biết thao tác gỡ khoá đã có hiệu lực hay chưa (CSDL không trả lời kịp). Hãy tải lại trạng thái robot trước khi làm tiếp.",
       "motionLockChanged": "Khoá chuyển động đã thay đổi trong lúc bạn xác nhận (có lần mất kết nối mới). Không gỡ gì cả; hãy đọc lại trạng thái robot rồi xác nhận lại.",
       "edgeCommandNotQueued": "Robot này thuộc một nút edge; lệnh không xếp được vào hàng lệnh của nút đó (chủ sở hữu vừa đổi, hoặc cơ sở dữ liệu / migration 0374 không sẵn). Chưa có gì được gỡ; hãy thử lại sau.",
       "stopOnly": "Đường STOP khẩn chỉ nhận lệnh dừng (stop / abort); lệnh chuyển động phải đi qua bảng điều khiển thường. Chưa có gì được gửi.",
@@ -14284,6 +14291,7 @@
     "deleteDesc": "Watcher của thư mục này sẽ dừng. File đã archive và sổ cái xử lý được giữ nguyên."
   },
   "edgeNodes": {
+    "retired": "Đã ngừng vĩnh viễn",
     "title": "Node biên (Edge)",
     "subtitle": "Đăng ký & theo dõi các runtime điều phối biên gần dây chuyền",
     "noPermission": "Bạn không có quyền xem node biên.",
@@ -14942,9 +14950,13 @@
       "reasonPlaceholder": "Ví dụ: đã kiểm tra tại chỗ, robot đứng yên, khu vực trống",
       "confirm": "Xác nhận gỡ khoá",
       "cleared": "Đã gỡ khoá chuyển động cho {{code}}",
+      "tipPersisted": "Chuyển động bị khoá ({{reason}}, từ {{since}}). Khoá này được lưu trong CSDL: lệnh DỪNG không gỡ nó; chỉ thao tác gỡ khoá có kiểm soát (có lý do, ghi kiểm toán) mới mở lại.",
+      "inactiveCannotClear": "Robot chưa được cổng robot nạp (không kết nối được — hệ thống tự thử lại), nên chưa gỡ khoá được; gỡ được ngay khi robot được nạp.",
       "notLocked": "Robot {{code}} không bị khoá chuyển động",
       "reason": {
-        "persistUnknown": "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn"
+        "persistUnknown": "không đọc được khoá đã lưu lúc khởi động (CSDL không trả lời) — khoá để an toàn",
+        "ownerChanged": "đổi quyền sở hữu (trả về từ nút biên) — một lệnh DỪNG được robot xác nhận hoặc thao tác gỡ khoá có kiểm soát sẽ gỡ",
+        "ownerChangedPersisted": "đổi quyền sở hữu (trả về từ nút biên) — lệnh DỪNG không gỡ được; chỉ thao tác gỡ khoá có kiểm soát, có lý do, mới gỡ"
       }
     }
   },

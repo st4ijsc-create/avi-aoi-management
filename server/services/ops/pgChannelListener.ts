@@ -19,6 +19,7 @@
 import { randomUUID } from "node:crypto";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { getDb, getNotifyClient } from "../../db/connection";
+import { DbUnavailableError } from "../../_core/dbErrors";
 
 export interface PgListenClient {
   listen(channel: string, fn: (payload: string) => void, onlisten?: () => void): Promise<{ unlisten: () => Promise<unknown> }>;
@@ -79,7 +80,7 @@ const isHeartbeatShaped = (raw: string): boolean => {
 export async function notifyBounded(client: () => Promise<PgNotifyClient | null> | PgNotifyClient | null, channel: string, payload: string, ms = CHANNEL_NOTIFY_DEADLINE_MS): Promise<{ ok: boolean; error?: string }> {
   try {
     const c = await client();
-    if (!c) throw new Error("no NOTIFY-capable client");
+    if (!c) throw new DbUnavailableError("no NOTIFY-capable client"); // doc 81 dot 12 integration (rawErrorCensus F3): the DB-unavailable class, message verbatim
     await withDeadline(Promise.resolve(c.notify(channel, payload)), ms, `NOTIFY ${channel}`);
     return { ok: true };
   } catch (e) {
@@ -227,7 +228,7 @@ export async function startChannelListener(o: {
     let listens = 0;
     const p = (async () => {
       const c = await listenClient();
-      if (!c) throw new Error("no LISTEN-capable client");
+      if (!c) throw new DbUnavailableError("no LISTEN-capable client"); // as deviceOwnershipService did before R-12-b
       return c.listen(
         o.channel,
         (payload: string) => {

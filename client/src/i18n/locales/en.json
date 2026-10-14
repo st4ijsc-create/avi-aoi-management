@@ -3685,6 +3685,7 @@
       "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
+      "edgeNode": "edge node",
       "mqttClient": "MQTT device",
       "abTestExperiment": "A/B test experiment",
       "adapter": "device adapter",
@@ -3866,6 +3867,7 @@
       "lateWriteResult": "late write result"
     },
     "operation": {
+      "retireEdgeNode": "retire the edge node",
       "updateApiKey": "update the API key",
       "changeApiKeyHolder": "change who the API key is issued to",
       "softwareStop": "send the software stop",
@@ -4306,6 +4308,9 @@
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
+      "edgeNodeBusy": "The node is being changed by another operation (a device assignment, a credential rotation…). Nothing was changed — retry in a moment.",
+      "edgeNodeRetireBlocked": "The node still has: {{blockers}}. Release its devices to central, let its STOPs / lock requests be acknowledged (or resolved) and finish its runs, then retry. Nothing was changed.",
+      "edgeNodeAlreadyRetired": "This node is already retired.",
       "reservedSettingKey": "This setting can only be changed on its own screen (robot automation switch: Robot Control) — it needs a reason and is audited.",
       "stopPinTagNotWritable": "A stop value can only be pinned on a tag that is ENABLED and WRITABLE. Make the tag writable and enabled first, then pin it again.",
       "stopPinTypeMismatch": "The stop value does not match the tag data type: a bool tag needs true/false (or 1/0), an int tag a whole number, a float tag a number, a string tag text; json tags cannot be pinned.",
@@ -4324,6 +4329,8 @@
       "factoryRequired": "You belong to more than one factory — pick a line, station or factory for this assignment (otherwise not even you could see it again).",
       "secretReentryRequired": "You changed {{field}} — where or how the stored secret is sent — so the saved password/secret is not reused. Re-enter the password/secret and save again; nothing has been changed yet.",
       "motionLockUnsupported": "This vendor's driver opens one connection per command and has no motion lock; there is nothing to clear.",
+      "clearNotApplied": "The motion lock was NOT cleared: the database refused or timed out the clear (rolled back). The robot is still locked; try again.",
+      "clearOutcomeUnknown": "It is unknown whether the clear took effect (the database did not answer in time). Reload the robot state before doing anything else.",
       "motionLockChanged": "The motion lock changed while you were confirming (a new link loss). Nothing was cleared; re-read the robot state and confirm again.",
       "edgeCommandNotQueued": "This robot is owned by an edge node, and the command could not be queued for that node (the owner just changed, or the database / migration 0374 is unavailable). Nothing was cleared; try again.",
       "stopOnly": "The emergency STOP route accepts stop verbs only (stop / abort); a motion command must go through the normal console. Nothing was sent.",
@@ -14304,6 +14311,7 @@
     "deleteDesc": "The watcher for this folder stops. Archived files and the processing ledger are kept."
   },
   "edgeNodes": {
+    "retired": "Retired",
     "title": "Edge Nodes",
     "subtitle": "Register & monitor edge coordination runtimes near the line",
     "noPermission": "You do not have permission to view edge nodes.",
@@ -14962,9 +14970,13 @@
       "reasonPlaceholder": "e.g. checked on site, robot stationary, area clear",
       "confirm": "Confirm clear",
       "cleared": "Motion lock cleared on {{code}}",
+      "tipPersisted": "Motion is locked ({{reason}}, since {{since}}). This lock is held in the database: a STOP does not clear it; only the controlled clear (with a reason, audited) re-enables motion.",
+      "inactiveCannotClear": "This robot is not loaded by the robot gateway (it could not connect — the system keeps retrying), so its lock cannot be cleared yet; it can be as soon as the robot is loaded.",
       "notLocked": "Robot {{code}} is not motion-locked",
       "reason": {
-        "persistUnknown": "the saved lock could not be read at startup (database did not answer) — locked to be safe"
+        "persistUnknown": "the saved lock could not be read at startup (database did not answer) — locked to be safe",
+        "ownerChanged": "ownership changed (returned from an edge node) — a STOP confirmed by the robot or the controlled clear removes it",
+        "ownerChangedPersisted": "ownership changed (returned from an edge node) — a STOP does not remove it; only the controlled clear with a reason does"
       }
     }
   },

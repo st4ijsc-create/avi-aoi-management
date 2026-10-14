@@ -392,7 +392,14 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   hành, design §2.11). `module = null` như các anh em robotRouter — không phải bề mặt AI; mọi SKU không đổi. Trùng
  *   `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2313, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-14 doc 81 Đợt 12 integration — **tong 2313 → 2316, GHIM LẠI** (đo trước, đọc cổng từng thủ tục mới, rồi ghim). Ba thủ
+ *   tục: `systemHealth.wormTableSizes` (Đợt 11 G) + `systemHealth.crossReplicaChannels` (Đợt 12 P) — `protectedProcedure` +
+ *   `requirePermission("admin_system","canView")`, chỉ đọc; `edgeRuntime.retireNode` (Đợt 12 O) — `adminProcedure` +
+ *   `machine_control:canDelete`. Không thủ tục nào là bề mặt AI; beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong và mọi SKU KHÔNG
+ *   đổi. `tong` 2316 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2316, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

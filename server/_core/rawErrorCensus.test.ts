@@ -149,6 +149,13 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   hợp đồng) — KHÔNG tới tRPC (trả lời HTTP của nút biên / tiến trình biên), nên theo đúng luật (a)+(b): không đẻ mã appError,
  *   đổi sang lớp có mã `EdgeContractError` (edgeSigning.ts; `code` theo họ), message GIỮ NGUYÊN VĂN, mọi nơi bắt vẫn thấy một
  *   `Error`. ĐO sau vá ra **462** — 478 − 16 = 462, không nới, không dư.
+ *
+ * 462 GIỮ NGUYÊN (2026-10-14, doc 81 Đợt 12 integration): ĐO trên cây tích hợp ra **465**. +3 sau lượt tích hợp Đợt 10
+ *   (`ef427b0fa`): `services/ops/pgChannelListener.ts` ×2 (Đợt 12 P fix 1 `57971b2fb`: "no NOTIFY-/LISTEN-capable client") và
+ *   `services/robot/robotMotionLockStore.ts` ×1 (Đợt 10 R-10-bu `6de17bb6b`: "no active admin / supervisor", bắt ngay bên dưới).
+ *   (`__edgeE2eHarness.dot10` ×17 là chỉ-test, không đếm.) Cả ba bị bắt nội bộ, KHÔNG tới tRPC ⇒ luật (a)+(b): hai chỗ đầu là họ
+ *   "DB không sẵn sàng" ⇒ `DbUnavailableError` (đúng lớp `deviceOwnershipService` dùng cho cùng câu trước R-12-b); chỗ thứ ba ⇒
+ *   lớp có mã cục bộ `NoAlertRecipientError`. Message GIỮ NGUYÊN VĂN. ĐO sau vá ra **462** — 465 − 3 = 462, không nới, không dư.
  */
 const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 462;
 
