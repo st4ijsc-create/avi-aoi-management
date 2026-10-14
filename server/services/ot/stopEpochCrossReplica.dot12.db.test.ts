@@ -88,10 +88,12 @@ let sql: ReturnType<typeof postgres>;
 let A: Replica;
 let B: Replica;
 let adapterId = 0;
+/** doc 81 Đợt 12 final fix wave (R-12-e I-1) — a second adapter with NO stop pin at all (only `w1`): the I-2 positive control */
+let adapterNoPins = 0;
 const device = { regs: new Map<string, unknown>(), log: [] as string[] };
 let seq = 0;
 
-async function prep(commandType: string, writes: Array<{ tagKey: string; value: unknown }>) {
+async function prep(commandType: string, writes: Array<{ tagKey: string; value: unknown }>, onAdapter: number = adapterId) {
   const id = `${DAU}-a-${++seq}`;
   const { aiPendingActions } = await import("../../../drizzle/schema");
   const { otPayloadHash, withOtPayloadHash } = await import("./otActionBinding");
@@ -103,19 +105,19 @@ async function prep(commandType: string, writes: Array<{ tagKey: string; value: 
     userId: OWNER,
     userRole: "engineer",
     summary: `${DAU} cross-replica stop epoch`,
-    previewJson: withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool: TOOL, adapterId, machineId: MACHINE, commandType, writes })),
+    previewJson: withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool: TOOL, adapterId: onAdapter, machineId: MACHINE, commandType, writes })),
     status: "confirmed",
     idempotencyKey: `${id}-idem`,
     expiresAt: new Date(Date.now() + 3_600_000),
   });
-  return { adapterId, machineId: MACHINE, commandType, writes, triggeredBy: { kind: "hitl" as const, actionId: id, tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER }, idempotencyKey: `${DAU}-k-${++seq}` };
+  return { adapterId: onAdapter, machineId: MACHINE, commandType, writes, triggeredBy: { kind: "hitl" as const, actionId: id, tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER }, idempotencyKey: `${DAU}-k-${++seq}` };
 }
-function holdGatesOf(tagKey: string): { entered: Promise<void>; release: () => void } {
+function holdGatesOf(tagKey: string, onAdapter: number = adapterId): { entered: Promise<void>; release: () => void } {
   let entered!: () => void;
   let release!: () => void;
   const e = new Promise<void>((r) => (entered = r));
   const rel = new Promise<void>((r) => (release = r));
-  H.hold = { adapterId, tagKey, entered, release: rel };
+  H.hold = { adapterId: onAdapter, tagKey, entered, release: rel };
   return { entered: e, release };
 }
 function setEnv(flag: boolean) {
@@ -156,17 +158,22 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
       { adapterId, tagKey: TAG_W, address: "holding:40001", dataType: "int", writable: true },
     ]);
     await sql`UPDATE device_tags SET stop_value = ${sql.json(0)}, stop_pinned_by = ${String(OWNER)}, stop_pinned_at = now() WHERE "adapterId" = ${adapterId} AND "tagKey" = ${TAG_STOP}`;
-    H.drivers.set(adapterId, {
-      isConnected: () => true,
-      writeTags: async (w: Array<{ tagKey: string; value: unknown }>) => {
-        for (const v of w) device.log.push(`${v.tagKey}=${String(v.value)}`);
-        for (const v of w) device.regs.set(v.tagKey, v.value);
-        return w.map((v) => ({ tagKey: v.tagKey, ok: true }));
-      },
-      readTags: async () => [],
-    });
-    const [fresh] = await x.select().from(deviceAdapters).where(eq(deviceAdapters.id, adapterId));
-    H.fps.set(adapterId, adapterTargetFingerprint(fresh!));
+    const [rowNp] = await x.insert(deviceAdapters).values({ code: `${DAU}-NP`, name: `${DAU} no pins`, protocol: "modbus", endpoint: "tcp://127.0.0.1:2", isEnabled: true, machineId: MACHINE }).returning();
+    adapterNoPins = rowNp!.id;
+    await x.insert(deviceTags).values([{ adapterId: adapterNoPins, tagKey: TAG_W, address: "holding:40001", dataType: "int", writable: true }]);
+    for (const id of [adapterId, adapterNoPins]) {
+      H.drivers.set(id, {
+        isConnected: () => true,
+        writeTags: async (w: Array<{ tagKey: string; value: unknown }>) => {
+          for (const v of w) device.log.push(`${id === adapterNoPins ? "np:" : ""}${v.tagKey}=${String(v.value)}`);
+          for (const v of w) device.regs.set(v.tagKey, v.value);
+          return w.map((v) => ({ tagKey: v.tagKey, ok: true }));
+        },
+        readTags: async () => [],
+      });
+      const [fresh] = await x.select().from(deviceAdapters).where(eq(deviceAdapters.id, id));
+      H.fps.set(id, adapterTargetFingerprint(fresh!));
+    }
     await startSync(A);
     await startSync(B);
   });
@@ -177,8 +184,10 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     H.fps.clear();
     if (sql) {
       await sql`DELETE FROM ai_pending_actions WHERE id LIKE ${DAU + "%"}`;
-      await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId}`;
-      await sql`DELETE FROM device_adapters WHERE id = ${adapterId}`.catch(() => undefined); // command_log rows (WORM) may pin it
+      for (const id of [adapterId, adapterNoPins].filter((v) => v > 0)) {
+        await sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`;
+        await sql`DELETE FROM device_adapters WHERE id = ${id}`.catch(() => undefined); // command_log rows (WORM) may pin it
+      }
       await sql.end();
     }
     for (const r of [A, B]) {
@@ -293,43 +302,55 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     console.log(`[task P] NOTIFY by role ${who[0]?.u} (superuser ${who[0]?.su}, createrole ${who[0]?.cr}) delivered; only the signed one applied`);
   });
 
-  it("★ I-2 (L-7): a forged / peer NOTIFY cannot deny a STOP on an adapter WITHOUT pins — the unverified stop in B's gates is written", async () => {
-    setEnv(false);
-    const stop = await prep("stop", [{ tagKey: TAG_W, value: 0 }]); // stop-typed, w1 unpinned ⇒ unverified: the only STOP there is
-    const h = holdGatesOf(TAG_W);
-    const pStop = B.cd.dispatch(stop);
-    await h.entered;
-    const e0 = B.dw.adapterStopEpoch(adapterId);
-    // a forger: the round-1 unsigned shape, and a correctly SIGNED message (a forger holding the key, or a real peer STOP)
-    await sql`SELECT pg_notify(${CHANNEL}, ${JSON.stringify({ v: 1, kind: "stop", origin: "forged-origin-1", adapterId, epoch: 1, at: Date.now() })})`;
-    if (typeof B.sync.signStopEpochMessage === "function") {
+  for (const flag of [false, true]) {
+    it(`[flag ${flag ? "ON" : "OFF"}] ★ I-2 (L-7) positive control (R-12-e I-1): a forged / peer NOTIFY cannot deny a STOP on an adapter WITHOUT pins — the unverified stop in B's gates is written`, async () => {
+      setEnv(flag);
+      const stop = await prep("stop", [{ tagKey: TAG_W, value: 0 }], adapterNoPins); // stop-typed, the adapter has NO pin ⇒ unverified: the only STOP there is
+      const h = holdGatesOf(TAG_W, adapterNoPins);
+      const pStop = B.cd.dispatch(stop);
+      await h.entered;
+      const e0 = B.dw.adapterStopEpoch(adapterNoPins);
+      // a forger: the round-1 unsigned shape, and a correctly SIGNED message (a forger holding the key, or a pin-edit race on a peer)
+      await sql`SELECT pg_notify(${CHANNEL}, ${JSON.stringify({ v: 1, kind: "stop", origin: "forged-origin-1", adapterId: adapterNoPins, epoch: 1, at: Date.now() })})`;
       const key = (B.sync.resolveStopEpochKey(HMAC_ENV) as { key: Buffer }).key;
-      await sql`SELECT pg_notify(${CHANNEL}, ${JSON.stringify(B.sync.signStopEpochMessage(key, { replicaId: "forger-replica-02", seq: 1, issuedAt: Date.now(), adapterId }))})`;
-    }
-    await until(() => B.dw.adapterStopEpoch(adapterId) !== e0, 2_000);
-    await new Promise((r) => setTimeout(r, 100));
-    h.release();
-    const r = await pStop;
-    expect(device.log).toEqual([`${TAG_W}=0`]); // the STOP reached the device
-    expect(r.reason).not.toBe("SUPERSEDED_BY_STOP");
-    expect(r.ok).toBe(true);
-  });
+      await sql`SELECT pg_notify(${CHANNEL}, ${JSON.stringify(B.sync.signStopEpochMessage(key, { replicaId: `forger-replica-0${flag ? 3 : 2}`, seq: 1, issuedAt: Date.now(), adapterId: adapterNoPins }))})`;
+      expect(await until(() => B.dw.adapterStopEpoch(adapterNoPins) !== e0, 3_000)).toBe(true); // the signed peer move DID land
+      h.release();
+      const r = await pStop;
+      expect(device.log).toEqual([`np:${TAG_W}=0`]); // the STOP reached the device
+      expect(r.reason).not.toBe("SUPERSEDED_BY_STOP");
+      expect(r.ok).toBe(true);
+    });
+  }
 
-  it("★ scan 'authorization-logic': a stop-LABELLED command that re-energises (writes the pinned stop tag with a non-pin value) in B's gates is SUPERSEDED by A's verified STOP — the label buys no exemption", async () => {
-    setEnv(false);
-    const fake = await prep("stop", [{ tagKey: TAG_STOP, value: 77 }]); // labelled stop, content: speed_sp = 77 (pin is 0)
-    const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);
-    const h = holdGatesOf(TAG_STOP);
-    const pFake = B.cd.dispatch(fake);
-    await h.entered;
-    const e0 = B.dw.adapterStopEpoch(adapterId);
-    expect(await A.cd.dispatch(stop)).toMatchObject({ ok: true, pinnedStop: true });
-    await until(() => B.dw.adapterStopEpoch(adapterId) !== e0, 3_000);
-    h.release();
-    const r = await pFake;
-    expect(device.log).toEqual([`${TAG_STOP}=0`]); // nothing re-energised after A's STOP
-    expect(r).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
-  });
+  // doc 81 Đợt 12 final fix wave (R-12-e I-1, scan #113) — the three rows of the final review's table, through the REAL dispatcher of
+  // both replicas: on an adapter that HAS pins, a stop-LABELLED command that is not a verified STOP (an unpinned tag, the pin value
+  // plus an unpinned tag, a non-pin value) is SUPERSEDED by a peer's verified STOP exactly as by a local one. At 05f3be445 the first
+  // two rows were exempt (overridesStopPin === false) and were written AFTER A's STOP.
+  const rows113: Array<[string, Array<{ tagKey: string; value: unknown }>]> = [
+    ["{w1:1} (an unpinned tag only)", [{ tagKey: TAG_W, value: 1 }]],
+    ["{speed_sp:0, w1:1} (the pin value plus an unpinned tag)", [{ tagKey: TAG_STOP, value: 0 }, { tagKey: TAG_W, value: 1 }]],
+    ["{speed_sp:77} (a non-pin value to the pinned tag)", [{ tagKey: TAG_STOP, value: 77 }]],
+  ];
+  for (const flag of [false, true]) {
+    for (const [label, writes] of rows113) {
+      it(`[flag ${flag ? "ON" : "OFF"}] ★ I-1 (scan #113): stop-labelled ${label} on a PINNED adapter, in B's gates, is SUPERSEDED by A's verified STOP — nothing written after it`, async () => {
+        setEnv(flag);
+        const fake = await prep("stop", writes);
+        const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);
+        const h = holdGatesOf(writes[writes.length - 1]!.tagKey);
+        const pFake = B.cd.dispatch(fake);
+        await h.entered;
+        const e0 = B.dw.adapterStopEpoch(adapterId);
+        expect(await A.cd.dispatch(stop)).toMatchObject({ ok: true, pinnedStop: true });
+        expect(await until(() => B.dw.adapterStopEpoch(adapterId) !== e0, 3_000)).toBe(true);
+        h.release();
+        const r = await pFake;
+        expect(device.log).toEqual([`${TAG_STOP}=0`]); // L-7: nothing written after A's STOP
+        expect(r).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+      });
+    }
+  }
 
   it("control: a write whose gates begin AFTER B learned of A's STOP is written (the newer intent)", async () => {
     setEnv(false);

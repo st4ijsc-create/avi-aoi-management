@@ -303,8 +303,9 @@ export function bumpAdapterStopEpoch(adapterId: number, stop?: Record<string, un
 /**
  * doc 81 Đợt 12 task P fix 1 — PEER epochs live in their OWN map (another central replica SENT a verified STOP), apart from the
  * LOCAL map above (STOPs sent by this process, bounded by the real adapter count):
- *   • I-2 (L-7): a peer move NEVER supersedes a stop-typed command (verified or not) — stopIssuedSince(…, {localOnly}) for those;
- *     it cancels only non-STOP writes.
+ *   • I-2 (L-7): a peer move never supersedes a stop-typed command on an adapter WITHOUT stop pins (the only software STOP there) —
+ *     stopIssuedSince(…, {localOnly}) for those; final fix wave R-12-e I-1: on an adapter WITH pins it cancels a stop-labelled command
+ *     that is not a verified STOP like any write (a verified STOP never records an epoch, so it is never cancelled).
  *   • I-3 (scan #111): the peer map is CAPPED without failing open — a new adapter always gets its entry; when full, the least
  *     recently moved entry is EVICTED and the PEER FLOOR rises to its epoch: an adapter without a peer entry reads the floor, so an
  *     eviction can only move an epoch FORWARD (the cancel direction), never back, and a real peer STOP is never dropped.
@@ -358,7 +359,8 @@ export function isStoppedBeforeWrite(x: unknown): x is StoppedBeforeWrite {
 
 /**
  * R-11-d — null when no STOP was issued for the adapter since `epochAtGates`, else the cancellation (the latest STOP named).
- * Task P fix 1 (I-2, L-7): `localOnly` (a stop-typed command) — only a STOP SENT BY THIS PROCESS counts; a peer move never denies a STOP.
+ * Task P fix 1 (I-2, L-7): `localOnly` (a stop-typed command on an adapter without pins, R-12-e I-1) — only a STOP SENT BY THIS
+ * PROCESS counts; a peer move never denies the only software STOP of an unpinned adapter.
  */
 export function stopIssuedSince(adapterId: number, epochAtGates: number, opts?: { localOnly?: boolean }): StoppedBeforeWrite | null {
   const local = adapterStopEpochs.get(adapterId) ?? null;
@@ -1075,16 +1077,18 @@ export function executeOtDeviceWriteUnlessStopped(
   a: Parameters<typeof executeOtDeviceWrite>[0] & {
     stopEpochAtGates: number | null;
     /**
-     * doc 81 Đợt 12 task P fix 1 (+ scan "authorization-logic") — the command's writes put a pinned stop tag to a NON-pin value
-     * (R-11-k 3 / R-11-m, computed by the caller from the adapter's pins). A stop-TYPED command is exempt from PEER moves (I-2: a peer
-     * never denies a STOP) only when this is explicitly false — classification by CONTENT, never by label (R-11-i): a "stop"-labelled
-     * command that re-energises a pinned stop tag is cancelled by a peer STOP like any write. Absent ⇒ not exempt.
+     * doc 81 Đợt 12 final fix wave (ruling R-12-e I-1, scan #113) — the adapter has NO stop pin at all (the caller read the adapter's
+     * pins and found none). A stop-TYPED command is exempt from PEER moves (I-2: a peer never denies the only software STOP there is)
+     * ONLY when this is explicitly true. On an adapter WITH pins a verified STOP exists, so a peer STOP cancels a stop-labelled command
+     * that is not a verified STOP (an unpinned tag, the pin value plus an unpinned tag, a non-pin value) exactly as a local STOP does —
+     * the replica the load balancer picked changes nothing. Absent (a pin read failure, the edge) ⇒ not exempt.
+     * (Was, P fix 1 + scan #112: exempt when `overridesStopPin === false` — still decided by the label for writes that touch no pin.)
      */
-    overridesStopPin?: boolean;
+    adapterHasNoStopPins?: boolean;
   },
 ): Promise<ExecutedWrite | StoppedBeforeWrite> {
   if (a.stopEpochAtGates !== null) {
-    const localOnly = a.stopTyped && a.overridesStopPin === false; // I-2 — only a real (non-re-energising) stop ignores peer moves
+    const localOnly = a.stopTyped && a.adapterHasNoStopPins === true; // I-2 / R-12-e I-1 — peer moves ignored only where no pin exists
     const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates, { localOnly });
     if (stopped) return Promise.resolve(stopped);
   }

@@ -735,6 +735,28 @@ export function stopEpochAtGatesFor(
   return opts.epochAtGates;
 }
 
+/** doc 81 Đợt 12 final fix wave (R-12-e I-1) — bound of the adapter-wide pin read deciding the peer-move exemption */
+export const PEER_EXEMPT_PIN_READ_MS = 1_000;
+/**
+ * doc 81 Đợt 12 final fix wave (ruling R-12-e I-1, scan #113) — true ONLY when the adapter's pins were read and there are none. A read
+ * error or no answer within PEER_EXEMPT_PIN_READ_MS ⇒ false (not exempt: fail toward cancelling on a peer STOP). Never throws.
+ */
+export async function adapterHasNoStopPinsBounded(db: Parameters<typeof loadStopPins>[0], adapterId: number, ms = PEER_EXEMPT_PIN_READ_MS): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<null>((r) => {
+      timer = setTimeout(() => r(null), ms);
+    });
+    const pins = await Promise.race([loadStopPins(db, adapterId), timeout]);
+    return pins !== null && pins.length === 0;
+  } catch (err) {
+    console.warn(`[Dispatch] stop-pin read for the peer-move exemption failed (adapter ${adapterId}) — not exempt:`, (err as Error)?.message || err);
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * doc 81 Đợt 11 final fix wave (R-11-k 3) — does this command write a PINNED stop tag with a value other than its pin (by the same
  * match rule as the pinned stop)? e.g. a reduce_speed interlock writing speed_sp = 30 where speed_sp's stop pin is 0. Pure.
@@ -1199,6 +1221,10 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // by a verified STOP (an ordinary write records its epoch anyway)
   const overridesStopPin = writesOverrideStopPin(input.writes, stopPinsFromTagRows(step3TagRows));
   const stopEpochAtGates = stopEpochAtGatesFor(input, { trueStop, epochAtGates, overridesStopPin });
+  // doc 81 Đợt 12 final fix wave (ruling R-12-e I-1, scan #113) — the PEER-move exemption of a stop-typed command that is not a verified
+  // STOP is decided by the ADAPTER's pins (all of them, not only the written tags): none ⇒ exempt (I-2: a peer never denies the only
+  // software STOP there is); any pin, or the read failing / not answering ⇒ not exempt (a peer STOP cancels it as a local one does).
+  const adapterHasNoStopPins = unverifiedStop && stopEpochAtGates !== null ? await adapterHasNoStopPinsBounded(db, input.adapterId) : false;
 
   // ── final wave F7 (final review M5) — the check-then-act gap. The safety preflight ran BEFORE the write-ahead
   //    reservation and the queue; a write queued behind a slow / timed-out one (B3 hold: up to ~11.25 s) reached the
@@ -1262,7 +1288,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       stopTyped: isStopCommandType(input.commandType),
       ledger: { intentIds: deviceLedgerIntents, confirmedBy: ledgerConfirmer },
       stopEpochAtGates,
-      overridesStopPin, // doc 81 Đợt 12 P fix 1 (scan "authorization-logic") — content, not label, decides the peer-move exemption
+      adapterHasNoStopPins, // doc 81 Đợt 12 final fix wave (R-12-e I-1) — only an adapter without pins exempts a stop from peer moves
       bumpStopEpoch: trueStop,
       onWriteAnswered: ctl?.writeAnswered, // R-11-o (M-2) — an identical STOP shares this write only until the device answered it
     });
