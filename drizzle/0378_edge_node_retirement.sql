@@ -9,11 +9,15 @@
 --   it cannot carry a terminal state. A retirement is three WRITE-ONCE columns instead, enforced HERE (not only in the app):
 --
 -- • edge_nodes."retiredAt" timestamptz, "retiredBy" integer (> 0), "retireReason" text (≥ 3 chars): all NULL or all set (CHECK).
--- • public.edge_node_retire_guard() — BEFORE UPDATE OR DELETE ON edge_nodes:
+-- • public.edge_node_retire_guard() — BEFORE INSERT OR UPDATE OR DELETE ON edge_nodes:
+--     – fix 1 (review O-R1): a node is never BORN retired — an INSERT that sets "retiredAt", "retiredBy" or "retireReason" is refused
+--       (else avi_app, which has INSERT on edge_nodes, could squat a code for good with a forged actor, even 'online');
 --     – RETIRING (retiredAt NULL → set): refused unless "retiredBy" is an ACTIVE ADMIN and the node has NOTHING left — no active
 --       credential, no robot / adapter it owns, no unacknowledged STOP (pending head, or a refused / failed one not resolved by a
 --       person), no unacknowledged lock / clear request, no non-terminal run (an edge assignment, or a legacy v1 delegation via
---       orchestration_runs."edgeNodeId"). The refusal NAMES every blocker (ids). The status is forced to 'offline'.
+--       orchestration_runs."edgeNodeId"). The refusal NAMES every blocker (ids). The status is forced to 'offline'; fix 1 (O-R2):
+--       "retiredAt" is stamped now() by the DB (any value written is replaced) and the SAME statement may not change "code",
+--       "factoryCode", "assignedLineCodes" or "protocolVersion" (a retirement never frees or moves the identity it freezes).
 --     – RETIRED: the three columns, "code", "factoryCode", "assignedLineCodes" and "protocolVersion" never change (never
 --       un-retired; its code is never freed for a re-registration); the status stays 'offline'. ("name" — a label — may change.)
 --     – a retired node is NEVER DELETED (the evidence that references it stays resolvable).
@@ -24,6 +28,12 @@
 --   Each reads the node row FOR SHARE: a retirement (which takes the row FOR NO KEY UPDATE) and any of these writes are
 --   SERIALISED — whichever commits second sees the other (a retirement re-checks its blockers in the guard above with a fresh
 --   snapshot; a write after the retirement sees "retiredAt"). Never a retired owner, never a credential of a retired node.
+--   fix 1 (O-R3) — EXCEPT a new CLAIM: it reads the node WITHOUT a lock. A claim is only ever made on a non-terminal run already
+--   assigned to the node, and such a run blocks the retirement anyway; a claim therefore never waits behind a retirement.
+-- STOP requests are serialised by the DEVICE row, not the node row (0374's request guard locks the device FOR SHARE and requires
+--   the node to own it NOW; a retirement requires the node to own no device): no STOP can be addressed to a node whose
+--   retirement passed this guard. Trust model (O-R7): the DB checks that "retiredBy" is an active admin; the app proves who that
+--   admin is (CLI: password / 2FA; tRPC: the session) — the same model as "revokedBy" and edge_stop_resolve(p_actor).
 --
 -- L-7: nothing here is on the STOP path. A STOP request's FK check on edge_nodes takes FOR KEY SHARE, which a retirement's FOR NO
 --   KEY UPDATE does not block (measured: edge-node-credential.retire.dot12.db.test.ts). A node with a pending STOP is NOT
@@ -36,6 +46,7 @@
 --   refused — R-3-g). Requires 0370 + 0374 (+ 0376 / 0377). Idempotent. Redefines no function of 0376 / 0377.
 -- ROLLBACK:
 --   DROP TRIGGER IF EXISTS trg_edge_nodes_retire_guard ON "edge_nodes"; DROP TRIGGER IF EXISTS trg_edge_nodes_retire_keep ON "edge_nodes";
+--   DROP TRIGGER IF EXISTS trg_edge_nodes_retire_born ON "edge_nodes";
 --   DROP TRIGGER IF EXISTS trg_edge_node_credentials_retired_ins ON "edge_node_credentials";
 --   DROP TRIGGER IF EXISTS trg_robots_edge_retired_ins ON "robots"; DROP TRIGGER IF EXISTS trg_robots_edge_retired_upd ON "robots";
 --   DROP TRIGGER IF EXISTS trg_adapters_edge_retired_ins ON "device_adapters"; DROP TRIGGER IF EXISTS trg_adapters_edge_retired_upd ON "device_adapters";
@@ -67,6 +78,14 @@ DECLARE
   blockers text[] := ARRAY[]::text[];
   ids text;
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    -- fix 1 (O-R1): never born retired — retirement happens only through the guarded UPDATE below
+    IF NEW."retiredAt" IS NOT NULL OR NEW."retiredBy" IS NOT NULL OR NEW."retireReason" IS NOT NULL THEN
+      RAISE EXCEPTION 'edge_nodes: node % cannot be created retired — a node is retired only by retiring it (edge-node-credential.ts retire-node)', NEW."code"
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
   IF TG_OP = 'DELETE' THEN
     IF OLD."retiredAt" IS NOT NULL THEN
       RAISE EXCEPTION 'edge_nodes: node % (id %) is retired — it is kept (evidence references it) and never deleted', OLD."code", OLD."id"
@@ -90,7 +109,12 @@ BEGIN
   IF NEW."retiredAt" IS NULL THEN
     RETURN NEW;
   END IF;
-  -- RETIRING now: a proven admin's id, and nothing left on the node
+  -- RETIRING now: a proven admin's id, the identity unchanged in this statement, and nothing left on the node
+  IF NEW."code" IS DISTINCT FROM OLD."code" OR NEW."factoryCode" IS DISTINCT FROM OLD."factoryCode"
+     OR NEW."assignedLineCodes" IS DISTINCT FROM OLD."assignedLineCodes" OR NEW."protocolVersion" IS DISTINCT FROM OLD."protocolVersion" THEN
+    RAISE EXCEPTION 'edge_nodes: node % (id %) — a retirement changes no code, factory, lines or protocol', OLD."code", OLD."id"
+      USING ERRCODE = 'check_violation';
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM public."users" u WHERE u."id" = NEW."retiredBy" AND u."role" = 'admin' AND u."isActive" IS NOT FALSE) THEN
     RAISE EXCEPTION 'edge_nodes: node % (id %) — retiredBy % is not an active admin', OLD."code", OLD."id", NEW."retiredBy" USING ERRCODE = 'check_violation';
   END IF;
@@ -125,6 +149,7 @@ BEGIN
       USING ERRCODE = 'check_violation';
   END IF;
   NEW."status" := 'offline';
+  NEW."retiredAt" := now(); -- fix 1 (O-R2): the DB's own time, never the writer's
   RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION public.edge_node_retire_guard() FROM PUBLIC;
@@ -134,6 +159,9 @@ CREATE TRIGGER trg_edge_nodes_retire_guard BEFORE UPDATE ON public."edge_nodes"
 DROP TRIGGER IF EXISTS trg_edge_nodes_retire_keep ON public."edge_nodes";
 CREATE TRIGGER trg_edge_nodes_retire_keep BEFORE DELETE ON public."edge_nodes"
   FOR EACH ROW EXECUTE FUNCTION public.edge_node_retire_guard();
+DROP TRIGGER IF EXISTS trg_edge_nodes_retire_born ON public."edge_nodes";
+CREATE TRIGGER trg_edge_nodes_retire_born BEFORE INSERT ON public."edge_nodes"
+  FOR EACH ROW EXECUTE FUNCTION public.edge_node_retire_guard();
 
 -- ══ nothing is given to a retired node ═════════════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION public.edge_node_refuse_retired_target() RETURNS trigger LANGUAGE plpgsql
@@ -142,8 +170,13 @@ DECLARE
   retired timestamptz;
   ncode text;
 BEGIN
-  -- FOR SHARE: serialised against a retirement of this node (FOR NO KEY UPDATE) — see the header
-  SELECT n."retiredAt", n."code" INTO retired, ncode FROM public."edge_nodes" n WHERE n."id" = NEW."edgeNodeId" FOR SHARE;
+  IF TG_OP = 'UPDATE' AND TG_TABLE_NAME = 'orchestration_run_edge_assignments' THEN
+    -- fix 1 (O-R3): a new CLAIM reads the node without a lock (its non-terminal run blocks a retirement anyway) — never waits
+    SELECT n."retiredAt", n."code" INTO retired, ncode FROM public."edge_nodes" n WHERE n."id" = NEW."edgeNodeId";
+  ELSE
+    -- FOR SHARE: serialised against a retirement of this node (FOR NO KEY UPDATE) — see the header
+    SELECT n."retiredAt", n."code" INTO retired, ncode FROM public."edge_nodes" n WHERE n."id" = NEW."edgeNodeId" FOR SHARE;
+  END IF;
   IF retired IS NOT NULL THEN
     RAISE EXCEPTION '%: edge node % (id %) is retired (since %) — it is given no credential, device, run or claim again',
       TG_TABLE_NAME, ncode, NEW."edgeNodeId", retired USING ERRCODE = 'check_violation';

@@ -384,6 +384,8 @@ export const orchestrationRouter = router({
         }
         // the same shape as startRun's own "not found" answer (a refused start, nothing created)
         if (n.kind === "none") return { ok: false as const, enabled: true, message: `Edge node "${input.edgeNodeCode}" not found.` };
+        // doc 81 Đợt 12 O fix 1 (O-R5) — a retired node is refused by name (nothing started; same result shape as "not found")
+        if (n.kind === "retired") return { ok: false as const, enabled: true, message: `Edge node "${input.edgeNodeCode}" was retired on ${n.retiredAt} — it is given no run; choose another node.` };
         edgeNodeId = n.id;
       }
       return startRun(input.workflowRef, input.params, toFoeUser(ctx.user), { workflowId: input.workflowId, ...(edgeNodeId !== undefined ? { edgeNodeId } : {}) });

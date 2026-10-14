@@ -120,6 +120,8 @@ export const edgeRuntimeRouter = router({
         // the blockers (ids, from the DB guard) travel as a param of their own; the message stays the full technical detail
         if (err.code === "retireBlocked") throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "retireEdgeNode", reason: "edgeNodeRetireBlocked", blockers: err.blockers ?? "" }, err.message);
         if (err.code === "nodeRetired") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "retireEdgeNode", reason: "edgeNodeAlreadyRetired" }, err.message);
+        // fix 1 (O-R3) — the node row was held by another change past the retirement's lock_timeout: retry
+        if (err.code === "nodeBusy") throw appError("CONFLICT", "OPERATION_FAILED", { operation: "retireEdgeNode", reason: "edgeNodeBusy" }, err.message);
         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "retireEdgeNode" }, err.message);
       }
     }),

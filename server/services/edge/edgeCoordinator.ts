@@ -180,8 +180,11 @@ export async function registerNode(input: RegisterNodeInput): Promise<EdgeResult
   }
 }
 
-/** List edge nodes (optionally by factory). Read — always safe (not flag-gated). */
-export async function listNodes(factoryCode?: string): Promise<EdgeNode[]> {
+/** doc 81 Đợt 12 O fix 1 (O-R4) — a listed node: status "retired" once retired (mig 0378), with its retiredAt (ISO; null = live). */
+export type ListedEdgeNode = Omit<EdgeNode, "status"> & { status: EdgeNode["status"] | "retired"; retiredAt: string | null };
+
+/** List edge nodes (optionally by factory). Read — always safe (not flag-gated). A retired node is listed as "retired". */
+export async function listNodes(factoryCode?: string): Promise<ListedEdgeNode[]> {
   try {
     const d = await getDb();
     if (!d) return [];
@@ -189,7 +192,23 @@ export async function listNodes(factoryCode?: string): Promise<EdgeNode[]> {
     const rows = factoryCode
       ? await q.where(eq(edgeNodes.factoryCode, factoryCode)).orderBy(desc(edgeNodes.updatedAt))
       : await q.orderBy(desc(edgeNodes.updatedAt));
-    return rows;
+    // the retired ones, read apart through to_jsonb (works with or without mig 0378; unreadable ⇒ none marked — the list stays)
+    const retired = new Map<number, string>();
+    try {
+      const { sql: rawSql } = await import("drizzle-orm");
+      const r = await (d as unknown as { execute: (x: unknown) => Promise<unknown> }).execute(
+        rawSql`SELECT n.id, to_jsonb(n) ->> 'retiredAt' AS "retiredAt" FROM public.edge_nodes n WHERE to_jsonb(n) ->> 'retiredAt' IS NOT NULL`,
+      );
+      for (const x of (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>) {
+        retired.set(Number(x.id), new Date(String(x.retiredAt)).toISOString());
+      }
+    } catch {
+      /* not readable here (no execute / DB error): nothing is marked retired */
+    }
+    return rows.map((node) => {
+      const at = retired.get(node.id) ?? null;
+      return { ...node, status: at ? ("retired" as const) : node.status, retiredAt: at };
+    });
   } catch {
     return [];
   }
@@ -250,7 +269,11 @@ export async function heartbeat(input: HeartbeatInput): Promise<EdgeResult<EdgeN
 /** doc 81 Đợt 12 O — when the node was retired (mig 0378; ISO), null = not retired (or 0378 missing — read via to_jsonb). */
 async function retiredAtOf(d: Awaited<ReturnType<typeof db>>, nodeId: number): Promise<string | null> {
   const { readNodeRetirement } = await import("./edgeNodeCredentials");
-  return (await readNodeRetirement(d as never, { id: nodeId }))?.retiredAt ?? null;
+  try {
+    return (await readNodeRetirement(d as never, { id: nodeId }))?.retiredAt ?? null;
+  } catch {
+    return null; // unreadable ⇒ the named refusal is skipped; the DB guards (mig 0378) still refuse every write to a retired node
+  }
 }
 
 /** doc 81 Đợt 10 — is the node on edge protocol v2 (edge_nodes."protocolVersion", mig 0373; column missing ⇒ v1)? */

@@ -296,7 +296,11 @@ mode 700, readable by central's service account.
    (`edge-device-owner.ts assign` answers `refused: … is retired`), a run assigned or delegated to it, a new claim, un-retiring
    it, changing its code / factory / lines / protocol, bringing it online. Every v2 route answers it the same 401 (its
    credentials are dead); re-registering its code is refused (`nodeRetired` — register a NEW code). `list --node` shows
-   `node "…" is retired since …`. Without 0378 applied the CLI answers `dbUnavailable` and changes nothing.
+   `node "…" is retired since …`; the node list and the fleet status show it as **retired** (counted apart, never an offline
+   endpoint), and starting a run on it is refused by name (`edgeNodeRetired`, REST 409 `edge_node_retired`). A node is never
+   *created* retired (the DB refuses such an INSERT) and the DB stamps `retiredAt` itself. The retirement waits for the node
+   row at most 5 s (another assignment / rotation in flight ⇒ `nodeBusy`, nothing changed, retry). Every refusal is audited.
+   Without 0378 applied the CLI answers `dbUnavailable` (audited) and changes nothing.
 
    **Teardown, in this order** (stop the gateway first, so nothing on the edge still holds a device session):
    1. `edge-device-owner.ts release --robot … / --adapter …` for every device (`list --node` ⇒ none owned). Central executes

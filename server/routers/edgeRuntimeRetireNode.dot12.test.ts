@@ -74,6 +74,10 @@ describe("Đợt 12 O — edgeRuntime.retireNode is admin-only, audited by the s
     expect((await err("nodeNotFound", "nope"))?.trpc).toBe("NOT_FOUND");
     expect((await err("nodeRetired", "already"))?.trpc).toBe("CONFLICT");
     expect((await err("nodeRetired", "already"))?.meta).toMatchObject({ appParams: { reason: "edgeNodeAlreadyRetired" } });
+    // fix 1 (O-R3) — lock_timeout ⇒ a coded "busy, retry"
+    const busy = await err("nodeBusy", "held");
+    expect(busy?.trpc).toBe("CONFLICT");
+    expect(busy?.meta).toMatchObject({ appCode: "OPERATION_FAILED", appParams: { operation: "retireEdgeNode", reason: "edgeNodeBusy" } });
     expect((await err("notAdmin", "no"))?.trpc).toBe("FORBIDDEN");
   });
 });

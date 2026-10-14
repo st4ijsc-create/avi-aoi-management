@@ -144,7 +144,7 @@ function nodeHasFactory(node: { factoryCode?: string | null }): boolean {
 export async function resolveAssignableNode(
   code: string,
   callerScope: FoeScope,
-): Promise<{ kind: "node"; id: number } | { kind: "none" } | { kind: "unverified" } | { kind: "unavailable" }> {
+): Promise<{ kind: "node"; id: number } | { kind: "retired"; id: number; retiredAt: string } | { kind: "none" } | { kind: "unverified" } | { kind: "unavailable" }> {
   // doc 81 Đợt 10 N6 — the edge runtime is off: no node could ever pull the run ⇒ the start is refused (nothing created).
   if (!edgeRuntimeEnabledNow()) return { kind: "unavailable" };
   try {
@@ -155,11 +155,21 @@ export async function resolveAssignableNode(
     if (!node) return { kind: "none" };
     // R-10-as N-6 — a node without a factory sees no run: nobody (an unrestricted caller included) may hand it one
     if (!nodeHasFactory(node)) return { kind: "none" };
-    if (callerIds === null) return { kind: "node", id: node.id };
+    // doc 81 Đợt 12 O fix 1 (O-R5) — a RETIRED node (mig 0378) inside the caller's scope is refused BY NAME, not as "unavailable";
+    // outside the scope it stays the same "none" (no oracle). Read through to_jsonb (unchanged without 0378).
+    const retiredOf = async () => {
+      const { readNodeRetirement } = await import("./edgeNodeCredentials");
+      return (await readNodeRetirement(d as never, { id: node.id }))?.retiredAt ?? null;
+    };
+    const inScope = async (): Promise<{ kind: "node"; id: number } | { kind: "retired"; id: number; retiredAt: string }> => {
+      const retiredAt = await retiredOf();
+      return retiredAt ? { kind: "retired", id: node.id, retiredAt } : { kind: "node", id: node.id };
+    };
+    if (callerIds === null) return await inScope();
     const ns = nodeScopeOf(node);
     const nodeIds = await idsTrongPhamVi("factory", ns, { strict: true });
     if (!nodeIds || nodeIds.length === 0) return { kind: "none" };
-    return nodeIds.every((id) => callerIds.includes(id)) ? { kind: "node", id: node.id } : { kind: "none" };
+    return nodeIds.every((id) => callerIds.includes(id)) ? await inScope() : { kind: "none" };
   } catch {
     return { kind: "unverified" };
   }

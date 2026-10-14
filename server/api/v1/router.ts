@@ -567,6 +567,7 @@ export function createV1Router(): Router {
         if (n.kind === "unavailable") throw new ApiHttpError(503, "edge_disabled", "Edge runtime is disabled (EDGE_RUNTIME_ENABLED) — a run cannot be handed to an edge node."); // doc 81 Đợt 10 N6
         if (n.kind === "unverified") throw new ApiHttpError(503, "scope_unverified", "The key's factory scope could not be verified — retry.");
         if (n.kind === "none") throw new ApiHttpError(404, "not_found", `Edge node "${body.edgeNodeCode}" not found.`);
+        if (n.kind === "retired") throw new ApiHttpError(409, "edge_node_retired", `Edge node "${body.edgeNodeCode}" was retired on ${n.retiredAt} — it is given no run.`); // doc 81 Đợt 12 O fix 1 (O-R5)
         edgeNodeId = n.id;
       }
       const principal = req.apiPrincipal?.name ?? "api-key";

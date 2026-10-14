@@ -43,6 +43,8 @@ type EdgeNodeRow = {
   lastHeartbeatAt?: string | Date | null;
   assignedLineCodes?: string[] | null;
   version?: string | null;
+  /** doc 81 Đợt 12 O fix 1 — set once the node is RETIRED (mig 0378); status is then "retired" */
+  retiredAt?: string | null;
 };
 
 const STALE_MS = 2 * 60_000; // mirrors markStaleNodesOffline(thresholdMin=2)
@@ -127,6 +129,10 @@ export default function EdgeNodesPage() {
   const rows = (listQ.data ?? []) as EdgeNodeRow[];
 
   const statusBadge = (n: EdgeNodeRow) => {
+    // doc 81 Đợt 12 O fix 1 (O-R4) — retired for good: never "offline" (it will never come back), never editable / deletable
+    if (n.status === "retired" || n.retiredAt) {
+      return <Badge variant="outline" className="text-muted-foreground line-through" title={n.retiredAt ? fmtDate(n.retiredAt) : undefined}>{t("edgeNodes.retired", "Đã ngừng vĩnh viễn")}</Badge>;
+    }
     const stale = heartbeatStale(n.lastHeartbeatAt);
     if (n.status === "offline" || (stale && n.status !== "offline")) {
       return <Badge variant="outline" className="text-muted-foreground"><WifiOff className="mr-1 h-3 w-3" />{t("edgeNodes.offline", "Ngoại tuyến")}</Badge>;
@@ -209,10 +215,10 @@ export default function EdgeNodesPage() {
                     <TableCell className="font-mono text-xs">{n.version ?? "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!canCreate || !enabled} onClick={() => openEdit(n)} title={t("common.edit", "Sửa")}>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!canCreate || !enabled || n.status === "retired"} onClick={() => openEdit(n)} title={t("common.edit", "Sửa")}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={!canDelete || !enabled} onClick={() => setDeleteId(n.id)} title={t("edgeNodes.deregister", "Gỡ node")}>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={!canDelete || !enabled || n.status === "retired"} onClick={() => setDeleteId(n.id)} title={t("edgeNodes.deregister", "Gỡ node")}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
