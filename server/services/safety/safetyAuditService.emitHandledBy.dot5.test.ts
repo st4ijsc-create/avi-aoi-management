@@ -167,7 +167,51 @@ describe("Đợt 5 F fix scan — census: the trusted door and the mark are reac
   it("the in-memory mark no longer exists; the trust store is used only by safetyAuditService.ts (writer) and trustedSafetyOrigin.ts", () => {
     expect(referencers("markTrustedSafetyEvent")).toEqual([]);
     expect(referencers("trustedEventStore")).toEqual(["services/safety/safetyAuditService.ts", "services/safety/trustedSafetyOrigin.ts"]);
-    expect(referencers("safety_event_trust")).toEqual(["services/safety/trustedSafetyOrigin.ts"]);
+    // Re-pinned 2026-10-15 (doc 81 Đợt 12 final fix wave, ruling R-12-e open item a): + services/ops/wormTableSizeMonitor.ts
+    // (Đợt 11 task G) — it names the table ONLY as a catalog key of its size watch (to_regclass / pg_total_relation_size /
+    // reltuples), never its rows. The meaning of this census is kept by the companion test below: that file holds no row access to
+    // the table (static) and every statement it runs reads the catalog only, the name travelling as a bound parameter (dynamic).
+    // trustedSafetyOrigin.ts stays the ONLY holder of the table's row SQL.
+    expect(referencers("safety_event_trust")).toEqual(["services/ops/wormTableSizeMonitor.ts", "services/safety/trustedSafetyOrigin.ts"]);
+  });
+
+  it("R-12-e (open item a) — wormTableSizeMonitor.ts reads only catalog / size functions, NEVER rows of safety_event_trust (static + every statement it runs)", async () => {
+    const mon = files.find((f) => f.rel === "services/ops/wormTableSizeMonitor.ts");
+    expect(mon).toBeDefined();
+    const code = mon!.src
+      .split("\n")
+      .filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l))
+      .join("\n");
+    // static: no row access to the trust table in any form (FROM / JOIN / INTO / UPDATE / DELETE / TRUNCATE / COPY / TABLE …)
+    expect(code).not.toMatch(/\b(FROM|JOIN|INTO|UPDATE|DELETE|TRUNCATE|COPY|TABLE|LOCK)\s+(ONLY\s+)?("?public"?\s*\.\s*)?"?safety_event_trust\b/i);
+    // the only occurrence in code is the size-watch list entry
+    expect(code.split("\n").filter((l) => /\bsafety_event_trust\b/.test(l)).map((l) => l.trim())).toEqual(['"safety_event_trust", // 0371']);
+    // dynamic: run the monitor against a recording executor — the statements read pg_class / to_regclass / pg_total_relation_size
+    // (+ notifications / users for the alert dedup); the table's name only ever travels as a bound PARAMETER of to_regclass
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const dialect = new PgDialect();
+    const statements: Array<{ sql: string; params: unknown[] }> = [];
+    const db = {
+      execute: async (q: unknown) => {
+        const r = dialect.sqlToQuery(q as never);
+        statements.push({ sql: r.sql, params: r.params });
+        if (/FROM pg_class/.test(r.sql)) return [{ bytes: 10 ** 13, rows: 10 ** 9 }]; // over every threshold ⇒ the alert path runs too
+        if (/FROM public\.users/.test(r.sql)) return [{ id: 1 }];
+        return [];
+      },
+    };
+    const { checkWormTableSizes, WORM_TABLES } = await import("../ops/wormTableSizeMonitor");
+    expect(WORM_TABLES as readonly string[]).toContain("safety_event_trust");
+    await checkWormTableSizes({ db: db as never, sink: async () => undefined });
+    expect(statements.length).toBeGreaterThan(WORM_TABLES.length);
+    for (const st of statements) {
+      expect(st.sql).not.toMatch(/safety_event_trust/);
+      expect(st.sql).toMatch(/FROM pg_class c|FROM public\.notifications|FROM public\.users/);
+      expect(st.sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
+    }
+    const sizeReads = statements.filter((s) => /FROM pg_class c/.test(s.sql));
+    expect(sizeReads.every((s) => /pg_total_relation_size\(c\.oid\)/.test(s.sql) && /to_regclass\(\$1\)/.test(s.sql))).toBe(true);
+    expect(sizeReads.some((s) => s.params.includes("public.safety_event_trust"))).toBe(true);
   });
 
   // doc 81 Đợt 8 N2 — also the background poller (its class takes injected deps; no request path may construct / drive it)

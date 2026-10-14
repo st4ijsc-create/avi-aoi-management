@@ -14,10 +14,13 @@
  * 0/6 driver sản xuất hôm nay). Commission = hàng `commissioning_records` / `robot_commissioning_records`
  * thật, cờ OT_/ROBOT_COMMISSIONING_REQUIRED để MẶC ĐỊNH (bật).
  *
- * ⚠ `safety_plc_configs` của `_test` dùng chung (hàng seed SIM-SAFETY-PLC-1 sạch luôn có mặt; tệp
- *   safetySourceHealth.dot1 chèn thêm một hàng SIM sạch khi chạy song song) ⇒ mọi kịch bản ở đây
- *   ĐÚNG khi có thêm hàng SIM sạch, và hàng của tệp này chỉ sống trong đúng một ca (xoá ở finally).
- *   OT và robot nằm CHUNG một tệp (chạy tuần tự) để hàng "real" của ca này không lọt vào ca kia.
+ * ⚠ `safety_plc_configs` của `_test` dùng chung: hàng seed SIM-SAFETY-PLC-1 (BẬT hoặc TẮT — harness E2E F1 tắt nó trong lúc
+ *   chạy; một harness chết giữa chừng có thể để nó tắt) và tệp safetySourceHealth.dot1 chèn thêm một hàng SIM sạch khi chạy song
+ *   song ⇒ mọi kịch bản ở đây ĐÚNG dù có hay không thêm hàng SIM sạch, và hàng của tệp này chỉ sống trong đúng một ca (xoá ở
+ *   finally). OT và robot nằm CHUNG một tệp (chạy tuần tự) để hàng "real" của ca này không lọt vào ca kia.
+ *   doc 81 Đợt 12 final fix wave (R-12-e open item b): tệp giữ khoá seed ĐỘC QUYỀN suốt đời (acquireSeedExclusive, chờ có giới
+ *   hạn) — không harness E2E nào chạy song song, nên hàng PLC thật SPLC-* của harness (chèn SAU khi harness giữ khoá) không bao giờ
+ *   lọt vào đây (trước: ×5 đỏ khi chạy rộng, chạy riêng thì xanh).
  * Treo đo bằng `within(...)` tường minh.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -58,6 +61,7 @@ import { otPayloadHash, robotPayloadHash, withOtPayloadHash } from "./otActionBi
 import { createAdapterFacade } from "./adapterFacade";
 import { ModbusDriver, createModbusDriver } from "./drivers/modbusDriver";
 import { registerDriver } from "./driverRegistry";
+import { acquireSeedExclusive } from "../edge/__edgeSeedGuard.dot10";
 
 const ServerTCP: any = (ModbusSerialNs as any).ServerTCP ?? (ModbusSerialNs as any).default?.ServerTCP;
 
@@ -136,6 +140,8 @@ const ESTOP_COIL = "coil:1"; // coil 0
 const ZONE_COIL = "coil:2"; // coil 1
 
 let sql: ReturnType<typeof postgres>;
+/** R-12-e open item b — the seed lock held EXCLUSIVELY for this suite's life (no F1 E2E harness runs meanwhile) */
+let seedExclusive: { release(): Promise<void> } | null = null;
 let adapterCommissioned = 0;
 let adapterUncommissioned = 0;
 let adapterSelfReport = 0; // fix round 1 #3 — driver TỰ báo getSafetyStatus = OK
@@ -277,6 +283,7 @@ const savedEnv: Record<string, string | undefined> = {};
 describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả preflight cho đích đã commission (CSDL _test)", () => {
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/); // cầu chì: không bao giờ chạy trên DB dev
+    seedExclusive = await acquireSeedExclusive(DB_URL!, { waitMs: 45_000 }); // R-12-e open item b — before any read of the configs
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     // Đợt 1D Task 2 fix round 1 (R-1D-h) — nạp NÓNG facade + nguồn safety-PLC: dispatcher nạp chúng bằng import
     // động BÊN TRONG hạn preflight 5 s; chạy gộp ~150 tệp thì lượt nạp nguội đầu tiên vượt hạn ⇒ UNKNOWN (ĐO: ~5,2 s).
@@ -360,6 +367,8 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả pref
       await sql`DELETE FROM robot_jobs WHERE "robotId" IN (${ROBOT_OK}, ${ROBOT_UNCOMMISSIONED})`.catch(() => undefined);
       await sql.end();
     }
+    await seedExclusive?.release(); // R-12-e open item b
+    seedExclusive = null;
     for (const k of ENV_KEYS) {
       if (savedEnv[k] === undefined) delete process.env[k];
       else process.env[k] = savedEnv[k];
