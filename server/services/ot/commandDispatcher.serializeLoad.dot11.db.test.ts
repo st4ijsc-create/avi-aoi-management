@@ -473,8 +473,10 @@ describe.skipIf(!DB_URL)("Đợt 11 K — OT_CMD_SERIALIZE_ENABLED load + STOP b
   // adapter queue was full. Ruling R-11-i (K-fix 2) made a stop-LABELLED command with arbitrary writes ordinary (BUSY when full);
   // rulings R-11-j / R-11-k (final fix wave, 2026-10-14) reverse that: EVERY stop-typed command takes the stop lane — never BUSY,
   // never behind ordinary writes — while only a verified stop (the pinned stop / exact pinned values) is ahead of it, moves the epoch
-  // and has precedence over interlock actions. (Was it.fails, then it under R-11-c, then R-11-i, now R-11-j.)
-  it("L-7 (R-11-j): with the flag ON NO stop-typed command is answered BUSY on a full queue — an unverified stop neither; a pinned STOP arriving meanwhile supersedes it (R-1E-b) and is the last word", async () => {
+  // and has precedence over interlock actions. (Was it.fails, then it under R-11-c, then R-11-i, then R-11-j.) Owner ruling R-11-n
+  // (simplify, 2026-10-14): no stop lane — an unverified stop is an ordinary queued command that is never BUSY: a full queue ⇒ it WAITS
+  // FOR A SLOT (it cancels nothing); a pinned STOP still waits only for the in-flight write and supersedes it (R-1E-b).
+  it("L-7 (R-11-n): with the flag ON NO stop-typed command is answered BUSY on a full queue — an unverified stop waits for a slot; a pinned STOP arriving meanwhile supersedes it (R-1E-b) and is the last word", async () => {
     setEnv(true, { OT_CMD_QUEUE_MAX: "3", OT_CONTROL_TIMEOUT_MS: "30000" });
     const a = adapters[2];
     reset(a, 20, 10);
@@ -488,7 +490,10 @@ describe.skipIf(!DB_URL)("Đợt 11 K — OT_CMD_SERIALIZE_ENABLED load + STOP b
     while (_adapterCommandQueueDepthForTests(a.id) < 3 && now() - t0 < 5000) await sleep(1);
     expect(_adapterCommandQueueDepthForTests(a.id)).toBe(3); // FULL (3 = max)
     const pArb = dispatch(arbitrary);
-    while (_adapterCommandQueueDepthForTests(a.id) !== 2 && now() - t0 < 10_000) await sleep(1); // in the lane; the 2 waiting writes cancelled
+    const { _adapterSlotWaitersForTests } = await import("./otDeviceWrite");
+    while (_adapterSlotWaitersForTests(a.id) !== 1 && now() - t0 < 10_000) await sleep(1); // waits for a slot (not BUSY), cancels nothing
+    expect(_adapterSlotWaitersForTests(a.id)).toBe(1);
+    expect(_adapterCommandQueueDepthForTests(a.id)).toBe(3);
     const pPin = dispatch(pinned);
     const rArb = await pArb; // R-1E-b: the pinned STOP supersedes the WAITING unverified stop (its value must not run after the STOP)
     expect(rArb.reason).not.toBe("BUSY");

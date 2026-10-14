@@ -1,16 +1,14 @@
 /**
  * doc 81 Đợt 11 K-fix / K-fix 2 — PURE checks (no DB, no real driver) of the queue and the STOP epoch:
- *   R-11-i (c) the BOUNDED stop lane (enqueueStopLane): per adapter one STOP in flight + ONE waiting group; more STOPs JOIN the
- *     waiting group (no queue entry, no extra device write); members' results resolve together, projected on their own writes;
- *   R-11-h a PROTECTIVE interlock action is never cancelled by a STOP (lane or legacy priorityStop) and keeps its place;
+ *   R-11-h a PROTECTIVE interlock action is never cancelled by a STOP and keeps its place (R-11-k 3: unless it overrides a pin);
  *   R-11-i (a) ordinary commands (a stop-LABELLED one with arbitrary writes too) are capped (BUSY when full) and cancelled by a STOP;
  *   R-11-d / R-11-i (b) the STOP epoch: who records it (stopEpochAtGatesFor), the check right before the device write, and the bump
  *     only when a TRUE stop is SENT (executeOtDeviceWrite bumpStopEpoch).
- * doc 81 Đợt 11 final fix wave (rulings R-11-j + addendum, R-11-k) — the lane block is rewritten: EVERY stop (pinned / verified by
- *   content / unverified stop-typed) takes the lane; stops coalesce only when their device writes are IDENTICAL; a pinned STOP stands
- *   ahead of every other stop; waiting unverified groups are capped (newest replaces oldest); each member gets the true outcome of
- *   the one write that contained exactly its writes; the group gets every member's intents and the strictest timeout; a verified stop
- *   cancels a protective action only when that action would override a pinned stop value.
+ * doc 81 Đợt 11 simplify (owner ruling R-11-n, 2026-10-14) — the STOP lane / groups / coalescing / pin-at-send are GONE. A verified STOP
+ *   (the pinned stop, or a stop by content) is a `priorityStop` job: it waits only for the command in flight (and earlier STOPs), cancels
+ *   the waiting commands (R-1E-a / R-1E-b), and an IDENTICAL pinned STOP already waiting or in flight is not queued again — its caller
+ *   gets that STOP's real outcome. An unverified stop-typed command is an ordinary queued command that is never BUSY: a full queue ⇒ it
+ *   waits for a slot. The lane tests of the final fix wave were removed or rewritten here (simplify-report.md lists each one and why).
  * Oracles are written by the test (job run log, driver write log), never read from product state.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -22,22 +20,15 @@ import {
   writesOverrideStopPin,
   type DispatchInput,
 } from "./commandDispatcher";
+import * as dw from "./otDeviceWrite";
 import {
   adapterStopEpoch,
   bumpAdapterStopEpoch,
-  enqueueStopLane,
   executeOtDeviceWrite,
   executeOtDeviceWriteUnlessStopped,
   isStoppedBeforeWrite,
   onPinnedStopQueued,
-  projectExecutedForMember,
-  _stopLaneWaitingMembersForTests,
-  _adapterQueueLineForTests,
-  applyPinsAtSend,
-  OT_STOP_LANE_UNVERIFIED_MAX,
-  type ExecutedWrite,
   type OtResolvedWrite,
-  type StopLaneGroupCtx,
 } from "./otDeviceWrite";
 
 const SUPERSEDED = { superseded: true, byStop: true };
@@ -66,14 +57,6 @@ function accepted<T>(o: ReturnType<typeof tryEnqueueAdapterCommand<T>>) {
   return o.result;
 }
 const rw = (tagKey: string, value: unknown): OtResolvedWrite => ({ write: { tagKey, value }, address: `a-${tagKey}`, dataType: "int" });
-/** a fake device-stage execution of a union: logs the union, answers acked per write */
-function laneExec(log: string[], gate?: Promise<void>) {
-  return async (union: OtResolvedWrite[]): Promise<ExecutedWrite> => {
-    log.push(union.map((u) => `${u.write.tagKey}=${String(u.write.value)}`).join(","));
-    if (gate) await gate;
-    return { sentAt: new Date(0), timedOut: false, outcomes: union.map((u, idx) => ({ idx, ok: true, status: "acked" as const, errorText: null, readBackValue: u.write.tagKey })) };
-  };
-}
 
 const savedMax = process.env.OT_CMD_QUEUE_MAX;
 beforeEach(() => {
@@ -86,163 +69,137 @@ afterEach(() => {
   _resetAdapterCommandQueuesForTests();
 });
 
-describe("R-11-k (1)(2) — the STOP lane: every stop, identical writes only, pinned first, bounded", () => {
+describe("R-11-n — a verified STOP waits only for the in-flight command; no lane, no group, an identical STOP shares the one in flight", () => {
   const A = 5151;
+  /** a pinned STOP job (identical key ⇒ shared); `wire` records the device writes it performs */
+  const stopJob = (wire: string[], name: string, outcome: unknown = name) => () => {
+    wire.push(name);
+    return Promise.resolve(outcome);
+  };
 
-  it("★ STOP FLOOD of IDENTICAL pinned STOPs while a write is in flight ⇒ ONE waiting group (depth ≤ 2), ONE device write, all 50 resolve with that write's outcome", async () => {
-    const { log, ctl, job } = makeJobs();
-    const rA = accepted(tryEnqueueAdapterCommand(A, job("A"))); // in flight
+  it("★ STOP FLOOD of IDENTICAL pinned STOPs while a write is in flight ⇒ ONE queue entry (depth 2), ONE device write, all 50 answered with that write's outcome, every caller's intents on it", async () => {
+    const { ctl, job } = makeJobs();
+    const rA = accepted(tryEnqueueAdapterCommand(A, job("A")));
     const wire: string[] = [];
+    const intents: number[] = [1];
     const results: Array<Promise<unknown>> = [];
     let joined = 0;
     for (let i = 0; i < 50; i++) {
-      const r = enqueueStopLane(A, [rw("run", 0), rw("speed", 0)], laneExec(wire), projectExecutedForMember, { cls: "pinned", stopRef: { k: `S${i}` } });
-      if (r.joined) joined++;
-      results.push(r.result);
+      const o = tryEnqueueAdapterCommand(A, stopJob(wire, `S${i}`, { outcome: "S0's write" }), { priorityStop: true, identicalStopKey: "K", shareIntentIds: i === 0 ? intents : [100 + i], stopRef: { k: `S${i}` } });
+      if (o.accepted && o.joined) joined++;
+      results.push(accepted(o));
       expect(_adapterCommandQueueDepthForTests(A)).toBeLessThanOrEqual(2);
     }
     expect(joined).toBe(49);
-    expect(_stopLaneWaitingMembersForTests(A)).toBe(50);
+    expect(dw._stopCallersForTests(A)).toBe(50);
     ctl.get("A")!.resolve("a");
     expect(await rA).toBe("a");
-    const all = (await Promise.all(results)) as ExecutedWrite[];
-    expect(wire).toEqual(["run=0,speed=0"]); // ONE device write
-    expect(log).toEqual(["A"]);
-    for (const r of all) expect(r.outcomes.map((o) => [o.idx, o.ok, o.status])).toEqual([[0, true, "acked"], [1, true, "acked"]]);
+    for (const r of await Promise.all(results)) expect(r).toEqual({ outcome: "S0's write" });
+    expect(wire).toEqual(["S0"]); // ONE device write
+    expect(intents).toHaveLength(50); // the one write carries every caller's ledger intent (late-result review, STOP watch)
     await flush();
     expect(_adapterCommandQueueDepthForTests(A)).toBe(0);
   });
 
-  it("★ a stop JOINING a waiting group is a newer stop intent: an ordinary write queued AFTER the group (and before the joiner) is cancelled", async () => {
-    const { log, ctl, job } = makeJobs();
-    process.env.OT_CMD_QUEUE_MAX = "10";
-    accepted(tryEnqueueAdapterCommand(A, job("A")));
-    const g1 = enqueueStopLane(A, [rw("speed", 0)], laneExec([]), projectExecutedForMember, { cls: "pinned", stopRef: { k: "P1" } });
-    const rW = accepted(tryEnqueueAdapterCommand(A, job("W"))); // issued after P1, before P2
-    const g2 = enqueueStopLane(A, [rw("speed", 0)], laneExec([]), projectExecutedForMember, { cls: "pinned", stopRef: { k: "P2" } });
-    expect(g2.joined).toBe(true);
-    expect(await rW).toEqual({ ...SUPERSEDED, stop: { k: "P2" } });
-    ctl.get("A")!.resolve("a");
-    await Promise.all([g1.result, g2.result]);
-    expect(log).toEqual(["A"]);
-  });
-
-  it("★ R-11-m: at the group's turn, a member whose epoch moved (a verified STOP was SENT after its gates began) is superseded; others in the group are written; all superseded ⇒ no device write", async () => {
-    const { ctl, job } = makeJobs();
-    accepted(tryEnqueueAdapterCommand(A, job("A")));
+  it("★ an identical STOP arriving while the first one's write is IN FLIGHT shares its outcome and moves the epoch now; once that write has answered, an identical STOP is sent anew", async () => {
     const wire: string[] = [];
+    const d = deferred<string>();
+    const p1 = accepted(tryEnqueueAdapterCommand(A, () => (wire.push("P1"), d.promise), { priorityStop: true, identicalStopKey: "K", stopRef: { k: "P1" } }));
+    await flush(); // P1's write is on the wire
     const e0 = adapterStopEpoch(A);
-    const u1 = enqueueStopLane(A, [rw("run", 1)], laneExec(wire), projectExecutedForMember, { cls: "unverified", member: { stopEpochAtGates: e0 } });
-    const u2 = enqueueStopLane(A, [rw("run", 1)], laneExec(wire), projectExecutedForMember, { cls: "unverified", member: { stopEpochAtGates: null } });
-    const u3 = enqueueStopLane(A, [rw("jog", 1)], laneExec(wire), projectExecutedForMember, { cls: "unverified", member: { stopEpochAtGates: e0 } });
-    bumpAdapterStopEpoch(A, { idempotencyKey: "P" }); // the verified STOP is SENT (e.g. central's fallback) while they wait
-    ctl.get("A")!.resolve("a");
-    expect(await u1.result).toEqual({ ...SUPERSEDED, stop: { idempotencyKey: "P" } });
-    expect((await u2.result) as ExecutedWrite).toMatchObject({ outcomes: [{ ok: true, status: "acked" }] });
-    expect(await u3.result).toEqual({ ...SUPERSEDED, stop: { idempotencyKey: "P" } });
-    expect(wire).toEqual(["run=1"]); // u3's group wrote nothing
-    await flush();
-    expect(_adapterCommandQueueDepthForTests(A)).toBe(0);
+    const o2 = tryEnqueueAdapterCommand(A, stopJob(wire, "P2"), { priorityStop: true, identicalStopKey: "K", stopRef: { k: "P2" } });
+    expect(o2.accepted && o2.joined).toBe(true);
+    expect(adapterStopEpoch(A)).toBeGreaterThan(e0); // P2 is executed by P1's identical write: a write whose gates began before P2 is cancelled
+    d.resolve("P1 outcome");
+    expect(await p1).toBe("P1 outcome");
+    expect(await accepted(o2)).toBe("P1 outcome");
+    const o3 = tryEnqueueAdapterCommand(A, stopJob(wire, "P3"), { priorityStop: true, identicalStopKey: "K" });
+    expect(o3.accepted && o3.joined).toBeFalsy();
+    expect(await accepted(o3)).toBe("P3");
+    expect(wire).toEqual(["P1", "P3"]);
   });
 
-  it("★ C-1/I-2: stops with DIFFERENT device writes never coalesce — each gets its own write and that write's TRUE outcome (a failed write ⇒ failed)", async () => {
+  it("★ a STOP whose write TIMED OUT is not shared while its slot is held (B3): an identical STOP pressed again is a fresh device write", async () => {
+    const wire: string[] = [];
+    let releaseHold!: () => void;
+    const hold = new Promise<void>((r) => (releaseHold = r));
+    const p1 = accepted(tryEnqueueAdapterCommand(A, stopJob(wire, "P1", "timeout"), { priorityStop: true, identicalStopKey: "K", holdSlot: () => hold }));
+    expect(await p1).toBe("timeout");
+    const o2 = tryEnqueueAdapterCommand(A, stopJob(wire, "P2", "acked"), { priorityStop: true, identicalStopKey: "K" });
+    expect(o2.accepted && o2.joined).toBeFalsy();
+    releaseHold();
+    expect(await accepted(o2)).toBe("acked");
+    expect(wire).toEqual(["P1", "P2"]);
+  });
+
+  it("★ STOPs with DIFFERENT writes are never shared — each is its own queue entry and device write, in arrival order, each with its own outcome; a STOP without a key is never shared", async () => {
     const { ctl, job } = makeJobs();
     accepted(tryEnqueueAdapterCommand(A, job("A")));
     const wire: string[] = [];
-    // the device refuses the `run` write; `speed` is accepted
-    const exec = async (writes: OtResolvedWrite[]): Promise<ExecutedWrite> => {
-      wire.push(writes.map((u) => `${u.write.tagKey}=${String(u.write.value)}`).join(","));
-      return { sentAt: new Date(0), timedOut: false, outcomes: writes.map((u, idx) => ({ idx, ok: u.write.tagKey !== "run", status: u.write.tagKey !== "run" ? ("acked" as const) : ("failed" as const), errorText: u.write.tagKey !== "run" ? null : "device refused", readBackValue: null })) };
-    };
-    const s1 = enqueueStopLane(A, [rw("speed", 0)], exec, projectExecutedForMember, { cls: "pinned" });
-    const s2 = enqueueStopLane(A, [rw("speed", 0), rw("run", 0)], exec, projectExecutedForMember, { cls: "pinned" });
-    const s3 = enqueueStopLane(A, [rw("speed", 0)], exec, projectExecutedForMember, { cls: "pinned", connKey: null }); // = s1's key ⇒ joins s1
-    const s4 = enqueueStopLane(A, [{ ...rw("speed", 0), address: "other" }], exec, projectExecutedForMember, { cls: "pinned" }); // other address
-    const s5 = enqueueStopLane(A, [{ ...rw("speed", 0), scale: 10 }], exec, projectExecutedForMember, { cls: "pinned" }); // other scale
-    const s6 = enqueueStopLane(A, [rw("run", 0), rw("speed", 0)], exec, projectExecutedForMember, { cls: "pinned" }); // = s2's writes, other order ⇒ joins s2
-    const s7 = enqueueStopLane(A, [rw("speed", 0)], exec, projectExecutedForMember, { cls: "pinned", connKey: "another-connection" }); // other running connection
-    const s8 = enqueueStopLane(A, [rw("speed", 0)], exec, projectExecutedForMember, { cls: "verified" }); // same writes, other class: never joins the pinned group
-    expect([s1.joined, s2.joined, s3.joined, s4.joined, s5.joined, s6.joined, s7.joined, s8.joined]).toEqual([false, false, true, false, false, true, false, false]);
-    expect(_adapterQueueLineForTests(A).map((x) => x.cls)).toEqual(["pinned", "pinned", "pinned", "pinned", "pinned", "verified"]); // the verified group behind every pinned one
+    const s1 = tryEnqueueAdapterCommand(A, stopJob(wire, "S1"), { priorityStop: true, identicalStopKey: "K1" });
+    const s2 = tryEnqueueAdapterCommand(A, stopJob(wire, "S2"), { priorityStop: true, identicalStopKey: "K2" });
+    const s3 = tryEnqueueAdapterCommand(A, stopJob(wire, "S3"), { priorityStop: true }); // a content stop: no key
+    const s4 = tryEnqueueAdapterCommand(A, stopJob(wire, "S4"), { priorityStop: true });
+    expect([s1, s2, s3, s4].map((o) => o.accepted && o.joined === true)).toEqual([false, false, false, false]);
+    expect(dw._adapterQueueLineForTests(A)).toEqual([{ cls: "stop", callers: 1 }, { cls: "stop", callers: 1 }, { cls: "stop", callers: 1 }, { cls: "stop", callers: 1 }]);
     ctl.get("A")!.resolve("a");
-    const [r1, r2, r3, , , r6] = (await Promise.all([s1.result, s2.result, s3.result, s4.result, s5.result, s6.result, s7.result, s8.result])) as ExecutedWrite[];
-    expect(wire).toEqual(["speed=0", "speed=0,run=0", "speed=0", "speed=0", "speed=0", "speed=0"]);
-    expect(r6.outcomes.map((o) => [o.idx, o.ok, o.status])).toEqual([[0, false, "failed"], [1, true, "acked"]]); // ITS run (idx 0) failed, ITS speed acked
-    expect(r1.outcomes).toEqual([{ idx: 0, ok: true, status: "acked", errorText: null, readBackValue: null }]);
-    expect(r3.outcomes).toEqual(r1.outcomes);
-    expect(r2.outcomes.map((o) => [o.idx, o.ok, o.status])).toEqual([[0, true, "acked"], [1, false, "failed"]]); // its own write's truth
+    expect(await Promise.all([s1, s2, s3, s4].map((o) => accepted(o)))).toEqual(["S1", "S2", "S3", "S4"]);
+    expect(wire).toEqual(["S1", "S2", "S3", "S4"]);
   });
 
-  it("★ C-1 scenario 2: a pin changed between two STOPs ⇒ two groups, BOTH values written in order (no 'conflict' drop) — the newest pin is the last word", async () => {
-    const { ctl, job } = makeJobs();
-    accepted(tryEnqueueAdapterCommand(A, job("A")));
-    const wire: string[] = [];
-    const p1 = enqueueStopLane(A, [rw("speed", 0)], laneExec(wire), projectExecutedForMember, { cls: "pinned" });
-    const p2 = enqueueStopLane(A, [rw("speed", 5)], laneExec(wire), projectExecutedForMember, { cls: "pinned" });
-    ctl.get("A")!.resolve("a");
-    const [r1, r2] = (await Promise.all([p1.result, p2.result])) as ExecutedWrite[];
-    expect(wire).toEqual(["speed=0", "speed=5"]);
-    expect(r1.outcomes[0]).toMatchObject({ ok: true, status: "acked" });
-    expect(r2.outcomes[0]).toMatchObject({ ok: true, status: "acked" });
+  it("identicalStopKey: the same writes in the same order on the same connection only — another value / address / scale / order is another key", () => {
+    const k = (w: OtResolvedWrite[]) => dw.identicalStopKey(A, w);
+    const base = k([rw("run", 0), rw("speed", 0)]);
+    expect(base).not.toBeNull();
+    expect(k([rw("run", 0), rw("speed", 0)])).toBe(base);
+    expect(k([rw("run", 1), rw("speed", 0)])).not.toBe(base);
+    expect(k([{ ...rw("run", 0), address: "other" }, rw("speed", 0)])).not.toBe(base);
+    expect(k([{ ...rw("run", 0), scale: 10 }, rw("speed", 0)])).not.toBe(base);
+    expect(k([rw("speed", 0), rw("run", 0)])).not.toBe(base); // order: the shared outcome's indexes are per write position
+    expect(k([rw("run", BigInt(1) as unknown as number)])).not.toBe(base);
   });
 
-  it("★ line order: an unverified stop stands behind the waiting pinned / verified stops and ahead of every ordinary entry; a pinned stop goes ahead of a waiting verified one", async () => {
+  it("★ R-1E-a: a STOP cancels the WAITING ordinary commands and runs right after the in-flight one", async () => {
     const { log, ctl, job } = makeJobs();
     process.env.OT_CMD_QUEUE_MAX = "10";
     accepted(tryEnqueueAdapterCommand(A, job("A")));
-    const rL = accepted(tryEnqueueAdapterCommand(A, job("L"), { protective: true }));
-    const order: string[] = [];
-    const named = (n: string) => async (writes: OtResolvedWrite[]) => {
-      order.push(n);
-      return laneExec([])(writes);
-    };
-    const c = enqueueStopLane(A, [rw("run", 0)], named("C"), projectExecutedForMember, { cls: "verified" });
-    const p = enqueueStopLane(A, [rw("speed", 0)], named("P"), projectExecutedForMember, { cls: "pinned" });
-    const u = enqueueStopLane(A, [rw("x", 1)], named("U"), projectExecutedForMember, { cls: "unverified" });
-    expect(_adapterQueueLineForTests(A).map((x) => x.cls)).toEqual(["pinned", "verified", "unverified", "protective"]);
+    const rW1 = accepted(tryEnqueueAdapterCommand(A, job("W1")));
+    const rW2 = accepted(tryEnqueueAdapterCommand(A, job("W2")));
+    const rS = accepted(tryEnqueueAdapterCommand(A, job("S"), { priorityStop: true, stopRef: { k: "S" } }));
+    expect(await rW1).toEqual({ ...SUPERSEDED, stop: { k: "S" } });
+    expect(await rW2).toEqual({ ...SUPERSEDED, stop: { k: "S" } });
     ctl.get("A")!.resolve("a");
-    await Promise.all([u.result, c.result, p.result]);
     await flush();
-    ctl.get("L")!.resolve("l");
-    expect(await rL).toBe("l");
-    expect(order).toEqual(["P", "C", "U"]);
-    expect(log).toEqual(["A", "L"]);
+    ctl.get("S")!.resolve("s");
+    expect(await rS).toBe("s");
+    expect(log).toEqual(["A", "S"]);
   });
 
-  it("★ C-2 bound: WAITING unverified groups are capped — the newest replaces the oldest (Superseded naming the newer stop), never BUSY even on a full queue; verified groups are never replaced", async () => {
-    const { ctl, job } = makeJobs();
+  it("★ an UNVERIFIED stop (waitForSlot) on a FULL queue is never BUSY: it waits for a slot, FIFO, ahead of anything newer; an ordinary command is BUSY meanwhile", async () => {
+    const { log, ctl, job } = makeJobs();
     process.env.OT_CMD_QUEUE_MAX = "1";
-    accepted(tryEnqueueAdapterCommand(A, job("A"))); // the queue is FULL
-    expect(OT_STOP_LANE_UNVERIFIED_MAX).toBe(2);
-    const wire: string[] = [];
-    const p = enqueueStopLane(A, [rw("speed", 0)], laneExec(wire), projectExecutedForMember, { cls: "pinned" });
-    const u1 = enqueueStopLane(A, [rw("x", 1)], laneExec(wire), projectExecutedForMember, { cls: "unverified", stopRef: { k: "U1" } });
-    const u2 = enqueueStopLane(A, [rw("x", 2)], laneExec(wire), projectExecutedForMember, { cls: "unverified", stopRef: { k: "U2" } });
-    const u2b = enqueueStopLane(A, [rw("x", 2)], laneExec(wire), projectExecutedForMember, { cls: "unverified", stopRef: { k: "U2b" } }); // identical ⇒ joins
-    const u3 = enqueueStopLane(A, [rw("x", 3)], laneExec(wire), projectExecutedForMember, { cls: "unverified", stopRef: { k: "U3" } });
-    expect(u2b.joined).toBe(true);
-    expect(await u1.result).toEqual({ ...SUPERSEDED, stop: { k: "U3" } }); // the oldest waiting unverified group
-    expect(_adapterQueueLineForTests(A)).toEqual([{ cls: "pinned", members: 1 }, { cls: "unverified", members: 2 }, { cls: "unverified", members: 1 }]);
-    expect(_adapterCommandQueueDepthForTests(A)).toBe(4); // A + P + two unverified groups
+    accepted(tryEnqueueAdapterCommand(A, job("A"))); // FULL
+    expect(tryEnqueueAdapterCommand(A, job("X")).accepted).toBe(false);
+    const rU1 = accepted(tryEnqueueAdapterCommand(A, job("U1"), { waitForSlot: true }));
+    const rU2 = accepted(tryEnqueueAdapterCommand(A, job("U2"), { waitForSlot: true }));
+    expect(dw._adapterSlotWaitersForTests(A)).toBe(2);
+    expect(_adapterCommandQueueDepthForTests(A)).toBe(1); // the cap holds: waiting for a slot is not a queue entry
+    process.env.OT_CMD_QUEUE_MAX = "10";
+    expect(tryEnqueueAdapterCommand(A, job("Y")).accepted).toBe(false); // a stop waits for a slot ⇒ it goes first
+    process.env.OT_CMD_QUEUE_MAX = "1";
     ctl.get("A")!.resolve("a");
-    await Promise.all([u2.result, u2b.result, p.result, u3.result]);
-    expect(wire).toEqual(["speed=0", "x=2", "x=3"]);
+    await flush();
+    ctl.get("U1")!.resolve("u1");
+    expect(await rU1).toBe("u1");
+    await flush();
+    ctl.get("U2")!.resolve("u2");
+    expect(await rU2).toBe("u2");
+    expect(log).toEqual(["A", "U1", "U2"]);
+    await flush();
+    expect(dw._adapterCommandQueueCountForTests()).toBe(0);
   });
 
-  it("★ R-1E-b (kept): a VERIFIED stop cancels a WAITING unverified stop (its unproven values must not run after the STOP and undo it); an unverified stop never cancels a verified one", async () => {
-    const { ctl, job } = makeJobs();
-    accepted(tryEnqueueAdapterCommand(A, job("A")));
-    const wire: string[] = [];
-    const u = enqueueStopLane(A, [rw("cmd_stop", false)], laneExec(wire), projectExecutedForMember, { cls: "unverified", stopRef: { k: "U" } });
-    const c = enqueueStopLane(A, [rw("run", 0)], laneExec(wire), projectExecutedForMember, { cls: "verified", stopRef: { k: "C", contentStop: true } });
-    expect(await u.result).toEqual({ ...SUPERSEDED, stop: { k: "C", contentStop: true } });
-    const u2 = enqueueStopLane(A, [rw("cmd_stop", false)], laneExec(wire), projectExecutedForMember, { cls: "unverified", stopRef: { k: "U2" } });
-    ctl.get("A")!.resolve("a");
-    await Promise.all([c.result, u2.result]);
-    expect(wire).toEqual(["run=0", "cmd_stop=false"]); // the verified stop first; the later unverified one after it (it cancelled nothing)
-  });
-
-  it("★ R-11-j: an UNVERIFIED stop cancels the waiting ORDINARY writes only — never a protective interlock action (even one overriding a pin) — and tells no re-check listener", async () => {
+  it("★ R-11-n: an UNVERIFIED stop with room is FIFO behind the waiting writes and cancels nothing; it tells no re-check listener", async () => {
     const { log, ctl, job } = makeJobs();
     process.env.OT_CMD_QUEUE_MAX = "10";
     const seen: unknown[] = [];
@@ -250,35 +207,37 @@ describe("R-11-k (1)(2) — the STOP lane: every stop, identical writes only, pi
     accepted(tryEnqueueAdapterCommand(A, job("A")));
     const rW = accepted(tryEnqueueAdapterCommand(A, job("W")));
     const rL = accepted(tryEnqueueAdapterCommand(A, job("L"), { protective: true, overridesStopPin: true }));
-    const u = enqueueStopLane(A, [rw("x", 1)], laneExec([]), projectExecutedForMember, { cls: "unverified", stopRef: { k: "U" } });
+    const rU = accepted(tryEnqueueAdapterCommand(A, job("U"), { waitForSlot: true }));
     off();
-    expect(await rW).toEqual({ ...SUPERSEDED, stop: { k: "U" } });
+    for (const n of ["A", "W", "L", "U"]) {
+      await flush();
+      ctl.get(n)!.resolve(n);
+    }
+    expect([await rW, await rL, await rU]).toEqual(["W", "L", "U"]);
+    expect(log).toEqual(["A", "W", "L", "U"]);
     expect(seen).toEqual([]);
-    ctl.get("A")!.resolve("a");
-    await u.result;
-    await flush();
-    ctl.get("L")!.resolve("l");
-    expect(await rL).toBe("l");
-    expect(log).toEqual(["A", "L"]);
   });
 
-  it("★ R-11-k (3): a VERIFIED stop cancels a waiting protective action that writes a pinned stop tag with a non-pin value; it keeps one that does not", async () => {
+  it("★ R-1E-b (kept): a VERIFIED STOP cancels an unverified stop still WAITING — in the queue or for a slot; one issued after the STOP runs after it", async () => {
     const { log, ctl, job } = makeJobs();
-    process.env.OT_CMD_QUEUE_MAX = "10";
+    process.env.OT_CMD_QUEUE_MAX = "2";
     accepted(tryEnqueueAdapterCommand(A, job("A")));
-    const rReduce = accepted(tryEnqueueAdapterCommand(A, job("reduce_speed=30"), { protective: true, overridesStopPin: true }));
-    const rBlock = accepted(tryEnqueueAdapterCommand(A, job("block"), { protective: true }));
-    const p = enqueueStopLane(A, [rw("speed", 0)], laneExec([]), projectExecutedForMember, { cls: "pinned", stopRef: { k: "P" } });
-    expect(await rReduce).toEqual({ ...SUPERSEDED, stop: { k: "P" } });
-    ctl.get("A")!.resolve("a");
-    await p.result;
-    await flush();
-    ctl.get("block")!.resolve("b");
-    expect(await rBlock).toBe("b");
-    expect(log).toEqual(["A", "block"]);
+    const rU1 = accepted(tryEnqueueAdapterCommand(A, job("U1"), { waitForSlot: true })); // in the queue (depth 2 = FULL)
+    const rU2 = accepted(tryEnqueueAdapterCommand(A, job("U2"), { waitForSlot: true })); // waits for a slot
+    const rS = accepted(tryEnqueueAdapterCommand(A, job("S"), { priorityStop: true, stopRef: { k: "S" } }));
+    expect(await rU1).toEqual({ ...SUPERSEDED, stop: { k: "S" } });
+    expect(await rU2).toEqual({ ...SUPERSEDED, stop: { k: "S" } });
+    expect(dw._adapterSlotWaitersForTests(A)).toBe(0);
+    const rU3 = accepted(tryEnqueueAdapterCommand(A, job("U3"), { waitForSlot: true }));
+    for (const n of ["A", "S", "U3"]) {
+      await flush();
+      ctl.get(n)!.resolve(n);
+    }
+    expect([await rS, await rU3]).toEqual(["S", "U3"]);
+    expect(log).toEqual(["A", "S", "U3"]);
   });
 
-  it("the legacy priorityStop path follows R-11-k (3) too: protective kept unless it overrides a pin", async () => {
+  it("★ R-11-k (3) (kept): a VERIFIED STOP cancels a waiting protective action that writes a pinned stop tag with a non-pin value; it keeps one that does not", async () => {
     const { ctl, job } = makeJobs();
     process.env.OT_CMD_QUEUE_MAX = "10";
     accepted(tryEnqueueAdapterCommand(A, job("A")));
@@ -294,69 +253,49 @@ describe("R-11-k (1)(2) — the STOP lane: every stop, identical writes only, pi
     expect(await rL).toBe("L");
   });
 
-  it("an ordinary command is capped (BUSY when full) — a protective one too; the lane never is", () => {
+  it("an ordinary command is capped (BUSY when full) — a protective one too; a STOP never is", () => {
     const { job } = makeJobs();
     accepted(tryEnqueueAdapterCommand(A, job("A")));
     accepted(tryEnqueueAdapterCommand(A, job("B")));
     expect(tryEnqueueAdapterCommand(A, job("X")).accepted).toBe(false);
     expect(tryEnqueueAdapterCommand(A, job("L"), { protective: true }).accepted).toBe(false);
-    const s = enqueueStopLane(A, [rw("speed", 0)], laneExec([]), projectExecutedForMember, { cls: "unverified" });
-    expect(s.joined).toBe(false);
-    expect(_adapterCommandQueueDepthForTests(A)).toBe(2); // B was cancelled, the group took one slot
+    expect(tryEnqueueAdapterCommand(A, job("S"), { priorityStop: true }).accepted).toBe(true);
+    expect(_adapterCommandQueueDepthForTests(A)).toBe(2); // B was cancelled, the STOP took one slot
   });
 
-  it("★ C-1 (3): the group runs with EVERY member's intents and the strictest timeout", async () => {
-    const { ctl, job } = makeJobs();
-    accepted(tryEnqueueAdapterCommand(A, job("A")));
-    const seen: StopLaneGroupCtx[] = [];
-    const exec = async (writes: OtResolvedWrite[], g: StopLaneGroupCtx) => {
-      seen.push(g);
-      return laneExec([])(writes);
-    };
-    const m1 = enqueueStopLane(A, [rw("speed", 0)], exec, projectExecutedForMember, { cls: "pinned", member: { intentIds: [11, 12], timeoutMs: 5000 } });
-    const m2 = enqueueStopLane(A, [rw("speed", 0)], exec, projectExecutedForMember, { cls: "pinned", member: { intentIds: [21], timeoutMs: 1500 } });
-    const m3 = enqueueStopLane(A, [rw("speed", 0)], exec, projectExecutedForMember, { cls: "pinned", member: { intentIds: [31] } });
-    ctl.get("A")!.resolve("a");
-    await Promise.all([m1.result, m2.result, m3.result]);
-    expect(seen).toHaveLength(1);
-    expect(seen[0]).toMatchObject({ cls: "pinned", intentIds: [11, 12, 21, 31], timeoutMs: 1500, members: 3 });
-    expect(typeof seen[0].dropStopped).toBe("function");
-  });
-
-  it("tells the in-flight re-check listeners about VERIFIED stops only (pinned:false for a content stop, true for the pin)", () => {
+  it("tells the in-flight re-check listeners about every VERIFIED STOP (pinned:false for a content stop, true for the pin), also when it is dropped onto an identical one", () => {
     const seen: unknown[] = [];
     const off = onPinnedStopQueued(A, (ref, info) => seen.push({ ref, info }));
     const { job } = makeJobs();
     accepted(tryEnqueueAdapterCommand(A, job("A")));
-    enqueueStopLane(A, [rw("speed", 0)], laneExec([]), projectExecutedForMember, { cls: "verified", stopRef: { k: "C", contentStop: true } });
-    enqueueStopLane(A, [rw("run", 0)], laneExec([]), projectExecutedForMember, { cls: "pinned", stopRef: { k: "P" } });
-    enqueueStopLane(A, [rw("x", 1)], laneExec([]), projectExecutedForMember, { cls: "unverified", stopRef: { k: "U" } });
+    tryEnqueueAdapterCommand(A, job("C"), { priorityStop: true, stopRef: { k: "C", contentStop: true } });
+    tryEnqueueAdapterCommand(A, job("P"), { priorityStop: true, identicalStopKey: "K", stopRef: { k: "P" } });
+    tryEnqueueAdapterCommand(A, job("P2"), { priorityStop: true, identicalStopKey: "K", stopRef: { k: "P2" } });
+    tryEnqueueAdapterCommand(A, job("U"), { waitForSlot: true });
     off();
     expect(seen).toEqual([
       { ref: { k: "C", contentStop: true }, info: { pinned: false } },
       { ref: { k: "P" }, info: { pinned: true } },
+      { ref: { k: "P2" }, info: { pinned: true } },
     ]);
   });
 
-  it("R-11-k (2) applyPinsAtSend: a changed pin is sent (and reported); a gone pin / a pin that no longer fits / unreadable pins keep the classified value", () => {
-    const fits = (dt: string | undefined, v: unknown) => dt === "int" && typeof v === "number";
-    const w = [rw("speed", 0), rw("run", 0), rw("jog", 0)];
-    const r = applyPinsAtSend(w, [{ tagKey: "speed", value: 2 }, { tagKey: "run", value: "x" }], fits);
-    expect(r.writes.map((x) => x.write.value)).toEqual([2, 0, 0]);
-    expect(r.changed).toEqual([{ tagKey: "speed", requested: 0, sent: 2 }]);
-    expect(applyPinsAtSend(w, null, fits)).toEqual({ writes: w, changed: [] });
-    expect(applyPinsAtSend(w, [{ tagKey: "speed", value: 0 }], fits).changed).toEqual([]);
-  });
-
-  it("projection: a member's pinAtSend note is carried for its own tags only; a non-executed result is shared as is", () => {
-    const ex: ExecutedWrite = { sentAt: new Date(0), timedOut: false, outcomes: [{ idx: 0, ok: true, status: "acked", errorText: null, readBackValue: null }], pinAtSend: [{ tagKey: "speed", requested: 0, sent: 2 }] };
-    const p = projectExecutedForMember(ex, [rw("speed", 2)], [rw("speed", 0)]) as ExecutedWrite;
-    expect(p.pinAtSend).toEqual([{ tagKey: "speed", requested: 0, sent: 2 }]);
-    expect(projectExecutedForMember(ex, [rw("run", 0)], [rw("run", 0)]).pinAtSend).toBeUndefined();
-    const other = { safetyRecheckRefused: true };
-    expect(projectExecutedForMember(other as never, [rw("x", 1)], [rw("x", 1)])).toBe(other);
+  it("★ scan #108 moot (R-11-n): no stop GROUP exists — 12 distinct pinned STOPs are 12 single-write queue entries that count against the cap (ordinary writes see BUSY), each answered from its own write; the lane API is gone", async () => {
+    const { ctl, job } = makeJobs();
+    accepted(tryEnqueueAdapterCommand(A0, job("A")));
+    const wire: string[] = [];
+    const outs = Array.from({ length: 12 }, (_, i) => tryEnqueueAdapterCommand(A0, stopJob(wire, `t${i}`), { priorityStop: true, identicalStopKey: `K${i}` }));
+    expect(_adapterCommandQueueDepthForTests(A0)).toBe(13);
+    expect(tryEnqueueAdapterCommand(A0, job("W")).accepted).toBe(false); // the STOPs are queue entries: the cap holds for everything else
+    expect(dw._adapterQueueLineForTests(A0).every((x) => x.cls === "stop" && x.callers === 1)).toBe(true);
+    for (const gone of ["enqueueStopLane", "projectExecutedForMember", "applyPinsAtSend", "stopLaneWriteSetKey", "OT_STOP_LANE_UNVERIFIED_MAX", "_stopLaneWaitingMembersForTests"]) expect(gone in dw).toBe(false);
+    ctl.get("A")!.resolve("a");
+    expect(await Promise.all(outs.map((o) => accepted(o)))).toEqual(Array.from({ length: 12 }, (_, i) => `t${i}`));
+    expect(wire).toHaveLength(12);
   });
 });
+const A0 = 7171;
+
 
 describe("R-11-d / R-11-i (b) — the per-adapter STOP epoch", () => {
   const A = 6161;
@@ -466,21 +405,3 @@ describe("R-11-d / R-11-i (b) — the per-adapter STOP epoch", () => {
     expect(adapterStopEpoch(A)).toBe(now);
   });
 });
-
-// ── Scan flag (on 14ba602c5) otDeviceWrite "priority-inversion / queue-cap bypass", PINNED ONLY — NOT fixed. Path: enqueueStopLane caps
-// only WAITING unverified groups; VERIFIED groups (pinned / content) get one waiting group per DISTINCT write set with no cap, ranked
-// ahead of every ordinary entry and outside OT_CMD_QUEUE_MAX. N distinct pinned / content write sets (subsets of the pinned tags, pin
-// versions, connections) ⇒ N queue entries and N sequential device writes; a later pinned STOP with yet another write set waits
-// behind all of them (each up to the in-flight bound, ~10 s, + B3 slot hold after a timeout).
-describe("scan pin — otDeviceWrite: verified stop groups are not capped", () => {
-  it.fails("★ 12 pinned STOPs with distinct write sets while a write is in flight ⇒ the waiting lane stays bounded and a 13th pinned STOP is not behind all of them", () => {
-    const { job } = makeJobs();
-    accepted(tryEnqueueAdapterCommand(A0, job("A")));
-    for (let i = 0; i < 12; i++) enqueueStopLane(A0, [rw(`t${i}`, 0)], laneExec([]), projectExecutedForMember, { cls: "pinned" });
-    enqueueStopLane(A0, [rw("estop", 0)], laneExec([]), projectExecutedForMember, { cls: "pinned", stopRef: { k: "LAST" } });
-    const line = _adapterQueueLineForTests(A0);
-    expect(line.length).toBeLessThanOrEqual(2); // FAILS today: 13 waiting groups, depth 14 (OT_CMD_QUEUE_MAX = 2 in this file)
-  });
-});
-const A0 = 7171;
-

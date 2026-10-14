@@ -120,21 +120,15 @@ import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 // public name it used to export from here is re-exported below, unchanged.
 import {
   adapterStopEpoch,
-  applyPinsAtSend,
-  connectionKeyOf,
-  enqueueStopLane,
-  executeOtDeviceWrite,
   executeOtDeviceWriteUnlessStopped,
+  identicalStopKey,
   isCmdSerializeEnabled,
   isStoppedBeforeWrite,
   isSuperseded,
   onPinnedStopQueued,
   OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS,
-  projectExecutedForMember,
   tryEnqueueAdapterCommand,
   type ExecutedWrite,
-  type StopLaneClass,
-  type StopLaneGroupCtx,
   type StoppedBeforeWrite,
   type Superseded,
 } from "./otDeviceWrite";
@@ -162,8 +156,6 @@ export {
   adapterStopEpoch,
   bumpAdapterStopEpoch,
   isStoppedBeforeWrite,
-  enqueueStopLane,
-  _stopLaneWaitingMembersForTests,
   type Superseded,
   type EnqueueOutcome,
   type StoppedBeforeWrite,
@@ -751,21 +743,13 @@ export function writesOverrideStopPin(writes: ReadonlyArray<DispatchWrite>, pins
   return writes.some((w) => pins.some((p) => p.tagKey === w.tagKey) && !matchPinnedStop([...pins], [{ tagKey: w.tagKey, value: w.value }]).ok);
 }
 
-/** R-11-k (2) — the bound of the pin read at SEND time of a verified stop group; unreadable within it ⇒ the classified values are sent. */
-export const OT_STOP_PIN_AT_SEND_DEADLINE_MS = 500;
-
-/** R-11-k (2) — the result row's note when the pin read at send time differed from the value this command was classified with. */
-function pinAtSendExtra(executed: ExecutedWrite, tagKey: string): Record<string, unknown> {
-  const p = executed.pinAtSend?.find((x) => x.tagKey === tagKey);
-  return p ? { pinAtSend: { requested: p.requested, sent: p.sent, note: "the stop pin changed before the STOP was sent — the CURRENT pin value was written" } } : {};
-}
-
 /**
  * doc 81 Đợt 11 K-fix 2 (ruling R-11-i a) — is this command a STOP by CONTENT (never by its label)? The pinned stop (5a-stop:
  * stop-typed + exact pins + step-3 rows + current connection), or — whatever its commandType, HITL or interlock — a command whose
  * writes are exactly pinned stop tags with their pinned values, fitting the step-3 rows, on a connection made for the adapter's
- * CURRENT target (the same evidence as the pin, minus the label). Only this decides the STOP lane and the STOP epoch; it never skips
- * a gate (the gate exemptions stay the pinned stop's alone). Any read failure ⇒ false (fail closed: the normal queue).
+ * CURRENT target (the same evidence as the pin, minus the label). Only this decides the STOP path of the queue (R-11-n) and the STOP
+ * epoch; it skips no gate before the queue (the gate exemptions stay the pinned stop's alone) — only the pre-write safety RE-check
+ * (R-11-k / R-11-l: never for a verified STOP). Any read failure ⇒ false (fail closed: an ordinary / unverified command).
  */
 async function isStopByContent(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -1205,12 +1189,12 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // for THIS command; absent → OT_CONTROL_TIMEOUT_MS (default 5000ms) as before.
   const timeoutMs = effectiveTimeoutMs(input.deadlineMs);
 
-  // doc 81 Đợt 11 K-fix 2 (R-11-i a, R-11-h) — STOP by CONTENT decides the STOP lane and the epoch; a protective interlock action
-  // is never cancelled (no epoch check, `protective` in the queue) and gets the lane only when it is a stop by content.
+  // doc 81 Đợt 11 K-fix 2 (R-11-i a, R-11-h) — STOP by CONTENT decides the STOP path and the epoch; a protective interlock action
+  // is never cancelled (no epoch check, `protective` in the queue) unless it overrides a pin, and is a STOP only by its content.
   const trueStop = await isStopByContent(db, input, resolved, step3TagRows, stopCls);
-  // doc 81 Đợt 11 final fix wave (R-11-j, R-11-k) — EVERY stop-typed command takes the stop lane: `pinned` / `verified` (a stop by
-  // content) / `unverified` (stop-typed, values not proven: lane, no epoch bump, cancels no protective action, keeps its preflight).
-  const laneCls: StopLaneClass | null = stopCls.pinnedStop ? "pinned" : trueStop ? "verified" : isStopCommandType(input.commandType) ? "unverified" : null;
+  // doc 81 Đợt 11 simplify (R-11-n) — an UNVERIFIED stop: stop-typed, values not proven. Every gate (the Đợt 5 F4 re-check too), the
+  // ordinary queue (FIFO) but never BUSY (a full queue ⇒ it waits for a slot), no epoch bump, cancels nothing (R-11-j).
+  const unverifiedStop = !trueStop && isStopCommandType(input.commandType);
   // R-11-k (3) / R-11-m — a protective interlock action or an UNVERIFIED stop that would override a pinned stop value can be cancelled
   // by a verified STOP (an ordinary write records its epoch anyway)
   const overridesStopPin = writesOverrideStopPin(input.writes, stopPinsFromTagRows(step3TagRows));
@@ -1231,19 +1215,16 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    The re-check holds this command's queue slot, so a PINNED STOP
   //    queued meanwhile must not wait on it: the re-check gives way at once (this write is dropped as SUPERSEDED_BY_STOP,
   //    exactly like a waiting command) and the STOP runs next.
+  //    doc 81 Đợt 11 (R-11-k / R-11-l, kept by R-11-n) — no VERIFIED STOP is re-checked (the pin, or a stop by content: its values are
+  //    the pinned stop values — refusing them when the safety PLC reads BLOCKED would gate a STOP, L-7); an UNVERIFIED stop is.
   const recheckSafetyIfStale = async (): Promise<Superseded | SafetyRecheckRefusal | null> => {
-    if (preflightPassedAt === undefined || stopCls.pinnedStop) return null;
+    if (preflightPassedAt === undefined || stopCls.pinnedStop || trueStop) return null;
     const waitedMs = Date.now() - preflightPassedAt;
     if (waitedMs <= OT_SAFETY_PREFLIGHT_DEADLINE_MS) return null;
     let unsubscribe: (() => void) | undefined;
     const stopQueued = new Promise<Superseded>((resolve) => {
-      unsubscribe = onPinnedStopQueued(input.adapterId, (stopRef) => {
-        // doc 81 Đợt 11 K-fix 2 (R-11-i a) — only TRUE stops (by content) are announced; a re-checking command that is itself
-        // a true stop (a content stop that is not the pin) does not give way (STOPs never cancel each other); a protective
-        // interlock action never re-checks (no preflight on that path).
-        if (trueStop) return;
-        resolve(stopRef ? { superseded: true, byStop: true, stop: stopRef } : { superseded: true, byStop: true });
-      });
+      // only VERIFIED STOPs are announced (K-fix 2, R-11-i a); a protective interlock action never re-checks (no preflight on that path)
+      unsubscribe = onPinnedStopQueued(input.adapterId, (stopRef) => resolve(stopRef ? { superseded: true, byStop: true, stop: stopRef } : { superseded: true, byStop: true }));
     });
     try {
       const r = await Promise.race([readSafetyStateForPreflight(input.adapterId, input.machineId ?? null), stopQueued]);
@@ -1260,6 +1241,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     }
   };
 
+  // doc 81 Đợt 11 simplify (R-11-n) — the intents the device write records (B3 slot hold / late-result review, STOP watch): this
+  // command's own, plus those of an identical pinned STOP dropped onto it while it waits or its write is in flight (mutable, by design).
+  const deviceLedgerIntents = [...intentIds];
   // ── G1.9 — the write+verify body, extracted UNCHANGED so it can run either
   //    immediately (flag OFF — prior behaviour) or under the per-adapter queue.
   //    It never throws for expected failure modes (driver errors are caught).
@@ -1276,53 +1260,10 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       driverWrites,
       timeoutMs,
       stopTyped: isStopCommandType(input.commandType),
-      ledger: { intentIds, confirmedBy: ledgerConfirmer },
+      ledger: { intentIds: deviceLedgerIntents, confirmedBy: ledgerConfirmer },
       stopEpochAtGates,
       bumpStopEpoch: trueStop,
     });
-  };
-
-  // ── doc 81 Đợt 11 final fix wave (R-11-k 2) — the device write of a STOP-LANE group (flag ON). Runs ONCE for every member of the
-  //    group (identical device writes), with EVERY member's intents (slot hold / late-result review / STOP watch) and the strictest
-  //    timeout. No epoch check (a stop is never epoch-cancelled). A VERIFIED group (pinned / content stop) runs NO safety re-check: a
-  //    pinned member never had one, and one member's re-check must never decide for another (C-1). An UNVERIFIED group keeps the
-  //    Đợt 5 F4 pre-write re-check (fail closed: its values are not proven energy-reducing; refused ⇒ "use the hardware E-STOP"):
-  //    its members are all unverified with IDENTICAL writes, so the one re-check of the current safety state is every member's
-  //    truth, and no pinned / verified stop can be in such a group. A verified group re-reads the pins at SEND time (bounded) and
-  //    sends the current pin; only a verified group moves the STOP epoch.
-  const executeStopGroup = async (writes: typeof resolved, g: StopLaneGroupCtx): Promise<ExecutedWrite | Superseded | SafetyRecheckRefusal> => {
-    if (g.cls === "unverified") {
-      const recheck = await recheckSafetyIfStale(); // Đợt 5 F4 / F fix 1: ≤ OT_SAFETY_PREFLIGHT_DEADLINE_MS; gives way to a verified STOP
-      if (recheck) return recheck;
-      // R-11-m — right before the device write (same tick as executeOtDeviceWrite → driver.writeTags): members a verified STOP sent
-      // since their gates began have been superseded; nobody left ⇒ nothing is written
-      if (g.dropStopped() === 0) return { superseded: true, byStop: true };
-    }
-    let send = writes;
-    let pinAtSend: Array<{ tagKey: string; requested: unknown; sent: unknown }> = [];
-    if (g.cls !== "unverified") {
-      const pins = await withDeadline(loadStopPins(db, input.adapterId), OT_STOP_PIN_AT_SEND_DEADLINE_MS, "pinned stop values at send").catch((err) => {
-        console.warn(`[Dispatch] adapter ${input.adapterId}: the pins could not be re-read at STOP send (${(err as Error)?.message || err}) — the classified pin values are sent`);
-        return null;
-      });
-      const applied = applyPinsAtSend(writes, pins, (dataType, value) => {
-        const v = validateStopValue(String(dataType ?? ""), value);
-        return v.ok && v.value === value;
-      });
-      send = applied.writes;
-      pinAtSend = applied.changed;
-    }
-    const ex = await executeOtDeviceWrite({
-      input: { ...input, writes: send.map((r) => ({ ...r.write })) },
-      driver,
-      resolved: send,
-      driverWrites: send.map((r) => ({ tagKey: r.write.tagKey, address: r.address, value: r.write.value, dataType: r.dataType as any, scale: r.scale, offset: r.offset })),
-      timeoutMs: g.timeoutMs ?? timeoutMs,
-      stopTyped: true,
-      ledger: { intentIds: g.intentIds, confirmedBy: ledgerConfirmer },
-      bumpStopEpoch: g.cls !== "unverified",
-    });
-    return pinAtSend.length > 0 ? { ...ex, pinAtSend } : ex;
   };
 
   // ── (5c) G1.9 — PER-ADAPTER SERIALIZATION (flag OT_CMD_SERIALIZE_ENABLED,
@@ -1333,40 +1274,37 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    doc 81 Đợt 1E Task 1 (R-1E-a) — a PINNED stop (stopCls.pinnedStop, Đợt 1D: exact pin match + step-3 row +
   //    connection fingerprint) is never BUSY: it runs right after the in-flight write and cancels the non-stop
   //    commands still WAITING ahead of it; each cancelled caller ledgers SUPERSEDED_BY_STOP naming the stop.
-  //    doc 81 Đợt 11 K-fix 2 (ruling R-11-i, R-11-h) — the front-of-line, never-BUSY treatment is for TRUE stops only, by CONTENT
-  //    (trueStop), never by label: they go through the BOUNDED stop lane (one in flight + one waiting group per adapter; more STOPs
-  //    JOIN the waiting group and share its single execution). Everything else — a stop-labelled command with arbitrary writes too —
-  //    is an ordinary queued command (capped, BUSY when full). A protective interlock action is never cancelled by a STOP.
+  //    doc 81 Đợt 11 simplify (owner ruling R-11-n) — a VERIFIED STOP (trueStop: the pin, or a stop by content) is sent exactly as with
+  //    the flag OFF, behind the per-adapter in-flight write only: no lane, no group, no pin read at send. An identical PINNED STOP
+  //    already waiting or in flight is not queued again — the caller gets that STOP's real outcome. An UNVERIFIED stop is an ordinary
+  //    queued command with every gate that is never BUSY (a full queue ⇒ it waits for a slot). Anything else: capped, BUSY when full.
+  //    A protective interlock action is never cancelled by a STOP unless it would override a pin (R-11-k 3).
   let executed: ExecutedWrite | SafetyRecheckRefusal | StoppedBeforeWrite;
   const slotHoldOf = (v: ExecutedWrite | Superseded | SafetyRecheckRefusal | StoppedBeforeWrite): Promise<void> | undefined => ("slotHold" in v ? v.slotHold : undefined);
   if (isCmdSerializeEnabled()) {
-    let queued: ExecutedWrite | Superseded | SafetyRecheckRefusal | StoppedBeforeWrite;
-    if (laneCls) {
-      // R-11-j / R-11-k (1) — every stop-typed command (and every stop by content): the stop lane — never BUSY, never behind ordinary writes
-      const stopRef = { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds, ...(laneCls === "pinned" ? {} : { contentStop: true }), ...(laneCls === "unverified" ? { unverified: true } : {}) };
-      queued = await enqueueStopLane(input.adapterId, resolved, executeStopGroup, projectExecutedForMember, {
-        cls: laneCls,
-        connKey: connectionKeyOf(input.adapterId),
-        member: { intentIds, timeoutMs, stopEpochAtGates: laneCls === "unverified" ? stopEpochAtGates : null },
-        stopRef,
-        holdSlot: slotHoldOf,
-      }).result;
-    } else {
-      const enq = tryEnqueueAdapterCommand(input.adapterId, () => executeWriteAndVerify(), { priorityStop: false, protective: input.triggeredBy.kind === "interlock", overridesStopPin, holdSlot: slotHoldOf });
-      if (!enq.accepted) {
-        const ids = await writeRejected(
-          db,
-          input,
-          "BUSY",
-          `adapter command queue full (depth ${enq.depth} >= max ${enq.max}) — command rejected, retry later`,
-          undefined,
-          undefined,
-          { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra }, // Task 6 — the RESULT row of the intent
-        );
-        return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids, ...(stopCls.pinnedStop ? { pinnedStop: true } : {}) };
-      }
-      queued = await enq.result;
+    const enq = trueStop
+      ? tryEnqueueAdapterCommand(input.adapterId, () => executeWriteAndVerify(), {
+          priorityStop: true,
+          stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds, ...(stopCls.pinnedStop ? {} : { contentStop: true }) },
+          // only the PINNED stop is shared: its outcome is its device write alone (a content stop is never one caller's verdict for another)
+          identicalStopKey: stopCls.pinnedStop ? identicalStopKey(input.adapterId, resolved) : null,
+          shareIntentIds: deviceLedgerIntents,
+          holdSlot: slotHoldOf,
+        })
+      : tryEnqueueAdapterCommand(input.adapterId, () => executeWriteAndVerify(), { waitForSlot: unverifiedStop, protective: input.triggeredBy.kind === "interlock", overridesStopPin, holdSlot: slotHoldOf });
+    if (!enq.accepted) {
+      const ids = await writeRejected(
+        db,
+        input,
+        "BUSY",
+        `adapter command queue full (depth ${enq.depth} >= max ${enq.max}) — command rejected, retry later`,
+        undefined,
+        undefined,
+        { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra }, // Task 6 — the RESULT row of the intent
+      );
+      return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids, ...(stopCls.pinnedStop ? { pinnedStop: true } : {}) };
     }
+    const queued = await enq.result;
     if (isSuperseded(queued)) {
       // R-1E-a — cancelled while WAITING: never reached driver.writeTags. RESULT row of the intent, like BUSY.
       // final wave G9 — a STOP without an idempotency key: its own localisable code, never the literal "unknown".
@@ -1406,7 +1344,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     }
     executed = direct;
   }
-  if (isStoppedBeforeWrite(executed) && laneCls === "unverified") {
+  if (isStoppedBeforeWrite(executed) && unverifiedStop) {
     // doc 81 Đợt 11 final fix wave residual (R-11-m) — an UNVERIFIED stop writing a pinned stop tag with a non-pin value, in its gates
     // while a verified STOP was sent: superseded by that STOP (a stop is never "STOPPED_BEFORE_WRITE" — R-11-j), nothing written.
     const stopKey = typeof executed.stop?.idempotencyKey === "string" && executed.stop.idempotencyKey ? executed.stop.idempotencyKey : null;
@@ -1504,7 +1442,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         errorText: o.errorText,
         // Task 6 — RESULT row linked to its write-ahead intent (by id; the key pair
         // '<k>' / 'intent:<k>' links them too).
-        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ledgerExtra, ...pinAtSendExtra(executed, r.write.tagKey) } as any,
+        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ledgerExtra } as any,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
         sentAt,
         ackedAt: o.ok ? new Date() : null,

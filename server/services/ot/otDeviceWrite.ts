@@ -172,7 +172,7 @@ export function _staleWriteRiskSizeForTests(): number {
 export function _sweepStaleWriteRiskForTests(now: number): void {
   sweepStaleWriteRisk(now);
 }
-/** doc 81 Đợt 11 final fix wave (R-11-k 2) — test seam: the intents the adapter's abandoned (timed-out) write carries, null when none. */
+/** doc 81 Đợt 11 (R-11-k 2, kept by R-11-n) — test seam: the intents the adapter's abandoned (timed-out) write carries, null when none. */
 export function _staleWriteRiskIntentIdsForTests(adapterId: number): number[] | null {
   return staleWriteRisk.get(adapterId)?.intentIds ?? null;
 }
@@ -203,15 +203,13 @@ export type ExecutedWrite = {
   timedOut: boolean;
   outcomes: Array<{ idx: number; ok: boolean; status: DispatchStatus; errorText: string | null; readBackValue: unknown }>;
   slotHold?: Promise<void>;
-  /** doc 81 Đợt 11 final fix wave (R-11-k 2) — a stop group's tags whose pin, read at SEND time, differed from the classified value (the pin was sent) */
-  pinAtSend?: Array<{ tagKey: string; requested: unknown; sent: unknown }>;
 };
 
 /**
  * final wave F7 — listeners told when a PINNED stop is queued for an adapter: an in-flight pre-write safety re-check of a
  * non-stop command gives way to it at once (L-7). Returns the unsubscribe function.
- * doc 81 Đợt 11 K-fix 2 (R-11-i a) — told for every TRUE stop (by content) queued in the stop lane; `info.pinned` false for a
- * content stop that is not the pinned stop command. A stop-LABELLED command with arbitrary writes never tells anyone.
+ * doc 81 Đợt 11 K-fix 2 (R-11-i a) / simplify (R-11-n) — told for every VERIFIED STOP (by content) that reaches the queue; `info.pinned`
+ * false for a content stop that is not the pinned stop command. An unverified stop-typed command never tells anyone.
  */
 export type StopQueuedListener = (stopRef?: Record<string, unknown>, info?: { pinned: boolean }) => void;
 const pinnedStopQueuedListeners = new Map<number, Set<StopQueuedListener>>();
@@ -302,14 +300,8 @@ interface PendingAdapterCommand {
   run: () => void;
   /** Huỷ lệnh đang CHỜ: người gọi nhận `Superseded` (mang danh tính DỪNG `byStop`); `fn` không bao giờ được gọi. */
   cancel: (byStop?: Record<string, unknown>) => void;
+  /** a VERIFIED STOP (the pinned stop, or a stop by content): never BUSY, waits only for the in-flight command, never cancelled */
   priorityStop: boolean;
-  /**
-   * doc 81 Đợt 11 final fix wave (R-11-k) — the place in the line: 0 a PINNED stop (lane group or legacy priorityStop job), 1 a VERIFIED
-   * content stop (writes exactly pinned stop values, not the pinned stop command), 2 an UNVERIFIED stop (stop-typed, values not proven),
-   * 3 everything else. A new entry stands after the last waiting entry of a rank ≤ its own; rank 3 is appended. Stops (rank < 3) are
-   * never cancelled by another stop.
-   */
-  rank: number;
   /**
    * doc 81 Đợt 11 K-fix 2 (ruling R-11-h) — a PROTECTIVE interlock action (stop_line / block / reduce): never cancelled by a STOP —
    * final fix wave (R-11-k 3): unless `overridesStopPin`, see below. It keeps every gate.
@@ -317,74 +309,38 @@ interface PendingAdapterCommand {
   protective: boolean;
   /**
    * R-11-k (3) — this protective action writes a PINNED stop tag with a value other than its pin (e.g. a reduce_speed writing 30 where the
-   * stop pin is 0): a VERIFIED stop cancels it (else it would land after the STOP and override it). An unverified stop never does.
+   * stop pin is 0): a VERIFIED stop cancels it (else it would land after the STOP and override it).
    */
   overridesStopPin: boolean;
-  /** doc 81 Đợt 11 K-fix 2 (R-11-i c) — the coalescing STOP group of the bounded fast lane, present only while it is WAITING. */
-  lane?: StopLaneGroup;
-}
-
-/**
- * doc 81 Đợt 11 final fix wave (R-11-k) — the class of a stop in the lane:
- *   • `pinned`     — the pinned stop command (stop-typed, writes exactly pinned values, current connection): epoch bump, cancels waiting
- *                    writes, precedence over interlock actions that would override its pin; ahead of every other entry;
- *   • `verified`   — a command whose writes are exactly pinned stop values but that is not the pinned stop command (a "set" of the pin,
- *                    an interlock stop_line writing the pin): the same STOP treatment, behind the pinned groups;
- *   • `unverified` — a stop-TYPED command whose values are not proven (no pins, values differ, stale connection): the lane (never BUSY,
- *                    never behind ordinary writes, never epoch-cancelled) but NO epoch bump, never cancels or overrides an interlock
- *                    action, and the waiting unverified groups are capped (OT_STOP_LANE_UNVERIFIED_MAX: the newest replaces the oldest).
- */
-export type StopLaneClass = "pinned" | "verified" | "unverified";
-/** R-11-k (1) — at most this many WAITING unverified groups per adapter; a new one beyond it replaces the oldest (SUPERSEDED_BY_STOP). */
-export const OT_STOP_LANE_UNVERIFIED_MAX = 2;
-const LANE_RANK: Record<StopLaneClass, number> = { pinned: 0, verified: 1, unverified: 2 };
-const ORDINARY_RANK = 3;
-
-/** R-11-k — what a member brings to its group's single device write (its ledger intents and its own timeout). */
-export interface StopLaneMemberCtx {
+  /**
+   * doc 81 Đợt 11 simplify (ruling R-11-n) — a PINNED STOP's device write identity (identicalStopKey); null: never shared. While this STOP
+   * waits or its write is in flight, an identical STOP is not queued again: its caller gets THIS STOP's real outcome.
+   */
+  identicalStopKey: string | null;
+  /** R-11-n — the shared outcome of this STOP (set for a sharable STOP) */
+  result?: Promise<unknown>;
+  /** R-11-n — this STOP's ledger intents (the array its device write was given): an identical STOP's intents are added to it */
   intentIds?: number[];
-  timeoutMs?: number;
-  /**
-   * doc 81 Đợt 11 final fix wave residual (R-11-m) — the STOP epoch this member read when its gates began, or null/absent when a STOP
-   * never cancels it. Set only for an UNVERIFIED stop that writes a pinned stop tag with a non-pin value: a VERIFIED STOP sent after its
-   * gates began supersedes it (SUPERSEDED_BY_STOP) right before the group's device write — it must not restart motion after the STOP.
-   */
-  stopEpochAtGates?: number | null;
-}
-/** R-11-k (2) — the group's execution context: EVERY member's intents (slot hold, late-result review, STOP watch) and the strictest timeout. */
-export interface StopLaneGroupCtx {
-  cls: StopLaneClass;
-  intentIds: number[];
-  /** the smallest timeout any member asked for; undefined when none did */
-  timeoutMs: number | undefined;
-  members: number;
-  /**
-   * R-11-m — supersede (SUPERSEDED_BY_STOP, naming the STOP) every member whose `stopEpochAtGates` moved, and answer how many members
-   * are still live. NOT async: the executor calls it right before its device write, in the same tick. 0 ⇒ do not write.
-   */
-  dropStopped: () => number;
-}
-
-/**
- * doc 81 Đợt 11 K-fix 2 (R-11-i c) → final fix wave (R-11-k 2, R-11-j addendum) — one WAITING group of an adapter's STOP lane. Members
- * coalesce ONLY when their device writes are IDENTICAL (`key`: class + running connection + every write's tag, address, dataType,
- * scale, offset and canonical value). All members therefore share one device write that contains exactly each member's writes; each
- * member gets that write's true outcome (failed ⇒ failed). Nothing is merged, nothing is dropped as a "conflict".
- */
-interface StopLaneGroup {
-  cls: StopLaneClass;
-  key: string;
-  writes: OtResolvedWrite[];
-  members: Array<{ own: OtResolvedWrite[]; ctx: StopLaneMemberCtx; resolve: (v: unknown) => void; reject: (e: unknown) => void }>;
+  /** R-11-n — the outcome is in (the write answered or timed out): from then on an identical STOP is sent anew */
+  settled: boolean;
+  /** R-11-n — callers sharing this job (1 + identical STOPs dropped onto it) — test seam only */
+  callers: number;
 }
 
 interface AdapterCommandQueue {
   /** Có một lệnh đang thực thi (write+verify) hay không. */
   inFlight: boolean;
+  /** R-11-n — the job in flight (an identical STOP joins it while its write has not answered) */
+  running: PendingAdapterCommand | null;
   /** Lệnh đang chờ, theo thứ tự sẽ chạy. */
   pending: PendingAdapterCommand[];
   /** Số lệnh trong hàng = lệnh đang bay (0/1) + lệnh đang chờ. */
   depth: number;
+  /**
+   * doc 81 Đợt 11 simplify (ruling R-11-n) — stop-typed commands that found the queue FULL: never BUSY, they wait (FIFO) for a slot and
+   * are admitted before any newer command. Not counted in `depth`.
+   */
+  slotWaiters: Array<{ admit: () => void; cancel: (byStop?: Record<string, unknown>) => void }>;
 }
 
 const adapterCommandQueues = new Map<number, AdapterCommandQueue>();
@@ -407,81 +363,90 @@ export function _adapterCommandQueueDepthForTests(adapterId: number): number {
   return adapterCommandQueues.get(adapterId)?.depth ?? 0;
 }
 
-/** K-fix 2 — test seam: members of the adapter's WAITING stop-lane groups, all groups summed (0 when none waits). */
-export function _stopLaneWaitingMembersForTests(adapterId: number): number {
-  return (adapterCommandQueues.get(adapterId)?.pending ?? []).reduce((n, j) => n + (j.lane?.members.length ?? 0), 0);
+/** R-11-n — test seam: stop-typed commands waiting for a slot of the adapter's full queue. */
+export function _adapterSlotWaitersForTests(adapterId: number): number {
+  return adapterCommandQueues.get(adapterId)?.slotWaiters.length ?? 0;
 }
 
-/** R-11-k — test seam: the WAITING entries of an adapter's queue in line order (lane groups with class + member count; `ordinary` jobs). */
-export function _adapterQueueLineForTests(adapterId: number): Array<{ cls: StopLaneClass | "priorityStop" | "ordinary" | "protective"; members?: number }> {
-  return (adapterCommandQueues.get(adapterId)?.pending ?? []).map((j) =>
-    j.lane ? { cls: j.lane.cls, members: j.lane.members.length } : { cls: j.priorityStop ? "priorityStop" : j.protective ? "protective" : "ordinary" },
-  );
+/** R-11-n — test seam: the WAITING entries in line order (`stop` with its callers, `protective`, `ordinary`). */
+export function _adapterQueueLineForTests(adapterId: number): Array<{ cls: "stop" | "protective" | "ordinary"; callers?: number }> {
+  return (adapterCommandQueues.get(adapterId)?.pending ?? []).map((j) => (j.priorityStop ? { cls: "stop" as const, callers: j.callers } : { cls: j.protective ? ("protective" as const) : ("ordinary" as const) }));
+}
+
+/** R-11-n — test seam: callers of the adapter's STOPs (waiting, or in flight with no answer yet), identical STOPs dropped onto them included. */
+export function _stopCallersForTests(adapterId: number): number {
+  const q = adapterCommandQueues.get(adapterId);
+  if (!q) return 0;
+  const run = q.running?.priorityStop && !q.running.settled ? q.running.callers : 0;
+  return q.pending.reduce((n, j) => n + (j.priorityStop ? j.callers : 0), run);
 }
 
 export type EnqueueOutcome<T> =
-  | { accepted: true; result: Promise<T | Superseded> }
+  | { accepted: true; result: Promise<T | Superseded>; /** R-11-n — an identical STOP was already waiting / in flight: this is ITS outcome */ joined?: boolean }
   | { accepted: false; depth: number; max: number };
+
+/** R-11-n — admit the waiting stop-typed commands (FIFO) while the queue has room. */
+function admitSlotWaiters(queue: AdapterCommandQueue): void {
+  const max = cmdQueueMax();
+  while (queue.slotWaiters.length > 0 && queue.depth < max) queue.slotWaiters.shift()!.admit();
+}
 
 /** Chạy lệnh chờ kế tiếp nếu không có lệnh nào đang bay; hàng cạn ⇒ xoá entry khỏi map. */
 function pumpAdapterQueue(adapterId: number, queue: AdapterCommandQueue): void {
   if (queue.inFlight) return;
+  admitSlotWaiters(queue);
   const next = queue.pending.shift();
   if (next) {
     next.run();
     return;
   }
-  if (queue.depth === 0 && adapterCommandQueues.get(adapterId) === queue) {
+  if (queue.depth === 0 && queue.slotWaiters.length === 0 && adapterCommandQueues.get(adapterId) === queue) {
     adapterCommandQueues.delete(adapterId);
   }
 }
 
 /**
- * A STOP is queued: cancel every WAITING command that is neither a stop nor a protective interlock action (SUPERSEDED_BY_STOP naming
- * the STOP) and tell an in-flight pre-write safety re-check (it gives way — final wave F7).
- * R-1E-a / R-1E-b — a waiting stop-LABELLED command that is not a true stop is an ordinary command and is cancelled too.
- * K-fix 2 (R-11-h) — a protective interlock action is NEVER cancelled …
- * final fix wave (R-11-k 3) — … except by a VERIFIED stop when the action writes a pinned stop tag with a non-pin value (overridesStopPin).
- * A VERIFIED stop also cancels the waiting UNVERIFIED stop groups (R-1E-b — their unproven values must not undo the STOP).
- * R-11-k (1) — an UNVERIFIED stop cancels the waiting ORDINARY commands only (never a protective one, never a stop) and tells no
- * re-check listener (an in-flight write's safety re-check does not give way to it).
+ * A VERIFIED STOP arrives (R-1E-a): cancel every WAITING command that is neither a STOP nor a protective interlock action
+ * (SUPERSEDED_BY_STOP naming the STOP), every stop-typed command still waiting for a slot (R-1E-b — its unproven values must not run
+ * after the STOP and undo it), a protective action only when it writes a pinned stop tag with a non-pin value (R-11-k 3), and tell an
+ * in-flight pre-write safety re-check (it gives way — final wave F7). The command in flight is never touched.
  */
-function cancelWaitingForStop(adapterId: number, queue: AdapterCommandQueue, stopRef: Record<string, unknown> | undefined, cls: StopLaneClass): void {
-  const verified = cls !== "unverified";
+function cancelWaitingForStop(adapterId: number, queue: AdapterCommandQueue, stopRef: Record<string, unknown> | undefined): void {
+  for (const w of queue.slotWaiters.splice(0)) w.cancel(stopRef);
   const kept: PendingAdapterCommand[] = [];
   for (const j of queue.pending) {
-    // R-1E-b (Đợt 1E review M-1, kept by R-11-k) — a VERIFIED stop cancels a waiting UNVERIFIED stop: its unproven values (e.g. a
-    // "stop" writing cmd_stop=false where the pin is true) must never run after the STOP and undo it. Never BUSY / never
-    // STOPPED_BEFORE_WRITE still hold for it (R-11-j); it answers SUPERSEDED_BY_STOP naming the STOP.
-    if (verified && j.lane?.cls === "unverified") j.cancel(stopRef);
-    else if (j.rank < ORDINARY_RANK) kept.push(j); // otherwise stops never cancel stops
-    else if (j.protective && !(verified && j.overridesStopPin)) kept.push(j);
+    if (j.priorityStop || (j.protective && !j.overridesStopPin)) kept.push(j);
     else j.cancel(stopRef);
   }
   queue.pending = kept;
-  if (!verified) return;
-  for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(stopRef, { pinned: cls === "pinned" });
-}
-
-/** Insert `job` after the last waiting entry whose rank is ≤ its own (stops keep their arrival order within a rank). */
-function insertByRank(queue: AdapterCommandQueue, job: PendingAdapterCommand): void {
-  if (job.rank >= ORDINARY_RANK) {
-    queue.pending.push(job);
-    return;
-  }
-  let at = 0;
-  for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].rank <= job.rank) at = i + 1;
-  queue.pending.splice(at, 0, job);
+  for (const fn of [...(pinnedStopQueuedListeners.get(adapterId) ?? [])]) fn(stopRef, { pinned: stopRef?.contentStop !== true });
 }
 
 /**
- * Xếp `fn` vào hàng đợi tuần tự của adapter. Lệnh thường: trả {accepted:false} NGAY (không side-effect) khi hàng
- * đã đầy; `fn` chỉ chạy sau khi mọi lệnh xếp trước nó đã kết thúc (kể cả khi lệnh trước lỗi). Lệnh
- * `priorityStop` (DỪNG ghim, R-1E-a): không bao giờ bị từ chối; huỷ mọi lệnh không-ưu-tiên đang CHỜ (chúng trả
- * `Superseded`), rồi đứng sau DỪNG ghim cuối cùng đang chờ (hoặc đầu hàng). Entry của adapter được dọn khỏi map
- * khi hàng cạn (không rò rỉ theo số adapter đã từng dùng).
- * doc 81 Đợt 11 K-fix 2: the dispatchers no longer use `priorityStop` — a true STOP goes through the BOUNDED lane
- * (enqueueStopLane); `priorityStop` stays for its existing callers / suites. Neither path cancels a `protective` command (R-11-h).
+ * doc 81 Đợt 11 simplify (ruling R-11-n) — the identity of a PINNED STOP's device write: the running connection + every write's tag,
+ * address, dataType, scale, offset and canonical value, IN ORDER (so the shared outcome's per-write indexes are the caller's own). Two
+ * STOPs share one write only when this is equal. Never throws: anything it cannot read ⇒ null (never shared, sent on its own).
+ */
+export function identicalStopKey(adapterId: number, writes: ReadonlyArray<OtResolvedWrite>): string | null {
+  try {
+    const conn = getActiveConnectionFingerprint(adapterId) ?? null;
+    return JSON.stringify([conn, writes.map((w) => [w.write.tagKey, w.address, w.dataType ?? null, w.scale ?? null, w.offset ?? null, canonicalOtValue(w.write.value)])]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Xếp `fn` vào hàng đợi tuần tự của adapter (G1.9; entry dọn khỏi map khi hàng cạn). `fn` chỉ chạy sau khi mọi lệnh xếp trước nó đã
+ * kết thúc (kể cả khi lệnh trước lỗi).
+ *   • Lệnh thường: trả {accepted:false} NGAY (không side-effect) khi hàng đã đầy (BUSY).
+ *   • `waitForSlot` (doc 81 Đợt 11 R-11-n — a stop-TYPED command that is not a verified stop): never BUSY; a full queue ⇒ it waits for a
+ *     slot (FIFO, before any newer command), then queues like any command, with every gate of its caller.
+ *   • `priorityStop` (a VERIFIED STOP — the pinned stop, R-1E-a, or a stop by content, R-11-n): never BUSY; cancels the waiting commands
+ *     (cancelWaitingForStop), then stands after the last waiting STOP — it waits only for the command in flight (and earlier STOPs).
+ *     `identicalStopKey` (a pinned STOP): an identical STOP already waiting, or in flight with no answer yet, is not queued again — the
+ *     caller gets THAT STOP's real outcome (`joined`); its `shareIntentIds` join that STOP's ledger intents, and when that STOP's write is
+ *     already in flight the adapter's STOP epoch moves now (R-11-d: this STOP is executed by that write).
  */
 export function tryEnqueueAdapterCommand<T>(
   adapterId: number,
@@ -492,6 +457,12 @@ export function tryEnqueueAdapterCommand<T>(
     protective?: boolean;
     /** R-11-k (3) — the protective action writes a pinned stop tag with a non-pin value: a VERIFIED stop cancels it. */
     overridesStopPin?: boolean;
+    /** R-11-n — a stop-typed command that is not a verified stop: a full queue ⇒ wait for a slot, never BUSY. */
+    waitForSlot?: boolean;
+    /** R-11-n — a pinned STOP's identicalStopKey (null / absent: never shared). */
+    identicalStopKey?: string | null;
+    /** R-11-n — the (mutable) intents array this STOP's device write records; an identical STOP's intents are appended to it. */
+    shareIntentIds?: number[];
     stopRef?: Record<string, unknown>;
     /**
      * doc 81 Đợt 4 Task B3 — given `fn`'s result, a promise the queue SLOT waits on before the next command runs
@@ -504,12 +475,26 @@ export function tryEnqueueAdapterCommand<T>(
   const max = cmdQueueMax();
   const priorityStop = opts?.priorityStop === true;
   let q = adapterCommandQueues.get(adapterId);
-  if (!priorityStop && q && q.depth >= max) return { accepted: false, depth: q.depth, max };
+  // full = no room, or stop-typed commands already wait for a slot (they go first)
+  if (!priorityStop && opts?.waitForSlot !== true && q && (q.depth >= max || q.slotWaiters.length > 0)) return { accepted: false, depth: q.depth, max };
   if (!q) {
-    q = { inFlight: false, pending: [], depth: 0 };
+    q = { inFlight: false, running: null, pending: [], depth: 0, slotWaiters: [] };
     adapterCommandQueues.set(adapterId, q);
   }
   const queue = q;
+
+  const key = priorityStop ? (opts?.identicalStopKey ?? null) : null;
+  if (key !== null) {
+    const live = (j: PendingAdapterCommand | null | undefined) => j && j.identicalStopKey === key && !j.settled && j.result;
+    const same = live(queue.running) ? queue.running : queue.pending.find((j) => live(j));
+    if (same?.result) {
+      same.callers += 1;
+      if (opts?.shareIntentIds && same.intentIds) same.intentIds.push(...opts.shareIntentIds);
+      if (same === queue.running) bumpAdapterStopEpoch(adapterId, opts?.stopRef ?? null);
+      cancelWaitingForStop(adapterId, queue, opts?.stopRef); // a newer STOP intent: nothing waiting before it runs after it
+      return { accepted: true, result: same.result as Promise<T | Superseded>, joined: true };
+    }
+  }
 
   let settle!: { resolve: (v: T | Superseded) => void; reject: (e: unknown) => void };
   const result = new Promise<T | Superseded>((resolve, reject) => {
@@ -517,11 +502,15 @@ export function tryEnqueueAdapterCommand<T>(
   });
   const job: PendingAdapterCommand = {
     priorityStop,
-    rank: priorityStop ? LANE_RANK.pinned : ORDINARY_RANK,
     protective: opts?.protective === true,
     overridesStopPin: opts?.overridesStopPin === true,
+    identicalStopKey: key,
+    ...(key !== null ? { result, intentIds: opts?.shareIntentIds } : {}),
+    settled: false,
+    callers: 1,
     run: () => {
       queue.inFlight = true;
+      queue.running = job;
       let p: Promise<T>;
       try {
         p = Promise.resolve(fn());
@@ -531,11 +520,13 @@ export function tryEnqueueAdapterCommand<T>(
       // Lệnh đang bay kết thúc (thành công HAY lỗi) ⇒ nhả hàng, chạy lệnh kế, rồi trả kết quả cho người gọi.
       const done = (): void => {
         queue.inFlight = false;
+        if (queue.running === job) queue.running = null;
         queue.depth -= 1;
         pumpAdapterQueue(adapterId, queue);
       };
       p.then(
         (v) => {
+          job.settled = true;
           let hold: Promise<void> | undefined;
           try {
             hold = opts?.holdSlot?.(v);
@@ -552,6 +543,7 @@ export function tryEnqueueAdapterCommand<T>(
           settle.resolve(v);
         },
         (err) => {
+          job.settled = true;
           done();
           settle.reject(err);
         },
@@ -563,258 +555,30 @@ export function tryEnqueueAdapterCommand<T>(
     },
   };
 
+  const enqueue = (): void => {
+    if (priorityStop) {
+      // Đứng sau DỪNG cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng.
+      let at = 0;
+      for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].priorityStop) at = i + 1;
+      queue.pending.splice(at, 0, job);
+    } else queue.pending.push(job);
+    queue.depth += 1;
+  };
   if (priorityStop) {
-    // R-1E-a — huỷ mọi lệnh KHÔNG phải DỪNG ghim còn đang CHỜ (lệnh đang bay không nằm trong `pending`) — trừ hành động
-    // interlock bảo vệ (K-fix 2, R-11-h). R-1E-b (review M-1) — CỐ Ý gồm cả một lệnh "stop" KHÔNG ghim đang chờ.
-    cancelWaitingForStop(adapterId, queue, opts?.stopRef, "pinned");
-  }
-  // Đứng sau DỪNG ghim cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng; lệnh thường ở cuối hàng.
-  insertByRank(queue, job);
-  queue.depth += 1;
+    // R-1E-a — huỷ mọi lệnh KHÔNG phải DỪNG đang CHỜ (lệnh đang bay không nằm trong `pending`) — trừ hành động interlock bảo vệ
+    // (R-11-h) không ghi đè ghim (R-11-k 3). R-1E-b — CỐ Ý gồm cả lệnh "stop" chưa xác minh đang chờ (trong hàng hoặc chờ chỗ).
+    cancelWaitingForStop(adapterId, queue, opts?.stopRef);
+    enqueue();
+  } else if (queue.depth >= max || queue.slotWaiters.length > 0) {
+    // R-11-n — a stop-typed command on a full queue: never BUSY, it waits for a slot
+    queue.slotWaiters.push({
+      admit: enqueue,
+      cancel: (byStop) => settle.resolve(byStop ? { superseded: true, byStop: true, stop: byStop } : { superseded: true, byStop: true }),
+    });
+    return { accepted: true, result };
+  } else enqueue();
   pumpAdapterQueue(adapterId, queue);
   return { accepted: true, result };
-}
-
-function sameOtValue(a: unknown, b: unknown): boolean {
-  try {
-    return canonicalOtValue(a) === canonicalOtValue(b);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * R-11-k (2) — the running connection a stop is classified on, as part of its coalescing key. NEVER throws (a STOP must not fail on a
- * lookup): unknown ⇒ null (stops with an unknown connection still coalesce only when every write is identical).
- */
-export function connectionKeyOf(adapterId: number): string | null {
-  try {
-    return getActiveConnectionFingerprint(adapterId) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-let uncoalescableSeq = 0;
-/**
- * R-11-k (2) — the IDENTITY of a stop's device write: class + running connection + every write's tag, address, dataType, scale, offset
- * and canonical value, order-independent. Two stops coalesce only when this is equal. A value that cannot be canonicalised never
- * coalesces (unique key).
- */
-export function stopLaneWriteSetKey(cls: StopLaneClass, writes: ReadonlyArray<OtResolvedWrite>, connKey?: string | null): string {
-  try {
-    const parts = writes
-      .map((w) => JSON.stringify([w.write.tagKey, w.address, w.dataType ?? null, w.scale ?? null, w.offset ?? null, canonicalOtValue(w.write.value)]))
-      .sort();
-    return JSON.stringify({ cls, conn: connKey ?? null, w: parts });
-  } catch {
-    uncoalescableSeq += 1;
-    return `uncoalescable:${uncoalescableSeq}`;
-  }
-}
-
-/**
- * doc 81 Đợt 11 K-fix 2 (R-11-i c) → final fix wave (rulings R-11-j + addendum, R-11-k 1/2) — the STOP lane of an adapter. EVERY
- * stop-typed command (and every stop by content) goes here: never BUSY, never behind an ordinary write, never cancelled by a STOP epoch.
- *   • A waiting group with the IDENTICAL device write (stopLaneWriteSetKey: same class, connection, tags, addresses, dataTypes, scales,
- *     offsets and values) ⇒ this stop JOINS it: no new queue entry, no new device write. Anything else ⇒ its own group.
- *   • Line order: pinned groups (and legacy priorityStop jobs) first, then verified content-stop groups, then unverified groups, then
- *     the ordinary commands. A pinned STOP therefore never waits behind a group led by another kind of stop.
- *   • A new group cancels the waiting ORDINARY commands (SUPERSEDED_BY_STOP); a verified one also cancels a waiting protective
- *     interlock action that would override a pinned stop value (R-11-k 3), cancels the waiting UNVERIFIED stop groups (R-1E-b: their
- *     unproven values must not undo it) and tells the in-flight re-check listeners; an unverified one does none of that (R-11-j).
- *   • Bounded: one waiting group per distinct device write. Verified groups are bounded by the adapter's pin configuration (their writes
- *     are pinned values); WAITING unverified groups are capped at OT_STOP_LANE_UNVERIFIED_MAX — the newest replaces the oldest, whose
- *     members answer Superseded (SUPERSEDED_BY_STOP naming the newer stop). A verified group is never replaced.
- *   • The group runs `execGroup` of its FIRST member once, with the group's writes and the context of EVERY member (all intents, the
- *     strictest timeout); no epoch check runs inside it and a VERIFIED group runs no safety re-check (central keeps the Đợt 5 F4
- *     re-check for an UNVERIFIED group only — all its members are unverified with identical writes). Each member then gets
- *     `project(result, groupWrites, ownWrites)`: the true outcome of the one write that contained exactly its writes.
- */
-export function enqueueStopLane<T>(
-  adapterId: number,
-  own: OtResolvedWrite[],
-  execGroup: (writes: OtResolvedWrite[], group: StopLaneGroupCtx) => Promise<T>,
-  project: (shared: T, groupWrites: OtResolvedWrite[], own: OtResolvedWrite[]) => T,
-  opts: {
-    /** default: `verified` when stopRef.contentStop, else `pinned` (K-fix 2 callers) */
-    cls?: StopLaneClass;
-    /** the running connection the stop was classified on (getActiveConnectionFingerprint) — part of the coalescing key */
-    connKey?: string | null;
-    member?: StopLaneMemberCtx;
-    stopRef?: Record<string, unknown>;
-    holdSlot?: (v: T) => Promise<void> | undefined;
-  } = {},
-): { joined: boolean; result: Promise<T | Superseded> } {
-  const cls: StopLaneClass = opts.cls ?? (opts.stopRef?.contentStop === true ? "verified" : "pinned");
-  let q = adapterCommandQueues.get(adapterId);
-  if (!q) {
-    q = { inFlight: false, pending: [], depth: 0 };
-    adapterCommandQueues.set(adapterId, q);
-  }
-  const queue = q;
-  let resolve!: (v: unknown) => void;
-  let reject!: (e: unknown) => void;
-  const result = new Promise<T | Superseded>((res, rej) => {
-    resolve = res as (v: unknown) => void;
-    reject = rej;
-  });
-  const member = { own, ctx: opts.member ?? {}, resolve, reject };
-  const key = stopLaneWriteSetKey(cls, own, opts.connKey);
-  const waiting = queue.pending.find((j) => j.lane?.key === key);
-  if (waiting?.lane) {
-    waiting.lane.members.push(member);
-    // a joining stop is a NEWER stop intent: whatever queued after the group (ordinary writes, an overriding protective action, an
-    // unverified stop) is cancelled exactly as if this stop had opened a group — nothing issued before it may run after it
-    cancelWaitingForStop(adapterId, queue, opts.stopRef, cls);
-    return { joined: true, result };
-  }
-  if (cls === "unverified") {
-    // R-11-k (1) — bounded: the newest unverified stop intent replaces the OLDEST waiting unverified group (never BUSY).
-    for (;;) {
-      const unv = queue.pending.filter((j) => j.lane?.cls === "unverified");
-      if (unv.length < OT_STOP_LANE_UNVERIFIED_MAX) break;
-      const oldest = unv[0];
-      queue.pending = queue.pending.filter((j) => j !== oldest);
-      oldest.cancel(opts.stopRef);
-    }
-  }
-  const group: StopLaneGroup = { cls, key, writes: own.map((w) => ({ ...w, write: { ...w.write } })), members: [member] };
-  const job: PendingAdapterCommand = {
-    priorityStop: false,
-    rank: LANE_RANK[cls],
-    protective: false,
-    overridesStopPin: false,
-    lane: group,
-    run: () => {
-      queue.inFlight = true;
-      job.lane = undefined; // running: no longer joinable (the member list is frozen)
-      const writes = group.writes.map((u) => ({ ...u, write: { ...u.write } }));
-      const timeouts = group.members.map((m) => m.ctx.timeoutMs).filter((t): t is number => typeof t === "number" && Number.isFinite(t) && t > 0);
-      // R-11-m — members a verified STOP sent since their gates began has superseded (answered at once, never written for)
-      const live = new Set(group.members);
-      const dropStopped = (): number => {
-        for (const m of [...live]) {
-          const e = m.ctx.stopEpochAtGates;
-          if (e === null || e === undefined) continue;
-          const st = stopIssuedSince(adapterId, e);
-          if (!st) continue;
-          live.delete(m);
-          m.resolve(st.stop ? { superseded: true, byStop: true, stop: st.stop } : { superseded: true, byStop: true });
-        }
-        return live.size;
-      };
-      const ctx: StopLaneGroupCtx = {
-        cls,
-        intentIds: group.members.flatMap((m) => m.ctx.intentIds ?? []),
-        timeoutMs: timeouts.length > 0 ? Math.min(...timeouts) : undefined,
-        members: group.members.length,
-        dropStopped,
-      };
-      const done = (): void => {
-        queue.inFlight = false;
-        queue.depth -= 1;
-        pumpAdapterQueue(adapterId, queue);
-      };
-      if (dropStopped() === 0) {
-        done(); // every member was superseded: nothing to write
-        return;
-      }
-      let p: Promise<T>;
-      try {
-        p = Promise.resolve(execGroup(writes, ctx));
-      } catch (err) {
-        p = Promise.reject(err);
-      }
-      p.then(
-        (v) => {
-          let hold: Promise<void> | undefined;
-          try {
-            hold = opts.holdSlot?.(v);
-          } catch {
-            hold = undefined;
-          }
-          if (hold) hold.then(done, done);
-          else done();
-          for (const m of live) {
-            try {
-              m.resolve(project(v, writes, m.own));
-            } catch (err) {
-              m.reject(err);
-            }
-          }
-        },
-        (err) => {
-          done();
-          for (const m of live) m.reject(err);
-        },
-      );
-    },
-    // only the unverified cap replaces a WAITING group (R-11-k 1): every member answers Superseded naming the newer stop
-    cancel: (byStop) => {
-      job.lane = undefined;
-      queue.depth -= 1;
-      for (const m of group.members) m.resolve(byStop ? { superseded: true, byStop: true, stop: byStop } : { superseded: true, byStop: true });
-    },
-  };
-  cancelWaitingForStop(adapterId, queue, opts.stopRef, cls);
-  insertByRank(queue, job);
-  queue.depth += 1;
-  pumpAdapterQueue(adapterId, queue);
-  return { joined: false, result };
-}
-
-/**
- * R-11-k (2) — a member's view of its group's single device write. The group's writes are identical to the member's (same key), so each
- * own write maps to the group write of the same tag; its outcome is that write's TRUE outcome (failed ⇒ failed, timeout ⇒ timeout).
- * `pinAtSend` (a pin read at send time differed from the classified value) is carried for the member's own tags. Any other result is
- * shared as is (a lane group runs no gate, so there is none in practice).
- */
-export function projectExecutedForMember<T>(shared: T, groupWrites: OtResolvedWrite[], own: OtResolvedWrite[]): T {
-  const ex = shared as unknown as ExecutedWrite;
-  if (!ex || typeof ex !== "object" || !Array.isArray((ex as { outcomes?: unknown }).outcomes)) return shared;
-  const outcomes = own.map((r, i) => {
-    const u = groupWrites.findIndex((x) => x.write.tagKey === r.write.tagKey);
-    const o = u >= 0 ? ex.outcomes.find((x) => x.idx === u) : undefined;
-    return o ? { ...o, idx: i } : { idx: i, ok: false, status: "failed" as DispatchStatus, errorText: "no result for this write in the STOP group's device write", readBackValue: null };
-  });
-  const pinAtSend = ex.pinAtSend?.filter((p) => own.some((r) => r.write.tagKey === p.tagKey));
-  return {
-    sentAt: ex.sentAt,
-    timedOut: ex.timedOut,
-    outcomes,
-    ...(ex.slotHold ? { slotHold: ex.slotHold } : {}),
-    ...(pinAtSend && pinAtSend.length > 0 ? { pinAtSend } : {}),
-  } as unknown as T;
-}
-
-/**
- * R-11-k (2) — "pin values read at SEND time": a verified stop group's writes are re-valued with the adapter's pins as they are right
- * before the device write (a maker-checker pin edit after classification ⇒ the CURRENT pin is sent). A tag whose pin is gone, or whose
- * new pin no longer fits the row the write uses (`fits`), keeps its classified value (it was a proven stop value moments ago: fail toward
- * stopping). `pins` null (unreadable within its bound) ⇒ unchanged. Pure.
- */
-export function applyPinsAtSend(
-  writes: OtResolvedWrite[],
-  pins: ReadonlyArray<{ tagKey: string; value: unknown }> | null,
-  fits: (dataType: string | undefined, value: unknown) => boolean,
-): { writes: OtResolvedWrite[]; changed: Array<{ tagKey: string; requested: unknown; sent: unknown }> } {
-  const changed: Array<{ tagKey: string; requested: unknown; sent: unknown }> = [];
-  if (!pins) return { writes, changed };
-  const out = writes.map((w) => {
-    const p = pins.find((x) => x.tagKey === w.write.tagKey);
-    if (!p || sameOtValue(p.value, w.write.value)) return w;
-    let ok = false;
-    try {
-      ok = fits(w.dataType, p.value);
-    } catch {
-      ok = false;
-    }
-    if (!ok) return w;
-    changed.push({ tagKey: w.write.tagKey, requested: w.write.value, sent: p.value });
-    return { ...w, write: { tagKey: w.write.tagKey, value: p.value } };
-  });
-  return { writes: out, changed };
 }
 
 
@@ -1088,7 +852,7 @@ function raiseStopUnverifiedAlarm(
 function auditWriteOverlapRisk(
   input: DispatchInput,
   ledger: { intentIds: number[]; confirmedBy: number },
-  /** R-11-k (2) — intentIds: EVERY intent the timed-out write carried (all members of a STOP group), for the late-result review */
+  /** R-11-k (2) / R-11-n — intentIds: EVERY intent the timed-out write carried (identical STOPs dropped onto it included), for the late-result review */
   detail: { graceMs: number; resetBoundMs: number; resetError: string; intentIds?: number[] },
   sink?: OtDeviceEventSink,
 ): void {

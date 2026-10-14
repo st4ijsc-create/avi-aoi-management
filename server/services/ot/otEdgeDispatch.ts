@@ -17,31 +17,27 @@
  * connection whose fingerprint equals the snapshot adapter's (replaces runningConnectionMatchesAdapterRow), is sent AT ONCE:
  * no authorisation, no verifier, no consume, no safety preflight, never BUSY (priority in the queue). Anything else typed
  * "stop" is NOT a verified stop and takes the non-STOP path (as on central).
- * doc 81 Đợt 11 K-fix 2 (R-11-i): queue priority (the bounded STOP lane) and the STOP epoch go by CONTENT, never by label — the
- * verified pinned STOP, or an AUTHORISED command whose writes are exactly the snapshot's pinned stop values. A "stop"-labelled
- * command with arbitrary writes is ordinary everywhere (capped queue, cancellable, no epoch bump). The epoch moves only when a
- * true STOP is SENT (device stage), never on receipt or before authorisation.
+ * doc 81 Đợt 11 K-fix 2 (R-11-i): queue priority and the STOP epoch go by CONTENT, never by label — the verified pinned STOP, or an
+ * AUTHORISED command whose writes are exactly the snapshot's pinned stop values. The epoch moves only when a true STOP is SENT (device
+ * stage), never on receipt or before authorisation. Simplify (owner ruling R-11-n): flag ON, a verified STOP waits only for the
+ * adapter's in-flight command (no lane, no group, no pin read at send; an identical pinned STOP already waiting or in flight is not
+ * sent again — its caller gets that STOP's outcome); an authorised stop-TYPED command that is not a verified stop is an ordinary queued
+ * command that is never BUSY (a full queue ⇒ it waits for a slot), moves no epoch and cancels nothing.
  */
 import { classifyOtStop, canonicalisePinnedStop, isStopCommandType, NO_CONFIRMER, writesOverrideStopPin, type DispatchInput, type DispatchStatus } from "./commandDispatcher";
 import {
   adapterStopEpoch,
-  applyPinsAtSend,
-  connectionKeyOf,
-  enqueueStopLane,
-  executeOtDeviceWrite,
   executeOtDeviceWriteUnlessStopped,
+  identicalStopKey,
   isCmdSerializeEnabled,
   isStoppedBeforeWrite,
   isSuperseded,
-  projectExecutedForMember,
   tryEnqueueAdapterCommand,
   type ExecutedWrite,
   type OtDeviceEventSink,
-  type StopLaneClass,
-  type StopLaneGroupCtx,
 } from "./otDeviceWrite";
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
-import { stopPinsFromTagRows, validateStopValue } from "./stopPin";
+import { stopPinsFromTagRows } from "./stopPin";
 import { isOtSafetyPreflightEnabled, safetyPreflightReason } from "./safetyPreflightPolicy";
 import { withDeadline } from "./drivers/boundedClose";
 import { edgeAuthorizationStillValid, verifyEdgeStepAuthorization, type EdgeStepAuthorization } from "../edge/edgeAuthorizationVerifier";
@@ -158,105 +154,58 @@ async function runDeviceStage(
   driver: NonNullable<ReturnType<typeof getActiveDriver>>,
   resolved: Resolved[],
   /**
-   * doc 81 Đợt 11 K-fix 2 (R-11-i) → final fix wave (R-11-j, R-11-k) — `laneCls`: the stop lane class — `pinned` (the verified pinned
-   * stop), `verified` (authorised writes that are exactly the snapshot's pinned stop values), `unverified` (an authorised stop-TYPED
-   * command whose values are not proven: the lane, never BUSY, never epoch-cancelled, but no epoch bump and it cancels no protective
-   * action); null for any other command (the ordinary capped queue). `stopEpochAtGates`: the epoch this command read when its gates
-   * began (null for every stop — never cancelled).
+   * doc 81 Đợt 11 K-fix 2 (R-11-i) → simplify (R-11-n) — `stop`: `pinned` (the verified pinned stop), `verified` (authorised writes that
+   * are exactly the snapshot's pinned stop values) — both wait only for the in-flight command and move the epoch when sent; `unverified`
+   * (an authorised stop-TYPED command whose values are not proven: the ordinary queue, never BUSY — it waits for a slot — no epoch bump);
+   * null for any other command (the ordinary capped queue). `stopEpochAtGates`: the epoch this command read when its gates began (null:
+   * never cancelled).
    */
-  opts: { laneCls: StopLaneClass | null; stopEpochAtGates: number | null },
+  opts: { stop: "pinned" | "verified" | "unverified" | null; stopEpochAtGates: number | null },
 ): Promise<{ kind: "done"; executed: ExecutedWrite } | { kind: "busy"; detail: string } | { kind: "superseded" } | { kind: "stopped"; detail: string }> {
-  const sink = deviceEventSink(rt, input);
-  const verifiedStop = opts.laneCls === "pinned" || opts.laneCls === "verified";
-  const stageInput = (res: Resolved[]) => ({
-    adapterId: input.adapterId,
-    machineId: input.machineId ?? null,
-    commandType: input.commandType,
-    writes: res.map((r) => ({ ...r.write })),
-    triggeredBy: { kind: "hitl" as const, requestedBy: NO_CONFIRMER },
-    idempotencyKey: input.idempotencyKey,
-  });
-  const driverWritesOf = (res: Resolved[]) => res.map((r) => ({ tagKey: r.write.tagKey, address: r.address, value: r.write.value, dataType: r.dataType as never, scale: r.scale, offset: r.offset }));
+  const verifiedStop = opts.stop === "pinned" || opts.stop === "verified";
   const body = () =>
     executeOtDeviceWriteUnlessStopped({
-      input: stageInput(resolved),
+      input: {
+        adapterId: input.adapterId,
+        machineId: input.machineId ?? null,
+        commandType: input.commandType,
+        writes: resolved.map((r) => ({ ...r.write })),
+        triggeredBy: { kind: "hitl" as const, requestedBy: NO_CONFIRMER },
+        idempotencyKey: input.idempotencyKey,
+      },
       driver,
       resolved,
-      driverWrites: driverWritesOf(resolved),
+      driverWrites: resolved.map((r) => ({ tagKey: r.write.tagKey, address: r.address, value: r.write.value, dataType: r.dataType as never, scale: r.scale, offset: r.offset })),
       timeoutMs: commandTimeoutMs(input.deadlineMs),
       stopTyped: isStopCommandType(input.commandType),
       ledger: { intentIds: [], confirmedBy: NO_CONFIRMER },
-      sink,
+      sink: deviceEventSink(rt, input),
       stopEpochAtGates: opts.stopEpochAtGates,
       bumpStopEpoch: verifiedStop, // K-fix 2 (R-11-i b) — moved when a VERIFIED STOP is SENT (after verification / under L-7)
     });
-  // R-11-k (2) — a lane group's single device write: no gate inside, the snapshot's pins as they are at SEND time (verified groups),
-  // the strictest member timeout; only a verified group moves the epoch.
-  const groupBody = async (writes: Resolved[], g: StopLaneGroupCtx): Promise<ExecutedWrite> => {
-    let send = writes;
-    let pinAtSend: Array<{ tagKey: string; requested: unknown; sent: unknown }> = [];
-    // R-11-m — right before the device write (same tick): members a verified STOP sent since their gates began are superseded
-    if (g.cls === "unverified" && g.dropStopped() === 0) return { superseded: true, byStop: true } as never;
-    if (g.cls !== "unverified") {
-      const snap = rt?.config()?.adapters.find((a) => a.id === input.adapterId);
-      const pins = snap ? stopPinsFromTagRows(snap.tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue ?? null, writable: t.writable, isEnabled: t.isEnabled }))) : null;
-      const applied = applyPinsAtSend(writes, pins, (dataType, value) => {
-        const v = validateStopValue(String(dataType ?? ""), value);
-        return v.ok && v.value === value;
-      });
-      send = applied.writes;
-      pinAtSend = applied.changed;
-    }
-    const ex = await executeOtDeviceWrite({
-      input: stageInput(send),
-      driver,
-      resolved: send,
-      driverWrites: driverWritesOf(send),
-      timeoutMs: g.timeoutMs ?? commandTimeoutMs(input.deadlineMs),
-      stopTyped: true,
-      ledger: { intentIds: g.intentIds, confirmedBy: NO_CONFIRMER },
-      sink,
-      bumpStopEpoch: g.cls !== "unverified",
-    });
-    return pinAtSend.length > 0 ? { ...ex, pinAtSend } : ex;
-  };
   const stoppedDetail = (s: { stop: Record<string, unknown> | null }) => {
     const k = typeof s.stop?.idempotencyKey === "string" && s.stop.idempotencyKey ? ` (${s.stop.idempotencyKey})` : "";
     return `a STOP${k} was executed on adapter ${input.adapterId} after this command's checks began — cancelled right before its device write, nothing sent`;
   };
-  if (!isCmdSerializeEnabled()) {
-    const direct = await body();
-    // R-11-m — an unverified stop overriding a pin, in its gates while a verified STOP was sent: superseded (never "stopped")
-    if (isStoppedBeforeWrite(direct) && opts.laneCls === "unverified") return { kind: "superseded" };
-    return isStoppedBeforeWrite(direct) ? { kind: "stopped", detail: stoppedDetail(direct) } : { kind: "done", executed: direct };
-  }
   let queued: unknown;
-  if (opts.laneCls) {
-    // R-11-j / R-11-k (1) — every stop (pinned, verified by content, or stop-typed unverified): the stop lane — never BUSY, never behind
-    // ordinary writes; identical device writes coalesce; waiting unverified groups are capped (newest replaces oldest).
-    const stopRef = { idempotencyKey: input.idempotencyKey, commandType: input.commandType, edge: true, ...(opts.laneCls === "pinned" ? {} : { contentStop: true }), ...(opts.laneCls === "unverified" ? { unverified: true } : {}) };
-    queued = await enqueueStopLane(input.adapterId, resolved, groupBody, projectExecutedForMember, {
-      cls: opts.laneCls,
-      connKey: connectionKeyOf(input.adapterId),
-      member: { timeoutMs: commandTimeoutMs(input.deadlineMs), stopEpochAtGates: opts.laneCls === "unverified" ? opts.stopEpochAtGates : null },
-      stopRef,
-      holdSlot: (v) => ("slotHold" in v ? v.slotHold : undefined),
-    }).result;
-  } else {
-    // anything else: the ordinary capped queue
-    const enq = tryEnqueueAdapterCommand(input.adapterId, () => body(), { holdSlot: (v) => ("slotHold" in v ? v.slotHold : undefined) });
+  if (!isCmdSerializeEnabled()) queued = await body();
+  else {
+    const holdSlot = (v: Awaited<ReturnType<typeof body>>) => ("slotHold" in v ? v.slotHold : undefined);
+    const enq = verifiedStop
+      ? tryEnqueueAdapterCommand(input.adapterId, body, {
+          priorityStop: true,
+          stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, edge: true, ...(opts.stop === "pinned" ? {} : { contentStop: true }) },
+          identicalStopKey: opts.stop === "pinned" ? identicalStopKey(input.adapterId, resolved) : null,
+          holdSlot,
+        })
+      : tryEnqueueAdapterCommand(input.adapterId, body, { waitForSlot: opts.stop === "unverified", holdSlot });
     if (!enq.accepted) return { kind: "busy", detail: `adapter command queue full (depth ${enq.depth} >= max ${enq.max})` };
     queued = await enq.result;
   }
   if (isSuperseded(queued)) return { kind: "superseded" };
-  if (isStoppedBeforeWrite(queued)) return { kind: "stopped", detail: stoppedDetail(queued) };
+  // R-11-m — an unverified stop overriding a pin, in its gates while a verified STOP was sent: superseded (never "stopped")
+  if (isStoppedBeforeWrite(queued)) return opts.stop === "unverified" ? { kind: "superseded" } : { kind: "stopped", detail: stoppedDetail(queued) };
   return { kind: "done", executed: queued as ExecutedWrite };
-}
-
-/** R-11-k (2) — the result's detail when a pin read at send time differed from the classified value (the current pin was written). */
-function pinAtSendDetail(executed: ExecutedWrite): { detail?: string } {
-  if (!executed.pinAtSend || executed.pinAtSend.length === 0) return {};
-  return { detail: `stop pin changed before the STOP was sent — the current pin was written: ${executed.pinAtSend.map((p) => `${p.tagKey} ${String(p.requested)} → ${String(p.sent)}`).join(", ")}`.slice(0, 500) };
 }
 
 function rollUp(executed: ExecutedWrite): { ok: boolean; status: DispatchStatus } {
@@ -339,7 +288,7 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
     } else if (!driver) {
       res = { ok: false, status: "failed", reason: "ADAPTER_OFFLINE", stop: true, pinnedStop: true, results: stopInput.writes.map((w) => ({ tagKey: w.tagKey, ok: false, status: "failed" as DispatchStatus, error: "ADAPTER_OFFLINE" })) };
     } else {
-      const stage = await runDeviceStage(rt, stopInput, driver, stopCls.resolved, { laneCls: "pinned", stopEpochAtGates: null });
+      const stage = await runDeviceStage(rt, stopInput, driver, stopCls.resolved, { stop: "pinned", stopEpochAtGates: null });
       if (stage.kind !== "done") {
         // unreachable for a pinned stop (never BUSY, never superseded) — kept total, reported honestly
         res = { ok: false, status: "rejected", reason: stage.kind === "busy" ? "BUSY" : stage.kind === "stopped" ? "STOPPED_BEFORE_WRITE" : "SUPERSEDED_BY_STOP", stop: true, pinnedStop: true, results: [] };
@@ -349,7 +298,6 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
           ...roll,
           stop: true,
           pinnedStop: true,
-          ...pinAtSendDetail(stage.executed),
           results: stage.executed.outcomes.map((o) => ({ tagKey: stopCls.resolved[o.idx].write.tagKey, ok: o.ok, status: o.status, ...(o.errorText ? { error: o.errorText } : {}) })),
         };
       }
@@ -440,17 +388,17 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
     res = { ok: true, status: "simulated", stop: false, jti, results: input.writes.map((w) => ({ tagKey: w.tagKey, ok: true, status: "simulated" as DispatchStatus })) };
   } else {
     // K-fix 2 (R-11-i a) — STOP by CONTENT (label ignored): writes exactly the snapshot's pinned stop values on the snapshot's
-    // connection ⇒ the stop lane (never cancelled); anything else — a "stop"-labelled command with arbitrary writes too — is ordinary.
+    // connection ⇒ a verified STOP (never cancelled); anything else — a "stop"-labelled command with arbitrary writes too — is not.
     const contentStop = classifyEdgeOtStop({ commandType: "stop", writes: input.writes }, adapter, getActiveConnectionFingerprint(input.adapterId)).pinned;
-    // final fix wave (R-11-j, R-11-k 1) — an authorised stop-TYPED command that is not a verified stop is an UNVERIFIED stop: the lane,
-    // never BUSY, never epoch-cancelled (flag ON or OFF), no epoch bump; it kept every gate above (authorisation, preflight, consume).
-    const laneCls: StopLaneClass | null = contentStop ? "verified" : unpinnedStop ? "unverified" : null;
+    // R-11-j / R-11-n — an authorised stop-TYPED command that is not a verified stop is an UNVERIFIED stop: the ordinary queue, never
+    // BUSY, never epoch-cancelled (flag ON or OFF), no epoch bump; it kept every gate above (authorisation, preflight, consume).
+    const stop = contentStop ? ("verified" as const) : unpinnedStop ? ("unverified" as const) : null;
     // R-11-m — an unverified stop that writes a pinned stop tag with a non-pin value records its epoch: a verified STOP sent while it is
     // in its gates supersedes it (it must not restart motion after the STOP); any other unverified stop is never cancelled (R-11-j)
     const snapPins = stopPinsFromTagRows(adapter.tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue ?? null, writable: t.writable, isEnabled: t.isEnabled })));
-    const unverifiedOverrides = laneCls === "unverified" && writesOverrideStopPin(input.writes, snapPins);
-    const stopEpochAtGates = laneCls === null || unverifiedOverrides ? epochAtGates : null;
-    const stage = await runDeviceStage(rt, input, driver, resolved, { laneCls, stopEpochAtGates });
+    const unverifiedOverrides = stop === "unverified" && writesOverrideStopPin(input.writes, snapPins);
+    const stopEpochAtGates = stop === null || unverifiedOverrides ? epochAtGates : null;
+    const stage = await runDeviceStage(rt, input, driver, resolved, { stop, stopEpochAtGates });
     if (stage.kind === "busy") res = { ...refusal(input, "BUSY", { detail: stage.detail }), jti };
     else if (stage.kind === "superseded") res = { ...refusal(input, "SUPERSEDED_BY_STOP"), jti };
     else if (stage.kind === "stopped") res = { ...refusal(input, "STOPPED_BEFORE_WRITE", { detail: stage.detail }), jti }; // K-fix R-11-d
@@ -460,7 +408,6 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
         ...roll,
         stop: false,
         jti,
-        ...pinAtSendDetail(stage.executed),
         results: stage.executed.outcomes.map((o) => ({ tagKey: resolved[o.idx].write.tagKey, ok: o.ok, status: o.status, ...(o.errorText ? { error: o.errorText } : {}) })),
       };
     }
