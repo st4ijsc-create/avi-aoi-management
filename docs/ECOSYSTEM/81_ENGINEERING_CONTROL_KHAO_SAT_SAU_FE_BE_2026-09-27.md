@@ -948,3 +948,22 @@ Plan `docs/superpowers/plans/2026-10-14-engineering-control-dot11.md`; sổ phá
 - Một test cũ (`pinnedStop.dot1d` "1E đối chứng") được sửa vì khẳng định hành vi BUSY đã bỏ có chủ đích (R-11-g).
 
 **Còn mở:** áp 0377 lên dev (ngoài giờ — bước kiểm làm mới 2 materialized view, có thể chặn dashboard tới 60 s); bật `OT_CMD_SERIALIZE_ENABLED` (đề xuất: được, giờ đã sạch); cài OpenPLC để bench thật; thử nút edge mô phỏng (cần chủ dự án nhập mật khẩu admin + 2FA); bộ đếm STOP theo tiến trình (nhiều bản sao: chỉ trong tiến trình); FAT S7; việc của chủ dự án (khoá TLS, mật khẩu keystore, APK 1.0.18).
+
+## 20. Kết quả Đợt 12 — phần còn mở sau Đợt 11 không cần quyết định (2026-10-15)
+
+Plan `docs/superpowers/plans/2026-10-15-engineering-control-dot12.md`; sổ phán quyết R-12-a … R-12-f trong `.superpowers/sdd/2026-10-15-engineering-control-dot12/`. Migration **0378** — chỉ `_test`.
+
+### Kết quả theo nhóm
+- **N — robot mô phỏng có khoá chuyển động thật; gỡ khoá robot không có bộ khoá:** driver sim có khoá chuyển động như driver thật (robot sim giao cho edge nhận gỡ khoá ký rồi di chuyển được); robot không có bộ khoá nhưng mang hàng khoá đã lưu (vd `ownerChanged` sau khi trả từ edge) chỉ gỡ qua thao tác gỡ khoá có audit (phạm vi nhà máy, lý do, khớp thế hệ, audit trước, có giới hạn thời gian, lỗi cũng ghi audit) — không bao giờ tự gỡ. Sửa thêm: trả robot từ edge từng kẹt vĩnh viễn (STOP xác nhận gỡ khoá rồi tháo bị từ chối "chưa khoá") ⇒ edge khoá lại sau STOP. Đổi cài đặt robot trên edge: trạng thái **"đang làm an toàn"** đặt trước STOP, STOP không gỡ được, kiểm lại sau khi ghi sổ uỷ quyền ⇒ không lệnh di chuyển nào lọt khe; robot kẹt ở trạng thái này hiện "degraded" và được thử lại; robot trung tâm không kết nối được hiện khoá + lý do và được thử gắn lại.
+- **O — cho nút edge nghỉ hưu:** lệnh `retire-node` + thao tác chỉ admin trong app, có audit; mig 0378: từ chối khi nút còn giữ thiết bị / có yêu cầu STOP-khoá mở / có run chưa xong (nêu đích danh), thu hồi mọi credential trong cùng giao dịch, giữ hàng (không xoá — bằng chứng WORM tham chiếu), không bao giờ cấp lại credential / thiết bị / run / claim, mã không đăng ký lại được; không thể chèn nút đã nghỉ sẵn; hiển thị "đã nghỉ" trong trạng thái fleet. Đăng ký nút mới tạo giao thức v2 (trước đó tạo v1 — một cuộc cắt chuyển thật sẽ không chạy được).
+- **P — STOP chia sẻ giữa nhiều máy chủ trung tâm:** STOP đã xác minh gửi xong ⇒ báo qua kênh NOTIFY riêng; máy chủ khác huỷ lệnh ghi thường còn đang qua cổng (không bao giờ huỷ STOP; trên thiết bị có ghim, lệnh nhãn "stop" ghi giá trị khác cũng bị huỷ). Tin ký HMAC (khoá dẫn xuất từ `SECRET_ENCRYPTION_KEY` hoặc `OT_STOP_EPOCH_HMAC_KEY`; không có khoá ⇒ TẮT, một cảnh báo mỗi đợt), chống lặp, giới hạn tuổi, bộ nhớ có trần không fail-open, kết nối riêng ngoài pool (trễ khi pool bão hoà 270 → 11–25 ms), lời chào ký lúc khởi động phát hiện lệch khoá; trạng thái hiện ở trang sức khoẻ hệ thống. Listener đổi chủ cũng có heartbeat + tự nối lại + đồng bộ lại.
+- **Dọn:** census `emitHandledBy` ghim lại kèm test chứng minh bộ theo dõi dung lượng chỉ đọc catalog; test `safetySimOnly` giữ khoá seed riêng; 10 khoá i18n AI-coding thiếu từ tháng 9 ⇒ `pnpm i18n:check` xanh.
+
+### Kiểm
+- Mỗi nhóm review → vòng sửa; 4 cờ quét bảo mật (#110–#113) đều được ghim bằng test đỏ trước rồi sửa; review toàn nhánh (0 Critical, 2 Important) → một vòng sửa cuối → review lại: **sẵn sàng gộp**. dot12 138/138, robot/OT/edge 2.556/2.556, project nối tiếp 66/66, `i18n:check` xanh, `tsc` sạch; đột biến của vòng cuối 45/45.
+
+### Ghi chú vận hành
+- Dev hiện chưa có `SECRET_ENCRYPTION_KEY` / `OT_STOP_EPOCH_HMAC_KEY` ⇒ sau khởi động lại, đồng bộ STOP giữa máy chủ TẮT kèm một cảnh báo (dev chạy một máy chủ nên không mất gì); phải đặt khoá trước khi thêm máy chủ trung tâm thứ hai.
+- Áp 0378 lúc yên tĩnh (chờ khoá có thể giữ yêu cầu STOP tới edge ≤ 5 s); app vẫn chạy khi chưa có 0378 (nghỉ hưu nút trả "thiếu migration 0378").
+
+**Còn mở:** thử nút edge mô phỏng trên dev (chờ chủ dự án nhập thông tin admin — `scratchpad/edge-trial/OWNER-SETUP.md`); khoá HMAC cho nhiều máy chủ; 223 nút nghỉ hưu của test trên `_test` (không xoá được, theo thiết kế); +2 kết nối DB mỗi máy chủ; nợ cũ ngoài module (35 chuỗi tiếng Việt twin3d, 115 lỗi kiểu ở tệp test); việc phần cứng/chủ dự án (FAT S7, PLC an toàn thật, khoá TLS, mật khẩu keystore, APK 1.0.18, bật hàng đợi ghi OT).
