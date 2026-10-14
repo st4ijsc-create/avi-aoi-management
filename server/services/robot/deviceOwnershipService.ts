@@ -65,6 +65,17 @@ export const DEVICE_OWNER_RECONCILE_MS = 30_000;
 export const PENDING_STOP_SWEEP_MS = 10_000;
 /** final fix wave (M-2) — "0374 missing" was already logged by the sweep (reset once the pending set reads again) */
 let pendingSchemaMissingLogged = false;
+/**
+ * doc 81 Đợt 11 final fix wave (R-11-k 4, final review M-3) — the GLOBAL sweep's "device row busy ⇒ STOP sent anyway" branch: the
+ * STOP is still sent EVERY pass (idempotent, L-7), but its operator alert is raised ONCE per device per lock EPISODE (and again only
+ * when the send outcome changes). An episode ends when a pass obtains the device lock, or when the device has no pending STOP left.
+ * Key `${kind}:${id}` → the outcome already alerted ("sent" | "simulated" | "failed").
+ */
+const busyEpisodeAlerted = new Map<string, string>();
+/** test seam — the devices whose busy-episode alert was raised (R-11-k 4) */
+export function _busyEpisodeAlertsForTests(): string[] {
+  return [...busyEpisodeAlerted.keys()];
+}
 
 const errText = (e: unknown) => String((e as Error)?.message ?? e).replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1***@").slice(0, 240);
 const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? (r as Array<Record<string, unknown>>) : (((r as { rows?: unknown[] })?.rows ?? []) as Array<Record<string, unknown>>));
@@ -183,6 +194,11 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
     return results;
   }
   pendingSchemaMissingLogged = false;
+  if (!opts.device) {
+    // R-11-k (4) — a device with no pending STOP left ends its busy episode (a later episode alerts again)
+    const live = new Set(devices.map((d) => `${d.kind}:${d.id}`));
+    for (const k of [...busyEpisodeAlerted.keys()]) if (!live.has(k)) busyEpisodeAlerted.delete(k);
+  }
   for (const dev of devices) {
     const r = await executeDeviceStopsLocked(dev.kind, dev.id, opts.actorUserId ?? null, opts.device !== undefined);
     if (r) results.push(r);
@@ -202,7 +218,11 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
     const sent = await sendCentralStop(kind, deviceId);
     // fix review 6 (NF5-5) — a simulated STOP (central control off) is NOT done: reported failed + notSent, and said so
     const notSent = sent.sent === "simulated";
-    void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], notSent ? `the pending STOP requests could not be read/locked (${why}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
+    // R-11-k (4) — the global sweep's busy-device branch: the STOP above is sent every pass; the alert once per lock episode
+    const episodeKey = `${kind}:${deviceId}`;
+    const repeat = force && !deviceScoped && busyEpisodeAlerted.get(episodeKey) === sent.sent;
+    if (force && !deviceScoped) busyEpisodeAlerted.set(episodeKey, sent.sent);
+    if (!repeat) void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], notSent ? `the pending STOP requests could not be read/locked (${why}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
     return { requestIds: [], outcome: sent.ok && sent.sent === "sent" ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [], ...(notSent ? { notSent: true as const } : {}) };
   };
   const db = await getDb().catch(() => null);
@@ -240,6 +260,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
         throw err;
       }
       await tx.execute(sql`SET LOCAL lock_timeout TO DEFAULT`);
+      busyEpisodeAlerted.delete(`${kind}:${deviceId}`); // R-11-k (4) — the device row lock was obtained: its busy episode (if any) ended
       const pending = rowsOf(await withDeadline(tx.execute(pick), 5 * STOP_DB_STEP_DEADLINE_MS, "pending STOP pick")).map((r) => ({ requestId: Number(r.id), requestedBy: Number(r.requestedBy), cannotList: r.cannotList === true }));
       picked = true;
       if (pending.length === 0) return;
@@ -536,6 +557,7 @@ const seenEpoch = { robot: new Map<number, number>(), adapter: new Map<number, n
 export function _resetOwnershipReconcileForTests(): void {
   seenEpoch.robot.clear();
   seenEpoch.adapter.clear();
+  busyEpisodeAlerted.clear();
 }
 
 /**

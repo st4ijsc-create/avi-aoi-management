@@ -3,7 +3,7 @@
  */
 import { getDb } from "../../db/connection";
 import { robotTelemetry, robots } from "../../../drizzle/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { RuntimeRobot } from "./robotAdapter";
 import type { RobotState } from "./robotDriver";
 import { TRUSTED_ROBOT_TELEMETRY_VENDORS } from "../safety/trustedSafetyOrigin";
@@ -109,19 +109,68 @@ function buildRobotTelemetryRow(robot: RuntimeRobot, state: RobotState, now: Dat
  * A write that times out is logged; the next poll writes the status again.
  */
 export const ROBOT_REGISTRY_LOCK_TIMEOUT_MS = 2000;
+
+/**
+ * doc 81 Đợt 11 final fix wave (R-11-k 4, final review M-4 — safety-relevant: fleetRouter / taskAllocator gate assignment on
+ * robots.status) — registry status writes are ORDERED, two layers:
+ *   • per robot, ONE write in flight; a newer status waiting behind it REPLACES the waiting one (coalesced to the latest observation);
+ *     a status observed EARLIER than the one already waiting is dropped (stale);
+ *   • the UPDATE itself is guarded by the observation timestamp (`lastSeenAt`, monotonic): it lands only when it is newer than the
+ *     row's — so a stale write (another process, another path, a reordered transaction) never overwrites a fresher one — EXCEPT
+ *     `estop`, the safest status, which always lands (fail closed: at worst the registry shows e-stopped until the next poll).
+ */
+const registryWrites = new Map<number, { inFlight: boolean; next: { status: string; at: Date } | null }>();
+
 function writeRegistryBounded(robotId: number, status: string, now: Date): void {
-  void (async () => {
-    try {
-      const db = await getDb();
-      if (!db) return;
-      await db.transaction(async (tx) => {
-        await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${ROBOT_REGISTRY_LOCK_TIMEOUT_MS}ms'`));
-        await tx.update(robots).set({ status, lastSeenAt: now }).where(eq(robots.id, robotId));
-      });
-    } catch (err) {
-      console.error(`[Robot] registry update failed for robot ${robotId}:`, (err as Error)?.message ?? err);
+  let st = registryWrites.get(robotId);
+  if (!st) {
+    st = { inFlight: false, next: null };
+    registryWrites.set(robotId, st);
+  }
+  if (st.next && st.next.at.getTime() > now.getTime() && status !== "estop") return; // older than the one already waiting: stale
+  st.next = { status, at: now };
+  if (!st.inFlight) void drainRegistryWrites(robotId, st);
+}
+
+async function drainRegistryWrites(robotId: number, st: { inFlight: boolean; next: { status: string; at: Date } | null }): Promise<void> {
+  st.inFlight = true;
+  try {
+    while (st.next) {
+      const w = st.next;
+      st.next = null;
+      await writeRegistryOnce(robotId, w.status, w.at);
     }
-  })();
+  } finally {
+    st.inFlight = false;
+    if (!st.next && registryWrites.get(robotId) === st) registryWrites.delete(robotId);
+  }
+}
+
+/** ONE guarded, bounded registry UPDATE (lock_timeout by the SERVER — H fix 1). Never throws. */
+async function writeRegistryOnce(robotId: number, status: string, at: Date): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.transaction(async (tx) => {
+      await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${ROBOT_REGISTRY_LOCK_TIMEOUT_MS}ms'`));
+      const fresher = or(isNull(robots.lastSeenAt), lt(robots.lastSeenAt, at));
+      await tx
+        .update(robots)
+        .set({ status, lastSeenAt: at })
+        .where(and(eq(robots.id, robotId), status === "estop" ? sql`true` : fresher));
+    });
+  } catch (err) {
+    console.error(`[Robot] registry update failed for robot ${robotId}:`, (err as Error)?.message ?? err);
+  }
+}
+
+/** Test seam (R-11-k 4) — the guarded registry write, awaited (the ingest paths fire it and forget). */
+export function _writeRobotRegistryForTests(robotId: number, status: string, at: Date): Promise<void> {
+  return writeRegistryOnce(robotId, status, at);
+}
+/** Test seam (R-11-k 4) — the ordered (single-flight, coalescing) registry write, as the ingest paths call it. */
+export function _queueRobotRegistryWriteForTests(robotId: number, status: string, at: Date): void {
+  writeRegistryBounded(robotId, status, at);
 }
 
 /**

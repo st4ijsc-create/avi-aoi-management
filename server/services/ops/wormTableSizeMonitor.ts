@@ -5,7 +5,9 @@
  * can be done about growth is to SEE it: this module measures each table (pg_total_relation_size + the planner row estimate
  * reltuples) once an hour (WORM_SIZE_CHECK_INTERVAL_MS) and raises an alert of its own kind (worm_table_size: alert stream + a
  * normal / high-priority inbox row per active admin, NOT safety-critical, NOT cap-exempt - R-11-b) the first time a table crosses a
- * level - "warn", then "critical"; delivery is remembered in the inbox rows themselves, so a restart never re-raises. READ-ONLY: only SELECTs on the catalog; no DDL, no DML on the tables, no delete path anywhere.
+ * level - "warn", then "critical"; delivery is remembered in the inbox rows themselves, so a restart never re-raises.
+ * Final fix wave (R-11-k 4): a recipient whose own preferences suppress the row is not retried by the process (logged once), and the
+ * alert stream / console line is said once per process per (table, level) - not every hour. READ-ONLY: only SELECTs on the catalog; no DDL, no DML on the tables, no delete path anywhere.
  */
 import { sql } from "drizzle-orm";
 
@@ -133,7 +135,22 @@ export interface WormAlert {
   /** only the recipients that do not yet hold this level (or a higher one) */
   recipients: number[];
 }
-export type WormAlertSink = (a: WormAlert) => Promise<void>;
+/**
+ * doc 81 Dot 11 final fix wave (R-11-k 4, final review M-2) - a sink may report the recipients whose row was SUPPRESSED by their own
+ * preferences (in-app alerts off, quiet hours: sendNotification answered null). Those are NOT retried by this process (logged once);
+ * a recipient whose send FAILED (threw) is still retried at the next check.
+ */
+export type WormAlertSink = (a: WormAlert) => Promise<void | { suppressed?: number[] }>;
+
+/** per process: `${userId}:${table}:${level}` suppressed by the recipient's preferences - never retried, logged once (R-11-k 4) */
+const suppressedByPrefs = new Set<string>();
+/** per process: `${table}:${level}` already announced on the alert stream + console - said once, not every hour (R-11-k 4) */
+const announced = new Set<string>();
+/** Test seam: forget the per-process memory (a "restart"). */
+export function _resetWormMonitorMemoryForTests(): void {
+  suppressedByPrefs.clear();
+  announced.clear();
+}
 
 async function adminRecipients(db: Executor): Promise<number[]> {
   return rowsOf(await db.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role = 'admin'`))
@@ -145,25 +162,33 @@ async function adminRecipients(db: Executor): Promise<number[]> {
  * Own kind, plain notifications: warn = NORMAL, critical = HIGH priority. NO safetyCritical, NO capExempt (R-8-d reserves the
  * exemptions for alarms where a STOP is at stake) - the recipient's preferences and the normal caps apply.
  */
-export async function defaultWormSink(a: WormAlert): Promise<void> {
-  console.error(`[WormSize] ${a.level === 2 ? "CRITICAL" : "WARN"}: ${a.message}`);
-  try {
-    const { publishAnomalyDetected } = await import("../ecosystem/ecosystemEvents");
-    publishAnomalyDetected({ kind: "worm_table_size", severity: a.level === 2 ? "critical" : "warning", source: "ot", machineId: null, message: a.message }, "ot");
-  } catch {
-    /* the notification rows below are the durable part */
+export async function defaultWormSink(a: WormAlert): Promise<{ suppressed: number[] }> {
+  const once = `${a.table}:${a.level}`;
+  if (!announced.has(once)) {
+    announced.add(once);
+    console.error(`[WormSize] ${a.level === 2 ? "CRITICAL" : "WARN"}: ${a.message}`);
+    try {
+      const { publishAnomalyDetected } = await import("../ecosystem/ecosystemEvents");
+      publishAnomalyDetected({ kind: "worm_table_size", severity: a.level === 2 ? "critical" : "warning", source: "ot", machineId: null, message: a.message }, "ot");
+    } catch {
+      /* the notification rows below are the durable part */
+    }
   }
   const { sendNotification } = await import("../notificationService");
+  const suppressed: number[] = [];
   for (const userId of a.recipients) {
-    await sendNotification(userId, {
+    const FAILED = Symbol("failed");
+    const r = await sendNotification(userId, {
       type: "ALERT",
       priority: a.level === 2 ? "HIGH" : "NORMAL",
       title: a.title,
       message: a.message,
       entityType: "db_table",
       metadata: { kind: "worm_table_size", table: a.table, level: a.level },
-    }).catch(() => null);
+    }).catch(() => FAILED);
+    if (r === null) suppressed.push(userId); // the recipient's preferences suppressed it (no row) - not an error
   }
+  return { suppressed };
 }
 
 /** One check: measure, alert each new (recipient, table, level) crossing once. Never throws, never writes to a WORM table. */
@@ -178,17 +203,25 @@ export async function checkWormTableSizes(opts: { db?: Executor; thresholds?: Wo
       const [recipients, delivered] = [await adminRecipients(db), await readDeliveredLevels(db)];
       const sink = opts.sink ?? defaultWormSink;
       for (const s of over) {
-        const need = recipients.filter((u) => (delivered.get(`${u}:${s.table}`) ?? 0) < s.level);
+        const need = recipients.filter((u) => (delivered.get(`${u}:${s.table}`) ?? 0) < s.level && !suppressedByPrefs.has(`${u}:${s.table}:${s.level}`));
         if (need.length === 0) continue;
         const lvl = s.level === 2 ? "critical" : "warn";
-        await sink({
+        const out = await sink({
           kind: "worm_table_size",
           table: s.table,
           level: s.level as 1 | 2,
           title: `Append-only table ${s.table} is large (${lvl})`,
           message: `Append-only table ${s.table}: ${formatBytes(s.bytes)}, about ${s.rowsEstimate} rows (${lvl} threshold crossed). The table is kept forever and is never deleted automatically - plan storage / archiving with the owner.`,
           recipients: need,
-        }).catch((e) => console.error(`[WormSize] alert for ${s.table} failed: ${String((e as Error)?.message ?? e).slice(0, 200)}`));
+        }).catch((e) => {
+          console.error(`[WormSize] alert for ${s.table} failed: ${String((e as Error)?.message ?? e).slice(0, 200)}`);
+          return undefined;
+        });
+        const blocked = (out && Array.isArray(out.suppressed) ? out.suppressed : []).filter((u) => need.includes(u) && !suppressedByPrefs.has(`${u}:${s.table}:${s.level}`));
+        if (blocked.length > 0) {
+          for (const u of blocked) suppressedByPrefs.add(`${u}:${s.table}:${s.level}`);
+          console.warn(`[WormSize] the ${lvl} alert for ${s.table} was suppressed by the preferences of user(s) ${blocked.join(", ")} - not retried by this process`);
+        }
       }
     }
     return sizes;

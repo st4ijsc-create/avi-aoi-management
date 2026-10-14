@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_WORM_THRESHOLDS,
   defaultWormSink,
+  _resetWormMonitorMemoryForTests,
   type WormAlert,
   checkWormTableSizes,
   wormCheckIntervalMs,
@@ -43,14 +44,22 @@ describe("env configuration", () => {
   });
 });
 
-const sent = vi.hoisted(() => ({ calls: [] as Array<{ userId: number; payload: Record<string, any>; opts: unknown[] }> }));
+const sent = vi.hoisted(() => ({
+  calls: [] as Array<{ userId: number; payload: Record<string, any>; opts: unknown[] }>,
+  /** final fix wave — recipients whose preferences suppress the row (sendNotification answers null) / whose send throws */
+  nullFor: new Set<number>(),
+  throwFor: new Set<number>(),
+  stream: 0,
+}));
 vi.mock("../notificationService", () => ({
   sendNotification: async (userId: number, payload: Record<string, any>, ...opts: unknown[]) => {
     sent.calls.push({ userId, payload, opts });
+    if (sent.throwFor.has(userId)) throw new Error("db down");
+    if (sent.nullFor.has(userId)) return null;
     return { id: sent.calls.length };
   },
 }));
-vi.mock("../ecosystem/ecosystemEvents", () => ({ publishAnomalyDetected: () => undefined }));
+vi.mock("../ecosystem/ecosystemEvents", () => ({ publishAnomalyDetected: () => void (sent.stream += 1) }));
 
 /**
  * A fake executor with PERSISTENT state (the notifications rows): sizes per table, two admins, and the delivered rows that the
@@ -132,5 +141,56 @@ describe("defaultWormSink - R-11-b: no safety-critical bypass, no cap exemption"
     await defaultWormSink({ ...base, level: 2 });
     expect(sent.calls[0].payload).toMatchObject({ priority: "HIGH", metadata: { level: 2 } });
     expect(sent.calls[0].opts).toEqual([]);
+  });
+});
+
+describe("final fix wave (R-11-k 4, final review M-2) - a recipient suppressed by its own preferences is not retried; said once", () => {
+  const tables = ["device_owner_changes"];
+  const sizes = { device_owner_changes: { bytes: 150, rows: 1 } };
+  /** the real default sink; a row "lands" (the persisted store the dedup reads) only for a recipient it was not suppressed for */
+  const realSink = (store: Array<{ uid: number; tbl: string; lvl: number }>) => async (a: WormAlert) => {
+    const r = await defaultWormSink(a);
+    for (const u of a.recipients) if (!r.suppressed.includes(u) && !sent.throwFor.has(u)) store.push({ uid: u, tbl: a.table, lvl: a.level });
+    return r;
+  };
+  it("★ user 2 (in-app alerts off / quiet hours) is tried ONCE per process, logged once; the stream line is said once; a restart tries once more", async () => {
+    _resetWormMonitorMemoryForTests();
+    sent.calls.length = 0;
+    sent.stream = 0;
+    sent.nullFor = new Set([2]);
+    sent.throwFor = new Set();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const store: Array<{ uid: number; tbl: string; lvl: number }> = [];
+      for (let i = 0; i < 3; i++) await checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink: realSink(store), tables });
+      expect(sent.calls.map((c) => c.userId)).toEqual([1, 2]); // hourly checks 2 and 3 send nothing
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes("suppressed by the preferences"))).toHaveLength(1);
+      expect(sent.stream).toBe(1);
+      _resetWormMonitorMemoryForTests(); // a restart
+      await checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink: realSink(store), tables });
+      expect(sent.calls.map((c) => c.userId)).toEqual([1, 2, 2]);
+    } finally {
+      warn.mockRestore();
+      err.mockRestore();
+      sent.nullFor = new Set();
+    }
+  });
+  it("control: a recipient whose send FAILED (threw) is retried at the next check", async () => {
+    _resetWormMonitorMemoryForTests();
+    sent.calls.length = 0;
+    sent.stream = 0;
+    sent.throwFor = new Set([2]);
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const store: Array<{ uid: number; tbl: string; lvl: number }> = [];
+      await checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink: realSink(store), tables });
+      await checkWormTableSizes({ db: fakeDb(sizes, store) as never, thresholds: T, sink: realSink(store), tables });
+      expect(sent.calls.map((c) => c.userId)).toEqual([1, 2, 2]);
+      expect(sent.stream).toBe(1); // the sink ran twice (user 2 retried); the stream / console line was said once
+    } finally {
+      err.mockRestore();
+      sent.throwFor = new Set();
+    }
   });
 });
