@@ -1262,6 +1262,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       stopTyped: isStopCommandType(input.commandType),
       ledger: { intentIds: deviceLedgerIntents, confirmedBy: ledgerConfirmer },
       stopEpochAtGates,
+      overridesStopPin, // doc 81 Đợt 12 P fix 1 (scan "authorization-logic") — content, not label, decides the peer-move exemption
       bumpStopEpoch: trueStop,
       onWriteAnswered: ctl?.writeAnswered, // R-11-o (M-2) — an identical STOP shares this write only until the device answered it
     });

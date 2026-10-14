@@ -36,7 +36,7 @@ function fakeDriver(log: string[]) {
     readTags: async () => [],
   } as never;
 }
-const stage = (adapterId: number, log: string[], over: { commandType: string; value?: number; stopEpochAtGates: number | null; bumpStopEpoch?: boolean }) => ({
+const stage = (adapterId: number, log: string[], over: { commandType: string; value?: number; stopEpochAtGates: number | null; bumpStopEpoch?: boolean; overridesStopPin?: boolean }) => ({
   input: base(adapterId, { commandType: over.commandType, writes: [{ tagKey: "t", value: over.value ?? 1 }] }),
   driver: fakeDriver(log),
   resolved: [{ write: { tagKey: "t", value: over.value ?? 1 }, address: "40001", dataType: "int" }],
@@ -47,6 +47,7 @@ const stage = (adapterId: number, log: string[], over: { commandType: string; va
   sink: () => undefined,
   stopEpochAtGates: over.stopEpochAtGates,
   ...(over.bumpStopEpoch !== undefined ? { bumpStopEpoch: over.bumpStopEpoch } : {}),
+  ...(over.overridesStopPin !== undefined ? { overridesStopPin: over.overridesStopPin } : {}),
 });
 afterEach(() => setStopEpochBroadcaster(null));
 
@@ -56,11 +57,28 @@ describe("I-2 (L-7) — a peer move never denies a STOP", () => {
     const log: string[] = [];
     const atGates = adapterStopEpoch(A);
     bumpAdapterStopEpochFromPeer(A, { peer: true, origin: "peer-replica-0001" });
-    const r = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "stop", value: 0, stopEpochAtGates: atGates, bumpStopEpoch: false }));
+    const r = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "stop", value: 0, stopEpochAtGates: atGates, bumpStopEpoch: false, overridesStopPin: false }));
     expect(isStoppedBeforeWrite(r)).toBe(false);
     expect(log).toEqual(["writeTags t=0"]);
-    const r2 = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "e_stop", value: 0, stopEpochAtGates: atGates, bumpStopEpoch: false }));
+    const r2 = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "e_stop", value: 0, stopEpochAtGates: atGates, bumpStopEpoch: false, overridesStopPin: false }));
     expect(isStoppedBeforeWrite(r2)).toBe(false);
+  });
+
+  it("★ scan 'authorization-logic' (fix 1 follow-up): a stop-LABELLED command that OVERRIDES a pinned stop value (re-energising) is NOT exempt — a peer STOP cancels it (classification by content, never by label — R-11-i / R-11-m)", async () => {
+    const A = 812_005;
+    const log: string[] = [];
+    const atGates = adapterStopEpoch(A);
+    bumpAdapterStopEpochFromPeer(A, { peer: true, origin: "peer-replica-0001" });
+    const r = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "stop", value: 77, stopEpochAtGates: atGates, bumpStopEpoch: false, overridesStopPin: true }));
+    expect(r).toMatchObject({ stoppedBeforeWrite: true, stop: { peer: true } });
+    expect(log).toEqual([]);
+    // the same label without overriding a pin (the only STOP on an unpinned tag) stays exempt (I-2)
+    const r2 = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "stop", value: 0, stopEpochAtGates: atGates, bumpStopEpoch: false, overridesStopPin: false }));
+    expect(isStoppedBeforeWrite(r2)).toBe(false);
+    // a caller that does not say (overridesStopPin absent) gets no exemption: fail toward cancelling, never toward a label
+    const r3 = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "stop", value: 77, stopEpochAtGates: atGates, bumpStopEpoch: false }));
+    expect(isStoppedBeforeWrite(r3)).toBe(true);
+    expect(log).toEqual(["writeTags t=0"]);
   });
 
   it("the same peer STOP cancels a NON-STOP write in its gates (the point of the sync)", async () => {
@@ -80,7 +98,7 @@ describe("I-2 (L-7) — a peer move never denies a STOP", () => {
     bumpAdapterStopEpochFromPeer(A, { peer: true });
     bumpAdapterStopEpoch(A, { idempotencyKey: "LOCAL" });
     bumpAdapterStopEpochFromPeer(A, { peer: true }); // a later peer move does not hide the local one
-    const r = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "stop", value: 0, stopEpochAtGates: atGates, bumpStopEpoch: false }));
+    const r = await executeOtDeviceWriteUnlessStopped(stage(A, log, { commandType: "stop", value: 0, stopEpochAtGates: atGates, bumpStopEpoch: false, overridesStopPin: false }));
     expect(r).toMatchObject({ stoppedBeforeWrite: true, stop: { idempotencyKey: "LOCAL" } });
     expect(stopIssuedSince(A, atGates, { localOnly: true })?.stop).toEqual({ idempotencyKey: "LOCAL" });
   });

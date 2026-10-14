@@ -315,6 +315,22 @@ describe.skipIf(!DB_URL)("Đợt 12 task P — a verified STOP sent by replica A
     expect(r.ok).toBe(true);
   });
 
+  it("★ scan 'authorization-logic': a stop-LABELLED command that re-energises (writes the pinned stop tag with a non-pin value) in B's gates is SUPERSEDED by A's verified STOP — the label buys no exemption", async () => {
+    setEnv(false);
+    const fake = await prep("stop", [{ tagKey: TAG_STOP, value: 77 }]); // labelled stop, content: speed_sp = 77 (pin is 0)
+    const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);
+    const h = holdGatesOf(TAG_STOP);
+    const pFake = B.cd.dispatch(fake);
+    await h.entered;
+    const e0 = B.dw.adapterStopEpoch(adapterId);
+    expect(await A.cd.dispatch(stop)).toMatchObject({ ok: true, pinnedStop: true });
+    await until(() => B.dw.adapterStopEpoch(adapterId) !== e0, 3_000);
+    h.release();
+    const r = await pFake;
+    expect(device.log).toEqual([`${TAG_STOP}=0`]); // nothing re-energised after A's STOP
+    expect(r).toMatchObject({ ok: false, reason: "SUPERSEDED_BY_STOP" });
+  });
+
   it("control: a write whose gates begin AFTER B learned of A's STOP is written (the newer intent)", async () => {
     setEnv(false);
     const stop = await prep("stop", [{ tagKey: TAG_STOP, value: 0 }]);

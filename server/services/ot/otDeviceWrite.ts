@@ -1072,10 +1072,20 @@ export interface OtResolvedWrite {
  * A stop-LABELLED command with arbitrary writes is not a true stop: it records an epoch and is checked like any write.
  */
 export function executeOtDeviceWriteUnlessStopped(
-  a: Parameters<typeof executeOtDeviceWrite>[0] & { stopEpochAtGates: number | null },
+  a: Parameters<typeof executeOtDeviceWrite>[0] & {
+    stopEpochAtGates: number | null;
+    /**
+     * doc 81 Đợt 12 task P fix 1 (+ scan "authorization-logic") — the command's writes put a pinned stop tag to a NON-pin value
+     * (R-11-k 3 / R-11-m, computed by the caller from the adapter's pins). A stop-TYPED command is exempt from PEER moves (I-2: a peer
+     * never denies a STOP) only when this is explicitly false — classification by CONTENT, never by label (R-11-i): a "stop"-labelled
+     * command that re-energises a pinned stop tag is cancelled by a peer STOP like any write. Absent ⇒ not exempt.
+     */
+    overridesStopPin?: boolean;
+  },
 ): Promise<ExecutedWrite | StoppedBeforeWrite> {
   if (a.stopEpochAtGates !== null) {
-    const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates, { localOnly: a.stopTyped }); // I-2: a peer move never denies a STOP
+    const localOnly = a.stopTyped && a.overridesStopPin === false; // I-2 — only a real (non-re-energising) stop ignores peer moves
+    const stopped = stopIssuedSince(a.input.adapterId, a.stopEpochAtGates, { localOnly });
     if (stopped) return Promise.resolve(stopped);
   }
   return executeOtDeviceWrite(a);
