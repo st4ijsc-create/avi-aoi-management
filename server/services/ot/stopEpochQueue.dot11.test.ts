@@ -466,3 +466,21 @@ describe("R-11-d / R-11-i (b) — the per-adapter STOP epoch", () => {
     expect(adapterStopEpoch(A)).toBe(now);
   });
 });
+
+// ── Scan flag (on 14ba602c5) otDeviceWrite "priority-inversion / queue-cap bypass", PINNED ONLY — NOT fixed. Path: enqueueStopLane caps
+// only WAITING unverified groups; VERIFIED groups (pinned / content) get one waiting group per DISTINCT write set with no cap, ranked
+// ahead of every ordinary entry and outside OT_CMD_QUEUE_MAX. N distinct pinned / content write sets (subsets of the pinned tags, pin
+// versions, connections) ⇒ N queue entries and N sequential device writes; a later pinned STOP with yet another write set waits
+// behind all of them (each up to the in-flight bound, ~10 s, + B3 slot hold after a timeout).
+describe("scan pin — otDeviceWrite: verified stop groups are not capped", () => {
+  it.fails("★ 12 pinned STOPs with distinct write sets while a write is in flight ⇒ the waiting lane stays bounded and a 13th pinned STOP is not behind all of them", () => {
+    const { job } = makeJobs();
+    accepted(tryEnqueueAdapterCommand(A0, job("A")));
+    for (let i = 0; i < 12; i++) enqueueStopLane(A0, [rw(`t${i}`, 0)], laneExec([]), projectExecutedForMember, { cls: "pinned" });
+    enqueueStopLane(A0, [rw("estop", 0)], laneExec([]), projectExecutedForMember, { cls: "pinned", stopRef: { k: "LAST" } });
+    const line = _adapterQueueLineForTests(A0);
+    expect(line.length).toBeLessThanOrEqual(2); // FAILS today: 13 waiting groups, depth 14 (OT_CMD_QUEUE_MAX = 2 in this file)
+  });
+});
+const A0 = 7171;
+

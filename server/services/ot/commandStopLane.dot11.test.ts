@@ -646,3 +646,22 @@ describe("final fix wave residual — R-11-m: the check right before the unverif
     expect(D.log.map((w) => w.tag)).toEqual(["cmd_speed"]); // U never reached the driver
   }, 30_000);
 });
+
+// ── Scan flag (on 14ba602c5) "safety-interlock-bypass / gate parity", PINNED ONLY — NOT fixed (controller: design decision pending).
+// Path: commandDispatcher.executeStopGroup → applyPinsAtSend (R-11-k 2) re-values a VERIFIED group's writes with the pin read at SEND
+// time. For a CONTENT stop (verified, not the gate-exempt pinned command: a HITL / FOE "set" of the pin value) every gate — the HITL
+// binding (payload hash of the confirmed writes), the policy gate, the interlock gate, the safety preflight — approved the CLASSIFIED
+// value; a maker-checker pin edit while it waits makes the device receive a value no gate of that command ever saw.
+describe("scan pin — central gate parity: a content stop is sent a value its gates never approved (pin read at send)", () => {
+  it.fails("★ [flag ON] content stop 'set_run cmd_run=false' waits in the lane; the pin becomes true; the device must NOT receive true for it", async () => {
+    const { pA, release } = await inFlight();
+    const pC = dispatch(input("cmd_run", "set_run", false)); // a stop by CONTENT (not the pinned stop command): every gate ran on false
+    expect(await until(() => _stopLaneWaitingMembersForTests(10) === 1, 5000)).toBe(true);
+    expect(_adapterQueueLineForTests(10).map((x) => x.cls)).toEqual(["verified"]);
+    tags.find((t) => t.tagKey === "cmd_run")!.stopValue = true;
+    release();
+    await within(Promise.all([pA, pC]), 5000);
+    expect(D.log.filter((w) => w.tag === "cmd_run").map((w) => w.value)).toEqual([false]); // FAILS today: [true]
+  });
+});
+

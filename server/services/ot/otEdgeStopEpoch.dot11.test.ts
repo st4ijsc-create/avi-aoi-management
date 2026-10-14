@@ -471,4 +471,32 @@ describe("Đợt 11 K-fix / K-fix 2 — edge: STOP epoch (bumped when a true STO
       }
     });
   }
+
+  // ── Scan flag (on 14ba602c5) otEdgeDispatch "safety-interlock-bypass", PINNED ONLY — NOT fixed. Same mechanism as central: the edge
+  // groupBody re-values a VERIFIED (content) group with the snapshot's pin at SEND time, but a content stop is not the gate-exempt pinned
+  // stop: its SIGNED authorisation (payload hash + target recomputed from the bytes about to be sent) covered the classified value only.
+  it.fails("★ scan pin — [flag ON] an authorised content stop (run=false) waiting in the lane is sent run=true after a snapshot pin change: a value no authorisation signed", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    try {
+      let releaseA!: () => void;
+      const held = new Promise<string>((r) => (releaseA = () => r("held")));
+      const { tryEnqueueAdapterCommand, _stopLaneWaitingMembersForTests } = await import("./otDeviceWrite");
+      tryEnqueueAdapterCommand(5, () => held);
+      let snap = config();
+      const CONTENT = { adapterId: 5, machineId: 50, commandType: "set_run", writes: [{ tagKey: "run", value: false }] };
+      const target = { adapterId: 5, writes: [{ tagKey: "run", address: "00001", dataType: "bool", scale: null, offset: null }] };
+      const aC: EdgeStepAuthorization = { envelope: signEdgeObject("auth", claims({ target, jti: "6b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a81" }, CONTENT as unknown as typeof SPEED_CMD), key), runId: 9, claimSeq: 2, stepId: "w1", attempt: 1, idempotencyKey: "foe:9:w1:1", reqNonce: NONCE };
+      const pC = dispatchOtOnEdge({ ...CONTENT, idempotencyKey: "foe:9:w1:1", authorization: aC, run }, runtime(journal(), { config: () => snap }));
+      for (let t = 0; t < 400 && _stopLaneWaitingMembersForTests(5) < 1; t++) await new Promise((r) => setTimeout(r, 5));
+      const next = config();
+      (next.adapters[0].tags.find((t) => t.tagKey === "run") as { stopValue: unknown }).stopValue = true;
+      snap = next;
+      releaseA();
+      await pC;
+      expect(H.driver!.writes.map((w) => w[0].value)).toEqual([false]); // FAILS today: [true]
+    } finally {
+      delete process.env.OT_CMD_SERIALIZE_ENABLED;
+    }
+  });
 });
+
