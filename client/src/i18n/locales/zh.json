@@ -4449,7 +4449,15 @@
     "DEVICE_PROTOCOL_UNSUPPORTED": "此版本不支持 {{entity}} 协议。",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "等待中的命令已因停止（STOP）命令（{{stopKey}}）而被取消——如仍需要，请重新发送。",
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "等待中的命令已因停止（STOP）命令而被取消——如仍需要，请重新发送。",
-    "OT_STOP_UNVERIFIED_QUEUE_FULL": "此停止命令不是已验证的（固定）停止（STOP），且该设备已有过多此类命令在等待——已被拒绝，未发送任何内容。请使用固定停止（STOP）（或机器的急停 E-STOP）。"
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "此停止命令不是已验证的（固定）停止（STOP），且该设备已有过多此类命令在等待——已被拒绝，未发送任何内容。请使用固定停止（STOP）（或机器的急停 E-STOP）。",
+    "TU_DONG_TAT": "服务器上的自动 Agent 模式已关闭（AI_CODING_TU_TRI_GHI 开关）。请使用逐步审批模式，或请管理员开启。",
+    "THIEU_QUYEN_THUC_THI": "缺少自动 Agent 模式所需的执行/自动写入权限（ai_repo_exec）。",
+    "THIEU_QUYEN": "缺少运行 Agent 所需的仓库读取权限（ai_repo_read）。",
+    "DANG_CO_LUOT_CHAY": "您已有一个 Agent 运行在进行中——请等待其完成或先点击停止。",
+    "CAU_HOI_RONG": "请求为空。",
+    "CAU_HOI_QUA_DAI": "请求对单次 Agent 运行而言过长。",
+    "CHE_DO_SAI": "Agent 模式无效。",
+    "PROJECT_NOT_FOUND": "未找到所选项目（或项目不在允许列表中）。"
   },
   "export": {
     "reportMenu": {
@@ -20934,6 +20942,71 @@
       "lop": "类",
       "kieu": "类型",
       "hang": "常量"
+    },
+    "agent": {
+      "canDuyet": "需要您审批",
+      "cheDo": {
+        "hoi": "提问",
+        "hoiGoiY": "照常问答 — 不会自行写入文件",
+        "nhom": "对话模式",
+        "sua": "智能体 · 逐步审批",
+        "suaGoiY": "智能体分多步自行读取、修改、运行命令 — 每次写入/命令都等待您审批",
+        "tuDong": "智能体 · 自动",
+        "tuDongCanhBao": "自动：智能体会写入文件并运行白名单命令，不再询问。请检查结果，必要时使用撤销。",
+        "tuDongGoiY": "白名单内的写入/命令在检查点之后自动执行（可撤销）"
+      },
+      "choModel": "正在等待模型（前面还有 {{n}} 个）",
+      "coLuotDangChay": "您有一个尚未完成的智能体运行。",
+      "ctx": "上下文 {{p}}%",
+      "daBac": "已驳回。",
+      "daBacLyDo": "已驳回 — 原因：{{lyDo}}",
+      "daDuyet": "已批准。",
+      "daKhoiPhuc": "已恢复 {{n}} 个文件。",
+      "dangChay": "智能体正在工作…",
+      "dangChoDuyet": "正在等待您审批",
+      "dauRaLenh": "命令输出（来自服务器）",
+      "duyet": {
+        "chayLenh": "运行命令：",
+        "doiTen": "重命名 {{tu}} → {{den}}",
+        "xoa": "删除文件 {{tep}}"
+      },
+      "guiBac": "发送驳回",
+      "hetHieuLuc": "已失效（运行已停止）。",
+      "hoanTac": "撤销本次运行",
+      "keHoach": "计划",
+      "keHoachDem": "已完成 {{xong}}/{{tong}}",
+      "lyDo": {
+        "hetGio": "已停止：达到时间上限。",
+        "hetLuot": "已停止：达到步数上限。",
+        "hetToken": "已停止：令牌预算已用完。",
+        "hoanThanh": "已完成。",
+        "huy": "已按要求停止。",
+        "lapLai": "已停止：模型重复了同一操作。",
+        "loiModel": "已停止：模型错误。",
+        "menhLenh": "安全停止：在读取的数据中发现了指令。"
+      },
+      "lyDoBac": "驳回原因（模型会读取并重新处理）",
+      "lyDoBacGoiY": "例如：不要改动公开 API，只修改内部函数",
+      "maKetQua": "代码：{{ma}}",
+      "maThoat": "退出码 {{ma}}",
+      "matKetNoi": "事件流连接中断 — 运行仍在服务器上继续。",
+      "moTep": "在查看器中打开",
+      "noiLai": "重新连接",
+      "nutBac": "驳回",
+      "nutDuyet": "批准",
+      "tepDaDoi": "已更改的文件（{{n}}）",
+      "thoiBac": "取消",
+      "toolChuaCoKetQua": "暂无结果。",
+      "toolDangChay": "运行中",
+      "toolLoi": "失败",
+      "toolOk": "成功",
+      "usage": "令牌 输入 {{vao}} · 输出 {{ra}}",
+      "viec": {
+        "cho": "待办",
+        "dangLam": "进行中",
+        "xong": "完成"
+      },
+      "xungDot": "冲突 — 未覆盖（{{n}} 个文件在运行后被再次修改）："
     }
   },
   "masterDataCol": {

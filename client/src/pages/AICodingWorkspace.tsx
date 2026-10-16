@@ -64,6 +64,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
 import { BangDangNghi } from "@/components/aiCoding/BangDangNghi";
+// ★ Đợt 1 · T5 — CHẾ ĐỘ AGENT (Hỏi / duyệt từng bước / tự động). Logic + giao diện ở `components/aiCoding/agent/`;
+//   trang chỉ nối: bộ chọn chế độ, rẽ `handleSend`, dòng thời gian, nút Dừng, làm mới cây/tab khi agent ghi tệp.
+import { BoChonCheDoChat } from "@/components/aiCoding/agent/BoChonCheDoChat";
+import { DongThoiGianAgent } from "@/components/aiCoding/agent/DongThoiGianAgent";
+import { useLuotChayAgent } from "@/components/aiCoding/agent/useLuotChayAgent";
+import { chuanHoaCheDo, docCheDoDaLuu, luuCheDo, type CheDoChat } from "@/components/aiCoding/agent/cheDoChat";
 import { LyDoDuyet } from "@/components/aiCoding/LyDoDuyet";
 import { chupLyDoDuyet, lyDoChoThe, type LyDoDuyet as LyDoDuyetT } from "@/components/aiCoding/lyDoDuyetLogic";
 import { congTuChoi, congUsage, thongKeRong, type ThongKePhien } from "@/components/aiCoding/thongKePhien";
@@ -485,6 +491,11 @@ export default function AICodingWorkspace() {
   const { hasPermission } = usePermissions();
   const canView = hasPermission("ai_repo_read", "canView");
   const canExec = hasPermission("ai_repo_exec", "canCreate");
+  // ★ Đợt 1 · T5 — chế độ ô chat, nhớ theo trình duyệt. Đọc THÔ (không cắt theo quyền) rồi chuẩn hoá theo `canExec`
+  //   mỗi render: quyền nạp muộn không được xoá lựa chọn "tự động" đã lưu.
+  const [cheDoChatTho, setCheDoChatTho] = useState<CheDoChat>(() => docCheDoDaLuu(true));
+  const cheDoChat = chuanHoaCheDo(cheDoChatTho, canExec);
+  const doiCheDoChat = useCallback((v: CheDoChat) => { setCheDoChatTho(v); luuCheDo(v); }, []);
 
   // ── Bộ chọn DỰ ÁN (doc 79 · TRỤC 2) — danh sách từ server (danh sách TRẮNG .env). Client giữ và
   //    gửi lên MỘT id, KHÔNG BAO GIỜ đường dẫn. ──
@@ -1427,9 +1438,29 @@ export default function AICodingWorkspace() {
    *   • gửi kèm `codingEditPath` GHIM tệp đang sửa. ⚠ Chỉ gửi ĐƯỜNG DẪN; nội dung tệp do server đọc
    *     LẠI từ đĩa trong lượt ấy (điểm neo của băm chống TOCTOU — sau lượt ghi trước, đĩa đã đổi).
    */
+  // ★ Đợt 1 · T5 — một LƯỢT CHẠY agent (SSE `/api/ai/agent/runs`). Agent ghi tệp ⇒ làm mới cây + tệp đang mở
+  //   (cùng đường trang dùng sau khi duyệt diff: `listFiles.invalidate` + `fileQ.refetch`). Hook giữ callback MỚI NHẤT qua ref.
+  const agent = useLuotChayAgent({
+    projectId,
+    ngonNgu: i18n.language?.startsWith("en") ? "en" : i18n.language?.startsWith("zh") ? "zh" : "vi",
+    onTepDaDoi: (tep) => {
+      void utils.repoWorkspace.listFiles.invalidate();
+      if (selectedPath && tep.includes(selectedPath)) void fileQ.refetch();
+    },
+  });
+  const agentDangChay = agent.trangThai.dangChay;
+  const agentGui = agent.gui;
+
   const handleSend = useCallback(async (override?: string, tuVong?: TuVongSend) => {
     const text = (override ?? input).trim();
     if (!text || isStreaming) return;
+    // ★ Đợt 1 · T5 — chế độ Agent: câu người gõ đi API agent (vòng tự động cũ `tuVong` giữ đường Hỏi).
+    if (cheDoChat !== "hoi" && !tuVong) {
+      if (agentDangChay) return;
+      setInput("");
+      void agentGui(text, cheDoChat);
+      return;
+    }
     setInput("");
     if (!tuVong) {
       // Người gõ một câu mới ⇒ vòng cũ kết thúc; câu này thành "câu hỏi gốc" của vòng kế tiếp.
@@ -1530,7 +1561,7 @@ export default function AICodingWorkspace() {
       setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.streamFailed", "Luồng bị lỗi — thử lại.") }]);
       setThongKe((tk) => congTuChoi(tk)); // ★ F6 — luồng lỗi cũng là một lượt không trả được
     }
-  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong]);
+  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong, cheDoChat, agentDangChay, agentGui]);
   handleSendRef.current = handleSend;
 
   // ★★★ 2026-08-27 · CURSOR-PARITY — GỬI lệnh sửa-đoạn-chọn (Cmd+K): DỰNG câu hỏi có bối cảnh (đoạn đã bôi
@@ -3270,6 +3301,8 @@ export default function AICodingWorkspace() {
                     thông báo NGAY khi hiện (công cụ bắt-duyệt-mỗi-lượt): `aria-live="assertive"` +
                     `role="status"`. Vùng LUÔN có trong DOM và LUÔN hiển thị (KHÔNG `empty:hidden`) để
                     lượt chèn thẻ chắc chắn được đọc. */}
+                {/* ★ Đợt 1 · T5 — dòng thời gian CHẾ ĐỘ AGENT (kế hoạch ghim · tool · thẻ duyệt · kết thúc + hoàn tác). */}
+                <DongThoiGianAgent agent={agent} onMoTep={openFile} />
                 <div aria-live="assertive" role="status">
                 {/* Thẻ xác nhận write-tool */}
                 {coDiffChoDuyet ? (
@@ -3343,6 +3376,7 @@ export default function AICodingWorkspace() {
                   <GoiYTep dsKhop={dsKhop} chiSoChon={chiSoChon} onChon={chenMention} />
                 </div>
               )}
+              <BoChonCheDoChat giaTri={cheDoChat} onDoi={doiCheDoChat} coQuyenTuDong={canExec} khoa={agentDangChay || isStreaming} />
               <div className="flex items-end gap-2">
                 <textarea
                   ref={oNhapRef}
@@ -3382,8 +3416,9 @@ export default function AICodingWorkspace() {
                   style={{ maxHeight: TRAN_CAO_O_NHAP_PX }}
                   aria-label={t("repoWs.chat.placeholder", "Hỏi tác nhân: đọc/tìm mã, đề xuất sửa, chạy test…")}
                 />
-                {isStreaming ? (
-                  <Button variant="destructive" size="icon" className="shrink-0" onClick={stopKbStream} aria-label={t("repoWs.chat.stopAria", "Dừng lượt đang chạy")}><StopCircle className="h-4 w-4" /></Button>
+                {isStreaming || agentDangChay ? (
+                  // ★ Đợt 1 · T5 — Dừng lượt agent = `/huy` (rời trang KHÔNG huỷ; chỉ nút này).
+                  <Button variant="destructive" size="icon" className="shrink-0" onClick={isStreaming ? stopKbStream : () => void agent.dung()} aria-label={t("repoWs.chat.stopAria", "Dừng lượt đang chạy")}><StopCircle className="h-4 w-4" /></Button>
                 ) : (
                   <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim()} aria-label={t("repoWs.chat.sendAria", "Gửi câu hỏi cho tác nhân")}><Send className="h-4 w-4" /></Button>
                 )}

@@ -4457,7 +4457,15 @@
     "DEVICE_PROTOCOL_UNSUPPORTED": "This build does not support the {{entity}} protocol.",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "The waiting command was cancelled because a STOP command ({{stopKey}}) was issued — resend it if still needed.",
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "The waiting command was cancelled because a STOP command was issued — resend it if still needed.",
-    "OT_STOP_UNVERIFIED_QUEUE_FULL": "This stop is not a verified (pinned) STOP and too many such stops are already waiting for this device — it was refused and nothing was sent. Use the pinned STOP (or the machine's E-STOP)."
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "This stop is not a verified (pinned) STOP and too many such stops are already waiting for this device — it was refused and nothing was sent. Use the pinned STOP (or the machine's E-STOP).",
+    "TU_DONG_TAT": "Autonomous agent mode is OFF on the server (AI_CODING_TU_TRI_GHI switch). Use step-by-step approval mode, or ask an admin to enable it.",
+    "THIEU_QUYEN_THUC_THI": "Missing run/auto-write permission (ai_repo_exec) for autonomous agent mode.",
+    "THIEU_QUYEN": "Missing repository read permission (ai_repo_read) to run the agent.",
+    "DANG_CO_LUOT_CHAY": "You already have an agent run in progress — wait for it or press Stop before sending a new request.",
+    "CAU_HOI_RONG": "The request is empty.",
+    "CAU_HOI_QUA_DAI": "The request is too long for one agent run.",
+    "CHE_DO_SAI": "Invalid agent mode.",
+    "PROJECT_NOT_FOUND": "The selected project was not found (or is not in the allowed list)."
   },
   "export": {
     "reportMenu": {
@@ -20926,6 +20934,71 @@
       "lop": "class",
       "kieu": "type",
       "hang": "const"
+    },
+    "agent": {
+      "canDuyet": "Needs your approval",
+      "cheDo": {
+        "hoi": "Ask",
+        "hoiGoiY": "Question & answer as before — never writes files on its own",
+        "nhom": "Chat mode",
+        "sua": "Agent · step-by-step approval",
+        "suaGoiY": "The agent reads, edits and runs commands over several steps — every write/command waits for your approval",
+        "tuDong": "Agent · automatic",
+        "tuDongCanhBao": "Automatic: the agent WRITES files and RUNS allow-listed commands WITHOUT asking again. Check the result and use Undo if needed.",
+        "tuDongGoiY": "Allow-listed writes/commands run on their own after a checkpoint (can be undone)"
+      },
+      "choModel": "Waiting for the model ({{n}} ahead)",
+      "coLuotDangChay": "You have an unfinished agent run.",
+      "ctx": "context {{p}}%",
+      "daBac": "Rejected.",
+      "daBacLyDo": "Rejected — reason: {{lyDo}}",
+      "daDuyet": "Approved.",
+      "daKhoiPhuc": "Restored {{n}} file(s).",
+      "dangChay": "Agent is working…",
+      "dangChoDuyet": "Waiting for your approval",
+      "dauRaLenh": "Command output (from the server)",
+      "duyet": {
+        "chayLenh": "RUN command:",
+        "doiTen": "RENAME {{tu}} → {{den}}",
+        "xoa": "DELETE file {{tep}}"
+      },
+      "guiBac": "Send rejection",
+      "hetHieuLuc": "No longer valid (the run has stopped).",
+      "hoanTac": "Undo this run",
+      "keHoach": "Plan",
+      "keHoachDem": "{{xong}}/{{tong}} done",
+      "lyDo": {
+        "hetGio": "Stopped: time limit reached.",
+        "hetLuot": "Stopped: step limit reached.",
+        "hetToken": "Stopped: token budget exhausted.",
+        "hoanThanh": "Completed.",
+        "huy": "Stopped on request.",
+        "lapLai": "Stopped: the model repeated the same action.",
+        "loiModel": "Stopped: model error.",
+        "menhLenh": "Safety stop: an instruction was found inside data the agent read."
+      },
+      "lyDoBac": "Reason for rejecting (the model will read it and try again)",
+      "lyDoBacGoiY": "E.g.: don't change the public API, only fix the internal function",
+      "maKetQua": "Code: {{ma}}",
+      "maThoat": "exit code {{ma}}",
+      "matKetNoi": "Lost the event stream — the run continues on the server.",
+      "moTep": "Open in the viewer",
+      "noiLai": "Reconnect",
+      "nutBac": "Reject",
+      "nutDuyet": "Approve",
+      "tepDaDoi": "Changed files ({{n}})",
+      "thoiBac": "Cancel",
+      "toolChuaCoKetQua": "No result yet.",
+      "toolDangChay": "running",
+      "toolLoi": "failed",
+      "toolOk": "succeeded",
+      "usage": "tokens in {{vao}} · out {{ra}}",
+      "viec": {
+        "cho": "pending",
+        "dangLam": "in progress",
+        "xong": "done"
+      },
+      "xungDot": "Conflict — NOT overwritten ({{n}} file(s) were edited again after the run):"
     }
   },
   "masterDataCol": {

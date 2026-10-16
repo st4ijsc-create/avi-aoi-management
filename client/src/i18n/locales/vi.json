@@ -4449,7 +4449,15 @@
     "DEVICE_PROTOCOL_UNSUPPORTED": "Bản dựng này chưa hỗ trợ giao thức {{entity}}.",
     "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG ({{stopKey}}) — gửi lại nếu cần.",
     "OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần.",
-    "OT_STOP_UNVERIFIED_QUEUE_FULL": "Lệnh dừng này không phải DỪNG ghim đã xác minh và đã có quá nhiều lệnh như vậy đang chờ cho thiết bị này — lệnh bị từ chối, không gửi gì. Hãy dùng DỪNG ghim (hoặc nút E-STOP của máy)."
+    "OT_STOP_UNVERIFIED_QUEUE_FULL": "Lệnh dừng này không phải DỪNG ghim đã xác minh và đã có quá nhiều lệnh như vậy đang chờ cho thiết bị này — lệnh bị từ chối, không gửi gì. Hãy dùng DỪNG ghim (hoặc nút E-STOP của máy).",
+    "TU_DONG_TAT": "Chế độ Agent tự động đang TẮT trên máy chủ (công tắc AI_CODING_TU_TRI_GHI). Dùng chế độ duyệt từng bước, hoặc nhờ quản trị bật công tắc.",
+    "THIEU_QUYEN_THUC_THI": "Thiếu quyền chạy lệnh / tự ghi (ai_repo_exec) cho chế độ Agent tự động.",
+    "THIEU_QUYEN": "Thiếu quyền đọc repo (ai_repo_read) để chạy Agent.",
+    "DANG_CO_LUOT_CHAY": "Bạn đang có một lượt Agent chạy — chờ nó xong hoặc bấm Dừng trước khi gửi yêu cầu mới.",
+    "CAU_HOI_RONG": "Yêu cầu trống.",
+    "CAU_HOI_QUA_DAI": "Yêu cầu quá dài cho một lượt Agent.",
+    "CHE_DO_SAI": "Chế độ Agent không hợp lệ.",
+    "PROJECT_NOT_FOUND": "Không tìm thấy dự án đã chọn (hoặc dự án không nằm trong danh sách cho phép)."
   },
   "export": {
     "reportMenu": {
@@ -20906,6 +20914,71 @@
       "lop": "lớp",
       "kieu": "kiểu",
       "hang": "hằng"
+    },
+    "agent": {
+      "canDuyet": "Cần bạn duyệt",
+      "cheDo": {
+        "hoi": "Hỏi",
+        "hoiGoiY": "Hỏi đáp như cũ — không tự ghi tệp",
+        "nhom": "Chế độ trò chuyện",
+        "sua": "Agent · duyệt từng bước",
+        "suaGoiY": "Agent tự đọc, sửa, chạy lệnh qua nhiều bước — mỗi lượt ghi/lệnh chờ bạn duyệt",
+        "tuDong": "Agent · tự động",
+        "tuDongCanhBao": "Tự động: agent GHI tệp và CHẠY lệnh danh sách trắng KHÔNG hỏi lại. Kiểm tra kết quả và dùng Hoàn tác nếu cần.",
+        "tuDongGoiY": "Ghi/lệnh trong danh sách trắng tự chạy sau checkpoint (hoàn tác được)"
+      },
+      "choModel": "Đang chờ lượt model ({{n}} phía trước)",
+      "coLuotDangChay": "Bạn có một lượt chạy agent chưa xong.",
+      "ctx": "ngữ cảnh {{p}}%",
+      "daBac": "Đã bác.",
+      "daBacLyDo": "Đã bác — lý do: {{lyDo}}",
+      "daDuyet": "Đã duyệt.",
+      "daKhoiPhuc": "Đã khôi phục {{n}} tệp.",
+      "dangChay": "Agent đang làm việc…",
+      "dangChoDuyet": "Đang chờ bạn duyệt",
+      "dauRaLenh": "Đầu ra lệnh (từ máy chủ)",
+      "duyet": {
+        "chayLenh": "CHẠY lệnh:",
+        "doiTen": "ĐỔI TÊN {{tu}} → {{den}}",
+        "xoa": "XOÁ tệp {{tep}}"
+      },
+      "guiBac": "Gửi lời bác",
+      "hetHieuLuc": "Hết hiệu lực (lượt chạy đã dừng).",
+      "hoanTac": "Hoàn tác lượt chạy",
+      "keHoach": "Kế hoạch",
+      "keHoachDem": "{{xong}}/{{tong}} xong",
+      "lyDo": {
+        "hetGio": "Dừng: đã hết thời gian cho phép.",
+        "hetLuot": "Dừng: đã hết số lượt cho phép.",
+        "hetToken": "Dừng: đã hết ngân sách token.",
+        "hoanThanh": "Hoàn thành.",
+        "huy": "Đã dừng theo yêu cầu.",
+        "lapLai": "Dừng: model lặp lại cùng một thao tác.",
+        "loiModel": "Dừng: lỗi model.",
+        "menhLenh": "Dừng an toàn: phát hiện mệnh lệnh nằm trong dữ liệu đọc được."
+      },
+      "lyDoBac": "Lý do bác (model sẽ đọc để làm lại)",
+      "lyDoBacGoiY": "Vd: đừng đổi API công khai, chỉ sửa hàm nội bộ",
+      "maKetQua": "Mã: {{ma}}",
+      "maThoat": "mã thoát {{ma}}",
+      "matKetNoi": "Mất kết nối luồng sự kiện — lượt chạy vẫn tiếp tục ở máy chủ.",
+      "moTep": "Mở trong trình xem",
+      "noiLai": "Nối lại",
+      "nutBac": "Bác",
+      "nutDuyet": "Duyệt",
+      "tepDaDoi": "Tệp đã đổi ({{n}})",
+      "thoiBac": "Thôi",
+      "toolChuaCoKetQua": "Chưa có kết quả.",
+      "toolDangChay": "đang chạy",
+      "toolLoi": "thất bại",
+      "toolOk": "thành công",
+      "usage": "token vào {{vao}} · ra {{ra}}",
+      "viec": {
+        "cho": "chờ",
+        "dangLam": "đang làm",
+        "xong": "xong"
+      },
+      "xungDot": "Xung đột — KHÔNG ghi đè ({{n}} tệp đã bị sửa tiếp sau lượt chạy):"
     }
   },
   "masterDataCol": {
