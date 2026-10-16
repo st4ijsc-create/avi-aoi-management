@@ -374,8 +374,12 @@ export function dangTamDung(duong: string, bayGio: number, hetHanMs: number): bo
  *
  * ⚠ BẪY ĐÃ BIẾT: `Start-Process` (bên trong kịch bản) gọi từ một tiến trình đang GIỮ ỐNG stdout/err
  *   của người gọi có thể làm người gọi TREO tới khi cháu (llama-server, sống vĩnh viễn) đóng ống.
- *   ⇒ `stdio: "ignore"` (không ống nào được thừa kế) + `detached` + `unref()`: node không chờ, không
- *   giữ gì, và llama-server sống tiếp khi tiến trình app chết/khởi động lại.
+ *   ⇒ `stdio: "ignore"` (không ống nào được thừa kế) + `unref()`: node không chờ, không giữ gì.
+ * ⚠⚠ KHÔNG `detached` (ĐO 2026-10-17): `detached` ⇒ DETACHED_PROCESS ⇒ powershell.exe KHÔNG có console ⇒
+ *   thoát 0 mà KHÔNG chạy một dòng kịch bản nào — cổng sống "giết llama-server" 300 s không phục hồi trong khi
+ *   lưới mock xanh. Không detached thì powershell (con trực tiếp) nằm trong job của node, nhưng libuv cho
+ *   phép cháu THOÁT KHỎI job (silent breakaway) ⇒ llama-server do `Start-Process` dựng vẫn sống khi app chết
+ *   (đo: cháu `ping` sống sau khi node cha thoát; lưới "THẬT" trong giamSatLlamaServer.test.ts).
  * ⚠ PHẢI nghe `error`: `spawn` ENOENT (không có powershell.exe) phát sự kiện BẤT ĐỒNG BỘ; không ai
  *   nghe ⇒ `uncaughtException` ⇒ sập CẢ server ứng dụng vì một bộ giám sát.
  */
@@ -391,7 +395,7 @@ export function khoiDongTachRoi(
   const spawnFn = o.spawnFn ?? spawnThat;
   const con = spawnFn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kichBan], {
     cwd: o.cwd ?? path.resolve(path.dirname(kichBan), "..", ".."),
-    detached: true,
+    detached: false,
     stdio: "ignore",
     windowsHide: true,
   });

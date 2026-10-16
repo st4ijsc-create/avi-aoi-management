@@ -477,13 +477,51 @@ describe("khoiDongTachRoi — PowerShell tách rời, không giữ ống", () =>
     const [lenh, thamSo, tuyChon] = spawnFn.mock.calls[0] as unknown as [string, string[], any];
     expect(lenh).toBe("powershell.exe");
     expect(thamSo).toEqual(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kichBan]);
-    expect(tuyChon.detached).toBe(true);
+    // ★ KHÔNG detached — xem ca "THẬT" bên dưới: detached + stdio ignore ⇒ powershell.exe không console, thoát 0
+    //   mà KHÔNG chạy một dòng nào của kịch bản (đo 2026-10-17, cổng giết-server 300 s không phục hồi).
+    expect(tuyChon.detached).toBe(false);
     expect(tuyChon.stdio).toBe("ignore");
     expect(tuyChon.windowsHide).toBe(true);
     expect(unref).toHaveBeenCalled();
     // ★ phải nghe 'error': spawn ENOENT phát sự kiện BẤT ĐỒNG BỘ, không nghe ⇒ sập cả tiến trình node.
     expect(on.mock.calls.map((c) => c[0])).toContain("error");
   });
+
+  it.runIf(process.platform === "win32")(
+    "★★★ THẬT (không mock spawn): kịch bản PowerShell CHẠY thật và cháu Start-Process SỐNG sau khi powershell thoát",
+    async () => {
+      // Đo 2026-10-17: lưới mock ở trên xanh trong khi cổng sống ĐỎ — llama-server bị giết, bộ giám sát
+      // "khởi động lại" 1 lần, 300 s sau vẫn chết, KHÔNG một dòng log nào của kịch bản. Gốc: detached ⇒
+      // DETACHED_PROCESS ⇒ powershell.exe không có console ⇒ thoát 0 ngay. Ca này chạy PowerShell THẬT.
+      const kichBan = path.join(thuMuc, "thu-khoi-dong.ps1");
+      const dau = path.join(thuMuc, "dau.txt");
+      const cuoi = path.join(thuMuc, "cuoi.txt");
+      fs.writeFileSync(
+        kichBan,
+        [
+          `"bat-dau" | Out-File -FilePath '${dau}' -Encoding utf8`,
+          `$p = Start-Process -FilePath 'ping.exe' -ArgumentList '-n','4','127.0.0.1' -WindowStyle Hidden -PassThru`,
+          `"$($p.Id)" | Out-File -FilePath '${cuoi}' -Encoding utf8`,
+        ].join("\r\n"),
+      );
+      let maThoat: number | null | undefined;
+      khoiDongTachRoi(kichBan, { cwd: thuMuc, khiKetThuc: (c) => { maThoat = c; } });
+      const han = Date.now() + 20_000;
+      while (!fs.existsSync(cuoi) && Date.now() < han) await new Promise((r) => setTimeout(r, 200));
+      expect(fs.existsSync(dau)).toBe(true);
+      expect(fs.existsSync(cuoi)).toBe(true);
+      const pidCha = Number(fs.readFileSync(cuoi, "utf8").replace(/^﻿/, "").trim());
+      expect(pidCha).toBeGreaterThan(0);
+      // chờ powershell (con trực tiếp) thoát rồi kiểm cháu còn sống
+      const han2 = Date.now() + 10_000;
+      while (maThoat === undefined && Date.now() < han2) await new Promise((r) => setTimeout(r, 100));
+      expect(maThoat).toBe(0);
+      let conSong = true;
+      try { process.kill(pidCha, 0); } catch { conSong = false; }
+      expect(conSong).toBe(true);
+    },
+    40_000,
+  );
 
   it("kịch bản vắng ⇒ ném trước khi spawn", () => {
     const spawnFn = vi.fn();
