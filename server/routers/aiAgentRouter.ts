@@ -37,8 +37,14 @@ import type { ToolLang } from "../services/aiLocalTools";
 // D4 (doc69 Giai đoạn 4/Wave 3) — the D2 autonomy kill-switch, made OPERABLE.
 import { tripKillSwitch, untripKillSwitch, isKillSwitchTripped } from "../services/ai/autonomyPolicy";
 import { AUDIT_ACTIONS, ENTITY_TYPES, createAuditContext, logCrudOperation } from "../services/auditTrailService";
+// ★ Đợt 1 · T4 (2026-10-17) — lượt chạy của vòng agent máy chủ (`shared/agentCore`). Thân thủ tục ở services
+//   (`services/ai/agent/thuTucLuotChay.ts`), nhập ĐỘNG trong từng thủ tục: đồ thị nhập tĩnh của router này (và mọi
+//   lưới đang mock tầng dữ liệu của nó) không đổi. SSE tạo/nối lại/huỷ lượt chạy ở `server/routes/aiAgentApi.ts`.
+const thuTucLuotChay = () => import("../services/ai/agent/thuTucLuotChay");
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
+/** id lượt chạy / pending action — `randomUUID()`. */
+const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
 /** D4 — ops-scoped (cross-user) agent session visibility: admin/engineer only,
  *  mirrors aiModelRouter's modelCardProcedure convention (roleProcedure combo). */
@@ -225,6 +231,56 @@ export const aiAgentRouter = router({
     }),
 
   /** Reset the kill-switch — admin + 2FA. Audited. */
+  // ═══ Đợt 1 · T4 — LƯỢT CHẠY vòng agent máy chủ (quyền `ai_repo_read/canView` kiểm trong thân) ═══
+  /** Lượt chạy CỦA MÌNH (tuỳ chọn lọc dự án), mới nhất trước. */
+  danhSach: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional() }).optional())
+    .query(async ({ input, ctx }) => (await thuTucLuotChay()).thuTucDanhSach(toAgentUser(ctx.user as any), input?.projectId ?? null)),
+
+  /** Chi tiết một lượt chạy của mình: trạng thái, sự kiện (đã gộp), checkpoint. */
+  chiTiet: protectedProcedure
+    .input(z.object({ runId: uuidSchema }))
+    .query(async ({ input, ctx }) => (await thuTucLuotChay()).thuTucChiTiet(toAgentUser(ctx.user as any), input.runId)),
+
+  /** Duyệt một đề xuất ghi/lệnh của lượt chạy (= `confirmAction` thật) rồi đánh thức lượt chạy. */
+  duyet: protectedProcedure
+    .input(
+      z.object({
+        actionId: uuidSchema,
+        selectedHunkIds: z.array(z.number().int().min(0).max(10_000)).max(2_000).optional(),
+        /** Bí danh của `selectedHunkIds` (tên phía giao diện T5). KHÔNG được để zod lặng lẽ bỏ — bỏ là áp MỌI khối. */
+        chonKhoi: z.array(z.number().int().min(0).max(10_000)).max(2_000).optional(),
+        lang: langSchema.optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucDuyet(toAgentUser(ctx.user as any), {
+        actionId: input.actionId,
+        selectedHunkIds: input.selectedHunkIds ?? input.chonKhoi,
+        lang: input.lang ?? "vi",
+        req: reqMeta(ctx),
+      }),
+    ),
+
+  /** Bác một đề xuất, kèm LÝ DO để model đọc ("User rejected this change: …"). */
+  bac: protectedProcedure
+    .input(z.object({ actionId: uuidSchema, lyDo: z.string().trim().min(1).max(2_000) }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucBac(toAgentUser(ctx.user as any), { actionId: input.actionId, lyDo: input.lyDo, req: reqMeta(ctx) }),
+    ),
+
+  /** Hoàn tác một checkpoint hoặc CẢ lượt chạy (thứ tự ngược) — đi cửa ghi + audit (T3 `checkpointAgent`). */
+  hoanTac: protectedProcedure
+    .input(z.object({ runId: uuidSchema, checkpointId: z.string().min(1).max(200).optional(), lang: langSchema.optional() }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucHoanTac(toAgentUser(ctx.user as any), {
+        runId: input.runId,
+        checkpointId: input.checkpointId,
+        lang: input.lang ?? "vi",
+        req: reqMeta(ctx),
+      }),
+    ),
+
   untripKillSwitch: killSwitchProcedure.mutation(async ({ ctx }) => {
     await untripKillSwitch(ctx.user.id);
     await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {

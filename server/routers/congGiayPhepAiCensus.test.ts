@@ -399,7 +399,15 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `machine_control:canDelete`. Không thủ tục nào là bề mặt AI; beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong và mọi SKU KHÔNG
  *   đổi. `tong` 2316 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2316, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-17 AI Local Đợt 1 · T4 (vòng agent máy chủ) — **tong 2316 → 2321 · beMatAi 367 → 372 · aiCoCong 305 → 310**
+ *   (đo trước rồi mới ghim; baseline 2316 XANH trên HEAD `c05b9848b` trước lượt này). Đúng NĂM thủ tục MỚI ở
+ *   `aiAgentRouter.ts` (bề mặt AI, sàn `moduleProcedure("MOD_AI")` như anh em cùng tệp ⇒ cả năm vào aiCoCong):
+ *   `aiAgent.{danhSach, chiTiet}` (query), `aiAgent.{duyet, bac, hoanTac}` (mutation) — quyền `ai_repo_read/canView`
+ *   kiểm trong thân (`services/ai/agent/thuTucLuotChay.ts`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
+ *   `tong` 2321 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2321, beMatAi: 372, aiCoCong: 310, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

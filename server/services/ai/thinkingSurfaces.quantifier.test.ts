@@ -404,6 +404,15 @@ const SO_KHAI: readonly BeMat[] = [
       "`StreamingSecretRedactor` dựng NGOÀI mọi nhánh, ngay dòng đầu của hàm (hàm này có nhiều " +
       "đường ném: planInference, import engine, đứt giữa luồng).",
   },
+  // ═══ Đợt 1 · T4 (2026-10-17) — VÒNG AGENT MÁY CHỦ (`shared/agentCore`) gọi model (1) ═══
+  {
+    tep: "server/services/ai/agent/goiModelMayChu.ts", ham: "bomLuongModelMayChu", goi: "chatCompletionStream",
+    hienThi: true, noi: "tai_cho",
+    ghiChu:
+      "Lượt model của vòng agent (SSE `/api/ai/agent/runs`): mảnh `token` ⇒ `StreamingThinkingStripper` rồi " +
+      "`StreamingSecretRedactor` (dựng ở hàm bao `luongModelMayChu`, một hop) ⇒ sự kiện `chu`; mảnh `reasoning` đi " +
+      "kênh RIÊNG `nghi` qua bộ che riêng, KHÔNG BAO GIỜ thành `chu`. Lưới hành vi: `agent/goiModelMayChu.test.ts`.",
+  },
   {
     tep: "server/services/programming/aiProgrammingCopilot.ts", ham: "completeInline", goi: "generateFim",
     hienThi: true, noi: "tai_cho",

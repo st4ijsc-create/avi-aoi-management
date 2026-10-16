@@ -549,6 +549,9 @@ describe("§8 — Q1: repo chính KHÔNG tự ghi khi chưa có checkpoint (theo
       }
     };
     duyet(goc);
-    expect(nguoiDung.sort()).toEqual(["ai/autonomyPolicy.ts", "aiCodingTuTriGhi.ts"]);
+    // ★ Đợt 1 · T4 (2026-10-17) — `ai/agent/boThucThiMayChu.ts`: chế độ `tu-dong` của vòng agent máy chủ là MỘT
+    //   cửa TỰ GHI nữa (confirm `{reason:"AI_AGENT_TU_DONG"}`, không người bấm) ⇒ nó PHẢI gọi cổng Q1. Chế độ `sua`
+    //   (duyệt tay từng lượt) của cùng tệp KHÔNG gọi cổng — xem nhánh `ctx.cheDo === "tu-dong"` ở đó.
+    expect(nguoiDung.sort()).toEqual(["ai/agent/boThucThiMayChu.ts", "ai/autonomyPolicy.ts", "aiCodingTuTriGhi.ts"]);
   });
 });

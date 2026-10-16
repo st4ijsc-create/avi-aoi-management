@@ -40,6 +40,8 @@ import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
 import { chanTuyenAiTheoGiayPhep } from "../routes/congGiayPhepAiExpress";
 import { registerOpenAiGateway } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
+import { registerAiAgentRoutes } from "../routes/aiAgentApi"; // Đợt 1 T4 — lượt chạy vòng agent máy chủ (SSE)
+import { danhDauGianDoanKhiBoot } from "../db/aiAgentRuns";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
 import {
@@ -5565,6 +5567,12 @@ async function startServer() {
   // middleware so trusted-LAN IDE tooling (VS Code + Continue) can reach it.
   registerOpenAiGateway(app);
   registerAiLocalKnowledgeRoutes(app);
+  // Đợt 1 T4 — vòng agent máy chủ: lượt chạy sống trong bộ nhớ ⇒ hàng sổ còn `dang-chay`/`cho-duyet` từ tiến trình
+  // trước là lượt đã chết ⇒ `gian-doan` (best-effort, không chặn khởi động). Đăng ký SAU cổng giấy phép `/api/ai`.
+  void danhDauGianDoanKhiBoot().then((n) => {
+    if (n > 0) console.log(`[aiAgent] ${n} lượt chạy dở từ lần chạy trước ⇒ gian-doan`);
+  });
+  registerAiAgentRoutes(app);
   // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
   registerEdgeDownloadRoute(app);
 

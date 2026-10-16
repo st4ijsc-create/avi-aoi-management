@@ -722,7 +722,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • `edgeRuntime.retireNode` (mutation, Đợt 12 O `f0a7c6f0a`): `adminProcedure` + `machine_control:canDelete`; the service
 //     re-checks an active admin in the DB, locks the node FOR NO KEY UPDATE (5 s lock_timeout) and refuses while it still owns
 //     devices / pending STOPs / runs; audited ⇒ D (edge nodes carry no factory scope of a caller). No baseline row added.
-const GHIM = { A: 333, B: 8, C: 474, D: 1144, S: 357, tong: 2316 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 1 · T4 — vòng agent máy chủ) — **C 474 → 476 · D 1144 → 1147 · tong 2316 → 2321 · A/B/S
+// unchanged.** Five NEW procedures in `aiAgentRouter.ts`, measured with this scanner (baseline 2316 green on HEAD `c05b9848b`):
+//   • `aiAgent.danhSach` / `aiAgent.chiTiet` (queries): read `ai_agent_runs` (mig 0390) with `eq(userId)` = OWNER scope (the
+//     agent-run log is per user, like `ai_coding_sessions`; no tenant/factory rows) ⇒ C;
+//   • `aiAgent.duyet` / `aiAgent.bac` / `aiAgent.hoanTac` (mutations): `confirmAction` / `cancelAction` (token bound to the
+//     session user) and the checkpoint undo (run ownership checked first) ⇒ D. No baseline row added.
+const GHIM = { A: 333, B: 8, C: 476, D: 1147, S: 357, tong: 2321 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
