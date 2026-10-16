@@ -57,6 +57,7 @@ import {
   TRAN_KET_QUA_GREP,
   TRAN_MUC_LIET_KE,
   TRAN_TEP_QUET,
+  TRAN_TEP_PHANG,
   duyetTepDocDuoc,
   gocHopCat,
   lietKeTrongHopCat,
@@ -557,6 +558,165 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
   },
 };
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// 4. find_files — ★ Đợt 1 · T2 (2026-10-14), CHỈ cho vòng agent
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★ GLOB TÊN TỆP trên cây ĐỌC ĐƯỢC của hộp cát (`duyetTepDocDuoc`).
+ *
+ * ⚠ AN TOÀN THEO CẤU TẠO, CÙNG LÝ LẼ VỚI `grep_repo.loaiTru`: `pattern` chỉ LỌC một danh sách mà
+ *   `duyetTepDocDuoc` đã cho qua mọi hàng rào (thư mục cấm, `.env*`/khoá, đuôi ngoài danh sách trắng,
+ *   symlink/junction KHÔNG được duyệt vào). Một mẫu bịa (`../*`, tuyệt đối) không nới được gì — nó bị
+ *   từ chối `INVALID_PATTERN` chỉ để lời đáp nói đúng lý do thay vì "0 kết quả".
+ * ⚠ Hệ quả có chủ ý: chỉ tệp agent ĐỌC/SỬA được mới hiện ra (một `*.png` luôn rỗng) — `list_files`
+ *   vẫn là đường để biết TÊN mọi thứ trong một thư mục.
+ * ⚠ Trần kép như grep: hạn giờ `HAN_GIO_GREP_MS` + trần duyệt `TRAN_TEP_PHANG`, và trần KẾT QUẢ
+ *   `TRAN_KET_QUA_TIM_TEP`; mọi bản cắt đều được KHAI.
+ * ⚠ CHỈ cho agent (`chiChoAgent`, `triggers: []`): bộ chọn cũ không với tới — đường cũ không đổi.
+ */
+export const TRAN_KET_QUA_TIM_TEP = 200;
+
+/**
+ * Glob → RegExp (neo hai đầu, KHÔNG phân biệt hoa/thường — tên tệp trên Windows/macOS cũng vậy):
+ * `**` vượt `/` (đoạn `**\/` khớp cả 0 nấc), `*` trong MỘT đoạn, `?` đúng một ký tự trong một đoạn;
+ * mọi ký tự khác là CHỮ (thoát regex). Thuần — export để lưới đo thẳng.
+ */
+export function globThanhRegex(mau: string): RegExp {
+  let re = "";
+  for (let i = 0; i < mau.length; i++) {
+    const c = mau[i]!;
+    if (c === "*") {
+      if (mau[i + 1] === "*") {
+        i++;
+        if (mau[i + 1] === "/") {
+          i++;
+          re += "(?:.*/)?";
+        } else {
+          re += ".*";
+        }
+      } else {
+        re += "[^/]*";
+      }
+    } else if (c === "?") {
+      re += "[^/]";
+    } else {
+      re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${re}$`, "i");
+}
+
+/** Mẫu hợp lệ ⇔ tương đối, không `..`, không NUL, không đoạn ổ đĩa — cùng hình dạng luật của hộp cát. */
+function chuanHoaMauTim(raw: string): string | null {
+  if (raw.includes("\0")) return null;
+  const m = raw.trim().replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+  if (m === "" || m.startsWith("/")) return null;
+  const doan = m.split("/");
+  if (doan.some((d) => d === ".." || /^[a-zA-Z]:/.test(d))) return null;
+  return m;
+}
+
+interface DuLieuTimTep {
+  pattern: string | null;
+  count: number;
+  truncated: boolean;
+  timedOut: boolean;
+  files: string[];
+}
+
+const RONG_TIM: DuLieuTimTep = { pattern: null, count: 0, truncated: false, timedOut: false, files: [] };
+
+const thamSoTimTep = z
+  .object({
+    pattern: z.string().min(1).max(200),
+    __authCtx: authCtxParam,
+    __projectRoot: projectRootParam,
+  })
+  .strict();
+
+const findFilesTool: Tool<z.infer<typeof thamSoTimTep>, DuLieuTimTep> = {
+  name: "find_files",
+  description:
+    "Tìm tệp theo GLOB TÊN trong dự án (`*` trong một đoạn, `**` qua nhiều thư mục, `?` một ký tự; mẫu không có " +
+    "`/` so với tên tệp ở mọi nấc, vd `*.test.ts`, `src/**/*.cs`). Chỉ liệt kê tệp hộp cát cho đọc; trần " +
+    `${TRAN_KET_QUA_TIM_TEP} kết quả, có hạn giờ. CHỈ ĐỌC, quyền ai_repo_read/canView. Find files by name glob.`,
+  parameters: thamSoTimTep,
+  triggers: [],
+  chiChoAgent: true,
+  kind: "read",
+  requiredPermission: QUYEN,
+  handler: async (params) => {
+    const title = "Tìm tệp theo tên";
+    const raw = params as unknown as Record<string, unknown>;
+    const denied = await rbacGate<DuLieuTimTep>(raw.__authCtx, QUYEN, KIEU, title, RONG_TIM);
+    if (denied) return denied;
+
+    const tho = typeof raw.pattern === "string" ? raw.pattern : "";
+    if (tho.trim() === "") {
+      return { type: KIEU, title, data: RONG_TIM, note: "MISSING_REQUIRED_ARG", textSummary: "Thiếu tham số bắt buộc `pattern` (glob tên tệp, vd `*.ts` hoặc `src/**/*.cs`)." };
+    }
+    const mau = chuanHoaMauTim(tho);
+    if (mau === null) {
+      return { type: KIEU, title, data: { ...RONG_TIM, pattern: tho }, note: "INVALID_PATTERN", textSummary: `Mẫu "${tho}" không hợp lệ: glob phải TƯƠNG ĐỐI trong dự án (không tuyệt đối, không "..", không ổ đĩa).` };
+    }
+
+    const goc = gocTuArgs(raw);
+    const khoa = khoaNganSach(raw.__authCtx);
+    if (khoa !== undefined && nganSachConLai(khoa).conLai <= 0) {
+      const ns = nganSachConLai(khoa);
+      return ketQuaTuChoiHopCat(title, { ...RONG_TIM, pattern: mau }, MA_TU_CHOI_HOP_CAT.BUDGET_EXCEEDED, `${ns.daDung}/${TRAN_BYTE_MOI_PHIEN}`);
+    }
+
+    // Mẫu có `/` ⇒ so cả đường; không có ⇒ so TÊN tệp ở mọi nấc. Đoạn chữ đứng đầu (không glob) là
+    // điểm bắt đầu duyệt — thu hẹp quét, không đổi kết quả.
+    const coGach = mau.includes("/");
+    const re = globThanhRegex(mau);
+    const doan = mau.split("/");
+    const tienTo: string[] = [];
+    if (coGach) {
+      for (const d of doan.slice(0, -1)) {
+        if (/[*?]/.test(d)) break;
+        tienTo.push(d);
+      }
+    }
+    const batDau = tienTo.join("/");
+    if (batDau !== "") {
+      const kiem = lietKeTrongHopCat(batDau, goc, 1);
+      if (!kiem.ok) return ketQuaTuChoiHopCat(title, { ...RONG_TIM, pattern: mau }, kiem.ma, kiem.chiTiet);
+    }
+
+    const hanChot = Date.now() + HAN_GIO_GREP_MS;
+    const duyet = duyetTepDocDuoc(goc, batDau, TRAN_TEP_PHANG, hanChot);
+    const files: string[] = [];
+    let catKetQua = false;
+    for (const rel of duyet.tep) {
+      const doiTuong = coGach ? rel : (rel.split("/").pop() ?? rel);
+      if (!re.test(doiTuong)) continue;
+      if (files.length >= TRAN_KET_QUA_TIM_TEP) {
+        catKetQua = true;
+        break;
+      }
+      files.push(rel);
+    }
+    const catBot = catKetQua || duyet.hetTran || duyet.hetGio;
+    const data: DuLieuTimTep = { pattern: mau, count: files.length, truncated: catBot, timedOut: duyet.hetGio, files };
+    if (files.length === 0) {
+      if (duyet.hetGio) {
+        return { type: KIEU, title, data, note: "FIND_DEADLINE", textSummary: `Quá hạn ${HAN_GIO_GREP_MS} ms khi duyệt cây mà chưa thấy tệp nào khớp "${mau}". Đây là BẢN CẮT vì hết giờ, KHÔNG phải kết luận "không có tệp ấy" — hãy thêm thư mục đầu mẫu (vd \`src/**/${doan[doan.length - 1]}\`).` };
+      }
+      return { type: KIEU, title, data, note: "NO_MATCH", textSummary: `Không tệp đọc được nào khớp "${mau}" trong "${batDau || "."}".${duyet.hetTran ? ` ⚠ Đã chạm trần duyệt ${TRAN_TEP_PHANG} tệp nên phạm vi là MỘT PHẦN.` : ""}` };
+    }
+    const canhBao = [
+      duyet.hetGio ? `quá hạn ${HAN_GIO_GREP_MS} ms` : "",
+      duyet.hetTran ? `chạm trần duyệt ${TRAN_TEP_PHANG} tệp` : "",
+      catKetQua ? `chạm trần ${TRAN_KET_QUA_TIM_TEP} kết quả` : "",
+    ].filter(Boolean);
+    const than = `"${mau}" — ${files.length} tệp${canhBao.length ? ` (BẢN CẮT: ${canhBao.join(", ")})` : ""}:\n${files.join("\n")}`;
+    if (khoa !== undefined) tieuNganSach(khoa, than.length);
+    return { type: KIEU, title, data, textSummary: than };
+  },
+};
+
 // ─── đăng ký (guard bất biến, đúng khuôn readToolsProgramming) ─────────────────────────────────
 
 let _daDangKy = false;
@@ -566,8 +726,9 @@ export function dangKyRepoReadTools(): void {
   registerTool(readFileTool);
   registerTool(listFilesTool);
   registerTool(grepRepoTool);
+  registerTool(findFilesTool);
 }
 
 dangKyRepoReadTools();
 
-export { readFileTool, listFilesTool, grepRepoTool };
+export { readFileTool, listFilesTool, grepRepoTool, findFilesTool };

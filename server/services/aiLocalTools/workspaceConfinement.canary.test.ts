@@ -81,15 +81,20 @@ beforeEach(() => {
   checkPermissionMock.mockResolvedValue(true);
 });
 
-/** Tool nào nhận một ô `path`? Hỏi **schema thật** của tool, không chép tay danh sách. */
+/**
+ * Tool nào nhận một ô ĐƯỜNG DẪN? Hỏi **schema thật** của tool, không chép tay danh sách.
+ * ★ Đợt 1 · T2 (2026-10-14) — `rename_file` nhận `from`/`to` (hợp đồng spec agent), không phải
+ *   `path`. Để một cái tên ô khác làm tool RƠI KHỎI lưới là đúng lớp "lách lưới bằng cách đặt tên"
+ *   mà khối trên cấm ⇒ lưới hỏi cả `from`, và `moiDauRa` điền cả `from`/`to`.
+ */
 function nhanThamSoPath(t: Tool<any, any>): boolean {
   const shape = (t.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
-  return !!shape && Object.hasOwn(shape, "path");
+  return !!shape && (Object.hasOwn(shape, "path") || Object.hasOwn(shape, "from"));
 }
 
 /** Gọi MỌI bề mặt của một tool với đường dẫn hard link, gom mọi thứ nó trả ra. */
 async function moiDauRa(t: Tool<any, any>, p: string): Promise<string> {
-  const args = { path: p, content: "x", __authCtx: AUTH };
+  const args = { path: p, from: p, to: `moi-${p}`, content: "x", __authCtx: AUTH };
   const ra: unknown[] = [];
   for (const [ten, f] of [
     ["handler", t.handler],
@@ -159,7 +164,19 @@ describe("★★★ I-3 — KHÔNG byte nào của một inode nlink>1 rời kh�
       ten,
       "một tool MỚI nhận `path` là một CỬA MỚI ra đĩa. Đọc lưới này, chứng minh nó đi qua cửa " +
         "chung, rồi mới thêm tên vào đây.",
-    ).toEqual(["apply_diff", "grep_repo", "list_files", "read_file", "read_project_file", "write_project_file"]);
+      // ★ Đợt 1 · T2 — `delete_file`/`rename_file`: gốc hộp cát repo (như apply_diff), mọi byte qua
+      //   `confineTargetUnder` + `readConfined` + `xoaConfined`/`doiTenConfined` (kiểm nlink trên fd);
+      //   hàng rào riêng của chúng ở `xoaDoiTenTep.census.test.ts` (junction · hard link · tráo sau cửa).
+    ).toEqual([
+      "apply_diff",
+      "delete_file",
+      "grep_repo",
+      "list_files",
+      "read_file",
+      "read_project_file",
+      "rename_file",
+      "write_project_file",
+    ]);
   });
 
   it("★★★ ĐỐI CHỨNG DƯƠNG — file thường trong workspace VẪN đi qua được cả hai cửa", async () => {

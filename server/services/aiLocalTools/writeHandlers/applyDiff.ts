@@ -53,16 +53,20 @@
  * (chỉ-đọc) để báo trạng thái bẩn — nhưng nó **KHÔNG ghi một byte nào ra đĩa**. Phép ghi DUY NHẤT
  * (`writeConfined`) nằm trong `execute`, chạy SAU `confirmAction`.
  */
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
 import { redactSecretsOnly } from "../../ai/aiSafety";
 import {
+  bamUtf8,
   confineTargetUnder,
+  doiTenConfined,
   readConfined,
   writeConfined,
+  xoaConfined,
+  type ConfinedDoiTenOutcome,
   type ConfinedTarget,
   type ConfinedWriteOutcome,
+  type ConfinedXoaOutcome,
 } from "../readToolsProgramming";
 import {
   MA_TU_CHOI_HOP_CAT,
@@ -90,7 +94,7 @@ const KIEU = "action_result" as const;
 const QUYEN = { module: "ai_repo_read", action: "canEdit" } as const;
 
 /** Trần đọc/ghi: đủ cho gần hết tệp mã nguồn; lớn hơn ⇒ không so khớp băm an toàn được ⇒ từ chối. */
-const TRAN_TEP = 2_000_000;
+export const TRAN_TEP = 2_000_000;
 /** Số ký tự trích cho diff hiển thị trong preview + audit. */
 const TRICH = 2_000;
 
@@ -110,7 +114,8 @@ function khoaNganSach(ctx: ToolExecContext): string {
  * lớp lỗi "hai bản sao một vị từ" mà repo này đếm nhiều lần.
  */
 export function bam(s: string): string {
-  return createHash("sha256").update(s, "utf8").digest("hex");
+  // ★ Đợt 1 · T2 — uỷ quyền về `bamUtf8` của tầng cửa đĩa: cửa huỷ/dời so ĐÚNG phép băm này.
+  return bamUtf8(s);
 }
 
 /**
@@ -359,9 +364,15 @@ export function cauCanhBaoKhongGit(relPath: string, lang: ToolLang): string {
  * ⚠ Cùng một hàm cho preview và execute ⇒ **không có đường nào tại confirm bỏ qua một hàng rào mà
  *   propose đã kiểm** — đó chính là điểm của hàng rào TOCTOU (kiểm LẠI tại confirm).
  */
-export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQuyet> {
-  // 1. CHÍNH SÁCH đường dẫn (dùng lại nguyên mã pha A).
-  const maPath = phanQuyetDuongDan(p.path);
+/**
+ * ★ Đợt 1 · T2 (2026-10-14) — hàng rào 1 (CHÍNH SÁCH đường: hình dạng/cấm + đuôi danh sách TRẮNG),
+ * tách khỏi `phanQuyet` để `delete_file`/`rename_file` dùng ĐÚNG vị từ này cho mọi đường (nguồn LẪN
+ * đích) — không có bản sao thứ hai để trôi. Thuần, trước mọi I/O.
+ */
+export function phanQuyetChinhSachDuong(
+  duong: unknown,
+): { ok: true } | { ok: false; ma: "PATH_REJECTED" | "DENIED_SECRET" | "DENIED_DIR" | "DENIED_EXT"; chiTiet: string } {
+  const maPath = phanQuyetDuongDan(duong);
   if (maPath !== null) {
     const ma =
       maPath === MA_TU_CHOI_HOP_CAT.DENIED_SECRET
@@ -369,12 +380,19 @@ export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQu
         : maPath === MA_TU_CHOI_HOP_CAT.DENIED_DIR
           ? "DENIED_DIR"
           : "PATH_REJECTED";
-    return { ok: false, ma, chiTiet: String(p.path ?? "") };
+    return { ok: false, ma, chiTiet: String(duong ?? "") };
   }
-  const ten = String(p.path).replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
+  const ten = String(duong).replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
   if (!duoiDuocPhep(ten)) {
     return { ok: false, ma: "DENIED_EXT", chiTiet: path.extname(ten) || "(không có đuôi)" };
   }
+  return { ok: true };
+}
+
+export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQuyet> {
+  // 1. CHÍNH SÁCH đường dẫn (dùng lại nguyên mã pha A).
+  const cs = phanQuyetChinhSachDuong(p.path);
+  if (!cs.ok) return cs;
 
   // 2. THAM SỐ.
   if (typeof p.original !== "string" || typeof p.modified !== "string") {
@@ -481,6 +499,53 @@ export function ghiTheoPhanQuyet(pq: PhanQuyetXanh, modified: string): ConfinedW
   // ★ 2026-09-01 · ĐỢT C — vào sổ băm-sau-ghi-HITL ngay TẠI cửa ghi chung: một nguồn phủ CẢ
   //   `apply_diff` LẪN `apply_diff_batch` theo cấu tạo (không nơi gọi nào phải nhớ ghi sổ).
   if (res.ok) soBamHITL.set(`${pq.goc}::${pq.relPath}`, bam(modified));
+  return res;
+}
+
+/**
+ * ★★ Đợt 1 · T2 (2026-10-14) — HỎI sổ băm HITL (chỉ đọc). `delete_file`/`rename_file` dùng nó cho
+ * CÙNG miễn trừ hẹp: tệp git-bẩn/chưa track/không-git chỉ được xoá/dời khi băm đĩa ≡ băm lượt HITL
+ * trước vừa đặt — tức toàn bộ nội dung là sản phẩm đã qua người duyệt, không một byte người nào.
+ * ⚠ CHỈ export phép HỎI: phép GHI sổ nằm trong các cửa của file này (một nguồn); không module nào
+ *   khác đặt được một băm miễn trừ.
+ */
+export function khopSoBamHITL(goc: string, relPath: string, bamDia: string): boolean {
+  return soBamHITL.get(`${goc}::${relPath}`) === bamDia;
+}
+
+/** Băm của "tệp KHÔNG tồn tại" — `phanQuyet` coi tệp vắng là nội dung `""`. */
+const BAM_VANG_MAT = bam("");
+
+/**
+ * ★★★ Đợt 1 · T2 — CỬA XOÁ của nhóm tool repo (vỏ trên `xoaConfined`), cùng khuôn `ghiTheoPhanQuyet`.
+ * Sổ HITL: sau khi xoá, đặt băm "vắng mặt" ⇒ trạng thái git ` D`/vắng là SẢN PHẨM HITL, nên lượt TẠO
+ * lại (hoàn tác bằng `apply_diff` với `original:""`) đi qua đúng miễn trừ hẹp — một tệp người tạo lại
+ * có nội dung ≠ "" ⇒ không khớp ⇒ từ chối như cũ.
+ */
+export function xoaTheoPhanQuyet(pq: { target: ConfinedTarget; goc: string; relPath: string; bamTruoc: string }): ConfinedXoaOutcome {
+  const res = xoaConfined(pq.target, pq.bamTruoc);
+  if (res.ok) soBamHITL.set(`${pq.goc}::${pq.relPath}`, BAM_VANG_MAT);
+  return res;
+}
+
+/**
+ * ★★★ Đợt 1 · T2 — CỬA DỜI (vỏ trên `doiTenConfined`). Sổ HITL: nguồn ⇒ "vắng mặt do HITL", đích ⇒
+ * băm nội dung đã dời (đích chưa track trong git là sản phẩm HITL — lượt `apply_diff` kế tiếp trên
+ * đích, hoặc dời NGƯỢC để hoàn tác, đi qua đúng miễn trừ hẹp).
+ */
+export function doiTenTheoPhanQuyet(pq: {
+  nguon: ConfinedTarget;
+  dich: ConfinedTarget;
+  goc: string;
+  relNguon: string;
+  relDich: string;
+  bamTruoc: string;
+}): ConfinedDoiTenOutcome {
+  const res = doiTenConfined(pq.nguon, pq.dich, pq.bamTruoc);
+  if (res.ok) {
+    soBamHITL.set(`${pq.goc}::${pq.relNguon}`, BAM_VANG_MAT);
+    soBamHITL.set(`${pq.goc}::${pq.relDich}`, pq.bamTruoc);
+  }
   return res;
 }
 

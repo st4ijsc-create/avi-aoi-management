@@ -39,6 +39,10 @@ import "./writeHandlers/applyDiff";
 // `phanQuyet()`/`ghiTheoPhanQuyet()` của `applyDiff.ts` ⇒ **mỗi tệp giữ băm neo RIÊNG**, không có
 // "một băm cho cả lô", và KHÔNG có cửa ghi thứ hai ra đĩa.
 import "./writeHandlers/applyDiffBatch";
+// Đợt 1 · T2 (2026-10-14) — `delete_file`/`rename_file`: tool GHI cho vòng agent. Cùng bốn hàng rào
+// của apply_diff cho mọi đường; đĩa qua hai cửa `xoaConfined`/`doiTenConfined`. `chiChoAgent` ⇒ bộ
+// chọn trigger/LLM/planner cũ KHÔNG thấy chúng (đường cũ không đổi). `find_files` nằm ở repoReadTools.
+import "./writeHandlers/xoaDoiTenTep";
 // Pha 4 Task 4 — VRAM broker state (READ-ONLY). Đây là NGƯỜI ĐỌC THẬT của `buildVramAgentState()`
 // cho AI Agent: Agent repo này đi qua toolRegistry, KHÔNG qua tRPC. Ba lệnh phá huỷ CỐ Ý không
 // đăng ký ở đây — xem khối đầu `vramTools.ts`.

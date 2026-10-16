@@ -37,14 +37,25 @@ const API_CHO_BYTE = new Set([
   "readFileSync", "writeFileSync", "appendFileSync", "openSync", "readSync", "writeSync",
   "ftruncateSync", "truncateSync", "copyFileSync", "createReadStream", "createWriteStream",
   "readFile", "writeFile", "appendFile", "open", "copyFile",
+  /**
+   * ★★ Đợt 1 · T2 (2026-10-14) — API **HUỶ / DỜI / NHÂN BẢN** tên tệp. Chúng không chở byte đi đâu,
+   * nhưng chúng PHÁ byte (xoá/ghi đè qua rename) hoặc dựng đường thoát (link/symlink). Trước T2 cả
+   * cây `aiLocalTools/**` không có một lời gọi nào ⇒ thêm vào đây không làm lưới kêu oan; từ T2 có
+   * `delete_file`/`rename_file`, và mọi lượt huỷ/dời phải nằm trong hai cửa mới bên dưới.
+   * ⚠ `mkdirSync` VẪN ngoài tập (dựng khung, không huỷ byte) — xem ca chiều DƯƠNG.
+   */
+  "unlinkSync", "unlink", "rmSync", "rm", "rmdirSync", "rmdir", "renameSync", "rename",
+  "linkSync", "link", "symlinkSync", "symlink", "cpSync", "cp",
 ]);
 
 /**
- * ★ HAI CỬA — và **chỉ** hai. Muốn thêm một cái tên vào đây thì phải sửa file này, tức phải đọc
- * khối trên một lần. Đó là mục đích.
+ * ★ CÁC CỬA — và **chỉ** những cửa này. Muốn thêm một cái tên vào đây thì phải sửa file này, tức
+ * phải đọc khối trên một lần. Đó là mục đích.
+ * ★ Đợt 1 · T2 — thêm `xoaConfined` (xoá) + `doiTenConfined` (dời): cùng tầng fd (isFile/nlink trên
+ *   fd + băm lại + tên-vẫn-là-inode + realpath cha) — xem docblock ở `readToolsProgramming.ts`.
  */
 const CUA: ReadonlyMap<string, ReadonlySet<string>> = new Map([
-  ["readToolsProgramming.ts", new Set(["readConfined", "writeConfined"])],
+  ["readToolsProgramming.ts", new Set(["readConfined", "writeConfined", "xoaConfined", "doiTenConfined"])],
 ]);
 
 interface DiemCham {
@@ -144,12 +155,47 @@ describe("★★★ M3 — MỌI lượt chạm đĩa theo BYTE trong nhóm tool
       tom,
       "thêm/bớt một lượt chạm đĩa phải được người viết nhìn thấy lưới này một lần",
     ).toEqual([
+      // ★ Đợt 1 · T2 — dời: mở nguồn + đọc, tạo đích O_EXCL + ghi, xoá nguồn, xoá đích vừa tạo (hoàn lại).
+      "readToolsProgramming.ts [doiTenConfined] fs.openSync",
+      "readToolsProgramming.ts [doiTenConfined] fs.openSync",
+      "readToolsProgramming.ts [doiTenConfined] fs.readSync",
+      "readToolsProgramming.ts [doiTenConfined] fs.unlinkSync",
+      "readToolsProgramming.ts [doiTenConfined] fs.unlinkSync",
+      "readToolsProgramming.ts [doiTenConfined] fs.writeSync",
       "readToolsProgramming.ts [readConfined] fs.openSync",
       "readToolsProgramming.ts [readConfined] fs.readSync",
       "readToolsProgramming.ts [writeConfined] fs.ftruncateSync",
       "readToolsProgramming.ts [writeConfined] fs.openSync",
       "readToolsProgramming.ts [writeConfined] fs.writeSync",
+      // ★ Đợt 1 · T2 — xoá: mở + đọc (băm lại trên fd), rồi đúng MỘT unlink.
+      "readToolsProgramming.ts [xoaConfined] fs.openSync",
+      "readToolsProgramming.ts [xoaConfined] fs.readSync",
+      "readToolsProgramming.ts [xoaConfined] fs.unlinkSync",
     ]);
+  });
+
+  /**
+   * ★★ Đợt 1 · T2 — LỖ CỦA CHÍNH LƯỚI NÀY: `tenApi` chỉ thấy `fs.X(…)`/`fs["X"](…)`. Một
+   * `import { unlinkSync } from "node:fs"` rồi gọi `unlinkSync(p)` TRẦN là vô hình. Ca này đóng lỗ ấy
+   * ở tầng NHẬP: không file sản phẩm nào trong cây được nhập TÊN một API trong tập trên từ `fs`.
+   */
+  it("★★ KHÔNG file sản phẩm nào nhập TÊN một API chở/huỷ byte từ `fs` (đường vòng qua named import)", () => {
+    const ho: string[] = [];
+    for (const file of moiFileSanXuat(GOC)) {
+      const src = fs.readFileSync(file, "utf8");
+      const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+      for (const st of sf.statements) {
+        if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+        if (!/^(node:)?fs(\/promises)?$/.test(st.moduleSpecifier.text)) continue;
+        const nb = st.importClause?.namedBindings;
+        if (!nb || !ts.isNamedImports(nb)) continue;
+        for (const el of nb.elements) {
+          const ten = (el.propertyName ?? el.name).text;
+          if (API_CHO_BYTE.has(ten)) ho.push(`${path.relative(GOC, file)}: { ${ten} }`);
+        }
+      }
+    }
+    expect(ho).toEqual([]);
   });
 
   /**
@@ -190,6 +236,12 @@ describe("★★★ M3 — MỌI lượt chạm đĩa theo BYTE trong nhóm tool
   it("★ chiều DƯƠNG: đúng hai cửa được cho qua, và phép hỏi/dựng-khung KHÔNG bị bắt oan", () => {
     expect(ngoaiCua({ file: "readToolsProgramming.ts", dong: 1, api: "openSync", trongHam: "readConfined" })).toBe(false);
     expect(ngoaiCua({ file: "readToolsProgramming.ts", dong: 1, api: "writeSync", trongHam: "writeConfined" })).toBe(false);
+    expect(ngoaiCua({ file: "readToolsProgramming.ts", dong: 1, api: "unlinkSync", trongHam: "xoaConfined" })).toBe(false);
+    // …nhưng một unlink ở hàm KHÁC (kể cả cùng file) vẫn bị BẮT.
+    expect(ngoaiCua({ file: "readToolsProgramming.ts", dong: 1, api: "unlinkSync", trongHam: "listConfined" })).toBe(true);
+    expect(chamTrenNguon("fs.unlinkSync(p);")).not.toBeNull();
+    expect(chamTrenNguon("fs.renameSync(a, b);")).not.toBeNull();
+    expect(chamTrenNguon("fs.rmSync(d, { recursive: true });")).not.toBeNull();
     // Một lưới kêu oan sẽ bị người sau tắt đi — `statSync`/`realpathSync`/`mkdirSync` phải im.
     expect(chamTrenNguon("const s = fs.statSync(p);")).toBeNull();
     expect(chamTrenNguon("const r = fs.realpathSync(p);")).toBeNull();

@@ -247,6 +247,16 @@ const CENSUS: Record<string, XepLoai> = {
   BATCH_REJECTED: "chan",
   BATCH_PARTIAL: "chan",
   BATCH_DUPLICATE_PATH: "chan",
+  // ── Đợt 1 · T2 (2026-10-14) — `delete_file`/`rename_file`/`find_files` ─────────────────────
+  /**
+   * ⚠ HAI MÃ MỚI, cả hai `chan` (mọi mã khác của ba tool DÙNG LẠI mã sẵn có, không đẻ mã trùng nghĩa):
+   *   • `DEST_EXISTS`   — đích đổi tên đã có ⇒ lượt TỪ CHỐI GHI, `data` rỗng, 0 byte vào đĩa. Văn vẻ
+   *     hoá là mời model nói "đã đổi tên" từ một lượt chưa làm gì — cùng lý lẽ `FILE_DIRTY`.
+   *   • `FIND_DEADLINE` — duyệt cây quá hạn mà chưa thấy tệp nào: BẢN CẮT, không phải "không có tệp
+   *     ấy" — đúng lý lẽ `GREP_DEADLINE` (phép đo BỘ PHẬN không được thành khẳng định TOÀN THỂ).
+   */
+  DEST_EXISTS: "chan",
+  FIND_DEADLINE: "chan",
 };
 
 describe("§1 — mọi mã `note` trong mã nguồn đều đã được PHÁN QUYẾT", () => {

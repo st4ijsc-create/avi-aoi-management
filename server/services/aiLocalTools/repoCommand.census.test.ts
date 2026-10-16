@@ -115,7 +115,8 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật", () => {
       .filter((t) => t.requiredPermission?.module === "ai_repo_read" && t.requiredPermission?.action === "canView")
       .map((t) => t.name)
       .sort();
-    expect(doc, "pha A phải còn nguyên ba tool đọc").toEqual(["grep_repo", "list_files", "read_file"]);
+    // ★ Đợt 1 · T2 — `find_files` (glob tên, CHỈ cho agent) là tool đọc thứ tư sau cùng bit canView.
+    expect(doc, "pha A phải còn nguyên các tool đọc").toEqual(["find_files", "grep_repo", "list_files", "read_file"]);
     expect(doc).not.toContain("run_command");
   });
 });

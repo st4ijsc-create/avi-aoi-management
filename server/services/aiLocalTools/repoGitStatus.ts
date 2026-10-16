@@ -50,6 +50,18 @@ export type TrangThaiGit =
   | { ok: false; ma: "GIT_STATUS_FAILED"; chiTiet: string };
 
 /**
+ * ★ Đợt 1 · T2 (2026-10-14) — `kemIgnored`: thêm `--ignored` ⇒ tệp bị `.gitignore` hiện `!!` ⇒ KHÔNG sạch.
+ *
+ * Vì sao chỉ `delete_file`/`rename_file` (phía nguồn) bật nó: `git status --porcelain -- <tệp>` TRẦN in
+ * RỖNG cho một tệp bị ignore, tức nói "sạch" về một tệp mà git KHÔNG HỀ có bản nào để khôi phục. Với
+ * `apply_diff` (ghi đè) lỗ ấy có từ trước, và đổi nó là đổi hành vi đường cũ — nên mặc định giữ nguyên
+ * argv từng byte. Với XOÁ thì "sạch" phải nghĩa là "git dựng lại được", nên phải bật.
+ */
+export interface TuyChonTrangThaiGit {
+  kemIgnored?: boolean;
+}
+
+/**
  * Trạng thái git-porcelain của **đúng một tệp** (đường dẫn TƯƠNG ĐỐI so với gốc hộp cát, đã được
  * người gọi chứng minh nằm trong hộp cát).
  *
@@ -69,10 +81,19 @@ export type TrangThaiGit =
  * THOÁT KHÁC 0 ("not a git repository") ⇒ `GIT_STATUS_FAILED` ⇒ `apply_diff` fail-closed (TỪ CHỐI
  * ghi). Đó là chiều hỏng ĐÚNG: không chứng minh được tệp sạch thì không ghi (xem đầu file).
  */
-export async function trangThaiGitCuaTep(relPath: string, goc: string = gocHopCat()): Promise<TrangThaiGit> {
+export async function trangThaiGitCuaTep(
+  relPath: string,
+  goc: string = gocHopCat(),
+  tuyChon: TuyChonTrangThaiGit = {},
+): Promise<TrangThaiGit> {
   const p = String(relPath).replace(/\\/g, "/");
   const kq = await chayLenhTrongHopCat(
-    { file: "git", args: ["--no-pager", "status", "--porcelain", "--", p] },
+    {
+      file: "git",
+      args: tuyChon.kemIgnored
+        ? ["--no-pager", "status", "--porcelain", "--ignored", "--", p]
+        : ["--no-pager", "status", "--porcelain", "--", p],
+    },
     { hanGioMs: HAN_GIO_GIT_MS, goc },
   );
   // Fail-closed: bất kỳ thứ gì khác "đã sinh tiến trình, thoát 0" đều là KHÔNG chứng minh được.
@@ -83,6 +104,16 @@ export async function trangThaiGitCuaTep(relPath: string, goc: string = gocHopCa
       chiTiet: `git status thoát ${kq.maThoat ?? "—"}${kq.ma ? ` (${kq.ma})` : ""}${kq.hetGio ? " · hết giờ" : ""}`,
     };
   }
-  const out = kq.dauRa.replace(/\r/g, "").trim();
+  // ★ Bộ chạy hộp cát GỘP stderr vào `dauRa`. Git in `warning:` (vd "could not open directory
+  //   'src/moi/'" khi tệp mới nằm trong thư mục con CHƯA CÓ của một thư mục đã track; "LF will be
+  //   replaced by CRLF") ra stderr với exit 0 — đó không phải trạng thái tệp. Không bỏ chúng ⇒ tạo tệp mới
+  //   trong thư mục mới bị coi là tệp bẩn (FILE_DIRTY) — đo 2026-10-17, lưới `repoGitStatus.test.ts`.
+  //   Chỉ bỏ đúng dòng `warning:`/`hint:`; mọi dòng lạ khác vẫn tính là BẨN (fail-closed).
+  const out = kq.dauRa
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((d) => d.trim() !== "" && !/^(warning|hint):/i.test(d.trim()))
+    .join("\n")
+    .trim();
   return { ok: true, sach: out === "", trangThai: out };
 }

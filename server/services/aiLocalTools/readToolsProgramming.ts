@@ -38,6 +38,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -348,7 +349,27 @@ export function confineTargetUnder(root: string, inputPath: unknown): ConfineOut
 
   const target = { relPath: r.relPath, exists: stat !== null } as ConfinedTarget;
   ABS_OF.set(target, abs);
+  GOC_OF.set(target, root);
   return { ok: true, target };
+}
+
+/**
+ * ★ Đợt 1 · T2 (2026-10-14) — GỐC mà `confineTargetUnder` đã dùng để chứng minh đích, giữ cùng chỗ
+ * với `ABS_OF` (ngoài tầm với của module khác). Hai cửa HUỶ/DỜI (`xoaConfined`/`doiTenConfined`)
+ * cần nó để KIỂM LẠI realpath của thư mục cha NGAY TRƯỚC syscall: phép kiểm của `confineTargetUnder`
+ * là phép kiểm theo đường dẫn tại một thời điểm, và một thư mục cha bị tráo thành junction giữa lúc
+ * phán quyết và lúc `unlink` sẽ làm `unlink` xoá tệp NGOÀI gốc — khác hẳn đọc/ghi (vốn kiểm được
+ * trên fd), phép xoá theo TÊN không có fd nào để hỏi.
+ */
+const GOC_OF = new WeakMap<ConfinedTarget, string>();
+
+/**
+ * ★ Đợt 1 · T2 — băm sha256 (utf8 → hex), MỘT bản cho cả nhóm tool repo. `applyDiff.bam` uỷ quyền
+ * về đây: cửa huỷ/dời phải so ĐÚNG phép băm mà `phanQuyet` dùng, và hai bản băm viết tay là lớp lỗi
+ * "hai bản sao một vị từ".
+ */
+export function bamUtf8(s: string): string {
+  return createHash("sha256").update(s, "utf8").digest("hex");
 }
 
 export type ConfinedReadOutcome =
@@ -439,6 +460,223 @@ export function writeConfined(target: ConfinedTarget, content: string): Confined
   } finally {
     fs.closeSync(fd);
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ★★★ Đợt 1 · T2 (2026-10-14) — HAI CỬA **HUỶ / DỜI** TỆP: `xoaConfined` · `doiTenConfined`
+// ────────────────────────────────────────────────────────────────────────────
+/**
+ * ⚠⚠ VÌ SAO HAI CỬA MỚI Ở ĐÂY, KHÔNG PHẢI `fs.unlinkSync` TRONG TOOL: bất biến của cả nhóm là
+ * *"mọi lượt chạm đĩa nằm trong hàm cửa của file này"* (`programmingFileIo.census.test.ts`, nay đếm cả
+ * API HUỶ/DỜI). Một `unlinkSync` trong `writeHandlers/` là một cửa thứ hai không có tầng fd.
+ *
+ * ⚠⚠ XOÁ KHÁC GHI Ở MỘT ĐIỂM CÓ TẢI TRỌNG: `writeConfined` kiểm được mọi thứ trên CHÍNH fd nó sẽ ghi;
+ * `unlink` thì làm việc trên TÊN, không trên fd. Nên mỗi cửa ở đây làm BA việc trước syscall:
+ *   1. mở tệp, hỏi `isFile`/`nlink` TRÊN fd (hard link ⇒ từ chối khi tệp còn NGUYÊN VẸN);
+ *   2. đọc hết, băm, so với băm mà phán quyết đã thấy (`CHANGED` ⇒ nội dung đổi dưới chân);
+ *   3. `lstat` TÊN phải là đúng inode đang mở (không symlink, cùng `ino`/`dev`) và realpath của thư mục
+ *      cha VẪN trong gốc — đóng ca "tráo cha thành junction sau phán quyết".
+ * Cửa sổ đua còn lại (giữa bước 3 và syscall) là vài micro-giây trên cùng tiến trình, KHAI ở đây chứ
+ * không giấu; mô hình đe doạ của nó là kẻ đã có quyền ghi vào cây làm việc.
+ */
+export type ConfinedXoaOutcome =
+  | { ok: true; bytes: number }
+  | { ok: false; kind: "NOT_FOUND" }
+  | { ok: false; kind: "NOT_A_FILE" }
+  | { ok: false; kind: "CHANGED" }
+  | { ok: false; kind: "PATH_REJECTED"; reason: ConfinementRejectReason }
+  | { ok: false; kind: "WRITE_ERROR"; message: string };
+
+export type ConfinedDoiTenOutcome = ConfinedXoaOutcome | { ok: false; kind: "DEST_EXISTS" };
+
+/** TÊN `abs` hiện vẫn trỏ ĐÚNG inode đang mở, và cả nó lẫn thư mục cha vẫn nằm trong gốc. */
+function tenVanLaInodeTrongGoc(abs: string, stFd: fs.Stats, goc: string): boolean {
+  const l = fs.lstatSync(abs);
+  if (l.isSymbolicLink() || !l.isFile()) return false;
+  if (l.ino !== stFd.ino || l.dev !== stFd.dev) return false;
+  return realpathContained(path.dirname(abs), true, goc) && realpathContained(abs, false, goc);
+}
+
+/**
+ * Thư mục ĐÍCH có thể chưa tồn tại nhiều nấc: `realpathContained` trên một đường CHƯA có trả `true`
+ * (không phân giải được), nên một junction ra ngoài nằm ở nấc tổ tiên sẽ lọt qua và `mkdirSync`
+ * dựng thư mục NGOÀI gốc. ⇒ Đi ngược tới tổ tiên GẦN NHẤT đang tồn tại và đòi realpath của NÓ trong gốc.
+ */
+function toTienGanNhatTrongGoc(dir: string, goc: string): boolean {
+  let p = dir;
+  for (let i = 0; i < 256; i++) {
+    let tonTai = false;
+    try {
+      fs.statSync(p);
+      tonTai = true;
+    } catch {
+      tonTai = false;
+    }
+    if (tonTai) return realpathContained(p, true, goc);
+    const cha = path.dirname(p);
+    if (cha === p) return false;
+    p = cha;
+  }
+  return false;
+}
+
+function maLoi(err: unknown): string | undefined {
+  return (err as NodeJS.ErrnoException)?.code;
+}
+function chuoiLoi(err: unknown): string {
+  // data-raw-ok: lỗi hệ tệp của công cụ mã — người đọc là kỹ sư (cùng luật `writeConfined`).
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * ★★★ XOÁ — **lượt xoá tệp DUY NHẤT** của nhóm tool. `bamMongDoi` = băm(nội dung) mà phán quyết đã
+ * thấy; lệch ⇒ `CHANGED`, không xoá. KHÔNG xoá thư mục (`NOT_A_FILE`) — cố ý không có nhánh `rmdir`.
+ */
+export function xoaConfined(target: ConfinedTarget, bamMongDoi: string): ConfinedXoaOutcome {
+  const abs = ABS_OF.get(target);
+  const goc = GOC_OF.get(target);
+  if (abs === undefined || goc === undefined) return { ok: false, kind: "WRITE_ERROR", message: "unproven target" };
+  let fd: number;
+  try {
+    fd = fs.openSync(abs, "r");
+  } catch (err) {
+    const code = maLoi(err);
+    if (code === "ENOENT") return { ok: false, kind: "NOT_FOUND" };
+    if (code === "EISDIR") return { ok: false, kind: "NOT_A_FILE" };
+    return { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+  }
+  let bytes = 0;
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return { ok: false, kind: "NOT_A_FILE" };
+    if (st.nlink > 1) return { ok: false, kind: "PATH_REJECTED", reason: "HARD_LINK" };
+    const buf = Buffer.alloc(st.size);
+    let da = 0;
+    while (da < buf.length) {
+      const n = fs.readSync(fd, buf, da, buf.length - da, da);
+      if (n === 0) break;
+      da += n;
+    }
+    if (bamUtf8(buf.toString("utf8", 0, da)) !== bamMongDoi) return { ok: false, kind: "CHANGED" };
+    if (!tenVanLaInodeTrongGoc(abs, st, goc)) return { ok: false, kind: "PATH_REJECTED", reason: "ESCAPE" };
+    bytes = da;
+  } catch (err) {
+    return { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+  } finally {
+    fs.closeSync(fd);
+  }
+  try {
+    fs.unlinkSync(abs);
+  } catch (err) {
+    if (maLoi(err) === "ENOENT") return { ok: false, kind: "NOT_FOUND" };
+    return { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+  }
+  return { ok: true, bytes };
+}
+
+/**
+ * ★★★ DỜI — **lượt đổi tên DUY NHẤT** của nhóm tool. Không dùng `rename(2)`: trên Windows
+ * `MoveFileEx(REPLACE_EXISTING)` và trên POSIX `rename` đều GHI ĐÈ đích có sẵn, tức "đích phải chưa
+ * tồn tại" sẽ chỉ là một phép kiểm-rồi-làm có cửa sổ đua. Thay vào đó: tạo đích bằng `O_EXCL` (`"wx"`
+ * — nguyên tử: đã có ⇒ `DEST_EXISTS`, không ghi đè một byte), chép ĐÚNG byte nguồn (không qua chuỗi,
+ * nên CRLF/byte không-UTF-8 nguyên vẹn), rồi mới xoá nguồn; hỏng giữa chừng ⇒ xoá đích vừa tạo
+ * (thứ DUY NHẤT cửa này từng tạo), nguồn còn nguyên. Thư mục đích được tạo nếu thiếu — sau khi
+ * chứng minh tổ tiên gần nhất nằm trong gốc.
+ */
+export function doiTenConfined(nguon: ConfinedTarget, dich: ConfinedTarget, bamMongDoi: string): ConfinedDoiTenOutcome {
+  const absN = ABS_OF.get(nguon);
+  const gocN = GOC_OF.get(nguon);
+  const absD = ABS_OF.get(dich);
+  const gocD = GOC_OF.get(dich);
+  if (absN === undefined || gocN === undefined || absD === undefined || gocD === undefined) {
+    return { ok: false, kind: "WRITE_ERROR", message: "unproven target" };
+  }
+  if (chuanHoaGoc(gocN) !== chuanHoaGoc(gocD)) return { ok: false, kind: "PATH_REJECTED", reason: "ESCAPE" };
+
+  // 1. NGUỒN — đọc trên fd, kiểm hard link + băm + tên.
+  let fdN: number;
+  try {
+    fdN = fs.openSync(absN, "r");
+  } catch (err) {
+    const code = maLoi(err);
+    if (code === "ENOENT") return { ok: false, kind: "NOT_FOUND" };
+    if (code === "EISDIR") return { ok: false, kind: "NOT_A_FILE" };
+    return { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+  }
+  let buf: Buffer;
+  let stN: fs.Stats;
+  try {
+    stN = fs.fstatSync(fdN);
+    if (!stN.isFile()) return { ok: false, kind: "NOT_A_FILE" };
+    if (stN.nlink > 1) return { ok: false, kind: "PATH_REJECTED", reason: "HARD_LINK" };
+    const tho = Buffer.alloc(stN.size);
+    let da = 0;
+    while (da < tho.length) {
+      const n = fs.readSync(fdN, tho, da, tho.length - da, da);
+      if (n === 0) break;
+      da += n;
+    }
+    buf = tho.subarray(0, da);
+    if (bamUtf8(buf.toString("utf8")) !== bamMongDoi) return { ok: false, kind: "CHANGED" };
+    if (!tenVanLaInodeTrongGoc(absN, stN, gocN)) return { ok: false, kind: "PATH_REJECTED", reason: "ESCAPE" };
+  } catch (err) {
+    return { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+  } finally {
+    fs.closeSync(fdN);
+  }
+
+  // 2. THƯ MỤC ĐÍCH — tổ tiên gần nhất trong gốc TRƯỚC mkdir; realpath của chính nó SAU mkdir.
+  const chaD = path.dirname(absD);
+  if (!toTienGanNhatTrongGoc(chaD, gocD)) return { ok: false, kind: "PATH_REJECTED", reason: "ESCAPE" };
+  try {
+    fs.mkdirSync(chaD, { recursive: true });
+  } catch (err) {
+    return { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+  }
+  if (!realpathContained(chaD, true, gocD)) return { ok: false, kind: "PATH_REJECTED", reason: "ESCAPE" };
+
+  // 3. ĐÍCH — O_EXCL: đã tồn tại (kể cả thư mục) ⇒ DEST_EXISTS, không ghi đè.
+  let fdD: number;
+  try {
+    fdD = fs.openSync(absD, "wx");
+  } catch (err) {
+    if (maLoi(err) === "EEXIST") return { ok: false, kind: "DEST_EXISTS" };
+    return { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+  }
+  let loi: ConfinedDoiTenOutcome | null = null;
+  try {
+    const stD = fs.fstatSync(fdD);
+    if (!stD.isFile() || stD.nlink > 1) {
+      loi = { ok: false, kind: "PATH_REJECTED", reason: "HARD_LINK" };
+    } else {
+      let viet = 0;
+      while (viet < buf.length) viet += fs.writeSync(fdD, buf, viet, buf.length - viet, viet);
+    }
+  } catch (err) {
+    loi = { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+  } finally {
+    fs.closeSync(fdD);
+  }
+
+  // 4. XOÁ NGUỒN — tên phải vẫn là đúng inode đã đọc, cha vẫn trong gốc.
+  if (loi === null) {
+    try {
+      if (!tenVanLaInodeTrongGoc(absN, stN, gocN)) loi = { ok: false, kind: "CHANGED" };
+      else fs.unlinkSync(absN);
+    } catch (err) {
+      loi = { ok: false, kind: "WRITE_ERROR", message: chuoiLoi(err) };
+    }
+  }
+  if (loi !== null) {
+    // Hoàn lại: chỉ xoá ĐÚNG tệp đích mà cửa này vừa tạo bằng O_EXCL.
+    try {
+      fs.unlinkSync(absD);
+    } catch {
+      /* best-effort — lỗi gốc mới là thứ phải báo */
+    }
+    return loi;
+  }
+  return { ok: true, bytes: buf.length };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
