@@ -18698,6 +18698,27 @@
     }
   },
   "systemHealth": {
+    "llamaWd": {
+      "title": "Giám sát llama-server (model chữ chính)",
+      "desc": "Tự khởi động lại llama-server khi không còn tiến trình nào nghe cổng (2 nhịp 15 giây liên tiếp), tối đa 3 lần trong 30 phút. Khi server chết, lượt sinh chữ của model chính CHỜ server dựng lại thay vì nạp model vào ứng dụng.",
+      "trangThai": "Trạng thái",
+      "soLan": "Số lần khởi động (tiến trình này)",
+      "trongCuaSo": "Trong cửa sổ {{phut}} phút",
+      "lanCuoi": "Lần khởi động cuối",
+      "lanKiem": "Lần kiểm cuối",
+      "lyDo": "Diễn giải (máy chủ)",
+      "khongDoc": "Không đọc được trạng thái máy AI.",
+      "st": {
+        "song": "Sống",
+        "dangNap": "Đang nạp model",
+        "chet": "Chết",
+        "dangKhoiDongLai": "Đang khởi động lại",
+        "boCuoc": "Bỏ cuộc — cần người",
+        "tamDung": "Tạm dừng (đổi model)",
+        "tat": "Tắt",
+        "chuaKiem": "Chưa kiểm"
+      }
+    },
     "title": "Sức khỏe hệ thống",
     "subtitle": "Trạng thái nội bộ thời gian thực: bộ đệm store-and-forward telemetry OT, giám sát kết nối HA theo adapter, và tình trạng model thị giác DINOv2. Chỉ đọc — không mở đường ghi thiết bị.",
     "ai": {
@@ -20444,6 +20465,14 @@
     "may": "máy",
     "engineHong": "ENGINE HỎNG",
     "engineOk": "engine ok",
+    "engineKhoiDongLai": "ĐANG KHỞI ĐỘNG LẠI MODEL",
+    "engineDangNap": "ĐANG NẠP MODEL",
+    "engineTamDung": "TẠM DỪNG (ĐỔI MODEL)",
+    "engineBoCuoc": "MODEL KHÔNG KHỞI ĐỘNG ĐƯỢC",
+    "tipKhoiDongLai": "llama-server vừa chết; bộ giám sát đang khởi động lại nó (lần {{lan}}, {{trongCuaSo}}/{{toiDa}} trong {{phut}} phút). Lượt sinh mã lúc này CHỜ tối đa khoảng 2 phút rồi đi qua server — không nạp model vào ứng dụng.",
+    "tipDangNap": "llama-server đang nạp model (30–90 giây với model khoảng 21 GB). Lượt sinh mã sẽ chờ rồi chạy tiếp.",
+    "tipTamDung": "Bộ giám sát đang tạm dừng có chủ ý (đang đổi model) — không tự khởi động lại llama-server.",
+    "tipBoCuoc": "llama-server không khởi động được sau {{toiDa}} lần trong {{phut}} phút — bộ giám sát đã dừng thử. Cần người xem logs/llama-server-*.err.log rồi chạy lại scripts/ai/start-llama-server.ps1.",
     "tipMayHong": "Engine suy luận KHÔNG khoẻ. Mọi câu trả lời lúc này phản ánh trạng thái MÁY, không phản ánh năng lực model — đừng kết luận gì về chất lượng model cho tới khi ô này xanh lại.",
     "tipMayOk": "Engine đang chạy qua {{duong}}. Model đã nạp: {{soModel}}. Chế độ GPU: {{gpu}}.",
     "duongNgoai": "llama-server (tiến trình ngoài)",
@@ -20508,6 +20537,7 @@
     },
     "khoi": {
       "modelSinh": "Mã do model viết — có thể khác tệp trên đĩa",
+      "dauRaLenh": "Đầu ra lệnh do máy chủ chạy thật — không phải mã do model viết",
       "bangChung": "Byte thật từ đĩa · {{luc}}",
       "khacDia": "≠ tệp trên đĩa (đọc {{luc}}) — nếu model nói đây là mã HIỆN TẠI thì đừng tin",
       "khopDia": "khớp tệp trên đĩa ({{luc}})"
@@ -20795,7 +20825,8 @@
         "offUser": "Vòng tự động đang TẮT — bản sửa ĐÃ ghi, nhưng bạn phải tự chạy test. Tính năng này do quản trị viên bật trên máy chủ — hãy liên hệ quản trị viên.",
         "error": "DỪNG vì một hỏng THẬT ở lượt chạy kiểm chứng.",
         "dirty": "DỪNG vì tệp đích có thay đổi CHƯA COMMIT của bạn — vòng tự-ghi KHÔNG đè lên công việc chưa lưu. Hãy commit (hoặc stash) rồi thử lại.",
-        "kill": "DỪNG vì công tắc khẩn cấp (kill-switch) đã được bật — vòng tự-ghi dừng ngay. Liên hệ quản trị viên để gỡ."
+        "kill": "DỪNG vì công tắc khẩn cấp (kill-switch) đã được bật — vòng tự-ghi dừng ngay. Liên hệ quản trị viên để gỡ.",
+        "mainRepo": "DỪNG: vòng tự ghi không chạy trên repo chính cho tới khi có điểm khôi phục (checkpoint). Bản sửa KHÔNG được ghi — hãy dùng đường duyệt tay, hoặc chạy trên một dự án hộp cát."
       }
     },
     "terminal": {

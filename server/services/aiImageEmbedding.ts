@@ -6,6 +6,8 @@ import sharp from "sharp";
 // LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
 // `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
 import { isVramRefusal } from "./vram/vramRefusalSignal";
+// Đợt 0.5 — cổng /api/tags trước khi gọi model Ollama (không lùi im lặng vào model không có).
+import { ollamaDungDuoc } from "./ai/ollamaLui";
 import path from "path";
 import fs from "fs";
 import { getDb } from "../db/connection";
@@ -238,6 +240,10 @@ export function parseVectorLiteral(raw: string | null | undefined): number[] {
  * caller fallback sang metadata search.
  */
 export async function embedTextOllama(text: string): Promise<number[]> {
+  if (!(await ollamaDungDuoc(OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, "embed"))) {
+    // Ném như mọi lỗi Ollama khác (caller lùi về metadata) — nhưng nói ĐÚNG lý do, không POST mù.
+    throw new Error(`Ollama không có model nhúng "${OLLAMA_EMBED_MODEL}" (hoặc không chạy) — đặt OLLAMA_EMBED_MODEL`);
+  }
   const res = await fetch(`${OLLAMA_BASE_URL}/api/embed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -265,6 +265,13 @@ export type LyDoDungVong =
    * là cái phanh khẩn cấp lật được LÚC ĐANG CHẠY, còn `co_tat` là "chưa bao giờ bật".
    */
   | "kill_switch"
+  /**
+   * ★★★ 2026-10-14 · Q1 — VÒNG TỰ-GHI muốn ghi vào REPO CHÍNH (cây mã của chính server, ngoài
+   * `sandbox-projects/`) khi CHƯA có điểm khôi phục (checkpoint, Đợt 1). Lượt ghi bị chặn TRƯỚC khi
+   * đề xuất ⇒ đĩa 0 đổi. Khác `co_tat` (cờ vắng): cờ đang BẬT, nhưng đích là repo chính. Ghi đè có chủ
+   * ý: `AI_CODING_TU_TRI_GHI_REPO_CHINH=1`.
+   */
+  | "repo_chinh_chua_checkpoint"
   | "loi";            // hỏng thật (server/model) — kèm thông điệp gốc
 
 /** Trạng thái đủ để quyết định, sau khi một lượt test vừa chạy xong. */

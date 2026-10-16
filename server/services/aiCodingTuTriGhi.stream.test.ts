@@ -345,3 +345,34 @@ describe("§3 — CÂU THƯỜNG: 'đọc tệp X' KHÔNG khởi động vòng (
     expect(h.auditRows.length).toBe(0);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ Q1 (2026-10-14) — gốc dự án LÀ REPO CHÍNH (giả lập: `.git` trong thư mục tạm + `process.cwd()`
+ * trỏ vào đó) ⇒ lượt tự ghi bị chặn TRƯỚC đề xuất, câu tổng nói THẲNG lý do mới ở đúng ngôn ngữ, sổ
+ * WORM khai mã từ chối, đĩa 0 đổi. Đột biến "gỡ nhánh case ở câu tổng" ⇒ câu rơi về message gốc
+ * (vẫn có chữ) nên ca này đo CẢ cụm "điểm khôi phục" lẫn tiền tố "Vòng tự trị DỪNG".
+ */
+describe("§6 — Q1: gốc = repo chính ⇒ DỪNG với lý do 'chưa có điểm khôi phục', 0 ghi", () => {
+  it("★★★ vi: câu tổng nêu 'repo chính' + 'điểm khôi phục', 0 apply_diff, WORM tu_choi", async () => {
+    fs.mkdirSync(path.join(GOC, ".git"), { recursive: true });
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(GOC);
+    try {
+      h.manhTheoLuot = [[STEP1_NGUON], [STEP2_MATCH]];
+      h.runSeq = [{ out: LOI_DO, exit: 1 }];
+      const r = await chay(CAU_TU_TRI);
+
+      expect(h.applyGoi.length, "repo chính ⇒ KHÔNG đề xuất ghi").toBe(0);
+      expect(r.chu).toContain("Vòng tự trị DỪNG");
+      expect(r.chu).toContain("repo chính");
+      expect(r.chu).toContain("điểm khôi phục");
+      expect(r.chu, "câu tổng có nhánh RIÊNG nêu lối ra (không chỉ chép message)").toContain("duyệt tay");
+      expect(h.auditRows.length).toBe(1);
+      expect((h.auditRows[0]!.details as any).metadata.tu_choi).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+      expect(fs.readFileSync(path.join(GOC, TEP_NGUON), "utf8"), "0 byte chạm đĩa").toBe(ND_NGUON);
+    } finally {
+      cwd.mockRestore();
+      fs.rmSync(path.join(GOC, ".git"), { recursive: true, force: true });
+    }
+  });
+});

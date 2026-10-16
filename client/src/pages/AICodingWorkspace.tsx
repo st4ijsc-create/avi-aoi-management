@@ -125,7 +125,7 @@ import { QuanLyDuAnRepo } from "@/components/ai/QuanLyDuAnRepo";
 // ★★★ 2026-08-23 · LÔ 3 — NHÃN TIN CẬY cho khối mã trong văn xuôi model (tầng 1: nguồn gốc; tầng
 // 2: chip đối chiếu tất định với thẻ đọc tệp). Component ở tệp riêng để lưới render CÂY THẬT —
 // cùng bài học TheDuyetDiff; phép so THUẦN + neo ở `@/lib/soKhoiMa` (lưới + đột biến riêng).
-import { taoBoKhoiMaCoNhan } from "@/components/ai/KhoiMaCoNhan";
+import { boNhanDauRaLenhChoModel, khoiDauRaLenh, taoBoKhoiMaCoNhan } from "@/components/ai/KhoiMaCoNhan";
 import { bocTheDocTep, dinhDangLucNhan, viTriCauTraLoiCungLuot } from "@/lib/soKhoiMa";
 // ★★★ 2026-08-24 · WAVE NỐI DÂY — bốn thành phần mới (ribbon tác vụ · bảng terminal · panel
 // Problems · thẻ duyệt LÔ). Tất cả THUẦN HIỂN THỊ + callback; mọi hành động THẬT vẫn ở TRANG,
@@ -388,6 +388,8 @@ function VongTuDongCard({ vong, onDung, laAdmin }: { vong: TrangThaiVong; onDung
     // ★★★ 2026-08-24 — VÒNG TỰ-TRỊ-GHI: hai lý do RIÊNG (khác `loi`/`co_tat`) — xem `LyDoDungVong`.
     tep_ban_nguoi: t("repoWs.loop.stop.dirty", "DỪNG vì tệp đích có thay đổi CHƯA COMMIT của bạn — vòng tự-ghi KHÔNG đè lên công việc chưa lưu. Hãy commit (hoặc stash) rồi thử lại."),
     kill_switch: t("repoWs.loop.stop.kill", "DỪNG vì công tắc khẩn cấp (kill-switch) đã được bật — vòng tự-ghi dừng ngay. Liên hệ quản trị viên để gỡ."),
+    // ★ Q1 (2026-10-14) — vòng tự ghi không chạm repo chính khi chưa có checkpoint (server quyết định).
+    repo_chinh_chua_checkpoint: t("repoWs.loop.stop.mainRepo", "DỪNG: vòng tự ghi không chạy trên repo chính cho tới khi có điểm khôi phục (checkpoint). Bản sửa KHÔNG được ghi — hãy dùng đường duyệt tay, hoặc chạy trên một dự án hộp cát."),
   };
 
   const xong = vong.lyDoDung === "xanh";
@@ -1427,7 +1429,9 @@ export default function AICodingWorkspace() {
       vongRef.current = { ...VONG_RONG, cauHoiGoc: text };
       setVong({ ...vongRef.current });
     }
-    const history = transcript.slice(-10);
+    // ★ Đợt 0.5 — đầu ra lệnh trong lịch sử mang nhãn fence riêng (nhãn tin cậy ở UI); bỏ nhãn ấy
+    //   trước khi gửi model để model không thấy mà bắt chước (xem `KhoiMaCoNhan` · khoiDauRaLenh).
+    const history = transcript.slice(-10).map((x) => ({ ...x, content: boNhanDauRaLenhChoModel(x.content) }));
     setTranscript((prev) => [...prev, { role: "user", content: text }]);
     setStreamTool(null);
     setStreamTools([]);
@@ -1681,7 +1685,7 @@ export default function AICodingWorkspace() {
       : "";
     setTranscript((prev) => [
       ...prev,
-      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n${klVong}\`\`\`\n${dauRa}\n\`\`\`` },
+      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n${klVong}${khoiDauRaLenh(dauRa)}` },
     ]);
 
     // ★★★ 2026-08-24 · BẮT #2 — lượt vòng tự-ghi vào bảng Terminal. `r` (`KetQuaKiemChung`) KHÔNG
@@ -1992,7 +1996,7 @@ export default function AICodingWorkspace() {
           // ★ NHỊP KHÉP VÒNG — đưa đầu ra THẬT vào lịch sử để lượt sau tác nhân đọc lỗi rồi sửa tiếp.
           setTranscript((prev) => [
             ...prev,
-            { role: "assistant", content: `${dongKetLuan}${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n\`\`\`\n${out.textSummary}\n\`\`\`` },
+            { role: "assistant", content: `${dongKetLuan}${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n${khoiDauRaLenh(out.textSummary ?? "")}` },
           ]);
         } else if (pending.tool === "apply_diff") {
           const tepDaGhi = (pending.args as unknown as DiffArgs | undefined)?.path ?? pendingDiff?.args.path ?? null;

@@ -6284,6 +6284,19 @@ async function startServer() {
     })
     .catch((err) => console.error("[WormSize] monitor failed to start:", (err as any)?.message || err));
 
+  // Đợt 0.1 (AI Local) — GIÁM SÁT llama-server: không ai nghe cổng ≥ 2 nhịp (15 s) ⇒ chạy
+  // scripts/ai/start-llama-server.ps1 tách rời (khoá liên tiến trình trong os.tmpdir() để :3000 và
+  // :3010 không cùng dựng; tối đa 3 lần / 30 phút; tệp tạm dừng cho doi-model.ps1). Nửa kia của hợp
+  // đồng là cửa FAIL-CLOSED trong aiGgufEngine (không nạp model chính in-process khi server chết).
+  // Tự tắt khi LLAMA_SERVER_ENABLED khác true / LLAMA_WATCHDOG_ENABLED=false / URL không loopback.
+  // KHÔNG ở tiến trình edge (không có llama-server cục bộ để trông); vai worker early-return từ trước.
+  void import("../services/ai/giamSatLlamaServer")
+    .then(async ({ khoiChayGiamSatLlamaServer }) => {
+      const { isEdgeProcessRole } = await import("../db/connection");
+      if (!isEdgeProcessRole()) khoiChayGiamSatLlamaServer();
+    })
+    .catch((err) => console.error("[llama-watchdog] failed to start:", (err as any)?.message || err));
+
   // VDA 5050 — AGV/AMR fleet connectivity framework (MQTT). Importing the module
   // registers the `vda5050` robot driver. Disabled by default; opt in via
   // VDA5050_ENABLED=true. AGV commands are HITL + dry-run unless ROBOT_CONTROL_ENABLED=true.

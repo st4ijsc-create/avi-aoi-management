@@ -16,6 +16,7 @@ import {
   type AiReadinessDeps,
   type LlamaServerProbeResult,
 } from "./aiReadiness";
+import type { AnhChupGiamSat } from "../services/ai/giamSatLlamaServer";
 
 const ALIVE: LlamaServerProbeResult = {
   reachable: true,
@@ -63,9 +64,94 @@ function deps(over: Partial<AiReadinessDeps> = {}): AiReadinessDeps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
+function anhGiamSat(trangThai: AnhChupGiamSat["trangThai"], over: Partial<AnhChupGiamSat> = {}): AnhChupGiamSat {
+  return {
+    trangThai,
+    thamDoCuoi: null,
+    lanKiemCuoi: null,
+    soLanKhoiDong: 0,
+    soLanTrongCuaSo: 0,
+    toiDaKhoiDong: 3,
+    cuaSoPhut: 30,
+    lanKhoiDongCuoi: null,
+    nguoiKhoiDong: null,
+    lyDo: "x",
+    ...over,
+  };
+}
+
+describe("★★★ Đợt 0.1 — FAIL-CLOSED: server chết KHÔNG còn là 'in-process im lặng'", () => {
+  it("mặc định + giám sát ĐANG KHỞI ĐỘNG LẠI ⇒ textGeneration=degraded, nói 'đang khởi động lại', KHÔNG nói fallback silent", async () => {
+    const r = await probeAiReadiness(
+      deps({
+        probeLlamaServer: async () => DEAD,
+        trangThaiGiamSat: () => anhGiamSat("dang-khoi-dong-lai", { soLanKhoiDong: 1, soLanTrongCuaSo: 1 }),
+      }),
+    );
+    expect(r.checks.textGeneration.status).toBe("degraded");
+    expect(r.checks.textGeneration.reason).toMatch(/đang KHỞI ĐỘNG LẠI/);
+    expect(r.checks.textGeneration.reason).toMatch(/KHÔNG lùi in-process/);
+    expect(r.checks.textGeneration.detail?.path).toBe("cho-khoi-dong-lai");
+    expect(r.checks.textGeneration.detail?.fallback).toBe("fail-closed");
+    expect(JSON.stringify(r)).not.toMatch(/"fallback":"silent"/);
+    // Trạng thái giám sát phơi ra ở MỘT chỗ dễ đọc + trong chi tiết llama-server.
+    expect(r.giamSat?.trangThai).toBe("dang-khoi-dong-lai");
+    expect((r.checks.llamaServer.detail as any)?.giamSat?.trangThai).toBe("dang-khoi-dong-lai");
+    expect(r.checks.llamaServer.reason).toMatch(/khởi động lại/);
+  });
+
+  it("giám sát BỎ CUỘC ⇒ textGeneration=down, câu nói 'không khởi động được' + cần người", async () => {
+    const r = await probeAiReadiness(
+      deps({ probeLlamaServer: async () => DEAD, trangThaiGiamSat: () => anhGiamSat("bo-cuoc", { soLanTrongCuaSo: 3 }) }),
+    );
+    expect(r.checks.textGeneration.status).toBe("down");
+    expect(r.checks.textGeneration.reason).toMatch(/KHÔNG khởi động được/);
+    expect(r.checks.textGeneration.detail?.path).toBe("none");
+    expect(r.httpStatus).toBe(503);
+  });
+
+  it("giám sát TẮT ⇒ textGeneration=down (không ai dựng lại, không lùi)", async () => {
+    const r = await probeAiReadiness(deps({ probeLlamaServer: async () => DEAD, trangThaiGiamSat: () => anhGiamSat("tat") }));
+    expect(r.checks.textGeneration.status).toBe("down");
+    expect(r.checks.textGeneration.detail?.fallback).toBe("fail-closed");
+  });
+
+  it("/health trả 503 (đang nạp model) ⇒ llamaServer nói 'đang nạp model', không nói 'đã chết'", async () => {
+    const r = await probeAiReadiness(
+      deps({
+        probeLlamaServer: async () => ({ ...DEAD, loading: true, error: "/health HTTP 503" }),
+        trangThaiGiamSat: () => anhGiamSat("dang-nap"),
+      }),
+    );
+    expect(r.checks.llamaServer.reason).toMatch(/đang nạp model/);
+    expect(r.checks.textGeneration.status).toBe("degraded");
+  });
+
+  it("server sống ⇒ giám sát vẫn được phơi (ok, không đổi trạng thái hệ con)", async () => {
+    const r = await probeAiReadiness(deps({ trangThaiGiamSat: () => anhGiamSat("song") }));
+    expect(r.status).toBe("ok");
+    expect(r.giamSat?.trangThai).toBe("song");
+  });
+
+  it("đọc trạng thái giám sát NÉM ⇒ phép đo vẫn chạy, giamSat = null", async () => {
+    const r = await probeAiReadiness(
+      deps({
+        trangThaiGiamSat: () => {
+          throw new Error("hỏng");
+        },
+      }),
+    );
+    expect(r.status).toBe("ok");
+    expect(r.giamSat).toBeNull();
+  });
+});
+
 describe("G1-E — llama-server CHẾT phải bị BẮT (ca quan trọng nhất)", () => {
-  it("server chết ⇒ KHÔNG 200, llamaServer=down, và câu báo nói ĐÚNG chữ 'in-process' + 'prefix-cache'", async () => {
-    const r = await probeAiReadiness(deps({ probeLlamaServer: async () => DEAD }));
+  it("server chết + LLAMA_SERVER_FAIL_CLOSED=false ⇒ KHÔNG 200, llamaServer=down, và câu báo nói ĐÚNG chữ 'in-process' + 'prefix-cache'", async () => {
+    // Đợt 0.1 — đường lùi im lặng nay chỉ còn sau lối thoát này; mặc định xem khối "FAIL-CLOSED" dưới.
+    const r = await probeAiReadiness(
+      deps({ env: goodEnv({ LLAMA_SERVER_FAIL_CLOSED: "false" }), probeLlamaServer: async () => DEAD }),
+    );
 
     expect(r.httpStatus).not.toBe(200); // ← lỗ cũ: mọi thứ vẫn 200
     expect(r.status).toBe("down");
@@ -100,7 +186,9 @@ describe("G1-E — llama-server CHẾT phải bị BẮT (ca quan trọng nhất
       }),
     );
     expect(r.checks.llamaServer.status).toBe("down");
-    expect(r.checks.textGeneration.status).toBe("degraded");
+    // Đợt 0.1 — mặc định fail-closed + giám sát không chạy trong tiến trình test ⇒ down (không lùi).
+    expect(r.checks.textGeneration.status).toBe("down");
+    expect(r.checks.textGeneration.detail?.fallback).toBe("fail-closed");
     expect(Date.now() - started).toBeLessThan(2000); // trần thời gian có tác dụng thật
   });
 

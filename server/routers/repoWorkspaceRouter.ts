@@ -567,6 +567,12 @@ export const repoWorkspaceRouter = router({
       vramPhanTramDung: number | null;
       cheDoGpu: string | null;
       soModelDaNap: number;
+      /**
+       * ★ Đợt 0.1 — trạng thái bộ giám sát llama-server, để thanh trạng thái nói được "đang khởi động
+       * lại model" / "đang nạp model" / "không khởi động được" thay vì chỉ "ENGINE HỎNG". `null` khi
+       * không đọc được (không biết ≠ tốt).
+       */
+      giamSat: import("../services/ai/giamSatLlamaServer").AnhChupGiamSat | null;
     } | null = null;
     try {
       const { getEngineHealth } = await import("../services/aiGgufEngine");
@@ -631,6 +637,9 @@ export const repoWorkspaceRouter = router({
         vramPhanTramDung: tong && tong > 0 && con !== null ? Math.round(((tong - con) / tong) * 100) : null,
         cheDoGpu: h.gpuMode ?? null,
         soModelDaNap: Number(h.modelsLoaded ?? 0),
+        giamSat: dungLlamaServer
+          ? await import("../services/ai/giamSatLlamaServer").then((m) => m.layAnhChupGiamSat()).catch(() => null)
+          : null,
       };
     } catch {
       mayMoc = null;

@@ -17,6 +17,8 @@ import { redisService } from "./redisService";
 import { resolveLogicalModel } from "./ai/modelResolver";
 import { decideAlertWrite, type AlertSeverity } from "./alerts/decideAlertWrite";
 import { decideNotify } from "./alerts/decideNotify";
+// Đợt 0.3 — cổng ưu tiên llama-server (module LÁ).
+import { chayVoiUuTien } from "./ai/hangDoiUuTienLlm";
 
 /** Wave 3 §4.2 — hạn dùng cảnh báo. Gia hạn mỗi lần tái diễn, nên hết hạn
  *  nghĩa là "tình trạng đã THÔI tái diễn", không phải "đã quá N ngày". */
@@ -1079,7 +1081,13 @@ Analyze this alert and respond in JSON format:
   "recommendations": ["Immediate action 1", "Follow-up action 2"]
 }`;
 
-    const result = await generateText({
+    // Đợt 0.3 — ĐIỂM VÀO CHUNG của mọi lượt "làm giàu cảnh báo bằng AI" (~12 nguồn gọi `routeAlert`:
+    // alertEvaluator, bảo trì dự đoán, rollback model, drift cấu hình, twin, robot, quality gate…) ⇒
+    // mức `nen`. ⚠ Lượt này nằm TRÊN đường gửi cảnh báo (`routeAlert` await nó) ⇒ trần chờ RIÊNG
+    // 30 s: model bận ⇒ bỏ phần làm giàu (catch ⇒ null) và cảnh báo vẫn đi — không để một phiên lập
+    // trình giữ cảnh báo bảo trì lại 5 phút.
+    // (bọc bằng hàm async có await bên trong — giữ đúng khuôn mà rào nguồn aiTextModelPinning.test.ts đếm.)
+    const result = await chayVoiUuTien("nen", async () => await generateText({
       systemPrompt:
         "You are an expert alert routing system in a manufacturing factory with AOI inspection. " +
         "Analyze alerts and provide concise, actionable reasoning for routing decisions. Be specific to manufacturing context.",
@@ -1087,7 +1095,7 @@ Analyze this alert and respond in JSON format:
       maxTokens: 256,
       temperature: 0.3,
       jsonMode: true,
-    }, resolveLogicalModel("chat"));
+    }, resolveLogicalModel("chat")), { choToiDaMs: 30_000 });
 
     const jsonMatch = result.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;

@@ -67,6 +67,10 @@ import {
   BoGomToolCallLuong,
   type WireToolCall as NativeToolCall,
 } from "./ai/nativeToolCalls";
+// ★ Đợt 0.3 — cổng ưu tiên trước llama-server (1 slot): tương tác > agent > nền. Module LÁ (chỉ
+//   `node:async_hooks`) ⇒ import TĨNH. Cắm ở ĐÚNG ba chỗ chạm mạng: `postChatCompletion`,
+//   `streamChatCompletion`, `postInfill` — mọi hàm `server*` công khai đi qua một trong ba.
+import { quaCongUuTien, quaCongUuTienLuong } from "./ai/hangDoiUuTienLlm";
 
 // ═══ G5-D — Ô DỮ LIỆU THỨ HAI: `message.reasoning_content` ════════════════════════════════════
 //
@@ -603,8 +607,21 @@ export async function preflightHealthyForFim(): Promise<boolean> {
   return probeHealthy(fimBaseUrl(), healthCheckTimeoutMs());
 }
 
+/**
+ * Đợt 0.3 — mọi lượt KHÔNG-stream xếp qua cổng ưu tiên TRƯỚC khi chạm mạng. Đồng hồ
+ * `LLAMA_SERVER_TIMEOUT_MS` chỉ bắt đầu SAU khi tới lượt (nằm trong thân trực tiếp) — thời gian
+ * chờ trong hàng có trần riêng (`LLM_PRIORITY_GATE_WAIT_MS`), không ăn vào ngân sách sinh chữ.
+ * `signal` huỷ khi đang chờ ⇒ rời hàng, không một byte nào được gửi.
+ */
+function postChatCompletion(
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<{ json: any; totalTimeMs: number }> {
+  return quaCongUuTien(() => postChatCompletionTrucTiep(body, signal), signal);
+}
+
 /** POST an OpenAI chat-completion to the server and return the raw JSON + timing. */
-async function postChatCompletion(
+async function postChatCompletionTrucTiep(
   body: Record<string, unknown>,
   /** Doc 80 · Task 8 — signal của người gọi (huỷ ⇒ đóng kết nối ⇒ slot rảnh). Vắng ⇒ như cũ. */
   signal?: AbortSignal,
@@ -985,7 +1002,17 @@ function suyLuanTrongChunk(json: any): string {
  * `finally` gỡ đồng hồ, gỡ listener `abort` của signal ngoài (nếu không, một signal sống lâu sẽ
  * tích listener theo từng lượt gọi), và `reader.cancel()` để socket không nằm lại.
  */
-async function* streamChatCompletion(
+function streamChatCompletion(
+  body: Record<string, unknown>,
+  signal: AbortSignal | undefined,
+  modelHienThi: string,
+): AsyncGenerator<GgufStreamChunk> {
+  // Đợt 0.3 — slot của cổng ưu tiên giữ SUỐT vòng đời luồng, nhả ở `finally` của cổng (xong / ném /
+  // consumer `return()` sớm). Đồng hồ nhàn rỗi của thân trực tiếp chỉ chạy SAU khi tới lượt.
+  return quaCongUuTienLuong(() => streamChatCompletionTrucTiep(body, signal, modelHienThi), signal);
+}
+
+async function* streamChatCompletionTrucTiep(
   body: Record<string, unknown>,
   signal: AbortSignal | undefined,
   modelHienThi: string,
@@ -1299,7 +1326,14 @@ export async function* serverChatCompletionStream(
  * Shares `LLAMA_SERVER_TIMEOUT_MS`/auth with the text path; targets `fimBaseUrl()` (the dedicated
  * FIM server when `LLAMA_FIM_SERVER_URL` is set, else the same server text uses).
  */
-async function postInfill(body: Record<string, unknown>): Promise<{ json: any; totalTimeMs: number }> {
+function postInfill(body: Record<string, unknown>): Promise<{ json: any; totalTimeMs: number }> {
+  // Đợt 0.3 — FIM chỉ qua cổng ưu tiên khi nó dùng CHUNG slot với đường chữ (không có
+  // `LLAMA_FIM_SERVER_URL` riêng). Server FIM riêng có slot riêng ⇒ xếp nó sau lượt chữ là chờ oan.
+  const dungChung = !dedicatedFimUrl() || dedicatedFimUrl() === baseUrl();
+  return dungChung ? quaCongUuTien(() => postInfillTrucTiep(body)) : postInfillTrucTiep(body);
+}
+
+async function postInfillTrucTiep(body: Record<string, unknown>): Promise<{ json: any; totalTimeMs: number }> {
   const url = fimBaseUrl();
   if (!url) throw new Error("[llamaServer] no FIM server URL configured (LLAMA_FIM_SERVER_URL/LLAMA_SERVER_URL)");
   const startTime = Date.now();

@@ -196,3 +196,55 @@ describe("§5 `taoBoKhoiMaCoNhan` — bộ component cho <Streamdown> chỉ ghi 
     expect(html).toContain("10:02:03");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★ 2026-10-14 · Đợt 0.5 — khối ĐẦU RA LỆNH (kết quả run_command do server chạy thật, client chèn vào
+ * hội thoại) từng bị gắn nhãn "Mã do model viết — có thể khác tệp trên đĩa": SAI nguồn gốc, và đúng
+ * loại nhãn tin cậy sai mà lô 3 sinh ra để tránh. Nay client bọc đầu ra bằng fence riêng
+ * (`khoiDauRaLenh`) và component đọc nhãn fence ấy ⇒ nhãn "đầu ra lệnh", không chip đối chiếu tệp.
+ */
+const { khoiDauRaLenh, boNhanDauRaLenhChoModel, NHAN_FENCE_DAU_RA_LENH } = await import("./KhoiMaCoNhan");
+
+describe("§6 khối ĐẦU RA LỆNH — nhãn đúng nguồn gốc", () => {
+  const DAU_RA = "$ git status\nOn branch main\nnothing to commit, working tree clean\n";
+
+  it("★★★ fence đầu ra lệnh ⇒ nhãn 'đầu ra lệnh', KHÔNG nhãn 'Mã do model viết'", () => {
+    const html = ve(DAU_RA, NHAN_FENCE_DAU_RA_LENH);
+    expect(html).toContain("data-khoi-dau-ra-lenh");
+    expect(html).toContain(esc(VI.repoWs.khoi.dauRaLenh));
+    expect(html).not.toContain(esc(VI.repoWs.khoi.modelSinh));
+    expect(html).not.toContain("data-khoi-ma-model");
+  });
+
+  it("★★ khối nhỏ (dưới ngưỡng băng) vẫn mang ĐÚNG câu đầu ra lệnh ở tooltip", () => {
+    const html = ve("ok\n", NHAN_FENCE_DAU_RA_LENH);
+    expect(html).toContain(`title="${esc(VI.repoWs.khoi.dauRaLenh)}"`);
+  });
+
+  it("★★ đầu ra lệnh KHÔNG bị đối chiếu với tệp trên đĩa (không chip) kể cả khi có neo", () => {
+    const html = ve(DAU_RA, NHAN_FENCE_DAU_RA_LENH, NEO, "10:02:03");
+    expect(html).not.toContain("data-chip-khoi-ma");
+  });
+
+  it("★★ khối mã model thường vẫn giữ nhãn model sinh (không hồi quy)", () => {
+    const html = ve(KHOI_4_DONG, "csharp");
+    expect(html).toContain(esc(VI.repoWs.khoi.modelSinh));
+    expect(html).not.toContain("data-khoi-dau-ra-lenh");
+  });
+
+  it("★★★ khoiDauRaLenh bọc bằng fence riêng; đầu ra CHỨA ``` vẫn không phá khối (fence dài hơn)", () => {
+    expect(khoiDauRaLenh("a\nb")).toBe("```" + NHAN_FENCE_DAU_RA_LENH + "\na\nb\n```");
+    const coFence = "x\n```\ny\n";
+    const k = khoiDauRaLenh(coFence);
+    expect(k.startsWith("````" + NHAN_FENCE_DAU_RA_LENH + "\n")).toBe(true);
+    expect(k.endsWith("\n````")).toBe(true);
+  });
+
+  it("★★ gửi lịch sử cho model: bỏ nhãn fence riêng (model không học bắt chước nhãn tin cậy)", () => {
+    const noiDung = "Kết quả:\n\n" + khoiDauRaLenh("$ npm test\nok");
+    const ra = boNhanDauRaLenhChoModel(noiDung);
+    expect(ra).not.toContain(NHAN_FENCE_DAU_RA_LENH);
+    expect(ra).toContain("```\n$ npm test\nok\n```");
+  });
+});

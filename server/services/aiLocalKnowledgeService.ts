@@ -76,6 +76,8 @@ import {
  * tách rời; bộ canh NỘI DUNG phải đứng CUỐI). Ca chứng minh: `aiLocalKnowledge.thinkingLeak.test.ts` §5.
  */
 import { StreamingThinkingStripper, stripThinking, thinkingStartsOpen } from "./ai/thinkingStrip";
+// Đợt 0.5 — cổng /api/tags cho mọi điểm lùi Ollama (không lùi im lặng vào model không tồn tại).
+import { ollamaDungDuoc } from "./ai/ollamaLui";
 import { planInference } from "./aiGateway";
 import { resolveTaskModel } from "./ai/modelResolver";
 // doc69 G2-7 (Wave E4) — "ask→do" 1-tap navigate: attaches a client `navigate`
@@ -122,6 +124,8 @@ import {
 import { streamCodingAnswer } from "./aiLocalKnowledgeCoding";
 // ★ B8 — VÒNG TOOL của streamAnswer (cổng vscode · tiến độ tool_loop) đã tách sang `./aiLocalKnowledgeVongTool.ts` (xem docblock đầu tệp đó).
 import { KHONG_TOOL_VSCODE, chayVongLapToolPhatTienDo, tachThanKhoiGiaoCuVscode } from "./aiLocalKnowledgeVongTool";
+// Đợt 0.3 — cổng ưu tiên llama-server (module LÁ): làm ấm lúc khởi động mang mức `nen`.
+import { chayVoiUuTien } from "./ai/hangDoiUuTienLlm";
 
 export type KbIntent =
   | "how_to"
@@ -470,6 +474,9 @@ const EMBEDDINGS_FILE = path.join(KNOWLEDGE_DIR, "embeddings.jsonl");
 const EMBEDDINGS_META_FILE = path.join(KNOWLEDGE_DIR, "embeddings-meta.json");
 
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
+// ⚠ Hai mặc định dưới đây CÓ THỂ không tồn tại trong Ollama đang chạy (đo 2026-10-14 trên máy dev:
+//   cả hai đều vắng). Mọi điểm lùi Ollama đi qua `ollamaDungDuoc` (hỏi /api/tags trước, log RÕ khi
+//   thiếu) — không lùi im lặng vào model không có. Xem `ai/ollamaLui.ts`.
 const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "mxbai-embed-large";
 const OLLAMA_QA_MODEL = process.env.OLLAMA_QA_MODEL ?? "qwen2.5:7b-instruct";
 
@@ -884,6 +891,7 @@ function l2normalizeVec(vec: number[]): number[] {
 
 /** Legacy Ollama /api/embed path (rollback + fallback). Returns a unit vector or null. */
 async function embedQuestionOllama(question: string): Promise<number[] | null> {
+  if (!(await ollamaDungDuoc(OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, "embed"))) return null;
   const body = {
     model: OLLAMA_EMBED_MODEL,
     input: question,
@@ -1845,6 +1853,8 @@ async function generateWithOllama(
   // full generation finishes. We MUST keep the timer armed across both the
   // fetch headers AND the body read (`res.json()`); otherwise the abort
   // becomes a no-op for long generations.
+  // Đợt 0.5 — model QA vắng trong /api/tags ⇒ trả null như khi Ollama 404, nhưng KHÔNG gọi + log rõ.
+  if (!(await ollamaDungDuoc(OLLAMA_BASE_URL, OLLAMA_QA_MODEL, "qa"))) return null;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), LLM_TIMEOUT_MS);
   try {
@@ -2028,6 +2038,8 @@ export async function* generateWithOllamaStream(
   // Ollama HTTP stream cannot starve the SSE handler. Reader.read()
   // observes the abort and throws, which the consumer (askStream)
   // catches and falls back to extractive/tool answer.
+  // Đợt 0.5 — model QA vắng trong /api/tags ⇒ kết thúc rỗng như nhánh `!res.ok` bên dưới, KHÔNG gọi.
+  if (!(await ollamaDungDuoc(OLLAMA_BASE_URL, OLLAMA_QA_MODEL, "qa"))) return;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), LLM_TIMEOUT_MS);
   let res: Response;
@@ -4014,7 +4026,9 @@ export function warmUpOllamaModels(): void {
     // aiGgufEngine.warmModel docs / doc 34 §P4). Best-effort + fail-safe: if the deep model cannot
     // load (VRAM), warmModel returns false and the callers' honest-degrade guards still render the
     // offline template — never gibberish. Embedder is still warmed right after (RAG needs it).
-    void (async () => {
+    // Đợt 0.3 — làm ấm lúc khởi động (1 token model sâu + một lượt truy hồi có thể dịch truy vấn)
+    // không ai chờ ⇒ mức `nen`: người dùng hỏi ngay sau khi khởi động không phải xếp sau nó.
+    void chayVoiUuTien("nen", async () => {
       if (!USE_LEGACY_OLLAMA) {
         try {
           const { warmModel } = await import("./aiGgufEngine");
@@ -4053,19 +4067,25 @@ export function warmUpOllamaModels(): void {
       } catch (e) {
         console.warn("[aiLocalKnowledge] làm ấm đường truy hồi KHÔNG xong (bỏ qua):", (e as Error)?.message ?? e);
       }
-    })().catch(() => {});
-    // Legacy Ollama QA warm — a no-op unless USE_LEGACY_OLLAMA (nothing listens on the GGUF path).
-    void fetch(`${OLLAMA_BASE_URL}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: OLLAMA_QA_MODEL,
-        prompt: "ok",
-        stream: false,
-        keep_alive: LLM_KEEP_ALIVE,
-        options: { num_predict: 1, temperature: 0 },
-      }),
     }).catch(() => {});
+    // Legacy Ollama QA warm — CHỈ khi USE_LEGACY_OLLAMA (Đợt 0.5: trước đây bắn bất kể cờ, kể cả
+    // khi model không có) và chỉ khi /api/tags có model (cổng `ollamaDungDuoc`, log rõ nếu thiếu).
+    if (USE_LEGACY_OLLAMA) {
+      void (async () => {
+        if (!(await ollamaDungDuoc(OLLAMA_BASE_URL, OLLAMA_QA_MODEL, "qa"))) return;
+        await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: OLLAMA_QA_MODEL,
+            prompt: "ok",
+            stream: false,
+            keep_alive: LLM_KEEP_ALIVE,
+            options: { num_predict: 1, temperature: 0 },
+          }),
+        });
+      })().catch(() => {});
+    }
   }, 2000);
 }
 

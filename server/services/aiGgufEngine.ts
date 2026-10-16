@@ -22,6 +22,8 @@ import fs from "fs";
 // `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
 import { isVramRefusal } from "./vram/vramRefusalSignal";
 import { withGgufSlot, withGgufSlotGenerator, getGgufQueueStats } from "./ggufConcurrency";
+// Đợt 0.3 — vị từ "lỗi này của CỔNG ƯU TIÊN (chưa chạm server)". Module LÁ ⇒ import TĨNH.
+import { laLoiHangDoiLlm } from "./ai/hangDoiUuTienLlm";
 // Read-only telemetry hook (TASK A): observeInference is a no-op when METRICS_ENABLED is off
 // and never throws. Imported only to record per-generation latency into the histogram.
 import { observeInference } from "./aiMetrics";
@@ -2018,7 +2020,22 @@ async function chanNapTrungModelServer(modelId: string, viTri: string): Promise<
 
   const conSong = await srv.preflightHealthy().catch(() => false);
   if (!conSong) {
-    // nhánh 2 — cho qua, nhưng KHÔNG im lặng.
+    /**
+     * ★★★ Đợt 0.1 — nhánh 2 nay FAIL-CLOSED (mặc định). "Server im ⇒ không còn giữ VRAM" đúng ở
+     * GIÂY NÀY, nhưng giám sát (`ai/giamSatLlamaServer`) sẽ dựng lại nó trong ít phút — lượt nạp
+     * này là bản thứ hai ~21 GB trong tương lai gần. Điểm nghẽn KHÔNG chờ: nếu server sống lại thì
+     * nhánh 3 ném đằng nào cũng ném; việc chờ thuộc về cổng (b), nơi "sống lại" còn dùng được.
+     * Phủ đúng những đường KHÔNG hỏi server: warmModel · router nạp tay · FIM dùng chung server.
+     */
+    const gs = await import("./ai/giamSatLlamaServer");
+    if (gs.llamaServerFailClosed()) {
+      const anh = gs.layAnhChupGiamSat();
+      const loi = new gs.LoiLlamaServerChet({ modelId, viTri, lyDo: "khong-cho", daChoMs: 0, trangThai: anh.trangThai });
+      console.error(loi.message);
+      ghiSuKienChanNapTrung("nap_trung_bi_chan_server_chet", modelId, viTri, { serverConSong: false, giamSat: anh.trangThai });
+      throw loi;
+    }
+    // nhánh 2 (LLAMA_SERVER_FAIL_CLOSED=false — hành vi cũ) — cho qua, nhưng KHÔNG im lặng.
     console.warn(
       `[aiGgufEngine] G1-D (${viTri}): llama-server được cấu hình phục vụ "${modelId}" nhưng KHÔNG ` +
         `trả lời thăm dò ⇒ coi như nó không còn giữ VRAM, CHO PHÉP nạp in-process (~19.000 MiB). ` +
@@ -2100,7 +2117,7 @@ async function thuDuongServer<T>(
   if (!srv.shouldUseServerForText(modelId)) return { xong: false };
 
   congNganSachNguCanh(srv, modelId, options, ten); // cổng (a)
-  if (!(await congPreflight(srv, ten))) return { xong: false }; // cổng (b)
+  if (!(await congPreflight(srv, ten, modelId, options.signal))) return { xong: false }; // cổng (b)
 
   try {
     return { xong: true, ketQua: await goi(srv) };
@@ -2149,14 +2166,44 @@ function congNganSachNguCanh(
 
 /**
  * CỔNG (b) — thăm dò sức khoẻ TRƯỚC lượt gửi. `true` = đi tiếp đường server; `false` = lùi
- * in-process (server im ⇒ nó không còn giữ VRAM ⇒ lùi là ĐÚNG, và đó là lưới an toàn mà `.env`
- * cố ý dựng khi để `LLAMA_SERVER_STRICT` TẮT). Ném khi STRICT bật.
+ * in-process. Ném khi STRICT bật (câu cũ, nguyên văn).
+ *
+ * ★★★ Đợt 0.1 — FAIL-CLOSED cho model CHÍNH. Lý lẽ cũ ở đây là *"server im ⇒ nó không còn giữ VRAM
+ * ⇒ lùi là ĐÚNG"*. Nửa đầu đúng, nửa sau SAI về thời gian: đo 2026-10-14, `:8091` chết từ 10/9 và
+ * mỗi lượt sinh mã kế tiếp nạp model 21 GB vào CHÍNH tiến trình node (TTFT 71 → 5.304 ms); ngay khi
+ * llama-server được dựng lại (nay là việc của `ai/giamSatLlamaServer`), HAI bản tranh 32 GB VRAM.
+ * ⇒ model server đang giữ + server im ⇒ CHỜ có trần cho giám sát dựng lại; sống ⇒ đi server; vẫn
+ *   chết ⇒ `LoiLlamaServerChet` (`LLAMA_SERVER_DOWN`). Model KHÁC không bao giờ tới đây (vị từ
+ *   `shouldUseServerForText` đã lọc), nên 4B/embed/FIM in-process không bị ảnh hưởng.
+ * Ngoại lệ DUY NHẤT: model ĐÃ nằm sẵn trong tiến trình ⇒ lùi không tốn byte nào (cùng ngoại lệ với
+ * cổng c). Lối thoát vận hành: `LLAMA_SERVER_FAIL_CLOSED=false` = hành vi cũ.
  */
-async function congPreflight(srv: typeof import("./aiLlamaServerClient"), ten: string): Promise<boolean> {
+async function congPreflight(
+  srv: typeof import("./aiLlamaServerClient"),
+  ten: string,
+  modelId?: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const healthy = await srv.preflightHealthy().catch(() => false);
   if (healthy) return true;
   if (srv.llamaServerStrict()) {
     throw new Error("[aiGgufEngine] llama-server preflight health check failed (LLAMA_SERVER_STRICT=true)");
+  }
+  const gs = await import("./ai/giamSatLlamaServer");
+  if (gs.llamaServerFailClosed() && srv.laModelServerDangGiu(modelId) && !daNamSanTrongTienTrinh(modelId)) {
+    const ten4Log = toBasename(modelId) || resolveDefaultModelBasename() || "default";
+    console.warn(
+      `[aiGgufEngine] llama-server không trả lời (${ten}) — FAIL-CLOSED: KHÔNG nạp "${ten4Log}" in-process, chờ giám sát dựng lại.`,
+    );
+    const kq = await gs.choLlamaServerHoiPhuc({ thamDoKhoe: () => srv.preflightHealthy(), signal });
+    if (kq.song) {
+      console.warn(`[aiGgufEngine] llama-server đã sống lại sau ${Math.round(kq.daChoMs / 1000)} s — tiếp tục lượt ${ten} qua server.`);
+      return true;
+    }
+    const loi = new gs.LoiLlamaServerChet({ modelId: ten4Log, viTri: ten, lyDo: kq.lyDo, daChoMs: kq.daChoMs, trangThai: kq.trangThai });
+    console.error(loi.message);
+    ghiSuKienChanNapTrung("llama_server_chet_fail_closed", ten4Log, ten, { lyDo: kq.lyDo, daChoMs: kq.daChoMs, giamSat: kq.trangThai });
+    throw loi;
   }
   console.warn(
     `[aiGgufEngine] llama-server preflight health check failed (${ten}) — falling back in-process (server unreachable/unhealthy)`,
@@ -2184,6 +2231,9 @@ function quyetDinhSauLoiServer(
   daPhatChu: boolean,
 ): void {
   if (srv.llamaServerStrict()) throw e;
+  // Đợt 0.3 — hàng đầy / chờ quá trần / huỷ khi chờ ở cổng ưu tiên: lượt CHƯA hề tới server, server
+  // không hỏng ⇒ không lùi in-process, không ghi sự kiện G1-D, ném NGUYÊN lỗi (giữ `code` cho tầng trên).
+  if (laLoiHangDoiLlm(e)) throw e;
   const chiTiet = (e as Error)?.message || String(e);
   const ten4Log = toBasename(modelId) || resolveDefaultModelBasename() || "default";
 
@@ -2251,7 +2301,7 @@ async function* thuDuongServerStream(
   if (!srv.shouldUseServerForText(modelId)) return false;
 
   congNganSachNguCanh(srv, modelId, nganSach, ten); // cổng (a)
-  if (!(await congPreflight(srv, ten))) return false; // cổng (b)
+  if (!(await congPreflight(srv, ten, modelId, signal))) return false; // cổng (b)
 
   let daPhatChu = false;
   try {

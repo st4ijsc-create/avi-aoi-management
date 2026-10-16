@@ -65,3 +65,33 @@ describe("manifest extension", () => {
     }
   });
 });
+
+/**
+ * ★ 2026-10-14 · Đợt 0.5 — README được đóng VÀO VSIX (trang chi tiết extension). Bản cũ còn ghi "Đợt A
+ * chỉ đọc" / "Ba lệnh" khi manifest đã có 10 lệnh + đường ghi có duyệt ⇒ người cài đọc một hợp đồng
+ * SAI. Lưới bám THẲNG manifest: mọi lệnh và mọi khoá cấu hình phải được README nhắc tới; câu lỗi thời
+ * không được quay lại.
+ */
+describe("README khớp manifest", () => {
+  const readme = readFileSync(join(goc, "README.md"), "utf8");
+
+  it("★★ mọi tiêu đề lệnh trong manifest có mặt trong README", () => {
+    const ds: Array<{ title: string }> = manifest.contributes.commands;
+    for (const l of ds) expect(readme, l.title).toContain(l.title);
+  });
+
+  it("★★ mọi khoá cấu hình có mặt trong README", () => {
+    for (const k of Object.keys(manifest.contributes.configuration.properties)) expect(readme, k).toContain(k);
+  });
+
+  it("★★ phím tắt khai trong manifest có mặt trong README", () => {
+    for (const kb of manifest.contributes.keybindings as Array<{ key: string }>) {
+      expect(readme.toLowerCase()).toContain(kb.key.toLowerCase());
+    }
+  });
+
+  it("★ không còn câu lỗi thời (Đợt A chỉ đọc / Ba lệnh)", () => {
+    expect(readme).not.toMatch(/CHỈ ĐỌC, chưa có đường ghi/);
+    expect(readme).not.toMatch(/^## Ba lệnh/m);
+  });
+});

@@ -17,6 +17,8 @@ import { eventBus, type DomainEvent } from "../../_core/eventBus";
 // ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được ở đây dù engine
 // vẫn nạp động trong `try` — hàng rào không treo vào một `await import()` có thể hỏng.
 import { stripThinking } from "../ai/thinkingStrip";
+// Đợt 0.3 — cổng ưu tiên llama-server (module LÁ).
+import { chayVoiUuTien } from "../ai/hangDoiUuTienLlm";
 
 let enabled = false;
 const unsubscribers: Array<() => void> = [];
@@ -116,7 +118,8 @@ async function onTriggered(e: DomainEvent): Promise<void> {
   lastRunByMachine.set(machine, now);
 
   const ctx: Record<string, unknown> = { rule, count: p.count };
-  const body = await generateAdvisory(rule, machine, ctx);
+  // Đợt 0.3 — khuyến nghị sinh từ SỰ KIỆN (không phải câu hỏi của ai) ⇒ mức `nen`.
+  const body = await chayVoiUuTien("nen", () => generateAdvisory(rule, machine, ctx));
   if (!body) return;
 
   const id = await storeInsight(rule, machine, body, ctx);

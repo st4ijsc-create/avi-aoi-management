@@ -18718,6 +18718,27 @@
     }
   },
   "systemHealth": {
+    "llamaWd": {
+      "title": "llama-server watchdog (main text model)",
+      "desc": "Restarts llama-server automatically when no process is listening on its port (2 consecutive 15-second checks), at most 3 times per 30 minutes. While the server is down, main-model text generation WAITS for it to come back instead of loading the model into the app.",
+      "trangThai": "Status",
+      "soLan": "Restarts (this process)",
+      "trongCuaSo": "Within the {{phut}}-minute window",
+      "lanCuoi": "Last restart",
+      "lanKiem": "Last check",
+      "lyDo": "Explanation (server)",
+      "khongDoc": "Could not read the AI machine status.",
+      "st": {
+        "song": "Alive",
+        "dangNap": "Loading model",
+        "chet": "Down",
+        "dangKhoiDongLai": "Restarting",
+        "boCuoc": "Gave up — needs a person",
+        "tamDung": "Paused (model switch)",
+        "tat": "Off",
+        "chuaKiem": "Not checked yet"
+      }
+    },
     "title": "System Health",
     "subtitle": "Real-time internal state: OT telemetry store-and-forward buffer, per-adapter HA connection supervision, and DINOv2 vision-model status. Read-only — no device write path is opened.",
     "ai": {
@@ -20464,6 +20485,14 @@
     "may": "engine",
     "engineHong": "ENGINE DOWN",
     "engineOk": "engine ok",
+    "engineKhoiDongLai": "RESTARTING MODEL",
+    "engineDangNap": "LOADING MODEL",
+    "engineTamDung": "PAUSED (MODEL SWITCH)",
+    "engineBoCuoc": "MODEL FAILED TO START",
+    "tipKhoiDongLai": "llama-server just died; the watchdog is restarting it (attempt {{lan}}, {{trongCuaSo}}/{{toiDa}} within {{phut}} min). Code generation now WAITS up to about 2 minutes and then goes through the server — the model is not loaded into the app.",
+    "tipDangNap": "llama-server is loading the model (30–90 seconds for a ~21 GB model). Code generation will wait and then continue.",
+    "tipTamDung": "The watchdog is intentionally paused (a model switch is in progress) — llama-server will not be restarted automatically.",
+    "tipBoCuoc": "llama-server failed to start after {{toiDa}} attempts within {{phut}} min — the watchdog stopped trying. Someone needs to check logs/llama-server-*.err.log and run scripts/ai/start-llama-server.ps1 again.",
     "tipMayHong": "The inference engine is NOT healthy. Every answer right now reflects the MACHINE, not the model — draw no conclusion about model quality until this turns green again.",
     "tipMayOk": "Engine running via {{duong}}. Models loaded: {{soModel}}. GPU mode: {{gpu}}.",
     "duongNgoai": "llama-server (external process)",
@@ -20528,6 +20557,7 @@
     },
     "khoi": {
       "modelSinh": "Code written by the model — may differ from the file on disk",
+      "dauRaLenh": "Output of a command the server actually ran — not model-written code",
       "bangChung": "Real bytes from disk · {{luc}}",
       "khacDia": "≠ file on disk (read {{luc}}) — if the model claims this is the CURRENT code, do not trust it",
       "khopDia": "matches the file on disk ({{luc}})"
@@ -20815,7 +20845,8 @@
         "offUser": "The auto loop is OFF — the fix WAS written, but you must run the tests yourself. This feature is enabled by an administrator on the server — contact your administrator.",
         "error": "STOPPED by a REAL failure while running the verification command.",
         "dirty": "STOPPED because the target file has UNCOMMITTED changes of yours — the auto-write loop will NOT overwrite unsaved work. Commit (or stash) first, then retry.",
-        "kill": "STOPPED because the emergency kill-switch is tripped — the auto-write loop halts immediately. Contact your administrator to reset it."
+        "kill": "STOPPED because the emergency kill-switch is tripped — the auto-write loop halts immediately. Contact your administrator to reset it.",
+        "mainRepo": "STOPPED: the self-write loop does not run on the main repo until a restore point (checkpoint) exists. The fix was NOT written — use the manual review path, or run it on a sandbox project."
       }
     },
     "terminal": {

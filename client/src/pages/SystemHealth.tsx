@@ -155,6 +155,7 @@ export default function SystemHealth() {
         <CrossReplicaChannelsPanel />
         <ConnectionSupervisorsSection query={supQuery} />
         <AiModelHealthSection query={aiQuery} />
+        <LlamaWatchdogSection />
         <TwinExportSection />
         <CommissioningPanel />
       </PageContainer>
@@ -649,6 +650,91 @@ function AiModelHealthSection({ query }: { query: QueryLike<AiModelHealthOut> })
             <InfoRow label={t("systemHealth.ai.configuredPath", "Đường dẫn cấu hình")} value={<code className="text-xs break-all">{h.configuredPath}</code>} />
           </div>
           <p className={`text-xs ${h.degraded ? "text-warning" : "text-muted-foreground"}`}>{h.note}</p>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 3b) Đợt 0.1 — giám sát llama-server (model chữ chính). Đọc `repoWorkspace.trangThaiAiLocal`
+//     (thủ tục CHỈ ĐỌC đã có — cùng nguồn với thanh trạng thái màn lập trình) thay vì mở thủ tục
+//     mới: một sự thật, một nơi tính; và không thêm một cổng giấy phép phải khai ở hai census.
+// ════════════════════════════════════════════════════════════════════════════
+
+const TONE_GIAM_SAT: Record<string, "success" | "warning" | "error" | "default"> = {
+  song: "success",
+  "dang-nap": "warning",
+  "dang-khoi-dong-lai": "warning",
+  "tam-dung": "warning",
+  chet: "error",
+  "bo-cuoc": "error",
+  tat: "default",
+  "chua-kiem": "default",
+};
+const KHOA_GIAM_SAT: Record<string, string> = {
+  song: "song",
+  "dang-nap": "dangNap",
+  chet: "chet",
+  "dang-khoi-dong-lai": "dangKhoiDongLai",
+  "bo-cuoc": "boCuoc",
+  "tam-dung": "tamDung",
+  tat: "tat",
+  "chua-kiem": "chuaKiem",
+};
+
+function LlamaWatchdogSection() {
+  const { t } = useTranslation();
+  const query = trpc.repoWorkspace.trangThaiAiLocal.useQuery(undefined, { refetchInterval: 15_000 });
+  const g = query.data?.mayMoc?.giamSat ?? null;
+  const nhan = (tt: string) => t(`systemHealth.llamaWd.st.${KHOA_GIAM_SAT[tt] ?? "chuaKiem"}`, tt);
+
+  return (
+    <SectionCard
+      icon={<Cpu className="h-5 w-5 text-primary" />}
+      title={t("systemHealth.llamaWd.title", "Giám sát llama-server (model chữ chính)")}
+      description={t(
+        "systemHealth.llamaWd.desc",
+        "Tự khởi động lại llama-server khi không còn tiến trình nào nghe cổng (2 nhịp 15 giây liên tiếp), tối đa 3 lần trong 30 phút. Khi server chết, lượt sinh chữ của model chính CHỜ server dựng lại thay vì nạp model vào ứng dụng.",
+      )}
+      action={g ? <StatusBadge status={g.trangThai} tone={TONE_GIAM_SAT[g.trangThai] ?? "default"} label={nhan(g.trangThai)} /> : null}
+    >
+      {query.isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+          <Loader2 className="h-4 w-4 animate-spin" /> {t("common.loading", "Đang tải…")}
+        </div>
+      ) : query.isError ? (
+        <div className="flex items-center gap-2 text-sm text-destructive py-6">
+          <AlertTriangle className="h-4 w-4" /> {mapTrpcError(query.error)}
+        </div>
+      ) : !g ? (
+        <p className="text-sm text-muted-foreground py-2">{t("systemHealth.llamaWd.khongDoc", "Không đọc được trạng thái máy AI.")}</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <MetricCard
+              icon={<Activity className="h-4 w-4" />}
+              label={t("systemHealth.llamaWd.trangThai", "Trạng thái")}
+              value={nhan(g.trangThai)}
+              tone={g.trangThai === "song" ? "good" : g.trangThai === "chet" || g.trangThai === "bo-cuoc" ? "danger" : g.trangThai === "tat" || g.trangThai === "chua-kiem" ? "default" : "warning"}
+            />
+            <MetricCard
+              icon={<RefreshCw className="h-4 w-4" />}
+              label={t("systemHealth.llamaWd.soLan", "Số lần khởi động (tiến trình này)")}
+              value={g.soLanKhoiDong}
+              delta={t("systemHealth.llamaWd.trongCuaSo", "Trong cửa sổ {{phut}} phút", { phut: g.cuaSoPhut }) + `: ${g.soLanTrongCuaSo}/${g.toiDaKhoiDong}`}
+              tone={g.soLanTrongCuaSo >= g.toiDaKhoiDong ? "danger" : g.soLanTrongCuaSo > 0 ? "warning" : "default"}
+            />
+            <MetricCard
+              icon={<Info className="h-4 w-4" />}
+              label={t("systemHealth.llamaWd.lanCuoi", "Lần khởi động cuối")}
+              value={fmtTime(g.lanKhoiDongCuoi)}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm">
+            <InfoRow label={t("systemHealth.llamaWd.lanKiem", "Lần kiểm cuối")} value={fmtTime(g.lanKiemCuoi)} />
+            <InfoRow label={t("systemHealth.llamaWd.lyDo", "Diễn giải (máy chủ)")} value={g.lyDo} />
+          </div>
         </div>
       )}
     </SectionCard>

@@ -14827,6 +14827,27 @@
     "noTarget": "缺少用于附加缺陷的 inspection/measurement 引用"
   },
   "systemHealth": {
+    "llamaWd": {
+      "title": "llama-server 监控（主文本模型）",
+      "desc": "当没有任何进程监听其端口（连续 2 次 15 秒检查）时自动重启 llama-server，30 分钟内最多 3 次。服务器停止期间，主模型的文本生成会等待其恢复，而不是把模型加载到应用中。",
+      "trangThai": "状态",
+      "soLan": "重启次数（本进程）",
+      "trongCuaSo": "{{phut}} 分钟窗口内",
+      "lanCuoi": "最近一次重启",
+      "lanKiem": "最近一次检查",
+      "lyDo": "说明（服务器）",
+      "khongDoc": "无法读取 AI 机器状态。",
+      "st": {
+        "song": "运行中",
+        "dangNap": "正在加载模型",
+        "chet": "已停止",
+        "dangKhoiDongLai": "正在重启",
+        "boCuoc": "已放弃——需要人工处理",
+        "tamDung": "已暂停（切换模型）",
+        "tat": "关闭",
+        "chuaKiem": "尚未检查"
+      }
+    },
     "crossReplica": {
       "desc": "本中央副本的状态：OT 停止同步（另一副本发出的停止指令会取消此处仍在等待的写入）以及设备归属变更通道。只读。",
       "disabledHint": "请设置 {{envKey}}（至少 32 个字符，所有中央副本相同）或 {{envSecret}}，然后重启。只有一个中央进程时无影响。",
@@ -20472,6 +20493,14 @@
     "may": "引擎",
     "engineHong": "引擎故障",
     "engineOk": "引擎正常",
+    "engineKhoiDongLai": "模型重启中",
+    "engineDangNap": "模型加载中",
+    "engineTamDung": "已暂停（切换模型）",
+    "engineBoCuoc": "模型无法启动",
+    "tipKhoiDongLai": "llama-server 刚刚停止；监控程序正在重启它（第 {{lan}} 次，{{phut}} 分钟内 {{trongCuaSo}}/{{toiDa}}）。此时代码生成会最多等待约 2 分钟，然后经由服务器执行——不会把模型加载到应用中。",
+    "tipDangNap": "llama-server 正在加载模型（约 21 GB 的模型需 30–90 秒）。代码生成将等待后继续。",
+    "tipTamDung": "监控程序已被有意暂停（正在切换模型）——不会自动重启 llama-server。",
+    "tipBoCuoc": "llama-server 在 {{phut}} 分钟内尝试 {{toiDa}} 次仍无法启动——监控程序已停止重试。需要人工查看 logs/llama-server-*.err.log，然后重新运行 scripts/ai/start-llama-server.ps1。",
     "tipMayHong": "推理引擎不健康。此时的所有回答反映的是机器状态，而不是模型能力——在此格重新变绿之前，不要对模型质量下任何结论。",
     "tipMayOk": "引擎通过 {{duong}} 运行。已加载模型：{{soModel}}。GPU 模式：{{gpu}}。",
     "duongNgoai": "llama-server（外部进程）",
@@ -20536,6 +20565,7 @@
     },
     "khoi": {
       "modelSinh": "模型编写的代码——可能与磁盘上的文件不同",
+      "dauRaLenh": "服务器实际运行命令的输出——不是模型编写的代码",
       "bangChung": "磁盘真实字节 · {{luc}}",
       "khacDia": "≠ 磁盘上的文件（读取于 {{luc}}）——若模型声称这是当前代码，请勿相信",
       "khopDia": "与磁盘上的文件一致（{{luc}}）"
@@ -20823,7 +20853,8 @@
         "offUser": "自动循环处于关闭状态——修复已写入，但您需要自己运行测试。此功能由管理员在服务器上启用——请联系管理员。",
         "error": "已停止：运行验证命令时发生真实故障。",
         "dirty": "已停止：目标文件有你未提交的更改——自写循环不会覆盖未保存的工作。请先提交（或暂存）再重试。",
-        "kill": "已停止：紧急停止开关（kill-switch）已触发——自写循环立即停止。请联系管理员解除。"
+        "kill": "已停止：紧急停止开关（kill-switch）已触发——自写循环立即停止。请联系管理员解除。",
+        "mainRepo": "已停止：在具备恢复点（checkpoint）之前，自写循环不在主仓库上运行。修改未写入——请使用人工审核流程，或在沙盒项目中运行。"
       }
     },
     "terminal": {

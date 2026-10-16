@@ -50,16 +50,20 @@
  * ⚠ Nội dung bản vá KHÔNG sinh ở đây: nó tới từ tầng model (persona sửa + `khoiNguCanhMa`) qua tham
  *   số `sinhBanVa` được TIÊM VÀO — nhờ đó lưới chạy được KHÔNG cần model 30B (`sinhBanVa` giả).
  */
+import fs from "node:fs";
+import path from "node:path";
 import {
   apDungDiffTuTriDuoc,
   autonomyGhiTuTriBat,
   isKillSwitchTripped,
+  tuTriGhiRepoChinhDuoc,
 } from "./ai/autonomyPolicy";
 import { laYDinhTuTri } from "./aiLocalTools/intentClassifier";
 import { chayKiemChung, type MaTuChoiKiemChung } from "./aiCodingVerify";
 import { executeDecision, type ToolExecContext, type ToolLang } from "./aiLocalTools";
 import { confirmAction, type CopilotUser } from "./aiCopilotActions";
 import { phanGiaiGoc } from "./aiLocalTools/repoProjects";
+import { gocHopCat } from "./aiLocalTools/repoSandbox";
 import {
   AUDIT_ACTIONS,
   ENTITY_TYPES,
@@ -133,6 +137,97 @@ export function laTepTest(duong: string | null | undefined): boolean {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Q1 (2026-10-14) — HÀNG RÀO 7: REPO CHÍNH KHÔNG TỰ GHI KHI CHƯA CÓ ĐIỂM KHÔI PHỤC
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Quyết định chủ dự án (Q1, kế hoạch `2026-10-14-ai-local-hoan-thien-7-tang.md`): `.env` máy dev đang
+ * bật cả hai cờ tự ghi, danh sách dự án GỒM repo chính, và CHƯA có checkpoint (Đợt 1 mục 1.4). Một lượt
+ * model phá trên cây mã của chính server khi ấy không hoàn tác được bằng một nút ⇒ vòng TỰ GHI không
+ * được chạm repo chính cho tới khi có checkpoint. Ghi đè có chủ ý: `AI_CODING_TU_TRI_GHI_REPO_CHINH=1`.
+ *
+ * ⚠⚠ QUY TẮC CHỌN — THEO **ĐƯỜNG TỆP ĐÍCH THẬT**, KHÔNG THEO ID DỰ ÁN, KHÔNG THEO GỐC DỰ ÁN:
+ *   từ chối ⇔ realpath(gốc dự án + đường tệp) nằm TRONG realpath(repo chính) **VÀ KHÔNG** nằm dưới
+ *   `<repo chính>/sandbox-projects/<…>/`.
+ *   • Vì sao không theo id `"repo"`: id là nhãn cấu hình — một mục `srv=…|<repo>\server` hay một gốc
+ *     viết HOA trên Windows trỏ cùng cây mà khác id/chuỗi. Đo bằng đường đã chuẩn hoá thì mọi biến thể
+ *     ấy về một.
+ *   • Vì sao không theo GỐC dự án mà theo TỆP: bộ đo agentic (`scripts/ai-eval/codegen-chay-duoc/
+ *     agentic.mjs`) gửi `projectId:"repo"` (gốc = repo chính) nhưng chỉ sửa
+ *     `sandbox-projects/agentic-demo{,2}/src/…` — đúng là dự án hộp cát được commit kèm lỗi, khôi phục
+ *     bằng `git checkout` sau mỗi lượt. Chặn theo gốc sẽ giết bộ đo; chặn theo tệp giữ được nó mà vẫn
+ *     không để một byte nào của server/client/shared bị tự ghi.
+ *   • Vì sao realpath: một junction/symlink trong dự án hộp cát trỏ ngược vào repo chính không được
+ *     thành cửa sau. Tệp chưa tồn tại (lượt TẠO) ⇒ realpath tổ tiên SÂU NHẤT còn tồn tại + phần đuôi.
+ *   • `sandbox-projects` phải là một ĐOẠN đường (không tiền tố chuỗi: `sandbox-projectsX/` ≠ hộp cát),
+ *     và phải có ít nhất một đoạn sau nó (chính thư mục `sandbox-projects` không phải tệp dự án nào).
+ * ⚠ Chỉ vòng TỰ GHI gọi cổng này. Đường DUYỆT TAY (người bấm duyệt từng lượt) KHÔNG đổi — lưới §8
+ *   khoá điều đó bằng census người gọi.
+ */
+export const THU_MUC_HOP_CAT_TRONG_REPO = "sandbox-projects";
+
+/**
+ * Gốc REPO CHÍNH = cây mã của chính server: thư mục có `.git` (thư mục hoặc tệp — worktree) gần nhất
+ * khi đi lên từ `process.cwd()` (server luôn khởi động từ gốc repo; đi lên để chịu được cwd con).
+ * Không thấy `.git` ⇒ cwd. ⚠ KHÔNG dùng `gocHopCat()`: `AI_REPO_SANDBOX_ROOT` có thể thu hẹp hộp cát
+ * về nơi khác, còn câu hỏi ở đây là "đây có phải mã của CHÍNH server không". Đọc tại chỗ gọi.
+ */
+export function gocRepoChinh(): string {
+  const cwd = path.resolve(process.cwd());
+  let d = cwd;
+  for (;;) {
+    if (fs.existsSync(path.join(d, ".git"))) return d;
+    const cha = path.dirname(d);
+    if (cha === d) return cwd;
+    d = cha;
+  }
+}
+
+/** realpath của tổ tiên SÂU NHẤT còn tồn tại + phần đuôi chưa tồn tại (lượt TẠO tệp mới). */
+function realpathMotPhan(p: string): string {
+  const abs = path.resolve(p);
+  let d = abs;
+  const duoi: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(d), ...duoi);
+    } catch {
+      const cha = path.dirname(d);
+      if (cha === d) return abs;
+      duoi.unshift(path.basename(d));
+      d = cha;
+    }
+  }
+}
+
+/** So một ĐOẠN đường: Windows không phân biệt hoa/thường (NTFS mặc định), POSIX có. */
+function cungDoan(a: string, b: string): boolean {
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/**
+ * ★★★ VỊ TỪ THUẦN (chỉ `realpath`/`existsSync`, không ghi): lượt ghi `duongTep` (tương đối gốc dự
+ * án, hoặc tuyệt đối) có rơi vào REPO CHÍNH ngoài `sandbox-projects/` không. Xem khối Q1 ở trên.
+ */
+export function laGhiVaoRepoChinh(gocDuAn: string, duongTep: string, repo: string = gocRepoChinh()): boolean {
+  const dich = realpathMotPhan(path.resolve(gocDuAn, duongTep));
+  const goc = realpathMotPhan(repo);
+  // path.win32.relative đã so không phân biệt hoa/thường; khác ổ đĩa ⇒ trả đường tuyệt đối.
+  const rel = path.relative(goc, dich);
+  if (path.isAbsolute(rel)) return false;
+  const doan = rel.split(/[\\/]+/).filter((x) => x !== "");
+  if (doan[0] === "..") return false; // NGOÀI repo chính
+  const laHopCat = doan.length >= 2 && cungDoan(doan[0]!, THU_MUC_HOP_CAT_TRONG_REPO);
+  return !laHopCat;
+}
+
+/** Câu từ chối Q1 — ba ngôn ngữ, cùng nghĩa với câu tổng của điểm gọi. */
+function cauRepoChinh(lang: ToolLang): string {
+  if (lang === "en") return "the self-write loop does not run on the main repo until a restore point (checkpoint) exists";
+  if (lang === "zh") return "在具备恢复点（checkpoint）之前，自写循环不在主仓库上运行";
+  return "vòng tự ghi không chạy trên repo chính cho tới khi có điểm khôi phục (checkpoint)";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
 // MỘT LƯỢT TỰ GHI (apply_diff — KHÔNG người duyệt)
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 export interface YeuCauLuotGhi {
@@ -157,7 +252,9 @@ export type MaLuotGhi =
   | "DENIED" // RBAC từ chối ở propose (thiếu ai_repo_read/canEdit)
   | "TEP_BAN_NGUOI" // applyDiff trả FILE_DIRTY — tệp có thay đổi CHƯA COMMIT của người
   | "GHI_TU_CHOI" // applyDiff trả một note khác (BASE_MISMATCH/PATH_REJECTED/…)
-  | "RUN_FAILED";
+  | "RUN_FAILED"
+  /** ★ Q1 — đích nằm trong repo chính (ngoài sandbox-projects/) và chưa có checkpoint. Xem khối Q1. */
+  | "REPO_CHINH_CHUA_CHECKPOINT";
 
 export interface KetQuaLuotGhi {
   /** `true` ⇔ BYTE đã vào đĩa. */
@@ -216,6 +313,14 @@ export async function chayLuotTuTriGhi(
   const goc = phanGiaiGoc(y.projectId);
   if (!goc.ok) return rong("PROJECT_NOT_FOUND");
   const ctx: ToolExecContext = goc.goc ? { ...execCtx, projectRoot: goc.goc } : execCtx;
+
+  // ── HÀNG RÀO 7 (Q1) — repo chính KHÔNG tự ghi khi chưa có checkpoint. Gốc HIỆU LỰC cùng luật
+  //    `apply_diff` dùng: projectRoot đã phân giải, vắng ⇒ gốc hộp cát mặc định. Chặn TRƯỚC đề xuất
+  //    ⇒ không hàng ai_pending_actions, đĩa 0 đổi.
+  const gocDuAn = ctx.projectRoot && ctx.projectRoot !== "" ? ctx.projectRoot : gocHopCat();
+  if (!tuTriGhiRepoChinhDuoc() && laGhiVaoRepoChinh(gocDuAn, y.path)) {
+    return rong("REPO_CHINH_CHUA_CHECKPOINT", cauRepoChinh(lang));
+  }
 
   // ── ĐỀ XUẤT (đúng cửa HITL) ────────────────────────────────────────────────────────────────────
   const out = await executeDecision(
@@ -278,6 +383,12 @@ export interface AuditLuotTuTri {
   path: string | null;
   /** ★ Model đã chọn ghi vào một tệp TEST? Cờ chống-gaming (xem `laTepTest`). KHÔNG chặn — chỉ khai. */
   suaTepTest: boolean;
+  /**
+   * ★ Q1 — mã từ chối của lượt ghi (`null` = byte đã vào đĩa). Trước đây sổ chỉ khai băm (null khi bị
+   * từ chối) nên người xem lại không phân biệt được "tệp bẩn" với "repo chính" với "RBAC". Tuỳ chọn để
+   * điểm gọi cũ (không khai) vẫn biên dịch; vắng ⇒ ghi `null`.
+   */
+  tuChoi?: MaLuotGhi | null;
 }
 
 /**
@@ -303,6 +414,7 @@ export async function ghiAuditLuotTuTri(user: CopilotUser, req: ToolExecContext[
           path: a.path,
           // ★ Chống-gaming: model chọn ghi vào tệp TEST ⇒ khai TRONG sổ (không chặn).
           sua_tep_test: a.suaTepTest,
+          tu_choi: a.tuChoi ?? null,
           autonomy: { reason: LY_DO_TU_TRI_GHI },
         },
       },
@@ -462,9 +574,12 @@ export async function chayVongTuTriGhi(
     const w = await chayLuotTuTriGhi({ projectId: y.projectId, path: banVa.path, original: banVa.original, modified: banVa.modified, luot }, execCtx, user, lang);
 
     // ── 5) AUDIT WORM một hàng cho lượt này (băm + lệnh + kết quả test + lượt + cờ sửa-tệp-test) ──
+    //    Lượt bị TỪ CHỐI vẫn khai đường model ĐÃ ĐỊNH ghi (w.path null khi không byte nào vào đĩa) +
+    //    mã từ chối — "nó đã định ghi vào đâu và vì sao không được" phải truy lại được.
     await ghiAuditLuotTuTri(user, execCtx?.req, {
       luot, command: kc.command, soDo: kc.soDo, soXanh: kc.soXanh, xanh: kc.xanh,
-      bamTruoc: w.bamTruoc, bamSau: w.bamSau, path: w.path, suaTepTest,
+      bamTruoc: w.bamTruoc, bamSau: w.bamSau, path: w.path ?? banVa.path, suaTepTest,
+      tuChoi: w.ok ? null : w.ma,
     });
     luots.push({ luot, command: kc.command, soDo: kc.soDo, soXanh: kc.soXanh, xanh: kc.xanh, bamTruoc: w.bamTruoc, bamSau: w.bamSau, path: w.path });
 
@@ -472,6 +587,7 @@ export async function chayVongTuTriGhi(
     if (w.ma === "TEP_BAN_NGUOI") return dung("tep_ban_nguoi", w.message);
     if (w.ma === "KILL_SWITCH") return dung("kill_switch");
     if (w.ma === "TU_TRI_TAT") return dung("co_tat");
+    if (w.ma === "REPO_CHINH_CHUA_CHECKPOINT") return dung("repo_chinh_chua_checkpoint", w.message);
     if (!w.ok) return dung("loi", w.message);
 
     soDoTruoc = kc.soDo;

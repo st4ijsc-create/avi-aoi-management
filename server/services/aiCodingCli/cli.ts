@@ -7,7 +7,9 @@
  * Nhà máy **KHÔNG CÓ INTERNET**. Nối bộ tool này vào Cursor/Claude Code thì model đang suy nghĩ là
  * Claude/GPT **trên mạng** ⇒ ở nhà máy nó **không chạy được một lượt nào**. Cầu MCP (`mcpServer.ts`)
  * vẫn hữu ích **trên máy phát triển**, nhưng thứ phục vụ được nhà máy là file này: một CLI nói
- * chuyện với **llama-server cục bộ** (:8091, `Qwen3-30B-A3B-Instruct`).
+ * chuyện với **llama-server cục bộ** (mặc định :8091). Model nào đang phục vụ là việc của CẤU HÌNH
+ * máy chủ (`.env`: model mặc định + llama-server), KHÔNG ghim ở đây — tài liệu ghim tên model sẽ lỗi
+ * thời ở lượt đổi model kế tiếp (đã xảy ra: dòng này từng ghi một model đã thay từ lâu).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ FILE NÀY LÀ **MỘT CÁI MÀN HÌNH**, KHÔNG PHẢI MỘT TÁC NHÂN
