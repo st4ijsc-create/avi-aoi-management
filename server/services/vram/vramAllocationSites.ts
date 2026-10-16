@@ -147,7 +147,7 @@ export const WIRED_ALLOCATION_SITE_COUNT = 15;
  * `ghi-lai-lich-ban-dung` (chạy `git`), và 5 script `do-twin` mở Playwright **có cờ GPU thật**
  * (`--use-gl=angle --use-angle=d3d11 --enable-gpu`), tức hộ tiêu thụ VRAM mà không sổ nào thấy.
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 188; // 2026-09-22: +3 (agentic.mjs execSync thứ hai · duan.mjs execSync + child_process)
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 199; // 2026-09-22: +3 (agentic.mjs execSync thứ hai · duan.mjs execSync + child_process) · 2026-10-14 Đợt 0.1: +1 (giamSatLlamaServer child_process) · 2026-10-17 Đợt 1 T6 + OCR khai muộn: +10
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -266,6 +266,7 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "server/services/aiReranker.ts", symbol: ".createRankingContext(", wired: true, note: ':486 ⚠⚠ contextSize:"auto" — ĐIỂM "auto" THỨ HAI, và là điểm DUY NHẤT nằm trong MÃ SẢN XUẤT (I-1 review vòng 1; bản trước của tôi khẳng định chỉ có một, ở scripts/ — SAI). Mở khoá bằng RAG_RERANKER_GPU=true. ⚠ "ĐÃ NỐI" KHÔNG cứu được lớp này: giấy phép ĐO SAU khi cấp phát xong, còn cưỡng chế phải quyết định TRƯỚC — không có con số nào để từ chối dựa vào.' },
   { file: "server/services/llamaVisionSidecar.ts", symbol: "child_process", wired: true, note: ":30 import spawn — tiến trình con là llama-server CUDA, nằm trong giấy phép :255." },
   { file: "server/services/llamaVisionSidecar.ts", symbol: "spawn(", wired: true, note: ":283 spawn(LLAMA_SERVER_BIN, ['-ngl', GPU_LAYERS, …]). .env: LLAMA_SERVER_BIN=D:/SOURCES/16.AI/llama-cuda/llama-server.exe, LLAMA_VISION_GPU_LAYERS=999. Trong cửa sổ :255." },
+  { file: "server/services/ai/giamSatLlamaServer.ts", symbol: "child_process", wired: false, note: "★ Đợt 0.1 (2026-10-14) — `import { spawn as spawnThat }`: bộ GIÁM SÁT chạy `powershell.exe -File scripts/ai/start-llama-server.ps1` tách rời (detached, stdio ignore, unref) khi KHÔNG ai nghe cổng :8091 ≥ 2 nhịp. Cháu của lượt spawn này là `llama-server` model chữ chính (~20–21 GB trọng số + KV) — CÙNG hộ tiêu thụ đã có ở khối `CONSUMERS_WITHOUT_A_CODE_SITE` (trước đây chỉ khởi động bằng tay/Task Scheduler), nay có thêm MỘT đường vào bằng mã. KHÔNG giấy phép nào phủ (pessimistic, wired:false): kịch bản idempotent, có khoá liên tiến trình `os.tmpdir()/llama-watchdog.lock` và trần 3 lần/30 phút; cửa fail-closed trong aiGgufEngine bảo đảm tiến trình app KHÔNG nạp bản thứ hai cùng model khi server chết. Lời gọi đi qua biến `spawnFn(` (tiêm được cho test) nên mẫu `spawn(` không bắt — chỉ mẫu module bắt, đúng lý do MODULE_PATTERNS tồn tại." },
   { file: "server/services/kbSyncScheduler.ts", symbol: "child_process", wired: true, note: ":63 import spawn — hai lượt spawn của file này đều nằm trong giấy phép (:264 / :482)." },
   { file: "server/services/kbSyncScheduler.ts", symbol: "spawn(", wired: true, note: ":291 spawn(node, [eval-rag.mjs, '--ci']) — trong cửa sổ giấy phép :264." },
   { file: "server/services/kbSyncScheduler.ts", symbol: "spawn(", wired: true, note: ":505 spawn('npm', ['run','kb:sync']) — trong cửa sổ :482. Kẻ cấp phát THẬT là tiến trình CHÁU (npm → node embed-incremental.mjs → _gguf-embed.mjs), nên phạm vi đo BẮT BUỘC cộng theo CÂY." },
@@ -322,6 +323,17 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "scripts/ai-eval/codegen-chay-duoc/duan.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên (:33 import), bắt qua mẫu MODULE." },
   { file: "server/services/ai/dotnetNewScaffold.ts", symbol: "execFile(", wired: false, note: "★ TRÔI CÓ SẴN (commit 954914503, trước audit 2026-09-21) — khai muộn tại đây. Chạy `dotnet new <template>` vào thư mục TẠM để dựng khung dự án. SDK .NET sinh tệp trên đĩa, KHÔNG chạm GPU." },
   { file: "server/services/ai/dotnetNewScaffold.ts", symbol: "child_process", wired: false, note: "★ TRÔI CÓ SẴN — cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  // ── 2026-10-17 · AI Local Đợt 1 T6: bộ đo F (tính năng nhiều tệp) + khai muộn OCR VietOCR (2026-09-23) ──
+  { file: "scripts/ai-eval/codegen-chay-duoc/agent-f/cham.mjs", symbol: "spawnSync(", wired: false, note: "Bộ đo F: chạy lệnh test của bài (`node --test` / `python -m pytest` / `dotnet test`) để MÁY chấm sau lượt agent. CPU, KHÔNG chạm GPU." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/agent-f/cham.mjs", symbol: "spawnSync(", wired: false, note: "Điểm gọi THỨ HAI (`git` lấy băm HEAD của tệp test hiển thị để phát hiện gian lận). CPU." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/agent-f/cham.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/agent-f/run-f.mjs", symbol: "spawnSync(", wired: false, note: "Bộ đo F: `git checkout`/`git clean` CHỈ trong thư mục bài để đặt lại fixture giữa hai lượt. CPU." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/agent-f/run-f.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  { file: "server/services/ai/ocrVietOcr.ts", symbol: "InferenceSession.create(", wired: false, note: "★ TRÔI CÓ SẴN (2026-09-23, OCR trang VietOCR) — khai muộn. Bộ mã hoá VGG, KHÔNG truyền executionProviders ⇒ onnxruntime-node mặc định CPU; chỉ chạy lúc nạp tài liệu (OCR trang)." },
+  { file: "server/services/ai/ocrVietOcr.ts", symbol: "InferenceSession.create(", wired: false, note: "★ TRÔI CÓ SẴN — bộ giải mã VGG, cùng lý lẽ (CPU mặc định)." },
+  { file: "server/services/ai/ocrVietOcr.ts", symbol: "import onnxruntime-node", wired: false, note: "★ TRÔI CÓ SẴN — nạp ort để tạo hai session ở trên." },
+  { file: "server/services/ai/ocrVietOcr.ts", symbol: "import onnxruntime-node", wired: false, note: "★ TRÔI CÓ SẴN — nạp ort CHỈ để dựng ort.Tensor khi nhận dạng; không tạo session." },
+  { file: "server/services/ai/ocrService.ts", symbol: "import onnxruntime-node", wired: false, note: "★ TRÔI CÓ SẴN — lượt nạp ort thứ ba (chế độ tu-dong gọi VietOCR); không tạo session ở điểm này." },
   // ── 7 điểm TRÔI CÓ SẴN khác (commit 580557832, phiên khác) — khai muộn, ĐÃ KIỂM từng cái ──
   { file: "scripts/ghi-lai-lich-ban-dung.mjs", symbol: "execFileSync(", wired: false, note: "★ TRÔI CÓ SẴN — :61 chạy `git` để ghi lai lịch bản dựng (commit/sạch/đường). KHÔNG chạm GPU." },
   { file: "scripts/ghi-lai-lich-ban-dung.mjs", symbol: "child_process", wired: false, note: "★ TRÔI CÓ SẴN — cùng điểm gọi ở trên, bắt qua mẫu MODULE." },

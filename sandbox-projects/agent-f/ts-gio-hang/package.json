@@ -1,0 +1,11 @@
+{
+  "name": "gio-hang",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Giỏ hàng nhỏ cho cửa hàng online — TypeScript chạy thẳng bằng Node 24 (type stripping), không phụ thuộc ngoài.",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --test test/gioHang.test.ts"
+  }
+}
