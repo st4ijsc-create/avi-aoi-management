@@ -126,3 +126,37 @@ Q1 (ngay) ─► Đợt 0 ─► Đợt 1 ─┬─► Đợt 2 ─► Đợt 3
 | Đợt 5 | 90 % | 85 % |
 
 Các con số này là mục tiêu chấm theo cùng danh mục của báo cáo khảo sát; chỉ được ghi là "đạt" khi cổng của đợt đo xong.
+
+## 5. Trạng thái thực thi (cập nhật liên tục)
+
+Làm trong worktree riêng `D:/SOURCES/_ai7_wt`, nhánh `feat/ai-local-7-tang`, server thử `:3010` (cùng DB dev).
+Chủ dự án giao toàn quyền (2026-10-14); Q1–Q6 đã trả lời (Q5: giữ 1 × 64k, không thêm server thứ hai).
+
+### Đợt 0 — XONG về mã (`088c9ee4f`), chờ đo sống cổng giết-server
+| Việc | Kết quả |
+|---|---|
+| 0.1 | `giamSatLlamaServer`: chết = ECONNREFUSED 2 nhịp × 15 s ⇒ khởi động lại tách rời, khoá liên tiến trình, trần 3 lần/30 phút, tệp tạm dừng (`doi-model.ps1` tự tạo); model chính fail-closed (chờ ≤ 120 s rồi `LLAMA_SERVER_DOWN`); trạng thái lên `/api/health/ai`, thanh trạng thái, System Health |
+| 0.2 | **Đóng bằng đo**: node-llama-cpp 3.19.0 + gói cuda 3.18.1 vẫn nạp `cuda prebuilt` — lo ngại Vulkan của khảo sát là sai |
+| 0.3 | `hangDoiUuTienLlm` (tương tác > agent > nền, chống đói 120 s, huỷ khi chờ); 6 nguồn nền bọc ở điểm vào. Sự kiện SSE "đang chờ lượt" chuyển sang chế độ agent (Đợt 1) |
+| 0.4 | Nền đo lại (bảng dưới) |
+| 0.5 | Nhãn đầu ra lệnh (+ vá giả nhãn `ec85a97e6` sau rà bảo mật), số dòng khối mã, README extension, chú thích 1 × 64k, Ollama lùi kiểm `/api/tags`, CLI không ghim model |
+| Q1 | Vòng tự ghi từ chối tệp đích trong repo chính ngoài `sandbox-projects/` (realpath); ghi đè `AI_CODING_TU_TRI_GHI_REPO_CHINH=1` |
+
+**Nền 2026-10-14/17 (HEAD trước thay đổi, `:3010`, Qwen3.6-35B-A3B 1 × 64k, nghĩ 12k):**
+
+| Bộ đo | Kết quả |
+|---|---|
+| H 12 bài khó × 3 | **27/36 = 75 %** (11 · 8 · 8; mốc tháng 9: 30–31/36, nhiễu ±3) |
+| A1 (1 lỗi / 1 tệp) × 12 | 12/12 |
+| A2 (2 lỗi / 2 tệp) × 12, vòng tự trị cũ | **4/12 = 33 %** (tháng 9: ≈ 44 %) |
+| Ba dự án thật × 3 | 21/21 hiện vật |
+| Kiểm thước | fake-ok 12/12 · fake-bad 0/12 · F: mẫu 6/6, gốc 0/6, gian lận 0/6 |
+
+Hai lần thiết bị đo sinh số giả trong lượt này, đã vứt số: (1) worktree mới thiếu `knowledge/` sinh ra ⇒ KB rỗng ⇒ H 7/12;
+(2) `.env` chép trỏ gốc dự án "repo" vào worktree chính ⇒ A1/A2 0/24 ở 150 ms và ghi nhầm 2 tệp hộp cát của worktree chính (đã trả HEAD).
+
+### Đợt 1 — đang làm
+T1 `shared/agentCore` (`a74304749`, 92 ca) · T2 `delete_file`/`rename_file`/`find_files` (`03ecad270`) + vá `git status` warning
+làm "tạo tệp mới trong thư mục mới" bị coi là tệp bẩn · T6 bộ F (`c05b9848b`) · T3 checkpoint, T4 runtime server + API + mig 0390,
+T5 UI chế độ agent: đang làm.
+**Lệch kế hoạch có chủ ý:** checkpoint dùng ảnh chụp byte ngoài dự án thay cho git plumbing (chạy cả dự án không có git; hook repo chặn stash).
