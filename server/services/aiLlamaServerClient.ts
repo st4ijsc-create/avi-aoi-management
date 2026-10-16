@@ -309,11 +309,28 @@ function gomToolCallCuaDapUng(
   message: unknown,
   options: GgufChatOptions,
   noiDung: string,
+  suyLuan = "",
 ): NativeToolCall[] {
   if (!options.tools?.length) return [];
   const tuO = docToolCallTuMessage(message);
   if (tuO.length) return tuO;
-  return gomToolCallTuVanBan(noiDung).toolCalls;
+  const tuChu = gomToolCallTuVanBan(noiDung).toolCalls;
+  if (tuChu.length) return tuChu;
+  return votToolCallTuSuyLuan(noiDung, suyLuan);
+}
+
+/**
+ * ★★★ Đo 2026-10-17 (proxy ghi thân thật, vòng agent Đợt 1): Qwen3.6 có lúc phát tool call (khuôn XML) NGAY
+ * TRONG chuỗi suy luận, chưa đóng `</think>` ⇒ b9814 không tách ⇒ 0 tool_calls, content rỗng ⇒ G5-D ném
+ * "token cạn kiệt vào suy luận" (chẩn đoán sai) ⇒ lượt agent chết. Vớt từ suy luận CHỈ khi: lượt có gửi `tools`
+ * (người gọi kiểm), server KHÔNG tách được gì, VÀ content RỖNG (model chưa trả lời) — suy luận chỉ NHẮC tới
+ * `<tool_call>` mà content có chữ thì không phải hành động. Mọi lượt ghi vẫn đi qua các hàng rào phía sau.
+ */
+function votToolCallTuSuyLuan(noiDung: string, suyLuan: string): NativeToolCall[] {
+  if (noiDung.trim() !== "" || !suyLuan || suyLuan.indexOf("<tool_call>") === -1) return [];
+  const vot = gomToolCallTuVanBan(suyLuan).toolCalls;
+  if (vot.length) console.warn(`[llamaServer] vớt ${vot.length} tool call từ reasoning_content (model chưa đóng </think>).`);
+  return vot;
 }
 
 /** Chữ hiển thị sau khi đã bóc các khối `<tool_call>` nguyên văn ra. */
@@ -755,7 +772,7 @@ export async function serverChatCompletion(
   // ⇒ mọi lượt native đều hỏng, và hỏng bằng một câu lỗi nói về "token cạn kiệt vào suy luận" —
   // một chẩn đoán hoàn toàn sai. Bỏ qua cổng ấy CHỈ khi thật sự có tool_call (chứ không phải khi
   // `tools` được gửi): lượt có tools mà model trả chữ rỗng thật vẫn phải kêu như cũ.
-  const toolCalls = gomToolCallCuaDapUng(message, options, nua.noiDung);
+  const toolCalls = gomToolCallCuaDapUng(message, options, nua.noiDung, nua.suyLuan);
   if (!toolCalls.length) {
     phanDinhCauTraLoiRong(nua, {
       maxTokens: body.max_tokens as number,
@@ -1196,7 +1213,14 @@ async function* streamChatCompletionTrucTiep(
     // THÀNH CÔNG kết thúc với `fullText === ""` theo cấu tạo (model không phát chữ nào, chỉ phát
     // `tool_calls`). Không có điều kiện `!boGomTool.coToolCall` dưới đây thì **mọi lượt native
     // streaming đều ném** — và ném bằng câu lỗi "token cạn kiệt vào suy luận", một chẩn đoán sai.
-    if (fullText.length === 0 && !boGomTool.coToolCall) {
+    // ★★★ Vớt tool call từ suy luận (xem `votToolCallTuSuyLuan`) TRƯỚC cổng câu-trả-lời-rỗng: một lượt mà model
+    // gọi tool ngay trong <think> không phải "câu trả lời rỗng".
+    const coGuiTools = Array.isArray((body as { tools?: unknown[] }).tools) && (body as { tools?: unknown[] }).tools!.length > 0;
+    const votTuSuyLuan =
+      coGuiTools && !boGomTool.coToolCall && gomToolCallTuVanBan(fullText).toolCalls.length === 0
+        ? votToolCallTuSuyLuan(fullText, fullReasoning)
+        : [];
+    if (fullText.length === 0 && !boGomTool.coToolCall && votTuSuyLuan.length === 0) {
       try {
         // ⚠ ĐÚNG vị từ dùng chung với ba đường kia — KHÔNG dựng lại phép phân định ở đây. Lượt
         // viết đầu tiên của bản vá này đã inline nó, và lưới §5 (đếm điểm gọi
@@ -1220,8 +1244,10 @@ async function* streamChatCompletionTrucTiep(
     // đường stream ta biết điều đó qua chính `body.tools`, không đoán theo nội dung chữ.
     const toolCalls = boGomTool.coToolCall
       ? boGomTool.ketThuc()
-      : Array.isArray((body as { tools?: unknown[] }).tools) && (body as { tools?: unknown[] }).tools!.length
-        ? gomToolCallTuVanBan(fullText).toolCalls
+      : coGuiTools
+        ? votTuSuyLuan.length
+          ? votTuSuyLuan
+          : gomToolCallTuVanBan(fullText).toolCalls
         : [];
     yield {
       type: "done",

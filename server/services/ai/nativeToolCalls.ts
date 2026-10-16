@@ -442,10 +442,47 @@ export function gomToolCallTuVanBan(raw: string): { vanBan: string; toolCalls: W
           });
         }
       } catch {
-        /* khối hỏng: không vớt được, nhưng vẫn phải DỌN khỏi chữ */
+        // Không phải JSON ⇒ thử khuôn XML của Qwen3.6/Qwen3-Coder (xem `docKhoiXmlQwen`). Hỏng cả hai ⇒ chỉ DỌN.
+        const xml = docKhoiXmlQwen(than);
+        if (xml) toolCalls.push({ id: sinhId(), type: "function", function: { name: xml.ten, arguments: JSON.stringify(xml.thamSo) } });
       }
       return "";
     })
     .trim();
   return { vanBan, toolCalls };
+}
+
+/**
+ * ★★★ Khuôn tool call XML của Qwen3.6 / Qwen3-Coder:
+ *   `<function=TÊN>\n<parameter=THAM_SỐ>\nGIÁ_TRỊ\n</parameter>…\n</function>`
+ * Đo 2026-10-17 (proxy ghi thân thật, vòng agent Đợt 1): model phát khối này NGAY TRONG chuỗi suy luận (chưa
+ * đóng `</think>`) ⇒ llama.cpp b9814 không tách ⇒ lượt kết thúc rỗng ⇒ G5-D ném ⇒ lượt agent chết. Giá trị:
+ * bỏ đúng MỘT dòng mới bao ngoài (template luôn đặt), giữ nguyên phần bên trong; giá trị mở bằng `[`/`{` được
+ * parse JSON (mảng/đối tượng — vd `todos`, `edits`), hỏng ⇒ giữ chuỗi. KHÔNG đoán số/bool: tầng trên (`kiemThamSo`
+ * của agentCore) chuẩn hoá theo schema. Thiếu `</function>` hoặc tên ⇒ null (không vớt nửa vời).
+ */
+function docKhoiXmlQwen(than: string): { ten: string; thamSo: Record<string, unknown> } | null {
+  const m = /<function=([A-Za-z0-9_.-]+)>([\s\S]*?)<\/function>/.exec(than);
+  if (!m) return null;
+  const thamSo: Record<string, unknown> = {};
+  const reTs = /<parameter=([A-Za-z0-9_.-]+)>([\s\S]*?)<\/parameter>/g;
+  let p: RegExpExecArray | null;
+  while ((p = reTs.exec(m[2])) !== null) {
+    let v = p[2];
+    if (v.startsWith("\r\n")) v = v.slice(2);
+    else if (v.startsWith("\n")) v = v.slice(1);
+    if (v.endsWith("\r\n")) v = v.slice(0, -2);
+    else if (v.endsWith("\n")) v = v.slice(0, -1);
+    const dau = v.trimStart()[0];
+    if (dau === "[" || dau === "{") {
+      try {
+        thamSo[p[1]] = JSON.parse(v);
+        continue;
+      } catch {
+        /* giữ chuỗi */
+      }
+    }
+    thamSo[p[1]] = v;
+  }
+  return { ten: m[1], thamSo };
 }
