@@ -14,7 +14,7 @@
  *   4. mỗi lượt khôi phục có hàng `ai_pending_actions` (đi cửa HITL) + một hàng audit tổng mỗi lần hoàn tác;
  *   5. lưu trữ ngoài dự án, bản sao đặt tên theo BĂM, trần dung lượng, dọn lượt chạy cũ.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -31,7 +31,10 @@ import {
   thayDoiTuKetQuaGhi,
   LY_DO_HOAN_TAC,
   LoiCheckpoint,
+  thuMucKhoCheckpoint,
 } from "./checkpointAgent";
+import { confineDirUnder, confineTargetUnder } from "../../aiLocalTools/readToolsProgramming";
+import { gocRepoChinh } from "../../aiCodingTuTriGhi";
 import { executeDecision } from "../../aiLocalTools";
 import { confirmAction } from "../../aiCopilotActions";
 import { _xoaSoBamHITL } from "../../aiLocalTools/writeHandlers/applyDiff";
@@ -43,6 +46,7 @@ import { createLocalUser } from "../../../db/auth";
 
 let REPO = "";
 let KHO = "";
+let KHOA_CU: string | undefined;
 let uid = 0;
 
 function git(...a: string[]): string {
@@ -96,6 +100,9 @@ beforeAll(async () => {
   REPO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cp-agent-repo-")));
   KHO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cp-agent-kho-")));
   process.env.AI_CHECKPOINT_DIR = KHO;
+  // Manifest checkpoint KÝ HMAC (rà bảo mật a5f56d089): lưới không nạp .env ⇒ đặt bí mật server riêng cho lưới.
+  KHOA_CU = process.env.SECRET_ENCRYPTION_KEY;
+  process.env.SECRET_ENCRYPTION_KEY = "luoi-checkpoint-khoa-thu-0123456789abcdef";
   git("init", "-q");
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
@@ -118,6 +125,8 @@ beforeEach(() => {
 
 afterAll(async () => {
   delete process.env.AI_CHECKPOINT_DIR;
+  if (KHOA_CU === undefined) delete process.env.SECRET_ENCRYPTION_KEY;
+  else process.env.SECRET_ENCRYPTION_KEY = KHOA_CU;
   const db = await getDb();
   if (db && uid > 0) {
     await db.delete(aiPendingActions).where(eq(aiPendingActions.userId, uid));
@@ -395,12 +404,16 @@ describe("§D — lưu trữ: ngoài dự án, theo băm, trần dung lượng, 
   it("★★ donCheckpointCu xoá lượt chạy cũ hơn 7 ngày, giữ lượt mới", async () => {
     const cu = runMoi();
     const moi = runMoi();
-    await chupTruocGhi({ runId: cu, seq: 1, gocDuAn: REPO, duongs: ["README.md"] });
+    // ⚠ Manifest nay KÝ HMAC — sửa tay `taoLuc` là giả mạo (bị từ chối). Lượt "cũ" được chụp ĐÚNG lúc 8 ngày trước
+    //   bằng đồng hồ giả (chỉ `Date`), nên manifest của nó ký thật với mốc cũ.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() - 8 * 86_400_000);
+      await chupTruocGhi({ runId: cu, seq: 1, gocDuAn: REPO, duongs: ["README.md"] });
+    } finally {
+      vi.useRealTimers();
+    }
     await chupTruocGhi({ runId: moi, seq: 1, gocDuAn: REPO, duongs: ["README.md"] });
-    const manCu = path.join(KHO, cu, "1", "manifest.json");
-    const m = JSON.parse(fs.readFileSync(manCu, "utf8"));
-    m.taoLuc = new Date(Date.now() - 8 * 86_400_000).toISOString();
-    fs.writeFileSync(manCu, JSON.stringify(m));
     const kq = await donCheckpointCu();
     expect(kq.daXoa).toContain(cu);
     expect(fs.existsSync(path.join(KHO, cu))).toBe(false);
@@ -419,4 +432,110 @@ describe("§D — lưu trữ: ngoài dự án, theo băm, trần dung lượng, 
     expect(doc("src/kho-hong.ts")).toBe("export const K = 2;\n");
     git("checkout", "--", "src/kho-hong.ts");
   }, 60_000);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ Rà bảo mật a5f56d089 · phát hiện 2 — "agent-writable undo manifest". Hai lớp:
+ *   (a) kho NGOÀI mọi gốc dự án (mặc định = thư mục dữ liệu ứng dụng của người dùng, không phải repo); kho cấu hình
+ *       rơi vào trong gốc dự án/repo ⇒ TỪ CHỐI dùng; hàng rào đường của hộp cát coi kho là CẤM đọc/ghi;
+ *   (b) manifest ký HMAC-SHA256 (khoá HKDF từ bí mật server) — sửa/thiếu chữ ký ⇒ hoàn tác TỪ CHỐI; không khoá ⇒
+ *       checkpoint KHÔNG dùng được (bộ thực thi ⇒ CHECKPOINT_LOI ⇒ không ghi).
+ */
+describe("§E — toàn vẹn kho checkpoint (manifest ký HMAC, kho ngoài dự án)", () => {
+  const manifestCua = (runId: string, seq: number) => path.join(KHO, runId, String(seq), "manifest.json");
+
+  it("★★★ manifest bị SỬA (đổi đường đích) ⇒ hoàn tác từ chối CHU_KY_SAI, KHÔNG ghi gì", async () => {
+    const goc = "export const S = 1;\n";
+    ghiCommit("src/ky.ts", goc);
+    ghiCommit("src/nan-nhan.ts", "export const NAN = 1;\n");
+    const runId = runMoi();
+    await agentGhi(runId, 1, "apply_diff", { path: "src/ky.ts", original: goc, modified: "export const S = 2;\n" }, ["src/ky.ts"]);
+    const p = manifestCua(runId, 1);
+    const m = JSON.parse(fs.readFileSync(p, "utf8"));
+    m.muc[0].duong = "src/nan-nhan.ts";
+    fs.writeFileSync(p, JSON.stringify(m, null, 2));
+    await expect(hoan(runId)).rejects.toMatchObject({ ma: "CHU_KY_SAI" });
+    await expect(hoan(runId, `${runId}.1`)).rejects.toMatchObject({ ma: "CHU_KY_SAI" });
+    expect(doc("src/ky.ts")).toBe("export const S = 2;\n");
+    expect(doc("src/nan-nhan.ts")).toBe("export const NAN = 1;\n");
+    git("checkout", "--", "src/ky.ts");
+  }, 60_000);
+
+  it("★★★ manifest THIẾU chữ ký (giả mạo viết tay) ⇒ CHU_KY_SAI; chotSauGhi cũng từ chối manifest giả", async () => {
+    const runId = runMoi();
+    const cp = await chupTruocGhi({ runId, seq: 1, gocDuAn: REPO, duongs: ["README.md"] });
+    const p = manifestCua(runId, 1);
+    const m = JSON.parse(fs.readFileSync(p, "utf8"));
+    expect(typeof m.mac, "manifest phải mang chữ ký").toBe("string");
+    delete m.mac;
+    fs.writeFileSync(p, JSON.stringify(m, null, 2));
+    await expect(hoan(runId)).rejects.toMatchObject({ ma: "CHU_KY_SAI" });
+    await expect(chotSauGhi(cp.id, [])).rejects.toMatchObject({ ma: "CHU_KY_SAI" });
+  });
+
+  it("★★★ không có bí mật server (SECRET_ENCRYPTION_KEY/JWT_SECRET) ⇒ KHONG_CO_KHOA: không chụp được, không hoàn tác được", async () => {
+    const runId = runMoi();
+    await chupTruocGhi({ runId, seq: 1, gocDuAn: REPO, duongs: ["README.md"] });
+    const cu = { s: process.env.SECRET_ENCRYPTION_KEY, j: process.env.JWT_SECRET };
+    delete process.env.SECRET_ENCRYPTION_KEY;
+    delete process.env.JWT_SECRET;
+    try {
+      await expect(chupTruocGhi({ runId: runMoi(), seq: 1, gocDuAn: REPO, duongs: ["README.md"] })).rejects.toMatchObject({ ma: "KHONG_CO_KHOA" });
+      await expect(hoan(runId)).rejects.toMatchObject({ ma: "KHONG_CO_KHOA" });
+    } finally {
+      if (cu.s !== undefined) process.env.SECRET_ENCRYPTION_KEY = cu.s;
+      if (cu.j !== undefined) process.env.JWT_SECRET = cu.j;
+    }
+  });
+
+  it("★★★ AI_CHECKPOINT_DIR TRONG gốc dự án / repo chính ⇒ KHO_KHONG_HOP_LE, không tạo thư mục nào", async () => {
+    const trongDuAn = path.join(REPO, "kho-trong-du-an");
+    const trongRepo = path.join(gocRepoChinh(), "tmp", `__kho_${randomUUID().slice(0, 8)}`);
+    for (const kho of [trongDuAn, trongRepo]) {
+      process.env.AI_CHECKPOINT_DIR = kho;
+      try {
+        await expect(chupTruocGhi({ runId: runMoi(), seq: 1, gocDuAn: REPO, duongs: ["README.md"] }), kho).rejects.toMatchObject({ ma: "KHO_KHONG_HOP_LE" });
+        await expect(hoan(runMoi()), kho).rejects.toMatchObject({ ma: "KHO_KHONG_HOP_LE" });
+        expect(fs.existsSync(kho), kho).toBe(false);
+      } finally {
+        process.env.AI_CHECKPOINT_DIR = KHO;
+      }
+    }
+  });
+
+  it("★★ kho MẶC ĐỊNH nằm NGOÀI repo chính và ngoài cwd (thư mục dữ liệu ứng dụng, ổn định qua restart)", () => {
+    delete process.env.AI_CHECKPOINT_DIR;
+    try {
+      const kho = thuMucKhoCheckpoint();
+      expect(path.isAbsolute(kho)).toBe(true);
+      for (const goc of [gocRepoChinh(), process.cwd()]) {
+        const rel = path.relative(goc, kho);
+        expect(rel.startsWith("..") || path.isAbsolute(rel), `${kho} phải ngoài ${goc}`).toBe(true);
+      }
+      expect(kho.startsWith(os.tmpdir()), "không dùng thư mục tạm (bị dọn ⇒ mất điểm khôi phục)").toBe(false);
+    } finally {
+      process.env.AI_CHECKPOINT_DIR = KHO;
+    }
+  });
+
+  it("★★★ hàng rào đường: thư mục kho là CẤM đọc/ghi/liệt kê dù (cấu hình sai) nằm dưới gốc dự án", () => {
+    const kho = path.join(REPO, "kho-cam");
+    fs.mkdirSync(path.join(kho, "r1", "1"), { recursive: true });
+    fs.writeFileSync(path.join(kho, "r1", "1", "manifest.json"), "{}");
+    process.env.AI_CHECKPOINT_DIR = kho;
+    try {
+      const doc1 = confineTargetUnder(REPO, "kho-cam/r1/1/manifest.json");
+      expect(doc1).toMatchObject({ ok: false, kind: "PATH_REJECTED", reason: "CHECKPOINT_STORE" });
+      const moi = confineTargetUnder(REPO, "kho-cam/r2/1/manifest.json");
+      expect(moi).toMatchObject({ ok: false, kind: "PATH_REJECTED", reason: "CHECKPOINT_STORE" });
+      expect(confineDirUnder(REPO, "kho-cam/r1")).toMatchObject({ ok: false, kind: "PATH_REJECTED", reason: "CHECKPOINT_STORE" });
+      expect(confineDirUnder(REPO, "kho-cam")).toMatchObject({ ok: false, kind: "PATH_REJECTED", reason: "CHECKPOINT_STORE" });
+      // Ngoài kho vẫn bình thường.
+      expect(confineTargetUnder(REPO, "README.md")).toMatchObject({ ok: true });
+    } finally {
+      process.env.AI_CHECKPOINT_DIR = KHO;
+      fs.rmSync(kho, { recursive: true, force: true });
+    }
+  });
 });

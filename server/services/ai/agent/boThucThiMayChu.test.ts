@@ -16,7 +16,7 @@ import { and, eq } from "drizzle-orm";
 import ts from "typescript";
 
 import { kiemThamSo, MA_MENH_LENH_TRONG_DU_LIEU, type CheDoAgent, type SuKienAgent } from "@shared/agentCore";
-import { taoBoThucThiMayChu, danhSoDong, globTenThanhRegex, type PhuThuocBoThucThi } from "./boThucThiMayChu";
+import { taoBoThucThiMayChu, danhSoDong, globTenThanhRegex, phanQuyetLenhTuDong, type PhuThuocBoThucThi } from "./boThucThiMayChu";
 import { congCheckpointThat } from "./quanLyLuotChay";
 import { danhSachCheckpoint } from "./checkpointAgent";
 import { thuTucBac, thuTucDuyet } from "./thuTucLuotChay";
@@ -32,6 +32,7 @@ import { createLocalUser } from "../../../db/auth";
 
 let REPO = "";
 let KHO = "";
+let KHOA_CU: string | undefined;
 let uid = 0;
 
 function git(...a: string[]): string {
@@ -98,8 +99,13 @@ beforeAll(async () => {
   REPO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "t4-bo-thuc-thi-")));
   KHO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "t4-bo-thuc-thi-kho-")));
   process.env.AI_CHECKPOINT_DIR = KHO;
+  // Manifest checkpoint KÝ HMAC (rà bảo mật a5f56d089): lưới không nạp .env ⇒ đặt bí mật server riêng cho lưới.
+  KHOA_CU = process.env.SECRET_ENCRYPTION_KEY;
+  process.env.SECRET_ENCRYPTION_KEY = "luoi-checkpoint-khoa-thu-0123456789abcdef";
   // Chế độ tu-dong đòi công tắc "model ghi không người duyệt" (quyết định 2026-10-17); ca riêng bên dưới tắt nó.
   process.env.AI_CODING_TU_TRI_GHI = "1";
+  // Lệnh tự chạy ở tu-dong đi ĐÚNG cổng vòng cũ: `AI_CODING_AUTOLOOP=1` (rà bảo mật a5f56d089); §G tắt nó theo ca.
+  process.env.AI_CODING_AUTOLOOP = "1";
   git("init", "-q");
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
@@ -126,6 +132,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   delete process.env.AI_CHECKPOINT_DIR;
+  if (KHOA_CU === undefined) delete process.env.SECRET_ENCRYPTION_KEY;
+  else process.env.SECRET_ENCRYPTION_KEY = KHOA_CU;
+  delete process.env.AI_CODING_AUTOLOOP;
   const db = await getDb();
   if (db && uid > 0) {
     await db.delete(aiPendingActions).where(eq(aiPendingActions.userId, uid));
@@ -446,6 +455,135 @@ describe("§E — chế độ sua: phát can-duyet rồi CHỜ người", () => 
     const hang = (await hangCuaToi("apply_diff")).find((h) => h.id === actionId);
     expect(hang?.status).toBe("cancelled");
   }, 60_000);
+});
+
+/**
+ * ★★★ Rà bảo mật a5f56d089 · phát hiện 1 — "autonomy gate mismatch (unattended command execution)".
+ * Lệnh TỰ CHẠY ở tu-dong phải qua ĐÚNG cổng của vòng tự động cũ (`aiCodingVerify`): `AI_CODING_AUTOLOOP=1` + chỉ tập
+ * KIỂM CHỨNG (`NHAN_KIEM_CHUNG`) + không khuôn `ghiDia`; Q1 xét theo CÁC ĐƯỜNG lệnh chạm (đối số đường trong argv;
+ * lệnh tự tìm dự án theo cwd như npm/npx ⇒ chạm cả gốc). Ngoài tập ⇒ lỗi cho model, KHÔNG hàng `ai_pending_actions`.
+ */
+describe("§G — lệnh ở tu-dong qua ĐÚNG cổng vòng cũ (AUTOLOOP + tập kiểm chứng + không ghiDia + Q1 theo đường)", () => {
+  it("★★★ AI_CODING_AUTOLOOP vắng ⇒ AUTOLOOP_TAT, lệnh KHÔNG chạy, 0 hàng run_command mới", async () => {
+    const soHang = (await hangCuaToi("run_command")).length;
+    delete process.env.AI_CODING_AUTOLOOP;
+    try {
+      const r = await chay(taoBo(), "run_command", { command: "node --test tests/tinh.test.mjs" }, "tu-dong");
+      expect(r.kq.ok).toBe(false);
+      expect(r.kq.ma).toBe("AUTOLOOP_TAT");
+      expect(r.kq.choModel).toMatch(/AI_CODING_AUTOLOOP/);
+      expect((await hangCuaToi("run_command")).length).toBe(soHang);
+    } finally {
+      process.env.AI_CODING_AUTOLOOP = "1";
+    }
+  });
+
+  it("★★★ lệnh NGOÀI tập kiểm chứng (git status) ⇒ LENH_CAN_DUYET_TAY, 0 hàng", async () => {
+    const soHang = (await hangCuaToi("run_command")).length;
+    const r = await chay(taoBo(), "run_command", { command: "git status" }, "tu-dong");
+    expect(r.kq.ok).toBe(false);
+    expect(r.kq.ma).toBe("LENH_CAN_DUYET_TAY");
+    expect(r.kq.choModel).toMatch(/approv/i);
+    expect((await hangCuaToi("run_command")).length).toBe(soHang);
+  });
+
+  it("★★★ khuôn ghiDia (dotnet format — GHI ĐÈ mã nguồn) ⇒ LENH_CAN_DUYET_TAY, 0 hàng", async () => {
+    const soHang = (await hangCuaToi("run_command")).length;
+    const r = await chay(taoBo(), "run_command", { command: "dotnet format src" }, "tu-dong");
+    expect(r.kq.ok).toBe(false);
+    expect(r.kq.ma).toBe("LENH_CAN_DUYET_TAY");
+    expect((await hangCuaToi("run_command")).length).toBe(soHang);
+  });
+
+  it("★★ chế độ sua: lệnh ngoài tập kiểm chứng VẪN được đề xuất cho người duyệt (cổng chỉ của tu-dong)", async () => {
+    const ac = new AbortController();
+    const r = await chay(taoBo(), "run_command", { command: "git status" }, "sua", {
+      ac,
+      khiSuKien: (e) => {
+        if (e.loai === "can-duyet") ac.abort();
+      },
+    });
+    expect(r.suKien.some((e) => e.loai === "can-duyet")).toBe(true);
+    expect(r.kq.ma).toBe("HUY");
+  }, 30_000);
+
+  it("★★★ dự án 'repo' (gốc = repo chính): lệnh test của dự án HỘP CÁT dưới sandbox-projects/ ⇒ CHẠY (Q1 không chặn oan)", async () => {
+    const goc = gocRepoChinh();
+    const ten = `__t4_q1_lenh_${randomUUID().slice(0, 8)}`;
+    const dir = path.join(goc, "sandbox-projects", ten, "test");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "xanh.test.mjs"), "import test from 'node:test';\nimport assert from 'node:assert';\ntest('xanh', () => assert.equal(1, 1));\n");
+    try {
+      const r = await chay(taoBo({ goc }), "run_command", { command: `node --test sandbox-projects/${ten}/test/xanh.test.mjs` }, "tu-dong");
+      expect(r.kq.ok, r.kq.choModel).toBe(true);
+      expect(r.kq.hienThi).toMatchObject({ tool: "run_command", xanh: true });
+    } finally {
+      fs.rmSync(path.join(goc, "sandbox-projects", ten), { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("★★★ dự án 'repo': lệnh chạm REPO CHÍNH (đối số ngoài sandbox-projects / lệnh phạm vi gốc) ⇒ REPO_CHINH_CHUA_CHECKPOINT, 0 hàng", async () => {
+    const goc = gocRepoChinh();
+    const soHang = (await hangCuaToi("run_command")).length;
+    for (const command of ["node --test server/services/ai/agent", "npm run check"]) {
+      const r = await chay(taoBo({ goc }), "run_command", { command }, "tu-dong");
+      expect(r.kq.ok, command).toBe(false);
+      expect(r.kq.ma, command).toBe("REPO_CHINH_CHUA_CHECKPOINT");
+    }
+    expect((await hangCuaToi("run_command")).length).toBe(soHang);
+  });
+
+  it("★★ phanQuyetLenhTuDong (thuần) trên gốc repo: lệnh test của bài agent-f qua; lệnh tự tìm dự án theo cwd thì không", () => {
+    const goc = gocRepoChinh();
+    for (const c of [
+      "node --test sandbox-projects/agent-f/js-cli-viec/test",
+      "python -m pytest sandbox-projects/agent-f/py-dang-ky/tests",
+      "python -m unittest sandbox-projects/agent-f/py-kho-cache/tests",
+      "dotnet test sandbox-projects/agent-f/cs-dat-phong/tests",
+      "dotnet build sandbox-projects/agent-f/cs-nhat-ky/src",
+    ]) {
+      const r = phanQuyetLenhTuDong(c, goc);
+      expect(r.ok, `${c}: ${JSON.stringify(r)}`).toBe(true);
+      expect(r.ok && r.duongCham, c).toEqual([c.split(" ").pop()]);
+    }
+    // npx/npm đi NGƯỢC từ cwd ⇒ chạy cấu hình + setup CỦA REPO dù bộ lọc trỏ vào sandbox ⇒ chạm "." ⇒ Q1.
+    expect(phanQuyetLenhTuDong("npx vitest run sandbox-projects/agent-f/ts-gio-hang", goc)).toMatchObject({ ok: false, ma: "REPO_CHINH_CHUA_CHECKPOINT" });
+    // Đối số `..` / tuyệt đối không bao giờ tới Q1 — tầng danh sách trắng chặn trước (fail-closed).
+    expect(phanQuyetLenhTuDong("node --test ../ngoai", goc)).toMatchObject({ ok: false, ma: "LENH_CAN_DUYET_TAY" });
+    // Vị từ Q1 ném ⇒ coi như chạm repo chính.
+    expect(
+      phanQuyetLenhTuDong("node --test sandbox-projects/agent-f/js-cli-viec/test", goc, () => {
+        throw new Error("realpath hỏng");
+      }),
+    ).toMatchObject({ ok: false, ma: "REPO_CHINH_CHUA_CHECKPOINT" });
+  });
+
+  it("★★★ không có khoá ký manifest ⇒ checkpoint không dùng được ⇒ CHECKPOINT_LOI, đĩa nguyên, đề xuất bị huỷ", async () => {
+    const cu = { s: process.env.SECRET_ENCRYPTION_KEY, j: process.env.JWT_SECRET };
+    delete process.env.SECRET_ENCRYPTION_KEY;
+    delete process.env.JWT_SECRET;
+    try {
+      const g = await chay(taoBo(), "write_file", { path: "src/khong-khoa.ts", content: "x\n" }, "tu-dong");
+      expect(g.kq.ok).toBe(false);
+      expect(g.kq.ma).toBe("CHECKPOINT_LOI");
+      expect(g.kq.choModel).toMatch(/KHONG_CO_KHOA/);
+      expect(co("src/khong-khoa.ts")).toBe(false);
+      const hang = (await hangCuaToi("apply_diff")).filter((h) => (h.argsJson as { path?: string }).path === "src/khong-khoa.ts");
+      expect(hang.map((h) => h.status)).toEqual(["cancelled"]);
+    } finally {
+      if (cu.s !== undefined) process.env.SECRET_ENCRYPTION_KEY = cu.s;
+      if (cu.j !== undefined) process.env.JWT_SECRET = cu.j;
+    }
+  }, 60_000);
+
+  it("★★★ đọc kill-switch HỎNG (ném) ⇒ coi như BẬT: KILL_SWITCH, không ghi, không chạy", async () => {
+    const bo = taoBo({ phuThuoc: { kiemKillSwitch: async () => Promise.reject(new Error("db down")) } });
+    const g = await chay(bo, "write_file", { path: "src/ks-hong.ts", content: "x\n" }, "tu-dong");
+    expect(g.kq.ma).toBe("KILL_SWITCH");
+    expect(co("src/ks-hong.ts")).toBe(false);
+    const l = await chay(bo, "run_command", { command: "node --test tests/tinh.test.mjs" }, "tu-dong");
+    expect(l.kq.ma).toBe("KILL_SWITCH");
+  });
 });
 
 describe("§F — thuần + census", () => {

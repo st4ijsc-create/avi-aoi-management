@@ -45,7 +45,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * LƯU TRỮ — NGOÀI DỰ ÁN, ĐẶT TÊN THEO BĂM, ĐỌC QUA HỘP CÁT
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- * `<AI_CHECKPOINT_DIR | <cwd>/tmp/ai-checkpoints>/<runId>/<seq>/manifest.json` + `<sha256>.bin`.
+ * `<AI_CHECKPOINT_DIR | <thư mục dữ liệu ứng dụng>/ai-checkpoints>/<runId>/<seq>/manifest.json` + `<sha256>.bin`.
  *   • Byte gốc đọc bằng `confineTargetUnder` + `readConfined` (realpath/nlink trên fd) — đúng cửa đọc
  *     của tool, KHÔNG `fs.readFile` một đường do model đưa. `fs` của file này chỉ chạm KHO checkpoint
  *     (đường dựng từ runId/seq đã kiểm hình dạng + băm hex), không bao giờ chạm cây dự án.
@@ -54,17 +54,43 @@
  *     phải UTF-8 (cỡ lệch / có U+FFFD) ⇒ đánh dấu `tuChoi`, hoàn tác KHAI xung đột thay vì ghi một bản
  *     giải mã sai byte (tool ghi vốn chỉ chở chuỗi).
  *   • Tên bản sao = băm ⇒ không đường lạ nào thành tên tệp trong kho; lúc khôi phục băm lại bản sao và
- *     so manifest (`BAN_SAO_HONG` nếu lệch — kho có thể nằm trong repo chính, nơi agent ghi được .json).
+ *     so manifest (`BAN_SAO_HONG` nếu lệch).
  *   • Gốc dự án của lượt hoàn tác phải TRÙNG gốc đã chụp (manifest không được tự chọn nơi ghi).
  *   • Trần dung lượng mỗi lượt chạy (`AI_CHECKPOINT_TRAN_BYTE`, mặc định 50 MB) ⇒ vượt thì `chupTruocGhi`
  *     NÉM `VUOT_TRAN` — người gọi KHÔNG được ghi khi không chụp được (fail-closed).
  *   • `donCheckpointCu()` (T4 gọi lúc boot) xoá lượt chạy không hoạt động > 7 ngày.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ RÀ BẢO MẬT a5f56d089 (2026-10-17) — MANIFEST QUYẾT ĐỊNH "HOÀN TÁC" GHI GÌ VÀO ĐÂU ⇒ HAI LỚP
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản T3 để kho mặc định ở `<cwd>/tmp/ai-checkpoints` — TRONG gốc dự án "repo" — nên chính agent (tool ghi,
+ * `.json` có trong danh sách đuôi) ghi/đè được `manifest.json`: một lần người bấm "Hoàn tác" sẽ ghi nội dung do
+ * model chọn (bản sao `.bin` + băm nó tự khai) vào bất kỳ đường nào manifest khai.
+ *   (a) KHO NGOÀI MỌI GỐC DỰ ÁN — mặc định = thư mục dữ liệu ứng dụng (`aiLocalTools/khoCheckpoint.ts` ghi lý
+ *       do chọn chỗ). `khoHopLe()` chạy ở MỌI điểm vào: kho (cấu hình hoặc mặc định) nằm trong / chứa repo chính,
+ *       gốc hộp cát, một dự án đăng ký (env `AI_REPO_SANDBOX_ROOTS` + DB) hay gốc của chính lượt này ⇒
+ *       `KHO_KHONG_HOP_LE` (fail-closed, log rõ). Cửa giam giữ của tool coi kho là CẤM đọc/ghi/liệt kê
+ *       (`CHECKPOINT_STORE`) — phòng khi danh sách dự án đổi lúc chạy.
+ *   (b) TOÀN VẸN — manifest ký HMAC-SHA256, khoá = HKDF-SHA256(`SECRET_ENCRYPTION_KEY`, vắng ⇒ `JWT_SECRET` —
+ *       đúng thứ tự `security/secretBox.ts`; info `ai_agent_checkpoint/manifest/v1`; khuôn
+ *       `otStopEpochSync.resolveStopEpochKey`). Ký TOÀN BỘ manifest dạng JSON chuẩn tắc (khoá sắp xếp): đường,
+ *       băm trước/sau, gốc dự án, runId, seq, userId, trạng thái hoàn tác. Chữ ký sai/thiếu ⇒ `CHU_KY_SAI` (hoàn
+ *       tác từ chối CẢ lượt, không bỏ qua từng mục); không có khoá ⇒ `KHONG_CO_KHOA` ⇒ `chupTruocGhi` ném ⇒ bộ
+ *       thực thi đi nhánh `CHECKPOINT_LOI` (huỷ đề xuất, KHÔNG ghi). Bản sao `.bin` buộc vào manifest qua băm
+ *       (đã ký). Không bao giờ log khoá hay nguồn bí mật.
+ * ⚠ Giới hạn nói thẳng: lớp (b) chống ghi qua TOOL. Mã do agent viết rồi được trình chạy test THI HÀNH
+ *   (`node --test`, `pytest`…) chạy với quyền tiến trình server — đó là một biên tin cậy khác (xem khối lệnh
+ *   tu-dong ở `boThucThiMayChu.ts`), không phải thứ một chữ ký vá được.
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import { confineTargetUnder, readConfined, bamUtf8 } from "../../aiLocalTools/readToolsProgramming";
 import { TRAN_TEP } from "../../aiLocalTools/writeHandlers/applyDiff";
 import { gocHopCat } from "../../aiLocalTools/repoSandbox";
+import { danhSachDuAn } from "../../aiLocalTools/repoProjects";
+import { duongKhoCheckpoint, namTrongHoacLa, realpathMotPhan } from "../../aiLocalTools/khoCheckpoint";
+import { gocRepoChinh } from "../../aiCodingTuTriGhi";
 import { executeDecision, type ToolExecContext, type ToolLang } from "../../aiLocalTools";
 import { confirmAction, type CopilotUser } from "../../aiCopilotActions";
 import { AUDIT_ACTIONS, ENTITY_TYPES, createAuditContext, logCrudOperation } from "../../auditTrailService";
@@ -120,7 +146,19 @@ export interface KetQuaHoanTac {
 /** Lý do gắn vào `confirmAction` của MỌI lượt ghi khôi phục — tách bạch với `AI_AGENT_TU_DONG`. */
 export const LY_DO_HOAN_TAC = "AI_AGENT_HOAN_TAC" as const;
 
-export type MaLoiCheckpoint = "THAM_SO_SAI" | "DA_TON_TAI" | "VUOT_TRAN" | "KHONG_TIM_THAY" | "DANG_HOAN_TAC" | "LOI_LUU_TRU";
+export type MaLoiCheckpoint =
+  | "THAM_SO_SAI"
+  | "DA_TON_TAI"
+  | "VUOT_TRAN"
+  | "KHONG_TIM_THAY"
+  | "DANG_HOAN_TAC"
+  | "LOI_LUU_TRU"
+  /** Manifest có mặt nhưng chữ ký HMAC sai/thiếu (hoặc không đọc được) — KHÔNG tin bất kỳ trường nào của nó. */
+  | "CHU_KY_SAI"
+  /** Không có bí mật server để dẫn xuất khoá ký ⇒ checkpoint không dùng được (fail-closed). */
+  | "KHONG_CO_KHOA"
+  /** Kho nằm trong / chứa một gốc dự án (hoặc repo chính) ⇒ agent có thể chạm manifest ⇒ không dùng. */
+  | "KHO_KHONG_HOP_LE";
 
 export class LoiCheckpoint extends Error {
   constructor(
@@ -142,11 +180,82 @@ const TRAN_SO_DUONG = 500;
 const KHUON_RUN_ID = /^[A-Za-z0-9_-]{1,100}$/;
 const KHUON_BAM = /^[0-9a-f]{64}$/;
 
-/** Đọc env TẠI CHỖ (lưới lật env theo ca). */
+/** Đường kho (đọc env TẠI CHỖ — lưới lật env theo ca). CHƯA kiểm hợp lệ — mọi thao tác đi qua `khoHopLe()`. */
 export function thuMucKhoCheckpoint(): string {
-  const raw = (process.env.AI_CHECKPOINT_DIR ?? "").trim();
-  if (raw === "") return path.resolve(process.cwd(), "tmp", "ai-checkpoints");
-  return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(process.cwd(), raw);
+  return duongKhoCheckpoint();
+}
+
+const daCanhBao = new Set<string>();
+function canhBaoMotLan(thongDiep: string): void {
+  if (daCanhBao.has(thongDiep)) return;
+  daCanhBao.add(thongDiep);
+  console.warn(`[checkpointAgent] ${thongDiep}`);
+}
+
+/**
+ * ★★★ Kho HỢP LỆ ⇔ không chồng lấn (nằm trong HOẶC chứa) repo chính, gốc hộp cát mặc định, bất kỳ dự án đăng ký
+ * nào (env + DB, đọc SỐNG mỗi lần) và các gốc `them` (gốc của chính lượt chụp/hoàn tác). So cả dạng chữ lẫn
+ * realpath. Lỗi khi dựng danh sách ⇒ từ chối (fail-closed). Ném `KHO_KHONG_HOP_LE`.
+ */
+export function khoHopLe(them: ReadonlyArray<string | null | undefined> = []): string {
+  const kho = thuMucKhoCheckpoint();
+  let gocs: string[];
+  try {
+    gocs = [
+      gocRepoChinh(),
+      gocHopCat(),
+      ...danhSachDuAn().map((d) => d.goc),
+      ...them.filter((g): g is string => typeof g === "string" && g !== ""),
+    ];
+  } catch (e) {
+    canhBaoMotLan(`TỪ CHỐI kho checkpoint "${kho}": không dựng được danh sách gốc dự án để kiểm (${(e as Error)?.message ?? String(e)})`);
+    throw new LoiCheckpoint("KHO_KHONG_HOP_LE", "không kiểm được kho checkpoint với danh sách dự án");
+  }
+  const khoThat = realpathMotPhan(kho);
+  for (const goc of gocs) {
+    const gocThat = realpathMotPhan(goc);
+    if (namTrongHoacLa(kho, goc) || namTrongHoacLa(goc, kho) || namTrongHoacLa(khoThat, gocThat) || namTrongHoacLa(gocThat, khoThat)) {
+      canhBaoMotLan(
+        `TỪ CHỐI kho checkpoint "${kho}": chồng lấn gốc dự án "${goc}" — agent ghi được vào đó nên manifest không còn đáng tin. ` +
+          "Đặt AI_CHECKPOINT_DIR ra NGOÀI mọi gốc dự án (mặc định: thư mục dữ liệu ứng dụng).",
+      );
+      throw new LoiCheckpoint("KHO_KHONG_HOP_LE", `kho checkpoint chồng lấn gốc dự án "${goc}"`);
+    }
+  }
+  return kho;
+}
+
+// ── chữ ký manifest ─────────────────────────────────────────────────────────────────────────────
+export const CHECKPOINT_HKDF_INFO = "ai_agent_checkpoint/manifest/v1";
+
+/**
+ * Khoá ký manifest = HKDF-SHA256(bí mật server, salt rỗng, info cố định, 32 byte) — KHÔNG BAO GIỜ là bí mật thô.
+ * Nguồn theo đúng thứ tự `secretBox`: `SECRET_ENCRYPTION_KEY`, vắng ⇒ `JWT_SECRET` (≥ 16 ký tự). Đọc TẠI CHỖ GỌI.
+ * Không có ⇒ ném `KHONG_CO_KHOA`. Không log khoá hay nguồn.
+ */
+function khoaKyManifest(): Buffer {
+  const ikm = (process.env.SECRET_ENCRYPTION_KEY ?? "").trim() || (process.env.JWT_SECRET ?? "").trim();
+  if (ikm.length < 16) {
+    canhBaoMotLan("checkpoint KHÔNG dùng được: thiếu bí mật server (SECRET_ENCRYPTION_KEY hoặc JWT_SECRET, ≥ 16 ký tự) để ký manifest");
+    throw new LoiCheckpoint("KHONG_CO_KHOA", "không có khoá ký manifest checkpoint");
+  }
+  return Buffer.from(hkdfSync("sha256", Buffer.from(ikm, "utf8"), Buffer.alloc(0), Buffer.from(CHECKPOINT_HKDF_INFO, "utf8"), 32));
+}
+
+/** JSON CHUẨN TẮC: khoá sắp xếp, bỏ `undefined` (đúng như JSON.stringify bỏ) ⇒ ký lúc ghi = ký lại lúc đọc. */
+function jsonChuanTac(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
+  if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? "null" : jsonChuanTac(x))).join(",")}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o)
+    .filter((k) => o[k] !== undefined)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${jsonChuanTac(o[k])}`)
+    .join(",")}}`;
+}
+
+function macManifest(khoa: Buffer, cp: Checkpoint): string {
+  return createHmac("sha256", khoa).update(`${CHECKPOINT_HKDF_INFO}\n${jsonChuanTac(cp)}`, "utf8").digest("hex");
 }
 
 function tranByteMoiLuotChay(): number {
@@ -176,17 +285,17 @@ function tachId(checkpointId: unknown): { runId: string; seq: number } {
   return { runId: kiemRunId(s.slice(0, i)), seq: kiemSeq(Number(seqStr)) };
 }
 
-function thuMucRun(runId: string): string {
-  return path.join(thuMucKhoCheckpoint(), runId);
+function thuMucRun(kho: string, runId: string): string {
+  return path.join(kho, runId);
 }
 
-function thuMucSeq(runId: string, seq: number): string {
-  return path.join(thuMucRun(runId), String(seq));
+function thuMucSeq(kho: string, runId: string, seq: number): string {
+  return path.join(thuMucRun(kho, runId), String(seq));
 }
 
-function duongBanSao(runId: string, seq: number, bam: string): string {
+function duongBanSao(kho: string, runId: string, seq: number, bam: string): string {
   if (!KHUON_BAM.test(bam)) throw new LoiCheckpoint("LOI_LUU_TRU", "băm bản sao không hợp lệ");
-  return path.join(thuMucSeq(runId, seq), `${bam}.bin`);
+  return path.join(thuMucSeq(kho, runId, seq), `${bam}.bin`);
 }
 
 /** Tổng byte đã dùng của một lượt chạy (đệ quy, không theo symlink). */
@@ -212,30 +321,78 @@ function dungLuong(dir: string): number {
   return tong;
 }
 
-/** Ghi nguyên tử (tệp tạm + rename) — một manifest dở dang không bao giờ được đọc thành checkpoint. */
-function ghiManifest(cp: Checkpoint): void {
-  const dich = path.join(thuMucSeq(cp.runId, cp.seq), "manifest.json");
+/** Ghi nguyên tử (tệp tạm + rename) + KÝ — một manifest dở dang không bao giờ được đọc thành checkpoint. */
+function ghiManifest(kho: string, khoa: Buffer, cp: Checkpoint): void {
+  const dich = path.join(thuMucSeq(kho, cp.runId, cp.seq), "manifest.json");
   const tam = `${dich}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tam, JSON.stringify(cp, null, 2));
+  const than: Checkpoint & { mac?: unknown } = { ...cp };
+  delete than.mac; // ký trên nội dung, không bao giờ trên chữ ký cũ
+  fs.writeFileSync(tam, JSON.stringify({ ...than, mac: macManifest(khoa, than) }, null, 2));
   fs.renameSync(tam, dich);
 }
 
-/** Đọc + kiểm manifest khớp CHÍNH chỗ nó nằm (runId/seq/id) — manifest lệch chỗ bị coi như không có. */
-function docManifest(runId: string, seq: number): Checkpoint | null {
+type KetQuaDocManifest = { loai: "ok"; cp: Checkpoint } | { loai: "vang" } | { loai: "chu-ky-sai" };
+
+/**
+ * Đọc + KIỂM CHỮ KÝ (so hằng thời gian) + kiểm manifest khớp CHÍNH chỗ nó nằm (runId/seq/id). Không đọc được tệp ⇒
+ * `vang`; có tệp nhưng không phân tích được / chữ ký sai-thiếu / lệch chỗ ⇒ `chu-ky-sai` (KHÔNG tin trường nào).
+ */
+function docManifest(kho: string, khoa: Buffer, runId: string, seq: number): KetQuaDocManifest {
   let raw: string;
   try {
-    raw = fs.readFileSync(path.join(thuMucSeq(runId, seq), "manifest.json"), "utf8");
+    raw = fs.readFileSync(path.join(thuMucSeq(kho, runId, seq), "manifest.json"), "utf8");
   } catch {
-    return null;
+    return { loai: "vang" };
   }
   try {
-    const cp = JSON.parse(raw) as Checkpoint;
-    if (cp?.runId !== runId || cp.seq !== seq || cp.id !== idCheckpoint(runId, seq)) return null;
-    if (typeof cp.gocDuAn !== "string" || !Array.isArray(cp.muc)) return null;
-    return cp;
+    const { mac, ...than } = JSON.parse(raw) as Checkpoint & { mac?: unknown };
+    if (typeof mac !== "string" || !/^[0-9a-f]{64}$/.test(mac)) return { loai: "chu-ky-sai" };
+    const cp = than as Checkpoint;
+    if (!timingSafeEqual(Buffer.from(macManifest(khoa, cp), "hex"), Buffer.from(mac, "hex"))) return { loai: "chu-ky-sai" };
+    if (cp.runId !== runId || cp.seq !== seq || cp.id !== idCheckpoint(runId, seq)) return { loai: "chu-ky-sai" };
+    if (typeof cp.gocDuAn !== "string" || !Array.isArray(cp.muc)) return { loai: "chu-ky-sai" };
+    return { loai: "ok", cp };
   } catch {
-    return null;
+    return { loai: "chu-ky-sai" };
   }
+}
+
+function canhBaoChuKy(runId: string, seq: number): void {
+  console.warn(`[checkpointAgent] TỪ CHỐI manifest ${idCheckpoint(runId, seq)}: chữ ký HMAC sai/thiếu — manifest có thể đã bị sửa ngoài cửa checkpoint`);
+}
+
+/** Manifest PHẢI hợp lệ: vắng ⇒ `KHONG_TIM_THAY`, chữ ký sai/thiếu ⇒ `CHU_KY_SAI`. */
+function docManifestBatBuoc(kho: string, khoa: Buffer, runId: string, seq: number): Checkpoint {
+  const r = docManifest(kho, khoa, runId, seq);
+  if (r.loai === "ok") return r.cp;
+  if (r.loai === "vang") throw new LoiCheckpoint("KHONG_TIM_THAY", `không có checkpoint ${idCheckpoint(runId, seq)}`);
+  canhBaoChuKy(runId, seq);
+  throw new LoiCheckpoint("CHU_KY_SAI", `manifest ${idCheckpoint(runId, seq)} có chữ ký sai hoặc thiếu — từ chối dùng`);
+}
+
+/**
+ * Mọi checkpoint của một lượt chạy, theo seq. `nghiemNgat` (hoàn tác) ⇒ MỘT manifest hỏng chữ ký là từ chối CẢ
+ * lượt (`CHU_KY_SAI`) — hoàn tác nửa vời vì lặng lẽ bỏ qua mục giả là kết cục khó dò nhất; không nghiêm ngặt
+ * (xem/dọn) ⇒ bỏ qua mục hỏng.
+ */
+function docCaLuotChay(kho: string, khoa: Buffer, runId: string, nghiemNgat: boolean): Checkpoint[] {
+  let ds: fs.Dirent[];
+  try {
+    ds = fs.readdirSync(thuMucRun(kho, runId), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const ra: Checkpoint[] = [];
+  for (const e of ds) {
+    if (!e.isDirectory() || !/^\d{1,15}$/.test(e.name)) continue;
+    const r = docManifest(kho, khoa, runId, Number(e.name));
+    if (r.loai === "ok") ra.push(r.cp);
+    else if (r.loai === "chu-ky-sai" && nghiemNgat) {
+      canhBaoChuKy(runId, Number(e.name));
+      throw new LoiCheckpoint("CHU_KY_SAI", `manifest ${runId}.${e.name} có chữ ký sai hoặc thiếu — từ chối hoàn tác lượt chạy`);
+    }
+  }
+  return ra.sort((a, b) => a.seq - b.seq);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -281,6 +438,9 @@ export async function chupTruocGhi(y: {
   const seq = kiemSeq(y?.seq);
   if (typeof y.gocDuAn !== "string" || !path.isAbsolute(y.gocDuAn)) throw new LoiCheckpoint("THAM_SO_SAI", "gocDuAn phải là đường TUYỆT ĐỐI");
   if (!Array.isArray(y.duongs) || y.duongs.length > TRAN_SO_DUONG) throw new LoiCheckpoint("THAM_SO_SAI", "duongs không hợp lệ");
+  // 0. Khoá ký + kho hợp lệ TRƯỚC mọi byte (fail-closed: người gọi KHÔNG ghi khi không chụp được).
+  const khoa = khoaKyManifest();
+  const kho = khoHopLe([y.gocDuAn]);
 
   // 1. Đọc toàn bộ TRƯỚC khi chạm kho (vượt trần ⇒ không để lại thư mục dở).
   const muc: MucCheckpoint[] = [];
@@ -317,15 +477,15 @@ export async function chupTruocGhi(y: {
 
   // 2. Trần dung lượng của CẢ lượt chạy.
   const them = [...banSao.values()].reduce((s, b) => s + b.length, 0) + Buffer.byteLength(JSON.stringify(cp, null, 2));
-  const daDung = dungLuong(thuMucRun(runId));
+  const daDung = dungLuong(thuMucRun(kho, runId));
   const tran = tranByteMoiLuotChay();
   if (daDung + them > tran) {
     throw new LoiCheckpoint("VUOT_TRAN", `checkpoint lượt chạy ${runId} vượt trần ${tran} byte (đã ${daDung}, thêm ${them}) — KHÔNG ghi khi không chụp được`);
   }
 
   // 3. Ghi kho: mkdir KHÔNG đệ quy cho seq ⇒ seq trùng bị từ chối, không ghi đè checkpoint cũ.
-  const dir = thuMucSeq(runId, seq);
-  fs.mkdirSync(thuMucRun(runId), { recursive: true });
+  const dir = thuMucSeq(kho, runId, seq);
+  fs.mkdirSync(thuMucRun(kho, runId), { recursive: true });
   try {
     fs.mkdirSync(dir);
   } catch (e) {
@@ -333,8 +493,8 @@ export async function chupTruocGhi(y: {
     throw new LoiCheckpoint("LOI_LUU_TRU", String((e as Error)?.message ?? e));
   }
   try {
-    for (const [bam, buf] of banSao) fs.writeFileSync(duongBanSao(runId, seq, bam), buf, { flag: "wx" });
-    ghiManifest(cp);
+    for (const [bam, buf] of banSao) fs.writeFileSync(duongBanSao(kho, runId, seq, bam), buf, { flag: "wx" });
+    ghiManifest(kho, khoa, cp);
   } catch (e) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -357,8 +517,9 @@ export async function chupTruocGhi(y: {
  */
 export async function chotSauGhi(checkpointId: string, thayDoi: ThayDoiChot[]): Promise<void> {
   const { runId, seq } = tachId(checkpointId);
-  const cp = docManifest(runId, seq);
-  if (!cp) throw new LoiCheckpoint("KHONG_TIM_THAY", `không có checkpoint ${checkpointId}`);
+  const khoa = khoaKyManifest();
+  const kho = khoHopLe();
+  const cp = docManifestBatBuoc(kho, khoa, runId, seq);
   const tim = (d: string) => cp.muc.find((m) => m.duong === d);
   for (const td of Array.isArray(thayDoi) ? thayDoi : []) {
     const duong = chuanDuong(td.duong);
@@ -384,7 +545,7 @@ export async function chotSauGhi(checkpointId: string, thayDoi: ThayDoiChot[]): 
     }
   }
   cp.chotLuc = new Date().toISOString();
-  ghiManifest(cp);
+  ghiManifest(kho, khoa, cp);
 }
 
 /**
@@ -414,29 +575,31 @@ export function thayDoiTuKetQuaGhi(tenTool: string, ketQua: unknown): ThayDoiCho
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // LIỆT KÊ + DỌN
 // ══════════════════════════════════════════════════════════════════════════════════════════════
+/** Checkpoint ĐÃ KIỂM CHỮ KÝ của một lượt chạy (manifest hỏng chữ ký bị bỏ qua — chỉ để xem). */
 export async function danhSachCheckpoint(runId: string): Promise<Checkpoint[]> {
   const id = kiemRunId(runId);
-  let ds: fs.Dirent[];
-  try {
-    ds = fs.readdirSync(thuMucRun(id), { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const ra: Checkpoint[] = [];
-  for (const e of ds) {
-    if (!e.isDirectory() || !/^\d{1,15}$/.test(e.name)) continue;
-    const cp = docManifest(id, Number(e.name));
-    if (cp) ra.push(cp);
-  }
-  return ra.sort((a, b) => a.seq - b.seq);
+  return docCaLuotChay(khoHopLe(), khoaKyManifest(), id, false);
 }
 
 /** Xoá lượt chạy KHÔNG hoạt động lâu hơn `soNgay` (mốc = taoLuc/chotLuc/hoàn tác mới nhất). T4 gọi lúc boot. */
 export async function donCheckpointCu(y: { soNgay?: number; bayGio?: number } = {}): Promise<{ daXoa: string[] }> {
   const soNgay = y.soNgay ?? 7;
   const bayGio = y.bayGio ?? Date.now();
-  const kho = thuMucKhoCheckpoint();
   const daXoa: string[] = [];
+  // Kho KHÔNG hợp lệ (chồng lấn một gốc dự án) ⇒ KHÔNG xoá gì: `rmSync` đệ quy trong cây dự án là thảm hoạ.
+  let kho: string;
+  try {
+    kho = khoHopLe();
+  } catch {
+    return { daXoa };
+  }
+  // Không có khoá ⇒ không tin mốc ghi trong manifest; chỉ còn mtime thư mục (dọn là việc best-effort).
+  let khoa: Buffer | null;
+  try {
+    khoa = khoaKyManifest();
+  } catch {
+    khoa = null;
+  }
   let ds: fs.Dirent[];
   try {
     ds = fs.readdirSync(kho, { withFileTypes: true });
@@ -445,7 +608,7 @@ export async function donCheckpointCu(y: { soNgay?: number; bayGio?: number } = 
   }
   for (const e of ds) {
     if (!e.isDirectory() || !KHUON_RUN_ID.test(e.name)) continue;
-    const cps = await danhSachCheckpoint(e.name);
+    const cps = khoa ? docCaLuotChay(kho, khoa, e.name, false) : [];
     let moiNhat = 0;
     for (const cp of cps) {
       for (const t of [cp.taoLuc, cp.chotLuc, ...cp.muc.map((m) => m.daHoanTacLuc)]) {
@@ -493,9 +656,9 @@ function khop(tt: TrangThaiTep, tonTai: boolean, bam: string | null): boolean {
 }
 
 /** Đọc bản sao + băm lại: bản sao hỏng/thiếu ⇒ null (không bao giờ ghi một nội dung không khớp manifest). */
-function docBanSao(cp: Checkpoint, bam: string): string | null {
+function docBanSao(kho: string, cp: Checkpoint, bam: string): string | null {
   try {
-    const buf = fs.readFileSync(duongBanSao(cp.runId, cp.seq, bam));
+    const buf = fs.readFileSync(duongBanSao(kho, cp.runId, cp.seq, bam));
     const s = buf.toString("utf8");
     return bamUtf8(s) === bam && Buffer.from(s, "utf8").equals(buf) ? s : null;
   } catch {
@@ -531,15 +694,16 @@ export async function hoanTac(y: {
   lang: ToolLang;
 }): Promise<KetQuaHoanTac> {
   const runId = kiemRunId(y?.runId);
+  // Khoá + kho hợp lệ TRƯỚC khi tin bất kỳ byte nào của kho (manifest quyết định ghi gì vào đâu).
+  const khoa = khoaKyManifest();
+  const kho = khoHopLe([y.execCtx?.projectRoot]);
   let cps: Checkpoint[];
   if (y.checkpointId !== undefined) {
     const t = tachId(y.checkpointId);
     if (t.runId !== runId) throw new LoiCheckpoint("THAM_SO_SAI", `checkpoint ${y.checkpointId} không thuộc lượt chạy ${runId}`);
-    const cp = docManifest(t.runId, t.seq);
-    if (!cp) throw new LoiCheckpoint("KHONG_TIM_THAY", `không có checkpoint ${y.checkpointId}`);
-    cps = [cp];
+    cps = [docManifestBatBuoc(kho, khoa, t.runId, t.seq)];
   } else {
-    cps = (await danhSachCheckpoint(runId)).reverse();
+    cps = docCaLuotChay(kho, khoa, runId, true).reverse();
   }
   if (dangHoanTac.has(runId)) throw new LoiCheckpoint("DANG_HOAN_TAC", `lượt chạy ${runId} đang được hoàn tác`);
   dangHoanTac.add(runId);
@@ -627,7 +791,7 @@ export async function hoanTac(y: {
         }
         let r: Awaited<ReturnType<typeof chayToolGhi>>;
         if (m.tonTai) {
-          const goc = m.bamTruoc ? docBanSao(cp, m.bamTruoc) : null;
+          const goc = m.bamTruoc ? docBanSao(kho, cp, m.bamTruoc) : null;
           if (goc === null) {
             kq.xungDot.push({ duong: m.duong, lyDo: "BAN_SAO_HONG: bản sao trong kho thiếu hoặc không khớp băm manifest" });
             continue;
@@ -653,7 +817,7 @@ export async function hoanTac(y: {
       }
       if (doi) {
         try {
-          ghiManifest(cp);
+          ghiManifest(kho, khoa, cp);
         } catch {
           /* đĩa đã đúng; lần sau mục này rơi vào nhánh "đã ở trạng thái trước" ⇒ bỏ qua */
         }

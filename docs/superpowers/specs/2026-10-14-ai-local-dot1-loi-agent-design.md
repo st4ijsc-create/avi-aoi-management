@@ -136,13 +136,22 @@ chỉ khi băm hiện tại == băm sau (không ai sửa tiếp), khôi phục q
 `reason:"AI_AGENT_HOAN_TAC"` — tức hoàn tác cũng đi cửa ghi + audit. Xung đột ⇒ liệt kê, không ghi đè. Snapshot không dùng git
 (dự án không có git cũng hoàn tác được; hook repo chặn stash). **Có checkpoint ⇒ gỡ chặn Q1 cho chế độ `tu-dong`? KHÔNG tự động:**
 Q1 giữ nguyên tới khi cổng hoàn tác đo đạt; mở bằng quyết định ghi trong tài liệu kết quả.
+**Sửa sau rà bảo mật a5f56d089 (2026-10-17):** kho mặc định KHÔNG còn là `<cwd>/tmp/ai-checkpoints` (nằm trong gốc dự án "repo" ⇒
+agent ghi được manifest) mà là thư mục dữ liệu ứng dụng (`%LOCALAPPDATA%/avi-aoi-management/ai-checkpoints`, POSIX
+`$XDG_STATE_HOME|~/.local/state/avi-aoi-management/ai-checkpoints`); kho (mặc định hay `AI_CHECKPOINT_DIR`) chồng lấn repo chính /
+gốc hộp cát / dự án đăng ký ⇒ `KHO_KHONG_HOP_LE`; cửa giam giữ của tool coi kho là CẤM (`CHECKPOINT_STORE`). Manifest ký
+HMAC-SHA256 (khoá HKDF từ `SECRET_ENCRYPTION_KEY`, vắng ⇒ `JWT_SECRET`); chữ ký sai/thiếu ⇒ `CHU_KY_SAI`, không khoá ⇒
+`KHONG_CO_KHOA` ⇒ không ghi.
 
 **BoThucThiMayChu (`server/services/ai/agent/boThucThiMayChu.ts`):** đọc ⇒ `executeDecision` (read_file/list_files/grep_repo
 sẵn có; `find_files` mới là tool đọc). Ghi ⇒ `executeDecision` tạo pending action ⇒ chụp checkpoint ⇒
 - `sua`: phát `can-duyet` (kèm `pendingAction` để UI dùng lại `TheDuyetDiff`), chờ quyết định (Promise trong bộ nhớ, đánh thức
   bởi `aiCopilot.confirmAction`/`cancelAction` thông qua một bus sự kiện nhỏ, + kiểm định kỳ `getAction` phòng lỡ sự kiện; hết
   hạn TTL 5 phút ⇒ coi như bác "hết hạn");
-- `tu-dong`: gọi `confirmAction(..., {reason:"AI_AGENT_TU_DONG"})` ngay (giữ mọi hàng rào + kill-switch + Q1).
+- `tu-dong`: gọi `confirmAction(..., {reason:"AI_AGENT_TU_DONG"})` ngay (giữ mọi hàng rào + kill-switch + Q1). **Lệnh** (sửa sau rà
+  bảo mật a5f56d089) chỉ tự chạy qua ĐÚNG cổng vòng tự động cũ: `AI_CODING_AUTOLOOP=1` + tập kiểm chứng (`NHAN_KIEM_CHUNG`) + không
+  `ghiDia`; Q1 xét theo các đường lệnh chạm (ô đường trong argv; "." khi lệnh phạm vi gốc hoặc npm/npx tự tìm dự án theo cwd);
+  ngoài tập ⇒ lỗi cho model "cần duyệt tay", không đề xuất. Đọc kill-switch hỏng ⇒ coi như bật.
 Kết quả thật đọc bằng `daBiTuChoiGhi`/`note` (không tin `ok:true`).
 
 **Mô hình (`goiModelMayChu`):** `aiGgufEngine.chatCompletionStream` với `tools` (native) + `signal`, ưu tiên `tuong-tac`

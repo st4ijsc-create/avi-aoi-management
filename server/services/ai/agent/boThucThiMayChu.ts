@@ -9,7 +9,28 @@
  *             ⇒ CHỤP CHECKPOINT ⇒ `sua`: phát `can-duyet` rồi CHỜ người · `tu-dong`: `confirmAction` ngay
  *             (`{reason:"AI_AGENT_TU_DONG"}`) sau ba cổng (kill-switch · Q1 · `ai_repo_exec`).
  *   • LỆNH  ⇒ tool `run_command` (danh sách trắng, HITL) — cùng đường ghi, không checkpoint (lệnh không có
- *             danh sách tệp để chụp).
+ *             danh sách tệp để chụp). `tu-dong` tự chạy lệnh CHỈ qua cổng của vòng tự động cũ — xem khối dưới.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ RÀ BẢO MẬT a5f56d089 (2026-10-17) — LỆNH KHÔNG NGƯỜI DUYỆT PHẢI QUA ĐÚNG CỔNG CỦA VÒNG CŨ
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản T4 để `tu-dong` tự chạy MỌI khuôn danh sách trắng (kể cả `dotnet format` — `ghiDia:true`, ghi đè mã nguồn
+ * không diff, không hàng rào tệp-bẩn/băm) chỉ sau kill-switch + Q1 + `ai_repo_exec` + `AI_CODING_TU_TRI_GHI`. Vòng
+ * cũ (`aiCodingVerify`) chỉ tự chạy khi `AI_CODING_AUTOLOOP=1` VÀ chỉ trong tập KIỂM CHỨNG. Nay `phanQuyetLenhTuDong`:
+ *   1. `AI_CODING_AUTOLOOP=1` (`vongTuDongBat`, đọc tại chỗ gọi) — vắng ⇒ `AUTOLOOP_TAT`;
+ *   2. lệnh ∈ `NHAN_KIEM_CHUNG` qua CHÍNH `laLenhKiemChung` (tách argv + khớp khuôn + hộp cát đường, với gốc dự án
+ *      thật) VÀ mục khớp KHÔNG `ghiDia` (phòng thủ chiều sâu) — ngoài tập ⇒ `LENH_CAN_DUYET_TAY`: model được bảo
+ *      lệnh này cần người duyệt (chế độ Sửa), KHÔNG ném, KHÔNG hàng `ai_pending_actions`;
+ *   3. Q1 xét theo CÁC ĐƯỜNG LỆNH CHẠM, không theo "." cố định. Bản cũ chặn oan mọi lệnh khi dự án là "repo"
+ *      (bộ đo F gửi projectId "repo", lệnh `node --test sandbox-projects/agent-f/<bài>/test` chạy ở gốc repo).
+ *      Đường chạm = ô tự do (đối số đường) + "." (gốc dự án) khi lệnh KHÔNG có ô tự do (`npm run check`: phạm vi
+ *      toàn dự án) hoặc tự tìm dự án ngược từ cwd (`npx vitest` ở gốc repo nạp cấu hình + setup CỦA REPO, dù bộ
+ *      lọc trỏ vào sandbox). `laGhiVaoRepoChinh` so realpath (junction trong sandbox trỏ ra repo vẫn bị bắt);
+ *      lỗi bất ngờ ⇒ coi như chạm repo chính (fail-closed).
+ * ⚠ GIỚI HẠN nói thẳng (giống hệt vòng cũ AUTOLOOP + TU_TRI_GHI): trình chạy test THI HÀNH mã trong dự án — mà ở
+ *   `tu-dong` mã ấy do chính model viết, không ai đọc. Môi trường đã lọc (không bí mật trong env) + hạn giờ giết
+ *   cây giới hạn thiệt hại, nhưng mã ấy chạy với quyền tiến trình server. Đó là lý do cả ba cờ mặc định TẮT.
+ *   Số lượt bị chặn bởi trần của lõi (30 lượt / 20 phút / 1 lượt chạy mỗi người).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * ⚠⚠ `edit_file`/`write_file`: `original` PHẢI LÀ BYTE THẬT CỦA ĐĨA, KHÔNG PHẢI BẢN ĐÃ CHE
@@ -55,6 +76,7 @@ import {
 } from "../../aiCopilotActions";
 import { autonomyGhiTuTriBat, isKillSwitchTripped, tuTriGhiRepoChinhDuoc } from "../autonomyPolicy";
 import { laGhiVaoRepoChinh as laGhiVaoRepoChinhGoc } from "../../aiCodingTuTriGhi";
+import { laLenhKiemChung, vongTuDongBat } from "../../aiCodingVerify";
 import { redactSecretsOnly, sanitizeUntrustedBlock } from "../aiSafety";
 import { vanBanChoModel } from "../vanBanChoModel";
 import { layLyDoBac, ngheQuyetDinhDuyet, type QuyetDinhDuyet } from "./busDuyetAgent";
@@ -243,11 +265,59 @@ function cauLoiDuong(ma: string, chiTiet: string, duong: string): string {
   }
 }
 
+// ─── cổng LỆNH của chế độ tu-dong (thuần trên env + đĩa chỉ-đọc; xem khối ★★★ đầu file) ───────────────────
+
+export type KetQuaLenhTuDong =
+  | { ok: true; nhan: string; duongCham: string[] }
+  | { ok: false; ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY" | "REPO_CHINH_CHUA_CHECKPOINT"; chiTiet: string };
+
+/**
+ * Lệnh `command` có được TỰ CHẠY (không người duyệt) trong gốc `gocDuAn` không — đúng cổng vòng tự động cũ +
+ * Q1 theo các đường lệnh chạm. KHÔNG kiểm kill-switch / `AI_CODING_TU_TRI_GHI` / quyền (người gọi kiểm trước).
+ */
+export function phanQuyetLenhTuDong(
+  command: unknown,
+  gocDuAn: string,
+  laGhiVaoRepoChinh: (gocDuAn: string, duongTep: string) => boolean = (g, d) => laGhiVaoRepoChinhGoc(g, d),
+): KetQuaLenhTuDong {
+  if (!vongTuDongBat()) return { ok: false, ma: "AUTOLOOP_TAT", chiTiet: "AI_CODING_AUTOLOOP" };
+  const kc = laLenhKiemChung(command, gocDuAn);
+  if (!kc.ok) return { ok: false, ma: "LENH_CAN_DUYET_TAY", chiTiet: kc.chiTiet };
+  if (kc.ghiDia) return { ok: false, ma: "LENH_CAN_DUYET_TAY", chiTiet: `${kc.nhan} (ghiDia)` };
+  const duongCham: string[] = [];
+  if (kc.oTuDo === null || kc.thoatCwdTheoCayThuMuc) duongCham.push(".");
+  if (kc.oTuDo !== null) duongCham.push(kc.oTuDo);
+  if (!tuTriGhiRepoChinhDuoc()) {
+    let chamRepoChinh: boolean;
+    try {
+      chamRepoChinh = duongCham.some((d) => laGhiVaoRepoChinh(gocDuAn, d));
+    } catch {
+      chamRepoChinh = true; // không xác định được ⇒ coi như chạm repo chính
+    }
+    if (chamRepoChinh) return { ok: false, ma: "REPO_CHINH_CHUA_CHECKPOINT", chiTiet: duongCham.join(", ") };
+  }
+  return { ok: true, nhan: kc.nhan, duongCham };
+}
+
+function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet: string): string {
+  if (ma === "AUTOLOOP_TAT")
+    return (
+      "Refused in automatic mode: running commands without approval is disabled on this server (AI_CODING_AUTOLOOP is off). " +
+      "The command was NOT run. Do not retry it; tell the user they can run it in 'Edit' mode (approval per command)."
+    );
+  return (
+    `Refused in automatic mode: this command needs manual approval (${chiTiet}). Only test/build verification commands ` +
+    "(e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>) run without approval, " +
+    "and never commands that rewrite source files (dotnet format). The command was NOT run. Use a verification command, " +
+    "or tell the user to run this one in 'Edit' mode."
+  );
+}
+
 function cauTuChoiTuDong(ma: "KILL_SWITCH" | "REPO_CHINH_CHUA_CHECKPOINT" | "THIEU_QUYEN_THUC_THI"): string {
   if (ma === "KILL_SWITCH")
     return "Refused in automatic mode: the AI autonomy kill-switch is ON. Nothing was written. Stop and tell the user (they can switch to 'Edit' mode to approve changes one by one).";
   if (ma === "REPO_CHINH_CHUA_CHECKPOINT")
-    return "Refused in automatic mode: this target is inside the platform's main repository (outside sandbox-projects/), which the automatic mode may not modify. Nothing was written. Stop and tell the user to use 'Edit' mode (approval per change) for this project.";
+    return "Refused in automatic mode: this target is inside the platform's main repository (outside sandbox-projects/), which the automatic mode may not modify or run repository-wide commands on. Nothing was written or run. Stop and tell the user to use 'Edit' mode (approval per change) for this project.";
   return "Refused in automatic mode: the user lacks the 'ai_repo_exec' permission required for automatic writes and commands. Nothing was written. Stop and tell the user.";
 }
 
@@ -422,15 +492,36 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
 
     // Cổng của chế độ tự động — TRƯỚC khi đề xuất ⇒ không hàng ai_pending_actions, đĩa 0 đổi.
     if (ctx.cheDo === "tu-dong") {
-      if (await kiemKillSwitch()) return { ok: false, ma: "KILL_SWITCH", choModel: cauTuChoiTuDong("KILL_SWITCH") };
+      // Đọc kill-switch HỎNG (ném) ⇒ coi như BẬT (fail-closed) — không để lỗi DB rơi thành "không có công tắc".
+      let ksBat: boolean;
+      try {
+        ksBat = await kiemKillSwitch();
+      } catch {
+        ksBat = true;
+      }
+      if (ksBat) return { ok: false, ma: "KILL_SWITCH", choModel: cauTuChoiTuDong("KILL_SWITCH") };
       // Công tắc "model ghi không người duyệt" có thể bị tắt GIỮA lượt chạy (đọc tại chỗ gọi) ⇒ kiểm lại mỗi lượt ghi.
       if (!autonomyGhiTuTriBat()) return { ok: false, ma: "KILL_SWITCH", choModel: cauTuChoiTuDong("KILL_SWITCH") };
-      if (!tuTriGhiRepoChinhDuoc()) {
-        const dich = laLenh ? ["."] : duongs;
-        if (dich.some((d) => laGhiVaoRepoChinh(gocDuAn, d)))
-          return { ok: false, ma: "REPO_CHINH_CHUA_CHECKPOINT", choModel: cauTuChoiTuDong("REPO_CHINH_CHUA_CHECKPOINT") };
-      }
       if (!cauHinh.coQuyenThucThi) return { ok: false, ma: "THIEU_QUYEN_THUC_THI", choModel: cauTuChoiTuDong("THIEU_QUYEN_THUC_THI") };
+      if (laLenh) {
+        // LỆNH: đúng cổng vòng tự động cũ (AUTOLOOP + tập kiểm chứng + không ghiDia) + Q1 theo đường lệnh chạm.
+        const pq = phanQuyetLenhTuDong(args.command, gocDuAn, laGhiVaoRepoChinh);
+        if (!pq.ok) {
+          return {
+            ok: false,
+            ma: pq.ma,
+            choModel: pq.ma === "REPO_CHINH_CHUA_CHECKPOINT" ? cauTuChoiTuDong("REPO_CHINH_CHUA_CHECKPOINT") : cauTuChoiLenhTuDong(pq.ma, pq.chiTiet),
+          };
+        }
+      } else if (!tuTriGhiRepoChinhDuoc()) {
+        let chamRepoChinh: boolean;
+        try {
+          chamRepoChinh = duongs.some((d) => laGhiVaoRepoChinh(gocDuAn, d));
+        } catch {
+          chamRepoChinh = true; // không xác định được ⇒ fail-closed
+        }
+        if (chamRepoChinh) return { ok: false, ma: "REPO_CHINH_CHUA_CHECKPOINT", choModel: cauTuChoiTuDong("REPO_CHINH_CHUA_CHECKPOINT") };
+      }
     }
     if (!laLenh && !cauHinh.checkpoint) {
       return { ok: false, ma: "CHECKPOINT_LOI", choModel: "Refused: no restore point (checkpoint) store is available, so no file may be written." };

@@ -46,6 +46,7 @@ import { checkPermission } from "../../_core/accessControl";
 import { searchProgrammingKb } from "../aiProgrammingKnowledgeService";
 import { programmingRegistry, type ProgrammingKind } from "../programming/programmingAdapter";
 import { registerTool, type Tool, type ToolResult, type ToolLang } from "./toolRegistry";
+import { laDuongTrongKhoCheckpoint } from "./khoCheckpoint";
 
 // ─── shared helpers (same shape as readToolsP2.ts / analyticsTools.ts) ────────
 
@@ -201,7 +202,14 @@ function chuanHoaGoc(root: unknown): string {
  * lập luận này bị nhận ra ngay lần sau: *"bên kia không dùng"* **không bao giờ** là lý do giữ một
  * kiểu hẹp — nó là câu hỏi *"vì sao bên kia không dùng?"*.
  */
-export type ConfinementRejectReason = WorkspaceRejectReason | "HARD_LINK";
+/**
+ * ★★★ Rà bảo mật a5f56d089 (2026-10-17) — `"CHECKPOINT_STORE"`: đích nằm trong KHO CHECKPOINT của vòng agent
+ * (`khoCheckpoint.ts`). Kho mặc định ở NGOÀI mọi gốc dự án và kho cấu hình rơi vào gốc dự án bị
+ * `checkpointAgent` từ chối dùng — nhưng danh sách dự án ĐỔI được lúc chạy (đăng ký qua UI), nên cửa giam giữ
+ * vẫn coi kho là CẤM đọc/ghi/liệt kê: manifest + bản sao là thứ quyết định "Hoàn tác" ghi gì vào đâu, và
+ * chúng không bao giờ được là thứ tool của model chạm tới.
+ */
+export type ConfinementRejectReason = WorkspaceRejectReason | "HARD_LINK" | "CHECKPOINT_STORE";
 
 /** Nội bộ, KHÔNG export — kết quả kiểm HÌNH DẠNG đường dẫn. Xem `confineTarget`. */
 interface InternalResolution {
@@ -327,6 +335,8 @@ export function confineTargetUnder(root: string, inputPath: unknown): ConfineOut
     return { ok: false, kind: "PATH_REJECTED", reason: r.reason ?? "EMPTY" };
   }
   const abs = r.absPath;
+  // Kho checkpoint: CẤM — trước mọi `stat` (lời từ chối không rò "tệp có tồn tại không"); so cả realpath.
+  if (laDuongTrongKhoCheckpoint(abs)) return { ok: false, kind: "PATH_REJECTED", reason: "CHECKPOINT_STORE" };
 
   let stat: fs.Stats | null = null;
   try {
@@ -731,6 +741,8 @@ export function confineDirUnder(root: string, inputPath: unknown): ConfineDirOut
     abs = r.absPath;
     rel = r.relPath;
   }
+  // Kho checkpoint: CẤM liệt kê (cả nhánh `laGoc`: một gốc dự án NẰM TRONG kho cũng bị từ chối).
+  if (laDuongTrongKhoCheckpoint(abs)) return { ok: false, kind: "PATH_REJECTED", reason: "CHECKPOINT_STORE" };
 
   let stat: fs.Stats | null = null;
   try {
@@ -832,6 +844,13 @@ export function confinementRejectMsg(reason: ConfinementRejectReason, lang: Lang
         "This file has multiple hard links, so its content may live outside the workspace — rejected. " +
           "Copy it into the workspace as a regular file and try again.",
         "该文件存在多个硬链接，其内容可能位于工作区之外——已拒绝。请先将其复制为工作区内的普通文件再操作。",
+      );
+    case "CHECKPOINT_STORE":
+      return w(
+        lang,
+        "Đường dẫn nằm trong kho điểm khôi phục (checkpoint) của AI — không bao giờ được đọc/ghi qua tool.",
+        "Path is inside the AI checkpoint (restore point) store — it can never be read or written by tools.",
+        "路径位于 AI 检查点（恢复点）存储内——工具永远不能读写。",
       );
     case "ABSOLUTE":
       return w(lang, "Đường dẫn tuyệt đối không được phép.", "Absolute paths are not allowed.", "不允许使用绝对路径。");

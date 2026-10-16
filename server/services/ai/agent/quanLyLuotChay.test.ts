@@ -25,6 +25,7 @@ import { createLocalUser } from "../../../db/auth";
 
 let REPO = "";
 let KHO = "";
+let KHOA_CU: string | undefined;
 let uid = 0;
 let uidOp = 0;
 const DU_AN = "t4e2e";
@@ -69,6 +70,9 @@ beforeAll(async () => {
   REPO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "t4-e2e-")));
   KHO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "t4-e2e-kho-")));
   process.env.AI_CHECKPOINT_DIR = KHO;
+  // Manifest checkpoint KÝ HMAC (rà bảo mật a5f56d089): lưới không nạp .env ⇒ đặt bí mật server riêng cho lưới.
+  KHOA_CU = process.env.SECRET_ENCRYPTION_KEY;
+  process.env.SECRET_ENCRYPTION_KEY = "luoi-checkpoint-khoa-thu-0123456789abcdef";
   process.env.AI_REPO_SANDBOX_ROOTS = `${DU_AN}=T4 E2E|${REPO}`;
   // Chế độ tu-dong đòi công tắc "model ghi không người duyệt" của chủ dự án (quyết định 2026-10-17).
   process.env.AI_CODING_TU_TRI_GHI = "1";
@@ -89,6 +93,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   delete process.env.AI_CHECKPOINT_DIR;
+  if (KHOA_CU === undefined) delete process.env.SECRET_ENCRYPTION_KEY;
+  else process.env.SECRET_ENCRYPTION_KEY = KHOA_CU;
   delete process.env.AI_REPO_SANDBOX_ROOTS;
   delete process.env.AI_CODING_TU_TRI_GHI;
   const db = await getDb();
