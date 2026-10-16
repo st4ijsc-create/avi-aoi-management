@@ -8,10 +8,14 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync, execSync } from "node:child_process";
 import { ck } from "./cookie.mjs";
 
-const ROOT = "D:/SOURCES/avi-aoi-management";
+// Gốc repo suy từ VỊ TRÍ tệp này (không ghim D:/SOURCES/avi-aoi-management) để chạy được trong worktree khác
+// mà không chạm cây làm việc của phiên khác; server đo chọn bằng AI_EVAL_BASE (mặc định :3000 như cũ).
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..").split(path.sep).join("/");
+const BASE = (process.env.AI_EVAL_BASE || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const BENCH = `${ROOT}/scripts/ai-eval/codegen-chay-duoc`;
 const WORK = `${ROOT}/tmp/codegen-chay-duoc-work`;  // sản phẩm tạm — KHÔNG vào git
 const args = process.argv.slice(2);
@@ -34,7 +38,7 @@ const SYS = "Bạn là trợ lý lập trình. Trả lời bằng ĐÚNG MỘT k
 // ─────────────────────────────────────────────────────────── SINH
 async function genPipeline(t) {
   const t0 = Date.now(); let tFirst = null;
-  const res = await fetch("http://127.0.0.1:3000/api/ai/local-kb/stream", {
+  const res = await fetch(`${BASE}/api/ai/local-kb/stream`, {
     method: "POST", headers: { "Content-Type": "application/json", Cookie: CK },
     body: JSON.stringify({ question: t.prompt, topK: 5, history: [], userRole: "admin",
       context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo", ...(CHE_DO_NGHI ? { cheDoNghi: CHE_DO_NGHI } : {}) } }),
