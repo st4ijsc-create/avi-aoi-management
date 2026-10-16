@@ -28,7 +28,14 @@ function dem(s: string, kim: string): number {
 
 describe("§1 hai điểm <Streamdown> đều nhận bộ component nhãn — và neo đi ĐÚNG đường", () => {
   it("★★★ điểm TĨNH: câu cùng lượt nhận bộ CÓ neo, câu cũ nhận bộ KHÔNG neo (rẽ theo viTriNeo)", () => {
-    expect(MA).toContain("components={i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}");
+    expect(MA).toContain('components={m.nguon === "dau-ra-lenh" ? boKhoiDauRaLenh : i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}');
+  });
+
+  it("★★★ CHỐNG GIẢ NHÃN (rà bảo mật 2026-10-17): bộ tin đầu ra lệnh CHỈ dựng một lần với cờ true và CHỈ cấp cho tin nhắn nguon dau-ra-lenh; điểm STREAMING (văn bản model) không bao giờ nhận nó", () => {
+    expect(MA).toContain("taoBoKhoiMaCoNhan(null, null, true)");
+    expect((MA.match(/taoBoKhoiMaCoNhan\([^)]*true\)/g) ?? []).length).toBe(1);
+    expect((MA.match(/nguon: "dau-ra-lenh"/g) ?? []).length).toBe(2);
+    expect(MA).not.toMatch(/mode="streaming" components=\{boKhoiDauRaLenh\}/);
   });
 
   it("★★★ điểm STREAMING: luôn bộ CÓ neo (văn bản đang stream luôn cùng lượt với thẻ đang giữ)", () => {

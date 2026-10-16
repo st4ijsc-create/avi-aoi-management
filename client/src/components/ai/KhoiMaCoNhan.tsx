@@ -123,20 +123,28 @@ interface PropsKhoiMa {
   neo?: NeoDocTep | null;
   /** Mốc-NHẬN thẻ đọc, đã định dạng (`dinhDangLucNhan`) — display-only, xem docblock ở đó. */
   luc?: string | null;
+  /**
+   * ★★★ NHÃN TIN CẬY CẤP THEO NGUỒN TIN NHẮN, KHÔNG THEO CHỮ (rà bảo mật 2026-10-17): `true` CHỈ khi
+   * tin nhắn chứa khối này do CLIENT chèn từ đầu ra `run_command` thật (`ChatTurn.nguon`). Model tự
+   * viết một fence `command-output` (bắt chước, hoặc bị nội dung tệp/tool tiêm) ⇒ mặc định `false` ⇒
+   * khối ấy vẫn mang nhãn "Mã do model viết". Thiếu cờ này, câu "đầu ra lệnh do máy chủ chạy thật" có
+   * thể bị model giả để khai "test đã xanh" mà không lệnh nào chạy.
+   */
+  tinDauRaLenh?: boolean;
 }
 
 /**
  * Khối mã trong văn xuôi model, có nhãn. Dùng làm component `pre` cho `<Streamdown>` qua
  * `taoBoKhoiMaCoNhan` (Streamdown chỉ truyền props chuẩn + `node`; `neo`/`luc` đi qua bao đóng).
  */
-export function KhoiMaCoNhan({ node, children, neo = null, luc = null }: PropsKhoiMa): ReactElement {
+export function KhoiMaCoNhan({ node, children, neo = null, luc = null, tinDauRaLenh = false }: PropsKhoiMa): ReactElement {
   const { t } = useTranslation();
   const boc = layMaVaNhanFence(node);
   if (!boc) return <>{children}</>;
 
   const soDong = boc.ma.replace(/\n$/, "").split("\n").length;
   const coBang = soDong >= NGUONG_DONG_BANG_NHAN;
-  const laDauRaLenh = boc.nhanFence === NHAN_FENCE_DAU_RA_LENH;
+  const laDauRaLenh = tinDauRaLenh && boc.nhanFence === NHAN_FENCE_DAU_RA_LENH;
   const cauNguonGoc = laDauRaLenh
     ? t("repoWs.khoi.dauRaLenh", "Đầu ra lệnh do máy chủ chạy thật — không phải mã do model viết")
     : t("repoWs.khoi.modelSinh", "Mã do model viết — có thể khác tệp trên đĩa");
@@ -198,8 +206,10 @@ export function KhoiMaCoNhan({ node, children, neo = null, luc = null }: PropsKh
 export function taoBoKhoiMaCoNhan(
   neo: NeoDocTep | null,
   luc: string | null,
+  /** Xem `PropsKhoiMa.tinDauRaLenh` — chỉ `true` cho tin nhắn đầu ra lệnh do client chèn. */
+  tinDauRaLenh = false,
 ): { pre: (props: { node?: unknown; children?: ReactNode }) => ReactElement } {
   return {
-    pre: (props) => <KhoiMaCoNhan node={props.node} neo={neo} luc={luc}>{props.children}</KhoiMaCoNhan>,
+    pre: (props) => <KhoiMaCoNhan node={props.node} neo={neo} luc={luc} tinDauRaLenh={tinDauRaLenh}>{props.children}</KhoiMaCoNhan>,
   };
 }

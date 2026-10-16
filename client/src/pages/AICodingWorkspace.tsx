@@ -425,7 +425,12 @@ function VongTuDongCard({ vong, onDung, laAdmin }: { vong: TrangThaiVong; onDung
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // TRANG
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-type ChatTurn = { role: "user" | "assistant"; content: string };
+/**
+ * `nguon: "dau-ra-lenh"` ⇔ tin nhắn do CLIENT chèn từ đầu ra `run_command` thật — chỉ tin nhắn này được
+ * nhãn "đầu ra lệnh do máy chủ chạy thật" (`KhoiMaCoNhan.tinDauRaLenh`). Không lưu vào phiên (mở lại
+ * ⇒ nhãn mặc định "model viết": an toàn) và KHÔNG gửi lên server (lịch sử chỉ mang role + content).
+ */
+type ChatTurn = { role: "user" | "assistant"; content: string; nguon?: "dau-ra-lenh" };
 
 /**
  * ★★★ 2026-08-23 — CHIỀU CAO KHUNG ĐO ĐƯỢC, THAY CHO HẰNG `calc(100vh-8.5rem)` ĐOÁN SAI.
@@ -920,6 +925,8 @@ export default function AICodingWorkspace() {
   const neoDocTep = useMemo(() => (streamTool ? bocTheDocTep(streamTool.data as unknown) : null), [streamTool]);
   const boKhoiCoNeo = useMemo(() => taoBoKhoiMaCoNhan(neoDocTep, lucNhanTool), [neoDocTep, lucNhanTool]);
   const boKhoiKhongNeo = useMemo(() => taoBoKhoiMaCoNhan(null, null), []);
+  /** Chỉ cho tin nhắn `nguon: "dau-ra-lenh"` (client chèn) — xem `ChatTurn`. */
+  const boKhoiDauRaLenh = useMemo(() => taoBoKhoiMaCoNhan(null, null, true), []);
   const viTriNeo = useMemo(() => viTriCauTraLoiCungLuot(transcript), [transcript]);
 
   const {
@@ -1431,7 +1438,7 @@ export default function AICodingWorkspace() {
     }
     // ★ Đợt 0.5 — đầu ra lệnh trong lịch sử mang nhãn fence riêng (nhãn tin cậy ở UI); bỏ nhãn ấy
     //   trước khi gửi model để model không thấy mà bắt chước (xem `KhoiMaCoNhan` · khoiDauRaLenh).
-    const history = transcript.slice(-10).map((x) => ({ ...x, content: boNhanDauRaLenhChoModel(x.content) }));
+    const history = transcript.slice(-10).map((x) => ({ role: x.role, content: boNhanDauRaLenhChoModel(x.content) }));
     setTranscript((prev) => [...prev, { role: "user", content: text }]);
     setStreamTool(null);
     setStreamTools([]);
@@ -1685,7 +1692,7 @@ export default function AICodingWorkspace() {
       : "";
     setTranscript((prev) => [
       ...prev,
-      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n${klVong}${khoiDauRaLenh(dauRa)}` },
+      { role: "assistant", content: `${t("repoWs.loop.ranTurn", "Vòng tự động — lượt {{luot}}/{{tran}} đã chạy `{{lenh}}`", { luot, tran: cfg.tran, lenh: r.command ?? "" })}\n\n${klVong}${khoiDauRaLenh(dauRa)}`, nguon: "dau-ra-lenh" },
     ]);
 
     // ★★★ 2026-08-24 · BẮT #2 — lượt vòng tự-ghi vào bảng Terminal. `r` (`KetQuaKiemChung`) KHÔNG
@@ -1996,7 +2003,7 @@ export default function AICodingWorkspace() {
           // ★ NHỊP KHÉP VÒNG — đưa đầu ra THẬT vào lịch sử để lượt sau tác nhân đọc lỗi rồi sửa tiếp.
           setTranscript((prev) => [
             ...prev,
-            { role: "assistant", content: `${dongKetLuan}${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n${khoiDauRaLenh(out.textSummary ?? "")}` },
+            { role: "assistant", content: `${dongKetLuan}${t("repoWs.chat.cmdOutput", "Kết quả lệnh (đã đưa vào ngữ cảnh để sửa tiếp)")}:\n\n${khoiDauRaLenh(out.textSummary ?? "")}`, nguon: "dau-ra-lenh" },
           ]);
         } else if (pending.tool === "apply_diff") {
           const tepDaGhi = (pending.args as unknown as DiffArgs | undefined)?.path ?? pendingDiff?.args.path ?? null;
@@ -3129,7 +3136,7 @@ export default function AICodingWorkspace() {
                            lưu phiên/gửi server không đổi một byte. */
                         /* ★ LÔ 3 — nhãn khối mã: câu CÙNG LƯỢT với thẻ đọc nhận bộ CÓ neo (tầng 2
                            so được), mọi câu cũ hơn nhận bộ KHÔNG neo — xem docblock `viTriNeo`. */
-                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static" components={i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}>{lamSachMocChoHienThi(m.content)}</Streamdown></div>
+                        <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static" components={m.nguon === "dau-ra-lenh" ? boKhoiDauRaLenh : i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}>{lamSachMocChoHienThi(m.content)}</Streamdown></div>
                       )}
                       {/* ★★★ 2026-09-03 · ĐỢT F2 — NHẢY `tệp:dòng` TỪ CHAT (CẢ HAI VAI). Stack trace/lỗi build
                           thường nằm NGAY TRONG hội thoại (người dùng dán vào, hoặc model chép lại),

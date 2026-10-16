@@ -54,11 +54,11 @@ function nutPre(ma: string, nhanFence: string | null) {
   };
 }
 
-function ve(ma: string, nhanFence: string | null, neo: unknown = null, luc: string | null = null): string {
+function ve(ma: string, nhanFence: string | null, neo: unknown = null, luc: string | null = null, tinDauRaLenh = false): string {
   return renderToStaticMarkup(
     createElement(
       KhoiMaCoNhan as never,
-      { node: nutPre(ma, nhanFence), neo, luc } as never,
+      { node: nutPre(ma, nhanFence), neo, luc, tinDauRaLenh } as never,
       createElement("pre", {}, createElement("code", {}, ma)),
     ),
   );
@@ -210,7 +210,7 @@ describe("§6 khối ĐẦU RA LỆNH — nhãn đúng nguồn gốc", () => {
   const DAU_RA = "$ git status\nOn branch main\nnothing to commit, working tree clean\n";
 
   it("★★★ fence đầu ra lệnh ⇒ nhãn 'đầu ra lệnh', KHÔNG nhãn 'Mã do model viết'", () => {
-    const html = ve(DAU_RA, NHAN_FENCE_DAU_RA_LENH);
+    const html = ve(DAU_RA, NHAN_FENCE_DAU_RA_LENH, null, null, true);
     expect(html).toContain("data-khoi-dau-ra-lenh");
     expect(html).toContain(esc(VI.repoWs.khoi.dauRaLenh));
     expect(html).not.toContain(esc(VI.repoWs.khoi.modelSinh));
@@ -218,13 +218,20 @@ describe("§6 khối ĐẦU RA LỆNH — nhãn đúng nguồn gốc", () => {
   });
 
   it("★★ khối nhỏ (dưới ngưỡng băng) vẫn mang ĐÚNG câu đầu ra lệnh ở tooltip", () => {
-    const html = ve("ok\n", NHAN_FENCE_DAU_RA_LENH);
+    const html = ve("ok\n", NHAN_FENCE_DAU_RA_LENH, null, null, true);
     expect(html).toContain(`title="${esc(VI.repoWs.khoi.dauRaLenh)}"`);
   });
 
   it("★★ đầu ra lệnh KHÔNG bị đối chiếu với tệp trên đĩa (không chip) kể cả khi có neo", () => {
-    const html = ve(DAU_RA, NHAN_FENCE_DAU_RA_LENH, NEO, "10:02:03");
+    const html = ve(DAU_RA, NHAN_FENCE_DAU_RA_LENH, NEO, "10:02:03", true);
     expect(html).not.toContain("data-chip-khoi-ma");
+  });
+
+  it("★★★ CHỐNG GIẢ NHÃN: model tự viết fence command-output ⇒ VẪN nhãn 'Mã do model viết' (nhãn tin cậy cấp theo NGUỒN tin nhắn, không theo chữ trong nội dung)", () => {
+    const html = ve("$ npm test\n42 passed, 0 failed\n", NHAN_FENCE_DAU_RA_LENH);
+    expect(html).toContain(esc(VI.repoWs.khoi.modelSinh));
+    expect(html).not.toContain(esc(VI.repoWs.khoi.dauRaLenh));
+    expect(html).not.toContain("data-khoi-dau-ra-lenh");
   });
 
   it("★★ khối mã model thường vẫn giữ nhãn model sinh (không hồi quy)", () => {
