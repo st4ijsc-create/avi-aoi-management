@@ -27,6 +27,7 @@
 // ─── Types ──────────────────────────────────────────────────────
 
 import { scanForInjection, scanUntrustedContent, type InjectionRisk } from "../../../shared/quetMenhLenh";
+import { RE_TOKEN_CO_TIEN_TO, RE_TOKEN_CO_TIEN_TO_DANG_GO } from "../../../shared/mauBiMat";
 
 // Kiểu + bộ quét mệnh lệnh sống ở `shared/quetMenhLenh.ts` (nguyên văn, thuần) — xuất lại để người gọi cũ không đổi.
 export type { InjectionRisk, InjectionScanResult } from "../../../shared/quetMenhLenh";
@@ -199,6 +200,10 @@ const REDACT_PATTERNS: RedactPattern[] = [
   { type: "jwt", re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, placeholder: "[REDACTED_SECRET]" },
   // Recognizable API-key-shaped prefixes (OpenAI-style sk-…, GitHub ghp_…, AWS AKIA…).
   { type: "api_key", re: /\b(?:sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b/g, placeholder: "[REDACTED_SECRET]" },
+  // ★★★ Đợt 4 (2026-10-17) — token có tiền tố của nhà cung cấp (GitHub gh?_/github_pat_, GitLab glpat-, Slack xox?-,
+  // AWS AKIA, Google AIza, Stripe sk_/rk_live_, npm_, OpenAI sk-proj-…): MỘT NGUỒN `shared/mauBiMat.ts`, dùng CHUNG với
+  // `cheBiMat` của extension. Luật cũ ở trên giữ nguyên (không đổi hành vi đã có lưới canh) — luật này chỉ CỘNG thêm.
+  { type: "api_key", re: RE_TOKEN_CO_TIEN_TO, placeholder: "[REDACTED_SECRET]" },
   // Labeled key=value / key: value forms (api_key=, access_token:, client_secret=…).
   {
     type: "api_key",
@@ -427,6 +432,9 @@ const PENDING_SECRET_START_PATTERNS: RegExp[] = [
   /\bBearer\s+[A-Za-z0-9\-_.]*$/i,
   // Recognizable API-key prefix (`sk-`, `ghp_`, `AKIA`) started, still growing at the tail.
   /\b(?:sk-|ghp_|AKIA)[A-Za-z0-9]*$/,
+  // ★★★ Đợt 4 — mọi tiền tố của `shared/mauBiMat.ts` (cùng nguồn với luật đầy đủ trong `REDACT_PATTERNS`). Không có
+  // dòng này, `github_pat_…` (93 ký tự > đuôi giữ 32) bị nhả từng mảnh trước khi đủ dài để luật đầy đủ khớp.
+  RE_TOKEN_CO_TIEN_TO_DANG_GO,
   // Labeled `api_key=`/`access_token:`/`client_secret=`… form started, still growing.
   /\b(?:api[_-]?key|apikey|access[_-]?token|secret[_-]?key|client[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9\-_.]*$/i,
   // `password=`/`pwd:`/`passwd=` form started, still growing.

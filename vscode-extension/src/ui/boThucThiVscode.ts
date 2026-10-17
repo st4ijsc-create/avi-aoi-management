@@ -46,7 +46,7 @@ import { giaiDuongThatChoTaoMoi } from "../loi/duongThat";
 import { duocPhepDoc, lamSachLyDo } from "../loi/docCucBo";
 import { cheBiMat, duocPhepRoiMay } from "../loi/nguCanh";
 import { chuanHoaMucQuyen, type MucQuyen } from "../loi/mucQuyen";
-import { xetDuyetLenh, TRAN_MS_THEO_LENH } from "../loi/lenhChoPhep";
+import { xetDuyetLenh, TRAN_MS_THEO_LENH, MAU_LENH_HIEN_THI } from "../loi/lenhChoPhep";
 import { dinhDangKetQuaLenh } from "../loi/dinhDangKetQuaLenh";
 import { locDiffTepCam } from "../loi/locDiffTepCam";
 import { chayLenhCucBo as chayLenhCucBoThat } from "../mang/chayLenhCucBo";
@@ -620,8 +620,7 @@ export class BoThucThiVscode implements BoThucThi {
     const xet = xetDuyetLenh(lenh.trim());
     if (!xet.ok) {
       return loiModel(
-        `Command not allowed: ${cheBiMat(xet.lyDo)}. Allowed commands: git status · git diff · git diff --staged · npm run check · ` +
-          "npx vitest run <path> · dotnet build <path> · dotnet test <path>.",
+        `Command not allowed: ${cheBiMat(xet.lyDo)}. Allowed commands: ${MAU_LENH_HIEN_THI.join(" · ")}.`,
         "LENH_KHONG_DUOC_PHEP",
       );
     }

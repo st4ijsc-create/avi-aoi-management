@@ -45,6 +45,10 @@
  * để nhét `$(...)` vào vì không có tham số tự do nào được đọc từ chuỗi lệnh gốc cả). `npm run check`
  * cũng cố định tuyệt đối. `npx vitest run <path>`/`dotnet build <path>`/`dotnet test <path>` nhận
  * ĐÚNG MỘT tham số ở cuối, phải qua `thamSoAnToan` (không tuyệt đối, không `..`, không ký tự shell).
+ *
+ * ★★★ Đợt 4 (2026-10-17) — thêm LỆNH CHẠY TEST (`npm test` · `node --test [<path>…]` · `python -m pytest [<path>…]
+ * [-q] [-x]` · `dotnet test` không tham số) cùng mức siết: chỉ ĐƯỜNG qua `thamSoAnToan` (tối đa `TRAN_SO_DUONG`) và cờ
+ * cố định khớp nguyên văn. Danh sách hiển thị: `MAU_LENH_HIEN_THI` (một nguồn cho lời nhắc + lời từ chối).
  */
 import { posix, win32 } from "node:path";
 
@@ -57,7 +61,10 @@ export type TenLenhChoPhep =
   | "npm_run_check"
   | "vitest_run"
   | "dotnet_build"
-  | "dotnet_test";
+  | "dotnet_test"
+  | "node_test"
+  | "npm_test"
+  | "pytest";
 
 export interface LenhDaDuyet {
   ten: TenLenhChoPhep;
@@ -68,6 +75,30 @@ export interface LenhDaDuyet {
 }
 
 export type KetQuaChoPhepLenh = { ok: true; lenh: LenhDaDuyet } | { ok: false; lyDo: string };
+
+/**
+ * ★★★ Đợt 4 (2026-10-17) — MỘT NGUỒN cho danh sách khuôn HIỂN THỊ (lời từ chối của `xetDuyetLenh`, lời từ chối của
+ * `ui/boThucThiVscode.ts`, ngữ cảnh dự án của lõi agent `loi/nguCanhAgent.ts#LENH_DUOC_PHEP_HIEN_THI`). Lệch giữa các
+ * bản sao = model được dạy xin lệnh chắc chắn bị chặn, hoặc không biết lệnh THẬT được phép.
+ */
+export const MAU_LENH_HIEN_THI: readonly string[] = [
+  "git status",
+  "git diff",
+  "git diff --staged",
+  "npm run check",
+  "npm test",
+  "npx vitest run <path>",
+  "node --test [<path>…]",
+  "python -m pytest [<path>…] [-q] [-x]",
+  "dotnet build <path>",
+  "dotnet test [<path>]",
+];
+
+/** Trần số ĐƯỜNG cho các khuôn nhận nhiều đường (`node --test`, `python -m pytest`). */
+export const TRAN_SO_DUONG = 8;
+
+/** Cờ CỐ ĐỊNH duy nhất `python -m pytest` nhận từ người gõ — mỗi cờ tối đa một lần. */
+const CO_PYTEST_CHO_PHEP = new Set(["-q", "-x"]);
 
 /** Trần độ dài chuỗi lệnh đầu vào — một chuỗi quá dài không thể là một lệnh hợp lệ trong sáu khuôn
  *  hẹp dưới đây; từ chối sớm tránh phải tách token trên một chuỗi rác dài. */
@@ -225,6 +256,11 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
     return { ok: true, lenh: { ten: "dotnet_build", argv, hienThi: hienThiArgv(argv) } };
   }
 
+  // ── dotnet test (không tham số) — ★★★ Đợt 4: dotnet tự tìm .sln/.csproj DUY NHẤT trong thư mục làm việc (workspace) ──
+  if (token.length === 2 && token[0] === "dotnet" && token[1] === "test") {
+    return { ok: true, lenh: { ten: "dotnet_test", argv: ["dotnet", "test"], hienThi: "dotnet test" } };
+  }
+
   // ── dotnet test <path> ─────────────────────────────────────────────────────────────────────
   if (token.length === 3 && token[0] === "dotnet" && token[1] === "test") {
     if (!thamSoAnToan(token[2])) {
@@ -234,11 +270,60 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
     return { ok: true, lenh: { ten: "dotnet_test", argv, hienThi: hienThiArgv(argv) } };
   }
 
+  // ═══ ★★★ Đợt 4 (2026-10-17) — LỆNH CHẠY TEST cho bài JS/TS/Python (đo: bộ đầu-cuối VSCode, model không tự kiểm được) ═══
+  // Cùng mức siết với khuôn cũ: tên chương trình + cờ CỐ ĐỊNH khớp nguyên văn từng token; phần còn lại CHỈ là đường qua
+  // `thamSoAnToan` (tương đối, trong workspace, không bắt đầu bằng `-`, danh sách trắng ký tự ⇒ không glob/`::`/shell).
+  // Như `npm run check`/vitest/dotnet, cả bốn lệnh CHẠY MÃ CỦA WORKSPACE (tệp test, conftest.py, script "test" trong
+  // package.json) — thẻ duyệt kể các tệp lượt này đã ghi (`ui/boThucThiVscode.ts#chayLenh`); chính sách duyệt KHÔNG đổi.
+
+  // ── npm test — CỐ ĐỊNH TUYỆT ĐỐI (không cả `-- <cờ>`: npm chuyển nguyên cho trình chạy test, vd `--update`) ──────
+  if (token.length === 2 && token[0] === "npm" && token[1] === "test") {
+    return { ok: true, lenh: { ten: "npm_test", argv: ["npm", "test"], hienThi: "npm test" } };
+  }
+
+  // ── node --test [<path>…] — `--test` là cờ DUY NHẤT; mọi cờ khác (`--experimental-*`, `--import`, `--inspect*`,
+  //    `--test-reporter-destination=<tệp>` ghi đĩa) bị từ chối vì token sau `--test` phải là ĐƯỜNG. Không đường ⇒ node tự
+  //    dò mẫu tệp test mặc định dưới thư mục làm việc (workspace).
+  if (token.length >= 2 && token[0] === "node" && token[1] === "--test") {
+    const duong = token.slice(2);
+    if (duong.length > TRAN_SO_DUONG) return { ok: false, lyDo: `node --test nhận tối đa ${TRAN_SO_DUONG} đường` };
+    const sai = duong.find((d) => !thamSoAnToan(d));
+    if (sai !== undefined) return { ok: false, lyDo: `tham số đường dẫn không an toàn: "${sai}"` };
+    const argv = ["node", "--test", ...duong];
+    return { ok: true, lenh: { ten: "node_test", argv, hienThi: hienThiArgv(argv) } };
+  }
+
+  // ── python -m pytest [<path>…] [-q] [-x] ───────────────────────────────────────────────────
+  // ⚠ Trình thông dịch là `python` NGUYÊN VĂN (extension chưa có cấu hình đường python; khi có thì đọc nó ở
+  //   `mang/chayLenhCucBo.ts`, không nới khuôn ở đây). Trên Windows `spawn("python")` (shell:false) dò PATH theo `.exe`:
+  //   nếu chỉ có STUB `%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe` (App Execution Alias, Python chưa cài) thì tiến
+  //   trình thoát mã 9009 với "Python was not found…" — kết quả lệnh trả nguyên văn cho model/người dùng, không phải lỗ
+  //   an toàn. `py`/`python3` không nhận (một khuôn, một trình nạp).
+  // ⚠ `-p no:cacheprovider` CỐ ĐỊNH: không ghi `.pytest_cache/`. Cờ người gõ: CHỈ `-q`/`-x`, mỗi cờ một lần —
+  //   `--pdb` (treo chờ stdin), `-p <plugin>` (nạp module tuỳ ý), `--basetemp=<thư mục>` (pytest XOÁ thư mục đó),
+  //   `-c`/`--rootdir` (cấu hình/gốc ngoài workspace), `-k`/`-s`/`--co` … đều bị từ chối.
+  if (token.length >= 3 && token[0] === "python" && token[1] === "-m" && token[2] === "pytest") {
+    const sau = token.slice(3);
+    const daCo = new Set<string>();
+    let soDuong = 0;
+    for (const t of sau) {
+      if (CO_PYTEST_CHO_PHEP.has(t)) {
+        if (daCo.has(t)) return { ok: false, lyDo: `cờ "${t}" lặp lại` };
+        daCo.add(t);
+        continue;
+      }
+      if (!thamSoAnToan(t)) return { ok: false, lyDo: `tham số không được phép cho pytest: "${t}" (chỉ đường tương đối, -q, -x)` };
+      soDuong++;
+    }
+    if (soDuong > TRAN_SO_DUONG) return { ok: false, lyDo: `python -m pytest nhận tối đa ${TRAN_SO_DUONG} đường` };
+    const argv = ["python", "-m", "pytest", "-p", "no:cacheprovider", ...sau];
+    // ⚠ `hienThi` = dạng NGƯỜI GÕ (không có `-p no:cacheprovider`): bangChat XÉT LẠI allowlist trên nhãn đã lưu.
+    return { ok: true, lenh: { ten: "pytest", argv, hienThi: ["python", "-m", "pytest", ...sau].join(" ") } };
+  }
+
   return {
     ok: false,
-    lyDo:
-      `"${chuoiLenh}" không khớp bất kỳ lệnh nào trong allowlist (git status · git diff · git diff --staged · ` +
-      `npm run check · npx vitest run <path> · dotnet build <path> · dotnet test <path>)`,
+    lyDo: `"${chuoiLenh}" không khớp bất kỳ lệnh nào trong allowlist (${MAU_LENH_HIEN_THI.join(" · ")})`,
   };
 }
 
@@ -253,4 +338,7 @@ export const TRAN_MS_THEO_LENH: Record<TenLenhChoPhep, number> = {
   vitest_run: 180_000,
   dotnet_build: 240_000,
   dotnet_test: 240_000,
+  node_test: 180_000,
+  npm_test: 240_000,
+  pytest: 180_000,
 };

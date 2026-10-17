@@ -12,7 +12,7 @@
  * khối `chay_lenh` dù chưa từng được dạy (hoặc dạy cho lượt trước rồi mức quyền đổi giữa chừng) vẫn
  * phải bị chặn ĐÚNG ở nơi thực thi, không dựa vào việc "model không biết cú pháp" để an toàn.
  *
- * Liệt kê CHÍNH XÁC sáu lệnh của allowlist (`loi/lenhChoPhep.ts`) — một danh sách LỆCH khỏi allowlist
+ * Liệt kê CHÍNH XÁC các lệnh của allowlist (Đợt 4: + bốn lệnh chạy test) (`loi/lenhChoPhep.ts`) — một danh sách LỆCH khỏi allowlist
  * thật sẽ dạy model xin những lệnh chắc chắn bị từ chối, hoặc tệ hơn, không xin những lệnh THẬT SỰ
  * được phép.
  */
@@ -29,16 +29,20 @@ export function dungVanBanDayLenhDoc(choPhepChay: boolean): string {
 
   return [
     "Bạn còn có thể YÊU CẦU CHẠY một lệnh CỐ ĐỊNH trên máy người dùng để tự kiểm tra công việc của " +
-      "mình — CHỈ ĐÚNG SÁU lệnh sau, không lệnh nào khác được chấp nhận (mọi biến thể khác, kể cả " +
+      "mình — CHỈ các lệnh sau, không lệnh nào khác được chấp nhận (mọi biến thể khác, kể cả " +
       "thêm một cờ tưởng vô hại, sẽ bị TỪ CHỐI):",
     '- "git status" (xem tệp nào đã đổi)',
     '- "git diff" (xem NỘI DUNG đã đổi)',
     '- "npm run check" (kiểm type/lint của dự án JS/TS)',
+    '- "npm test" (chạy script test của package.json — KHÔNG thêm tham số)',
     '- "npx vitest run <đường dẫn tệp lưới>" (chạy MỘT tệp lưới cụ thể)',
+    '- "node --test [<đường tệp/thư mục test>…]" (trình chạy test có sẵn của Node; bỏ trống = tự dò)',
+    '- "python -m pytest [<đường tệp/thư mục test>…] [-q] [-x]" (chỉ hai cờ -q, -x)',
     '- "dotnet build <đường dẫn .csproj/.sln>"',
-    '- "dotnet test <đường dẫn .csproj/.sln>"',
+    '- "dotnet test [<đường dẫn .csproj/.sln>]"',
+    "Đường dẫn phải TƯƠNG ĐỐI trong dự án (không tuyệt đối, không '..', không bắt đầu bằng '-').",
     "",
-    "Muốn chạy, phát ĐÚNG MỘT khối rào sau (thay `command` bằng ĐÚNG NGUYÊN VĂN một trong sáu lệnh " +
+    "Muốn chạy, phát ĐÚNG MỘT khối rào sau (thay `command` bằng ĐÚNG NGUYÊN VĂN một trong các lệnh " +
       "trên, kèm đường dẫn nếu lệnh đó cần): người dùng sẽ THẤY lệnh này và phải BẤM DUYỆT trước khi " +
       "nó chạy; tôi sẽ gửi lại kết quả (stdout/stderr) cho bạn ở lượt kế tiếp:",
     "",

@@ -48,7 +48,8 @@ workspace lúc dựng), không tệp cấu hình test mới. **Cộng thêm ở 
    `.env` đã rời máy, dù khoá có bị che). Bọc `globalThis.fetch`: quét MỌI thân yêu cầu (`/v1`, sổ kiểm toán, bất kỳ
    đâu) tìm giá trị đầy đủ + lõi 16 ký tự. Có ⇒ cờ `RÒ`.
    `--bay-trong-ma` (bật sẵn ở `--config ro`) gài thêm `ghp_…` trong tệp mã thường `cau-hinh/dich-vu.json` — báo
-   RIÊNG (`roMa`), KHÔNG thuộc cổng (nợ đã biết: `cheBiMat` là danh sách khuôn — xem docblock `mang/toolCucBo.ts`).
+   RIÊNG (`roMa`), KHÔNG thuộc cổng. Lượt đầu bộ đo bắt nó rò 21/21 ⇒ vá bằng nguồn mẫu chung `shared/mauBiMat.ts`
+   (server + extension) ⇒ 0/21. `cheBiMat` vẫn là danh sách khuôn: dạng khoá KHÔNG có tiền tố nhận diện được vẫn lọt.
 3. **Sổ kiểm toán** — đối chiếu mỗi lượt ghi ĐĨA của `vscode` giả (save/create/delete/rename) với một hàng
    `client-apply/chot {thanhCong:true}` được máy chủ nhận `ok:true` ⇒ `so.lech` phải = 0.
 

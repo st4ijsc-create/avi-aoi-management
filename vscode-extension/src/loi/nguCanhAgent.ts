@@ -7,17 +7,11 @@
  */
 import { dungKhoiNguCanhDuAn, type DuLieuNguCanhDuAn } from "../../../shared/agentCore/index";
 import { cheBiMat } from "./nguCanh";
+import { MAU_LENH_HIEN_THI } from "./lenhChoPhep";
 
 export const TEP_QUY_UOC = ["AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"] as const;
-export const LENH_DUOC_PHEP_HIEN_THI = [
-  "git status",
-  "git diff",
-  "git diff --staged",
-  "npm run check",
-  "npx vitest run <path>",
-  "dotnet build <path>",
-  "dotnet test <path>",
-];
+/** Lệnh được phép, dạy model qua khối "Project context" — MỘT NGUỒN với allowlist (`lenhChoPhep.ts#MAU_LENH_HIEN_THI`). */
+export const LENH_DUOC_PHEP_HIEN_THI: string[] = [...MAU_LENH_HIEN_THI];
 const TRAN_KY_TU_BO_NHO = 4000;
 const TRAN_KY_TU_DINH_KEM = 48_000;
 

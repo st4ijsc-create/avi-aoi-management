@@ -63,8 +63,13 @@ const GOC = join(__dirname, "..");
  * máy chủ (chính sách phân bậc: không dừng, cảnh báo, hạ tự trị). Đo trước: nhập thẳng `aiSafety.ts` làm census ĐỎ (từ
  * "truncate" của hậu tố cắt) ⇒ tách bộ quét, KHÔNG nới census. Vào bundle ⇒ census quét nó như mọi tệp.
  */
+/**
+ * ★★ (2026-10-17, Đợt 4) `loi/nguCanh.ts#cheBiMat` nhập `shared/mauBiMat.ts` (mẫu token có tiền tố THUẦN, không import
+ * gì) — MỘT NGUỒN với `aiSafety.REDACT_PATTERNS` của máy chủ. Vào bundle ⇒ census quét nó.
+ */
 const TEP_NGOAI_CAY_VAO_BUNDLE = [
   join(GOC, "..", "..", "shared", "quetMenhLenh.ts"),
+  join(GOC, "..", "..", "shared", "mauBiMat.ts"),
   join(GOC, "..", "..", "shared", "aiCodingLoop.ts"),
   ...["index", "kieu", "congCu", "loiNhac", "nguCanh", "vongAgent"].map((t) => join(GOC, "..", "..", "shared", "agentCore", `${t}.ts`)),
 ];

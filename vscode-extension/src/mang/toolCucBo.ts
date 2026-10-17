@@ -38,7 +38,9 @@
  *   · `cheBiMat` là một danh sách **KHUÔN MẪU**, không phải bộ dò bí mật. Một khoá không khớp năm
  *     luật hiện có (token nội bộ 32 hex không tiền tố, gán bằng tên biến lạ…) **SẼ rời máy** nếu nó
  *     nằm hardcode trong một tệp mã hợp lệ. Tầng chặn-theo-TỆP không với tới ca đó. Đây là nợ đã
- *     ghi từ Đợt A: gộp bộ che của client với `redactSecretsAndPII` của máy chủ — chưa làm.
+ *     ghi từ Đợt A: gộp bộ che của client với `redactSecretsAndPII` của máy chủ — Đợt 4 (2026-10-17) gộp PHẦN token
+ *     có tiền tố nhà cung cấp (`shared/mauBiMat.ts`: GitHub/GitLab/Slack/AWS/Google/Stripe/npm/OpenAI); bí mật KHÔNG
+ *     có hình dạng vẫn là nợ.
  *   · `liet_ke` là **ĐỆ QUY** (`**​/*` qua `findFiles`), không phải một-mức, và có trần số mục +
  *     trần tầng tìm kiếm; cả hai lần cắt đều được KHAI ra trong kết quả.
  *
