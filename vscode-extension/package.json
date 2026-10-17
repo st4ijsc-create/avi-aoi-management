@@ -13,6 +13,9 @@
     "Programming Languages",
     "Other"
   ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -103,6 +106,10 @@
         "command": "aviAiLocal.hoanTacLuotChay",
         "title": "AI Local: Hoàn tác lượt chạy agent",
         "icon": "$(discard)"
+      },
+      {
+        "command": "aviAiLocal.batTatGhostText",
+        "title": "AI Local: Bật/tắt gợi ý chữ mờ (ghost-text)"
       }
     ],
     "keybindings": [
@@ -258,6 +265,20 @@
           "default": 16000,
           "minimum": 512,
           "description": "Trần token sinh của MỘT lượt model trong agent (gồm cả suy luận). Lõi agent còn có trần tổng của lượt chạy."
+        },
+        "aviAiLocal.ghostText.enabled": {
+          "type": "boolean",
+          "scope": "machine",
+          "default": false,
+          "description": "Bật gợi ý chữ mờ khi gõ (ghost-text, kiểu Copilot) qua POST /v1/completions (model logic fim). Cần token /v1 (device flow). Chỉ gửi ~2.000 ký tự trước + ~800 ký tự sau con trỏ, đã che bí mật; không bao giờ gửi .env/khoá riêng/.git/tệp ngoài workspace. Phạm vi Máy: một repo lạ không tự bật được."
+        },
+        "aviAiLocal.ghostText.doTreMs": {
+          "type": "number",
+          "scope": "machine",
+          "default": 250,
+          "minimum": 50,
+          "maximum": 2000,
+          "description": "Thời gian ngừng gõ (ms) trước khi xin gợi ý ghost-text (gỡ dội)."
         }
       }
     }

@@ -21,6 +21,7 @@ Báo cáo ghi vào `scripts/ai-eval/reports/*.json`.
 | **RAG lập trình** | `npx tsx eval-rag-programming.mjs` | **CÓ** (nhúng) | Recall trên kho manual hãng |
 | **Sinh mã** | `npx tsx eval-codegen.mjs` | **CÓ** (model *code* 30B) | Chất lượng sinh chương trình + cổng an toàn |
 | **Specialist** | `npx tsx eval-specialist.mjs` | **CÓ** (model text) | 8 bài chẩn đoán bug thật |
+| **FIM / ghost-text** | `npx tsx fim/chay-fim.mts --model=<tệp.gguf>[,…]` | **CÓ** (GGUF trực tiếp, không qua máy chủ) | Khớp dòng đầu · khớp toàn đoạn · tương tự ký tự · p50/p95 trên 2×64 mẫu mã thật (`fim/mau-fim*.jsonl`, dựng bằng `fim/tao-mau.mts` từ một commit cố định), qua đúng `dungThanYeuCauFim`/`catGoiY` của extension. Kiểm thước: `--thuoc=dapan\|rong\|qua-cat` + `fim/chamFim.test.ts` |
 | **Mọi bộ** | `… --selfcheck` | **KHÔNG** | Bộ ca hợp lệ + wiring nguyên vẹn |
 
 > **Luôn chạy `--selfcheck` trước.** Nó chứng minh harness nối đúng vào mã sản phẩm và bộ ca hợp lệ

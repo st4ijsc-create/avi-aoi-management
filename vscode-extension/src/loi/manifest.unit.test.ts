@@ -47,6 +47,20 @@ describe("manifest extension", () => {
     expect(manifest.contributes.configuration.properties["aviAiLocal.serverUrl"]?.scope).toBe("machine");
   });
 
+  /**
+   * ★★★ ĐỢT 4C — ghost-text gửi mã quanh con trỏ lên máy chủ MỖI LẦN NGỪNG GÕ. Một repo lạ không được tự bật nó (hay
+   * hạ gỡ dội để dội máy chủ) bằng `.vscode/settings.json` ⇒ phạm vi Máy; mặc định TẮT; ghost-text cần kích hoạt lúc
+   * khởi động (không đợi người dùng mở khung chat).
+   */
+  it("★★★ ghost-text: khoá cấu hình phạm vi Máy, mặc định TẮT, có lệnh bật/tắt, kích hoạt lúc khởi động", () => {
+    const p = manifest.contributes.configuration.properties;
+    expect(p["aviAiLocal.ghostText.enabled"]?.scope).toBe("machine");
+    expect(p["aviAiLocal.ghostText.enabled"]?.default).toBe(false);
+    expect(p["aviAiLocal.ghostText.doTreMs"]?.scope).toBe("machine");
+    expect(manifest.contributes.commands.map((c: { command: string }) => c.command)).toContain("aviAiLocal.batTatGhostText");
+    expect(manifest.activationEvents).toContain("onStartupFinished");
+  });
+
   it("★★★ KHÔNG lệnh nào trong Command Palette tự nó GHI/ÁP/DUYỆT — mọi lượt ghi phải qua thẻ duyệt", () => {
     /**
      * ⚠ TIÊU ĐỀ CŨ NÓI SAI TỪ ĐỢT C (sửa 2026-08-30): nó viết "Đợt A KHÔNG khai lệnh nào mang nghĩa

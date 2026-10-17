@@ -113,6 +113,23 @@ Mở **Command Palette** (`Ctrl+Shift+P`), gõ "AI Local":
 | **AI Local: Nhớ điều này** | Lưu một ghi chú vào bộ nhớ dài hạn (bí mật được che trước khi lưu). |
 | **AI Local: Bộ nhớ dài hạn** | Xem và xoá từng mục nhớ. |
 | **AI Local: Đổi địa chỉ máy chủ** | Mở Settings lọc sẵn ô `aviAiLocal.serverUrl`. |
+| **AI Local: Bật/tắt gợi ý chữ mờ (ghost-text)** | Bật/tắt gợi ý mã khi gõ (cũng là nút `AI gợi ý` ở thanh trạng thái). |
+
+## Gợi ý chữ mờ khi gõ (ghost-text)
+
+Gõ mã trong một tệp của workspace ⇒ sau ~250 ms ngừng gõ, AI Local gợi ý phần tiếp theo dạng chữ mờ; **Tab** để nhận,
+gõ tiếp để bỏ (`Alt+\` gọi gợi ý ngay). Giữa một dòng đã có chữ ⇒ gợi ý tới hết dòng; trên một dòng trống ⇒ có thể gợi
+ý cả khối (tối đa 8 dòng).
+
+- **Mặc định TẮT** — bật bằng nút `AI gợi ý` ở thanh trạng thái hoặc `aviAiLocal.ghostText.enabled`.
+- Cần **token `/v1`** (lệnh *Đăng nhập AI Local (device flow)*, phạm vi `fim`). Gọi `POST /v1/completions` với model
+  logic `fim` (model nhỏ chạy trong tiến trình máy chủ, không chiếm slot của model chính).
+- Chỉ gửi ~2.000 ký tự trước và ~800 ký tự sau con trỏ, **đã che bí mật**. Không gợi ý (không gửi byte nào) cho
+  `.env`, khoá riêng, `.git/`, tệp ngoài workspace, tệp không phải trên đĩa, tệp quá 1 triệu ký tự.
+- Gợi ý chứa dấu che (model chỉ thấy bản đã che) bị bỏ — không chèn rác vào mã thật.
+- Lỗi **không bao giờ bật hộp thoại**: chỉ ghi vào kênh Output **"AI Local — Ghost text"** (kèm độ trễ từng lượt, không
+  ghi mã) và đổi biểu tượng thanh trạng thái; lỗi mạng ⇒ nghỉ 30 s, token hỏng ⇒ nghỉ tới khi đăng nhập lại.
+- Nhận gợi ý là VSCode chèn vào bộ đệm (Ctrl+Z hoàn tác) — không phải một đường ghi đĩa của extension.
 
 ## MCP server ngoài
 
@@ -139,6 +156,8 @@ của agent.
 | `aviAiLocal.mcpServers` | `{}` | MCP server ngoài (xem trên). Phạm vi **Máy**. |
 | `aviAiLocal.agentModel` | `chat` | Model logic của cổng `/v1` cho agent (`chat` / `code`). Phạm vi **Máy**. |
 | `aviAiLocal.agentMaxTokens` | `16000` | Trần token sinh của một lượt model (gồm suy luận). Phạm vi **Máy**. |
+| `aviAiLocal.ghostText.enabled` | `false` | Bật gợi ý chữ mờ khi gõ (ghost-text). Phạm vi **Máy**. |
+| `aviAiLocal.ghostText.doTreMs` | `250` | Thời gian ngừng gõ (ms) trước khi xin gợi ý (50–2000). Phạm vi **Máy**. |
 
 **Vì sao các khoá trên có phạm vi Máy:** một `.vscode/settings.json` trong repo lạ không thể ghi đè chúng — nếu không,
 mở một repo thù địch là đủ để chuyển cookie/token sang máy chủ khác hoặc chạy một tiến trình tuỳ ý.
@@ -166,5 +185,6 @@ Lệnh sinh `vscode-extension/avi-ai-local-0.2.0.vsix` (không commit vào git).
   chưa ghi được cho tới khi máy chủ mở sổ kiểm toán cho token.
 - Khi model phát lời gọi tool bên trong phần suy luận, extension hỏi lại lượt đó một lần với yêu cầu tắt nghĩ; cổng
   `/v1` hiện chưa chuyển tiếp yêu cầu tắt nghĩ xuống engine.
-- Chưa có gợi ý chữ mờ khi gõ (ghost-text) — việc riêng của Đợt 4.
+- Ghost-text dùng một yêu cầu không stream mỗi lần ngừng gõ; máy chủ chưa có bộ đệm tiền tố cho FIM trong tiến trình,
+  nên mỗi gợi ý tính lại toàn bộ ngữ cảnh (~0,1–0,25 s trên model 1,5B).
 - Mức **Tự ghi** không áp cho chạy lệnh — lệnh luôn hỏi trước. Danh sách lệnh chạy được là cố định.

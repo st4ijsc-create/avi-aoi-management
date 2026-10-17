@@ -24,6 +24,8 @@ import { BoNhoQuanLy, chayNhoDieuNay } from "./ui/boNhoQuanLy";
 // ★★★ ĐỢT 4B — đăng nhập DEVICE FLOW lấy token cổng /v1 cho lõi agent (token chỉ ở SecretStorage).
 import { dangNhapThietBi } from "./mang/thietBi";
 import { KHOA_THONG_TIN_TOKEN, KHOA_TOKEN_GATEWAY, tenThietBi } from "./loi/thietBi";
+// ★★★ ĐỢT 4C — ghost-text (InlineCompletionItemProvider) gọi /v1/completions bằng token cá nhân.
+import { dangKyGhostText } from "./ui/ghostText";
 import { hostname } from "node:os";
 
 /**
@@ -356,6 +358,10 @@ export function activate(context: vscode.ExtensionContext): void {
       webviewOptions: { retainContextWhenHidden: true },
     }),
   );
+
+  // ★★★ ĐỢT 4C — ghost-text: provider + lệnh bật/tắt + nút thanh trạng thái + kênh nhật ký (xem `ui/ghostText.ts`).
+  // Mặc định TẮT (`aviAiLocal.ghostText.enabled`); provider không gửi byte nào khi tắt.
+  dangKyGhostText(context);
 }
 
 export function deactivate(): void {
