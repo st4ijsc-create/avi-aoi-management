@@ -13,8 +13,11 @@
  * ⚠ Luật chủ dự án (ec85a97e6): văn bản do MODEL viết KHÔNG BAO GIỜ đi bộ `boKhoiDauRaLenh` (nhãn tin cậy "đầu ra
  *   lệnh"). Ở đây chữ model vẽ bằng `Streamdown` TRƠN; đầu ra lệnh vẽ bằng `DauRaLenhAgent` từ dữ liệu CÓ CẤU TRÚC của
  *   sự kiện `ket-qua-tool` (server), không qua fence trong văn bản.
+ * ★ Đợt 5.1: nút 👍/👎 (`NutPhanHoi`) ngay dưới câu trả lời CUỐI của lượt ĐÃ XONG (`viTriTraLoiCuoi`: đúng `runId` +
+ *   `chiSoTin` theo hợp đồng `aiAgent.phanHoi`). Phiếu cũ của mình tải lại từ `aiAgent.phanHoiCuaToi`. Thẻ duyệt diff
+ *   KHÔNG mang nút: quyết định duyệt/bác (kèm lý do bác) máy chủ đã tự ghi từ cửa duyệt thật.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
 import {
@@ -39,9 +42,11 @@ import type { LyDoDung, ViecKeHoach } from "@shared/agentCore/kieu";
 import { Button } from "@/components/ui/button";
 import { TheDuyetDiff } from "@/components/ai/TheDuyetDiff";
 import type { ActionState } from "@/components/ConfirmActionCard";
+import { agentTrpc, phieuTraLoiCuaToi } from "@/lib/agentApi";
 import { cn } from "@/lib/utils";
 import { BangDangNghi } from "../BangDangNghi";
-import { idHanhDong, layDiffTuDeXuat, thamSoChinh, type MucDongThoiGian } from "./trangThaiAgent";
+import { NutPhanHoi } from "./NutPhanHoi";
+import { idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucDongThoiGian } from "./trangThaiAgent";
 import type { HookAgent, TheDuyetMuc, TheNhoMuc } from "./useLuotChayAgent";
 
 type T = ReturnType<typeof useTranslation>["t"];
@@ -359,6 +364,37 @@ function TheDeXuatNho({ m, agent }: { m: TheNhoMuc; agent: HookAgent }) {
   );
 }
 
+/**
+ * (Đợt 5.1) 👍/👎 cho khối trả lời (`runId`, `chiSoTin`). Đọc phiếu CỦA MÌNH trước rồi mới vẽ nút (nút giữ phiếu ban đầu
+ * trong state riêng); đọc hỏng ⇒ vẽ với "chưa bỏ phiếu" — ghi vẫn đi qua máy chủ, hiển thị theo kết quả THẬT.
+ * ⚠ `phanHoiCuaToi` chỉ trả 50 phiếu mới nhất ⇒ phiếu rất cũ không hiện lại (ghi đè vẫn đúng hàng phía máy chủ).
+ */
+function PhanHoiTraLoi({ runId, chiSoTin }: { runId: string; chiSoTin: number }) {
+  const khoa = `${runId}#${chiSoTin}`;
+  const [daDoc, setDaDoc] = useState<{ khoa: string; danhGia: 1 | -1 | null } | null>(null);
+  useEffect(() => {
+    let huy = false;
+    agentTrpc
+      .phanHoiCuaToi()
+      .then(
+        (ds) => phieuTraLoiCuaToi(ds, runId, chiSoTin),
+        () => null,
+      )
+      .then((danhGia) => {
+        if (!huy) setDaDoc({ khoa, danhGia });
+      });
+    return () => {
+      huy = true;
+    };
+  }, [khoa, runId, chiSoTin]);
+  if (!daDoc || daDoc.khoa !== khoa) return null;
+  return (
+    <div data-testid="agent-phan-hoi-tra-loi" className="pl-1">
+      <NutPhanHoi key={khoa} dich={{ loai: "tra-loi", runId, chiSoTin }} danhGiaBanDau={daDoc.danhGia} />
+    </div>
+  );
+}
+
 function KetThuc({ agent, onMoTep }: { agent: HookAgent; onMoTep: (p: string) => void }) {
   const { t } = useTranslation();
   const s = agent.trangThai;
@@ -416,6 +452,7 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
   const { t } = useTranslation();
   const s = agent.trangThai;
   const ds = s.dongThoiGian;
+  const choPhanHoi = viTriTraLoiCuoi(s);
   const coGi = ds.length > 0 || !!agent.luotDangChayCu || agent.matKetNoi !== null;
   if (!coGi) return null;
 
@@ -475,10 +512,13 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
             );
           case "chu":
             return (
-              <div key={i} data-testid="agent-chu" className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words rounded-lg bg-muted px-3 py-2 text-[13px] leading-relaxed">
-                {/* Chữ MODEL viết ⇒ Streamdown TRƠN (không bộ khối "đầu ra lệnh"). */}
-                <Streamdown mode={s.dangChay && cuoi ? "streaming" : "static"}>{m.noiDung}</Streamdown>
-              </div>
+              <Fragment key={i}>
+                <div data-testid="agent-chu" className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words rounded-lg bg-muted px-3 py-2 text-[13px] leading-relaxed">
+                  {/* Chữ MODEL viết ⇒ Streamdown TRƠN (không bộ khối "đầu ra lệnh"). */}
+                  <Streamdown mode={s.dangChay && cuoi ? "streaming" : "static"}>{m.noiDung}</Streamdown>
+                </div>
+                {choPhanHoi?.iDong === i && <PhanHoiTraLoi runId={choPhanHoi.runId} chiSoTin={choPhanHoi.chiSoTin} />}
+              </Fragment>
             );
           case "nghi":
             return (

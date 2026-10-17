@@ -270,6 +270,23 @@ export function vanBanTraLoiCuoi(s: TrangThaiAgent): string {
   return "";
 }
 
+/**
+ * (Đợt 5.1) Chỗ gắn nút 👍/👎: câu trả lời CUỐI của lượt ĐÃ XONG phía máy chủ. `iDong` = vị trí trên `dongThoiGian`;
+ * `chiSoTin` = thứ tự của khối `chu` ấy trong các khối `chu` (hợp đồng `aiAgent.phanHoi` — cùng luật gộp với
+ * `khoiTraLoiTuSuKien`). Đang chạy / chưa có `runId` (dừng trước `bat-dau`) / không có chữ ⇒ null.
+ */
+export function viTriTraLoiCuoi(s: TrangThaiAgent): { runId: string; iDong: number; chiSoTin: number } | null {
+  if (s.dangChay || !s.ketThuc || !s.runId) return null;
+  let iDong = -1;
+  let chiSoTin = -1;
+  s.dongThoiGian.forEach((m, i) => {
+    if (m.kieu !== "chu") return;
+    iDong = i;
+    chiSoTin++;
+  });
+  return iDong < 0 ? null : { runId: s.runId, iDong, chiSoTin };
+}
+
 // ─── Đề xuất ghi ⇒ args cho `TheDuyetDiff` ─────────────────────────────────────────────────────
 
 export interface DiffTuDeXuat {

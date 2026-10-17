@@ -44,6 +44,7 @@ let goiHuy: string[] = [];
 let danhSachTra: unknown[] = [];
 let hoanTacTra: unknown = { khoiPhuc: [], xungDot: [] };
 let nhoTra: unknown = { ok: true, note: null, ketQua: "them" };
+let phanHoiCuaToiTra: unknown = { ok: true, note: null, phieu: [] };
 
 function traJson(o: unknown, status = 200): Response {
   return new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
@@ -57,7 +58,18 @@ function fetchGia(input: string, init?: RequestInit): Promise<Response> {
     let inp: unknown;
     if (method === "POST") inp = (JSON.parse(String(init?.body)) as { json: unknown }).json;
     goiTrpc.push({ thuTuc, input: inp });
-    const data = thuTuc === "danhSach" ? danhSachTra : thuTuc === "hoanTac" ? hoanTacTra : thuTuc === "nhoDeXuat" ? nhoTra : { ok: true };
+    const data =
+      thuTuc === "danhSach"
+        ? danhSachTra
+        : thuTuc === "hoanTac"
+          ? hoanTacTra
+          : thuTuc === "nhoDeXuat"
+            ? nhoTra
+            : thuTuc === "phanHoiCuaToi"
+              ? phanHoiCuaToiTra
+              : thuTuc === "phanHoi"
+                ? { ok: true, note: null, phieu: { danhGia: (inp as { danhGia?: unknown }).danhGia ?? null } }
+                : { ok: true };
     return Promise.resolve(traJson({ result: { data: { json: data } } }));
   }
   if (/\/api\/ai\/agent\/runs\/[^/]+\/huy$/.test(url)) {
@@ -129,6 +141,7 @@ beforeEach(() => {
   danhSachTra = [];
   hoanTacTra = { khoiPhuc: [], xungDot: [] };
   nhoTra = { ok: true, note: null, ketQua: "them" };
+  phanHoiCuaToiTra = { ok: true, note: null, phieu: [] };
   onTep.mockReset();
   onMoTep.mockReset();
   vi.stubGlobal("fetch", vi.fn(fetchGia));
@@ -365,5 +378,104 @@ describe("DongThoiGianAgent — nội dung đáng ngờ (2026-10-17: cảnh báo
     expect(cb[1]).toHaveAttribute("data-loai", "ha-tu-tri");
     expect(within(screen.getByTestId("agent-the-duyet")).getByTestId("agent-the-dang-ngo")).toHaveTextContent("shared/agentCore/loiNhac.ts");
     expect(screen.getByTestId("agent-trang-thai")).toBeInTheDocument();
+  });
+});
+
+// ★ Đợt 5.1 — nút 👍/👎 gắn dưới câu trả lời CUỐI của lượt ĐÃ XONG. `chiSoTin` = thứ tự khối `chu` trên dòng thời gian
+// (cùng luật gộp với `khoiTraLoiTuSuKien` máy chủ). Thẻ duyệt diff KHÔNG mang nút (quyết định duyệt/bác máy chủ tự ghi).
+describe("DongThoiGianAgent — phản hồi 👍/👎 (Đợt 5.1)", () => {
+  const DIFF = {
+    loai: "can-duyet" as const,
+    id: "c2",
+    deXuat: {
+      ten: "edit_file",
+      thamSo: { path: "a.ts" },
+      pendingActionId: "77",
+      xemTruoc: { path: "a.ts", original: "const a = 1;\n", modified: "const a = 2;\n" },
+    },
+  };
+
+  it("lượt ĐANG chạy ⇒ không có nút phản hồi (kể cả khi đã có chữ)", async () => {
+    await batDau();
+    await day({ loai: "chu", noiDung: "Đang xem xét…" });
+    expect(screen.getByTestId("agent-chu")).toBeInTheDocument();
+    expect(screen.queryByTestId("nut-phan-hoi")).toBeNull();
+    expect(goiTrpc.some((g) => g.thuTuc === "phanHoiCuaToi")).toBe(false);
+  });
+
+  it("lượt XONG ⇒ đúng MỘT nút, ngay dưới câu trả lời CUỐI; bấm 👍 gửi {tra-loi, runId, chiSoTin} đúng khối; thẻ diff không có nút", async () => {
+    await batDau();
+    await day(
+      { loai: "chu", noiDung: "Tôi sẽ đọc tệp." },
+      { loai: "goi-tool", goi: { id: "t1", ten: "read_file", thamSo: { path: "a.ts" } }, luot: 1 },
+      { loai: "ket-qua-tool", id: "t1", ten: "read_file", ok: true, tomTat: "ok" },
+      DIFF,
+      { loai: "da-duyet", id: "c2" },
+      { loai: "chu", noiDung: "Đã sửa " },
+      { loai: "usage", vao: 1, ra: 1 }, // không lên dòng thời gian ⇒ KHÔNG cắt khối
+      { loai: "chu", noiDung: "xong." },
+    );
+    expect(screen.queryByTestId("nut-phan-hoi")).toBeNull();
+    await day({ loai: "xong", lyDo: "hoan-thanh" });
+
+    const nut = screen.getAllByTestId("nut-phan-hoi");
+    expect(nut).toHaveLength(1);
+    const chu = screen.getAllByTestId("agent-chu");
+    expect(chu).toHaveLength(2);
+    expect(chu[1]).toHaveTextContent("Đã sửa xong.");
+    expect(chu[1]!.nextElementSibling).toContainElement(nut[0]!);
+    expect(within(screen.getByTestId("agent-the-duyet")).queryByTestId("nut-phan-hoi")).toBeNull();
+
+    fireEvent.click(within(nut[0]!).getByRole("button", { name: "Hữu ích" }));
+    await nhip();
+    expect(goiTrpc.find((g) => g.thuTuc === "phanHoi")).toEqual({
+      thuTuc: "phanHoi",
+      input: { loai: "tra-loi", runId: "r1", chiSoTin: 1, danhGia: 1 },
+    });
+    expect(within(nut[0]!).getByRole("button", { name: "Hữu ích" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("mở lại: phiếu CỦA MÌNH cho đúng (runId, chiSoTin) được tải lại từ phanHoiCuaToi", async () => {
+    phanHoiCuaToiTra = {
+      ok: true,
+      note: null,
+      phieu: [
+        { loai: "tra-loi", runId: "r-khac", chiSoTin: 0, danhGia: 1 },
+        { loai: "tra-loi", runId: "r1", chiSoTin: 5, danhGia: 1 },
+        { loai: "diff", runId: "r1", chiSoTin: null, actionId: "77", danhGia: 1 },
+        { loai: "tra-loi", runId: "r1", chiSoTin: 0, danhGia: -1 },
+      ],
+    };
+    await batDau();
+    await day({ loai: "chu", noiDung: "Trả lời." }, { loai: "xong", lyDo: "hoan-thanh" });
+    const nut = screen.getByTestId("nut-phan-hoi");
+    expect(within(nut).getByRole("button", { name: "Chưa tốt" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(nut).getByRole("button", { name: "Hữu ích" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("đọc phiếu hỏng (ok:false) ⇒ vẫn hiện nút, chưa chọn gì", async () => {
+    phanHoiCuaToiTra = { ok: false, note: "PERMISSION_DENIED", phieu: [] };
+    await batDau();
+    await day({ loai: "chu", noiDung: "Trả lời." }, { loai: "xong", lyDo: "hoan-thanh" });
+    const nut = screen.getByTestId("nut-phan-hoi");
+    expect(within(nut).getByRole("button", { name: "Hữu ích" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(nut).getByRole("button", { name: "Chưa tốt" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("lượt xong mà KHÔNG có chữ trả lời ⇒ không có nút", async () => {
+    await batDau();
+    await day({ loai: "loi", ma: "E", thongDiep: "hỏng" }, { loai: "xong", lyDo: "loi-model" });
+    expect(screen.queryByTestId("nut-phan-hoi")).toBeNull();
+  });
+
+  it("dừng TRƯỚC bat-dau (chưa có runId phía máy chủ) ⇒ không có nút", async () => {
+    render(<Harness />);
+    await nhip();
+    fireEvent.click(screen.getByText("gui"));
+    await nhip();
+    fireEvent.click(screen.getByText("dung"));
+    await nhip();
+    expect(screen.getByTestId("agent-ket-thuc")).toBeInTheDocument();
+    expect(screen.queryByTestId("nut-phan-hoi")).toBeNull();
   });
 });

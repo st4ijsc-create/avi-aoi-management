@@ -281,7 +281,47 @@ export const agentTrpc = {
   async phanHoi(vao: DauVaoPhanHoi): Promise<KetQuaPhanHoi> {
     return chuanHoaKetQuaPhanHoi(await dotBien<unknown>("phanHoi", vao));
   },
+  /** (Đợt 5.1) phiếu CỦA MÌNH (máy chủ trả tối đa 50 hàng mới nhất) — để nút hiện lại phiếu khi mở lại lượt chạy. */
+  async phanHoiCuaToi(): Promise<PhieuCuaToi[]> {
+    return chuanHoaPhanHoiCuaToi(await truyVan<unknown>("phanHoiCuaToi"));
+  },
 };
+
+/** (Đợt 5.1) một phiếu của mình (tập con `TomTatPhanHoi` máy chủ) — chỉ phần đủ để khớp nút. */
+export interface PhieuCuaToi {
+  loai: "tra-loi" | "diff";
+  runId: string | null;
+  chiSoTin: number | null;
+  actionId: string | null;
+  danhGia: 1 | -1 | null;
+}
+
+/** `{ok, phieu: TomTatPhanHoi[]}` ⇒ phiếu hợp lệ; `ok:false` / hình lạ ⇒ `[]` (nút hiện "chưa bỏ phiếu"). */
+export function chuanHoaPhanHoiCuaToi(o: unknown): PhieuCuaToi[] {
+  if (!o || typeof o !== "object" || (o as { ok?: unknown }).ok !== true) return [];
+  const ds = (o as { phieu?: unknown }).phieu;
+  if (!Array.isArray(ds)) return [];
+  const kq: PhieuCuaToi[] = [];
+  for (const h of ds) {
+    if (!h || typeof h !== "object") continue;
+    const r = h as Record<string, unknown>;
+    if (r.loai !== "tra-loi" && r.loai !== "diff") continue;
+    kq.push({
+      loai: r.loai,
+      runId: typeof r.runId === "string" ? r.runId : null,
+      chiSoTin: typeof r.chiSoTin === "number" && Number.isInteger(r.chiSoTin) ? r.chiSoTin : null,
+      actionId: typeof r.actionId === "string" ? r.actionId : null,
+      danhGia: r.danhGia === 1 || r.danhGia === -1 ? r.danhGia : null,
+    });
+  }
+  return kq;
+}
+
+/** Phiếu của mình cho khối trả lời (`runId`, `chiSoTin`); không có ⇒ null. */
+export function phieuTraLoiCuaToi(ds: readonly PhieuCuaToi[], runId: string, chiSoTin: number): 1 | -1 | null {
+  const h = ds.find((p) => p.loai === "tra-loi" && p.runId === runId && p.chiSoTin === chiSoTin);
+  return h ? h.danhGia : null;
+}
 
 /** (Đợt 5.1) đầu vào `aiAgent.phanHoi`. `danhGia: null` = gỡ phiếu. */
 export type DauVaoPhanHoi =

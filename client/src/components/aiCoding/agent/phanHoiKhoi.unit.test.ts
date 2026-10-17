@@ -6,8 +6,8 @@
 import { describe, expect, it } from "vitest";
 import type { SuKienAgent } from "@shared/agentCore/kieu";
 import { khoiTraLoiTuSuKien } from "@shared/phanHoiAgent";
-import { chuanHoaKetQuaPhanHoi } from "@/lib/agentApi";
-import { TRANG_THAI_RONG, giamNhieu } from "./trangThaiAgent";
+import { chuanHoaKetQuaPhanHoi, chuanHoaPhanHoiCuaToi, phieuTraLoiCuaToi } from "@/lib/agentApi";
+import { TRANG_THAI_RONG, batDauGui, giamNhieu, viTriTraLoiCuoi } from "./trangThaiAgent";
 
 const MOI_LOAI: SuKienAgent[] = [
   { loai: "bat-dau", runId: "r", cheDo: "sua" },
@@ -69,5 +69,61 @@ describe("chuanHoaKetQuaPhanHoi", () => {
     expect(chuanHoaKetQuaPhanHoi({ ok: true, note: null, phieu: null })).toEqual({ ok: true, ma: null, danhGia: null });
     expect(chuanHoaKetQuaPhanHoi({ ok: false, note: "NOT_FOUND", phieu: null })).toEqual({ ok: false, ma: "NOT_FOUND", danhGia: null });
     expect(chuanHoaKetQuaPhanHoi("x")).toEqual({ ok: false, ma: "LOI", danhGia: null });
+  });
+});
+
+describe("viTriTraLoiCuoi (chỗ gắn nút) ⇄ khối máy chủ", () => {
+  it("300 lượt ngẫu nhiên ĐÃ XONG: chiSoTin = khối CUỐI máy chủ, cùng văn bản; không chữ ⇒ null", () => {
+    const r = prng(77);
+    for (let lan = 0; lan < 300; lan++) {
+      const es: SuKienAgent[] = [{ loai: "bat-dau", runId: "r", cheDo: "sua" }];
+      const n = Math.floor(r() * 20);
+      for (let i = 0; i < n; i++) {
+        const mau = MOI_LOAI[Math.floor(r() * MOI_LOAI.length)]!;
+        if (mau.loai === "xong" || mau.loai === "bat-dau") continue;
+        es.push(mau.loai === "chu" ? { loai: "chu", noiDung: String(i) } : mau.loai === "de-xuat-nho" ? { ...mau, id: `n${i}` } : mau);
+      }
+      es.push({ loai: "xong", lyDo: "hoan-thanh" });
+      const s = giamNhieu(batDauGui("hỏi", "sua"), es);
+      const khoi = khoiTraLoiTuSuKien(es);
+      const v = viTriTraLoiCuoi(s);
+      if (!khoi.length) {
+        expect(v).toBeNull();
+        continue;
+      }
+      expect(v).not.toBeNull();
+      expect(v!.runId).toBe("r");
+      expect(v!.chiSoTin).toBe(khoi.length - 1);
+      expect(s.dongThoiGian[v!.iDong]).toEqual({ kieu: "chu", noiDung: khoi[khoi.length - 1] });
+    }
+  });
+
+  it("đang chạy / chưa có runId ⇒ null", () => {
+    const dang = giamNhieu(batDauGui("hỏi", "sua"), [{ loai: "bat-dau", runId: "r", cheDo: "sua" }, { loai: "chu", noiDung: "a" }]);
+    expect(viTriTraLoiCuoi(dang)).toBeNull();
+    const khongRun = giamNhieu(batDauGui("hỏi", "sua"), [{ loai: "chu", noiDung: "a" }, { loai: "xong", lyDo: "huy" }]);
+    expect(viTriTraLoiCuoi(khongRun)).toBeNull();
+    expect(viTriTraLoiCuoi(TRANG_THAI_RONG)).toBeNull();
+  });
+});
+
+describe("chuanHoaPhanHoiCuaToi / phieuTraLoiCuaToi", () => {
+  it("ok ⇒ phiếu hợp lệ; ok:false / rác ⇒ []; khớp đúng (runId, chiSoTin, loai tra-loi)", () => {
+    const ds = chuanHoaPhanHoiCuaToi({
+      ok: true,
+      note: null,
+      phieu: [
+        { loai: "tra-loi", runId: "r", chiSoTin: 1, actionId: null, danhGia: -1 },
+        { loai: "diff", runId: "r", chiSoTin: null, actionId: "a", danhGia: 1 },
+        { loai: "la", runId: "r", chiSoTin: 0, danhGia: 1 },
+        null,
+      ],
+    });
+    expect(ds).toHaveLength(2);
+    expect(phieuTraLoiCuaToi(ds, "r", 1)).toBe(-1);
+    expect(phieuTraLoiCuaToi(ds, "r", 0)).toBeNull();
+    expect(phieuTraLoiCuaToi(ds, "khac", 1)).toBeNull();
+    expect(chuanHoaPhanHoiCuaToi({ ok: false, note: "PERMISSION_DENIED", phieu: [] })).toEqual([]);
+    expect(chuanHoaPhanHoiCuaToi("x")).toEqual([]);
   });
 });
