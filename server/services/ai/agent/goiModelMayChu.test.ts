@@ -179,6 +179,37 @@ describe("goiModelMayChu", () => {
     expect(xong?.toolCalls).toHaveLength(1);
   });
 
+  it("★★★ Đợt 4 — câu trả lời nằm TRONG suy luận, content rỗng (G5-D ca B, bọc G1-D) ⇒ hỏi lại MỘT lần nghĩ TẮT", async () => {
+    const goiDi: GgufChatOptions[] = [];
+    const goi = taoGoiModelMayChu({
+      chatStream: async function* (o) {
+        goiDi.push(o);
+        if (goiDi.length === 1) {
+          throw new Error(
+            "[aiGgufEngine] TỪ CHỐI TRUNG THỰC (G1-D, streaming chat completion): … hỏng: [llamaServer] TỪ CHỐI TRUNG THỰC (G5-D, stream): model đã tiêu HẾT hạn mức 16000 token vào chuỗi SUY LUẬN",
+          );
+        }
+        yield { type: "token", token: "Xong." } as GgufStreamChunk;
+        yield { type: "done" } as GgufStreamChunk;
+      },
+    });
+    await gom(goi({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }));
+    expect(goiDi).toHaveLength(2);
+    expect(goiDi[1].disableThinking).toBe(true);
+  });
+
+  it("★★ G5-D khi KHÔNG có tool ⇒ không hỏi lại (giữ hành vi cũ)", async () => {
+    let n = 0;
+    const goi = taoGoiModelMayChu({
+      chatStream: async function* () {
+        n++;
+        throw new Error("[llamaServer] TỪ CHỐI TRUNG THỰC (G5-D, stream): x");
+      },
+    });
+    await expect(gom(goi({ tinNhan: TIN, congCu: [], signal: new AbortController().signal }))).rejects.toBeInstanceOf(LoiModel);
+    expect(n).toBe(1);
+  });
+
   it("★★ hỏi lại vẫn tool call trong suy luận ⇒ KHÔNG lặp vô hạn: lỗi tạm thời cho lõi", async () => {
     let n = 0;
     const goi = taoGoiModelMayChu({

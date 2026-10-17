@@ -110,6 +110,61 @@ describe("GoiModel /v1 — luồng", () => {
     expect((ra.at(-1) as Extract<ManhModel, { loai: "xong" }>).toolCalls[0].function.name).toBe("read_file");
   });
 
+  // ★★★ Đợt 4 (V-dot4-1/2) — máy chủ mới trả `error.code`; máy chủ cũ trả thông điệp G5-D (câu trả lời cuối nằm TRONG
+  //   suy luận, content rỗng — 5/6 lượt `loi-model` đo được: extension cũ không nhận ra ⇒ lõi thử lại y hệt ⇒ chết).
+  const motLanLoiRoiOn = (loi: Record<string, unknown>) => {
+    const than: Array<Record<string, unknown>> = [];
+    let lan = 0;
+    const f = (async (_u: string, init: { body: string }) => {
+      than.push(JSON.parse(init.body));
+      lan++;
+      if (lan === 1) return dapStream(sse(delta({ role: "assistant" }), { error: loi }));
+      return dapStream(sse(delta({ tool_calls: [{ index: 0, id: "k", function: { name: "read_file", arguments: "{}" } }] }), delta({}, "tool_calls"), "[DONE]"));
+    }) as unknown as typeof fetch;
+    return { f, than, lan: () => lan };
+  };
+  it.each([
+    ["code tool_call_in_reasoning (thông điệp KHÔNG có dấu)", { message: "model emitted a tool call inside reasoning", type: "server_error", code: "tool_call_in_reasoning" }],
+    ["code reasoning_without_content", { message: "x", type: "server_error", code: "reasoning_without_content" }],
+    [
+      "thông điệp G5-D của máy chủ CŨ (không code)",
+      { message: "[aiGgufEngine] TỪ CHỐI TRUNG THỰC (G1-D, streaming chat completion): … hỏng: [llamaServer] TỪ CHỐI TRUNG THỰC (G5-D, stream): model đã tiêu HẾT hạn mức 16000 token vào chuỗi SUY LUẬN" },
+    ],
+  ])("★★★ %s ⇒ hỏi lại ĐÚNG MỘT lần với enable_thinking=false", async (_ten, loi) => {
+    const k = motLanLoiRoiOn(loi);
+    const ra = await gom(taoGoiModelV1({ serverUrl: "http://m", layToken: async () => "avgw_x", fetch: k.f })(vaoMau()));
+    expect(k.lan()).toBe(2);
+    expect(k.than[0].chat_template_kwargs).toBeUndefined();
+    expect(k.than[1].chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect((ra.at(-1) as Extract<ManhModel, { loai: "xong" }>).toolCalls[0].function.name).toBe("read_file");
+  });
+
+  it("★★★ HTTP 500 JSON có code tool_call_in_reasoning (đường không-luồng của cổng) ⇒ hỏi lại nghĩ TẮT", async () => {
+    const than: Array<Record<string, unknown>> = [];
+    let lan = 0;
+    const f = (async (_u: string, init: { body: string }) => {
+      than.push(JSON.parse(init.body));
+      lan++;
+      if (lan === 1) return dapLoi(500, { error: { message: "x", type: "server_error", code: "tool_call_in_reasoning" } });
+      return dapStream(sse(delta({ content: "ok" }), delta({}, "stop"), "[DONE]"));
+    }) as unknown as typeof fetch;
+    await gom(taoGoiModelV1({ serverUrl: "http://m", layToken: async () => "avgw_x", fetch: f })(vaoMau()));
+    expect(lan).toBe(2);
+    expect(than[1].chat_template_kwargs).toEqual({ enable_thinking: false });
+  });
+
+  it("★★ G5-D lặp lại cả lần nghĩ TẮT ⇒ LoiModel SUY_LUAN_KHONG_CO_TRA_LOI, không lần ba", async () => {
+    let lan = 0;
+    const f = (async () => {
+      lan++;
+      return dapStream(sse({ error: { message: "x", code: "reasoning_without_content" } }, "[DONE]"));
+    }) as unknown as typeof fetch;
+    await expect(gom(taoGoiModelV1({ serverUrl: "http://m", layToken: async () => "avgw_x", fetch: f })(vaoMau()))).rejects.toMatchObject({
+      ma: "SUY_LUAN_KHONG_CO_TRA_LOI",
+    });
+    expect(lan).toBe(2);
+  });
+
   it("★★ dấu lặp lại ở lần hai ⇒ LoiModel, KHÔNG hỏi lần ba", async () => {
     let lan = 0;
     const f = (async () => {

@@ -20,7 +20,7 @@
  * xem khối VRAM ở `aiCodingAgent.ts`: model khác model server đang giữ thì đường tool-calling KHÔNG có).
  * Lỗi `LLAMA_SERVER_DOWN` / mảnh `error` giữa luồng ⇒ `LoiModel` TẠM THỜI (lõi thử lại 1 lần).
  */
-import { laLoiToolCallTrongSuyLuan } from "../../aiLlamaServerClient";
+import { laLoiToolCallTrongSuyLuan, laLoiTokenCanKietVaoSuyLuan } from "../../aiLlamaServerClient";
 import { LoiModel, type GoiModel, type ManhModel, type TinNhan, type WireTool } from "@shared/agentCore";
 import { StreamingThinkingStripper, thinkingStartsOpen } from "../../ai/thinkingStrip";
 import { StreamingSecretRedactor } from "../aiSafety";
@@ -160,8 +160,15 @@ async function* luongModelMayChu(
         // ★★★ Model phát tool call TRONG suy luận (xem `LoiToolCallTrongSuyLuan`, aiLlamaServerClient): chữ suy luận
         //   KHÔNG được thành hành động (rà bảo mật ×2) ⇒ hỏi lại ĐÚNG lượt này MỘT lần với nghĩ TẮT — model khi ấy phát
         //   tool call qua đường thật (b9814 tách được). Lần hai vẫn hỏng ⇒ ném tiếp (lõi coi là lỗi model).
-        if (!laLoiToolCallTrongSuyLuan(e) || vao.signal.aborted) throw e;
-        console.warn("[agent] tool call nằm trong suy luận ⇒ hỏi lại lượt này với nghĩ TẮT.");
+        //   ★★★ Đợt 4 (V-dot4-1/2) — cùng cách chữa cho G5-D ca (B) khi lượt có tool: model viết NGUYÊN câu trả lời cuối
+        //   vào suy luận chưa đóng, content rỗng. Chữ suy luận đó KHÔNG thành câu trả lời — chỉ hỏi lại.
+        const g5d = vao.congCu.length > 0 && laLoiTokenCanKietVaoSuyLuan(e);
+        if ((!laLoiToolCallTrongSuyLuan(e) && !g5d) || vao.signal.aborted) throw e;
+        console.warn(
+          g5d
+            ? "[agent] câu trả lời nằm trong suy luận, content rỗng (G5-D) ⇒ hỏi lại lượt này với nghĩ TẮT."
+            : "[agent] tool call nằm trong suy luận ⇒ hỏi lại lượt này với nghĩ TẮT.",
+        );
         await bomLuongModelMayChu(true);
       }
     }),

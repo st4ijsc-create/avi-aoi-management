@@ -344,6 +344,21 @@ export function laLoiToolCallTrongSuyLuan(e: unknown): boolean {
   return false;
 }
 
+/**
+ * ★★ G5-D ca (B) — content rỗng, CHỈ có suy luận (`LoiTokenCanKietVaoSuyLuan`). Nhận theo LỚP hoặc theo dấu chuỗi
+ * `DAU_G5D` trong thông điệp: cổng G1-D của `aiGgufEngine` bọc lỗi server bằng `new Error(msg)` (mất `cause`), nên
+ * dấu chuỗi là thứ duy nhất sống qua lớp bọc đó. Đo 2026-10-17 (V-dot4-1/2): Qwen3.6 viết NGUYÊN câu trả lời cuối vào
+ * suy luận chưa đóng `</think>` ⇒ lớp lỗi này; chữa = hỏi lại nghĩ TẮT (cách sửa (1) của chính thông điệp G5-D).
+ */
+export const DAU_G5D = "TỪ CHỐI TRUNG THỰC (G5-D";
+export function laLoiTokenCanKietVaoSuyLuan(e: unknown): boolean {
+  for (let x: unknown = e, i = 0; x && i < 6; x = (x as { cause?: unknown }).cause, i++) {
+    if (x instanceof LoiTokenCanKietVaoSuyLuan) return true;
+    if (String((x as { message?: unknown }).message ?? x).includes(DAU_G5D)) return true;
+  }
+  return false;
+}
+
 /** Chữ hiển thị sau khi đã bóc các khối `<tool_call>` nguyên văn ra. */
 function vanBanSauKhiVot(noiDung: string): string {
   return gomToolCallTuVanBan(noiDung).vanBan;

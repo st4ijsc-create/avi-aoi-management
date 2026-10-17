@@ -82,6 +82,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // for the full STEP 0 comparison / reconciliation notes, incl. the one deliberately-fixed "fim"
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { resolveLogicalModel } from "../services/ai/modelResolver";
+import { laLoiToolCallTrongSuyLuan, laLoiTokenCanKietVaoSuyLuan } from "../services/aiLlamaServerClient";
 // ★★★ G2-B — TOOL-CALLING GỐC. Module LÁ (0 import, 0 I/O, 0 env) — xem header của nó để biết
 // BẰNG CHỨNG ĐO SỐNG rằng build `llama-server` đang chạy hỗ trợ `tools` gốc, và ba thứ nó KHÔNG làm.
 //
@@ -497,6 +498,30 @@ function toGgufMessages(messages: any[]): GgufChatMessage[] {
 // FIM prompt assembly + stop sequences now live in aiGgufEngine.generateFim (native infill);
 // the gateway just forwards prefix/suffix to it.
 
+/**
+ * ★★★ Đợt 4 (bộ đo `vscode-e2e` V-dot4-1/2) — lớp lỗi "model trả lời vào KÊNH SUY LUẬN, content rỗng" mà HỎI LẠI với
+ * nghĩ TẮT chữa được. Trả `code` của khung lỗi `/v1` (để client hành động được thay vì một 500 trơn), `null` = lớp khác.
+ *   • `tool_call_in_reasoning` — `<tool_call>` trong suy luận chưa đóng (`LoiToolCallTrongSuyLuan`);
+ *   • `reasoning_without_content` — G5-D ca (B): suy luận có, content rỗng, không tool call (đo được: NGUYÊN câu trả
+ *     lời cuối nằm trong suy luận — 5/6 lượt `loi-model` của V-dot4-1/2).
+ * ⚠ Chữ suy luận KHÔNG BAO GIỜ được vớt thành hành động hay chữ hiển thị (rà bảo mật ×3) — chỉ được HỎI LẠI.
+ */
+export type MaLoiSuyLuanV1 = "tool_call_in_reasoning" | "reasoning_without_content";
+export function maLoiSuyLuanV1(e: unknown): MaLoiSuyLuanV1 | null {
+  if (!e) return null;
+  if (laLoiToolCallTrongSuyLuan(e)) return "tool_call_in_reasoning";
+  if (laLoiTokenCanKietVaoSuyLuan(e)) return "reasoning_without_content";
+  return null;
+}
+
+/**
+ * Được hỏi lại lượt này ĐÚNG MỘT lần với nghĩ TẮT? Chỉ khi: lỗi thuộc lớp trên · yêu cầu có `tools` (lượt agent — lượt
+ * chat thường giữ hành vi cũ) · yêu cầu CHƯA tắt nghĩ (tắt rồi thì lần hai y hệt lần một) · chưa hỏi lại lần nào.
+ */
+function nenHoiLaiNghiTat(err: unknown, coTools: boolean, daTatNghi: boolean, daHoiLai: boolean): boolean {
+  return !daHoiLai && coTools && !daTatNghi && maLoiSuyLuanV1(err) !== null;
+}
+
 function jsonError(
   res: Response,
   status: number,
@@ -882,22 +907,23 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         };
         res.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
 
-        const stream = chatCompletionStream(
-          {
-            messages: ggufMessages,
-            maxTokens,
-            temperature,
-            topP,
-            // ★ G2-B — `...(x ? {k:v} : {})` chứ không `tools: yeuCauTool.tools`: một ô `tools:
-            // undefined` vẫn là một ô CÓ MẶT khi ai đó `JSON.stringify` xuống dây, và engine phân
-            // biệt "không có tools" bằng `options.tools?.length`. Giữ hình dạng cũ bit-đối-bit cho
-            // mọi lượt chat không dùng tool.
-            ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
-            ...tatNghi,
-          },
-          modelId,
-          abort.signal,
-        );
+        const moLuong = (nghi: { disableThinking?: true }) =>
+          chatCompletionStream(
+            {
+              messages: ggufMessages,
+              maxTokens,
+              temperature,
+              topP,
+              // ★ G2-B — `...(x ? {k:v} : {})` chứ không `tools: yeuCauTool.tools`: một ô `tools:
+              // undefined` vẫn là một ô CÓ MẶT khi ai đó `JSON.stringify` xuống dây, và engine phân
+              // biệt "không có tools" bằng `options.tools?.length`. Giữ hình dạng cũ bit-đối-bit cho
+              // mọi lượt chat không dùng tool.
+              ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
+              ...nghi,
+            },
+            modelId,
+            abort.signal,
+          );
         // doc69 G2-3 — stateful per-request redactor: holds back a growing secret across
         // chunk boundaries so it never reaches the SSE client unredacted (reuses the exact
         // G2-2 class — see its doc comment in ai/aiSafety.ts). Review fix — gated behind
@@ -919,75 +945,103 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         // ★★★ G2-B — `finish_reason` của luồng này. Chỉ đổi sang "tool_calls" khi ĐÃ THẬT SỰ phát
         // ít nhất một mảnh tool-call ra dây; mặc định giữ nguyên "stop" như trước.
         let daPhatToolCall = false;
-        for await (const chunk of stream) {
-          if (res.destroyed) break;
-          // ★★★ G2-B — mảnh `delta.tool_calls`, phát NGUYÊN VĂN đúng khuôn OpenAI.
-          // ⚠ KHÔNG đi qua `thinker`/`redactor`: cả hai là bộ lọc CHỮ hiển thị, stateful theo ô
-          // `content`. Đẩy JSON `arguments` qua chúng là (a) làm hỏng JSON khi bộ cắt giữ lại một
-          // đoạn giữa, và (b) trộn hai dòng dữ liệu vào một máy trạng thái. Args là dữ liệu có cấu
-          // trúc do CLIENT tự thực thi, không phải chữ in ra màn hình.
-          if (chunk.type === "tool_call_delta" && chunk.toolCallDelta?.length) {
-            daPhatToolCall = true;
-            res.write(
-              `data: ${JSON.stringify({
-                id,
-                object: "chat.completion.chunk",
-                created,
-                model: modelLabel,
-                choices: [{ index: 0, delta: { tool_calls: chunk.toolCallDelta }, finish_reason: null }],
-              })}\n\n`,
-            );
-            continue;
-          }
-          if (chunk.type === "token" && chunk.token) {
-            const visible = thinker.push(chunk.token);
-            const safe = redactor ? redactor.push(visible) : visible;
-            if (safe) {
-              const delta = {
-                id,
-                object: "chat.completion.chunk",
-                created,
-                model: modelLabel,
-                choices: [{ index: 0, delta: { content: safe }, finish_reason: null }],
-              };
-              res.write(`data: ${JSON.stringify(delta)}\n\n`);
-            }
-          } else if (chunk.type === "done") {
-            tokensIn = chunk.tokensPrompt ?? 0;
-            tokensOut = chunk.tokensGenerated ?? 0;
-            tokensNghi = chunk.tokensReasoning;
-            daCoDone = true;
-            // ⚠ Bộ VỚT (build không phân giải `<tool_call>`) chỉ hiện ra ở chunk `done` — không có
-            // mảnh delta nào cả. Phát nguyên khối ở đây, nếu không lượt ấy im lặng mất tool-call.
-            if (chunk.toolCalls?.length && !daPhatToolCall) {
-              daPhatToolCall = true;
-              res.write(
-                `data: ${JSON.stringify({
+        // ★★★ Đợt 4 — HỎI LẠI ĐÚNG MỘT LẦN với nghĩ TẮT trong CÙNG luồng SSE (cùng `id`, không gửi lại role chunk)
+        // khi lượt sinh hỏng vì model trả lời vào kênh suy luận (`maLoiSuyLuanV1`). AN TOÀN vì hai lớp lỗi đó chỉ
+        // ném khi content RỖNG và CHƯA có tool call ⇒ trên dây mới có role chunk; mảnh `reasoning` không bao giờ ra dây
+        // (nội tâm chỉ phát ở cuối, từ `thinker`). Lưới thứ hai: `daNhanNoiDung` — đã nhận BẤT KỲ mảnh nào ngoài
+        // `reasoning` (chữ, kể cả chữ bộ cắt/bộ che còn GIỮ chưa ghi; tool call; lỗi) ⇒ KHÔNG hỏi lại: nối hai lượt
+        // suy luận khác nhau vào một câu trả lời là bịa (cùng lý lẽ G1 `daPhatChu`). Chữ suy luận của lượt hỏng bị BỎ.
+        let nghiLuot = tatNghi;
+        let daNhanNoiDung = false;
+        for (let daHoiLai = false; ; ) {
+          try {
+            for await (const chunk of moLuong(nghiLuot)) {
+              if (res.destroyed) break;
+              if (chunk.type !== "reasoning") daNhanNoiDung = true;
+              // ★★★ G2-B — mảnh `delta.tool_calls`, phát NGUYÊN VĂN đúng khuôn OpenAI.
+              // ⚠ KHÔNG đi qua `thinker`/`redactor`: cả hai là bộ lọc CHỮ hiển thị, stateful theo ô
+              // `content`. Đẩy JSON `arguments` qua chúng là (a) làm hỏng JSON khi bộ cắt giữ lại một
+              // đoạn giữa, và (b) trộn hai dòng dữ liệu vào một máy trạng thái. Args là dữ liệu có cấu
+              // trúc do CLIENT tự thực thi, không phải chữ in ra màn hình.
+              if (chunk.type === "tool_call_delta" && chunk.toolCallDelta?.length) {
+                daPhatToolCall = true;
+                res.write(
+                  `data: ${JSON.stringify({
+                    id,
+                    object: "chat.completion.chunk",
+                    created,
+                    model: modelLabel,
+                    choices: [{ index: 0, delta: { tool_calls: chunk.toolCallDelta }, finish_reason: null }],
+                  })}\n\n`,
+                );
+                continue;
+              }
+              if (chunk.type === "token" && chunk.token) {
+                const visible = thinker.push(chunk.token);
+                const safe = redactor ? redactor.push(visible) : visible;
+                if (safe) {
+                  const delta = {
+                    id,
+                    object: "chat.completion.chunk",
+                    created,
+                    model: modelLabel,
+                    choices: [{ index: 0, delta: { content: safe }, finish_reason: null }],
+                  };
+                  res.write(`data: ${JSON.stringify(delta)}\n\n`);
+                }
+              } else if (chunk.type === "done") {
+                tokensIn = chunk.tokensPrompt ?? 0;
+                tokensOut = chunk.tokensGenerated ?? 0;
+                tokensNghi = chunk.tokensReasoning;
+                daCoDone = true;
+                // ⚠ Bộ VỚT (build không phân giải `<tool_call>`) chỉ hiện ra ở chunk `done` — không có
+                // mảnh delta nào cả. Phát nguyên khối ở đây, nếu không lượt ấy im lặng mất tool-call.
+                if (chunk.toolCalls?.length && !daPhatToolCall) {
+                  daPhatToolCall = true;
+                  res.write(
+                    `data: ${JSON.stringify({
+                      id,
+                      object: "chat.completion.chunk",
+                      created,
+                      model: modelLabel,
+                      choices: [
+                        {
+                          index: 0,
+                          delta: { tool_calls: chunk.toolCalls.map((t, i) => ({ index: i, ...t })) },
+                          finish_reason: null,
+                        },
+                      ],
+                    })}\n\n`,
+                  );
+                }
+              } else if (chunk.type === "error") {
+                outcome = "error";
+                const errChunk = {
                   id,
                   object: "chat.completion.chunk",
                   created,
                   model: modelLabel,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: { tool_calls: chunk.toolCalls.map((t, i) => ({ index: i, ...t })) },
-                      finish_reason: null,
-                    },
-                  ],
-                })}\n\n`,
-              );
+                  choices: [{ index: 0, delta: {}, finish_reason: "error" }],
+                  error: { message: chunk.error || "generation error", type: "server_error" },
+                };
+                res.write(`data: ${JSON.stringify(errChunk)}\n\n`);
+              }
             }
-          } else if (chunk.type === "error") {
-            outcome = "error";
-            const errChunk = {
-              id,
-              object: "chat.completion.chunk",
-              created,
-              model: modelLabel,
-              choices: [{ index: 0, delta: {}, finish_reason: "error" }],
-              error: { message: chunk.error || "generation error", type: "server_error" },
-            };
-            res.write(`data: ${JSON.stringify(errChunk)}\n\n`);
+            break;
+          } catch (err) {
+            if (
+              daNhanNoiDung ||
+              res.destroyed ||
+              abort.signal.aborted ||
+              !nenHoiLaiNghiTat(err, !!yeuCauTool.tools, !!nghiLuot.disableThinking, daHoiLai)
+            ) {
+              throw err;
+            }
+            console.warn(
+              `[openaiGateway] /v1 stream: model trả lời vào kênh suy luận (${maLoiSuyLuanV1(err)}) — hỏi lại lượt này MỘT lần với nghĩ TẮT (chữ suy luận bị bỏ, không thực thi).`,
+            );
+            daHoiLai = true;
+            nghiLuot = { disableThinking: true };
           }
         }
         // Release whatever the two stateful filters were still holding back (e.g. a short tail).
@@ -1046,17 +1100,29 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
 
       // ── Non-streaming ──
-      const result = await chatCompletion(
-        {
-          messages: ggufMessages,
-          maxTokens,
-          temperature,
-          topP,
-          ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
-          ...tatNghi,
-        },
-        modelId,
-      );
+      const goiMotLan = (nghi: { disableThinking?: true }) =>
+        chatCompletion(
+          {
+            messages: ggufMessages,
+            maxTokens,
+            temperature,
+            topP,
+            ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
+            ...nghi,
+          },
+          modelId,
+        );
+      let result: Awaited<ReturnType<typeof chatCompletion>>;
+      try {
+        result = await goiMotLan(tatNghi);
+      } catch (err) {
+        // ★★★ Đợt 4 — cùng chính sách với nhánh stream: hỏi lại ĐÚNG MỘT lần với nghĩ TẮT (chưa có byte nào ra dây).
+        if (!nenHoiLaiNghiTat(err, !!yeuCauTool.tools, !!tatNghi.disableThinking, false)) throw err;
+        console.warn(
+          `[openaiGateway] /v1: model trả lời vào kênh suy luận (${maLoiSuyLuanV1(err)}) — hỏi lại lượt này MỘT lần với nghĩ TẮT (chữ suy luận bị bỏ, không thực thi).`,
+        );
+        result = await goiMotLan({ disableThinking: true });
+      }
       // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
       plan?.record({
         tokensIn: result.tokensPrompt,
@@ -1125,13 +1191,17 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // call) and a safe no-op when `plan` is null (fail-open path, or failure before the
       // plan was created).
       plan?.record({ latencyMs: engineStart ? Date.now() - engineStart : 0, outcome: "error" });
+      // ★★★ Đợt 4 — lớp "trả lời vào kênh suy luận" mang `code` để client hành động được (vd hỏi lại nghĩ TẮT).
+      const maSuyLuan = maLoiSuyLuanV1(err);
       if (!res.headersSent) {
-        jsonError(res, 500, err?.message || "chat completion failed", "server_error");
+        jsonError(res, 500, err?.message || "chat completion failed", "server_error", maSuyLuan ?? undefined);
       } else {
         // data-raw-ok: khung lỗi SSE theo ĐÚNG chuẩn OpenAI — khách là API client (SDK
         // openai, LangChain…) parse trường `error.message` này theo hợp đồng của họ.
         // Dịch nó sang tiếng Việt là phá tương thích, không phải cải thiện.
-        res.write(`data: ${JSON.stringify({ error: { message: err?.message || "error" } })}\n\n`);
+        res.write(
+          `data: ${JSON.stringify({ error: { message: err?.message || "error", ...(maSuyLuan ? { type: "server_error", code: maSuyLuan } : {}) } })}\n\n`,
+        );
         res.end();
       }
     }

@@ -25,6 +25,8 @@ export interface TrangThaiLuongV1 {
   ketThuc: boolean;
   finishReason?: string;
   loi?: string;
+  /** `error.code` của khung lỗi (nếu máy chủ có gửi) — vd `tool_call_in_reasoning`. */
+  maLoi?: string;
 }
 
 export function trangThaiLuongMoi(): TrangThaiLuongV1 {
@@ -39,6 +41,8 @@ export function apSuKienV1(tt: TrangThaiLuongV1, sk: Record<string, unknown>): M
   const loiTop = sk.error as { message?: unknown } | undefined;
   if (loiTop && typeof loiTop === "object") {
     tt.loi ??= typeof loiTop.message === "string" ? loiTop.message : "lỗi sinh chữ không rõ";
+    const ma = (loiTop as { code?: unknown }).code;
+    if (typeof ma === "string" && ma) tt.maLoi ??= ma;
     return ra;
   }
   const u = sk.usage as Record<string, unknown> | undefined;
@@ -89,6 +93,22 @@ export function toolCallsCuoi(tt: TrangThaiLuongV1): WireToolCall[] {
 
 export function laLoiToolCallTrongSuyLuan(thongDiep: string | undefined): boolean {
   return !!thongDiep && thongDiep.includes(DAU_TOOL_CALL_TRONG_SUY_LUAN);
+}
+
+/** Dấu G5-D ca (B) trong thông điệp máy chủ (`aiLlamaServerClient.DAU_G5D`) — máy chủ CŨ chưa gửi `error.code`. */
+export const DAU_G5D = "TỪ CHỐI TRUNG THỰC (G5-D";
+export type LoiSuyLuanV1 = "tool_call_in_reasoning" | "reasoning_without_content";
+
+/**
+ * ★★★ Đợt 4 (V-dot4-1/2) — lỗi "model trả lời vào KÊNH SUY LUẬN, content rỗng" mà hỏi lại nghĩ TẮT chữa được.
+ * Ưu tiên `error.code` của máy chủ mới (`server/routes/openaiGateway.ts` `maLoiSuyLuanV1`); máy chủ cũ ⇒ dấu chuỗi.
+ * `null` = lớp khác (không hỏi lại).
+ */
+export function phanLoaiLoiSuyLuan(thongDiep: string | undefined, ma: string | undefined): LoiSuyLuanV1 | null {
+  if (ma === "tool_call_in_reasoning" || ma === "reasoning_without_content") return ma;
+  if (laLoiToolCallTrongSuyLuan(thongDiep)) return "tool_call_in_reasoning";
+  if (thongDiep && thongDiep.includes(DAU_G5D)) return "reasoning_without_content";
+  return null;
 }
 
 /** Thông điệp tiếng Việt cho lỗi HTTP của cổng `/v1` — nói ĐÚNG việc phải làm. */

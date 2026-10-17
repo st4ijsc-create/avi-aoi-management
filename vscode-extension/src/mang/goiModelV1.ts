@@ -8,7 +8,11 @@
  * - Lỗi HTTP 401/403/429/… ⇒ `LoiModel` có thông điệp tiếng Việt chỉ đúng việc phải làm (`moTaLoiHttpV1`); 5xx/mạng
  *   ⇒ `tamThoi` (lõi thử lại tối đa 1 lần/lượt).
  * - ★ Model phát tool call TRONG suy luận ⇒ máy chủ trả khung lỗi mang dấu `TOOL_CALL_TRONG_SUY_LUAN` ⇒ hỏi lại ĐÚNG
- *   lượt đó MỘT lần với `chat_template_kwargs.enable_thinking=false` (khuôn `goiModelMayChu.ts`). Máy chủ 126de672b
+ *   lượt đó MỘT lần với `chat_template_kwargs.enable_thinking=false` (khuôn `goiModelMayChu.ts`).
+ *   ★★★ Đợt 4 (V-dot4-1/2): cùng cách chữa cho G5-D ca (B) — model viết NGUYÊN câu trả lời cuối vào suy luận chưa đóng,
+ *   content rỗng (5/6 lượt `loi-model` đo được; bản trước không nhận ra ⇒ lõi thử lại y hệt ⇒ chết). Nhận theo
+ *   `error.code` (`tool_call_in_reasoning` | `reasoning_without_content`, máy chủ mới — cổng đã tự hỏi lại một lần) hoặc
+ *   dấu chuỗi (máy chủ cũ), cả ở khung lỗi giữa luồng lẫn HTTP ≥ 500 JSON. Chữ suy luận của lượt hỏng KHÔNG được phát. Máy chủ 126de672b
  *   đọc ô này theo danh sách trắng (chỉ `enable_thinking` boolean; `false` ⇒ `disableThinking`, `true`/vắng ⇒ mặc định
  *   máy chủ). Phiên agent CHƯA có công tắc nghĩ cho người dùng ⇒ lượt thường không gửi ô này.
  * - `stream_options.include_usage` ⇒ máy chủ 126de672b trả `usage` thật ở chunk cuối ⇒ `xong.usage` ⇒ đồng hồ ngữ cảnh.
@@ -17,8 +21,9 @@ import { LoiModel, type GoiModel, type ManhModel, type TinNhan, type WireTool } 
 import { tachKhungSse } from "../loi/khungSse";
 import {
   apSuKienV1,
-  laLoiToolCallTrongSuyLuan,
   moTaLoiHttpV1,
+  phanLoaiLoiSuyLuan,
+  type LoiSuyLuanV1,
   toolCallsCuoi,
   trangThaiLuongMoi,
 } from "../loi/luongV1";
@@ -95,6 +100,14 @@ async function* motLuot(
     }
     const m = moTaLoiHttpV1(res.status, du, res.headers?.get?.("retry-after"));
     if (res.status === 401) ch.khi401?.();
+    if (res.status >= 500) {
+      const e = (du as { error?: { message?: unknown; code?: unknown } } | null)?.error;
+      const loai = phanLoaiLoiSuyLuan(
+        typeof e?.message === "string" ? e.message : undefined,
+        typeof e?.code === "string" ? e.code : undefined,
+      );
+      if (loai) throw Object.assign(new Error(m.thongDiep), { dauSuyLuan: loai });
+    }
     throw new LoiModel(m.thongDiep, { tamThoi: m.tamThoi, ma: m.ma });
   }
 
@@ -128,8 +141,9 @@ async function* motLuot(
     }
   }
   if (tt.loi) {
-    // Lỗi có dấu suy-luận: ném nguyên văn để vòng ngoài nhận ra (giữ dấu trong `message`).
-    if (laLoiToolCallTrongSuyLuan(tt.loi)) throw Object.assign(new Error(tt.loi), { dauSuyLuan: true });
+    // Lỗi lớp "trả lời vào kênh suy luận": ném nguyên văn kèm loại để vòng ngoài hỏi lại nghĩ TẮT.
+    const loai = phanLoaiLoiSuyLuan(tt.loi, tt.maLoi);
+    if (loai) throw Object.assign(new Error(tt.loi), { dauSuyLuan: loai });
     throw new LoiModel(`Lỗi sinh chữ trên máy chủ: ${tt.loi}`, { tamThoi: true, ma: "MODEL_LOI_LUONG" });
   }
   if (!daXongDone && !tt.finishReason) {
@@ -144,15 +158,22 @@ export function taoGoiModelV1(ch: CauHinhGoiModelV1): GoiModel {
       try {
         yield* motLuot(ch, vao, false);
       } catch (e) {
-        if (!(e as { dauSuyLuan?: boolean })?.dauSuyLuan || vao.signal.aborted) throw e;
+        if (!(e as { dauSuyLuan?: LoiSuyLuanV1 })?.dauSuyLuan || vao.signal.aborted) throw e;
         // ★ Hỏi lại ĐÚNG MỘT lần, nghĩ TẮT. Lần hai vẫn hỏng ⇒ lỗi model (không lặp).
         try {
           yield* motLuot(ch, vao, true);
         } catch (e2) {
-          if ((e2 as { dauSuyLuan?: boolean })?.dauSuyLuan) {
+          const loai2 = (e2 as { dauSuyLuan?: LoiSuyLuanV1 })?.dauSuyLuan;
+          if (loai2 === "tool_call_in_reasoning") {
             throw new LoiModel(
               "Model phát lời gọi tool bên trong phần suy luận hai lần liền (kể cả khi đã yêu cầu tắt nghĩ) — lượt bị bỏ để không biến chữ suy luận thành hành động.",
               { ma: "TOOL_CALL_TRONG_SUY_LUAN" },
+            );
+          }
+          if (loai2 === "reasoning_without_content") {
+            throw new LoiModel(
+              "Model chỉ trả lời trong phần suy luận (không có nội dung) hai lần liền, kể cả khi đã yêu cầu tắt nghĩ — lượt bị bỏ; chữ suy luận không được dùng làm câu trả lời.",
+              { ma: "SUY_LUAN_KHONG_CO_TRA_LOI" },
             );
           }
           throw e2;
