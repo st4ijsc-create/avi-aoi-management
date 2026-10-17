@@ -33,7 +33,8 @@ function viTriDuong(van, duong) {
 function soTrongDoan(doan) {
   const so = [];
   const them = (re) => { for (const m of doan.matchAll(re)) so.push(Number(m[1])); };
-  them(/(?:dòng|dong|line|lines|lines?:)\s*(?:số\s*)?(\d{1,6})/g);
+  // `[\s*_:`]*`: model hay viết dạng danh sách markdown `- **Dòng**: **86**` (âm tính giả đo được ở TM-mo-mang R1)
+  them(/(?:dòng|dong|line|lines)[\s*_:`]*(?:số\s*)?(\d{1,6})/g);
   them(/(?<![a-z0-9])l(\d{1,6})(?![0-9])/g);
   return so;
 }
@@ -77,12 +78,13 @@ export function chamCau(cau, traLoi) {
 
 // ── KIỂM THƯỚC: câu trả lời mẫu sinh TỪ ĐÁP ÁN ─────────────────────────────────────────────────────
 
-/** Năm kiểu viết đúng, xoay vòng theo chỉ số câu (thước phải nhận đủ các kiểu người/model hay viết). */
+/** Sáu kiểu viết đúng, xoay vòng theo chỉ số câu (thước phải nhận đủ các kiểu người/model hay viết). */
 function mauDung(cau, i) {
   const tep = cau.tep;
   const tuongDoi = cau.duAn ? tep.slice(cau.duAn.length + 1) : tep;
   const goi = cau.tepGoi?.[0] ? ` Nó được gọi từ \`${cau.tepGoi[0]}\` (dòng 12).` : "";
-  switch (i % 5) {
+  switch (i % 6) {
+    case 5: return `### Định nghĩa\n\n- **Tệp**: \`${tep}\`\n- **Dòng**: **${cau.dong}**\n${goi}`;
     case 0: return `Định nghĩa ở \`${tep}:${cau.dong}\`.${goi}`;
     case 1: return `Bạn xem tệp ${tep.replace(/\//g, "\\")}, dòng ${cau.dong + 3} — đó là chỗ cần sửa.${goi}`;
     case 2: return `- [${tep.split("/").pop()}](${tep}#L${cau.dong})\n${goi}`;
