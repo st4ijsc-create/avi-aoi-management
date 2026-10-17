@@ -177,6 +177,39 @@ describe.skipIf(!DB_URL)("chỉ mục ngữ nghĩa trên DB _test thật (bộ n
     for (const id of duAnDaDung) await db.execute(sql`DELETE FROM ai_code_chunks WHERE "projectId" = ${id}`);
   });
 
+  it("★★★ (đo sống 2026-10-17) bộ nhúng ném 'Input is longer than the context size' cho đoạn DÀI ⇒ đoạn được rút ngắn cho vừa, lượt dựng KHÔNG chết, mọi tệp khác vẫn vào chỉ mục", async () => {
+    // Sống: lượt dựng repo chính chết ở chunk thứ 393 vì MỘT đoạn 6.000 ký tự vượt ngữ cảnh nhúng 2.048 token — một tệp
+    // làm hỏng cả chỉ mục. Bộ nhúng giả ném đúng câu lỗi của node-llama-cpp khi văn bản > 1.200 ký tự.
+    bo.truocMoiLo = undefined;
+    const goc1 = bo.nhungTaiLieu.bind(bo);
+    bo.nhungTaiLieu = async (van: string[]) => {
+      if (van.some((t) => t.length > 1200)) throw new Error("Input is longer than the context size. Try to increase the context size or use another model that supports longer contexts.");
+      return goc1(van);
+    };
+    // MỘT định nghĩa dài (một hàm 120 dòng) ⇒ một đoạn lớn — đúng hình dạng đã làm chết lượt dựng sống.
+    viet(
+      "src/dai.ts",
+      ["export function hamRatDai(): string[] {", "  const ds: string[] = [];", ...Array.from({ length: 120 }, (_, i) => `  ds.push("dong so ${i} ${"x".repeat(30)}");`), "  return ds;", "}"].join("\n"),
+    );
+    const p = duAnMoi();
+    const kq = await dungChiMuc({ gocDuAn: goc, projectId: p });
+    const hang = await hangCua(p);
+    expect([...new Set(hang.map((h) => h.duong))].sort()).toEqual(["src/dai.ts", "src/ketNoi.go", "src/nhatKy.py", "src/thanhToan.ts"]);
+    expect(kq.soTep).toBe(4);
+  });
+
+  it("★★ một tệp nhúng hỏng vì lỗi KHÁC (không phải độ dài) ⇒ tệp đó bị bỏ qua có ghi nhận, các tệp còn lại vẫn vào chỉ mục", async () => {
+    const goc1 = bo.nhungTaiLieu.bind(bo);
+    bo.nhungTaiLieu = async (van: string[]) => {
+      if (van.some((t) => t.startsWith("src/nhatKy.py"))) throw new Error("loi bo nhung gia");
+      return goc1(van);
+    };
+    const p = duAnMoi();
+    await dungChiMuc({ gocDuAn: goc, projectId: p });
+    const hang = await hangCua(p);
+    expect([...new Set(hang.map((h) => h.duong))].sort()).toEqual(["src/ketNoi.go", "src/thanhToan.ts"]);
+  });
+
   it("dựng ⇒ lưu theo projectId + băm tệp; tìm ⇒ đoạn đúng xếp đầu, kèm tệp:dòng, trangThai san-sang", async () => {
     const p = duAnMoi();
     const kq = await dungChiMuc({ gocDuAn: goc, projectId: p });

@@ -64,7 +64,10 @@ export const TRAN_THOI_GIAN_DUNG_MS = 45 * 60_000;
 /** Số đoạn mỗi lô nhúng (điểm kiểm huỷ giữa các lô). */
 const LO_NHUNG = 16;
 /** Ký tự tối đa một đoạn (≈ 1.500 token — dưới ngữ cảnh nhúng). */
-const TRAN_KY_TU_DOAN = 6_000;
+// ⚠ Đo sống 2026-10-17: 6.000 ký tự (mã có chú thích tiếng Việt ≈ 2 ký tự/token) VƯỢT ngữ cảnh nhúng 2.048 token
+//   (`GGUF_EMBED_CTX`) ⇒ "Input is longer than the context size" ⇒ lượt dựng repo chính chết ở đoạn 393. 3.000 ký tự
+//   ≈ ≤ 1.500 token cả ở ca xấu; đoạn vẫn vượt thì `nhungLoAnToan` rút ngắn dần.
+const TRAN_KY_TU_DOAN = 3_000;
 /** Ký tự tối đa của `doan` trả về cho model. */
 const TRAN_KY_TU_KET_QUA = 3_000;
 const K_MAC_DINH = 8;
@@ -389,7 +392,7 @@ async function xuLyTep(
   for (let i = 0; i < doan.length; i += LO_NHUNG) {
     if (nc.signal?.aborted) throw loiHuy();
     const lo = doan.slice(i, i + LO_NHUNG);
-    const vecs = await nc.bo.nhungTaiLieu(lo.map((d) => `${rel}\n${d.noiDung}`), nc.signal);
+    const vecs = await nhungLoAnToan(nc, lo.map((d) => `${rel}\n${d.noiDung}`));
     if (nc.signal?.aborted) throw loiHuy();
     if (vecs.length !== lo.length) throw new Error(`chiMucMa: bộ nhúng trả ${vecs.length} vector cho ${lo.length} đoạn`);
     lo.forEach((d, j) => {
@@ -404,6 +407,38 @@ async function xuLyTep(
   }
   await ghiTep(nc.db, nc.projectId, rel, bamTep, nc.bo.moHinh, coVec);
   return { loai: "nhung", soDoan: coVec.length, catBot: doc.catBot };
+}
+
+/** Lỗi "văn bản dài hơn ngữ cảnh" của node-llama-cpp (đo nguyên văn trên lượt dựng sống 2026-10-17). */
+function laLoiQuaNguCanh(e: unknown): boolean {
+  return /longer than the context size/i.test(String((e as { message?: unknown })?.message ?? e));
+}
+
+/**
+ * Nhúng một lô; lô hỏng vì QUÁ NGỮ CẢNH ⇒ nhúng TỪNG đoạn, đoạn nào vẫn quá thì rút còn một nửa tới khi vừa (sàn 200 ký tự
+ * — vẫn quá ⇒ ném). Lỗi KHÁC đi thẳng lên (tầng dựng bỏ qua cả tệp, không giết lượt dựng).
+ */
+async function nhungLoAnToan(nc: NguCanhTep, van: string[]): Promise<number[][]> {
+  try {
+    return await nc.bo.nhungTaiLieu(van, nc.signal);
+  } catch (e) {
+    if (!laLoiQuaNguCanh(e)) throw e;
+  }
+  const ra: number[][] = [];
+  for (const t of van) {
+    let x = t;
+    for (;;) {
+      if (nc.signal?.aborted) throw loiHuy();
+      try {
+        ra.push((await nc.bo.nhungTaiLieu([x], nc.signal))[0]!);
+        break;
+      } catch (e) {
+        if (!laLoiQuaNguCanh(e) || x.length <= 200) throw e;
+        x = x.slice(0, Math.floor(x.length / 2));
+      }
+    }
+  }
+  return ra;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -455,6 +490,7 @@ async function dungThat(goc: string, projectId: string, ac: AbortController, tc:
   let soTep = 0;
   let soDoan = 0;
   let soTepNhung = 0;
+  let soTepLoi = 0;
   const daThay = new Set<string>();
   for (const rel of dt.tep) {
     if (ac.signal.aborted) throw loiHuy();
@@ -463,7 +499,16 @@ async function dungThat(goc: string, projectId: string, ac: AbortController, tc:
       break;
     }
     daThay.add(rel);
-    const kq = await xuLyTep(nc, rel, daLuu.get(rel));
+    // ★ Một tệp hỏng KHÔNG được giết cả lượt dựng (đo sống 2026-10-17: một đoạn quá ngữ cảnh ⇒ chỉ mục repo dừng ở 393).
+    let kq: Awaited<ReturnType<typeof xuLyTep>>;
+    try {
+      kq = await xuLyTep(nc, rel, daLuu.get(rel));
+    } catch (e) {
+      if (ac.signal.aborted) throw e;
+      soTepLoi++;
+      if (soTepLoi <= 5) console.warn(`[chiMucMa] bỏ qua ${rel}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
+      continue;
+    }
     if (kq.loai === "bo") continue;
     soTep++;
     soDoan += kq.soDoan;
