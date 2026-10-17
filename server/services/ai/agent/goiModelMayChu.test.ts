@@ -159,6 +159,38 @@ describe("goiModelMayChu", () => {
     expect(chuyenLoiModel(new Error("x")).ma).toBe("MODEL_LOI");
   });
 
+  it("★★★ tool call TRONG suy luận (lỗi có dấu TOOL_CALL_TRONG_SUY_LUAN) ⇒ hỏi lại ĐÚNG lượt đó MỘT lần với nghĩ TẮT", async () => {
+    const goiDi: GgufChatOptions[] = [];
+    const goi = taoGoiModelMayChu({
+      chatStream: async function* (o) {
+        goiDi.push(o);
+        if (goiDi.length === 1) {
+          yield { type: "reasoning", token: "<tool_call>\n<function=read_file>…" } as GgufStreamChunk;
+          throw new Error("[aiGgufEngine] TỪ CHỐI TRUNG THỰC: [llamaServer] TOOL_CALL_TRONG_SUY_LUAN: model phát <tool_call> TRONG chuỗi suy luận");
+        }
+        yield { type: "done", toolCalls: [{ id: "c9", type: "function", function: { name: "read_file", arguments: '{"path":"a.ts"}' } }] } as GgufStreamChunk;
+      },
+    });
+    const ra = await gom(goi({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }));
+    expect(goiDi).toHaveLength(2);
+    expect(goiDi[0].disableThinking).toBeFalsy();
+    expect(goiDi[1].disableThinking).toBe(true);
+    const xong = ra.find((m) => m.loai === "xong") as { toolCalls: unknown[] } | undefined;
+    expect(xong?.toolCalls).toHaveLength(1);
+  });
+
+  it("★★ hỏi lại vẫn tool call trong suy luận ⇒ KHÔNG lặp vô hạn: lỗi tạm thời cho lõi", async () => {
+    let n = 0;
+    const goi = taoGoiModelMayChu({
+      chatStream: async function* () {
+        n++;
+        throw new Error("[llamaServer] TOOL_CALL_TRONG_SUY_LUAN: x");
+      },
+    });
+    await expect(gom(goi({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }))).rejects.toBeInstanceOf(LoiModel);
+    expect(n).toBe(2);
+  });
+
   it("★★ engine ném LLAMA_SERVER_DOWN ⇒ generator ném LoiModel tạm thời (lõi thử lại 1 lần)", async () => {
     const goi = taoGoiModelMayChu({
       chatStream: async function* () {

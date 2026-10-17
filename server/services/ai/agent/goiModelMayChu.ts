@@ -20,6 +20,7 @@
  * xem khối VRAM ở `aiCodingAgent.ts`: model khác model server đang giữ thì đường tool-calling KHÔNG có).
  * Lỗi `LLAMA_SERVER_DOWN` / mảnh `error` giữa luồng ⇒ `LoiModel` TẠM THỜI (lõi thử lại 1 lần).
  */
+import { laLoiToolCallTrongSuyLuan } from "../../aiLlamaServerClient";
 import { LoiModel, type GoiModel, type ManhModel, type TinNhan, type WireTool } from "@shared/agentCore";
 import { StreamingThinkingStripper, thinkingStartsOpen } from "../../ai/thinkingStrip";
 import { StreamingSecretRedactor } from "../aiSafety";
@@ -99,14 +100,14 @@ async function* luongModelMayChu(
   };
 
   /** Máy bơm: chạy TRỌN trong `chayVoiUuTien` (xem đầu tệp). Bộ cắt suy luận + bộ che ở ngay trên. */
-  async function bomLuongModelMayChu(): Promise<void> {
+  async function bomLuongModelMayChu(epTatNghi = false): Promise<void> {
     const chatCompletionStream: HamChatStream =
       cauHinh.chatStream ?? (await import("../../aiGgufEngine")).chatCompletionStream;
     let modelId = cauHinh.modelId;
     if (modelId === undefined && process.env.AI_CODING_MODEL_TASK === "code") {
       modelId = (await import("../../aiGgufEngine")).codeModelBasename();
     }
-    const nghi = cauHinh.nghi ?? docCoNghi();
+    const nghi = epTatNghi ? false : (cauHinh.nghi ?? docCoNghi());
     const options: GgufChatOptions = {
       messages: sangTinNhanGguf(vao.tinNhan),
       maxTokens: cauHinh.maxTokens ?? docMaxTokens(),
@@ -152,7 +153,18 @@ async function* luongModelMayChu(
 
   const mucUuTien = cauHinh.mucUuTien ?? "tuong-tac";
   const chay = chayVoiUuTien(mucUuTien, () =>
-    chayVoiNgheCho((tb) => day({ loai: "cho", phiaTruoc: tb.phiaTruoc }), () => bomLuongModelMayChu()),
+    chayVoiNgheCho((tb) => day({ loai: "cho", phiaTruoc: tb.phiaTruoc }), async () => {
+      try {
+        await bomLuongModelMayChu();
+      } catch (e) {
+        // ★★★ Model phát tool call TRONG suy luận (xem `LoiToolCallTrongSuyLuan`, aiLlamaServerClient): chữ suy luận
+        //   KHÔNG được thành hành động (rà bảo mật ×2) ⇒ hỏi lại ĐÚNG lượt này MỘT lần với nghĩ TẮT — model khi ấy phát
+        //   tool call qua đường thật (b9814 tách được). Lần hai vẫn hỏng ⇒ ném tiếp (lõi coi là lỗi model).
+        if (!laLoiToolCallTrongSuyLuan(e) || vao.signal.aborted) throw e;
+        console.warn("[agent] tool call nằm trong suy luận ⇒ hỏi lại lượt này với nghĩ TẮT.");
+        await bomLuongModelMayChu(true);
+      }
+    }),
   );
   chay.then(
     () => {

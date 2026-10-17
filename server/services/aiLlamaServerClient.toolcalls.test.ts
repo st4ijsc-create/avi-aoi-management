@@ -150,7 +150,7 @@ describe("G2-B · lượt tool-call thành công có `content: \"\"` — KHÔNG 
     ).rejects.toThrow();
   });
 
-  it("★★★ KHÔNG-stream: tool call XML trong reasoning_content + content rỗng ⇒ VỚT, không ném", async () => {
+  it("★★★ KHÔNG-stream: tool call XML trong reasoning_content + content rỗng ⇒ lỗi có DẤU, KHÔNG vớt thành hành động", async () => {
     const srv = await freshClient();
     stubFetch({
       choices: [
@@ -166,10 +166,13 @@ describe("G2-B · lượt tool-call thành công có `content: \"\"` — KHÔNG 
       ],
       usage: { prompt_tokens: 10, completion_tokens: 60 },
     });
-    const kq = await srv.serverChatCompletion({ messages: [{ role: "user", content: "OEE?" }], tools: TOOLS, maxTokens: 16000 });
-    expect(kq.toolCalls).toHaveLength(1);
-    expect(JSON.parse(kq.toolCalls![0].function.arguments)).toEqual({ machineId: "AOI-01" });
-    expect(kq.finishReason).toBe("tool_calls");
+    let loi: unknown = null;
+    try {
+      await srv.serverChatCompletion({ messages: [{ role: "user", content: "OEE?" }], tools: TOOLS, maxTokens: 16000 });
+    } catch (e) {
+      loi = e;
+    }
+    expect(srv.laLoiToolCallTrongSuyLuan(loi)).toBe(true);
   });
 
   it("lượt KHÔNG tool vẫn không mọc ô `toolCalls` (không phải `[]`)", async () => {
@@ -307,26 +310,27 @@ describe("G2-B · streaming tool-calls", () => {
    * `reasoning_content` (chưa đóng </think>) ⇒ b9814 không tách ⇒ 0 mảnh tool_calls, content rỗng ⇒ G5-D
    * ném "token cạn kiệt vào suy luận" (chẩn đoán SAI) ⇒ lượt agent chết `loi-model` (3/3 bài F đầu tiên).
    */
-  it("★★★ tool call XML NẰM TRONG suy luận + content rỗng ⇒ VỚT từ suy luận, KHÔNG ném G5-D", async () => {
+  it("★★★ tool call XML NẰM TRONG suy luận + content rỗng ⇒ lỗi có DẤU TOOL_CALL_TRONG_SUY_LUAN — KHÔNG vớt thành hành động (rà bảo mật ×2), KHÔNG chẩn đoán sai G5-D", async () => {
     const nghi =
       "Tôi sẽ lập kế hoạch.\\n\\n<tool_call>\\n<function=todo_write>\\n<parameter=todos>\\n" +
       '[{\\"content\\": \\"Tạo module\\", \\"status\\": \\"in_progress\\"}]\\n</parameter>\\n</function>\\n</tool_call>';
-    const { ra } = await chay(
-      [
-        'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":null}}]}\n\n',
-        `data: {"choices":[{"index":0,"delta":{"reasoning_content":"${nghi}"}}]}\n\n`,
-        'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
-        "data: [DONE]\n\n",
-      ],
-      { messages: [{ role: "user", content: "làm đi" }], tools: TOOLS, maxTokens: 16000 },
-    );
-    expect(ra.filter((c) => c.type === "error")).toHaveLength(0);
-    const done = ra.find((c) => c.type === "done");
-    expect(done, "phải kết thúc bằng `done`, không ném").toBeTruthy();
-    expect(done!.toolCalls).toHaveLength(1);
-    expect(done!.toolCalls![0].function.name).toBe("todo_write");
-    expect(JSON.parse(done!.toolCalls![0].function.arguments).todos[0].content).toBe("Tạo module");
-    expect(done!.finishReason).toBe("tool_calls");
+    const srv = await freshClient();
+    stubSse([
+      'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":null}}]}\n\n',
+      `data: {"choices":[{"index":0,"delta":{"reasoning_content":"${nghi}"}}]}\n\n`,
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+      "data: [DONE]\n\n",
+    ]);
+    const ra: GgufStreamChunk[] = [];
+    let loi: unknown = null;
+    try {
+      for await (const c of srv.serverChatCompletionStream({ messages: [{ role: "user", content: "làm đi" }], tools: TOOLS, maxTokens: 16000 })) ra.push(c);
+    } catch (e) {
+      loi = e;
+    }
+    expect(ra.find((c) => c.type === "done")?.toolCalls ?? []).toHaveLength(0);
+    expect(srv.laLoiToolCallTrongSuyLuan(loi)).toBe(true);
+    expect(String((loi as Error).message)).not.toMatch(/G5-D/);
   });
 
   it("★★★ (rà bảo mật 9c9b8ee1e) khối <tool_call> ở GIỮA suy luận (đang trích/bàn) ⇒ KHÔNG vớt — chỉ khối ĐUÔI là lệnh gọi thật", async () => {

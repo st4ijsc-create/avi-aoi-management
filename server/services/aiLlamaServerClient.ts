@@ -309,55 +309,39 @@ function gomToolCallCuaDapUng(
   message: unknown,
   options: GgufChatOptions,
   noiDung: string,
-  suyLuan = "",
 ): NativeToolCall[] {
   if (!options.tools?.length) return [];
   const tuO = docToolCallTuMessage(message);
   if (tuO.length) return tuO;
-  const tuChu = gomToolCallTuVanBan(noiDung).toolCalls;
-  if (tuChu.length) return tuChu;
-  return votToolCallTuSuyLuan(noiDung, suyLuan, options.messages ?? []);
+  return gomToolCallTuVanBan(noiDung).toolCalls;
 }
 
 /**
- * ★★★ Đo 2026-10-17 (proxy ghi thân thật, vòng agent Đợt 1): Qwen3.6 có lúc phát tool call (khuôn XML) NGAY
- * TRONG chuỗi suy luận, chưa đóng `</think>` ⇒ b9814 không tách ⇒ 0 tool_calls, content rỗng ⇒ G5-D ném
- * "token cạn kiệt vào suy luận" (chẩn đoán sai) ⇒ lượt agent chết. Vớt từ suy luận CHỈ khi: lượt có gửi `tools`
- * (người gọi kiểm), server KHÔNG tách được gì, VÀ content RỖNG (model chưa trả lời) — suy luận chỉ NHẮC tới
- * `<tool_call>` mà content có chữ thì không phải hành động. Mọi lượt ghi vẫn đi qua các hàng rào phía sau.
+ * ★★★ TOOL CALL NẰM TRONG SUY LUẬN — PHÁT HIỆN, KHÔNG VỚT.
+ * Đo 2026-10-17 (proxy ghi thân thật, vòng agent Đợt 1): Qwen3.6 có lúc phát tool call (khuôn XML) NGAY TRONG
+ * chuỗi suy luận, chưa đóng `</think>` ⇒ b9814 không tách ⇒ 0 tool_calls, content rỗng ⇒ G5-D ném "token cạn
+ * kiệt vào suy luận" (chẩn đoán sai) ⇒ lượt agent chết.
+ * ⚠ Bản đầu VỚT khối đó thành hành động; rà bảo mật bác HAI lần (9c9b8ee1e: trích dữ liệu khi nghĩ ⇒ tiêm;
+ *   e77b68dcd: so nguyên văn bị lách bằng định dạng khác — vi sai bộ phân tích). Kết luận: chữ SUY LUẬN không bao
+ *   giờ được thành HÀNH ĐỘNG. Thay vào đó ném lỗi có DẤU `TOOL_CALL_TRONG_SUY_LUAN` (chuỗi — sống qua mọi lớp bọc)
+ *   để tầng gọi tự quyết (vòng agent: hỏi lại ĐÚNG lượt đó với nghĩ TẮT ⇒ model phát tool call qua đường thật).
  */
-function votToolCallTuSuyLuan(noiDung: string, suyLuan: string, dauVao: readonly unknown[] = []): NativeToolCall[] {
-  if (noiDung.trim() !== "" || !suyLuan || suyLuan.indexOf("<tool_call>") === -1) return [];
-  // ★★★ Rà bảo mật 9c9b8ee1e — biến chữ SUY LUẬN thành HÀNH ĐỘNG là một kênh tiêm: model có thể TRÍCH một khối
-  //   `<tool_call>` gặp trong dữ liệu (tệp, kết quả tool) khi đang nghĩ. Hai điều kiện, cả hai bắt buộc:
-  //   (1) VỊ TRÍ — chỉ dãy khối nằm ở ĐUÔI suy luận (không chữ nào sau nó) là lệnh gọi thật; khối ở giữa là đang bàn.
-  //   (2) NGUỒN — khối nào có NGUYÊN VĂN (chuẩn hoá khoảng trắng) trong một tin nhắn đầu vào (câu hỏi, kết quả tool,
-  //       lịch sử) là chữ CHÉP từ dữ liệu ⇒ bỏ CẢ lượt vớt (fail-closed).
-  // ⚠ KHÔNG dùng regex lồng lượng từ neo `$` cho việc này (rà bảo mật bcd02aed7: ReDoS > 120 s trên 20.000 khối
-  //   không đóng). Quét TUYẾN TÍNH từ cuối: còn kết thúc bằng `</tool_call>` thì cắt khối cuối bằng lastIndexOf.
-  const khoi: string[] = [];
-  let con = suyLuan.trimEnd();
-  const DONG = "</tool_call>";
-  const MO = "<tool_call>";
-  while (con.endsWith(DONG) && khoi.length < 16) {
-    const batDau = con.lastIndexOf(MO, con.length - DONG.length);
-    if (batDau < 0) break;
-    khoi.unshift(con.slice(batDau));
-    con = con.slice(0, batDau).trimEnd();
+export const DAU_TOOL_CALL_TRONG_SUY_LUAN = "TOOL_CALL_TRONG_SUY_LUAN";
+export class LoiToolCallTrongSuyLuan extends Error {
+  readonly code = DAU_TOOL_CALL_TRONG_SUY_LUAN;
+  constructor() {
+    super(`[llamaServer] ${DAU_TOOL_CALL_TRONG_SUY_LUAN}: model phát <tool_call> TRONG chuỗi suy luận (chưa đóng </think>) và content rỗng — không thực thi chữ suy luận; hỏi lại lượt này với nghĩ TẮT.`);
+    this.name = "LoiToolCallTrongSuyLuan";
   }
-  if (khoi.length === 0) return [];
-  const chuan = (s: string) => s.replace(/\s+/g, " ").trim();
-  const noiDungVao = dauVao.map((m) => chuan(String((m as { content?: unknown })?.content ?? ""))).filter((s) => s !== "");
-  for (const k of khoi) {
-    const kc = chuan(k);
-    if (noiDungVao.some((v) => v.includes(kc))) {
-      console.warn("[llamaServer] KHÔNG vớt tool call từ suy luận: khối có nguyên văn trong dữ liệu đầu vào (nghi chép/tiêm).");
-      return [];
-    }
+}
+export function laToolCallTrongSuyLuan(coGuiTools: boolean, daCoToolCall: boolean, noiDung: string, suyLuan: string): boolean {
+  return coGuiTools && !daCoToolCall && noiDung.trim() === "" && !!suyLuan && suyLuan.indexOf("<tool_call>") !== -1;
+}
+export function laLoiToolCallTrongSuyLuan(e: unknown): boolean {
+  for (let x: unknown = e, i = 0; x && i < 6; x = (x as { cause?: unknown }).cause, i++) {
+    if (String((x as { message?: unknown }).message ?? x).includes(DAU_TOOL_CALL_TRONG_SUY_LUAN)) return true;
   }
-  const vot = gomToolCallTuVanBan(khoi.join("\n")).toolCalls;
-  if (vot.length) console.warn(`[llamaServer] vớt ${vot.length} tool call từ ĐUÔI reasoning_content (model chưa đóng </think>).`);
-  return vot;
+  return false;
 }
 
 /** Chữ hiển thị sau khi đã bóc các khối `<tool_call>` nguyên văn ra. */
@@ -799,7 +783,10 @@ export async function serverChatCompletion(
   // ⇒ mọi lượt native đều hỏng, và hỏng bằng một câu lỗi nói về "token cạn kiệt vào suy luận" —
   // một chẩn đoán hoàn toàn sai. Bỏ qua cổng ấy CHỈ khi thật sự có tool_call (chứ không phải khi
   // `tools` được gửi): lượt có tools mà model trả chữ rỗng thật vẫn phải kêu như cũ.
-  const toolCalls = gomToolCallCuaDapUng(message, options, nua.noiDung, nua.suyLuan);
+  const toolCalls = gomToolCallCuaDapUng(message, options, nua.noiDung);
+  if (!toolCalls.length && laToolCallTrongSuyLuan(!!options.tools?.length, false, nua.noiDung, nua.suyLuan ?? "")) {
+    throw new LoiToolCallTrongSuyLuan();
+  }
   if (!toolCalls.length) {
     phanDinhCauTraLoiRong(nua, {
       maxTokens: body.max_tokens as number,
@@ -1240,14 +1227,12 @@ async function* streamChatCompletionTrucTiep(
     // THÀNH CÔNG kết thúc với `fullText === ""` theo cấu tạo (model không phát chữ nào, chỉ phát
     // `tool_calls`). Không có điều kiện `!boGomTool.coToolCall` dưới đây thì **mọi lượt native
     // streaming đều ném** — và ném bằng câu lỗi "token cạn kiệt vào suy luận", một chẩn đoán sai.
-    // ★★★ Vớt tool call từ suy luận (xem `votToolCallTuSuyLuan`) TRƯỚC cổng câu-trả-lời-rỗng: một lượt mà model
-    // gọi tool ngay trong <think> không phải "câu trả lời rỗng".
+    // ★★★ Tool call nằm TRONG suy luận ⇒ ném lỗi có dấu (xem `LoiToolCallTrongSuyLuan`), KHÔNG vớt, KHÔNG G5-D.
     const coGuiTools = Array.isArray((body as { tools?: unknown[] }).tools) && (body as { tools?: unknown[] }).tools!.length > 0;
-    const votTuSuyLuan =
-      coGuiTools && !boGomTool.coToolCall && gomToolCallTuVanBan(fullText).toolCalls.length === 0
-        ? votToolCallTuSuyLuan(fullText, fullReasoning, ((body as { messages?: unknown[] }).messages ?? []) as unknown[])
-        : [];
-    if (fullText.length === 0 && !boGomTool.coToolCall && votTuSuyLuan.length === 0) {
+    if (laToolCallTrongSuyLuan(coGuiTools, boGomTool.coToolCall || gomToolCallTuVanBan(fullText).toolCalls.length > 0, fullText, fullReasoning)) {
+      throw new LoiStreamServer(new LoiToolCallTrongSuyLuan().message, false, { cause: new LoiToolCallTrongSuyLuan() });
+    }
+    if (fullText.length === 0 && !boGomTool.coToolCall) {
       try {
         // ⚠ ĐÚNG vị từ dùng chung với ba đường kia — KHÔNG dựng lại phép phân định ở đây. Lượt
         // viết đầu tiên của bản vá này đã inline nó, và lưới §5 (đếm điểm gọi
@@ -1272,9 +1257,7 @@ async function* streamChatCompletionTrucTiep(
     const toolCalls = boGomTool.coToolCall
       ? boGomTool.ketThuc()
       : coGuiTools
-        ? votTuSuyLuan.length
-          ? votTuSuyLuan
-          : gomToolCallTuVanBan(fullText).toolCalls
+        ? gomToolCallTuVanBan(fullText).toolCalls
         : [];
     yield {
       type: "done",
