@@ -460,6 +460,20 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
         "ACS/metadata của SAML — cửa đúc vé thứ hai, chủ thể đến từ IdP chứ không từ một cookie phiên. Cùng người canh với `oauth.ts` (`sessionGrantScan.test.ts` §4).",
       soTuyen: 3,
     },
+    /* ── ★★★ 2026-10-17 (doc 81 Đợt 10 edge) — NÚT BIÊN: khoá CỦA NÚT, không phải phiên, không phải khoá API ─────
+     * Lúc đầu `edgeNodeRoutes.ts` rơi vào luật thư mục `server/api/v1/` (nó nằm cạnh các tuyến `validateExternalAuth`) —
+     * khai thế là SAI TRỤC: chủ thể ở đây là một NÚT BIÊN, được xác thực bằng bí mật riêng của nút (`requireEdgeNode` →
+     * `authenticateEdgeNodeToken`, chỉ băm SHA-256 trong `edge_node_credentials`), không qua `validateExternalAuth`.
+     * ⇒ Khai riêng ở đây (cùng khuôn với khoá máy/API key), và luật thư mục loại nó ra khỏi số 15.
+     * ⚠ Lưới này KHÔNG gọi thật nhóm này (không chạy 401-probe): `requireEdgeNode` trả 503 khi `EDGE_RUNTIME_ENABLED` tắt,
+     *   401 chỉ khi bật + thiếu/thu hồi khoá; hành vi 401 do lưới edge (`edgeExecution.*.dot9/dot10.db.test.ts`) canh.
+     * ⚠ `soTuyen` = 0 vì `soGanTuyen()` chỉ khớp `app|router.` còn file này gắn bằng tham số `r` (`r.post(...)`) — con số
+     *   ghim là sự thật đo được, không phải lời khẳng định "file không có tuyến" (14+ tuyến POST `/edge/node/*`). */
+    "server/api/v1/edgeNodeRoutes.ts": {
+      viSao:
+        "Giao thức nút biên (`/api/v1/edge/node/*`) — xác thực bằng KHOÁ CỦA NÚT (`requireEdgeNode`, bí mật riêng mỗi nút, không phải phiên trình duyệt, không phải API key). Không khoá ⇒ 401 (khi runtime edge bật), runtime tắt ⇒ 503. Trục này do các lưới `edgeExecution*.dot9/dot10.db.test.ts` canh.",
+      soTuyen: 0,
+    },
     "server/_core/securityHeaders.ts": {
       viSao:
         "Điểm nhận báo cáo CSP — trình duyệt POST tới đây KHÔNG kèm cookie theo đúng đặc tả; đòi 401 là tự tắt kênh báo cáo. Nội dung bị bỏ qua, không chạm dữ liệu người dùng.",
@@ -483,6 +497,8 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
       "Trục ấy được canh bởi `server/_core/thuHoiPhienMoiBeMat.test.ts` (thu hồi phiên trên nhánh Bearer).",
     soFile: 15,
   } as const;
+  /** Registrar dưới thư mục nhưng được KHAI RIÊNG ở `NGOAI_PHAM_VI` (khác trục) — không tính vào luật thư mục. */
+  const thuocLuatThuMuc = (d: string) => d.startsWith(THU_MUC_NGOAI.tienTo) && NGOAI_PHAM_VI[d] === undefined;
 
   /**
    * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-1 — THIẾT BỊ CHỐNG-"N+1" TỰ NÓ LÀ MỘT DANH SÁCH N+1.**
@@ -502,7 +518,9 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
    *    cho chúng là dựng đúng cái danh sách vô nghĩa mà lượng từ này ra đời để giết.
    * ⇒ Vị từ được siết theo **HÌNH DẠNG**, không theo thư mục: một registrar TUYẾN là hàm
    *   `register…` nhận **một tham số kiểu Express** (`Express` · `Application` · `Router`).
-   *   Đo được: 55 → **25** = 22 cũ + **đúng ba** file `_core/` mà bản trước bỏ sót. §6a ghim cả
+   *   ★ 2026-10-17 doc 81 Đợt 10 edge: +1 (`server/api/v1/edgeNodeRoutes.ts`) ⇒ thô 55 → **56**, registrar Express 25 → **26**;
+   *   AI Local cộng thêm +2 trên `feat/ai-local-7-tang` ⇒ **58/28** sau khi gộp (mỗi nhánh ghim số của riêng nó).
+   *   Đo được (gốc): 55 → **25** = 22 cũ + **đúng ba** file `_core/` mà bản trước bỏ sót. §6a ghim cả
    *   **hai** con số, nên một lượt nới vị từ trở lại (hoặc thu phạm vi lại) đều ĐỎ.
    */
   const VI_TU_REGISTRAR = /export function register\w*\s*\(/;
@@ -561,11 +579,11 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
     expect(
       REGISTRAR_THO.length,
       "số hàm `register…` trên toàn `server/` đã đổi — đây là con số bản trước ĐÃ ĐO SAI (22 vì chỉ đi hai thư mục)",
-    ).toBe(55);
+    ).toBe(56);
     expect(
       REGISTRAR.length,
       "số registrar TUYẾN EXPRESS đã đổi — một registrar tuyến mới vừa xuất hiện, hoặc vị từ đã bị nới",
-    ).toBe(25);
+    ).toBe(26);
     expect(
       REGISTRAR.filter((d) => d.startsWith("server/_core/")).sort(),
       "ba registrar `_core/` mà bản trước KHÔNG BAO GIỜ thấy — chúng là lý do §6 được viết lại",
@@ -599,8 +617,19 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "(2) BA DƯƠNG TÍNH GIẢ — ba dòng CHÚ THÍCH ngay trên middleware ấy trích nguyên văn `app.get(\"/uploads/*\")`, " +
           "`app.use(\"/uploads\", express.static(...))` và `app.use(\"/uploads\", …)` để ghi lại VÌ SAO thứ tự gắn có ý " +
           "nghĩa (đặt sau dòng resize thì mọi yêu cầu kèm `?w=` đi vòng qua cổng — một bản vá xanh mà cửa vẫn mở). " +
-          "⚠ Vẫn ghi lại thay vì sửa chú thích cho vừa bộ đếm, đúng lý do đã nêu ở lượt +2 phía trên.",
-        soTuyen: 104,
+          "⚠ Vẫn ghi lại thay vì sửa chú thích cho vừa bộ đếm, đúng lý do đã nêu ở lượt +2 phía trên." +
+          "★ 2026-10-17 104 → 106: MÀU ĐỎ BỊ CHE — §6b dừng ở khẳng định 'file chưa khai' đầu tiên (giàn thử edge) nên chưa bao giờ tới vòng so số. " +
+          "Đo bộ đếm trên các commit 8c12bbbc7…7e849be39: đều 106 (không đổi trong Đợt 8-12) ⇒ độ lệch +2 có từ trước, không do Đợt 10-12 thêm; " +
+          "con số ghim chỉ được đưa về sự thật đo được, chưa truy ra 2 điểm gắn nào. Cần một lượt đối chiếu riêng nếu muốn biết chúng là gì.",
+        soTuyen: 106,
+      },
+      "server/services/edge/__edgeE2eHarness.dot10.ts": {
+        viSao:
+          "★ THÊM 2026-10-17 (doc 81 Đợt 10 edge) — GIÀN THỬ E2E, CHỈ-TEST: gắn `/api/v1/edge/node`, `/api/v1` và `/api/trpc` THẲNG vào một `express()` riêng " +
+          "để các lưới `*.dot10*.test.ts` gọi tuyến thật qua HTTP. Chỉ được nhập từ các test `*.dot9/dot10/dot12*.test.ts` (tiền tố `__` loại nó khỏi các census mã sản xuất), " +
+          "không được nhập từ đường khởi động nào, không lắng nghe cổng sản xuất. Các điểm gắn là dương tính giả đối với bề mặt thật: " +
+          "bề mặt thật của chúng được đếm ở registrar/`_core/index.ts`. Khai kèm SỐ để một điểm gắn thứ N+1 là một quyết định nói ra.",
+        soTuyen: 3,
       },
       "server/api/v1/guard.ts": {
         viSao:
@@ -700,7 +729,7 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
   });
 
   it("★★★ SỐ file của luật thư mục được GHIM (file thứ 16 phải là một quyết định nói ra)", () => {
-    const trongThuMuc = REGISTRAR.filter((d) => d.startsWith(THU_MUC_NGOAI.tienTo));
+    const trongThuMuc = REGISTRAR.filter(thuocLuatThuMuc);
     expect(
       trongThuMuc.length,
       `số registrar dưới \`${THU_MUC_NGOAI.tienTo}\` đã đổi — một tuyến ngoài mới vừa xuất hiện,\n` +
@@ -714,7 +743,7 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
       (d) =>
         !DA_GOI.includes(d as (typeof DA_GOI)[number]) &&
         NGOAI_PHAM_VI[d] === undefined &&
-        !d.startsWith(THU_MUC_NGOAI.tienTo),
+        !thuocLuatThuMuc(d),
     );
     expect(
       chuaXuLy.map((d) => `  · ${d}`).join("\n"),
