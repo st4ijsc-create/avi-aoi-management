@@ -15371,6 +15371,20 @@
       }
     }
   },
+  "aiAgentPhanHoi": {
+    "huuIch": "Helpful",
+    "khongHuuIch": "Not good",
+    "lyDoNhan": "What was wrong? (optional)",
+    "lyDoGoiY": "e.g. wrong API, does not compile, edited the wrong file…",
+    "guiLyDo": "Send reason",
+    "daGhiLyDo": "Reason recorded.",
+    "loi": {
+      "quyen": "You are not allowed to send feedback.",
+      "khongThay": "This answer / proposal was not found (it may no longer be stored).",
+      "khongPhaiDiff": "This proposal is not a file change — it cannot be rated.",
+      "chung": "Feedback could not be saved — try again later."
+    }
+  },
   "kbStudio": {
     "title": "Training Studio",
     "subtitle": "Manage knowledge corpora, ingest documents and URLs, track ingest jobs, and preview what got ingested",
@@ -15434,7 +15448,7 @@
         "fillCorpusAria": "Fill the suggested corpus name \"{{corpus}}\" into the Corpus name field",
         "step1Note": "Clicking a suggestion only FILLS the \"Corpus name\" field below (it does not create an empty corpus) — a corpus only really exists once its first document has been ingested.",
         "currentlySelected": "Currently selected:",
-        "step1WebWarning": "For mainstream languages (C#, React, Node.js, Python, SQL): ingesting BEGINNER TUTORIALS is useless noise — the model already knows the syntax. API REFERENCE and PROJECT CONVENTIONS do help: measured 2026-09-23, the model's recurring C# error is a FORGOTTEN NAMESPACE — `reader.GetInt32(\"MaHocSinh\")` and `SqlDbType` both need `using System.Data;` (missing it ⇒ dotnet build rejects the whole file). The API reference states the `using` for every symbol. ⇒ Ingest API reference, coding standards and conventions; not tutorials.",
+        "step1WebWarning": "For mainstream languages (C#, React, Node.js, Python, SQL): ingesting BEGINNER TUTORIALS is almost certainly useless — the model already knows the syntax. API REFERENCE and PROJECT CONVENTIONS are better candidates, but NO measurement yet shows they make code better. Today a Studio corpus only reaches the web Q&A assistant and the VSCode assistant in LOCAL mode; it does NOT reach the browser coding workspace or the extension in SERVER mode. To find out whether a corpus helps code: Evaluation tab → Code eval (corpus ON/OFF).",
         "step2Title": "2. Pick files",
         "step2Accepts": "Accepts: {{formats}}",
         "step2AcceptsUrl": ", URL (paste a link in the panel on the right)",
@@ -15561,14 +15575,14 @@
         "hitHint": "Share of questions with a chunk of the expected file in the corpus top‑K.",
         "mrrHint": "Mean 1/rank of the first matching chunk (1 = always first).",
         "overThreshold": "Over {{nguong}}",
-        "overThresholdHint": "The matching chunk scores ≥ the coding assistant's Studio citation threshold — i.e. it actually enters the prompt.",
+        "overThresholdHint": "The matching chunk scores ≥ the Studio citation threshold (0.44) — the threshold the VSCode assistant in LOCAL mode uses to accept chunks into its context. The browser coding workspace does not read Studio corpora. Clearing the threshold does not prove better code — see Code eval.",
         "answer": "Answer in context",
         "answerHint": "The expected answer (regex) is present in the top‑K text — machine graded, no LLM.",
         "pipeline": "Reaches assistant",
         "pipelineHint": "After merging system KB + Studio + threshold + re-sort, the final citations include the expected file from this corpus.",
         "pipelineOff": "This run did not include the real-pipeline tier.",
         "reject": "Correct rejects ({{n}} off-corpus)",
-        "rejectHint": "Off-corpus questions where no chunk clears the threshold — noise stays out of the prompt.",
+        "rejectHint": "Off-corpus questions where no chunk clears the threshold — in the VSCode assistant in LOCAL mode, off-topic chunks would not be accepted into the context.",
         "pipelineAny": "Right source reaches assistant (any store)",
         "pipelineAnyHint": "The final citations include the expected file from ANY store — the system KB may hold a same-named copy that wins over your upload. Compare with the tile on the left to tell 'upload crowded out' from 'assistant truly lacks the source'."
       },
@@ -15586,11 +15600,47 @@
       "missingFileBadge": "file missing",
       "systemCopyBadge": "system copy"
     },
+    "evalMa": {
+      "title": "Code eval — corpus ON / OFF",
+      "desc": "Every task of the benchmark set is generated TWICE — without context, and with corpus chunks ≥ the 0.44 threshold (the way the VSCode assistant in LOCAL mode takes chunks) — then a machine compiles / runs the tests. It answers what the retrieval eval above cannot: does this corpus make code better or worse?",
+      "tat": "Code eval is OFF on the server (KB_STUDIO_EVAL_MA_ENABLED). A run executes model-generated code on the server, so it is off by default; turning it on is an administrator decision.",
+      "boBaiAria": "Task set",
+      "soLapAria": "Repetitions",
+      "soBai": "{{n}} tasks",
+      "chay": "Run code eval",
+      "huy": "Cancel",
+      "giaiThich": "Runs in the background at low priority (does not block people using the AI). Only an admin with 2FA can start / cancel. \"Regressed\" only when ON scores below OFF by MORE than the noise margin: ±3/36 measured on the 12-task × 3-run set, scaled to this run's size. No ON attempt received a chunk ≥ the threshold ⇒ \"Not applicable\".",
+      "chuaCo": "No code eval runs for this corpus yet.",
+      "cut": "{{n}} cut off",
+      "dangChay": "running {{pct}} %",
+      "col": {
+        "thoiDiem": "Time",
+        "boBai": "Task set",
+        "tat": "OFF (pass/n)",
+        "bat": "ON (pass/n)",
+        "chenh": "Delta (margin)",
+        "ketLuan": "Verdict"
+      },
+      "ketLuan": {
+        "tut": "REGRESSED",
+        "nang": "Improved",
+        "trong-nhieu": "Within noise",
+        "khong-ap-dung": "Not applicable",
+        "khong-do-duoc": "Not measurable"
+      },
+      "trangThai": {
+        "dang-chay": "Running",
+        "huy": "Cancelled",
+        "loi": "Error",
+        "khong-do-duoc": "Not measurable",
+        "gian-doan": "Interrupted (server restarted mid-run)"
+      }
+    },
     "modelBuilder": {
       "title": "Model Builder",
       "desc": "Fine-tune a local model on a corpus (LoRA)",
       "comingSoon": "Coming in a later task (E3-6)",
-      "comingSoonDesc": "LoRA fine-tuning is not built yet. Documents you've ingested into a corpus are now used by the AI assistant as citation sources (labeled \"Your uploaded documents\") in its answers — a dedicated fine-tuned model is a separate future upgrade, not built yet.",
+      "comingSoonDesc": "LoRA fine-tuning is not built yet. Documents you ingest into a corpus are used as citation sources (labeled \"Your uploaded documents\") by the web Q&A assistant and the VSCode assistant in LOCAL mode — not by the browser coding workspace. Training a dedicated model is a future upgrade, not built yet.",
       "startButton": "Start fine-tune"
     },
     "kiemMay": {

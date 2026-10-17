@@ -41,6 +41,10 @@ import { AUDIT_ACTIONS, ENTITY_TYPES, createAuditContext, logCrudOperation } fro
 //   (`services/ai/agent/thuTucLuotChay.ts`), nhập ĐỘNG trong từng thủ tục: đồ thị nhập tĩnh của router này (và mọi
 //   lưới đang mock tầng dữ liệu của nó) không đổi. SSE tạo/nối lại/huỷ lượt chạy ở `server/routes/aiAgentApi.ts`.
 const thuTucLuotChay = () => import("../services/ai/agent/thuTucLuotChay");
+// ★ Đợt 5.1 (2026-10-17) — PHẢN HỒI 👍/👎 + bộ dữ liệu "chỉ dẫn → diff được duyệt". Thân ở
+//   `services/ai/phanHoi/thuTucPhanHoi.ts` (nhập ĐỘNG như trên). Quyền `ai_repo_read/canView` trong thân; tổng hợp + xuất
+//   MỌI người đòi admin (sàn `adminPhanHoiProcedure` + kiểm lại trong thân).
+const thuTucPhanHoi = () => import("../services/ai/phanHoi/thuTucPhanHoi");
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
 /** id lượt chạy / pending action — `randomUUID()`. */
@@ -53,6 +57,11 @@ const opsAgentProcedure = roleProcedure("admin", "engineer").use(moduleGate("MOD
 /** D4 — kill-switch trip/untrip: admin + 2FA, the SAME guard D3 chained for
  *  model-card writes (`roleProcedure(...).use(require2FA)`). */
 const killSwitchProcedure = roleProcedure("admin").use(require2FA);
+
+/** Đợt 5.1 — tổng hợp phản hồi của MỌI người (chỉ đếm): admin + giấy phép MOD_AI (khuôn `opsAgentProcedure`). */
+const adminPhanHoiProcedure = roleProcedure("admin").use(moduleGate("MOD_AI"));
+
+const danhGiaSchema = z.union([z.literal(1), z.literal(-1)]).nullable();
 
 const AGENT_SESSION_STATUSES = [
   "planning",
@@ -295,6 +304,55 @@ export const aiAgentRouter = router({
     .mutation(async ({ input, ctx }) =>
       (await thuTucLuotChay()).thuTucBoDeXuat(toAgentUser(ctx.user as any), { runId: input.runId, id: input.id }),
     ),
+
+  // ═══ Đợt 5.1 — PHẢN HỒI 👍/👎 (câu trả lời của lượt chạy · diff đã duyệt/bác) + bộ dữ liệu ═══
+  /**
+   * Bỏ/sửa/gỡ phiếu CỦA MÌNH. `tra-loi`: khối trả lời thứ `chiSoTin` của lượt chạy; `diff`: một đề xuất `apply_diff`.
+   * Văn bản lưu lấy từ SỔ máy chủ (không từ client), đã che bí mật. `danhGia: null` = gỡ phiếu.
+   */
+  phanHoi: protectedProcedure
+    .input(
+      z.discriminatedUnion("loai", [
+        z.object({
+          loai: z.literal("tra-loi"),
+          runId: uuidSchema,
+          chiSoTin: z.number().int().min(0).max(10_000),
+          danhGia: danhGiaSchema,
+          lyDo: z.string().max(2_000).optional(),
+        }),
+        z.object({ loai: z.literal("diff"), actionId: uuidSchema, danhGia: danhGiaSchema, lyDo: z.string().max(2_000).optional() }),
+      ]),
+    )
+    .mutation(async ({ input, ctx }) => (await thuTucPhanHoi()).thuTucPhanHoi(toAgentUser(ctx.user as any), input)),
+
+  /** Phiếu CỦA MÌNH, mới nhất trước. */
+  phanHoiCuaToi: protectedProcedure.query(async ({ ctx }) => (await thuTucPhanHoi()).thuTucPhanHoiCuaToi(toAgentUser(ctx.user as any))),
+
+  /** ADMIN — đếm phiếu/quyết định của mọi người (không nội dung, không danh tính). */
+  phanHoiTongHop: adminPhanHoiProcedure.query(async ({ ctx }) =>
+    (await thuTucPhanHoi()).thuTucTongHopPhanHoi(toAgentUser(ctx.user as any)),
+  ),
+
+  /**
+   * Xuất JSONL "chỉ dẫn → diff ĐƯỢC DUYỆT" (đã che, loại tệp cấm). Mặc định của mình; `tatCa` (mọi người) đòi admin và
+   * được ghi audit. Mutation (không phải query) để không bị cache/tiền nạp như một lượt đọc thường.
+   */
+  xuatBoDuLieu: protectedProcedure
+    .input(z.object({ tatCa: z.boolean().optional() }).optional())
+    .mutation(async ({ input, ctx }) => {
+      const u = toAgentUser(ctx.user as any);
+      const kq = await (await thuTucPhanHoi()).thuTucXuatBoDuLieu(u, { tatCa: input?.tatCa === true });
+      if (kq.ok && input?.tatCa) {
+        await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {
+          action: AUDIT_ACTIONS.EXPORT,
+          entityType: ENTITY_TYPES.AI_ACTION,
+          entityName: "ai_agent_feedback_dataset",
+          details: { operation: "AI_FEEDBACK_DATASET_EXPORT_ALL", metadata: { soMau: kq.soMau, soBoQua: kq.soBoQua } },
+          status: "success",
+        });
+      }
+      return kq;
+    }),
 
   untripKillSwitch: killSwitchProcedure.mutation(async ({ ctx }) => {
     await untripKillSwitch(ctx.user.id);

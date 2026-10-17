@@ -18,6 +18,19 @@ import { cancelAction, confirmAction, type CopilotUser } from "../../aiCopilotAc
 import type { ToolExecContext } from "../../aiLocalTools";
 import { baoQuyetDinhDuyet, boLyDoBac, ghiLyDoBacTruoc } from "./busDuyetAgent";
 import { quanLyLuotChay, type QuanLyLuotChay } from "./quanLyLuotChay";
+import { ghiQuyetDinhTuCuaDuyet } from "../phanHoi/thuTucPhanHoi";
+
+/**
+ * ★ Đợt 5.1 — quyết định duyệt/bác THẬT vào sổ phản hồi (`ai_agent_feedback`) để thành bộ dữ liệu "chỉ dẫn → diff được
+ * duyệt". Gọi SAU hành động thật; mọi lỗi nuốt tại đây — sổ phản hồi không bao giờ làm hỏng một lượt duyệt/bác.
+ */
+async function ghiQuyetDinhAnToan(u: NguoiPhien, actionId: string, qd: "duyet" | "bac", lyDo: string | null): Promise<void> {
+  try {
+    await ghiQuyetDinhTuCuaDuyet(u, actionId, qd, lyDo);
+  } catch {
+    /* phụ — bỏ qua */
+  }
+}
 
 type NguoiPhien = { id: number; role: string; name?: string | null };
 
@@ -52,12 +65,14 @@ export async function thuTucDuyet(
   const kq = await confirmAction(y.actionId, y.actionId, copilot(u), y.lang, y.req, {}, undefined, y.selectedHunkIds);
   // Đánh thức lượt chạy (nếu có) với KẾT QUẢ THẬT — kể cả khi bị từ chối, để vòng không chờ tới hết hạn.
   if (kq.ok || kq.status === "denied" || kq.status === "expired") baoQuyetDinhDuyet(y.actionId, { loai: "duyet", ketQua: kq });
+  const daGhi = kq.ok && kq.status !== "bi_tu_choi_ghi" && !daBiTuChoiGhi(kq.result);
+  if (daGhi) await ghiQuyetDinhAnToan(u, y.actionId, "duyet", null);
   return {
     ok: kq.ok,
     note: null,
     status: kq.status,
     message: kq.message ?? null,
-    daGhi: kq.ok && kq.status !== "bi_tu_choi_ghi" && !daBiTuChoiGhi(kq.result),
+    daGhi,
     maTuChoi: maTuChoiGhi(kq.result),
   };
 }
@@ -67,8 +82,10 @@ export async function thuTucBac(u: NguoiPhien, y: { actionId: string; lyDo: stri
   // Ghi lý do TRƯỚC khi huỷ — xem `ghiLyDoBacTruoc` (cuộc đua với bộ kiểm định kỳ của lượt chạy).
   ghiLyDoBacTruoc(y.actionId, y.lyDo.trim());
   const kq = await cancelAction(y.actionId, copilot(u), y.req);
-  if (kq.ok) baoQuyetDinhDuyet(y.actionId, { loai: "bac", lyDo: y.lyDo.trim() });
-  else boLyDoBac(y.actionId);
+  if (kq.ok) {
+    baoQuyetDinhDuyet(y.actionId, { loai: "bac", lyDo: y.lyDo.trim() });
+    await ghiQuyetDinhAnToan(u, y.actionId, "bac", y.lyDo.trim());
+  } else boLyDoBac(y.actionId);
   return { ok: kq.ok, note: null, status: kq.status };
 }
 

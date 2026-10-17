@@ -277,7 +277,34 @@ export const agentTrpc = {
   async boDeXuat(runId: string, id: string): Promise<KetQuaDeXuatNho> {
     return chuanHoaKetQuaDeXuat(await dotBien<unknown>("boDeXuat", { runId, id }));
   },
+  /** (Đợt 5.1) bỏ / sửa / gỡ phiếu 👍/👎 — chỉ định danh + phiếu + lý do; máy chủ tự lấy văn bản từ sổ của nó. */
+  async phanHoi(vao: DauVaoPhanHoi): Promise<KetQuaPhanHoi> {
+    return chuanHoaKetQuaPhanHoi(await dotBien<unknown>("phanHoi", vao));
+  },
 };
+
+/** (Đợt 5.1) đầu vào `aiAgent.phanHoi`. `danhGia: null` = gỡ phiếu. */
+export type DauVaoPhanHoi =
+  | { loai: "tra-loi"; runId: string; chiSoTin: number; danhGia: 1 | -1 | null; lyDo?: string }
+  | { loai: "diff"; actionId: string; danhGia: 1 | -1 | null; lyDo?: string };
+
+/** (Đợt 5.1) kết quả THẬT: `danhGia` là phiếu máy chủ đang giữ sau lượt ghi (null = không có phiếu). */
+export interface KetQuaPhanHoi {
+  ok: boolean;
+  ma: string | null;
+  danhGia: 1 | -1 | null;
+}
+
+export function chuanHoaKetQuaPhanHoi(o: unknown): KetQuaPhanHoi {
+  if (!o || typeof o !== "object") return { ok: false, ma: "LOI", danhGia: null };
+  const r = o as { ok?: unknown; note?: unknown; phieu?: { danhGia?: unknown } | null };
+  const dg = r.phieu && typeof r.phieu === "object" ? r.phieu.danhGia : null;
+  return {
+    ok: r.ok === true,
+    ma: typeof r.note === "string" ? r.note : r.ok === true ? null : "LOI",
+    danhGia: r.ok === true && (dg === 1 || dg === -1) ? dg : null,
+  };
+}
 
 /** (Đợt 2) kết quả Nhớ / Bỏ qua: `ok` THẬT của máy chủ + mã từ chối (`NOT_FOUND`, `DA_XU_LY`, `PERMISSION_DENIED`, …). */
 export interface KetQuaDeXuatNho {

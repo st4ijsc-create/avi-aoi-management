@@ -16026,6 +16026,20 @@
       }
     }
   },
+  "aiAgentPhanHoi": {
+    "huuIch": "有帮助",
+    "khongHuuIch": "不好",
+    "lyDoNhan": "哪里不好？（可选）",
+    "lyDoGoiY": "例如：API 错误、无法编译、改错了文件…",
+    "guiLyDo": "发送原因",
+    "daGhiLyDo": "已记录原因。",
+    "loi": {
+      "quyen": "您无权发送反馈。",
+      "khongThay": "找不到该回答 / 提议（可能已不再保存）。",
+      "khongPhaiDiff": "该提议不是文件修改——无法评分。",
+      "chung": "无法保存反馈——请稍后重试。"
+    }
+  },
   "kbStudio": {
     "title": "Training Studio",
     "subtitle": "管理知识语料库（corpus）、导入文档与网页、跟踪导入任务、预览已导入的内容",
@@ -16089,7 +16103,7 @@
         "fillCorpusAria": "将建议的语料库名称「{{corpus}}」填入语料库名称栏",
         "step1Note": "点击建议只会把名称填入下方的「语料库名称」栏（不会自动创建空语料库）——语料库要等第一份文档导入后才真正存在。",
         "currentlySelected": "当前选择：",
-        "step1WebWarning": "对于主流编程语言（C#、React、Node.js、Python、SQL）：导入入门教程毫无用处且制造噪声——模型已掌握语法。API 参考与项目约定确实有用：2026-09-23 实测，模型反复出现的 C# 错误是遗漏命名空间——`reader.GetInt32(\"MaHocSinh\")` 与 `SqlDbType` 都需要 `using System.Data;`（缺少会使 dotnet build 拒绝整个文件）。API 参考为每个符号写明所需的 `using`。⇒ 请导入 API 参考、编码规范与约定，而不是教程。",
+        "step1WebWarning": "对于主流编程语言（C#、React、Node.js、Python、SQL）：导入入门教程几乎肯定无用——模型已掌握语法。API 参考与项目约定是更值得尝试的候选，但目前还没有任何测量表明它们能让代码更好。如今 Studio 语料库只到达网页问答助手和 LOCAL 模式的 VSCode 助手；不会到达浏览器编程工作区或 SERVER 模式的扩展。想知道某个语料库是否有助于代码：评估页 → 代码评估（语料库开/关）。",
         "step2Title": "2. 选择文件",
         "step2Accepts": "接受：{{formats}}",
         "step2AcceptsUrl": "、网址（粘贴到右侧面板的链接框）",
@@ -16216,14 +16230,14 @@
         "hitHint": "期望文件的段落出现在语料 top‑K 中的题目比例。",
         "mrrHint": "首个命中段落的平均 1/名次（1 = 总是第一）。",
         "overThreshold": "超过阈值 {{nguong}}",
-        "overThresholdHint": "命中段落得分 ≥ 编程助手的 Studio 引用阈值——即真正进入提示词。",
+        "overThresholdHint": "命中段落得分 ≥ Studio 引用阈值（0.44）——即 LOCAL 模式的 VSCode 助手将段落纳入上下文所用的阈值。浏览器编程工作区不读取 Studio 语料库。超过阈值并不证明代码更好——请看代码评估。",
         "answer": "答案在上下文中",
         "answerHint": "期望答案（正则）出现在 top‑K 文本中——机器评分，不使用 LLM。",
         "pipeline": "到达助手",
         "pipelineHint": "合并系统知识库 + Studio + 阈值 + 重排后，最终引用包含来自该语料的期望文件。",
         "pipelineOff": "本轮未运行真实管线层。",
         "reject": "正确拒绝（{{n}} 题外）",
-        "rejectHint": "题外问题中没有段落超过阈值——噪声未进入提示词。",
+        "rejectHint": "题外问题中没有段落超过阈值——在 LOCAL 模式的 VSCode 助手中，离题段落不会被纳入上下文。",
         "pipelineAny": "正确来源到达助手（任意库）",
         "pipelineAnyHint": "最终引用包含来自任意库的期望文件——系统知识库可能有同名副本并胜过你导入的版本。与左侧对比，区分“导入被挤出”与“助手确实缺少来源”。"
       },
@@ -16241,11 +16255,47 @@
       "missingFileBadge": "缺少文件",
       "systemCopyBadge": "系统副本"
     },
+    "evalMa": {
+      "title": "代码评估——语料库 开 / 关",
+      "desc": "基准题集中的每道题生成两次——无上下文，以及附带得分 ≥ 0.44 阈值的语料段落（即 LOCAL 模式 VSCode 助手接收段落的方式）——再由机器编译 / 运行测试评分。它回答上方检索评估无法回答的问题：该语料库让代码变好还是变差？",
+      "tat": "服务器上代码评估已关闭（KB_STUDIO_EVAL_MA_ENABLED）。该运行会在服务器上执行模型生成的代码，因此默认关闭；是否开启由管理员决定。",
+      "boBaiAria": "题集",
+      "soLapAria": "重复次数",
+      "soBai": "{{n}} 题",
+      "chay": "运行代码评估",
+      "huy": "取消",
+      "giaiThich": "后台低优先级运行（不阻塞正在使用 AI 的人）。只有启用 2FA 的管理员可以启动 / 取消。只有当“开”比“关”低出噪声范围以上时才判定“退步”：噪声 ±3/36 测于 12 题 × 3 轮，按本次运行规模换算。没有任何“开”轮次获得 ≥ 阈值的段落 ⇒“不适用”。",
+      "chuaCo": "该语料库尚无代码评估运行。",
+      "cut": "截断 {{n}}",
+      "dangChay": "运行中 {{pct}} %",
+      "col": {
+        "thoiDiem": "时间",
+        "boBai": "题集",
+        "tat": "关（通过/n）",
+        "bat": "开（通过/n）",
+        "chenh": "差值（范围）",
+        "ketLuan": "结论"
+      },
+      "ketLuan": {
+        "tut": "退步",
+        "nang": "提升",
+        "trong-nhieu": "在噪声内",
+        "khong-ap-dung": "不适用",
+        "khong-do-duoc": "无法测量"
+      },
+      "trangThai": {
+        "dang-chay": "运行中",
+        "huy": "已取消",
+        "loi": "错误",
+        "khong-do-duoc": "无法测量",
+        "gian-doan": "中断（服务器中途重启）"
+      }
+    },
     "modelBuilder": {
       "title": "模型构建",
       "desc": "在语料库上微调本地模型（LoRA）",
       "comingSoon": "将在后续任务中提供（E3-6）",
-      "comingSoonDesc": "LoRA 微调功能尚未构建。您已导入语料库的文档现在会被 AI 助手用作回答中的引用来源（标注为“您上传的文档”）— 而专用微调模型仍是未来的升级项，尚未构建。",
+      "comingSoonDesc": "LoRA 微调功能尚未构建。您导入语料库的文档会被网页问答助手和 LOCAL 模式的 VSCode 助手用作引用来源（标注为“您上传的文档”）——浏览器编程工作区不会使用。训练专用模型仍是未来的升级项，尚未构建。",
       "startButton": "开始微调"
     },
     "kiemMay": {

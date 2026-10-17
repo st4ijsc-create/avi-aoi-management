@@ -147,7 +147,7 @@ export const WIRED_ALLOCATION_SITE_COUNT = 15;
  * `ghi-lai-lich-ban-dung` (chạy `git`), và 5 script `do-twin` mở Playwright **có cờ GPU thật**
  * (`--use-gl=angle --use-angle=d3d11 --enable-gpu`), tức hộ tiêu thụ VRAM mà không sổ nào thấy.
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 203; // 2026-10-17 Đợt 3b: +2 (duAnCaNhan/gitDuAnCaNhan child_process + execFile — bộ chạy git DUY NHẤT của Đợt 3a/3b, khai muộn) · 2026-10-17 Đợt 3c: +2 (chayUngDung/cuaSinhUngDung child_process + spawn — cửa sinh ứng dụng xem trước) · 2026-09-22: +3 (agentic.mjs execSync thứ hai · duan.mjs execSync + child_process) · 2026-10-14 Đợt 0.1: +1 (giamSatLlamaServer child_process) · 2026-10-17 Đợt 1 T6 + OCR khai muộn: +10
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 203; // 2026-10-17 Đợt 5.2: ±0 (run.mjs execSync + child_process ⇒ cham.mjs execFile + child_process — dời chỗ, không thêm hộ) · 2026-10-17 Đợt 3b: +2 (duAnCaNhan/gitDuAnCaNhan child_process + execFile — bộ chạy git DUY NHẤT của Đợt 3a/3b, khai muộn) · 2026-10-17 Đợt 3c: +2 (chayUngDung/cuaSinhUngDung child_process + spawn — cửa sinh ứng dụng xem trước) · 2026-09-22: +3 (agentic.mjs execSync thứ hai · duan.mjs execSync + child_process) · 2026-10-14 Đợt 0.1: +1 (giamSatLlamaServer child_process) · 2026-10-17 Đợt 1 T6 + OCR khai muộn: +10
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -313,8 +313,12 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   //   Kỷ luật của bảng này là PHÂN LOẠI, không phải bỏ qua: mỗi dòng phải trả lời "có chạm GPU không".
   //   `WIRED_ALLOCATION_SITE_COUNT` KHÔNG đổi (vẫn 15) — không dòng nào mở giấy phép.
   // ═════════════════════════════════════════════════════════════════════════════════════════
-  { file: "scripts/ai-eval/codegen-chay-duoc/run.mjs", symbol: "execSync(", wired: false, note: "Bộ đo 'sinh mã CHẠY ĐƯỢC': chạy `node --test` / `python -m pytest` / `dotnet run` trên mã do model sinh, trong thư mục nháp. Ba trình chạy test đều CPU — KHÔNG chạm GPU. (Model chạy ở llama-server, một tiến trình KHÁC, và nó có hộ riêng.)" },
-  { file: "scripts/ai-eval/codegen-chay-duoc/run.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE. Script CHỈ chạy khi người vận hành gọi tay để đo; không nằm trong đường sản phẩm." },
+  // ★ 2026-10-17 (AI Local Đợt 5.2) — điểm chạy của bộ đo DỜI từ `run.mjs` (execSync, 2 dòng) sang `cham.mjs` (execFile một
+  //   hàm `chay`, 2 dòng): đổi CHỖ, không thêm hộ. Nay có HAI người gọi: `run.mjs` (tay) và Training Studio "Eval mã"
+  //   (`server/services/kbStudioEvalMa.ts`, nạp `cham.mjs` theo đường tệp lúc chạy — sau cờ KB_STUDIO_EVAL_MA_ENABLED +
+  //   admin/2FA). Cả hai CPU, không chạm GPU; model của Studio đi `serverGenerateText` ⇒ llama-server (hộ riêng).
+  { file: "scripts/ai-eval/codegen-chay-duoc/cham.mjs", symbol: "execFile(", wired: false, note: "Bộ chấm 'sinh mã CHẠY ĐƯỢC' (một hàm `chay`): `node --test` / `python t.py` / `dotnet run` / CMake+MSVC trên mã do model sinh, trong thư mục nháp. CPU — KHÔNG chạm GPU. Người gọi: `run.mjs` (tay) + Training Studio Eval mã (máy chủ, sau cờ + admin/2FA)." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/cham.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
   { file: "scripts/ai-eval/codegen-chay-duoc/agentic.mjs", symbol: "execSync(", wired: false, note: "Bộ đo AGENTIC: chạy `node --test` để KIỂM ĐỘC LẬP xem tác nhân đã sửa xanh thật chưa (không tin lời khai). CPU, KHÔNG chạm GPU." },
   { file: "scripts/ai-eval/codegen-chay-duoc/agentic.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
   // ── 2026-09-22 · bộ đo mở rộng: agentic.mjs có điểm execSync( THỨ HAI; duan.mjs (ba dự án thật) MỚI ──

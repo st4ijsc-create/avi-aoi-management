@@ -15351,6 +15351,20 @@
       }
     }
   },
+  "aiAgentPhanHoi": {
+    "huuIch": "Hữu ích",
+    "khongHuuIch": "Chưa tốt",
+    "lyDoNhan": "Vì sao chưa tốt? (tuỳ chọn)",
+    "lyDoGoiY": "VD: sai API, không biên dịch được, sửa nhầm tệp…",
+    "guiLyDo": "Gửi lý do",
+    "daGhiLyDo": "Đã ghi lý do.",
+    "loi": {
+      "quyen": "Bạn không có quyền gửi phản hồi.",
+      "khongThay": "Không tìm thấy câu trả lời / đề xuất này (có thể đã hết hạn lưu).",
+      "khongPhaiDiff": "Đề xuất này không phải một thay đổi tệp — không chấm được.",
+      "chung": "Không ghi được phản hồi — thử lại sau."
+    }
+  },
   "kbStudio": {
     "title": "Training Studio",
     "subtitle": "Quản lý kho tri thức (corpus), nạp tài liệu/URL, theo dõi tác vụ nạp dữ liệu và xem trước nội dung đã nạp",
@@ -15414,7 +15428,7 @@
         "fillCorpusAria": "Điền tên corpus gợi ý \"{{corpus}}\" vào ô Tên corpus",
         "step1Note": "Bấm một gợi ý chỉ ĐIỀN tên vào ô \"Tên corpus\" bên dưới (không tự tạo corpus rỗng) — corpus chỉ thật sự tồn tại sau khi tài liệu đầu tiên được nạp vào nó.",
         "currentlySelected": "Đang chọn:",
-        "step1WebWarning": "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN là vô ích và gây nhiễu — model đã nắm cú pháp từ lúc huấn luyện. Tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN thì có ích thật: đo 2026-09-23, lỗi C# lặp lại của model là QUÊN KHÔNG GIAN TÊN — `reader.GetInt32(\"MaHocSinh\")` và `SqlDbType` đều cần `using System.Data;` (thiếu ⇒ dotnet build chặn cả tệp). Tham chiếu API ghi rõ `using` cho từng ký hiệu. ⇒ Nạp tài liệu tra cứu API, chuẩn mã và quy ước; đừng nạp giáo trình.",
+        "step1WebWarning": "Với ngôn ngữ lập trình phổ thông (C#, React, Node.js, Python, SQL): nạp GIÁO TRÌNH NHẬP MÔN gần như chắc chắn vô ích — model đã nắm cú pháp từ lúc huấn luyện. Tài liệu THAM CHIẾU API và QUY ƯỚC DỰ ÁN là ứng viên đáng thử hơn, nhưng CHƯA có số đo nào cho thấy chúng làm mã tốt hơn. Corpus Studio hôm nay chỉ tới trợ lý hỏi đáp trên web và trợ lý VSCode chế độ LOCAL; KHÔNG tới không gian lập trình trên trình duyệt hay extension chế độ SERVER. Muốn biết một corpus có giúp mã hay không: tab Đánh giá → Eval mã (corpus BẬT/TẮT).",
         "step2Title": "2. Chọn tệp",
         "step2Accepts": "Nhận: {{formats}}",
         "step2AcceptsUrl": ", URL (dán link ở khung bên phải)",
@@ -15541,14 +15555,14 @@
         "hitHint": "Tỷ lệ câu có một đoạn của tệp kỳ vọng nằm trong top‑K truy hồi của corpus.",
         "mrrHint": "Trung bình 1/hạng của đoạn trúng đầu tiên (1 = luôn đứng đầu).",
         "overThreshold": "Qua ngưỡng {{nguong}}",
-        "overThresholdHint": "Đoạn trúng có điểm ≥ ngưỡng trích dẫn Studio của trợ lý lập trình — tức là thật sự được đưa vào prompt.",
+        "overThresholdHint": "Đoạn trúng có điểm ≥ ngưỡng trích dẫn Studio (0,44) — ngưỡng trợ lý VSCode chế độ LOCAL dùng để nhận đoạn vào ngữ cảnh. Không gian lập trình trên trình duyệt không đọc corpus Studio. Qua ngưỡng chưa chứng minh mã tốt hơn — xem Eval mã.",
         "answer": "Đáp án trong ngữ cảnh",
         "answerHint": "Đáp án kỳ vọng (regex) có mặt trong văn bản top‑K — chấm bằng máy, không dùng LLM.",
         "pipeline": "Tới trợ lý",
         "pipelineHint": "Sau khi trộn kho hệ thống + Studio + ngưỡng + sắp lại, trích dẫn cuối có đoạn của tệp kỳ vọng từ corpus này.",
         "pipelineOff": "Lượt này không chạy tầng đường ống thật.",
         "reject": "Từ chối đúng ({{n}} câu ngoài)",
-        "rejectHint": "Câu hỏi không thuộc corpus mà không đoạn nào qua ngưỡng — nhiễu không lọt vào prompt.",
+        "rejectHint": "Câu hỏi không thuộc corpus mà không đoạn nào qua ngưỡng — ở trợ lý VSCode chế độ LOCAL, đoạn lạc đề sẽ không được nhận vào ngữ cảnh.",
         "pipelineAny": "Nguồn đúng tới trợ lý (mọi kho)",
         "pipelineAnyHint": "Trích dẫn cuối có tệp kỳ vọng từ BẤT KỲ kho nào — kho hệ thống có thể giữ bản sao cùng tên và thắng chỗ bản bạn nạp. So với ô bên trái để biết tài liệu nạp bị lấn át hay trợ lý thật sự thiếu nguồn."
       },
@@ -15566,11 +15580,47 @@
       "missingFileBadge": "thiếu tệp",
       "systemCopyBadge": "bản hệ thống"
     },
+    "evalMa": {
+      "title": "Eval mã — corpus BẬT / TẮT",
+      "desc": "Mỗi bài trong bộ bài của bộ đo được sinh HAI lần — không ngữ cảnh, và có đoạn corpus ≥ ngưỡng 0,44 (cách trợ lý VSCode chế độ LOCAL nhận đoạn) — rồi máy biên dịch / chạy test chấm. Trả lời câu mà eval truy hồi ở trên không trả lời được: corpus này làm mã tốt lên hay tệ đi?",
+      "tat": "Eval mã đang TẮT trên máy chủ (KB_STUDIO_EVAL_MA_ENABLED). Lượt này chạy mã do model sinh trên máy chủ nên mặc định tắt; bật là quyết định của quản trị.",
+      "boBaiAria": "Bộ bài",
+      "soLapAria": "Số lần lặp",
+      "soBai": "{{n}} bài",
+      "chay": "Chạy eval mã",
+      "huy": "Huỷ",
+      "giaiThich": "Chạy nền, mức ưu tiên thấp (không chặn người đang dùng AI). Chỉ admin đã bật 2FA mới bắt đầu / huỷ được. \"Tụt\" chỉ khi BẬT thấp hơn TẮT QUÁ biên nhiễu: ±3/36 đo trên bộ 12 bài × 3 lượt, quy theo số lượt của lượt này. Không lượt BẬT nào nhận được đoạn ≥ ngưỡng ⇒ \"Không áp dụng\".",
+      "chuaCo": "Chưa có lượt eval mã nào cho corpus này.",
+      "cut": "cụt {{n}}",
+      "dangChay": "đang chạy {{pct}} %",
+      "col": {
+        "thoiDiem": "Thời điểm",
+        "boBai": "Bộ bài",
+        "tat": "TẮT (đạt/n)",
+        "bat": "BẬT (đạt/n)",
+        "chenh": "Chênh (biên)",
+        "ketLuan": "Kết luận"
+      },
+      "ketLuan": {
+        "tut": "TỤT",
+        "nang": "Nâng",
+        "trong-nhieu": "Trong nhiễu",
+        "khong-ap-dung": "Không áp dụng",
+        "khong-do-duoc": "Không đo được"
+      },
+      "trangThai": {
+        "dang-chay": "Đang chạy",
+        "huy": "Đã huỷ",
+        "loi": "Lỗi",
+        "khong-do-duoc": "Không đo được",
+        "gian-doan": "Gián đoạn (máy chủ khởi động lại giữa chừng)"
+      }
+    },
     "modelBuilder": {
       "title": "Xây dựng mô hình",
       "desc": "Tinh chỉnh (fine-tune) một mô hình cục bộ trên corpus (LoRA)",
       "comingSoon": "Sẽ có ở tác vụ sau (E3-6)",
-      "comingSoonDesc": "Tinh chỉnh (fine-tune) LoRA chưa được xây dựng. Tài liệu bạn đã nạp vào corpus giờ được trợ lý AI dùng làm nguồn trích dẫn (nhãn \"Tài liệu bạn nạp\") trong câu trả lời — còn việc huấn luyện một mô hình tinh chỉnh riêng vẫn là nâng cấp trong tương lai, chưa được xây dựng.",
+      "comingSoonDesc": "Tinh chỉnh (fine-tune) LoRA chưa được xây dựng. Tài liệu bạn nạp vào corpus hiện được dùng làm nguồn trích dẫn (nhãn \"Tài liệu bạn nạp\") cho trợ lý hỏi đáp trên web và trợ lý VSCode chế độ LOCAL — không cho không gian lập trình trên trình duyệt. Huấn luyện một mô hình riêng vẫn là nâng cấp tương lai, chưa được xây dựng.",
       "startButton": "Bắt đầu tinh chỉnh"
     },
     "kiemMay": {

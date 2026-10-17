@@ -9,8 +9,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync, execSync } from "node:child_process";
 import { ck } from "./cookie.mjs";
+// ★ 2026-10-17 (AI Local Đợt 5.2) — trích mã + bốn trình chạy tách sang `cham.mjs` để Training Studio "Eval mã" dùng
+//   CÙNG bộ chấm (không chép). Hành vi chấm không đổi; kiểm bằng thước fake-ok 12/12 · fake-bad 0/12.
+import { SYS, chamBai } from "./cham.mjs";
 
 // Gốc repo suy từ VỊ TRÍ tệp này (không ghim D:/SOURCES/avi-aoi-management) để chạy được trong worktree khác
 // mà không chạm cây làm việc của phiên khác; server đo chọn bằng AI_EVAL_BASE (mặc định :3000 như cũ).
@@ -32,8 +34,6 @@ const TASKFILE = arg("--tasks", "tasks.json");
 const FAKEFILE = arg("--fake", TASKFILE.startsWith("tasks-hard") ? "fake-hard.json" : "fake.json");
 const tasks = JSON.parse(fs.readFileSync(`${BENCH}/${TASKFILE}`, "utf8"))
   .filter(t => !ONLY || ONLY.split(",").includes(t.id) || ONLY.split(",").includes(t.lang));
-
-const SYS = "Bạn là trợ lý lập trình. Trả lời bằng ĐÚNG MỘT khối mã trong dấu ``` và không thêm lời giải thích nào ngoài khối mã đó.";
 
 // ─────────────────────────────────────────────────────────── SINH
 async function genPipeline(t) {
@@ -134,87 +134,6 @@ async function genFake(t, kind) {
   return { text: c ? "```\n" + c + "\n```" : "", totalMs: 0, fake: true };
 }
 
-// ─────────────────────────────────────────────────────────── TÁCH MÃ
-function extract(text, lang) {
-  const fences = [...text.matchAll(/```[a-zA-Z#+]*\s*\n([\s\S]*?)```/g)].map(m => m[1]);
-  if (fences.length) {
-    // ★ ƯU TIÊN khối mang ĐỊNH DANH bài yêu cầu. Đường ống trả kèm NGỮ CẢNH REPO, trong đó có
-    //   khối mã dài hơn nhiều — lấy "dài nhất" là lấy nhầm tệp của repo (đã đo: 21.638 ký tự
-    //   trong khi model thật chỉ sinh 2.002).
-    if (globalThis.__dinhDanh) {
-      const trung = fences.filter(f => f.includes(globalThis.__dinhDanh));
-      if (trung.length) return trung.sort((a, b) => b.length - a.length)[0].trim();
-    }
-    const key = lang === "cs" ? /class|namespace/ : lang === "cpp" ? /#include|template|struct|class/ : lang === "py" ? /def\s/ : /function|=>|const|export/;
-    const good = fences.filter(f => key.test(f));
-    return (good.length ? good : fences).sort((a, b) => b.length - a.length)[0].trim();
-  }
-  return text.trim();
-}
-
-// ─────────────────────────────────────────────────────────── CHẠY
-/** CMake không nằm trên PATH của shell này — ghim đường tuyệt đối đã ĐO được, không đoán. */
-const CMAKE = fs.existsSync("C:/Program Files/CMake/bin/cmake.exe")
-  ? "C:/Program Files/CMake/bin/cmake.exe"
-  : "cmake";
-
-function sh(cmd, cwd, timeout = 180000) {
-  try { return { ok: true, out: execSync(cmd, { cwd, timeout, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" }) }; }
-  catch (e) { return { ok: false, out: `${e.stdout || ""}\n${e.stderr || ""}`.slice(-1500) }; }
-}
-
-function runTs(t, code, dir) {
-  fs.mkdirSync(dir, { recursive: true });
-  // model hay viết `export function` — giữ nguyên; node 24 tự bóc kiểu cho .ts
-  fs.writeFileSync(`${dir}/sol.ts`, code);
-  fs.writeFileSync(`${dir}/t.test.ts`, t.test.replace("./sol.mjs", "./sol.ts"));
-  fs.writeFileSync(`${dir}/package.json`, '{"type":"module"}');
-  return sh(`node --experimental-transform-types --test t.test.ts`, dir, 60000);
-}
-function runPy(t, code, dir) {
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(`${dir}/sol.py`, code);
-  fs.writeFileSync(`${dir}/t.py`, t.test);
-  return sh(`python t.py`, dir, 60000);
-}
-function runCs(t, code, dir) {
-  fs.mkdirSync(dir, { recursive: true });
-  fs.copyFileSync(`${BENCH}/cs-template/p.csproj`, `${dir}/p.csproj`);
-  fs.writeFileSync(`${dir}/Sol.cs`, code);
-  fs.writeFileSync(`${dir}/Program.cs`, t.test);
-  return sh(`dotnet run --project p.csproj -v q --nologo`, dir, 240000);
-}
-/**
- * ★★★ C++ (2026-09-22) — chủ dự án đã cài CMake + msys2; đo được trên máy này: msys2 ở `C:\msys64`
- * **chưa cài gói toolchain** (0 tệp `g++.exe`), còn **MSVC 14.51.36231 thì có đủ**
- * (VS Professional 2026 + Build Tools 2026), chỉ không nằm trên PATH vì MSVC cần `vcvars64`.
- *
- * ⇒ Đi qua **CMake**, vì CMake tự dò MSVC qua registry: một bước ít hơn là một chỗ ít hỏng hơn,
- *   và bộ đo không phải mang theo một bản sao logic dựng môi trường của Visual Studio.
- *
- * ⚠ Thư mục dựng KHÔNG được nằm dưới thư mục tạm của hệ: MSBuild cảnh báo MSB8029 và build tăng
- *   dần có thể sai. Nên `dir` do người gọi truyền (nằm trong `tmp/` của repo) là đúng chỗ.
- * ⚠ `--config Release` BẮT BUỘC ở generator đa-cấu-hình của Visual Studio; thiếu nó thì
- *   `CMAKE_BUILD_TYPE` bị bỏ qua trong im lặng và tệp .exe rơi vào `Debug/`.
- */
-function runCpp(t, code, dir) {
-  fs.mkdirSync(dir, { recursive: true });
-  fs.copyFileSync(`${BENCH}/cpp-template/CMakeLists.txt`, `${dir}/CMakeLists.txt`);
-  // Bài kiểm nối THẲNG vào sau lời giải: C++ một-tệp, không cần hệ thống test ngoài.
-  fs.writeFileSync(`${dir}/sol.cpp`, `${code}
-
-${t.test}
-`);
-  const cm = sh(`"${CMAKE}" -S . -B b`, dir, 180000);
-  if (!cm.ok) return cm;
-  const bd = sh(`"${CMAKE}" --build b --config Release`, dir, 300000);
-  if (!bd.ok) return bd;
-  // ⚠ Dựng bằng `path.join` chứ KHÔNG gõ tay dấu `\` trong template string: bản đầu viết
-  //   "b\Release\solbench.exe", JS nuốt hai dấu thoát và lệnh thành "bReleasesolbench.exe"
-  //   — biên dịch ĐÃ đạt mà cả ba bài vẫn 0/3, tức một hiện vật công cụ đội lốt khuyết tật model.
-  return sh(`"${path.join(dir, "b", "Release", "solbench.exe")}"`, dir, 60000);
-}
-const RUNNERS = { ts: runTs, py: runPy, cs: runCs, cpp: runCpp };
 
 // ─────────────────────────────────────────────────────────── VÒNG
 const gen = CONFIG === "pipeline" ? genPipeline
@@ -225,6 +144,9 @@ const gen = CONFIG === "pipeline" ? genPipeline
 // ★★★ CỔNG SỨC KHOẺ — bài học đắt nhất phiên này: llama-server CHẾT giữa chừng và tôi suýt
 //   báo cáo "đường ống + Coder = 0/9" như phát hiện sản phẩm, trong khi đó là hiện vật công cụ.
 async function kiemLlama(nhan) {
+  // fake-ok / fake-bad KHÔNG gọi model (kiểm thước) ⇒ không đòi llama-server sống: vứt số vì server chết chỉ đúng khi
+  // số ấy có đi qua model.
+  if (CONFIG.startsWith("fake-")) return;
   /**
    * ★ Cổng canh ĐÚNG endpoint đang đo, không canh cứng một cổng. Bản đầu ghim `:8091/health`;
    * khi đo một runtime KHÁC (Ollama :11434 cho Devstral — llama.cpp b9814 không nạp nổi kiến trúc
@@ -248,15 +170,13 @@ const rows = [];
 for (const t of tasks) {
   process.stderr.write(`▶ ${t.id} (${t.lang}) … `);
   let g; try { g = await gen(t); } catch (e) { g = { text: "", err: String(e).slice(0, 200) }; }
-  globalThis.__dinhDanh = (t.test.match(/import\s*\{\s*([A-Za-z_$][\w$]*)/) || t.test.match(/from sol import\s+([A-Za-z_][\w]*)/) || t.test.match(/([A-Z][A-Za-z0-9]+)\.[A-Z]/) || [])[1] || t.name;
-  const code = extract(g.text || "", t.lang);
   const dir = `${WORK}/${LABEL}/${t.id}`;
-  let r = { ok: false, out: "KHÔNG SINH ĐƯỢC MÃ" };
-  if (code) { try { r = RUNNERS[t.lang](t, code, dir); } catch (e) { r = { ok: false, out: String(e).slice(0, 600) }; } }
-  const row = { id: t.id, lang: t.lang, config: LABEL, sinhDuocMa: !!code, chayDat: r.ok,
+  const c = await chamBai({ t, text: g.text || "", dir });
+  const r = { ok: c.dat };
+  const row = { id: t.id, lang: t.lang, config: LABEL, sinhDuocMa: c.sinhDuocMa, chayDat: c.dat,
     ttftMs: g.ttftMs ?? null, totalMs: g.totalMs ?? null, tokPerSec: g.tokPerSec ?? null,
     genTok: g.genTok ?? null, evs: g.evs ?? null, err: g.err ?? null,
-    loi: r.ok ? null : String(r.out).slice(-700), code, vanBanGoc: (g.text||'').slice(0,20000) };
+    loi: c.loi, code: c.code, vanBanGoc: (g.text||"").slice(0,20000) };
   rows.push(row);
   process.stderr.write(`${r.ok ? "ĐẠT" : "TRƯỢT"}  ${g.totalMs ?? "-"}ms\n`);
 }

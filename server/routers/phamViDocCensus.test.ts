@@ -767,7 +767,17 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • `repoWorkspace.deXuatXoaTep` / `deXuatDoiTenTep` (mutations): PROPOSE `delete_file`/`rename_file` (HITL card) ⇒ D;
 //   • `repoWorkspace.baiHocThem` / `baiHocSua` / `baiHocXoa` / `doiTenPhien` (mutations): owner = session user ⇒ D;
 //   • `repoWorkspace.ocrAnhLoi` (mutation): OCR of an uploaded screenshot, no rows ⇒ D. No baseline row added.
-const GHIM = { A: 333, B: 8, C: 486, D: 1169, S: 357, tong: 2353 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 5 — phản hồi 👍/👎 + eval mã A/B) — **C 486 → 490 · D 1169 → 1173 · tong 2353 → 2361 ·
+// A/B/S unchanged.** Eight NEW procedures (before = this pin, green on HEAD `efb9ff532`):
+//   • `aiAgent.phanHoiCuaToi` (query): the session user's OWN feedback rows (`"userId" = <session>` in every query of
+//     `server/db/aiAgentFeedback.ts`) ⇒ C; `aiAgent.phanHoiTongHop` (query): ADMIN-only COUNTS over ai_agent_feedback, no
+//     content, no identity, no tenant rows ⇒ C;
+//   • `kbStudio.listBoBaiMa` (query): reads benchmark task files on disk ⇒ C; `kbStudio.danhSachEvalMa` (query): eval runs of
+//     one Studio corpus (`kb_eval_ma_runs`, not tenant data; same scope as `kbStudio.listEvalRuns`) ⇒ C;
+//   • `aiAgent.phanHoi` / `aiAgent.xuatBoDuLieu` (mutations): write / export the CALLER's own feedback (export of ALL users
+//     requires admin + is audited) ⇒ D; `kbStudio.batDauEvalMa` / `kbStudio.huyEvalMa` (mutations, admin + 2FA) ⇒ D.
+//   No baseline row added.
+const GHIM = { A: 333, B: 8, C: 490, D: 1173, S: 357, tong: 2361 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

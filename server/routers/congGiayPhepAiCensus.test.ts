@@ -448,7 +448,18 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   tên tệp qua RBAC + HITL của tool `delete_file`/`rename_file`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
  *   `tong` 2353 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2353, beMatAi: 404, aiCoCong: 342, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-17 AI Local Đợt 5 (5.1 phản hồi · 5.2 eval mã) — **tong 2353 → 2361 · beMatAi 404 → 408 · aiCoCong 342 → 346**
+ *   (đo trước rồi mới ghim; trước lượt này 2353 XANH trên HEAD `efb9ff532`). TÁM thủ tục mới:
+ *   • BỐN ở `aiAgentRouter.ts` (bề mặt AI, sàn MOD_AI ⇒ cả bốn vào aiCoCong): `aiAgent.phanHoiCuaToi` (query),
+ *     `aiAgent.{phanHoi, xuatBoDuLieu}` (mutation) — sàn `moduleProcedure("MOD_AI")`, quyền ai_repo_read/canView trong thân;
+ *     `aiAgent.phanHoiTongHop` (query) — sàn MỚI `adminPhanHoiProcedure = roleProcedure("admin").use(moduleGate("MOD_AI"))`.
+ *   • BỐN ở `kbStudioRouter.ts` (KHÔNG phải bề mặt AI — cùng nhóm với `evalCorpus`/`listEvalRuns`, chỉ vào `tong`):
+ *     `kbStudio.{listBoBaiMa, danhSachEvalMa}` (query, admin/engineer + 2FA), `kbStudio.{batDauEvalMa, huyEvalMa}`
+ *     (mutation, admin + 2FA). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2361 trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2361, beMatAi: 408, aiCoCong: 346, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
