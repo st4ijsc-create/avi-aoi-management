@@ -147,7 +147,7 @@ export const WIRED_ALLOCATION_SITE_COUNT = 15;
  * `ghi-lai-lich-ban-dung` (chạy `git`), và 5 script `do-twin` mở Playwright **có cờ GPU thật**
  * (`--use-gl=angle --use-angle=d3d11 --enable-gpu`), tức hộ tiêu thụ VRAM mà không sổ nào thấy.
  */
-export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 203; // 2026-10-17 Đợt 5.2: ±0 (run.mjs execSync + child_process ⇒ cham.mjs execFile + child_process — dời chỗ, không thêm hộ) · 2026-10-17 Đợt 3b: +2 (duAnCaNhan/gitDuAnCaNhan child_process + execFile — bộ chạy git DUY NHẤT của Đợt 3a/3b, khai muộn) · 2026-10-17 Đợt 3c: +2 (chayUngDung/cuaSinhUngDung child_process + spawn — cửa sinh ứng dụng xem trước) · 2026-09-22: +3 (agentic.mjs execSync thứ hai · duan.mjs execSync + child_process) · 2026-10-14 Đợt 0.1: +1 (giamSatLlamaServer child_process) · 2026-10-17 Đợt 1 T6 + OCR khai muộn: +10
+export const KNOWN_ALLOCATION_SITE_ROW_COUNT = 220; // 2026-10-17 bộ đo Đợt 2/4 khai muộn: +17 (tim-ma/chuanBi 3 · fim/chay-fim 4 [VRAM THẬT, chạy tay] · fim/tao-mau 4 · vscode-e2e 6) · 2026-10-17 Đợt 5.2: ±0 (run.mjs execSync + child_process ⇒ cham.mjs execFile + child_process — dời chỗ, không thêm hộ) · 2026-10-17 Đợt 3b: +2 (duAnCaNhan/gitDuAnCaNhan child_process + execFile — bộ chạy git DUY NHẤT của Đợt 3a/3b, khai muộn) · 2026-10-17 Đợt 3c: +2 (chayUngDung/cuaSinhUngDung child_process + spawn — cửa sinh ứng dụng xem trước) · 2026-09-22: +3 (agentic.mjs execSync thứ hai · duan.mjs execSync + child_process) · 2026-10-14 Đợt 0.1: +1 (giamSatLlamaServer child_process) · 2026-10-17 Đợt 1 T6 + OCR khai muộn: +10
 
 /**
  * ★★ HAI CÁI BẪY ĐẾM-HAI-LẦN, khai TƯỜNG MINH thay vì lọc ngầm bằng regex.
@@ -333,6 +333,24 @@ export const KNOWN_ALLOCATION_SITES: readonly {
   { file: "scripts/ai-eval/codegen-chay-duoc/agent-f/cham.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
   { file: "scripts/ai-eval/codegen-chay-duoc/agent-f/run-f.mjs", symbol: "spawnSync(", wired: false, note: "Bộ đo F: `git checkout`/`git clean` CHỈ trong thư mục bài để đặt lại fixture giữa hai lượt. CPU." },
   { file: "scripts/ai-eval/codegen-chay-duoc/agent-f/run-f.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  // ── 2026-10-17 bộ đo Đợt 2/4 khai muộn (+17) ──
+  { file: "scripts/ai-eval/codegen-chay-duoc/tim-ma/chuanBi.mjs", symbol: "spawnSync(", wired: false, note: "Bộ đo 'tìm mã' Đợt 2: `git ls-files` liệt kê cây để kiểm định nghĩa DUY NHẤT. CPU, KHÔNG chạm GPU." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/tim-ma/chuanBi.mjs", symbol: "spawnSync(", wired: false, note: "Điểm gọi THỨ HAI: `git rev-parse --short HEAD` ghi commit của đáp án. CPU." },
+  { file: "scripts/ai-eval/codegen-chay-duoc/tim-ma/chuanBi.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  { file: "scripts/ai-eval/fim/chay-fim.mts", symbol: "import node-llama-cpp", wired: false, note: "Bộ đo FIM Đợt 4C — chạy TAY, nạp GGUF TRỰC TIẾP (không qua :3000/:8091). CÓ chiếm VRAM thật (1,5B q8 ≈ 1,6 GB; 3B ≈ 3,3 GB), NGOÀI sổ broker — chỉ chạy khi không đo gì khác." },
+  { file: "scripts/ai-eval/fim/chay-fim.mts", symbol: "getLlama(", wired: false, note: "getLlama() mặc định — GPU tự động." },
+  { file: "scripts/ai-eval/fim/chay-fim.mts", symbol: ".loadModel(", wired: false, note: "gpuLayers: \"max\" — toàn bộ lớp lên GPU, từng model một (giải phóng giữa các model)." },
+  { file: "scripts/ai-eval/fim/chay-fim.mts", symbol: ".createContext(", wired: false, note: "contextSize 4096, sequences 1 — CÓ chặn trên." },
+  { file: "scripts/ai-eval/fim/tao-mau.mts", symbol: "execFileSync(", wired: false, note: "Bộ dựng mẫu FIM: `git rev-parse` ghim commit nguồn (mẫu dựng từ commit CỐ ĐỊNH, không đọc đĩa). CPU." },
+  { file: "scripts/ai-eval/fim/tao-mau.mts", symbol: "execFileSync(", wired: false, note: "Điểm gọi THỨ HAI: `git show <commit>:<tệp>`. CPU." },
+  { file: "scripts/ai-eval/fim/tao-mau.mts", symbol: "execFileSync(", wired: false, note: "Điểm gọi THỨ BA: `git ls-tree -r`. CPU." },
+  { file: "scripts/ai-eval/fim/tao-mau.mts", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  { file: "scripts/ai-eval/vscode-e2e/lib/chuanBi.mjs", symbol: "spawnSync(", wired: false, note: "Bộ đo cổng Đợt 4: `git` (init/commit) dựng workspace tạm của bài. CPU." },
+  { file: "scripts/ai-eval/vscode-e2e/lib/chuanBi.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  { file: "scripts/ai-eval/vscode-e2e/kiem-thuoc.mjs", symbol: "spawnSync(", wired: false, note: "Kiểm thước Đợt 4: chạy lại `run.mjs` (node) với model GIẢ theo kịch bản — không gọi model thật. CPU." },
+  { file: "scripts/ai-eval/vscode-e2e/kiem-thuoc.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
+  { file: "scripts/ai-eval/vscode-e2e/run.mjs", symbol: "spawnSync(", wired: false, note: "`git rev-parse --short HEAD` ghi commit vào báo cáo. Lệnh của MODEL chạy qua `chayLenhCucBo` của extension (đã khai phía extension). CPU." },
+  { file: "scripts/ai-eval/vscode-e2e/run.mjs", symbol: "child_process", wired: false, note: "Cùng điểm gọi ở trên, bắt qua mẫu MODULE." },
   { file: "server/services/ai/ocrVietOcr.ts", symbol: "InferenceSession.create(", wired: false, note: "★ TRÔI CÓ SẴN (2026-09-23, OCR trang VietOCR) — khai muộn. Bộ mã hoá VGG, KHÔNG truyền executionProviders ⇒ onnxruntime-node mặc định CPU; chỉ chạy lúc nạp tài liệu (OCR trang)." },
   { file: "server/services/ai/ocrVietOcr.ts", symbol: "InferenceSession.create(", wired: false, note: "★ TRÔI CÓ SẴN — bộ giải mã VGG, cùng lý lẽ (CPU mặc định)." },
   { file: "server/services/ai/ocrVietOcr.ts", symbol: "import onnxruntime-node", wired: false, note: "★ TRÔI CÓ SẴN — nạp ort để tạo hai session ở trên." },
