@@ -25,7 +25,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 
-const PHAM_VI = ["chat", "fim", "embed"] as const;
+// Đợt 4B-server — `apply`: sổ kiểm toán lượt áp tệp ở client (REST `client-apply/*`); token web chọn tường minh.
+const PHAM_VI = ["chat", "fim", "embed", "apply"] as const;
 type PhamVi = (typeof PHAM_VI)[number];
 
 /** Cùng luật `chuanHoaMaNguoiDung` phía máy chủ (chỉ để bật nút — máy chủ kiểm lại). */

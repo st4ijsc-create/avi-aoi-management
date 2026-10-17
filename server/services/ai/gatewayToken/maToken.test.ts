@@ -68,3 +68,26 @@ describe("phamViCuaDuong — không phân biệt hoa/thường như Express (rà
     expect(pv("/MODELS")).toBeNull();
   });
 });
+
+describe("★ Đợt 4B-server — phạm vi `apply` (sổ kiểm toán ghi tệp ở client bằng token)", () => {
+  it("`apply` là phạm vi hợp lệ; token web mặc định KHÔNG có nó (phải chọn tường minh)", async () => {
+    const m = await import("./maToken");
+    expect(m.PHAM_VI).toContain("apply");
+    expect(m.chuanHoaPhamVi(["apply", "chat"])).toEqual(["chat", "apply"]);
+    expect(m.chuanHoaPhamVi(undefined)).toEqual(["chat", "fim"]);
+  });
+  it("device flow: xin rỗng/sai ⇒ mặc định chat+fim+apply; xin tường minh ⇒ đúng thứ xin (∩ trần); `embed` vẫn bị cắt", async () => {
+    const m = await import("./maToken");
+    expect(m.chuanHoaPhamViThietBi(undefined)).toEqual(["chat", "fim", "apply"]);
+    expect(m.chuanHoaPhamViThietBi([])).toEqual(["chat", "fim", "apply"]);
+    expect(m.chuanHoaPhamViThietBi(["chat", "fim"])).toEqual(["chat", "fim"]);
+    expect(m.chuanHoaPhamViThietBi(["chat", "fim", "apply", "embed"])).toEqual(["chat", "fim", "apply"]);
+    expect(m.chuanHoaPhamViThietBi(["embed"])).toEqual(["chat", "fim", "apply"]);
+  });
+  it("`apply` KHÔNG mở đường nào của cổng `/v1` (nó chỉ mở hai tuyến REST sổ kiểm toán)", async () => {
+    const m = await import("./maToken");
+    for (const d of ["/chat/completions", "/completions", "/embeddings", "/models", "/apply"]) {
+      expect(m.phamViCuaDuong(d)).not.toBe("apply");
+    }
+  });
+});

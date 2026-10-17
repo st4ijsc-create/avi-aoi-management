@@ -26,9 +26,9 @@ import { RCA_SUGGESTED_ACTION_TOOLS, ensureRcaToolsRegistered } from "../service
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
 // 64 hex ⇔ sha256. Đợt C · Task 5 — `batDauApDungOClient`/`chotApDungOClient` chỉ nhận BĂM, không
-// bao giờ nhận nội dung tệp; ràng buộc hình dạng ở tầng zod chặn một client gửi nhầm/cố ý gửi một
-// chuỗi dài (vd. nội dung tệp) vào đúng ô lẽ ra chỉ chứa một băm 32-byte.
-const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/i, "Phải là sha256 (64 ký tự hex).");
+// bao giờ nhận nội dung tệp. Đợt 4B-server: lược đồ dời sang module lá dùng chung với cửa REST Bearer
+// (`POST /api/ai/client-apply/*`) — MỘT chủ, hai cửa không trôi khỏi nhau.
+import { batDauApDungOClientSchema, chotApDungOClientSchema } from "./aiCopilotApOClientSchema";
 
 function toCopilotUser(user: { id: number; role: string; name?: string | null }): CopilotUser {
   return { id: user.id, role: String(user.role), name: user.name ?? null };
@@ -135,15 +135,7 @@ export const aiCopilotRouter = router({
   // máy chủ này — máy chủ CHỈ giữ sổ kiểm toán những gì extension TỰ KHAI. Xem docblock đầy đủ ở
   // `server/services/aiCopilotActions.ts` (`batDauApDungOClient`/`chotApDungOClient`).
   batDauApDungOClient: protectedProcedure
-    .input(z.object({
-      path: z.string().min(1).max(1000),
-      nhanWorkspace: z.string().min(1).max(200),
-      sha256Truoc: sha256Schema,
-      sha256Sau: sha256Schema,
-      tomTat: z.string().min(1).max(2000),
-      soDongThem: z.number().int().min(0),
-      soDongBot: z.number().int().min(0),
-    }))
+    .input(batDauApDungOClientSchema)
     .mutation(async ({ input, ctx }) => {
       const user = toCopilotUser(ctx.user as any);
       return batDauApDungOClient(input, user, {
@@ -154,13 +146,7 @@ export const aiCopilotRouter = router({
     }),
 
   chotApDungOClient: protectedProcedure
-    .input(z.object({
-      actionId: z.string().min(1),
-      token: z.string().min(1),
-      thanhCong: z.boolean(),
-      sha256SauThat: sha256Schema.optional(),
-      loi: z.string().max(2000).optional(),
-    }))
+    .input(chotApDungOClientSchema)
     .mutation(async ({ input, ctx }) => {
       const user = toCopilotUser(ctx.user as any);
       return chotApDungOClient(input, user, {

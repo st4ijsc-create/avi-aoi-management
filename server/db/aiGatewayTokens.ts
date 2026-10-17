@@ -305,6 +305,44 @@ export async function thuHoiToken(userId: number, id: number): Promise<boolean> 
   }
 }
 
+export type KetQuaTuThuHoi =
+  | { ok: true; tokenId: number; userId: number; tienTo: string; daThuHoiTruoc: boolean }
+  | { ok: false; ma: "khong-hop-le" | "csdl" };
+
+/**
+ * ★ Đợt 4B-server — TỰ THU HỒI: extension "đăng xuất" bằng chính token nó đang giữ (`POST /api/ai/gateway-token/tu-thu-hoi`).
+ *
+ * Ngoại lệ có chủ đích của PHẠM VI CHỦ (cùng lý do `xacThucTokenNguoiDung`): tra theo BĂM — người cầm bản rõ chính là bằng
+ * chứng. Thu hẹp quyền luôn được phép ⇒ KHÔNG đòi token còn hạn / tài khoản còn bật / còn quyền AI: một token hết hạn hay
+ * của tài khoản bị khoá vẫn tự thu hồi được (kết quả chỉ có thể là ít quyền hơn).
+ * IDEMPOTENT: đã thu hồi trước đó ⇒ `ok` + `daThuHoiTruoc: true`, KHÔNG ghi đè `thuHoiLuc`/`thuHoiBoi` cũ (giữ dấu vết
+ * lượt thu hồi đầu, kể cả lượt HỆ THỐNG có `thuHoiBoi = NULL`). Lượt mới ghi `thuHoiBoi = chủ token` (tự tay).
+ */
+export async function tuThuHoiTokenTheoBam(token: unknown): Promise<KetQuaTuThuHoi> {
+  if (!laTokenNguoiDung(token)) return { ok: false, ma: "khong-hop-le" };
+  const db = await getDb();
+  if (!db) return { ok: false, ma: "csdl" };
+  try {
+    const bam = bamToken(token);
+    const [moi] = await chay<{ id: number; user_id: number; tien_to: string }>(
+      db,
+      sql`UPDATE ai_gateway_tokens SET "thuHoiLuc" = now(), "thuHoiBoi" = "userId"
+           WHERE "tokenHash" = ${bam} AND "thuHoiLuc" IS NULL
+       RETURNING id, "userId" AS user_id, "tienTo" AS tien_to`,
+    );
+    if (moi) return { ok: true, tokenId: Number(moi.id), userId: Number(moi.user_id), tienTo: String(moi.tien_to), daThuHoiTruoc: false };
+    const [cu] = await chay<{ id: number; user_id: number; tien_to: string }>(
+      db,
+      sql`SELECT id, "userId" AS user_id, "tienTo" AS tien_to FROM ai_gateway_tokens WHERE "tokenHash" = ${bam}`,
+    );
+    if (!cu) return { ok: false, ma: "khong-hop-le" };
+    return { ok: true, tokenId: Number(cu.id), userId: Number(cu.user_id), tienTo: String(cu.tien_to), daThuHoiTruoc: true };
+  } catch (err) {
+    canhBao("tuThuHoiTokenTheoBam", err);
+    return { ok: false, ma: "csdl" };
+  }
+}
+
 /**
  * ★★★ Rà bảo mật de591c868 #2 — FAN-OUT: một sự kiện vô hiệu DANH TÍNH ⇒ mọi token cá nhân của người đó chết theo.
  *

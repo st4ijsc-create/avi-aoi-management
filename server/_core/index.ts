@@ -44,6 +44,7 @@ import { registerAiAgentRoutes } from "../routes/aiAgentApi"; // Đợt 1 T4 —
 import { registerAiXemTruocRoutes } from "../routes/aiXemTruocApi"; // Đợt 3c — cửa vào xem trước: kiểm phiên + chủ ⇒ vé một lần ⇒ 302 sang ORIGIN riêng của proxy
 import { laOriginXemTruoc } from "../services/ai/chayUngDung"; // Đợt 3c — CORS KHÔNG phản chiếu origin xem trước (script do AI sinh)
 import { registerAiGatewayTokenThietBiRoutes } from "../routes/aiGatewayTokenThietBi"; // Đợt 4A — device flow: extension xin mã ⇒ người duyệt trên web ⇒ đổi lấy token /v1
+import { registerAiGatewayTokenBearerRoutes } from "../routes/aiGatewayTokenBearerApi"; // Đợt 4B-server — sổ áp tệp ở client + tự thu hồi, xác thực Bearer avgw_
 import { danhDauGianDoanKhiBoot } from "../db/aiAgentRuns";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
@@ -5587,6 +5588,7 @@ async function startServer() {
   registerAiAgentRoutes(app);
   registerAiXemTruocRoutes(app); // Đợt 3c — sau cổng giấy phép `/api/ai`; xác thực `thuXacThucRest` (lượng từ §2 của xacThucBeMatRest)
   registerAiGatewayTokenThietBiRoutes(app); // Đợt 4A — sau cổng giấy phép `/api/ai` ở trên; xác thực thay thế: xem docblock tuyến
+  registerAiGatewayTokenBearerRoutes(app); // Đợt 4B-server — sau cổng giấy phép `/api/ai`; Bearer `avgw_` + phạm vi `apply` (lượng từ §2 của xacThucBeMatRest)
   // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
   registerEdgeDownloadRoute(app);
 

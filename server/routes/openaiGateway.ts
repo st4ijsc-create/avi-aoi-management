@@ -68,6 +68,7 @@ import {
 // ★★★ Đợt 4A — TOKEN THEO NGƯỜI DÙNG (`avgw_…`, mig 0392). Tầng dữ liệu chỉ tra BĂM; module lá cho tiền tố/phạm vi.
 import { xacThucTokenNguoiDung, ghiDungLanCuoi, type KetQuaXacThucToken } from "../db/aiGatewayTokens";
 import { TIEN_TO_TOKEN, phamViCuaDuong } from "../services/ai/gatewayToken/maToken";
+import { TU_CHOI_TOKEN, loaiLoiTheoMa } from "../services/ai/gatewayToken/tuChoiToken";
 import { redactSecretsAndPII, StreamingSecretRedactor } from "../services/ai/aiSafety";
 // ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được từ đây với chi
 // phí ~0 ⇒ hàng rào là vô điều kiện theo CẤU TẠO, không phụ thuộc một `await import()` trong try.
@@ -252,6 +253,43 @@ function docYeuCauTool(body: any): YeuCauTool {
     );
   }
   return { tools, callerCoNeuTools: true };
+}
+
+/**
+ * ★★★ Đợt 4B-server — `chat_template_kwargs` theo DANH SÁCH TRẮNG.
+ *
+ * Extension (và client OpenAI-compat kiểu vLLM/llama.cpp) gửi `chat_template_kwargs.enable_thinking=false` để hỏi lại MỘT
+ * lượt với suy luận tắt (vd model phát tool call bên trong phần suy luận). Trước bản này cổng BỎ cả ô ⇒ lần hỏi lại vẫn
+ * nghĩ theo mặc định server.
+ * ⚠⚠ KHÔNG chuyển tiếp nguyên ô: mỗi khoá của chat template là một cần gạt hành vi model (thêm/bớt prompt sinh, chèn
+ *   tool vào lượt user, …) — để caller của một bề mặt dùng chung điều khiển chúng là mở một đường vòng quanh mọi giả định
+ *   prompt phía máy chủ. CHỈ `enable_thinking` kiểu BOOLEAN được đọc, và đi qua đường ĐÃ CÓ (`disableThinking` ⇒
+ *   `aiLlamaServerClient.lapCoTatSuyLuan`), không qua một ô mới xuống engine:
+ *     `false` ⇒ `{ disableThinking: true }` · `true`/vắng/kiểu sai/khoá khác ⇒ `{}` (mặc định server; hình dạng cũ bit-đối-bit).
+ */
+export function docTatNghi(body: unknown): { disableThinking?: true } {
+  const kw = (body as { chat_template_kwargs?: unknown } | null)?.chat_template_kwargs;
+  if (!kw || typeof kw !== "object" || Array.isArray(kw)) return {};
+  return Object.prototype.hasOwnProperty.call(kw, "enable_thinking") && (kw as { enable_thinking?: unknown }).enable_thinking === false
+    ? { disableThinking: true }
+    : {};
+}
+
+/**
+ * ★★★ Đợt 4B-server — usage trong LUỒNG theo chuẩn OpenAI: chỉ khi caller xin `stream_options.include_usage: true` (mặc
+ * định OpenAI = KHÔNG phát; client không xin nhận luồng y như cũ). Chunk usage là chunk CUỐI trước `[DONE]`, `choices: []`.
+ * `completion_tokens_details.reasoning_tokens` chỉ có khi engine ĐẾM được (`tokensReasoning` là số — "không biết ≠ 0").
+ */
+function xinUsageLuong(body: unknown): boolean {
+  return (body as { stream_options?: { include_usage?: unknown } } | null)?.stream_options?.include_usage === true;
+}
+function usageOpenAi(vao: number, ra: number, nghi?: number): Record<string, unknown> {
+  return {
+    prompt_tokens: vao,
+    completion_tokens: ra,
+    total_tokens: vao + ra,
+    ...(typeof nghi === "number" && Number.isFinite(nghi) ? { completion_tokens_details: { reasoning_tokens: nghi } } : {}),
+  };
 }
 
 /** Cờ TẮT nhưng caller vẫn nêu `tools` ⇒ phải NÓI RA, không nuốt. */
@@ -551,16 +589,7 @@ function canhBaoKeyChung(): void {
   );
 }
 
-/** Mã máy-đọc-được của từng lý do token bị từ chối (client hành động khác nhau theo từng mã). */
-const TU_CHOI_TOKEN: Readonly<Record<Exclude<KetQuaXacThucToken, { ok: true }>["ma"], [number, string, string]>> = {
-  "khong-hop-le": [401, "invalid_api_key", "Invalid API token."],
-  "het-han": [401, "token_expired", "API token expired. Create a new one or sign the device in again."],
-  "thu-hoi": [401, "token_revoked", "API token has been revoked."],
-  "tai-khoan-tat": [403, "account_disabled", "The account owning this token is disabled."],
-  // Rà bảo mật de591c868 #2 — tài khoản đang bị buộc đổi mật khẩu (bí mật bị coi là lộ) ⇒ token bị chặn tới khi đổi.
-  "phai-doi-mat-khau": [403, "password_change_required", "The account owning this token must change its password first."],
-  csdl: [503, "auth_backend_unavailable", "Token verification backend unavailable."],
-};
+// Bảng mã từ chối token (401/403/503 + `error.code`) — một chủ dùng chung với tuyến REST Bearer: `gatewayToken/tuChoiToken.ts`.
 
 /** Quyền AI mặc định: cùng bit `ai_repo_read/canView` cấp token (mất quyền sau khi cấp ⇒ token thôi mở cổng). */
 async function coQuyenAiMacDinh(userId: number, role: string): Promise<boolean> {
@@ -667,7 +696,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         const kq = await xacThucToken(token);
         if (!kq.ok) {
           const [ma, code, msg] = TU_CHOI_TOKEN[kq.ma] ?? TU_CHOI_TOKEN["khong-hop-le"];
-          jsonError(res, ma, msg, ma === 503 ? "server_error" : ma === 403 ? "permission_error" : "invalid_request_error", code);
+          jsonError(res, ma, msg, loaiLoiTheoMa(ma), code);
           return;
         }
         if (!(await coQuyenAi(kq.userId, kq.role))) {
@@ -792,6 +821,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // sai khuôn hoặc một ràng buộc không cưỡng chế được phải hỏng ở đây, TRƯỚC khi tiêu một
       // token nào của model. Ba lỗi của nó → 400 có mã (xem `xuLyLoiTool` ở khối catch).
       const yeuCauTool = docYeuCauTool(body);
+      // ★ Đợt 4B-server — danh sách trắng `chat_template_kwargs` (chỉ `enable_thinking` boolean) ⇒ `disableThinking`.
+      const tatNghi = docTatNghi(body);
       const ggufMessagesRaw = toGgufMessages(messages);
       const lastIdx = ggufMessagesRaw.length - 1;
       const representativeText = lastIdx >= 0 ? ggufMessagesRaw[lastIdx].content : "";
@@ -846,6 +877,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
             // biệt "không có tools" bằng `options.tools?.length`. Giữ hình dạng cũ bit-đối-bit cho
             // mọi lượt chat không dùng tool.
             ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
+            ...tatNghi,
           },
           modelId,
           abort.signal,
@@ -864,6 +896,9 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         const thinker = new StreamingThinkingStripper();
         let tokensIn = 0;
         let tokensOut = 0;
+        // ★ Đợt 4B-server — cho chunk usage: chỉ phát khi engine ĐÃ trả chunk `done` (có số thật để nói).
+        let tokensNghi: number | undefined;
+        let daCoDone = false;
         let outcome: "ok" | "error" = "ok";
         // ★★★ G2-B — `finish_reason` của luồng này. Chỉ đổi sang "tool_calls" khi ĐÃ THẬT SỰ phát
         // ít nhất một mảnh tool-call ra dây; mặc định giữ nguyên "stop" như trước.
@@ -904,6 +939,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           } else if (chunk.type === "done") {
             tokensIn = chunk.tokensPrompt ?? 0;
             tokensOut = chunk.tokensGenerated ?? 0;
+            tokensNghi = chunk.tokensReasoning;
+            daCoDone = true;
             // ⚠ Bộ VỚT (build không phân giải `<tool_call>`) chỉ hiện ra ở chunk `done` — không có
             // mảnh delta nào cả. Phát nguyên khối ở đây, nếu không lượt ấy im lặng mất tool-call.
             if (chunk.toolCalls?.length && !daPhatToolCall) {
@@ -982,6 +1019,11 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           choices: [{ index: 0, delta: {}, finish_reason: daPhatToolCall ? "tool_calls" : "stop" }],
         };
         res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
+        if (xinUsageLuong(body) && daCoDone && !res.destroyed) {
+          res.write(
+            `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: modelLabel, choices: [], usage: usageOpenAi(tokensIn, tokensOut, tokensNghi) })}\n\n`,
+          );
+        }
         res.write("data: [DONE]\n\n");
         res.end();
         return;
@@ -995,6 +1037,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           temperature,
           topP,
           ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
+          ...tatNghi,
         },
         modelId,
       );
@@ -1129,8 +1172,11 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           Connection: "keep-alive",
           "X-Accel-Buffering": "no",
         });
+        // ★ Đợt 4B-server — usage của luồng FIM (opt-in, chỉ khi `stream_options.include_usage: true`).
+        let usageFim: Record<string, unknown> | null = null;
         try {
           const result = await generateFim(fimOpts, modelId);
+          usageFim = usageOpenAi(result.tokensPrompt, result.tokensGenerated);
           // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
           plan?.record({
             tokensIn: result.tokensPrompt,
@@ -1158,6 +1204,9 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         res.write(
           `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: "", finish_reason: "stop" }] })}\n\n`,
         );
+        if (usageFim && xinUsageLuong(body) && !res.destroyed) {
+          res.write(`data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [], usage: usageFim })}\n\n`);
+        }
         res.write("data: [DONE]\n\n");
         res.end();
         return;

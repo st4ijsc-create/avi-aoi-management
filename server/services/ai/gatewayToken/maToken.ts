@@ -23,7 +23,14 @@ export const TIEN_TO_MA_THIET_BI = "avgd_";
 const RE_TOKEN = /^avgw_[A-Za-z0-9_-]{43}$/;
 const RE_MA_THIET_BI = /^avgd_[A-Za-z0-9_-]{43}$/;
 
-export const PHAM_VI = ["chat", "fim", "embed"] as const;
+/**
+ * ★ Đợt 4B-server (2026-10-17) — `apply`: KHÔNG mở đường nào của cổng `/v1` (`phamViCuaDuong` không bao giờ trả nó); nó
+ *   chỉ mở hai tuyến REST GHI SỔ KIỂM TOÁN lượt áp tệp ở client (`POST /api/ai/client-apply/bat-dau|chot`,
+ *   `routes/aiGatewayTokenBearerApi.ts`) — đúng hai thủ tục tRPC `aiCopilot.batDauApDungOClient|chotApDungOClient` mà
+ *   extension trước đây phải gọi bằng COOKIE phiên. Thứ tự trong mảng = thứ tự hiển thị/so sánh (`chuanHoaPhamVi`).
+ *   CHECK ở CSDL: mig 0396.
+ */
+export const PHAM_VI = ["chat", "fim", "embed", "apply"] as const;
 export type PhamVi = (typeof PHAM_VI)[number];
 /** Mặc định ÍT NHẤT cần cho extension (chat + ghost-text) — `embed` phải xin tường minh. */
 export const PHAM_VI_MAC_DINH: readonly PhamVi[] = ["chat", "fim"];
@@ -33,17 +40,24 @@ export const SO_NGAY_MAC_DINH = 90;
 /**
  * ★ Rà bảo mật de591c868 #3 (device-code phishing) — token ĐÚC TỪ THIẾT BỊ là loại dễ bị lừa duyệt nhất (người duyệt chỉ
  *   bấm một nút trên một yêu cầu do bên kia khởi tạo) ⇒ hẹp hơn token web theo cả hai trục:
- *   • phạm vi TRẦN = đúng thứ extension cần (chat + ghost-text FIM) — `embed` chỉ cấp được qua trang web, nơi chính
+ *   • phạm vi TRẦN = đúng thứ extension cần (chat + ghost-text FIM + ghi sổ lượt áp `apply`) — `embed` chỉ cấp được qua trang web, nơi chính
  *     người dùng chọn; phạm vi xin vượt trần bị CẮT (không báo lỗi — `scope` trong phản hồi nói thật đã cấp gì);
  *   • hạn 30 ngày (token web mặc định 90): extension đăng nhập lại bằng device flow là việc một cú bấm.
  */
-export const PHAM_VI_THIET_BI: readonly PhamVi[] = ["chat", "fim"];
+export const PHAM_VI_THIET_BI: readonly PhamVi[] = ["chat", "fim", "apply"];
+/**
+ * ★ Đợt 4B-server — mặc định của device flow = đủ thứ extension v0.2 dùng: chat + ghost-text + GHI SỔ lượt áp tệp
+ *   (`apply`). Chỉ áp khi extension KHÔNG xin gì hợp lệ; xin tường minh ⇒ được đúng thứ xin (∩ trần) — trang duyệt hiện
+ *   đúng thứ sẽ cấp, không cấp thêm thứ không ai xin.
+ */
+export const PHAM_VI_THIET_BI_MAC_DINH: readonly PhamVi[] = ["chat", "fim", "apply"];
 export const SO_NGAY_THIET_BI = 30;
 
-/** Phạm vi của một mã thiết bị: `chuanHoaPhamVi` rồi giao với `PHAM_VI_THIET_BI`; rỗng ⇒ mặc định. */
+/** Phạm vi của một mã thiết bị: lọc tập hợp lệ rồi giao với `PHAM_VI_THIET_BI`; rỗng ⇒ `PHAM_VI_THIET_BI_MAC_DINH`. */
 export function chuanHoaPhamViThietBi(vao: unknown): PhamVi[] {
-  const giao = chuanHoaPhamVi(vao).filter((p) => PHAM_VI_THIET_BI.includes(p));
-  return giao.length ? giao : [...PHAM_VI_MAC_DINH];
+  const xin = Array.isArray(vao) ? new Set(vao) : new Set<unknown>();
+  const giao = PHAM_VI.filter((p) => xin.has(p) && PHAM_VI_THIET_BI.includes(p));
+  return giao.length ? giao : [...PHAM_VI_THIET_BI_MAC_DINH];
 }
 export const SO_NGAY_TOI_DA = 365;
 /** Trần token CÒN HIỆU LỰC mỗi người — chặn một vòng lặp lỗi đẻ token vô hạn. */

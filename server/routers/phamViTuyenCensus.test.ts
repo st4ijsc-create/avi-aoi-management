@@ -133,7 +133,14 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 //     `aiGatewayTokenThietBi.ts#POST /api/ai/gateway-token/thiet-bi` + `…/doi` (Đợt 4A — device flow RFC 8628: xin mã / đổi mã
 //     lấy token; danh tính là `device_code` bí mật + người DUYỆT trên web qua tRPC `aiGatewayToken.quyetThietBi`; có trần lượt).
 // Không tuyến nào chạm dữ liệu tenant/nhà máy ⇒ không mục nào vào A, sổ nợ không thêm dòng. Cả bảy sau cổng giấy phép `/api/ai`.
-const GHIM = { A: 80, C: 40, D: 91, S: 19, U: 16, tong: 246 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 4B-server, cùng nhánh) — **D 91 → 94 · tong 246 → 249 · A/C/S/U giữ nguyên.** Đo: chạy bộ suy
+// trước/sau khi thêm `server/routes/aiGatewayTokenBearerApi.ts` — đúng BA tuyến mới, đều POST, không tuyến cũ nào đổi nhóm:
+//   `POST /api/ai/client-apply/bat-dau` + `…/chot` (sổ kiểm toán lượt áp tệp ở client — gọi ĐÚNG `batDauApDungOClient` /
+//     `chotApDungOClient` của tRPC `aiCopilot.*`; danh tính = CHỦ token `avgw_` tra theo băm, phạm vi `apply`,
+//     `ai_repo_read/canView` kiểm lại mỗi lượt; chốt lượt của người khác bị chính dịch vụ từ chối — `row.userId !== user.id`);
+//   `POST /api/ai/gateway-token/tu-thu-hoi` (thu hồi CHÍNH token đang trình, tra theo băm; chỉ có thể THU HẸP quyền).
+// Không tuyến nào đọc dữ liệu tenant/nhà máy ⇒ không mục nào vào A, sổ nợ không thêm dòng. Cả ba sau cổng giấy phép `/api/ai`.
+const GHIM = { A: 80, C: 40, D: 94, S: 19, U: 16, tong: 249 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -184,8 +191,10 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //   registerAiXemTruocRoutes, laOriginXemTruoc, registerAiGatewayTokenThietBiRoutes, danhDauGianDoanKhiBoot) + 9 dòng ở
     //   middleware CORS phía trên (`xuLyCorsCongOpenAi` Đợt 4A, chặn phản chiếu origin xem trước Đợt 3c). Đo: diff `tuyenTinh`
     //   gốc `8be43f65a` ↔ nhánh — vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
+    // ⚠ Đợt 4B-server: **664 → 665** — +1 dòng `import { registerAiGatewayTokenBearerRoutes }` cạnh import device flow.
+    //   Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:664",
+      "server/_core/index.ts:665",
       "server/_core/vite.ts:58",
     ]);
   });

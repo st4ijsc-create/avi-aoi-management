@@ -218,11 +218,15 @@ beforeAll(async () => {
   const { registerAiAgentRoutes } = await import("./aiAgentApi");
   // Đợt 3c (2026-10-17) — cửa vào xem trước (`GET /api/ai/preview/:projectId[/*]`) vào THẲNG lượng từ §2.
   const { registerAiXemTruocRoutes } = await import("./aiXemTruocApi");
+  // Đợt 4B-server (2026-10-17) — ba tuyến Bearer `avgw_` (sổ áp tệp ở client + tự thu hồi) vào THẲNG lượng từ §2: không
+  // cookie VÀ không Bearer ⇒ 401 (cửa xác thực của chúng là token, nhưng "không trình gì ⇒ 401, không 5xx" vẫn phải đúng).
+  const { registerAiGatewayTokenBearerRoutes } = await import("./aiGatewayTokenBearerApi");
   registerAiStreamingRoutes(app);
   registerAiLocalKnowledgeRoutes(app);
   registerObservabilityRoutes(app);
   registerAiAgentRoutes(app);
   registerAiXemTruocRoutes(app);
+  registerAiGatewayTokenBearerRoutes(app);
   TUYEN = tuyen;
 
   const r = await db.createLocalUser({
@@ -406,6 +410,7 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
     "server/routes/observabilityRoutes.ts",
     "server/routes/aiAgentApi.ts",
     "server/routes/aiXemTruocApi.ts",
+    "server/routes/aiGatewayTokenBearerApi.ts",
   ] as const;
 
   /**
@@ -578,13 +583,16 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
       // Đợt 4A, khai NGOAI_PHAM_VI) + 1 engineering (registerEdgeNodeRoutes, server/api/v1 — ô "file thứ 16" bên dưới
       // vẫn ĐỎ cho tới khi phiên engineering khai nó).
       // Đợt 3c (2026-10-17): +1 AI Local — registerAiXemTruocRoutes (cửa vào xem trước), vào DA_GOI ⇒ 59.
-    ).toBe(59);
+      // Đợt 4B-server (2026-10-17): +1 — registerAiGatewayTokenBearerRoutes (sổ áp tệp ở client + tự thu hồi bằng Bearer
+      // `avgw_`), vào DA_GOI (gọi thật ở beforeAll ⇒ §2 đo nó) ⇒ 60. Đo: chạy lưới trước/sau khi thêm registrar.
+    ).toBe(60);
     expect(
       REGISTRAR.length,
       "số registrar TUYẾN EXPRESS đã đổi — một registrar tuyến mới vừa xuất hiện, hoặc vị từ đã bị nới",
       // 2026-10-17: 25 + 2 AI Local (aiAgentApi, aiGatewayTokenThietBi) + 1 engineering (edgeNodeRoutes) — cùng bộ ba ở trên.
       // Đợt 3c: +1 (aiXemTruocApi) ⇒ 29.
-    ).toBe(29);
+      // Đợt 4B-server: +1 (aiGatewayTokenBearerApi — nhận `app: express.Express`) ⇒ 30.
+    ).toBe(30);
     expect(
       REGISTRAR.filter((d) => d.startsWith("server/_core/")).sort(),
       "ba registrar `_core/` mà bản trước KHÔNG BAO GIỜ thấy — chúng là lý do §6 được viết lại",
