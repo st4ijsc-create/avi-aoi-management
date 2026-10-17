@@ -1,0 +1,10 @@
+{
+  "name": "thu-vien",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Quản lý thư viện nhỏ: kho sách, mượn/trả. Node thuần, không phụ thuộc ngoài.",
+  "scripts": {
+    "test": "node --test test/thuVien.test.mjs"
+  }
+}

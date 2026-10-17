@@ -108,8 +108,10 @@ function docDem(kieu, out) {
  * @param {string} y.thuMuc       thư mục dự án (tuyệt đối)
  * @param {(rel:string)=>string|null} y.bamChuan  sha256 chuẩn của một tệp được bảo vệ
  * @param {boolean} [y.chiHienThi] chỉ chạy test hiển thị (kiểm "đang xanh trước khi làm"); không chép test ẩn
+ * @param {string} [y.thuMucAn]   thư mục gốc của test ẩn bài này (mặc định `agent-f/an/<bai>`; bộ đầu-cuối VSCode
+ *                                `scripts/ai-eval/vscode-e2e` truyền thư mục `an/` của nó cho bài riêng)
  */
-export function chamBai({ bai, thuMuc, bamChuan, chiHienThi = false }) {
+export function chamBai({ bai, thuMuc, bamChuan, chiHienThi = false, thuMucAn = `${BENCH}/an/${bai.id}` }) {
   const t0 = Date.now();
   const kq = { id: bai.id, dat: false, lyDo: [], chiHienThi, dem: null, canToiThieu: 0, maThoat: null,
     hetGio: false, tepBaoVeBiSua: [], tepAn: [], ms: 0, duoiRa: "" };
@@ -138,7 +140,7 @@ export function chamBai({ bai, thuMuc, bamChuan, chiHienThi = false }) {
         const dich = `${thuMuc}/${rel}`;
         const cu = fs.existsSync(dich) ? fs.readFileSync(dich) : null;
         fs.mkdirSync(path.dirname(dich), { recursive: true });
-        fs.copyFileSync(`${BENCH}/an/${bai.id}/${rel}`, dich);
+        fs.copyFileSync(`${thuMucAn}/${rel}`, dich);
         daChep.push({ dich, cu });
         files.push(rel);
       }

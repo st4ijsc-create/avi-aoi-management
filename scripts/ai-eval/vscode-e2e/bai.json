@@ -1,0 +1,124 @@
+[
+  { "id": "ts-gio-hang", "boF": "ts-gio-hang", "nhieuTep": true, "loai": "tinh-nang" },
+  { "id": "js-cli-viec", "boF": "js-cli-viec", "nhieuTep": true, "loai": "tinh-nang" },
+  { "id": "py-kho-cache", "boF": "py-kho-cache", "nhieuTep": true, "loai": "tinh-nang" },
+  { "id": "py-dang-ky", "boF": "py-dang-ky", "nhieuTep": true, "loai": "tinh-nang" },
+  { "id": "cs-dat-phong", "boF": "cs-dat-phong", "nhieuTep": true, "loai": "tinh-nang" },
+  { "id": "cs-nhat-ky", "boF": "cs-nhat-ky", "nhieuTep": true, "loai": "tinh-nang" },
+
+  {
+    "id": "A1", "lang": "js", "kieu": "node", "nhieuTep": false, "loai": "sua-loi",
+    "nguon": "sandbox-projects/agentic-demo", "hienThiDoTruoc": true,
+    "cauHoi": "Dự án này (Node, ESM) có test đang đỏ: `node --test test/kho.test.mjs`. Hãy tìm và sửa lỗi trong mã nguồn (KHÔNG sửa tệp test) để test xanh.",
+    "testHienThi": ["test/kho.test.mjs"], "tepBaoVe": ["test/kho.test.mjs"], "testAn": ["test/an-v.test.mjs"],
+    "soTest": { "hienThi": 3, "an": 4 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "A2", "lang": "js", "kieu": "node", "nhieuTep": true, "loai": "sua-loi",
+    "nguon": "sandbox-projects/agentic-demo2", "hienThiDoTruoc": true,
+    "cauHoi": "Dự án này (Node, ESM) có test đang đỏ: `node --test test/kho.test.mjs`. Hãy tìm và sửa lỗi trong mã nguồn (KHÔNG sửa tệp test) để test xanh.",
+    "testHienThi": ["test/kho.test.mjs"], "tepBaoVe": ["test/kho.test.mjs"], "testAn": ["test/an-v.test.mjs"],
+    "soTest": { "hienThi": 3, "an": 4 }, "tranGiayMs": 60000
+  },
+
+  {
+    "id": "js-han-tra", "lang": "js", "kieu": "node", "nhieuTep": false, "loai": "sua-loi",
+    "nguon": "du-an/js-thu-vien", "phu": "phu/js-han-tra", "hienThiDoTruoc": true,
+    "cauHoi": "Bạn đọc phản ánh hai lỗi ở phần mượn/trả sách của dự án này (xem README): (1) hạn trả bị SỚM một ngày — mượn ngày 2026-03-01 với thời hạn mặc định 14 ngày thì `hanTra` phải là `2026-03-15`; (2) trả sách sớm hơn hạn thì `soNgayTre` ra số âm — trả đúng hạn hoặc sớm thì phải là 0. Hãy sửa mã nguồn (không sửa test). Test hiện có phải xanh: `node --test test/thuVien.test.mjs`.",
+    "testHienThi": ["test/thuVien.test.mjs"], "tepBaoVe": ["test/thuVien.test.mjs"], "testAn": ["test/an-v.test.mjs"],
+    "soTest": { "hienThi": 5, "an": 6 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "js-sap-xep", "lang": "js", "kieu": "node", "nhieuTep": false, "loai": "sua-loi",
+    "nguon": "du-an/js-thu-vien", "phu": "phu/js-sap-xep", "hienThiDoTruoc": true,
+    "cauHoi": "Trong dự án này (xem README), `KhoSach.danhSach()` đang xếp sách theo mã ký tự nên những tên như \"Ánh sáng\", \"Đà Lạt\" bị đẩy xuống cuối và chữ hoa luôn đứng trước chữ thường. Sửa để danh sách (và kết quả `timTheoTen`, vốn lấy theo thứ tự của `danhSach()`) xếp theo tên kiểu tiếng Việt, không phân biệt hoa thường: so sánh bằng `localeCompare` với locale `\"vi\"` và `sensitivity: \"base\"`; hai sách có tên bằng nhau theo phép so ấy thì xếp theo mã tăng dần. Test hiện có phải xanh: `node --test test/thuVien.test.mjs`.",
+    "testHienThi": ["test/thuVien.test.mjs"], "tepBaoVe": ["test/thuVien.test.mjs"], "testAn": ["test/an-v.test.mjs"],
+    "soTest": { "hienThi": 5, "an": 3 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "js-doi-ten", "lang": "js", "kieu": "node", "nhieuTep": true, "loai": "tai-cau-truc",
+    "nguon": "du-an/js-thu-vien", "mauDoiTen": [{ "tu": "src/tienIch.mjs", "den": "src/vanBan.mjs" }],
+    "cauHoi": "Dọn dự án này (xem README):\n\n1. Đổi tên module `src/tienIch.mjs` thành `src/vanBan.mjs` (đổi tên tệp, giữ nguyên các hàm đang có) và cập nhật MỌI import trong `src/` — xong việc thì không còn tệp nào nhắc tới `tienIch`.\n2. Thêm vào `src/vanBan.mjs` hàm `boDau(s)` bỏ dấu tiếng Việt, giữ nguyên hoa/thường và các ký tự khác: `boDau(\"Đường Lê Lợi\")` ⇒ `\"Duong Le Loi\"`, `đ`/`Đ` ⇒ `d`/`D`. Xuất `boDau` từ `src/index.mjs`.\n3. `KhoSach.timTheoTen(tuKhoa)` tìm không phân biệt hoa thường VÀ không phân biệt dấu: tìm `\"lap trinh\"` ra \"Lập trình Node\", tìm `\"DUONG\"` ra \"Đường xưa mây trắng\".\n\nTest hiện có phải vẫn xanh: `node --test test/thuVien.test.mjs`.",
+    "testHienThi": ["test/thuVien.test.mjs"], "tepBaoVe": ["test/thuVien.test.mjs"], "testAn": ["test/an-v.test.mjs"],
+    "soTest": { "hienThi": 5, "an": 5 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "js-phat-tre", "lang": "js", "kieu": "node", "nhieuTep": true, "loai": "tinh-nang",
+    "nguon": "du-an/js-thu-vien",
+    "cauHoi": "Dự án thư viện này (xem README) cần tính tiền phạt trả trễ:\n\n1. Module mới `src/phat.mjs` xuất `tinhPhat(soNgayTre, { mucNgay = 5000, toiDa = 100000 } = {})`: tiền phạt = `soNgayTre × mucNgay` nhưng không vượt `toiDa`; `soNgayTre` không phải số nguyên ≥ 0 thì ném `RangeError`.\n2. `QuanLyMuon` nhận thêm tuỳ chọn `phat` trong đối số thứ hai của constructor (`new QuanLyMuon(kho, { soNgayMuon, phat: { mucNgay, toiDa } })`) và truyền nó cho `tinhPhat`. `tra(...)` trả thêm `tienPhat` (trả đúng hạn hoặc sớm ⇒ 0).\n3. Thêm `QuanLyMuon.tongPhat(nguoiMuon)`: tổng `tienPhat` các phiếu ĐÃ TRẢ của người đó (không có ⇒ 0).\n4. Xuất `tinhPhat` từ `src/index.mjs`.\n\nTest hiện có phải vẫn xanh: `node --test test/thuVien.test.mjs`.",
+    "testHienThi": ["test/thuVien.test.mjs"], "tepBaoVe": ["test/thuVien.test.mjs"], "testAn": ["test/an-v.test.mjs"],
+    "soTest": { "hienThi": 5, "an": 6 }, "tranGiayMs": 60000
+  },
+
+  {
+    "id": "py-trung-binh", "lang": "py", "kieu": "pytest", "nhieuTep": false, "loai": "sua-loi",
+    "nguon": "du-an/py-bang-diem", "phu": "phu/py-trung-binh", "hienThiDoTruoc": true,
+    "cauHoi": "Điểm trung bình trong dự án này (Python, xem README) đang tính sai: (1) phải tính theo hệ số `he_so` của từng bài; (2) làm tròn 2 chữ số kiểu NỬA-LÊN trên giá trị thập phân (8,125 ⇒ 8,13; hiện `round()` cho 8,12); (3) không có bài kiểm tra nào thì `trung_binh` trả `None` (hiện trả 0). Hãy sửa mã nguồn (không sửa test). Test hiện có phải xanh: `python -m pytest tests`.",
+    "testHienThi": ["tests/test_diem.py"], "tepBaoVe": ["tests/test_diem.py", "conftest.py"], "testAn": ["tests/test_an_v_trung_binh.py"],
+    "soTest": { "hienThi": 4, "an": 5 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "py-xep-hang", "lang": "py", "kieu": "pytest", "nhieuTep": false, "loai": "tinh-nang",
+    "nguon": "du-an/py-bang-diem",
+    "cauHoi": "Thêm xếp hạng cho dự án sổ điểm này (Python, xem README): module mới `diem/xep_hang.py` với hàm `xep_hang(dtb_theo_ma: dict) -> dict` nhận `{mã học sinh: điểm trung bình}` và trả `{mã học sinh: hạng}`, giữ nguyên thứ tự khoá đầu vào. Hạng theo điểm giảm dần; đồng điểm thì đồng hạng và hạng kế tiếp NHẢY (ví dụ 1, 2, 2, 4); học sinh có điểm `None` không được xếp hạng (giá trị `None`); dict rỗng ⇒ `{}`. Test hiện có phải vẫn xanh: `python -m pytest tests`.",
+    "testHienThi": ["tests/test_diem.py"], "tepBaoVe": ["tests/test_diem.py", "conftest.py"], "testAn": ["tests/test_an_v_xep_hang.py"],
+    "soTest": { "hienThi": 4, "an": 6 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "py-xuat-csv", "lang": "py", "kieu": "pytest", "nhieuTep": true, "loai": "tinh-nang",
+    "nguon": "du-an/py-bang-diem",
+    "cauHoi": "Dự án sổ điểm này (Python, xem README) cần xuất báo cáo lớp ra CSV:\n\n1. `bao_cao_lop` thêm khoá `hang` cho mỗi dòng: hạng theo `dtb` giảm dần, đồng điểm đồng hạng, hạng kế tiếp nhảy (1, 2, 2, 4); học sinh không có bài (`dtb` là `None`) có `hang` là `None`. Các khoá cũ giữ nguyên.\n2. Module mới `diem/xuat.py` với `xuat_csv(dong) -> str` nhận kết quả của `bao_cao_lop`: dòng tiêu đề `ma,ho_ten,dtb,xep_loai,hang`; mỗi học sinh một dòng theo thứ tự đầu vào; `dtb` in đúng 2 chữ số thập phân (ví dụ `8.00`); giá trị `None` ⇒ ô trống; trường chứa dấu phẩy hoặc nháy kép thì bọc trong nháy kép, nháy kép bên trong nhân đôi; mỗi dòng (kể cả dòng cuối) kết thúc bằng `\\n`; danh sách rỗng ⇒ chỉ dòng tiêu đề.\n3. Xuất `xuat_csv` từ `diem/__init__.py`.\n\nTest hiện có phải vẫn xanh: `python -m pytest tests`.",
+    "testHienThi": ["tests/test_diem.py"], "tepBaoVe": ["tests/test_diem.py", "conftest.py"], "testAn": ["tests/test_an_v_xuat_csv.py"],
+    "soTest": { "hienThi": 4, "an": 6 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "py-bo-module-cu", "lang": "py", "kieu": "pytest", "nhieuTep": true, "loai": "tai-cau-truc",
+    "nguon": "du-an/py-bang-diem", "mauXoa": ["diem/cu.py"],
+    "cauHoi": "Dọn mã cũ trong dự án sổ điểm này (Python, xem README): module `diem/cu.py` đã lỗi thời.\n\n1. Chuyển hai hàm `lam_tron(x, so_chu_so=2)` và `dinh_dang_diem(x)` sang `diem/tinh.py`. `lam_tron` phải làm tròn kiểu NỬA-LÊN trên giá trị thập phân (`lam_tron(2.675)` ⇒ `2.68`, `lam_tron(2.5, 0)` ⇒ `3.0`; hiện `round()` cho `2.67`).\n2. Cập nhật mọi chỗ đang import từ `diem.cu`.\n3. XOÁ tệp `diem/cu.py`.\n\nTest hiện có phải vẫn xanh: `python -m pytest tests`.",
+    "testHienThi": ["tests/test_diem.py"], "tepBaoVe": ["tests/test_diem.py", "conftest.py"], "testAn": ["tests/test_an_v_bo_module_cu.py"],
+    "soTest": { "hienThi": 4, "an": 5 }, "tranGiayMs": 60000
+  },
+
+  {
+    "id": "ts-ca-qua-dem", "lang": "ts", "kieu": "node", "nhieuTep": false, "loai": "sua-loi",
+    "nguon": "du-an/ts-lich-ca", "phu": "phu/ts-ca-qua-dem", "hienThiDoTruoc": true,
+    "cauHoi": "Trong dự án xếp ca này (TypeScript chạy thẳng bằng Node 24, xem README), `caCuaGio(gio, gioBatDau)` sai khi giờ nằm TRƯỚC giờ bắt đầu ca 1 (ca vắt qua nửa đêm): ca 1 bắt đầu 6h thì 0h–5h phải là `CA3` (hiện trả `undefined`). Đồng thời `gio` hoặc `gioBatDau` không phải số nguyên trong khoảng 0–23 thì phải ném `RangeError`. Hãy sửa mã nguồn (không sửa test). Test hiện có phải xanh: `node --test test/lich.test.ts`.",
+    "testHienThi": ["test/lich.test.ts"], "tepBaoVe": ["test/lich.test.ts"], "testAn": ["test/an-v.test.ts"],
+    "soTest": { "hienThi": 4, "an": 5 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "ts-ngay-nghi", "lang": "ts", "kieu": "node", "nhieuTep": true, "loai": "tinh-nang",
+    "nguon": "du-an/ts-lich-ca",
+    "cauHoi": "Dự án xếp ca này (TypeScript chạy thẳng bằng Node 24, xem README — chỉ dùng cú pháp TS xoá được) cần bỏ qua ngày nghỉ:\n\n1. Module mới `src/ngayNghi.ts` xuất `laNgayNghi(ngay: string, dsNghi: readonly string[] = []): boolean` — Chủ nhật (theo UTC) luôn là ngày nghỉ, cộng các ngày có trong `dsNghi` (dạng `YYYY-MM-DD`).\n2. `taoLich(nhanVien, tuNgay, soNgay, dsNghi = [])` (thêm tham số thứ tư tuỳ chọn): ngày nghỉ KHÔNG có phân công nào; `soNgay` vẫn là số ngày LỊCH (tính cả ngày nghỉ); vòng xoay nhân viên KHÔNG tiến qua ngày nghỉ — ngày làm kế tiếp tiếp tục từ người kế.\n3. Xuất `laNgayNghi` từ `src/index.ts`.\n\nTest hiện có phải vẫn xanh: `node --test test/lich.test.ts`.",
+    "testHienThi": ["test/lich.test.ts"], "tepBaoVe": ["test/lich.test.ts"], "testAn": ["test/an-v.test.ts"],
+    "soTest": { "hienThi": 4, "an": 5 }, "tranGiayMs": 60000
+  },
+  {
+    "id": "ts-bao-cao", "lang": "ts", "kieu": "node", "nhieuTep": true, "loai": "tinh-nang",
+    "nguon": "du-an/ts-lich-ca",
+    "cauHoi": "Dự án xếp ca này (TypeScript chạy thẳng bằng Node 24, xem README — chỉ dùng cú pháp TS xoá được) cần báo cáo theo nhân viên. Tạo module `src/baoCao.ts`:\n\n- `interface ThongKeNhanVien { nhanVien: string; tong: number; CA1: number; CA2: number; CA3: number }`.\n- `thongKe(lich: PhanCong[]): ThongKeNhanVien[]` — mỗi nhân viên có trong lịch một dòng (số ca theo từng ca và tổng), sắp `tong` giảm dần, cùng tổng thì theo tên tăng dần (`localeCompare` với locale `\"vi\"`). Lịch rỗng ⇒ `[]`.\n- `bangText(tk: ThongKeNhanVien[]): string` — dòng tiêu đề `Nhân viên | Tổng | CA1 | CA2 | CA3`, rồi mỗi nhân viên một dòng `<nhanVien> | <tong> | <CA1> | <CA2> | <CA3>`; các dòng nối bằng `\\n`, không có `\\n` ở cuối; danh sách rỗng ⇒ chỉ dòng tiêu đề.\n\nXuất `thongKe`, `bangText` (và kiểu `ThongKeNhanVien`) từ `src/index.ts`. Test hiện có phải vẫn xanh: `node --test test/lich.test.ts`.",
+    "testHienThi": ["test/lich.test.ts"], "tepBaoVe": ["test/lich.test.ts"], "testAn": ["test/an-v.test.ts"],
+    "soTest": { "hienThi": 4, "an": 5 }, "tranGiayMs": 60000
+  },
+
+  {
+    "id": "cs-ton-am", "lang": "cs", "kieu": "dotnet", "nhieuTep": false, "loai": "sua-loi",
+    "nguon": "du-an/cs-kho-hang", "phu": "phu/cs-ton-am", "hienThiDoTruoc": true,
+    "cauHoi": "Kho trong dự án này (C# .NET 10, xem README) đang cho xuất quá số tồn (tồn bị âm) và nhận số lượng ≤ 0. Sửa: `Nhap` và `Xuat` với `soLuong` ≤ 0 ném `ArgumentOutOfRangeException`; `Xuat` nhiều hơn số tồn ném `InvalidOperationException`; khi ném lỗi thì số tồn KHÔNG đổi. Hãy sửa mã nguồn (không sửa test). Test hiện có phải xanh: `dotnet test tests/KhoHang.Tests`.",
+    "testHienThi": ["tests/KhoHang.Tests/KhoTests.cs"],
+    "tepBaoVe": ["tests/KhoHang.Tests/KhoTests.cs", "tests/KhoHang.Tests/KhoHang.Tests.csproj"],
+    "testAn": ["tests/KhoHang.Tests/AnVTonAmTests.cs"],
+    "dotnet": { "duAnTest": "tests/KhoHang.Tests", "lopTest": ["KhoHang.Tests.KhoTests", "KhoHang.Tests.AnVTonAmTests"] },
+    "soTest": { "hienThi": 5, "an": 6 }, "tranGiayMs": 300000
+  },
+  {
+    "id": "cs-lo-han-dung", "lang": "cs", "kieu": "dotnet", "nhieuTep": true, "loai": "tinh-nang",
+    "nguon": "du-an/cs-kho-hang",
+    "cauHoi": "Kho trong dự án này (C# .NET 10, xem README) cần quản lý hàng theo LÔ có hạn dùng, xuất theo FEFO (hạn sớm nhất xuất trước):\n\n1. Tệp mới `src/KhoHang/LoHang.cs`: `public record LoHang(string MaLo, int SoLuong, DateOnly HanDung);` (namespace `KhoHang`).\n2. Overload mới `Kho.Nhap(string ma, int soLuong, string maLo, DateOnly hanDung)`: nhập vào lô đó; cùng mã lô nhập lại thì cộng dồn; cùng mã lô mà khác hạn dùng ⇒ `InvalidOperationException`. `Nhap(ma, soLuong)` cũ nhập vào lô `\"MAC_DINH\"` với hạn `DateOnly.MaxValue`.\n3. `Xuat(ma, soLuong)` lấy theo FEFO: lô hạn sớm nhất trước, cùng hạn thì mã lô tăng dần (so sánh ordinal); lô về 0 thì bỏ. Thêm `IReadOnlyList<LoHang> XuatTheoLo(string ma, int soLuong)` làm y như `Xuat` nhưng trả phần đã lấy từ từng lô (theo thứ tự lấy; `SoLuong` là số lấy từ lô đó).\n4. `IReadOnlyList<LoHang> DanhSachLo(string ma)`: các lô còn hàng theo thứ tự FEFO. `TonKho` = tổng các lô; `TongGiaTri` tính trên tổng tồn như cũ.\n5. `IReadOnlyList<(string Ma, LoHang Lo)> LoSapHetHan(DateOnly homNay, int soNgay)`: mọi lô còn hàng của mọi sản phẩm có `HanDung <= homNay.AddDays(soNgay)`, sắp theo hạn dùng, rồi mã sản phẩm, rồi mã lô (ordinal).\n\nCác quy tắc lỗi cũ (mã không có, số lượng ≤ 0, không đủ hàng — khi lỗi không đổi tồn) giữ nguyên. Test hiện có phải vẫn xanh: `dotnet test tests/KhoHang.Tests`.",
+    "testHienThi": ["tests/KhoHang.Tests/KhoTests.cs"],
+    "tepBaoVe": ["tests/KhoHang.Tests/KhoTests.cs", "tests/KhoHang.Tests/KhoHang.Tests.csproj"],
+    "testAn": ["tests/KhoHang.Tests/AnVLoHangTests.cs"],
+    "dotnet": { "duAnTest": "tests/KhoHang.Tests", "lopTest": ["KhoHang.Tests.KhoTests", "KhoHang.Tests.AnVLoHangTests"] },
+    "soTest": { "hienThi": 5, "an": 7 }, "tranGiayMs": 300000
+  }
+]
