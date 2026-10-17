@@ -316,7 +316,7 @@ function gomToolCallCuaDapUng(
   if (tuO.length) return tuO;
   const tuChu = gomToolCallTuVanBan(noiDung).toolCalls;
   if (tuChu.length) return tuChu;
-  return votToolCallTuSuyLuan(noiDung, suyLuan);
+  return votToolCallTuSuyLuan(noiDung, suyLuan, options.messages ?? []);
 }
 
 /**
@@ -326,10 +326,27 @@ function gomToolCallCuaDapUng(
  * (người gọi kiểm), server KHÔNG tách được gì, VÀ content RỖNG (model chưa trả lời) — suy luận chỉ NHẮC tới
  * `<tool_call>` mà content có chữ thì không phải hành động. Mọi lượt ghi vẫn đi qua các hàng rào phía sau.
  */
-function votToolCallTuSuyLuan(noiDung: string, suyLuan: string): NativeToolCall[] {
+function votToolCallTuSuyLuan(noiDung: string, suyLuan: string, dauVao: readonly unknown[] = []): NativeToolCall[] {
   if (noiDung.trim() !== "" || !suyLuan || suyLuan.indexOf("<tool_call>") === -1) return [];
-  const vot = gomToolCallTuVanBan(suyLuan).toolCalls;
-  if (vot.length) console.warn(`[llamaServer] vớt ${vot.length} tool call từ reasoning_content (model chưa đóng </think>).`);
+  // ★★★ Rà bảo mật 9c9b8ee1e — biến chữ SUY LUẬN thành HÀNH ĐỘNG là một kênh tiêm: model có thể TRÍCH một khối
+  //   `<tool_call>` gặp trong dữ liệu (tệp, kết quả tool) khi đang nghĩ. Hai điều kiện, cả hai bắt buộc:
+  //   (1) VỊ TRÍ — chỉ dãy khối nằm ở ĐUÔI suy luận (không chữ nào sau nó) là lệnh gọi thật; khối ở giữa là đang bàn.
+  //   (2) NGUỒN — khối nào có NGUYÊN VĂN (chuẩn hoá khoảng trắng) trong một tin nhắn đầu vào (câu hỏi, kết quả tool,
+  //       lịch sử) là chữ CHÉP từ dữ liệu ⇒ bỏ CẢ lượt vớt (fail-closed).
+  const duoi = /((?:<tool_call>[\s\S]*?<\/tool_call>\s*)+)$/.exec(suyLuan.trimEnd() + "\n");
+  if (!duoi) return [];
+  const chuan = (s: string) => s.replace(/\s+/g, " ").trim();
+  const khoi = duoi[1].match(/<tool_call>[\s\S]*?<\/tool_call>/g) ?? [];
+  const noiDungVao = dauVao.map((m) => chuan(String((m as { content?: unknown })?.content ?? ""))).filter((s) => s !== "");
+  for (const k of khoi) {
+    const kc = chuan(k);
+    if (noiDungVao.some((v) => v.includes(kc))) {
+      console.warn("[llamaServer] KHÔNG vớt tool call từ suy luận: khối có nguyên văn trong dữ liệu đầu vào (nghi chép/tiêm).");
+      return [];
+    }
+  }
+  const vot = gomToolCallTuVanBan(duoi[1]).toolCalls;
+  if (vot.length) console.warn(`[llamaServer] vớt ${vot.length} tool call từ ĐUÔI reasoning_content (model chưa đóng </think>).`);
   return vot;
 }
 
@@ -1218,7 +1235,7 @@ async function* streamChatCompletionTrucTiep(
     const coGuiTools = Array.isArray((body as { tools?: unknown[] }).tools) && (body as { tools?: unknown[] }).tools!.length > 0;
     const votTuSuyLuan =
       coGuiTools && !boGomTool.coToolCall && gomToolCallTuVanBan(fullText).toolCalls.length === 0
-        ? votToolCallTuSuyLuan(fullText, fullReasoning)
+        ? votToolCallTuSuyLuan(fullText, fullReasoning, ((body as { messages?: unknown[] }).messages ?? []) as unknown[])
         : [];
     if (fullText.length === 0 && !boGomTool.coToolCall && votTuSuyLuan.length === 0) {
       try {
