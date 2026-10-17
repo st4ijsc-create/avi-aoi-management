@@ -907,23 +907,19 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         };
         res.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
 
-        const moLuong = (nghi: { disableThinking?: true }) =>
-          chatCompletionStream(
-            {
-              messages: ggufMessages,
-              maxTokens,
-              temperature,
-              topP,
-              // ★ G2-B — `...(x ? {k:v} : {})` chứ không `tools: yeuCauTool.tools`: một ô `tools:
-              // undefined` vẫn là một ô CÓ MẶT khi ai đó `JSON.stringify` xuống dây, và engine phân
-              // biệt "không có tools" bằng `options.tools?.length`. Giữ hình dạng cũ bit-đối-bit cho
-              // mọi lượt chat không dùng tool.
-              ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
-              ...nghi,
-            },
-            modelId,
-            abort.signal,
-          );
+        // Chỉ dựng TUỲ CHỌN; lời gọi `chatCompletionStream` đứng NGAY trong handler (sổ `thinkingSurfaces` khoá theo hàm bao).
+        const tuyChonLuong = (nghi: { disableThinking?: true }) => ({
+          messages: ggufMessages,
+          maxTokens,
+          temperature,
+          topP,
+          // ★ G2-B — `...(x ? {k:v} : {})` chứ không `tools: yeuCauTool.tools`: một ô `tools:
+          // undefined` vẫn là một ô CÓ MẶT khi ai đó `JSON.stringify` xuống dây, và engine phân
+          // biệt "không có tools" bằng `options.tools?.length`. Giữ hình dạng cũ bit-đối-bit cho
+          // mọi lượt chat không dùng tool.
+          ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
+          ...nghi,
+        });
         // doc69 G2-3 — stateful per-request redactor: holds back a growing secret across
         // chunk boundaries so it never reaches the SSE client unredacted (reuses the exact
         // G2-2 class — see its doc comment in ai/aiSafety.ts). Review fix — gated behind
@@ -955,7 +951,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         let daNhanNoiDung = false;
         for (let daHoiLai = false; ; ) {
           try {
-            for await (const chunk of moLuong(nghiLuot)) {
+            for await (const chunk of chatCompletionStream(tuyChonLuong(nghiLuot), modelId, abort.signal)) {
               if (res.destroyed) break;
               if (chunk.type !== "reasoning") daNhanNoiDung = true;
               // ★★★ G2-B — mảnh `delta.tool_calls`, phát NGUYÊN VĂN đúng khuôn OpenAI.
@@ -1100,28 +1096,25 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
 
       // ── Non-streaming ──
-      const goiMotLan = (nghi: { disableThinking?: true }) =>
-        chatCompletion(
-          {
-            messages: ggufMessages,
-            maxTokens,
-            temperature,
-            topP,
-            ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
-            ...nghi,
-          },
-          modelId,
-        );
+      // Chỉ dựng TUỲ CHỌN; lời gọi `chatCompletion` đứng NGAY trong handler (sổ `thinkingSurfaces` khoá theo hàm bao).
+      const tuyChonMotLan = (nghi: { disableThinking?: true }) => ({
+        messages: ggufMessages,
+        maxTokens,
+        temperature,
+        topP,
+        ...(yeuCauTool.tools ? { tools: yeuCauTool.tools, toolChoice: "auto" as const } : {}),
+        ...nghi,
+      });
       let result: Awaited<ReturnType<typeof chatCompletion>>;
       try {
-        result = await goiMotLan(tatNghi);
+        result = await chatCompletion(tuyChonMotLan(tatNghi), modelId);
       } catch (err) {
         // ★★★ Đợt 4 — cùng chính sách với nhánh stream: hỏi lại ĐÚNG MỘT lần với nghĩ TẮT (chưa có byte nào ra dây).
         if (!nenHoiLaiNghiTat(err, !!yeuCauTool.tools, !!tatNghi.disableThinking, false)) throw err;
         console.warn(
           `[openaiGateway] /v1: model trả lời vào kênh suy luận (${maLoiSuyLuanV1(err)}) — hỏi lại lượt này MỘT lần với nghĩ TẮT (chữ suy luận bị bỏ, không thực thi).`,
         );
-        result = await goiMotLan({ disableThinking: true });
+        result = await chatCompletion(tuyChonMotLan({ disableThinking: true }), modelId);
       }
       // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
       plan?.record({
