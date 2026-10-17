@@ -216,4 +216,22 @@ Lỗi sản phẩm/thiết bị đo lộ ra khi đo cổng Đợt 2 (đã vá):
 (`d1b5d289d`, `9efc29ffb`, cookie-tossing) · 4A token + device flow (mig 0392/0394) · 4B extension v0.2 + sổ áp tệp Bearer
 (`126de672b`, mig 0396, `6369a1703`) · 4C ghost-text (`22e81add4`; FIM base q8_0: dòng đầu 43,8 % vs Instruct 37,5 %, +8/−0) ·
 bảo mật extension (`655e4a77f`, `84ab2a301` mẫu bí mật chung) · 5.1/5.2/5.4 (`092bb4ec2`, mig 0397). Migration 0390–0397 đã áp dev.
-Bộ đo cổng Đợt 4 `scripts/ai-eval/vscode-e2e/` (`c682ccf70`): 21 bài (14 nhiều tệp), kiểm thước 9/9; lượt đo thật đầu tiên đang chạy.
+Bộ đo cổng Đợt 4 `scripts/ai-eval/vscode-e2e/` (`c682ccf70`): 21 bài (14 nhiều tệp), kiểm thước 9/9.
+
+### Đợt 4 — CỔNG ĐẠT (2026-10-17, extension chạy headless bằng đúng mã thật; `:3010`)
+| Lượt | Build | ĐẠT (21 × 3) | Nhiều tệp | Ghi ngoài | Rò `.env` | Sổ lệch | Ghi chú |
+|---|---|---|---|---|---|---|---|
+| V-dot4-1 | `84ab2a301` | 55/63 = 87 % | 34/42 | 0 | 0 | 0 | harness bác `node --test`/`pytest` (danh sách cũ) ⇒ chặn dưới |
+| V-dot4-2 | `84ab2a301` | 55/63 = 87 % | 36/42 | 0 (model thử 2, lọt 0) | 0 | 0 | 4 lượt `loi-model` |
+| **V-dot4-3** | `9ff2ba9f3` | **56/63 = 89 %** | **36/42** | 0 | 0 | 0 | 0 lượt `loi-model` |
+Ghost-text (đo ngoại tuyến trên GGUF, chưa qua `/v1`): p50 142 ms ≤ 300; dòng đầu 43,8 % ≥ nền 37,5 %.
+Trượt ổn định: `py-dang-ky` 0/3 (cùng bài trượt bên trình duyệt). Lỗi sản phẩm lộ ra và đã vá: `ghp_` trong tệp mã rò 21/21
+(⇒ mẫu bí mật chung), allowlist thiếu lệnh test, lớp "trả lời nằm trong suy luận chưa đóng" không được hỏi lại ở `/v1` +
+extension (5/6 lượt `loi-model`; thông điệp lỗi bị bộ đo cắt 160 ký tự che mất nguyên nhân). Còn mở: llama-server HTTP 500
+"Failed to parse tool call arguments" khi tham số tool quá dài (1/63). Chưa kiểm bằng tay trong VSCode thật.
+
+### Việc còn lại sau 2026-10-17
+- 5.1 phía VSCode: lượt extension chạy CỤC BỘ, không có `ai_agent_runs` ⇒ cần tuyến phản hồi Bearer riêng (khoá theo id lượt client).
+- Cổng Đợt 5: cần dữ liệu dùng thật (bảng phản hồi) + một lượt Eval mã A/B corpus trong Studio.
+- Đợt 6: API đổi model kiểm `/props`; dọn kho model (XOÁ tệp ⇒ hỏi chủ dự án trước).
+- Gộp về main: phối hợp phiên engineering; số census gộp (VRAM 220 + 15 eng = 235).
