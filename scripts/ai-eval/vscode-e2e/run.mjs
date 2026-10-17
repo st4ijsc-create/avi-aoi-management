@@ -177,8 +177,10 @@ async function chayQuaExtension(b, R, ws, biMat, ops) {
     suKien.push(m);
     if (m.loai === "ag_the_duyet") {
       // Thẻ lệnh chỉ hiện SAU khi extension đã qua allowlist (`xetDuyetLenh`) ⇒ người duyệt giả bấm Áp; vẫn từ chối phòng
-      // xa nếu chương trình hiển thị không thuộc bốn chương trình của allowlist.
-      const ok = m.loaiDuyet === "ghi" || (m.loaiDuyet === "lenh" && /^(git|npm|npx|dotnet)(\s|$)/.test(String(m.lenh ?? "")));
+      // xa nếu chương trình hiển thị không thuộc các chương trình của allowlist. ⚠ 84ab2a301 thêm `node --test` +
+      // `python -m pytest` vào allowlist; lượt V-dot4-1 chạy với danh sách CŨ ở đây ⇒ harness BÁC lệnh test hợp lệ
+      // (model lặp ⇒ dừng `lap-lai`) — số lượt đó là chặn dưới.
+      const ok = m.loaiDuyet === "ghi" || (m.loaiDuyet === "lenh" && /^(git|npm|npx|dotnet|node|python)(\s|$)/.test(String(m.lenh ?? "")));
       duyet.push({ loai: m.loaiDuyet, duong: m.duong, lenh: m.lenh, tomTat: m.tomTat, apDung: ok });
       setImmediate(() => phien.quyet(m.id, ok ? { duyet: true } : { duyet: false, lyDo: "harness: lệnh ngoài allowlist" }));
     }
