@@ -373,6 +373,25 @@ describe("G2-B · streaming tool-calls", () => {
     expect(ra.find((c) => c.type === "done")?.toolCalls ?? []).toHaveLength(0);
   });
 
+  it("★★★ (rà bảo mật bcd02aed7 — ReDoS) suy luận dài toàn <tool_call> không đóng ⇒ xong nhanh, không treo", async () => {
+    const xau = "<tool_call>a ".repeat(20_000) + "</tool_call>x";
+    const srv = await freshClient();
+    stubSse([
+      `data: {"choices":[{"index":0,"delta":{"reasoning_content":${JSON.stringify(xau)}}}]}\n\n`,
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+      "data: [DONE]\n\n",
+    ]);
+    const t0 = Date.now();
+    try {
+      for await (const _c of srv.serverChatCompletionStream({ messages: [{ role: "user", content: "x" }], tools: TOOLS, maxTokens: 16000 })) {
+        /* tiêu luồng */
+      }
+    } catch {
+      /* lỗi rỗng như cũ là chấp nhận được */
+    }
+    expect(Date.now() - t0).toBeLessThan(1500);
+  }, 20_000);
+
   it("⚠ suy luận NHẮC tới <tool_call> nhưng content CÓ chữ ⇒ KHÔNG vớt (model đã trả lời)", async () => {
     const nghi = "Ví dụ: <tool_call>\\n<function=list_dir>\\n<parameter=path>\\nsrc\\n</parameter>\\n</function>\\n</tool_call> nhưng không cần.";
     const { ra } = await chay(

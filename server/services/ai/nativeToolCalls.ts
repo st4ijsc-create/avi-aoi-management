@@ -428,8 +428,16 @@ export class BoGomToolCallLuong {
  */
 export function gomToolCallTuVanBan(raw: string): { vanBan: string; toolCalls: WireToolCall[] } {
   if (!raw || raw.indexOf("<tool_call>") === -1) return { vanBan: raw ?? "", toolCalls: [] };
+  // ⚠ Rà bảo mật (ReDoS): mỗi `<tool_call>` KHÔNG đóng nằm sau `</tool_call>` cuối cùng làm regex lười quét tới hết
+  //   chuỗi ⇒ O(n²) (20.000 khối ⇒ hàng trăm ms tới giây, chặn vòng sự kiện). Không có khối nào ĐÓNG ở đó nên phần
+  //   đuôi ấy không thể khớp — chỉ quét tới hết `</tool_call>` cuối, phần đuôi giữ nguyên (cùng ngữ nghĩa).
+  const DONG = "</tool_call>";
+  const het = raw.lastIndexOf(DONG);
+  if (het === -1) return { vanBan: raw, toolCalls: [] };
+  const dau = raw.slice(0, het + DONG.length);
+  const duoi = raw.slice(het + DONG.length);
   const toolCalls: WireToolCall[] = [];
-  const vanBan = raw
+  const vanBan = (dau
     .replace(/<tool_call>([\s\S]*?)<\/tool_call>/g, (_all, than: string) => {
       try {
         const o = JSON.parse(than.trim());
@@ -447,8 +455,7 @@ export function gomToolCallTuVanBan(raw: string): { vanBan: string; toolCalls: W
         if (xml) toolCalls.push({ id: sinhId(), type: "function", function: { name: xml.ten, arguments: JSON.stringify(xml.thamSo) } });
       }
       return "";
-    })
-    .trim();
+    }) + duoi).trim();
   return { vanBan, toolCalls };
 }
 

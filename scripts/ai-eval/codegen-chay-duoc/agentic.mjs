@@ -20,6 +20,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { ck } from "./cookie.mjs";
+import { chayAgent } from "./agent-f/khachAgent.mjs";
 
 // Gốc repo suy từ VỊ TRÍ tệp này (không ghim D:/SOURCES/avi-aoi-management) để chạy được trong worktree khác
 // mà không chạm cây làm việc của phiên khác; server đo chọn bằng AI_EVAL_BASE (mặc định :3000 như cũ).
@@ -31,6 +32,19 @@ const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] :
 const CK = ck(arg("--cookie", `${ROOT}/tmp/audit-ai/ck.txt`));
 const LABEL = arg("--label", "agentic");
 const SO_LUOT = Number(arg("--luot", 3));
+/**
+ * `--duong cu` (mặc định): đường lập trình cũ (`/api/ai/local-kb/stream`, vòng tự trị regex).
+ * `--duong agent`: vòng agent Đợt 1 (`/api/ai/agent/runs`, chế độ tu-dong, projectId "repo") — cổng ra Đợt 1.
+ */
+const DUONG = arg("--duong", "cu");
+const TRAN_MS_AGENT = Number(arg("--tran-phut", 20)) * 60_000;
+const hoiAgent = async (q) => {
+  const g = await chayAgent({ base: BASE, cookie: CK, cauHoi: q, projectId: "repo", tranMs: TRAN_MS_AGENT });
+  const evs = Object.entries(g.tool).map(([t, n]) => `tool:${t}x${n}`);
+  if (g.lyDo) evs.push(`xong(${g.lyDo})`);
+  for (const l of g.loi) evs.push(`loi:${String(l).slice(0, 80)}`);
+  return { ms: g.ms, evs, text: g.tomTat ?? "", soGoiTool: g.soGoiTool, usage: g.usage };
+};
 
 const cauHoi = (ten) => `Trong dự án sandbox-projects/${ten} có test đang đỏ. Hãy tự động sửa mã nguồn cho tới khi test xanh. Chạy node --test sandbox-projects/${ten}/test/kho.test.mjs để kiểm.`;
 const BAI = [
@@ -134,7 +148,7 @@ for (const b of BAI) {
     const testGoc = bam(`${DA}/test/kho.test.mjs`);
 
     process.stderr.write(`▶ ${b.id} lượt ${i} … `);
-    const g = await hoi(b.q);
+    const g = DUONG === "agent" ? await hoiAgent(b.q) : await hoi(b.q);
     const sau = chayTest(DA);
     const daChamTepTest = bam(`${DA}/test/kho.test.mjs`) !== testGoc;
 

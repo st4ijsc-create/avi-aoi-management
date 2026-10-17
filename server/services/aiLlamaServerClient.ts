@@ -333,10 +333,20 @@ function votToolCallTuSuyLuan(noiDung: string, suyLuan: string, dauVao: readonly
   //   (1) VỊ TRÍ — chỉ dãy khối nằm ở ĐUÔI suy luận (không chữ nào sau nó) là lệnh gọi thật; khối ở giữa là đang bàn.
   //   (2) NGUỒN — khối nào có NGUYÊN VĂN (chuẩn hoá khoảng trắng) trong một tin nhắn đầu vào (câu hỏi, kết quả tool,
   //       lịch sử) là chữ CHÉP từ dữ liệu ⇒ bỏ CẢ lượt vớt (fail-closed).
-  const duoi = /((?:<tool_call>[\s\S]*?<\/tool_call>\s*)+)$/.exec(suyLuan.trimEnd() + "\n");
-  if (!duoi) return [];
+  // ⚠ KHÔNG dùng regex lồng lượng từ neo `$` cho việc này (rà bảo mật bcd02aed7: ReDoS > 120 s trên 20.000 khối
+  //   không đóng). Quét TUYẾN TÍNH từ cuối: còn kết thúc bằng `</tool_call>` thì cắt khối cuối bằng lastIndexOf.
+  const khoi: string[] = [];
+  let con = suyLuan.trimEnd();
+  const DONG = "</tool_call>";
+  const MO = "<tool_call>";
+  while (con.endsWith(DONG) && khoi.length < 16) {
+    const batDau = con.lastIndexOf(MO, con.length - DONG.length);
+    if (batDau < 0) break;
+    khoi.unshift(con.slice(batDau));
+    con = con.slice(0, batDau).trimEnd();
+  }
+  if (khoi.length === 0) return [];
   const chuan = (s: string) => s.replace(/\s+/g, " ").trim();
-  const khoi = duoi[1].match(/<tool_call>[\s\S]*?<\/tool_call>/g) ?? [];
   const noiDungVao = dauVao.map((m) => chuan(String((m as { content?: unknown })?.content ?? ""))).filter((s) => s !== "");
   for (const k of khoi) {
     const kc = chuan(k);
@@ -345,7 +355,7 @@ function votToolCallTuSuyLuan(noiDung: string, suyLuan: string, dauVao: readonly
       return [];
     }
   }
-  const vot = gomToolCallTuVanBan(duoi[1]).toolCalls;
+  const vot = gomToolCallTuVanBan(khoi.join("\n")).toolCalls;
   if (vot.length) console.warn(`[llamaServer] vớt ${vot.length} tool call từ ĐUÔI reasoning_content (model chưa đóng </think>).`);
   return vot;
 }

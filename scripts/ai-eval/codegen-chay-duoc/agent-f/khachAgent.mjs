@@ -49,8 +49,10 @@ export async function chayAgent({ base, cookie, cauHoi, projectId, tranMs }) {
         const data = blk.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).replace(/^ /, "")).join("\n");
         if (!data) continue;
         let o; try { o = JSON.parse(data); } catch { continue; }
-        xuLy(o);
-        if (o.loai === "xong") break outer;
+        // Server (T4) gửi phong bì `{seq, suKien}` (để nối lại `?tu=n`); chấp nhận cả sự kiện trần.
+        const e = o && typeof o === "object" && o.suKien && typeof o.suKien === "object" ? o.suKien : o;
+        xuLy(e);
+        if (e.loai === "xong") break outer;
       }
     }
   } catch (e) {

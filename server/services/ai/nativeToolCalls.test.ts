@@ -277,6 +277,15 @@ describe("gomToolCallTuVanBan", () => {
     expect(JSON.parse(ra.toolCalls[1].function.arguments)).toEqual({ path: "src/b.ts", content: "line1\n\nline3" });
   });
 
+  it("★★★ (rà bảo mật — ReDoS) nhiều <tool_call> KHÔNG đóng sau khối cuối ⇒ xong nhanh, giữ nguyên ngữ nghĩa", () => {
+    const raw = '<tool_call>{"name":"f","arguments":{}}</tool_call>' + "<tool_call>a ".repeat(20_000);
+    const t0 = Date.now();
+    const ra = gomToolCallTuVanBan(raw);
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(ra.toolCalls.map((t) => t.function.name)).toEqual(["f"]);
+    expect(ra.vanBan.startsWith("<tool_call>a")).toBe(true);
+  });
+
   it("★★ XML hỏng (thiếu </function>) ⇒ không vớt, chữ vẫn được dọn", () => {
     const ra = gomToolCallTuVanBan("<tool_call>\n<function=list_dir>\n<parameter=path>\nsrc\n</parameter>\n</tool_call>xong");
     expect(ra.toolCalls).toEqual([]);
