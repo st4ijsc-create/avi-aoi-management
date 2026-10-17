@@ -230,8 +230,19 @@ Trượt ổn định: `py-dang-ky` 0/3 (cùng bài trượt bên trình duyệt
 extension (5/6 lượt `loi-model`; thông điệp lỗi bị bộ đo cắt 160 ký tự che mất nguyên nhân). Còn mở: llama-server HTTP 500
 "Failed to parse tool call arguments" khi tham số tool quá dài (1/63). Chưa kiểm bằng tay trong VSCode thật.
 
+### Đợt 5.1 phía VSCode + Đợt 6 đổi model — XONG + đo sống (2026-10-17)
+- 5.1 VSCode `6f846cc09` (mig 0398 đã áp dev): phiếu cho lượt extension CỤC BỘ qua `POST /api/ai/client-feedback`
+  (Bearer, văn bản do client gửi ⇒ che + trần; cột `nguon` — bộ xuất JSONL CHỈ đọc nguồn `web`). Nút web `f685c233f`.
+- Đợt 6 `1b04f2abd` + `4ec67d529`: đổi model llama-server qua API (admin + 2FA), lựa chọn bền ở
+  `%LOCALAPPDATA%\avi-aoi-ai\llama-server-lua-chon.json` (KHÔNG ghi `.env`). Đo SỐNG trên :8091:
+  Qwen3.6-35B → Qwen3-Coder-30B 43 s → về 13 s, `/props` khớp, sinh thử OK, dòng lệnh giữ `--reasoning-budget 12000`.
+  Lần đo đầu (tiến trình gọi chết giữa lượt) lộ LỖ: lựa chọn ghi TRƯỚC khi kiểm + tạm dừng/khoá mồ côi ⇒ vá: `-Model`
+  tường minh, lựa chọn chỉ bền SAU `/props` + sinh thử; `phucHoiLuotMoCoi`. Đo sống lại bằng GIẾT tiến trình gọi giữa
+  `khoi-dong`: lựa chọn bền giữ nguyên, phục hồi gỡ khoá PID chết + đúng tạm dừng của nó, cảnh báo server chạy model chưa
+  kiểm (chỉ lệch nhãn) ⇒ lượt đổi thường đưa về Qwen3.6 ĐẠT. Task Scheduler chạy ps1 của repo chính ⇒ hiệu lực sau gộp.
+
 ### Việc còn lại sau 2026-10-17
-- 5.1 phía VSCode: lượt extension chạy CỤC BỘ, không có `ai_agent_runs` ⇒ cần tuyến phản hồi Bearer riêng (khoá theo id lượt client).
+- (xong) 5.1 phía VSCode.
 - Cổng Đợt 5: cần dữ liệu dùng thật (bảng phản hồi) + một lượt Eval mã A/B corpus trong Studio.
-- Đợt 6: API đổi model kiểm `/props`; dọn kho model (XOÁ tệp ⇒ hỏi chủ dự án trước).
+- Đợt 6 còn: dọn kho model ~89 GB + ổ C: (XOÁ tệp ⇒ hỏi chủ dự án trước); model lên NVMe.
 - Gộp về main: phối hợp phiên engineering; số census gộp (VRAM 220 + 15 eng = 235).
