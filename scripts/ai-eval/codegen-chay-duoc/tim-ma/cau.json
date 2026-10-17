@@ -1,0 +1,230 @@
+{
+ "moTa": "Bộ tìm mã Đợt 2 — SINH bởi chuanBi.mjs từ mã thật; đừng sửa tay số dòng.",
+ "luc": "2026-10-17T01:18:26.396Z",
+ "commit": "585653766",
+ "cau": [
+  {
+   "id": "R1-chayVongAgent",
+   "cauHoi": "Hàm chayVongAgent (vòng lặp agent) được định nghĩa ở tệp nào, dòng mấy? Phía server nó được gọi từ đâu?",
+   "kyHieu": "chayVongAgent",
+   "tep": "shared/agentCore/vongAgent.ts",
+   "dong": 86,
+   "doiDong": true,
+   "duAn": null,
+   "mau": "^export async function chayVongAgent\\(",
+   "tepGoi": [
+    "vscode-extension/src/ui/phienAgent.ts",
+    "server/services/ai/agent/goiModelMayChu.ts",
+    "server/services/ai/agent/quanLyLuotChay.ts",
+    "shared/agentCore/congCu.ts"
+   ],
+   "dongMa": "export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent> {"
+  },
+  {
+   "id": "R2-gomToolCall",
+   "cauHoi": "Khi model trả tool call dưới dạng văn bản thay vì native tool call, chỗ nào gom chúng lại (gomToolCallTuVanBan)? Cho mình tệp và dòng.",
+   "kyHieu": "gomToolCallTuVanBan",
+   "tep": "server/services/ai/nativeToolCalls.ts",
+   "dong": 429,
+   "doiDong": true,
+   "duAn": null,
+   "mau": "^export function gomToolCallTuVanBan\\(",
+   "tepGoi": [
+    "server/services/aiLlamaServerClient.ts"
+   ],
+   "dongMa": "export function gomToolCallTuVanBan(raw: string): { vanBan: string; toolCalls: WireToolCall[] } {"
+  },
+  {
+   "id": "R3-docKetQuaTest",
+   "cauHoi": "Muốn hỗ trợ thêm một định dạng đầu ra test mới cho bước đọc kết quả test (docKetQuaTest) thì sửa ở tệp nào, dòng mấy?",
+   "kyHieu": "docKetQuaTest",
+   "tep": "shared/aiCodingLoop.ts",
+   "dong": 121,
+   "doiDong": true,
+   "duAn": null,
+   "mau": "^export function docKetQuaTest\\(",
+   "tepGoi": [
+    "client/src/components/ai/BangTerminal.tsx",
+    "client/src/pages/AICodingWorkspace.tsx",
+    "server/services/ai/agent/boThucThiMayChu.ts",
+    "server/services/aiCodingVerify.ts",
+    "shared/aiCodingLoiViTri.ts"
+   ],
+   "dongMa": "export function docKetQuaTest(dauRa: string | null | undefined, maThoat: number | null, hetGio = false): KetQuaTest {"
+  },
+  {
+   "id": "R4-laGhiVaoRepoChinh",
+   "cauHoi": "Hàm kiểm tra một đường tệp có rơi vào repo chính hay không (laGhiVaoRepoChinh) nằm ở đâu (tệp:dòng), và nó được gọi từ đâu?",
+   "kyHieu": "laGhiVaoRepoChinh",
+   "tep": "server/services/aiCodingTuTriGhi.ts",
+   "dong": 211,
+   "doiDong": true,
+   "duAn": null,
+   "mau": "^export function laGhiVaoRepoChinh\\(",
+   "tepGoi": [
+    "server/services/ai/agent/boThucThiMayChu.ts"
+   ],
+   "dongMa": "export function laGhiVaoRepoChinh(gocDuAn: string, duongTep: string, repo: string = gocRepoChinh()): boolean {"
+  },
+  {
+   "id": "R5-gioiHanVong",
+   "cauHoi": "Mình muốn tăng số lượt tối đa của vòng agent (mặc định đang là 30 lượt) — giá trị mặc định đó khai ở tệp nào để sửa?",
+   "kyHieu": "GIOI_HAN_MAC_DINH",
+   "tep": "shared/agentCore/kieu.ts",
+   "dong": 158,
+   "doiDong": false,
+   "duAn": null,
+   "mau": "^export const GIOI_HAN_MAC_DINH\\b",
+   "tepGoi": [
+    "vscode-extension/src/ui/phienAgent.ts",
+    "shared/agentCore/vongAgent.ts"
+   ],
+   "dongMa": "export const GIOI_HAN_MAC_DINH: GioiHanVong = {"
+  },
+  {
+   "id": "R6-kiemThamSo",
+   "cauHoi": "Tham số của một tool call do model gửi lên được kiểm tra hợp lệ ở hàm nào trong lõi agent? Chỉ giúp tệp và dòng.",
+   "kyHieu": "kiemThamSo",
+   "tep": "shared/agentCore/congCu.ts",
+   "dong": 373,
+   "doiDong": true,
+   "duAn": null,
+   "mau": "^export function kiemThamSo\\(",
+   "tepGoi": [
+    "server/services/ai/nativeToolCalls.ts",
+    "shared/agentCore/vongAgent.ts"
+   ],
+   "dongMa": "export function kiemThamSo(ten: string, thamSoTho: unknown): KetQuaKiemThamSo {"
+  },
+  {
+   "id": "R7-routeAgentRuns",
+   "cauHoi": "Endpoint POST /api/ai/agent/runs (tạo lượt chạy agent) được đăng ký ở tệp nào, dòng nào?",
+   "kyHieu": "/api/ai/agent/runs",
+   "tep": "server/routes/aiAgentApi.ts",
+   "dong": 80,
+   "doiDong": true,
+   "duAn": null,
+   "mau": "app\\.post\\(\"/api/ai/agent/runs\",",
+   "tepGoi": [
+    "client/src/lib/agentApi.ts",
+    "client/src/pages/AICodingWorkspace.tsx"
+   ],
+   "dongMa": "app.post(\"/api/ai/agent/runs\", async (req, res) => {"
+  },
+  {
+   "id": "R8-loiNhacHeThong",
+   "cauHoi": "System prompt của chế độ agent được dựng ở hàm nào? Muốn thêm một quy tắc cho model thì sửa tệp nào, dòng nào?",
+   "kyHieu": "dungLoiNhacHeThong",
+   "tep": "shared/agentCore/loiNhac.ts",
+   "dong": 23,
+   "doiDong": true,
+   "duAn": null,
+   "mau": "^export function dungLoiNhacHeThong\\(",
+   "tepGoi": [
+    "shared/agentCore/vongAgent.ts"
+   ],
+   "dongMa": "export function dungLoiNhacHeThong(y: { cheDo: CheDoAgent; ngonNgu: NgonNgu }): string {"
+  },
+  {
+   "id": "R9-lamSachBaiHoc",
+   "cauHoi": "Bài học (lesson) của trợ lý lập trình được làm sạch và che bí mật trước khi lưu ở hàm nào? Cho tệp:dòng.",
+   "kyHieu": "lamSachBaiHoc",
+   "tep": "server/services/ai/codingLessonContext.ts",
+   "dong": 112,
+   "doiDong": true,
+   "duAn": null,
+   "mau": "^export function lamSachBaiHoc\\(",
+   "tepGoi": [
+    "server/db/aiCodingLessons.ts",
+    "server/routers/aiAgentRouter.ts",
+    "server/services/ai/agent/boThucThiMayChu.ts",
+    "server/services/ai/agent/quanLyLuotChay.ts",
+    "server/services/ai/agent/thuTucLuotChay.ts",
+    "server/services/aiLocalKnowledgeCoding.ts"
+   ],
+   "dongMa": "export function lamSachBaiHoc(raw: unknown): KetQuaLamSach {"
+  },
+  {
+   "id": "A1-timSanPham",
+   "cauHoi": "Trong dự án sandbox-projects/agent-f/ts-gio-hang, hàm tìm sản phẩm theo mã nằm ở đâu (tệp:dòng), và giỏ hàng gọi nó ở chỗ nào?",
+   "kyHieu": "timSanPham",
+   "tep": "sandbox-projects/agent-f/ts-gio-hang/src/sanPham.ts",
+   "dong": 16,
+   "doiDong": true,
+   "duAn": "sandbox-projects/agent-f/ts-gio-hang",
+   "mau": "^export function timSanPham\\(",
+   "tepGoi": [
+    "sandbox-projects/agent-f/ts-gio-hang/src/gioHang.ts",
+    "sandbox-projects/agent-f/ts-gio-hang/src/index.ts"
+   ],
+   "dongMa": "export function timSanPham(ma: string): SanPham | undefined {"
+  },
+  {
+   "id": "A2-baoCaoTonThap",
+   "cauHoi": "Trong dự án sandbox-projects/agent-f/py-kho-cache, muốn đổi cách lập báo cáo hàng tồn dưới ngưỡng thì sửa ở tệp nào?",
+   "kyHieu": "bao_cao_ton_thap",
+   "tep": "sandbox-projects/agent-f/py-kho-cache/kho/dich_vu.py",
+   "dong": 46,
+   "doiDong": false,
+   "duAn": "sandbox-projects/agent-f/py-kho-cache",
+   "mau": "^\\s+def bao_cao_ton_thap\\(",
+   "tepGoi": [],
+   "dongMa": "def bao_cao_ton_thap(self, nguong: int) -> list[str]:"
+  },
+  {
+   "id": "A3-trungVoi",
+   "cauHoi": "Trong sandbox-projects/agent-f/cs-dat-phong, logic kiểm tra hai lượt đặt phòng có trùng giờ với nhau nằm ở đâu? Cho mình tệp và dòng.",
+   "kyHieu": "TrungVoi",
+   "tep": "sandbox-projects/agent-f/cs-dat-phong/src/DatPhong/DatCho.cs",
+   "dong": 6,
+   "doiDong": true,
+   "duAn": "sandbox-projects/agent-f/cs-dat-phong",
+   "mau": "^\\s+public bool TrungVoi\\(",
+   "tepGoi": [
+    "sandbox-projects/agent-f/cs-dat-phong/src/DatPhong/DichVuDatPhong.cs"
+   ],
+   "dongMa": "public bool TrungVoi(DateTime batDau, DateTime ketThuc) => BatDau < ketThuc && batDau < KetThuc;"
+  },
+  {
+   "id": "A4-tachThamSo",
+   "cauHoi": "Dự án sandbox-projects/agent-f/js-cli-viec: hàm tách tham số dòng lệnh (các cờ --xxx) ở tệp nào, dòng mấy, và được gọi từ đâu?",
+   "kyHieu": "tachThamSo",
+   "tep": "sandbox-projects/agent-f/js-cli-viec/src/thamSo.mjs",
+   "dong": 6,
+   "doiDong": true,
+   "duAn": "sandbox-projects/agent-f/js-cli-viec",
+   "mau": "^export function tachThamSo\\(",
+   "tepGoi": [
+    "sandbox-projects/agent-f/js-cli-viec/src/cli.mjs"
+   ],
+   "dongMa": "export function tachThamSo(argv, coBoolean = []) {"
+  },
+  {
+   "id": "A5-phanTichDong",
+   "cauHoi": "Trong sandbox-projects/agent-f/cs-nhat-ky, chỗ phân tích MỘT dòng log thành bản ghi nằm ở đâu (tệp:dòng)?",
+   "kyHieu": "PhanTichDong",
+   "tep": "sandbox-projects/agent-f/cs-nhat-ky/src/NhatKy/BoPhanTich.cs",
+   "dong": 21,
+   "doiDong": true,
+   "duAn": "sandbox-projects/agent-f/cs-nhat-ky",
+   "mau": "^\\s+public static BanGhi\\? PhanTichDong\\(",
+   "tepGoi": [],
+   "dongMa": "public static BanGhi? PhanTichDong(string dong)"
+  },
+  {
+   "id": "A6-traThongDiep",
+   "cauHoi": "Trong sandbox-projects/agent-f/py-dang-ky, thông điệp trả cho người dùng được tra theo khoá ở hàm nào? Cho tệp và dòng.",
+   "kyHieu": "t",
+   "tep": "sandbox-projects/agent-f/py-dang-ky/dang_ky/thong_diep.py",
+   "dong": 9,
+   "doiDong": true,
+   "duAn": "sandbox-projects/agent-f/py-dang-ky",
+   "mau": "^def t\\(",
+   "tepGoi": [
+    "sandbox-projects/agent-f/py-dang-ky/conftest.py",
+    "sandbox-projects/agent-f/py-dang-ky/dang_ky/dich_vu.py"
+   ],
+   "dongMa": "def t(khoa: str, **tham_so) -> str:"
+  }
+ ]
+}

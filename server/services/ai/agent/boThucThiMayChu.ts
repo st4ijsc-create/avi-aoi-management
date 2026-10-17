@@ -117,6 +117,23 @@ const K_TIM_MA_MAC_DINH = 8;
 /** Câu trả model sau `remember` — CỐ ĐỊNH (lõi + lưới + UI cùng hiểu: chưa có gì được ghi). */
 export const CAU_DA_DE_XUAT_NHO = "Proposed to the user; it will be saved only if they approve.";
 
+/**
+ * Công tắc ABLATION (bộ đo "tìm mã" Đợt 2, `scripts/ai-eval/codegen-chay-duoc/tim-ma/`): `AI_AGENT_AN_CONG_CU` =
+ * danh sách tên tool, phân tách bằng phẩy (vd `find_symbol,search_code,search_docs`) ⇒ `congCu(cheDo)` BỎ các tool
+ * đó khỏi bộ phơi cho model, và `chay` TỪ CHỐI (`CONG_CU_BI_AN`) nếu model vẫn gọi tên đó. Đọc TẠI CHỖ GỌI (không
+ * chụp lúc nạp mô-đun) ⇒ khởi động lại server với biến khác là đủ. Rỗng/không đặt ⇒ không ẩn gì. Thuần.
+ * ⚠ Lời nhắc hệ thống (`shared/agentCore/loiNhac.ts` quy tắc 9–10) vẫn NHẮC tên các tool Đợt 2 — nhánh tắt đo cả
+ * hiệu ứng "được nhắc mà không có"; lõi vòng (`vongAgent`) đã chặn tool ngoài bộ phơi, đây là lớp thứ hai.
+ */
+export function congCuBiAn(giaTri: string | undefined = process.env.AI_AGENT_AN_CONG_CU): Set<string> {
+  return new Set(
+    String(giaTri ?? "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean),
+  );
+}
+
 /** Cắt một chuỗi theo trần, có dấu cắt. */
 const catDuoi = (s: string, tran: number) => (s.length <= tran ? s : `${s.slice(0, tran)}\n…[${s.length - tran} chars omitted]`);
 
@@ -866,9 +883,14 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
 
   return {
     congCu(cheDo: CheDoAgent) {
-      return congCuTheoCheDo(cheDo);
+      const an = congCuBiAn();
+      const ds = congCuTheoCheDo(cheDo);
+      return an.size === 0 ? ds : ds.filter((t) => !an.has(t.function.name));
     },
     async chay(goi, ctx) {
+      if (congCuBiAn().has(goi.ten)) {
+        return { ok: false, ma: "CONG_CU_BI_AN", choModel: `Tool "${goi.ten}" is not available in this run. Use the tools you were given.` };
+      }
       try {
         const t = goi.thamSo;
         switch (goi.ten) {
