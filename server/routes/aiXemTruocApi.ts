@@ -6,7 +6,9 @@
  *   1. xác thực PHIÊN (`thuXacThucRest` — cùng phân loại 401/403/500 của mọi tuyến REST);
  *   2. hỏi lại `ai_repo_read/canView` (fail-closed — quyền bị thu sau khi chạy thì không xem được nữa);
  *   3. kiểm dự án ĐANG CHẠY và người hỏi CHÍNH LÀ người đã chạy nó — sai ⇒ 404 (không tiết lộ dự án nào đang chạy);
- *   4. cấp VÉ MỘT LẦN (60 s) và 302 sang `<origin xem trước>/__ai_xem_truoc/vao?t=<vé>&p=<đường con>`.
+ *   4. ★★★ (vá cookie-tossing) origin xem trước = `AI_PREVIEW_PUBLIC_ORIGIN` (BẮT BUỘC, không suy từ host yêu cầu) và
+ *      phải KHÁC SITE với host ứng dụng của CHÍNH yêu cầu (`cungSite`) — cùng site ⇒ 409 `PREVIEW_SAME_SITE`, 0 vé;
+ *   5. cấp VÉ MỘT LẦN (60 s) và 302 sang `<origin xem trước>/__ai_xem_truoc/vao?t=<vé>&p=<đường con>`.
  * `iframe src` của bảng "Chạy & Xem trước" trỏ vào đây (same-origin ⇒ cookie phiên ứng dụng đi kèm ĐÚNG MỘT lần,
  * tới đúng tuyến này); sau 302, khung ở origin proxy với cookie RIÊNG.
  *
@@ -20,6 +22,7 @@ import { thuXacThucRest, thanTuChoiRest, type KetQuaXacThucRest } from "./_xacTh
 import { DUONG_VAO, type KhoVeXemTruoc } from "../services/ai/chayUngDung/proxyXemTruoc";
 import { phanGiaiGoc, type NguoiGoiDuAn } from "../services/aiLocalTools/repoProjects";
 import { docCauHinhXemTruoc, khoVeXemTruoc, quanLyUngDung, type CauHinhXemTruoc } from "../services/ai/chayUngDung";
+import { GOI_Y_CAU_HINH_ORIGIN_RIENG, cungSite } from "../services/ai/chayUngDung/cungSite";
 
 export interface PhuThuocTuyenXemTruoc {
   xacThuc: (req: Request) => Promise<KetQuaXacThucRest>;
@@ -74,8 +77,24 @@ export function registerAiXemTruocRoutes(app: express.Express, deps: PhuThuocTuy
       return;
     }
     const ch = deps.cauHinh();
-    if (!ch.bat || ch.cong === null) {
-      res.status(503).json({ success: false, code: "PREVIEW_DISABLED", lyDo: ch.lyDoTat ?? null });
+    // ★★★ Vá cookie-tossing (rà f4b504dc5): KHÔNG còn suy origin từ `req.hostname` (= CÙNG host ứng dụng ⇒ cùng site,
+    // cookie không tách theo cổng). Origin RIÊNG do cấu hình quyết, thiếu ⇒ TẮT.
+    if (!ch.bat || ch.cong === null || !ch.originCongKhai) {
+      res.status(503).json({ success: false, code: "PREVIEW_DISABLED", lyDo: ch.lyDoTat ?? "THIEU_ORIGIN_RIENG" });
+      return;
+    }
+    const origin = ch.originCongKhai;
+    // So với host ỨNG DỤNG mà CHÍNH yêu cầu này dùng (người dùng có thể mở ứng dụng bằng đúng host xem trước) — cùng
+    // site ⇒ 409, KHÔNG cấp vé. Host vắng/méo ⇒ coi là cùng (fail-closed, `cungSite`).
+    let hostXemTruoc: string | null = null;
+    try {
+      hostXemTruoc = new URL(origin).hostname;
+    } catch {
+      hostXemTruoc = null;
+    }
+    if (cungSite(typeof req.hostname === "string" ? req.hostname : null, hostXemTruoc)) {
+      res.setHeader("Cache-Control", "no-store");
+      res.status(409).json({ success: false, code: "PREVIEW_SAME_SITE", goiY: GOI_Y_CAU_HINH_ORIGIN_RIENG });
       return;
     }
     const ve = deps.kho.capVe(userId, projectId);
@@ -83,8 +102,6 @@ export function registerAiXemTruocRoutes(app: express.Express, deps: PhuThuocTuy
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries((req.query ?? {}) as Record<string, unknown>)) if (typeof v === "string") q.append(k, v);
     const duong = `/${con}${q.toString() ? `?${q.toString()}` : ""}`;
-    const host = String(req.hostname ?? "localhost").replace(/[^A-Za-z0-9.\-:[\]]/g, "");
-    const origin = ch.originCongKhai ?? `${req.protocol === "https" ? "https" : "http"}://${host}:${ch.cong}`;
     res.setHeader("Cache-Control", "no-store");
     res.redirect(302, `${origin}${DUONG_VAO}?t=${encodeURIComponent(ve)}&p=${encodeURIComponent(duong)}`);
   };

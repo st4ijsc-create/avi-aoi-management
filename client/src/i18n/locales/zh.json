@@ -21106,6 +21106,7 @@
       "xemTruoc": "预览",
       "moTabMoi": "在新标签页打开",
       "xemTruocTat": "预览已关闭（{{lyDo}}）——管理员设置 AI_PREVIEW_PROXY_PORT 以启用（独立端口代理，与应用源隔离）。",
+      "xemTruocCanHostRieng": "预览已关闭（{{lyDo}}）：代理必须位于与应用不同站点的主机上——Cookie 不按端口隔离，同一主机上的预览代码可写入应用的会话 Cookie。管理员设置 AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:<代理端口> 和 AI_PREVIEW_PROXY_HOST=127.0.0.2（开发机；局域网：使用独立 IP/域名），并通过不同的主机访问应用。",
       "xemTruocCho": "应用开始监听后显示预览框。",
       "xemTruocAnToan": "预览框运行在独立源（沙箱）中——不共享登录会话。",
       "nguoiKhacDangChay": "其他人正在运行此项目。",
@@ -22524,7 +22525,8 @@
     "scope": {
       "chat": "对话 / 智能体",
       "fim": "代码补全（FIM）",
-      "embed": "向量嵌入"
+      "embed": "向量嵌入",
+      "apply": "文件应用审计（扩展）"
     },
     "source": {
       "web": "网页创建",

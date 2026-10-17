@@ -18,7 +18,8 @@ function ghiTuyen(deps: PhuThuocTuyenXemTruoc): Map<string, XuLy> {
   return t;
 }
 
-function goi(h: XuLy, params: Record<string, string>, query: Record<string, string> = {}) {
+function goi(h: XuLy, params: Record<string, string>, query: Record<string, string> = {}, hostnameHoacNull: string | null = "may-chu.local") {
+  const hostname = hostnameHoacNull ?? undefined; // null ⇒ `req.hostname` VẮNG thật (undefined kích hoạt giá trị mặc định)
   const ra = { ma: 0, than: null as unknown, chuyen: null as string | null };
   const res: any = {
     status(m: number) {
@@ -35,7 +36,7 @@ function goi(h: XuLy, params: Record<string, string>, query: Record<string, stri
       ra.chuyen = u;
     },
   };
-  const req: any = { params, query, protocol: "http", hostname: "may-chu.local", headers: {}, originalUrl: "" };
+  const req: any = { params, query, protocol: "http", hostname, headers: {}, originalUrl: "" };
   return Promise.resolve(h(req, res)).then(() => ra);
 }
 
@@ -44,6 +45,7 @@ let chay: Map<string, { chuSoHuu: number; cong: number }>;
 let coQuyen = true;
 let nguoiDung: { ok: true; user: any } | { ok: false; ma: 401 | 403 | 500; lyDo: any } = { ok: true, user: { id: 7, role: "engineer" } };
 let bat = true;
+let originCongKhai: string | null = "http://10.0.0.9:5099";
 
 function deps(): PhuThuocTuyenXemTruoc {
   return {
@@ -56,7 +58,7 @@ function deps(): PhuThuocTuyenXemTruoc {
       trangThai: (id) => (chay.has(id) ? { chuSoHuu: chay.get(id)!.chuSoHuu } : null),
       congCuaDuAn: (id) => chay.get(id)?.cong ?? null,
     },
-    cauHinh: () => ({ bat, cong: 5099, originCongKhai: null }) as any,
+    cauHinh: () => ({ bat, cong: 5099, originCongKhai }) as any,
   };
 }
 
@@ -66,6 +68,7 @@ beforeEach(() => {
   coQuyen = true;
   nguoiDung = { ok: true, user: { id: 7, role: "engineer" } };
   bat = true;
+  originCongKhai = "http://10.0.0.9:5099";
 });
 
 describe("§1 — đăng ký đúng hai tuyến GET", () => {
@@ -120,11 +123,11 @@ describe("§2 — xác thực + chủ sở hữu", () => {
 });
 
 describe("§3 — chủ ⇒ 302 sang ORIGIN RIÊNG với vé MỘT LẦN", () => {
-  it("★★★ chuyển tới http://<host>:<cổng proxy>/__ai_xem_truoc/vao?t=<vé>&p=<đường con> — vé đổi được ĐÚNG một lần", async () => {
+  it("★★★ chuyển tới <AI_PREVIEW_PUBLIC_ORIGIN>/__ai_xem_truoc/vao?t=<vé>&p=<đường con> — vé đổi được ĐÚNG một lần", async () => {
     const r = await goi(ghiTuyen(deps()).get("/api/ai/preview/:projectId/*")!, { projectId: "du-an-a", 0: "src/trang" }, { a: "1" });
     expect(r.ma).toBe(302);
     const u = new URL(r.chuyen!);
-    expect(u.origin).toBe("http://may-chu.local:5099");
+    expect(u.origin).toBe("http://10.0.0.9:5099");
     expect(u.pathname).toBe(DUONG_VAO);
     expect(u.searchParams.get("p")).toBe("/src/trang?a=1");
     const ve = u.searchParams.get("t")!;
@@ -137,5 +140,63 @@ describe("§3 — chủ ⇒ 302 sang ORIGIN RIÊNG với vé MỘT LẦN", () =>
     d.cauHinh = () => ({ bat: true, cong: 5099, originCongKhai: "http://10.0.0.9:5099" }) as any;
     const r = await goi(ghiTuyen(d).get("/api/ai/preview/:projectId")!, { projectId: "du-an-a" });
     expect(new URL(r.chuyen!).origin).toBe("http://10.0.0.9:5099");
+  });
+});
+
+describe("§4 — ★★★ vá cookie-tossing: CÙNG SITE ⇒ KHÔNG cấp vé (fail-closed)", () => {
+  function demVe(d: PhuThuocTuyenXemTruoc): { n: number } {
+    const dem = { n: 0 };
+    const goc = d.kho.capVe.bind(d.kho);
+    d.kho = Object.assign(Object.create(Object.getPrototypeOf(d.kho)), d.kho, {
+      capVe: (u: number, p: string) => {
+        dem.n++;
+        return goc(u, p);
+      },
+    });
+    return dem;
+  }
+
+  it("★★★ không có origin RIÊNG (originCongKhai null) ⇒ 503, KHÔNG suy origin từ host của yêu cầu, KHÔNG cấp vé", async () => {
+    originCongKhai = null;
+    const d = deps();
+    const dem = demVe(d);
+    const r = await goi(ghiTuyen(d).get("/api/ai/preview/:projectId")!, { projectId: "du-an-a" });
+    expect(r.ma).toBe(503);
+    expect(r.chuyen).toBeNull();
+    expect(dem.n).toBe(0);
+  });
+
+  for (const [hostApp, origin] of [
+    ["may-chu.local", "http://may-chu.local:5099"],
+    ["127.0.0.2", "http://127.0.0.2:5099"],
+    ["localhost", "http://127.0.0.1:5099"],
+    ["[::1]", "http://localhost:5099"],
+    ["mes.factory.vn", "http://preview.factory.vn:5099"],
+  ] as const) {
+    it(`★★★ ứng dụng ở ${hostApp} + xem trước ở ${origin} ⇒ 409 PREVIEW_SAME_SITE, không vé, có gợi ý cấu hình`, async () => {
+      originCongKhai = origin;
+      const d = deps();
+      const dem = demVe(d);
+      const r = await goi(ghiTuyen(d).get("/api/ai/preview/:projectId")!, { projectId: "du-an-a" }, {}, hostApp);
+      expect(r.ma).toBe(409);
+      expect(r.chuyen).toBeNull();
+      expect((r.than as any).code).toBe("PREVIEW_SAME_SITE");
+      expect(String((r.than as any).goiY)).toContain("AI_PREVIEW_PUBLIC_ORIGIN");
+      expect(dem.n).toBe(0);
+    });
+  }
+
+  it("★★★ host yêu cầu vắng ⇒ fail-closed 409", async () => {
+    const r = await goi(ghiTuyen(deps()).get("/api/ai/preview/:projectId")!, { projectId: "du-an-a" }, {}, null);
+    expect(r.ma).toBe(409);
+  });
+
+  it("★★ KHÁC site ⇒ cấp: ứng dụng ở 127.0.0.1 / localhost, xem trước ở 127.0.0.2", async () => {
+    originCongKhai = "http://127.0.0.2:5099";
+    for (const hostApp of ["127.0.0.1", "localhost"]) {
+      const r = await goi(ghiTuyen(deps()).get("/api/ai/preview/:projectId")!, { projectId: "du-an-a" }, {}, hostApp);
+      expect(r.ma, hostApp).toBe(302);
+      expect(new URL(r.chuyen!).origin).toBe("http://127.0.0.2:5099");
+    }
   });
 });

@@ -57,10 +57,10 @@ function phanTich(file: string) {
 const SAN_PHAM = moiFileTs(GOC_SERVER).map((f) => ({ f, r: rel(f), ...phanTich(f) }));
 
 describe("§0 — cầu chì", () => {
-  it("★ quét thấy cả cây server/ và đủ 7 file của chayUngDung/", () => {
+  it("★ quét thấy cả cây server/ và đủ 8 file của chayUngDung/ (+cungSite.ts — vá cookie-tossing)", () => {
     expect(SAN_PHAM.length).toBeGreaterThan(500);
     expect(SAN_PHAM.filter((x) => x.f.startsWith(THU_MUC)).map((x) => path.basename(x.f)).sort()).toEqual(
-      ["capCong.ts", "cauHinhChayDuAn.ts", "cuaSinhUngDung.ts", "dichVu.ts", "index.ts", "proxyXemTruoc.ts", "quanLyUngDung.ts"].sort(),
+      ["capCong.ts", "cauHinhChayDuAn.ts", "cuaSinhUngDung.ts", "cungSite.ts", "dichVu.ts", "index.ts", "proxyXemTruoc.ts", "quanLyUngDung.ts"].sort(),
     );
   });
 });

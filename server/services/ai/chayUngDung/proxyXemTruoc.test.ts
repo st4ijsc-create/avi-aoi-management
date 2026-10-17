@@ -20,6 +20,7 @@ import {
   doiSetCookieRa,
   locCookieChoUngDung,
   taoMayChuXemTruoc,
+  hostYeuCauKhop,
   type NguonUngDungXemTruoc,
 } from "./proxyXemTruoc";
 
@@ -45,9 +46,11 @@ const nguon: NguonUngDungXemTruoc = {
   cham: (id) => daCham.push(id),
 };
 
-function goi(duong: string, cookie?: string, method = "GET"): Promise<{ ma: number; headers: http.IncomingHttpHeaders; than: string }> {
+function goi(duong: string, cookie?: string, method = "GET", hostHeader?: string): Promise<{ ma: number; headers: http.IncomingHttpHeaders; than: string }> {
   return new Promise((giai, tuChoi) => {
-    const r = http.request({ host: "127.0.0.1", port: congProxy, path: duong, method, headers: cookie ? { cookie } : {} }, (res) => {
+    const headers: http.OutgoingHttpHeaders = cookie ? { cookie } : {};
+    if (hostHeader) headers.host = hostHeader;
+    const r = http.request({ host: "127.0.0.1", port: congProxy, path: duong, method, headers }, (res) => {
       let than = "";
       res.setEncoding("utf8");
       res.on("data", (c) => (than += c));
@@ -83,7 +86,7 @@ beforeAll(async () => {
   for (const m of [nguocDong]) m.on("connection", (so) => socketMo.add(so));
   await new Promise<void>((g) => nguocDong.listen(0, "127.0.0.1", () => g()));
   congNguoc = (nguocDong.address() as AddressInfo).port;
-  proxy = taoMayChuXemTruoc({ kho, nguon, dai: { tu: congNguoc, den: congNguoc } });
+  proxy = taoMayChuXemTruoc({ kho, nguon, dai: { tu: congNguoc, den: congNguoc }, hostCongKhai: "127.0.0.1" });
   proxy.on("connection", (so) => socketMo.add(so));
   await new Promise<void>((g) => proxy.listen(0, "127.0.0.1", () => g()));
   congProxy = (proxy.address() as AddressInfo).port;
@@ -201,7 +204,7 @@ describe("§4 — WebSocket (HMR) qua upgrade", () => {
     return new Promise((giai, tuChoi) => {
       const s = net.connect(congProxy, "127.0.0.1", () => {
         s.write(
-          "GET /@vite/client-ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+          "GET /@vite/client-ws HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
             "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n" +
             (cookie ? `Cookie: ${cookie}\r\n` : "") +
             "\r\n",
@@ -247,5 +250,31 @@ describe("§5 — không open-redirect sau khi đổi vé", () => {
     const r = await goi(`${DUONG_VAO}?t=${ve}&p=${encodeURIComponent(p)}`);
     expect(r.ma).toBe(302);
     expect(r.headers.location).toBe(mong);
+  });
+});
+
+describe("§6 — ★★★ vá cookie-tossing: proxy CHỈ phục vụ đúng HOST của origin công khai", () => {
+  it("★★★ Host khác (vd localhost — cùng site với ứng dụng) ⇒ 421, vé KHÔNG bị đổi, không cookie phiên", async () => {
+    chay.set("du-an-a", { cong: congNguoc, chuSoHuu: 7 });
+    const ve = kho.capVe(7, "du-an-a");
+    const r = await goi(`${DUONG_VAO}?t=${encodeURIComponent(ve)}`, undefined, "GET", `localhost:${congProxy}`);
+    expect(r.ma).toBe(421);
+    expect(r.headers["set-cookie"]).toBeUndefined();
+    expect(kho.doiVe(ve)).toEqual({ userId: 7, projectId: "du-an-a" });
+  });
+  it("★★★ Host khác + phiên hợp lệ ⇒ 421, ngược dòng không thấy yêu cầu nào", async () => {
+    chay.set("du-an-a", { cong: congNguoc, chuSoHuu: 7 });
+    const phien = await vaoPhien(7, "du-an-a");
+    const truoc = nhan.length;
+    const r = await goi("/x", phien, "GET", `localhost:${congProxy}`);
+    expect(r.ma).toBe(421);
+    expect(nhan.length).toBe(truoc);
+  });
+  it("★★ so Host: thiếu ⇒ false (fail-closed); hậu tố giả ⇒ false", () => {
+    expect(hostYeuCauKhop(undefined, "127.0.0.1")).toBe(false);
+    expect(hostYeuCauKhop("127.0.0.1:5099", "127.0.0.1")).toBe(true);
+    expect(hostYeuCauKhop("[::1]:5099", "[::1]")).toBe(true);
+    expect(hostYeuCauKhop("PREVIEW.example:1", "preview.example")).toBe(true);
+    expect(hostYeuCauKhop("127.0.0.1.evil:5099", "127.0.0.1")).toBe(false);
   });
 });

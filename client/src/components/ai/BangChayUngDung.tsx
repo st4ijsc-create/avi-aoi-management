@@ -44,7 +44,16 @@ export interface DuLieuBangChay {
 
 export const SANDBOX_XEM_TRUOC = "allow-scripts allow-same-origin allow-forms allow-popups allow-modals";
 
-/** URL vào xem trước: tuyến cấp vé của ứng dụng (KHÔNG phải origin proxy — client không biết/không cần biết nó). */
+/**
+ * ★★★ Vá cookie-tossing (rà f4b504dc5): máy chủ TẮT xem trước khi origin proxy không KHÁC SITE với ứng dụng (cookie
+ * không tách theo cổng). Các mã này ⇒ câu cấu hình riêng (AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:<cổng>).
+ */
+const LY_DO_CAN_HOST_RIENG = new Set(["THIEU_ORIGIN_RIENG", "ORIGIN_CUNG_SITE", "ORIGIN_KHONG_HOP_LE"]);
+
+/**
+ * URL vào xem trước: tuyến cấp vé của ứng dụng (đường TƯƠNG ĐỐI). ⚠ Client KHÔNG BAO GIỜ tự dựng origin xem trước từ
+ * host hiện tại: tuyến cấp vé 302 sang `AI_PREVIEW_PUBLIC_ORIGIN` do MÁY CHỦ cấu hình và kiểm khác site.
+ */
 export function urlXemTruoc(projectId: string): string {
   return `/api/ai/preview/${encodeURIComponent(projectId)}/`;
 }
@@ -150,7 +159,13 @@ export function BangChayUngDung({ projectId, duLieu, nhatKy, dangBan, onCai, onC
           )}
         </div>
         {duLieu && !duLieu.xemTruoc.bat ? (
-          <p className="text-muted-foreground" data-xem-truoc="tat">{t("repoWs.chayUD.xemTruocTat", { lyDo: duLieu.xemTruoc.lyDoTat ?? "?" })}</p>
+          LY_DO_CAN_HOST_RIENG.has(String(duLieu.xemTruoc.lyDoTat)) ? (
+            <p className="text-amber-700 dark:text-amber-300" data-xem-truoc="can-host-rieng">
+              {t("repoWs.chayUD.xemTruocCanHostRieng", { lyDo: duLieu.xemTruoc.lyDoTat ?? "?" })}
+            </p>
+          ) : (
+            <p className="text-muted-foreground" data-xem-truoc="tat">{t("repoWs.chayUD.xemTruocTat", { lyDo: duLieu.xemTruoc.lyDoTat ?? "?" })}</p>
+          )
         ) : hienKhung ? (
           <>
             <p className="text-[11px] text-muted-foreground">{t("repoWs.chayUD.xemTruocAnToan")}</p>

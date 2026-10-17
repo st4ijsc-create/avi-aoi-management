@@ -35,9 +35,13 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * GIỚI HẠN KHAI THẲNG
  * ══════════════════════════════════════════════════════════════════════════════════════════════
- *   • Cùng HOST khác cổng = cùng SITE: một form POST `text/plain` từ trang xem trước tới :3000 vẫn mang cookie Lax
- *     (CSRF mù — không đọc được phản hồi). Đóng hẳn bằng `AI_PREVIEW_PUBLIC_ORIGIN` khác host, hoặc
- *     `SEC_ORIGIN_CHECK_MODE=enforce` (origin-check sẵn có chặn origin khác host:port ở prod).
+ *   • ★★★ ĐÃ ĐÓNG (rà f4b504dc5 "cookie-tossing"): cùng HOST khác cổng = cùng SITE — cookie KHÔNG tách theo cổng, mã
+ *     xem trước ghi được `app_session_id=…; path=/api` mà ứng dụng nhận, và CSRF same-site. Nay: origin công khai
+ *     BẮT BUỘC + khác site (`cungSite.ts`, kiểm ở cấu hình VÀ lúc cấp vé so với host của chính yêu cầu), proxy chỉ
+ *     phục vụ đúng host ấy (`hostYeuCauKhop` ⇒ 421).
+ *   • CÒN MỞ: ứng dụng xem trước nghe thẳng `127.0.0.1:<cổng dải>` — trên MÁY CHỦ, mã xem trước điều hướng chính
+ *     khung tới `http://127.0.0.1:<cổng dải>/` là chạy trên host 127.0.0.1 (cùng site nếu ứng dụng mở bằng
+ *     localhost/127.0.0.1). Chỉ với trình duyệt chạy trên chính máy chủ; máy trạm LAN không với tới.
  *   • Một trình duyệt xem MỘT dự án tại một thời điểm qua cổng proxy (cookie phiên là một ô); mở dự án thứ hai sẽ
  *     chuyển phiên sang dự án ấy.
  *   • Proxy KHÔNG viết lại HTML/URL tuyệt đối: ứng dụng phải dùng đường tương đối hoặc gốc `/` (Vite/CRA mặc định ổn).
@@ -46,6 +50,7 @@ import http from "node:http";
 import net from "node:net";
 import { randomBytes } from "node:crypto";
 import { trongDai, type DaiCong } from "./capCong";
+import { chuanHoaHost } from "./cungSite";
 
 export const TEN_COOKIE_PHIEN = "__aipv_phien";
 export const TIEN_TO_COOKIE_UNG_DUNG = "__aipv_u_";
@@ -194,14 +199,42 @@ export function duongQuayVe(p: unknown): string {
   return p;
 }
 
+/**
+ * ★★★ Vá cookie-tossing (lớp 4): proxy CHỈ phục vụ đúng HOST của `AI_PREVIEW_PUBLIC_ORIGIN`. Proxy nghe `0.0.0.0` thì
+ * cũng trả lời qua `127.0.0.1:<cổng>` / `localhost:<cổng>` — CÙNG SITE với ứng dụng; một vé đổi ở đó sẽ đặt cookie và
+ * chạy mã AI trên host ứng dụng. So khớp TUYỆT ĐỐI hostname (bỏ cổng); thiếu/méo ⇒ `false` (421, fail-closed).
+ */
+export function hostYeuCauKhop(hostHeader: string | undefined, hostCongKhai: string): boolean {
+  if (typeof hostHeader !== "string" || hostHeader.trim() === "") return false;
+  let ten: string;
+  try {
+    ten = new URL(`http://${hostHeader.trim()}/`).hostname;
+  } catch {
+    return false;
+  }
+  const a = chuanHoaHost(ten);
+  const b = chuanHoaHost(hostCongKhai);
+  return a !== null && b !== null && a === b;
+}
+
 function traLoi(res: http.ServerResponse, ma: number, ly: string): void {
   res.writeHead(ma, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-ai-preview": ly });
   res.end(`${ma} ${ly}`);
 }
 
-export function taoMayChuXemTruoc(o: { kho: KhoVeXemTruoc; nguon: NguonUngDungXemTruoc; dai: DaiCong }): http.Server {
-  const { kho, nguon, dai } = o;
+export function taoMayChuXemTruoc(o: {
+  kho: KhoVeXemTruoc;
+  nguon: NguonUngDungXemTruoc;
+  dai: DaiCong;
+  /** Hostname của `AI_PREVIEW_PUBLIC_ORIGIN` — BẮT BUỘC (yêu cầu tới host khác ⇒ 421). */
+  hostCongKhai: string;
+}): http.Server {
+  const { kho, nguon, dai, hostCongKhai } = o;
   const may = http.createServer((req, res) => {
+    if (!hostYeuCauKhop(req.headers.host, hostCongKhai)) {
+      traLoi(res, 421, "PREVIEW_WRONG_HOST");
+      return;
+    }
     let url: URL;
     try {
       url = new URL(req.url ?? "/", "http://x");
@@ -253,6 +286,10 @@ export function taoMayChuXemTruoc(o: { kho: KhoVeXemTruoc; nguon: NguonUngDungXe
 
   may.on("upgrade", (req: http.IncomingMessage, socket: net.Socket, head: Buffer) => {
     socket.on("error", () => socket.destroy());
+    if (!hostYeuCauKhop(req.headers.host, hostCongKhai)) {
+      socket.end("HTTP/1.1 421 PREVIEW_WRONG_HOST\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+      return;
+    }
     const x = xacThuc(req, kho, nguon, dai);
     if (!x.ok) {
       socket.end(`HTTP/1.1 ${x.ma} ${x.ly}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);

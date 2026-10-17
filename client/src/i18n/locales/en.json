@@ -21098,6 +21098,7 @@
       "xemTruoc": "Preview",
       "moTabMoi": "Open in new tab",
       "xemTruocTat": "Preview is OFF ({{lyDo}}) — an admin sets AI_PREVIEW_PROXY_PORT to enable it (proxy on a separate port, origin isolated from the app).",
+      "xemTruocCanHostRieng": "Preview is OFF ({{lyDo}}): the proxy must live on a HOST that is a different site from the app — cookies are not isolated by port, so on the same host preview code could write the app's session cookie. An admin sets AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:<proxy port> and AI_PREVIEW_PROXY_HOST=127.0.0.2 (dev machine; on a LAN: a separate IP/domain), then opens the app via a different host.",
       "xemTruocCho": "The preview frame appears once the app is listening.",
       "xemTruocAnToan": "The frame runs on a SEPARATE ORIGIN (sandboxed) — it does not share your login session.",
       "nguoiKhacDangChay": "Someone else is running this project.",
@@ -22522,7 +22523,8 @@
     "scope": {
       "chat": "Chat / agent",
       "fim": "Code completion (FIM)",
-      "embed": "Embeddings"
+      "embed": "Embeddings",
+      "apply": "File-apply audit (extension)"
     },
     "source": {
       "web": "created on web",

@@ -21078,6 +21078,7 @@
       "xemTruoc": "Xem trước",
       "moTabMoi": "Mở tab mới",
       "xemTruocTat": "Xem trước đang TẮT ({{lyDo}}) — quản trị đặt AI_PREVIEW_PROXY_PORT để bật (proxy trên cổng riêng, tách origin khỏi ứng dụng).",
+      "xemTruocCanHostRieng": "Xem trước đang TẮT ({{lyDo}}): proxy phải ở một HOST khác site với ứng dụng — cookie không tách theo cổng, nên cùng host thì mã xem trước ghi được cookie phiên của ứng dụng. Quản trị đặt AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:<cổng proxy> và AI_PREVIEW_PROXY_HOST=127.0.0.2 (máy dev; LAN: một IP/tên miền riêng), rồi mở ứng dụng bằng host khác host ấy.",
       "xemTruocCho": "Khung xem trước hiện khi ứng dụng đã nghe cổng.",
       "xemTruocAnToan": "Khung chạy ở ORIGIN RIÊNG (sandbox) — không chia phiên đăng nhập với ứng dụng.",
       "nguoiKhacDangChay": "Dự án này đang được người khác chạy.",
@@ -22496,7 +22497,8 @@
     "scope": {
       "chat": "Trò chuyện / agent",
       "fim": "Gợi ý mã (FIM)",
-      "embed": "Embedding"
+      "embed": "Embedding",
+      "apply": "Ghi sổ áp tệp (extension)"
     },
     "source": {
       "web": "tạo trên web",

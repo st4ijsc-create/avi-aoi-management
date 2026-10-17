@@ -79,6 +79,31 @@ describe("§1 — khung xem trước", () => {
   });
 });
 
+describe("§1b — ★★★ vá cookie-tossing: xem trước chỉ ở origin KHÁC SITE do MÁY CHỦ quyết", () => {
+  it("★★★ client KHÔNG tự dựng URL xem trước từ host hiện tại (không window.location / location.host trong bảng + khung)", () => {
+    for (const f of ["BangChayUngDung.tsx", "KhungChayUngDung.tsx"]) {
+      const src = readFileSync(join(HERE, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      expect(src, f).not.toMatch(/\blocation\b/);
+      expect(src, f).not.toMatch(/AI_PREVIEW_PROXY_PORT|:5099|\bhostname\b/);
+    }
+    const the = /<iframe[^>]*>/.exec(html({ duLieu: DANG_CHAY }))![0];
+    expect(the).toMatch(/src="\/api\/ai\/preview\//);
+  });
+
+  for (const ly of ["THIEU_ORIGIN_RIENG", "ORIGIN_CUNG_SITE", "ORIGIN_KHONG_HOP_LE"]) {
+    it(`★★★ máy chủ báo ${ly} ⇒ KHÔNG khung, nói rõ cấu hình AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:<cổng> + proxy nghe địa chỉ ấy`, () => {
+      const h = html({ duLieu: { ...DANG_CHAY, xemTruoc: { bat: false, lyDoTat: ly } } });
+      expect(h).not.toContain("<iframe");
+      expect(h).not.toContain('data-nut="tab-moi"');
+      expect(h).toContain(`data-xem-truoc="can-host-rieng"`);
+      expect(h).toContain("AI_PREVIEW_PUBLIC_ORIGIN=http://127.0.0.2:");
+      expect(h).toContain("AI_PREVIEW_PROXY_HOST");
+      expect(h).toContain(ly);
+      expect(h).not.toContain("‹THIẾU:");
+    });
+  }
+});
+
 describe("§2 — nút", () => {
   it("★★★ nút Cài chỉ là lệnh máy chủ gợi ý (data-lenh), bấm ⇒ onCai(lệnh) — bảng không có ô nhập lệnh cài", () => {
     const h = html({ duLieu: { ...CO_BAN, goiYCai: ["npm ci", "dotnet restore"] } });
