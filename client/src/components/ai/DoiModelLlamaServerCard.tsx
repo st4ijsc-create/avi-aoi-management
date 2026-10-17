@@ -9,7 +9,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -119,7 +119,7 @@ export default function DoiModelLlamaServerCard() {
         {tq.isLoading ? (
           <p className="text-sm text-muted-foreground">{t("gguf.doiModel.dangTai", "Đang đọc trạng thái…")}</p>
         ) : tq.error ? (
-          <p className="text-sm text-destructive">{tq.error.message}</p>
+          <p className="text-sm text-destructive">{mapTrpcError(tq.error)}</p>
         ) : d ? (
           <>
             <div className="grid gap-2 text-sm sm:grid-cols-2">

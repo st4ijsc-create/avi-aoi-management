@@ -41,7 +41,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn as spawnThat } from "node:child_process";
-import { laTenModelHopLe } from "./luaChonModelLlamaServer";
+import { laTenModelHopLe, LoiTenModelKhongHopLe } from "./luaChonModelLlamaServer";
 
 // ─── Kiểu ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -413,7 +413,7 @@ export function khoiDongTachRoi(
     model?: string;
   } = {},
 ): { pid: number | undefined } {
-  if (o.model !== undefined && !laTenModelHopLe(o.model)) throw new Error(`tên model không hợp lệ cho -Model: ${String(o.model).slice(0, 80)}`);
+  if (o.model !== undefined && !laTenModelHopLe(o.model)) throw new LoiTenModelKhongHopLe(`tên model không hợp lệ cho -Model: ${String(o.model).slice(0, 80)}`);
   if (!fs.existsSync(kichBan)) throw new LoiKichBanKhoiDongVang(kichBan);
   const spawnFn = o.spawnFn ?? spawnThat;
   const them: string[] = (o.thamSoThem ?? []).filter((x) => x === "-Force");

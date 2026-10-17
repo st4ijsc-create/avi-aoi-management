@@ -1189,10 +1189,11 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       if (!res.headersSent) {
         jsonError(res, 500, err?.message || "chat completion failed", "server_error", maSuyLuan ?? undefined);
       } else {
-        // data-raw-ok: khung lỗi SSE theo ĐÚNG chuẩn OpenAI — khách là API client (SDK
-        // openai, LangChain…) parse trường `error.message` này theo hợp đồng của họ.
-        // Dịch nó sang tiếng Việt là phá tương thích, không phải cải thiện.
         res.write(
+          // data-raw-ok: khung lỗi SSE theo ĐÚNG chuẩn OpenAI — khách là API client (SDK
+          // openai, LangChain…) parse trường `error.message` này theo hợp đồng của họ.
+          // Dịch nó sang tiếng Việt là phá tương thích, không phải cải thiện.
+          // (Dấu phải nằm NGAY TRÊN dòng chứa `message:` — bộ quét F14 chỉ đọc khối chú thích liền kề.)
           `data: ${JSON.stringify({ error: { message: err?.message || "error", ...(maSuyLuan ? { type: "server_error", code: maSuyLuan } : {}) } })}\n\n`,
         );
         res.end();

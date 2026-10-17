@@ -3745,6 +3745,7 @@
       "interlockEvent": "联锁事件",
       "interlockRule": "联锁规则",
       "kbCorpus": "知识库(corpus)",
+      "kbEvalMaTaskSet": "代码生成评估题集",
       "license": "许可证",
       "line": "产线",
       "machine": "机台",
@@ -3928,6 +3929,7 @@
       "closeProductionSession": "关闭生产阶段",
       "signOffProductionSession": "主管签核生产阶段",
       "unloadGgufModel": "卸载GGUF模型",
+      "doiModelLlamaServer": "切换 llama-server 上运行的模型",
       "generateText": "生成文本",
       "chatCompletion": "聊天补全",
       "analyzeDefect": "分析缺陷",
@@ -4013,6 +4015,7 @@
       "taiAnhNenTang": "上传楼层背景图",
       "dungNhaXuong": "搭建厂房布局",
       "runKbEval": "运行语料评估",
+      "runKbEvalMa": "运行代码生成评估",
       "resumeOrchestrationRun": "继续编排运行",
       "buildArtifact": "构建程序版本",
       "requestVersionReview": "请求审核程序版本",
@@ -4195,7 +4198,9 @@
       "secsGem": "SECS/GEM 主机通信",
       "secsGemLive": "SECS/GEM 实时调度",
       "gem300": "GEM300",
-      "kbEvalRuns": "Training Studio 评估记录"
+      "kbEvalRuns": "Training Studio 评估记录",
+      "kbEvalMa": "Training Studio 代码生成评估",
+      "kbEvalMaRuns": "Training Studio 代码生成评估记录"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "更改绑定到您范围外机器的MQTT设备",

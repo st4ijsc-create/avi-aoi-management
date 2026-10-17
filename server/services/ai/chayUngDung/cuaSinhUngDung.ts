@@ -95,6 +95,19 @@ export function argvVoiDiaChi(lenh: LenhUngDung, diaChi: string, cong: number): 
   return [...lenh.args];
 }
 
+/**
+ * Bất biến LỚP CUỐI của cửa sinh: trình quản lý đã kiểm địa chỉ và trả `{ ok:false, ma }` cho người dùng
+ * (`quanLyUngDung.chay`), nên lỗi này KHÔNG tới tRPC — chỉ nổ khi một đường gọi mới bỏ qua lớp kiểm ấy.
+ * `code` để máy đọc (cùng mã `KetQuaDiaChiUngDung.ma`); thông điệp giữ nguyên văn.
+ */
+export class LoiDiaChiUngDung extends Error {
+  readonly code = "DIA_CHI_UNG_DUNG_KHONG_HOP_LE" as const;
+  constructor(readonly diaChi: string) {
+    super(`DIA_CHI_UNG_DUNG_KHONG_HOP_LE: ${diaChi}`);
+    this.name = "LoiDiaChiUngDung";
+  }
+}
+
 /** ★ CỬA DUY NHẤT. `envNguon` chỉ để lưới đo phép lọc mà không làm bẩn tiến trình. */
 export function sinhUngDungThat(
   lenh: LenhUngDung,
@@ -104,7 +117,7 @@ export function sinhUngDungThat(
   envNguon: NodeJS.ProcessEnv = process.env,
 ): TienTrinhUngDung {
   // Lớp cuối (trình quản lý đã kiểm): không bao giờ sinh với 127.0.0.1/0.0.0.0/localhost.
-  if (!laDiaChiUngDungHopLe(diaChi)) throw new Error(`DIA_CHI_UNG_DUNG_KHONG_HOP_LE: ${String(diaChi)}`);
+  if (!laDiaChiUngDungHopLe(diaChi)) throw new LoiDiaChiUngDung(String(diaChi));
   const env: NodeJS.ProcessEnv = {
     ...moiTruongDaLoc(envNguon),
     ...lenh.envThem,

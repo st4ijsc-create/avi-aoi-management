@@ -3753,6 +3753,7 @@
       "interlockEvent": "sự kiện khoá liên động",
       "interlockRule": "quy tắc khoá liên động",
       "kbCorpus": "kho tri thức (corpus)",
+      "kbEvalMaTaskSet": "bộ bài đánh giá sinh mã",
       "license": "giấy phép",
       "line": "chuyền",
       "machine": "máy",
@@ -3936,6 +3937,7 @@
       "closeProductionSession": "đóng phiên sản xuất",
       "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất",
       "unloadGgufModel": "gỡ tải model GGUF",
+      "doiModelLlamaServer": "đổi model đang chạy trên llama-server",
       "generateText": "sinh văn bản",
       "chatCompletion": "hoàn thành hội thoại",
       "analyzeDefect": "phân tích lỗi",
@@ -4021,6 +4023,7 @@
       "taiAnhNenTang": "tải ảnh nền của tầng lên",
       "dungNhaXuong": "dựng nhà xưởng",
       "runKbEval": "chạy đánh giá corpus",
+      "runKbEvalMa": "chạy đánh giá sinh mã",
       "resumeOrchestrationRun": "tiếp tục lượt chạy điều phối",
       "buildArtifact": "build phiên bản chương trình",
       "requestVersionReview": "yêu cầu duyệt phiên bản chương trình",
@@ -4203,7 +4206,9 @@
       "secsGem": "SECS/GEM (giao tiếp host bán dẫn)",
       "secsGemLive": "SECS/GEM điều phối trực tiếp",
       "gem300": "GEM300",
-      "kbEvalRuns": "sổ lượt đánh giá Training Studio"
+      "kbEvalRuns": "sổ lượt đánh giá Training Studio",
+      "kbEvalMa": "đánh giá sinh mã Training Studio",
+      "kbEvalMaRuns": "sổ lượt đánh giá sinh mã Training Studio"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",

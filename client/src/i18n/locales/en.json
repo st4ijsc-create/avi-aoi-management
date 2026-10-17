@@ -3753,6 +3753,7 @@
       "interlockEvent": "interlock event",
       "interlockRule": "interlock rule",
       "kbCorpus": "knowledge corpus",
+      "kbEvalMaTaskSet": "code-generation evaluation task set",
       "license": "license",
       "line": "line",
       "machine": "machine",
@@ -3936,6 +3937,7 @@
       "closeProductionSession": "close production session",
       "signOffProductionSession": "supervisor sign-off production session",
       "unloadGgufModel": "unload GGUF model",
+      "doiModelLlamaServer": "switch the model running on llama-server",
       "generateText": "generate text",
       "chatCompletion": "chat completion",
       "analyzeDefect": "analyze defect",
@@ -4021,6 +4023,7 @@
       "taiAnhNenTang": "upload floor background image",
       "dungNhaXuong": "build factory layout",
       "runKbEval": "run the corpus evaluation",
+      "runKbEvalMa": "run the code-generation evaluation",
       "resumeOrchestrationRun": "resume the orchestration run",
       "buildArtifact": "build a program version",
       "requestVersionReview": "request a program version review",
@@ -4203,7 +4206,9 @@
       "secsGem": "SECS/GEM host communication",
       "secsGemLive": "SECS/GEM live dispatch",
       "gem300": "GEM300",
-      "kbEvalRuns": "Training Studio evaluation log"
+      "kbEvalRuns": "Training Studio evaluation log",
+      "kbEvalMa": "Training Studio code-generation evaluation",
+      "kbEvalMaRuns": "Training Studio code-generation evaluation log"
     },
     "action": {
       "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",

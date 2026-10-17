@@ -160,15 +160,31 @@ async function voiHetGio<T>(ms: number, f: (signal: AbortSignal) => Promise<T>):
   }
 }
 
+/**
+ * Lỗi NỘI BỘ của lượt đổi model (đọc `/props`, quay về). Mọi chỗ ném đều bị bắt ngay trong module này và
+ * thành chi tiết bước / cảnh báo / `loiDocProps` — KHÔNG tới tRPC (lỗi tới người dùng là `LoiDoiModel`,
+ * appError ở `aiGgufRouter`). `code` để máy đọc; thông điệp giữ nguyên văn (kỹ sư đọc trong bảng bước).
+ */
+export type MaLoiNoiBoDoiModel = "PROPS_HTTP" | "PROPS_THIEU_MODEL_PATH" | "KICH_BAN_THOAT_LOI" | "QUAY_VE_LECH_MODEL";
+export class LoiNoiBoDoiModel extends Error {
+  constructor(
+    readonly code: MaLoiNoiBoDoiModel,
+    message: string,
+  ) {
+    super(message);
+    this.name = "LoiNoiBoDoiModel";
+  }
+}
+
 /** GET `/props`. NÉM khi không đọc được (người gọi quyết định nghĩa của "không đọc được"). */
 export async function docProps(url: string, fetchFn: typeof fetch, hetGioMs: number, env: NodeJS.ProcessEnv = process.env): Promise<ThongTinProps> {
   return voiHetGio(hetGioMs, async (signal) => {
     const res = await fetchFn(`${url.replace(/\/+$/, "")}/props`, { headers: tieuDe(env), signal });
     const txt = await res.text();
-    if (!res.ok) throw new Error(`/props HTTP ${res.status}`);
+    if (!res.ok) throw new LoiNoiBoDoiModel("PROPS_HTTP", `/props HTTP ${res.status}`);
     const j = JSON.parse(txt);
     const modelPath = String(j?.model_path ?? "");
-    if (!modelPath) throw new Error("/props không có model_path");
+    if (!modelPath) throw new LoiNoiBoDoiModel("PROPS_THIEU_MODEL_PATH", "/props không có model_path");
     const n = Number(j?.default_generation_settings?.n_ctx);
     const s = Number(j?.total_slots);
     return {
@@ -690,10 +706,10 @@ export class DieuPhoiDoiModel {
         if (thoCu !== undefined) khoiPhucNoiDungTho(dLuaChon, thoCu);
         apDungLuaChonModel(env);
         const kb = await this.d.chayKichBan(["-Force"]); // KHÔNG -Model ⇒ lựa chọn ĐÃ CHỐT
-        if (kb.ma !== 0) throw new Error(`kịch bản thoát ${kb.ma ?? "?"}${kb.ma && MO_TA_MA_THOAT[kb.ma] ? ` (${MO_TA_MA_THOAT[kb.ma]})` : ""}${kb.loi ? `: ${kb.loi}` : ""}`);
+        if (kb.ma !== 0) throw new LoiNoiBoDoiModel("KICH_BAN_THOAT_LOI", `kịch bản thoát ${kb.ma ?? "?"}${kb.ma && MO_TA_MA_THOAT[kb.ma] ? ` (${MO_TA_MA_THOAT[kb.ma]})` : ""}${kb.loi ? `: ${kb.loi}` : ""}`);
         const pr = await docProps(url, this.d.fetchFn, this.d.hetGio?.propsMs ?? 5000, env);
         const lech = kiemProps(pr, { tenModel: p.modelCu, ...mong });
-        if (tenModelGoc(pr.tenModel) !== tenModelGoc(p.modelCu)) throw new Error(lech.join("; "));
+        if (tenModelGoc(pr.tenModel) !== tenModelGoc(p.modelCu)) throw new LoiNoiBoDoiModel("QUAY_VE_LECH_MODEL", lech.join("; "));
         p.props = pr;
         if (lech.length) p.canhBao.push(`sau khi quay về: ${lech.join("; ")}`);
         this.datBuoc("quay-ve", "xong", `đã quay về ${pr.tenModel}`);

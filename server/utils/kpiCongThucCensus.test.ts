@@ -77,7 +77,11 @@ const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
   // ⚠ 3695 → 3709 (2026-10-17, AI Local nhánh `feat/ai-local-7-tang`): +5 dòng import (tuyến agent / xem trước / device
   // flow / origin xem trước / danhDauGianDoanKhiBoot) + 9 dòng ở middleware CORS (`xuLyCorsCongOpenAi`, chặn phản chiếu
   // origin xem trước) phía trên ⇒ lệch RÒNG +14. Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
-  { file: "server/_core/index.ts",                          dong: 3709, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
+  // ⚠ 3709 → 3719 (2026-10-17, cùng nhánh, đo lại trước khi gộp main): `126de672b` +1 dòng import
+  // (`registerAiGatewayTokenBearerRoutes`) và `1b04f2abd` +1 import (`khoiChayDongBoLuaChonModel`) + 8 dòng thân module
+  // (khối gọi `khoiChayDongBoLuaChonModel()` kèm docblock) phía trên ⇒ lệch RÒNG +10. Xác minh bằng `git show <c>:server/_core/index.ts`:
+  // 3709 @f4b504dc5 → 3710 @126de672b → 3719 @1b04f2abd. Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
+  { file: "server/_core/index.ts",                          dong: 3719, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
 
   // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là
   // COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ

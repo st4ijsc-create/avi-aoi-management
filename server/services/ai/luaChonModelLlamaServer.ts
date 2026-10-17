@@ -44,6 +44,20 @@ export function laTenModelHopLe(ten: unknown): ten is string {
   return typeof ten === "string" && MAU_TEN_MODEL.test(ten) && !ten.includes("..");
 }
 
+/**
+ * Bất biến LỚP CUỐI (fail-closed) trước khi tên model chạm tệp lựa chọn / tham số `-Model` của kịch bản.
+ * Người gọi đã kiểm tên từ trước (từ chối người dùng bằng `LoiDoiModel("MODEL_KHONG_HOP_LE")`), nên lỗi này
+ * KHÔNG tới tRPC — bị bắt trong lượt đổi model / bộ giám sát và thành chi tiết bước. `code` để máy đọc
+ * (cùng khuôn `LoiKichBanKhoiDongVang`); thông điệp giữ nguyên văn.
+ */
+export class LoiTenModelKhongHopLe extends Error {
+  readonly code = "TEN_MODEL_KHONG_HOP_LE" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "LoiTenModelKhongHopLe";
+  }
+}
+
 /** `D:/m/A.gguf` → `A`. Cùng phép với `aiLlamaServerClient.basename` (phân biệt hoa thường ở THÂN tên). */
 export function tenModelGoc(v: string | undefined | null): string {
   return String(v ?? "")
@@ -89,7 +103,7 @@ export function docLuaChon(duong: string): LuaChonModel | null {
 
 /** Ghi NGUYÊN TỬ (tệp tạm cùng thư mục rồi `rename`) — kịch bản đọc giữa chừng không thấy nửa tệp. */
 export function ghiLuaChon(duong: string, lc: LuaChonModel): void {
-  if (!laTenModelHopLe(lc.model)) throw new Error(`tên model không hợp lệ: ${String(lc.model).slice(0, 80)}`);
+  if (!laTenModelHopLe(lc.model)) throw new LoiTenModelKhongHopLe(`tên model không hợp lệ: ${String(lc.model).slice(0, 80)}`);
   fs.mkdirSync(path.dirname(duong), { recursive: true });
   const tam = `${duong}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tam, JSON.stringify(lc, null, 2), "utf8");
