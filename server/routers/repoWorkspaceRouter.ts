@@ -41,6 +41,7 @@
  * ⇒ Client ẩn nút chỉ là phép LỊCH SỰ; đây mới là hàng rào.
  */
 import { z } from "zod";
+import { stripThinking } from "../services/ai/thinkingStrip";
 import { router, moduleProcedure, adminProcedure, moduleGate } from "../_core/trpc";
 import {
   executeDecision,
@@ -1351,7 +1352,10 @@ export const repoWorkspaceRouter = router({
       if (!d.ok) return { ok: false as const, ma: d.ma, thongDiep: null };
       const { goiYThongDiepCommit } = await import("../services/ai/gitDuAn/goiYThongDiep");
       const { generateText } = await import("../services/aiGgufEngine");
-      const kq = await goiYThongDiepCommit(d.van, input.lang ?? "vi", (y) => generateText(y));
+      // Bề mặt HIỂN THỊ (ô thông điệp commit) — cắt suy luận NGAY tại điểm gọi (sổ `thinkingSurfaces` noi:tai_cho).
+      const kq = await goiYThongDiepCommit(d.van, input.lang ?? "vi", async (y) => ({
+        text: stripThinking((await generateText(y)).text).answer,
+      }));
       return kq.ok ? { ok: true as const, ma: null, thongDiep: kq.thongDiep } : { ok: false as const, ma: kq.ma, thongDiep: null };
     }),
 

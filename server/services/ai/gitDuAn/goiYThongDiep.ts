@@ -9,6 +9,7 @@
  */
 import { sanitizeUntrustedBlock, wrapUntrustedBlock } from "../aiSafety";
 import { chayVoiUuTien } from "../hangDoiUuTienLlm";
+import { stripThinking } from "../thinkingStrip";
 
 export type HamSinhChu = (y: {
   prompt: string;
@@ -29,7 +30,8 @@ const HE_THONG: Record<"vi" | "en" | "zh", string> = {
 /** Làm sạch đầu ra model thành một thông điệp dùng được. THUẦN. */
 export function lamSachThongDiepModel(raw: string): string {
   let s = String(raw ?? "").replace(/\r\n/g, "\n");
-  s = s.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  // Bộ cắt CHUẨN (khối đóng, khối CỤT không đóng, thẻ lạc) — regex `<think>…</think>` tự viết để lọt khối cụt.
+  s = stripThinking(s).answer;
   s = s.replace(/^```[^\n]*\n?/gm, "").replace(/```/g, "");
   const dong = s.split("\n").map((d) => d.replace(/\s+$/, ""));
   while (dong.length && dong[0]!.trim() === "") dong.shift();

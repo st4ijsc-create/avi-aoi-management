@@ -39,3 +39,10 @@ describe("goiYThongDiepCommit", () => {
     expect(d.length).toBe(72);
   });
 });
+
+describe("lamSachThongDiepModel — cắt suy luận (bề mặt HIỂN THỊ, sổ thinkingSurfaces)", () => {
+  it("★ khối <think> CỤT không đóng (model hết token khi đang nghĩ) KHÔNG lọt vào ô thông điệp", () => {
+    expect(lamSachThongDiepModel("<think>người dùng muốn một thông điệp, mình nên")).toBe("");
+    expect(lamSachThongDiepModel("<think>cân nhắc…</think>\nSửa lỗi chia cho 0")).toBe("Sửa lỗi chia cho 0");
+  });
+});

@@ -331,6 +331,12 @@ interface BeMat {
 }
 
 const SO_KHAI: readonly BeMat[] = [
+  // ─── AI Local Đợt 3b (2026-10-17) — "Gợi ý thông điệp" commit ───
+  {
+    tep: "server/routers/repoWorkspaceRouter.ts", ham: "<module>", goi: "generateText",
+    hienThi: true, noi: "tai_cho",
+    ghiChu: "Ô thông điệp commit (người đọc + sửa trước khi bấm Commit). `stripThinking().answer` ngay tại điểm gọi; `lamSachThongDiepModel` cắt lần nữa (khối cụt). Lưới hành vi: `gitDuAn/goiYThongDiep.test.ts`.",
+  },
   // ─── B6 phủ quyết chọn tool lập trình (2026-09-23) ───
   {
     tep: "server/services/ai/phuQuyetToolNative.ts", ham: "hoiModelChonTool", goi: "chatCompletion",
