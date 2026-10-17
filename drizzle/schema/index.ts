@@ -84,6 +84,7 @@ export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội 
 export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336
 export * from "./aiAgentRun"; // Đợt 1 T4 2026-10-17 — sổ LƯỢT CHẠY vòng agent máy chủ, phạm vi CHỦ LƯỢT CHẠY, migration 0390
 export * from "./aiCodeChunk"; // Đợt 2 2026-10-17 — chỉ mục NGỮ NGHĨA mã nguồn theo dự án (pgvector, khoá projectId), migration 0391
+export * from "./aiCodeIndexState"; // 2026-10-17 — TRẠNG THÁI lượt dựng chỉ mục ngữ nghĩa (san-sang CHỈ khi xong), migration 0395
 export * from "./aiGatewayToken"; // Đợt 4A 2026-10-17 — token THEO NGƯỜI DÙNG cho cổng /v1 (chỉ lưu băm) + device flow extension, migration 0392
 export * from "./aiRepoDuAn"; // QUẢN LÝ DỰ ÁN 2026-08-23 — dự án hộp cát đăng ký qua UI (nguồn DB, env thắng khi trùng id), migration 0337
 export * from "./productConfigTree"; // Pha 1A 2026-08-25 — cây CẤU HÌNH 4 cấp surface→position→capture→component, migration 0338

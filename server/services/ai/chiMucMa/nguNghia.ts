@@ -10,11 +10,14 @@
  *                     bỏ qua, tệp đổi ⇒ cắt đoạn + nhúng + thay hàng; hàng của tệp đã biến mất ⇒ xoá. Mức ưu tiên
  *                     `nen` (`chayVoiUuTien`), huỷ được (`signal` ⇒ AbortError), một lượt dựng mỗi dự án tại một thời
  *                     điểm (lượt gọi thứ hai NHẬP vào lượt đang chạy).
- *   • `lamTuoiTep`  — chỉ những đường đưa vào (gọi sau mỗi lượt ghi của agent). Dự án CHƯA dựng ⇒ không làm gì: chỉ
- *                     mục nửa vời sẽ khiến `timMaNgu` báo `san-sang` trên 2 tệp của một dự án 2.000 tệp.
+ *   • `lamTuoiTep`  — chỉ những đường đưa vào (gọi sau mỗi lượt ghi của agent). Chỉ mục chưa CHỐT `xong` ⇒ không làm
+ *                     gì (lượt dựng tiếp theo nhặt thay đổi nhờ so băm).
  *   • `timMaNgu`    — cosine trên pgvector, LỌC `projectId` + `moHinh`, k mặc định 8. Chưa có hàng nào ⇒ trả NGAY
  *                     `chua-co` và KÍCH HOẠT dựng nền — KHÔNG dựng đồng bộ trong lượt tìm (một lượt dựng repo này là
  *                     hàng chục phút nhúng; lượt tool của agent không được treo chừng ấy).
+ *   • `san-sang`    — CHỈ khi lượt dựng gần nhất cho (dự án, model) đã CHỐT `xong` trong `ai_code_index_state` (mig
+ *                     0395). "Có hàng" KHÔNG đủ: đo sống 2026-10-17 lượt dựng chết ở 393/~50.000 đoạn khai `san-sang`
+ *                     mãi. Xem khối TRẠNG THÁI LƯỢT DỰNG.
  *
  * ── QUYẾT ĐỊNH ────────────────────────────────────────────────────────────────────────────────────────────────────
  *   • Bộ nhúng TIÊM ĐƯỢC (`datBoNhung`). Mặc định = `aiGgufEngine.generateEmbeddings` in-process, CÙNG model với kho KB
@@ -31,7 +34,8 @@
  */
 import path from "node:path";
 import fs from "node:fs";
-import { createHash } from "node:crypto";
+import os from "node:os";
+import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { DbUnavailableError, isMissingTable } from "../../../_core/dbErrors";
@@ -467,6 +471,11 @@ export interface TuyChonDung {
 }
 
 export interface KetQuaDung {
+  /**
+   * Trạng thái lượt dựng đã chốt vào `ai_code_index_state` (mig 0395): `xong` ⇔ duyệt hết cây (kể cả `catBot` vì trần
+   * CẤU TRÚC — dựng lại cũng ra y vậy); `do-dang` ⇔ hết trần THỜI GIAN (lượt sau đi tiếp); `loi` ⇔ quá nhiều tệp nhúng hỏng.
+   */
+  trangThai: "xong" | "do-dang" | "loi";
   soTep: number;
   soDoan: number;
   ms: number;
@@ -480,12 +489,169 @@ export interface KetQuaDung {
 
 const dangDung = new Map<string, { hua: Promise<KetQuaDung>; ac: AbortController }>();
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// TRẠNG THÁI LƯỢT DỰNG (mig 0395 `ai_code_index_state`, khoá dự án × model nhúng)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// ★★★ Đo sống 2026-10-17: "có hàng trong `ai_code_chunks`" ≠ "đã dựng trọn" — lượt dựng repo chính chết ở 393/~50.000
+// đoạn và chỉ mục khai `san-sang` MÃI. Chỉ một bản ghi CHỐT lượt dựng mới cho phép nói `san-sang`.
+//   • Lượt dựng ghi `dang-dung` lúc bắt đầu (kèm `tienTrinh` + `luot`), gõ nhịp `capNhat` mỗi `NHIP_DUNG_MS`, chốt
+//     `xong`/`do-dang`/`loi` lúc kết thúc — chỉ lượt mang đúng `luot` được chốt hàng của nó.
+//   • Hàng `dang-dung` mà KHÔNG có lượt nào chạy trong tiến trình này: của chính tiến trình này ⇒ mồ côi ngay; của tiến
+//     trình khác ⇒ mồ côi khi mất nhịp quá `HAN_MO_COI_GIAY` (tiến trình chết / restart giữa chừng) — người đọc ghi
+//     nó thành `do-dang` ⇒ `chua-co` ⇒ agent kích hoạt dựng lại (tệp không đổi băm được bỏ qua ⇒ đi tiếp rẻ).
+//   • Bảng vắng (0395 chưa áp) ⇒ đọc = `chua-co`; ghi = bỏ qua. Không bao giờ quay về "có hàng là đủ".
+type TrangThaiDung = "dang-dung" | "xong" | "do-dang" | "loi";
+
+const NHIP_DUNG_MS = 30_000;
+/** Mất nhịp quá chừng này (6 nhịp) ⇒ hàng `dang-dung` của tiến trình khác là mồ côi. */
+export const HAN_MO_COI_GIAY = 180;
+/** Lượt dựng có hơn tỉ lệ này số tệp nhúng hỏng ⇒ `loi` (bộ nhúng hỏng — không khai một chỉ mục rỗng là trọn). */
+const TY_LE_TEP_LOI_TOI_DA = 0.05;
+const TIEN_TRINH = `${os.hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`.slice(0, 120);
+
+function rutGonLoi(e: unknown): string {
+  return redactSecretsAndPII(String((e as { message?: unknown })?.message ?? e))
+    .text.replace(/\0/g, "")
+    .slice(0, 480);
+}
+
+/** Ghi trạng thái là việc PHỤ của lượt dựng: hỏng ⇒ cảnh báo, không giết lượt dựng (mất nhịp ⇒ người đọc tự sửa). */
+async function ghiTrangThaiAnToan(fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    if (isMissingTable(e)) return;
+    console.warn(`[chiMucMa] ghi trạng thái lượt dựng hỏng: ${rutGonLoi(e)}`);
+  }
+}
+
+async function batDauTrangThai(db: Db, projectId: string, moHinh: string, luot: string): Promise<void> {
+  await ghiTrangThaiAnToan(async () => {
+    await db.execute(sql`
+      INSERT INTO public.ai_code_index_state
+        ("projectId", "moHinh", "trangThai", "batDau", "ketThuc", "soTep", "soDoan", "catBot", loi, "tienTrinh", luot, "capNhat")
+      VALUES (${projectId}, ${moHinh}, 'dang-dung', now(), NULL, 0, 0, false, NULL, ${TIEN_TRINH}, ${luot}, now())
+      ON CONFLICT ("projectId", "moHinh") DO UPDATE SET
+        "trangThai" = 'dang-dung', "batDau" = now(), "ketThuc" = NULL, "soTep" = 0, "soDoan" = 0, "catBot" = false,
+        loi = NULL, "tienTrinh" = EXCLUDED."tienTrinh", luot = EXCLUDED.luot, "capNhat" = now()`);
+    // Lượt dựng bằng model này nhúng lại MỌI tệp (băm cùng, model khác) và THAY hàng của chúng ⇒ chỉ mục model khác
+    // từng `xong` không còn trọn nữa.
+    await db.execute(sql`
+      UPDATE public.ai_code_index_state
+         SET "trangThai" = 'do-dang', "ketThuc" = now(), "capNhat" = now(),
+             loi = ${("chỉ mục đang được dựng lại bằng model nhúng " + moHinh).slice(0, 480)}
+       WHERE "projectId" = ${projectId} AND "moHinh" <> ${moHinh} AND "trangThai" = 'xong'`);
+  });
+}
+
+async function chotTrangThai(
+  db: Db,
+  projectId: string,
+  moHinh: string,
+  luot: string,
+  tt: Exclude<TrangThaiDung, "dang-dung">,
+  y: { soTep: number; soDoan: number; catBot: boolean; loi: string | null },
+): Promise<void> {
+  await ghiTrangThaiAnToan(() =>
+    db.execute(sql`
+      UPDATE public.ai_code_index_state
+         SET "trangThai" = ${tt}, "ketThuc" = now(), "soTep" = ${y.soTep}, "soDoan" = ${y.soDoan}, "catBot" = ${y.catBot},
+             loi = ${y.loi === null ? null : y.loi.slice(0, 480)}, "capNhat" = now()
+       WHERE "projectId" = ${projectId} AND "moHinh" = ${moHinh} AND luot = ${luot}`),
+  );
+}
+
+/**
+ * Trạng thái lượt dựng đã ghi cho (dự án, model), sau khi xử lý mồ côi; `null` ⇔ không có bản ghi (kể cả di sản trước
+ * 0395: có hàng đoạn mà chưa lượt nào chốt). Bảng vắng ⇒ ném (người gọi bắt `isMissingTable`).
+ */
+async function docTrangThaiDung(db: Db, projectId: string, moHinh: string): Promise<TrangThaiDung | null> {
+  const rows = (await db.execute(sql`
+    SELECT "trangThai", "tienTrinh", luot, ("capNhat" < now() - ${HAN_MO_COI_GIAY}::int * interval '1 second') AS "quaHan"
+      FROM public.ai_code_index_state WHERE "projectId" = ${projectId} AND "moHinh" = ${moHinh}`)) as unknown as Array<{
+    trangThai: TrangThaiDung;
+    tienTrinh: string;
+    luot: string;
+    quaHan: boolean;
+  }>;
+  const h = rows[0];
+  if (!h) return null;
+  if (h.trangThai !== "dang-dung") return h.trangThai;
+  if (dangDung.has(projectId)) return "dang-dung";
+  if (!h.quaHan && h.tienTrinh !== TIEN_TRINH) return "dang-dung"; // tiến trình khác, còn nhịp ⇒ đang dựng thật
+  const lyDo = h.quaHan
+    ? `tiến trình dựng mất nhịp quá ${HAN_MO_COI_GIAY} s (chết / khởi động lại giữa chừng)`
+    : "lượt dựng của chính tiến trình này không còn chạy";
+  await ghiTrangThaiAnToan(() =>
+    db.execute(sql`
+      UPDATE public.ai_code_index_state SET "trangThai" = 'do-dang', "ketThuc" = "capNhat", loi = ${lyDo}
+       WHERE "projectId" = ${projectId} AND "moHinh" = ${moHinh} AND luot = ${h.luot} AND "trangThai" = 'dang-dung'`),
+  );
+  return "do-dang";
+}
+
 async function dungThat(goc: string, projectId: string, ac: AbortController, tc: TuyChonDung): Promise<KetQuaDung> {
   const t0 = Date.now();
   const db = await getDb();
   if (!db) throw new DbUnavailableError("chiMucMa: không có kết nối CSDL");
   const bo = boNhung();
   if (bo.soChieu !== SO_CHIEU_NHUNG) throw new LoiChiMucMa("BO_NHUNG_SAI_HOP_DONG", `chiMucMa: bộ nhúng ${bo.soChieu} chiều, bảng cần ${SO_CHIEU_NHUNG}`);
+  const moHinh = bo.moHinh;
+  const luot = randomUUID();
+  const tienDo = { soTep: 0, soDoan: 0 };
+  await batDauTrangThai(db, projectId, moHinh, luot);
+  const nhip = setInterval(() => {
+    void ghiTrangThaiAnToan(() =>
+      db.execute(sql`
+        UPDATE public.ai_code_index_state SET "capNhat" = now(), "soTep" = ${tienDo.soTep}, "soDoan" = ${tienDo.soDoan}
+         WHERE "projectId" = ${projectId} AND "moHinh" = ${moHinh} AND luot = ${luot} AND "trangThai" = 'dang-dung'`),
+    );
+  }, NHIP_DUNG_MS);
+  nhip.unref?.();
+  try {
+    const kq = await duyetVaNhung(db, bo, goc, projectId, ac, tc, t0, tienDo);
+    const tong = kq.soTep + kq.soTepLoi;
+    const trangThai: KetQuaDung["trangThai"] =
+      kq.soTepLoi > 0 && kq.soTepLoi > tong * TY_LE_TEP_LOI_TOI_DA ? "loi" : kq.hetGio ? "do-dang" : "xong";
+    const loi =
+      kq.soTepLoi > 0
+        ? `bỏ qua ${kq.soTepLoi} tệp lỗi nhúng / ${tong} (vd ${kq.loiDau ?? "?"})`
+        : kq.hetGio
+          ? "chạm trần thời gian một lượt dựng — lượt sau đi tiếp"
+          : null;
+    await chotTrangThai(db, projectId, moHinh, luot, trangThai, { soTep: kq.soTep, soDoan: kq.soDoan, catBot: kq.catBot, loi });
+    return {
+      trangThai,
+      soTep: kq.soTep,
+      soDoan: kq.soDoan,
+      ms: kq.ms,
+      catBot: kq.catBot,
+      soTepNhung: kq.soTepNhung,
+      soTepXoa: kq.soTepXoa,
+    };
+  } catch (e) {
+    const huy = ac.signal.aborted || (e as { name?: string })?.name === "AbortError";
+    await chotTrangThai(db, projectId, moHinh, luot, huy ? "do-dang" : "loi", {
+      ...tienDo,
+      catBot: false,
+      loi: huy ? "lượt dựng bị huỷ" : rutGonLoi(e),
+    });
+    throw e;
+  } finally {
+    clearInterval(nhip);
+  }
+}
+
+async function duyetVaNhung(
+  db: Db,
+  bo: BoNhung,
+  goc: string,
+  projectId: string,
+  ac: AbortController,
+  tc: TuyChonDung,
+  t0: number,
+  tienDo: { soTep: number; soDoan: number },
+): Promise<Omit<KetQuaDung, "trangThai"> & { soTepLoi: number; loiDau: string | null; hetGio: boolean }> {
   const hanChot = t0 + Math.max(1, tc.tranMs ?? TRAN_THOI_GIAN_DUNG_MS);
   const tranDoan = Math.max(1, tc.tranDoan ?? TRAN_DOAN_DU_AN);
   const boQua = napBoQuaGit(goc);
@@ -499,6 +665,8 @@ async function dungThat(goc: string, projectId: string, ac: AbortController, tc:
   });
   if (ac.signal.aborted) throw loiHuy();
   let catBot = dt.catBot;
+  // Trần THỜI GIAN khác trần CẤU TRÚC (tệp/đoạn/byte/thư mục): dựng lại sẽ đi tiếp nhờ so băm ⇒ lượt này `do-dang`.
+  let hetGio = dt.catBot && Date.now() >= hanChot;
   const daLuu = await bamDaLuu(db, projectId);
   const nc: NguCanhTep = { db, goc, projectId, bo, tranByte: Math.max(1, tc.tranByteTep ?? TRAN_BYTE_TEP_NGU_NGHIA), signal: ac.signal };
 
@@ -506,10 +674,16 @@ async function dungThat(goc: string, projectId: string, ac: AbortController, tc:
   let soDoan = 0;
   let soTepNhung = 0;
   let soTepLoi = 0;
+  let loiDau: string | null = null;
   const daThay = new Set<string>();
   for (const rel of dt.tep) {
     if (ac.signal.aborted) throw loiHuy();
-    if (Date.now() >= hanChot || soDoan >= tranDoan) {
+    if (Date.now() >= hanChot) {
+      hetGio = true;
+      catBot = true;
+      break;
+    }
+    if (soDoan >= tranDoan) {
       catBot = true;
       break;
     }
@@ -521,12 +695,15 @@ async function dungThat(goc: string, projectId: string, ac: AbortController, tc:
     } catch (e) {
       if (ac.signal.aborted) throw e;
       soTepLoi++;
+      loiDau ??= `${rel}: ${rutGonLoi(e).slice(0, 200)}`;
       if (soTepLoi <= 5) console.warn(`[chiMucMa] bỏ qua ${rel}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
       continue;
     }
     if (kq.loai === "bo") continue;
     soTep++;
     soDoan += kq.soDoan;
+    tienDo.soTep = soTep;
+    tienDo.soDoan = soDoan;
     if (kq.loai === "nhung") {
       soTepNhung++;
       if (kq.catBot) catBot = true;
@@ -545,7 +722,7 @@ async function dungThat(goc: string, projectId: string, ac: AbortController, tc:
       soTepXoa++;
     }
   }
-  return { soTep, soDoan, ms: Date.now() - t0, catBot, soTepNhung, soTepXoa };
+  return { soTep, soDoan, ms: Date.now() - t0, catBot, soTepNhung, soTepXoa, soTepLoi, loiDau, hetGio };
 }
 
 /**
@@ -622,7 +799,8 @@ function relTrongGoc(goc: string, duong: unknown): string | null {
 
 /**
  * Làm tươi đúng các đường đưa vào (sau một lượt ghi của agent): đổi băm ⇒ nhúng lại; biến mất/bị loại ⇒ xoá khỏi
- * chỉ mục; không đổi ⇒ không làm gì. Dự án chưa dựng ⇒ không làm gì (xem đầu tệp). Không ném vì một đường xấu.
+ * chỉ mục; không đổi ⇒ không làm gì. Chỉ mục chưa `xong` (chưa dựng / dở dang) ⇒ không làm gì (xem đầu tệp). Không
+ * ném vì một đường xấu.
  */
 export async function lamTuoiTep(y: { gocDuAn: string; duongs: string[]; projectId?: string; signal?: AbortSignal }): Promise<void> {
   const goc = gocHopLe(y.gocDuAn);
@@ -630,16 +808,18 @@ export async function lamTuoiTep(y: { gocDuAn: string; duongs: string[]; project
   const projectId = phanGiaiDuAn(goc, y.projectId);
   const db = await getDb();
   if (!db) return;
-  try {
-    const coHang = (await db.execute(sql`
-      SELECT EXISTS (SELECT 1 FROM public.ai_code_chunks WHERE "projectId" = ${projectId}) AS co`)) as unknown as Array<{ co: boolean }>;
-    if (!coHang[0]?.co && !dangDung.has(projectId)) return;
-  } catch (e) {
-    if (isMissingTable(e)) return;
-    throw e;
+  const bo = boNhung();
+  // Chỉ làm tươi chỉ mục ĐÃ TRỌN (`xong` cho đúng model) hoặc đang dựng trong tiến trình này. Chỉ mục dở dang (có hàng
+  // nhưng chưa chốt) ⇒ không làm gì: lượt dựng tiếp theo sẽ nhặt thay đổi nhờ so băm.
+  if (!dangDung.has(projectId)) {
+    try {
+      if ((await docTrangThaiDung(db, projectId, bo.moHinh)) !== "xong") return;
+    } catch (e) {
+      if (isMissingTable(e)) return;
+      throw e;
+    }
   }
 
-  const bo = boNhung();
   const boQua = napBoQuaGit(goc);
   const nc: NguCanhTep = { db, goc, projectId, bo, tranByte: TRAN_BYTE_TEP_NGU_NGHIA, signal: y.signal };
   const daLuu = await bamDaLuu(db, projectId);
@@ -662,8 +842,10 @@ export async function lamTuoiTep(y: { gocDuAn: string; duongs: string[]; project
 // TRẠNG THÁI (tuỳ chọn trong hợp đồng — cầu nối agent dùng để chỉ dựng nền khi `chua-co`)
 // ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 /**
- * `dang-dung` ⇔ có lượt dựng đang chạy; `san-sang` ⇔ có hàng cho (dự án, model nhúng hiện hành); còn lại `chua-co`
- * (kể cả chưa áp mig 0391 / không có CSDL). Không kích hoạt gì — chỉ hỏi.
+ * `dang-dung` ⇔ có lượt dựng đang chạy (tiến trình này, hoặc tiến trình khác còn nhịp); `san-sang` ⇔ lượt dựng gần nhất
+ * cho (dự án, model nhúng hiện hành) đã CHỐT `xong`; còn lại `chua-co` — kể cả CÓ hàng đoạn mà lượt dựng dở dang / lỗi /
+ * mồ côi / di sản chưa chốt (đo sống: 393/~50.000 đoạn từng khai `san-sang` mãi), chưa áp mig 0391/0395, không có CSDL.
+ * Không kích hoạt dựng — chỉ hỏi (có thể ghi một hàng `dang-dung` mồ côi thành `do-dang`).
  */
 export async function trangThaiChiMuc(y: { gocDuAn: string; projectId?: string }): Promise<KetQuaTimMaNgu["trangThai"]> {
   const goc = gocHopLe(y.gocDuAn);
@@ -673,9 +855,8 @@ export async function trangThaiChiMuc(y: { gocDuAn: string; projectId?: string }
   const db = await getDb();
   if (!db) return "chua-co";
   try {
-    const r = (await db.execute(sql`
-      SELECT EXISTS (SELECT 1 FROM public.ai_code_chunks WHERE "projectId" = ${projectId} AND "moHinh" = ${boNhung().moHinh}) AS co`)) as unknown as Array<{ co: boolean }>;
-    return r[0]?.co ? "san-sang" : "chua-co";
+    const tt = await docTrangThaiDung(db, projectId, boNhung().moHinh);
+    return tt === "xong" ? "san-sang" : tt === "dang-dung" ? "dang-dung" : "chua-co";
   } catch (e) {
     if (isMissingTable(e)) return "chua-co";
     throw e;
@@ -693,6 +874,11 @@ export interface KetQuaTimMaNgu {
 /**
  * Tìm theo nghĩa trong chỉ mục của DỰ ÁN (lọc `projectId` + `moHinh`). Chưa có hàng nào ⇒ `chua-co` NGAY + kích
  * hoạt dựng nền; đang dựng ⇒ trả kết quả trên phần đã có, `dang-dung`.
+ *
+ * QUYẾT ĐỊNH (mig 0395): CÓ hàng nhưng lượt dựng CHƯA chốt `xong` (dở dang / lỗi / mồ côi / di sản) ⇒ vẫn tìm trên phần
+ * đã có (tốt hơn không gì), RỒI kích hoạt dựng nền, và khai `dang-dung` (agent thêm "kết quả có thể thiếu") — hoặc
+ * `chua-co` nếu không dựng được. `san-sang` CHỈ khi đã `xong` và không có lượt dựng nào đang chạy. Tìm TRƯỚC khi kích
+ * hoạt để kết quả không lẫn hàng do chính lượt vừa kích hoạt ghi giữa chừng.
  */
 export async function timMaNgu(y: {
   gocDuAn: string;
@@ -712,15 +898,18 @@ export async function timMaNgu(y: {
   const k = Math.max(1, Math.min(Math.floor(y.k ?? K_MAC_DINH), K_TOI_DA));
 
   let coHang: boolean;
+  let tt: TrangThaiDung | null;
   try {
     const r = (await db.execute(sql`
       SELECT EXISTS (SELECT 1 FROM public.ai_code_chunks WHERE "projectId" = ${projectId} AND "moHinh" = ${bo.moHinh}) AS co`)) as unknown as Array<{ co: boolean }>;
     coHang = Boolean(r[0]?.co);
+    tt = await docTrangThaiDung(db, projectId, bo.moHinh);
   } catch (e) {
-    if (isMissingTable(e)) return chuaCo; // mig 0391 chưa áp — không có gì để dựng vào
+    // mig 0391 chưa áp — không có gì để dựng vào; 0395 chưa áp — không nói được "trọn" ⇒ `chua-co` (agent kích hoạt dựng).
+    if (isMissingTable(e)) return chuaCo;
     throw e;
   }
-  const dang = dangDung.has(projectId);
+  const dang = dangDung.has(projectId) || tt === "dang-dung";
   if (!coHang) {
     if (dang) return { ketQua: [], trangThai: "dang-dung" };
     kichHoatDungNen({ gocDuAn: goc, projectId });
@@ -737,6 +926,11 @@ export async function timMaNgu(y: {
     WHERE "projectId" = ${projectId} AND "moHinh" = ${bo.moHinh}
     ORDER BY embedding <=> ${qv}::vector
     LIMIT ${k}`)) as unknown as Array<{ duong: string; dongDau: number; dongCuoi: number; noiDung: string; diem: number }>;
+  let trangThai: KetQuaTimMaNgu["trangThai"] = dang ? "dang-dung" : "san-sang";
+  if (tt !== "xong" && !dang) {
+    kichHoatDungNen({ gocDuAn: goc, projectId });
+    trangThai = dangDung.has(projectId) ? "dang-dung" : "chua-co";
+  }
   return {
     ketQua: rows.map((r) => ({
       duong: r.duong,
@@ -745,6 +939,6 @@ export async function timMaNgu(y: {
       doan: r.noiDung.length > TRAN_KY_TU_KET_QUA ? r.noiDung.slice(0, TRAN_KY_TU_KET_QUA - 1) + "…" : r.noiDung,
       diem: Math.round(Number(r.diem) * 10_000) / 10_000,
     })),
-    trangThai: dang ? "dang-dung" : "san-sang",
+    trangThai,
   };
 }

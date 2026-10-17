@@ -150,6 +150,38 @@ describe.skipIf(!DB_URL)("chỉ mục ngữ nghĩa trên DB _test thật (bộ n
     }>;
   };
 
+  const trangThaiDb = async (projectId: string) => {
+    const { getDb } = await import("../../../db/connection");
+    const db = (await getDb())!;
+    return (await db.execute(sql`
+      SELECT "moHinh", "trangThai", "soTep", "soDoan", "catBot", loi, "tienTrinh", ("ketThuc" IS NOT NULL) AS "coKetThuc"
+      FROM ai_code_index_state WHERE "projectId" = ${projectId} ORDER BY "moHinh"`)) as unknown as Array<{
+      moHinh: string;
+      trangThai: string;
+      soTep: number;
+      soDoan: number;
+      catBot: boolean;
+      loi: string | null;
+      tienTrinh: string;
+      coKetThuc: boolean;
+    }>;
+  };
+  const suaTrangThaiDb = async (projectId: string, q: ReturnType<typeof sql>) => {
+    const { getDb } = await import("../../../db/connection");
+    const db = (await getDb())!;
+    await db.execute(sql`UPDATE ai_code_index_state SET ${q} WHERE "projectId" = ${projectId}`);
+  };
+  /** Bộ nhúng giả hỏng lượt dựng SAU `n` lô đầu (huỷ qua signal) — "tiến trình chết giữa chừng" trong một tiến trình. */
+  const dungHongSauLo = async (p: string, n: number) => {
+    const ac = new AbortController();
+    let dem = 0;
+    bo.truocMoiLo = () => {
+      if (++dem > n) ac.abort();
+    };
+    await expect(dungChiMuc({ gocDuAn: goc, projectId: p, signal: ac.signal })).rejects.toMatchObject({ name: "AbortError" });
+    bo.truocMoiLo = undefined;
+  };
+
   beforeEach(() => {
     tam = fs.mkdtempSync(path.join(os.tmpdir(), "chimucma-ng-"));
     goc = path.join(tam, "du-an");
@@ -174,7 +206,10 @@ describe.skipIf(!DB_URL)("chỉ mục ngữ nghĩa trên DB _test thật (bộ n
     const { getDb } = await import("../../../db/connection");
     const db = await getDb();
     if (!db) return;
-    for (const id of duAnDaDung) await db.execute(sql`DELETE FROM ai_code_chunks WHERE "projectId" = ${id}`);
+    for (const id of duAnDaDung) {
+      await db.execute(sql`DELETE FROM ai_code_chunks WHERE "projectId" = ${id}`);
+      await db.execute(sql`DELETE FROM ai_code_index_state WHERE "projectId" = ${id}`);
+    }
   });
 
   it("★★★ (đo sống 2026-10-17) bộ nhúng ném 'Input is longer than the context size' cho đoạn DÀI ⇒ đoạn được rút ngắn cho vừa, lượt dựng KHÔNG chết, mọi tệp khác vẫn vào chỉ mục", async () => {
@@ -349,6 +384,138 @@ describe.skipIf(!DB_URL)("chỉ mục ngữ nghĩa trên DB _test thật (bộ n
     await expect(dungChiMuc({ gocDuAn: goc, projectId: q, signal: ac.signal })).rejects.toMatchObject({ name: "AbortError" });
     bo.truocMoiLo = undefined;
     expect((await hangCua(q)).length).toBe(0);
+    // Trần CẤU TRÚC (số tệp) ⇒ dựng lại cũng ra y vậy ⇒ `xong` + cờ catBot ⇒ `san-sang`; huỷ ⇒ KHÔNG `san-sang`.
+    expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("san-sang");
+    expect((await trangThaiDb(p))[0]).toMatchObject({ trangThai: "xong", catBot: true, soTep: 2 });
+    expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: q })).toBe("chua-co");
+    expect((await trangThaiDb(q))[0]).toMatchObject({ trangThai: "do-dang" });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ (đo sống 2026-10-17) `san-sang` CHỈ khi lượt dựng đã TRỌN — "có hàng" không phải "đã dựng xong"
+  // (lượt dựng repo chính chết ở 393/~50.000 đoạn ⇒ chỉ mục MÃI "sẵn sàng", không bao giờ dựng tiếp)
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  describe("trạng thái lượt dựng (mig 0395)", () => {
+    const tatCaTep = ["src/ketNoi.go", "src/nhatKy.py", "src/thanhToan.ts"];
+
+    it("★★★ dựng hỏng giữa chừng ⇒ CÓ hàng nhưng `chua-co`; dựng lại ⇒ CHỈ nhúng tệp còn thiếu ⇒ `san-sang`", async () => {
+      const p = duAnMoi();
+      await dungHongSauLo(p, 1);
+      const daCo = [...new Set((await hangCua(p)).map((h) => h.duong))];
+      expect(daCo.length).toBeGreaterThan(0); // đúng hình dạng sống: chỉ mục một phần
+      expect(daCo.length).toBeLessThan(tatCaTep.length);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("chua-co");
+      expect((await trangThaiDb(p))[0]).toMatchObject({ trangThai: "do-dang", coKetThuc: true });
+
+      bo.daNhung = [];
+      const kq = await dungChiMuc({ gocDuAn: goc, projectId: p });
+      expect(bo.tepDaNhung()).toEqual(tatCaTep.filter((t) => !daCo.includes(t)));
+      expect(kq).toMatchObject({ soTep: 3, catBot: false, soTepNhung: tatCaTep.length - daCo.length });
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("san-sang");
+      expect((await trangThaiDb(p))[0]).toMatchObject({ trangThai: "xong", soTep: 3, soDoan: 3, catBot: false, coKetThuc: true });
+    });
+
+    it("★★★ di sản trước 0395: hàng đoạn có mà KHÔNG có bản ghi trạng thái ⇒ `chua-co`; tìm ⇒ kết quả MỘT PHẦN + `dang-dung` (không bao giờ `san-sang`) + dựng tiếp rẻ", async () => {
+      const p = duAnMoi();
+      await dungHongSauLo(p, 1);
+      const { getDb } = await import("../../../db/connection");
+      await (await getDb())!.execute(sql`DELETE FROM ai_code_index_state WHERE "projectId" = ${p}`);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("chua-co");
+
+      const daCo = [...new Set((await hangCua(p)).map((h) => h.duong))];
+      bo.daNhung = [];
+      const tim = await timMaNgu({ gocDuAn: goc, projectId: p, cauHoi: "tinh tong tien don hang", k: 20 });
+      expect(tim.trangThai).toBe("dang-dung"); // model nghe "chỉ mục đang dựng — kết quả có thể thiếu"
+      expect(tim.ketQua.length).toBe(daCo.length);
+      await choDungXong(p);
+      expect(bo.tepDaNhung()).toEqual(tatCaTep.filter((t) => !daCo.includes(t)));
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("san-sang");
+    });
+
+    it("★★★ hàng `dang-dung` MỒ CÔI (tiến trình chết / restart) ⇒ không treo mãi: quá nhịp ⇒ `chua-co` (+ ghi `do-dang`); tiến trình khác còn nhịp ⇒ `dang-dung`; của CHÍNH tiến trình này mà không có lượt chạy ⇒ `chua-co`", async () => {
+      const p = duAnMoi();
+      await dungChiMuc({ gocDuAn: goc, projectId: p });
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("san-sang");
+
+      // (1) tiến trình KHÁC, nhịp cuối 1 giờ trước ⇒ đã chết.
+      await suaTrangThaiDb(p, sql`"trangThai" = 'dang-dung', "ketThuc" = NULL, "tienTrinh" = 'may-chet:4242:x', "capNhat" = now() - interval '1 hour'`);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("chua-co");
+      expect((await trangThaiDb(p))[0]).toMatchObject({ trangThai: "do-dang", coKetThuc: true });
+
+      // (2) tiến trình KHÁC, nhịp vừa xong ⇒ đang sống, đang dựng.
+      await suaTrangThaiDb(p, sql`"trangThai" = 'dang-dung', "ketThuc" = NULL, "tienTrinh" = 'may-khac:4243:y', "capNhat" = now()`);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("dang-dung");
+
+      // (3) chính tiến trình này ghi `dang-dung` nhưng không còn lượt nào chạy ⇒ mồ côi ngay.
+      await dungChiMuc({ gocDuAn: goc, projectId: p });
+      const cuaToi = (await trangThaiDb(p))[0]!.tienTrinh;
+      await suaTrangThaiDb(p, sql`"trangThai" = 'dang-dung', "ketThuc" = NULL, "tienTrinh" = ${cuaToi}, "capNhat" = now()`);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("chua-co");
+    });
+
+    it("★★ chạm TRẦN THỜI GIAN ⇒ `do-dang` (dựng lại đi tiếp được) ⇒ KHÔNG `san-sang`", async () => {
+      const p = duAnMoi();
+      bo.truocMoiLo = () => {
+        const t = Date.now();
+        while (Date.now() - t < 15) {
+          /* nhúng chậm */
+        }
+      };
+      const kq = await dungChiMuc({ gocDuAn: goc, projectId: p, tranMs: 5 });
+      bo.truocMoiLo = undefined;
+      expect(kq.catBot).toBe(true);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("chua-co");
+      expect((await trangThaiDb(p))[0]).toMatchObject({ trangThai: "do-dang", catBot: true });
+    });
+
+    it("★★ bộ nhúng hỏng trên MỌI tệp ⇒ `loi` (không khai 0 tệp là `san-sang`)", async () => {
+      bo.nhungTaiLieu = async () => {
+        throw new Error("GPU mat");
+      };
+      const p = duAnMoi();
+      await dungChiMuc({ gocDuAn: goc, projectId: p });
+      expect(await hangCua(p)).toEqual([]);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("chua-co");
+      const [h] = await trangThaiDb(p);
+      expect(h).toMatchObject({ trangThai: "loi" });
+      expect(h!.loi).toMatch(/3 tệp/);
+    });
+
+    it("★★ đổi model nhúng ⇒ không `san-sang`; dựng bằng model mới làm chỉ mục model CŨ hết trọn ⇒ quay lại model cũ cũng `chua-co`", async () => {
+      const p = duAnMoi();
+      await dungChiMuc({ gocDuAn: goc, projectId: p });
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("san-sang");
+
+      const boCu = bo;
+      const boMoi = new BoNhungGia();
+      Object.defineProperty(boMoi, "moHinh", { value: "gia-tui-tu-1024-v2" });
+      datBoNhung(boMoi);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("chua-co");
+      await dungChiMuc({ gocDuAn: goc, projectId: p });
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("san-sang");
+
+      datBoNhung(boCu);
+      expect(await trangThaiChiMuc({ gocDuAn: goc, projectId: p })).toBe("chua-co");
+      expect((await trangThaiDb(p)).map((h) => `${h.moHinh}:${h.trangThai}`)).toEqual([
+        "gia-tui-tu-1024:do-dang",
+        "gia-tui-tu-1024-v2:xong",
+      ]);
+    });
+
+    it("★★ làm tươi trên chỉ mục CHƯA trọn (có hàng, `do-dang`) ⇒ không làm gì; trên `xong` ⇒ như cũ", async () => {
+      const p = duAnMoi();
+      await dungHongSauLo(p, 1);
+      bo.daNhung = [];
+      viet("src/nhatKy.py", `def ham_moi_sau_khi_sua():\n    return 1\n`);
+      await lamTuoiTep({ gocDuAn: goc, projectId: p, duongs: [...tatCaTep] });
+      expect(bo.daNhung).toEqual([]);
+
+      await dungChiMuc({ gocDuAn: goc, projectId: p });
+      bo.daNhung = [];
+      viet("src/nhatKy.py", `def ham_moi_lan_hai():\n    return 2\n`);
+      await lamTuoiTep({ gocDuAn: goc, projectId: p, duongs: [...tatCaTep] });
+      expect(bo.tepDaNhung()).toEqual(["src/nhatKy.py"]);
+    });
   });
 
   it("projectId không hợp lệ (đường dẫn) ⇒ từ chối, không chạm DB", async () => {
