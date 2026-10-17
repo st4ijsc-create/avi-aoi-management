@@ -20,6 +20,7 @@ import "dotenv/config";
 import { installConsoleBridge } from "./logger";
 import { runWorkerProcess } from "./_core/backgroundJobs";
 import { assertVramEnforcementPolicy } from "./services/vram/vramBroker";
+import { khoiChayDongBoLuaChonModel } from "./services/ai/luaChonModelLlamaServer";
 
 // Structured logging parity with the main entry (no-op unless LOG_JSON=1).
 installConsoleBridge();
@@ -30,6 +31,10 @@ installConsoleBridge();
  * `api`+`worker` — cấu hình cưỡng chế hỏng ở đây phải chết SỚM y hệt, ngoài mọi `try`.
  */
 assertVramEnforcementPolicy();
+
+// Đợt 6 (AI Local) — lựa chọn model llama-server của API đổi model: phủ BA khoá env TRƯỚC mọi lượt LLM,
+// áp lại mỗi 15 s (xem `luaChonModelLlamaServer.ts`). Không có tệp ⇒ no-op.
+khoiChayDongBoLuaChonModel();
 
 runWorkerProcess().catch((err) => {
   console.error("[Worker] Fatal startup error:", err);

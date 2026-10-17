@@ -13471,7 +13471,48 @@
     "providerOffline": "Offline",
     "gpuMode": "GPU Mode",
     "engineHealth": "Engine Health",
-    "embedding": "Embedding"
+    "embedding": "Embedding",
+    "doiModel": {
+      "tieuDe": "llama-server model",
+      "moTa": "Switch the main text model running on llama-server. The server checks VRAM, restarts, verifies /props and a short test generation; on failure it rolls back to the previous model.",
+      "dangTai": "Reading status…",
+      "dangChay": "Running",
+      "khongDocDuocProps": "cannot read /props",
+      "ngCanh": "Context / slots",
+      "mongDoi": "expected",
+      "nguon": "Selection source",
+      "nguonQuanTri": "admin selection",
+      "nguonEnv": "base configuration",
+      "cauHinhGoc": "base configuration",
+      "chonModel": "Choose a model",
+      "dangChayNhan": "running",
+      "nutDoi": "Switch model",
+      "canhBao": "All AI requests pause while switching (usually 1–3 minutes). Only text-generation models in the model store are listed.",
+      "daBatDau": "Model switch started — follow each step below.",
+      "sinhThuNhan": "test generation",
+      "ketQua": {
+        "dang-chay": "Switching",
+        "thanh-cong": "Succeeded",
+        "that-bai-da-quay-ve": "Failed — rolled back to previous model",
+        "that-bai-quay-ve-hong": "Failed — rollback also failed",
+        "huy-khong-doi": "Cancelled — nothing changed"
+      },
+      "buoc": {
+        "kiemLuaChon": "Validate selection",
+        "giuKhoa": "Acquire switch lock",
+        "kiemServer": "Read current /props",
+        "uocLuongVram": "Estimate VRAM",
+        "tamDungGiamSat": "Pause watchdog",
+        "choHangDoi": "Wait for running AI requests",
+        "ghiLuaChon": "Persist selection",
+        "khoiDong": "Restart llama-server",
+        "kiemProps": "Verify /props",
+        "sinhThu": "Test generation",
+        "apDung": "Apply routing",
+        "quayVe": "Roll back to previous model"
+      },
+      "xacNhan": "Switch the llama-server model? All AI requests pause while switching."
+    }
   },
   "measurementPointP1": {
     "shape": {

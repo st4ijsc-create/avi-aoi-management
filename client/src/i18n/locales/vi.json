@@ -13451,7 +13451,48 @@
     "providerOffline": "Offline",
     "gpuMode": "GPU Mode",
     "engineHealth": "Engine Health",
-    "embedding": "Embedding"
+    "embedding": "Embedding",
+    "doiModel": {
+      "tieuDe": "Model của llama-server",
+      "moTa": "Đổi model chữ chính đang chạy trên llama-server. Máy chủ kiểm VRAM, khởi động lại, kiểm /props và một lượt sinh thử; hỏng thì tự quay về model cũ.",
+      "dangTai": "Đang đọc trạng thái…",
+      "dangChay": "Đang chạy",
+      "khongDocDuocProps": "không đọc được /props",
+      "ngCanh": "Ngữ cảnh / slot",
+      "mongDoi": "mong đợi",
+      "nguon": "Nguồn lựa chọn",
+      "nguonQuanTri": "lựa chọn quản trị",
+      "nguonEnv": "cấu hình gốc",
+      "cauHinhGoc": "cấu hình gốc",
+      "chonModel": "Chọn model",
+      "dangChayNhan": "đang chạy",
+      "nutDoi": "Đổi model",
+      "canhBao": "Mọi lượt AI bị tạm ngưng trong lúc đổi (thường 1–3 phút). Chỉ liệt kê model sinh chữ trong kho model.",
+      "daBatDau": "Đã bắt đầu đổi model — theo dõi từng bước bên dưới.",
+      "sinhThuNhan": "sinh thử",
+      "ketQua": {
+        "dang-chay": "Đang đổi",
+        "thanh-cong": "Thành công",
+        "that-bai-da-quay-ve": "Thất bại — đã quay về model cũ",
+        "that-bai-quay-ve-hong": "Thất bại — quay về cũng hỏng",
+        "huy-khong-doi": "Đã huỷ — chưa đổi gì"
+      },
+      "buoc": {
+        "kiemLuaChon": "Kiểm lựa chọn",
+        "giuKhoa": "Giữ khoá đổi model",
+        "kiemServer": "Đọc /props hiện tại",
+        "uocLuongVram": "Ước lượng VRAM",
+        "tamDungGiamSat": "Tạm dừng giám sát",
+        "choHangDoi": "Chờ lượt AI đang chạy",
+        "ghiLuaChon": "Ghi lựa chọn bền",
+        "khoiDong": "Khởi động lại llama-server",
+        "kiemProps": "Kiểm /props",
+        "sinhThu": "Sinh thử",
+        "apDung": "Áp dụng định tuyến",
+        "quayVe": "Quay về model cũ"
+      },
+      "xacNhan": "Đổi model llama-server? Mọi lượt AI tạm ngưng trong lúc đổi."
+    }
   },
   "measurementPointP1": {
     "shape": {

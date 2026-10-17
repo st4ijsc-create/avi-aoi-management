@@ -64,6 +64,7 @@ import { livenessProbe, createHealthHandler, createReadyzHandler, createNetworkH
 import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
+import { khoiChayDongBoLuaChonModel } from "../services/ai/luaChonModelLlamaServer";
 import { listenThenStartOt } from "../services/ot/backgroundStart";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
@@ -89,6 +90,14 @@ installConsoleBridge();
  * lập, không vai trò nào đi qua cả hai).
  */
 assertVramEnforcementPolicy();
+
+/**
+ * Đợt 6 (AI Local) — LỰA CHỌN MODEL llama-server của API đổi model (tệp ngoài repo, KHÔNG ghi `.env`).
+ * Phủ BA khoá env (`LLAMA_SERVER_MODEL` · `GGUF_DEFAULT_MODEL` · `GGUF_CODE_MODEL`) ở thân module điểm vào —
+ * TRƯỚC mọi lượt LLM — rồi áp lại mỗi 15 s để theo kịp lượt đổi từ tiến trình anh em. Không có tệp ⇒ no-op.
+ * Không phủ thì định tuyến so tên model mới với khoá cũ ⇒ lùi in-process ⇒ nạp bản thứ hai (OOM).
+ */
+khoiChayDongBoLuaChonModel();
 
 
 // BG-96 (spec Khối C QĐ-1): dateStr is a user-typed date/time — read as FACTORY

@@ -247,13 +247,13 @@ export function quyetDinhNhip(
 
 // ─── Khoá liên tiến trình (tệp `wx`) ───────────────────────────────────────────────────────────
 
-interface NoiDungKhoa {
+export interface NoiDungKhoa {
   pid: number;
   luc: number;
   token: string;
 }
 
-function docKhoa(duong: string): NoiDungKhoa | null {
+export function docKhoa(duong: string): NoiDungKhoa | null {
   try {
     const j = JSON.parse(fs.readFileSync(duong, "utf8"));
     if (Number.isFinite(j?.pid) && Number.isFinite(j?.luc) && typeof j?.token === "string") return j as NoiDungKhoa;
@@ -398,11 +398,17 @@ export function khoiDongTachRoi(
     spawnFn?: typeof spawnThat;
     cwd?: string;
     khiKetThuc?: (code: number | null, loi?: Error) => void;
+    /**
+     * Đợt 6 — cờ thêm cho kịch bản. DANH SÁCH ĐÓNG: chỉ `-Force` (API đổi model: giết llama-server đang giữ
+     * cổng rồi dựng lại từ lựa chọn mới). Bộ giám sát KHÔNG BAO GIỜ truyền — nó chỉ chạy khi không ai nghe cổng.
+     */
+    thamSoThem?: readonly "-Force"[];
   } = {},
 ): { pid: number | undefined } {
   if (!fs.existsSync(kichBan)) throw new LoiKichBanKhoiDongVang(kichBan);
   const spawnFn = o.spawnFn ?? spawnThat;
-  const con = spawnFn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kichBan], {
+  const them = (o.thamSoThem ?? []).filter((x) => x === "-Force");
+  const con = spawnFn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kichBan, ...them], {
     cwd: o.cwd ?? path.resolve(path.dirname(kichBan), "..", ".."),
     detached: false,
     stdio: "ignore",

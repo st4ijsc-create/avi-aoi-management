@@ -199,8 +199,10 @@ describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến khô
     //   gốc `8be43f65a` ↔ nhánh — vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
     // ⚠ Đợt 4B-server: **664 → 665** — +1 dòng `import { registerAiGatewayTokenBearerRoutes }` cạnh import device flow.
     //   Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
+    // ⚠ Đợt 6 (đổi model): **665 → 674** — +1 import `khoiChayDongBoLuaChonModel` + 8 dòng (docblock + lời gọi) ở thân
+    //   module điểm vào. Vẫn đúng HAI mục, cùng `app.use("/uploads", express.static(uploadsRoot))`; không thư mục mới.
     expect(QUET.tuyenTinh.map((s) => s.split(" — ")[0])).toEqual([
-      "server/_core/index.ts:665",
+      "server/_core/index.ts:674",
       "server/_core/vite.ts:58",
     ]);
   });

@@ -458,8 +458,12 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *     `kbStudio.{listBoBaiMa, danhSachEvalMa}` (query, admin/engineer + 2FA), `kbStudio.{batDauEvalMa, huyEvalMa}`
  *     (mutation, admin + 2FA). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2361 trùng
  *   `phamViDocCensus.test.ts#GHIM.tong`.
+ * ★ 2026-10-17 (AI Local Đợt 6 — đổi model llama-server qua API) — **tong 2361 → 2363 · beMatAi 408 → 410 ·
+ *   aiCoCong 346 → 348.** Hai thủ tục MỚI trong `aiGgufRouter.ts` (bề mặt AI, CÓ cổng `MOD_AI`):
+ *     `aiGguf.doiModelTongQuan` (query — sàn `adminProcedure` của `_core` + `moduleGate("MOD_AI")`) và
+ *     `aiGguf.doiModelBatDau` (mutation — cùng sàn; audit qua middleware + hàng audit kết quả riêng). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2363 trùng `phamViDocCensus`.
  */
-const GHIM = { tong: 2361, beMatAi: 408, aiCoCong: 346, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+const GHIM = { tong: 2363, beMatAi: 410, aiCoCong: 348, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

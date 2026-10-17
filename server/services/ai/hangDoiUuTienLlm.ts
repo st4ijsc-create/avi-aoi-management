@@ -310,6 +310,29 @@ export class CongUuTienLlm {
     });
   }
 
+  /**
+   * ★ Đợt 6 — GIỮ TOÀN BỘ slot để BẢO TRÌ (đổi model llama-server). Xin lần lượt `soSlot` slot ở mức
+   * `tuong-tac` (tức đứng SAU các lượt tương tác đã xếp hàng — "chờ hàng tương tác rỗng"), có TRẦN chung
+   * `choToiDaMs`. Hỏng giữa chừng (hết giờ / huỷ / quá tải) ⇒ nhả mọi slot đã giữ rồi ném — không bao giờ
+   * khoá cứng cổng. Trong lúc giữ, mọi lượt LLM mới của tiến trình này XẾP HÀNG (không chạm server đang
+   * bị dừng) và đi tiếp trên model mới khi nhả.
+   */
+  async giuHet({ choToiDaMs, signal }: { choToiDaMs: number; signal?: AbortSignal }): Promise<() => void> {
+    const han = Date.now() + Math.max(1, choToiDaMs);
+    const daGiu: Array<() => void> = [];
+    try {
+      for (let i = 0; i < this.ch.soSlot; i++) {
+        daGiu.push(await this.xin("tuong-tac", { signal, choToiDaMs: Math.max(1, han - Date.now()) }));
+      }
+    } catch (e) {
+      for (const n of daGiu) n();
+      throw e;
+    }
+    return () => {
+      for (const n of daGiu) n();
+    };
+  }
+
   thongKe(): ThongKeCong {
     const dangCho = { "tuong-tac": 0, agent: 0, nen: 0 } as Record<MucUuTien, number>;
     for (const l of this.hang) dangCho[l.muc]++;
@@ -441,6 +464,15 @@ export async function* quaCongUuTienLuong<T>(
   }
   const nc = khoNguCanh.getStore();
   yield* layCong().chayLuong(nc?.muc ?? "tuong-tac", moLuong, { signal, nghe: nc?.nghe, choToiDaMs: nc?.choToiDaMs });
+}
+
+/**
+ * Đợt 6 — giữ TOÀN BỘ slot của cổng chung trong lúc đổi model (xem `CongUuTienLlm.giuHet`). Cờ cổng tắt
+ * ⇒ không có gì để giữ: trả hàm nhả rỗng và `batCong: false` để người gọi NÓI RA điều đó.
+ */
+export async function giuToanBoCongDeBaoTri(o: { choToiDaMs: number; signal?: AbortSignal }): Promise<{ nha: () => void; batCong: boolean }> {
+  if (!congUuTienBat()) return { nha: () => {}, batCong: false };
+  return { nha: await layCong().giuHet(o), batCong: true };
 }
 
 /** Ảnh chụp cho `/api/health/ai`. */

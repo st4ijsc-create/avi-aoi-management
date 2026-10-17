@@ -4,13 +4,24 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure, moduleGate } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, adminProcedure as adminProcedureCore } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { adminProcedure as adminProcedureBase } from "./_shared";
 // ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
 //   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
 const protectedProcedure = moduleProcedure("MOD_AI");
 const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
+/**
+ * ★ Đợt 6 — ĐỔI MODEL llama-server: dừng server chữ chính (mọi lượt AI xếp hàng ~1–3 phút) rồi nạp model khác lên
+ * card. Sàn: `adminProcedure` của `_core` — vai admin + ĐÃ BẬT 2FA (khi `AUTH_2FA_BAT_BUOC` bật) + audit mọi mutation
+ * (KHÔNG phải `adminProcedure` của `_shared`, sàn đó không đòi 2FA) — và cổng giấy phép `MOD_AI`.
+ * ⚠ CỐ Ý KHÔNG step-up OTP mỗi lượt: tập "đòi OTP" của repo ĐỊNH NGHĨA = tập `deployProcedure` (lưới hai nửa
+ * `deployStepUpFreshness.test.ts` + `client/src/lib/vramPanelStepUp.unit.test.ts`: client chỉ được mở hộp OTP cho
+ * đúng tập đó, mỗi thủ tục cần một lưới gọi THẬT). Đưa lượt đổi model vào tập ấy là một QUYẾT ĐỊNH cho chủ dự án
+ * (sàn `actuation` còn cho supervisor/engineer — phải thêm chặn vai admin). Rào thay thế ở đây: lượt đổi tự kiểm
+ * VRAM + `/props` + sinh thử và TỰ QUAY VỀ; không có tham số nào ngoài một tên tệp trong danh sách trắng.
+ */
+const adminDoiModel = adminProcedureCore.use(moduleGate("MOD_AI"));
 import {
   loadGgufModel,
   unloadGgufModel,
@@ -30,6 +41,21 @@ import {
 import { getAIProviderStatus } from "../services/aiProviderManager";
 // ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) ⇒ import TĨNH, hàng rào vô điều kiện.
 import { stripThinking } from "../services/ai/thinkingStrip";
+import { LoiDoiModel, layDieuPhoiDoiModel, tongQuanDoiModel, type MaLoiDoiModel } from "../services/ai/doiModelLlamaServer";
+import { trangThaiLuaChonModel } from "../services/ai/luaChonModelLlamaServer";
+
+/** Mã từ chối của lượt đổi model ⇒ mã tRPC: xung đột trạng thái máy = CONFLICT, đầu vào sai = BAD_REQUEST. */
+const MA_TRPC_DOI_MODEL: Record<MaLoiDoiModel, "BAD_REQUEST" | "CONFLICT" | "PRECONDITION_FAILED"> = {
+  TAT: "PRECONDITION_FAILED",
+  MODEL_KHONG_HOP_LE: "BAD_REQUEST",
+  DANG_DOI: "CONFLICT",
+  DANG_TAM_DUNG: "CONFLICT",
+  GIAM_SAT_DANG_KHOI_DONG: "CONFLICT",
+  SERVER_KHONG_SONG: "PRECONDITION_FAILED",
+  DA_DANG_CHAY: "CONFLICT",
+  VRAM_KHONG_DOC_DUOC: "PRECONDITION_FAILED",
+  VRAM_KHONG_DU: "PRECONDITION_FAILED",
+};
 
 /**
  * ★ G5-E — `generate`/`chat` trả NGUYÊN VẸN đối tượng của engine cho playground/Vision-Lab: ô
@@ -255,6 +281,59 @@ export const aiGgufRouter = router({
       } catch (err: any) {
         throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "generateEmbedding" }, `Embedding generation failed: ${err.message}`);
       }
+    }),
+
+  // ─── Đợt 6 — Đổi model llama-server (có kiểm /props) ─────────
+  /** Kho model + server đang chạy (`/props`) + lựa chọn bền + lượt đổi gần nhất (UI hỏi mỗi 2 s khi đang đổi). */
+  doiModelTongQuan: adminDoiModel.query(async () => {
+    const tq = await tongQuanDoiModel();
+    return { ...tq, luaChon: trangThaiLuaChonModel(), phien: layDieuPhoiDoiModel().trangThai() };
+  }),
+
+  /**
+   * Bắt đầu đổi model. Kiểm trước (danh sách trắng, khoá, `/props` hiện tại, VRAM) ĐỒNG BỘ — từ chối trả về
+   * ngay; phần dài (dừng → nạp → `/props` → sinh thử, tự quay về khi hỏng) chạy nền. Kết quả cuối ghi audit
+   * riêng (`aiGguf.doiModelKetQua`) — middleware chỉ thấy lượt BẮT ĐẦU.
+   */
+  doiModelBatDau: adminDoiModel
+    .input(z.object({ tenModel: z.string().trim().min(1).max(220) }))
+    .mutation(async ({ input, ctx }) => {
+      const nguoi = ctx.user.username ?? ctx.user.name ?? String(ctx.user.id);
+      let kq: Awaited<ReturnType<ReturnType<typeof layDieuPhoiDoiModel>["batDau"]>>;
+      try {
+        kq = await layDieuPhoiDoiModel().batDau(input.tenModel, nguoi);
+      } catch (e) {
+        if (e instanceof LoiDoiModel) {
+          throw appError(MA_TRPC_DOI_MODEL[e.code], "OPERATION_FAILED", { operation: "doiModelLlamaServer" }, e.message);
+        }
+        throw e;
+      }
+      const ngCanh = {
+        userId: ctx.user.id,
+        userName: ctx.user.username ?? ctx.user.name ?? null,
+        ipAddress: ctx.req?.ip ?? null,
+        userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+        source: "trpc" as const,
+      };
+      void kq.xong
+        .then(async (p) => {
+          const { logCrudOperation } = await import("../services/auditTrailService");
+          await logCrudOperation(ngCanh, {
+            action: "aiGguf.doiModelKetQua",
+            entityType: "llama_server_model",
+            entityName: p.modelMoi,
+            details: {
+              operation: "update",
+              before: { model: p.modelCu, props: p.propsCu },
+              after: { model: p.ketQua === "thanh-cong" ? p.modelMoi : p.modelCu, props: p.props },
+              metadata: { id: p.id, ketQua: p.ketQua, loi: p.loi, canhBao: p.canhBao, buoc: p.buoc.map((b) => `${b.buoc}:${b.trangThai}`) },
+              ...(p.loi ? { errorMessage: p.loi } : {}),
+            },
+            status: p.ketQua === "thanh-cong" ? "success" : "failure",
+          });
+        })
+        .catch((err) => console.error("[aiGguf.doiModel] ghi audit kết quả hỏng:", err?.message ?? err));
+      return { id: kq.id };
     }),
 
   // ─── Token Counting ─────────────────────────────────

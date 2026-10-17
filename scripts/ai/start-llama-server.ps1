@@ -25,8 +25,9 @@
     Đường dẫn .env (mặc định: .env ở gốc repo).
 
 .PARAMETER Force
-    Giết tiến trình llama-server đang giữ cổng rồi khởi động lại. MẶC ĐỊNH KHÔNG — script bình thường
-    không bao giờ giết tiến trình đang chạy.
+    Giết tiến trình llama-server đang giữ cổng (kể cả khi chưa trả /health), CHỜ cổng nhả, rồi khởi động
+    lại. MẶC ĐỊNH KHÔNG — script bình thường không bao giờ giết tiến trình đang chạy. Đường dùng: API đổi
+    model (server/services/ai/doiModelLlamaServer.ts). Chủ cổng không phải llama-server ⇒ thoát 3.
 
 .PARAMETER WaitSeconds
     Số giây chờ `/health` xanh sau khi spawn (mặc định 300 — model 30B nạp từ đĩa lạnh khá lâu).
@@ -90,8 +91,52 @@ if ([string]::IsNullOrWhiteSpace($modelRaw)) { $modelRaw = $cfg['GGUF_DEFAULT_MO
 if ([string]::IsNullOrWhiteSpace($modelRaw)) { Write-Bad 'Cả LLAMA_SERVER_MODEL lẫn GGUF_DEFAULT_MODEL đều rỗng trong .env'; exit 2 }
 if (-not $modelRaw.ToLower().EndsWith('.gguf')) { $modelRaw = "$modelRaw.gguf" }
 
+# ── Đợt 6 (2026-10-17) — LỰA CHỌN MODEL BỀN của API đổi model ─────────────────────────────────
+# Nguồn: server/services/ai/luaChonModelLlamaServer.ts (CÙNG quy tắc, giữ hai bên khớp từng điều):
+#   • tệp NGOÀI repo (dùng chung mọi worktree cùng :8091): LLAMA_SERVER_SELECTION_FILE (.env hoặc biến
+#     môi trường) → %LOCALAPPDATA%\avi-aoi-ai\llama-server-lua-chon.json;
+#   • chỉ nhận basename .gguf CÓ trong GGUF_MODELS_DIR (danh sách trắng — không đường dẫn tuỳ ý);
+#   • "ý định mới hơn thắng": `envModel` ghi lúc chọn KHÁC model .env hiện tại ⇒ .env đã bị sửa SAU lựa
+#     chọn ⇒ BỎ QUA lựa chọn.
+# Không có tệp / tệp hỏng ⇒ hành vi cũ y nguyên (model của .env).
+function Get-TenGoc([string]$v) {
+    if ([string]::IsNullOrWhiteSpace($v)) { return '' }
+    return ([System.IO.Path]::GetFileName($v.Trim().Replace('/', '\'))) -replace '(?i)\.gguf$', ''
+}
+$tepLuaChon = $cfg['LLAMA_SERVER_SELECTION_FILE']
+if ([string]::IsNullOrWhiteSpace($tepLuaChon)) { $tepLuaChon = $env:LLAMA_SERVER_SELECTION_FILE }
+if ([string]::IsNullOrWhiteSpace($tepLuaChon)) {
+    $gocLuaChon = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $HOME }
+    $tepLuaChon = Join-Path (Join-Path $gocLuaChon 'avi-aoi-ai') 'llama-server-lua-chon.json'
+}
+$modelLuaChon = $null
+if (Test-Path -LiteralPath $tepLuaChon -PathType Leaf) {
+    try {
+        $lc = Get-Content -LiteralPath $tepLuaChon -Raw -Encoding UTF8 | ConvertFrom-Json
+        $tenLc = [string]$lc.model
+        $khoLc = $cfg['GGUF_MODELS_DIR']
+        if ($lc.v -ne 1 -or $tenLc -notmatch '^[A-Za-z0-9][A-Za-z0-9._+-]{0,200}\.gguf$' -or $tenLc.Contains('..')) {
+            Write-Bad "Bỏ qua tệp lựa chọn $tepLuaChon — nội dung không hợp lệ."
+        }
+        elseif ((Get-TenGoc ([string]$lc.envModel)) -cne (Get-TenGoc $modelRaw)) {
+            Write-Step "Bỏ qua lựa chọn ($tenLc): .env đã đổi model server SAU lựa chọn — .env thắng."
+        }
+        elseif ([string]::IsNullOrWhiteSpace($khoLc) -or -not (Test-Path -LiteralPath (Join-Path $khoLc $tenLc) -PathType Leaf)) {
+            Write-Bad "Bỏ qua lựa chọn ($tenLc): không có trong GGUF_MODELS_DIR."
+        }
+        else {
+            $modelLuaChon = Join-Path $khoLc $tenLc
+            Write-Step "model theo LỰA CHỌN QUẢN TRỊ ($tepLuaChon): $tenLc (.env khai $modelRaw)"
+        }
+    }
+    catch { Write-Bad "Bỏ qua tệp lựa chọn $tepLuaChon — không đọc được JSON." }
+}
+
 $modelPath = $null
-if ([System.IO.Path]::IsPathRooted($modelRaw) -and (Test-Path -LiteralPath $modelRaw)) {
+if ($modelLuaChon) {
+    $modelPath = $modelLuaChon
+}
+elseif ([System.IO.Path]::IsPathRooted($modelRaw) -and (Test-Path -LiteralPath $modelRaw)) {
     $modelPath = $modelRaw
 }
 else {
@@ -168,18 +213,27 @@ function Get-PortOwners {
     catch { return @() }
 }
 
-if (Test-ServerAlive) {
-    if (-not $Force) {
-        Write-Step "ĐÃ CHẠY — $healthUrl trả 200. Không spawn thêm (idempotent). Thoát 0."
-        exit 0
-    }
-    Write-Step '-Force: dừng tiến trình llama-server đang giữ cổng...'
-    foreach ($procId in (Get-PortOwners)) {
+if ((-not $Force) -and (Test-ServerAlive)) {
+    Write-Step "ĐÃ CHẠY — $healthUrl trả 200. Không spawn thêm (idempotent). Thoát 0."
+    exit 0
+}
+if ($Force) {
+    # Đợt 6 — `-Force` (API đổi model) dừng llama-server giữ cổng CẢ KHI nó chưa trả /health (đang nạp dở /
+    # treo — đúng ca QUAY VỀ sau một model mới nạp hỏng). Kiểm HẾT chủ cổng TRƯỚC khi dừng ai: có một chủ
+    # KHÔNG phải llama-server ⇒ không đụng gì, thoát 3.
+    $owners = Get-PortOwners
+    foreach ($procId in $owners) {
         $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
-        if ($p -and $p.ProcessName -like 'llama-server*') { Write-Step "  stop PID $procId"; Stop-Process -Id $procId -Force }
-        else { Write-Bad "  PID $procId ($($p.ProcessName)) KHÔNG phải llama-server — KHÔNG đụng vào."; exit 3 }
+        if (-not ($p -and $p.ProcessName -like 'llama-server*')) {
+            Write-Bad "  PID $procId ($($p.ProcessName)) KHÔNG phải llama-server — KHÔNG đụng vào."
+            exit 3
+        }
     }
-    Start-Sleep -Seconds 2
+    foreach ($procId in $owners) { Write-Step "-Force: stop llama-server PID $procId"; Stop-Process -Id $procId -Force }
+    # CHỜ cổng nhả THẬT (≤ 60 s) — `Start-Sleep 2` cũ đôi khi chưa đủ ⇒ bản mới không bind được ⇒ exit 4.
+    $hetNha = (Get-Date).AddSeconds(60)
+    while (((Get-PortOwners).Count -gt 0) -and ((Get-Date) -lt $hetNha)) { Start-Sleep -Milliseconds 500 }
+    if ((Get-PortOwners).Count -gt 0) { Write-Bad "Cổng $srvPort chưa nhả sau 60 s."; exit 3 }
 }
 else {
     # Cổng có người nghe nhưng /health không xanh ⇒ CÓ THỂ là dịch vụ khác (nhắc lại: 8080 là Apache).

@@ -777,7 +777,13 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • `aiAgent.phanHoi` / `aiAgent.xuatBoDuLieu` (mutations): write / export the CALLER's own feedback (export of ALL users
 //     requires admin + is audited) ⇒ D; `kbStudio.batDauEvalMa` / `kbStudio.huyEvalMa` (mutations, admin + 2FA) ⇒ D.
 //   No baseline row added.
-const GHIM = { A: 333, B: 8, C: 490, D: 1173, S: 357, tong: 2361 } as const;
+// ★ 2026-10-17 (AI Local Đợt 6 — đổi model llama-server qua API) — **C 490 → 491 · D 1173 → 1174 · tong 2361 → 2363 ·
+// A/B/S unchanged.** Two NEW procedures in `aiGgufRouter.ts` (admin + 2FA):
+//   • `aiGguf.doiModelTongQuan` (query): lists `.gguf` files in GGUF_MODELS_DIR + GET `/props` of the local llama-server +
+//     the selection file outside the repo — files/HTTP on this machine, no tenant rows ⇒ C;
+//   • `aiGguf.doiModelBatDau` (mutation, admin + 2FA): restarts llama-server with another model, audited ⇒ D.
+//   No baseline row added.
+const GHIM = { A: 333, B: 8, C: 491, D: 1174, S: 357, tong: 2363 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
