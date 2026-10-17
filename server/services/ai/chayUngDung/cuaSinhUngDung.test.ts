@@ -42,12 +42,12 @@ describe("§1 — dựng argv từ khai báo chạy (KHÔNG chuỗi lệnh tự 
     expect(!("thieu" in r) && r.args).toEqual(["app.py"]);
   });
 
-  it("★★ dotnet ⇒ `run --project <csproj>` + `--no-restore` mặc định offline; ASPNETCORE_URLS do cửa sinh đặt", () => {
+  it("★★ dotnet ⇒ `run --project <csproj> --no-launch-profile` (launchSettings không đè ASPNETCORE_URLS) + `--no-restore` mặc định offline", () => {
     const r = dungLenhUngDung({ loai: "dotnet", duAn: "src/App.csproj" }, gocTam());
-    expect(!("thieu" in r) && r.args).toEqual(["run", "--project", "src/App.csproj", "--no-restore"]);
+    expect(!("thieu" in r) && r.args).toEqual(["run", "--project", "src/App.csproj", "--no-launch-profile", "--no-restore"]);
     process.env.DOTNET_CHO_PHEP_RESTORE = "1";
     const r2 = dungLenhUngDung({ loai: "dotnet", duAn: "src/App.csproj" }, gocTam());
-    expect(!("thieu" in r2) && r2.args).toEqual(["run", "--project", "src/App.csproj"]);
+    expect(!("thieu" in r2) && r2.args).toEqual(["run", "--project", "src/App.csproj", "--no-launch-profile"]);
   });
 });
 
@@ -58,6 +58,7 @@ describe("§2 — tiến trình THẬT: môi trường LỌC, PORT/HOST đúng c
       { file: process.execPath, args: ["-e", "console.log(JSON.stringify({env: process.env, cwd: process.cwd()}))"], envThem: {}, moTa: "t" },
       g,
       5155,
+      "127.0.0.2",
       { ...process.env, DATABASE_URL: "postgres://canary-ai7:matkhau@x/y", MASTER_API_KEY: "canary-master-ai7" },
     );
     let out = "";
@@ -67,8 +68,8 @@ describe("§2 — tiến trình THẬT: môi trường LỌC, PORT/HOST đúng c
     expect(out).not.toContain("canary-ai7");
     expect(out).not.toContain("canary-master-ai7");
     expect(j.env.PORT).toBe("5155");
-    expect(j.env.HOST).toBe("127.0.0.1");
-    expect(j.env.ASPNETCORE_URLS).toBe("http://127.0.0.1:5155");
+    expect(j.env.HOST).toBe("127.0.0.2");
+    expect(j.env.ASPNETCORE_URLS).toBe("http://127.0.0.2:5155");
     expect(fs.realpathSync(j.cwd).toLowerCase()).toBe(fs.realpathSync(g).toLowerCase());
   });
 
@@ -77,10 +78,11 @@ describe("§2 — tiến trình THẬT: môi trường LỌC, PORT/HOST đúng c
       { file: process.execPath, args: ["-e", "console.log(process.env.PORT + ' ' + process.env.HOST)"], envThem: { PORT: "80", HOST: "0.0.0.0" }, moTa: "t" },
       gocTam(),
       5156,
+      "127.0.0.2",
     );
     let out = "";
     con.stdout?.on("data", (c: Buffer) => (out += c.toString("utf8")));
     await new Promise<void>((giai) => con.on("exit", () => giai()));
-    expect(out.trim()).toBe("5156 127.0.0.1");
+    expect(out.trim()).toBe("5156 127.0.0.2");
   });
 });

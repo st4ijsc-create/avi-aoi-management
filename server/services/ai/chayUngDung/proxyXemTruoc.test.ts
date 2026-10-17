@@ -40,8 +40,11 @@ const socketMo = new Set<net.Socket>();
 const kho = new KhoVeXemTruoc(() => gio);
 const chay = new Map<string, { cong: number; chuSoHuu: number }>();
 const daCham: string[] = [];
+const khongDiaChi = new Set<string>();
 const nguon: NguonUngDungXemTruoc = {
   congCuaDuAn: (id) => chay.get(id)?.cong ?? null,
+  // Ngược dòng giả nghe 127.0.0.1 (lưới đo PROXY; phép chọn địa chỉ hợp lệ là của trình quản lý — diaChiUngDung.test.ts).
+  diaChiCuaDuAn: (id) => (chay.has(id) && !khongDiaChi.has(id) ? "127.0.0.1" : null),
   chuSoHuu: (id) => chay.get(id)?.chuSoHuu ?? null,
   cham: (id) => daCham.push(id),
 };
@@ -177,6 +180,17 @@ describe("§2 — cookie phiên ứng dụng KHÔNG đi tới ứng dụng xem t
 });
 
 describe("§3 — chủ sở hữu, trạng thái chạy, dải cổng", () => {
+  it("★★★ trình quản lý không trả ĐỊA CHỈ ứng dụng ⇒ 404, ngược dòng nhận 0 (không rơi về 127.0.0.1 ngầm)", async () => {
+    const phien = await vaoPhien(7, "du-an-a");
+    khongDiaChi.add("du-an-a");
+    try {
+      expect((await goi("/", phien)).ma).toBe(404);
+      expect(nhan.length).toBe(0);
+    } finally {
+      khongDiaChi.clear();
+    }
+  });
+
   it("★★★ phiên của NGƯỜI KHÁC (không phải người chạy ứng dụng) ⇒ 404, ngược dòng nhận 0", async () => {
     const phien = await vaoPhien(8, "du-an-a");
     expect((await goi("/", phien)).ma).toBe(404);

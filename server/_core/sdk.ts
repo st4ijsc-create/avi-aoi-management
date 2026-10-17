@@ -20,6 +20,7 @@ import { redactServerOnlyUserFields } from "./publicUser";
 import { ENV } from "./env";
 // ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, `SESSION_TTL_DAYS`).
 import { hanPhienMs } from "./hanPhien";
+import { canhBaoCookiePhienTrung } from "./cookiePhienTrung";
 import type {
   ExchangeTokenRequest,
   ExchangeTokenResponse,
@@ -531,6 +532,7 @@ class SDKServer {
   /** Phân giải *"yêu cầu này là ai"* — **KHÔNG** quyết định người ấy có được đi tiếp hay không. */
   private async xacThucTho(req: Request): Promise<User> {
     // Regular authentication flow
+    canhBaoCookiePhienTrung(req.headers.cookie); // ★ Đợt 3c: CHỈ GHI LOG khi ≥ 2 app_session_id (cookie-tossing) — không chặn
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await this.verifySession(sessionCookie);

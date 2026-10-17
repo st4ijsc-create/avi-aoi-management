@@ -31,6 +31,7 @@ function deps(): PhuThuocDichVu {
     gocRepoChinh: () => gocRepo,
     ql: () => ql,
     cauHinhXemTruoc: () => ({ bat: true, lyDoTat: null }),
+    diaChiUngDung: () => ({ ok: true, diaChi: "127.0.0.2" }),
   };
 }
 
@@ -54,6 +55,7 @@ beforeEach(() => {
     bayGio: () => 1,
     congTrong: async () => true,
     thuKetNoi: async () => false,
+    ngheSaiDiaChi: async () => false,
     ghiAudit: () => {},
     anHanGietMs: 10,
   });
@@ -120,7 +122,7 @@ describe("§2 — DỪNG / NHẬT KÝ: chỉ chủ (hoặc admin)", () => {
   it("★★★ người KHÁC dừng ⇒ NOT_FOUND (không tiết lộ), tiến trình vẫn chạy; chủ dừng được", async () => {
     await chayUngDungChoNguoi({ user: U7, projectId: "demo" }, deps());
     expect(await dungUngDungChoNguoi({ user: U8, projectId: "demo" }, deps())).toMatchObject({ ok: false, ma: "NOT_FOUND" });
-    expect(ql.congCuaDuAn("demo")).toBe(5100);
+    expect(ql.trangThai("demo")?.cong).toBe(5100);
     expect((await dungUngDungChoNguoi({ user: U7, projectId: "demo" }, deps())).ok).toBe(true);
   });
 

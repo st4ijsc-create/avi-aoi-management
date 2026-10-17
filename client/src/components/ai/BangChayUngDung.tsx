@@ -31,7 +31,7 @@ export interface DuLieuBangChay {
         trangThai: TrangThaiUngDung;
         lenh: string;
         maThoat: number | null;
-        lyDoDung: "nguoi-dung" | "nhan-roi" | "tat-may" | null;
+        lyDoDung: "nguoi-dung" | "nhan-roi" | "tat-may" | "nghe-sai-dia-chi" | null;
         chuaXacNhanChet: boolean;
         chuaNgheCong: boolean;
       }

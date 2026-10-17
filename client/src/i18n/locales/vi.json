@@ -21095,7 +21095,8 @@
       "lyDoDung": {
         "nguoi-dung": "dừng bởi người dùng",
         "nhan-roi": "tự dừng vì nhàn rỗi 30 phút",
-        "tat-may": "dừng vì máy chủ tắt"
+        "tat-may": "dừng vì máy chủ tắt",
+        "nghe-sai-dia-chi": "DỪNG vì ứng dụng nghe trên 127.0.0.1/::1 thay vì địa chỉ HOST được cấp (cùng site với ứng dụng chính) — sửa mã để nghe process.env.HOST"
       }
     }
   },

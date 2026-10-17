@@ -10,6 +10,7 @@
  *     một bản máy chủ MES thứ hai (cùng lý do `npm run build` cố ý vắng khỏi danh sách trắng lệnh).
  */
 import path from "node:path";
+import { docDiaChiUngDung, type KetQuaDiaChiUngDung } from "./capCong";
 import { suyLenhCaiDat, suyLenhChay, type MaSuyLenhChay } from "./cauHinhChayDuAn";
 import { dungLenhUngDung } from "./cuaSinhUngDung";
 import type { MucCongKhai, QuanLyUngDung } from "./quanLyUngDung";
@@ -29,6 +30,8 @@ export interface PhuThuocDichVu {
   gocRepoChinh: () => string;
   ql: () => QuanLyUngDung;
   cauHinhXemTruoc: () => { bat: boolean; lyDoTat: string | null };
+  /** Địa chỉ bind của ứng dụng (vá cookie-tossing). Vắng ⇒ đọc env (`capCong.docDiaChiUngDung`) — vẫn fail-closed. */
+  diaChiUngDung?: () => KetQuaDiaChiUngDung;
 }
 
 type MaLoi =
@@ -41,7 +44,13 @@ type MaLoi =
   | "HET_CONG"
   | "LOI_SINH"
   | "THIEU_MOI_TRUONG"
+  | MaChanDiaChi
   | MaSuyLenhChay;
+
+/** ★★★ Vá cookie-tossing: hai mã "không chạy vì không ép được địa chỉ nghe an toàn". */
+type MaChanDiaChi = "DIA_CHI_UNG_DUNG_KHONG_HOP_LE" | "KHUON_KHONG_EP_DUOC_HOST";
+
+const diaChiCua = (d: PhuThuocDichVu): KetQuaDiaChiUngDung => (d.diaChiUngDung ?? (() => docDiaChiUngDung()))();
 
 type Loi = { ok: false; ma: MaLoi; chiTiet?: string };
 
@@ -73,9 +82,12 @@ export async function chayUngDungChoNguoi(
   if (cung(g.goc, d.gocRepoChinh())) return { ok: false, ma: "REPO_CHINH_KHONG_CHAY" };
   const s = suyLenhChay(g.goc);
   if (!s.ok) return { ok: false, ma: s.ma, chiTiet: s.chiTiet };
+  const dc = diaChiCua(d);
+  if (!dc.ok) return { ok: false, ma: dc.ma, chiTiet: dc.chiTiet };
   const lenh = dungLenhUngDung(s.khai, g.goc);
+  if ("tuChoi" in lenh) return { ok: false, ma: lenh.tuChoi.ma, chiTiet: lenh.tuChoi.chiTiet };
   if ("thieu" in lenh) return { ok: false, ma: "THIEU_MOI_TRUONG", chiTiet: lenh.thieu };
-  const r = await d.ql().chay({ projectId: g.id, goc: g.goc, userId: i.user.id, lenh });
+  const r = await d.ql().chay({ projectId: g.id, goc: g.goc, userId: i.user.id, lenh, diaChi: dc.diaChi });
   return r.ok ? r : { ok: false, ma: r.ma, chiTiet: r.chiTiet };
 }
 
@@ -113,7 +125,7 @@ export async function trangThaiChoNguoi(
   | {
       ok: true;
       ungDung: UngDungChoNguoi;
-      lenhChay: { ok: true; moTa: string; nguon: string } | { ok: false; ma: MaSuyLenhChay | "REPO_CHINH_KHONG_CHAY"; chiTiet: string };
+      lenhChay: { ok: true; moTa: string; nguon: string } | { ok: false; ma: MaSuyLenhChay | MaChanDiaChi | "REPO_CHINH_KHONG_CHAY"; chiTiet: string };
       goiYCai: string[];
       xemTruoc: { bat: boolean; lyDoTat: string | null };
     }
@@ -127,15 +139,19 @@ export async function trangThaiChoNguoi(
   const m = q.trangThai(g.id);
   const song = !!m && (m.trangThai === "dang-khoi-dong" || m.trangThai === "dang-chay" || m.trangThai === "dang-dung");
   const ungDung: UngDungChoNguoi = !m ? null : laChuHoacAdmin(m, i.user) ? { ...m, laChu: true } : { laChu: false, dangBan: song };
-  let lenhChay: { ok: true; moTa: string; nguon: string } | { ok: false; ma: MaSuyLenhChay | "REPO_CHINH_KHONG_CHAY"; chiTiet: string };
+  let lenhChay: { ok: true; moTa: string; nguon: string } | { ok: false; ma: MaSuyLenhChay | MaChanDiaChi | "REPO_CHINH_KHONG_CHAY"; chiTiet: string };
   if (cung(g.goc, d.gocRepoChinh())) {
     lenhChay = { ok: false, ma: "REPO_CHINH_KHONG_CHAY", chiTiet: "repo nền tảng" };
   } else {
     const s = suyLenhChay(g.goc);
-    if (s.ok) {
+    const dc = diaChiCua(d);
+    if (!s.ok) lenhChay = { ok: false, ma: s.ma, chiTiet: s.chiTiet };
+    else if (!dc.ok) lenhChay = { ok: false, ma: dc.ma, chiTiet: dc.chiTiet };
+    else {
       const l = dungLenhUngDung(s.khai, g.goc);
-      lenhChay = { ok: true, moTa: "thieu" in l ? s.khai.loai : l.moTa, nguon: s.nguon };
-    } else lenhChay = { ok: false, ma: s.ma, chiTiet: s.chiTiet };
+      if ("tuChoi" in l) lenhChay = { ok: false, ma: l.tuChoi.ma, chiTiet: l.tuChoi.chiTiet };
+      else lenhChay = { ok: true, moTa: "thieu" in l ? s.khai.loai : l.moTa, nguon: s.nguon };
+    }
   }
   return { ok: true, ungDung, lenhChay, goiYCai: suyLenhCaiDat(g.goc), xemTruoc: d.cauHinhXemTruoc() };
 }

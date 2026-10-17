@@ -104,6 +104,20 @@ describe("§1b — ★★★ vá cookie-tossing: xem trước chỉ ở origin K
   }
 });
 
+describe("§1c — ★★★ ứng dụng bị DỪNG vì nghe sai địa chỉ (127.0.0.1/::1 — cùng site với ứng dụng)", () => {
+  it("★★★ lyDoDung nghe-sai-dia-chi ⇒ câu riêng, không khoá thiếu; lỗi DIA_CHI/KHUON ⇒ mã hiện rõ, nút Chạy khoá", () => {
+    const h = html({ duLieu: { ...CO_BAN, ungDung: { ...(DANG_CHAY.ungDung as any), trangThai: "da-dung", lyDoDung: "nghe-sai-dia-chi" } } });
+    expect(h).toContain(tThat("repoWs.chayUD.lyDoDung.nghe-sai-dia-chi"));
+    expect(h).not.toContain("‹THIẾU:");
+    for (const ma of ["DIA_CHI_UNG_DUNG_KHONG_HOP_LE", "KHUON_KHONG_EP_DUOC_HOST"]) {
+      const k = html({ duLieu: { ...CO_BAN, lenhChay: { ok: false, ma, chiTiet: "AI_PREVIEW_PROXY_HOST=127.0.0.2" } } });
+      expect(k).toContain(`data-loi-chay="${ma}"`);
+      expect(k).toContain("127.0.0.2");
+      expect(k).toMatch(/<button[^>]*data-nut="chay"[^>]*disabled/);
+    }
+  });
+});
+
 describe("§2 — nút", () => {
   it("★★★ nút Cài chỉ là lệnh máy chủ gợi ý (data-lenh), bấm ⇒ onCai(lệnh) — bảng không có ô nhập lệnh cài", () => {
     const h = html({ duLieu: { ...CO_BAN, goiYCai: ["npm ci", "dotnet restore"] } });

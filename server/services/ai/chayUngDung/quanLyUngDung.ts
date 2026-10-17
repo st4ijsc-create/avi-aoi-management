@@ -24,7 +24,10 @@
  */
 import { StreamingSecretRedactor } from "../aiSafety";
 import type { KetQuaGiet } from "../../aiLocalTools/repoCommandSandbox";
-import type { DaiCong } from "./capCong";
+import { laDiaChiUngDungHopLe, type DaiCong } from "./capCong";
+
+/** Cách cửa sinh ÉP địa chỉ nghe cho khuôn này (`cuaSinhUngDung.argvVoiDiaChi`). Vắng ⇔ "env" (HOST/PORT). */
+export type CachEpHost = "vite" | "next" | "env";
 
 export interface LenhUngDung {
   /** Tệp chạy THẬT (tuyệt đối hoặc tên tra PATH). */
@@ -34,6 +37,7 @@ export interface LenhUngDung {
   envThem: Record<string, string>;
   /** Dạng người đọc ("npm run dev", "python app.py", "dotnet run --project …"). */
   moTa: string;
+  epHost?: CachEpHost;
 }
 
 /** Tối thiểu của một `ChildProcess` mà trình quản lý cần. */
@@ -56,20 +60,26 @@ export interface SuKienAuditUngDung {
 }
 
 export interface PhuThuocQuanLy {
-  sinh: (lenh: LenhUngDung, goc: string, cong: number) => TienTrinhUngDung;
+  /** `diaChi` = địa chỉ bind của ứng dụng (loopback KHÁC 127.0.0.1 — `capCong.laDiaChiUngDungHopLe`). */
+  sinh: (lenh: LenhUngDung, goc: string, cong: number, diaChi: string) => TienTrinhUngDung;
   giet: (pid: number | undefined) => KetQuaGiet;
   bayGio: () => number;
-  /** Cổng `listen` được không (tiến trình lạ chiếm ⇒ false). */
-  congTrong: (cong: number) => Promise<boolean>;
-  /** Có ai đang NGHE cổng không (sẵn sàng). */
-  thuKetNoi: (cong: number) => Promise<boolean>;
+  /** Cổng `listen` được trên `diaChi` (và không bị chiếm ở 127.0.0.1) không — tiến trình lạ chiếm ⇒ false. */
+  congTrong: (cong: number, diaChi: string) => Promise<boolean>;
+  /** Có ai đang NGHE cổng trên ĐÚNG `diaChi` không (sẵn sàng). */
+  thuKetNoi: (cong: number, diaChi: string) => Promise<boolean>;
+  /**
+   * ★★★ Vá cookie-tossing: cổng có nghe trên 127.0.0.1 / ::1 không. `true` ⇒ ứng dụng lờ HOST (bind 0.0.0.0/::/
+   * localhost) ⇒ trình duyệt trên máy chủ mở thẳng được nó CÙNG SITE với ứng dụng chính ⇒ trình quản lý DỪNG nó.
+   */
+  ngheSaiDiaChi: (cong: number) => Promise<boolean>;
   ghiAudit: (e: SuKienAuditUngDung) => void;
   /** Ân hạn chờ `exit` sau lệnh giết (mặc định 5 s). */
   anHanGietMs?: number;
 }
 
 export type TrangThaiUngDung = "dang-khoi-dong" | "dang-chay" | "dang-dung" | "da-dung" | "loi";
-export type LyDoDung = "nguoi-dung" | "nhan-roi" | "tat-may";
+export type LyDoDung = "nguoi-dung" | "nhan-roi" | "tat-may" | "nghe-sai-dia-chi";
 
 export const NHAN_ROI_MS = 30 * 60_000;
 export const TRAN_DONG_NHAT_KY = 1000;
@@ -82,6 +92,8 @@ interface MucNoiBo {
   goc: string;
   chuSoHuu: number;
   cong: number;
+  /** Địa chỉ bind (loopback KHÁC 127.0.0.1) — proxy chuyển tới `diaChi:cong`. */
+  diaChi: string;
   /** `true` ⇔ cổng còn bị giữ (tiến trình chưa được quan sát là đã chết). */
   giuCong: boolean;
   pid: number | null;
@@ -117,7 +129,7 @@ export interface MucCongKhai {
 
 export type KetQuaChayUngDung =
   | { ok: true; muc: MucCongKhai }
-  | { ok: false; ma: "DANG_CHAY" | "HET_CONG" | "LOI_SINH"; chiTiet: string; muc?: MucCongKhai };
+  | { ok: false; ma: "DANG_CHAY" | "HET_CONG" | "LOI_SINH" | "DIA_CHI_UNG_DUNG_KHONG_HOP_LE"; chiTiet: string; muc?: MucCongKhai };
 
 export type KetQuaDungUngDung =
   | { ok: true; chuaXacNhanChet: boolean }
@@ -158,25 +170,27 @@ export class QuanLyUngDung {
     };
   }
 
-  private async capCong(): Promise<number | null> {
+  private async capCong(diaChi: string): Promise<number | null> {
     const daGiu = new Set<number>();
     for (const m of this.ds.values()) if (m.giuCong) daGiu.add(m.cong);
     for (let c = this.dai.tu; c <= this.dai.den; c++) {
       if (daGiu.has(c)) continue;
-      if (await this.deps.congTrong(c)) return c;
+      if (await this.deps.congTrong(c, diaChi)) return c;
     }
     return null;
   }
 
-  async chay(input: { projectId: string; goc: string; userId: number; lenh: LenhUngDung }): Promise<KetQuaChayUngDung> {
-    const { projectId } = input;
+  async chay(input: { projectId: string; goc: string; userId: number; lenh: LenhUngDung; diaChi: string }): Promise<KetQuaChayUngDung> {
+    const { projectId, diaChi } = input;
+    // ★★★ Vá cookie-tossing: KHÔNG BAO GIỜ sinh với 127.0.0.1/0.0.0.0/localhost (fail-closed, trước mọi tác dụng phụ).
+    if (!laDiaChiUngDungHopLe(diaChi)) return { ok: false, ma: "DIA_CHI_UNG_DUNG_KHONG_HOP_LE", chiTiet: String(diaChi) };
     const cu = this.ds.get(projectId);
     if (this.dangGiu.has(projectId) || (cu && SONG.has(cu.trangThai))) {
       return { ok: false, ma: "DANG_CHAY", chiTiet: projectId, ...(cu ? { muc: this.congKhai(cu) } : {}) };
     }
     this.dangGiu.add(projectId);
     try {
-      const cong = await this.capCong();
+      const cong = await this.capCong(diaChi);
       if (cong === null) return { ok: false, ma: "HET_CONG", chiTiet: `${this.dai.tu}-${this.dai.den}` };
       const bayGio = this.deps.bayGio();
       const m: MucNoiBo = {
@@ -184,6 +198,7 @@ export class QuanLyUngDung {
         goc: input.goc,
         chuSoHuu: input.userId,
         cong,
+        diaChi,
         giuCong: true,
         pid: null,
         trangThai: "dang-khoi-dong",
@@ -202,7 +217,7 @@ export class QuanLyUngDung {
       };
       let con: TienTrinhUngDung;
       try {
-        con = this.deps.sinh(input.lenh, input.goc, cong);
+        con = this.deps.sinh(input.lenh, input.goc, cong, diaChi);
       } catch (e) {
         return { ok: false, ma: "LOI_SINH", chiTiet: e instanceof Error ? e.message : String(e) };
       }
@@ -302,10 +317,19 @@ export class QuanLyUngDung {
     return { dong: m.doDang ? [...m.dong, m.doDang] : [...m.dong], catDau: m.catDau };
   }
 
-  /** Cổng ĐANG GIỮ của dự án (proxy chỉ chuyển tới đây). `null` ⇔ không có tiến trình sống. */
+  /**
+   * Cổng ĐANG GIỮ của dự án (proxy chỉ chuyển tới đây). `null` ⇔ không có tiến trình sống — hoặc CHƯA qua lượt kiểm
+   * địa chỉ (`lamMoiSanSang`): ⚠ chỉ `dang-chay` (mã AI của dự án không chạy trong trình duyệt trước khi kiểm xong).
+   */
   congCuaDuAn(projectId: string): number | null {
     const m = this.ds.get(projectId);
-    return m && m.giuCong && (m.trangThai === "dang-khoi-dong" || m.trangThai === "dang-chay") ? m.cong : null;
+    return m && m.giuCong && m.trangThai === "dang-chay" ? m.cong : null;
+  }
+
+  /** Địa chỉ bind của ứng dụng (cùng điều kiện với `congCuaDuAn`) — proxy nối `diaChi:cong`, không 127.0.0.1 ngầm. */
+  diaChiCuaDuAn(projectId: string): string | null {
+    const m = this.ds.get(projectId);
+    return m && m.giuCong && m.trangThai === "dang-chay" ? m.diaChi : null;
   }
 
   /** Một lượt xem trước đi qua proxy ⇒ đẩy lùi mốc nhàn rỗi. */
@@ -314,11 +338,22 @@ export class QuanLyUngDung {
     if (m && SONG.has(m.trangThai)) m.hoatDongCuoi = this.deps.bayGio();
   }
 
+  /**
+   * Kiểm SẴN SÀNG + ĐỊA CHỈ (gọi bởi poll trạng thái và đồng hồ 60 s): cổng nghe trên 127.0.0.1/::1 ⇒ DỪNG
+   * (`nghe-sai-dia-chi`) — kể cả khi đã `dang-chay` (ứng dụng mở thêm listener sau); nghe đúng `diaChi` ⇒ `dang-chay`.
+   */
   async lamMoiSanSang(projectId: string): Promise<void> {
     const m = this.ds.get(projectId);
-    if (!m || m.trangThai !== "dang-khoi-dong" || !m.giuCong) return;
-    if (await this.deps.thuKetNoi(m.cong)) {
-      if (m.trangThai === "dang-khoi-dong") m.trangThai = "dang-chay";
+    const dangSong = (x: MucNoiBo) => x.giuCong && (x.trangThai === "dang-khoi-dong" || x.trangThai === "dang-chay");
+    if (!m || !dangSong(m)) return;
+    if (await this.deps.ngheSaiDiaChi(m.cong)) {
+      if (!dangSong(m)) return;
+      this.themDong(m, `\n[xem trước] ứng dụng nghe cổng ${m.cong} trên 127.0.0.1/::1 (bỏ qua HOST=${m.diaChi}) — DỪNG: mở được thẳng cùng site với ứng dụng chính. Sửa mã để nghe process.env.HOST.\n`, false);
+      await this.dung(projectId, "nghe-sai-dia-chi", null);
+      return;
+    }
+    if (m.trangThai === "dang-khoi-dong" && (await this.deps.thuKetNoi(m.cong, m.diaChi))) {
+      if (m.trangThai === "dang-khoi-dong" && m.giuCong) m.trangThai = "dang-chay";
     }
   }
 

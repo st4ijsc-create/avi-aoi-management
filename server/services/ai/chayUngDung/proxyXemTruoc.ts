@@ -39,9 +39,11 @@
  *     xem trước ghi được `app_session_id=…; path=/api` mà ứng dụng nhận, và CSRF same-site. Nay: origin công khai
  *     BẮT BUỘC + khác site (`cungSite.ts`, kiểm ở cấu hình VÀ lúc cấp vé so với host của chính yêu cầu), proxy chỉ
  *     phục vụ đúng host ấy (`hostYeuCauKhop` ⇒ 421).
- *   • CÒN MỞ: ứng dụng xem trước nghe thẳng `127.0.0.1:<cổng dải>` — trên MÁY CHỦ, mã xem trước điều hướng chính
- *     khung tới `http://127.0.0.1:<cổng dải>/` là chạy trên host 127.0.0.1 (cùng site nếu ứng dụng mở bằng
- *     localhost/127.0.0.1). Chỉ với trình duyệt chạy trên chính máy chủ; máy trạm LAN không với tới.
+ *   • ★★★ ĐÃ ĐÓNG (lỗ còn lại): ứng dụng xem trước KHÔNG còn nghe `127.0.0.1:<cổng dải>` — bind loopback KHÁC
+ *     (`capCong.docDiaChiUngDung`, vd 127.0.0.2), mỗi khuôn bị ÉP host (`cuaSinhUngDung`), trình quản lý dừng ứng
+ *     dụng nào vẫn nghe 127.0.0.1/::1 và proxy chỉ nối `diaChiCuaDuAn:cong` SAU lượt kiểm ấy.
+ *   • CÒN MỞ (khai thẳng): mã dự án là mã TUỲ Ý chạy trên máy chủ — nó tự mở được listener KHÁC (ngoài cổng cấp) trên
+ *     127.0.0.1; đóng hẳn cần cô lập mức hệ điều hành (container/namespace mạng), ngoài phạm vi proxy.
  *   • Một trình duyệt xem MỘT dự án tại một thời điểm qua cổng proxy (cookie phiên là một ô); mở dự án thứ hai sẽ
  *     chuyển phiên sang dự án ấy.
  *   • Proxy KHÔNG viết lại HTML/URL tuyệt đối: ứng dụng phải dùng đường tương đối hoặc gốc `/` (Vite/CRA mặc định ổn).
@@ -120,6 +122,8 @@ export class KhoVeXemTruoc {
 /** Điều proxy cần biết từ trình quản lý — tiêm được để lưới không cần tiến trình thật. */
 export interface NguonUngDungXemTruoc {
   congCuaDuAn(projectId: string): number | null;
+  /** Địa chỉ bind của ứng dụng (loopback KHÁC 127.0.0.1). `null` ⇒ 404 — proxy KHÔNG rơi về 127.0.0.1 ngầm. */
+  diaChiCuaDuAn(projectId: string): string | null;
   chuSoHuu(projectId: string): number | null;
   cham(projectId: string): void;
 }
@@ -178,7 +182,7 @@ function headerVao(req: http.IncomingMessage, cong: number, giuNangCap: boolean)
   return ra;
 }
 
-type KetQuaXacThuc = { ok: true; projectId: string; cong: number } | { ok: false; ma: 401 | 403 | 404; ly: string };
+type KetQuaXacThuc = { ok: true; projectId: string; cong: number; diaChi: string } | { ok: false; ma: 401 | 403 | 404; ly: string };
 
 function xacThuc(req: http.IncomingMessage, kho: KhoVeXemTruoc, nguon: NguonUngDungXemTruoc, dai: DaiCong): KetQuaXacThuc {
   const id = tachCookie(req.headers.cookie).find(([k]) => k === TEN_COOKIE_PHIEN)?.[1];
@@ -186,10 +190,11 @@ function xacThuc(req: http.IncomingMessage, kho: KhoVeXemTruoc, nguon: NguonUngD
   if (!p) return { ok: false, ma: 401, ly: "PREVIEW_NO_SESSION" };
   const chu = nguon.chuSoHuu(p.projectId);
   const cong = nguon.congCuaDuAn(p.projectId);
+  const diaChi = nguon.diaChiCuaDuAn(p.projectId);
   // ⚠ Người khác / không chạy ⇒ CÙNG 404: không tiết lộ dự án nào đang chạy cho ai không phải chủ.
-  if (cong === null || chu === null || chu !== p.userId) return { ok: false, ma: 404, ly: "PREVIEW_NOT_RUNNING" };
+  if (cong === null || diaChi === null || chu === null || chu !== p.userId) return { ok: false, ma: 404, ly: "PREVIEW_NOT_RUNNING" };
   if (!trongDai(cong, dai)) return { ok: false, ma: 403, ly: "PREVIEW_PORT_OUT_OF_RANGE" };
-  return { ok: true, projectId: p.projectId, cong };
+  return { ok: true, projectId: p.projectId, cong, diaChi };
 }
 
 /** Đường chuyển hướng sau khi đổi vé: CHỈ đường tuyệt-đối-trong-origin (`/x`), không `//host`, không `/\host`. */
@@ -264,7 +269,7 @@ export function taoMayChuXemTruoc(o: {
     }
     nguon.cham(x.projectId);
     const up = http.request(
-      { host: "127.0.0.1", port: x.cong, method: req.method, path: req.url, headers: headerVao(req, x.cong, false) },
+      { host: x.diaChi, port: x.cong, method: req.method, path: req.url, headers: headerVao(req, x.cong, false) },
       (upRes) => {
         const h: http.OutgoingHttpHeaders = {};
         for (const [k, v] of Object.entries(upRes.headers)) {
@@ -296,7 +301,7 @@ export function taoMayChuXemTruoc(o: {
       return;
     }
     nguon.cham(x.projectId);
-    const up = net.connect(x.cong, "127.0.0.1", () => {
+    const up = net.connect(x.cong, x.diaChi, () => {
       let dau = `${req.method ?? "GET"} ${req.url ?? "/"} HTTP/1.1\r\n`;
       for (const [k, v] of Object.entries(headerVao(req, x.cong, true))) {
         if (v === undefined) continue;

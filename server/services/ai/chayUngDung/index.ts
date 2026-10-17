@@ -128,12 +128,17 @@ export function quanLyUngDung(): QuanLyUngDung {
     sinh: sinhUngDungThat,
     giet: gietCayTienTrinh,
     bayGio: Date.now,
-    congTrong: congTrongThat,
-    thuKetNoi: (c) => coNgheCong(c),
+    // ★★★ Vá cookie-tossing: cổng phải trống trên ĐỊA CHỈ ỨNG DỤNG và cả 127.0.0.1 (một listener lạ 0.0.0.0 cũng chiếm);
+    // sẵn sàng = nghe ĐÚNG địa chỉ ấy; nghe trên 127.0.0.1/::1 ⇒ trình quản lý dừng ứng dụng (`lamMoiSanSang`).
+    congTrong: async (c, d) => (await congTrongThat(c, d)) && (await congTrongThat(c, "127.0.0.1")),
+    thuKetNoi: (c, d) => coNgheCong(c, d),
+    ngheSaiDiaChi: async (c) => (await coNgheCong(c, "127.0.0.1")) || (await coNgheCong(c, "::1")),
     ghiAudit: ghiAuditThat,
   });
   dongHoNhanRoi = setInterval(() => {
     void ql?.kiemNhanRoi().catch(() => {});
+    // Kiểm lại ĐỊA CHỈ của mọi ứng dụng sống (ứng dụng có thể mở thêm listener 127.0.0.1 sau khi đã "dang-chay").
+    for (const m of ql?.danhSach() ?? []) void ql?.lamMoiSanSang(m.projectId).catch(() => {});
   }, 60_000);
   dongHoNhanRoi.unref();
   return ql;
@@ -160,6 +165,7 @@ export function khoiDongProxyXemTruoc(congUngDung: number): CauHinhXemTruoc {
     kho: khoVeXemTruoc,
     nguon: {
       congCuaDuAn: (id) => q.congCuaDuAn(id),
+      diaChiCuaDuAn: (id) => q.diaChiCuaDuAn(id),
       chuSoHuu: (id) => q.trangThai(id)?.chuSoHuu ?? null,
       cham: (id) => q.cham(id),
     },

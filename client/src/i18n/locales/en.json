@@ -21115,7 +21115,8 @@
       "lyDoDung": {
         "nguoi-dung": "stopped by user",
         "nhan-roi": "auto-stopped after 30 idle minutes",
-        "tat-may": "stopped by server shutdown"
+        "tat-may": "stopped by server shutdown",
+        "nghe-sai-dia-chi": "STOPPED: the app listened on 127.0.0.1/::1 instead of the assigned HOST address (same site as the main app) — make it listen on process.env.HOST"
       }
     }
   },
