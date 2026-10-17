@@ -18,6 +18,11 @@
  * ★ CỔNG "TỤT" CÓ BIÊN NHIỄU — không so trần. Đo được (kế hoạch 2026-10-14 §5): trục H 12 bài × 3 lượt dao động ±3/36.
  *   Biên của một lượt eval mã = ⌈n × 3/36⌉ lượt mỗi nhánh (sàn 1). `tut` ⇔ (đạt TẮT − đạt BẬT) > biên. Không lượt BẬT nào
  *   nhận được đoạn ≥ ngưỡng ⇒ `khong-ap-dung` (hai nhánh cùng prompt — A/B không nói gì về corpus).
+ * ★★ HAI THƯỚC (2026-10-17, sau lượt đo cổng Đợt 5) — kết luận CHÍNH theo TẬP CON "bài có đoạn", thước toàn bộ vẫn tính
+ *   và hiển thị. Xem docblock `tongHopEvalMa` (lý do + số đo).
+ * ★ ĐỐI CHỨNG A/A (`doiChung`): nhánh BẬT dùng ĐÚNG prompt TẮT (không chèn đoạn) nhưng VẪN truy hồi + ghi `coNguCanh` =
+ *   số đoạn LẼ RA chèn ⇒ tập con là cùng tập bài với lượt A/B thật, mọi chênh lệch là nhiễu thuần. Dùng để đo biên nhiễu
+ *   RIÊNG của một bộ bài (vd `tasks-api` — chưa có số nhiễu riêng): ≥ 3 lượt A/A, ghi `max |chênh tập con|`.
  * ★ Không biết ≠ 0: lượt sinh lỗi HẠ TẦNG (llama-server chết, mạng) ⇒ cả lượt `khong-do-duoc` + lý do. Lượt CỤT (model
  *   nghĩ hết trần) là TRƯỢT có đếm (`cut`), đúng như bộ đo dòng lệnh.
  *
@@ -36,6 +41,8 @@ import { chayVoiUuTien } from "./ai/hangDoiUuTienLlm";
 
 export const THU_MUC_BO_DO = path.join(process.cwd(), "scripts", "ai-eval", "codegen-chay-duoc");
 const TEN_BO_BAI = /^tasks(?:-[a-z0-9]+)*$/i;
+/** Tập con "bài có đoạn" phải có ít nhất chừng này lượt mỗi nhánh mới làm kết luận chính (dưới ⇒ `khong-du-bai-co-doan`). */
+export const TOI_THIEU_LUOT_TAP_CO_DOAN = 6;
 /** Biên nhiễu ĐO ĐƯỢC của trục H: ±3 trên 36 lượt (12 bài × 3). */
 export const NHIEU_DO_DUOC = { lech: 3, tren: 36 } as const;
 export const TRAN_SO_LAP = 3;
@@ -122,7 +129,7 @@ export interface KetQuaLuotMa {
   lang: string;
   lap: number;
   nhanh: "tat" | "bat";
-  /** Số đoạn corpus ≥ ngưỡng đã đưa vào prompt (nhánh TẮT luôn 0). */
+  /** Số đoạn corpus ≥ ngưỡng đã đưa vào prompt (nhánh TẮT luôn 0). Lượt ĐỐI CHỨNG A/A: số đoạn LẼ RA đưa vào (prompt KHÔNG chứa). */
   coNguCanh: number;
   dat: boolean;
   sinhDuocMa: boolean;
@@ -133,7 +140,20 @@ export interface KetQuaLuotMa {
   msCham: number;
 }
 
-export type KetLuanEvalMa = "tut" | "nang" | "trong-nhieu" | "khong-ap-dung" | "khong-do-duoc";
+export type KetLuanEvalMa = "tut" | "nang" | "trong-nhieu" | "khong-ap-dung" | "khong-do-duoc" | "khong-du-bai-co-doan";
+
+/** Thước TẬP CON: chỉ các cặp (bài, lần lặp) mà nhánh BẬT thật sự nhận ≥ 1 đoạn ≥ ngưỡng. */
+export interface TapCoDoanEvalMa {
+  /** Số lượt MỖI nhánh trong tập con. */
+  n: number;
+  /** Số bài khác nhau trong tập con. */
+  soBai: number;
+  tat: { dat: number };
+  bat: { dat: number };
+  chenh: number;
+  /** Cùng quy tắc ⌈n×3/36⌉ (sàn 1) trên n lượt của tập con. */
+  nguongNhieu: number;
+}
 
 export interface TongHopEvalMa {
   /** Số lượt MỖI nhánh. */
@@ -147,7 +167,13 @@ export interface TongHopEvalMa {
   nguonNguong: string;
   soLuotCoNguCanh: number;
   soLoiHaTang: number;
+  /** Kết luận CHÍNH — theo tập con khi tập con ≥ `TOI_THIEU_LUOT_TAP_CO_DOAN` lượt, nếu không `khong-du-bai-co-doan`. */
   ketLuan: KetLuanEvalMa;
+  /** Kết luận theo thước TOÀN BỘ (thước cũ, trước 2026-10-17 — chính là `ketLuan` của hàng cũ). */
+  ketLuanToanBo: KetLuanEvalMa;
+  tapCoDoan: TapCoDoanEvalMa;
+  /** Lượt ĐỐI CHỨNG A/A (hai nhánh cùng prompt TẮT) — chênh lệch là nhiễu, không phải tác dụng corpus. */
+  doiChung: boolean;
   tut: boolean;
   theoNgonNgu: Record<string, { n: number; tat: number; bat: number }>;
 }
@@ -156,7 +182,25 @@ export function nguongNhieu(n: number): number {
   return Math.max(1, Math.ceil((Math.max(0, n) * NHIEU_DO_DUOC.lech) / NHIEU_DO_DUOC.tren));
 }
 
-export function tongHopEvalMa(ketQua: readonly KetQuaLuotMa[]): TongHopEvalMa {
+/** Kết luận từ chênh + biên (sau khi đã loại hạ tầng / không áp dụng). */
+const theoBien = (chenh: number, nguong: number): KetLuanEvalMa => (-chenh > nguong ? "tut" : chenh > nguong ? "nang" : "trong-nhieu");
+
+/**
+ * ★★ Tổng hợp + cổng, HAI THƯỚC.
+ *
+ * Thước TOÀN BỘ (cũ): đạt BẬT − đạt TẮT trên MỌI lượt. Nó trộn hai loại bài: bài nhánh BẬT nhận đoạn (prompt hai nhánh
+ * KHÁC nhau — đây mới là phép thử corpus) và bài KHÔNG nhận đoạn nào ≥ ngưỡng (prompt hai nhánh Y HỆT ⇒ mọi chênh lệch ở
+ * đó là nhiễu sinh thuần, không thể là tác dụng của corpus). ĐO ĐƯỢC 2026-10-17 (cổng Đợt 5, corpus `csharp-dotnet`):
+ *   • `tasks-hard` × 3: toàn bộ 25 → 27/36 (+2, biên 3) — nhưng chỉ 6/36 lượt BẬT nhận đoạn (H-cs2, H-cs3 × 3); trên
+ *     6 lượt đó 3 → 2 (−1). TOÀN BỘ +2 đến từ 30 lượt KHÔNG nhận đoạn ⇒ +2 là nhiễu thuần, thước cũ pha loãng phép thử
+ *     6 lượt bằng 30 lượt nhiễu (biên 3 thay vì 1).
+ *   • `tasks-api` × 3: 14 → 13/18 (−1, biên 2), 18/18 lượt nhận đoạn ⇒ tập con = toàn bộ (hai thước trùng nhau).
+ * Vì thế: kết luận CHÍNH theo TẬP CON (cặp (bài, lần lặp) mà nhánh BẬT nhận ≥ 1 đoạn), biên nhiễu cùng quy tắc
+ * ⌈n×3/36⌉ trên n lượt của tập con; tập con < `TOI_THIEU_LUOT_TAP_CO_DOAN` lượt ⇒ `khong-du-bai-co-doan` (một hai lượt
+ * không đủ để phát cờ tụt). Thước toàn bộ vẫn tính (`chenh`, `nguongNhieu`, `ketLuanToanBo`) và hiển thị.
+ * Thứ tự ưu tiên giữ nguyên: lỗi hạ tầng ⇒ `khong-do-duoc`; không lượt BẬT nào nhận đoạn ⇒ `khong-ap-dung`.
+ */
+export function tongHopEvalMa(ketQua: readonly KetQuaLuotMa[], tuyChon: { doiChung?: boolean } = {}): TongHopEvalMa {
   const dem = (nh: "tat" | "bat") => {
     const ds = ketQua.filter((k) => k.nhanh === nh);
     return { ds, dat: ds.filter((k) => k.dat).length, sinhDuocMa: ds.filter((k) => k.sinhDuocMa).length, cut: ds.filter((k) => k.cut).length };
@@ -174,16 +218,24 @@ export function tongHopEvalMa(ketQua: readonly KetQuaLuotMa[]): TongHopEvalMa {
     if (k.nhanh === "tat") o.n += 1;
     if (k.dat) o[k.nhanh] += 1;
   }
+  // Tập con: khoá (bài, lần lặp) mà nhánh BẬT nhận ≥ 1 đoạn; lấy CẢ HAI nhánh của các khoá đó.
+  const khoa = (k: KetQuaLuotMa) => `${k.baiId}#${k.lap}`;
+  const khoaCoDoan = new Set(bat.ds.filter((k) => k.coNguCanh > 0).map(khoa));
+  const tapTat = tat.ds.filter((k) => khoaCoDoan.has(khoa(k)));
+  const tapBat = bat.ds.filter((k) => khoaCoDoan.has(khoa(k)));
+  const nTap = Math.max(tapTat.length, tapBat.length);
+  const tapCoDoan: TapCoDoanEvalMa = {
+    n: nTap,
+    soBai: new Set(tapBat.map((k) => k.baiId)).size,
+    tat: { dat: tapTat.filter((k) => k.dat).length },
+    bat: { dat: tapBat.filter((k) => k.dat).length },
+    chenh: tapBat.filter((k) => k.dat).length - tapTat.filter((k) => k.dat).length,
+    nguongNhieu: nguongNhieu(nTap),
+  };
+  const chan: KetLuanEvalMa | null = soLoiHaTang > 0 ? "khong-do-duoc" : soLuotCoNguCanh === 0 ? "khong-ap-dung" : null;
+  const ketLuanToanBo: KetLuanEvalMa = chan ?? theoBien(chenh, nguong);
   const ketLuan: KetLuanEvalMa =
-    soLoiHaTang > 0
-      ? "khong-do-duoc"
-      : soLuotCoNguCanh === 0
-        ? "khong-ap-dung"
-        : -chenh > nguong
-          ? "tut"
-          : chenh > nguong
-            ? "nang"
-            : "trong-nhieu";
+    chan ?? (tapCoDoan.n < TOI_THIEU_LUOT_TAP_CO_DOAN ? "khong-du-bai-co-doan" : theoBien(tapCoDoan.chenh, tapCoDoan.nguongNhieu));
   return {
     n,
     tat: { dat: tat.dat, sinhDuocMa: tat.sinhDuocMa, cut: tat.cut },
@@ -194,6 +246,9 @@ export function tongHopEvalMa(ketQua: readonly KetQuaLuotMa[]): TongHopEvalMa {
     soLuotCoNguCanh,
     soLoiHaTang,
     ketLuan,
+    ketLuanToanBo,
+    tapCoDoan,
+    doiChung: tuyChon.doiChung === true,
     tut: ketLuan === "tut",
     theoNgonNgu,
   };
@@ -279,6 +334,8 @@ export interface DauVaoEvalMa {
   soLap: number;
   /** Lọc ngôn ngữ (vd ["cs"]) — vắng ⇒ mọi bài. */
   ngonNgu?: string[];
+  /** ĐỐI CHỨNG A/A: nhánh BẬT không chèn đoạn (cùng prompt TẮT) — đo biên nhiễu riêng của bộ bài. */
+  doiChung?: boolean;
   userId: number | null;
 }
 
@@ -304,13 +361,13 @@ export async function batDauEvalMa(vao: DauVaoEvalMa, ptVao?: PhuThuocEvalMa): P
     jobSong = null;
     throw e;
   }
-  giuCho.xong = chayVoiUuTien("nen", () => chayJob(id, vao.corpus, ds, soLap, pt, boHuy.signal)).finally(() => {
+  giuCho.xong = chayVoiUuTien("nen", () => chayJob(id, vao.corpus, ds, soLap, pt, boHuy.signal, vao.doiChung === true)).finally(() => {
     if (jobSong?.id === id) jobSong = null;
   });
   return { id };
 }
 
-async function chayJob(id: string, corpus: string, ds: BaiMa[], soLap: number, pt: PhuThuocEvalMa, signal: AbortSignal): Promise<void> {
+async function chayJob(id: string, corpus: string, ds: BaiMa[], soLap: number, pt: PhuThuocEvalMa, signal: AbortSignal, doiChung = false): Promise<void> {
   const ketQua: KetQuaLuotMa[] = [];
   const tong = ds.length * soLap * 2;
   const nguCanhTheoBai = new Map<string, DoanNguCanh[]>();
@@ -334,7 +391,8 @@ async function chayJob(id: string, corpus: string, ds: BaiMa[], soLap: number, p
             }
             doan = nguCanhTheoBai.get(bai.id)!;
           }
-          const prompt = doan.length ? taoPromptCoNguCanh(bai.prompt, doan, corpus, raoDoan) : bai.prompt;
+          // Đối chứng A/A: vẫn truy hồi (để `coNguCanh` đánh dấu đúng tập con) nhưng prompt BẬT = prompt TẮT.
+          const prompt = doan.length && !doiChung ? taoPromptCoNguCanh(bai.prompt, doan, corpus, raoDoan) : bai.prompt;
           const muc: KetQuaLuotMa = {
             baiId: bai.id,
             lang: bai.lang,
@@ -390,7 +448,7 @@ async function chayJob(id: string, corpus: string, ds: BaiMa[], soLap: number, p
   }
   let tongHop: TongHopEvalMa | null = null;
   if (trangThai === "xong") {
-    tongHop = tongHopEvalMa(ketQua);
+    tongHop = tongHopEvalMa(ketQua, { doiChung });
     if (tongHop.soLoiHaTang > 0) {
       trangThai = "khong-do-duoc";
       lyDo = `${tongHop.soLoiHaTang}/${ketQua.length} lượt sinh lỗi hạ tầng (llama-server/mạng) — không phát số A/B.`;

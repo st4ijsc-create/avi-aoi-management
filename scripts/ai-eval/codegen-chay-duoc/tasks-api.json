@@ -1,0 +1,44 @@
+[
+ {
+  "id": "A-cs1",
+  "lang": "cs",
+  "name": "DocHocSinh",
+  "prompt": "Viết C# trong namespace Sol: public static class DocDuLieu với public static System.Collections.Generic.List<(int Id, string Ten, decimal? Diem)> DocHocSinh(System.Data.Common.DbDataReader r) — đọc HẾT các dòng của reader; lấy cột theo TÊN cột \"Id\" (int), \"Ten\" (string), \"Diem\" (decimal, có thể NULL trong CSDL ⇒ trả null). KHÔNG giả định thứ tự cột. Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; using System.Linq; using System.Data; using System.Collections.Generic; public static class T { public static int Main(){ var t=new DataTable(); t.Columns.Add(\"Diem\",typeof(decimal)); t.Columns.Add(\"Ten\",typeof(string)); t.Columns.Add(\"Id\",typeof(int)); t.Rows.Add(8.5m,\"An\",1); t.Rows.Add(DBNull.Value,\"Binh\",2); using var r=new DataTableReader(t); var ds=DocDuLieu.DocHocSinh(r); if(ds.Count!=2) return 1; if(ds[0].Id!=1||ds[0].Ten!=\"An\"||ds[0].Diem!=8.5m) return 2; if(ds[1].Id!=2||ds[1].Ten!=\"Binh\"||ds[1].Diem!=null) return 3; System.Console.WriteLine(\"OK\"); return 0; } }"
+ },
+ {
+  "id": "A-cs2",
+  "lang": "cs",
+  "name": "TaoChuoiKetNoi",
+  "prompt": "Viết C# trong namespace Sol: public static class KetNoi với public static string TaoChuoiKetNoi(string may, string csdl, int timeoutGiay) — dùng Microsoft.Data.SqlClient.SqlConnectionStringBuilder dựng chuỗi kết nối SQL Server: máy chủ = may, cơ sở dữ liệu = csdl, xác thực Windows tích hợp, TIN chứng chỉ máy chủ (không kiểm chuỗi chứng chỉ), tên ứng dụng \"AOI\", thời gian chờ kết nối = timeoutGiay giây, TẮT MARS, ý định ứng dụng CHỈ ĐỌC. timeoutGiay <= 0 ném ArgumentOutOfRangeException. Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; using System.Linq; using System.Data; using System.Collections.Generic; public static class T { public static int Main(){ var s=KetNoi.TaoChuoiKetNoi(\"SRV01\\\\SQL\",\"AOI_DB\",15); var b=new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(s); if(b.DataSource!=\"SRV01\\\\SQL\") return 1; if(b.InitialCatalog!=\"AOI_DB\") return 2; if(!b.IntegratedSecurity) return 3; if(!b.TrustServerCertificate) return 4; if(b.ApplicationName!=\"AOI\") return 5; if(b.ConnectTimeout!=15) return 6; if(b.MultipleActiveResultSets) return 7; if(b.ApplicationIntent!=Microsoft.Data.SqlClient.ApplicationIntent.ReadOnly) return 8; try { KetNoi.TaoChuoiKetNoi(\"a\",\"b\",0); return 9; } catch(ArgumentOutOfRangeException) {} System.Console.WriteLine(\"OK\"); return 0; } }"
+ },
+ {
+  "id": "A-cs3",
+  "lang": "cs",
+  "name": "TaoThamSoTien",
+  "prompt": "Viết C# trong namespace Sol: public static class ThamSo với public static Microsoft.Data.SqlClient.SqlParameter TaoThamSoTien(string ten, decimal? giaTri) — tạo tham số SQL Server kiểu DECIMAL(18,2), chiều vào; tên tham số luôn bắt đầu bằng '@' (thêm nếu thiếu); giaTri khác null ⇒ gán NGUYÊN giá trị (KHÔNG tự làm tròn — máy chủ CSDL làm tròn khi ghi); giaTri null ⇒ giá trị là NULL của CSDL (không phải null của C#). Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; using System.Linq; using System.Data; using System.Collections.Generic; public static class T { public static int Main(){ var p=ThamSo.TaoThamSoTien(\"Gia\",12.345m); if(p.ParameterName!=\"@Gia\") return 1; if(p.SqlDbType!=SqlDbType.Decimal) return 2; if(p.Precision!=18||p.Scale!=2) return 3; if(p.Direction!=ParameterDirection.Input) return 4; if(!(p.Value is decimal v && v==12.345m)) return 5; var q=ThamSo.TaoThamSoTien(\"@X\",null); if(q.ParameterName!=\"@X\") return 6; if(q.Value!=DBNull.Value) return 7; if(q.SqlDbType!=SqlDbType.Decimal) return 8; System.Console.WriteLine(\"OK\"); return 0; } }"
+ },
+ {
+  "id": "A-cs4",
+  "lang": "cs",
+  "name": "DemKetQua",
+  "prompt": "Viết C# trong namespace Sol: public static class NhieuKetQua với public static System.Collections.Generic.List<int> DemDong(System.Data.Common.DbDataReader r) — reader trả NHIỀU tập kết quả (vd một batch SQL có nhiều câu SELECT); trả danh sách số dòng của TỪNG tập kết quả theo thứ tự, kể cả tập rỗng. Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; using System.Linq; using System.Data; using System.Collections.Generic; public static class T { public static int Main(){ var a=new DataTable(); a.Columns.Add(\"x\",typeof(int)); a.Rows.Add(1); a.Rows.Add(2); var b=new DataTable(); b.Columns.Add(\"y\",typeof(string)); var c=new DataTable(); c.Columns.Add(\"z\",typeof(int)); for(int i=0;i<3;i++) c.Rows.Add(i); using var r=new DataTableReader(new[]{a,b,c}); var ds=NhieuKetQua.DemDong(r); if(ds.Count!=3) return 1; if(ds[0]!=2||ds[1]!=0||ds[2]!=3) return 2; System.Console.WriteLine(\"OK\"); return 0; } }"
+ },
+ {
+  "id": "A-cs5",
+  "lang": "cs",
+  "name": "TaoBangLoi",
+  "prompt": "Viết C# trong namespace Sol: public static class BangLoi với public static System.Data.DataTable Tao() — trả DataTable tên \"Loi\" có cột \"Id\" (long, tự tăng bắt đầu 1 bước 1, khoá chính), \"Ma\" (string, không NULL, DUY NHẤT, độ dài tối đa 20), \"SoLan\" (int, không NULL, mặc định 0); và public static void Cong(System.Data.DataTable t, string ma, int them) — nếu đã có dòng mang Ma đó thì cộng thêm vào SoLan, chưa có thì thêm dòng mới với SoLan = them. Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; using System.Linq; using System.Data; using System.Collections.Generic; public static class T { public static int Main(){ var t=BangLoi.Tao(); if(t.TableName!=\"Loi\") return 1; if(t.PrimaryKey.Length!=1||t.PrimaryKey[0].ColumnName!=\"Id\") return 2; var id=t.Columns[\"Id\"]!; if(!id.AutoIncrement||id.DataType!=typeof(long)) return 3; var ma=t.Columns[\"Ma\"]!; if(ma.AllowDBNull||!ma.Unique||ma.MaxLength!=20) return 4; var sl=t.Columns[\"SoLan\"]!; if(sl.AllowDBNull||!0.Equals(sl.DefaultValue)) return 5; BangLoi.Cong(t,\"A1\",2); BangLoi.Cong(t,\"B2\",1); BangLoi.Cong(t,\"A1\",3); if(t.Rows.Count!=2) return 6; var a=t.AsEnumerable().First(x=>(string)x[\"Ma\"]==\"A1\"); if((int)a[\"SoLan\"]!=5) return 7; if((long)a[\"Id\"]!=1L) return 8; var r=t.NewRow(); r[\"Ma\"]=\"C3\"; t.Rows.Add(r); if((int)r[\"SoLan\"]!=0) return 9; try { var d=t.NewRow(); d[\"Ma\"]=\"A1\"; t.Rows.Add(d); return 10; } catch(ConstraintException) {} System.Console.WriteLine(\"OK\"); return 0; } }"
+ },
+ {
+  "id": "A-cs6",
+  "lang": "cs",
+  "name": "TaoBulkCopy",
+  "prompt": "Viết C# trong namespace Sol: public static class NapLo với public static Microsoft.Data.SqlClient.SqlBulkCopy Tao(string chuoiKetNoi, string bang, System.Collections.Generic.IReadOnlyList<(string Nguon, string Dich)> anhXa) — tạo đối tượng chép khối SQL Server (KHÔNG mở kết nối, KHÔNG ghi) với bảng đích = bang, lô 5000 dòng, KHÔNG giới hạn thời gian chờ, giữ giá trị định danh (identity) từ nguồn, và ánh xạ cột theo TÊN từ cột nguồn sang cột đích theo đúng anhXa. Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; using System.Linq; using System.Data; using System.Collections.Generic; public static class T { public static int Main(){ var m=new List<(string,string)>{(\"ma_loi\",\"Ma\"),(\"so\",\"SoLan\")}; using var b=NapLo.Tao(\"Server=.;Database=x;Integrated Security=true;TrustServerCertificate=true\",\"dbo.Loi\",m); if(b.DestinationTableName!=\"dbo.Loi\") return 1; if(b.BatchSize!=5000) return 2; if(b.BulkCopyTimeout!=0) return 3; if(b.ColumnMappings.Count!=2) return 4; if(b.ColumnMappings[0].SourceColumn!=\"ma_loi\"||b.ColumnMappings[0].DestinationColumn!=\"Ma\") return 5; if(b.ColumnMappings[1].SourceColumn!=\"so\"||b.ColumnMappings[1].DestinationColumn!=\"SoLan\") return 6; var f=typeof(Microsoft.Data.SqlClient.SqlBulkCopy).GetField(\"_copyOptions\",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance); if(f==null) return 7; var o=(Microsoft.Data.SqlClient.SqlBulkCopyOptions)f.GetValue(b)!; if((o&Microsoft.Data.SqlClient.SqlBulkCopyOptions.KeepIdentity)==0) return 8; System.Console.WriteLine(\"OK\"); return 0; } }"
+ }
+]

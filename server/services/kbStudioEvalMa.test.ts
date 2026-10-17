@@ -18,6 +18,7 @@ import {
   huyEvalMa,
   listBoBai,
   nguongNhieu,
+  TOI_THIEU_LUOT_TAP_CO_DOAN,
   tongHopEvalMa,
   type HangEvalMa,
   type KetQuaLuotMa,
@@ -58,6 +59,16 @@ describe("tongHopEvalMa — cổng tụt", () => {
   it("KHÔNG bài nào nhận được ngữ cảnh ⇒ khong-ap-dung (A/B không nói gì về corpus) dù số chênh", () => {
     const r = [...lap(12, (i) => kq("tat", i < 10)), ...lap(12, (i) => kq("bat", i < 6, { coNguCanh: 0 }))];
     expect(tongHopEvalMa(r)).toMatchObject({ soLuotCoNguCanh: 0, ketLuan: "khong-ap-dung", tut: false });
+    expect(tongHopEvalMa(r)).toMatchObject({ ketLuanToanBo: "khong-ap-dung", tapCoDoan: { n: 0, soBai: 0 } });
+  });
+
+  it("mọi lượt BẬT có đoạn ⇒ tập con = toàn bộ, kết luận như thước cũ", () => {
+    const r = [...lap(12, (i) => kq("tat", i < 10)), ...lap(12, (i) => kq("bat", i < 8))];
+    expect(tongHopEvalMa(r)).toMatchObject({
+      ketLuan: "tut",
+      ketLuanToanBo: "tut",
+      tapCoDoan: { n: 12, tat: { dat: 10 }, bat: { dat: 8 }, chenh: -2, nguongNhieu: 1 },
+    });
   });
 
   it("đếm cụt + theo ngôn ngữ", () => {
@@ -68,7 +79,62 @@ describe("tongHopEvalMa — cổng tụt", () => {
   });
 });
 
+/**
+ * Bộ lượt soBai × soLap: `baiCoDoan` bài đầu nhận đoạn ở nhánh BẬT (tập con), phần còn lại KHÔNG (prompt hai nhánh y hệt).
+ * `tapCon`/`conLai` = số lượt ĐẠT mỗi nhánh trong từng nhóm.
+ */
+function boDo(o: { soBai: number; soLap: number; baiCoDoan: number; tapCon: { tat: number; bat: number }; conLai: { tat: number; bat: number } }): KetQuaLuotMa[] {
+  const r: KetQuaLuotMa[] = [];
+  let iTap = 0;
+  let iCon = 0;
+  for (let l = 1; l <= o.soLap; l++) {
+    for (let b = 0; b < o.soBai; b++) {
+      const co = b < o.baiCoDoan;
+      const i = co ? iTap++ : iCon++;
+      const g = co ? o.tapCon : o.conLai;
+      r.push(kq("tat", i < g.tat, { baiId: `B${b}`, lap: l }), kq("bat", i < g.bat, { baiId: `B${b}`, lap: l, coNguCanh: co ? 5 : 0 }));
+    }
+  }
+  return r;
+}
+
+describe("tongHopEvalMa — thước TẬP CON (chỉ bài nhánh BẬT nhận ≥ 1 đoạn)", () => {
+  it("tái hiện lượt đo cổng Đợt 5 (tasks-hard × csharp-dotnet): toàn bộ 25→27/36 (+2) nhưng tập con 3→2/6 (−1) ⇒ +2 là của bài KHÔNG nhận đoạn", () => {
+    const t = tongHopEvalMa(boDo({ soBai: 12, soLap: 3, baiCoDoan: 2, tapCon: { tat: 3, bat: 2 }, conLai: { tat: 22, bat: 25 } }));
+    expect(t).toMatchObject({ n: 36, tat: { dat: 25 }, bat: { dat: 27 }, chenh: 2, nguongNhieu: 3, ketLuanToanBo: "trong-nhieu", soLuotCoNguCanh: 6 });
+    expect(t.tapCoDoan).toMatchObject({ n: 6, soBai: 2, tat: { dat: 3 }, bat: { dat: 2 }, chenh: -1, nguongNhieu: 1 });
+    expect(t.ketLuan).toBe("trong-nhieu");
+  });
+
+  it("nhiễu của bài KHÔNG nhận đoạn kéo thước cũ thành 'nang' — kết luận chính theo tập con: trong-nhieu", () => {
+    const t = tongHopEvalMa(boDo({ soBai: 12, soLap: 1, baiCoDoan: 6, tapCon: { tat: 3, bat: 3 }, conLai: { tat: 2, bat: 6 } }));
+    expect(t).toMatchObject({ chenh: 4, nguongNhieu: 1, ketLuanToanBo: "nang", ketLuan: "trong-nhieu", tapCoDoan: { n: 6, chenh: 0 } });
+  });
+
+  it("tập con NHẠY hơn: −2 trên 6 lượt có đoạn vượt biên 1 ⇒ tut, dù toàn bộ −2/36 nằm trong biên 3", () => {
+    const t = tongHopEvalMa(boDo({ soBai: 12, soLap: 3, baiCoDoan: 2, tapCon: { tat: 6, bat: 4 }, conLai: { tat: 24, bat: 24 } }));
+    expect(t).toMatchObject({ chenh: -2, nguongNhieu: 3, ketLuanToanBo: "trong-nhieu", ketLuan: "tut", tut: true, tapCoDoan: { n: 6, chenh: -2, nguongNhieu: 1 } });
+  });
+
+  it(`tập con < ${TOI_THIEU_LUOT_TAP_CO_DOAN} lượt ⇒ "khong-du-bai-co-doan" (không tut), thước cũ vẫn tính và hiển thị`, () => {
+    expect(TOI_THIEU_LUOT_TAP_CO_DOAN).toBe(6);
+    const t = tongHopEvalMa(boDo({ soBai: 12, soLap: 1, baiCoDoan: 2, tapCon: { tat: 2, bat: 0 }, conLai: { tat: 10, bat: 10 } }));
+    expect(t).toMatchObject({ ketLuan: "khong-du-bai-co-doan", tut: false, ketLuanToanBo: "tut", chenh: -2, tapCoDoan: { n: 2, soBai: 2, chenh: -2 } });
+  });
+
+  it("lỗi hạ tầng vẫn thắng mọi thước ⇒ khong-do-duoc", () => {
+    const r = boDo({ soBai: 12, soLap: 1, baiCoDoan: 12, tapCon: { tat: 12, bat: 0 }, conLai: { tat: 0, bat: 0 } });
+    r[0] = { ...r[0]!, loiHaTang: true };
+    expect(tongHopEvalMa(r)).toMatchObject({ ketLuan: "khong-do-duoc", ketLuanToanBo: "khong-do-duoc", tut: false });
+  });
+});
+
 describe("bộ bài — đọc TỆP THẬT của bộ đo", () => {
+  it("tasks-api (6 bài C# nặng API ngoài ADO.NET/SqlClient) có trong danh sách chọn được", () => {
+    expect(listBoBai().find((b) => b.ten === "tasks-api")).toMatchObject({ soBai: 6, ngonNgu: { cs: 6 } });
+    expect(docBoBai("fake-api")).toBeNull();
+  });
+
   it("listBoBai thấy tasks (11) + tasks-hard (12) kèm băm", () => {
     const ds = listBoBai();
     expect(ds.find((b) => b.ten === "tasks-hard")).toMatchObject({ soBai: 12, ngonNgu: { ts: 3, py: 3, cs: 3, cpp: 3 } });
@@ -162,8 +228,32 @@ describe("job eval mã — nền, A/B, %, huỷ", () => {
     expect(batCong).toBeDefined();
     expect(prompts.some((p) => p.prompt.includes("ĐOẠN NHIỄU"))).toBe(false);
     expect(prompts.filter((p) => p.prompt.includes("api.md"))).toHaveLength(1); // chỉ nhánh BẬT của T1
-    // cham giả: nhánh tat đạt, bat trượt ⇒ 2/2 vs 0/2, biên 1 ⇒ tut — NHƯNG chỉ 1 lượt có ngữ cảnh
-    expect(h.tongHop).toMatchObject({ n: 2, tat: { dat: 2 }, bat: { dat: 0 }, soLuotCoNguCanh: 1, ketLuan: "tut", tut: true });
+    // cham giả: nhánh tat đạt, bat trượt ⇒ 2/2 vs 0/2, biên 1 ⇒ thước cũ "tut" — NHƯNG chỉ 1 lượt có ngữ cảnh ⇒ tập con
+    // 1 lượt < 6 ⇒ kết luận chính "khong-du-bai-co-doan" (không phát cờ tụt từ một lượt).
+    expect(h.tongHop).toMatchObject({
+      n: 2,
+      tat: { dat: 2 },
+      bat: { dat: 0 },
+      soLuotCoNguCanh: 1,
+      ketLuanToanBo: "tut",
+      tapCoDoan: { n: 1, soBai: 1, tat: { dat: 1 }, bat: { dat: 0 } },
+      ketLuan: "khong-du-bai-co-doan",
+      tut: false,
+      doiChung: false,
+    });
+  });
+
+  it("ĐỐI CHỨNG A/A: nhánh BẬT dùng prompt TẮT (không chèn đoạn) nhưng VẪN truy hồi ⇒ tập con = bài LẼ RA nhận đoạn; tongHop.doiChung", async () => {
+    process.env.KB_STUDIO_EVAL_MA_ENABLED = "true";
+    const { pt, hang, prompts } = phuThuoc();
+    const { id } = await batDauEvalMa({ corpus: "c", boBai: "tasks-gia", soLap: 1, userId: 1, doiChung: true }, pt);
+    await choXongEvalMa(id);
+    const h = hang.get(id)!;
+    expect(prompts).toHaveLength(4);
+    expect(prompts.some((p) => p.prompt.includes("api.md") || p.prompt.includes("TAI_LIEU"))).toBe(false);
+    expect(pt.truyHoi).toHaveBeenCalledTimes(2);
+    expect(h.ketQua.find((k) => k.baiId === "T1" && k.nhanh === "bat")!.coNguCanh).toBe(1);
+    expect(h.tongHop).toMatchObject({ doiChung: true, soLuotCoNguCanh: 1, tapCoDoan: { n: 1 } });
   });
 
   it("một lượt tại một thời điểm ⇒ lượt thứ hai bị từ chối khi lượt đầu còn chạy", async () => {

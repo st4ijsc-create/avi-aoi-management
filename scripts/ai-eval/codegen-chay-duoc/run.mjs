@@ -31,7 +31,9 @@ const LABEL = arg("--label", CONFIG);
 const CHE_DO_NGHI = arg("--che-do-nghi", null);
 
 const TASKFILE = arg("--tasks", "tasks.json");
-const FAKEFILE = arg("--fake", TASKFILE.startsWith("tasks-hard") ? "fake-hard.json" : "fake.json");
+// Lời giải kiểm thước đi cặp theo tên: tasks-<x>.json ⇔ fake-<x>.json (tasks-hard, tasks-api …); tasks.json ⇔ fake.json.
+const FAKE_CAP = TASKFILE.replace(/^tasks/, "fake");
+const FAKEFILE = arg("--fake", FAKE_CAP !== TASKFILE && fs.existsSync(`${BENCH}/${FAKE_CAP}`) ? FAKE_CAP : "fake.json");
 const tasks = JSON.parse(fs.readFileSync(`${BENCH}/${TASKFILE}`, "utf8"))
   .filter(t => !ONLY || ONLY.split(",").includes(t.id) || ONLY.split(",").includes(t.lang));
 

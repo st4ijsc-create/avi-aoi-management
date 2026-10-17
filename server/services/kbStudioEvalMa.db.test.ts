@@ -41,7 +41,8 @@ describe("sổ eval mã — CSDL _test thật", () => {
     const [h] = await db.select().from(kbEvalMaRuns).where(eq(kbEvalMaRuns.id, id));
     expect(h).toMatchObject({ trangThai: "xong", tienDo: 100, soBai: 1, soLap: 2 });
     expect(h!.ketThuc).toBeInstanceOf(Date);
-    expect(h!.tongHop).toMatchObject({ n: 2, tat: { dat: 2 }, bat: { dat: 0 }, ketLuan: "tut", tut: true });
+    // 1 bài × 2 lặp ⇒ tập con 2 lượt < 6 ⇒ kết luận chính "khong-du-bai-co-doan"; thước cũ (toàn bộ) vẫn "tut" và đọc lại được.
+    expect(h!.tongHop).toMatchObject({ n: 2, tat: { dat: 2 }, bat: { dat: 0 }, ketLuanToanBo: "tut", tapCoDoan: { n: 2 }, ketLuan: "khong-du-bai-co-doan", tut: false });
     expect(h!.ketQua).toHaveLength(4);
     const ds = await danhSachEvalMa(CORPUS, 10, pt);
     expect(ds[0]).toMatchObject({ id, trangThai: "xong", dangSong: false });

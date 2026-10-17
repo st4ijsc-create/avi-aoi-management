@@ -11,12 +11,35 @@ describe("evalMaLogic", () => {
     expect(docTongHop({ ...th, n: "12" })).toBeNull();
   });
 
+  it("hàng CŨ (trước thước tập con) ⇒ tapCoDoan null, ketLuanToanBo = ketLuan, không đối chứng", () => {
+    expect(docTongHop(th)).toMatchObject({ tapCoDoan: null, ketLuanToanBo: "tut", doiChung: false });
+  });
+
+  it("hàng MỚI ⇒ đọc thước tập con + kết luận thước toàn bộ + cờ đối chứng A/A; tập con méo ⇒ null (không vẽ số giả)", () => {
+    const moi = {
+      ...th,
+      ketLuan: "khong-du-bai-co-doan",
+      ketLuanToanBo: "tut",
+      doiChung: true,
+      tapCoDoan: { n: 2, soBai: 2, tat: { dat: 2 }, bat: { dat: 0 }, chenh: -2, nguongNhieu: 1 },
+    };
+    expect(docTongHop(moi)).toMatchObject({
+      ketLuan: "khong-du-bai-co-doan",
+      ketLuanToanBo: "tut",
+      doiChung: true,
+      tapCoDoan: { n: 2, soBai: 2, tat: 2, bat: 0, chenh: -2, nguongNhieu: 1 },
+    });
+    expect(docTongHop({ ...moi, tapCoDoan: { n: "2" } })?.tapCoDoan).toBeNull();
+    expect(docTongHop({ ...moi, ketLuanToanBo: "la" })?.ketLuanToanBo).toBe("khong-du-bai-co-doan");
+  });
+
   it("huy hiệu: tụt đỏ · nâng chính · trong nhiễu phụ · còn lại viền", () => {
     expect(kieuHuyHieu("tut")).toBe("destructive");
     expect(kieuHuyHieu("nang")).toBe("default");
     expect(kieuHuyHieu("trong-nhieu")).toBe("secondary");
     expect(kieuHuyHieu("khong-ap-dung")).toBe("outline");
     expect(kieuHuyHieu("khong-do-duoc")).toBe("outline");
+    expect(kieuHuyHieu("khong-du-bai-co-doan")).toBe("outline");
   });
 
   it("dấu chênh + còn chạy", () => {

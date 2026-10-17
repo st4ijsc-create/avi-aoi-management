@@ -15650,16 +15650,20 @@
       "soBai": "{{n}} tasks",
       "chay": "Run code eval",
       "huy": "Cancel",
-      "giaiThich": "Runs in the background at low priority (does not block people using the AI). Only an admin with 2FA can start / cancel. \"Regressed\" only when ON scores below OFF by MORE than the noise margin: ±3/36 measured on the 12-task × 3-run set, scaled to this run's size. No ON attempt received a chunk ≥ the threshold ⇒ \"Not applicable\".",
+      "giaiThich": "Runs in the background at low priority (does not block people using the AI). Only an admin with 2FA can start / cancel. TWO MEASURES: the main verdict is computed on the tasks where the ON branch actually received ≥ 1 chunk (tasks without chunks get an identical prompt on both branches — they only add noise); at least 6 such attempts are needed, otherwise ⇒ \"Too few tasks with chunks\". The whole-set measure is still shown. \"Regressed\" only when ON scores below OFF by MORE than the noise margin: ±3/36 measured on the 12-task × 3-run set, scaled to that measure's attempt count. No ON attempt received a chunk ≥ the threshold ⇒ \"Not applicable\".",
       "chuaCo": "No code eval runs for this corpus yet.",
       "cut": "{{n}} cut off",
       "dangChay": "running {{pct}} %",
+      "toanBo": "whole set: {{kl}}",
+      "doiChung": "A/A control",
+      "tapConCu": "— (older run, no such measure)",
       "col": {
         "thoiDiem": "Time",
         "boBai": "Task set",
-        "tat": "OFF (pass/n)",
-        "bat": "ON (pass/n)",
-        "chenh": "Delta (margin)",
+        "tat": "OFF whole set (pass/n)",
+        "bat": "ON whole set (pass/n)",
+        "chenh": "Delta whole set (margin)",
+        "tapCoDoan": "Tasks with chunks: OFF → ON (delta, margin)",
         "ketLuan": "Verdict"
       },
       "ketLuan": {
@@ -15667,7 +15671,8 @@
         "nang": "Improved",
         "trong-nhieu": "Within noise",
         "khong-ap-dung": "Not applicable",
-        "khong-do-duoc": "Not measurable"
+        "khong-do-duoc": "Not measurable",
+        "khong-du-bai-co-doan": "Too few tasks with chunks"
       },
       "trangThai": {
         "dang-chay": "Running",

@@ -116,6 +116,8 @@ Báo cáo JSON: `reports/<label>.json`. **Nhãn luôn kết thúc bằng số l�
 | `tasks-hard.json` | **12** (3 TS · 3 Py · 3 C# · **3 C++**) | LRU+TTL · gộp khoảng · topo+chu trình (TS: **nhỏ nhất theo từ điển + đúng nút TRONG chu trình**) · rate-limit · SemVer · CSV RFC4180 · ring buffer · biểu thức · ca UTC · **C++: cửa sổ trượt biên MỞ · topo+chu trình · biểu thức chia cắt-về-0** |
 | `duan.mjs` | 3 đơn hàng | **hiện vật có biên dịch/phân tích được không**: T-SQL qua ScriptDom (offline) · PostgreSQL cục bộ, lược đồ tạm · `dotnet build` · `node --check`/esbuild |
 
+| `tasks-api.json` | **6** (6 C#) | **nặng API ngoài** (ADO.NET / `Microsoft.Data.SqlClient` 5.2.2 ghim trong `cs-template`): đọc `DbDataReader` theo TÊN cột + NULL · `SqlConnectionStringBuilder` · `SqlParameter` DECIMAL(18,2) + `DBNull` · nhiều tập kết quả (`NextResult`) · `DataTable` ràng buộc · `SqlBulkCopy` ánh xạ cột. Thiết kế để corpus kiểu `csharp-dotnet` (Training Studio "Eval mã") có chỗ TÁC DỤNG — bộ khó chỉ 2/12 bài nhận đoạn ≥ 0,44 |
+
 C++ đi qua **CMake → MSVC** (`cpp-template/`): CMake tự dò MSVC qua registry, không cần `vcvars64`.
 Máy này: msys2 có nhưng **chưa cài toolchain**; MSVC 14.51 (VS 2026) có đủ.
 
@@ -157,6 +159,33 @@ Khoảng cách H 67 % ↔ M 83 % là chi phí đường ống (ngữ cảnh repo
 
 Bài **không** model nào giải: không còn (H-ts3 từng là bài ấy — MoE có nghĩ giải 3/3).
 Bài ổn định khó nhất: H-cs2 (biểu thức C#), H-py3 (CSV RFC4180), H-ts3.
+
+### `tasks-api` — kiểm thước, nhiễu, giới hạn (2026-10-17)
+
+```bash
+node scripts/ai-eval/codegen-chay-duoc/run.mjs --tasks tasks-api.json --config fake-ok  --label kt-api-ok-1   # PHẢI 6/6
+node scripts/ai-eval/codegen-chay-duoc/run.mjs --tasks tasks-api.json --config fake-bad --label kt-api-bad-1  # PHẢI 0/6
+```
+`fake-api.json` tự cặp theo tên (`tasks-<x>.json` ⇔ `fake-<x>.json`). Mỗi `fake-bad` biên dịch được và sai đúng MỘT
+điều đặc tả nói rõ (đọc theo vị trí cột · thiếu `ApplicationIntent` · gán `null` C# thay `DBNull` · bỏ tập kết quả đầu ·
+thiếu `Unique` · đảo chiều ánh xạ).
+
+- ⚠ **CHƯA có số đo nhiễu riêng.** Biên ±3/36 là của `tasks-hard` (12 bài, 4 ngôn ngữ); 6 bài C# nặng API có thể dao
+  động khác. Lượt A/B duy nhất (Studio, corpus `csharp-dotnet`, × 3): TẮT 14/18 → BẬT 13/18, 18/18 lượt nhận đoạn.
+- **Cách đo nhiễu: A/A** — hai nhánh CÙNG tắt corpus, ≥ 3 lượt, ghi `max |chênh|`. Ở Studio: thủ tục
+  `kbStudio.batDauEvalMa` nhận `doiChung: true` (nhánh BẬT vẫn truy hồi để đánh dấu "bài có đoạn" nhưng prompt = prompt
+  TẮT; hàng hiện nhãn "A/A đối chứng"). Ở dòng lệnh: chạy cùng cấu hình ≥ 3 lần (`--label X-1`, `X-2`, `X-3`) rồi
+  `so-sanh.mjs X-`.
+- `A-cs6` đọc trường riêng `_copyOptions` của `SqlBulkCopy` bằng phản chiếu (không có API công khai đọc `KeepIdentity`)
+  ⇒ gắn với `Microsoft.Data.SqlClient` 5.2.2; đổi phiên bản gói ⇒ chạy lại kiểm thước trước khi tin số.
+- Bài nào cũng là C# ⇒ không dùng để so ngôn ngữ; dùng để đo "corpus API có giúp mã gọi API đúng không".
+
+### Studio "Eval mã" — HAI THƯỚC (2026-10-17)
+
+Kết luận chính tính trên **tập con** cặp (bài, lần lặp) mà nhánh BẬT thật sự nhận ≥ 1 đoạn ≥ 0,44; biên ⌈n×3/36⌉ trên n
+lượt của tập con; tập con < 6 lượt ⇒ "không đủ bài có đoạn". Thước toàn bộ vẫn hiển thị. Lý do (đo được, cổng Đợt 5):
+`tasks-hard` × 3 toàn bộ 25 → 27/36 (+2) nhưng chỉ 6/36 lượt nhận đoạn, trên đó 3 → 2/6 (−1) — +2 đến hoàn toàn từ bài
+có prompt hai nhánh y hệt, tức nhiễu thuần. Xem `server/services/kbStudioEvalMa.ts#tongHopEvalMa`.
 
 ## Thêm một model mới — checklist
 

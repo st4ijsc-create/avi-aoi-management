@@ -4,7 +4,8 @@
  * Câu hỏi nó trả lời: "nạp corpus này có làm MÃ tốt hơn hay tệ đi?" — bộ bài của bộ đo `codegen-chay-duoc`, mỗi bài
  * sinh hai lần (corpus TẮT / BẬT), máy chạy test chấm. Lượt chạy NỀN trên máy chủ; khung này chỉ bắt đầu / huỷ / đọc
  * tiến độ (hỏi lại 3 s khi còn lượt chạy). Kết luận cổng ("tụt" / "nâng" / "trong nhiễu") do MÁY CHỦ tính kèm biên
- * nhiễu ĐO ĐƯỢC — khung chỉ hiển thị, không tự suy.
+ * nhiễu ĐO ĐƯỢC — khung chỉ hiển thị, không tự suy. HAI THƯỚC (2026-10-17): cột "Bài có đoạn" là thước của kết luận
+ * chính (chỉ bài nhánh BẬT nhận ≥ 1 đoạn); cột TẮT/BẬT/Chênh là thước TOÀN BỘ cũ, kết luận của nó in nhỏ dưới huy hiệu.
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -108,7 +109,8 @@ export function EvalMaPanel({ corpus }: { corpus: string }) {
                   <th className="py-1 pr-2">{t("kbStudio.evalMa.col.boBai", "Bộ bài")}</th>
                   <th className="py-1 pr-2">{t("kbStudio.evalMa.col.tat", "TẮT")}</th>
                   <th className="py-1 pr-2">{t("kbStudio.evalMa.col.bat", "BẬT")}</th>
-                  <th className="py-1 pr-2">{t("kbStudio.evalMa.col.chenh", "Chênh (biên)")}</th>
+                  <th className="py-1 pr-2">{t("kbStudio.evalMa.col.chenh", "Chênh toàn bộ (biên)")}</th>
+                  <th className="py-1 pr-2">{t("kbStudio.evalMa.col.tapCoDoan", "Bài có đoạn: TẮT → BẬT (chênh, biên)")}</th>
                   <th className="py-1 pr-2">{t("kbStudio.evalMa.col.ketLuan", "Kết luận")}</th>
                 </tr>
               </thead>
@@ -121,6 +123,11 @@ export function EvalMaPanel({ corpus }: { corpus: string }) {
                       <td className="py-1 pr-2 whitespace-nowrap">{new Date(r.batDau).toLocaleString()}</td>
                       <td className="py-1 pr-2">
                         {r.boBai} × {r.soLap}
+                        {th?.doiChung ? (
+                          <Badge variant="outline" className="ml-1">
+                            {t("kbStudio.evalMa.doiChung", "A/A đối chứng")}
+                          </Badge>
+                        ) : null}
                       </td>
                       {th ? (
                         <>
@@ -135,12 +142,33 @@ export function EvalMaPanel({ corpus }: { corpus: string }) {
                           <td className="py-1 pr-2">
                             {dauChenh(th.chenh)} (±{th.nguongNhieu})
                           </td>
+                          <td className="py-1 pr-2 whitespace-nowrap">
+                            {th.tapCoDoan ? (
+                              <>
+                                {th.tapCoDoan.tat}/{th.tapCoDoan.n} → {th.tapCoDoan.bat}/{th.tapCoDoan.n} · {dauChenh(th.tapCoDoan.chenh)} (±{th.tapCoDoan.nguongNhieu})
+                                <span className="text-xs text-muted-foreground">
+                                  {" "}
+                                  · {t("kbStudio.evalMa.soBai", { n: th.tapCoDoan.soBai, defaultValue: `${th.tapCoDoan.soBai} bài` })}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">{t("kbStudio.evalMa.tapConCu", "— (lượt cũ, chưa có thước này)")}</span>
+                            )}
+                          </td>
                           <td className="py-1 pr-2">
                             <Badge variant={kieuHuyHieu(th.ketLuan)}>{t(`kbStudio.evalMa.ketLuan.${th.ketLuan}`)}</Badge>
+                            {th.tapCoDoan ? (
+                              <div className="text-xs text-muted-foreground">
+                                {t("kbStudio.evalMa.toanBo", {
+                                  kl: t(`kbStudio.evalMa.ketLuan.${th.ketLuanToanBo}`),
+                                  defaultValue: `toàn bộ: ${th.ketLuanToanBo}`,
+                                })}
+                              </div>
+                            ) : null}
                           </td>
                         </>
                       ) : (
-                        <td className="py-1 pr-2" colSpan={4}>
+                        <td className="py-1 pr-2" colSpan={5}>
                           {r.trangThai === "dang-chay" ? (
                             <span className="inline-flex items-center gap-1">
                               <Loader2 className="h-3 w-3 animate-spin" />

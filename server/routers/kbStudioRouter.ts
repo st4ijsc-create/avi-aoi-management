@@ -459,13 +459,22 @@ export const kbStudioRouter = router({
         boBai: z.string().trim().regex(/^tasks(?:-[a-z0-9]+)*$/i).max(120),
         soLap: z.number().int().min(1).max(3).optional(),
         ngonNgu: z.array(z.enum(["ts", "py", "cs", "cpp"])).max(4).optional(),
+        /** Đối chứng A/A (hai nhánh cùng prompt TẮT) — đo biên nhiễu riêng của bộ bài. */
+        doiChung: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const m = await import("../services/kbStudioEvalMa");
       const { KbEvalMaBangVangError } = await import("../services/kbStudioEvalMaSo");
       try {
-        return await m.batDauEvalMa({ corpus: input.corpus, boBai: input.boBai, soLap: input.soLap ?? 1, ngonNgu: input.ngonNgu, userId: ctx.user?.id ?? null });
+        return await m.batDauEvalMa({
+          corpus: input.corpus,
+          boBai: input.boBai,
+          soLap: input.soLap ?? 1,
+          ngonNgu: input.ngonNgu,
+          doiChung: input.doiChung === true,
+          userId: ctx.user?.id ?? null,
+        });
       } catch (err) {
         if (err instanceof m.KbEvalMaTatError) throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "kbEvalMa" }, err.message);
         if (err instanceof m.KbEvalMaDangChayError) {

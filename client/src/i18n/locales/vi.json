@@ -15630,16 +15630,20 @@
       "soBai": "{{n}} bài",
       "chay": "Chạy eval mã",
       "huy": "Huỷ",
-      "giaiThich": "Chạy nền, mức ưu tiên thấp (không chặn người đang dùng AI). Chỉ admin đã bật 2FA mới bắt đầu / huỷ được. \"Tụt\" chỉ khi BẬT thấp hơn TẮT QUÁ biên nhiễu: ±3/36 đo trên bộ 12 bài × 3 lượt, quy theo số lượt của lượt này. Không lượt BẬT nào nhận được đoạn ≥ ngưỡng ⇒ \"Không áp dụng\".",
+      "giaiThich": "Chạy nền, mức ưu tiên thấp (không chặn người đang dùng AI). Chỉ admin đã bật 2FA mới bắt đầu / huỷ được. HAI THƯỚC: kết luận chính tính trên các bài mà nhánh BẬT thật sự nhận ≥ 1 đoạn (bài không nhận đoạn có prompt giống hệt hai nhánh — chỉ góp nhiễu); cần ≥ 6 lượt như thế, nếu không ⇒ \"Không đủ bài có đoạn\". Thước toàn bộ vẫn hiển thị. \"Tụt\" chỉ khi BẬT thấp hơn TẮT QUÁ biên nhiễu: ±3/36 đo trên bộ 12 bài × 3 lượt, quy theo số lượt của thước đó. Không lượt BẬT nào nhận được đoạn ≥ ngưỡng ⇒ \"Không áp dụng\".",
       "chuaCo": "Chưa có lượt eval mã nào cho corpus này.",
       "cut": "cụt {{n}}",
       "dangChay": "đang chạy {{pct}} %",
+      "toanBo": "toàn bộ: {{kl}}",
+      "doiChung": "A/A đối chứng",
+      "tapConCu": "— (lượt cũ, chưa có thước này)",
       "col": {
         "thoiDiem": "Thời điểm",
         "boBai": "Bộ bài",
-        "tat": "TẮT (đạt/n)",
-        "bat": "BẬT (đạt/n)",
-        "chenh": "Chênh (biên)",
+        "tat": "TẮT toàn bộ (đạt/n)",
+        "bat": "BẬT toàn bộ (đạt/n)",
+        "chenh": "Chênh toàn bộ (biên)",
+        "tapCoDoan": "Bài có đoạn: TẮT → BẬT (chênh, biên)",
         "ketLuan": "Kết luận"
       },
       "ketLuan": {
@@ -15647,7 +15651,8 @@
         "nang": "Nâng",
         "trong-nhieu": "Trong nhiễu",
         "khong-ap-dung": "Không áp dụng",
-        "khong-do-duoc": "Không đo được"
+        "khong-do-duoc": "Không đo được",
+        "khong-du-bai-co-doan": "Không đủ bài có đoạn"
       },
       "trangThai": {
         "dang-chay": "Đang chạy",
