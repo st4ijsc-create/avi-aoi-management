@@ -239,3 +239,62 @@ describe("webview agent — cảnh báo nội dung đáng ngờ (2026-10-17)", (
     expect(cac.some((p) => p.tag === "b")).toBe(false);
   });
 });
+
+describe("webview agent — 👍/👎 câu trả lời cuối (Đợt 5.1 VSCode)", () => {
+  const LUOT = "0f0e0d0c-0b0a-4908-8706-050403020100";
+  const nutPh = (w: ReturnType<typeof chay>) =>
+    tatCa(w.nut("hoi-thoai")).filter((p) => p.tag === "button" && (p.textContent === "👍" || p.textContent === "👎"));
+
+  it("★★★ nút CHỈ hiện khi lượt xong VÀ host báo có câu trả lời để chấm; xong không kèm phanHoi ⇒ không nút", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "p", con: [{ t: "text", chu: "Đã sửa." }] }] });
+    expect(nutPh(w)).toHaveLength(0);
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false });
+    expect(nutPh(w)).toHaveLength(0);
+    w.nut("o-nhap").value = "y";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "p", con: [{ t: "text", chu: "Xong." }] }] });
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false, phanHoi: { luotId: LUOT, chiSoKhoi: 1 } });
+    expect(nutPh(w).map((n) => n.textContent)).toEqual(["👍", "👎"]);
+  });
+
+  it("★★★ 👍 ⇒ ag_phan_hoi {luotId, chiSoKhoi, danhGia:1}; 👎 ⇒ danhGia −1 rồi lý do tuỳ chọn gửi lại CÙNG khoá", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "p", con: [{ t: "text", chu: "Đã sửa." }] }] });
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false, phanHoi: { luotId: LUOT, chiSoKhoi: 0 } });
+    const [len, xuong] = nutPh(w);
+    const vung = tatCa(w.nut("hoi-thoai")).find((p) => p.className === "ag-phan-hoi")!;
+    const oLyDo = tatCa(vung).find((p) => p.tag === "input")!;
+    const nutLyDo = tatCa(vung).find((p) => p.tag === "button" && p.textContent === "Gửi lý do")!;
+    expect(oLyDo.hidden).toBe(true);
+    len!.bam();
+    xuong!.bam();
+    expect(oLyDo.hidden).toBe(false);
+    oLyDo.value = "sai API";
+    nutLyDo.bam();
+    expect(w.daGui.filter((m) => m.loai === "ag_phan_hoi")).toEqual([
+      { loai: "ag_phan_hoi", luotId: LUOT, chiSoKhoi: 0, danhGia: 1 },
+      { loai: "ag_phan_hoi", luotId: LUOT, chiSoKhoi: 0, danhGia: -1 },
+      { loai: "ag_phan_hoi", luotId: LUOT, chiSoKhoi: 0, danhGia: -1, lyDo: "sai API" },
+    ]);
+  });
+
+  it("★★ kết quả từ host: ok ⇒ 'Đã ghi phản hồi'; hỏng ⇒ dòng trạng thái nhỏ (KHÔNG thêm lượt Lỗi/hộp thoại)", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "x";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "ag_md", chiSoMaDau: 0, cay: [{ t: "p", con: [{ t: "text", chu: "Đã sửa." }] }] });
+    w.banTin({ loai: "ag_xong", lyDo: "hoan-thanh", coHoanTac: false, phanHoi: { luotId: LUOT, chiSoKhoi: 0 } });
+    const vung = tatCa(w.nut("hoi-thoai")).find((p) => p.className === "ag-phan-hoi")!;
+    const soLuotTruoc = tatCa(w.nut("hoi-thoai")).length;
+    w.banTin({ loai: "ag_phan_hoi_kq", luotId: LUOT, ok: false });
+    expect(tatCa(vung).some((p) => String(p.textContent).includes("Output"))).toBe(true);
+    expect(tatCa(w.nut("hoi-thoai")).length).toBe(soLuotTruoc);
+    w.banTin({ loai: "ag_phan_hoi_kq", luotId: LUOT, ok: true });
+    expect(tatCa(vung).some((p) => p.textContent === "Đã ghi phản hồi.")).toBe(true);
+  });
+});

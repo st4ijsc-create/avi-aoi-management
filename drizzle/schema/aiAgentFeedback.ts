@@ -7,7 +7,8 @@
  *   • `kb_eval_ma_runs` — lượt EVAL MÃ của Training Studio (5.2): corpus BẬT/TẮT (A/B) trong cùng một lượt, chạy nền có
  *     huỷ + %. Người ghi/đọc DUY NHẤT: `server/services/kbStudioEvalMa.ts`.
  *
- * ⚠ CHECK ở `drizzle/0397_ai_phan_hoi_eval_ma.sql` (hình dạng tra-loi/diff; danhGia ∈ {−1, 1}; quyết định ∈ {duyet, bac};
+ * ★ mig 0398: `nguon` (`web` | `vscode`) + `luotClient` cho phiếu của lượt agent chạy cục bộ trong extension VSCode.
+ * ⚠ CHECK ở `drizzle/0397_ai_phan_hoi_eval_ma.sql` (+ `0398_ai_phan_hoi_nguon_client.sql`) (hình dạng tra-loi/diff; danhGia ∈ {−1, 1}; quyết định ∈ {duyet, bac};
  *   `dang-chay` ⇔ ketThuc NULL; `xong` ⇒ có tongHop). Mốc giờ `timestamptz`, ghi bằng `now()` phía SQL.
  */
 import { pgTable, varchar, integer, smallint, text, timestamp, uuid, jsonb, index } from "drizzle-orm/pg-core";
@@ -22,6 +23,13 @@ export const aiAgentFeedback = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     /** `tra-loi` | `diff`. */
     loai: varchar("loai", { length: 8 }).notNull(),
+    /**
+     * (mig 0398) `web` — văn bản lấy từ SỔ máy chủ (`ai_agent_runs` / `ai_pending_actions`); `vscode` — lượt agent CHẠY
+     * CỤC BỘ trong extension, văn bản do client gửi (đã che + cắt). Hai mức tin, KHÔNG trộn (CHECK `…_nguon`).
+     */
+    nguon: varchar("nguon", { length: 8 }).default("web").notNull(),
+    /** (mig 0398) vscode: id lượt do extension sinh (uuid) — thay `runId` (lượt cục bộ không có hàng `ai_agent_runs`). */
+    luotClient: uuid("luotClient"),
     runId: uuid("runId"),
     /** tra-loi: thứ tự KHỐI TRẢ LỜI trong lượt chạy (`khoiTraLoiTuSuKien`), từ 0. */
     chiSoTin: integer("chiSoTin"),

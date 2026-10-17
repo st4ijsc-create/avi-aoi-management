@@ -140,7 +140,13 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 //     `ai_repo_read/canView` kiểm lại mỗi lượt; chốt lượt của người khác bị chính dịch vụ từ chối — `row.userId !== user.id`);
 //   `POST /api/ai/gateway-token/tu-thu-hoi` (thu hồi CHÍNH token đang trình, tra theo băm; chỉ có thể THU HẸP quyền).
 // Không tuyến nào đọc dữ liệu tenant/nhà máy ⇒ không mục nào vào A, sổ nợ không thêm dòng. Cả ba sau cổng giấy phép `/api/ai`.
-const GHIM = { A: 80, C: 40, D: 94, S: 19, U: 16, tong: 249 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 5.1 phía VSCode, cùng nhánh) — **D 94 → 95 · tong 249 → 250 · A/C/S/U giữ nguyên.** Đo: chạy
+// lưới trước/sau khi thêm MỘT tuyến vào `server/routes/aiGatewayTokenBearerApi.ts` — đúng một tuyến mới, POST, không tuyến cũ
+// nào đổi nhóm: `POST /api/ai/client-feedback` (👍/👎 + lý do cho câu trả lời cuối của lượt agent CHẠY CỤC BỘ trong
+// extension; danh tính = CHỦ token `avgw_` tra theo băm, phạm vi `chat`, `ai_repo_read/canView` kiểm lại mỗi lượt; chỉ GHI
+// một hàng `ai_agent_feedback` của CHÍNH chủ token — `nguon = 'vscode'`, khoá (người, lượt client, khối) — và trả lại đúng
+// hàng ấy; không đọc dữ liệu tenant/nhà máy nào). Không mục nào vào A, sổ nợ không thêm dòng. Sau cổng giấy phép `/api/ai`.
+const GHIM = { A: 80, C: 40, D: 95, S: 19, U: 16, tong: 250 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {

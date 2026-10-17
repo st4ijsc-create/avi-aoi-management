@@ -17,8 +17,21 @@
  * ⚠ Quyền: `ai_repo_read/canView` (cùng bit các thủ tục lượt chạy) — fail-closed khi `checkPermission` ném. Tổng hợp và
  *   xuất MỌI người đòi vai `admin` (kiểm ở đây VÀ ở sàn thủ tục). Từ chối ⇒ `{ ok:false, note }`, không ném lỗi thô.
  * ⚠ `ghiQuyetDinhTuCuaDuyet` KHÔNG BAO GIỜ ném: phản hồi là phụ, không được làm hỏng một lượt duyệt/bác thật.
+ *
+ * ★ Đợt 5.1 VSCode — `thuTucPhanHoiClient`: phiếu cho câu trả lời cuối của lượt agent CHẠY CỤC BỘ trong extension (cửa
+ *   REST Bearer `avgw_` phạm vi `chat`, `routes/aiGatewayTokenBearerApi.ts`). NGOẠI LỆ CÓ TÊN của nguyên tắc "không tin chữ
+ *   client" ở trên: lượt cục bộ KHÔNG có hàng `ai_agent_runs` nên không có sổ để tra ⇒ client gửi văn bản, máy chủ che bí
+ *   mật + cắt trần + ghi `nguon = 'vscode'` (mức tin THẤP hơn, không trộn với phiếu web — xem `db/aiAgentFeedback.ts`).
  */
-import { khoiTraLoiTuSuKien, diffHopNhat, mauBoDuLieuTuHang, TRAN_KY_TU_NOI_DUNG } from "@shared/phanHoiAgent";
+import {
+  khoiTraLoiTuSuKien,
+  diffHopNhat,
+  mauBoDuLieuTuHang,
+  TRAN_KY_TU_NOI_DUNG,
+  TRAN_KY_TU_CAU_HOI_CLIENT,
+  TRAN_KY_TU_TRA_LOI_CLIENT,
+  TRAN_KY_TU_LY_DO,
+} from "@shared/phanHoiAgent";
 import { checkPermission } from "../../../_core/accessControl";
 import { redactSecretsOnly } from "../aiSafety";
 import { phanQuyetDuongDan } from "../../aiLocalTools/repoSandbox";
@@ -28,6 +41,7 @@ import type {
   TongHopPhanHoi,
   HangXuat,
   PhieuTraLoi,
+  PhieuTraLoiClient,
   AnhChupDiff,
   DanhGia,
 } from "../../../db/aiAgentFeedback";
@@ -87,7 +101,7 @@ const cheCat = (s: string | null | undefined) => (s == null ? null : che(s).slic
 const duongDuocPhep = (d: string) => phanQuyetDuongDan(d) === null;
 const lyDoSach = (s: string | null | undefined) => {
   const t = (s ?? "").trim();
-  return t ? che(t).slice(0, 2000) : null;
+  return t ? che(t).slice(0, TRAN_KY_TU_LY_DO) : null;
 };
 
 async function coQuyen(u: NguoiPhien, pt: PhuThuocPhanHoi): Promise<boolean> {
@@ -153,6 +167,49 @@ export async function thuTucPhanHoi(u: NguoiPhien, y: DauVaoPhanHoi, ptVao?: Phu
     duongDan: anh.duongDan,
     danhGia: y.danhGia,
     lyDo: lyDoSach(y.lyDo),
+  });
+  return kq.ok ? { ok: true as const, note: null, phieu: kq.hang } : { ok: false as const, note: "DB_LOI" as const, phieu: null };
+}
+
+// ─── phiếu của lượt agent CHẠY CỤC BỘ (extension VSCode) ────────────────────────────────────────
+
+export type GhiPhieuClient = (p: PhieuTraLoiClient) => Promise<KetQuaGhi>;
+
+export interface DauVaoPhanHoiClient {
+  /** id lượt do extension sinh (uuid). */
+  luotId: string;
+  /** Thứ tự khối trả lời trong lượt (`traLoiCuoiTuSuKien`), từ 0. */
+  chiSoKhoi: number;
+  danhGia: DanhGia | null;
+  lyDo?: string | null;
+  /** Câu hỏi người gõ — CLIENT gửi (không có sổ máy chủ). */
+  cauHoi: string;
+  /** Câu trả lời cuối — CLIENT gửi. */
+  traLoi: string;
+  duAn?: string | null;
+}
+
+/** Bỏ NUL (cột `text` Postgres từ chối `\u0000` ⇒ cả lượt ghi hỏng) rồi che, rồi cắt — cắt SAU che (che làm chuỗi dài ra). */
+const cheVanBanClient = (s: string, tran: number) => che(s.replace(/\u0000/g, "")).slice(0, tran);
+
+/**
+ * Phiếu cho câu trả lời cuối của lượt agent cục bộ. `u` = CHỦ TOKEN (cửa REST đã kiểm token · `ai_repo_read/canView` ·
+ * phạm vi `chat` · trần lượt) — thân yêu cầu không mang id người nào. Văn bản client gửi được che + cắt ở ĐÂY trước khi
+ * tới tầng dữ liệu; tầng dữ liệu đặt `nguon = 'vscode'`.
+ */
+export async function thuTucPhanHoiClient(u: NguoiPhien, y: DauVaoPhanHoiClient, ghiVao?: GhiPhieuClient) {
+  if (!Number.isInteger(u.id) || u.id <= 0) return { ok: false as const, note: "PERMISSION_DENIED" as const, phieu: null };
+  const ghi = ghiVao ?? (await import("../../../db/aiAgentFeedback")).ghiPhieuTraLoiClient;
+  const duAn = typeof y.duAn === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(y.duAn) ? y.duAn : null;
+  const kq = await ghi({
+    userId: u.id,
+    luotClient: y.luotId,
+    chiSoTin: y.chiSoKhoi,
+    projectId: duAn,
+    danhGia: y.danhGia,
+    lyDo: lyDoSach(y.lyDo),
+    cauHoi: cheVanBanClient(y.cauHoi, TRAN_KY_TU_CAU_HOI_CLIENT) || null,
+    noiDung: cheVanBanClient(y.traLoi, TRAN_KY_TU_TRA_LOI_CLIENT) || null,
   });
   return kq.ok ? { ok: true as const, note: null, phieu: kq.hang } : { ok: false as const, note: "DB_LOI" as const, phieu: null };
 }

@@ -9,12 +9,15 @@
  *     TỆP (diff native `vscode.diff`), đề xuất nhớ, đồng hồ token/ngữ cảnh, kết thúc;
  *   · đoạn chữ của model được dựng thành CÂY MARKDOWN AN TOÀN ở đây (host) — webview chỉ dựng DOM bằng textContent;
  *   · khối mã: Chép (clipboard) · Chèn vào con trỏ (qua `apBanVa`) · Áp dụng (đề xuất qua CỬA DUYỆT rồi `apBanVa`);
- *   · Dừng (AbortSignal) · Hoàn tác lượt chạy (checkpoint ⇒ `hoanTacLuotChay`).
+ *   · Dừng (AbortSignal) · Hoàn tác lượt chạy (checkpoint ⇒ `hoanTacLuotChay`);
+ *   · (Đợt 5.1) 👍/👎 + lý do cho câu trả lời CUỐI của lượt: `ag_xong.phanHoi = {luotId, chiSoKhoi}` (khối cuối theo luật
+ *     gộp DÙNG CHUNG `shared/phanHoiAgent#traLoiCuoiTuSuKien`); văn bản câu hỏi/câu trả lời do HOST giữ (webview chỉ gửi
+ *     định danh) rồi `mang/phanHoiAgent` gửi REST Bearer. Lỗi ⇒ kênh Output + dòng trạng thái, KHÔNG hộp thoại.
  * KHÔNG có đường ghi riêng: mọi byte vẫn qua `apBanVa` (census canh).
  */
 import * as vscode from "vscode";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   chayVongAgent,
   uocLuongTinNhan,
@@ -28,6 +31,8 @@ import {
   type TinNhan,
 } from "../../../shared/agentCore/index";
 import { taoGoiModelV1, TRAN_TOKEN_MOT_LUOT_MAC_DINH, type CauHinhGoiModelV1 } from "../mang/goiModelV1";
+import { guiPhanHoiAgent, type KetQuaGuiPhanHoi, type PhieuPhanHoi } from "../mang/phanHoiAgent";
+import { traLoiCuoiTuSuKien } from "../../../shared/phanHoiAgent";
 import { BoThucThiVscode, type QuyetDinhDuyet, type YeuCauDuyet } from "./boThucThiVscode";
 import { apBanVa as apBanVaThat, type DauVaoApBanVa, type KetQuaApBanVa } from "./apBanVa";
 import { hoanTacLuotChay } from "./hoanTac";
@@ -65,6 +70,23 @@ export interface PhuThuocPhienAgent {
   taoGoiModel?: (ch: CauHinhGoiModelV1) => GoiModel;
   apBanVa?: (dv: DauVaoApBanVa) => Promise<KetQuaApBanVa>;
   chayLenh?: typeof chayLenhCucBoThat;
+  /** (Đợt 5.1) gửi phiếu — mặc định `guiPhanHoiAgent` (REST Bearer). */
+  guiPhanHoi?: (serverUrl: string, token: string, p: PhieuPhanHoi) => Promise<KetQuaGuiPhanHoi>;
+  /** (Đợt 5.1) một dòng nhật ký — mặc định kênh Output "AI Local — Phản hồi" (tạo lười). */
+  ghiNhatKy?: (dong: string) => void;
+}
+
+/** Số lượt gần nhất còn chấm được (giữ văn bản trong bộ nhớ host; lượt cũ hơn ⇒ không gửi, báo ok:false). */
+const SO_LUOT_CHO_PHAN_HOI = 20;
+
+let kenhPhanHoi: vscode.OutputChannel | undefined;
+function nhatKyMacDinh(dong: string): void {
+  try {
+    kenhPhanHoi ??= vscode.window.createOutputChannel("AI Local — Phản hồi");
+    kenhPhanHoi.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${dong}`);
+  } catch {
+    console.warn("[AI Local] phản hồi:", dong);
+  }
 }
 
 const TRAN_DIFF_STAGED = 40_000;
@@ -116,6 +138,10 @@ export class PhienAgent {
   private readonly dsKhoiMa: Array<{ ngonNgu: string; ma: string }> = [];
   private doan = "";
   private dangChay = false;
+  /** Sự kiện lõi của lượt đang chạy (để tìm khối trả lời CUỐI theo luật gộp dùng chung). */
+  private suKienLuot: SuKienAgent[] = [];
+  /** luotId ⇒ văn bản chấm được của lượt (host giữ; webview chỉ gửi định danh). Tối đa `SO_LUOT_CHO_PHAN_HOI`. */
+  private readonly luotChoPhanHoi = new Map<string, { chiSoKhoi: number; cauHoi: string; traLoi: string; duAn: string | null }>();
 
   constructor(private readonly pt: PhuThuocPhienAgent) {}
 
@@ -158,6 +184,7 @@ export class PhienAgent {
     const ac = new AbortController();
     this.huy = ac;
     this.doan = "";
+    this.suKienLuot = [];
     let cuoi = "";
     let daBaoXong = false;
     try {
@@ -253,7 +280,8 @@ export class PhienAgent {
       this.xaDoan();
       this.lichSu = kq.tinNhan.filter((m) => m.role !== "system");
       cuoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
-      this.pt.gui({ loai: "ag_xong", lyDo: kq.lyDo, coHoanTac: !so.rong, soTep: so.danhSach().length });
+      const phanHoi = this.ghiNhoLuotChoPhanHoi(runId, cauHoiTho, goc[0]);
+      this.pt.gui({ loai: "ag_xong", lyDo: kq.lyDo, coHoanTac: !so.rong, soTep: so.danhSach().length, ...(phanHoi ? { phanHoi } : {}) });
       daBaoXong = true;
       this.pt.ghiLuot?.(cauHoiTho, cuoi);
     } catch (e) {
@@ -294,6 +322,7 @@ export class PhienAgent {
   }
 
   private xuLySuKien(e: SuKienAgent): void {
+    this.suKienLuot.push(e);
     switch (e.loai) {
       case "bat-dau":
         this.pt.gui({ loai: "ag_bat_dau", runId: e.runId, cheDo: e.cheDo });
@@ -362,6 +391,50 @@ export class PhienAgent {
     this.dsKhoiMa.push(...layKhoiMa(cay));
     this.pt.gui({ loai: "ag_md", cay, chiSoMaDau });
     this.doan = "";
+  }
+
+  // ─── PHẢN HỒI 👍/👎 (Đợt 5.1) ──────────────────────────────────────────────────────────────────
+
+  /** Giữ văn bản câu trả lời cuối của lượt vừa xong; trả định danh cho webview (null ⇒ không có chữ để chấm). */
+  private ghiNhoLuotChoPhanHoi(luotId: string, cauHoi: string, goc: string | undefined): { luotId: string; chiSoKhoi: number } | null {
+    const cuoi = traLoiCuoiTuSuKien(this.suKienLuot);
+    this.suKienLuot = [];
+    if (!cuoi) return null;
+    const nhan = goc ? basename(goc).replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 64) : "";
+    this.luotChoPhanHoi.set(luotId, { chiSoKhoi: cuoi.chiSoKhoi, cauHoi, traLoi: cuoi.vanBan, duAn: nhan || null });
+    while (this.luotChoPhanHoi.size > SO_LUOT_CHO_PHAN_HOI) this.luotChoPhanHoi.delete(this.luotChoPhanHoi.keys().next().value!);
+    return { luotId, chiSoKhoi: cuoi.chiSoKhoi };
+  }
+
+  /**
+   * Gửi phiếu của webview. Định danh lạ (lượt đã rơi khỏi bộ nhớ / khối không phải khối cuối) ⇒ KHÔNG gửi gì. Không bao
+   * giờ ném; lỗi ⇒ kênh Output + `ag_phan_hoi_kq ok:false` (không `ag_loi`, không hộp thoại).
+   */
+  async phanHoi(luotId: string, chiSoKhoi: number, danhGia: 1 | -1 | null, lyDo: string | null): Promise<void> {
+    const nhatKy = this.pt.ghiNhatKy ?? nhatKyMacDinh;
+    const luot = this.luotChoPhanHoi.get(luotId);
+    if (!luot || luot.chiSoKhoi !== chiSoKhoi) {
+      nhatKy(`bỏ qua phiếu cho lượt ${luotId.slice(0, 8)}… khối ${chiSoKhoi}: không còn trong bộ nhớ phiên này.`);
+      this.pt.gui({ loai: "ag_phan_hoi_kq", luotId, ok: false });
+      return;
+    }
+    let kq: KetQuaGuiPhanHoi;
+    try {
+      const token = (await this.pt.context.secrets.get(KHOA_TOKEN_GATEWAY)) ?? "";
+      kq = await (this.pt.guiPhanHoi ?? guiPhanHoiAgent)(this.serverUrl(), token, {
+        luotId,
+        chiSoKhoi,
+        danhGia,
+        lyDo,
+        cauHoi: luot.cauHoi,
+        traLoi: luot.traLoi,
+        duAn: luot.duAn,
+      });
+    } catch (e) {
+      kq = { ok: false, lyDo: cheBiMat((e as Error)?.message ?? String(e)) };
+    }
+    if (!kq.ok) nhatKy(`không ghi được phiếu (lượt ${luotId.slice(0, 8)}…): ${kq.lyDo}`);
+    this.pt.gui({ loai: "ag_phan_hoi_kq", luotId, ok: kq.ok });
   }
 
   // ─── DUYỆT ───────────────────────────────────────────────────────────────────────────────────

@@ -220,6 +220,7 @@ beforeAll(async () => {
   const { registerAiXemTruocRoutes } = await import("./aiXemTruocApi");
   // Đợt 4B-server (2026-10-17) — ba tuyến Bearer `avgw_` (sổ áp tệp ở client + tự thu hồi) vào THẲNG lượng từ §2: không
   // cookie VÀ không Bearer ⇒ 401 (cửa xác thực của chúng là token, nhưng "không trình gì ⇒ 401, không 5xx" vẫn phải đúng).
+  // Đợt 5.1 VSCode: + `POST /api/ai/client-feedback` trong CÙNG registrar ⇒ tự vào §2 (số registrar 60/30 không đổi).
   const { registerAiGatewayTokenBearerRoutes } = await import("./aiGatewayTokenBearerApi");
   registerAiStreamingRoutes(app);
   registerAiLocalKnowledgeRoutes(app);

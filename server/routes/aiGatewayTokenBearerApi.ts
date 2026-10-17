@@ -1,10 +1,19 @@
 /**
- * ★★★ Đợt 4B-server (2026-10-17) — ba tuyến REST cho extension VSCode xác thực bằng TOKEN THEO NGƯỜI DÙNG
+ * ★★★ Đợt 4B-server (2026-10-17) — các tuyến REST cho extension VSCode xác thực bằng TOKEN THEO NGƯỜI DÙNG
  * (`Authorization: Bearer avgw_…`, mig 0392/0396) thay cho COOKIE phiên web:
  *
  *   POST /api/ai/client-apply/bat-dau        phạm vi `apply` ⇒ `aiCopilotActions.batDauApDungOClient` (GHI TRƯỚC khi byte rơi)
  *   POST /api/ai/client-apply/chot           phạm vi `apply` ⇒ `aiCopilotActions.chotApDungOClient`   (CHỐT SAU)
  *   POST /api/ai/gateway-token/tu-thu-hoi    mọi token        ⇒ thu hồi CHÍNH token đang trình (idempotent, audit)
+ *   POST /api/ai/client-feedback             phạm vi `chat`   ⇒ `thuTucPhanHoiClient` (Đợt 5.1 VSCode — 👍/👎 + lý do cho câu
+ *                                            trả lời cuối của lượt agent CHẠY CỤC BỘ trong extension)
+ *
+ * ★ Đợt 5.1 VSCode — VÌ SAO `chat` (không `apply`): người đang chat với agent thì được chấm câu trả lời; phiếu không ghi
+ *   byte nào, không mở sổ áp tệp. Lượt cục bộ KHÔNG có hàng `ai_agent_runs` ⇒ thân MANG văn bản (câu hỏi + câu trả lời);
+ *   thủ tục che bí mật + cắt trần, tầng dữ liệu đặt `nguon = 'vscode'` (mức tin riêng, mig 0398). Khoá phiếu = (CHỦ
+ *   token, `luotId` client, `chiSoKhoi`) ⇒ gửi lại = sửa cùng hàng. Thân lớn (≤ 1 MB, câu trả lời ≤ 100k ký tự) ⇒ header
+ *   Bearer được soi TRƯỚC khi đọc thân (lượt không trình gì không bắt máy chủ parse 1 MB). Trần riêng
+ *   `TRAN_PHAN_HOI_MOI_PHUT_TOKEN` (không ăn chung xô với `apply`).
  *
  * ⚠⚠ KHÔNG VIẾT LẠI LOGIC SỔ: hai tuyến `client-apply` gọi ĐÚNG hai hàm dịch vụ mà tRPC `aiCopilot.*` gọi, với ĐÚNG lược đồ
  *   (`routers/aiCopilotApOClientSchema.ts`, một chủ cho hai cửa) và người = CHỦ TOKEN (`{id, role, name}` từ lượt tra băm —
@@ -37,9 +46,17 @@ import type {
 import { TIEN_TO_TOKEN } from "../services/ai/gatewayToken/maToken";
 import { TU_CHOI_TOKEN, loaiLoiTheoMa } from "../services/ai/gatewayToken/tuChoiToken";
 import { batDauApDungOClientSchema, chotApDungOClientSchema } from "../routers/aiCopilotApOClientSchema";
+import { z } from "zod";
+import { TRAN_KY_TU_CAU_HOI_CLIENT, TRAN_KY_TU_TRA_LOI_CLIENT, TRAN_KY_TU_LY_DO } from "@shared/phanHoiAgent";
+import type { DauVaoPhanHoiClient } from "../services/ai/phanHoi/thuTucPhanHoi";
+import type { TomTatPhanHoi } from "../db/aiAgentFeedback";
 
 /** Trần lượt ghi sổ mỗi phút MỖI TOKEN (mỗi lượt áp = 2 lượt gọi; một phiên agent bình thường áp vài chục tệp). */
 export const TRAN_APPLY_MOI_PHUT_TOKEN = 60;
+/** Trần phiếu phản hồi mỗi phút MỖI TOKEN (người bấm 👍/👎 + sửa lý do vài lần mỗi lượt; 30 là dư). */
+export const TRAN_PHAN_HOI_MOI_PHUT_TOKEN = 30;
+/** Trần thân `client-feedback` (câu hỏi 20k + câu trả lời 100k ký tự UTF-8 ≈ ≤ 0,5 MB, dư cho thoát JSON). */
+export const TRAN_THAN_PHAN_HOI = "1mb";
 /** Trần lượt tự thu hồi mỗi phút mỗi IP. */
 export const TRAN_TU_THU_HOI_MOI_PHUT_IP = 30;
 export const ENTITY_AI_GATEWAY_TOKEN = "ai_gateway_token";
@@ -53,6 +70,10 @@ export interface PhuThuocBearer {
   batDau?: (vao: BatDauApDungOClientInput, u: CopilotUser, req?: ReqMeta) => Promise<BatDauApDungOClientResult>;
   chot?: (vao: ChotApDungOClientInput, u: CopilotUser, req?: ReqMeta) => Promise<ChotApDungOClientResult>;
   tuThuHoi?: (token: string) => Promise<KetQuaTuThuHoi>;
+  phanHoiClient?: (
+    u: CopilotUser,
+    vao: DauVaoPhanHoiClient,
+  ) => Promise<{ ok: true; note: null; phieu: TomTatPhanHoi | null } | { ok: false; note: "PERMISSION_DENIED" | "DB_LOI"; phieu: null }>;
   ghiAudit?: (userId: number, req: ReqMeta, hang: { entityId: number; entityName: string; metadata: Record<string, unknown> }) => Promise<void>;
 }
 
@@ -74,6 +95,7 @@ const macDinh: Required<PhuThuocBearer> = {
   batDau: async (vao, u, req) => (await import("../services/aiCopilotActions")).batDauApDungOClient(vao, u, req as never),
   chot: async (vao, u, req) => (await import("../services/aiCopilotActions")).chotApDungOClient(vao, u, req as never),
   tuThuHoi: async (t) => (await import("../db/aiGatewayTokens")).tuThuHoiTokenTheoBam(t),
+  phanHoiClient: async (u, vao) => (await import("../services/ai/phanHoi/thuTucPhanHoi")).thuTucPhanHoiClient(u, vao),
   ghiAudit: async (userId, req, hang) => {
     const { createAuditContext, logCrudOperation } = await import("../services/auditTrailService");
     await logCrudOperation(createAuditContext({ user: { id: userId }, req: req as never }), {
@@ -121,10 +143,15 @@ async function quaTran(userId: number | undefined, xo: string, tran: number): Pr
 }
 
 /**
- * Cửa xác thực của hai tuyến `client-apply`: token ⇒ quyền AI ⇒ phạm vi `apply` ⇒ trần theo token. Trả người dùng, hoặc
- * `null` khi ĐÃ trả lời từ chối (fail-closed: mọi nhánh hỏng dừng tại đây).
+ * Cửa xác thực của các tuyến có phạm vi: token ⇒ quyền AI ⇒ phạm vi (`apply` | `chat`) ⇒ trần theo token. Trả người dùng,
+ * hoặc `null` khi ĐÃ trả lời từ chối (fail-closed: mọi nhánh hỏng dừng tại đây).
  */
-async function xacThucApply(req: express.Request, res: express.Response, pt: Required<PhuThuocBearer>): Promise<CopilotUser | null> {
+async function xacThucPhamVi(
+  req: express.Request,
+  res: express.Response,
+  pt: Required<PhuThuocBearer>,
+  cua: { phamVi: "apply" | "chat"; xo: string; tran: number },
+): Promise<CopilotUser | null> {
   const token = bearerNguoiDung(req);
   if (!token) {
     loi(res, 401, "invalid_api_key", "Missing personal API token. Provide 'Authorization: Bearer avgw_…'.");
@@ -140,11 +167,11 @@ async function xacThucApply(req: express.Request, res: express.Response, pt: Req
     loi(res, 403, "permission_denied", "The token owner no longer has AI access.");
     return null;
   }
-  if (!kq.phamVi.includes("apply")) {
-    loi(res, 403, "insufficient_scope", "This token lacks the 'apply' scope.");
+  if (!kq.phamVi.includes(cua.phamVi)) {
+    loi(res, 403, "insufficient_scope", `This token lacks the '${cua.phamVi}' scope.`);
     return null;
   }
-  const choMs = await quaTran(kq.userId, `gw-token-apply:${kq.tokenId}`, TRAN_APPLY_MOI_PHUT_TOKEN);
+  const choMs = await quaTran(kq.userId, `${cua.xo}:${kq.tokenId}`, cua.tran);
   if (choMs !== null) {
     res.setHeader("Retry-After", String(Math.max(1, Math.ceil(choMs / 1000))));
     loi(res, 429, "rate_limit_exceeded", "Rate limit exceeded for this token.");
@@ -152,6 +179,41 @@ async function xacThucApply(req: express.Request, res: express.Response, pt: Req
   }
   pt.ghiDung(kq.tokenId);
   return { id: kq.userId, role: kq.role, name: kq.name ?? null };
+}
+
+const CUA_APPLY = { phamVi: "apply", xo: "gw-token-apply", tran: TRAN_APPLY_MOI_PHUT_TOKEN } as const;
+const CUA_PHAN_HOI = { phamVi: "chat", xo: "gw-token-phan-hoi", tran: TRAN_PHAN_HOI_MOI_PHUT_TOKEN } as const;
+
+/** Thân `POST /api/ai/client-feedback` — khoá ngoài lạ (`userId`, `nguon`…) bị BỎ (zod strip): người = chủ token. */
+export const phanHoiClientSchema = z.object({
+  luotId: z.string().uuid(),
+  chiSoKhoi: z.number().int().min(0).max(10_000),
+  danhGia: z.union([z.literal(1), z.literal(-1)]).nullable(),
+  lyDo: z.string().max(TRAN_KY_TU_LY_DO).nullable().optional(),
+  cauHoi: z.string().min(1).max(TRAN_KY_TU_CAU_HOI_CLIENT),
+  traLoi: z.string().min(1).max(TRAN_KY_TU_TRA_LOI_CLIENT),
+  duAn: z.string().max(64).nullable().optional(),
+});
+
+/** Từ chối sớm (KHÔNG chạm CSDL, KHÔNG đọc thân) khi không trình Bearer `avgw_` — đứng TRƯỚC bộ đọc thân lớn. */
+const canBearerSom: express.RequestHandler = (req, res, next) => {
+  if (!bearerNguoiDung(req)) {
+    loi(res, 401, "invalid_api_key", "Missing personal API token. Provide 'Authorization: Bearer avgw_…'.");
+    return;
+  }
+  next();
+};
+
+/** Bộ đọc thân JSON trả lỗi bằng KHUNG OpenAI (413 quá lớn · 400 JSON hỏng) thay vì trang lỗi mặc định của Express. */
+function docThanJson(limit: string): express.RequestHandler {
+  const parser = express.json({ limit });
+  return (req, res, next) =>
+    parser(req, res, (err?: unknown) => {
+      if (!err) return next();
+      const e = err as { type?: string; status?: number };
+      if (e.type === "entity.too.large" || e.status === 413) loi(res, 413, "body_too_large", `Request body exceeds ${limit}.`);
+      else loi(res, 400, "invalid_body", "Request body is not valid JSON.");
+    });
 }
 
 /** Bọc handler: KHÔNG một ngoại lệ nào thoát ra (census §2 — 5xx thô / rò `err.message`). */
@@ -174,7 +236,7 @@ export function registerAiGatewayTokenBearerRoutes(app: express.Express, phuThuo
     "/api/ai/client-apply/bat-dau",
     docThan,
     anToan(async (req, res) => {
-      const nguoi = await xacThucApply(req, res, pt);
+      const nguoi = await xacThucPhamVi(req, res, pt, CUA_APPLY);
       if (!nguoi) return;
       const vao = batDauApDungOClientSchema.safeParse(req.body ?? {});
       if (!vao.success) {
@@ -198,7 +260,7 @@ export function registerAiGatewayTokenBearerRoutes(app: express.Express, phuThuo
     "/api/ai/client-apply/chot",
     docThan,
     anToan(async (req, res) => {
-      const nguoi = await xacThucApply(req, res, pt);
+      const nguoi = await xacThucPhamVi(req, res, pt, CUA_APPLY);
       if (!nguoi) return;
       const vao = chotApDungOClientSchema.safeParse(req.body ?? {});
       if (!vao.success) {
@@ -249,6 +311,30 @@ export function registerAiGatewayTokenBearerRoutes(app: express.Express, phuThuo
       }
       res.setHeader("Cache-Control", "no-store");
       res.json({ revoked: true, already_revoked: kq.daThuHoiTruoc, token_prefix: kq.tienTo });
+    }),
+  );
+
+  // ★ Đợt 5.1 VSCode — phiếu cho câu trả lời cuối của lượt agent chạy cục bộ trong extension.
+  app.post(
+    "/api/ai/client-feedback",
+    canBearerSom,
+    docThanJson(TRAN_THAN_PHAN_HOI),
+    anToan(async (req, res) => {
+      const nguoi = await xacThucPhamVi(req, res, pt, CUA_PHAN_HOI);
+      if (!nguoi) return;
+      const vao = phanHoiClientSchema.safeParse(req.body ?? {});
+      if (!vao.success) {
+        loi(res, 400, "invalid_body", `Invalid body: ${vao.error.issues.map((i) => i.path.join(".") || "(root)").join(", ")}`);
+        return;
+      }
+      const kq = await pt.phanHoiClient(nguoi, vao.data);
+      if (!kq.ok) {
+        if (kq.note === "PERMISSION_DENIED") loi(res, 403, "permission_denied", "The token owner cannot record feedback.");
+        else loi(res, 503, "db_unavailable", "Feedback store unavailable.");
+        return;
+      }
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, phieu: kq.phieu });
     }),
   );
 }

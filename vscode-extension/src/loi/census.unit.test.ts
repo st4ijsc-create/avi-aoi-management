@@ -71,6 +71,9 @@ const TEP_NGOAI_CAY_VAO_BUNDLE = [
   join(GOC, "..", "..", "shared", "quetMenhLenh.ts"),
   join(GOC, "..", "..", "shared", "mauBiMat.ts"),
   join(GOC, "..", "..", "shared", "aiCodingLoop.ts"),
+  // Đợt 5.1 VSCode — `traLoiCuoiTuSuKien` + trần độ dài phiếu 👍/👎 (một chủ cho extension ⇄ máy chủ); chỉ nhập KIỂU từ
+  // `agentCore/kieu` (đã có dưới). Quét: không từ nào trong CAM_TU (đo lúc thêm).
+  join(GOC, "..", "..", "shared", "phanHoiAgent.ts"),
   ...["index", "kieu", "congCu", "loiNhac", "nguCanh", "vongAgent"].map((t) => join(GOC, "..", "..", "shared", "agentCore", `${t}.ts`)),
 ];
 

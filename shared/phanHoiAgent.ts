@@ -11,7 +11,10 @@
  *   • `diffHopNhat` / `apDiffHopNhat` — unified diff MỘT khối (cắt đầu/đuôi chung, 3 dòng ngữ cảnh) + áp lại; giữ `\r`
  *     của tệp CRLF. Quá trần ⇒ `null` (không xuất một diff cụt như thể trọn vẹn).
  *   • `mauBoDuLieuTuHang` — một hàng phản hồi ⇒ một mẫu bộ dữ liệu (chỉ dẫn → diff ĐƯỢC DUYỆT) hoặc `null`. Chính sách
- *     đường dẫn và lớp che bí mật là của MÁY CHỦ, nên được TIÊM vào (shared không nhập `server/`).
+ *     đường dẫn và lớp che bí mật là của MÁY CHỦ, nên được TIÊM vào (shared không nhập `server/`). Mẫu ghi rõ `nguon`.
+ *   • (Đợt 5.1 VSCode) `traLoiCuoiTuSuKien` + trần độ dài của phiếu do EXTENSION gửi (lượt agent chạy CỤC BỘ, không có
+ *     sổ `ai_agent_runs` ⇒ client gửi văn bản; máy chủ che bí mật + kiểm trần + đánh dấu `nguon = 'vscode'`). Extension và
+ *     máy chủ nhập CÙNG hằng số ở đây ⇒ extension cắt trước khi gửi đúng bằng trần máy chủ kiểm (không 400 oan).
  */
 import type { SuKienAgent } from "./agentCore/kieu";
 
@@ -20,6 +23,12 @@ export const TRAN_DONG_DIFF = 3_000;
 /** Trần ký tự của một diff / một khối trả lời lưu vào sổ phản hồi. */
 export const TRAN_KY_TU_NOI_DUNG = 200_000;
 const NGU_CANH = 3;
+/** (Đợt 5.1 VSCode) Trần câu hỏi người gõ mà extension gửi kèm phiếu. */
+export const TRAN_KY_TU_CAU_HOI_CLIENT = 20_000;
+/** (Đợt 5.1 VSCode) Trần câu trả lời cuối mà extension gửi kèm phiếu (≤ `TRAN_KY_TU_NOI_DUNG`). */
+export const TRAN_KY_TU_TRA_LOI_CLIENT = 100_000;
+/** Trần lý do (cột `lyDo varchar(2000)`). */
+export const TRAN_KY_TU_LY_DO = 2_000;
 
 type MucVao = SuKienAgent | { suKien?: unknown } | null | undefined;
 
@@ -56,6 +65,16 @@ export function khoiTraLoiTuSuKien(ds: ReadonlyArray<MucVao>): string[] {
     }
   }
   return khoi;
+}
+
+/**
+ * (Đợt 5.1 VSCode) Câu trả lời CUỐI của một lượt = khối trả lời cuối theo ĐÚNG luật gộp `khoiTraLoiTuSuKien` (cùng chỗ
+ * web gắn nút — `viTriTraLoiCuoi`). Không có khối chữ nào / khối cuối rỗng ⇒ null (không có gì để chấm).
+ */
+export function traLoiCuoiTuSuKien(ds: ReadonlyArray<MucVao>): { chiSoKhoi: number; vanBan: string } | null {
+  const khoi = khoiTraLoiTuSuKien(ds);
+  const vanBan = khoi[khoi.length - 1];
+  return vanBan && vanBan.trim() ? { chiSoKhoi: khoi.length - 1, vanBan } : null;
 }
 
 /** Tách dòng GIỮ ký tự kết thúc (`\n`, `\r\n`); dòng cuối có thể không có `\n`. */
@@ -140,6 +159,8 @@ export interface HangPhanHoiChoXuat {
   projectId: string | null;
   runId: string | null;
   actionId: string | null;
+  /** `web` (văn bản lấy từ sổ máy chủ) | `vscode` (văn bản client tự khai). Thiếu ⇒ `web` (hàng trước mig 0398). */
+  nguon?: string | null;
 }
 
 /** Một dòng JSONL của bộ dữ liệu "chỉ dẫn → diff được duyệt". */
@@ -152,6 +173,8 @@ export interface MauBoDuLieu {
   danhGia: number | null;
   runId: string | null;
   actionId: string | null;
+  /** Nguồn của hàng — bộ dữ liệu diff chỉ nhận `web` (văn bản lấy từ SỔ máy chủ, không phải chữ client tự khai). */
+  nguon: "web";
 }
 
 export interface TuyChonMau {
@@ -163,6 +186,8 @@ export interface TuyChonMau {
 
 export function mauBoDuLieuTuHang(h: HangPhanHoiChoXuat, o: TuyChonMau): MauBoDuLieu | null {
   if (h.loai !== "diff" || h.quyetDinh !== "duyet" || h.danhGia === -1) return null;
+  // Không trộn mức tin: văn bản client tự khai (nguồn ≠ web) không bao giờ thành mẫu "chỉ dẫn → diff được duyệt".
+  if ((h.nguon ?? "web") !== "web") return null;
   const chiDan = (h.cauHoi ?? "").trim();
   const diff = h.noiDung ?? "";
   const duong = (h.duongDan ?? "").trim();
@@ -176,5 +201,6 @@ export function mauBoDuLieuTuHang(h: HangPhanHoiChoXuat, o: TuyChonMau): MauBoDu
     danhGia: h.danhGia ?? null,
     runId: h.runId ?? null,
     actionId: h.actionId ?? null,
+    nguon: "web",
   };
 }

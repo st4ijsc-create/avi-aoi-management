@@ -10,6 +10,10 @@
  * ⚠ Hỏng CSDL ⇒ suy giảm (`{ ok:false }` / rỗng / null + cảnh báo), KHÔNG ném: phản hồi là phụ, không được làm hỏng
  *   lượt duyệt/bác đang gọi nó.
  * ⚠ Nội dung (`cauHoi`, `noiDung`, `lyDo`…) phải được CHE bí mật ở tầng gọi TRƯỚC khi tới đây (`thuTucPhanHoi.ts`).
+ * ★ Đợt 5.1 VSCode (mig 0398): cột `nguon` (`web` | `vscode`) + `luotClient`. Phiếu `vscode` = lượt agent CHẠY CỤC BỘ
+ *   trong extension — KHÔNG có hàng `ai_agent_runs`, văn bản do CLIENT gửi (máy chủ chỉ che + cắt). Khoá riêng
+ *   (`ai_agent_feedback_vscode_uq`: người × lượt client × khối). KHÔNG trộn mức tin: tổng hợp đếm tách nguồn; bộ đọc
+ *   xuất mang `nguon` và chỉ đọc `web`; `mauBoDuLieuTuHang` cũng chỉ nhận `web`.
  */
 import { sql } from "drizzle-orm";
 import { getDb } from "./connection";
@@ -26,6 +30,10 @@ export type DanhGia = -1 | 1;
 export interface TomTatPhanHoi {
   id: string;
   loai: "tra-loi" | "diff";
+  /** `web` (văn bản từ sổ máy chủ) | `vscode` (văn bản client tự khai — mig 0398). */
+  nguon: "web" | "vscode";
+  /** vscode: id lượt do extension sinh (uuid); web: null. */
+  luotClient: string | null;
   runId: string | null;
   chiSoTin: number | null;
   actionId: string | null;
@@ -59,6 +67,8 @@ function tomTat(h: HangTho): TomTatPhanHoi {
   return {
     id: String(h.id),
     loai: h.loai === "diff" ? "diff" : "tra-loi",
+    nguon: h.nguon === "vscode" ? "vscode" : "web",
+    luotClient: h.luotClient == null ? null : String(h.luotClient),
     runId: h.runId == null ? null : String(h.runId),
     chiSoTin: h.chiSoTin == null ? null : Number(h.chiSoTin),
     actionId: h.actionId == null ? null : String(h.actionId),
@@ -113,6 +123,55 @@ export async function ghiPhieuTraLoi(p: PhieuTraLoi): Promise<KetQuaGhi> {
     return { ok: true, hang: ra[0] ? tomTat(ra[0]) : null };
   } catch (err) {
     canhBao("ghiPhieuTraLoi", err);
+    return { ok: false };
+  }
+}
+
+// ─── phiếu câu trả lời của lượt agent CHẠY CỤC BỘ (extension VSCode, mig 0398) ────────────────────
+
+export interface PhieuTraLoiClient {
+  userId: number;
+  /** id lượt do extension sinh (uuid) — không phải `ai_agent_runs.id`. */
+  luotClient: string;
+  chiSoTin: number;
+  projectId: string | null;
+  /** null ⇒ BỎ PHIẾU (xoá hàng của chính người này). */
+  danhGia: DanhGia | null;
+  lyDo: string | null;
+  cauHoi: string | null;
+  /** Câu trả lời CLIENT gửi — đã che + cắt ở `thuTucPhanHoiClient`. Bắt buộc khi bỏ phiếu (CHECK 0398). */
+  noiDung: string | null;
+}
+
+/**
+ * Upsert phiếu `nguon = 'vscode'` theo (người, lượt client, khối). Bấm lại = SỬA phiếu/lý do; văn bản của LẦN ĐẦU được
+ * GIỮ (cùng luật ảnh chụp đầu của diff) — một lượt gửi sau với chữ khác cho cùng khoá không viết lại lịch sử.
+ */
+export async function ghiPhieuTraLoiClient(p: PhieuTraLoiClient): Promise<KetQuaGhi> {
+  if (!laUser(p.userId) || !RE_UUID.test(p.luotClient) || !Number.isInteger(p.chiSoTin) || p.chiSoTin < 0) return { ok: false };
+  const db = await getDb();
+  if (!db) return { ok: false };
+  try {
+    if (p.danhGia === null) {
+      await db.execute(sql`
+        DELETE FROM ai_agent_feedback
+         WHERE "userId" = ${p.userId} AND loai = 'tra-loi' AND nguon = 'vscode'
+           AND "luotClient" = ${p.luotClient} AND "chiSoTin" = ${p.chiSoTin}`);
+      return { ok: true, hang: null };
+    }
+    if (!p.noiDung) return { ok: false };
+    const ra = rows(
+      await db.execute(sql`
+        INSERT INTO ai_agent_feedback ("userId", loai, nguon, "luotClient", "chiSoTin", "projectId", "danhGia", "lyDo", "cauHoi", "noiDung")
+        VALUES (${p.userId}, 'tra-loi', 'vscode', ${p.luotClient}, ${p.chiSoTin}, ${duAnHopLe(p.projectId)}, ${p.danhGia},
+                ${catNgan(p.lyDo, 2000)}, ${p.cauHoi}, ${p.noiDung})
+        ON CONFLICT ("userId", "luotClient", "chiSoTin") WHERE loai = 'tra-loi' AND nguon = 'vscode'
+        DO UPDATE SET "danhGia" = EXCLUDED."danhGia", "lyDo" = EXCLUDED."lyDo", "updatedAt" = now()
+        RETURNING *`),
+    );
+    return { ok: true, hang: ra[0] ? tomTat(ra[0]) : null };
+  } catch (err) {
+    canhBao("ghiPhieuTraLoiClient", err);
     return { ok: false };
   }
 }
@@ -220,7 +279,10 @@ export async function danhSachPhanHoiCuaToi(userId: number, gioiHan = 50): Promi
 }
 
 export interface TongHopPhanHoi {
+  /** Phiếu câu trả lời của lượt máy chủ (`nguon = 'web'`, văn bản từ sổ). */
   traLoi: { len: number; xuong: number };
+  /** Phiếu câu trả lời của lượt chạy cục bộ trong extension (`nguon = 'vscode'`, văn bản client tự khai) — TÁCH RIÊNG. */
+  traLoiVscode: { len: number; xuong: number };
   diff: { len: number; xuong: number; duyet: number; bac: number };
   soNguoi: number;
 }
@@ -232,8 +294,10 @@ export async function tongHopPhanHoi(): Promise<TongHopPhanHoi | null> {
   try {
     const [h] = rows(
       await db.execute(sql`
-        SELECT count(*) FILTER (WHERE loai = 'tra-loi' AND "danhGia" = 1)::int  AS tl_len,
-               count(*) FILTER (WHERE loai = 'tra-loi' AND "danhGia" = -1)::int AS tl_xuong,
+        SELECT count(*) FILTER (WHERE loai = 'tra-loi' AND nguon = 'web' AND "danhGia" = 1)::int  AS tl_len,
+               count(*) FILTER (WHERE loai = 'tra-loi' AND nguon = 'web' AND "danhGia" = -1)::int AS tl_xuong,
+               count(*) FILTER (WHERE loai = 'tra-loi' AND nguon = 'vscode' AND "danhGia" = 1)::int  AS tlv_len,
+               count(*) FILTER (WHERE loai = 'tra-loi' AND nguon = 'vscode' AND "danhGia" = -1)::int AS tlv_xuong,
                count(*) FILTER (WHERE loai = 'diff' AND "danhGia" = 1)::int     AS d_len,
                count(*) FILTER (WHERE loai = 'diff' AND "danhGia" = -1)::int    AS d_xuong,
                count(*) FILTER (WHERE loai = 'diff' AND "quyetDinh" = 'duyet')::int AS d_duyet,
@@ -244,6 +308,7 @@ export async function tongHopPhanHoi(): Promise<TongHopPhanHoi | null> {
     const n = (k: string) => Number(h?.[k] ?? 0);
     return {
       traLoi: { len: n("tl_len"), xuong: n("tl_xuong") },
+      traLoiVscode: { len: n("tlv_len"), xuong: n("tlv_xuong") },
       diff: { len: n("d_len"), xuong: n("d_xuong"), duyet: n("d_duyet"), bac: n("d_bac") },
       soNguoi: n("so_nguoi"),
     };
@@ -263,6 +328,7 @@ export interface HangXuat {
   projectId: string | null;
   runId: string | null;
   actionId: string | null;
+  nguon: string;
 }
 
 /**
@@ -277,9 +343,9 @@ export async function docHangChoXuat(userId: number | null, gioiHan = TRAN_XUAT)
   try {
     const ra = rows(
       await db.execute(sql`
-        SELECT loai, "quyetDinh", "danhGia", "cauHoi", "noiDung", "duongDan", "projectId", "runId", "actionId"
+        SELECT loai, nguon, "quyetDinh", "danhGia", "cauHoi", "noiDung", "duongDan", "projectId", "runId", "actionId"
           FROM ai_agent_feedback
-         WHERE loai = 'diff' AND "quyetDinh" = 'duyet' AND "danhGia" IS DISTINCT FROM -1
+         WHERE loai = 'diff' AND nguon = 'web' AND "quyetDinh" = 'duyet' AND "danhGia" IS DISTINCT FROM -1
            ${userId === null ? sql`` : sql`AND "userId" = ${userId}`}
          ORDER BY "createdAt", id
          LIMIT ${n}`),
@@ -294,6 +360,7 @@ export async function docHangChoXuat(userId: number | null, gioiHan = TRAN_XUAT)
       projectId: h.projectId == null ? null : String(h.projectId),
       runId: h.runId == null ? null : String(h.runId),
       actionId: h.actionId == null ? null : String(h.actionId),
+      nguon: h.nguon == null ? "web" : String(h.nguon),
     }));
   } catch (err) {
     canhBao("docHangChoXuat", err);

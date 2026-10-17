@@ -168,6 +168,12 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
             background: var(--vscode-editorWidget-background); padding: 6px; margin: 6px 0; font-size: 12px; }
   .ag-the input { width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--vscode-input-background);
                   color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); }
+  .ag-phan-hoi { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; font-size: 11px; }
+  .ag-phan-hoi button { font-size: 12px; padding: 0 6px; opacity: .7; }
+  .ag-phan-hoi button.chon { opacity: 1; outline: 1px solid var(--vscode-focusBorder); }
+  .ag-phan-hoi input { flex: 1; min-width: 120px; background: var(--vscode-input-background);
+                       color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); }
+  .ag-phan-hoi .nhan { opacity: .7; }
 </style>
 </head>
 <body>
@@ -714,6 +720,42 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     "loi-model": "Đã dừng vì lỗi model.",
   };
   const MA_CAN_TOKEN = { CHUA_CO_TOKEN: 1, TOKEN_401: 1 };
+  // ★ Đợt 5.1 VSCode — 👍/👎 (+ lý do 👎 tuỳ chọn) dưới câu trả lời CUỐI của lượt agent đã xong. Webview chỉ gửi ĐỊNH
+  //   DANH (luotId, chiSoKhoi) + phiếu + lý do; văn bản câu hỏi/câu trả lời do HOST giữ (không tin chữ từ webview).
+  //   Kết quả gửi chỉ hiện ở dòng trạng thái nhỏ — lỗi mạng KHÔNG thành lượt "Lỗi" hay hộp thoại (chi tiết: kênh Output).
+  const agPhanHoi = {};
+  function agNutPhanHoi(ph) {
+    if (!ph || typeof ph.luotId !== "string" || typeof ph.chiSoKhoi !== "number") return;
+    const vung = taoPhan("div", "ag-phan-hoi");
+    const nutLen = taoPhan("button", "", "👍");
+    const nutXuong = taoPhan("button", "", "👎");
+    nutLen.title = "Câu trả lời hữu ích";
+    nutXuong.title = "Câu trả lời chưa tốt";
+    const oLyDo = document.createElement("input");
+    oLyDo.setAttribute("placeholder", "Lý do (tuỳ chọn)");
+    oLyDo.hidden = true;
+    const nutLyDo = taoPhan("button", "", "Gửi lý do");
+    nutLyDo.hidden = true;
+    const trangThai = taoPhan("span", "nhan", "");
+    const gui = (danhGia, lyDo) => {
+      const tin = { loai: "ag_phan_hoi", luotId: ph.luotId, chiSoKhoi: ph.chiSoKhoi, danhGia };
+      if (lyDo) tin.lyDo = lyDo;
+      nutLen.className = danhGia === 1 ? "chon" : "";
+      nutXuong.className = danhGia === -1 ? "chon" : "";
+      trangThai.textContent = "Đang gửi…";
+      vscode.postMessage(tin);
+    };
+    nutLen.addEventListener("click", () => { oLyDo.hidden = true; nutLyDo.hidden = true; gui(1, ""); });
+    nutXuong.addEventListener("click", () => { oLyDo.hidden = false; nutLyDo.hidden = false; gui(-1, ""); });
+    nutLyDo.addEventListener("click", () => { const l = String(oLyDo.value || "").trim(); if (l) gui(-1, l); });
+    vung.appendChild(nutLen);
+    vung.appendChild(nutXuong);
+    vung.appendChild(oLyDo);
+    vung.appendChild(nutLyDo);
+    vung.appendChild(trangThai);
+    agPhanHoi[ph.luotId] = { trangThai };
+    agKhung().appendChild(vung);
+  }
   function agTheDuyet(m) {
     const the = taoPhan("div", "ag-the");
     the.appendChild(taoPhan("div", "nhan", m.loaiDuyet === "lenh" ? "AI muốn CHẠY LỆNH" : "Đề xuất thay đổi tệp"));
@@ -842,7 +884,13 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
       if (m.lyDo && m.lyDo !== "hoan-thanh" && m.lyDo !== "khong-chay") themLuot("he_thong", NHAN_LY_DO[m.lyDo] || ("Đã dừng: " + m.lyDo), false, "Lưu ý");
       nutHoanTac.hidden = !m.coHoanTac;
       nutHoanTac.disabled = false;
+      if (m.phanHoi) agNutPhanHoi(m.phanHoi);
       khoiTraLoi = null;
+      return;
+    }
+    if (m.loai === "ag_phan_hoi_kq") {
+      const p = agPhanHoi[m.luotId];
+      if (p) p.trangThai.textContent = m.ok ? "Đã ghi phản hồi." : "Chưa gửi được phản hồi (chi tiết ở Output › AI Local — Phản hồi).";
       return;
     }
     if (m.loai === "ag_loi") {

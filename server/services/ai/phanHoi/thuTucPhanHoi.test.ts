@@ -69,10 +69,10 @@ function taoPhuThuoc(over: Partial<PhuThuocPhanHoi> = {}) {
       return { ok: true as const, hang: null };
     }),
     danhSachCuaToi: vi.fn(async (userId: number) => [{ id: `cua-${userId}` }] as never),
-    tongHop: vi.fn(async () => ({ traLoi: { len: 1, xuong: 0 }, diff: { len: 0, xuong: 0, duyet: 1, bac: 0 }, soNguoi: 1 })),
+    tongHop: vi.fn(async () => ({ traLoi: { len: 1, xuong: 0 }, traLoiVscode: { len: 0, xuong: 0 }, diff: { len: 0, xuong: 0, duyet: 1, bac: 0 }, soNguoi: 1 })),
     docHangChoXuat: vi.fn(async (userId: number | null) => [
-      { loai: "diff", quyetDinh: "duyet", danhGia: null, cauHoi: `dùng api_key=${BI_MAT}`, noiDung: "+a\n", duongDan: "src/a.ts", projectId: "repo", runId: RUN, actionId: `x-${userId}` },
-      { loai: "diff", quyetDinh: "duyet", danhGia: 1, cauHoi: "q", noiDung: "+b\n", duongDan: ".env", projectId: "repo", runId: RUN, actionId: "env" },
+      { loai: "diff", quyetDinh: "duyet", danhGia: null, cauHoi: `dùng api_key=${BI_MAT}`, noiDung: "+a\n", duongDan: "src/a.ts", projectId: "repo", runId: RUN, actionId: `x-${userId}`, nguon: "web" },
+      { loai: "diff", quyetDinh: "duyet", danhGia: 1, cauHoi: "q", noiDung: "+b\n", duongDan: ".env", projectId: "repo", runId: RUN, actionId: "env", nguon: "web" },
     ]),
     ...over,
   };
@@ -189,7 +189,7 @@ describe("§4 danh sách · tổng hợp · xuất", () => {
     const to = "+".repeat(9_000_000);
     const { pt } = taoPhuThuoc({
       docHangChoXuat: vi.fn(async () =>
-        [1, 2].map((i) => ({ loai: "diff", quyetDinh: "duyet", danhGia: null, cauHoi: "q", noiDung: to, duongDan: `a${i}.ts`, projectId: "repo", runId: RUN, actionId: `a${i}` })),
+        [1, 2].map((i) => ({ loai: "diff", quyetDinh: "duyet", danhGia: null, cauHoi: "q", noiDung: to, duongDan: `a${i}.ts`, projectId: "repo", runId: RUN, actionId: `a${i}`, nguon: "web" })),
       ),
     });
     const kq = (await thuTucXuatBoDuLieu(KY, {}, pt)) as { soMau: number; catBot: boolean; jsonl: string };

@@ -49,12 +49,18 @@ vi.mock("vscode", () => {
 import { PhienAgent } from "./phienAgent";
 import type { GoiModel, ManhModel, TinNhan, WireTool } from "../../../shared/agentCore/index";
 import type { DauVaoApBanVa } from "./apBanVa";
+import type { KetQuaGuiPhanHoi, PhieuPhanHoi } from "../mang/phanHoiAgent";
+import { basename } from "node:path";
 
 const WS = realpathSync(mkdtempSync(join(tmpdir(), "phien-")));
 mkdirSync(join(WS, "src"), { recursive: true });
 afterAll(() => rmSync(WS, { recursive: true, force: true }));
 
-function dung(kichBan: (luot: number, vao: { tinNhan: TinNhan[]; congCu: WireTool[] }) => ManhModel[], o: { tuDuyet?: boolean; diffStaged?: string } = {}) {
+function dung(
+  kichBan: (luot: number, vao: { tinNhan: TinNhan[]; congCu: WireTool[] }) => ManhModel[],
+  o: { tuDuyet?: boolean; diffStaged?: string; guiPhanHoi?: (url: string, token: string, p: PhieuPhanHoi) => Promise<KetQuaGuiPhanHoi> } = {},
+) {
+  const nhatKy: string[] = [];
   const tin: Array<Record<string, unknown>> = [];
   const ap: DauVaoApBanVa[] = [];
   const vaoModel: Array<{ tinNhan: TinNhan[]; congCu: WireTool[] }> = [];
@@ -87,6 +93,8 @@ function dung(kichBan: (luot: number, vao: { tinNhan: TinNhan[]; congCu: WireToo
     goc: () => [WS],
     ghiLuot: (q, a) => luu.push([q, a]),
     taoGoiModel: () => goiModel,
+    guiPhanHoi: o.guiPhanHoi,
+    ghiNhatKy: (d) => nhatKy.push(d),
     apBanVa: async (dv) => {
       ap.push(dv);
       const t = dv.thaoTac!;
@@ -98,7 +106,7 @@ function dung(kichBan: (luot: number, vao: { tinNhan: TinNhan[]; congCu: WireToo
       return { ok: true, output: o.diffStaged ?? "", exitCode: 0, signal: null, timedOut: false, daCatSom: false, durationMs: 1 };
     },
   });
-  return { phien, tin, ap, vaoModel, lenh, luu };
+  return { phien, tin, ap, vaoModel, lenh, luu, nhatKy };
 }
 
 const goiTool = (id: string, ten: string, args: unknown): ManhModel => ({
@@ -242,5 +250,63 @@ describe("phiên agent — nội dung đáng ngờ (2026-10-17: không dừng, c
     expect(String(d.tin.find((m) => m.loai === "ag_the_duyet")?.tomTat)).toContain("src/loiNhac.ts");
     expect(d.vaoModel[1].tinNhan.find((m) => m.role === "tool")?.content).toMatch(/^\[warning: /);
     expect(d.tin.at(-1)).toMatchObject({ loai: "ag_xong", lyDo: "hoan-thanh" });
+  });
+});
+
+describe("phiên agent — 👍/👎 câu trả lời cuối (Đợt 5.1 VSCode)", () => {
+  const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const kichBan = (luot: number): ManhModel[] =>
+    luot === 1
+      ? [{ loai: "chu", noiDung: "Đọc mã." }, goiTool("c1", "list_dir", { path: "." })]
+      : [{ loai: "chu", noiDung: "Xong: " }, { loai: "chu", noiDung: "đã sửa." }, { loai: "xong", toolCalls: [] }];
+
+  it("★★★ lượt xong ⇒ ag_xong mang phanHoi {luotId = runId của lượt, chiSoKhoi = khối CUỐI theo luật gộp dùng chung}", async () => {
+    const d = dung(kichBan);
+    await d.phien.chay("sửa hàm cộng", "hoi");
+    const batDau = d.tin.find((m) => m.loai === "ag_bat_dau")!;
+    const xong = d.tin.find((m) => m.loai === "ag_xong")!;
+    expect(xong.phanHoi).toEqual({ luotId: batDau.runId, chiSoKhoi: 1 });
+    expect(String(batDau.runId)).toMatch(RE_UUID);
+  });
+
+  it("★★★ phanHoi() gửi ĐÚNG thân: câu hỏi người GÕ + văn bản khối cuối (host giữ, không lấy từ webview) + token avgw_", async () => {
+    const gui: Array<{ url: string; token: string; p: PhieuPhanHoi }> = [];
+    const d = dung(kichBan, { guiPhanHoi: async (url, token, p) => (gui.push({ url, token, p }), { ok: true }) });
+    await d.phien.chay("sửa hàm cộng", "hoi");
+    const { luotId } = d.tin.find((m) => m.loai === "ag_xong")!.phanHoi as { luotId: string };
+    await d.phien.phanHoi(luotId, 1, -1, "sai API");
+    expect(gui).toEqual([
+      {
+        url: "http://localhost:3000",
+        token: "avgw_x",
+        p: { luotId, chiSoKhoi: 1, danhGia: -1, lyDo: "sai API", cauHoi: "sửa hàm cộng", traLoi: "Xong: đã sửa.", duAn: basename(WS) },
+      },
+    ]);
+    expect(d.tin.at(-1)).toEqual({ loai: "ag_phan_hoi_kq", luotId, ok: true });
+  });
+
+  it("★★ lỗi mạng / máy chủ ⇒ ghi kênh Output + ag_phan_hoi_kq ok:false — KHÔNG ag_loi (không hộp thoại, không lượt Lỗi)", async () => {
+    const d = dung(kichBan, { guiPhanHoi: async () => ({ ok: false, lyDo: "máy chủ trả 503 — db_unavailable" }) });
+    await d.phien.chay("sửa hàm cộng", "hoi");
+    const { luotId } = d.tin.find((m) => m.loai === "ag_xong")!.phanHoi as { luotId: string };
+    const soLoiTruoc = d.tin.filter((m) => m.loai === "ag_loi").length;
+    await d.phien.phanHoi(luotId, 1, 1, null);
+    expect(d.tin.at(-1)).toEqual({ loai: "ag_phan_hoi_kq", luotId, ok: false });
+    expect(d.tin.filter((m) => m.loai === "ag_loi").length).toBe(soLoiTruoc);
+    expect(d.nhatKy.join(" | ")).toContain("503");
+  });
+
+  it("★★ luotId/khối lạ (webview giả mạo / lượt đã rơi khỏi bộ nhớ) ⇒ KHÔNG gửi gì, ok:false; lượt không có chữ ⇒ không mời chấm", async () => {
+    const guiPhanHoi = vi.fn(async () => ({ ok: true as const }));
+    const d = dung(kichBan, { guiPhanHoi });
+    await d.phien.chay("sửa hàm cộng", "hoi");
+    const { luotId } = d.tin.find((m) => m.loai === "ag_xong")!.phanHoi as { luotId: string };
+    await d.phien.phanHoi("0f0e0d0c-0b0a-4908-8706-050403020100", 1, 1, null);
+    await d.phien.phanHoi(luotId, 0, 1, null);
+    expect(guiPhanHoi).not.toHaveBeenCalled();
+    expect(d.tin.filter((m) => m.loai === "ag_phan_hoi_kq").every((m) => m.ok === false)).toBe(true);
+    const d2 = dung(() => [{ loai: "xong", toolCalls: [] }]);
+    await d2.phien.chay("không nói gì", "hoi");
+    expect(d2.tin.find((m) => m.loai === "ag_xong")!.phanHoi).toBeUndefined();
   });
 });

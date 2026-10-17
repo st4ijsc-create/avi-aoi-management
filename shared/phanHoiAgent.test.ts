@@ -3,7 +3,17 @@
  */
 import { describe, expect, it } from "vitest";
 import type { SuKienAgent } from "./agentCore/kieu";
-import { apDiffHopNhat, diffHopNhat, khoiTraLoiTuSuKien, mauBoDuLieuTuHang, TRAN_DONG_DIFF } from "./phanHoiAgent";
+import {
+  apDiffHopNhat,
+  diffHopNhat,
+  khoiTraLoiTuSuKien,
+  mauBoDuLieuTuHang,
+  traLoiCuoiTuSuKien,
+  TRAN_DONG_DIFF,
+  TRAN_KY_TU_CAU_HOI_CLIENT,
+  TRAN_KY_TU_TRA_LOI_CLIENT,
+  TRAN_KY_TU_LY_DO,
+} from "./phanHoiAgent";
 
 describe("khoiTraLoiTuSuKien — khối trả lời theo ĐÚNG luật gộp của dòng thời gian client", () => {
   it("gộp `chu` liền nhau; sự kiện KHÔNG lên dòng thời gian (usage, ke-hoach, dang-cho-model, checkpoint) không cắt khối", () => {
@@ -98,7 +108,14 @@ describe("mauBoDuLieuTuHang — chỉ cặp (chỉ dẫn → diff ĐƯỢC DUY�
       danhGia: null,
       runId: coBan.runId,
       actionId: "act-1",
+      nguon: "web",
     });
+  });
+
+  it("(Đợt 5.1 VSCode) mẫu ghi rõ NGUỒN; hàng nguồn khác `web` (văn bản client tự khai) KHÔNG vào bộ dữ liệu diff", () => {
+    const o = { duongDuocPhep: duongOk, che: khongChe };
+    expect(mauBoDuLieuTuHang({ ...coBan, nguon: "web" }, o)?.nguon).toBe("web");
+    expect(mauBoDuLieuTuHang({ ...coBan, nguon: "vscode" }, o)).toBeNull();
   });
 
   it("bị bác / 👎 / không chỉ dẫn / không diff / không phải diff ⇒ null", () => {
@@ -121,5 +138,27 @@ describe("mauBoDuLieuTuHang — chỉ cặp (chỉ dẫn → diff ĐƯỢC DUY�
     expect(m?.chiDan).toBe("dùng [REDACTED]");
     expect(m?.diff).toContain("+k=[REDACTED]");
     expect(JSON.stringify(m)).not.toMatch(/sk-/);
+  });
+});
+
+describe("(Đợt 5.1 VSCode) traLoiCuoiTuSuKien + trần độ dài dùng chung extension ⇄ máy chủ", () => {
+  it("khối CUỐI theo đúng luật gộp của khoiTraLoiTuSuKien; chỉ số = số khối − 1; không chữ ⇒ null", () => {
+    const es: SuKienAgent[] = [
+      { loai: "chu", noiDung: "Đọc " },
+      { loai: "chu", noiDung: "mã." },
+      { loai: "goi-tool", goi: { id: "g", ten: "read_file", thamSo: {} }, luot: 1 },
+      { loai: "chu", noiDung: "Xong: " },
+      { loai: "usage", vao: 1, ra: 1 },
+      { loai: "chu", noiDung: "đã sửa." },
+    ];
+    expect(traLoiCuoiTuSuKien(es)).toEqual({ chiSoKhoi: 1, vanBan: "Xong: đã sửa." });
+    expect(traLoiCuoiTuSuKien([{ loai: "goi-tool", goi: { id: "g", ten: "x", thamSo: {} }, luot: 1 }])).toBeNull();
+    expect(traLoiCuoiTuSuKien([{ loai: "chu", noiDung: "   " }])).toBeNull();
+  });
+  it("trần: câu hỏi ≤ câu trả lời ≤ trần nội dung sổ; lý do 2000 (cột varchar(2000))", () => {
+    expect(TRAN_KY_TU_CAU_HOI_CLIENT).toBeGreaterThan(0);
+    expect(TRAN_KY_TU_CAU_HOI_CLIENT).toBeLessThanOrEqual(TRAN_KY_TU_TRA_LOI_CLIENT);
+    expect(TRAN_KY_TU_TRA_LOI_CLIENT).toBeLessThanOrEqual(200_000);
+    expect(TRAN_KY_TU_LY_DO).toBe(2000);
   });
 });

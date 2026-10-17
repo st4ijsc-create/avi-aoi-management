@@ -358,6 +358,10 @@ export class BangChat {
         lyDo?: unknown;
         chiSo?: unknown;
         hanhDong?: unknown;
+        // (Đợt 5.1) phiếu 👍/👎 — THÔ, kiểm trước khi dùng; văn bản do host giữ, webview chỉ gửi định danh.
+        luotId?: unknown;
+        chiSoKhoi?: unknown;
+        danhGia?: unknown;
       }) => {
       if (m.loai === "san_sang") {
         this.daSanSang = true;
@@ -419,6 +423,18 @@ export class BangChat {
         else if (m.loai === "ag_bo_nho" && id) void this.phienAgent.nho(id, false);
         else if (m.loai === "ag_khoi_ma" && typeof m.chiSo === "number" && typeof m.hanhDong === "string")
           void this.phienAgent.hanhDongKhoiMa(m.chiSo, m.hanhDong);
+        else if (
+          m.loai === "ag_phan_hoi" &&
+          typeof m.luotId === "string" &&
+          Number.isInteger(m.chiSoKhoi) &&
+          (m.danhGia === 1 || m.danhGia === -1 || m.danhGia === null)
+        )
+          void this.phienAgent.phanHoi(
+            m.luotId,
+            m.chiSoKhoi as number,
+            m.danhGia,
+            typeof m.lyDo === "string" && m.lyDo.trim() ? m.lyDo.trim().slice(0, 2000) : null,
+          );
         else if (m.loai === "ag_dang_nhap_thiet_bi")
           void Promise.resolve(vscode.commands.executeCommand("aviAiLocal.dangNhapThietBi")).then(() => this.phienAgent.guiTrangThaiToken());
         return;
