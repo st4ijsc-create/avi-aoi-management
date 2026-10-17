@@ -6323,10 +6323,20 @@ async function startServer() {
   // đồng là cửa FAIL-CLOSED trong aiGgufEngine (không nạp model chính in-process khi server chết).
   // Tự tắt khi LLAMA_SERVER_ENABLED khác true / LLAMA_WATCHDOG_ENABLED=false / URL không loopback.
   // KHÔNG ở tiến trình edge (không có llama-server cục bộ để trông); vai worker early-return từ trước.
+  // Đợt 6 (an toàn khi sập): TRƯỚC giám sát, dọn lượt đổi model MỒ CÔI của lần chạy trước (khoá PID đã chết +
+  // tệp tạm dừng mang token của nó) — không thì giám sát đứng im tới 30 phút và lượt đổi sau bị khoá chặn.
+  // Dọn tệp đồng bộ trong lời gọi; /props + audit chạy nền. Không khởi động lại server.
   void import("../services/ai/giamSatLlamaServer")
     .then(async ({ khoiChayGiamSatLlamaServer }) => {
       const { isEdgeProcessRole } = await import("../db/connection");
-      if (!isEdgeProcessRole()) khoiChayGiamSatLlamaServer();
+      if (isEdgeProcessRole()) return;
+      try {
+        const { phucHoiDoiModelKhiKhoiDong } = await import("../services/ai/doiModelLlamaServer");
+        void phucHoiDoiModelKhiKhoiDong()?.catch((err) => console.error("[llama-doi-model] phục hồi hỏng:", err?.message ?? err));
+      } catch (err) {
+        console.error("[llama-doi-model] phục hồi hỏng:", (err as any)?.message || err);
+      }
+      khoiChayGiamSatLlamaServer();
     })
     .catch((err) => console.error("[llama-watchdog] failed to start:", (err as any)?.message || err));
 

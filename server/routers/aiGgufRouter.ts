@@ -287,7 +287,8 @@ export const aiGgufRouter = router({
   /** Kho model + server đang chạy (`/props`) + lựa chọn bền + lượt đổi gần nhất (UI hỏi mỗi 2 s khi đang đổi). */
   doiModelTongQuan: adminDoiModel.query(async () => {
     const tq = await tongQuanDoiModel();
-    return { ...tq, luaChon: trangThaiLuaChonModel(), phien: layDieuPhoiDoiModel().trangThai() };
+    const dp = layDieuPhoiDoiModel();
+    return { ...tq, luaChon: trangThaiLuaChonModel(), phien: dp.trangThai(), phucHoi: dp.phucHoiCuoi() };
   }),
 
   /**

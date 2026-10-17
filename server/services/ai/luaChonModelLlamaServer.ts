@@ -93,7 +93,16 @@ export function ghiLuaChon(duong: string, lc: LuaChonModel): void {
   fs.mkdirSync(path.dirname(duong), { recursive: true });
   const tam = `${duong}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tam, JSON.stringify(lc, null, 2), "utf8");
-  fs.renameSync(tam, duong);
+  try {
+    fs.renameSync(tam, duong);
+  } catch (e) {
+    try {
+      fs.unlinkSync(tam); // hỏng ⇒ tệp đích Y NGUYÊN, không để rác cạnh nó
+    } catch {
+      /* không gỡ được tệp tạm — vô hại với người đọc (khác tên) */
+    }
+    throw e;
+  }
 }
 
 /** Nội dung thô hiện tại (để quay về y nguyên); `null` = không có tệp. */

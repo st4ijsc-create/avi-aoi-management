@@ -25,10 +25,10 @@ const BUOC = [
   "uoc-luong-vram",
   "tam-dung-giam-sat",
   "cho-hang-doi",
-  "ghi-lua-chon",
   "khoi-dong",
   "kiem-props",
   "sinh-thu",
+  "ghi-lua-chon", // CHỐT lựa chọn bền chỉ SAU /props + sinh thử (an toàn khi sập)
   "ap-dung",
   "quay-ve",
 ] as const;

@@ -41,6 +41,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn as spawnThat } from "node:child_process";
+import { laTenModelHopLe } from "./luaChonModelLlamaServer";
 
 // ─── Kiểu ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -403,11 +404,20 @@ export function khoiDongTachRoi(
      * cổng rồi dựng lại từ lựa chọn mới). Bộ giám sát KHÔNG BAO GIỜ truyền — nó chỉ chạy khi không ai nghe cổng.
      */
     thamSoThem?: readonly "-Force"[];
+    /**
+     * Đợt 6 (an toàn khi sập) — model nạp LẦN NÀY, truyền TƯỜNG MINH (`-Model <tên>`) thay vì qua tệp lựa chọn
+     * bền: lượt đổi chỉ ghi tệp đó SAU khi kiểm `/props` + sinh thử. Chỉ basename `.gguf` (cùng danh sách trắng
+     * dạng tên với tệp lựa chọn); kịch bản kiểm lại tên có trong `GGUF_MODELS_DIR`. Tên lạ ⇒ NÉM, không spawn.
+     * Bộ giám sát / Task Scheduler KHÔNG truyền ⇒ kịch bản dùng lựa chọn ĐÃ CHỐT.
+     */
+    model?: string;
   } = {},
 ): { pid: number | undefined } {
+  if (o.model !== undefined && !laTenModelHopLe(o.model)) throw new Error(`tên model không hợp lệ cho -Model: ${String(o.model).slice(0, 80)}`);
   if (!fs.existsSync(kichBan)) throw new LoiKichBanKhoiDongVang(kichBan);
   const spawnFn = o.spawnFn ?? spawnThat;
-  const them = (o.thamSoThem ?? []).filter((x) => x === "-Force");
+  const them: string[] = (o.thamSoThem ?? []).filter((x) => x === "-Force");
+  if (o.model !== undefined) them.push("-Model", o.model);
   const con = spawnFn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kichBan, ...them], {
     cwd: o.cwd ?? path.resolve(path.dirname(kichBan), "..", ".."),
     detached: false,

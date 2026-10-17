@@ -29,6 +29,13 @@
     lại. MẶC ĐỊNH KHÔNG — script bình thường không bao giờ giết tiến trình đang chạy. Đường dùng: API đổi
     model (server/services/ai/doiModelLlamaServer.ts). Chủ cổng không phải llama-server ⇒ thoát 3.
 
+.PARAMETER Model
+    Model nạp LẦN NÀY — basename `.gguf` CÓ trong GGUF_MODELS_DIR (cùng danh sách trắng dạng tên với tệp lựa
+    chọn). Thắng tệp lựa chọn và `.env`, KHÔNG ghi gì xuống đĩa. Đường dùng: API đổi model nạp model CHƯA KIỂM
+    bằng tham số này và chỉ ghi lựa chọn bền SAU khi `/props` + sinh thử đạt — tiến trình gọi chết giữa lượt
+    thì lần khởi động sau (Task Scheduler / bộ giám sát, KHÔNG tham số) vẫn dùng lựa chọn ĐÃ CHỐT. Tên sai /
+    không có trong kho ⇒ thoát 2 TRƯỚC khi dừng hay spawn gì.
+
 .PARAMETER WaitSeconds
     Số giây chờ `/health` xanh sau khi spawn (mặc định 300 — model 30B nạp từ đĩa lạnh khá lâu).
 
@@ -43,6 +50,7 @@
 param(
     [string]$EnvFile,
     [switch]$Force,
+    [string]$Model,
     [int]$WaitSeconds = 300
 )
 
@@ -110,7 +118,22 @@ if ([string]::IsNullOrWhiteSpace($tepLuaChon)) {
     $tepLuaChon = Join-Path (Join-Path $gocLuaChon 'avi-aoi-ai') 'llama-server-lua-chon.json'
 }
 $modelLuaChon = $null
-if (Test-Path -LiteralPath $tepLuaChon -PathType Leaf) {
+# `-Model` tường minh (API đổi model, lượt CHƯA kiểm) — kiểm TRƯỚC mọi thứ có thể dừng/spawn tiến trình.
+$modelTuongMinh = $null
+if ($PSBoundParameters.ContainsKey('Model')) {
+    $khoM = $cfg['GGUF_MODELS_DIR']
+    if ([string]::IsNullOrWhiteSpace($Model) -or $Model -notmatch '^[A-Za-z0-9][A-Za-z0-9._+-]{0,200}\.gguf$' -or $Model.Contains('..')) {
+        Write-Bad "-Model không hợp lệ (chỉ nhận tên tệp .gguf trong kho, không đường dẫn): $Model"
+        exit 2
+    }
+    if ([string]::IsNullOrWhiteSpace($khoM) -or -not (Test-Path -LiteralPath (Join-Path $khoM $Model) -PathType Leaf)) {
+        Write-Bad "-Model $Model không có trong GGUF_MODELS_DIR."
+        exit 2
+    }
+    $modelTuongMinh = Join-Path $khoM $Model
+    Write-Step "model theo THAM SỐ -Model (lượt đổi chưa chốt — không ghi lựa chọn): $Model"
+}
+if ((-not $modelTuongMinh) -and (Test-Path -LiteralPath $tepLuaChon -PathType Leaf)) {
     try {
         $lc = Get-Content -LiteralPath $tepLuaChon -Raw -Encoding UTF8 | ConvertFrom-Json
         $tenLc = [string]$lc.model
@@ -133,7 +156,10 @@ if (Test-Path -LiteralPath $tepLuaChon -PathType Leaf) {
 }
 
 $modelPath = $null
-if ($modelLuaChon) {
+if ($modelTuongMinh) {
+    $modelPath = $modelTuongMinh
+}
+elseif ($modelLuaChon) {
     $modelPath = $modelLuaChon
 }
 elseif ([System.IO.Path]::IsPathRooted($modelRaw) -and (Test-Path -LiteralPath $modelRaw)) {

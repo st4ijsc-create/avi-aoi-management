@@ -28,7 +28,7 @@ import {
   type PhuThuocDoiModel,
   type MetaGguf,
 } from "./doiModelLlamaServer";
-import { docLuaChon, duongLuaChon, ghiLuaChon } from "./luaChonModelLlamaServer";
+import { apDungLuaChonModel, docLuaChon, duongLuaChon, ghiLuaChon } from "./luaChonModelLlamaServer";
 import { CongUuTienLlm } from "./hangDoiUuTienLlm";
 
 const GiB = 1024 ** 3;
@@ -99,19 +99,39 @@ function dungMoiTruong(over: Partial<PhuThuocDoiModel> = {}, serverOver: Partial
     LLAMA_SERVER_SLOTS: "1",
     LLAMA_SERVER_SELECTION_FILE: path.join(thuMuc, "sel", "lua-chon.json"),
   } as NodeJS.ProcessEnv;
-  const nhatKy = { kichBan: [] as string[], congGiu: 0, congNha: 0, tamDungLucKichBan: [] as boolean[] };
+  const nhatKy = {
+    kichBan: [] as string[],
+    congGiu: 0,
+    congNha: 0,
+    tamDungLucKichBan: [] as boolean[],
+    /** Nội dung tệp lựa chọn BỀN ngay lúc kịch bản chạy (null = không có tệp). */
+    luaChonLucKichBan: [] as (string | null)[],
+  };
   const duongTamDung = path.join(thuMuc, "llama-watchdog.pause");
-  // Kịch bản giả: đọc tệp lựa chọn y như start-llama-server.ps1 rồi "nạp" model đó (hoặc hỏng theo kịch).
+  // Kịch bản giả, CÙNG hợp đồng với start-llama-server.ps1: `-Model <tên>` tường minh thắng; không có thì đọc
+  // tệp lựa chọn ĐÃ CHỐT rồi "nạp" model đó (hoặc hỏng / treo theo kịch).
   let hongKhiNap: ((model: string) => number | null) | null = null;
+  let treoKhiNap: ((model: string) => boolean) | null = null;
   const d: PhuThuocDoiModel = {
     env,
     nenTang: "win32",
     fetchFn: fetchGia(s),
-    chayKichBan: async (thamSo) => {
-      nhatKy.kichBan.push(thamSo.join(" "));
+    chayKichBan: async (thamSo, modelTuongMinh) => {
+      nhatKy.kichBan.push(thamSo.join(" ") + (modelTuongMinh ? ` -Model ${modelTuongMinh}` : ""));
       nhatKy.tamDungLucKichBan.push(fs.existsSync(duongTamDung));
+      let thoLc: string | null = null;
+      try {
+        thoLc = fs.readFileSync(duongLuaChon(env), "utf8");
+      } catch {
+        /* không có tệp (hoặc ca giả lập đĩa hỏng: đường là thư mục) */
+      }
+      nhatKy.luaChonLucKichBan.push(thoLc);
       const lc = docLuaChon(duongLuaChon(env));
-      const model = lc && lc.envModel === "Cu.gguf" ? lc.model : "Cu.gguf";
+      const model = modelTuongMinh ?? (lc && lc.envModel === "Cu.gguf" ? lc.model : "Cu.gguf");
+      if (treoKhiNap?.(model)) {
+        s.model = model; // kịch bản đã giết server cũ và dựng bản mới… rồi tiến trình gọi CHẾT, không ai nghe kết quả
+        return new Promise<never>(() => {});
+      }
       const ma = hongKhiNap?.(model) ?? null;
       if (ma !== null && ma !== 0) {
         s.model = null;
@@ -143,6 +163,9 @@ function dungMoiTruong(over: Partial<PhuThuocDoiModel> = {}, serverOver: Partial
     duongTamDung,
     datHongKhiNap: (f: (model: string) => number | null) => {
       hongKhiNap = f;
+    },
+    datTreoKhiNap: (f: (model: string) => boolean) => {
+      treoKhiNap = f;
     },
   };
 }
@@ -287,7 +310,8 @@ describe("luồng đầy đủ", () => {
     expect(kq.modelCu).toBe("Cu.gguf");
     expect(kq.props?.tenModel).toBe("Moi.gguf");
     expect(kq.props?.nCtx).toBe(65536);
-    expect(m.nhatKy.kichBan).toEqual(["-Force"]);
+    expect(m.nhatKy.kichBan, "model mới đi bằng THAM SỐ tường minh, không qua tệp").toEqual(["-Force -Model Moi.gguf"]);
+    expect(m.nhatKy.luaChonLucKichBan, "lựa chọn bền CHƯA được ghi lúc kịch bản chạy (chưa kiểm)").toEqual([null]);
     expect(m.nhatKy.tamDungLucKichBan, "giám sát phải TẠM DỪNG lúc kịch bản giết server").toEqual([true]);
     expect(m.nhatKy.congGiu).toBe(1);
     expect(m.nhatKy.congNha).toBe(1);
@@ -314,7 +338,8 @@ describe("luồng đầy đủ", () => {
     const kq = await (await new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "admin")).xong;
     expect(kq.ketQua).toBe("that-bai-da-quay-ve");
     expect(kq.loi).toMatch(/n_ctx/);
-    expect(m.nhatKy.kichBan).toEqual(["-Force", "-Force"]);
+    expect(m.nhatKy.kichBan, "quay về KHÔNG truyền model — kịch bản dùng lựa chọn ĐÃ CHỐT").toEqual(["-Force -Model Moi.gguf", "-Force"]);
+    expect(m.nhatKy.luaChonLucKichBan).toEqual([tho, tho]);
     expect(m.s.model).toBe("Cu.gguf");
     expect(fs.readFileSync(duongLuaChon(m.env), "utf8")).toBe(tho);
     expect(m.env.LLAMA_SERVER_MODEL).toBe("Cu.gguf");
@@ -323,7 +348,7 @@ describe("luồng đầy đủ", () => {
     expect(kq.buoc.find((b) => b.buoc === "quay-ve")?.trangThai).toBe("xong");
   });
 
-  it("sinh thử hỏng ⇒ quay về; không có lựa chọn cũ ⇒ tệp lựa chọn bị GỠ (trạng thái trước)", async () => {
+  it("sinh thử hỏng ⇒ quay về; không có lựa chọn cũ ⇒ tệp lựa chọn vẫn KHÔNG có (chưa từng được ghi)", async () => {
     const m = dungMoiTruong();
     m.datHongKhiNap((model) => {
       m.s.sinhHong = model === "Moi.gguf";
@@ -374,6 +399,203 @@ describe("luồng đầy đủ", () => {
     const m = dungMoiTruong({ khiKetThuc: (p) => void ghi.push(p.ketQua) });
     await (await new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "admin")).xong;
     expect(ghi).toEqual(["thanh-cong"]);
+  });
+});
+
+// ─── 4b. AN TOÀN KHI SẬP — tiến trình gọi chết giữa lượt (node thoát, không `finally` nào chạy) ────────
+/** PID của một tiến trình THẬT vừa thoát (spawnSync chờ nó chết) — không đoán số. */
+function pidDaChet(): number {
+  const { spawnSync } = require("node:child_process") as typeof import("node:child_process");
+  const r = spawnSync(process.execPath, ["-e", ""], { windowsHide: true });
+  expect(r.status).toBe(0);
+  return r.pid!;
+}
+const nghi = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+async function choBuoc(dp: DieuPhoiDoiModel, buoc: string, trangThai = "dang-chay"): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    if (dp.trangThai()?.buoc.find((b) => b.buoc === buoc)?.trangThai === trangThai) return;
+    await nghi(5);
+  }
+  throw new Error(`không tới bước ${buoc}:${trangThai}`);
+}
+
+describe("AN TOÀN KHI SẬP — lựa chọn chỉ BỀN sau khi kiểm /props + sinh thử", () => {
+  it("sập lúc kịch bản đang khởi động (server cũ đã bị giết) ⇒ lựa chọn bền VẪN là cũ; người đọc không phủ sang model chưa kiểm", async () => {
+    const m = dungMoiTruong();
+    ghiLuaChon(duongLuaChon(m.env), { v: 1, model: "Cu.gguf", envModel: "Cu.gguf", luc: "truoc", nguoi: "x" });
+    const tho = fs.readFileSync(duongLuaChon(m.env), "utf8");
+    m.datTreoKhiNap((model) => model === "Moi.gguf");
+    const dp = new DieuPhoiDoiModel(m.d);
+    await dp.batDau("Moi.gguf", "admin");
+    await choBuoc(dp, "khoi-dong");
+    expect(m.nhatKy.kichBan).toEqual(["-Force -Model Moi.gguf"]);
+    expect(fs.readFileSync(duongLuaChon(m.env), "utf8"), "tệp lựa chọn không được chạm trước khi kiểm").toBe(tho);
+    // boot sau / nhịp 15 s của tiến trình anh em: vẫn model ĐÃ CHỐT
+    const envAnhEm: NodeJS.ProcessEnv = { ...m.env, LLAMA_SERVER_MODEL: "Cu.gguf", GGUF_DEFAULT_MODEL: "Cu.gguf", GGUF_CODE_MODEL: "Cu.gguf" };
+    expect(apDungLuaChonModel(envAnhEm).model).toBe("Cu.gguf");
+    expect(envAnhEm.LLAMA_SERVER_MODEL).toBe("Cu.gguf");
+  });
+
+  it("sập lúc sinh thử (server mới đã lên, /props khớp) ⇒ chưa có lựa chọn bền nào được ghi", async () => {
+    const m = dungMoiTruong();
+    const goc = m.d.fetchFn;
+    m.d.fetchFn = ((url: any, init?: any) =>
+      String(url).endsWith("/v1/chat/completions") ? new Promise<Response>(() => {}) : goc(url, init)) as typeof fetch;
+    const dp = new DieuPhoiDoiModel(m.d);
+    await dp.batDau("Moi.gguf", "admin");
+    await choBuoc(dp, "sinh-thu");
+    expect(dp.trangThai()?.buoc.find((b) => b.buoc === "kiem-props")?.trangThai).toBe("xong");
+    expect(fs.existsSync(duongLuaChon(m.env)), "lựa chọn chỉ ghi SAU sinh thử đạt").toBe(false);
+  });
+
+  it("ghi lựa chọn bền hỏng (đĩa) sau khi kiểm đạt ⇒ QUAY VỀ — server không được chạy model mà lựa chọn bền không nói", async () => {
+    const m = dungMoiTruong();
+    // đường lựa chọn là THƯ MỤC ⇒ rename tệp tạm vào đó hỏng
+    fs.mkdirSync(duongLuaChon(m.env), { recursive: true });
+    const kq = await (await new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "admin")).xong;
+    expect(kq.ketQua).toBe("that-bai-da-quay-ve");
+    expect(m.nhatKy.kichBan).toEqual(["-Force -Model Moi.gguf", "-Force"]);
+    expect(m.s.model).toBe("Cu.gguf");
+    expect(m.env.LLAMA_SERVER_MODEL).toBe("Cu.gguf");
+  });
+});
+
+describe("PHỤC HỒI lượt đổi MỒ CÔI (khoá của tiến trình đã chết)", () => {
+  function datMoCoi(m: ReturnType<typeof dungMoiTruong>, o: { pid: number; token?: string; tamDung?: string | null }) {
+    const token = o.token ?? "tok-mo-coi";
+    fs.writeFileSync(m.d.duongKhoaDoi, JSON.stringify({ pid: o.pid, luc: Date.now(), token }));
+    const td = o.tamDung === undefined ? `doi-model API PID ${o.pid} token ${token} ${new Date().toISOString()} Moi.gguf` : o.tamDung;
+    if (td !== null) fs.writeFileSync(m.duongTamDung, td);
+    return token;
+  }
+
+  it("PID đã chết ⇒ gỡ khoá + tệp tạm dừng của CHÍNH lượt ấy, ghi nhật ký; lượt đổi mới chạy được", async () => {
+    const m = dungMoiTruong();
+    datMoCoi(m, { pid: pidDaChet() });
+    const ghi: unknown[] = [];
+    m.d.khiPhucHoi = (k) => void ghi.push(k);
+    const kq = await new DieuPhoiDoiModel(m.d).phucHoiLuotMoCoi();
+    expect(kq.coMoCoi).toBe(true);
+    expect(kq.khoa?.lyDo).toBe("pid-chet");
+    expect(kq.daGoKhoa).toBe(true);
+    expect(kq.tamDung).toBe("da-go");
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(false);
+    expect(fs.existsSync(m.duongTamDung)).toBe(false);
+    expect(ghi).toHaveLength(1);
+    const p = await (await new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "admin")).xong;
+    expect(p.ketQua).toBe("thanh-cong");
+  });
+
+  it("batDau TỰ phục hồi trước khi kiểm tạm dừng/khoá (không cần khởi động lại dịch vụ)", async () => {
+    const m = dungMoiTruong();
+    datMoCoi(m, { pid: pidDaChet() });
+    const p = await (await new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "admin")).xong;
+    expect(p.ketQua).toBe("thanh-cong");
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(false);
+  });
+
+  it("PID ĐANG SỐNG, khoá còn nhịp ⇒ KHÔNG gỡ gì; lượt đổi mới bị từ chối", async () => {
+    const m = dungMoiTruong();
+    datMoCoi(m, { pid: process.pid });
+    const truoc = fs.readFileSync(m.duongTamDung, "utf8");
+    const kq = await new DieuPhoiDoiModel(m.d).phucHoiLuotMoCoi();
+    expect(kq.coMoCoi).toBe(false);
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(true);
+    expect(fs.readFileSync(m.duongTamDung, "utf8")).toBe(truoc);
+    await expect(new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "admin")).rejects.toBeInstanceOf(LoiDoiModel);
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(true);
+    expect(fs.existsSync(m.duongTamDung)).toBe(true);
+  });
+
+  it("PID 'sống' nhưng khoá MẤT NHỊP quá ngưỡng (PID bị Windows tái dùng) ⇒ mồ côi", async () => {
+    const m = dungMoiTruong();
+    datMoCoi(m, { pid: process.pid });
+    const cu = new Date(Date.now() - 10 * 60_000);
+    fs.utimesSync(m.d.duongKhoaDoi, cu, cu);
+    const kq = await new DieuPhoiDoiModel(m.d).phucHoiLuotMoCoi();
+    expect(kq.coMoCoi).toBe(true);
+    expect(kq.khoa?.lyDo).toBe("mat-nhip");
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(false);
+    expect(fs.existsSync(m.duongTamDung)).toBe(false);
+  });
+
+  it("tạm dừng TAY (doi-model.ps1) KHÔNG bị gỡ — khoá mồ côi thì vẫn gỡ", async () => {
+    const m = dungMoiTruong();
+    datMoCoi(m, { pid: pidDaChet(), tamDung: "doi-model.ps1 PID 4242 2026-10-17T00:00:00 Moi.gguf" });
+    const kq = await new DieuPhoiDoiModel(m.d).phucHoiLuotMoCoi();
+    expect(kq.daGoKhoa).toBe(true);
+    expect(kq.tamDung).toBe("giu-lai");
+    expect(fs.readFileSync(m.duongTamDung, "utf8")).toMatch(/^doi-model\.ps1 PID 4242/);
+    await expect(new DieuPhoiDoiModel(m.d).batDau("Moi.gguf", "admin")).rejects.toMatchObject({ code: "DANG_TAM_DUNG" });
+  });
+
+  it("tạm dừng của lượt KHÁC (token khác) KHÔNG bị gỡ", async () => {
+    const m = dungMoiTruong();
+    datMoCoi(m, { pid: pidDaChet(), tamDung: `doi-model API PID ${process.pid} token tok-khac 2026-10-17T00:00:00.000Z Moi.gguf` });
+    const kq = await new DieuPhoiDoiModel(m.d).phucHoiLuotMoCoi();
+    expect(kq.tamDung).toBe("giu-lai");
+    expect(fs.existsSync(m.duongTamDung)).toBe(true);
+  });
+
+  it("tạm dừng định dạng TRƯỚC bản vá (không token) cùng PID với khoá mồ côi ⇒ gỡ", async () => {
+    const m = dungMoiTruong();
+    const pid = pidDaChet();
+    datMoCoi(m, { pid, tamDung: `doi-model API PID ${pid} 2026-10-17T00:00:00.000Z Moi.gguf` });
+    const kq = await new DieuPhoiDoiModel(m.d).phucHoiLuotMoCoi();
+    expect(kq.tamDung).toBe("da-go");
+    expect(fs.existsSync(m.duongTamDung)).toBe(false);
+  });
+
+  it("lượt ĐANG CHẠY giữ nhịp khoá ⇒ tiến trình anh em không coi là mồ côi", async () => {
+    let tha!: () => void;
+    const m = dungMoiTruong({
+      hetGio: { chamTamDungMs: 10 },
+      giuCong: () => new Promise((r) => (tha = () => r(() => {}))),
+    });
+    const dpA = new DieuPhoiDoiModel(m.d);
+    const { xong } = await dpA.batDau("Moi.gguf", "admin");
+    await choBuoc(dpA, "cho-hang-doi");
+    const cu = new Date(Date.now() - 10 * 60_000);
+    fs.utimesSync(m.d.duongKhoaDoi, cu, cu);
+    await nghi(80);
+    const kq = await new DieuPhoiDoiModel({ ...m.d }).phucHoiLuotMoCoi();
+    expect(kq.coMoCoi).toBe(false);
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(true);
+    tha();
+    expect((await xong).ketQua).toBe("thanh-cong");
+  });
+
+  it("SẬP đầu–cuối: A chết khi kịch bản đang nạp model mới ⇒ B phục hồi: gỡ khoá + tạm dừng, lựa chọn bền vẫn cũ, cảnh báo server chạy model CHƯA chốt", async () => {
+    const m = dungMoiTruong({ pid: pidDaChet() });
+    m.datTreoKhiNap((model) => model === "Moi.gguf");
+    const dpA = new DieuPhoiDoiModel(m.d);
+    await dpA.batDau("Moi.gguf", "admin");
+    await choBuoc(dpA, "khoi-dong");
+    expect(fs.existsSync(m.d.duongKhoaDoi)).toBe(true);
+    expect(fs.existsSync(m.duongTamDung)).toBe(true);
+    m.datTreoKhiNap(() => false);
+    const ghi: unknown[] = [];
+    const kq = await new DieuPhoiDoiModel({ ...m.d, pid: process.pid, khiPhucHoi: (k) => void ghi.push(k) }).phucHoiLuotMoCoi();
+    expect(kq.coMoCoi).toBe(true);
+    expect(kq.daGoKhoa).toBe(true);
+    expect(kq.tamDung).toBe("da-go");
+    expect(fs.existsSync(duongLuaChon(m.env)), "không có lựa chọn chưa chốt nào để khôi phục").toBe(false);
+    expect(kq.luaChonBen).toBe("Cu.gguf");
+    expect(kq.serverDangChay).toBe("Moi.gguf");
+    expect(kq.canhBao.join(" ")).toMatch(/Moi\.gguf/);
+    expect(m.nhatKy.kichBan, "phục hồi KHÔNG tự khởi động lại server").toEqual(["-Force -Model Moi.gguf"]);
+    expect(ghi).toHaveLength(1);
+  });
+
+  it("không có gì mồ côi ⇒ không ghi nhật ký, không đụng tệp nào", async () => {
+    const m = dungMoiTruong();
+    fs.writeFileSync(m.duongTamDung, "doi-model.ps1 PID 1 x");
+    const ghi: unknown[] = [];
+    m.d.khiPhucHoi = (k) => void ghi.push(k);
+    const kq = await new DieuPhoiDoiModel(m.d).phucHoiLuotMoCoi();
+    expect(kq.coMoCoi).toBe(false);
+    expect(ghi).toEqual([]);
+    expect(fs.existsSync(m.duongTamDung)).toBe(true);
   });
 });
 
@@ -456,7 +678,7 @@ describe("THẬT — header GGUF trong kho model (chỉ đọc; bỏ qua nếu k
 // kiểm là dòng "model : …" mà kịch bản in TRƯỚC khi spawn — tức đúng tệp nó sẽ nạp.
 const BIN_GIA = path.join(process.env.SystemRoot || process.env.windir || "C:/Windows", "System32", "where.exe");
 describe.runIf(process.platform === "win32")("THẬT — start-llama-server.ps1 chọn -m theo tệp lựa chọn", () => {
-  function chay(luaChon: object | null): { out: string; ma: number | null } {
+  function chay(luaChon: object | null, thamSoThem: string[] = []): { out: string; ma: number | null } {
     const { spawnSync } = require("node:child_process") as typeof import("node:child_process");
     const goc = path.join(thuMuc, "repo");
     fs.mkdirSync(path.join(goc, "scripts", "ai"), { recursive: true });
@@ -474,7 +696,7 @@ describe.runIf(process.platform === "win32")("THẬT — start-llama-server.ps1 
         `LLAMA_SERVER_SELECTION_FILE=${sel}`,
       ].join("\n"),
     );
-    const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kb, "-WaitSeconds", "5"], {
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kb, "-WaitSeconds", "5", ...thamSoThem], {
       encoding: "utf8",
       timeout: 60_000,
       windowsHide: true,
@@ -504,6 +726,21 @@ describe.runIf(process.platform === "win32")("THẬT — start-llama-server.ps1 
   it("không có tệp lựa chọn ⇒ hành vi cũ (model .env)", () => {
     expect(dongModel(chay(null).out)).toMatch(/\/Cu\.gguf$/);
   }, 70_000);
+
+  it("-Model hợp lệ ⇒ -m là model TRUYỀN VÀO, tệp lựa chọn (đã chốt) bị bỏ qua", () => {
+    const r = chay({ v: 1, model: "Cu.gguf", envModel: "Cu.gguf", luc: "t", nguoi: "x" }, ["-Model", "Moi.gguf"]);
+    expect(dongModel(r.out)).toMatch(/\/Moi\.gguf$/);
+    expect(r.ma).toBe(4); // where.exe thoát ngay ⇒ "THOÁT SỚM" — tức ĐÃ tới bước spawn
+  }, 70_000);
+
+  it("-Model không hợp lệ (đường dẫn / ngoài kho / tuyệt đối / sai đuôi) ⇒ thoát 2 TRƯỚC khi giết hay spawn gì, kể cả với -Force", () => {
+    for (const ten of ["..\\Cu.gguf", "Khong.gguf", "C:\\Windows\\x.gguf", "Moi.txt"]) {
+      const r = chay(null, ["-Force", "-Model", ten]);
+      expect(r.ma, ten).toBe(2);
+      expect(dongModel(r.out), ten).toBe("");
+      expect(r.out, ten).not.toMatch(/-Force: stop/);
+    }
+  }, 120_000);
 });
 
 describe("khoiDongTachRoi — cờ thêm là DANH SÁCH ĐÓNG", () => {
@@ -522,5 +759,22 @@ describe("khoiDongTachRoi — cờ thêm là DANH SÁCH ĐÓNG", () => {
     expect(goi[0].slice(-1)).toEqual([kb]);
     expect(goi[1].slice(-2)).toEqual([kb, "-Force"]);
     expect(goi[2].slice(-2)).toEqual([kb, "-Force"]);
+  });
+
+  it("`model` chỉ nhận basename .gguf (danh sách trắng dạng tên) ⇒ `-Model <tên>`; tên lạ ⇒ NÉM, không spawn", async () => {
+    const { khoiDongTachRoi } = await import("./giamSatLlamaServer");
+    const kb = path.join(thuMuc, "start-llama-server.ps1");
+    fs.writeFileSync(kb, "");
+    const goi: string[][] = [];
+    const spawnFn: any = (_l: string, a: string[]) => {
+      goi.push(a);
+      return { on: () => {}, unref: () => {}, pid: 1 };
+    };
+    khoiDongTachRoi(kb, { spawnFn, thamSoThem: ["-Force"], model: "Moi.gguf" });
+    expect(goi[0].slice(-4)).toEqual([kb, "-Force", "-Model", "Moi.gguf"]);
+    for (const xau of ["../x.gguf", "x.gguf -EnvFile y", "C:/m/x.gguf", "-Force"]) {
+      expect(() => khoiDongTachRoi(kb, { spawnFn, model: xau }), xau).toThrow();
+    }
+    expect(goi).toHaveLength(1);
   });
 });
