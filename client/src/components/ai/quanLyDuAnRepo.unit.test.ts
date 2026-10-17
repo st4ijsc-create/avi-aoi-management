@@ -134,10 +134,10 @@ function nutBiKhoa(html: string, dau: string): boolean {
 }
 
 describe("§1 VỎ — nút bánh răng có THẬT, dialog nối đúng ruột", () => {
-  it("★★★ nút bánh răng ra HTML kèm nhãn truy cập (admin-only là việc của TRANG — vỏ không tự quyết)", () => {
+  it("★★★ nút bánh răng ra HTML kèm nhãn truy cập (★ Đợt 3a: nhãn chung 'Quản lý dự án' — dialog mở cho mọi người)", () => {
     const html = renderToStaticMarkup(createElement(QuanLyDuAnRepo, {}));
     expect(html).toContain("data-nut-quan-ly-du-an");
-    expect(html).toContain(esc(VI.repoWs.duan.moTitle));
+    expect(html).toContain(esc(VI.repoWs.duan.moTitleMoi));
     expect(html).not.toContain("‹THIẾU:");
   });
 
@@ -154,9 +154,17 @@ describe("§1 VỎ — nút bánh răng có THẬT, dialog nối đúng ruột",
     expect(NGUON.indexOf("data-nut-quan-ly-du-an")).toBeLessThan(moContent);
   });
 
-  it("★ TRANG gắn vỏ CHỈ cho admin (phép lịch sự — hàng rào thật là adminProcedure, đo ở lưới router)", () => {
+  /**
+   * ★ Đợt 3a (Q3, 2026-10-17) — ĐỔI CÓ CHỦ ĐÍCH: trang gắn vỏ cho MỌI người dùng (phần "Dự án của tôi"), còn phần
+   * ĐĂNG KÝ thư mục bất kỳ chỉ vẽ khi `laAdmin` — vẫn là phép lịch sự, hàng rào thật là adminProcedure (lưới router).
+   */
+  it("★ TRANG gắn vỏ cho mọi người với `laAdmin` theo vai; ruột đăng ký nằm trong nhánh `laAdmin &&`", () => {
     const trang = readFileSync(join(CLIENT_SRC, "pages", "AICodingWorkspace.tsx"), "utf8").replace(/\r\n/g, "\n");
-    expect(trang).toMatch(/user\?\.role === "admin" && <QuanLyDuAnRepo/);
+    expect(trang).toMatch(/<QuanLyDuAnRepo\s+laAdmin=\{user\?\.role === "admin"\}/);
+    expect(trang).not.toMatch(/user\?\.role === "admin" && <QuanLyDuAnRepo/);
+    const nhanh = NGUON.indexOf("{laAdmin && (");
+    expect(nhanh, "phần admin phải nằm sau cổng laAdmin").toBeGreaterThan(-1);
+    expect(NGUON.indexOf("<NoiDungQuanLyDuAn")).toBeGreaterThan(nhanh);
   });
 });
 

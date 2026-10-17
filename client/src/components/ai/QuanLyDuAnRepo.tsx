@@ -11,9 +11,10 @@
  *      với admin sửa `.env`, và server xác thực FAIL-CLOSED (mỗi lỗi một mã). (Bộ chọn thư mục
  *      `duyetThuMuc` cũng nhận một đường — nhưng nó CHỈ liệt kê tên thư mục cho form, cùng sàn
  *      admin+2FA, và đường chọn xong vẫn qua `kiemTraDangKyDuAn` lúc đăng ký.)
- *   2. **Client ẩn nút chỉ là phép lịch sự** — trang chỉ gắn component này cho `role === "admin"`,
- *      nhưng hàng rào THẬT là `adminProcedure` ở server: gọi thẳng API bằng tài khoản thường vẫn
- *      nhận FORBIDDEN.
+ *   2. **Client ẩn nút chỉ là phép lịch sự** — phần ĐĂNG KÝ thư mục chỉ vẽ khi `laAdmin`, nhưng hàng
+ *      rào THẬT là `adminProcedure` ở server: gọi thẳng API bằng tài khoản thường vẫn nhận FORBIDDEN.
+ *      ★ Đợt 3a (Q3): dialog nay gắn cho MỌI người dùng — phần "Dự án của tôi" (`DuAnCaNhan.tsx`) cho kỹ
+ *      sư tạo/mở/đổi tên/xoá dự án cá nhân, server tự đặt thư mục (không đường dẫn nào từ client).
  *   3. **Mục nguồn env KHÔNG xoá được** — server từ chối (`MUC_ENV_KHONG_XOA_DUOC`); UI hiện ổ
  *      khoá thay nút xoá để người dùng không bấm vào một cánh cửa đóng.
  *
@@ -59,6 +60,8 @@ import {
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { RE_ID_DU_AN } from "@shared/aiCodingSession";
+// ★ Đợt 3a — phần "Dự án của tôi" (mọi kỹ sư có quyền), đặt TRÊN phần admin trong cùng dialog.
+import { DuAnCaNhan } from "./DuAnCaNhan";
 
 /** Một mục như `repoWorkspace.danhSachDayDu` trả về. */
 export interface MucDuAnUI {
@@ -478,12 +481,20 @@ export function NoiDungQuanLyDuAn({
 }
 
 interface QuanLyDuAnRepoProps {
-  /** Trang chỉ gắn khi admin — nhưng đây là phép LỊCH SỰ; hàng rào là `adminProcedure` ở server. */
   className?: string;
+  /**
+   * ★ Đợt 3a — dialog nay mở cho MỌI người dùng (phần "Dự án của tôi"); phần đăng ký thư mục bất kỳ CHỈ hiện khi
+   * `laAdmin`. Ẩn là phép LỊCH SỰ; hàng rào vẫn là `adminProcedure` ở server.
+   */
+  laAdmin?: boolean;
+  /** Mở một dự án (đổi selectBox của trang). */
+  onChonDuAn?: (id: string) => void;
+  /** "Tạo từ mô tả": dự án rỗng đã tạo ⇒ trang chuyển chế độ Agent + đặt mô tả vào ô chat. */
+  onTaoTuMoTa?: (id: string, moTa: string) => void;
 }
 
 /** VỎ: nút bánh răng cạnh selectBox dự án — mở dialog quản lý. */
-export function QuanLyDuAnRepo({ className }: QuanLyDuAnRepoProps) {
+export function QuanLyDuAnRepo({ className, laAdmin = false, onChonDuAn, onTaoTuMoTa }: QuanLyDuAnRepoProps) {
   const { t } = useTranslation();
   const [mo, setMo] = useState(false);
   const [loiThem, setLoiThem] = useState<LoiThemUI | null>(null);
@@ -491,13 +502,13 @@ export function QuanLyDuAnRepo({ className }: QuanLyDuAnRepoProps) {
   const [duongDuyet, setDuongDuyet] = useState<string | null>(null);
   const utils = trpc.useUtils();
   // `enabled: mo` — thủ tục admin-only, đừng bắn query (và nhận FORBIDDEN) khi dialog chưa mở.
-  const dsQ = trpc.repoWorkspace.danhSachDayDu.useQuery(undefined, { enabled: mo, staleTime: 10_000 });
+  const dsQ = trpc.repoWorkspace.danhSachDayDu.useQuery(undefined, { enabled: mo && laAdmin, staleTime: 10_000 });
   // Bộ chọn: chỉ hỏi khi ĐANG mở (dialog + panel). `staleTime: 0` — API khai "không cache, đọc hệ
   // tệp SỐNG"; client giữ một ảnh chụp 5 giây là phản lại lời khai ấy. `retry: false` — đường xấu
   // là ca TẤT ĐỊNH, retry chỉ bắt người dùng chờ ba lượt cho cùng một câu từ chối.
   const duyetQ = trpc.repoWorkspace.duyetThuMuc.useQuery(
     { duong: duongDuyet ?? undefined },
-    { enabled: mo && chonMo, staleTime: 0, retry: false },
+    { enabled: mo && laAdmin && chonMo, staleTime: 0, retry: false },
   );
 
   /** Sau MỖI mutation xanh: selectBox (`listProjects`) + danh sách dialog cùng làm tươi — không F5. */
@@ -590,22 +601,32 @@ export function QuanLyDuAnRepo({ className }: QuanLyDuAnRepoProps) {
           size="icon"
           data-nut-quan-ly-du-an
           className={cn("h-5 w-5", className)}
-          title={t("repoWs.duan.moTitle", "Quản lý dự án (admin)")}
-          aria-label={t("repoWs.duan.moTitle", "Quản lý dự án (admin)")}
+          title={t("repoWs.duan.moTitleMoi", "Quản lý dự án")}
+          aria-label={t("repoWs.duan.moTitleMoi", "Quản lý dự án")}
         >
           <Settings2 className="h-3.5 w-3.5" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("repoWs.duan.title", "Quản lý dự án")}</DialogTitle>
           <DialogDescription>
             {t(
-              "repoWs.duan.moTa",
-              "Thêm/xoá thư mục dự án cho không gian lập trình AI. Mục .env chỉ sửa được bằng tay; mục thêm ở đây có hiệu lực NGAY, không cần khởi động lại.",
+              "repoWs.duanCaNhan.moTaDialog",
+              "Tạo và mở dự án của riêng bạn trên máy chủ — không cần thư mục có sẵn. Chỉ bạn (và quản trị) thấy dự án cá nhân.",
             )}
           </DialogDescription>
         </DialogHeader>
+        <DuAnCaNhan onChonDuAn={onChonDuAn} onTaoTuMoTa={onTaoTuMoTa} onXong={() => setMo(false)} />
+        {laAdmin && (
+        <div data-phan-admin className="mt-2 space-y-2 border-t pt-3">
+        <p className="text-[11px] font-semibold">{t("repoWs.duan.phanAdmin", "Quản trị: đăng ký thư mục có sẵn")}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {t(
+            "repoWs.duan.moTa",
+            "Thêm/xoá thư mục dự án cho không gian lập trình AI. Mục .env chỉ sửa được bằng tay; mục thêm ở đây có hiệu lực NGAY, không cần khởi động lại.",
+          )}
+        </p>
         <NoiDungQuanLyDuAn
           muc={(dsQ.data?.projects ?? []) as MucDuAnUI[]}
           tranDb={dsQ.data?.tranDb ?? 20}
@@ -630,6 +651,8 @@ export function QuanLyDuAnRepo({ className }: QuanLyDuAnRepoProps) {
           onDuyet={(d) => setDuongDuyet(d)}
           onDongChon={() => setChonMo(false)}
         />
+        </div>
+        )}
       </DialogContent>
     </Dialog>
   );

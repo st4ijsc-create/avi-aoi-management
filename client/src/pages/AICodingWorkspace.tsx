@@ -139,6 +139,8 @@ import { bocTheDocTep, dinhDangLucNhan, viTriCauTraLoiCungLuot } from "@/lib/soK
 import { RibbonTacVu } from "@/components/ai/RibbonTacVu";
 import { BangTerminal, type LuotLenh } from "@/components/ai/BangTerminal";
 import { BangProblems } from "@/components/ai/BangProblems";
+// ★ Đợt 3c — bảng "Chạy & Xem trước" (khung chứa tRPC + bảng thuần; lưới `bangChayUngDung.unit.test.ts`).
+import { KhungChayUngDung } from "@/components/ai/KhungChayUngDung";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
 // ★★★ 2026-08-25 · UX (Đợt 1) — TRÌNH XEM MÃ: tô cú pháp + SỐ DÒNG THẬT + cuộn ngang, thay `<pre>`
 // trơn ở khung Trình xem. Component thuần hiển thị (lưới render riêng `trinhXemMa.unit.test.ts`).
@@ -162,7 +164,7 @@ import {
   FolderTree, FileCode, ChevronRight, ChevronDown, RefreshCw, Send, StopCircle,
   Bot, User, Loader2, ShieldAlert, AlertTriangle, Eye, FileDiff, Clock, Wrench, Lock,
   Repeat, CheckCircle2, OctagonX, Terminal, Search, X, ChevronUp, Wand2, Copy, Undo2,
-  WrapText, Maximize2, Minimize2, List, ArrowUpRight,
+  WrapText, Maximize2, Minimize2, List, ArrowUpRight, PlayCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 /**
@@ -789,7 +791,7 @@ export default function AICodingWorkspace() {
    * ⇒ **KHÔNG** nằm trong ba hàm reset. Mặc định GẬP: nội dung có `max-h` + cuộn nội bộ nên không đẩy
    * ô nhập xuống dưới nếp gấp (bài học `khungVuaManHinh`).
    */
-  const [duoiChat, setDuoiChat] = useState<"dong" | "terminal" | "problems">("dong");
+  const [duoiChat, setDuoiChat] = useState<"dong" | "terminal" | "problems" | "chay">("dong");
 
   // ★ ĐỢT A (UX H5) — KHÔI PHỤC bàn làm việc của dự án (một lần mỗi projectId; xem docblock khoá).
   useEffect(() => {
@@ -959,6 +961,8 @@ export default function AICodingWorkspace() {
   const cancelM = trpc.aiCopilot.cancelAction.useMutation();
   // ★ ĐỢT C — đề xuất sửa tay (CHỈ propose; ghi vẫn qua confirmM duy nhất — xem docblock dangSuaTay).
   const deXuatSuaTayM = trpc.repoWorkspace.deXuatSuaTay.useMutation();
+  // ★ Đợt 3c — Terminal gõ/chạy-lại lệnh danh sách trắng ĐI THẲNG vào `run_command` propose (KHÔNG qua model).
+  const deXuatLenhM = trpc.aiChayUngDung.deXuatLenh.useMutation();
 
   // ── ★★★ doc 79 · VÒNG TỰ ĐỘNG — cấu hình từ SERVER (không đoán) + bộ chạy kiểm chứng ──
   const cauHinhVongQ = trpc.repoWorkspace.cauHinhVong.useQuery(undefined, { staleTime: 5 * 60_000 });
@@ -1621,6 +1625,28 @@ export default function AICodingWorkspace() {
     setPendingDiff({ action: pa, args: { path: selectedPath, original, modified: banSua } });
     setDangSuaTay(false);
   }, [selectedPath, fileReply, banSua, lang, projectId, deXuatSuaTayM, t]);
+
+  /**
+   * ★★★ Đợt 3c — LỆNH TERMINAL ĐI THẲNG VÀO THẺ DUYỆT. Trước: gõ lệnh ⇒ dựng câu "chạy <lệnh>" ⇒ model ⇒ propose
+   * (khảo sát đo 30–120 s/lệnh, và model có lúc đổi lệnh). Nay: `aiChayUngDung.deXuatLenh` ⇒ máy chủ phán quyết danh
+   * sách trắng + dựng `pendingAction` ⇒ ĐÚNG thẻ duyệt hiện có (`setPending`). Lệnh chạy khi và chỉ khi người bấm
+   * Xác nhận (`confirmAction`). BangTerminal giữ nguyên 0 mutation.
+   */
+  const deXuatLenhTrucTiep = useCallback(async (lenh: string) => {
+    let r: Awaited<ReturnType<typeof deXuatLenhM.mutateAsync>> | null = null;
+    try {
+      r = await deXuatLenhM.mutateAsync({ command: lenh, lang, ...(projectId ? { projectId } : {}) });
+    } catch (e) {
+      toast.error(mapTrpcError(e));
+      return;
+    }
+    if (!r.ok || !r.pendingAction) {
+      toast.error(r.message ?? t("repoWs.chayUD.loiDeXuat", "Không tạo được thẻ duyệt cho lệnh [{{ma}}].", { ma: r.note ?? "?" }));
+      return;
+    }
+    setPending(r.pendingAction as unknown as KbPendingAction);
+    setActionState("pending");
+  }, [deXuatLenhM, lang, projectId, t]);
 
   // Đổi tệp/dự án ⇒ thoát chế độ sửa (buffer thuộc về tệp CŨ — giữ lại là dán nhầm nội dung).
   useEffect(() => { setDangSuaTay(false); }, [selectedPath, projectId]);
@@ -2431,7 +2457,13 @@ export default function AICodingWorkspace() {
                 {/* ★ QUẢN LÝ DỰ ÁN — bánh răng NGOÀI <label> (nút trong label ăn cú bấm của label)
                     và chỉ gắn cho admin: phép LỊCH SỰ; hàng rào thật là `adminProcedure` ở server
                     (repoWorkspace.themDuAn/xoaDuAn) — gọi thẳng API vẫn FORBIDDEN. */}
-                {user?.role === "admin" && <QuanLyDuAnRepo />}
+                {/* ★ Đợt 3a (Q3) — mở cho MỌI người dùng: "Dự án của tôi" (tạo/mở/đổi tên/xoá); phần đăng ký thư mục
+                    vẫn chỉ admin. "Từ mô tả" = dự án rỗng ⇒ chế độ Agent (`sua`) + mô tả trong ô chat. */}
+                <QuanLyDuAnRepo
+                  laAdmin={user?.role === "admin"}
+                  onChonDuAn={changeProject}
+                  onTaoTuMoTa={(_id, moTa) => { doiCheDoChat("sua"); setInput(moTa); }}
+                />
               </div>
               <select
                 id="repows-project"
@@ -3477,28 +3509,54 @@ export default function AICodingWorkspace() {
                 </span>
               )}
             </button>
+            {/* ★ Đợt 3c — tab "Chạy & Xem trước" (cài phụ thuộc qua thẻ duyệt · chạy/dừng · nhật ký · khung xem trước). */}
+            <button
+              type="button"
+              role="tab"
+              id="repows-tab-chay"
+              aria-selected={duoiChat === "chay"}
+              aria-controls="repows-panel-duoi"
+              data-tab-duoi="chay"
+              onClick={() => setDuoiChat((v) => (v === "chay" ? "dong" : "chay"))}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
+                duoiChat === "chay" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              <PlayCircle className="h-3.5 w-3.5" />
+              {t("repoWs.pane.runTab", "Chạy & Xem trước")}
+            </button>
           </div>
           {duoiChat !== "dong" && (
             <div
               className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2"
               role="tabpanel"
               id="repows-panel-duoi"
-              aria-labelledby={duoiChat === "terminal" ? "repows-tab-terminal" : "repows-tab-problems"}
+              aria-labelledby={duoiChat === "terminal" ? "repows-tab-terminal" : duoiChat === "chay" ? "repows-tab-chay" : "repows-tab-problems"}
             >
-              {duoiChat === "terminal" ? (
+              {duoiChat === "chay" ? (
+                projectId ? (
+                  <KhungChayUngDung
+                    projectId={projectId}
+                    lang={lang}
+                    onDeXuat={(pa) => {
+                      setPending(pa as KbPendingAction);
+                      setActionState("pending");
+                    }}
+                  />
+                ) : null
+              ) : duoiChat === "terminal" ? (
                 <BangTerminal
                   luotLenh={lenhDaChay}
                   goiYNhanh={goiYTheoDuAn(projectId)}
                   dangGui={isStreaming}
                   onChayNhanh={(g) => handleSend(t(g.khoa, g.macDinh))}
                   luotSong={dangChayLenhSong ? songQ.data ?? null : null}
-                  onChayLai={(lenh) => handleSend(t("repoWs.terminal.rerunPrompt", "chạy {{lenh}}", { lenh }))}
+                  onChayLai={(lenh) => void deXuatLenhTrucTiep(lenh)}
                   onXoaLichSu={() => setLenhDaChay([])}
-                  /* ★★★ G17 (2026-09-22 · phản hồi chủ dự án) — GÕ ĐƯỢC LỆNH.
-                     Đường đi y HỆT nút chạy-nhanh và nút chạy-lại: dựng câu → `handleSend` →
-                     model → propose → **cùng thẻ duyệt HITL**. Không một đường chạy thẳng nào
-                     mọc ra ở đây, nên bất biến "0 mutation trong BangTerminal" không đổi. */
-                  onGoLenh={(lenh) => handleSend(t("repoWs.terminal.rerunPrompt", "chạy {{lenh}}", { lenh }))}
+                  /* ★★★ G17 (2026-09-22) — GÕ ĐƯỢC LỆNH. ★ Đợt 3c — nay KHÔNG đi vòng qua model: propose thẳng
+                     `run_command` ⇒ **cùng thẻ duyệt HITL**. Không đường chạy thẳng nào: chạy chỉ sau Xác nhận. */
+                  onGoLenh={(lenh) => void deXuatLenhTrucTiep(lenh)}
                   lenhChoPhep={dsLenhChoPhepQ.data ?? undefined}
                 />
               ) : (

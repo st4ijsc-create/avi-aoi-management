@@ -14,7 +14,7 @@ import { getDb } from "../db/connection";
 import { createLocalUser } from "../db/auth";
 import { users, userSecrets } from "../../drizzle/schema/auth";
 import { aiGatewayTokens, aiGatewayDeviceCodes, auditLogs } from "../../drizzle/schema";
-import { quyetThietBi, xacThucTokenNguoiDung } from "../db/aiGatewayTokens";
+import { quyetThietBi, xacThucTokenNguoiDung, xemThietBi, TRAN_MA_CHO_MOI_IP } from "../db/aiGatewayTokens";
 import { registerAiGatewayTokenThietBiRoutes, TRAN_XIN_MA_MOI_PHUT_IP } from "./aiGatewayTokenThietBi";
 
 let uid = 0;
@@ -67,7 +67,10 @@ describe("device flow REST", () => {
     expect(b.device_code).toMatch(/^avgd_/);
     expect(b.user_code).toMatch(/^[A-Z]{4}-[A-Z]{4}$/);
     expect(b.verification_path).toBe("/ai-thiet-bi");
-    expect(b.verification_path_complete).toBe(`/ai-thiet-bi?ma=${b.user_code}`);
+    // ★ Rà bảo mật de591c868 #3 — đường "complete" KHÔNG mang mã: trang duyệt không điền sẵn, người dùng phải GÕ mã
+    //   hiển thị trong VSCode của CHÍNH họ (một đường dẫn mang sẵn mã là mồi lừa đảo một-cú-bấm). Giữ ô cho hợp đồng.
+    expect(b.verification_path_complete).toBe("/ai-thiet-bi");
+    expect(JSON.stringify(b)).not.toContain(`ma=`);
     expect(b.expires_in).toBe(600);
     expect(b.interval).toBe(5);
     expect(JSON.stringify(b)).not.toMatch(/https?:\/\//); // không dựng URL từ Host (chống chèn Host)
@@ -116,6 +119,42 @@ describe("device flow REST", () => {
     expect((await (await post("/doi", { device_code: b.device_code })).json()).error).toBe("access_denied");
     expect((await (await post("/doi", { device_code: "rac" })).json()).error).toBe("invalid_grant");
     expect((await (await post("/doi", {})).json()).error).toBe("invalid_grant");
+  });
+
+  it("★ #3 lượt khởi tạo ghi NGUỒN GỐC (IP + User-Agent) cho trang duyệt; phạm vi `embed` bị cắt", async () => {
+    const r = await fetch(`${may.url}/api/ai/gateway-token/thiet-bi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "luoi-ua VSCode/1.99" },
+      body: JSON.stringify({ ten: "luoi-rest-nguon", phamVi: ["chat", "fim", "embed"] }),
+    });
+    expect(r.status).toBe(200);
+    const b = await r.json();
+    const xem = await xemThietBi(b.user_code);
+    expect(xem).toMatchObject({ ok: true, phamVi: ["chat", "fim"], tacNhanKhoiTao: "luoi-ua VSCode/1.99" });
+    expect(xem.ok && String(xem.ipKhoiTao)).toMatch(/127\.0\.0\.1/);
+  });
+
+  it("★ #3 trần mã đang CHỜ mỗi IP ⇒ 429 slow_down (không rải hàng loạt mã đi lừa)", async () => {
+    const db = (await getDb())!;
+    const mau = (await (await post("", { ten: "luoi-rest-cho-mau" })).json()) as { user_code: string };
+    const [h] = (await db.execute(
+      sql`SELECT "ipKhoiTao" AS ip FROM ai_gateway_device_codes WHERE "maNguoiDung" = ${mau.user_code}`,
+    )) as unknown as Array<{ ip: string }>;
+    const [dem] = (await db.execute(
+      sql`SELECT count(*)::int AS n FROM ai_gateway_device_codes WHERE "ipKhoiTao" = ${h.ip} AND "trangThai" = 'cho' AND "hetHanLuc" > now()`,
+    )) as unknown as Array<{ n: number }>;
+    for (let i = Number(dem.n); i < TRAN_MA_CHO_MOI_IP; i++) {
+      await db.execute(
+        sql`INSERT INTO ai_gateway_device_codes ("maThietBiHash", "maNguoiDung", ten, "hetHanLuc", "ipKhoiTao")
+            VALUES (${"0".repeat(60) + String(1000 + i)}, ${"ZZZZ-ZZ" + "BCDFGHJKLM"[i] + "Z"}, 'luoi-rest-cho-seed', now() + interval '5 minutes', ${h.ip})`,
+      );
+    }
+    const r = await post("", { ten: "luoi-rest-cho-thua" });
+    expect(r.status).toBe(429);
+    expect((await r.json()).error).toBe("slow_down");
+    // Dọn để ca sau đo đúng trần THEO PHÚT (không vướng trần mã chờ).
+    await db.execute(sql`UPDATE ai_gateway_device_codes SET "trangThai" = 'tu-choi' WHERE "ipKhoiTao" = ${h.ip} AND "trangThai" = 'cho'`);
+    await db.execute(sql`DELETE FROM ai_gateway_device_codes WHERE ten = 'luoi-rest-cho-seed'`);
   });
 
   it("xin mã dồn từ một IP ⇒ 429 sau trần", async () => {

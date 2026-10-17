@@ -20,6 +20,7 @@ import {
   xemThietBi,
   quyetThietBi,
   doiMaThietBi,
+  TRAN_MA_CHO_MOI_IP,
 } from "./aiGatewayTokens";
 import { bamToken, TRAN_TOKEN_HIEU_LUC } from "../services/ai/gatewayToken/maToken";
 
@@ -208,5 +209,150 @@ describe("device flow — mã 10 phút, dùng một lần", () => {
     expect(await xemThietBi("BCDF-0000")).toEqual({ ok: false, ma: "khong-ton-tai" });
     expect(await doiMaThietBi("avgd_" + "y".repeat(43))).toEqual({ trangThai: "khong-hop-le" });
     expect(await doiMaThietBi("rac")).toEqual({ trangThai: "khong-hop-le" });
+  });
+});
+
+/**
+ * ★★★ Rà bảo mật de591c868 — phát hiện 2 (credential-revocation-fanout): token cá nhân KHÔNG được sống lâu hơn danh
+ * tính đã cấp nó. Trước bản vá: đổi mật khẩu / "đăng xuất mọi thiết bị" / tắt rồi BẬT LẠI tài khoản đều để token
+ * `avgw_…` (90 ngày) chạy tiếp; tài khoản đang bị buộc đổi mật khẩu (mốc `passwordInvalidBefore` — bí mật bị coi là
+ * lộ) vẫn mở được cổng; và một mã thiết bị ĐÃ duyệt nhưng CHƯA đổi vẫn đúc được token SAU khi chủ đổi mật khẩu.
+ */
+describe("thu hồi LAN theo danh tính (rà bảo mật de591c868 #2)", () => {
+  async function voiNguoiMoi(ten: string, than: (uid: number) => Promise<void>): Promise<void> {
+    const uid = await taoNguoi(ten);
+    try {
+      await than(uid);
+    } finally {
+      const db = (await getDb())!;
+      await db.delete(aiGatewayDeviceCodes).where(eq(aiGatewayDeviceCodes.userId, uid));
+      await db.delete(aiGatewayTokens).where(eq(aiGatewayTokens.userId, uid));
+      await db.delete(userSecrets).where(eq(userSecrets.userId, uid));
+      await db.delete(users).where(eq(users.id, uid));
+    }
+  }
+  const taoOk = async (uid: number, ten: string) => {
+    const kq = await taoTokenNguoiDung({ userId: uid, ten });
+    if (!kq.ok) throw new Error("tạo hỏng");
+    return kq;
+  };
+
+  it("đổi mật khẩu (updateUserPassword) ⇒ MỌI token của người đó thu-hoi; token người khác KHÔNG bị vạ lây", async () => {
+    const { updateUserPassword } = await import("./auth");
+    const cuaA = await taoOk(uidA, "doi-mk-doi-chung");
+    await voiNguoiMoi("doi-mk", async (uid) => {
+      const t1 = await taoOk(uid, "t1");
+      const t2 = await taoOk(uid, "t2");
+      await updateUserPassword(uid, "$2a$04$" + "x".repeat(53));
+      expect(await xacThucTokenNguoiDung(t1.token)).toEqual({ ok: false, ma: "thu-hoi" });
+      expect(await xacThucTokenNguoiDung(t2.token)).toEqual({ ok: false, ma: "thu-hoi" });
+      // Token mới tạo SAU lượt đổi vẫn chạy (không nhà tù).
+      const t3 = await taoOk(uid, "t3");
+      expect((await xacThucTokenNguoiDung(t3.token)).ok).toBe(true);
+    });
+    expect((await xacThucTokenNguoiDung(cuaA.token)).ok).toBe(true);
+  });
+
+  it("đăng xuất mọi thiết bị (revokeAllSessions, kể cả giữ phiên hiện tại) ⇒ token thu-hoi", async () => {
+    const { revokeAllSessions } = await import("./auth");
+    await voiNguoiMoi("dx-moi-noi", async (uid) => {
+      const t = await taoOk(uid, "vscode");
+      await revokeAllSessions(uid, 987654321);
+      expect(await xacThucTokenNguoiDung(t.token)).toEqual({ ok: false, ma: "thu-hoi" });
+    });
+  });
+
+  it("tắt tài khoản qua updateUser rồi BẬT LẠI ⇒ token cũ KHÔNG sống lại", async () => {
+    const { updateUser } = await import("./auth");
+    await voiNguoiMoi("tat-bat", async (uid) => {
+      const t = await taoOk(uid, "vscode");
+      await updateUser(uid, { isActive: false });
+      await updateUser(uid, { isActive: true });
+      expect(await xacThucTokenNguoiDung(t.token)).toEqual({ ok: false, ma: "thu-hoi" });
+    });
+  });
+
+  it("tài khoản đang bị BUỘC đổi mật khẩu (passwordInvalidBefore) ⇒ token bị chặn `phai-doi-mat-khau`", async () => {
+    await voiNguoiMoi("buoc-doi", async (uid) => {
+      const t = await taoOk(uid, "vscode");
+      const db = (await getDb())!;
+      await db.execute(sql`UPDATE users SET "passwordInvalidBefore" = now(), "passwordChangedAt" = NULL WHERE id = ${uid}`);
+      expect(await xacThucTokenNguoiDung(t.token)).toEqual({ ok: false, ma: "phai-doi-mat-khau" });
+    });
+  });
+
+  it("mã thiết bị ĐÃ duyệt nhưng CHƯA đổi ⇒ đổi mật khẩu xong thì mã KHÔNG đúc được token", async () => {
+    const { updateUserPassword } = await import("./auth");
+    await voiNguoiMoi("tb-cho-doi", async (uid) => {
+      const bd = await batDauThietBi({ ten: "luoi-tb-fanout", phamVi: ["chat"] });
+      if (!bd.ok) throw new Error("bắt đầu hỏng");
+      expect((await quyetThietBi(uid, bd.maNguoiDung, true)).ok).toBe(true);
+      await updateUserPassword(uid, "$2a$04$" + "y".repeat(53));
+      const doi = await doiMaThietBi(bd.maThietBi);
+      expect(doi.trangThai).not.toBe("xong");
+    });
+  });
+
+  it("mã thiết bị đã duyệt bởi người SAU ĐÓ bị tắt bằng SQL thẳng (không qua fan-out) ⇒ không đúc token", async () => {
+    await voiNguoiMoi("tb-tat-sql", async (uid) => {
+      const bd = await batDauThietBi({ ten: "luoi-tb-tat", phamVi: ["chat"] });
+      if (!bd.ok) throw new Error("bắt đầu hỏng");
+      expect((await quyetThietBi(uid, bd.maNguoiDung, true)).ok).toBe(true);
+      const db = (await getDb())!;
+      await db.execute(sql`UPDATE users SET "isActive" = false WHERE id = ${uid}`);
+      expect((await doiMaThietBi(bd.maThietBi)).trangThai).toBe("tu-choi");
+    });
+  });
+});
+
+/**
+ * ★★★ Rà bảo mật de591c868 — phát hiện 3 (device-code phishing): kẻ tấn công khởi tạo luồng rồi lừa nạn nhân duyệt.
+ * Tầng dữ liệu phải: (a) ghi NGUỒN GỐC lượt khởi tạo (IP + User-Agent + lúc tạo) để trang duyệt cho người dùng nhận ra
+ * yêu cầu không phải của mình; (b) token đúc từ thiết bị có phạm vi TỐI THIỂU (≤ chat+fim — không `embed`) và hạn NGẮN
+ * hơn token web; (c) trần số mã đang CHỜ mỗi IP (một IP không rải được hàng loạt mã đi lừa).
+ */
+describe("device flow — chống lừa đảo mã (rà bảo mật de591c868 #3)", () => {
+  const IP_A = "10.250.0.7";
+  const IP_B = "10.250.0.8";
+  const donIp = async () => {
+    const db = (await getDb())!;
+    await db.execute(sql`DELETE FROM ai_gateway_device_codes WHERE "ipKhoiTao" IN (${IP_A}, ${IP_B})`);
+  };
+  afterAll(donIp);
+
+  it("xem mã ⇒ có IP + User-Agent + lúc khởi tạo; phạm vi xin `embed` bị CẮT về chat+fim", async () => {
+    await donIp();
+    const bd = await batDauThietBi({ ten: "luoi-tb-nguon", phamVi: ["chat", "fim", "embed"], ip: IP_A, tacNhan: "vscode/1.99\u0000 x" });
+    if (!bd.ok) throw new Error("bắt đầu hỏng");
+    const xem = await xemThietBi(bd.maNguoiDung);
+    expect(xem).toMatchObject({ ok: true, phamVi: ["chat", "fim"], ipKhoiTao: IP_A, tacNhanKhoiTao: "vscode/1.99 x" });
+    if (!xem.ok) return;
+    expect(Number.isNaN(Date.parse(String(xem.taoLuc)))).toBe(false);
+  });
+
+  it("token đúc từ thiết bị: phạm vi ≤ chat+fim, hạn 30 ngày (ngắn hơn 90 ngày của token web)", async () => {
+    const bd = await batDauThietBi({ ten: "luoi-tb-han", phamVi: ["embed"], ip: IP_A });
+    if (!bd.ok) throw new Error("bắt đầu hỏng");
+    expect((await quyetThietBi(uidA, bd.maNguoiDung, true)).ok).toBe(true);
+    const doi = await doiMaThietBi(bd.maThietBi);
+    if (doi.trangThai !== "xong") throw new Error(`đổi hỏng: ${doi.trangThai}`);
+    expect(doi.phamVi).not.toContain("embed");
+    const db = (await getDb())!;
+    const [d] = (await db.execute(
+      sql`SELECT round(extract(epoch FROM ("hetHanLuc" - "createdAt")) / 86400)::int AS n FROM ai_gateway_tokens WHERE id = ${doi.tokenId}`,
+    )) as unknown as Array<{ n: number }>;
+    expect(Number(d.n)).toBe(30);
+  });
+
+  it("trần mã đang CHỜ mỗi IP ⇒ qua-tran-cho; IP khác không bị vạ lây; mã đã xử lý không tính", async () => {
+    await donIp();
+    const ra: string[] = [];
+    for (let i = 0; i < TRAN_MA_CHO_MOI_IP + 1; i++) {
+      const kq = await batDauThietBi({ ten: `luoi-tb-tran-${i}`, ip: IP_A });
+      ra.push(kq.ok ? "ok" : kq.ma);
+    }
+    expect(ra.slice(0, TRAN_MA_CHO_MOI_IP).every((x) => x === "ok")).toBe(true);
+    expect(ra[TRAN_MA_CHO_MOI_IP]).toBe("qua-tran-cho");
+    expect((await batDauThietBi({ ten: "luoi-tb-ip-khac", ip: IP_B })).ok).toBe(true);
   });
 });

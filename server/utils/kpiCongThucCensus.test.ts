@@ -74,7 +74,10 @@ const MIEN_TRU_DONG: Array<{ file: string; dong: number; lyDo: string }> = [
   // import mới ở đầu file ⇒ lệch RÒNG -4 dòng. Bỏ sót lượt cập nhật này ở commit gốc của
   // Task 2 (chỉ phát hiện khi chạy lại cổng này ở đợt vá toFakeUtc) — bài học: MỌI sửa vào
   // `_core/index.ts` phải chạy cổng này trước khi commit, không chỉ cổng liên quan trực tiếp.
-  { file: "server/_core/index.ts",                          dong: 3695, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
+  // ⚠ 3695 → 3709 (2026-10-17, AI Local nhánh `feat/ai-local-7-tang`): +5 dòng import (tuyến agent / xem trước / device
+  // flow / origin xem trước / danhDauGianDoanKhiBoot) + 9 dòng ở middleware CORS (`xuLyCorsCongOpenAi`, chặn phản chiếu
+  // origin xem trước) phía trên ⇒ lệch RÒNG +14. Cùng dòng `const fpy = t > 0 ? …` — không có công thức mới.
+  { file: "server/_core/index.ts",                          dong: 3709, lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
 
   // aiInspectionAnalytics.ts: `pass` ở BỐN dòng này KHÔNG phải OK-only — nó là
   // COUNT(*) FILTER (WHERE finalYieldPassCondSql(...)) tính Ở SQL, tức đã CHÍNH LÀ

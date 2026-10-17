@@ -557,6 +557,8 @@ const TU_CHOI_TOKEN: Readonly<Record<Exclude<KetQuaXacThucToken, { ok: true }>["
   "het-han": [401, "token_expired", "API token expired. Create a new one or sign the device in again."],
   "thu-hoi": [401, "token_revoked", "API token has been revoked."],
   "tai-khoan-tat": [403, "account_disabled", "The account owning this token is disabled."],
+  // Rà bảo mật de591c868 #2 — tài khoản đang bị buộc đổi mật khẩu (bí mật bị coi là lộ) ⇒ token bị chặn tới khi đổi.
+  "phai-doi-mat-khau": [403, "password_change_required", "The account owning this token must change its password first."],
   csdl: [503, "auth_backend_unavailable", "Token verification backend unavailable."],
 };
 
@@ -584,8 +586,10 @@ async function coQuyenAiMacDinh(userId: number, role: string): Promise<boolean> 
  */
 export function xuLyCorsCongOpenAi(req: Request, res: Response): "khong-phai" | "da-xu-ly" | "tiep" {
   if (!envBool("OPENAI_GATEWAY_ENABLED")) return "khong-phai";
-  const base = (envStr("OPENAI_GATEWAY_PATH") || "/v1").replace(/\/+$/, "");
-  const duong = req.path || "";
+  // ⚠ Rà bảo mật de591c868 #1 — so KHÔNG phân biệt hoa/thường: gắn cổng bằng Express khớp cả `/V1/…`, nên
+  //   bản so chính xác để `/V1/models` lọt về bộ CORS chung (`*` / phản chiếu kèm credentials).
+  const base = (envStr("OPENAI_GATEWAY_PATH") || "/v1").replace(/\/+$/, "").toLowerCase();
+  const duong = (req.path || "").toLowerCase();
   if (duong !== base && !duong.startsWith(`${base}/`)) return "khong-phai";
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
   const choPhep = envStr("OPENAI_GATEWAY_CORS_ORIGINS")
@@ -670,8 +674,14 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           jsonError(res, 403, "The token owner no longer has AI access.", "permission_error", "permission_denied");
           return;
         }
+        // ⚠ Rà bảo mật de591c868 #1 — `phamViCuaDuong` so không phân biệt hoa/thường (như Express); đường KHÔNG khai
+        //   phạm vi ⇒ 404 ngay tại đây (fail-closed), KHÔNG `next()` cho token người dùng.
         const can = phamViCuaDuong(req.path);
-        if (can !== null && can !== "khong-ro" && !kq.phamVi.includes(can)) {
+        if (can === "khong-ro") {
+          jsonError(res, 404, "Unknown gateway endpoint.", "invalid_request_error", "not_found");
+          return;
+        }
+        if (can !== null && !kq.phamVi.includes(can)) {
           jsonError(res, 403, `This token lacks the '${can}' scope.`, "permission_error", "insufficient_scope");
           return;
         }

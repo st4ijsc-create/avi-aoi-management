@@ -20638,7 +20638,9 @@
         "duongKhongHopLe": "Không duyệt được đường này (không tồn tại, không phải thư mục, hoặc hệ điều hành chặn đọc). Lên một cấp hoặc chọn ổ đĩa khác.",
         "guiThatBai": "Không gửi được yêu cầu tới máy chủ — chi tiết: {{chiTiet}}",
         "khac": "Server từ chối với mã {{ma}} — báo cho người phụ trách hệ thống."
-      }
+      },
+      "moTitleMoi": "Quản lý dự án",
+      "phanAdmin": "Quản trị: đăng ký thư mục có sẵn"
     },
     "title": "Không gian lập trình AI",
     "subtitle": "Đọc mã → đề xuất diff → người duyệt → chạy test → đọc lỗi thật rồi sửa tiếp",
@@ -20878,7 +20880,8 @@
       "chat": "Hội thoại",
       "terminalTab": "Lệnh & Nhật ký",
       "problemsTab": "Vấn đề",
-      "problemsCount": "{{n}}"
+      "problemsCount": "{{n}}",
+      "runTab": "Chạy & Xem trước"
     },
     "problems": {
       "title": "Vấn đề",
@@ -20996,6 +20999,103 @@
         "xong": "xong"
       },
       "xungDot": "Xung đột — KHÔNG ghi đè ({{n}} tệp đã bị sửa tiếp sau lượt chạy):"
+    },
+    "duanCaNhan": {
+      "err": {
+        "quyen": "Tài khoản chưa có quyền tạo dự án (cần quyền chạy lệnh AI — ai_repo_exec). Nhờ quản trị cấp quyền.",
+        "ten": "Tên phải có 1–100 ký tự và không chứa # ; = |.",
+        "khuon": "Không có khuôn này trên máy chủ. Chọn một khuôn trong danh sách.",
+        "zipThieu": "Chưa chọn tệp ZIP.",
+        "zipHong": "Tệp không phải ZIP hợp lệ (hoặc bị hỏng).",
+        "zipDuong": "ZIP chứa đường dẫn nguy hiểm (../, ổ đĩa, đường tuyệt đối) — đã từ chối cả tệp, không giải nén gì.",
+        "zipSymlink": "ZIP chứa liên kết tượng trưng (symlink) — đã từ chối. Nén lại thư mục không kèm symlink.",
+        "zipNhieu": "ZIP có quá nhiều tệp. Bỏ node_modules/bin/obj rồi nén lại.",
+        "zipLon": "ZIP quá lớn sau khi giải nén (hoặc vượt dung lượng còn lại của bạn).",
+        "zipBom": "ZIP có tỉ lệ nén bất thường (nghi zip bomb) — đã từ chối.",
+        "zipGhi": "Không ghi được một tệp trong ZIP (trùng tên khác hoa/thường?).",
+        "gitTat": "Máy chủ chưa bật clone git (chưa khai danh sách máy chủ git nội bộ).",
+        "gitNguon": "Nguồn git không hợp lệ. Dùng URL https://… của máy chủ git nội bộ hoặc đường thư mục được phép.",
+        "gitNgoai": "Nguồn này không nằm trong danh sách máy chủ git nội bộ được phép (hệ chạy offline).",
+        "gitClone": "Clone thất bại — kiểm tra URL/quyền truy cập máy chủ git.",
+        "gitHetGio": "Clone quá thời gian cho phép — repo quá lớn hoặc máy chủ git không phản hồi.",
+        "tranSo": "Bạn đã đủ số dự án tối đa. Xoá bớt một dự án không dùng rồi tạo lại.",
+        "tranByte": "Vượt dung lượng cho phép của bạn. Xoá bớt dự án (thùng rác giữ 30 ngày, không tính vào dung lượng).",
+        "dangTao": "Đang tạo một dự án khác của bạn — đợi xong rồi thử lại.",
+        "goc": "Thư mục gốc dự án trên máy chủ cấu hình sai (AI_PROJECTS_ROOT) — báo quản trị.",
+        "gui": "Không gửi được yêu cầu tới máy chủ — chi tiết:",
+        "khongThay": "Không thấy dự án này (có thể đã bị xoá). Tải lại danh sách.",
+        "khac": "Máy chủ từ chối với mã {{ma}}."
+      },
+      "cach": {
+        "rong": "Rỗng",
+        "khuon": "Từ khuôn",
+        "zip": "Nhập ZIP",
+        "git": "Git nội bộ",
+        "moTa": "Từ mô tả (Agent)"
+      },
+      "title": "Dự án của tôi",
+      "dungLuong": "{{so}}/{{tran}} dự án · {{daDung}} / {{tranByte}}",
+      "loiTai": "Không tải được danh sách dự án của bạn — đây là LỖI, không phải danh sách rỗng.",
+      "dangTai": "Đang tải…",
+      "rong": "Bạn chưa có dự án nào — tạo một dự án bên dưới.",
+      "doiTen": "Đổi tên",
+      "luuTen": "Lưu tên",
+      "huy": "Huỷ",
+      "mo": "Mở dự án này",
+      "xoa": "Xoá (vào thùng rác 30 ngày)",
+      "taoMoi": "Tạo dự án mới",
+      "cachTao": "Cách tạo",
+      "oTen": "Tên dự án",
+      "oTenGoiY": "Ví dụ: Công cụ đọc log máy AOI",
+      "oKhuon": "Khuôn",
+      "oZip": "Tệp ZIP (tối đa 50 MB; tệp chạy được và bí mật sẽ bị bỏ qua)",
+      "oGit": "URL máy chủ git nội bộ (hoặc thư mục được phép)",
+      "oMoTa": "Mô tả dự án — tạo dự án rỗng rồi mở chế độ Agent với mô tả này",
+      "oMoTaGoiY": "Ví dụ: Ứng dụng console C# đọc tệp CSV kết quả AOI và in tỉ lệ lỗi theo ca",
+      "nutTao": "Tạo",
+      "daXoa": "Đã chuyển dự án vào thùng rác (giữ 30 ngày).",
+      "boQua": "Đã bỏ qua {{n}} tệp không được phép (tệp chạy được / bí mật / .git / node_modules).",
+      "daTao": "Đã tạo dự án — đang mở.",
+      "hoiXoa": "Xoá dự án này? Thư mục được chuyển vào thùng rác và xoá hẳn sau 30 ngày.",
+      "moTaDialog": "Tạo và mở dự án của riêng bạn trên máy chủ — không cần thư mục có sẵn. Chỉ bạn (và quản trị) thấy dự án cá nhân."
+    },
+    "chayUD": {
+      "tieuDe": "Chạy & Xem trước",
+      "caiPhuThuoc": "Cài phụ thuộc",
+      "caiTip": "Đề xuất lệnh cài theo manifest của dự án — đi qua thẻ duyệt như mọi lệnh; không bao giờ tự chạy.",
+      "khongCoLenhCai": "Không nhận ra manifest (package.json / requirements.txt / *.csproj).",
+      "chay": "Chạy",
+      "dung": "Dừng",
+      "lenhChay": "Lệnh chạy: {{lenh}} (từ {{nguon}})",
+      "khongChayDuoc": "Chưa chạy được [{{ma}}]: {{chiTiet}}",
+      "repoChinh": "Repo nền tảng không chạy được ở đây — lệnh dev của nó chính là máy chủ này.",
+      "cong": "Cổng {{cong}}",
+      "chuaNgheCong": "Ứng dụng chưa nghe cổng {{cong}} sau 2 phút — script dev có đọc biến PORT không?",
+      "chuaXacNhanChet": "Đã ra lệnh dừng nhưng CHƯA quan sát được tiến trình thoát — cổng vẫn bị giữ.",
+      "nhatKy": "Nhật ký",
+      "nhatKyCat": "… (phần đầu đã bị cắt)",
+      "nhatKyRong": "Chưa có nhật ký.",
+      "xemTruoc": "Xem trước",
+      "moTabMoi": "Mở tab mới",
+      "xemTruocTat": "Xem trước đang TẮT ({{lyDo}}) — quản trị đặt AI_PREVIEW_PROXY_PORT để bật (proxy trên cổng riêng, tách origin khỏi ứng dụng).",
+      "xemTruocCho": "Khung xem trước hiện khi ứng dụng đã nghe cổng.",
+      "xemTruocAnToan": "Khung chạy ở ORIGIN RIÊNG (sandbox) — không chia phiên đăng nhập với ứng dụng.",
+      "nguoiKhacDangChay": "Dự án này đang được người khác chạy.",
+      "nhanRoi": "Tự dừng sau 30 phút không có lượt xem trước.",
+      "loiDeXuat": "Không tạo được thẻ duyệt cho lệnh [{{ma}}].",
+      "trangThai": {
+        "chuaChay": "Chưa chạy",
+        "dang-khoi-dong": "Đang khởi động",
+        "dang-chay": "Đang chạy",
+        "dang-dung": "Đang dừng",
+        "da-dung": "Đã dừng",
+        "loi": "Thoát lỗi (mã {{ma}})"
+      },
+      "lyDoDung": {
+        "nguoi-dung": "dừng bởi người dùng",
+        "nhan-roi": "tự dừng vì nhàn rỗi 30 phút",
+        "tat-may": "dừng vì máy chủ tắt"
+      }
     }
   },
   "masterDataCol": {
@@ -22359,11 +22459,18 @@
       "deviceName": "Thiết bị",
       "scopes": "Phạm vi xin",
       "expiresIn": "Mã còn hiệu lực {{s}} giây",
-      "warning": "Cho phép sẽ cấp một token 90 ngày gắn với tài khoản của bạn. Mọi yêu cầu của extension được ghi theo tên bạn.",
+      "warning": "Cho phép sẽ cấp một token 30 ngày (chỉ chat + gợi ý mã) gắn với tài khoản của bạn. Mọi yêu cầu của extension được ghi theo tên bạn.",
       "approve": "Cho phép",
       "deny": "Từ chối",
       "approved": "Đã cho phép. Quay lại VSCode — extension sẽ tự nhận token.",
-      "denied": "Đã từ chối. Thiết bị không nhận được token nào."
+      "denied": "Đã từ chối. Thiết bị không nhận được token nào.",
+      "phishingWarning": "CHỈ cho phép nếu CHÍNH bạn vừa bấm đăng nhập trong VSCode trên máy của bạn và tự gõ mã ở đây. Nếu ai đó gửi mã/đường dẫn này cho bạn — hãy TỪ CHỐI: đó là cách lấy cắp quyền truy cập của bạn.",
+      "requestedFrom": "Yêu cầu từ IP",
+      "userAgent": "Phần mềm yêu cầu",
+      "requestedAt": "Lúc yêu cầu",
+      "unknown": "không rõ",
+      "ipMismatch": "Yêu cầu này đến từ một địa chỉ IP KHÁC trình duyệt bạn đang dùng. Chỉ cho phép nếu VSCode của bạn đang chạy trên máy đó.",
+      "confirmMine": "Tôi xác nhận chính tôi vừa bấm đăng nhập trong VSCode và mã trên khớp với mã VSCode đang hiển thị."
     },
     "tokens": {
       "title": "Token của tôi",
@@ -22410,7 +22517,8 @@
       "khong-ton-tai": "Mã không đúng. Kiểm tra lại mã trên VSCode.",
       "het-han": "Mã đã hết hạn. Bắt đầu đăng nhập lại từ VSCode.",
       "da-xu-ly": "Mã này đã được xử lý.",
-      "csdl": "Máy chủ tạm không xử lý được. Thử lại sau."
+      "csdl": "Máy chủ tạm không xử lý được. Thử lại sau.",
+      "CAN_XAC_NHAN": "Hãy tích xác nhận rằng chính bạn vừa bấm đăng nhập trong VSCode trước khi cho phép."
     }
   }
 }

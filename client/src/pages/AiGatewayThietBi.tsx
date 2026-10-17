@@ -3,13 +3,17 @@
  * extension xin mã ⇒ người dùng mở trang này trong phiên ĐÃ đăng nhập, đã qua 2FA nếu bật ⇒ đối chiếu tên thiết bị +
  * phạm vi ⇒ Cho phép/Từ chối); (2) quản lý token cá nhân của cổng `/v1` (tạo — bản rõ hiện ĐÚNG MỘT LẦN —, xem, thu hồi).
  *
+ * ★★★ Rà bảo mật de591c868 #3 — LỪA ĐẢO MÃ THIẾT BỊ: kẻ tấn công khởi tạo luồng rồi gửi nạn nhân `/ai-thiet-bi?ma=…`.
+ *   ⇒ trang KHÔNG điền sẵn mã từ URL (người dùng GÕ mã đang hiện trong VSCode của CHÍNH họ — tham số `?ma=` bị bỏ qua
+ *   có chủ đích); khi có mã, hiện NGUỒN GỐC lượt khởi tạo (IP, User-Agent, lúc tạo) + cảnh báo IP khác IP trình duyệt;
+ *   "Cho phép" khoá tới khi tích xác nhận "chính tôi vừa bấm đăng nhập trong VSCode" (máy chủ cưỡng chế lại:
+ *   `xacNhanTuKhoiTao`, note `CAN_XAC_NHAN`). Lưới: `AiGatewayThietBi.dom.test.tsx`.
  * ⚠ Bản rõ token chỉ sống trong state của lượt tạo; rời trang là mất (máy chủ chỉ giữ băm). Không ghi localStorage.
  * ⚠ Mọi chữ qua i18n `aiGatewayToken.*` (vi/en/zh); `note` từ máy chủ dịch qua `aiGatewayToken.errors.<note>`.
  */
-import { useMemo, useState } from "react";
-import { useSearch } from "wouter";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { KeyRound, MonitorSmartphone, Copy, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
+import { KeyRound, MonitorSmartphone, Copy, ShieldCheck, ShieldX, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/patterns";
@@ -31,11 +35,11 @@ function chuanHoaMa(vao: string): string | null {
   return `${s.slice(0, 4)}-${s.slice(4)}`;
 }
 
-function XacNhanThietBi() {
-  const { t } = useTranslation();
-  const search = useSearch();
-  const maTuUrl = useMemo(() => new URLSearchParams(search).get("ma") ?? "", [search]);
-  const [maGo, setMaGo] = useState(maTuUrl);
+export function XacNhanThietBi() {
+  const { t, i18n } = useTranslation();
+  // ⚠ KHÔNG đọc `?ma=` (xem docblock): ô mã luôn bắt đầu RỖNG.
+  const [maGo, setMaGo] = useState("");
+  const [xacNhan, setXacNhan] = useState(false);
   const [ketQua, setKetQua] = useState<"da-duyet" | "tu-choi" | null>(null);
   const ma = chuanHoaMa(maGo);
   const xem = trpc.aiGatewayToken.xemThietBi.useQuery({ maNguoiDung: ma ?? "" }, { enabled: !!ma && !ketQua, retry: false });
@@ -71,6 +75,7 @@ function XacNhanThietBi() {
             onChange={(e) => {
               setMaGo(e.target.value);
               setKetQua(null);
+              setXacNhan(false);
             }}
           />
         </div>
@@ -79,9 +84,24 @@ function XacNhanThietBi() {
         {!ketQua && loiXem && <p className="text-sm text-destructive">{t(`aiGatewayToken.errors.${loiXem}`)}</p>}
         {!ketQua && xem.data?.ok && (
           <div className="rounded-md border p-4 space-y-3">
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+              <TriangleAlert className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+              <span>{t("aiGatewayToken.device.phishingWarning")}</span>
+            </div>
             <p className="text-sm">
               {t("aiGatewayToken.device.deviceName")}: <strong>{xem.data.ten}</strong>
             </p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+              <dt className="text-muted-foreground">{t("aiGatewayToken.device.requestedFrom")}</dt>
+              <dd className="font-mono break-all">{xem.data.ipKhoiTao ?? t("aiGatewayToken.device.unknown")}</dd>
+              <dt className="text-muted-foreground">{t("aiGatewayToken.device.userAgent")}</dt>
+              <dd className="font-mono text-xs break-all">{xem.data.tacNhanKhoiTao ?? t("aiGatewayToken.device.unknown")}</dd>
+              <dt className="text-muted-foreground">{t("aiGatewayToken.device.requestedAt")}</dt>
+              <dd>{xem.data.taoLuc ? new Date(xem.data.taoLuc).toLocaleString(i18n.language) : t("aiGatewayToken.device.unknown")}</dd>
+            </dl>
+            {xem.data.khacIp && (
+              <p className="text-sm text-destructive">{t("aiGatewayToken.device.ipMismatch")}</p>
+            )}
             <div className="flex flex-wrap items-center gap-2 text-sm">
               {t("aiGatewayToken.device.scopes")}:
               {xem.data.phamVi.map((p) => (
@@ -92,8 +112,15 @@ function XacNhanThietBi() {
             </div>
             <p className="text-xs text-muted-foreground">{t("aiGatewayToken.device.expiresIn", { s: xem.data.conLaiGiay })}</p>
             <p className="text-xs text-muted-foreground">{t("aiGatewayToken.device.warning")}</p>
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox checked={xacNhan} onCheckedChange={(v) => setXacNhan(v === true)} aria-label={t("aiGatewayToken.device.confirmMine")} />
+              <span>{t("aiGatewayToken.device.confirmMine")}</span>
+            </label>
             <div className="flex gap-2">
-              <Button disabled={quyet.isPending} onClick={() => ma && quyet.mutate({ maNguoiDung: ma, dongY: true })}>
+              <Button
+                disabled={quyet.isPending || !xacNhan}
+                onClick={() => ma && xacNhan && quyet.mutate({ maNguoiDung: ma, dongY: true, xacNhanTuKhoiTao: true })}
+              >
                 <ShieldCheck className="h-4 w-4 mr-1" />
                 {t("aiGatewayToken.device.approve")}
               </Button>

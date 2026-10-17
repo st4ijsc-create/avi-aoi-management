@@ -81,11 +81,14 @@ describe("§3 (B3) — câu CMD_NOT_ALLOWED: NGẮN + gợi ý ĐÚNG HỌ theo 
     expect(s).toContain("Xem cả danh sách");
   });
 
-  it("★★ `goiYLenhGanNhat` thuần: dotnet⇒3 · npm⇒2 · git⇒2 · lạ/méo⇒0", () => {
-    expect(goiYLenhGanNhat("dotnet").length).toBe(3);
-    expect(goiYLenhGanNhat("npm").length).toBe(2);
+  // ★ Đợt 3c (2026-10-17) — nhóm CÀI thêm 2 mục dotnet (restore, restore <đường>), 2 mục npm (ci, install), 1 mục
+  //   pip ⇒ dotnet 3→5 · npm 2→4 · pip 0→1. Gợi ý suy thẳng từ bảng nên con số đổi THEO bảng (không bảng thứ hai).
+  it("★★ `goiYLenhGanNhat` thuần: dotnet⇒5 · npm⇒4 · git⇒2 · pip⇒1 · lạ/méo⇒0", () => {
+    expect(goiYLenhGanNhat("dotnet").length).toBe(5);
+    expect(goiYLenhGanNhat("npm").length).toBe(4);
     expect(goiYLenhGanNhat("git").length).toBe(2);
-    expect(goiYLenhGanNhat("DOTNET").length).toBe(3); // không phân biệt hoa thường
+    expect(goiYLenhGanNhat("pip").length).toBe(1);
+    expect(goiYLenhGanNhat("DOTNET").length).toBe(5); // không phân biệt hoa thường
     expect(goiYLenhGanNhat("foobar")).toEqual([]);
     expect(goiYLenhGanNhat(undefined)).toEqual([]);
     expect(goiYLenhGanNhat(42 as never)).toEqual([]);

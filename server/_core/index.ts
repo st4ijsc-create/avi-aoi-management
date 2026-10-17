@@ -41,6 +41,8 @@ import { chanTuyenAiTheoGiayPhep } from "../routes/congGiayPhepAiExpress";
 import { registerOpenAiGateway, xuLyCorsCongOpenAi } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerAiAgentRoutes } from "../routes/aiAgentApi"; // Đợt 1 T4 — lượt chạy vòng agent máy chủ (SSE)
+import { registerAiXemTruocRoutes } from "../routes/aiXemTruocApi"; // Đợt 3c — cửa vào xem trước: kiểm phiên + chủ ⇒ vé một lần ⇒ 302 sang ORIGIN riêng của proxy
+import { laOriginXemTruoc } from "../services/ai/chayUngDung"; // Đợt 3c — CORS KHÔNG phản chiếu origin xem trước (script do AI sinh)
 import { registerAiGatewayTokenThietBiRoutes } from "../routes/aiGatewayTokenThietBi"; // Đợt 4A — device flow: extension xin mã ⇒ người duyệt trên web ⇒ đổi lấy token /v1
 import { danhDauGianDoanKhiBoot } from "../db/aiAgentRuns";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
@@ -245,7 +247,10 @@ async function startServer() {
     // No Origin header => non-browser client (LAN machine). Always allow.
     if (!origin) {
       res.setHeader("Access-Control-Allow-Origin", "*");
-    } else if (corsAllowAll || corsAllowList.includes(origin) || isDevLoopbackOrigin(origin)) {
+    } else if ((corsAllowAll || corsAllowList.includes(origin) || isDevLoopbackOrigin(origin)) && !laOriginXemTruoc(origin)) {
+      // ★ Đợt 3c — `!laOriginXemTruoc`: trang xem trước chạy mã do AI sinh trên cổng proxy riêng; nhánh dev
+      //   "phản chiếu mọi origin/loopback" sẽ cho nó ĐỌC phản hồi tRPC bằng phiên người dùng. Origin ấy KHÔNG BAO GIỜ
+      //   được phản chiếu (rơi xuống nhánh "untrusted" bên dưới — yêu cầu vẫn qua, trình duyệt không cho đọc).
       // Reflect only trusted origins so credentials can be shared safely.
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
@@ -5580,6 +5585,7 @@ async function startServer() {
     if (n > 0) console.log(`[aiAgent] ${n} lượt chạy dở từ lần chạy trước ⇒ gian-doan`);
   });
   registerAiAgentRoutes(app);
+  registerAiXemTruocRoutes(app); // Đợt 3c — sau cổng giấy phép `/api/ai`; xác thực `thuXacThucRest` (lượng từ §2 của xacThucBeMatRest)
   registerAiGatewayTokenThietBiRoutes(app); // Đợt 4A — sau cổng giấy phép `/api/ai` ở trên; xác thực thay thế: xem docblock tuyến
   // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
   registerEdgeDownloadRoute(app);
@@ -6463,6 +6469,11 @@ async function startServer() {
   const onListening = () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);
 
+    // ★ Đợt 3c — proxy xem trước trên CỔNG RIÊNG (origin tách khỏi ứng dụng). Vắng AI_PREVIEW_PROXY_PORT ⇒ TẮT.
+    import("../services/ai/chayUngDung")
+      .then((m) => m.khoiDongProxyXemTruoc(port))
+      .catch((err) => logger.error({ err }, "[XemTruoc] khởi động proxy thất bại"));
+
     // doc 33 F1 (SYNAPSE ADR-007): report the resolved edition + infra profile (advisory).
     import("./deploymentProfile")
       .then(({ describeDeployment, resolveDeploymentProfile }) => {
@@ -6509,6 +6520,10 @@ async function startServer() {
       .then((m) => m.stopBackgroundSchedulers())
       .catch(() => {});
     shutdownScheduledReports();
+    // ★ Đợt 3c — dừng MỌI ứng dụng xem trước đang chạy (giết cây) + đóng proxy.
+    import("../services/ai/chayUngDung")
+      .then((m) => m.tatChayUngDung())
+      .catch(() => {});
     import("../services/reportScheduler")
       .then((m) => m.stopExecutiveReportScheduler())
       .catch(() => {});

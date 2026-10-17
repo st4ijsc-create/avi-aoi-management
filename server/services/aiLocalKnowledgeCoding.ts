@@ -402,7 +402,12 @@ export async function* streamCodingAnswer(
   //   ĐƯỜNG DẪN thay vì id ⇒ TỪ CHỐI, KHÔNG âm thầm chạy trên gốc mặc định. Gốc đã phân giải đi vào
   //   `execCtx.projectRoot` → `argsWithAuthCtx` tiêm cho read tool, và write tool đọc thẳng ở HITL.
   const { phanGiaiGoc, ID_DU_AN_MAC_DINH } = await import("./aiLocalTools/repoProjects");
-  const goc = phanGiaiGoc(context.projectId);
+  // ★ Đợt 3a — người gọi = `execCtx.user` (danh tính phiên do tuyến dựng). Vắng ⇒ `null` ⇒ dự án CÁ NHÂN bị từ chối.
+  const uKb = execCtx?.user;
+  const goc = phanGiaiGoc(
+    context.projectId,
+    uKb && Number.isInteger(uKb.id) && uKb.id > 0 ? { id: uKb.id, role: String(uKb.role ?? "") } : null,
+  );
   if (!goc.ok) {
     const msg = codingProjectDeniedMessage(language, context.projectId);
     yield { type: "token", token: msg };

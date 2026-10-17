@@ -368,7 +368,10 @@ describe("doc 83 · điều tra dân số cửa CLI/MCP", () => {
     };
     di(sf);
     // Hai chỗ: `execCtx.user.id` lúc mở phiên, và `CopilotUser.id` lúc duyệt (lấy LẠI từ phiên).
-    expect(nguonId.sort()).toEqual(["p.danhTinh.userId", "phien.execCtx.user.id"]);
+    // ★ Đợt 3a (2026-10-17) — +2, CẢ HAI vẫn từ danh tính ĐÃ CHỨNG MINH: người gọi của `phanGiaiGoc` trong
+    //   `moPhienCli` (`p.danhTinh.userId`) và của `danhSachDuAnChoNguoi` trong `danhSachDuAnCli(danhTinh)`
+    //   (`danhTinh.userId`) — dự án CÁ NHÂN chỉ chủ (và admin) thấy/mở. Không nguồn id mới nào.
+    expect(nguonId.sort()).toEqual(["danhTinh.userId", "p.danhTinh.userId", "p.danhTinh.userId", "phien.execCtx.user.id"]);
   });
 
   it("§7.2 ★★★ `moPhienCli` KHÔNG có quá tải nào nhận `userId` trần", () => {

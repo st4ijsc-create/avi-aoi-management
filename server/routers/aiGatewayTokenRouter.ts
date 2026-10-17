@@ -48,10 +48,13 @@ export const aiGatewayTokenRouter = router({
 
   xemThietBi: thuTucAi
     .input(z.object({ maNguoiDung: maNguoiDungSchema }))
-    .query(async ({ input, ctx }) => (await thuTuc()).thuTucXemThietBi(nguoi(ctx.user), input.maNguoiDung)),
+    .query(async ({ input, ctx }) =>
+      (await thuTuc()).thuTucXemThietBi(nguoi(ctx.user), input.maNguoiDung, undefined, reqMeta(ctx)),
+    ),
 
   quyetThietBi: thuTucAi
-    .input(z.object({ maNguoiDung: maNguoiDungSchema, dongY: z.boolean() }))
+    // ★ Rà bảo mật de591c868 #3 — `xacNhanTuKhoiTao`: Cho phép phải kèm `true` (thủ tục cưỡng chế, note CAN_XAC_NHAN).
+    .input(z.object({ maNguoiDung: maNguoiDungSchema, dongY: z.boolean(), xacNhanTuKhoiTao: z.boolean().optional() }))
     .mutation(async ({ input, ctx }) =>
       (await thuTuc()).thuTucQuyetThietBi(nguoi(ctx.user), ctx.sessionToken, input, reqMeta(ctx)),
     ),

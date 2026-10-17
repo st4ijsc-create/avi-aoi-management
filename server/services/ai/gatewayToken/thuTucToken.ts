@@ -58,6 +58,12 @@ async function ghiAudit(
   });
 }
 
+/** IP của phiên đang duyệt (theo `trust proxy` của ứng dụng), bỏ tiền tố IPv4-ánh-xạ để so được với IP khởi tạo. */
+function ipCuaReq(req: ReqMeta): string | null {
+  const ip = String(req?.ip ?? req?.socket?.remoteAddress ?? "").trim();
+  return ip ? ip.replace(/^::ffff:/i, "") : null;
+}
+
 async function quaTranThuMa(userId: number): Promise<boolean> {
   const { checkNamedRateLimit } = await import("../../aiGateway");
   return checkNamedRateLimit(userId, "gw-thiet-bi-thu-ma", TRAN_THU_MA_MOI_PHUT) !== null;
@@ -113,33 +119,68 @@ export async function thuTucThuHoi(u: NguoiPhienToken, id: number, req?: ReqMeta
   return { ok: true as const, note: null };
 }
 
-export async function thuTucXemThietBi(u: NguoiPhienToken, maNguoiDung: string, coQuyen: KiemQuyen = coQuyenMacDinh) {
+/**
+ * ★ Rà bảo mật de591c868 #3 — trả NGUỒN GỐC lượt khởi tạo để người dùng NHẬN RA một yêu cầu không phải của mình:
+ *   IP + User-Agent + lúc tạo của lượt khởi tạo, IP của chính trình duyệt đang xem (`ipCuaBan`) và cờ `khacIp`.
+ *   `khacIp` là CẢNH BÁO, không chặn: extension chạy trên một máy khác trong LAN (remote dev, máy build) là hợp lệ.
+ */
+export async function thuTucXemThietBi(
+  u: NguoiPhienToken,
+  maNguoiDung: string,
+  coQuyen: KiemQuyen = coQuyenMacDinh,
+  req?: ReqMeta,
+) {
   if (!(await coQuyen(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const };
   if (await quaTranThuMa(u.id)) return { ok: false as const, note: "RATE_LIMITED" as const };
   const kq = await xemThietBi(maNguoiDung);
   if (!kq.ok) return { ok: false as const, note: kq.ma };
-  return { ok: true as const, note: null, ten: kq.ten, phamVi: kq.phamVi, conLaiGiay: kq.conLaiGiay };
+  const ipCuaBan = ipCuaReq(req);
+  const ipKhoiTao = kq.ipKhoiTao ? kq.ipKhoiTao.replace(/^::ffff:/i, "") : null;
+  return {
+    ok: true as const,
+    note: null,
+    ten: kq.ten,
+    phamVi: kq.phamVi,
+    conLaiGiay: kq.conLaiGiay,
+    ipKhoiTao,
+    tacNhanKhoiTao: kq.tacNhanKhoiTao,
+    taoLuc: kq.taoLuc,
+    ipCuaBan,
+    khacIp: !!ipKhoiTao && !!ipCuaBan && ipKhoiTao !== ipCuaBan,
+  };
 }
 
 export async function thuTucQuyetThietBi(
   u: NguoiPhienToken,
   sessionToken: string | null | undefined,
-  vao: { maNguoiDung: string; dongY: boolean },
+  vao: { maNguoiDung: string; dongY: boolean; xacNhanTuKhoiTao?: boolean },
   req?: ReqMeta,
   coQuyen: KiemQuyen = coQuyenMacDinh,
 ) {
   if (!sessionToken) return { ok: false as const, note: "CAN_PHIEN_WEB" as const };
   if (!(await coQuyen(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const };
+  // ★ Rà bảo mật de591c868 #3 — CHO PHÉP đòi xác nhận tường minh "chính tôi vừa bấm đăng nhập trong VSCode". Cưỡng chế ở
+  //   MÁY CHỦ (không chỉ ô tích ở giao diện): một client khác/đường gọi thẳng tRPC cũng phải khẳng định điều đó. Từ chối
+  //   không cần — thu hẹp quyền luôn được phép.
+  if (vao.dongY && vao.xacNhanTuKhoiTao !== true) return { ok: false as const, note: "CAN_XAC_NHAN" as const };
   if (await quaTranThuMa(u.id)) return { ok: false as const, note: "RATE_LIMITED" as const };
   const xem = await xemThietBi(vao.maNguoiDung);
   const kq = await quyetThietBi(u.id, vao.maNguoiDung, vao.dongY);
   if (!kq.ok) return { ok: false as const, note: kq.ma };
+  // Audit đủ để truy vết một lượt duyệt bị lừa: ai (IP/User-Agent) đã khởi tạo mã, lúc nào, ai duyệt từ IP nào.
   await ghiAudit(u, req, {
     action: "update",
     entityId: kq.id,
     entityName: `thiet-bi:${xem.ok ? xem.ten : "?"}`,
     operation: vao.dongY ? "AI_GATEWAY_DEVICE_APPROVED" : "AI_GATEWAY_DEVICE_DENIED",
-    metadata: { phamVi: xem.ok ? xem.phamVi : null },
+    metadata: {
+      phamVi: xem.ok ? xem.phamVi : null,
+      ipKhoiTao: xem.ok ? xem.ipKhoiTao : null,
+      tacNhanKhoiTao: xem.ok ? xem.tacNhanKhoiTao : null,
+      taoLuc: xem.ok ? xem.taoLuc : null,
+      ipDuyet: ipCuaReq(req),
+      xacNhanTuKhoiTao: vao.xacNhanTuKhoiTao === true,
+    },
   });
   return { ok: true as const, note: null, trangThai: kq.trangThai };
 }

@@ -76,6 +76,12 @@ const THU_MUC_BO_QUA = new Set([
   "uploads",        // dữ liệu chạy
   "data",           // dữ liệu chạy (WAL store-forward THẬT)
   "knowledge",      // chỉ mục sinh tự động
+  // 2026-10-17 (AI Local nhánh `feat/ai-local-7-tang`): `tmp/` là thư mục NHÁP bị `.gitignore` (dòng `tmp/`) — không
+  // bao giờ vào commit, không bao giờ chạy trong sản phẩm. Đo: trên cây làm việc của nhánh có `tmp/snap-{b14b,dot2,dot2b,fix}/`
+  // (bản CHỤP tay của `aoiPackageRouter` / `aoiImageEmbeddingWorker` / `_core/index` … do phiên đo để lại) ⇒ census thấy
+  // 22 điểm tra ảnh thay vì 7 — 15 điểm thừa đều nằm trong `tmp/snap-*` (bản sao tệp của `server/**`). Cùng loại với
+  // `dist` (bản sao của mã đang quét). Điểm tra ảnh THẬT không thể sống ở đây vì git không mang nó đi đâu cả.
+  "tmp",
 ]);
 
 const DUOI_MA_NGUON = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);

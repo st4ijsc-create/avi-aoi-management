@@ -741,7 +741,22 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   • `aiGatewayToken.tao` / `thuHoi` / `quyetThietBi` (mutations): insert/revoke the caller's OWN token, approve a device code
 //     for the session user; `ai_repo_read/canView` checked in the body (`services/ai/gatewayToken/thuTucToken.ts`) ⇒ D.
 //     No baseline row added.
-const GHIM = { A: 333, B: 8, C: 478, D: 1152, S: 357, tong: 2328 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 3a — dự án cá nhân của kỹ sư, Q3) — **C 478 → 479 · D 1152 → 1155 · tong 2328 → 2332 ·
+// A/B/S unchanged.** Four NEW procedures in `repoWorkspaceRouter.ts`, measured with this scanner (before = this pin, green;
+// after = C 479 · D 1155 · tong 2332):
+//   • `repoWorkspace.duAnCuaToi` (query): the caller's OWN personal projects (filter `chuSoHuu === session user`) from the
+//     in-memory whitelist snapshot + a disk-usage walk of `<AI_PROJECTS_ROOT>/u<session user>` — OWNER scope, no tenant rows ⇒ C;
+//   • `repoWorkspace.taoDuAnCaNhan` / `doiTenDuAnCaNhan` / `xoaDuAnCaNhan` (mutations): owner = session user (never input),
+//     `ai_repo_read/canView` + `ai_repo_exec/canCreate` checked in the body, rename/delete restricted to owner (or admin) ⇒ D.
+//   `listProjects` now reads `ctx` (filters other users' personal projects) — stays in its group (A unchanged).
+//     No baseline row added.
+// ★★★ 2026-10-17 (AI Local Đợt 3c — Chạy & Xem trước) — **C 479 → 481 · D 1155 → 1158 · tong 2332 → 2337 · A/B/S
+// unchanged.** Five procedures in the NEW `aiChayUngDungRouter.ts`, measured with this scanner (before = this pin, green):
+//   • `aiChayUngDung.trangThai` / `nhatKy` (queries): in-memory app-process registry keyed by projectId; port/log only for the
+//     OWNER (the session user who started it) or admin, others see "busy" only; `ai_repo_read/canView` in the body ⇒ C;
+//   • `aiChayUngDung.chay` / `dung` / `deXuatLenh` (mutations): start (ai_repo_exec/canCreate) / stop (owner or admin) /
+//     propose ONE allowlisted command through `run_command`'s HITL path ⇒ D. No tenant rows. No baseline row added.
+const GHIM = { A: 333, B: 8, C: 481, D: 1158, S: 357, tong: 2337 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

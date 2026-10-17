@@ -199,6 +199,12 @@ const CENSUS: Record<string, XepLoai> = {
    */
   CMD_GOC_THIEU_PACKAGE_JSON: "chan",
   /**
+   * ★ Đợt 3c (2026-10-17) — `CMD_THIEU_DIEU_KIEN`: **`chan`**, cùng lý lẽ `CMD_GOC_THIEU_PACKAGE_JSON`: lệnh chưa
+   * chạy, và câu mang ĐÚNG BƯỚC tiếp theo ("chạy python -m venv .venv trước", "AI_PIP_FIND_LINKS phải là đường
+   * tuyệt đối…"). Để LLM diễn giải lại là mời nó rút gọn thành "không cài được" — mất đúng bước sửa.
+   */
+  CMD_THIEU_DIEU_KIEN: "chan",
+  /**
    * ★ 2026-08-20 — **`EXEC_WRITE_NEEDS_EDIT_BIT`: `chan`, và vì sao nó KHÔNG được `dien-giai`.**
    *
    * Mã này phát ra khi cờ `AI_REPO_EXEC_GHIDIA_DOI_CANEDIT` BẬT và người dùng thiếu bit thứ hai

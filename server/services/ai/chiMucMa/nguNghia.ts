@@ -34,7 +34,7 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
-import { isMissingTable } from "../../../_core/dbErrors";
+import { DbUnavailableError, isMissingTable } from "../../../_core/dbErrors";
 import { redactSecretsAndPII } from "../aiSafety";
 import { chayVoiUuTien } from "../hangDoiUuTienLlm";
 import { tienToNhungCauHoi } from "../tienToNhungCauHoi";
@@ -273,7 +273,7 @@ function gocHopLe(gocDuAn: unknown): string | null {
  */
 export function phanGiaiDuAn(goc: string, projectId?: string): string {
   if (projectId !== undefined) {
-    if (!RE_ID_DU_AN.test(projectId)) throw new Error(`chiMucMa: projectId không hợp lệ (${JSON.stringify(projectId).slice(0, 80)})`);
+    if (!RE_ID_DU_AN.test(projectId)) throw new LoiChiMucMa("PROJECT_ID_KHONG_HOP_LE", `chiMucMa: projectId không hợp lệ (${JSON.stringify(projectId).slice(0, 80)})`);
     duAnTheoGoc.set(khoaGoc(goc), projectId);
     return projectId;
   }
@@ -349,6 +349,21 @@ async function ghiTep(
 // ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // XỬ LÝ MỘT TỆP
 // ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Lỗi có mã của chỉ mục ngữ nghĩa. Mọi chỗ ném đi tới KẾT QUẢ TOOL của agent / nhật ký dựng nền — không tới tRPC dưới dạng
+ * câu chữ cho người dùng ⇒ theo luật (a)+(b) của rawErrorCensus F3: không đẻ mã appError, chỉ gắn `code` để máy đọc,
+ * message GIỮ NGUYÊN VĂN (lưới khớp regex + LLM đọc).
+ */
+export class LoiChiMucMa extends Error {
+  constructor(
+    readonly code: "PROJECT_ID_KHONG_HOP_LE" | "GOC_KHONG_HOP_LE" | "BO_NHUNG_SAI_HOP_DONG",
+    message: string,
+  ) {
+    super(message);
+    this.name = "LoiChiMucMa";
+  }
+}
+
 function loiHuy(): Error {
   const e = new Error("chiMucMa: đã huỷ");
   e.name = "AbortError";
@@ -394,10 +409,10 @@ async function xuLyTep(
     const lo = doan.slice(i, i + LO_NHUNG);
     const vecs = await nhungLoAnToan(nc, lo.map((d) => `${rel}\n${d.noiDung}`));
     if (nc.signal?.aborted) throw loiHuy();
-    if (vecs.length !== lo.length) throw new Error(`chiMucMa: bộ nhúng trả ${vecs.length} vector cho ${lo.length} đoạn`);
+    if (vecs.length !== lo.length) throw new LoiChiMucMa("BO_NHUNG_SAI_HOP_DONG", `chiMucMa: bộ nhúng trả ${vecs.length} vector cho ${lo.length} đoạn`);
     lo.forEach((d, j) => {
       const v = vecs[j]!;
-      if (v.length !== SO_CHIEU_NHUNG) throw new Error(`chiMucMa: vector ${v.length} chiều, bảng cần ${SO_CHIEU_NHUNG}`);
+      if (v.length !== SO_CHIEU_NHUNG) throw new LoiChiMucMa("BO_NHUNG_SAI_HOP_DONG", `chiMucMa: vector ${v.length} chiều, bảng cần ${SO_CHIEU_NHUNG}`);
       coVec.push({ ...d, vec: v });
     });
   }
@@ -468,9 +483,9 @@ const dangDung = new Map<string, { hua: Promise<KetQuaDung>; ac: AbortController
 async function dungThat(goc: string, projectId: string, ac: AbortController, tc: TuyChonDung): Promise<KetQuaDung> {
   const t0 = Date.now();
   const db = await getDb();
-  if (!db) throw new Error("chiMucMa: không có kết nối CSDL");
+  if (!db) throw new DbUnavailableError("chiMucMa: không có kết nối CSDL");
   const bo = boNhung();
-  if (bo.soChieu !== SO_CHIEU_NHUNG) throw new Error(`chiMucMa: bộ nhúng ${bo.soChieu} chiều, bảng cần ${SO_CHIEU_NHUNG}`);
+  if (bo.soChieu !== SO_CHIEU_NHUNG) throw new LoiChiMucMa("BO_NHUNG_SAI_HOP_DONG", `chiMucMa: bộ nhúng ${bo.soChieu} chiều, bảng cần ${SO_CHIEU_NHUNG}`);
   const hanChot = t0 + Math.max(1, tc.tranMs ?? TRAN_THOI_GIAN_DUNG_MS);
   const tranDoan = Math.max(1, tc.tranDoan ?? TRAN_DOAN_DU_AN);
   const boQua = napBoQuaGit(goc);
@@ -541,10 +556,10 @@ export async function dungChiMuc(
   y: { gocDuAn: string; projectId: string; signal?: AbortSignal } & TuyChonDung,
 ): Promise<KetQuaDung> {
   if (typeof y.projectId !== "string" || !RE_ID_DU_AN.test(y.projectId)) {
-    throw new Error(`chiMucMa: projectId không hợp lệ (${JSON.stringify(y.projectId).slice(0, 80)})`);
+    throw new LoiChiMucMa("PROJECT_ID_KHONG_HOP_LE", `chiMucMa: projectId không hợp lệ (${JSON.stringify(y.projectId).slice(0, 80)})`);
   }
   const goc = gocHopLe(y.gocDuAn);
-  if (goc === null) throw new Error("chiMucMa: gốc dự án phải là đường TUYỆT ĐỐI tới một thư mục tồn tại");
+  if (goc === null) throw new LoiChiMucMa("GOC_KHONG_HOP_LE", "chiMucMa: gốc dự án phải là đường TUYỆT ĐỐI tới một thư mục tồn tại");
   phanGiaiDuAn(goc, y.projectId);
 
   const dang = dangDung.get(y.projectId);
@@ -714,7 +729,7 @@ export async function timMaNgu(y: {
 
   if (y.signal?.aborted) throw loiHuy();
   const q = await bo.nhungCauHoi(cauHoi, y.signal);
-  if (q.length !== SO_CHIEU_NHUNG) throw new Error(`chiMucMa: vector câu hỏi ${q.length} chiều, bảng cần ${SO_CHIEU_NHUNG}`);
+  if (q.length !== SO_CHIEU_NHUNG) throw new LoiChiMucMa("BO_NHUNG_SAI_HOP_DONG", `chiMucMa: vector câu hỏi ${q.length} chiều, bảng cần ${SO_CHIEU_NHUNG}`);
   const qv = vecLiteral(q);
   const rows = (await db.execute(sql`
     SELECT duong, "dongDau", "dongCuoi", "noiDung", 1 - (embedding <=> ${qv}::vector) AS diem

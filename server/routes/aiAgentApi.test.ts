@@ -54,6 +54,23 @@ const modelChoNut: GoiModel = async function* (vao): AsyncGenerator<ManhModel> {
   yield { loai: "xong", toolCalls: [] };
 };
 
+/**
+ * Thả model ĐÚNG lượt đang chờ. ⚠ Bản cũ `setTimeout(() => thaModel?.(), 30)` ĐUA: chạy gộp (tải nặng) model chưa tới
+ * điểm chờ sau 30 ms ⇒ `thaModel` còn là hàm thả CŨ của ca trước (đã dùng) ⇒ lệnh thả rơi mất, model chờ mãi ⇒ ca
+ * "lượt đã rời bộ nhớ" quá giờ 30 s (đo 2026-10-17, chỉ khi chạy gộp). Nay: xoá con trỏ trước mỗi lượt, CHỜ tới khi model
+ * của lượt này đăng ký hàm thả rồi mới thả (và tiêu thụ nó).
+ */
+async function thaModelKhiSan(): Promise<void> {
+  const han = Date.now() + 20_000;
+  while (!thaModel) {
+    if (Date.now() > han) throw new Error("model không tới điểm chờ trong 20 s");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  const f = thaModel;
+  thaModel = null;
+  f();
+}
+
 let ql: QuanLyLuotChay;
 let srv: http.Server;
 let base = "";
@@ -90,7 +107,9 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(REPO, "a.ts"), "export const A = 1;\n");
   process.env.AI_REPO_SANDBOX_ROOTS = `${DU_AN}=T4 Route|${REPO}`;
   const bcrypt = await import("bcryptjs");
-  const hash = await bcrypt.hash("Mk-route-agent!1", 10);
+  // Cost 4 (tối thiểu hợp lệ): lưới không đo bcrypt; cost 10 tốn CPU đáng kể khi chạy gộp hàng trăm tệp song song
+  // (đo 2026-10-17: "Hook timed out in 60000ms" chỉ khi chạy gộp, chạy riêng hook < 4 s).
+  const hash = await bcrypt.hash("Mk-route-agent!1", 4);
   uid = (await createLocalUser({ username: `t4-route-${Date.now()}`, passwordHash: hash, name: "Thu", role: "admin" })).id;
   uid2 = (await createLocalUser({ username: `t4-route2-${Date.now()}`, passwordHash: hash, name: "Thu2", role: "admin" })).id;
 
@@ -104,6 +123,10 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  // ★ Hook nhẹ + KHÔNG treo: một ca đỏ/quá giờ giữa chừng (vd model chờ `thaModel` mãi) để lại luồng SSE MỞ ⇒ `srv.close()`
+  //   chờ socket ấy tới hết hạn hook (60 s) và che mất lỗi thật. Thả model, huỷ mọi kết nối còn mở rồi mới đóng.
+  thaModel?.();
+  srv.closeAllConnections();
   await new Promise<void>((r) => srv.close(() => r()));
   delete process.env.AI_REPO_SANDBOX_ROOTS;
   const db = await getDb();
@@ -119,6 +142,7 @@ afterAll(async () => {
 
 describe("POST /api/ai/agent/runs + nối lại + huỷ", () => {
   it("★★★ client bỏ đi KHÔNG huỷ; nối lại từ ?tu phát phần còn lại; lượt chạy hoàn thành", async () => {
+    thaModel = null; // hàm thả của ca trước (nếu còn) KHÔNG được dùng cho lượt này
     const r1 = await fetch(`${base}/api/ai/agent/runs`, {
       method: "POST",
       headers: hdr(uid),
@@ -144,7 +168,7 @@ describe("POST /api/ai/agent/runs + nối lại + huỷ", () => {
     // nối lại từ seq 2 rồi thả model
     const r2 = await fetch(`${base}/api/ai/agent/runs/${runId}/events?tu=2`, { headers: hdr(uid) });
     expect(r2.status).toBe(200);
-    setTimeout(() => thaModel?.(), 30);
+    void thaModelKhiSan();
     const sau = await docSse(r2);
     expect(sau[0]!.seq).toBe(3);
     expect(sau.map((m) => m.suKien.loai)).toEqual(["chu", "xong"]);
@@ -170,13 +194,14 @@ describe("POST /api/ai/agent/runs + nối lại + huỷ", () => {
   }, 30_000);
 
   it("★★ lượt đã rời bộ nhớ ⇒ phát lại bản ĐÃ GỘP trong sổ rồi đóng", async () => {
+    thaModel = null; // hàm thả của ca trước (nếu còn) KHÔNG được dùng cho lượt này
     const r1 = await fetch(`${base}/api/ai/agent/runs`, {
       method: "POST",
       headers: hdr(uid),
       body: JSON.stringify({ cauHoi: "ngắn", projectId: DU_AN, cheDo: "hoi" }),
     });
     const runId = r1.headers.get("x-agent-run-id")!;
-    setTimeout(() => thaModel?.(), 30);
+    void thaModelKhiSan();
     await docSse(r1);
     await ql.layLuotChay(runId, uid)!.xong;
 

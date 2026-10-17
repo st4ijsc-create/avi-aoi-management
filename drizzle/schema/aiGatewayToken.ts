@@ -7,6 +7,7 @@
  */
 import { pgTable, serial, integer, varchar, char, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { users } from "./auth";
+import { sql } from "drizzle-orm";
 
 export const aiGatewayTokens = pgTable(
   "ai_gateway_tokens",
@@ -54,10 +55,14 @@ export const aiGatewayDeviceCodes = pgTable(
     hoiLanCuoiLuc: timestamp("hoiLanCuoiLuc", { withTimezone: true }),
     hetHanLuc: timestamp("hetHanLuc", { withTimezone: true }).notNull(),
     createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+    /** ★ mig 0394 (rà bảo mật de591c868 #3) — NGUỒN GỐC lượt khởi tạo, hiện trên trang duyệt + vào audit. */
+    ipKhoiTao: varchar("ipKhoiTao", { length: 64 }),
+    tacNhanKhoiTao: varchar("tacNhanKhoiTao", { length: 200 }),
   },
   (table) => [
     uniqueIndex("ai_gateway_device_codes_ma_tb_uq").on(table.maThietBiHash),
     uniqueIndex("ai_gateway_device_codes_ma_nd_uq").on(table.maNguoiDung),
+    index("ai_gateway_device_codes_ip_cho_idx").on(table.ipKhoiTao).where(sql`"trangThai" = 'cho'`),
   ],
 );
 

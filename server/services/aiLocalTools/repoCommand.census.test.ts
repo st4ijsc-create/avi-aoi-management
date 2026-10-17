@@ -123,7 +123,7 @@ describe("§0 — CẦU CHÌ: lưới đang quét vật thật", () => {
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chính bảng, không phải trên hành vi)", () => {
-  it("★ đúng MƯỜI MỘT mục, và mỗi mục có hạn giờ dương ≤ trần hệ", () => {
+  it("★ đúng MƯỜI BẢY mục, và mỗi mục có hạn giờ dương ≤ trần hệ", () => {
     // ★ 2026-08-19 (doc 79 TRỤC 1 (D)) — BỐN mục MỚI cho vòng khép kín dự án thử: ba `dotnet` (build/
     //   test/format) cho C# và một `node --test` cho react/node. Mỗi mục vẫn là "subcommand cố định +
     //   một đường trong hộp cát"; xem khối lý lẽ ở `repoCommandSandbox.DANH_SACH_TRANG`.
@@ -143,6 +143,15 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
       //   cố ý KHÔNG có mặt — đúng thứ danh sách trắng tồn tại để chặn.
       "python -m pytest <đường-dẫn>",
       "python -m unittest <đường-dẫn>",
+      // ★★★ Đợt 3c (2026-10-17) — SÁU mục nhóm CÀI ĐẶT (`nhom: "cai-dat"`): hành trình "mô tả → dự án chạy được"
+      //   tắc ở bước cài phụ thuộc. Khuôn CỨNG theo manifest (không đối số gói), luôn cần người duyệt, KHÔNG
+      //   BAO GIỜ tự chạy (`laLenhKiemChung` chốt theo `nhom`). Lưới riêng: `repoCommandCaiDat.test.ts`.
+      "npm ci",
+      "npm install",
+      "python -m venv .venv",
+      "pip install -r requirements.txt",
+      "dotnet restore",
+      "dotnet restore <đường-dẫn>",
     ]);
     for (const m of DANH_SACH_TRANG) {
       expect(m.hanGioMs, m.nhan).toBeGreaterThan(0);
@@ -205,6 +214,14 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
       "dotnet build <đường-dẫn>",
       "dotnet test <đường-dẫn>",
       "dotnet format <đường-dẫn>",
+      // ★ Đợt 3c — cả sáu lệnh cài đều SINH sản phẩm (node_modules · .venv · obj/project.assets.json · lockfile),
+      //   và KHÔNG mục nào ghi đè mã do người viết ⇒ dân số `ghiDia` vẫn đúng 1.
+      "npm ci",
+      "npm install",
+      "python -m venv .venv",
+      "pip install -r requirements.txt",
+      "dotnet restore",
+      "dotnet restore <đường-dẫn>",
     ]);
     // ⚠ Vế NGƯỢC: "sinh sản phẩm dựng" KHÔNG được kéo theo "ghi đè mã nguồn". Nếu ai đó "đơn giản
     //   hoá" hai ô thành một, ca này đỏ.
@@ -237,11 +254,19 @@ describe("§A — CẤU TRÚC của danh sách trắng (bất biến trên chín
      * bị cấm tuyệt đối vẫn là: git hoàn nguyên/xoá, `rm`, và `npm run build` (dựng lại đúng server đang
      * chạy — xem khối "npm run build CỐ Ý KHÔNG CÓ" ở `repoCommandSandbox.ts`).
      */
-    const camTuyetDoi = ["checkout", "reset", "restore", "clean", "rm", "revert", "push", "commit", "publish"];
+    const camTuyetDoi = ["checkout", "reset", "clean", "rm", "revert", "push", "commit", "publish"];
     for (const m of DANH_SACH_TRANG) {
       for (const k of m.khuon) {
         if (k === null) continue;
         expect(camTuyetDoi, `"${k}" trong khuôn của ${m.nhan}`).not.toContain(k);
+      }
+      /**
+       * ★ Đợt 3c — "restore" rời tập cấm CHUNG vì `dotnet restore` (khôi phục GÓI NuGet, không đụng một byte mã
+       *   nguồn) là khuôn cài đặt hợp lệ. Cái bị cấm là `git restore` (HOÀN NGUYÊN tệp — cùng họ `git checkout`)
+       *   ⇒ ghim đúng ngữ nghĩa ấy: mọi khuôn `git` không được chứa "restore"/"switch"/"stash".
+       */
+      if (m.khuon[0] === "git") {
+        for (const k of m.khuon) expect(["restore", "switch", "stash"], `git ${String(k)} trong ${m.nhan}`).not.toContain(k);
       }
     }
     // `npm run build` (dựng lại SERVER đang chạy) vẫn KHÔNG được có mặt dù `dotnet build` đã mở.
@@ -453,7 +478,9 @@ describe("§C — LỚP 2 MỘT MÌNH: `phanQuyetLenh` khớp CẤU TRÚC trên 
     [["npm", "run", "check", "--", "extra"], "đuôi thừa sau một tiền tố HỢP LỆ"],
     [["npm", "run", "build"], "npm run build — CỐ Ý ngoài danh sách trắng ở lượt đầu"],
     [["npm", "run", "dev"], "script khác trong package.json"],
-    [["npm", "install"], "npm install"],
+    // ★ Đợt 3c — `npm install` (trần, theo package.json) NAY là khuôn cài hợp lệ; cái vẫn bị cấm là THÊM GÓI.
+    [["npm", "install", "lodash"], "npm install <gói> — thêm gói do model nghĩ ra"],
+    [["npm", "i"], "npm i — bí danh không khai"],
     [["git", "checkout", "server/x.ts"], "★ ĐÚNG LỆNH ĐÃ XOÁ 123 DÒNG NGÀY 2026-08-18"],
     [["git", "checkout", "."], "git checkout ."],
     [["git", "reset", "--hard"], "git reset --hard"],
@@ -1131,7 +1158,7 @@ describe("§L — dòng catalog quyền `ai_repo_exec` khai ĐÚNG bảng SỐNG
     return ra!;
   }
 
-  it("★★★ catalog nêu ĐỦ CẢ MƯỜI MỘT lệnh — suy từ bảng SỐNG, không chép tay", () => {
+  it("★★★ catalog nêu ĐỦ CẢ MƯỜI BẢY lệnh — suy từ bảng SỐNG, không chép tay", () => {
     const mo = moTaCatalog();
     const thieu = DANH_SACH_TRANG.filter((m) => !mo.includes(m.nhan)).map((m) => m.nhan);
     expect(
@@ -1297,13 +1324,14 @@ describe("§K — lệnh Node đòi `package.json` Ở ĐÚNG GỐC", () => {
     for (const d of [gocCoNode, gocChaCoNode]) fs.rmSync(d, { recursive: true, force: true });
   });
 
-  it("★★ dân số: đúng BA mục thoát cwd, và chúng đúng là ba mục npm/npx", () => {
+  it("★★ dân số: đúng NĂM mục thoát cwd, và chúng đúng là năm mục npm/npx", () => {
     const thoat = DANH_SACH_TRANG.filter((m) => m.thoatCwdTheoCayThuMuc).map((m) => m.nhan);
     expect(
       thoat,
       "Thêm một lệnh `npm`/`npx`/`yarn`/`pnpm` vào bảng mà quên khai ô này ⇒ nó chạy trên dự án CHA " +
         "trong khi thẻ duyệt khai thư mục CON. Đọc khối `thoatCwdTheoCayThuMuc` trước khi sửa số này.",
-    ).toEqual(["npm run check", "npm run check:tests", "npx vitest run <đường-dẫn>"]);
+      // ★ Đợt 3c — `npm ci`/`npm install` cũng leo cây tìm package.json ⇒ khai `true` (phép kiểm gốc chặn chúng y hệt).
+    ).toEqual(["npm run check", "npm run check:tests", "npx vitest run <đường-dẫn>", "npm ci", "npm install"]);
     // Mọi mục đều PHẢI khai — thiếu ô là `undefined`, tức lọt qua cổng theo chiều KHÔNG an toàn.
     for (const m of DANH_SACH_TRANG) expect(typeof m.thoatCwdTheoCayThuMuc, m.nhan).toBe("boolean");
   });

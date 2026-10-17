@@ -288,3 +288,52 @@ describe("§6 CORS của đường /v1 — không bao giờ `*`", () => {
     expect(iSao).toBeGreaterThan(iCong);
   });
 });
+
+/**
+ * ★★★ Rà bảo mật de591c868 — phát hiện 1 (authorization-bypass): Express khớp tuyến KHÔNG phân biệt hoa/thường
+ * (`caseSensitive: false` mặc định) nhưng `phamViCuaDuong` so CHÍNH XÁC chữ thường ⇒ `/v1/Completions`,
+ * `/v1/EMBEDDINGS` rơi vào `"khong-ro"` ⇒ middleware bỏ qua kiểm phạm vi ⇒ handler thật vẫn chạy. Một token chỉ
+ * `chat` (hay token thiết bị chỉ `chat/fim`) gọi được mọi đường của cổng. Cùng gốc: `xuLyCorsCongOpenAi` so `/v1` phân
+ * biệt hoa/thường ⇒ `/V1/...` rơi về bộ CORS chung (`*` / phản chiếu kèm credentials).
+ */
+describe("§7 phạm vi KHÔNG lách được bằng hoa/thường của đường (rà bảo mật de591c868 #1)", () => {
+  const goi = (duong: string, token: string, than: unknown) =>
+    fetch(`${cong.url}/v1${duong}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(than),
+    });
+
+  it("token chỉ `chat` gọi `/v1/Completions` (FIM) ⇒ 403 insufficient_scope, engine KHÔNG chạy", async () => {
+    const r = await goi("/Completions", T_CHAT, { prompt: "function f() {", suffix: "}" });
+    expect(r.status).toBe(403);
+    expect((await r.json()).error.code).toBe("insufficient_scope");
+    expect(planSpy).not.toHaveBeenCalled();
+  });
+  it("token `chat+fim` gọi `/v1/EMBEDDINGS` và `/v1/Embeddings/` ⇒ 403", async () => {
+    for (const d of ["/EMBEDDINGS", "/Embeddings/"]) {
+      const r = await goi(d, T_CHAT_FIM, { input: "x" });
+      expect(r.status).toBe(403);
+      expect((await r.json()).error.code).toBe("insufficient_scope");
+    }
+  });
+  it("token chỉ `chat` vẫn gọi được `/v1/Chat/Completions` (đối chứng: chuẩn hoá không làm GÃY đường hợp lệ)", async () => {
+    const r = await goi("/Chat/Completions", T_CHAT, { messages: [{ role: "user", content: "hi" }] });
+    expect(r.status).toBe(200);
+  });
+  it("đường lạ với token người dùng ⇒ 404 NGAY ở cửa xác thực (fail-closed cho đường mới chưa khai phạm vi)", async () => {
+    const r = await goi("/responses", T_CHAT_FIM, {});
+    expect(r.status).toBe(404);
+    expect(planSpy).not.toHaveBeenCalled();
+  });
+  it("CORS: `/V1/models` (hoa) vẫn đi bộ CORS RIÊNG — không bao giờ `*`", () => {
+    process.env.OPENAI_GATEWAY_ENABLED = "true";
+    delete process.env.OPENAI_GATEWAY_PATH;
+    process.env.OPENAI_GATEWAY_CORS_ORIGINS = "";
+    const headers: Record<string, string> = {};
+    const res = { setHeader: (k: string, v: string) => void (headers[k] = v), status: () => ({ end: () => {} }) };
+    const kq = xuLyCorsCongOpenAi({ path: "/V1/models", method: "GET", headers: {} } as never, res as never);
+    expect(kq).toBe("tiep");
+    expect(headers["Access-Control-Allow-Origin"]).toBeUndefined();
+  });
+});

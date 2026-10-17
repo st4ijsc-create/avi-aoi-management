@@ -58,3 +58,13 @@ describe("maToken", () => {
     expect(phamViCuaDuong("/admin")).toBe("khong-ro");
   });
 });
+
+describe("phamViCuaDuong — không phân biệt hoa/thường như Express (rà bảo mật de591c868 #1)", () => {
+  it("biến thể hoa/thường + gạch cuối ⇒ cùng phạm vi", async () => {
+    const { phamViCuaDuong: pv } = await import("./maToken");
+    expect(pv("/Chat/Completions")).toBe("chat");
+    expect(pv("/COMPLETIONS")).toBe("fim");
+    expect(pv("/Embeddings//")).toBe("embed");
+    expect(pv("/MODELS")).toBeNull();
+  });
+});

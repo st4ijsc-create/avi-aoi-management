@@ -16,6 +16,19 @@
  *   cho cả xin lẫn đổi, chu kỳ hỏi tối thiểu (`slow_down`), trần lượt hỏi mỗi mã; (e) phía duyệt có trần lượt thử mã.
  * ⚠ KHÔNG trả URL tuyệt đối: dựng từ `Host` là mở cửa cho chèn Host (lừa người dùng mở máy chủ giả). Extension đã
  *   biết địa chỉ máy chủ nó đang gọi ⇒ ghép `verification_path` vào đó.
+ * ★★★ Rà bảo mật de591c868 #3 — LỪA ĐẢO MÃ THIẾT BỊ (RFC 8628 §5.4): kẻ tấn công tự khởi tạo luồng (tuyến này không
+ *   đòi danh tính), gửi mã/đường dẫn cho nạn nhân bấm duyệt ⇒ kẻ tấn công (đang giữ `device_code`) nhận token của nạn
+ *   nhân. Giảm thiểu, mỗi lớp một chỗ:
+ *   • `verification_path_complete` KHÔNG mang mã nữa (ô giữ cho hợp đồng, = `verification_path`) và trang duyệt KHÔNG
+ *     điền sẵn mã từ URL — người dùng phải GÕ mã đang hiện trong VSCode của CHÍNH họ;
+ *   • trang duyệt hiện NGUỒN GỐC (IP + User-Agent + lúc khởi tạo — mig 0394), cảnh báo khi IP khởi tạo ≠ IP trình duyệt,
+ *     và Cho phép đòi xác nhận tường minh — cưỡng chế ở máy chủ (`thuTucQuyetThietBi`, note `CAN_XAC_NHAN`);
+ *   • token đúc từ thiết bị: phạm vi trần chat+fim (`embed` bị cắt), hạn 30 ngày (`SO_NGAY_THIET_BI`);
+ *   • trần mã đang CHỜ mỗi IP (`TRAN_MA_CHO_MOI_IP`) ngoài trần theo phút;
+ *   • audit: duyệt/từ chối mang IP/UA khởi tạo + IP người duyệt; lượt đổi mang id mã + IP khởi tạo + IP đổi.
+ *   QUYẾT ĐỊNH — KHÔNG ràng buộc IP đổi mã = IP khởi tạo: kẻ lừa đảo vừa khởi tạo vừa hỏi từ CÙNG máy của hắn ⇒ ràng
+ *   buộc ấy không chặn được lớp tấn công này; nó chỉ chống trộm `device_code` (256 bit, chỉ extension giữ, chỉ băm nằm
+ *   trong CSDL) — đổi lại rủi ro gãy ca thật (máy dual-stack đổi ::1/127.0.0.1, NAT/VPN đổi đường giữa hai lượt).
  * ⚠ Cổng giấy phép MOD_AI: `chanTuyenAiTheoGiayPhep()` gắn trên nhánh `/api/ai` ở `_core/index.ts`, đứng TRƯỚC lượt đăng ký.
  * ⚠ Thân lỗi theo RFC 8628 (`{error, error_description}`) — extension là client máy, không phải người đọc.
  */
@@ -62,8 +75,13 @@ export function registerAiGatewayTokenThietBiRoutes(app: express.Express): void 
       return;
     }
     const than = (req.body ?? {}) as { ten?: unknown; phamVi?: unknown };
-    const kq = await batDauThietBi({ ten: than.ten, phamVi: than.phamVi });
+    const kq = await batDauThietBi({ ten: than.ten, phamVi: than.phamVi, ip: ipCua(req), tacNhan: req.get("user-agent") });
     if (!kq.ok) {
+      if (kq.ma === "qua-tran-cho") {
+        res.setHeader("Retry-After", "60");
+        loi(res, 429, "slow_down", "Too many pending device codes from this address. Finish or let them expire first.");
+        return;
+      }
       loi(res, 503, "temporarily_unavailable", "Token backend unavailable.");
       return;
     }
@@ -72,7 +90,8 @@ export function registerAiGatewayTokenThietBiRoutes(app: express.Express): void 
       device_code: kq.maThietBi,
       user_code: kq.maNguoiDung,
       verification_path: DUONG_XAC_NHAN,
-      verification_path_complete: `${DUONG_XAC_NHAN}?ma=${kq.maNguoiDung}`,
+      // ★ #3 — KHÔNG mang mã (xem docblock): người dùng gõ mã đang hiện trong VSCode của chính họ.
+      verification_path_complete: DUONG_XAC_NHAN,
       expires_in: kq.hetHanGiay,
       interval: kq.chuKyGiay,
     });
@@ -101,7 +120,15 @@ export function registerAiGatewayTokenThietBiRoutes(app: express.Express): void 
         entityName: kq.tienTo,
         details: {
           operation: "AI_GATEWAY_TOKEN_CREATED",
-          metadata: { ten: kq.ten, phamVi: kq.phamVi, hetHanLuc: kq.hetHanLuc, nguon: "thiet-bi" },
+          metadata: {
+            ten: kq.ten,
+            phamVi: kq.phamVi,
+            hetHanLuc: kq.hetHanLuc,
+            nguon: "thiet-bi",
+            maThietBiId: kq.maThietBiId,
+            ipKhoiTao: kq.ipKhoiTao,
+            ipDoi: ipCua(req),
+          },
         },
         status: "success",
       });

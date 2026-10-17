@@ -505,7 +505,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         projectId = md.id;
         goc = md.goc;
       } else {
-        const pg = phanGiaiGoc(y.projectId);
+        // ★ Đợt 3a — người gọi = danh tính phiên: dự án CÁ NHÂN chỉ chủ (và admin) mở được.
+        const pg = phanGiaiGoc(y.projectId, { id: user.id, role: user.role });
         if (!pg.ok || !pg.goc || !pg.id) return { ok: false, ma: "PROJECT_NOT_FOUND", http: HTTP_CUA_MA.PROJECT_NOT_FOUND };
         projectId = pg.id;
         goc = pg.goc;
@@ -714,7 +715,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         if (hang.trangThai === "dang-chay" || hang.trangThai === "cho-duyet") return { ok: false, ma: "LUOT_CHAY_DANG_CHAY" };
         projectId = hang.projectId;
       }
-      const pg = phanGiaiGoc(projectId);
+      const pg = phanGiaiGoc(projectId, { id: y.user.id, role: y.user.role });
       if (!pg.ok || !pg.goc) return { ok: false, ma: "PROJECT_NOT_FOUND" };
       try {
         const ketQua = await hoanTacCheckpoint({

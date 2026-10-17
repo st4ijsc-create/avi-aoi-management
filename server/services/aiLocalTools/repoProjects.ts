@@ -57,6 +57,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { gocHopCat } from "./repoSandbox";
+// ★ Đợt 3a — vị từ chỗ-đứng của dự án CÁ NHÂN (module lá: chỉ fs/os/path — giữ đồ thị import của CLI sạch DB).
+import { duAnCaNhanDungCho, gocQuanLy } from "./gocDuAnCaNhan";
 
 /** Biến môi trường chứa danh sách TRẮNG các gốc dự án. VẮNG ⇒ một dự án mặc định = `gocHopCat()`. */
 export const BIEN_DANH_SACH_GOC = "AI_REPO_SANDBOX_ROOTS";
@@ -80,6 +82,28 @@ export interface DuAnHopCat {
    *   • `"db"`  — đăng ký qua UI (bảng `ai_repo_du_an`): xoá được qua `repoWorkspace.xoaDuAn`.
    */
   nguon: "env" | "db";
+  /**
+   * ★★★ Đợt 3a (Q3, mig 0393) — có ⇔ dự án CÁ NHÂN của người dùng id này (luôn `nguon:"db"`). Vắng ⇔ mục env/admin
+   * dùng chung (hành vi cũ). Dự án cá nhân KHÔNG BAO GIỜ phân giải qua `gocTheoId` (cửa không biết người gọi) — chỉ
+   * qua `phanGiaiGoc(id, nguoiGoi)` với người gọi là chủ hoặc admin. Xem khối "AI THẤY ĐƯỢC GÌ" ở `phanGiaiGoc`.
+   */
+  chuSoHuu?: number;
+}
+
+/**
+ * ★ Đợt 3a — NGƯỜI GỌI của một lượt phân giải dự án: danh tính PHIÊN (server tự đọc, không bao giờ từ client).
+ * `null` ⇔ người gọi không biết được (tiến trình nền, CLI chưa xác thực) ⇒ dự án cá nhân KHÔNG phân giải (fail-closed).
+ */
+export interface NguoiGoiDuAn {
+  id: number;
+  role: string;
+}
+
+/** Dự án cá nhân `m` có MỞ được cho người gọi này không: chủ hoặc admin. Danh tính méo ⇒ không. */
+function nguoiGoiThayDuoc(m: DuAnHopCat, nguoiGoi: NguoiGoiDuAn | null | undefined): boolean {
+  if (m.chuSoHuu === undefined) return true;
+  if (!nguoiGoi || !Number.isInteger(nguoiGoi.id) || nguoiGoi.id <= 0) return false;
+  return nguoiGoi.id === m.chuSoHuu || nguoiGoi.role === "admin";
 }
 
 // Chống spam LOG (KHÔNG nhớ đệm kết quả phân tích — xem docblock đầu file).
@@ -194,10 +218,25 @@ export function danhSachDuAn(): DuAnHopCat[] {
       canhBao(`bỏ mục DB "${m.id}" — gốc không còn là thư mục: "${m.goc}"`);
       continue;
     }
+    // ★ Đợt 3a — dự án cá nhân phải ĐỨNG ĐÚNG CHỖ của chủ nó (realpath trong `<gốc quản lý>/u<chủ>`) ở MỖI lượt
+    //   đọc, không chỉ lúc nạp: một junction cài SAU khi nạp, hoặc `AI_PROJECTS_ROOT` đổi, phải bị bắt ngay.
+    if (m.chuSoHuu !== undefined && !duAnCaNhanDungCho(m.goc, m.chuSoHuu)) {
+      canhBao(`bỏ dự án cá nhân "${m.id}" — gốc không nằm (realpath) trong thư mục của chủ u${m.chuSoHuu}`);
+      continue;
+    }
     thayId.add(m.id);
     ra.push(m);
   }
   return ra;
+}
+
+/**
+ * ★★★ Đợt 3a — danh sách dự án MỘT người gọi được thấy/chọn: mọi mục env/admin + dự án cá nhân CỦA CHÍNH họ (admin:
+ * mọi dự án cá nhân). Người gọi `null` ⇒ không dự án cá nhân nào. Dùng cho selectBox (`listProjects`) và CLI/MCP —
+ * KHÔNG dùng `danhSachDuAn()` thô cho một danh sách đưa tới người dùng (nó gồm dự án của người khác).
+ */
+export function danhSachDuAnChoNguoi(nguoiGoi: NguoiGoiDuAn | null | undefined): DuAnHopCat[] {
+  return danhSachDuAn().filter((d) => nguoiGoiThayDuoc(d, nguoiGoi));
 }
 
 /**
@@ -238,8 +277,27 @@ export async function napLaiDuAnTuDb(): Promise<{ ok: boolean; soMuc: number }> 
         canhBao(`bỏ hàng DB "${r.id}" — gốc không tồn tại/không phải thư mục: "${r.goc}"`);
         continue;
       }
+      // ★ Đợt 3a — hàng cá nhân: chủ phải là số nguyên dương VÀ gốc phải đứng đúng chỗ của chủ (realpath). Một hàng
+      //   bị sửa tay trỏ `goc` sang thư mục người khác / ra ngoài gốc quản lý KHÔNG vào được ảnh chụp.
+      const chu = r.chuSoHuu;
+      if (chu !== null && chu !== undefined) {
+        if (!Number.isInteger(chu) || chu <= 0) {
+          canhBao(`bỏ hàng DB "${r.id}" — chủ sở hữu méo`);
+          continue;
+        }
+        if (!duAnCaNhanDungCho(r.goc, chu)) {
+          canhBao(`bỏ dự án cá nhân "${r.id}" — gốc không nằm trong thư mục của chủ u${chu}`);
+          continue;
+        }
+      }
       thayId.add(r.id);
-      moi.push({ id: r.id, ten: r.ten, goc: path.resolve(r.goc), nguon: "db" });
+      moi.push({
+        id: r.id,
+        ten: r.ten,
+        goc: path.resolve(r.goc),
+        nguon: "db",
+        ...(chu !== null && chu !== undefined ? { chuSoHuu: chu } : {}),
+      });
     }
     boDemDuAnDb = moi;
     return { ok: true, soMuc: moi.length };
@@ -256,7 +314,9 @@ export async function napLaiDuAnTuDb(): Promise<{ ok: boolean; soMuc: number }> 
 export function gocTheoId(id: unknown): string | null {
   if (typeof id !== "string" || id === "") return null;
   const m = danhSachDuAn().find((d) => d.id === id);
-  return m ? m.goc : null;
+  // ★ Đợt 3a — cửa này KHÔNG biết người gọi ⇒ dự án cá nhân luôn `null` (fail-closed). Đi qua `phanGiaiGoc`.
+  if (!m || m.chuSoHuu !== undefined) return null;
+  return m.goc;
 }
 
 /** Dự án mặc định để hiển thị/chọn ban đầu: ưu tiên id `"repo"`, nếu không có thì mục đầu. */
@@ -277,13 +337,22 @@ export type KetQuaPhanGiaiGoc =
   | { ok: true; id: string | null; goc: string | null }
   | { ok: false; ma: "PROJECT_NOT_FOUND" };
 
-export function phanGiaiGoc(projectId: unknown): KetQuaPhanGiaiGoc {
+/**
+ * ★★★ Đợt 3a — AI THẤY ĐƯỢC GÌ. Tham số thứ hai `nguoiGoi` là BẮT BUỘC về chữ ký (TypeScript buộc MỌI điểm gọi khai
+ * rõ "ai đang hỏi"), và `null` là một câu trả lời hợp lệ — nghĩa là "không biết" ⇒ dự án cá nhân bị từ chối:
+ *   • mục env/admin  ⇒ như cũ, mọi người gọi (RBAC đọc/ghi vẫn ở tool);
+ *   • dự án cá nhân  ⇒ CHỈ chủ sở hữu hoặc admin; người khác / không biết ⇒ `PROJECT_NOT_FOUND` — CÙNG mã với id lạ
+ *     (phân biệt "có nhưng không phải của bạn" với "không có" là một kênh dò dự án của người khác).
+ * Census `duAnCaNhan.census.test.ts` ghim: mọi lời gọi `phanGiaiGoc(` ngoài lưới có ĐÚNG hai đối số.
+ */
+export function phanGiaiGoc(projectId: unknown, nguoiGoi: NguoiGoiDuAn | null): KetQuaPhanGiaiGoc {
   if (projectId === undefined || projectId === null || projectId === "") {
     return { ok: true, id: null, goc: null };
   }
-  const goc = gocTheoId(projectId);
-  if (goc === null) return { ok: false, ma: "PROJECT_NOT_FOUND" };
-  return { ok: true, id: String(projectId), goc };
+  if (typeof projectId !== "string") return { ok: false, ma: "PROJECT_NOT_FOUND" };
+  const m = danhSachDuAn().find((d) => d.id === projectId);
+  if (!m || !nguoiGoiThayDuoc(m, nguoiGoi)) return { ok: false, ma: "PROJECT_NOT_FOUND" };
+  return { ok: true, id: projectId, goc: m.goc };
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -392,14 +461,19 @@ export function kiemTraDangKyDuAn(input: {
 
   // 6. KHÔNG lồng gốc đã có — cả hai chiều. Hai dự án lồng nhau = hai hộp cát chồng lấn: cùng một
   //    tệp được hai chính sách phán, và ngân sách đọc của dự án này tiêu hộ dự án kia.
-  const gocDaCo = [...danhSach.map((d) => d.goc), gocHopCat()];
+  // ★ Đợt 3a — cộng GỐC QUẢN LÝ dự án cá nhân: admin không được đăng ký một thư mục nằm trong (hoặc chứa) cây của
+  //   kỹ sư — nếu không, `<gốc quản lý>\u5` thành dự án dùng chung và mọi dự án tương lai của u5 lồng trong nó.
+  const gocDaCo = [...danhSach.map((d) => d.goc), gocHopCat(), gocQuanLy()];
   for (const cu of gocDaCo) {
     if (namTrong(goc, cu)) return { ok: false, ma: "NAM_TRONG_GOC_DA_CO" };
     if (namTrong(cu, goc)) return { ok: false, ma: "CHUA_GOC_DA_CO" };
   }
 
   // 7. trần số mục nguồn DB.
-  if (boDemDuAnDb.length >= TRAN_DU_AN_DB) return { ok: false, ma: "VUOT_TRAN_DU_AN" };
+  //    ★ Đợt 3a — chỉ đếm mục ADMIN (dự án cá nhân có trần riêng theo người — `duAnCaNhan.TRAN_DU_AN_MOI_NGUOI`).
+  if (boDemDuAnDb.filter((d) => d.chuSoHuu === undefined).length >= TRAN_DU_AN_DB) {
+    return { ok: false, ma: "VUOT_TRAN_DU_AN" };
+  }
 
   return { ok: true, id, ten, goc };
 }

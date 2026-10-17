@@ -122,7 +122,7 @@ describe("thiết bị — xem + quyết, trần lượt thử", () => {
       ok: false,
       note: "CAN_PHIEN_WEB",
     });
-    const q = await thuTucQuyetThietBi(NGUOI(), PHIEN, { maNguoiDung: bd.maNguoiDung, dongY: true }, undefined, coQuyen);
+    const q = await thuTucQuyetThietBi(NGUOI(), PHIEN, { maNguoiDung: bd.maNguoiDung, dongY: true, xacNhanTuKhoiTao: true }, undefined, coQuyen);
     expect(q).toMatchObject({ ok: true, trangThai: "da-duyet" });
     const db = (await getDb())!;
     const [h] = await db.select().from(aiGatewayDeviceCodes).where(eq(aiGatewayDeviceCodes.maNguoiDung, bd.maNguoiDung));
@@ -139,7 +139,43 @@ describe("thiết bị — xem + quyết, trần lượt thử", () => {
     }
     expect(kq.slice(0, 10).every((x) => x !== "RATE_LIMITED")).toBe(true);
     expect(kq[10]).toBe("RATE_LIMITED");
-    const q = await thuTucQuyetThietBi(nguoi, PHIEN, { maNguoiDung: "BCDF-GHJK", dongY: true }, undefined, coQuyen);
+    const q = await thuTucQuyetThietBi(nguoi, PHIEN, { maNguoiDung: "BCDF-GHJK", dongY: true, xacNhanTuKhoiTao: true }, undefined, coQuyen);
     expect(q).toMatchObject({ ok: false, note: "RATE_LIMITED" });
+  });
+});
+
+/**
+ * ★★★ Rà bảo mật de591c868 #3 — device-code phishing ở bước DUYỆT:
+ *   • Cho phép đòi xác nhận TƯỜNG MINH "chính tôi vừa bấm đăng nhập trong VSCode" (`xacNhanTuKhoiTao: true`) — máy chủ
+ *     cưỡng chế, không chỉ giao diện; Từ chối thì không cần (thu hẹp quyền luôn được);
+ *   • xem mã trả NGUỒN GỐC (IP + User-Agent + lúc tạo) và cờ `khacIp` khi IP khởi tạo ≠ IP trình duyệt đang duyệt;
+ *   • audit duyệt mang nguồn gốc lượt khởi tạo + IP người duyệt (truy vết được ai đã khởi tạo mã bị lừa duyệt).
+ */
+describe("thiết bị — chống lừa đảo mã (rà bảo mật de591c868 #3)", () => {
+  const REQ = { ip: "10.250.1.9", headers: {} as Record<string, unknown> };
+
+  it("Cho phép KHÔNG có xacNhanTuKhoiTao ⇒ CAN_XAC_NHAN, mã vẫn đang chờ; Từ chối không cần xác nhận", async () => {
+    const bd = await batDauThietBi({ ten: "luoi-thutuc-xn", phamVi: ["chat"], ip: "10.250.1.1" });
+    if (!bd.ok) throw new Error("bắt đầu hỏng");
+    const q = await thuTucQuyetThietBi(NGUOI(), PHIEN, { maNguoiDung: bd.maNguoiDung, dongY: true }, REQ, coQuyen);
+    expect(q).toMatchObject({ ok: false, note: "CAN_XAC_NHAN" });
+    expect(await thuTucXemThietBi(NGUOI(), bd.maNguoiDung, coQuyen, REQ)).toMatchObject({ ok: true });
+    const tc = await thuTucQuyetThietBi(NGUOI(), PHIEN, { maNguoiDung: bd.maNguoiDung, dongY: false }, REQ, coQuyen);
+    expect(tc).toMatchObject({ ok: true, trangThai: "tu-choi" });
+  });
+
+  it("xem ⇒ IP/User-Agent/lúc tạo + khacIp; duyệt ⇒ audit mang nguồn gốc + IP người duyệt", async () => {
+    const bd = await batDauThietBi({ ten: "luoi-thutuc-ng", phamVi: ["chat"], ip: "10.250.1.2", tacNhan: "ua-ke-la/1" });
+    if (!bd.ok) throw new Error("bắt đầu hỏng");
+    const xem = await thuTucXemThietBi(NGUOI(), bd.maNguoiDung, coQuyen, REQ);
+    expect(xem).toMatchObject({ ok: true, ipKhoiTao: "10.250.1.2", tacNhanKhoiTao: "ua-ke-la/1", ipCuaBan: "10.250.1.9", khacIp: true });
+    const q = await thuTucQuyetThietBi(NGUOI(), PHIEN, { maNguoiDung: bd.maNguoiDung, dongY: true, xacNhanTuKhoiTao: true }, REQ, coQuyen);
+    expect(q).toMatchObject({ ok: true });
+    const db = (await getDb())!;
+    const [h] = await db.select().from(aiGatewayDeviceCodes).where(eq(aiGatewayDeviceCodes.maNguoiDung, bd.maNguoiDung));
+    const au = (await auditCua(h.id)).find((a) => a.details.operation === "AI_GATEWAY_DEVICE_APPROVED")!;
+    expect(au.tho).toContain("10.250.1.2");
+    expect(au.tho).toContain("ua-ke-la/1");
+    expect(au.tho).toContain("10.250.1.9");
   });
 });

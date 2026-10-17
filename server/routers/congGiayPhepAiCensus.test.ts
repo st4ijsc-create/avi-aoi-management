@@ -422,7 +422,23 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   (`services/ai/gatewayToken/thuTucToken.ts`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2328 trùng
  *   `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2328, beMatAi: 379, aiCoCong: 317, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-17 AI Local Đợt 3a (dự án cá nhân của kỹ sư, Q3) — **tong 2328 → 2332 · beMatAi 379 → 383 · aiCoCong 317 → 321**
+ *   (đo trước rồi mới ghim; trước lượt này 2328 XANH). Đúng BỐN thủ tục MỚI ở `repoWorkspaceRouter.ts` (bề mặt AI khai tường
+ *   minh, sàn `moduleProcedure("MOD_AI")` như anh em cùng tệp ⇒ cả bốn vào aiCoCong): `repoWorkspace.duAnCuaToi` (query),
+ *   `repoWorkspace.{taoDuAnCaNhan, doiTenDuAnCaNhan, xoaDuAnCaNhan}` (mutation) — quyền `ai_repo_read/canView` +
+ *   `ai_repo_exec/canCreate` kiểm trong thân (`congPhien` + `coQuyenTaoDuAn`). aiMienTru / ngoaiAiCoCong và mọi SKU khác
+ *   KHÔNG đổi. `tong` 2332 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-17 AI Local Đợt 3c (Chạy & Xem trước) — **tong 2332 → 2337 · beMatAi 383 → 388 · aiCoCong 321 → 326** (đo trước
+ *   rồi mới ghim; trước lượt này 2332 XANH). Đúng NĂM thủ tục ở router MỚI `aiChayUngDungRouter.ts` (tên `ai…` ⇒ tự vào bề mặt
+ *   AI; sàn `moduleProcedure("MOD_AI")` ⇒ cả năm vào aiCoCong): `aiChayUngDung.{trangThai, nhatKy}` (query),
+ *   `aiChayUngDung.{chay, dung, deXuatLenh}` (mutation) — quyền kiểm trong thân (`services/ai/chayUngDung/dichVu.ts`;
+ *   `deXuatLenh` qua RBAC + HITL của `run_command`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
+ *   `tong` 2337 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2337, beMatAi: 388, aiCoCong: 326, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

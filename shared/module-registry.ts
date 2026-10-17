@@ -371,6 +371,10 @@ const SEED_MODULES: SystemModule[] = [
       //   thư của khách không mua AI — đúng kiểu hồi quy mà lượt này phải tránh.
       "/ai-home", "/ai-command-center", "/ai-specialist-studio", "/ai-experiments",
       "/ai-datasets", "/ai-training-studio", "/ai-coding-workspace",
+      // AI Local Đợt 4A (2026-10-17) — trang xác nhận mã thiết bị + quản lý token cổng `/v1` của extension VSCode
+      // (`client/src/pages/AiGatewayThietBi.tsx`). Tuyến mang `requireModule="MOD_AI"` ⇒ phải có tên ở đây
+      // (`congGiayPhepAiTuyen.unit.test.ts` §3). Không có mục menu riêng — vào từ đường dẫn extension mở.
+      "/ai-thiet-bi",
     ],
     permissionCategories: ["analytics"],
     features: [

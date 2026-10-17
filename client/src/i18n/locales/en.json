@@ -20658,7 +20658,9 @@
         "duongKhongHopLe": "Cannot browse this path (it does not exist, is not a folder, or the OS denies reading). Go up one level or pick another drive.",
         "guiThatBai": "Could not send the request to the server — details: {{chiTiet}}",
         "khac": "The server refused with code {{ma}} — report it to your system owner."
-      }
+      },
+      "moTitleMoi": "Manage projects",
+      "phanAdmin": "Administration: register an existing folder"
     },
     "title": "AI Coding Workspace",
     "subtitle": "Read code → propose diff → human review → run tests → read real errors, then keep fixing",
@@ -20898,7 +20900,8 @@
       "chat": "Chat",
       "terminalTab": "Commands & Logs",
       "problemsTab": "Problems",
-      "problemsCount": "{{n}}"
+      "problemsCount": "{{n}}",
+      "runTab": "Run & Preview"
     },
     "problems": {
       "title": "Problems",
@@ -21016,6 +21019,103 @@
         "xong": "done"
       },
       "xungDot": "Conflict — NOT overwritten ({{n}} file(s) were edited again after the run):"
+    },
+    "duanCaNhan": {
+      "err": {
+        "quyen": "Your account cannot create projects yet (needs the AI command permission — ai_repo_exec). Ask an administrator.",
+        "ten": "The name must be 1–100 characters and must not contain # ; = |.",
+        "khuon": "This template does not exist on the server. Pick one from the list.",
+        "zipThieu": "No ZIP file selected.",
+        "zipHong": "The file is not a valid ZIP (or it is corrupted).",
+        "zipDuong": "The ZIP contains dangerous paths (../, drive letters, absolute paths) — the whole file was rejected, nothing was extracted.",
+        "zipSymlink": "The ZIP contains symbolic links — rejected. Re-create the archive without symlinks.",
+        "zipNhieu": "The ZIP has too many files. Remove node_modules/bin/obj and zip again.",
+        "zipLon": "The ZIP is too large once extracted (or exceeds your remaining quota).",
+        "zipBom": "The ZIP has an abnormal compression ratio (suspected zip bomb) — rejected.",
+        "zipGhi": "A file in the ZIP could not be written (same name with different letter case?).",
+        "gitTat": "Git clone is not enabled on this server (no internal git servers configured).",
+        "gitNguon": "Invalid git source. Use an https://… URL of the internal git server or an allowed folder path.",
+        "gitNgoai": "This source is not in the list of allowed internal git servers (the system runs offline).",
+        "gitClone": "Clone failed — check the URL and your access to the git server.",
+        "gitHetGio": "Clone took too long — the repository is too large or the git server is not responding.",
+        "tranSo": "You have reached the maximum number of projects. Delete one you no longer use, then try again.",
+        "tranByte": "Your storage quota is exceeded. Delete some projects (the trash keeps them 30 days and does not count toward the quota).",
+        "dangTao": "Another of your projects is being created — wait for it to finish, then try again.",
+        "goc": "The server's project root folder is misconfigured (AI_PROJECTS_ROOT) — tell an administrator.",
+        "gui": "Could not send the request to the server — details:",
+        "khongThay": "This project was not found (it may have been deleted). Reload the list.",
+        "khac": "The server refused with code {{ma}}."
+      },
+      "cach": {
+        "rong": "Empty",
+        "khuon": "From template",
+        "zip": "Import ZIP",
+        "git": "Internal git",
+        "moTa": "From description (Agent)"
+      },
+      "title": "My projects",
+      "dungLuong": "{{so}}/{{tran}} projects · {{daDung}} / {{tranByte}}",
+      "loiTai": "Could not load your projects — this is an ERROR, not an empty list.",
+      "dangTai": "Loading…",
+      "rong": "You have no projects yet — create one below.",
+      "doiTen": "Rename",
+      "luuTen": "Save name",
+      "huy": "Cancel",
+      "mo": "Open this project",
+      "xoa": "Delete (to trash for 30 days)",
+      "taoMoi": "New project",
+      "cachTao": "How to create",
+      "oTen": "Project name",
+      "oTenGoiY": "e.g. AOI machine log reader",
+      "oKhuon": "Template",
+      "oZip": "ZIP file (max 50 MB; executables and secrets are skipped)",
+      "oGit": "Internal git server URL (or an allowed folder)",
+      "oMoTa": "Project description — creates an empty project, then opens Agent mode with this description",
+      "oMoTaGoiY": "e.g. A C# console app that reads AOI result CSV files and prints the defect rate per shift",
+      "nutTao": "Create",
+      "daXoa": "Project moved to the trash (kept for 30 days).",
+      "boQua": "Skipped {{n}} disallowed files (executables / secrets / .git / node_modules).",
+      "daTao": "Project created — opening it.",
+      "hoiXoa": "Delete this project? The folder goes to the trash and is permanently removed after 30 days.",
+      "moTaDialog": "Create and open your own projects on the server — no existing folder needed. Only you (and administrators) can see personal projects."
+    },
+    "chayUD": {
+      "tieuDe": "Run & Preview",
+      "caiPhuThuoc": "Install dependencies",
+      "caiTip": "Proposes the install command from the project manifest — goes through the review card like every command; never runs by itself.",
+      "khongCoLenhCai": "No manifest recognised (package.json / requirements.txt / *.csproj).",
+      "chay": "Run",
+      "dung": "Stop",
+      "lenhChay": "Run command: {{lenh}} (from {{nguon}})",
+      "khongChayDuoc": "Cannot run [{{ma}}]: {{chiTiet}}",
+      "repoChinh": "The platform repo cannot be run here — its dev command is this very server.",
+      "cong": "Port {{cong}}",
+      "chuaNgheCong": "The app is not listening on port {{cong}} after 2 minutes — does the dev script read the PORT variable?",
+      "chuaXacNhanChet": "Stop was issued but the process exit was NOT observed — the port is still held.",
+      "nhatKy": "Log",
+      "nhatKyCat": "… (head truncated)",
+      "nhatKyRong": "No log yet.",
+      "xemTruoc": "Preview",
+      "moTabMoi": "Open in new tab",
+      "xemTruocTat": "Preview is OFF ({{lyDo}}) — an admin sets AI_PREVIEW_PROXY_PORT to enable it (proxy on a separate port, origin isolated from the app).",
+      "xemTruocCho": "The preview frame appears once the app is listening.",
+      "xemTruocAnToan": "The frame runs on a SEPARATE ORIGIN (sandboxed) — it does not share your login session.",
+      "nguoiKhacDangChay": "Someone else is running this project.",
+      "nhanRoi": "Stops automatically after 30 minutes without preview traffic.",
+      "loiDeXuat": "Could not create a review card for the command [{{ma}}].",
+      "trangThai": {
+        "chuaChay": "Not running",
+        "dang-khoi-dong": "Starting",
+        "dang-chay": "Running",
+        "dang-dung": "Stopping",
+        "da-dung": "Stopped",
+        "loi": "Exited with error (code {{ma}})"
+      },
+      "lyDoDung": {
+        "nguoi-dung": "stopped by user",
+        "nhan-roi": "auto-stopped after 30 idle minutes",
+        "tat-may": "stopped by server shutdown"
+      }
     }
   },
   "masterDataCol": {
@@ -22385,11 +22485,18 @@
       "deviceName": "Device",
       "scopes": "Requested scopes",
       "expiresIn": "Code valid for {{s}} more seconds",
-      "warning": "Approving issues a 90-day token tied to your account. Every request from the extension is recorded under your name.",
+      "warning": "Approving issues a 30-day token (chat + code completion only) tied to your account. Every request from the extension is recorded under your name.",
       "approve": "Approve",
       "deny": "Deny",
       "approved": "Approved. Return to VSCode — the extension will pick up the token automatically.",
-      "denied": "Denied. The device received no token."
+      "denied": "Denied. The device received no token.",
+      "phishingWarning": "Approve ONLY if YOU just started the sign-in in VSCode on your own machine and typed this code yourself. If someone sent you this code or link — DENY it: that is how your access gets stolen.",
+      "requestedFrom": "Requested from IP",
+      "userAgent": "Requesting software",
+      "requestedAt": "Requested at",
+      "unknown": "unknown",
+      "ipMismatch": "This request came from a DIFFERENT IP address than the browser you are using. Approve only if your VSCode is running on that machine.",
+      "confirmMine": "I confirm I just started the sign-in in VSCode myself and the code above matches the one VSCode is showing."
     },
     "tokens": {
       "title": "My tokens",
@@ -22436,7 +22543,8 @@
       "khong-ton-tai": "Unknown code. Check the code shown in VSCode.",
       "het-han": "The code has expired. Start the sign-in again from VSCode.",
       "da-xu-ly": "This code has already been handled.",
-      "csdl": "The server is temporarily unavailable. Try again later."
+      "csdl": "The server is temporarily unavailable. Try again later.",
+      "CAN_XAC_NHAN": "Tick the confirmation that you yourself just started the sign-in in VSCode before approving."
     }
   }
 }

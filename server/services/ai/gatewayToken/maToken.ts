@@ -29,6 +29,22 @@ export type PhamVi = (typeof PHAM_VI)[number];
 export const PHAM_VI_MAC_DINH: readonly PhamVi[] = ["chat", "fim"];
 
 export const SO_NGAY_MAC_DINH = 90;
+
+/**
+ * ★ Rà bảo mật de591c868 #3 (device-code phishing) — token ĐÚC TỪ THIẾT BỊ là loại dễ bị lừa duyệt nhất (người duyệt chỉ
+ *   bấm một nút trên một yêu cầu do bên kia khởi tạo) ⇒ hẹp hơn token web theo cả hai trục:
+ *   • phạm vi TRẦN = đúng thứ extension cần (chat + ghost-text FIM) — `embed` chỉ cấp được qua trang web, nơi chính
+ *     người dùng chọn; phạm vi xin vượt trần bị CẮT (không báo lỗi — `scope` trong phản hồi nói thật đã cấp gì);
+ *   • hạn 30 ngày (token web mặc định 90): extension đăng nhập lại bằng device flow là việc một cú bấm.
+ */
+export const PHAM_VI_THIET_BI: readonly PhamVi[] = ["chat", "fim"];
+export const SO_NGAY_THIET_BI = 30;
+
+/** Phạm vi của một mã thiết bị: `chuanHoaPhamVi` rồi giao với `PHAM_VI_THIET_BI`; rỗng ⇒ mặc định. */
+export function chuanHoaPhamViThietBi(vao: unknown): PhamVi[] {
+  const giao = chuanHoaPhamVi(vao).filter((p) => PHAM_VI_THIET_BI.includes(p));
+  return giao.length ? giao : [...PHAM_VI_MAC_DINH];
+}
 export const SO_NGAY_TOI_DA = 365;
 /** Trần token CÒN HIỆU LỰC mỗi người — chặn một vòng lặp lỗi đẻ token vô hạn. */
 export const TRAN_TOKEN_HIEU_LUC = 20;
@@ -99,10 +115,15 @@ export function chuanHoaSoNgay(vao: unknown): number {
 
 /**
  * Phạm vi mà MỘT đường của cổng đòi. `/models` ⇒ `null` = mọi token hợp lệ (danh sách model không sinh chữ).
- * Đường lạ ⇒ `"khong-ro"` — cổng trả 404 của nó, không cần phạm vi.
+ * Đường lạ ⇒ `"khong-ro"` — cửa xác thực của cổng trả 404 NGAY cho token người dùng (fail-closed: một đường mới thêm
+ * vào cổng mà quên khai ở đây thì token KHÔNG gọi được nó, thay vì gọi được mà không qua phạm vi).
+ *
+ * ⚠⚠ Rà bảo mật de591c868 #1 — so KHÔNG phân biệt hoa/thường, vì Express khớp tuyến như vậy (`caseSensitive: false`
+ *   mặc định): bản đầu so chính xác ⇒ `/v1/Completions` = "khong-ro" ⇒ bỏ qua phạm vi ⇒ handler `/completions` vẫn
+ *   chạy cho token chỉ có `chat`. Bộ phân loại phạm vi PHẢI nhìn đường ĐÚNG như bộ định tuyến nhìn.
  */
 export function phamViCuaDuong(duong: string): PhamVi | null | "khong-ro" {
-  const p = duong.replace(/\/+$/, "");
+  const p = duong.toLowerCase().replace(/\/+$/, "");
   if (p === "/chat/completions") return "chat";
   if (p === "/completions") return "fim";
   if (p === "/embeddings") return "embed";

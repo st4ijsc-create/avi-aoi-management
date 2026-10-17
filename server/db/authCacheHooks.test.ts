@@ -17,6 +17,10 @@ const stub = vi.hoisted(() => {
     }),
     delete: () => ({ where: async () => undefined }),
     select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+    // Rà bảo mật de591c868 #2 — `updateUserPassword`/`revokeAllSessions` nay gọi `thuHoiMoiTokenCuaNguoi` (SQL thô qua
+    // `execute`). `[]` ⇒ "bảng token chưa có" ⇒ 0 hàng — file này chỉ canh móc dọn cache, không canh fan-out token
+    // (fan-out đo trên CSDL `_test` thật ở `aiGatewayTokens.test.ts`).
+    execute: async () => [],
   };
   // ★ Pha 7 Task 9 (9c) — `updateUserPassword` / `disable2FA` / `createLocalUser` nay ghi **hai
   //   bảng trong MỘT giao dịch** (`users` + `user_secrets`). Một tài khoản có hàng `users` mà

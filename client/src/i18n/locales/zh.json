@@ -20666,7 +20666,9 @@
         "duongKhongHopLe": "无法浏览该路径（不存在、不是文件夹，或被操作系统拒绝读取）。请返回上一级或选择其他磁盘。",
         "guiThatBai": "无法把请求发送到服务器——详情：{{chiTiet}}",
         "khac": "服务器以代码 {{ma}} 拒绝——请报告给系统负责人。"
-      }
+      },
+      "moTitleMoi": "项目管理",
+      "phanAdmin": "管理：登记现有文件夹"
     },
     "title": "AI 编程工作区",
     "subtitle": "读代码 → 提出 diff → 人工审核 → 运行测试 → 读真实错误再继续修复",
@@ -20906,7 +20908,8 @@
       "chat": "对话",
       "terminalTab": "命令与日志",
       "problemsTab": "问题",
-      "problemsCount": "{{n}}"
+      "problemsCount": "{{n}}",
+      "runTab": "运行与预览"
     },
     "problems": {
       "title": "问题",
@@ -21024,6 +21027,103 @@
         "xong": "完成"
       },
       "xungDot": "冲突 — 未覆盖（{{n}} 个文件在运行后被再次修改）："
+    },
+    "duanCaNhan": {
+      "err": {
+        "quyen": "您的账户尚无创建项目的权限（需要 AI 命令执行权限 ai_repo_exec）。请联系管理员。",
+        "ten": "名称须为 1–100 个字符，且不能包含 # ; = |。",
+        "khuon": "服务器上没有该模板。请从列表中选择。",
+        "zipThieu": "尚未选择 ZIP 文件。",
+        "zipHong": "该文件不是有效的 ZIP（或已损坏）。",
+        "zipDuong": "ZIP 含有危险路径（../、盘符、绝对路径）——已拒绝整个文件，未解压任何内容。",
+        "zipSymlink": "ZIP 含有符号链接——已拒绝。请重新打包且不包含符号链接。",
+        "zipNhieu": "ZIP 中文件过多。请去掉 node_modules/bin/obj 后重新压缩。",
+        "zipLon": "ZIP 解压后过大（或超出您剩余的配额）。",
+        "zipBom": "ZIP 压缩比异常（疑似 zip 炸弹）——已拒绝。",
+        "zipGhi": "ZIP 中有文件无法写入（是否存在仅大小写不同的同名文件？）。",
+        "gitTat": "服务器未启用 git 克隆（未配置内部 git 服务器列表）。",
+        "gitNguon": "git 来源无效。请使用内部 git 服务器的 https://… 地址或允许的文件夹路径。",
+        "gitNgoai": "该来源不在允许的内部 git 服务器列表中（系统离线运行）。",
+        "gitClone": "克隆失败——请检查地址及对 git 服务器的访问权限。",
+        "gitHetGio": "克隆超时——仓库过大或 git 服务器无响应。",
+        "tranSo": "您的项目数量已达上限。请删除不再使用的项目后重试。",
+        "tranByte": "已超出您的存储配额。请删除部分项目（回收站保留 30 天，不计入配额）。",
+        "dangTao": "您的另一个项目正在创建中——请等待完成后重试。",
+        "goc": "服务器项目根目录配置错误（AI_PROJECTS_ROOT）——请告知管理员。",
+        "gui": "无法向服务器发送请求——详情：",
+        "khongThay": "未找到该项目（可能已被删除）。请刷新列表。",
+        "khac": "服务器以代码 {{ma}} 拒绝。"
+      },
+      "cach": {
+        "rong": "空项目",
+        "khuon": "从模板",
+        "zip": "导入 ZIP",
+        "git": "内部 git",
+        "moTa": "从描述（Agent）"
+      },
+      "title": "我的项目",
+      "dungLuong": "{{so}}/{{tran}} 个项目 · {{daDung}} / {{tranByte}}",
+      "loiTai": "无法加载您的项目——这是错误，而不是空列表。",
+      "dangTai": "加载中…",
+      "rong": "您还没有项目——请在下方创建。",
+      "doiTen": "重命名",
+      "luuTen": "保存名称",
+      "huy": "取消",
+      "mo": "打开此项目",
+      "xoa": "删除（移入回收站 30 天）",
+      "taoMoi": "新建项目",
+      "cachTao": "创建方式",
+      "oTen": "项目名称",
+      "oTenGoiY": "例如：AOI 机台日志读取工具",
+      "oKhuon": "模板",
+      "oZip": "ZIP 文件（最大 50 MB；可执行文件和机密文件将被跳过）",
+      "oGit": "内部 git 服务器地址（或允许的文件夹）",
+      "oMoTa": "项目描述——先创建空项目，然后以此描述打开 Agent 模式",
+      "oMoTaGoiY": "例如：一个读取 AOI 结果 CSV 文件并按班次输出不良率的 C# 控制台程序",
+      "nutTao": "创建",
+      "daXoa": "项目已移入回收站（保留 30 天）。",
+      "boQua": "已跳过 {{n}} 个不允许的文件（可执行文件 / 机密 / .git / node_modules）。",
+      "daTao": "项目已创建——正在打开。",
+      "hoiXoa": "删除此项目？文件夹将移入回收站，30 天后永久删除。",
+      "moTaDialog": "在服务器上创建并打开您自己的项目——无需现有文件夹。个人项目仅您（和管理员）可见。"
+    },
+    "chayUD": {
+      "tieuDe": "运行与预览",
+      "caiPhuThuoc": "安装依赖",
+      "caiTip": "根据项目清单提出安装命令——与所有命令一样需经审批卡；绝不自动运行。",
+      "khongCoLenhCai": "未识别到清单（package.json / requirements.txt / *.csproj）。",
+      "chay": "运行",
+      "dung": "停止",
+      "lenhChay": "运行命令：{{lenh}}（来自 {{nguon}}）",
+      "khongChayDuoc": "无法运行 [{{ma}}]：{{chiTiet}}",
+      "repoChinh": "平台仓库不能在此运行——其 dev 命令就是本服务器。",
+      "cong": "端口 {{cong}}",
+      "chuaNgheCong": "2 分钟后应用仍未监听端口 {{cong}}——dev 脚本是否读取 PORT 变量？",
+      "chuaXacNhanChet": "已发出停止指令但未观察到进程退出——端口仍被占用。",
+      "nhatKy": "日志",
+      "nhatKyCat": "……（开头已截断）",
+      "nhatKyRong": "暂无日志。",
+      "xemTruoc": "预览",
+      "moTabMoi": "在新标签页打开",
+      "xemTruocTat": "预览已关闭（{{lyDo}}）——管理员设置 AI_PREVIEW_PROXY_PORT 以启用（独立端口代理，与应用源隔离）。",
+      "xemTruocCho": "应用开始监听后显示预览框。",
+      "xemTruocAnToan": "预览框运行在独立源（沙箱）中——不共享登录会话。",
+      "nguoiKhacDangChay": "其他人正在运行此项目。",
+      "nhanRoi": "30 分钟无预览访问后自动停止。",
+      "loiDeXuat": "无法为该命令创建审批卡 [{{ma}}]。",
+      "trangThai": {
+        "chuaChay": "未运行",
+        "dang-khoi-dong": "启动中",
+        "dang-chay": "运行中",
+        "dang-dung": "停止中",
+        "da-dung": "已停止",
+        "loi": "异常退出（代码 {{ma}}）"
+      },
+      "lyDoDung": {
+        "nguoi-dung": "由用户停止",
+        "nhan-roi": "空闲 30 分钟后自动停止",
+        "tat-may": "因服务器关闭而停止"
+      }
     }
   },
   "masterDataCol": {
@@ -22387,11 +22487,18 @@
       "deviceName": "设备",
       "scopes": "请求的权限范围",
       "expiresIn": "代码剩余有效时间 {{s}} 秒",
-      "warning": "批准后将签发一个与您账户绑定、有效期 90 天的令牌。扩展的每个请求都会以您的名义记录。",
+      "warning": "批准后将签发一个与您账户绑定、有效期 30 天的令牌（仅限对话 + 代码补全）。扩展的每个请求都会以您的名义记录。",
       "approve": "批准",
       "deny": "拒绝",
       "approved": "已批准。请返回 VSCode——扩展将自动获取令牌。",
-      "denied": "已拒绝。设备未获得任何令牌。"
+      "denied": "已拒绝。设备未获得任何令牌。",
+      "phishingWarning": "仅当您本人刚在自己电脑上的 VSCode 中发起登录并亲自在此输入代码时才批准。如果有人把此代码或链接发给您——请拒绝：这是窃取您访问权限的手段。",
+      "requestedFrom": "请求来源 IP",
+      "userAgent": "请求软件",
+      "requestedAt": "请求时间",
+      "unknown": "未知",
+      "ipMismatch": "此请求来自与您当前浏览器不同的 IP 地址。仅当您的 VSCode 正在该机器上运行时才批准。",
+      "confirmMine": "我确认是我本人刚在 VSCode 中发起登录，且上方代码与 VSCode 显示的代码一致。"
     },
     "tokens": {
       "title": "我的令牌",
@@ -22438,7 +22545,8 @@
       "khong-ton-tai": "代码无效，请核对 VSCode 中显示的代码。",
       "het-han": "代码已过期，请在 VSCode 中重新开始登录。",
       "da-xu-ly": "此代码已被处理。",
-      "csdl": "服务器暂时不可用，请稍后重试。"
+      "csdl": "服务器暂时不可用，请稍后重试。",
+      "CAN_XAC_NHAN": "批准前请勾选确认：是您本人刚在 VSCode 中发起登录。"
     }
   }
 }

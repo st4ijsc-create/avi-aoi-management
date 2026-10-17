@@ -216,10 +216,13 @@ beforeAll(async () => {
   const { registerObservabilityRoutes } = await import("./observabilityRoutes");
   // Đợt 1 T4 (2026-10-17) — lượt chạy vòng agent (SSE) vào THẲNG lượng từ §2: không cookie ⇒ 401/403, không 5xx.
   const { registerAiAgentRoutes } = await import("./aiAgentApi");
+  // Đợt 3c (2026-10-17) — cửa vào xem trước (`GET /api/ai/preview/:projectId[/*]`) vào THẲNG lượng từ §2.
+  const { registerAiXemTruocRoutes } = await import("./aiXemTruocApi");
   registerAiStreamingRoutes(app);
   registerAiLocalKnowledgeRoutes(app);
   registerObservabilityRoutes(app);
   registerAiAgentRoutes(app);
+  registerAiXemTruocRoutes(app);
   TUYEN = tuyen;
 
   const r = await db.createLocalUser({
@@ -402,6 +405,7 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
     "server/routes/aiLocalKnowledgeApi.ts",
     "server/routes/observabilityRoutes.ts",
     "server/routes/aiAgentApi.ts",
+    "server/routes/aiXemTruocApi.ts",
   ] as const;
 
   /**
@@ -573,12 +577,14 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
       // 2026-10-17: 55 + 2 AI Local (registerAiAgentRoutes — Đợt 1 T4, vào DA_GOI; registerAiGatewayTokenThietBiRoutes —
       // Đợt 4A, khai NGOAI_PHAM_VI) + 1 engineering (registerEdgeNodeRoutes, server/api/v1 — ô "file thứ 16" bên dưới
       // vẫn ĐỎ cho tới khi phiên engineering khai nó).
-    ).toBe(58);
+      // Đợt 3c (2026-10-17): +1 AI Local — registerAiXemTruocRoutes (cửa vào xem trước), vào DA_GOI ⇒ 59.
+    ).toBe(59);
     expect(
       REGISTRAR.length,
       "số registrar TUYẾN EXPRESS đã đổi — một registrar tuyến mới vừa xuất hiện, hoặc vị từ đã bị nới",
       // 2026-10-17: 25 + 2 AI Local (aiAgentApi, aiGatewayTokenThietBi) + 1 engineering (edgeNodeRoutes) — cùng bộ ba ở trên.
-    ).toBe(28);
+      // Đợt 3c: +1 (aiXemTruocApi) ⇒ 29.
+    ).toBe(29);
     expect(
       REGISTRAR.filter((d) => d.startsWith("server/_core/")).sort(),
       "ba registrar `_core/` mà bản trước KHÔNG BAO GIỜ thấy — chúng là lý do §6 được viết lại",

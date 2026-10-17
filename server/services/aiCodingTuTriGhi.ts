@@ -310,7 +310,7 @@ export async function chayLuotTuTriGhi(
   if (!execCtx) return rong("NO_EXEC_CONTEXT");
   if (!Number.isInteger(y.luot) || y.luot < 1 || y.luot > tran) return rong("LOOP_CAP");
 
-  const goc = phanGiaiGoc(y.projectId);
+  const goc = phanGiaiGoc(y.projectId, { id: user.id, role: user.role });
   if (!goc.ok) return rong("PROJECT_NOT_FOUND");
   const ctx: ToolExecContext = goc.goc ? { ...execCtx, projectRoot: goc.goc } : execCtx;
 

@@ -232,7 +232,7 @@ export async function goiToolMcp(ten: string, args: Record<string, unknown>): Pr
   if (!dt.ok) return { chu: `Chưa xác định được danh tính nên KHÔNG chạy gì cả.\n${dt.loi}`, loi: true };
 
   if (muc.toolThat === null) {
-    const ds = danhSachDuAnCli().map((d) => `${d.id}\t${d.ten}`);
+    const ds = danhSachDuAnCli(dt.danhTinh).map((d) => `${d.id}\t${d.ten}`);
     return { chu: ["ID\tTên", ...ds].join("\n"), loi: false };
   }
 

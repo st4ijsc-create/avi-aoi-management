@@ -383,6 +383,15 @@ export function dangTamDung(duong: string, bayGio: number, hetHanMs: number): bo
  * ⚠ PHẢI nghe `error`: `spawn` ENOENT (không có powershell.exe) phát sự kiện BẤT ĐỒNG BỘ; không ai
  *   nghe ⇒ `uncaughtException` ⇒ sập CẢ server ứng dụng vì một bộ giám sát.
  */
+/** Kịch bản khởi động vắng — lỗi HỆ THỐNG TỆP: giữ đường dẫn (giá trị chẩn đoán), bộ giám sát bắt nội bộ, không tới tRPC. */
+export class LoiKichBanKhoiDongVang extends Error {
+  readonly code = "KICH_BAN_KHOI_DONG_VANG" as const;
+  constructor(readonly duongDan: string) {
+    super(`không thấy kịch bản khởi động: ${duongDan}`);
+    this.name = "LoiKichBanKhoiDongVang";
+  }
+}
+
 export function khoiDongTachRoi(
   kichBan: string,
   o: {
@@ -391,7 +400,7 @@ export function khoiDongTachRoi(
     khiKetThuc?: (code: number | null, loi?: Error) => void;
   } = {},
 ): { pid: number | undefined } {
-  if (!fs.existsSync(kichBan)) throw new Error(`không thấy kịch bản khởi động: ${kichBan}`);
+  if (!fs.existsSync(kichBan)) throw new LoiKichBanKhoiDongVang(kichBan);
   const spawnFn = o.spawnFn ?? spawnThat;
   const con = spawnFn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kichBan], {
     cwd: o.cwd ?? path.resolve(path.dirname(kichBan), "..", ".."),
