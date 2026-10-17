@@ -94,7 +94,7 @@ interface Dung {
   ctx: (cheDo?: CheDoAgent) => NguCanhThucThi;
 }
 
-function dung(o: { mucQuyen?: MucQuyen; quyetDinh?: QuyetDinhDuyet; cookie?: string | undefined; apThat?: boolean; exit?: number } = {}): Dung {
+function dung(o: { mucQuyen?: MucQuyen; quyetDinh?: QuyetDinhDuyet; cookie?: string | undefined; apThat?: boolean; exit?: number; output?: string } = {}): Dung {
   const suKien: SuKienAgent[] = [];
   const duyet: YeuCauDuyet[] = [];
   const ap: DauVaoApBanVa[] = [];
@@ -113,7 +113,7 @@ function dung(o: { mucQuyen?: MucQuyen; quyetDinh?: QuyetDinhDuyet; cookie?: str
     checkpoint: () => so,
     chayLenh: async (dv) => {
       lenh.push(dv.lenh.argv);
-      return { ok: (o.exit ?? 0) === 0, output: "FAIL src/a.test.ts > cộng\nexpected 3, got 4", exitCode: o.exit ?? 0, signal: null, timedOut: false, daCatSom: false, durationMs: 5 };
+      return { ok: (o.exit ?? 0) === 0, output: o.output ?? "FAIL src/a.test.ts > cộng\nexpected 3, got 4", exitCode: o.exit ?? 0, signal: null, timedOut: false, daCatSom: false, durationMs: 5 };
     },
     ...(o.apThat
       ? {}
@@ -344,7 +344,7 @@ describe("BoThucThiVscode — lệnh + nhớ", () => {
     const d = dung({ exit: 1 });
     const kq = await d.bo.chay(goi("run_command", { command: "npx vitest run src/a.test.ts" }), d.ctx("sua"));
     expect(d.duyet[0]).toMatchObject({ loai: "lenh", lenh: "npx vitest run src/a.test.ts" });
-    expect(d.lenh).toEqual([["npx", "vitest", "run", "src/a.test.ts"]]);
+    expect(d.lenh).toEqual([["npx", "--no-install", "vitest", "run", "src/a.test.ts"]]);
     expect(kq.ok).toBe(false);
     expect(kq.choModel).toMatch(/^exit code: 1/);
     expect(kq.choModel).toContain("expected 3, got 4");
@@ -357,6 +357,38 @@ describe("BoThucThiVscode — lệnh + nhớ", () => {
     const kq = await d.bo.chay(goi("run_command", { command: "rm -rf /" }), d.ctx("tu-dong"));
     expect(kq.ma).toBe("LENH_KHONG_DUOC_PHEP");
     expect(d.lenh).toHaveLength(1);
+  });
+
+  it("★★★ RÀ BẢO MẬT — cờ ở vị trí <path> (vitest --update/--inspect-brk, dotnet -bl) ⇒ KHÔNG hỏi, KHÔNG chạy, kể cả tu-dong + tu_ghi", async () => {
+    const d = dung({ mucQuyen: "tu_ghi" });
+    for (const c of ["npx vitest run --update", "npx vitest run --inspect-brk", "dotnet build -bl", "dotnet test --blame", "git diff --output=x.txt"]) {
+      const kq = await d.bo.chay(goi("run_command", { command: c }), d.ctx("tu-dong"));
+      expect(kq.ma, c).toBe("LENH_KHONG_DUOC_PHEP");
+    }
+    expect(d.duyet).toHaveLength(0);
+    expect(d.lenh).toHaveLength(0);
+  });
+
+  it("★★★ RÀ BẢO MẬT — git diff: khối của tệp cấm (.env đã theo dõi) KHÔNG về model, KHÔNG lên thẻ", async () => {
+    const PAT = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    const output =
+      "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n+const a = 1;\n" +
+      `diff --git a/.env b/.env\n--- a/.env\n+++ b/.env\n@@ -1 +1 @@\n+GITHUB_PAT=${PAT}\n`;
+    const d = dung({ output });
+    const kq = await d.bo.chay(goi("run_command", { command: "git diff" }), d.ctx("sua"));
+    expect(kq.choModel).toContain("+const a = 1;");
+    expect(kq.choModel).not.toContain(PAT);
+    expect(JSON.stringify(kq.hienThi)).not.toContain(PAT);
+    expect(kq.choModel).toMatch(/\.env/);
+  });
+
+  it("★★★ RÀ BẢO MẬT — tu-dong + tu_ghi: lượt đã TỰ GHI tệp (không thẻ) ⇒ thẻ duyệt LỆNH phải nói rõ tệp đó (lệnh có thể chạy mã vừa ghi)", async () => {
+    const d = dung({ mucQuyen: "tu_ghi" });
+    await d.bo.chay(goi("write_file", { path: "package.json", content: '{"scripts":{"check":"node x.js"}}' }), d.ctx("tu-dong"));
+    expect(d.duyet).toHaveLength(0);
+    await d.bo.chay(goi("run_command", { command: "npm run check" }), d.ctx("tu-dong"));
+    expect(d.duyet).toHaveLength(1);
+    expect(d.duyet[0].tomTat).toContain("package.json");
   });
 
   it("★★★ remember ⇒ CHỈ phát đề xuất (đã che bí mật), không ghi gì", async () => {

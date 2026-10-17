@@ -155,11 +155,26 @@ describe("phiên agent — đầu cuối", () => {
   it("★★★ /commit: chạy git diff --staged (argv cố định), model ở chế độ CHỈ ĐỌC (không có tool ghi)", async () => {
     const d = dung(() => [{ loai: "chu", noiDung: "```text\nfeat: x\n```" }, { loai: "xong", toolCalls: [] }], { diffStaged: "+thêm dòng" });
     await d.phien.chay("/commit", "sua");
-    expect(d.lenh).toEqual([["git", "--no-pager", "diff", "--staged", "--", "."]]);
+    expect(d.lenh).toEqual([["git", "--no-pager", "-c", "core.fsmonitor=false", "diff", "--staged", "--no-ext-diff", "--no-textconv", "--no-color", "--", "."]]);
     const ten = d.vaoModel[0].congCu.map((t) => t.function.name);
     expect(ten).not.toContain("edit_file");
     expect(d.vaoModel[0].tinNhan.at(-1)!.content).toContain("+thêm dòng");
     expect(d.tin.some((m) => m.loai === "ag_thong_bao" && String(m.thongDiep).includes("không tự commit"))).toBe(true);
+  });
+
+  it("★★★ RÀ BẢO MẬT — /commit và @git: khối .env đã stage/theo dõi KHÔNG tới model; người dùng được CẢNH BÁO", async () => {
+    const PAT = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    const diff =
+      "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n+const a = 1;\n" +
+      `diff --git a/.env b/.env\n--- a/.env\n+++ b/.env\n@@ -1 +1 @@\n+GITHUB_PAT=${PAT}\n`;
+    for (const cau of ["/commit", "xem thay đổi @git"]) {
+      const d = dung(() => [{ loai: "chu", noiDung: "ok" }, { loai: "xong", toolCalls: [] }], { diffStaged: diff });
+      await d.phien.chay(cau, "sua");
+      const gui = JSON.stringify(d.vaoModel);
+      expect(gui, cau).toContain("+const a = 1;");
+      expect(gui, cau).not.toContain(PAT);
+      expect(d.tin.some((m) => m.loai === "ag_thong_bao" && String(m.thongDiep).includes(".env")), cau).toBe(true);
+    }
   });
 
   it("★★ /commit khi chưa stage gì ⇒ lỗi rõ, KHÔNG gọi model", async () => {

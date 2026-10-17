@@ -46,7 +46,7 @@
  * cũng cố định tuyệt đối. `npx vitest run <path>`/`dotnet build <path>`/`dotnet test <path>` nhận
  * ĐÚNG MỘT tham số ở cuối, phải qua `thamSoAnToan` (không tuyệt đối, không `..`, không ký tự shell).
  */
-import { isAbsolute } from "node:path";
+import { posix, win32 } from "node:path";
 
 /** Nhãn NGUYÊN VĂN của một lệnh trong allowlist — dùng để hiện trên thẻ duyệt (M3) và để lưới đối
  *  chiếu đúng khuôn đang được khai. */
@@ -97,7 +97,14 @@ function tachToken(chuoi: string): string[] {
  *     kể cả ký tự chưa ai nghĩ tới hôm nay — đây là khác biệt giữa "lọc-sau" và "không thể chèn");
  *   · tuyệt đối (`C:\...`, `/...`) — một lệnh test/build phải nhắm vào một đường TRONG workspace,
  *     không phải một đường tuỳ ý trên máy;
- *   · chứa đoạn `..` — chặn thoát khỏi workspace bằng đường tương đối ngược.
+ *   · chứa đoạn `..` — chặn thoát khỏi workspace bằng đường tương đối ngược;
+ *   · ★★★ (rà bảo mật 9d26ad568) BẮT ĐẦU BẰNG `-` — tham số "đường dẫn" mang hình dạng CỜ thì chương trình đích đọc nó
+ *     là CỜ, không phải đường: khuôn `npx vitest run <path>` vẫn đúng 4 token với `--update` (vitest GHI ĐÈ snapshot —
+ *     ghi đĩa không qua cửa ghi), `--inspect-brk` (mở cổng debugger Node: ai kết nối được là chạy mã), `--api`/`--ui`
+ *     (mở máy chủ cục bộ), `--watch` (treo tới trần giờ); `dotnet build -bl` ghi msbuild.binlog chứa CẢ biến môi trường.
+ *     Không chương trình nào trong allowlist cần một đường bắt đầu bằng `-` (muốn thì viết `./-x`).
+ *   · tuyệt đối theo BẤT KỲ nền tảng nào (`win32` HOẶC `posix`) — `isAbsolute` theo nền tảng đang chạy để lọt
+ *     `\\server\share\x` khi chạy trên Linux; fail-closed: chặn cả hai cách viết.
  * ⚠ Việc tệp/thư mục đó CÓ TỒN TẠI hay không KHÔNG được kiểm ở đây (module này THUẦN, không
  *   `node:fs`) — đó là việc của `mang/chayLenhCucBo.ts` lúc thực thi thật; `spawn` trên một đường
  *   không tồn tại chỉ đơn giản LỖI, không phải một lỗ an toàn.
@@ -105,10 +112,21 @@ function tachToken(chuoi: string): string[] {
 export function thamSoAnToan(thamSo: string): boolean {
   if (thamSo.length === 0) return false;
   if (!/^[A-Za-z0-9._/\\-]+$/.test(thamSo)) return false;
-  if (isAbsolute(thamSo)) return false;
+  if (thamSo.startsWith("-")) return false;
+  if (win32.isAbsolute(thamSo) || posix.isAbsolute(thamSo)) return false;
   if (thamSo.split(/[\\/]+/).includes("..")) return false;
   return true;
 }
+
+/**
+ * ★★★ (rà bảo mật 9d26ad568) Tiền tố CỐ ĐỊNH của mọi lệnh git. Git đọc CẤU HÌNH (kho, người dùng, hệ thống) để quyết
+ * định chạy CHƯƠNG TRÌNH NÀO KHÁC: `core.pager` (đã chặn bằng `--no-pager`), `core.fsmonitor` (chạy ở mỗi lần làm mới
+ * chỉ mục — một repo clone về có thể mang sẵn), `diff.external`/`GIT_EXTERNAL_DIFF` (diff ngoài), `diff.<driver>.textconv`
+ * (chọn qua `.gitattributes` — tệp model GHI ĐƯỢC). Các cờ dưới tắt đúng ba đường đó; `--no-color` giữ đầu ra là văn
+ * bản thô để `locDiffTepCam` đọc được tiêu đề `diff --git` kể cả khi người dùng đặt `color.diff=always`.
+ */
+const GIT_DAU = ["git", "--no-pager", "-c", "core.fsmonitor=false"] as const;
+const GIT_DIFF_CO = ["--no-ext-diff", "--no-textconv", "--no-color"] as const;
 
 /** Ghép argv thành một chuỗi hiển thị AN TOÀN cho thẻ duyệt — chỉ nối bằng dấu cách, không có
  *  bước diễn giải nào; đây là NHÃN, không phải thứ đưa lại cho `spawn` (spawn nhận mảng `argv`). */
@@ -153,13 +171,13 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
   if (token.length === 2 && token[0] === "git" && token[1] === "status") {
     return {
       ok: true,
-      lenh: { ten: "git_status", argv: ["git", "--no-pager", "status", "--", "."], hienThi: "git status" },
+      lenh: { ten: "git_status", argv: [...GIT_DAU, "status", "--", "."], hienThi: "git status" },
     };
   }
   if (token.length === 2 && token[0] === "git" && token[1] === "diff") {
     return {
       ok: true,
-      lenh: { ten: "git_diff", argv: ["git", "--no-pager", "diff", "--", "."], hienThi: "git diff" },
+      lenh: { ten: "git_diff", argv: [...GIT_DAU, "diff", ...GIT_DIFF_CO, "--", "."], hienThi: "git diff" },
     };
   }
 
@@ -170,7 +188,7 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
       ok: true,
       lenh: {
         ten: "git_diff_staged",
-        argv: ["git", "--no-pager", "diff", "--staged", "--", "."],
+        argv: [...GIT_DAU, "diff", "--staged", ...GIT_DIFF_CO, "--", "."],
         hienThi: "git diff --staged",
       },
     };
@@ -189,8 +207,13 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
     if (!thamSoAnToan(token[3])) {
       return { ok: false, lyDo: `tham số đường dẫn không an toàn: "${token[3]}"` };
     }
-    const argv = ["npx", "vitest", "run", token[3]];
-    return { ok: true, lenh: { ten: "vitest_run", argv, hienThi: hienThiArgv(argv) } };
+    // ★★★ (rà bảo mật 9d26ad568) `--no-install`: dự án CHƯA cài vitest thì `npx vitest` TẢI gói từ registry rồi CHẠY
+    // nó — và vì stdin của tiến trình con là "ignore" (không phải TTY), npx tự coi như `--yes`, không hỏi ai. Đo trên
+    // npm 11: `npx --no-install cowsay` ⇒ "npx canceled due to missing packages and no YES option", exit 1.
+    // ⚠ `hienThi` giữ dạng NGƯỜI GÕ (4 token), không ghép từ argv: `bangChat.ts` XÉT LẠI allowlist trên chính `hienThi`
+    // đã lưu — nhãn 5 token sẽ tự bị từ chối. Như nhãn `git status`/`git diff`: nhãn là lệnh khớp khuôn, argv là thứ chạy.
+    const argv = ["npx", "--no-install", "vitest", "run", token[3]];
+    return { ok: true, lenh: { ten: "vitest_run", argv, hienThi: `npx vitest run ${token[3]}` } };
   }
 
   // ── dotnet build <path> ────────────────────────────────────────────────────────────────────

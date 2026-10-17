@@ -188,7 +188,7 @@ describe("ĐỢT M — HÀNG RÀO 1: cửa duyệt (mặc định hỏi trước
     await new Promise((r) => setTimeout(r, 0));
 
     expect(may.chayLenhCucBoGoiVoi).toHaveLength(1);
-    expect(may.chayLenhCucBoGoiVoi[0]!.lenh.argv).toEqual(["git", "--no-pager", "status", "--", "."]);
+    expect(may.chayLenhCucBoGoiVoi[0]!.lenh.argv).toEqual(["git", "--no-pager", "-c", "core.fsmonitor=false", "status", "--", "."]);
     expect(may.chayLenhCucBoGoiVoi[0]!.cwd).toBe(WS);
   });
 

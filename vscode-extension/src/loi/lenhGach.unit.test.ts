@@ -2,7 +2,7 @@
  * ★★★ ĐỢT 4B — lưới lệnh gạch (/fix /test /explain /commit) + dựng ngữ cảnh agent (thẻ @, tệp quy ước, bộ nhớ).
  */
 import { describe, it, expect } from "vitest";
-import { docLenhGach, dungCauHoiLenhGach } from "./lenhGach";
+import { docLenhGach, dungCauHoiLenhGach, TRAN_KY_TU_DIFF_LENH_GACH, TRAN_KY_TU_VUNG_CHON_LENH_GACH } from "./lenhGach";
 import { docTheDacBiet, dungCauHoiAgent, dungNguCanhDuAnExtension } from "./nguCanhAgent";
 
 describe("lệnh gạch", () => {
@@ -35,6 +35,58 @@ describe("lệnh gạch", () => {
     expect(kq).toMatchObject({ ok: true, cheDo: "hoi" });
     expect(kq.ok && kq.cauHoi).toMatch(/do not commit/);
     expect(kq.ok && kq.cauHoi).toContain("+a");
+  });
+});
+
+/**
+ * ★★★ RÀ BẢO MẬT 9d26ad568 — sensitive-data-exposure ở lệnh gạch. Đường câu hỏi THƯỜNG (`dungCauHoiAgent`) che vùng
+ * chọn/@problems/@git; đường LỆNH GẠCH thì nối THẲNG `vungChon.noiDung`, `chanDoan`, `them`, và tin `diffStaged`
+ * "đã che ở tầng I/O" — tầng I/O chỉ `cheBiMat`, không loại khối của tệp cấm (`.env` lỡ stage), và không ai cảnh báo.
+ */
+describe("★★★ RÀ BẢO MẬT — lệnh gạch không gửi bí mật", () => {
+  const KHOA = "sk-abcdefghijklmnopqrstuvwxyz0123";
+  const PAT = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+  it("vùng chọn của /fix /test /explain ⇒ đã che", () => {
+    for (const ten of ["fix", "test", "explain"] as const) {
+      const kq = dungCauHoiLenhGach(
+        { ten, them: "" },
+        { cheDoChon: "sua", tepDangMo: "src/a.ts", soLoi: 1, chanDoan: "x", vungChon: { dongDau: 1, dongCuoi: 1, noiDung: `const k = "${KHOA}";` } },
+      );
+      expect(kq.ok, ten).toBe(true);
+      expect(kq.ok && kq.cauHoi, ten).not.toContain(KHOA);
+    }
+  });
+  it("chẩn đoán + phần thêm của người dùng ⇒ đã che", () => {
+    const kq = dungCauHoiLenhGach(
+      { ten: "fix", them: `dùng token=${KHOA}` },
+      { cheDoChon: "sua", tepDangMo: "src/a.ts", soLoi: 1, chanDoan: `src/a.ts:1:1 error: Type '"${KHOA}"' is not assignable` },
+    );
+    expect(kq.ok && kq.cauHoi).not.toContain(KHOA);
+  });
+  it("/commit: khối của .env đã stage bị LOẠI (kể cả bí mật không có hình dạng khoá) + cảnh báo người dùng; tệp mã giữ nguyên", () => {
+    const diff =
+      "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n+const a = 1;\n" +
+      `diff --git a/.env b/.env\nnew file mode 100644\n--- /dev/null\n+++ b/.env\n@@ -0,0 +1 @@\n+GITHUB_PAT=${PAT}\n`;
+    const kq = dungCauHoiLenhGach({ ten: "commit", them: "" }, { cheDoChon: "sua", diffStaged: diff });
+    expect(kq.ok).toBe(true);
+    if (!kq.ok) return;
+    expect(kq.cauHoi).not.toContain(PAT);
+    expect(kq.cauHoi).toContain("+const a = 1;");
+    expect(kq.canhBao).toMatch(/\.env/);
+  });
+  it("/commit: bí mật có hình dạng khoá trong tệp mã ⇒ che; diff khổng lồ ⇒ cắt theo trần, khai rõ", () => {
+    const dong = `+const k = "${KHOA}";\n`;
+    const diff = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n" + dong.repeat(5000);
+    const kq = dungCauHoiLenhGach({ ten: "commit", them: "" }, { cheDoChon: "sua", diffStaged: diff });
+    expect(kq.ok && kq.cauHoi).not.toContain(KHOA);
+    expect(kq.ok && kq.cauHoi.length).toBeLessThan(TRAN_KY_TU_DIFF_LENH_GACH + 2000);
+    expect(kq.ok && kq.cauHoi).toMatch(/cut/);
+    expect(kq.ok && kq.canhBao).toBeUndefined();
+  });
+  it("vùng chọn khổng lồ ⇒ cắt theo trần, khai rõ", () => {
+    const kq = dungCauHoiLenhGach({ ten: "explain", them: "" }, { cheDoChon: "hoi", tepDangMo: "a.ts", vungChon: { dongDau: 1, dongCuoi: 9, noiDung: "x".repeat(200_000) } });
+    expect(kq.ok && kq.cauHoi.length).toBeLessThan(TRAN_KY_TU_VUNG_CHON_LENH_GACH + 2000);
+    expect(kq.ok && kq.cauHoi).toMatch(/cut/);
   });
 });
 

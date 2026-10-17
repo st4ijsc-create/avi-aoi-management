@@ -40,6 +40,7 @@ import { cheBiMat, duocPhepRoiMay } from "../loi/nguCanh";
 import { chuanHoaMucQuyen, type MucQuyen } from "../loi/mucQuyen";
 import { xetDuyetLenh, TRAN_MS_THEO_LENH } from "../loi/lenhChoPhep";
 import { dinhDangKetQuaLenh } from "../loi/dinhDangKetQuaLenh";
+import { locDiffTepCam } from "../loi/locDiffTepCam";
 import { chayLenhCucBo as chayLenhCucBoThat } from "../mang/chayLenhCucBo";
 import { LOAI_TRU, gocDaGiai, locUngVien, nhanGon, quyVeDuongThat } from "../mang/toolCucBo";
 import { dinhDangChanDoan, dinhDangDocFile, grepTrenTep, type MucChanDoan, type TepQuet } from "../loi/congCuDoc";
@@ -564,17 +565,32 @@ export class BoThucThiVscode implements BoThucThi {
       return loiModel('Command not run: the permission level is "read-only" (Chỉ đọc).', "CHI_DOC");
     }
     const cwd = this.pt.goc()[0];
-    ctx.phat({ loai: "can-duyet", id: goi.id, deXuat: { ten: goi.ten, thamSo: { command: xet.lenh.hienThi }, moTa: `Chạy: ${xet.lenh.hienThi}` } });
-    const qd = await this.choDuyet({ id: goi.id, loai: "lenh", ten: goi.ten, lenh: xet.lenh.hienThi, tomTat: `Chạy lệnh: ${xet.lenh.hienThi}` }, ctx.signal);
+    // ★★★ (rà bảo mật 9d26ad568) Lệnh trong allowlist CHẠY MÃ CỦA WORKSPACE (`npm run check` ⇒ script trong package.json /
+    // `.npmrc script-shell`; vitest ⇒ vitest.config + tệp test; dotnet ⇒ .csproj / Directory.Build.*). Ở `tu-dong` +
+    // `tu_ghi` model GHI các tệp đó KHÔNG qua thẻ, rồi xin chạy một lệnh trông vô hại — thẻ "Chạy lệnh: npm run check"
+    // mô tả SAI cái sắp chạy. Thẻ lệnh phải kể các tệp lượt này đã ghi để người duyệt biết lệnh sẽ chạy mã nào.
+    const daGhi = this.pt.checkpoint().danhSach().map((m) => m.duongTuongDoi);
+    const ghiChuGhi = daGhi.length
+      ? ` — ⚠ lượt này đã ghi ${daGhi.length} tệp (${daGhi.slice(0, 8).join(", ")}${daGhi.length > 8 ? ", …" : ""}); lệnh có thể chạy mã từ các tệp đó`
+      : "";
+    ctx.phat({ loai: "can-duyet", id: goi.id, deXuat: { ten: goi.ten, thamSo: { command: xet.lenh.hienThi }, moTa: `Chạy: ${xet.lenh.hienThi}${ghiChuGhi}` } });
+    const qd = await this.choDuyet(
+      { id: goi.id, loai: "lenh", ten: goi.ten, lenh: xet.lenh.hienThi, tomTat: `Chạy lệnh: ${xet.lenh.hienThi}${ghiChuGhi}` },
+      ctx.signal,
+    );
     if (!qd.duyet) {
       ctx.phat({ loai: "bi-bac", id: goi.id, ...(qd.lyDo ? { lyDo: qd.lyDo } : {}) });
       return loiModel(`The user rejected running "${xet.lenh.hienThi}"${qd.lyDo ? `. Reason: ${cheBiMat(qd.lyDo)}` : ""}.`, "BI_BAC");
     }
     ctx.phat({ loai: "da-duyet", id: goi.id });
     const kq = await (this.pt.chayLenh ?? chayLenhCucBoThat)({ lenh: xet.lenh, cwd, tranMs: TRAN_MS_THEO_LENH[xet.lenh.ten] });
+    // ★★★ (rà bảo mật 9d26ad568) `git diff` in nguyên văn tệp đã theo dõi — kể cả `.env`/khoá lỡ `git add -f`; `cheBiMat`
+    // không bắt được bí mật không có hình dạng khoá ⇒ loại CẢ khối của tệp cấm ở tầng TỆP trước khi che.
+    const laDiff = xet.lenh.ten === "git_diff" || xet.lenh.ten === "git_diff_staged";
+    const loc = laDiff ? locDiffTepCam(kq.output) : { diff: kq.output, tepBiLoai: [] as string[] };
     const vanBan = dinhDangKetQuaLenh({
       lenhHienThi: xet.lenh.hienThi,
-      output: kq.output,
+      output: loc.diff,
       exitCode: kq.exitCode,
       timedOut: kq.timedOut,
       daCatSomODongChay: kq.daCatSom,

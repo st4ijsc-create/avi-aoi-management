@@ -44,6 +44,7 @@ import { duongTuongDoiTrongWorkspace } from "../loi/chanGhi";
 import { duocPhepDoc } from "../loi/docCucBo";
 import { cheBiMat, duocPhepRoiMay } from "../loi/nguCanh";
 import { xetDuyetLenh, TRAN_MS_THEO_LENH } from "../loi/lenhChoPhep";
+import { locDiffTepCam } from "../loi/locDiffTepCam";
 import { docDanhSachBoNho, themMucBoNho } from "../loi/khoBoNho";
 import { chayLenhCucBo as chayLenhCucBoThat } from "../mang/chayLenhCucBo";
 import { gocDaGiai, nhanGon, quyVeDuongThat } from "../mang/toolCucBo";
@@ -202,6 +203,7 @@ export class PhienAgent {
         }
         cauHoi = kq.cauHoi;
         cheDo = kq.cheDo;
+        if (kq.canhBao) this.pt.gui({ loai: "ag_thong_bao", thongDiep: kq.canhBao });
         if (gach.ten === "commit") this.pt.gui({ loai: "ag_thong_bao", thongDiep: "/commit chỉ SINH thông điệp — extension không tự commit." });
       } else {
         const the = docTheDacBiet(cauHoiTho);
@@ -601,18 +603,31 @@ export class PhienAgent {
     return dinhDangChanDoan(ds, "workspace");
   }
 
-  /** Lệnh ĐỌC do NGƯỜI DÙNG chủ động gọi (@git, /commit) — argv cố định từ allowlist, không qua model. */
+  /**
+   * Lệnh ĐỌC do NGƯỜI DÙNG chủ động gọi (@git) — argv cố định từ allowlist, không qua model.
+   * ★★★ (rà bảo mật 9d26ad568) loại khối tệp cấm (`.env` đã theo dõi…) TRƯỚC khi che + cắt, và báo người dùng.
+   */
   private async chayLenhDoc(lenh: string, cwd: string): Promise<string> {
     const xet = xetDuyetLenh(lenh);
     if (!xet.ok) return `(không chạy được: ${xet.lyDo})`;
     const kq = await (this.pt.chayLenh ?? chayLenhCucBoThat)({ lenh: xet.lenh, cwd, tranMs: TRAN_MS_THEO_LENH[xet.lenh.ten] });
-    if (!kq.ok) return `(lệnh "${lenh}" hỏng, exit ${kq.exitCode ?? "?"}: ${cheBiMat(kq.output.slice(0, 500))})`;
-    const ra = cheBiMat(kq.output);
+    if (!kq.ok) return `(lệnh "${lenh}" hỏng, exit ${kq.exitCode ?? "?"}: ${cheBiMat(locDiffTepCam(kq.output).diff.slice(0, 500))})`;
+    const loc = locDiffTepCam(kq.output);
+    if (loc.tepBiLoai.length) {
+      this.pt.gui({
+        loai: "ag_thong_bao",
+        thongDiep: `⚠ "${lenh}" có ${loc.tepBiLoai.length} tệp nhạy cảm (${loc.tepBiLoai.slice(0, 10).map((p) => `"${cheBiMat(p)}"`).join(", ")}) — nội dung của chúng KHÔNG được gửi cho model.`,
+      });
+    }
+    const ra = cheBiMat(loc.diff);
     return ra.length > TRAN_DIFF_STAGED ? `${ra.slice(0, TRAN_DIFF_STAGED)}\n…[diff cut]` : ra;
   }
 
+  /** `/commit`: trả đầu ra THÔ — `dungCauHoiLenhGach` là cửa chót (loại tệp cấm + che + cắt + cảnh báo người dùng). */
   private async diffStaged(cwd: string): Promise<string> {
-    const s = await this.chayLenhDoc("git diff --staged", cwd);
-    return s.startsWith("(lệnh") || s.startsWith("(không") ? "" : s;
+    const xet = xetDuyetLenh("git diff --staged");
+    if (!xet.ok) return "";
+    const kq = await (this.pt.chayLenh ?? chayLenhCucBoThat)({ lenh: xet.lenh, cwd, tranMs: TRAN_MS_THEO_LENH[xet.lenh.ten] });
+    return kq.ok ? kq.output : "";
   }
 }
