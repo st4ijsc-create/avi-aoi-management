@@ -52,7 +52,15 @@ const GOC = join(__dirname, "..");
  *   là tự chọc mù chính mình. Ca "tập quét phủ hết tệp ngoài-cây đang được import" bên dưới canh
  *   đúng điều đó — nó đọc `src/` tìm import vượt lên `../..` và so với danh sách này.
  */
-const TEP_NGOAI_CAY_VAO_BUNDLE = [join(GOC, "..", "..", "shared", "aiCodingLoop.ts")];
+/**
+ * ★★★ ĐỢT 4B (2026-10-17) — extension chạy LÕI AGENT DÙNG CHUNG (`shared/agentCore`, quyết định Q2-A) ⇒ sáu tệp
+ * thuần của lõi vào bundle. Lõi thuần (lưới `shared/agentCore/thuan.test.ts`: không `node:*`, không `vscode`), nhưng
+ * "thuần" là lời khai của MỘT lưới khác — census vẫn phải QUÉT chúng như mọi tệp vào bundle.
+ */
+const TEP_NGOAI_CAY_VAO_BUNDLE = [
+  join(GOC, "..", "..", "shared", "aiCodingLoop.ts"),
+  ...["index", "kieu", "congCu", "loiNhac", "nguCanh", "vongAgent"].map((t) => join(GOC, "..", "..", "shared", "agentCore", `${t}.ts`)),
+];
 
 /** Mọi `.ts` dưới `src/`, loại CHÍNH TỆP CENSUS này (xem lý do ở docblock trên). */
 function moiTepTs(dir: string): string[] {
@@ -127,6 +135,17 @@ function laTepLuoi(p: string): boolean {
  * `.renameFile(` đã bị `rename` phủ.
  * ⚠ Mỗi từ thêm ở đây ĐÃ ĐƯỢC ĐO = 0 trên toàn tập vào bundle NGAY TRƯỚC khi thêm.
  */
+/*
+ * ★★★ ĐỢT 4B (2026-10-17) — HAI THAY ĐỔI, CẢ HAI ĐO TRƯỚC KHI ĐỔI:
+ * (1) Từ thô "rename" ⇒ BỐN dạng GỌI cụ thể ("fs.rename", "renameSync", ".rename(", "promises.rename"). Lý do: lõi
+ *     agent dùng chung khai tool tên `rename_file` (dữ liệu cho model, `shared/agentCore/congCu.ts`) và lời nhắc hệ
+ *     thống viết chữ "rename" — từ thô sẽ đỏ VĨNH VIỄN vì một chuỗi DỮ LIỆU, buộc người sau nới lưới. Bốn dạng gọi
+ *     trên phủ mọi cách Node đổi tên tệp (callback · sync · `fs.promises` · destructure rồi gọi); đo = 0 trên toàn
+ *     tập vào bundle lúc đổi. Phép đổi tên HỢP LỆ duy nhất (đối tượng chỉnh-sửa của VSCode) bị đếm ĐÚNG MỘT lần ở
+ *     `GHI_DUNG_MOT_LAN`.
+ * (2) ".deleteFile(" rời danh sách CẤM sang danh sách ĐÚNG MỘT (cùng ".createFile(" và ".renameFile("): Đợt 4B mở
+ *     thao tác tệp qua ĐÚNG điểm ghi `ui/apBanVa.ts`. Đúng khuôn lưới này dặn: "= 0" ⇒ "đúng MỘT, tại đúng tệp".
+ */
 const CAM_TU = [
   "fs.writeFile",
   "writeFileSync",
@@ -134,7 +153,11 @@ const CAM_TU = [
   // I-2 — dạng destructure (`import { writeFile } from "node:fs/promises"`) không chứa "fs.writeFile"
   "writeFile",
   "createWriteStream",
-  "rename",
+  // ★★★ ĐỢT 4B — từ thô "rename" ⇒ bốn dạng GỌI (xem docblock ĐỢT 4B ngay trên `CAM_TU`).
+  "fs.rename",
+  "renameSync",
+  ".rename(",
+  "promises.rename",
   "truncate",
   "cp(",
   // `editor.edit(...)` ghi thẳng vào bộ đệm, KHÔNG qua đối tượng chỉnh-sửa ⇒ lọt mọi phép đếm dưới.
@@ -144,8 +167,8 @@ const CAM_TU = [
   "fs.delete(",
   // F4 — chép đè. Đối xứng với `cp(` đã có; `fs.copy(` là tập con của mẫu này.
   "copy(",
-  // F4 — XOÁ tệp qua CHÍNH lời gọi áp-chỉnh-sửa mà phép đếm dưới coi là hợp lệ ⇒ không đụng số đếm.
-  ".deleteFile(",
+  // F4 — ".deleteFile(" từng nằm ở đây (xoá qua chính lời gọi áp-chỉnh-sửa ⇒ không đụng số đếm). ĐỢT 4B mở thao tác
+  // xoá qua ĐÚNG điểm ghi ⇒ nó chuyển sang `GHI_DUNG_MOT_LAN` (đúng MỘT lần, tại `ui/apBanVa.ts`) — vẫn có răng.
 ];
 
 /**
@@ -184,6 +207,10 @@ const CAM_TU = [
 const GHI_DUNG_MOT_LAN: Array<{ tu: string; tep: string }> = [
   { tu: "applyEdit", tep: "ui/apBanVa.ts" },
   { tu: "WorkspaceEdit", tep: "ui/apBanVa.ts" },
+  // ★★★ ĐỢT 4B — tạo/xoá/đổi tên tệp: ĐÚNG MỘT lần mỗi phép, cùng đối tượng chỉnh-sửa, cùng lời gọi áp duy nhất.
+  { tu: ".createFile(", tep: "ui/apBanVa.ts" },
+  { tu: ".deleteFile(", tep: "ui/apBanVa.ts" },
+  { tu: ".renameFile(", tep: "ui/apBanVa.ts" },
 ];
 
 describe("census — không đường ghi ĐĨA nào ngoài ĐÚNG MỘT điểm ghi", () => {

@@ -76,3 +76,43 @@ export function giaiDuongThat(duong: string): KetQuaGiaiDuong {
     };
   }
 }
+
+/**
+ * ★★★ ĐỢT 4B — giải đường thật cho một tệp SẼ TẠO (hoặc đích đổi tên) mà các THƯ MỤC CHA có thể chưa tồn tại
+ * (`src/moi/a.ts` khi `src/moi/` chưa có). `giaiDuongThat` từ chối ca đó (cha không giải được) — đúng cho đường
+ * sửa, quá chặt cho đường tạo.
+ *
+ * Cách giải: leo lên tới TỔ TIÊN GẦN NHẤT đang tồn tại, giải đường thật của tổ tiên ấy (symlink/junction được giải
+ * ⇒ phép so ranh giới workspace vẫn so trên đường THẬT), rồi nối lại các thành phần chưa tồn tại (chúng chưa tồn
+ * tại nên không thể là liên kết). ⚠ Chỉ rơi xuống nhánh này khi KHÔNG có gì ở chính đường đích (`lstat` ném):
+ * một liên kết HỎNG ở đích vẫn bị `giaiDuongThat` từ chối như cũ.
+ */
+export function giaiDuongThatChoTaoMoi(duong: string): KetQuaGiaiDuong {
+  const r = giaiDuongThat(duong);
+  if (r.ok || !isAbsolute(duong)) return r;
+  try {
+    lstatSync(duong);
+    return r; // có thứ gì đó ở đích (vd liên kết hỏng) ⇒ giữ nguyên lời từ chối
+  } catch {
+    /* đích chưa tồn tại ⇒ leo lên */
+  }
+  const phan: string[] = [];
+  let hienTai = duong;
+  for (let i = 0; i < 128; i++) {
+    const cha = dirname(hienTai);
+    if (cha === hienTai) return r;
+    phan.unshift(basename(hienTai));
+    hienTai = cha;
+    try {
+      lstatSync(hienTai);
+    } catch {
+      continue;
+    }
+    try {
+      return { ok: true, duong: join(realpathSync(hienTai), ...phan) };
+    } catch (e) {
+      return { ok: false, lyDo: `không giải được đường thật của "${hienTai}" (${maLoi(e)})` };
+    }
+  }
+  return r;
+}

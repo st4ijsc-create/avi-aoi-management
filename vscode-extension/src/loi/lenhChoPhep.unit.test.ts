@@ -133,3 +133,14 @@ describe("TRAN_MS_THEO_LENH — mỗi khuôn có một trần thời gian dươn
     }
   });
 });
+
+describe("ĐỢT 4B — git diff --staged (cho /commit)", () => {
+  it("★★★ đúng 3 token ⇒ argv cố định có --staged và giới hạn '-- .'", () => {
+    const kq = xetDuyetLenh("git diff --staged");
+    expect(kq.ok && kq.lenh.argv).toEqual(["git", "--no-pager", "diff", "--staged", "--", "."]);
+  });
+  it("★★ thêm tham số ⇒ từ chối (không thương lượng)", () => {
+    expect(xetDuyetLenh("git diff --staged HEAD").ok).toBe(false);
+    expect(xetDuyetLenh("git diff --cached").ok).toBe(false);
+  });
+});

@@ -108,7 +108,7 @@ export type KetQuaToolCucBo = { ok: true; ketQua: string } | { ok: false; lyDo: 
  * TÍN HIỆU (model đọc `node_modules` thì hỏng câu trả lời), KHÔNG phải chuyện an toàn — an toàn do
  * `duocPhepGuiNoiDung` + `cheBiMat` lo. Đừng bao giờ đổi vai hai thứ đó cho nhau.
  */
-const LOAI_TRU = "**/{node_modules,.git,dist,build,out,bin,obj,.next,.nuxt,coverage,.venv,venv,vendor,target,.gradle}/**";
+export const LOAI_TRU = "**/{node_modules,.git,dist,build,out,bin,obj,.next,.nuxt,coverage,.venv,venv,vendor,target,.gradle}/**";
 
 /** Trần SỐ TỆP mà một lượt `findFiles` được trả về. Chạm trần ⇒ KHAI (xem `tapNguonBiCat`). */
 const TRAN_TIM_LIET_KE = TRAN_MUC_LIET_KE * 8;
@@ -120,7 +120,7 @@ const TRAN_BYTE_TEP_QUET = 1024 * 1024;
 const TRAN_BYTE_MO_TEP = 16 * 1024 * 1024;
 
 /** Giải các gốc workspace về đường THẬT — cùng hệ quy chiếu với đường đích đã giải (hàng rào 2). */
-function gocDaGiai(thuMucWorkspace: string[]): string[] {
+export function gocDaGiai(thuMucWorkspace: string[]): string[] {
   const ra: string[] = [];
   for (const ws of thuMucWorkspace) {
     const g = giaiDuongThat(ws);
@@ -130,14 +130,14 @@ function gocDaGiai(thuMucWorkspace: string[]): string[] {
 }
 
 /** Hàng rào 1 + 2 cho đường do MODEL khai. */
-function quyVeDuongThat(duongModel: string, gocThat: string[]): { ok: true; duong: string } | { ok: false; lyDo: string } {
+export function quyVeDuongThat(duongModel: string, gocThat: string[]): { ok: true; duong: string } | { ok: false; lyDo: string } {
   const deXuat = giaiDuongDeXuat(duongModel, gocThat[0], gocThat, (p) => existsSync(p));
   if (!deXuat.ok) return deXuat;
   return giaiDuongThat(deXuat.duong);
 }
 
 /** Nhãn hiện cho model: đường TƯƠNG ĐỐI trong workspace, rơi về đường thật nếu không gốc nào chứa. */
-function nhanGon(duongThat: string, gocThat: string[]): string {
+export function nhanGon(duongThat: string, gocThat: string[]): string {
   return duongTuongDoiTrongWorkspace(duongThat, gocThat)?.duongTuongDoi ?? duongThat;
 }
 
@@ -156,7 +156,7 @@ function nhanGon(duongThat: string, gocThat: string[]): string {
  * ⚠ Chỉ đếm phần bị loại vì NHẠY CẢM, không đếm phần thoát ra ngoài workspace (symlink) — cái sau
  *   vốn không thuộc dự án.
  */
-function locUngVien(
+export function locUngVien(
   uris: readonly vscode.Uri[],
   gocThat: string[],
 ): { giu: UngVienQuet[]; soNhayCam: number } {

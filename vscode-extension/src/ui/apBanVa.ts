@@ -83,25 +83,48 @@
  * một lượt ghi — với `files.autoSave` bật hoặc chỉ một cú Ctrl+S sau đó, byte của AI vẫn xuống đĩa
  * trong khi sổ đã đóng lại là "không có gì xảy ra". Đây là lỗ đã có thật, vá 2026-08-29.
  *
- * ⚠ NGOÀI PHẠM VI (nói thẳng, không giả vờ): **KHÔNG tạo tệp mới**. Đợt này chỉ sửa tệp ĐÃ CÓ.
- *   Tạo tệp cần một lối ghi THỨ HAI (`.createFile()` của cùng đối tượng chỉnh-sửa) và một nhánh
- *   băm-gốc-rỗng riêng — hai thứ đều nới rộng đúng bề mặt mà tệp này sinh ra để thu hẹp. Đề xuất
- *   trỏ vào tệp chưa tồn tại bị từ chối RÀNH MẠCH ở bước 3, không im lặng.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 4B (2026-10-17) — MỘT CỬA, NHIỀU THAO TÁC: SỬA · TẠO · XOÁ · ĐỔI TÊN
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Lõi agent dùng chung (`shared/agentCore`) gọi `edit_file`/`write_file`/`delete_file`/`rename_file` trên NHIỀU tệp
+ * mỗi lượt chạy. Tất cả vẫn đi qua ĐÚNG hàm này (`thaoTac`), và mọi byte vẫn đi qua ĐÚNG MỘT lời gọi áp-chỉnh-sửa
+ * (`apChinhSua` bên dưới — đối tượng chỉnh-sửa được dựng ở đúng một chỗ, ba phép tạo/xoá/đổi-tên của nó xuất hiện
+ * đúng một lần mỗi phép, census đếm cả ba). Mỗi thao tác tệp có đủ chuỗi bước của tệp này, áp theo ngữ nghĩa riêng:
+ *   · tạo     — đích KHÔNG được tồn tại (đo bằng `fs.stat`, không suy); thư mục cha chưa có được giải qua tổ tiên
+ *               gần nhất (`giaiDuongThatChoTaoMoi`); sổ: băm trước = băm chuỗi rỗng.
+ *   · xoá     — băm đĩa phải khớp băm lúc đề xuất; bộ đệm bẩn ⇒ từ chối; sổ: băm sau = băm chuỗi rỗng.
+ *   · đổi tên — nguồn khớp băm, đích chưa tồn tại, cả HAI đường qua `duocPhepGhi` trên đường THẬT.
+ * Kết cục vẫn chỉ là một trong BA lời khai (đã ghi · không ghi gì · chưa rõ), luôn dựa trên phép ĐỌC LẠI đĩa.
+ * Thêm một hàng rào cho mọi thao tác sinh nội dung: dấu che MỚI (`[REDACTED_…]`, `«đã che»`) ⇒ từ chối
+ * (`loi/chanDaChe.ts`, kế hoạch 4.7).
  */
 import * as vscode from "vscode";
 import type { DeXuatCucBo } from "../loi/deXuatCucBo";
 import { bamNoiDung, khopBanGoc } from "../loi/bamTep";
 import { duocPhepGhi } from "../loi/chanGhi";
-import { giaiDuongThat } from "../loi/duongThat";
+import { giaiDuongThat, giaiDuongThatChoTaoMoi } from "../loi/duongThat";
+import { dauCheMoi, lyDoDauCheMoi } from "../loi/chanDaChe";
 import { eolLanLon } from "../loi/eolLanLon";
 import { ghepBanVa } from "../loi/ghepBanVa";
 import { chuanHoaMucQuyen, duocPhepGhiTheoMucQuyen, type MucQuyen } from "../loi/mucQuyen";
 import { tomTatDiff } from "../loi/tomTatDiff";
 import { goiBatDauApClient, goiChotApClient } from "../mang/duyetGhi";
 
+/**
+ * ★★★ ĐỢT 4B — thao tác của lõi agent. `thay` = sửa tệp ĐÃ CÓ bằng nội dung mới đã tính (edit_file/write_file);
+ * `tao` = tệp MỚI; `xoa`; `doi-ten` (đích tuyệt đối CHƯA giải symlink + tương đối để khai sổ).
+ */
+export type ThaoTacGhi =
+  | { loai: "thay"; noiDungMoi: string }
+  | { loai: "tao"; noiDungMoi: string }
+  | { loai: "xoa" }
+  | { loai: "doi-ten"; duongDichTuyetDoi: string; duongDichTuongDoi: string };
+
 export interface DauVaoApBanVa {
-  /** Đề xuất đã đọc từ văn bản model (`loi/deXuatCucBo.ts`). */
-  deXuat: DeXuatCucBo;
+  /** Đề xuất đã đọc từ văn bản model (`loi/deXuatCucBo.ts`) — đường cũ (Cmd+K / chat cũ). */
+  deXuat?: DeXuatCucBo;
+  /** ★★★ ĐỢT 4B — thao tác của lõi agent; có mặt thì THẮNG `deXuat`. */
+  thaoTac?: ThaoTacGhi;
   /** Đường TUYỆT ĐỐI đã ghép từ gốc workspace + `deXuat.path` (chưa giải symlink — bước 1 lo). */
   duongTuyetDoi: string;
   /** Đường TƯƠNG ĐỐI để khai lên sổ kiểm toán — máy chủ KHÔNG nhận đường tuyệt đối máy dev. */
@@ -134,6 +157,11 @@ export interface KetQuaApBanVa {
    */
   ok: boolean;
   thongDiep: string;
+  /**
+   * ★★★ ĐỢT 4B — băm ĐO ĐƯỢC trên đĩa sau lượt ghi thành công (`null` = tệp không còn ở đường này: đã xoá / đã đổi
+   * tên đi). Checkpoint dùng nó để biết lúc hoàn tác tệp còn đúng là bản AI đã ghi hay đã bị ai khác sửa.
+   */
+  bamSauThat?: string | null;
 }
 
 /** Đọc BYTE THẬT từ đĩa (không qua bộ đệm editor) và trả về dạng chuỗi utf8. */
@@ -157,14 +185,28 @@ async function docDia(uri: vscode.Uri): Promise<string> {
  * Trả `false` ⇔ VSCode nói THẲNG rằng nó KHÔNG áp (khi ấy bộ đệm chắc chắn chưa đổi). Ném ⇒ trạng
  * thái bộ đệm KHÔNG XÁC ĐỊNH, nơi gọi phải xử lý như vậy.
  */
+function taoBienTap() {
+  return new vscode.WorkspaceEdit();
+}
+type BienTap = ReturnType<typeof taoBienTap>;
+
+/**
+ * ★★★ ĐỢT 4B — LỜI GỌI ÁP-CHỈNH-SỬA DUY NHẤT của extension. Mọi thao tác (thay nội dung, tạo, xoá, đổi tên, hoàn
+ * nguyên) dựng phần việc của mình lên MỘT đối tượng chỉnh-sửa rồi đi qua đúng dòng này. Trả `false` ⇔ VSCode nói
+ * thẳng "không áp"; ném ⇒ trạng thái KHÔNG XÁC ĐỊNH (nơi gọi phải đọc lại đĩa).
+ */
+async function apChinhSua(dung: (bt: BienTap) => void): Promise<boolean> {
+  const bienTap = taoBienTap();
+  dung(bienTap);
+  return await vscode.workspace.applyEdit(bienTap);
+}
+
 async function thayToanBoNoiDung(
   uri: vscode.Uri,
   doc: vscode.TextDocument,
   noiDung: string,
 ): Promise<boolean> {
-  const bienTap = new vscode.WorkspaceEdit();
-  bienTap.replace(uri, doc.validateRange(new vscode.Range(0, 0, doc.lineCount, 0)), noiDung);
-  return await vscode.workspace.applyEdit(bienTap);
+  return await apChinhSua((bt) => bt.replace(uri, doc.validateRange(new vscode.Range(0, 0, doc.lineCount, 0)), noiDung));
 }
 
 export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
@@ -185,6 +227,11 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
   const mucQuyen = chuanHoaMucQuyen(dv.mucQuyen);
   const quyenGhi = duocPhepGhiTheoMucQuyen(mucQuyen);
   if (!quyenGhi.ok) return { ok: false, thongDiep: `KHÔNG GHI — ${quyenGhi.lyDo}` };
+
+  // ★★★ ĐỢT 4B — thao tác TỆP (tạo/xoá/đổi tên) có chuỗi bước riêng (cùng bất biến, xem docblock đầu tệp).
+  const thaoTac = dv.thaoTac;
+  if (thaoTac && thaoTac.loai !== "thay") return await apThaoTacTep(dv, thaoTac);
+  if (!thaoTac && !dv.deXuat) return { ok: false, thongDiep: "KHÔNG GHI — không có đề xuất hay thao tác nào để áp." };
 
   // ── BƯỚC 1: giải đường THẬT (R-C5) ─────────────────────────────────────────────────────────
   const that = giaiDuongThat(dv.duongTuyetDoi);
@@ -219,7 +266,7 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
   } catch (e) {
     return {
       ok: false,
-      thongDiep: `KHÔNG GHI — không đọc được tệp từ đĩa: "${dv.duongTuongDoi}" (${(e as Error).message}). Đợt này chỉ sửa tệp ĐÃ CÓ, không tạo tệp mới.`,
+      thongDiep: `KHÔNG GHI — không đọc được tệp từ đĩa: "${dv.duongTuongDoi}" (${(e as Error).message}). Tệp chưa tồn tại thì phải TẠO (write_file), không sửa.`,
     };
   }
 
@@ -288,9 +335,17 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
   const phienBanLucDoc = doc.version;
 
   // ── BƯỚC 5: ghép bản vá (thuần, chưa chạm đĩa) ─────────────────────────────────────────────
-  const ghep = ghepBanVa(noiDungDia, dv.deXuat);
-  if (!ghep.ok) return { ok: false, thongDiep: `KHÔNG GHI — ${ghep.lyDo}` };
-  const moi = ghep.moi;
+  let moi: string;
+  if (thaoTac?.loai === "thay") {
+    moi = thaoTac.noiDungMoi;
+  } else {
+    const ghep = ghepBanVa(noiDungDia, dv.deXuat!);
+    if (!ghep.ok) return { ok: false, thongDiep: `KHÔNG GHI — ${ghep.lyDo}` };
+    moi = ghep.moi;
+  }
+  // ★★★ ĐỢT 4B (4.7) — dấu che MỚI ⇒ từ chối, TRƯỚC khi mở sổ kiểm toán (lượt chắc chắn bị từ chối không chạm mạng).
+  const dauChe = dauCheMoi(noiDungDia, moi);
+  if (dauChe.length > 0) return { ok: false, thongDiep: `KHÔNG GHI — ${lyDoDauCheMoi(dauChe, dv.duongTuongDoi)}` };
   if (moi === noiDungDia) {
     // Không có gì để ghi. Vẫn phải nói ra: một lượt "thành công" mà đĩa không đổi là lời khai gây
     // hiểu nhầm, và ghi một hàng kiểm toán cho một lượt không thay đổi gì chỉ làm loãng sổ.
@@ -451,6 +506,7 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
       }
       return {
         ok: true,
+        bamSauThat: bamSauHong,
         thongDiep:
           `ĐÃ GHI vào workspace: "${dv.duongTuongDoi}" (+${them} / −${bot}) — MẶC DÙ VSCode báo lỗi ("${loi}"). ` +
           `Đọc lại đĩa cho thấy nội dung MỚI đã nằm trên đĩa (băm khớp bản đã xem trước), nên khai "thất bại" ở đây sẽ là lời khai sai. ` +
@@ -625,6 +681,267 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
 
   return {
     ok: true,
+    bamSauThat,
     thongDiep: `Đã ghi vào workspace: "${dv.duongTuongDoi}" (+${them} / −${bot}). Ctrl+Z hoàn tác được.${lechBam}${ketSo}`,
   };
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 4B — THAO TÁC TỆP: TẠO · XOÁ · ĐỔI TÊN (cùng bất biến: đường thật → hàng rào → đo đĩa → sổ TRƯỚC →
+// đo lại → ghi qua `apChinhSua` → ĐỌC LẠI rồi mới khai; ba lời khai hợp lệ, không chốt "thất bại" khi chưa đo được).
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+const BAM_RONG = bamNoiDung("");
+
+type TonTai = "co" | "khong" | { loi: string };
+
+/** Đo sự tồn tại bằng `fs.stat` — KHÔNG suy từ lỗi đọc (không có quyền ≠ không tồn tại). */
+async function tonTai(uri: vscode.Uri): Promise<TonTai> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return "co";
+  } catch (e) {
+    const ma = String((e as { code?: unknown })?.code ?? "");
+    if (ma === "FileNotFound" || ma === "EntryNotFound" || ma === "ENOENT" || /EntryNotFound|FileNotFound|ENOENT/.test(String((e as Error)?.message)))
+      return "khong";
+    return { loi: (e as Error)?.message ?? String(e) };
+  }
+}
+
+/** Tài liệu ĐANG MỞ trong editor có thay đổi chưa lưu? (Không mở tài liệu mới chỉ để hỏi.) */
+function taiLieuBan(uri: vscode.Uri): boolean {
+  const k = uri.toString();
+  return (vscode.workspace.textDocuments ?? []).some((d) => d.uri.toString() === k && d.isDirty);
+}
+
+function khongGhi(lyDo: string): KetQuaApBanVa {
+  return { ok: false, thongDiep: `KHÔNG GHI — ${lyDo}` };
+}
+
+function catNhan(s: string, tran: number): string {
+  return s.length > tran ? `…${s.slice(-(tran - 1))}` : s;
+}
+
+async function moSoKiemToan(
+  dv: DauVaoApBanVa,
+  v: { path: string; truoc: string; sau: string; tomTat: string; them: number; bot: number },
+): Promise<{ ok: true; actionId: string; token: string } | { ok: false; thongDiep: string }> {
+  try {
+    const b = await goiBatDauApClient(dv.serverUrl, dv.cookie, {
+      path: catNhan(v.path, 1000),
+      nhanWorkspace: catNhan(dv.nhanWorkspace, 200),
+      sha256Truoc: v.truoc,
+      sha256Sau: v.sau,
+      tomTat: catNhan(v.tomTat, 2000),
+      soDongThem: v.them,
+      soDongBot: v.bot,
+    });
+    if (!b.actionId || !b.token) {
+      return { ok: false, thongDiep: "KHÔNG GHI — máy chủ không cấp actionId/token cho lượt kiểm toán; không có vết thì không ghi." };
+    }
+    return { ok: true, actionId: b.actionId, token: b.token };
+  } catch (e) {
+    return {
+      ok: false,
+      thongDiep: `KHÔNG GHI — không mở được sổ kiểm toán trên máy chủ (${(e as Error).message}). Thà không ghi còn hơn ghi mà không có vết.`,
+    };
+  }
+}
+
+/** Chốt sổ; trả phần CẢNH BÁO nối vào thông điệp ("" khi máy chủ nhận). Không bao giờ ném. */
+async function chotSoKiemToan(
+  dv: DauVaoApBanVa,
+  so: { actionId: string; token: string },
+  v: { thanhCong: boolean; sha256SauThat?: string; loi?: string },
+): Promise<string> {
+  try {
+    const chot = await goiChotApClient(dv.serverUrl, dv.cookie, { actionId: so.actionId, token: so.token, ...v });
+    return chot.ok ? "" : ` ⚠ Máy chủ từ chối chốt sổ kiểm toán: ${chot.message ?? "không rõ lý do"} (lượt này đứng ở "đang áp" = CHƯA RÕ).`;
+  } catch (e) {
+    return ` ⚠ KHÔNG chốt được sổ kiểm toán (${(e as Error).message}) — lượt này đứng ở "đang áp" = CHƯA RÕ trên máy chủ.`;
+  }
+}
+
+type KetCucDo =
+  | { loai: "moi"; bam: string }
+  | { loai: "goc" }
+  | { loai: "khac"; moTa: string; bam?: string }
+  | { loai: "khong-ro"; moTa: string };
+
+async function apThaoTacTep(dv: DauVaoApBanVa, tt: Exclude<ThaoTacGhi, { loai: "thay" }>): Promise<KetQuaApBanVa> {
+  const rel = dv.duongTuongDoi;
+
+  // ── BƯỚC 1: đường THẬT (nguồn + mọi thư mục workspace) ──────────────────────────────────────
+  const that = tt.loai === "tao" ? giaiDuongThatChoTaoMoi(dv.duongTuyetDoi) : giaiDuongThat(dv.duongTuyetDoi);
+  if (!that.ok) return khongGhi(that.lyDo);
+  const wsThat: string[] = [];
+  for (const ws of dv.thuMucWorkspace) {
+    const r = giaiDuongThat(ws);
+    if (!r.ok) return khongGhi(`không giải được đường thật của thư mục workspace "${ws}" (${r.lyDo}); từ chối vì không so được ranh giới thật.`);
+    wsThat.push(r.duong);
+  }
+
+  // ── BƯỚC 2: hàng rào ghi — CẢ nguồn lẫn đích (đổi tên) ─────────────────────────────────────
+  const phep = duocPhepGhi(that.duong, wsThat);
+  if (!phep.ok) return khongGhi(phep.lyDo);
+  const uri = vscode.Uri.file(that.duong);
+  let dich: { uri: vscode.Uri; rel: string } | undefined;
+  if (tt.loai === "doi-ten") {
+    const d = giaiDuongThatChoTaoMoi(tt.duongDichTuyetDoi);
+    if (!d.ok) return khongGhi(`đích đổi tên: ${d.lyDo}`);
+    const p2 = duocPhepGhi(d.duong, wsThat);
+    if (!p2.ok) return khongGhi(`đích đổi tên: ${p2.lyDo}`);
+    if (d.duong === that.duong) return khongGhi(`đổi tên "${rel}" sang CHÍNH nó — không có gì để làm.`);
+    dich = { uri: vscode.Uri.file(d.duong), rel: tt.duongDichTuongDoi };
+  }
+
+  // ── BƯỚC 3/4: ĐO đĩa + chống xung đột + bộ đệm bẩn ─────────────────────────────────────────
+  let noiDungGoc = "";
+  let bamDia = BAM_RONG;
+  if (tt.loai === "tao") {
+    const t = await tonTai(uri);
+    if (t === "co") return khongGhi(`"${rel}" ĐÃ TỒN TẠI — tạo mới sẽ đè mất tệp đang có. Hãy đọc tệp rồi sửa nó.`);
+    if (t !== "khong") return khongGhi(`không kiểm được "${rel}" có tồn tại hay không (${t.loi}).`);
+    const dau = dauCheMoi("", tt.noiDungMoi);
+    if (dau.length > 0) return khongGhi(lyDoDauCheMoi(dau, rel));
+  } else {
+    try {
+      noiDungGoc = await docDia(uri);
+    } catch (e) {
+      return khongGhi(`không đọc được "${rel}" từ đĩa (${(e as Error).message}).`);
+    }
+    bamDia = bamNoiDung(noiDungGoc);
+    if (!khopBanGoc(bamDia, dv.bamGoc)) {
+      return khongGhi(
+        `tệp đã đổi kể từ lúc đề xuất: "${rel}". Băm đĩa ${bamDia.slice(0, 12)}… ≠ băm gốc ${dv.bamGoc.slice(0, 12)}…. Hãy đọc lại bản mới nhất.`,
+      );
+    }
+    if (taiLieuBan(uri)) return khongGhi(`"${rel}" đang có thay đổi CHƯA LƯU trong editor — hãy lưu (hoặc hoàn tác) rồi thử lại.`);
+    if (dich) {
+      const t = await tonTai(dich.uri);
+      if (t === "co") return khongGhi(`đích đổi tên "${dich.rel}" ĐÃ TỒN TẠI — không ghi đè.`);
+      if (t !== "khong") return khongGhi(`không kiểm được đích "${dich.rel}" (${t.loi}).`);
+    }
+  }
+
+  const noiDungSau = tt.loai === "tao" ? tt.noiDungMoi : tt.loai === "xoa" ? "" : noiDungGoc;
+  const bamSauDuKien = bamNoiDung(noiDungSau);
+  const { them, bot } =
+    tt.loai === "tao" ? tomTatDiff("", noiDungSau) : tt.loai === "xoa" ? tomTatDiff(noiDungGoc, "") : { them: 0, bot: 0 };
+  const moTaThaoTac =
+    tt.loai === "tao" ? `TẠO tệp mới (+${them} dòng)` : tt.loai === "xoa" ? `XOÁ tệp (−${bot} dòng)` : `ĐỔI TÊN → ${dich!.rel}`;
+
+  // ── BƯỚC 6: KIỂM TOÁN TRƯỚC KHI BYTE RƠI ─────────────────────────────────────────────────
+  const so = await moSoKiemToan(dv, {
+    path: dich ? `${rel} → ${dich.rel}` : rel,
+    truoc: bamDia,
+    sau: bamSauDuKien,
+    tomTat: moTaThaoTac,
+    them,
+    bot,
+  });
+  if (!so.ok) return { ok: false, thongDiep: so.thongDiep };
+
+  // ── BƯỚC 6b: ĐO LẠI ngay sát trước lượt ghi (cửa sổ TOCTOU của lượt gọi mạng) ─────────────
+  let lyDoDung: string | undefined;
+  if (tt.loai === "tao") {
+    const t = await tonTai(uri);
+    if (t !== "khong") lyDoDung = "tệp đích XUẤT HIỆN (hoặc không đo được) trong lúc mở sổ kiểm toán";
+  } else {
+    try {
+      const b = bamNoiDung(await docDia(uri));
+      if (!khopBanGoc(b, bamDia)) lyDoDung = `tệp đã đổi TRONG LÚC mở sổ kiểm toán (băm ${b.slice(0, 12)}… ≠ ${bamDia.slice(0, 12)}…)`;
+    } catch (e) {
+      lyDoDung = `không đọc lại được tệp ngay trước lượt ghi (${(e as Error).message})`;
+    }
+    if (!lyDoDung && taiLieuBan(uri)) lyDoDung = "bộ đệm editor trở nên BẨN trong lúc mở sổ kiểm toán";
+    if (!lyDoDung && dich && (await tonTai(dich.uri)) !== "khong") lyDoDung = "đích đổi tên xuất hiện trong lúc mở sổ kiểm toán";
+  }
+  if (lyDoDung) {
+    const gc = await chotSoKiemToan(dv, so, { thanhCong: false, loi: `DỪNG TRƯỚC KHI GHI: ${lyDoDung}` });
+    return khongGhi(`"${rel}": ${lyDoDung}. Chưa gọi tới điểm ghi lần nào nên KHÔNG byte nào rơi.${gc}`);
+  }
+
+  // ── BƯỚC 7: GHI qua lời gọi áp-chỉnh-sửa DUY NHẤT ─────────────────────────────────────────
+  let loiGhi: string | undefined;
+  try {
+    const daAp = await apChinhSua((bt) => {
+      if (tt.loai === "tao") bt.createFile(uri, { overwrite: false, ignoreIfExists: false, contents: Buffer.from(tt.noiDungMoi, "utf8") });
+      else if (tt.loai === "xoa") bt.deleteFile(uri, { recursive: false, ignoreIfNotExists: false });
+      else bt.renameFile(uri, dich!.uri, { overwrite: false, ignoreIfExists: false });
+    });
+    if (!daAp) loiGhi = "VSCode từ chối áp thao tác";
+  } catch (e) {
+    loiGhi = (e as Error)?.message ?? String(e);
+  }
+
+  // ── BƯỚC 8: ĐỌC LẠI rồi mới khai ─────────────────────────────────────────────────────────
+  const ketCuc = await doKetCuc(tt.loai, uri, dich?.uri, bamDia, bamSauDuKien);
+  const kemLoi = loiGhi ? ` (VSCode báo: "${loiGhi}")` : "";
+  if (ketCuc.loai === "moi") {
+    const gc = await chotSoKiemToan(dv, so, { thanhCong: true, sha256SauThat: ketCuc.bam });
+    return {
+      ok: true,
+      bamSauThat: tt.loai === "xoa" ? null : ketCuc.bam,
+      thongDiep: `Đã ${moTaThaoTac.toLowerCase()}: "${rel}"${kemLoi}. Đo lại trên đĩa xác nhận.${gc}`,
+    };
+  }
+  if (ketCuc.loai === "goc" && loiGhi) {
+    // Đo được: đĩa đúng trạng thái gốc VÀ lời gọi đã báo hỏng ⇒ "không byte nào rơi" là điều ĐO được.
+    const gc = await chotSoKiemToan(dv, so, { thanhCong: false, loi: loiGhi });
+    return khongGhi(`"${rel}": ${loiGhi}. Đọc lại đĩa cho thấy trạng thái GỐC còn nguyên.${gc}`);
+  }
+  if (ketCuc.loai === "khac" && tt.loai === "tao" && ketCuc.bam) {
+    const gc = await chotSoKiemToan(dv, so, { thanhCong: true, sha256SauThat: ketCuc.bam });
+    return {
+      ok: true,
+      bamSauThat: ketCuc.bam,
+      thongDiep: `Đã tạo "${rel}"${kemLoi} — ⚠ nội dung trên đĩa KHÁC bản xem trước (${ketCuc.moTa}); hãy xem lại tệp.${gc}`,
+    };
+  }
+  // Còn lại: CHƯA RÕ — KHÔNG chốt sổ (để "đang áp"), nói thẳng.
+  const moTa = ketCuc.loai === "goc" ? "VSCode báo đã áp nhưng đĩa vẫn mang trạng thái GỐC" : ketCuc.moTa;
+  return {
+    ok: false,
+    thongDiep:
+      `⚠⚠ CHƯA RÕ — "${rel}" (${moTaThaoTac}): ${moTa}${kemLoi}. Hãy tự kiểm tra trong Explorer trước khi làm gì tiếp. ` +
+      `Sổ kiểm toán được ĐỂ NGUYÊN ở trạng thái "đang áp" (CHƯA RÕ).`,
+  };
+}
+
+async function bamNeuCo(uri: vscode.Uri): Promise<{ co: true; bam: string } | { co: false } | { loi: string }> {
+  const t = await tonTai(uri);
+  if (t === "khong") return { co: false };
+  if (t !== "co") return { loi: t.loi };
+  try {
+    return { co: true, bam: bamNoiDung(await docDia(uri)) };
+  } catch (e) {
+    return { loi: (e as Error).message };
+  }
+}
+
+async function doKetCuc(
+  loai: "tao" | "xoa" | "doi-ten",
+  uri: vscode.Uri,
+  uriDich: vscode.Uri | undefined,
+  bamDia: string,
+  bamSauDuKien: string,
+): Promise<KetCucDo> {
+  const nguon = await bamNeuCo(uri);
+  if ("loi" in nguon) return { loai: "khong-ro", moTa: `không đo lại được tệp (${nguon.loi})` };
+  if (loai === "tao") {
+    if (!nguon.co) return { loai: "goc" };
+    return khopBanGoc(nguon.bam, bamSauDuKien)
+      ? { loai: "moi", bam: nguon.bam }
+      : { loai: "khac", moTa: `băm ${nguon.bam.slice(0, 12)}…`, bam: nguon.bam };
+  }
+  if (loai === "xoa") {
+    if (!nguon.co) return { loai: "moi", bam: BAM_RONG };
+    return khopBanGoc(nguon.bam, bamDia) ? { loai: "goc" } : { loai: "khac", moTa: "tệp vẫn còn và mang nội dung KHÁC bản gốc" };
+  }
+  const d = await bamNeuCo(uriDich!);
+  if ("loi" in d) return { loai: "khong-ro", moTa: `không đo lại được đích (${d.loi})` };
+  if (!nguon.co && d.co && khopBanGoc(d.bam, bamDia)) return { loai: "moi", bam: d.bam };
+  if (nguon.co && khopBanGoc(nguon.bam, bamDia) && !d.co) return { loai: "goc" };
+  return { loai: "khac", moTa: `nguồn ${nguon.co ? "còn" : "mất"}, đích ${d.co ? "có" : "không có"} — không khớp một lượt đổi tên trọn vẹn` };
 }

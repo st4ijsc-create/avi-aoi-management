@@ -53,6 +53,7 @@ import { isAbsolute } from "node:path";
 export type TenLenhChoPhep =
   | "git_status"
   | "git_diff"
+  | "git_diff_staged"
   | "npm_run_check"
   | "vitest_run"
   | "dotnet_build"
@@ -162,6 +163,19 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
     };
   }
 
+  // ★★★ ĐỢT 4B — `git diff --staged`: CỐ ĐỊNH TUYỆT ĐỐI (3 token đúng nguyên văn), chỉ đọc. Dùng cho lệnh slash
+  // `/commit` (sinh thông điệp commit từ phần đã stage — extension KHÔNG BAO GIỜ tự commit) và cho model tự xem.
+  if (token.length === 3 && token[0] === "git" && token[1] === "diff" && token[2] === "--staged") {
+    return {
+      ok: true,
+      lenh: {
+        ten: "git_diff_staged",
+        argv: ["git", "--no-pager", "diff", "--staged", "--", "."],
+        hienThi: "git diff --staged",
+      },
+    };
+  }
+
   // ── npm run check — CỐ ĐỊNH TUYỆT ĐỐI ─────────────────────────────────────────────────────────
   if (token.length === 3 && token[0] === "npm" && token[1] === "run" && token[2] === "check") {
     return {
@@ -200,7 +214,7 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
   return {
     ok: false,
     lyDo:
-      `"${chuoiLenh}" không khớp bất kỳ lệnh nào trong allowlist (git status · git diff · ` +
+      `"${chuoiLenh}" không khớp bất kỳ lệnh nào trong allowlist (git status · git diff · git diff --staged · ` +
       `npm run check · npx vitest run <path> · dotnet build <path> · dotnet test <path>)`,
   };
 }
@@ -211,6 +225,7 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
 export const TRAN_MS_THEO_LENH: Record<TenLenhChoPhep, number> = {
   git_status: 20_000,
   git_diff: 20_000,
+  git_diff_staged: 20_000,
   npm_run_check: 240_000,
   vitest_run: 180_000,
   dotnet_build: 240_000,
