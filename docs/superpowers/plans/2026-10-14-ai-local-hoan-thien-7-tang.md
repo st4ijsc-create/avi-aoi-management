@@ -188,3 +188,32 @@ hoàn tác nằm trong vùng agent ghi được (nay ngoài repo + ký HMAC) —
 Đợt 2: tool `find_symbol` / `search_code` / `search_docs` / `remember` (đề xuất, người duyệt mới ghi), tệp quy ước dự án, chỉ mục
 mã theo dự án (mig 0391, pgvector). Đợt 4A: token cá nhân `/v1` + device flow (mig 0392) — đang vá 3 phát hiện rà bảo mật trước
 khi áp dev. Đang làm song song: 3a dự án cho kỹ sư, 3c cài/chạy/xem trước, 4B extension v0.2 chạy lõi agent.
+
+### Đợt 2 — ĐO CỔNG (2026-10-17, build `efb9ff532` trên `:3010`; chỉ mục repo trọn 5.911 tệp / 59.906 đoạn)
+| Cổng | Ngưỡng | Bật tool mới | Tắt (`AI_AGENT_AN_CONG_CU`) |
+|---|---|---|---|
+| (1) Tìm mã đúng tệp:dòng, 15 câu × 3 | ≥ 80 % | **41/45 = 91 % — ĐẠT** | 39/45 = 87 % |
+| (2) Số tool trung vị GIẢM | bật < tắt | **5 = 5 — CHƯA ĐẠT theo định nghĩa** | 5 |
+| Hồi quy F × 3 | không tụt | **15/18 = 83 %** (5/6 × 3; Đợt 1: 14/18) | — |
+
+Đọc số cho đúng (không đổi tiêu chí sau khi thấy dữ liệu — ghi ra để lần sau đặt cổng cho đúng): tác dụng nằm ở ĐUÔI và ở repo
+LỚN. 9 câu repo chính × 3: tổng tool 205 → **116** (−43 %), p90 tool 20 → 7, p90 thời gian 51 s → 20 s, token ra 59k → 27k,
+đúng 21 → 24/27; trung vị vẫn 3 = 3 (câu dễ grep 2–3 lượt là xong). 6 câu dự án nhỏ agent-f: tool mới gần như không được gọi
+(`list_dir` đủ) ⇒ không đổi. Cổng (2) nên là "tổng tool / p90 trên repo lớn" — ghi nhận, KHÔNG tính lại là đạt.
+Câu R5 (giá trị 30 lượt trong `GIOI_HAN_MAC_DINH`) 0/3 ở cả hai nhánh: model không tìm ra `soLuotToiDa: 30` — trượt thật.
+
+Lỗi sản phẩm/thiết bị đo lộ ra khi đo cổng Đợt 2 (đã vá):
+1. `trangThaiChiMuc` = "sẵn sàng" khi CÓ BẤT KỲ hàng nào ⇒ chỉ mục chết giữa chừng (393 đoạn) mãi "sẵn sàng" ⇒ sổ trạng thái
+   lượt dựng (mig 0395, `44932d984`): sẵn sàng CHỈ khi lượt dựng ghi `xong`; trần 45 phút ⇒ `do-dang`, lượt sau đi tiếp theo băm.
+2. Bảo vệ "mệnh lệnh trong dữ liệu" DỪNG CẢ LƯỢT khi agent đọc mã an toàn/lời nhắc của chính repo (7/45 lượt câu trả lời rỗng) ⇒
+   `efb9ff532`: không dừng; cảnh báo + cờ trên thẻ duyệt; `tu-dong` HẠ tự trị một chiều (thi hành ở cả hai bộ thực thi).
+3. Thước chấm bỏ sót dạng `- **Dòng**: **86**` (âm tính giả) ⇒ `9711e64fb` + kiểu viết thứ 6 trong kiểm thước.
+4. Máy: `python` trên PATH người dùng trỏ stub WindowsApps (treo) vì `…\Programs\Python\Python314\` rỗng đứng trước ⇒ bài Python
+   bị VỨT đúng cách. Không sửa PATH máy; `:3010` + bộ đo đặt PATH theo tiến trình (`…\Local\Python\bin` trước).
+
+### Đợt 3/4/5 — mã đã commit trong ngày 2026-10-17 (chưa có số cổng trừ ghi chú)
+3a dự án cá nhân (mig 0393) · 3b bảng Git + 3d UX (`77b5134cb`) · 3c chạy/xem trước — xem trước bắt buộc HOST khác site
+(`d1b5d289d`, `9efc29ffb`, cookie-tossing) · 4A token + device flow (mig 0392/0394) · 4B extension v0.2 + sổ áp tệp Bearer
+(`126de672b`, mig 0396, `6369a1703`) · 4C ghost-text (`22e81add4`; FIM base q8_0: dòng đầu 43,8 % vs Instruct 37,5 %, +8/−0) ·
+bảo mật extension (`655e4a77f`, `84ab2a301` mẫu bí mật chung) · 5.1/5.2/5.4 (`092bb4ec2`, mig 0397). Migration 0390–0397 đã áp dev.
+Bộ đo cổng Đợt 4 `scripts/ai-eval/vscode-e2e/` (`c682ccf70`): 21 bài (14 nhiều tệp), kiểm thước 9/9; lượt đo thật đầu tiên đang chạy.
