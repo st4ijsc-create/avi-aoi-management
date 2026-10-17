@@ -12,7 +12,7 @@ import type { DauVaoApBanVa, KetQuaApBanVa } from "./apBanVa";
 export interface PhuThuocHoanTac {
   apBanVa: (dv: DauVaoApBanVa) => Promise<KetQuaApBanVa>;
   /** Phần chung của đầu vào điểm ghi (workspace, máy chủ, cookie, mức quyền). */
-  dauVaoChung: () => Promise<Pick<DauVaoApBanVa, "thuMucWorkspace" | "nhanWorkspace" | "serverUrl" | "cookie" | "mucQuyen">>;
+  dauVaoChung: () => Promise<Pick<DauVaoApBanVa, "thuMucWorkspace" | "nhanWorkspace" | "serverUrl" | "cookie" | "tokenGateway" | "mucQuyen">>;
   /** Băm nội dung hiện tại; `null` = không có tệp; `undefined` = không đo được. */
   docBam: (duongTuyetDoi: string) => Promise<string | null | undefined>;
 }

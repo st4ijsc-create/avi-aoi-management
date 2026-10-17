@@ -205,3 +205,21 @@ describe("phiên agent — đầu cuối", () => {
     expect(may.tep.get(p)).toBe("moi\n");
   });
 });
+
+describe("phiên agent — sổ kiểm toán bằng token cá nhân (4B-client)", () => {
+  it("★★★ lượt ghi của lõi agent đưa token avgw_ (KHÔNG cookie) xuống apBanVa", async () => {
+    may.tep.set(join(WS, "src", "c.ts"), "x\n");
+    const d = dung((luot) => (luot === 1 ? [goiTool("c1", "write_file", { path: "src/c.ts", content: "y\n" })] : [{ loai: "xong", toolCalls: [] }]));
+    await d.phien.chay("ghi", "sua");
+    expect(d.ap).toHaveLength(1);
+    expect(d.ap[0].tokenGateway).toBe("avgw_x");
+    expect(d.ap[0].cookie).toBeUndefined();
+  });
+
+  it("★★★ đầu vào chung của Hoàn tác / khối mã cũng mang token, không cookie", async () => {
+    const d = dung(() => [{ loai: "xong", toolCalls: [] }]);
+    const chung = await (d.phien as unknown as { dauVaoChung(): Promise<Record<string, unknown>> }).dauVaoChung();
+    expect(chung.tokenGateway).toBe("avgw_x");
+    expect(chung).not.toHaveProperty("cookie");
+  });
+});

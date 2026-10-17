@@ -8,7 +8,7 @@
  * - Token chỉ đi vào `luuToken` (SecretStorage) — hàm này không log, không trả token cho UI.
  */
 import { kiemTraServerUrl } from "../loi/dangNhap";
-import { PHAM_VI_XIN, docPhanHoiDoiMa, docPhanHoiXinMa, type MaThietBi } from "../loi/thietBi";
+import { PHAM_VI_XIN, docPhanHoiDoiMa, docPhanHoiTuThuHoi, docPhanHoiXinMa, type KetQuaTuThuHoi, type MaThietBi } from "../loi/thietBi";
 
 export interface PhuThuocThietBi {
   serverUrl: string;
@@ -109,4 +109,25 @@ export async function dangNhapThietBi(pt: PhuThuocThietBi): Promise<KetQuaThietB
     if (kq.tamThoi) continue;
     return { ok: false, ly: "loi", lyDo: kq.lyDo };
   }
+}
+
+/**
+ * ★★★ 4B-client — ĐĂNG XUẤT THU HỒI THẬT: trình CHÍNH token đang giữ cho `POST /api/ai/gateway-token/tu-thu-hoi`.
+ * Không bao giờ ném: lỗi mạng/máy chủ ⇒ `{ok:false}` để lệnh Đăng xuất VẪN xoá token cục bộ và cảnh báo người dùng rằng
+ * token còn sống trên máy chủ tới khi thu hồi ở trang web. Không thân yêu cầu (máy chủ chỉ đọc header).
+ */
+export async function thuHoiTokenCuaMinh(pt: { serverUrl: string; token: string; fetch?: typeof fetch; signal?: AbortSignal }): Promise<KetQuaTuThuHoi> {
+  const kt = kiemTraServerUrl(pt.serverUrl);
+  if (!kt.ok) return { ok: false, lyDo: kt.lyDo };
+  let res: Response;
+  try {
+    res = await (pt.fetch ?? fetch)(`${kt.url}/api/ai/gateway-token/tu-thu-hoi`, {
+      method: "POST",
+      headers: { accept: "application/json", authorization: `Bearer ${pt.token}` },
+      signal: pt.signal,
+    });
+  } catch (e) {
+    return { ok: false, lyDo: `Không nối được máy chủ ${kt.url}: ${(e as Error).message}` };
+  }
+  return docPhanHoiTuThuHoi(res.status, await docJson(res));
 }

@@ -178,3 +178,33 @@ describe("GoiModel /v1 — lỗi HTTP có thông điệp rõ", () => {
     });
   });
 });
+
+/**
+ * ★★ 4B-client — `usage` THẬT của máy chủ (126de672b): xin `stream_options.include_usage` ⇒ chunk CUỐI `choices: []` + `usage`,
+ * đứng SAU finish và TRƯỚC `[DONE]` (khuôn `openaiGateway.kwargsUsage.test.ts`). Đồng hồ ngữ cảnh dùng số này thay ước lượng.
+ */
+describe("GoiModel /v1 — usage thật", () => {
+  it("★★ chunk cuối choices:[] + usage ⇒ `xong.usage` {vao, ra, nghi}; thân yêu cầu xin include_usage", async () => {
+    const than: Array<Record<string, unknown>> = [];
+    const f = (async (_u: string, init: { body: string }) => {
+      than.push(JSON.parse(init.body));
+      return dapStream(
+        sse(
+          delta({ content: "xong" }),
+          delta({}, "stop"),
+          {
+            object: "chat.completion.chunk",
+            choices: [],
+            usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18, completion_tokens_details: { reasoning_tokens: 4 } },
+          },
+          "[DONE]",
+        ),
+      );
+    }) as unknown as typeof fetch;
+    const ra = await gom(taoGoiModelV1({ serverUrl: "http://may", layToken: async () => "avgw_x", fetch: f })(vaoMau()));
+    expect(than[0].stream_options).toEqual({ include_usage: true });
+    const xong = ra.at(-1) as Extract<ManhModel, { loai: "xong" }>;
+    expect(xong.usage).toEqual({ vao: 11, ra: 7, nghi: 4 });
+    expect(ra.filter((m) => m.loai === "chu").map((m) => (m as { noiDung: string }).noiDung).join("")).toBe("xong");
+  });
+});

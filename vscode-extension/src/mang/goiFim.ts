@@ -5,8 +5,8 @@
  * ⚠ KHÔNG BAO GIỜ NÉM: ghost-text chạy mỗi lần gõ phím — mọi lỗi thành GIÁ TRỊ để tầng UI ghi nhật ký im lặng, không
  *   bật hộp thoại. `huy` (người dùng gõ tiếp) không phải lỗi.
  * Đọc mã cổng 2026-10-17 (`server/routes/openaiGateway.ts` POST /completions): nhận `prompt`, `suffix`, `model`,
- * `max_tokens`, `temperature`, `top_p`, `stream`; KHÔNG chuyển `stop` xuống engine (chỉ FIM_STOP cố định) ⇒ extension
- * tự cắt bằng `catGoiY`.
+ * `max_tokens`, `temperature`, `top_p`, `stream`, và (từ 4C-server) `stop` — chuỗi/mảng ≤ 4 × ≤ 64 ký tự, nối thêm vào
+ * FIM_STOP của engine; máy chủ cũ bỏ qua ô này ⇒ extension VẪN tự cắt bằng `catGoiY` (phòng thủ hai lớp).
  */
 import { kiemTraServerUrl } from "../loi/dangNhap";
 import type { ThanYeuCauFim } from "../loi/ghostText";

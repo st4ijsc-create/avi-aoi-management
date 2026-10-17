@@ -56,6 +56,10 @@ const may = vi.hoisted(() => ({
   chot: [] as Array<Record<string, unknown>>,
   /** Đáp ứng của lượt chốt sổ — máy chủ có quyền TỪ CHỐI qua HTTP 200 (`ok:false`), không ném. */
   chotTraVe: { ok: true } as { ok: boolean; message?: string },
+  /** ★ 4B-client — đối số XÁC THỰC mà từng lượt ghi sổ nhận (cookie chuỗi hay `{bearer}`). */
+  xacThuc: [] as unknown[],
+  /** ★ 4B-client — lỗi CÓ MÃ ném ra từ lượt mở sổ (vd. 403 insufficient_scope ⇒ `THIEU_PHAM_VI_APPLY`). */
+  batDauLoi: undefined as (Error & { ma?: string }) | undefined,
 }));
 
 vi.mock("vscode", () => {
@@ -128,18 +132,21 @@ vi.mock("vscode", () => {
 });
 
 vi.mock("../mang/duyetGhi", () => ({
-  goiBatDauApClient: async (_u: string, _c: string, dv: Record<string, unknown>) => {
+  goiBatDauApClient: async (_u: string, _c: unknown, dv: Record<string, unknown>) => {
     may.nhatKy.push("batDauApClient");
     may.batDau.push(dv);
+    may.xacThuc.push(_c);
+    if (may.batDauLoi) throw may.batDauLoi;
     // ⚠ Đây là CỬA SỔ TOCTOU thật: một lượt đi-về mạng. Mô phỏng đúng thứ có thể rơi vào đó.
     if (may.doiDiaKhiBatDau !== undefined) may.dia = may.doiDiaKhiBatDau;
     if (may.doiVersionKhiBatDau) may.version += 1;
     if (may.batDauNem) throw new Error("mạng giả: không mở được sổ");
     return { actionId: "ACT-1", token: "TOK-1" };
   },
-  goiChotApClient: async (_u: string, _c: string, dv: Record<string, unknown>) => {
+  goiChotApClient: async (_u: string, _c: unknown, dv: Record<string, unknown>) => {
     may.nhatKy.push("chotApClient");
     may.chot.push(dv);
+    may.xacThuc.push(_c);
     // ⚠ F6 — máy chủ TỪ CHỐI qua HTTP 200 (token lệch, hàng không ở `dang_ap_client`): `ok:false`
     // KHÔNG kèm ném. Bản giả phải nói được điều đó, nếu không lưới sẽ mù đúng ca cần đo.
     return may.chotTraVe;
@@ -230,6 +237,8 @@ beforeEach(() => {
   may.batDau = [];
   may.chot = [];
   may.chotTraVe = { ok: true };
+  may.xacThuc = [];
+  may.batDauLoi = undefined;
 });
 
 describe("apBanVa — THỨ TỰ BẤT BIẾN", () => {
@@ -586,5 +595,40 @@ describe("apBanVa — I-4: cửa sổ TOCTOU do chính lượt gọi kiểm toá
     expect(may.dia).toBe(GOC_ND);
     expect(may.chot).toHaveLength(1);
     expect(may.chot[0]).toMatchObject({ thanhCong: false });
+  });
+});
+
+/**
+ * ★★★ ĐỢT 4B-client — lõi agent ghi sổ bằng TOKEN CÁ NHÂN (REST Bearer), không cookie. `tokenGateway` có mặt ⇒ MỌI lượt
+ * ghi sổ (mở + chốt) nhận `{bearer}`; KHÔNG lùi về cookie. Token cũ thiếu `apply` ⇒ sổ không mở ⇒ KHÔNG ghi + mã máy đọc.
+ */
+describe("apBanVa — sổ kiểm toán qua token cá nhân (4B-client)", () => {
+  it("★★★ tokenGateway ⇒ mở sổ VÀ chốt sổ đều đi `{bearer}` (không cookie), ghi thành công", async () => {
+    const kq = await apBanVa(dauVao({ cookie: undefined, tokenGateway: "avgw_tok" }));
+    expect(kq.ok).toBe(true);
+    expect(may.xacThuc).toEqual([{ bearer: "avgw_tok" }, { bearer: "avgw_tok" }]);
+  });
+
+  it("★★★ có CẢ cookie lẫn tokenGateway ⇒ token THẮNG (không đường chéo về cookie)", async () => {
+    await apBanVa(dauVao({ cookie: "cookie-gia", tokenGateway: "avgw_tok" }));
+    expect(may.xacThuc.every((x) => typeof x === "object")).toBe(true);
+  });
+
+  it("★★ không có tokenGateway ⇒ đường cookie cũ giữ nguyên (khung chat cũ)", async () => {
+    await apBanVa(dauVao());
+    expect(may.xacThuc).toEqual(["cookie-gia", "cookie-gia"]);
+  });
+
+  it("★★★ token thiếu phạm vi 'apply' (sổ không mở) ⇒ KHÔNG GHI, không chạm điểm ghi, mã THIEU_PHAM_VI_APPLY, chỉ đường đăng nhập lại", async () => {
+    may.batDauLoi = Object.assign(new Error("token hiện tại thiếu phạm vi 'apply' … Hãy đăng nhập lại để cấp quyền ghi sổ"), {
+      ma: "THIEU_PHAM_VI_APPLY",
+    });
+    const kq = await apBanVa(dauVao({ cookie: undefined, tokenGateway: "avgw_cu" }));
+    expect(kq.ok).toBe(false);
+    expect(kq.ma).toBe("THIEU_PHAM_VI_APPLY");
+    expect(kq.thongDiep).toMatch(/đăng nhập lại để cấp quyền ghi sổ/);
+    expect(demTrongNhatKy("apChinhSua")).toBe(0);
+    expect(may.dia).toBe(GOC_ND);
+    expect(may.chot).toHaveLength(0);
   });
 });

@@ -20,6 +20,9 @@ const may = vi.hoisted(() => ({
   apKhongDoi: false,
   /** `applyEdit` trả false. */
   apTuChoi: false,
+  /** ★ 4B-client — đối số xác thực của từng lượt ghi sổ + lỗi có mã khi mở sổ. */
+  xacThuc: [] as unknown[],
+  batDauLoi: undefined as (Error & { ma?: string }) | undefined,
 }));
 
 vi.mock("vscode", () => {
@@ -110,14 +113,17 @@ vi.mock("vscode", () => {
 });
 
 vi.mock("../mang/duyetGhi", () => ({
-  goiBatDauApClient: async (_u: string, _c: string, dv: Record<string, unknown>) => {
+  goiBatDauApClient: async (_u: string, _c: unknown, dv: Record<string, unknown>) => {
     may.nhatKy.push("soTruoc");
     may.batDau.push(dv);
+    may.xacThuc.push(_c);
+    if (may.batDauLoi) throw may.batDauLoi;
     return { actionId: `ACT-${may.batDau.length}`, token: "TOK" };
   },
-  goiChotApClient: async (_u: string, _c: string, dv: Record<string, unknown>) => {
+  goiChotApClient: async (_u: string, _c: unknown, dv: Record<string, unknown>) => {
     may.nhatKy.push("soSau");
     may.chot.push(dv);
+    may.xacThuc.push(_c);
     return { ok: true };
   },
 }));
@@ -157,6 +163,8 @@ beforeEach(() => {
   may.chot.length = 0;
   may.apKhongDoi = false;
   may.apTuChoi = false;
+  may.xacThuc.length = 0;
+  may.batDauLoi = undefined;
 });
 
 describe("apBanVa — TẠO tệp", () => {
@@ -319,5 +327,24 @@ describe("apBanVa — mức quyền + NHIỀU tệp + thay nội dung", () => {
   it("★★ thiếu cả đề xuất lẫn thao tác ⇒ từ chối rõ", async () => {
     const kq = await apBanVa(dv({}));
     expect(kq.ok).toBe(false);
+  });
+});
+
+describe("apBanVa — thao tác tệp ghi sổ qua token cá nhân (4B-client)", () => {
+  it("★★★ tạo tệp với tokenGateway ⇒ sổ trước + chốt sau đều `{bearer}`", async () => {
+    const kq = await apBanVa(dv({ cookie: undefined, tokenGateway: "avgw_t", thaoTac: { loai: "tao", noiDungMoi: "x\n" } }));
+    expect(kq.ok).toBe(true);
+    expect(may.xacThuc).toEqual([{ bearer: "avgw_t" }, { bearer: "avgw_t" }]);
+  });
+
+  it("★★★ xoá tệp, sổ không mở được vì thiếu 'apply' ⇒ KHÔNG xoá, mã THIEU_PHAM_VI_APPLY", async () => {
+    may.dia.set(p("a.ts"), "cu");
+    may.batDauLoi = Object.assign(new Error("thiếu phạm vi 'apply' — đăng nhập lại để cấp quyền ghi sổ"), { ma: "THIEU_PHAM_VI_APPLY" });
+    const kq = await apBanVa(dv({ cookie: undefined, tokenGateway: "avgw_cu", bamGoc: bam("cu"), thaoTac: { loai: "xoa" } }));
+    expect(kq.ok).toBe(false);
+    expect(kq.ma).toBe("THIEU_PHAM_VI_APPLY");
+    expect(may.dia.get(p("a.ts"))).toBe("cu");
+    expect(may.nhatKy.some((x) => x.startsWith("ap:"))).toBe(false);
+    expect(may.chot).toHaveLength(0);
   });
 });

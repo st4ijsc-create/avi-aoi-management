@@ -98,8 +98,8 @@ export interface ThanYeuCauFim {
   temperature: number;
   top_p: number;
   stream: false;
-  /** Cổng hiện KHÔNG chuyển `stop` xuống engine (đọc `openaiGateway.ts` 2026-10-17) — gửi để sẵn sàng; extension
-   *  vẫn tự cắt bằng `catGoiY`. */
+  /** Cổng 4C-server chuyển `stop` (≤ 4 × ≤ 64 ký tự) xuống `generateFim`; máy chủ cũ bỏ qua ⇒ extension vẫn tự cắt
+   *  bằng `catGoiY`. */
   stop: string[];
 }
 

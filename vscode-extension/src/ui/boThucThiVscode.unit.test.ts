@@ -94,7 +94,9 @@ interface Dung {
   ctx: (cheDo?: CheDoAgent) => NguCanhThucThi;
 }
 
-function dung(o: { mucQuyen?: MucQuyen; quyetDinh?: QuyetDinhDuyet; cookie?: string | undefined; apThat?: boolean; exit?: number; output?: string } = {}): Dung {
+function dung(
+  o: { mucQuyen?: MucQuyen; quyetDinh?: QuyetDinhDuyet; token?: string | undefined; apThat?: boolean; exit?: number; output?: string; apKq?: KetQuaApBanVa } = {},
+): Dung {
   const suKien: SuKienAgent[] = [];
   const duyet: YeuCauDuyet[] = [];
   const ap: DauVaoApBanVa[] = [];
@@ -104,7 +106,7 @@ function dung(o: { mucQuyen?: MucQuyen; quyetDinh?: QuyetDinhDuyet; cookie?: str
     goc: () => [WS],
     mucQuyen: () => o.mucQuyen ?? "hoi_truoc_khi_ghi",
     serverUrl: () => "http://gia",
-    layCookie: async () => ("cookie" in o ? o.cookie : "c"),
+    layToken: async () => ("token" in o ? o.token : "avgw_tok"),
     nhanWorkspace: () => WS,
     xinDuyet: async (yc) => {
       duyet.push(yc);
@@ -120,6 +122,7 @@ function dung(o: { mucQuyen?: MucQuyen; quyetDinh?: QuyetDinhDuyet; cookie?: str
       : {
           apBanVa: async (dv: DauVaoApBanVa): Promise<KetQuaApBanVa> => {
             ap.push(dv);
+            if (o.apKq) return o.apKq;
             const t = dv.thaoTac!;
             if (t.loai === "tao" || t.loai === "thay") {
               may.tep.set(dv.duongTuyetDoi, t.noiDungMoi);
@@ -303,13 +306,37 @@ describe("BoThucThiVscode — ghi NHIỀU tệp qua apBanVa", () => {
     expect(d.so.rong).toBe(true);
   });
 
-  it("★★ chưa có phiên cookie (sổ kiểm toán) ⇒ không hỏi, không ghi, nói rõ cần đăng nhập phiên", async () => {
+  it("★★ chưa có token cá nhân (sổ kiểm toán qua Bearer) ⇒ không hỏi, không ghi, nói rõ cần đăng nhập device flow", async () => {
     may.tep.set(P("a.ts"), "A");
-    const d = dung({ cookie: undefined });
+    const d = dung({ token: undefined });
     const kq = await d.bo.chay(goi("write_file", { path: "a.ts", content: "B" }), d.ctx("sua"));
-    expect(kq.ma).toBe("CHUA_DANG_NHAP_PHIEN");
+    expect(kq.ma).toBe("CHUA_CO_TOKEN_GHI_SO");
+    expect(kq.choModel).toMatch(/device flow/);
     expect(d.duyet).toHaveLength(0);
     expect(d.ap).toHaveLength(0);
+  });
+
+  it("★★★ 4B-client — lượt ghi đưa TOKEN cá nhân (không cookie) xuống apBanVa để sổ đi REST Bearer", async () => {
+    may.tep.set(P("a.ts"), "A");
+    const d = dung();
+    const kq = await d.bo.chay(goi("write_file", { path: "a.ts", content: "B" }), d.ctx("sua"));
+    expect(kq.ok).toBe(true);
+    expect(d.ap).toHaveLength(1);
+    expect(d.ap[0].tokenGateway).toBe("avgw_tok");
+    expect(d.ap[0].cookie).toBeUndefined();
+  });
+
+  it("★★★ 4B-client — token cũ thiếu 'apply' ⇒ mã THIEU_PHAM_VI_APPLY về model kèm lệnh ĐỪNG thử ghi lại", async () => {
+    may.tep.set(P("a.ts"), "A");
+    const d = dung({
+      apKq: { ok: false, ma: "THIEU_PHAM_VI_APPLY", thongDiep: "KHÔNG GHI — … đăng nhập lại để cấp quyền ghi sổ …" },
+    });
+    const kq = await d.bo.chay(goi("write_file", { path: "a.ts", content: "B" }), d.ctx("sua"));
+    expect(kq.ok).toBe(false);
+    expect(kq.ma).toBe("THIEU_PHAM_VI_APPLY");
+    expect(kq.choModel).toMatch(/apply/);
+    expect(kq.choModel).toMatch(/[Dd]o not retry/);
+    expect(may.tep.get(P("a.ts"))).toBe("A");
   });
 
   it("★★★ ghi .env / ra ngoài workspace / .git/hooks ⇒ chặn SỚM: không thẻ duyệt, không đọc nội dung, không apBanVa", async () => {

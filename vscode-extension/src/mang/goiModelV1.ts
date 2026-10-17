@@ -8,9 +8,10 @@
  * - Lỗi HTTP 401/403/429/… ⇒ `LoiModel` có thông điệp tiếng Việt chỉ đúng việc phải làm (`moTaLoiHttpV1`); 5xx/mạng
  *   ⇒ `tamThoi` (lõi thử lại tối đa 1 lần/lượt).
  * - ★ Model phát tool call TRONG suy luận ⇒ máy chủ trả khung lỗi mang dấu `TOOL_CALL_TRONG_SUY_LUAN` ⇒ hỏi lại ĐÚNG
- *   lượt đó MỘT lần với `chat_template_kwargs.enable_thinking=false` (khuôn `goiModelMayChu.ts`). ⚠ Đo 2026-10-17:
- *   cổng `/v1` CHƯA chuyển tiếp `chat_template_kwargs` xuống engine ⇒ lần hỏi lại hiện vẫn chạy với nghĩ theo mặc
- *   định máy chủ; extension đã gửi đúng ô — phần còn lại là việc của máy chủ (ghi trong báo cáo Đợt 4B).
+ *   lượt đó MỘT lần với `chat_template_kwargs.enable_thinking=false` (khuôn `goiModelMayChu.ts`). Máy chủ 126de672b
+ *   đọc ô này theo danh sách trắng (chỉ `enable_thinking` boolean; `false` ⇒ `disableThinking`, `true`/vắng ⇒ mặc định
+ *   máy chủ). Phiên agent CHƯA có công tắc nghĩ cho người dùng ⇒ lượt thường không gửi ô này.
+ * - `stream_options.include_usage` ⇒ máy chủ 126de672b trả `usage` thật ở chunk cuối ⇒ `xong.usage` ⇒ đồng hồ ngữ cảnh.
  */
 import { LoiModel, type GoiModel, type ManhModel, type TinNhan, type WireTool } from "../../../shared/agentCore/index";
 import { tachKhungSse } from "../loi/khungSse";

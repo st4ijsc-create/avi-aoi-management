@@ -22,8 +22,8 @@ import { chayQuanLyMcpNgoai } from "./ui/mcpQuanLy";
 // xem/xoá (B2). Xem docblock `ui/boNhoQuanLy.ts`.
 import { BoNhoQuanLy, chayNhoDieuNay } from "./ui/boNhoQuanLy";
 // ★★★ ĐỢT 4B — đăng nhập DEVICE FLOW lấy token cổng /v1 cho lõi agent (token chỉ ở SecretStorage).
-import { dangNhapThietBi } from "./mang/thietBi";
-import { KHOA_THONG_TIN_TOKEN, KHOA_TOKEN_GATEWAY, tenThietBi } from "./loi/thietBi";
+import { dangNhapThietBi, thuHoiTokenCuaMinh } from "./mang/thietBi";
+import { KHOA_THONG_TIN_TOKEN, KHOA_TOKEN_GATEWAY, tenThietBi, thongDiepDangXuat } from "./loi/thietBi";
 // ★★★ ĐỢT 4C — ghost-text (InlineCompletionItemProvider) gọi /v1/completions bằng token cá nhân.
 import { dangKyGhostText } from "./ui/ghostText";
 import { hostname } from "node:os";
@@ -246,16 +246,22 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.secrets.delete(KHOA_COOKIE);
       // Xoá CÙNG LÚC với cookie — cùng lý do đã ghi CÙNG LÚC lúc đăng nhập (xem `chayDangNhap`).
       await context.globalState.update(KHOA_TEN_TAI_KHOAN, undefined);
-      // ★★★ ĐỢT 4B — xoá luôn token /v1 CỤC BỘ. Token vẫn còn hiệu lực TRÊN MÁY CHỦ tới khi hết hạn — thu hồi hẳn ở
-      // trang /ai-thiet-bi (extension không có đường thu hồi bằng chính token; nói thẳng thay vì khai "đã thu hồi").
-      const coToken = !!(await context.secrets.get(KHOA_TOKEN_GATEWAY));
+      // ★★★ ĐỢT 4B-client — THU HỒI THẬT trên máy chủ bằng chính token (`/api/ai/gateway-token/tu-thu-hoi`) TRƯỚC khi
+      // xoá SecretStorage (xoá trước thì không còn gì để trình). Thu hồi hỏng (mạng/máy chủ) ⇒ VẪN xoá cục bộ, và thông
+      // điệp nói thẳng token còn sống trên máy chủ tới khi thu hồi ở /ai-thiet-bi — không khai "đã thu hồi" khi chưa đo.
+      const token = await context.secrets.get(KHOA_TOKEN_GATEWAY);
+      const kqThuHoi = token
+        ? await thuHoiTokenCuaMinh({
+            serverUrl: vscode.workspace.getConfiguration("aviAiLocal").get<string>("serverUrl", "http://localhost:3000"),
+            token,
+            signal: AbortSignal.timeout(8000),
+          })
+        : undefined;
       await context.secrets.delete(KHOA_TOKEN_GATEWAY);
       await context.globalState.update(KHOA_THONG_TIN_TOKEN, undefined);
-      void vscode.window.showInformationMessage(
-        coToken
-          ? "AI Local: đã đăng xuất và xoá token /v1 khỏi máy này (token vẫn sống trên máy chủ tới khi hết hạn — thu hồi hẳn ở trang /ai-thiet-bi)."
-          : "AI Local: đã đăng xuất.",
-      );
+      const thongDiep = thongDiepDangXuat(!!token, kqThuHoi);
+      if (kqThuHoi && !kqThuHoi.ok) void vscode.window.showWarningMessage(thongDiep);
+      else void vscode.window.showInformationMessage(thongDiep);
       void BangChat.dangMoBatKy()?.guiTrangThaiTokenAgent();
     }),
     vscode.commands.registerCommand("aviAiLocal.dangNhapThietBi", async () => {

@@ -108,7 +108,7 @@ import { eolLanLon } from "../loi/eolLanLon";
 import { ghepBanVa } from "../loi/ghepBanVa";
 import { chuanHoaMucQuyen, duocPhepGhiTheoMucQuyen, type MucQuyen } from "../loi/mucQuyen";
 import { tomTatDiff } from "../loi/tomTatDiff";
-import { goiBatDauApClient, goiChotApClient } from "../mang/duyetGhi";
+import { goiBatDauApClient, goiChotApClient, type XacThucSo } from "../mang/duyetGhi";
 
 /**
  * ★★★ ĐỢT 4B — thao tác của lõi agent. `thay` = sửa tệp ĐÃ CÓ bằng nội dung mới đã tính (edit_file/write_file);
@@ -135,7 +135,13 @@ export interface DauVaoApBanVa {
   thuMucWorkspace: string[];
   nhanWorkspace: string;
   serverUrl: string;
-  cookie: string;
+  /** Cookie phiên web — CHỈ khung chat cũ (tRPC `aiCopilot.*ApDungOClient`). Lõi agent KHÔNG dùng. */
+  cookie?: string;
+  /**
+   * ★★★ ĐỢT 4B-client — token cá nhân `avgw_…` (device flow). CÓ MẶT (kể cả chuỗi rỗng) ⇒ MỌI lượt ghi sổ đi REST Bearer
+   * (`/api/ai/client-apply/*`) và KHÔNG BAO GIỜ lùi về cookie: rỗng ⇒ sổ không mở ⇒ không ghi (fail-closed).
+   */
+  tokenGateway?: string;
   /**
    * ★★★ ĐỢT G / TASK G3 — mức quyền HIỆN TẠI của workspace (BƯỚC 0 dưới đây). Giá trị THÔ, CHƯA
    * kiểm — `apBanVa` tự `chuanHoaMucQuyen` nó (fail-closed: một giá trị lạ rơi về mức mặc định AN
@@ -158,10 +164,26 @@ export interface KetQuaApBanVa {
   ok: boolean;
   thongDiep: string;
   /**
+   * ★ ĐỢT 4B-client — mã MÁY ĐỌC khi sổ kiểm toán không mở được qua REST Bearer (`LoiSoKiemToan.ma` — vd.
+   * `THIEU_PHAM_VI_APPLY`: token cũ thiếu phạm vi `apply` ⇒ phải đăng nhập lại; lõi agent dùng để bảo model ĐỪNG thử lại).
+   */
+  ma?: string;
+  /**
    * ★★★ ĐỢT 4B — băm ĐO ĐƯỢC trên đĩa sau lượt ghi thành công (`null` = tệp không còn ở đường này: đã xoá / đã đổi
    * tên đi). Checkpoint dùng nó để biết lúc hoàn tác tệp còn đúng là bản AI đã ghi hay đã bị ai khác sửa.
    */
   bamSauThat?: string | null;
+}
+
+/** ★ 4B-client — xác thực của MỌI lượt ghi sổ trong một lượt áp: token (nếu có mặt) THẮNG, không đường chéo về cookie. */
+function xacThucSo(dv: DauVaoApBanVa): XacThucSo {
+  return dv.tokenGateway !== undefined ? { bearer: dv.tokenGateway } : (dv.cookie ?? "");
+}
+
+/** Mã máy đọc của lỗi mở sổ (`LoiSoKiemToan.ma`), nếu có. */
+function maLoiSo(e: unknown): string | undefined {
+  const ma = (e as { ma?: unknown } | null)?.ma;
+  return typeof ma === "string" ? ma : undefined;
 }
 
 /** Đọc BYTE THẬT từ đĩa (không qua bộ đệm editor) và trả về dạng chuỗi utf8. */
@@ -357,7 +379,7 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
   // ── BƯỚC 6: KIỂM TOÁN **TRƯỚC** KHI BYTE RƠI ───────────────────────────────────────────────
   let batDau: { actionId: string; token: string };
   try {
-    batDau = await goiBatDauApClient(dv.serverUrl, dv.cookie, {
+    batDau = await goiBatDauApClient(dv.serverUrl, xacThucSo(dv), {
       path: dv.duongTuongDoi,
       // ⚠ Router chặn `nhanWorkspace` ở 200 ký tự (`aiCopilotRouter.ts`). Nhãn này là MÔ TẢ, không
       // dùng để cưỡng chế điều gì, nên cắt bớt là vô hại — trong khi để nó vượt trần sẽ khiến zod
@@ -370,8 +392,10 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
       soDongBot: bot,
     });
   } catch (e) {
+    const ma = maLoiSo(e);
     return {
       ok: false,
+      ...(ma ? { ma } : {}),
       thongDiep:
         `KHÔNG GHI — không mở được sổ kiểm toán trên máy chủ (${(e as Error).message}). ` +
         `Thà không ghi còn hơn ghi mà không có vết.`,
@@ -425,7 +449,7 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
       // lệch, hàng không ở `dang_ap_client`) và `goiChotApClient` KHÔNG ném cho các ca đó. Bỏ qua
       // trường này là để hàng đứng ở `dang_ap_client` VĨNH VIỄN trong khi người dùng không được
       // nói gì — đúng lớp lỗi "khai kết cục mà không đọc kết cục", chỉ đổi chỗ.
-      const chot = await goiChotApClient(dv.serverUrl, dv.cookie, {
+      const chot = await goiChotApClient(dv.serverUrl, xacThucSo(dv), {
         actionId: batDau.actionId,
         token: batDau.token,
         thanhCong: false,
@@ -494,7 +518,7 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
       // hướng che giấu. Khai THÀNH CÔNG kèm nguyên văn lỗi để người dùng biết đường đi bất thường.
       let ketSoNgoaiY = "";
       try {
-        const chot = await goiChotApClient(dv.serverUrl, dv.cookie, {
+        const chot = await goiChotApClient(dv.serverUrl, xacThucSo(dv), {
           actionId: batDau.actionId,
           token: batDau.token,
           thanhCong: true,
@@ -565,7 +589,7 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
     try {
       // ⚠ F6 — cùng lý lẽ với lượt chốt ở bước 6b: `ok:false` qua HTTP 200 là một lượt chốt KHÔNG
       // xảy ra, và im lặng ở đây để lại một hàng `dang_ap_client` mà không ai biết.
-      const chot = await goiChotApClient(dv.serverUrl, dv.cookie, {
+      const chot = await goiChotApClient(dv.serverUrl, xacThucSo(dv), {
         actionId: batDau.actionId,
         token: batDau.token,
         thanhCong: false,
@@ -666,7 +690,7 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
 
   let ketSo = "";
   try {
-    const chot = await goiChotApClient(dv.serverUrl, dv.cookie, {
+    const chot = await goiChotApClient(dv.serverUrl, xacThucSo(dv), {
       actionId: batDau.actionId,
       token: batDau.token,
       thanhCong: true,
@@ -725,9 +749,9 @@ function catNhan(s: string, tran: number): string {
 async function moSoKiemToan(
   dv: DauVaoApBanVa,
   v: { path: string; truoc: string; sau: string; tomTat: string; them: number; bot: number },
-): Promise<{ ok: true; actionId: string; token: string } | { ok: false; thongDiep: string }> {
+): Promise<{ ok: true; actionId: string; token: string } | { ok: false; thongDiep: string; ma?: string }> {
   try {
-    const b = await goiBatDauApClient(dv.serverUrl, dv.cookie, {
+    const b = await goiBatDauApClient(dv.serverUrl, xacThucSo(dv), {
       path: catNhan(v.path, 1000),
       nhanWorkspace: catNhan(dv.nhanWorkspace, 200),
       sha256Truoc: v.truoc,
@@ -741,8 +765,10 @@ async function moSoKiemToan(
     }
     return { ok: true, actionId: b.actionId, token: b.token };
   } catch (e) {
+    const ma = maLoiSo(e);
     return {
       ok: false,
+      ...(ma ? { ma } : {}),
       thongDiep: `KHÔNG GHI — không mở được sổ kiểm toán trên máy chủ (${(e as Error).message}). Thà không ghi còn hơn ghi mà không có vết.`,
     };
   }
@@ -755,7 +781,7 @@ async function chotSoKiemToan(
   v: { thanhCong: boolean; sha256SauThat?: string; loi?: string },
 ): Promise<string> {
   try {
-    const chot = await goiChotApClient(dv.serverUrl, dv.cookie, { actionId: so.actionId, token: so.token, ...v });
+    const chot = await goiChotApClient(dv.serverUrl, xacThucSo(dv), { actionId: so.actionId, token: so.token, ...v });
     return chot.ok ? "" : ` ⚠ Máy chủ từ chối chốt sổ kiểm toán: ${chot.message ?? "không rõ lý do"} (lượt này đứng ở "đang áp" = CHƯA RÕ).`;
   } catch (e) {
     return ` ⚠ KHÔNG chốt được sổ kiểm toán (${(e as Error).message}) — lượt này đứng ở "đang áp" = CHƯA RÕ trên máy chủ.`;
@@ -840,7 +866,7 @@ async function apThaoTacTep(dv: DauVaoApBanVa, tt: Exclude<ThaoTacGhi, { loai: "
     them,
     bot,
   });
-  if (!so.ok) return { ok: false, thongDiep: so.thongDiep };
+  if (!so.ok) return { ok: false, thongDiep: so.thongDiep, ...(so.ma ? { ma: so.ma } : {}) };
 
   // ── BƯỚC 6b: ĐO LẠI ngay sát trước lượt ghi (cửa sổ TOCTOU của lượt gọi mạng) ─────────────
   let lyDoDung: string | undefined;

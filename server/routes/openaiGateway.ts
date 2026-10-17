@@ -275,6 +275,22 @@ export function docTatNghi(body: unknown): { disableThinking?: true } {
     : {};
 }
 
+/** Trần `stop` của `/completions` (chuẩn OpenAI: tối đa 4 chuỗi) + trần độ dài MỖI chuỗi (cắt ở ranh giới dòng/khối). */
+export const TRAN_STOP_FIM = 4;
+export const TRAN_KY_TU_STOP_FIM = 64;
+
+/**
+ * ★★ Đợt 4C-server — `stop` của `/v1/completions` ⇒ `GgufFimOptions.stopSequences` (engine NỐI THÊM vào sentinel FIM).
+ * Nhận CHUỖI hoặc MẢNG ≤ `TRAN_STOP_FIM` phần tử, mỗi phần là chuỗi KHÔNG RỖNG ≤ `TRAN_KY_TU_STOP_FIM` ký tự. Mọi hình
+ * dạng khác ⇒ `undefined` (BỎ CẢ Ô — không cắt xén, không đoán ý caller) ⇒ opts engine giữ hình dạng cũ bit-đối-bit.
+ */
+export function docStopFim(stop: unknown): string[] | undefined {
+  const ds = typeof stop === "string" ? [stop] : Array.isArray(stop) ? stop : null;
+  if (!ds || ds.length === 0 || ds.length > TRAN_STOP_FIM) return undefined;
+  if (!ds.every((x) => typeof x === "string" && x.length > 0 && x.length <= TRAN_KY_TU_STOP_FIM)) return undefined;
+  return [...(ds as string[])];
+}
+
 /**
  * ★★★ Đợt 4B-server — usage trong LUỒNG theo chuẩn OpenAI: chỉ khi caller xin `stream_options.include_usage: true` (mặc
  * định OpenAI = KHÔNG phát; client không xin nhận luồng y như cũ). Chunk usage là chunk CUỐI trước `[DONE]`, `choices: []`.
@@ -1157,7 +1173,9 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // Native fill-in-middle via the engine's generateFim (LlamaCompletion.generateInfillCompletion
       // when the coder model supports infill; raw completion otherwise) — no chat template, so the
       // model returns clean inline code for Continue autocomplete. `suffix` present → real infill.
-      const fimOpts = { prefix: planned.safeText, suffix: safeSuffix, maxTokens, temperature, topP };
+      // ★ Đợt 4C-server — `stop` của caller (ghost-text cắt ở ranh giới dòng/khối); lạ ⇒ bỏ, khoá vắng như cũ.
+      const stopSequences = docStopFim(body.stop);
+      const fimOpts = { prefix: planned.safeText, suffix: safeSuffix, maxTokens, temperature, topP, ...(stopSequences ? { stopSequences } : {}) };
 
       const id = genId("cmpl");
       const created = nowUnix();

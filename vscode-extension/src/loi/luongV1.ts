@@ -6,8 +6,9 @@
  * Lỗi: chunk có `error` (khung lỗi giữa luồng của cổng — `finish_reason:"error"` hoặc khung `{error}` của nhánh catch)
  * ⇒ ghi nhận `loi`; mọi chữ/suy luận SAU lỗi bị bỏ (thuộc về lượt hỏng).
  *
- * ⚠ Cổng hiện KHÔNG gửi `usage` trong luồng (đo 2026-10-17 trên `openaiGateway.ts`) ⇒ `usage` thường vắng; lõi
- *   agent tự ước lượng. Bộ đọc vẫn nhận `usage` nếu một ngày máy chủ bật `stream_options.include_usage`.
+ * ★ Máy chủ 126de672b (4B-server): xin `stream_options.include_usage` ⇒ chunk CUỐI `choices: []` + `usage` (prompt/
+ *   completion/`completion_tokens_details.reasoning_tokens`), sau finish và trước `[DONE]`. Máy chủ cũ không gửi ⇒ `usage`
+ *   vắng và lõi agent tự ước lượng (khai rõ là ước lượng).
  */
 import type { WireToolCall } from "../../../shared/agentCore/index";
 

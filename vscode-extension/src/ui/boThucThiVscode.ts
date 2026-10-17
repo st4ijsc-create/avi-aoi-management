@@ -14,6 +14,8 @@
  *   `doi-ten`), sau cửa duyệt TỪNG TỆP (chế độ `sua`; `tu-dong` chỉ bỏ duyệt khi mức quyền là `tu_ghi`). Mức quyền
  *   `chi_doc` không hiện thẻ — đi thẳng tới `apBanVa` để bị chặn TẠI ĐIỂM GHI (một nguồn sự thật cho lời từ chối).
  *   Trước mỗi lượt ghi, nội dung GỐC được chụp vào checkpoint của lượt chạy (hoàn tác: `ui/hoanTac.ts`).
+ *   ★ 4B-client: sổ kiểm toán của mọi lượt ghi đi REST Bearer bằng TOKEN CÁ NHÂN (phạm vi `apply`) — không cookie phiên.
+ *   Không token ⇒ không hỏi, không ghi; token cũ thiếu `apply` ⇒ `THIEU_PHAM_VI_APPLY` (model được dặn ĐỪNG thử lại).
  * LỆNH: `run_command` ⇒ allowlist của extension (`xetDuyetLenh`) ⇒ LUÔN hỏi (kể cả tự động — giữ quyết định cũ của
  *   extension: chạy tiến trình là hành động khác hẳn ghi tệp) ⇒ `chayLenhCucBo` ⇒ ĐẦU RA + EXIT CODE TRẢ VỀ MODEL.
  * NHỚ: `remember` ⇒ sự kiện `de-xuat-nho` (đề xuất); chỉ người bấm "Nhớ" mới ghi vào `khoBoNho`.
@@ -90,7 +92,8 @@ export interface PhuThuocBoThucThi {
   goc: () => string[];
   mucQuyen: () => MucQuyen;
   serverUrl: () => string;
-  layCookie: () => Promise<string | undefined>;
+  /** ★ 4B-client — token cá nhân `avgw_…` (SecretStorage) dùng ghi sổ kiểm toán qua REST Bearer. */
+  layToken: () => Promise<string | undefined>;
   nhanWorkspace: () => string;
   xinDuyet: (yc: YeuCauDuyet, signal: AbortSignal) => Promise<QuyetDinhDuyet>;
   checkpoint: () => SoCheckpoint;
@@ -461,18 +464,19 @@ export class BoThucThiVscode implements BoThucThi {
       thuMucWorkspace: this.pt.goc(),
       nhanWorkspace: this.pt.nhanWorkspace(),
       serverUrl: this.pt.serverUrl(),
-      cookie: (await this.pt.layCookie()) ?? "",
+      // Rỗng vẫn là "có mặt" ⇒ apBanVa đi Bearer và sổ không mở ⇒ không ghi (không bao giờ lùi về cookie).
+      tokenGateway: (await this.pt.layToken()) ?? "",
       mucQuyen,
     });
     const ap = this.pt.apBanVa ?? apBanVaThat;
 
     if (mucQuyen !== "chi_doc") {
-      const cookie = await this.pt.layCookie();
-      if (!cookie) {
+      const token = await this.pt.layToken();
+      if (!token) {
         return loiModel(
-          "Write not performed: every file change must be recorded in the server audit log, which needs the user's session login. " +
-            'Ask the user to run "AI Local: Đăng nhập phiên (mật khẩu)" and then retry.',
-          "CHUA_DANG_NHAP_PHIEN",
+          "Write not performed: every file change must be recorded in the server audit log, which needs the user's personal API token. " +
+            'Ask the user to run "AI Local: Đăng nhập AI Local (device flow)" and then retry.',
+          "CHUA_CO_TOKEN_GHI_SO",
         );
       }
       const canDuyet = !(ctx.cheDo === "tu-dong" && mucQuyen === "tu_ghi");
@@ -513,6 +517,17 @@ export class BoThucThiVscode implements BoThucThi {
     }
 
     const kq = await ap(await dauVao());
+    if (!kq.ok && kq.ma === "THIEU_PHAM_VI_APPLY") {
+      // Lỗi CẤU HÌNH (token cũ chỉ có chat/fim), không phải lỗi của tệp: mọi lượt ghi sau cũng sẽ hỏng y hệt.
+      return {
+        ok: false,
+        ma: kq.ma,
+        choModel:
+          `Not applied (${nhanThaoTac} ${v.rel}): the user's API token lacks the 'apply' scope needed to record file changes in the server audit log, ` +
+          'so no file can be written in this run. Do not retry any write. Tell the user to run "AI Local: Đăng nhập AI Local (device flow)" to sign in again, then ask again.',
+        hienThi: { thongDiep: kq.thongDiep },
+      };
+    }
     if (!kq.ok) return { ok: false, ma: "KHONG_GHI", choModel: `Not applied (${nhanThaoTac} ${v.rel}): ${cheBiMat(kq.thongDiep)}`, hienThi: { thongDiep: kq.thongDiep } };
 
     const so = this.pt.checkpoint();

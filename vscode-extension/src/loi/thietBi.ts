@@ -18,8 +18,12 @@ export const KHOA_TOKEN_GATEWAY = "aviAiLocal.tokenGateway";
 /** Siêu dữ liệu KHÔNG bí mật của token (tiền tố hiển thị + hạn) — globalState, chỉ để hiển thị. */
 export const KHOA_THONG_TIN_TOKEN = "aviAiLocal.thongTinToken";
 export const TIEN_TO_TOKEN_GATEWAY = "avgw_";
-/** Phạm vi xin: `chat` (agent) + `fim` (ghost-text, việc sau) — máy chủ chuẩn hoá lại. */
-export const PHAM_VI_XIN = ["chat", "fim"] as const;
+/**
+ * Phạm vi xin: `chat` (agent) + `fim` (ghost-text) + `apply` (★ 4B-client: ghi SỔ KIỂM TOÁN cho mỗi lượt áp tệp qua
+ * `/api/ai/client-apply/*` — thiếu nó thì lõi agent KHÔNG ghi tệp nào). Máy chủ chuẩn hoá lại (`PHAM_VI_THIET_BI`).
+ * ⚠ Token cấp TRƯỚC bản này chỉ có chat/fim ⇒ ghi sổ bị 403 `insufficient_scope` ⇒ người dùng phải đăng nhập lại.
+ */
+export const PHAM_VI_XIN = ["chat", "fim", "apply"] as const;
 
 export interface MaThietBi {
   maThietBi: string;
@@ -102,4 +106,49 @@ export function docPhanHoiDoiMa(status: number, than: unknown): KetQuaDoiMa {
 /** Tên thiết bị gửi lên (máy chủ chuẩn hoá/cắt) — không chứa bí mật. */
 export function tenThietBi(may: string, phienBan: string): string {
   return `VSCode AI Local ${phienBan} — ${may}`.slice(0, 80);
+}
+
+/**
+ * ★★★ 4B-client — kết cục TỰ THU HỒI (`POST /api/ai/gateway-token/tu-thu-hoi`, Bearer; máy chủ 126de672b).
+ *   200 `{revoked:true, already_revoked, token_prefix}` ⇒ token đã chết trên máy chủ (vừa xong / từ trước);
+ *   401 `invalid_api_key` ⇒ máy chủ KHÔNG biết băm này ⇒ token không mở được cửa nào (coi như đã chết);
+ *   còn lại (429 · 503 · 403 giấy phép · thân lạ) ⇒ KHÔNG được khai đã thu hồi — token có thể còn sống.
+ */
+export type KetQuaTuThuHoi =
+  | { ok: true; ketCuc: "vua-thu-hoi" | "da-thu-hoi-truoc" | "khong-nhan-ra"; tienTo?: string }
+  | { ok: false; lyDo: string };
+
+export function docPhanHoiTuThuHoi(status: number, than: unknown): KetQuaTuThuHoi {
+  const o = than && typeof than === "object" ? (than as Record<string, unknown>) : {};
+  const e = (o.error && typeof o.error === "object" ? o.error : {}) as Record<string, unknown>;
+  const code = typeof e.code === "string" ? e.code : "";
+  if (status === 200) {
+    if (o.revoked !== true) return { ok: false, lyDo: "Máy chủ trả đáp ứng thu hồi không đúng khuôn." };
+    return {
+      ok: true,
+      ketCuc: o.already_revoked === true ? "da-thu-hoi-truoc" : "vua-thu-hoi",
+      ...(typeof o.token_prefix === "string" ? { tienTo: o.token_prefix } : {}),
+    };
+  }
+  if (status === 401 && code === "invalid_api_key") return { ok: true, ketCuc: "khong-nhan-ra" };
+  if (status === 429) return { ok: false, lyDo: "Máy chủ đang chặn vì gọi thu hồi quá nhiều lần (429)." };
+  return { ok: false, lyDo: `Máy chủ trả ${status}${code ? ` (${code})` : ""} khi thu hồi token.` };
+}
+
+/**
+ * Thông điệp của lệnh Đăng xuất theo kết cục thu hồi ĐO ĐƯỢC. Thu hồi hỏng ⇒ token VẪN bị xoá khỏi máy này, nhưng nói
+ * thẳng nó còn sống trên máy chủ tới khi hết hạn hoặc được thu hồi ở trang /ai-thiet-bi — không khai "đã thu hồi".
+ */
+export function thongDiepDangXuat(coToken: boolean, kq: KetQuaTuThuHoi | undefined): string {
+  if (!coToken) return "AI Local: đã đăng xuất.";
+  if (kq?.ok) {
+    const tt = kq.tienTo ? ` ${kq.tienTo}…` : "";
+    return kq.ketCuc === "khong-nhan-ra"
+      ? `AI Local: đã đăng xuất và xoá token${tt} khỏi máy này (máy chủ không còn nhận ra token này — nó không mở được cửa nào).`
+      : `AI Local: đã đăng xuất — token${tt} đã thu hồi trên máy chủ${kq.ketCuc === "da-thu-hoi-truoc" ? " (từ trước)" : ""} và đã xoá khỏi máy này.`;
+  }
+  return (
+    `AI Local: đã đăng xuất và xoá token khỏi máy này, NHƯNG KHÔNG thu hồi được trên máy chủ (${kq?.lyDo ?? "không rõ lý do"}). ` +
+    `Token còn sống trên máy chủ tới khi hết hạn — thu hồi hẳn ở trang /ai-thiet-bi.`
+  );
 }

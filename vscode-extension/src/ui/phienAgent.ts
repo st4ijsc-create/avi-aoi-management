@@ -33,7 +33,6 @@ import { apBanVa as apBanVaThat, type DauVaoApBanVa, type KetQuaApBanVa } from "
 import { hoanTacLuotChay } from "./hoanTac";
 import { SoCheckpoint } from "../loi/checkpoint";
 import { KHOA_TOKEN_GATEWAY } from "../loi/thietBi";
-import { KHOA_COOKIE } from "../loi/dangNhap";
 import { chuanHoaMucQuyen, NHAN_MUC_QUYEN, type MucQuyen } from "../loi/mucQuyen";
 import { phanTichMarkdown, khoiMa as layKhoiMa } from "../loi/markdownAnToan";
 import { docLenhGach, dungCauHoiLenhGach } from "../loi/lenhGach";
@@ -230,7 +229,8 @@ export class PhienAgent {
         goc: () => this.pt.goc(),
         mucQuyen: () => this.pt.mucQuyen(),
         serverUrl: () => this.serverUrl(),
-        layCookie: async () => this.pt.context.secrets.get(KHOA_COOKIE),
+        // ★ 4B-client — sổ kiểm toán đi REST Bearer bằng CHÍNH token device flow (phạm vi `apply`), không cookie phiên.
+        layToken: async () => this.pt.context.secrets.get(KHOA_TOKEN_GATEWAY),
         nhanWorkspace: () => this.pt.goc()[0] ?? "",
         xinDuyet: (yc, signal) => this.xinDuyet(yc, signal),
         checkpoint: () => so,
@@ -280,7 +280,8 @@ export class PhienAgent {
     };
     const goc = (this.pt.taoGoiModel ?? taoGoiModelV1)(ch);
     return (vao) => {
-      // Cổng /v1 hiện không trả `usage` trong luồng ⇒ đồng hồ ƯỚC LƯỢNG (khai rõ) từ chính tin nhắn gửi đi.
+      // Đồng hồ ƯỚC LƯỢNG (khai rõ) TRƯỚC mỗi lượt gọi; máy chủ có `stream_options.include_usage` (126de672b) thì lõi phát
+      // sự kiện `usage` THẬT sau lượt ⇒ `ag_usage` với `uocLuong:false` ghi đè số ước lượng (`xuLySuKien`).
       const uoc = uocLuongTinNhan(vao.tinNhan) + uocLuongTokenMacDinh(JSON.stringify(vao.congCu));
       this.pt.gui({
         loai: "ag_usage",
@@ -392,12 +393,13 @@ export class PhienAgent {
 
   // ─── HOÀN TÁC / NHỚ ──────────────────────────────────────────────────────────────────────────
 
-  private async dauVaoChung(): Promise<Pick<DauVaoApBanVa, "thuMucWorkspace" | "nhanWorkspace" | "serverUrl" | "cookie" | "mucQuyen">> {
+  private async dauVaoChung(): Promise<Pick<DauVaoApBanVa, "thuMucWorkspace" | "nhanWorkspace" | "serverUrl" | "tokenGateway" | "mucQuyen">> {
     return {
       thuMucWorkspace: this.pt.goc(),
       nhanWorkspace: this.pt.goc()[0] ?? "",
       serverUrl: this.serverUrl(),
-      cookie: (await this.pt.context.secrets.get(KHOA_COOKIE)) ?? "",
+      // ★ 4B-client — Hoàn tác + khối mã (Chèn/Áp dụng) ghi sổ bằng token cá nhân; rỗng ⇒ sổ không mở ⇒ không ghi.
+      tokenGateway: (await this.pt.context.secrets.get(KHOA_TOKEN_GATEWAY)) ?? "",
       mucQuyen: this.pt.mucQuyen(),
     };
   }
