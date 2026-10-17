@@ -245,4 +245,4 @@ extension (5/6 lượt `loi-model`; thông điệp lỗi bị bộ đo cắt 160
 - (xong) 5.1 phía VSCode.
 - Cổng Đợt 5: cần dữ liệu dùng thật (bảng phản hồi) + một lượt Eval mã A/B corpus trong Studio.
 - Đợt 6 còn: dọn kho model ~89 GB + ổ C: (XOÁ tệp ⇒ hỏi chủ dự án trước); model lên NVMe.
-- Gộp về main: phối hợp phiên engineering; số census gộp (VRAM 220 + 15 eng = 235).
+- Gộp về main: phối hợp phiên engineering; số census gộp (VRAM 221 + 15 eng = 236; REST registrar 60/30; phamViTuyen tong 250, dòng tĩnh index.ts thay đổi khi gộp ⇒ đo lại).
