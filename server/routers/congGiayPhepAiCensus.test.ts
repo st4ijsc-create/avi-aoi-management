@@ -438,7 +438,17 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `deXuatLenh` qua RBAC + HITL của `run_command`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
  *   `tong` 2337 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2337, beMatAi: 388, aiCoCong: 326, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-17 AI Local Đợt 3b (bảng Git · nút tệp · trí nhớ · tên phiên · OCR ảnh) — **tong 2337 → 2353 · beMatAi 388 → 404 ·
+ *   aiCoCong 326 → 342** (đo trước rồi mới ghim; trước lượt này 2337 XANH). Đúng MƯỜI SÁU thủ tục MỚI ở `repoWorkspaceRouter.ts`
+ *   (bề mặt AI khai tường minh, sàn `moduleProcedure("MOD_AI")` ⇒ cả mười sáu vào aiCoCong): `repoWorkspace.{gitTrangThai,
+ *   gitDiffTep, gitNhanh, gitLog, baiHocDanhSach}` (query), `repoWorkspace.{gitCommit, gitTaoNhanh, gitChuyenNhanh,
+ *   gitGoiYThongDiep, deXuatXoaTep, deXuatDoiTenTep, baiHocThem, baiHocSua, baiHocXoa, doiTenPhien, ocrAnhLoi}` (mutation) —
+ *   quyền kiểm trong thân (`congPhien` = ai_repo_read/canView; ghi git thêm `coQuyenTaoDuAn` = ai_repo_exec/canCreate; xoá/đổi
+ *   tên tệp qua RBAC + HITL của tool `delete_file`/`rename_file`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
+ *   `tong` 2353 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2353, beMatAi: 404, aiCoCong: 342, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

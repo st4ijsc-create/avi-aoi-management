@@ -954,7 +954,8 @@ export const repoWorkspaceRouter = router({
 
   /**
    * Lưu TOÀN BỘ mạch hội thoại (upsert). `sessionId` vắng ⇒ tạo mới; nhãn do **server** suy từ
-   * câu hỏi đầu (`nhanTuLuot`) — client KHÔNG gửi nhãn, người dùng KHÔNG phải đặt tên.
+   * câu hỏi đầu (`nhanTuLuot`) — client KHÔNG gửi nhãn ở đây. ★ Đợt 3b: người dùng CÓ THỂ đặt tên qua `doiTenPhien`
+   * (thủ tục riêng); lượt lưu sau KHÔNG ghi đè tên đã đặt (tầng dữ liệu chỉ lấp nhãn suy khi hàng còn rỗng).
    *
    * ⚠ `turns` khai `.strict()` ⇒ một lượt mang `actionId`/`token` bị zod **TỪ CHỐI CẢ LƯỢT GỌI**
    *   (không phải lọc im lặng): client gửi được hình dạng ấy nghĩa là có một lỗi lập trình cần
@@ -1231,4 +1232,314 @@ export const repoWorkspaceRouter = router({
       await ghiAuditDuAnCaNhan(ctx, "delete", kq.id, { thungRac: kq.thungRac });
       return { ok: true as const, ma: null };
     }),
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ Đợt 3b (3.4) — BẢNG GIT. Mọi lệnh git đi qua ĐÚNG một cửa: `services/ai/gitDuAn/cuaGitDuAn.ts`
+  //   (argv hằng, không shell, hook câm, môi trường lọc, trần giờ, repo chính chỉ đọc, tác giả = phiên).
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠ RBAC fail-closed: ĐỌC (trạng thái/diff/nhánh/log/gợi ý thông điệp) = `ai_repo_read/canView` (`congPhien`);
+  //   GHI (commit/tạo nhánh/chuyển nhánh) = thêm `ai_repo_exec/canCreate` (`coQuyenTaoDuAn`) — cùng bit cho phép AI ghi
+  //   đĩa. Client chỉ gửi `projectId`; gốc do `phanGiaiGoc(id, người gọi)` phán (dự án cá nhân: chủ/admin).
+  // ⚠ Người bấm Commit = người duyệt: thao tác ghi git KHÔNG đi qua thẻ duyệt HITL (thẻ ấy dành cho thứ MODEL đề xuất);
+  //   ở đây không model nào chọn tệp hay thông điệp — "Gợi ý thông điệp" chỉ trả CHỮ về ô nhập.
+  // ⚠ Audit: mỗi lượt ghi git (thành công hay bị từ chối ở cửa) một dòng `ai_repo_git`.
+
+  /** Trạng thái `git status` của dự án + hai cờ cho UI (chỉ đọc? người này ghi được?). */
+  gitTrangThai: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN) }))
+    .query(async ({ input, ctx }) => {
+      const r = await moRepoGit(ctx, input.projectId);
+      if (!r.ok) return { ok: false as const, ma: r.ma, tt: null, coQuyenGhi: false };
+      const { trangThai } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+      const kq = await trangThai(r.repo);
+      if (!kq.ok) return { ok: false as const, ma: kq.ma, tt: null, coQuyenGhi: false };
+      return { ok: true as const, ma: null, tt: kq.tt, coQuyenGhi: await coQuyenTaoDuAn(ctx) };
+    }),
+
+  /** Hai bản văn (HEAD · đĩa) của MỘT tệp có trong trạng thái — đã che bí mật; client vẽ bằng `HunkDiffView readOnly`. */
+  gitDiffTep: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN), path: z.string().min(1).max(1024) }))
+    .query(async ({ input, ctx }) => {
+      const r = await moRepoGit(ctx, input.projectId);
+      if (!r.ok) return { ok: false as const, ma: r.ma, diff: null };
+      const { diffTep } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+      const kq = await diffTep(r.repo, input.path, `u:${r.userId}`);
+      return kq.ok ? { ok: true as const, ma: null, diff: kq.diff } : { ok: false as const, ma: kq.ma, diff: null };
+    }),
+
+  /** Nhánh cục bộ + nhánh hiện tại. */
+  gitNhanh: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN) }))
+    .query(async ({ input, ctx }) => {
+      const r = await moRepoGit(ctx, input.projectId);
+      if (!r.ok) return { ok: false as const, ma: r.ma, nhanh: [] as string[], hienTai: null };
+      const { danhSachNhanh } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+      const kq = await danhSachNhanh(r.repo);
+      return kq.ok
+        ? { ok: true as const, ma: null, nhanh: kq.nhanh, hienTai: kq.hienTai }
+        : { ok: false as const, ma: kq.ma, nhanh: [] as string[], hienTai: null };
+    }),
+
+  /** Log ngắn (mặc định 30 commit). */
+  gitLog: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN), so: z.number().int().min(1).max(100).optional() }))
+    .query(async ({ input, ctx }) => {
+      const r = await moRepoGit(ctx, input.projectId);
+      if (!r.ok) return { ok: false as const, ma: r.ma, dong: [] };
+      const { logNgan } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+      const kq = await logNgan(r.repo, input.so);
+      return kq.ok ? { ok: true as const, ma: null, dong: kq.dong } : { ok: false as const, ma: kq.ma, dong: [] };
+    }),
+
+  /** COMMIT các tệp đã chọn với thông điệp. Tác giả = người dùng PHIÊN. */
+  gitCommit: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().regex(RE_ID_DU_AN),
+        paths: z.array(z.string().min(1).max(1024)).min(1).max(200),
+        thongDiep: z.string().min(1).max(4000),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const r = await moRepoGit(ctx, input.projectId, true);
+      if (!r.ok) return { ok: false as const, ma: r.ma, hash: null };
+      const { commitTep, tacGiaTuPhien } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+      const u = (ctx as any).user ?? {};
+      const kq = await commitTep(r.repo, input.paths, input.thongDiep, tacGiaTuPhien({ id: r.userId, name: u.name, username: u.username, email: u.email }));
+      await ghiAuditGit(ctx, "commit", input.projectId, { ok: kq.ok, ma: kq.ok ? null : kq.ma, soTep: input.paths.length, hash: kq.ok ? kq.hash : null });
+      return kq.ok ? { ok: true as const, ma: null, hash: kq.hash } : { ok: false as const, ma: kq.ma, hash: null };
+    }),
+
+  /** TẠO nhánh mới từ HEAD và chuyển sang (từ chối khi cây bẩn). */
+  gitTaoNhanh: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN), ten: z.string().min(1).max(100) }))
+    .mutation(async ({ input, ctx }) => {
+      const r = await moRepoGit(ctx, input.projectId, true);
+      if (!r.ok) return { ok: false as const, ma: r.ma };
+      const { taoNhanh } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+      const kq = await taoNhanh(r.repo, input.ten);
+      await ghiAuditGit(ctx, "tao-nhanh", input.projectId, { ok: kq.ok, ma: kq.ok ? null : kq.ma, nhanh: input.ten });
+      return kq.ok ? { ok: true as const, ma: null } : { ok: false as const, ma: kq.ma };
+    }),
+
+  /** CHUYỂN sang một nhánh cục bộ đã có (từ chối khi cây bẩn). */
+  gitChuyenNhanh: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN), ten: z.string().min(1).max(100) }))
+    .mutation(async ({ input, ctx }) => {
+      const r = await moRepoGit(ctx, input.projectId, true);
+      if (!r.ok) return { ok: false as const, ma: r.ma };
+      const { chuyenNhanh } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+      const kq = await chuyenNhanh(r.repo, input.ten);
+      await ghiAuditGit(ctx, "chuyen-nhanh", input.projectId, { ok: kq.ok, ma: kq.ok ? null : kq.ma, nhanh: input.ten });
+      return kq.ok ? { ok: true as const, ma: null } : { ok: false as const, ma: kq.ma };
+    }),
+
+  /** "Gợi ý thông điệp" — model chỉ sinh CHỮ (mức ưu tiên tương tác); KHÔNG commit. */
+  gitGoiYThongDiep: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().regex(RE_ID_DU_AN),
+        paths: z.array(z.string().min(1).max(1024)).min(1).max(200),
+        lang: langSchema.optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const r = await moRepoGit(ctx, input.projectId);
+      if (!r.ok) return { ok: false as const, ma: r.ma, thongDiep: null };
+      const { diffGopChoGoiY } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+      const d = await diffGopChoGoiY(r.repo, input.paths);
+      if (!d.ok) return { ok: false as const, ma: d.ma, thongDiep: null };
+      const { goiYThongDiepCommit } = await import("../services/ai/gitDuAn/goiYThongDiep");
+      const { generateText } = await import("../services/aiGgufEngine");
+      const kq = await goiYThongDiepCommit(d.van, input.lang ?? "vi", (y) => generateText(y));
+      return kq.ok ? { ok: true as const, ma: null, thongDiep: kq.thongDiep } : { ok: false as const, ma: kq.ma, thongDiep: null };
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ Đợt 3b (3.5) — NÚT TỆP: xoá / đổi tên đi qua tool GHI SẴN CÓ (`delete_file`/`rename_file`) ⇒ `pendingAction`
+  //   ⇒ THẺ DUYỆT hiện có ⇒ người bấm Xác nhận ⇒ `confirmAction`. Không đường ghi mới: tuyến chỉ ĐỀ XUẤT (như
+  //   `deXuatSuaTay`); bốn lớp hàng rào + TOCTOU + RBAC `ai_repo_exec` vẫn ở tool. TẠO tệp/thư mục = `deXuatSuaTay`
+  //   với `original:""` (lượt `apply_diff` tạo mới — đường có sẵn).
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+
+  deXuatXoaTep: protectedProcedure
+    .input(z.object({ path: z.string().min(1).max(1024), lang: langSchema.optional(), projectId: projectIdSchema }))
+    .mutation(async ({ input, ctx }) => {
+      const goc = phanGiaiGoc(input.projectId, nguoiGoiTuCtx(ctx));
+      if (!goc.ok) return { ok: false as const, note: "PROJECT_NOT_FOUND", message: null, pendingAction: null };
+      const outcome = await executeDecision(
+        { tool: "delete_file", args: { path: input.path } },
+        execCtxFrom(ctx, input.lang ?? "vi", goc.goc ?? undefined),
+      );
+      if (outcome.denied) return { ok: false as const, note: "DENIED", message: outcome.denied.message, pendingAction: null };
+      if (outcome.error || !outcome.pendingAction) {
+        return { ok: false as const, note: outcome.error ?? "NO_PENDING", message: null, pendingAction: null };
+      }
+      return { ok: true as const, note: null, message: null, pendingAction: outcome.pendingAction };
+    }),
+
+  deXuatDoiTenTep: protectedProcedure
+    .input(
+      z.object({
+        from: z.string().min(1).max(1024),
+        to: z.string().min(1).max(1024),
+        lang: langSchema.optional(),
+        projectId: projectIdSchema,
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const goc = phanGiaiGoc(input.projectId, nguoiGoiTuCtx(ctx));
+      if (!goc.ok) return { ok: false as const, note: "PROJECT_NOT_FOUND", message: null, pendingAction: null };
+      const outcome = await executeDecision(
+        { tool: "rename_file", args: { from: input.from, to: input.to } },
+        execCtxFrom(ctx, input.lang ?? "vi", goc.goc ?? undefined),
+      );
+      if (outcome.denied) return { ok: false as const, note: "DENIED", message: outcome.denied.message, pendingAction: null };
+      if (outcome.error || !outcome.pendingAction) {
+        return { ok: false as const, note: outcome.error ?? "NO_PENDING", message: null, pendingAction: null };
+      }
+      return { ok: true as const, note: null, message: null, pendingAction: outcome.pendingAction };
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ Đợt 3b (3.5) — MÀN QUẢN LÝ TRÍ NHỚ: bài học `ai_coding_lessons` theo (người × dự án). Không quyền mới: cùng
+  //   bit `ai_repo_read/canView` của đường chat "nhớ rằng:/quên bài học N" (doc 82). Chủ = `ctx.user.id`; mọi câu
+  //   truy vấn ở `db/aiCodingLessons.ts` mang `eq(userId)`. Nội dung THÊM/SỬA qua `lamSachBaiHoc` (quét tiêm + che bí
+  //   mật; rủi ro cao ⇒ từ chối) — đúng cửa ghi của đường chat, không bản sao thứ hai.
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+
+  baiHocDanhSach: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN) }))
+    .query(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false as const, note: "PERMISSION_DENIED", baiHoc: [], tran: 0, batTrongPrompt: false };
+      if (!phanGiaiGoc(input.projectId, nguoiGoiTuCtx(ctx)).ok) {
+        return { ok: false as const, note: "PROJECT_NOT_FOUND", baiHoc: [], tran: 0, batTrongPrompt: false };
+      }
+      const { danhSachBaiHoc } = await import("../db/aiCodingLessons");
+      const { baiHocEnabled } = await import("../services/ai/codingLessonContext");
+      const { GIOI_HAN_BAI_HOC } = await import("@shared/aiCodingLesson");
+      return {
+        ok: true as const,
+        note: null,
+        baiHoc: await danhSachBaiHoc(cong.userId, input.projectId),
+        tran: GIOI_HAN_BAI_HOC.SO_BAI_TOI_DA,
+        batTrongPrompt: baiHocEnabled(),
+      };
+    }),
+
+  baiHocThem: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN), noiDung: z.string().min(1).max(2000) }))
+    .mutation(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false as const, note: "PERMISSION_DENIED", noiDung: "" };
+      if (!phanGiaiGoc(input.projectId, nguoiGoiTuCtx(ctx)).ok) return { ok: false as const, note: "PROJECT_NOT_FOUND", noiDung: "" };
+      const { lamSachBaiHoc } = await import("../services/ai/codingLessonContext");
+      const sach = lamSachBaiHoc(input.noiDung);
+      if (!sach.ok) return { ok: false as const, note: sach.ma === "rui_ro_cao" ? "LESSON_RISKY" : "LESSON_EMPTY", noiDung: "" };
+      const { luuBaiHoc } = await import("../db/aiCodingLessons");
+      const kq = await luuBaiHoc(cong.userId, { projectId: input.projectId, noiDung: sach.noiDung, mucRuiRo: sach.mucRuiRo });
+      if (kq.ma === "hong") return { ok: false as const, note: "SAVE_FAILED", noiDung: "" };
+      if (kq.ma === "day") return { ok: false as const, note: "LESSON_FULL", noiDung: "" };
+      return { ok: true as const, note: kq.ma === "trung" ? "LESSON_DUPLICATE" : null, noiDung: kq.noiDung };
+    }),
+
+  baiHocSua: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN), id: z.string().min(1).max(64), noiDung: z.string().min(1).max(2000) }))
+    .mutation(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false as const, note: "PERMISSION_DENIED", noiDung: "" };
+      if (!phanGiaiGoc(input.projectId, nguoiGoiTuCtx(ctx)).ok) return { ok: false as const, note: "PROJECT_NOT_FOUND", noiDung: "" };
+      const { lamSachBaiHoc } = await import("../services/ai/codingLessonContext");
+      const sach = lamSachBaiHoc(input.noiDung);
+      if (!sach.ok) return { ok: false as const, note: sach.ma === "rui_ro_cao" ? "LESSON_RISKY" : "LESSON_EMPTY", noiDung: "" };
+      const { suaBaiHoc } = await import("../db/aiCodingLessons");
+      const kq = await suaBaiHoc(cong.userId, { projectId: input.projectId, id: input.id, noiDung: sach.noiDung, mucRuiRo: sach.mucRuiRo });
+      if (kq.ma === "sua") return { ok: true as const, note: null, noiDung: kq.noiDung };
+      const note = kq.ma === "trung" ? "LESSON_DUPLICATE" : kq.ma === "khong_thay" ? "NOT_FOUND" : "SAVE_FAILED";
+      return { ok: false as const, note, noiDung: "" };
+    }),
+
+  baiHocXoa: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(RE_ID_DU_AN), id: z.string().min(1).max(64) }))
+    .mutation(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false as const, note: "PERMISSION_DENIED" };
+      if (!phanGiaiGoc(input.projectId, nguoiGoiTuCtx(ctx)).ok) return { ok: false as const, note: "PROJECT_NOT_FOUND" };
+      const { xoaBaiHocTheoId } = await import("../db/aiCodingLessons");
+      const kq = await xoaBaiHocTheoId(cong.userId, input.projectId, input.id);
+      return kq.ok ? { ok: true as const, note: null } : { ok: false as const, note: "NOT_FOUND" };
+    }),
+
+  // ★★★ Đợt 3b (3.5) — ĐẶT / ĐỔI TÊN PHIÊN (cột có sẵn `title`; tên rỗng ⇒ về nhãn suy). Cổng `congPhien`, chủ = phiên.
+  doiTenPhien: protectedProcedure
+    .input(z.object({ sessionId: z.string().regex(RE_ID_PHIEN), title: z.string().max(400) }))
+    .mutation(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false as const, note: "PERMISSION_DENIED", title: "" };
+      const { doiTenPhien } = await import("../db/aiCodingSessions");
+      const r = await doiTenPhien(cong.userId, input.sessionId, input.title);
+      return r.ok ? { ok: true as const, note: null, title: r.title } : { ok: false as const, note: "NOT_FOUND", title: "" };
+    }),
+
+  // ★★★ Đợt 3b (3.5) — DÁN ẢNH LỖI: ảnh ⇒ OCR (dịch vụ sẵn có của Training Studio) ⇒ CHỮ về ô nhập. Ảnh không đi tới
+  //   model (model chính không có thị giác). Cổng `congPhien`; chỉ ảnh theo byte đầu; trần 4 MiB; một lượt/người.
+  ocrAnhLoi: protectedProcedure
+    .input(z.object({ anhBase64: z.string().min(8).max(6_000_000) }))
+    .mutation(async ({ input, ctx }) => {
+      const cong = await congPhien(ctx);
+      if (!cong.ok) return { ok: false as const, ma: "PERMISSION_DENIED", text: "", doTinCay: 0, catBot: false };
+      const { ocrAnhLoi } = await import("../services/ai/ocrAnhLoi");
+      const kq = await ocrAnhLoi(cong.userId, input.anhBase64);
+      return kq.ok
+        ? { ok: true as const, ma: null, text: kq.text, doTinCay: kq.doTinCay, catBot: kq.catBot }
+        : { ok: false as const, ma: kq.ma, text: "", doTinCay: 0, catBot: false };
+    }),
 });
+
+/**
+ * ★ Đợt 3b — mở repo git của dự án cho một lượt bảng Git. Fail-closed theo thứ tự: quyền ĐỌC (`congPhien`) · quyền GHI
+ * khi `ghi` (`ai_repo_exec/canCreate`) · `phanGiaiGoc(id, người gọi)` · `phanGiaiRepoGit` (repo đúng gốc, cờ chỉ đọc).
+ */
+async function moRepoGit(
+  ctx: any,
+  projectId: string,
+  ghi = false,
+): Promise<
+  | { ok: true; userId: number; repo: import("../services/ai/gitDuAn/cuaGitDuAn").RepoGit }
+  | { ok: false; ma: string }
+> {
+  const cong = await congPhien(ctx);
+  if (!cong.ok) return { ok: false, ma: "PERMISSION_DENIED" };
+  if (ghi && !(await coQuyenTaoDuAn(ctx))) return { ok: false, ma: "PERMISSION_DENIED" };
+  const goc = phanGiaiGoc(projectId, nguoiGoiTuCtx(ctx));
+  if (!goc.ok || !goc.goc) return { ok: false, ma: "PROJECT_NOT_FOUND" };
+  const { phanGiaiRepoGit } = await import("../services/ai/gitDuAn/cuaGitDuAn");
+  const r = await phanGiaiRepoGit(goc.goc);
+  if (!r.ok) return { ok: false, ma: r.ma };
+  return { ok: true, userId: cong.userId, repo: r.repo };
+}
+
+/** Audit một lượt GHI git (kể cả bị cửa từ chối — "ai đã cố commit gì" cũng là câu điều tra). Nuốt lỗi. */
+async function ghiAuditGit(ctx: any, thaoTac: string, projectId: string, chiTiet: Record<string, unknown>): Promise<void> {
+  try {
+    const { logCrudOperation } = await import("../services/auditTrailService");
+    await logCrudOperation(
+      {
+        userId: Number(ctx.user.id),
+        userName: (ctx.user as { name?: string | null }).name ?? null,
+        ipAddress: (ctx.req as { ip?: string } | undefined)?.ip ?? null,
+        source: "trpc",
+      },
+      {
+        action: "update",
+        entityType: "ai_repo_git",
+        entityName: projectId,
+        details: { operation: thaoTac, after: { projectId, ...chiTiet } },
+        status: chiTiet.ok === true ? "success" : "failure",
+      },
+    );
+  } catch {
+    /* audit là phần thêm — không làm hỏng lượt đã chạy */
+  }
+}

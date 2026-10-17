@@ -756,7 +756,18 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //     OWNER (the session user who started it) or admin, others see "busy" only; `ai_repo_read/canView` in the body ⇒ C;
 //   • `aiChayUngDung.chay` / `dung` / `deXuatLenh` (mutations): start (ai_repo_exec/canCreate) / stop (owner or admin) /
 //     propose ONE allowlisted command through `run_command`'s HITL path ⇒ D. No tenant rows. No baseline row added.
-const GHIM = { A: 333, B: 8, C: 481, D: 1158, S: 357, tong: 2337 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 3b — bảng Git · nút tệp · trí nhớ · tên phiên · OCR ảnh) — **C 481 → 486 · D 1158 → 1169 ·
+// tong 2337 → 2353 · A/B/S unchanged.** Sixteen NEW procedures in `repoWorkspaceRouter.ts` (before = this pin, green):
+//   • `repoWorkspace.gitTrangThai` / `gitDiffTep` / `gitNhanh` / `gitLog` (queries): git status/diff/branches/log of the
+//     project the CALLER resolves via `phanGiaiGoc(id, session user)` (personal projects: owner/admin only), through the
+//     controlled git gate `services/ai/gitDuAn/cuaGitDuAn.ts` — files on disk, no tenant rows ⇒ C;
+//   • `repoWorkspace.baiHocDanhSach` (query): the session user's OWN lessons (`eq(userId)` in every query) ⇒ C;
+//   • `repoWorkspace.gitCommit` / `gitTaoNhanh` / `gitChuyenNhanh` / `gitGoiYThongDiep` (mutations): ai_repo_exec/canCreate for
+//     writes, author = session user, platform repo read-only, audit `ai_repo_git`; suggestion only returns text ⇒ D;
+//   • `repoWorkspace.deXuatXoaTep` / `deXuatDoiTenTep` (mutations): PROPOSE `delete_file`/`rename_file` (HITL card) ⇒ D;
+//   • `repoWorkspace.baiHocThem` / `baiHocSua` / `baiHocXoa` / `doiTenPhien` (mutations): owner = session user ⇒ D;
+//   • `repoWorkspace.ocrAnhLoi` (mutation): OCR of an uploaded screenshot, no rows ⇒ D. No baseline row added.
+const GHIM = { A: 333, B: 8, C: 486, D: 1169, S: 357, tong: 2353 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

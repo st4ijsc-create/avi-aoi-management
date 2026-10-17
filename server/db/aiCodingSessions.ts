@@ -182,7 +182,14 @@ export async function luuPhien(
       if (!laIdPhienHopLe(input.sessionId)) return LUU_HONG;
       const ra = await db
         .update(aiCodingSessions)
-        .set({ turns, turnCount: turns.length, title, updatedAt: new Date() })
+        // ★ Đợt 3b — nhãn NGƯỜI ĐẶT (`doiTenPhien`) không bị lượt lưu tự động ghi đè: chỉ lấp nhãn suy khi hàng còn
+        //   rỗng. Nhãn suy vốn lấy từ câu hỏi ĐẦU (không đổi khi mạch dài thêm) ⇒ với phiên chưa đặt tên, hành vi cũ y nguyên.
+        .set({
+          turns,
+          turnCount: turns.length,
+          title: sql`CASE WHEN ${aiCodingSessions.title} = '' THEN ${title} ELSE ${aiCodingSessions.title} END`,
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(aiCodingSessions.id, input.sessionId),
@@ -192,10 +199,10 @@ export async function luuPhien(
             eq(aiCodingSessions.projectId, input.projectId),
           ),
         )
-        .returning({ id: aiCodingSessions.id });
+        .returning({ id: aiCodingSessions.id, title: aiCodingSessions.title });
       const hang = ra[0];
       if (!hang) return LUU_HONG; // không tồn tại / của người khác / khác dự án — cả ba đều là hỏng
-      return { ok: true, id: String(hang.id), title, turnCount: turns.length };
+      return { ok: true, id: String(hang.id), title: hang.title ?? title, turnCount: turns.length };
     }
 
     const ra = await db
@@ -214,6 +221,45 @@ export async function luuPhien(
   } catch (err) {
     canhBao("luuPhien", err);
     return LUU_HONG;
+  }
+}
+
+/**
+ * ★★★ Đợt 3b (3.5) — ĐẶT / ĐỔI TÊN một phiên **của chính mình** (cột có sẵn `title`, không migration).
+ *
+ * • Tên làm sạch: một dòng, bỏ ký tự điều khiển, cắt `DAI_NHAN`. Rỗng ⇒ TRẢ VỀ nhãn suy từ câu hỏi đầu (`nhanTuLuot`
+ *   trên `turns` đã chiếu) — "xoá tên" nghĩa là về mặc định, không phải một phiên tên rỗng vĩnh viễn.
+ * • `eq(userId)` trong WHERE là phép CƯỠNG CHẾ: đổi tên phiên người khác bằng id đoán trúng khớp 0 hàng ⇒ `{ok:false}`
+ *   — cùng mã với "không tồn tại" (không làm oracle đếm phiên người khác).
+ * • KHÔNG chạm `turns`/`updatedAt`: đổi tên không phải một lượt hội thoại, không đẩy phiên lên đầu danh sách.
+ */
+export async function doiTenPhien(userId: number, sessionId: string, tenMoi: unknown): Promise<{ ok: boolean; title: string }> {
+  if (!Number.isInteger(userId) || userId <= 0) return { ok: false, title: "" };
+  if (!laIdPhienHopLe(sessionId)) return { ok: false, title: "" };
+  const db = await getDb();
+  if (!db) return { ok: false, title: "" };
+  // eslint-disable-next-line no-control-regex
+  const sach = String(tenMoi ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  let title = sach.length <= GIOI_HAN_PHIEN.DAI_NHAN ? sach : sach.slice(0, GIOI_HAN_PHIEN.DAI_NHAN - 1) + "…";
+  try {
+    if (title === "") {
+      const [row] = await db
+        .select({ turns: aiCodingSessions.turns })
+        .from(aiCodingSessions)
+        .where(and(eq(aiCodingSessions.id, sessionId), eq(aiCodingSessions.userId, userId)))
+        .limit(1);
+      if (!row) return { ok: false, title: "" };
+      title = nhanTuLuot(locLuot(row.turns));
+    }
+    const ra = await db
+      .update(aiCodingSessions)
+      .set({ title })
+      .where(and(eq(aiCodingSessions.id, sessionId), eq(aiCodingSessions.userId, userId)))
+      .returning({ id: aiCodingSessions.id });
+    return ra.length > 0 ? { ok: true, title } : { ok: false, title: "" };
+  } catch (err) {
+    canhBao("doiTenPhien", err);
+    return { ok: false, title: "" };
   }
 }
 

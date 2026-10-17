@@ -138,19 +138,57 @@ function moiTruongGit(): NodeJS.ProcessEnv {
   };
 }
 
-function chayGit(args: string[], cwd: string, hanGio: number): Promise<{ ok: boolean; hetGio: boolean; loi: string }> {
+/** Kết quả THÔ của một lượt `git` (dùng chung cho cửa git dự án — Đợt 3b). */
+export interface KetQuaChayGit {
+  ok: boolean;
+  hetGio: boolean;
+  /** Mã thoát (`null` khi bị giết / không khởi động được). */
+  ma: number | null;
+  stdout: string;
+  loi: string;
+}
+
+/**
+ * ★★★ BỘ CHẠY `git` DUY NHẤT của thư mục này (và của cửa git dự án `ai/gitDuAn/cuaGitDuAn.ts` — Đợt 3b dùng lại, không
+ * mở điểm sinh tiến trình thứ hai): `execFile` + MẢNG đối số (không shell), trần giờ, trần bộ đệm, cửa sổ ẩn. `env`
+ * vắng ⇒ môi trường của clone/init (`moiTruongGit`); cửa git dự án truyền môi trường ĐÃ LỌC của nó.
+ */
+export function chayGitDauRa(
+  args: string[],
+  cwd: string,
+  hanGio: number,
+  tuyChon: { env?: NodeJS.ProcessEnv; maxBuffer?: number } = {},
+): Promise<KetQuaChayGit> {
   return new Promise((resolve) => {
     execFile(
       "git",
       args,
-      { cwd, env: moiTruongGit(), timeout: hanGio, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-      (err, _stdout, stderr) => {
-        if (!err) return resolve({ ok: true, hetGio: false, loi: "" });
-        const e = err as NodeJS.ErrnoException & { killed?: boolean; signal?: string };
-        resolve({ ok: false, hetGio: e.killed === true || e.signal === "SIGTERM", loi: String(stderr || e.message).slice(0, 2000) });
+      {
+        cwd,
+        env: tuyChon.env ?? moiTruongGit(),
+        timeout: hanGio,
+        windowsHide: true,
+        maxBuffer: tuyChon.maxBuffer ?? 4 * 1024 * 1024,
+        encoding: "utf8",
+      },
+      (err, stdout, stderr) => {
+        if (!err) return resolve({ ok: true, hetGio: false, ma: 0, stdout: String(stdout ?? ""), loi: String(stderr ?? "") });
+        const e = err as NodeJS.ErrnoException & { killed?: boolean; signal?: string; code?: number | string };
+        resolve({
+          ok: false,
+          hetGio: e.killed === true || e.signal === "SIGTERM",
+          ma: typeof e.code === "number" ? e.code : null,
+          stdout: String(stdout ?? ""),
+          loi: String(stderr || e.message).slice(0, 2000),
+        });
       },
     );
   });
+}
+
+async function chayGit(args: string[], cwd: string, hanGio: number): Promise<{ ok: boolean; hetGio: boolean; loi: string }> {
+  const kq = await chayGitDauRa(args, cwd, hanGio);
+  return { ok: kq.ok, hetGio: kq.hetGio, loi: kq.loi };
 }
 
 /** Thư mục rỗng cho `core.hooksPath` (tạo nếu thiếu; có tệp lạ ⇒ dọn — "rỗng" là bất biến, không là lời khai). */
