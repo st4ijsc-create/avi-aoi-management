@@ -160,3 +160,31 @@ T1 `shared/agentCore` (`a74304749`, 92 ca) · T2 `delete_file`/`rename_file`/`fi
 làm "tạo tệp mới trong thư mục mới" bị coi là tệp bẩn · T6 bộ F (`c05b9848b`) · T3 checkpoint, T4 runtime server + API + mig 0390,
 T5 UI chế độ agent: đang làm.
 **Lệch kế hoạch có chủ ý:** checkpoint dùng ảnh chụp byte ngoài dự án thay cho git plumbing (chạy cả dự án không có git; hook repo chặn stash).
+
+### Đợt 1 — CỔNG ĐẠT (2026-10-17, build `b55ae63c2` trên `:3010`)
+| Cổng | Ngưỡng | Kết quả | Nền |
+|---|---|---|---|
+| A2 (2 lỗi / 2 tệp) qua chế độ agent `tu-dong`, 12 lượt | ≥ 70 % | **12/12 = 100 %** (trung vị 13 s) | 4/12 = 33 % (vòng tự trị cũ) |
+| A1 × 12 | — | 12/12 | 12/12 |
+| Bộ F (6 bài tính năng nhiều tệp TS/JS/Py/C#) × 3 | ≥ 60 % | **14/18 = 78 %** (4/6 · 5/6 · 5/6) | 0 % (không đường nào làm được) |
+| Chế độ Hỏi H 12 × 3 | không tụt quá ±3 | **30/36 = 83 %** | 27/36 |
+| Tệp test bị sửa | phải bị bắt | 1/18 lượt (py-dang-ky lượt 1) — thước bắt, tính TRƯỢT | — |
+
+Trượt còn lại: `py-dang-ky` 13/14 ổn định — model thêm bản dịch Anh cho khoá mà bảng đề bài KHÔNG liệt kê (không bám đặc tả;
+thước công bằng, giữ). Lượt 3 `cs-dat-phong` bị huỷ nhầm bởi chính chủ dự án ⇒ chạy bù (ĐẠT).
+
+Lỗi sản phẩm thật lộ ra khi đo sống (đã vá, mỗi cái có lưới đỏ trước):
+1. Watchdog spawn PowerShell `detached` ⇒ không console ⇒ thoát 0 không chạy gì (cổng giết-server 300 s) ⇒ vá: phục hồi 31 s.
+2. Qwen3.6 phát tool call (khuôn XML) TRONG `reasoning_content` ⇒ 0 tool call ⇒ G5-D chẩn đoán sai ⇒ lượt agent chết. Bản đầu
+   VỚT khối đó; rà bảo mật bác 3 lần (tiêm khi trích dữ liệu · vi sai bộ phân tích · ReDoS) ⇒ chốt: chữ suy luận KHÔNG BAO GIỜ
+   thành hành động; phát hiện + hỏi lại lượt đó với nghĩ TẮT.
+3. Hộp cát chặn `.py` (và Java/Go/Rust/C/C++…) ⇒ 2/2 bài Python trượt ⇒ mở danh sách đuôi ngôn ngữ nguồn văn bản.
+4. `git status` gộp stderr `warning:` ⇒ tạo tệp mới trong thư mục con mới bị coi là "tệp bẩn".
+5. Cuộc đua lý do bác (bộ kiểm 1 s thắng bus) ⇒ model nhận "rejected" mất lý do.
+Rà bảo mật tự động mỗi commit còn bắt: nhãn tin cậy "đầu ra lệnh" giả được · lệnh tự chạy ở tu-dong lỏng hơn vòng cũ · manifest
+hoàn tác nằm trong vùng agent ghi được (nay ngoài repo + ký HMAC) — tất cả đã vá.
+
+### Đợt 2 + 4A — mã xong (`de591c868`), chờ đo
+Đợt 2: tool `find_symbol` / `search_code` / `search_docs` / `remember` (đề xuất, người duyệt mới ghi), tệp quy ước dự án, chỉ mục
+mã theo dự án (mig 0391, pgvector). Đợt 4A: token cá nhân `/v1` + device flow (mig 0392) — đang vá 3 phát hiện rà bảo mật trước
+khi áp dev. Đang làm song song: 3a dự án cho kỹ sư, 3c cài/chạy/xem trước, 4B extension v0.2 chạy lõi agent.
