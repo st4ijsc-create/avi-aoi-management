@@ -20936,6 +20936,23 @@
       "hang": "const"
     },
     "agent": {
+      "nho": {
+        "tieuDe": "Memory proposal",
+        "phamViDuAn": "This project",
+        "phamViNguoiDung": "Your preference",
+        "giaiThich": "Saved only if you click Remember; it will be used as context in later runs.",
+        "nutNho": "Remember",
+        "nutBoQua": "Dismiss",
+        "daNho": "Remembered — it will be used in later runs.",
+        "daBo": "Dismissed.",
+        "loiHetHieuLuc": "This proposal has expired (the run is no longer on the server).",
+        "loiDaXuLy": "This proposal has already been handled.",
+        "loiTat": "Memory is turned off on the server — nothing saved.",
+        "loiRuiRo": "Not saved: the note looks like an instruction.",
+        "loiDay": "This project already has the maximum number of lessons — delete some first.",
+        "loiQuyen": "You do not have permission for this run.",
+        "loiKhac": "Could not save ({{ma}})."
+      },
       "canDuyet": "Needs your approval",
       "cheDo": {
         "hoi": "Ask",
@@ -22357,5 +22374,69 @@
     "lateDialogTitle": "Mark late write result #{{id}} as reviewed?",
     "lateDialogDesc": "The device returned a REAL result for this write AFTER it was recorded as 'outcome unknown'. The result is kept as evidence (nothing is edited or deleted). Check the real value on the device; the review is audited with your note and releases the adapter's ownership-change hold.",
     "lateReviewed": "Late result review recorded"
+  },
+  "aiGatewayToken": {
+    "title": "AI gateway tokens & devices",
+    "subtitle": "Let the VSCode extension call the /v1 gateway on your behalf — each token has scopes, an expiry and can be revoked.",
+    "device": {
+      "title": "Confirm a device",
+      "desc": "Enter the code shown by the extension. Only approve if you just started the sign-in in VSCode yourself.",
+      "codeLabel": "Device code",
+      "deviceName": "Device",
+      "scopes": "Requested scopes",
+      "expiresIn": "Code valid for {{s}} more seconds",
+      "warning": "Approving issues a 90-day token tied to your account. Every request from the extension is recorded under your name.",
+      "approve": "Approve",
+      "deny": "Deny",
+      "approved": "Approved. Return to VSCode — the extension will pick up the token automatically.",
+      "denied": "Denied. The device received no token."
+    },
+    "tokens": {
+      "title": "My tokens",
+      "desc": "A token is shown in full only once, when created; the server stores only its hash.",
+      "empty": "No tokens yet.",
+      "name": "Name",
+      "prefix": "Prefix",
+      "scopes": "Scopes",
+      "status": "Status",
+      "expires": "Expires",
+      "lastUsed": "Last used",
+      "never": "Never",
+      "revoke": "Revoke",
+      "revoked": "Token revoked."
+    },
+    "create": {
+      "name": "Token name (e.g. VSCode laptop)",
+      "days": "Days",
+      "submit": "Create token",
+      "once": "Copy the token now — it will NOT be shown again.",
+      "copied": "Token copied."
+    },
+    "scope": {
+      "chat": "Chat / agent",
+      "fim": "Code completion (FIM)",
+      "embed": "Embeddings"
+    },
+    "source": {
+      "web": "created on web",
+      "thiet-bi": "device sign-in"
+    },
+    "status": {
+      "hieu-luc": "Active",
+      "het-han": "Expired",
+      "thu-hoi": "Revoked"
+    },
+    "errors": {
+      "PERMISSION_DENIED": "You do not have AI coding access (ai_repo_read).",
+      "CAN_PHIEN_WEB": "This action requires a web sign-in session. Please sign in again.",
+      "QUA_TRAN": "You have too many active tokens. Revoke some first.",
+      "DB_UNAVAILABLE": "The server could not store the token right now. Try again later.",
+      "NOT_FOUND": "Token not found (or already revoked).",
+      "RATE_LIMITED": "Too many code attempts. Wait a minute and try again.",
+      "khong-ton-tai": "Unknown code. Check the code shown in VSCode.",
+      "het-han": "The code has expired. Start the sign-in again from VSCode.",
+      "da-xu-ly": "This code has already been handled.",
+      "csdl": "The server is temporarily unavailable. Try again later."
+    }
   }
 }

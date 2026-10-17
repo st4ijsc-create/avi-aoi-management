@@ -281,6 +281,21 @@ export const aiAgentRouter = router({
       }),
     ),
 
+  // ═══ Đợt 2 — ĐỀ XUẤT NHỚ của lượt chạy (tool `remember` chỉ đề xuất; ghi CHỈ khi người bấm "Nhớ") ═══
+  /** Nhớ một đề xuất ⇒ `luuBaiHoc` (người × dự án của lượt) sau `lamSachBaiHoc`. Chỉ chủ lượt chạy. */
+  nhoDeXuat: protectedProcedure
+    .input(z.object({ runId: uuidSchema, id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucNhoDeXuat(toAgentUser(ctx.user as any), { runId: input.runId, id: input.id }),
+    ),
+
+  /** Bỏ qua một đề xuất nhớ — không ghi gì. Chỉ chủ lượt chạy. */
+  boDeXuat: protectedProcedure
+    .input(z.object({ runId: uuidSchema, id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucLuotChay()).thuTucBoDeXuat(toAgentUser(ctx.user as any), { runId: input.runId, id: input.id }),
+    ),
+
   untripKillSwitch: killSwitchProcedure.mutation(async ({ ctx }) => {
     await untripKillSwitch(ctx.user.id);
     await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {

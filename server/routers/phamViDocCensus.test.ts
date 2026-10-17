@@ -728,7 +728,20 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //     agent-run log is per user, like `ai_coding_sessions`; no tenant/factory rows) ⇒ C;
 //   • `aiAgent.duyet` / `aiAgent.bac` / `aiAgent.hoanTac` (mutations): `confirmAction` / `cancelAction` (token bound to the
 //     session user) and the checkpoint undo (run ownership checked first) ⇒ D. No baseline row added.
-const GHIM = { A: 333, B: 8, C: 476, D: 1147, S: 357, tong: 2321 } as const;
+// ★★★ 2026-10-17 (AI Local Đợt 2 — đề xuất nhớ của vòng agent) — **D 1147 → 1149 · tong 2321 → 2323 · A/B/C/S unchanged.**
+// Two NEW mutations in `aiAgentRouter.ts`, measured with this scanner (before = this pin, green; after = D 1149 · tong 2323):
+//   • `aiAgent.nhoDeXuat` / `aiAgent.boDeXuat`: act on a "remember" proposal held IN MEMORY by the caller's OWN agent run
+//     (`quanLyLuotChay.nhoDeXuat` returns NOT_FOUND for another user's run); `nhoDeXuat` writes `ai_coding_lessons` through
+//     `luuBaiHoc(userId from the session, projectId of the run)` = OWNER scope, no tenant/factory rows ⇒ D. No baseline row added.
+// ★★★ 2026-10-17 (AI Local Đợt 4A — token theo người dùng cho cổng /v1) — **C 476 → 478 · D 1149 → 1152 · tong 2323 → 2328 ·
+// A/B/S unchanged.** Five NEW procedures in the NEW `aiGatewayTokenRouter.ts`, measured with this scanner (before = this pin,
+// green; after = C 478 · D 1152 · tong 2328):
+//   • `aiGatewayToken.danhSach` (query): `ai_gateway_tokens` (mig 0392) WHERE `userId` = session user = OWNER scope ⇒ C;
+//   • `aiGatewayToken.xemThietBi` (query): one device-code row by its short code (no tenant/factory rows, no owner yet) ⇒ C;
+//   • `aiGatewayToken.tao` / `thuHoi` / `quyetThietBi` (mutations): insert/revoke the caller's OWN token, approve a device code
+//     for the session user; `ai_repo_read/canView` checked in the body (`services/ai/gatewayToken/thuTucToken.ts`) ⇒ D.
+//     No baseline row added.
+const GHIM = { A: 333, B: 8, C: 478, D: 1152, S: 357, tong: 2328 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

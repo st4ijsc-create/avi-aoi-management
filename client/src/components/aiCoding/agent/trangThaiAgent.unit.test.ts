@@ -197,3 +197,37 @@ describe("layDiffTuDeXuat — đề xuất ghi ⇒ args cho TheDuyetDiff (dung n
     expect(layDiffTuDeXuat({ ten: "run_command", thamSo: { command: "ls" }, xemTruoc: { argv: ["ls"] } })).toBeNull();
   });
 });
+
+describe("Đợt 2 — đề xuất nhớ + dòng tool của 4 tool mới", () => {
+  it("de-xuat-nho ⇒ thẻ 'nho' trạng thái cho (nội dung + phạm vi); xong KHÔNG làm nó hết hiệu lực", async () => {
+    const { capNhatDeXuatNho } = await import("./trangThaiAgent");
+    let s = chay([
+      { loai: "bat-dau", runId: "r1", cheDo: "hoi" },
+      { loai: "de-xuat-nho", id: "nho-1", note: "Dùng pnpm.", scope: "project" },
+      { loai: "xong", lyDo: "hoan-thanh" },
+    ]);
+    const m = s.dongThoiGian.find((x) => x.kieu === "nho");
+    expect(m).toEqual({ kieu: "nho", id: "nho-1", note: "Dùng pnpm.", scope: "project", trangThai: "cho" });
+    s = capNhatDeXuatNho(s, "nho-1", { trangThai: "da-nho" });
+    expect(s.dongThoiGian.find((x) => x.kieu === "nho")).toEqual(expect.objectContaining({ trangThai: "da-nho" }));
+    // cập nhật id lạ ⇒ không đổi
+    expect(capNhatDeXuatNho(s, "khac", { trangThai: "da-bo" })).toEqual(s);
+  });
+
+  it("phát lại cùng sự kiện (nối lại ?tu=0) ⇒ cùng một thẻ, không nhân đôi", () => {
+    const es: SuKienAgent[] = [
+      { loai: "bat-dau", runId: "r1", cheDo: "hoi" },
+      { loai: "de-xuat-nho", id: "nho-1", note: "a", scope: "user" },
+      { loai: "de-xuat-nho", id: "nho-1", note: "a", scope: "user" },
+    ];
+    expect(chay(es).dongThoiGian.filter((x) => x.kieu === "nho")).toHaveLength(1);
+  });
+
+  it("thamSoChinh: tên ký hiệu / câu tìm / ghi chú", () => {
+    expect(thamSoChinh("find_symbol", { name: "cong", kind: "function" })).toBe("cong · function");
+    expect(thamSoChinh("find_symbol", { name: "cong" })).toBe("cong");
+    expect(thamSoChinh("search_code", { query: "retry logic" })).toBe("retry logic");
+    expect(thamSoChinh("search_docs", { query: "MC protocol", corpus: "vendor" })).toBe("MC protocol · vendor");
+    expect(thamSoChinh("remember", { note: "Dùng pnpm." })).toBe("Dùng pnpm.");
+  });
+});

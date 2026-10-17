@@ -1,13 +1,18 @@
 /**
  * shared/agentCore — bộ tool v1 (schema OpenAI function, tên + mô tả tiếng Anh cho model), kiểm/chuẩn hoá tham số,
- * và `apDungEdits` (phép vá thuần của `edit_file`). Thiết kế: spec Đợt 1 §3.
+ * và `apDungEdits` (phép vá thuần của `edit_file`). Thiết kế: spec Đợt 1 §3; bốn tool ngữ cảnh/trí nhớ của Đợt 2
+ * (`find_symbol`, `search_code`, `search_docs`, `remember`): spec `2026-10-17-ai-local-dot2-ngu-canh-tri-nho-design.md` §2.
  *
  * Ràng buộc grammar llama.cpp (xem `timGioiHanGrammar` trong server/services/ai/nativeToolCalls.ts): schema KHÔNG có
  * `pattern`, KHÔNG `maxLength > 1999`. Lưới `congCu.test.ts` chạy chính bộ kiểm đó trên `CONG_CU`.
  */
 import type { CheDoAgent, WireTool } from "./kieu";
 
-export type LoaiCongCu = "doc" | "ghi" | "lenh" | "ke-hoach";
+/**
+ * `de-xuat` (Đợt 2): tool KHÔNG tác dụng phụ nào ngoài một ĐỀ XUẤT cho người (`remember` ⇒ sự kiện `de-xuat-nho`).
+ * Tách khỏi `ghi` vì nó phải có ở MỌI chế độ (kể cả `hoi`): chỉ người bấm "Nhớ" mới ghi — kể cả ở `tu-dong`.
+ */
+export type LoaiCongCu = "doc" | "ghi" | "lenh" | "ke-hoach" | "de-xuat";
 
 export const TEN_CONG_CU = [
   "read_file",
@@ -20,6 +25,11 @@ export const TEN_CONG_CU = [
   "rename_file",
   "run_command",
   "todo_write",
+  // ── Đợt 2 ──
+  "find_symbol",
+  "search_code",
+  "search_docs",
+  "remember",
 ] as const;
 export type TenCongCu = (typeof TEN_CONG_CU)[number];
 
@@ -34,7 +44,21 @@ export const LOAI_CONG_CU: Record<TenCongCu, LoaiCongCu> = {
   rename_file: "ghi",
   run_command: "lenh",
   todo_write: "ke-hoach",
+  find_symbol: "doc",
+  search_code: "doc",
+  search_docs: "doc",
+  remember: "de-xuat",
 };
+
+/** Loại ký hiệu `find_symbol` nhận (enum — model chọn sai ⇒ lỗi liệt kê giá trị đúng). */
+export const LOAI_KY_HIEU = ["function", "class", "method", "interface", "type", "enum", "variable"] as const;
+/** Kho tài liệu `search_docs`: tất cả · tài liệu hãng (PLC/robot…) · kho Training Studio · tham chiếu API (api-ref). */
+export const KHO_TAI_LIEU = ["all", "vendor", "studio", "api"] as const;
+export const PHAM_VI_NHO = ["project", "user"] as const;
+/** Trần một ghi chú `remember` — BẰNG `GIOI_HAN_BAI_HOC.KY_TU_MOI_BAI` (shared/aiCodingLesson.ts; lõi thuần nên chép số). */
+export const TRAN_KY_TU_NHO = 400;
+/** Trần `k` của `search_code`. */
+export const TRAN_K_TIM_MA = 20;
 
 const chuoi = (description: string) => ({ type: "string", description });
 const soNguyen = (description: string) => ({ type: "integer", minimum: 1, description });
@@ -132,15 +156,69 @@ export const CONG_CU: WireTool[] = [
     },
     ["todos"],
   ),
+  // ── Đợt 2: ngữ cảnh + trí nhớ ── (⚠ không `pattern`, không `maxLength` — trần kiểm ở `kiemThamSo`, lỗi nói rõ)
+  tool(
+    "find_symbol",
+    "Find where a symbol (function, class, method, interface, type, enum, variable) is defined in the project — file:line and " +
+      "signature — plus a limited list of references (whole-word matches). Faster and more precise than grep for 'where is X " +
+      "defined / used'.",
+    {
+      name: chuoi("Exact symbol name, e.g. 'chayVongAgent' or 'UserService' (no regex)."),
+      kind: { type: "string", enum: [...LOAI_KY_HIEU], description: "Optional kind filter." },
+    },
+    ["name"],
+  ),
+  tool(
+    "search_code",
+    "Semantic search over the code of the CURRENT project: describe what the code does (meaning, not exact text), e.g. " +
+      "'where is the retry logic for HTTP calls'. Returns real code snippets with file:line.",
+    {
+      query: chuoi("Natural-language description of the code you are looking for."),
+      k: {
+        type: "integer",
+        minimum: 1,
+        maximum: TRAN_K_TIM_MA,
+        description: `Number of snippets (optional, default 8, at most ${TRAN_K_TIM_MA}).`,
+      },
+    },
+    ["query"],
+  ),
+  tool(
+    "search_docs",
+    "Search reference documentation: vendor programming manuals (PLC, robots…), documents the user uploaded to the training " +
+      "studio, and API references. Returns excerpts with their source. Says so plainly when nothing relevant is found.",
+    {
+      query: chuoi("What you need to know, e.g. 'Mitsubishi MC protocol read D registers' or 'SqlDataReader namespace'."),
+      corpus: { type: "string", enum: [...KHO_TAI_LIEU], description: "Which documentation to search (optional, default 'all')." },
+    },
+    ["query"],
+  ),
+  tool(
+    "remember",
+    `Propose a short durable note to remember for future sessions (a project convention or a user preference), at most ` +
+      `${TRAN_KY_TU_NHO} characters. Nothing is saved now: the user sees the proposal and it is saved only if they approve it.`,
+    {
+      note: chuoi(`The fact to remember, one or two sentences, at most ${TRAN_KY_TU_NHO} characters.`),
+      scope: {
+        type: "string",
+        enum: [...PHAM_VI_NHO],
+        description: "'project' (default): about this project; 'user': a personal preference of the user.",
+      },
+    },
+    ["note"],
+  ),
 ];
 
-/** Bộ tool phơi cho model theo chế độ: `hoi` = đọc + todo_write; `sua`/`tu-dong` = đủ 10. Trả BẢN SAO sâu. */
+/**
+ * Bộ tool phơi cho model theo chế độ: `hoi` = đọc (kể cả 3 tool tìm của Đợt 2) + todo_write + remember (chỉ là đề
+ * xuất); `sua`/`tu-dong` = đủ 14. Trả BẢN SAO sâu.
+ */
 export function congCuTheoCheDo(cheDo: CheDoAgent): WireTool[] {
   const chon =
     cheDo === "hoi"
       ? CONG_CU.filter((t) => {
           const loai = LOAI_CONG_CU[t.function.name as TenCongCu];
-          return loai === "doc" || loai === "ke-hoach";
+          return loai === "doc" || loai === "ke-hoach" || loai === "de-xuat";
         })
       : CONG_CU;
   return structuredClone(chon);
@@ -152,11 +230,13 @@ export const CONG_CU_TODO_WRITE: WireTool = CONG_CU.find((t) => t.function.name 
 
 export type KetQuaKiemThamSo = { ok: true; thamSo: Record<string, unknown> } | { ok: false; loiChoModel: string };
 
-type KieuTruong = "duong" | "chuoi" | "chuoiRong" | "so" | "edits" | "todos";
-type DacTa = Record<string, { kieu: KieuTruong; batBuoc: boolean }>;
+type KieuTruong = "duong" | "chuoi" | "chuoiRong" | "so" | "edits" | "todos" | "enum";
+/** `giaTri`: tập hợp lệ của `enum` · `toiDa`: trần ký tự (`chuoi`) hoặc trần giá trị (`so`). */
+type MotDacTa = { kieu: KieuTruong; batBuoc: boolean; giaTri?: readonly string[]; toiDa?: number };
+type DacTa = Record<string, MotDacTa>;
 
-const B = (kieu: KieuTruong) => ({ kieu, batBuoc: true });
-const T = (kieu: KieuTruong) => ({ kieu, batBuoc: false });
+const B = (kieu: KieuTruong, them: Partial<MotDacTa> = {}): MotDacTa => ({ kieu, batBuoc: true, ...them });
+const T = (kieu: KieuTruong, them: Partial<MotDacTa> = {}): MotDacTa => ({ kieu, batBuoc: false, ...them });
 
 const DAC_TA: Record<TenCongCu, DacTa> = {
   read_file: { path: B("duong"), start_line: T("so"), end_line: T("so") },
@@ -169,6 +249,10 @@ const DAC_TA: Record<TenCongCu, DacTa> = {
   rename_file: { from: B("duong"), to: B("duong") },
   run_command: { command: B("chuoi") },
   todo_write: { todos: B("todos") },
+  find_symbol: { name: B("chuoi"), kind: T("enum", { giaTri: LOAI_KY_HIEU }) },
+  search_code: { query: B("chuoi"), k: T("so", { toiDa: TRAN_K_TIM_MA }) },
+  search_docs: { query: B("chuoi"), corpus: T("enum", { giaTri: KHO_TAI_LIEU }) },
+  remember: { note: B("chuoi", { toiDa: TRAN_KY_TU_NHO }), scope: T("enum", { giaTri: PHAM_VI_NHO }) },
 };
 
 const VI_DU: Record<TenCongCu, string> = {
@@ -182,6 +266,10 @@ const VI_DU: Record<TenCongCu, string> = {
   rename_file: '{"from":"src/a.ts","to":"src/b.ts"}',
   run_command: '{"command":"npm test"}',
   todo_write: '{"todos":[{"content":"Read the code","status":"in_progress"},{"content":"Fix the bug","status":"pending"}]}',
+  find_symbol: '{"name":"parseConfig","kind":"function"}',
+  search_code: '{"query":"where are HTTP requests retried","k":5}',
+  search_docs: '{"query":"Mitsubishi MC protocol read D registers","corpus":"vendor"}',
+  remember: '{"note":"This project uses pnpm, not npm.","scope":"project"}',
 };
 
 const TRANG_THAI_TODO = ["pending", "in_progress", "completed"] as const;
@@ -210,8 +298,8 @@ function epBool(v: unknown, ten: string): boolean | undefined {
   throw new LoiThamSo(`"${ten}" must be a boolean (true or false)`);
 }
 
-function kiemTruong(kieu: KieuTruong, v: unknown, ten: string): unknown {
-  switch (kieu) {
+function kiemTruong(dt: MotDacTa, v: unknown, ten: string): unknown {
+  switch (dt.kieu) {
     case "duong":
       if (typeof v !== "string") throw new LoiThamSo(`"${ten}" must be a string (a path relative to the project root)`);
       if (v.trim() === "") throw new LoiThamSo(`"${ten}" must not be empty`);
@@ -220,13 +308,21 @@ function kiemTruong(kieu: KieuTruong, v: unknown, ten: string): unknown {
     case "chuoi":
       if (typeof v !== "string") throw new LoiThamSo(`"${ten}" must be a string`);
       if (v.trim() === "") throw new LoiThamSo(`"${ten}" must not be empty`);
-      return v;
+      if (dt.toiDa !== undefined && v.trim().length > dt.toiDa)
+        throw new LoiThamSo(`"${ten}" must be at most ${dt.toiDa} characters (got ${v.trim().length}); shorten it`);
+      return dt.toiDa !== undefined ? v.trim() : v;
+    case "enum": {
+      const ds = dt.giaTri ?? [];
+      if (typeof v !== "string" || !ds.includes(v.trim())) throw new LoiThamSo(`"${ten}" must be one of: ${ds.join(", ")}`);
+      return v.trim();
+    }
     case "chuoiRong":
       if (typeof v !== "string") throw new LoiThamSo(`"${ten}" must be a string`);
       return v;
     case "so": {
       const n = typeof v === "string" && /^\s*\d+\s*$/.test(v) ? Number(v) : v;
       if (typeof n !== "number" || !Number.isInteger(n) || n < 1) throw new LoiThamSo(`"${ten}" must be a positive integer`);
+      if (dt.toiDa !== undefined && n > dt.toiDa) throw new LoiThamSo(`"${ten}" must be at most ${dt.toiDa}`);
       return n;
     }
     case "edits": {
@@ -271,7 +367,7 @@ function kiemTruong(kieu: KieuTruong, v: unknown, ten: string): unknown {
 
 /**
  * Parse an toàn + kiểm + chuẩn hoá tham số của một lời gọi tool. KHÔNG ném: lỗi ⇒ `loiChoModel` (tiếng Anh, nêu
- * cụ thể sai gì + một ví dụ đúng) để model tự sửa ở lượt sau. Khoá lạ bị bỏ. Tool ngoài bộ 10 (bộ thực thi có thể
+ * cụ thể sai gì + một ví dụ đúng) để model tự sửa ở lượt sau. Khoá lạ bị bỏ. Tool ngoài bộ 14 (bộ thực thi có thể
  * phơi thêm) chỉ bị đòi là một JSON object — bộ thực thi tự kiểm phần còn lại.
  */
 export function kiemThamSo(ten: string, thamSoTho: unknown): KetQuaKiemThamSo {
@@ -299,13 +395,13 @@ export function kiemThamSo(ten: string, thamSoTho: unknown): KetQuaKiemThamSo {
 
   const ra: Record<string, unknown> = {};
   try {
-    for (const [truong, { kieu, batBuoc }] of Object.entries(dacTa)) {
+    for (const [truong, dt] of Object.entries(dacTa)) {
       const gt = vao[truong];
       if (gt === undefined || gt === null) {
-        if (batBuoc) throw new LoiThamSo(`missing required field "${truong}"`);
+        if (dt.batBuoc) throw new LoiThamSo(`missing required field "${truong}"`);
         continue;
       }
-      ra[truong] = kiemTruong(kieu, gt, truong);
+      ra[truong] = kiemTruong(dt, gt, truong);
     }
   } catch (e) {
     if (e instanceof LoiThamSo) return loi(e.message);

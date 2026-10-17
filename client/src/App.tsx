@@ -100,6 +100,7 @@ const AIHome = React.lazy(() => import("./pages/AIHome"));
 const AIChatPage = React.lazy(() => import("./pages/AIChatPage"));
 // doc 78 PHA D — Không gian lập trình AI (cây tệp · trình xem+diff · hội thoại tác nhân). RBAC ai_repo_read.
 const AICodingWorkspace = React.lazy(() => import("./pages/AICodingWorkspace"));
+const AiGatewayThietBi = React.lazy(() => import("./pages/AiGatewayThietBi")); // Đợt 4A — xác nhận mã thiết bị (extension) + token cá nhân cổng /v1
 const AIQualityGatePage = React.lazy(() => import("./pages/AIQualityGatePage"));
 const AIActiveLearningPage = React.lazy(() => import("./pages/AIActiveLearningPage"));
 const AIImageSearchPage = React.lazy(() => import("./pages/AIImageSearchPage"));
@@ -690,6 +691,7 @@ function Router() {
       <Route path="/ai-chat"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><AIChatPage /></AIPageWrapper></RouteGuard></Route>
       {/* doc 78 PHA D — Không gian lập trình AI: ghim RBAC ai_repo_read (engineer/admin), KHÔNG mở cho mọi tài khoản. */}
       <Route path="/ai-coding-workspace"><RouteGuard requirePermission="ai_repo_read" requireModule="MOD_AI"><AIPageWrapper><AICodingWorkspace /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-thiet-bi"><RouteGuard requirePermission="ai_repo_read" requireModule="MOD_AI"><AIPageWrapper><AiGatewayThietBi /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-home"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><AIHome /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-hub"><Redirect to="/ai-home" /></Route>
       <Route path="/management-insight"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><ManagementInsight /></AIPageWrapper></RouteGuard></Route>

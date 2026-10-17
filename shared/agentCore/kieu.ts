@@ -97,6 +97,9 @@ export type LyDoDung =
   | "menh-lenh-trong-du-lieu"
   | "loi-model";
 
+/** Phạm vi một ghi chú trí nhớ (tool `remember`, Đợt 2). Bảng `ai_coding_lessons` khoá (người × dự án) — xem README. */
+export type PhamViNho = "project" | "user";
+
 export type SuKienAgent =
   | { loai: "bat-dau"; runId: string; cheDo: CheDoAgent }
   | { loai: "chu"; noiDung: string }
@@ -106,6 +109,11 @@ export type SuKienAgent =
   | { loai: "can-duyet"; id: string; deXuat: DeXuatDuyet }
   | { loai: "da-duyet" | "bi-bac"; id: string; lyDo?: string }
   | { loai: "ke-hoach"; viec: ViecKeHoach[] }
+  /**
+   * (Đợt 2) model gọi `remember` ⇒ bộ thực thi phát ĐỀ XUẤT; KHÔNG GHI gì. Chỉ người bấm "Nhớ" (tRPC
+   * `aiAgent.nhoDeXuat`) mới ghi — ở MỌI chế độ, kể cả `tu-dong`. `note` đã làm sạch (một dòng, che bí mật).
+   */
+  | { loai: "de-xuat-nho"; id: string; note: string; scope: PhamViNho }
   | { loai: "checkpoint"; checkpointId: string; tep: string[] }
   | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number }
   | { loai: "dang-cho-model"; phiaTruoc: number }

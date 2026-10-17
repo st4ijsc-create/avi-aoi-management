@@ -252,6 +252,8 @@ export function chuanHoaHoanTac(o: unknown): KetQuaHoanTac {
  *   duyet({actionId, chonKhoi?})       — `chonKhoi` = chỉ số khối (TheDuyetDiff), vắng ⇒ mọi khối
  *   bac({actionId, lyDo})              — lý do đưa cho model
  *   hoanTac({runId, checkpointId?})    ⇒ {khoiPhuc, xungDot}
+ *   nhoDeXuat({runId, id})             ⇒ {ok, note, ketQua}  (Đợt 2 — ghi đề xuất nhớ thành bài học)
+ *   boDeXuat({runId, id})              ⇒ {ok, note}          (Đợt 2 — bỏ qua, không ghi)
  */
 export const agentTrpc = {
   async danhSach(): Promise<TomTatLuotChay[]> {
@@ -269,4 +271,22 @@ export const agentTrpc = {
   async hoanTac(runId: string, checkpointId?: string): Promise<KetQuaHoanTac> {
     return chuanHoaHoanTac(await dotBien<unknown>("hoanTac", checkpointId ? { runId, checkpointId } : { runId }));
   },
+  async nhoDeXuat(runId: string, id: string): Promise<KetQuaDeXuatNho> {
+    return chuanHoaKetQuaDeXuat(await dotBien<unknown>("nhoDeXuat", { runId, id }));
+  },
+  async boDeXuat(runId: string, id: string): Promise<KetQuaDeXuatNho> {
+    return chuanHoaKetQuaDeXuat(await dotBien<unknown>("boDeXuat", { runId, id }));
+  },
 };
+
+/** (Đợt 2) kết quả Nhớ / Bỏ qua: `ok` THẬT của máy chủ + mã từ chối (`NOT_FOUND`, `DA_XU_LY`, `PERMISSION_DENIED`, …). */
+export interface KetQuaDeXuatNho {
+  ok: boolean;
+  ma: string | null;
+}
+
+export function chuanHoaKetQuaDeXuat(o: unknown): KetQuaDeXuatNho {
+  if (!o || typeof o !== "object") return { ok: false, ma: "LOI" };
+  const r = o as { ok?: unknown; note?: unknown };
+  return { ok: r.ok === true, ma: typeof r.note === "string" ? r.note : r.ok === true ? null : "LOI" };
+}

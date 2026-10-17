@@ -19,7 +19,16 @@ import {
   type TuyChonLuong,
 } from "@/lib/agentApi";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { TRANG_THAI_RONG, batDauGui, giamSuKien, idHanhDong, vanBanTraLoiCuoi, type MucDongThoiGian, type TrangThaiAgent } from "./trangThaiAgent";
+import {
+  TRANG_THAI_RONG,
+  batDauGui,
+  capNhatDeXuatNho,
+  giamSuKien,
+  idHanhDong,
+  vanBanTraLoiCuoi,
+  type MucDongThoiGian,
+  type TrangThaiAgent,
+} from "./trangThaiAgent";
 
 /** Lịch sử hội thoại agent gửi kèm lượt sau (cặp hỏi/đáp) — trần để giữ ngữ cảnh 64k cho việc chính. */
 const TRAN_LICH_SU = 8;
@@ -32,6 +41,7 @@ export interface DauVaoHookAgent {
 }
 
 export type TheDuyetMuc = Extract<MucDongThoiGian, { kieu: "duyet" }>;
+export type TheNhoMuc = Extract<MucDongThoiGian, { kieu: "nho" }>;
 
 export interface HookAgent {
   trangThai: TrangThaiAgent;
@@ -50,6 +60,8 @@ export interface HookAgent {
   duyet: (m: TheDuyetMuc, chonKhoi?: number[]) => Promise<void>;
   bac: (m: TheDuyetMuc, lyDo: string) => Promise<void>;
   hoanTac: () => Promise<void>;
+  /** (Đợt 2) "Nhớ" / "Bỏ qua" một đề xuất nhớ — thẻ đổi theo kết quả THẬT của máy chủ (không lạc quan). */
+  quyetDeXuatNho: (m: TheNhoMuc, nho: boolean) => Promise<void>;
   datLai: () => void;
 }
 
@@ -204,6 +216,27 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi }: DauVaoHookA
     }
   }, []);
 
+  const quyetDeXuatNho = useCallback<HookAgent["quyetDeXuatNho"]>(
+    async (m, nho) => {
+      const runId = sRef.current.runId;
+      if (!runId || m.trangThai !== "cho") return;
+      datTrangThai(capNhatDeXuatNho(sRef.current, m.id, { trangThai: "dang-gui" }));
+      try {
+        const kq = nho ? await agentTrpc.nhoDeXuat(runId, m.id) : await agentTrpc.boDeXuat(runId, m.id);
+        datTrangThai(
+          capNhatDeXuatNho(
+            sRef.current,
+            m.id,
+            kq.ok ? { trangThai: nho ? "da-nho" : "da-bo" } : { trangThai: "loi", maLoi: kq.ma ?? "LOI" },
+          ),
+        );
+      } catch (e) {
+        datTrangThai(capNhatDeXuatNho(sRef.current, m.id, { trangThai: "loi", maLoi: mapTrpcError(e) }));
+      }
+    },
+    [datTrangThai],
+  );
+
   const datLai = useCallback(() => {
     if (sRef.current.dangChay) return;
     soTepDaBaoRef.current = 0;
@@ -250,6 +283,7 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi }: DauVaoHookA
     duyet,
     bac,
     hoanTac,
+    quyetDeXuatNho,
     datLai,
   };
 }

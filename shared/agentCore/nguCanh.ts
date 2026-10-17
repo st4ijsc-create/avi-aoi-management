@@ -59,7 +59,7 @@ export interface KetQuaNen {
 function duongTuThamSo(args: string): string {
   try {
     const o = JSON.parse(args) as Record<string, unknown>;
-    const d = o?.path ?? o?.from ?? o?.pattern ?? o?.command;
+    const d = o?.path ?? o?.from ?? o?.pattern ?? o?.command ?? o?.name ?? o?.query;
     return typeof d === "string" ? d : "";
   } catch {
     return "";

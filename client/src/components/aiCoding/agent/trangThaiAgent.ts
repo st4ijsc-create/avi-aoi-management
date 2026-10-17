@@ -11,16 +11,23 @@
  *   • `chu`/`nghi` liên tiếp gộp vào một khối; bất kỳ mục nào chen giữa ⇒ khối mới.
  *   • `tepDaDoi` = tool GHI có kết quả `ok` (đường lấy từ tham số lời gọi) ∪ `hienThi.thayDoi[].duong`.
  *     Checkpoint chụp TRƯỚC lượt ghi (có thể bị bác) nên KHÔNG tự tính là đã đổi — chỉ giữ cho hoàn tác.
+ *   • (Đợt 2) `de-xuat-nho` ⇒ thẻ `nho` (trạng thái `cho`). Trạng thái sau khi bấm (Nhớ / Bỏ qua) là của CLIENT
+ *     (`capNhatDeXuatNho` theo kết quả THẬT của tRPC) — máy chủ không phát sự kiện cho lượt bấm, nên `xong` KHÔNG làm
+ *     thẻ hết hiệu lực: đề xuất còn duyệt được sau khi lượt chạy kết thúc (máy chủ giữ 30 phút).
  */
 import type {
   CheDoAgent,
   DeXuatDuyet,
   LyDoDung,
+  PhamViNho,
   SuKienAgent,
   ViecKeHoach,
 } from "@shared/agentCore/kieu";
 
 export type TrangThaiTheDuyet = "cho" | "da-duyet" | "bi-bac" | "het-hieu-luc";
+
+/** (Đợt 2) trạng thái thẻ đề xuất nhớ phía client. `loi` mang mã máy chủ (`NOT_FOUND`, `DA_XU_LY`, …). */
+export type TrangThaiTheNho = "cho" | "dang-gui" | "da-nho" | "da-bo" | "loi";
 
 export interface KetQuaDongTool {
   ok: boolean;
@@ -35,6 +42,7 @@ export type MucDongThoiGian =
   | { kieu: "nghi"; noiDung: string }
   | { kieu: "tool"; id: string; ten: string; thamSo: Record<string, unknown>; luot: number; ketQua?: KetQuaDongTool }
   | { kieu: "duyet"; id: string; deXuat: DeXuatDuyet; trangThai: TrangThaiTheDuyet; lyDo?: string }
+  | { kieu: "nho"; id: string; note: string; scope: PhamViNho; trangThai: TrangThaiTheNho; maLoi?: string }
   | { kieu: "loi"; ma: string; thongDiep: string };
 
 export interface UsageGop {
@@ -103,6 +111,10 @@ export function thamSoChinh(ten: string, thamSo: Record<string, unknown>): strin
     return [p, d].filter(Boolean).join(" · ");
   }
   if (ten === "find_files") return chuoi(ts.pattern) ?? "";
+  if (ten === "find_symbol") return [chuoi(ts.name), chuoi(ts.kind)].filter(Boolean).join(" · ");
+  if (ten === "search_code") return chuoi(ts.query) ?? "";
+  if (ten === "search_docs") return [chuoi(ts.query), chuoi(ts.corpus)].filter(Boolean).join(" · ");
+  if (ten === "remember") return chuoi(ts.note) ?? "";
   if (ten === "todo_write") return Array.isArray(ts.todos) ? String(ts.todos.length) : "";
   return chuoi(ts.path) ?? "";
 }
@@ -174,6 +186,11 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent): TrangThaiAgent {
     }
     case "ke-hoach":
       return { ...n, keHoach: Array.isArray(e.viec) ? e.viec : [] };
+    case "de-xuat-nho": {
+      if (typeof e.id !== "string" || n.dongThoiGian.some((m) => m.kieu === "nho" && m.id === e.id)) return n;
+      const scope: PhamViNho = e.scope === "user" ? "user" : "project";
+      return { ...n, dongThoiGian: [...n.dongThoiGian, { kieu: "nho", id: e.id, note: String(e.note ?? ""), scope, trangThai: "cho" }] };
+    }
     case "checkpoint":
       return { ...n, checkpoints: [...n.checkpoints, { checkpointId: e.checkpointId, tep: Array.isArray(e.tep) ? e.tep : [] }] };
     case "usage": {
@@ -205,6 +222,23 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent): TrangThaiAgent {
     default:
       return n;
   }
+}
+
+/** (Đợt 2) cập nhật thẻ đề xuất nhớ `id` (sau khi bấm Nhớ / Bỏ qua). id lạ ⇒ trả NGUYÊN `s`. Thuần. */
+export function capNhatDeXuatNho(
+  s: TrangThaiAgent,
+  id: string,
+  vao: { trangThai: TrangThaiTheNho; maLoi?: string },
+): TrangThaiAgent {
+  if (!s.dongThoiGian.some((m) => m.kieu === "nho" && m.id === id)) return s;
+  return {
+    ...s,
+    dongThoiGian: s.dongThoiGian.map((m) => {
+      if (m.kieu !== "nho" || m.id !== id) return m;
+      const { maLoi: _bo, ...goc } = m;
+      return vao.maLoi ? { ...goc, trangThai: vao.trangThai, maLoi: vao.maLoi } : { ...goc, trangThai: vao.trangThai };
+    }),
+  };
 }
 
 export function giamNhieu(s: TrangThaiAgent, es: SuKienAgent[]): TrangThaiAgent {

@@ -6,6 +6,8 @@
  * (bấm mở tóm tắt) · thẻ cần duyệt (`TheDuyetDiff` cho diff; xoá/đổi tên/chạy lệnh thẻ gọn) với Bác CÓ LÝ DO · lỗi ·
  * kết thúc (lý do dừng, tệp đã đổi, Hoàn tác lượt chạy).
  *
+ * ★ Đợt 2: thẻ "Đề xuất nhớ" (`TheDeXuatNho`) — model gọi `remember` chỉ ĐỀ XUẤT; người bấm Nhớ (ghi bài học) hoặc Bỏ
+ *   qua. Nội dung đề xuất là chữ model viết ⇒ vẽ TRƠN (text node), không markdown, không nhãn tin cậy.
  * ⚠ Luật chủ dự án (ec85a97e6): văn bản do MODEL viết KHÔNG BAO GIỜ đi bộ `boKhoiDauRaLenh` (nhãn tin cậy "đầu ra
  *   lệnh"). Ở đây chữ model vẽ bằng `Streamdown` TRƠN; đầu ra lệnh vẽ bằng `DauRaLenhAgent` từ dữ liệu CÓ CẤU TRÚC của
  *   sự kiện `ket-qua-tool` (server), không qua fence trong văn bản.
@@ -25,6 +27,7 @@ import {
   Hourglass,
   ListTodo,
   Loader2,
+  BookmarkPlus,
   RotateCcw,
   User,
   Wrench,
@@ -37,7 +40,7 @@ import type { ActionState } from "@/components/ConfirmActionCard";
 import { cn } from "@/lib/utils";
 import { BangDangNghi } from "../BangDangNghi";
 import { idHanhDong, layDiffTuDeXuat, thamSoChinh, type MucDongThoiGian } from "./trangThaiAgent";
-import type { HookAgent, TheDuyetMuc } from "./useLuotChayAgent";
+import type { HookAgent, TheDuyetMuc, TheNhoMuc } from "./useLuotChayAgent";
 
 type T = ReturnType<typeof useTranslation>["t"];
 
@@ -272,6 +275,72 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   );
 }
 
+/** Câu cho mã từ chối của Nhớ / Bỏ qua (i18n). */
+function cauLoiNho(t: T, ma: string | undefined): string {
+  switch (ma) {
+    case "NOT_FOUND":
+      return t("repoWs.agent.nho.loiHetHieuLuc", "Đề xuất đã hết hiệu lực (lượt chạy không còn trên máy chủ).");
+    case "DA_XU_LY":
+      return t("repoWs.agent.nho.loiDaXuLy", "Đề xuất này đã được xử lý.");
+    case "TRI_NHO_TAT":
+      return t("repoWs.agent.nho.loiTat", "Trí nhớ đang tắt trên máy chủ — không lưu.");
+    case "RUI_RO_CAO":
+      return t("repoWs.agent.nho.loiRuiRo", "Không lưu: ghi chú trông giống một mệnh lệnh.");
+    case "DAY":
+      return t("repoWs.agent.nho.loiDay", "Đã đủ số bài học tối đa cho dự án này — xoá bớt trước.");
+    case "PERMISSION_DENIED":
+      return t("repoWs.agent.nho.loiQuyen", "Bạn không có quyền với lượt chạy này.");
+    default:
+      return t("repoWs.agent.nho.loiKhac", "Không lưu được ({{ma}}).", { ma: ma ?? "?" });
+  }
+}
+
+function TheDeXuatNho({ m, agent }: { m: TheNhoMuc; agent: HookAgent }) {
+  const { t } = useTranslation();
+  const dangGui = m.trangThai === "dang-gui";
+  return (
+    <div
+      data-testid="agent-de-xuat-nho"
+      data-trang-thai={m.trangThai}
+      className="rounded-md border border-sky-300 bg-sky-50/50 p-2 text-[12px] dark:border-sky-800 dark:bg-sky-950/20"
+    >
+      <div className="mb-1 flex flex-wrap items-center gap-1.5 font-medium text-sky-900 dark:text-sky-200">
+        <BookmarkPlus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>{t("repoWs.agent.nho.tieuDe", "Đề xuất nhớ")}</span>
+        <span className="rounded border border-sky-300 px-1 text-[10px] font-normal dark:border-sky-700">
+          {m.scope === "user" ? t("repoWs.agent.nho.phamViNguoiDung", "Sở thích của bạn") : t("repoWs.agent.nho.phamViDuAn", "Dự án này")}
+        </span>
+      </div>
+      {/* Chữ MODEL viết ⇒ text node trơn. */}
+      <p className="min-w-0 whitespace-pre-wrap break-words">{m.note}</p>
+      {(m.trangThai === "cho" || dangGui) && (
+        <>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {t("repoWs.agent.nho.giaiThich", "Chỉ được lưu khi bạn bấm Nhớ; sẽ dùng làm ngữ cảnh cho các lượt sau.")}
+          </p>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <Button size="sm" disabled={dangGui} onClick={() => void agent.quyetDeXuatNho(m, true)}>
+              {dangGui ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+              {t("repoWs.agent.nho.nutNho", "Nhớ")}
+            </Button>
+            <Button size="sm" variant="outline" disabled={dangGui} onClick={() => void agent.quyetDeXuatNho(m, false)}>
+              {t("repoWs.agent.nho.nutBoQua", "Bỏ qua")}
+            </Button>
+          </div>
+        </>
+      )}
+      {m.trangThai === "da-nho" && (
+        <p className="mt-1 flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+          <Check className="h-3 w-3" aria-hidden />
+          {t("repoWs.agent.nho.daNho", "Đã nhớ — sẽ dùng cho các lượt sau.")}
+        </p>
+      )}
+      {m.trangThai === "da-bo" && <p className="mt-1 text-[11px] text-muted-foreground">{t("repoWs.agent.nho.daBo", "Đã bỏ qua.")}</p>}
+      {m.trangThai === "loi" && <p className="mt-1 text-[11px] text-red-700 dark:text-red-300">{cauLoiNho(t, m.maLoi)}</p>}
+    </div>
+  );
+}
+
 function KetThuc({ agent, onMoTep }: { agent: HookAgent; onMoTep: (p: string) => void }) {
   const { t } = useTranslation();
   const s = agent.trangThai;
@@ -406,6 +475,8 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
             return <DongTool key={`t-${m.id}-${i}`} m={m} />;
           case "duyet":
             return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} />;
+          case "nho":
+            return <TheDeXuatNho key={`n-${m.id}-${i}`} m={m} agent={agent} />;
           case "loi":
             return (
               <p key={i} data-testid="agent-loi" className="flex items-start gap-1.5 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[12px] text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">

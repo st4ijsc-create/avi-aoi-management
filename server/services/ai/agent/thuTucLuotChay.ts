@@ -5,6 +5,8 @@
  *
  * ⚠ Quyền: MỌI thủ tục đòi `ai_repo_read/canView` (cùng bit của tool đọc repo) — fail-closed khi `checkPermission`
  *   ném. Từ chối ⇒ `{ ok:false, note:"PERMISSION_DENIED" }` (khuôn `repoWorkspaceRouter`), không ném lỗi thô.
+ * ★★ Đợt 2: `nhoDeXuat` / `boDeXuat` — người bấm "Nhớ" / "Bỏ qua" trên thẻ đề xuất nhớ của lượt chạy CỦA MÌNH
+ *   (`userId` từ PHIÊN; bộ quản lý trả NOT_FOUND cho lượt của người khác). Ghi = `luuBaiHoc` qua `lamSachBaiHoc`.
  * ⚠ `duyet` = `confirmAction` THẬT (RBAC lần 2, hàng rào ghi, audit CONFIRMED/EXECUTED — người bấm là người phiên)
  *   rồi ĐÁNH THỨC lượt chạy đang chờ qua bus; `bac` = `cancelAction` + lý do cho model. Phạm vi chủ sở hữu do
  *   `confirmAction`/`cancelAction` cưỡng chế (token gắn userId).
@@ -68,6 +70,19 @@ export async function thuTucBac(u: NguoiPhien, y: { actionId: string; lyDo: stri
   if (kq.ok) baoQuyetDinhDuyet(y.actionId, { loai: "bac", lyDo: y.lyDo.trim() });
   else boLyDoBac(y.actionId);
   return { ok: kq.ok, note: null, status: kq.status };
+}
+
+export async function thuTucNhoDeXuat(u: NguoiPhien, y: { runId: string; id: string }, ql: QuanLyLuotChay = quanLyLuotChay()) {
+  if (!(await coQuyenDoc(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const, ketQua: null };
+  const kq = await ql.nhoDeXuat({ runId: y.runId, id: y.id, userId: u.id });
+  if (!kq.ok) return { ok: false as const, note: kq.ma, ketQua: null };
+  return { ok: true as const, note: null, ketQua: kq.ketQua, noiDung: kq.noiDung };
+}
+
+export async function thuTucBoDeXuat(u: NguoiPhien, y: { runId: string; id: string }, ql: QuanLyLuotChay = quanLyLuotChay()) {
+  if (!(await coQuyenDoc(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const };
+  const kq = ql.boDeXuat({ runId: y.runId, id: y.id, userId: u.id });
+  return kq.ok ? { ok: true as const, note: null } : { ok: false as const, note: kq.ma };
 }
 
 export async function thuTucHoanTac(

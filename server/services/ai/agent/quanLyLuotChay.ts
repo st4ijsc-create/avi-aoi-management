@@ -16,6 +16,15 @@
  * ⚠ Quyền: `ai_repo_read/canView` để tạo lượt chạy; chế độ `tu-dong` đòi thêm `ai_repo_exec/canCreate`
  *   (bộ thực thi còn kiểm lại ở TỪNG lượt ghi). Ghi/lệnh ở `sua` đi RBAC của chính tool (propose + confirm).
  * ⚠ Không ném ra tầng route: mọi từ chối là `{ ok:false, ma, http }`.
+ *
+ * ★★ Đợt 2 (2026-10-17, spec `2026-10-17-ai-local-dot2-ngu-canh-tri-nho-design.md` §4):
+ *   • TỆP QUY ƯỚC (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.cursorrules`) đọc qua hộp cát + che bí
+ *     mật (`tepQuyUocAgent.ts`) ⇒ khối "Project conventions" (lõi đóng khung DỮ LIỆU + trần 8 KB tổng).
+ *   • ĐỀ XUẤT NHỚ (`de-xuat-nho`) GIỮ TRONG LƯỢT CHẠY (bộ nhớ). Chỉ CHỦ lượt chạy ghi được, qua `nhoDeXuat` ⇒
+ *     `lamSachBaiHoc` (lần nữa — cửa ghi) ⇒ `luuBaiHoc(userId, projectId CỦA LƯỢT)`. `boDeXuat` đánh dấu bỏ. Mỗi đề
+ *     xuất xử lý ĐÚNG MỘT lần (đánh dấu đồng bộ trước `await` — bấm đúp không ghi hai lần). Lượt rời bộ nhớ (30 phút
+ *     sau khi xong) ⇒ đề xuất hết hiệu lực (`NOT_FOUND`) — không dựng lại từ sổ (sổ không mang trạng thái duyệt).
+ *   • Chỉ mục mã: lượt chạy bắt đầu ⇒ `damBaoChiMucNen` (dựng nền khi `chua-co`), không chờ.
  */
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -37,8 +46,8 @@ import { DANH_SACH_TRANG } from "../../aiLocalTools/repoCommandSandbox";
 import { gocRepoChinh } from "../../aiCodingTuTriGhi";
 import { autonomyGhiTuTriBat } from "../autonomyPolicy";
 import { uocLuongSoToken } from "../../aiLlamaServerClient";
-import { baiHocEnabled, khoiBaiHocChoPrompt } from "../codingLessonContext";
-import { danhSachBaiHoc } from "../../../db/aiCodingLessons";
+import { baiHocEnabled, khoiBaiHocChoPrompt, lamSachBaiHoc } from "../codingLessonContext";
+import { danhSachBaiHoc, luuBaiHoc } from "../../../db/aiCodingLessons";
 import { moPhien, luuPhien } from "../../../db/aiCodingSessions";
 import {
   capNhatHangLuotChay,
@@ -52,6 +61,9 @@ import {
 import type { CopilotUser } from "../../aiCopilotActions";
 import { taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
 import { taoGoiModelMayChu } from "./goiModelMayChu";
+import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAgent";
+import { docTepQuyUoc } from "./tepQuyUocAgent";
+import type { TimTaiLieu } from "./timTaiLieuAgent";
 import {
   chotSauGhi,
   chupTruocGhi,
@@ -112,8 +124,20 @@ export interface LuotChay {
   xong: Promise<void>;
 }
 
+/** (Đợt 2) một đề xuất nhớ của lượt chạy. `dang-luu` = đã bấm Nhớ, đang ghi (chặn bấm đúp). */
+interface DeXuatNhoTrongLuot {
+  note: string;
+  scope: "project" | "user";
+  trangThai: "cho" | "dang-luu" | "da-nho" | "da-bo";
+}
+
+export type KetQuaNhoDeXuat =
+  | { ok: true; ketQua: "them" | "trung"; noiDung: string }
+  | { ok: false; ma: "NOT_FOUND" | "DA_XU_LY" | "TRI_NHO_TAT" | "RUI_RO_CAO" | "DAY" | "LOI_LUU" };
+
 interface TrangThaiNoi {
   luot: LuotChay;
+  deXuatNho: Map<string, DeXuatNhoTrongLuot>;
   dem: MucDem[];
   seqCuoi: number;
   nguoiNghe: Set<(m: MucSuKien) => void>;
@@ -166,6 +190,10 @@ export interface PhuThuocQuanLy {
   phuThuocBoThucThi?: PhuThuocBoThucThi;
   gioiHan?: Partial<GioiHanVong>;
   giuSauKhiXongMs?: number;
+  /** (Đợt 2) chỉ mục mã cho bộ thực thi + dựng nền — `null` = cố ý vắng; không khai = module thật (import động). */
+  chiMucMa?: CongChiMucMa | null;
+  /** (Đợt 2) truy hồi tài liệu cho `search_docs`. */
+  timTaiLieu?: TimTaiLieu;
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -282,6 +310,10 @@ export interface QuanLyLuotChay {
     lang: NgonNgu;
     req?: ToolExecContext["req"];
   }): Promise<{ ok: true; ketQua: KetQuaHoanTac } | { ok: false; ma: string }>;
+  /** (Đợt 2) người dùng bấm "Nhớ" một đề xuất của lượt chạy CỦA MÌNH ⇒ ghi bài học (projectId của lượt). */
+  nhoDeXuat(y: { runId: string; id: string; userId: number }): Promise<KetQuaNhoDeXuat>;
+  /** (Đợt 2) "Bỏ qua" một đề xuất — không ghi gì. */
+  boDeXuat(y: { runId: string; id: string; userId: number }): { ok: true } | { ok: false; ma: "NOT_FOUND" | "DA_XU_LY" };
   /** Chỉ cho lưới. */
   _dangChay(): number;
 }
@@ -366,6 +398,9 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         if (!l.checkpointIds.includes(e.checkpointId)) l.checkpointIds.push(e.checkpointId);
         doiTrangThai = true;
         break;
+      case "de-xuat-nho":
+        if (!s.deXuatNho.has(e.id)) s.deXuatNho.set(e.id, { note: e.note, scope: e.scope === "user" ? "user" : "project", trangThai: "cho" });
+        break;
       case "goi-tool":
         l.soLuot = Math.max(l.soLuot, e.luot);
         break;
@@ -415,11 +450,18 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
     } catch {
       cay = [];
     }
+    let tepQuyUoc: Array<{ duong: string; noiDung: string }> = [];
+    try {
+      tepQuyUoc = docTepQuyUoc(y.goc);
+    } catch {
+      tepQuyUoc = []; // tệp quy ước là phần thêm — hỏng thì bỏ
+    }
     let khoi = dungKhoiNguCanhDuAn({
       ten: y.ten,
       gocTuongDoi: gocTuongDoiChoPrompt(y.goc),
       cay,
       lenhDuocPhep: DANH_SACH_TRANG.map((m) => m.nhan),
+      tepQuyUoc,
     });
     if (baiHocEnabled()) {
       try {
@@ -505,7 +547,15 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         boHuy,
         xong: Promise.resolve(),
       };
-      const s: TrangThaiNoi = { luot, dem: [], seqCuoi: 0, nguoiNghe: new Set(), henLuu: null, chuoiLuu: Promise.resolve() };
+      const s: TrangThaiNoi = {
+        luot,
+        deXuatNho: new Map(),
+        dem: [],
+        seqCuoi: 0,
+        nguoiNghe: new Set(),
+        henLuu: null,
+        chuoiLuu: Promise.resolve(),
+      };
       // Giữ chỗ NGAY (đồng bộ) — hai POST cùng lúc không lọt được cả hai.
       theoId.set(id, s);
       dangChayCuaNguoi.set(user.id, id);
@@ -515,14 +565,24 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
 
       const copilotUser: CopilotUser = { id: user.id, role: user.role, name: user.name ?? null };
       const execCtx: ToolExecContext = { user: copilotUser, lang, req: y.req, projectRoot: goc, signal: boHuy.signal };
+      const phuThuocBo: PhuThuocBoThucThi = {
+        ...(phuThuoc.chiMucMa !== undefined ? { chiMucMa: phuThuoc.chiMucMa } : {}),
+        ...(phuThuoc.timTaiLieu ? { timTaiLieu: phuThuoc.timTaiLieu } : {}),
+        ...(phuThuoc.phuThuocBoThucThi ?? {}),
+      };
       const boThucThi = taoBoThucThiMayChu({
         execCtx,
         gocDuAn: goc,
+        projectId,
         user: copilotUser,
         coQuyenThucThi,
         checkpoint: congCheckpoint(user.id),
-        phuThuoc: phuThuoc.phuThuocBoThucThi,
+        phuThuoc: phuThuocBo,
       });
+      // Chỉ mục mã của dự án: dựng NỀN nếu chưa có (không chờ, không ném — `damBaoChiMucNen` tự nuốt lỗi).
+      void phanGiaiChiMuc(phuThuocBo.chiMucMa)()
+        .then((c) => (c ? damBaoChiMucNen(c, { gocDuAn: goc, projectId }) : null))
+        .catch(() => undefined);
       const ten = danhSachDuAn().find((d) => d.id === projectId)?.ten ?? projectId;
       const lichSu = locLichSu(y.lichSu);
 
@@ -669,6 +729,40 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         const ma = (e as { ma?: unknown })?.ma;
         return { ok: false, ma: typeof ma === "string" ? ma : "LOI_HOAN_TAC" };
       }
+    },
+
+    async nhoDeXuat(y) {
+      const s = theoId.get(y.runId);
+      // Không có / của người khác ⇒ CÙNG mã (không kênh dò lượt chạy của người khác).
+      if (!s || s.luot.userId !== y.userId) return { ok: false, ma: "NOT_FOUND" };
+      const dx = s.deXuatNho.get(y.id);
+      if (!dx) return { ok: false, ma: "NOT_FOUND" };
+      if (dx.trangThai !== "cho") return { ok: false, ma: "DA_XU_LY" };
+      if (!baiHocEnabled()) return { ok: false, ma: "TRI_NHO_TAT" };
+      // Cửa GHI làm sạch LẦN NỮA (cùng một hàm với cửa đề xuất + cửa đọc) — không tin bản trong bộ nhớ.
+      const sach = lamSachBaiHoc(dx.note);
+      if (!sach.ok) {
+        dx.trangThai = "da-bo";
+        return { ok: false, ma: "RUI_RO_CAO" };
+      }
+      dx.trangThai = "dang-luu"; // ĐỒNG BỘ, trước await — bấm đúp không ghi hai lần
+      const kq = await luuBaiHoc(y.userId, { projectId: s.luot.projectId, noiDung: sach.noiDung, mucRuiRo: sach.mucRuiRo });
+      if (kq.ma === "them" || kq.ma === "trung") {
+        dx.trangThai = "da-nho";
+        return { ok: true, ketQua: kq.ma, noiDung: kq.noiDung };
+      }
+      dx.trangThai = "cho"; // hỏng/đầy ⇒ cho thử lại
+      return { ok: false, ma: kq.ma === "day" ? "DAY" : "LOI_LUU" };
+    },
+
+    boDeXuat(y) {
+      const s = theoId.get(y.runId);
+      if (!s || s.luot.userId !== y.userId) return { ok: false, ma: "NOT_FOUND" };
+      const dx = s.deXuatNho.get(y.id);
+      if (!dx) return { ok: false, ma: "NOT_FOUND" };
+      if (dx.trangThai !== "cho") return { ok: false, ma: "DA_XU_LY" };
+      dx.trangThai = "da-bo";
+      return { ok: true };
     },
 
     _dangChay() {

@@ -14,18 +14,22 @@ import type { WireTool } from "./kieu";
 
 const tenTheoCheDo = (c: Parameters<typeof congCuTheoCheDo>[0]) => congCuTheoCheDo(c).map((t) => t.function.name).sort();
 
-describe("congCu — schema 10 tool", () => {
-  it("có đúng 10 tool theo §3, tên tiếng Anh, có mô tả + parameters object", () => {
+describe("congCu — schema 14 tool (10 của Đợt 1 + 4 của Đợt 2)", () => {
+  it("có đúng 14 tool (spec Đợt 1 §3 + Đợt 2 §2), tên tiếng Anh, có mô tả + parameters object", () => {
     expect([...TEN_CONG_CU].sort()).toEqual(
       [
         "delete_file",
         "edit_file",
         "find_files",
+        "find_symbol",
         "grep",
         "list_dir",
         "read_file",
+        "remember",
         "rename_file",
         "run_command",
+        "search_code",
+        "search_docs",
         "todo_write",
         "write_file",
       ].sort(),
@@ -65,10 +69,20 @@ describe("congCu — schema 10 tool", () => {
     expect(LOAI_CONG_CU.todo_write).toBe("ke-hoach");
   });
 
-  it("congCuTheoCheDo: hoi = đọc + todo_write; sua/tu-dong = đủ 10", () => {
-    expect(tenTheoCheDo("hoi")).toEqual(["find_files", "grep", "list_dir", "read_file", "todo_write"]);
-    expect(tenTheoCheDo("sua")).toHaveLength(10);
-    expect(tenTheoCheDo("tu-dong")).toHaveLength(10);
+  it("congCuTheoCheDo: hoi = đọc (kể cả 3 tool tìm) + todo_write + remember; sua/tu-dong = đủ 14", () => {
+    expect(tenTheoCheDo("hoi")).toEqual([
+      "find_files",
+      "find_symbol",
+      "grep",
+      "list_dir",
+      "read_file",
+      "remember",
+      "search_code",
+      "search_docs",
+      "todo_write",
+    ]);
+    expect(tenTheoCheDo("sua")).toHaveLength(14);
+    expect(tenTheoCheDo("tu-dong")).toHaveLength(14);
   });
 
   it("congCuTheoCheDo trả bản sao — sửa kết quả không làm bẩn hằng", () => {
@@ -182,7 +196,7 @@ describe("kiemThamSo — parse an toàn + chuẩn hoá", () => {
     if (!r.ok) expect(r.loiChoModel).toMatch(/pending.*in_progress.*completed/);
   });
 
-  it("tool ngoài bộ 10 ⇒ chỉ đòi object (bộ thực thi tự kiểm)", () => {
+  it("tool ngoài bộ 14 ⇒ chỉ đòi object (bộ thực thi tự kiểm)", () => {
     expect(kiemThamSo("get_diagnostics", '{"x":1}')).toEqual({ ok: true, thamSo: { x: 1 } });
     expect(kiemThamSo("get_diagnostics", "{hỏng").ok).toBe(false);
   });

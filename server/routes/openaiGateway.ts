@@ -19,6 +19,10 @@
  *     logs a clear error — we NEVER expose an unauthenticated LLM endpoint.
  *   • Every request must carry `Authorization: Bearer <OPENAI_GATEWAY_API_KEY>`
  *     (constant-time compared). 401 otherwise.
+ *   • ★★★ Đợt 4A (2026-10-17) — `Authorization: Bearer avgw_…` = TOKEN THEO NGƯỜI DÙNG (mig 0392, chỉ lưu băm):
+ *     gắn userId vào đo lường/hạn mức, phạm vi theo đường (chat · fim · embed), trần/phút theo token, hết hạn/thu
+ *     hồi ⇒ 401 có mã. Key chung ở trên GIỮ nhưng DEPRECATE (`OPENAI_GATEWAY_SHARED_KEY_ENABLED`, mặc định bật);
+ *     tắt cờ ⇒ chế độ chỉ-token (gắn cổng không cần key). CORS của `/v1`: không bao giờ `*` (`xuLyCorsCongOpenAi`).
  *
  * BINDING NOTE: this is intended for localhost / trusted-LAN engineer use (IDE
  * autocomplete + chat). It inherits the app's listen address — do NOT expose the
@@ -53,6 +57,7 @@ import {
 // primitives verbatim; no redaction logic is reimplemented here.
 import {
   planInference,
+  checkNamedRateLimit,
   RateLimitError,
   SafetyBlockedError,
   QuotaExceededError,
@@ -60,6 +65,9 @@ import {
   type TaskKind,
   type GatewayPlan,
 } from "../services/aiGateway";
+// ★★★ Đợt 4A — TOKEN THEO NGƯỜI DÙNG (`avgw_…`, mig 0392). Tầng dữ liệu chỉ tra BĂM; module lá cho tiền tố/phạm vi.
+import { xacThucTokenNguoiDung, ghiDungLanCuoi, type KetQuaXacThucToken } from "../db/aiGatewayTokens";
+import { TIEN_TO_TOKEN, phamViCuaDuong } from "../services/ai/gatewayToken/maToken";
 import { redactSecretsAndPII, StreamingSecretRedactor } from "../services/ai/aiSafety";
 // ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được từ đây với chi
 // phí ~0 ⇒ hàng rào là vô điều kiện theo CẤU TẠO, không phụ thuộc một `await import()` trong try.
@@ -340,9 +348,19 @@ interface PlannedCall {
    * thrown without redacted text attached, which should never happen). */
   safeText: string;
 }
-async function planGatewayFailOpen(task: TaskKind, text: string | undefined): Promise<PlannedCall> {
+async function planGatewayFailOpen(
+  task: TaskKind,
+  text: string | undefined,
+  nguoi?: NguoiGoiCong,
+): Promise<PlannedCall> {
   try {
-    const plan = await planInference({ task, text });
+    // ★ Đợt 4A — token người dùng ⇒ `userId`/`role` THẬT vào đo lường (`ai_gateway_metrics.userId`), hạn mức và
+    //   rate-limit theo người của `planInference`. Key chung ⇒ vẫn không có người (KHÔNG bịa một userId).
+    const plan = await planInference({
+      task,
+      text,
+      ...(nguoi?.kieu === "token" ? { userId: nguoi.userId, role: nguoi.role } : {}),
+    });
     return { plan, safeText: plan.safeText };
   } catch (err) {
     if (err instanceof RateLimitError) return { plan: null, safeText: err.safeText ?? text ?? "" };
@@ -489,11 +507,120 @@ function timingSafeEqualStr(a: string, b: string): boolean {
   }
 }
 
+// ─── ★★★ Đợt 4A — danh tính người gọi: TOKEN NGƯỜI DÙNG hoặc KEY CHUNG (deprecate) ──────────────
+
+/**
+ * Người gọi của MỘT yêu cầu `/v1`, do middleware xác thực đặt vào `res.locals.nguoiGoiCong`.
+ * ⚠ Chỉ middleware xác thực được ghi ô này; handler chỉ ĐỌC (qua `nguoiGoi`). Không có đường nào để thân yêu cầu
+ *   hay header khai một userId.
+ */
+export type NguoiGoiCong =
+  | { kieu: "token"; userId: number; role: string; tokenId: number; phamVi: readonly string[] }
+  | { kieu: "key-chung" };
+
+function nguoiGoi(res: Response): NguoiGoiCong | undefined {
+  return (res.locals as { nguoiGoiCong?: NguoiGoiCong }).nguoiGoiCong;
+}
+
+/**
+ * Key dùng chung `OPENAI_GATEWAY_API_KEY` — GIỮ để không gãy Continue/IDE đang cấu hình, nhưng đã DEPRECATE: nó không
+ * gắn người (đo lường/hạn mức về xô "anon"), và thu hồi nó là cắt mọi kỹ sư cùng lúc. Mặc định BẬT (hành vi cũ);
+ * `OPENAI_GATEWAY_SHARED_KEY_ENABLED=0|false|no|off` ⇒ chỉ token người dùng. Đọc tại thời điểm gọi.
+ */
+export function keyChungBat(): boolean {
+  const raw = envStr("OPENAI_GATEWAY_SHARED_KEY_ENABLED").toLowerCase();
+  if (raw === "") return true;
+  return raw !== "0" && raw !== "false" && raw !== "no" && raw !== "off";
+}
+
+/** Trần yêu cầu/phút MỖI TOKEN (FIM gõ phím bắn dày — mặc định rộng tay). `OPENAI_GATEWAY_TOKEN_RPM`. */
+function tranMoiPhutToken(): number {
+  const n = Number(envStr("OPENAI_GATEWAY_TOKEN_RPM"));
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 240;
+}
+
+let canhBaoKeyChungLuc = 0;
+function canhBaoKeyChung(): void {
+  const now = Date.now();
+  if (now - canhBaoKeyChungLuc < 10 * 60_000) return; // một dòng mỗi 10 phút, không lụt nhật ký
+  canhBaoKeyChungLuc = now;
+  console.warn(
+    "[openaiGateway] DEPRECATED: một yêu cầu /v1 dùng KEY CHUNG OPENAI_GATEWAY_API_KEY (không gắn người dùng). " +
+      "Chuyển sang token cá nhân (trang AI › Token cổng, hoặc đăng nhập thiết bị từ extension), rồi đặt " +
+      "OPENAI_GATEWAY_SHARED_KEY_ENABLED=0.",
+  );
+}
+
+/** Mã máy-đọc-được của từng lý do token bị từ chối (client hành động khác nhau theo từng mã). */
+const TU_CHOI_TOKEN: Readonly<Record<Exclude<KetQuaXacThucToken, { ok: true }>["ma"], [number, string, string]>> = {
+  "khong-hop-le": [401, "invalid_api_key", "Invalid API token."],
+  "het-han": [401, "token_expired", "API token expired. Create a new one or sign the device in again."],
+  "thu-hoi": [401, "token_revoked", "API token has been revoked."],
+  "tai-khoan-tat": [403, "account_disabled", "The account owning this token is disabled."],
+  csdl: [503, "auth_backend_unavailable", "Token verification backend unavailable."],
+};
+
+/** Quyền AI mặc định: cùng bit `ai_repo_read/canView` cấp token (mất quyền sau khi cấp ⇒ token thôi mở cổng). */
+async function coQuyenAiMacDinh(userId: number, role: string): Promise<boolean> {
+  try {
+    const { checkPermission } = await import("../_core/accessControl");
+    return await checkPermission(userId, role, "ai_repo_read", "canView");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ★★★ CORS RIÊNG cho đường `/v1` — gọi từ bộ CORS chung ở `_core/index.ts` TRƯỚC khi nó đặt bất kỳ header nào.
+ *
+ * Vì sao: bộ chung trả `Access-Control-Allow-Origin: *` cho yêu cầu không Origin và (ở dev) phản chiếu MỌI origin kèm
+ * credentials. Cổng giờ mang token CÁ NHÂN ⇒ một trang lạ không được phép đọc phản hồi `/v1` từ trình duyệt.
+ * Extension gọi từ extension host (Node, không Origin) nên KHÔNG cần CORS. Trình duyệt cần thì khai tường minh
+ * `OPENAI_GATEWAY_CORS_ORIGINS` (phẩy). Không bao giờ `*`, không bao giờ Allow-Credentials (cổng dùng Bearer).
+ *
+ * @returns `"khong-phai"` — không phải đường cổng (hoặc cổng TẮT) ⇒ bộ chung làm như cũ từng bit;
+ *          `"da-xu-ly"`   — preflight đã trả lời xong;
+ *          `"tiep"`       — header đã đặt, đi tiếp (BỎ QUA bộ chung).
+ */
+export function xuLyCorsCongOpenAi(req: Request, res: Response): "khong-phai" | "da-xu-ly" | "tiep" {
+  if (!envBool("OPENAI_GATEWAY_ENABLED")) return "khong-phai";
+  const base = (envStr("OPENAI_GATEWAY_PATH") || "/v1").replace(/\/+$/, "");
+  const duong = req.path || "";
+  if (duong !== base && !duong.startsWith(`${base}/`)) return "khong-phai";
+  const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+  const choPhep = envStr("OPENAI_GATEWAY_CORS_ORIGINS")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const hopLe = origin !== "" && choPhep.includes(origin);
+  if (hopLe) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Max-Age", "600");
+  }
+  if (req.method === "OPTIONS") {
+    res.status(hopLe ? 204 : 403).end();
+    return "da-xu-ly";
+  }
+  return "tiep";
+}
+
 // ─── Router factory ─────────────────────────────────────────────────────────────
 
 export interface OpenAiGatewayConfig {
-  /** Bearer token every request must present (constant-time compared). Required. */
+  /**
+   * KEY CHUNG (deprecate) — so khớp hằng-thời-gian. Rỗng ⇒ không key chung nào khớp (chế độ chỉ-token).
+   * `OPENAI_GATEWAY_SHARED_KEY_ENABLED=0` ⇒ bị từ chối dù khớp.
+   */
   apiKey: string;
+  /** Đợt 4A — seam cho lưới; mặc định tra CSDL (`xacThucTokenNguoiDung`). */
+  xacThucToken?: (token: string) => Promise<KetQuaXacThucToken>;
+  /** Đợt 4A — seam cho lưới; mặc định `checkPermission(…, "ai_repo_read", "canView")`. */
+  coQuyenAi?: (userId: number, role: string) => Promise<boolean>;
+  /** Đợt 4A — seam cho lưới; mặc định ghi `dungLanCuoiLuc` (thưa 60 s). */
+  ghiDung?: (tokenId: number) => void;
 }
 
 /**
@@ -504,6 +631,9 @@ export interface OpenAiGatewayConfig {
 export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
   const router = Router();
   const apiKey = config.apiKey;
+  const xacThucToken = config.xacThucToken ?? xacThucTokenNguoiDung;
+  const coQuyenAi = config.coQuyenAi ?? coQuyenAiMacDinh;
+  const ghiDung = config.ghiDung ?? ghiDungLanCuoi;
 
   // Own body parser so the gateway works regardless of global config / in tests.
   // express.json is idempotent (skips when a body was already parsed upstream).
@@ -517,19 +647,82 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
   router.use(requireServiceIdentity({ audience: "openai-gateway" }));
 
   // Bearer auth on every endpoint. Fail-closed: no key configured ⇒ reject all.
+  // ★★★ Đợt 4A — HAI loại Bearer, rẽ theo TIỀN TỐ (key chung không bao giờ phải tra CSDL):
+  //   • `avgw_…` ⇒ token NGƯỜI DÙNG: tra băm ⇒ (thu hồi · hết hạn · tài khoản tắt) ⇒ quyền AI còn không ⇒ phạm vi của
+  //     đường ⇒ trần/phút của token ⇒ gắn `res.locals.nguoiGoiCong`. Mọi nhánh hỏng ⇒ dừng (fail-closed; CSDL sập ⇒ 503).
+  //   • còn lại ⇒ KEY CHUNG (deprecate): chỉ khi cờ bật; khớp hằng-thời-gian; cảnh báo + header `Deprecation`.
   router.use((req: Request, res: Response, next) => {
-    const token = extractBearer(req);
-    if (!apiKey || !token || !timingSafeEqualStr(token, apiKey)) {
-      jsonError(
-        res,
-        401,
-        "Invalid API key. Provide 'Authorization: Bearer <OPENAI_GATEWAY_API_KEY>'.",
-        "invalid_request_error",
-        "invalid_api_key",
-      );
-      return;
-    }
-    next();
+    void (async () => {
+      const token = extractBearer(req);
+      if (!token) {
+        jsonError(res, 401, "Missing API token. Provide 'Authorization: Bearer <token>'.", "invalid_request_error", "invalid_api_key");
+        return;
+      }
+
+      if (token.startsWith(TIEN_TO_TOKEN)) {
+        const kq = await xacThucToken(token);
+        if (!kq.ok) {
+          const [ma, code, msg] = TU_CHOI_TOKEN[kq.ma] ?? TU_CHOI_TOKEN["khong-hop-le"];
+          jsonError(res, ma, msg, ma === 503 ? "server_error" : ma === 403 ? "permission_error" : "invalid_request_error", code);
+          return;
+        }
+        if (!(await coQuyenAi(kq.userId, kq.role))) {
+          jsonError(res, 403, "The token owner no longer has AI access.", "permission_error", "permission_denied");
+          return;
+        }
+        const can = phamViCuaDuong(req.path);
+        if (can !== null && can !== "khong-ro" && !kq.phamVi.includes(can)) {
+          jsonError(res, 403, `This token lacks the '${can}' scope.`, "permission_error", "insufficient_scope");
+          return;
+        }
+        // Trần THEO TOKEN (không theo người): một extension chạy loạn không ăn hết trần của token khác cùng người.
+        const choMs = checkNamedRateLimit(kq.userId, `gw-token:${kq.tokenId}`, tranMoiPhutToken());
+        if (choMs !== null) {
+          res.setHeader("Retry-After", String(Math.max(1, Math.ceil(choMs / 1000))));
+          jsonError(res, 429, "Rate limit exceeded for this token.", "rate_limit_error", "rate_limit_exceeded");
+          return;
+        }
+        (res.locals as { nguoiGoiCong?: NguoiGoiCong }).nguoiGoiCong = {
+          kieu: "token",
+          userId: kq.userId,
+          role: kq.role,
+          tokenId: kq.tokenId,
+          phamVi: kq.phamVi,
+        };
+        ghiDung(kq.tokenId);
+        next();
+        return;
+      }
+
+      if (!keyChungBat()) {
+        jsonError(
+          res,
+          401,
+          "The shared gateway key is disabled. Use a personal API token.",
+          "invalid_request_error",
+          "shared_key_disabled",
+        );
+        return;
+      }
+      if (!apiKey || !timingSafeEqualStr(token, apiKey)) {
+        jsonError(
+          res,
+          401,
+          "Invalid API key. Provide 'Authorization: Bearer <OPENAI_GATEWAY_API_KEY>'.",
+          "invalid_request_error",
+          "invalid_api_key",
+        );
+        return;
+      }
+      canhBaoKeyChung();
+      res.setHeader("Deprecation", "true");
+      (res.locals as { nguoiGoiCong?: NguoiGoiCong }).nguoiGoiCong = { kieu: "key-chung" };
+      next();
+    })().catch((err) => {
+      // Lỗi không lường trước trong lượt xác thực ⇒ fail-closed, KHÔNG next().
+      console.error("[openaiGateway] auth middleware error:", (err as Error)?.message ?? err);
+      if (!res.headersSent) jsonError(res, 503, "Authentication failed unexpectedly.", "server_error", "auth_backend_unavailable");
+    });
   });
 
   async function ensureEngine(res: Response): Promise<boolean> {
@@ -592,7 +785,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const ggufMessagesRaw = toGgufMessages(messages);
       const lastIdx = ggufMessagesRaw.length - 1;
       const representativeText = lastIdx >= 0 ? ggufMessagesRaw[lastIdx].content : "";
-      const planned = await planGatewayFailOpen(inferTaskFromLabel(modelLabel), representativeText);
+      const planned = await planGatewayFailOpen(inferTaskFromLabel(modelLabel), representativeText, nguoiGoi(res));
       plan = planned.plan;
       // Redact every OTHER message directly/ungated (defense-in-depth, mirrors
       // aiChatAssistant's treatment of prior-turn/tool-result text); the last (most recent)
@@ -904,7 +1097,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // source of truth for generation, and the fail-open rate-limit rationale). `suffix`
       // (FIM's surrounding code context) is redacted directly/ungated, mirroring
       // aiChatAssistant's treatment of supplementary content.
-      const planned = await planGatewayFailOpen(isFim ? "fim" : "code", prompt);
+      const planned = await planGatewayFailOpen(isFim ? "fim" : "code", prompt, nguoiGoi(res));
       plan = planned.plan;
       const safeSuffix = suffix ? redactSecretsAndPII(suffix).text : suffix;
 
@@ -1074,6 +1267,15 @@ export function registerOpenAiGateway(app: Express): boolean {
   }
 
   const apiKey = envStr("OPENAI_GATEWAY_API_KEY");
+  // ★ Đợt 4A — cờ key chung TẮT tường minh ⇒ chế độ CHỈ-TOKEN: gắn cổng mà không cần key (mọi yêu cầu vẫn phải mang
+  //   token cá nhân hợp lệ — không có đường nào vào cổng mà không xác thực). Cờ BẬT (mặc định) + key rỗng ⇒ từ chối
+  //   gắn NHƯ CŨ: một người cấu hình cũ quên key không được lặng lẽ thấy cổng mọc lên.
+  if (!keyChungBat()) {
+    const basePath = envStr("OPENAI_GATEWAY_PATH") || "/v1";
+    app.use(basePath, createOpenAiGatewayRouter({ apiKey: "" }));
+    console.log(`[openaiGateway] OpenAI-compatible gateway mounted at ${basePath} — CHỈ token người dùng (key chung TẮT).`);
+    return true;
+  }
   if (!apiKey) {
     console.error(
       "[openaiGateway] REFUSING to mount: OPENAI_GATEWAY_ENABLED is on but " +
@@ -1107,6 +1309,10 @@ export function registerOpenAiGateway(app: Express): boolean {
     `[openaiGateway] OpenAI-compatible gateway mounted at ${basePath} ` +
       `(chat/completions · completions[FIM] · embeddings · models). ` +
       `Bearer-auth required; intended for localhost/LAN engineer use only.`,
+  );
+  console.warn(
+    "[openaiGateway] KEY CHUNG OPENAI_GATEWAY_API_KEY đang BẬT (deprecate — không gắn người dùng). Token cá nhân `avgw_…` " +
+      "cũng được nhận; khi mọi client đã chuyển, đặt OPENAI_GATEWAY_SHARED_KEY_ENABLED=0.",
   );
   return true;
 }

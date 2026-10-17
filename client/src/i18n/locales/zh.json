@@ -20944,6 +20944,23 @@
       "hang": "常量"
     },
     "agent": {
+      "nho": {
+        "tieuDe": "记忆建议",
+        "phamViDuAn": "本项目",
+        "phamViNguoiDung": "您的偏好",
+        "giaiThich": "仅在您点击“记住”后保存；将作为后续运行的上下文。",
+        "nutNho": "记住",
+        "nutBoQua": "忽略",
+        "daNho": "已记住——后续运行将使用。",
+        "daBo": "已忽略。",
+        "loiHetHieuLuc": "该建议已失效（服务器上已没有这次运行）。",
+        "loiDaXuLy": "该建议已处理过。",
+        "loiTat": "服务器已关闭记忆功能——未保存。",
+        "loiRuiRo": "未保存：该笔记看起来像一条指令。",
+        "loiDay": "本项目的经验条数已达上限——请先删除一些。",
+        "loiQuyen": "您无权操作这次运行。",
+        "loiKhac": "无法保存（{{ma}}）。"
+      },
       "canDuyet": "需要您审批",
       "cheDo": {
         "hoi": "提问",
@@ -22359,5 +22376,69 @@
     "lateDialogTitle": "将迟到的写入结果 #{{id}} 标记为已审阅？",
     "lateDialogDesc": "设备在该写入被记录为“结果未知”之后才返回了真实结果。该结果作为证据保留（不修改、不删除）。请在设备上核对实际值；审阅连同备注一起审计，并解除适配器的所有权变更阻止。",
     "lateReviewed": "已记录迟到结果的审阅"
+  },
+  "aiGatewayToken": {
+    "title": "AI 网关令牌与设备",
+    "subtitle": "允许 VSCode 扩展代表您调用 /v1 网关——每个令牌都有权限范围、有效期，且可撤销。",
+    "device": {
+      "title": "确认设备",
+      "desc": "输入扩展显示的代码。仅当您本人刚在 VSCode 中发起登录时才批准。",
+      "codeLabel": "设备代码",
+      "deviceName": "设备",
+      "scopes": "请求的权限范围",
+      "expiresIn": "代码剩余有效时间 {{s}} 秒",
+      "warning": "批准后将签发一个与您账户绑定、有效期 90 天的令牌。扩展的每个请求都会以您的名义记录。",
+      "approve": "批准",
+      "deny": "拒绝",
+      "approved": "已批准。请返回 VSCode——扩展将自动获取令牌。",
+      "denied": "已拒绝。设备未获得任何令牌。"
+    },
+    "tokens": {
+      "title": "我的令牌",
+      "desc": "令牌仅在创建时完整显示一次；服务器只保存其哈希值。",
+      "empty": "暂无令牌。",
+      "name": "名称",
+      "prefix": "前缀",
+      "scopes": "权限范围",
+      "status": "状态",
+      "expires": "过期时间",
+      "lastUsed": "最近使用",
+      "never": "从未",
+      "revoke": "撤销",
+      "revoked": "令牌已撤销。"
+    },
+    "create": {
+      "name": "令牌名称（例如：VSCode 笔记本）",
+      "days": "天数",
+      "submit": "创建令牌",
+      "once": "请立即复制令牌——它将不会再次显示。",
+      "copied": "令牌已复制。"
+    },
+    "scope": {
+      "chat": "对话 / 智能体",
+      "fim": "代码补全（FIM）",
+      "embed": "向量嵌入"
+    },
+    "source": {
+      "web": "网页创建",
+      "thiet-bi": "设备登录"
+    },
+    "status": {
+      "hieu-luc": "有效",
+      "het-han": "已过期",
+      "thu-hoi": "已撤销"
+    },
+    "errors": {
+      "PERMISSION_DENIED": "您没有 AI 编程权限（ai_repo_read）。",
+      "CAN_PHIEN_WEB": "此操作需要网页登录会话，请重新登录。",
+      "QUA_TRAN": "您的有效令牌过多，请先撤销部分令牌。",
+      "DB_UNAVAILABLE": "服务器暂时无法保存令牌，请稍后重试。",
+      "NOT_FOUND": "未找到令牌（或已撤销）。",
+      "RATE_LIMITED": "尝试代码次数过多，请等待一分钟后重试。",
+      "khong-ton-tai": "代码无效，请核对 VSCode 中显示的代码。",
+      "het-han": "代码已过期，请在 VSCode 中重新开始登录。",
+      "da-xu-ly": "此代码已被处理。",
+      "csdl": "服务器暂时不可用，请稍后重试。"
+    }
   }
 }

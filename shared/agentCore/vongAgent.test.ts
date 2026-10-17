@@ -280,12 +280,16 @@ describe("chayVongAgent — tool và tham số", () => {
     expect(t.content).toMatch(/not available/i);
     expect(t.content).toMatch(/read_file/); // liệt kê tool được dùng
     expect(suKien).toContainEqual(expect.objectContaining({ loai: "ket-qua-tool", ten: "write_file", ok: false }));
-    // model chế độ hoi chỉ thấy tool đọc + todo_write
+    // model chế độ hoi chỉ thấy tool đọc (kể cả 3 tool tìm của Đợt 2) + todo_write + remember (chỉ là đề xuất)
     expect(vao[0].congCu.map((t) => t.function.name).sort()).toEqual([
       "find_files",
+      "find_symbol",
       "grep",
       "list_dir",
       "read_file",
+      "remember",
+      "search_code",
+      "search_docs",
       "todo_write",
     ]);
   });

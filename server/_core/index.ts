@@ -38,9 +38,10 @@ import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/r
 import { registerExternalInspectionRoutes } from "../routes/externalInspectionApi";
 import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
 import { chanTuyenAiTheoGiayPhep } from "../routes/congGiayPhepAiExpress";
-import { registerOpenAiGateway } from "../routes/openaiGateway";
+import { registerOpenAiGateway, xuLyCorsCongOpenAi } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerAiAgentRoutes } from "../routes/aiAgentApi"; // Đợt 1 T4 — lượt chạy vòng agent máy chủ (SSE)
+import { registerAiGatewayTokenThietBiRoutes } from "../routes/aiGatewayTokenThietBi"; // Đợt 4A — device flow: extension xin mã ⇒ người duyệt trên web ⇒ đổi lấy token /v1
 import { danhDauGianDoanKhiBoot } from "../db/aiAgentRuns";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
@@ -233,6 +234,12 @@ async function startServer() {
   }
 
   app.use((req, res, next) => {
+    // ★ Đợt 4A — cổng `/v1` mang token CÁ NHÂN ⇒ CORS riêng (không bao giờ `*`, chỉ origin khai trong
+    //   OPENAI_GATEWAY_CORS_ORIGINS). Cổng TẮT / đường khác ⇒ "khong-phai" ⇒ khối dưới chạy như cũ từng bit.
+    const corsCong = xuLyCorsCongOpenAi(req, res);
+    if (corsCong === "da-xu-ly") return;
+    if (corsCong === "tiep") return next();
+
     const origin = req.headers.origin;
 
     // No Origin header => non-browser client (LAN machine). Always allow.
@@ -5573,6 +5580,7 @@ async function startServer() {
     if (n > 0) console.log(`[aiAgent] ${n} lượt chạy dở từ lần chạy trước ⇒ gian-doan`);
   });
   registerAiAgentRoutes(app);
+  registerAiGatewayTokenThietBiRoutes(app); // Đợt 4A — sau cổng giấy phép `/api/ai` ở trên; xác thực thay thế: xem docblock tuyến
   // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
   registerEdgeDownloadRoute(app);
 

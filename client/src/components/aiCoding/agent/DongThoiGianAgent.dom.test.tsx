@@ -43,6 +43,7 @@ let goiTrpc: GoiTrpc[] = [];
 let goiHuy: string[] = [];
 let danhSachTra: unknown[] = [];
 let hoanTacTra: unknown = { khoiPhuc: [], xungDot: [] };
+let nhoTra: unknown = { ok: true, note: null, ketQua: "them" };
 
 function traJson(o: unknown, status = 200): Response {
   return new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
@@ -56,7 +57,7 @@ function fetchGia(input: string, init?: RequestInit): Promise<Response> {
     let inp: unknown;
     if (method === "POST") inp = (JSON.parse(String(init?.body)) as { json: unknown }).json;
     goiTrpc.push({ thuTuc, input: inp });
-    const data = thuTuc === "danhSach" ? danhSachTra : thuTuc === "hoanTac" ? hoanTacTra : { ok: true };
+    const data = thuTuc === "danhSach" ? danhSachTra : thuTuc === "hoanTac" ? hoanTacTra : thuTuc === "nhoDeXuat" ? nhoTra : { ok: true };
     return Promise.resolve(traJson({ result: { data: { json: data } } }));
   }
   if (/\/api\/ai\/agent\/runs\/[^/]+\/huy$/.test(url)) {
@@ -127,6 +128,7 @@ beforeEach(() => {
   goiHuy = [];
   danhSachTra = [];
   hoanTacTra = { khoiPhuc: [], xungDot: [] };
+  nhoTra = { ok: true, note: null, ketQua: "them" };
   onTep.mockReset();
   onMoTep.mockReset();
   vi.stubGlobal("fetch", vi.fn(fetchGia));
@@ -255,6 +257,47 @@ describe("DongThoiGianAgent — luồng SSE giả", () => {
     expect(kq).toHaveTextContent("Đã khôi phục 1 tệp.");
     expect(kq).toHaveTextContent("b.ts — đã bị sửa tiếp");
     expect(onTep).toHaveBeenCalledWith(["a.ts"]);
+  });
+
+  it("★ Đợt 2 — thẻ 'Đề xuất nhớ': nội dung + phạm vi; Nhớ gọi aiAgent.nhoDeXuat {runId,id} ⇒ 'Đã nhớ'; Bỏ qua gọi boDeXuat", async () => {
+    await batDau();
+    await day(
+      { loai: "goi-tool", goi: { id: "c5", ten: "find_symbol", thamSo: { name: "cong", kind: "function" } }, luot: 1 },
+      { loai: "ket-qua-tool", id: "c5", ten: "find_symbol", ok: true, tomTat: "src/a.ts:1" },
+      { loai: "de-xuat-nho", id: "nho-1", note: "Dự án dùng pnpm.", scope: "project" },
+      { loai: "de-xuat-nho", id: "nho-2", note: "Thích trả lời ngắn.", scope: "user" },
+    );
+    const dongTool = screen.getAllByTestId("agent-dong-tool").find((d) => d.getAttribute("data-tool") === "find_symbol")!;
+    expect(dongTool).toHaveTextContent("cong · function");
+
+    const the = screen.getAllByTestId("agent-de-xuat-nho");
+    expect(the).toHaveLength(2);
+    expect(the[0]).toHaveTextContent("Đề xuất nhớ");
+    expect(the[0]).toHaveTextContent("Dự án dùng pnpm.");
+    expect(the[0]).toHaveTextContent("Dự án này");
+    expect(the[1]).toHaveTextContent("Sở thích của bạn");
+
+    fireEvent.click(within(the[0]!).getByText("Nhớ"));
+    await nhip();
+    expect(goiTrpc.find((g) => g.thuTuc === "nhoDeXuat")).toEqual({ thuTuc: "nhoDeXuat", input: { runId: "r1", id: "nho-1" } });
+    expect(screen.getAllByTestId("agent-de-xuat-nho")[0]).toHaveTextContent("Đã nhớ");
+    expect(within(screen.getAllByTestId("agent-de-xuat-nho")[0]!).queryByText("Nhớ")).toBeNull();
+
+    fireEvent.click(within(screen.getAllByTestId("agent-de-xuat-nho")[1]!).getByText("Bỏ qua"));
+    await nhip();
+    expect(goiTrpc.find((g) => g.thuTuc === "boDeXuat")).toEqual({ thuTuc: "boDeXuat", input: { runId: "r1", id: "nho-2" } });
+    expect(screen.getAllByTestId("agent-de-xuat-nho")[1]).toHaveTextContent("Đã bỏ qua");
+  });
+
+  it("★ Đợt 2 — máy chủ từ chối (ok:false) ⇒ thẻ báo lỗi, không giả 'Đã nhớ'", async () => {
+    nhoTra = { ok: false, note: "NOT_FOUND", ketQua: null };
+    await batDau();
+    await day({ loai: "de-xuat-nho", id: "nho-1", note: "x", scope: "project" });
+    fireEvent.click(within(screen.getByTestId("agent-de-xuat-nho")).getByText("Nhớ"));
+    await nhip();
+    const the = screen.getByTestId("agent-de-xuat-nho");
+    expect(the).not.toHaveTextContent("Đã nhớ");
+    expect(the).toHaveTextContent("hết hiệu lực");
   });
 
   it("mọi LyDoDung có câu riêng (không rơi về mã thô)", async () => {

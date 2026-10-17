@@ -135,6 +135,7 @@ import { aiThresholdAdvisorRouter } from "./routers/aiThresholdAdvisorRouter"; /
 import { aiSetupAdvisorRouter } from "./routers/aiSetupAdvisorRouter"; // Technician Copilot ①: Setup Advisor (pre-fill new-machine config from similar template)
 import { aiAgentRouter } from "./routers/aiAgentRouter"; // GĐ3b: multi-step agentic orchestrator (on top of HITL)
 import { aiAgentCenterRouter } from "./routers/aiAgentCenterRouter"; // doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
+import { aiGatewayTokenRouter } from "./routers/aiGatewayTokenRouter"; // Đợt 4A: token THEO NGƯỜI DÙNG cho cổng /v1 (extension VSCode) + bước duyệt device flow
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
 import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: segmentation mask + sub-pixel metrology
@@ -777,6 +778,8 @@ export const appRouter = router({
   aiAgent: aiAgentRouter,
   // AI Agent Command Center — doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
   aiAgentCenter: aiAgentCenterRouter,
+  // AI Gateway Token — Đợt 4A: token cá nhân cho cổng OpenAI /v1 (chỉ lưu băm, phạm vi, hết hạn, thu hồi) + duyệt thiết bị
+  aiGatewayToken: aiGatewayTokenRouter,
   // AI Confidence Calibration — ECE / reliability diagram (B2)
   aiCalibration: aiCalibrationRouter,
   // AI Anomaly Detection — unsupervised PatchCore-style memory bank + kNN (B3)

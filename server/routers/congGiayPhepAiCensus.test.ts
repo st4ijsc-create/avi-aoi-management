@@ -407,7 +407,22 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   kiểm trong thân (`services/ai/agent/thuTucLuotChay.ts`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi.
  *   `tong` 2321 trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
-const GHIM = { tong: 2321, beMatAi: 372, aiCoCong: 310, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-10-17 AI Local Đợt 2 (đề xuất nhớ của vòng agent) — **tong 2321 → 2323 · beMatAi 372 → 374 · aiCoCong 310 → 312**
+ *   (đo trước rồi mới ghim; trước lượt này 2321 XANH). Đúng HAI thủ tục MỚI ở `aiAgentRouter.ts` (bề mặt AI, sàn
+ *   `moduleProcedure("MOD_AI")` như anh em cùng tệp ⇒ cả hai vào aiCoCong): `aiAgent.{nhoDeXuat, boDeXuat}` (mutation) —
+ *   quyền `ai_repo_read/canView` kiểm trong thân (`thuTucLuotChay.ts`), chỉ chủ lượt chạy. aiMienTru / ngoaiAiCoCong và mọi
+ *   SKU khác KHÔNG đổi. `tong` 2323 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+/*
+ * ★ 2026-10-17 AI Local Đợt 4A (token theo người dùng cho cổng /v1) — **tong 2323 → 2328 · beMatAi 374 → 379 · aiCoCong
+ *   312 → 317** (đo trước rồi mới ghim; trước lượt này 2323 XANH). Đúng NĂM thủ tục MỚI ở tệp MỚI `aiGatewayTokenRouter.ts`
+ *   (tên `ai…` ⇒ tự vào bề mặt AI; sàn `moduleProcedure("MOD_AI")` ⇒ cả năm vào aiCoCong): `aiGatewayToken.{danhSach,
+ *   xemThietBi}` (query), `aiGatewayToken.{tao, thuHoi, quyetThietBi}` (mutation) — quyền `ai_repo_read/canView` kiểm trong thân
+ *   (`services/ai/gatewayToken/thuTucToken.ts`). aiMienTru / ngoaiAiCoCong và mọi SKU khác KHÔNG đổi. `tong` 2328 trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2328, beMatAi: 379, aiCoCong: 317, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

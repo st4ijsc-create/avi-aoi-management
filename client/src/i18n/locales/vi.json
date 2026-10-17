@@ -20916,6 +20916,23 @@
       "hang": "hằng"
     },
     "agent": {
+      "nho": {
+        "tieuDe": "Đề xuất nhớ",
+        "phamViDuAn": "Dự án này",
+        "phamViNguoiDung": "Sở thích của bạn",
+        "giaiThich": "Chỉ được lưu khi bạn bấm Nhớ; sẽ dùng làm ngữ cảnh cho các lượt sau.",
+        "nutNho": "Nhớ",
+        "nutBoQua": "Bỏ qua",
+        "daNho": "Đã nhớ — sẽ dùng cho các lượt sau.",
+        "daBo": "Đã bỏ qua.",
+        "loiHetHieuLuc": "Đề xuất đã hết hiệu lực (lượt chạy không còn trên máy chủ).",
+        "loiDaXuLy": "Đề xuất này đã được xử lý.",
+        "loiTat": "Trí nhớ đang tắt trên máy chủ — không lưu.",
+        "loiRuiRo": "Không lưu: ghi chú trông giống một mệnh lệnh.",
+        "loiDay": "Đã đủ số bài học tối đa cho dự án này — xoá bớt trước.",
+        "loiQuyen": "Bạn không có quyền với lượt chạy này.",
+        "loiKhac": "Không lưu được ({{ma}})."
+      },
       "canDuyet": "Cần bạn duyệt",
       "cheDo": {
         "hoi": "Hỏi",
@@ -22331,5 +22348,69 @@
     "lateDialogTitle": "Xác nhận đã xem kết quả ghi đến muộn #{{id}}?",
     "lateDialogDesc": "Thiết bị đã trả kết quả THẬT cho lệnh ghi này SAU khi lệnh được ghi nhận 'kết cục không rõ'. Kết quả được giữ nguyên làm bằng chứng (không sửa, không xoá). Hãy đối chiếu giá trị thật trên thiết bị; xác nhận được kiểm toán kèm ghi chú và gỡ việc chặn đổi chủ của bộ chuyển đổi.",
     "lateReviewed": "Đã ghi nhận việc xem xét kết quả đến muộn"
+  },
+  "aiGatewayToken": {
+    "title": "Token cổng AI & thiết bị",
+    "subtitle": "Cấp quyền cho extension VSCode gọi cổng /v1 thay mặt bạn — mỗi token có phạm vi, hạn dùng và thu hồi được.",
+    "device": {
+      "title": "Xác nhận thiết bị",
+      "desc": "Nhập mã extension đang hiển thị. Chỉ cho phép khi chính bạn vừa bấm đăng nhập trong VSCode.",
+      "codeLabel": "Mã thiết bị",
+      "deviceName": "Thiết bị",
+      "scopes": "Phạm vi xin",
+      "expiresIn": "Mã còn hiệu lực {{s}} giây",
+      "warning": "Cho phép sẽ cấp một token 90 ngày gắn với tài khoản của bạn. Mọi yêu cầu của extension được ghi theo tên bạn.",
+      "approve": "Cho phép",
+      "deny": "Từ chối",
+      "approved": "Đã cho phép. Quay lại VSCode — extension sẽ tự nhận token.",
+      "denied": "Đã từ chối. Thiết bị không nhận được token nào."
+    },
+    "tokens": {
+      "title": "Token của tôi",
+      "desc": "Token chỉ hiện đầy đủ một lần lúc tạo; máy chủ chỉ lưu bản băm.",
+      "empty": "Chưa có token nào.",
+      "name": "Tên",
+      "prefix": "Tiền tố",
+      "scopes": "Phạm vi",
+      "status": "Trạng thái",
+      "expires": "Hết hạn",
+      "lastUsed": "Dùng lần cuối",
+      "never": "Chưa dùng",
+      "revoke": "Thu hồi",
+      "revoked": "Đã thu hồi token."
+    },
+    "create": {
+      "name": "Tên token (vd: VSCode laptop)",
+      "days": "Số ngày",
+      "submit": "Tạo token",
+      "once": "Sao chép token ngay — nó sẽ KHÔNG hiện lại lần nữa.",
+      "copied": "Đã sao chép token."
+    },
+    "scope": {
+      "chat": "Trò chuyện / agent",
+      "fim": "Gợi ý mã (FIM)",
+      "embed": "Embedding"
+    },
+    "source": {
+      "web": "tạo trên web",
+      "thiet-bi": "đăng nhập thiết bị"
+    },
+    "status": {
+      "hieu-luc": "Hiệu lực",
+      "het-han": "Hết hạn",
+      "thu-hoi": "Đã thu hồi"
+    },
+    "errors": {
+      "PERMISSION_DENIED": "Bạn chưa có quyền dùng trợ lý lập trình AI (ai_repo_read).",
+      "CAN_PHIEN_WEB": "Thao tác này cần phiên đăng nhập web. Hãy đăng nhập lại.",
+      "QUA_TRAN": "Bạn đã có quá nhiều token còn hiệu lực. Hãy thu hồi bớt.",
+      "DB_UNAVAILABLE": "Máy chủ tạm không lưu được token. Thử lại sau.",
+      "NOT_FOUND": "Không tìm thấy token (hoặc đã thu hồi).",
+      "RATE_LIMITED": "Thử mã quá nhiều lần. Đợi một phút rồi thử lại.",
+      "khong-ton-tai": "Mã không đúng. Kiểm tra lại mã trên VSCode.",
+      "het-han": "Mã đã hết hạn. Bắt đầu đăng nhập lại từ VSCode.",
+      "da-xu-ly": "Mã này đã được xử lý.",
+      "csdl": "Máy chủ tạm không xử lý được. Thử lại sau."
+    }
   }
 }
