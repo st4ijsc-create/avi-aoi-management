@@ -241,6 +241,15 @@ extension (5/6 lượt `loi-model`; thông điệp lỗi bị bộ đo cắt 160
   `khoi-dong`: lựa chọn bền giữ nguyên, phục hồi gỡ khoá PID chết + đúng tạm dừng của nó, cảnh báo server chạy model chưa
   kiểm (chỉ lệch nhãn) ⇒ lượt đổi thường đưa về Qwen3.6 ĐẠT. Task Scheduler chạy ps1 của repo chính ⇒ hiệu lực sau gộp.
 
+### Đợt 5 — ĐO CỔNG: CHƯA ĐẠT (2026-10-17, Eval mã Studio, corpus `csharp-dotnet` 964 đoạn)
+| Bộ bài | TẮT | BẬT | Biên | Lượt BẬT có đoạn | Kết luận |
+|---|---|---|---|---|---|
+| tasks-hard 12 × 3 | 25/36 | 27/36 | ±3 | 6/36 (lạc đề) | trong nhiễu (tập con có đoạn 3 → 2/6) |
+| tasks-api 6 × 3 (ADO.NET, bản đo trong tmp) | 14/18 | 13/18 | ±2 | 18/18 | trong nhiễu |
+Bảng `ai_agent_feedback`: 0 hàng (chưa ai dùng thật). Corpus giúp 1 bài (namespace `SqlDbType` 1/3 → 3/3), hại 1 bài, thiếu
+trang `SqlBulkCopyOptions` (bài A-cs6 5/6 trượt cả hai nhánh). Sau đo (`bc5b67343`): thước tập con "bài có đoạn" + bộ
+`tasks-api` vào repo + nhánh đối chứng A/A để đo nhiễu riêng — đo lại cổng cần: chạy A/A, bổ sung corpus, dữ liệu phản hồi thật.
+
 ### Việc còn lại sau 2026-10-17
 - (xong) 5.1 phía VSCode.
 - Cổng Đợt 5: cần dữ liệu dùng thật (bảng phản hồi) + một lượt Eval mã A/B corpus trong Studio.
