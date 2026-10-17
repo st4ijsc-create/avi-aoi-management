@@ -373,12 +373,21 @@ describe("ĐIỂM NGHẼN `loadGgufModel` — vị từ MỘT chỗ, phủ MỌI
   it("★★ chatCompletion (đường /v1 gateway): BẤT BIẾN — không bao giờ nạp bản thứ hai", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // ⚠ 2026-10-17: ca này từng gửi `fetch` THẬT tới :8091 (3 lượt "hi" vào model đang phục vụ đo; một lần hết giờ 30 s
+    //   khi server bận ⇒ đỏ chập chờn). Chặn mạng: bất biến cần đo không phụ thuộc server có trả lời hay không.
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:8091 (giả trong lưới)"), { code: "ECONNREFUSED" });
+    }));
     const eng = await freshEngine();
     // Không khai TRƯỚC là lượt này sẽ được phục vụ hay bị từ chối — đó chính là CƠ CHẾ, thứ P1 vừa
     // đổi. Chỉ phát biểu điều KHÔNG được phép xảy ra ở cả hai kết cục.
-    await eng
-      .chatCompletion({ messages: [{ role: "user", content: "hi" }] })
-      .catch(() => undefined);
+    try {
+      await eng
+        .chatCompletion({ messages: [{ role: "user", content: "hi" }] })
+        .catch(() => undefined);
+    } finally {
+      vi.unstubAllGlobals();
+    }
     expect(
       fakeLlama.loadModel,
       "lượt chat cho model mà llama-server đang giữ đã nạp BẢN THỨ HAI (~19.000 MiB)",
