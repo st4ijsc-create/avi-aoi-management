@@ -34,7 +34,7 @@ export const MAU_TOKEN_CO_TIEN_TO: readonly MauToken[] = [
   { ten: "github_pat", nguon: "github_pat_[A-Za-z0-9_]{22,}" },
   // GitLab PAT: `glpat-` + 20 ký tự.
   { ten: "gitlab", nguon: "glpat-[A-Za-z0-9_-]{20,}" },
-  // Slack: `xox[abprs]-` + SỐ + `-` … (đòi số ngay sau tiền tố ⇒ `xoxb-container-large` không phải khoá).
+  // Slack: `xox[abprs]-` + SỐ + `-` … (đòi SỐ ngay sau tiền tố ⇒ tên kiểu "xoxb" + gạch + chữ thường không phải khoá — ví dụ đầy đủ chỉ để trong test, vì `vsce package` quét dist và chặn chuỗi giống khoá Slack).
   { ten: "slack", nguon: "xox[abprs]-[0-9]{6,}-[A-Za-z0-9-]{8,}" },
   // AWS access key id: đúng 20 ký tự.
   { ten: "aws", nguon: "AKIA[0-9A-Z]{16}" },
