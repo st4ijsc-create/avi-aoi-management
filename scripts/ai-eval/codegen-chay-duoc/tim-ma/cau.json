@@ -1,22 +1,22 @@
 {
  "moTa": "Bộ tìm mã Đợt 2 — SINH bởi chuanBi.mjs từ mã thật; đừng sửa tay số dòng.",
- "luc": "2026-10-17T01:18:26.396Z",
- "commit": "585653766",
+ "luc": "2026-10-17T05:51:48.283Z",
+ "commit": "efb9ff532",
  "cau": [
   {
    "id": "R1-chayVongAgent",
    "cauHoi": "Hàm chayVongAgent (vòng lặp agent) được định nghĩa ở tệp nào, dòng mấy? Phía server nó được gọi từ đâu?",
    "kyHieu": "chayVongAgent",
    "tep": "shared/agentCore/vongAgent.ts",
-   "dong": 86,
+   "dong": 101,
    "doiDong": true,
    "duAn": null,
    "mau": "^export async function chayVongAgent\\(",
    "tepGoi": [
-    "vscode-extension/src/ui/phienAgent.ts",
     "server/services/ai/agent/goiModelMayChu.ts",
     "server/services/ai/agent/quanLyLuotChay.ts",
-    "shared/agentCore/congCu.ts"
+    "shared/agentCore/congCu.ts",
+    "vscode-extension/src/ui/phienAgent.ts"
    ],
    "dongMa": "export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent> {"
   },
@@ -71,13 +71,13 @@
    "cauHoi": "Mình muốn tăng số lượt tối đa của vòng agent (mặc định đang là 30 lượt) — giá trị mặc định đó khai ở tệp nào để sửa?",
    "kyHieu": "GIOI_HAN_MAC_DINH",
    "tep": "shared/agentCore/kieu.ts",
-   "dong": 158,
+   "dong": 194,
    "doiDong": false,
    "duAn": null,
    "mau": "^export const GIOI_HAN_MAC_DINH\\b",
    "tepGoi": [
-    "vscode-extension/src/ui/phienAgent.ts",
-    "shared/agentCore/vongAgent.ts"
+    "shared/agentCore/vongAgent.ts",
+    "vscode-extension/src/ui/phienAgent.ts"
    ],
    "dongMa": "export const GIOI_HAN_MAC_DINH: GioiHanVong = {"
   },
@@ -135,8 +135,10 @@
    "duAn": null,
    "mau": "^export function lamSachBaiHoc\\(",
    "tepGoi": [
+    "client/src/components/ai/QuanLyTriNho.tsx",
     "server/db/aiCodingLessons.ts",
     "server/routers/aiAgentRouter.ts",
+    "server/routers/repoWorkspaceRouter.ts",
     "server/services/ai/agent/boThucThiMayChu.ts",
     "server/services/ai/agent/quanLyLuotChay.ts",
     "server/services/ai/agent/thuTucLuotChay.ts",
