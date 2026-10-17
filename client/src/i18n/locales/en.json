@@ -20964,6 +20964,9 @@
         "loiKhac": "Could not save ({{ma}})."
       },
       "canDuyet": "Needs your approval",
+      "canhBaoDuLieu": "Content read from {{nguon}} contains instruction-like text — the agent treats it as data and does not follow it.",
+      "haTuTri": "Autonomy reduced: this run read suspicious content ({{nguon}}) — every further write/command needs your approval.",
+      "theDangNgo": "This run has read suspicious content: {{nguon}} — review carefully before approving.",
       "cheDo": {
         "hoi": "Ask",
         "hoiGoiY": "Question & answer as before — never writes files on its own",

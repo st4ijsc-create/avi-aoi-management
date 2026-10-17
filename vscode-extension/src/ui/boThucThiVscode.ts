@@ -19,6 +19,11 @@
  * LỆNH: `run_command` ⇒ allowlist của extension (`xetDuyetLenh`) ⇒ LUÔN hỏi (kể cả tự động — giữ quyết định cũ của
  *   extension: chạy tiến trình là hành động khác hẳn ghi tệp) ⇒ `chayLenhCucBo` ⇒ ĐẦU RA + EXIT CODE TRẢ VỀ MODEL.
  * NHỚ: `remember` ⇒ sự kiện `de-xuat-nho` (đề xuất); chỉ người bấm "Nhớ" mới ghi vào `khoBoNho`.
+ * ★★★ (2026-10-17) NỘI DUNG ĐÁNG NGỜ — chính sách phân bậc (ranh giới an toàn là CỬA DUYỆT, không dừng đọc): kết quả
+ *   đọc/lệnh được quét bằng CHÍNH bộ quét dữ liệu không tin cậy của máy chủ (`scanUntrustedContent`, thuần) ⇒ mức `high`
+ *   ⇒ `dangNgo{nguon, mau}` (dữ liệu vẫn về model; lõi cảnh báo). Nơi QUYẾT ĐỊNH bỏ thẻ (`tu-dong` + `tu_ghi`) ở ĐÂY nên
+ *   hạ tự trị THI HÀNH ở đây theo hai nguồn độc lập: `ctx.haTuTri` (lõi) HOẶC chốt nội bộ `nguonDangNgo` (tự thấy).
+ *   Mọi thẻ duyệt (ghi + lệnh) sau đó mang `nguonDangNgo` (YeuCauDuyet + `can-duyet`) và câu cảnh báo trong `tomTat`.
  */
 import * as vscode from "vscode";
 import { existsSync } from "node:fs";
@@ -32,6 +37,7 @@ import {
   type MotEdit,
   type NguCanhThucThi,
   type WireTool,
+  nhanNguonGoi,
 } from "../../../shared/agentCore/index";
 import { apBanVa as apBanVaThat, type DauVaoApBanVa, type KetQuaApBanVa, type ThaoTacGhi } from "./apBanVa";
 import { bamNoiDung } from "../loi/bamTep";
@@ -47,6 +53,8 @@ import { chayLenhCucBo as chayLenhCucBoThat } from "../mang/chayLenhCucBo";
 import { LOAI_TRU, gocDaGiai, locUngVien, nhanGon, quyVeDuongThat } from "../mang/toolCucBo";
 import { dinhDangChanDoan, dinhDangDocFile, grepTrenTep, type MucChanDoan, type TepQuet } from "../loi/congCuDoc";
 import type { SoCheckpoint } from "../loi/checkpoint";
+// Bộ quét THUẦN (không import gì) — CHÍNH bộ máy chủ dùng (aiSafety xuất lại) ⇒ hai bộ thực thi đánh giá "đáng ngờ" như nhau.
+import { scanUntrustedContent } from "../../../shared/quetMenhLenh";
 
 /** Tool riêng của extension (không thuộc bộ 14 của lõi) — đọc, có ở MỌI chế độ. */
 export const CONG_CU_CHAN_DOAN: WireTool = {
@@ -65,6 +73,8 @@ export const CONG_CU_CHAN_DOAN: WireTool = {
 };
 
 const KHONG_BAY = new Set(["search_code", "search_docs"]);
+/** Tool mà kết quả là DỮ LIỆU từ workspace/tiến trình (quét tìm câu dạng mệnh lệnh). */
+const TOOL_TRA_DU_LIEU = new Set(["read_file", "list_dir", "find_files", "grep", "find_symbol", "get_diagnostics", "run_command"]);
 const TRAN_TEP_GREP = 4000;
 const TRAN_BYTE_TEP_GREP = 1024 * 1024;
 const TRAN_BYTE_MO = 16 * 1024 * 1024;
@@ -83,6 +93,8 @@ export interface YeuCauDuyet {
   moi?: string | null;
   tomTat: string;
   lenh?: string;
+  /** Lượt chạy đã đọc nội dung đáng ngờ từ các nguồn này — người duyệt phải thấy. */
+  nguonDangNgo?: string[];
 }
 
 export type QuyetDinhDuyet = { duyet: true } | { duyet: false; lyDo?: string };
@@ -125,14 +137,44 @@ async function tonTaiFs(uri: vscode.Uri): Promise<boolean> {
 
 const MUC_DO: Record<number, MucChanDoan["mucDo"]> = { 0: "error", 1: "warning", 2: "info", 3: "hint" };
 
+/** Câu cảnh báo gắn vào `tomTat` của thẻ duyệt khi lượt đã đọc nội dung đáng ngờ. */
+function ghiChuDangNgo(nguon: string[]): string {
+  return nguon.length
+    ? ` — ⚠ lượt này đã đọc nội dung đáng ngờ: ${nguon.slice(0, 5).join(", ")}${nguon.length > 5 ? ", …" : ""}`
+    : "";
+}
+
 export class BoThucThiVscode implements BoThucThi {
+  /** Chốt NỘI BỘ (một chiều, đời = một lượt chạy): nguồn đáng ngờ chính bộ thực thi đã trả về. */
+  private readonly nguonDangNgo: string[] = [];
+
   constructor(private readonly pt: PhuThuocBoThucThi) {}
+
+  /** Nguồn đáng ngờ cho thẻ duyệt: ctx (lõi) ∪ nội bộ. */
+  private nguonDangNgoCua(ctx: NguCanhThucThi): string[] {
+    return [...new Set([...(ctx.nguonDangNgo ?? []), ...this.nguonDangNgo])];
+  }
+
+  /** `tu-dong` CÒN tự trị? Hạ khi lõi báo (`ctx.haTuTri`) HOẶC bộ thực thi đã tự thấy nội dung đáng ngờ. */
+  private conTuTri(ctx: NguCanhThucThi): boolean {
+    return ctx.cheDo === "tu-dong" && ctx.haTuTri !== true && this.nguonDangNgo.length === 0;
+  }
 
   congCu(cheDo: CheDoAgent): WireTool[] {
     return [...congCuTheoCheDo(cheDo).filter((t) => !KHONG_BAY.has(t.function.name)), structuredClone(CONG_CU_CHAN_DOAN)];
   }
 
   async chay(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
+    const kq = await this.chayMot(goi, ctx);
+    if (!TOOL_TRA_DU_LIEU.has(goi.ten)) return kq;
+    const quet = scanUntrustedContent(kq.choModel);
+    if (quet.risk !== "high") return kq;
+    const nguon = nhanNguonGoi(goi);
+    if (!this.nguonDangNgo.includes(nguon)) this.nguonDangNgo.push(nguon);
+    return { ...kq, dangNgo: { nguon, mau: quet.matched } };
+  }
+
+  private async chayMot(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
     const gocThat = gocDaGiai(this.pt.goc());
     if (gocThat.length === 0) return loiModel("No workspace folder is open — no file can be read or written.", "KHONG_WORKSPACE");
     const t = goi.thamSo;
@@ -479,17 +521,23 @@ export class BoThucThiVscode implements BoThucThi {
           "CHUA_CO_TOKEN_GHI_SO",
         );
       }
-      const canDuyet = !(ctx.cheDo === "tu-dong" && mucQuyen === "tu_ghi");
+      // Bỏ thẻ CHỈ khi tu-dong + tu_ghi VÀ chưa bị hạ tự trị (nội dung đáng ngờ) — nơi THI HÀNH hạ tự trị.
+      const canDuyet = !(this.conTuTri(ctx) && mucQuyen === "tu_ghi");
       if (canDuyet) {
+        const dangNgo = this.nguonDangNgoCua(ctx);
         const tomTat =
-          v.thaoTac.loai === "doi-ten"
+          (v.thaoTac.loai === "doi-ten"
             ? `Đổi tên ${v.rel} → ${v.thaoTac.duongDichTuongDoi}`
             : v.thaoTac.loai === "xoa"
               ? `Xoá ${v.rel}`
               : v.thaoTac.loai === "tao"
                 ? `Tạo ${v.rel}`
-                : `Sửa ${v.rel}`;
-        ctx.phat({ loai: "can-duyet", id: goi.id, deXuat: { ten: goi.ten, thamSo: { path: v.rel }, moTa: tomTat } });
+                : `Sửa ${v.rel}`) + ghiChuDangNgo(dangNgo);
+        ctx.phat({
+          loai: "can-duyet",
+          id: goi.id,
+          deXuat: { ten: goi.ten, thamSo: { path: v.rel }, moTa: tomTat, ...(dangNgo.length ? { nguonDangNgo: dangNgo } : {}) },
+        });
         const qd = await this.choDuyet(
           {
             id: goi.id,
@@ -502,6 +550,7 @@ export class BoThucThiVscode implements BoThucThi {
             goc: v.goc,
             moi: v.moi,
             tomTat,
+            ...(dangNgo.length ? { nguonDangNgo: dangNgo } : {}),
           },
           ctx.signal,
         );
@@ -588,9 +637,16 @@ export class BoThucThiVscode implements BoThucThi {
     const ghiChuGhi = daGhi.length
       ? ` — ⚠ lượt này đã ghi ${daGhi.length} tệp (${daGhi.slice(0, 8).join(", ")}${daGhi.length > 8 ? ", …" : ""}); lệnh có thể chạy mã từ các tệp đó`
       : "";
-    ctx.phat({ loai: "can-duyet", id: goi.id, deXuat: { ten: goi.ten, thamSo: { command: xet.lenh.hienThi }, moTa: `Chạy: ${xet.lenh.hienThi}${ghiChuGhi}` } });
+    const dangNgo = this.nguonDangNgoCua(ctx);
+    const ghiChu = `${ghiChuGhi}${ghiChuDangNgo(dangNgo)}`;
+    const coDangNgo = dangNgo.length ? { nguonDangNgo: dangNgo } : {};
+    ctx.phat({
+      loai: "can-duyet",
+      id: goi.id,
+      deXuat: { ten: goi.ten, thamSo: { command: xet.lenh.hienThi }, moTa: `Chạy: ${xet.lenh.hienThi}${ghiChu}`, ...coDangNgo },
+    });
     const qd = await this.choDuyet(
-      { id: goi.id, loai: "lenh", ten: goi.ten, lenh: xet.lenh.hienThi, tomTat: `Chạy lệnh: ${xet.lenh.hienThi}${ghiChuGhi}` },
+      { id: goi.id, loai: "lenh", ten: goi.ten, lenh: xet.lenh.hienThi, tomTat: `Chạy lệnh: ${xet.lenh.hienThi}${ghiChu}`, ...coDangNgo },
       ctx.signal,
     );
     if (!qd.duyet) {

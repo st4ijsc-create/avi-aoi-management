@@ -331,6 +331,21 @@ export class PhienAgent {
       case "loi":
         this.pt.gui({ loai: "ag_loi", thongDiep: e.thongDiep, ma: e.ma });
         break;
+      // (2026-10-17) nội dung đáng ngờ: KHÔNG dừng — chỉ báo người dùng; hạ tự trị do bộ thực thi THI HÀNH.
+      case "canh-bao-du-lieu":
+        this.pt.gui({
+          loai: "ag_canh_bao",
+          haTuTri: false,
+          thongDiep: `Nội dung đọc từ ${cheBiMat(e.nguon)} chứa câu dạng mệnh lệnh — agent coi là dữ liệu, không làm theo.`,
+        });
+        break;
+      case "ha-tu-tri":
+        this.pt.gui({
+          loai: "ag_canh_bao",
+          haTuTri: true,
+          thongDiep: `Đã hạ tự trị: lượt này đã đọc nội dung đáng ngờ (${cheBiMat(e.nguon)}) — mọi ghi/lệnh sau đó cần bạn duyệt.`,
+        });
+        break;
       default:
         break; // can-duyet/da-duyet/bi-bac: thẻ do xinDuyet/quyet dựng; xong: xử lý sau vòng
     }

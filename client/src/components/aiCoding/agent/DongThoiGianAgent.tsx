@@ -6,6 +6,8 @@
  * (bấm mở tóm tắt) · thẻ cần duyệt (`TheDuyetDiff` cho diff; xoá/đổi tên/chạy lệnh thẻ gọn) với Bác CÓ LÝ DO · lỗi ·
  * kết thúc (lý do dừng, tệp đã đổi, Hoàn tác lượt chạy).
  *
+ * ★ (2026-10-17) nội dung đáng ngờ: `canh-bao-du-lieu` / `ha-tu-tri` ⇒ dòng cảnh báo (lượt KHÔNG dừng); thẻ duyệt có
+ *   `deXuat.nguonDangNgo` ⇒ dòng "Lượt này đã đọc nội dung đáng ngờ: …" để người duyệt thấy. Nguồn vẽ TRƠN (text node).
  * ★ Đợt 2: thẻ "Đề xuất nhớ" (`TheDeXuatNho`) — model gọi `remember` chỉ ĐỀ XUẤT; người bấm Nhớ (ghi bài học) hoặc Bỏ
  *   qua. Nội dung đề xuất là chữ model viết ⇒ vẽ TRƠN (text node), không markdown, không nhãn tin cậy.
  * ⚠ Luật chủ dự án (ec85a97e6): văn bản do MODEL viết KHÔNG BAO GIỜ đi bộ `boKhoiDauRaLenh` (nhãn tin cậy "đầu ra
@@ -186,6 +188,20 @@ function MoTaGon({ m }: { m: TheDuyetMuc }) {
   return <p className="font-mono">{m.deXuat.ten} {thamSoChinh(m.deXuat.ten, ts)}</p>;
 }
 
+/** Cờ trên thẻ duyệt: lượt đã đọc nội dung đáng ngờ (nguồn từ máy chủ — chữ trơn). */
+function DongDangNgo({ nguon }: { nguon: string[] | undefined }) {
+  const { t } = useTranslation();
+  if (!Array.isArray(nguon) || nguon.length === 0) return null;
+  return (
+    <p data-testid="agent-the-dang-ngo" className="mb-1 flex items-start gap-1 text-[12px] font-medium text-red-700 dark:text-red-300">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0 break-words">
+        {t("repoWs.agent.theDangNgo", "Lượt này đã đọc nội dung đáng ngờ: {{nguon}} — xem kỹ trước khi duyệt.", { nguon: nguon.join(", ") })}
+      </span>
+    </p>
+  );
+}
+
 function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   const { t } = useTranslation();
   const diff = useMemo(() => layDiffTuDeXuat(m.deXuat), [m.deXuat]);
@@ -234,6 +250,7 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   if (diff) {
     return (
       <div data-testid="agent-the-duyet" data-loai="diff">
+        <DongDangNgo nguon={m.deXuat.nguonDangNgo} />
         {m.deXuat.moTa && <p className="mb-1 text-[12px] text-muted-foreground">{m.deXuat.moTa}</p>}
         <TheDuyetDiff
           action={{ expiresAt: diff.expiresAt, preview: { warnings: diff.warnings } }}
@@ -257,6 +274,7 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
         <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
         <span>{t("repoWs.agent.canDuyet", "Cần bạn duyệt")}</span>
       </div>
+      <DongDangNgo nguon={m.deXuat.nguonDangNgo} />
       <MoTaGon m={m} />
       {m.deXuat.moTa && <p className="mt-1 text-[12px] text-muted-foreground">{m.deXuat.moTa}</p>}
       {conCho && !moLyDo && (
@@ -477,6 +495,22 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
             return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} />;
           case "nho":
             return <TheDeXuatNho key={`n-${m.id}-${i}`} m={m} agent={agent} />;
+          case "canh-bao":
+            return (
+              <p
+                key={i}
+                data-testid="agent-canh-bao"
+                data-loai={m.loaiCanhBao}
+                className="flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+              >
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="min-w-0 break-words">
+                  {m.loaiCanhBao === "ha-tu-tri"
+                    ? t("repoWs.agent.haTuTri", "Đã hạ tự trị: lượt này đã đọc nội dung đáng ngờ ({{nguon}}) — mọi ghi/lệnh sau đó cần bạn duyệt.", { nguon: m.nguon })
+                    : t("repoWs.agent.canhBaoDuLieu", "Nội dung đọc từ {{nguon}} chứa câu dạng mệnh lệnh — agent coi là dữ liệu, không làm theo.", { nguon: m.nguon })}
+                </span>
+              </p>
+            );
           case "loi":
             return (
               <p key={i} data-testid="agent-loi" className="flex items-start gap-1.5 rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[12px] text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">

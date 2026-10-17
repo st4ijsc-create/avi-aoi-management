@@ -14,6 +14,7 @@
  *   • (Đợt 2) `de-xuat-nho` ⇒ thẻ `nho` (trạng thái `cho`). Trạng thái sau khi bấm (Nhớ / Bỏ qua) là của CLIENT
  *     (`capNhatDeXuatNho` theo kết quả THẬT của tRPC) — máy chủ không phát sự kiện cho lượt bấm, nên `xong` KHÔNG làm
  *     thẻ hết hiệu lực: đề xuất còn duyệt được sau khi lượt chạy kết thúc (máy chủ giữ 30 phút).
+ *   • (2026-10-17) `canh-bao-du-lieu` / `ha-tu-tri` ⇒ mục `canh-bao` (lượt KHÔNG dừng); `ha-tu-tri` bật `daHaTuTri`.
  */
 import type {
   CheDoAgent,
@@ -43,6 +44,8 @@ export type MucDongThoiGian =
   | { kieu: "tool"; id: string; ten: string; thamSo: Record<string, unknown>; luot: number; ketQua?: KetQuaDongTool }
   | { kieu: "duyet"; id: string; deXuat: DeXuatDuyet; trangThai: TrangThaiTheDuyet; lyDo?: string }
   | { kieu: "nho"; id: string; note: string; scope: PhamViNho; trangThai: TrangThaiTheNho; maLoi?: string }
+  /** (2026-10-17) nội dung đáng ngờ: `du-lieu` = cảnh báo (lượt KHÔNG dừng) · `ha-tu-tri` = tu-dong bị hạ (ghi/lệnh cần duyệt). */
+  | { kieu: "canh-bao"; loaiCanhBao: "du-lieu" | "ha-tu-tri"; nguon: string; mau: string[] }
   | { kieu: "loi"; ma: string; thongDiep: string };
 
 export interface UsageGop {
@@ -67,6 +70,8 @@ export interface TrangThaiAgent {
   checkpoints: Array<{ checkpointId: string; tep: string[] }>;
   tepDaDoi: string[];
   ketThuc: { lyDo: LyDoDung; tomTat?: string } | null;
+  /** (2026-10-17) tu-dong đã bị hạ tự trị trong lượt này (`ha-tu-tri`) — một chiều. */
+  daHaTuTri: boolean;
 }
 
 export const TRANG_THAI_RONG: TrangThaiAgent = {
@@ -82,6 +87,7 @@ export const TRANG_THAI_RONG: TrangThaiAgent = {
   checkpoints: [],
   tepDaDoi: [],
   ketThuc: null,
+  daHaTuTri: false,
 };
 
 /** Trạng thái lúc người dùng vừa gửi câu hỏi (chưa có `bat-dau`). */
@@ -190,6 +196,16 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent): TrangThaiAgent {
       if (typeof e.id !== "string" || n.dongThoiGian.some((m) => m.kieu === "nho" && m.id === e.id)) return n;
       const scope: PhamViNho = e.scope === "user" ? "user" : "project";
       return { ...n, dongThoiGian: [...n.dongThoiGian, { kieu: "nho", id: e.id, note: String(e.note ?? ""), scope, trangThai: "cho" }] };
+    }
+    case "canh-bao-du-lieu":
+    case "ha-tu-tri": {
+      const muc: MucDongThoiGian = {
+        kieu: "canh-bao",
+        loaiCanhBao: e.loai === "ha-tu-tri" ? "ha-tu-tri" : "du-lieu",
+        nguon: String(e.nguon ?? ""),
+        mau: Array.isArray(e.mau) ? e.mau.filter((x): x is string => typeof x === "string") : [],
+      };
+      return { ...n, dongThoiGian: [...n.dongThoiGian, muc], ...(e.loai === "ha-tu-tri" ? { daHaTuTri: true } : {}) };
     }
     case "checkpoint":
       return { ...n, checkpoints: [...n.checkpoints, { checkpointId: e.checkpointId, tep: Array.isArray(e.tep) ? e.tep : [] }] };

@@ -709,6 +709,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
     "het-token": "Đã dừng: hết ngân sách token.",
     huy: "Đã dừng theo yêu cầu.",
     "lap-lai": "Đã dừng: model lặp lại cùng một lời gọi tool.",
+    // Không còn phát (2026-10-17: nội dung đáng ngờ ⇒ cảnh báo/hạ tự trị, không dừng) — giữ cho bản ghi cũ.
     "menh-lenh-trong-du-lieu": "Đã dừng: dữ liệu chứa mệnh lệnh đáng ngờ.",
     "loi-model": "Đã dừng vì lỗi model.",
   };
@@ -853,6 +854,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean }): strin
         c.appendChild(b);
         nutToken.hidden = false;
       }
+      return;
+    }
+    if (m.loai === "ag_canh_bao") {
+      // Nội dung đáng ngờ / đã hạ tự trị — CẢNH BÁO, lượt KHÔNG dừng. textContent (không HTML).
+      themLuot("he_thong", String(m.thongDiep || ""), false, m.haTuTri ? "Đã hạ tự trị" : "Cảnh báo");
       return;
     }
     if (m.loai === "ag_thong_bao") {

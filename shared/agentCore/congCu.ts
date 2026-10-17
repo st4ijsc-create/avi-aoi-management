@@ -6,7 +6,7 @@
  * Ràng buộc grammar llama.cpp (xem `timGioiHanGrammar` trong server/services/ai/nativeToolCalls.ts): schema KHÔNG có
  * `pattern`, KHÔNG `maxLength > 1999`. Lưới `congCu.test.ts` chạy chính bộ kiểm đó trên `CONG_CU`.
  */
-import type { CheDoAgent, WireTool } from "./kieu";
+import type { CheDoAgent, LoiGoiTool, WireTool } from "./kieu";
 
 /**
  * `de-xuat` (Đợt 2): tool KHÔNG tác dụng phụ nào ngoài một ĐỀ XUẤT cho người (`remember` ⇒ sự kiện `de-xuat-nho`).
@@ -422,6 +422,18 @@ export function chuanHoaThamSo(v: unknown): string {
     return x;
   };
   return JSON.stringify(sap(v)) ?? "null";
+}
+
+/**
+ * Nhãn NGUỒN ngắn của một lời gọi tool (cho cảnh báo "nội dung đáng ngờ" + cờ thẻ duyệt): `read_file` ⇒ chính đường
+ * tệp; tool khác ⇒ `<tên> <tham số chính>`. Một dòng, ≤ 160 ký tự. Thuần — server, extension và lõi dùng CHUNG.
+ */
+export function nhanNguonGoi(goi: Pick<LoiGoiTool, "ten" | "thamSo">): string {
+  const t = goi.thamSo ?? {};
+  const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const chinh = s(t.path) || s(t.pattern) || s(t.name) || s(t.query) || s(t.command) || s(t.from);
+  const nhan = goi.ten === "read_file" && chinh ? chinh : `${goi.ten}${chinh ? ` ${chinh}` : ""}`;
+  return nhan.replace(/[\r\n\t]+/g, " ").trim().slice(0, 160) || goi.ten;
 }
 
 // ─── apDungEdits ──────────────────────────────────────────────────────────────────────────────

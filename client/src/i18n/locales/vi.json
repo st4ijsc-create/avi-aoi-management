@@ -20944,6 +20944,9 @@
         "loiKhac": "Không lưu được ({{ma}})."
       },
       "canDuyet": "Cần bạn duyệt",
+      "canhBaoDuLieu": "Nội dung đọc từ {{nguon}} chứa câu dạng mệnh lệnh — agent coi là dữ liệu, không làm theo.",
+      "haTuTri": "Đã hạ tự trị: lượt này đã đọc nội dung đáng ngờ ({{nguon}}) — mọi ghi/lệnh sau đó cần bạn duyệt.",
+      "theDangNgo": "Lượt này đã đọc nội dung đáng ngờ: {{nguon}} — xem kỹ trước khi duyệt.",
       "cheDo": {
         "hoi": "Hỏi",
         "hoiGoiY": "Hỏi đáp như cũ — không tự ghi tệp",

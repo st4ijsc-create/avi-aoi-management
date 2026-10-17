@@ -226,3 +226,16 @@ describe("webview agent — hành vi", () => {
     expect(w.daGui.filter((m) => m.loai === "ag_nho")).toEqual([{ loai: "ag_nho", id: "n1" }]);
   });
 });
+
+describe("webview agent — cảnh báo nội dung đáng ngờ (2026-10-17)", () => {
+  it("★★ ag_canh_bao ⇒ dòng hệ thống 'Cảnh báo' / 'Đã hạ tự trị' (chữ trơn), lượt không bị kết thúc", () => {
+    const w = chay();
+    w.banTin({ loai: "ag_canh_bao", haTuTri: false, thongDiep: "Nội dung đọc từ <b>x</b> chứa câu dạng mệnh lệnh" });
+    w.banTin({ loai: "ag_canh_bao", haTuTri: true, thongDiep: "Đã hạ tự trị: …" });
+    const cac = tatCa(w.nut("hoi-thoai"));
+    expect(cac.some((p) => p.textContent === "Nội dung đọc từ <b>x</b> chứa câu dạng mệnh lệnh")).toBe(true);
+    expect(cac.some((p) => p.textContent === "Cảnh báo")).toBe(true);
+    expect(cac.some((p) => p.textContent === "Đã hạ tự trị")).toBe(true);
+    expect(cac.some((p) => p.tag === "b")).toBe(false);
+  });
+});

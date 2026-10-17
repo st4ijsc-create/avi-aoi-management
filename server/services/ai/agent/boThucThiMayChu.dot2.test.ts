@@ -180,7 +180,7 @@ describe("§1 — find_symbol qua chỉ mục (giả)", () => {
     expect(kq.choModel).toMatch(/grep/);
   });
 
-  it("kết quả là DỮ LIỆU đi qua lớp làm sạch: dòng mã mang mệnh lệnh ⇒ MENH_LENH_TRONG_DU_LIEU; bí mật bị che", async () => {
+  it("kết quả là DỮ LIỆU đi qua lớp làm sạch: dòng mã mang mệnh lệnh ⇒ dangNgo (không mã dừng); bí mật bị che", async () => {
     const { cong } = chiMucGia({
       timKyHieu: async () => ({
         dinhNghia: [{ duong: "src/a.ts", dong: 1, kind: "variable", chuKy: 'const apiKey = "sk-abcdefghijklmnopqrstuvwx"' }],
@@ -198,7 +198,8 @@ describe("§1 — find_symbol qua chỉ mục (giả)", () => {
       }),
     });
     const tiem = await chay(taoBo({ chiMucMa: cong2 }), "find_symbol", { name: "x" });
-    expect(tiem.kq.ma).toBe(MA_MENH_LENH_TRONG_DU_LIEU);
+    expect(tiem.kq.ma).not.toBe(MA_MENH_LENH_TRONG_DU_LIEU);
+    expect(tiem.kq.dangNgo).toEqual({ nguon: "find_symbol x", mau: expect.arrayContaining(["ignore_instructions"]) });
   });
 });
 

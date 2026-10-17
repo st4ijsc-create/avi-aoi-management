@@ -57,7 +57,14 @@ const GOC = join(__dirname, "..");
  * thuần của lõi vào bundle. Lõi thuần (lưới `shared/agentCore/thuan.test.ts`: không `node:*`, không `vscode`), nhưng
  * "thuần" là lời khai của MỘT lưới khác — census vẫn phải QUÉT chúng như mọi tệp vào bundle.
  */
+/**
+ * ★★ (2026-10-17) `boThucThiVscode.ts` nhập `shared/quetMenhLenh.ts` (bộ quét `scanUntrustedContent` THUẦN, tách nguyên
+ * văn khỏi `server/services/ai/aiSafety.ts`, không import gì) để extension đánh giá "nội dung đáng ngờ" bằng CÙNG mẫu với
+ * máy chủ (chính sách phân bậc: không dừng, cảnh báo, hạ tự trị). Đo trước: nhập thẳng `aiSafety.ts` làm census ĐỎ (từ
+ * "truncate" của hậu tố cắt) ⇒ tách bộ quét, KHÔNG nới census. Vào bundle ⇒ census quét nó như mọi tệp.
+ */
 const TEP_NGOAI_CAY_VAO_BUNDLE = [
+  join(GOC, "..", "..", "shared", "quetMenhLenh.ts"),
   join(GOC, "..", "..", "shared", "aiCodingLoop.ts"),
   ...["index", "kieu", "congCu", "loiNhac", "nguCanh", "vongAgent"].map((t) => join(GOC, "..", "..", "shared", "agentCore", `${t}.ts`)),
 ];

@@ -231,3 +231,19 @@ describe("Đợt 2 — đề xuất nhớ + dòng tool của 4 tool mới", () =
     expect(thamSoChinh("remember", { note: "Dùng pnpm." })).toBe("Dùng pnpm.");
   });
 });
+
+describe("(2026-10-17) nội dung đáng ngờ — cảnh báo + hạ tự trị (không dừng)", () => {
+  it("canh-bao-du-lieu / ha-tu-tri ⇒ mục 'canh-bao' trên dòng thời gian; lượt VẪN chạy; daHaTuTri chỉ bật bởi ha-tu-tri", () => {
+    const s = chay([
+      { loai: "bat-dau", runId: "r1", cheDo: "tu-dong" },
+      { loai: "canh-bao-du-lieu", id: "c1", ten: "read_file", nguon: "docs/x.md", mau: ["ignore_instructions"] },
+    ]);
+    expect(s.dangChay).toBe(true);
+    expect(s.daHaTuTri).toBe(false);
+    expect(s.dongThoiGian.at(-1)).toEqual({ kieu: "canh-bao", loaiCanhBao: "du-lieu", nguon: "docs/x.md", mau: ["ignore_instructions"] });
+    const s2 = giamSuKien(s, { loai: "ha-tu-tri", lyDo: "noi-dung-dang-ngo", nguon: "docs/x.md", mau: ["ignore_instructions"] });
+    expect(s2.daHaTuTri).toBe(true);
+    expect(s2.dongThoiGian.at(-1)).toMatchObject({ kieu: "canh-bao", loaiCanhBao: "ha-tu-tri", nguon: "docs/x.md" });
+    expect(s2.dangChay).toBe(true);
+  });
+});

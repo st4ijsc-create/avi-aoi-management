@@ -349,3 +349,21 @@ describe("DongThoiGianAgent — luồng SSE giả", () => {
     expect(luong[1]!.url).toBe("/api/ai/agent/runs/r1/events?tu=2");
   });
 });
+
+describe("DongThoiGianAgent — nội dung đáng ngờ (2026-10-17: cảnh báo, không dừng)", () => {
+  it("canh-bao-du-lieu + ha-tu-tri ⇒ dòng cảnh báo; thẻ duyệt sau đó nêu nguồn đáng ngờ; lượt vẫn chạy", async () => {
+    await batDau();
+    await day(
+      { loai: "canh-bao-du-lieu", id: "c1", ten: "read_file", nguon: "shared/agentCore/loiNhac.ts", mau: ["ignore_instructions"] },
+      { loai: "ha-tu-tri", lyDo: "noi-dung-dang-ngo", nguon: "shared/agentCore/loiNhac.ts", mau: ["ignore_instructions"] },
+      { loai: "can-duyet", id: "c2", deXuat: { ten: "delete_file", thamSo: { path: "old.ts" }, nguonDangNgo: ["shared/agentCore/loiNhac.ts"] } },
+    );
+    const cb = screen.getAllByTestId("agent-canh-bao");
+    expect(cb).toHaveLength(2);
+    expect(cb[0]).toHaveTextContent("shared/agentCore/loiNhac.ts");
+    expect(cb[0]).toHaveAttribute("data-loai", "du-lieu");
+    expect(cb[1]).toHaveAttribute("data-loai", "ha-tu-tri");
+    expect(within(screen.getByTestId("agent-the-duyet")).getByTestId("agent-the-dang-ngo")).toHaveTextContent("shared/agentCore/loiNhac.ts");
+    expect(screen.getByTestId("agent-trang-thai")).toBeInTheDocument();
+  });
+});

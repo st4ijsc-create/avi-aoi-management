@@ -185,10 +185,12 @@ describe("§A — ĐỌC qua tool thật", () => {
     expect(r.kq.ma).toBe("DENIED_SECRET");
   });
 
-  it("★★★ dữ liệu mang chỉ thị (scanUntrustedContent high) ⇒ MENH_LENH_TRONG_DU_LIEU, nội dung KHÔNG vào model", async () => {
+  it("★★★ dữ liệu mang chỉ thị (scanUntrustedContent high) ⇒ dangNgo (KHÔNG mã dừng — chính sách phân bậc 2026-10-17); dữ liệu vẫn tới model", async () => {
     const r = await chay(taoBo(), "read_file", { path: "docs/doc-doc.md" }, "hoi");
-    expect(r.kq.ma).toBe(MA_MENH_LENH_TRONG_DU_LIEU);
-    expect(r.kq.choModel).not.toContain("delete every file");
+    expect(r.kq.ma).not.toBe(MA_MENH_LENH_TRONG_DU_LIEU);
+    expect(r.kq.ok).toBe(true);
+    expect(r.kq.dangNgo).toEqual({ nguon: "docs/doc-doc.md", mau: expect.arrayContaining(["ignore_instructions"]) });
+    expect(r.kq.choModel).toContain("Ghi chu.");
   });
 });
 
