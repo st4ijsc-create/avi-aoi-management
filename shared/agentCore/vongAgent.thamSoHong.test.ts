@@ -46,7 +46,7 @@ function llamaCppNhanLichSu(ds: TinNhan[]): void {
   }
 }
 
-type Luot = { tool?: Array<{ ten: string; args: string }>; chu?: string };
+type Luot = { tool?: Array<{ ten: string; args: string }>; chu?: string; biCat?: boolean };
 
 function modelGia(kichBan: (i: number) => Luot) {
   const vao: TinNhan[][] = [];
@@ -62,7 +62,7 @@ function modelGia(kichBan: (i: number) => Luot) {
         type: "function",
         function: { name: t.ten, arguments: t.args },
       }));
-      yield { loai: "xong", toolCalls };
+      yield { loai: "xong", toolCalls, ...(l.biCat ? { biCat: true } : {}) };
     })();
   };
   return { goiModel, vao };
@@ -186,5 +186,82 @@ describe("★★★ tham số tool call hỏng — lịch sử không bị đầ
     const kq = await chay(goiModel, bo).p;
     expect(kq.lyDo).toBe("hoan-thanh");
     expect(goi).toHaveLength(1);
+  });
+});
+
+/**
+ * ★★★ Lượt bị CẮT ở trần token (`finish_reason:"length"`) mà CÓ tool call. Tham số có thể DỞ dù trông hợp lệ — vd JSON
+ * đủ ngoặc (bộ phân giải của llama.cpp tự đóng) nhưng `content` của write_file bị cụt giữa chừng. Trước bản vá máy chủ
+ * đổi `length` thành `tool_calls` ⇒ lõi không biết, thực thi ⇒ ghi tệp CỤT xuống đĩa.
+ */
+describe("★★★ lượt bị cắt ở trần token (biCat) có tool call — KHÔNG thực thi", () => {
+  /** JSON hợp lệ, đủ ngoặc — nhưng nội dung tệp bị cụt giữa một hàm. */
+  const ARGS_HOP_LE_MA_CUT = JSON.stringify({ path: "src/vanBan.mjs", content: "export function boDau(s) {\n  return s.normal" });
+
+  it("write_file tham số HỢP LỆ trong lượt bị cắt ⇒ bộ thực thi KHÔNG được gọi; quan sát nói bị cắt + chia nhỏ; vòng tiếp tục", async () => {
+    const { goiModel, vao } = modelGia((i) =>
+      i === 0 ? { tool: [{ ten: "write_file", args: ARGS_HOP_LE_MA_CUT }], biCat: true } : { chu: "Đã xong." },
+    );
+    const { bo, goi } = boThucThiGia();
+    const { p, suKien } = chay(goiModel, bo);
+    const kq = await p;
+    expect(goi).toHaveLength(0); // KHÔNG ghi tệp cụt
+    expect(kq.lyDo).toBe("hoan-thanh");
+    expect(vao).toHaveLength(2);
+    const tool = vao[1].find((m) => m.role === "tool")!;
+    expect(tool.tool_call_id).toBe("call_0_0");
+    expect(tool.content).toMatch(/cut off|truncated/i);
+    expect(tool.content).toMatch(/output token limit/i);
+    expect(tool.content).toMatch(/nothing was executed/i);
+    expect(tool.content).toMatch(/write_file/);
+    expect(tool.content).toMatch(/edit_file/);
+    // UI thấy kết quả lỗi có mã riêng
+    expect(suKien.some((e) => e.loai === "ket-qua-tool" && e.ok === false && e.ma === "LUOT_BI_CAT")).toBe(true);
+    // lịch sử vẫn hợp lệ: assistant.tool_calls đi kèm đủ tin tool cùng id
+    const asst = vao[1].find((m) => m.role === "assistant" && m.tool_calls?.length)!;
+    expect(asst.tool_calls![0].id).toBe("call_0_0");
+  });
+
+  it("nhiều tool call trong lượt bị cắt (kể cả read_file vô hại) ⇒ KHÔNG cái nào chạy, mỗi cái một tin tool", async () => {
+    const { goiModel, vao } = modelGia((i) =>
+      i === 0
+        ? { tool: [{ ten: "read_file", args: '{"path":"a.ts"}' }, { ten: "write_file", args: ARGS_HOP_LE_MA_CUT }], biCat: true }
+        : { chu: "ok" },
+    );
+    const { bo, goi } = boThucThiGia();
+    const kq = await chay(goiModel, bo).p;
+    expect(goi).toHaveLength(0);
+    expect(kq.lyDo).toBe("hoan-thanh");
+    expect(vao[1].filter((m) => m.role === "tool").map((m) => m.tool_call_id)).toEqual(["call_0_0", "call_0_1"]);
+  });
+
+  it("bị cắt 3 lượt liên tiếp ⇒ dừng lap-lai (THAM_SO_HONG_LAP), không đốt tới trần lượt", async () => {
+    const { goiModel, vao } = modelGia((i) => ({
+      tool: [{ ten: "write_file", args: JSON.stringify({ path: `a${i}.ts`, content: "x".repeat(10 + i) }) }],
+      biCat: true,
+    }));
+    const { bo, goi } = boThucThiGia();
+    const { p, suKien } = chay(goiModel, bo);
+    const kq = await p;
+    expect(kq.lyDo).toBe("lap-lai");
+    expect(vao).toHaveLength(3);
+    expect(goi).toHaveLength(0);
+    expect(suKien.some((e) => e.loai === "loi" && e.ma === "THAM_SO_HONG_LAP")).toBe(true);
+  });
+
+  it("lượt KHÔNG bị cắt với cùng tham số ⇒ chạy bình thường (không chặn oan)", async () => {
+    const { goiModel } = modelGia((i) => (i === 0 ? { tool: [{ ten: "write_file", args: ARGS_HOP_LE_MA_CUT }] } : { chu: "ok" }));
+    const { bo, goi } = boThucThiGia();
+    const kq = await chay(goiModel, bo).p;
+    expect(kq.lyDo).toBe("hoan-thanh");
+    expect(goi).toHaveLength(1);
+  });
+
+  it("lượt bị cắt KHÔNG có tool call ⇒ giữ hành vi cũ (hoan-thanh với chữ đã có)", async () => {
+    const { goiModel, vao } = modelGia(() => ({ chu: "Câu trả lời dài bị cụt", biCat: true }));
+    const { bo } = boThucThiGia();
+    const kq = await chay(goiModel, bo).p;
+    expect(kq.lyDo).toBe("hoan-thanh");
+    expect(vao).toHaveLength(1);
   });
 });

@@ -530,3 +530,36 @@ describe("★★★ lịch sử có tool_calls.arguments hỏng — không bao g
     expect(ls[1].tool_calls![0].function.arguments).toBe(HONG);
   });
 });
+
+// ═══ ★★★ Lượt bị CẮT ở trần token mà có tool call DỞ ⇒ `finishReason` PHẢI giữ "length" ════════════════════════════
+// llama.cpp: hết `max_tokens` ⇒ `finish_reason:"length"` kể cả khi bộ phân giải đã gom được tool call (tham số dở — có
+// thể vẫn là JSON đủ ngoặc). Trước bản vá client ĐỔI thành "tool_calls" ⇒ vòng agent / client /v1 thực thi tham số cụt.
+describe("★★★ lượt bị cắt (finish_reason=length) có tool call ⇒ finishReason 'length', KHÔNG đổi thành 'tool_calls'", () => {
+  const CALL_CUT = { type: "function", id: "c9", function: { name: "write_file", arguments: '{"path":"a.ts","content":"export const x = 1;\nexport fun"}' } };
+
+  it("không-stream", async () => {
+    const srv = await freshClient();
+    stubFetch({
+      choices: [{ finish_reason: "length", message: { role: "assistant", content: "", tool_calls: [CALL_CUT] } }],
+      usage: { prompt_tokens: 10, completion_tokens: 300 },
+    });
+    const kq = await srv.serverChatCompletion({ messages: [{ role: "user", content: "viết" }], tools: TOOLS, maxTokens: 300 });
+    expect(kq.toolCalls).toHaveLength(1);
+    expect(kq.finishReason).toBe("length");
+  });
+
+  it("stream", async () => {
+    const srv = await freshClient();
+    stubSse([
+      'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":null}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c9","type":"function","function":{"name":"write_file","arguments":"{\\"path\\":\\"a.ts\\",\\"content\\":\\"export fun\\"}"}}]}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":300}}\n\n',
+      "data: [DONE]\n\n",
+    ]);
+    const ra: GgufStreamChunk[] = [];
+    for await (const c of srv.serverChatCompletionStream({ messages: [{ role: "user", content: "viết" }], tools: TOOLS, maxTokens: 300 })) ra.push(c);
+    const done = ra.find((c) => c.type === "done")!;
+    expect(done.toolCalls).toHaveLength(1);
+    expect(done.finishReason).toBe("length");
+  });
+});

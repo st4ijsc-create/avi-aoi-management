@@ -76,6 +76,19 @@ const TRAN_NGUON_DANG_NGO = 20;
  */
 const TRAN_THAM_SO_HONG_LIEN_TIEP = 3;
 
+/** Mã kết quả tool cho lời gọi KHÔNG chạy vì lượt model bị cắt ở trần token ra (`ManhModel.xong.biCat`). */
+export const MA_LUOT_BI_CAT = "LUOT_BI_CAT";
+
+/** Quan sát cho model khi lượt bị cắt (tiếng Anh như prompt/tool). Nói rõ: không gì chạy + cách chia nhỏ. */
+export function cauQuanSatLuotBiCat(ten: string): string {
+  return (
+    `[not executed: this turn was cut off at the output token limit (finish_reason "length"), so the arguments of ${ten || "this call"} ` +
+    "may be incomplete even if they look valid. Nothing was executed. Split the work into smaller calls: for a large file, " +
+    "create it with write_file containing only the first part (keep each call under ~150 lines), then append the rest with " +
+    "edit_file (anchor old_string on the last lines already written); otherwise send fewer or shorter tool calls per turn.]"
+  );
+}
+
 /** Dòng cảnh báo đặt TRƯỚC kết quả đáng ngờ (đầu chuỗi ⇒ sống qua `catDauDuoi`). Tiếng Anh như prompt/tool. */
 export function cauCanhBaoDangNgo(nguon: string, mau: string[], vuaHaTuTri: boolean): string {
   const nhan = mau.length ? ` (${mau.slice(0, 5).join(", ")})` : "";
@@ -86,7 +99,15 @@ export function cauCanhBaoDangNgo(nguon: string, mau: string[], vuaHaTuTri: bool
 }
 
 type KetQuaLuotModel =
-  | { loai: "ok"; chu: string; nghi: string; toolCalls: WireToolCall[]; usage?: { vao: number; ra: number; nghi?: number } }
+  | {
+      loai: "ok";
+      chu: string;
+      nghi: string;
+      toolCalls: WireToolCall[];
+      usage?: { vao: number; ra: number; nghi?: number };
+      /** lượt bị cắt ở trần token ra (`ManhModel.xong.biCat`) */
+      biCat?: boolean;
+    }
   | { loai: "huy" }
   | { loai: "het-gio"; chu: string }
   | { loai: "loi"; loi: unknown };
@@ -202,7 +223,14 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           phat({ loai: "dang-cho-model", phiaTruoc: Number(m.phiaTruoc) || 0 });
         } else if (m.loai === "xong") {
           dong();
-          return { loai: "ok", chu, nghi, toolCalls: chuanHoaToolCalls(m.toolCalls, luot), usage: m.usage };
+          return {
+            loai: "ok",
+            chu,
+            nghi,
+            toolCalls: chuanHoaToolCalls(m.toolCalls, luot),
+            usage: m.usage,
+            ...(m.biCat === true ? { biCat: true } : {}),
+          };
         }
         if (hetGio()) {
           dong();
@@ -360,6 +388,34 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         lyDo = "het-token";
         boSungKhongChay(calls, 0, lyDo);
         break;
+      }
+
+      // ★★★ Lượt bị CẮT ở trần token ra (`biCat`, engine báo `finish_reason:"length"`) mà có tool call ⇒ KHÔNG thực thi
+      //   lời gọi nào của lượt: tham số có thể DỞ dù trông hợp lệ (JSON đủ ngoặc nhưng `content` của write_file cụt — ghi
+      //   nó xuống là ghi tệp hỏng). Mỗi lời gọi nhận quan sát "bị cắt ⇒ chia nhỏ"; tính vào bộ đếm hỏng liên tiếp
+      //   (cắt 3 lượt liền ⇒ dừng `lap-lai`). Lượt bị cắt KHÔNG có tool call giữ hành vi cũ (đã `hoan-thanh` ở trên).
+      if (kq.biCat === true) {
+        demHongLienTiep++;
+        if (demHongLienTiep >= TRAN_THAM_SO_HONG_LIEN_TIEP) {
+          phat({
+            loai: "loi",
+            ma: "THAM_SO_HONG_LAP",
+            thongDiep: `model was cut off by the output limit in ${demHongLienTiep} turns in a row while calling tools — stopping`,
+          });
+          lyDo = "lap-lai";
+          boSungKhongChay(calls, 0, lyDo);
+          break;
+        }
+        for (let k = 0; k < calls.length; k++) {
+          const tc = calls[k];
+          const ten = tc.function.name;
+          const kt = kts[k];
+          phat({ loai: "goi-tool", goi: { id: tc.id, ten, thamSo: kt.ok ? kt.thamSo : {} }, luot });
+          const choModel = catDauDuoi(cauQuanSatLuotBiCat(ten), gh.kyTuQuanSatToiDa);
+          tinNhan.push({ role: "tool", tool_call_id: tc.id, name: ten, content: choModel });
+          phat({ loai: "ket-qua-tool", id: tc.id, ten, ok: false, tomTat: rutGon(choModel, TRAN_TOM_TAT), ma: MA_LUOT_BI_CAT });
+        }
+        continue;
       }
 
       for (let k = 0; k < calls.length; k++) {
