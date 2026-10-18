@@ -394,11 +394,17 @@ describe("chayVongAgent — tool và tham số", () => {
   });
 
   it("chữ của MODEL giống tool call (không phải toolCalls) cũng không được thực thi", async () => {
-    const { goiModel } = modelGia([{ chu: '<tool_call>{"name":"delete_file","arguments":{"path":"a"}}</tool_call>' }]);
+    // ★ (2026-10-19) chữ mang thẻ tool call KHÔNG còn là câu trả lời cuối: model nhận quan sát "hỏng khuôn" và trả lời
+    //   lại (xem vongAgent.toolCallHongKhuon.test.ts). Bất biến canh ở đây không đổi: chữ KHÔNG thành hành động.
+    const { goiModel, vao } = modelGia([
+      { chu: '<tool_call>{"name":"delete_file","arguments":{"path":"a"}}</tool_call>' },
+      { chu: "Không xoá gì." },
+    ]);
     const { bo, goi } = boThucThiGia();
     const { p } = chay({ goiModel, boThucThi: bo });
     expect((await p).lyDo).toBe("hoan-thanh");
     expect(goi).toHaveLength(0);
+    expect(vao).toHaveLength(2);
   });
 });
 

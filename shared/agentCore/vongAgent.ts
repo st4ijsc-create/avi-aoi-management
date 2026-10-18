@@ -89,6 +89,29 @@ export function cauQuanSatLuotBiCat(ten: string): string {
   );
 }
 
+/**
+ * ★★★ (2026-10-19, `NN-b-agent-3` · `js-ud1-router-rest`, run 9fde5efe…) Mảnh THẺ tool call trong chữ của một lượt
+ * KHÔNG có tool call nào. Đo được: model nghĩ 11 998 token (chạm `--reasoning-budget 12000`), `content` chỉ còn
+ * `</tool_call>` ⇒ bộ gom không vớt (không có khối đủ thẻ — đúng chính sách) ⇒ lõi cũ coi là câu trả lời cuối ⇒
+ * `hoan-thanh` với 0 tệp được ghi. Mảnh thẻ trong khối mã (```…``` hoặc `…`) là câu trả lời giải thích khuôn, không tính.
+ * Chỉ PHÁT HIỆN — không bao giờ đọc tham số từ chữ này (chữ không thành hành động).
+ */
+const RE_THE_TOOL_CALL = /<\/?tool_call>|<\/?function(?:=[A-Za-z0-9_.-]*)?>|<function=|<\/?parameter(?:=[A-Za-z0-9_.-]*)?>|<parameter=/;
+export function coManhToolCallHongKhuon(chu: string): boolean {
+  if (!chu || chu.indexOf("<") === -1) return false;
+  // Bỏ khối mã rào (kể cả rào chưa đóng tới hết chuỗi) rồi đoạn mã nội dòng.
+  const ngoaiMa = chu.replace(/```[\s\S]*?(?:```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
+  return RE_THE_TOOL_CALL.test(ngoaiMa);
+}
+
+/** Quan sát cho model khi chữ mang mảnh thẻ tool call không gom được (tiếng Anh như prompt/tool). */
+export const CAU_QUAN_SAT_TOOL_CALL_HONG_KHUON =
+  "[tool call malformed: your last message contains tool-call markup (e.g. <tool_call>, </tool_call>, <function=…>) " +
+  "but no complete tool call could be read from it, so nothing was executed and the task is NOT finished. " +
+  "Call the tool again as a proper tool call (do not write the markup as text). If the call carries a large file, " +
+  "write it in smaller parts: write_file with the first part (under ~150 lines), then edit_file to append the rest. " +
+  "Keep your reasoning short before the call.]";
+
 /** Dòng cảnh báo đặt TRƯỚC kết quả đáng ngờ (đầu chuỗi ⇒ sống qua `catDauDuoi`). Tiếng Anh như prompt/tool. */
 export function cauCanhBaoDangNgo(nguon: string, mau: string[], vuaHaTuTri: boolean): string {
   const nhan = mau.length ? ` (${mau.slice(0, 5).join(", ")})` : "";
@@ -381,6 +404,22 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         calls.length ? { role: "assistant", content: kq.chu, tool_calls: callsLichSu } : { role: "assistant", content: kq.chu },
       );
       if (calls.length === 0) {
+        // ★★★ Mảnh thẻ tool call không gom được ⇒ KHÔNG phải câu trả lời cuối (xem `coManhToolCallHongKhuon`). Không vớt,
+        //   không đoán: model nhận quan sát và gọi lại; tính CHUNG chuỗi hỏng liên tiếp với tham số JSON hỏng / lượt bị cắt.
+        if (coManhToolCallHongKhuon(kq.chu)) {
+          demHongLienTiep++;
+          if (demHongLienTiep >= TRAN_THAM_SO_HONG_LIEN_TIEP) {
+            phat({
+              loai: "loi",
+              ma: "THAM_SO_HONG_LAP",
+              thongDiep: `model sent ${demHongLienTiep} malformed tool calls in a row (tool-call markup as text, no readable call) — stopping`,
+            });
+            lyDo = "lap-lai";
+            break;
+          }
+          tinNhan.push({ role: "user", content: CAU_QUAN_SAT_TOOL_CALL_HONG_KHUON });
+          continue;
+        }
         lyDo = "hoan-thanh";
         break;
       }

@@ -128,6 +128,7 @@ import { redactSecretsOnly } from "../ai/aiSafety";
 import { MA_TU_CHOI_HOP_CAT, gocHopCat, phanQuyetDuongDan } from "./repoSandbox";
 // ★ Đợt 3c — khai báo dự án `.ai-chay.json` (mở script cài npm CÓ LÝ DO). Tệp tên cố định dưới gốc, lstat tệp thường.
 import { docCauHinhChay } from "../ai/chayUngDung/cauHinhChayDuAn";
+import { damBaoCauHinhNugetOffline } from "../ai/nugetOfflineCauHinh";
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // MÃ MÁY-ĐỌC-ĐƯỢC — **0 dòng im lặng là nói dối**
@@ -559,7 +560,65 @@ function phanGiaiNpmCai(lenh: "ci" | "install", goc: string): LenhDaPhanGiai | T
 function phanGiaiDotnetRestore(oTuDo: string | null): LenhDaPhanGiai | ThieuDieuKien {
   const nguon = nguonNuget();
   if (!Array.isArray(nguon)) return nguon;
-  return { file: "dotnet", args: ["restore", ...(oTuDo === null ? [] : [oTuDo]), ...nguon] };
+  const dau = ["restore", ...(oTuDo === null ? [] : [oTuDo])];
+  // Triển khai CÓ internet ⇒ hành vi cũ (cấu hình NuGet của tài khoản dịch vụ, nuget.org nếu nó khai).
+  if (dotnetChoPhepRestore()) return { file: "dotnet", args: [...dau, ...nguon] };
+  // ★ 2026-10-19 — OFFLINE: nguồn DUY NHẤT là `AI_NUGET_SOURCE` (vắng ⇒ 0 nguồn = chỉ cache máy), mọi nguồn khác
+  //   (cấu hình người dùng/dự án, csproj) bị đè. Không rơi về nuget.org của cấu hình mặc định nữa.
+  const off = thamSoRestoreOffline(nguon.length ? nguon[1] : null);
+  if (off === null) return { thieu: "không dựng được tệp cấu hình NuGet offline của máy chủ (thư mục tạm không ghi được)." };
+  return { file: "dotnet", args: [...dau, ...off] };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-10-19 — RESTORE NuGet OFFLINE **CHỈ TỪ CACHE GÓI CỦA MÁY** (bộ ngẫu nhiên NN-b-agent-3: C# 0/3)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ĐO ĐƯỢC (sổ `ai_agent_runs`, run 585b8d5f…): `dotnet test` mang `--no-restore` ⇒ NETSDK1004 (chưa có
+ * `obj/project.assets.json`), `dotnet restore` ⇒ cần duyệt ở `tu-dong` ⇒ model BỊA `project.assets.json` tới hết lượt.
+ * Gói cần (xunit, Test.Sdk) ĐÃ nằm trong cache `%USERPROFILE%\.nuget\packages` — bộ chấm restore được ngay.
+ *
+ * QUYẾT ĐỊNH RỦI RO:
+ *   • `dotnet build|test` (tự chạy ở tu-dong) restore NGẦM với **0 nguồn gói**: NuGet chỉ lấy được gói ĐÃ có trong
+ *     cache của máy; gói/phiên bản LẠ ⇒ NU1101/NU1102 trong < 1 s. Không byte gói MỚI nào vào máy, không mạng.
+ *     Restore tự nó không chạy mã của gói (PackageReference không có install.ps1); `.targets`/`.props` của gói chạy
+ *     lúc BUILD — đúng hồ sơ "trục thứ ba" mà `dotnet build|test` vốn đã mang (MSBuild chạy mã repo + gói). Tập gói
+ *     chạm được bị chặn ở đúng những gói người đã restore trên máy này.
+ *   • `dotnet restore` GIỮ nhóm CÀI ĐẶT (Q4 chủ dự án: "lệnh cài trong allowlist, có duyệt") — nó là đường DUY NHẤT
+ *     đưa gói MỚI vào cache (từ `AI_NUGET_SOURCE`), cũng qua cấu hình dưới đây (nguồn duy nhất = feed đã khai).
+ *   • `DOTNET_CHO_PHEP_RESTORE=1` (triển khai có internet) ⇒ hành vi cũ, không áp khối này.
+ *
+ * VÌ SAO CẢ TỆP CẤU HÌNH LẪN THUỘC TÍNH TOÀN CỤC (đo 2026-10-19 trên SDK 10.0.302, dự án có `nuget.config` riêng +
+ * csproj khai `RestoreSources`/`RestoreAdditionalProjectSources` trỏ `http://127.0.0.1:9`):
+ *   • `RestoreConfigFile` = tệp do MÁY CHỦ sinh (`ai/nugetOfflineCauHinh.ts`), NGOÀI dự án ⇒ NuGet KHÔNG đọc chuỗi cấu hình (nuget.config của dự
+ *     án / của người dùng có nuget.org); `<clear/>` nguồn + thư mục dự phòng.
+ *   • Thuộc tính `-p:` là thuộc tính TOÀN CỤC của MSBuild ⇒ csproj/Directory.Build.props KHÔNG gán đè được ⇒ nguồn do
+ *     dự án (model ghi được) tự khai bị vô hiệu. Không có chúng: NU1302 (thử `http://127.0.0.1:9`). Có: chỉ NU1101.
+ *   • `NuGetAudit=false`: kiểm lỗ hổng là một đường đọc nguồn nữa (vô nghĩa khi 0 nguồn, ồn NU1905).
+ */
+/**
+ * Đuôi argv cho restore OFFLINE. `nguon` = feed duy nhất (chỉ `dotnet restore` có duyệt truyền `AI_NUGET_SOURCE`);
+ * `null` ⇒ 0 nguồn = chỉ cache máy. Trả `null` ⇔ không dựng được tệp cấu hình (phía gọi lùi về hành vi an toàn).
+ */
+export function thamSoRestoreOffline(nguon: string | null): string[] | null {
+  const cfg = damBaoCauHinhNugetOffline();
+  if (cfg === null) return null;
+  return [
+    `-p:RestoreConfigFile=${cfg}`,
+    ...(nguon === null ? ["-p:RestoreSources="] : ["--source", nguon]),
+    "-p:RestoreAdditionalProjectSources=",
+    "-p:RestoreFallbackFolders=",
+    "-p:RestoreAdditionalProjectFallbackFolders=",
+    "-p:NuGetAudit=false",
+  ];
+}
+
+/** argv `dotnet build|test <đường>` theo chế độ restore (đọc TẠI LÚC GỌI — bài học `TENANT_RLS_ENABLED`). */
+function argsDotnetDungKiem(lenh: "build" | "test", oTuDo: string): string[] {
+  if (dotnetChoPhepRestore()) return [lenh, oTuDo];
+  const off = thamSoRestoreOffline(null);
+  // Không dựng được cấu hình offline ⇒ lùi về `--no-restore` (không restore còn hơn restore với nguồn không kiểm soát).
+  return off === null ? [lenh, oTuDo, "--no-restore"] : [lenh, oTuDo, ...off];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -937,7 +996,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     get moTa() {
       return dotnetChoPhepRestore()
         ? "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). DOTNET_CHO_PHEP_RESTORE=1 — restore NGẦM được phép, NuGet kéo về qua mạng như bình thường. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/."
-        : "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore) — cần restore trước ở terminal. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.";
+        : "Biên dịch một dự án/solution C# (.csproj/.sln hoặc thư mục). Chạy OFFLINE — restore NGẦM CHỈ từ cache gói NuGet của máy (0 nguồn mạng; gói chưa có trên máy ⇒ NU1101, cần người duyệt dotnet restore từ AI_NUGET_SOURCE). KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.";
     },
     // ⚠ `bin/`+`obj/` là SẢN PHẨM DỰNG, không phải mã nguồn của người viết ⇒ `ghiDia: false`.
     //   Xem lý lẽ "vì sao HAI ô" ở `MucDanhSachTrang`.
@@ -953,7 +1012,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     phanGiai: (oTuDo) =>
       oTuDo === null
         ? null
-        : { file: "dotnet", args: dotnetChoPhepRestore() ? ["build", oTuDo] : ["build", oTuDo, "--no-restore"] },
+        : { file: "dotnet", args: argsDotnetDungKiem("build", oTuDo) },
   },
   {
     nhan: "dotnet test <đường-dẫn>",
@@ -963,7 +1022,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     get moTa() {
       return dotnetChoPhepRestore()
         ? "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). DOTNET_CHO_PHEP_RESTORE=1 — restore NGẦM được phép, NuGet kéo về qua mạng như bình thường. KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/."
-        : "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE (--no-restore). KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.";
+        : "Chạy bộ test C# của một dự án/solution (.csproj/.sln hoặc thư mục). Chạy OFFLINE — restore NGẦM CHỈ từ cache gói NuGet của máy (0 nguồn mạng; gói chưa có trên máy ⇒ NU1101). KHÔNG sửa tệp mã nguồn; chỉ sinh bin/ obj/.";
     },
     nhom: "hoi-kiem",
     thoatCwdTheoCayThuMuc: false,
@@ -976,7 +1035,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     phanGiai: (oTuDo) =>
       oTuDo === null
         ? null
-        : { file: "dotnet", args: dotnetChoPhepRestore() ? ["test", oTuDo] : ["test", oTuDo, "--no-restore"] },
+        : { file: "dotnet", args: argsDotnetDungKiem("test", oTuDo) },
   },
   {
     nhan: "dotnet format <đường-dẫn>",
@@ -1346,7 +1405,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     nhan: "dotnet restore",
     khuon: ["dotnet", "restore"],
     hanGioMs: 600_000,
-    moTa: "Khôi phục gói NuGet cho dự án/solution ở gốc. Nguồn = AI_NUGET_SOURCE (thư mục/feed cục bộ) hoặc cấu hình NuGet mặc định.",
+    moTa: "Khôi phục gói NuGet cho dự án/solution ở gốc. OFFLINE: nguồn DUY NHẤT = AI_NUGET_SOURCE (thư mục/feed cục bộ; vắng ⇒ chỉ cache máy), nguồn do dự án tự khai bị bỏ qua. DOTNET_CHO_PHEP_RESTORE=1 ⇒ cấu hình NuGet mặc định.",
     nhom: "cai-dat",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
@@ -1357,7 +1416,7 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     nhan: "dotnet restore <đường-dẫn>",
     khuon: ["dotnet", "restore", null],
     hanGioMs: 600_000,
-    moTa: "Khôi phục gói NuGet cho MỘT .csproj/.sln (khi gốc có nhiều dự án). Nguồn = AI_NUGET_SOURCE hoặc cấu hình NuGet mặc định.",
+    moTa: "Khôi phục gói NuGet cho MỘT .csproj/.sln (khi gốc có nhiều dự án). OFFLINE: nguồn DUY NHẤT = AI_NUGET_SOURCE (vắng ⇒ chỉ cache máy). DOTNET_CHO_PHEP_RESTORE=1 ⇒ cấu hình NuGet mặc định.",
     nhom: "cai-dat",
     thoatCwdTheoCayThuMuc: false,
     ghiDia: false,
@@ -1582,6 +1641,10 @@ export const BIEN_MOI_TRUONG_CHO_PHEP: readonly string[] = [
   // ★ Proxy chuỗi công cụ (mục 5) — xem docblock trên. So khớp KHÔNG phân biệt hoa/thường nên bản
   //   viết hoa ở đây phủ luôn `http_proxy`/`https_proxy`/`no_proxy` viết thường mà npm/curl hay đọc.
   "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+  // ★ 2026-10-19 — NuGet dựng đường cấu hình máy từ `ProgramFiles(x86)`/`ProgramFiles`; vắng cả hai ⇒ MỌI restore chết
+  //   ngay ("ConfigurationDefaults … Value cannot be null (Parameter 'path1')", đo trên SDK 10.0.302). Đường HĐH, không
+  //   phải bí mật. Lưới: `repoCommandDotnetRestoreOffline.test.ts` §2b + §3 (chạy thật).
+  "PROGRAMFILES", "PROGRAMFILES(X86)",
 ];
 
 /**

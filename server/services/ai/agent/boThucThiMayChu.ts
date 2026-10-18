@@ -366,8 +366,15 @@ function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet:
       "Refused in automatic mode: running commands without approval is disabled on this server (AI_CODING_AUTOLOOP is off). " +
       "The command was NOT run. Do not retry it; tell the user they can run it in 'Edit' mode (approval per command)."
     );
+  // ★ 2026-10-19 (NN-b-agent-3, C# 0/3) — bị từ chối `dotnet restore`, model kết luận "không restore được" rồi BỊA
+  //   `obj/project.assets.json`. Chỉ đường thật: build/test tự restore offline từ cache gói của máy (repoCommandSandbox).
+  const goiYRestore = /^dotnet restore\b/.test(chiTiet)
+    ? " Note: dotnet build|test <path> restore NuGet packages automatically (offline, from this machine's package cache) — " +
+      "just run `dotnet test <project>`; a package not on this machine fails with NU1101 and needs the user to approve " +
+      "`dotnet restore` in 'Edit' mode. Do not create or edit obj/project.assets.json by hand."
+    : "";
   return (
-    `Refused in automatic mode: this command needs manual approval (${chiTiet}). Only test/build verification commands ` +
+    `Refused in automatic mode: this command needs manual approval (${chiTiet}).${goiYRestore} Only test/build verification commands ` +
     "(e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>, " +
     "javac -d <out> <files|dir>, java -cp <out> <TestClass>, cmake -S . -B <build>, cmake --build <build>, ctest --test-dir <build>, " +
     "go test|build|vet ./..., cargo test|build|check --offline) run without approval, " +
