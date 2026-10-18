@@ -347,6 +347,7 @@ export function phanQuyetLenhTuDong(
   const duongCham: string[] = [];
   if (kc.oTuDo === null || kc.thoatCwdTheoCayThuMuc) duongCham.push(".");
   if (kc.oTuDo !== null) duongCham.push(kc.oTuDo);
+  duongCham.push(...kc.duongThem);
   if (!tuTriGhiRepoChinhDuoc()) {
     let chamRepoChinh: boolean;
     try {
@@ -367,7 +368,9 @@ function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet:
     );
   return (
     `Refused in automatic mode: this command needs manual approval (${chiTiet}). Only test/build verification commands ` +
-    "(e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>) run without approval, " +
+    "(e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>, " +
+    "javac -d <out> <files|dir>, java -cp <out> <TestClass>, cmake -S . -B <build>, cmake --build <build>, ctest --test-dir <build>, " +
+    "go test|build|vet ./..., cargo test|build|check --offline) run without approval, " +
     "and never commands that rewrite source files (dotnet format). The command was NOT run. Use a verification command, " +
     "or tell the user to run this one in 'Edit' mode."
   );

@@ -145,8 +145,13 @@ export const CONG_CU: WireTool[] = [
   ),
   tool(
     "run_command",
-    "Run an allowed command (build, test, lint) in the project root and return its output and exit code.",
-    { command: chuoi("The command line, e.g. 'npm test'. Must be in the project's allowed command list.") },
+    "Run ONE allowed command (build, test, lint) in the project root and return its output and exit code. After changing " +
+      "code, build and run the tests yourself instead of assuming they pass. Typical forms by language: JS/TS 'node --test " +
+      "<path>'; Python 'python -m pytest <path>'; C# 'dotnet test <path>'; Java 'javac -d out <files or dir>' then 'java -cp " +
+      "out <TestClass>'; C++ 'cmake -S . -B build', 'cmake --build build', 'ctest --test-dir build'; Go 'go test ./...'; " +
+      "Rust 'cargo test --offline'. Only the exact forms under 'Allowed commands' in the project context are accepted (this " +
+      "host may allow fewer); there is no shell.",
+    { command: chuoi("The command line, exactly one allowed form, e.g. 'go test ./...'. Paths are relative to the project root.") },
     ["command"],
   ),
   tool(

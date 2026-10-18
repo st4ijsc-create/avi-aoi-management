@@ -59,6 +59,38 @@ describe("dungKhoiNguCanhDuAn", () => {
     expect(k).toMatch(/40 more/);
   });
 
+  it("★★ 2026-10-18 — lệnh được phép NHÓM THEO NGÔN NGỮ (Java/C++/Go/Rust có dòng riêng; thứ tự trong nhóm giữ nguyên)", () => {
+    const k = dungKhoiNguCanhDuAn({
+      ten: "x",
+      cay: [],
+      lenhDuocPhep: [
+        "npm run check",
+        "git status",
+        "dotnet test <đường-dẫn>",
+        "node --test <đường-dẫn>",
+        "python -m pytest <đường-dẫn>",
+        "javac -d <thư-mục-lớp> <tệp.java|thư-mục>…",
+        "java -cp <thư-mục-lớp> <LớpTest>",
+        "cmake -S . -B <thư-mục-dựng>",
+        "ctest --test-dir <thư-mục-dựng>",
+        "go test ./...",
+        "cargo test --offline",
+        "lạ x",
+      ],
+    });
+    expect(k).toContain("- JavaScript/TypeScript: npm run check · node --test <đường-dẫn>");
+    expect(k).toContain("- Python: python -m pytest <đường-dẫn>");
+    expect(k).toContain("- C#/.NET: dotnet test <đường-dẫn>");
+    expect(k).toContain("- Java: javac -d <thư-mục-lớp> <tệp.java|thư-mục>… · java -cp <thư-mục-lớp> <LớpTest>");
+    expect(k).toContain("- C/C++ (CMake): cmake -S . -B <thư-mục-dựng> · ctest --test-dir <thư-mục-dựng>");
+    expect(k).toContain("- Go: go test ./...");
+    expect(k).toContain("- Rust: cargo test --offline");
+    expect(k).toContain("- Git: git status");
+    expect(k).toContain("- Other: lạ x");
+    expect(k, "nói rõ: gõ ĐÚNG dạng, không shell").toMatch(/exactly/i);
+    expect(k).toMatch(/no shell/i);
+  });
+
   it("không lệnh nào được phép ⇒ nói rõ", () => {
     const k = dungKhoiNguCanhDuAn({ ten: "x", cay: [], lenhDuocPhep: [] });
     expect(k).toMatch(/no commands/i);

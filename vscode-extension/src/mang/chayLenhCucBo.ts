@@ -111,7 +111,8 @@ export function chayLenhCucBo(dv: { lenh: LenhDaDuyet; cwd: string; tranMs: numb
     try {
       const cp = spawn(chuongTrinh, doi, {
         cwd: dv.cwd,
-        env: process.env,
+        // ★ 2026-10-18 — `lenh.env` là HẰNG của allowlist (khoá mạng go/cargo), không bao giờ từ chuỗi người gõ.
+        env: dv.lenh.env ? { ...process.env, ...dv.lenh.env } : process.env,
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

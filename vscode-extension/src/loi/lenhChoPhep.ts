@@ -64,7 +64,19 @@ export type TenLenhChoPhep =
   | "dotnet_test"
   | "node_test"
   | "npm_test"
-  | "pytest";
+  | "pytest"
+  // ★ 2026-10-18 — Java · C++ (CMake) · Go · Rust
+  | "javac"
+  | "java_run"
+  | "cmake_configure"
+  | "cmake_build"
+  | "ctest"
+  | "go_test"
+  | "go_build"
+  | "go_vet"
+  | "cargo_test"
+  | "cargo_build"
+  | "cargo_check";
 
 export interface LenhDaDuyet {
   ten: TenLenhChoPhep;
@@ -72,6 +84,11 @@ export interface LenhDaDuyet {
   argv: string[];
   /** Nhãn hiển thị cho người dùng trên thẻ duyệt — NGUYÊN VĂN lệnh sắp chạy, ghép lại từ `argv`. */
   hienThi: string;
+  /**
+   * ★ 2026-10-18 — biến môi trường ĐẶT THÊM (đè lên môi trường của extension host) — chỉ HẰNG của tệp này, không bao giờ
+   * từ chuỗi người gõ. Dùng để KHOÁ đường ra mạng của chuỗi công cụ (go GOPROXY=off/GOTOOLCHAIN=local, cargo offline).
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 export type KetQuaChoPhepLenh = { ok: true; lenh: LenhDaDuyet } | { ok: false; lyDo: string };
@@ -92,7 +109,30 @@ export const MAU_LENH_HIEN_THI: readonly string[] = [
   "python -m pytest [<path>…] [-q] [-x]",
   "dotnet build <path>",
   "dotnet test [<path>]",
+  // ★ 2026-10-18 — Java · C++ (CMake) · Go · Rust (chương trình tra PATH của máy lập trình viên; cờ cố định).
+  "javac -d <out> <file.java…>",
+  "java -cp <out> <MainClass>",
+  "cmake -S . -B <build>",
+  "cmake --build <build>",
+  "ctest --test-dir <build>",
+  "go test ./...",
+  "go build ./...",
+  "go vet ./...",
+  "cargo test --offline",
+  "cargo build --offline",
+  "cargo check --offline",
 ];
+
+/** Tên lớp Java đầy đủ (`a.b.C`) — định danh ASCII nối bằng `.`, không gì khác (không `-`, `@`, `:`). */
+const TEN_LOP_JAVA = /^[A-Za-z_][A-Za-z0-9_]*(.[A-Za-z_][A-Za-z0-9_]*)*$/;
+
+/**
+ * ★ Môi trường CỐ ĐỊNH khoá đường ra mạng. `go`: GOPROXY=off (không tải module), GOTOOLCHAIN=local (dòng `toolchain` của
+ * go.mod KHÔNG được kéo một bản Go khác về rồi CHẠY nó). `cargo`: `--offline` nằm trong khuôn + CARGO_NET_OFFLINE, và
+ * RUSTUP_AUTO_INSTALL=0 (rust-toolchain.toml không kéo toolchain về).
+ */
+const ENV_GO: Readonly<Record<string, string>> = { GOPROXY: "off", GOTOOLCHAIN: "local" };
+const ENV_CARGO: Readonly<Record<string, string>> = { CARGO_NET_OFFLINE: "true", RUSTUP_AUTO_INSTALL: "0" };
 
 /** Trần số ĐƯỜNG cho các khuôn nhận nhiều đường (`node --test`, `python -m pytest`). */
 export const TRAN_SO_DUONG = 8;
@@ -321,6 +361,61 @@ export function xetDuyetLenh(chuoiLenh: string): KetQuaChoPhepLenh {
     return { ok: true, lenh: { ten: "pytest", argv, hienThi: ["python", "-m", "pytest", ...sau].join(" ") } };
   }
 
+  // ═══ ★★★ 2026-10-18 — JAVA · C++ (CMake) · GO · RUST ═══
+  // Đo (bộ đo ngẫu nhiên đường (c)): allowlist không có java/cmake/go/cargo ⇒ model sinh mã bốn ngôn ngữ này mà không tự
+  // biên dịch/chạy test được. Cùng mức siết: tên chương trình + cờ CỐ ĐỊNH khớp nguyên văn; ô tự do CHỈ qua `thamSoAnToan`
+  // (không `-`/`@`/`:`/tuyệt đối/`..`). Không `-D`/`-javaagent`/`-agentlib`/`-XX`/`--target`/`get`/`run`/`install`.
+  // Mọi lệnh vẫn qua THẺ DUYỆT (chính sách không đổi); như các khuôn cũ, dựng/test CHẠY MÃ CỦA WORKSPACE (CMakeLists,
+  // build.rs, tệp test) — thẻ kể các tệp lượt này đã ghi.
+
+  // ── javac -d <out> <tệp.java>… — nguồn phải là tệp .java (module thuần: không liệt kê thư mục) ──
+  if (token.length >= 4 && token[0] === "javac" && token[1] === "-d") {
+    const [, , ra, ...nguon] = token;
+    if (!thamSoAnToan(ra)) return { ok: false, lyDo: `thư mục ra không an toàn: "${ra}"` };
+    if (nguon.length > TRAN_SO_DUONG) return { ok: false, lyDo: `javac nhận tối đa ${TRAN_SO_DUONG} tệp` };
+    const sai = nguon.find((t) => !thamSoAnToan(t) || !/.java$/i.test(t));
+    if (sai !== undefined) return { ok: false, lyDo: `nguồn javac phải là tệp .java tương đối: "${sai}"` };
+    const argv = ["javac", "-encoding", "UTF-8", "-d", ra, ...nguon];
+    return { ok: true, lenh: { ten: "javac", argv, hienThi: token.join(" ") } };
+  }
+
+  // ── java -cp <out> <Lớp> — đúng 4 token; KHÔNG cờ JVM nào từ người gõ ──
+  if (token.length === 4 && token[0] === "java" && token[1] === "-cp") {
+    if (!thamSoAnToan(token[2])) return { ok: false, lyDo: `classpath không an toàn: "${token[2]}"` };
+    if (!TEN_LOP_JAVA.test(token[3]) || token[3].length > 200) return { ok: false, lyDo: `tên lớp Java không hợp lệ: "${token[3]}"` };
+    const argv = ["java", "-ea", "-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-cp", token[2], token[3]];
+    return { ok: true, lenh: { ten: "java_run", argv, hienThi: token.join(" ") } };
+  }
+
+  // ── cmake -S . -B <build> · cmake --build <build> · ctest --test-dir <build> — `-D` CHỈ do tệp này đặt ──
+  if (token.length === 5 && token[0] === "cmake" && token[1] === "-S" && token[2] === "." && token[3] === "-B") {
+    if (!thamSoAnToan(token[4])) return { ok: false, lyDo: `thư mục dựng không an toàn: "${token[4]}"` };
+    const argv = ["cmake", "-S", ".", "-B", token[4], "-DCMAKE_BUILD_TYPE=Debug", "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"];
+    return { ok: true, lenh: { ten: "cmake_configure", argv, hienThi: token.join(" ") } };
+  }
+  if (token.length === 3 && token[0] === "cmake" && token[1] === "--build") {
+    if (!thamSoAnToan(token[2])) return { ok: false, lyDo: `thư mục dựng không an toàn: "${token[2]}"` };
+    const argv = ["cmake", "--build", token[2], "--config", "Debug"];
+    return { ok: true, lenh: { ten: "cmake_build", argv, hienThi: token.join(" ") } };
+  }
+  if (token.length === 3 && token[0] === "ctest" && token[1] === "--test-dir") {
+    if (!thamSoAnToan(token[2])) return { ok: false, lyDo: `thư mục dựng không an toàn: "${token[2]}"` };
+    const argv = ["ctest", "--test-dir", token[2], "-C", "Debug", "--output-on-failure", "--no-tests=error"];
+    return { ok: true, lenh: { ten: "ctest", argv, hienThi: token.join(" ") } };
+  }
+
+  // ── go test|build|vet ./... — CỐ ĐỊNH TUYỆT ĐỐI ──
+  if (token.length === 3 && token[0] === "go" && token[2] === "./..." && (token[1] === "test" || token[1] === "build" || token[1] === "vet")) {
+    const ten = token[1] === "test" ? "go_test" : token[1] === "build" ? "go_build" : "go_vet";
+    return { ok: true, lenh: { ten, argv: [...token], hienThi: token.join(" "), env: ENV_GO } };
+  }
+
+  // ── cargo test|build|check --offline — CỐ ĐỊNH TUYỆT ĐỐI, `--offline` bắt buộc ──
+  if (token.length === 3 && token[0] === "cargo" && token[2] === "--offline" && (token[1] === "test" || token[1] === "build" || token[1] === "check")) {
+    const ten = token[1] === "test" ? "cargo_test" : token[1] === "build" ? "cargo_build" : "cargo_check";
+    return { ok: true, lenh: { ten, argv: [...token], hienThi: token.join(" "), env: ENV_CARGO } };
+  }
+
   return {
     ok: false,
     lyDo: `"${chuoiLenh}" không khớp bất kỳ lệnh nào trong allowlist (${MAU_LENH_HIEN_THI.join(" · ")})`,
@@ -341,4 +436,15 @@ export const TRAN_MS_THEO_LENH: Record<TenLenhChoPhep, number> = {
   node_test: 180_000,
   npm_test: 240_000,
   pytest: 180_000,
+  javac: 180_000,
+  java_run: 120_000,
+  cmake_configure: 240_000,
+  cmake_build: 300_000,
+  ctest: 240_000,
+  go_test: 240_000,
+  go_build: 240_000,
+  go_vet: 240_000,
+  cargo_test: 300_000,
+  cargo_build: 300_000,
+  cargo_check: 300_000,
 };

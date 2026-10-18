@@ -122,7 +122,7 @@
  * điểm chạm byte ("phép hỏi/dựng khung"), nên bất biến "mọi byte qua ĐÚNG HAI hàm cửa" vẫn nguyên.
  */
 import { spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { redactSecretsOnly } from "../ai/aiSafety";
 import { MA_TU_CHOI_HOP_CAT, gocHopCat, phanQuyetDuongDan } from "./repoSandbox";
@@ -406,10 +406,37 @@ export interface MucDanhSachTrang {
   /** Phán quyết ô TỰ DO. Bắt buộc có khi `khuon` chứa `null`; `null` ⇔ được phép. */
   readonly phanQuyetOTuDo?: (v: string) => { ma: MaTuChoiLenh; chiTiet: string } | null;
   /**
-   * Dựng argv THẬT. `null` ⇔ không phân giải được (thiếu `npm-cli.js`/`vitest.mjs`).
-   * `{thieu}` ⇔ thiếu điều kiện tiên quyết (Đợt 3c — venv/requirements/nguồn offline méo).
+   * ★★★ 2026-10-18 (đa ngôn ngữ) — **ĐUÔI TỰ DO**: sau `khuon` cho phép thêm `toiThieu..toiDa` token, MỖI token qua
+   * `phanQuyet` (bắt buộc — census + `phanQuyetLenh` fail-closed). Sinh ra cho đúng hai khuôn cần NHIỀU hơn một ô:
+   * `javac -d <ra> <tệp.java|thư-mục>…` (nhiều nguồn) và `java -cp <ra> <Lớp>` (đường + TÊN LỚP — hai loại ô khác
+   * nhau). Giữ `khuon` ≤ 1 ô `null` (`oTuDo` vẫn là MỘT đường — mọi người đọc cũ không đổi nghĩa).
+   * `laDuong` ⇔ token là ĐƯỜNG trong dự án (cổng Q1 của tu-dong xét chúng như đường lệnh chạm).
+   * ⚠ Trần thật vẫn là `TRAN_PHAN_TU_ARGV` (lớp 1 cắt trước): `toiDa` lớn hơn phần còn lại là vô nghĩa, không phải lỗ.
    */
-  readonly phanGiai: (oTuDo: string | null, goc: string) => LenhDaPhanGiai | ThieuDieuKien | null;
+  readonly duoi?: {
+    readonly toiThieu: number;
+    readonly toiDa: number;
+    readonly laDuong: boolean;
+    readonly phanQuyet: (v: string) => { ma: MaTuChoiLenh; chiTiet: string } | null;
+  };
+  /**
+   * ★ 2026-10-18 — điều kiện KHỚP THÊM ngoài cấu trúc (thuần trên argv). `false` ⇒ mục này KHÔNG nhận argv, bảng xét
+   * mục kế. Dùng đúng một chỗ: `java -cp <ra> <LớpTest>` (tập kiểm chứng) đứng TRƯỚC `java -cp <ra> <LớpMain>` (cần
+   * người duyệt) — cùng khuôn, khác chính sách theo TÊN lớp.
+   */
+  readonly dieuKienKhop?: (argv: readonly string[]) => boolean;
+  /**
+   * ★ 2026-10-18 — tệp MANIFEST phải có ở ĐÚNG gốc khi `thoatCwdTheoCayThuMuc` (công cụ tự đi NGƯỢC cây thư mục tìm
+   * nó). Vắng ⇒ `"package.json"` (npm/npx — mã từ chối cũ `CMD_GOC_THIEU_PACKAGE_JSON`). `go.mod` / `Cargo.toml` ⇒
+   * `CMD_THIEU_DIEU_KIEN` (cùng lý lẽ: thiếu ở gốc ⇒ công cụ chạy trên dự án CHA, kết quả không nói gì về dự án này).
+   */
+  readonly manifestGoc?: string;
+  /**
+   * Dựng argv THẬT. `null` ⇔ không phân giải được (thiếu `npm-cli.js`/`vitest.mjs`).
+   * `{thieu}` ⇔ thiếu điều kiện tiên quyết (Đợt 3c — venv/requirements/nguồn offline méo; 2026-10-18 — toolchain
+   * chưa cấu hình). `duoi` = các token ĐUÔI đã qua phán quyết (rỗng nếu mục không có đuôi).
+   */
+  readonly phanGiai: (oTuDo: string | null, goc: string, duoi: readonly string[]) => LenhDaPhanGiai | ThieuDieuKien | null;
 }
 
 /** Tên biến môi trường của công tắc restore — xem `dotnetChoPhepRestore`. */
@@ -535,6 +562,191 @@ function phanGiaiDotnetRestore(oTuDo: string | null): LenhDaPhanGiai | ThieuDieu
   return { file: "dotnet", args: ["restore", ...(oTuDo === null ? [] : [oTuDo]), ...nguon] };
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-10-18 — TOOLCHAIN ĐA NGÔN NGỮ (Java · CMake/C++ · Go · Rust): CẤU HÌNH MÁY CHỦ, KHÔNG PATH
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * Vì sao KHÔNG tra PATH (khác `dotnet`/`git`/`python` — ba mục cũ giữ nguyên hành vi):
+ *   • Toolchain Go/Rust trên máy này là bản DI ĐỘNG (`D:\SOURCES\16.AI\toolchains\…`), không có trên PATH dịch vụ;
+ *     tra PATH ⇒ `CMD_SPAWN_ERROR` mơ hồ, hoặc tệ hơn: chạy một `go`/`cargo` KHÁC bản quản trị đã kiểm.
+ *   • PATH của tài khoản dịch vụ là thứ ai cũng có thể chen một thư mục vào; đường TUYỆT ĐỐI do quản trị khai là
+ *     MỘT nguồn sự thật, đọc được trên thẻ duyệt (argv THẬT in đường đầy đủ).
+ * Thiếu/méo ⇒ `{thieu}` ⇒ `CMD_THIEU_DIEU_KIEN` NÊU TÊN BIẾN — không lặng lẽ rơi về PATH.
+ * Đọc TẠI LÚC GỌI (bài học `TENANT_RLS_ENABLED` — lưới lật env theo ca).
+ */
+export const BIEN_GO_ROOT = "AI_TOOLCHAIN_GO_ROOT";
+export const BIEN_CARGO_HOME = "AI_TOOLCHAIN_CARGO_HOME";
+export const BIEN_RUSTUP_HOME = "AI_TOOLCHAIN_RUSTUP_HOME";
+export const BIEN_JAVA_HOME = "AI_JAVA_HOME";
+export const BIEN_CMAKE_DIR = "AI_TOOLCHAIN_CMAKE_DIR";
+
+const DUOI_EXE = process.platform === "win32" ? ".exe" : "";
+
+/** Thư mục toolchain từ biến `bien`: TUYỆT ĐỐI, tồn tại, chứa đủ `tepCan` (tương đối, chưa có đuôi .exe). */
+function thuMucToolchain(bien: string, tepCan: readonly string[], moTa: string): string | ThieuDieuKien {
+  const v = (process.env[bien] ?? "").trim();
+  const huongDan = `quản trị đặt ${bien}=<${moTa}> trong .env của máy chủ rồi khởi động lại (lệnh KHÔNG tra PATH).`;
+  if (v === "") return { thieu: `chưa cấu hình ${bien} — ${huongDan}` };
+  if (!laThuMucTuyetDoi(v)) return { thieu: `${bien} phải là đường TUYỆT ĐỐI tới một thư mục đang tồn tại — ${huongDan}` };
+  for (const t of tepCan) {
+    if (!existsSync(path.join(v, `${t}${DUOI_EXE}`))) {
+      return { thieu: `${bien} không chứa ${t}${DUOI_EXE} — ${huongDan}` };
+    }
+  }
+  return v;
+}
+
+/** PATH của tiến trình con = `dauTien` + PATH đã có (CÙNG tên khoá — Windows để `Path`; hai khoá khác hoa ⇒ mơ hồ). */
+function pathDatThem(dauTien: string): Record<string, string> {
+  const khoa = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+  const cu = process.env[khoa] ?? "";
+  return { [khoa]: cu === "" ? dauTien : `${dauTien}${path.delimiter}${cu}` };
+}
+
+function phanGiaiJava(tep: "javac" | "java", args: string[]): LenhDaPhanGiai | ThieuDieuKien {
+  const home = thuMucToolchain(BIEN_JAVA_HOME, [`bin/${tep}`], "thư mục JDK, vd C:\\Program Files\\Java\\jdk-26.0.1");
+  if (typeof home !== "string") return home;
+  return { file: path.join(home, "bin", `${tep}${DUOI_EXE}`), args, envThem: { JAVA_HOME: home } };
+}
+
+function phanGiaiCmake(tep: "cmake" | "ctest", args: string[]): LenhDaPhanGiai | ThieuDieuKien {
+  const dir = thuMucToolchain(BIEN_CMAKE_DIR, [tep], "thư mục chứa cmake/ctest, vd C:\\Program Files\\CMake\\bin");
+  if (typeof dir !== "string") return dir;
+  return { file: path.join(dir, `${tep}${DUOI_EXE}`), args, envThem: pathDatThem(dir) };
+}
+
+/**
+ * `go <sub> ./...` — môi trường KHÔNG MẠNG bằng cấu tạo:
+ *   • `GOPROXY=off`      — không tải module (thiếu trong cache ⇒ lỗi rõ, không treo);
+ *   • `GOTOOLCHAIN=local` — dòng `toolchain go1.x` trong go.mod KHÔNG được kéo một bản Go khác về rồi CHẠY nó;
+ *   • `GOFLAGS` CỐ ĐỊNH  — `-mod=vendor` nếu dự án có `vendor/modules.txt` (phụ thuộc đã chép vào dự án), ngược lại
+ *     `-mod=readonly` (không sửa go.mod/go.sum). Đè mọi GOFLAGS khác (`-toolexec`, `-exec`… = chạy chương trình tuỳ ý);
+ *   • `GOENV=off`        — bỏ tệp cấu hình `go env -w` của tài khoản (APPDATA được truyền qua bộ lọc);
+ *   • `GOWORK=off`       — go.work ở thư mục CHA không được kéo module ngoài dự án vào;
+ *   • `CGO_ENABLED=0`, `GOTELEMETRY=off`.
+ * GOCACHE/GOPATH: mặc định của Go (LOCALAPPDATA/USERPROFILE — có trong danh sách trắng biến).
+ */
+function phanGiaiGo(sub: "test" | "build" | "vet", goc: string): LenhDaPhanGiai | ThieuDieuKien {
+  const root = thuMucToolchain(BIEN_GO_ROOT, ["bin/go"], "GOROOT, vd D:\\SOURCES\\16.AI\\toolchains\\go");
+  if (typeof root !== "string") return root;
+  const vendor = existsSync(path.join(goc, "vendor", "modules.txt"));
+  return {
+    file: path.join(root, "bin", `go${DUOI_EXE}`),
+    args: [sub, "./..."],
+    envThem: {
+      ...pathDatThem(path.join(root, "bin")),
+      GOROOT: root,
+      GOTOOLCHAIN: "local",
+      GOPROXY: "off",
+      GOFLAGS: vendor ? "-mod=vendor" : "-mod=readonly",
+      GOENV: "off",
+      GOWORK: "off",
+      GOTELEMETRY: "off",
+      CGO_ENABLED: "0",
+    },
+  };
+}
+
+/**
+ * `cargo <sub> --offline` — `--offline` nằm TRONG KHUÔN (người/model phải gõ, thẻ duyệt thấy) VÀ `CARGO_NET_OFFLINE`
+ * ở môi trường (hai lớp). `RUSTUP_AUTO_INSTALL=0`: `rust-toolchain.toml` của dự án KHÔNG được kéo một toolchain về rồi
+ * chạy nó (rustup ≥ 1.28 tự cài mặc định). `RUSTUP_HOME` bắt buộc: `cargo` trong CARGO_HOME/bin là PROXY rustup.
+ * ⚠ Trục thứ ba (THI HÀNH mã của dự án): `build.rs` + proc-macro chạy lúc dựng — cùng hồ sơ với MSBuild target.
+ */
+function phanGiaiCargo(sub: "test" | "build" | "check"): LenhDaPhanGiai | ThieuDieuKien {
+  const home = thuMucToolchain(BIEN_CARGO_HOME, ["bin/cargo"], "CARGO_HOME, vd D:\\SOURCES\\16.AI\\toolchains\\cargo");
+  if (typeof home !== "string") return home;
+  const rustup = thuMucToolchain(BIEN_RUSTUP_HOME, [], "RUSTUP_HOME, vd D:\\SOURCES\\16.AI\\toolchains\\rustup");
+  if (typeof rustup !== "string") return rustup;
+  return {
+    file: path.join(home, "bin", `cargo${DUOI_EXE}`),
+    args: [sub, "--offline"],
+    envThem: {
+      ...pathDatThem(path.join(home, "bin")),
+      CARGO_HOME: home,
+      RUSTUP_HOME: rustup,
+      CARGO_NET_OFFLINE: "true",
+      RUSTUP_AUTO_INSTALL: "0",
+      CARGO_TERM_COLOR: "never",
+    },
+  };
+}
+
+/**
+ * ★ Ô ĐƯỜNG CHẶT cho các mục mới: danh sách trắng ký tự HẸP hơn lớp 1 (KHÔNG `:` — dấu tách classpath POSIX và ổ đĩa;
+ * KHÔNG `@` — tệp tham số của javac/java/MSBuild), không bắt đầu bằng `-`/`/`, rồi hộp cát pha A.
+ */
+const KY_TU_DUONG_CHAT = /^[A-Za-z0-9_.][A-Za-z0-9_./\\-]*$/;
+function phanQuyetDuongChat(v: string): { ma: MaTuChoiLenh; chiTiet: string } | null {
+  if (!KY_TU_DUONG_CHAT.test(v)) {
+    return { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (đường chỉ gồm chữ/số/_ . - / \\, tương đối, không ':' '@')` };
+  }
+  const ma = phanQuyetDuongDan(v);
+  return ma === null ? null : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (hộp cát pha A: ${ma})` };
+}
+
+/** Tên lớp Java đầy đủ (`a.b.C`) — định danh ASCII, không gì khác. */
+const TEN_LOP_JAVA = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+function phanQuyetTenLop(v: string): { ma: MaTuChoiLenh; chiTiet: string } | null {
+  return v.length <= 200 && TEN_LOP_JAVA.test(v)
+    ? null
+    : { ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED, chiTiet: `${v} (không phải tên lớp Java hợp lệ: định danh ASCII nối bằng '.')` };
+}
+/** Quy ước tên lớp TEST (JUnit/Surefire): `Test*`, `*Test`, `*Tests` — xét đoạn cuối của tên đầy đủ. */
+export function laTenLopTest(v: string | undefined): boolean {
+  if (typeof v !== "string" || phanQuyetTenLop(v) !== null) return false;
+  const ten = v.slice(v.lastIndexOf(".") + 1);
+  return /^Test[A-Z0-9_]/.test(ten) || /Tests?$/.test(ten);
+}
+
+/** Trần số tệp `.java` khi một token của `javac` là THƯ MỤC (máy chủ tự liệt kê). */
+export const TRAN_TEP_JAVAC = 500;
+
+/**
+ * Nguồn của `javac`: token `.java` đi nguyên văn; token khác phải là THƯ MỤC trong dự án ⇒ liệt kê mọi `.java` dưới nó
+ * (đệ quy, sắp xếp, bỏ tên bắt đầu `.`, bỏ liên kết mềm, bỏ đường hộp cát pha A cấm). Không gì khác ⇒ `{thieu}`.
+ */
+function nguonJavac(goc: string, duoi: readonly string[]): string[] | ThieuDieuKien {
+  const ra = new Set<string>();
+  for (const t of duoi) {
+    const chuan = t.replace(/\\/g, "/").replace(/\/+$/, "");
+    if (/\.java$/i.test(chuan)) {
+      ra.add(chuan);
+      continue;
+    }
+    const tuyet = path.join(goc, chuan);
+    let laThuMuc = false;
+    try {
+      laThuMuc = statSync(tuyet).isDirectory();
+    } catch {
+      laThuMuc = false;
+    }
+    if (!laThuMuc) return { thieu: `"${t}" không phải tệp .java cũng không phải thư mục trong dự án.` };
+    const tim: string[] = [];
+    const di = (tuongDoi: string, sau: number): void => {
+      if (sau > 12 || tim.length > TRAN_TEP_JAVAC) return;
+      let ds: Dirent[];
+      try {
+        ds = readdirSync(path.join(goc, tuongDoi), { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const d of ds) {
+        if (d.name.startsWith(".") || d.isSymbolicLink()) continue;
+        const rel = `${tuongDoi}/${d.name}`;
+        if (phanQuyetDuongDan(rel) !== null) continue;
+        if (d.isDirectory()) di(rel, sau + 1);
+        else if (d.isFile() && /\.java$/i.test(d.name)) tim.push(rel);
+      }
+    };
+    di(chuan, 0);
+    if (tim.length === 0) return { thieu: `thư mục "${t}" không có tệp .java nào.` };
+    for (const f of tim.sort()) ra.add(f);
+  }
+  if (ra.size > TRAN_TEP_JAVAC) return { thieu: `quá ${TRAN_TEP_JAVAC} tệp .java — chỉ định thư mục/tệp hẹp hơn.` };
+  return [...ra];
+}
+
 /**
  * ★ Gợi ý khi một lệnh CÀI hỏng vì KHÔNG VỚI TỚI NGUỒN GÓI — chỉ đúng biến cần đặt. `null` ⇔ không phải lệnh
  * cài, mã thoát 0, hoặc đầu ra không mang dấu hiệu mạng/nguồn (chống báo giả: `npm ci` thiếu lockfile KHÔNG
@@ -580,6 +792,9 @@ export function goiYKhiCaiLoiMang(nhan: string, dauRa: string, maThoat: number |
  * ★★★ Đợt 3c (2026-10-17) — bảng nay có **MƯỜI BẢY** mục: mười một mục `nhom: "hoi-kiem"` (một trong số đó —
  * `dotnet format` — ghi đè mã nguồn) + **sáu** mục `nhom: "cai-dat"` (npm ci · npm install · python -m venv .venv ·
  * pip install -r requirements.txt · dotnet restore · dotnet restore <đường>). Nhóm cài-đặt LUÔN cần người duyệt.
+ *
+ * ★★★ 2026-10-18 — **HAI MƯƠI CHÍN** mục: thêm MƯỜI HAI mục hỏi/kiểm Java · C++ (CMake) · Go · Rust (khối riêng bên
+ * dưới; toolchain từ cấu hình máy chủ, không đường ra mạng). Từ bản này MỌI ô tự do từ chối token bắt đầu `-`/`@`.
  *
  * ⚠ Đây là **toàn bộ** tập lệnh tác nhân chạy được, và nó là một hằng của mã nguồn: không cờ môi
  * trường nào nới nó, không tham số nào thêm mục vào nó. Muốn thêm thì phải sửa file này, tức phải
@@ -859,6 +1074,204 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
     phanGiai: (oTuDo) => (oTuDo === null ? null : { file: "python", args: ["-m", "unittest", oTuDo] }),
   },
   // ════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ 2026-10-18 — JAVA · C++ (CMake) · GO · RUST: vòng "sinh mã → TỰ biên dịch/chạy test" cho bốn ngôn ngữ
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  /**
+   * Khoảng trống ĐO ĐƯỢC (bộ đo `scripts/ai-eval/ngau-nhien/`, đường (b) agent máy chủ): danh sách trắng chỉ có
+   * node/pytest/dotnet ⇒ với Java/C++/Go/Rust agent sinh mã mà KHÔNG BAO GIỜ tự biên dịch/chạy test được.
+   * Mười hai mục dưới đây mở đúng vòng ấy, cùng mức siết của các mục cũ:
+   *   • subcommand + cờ CỐ ĐỊNH; ô tự do = đường TƯƠNG ĐỐI qua `phanQuyetDuongChat` (không `:`/`@`, không bắt đầu
+   *     `-`) — `-D`, `-javaagent`, `-agentlib`, `-XX`, `--target`, `-P`, `-E`, `get`/`run`/`install` đều KHÔNG có khuôn;
+   *   • toolchain từ CẤU HÌNH MÁY CHỦ (`AI_TOOLCHAIN_GO_ROOT`, `AI_TOOLCHAIN_CARGO_HOME`+`AI_TOOLCHAIN_RUSTUP_HOME`,
+   *     `AI_JAVA_HOME`, `AI_TOOLCHAIN_CMAKE_DIR`) — KHÔNG tra PATH; thiếu ⇒ `CMD_THIEU_DIEU_KIEN` nêu tên biến;
+   *   • KHÔNG ĐƯỜNG RA MẠNG bằng cấu tạo: go GOPROXY=off + GOTOOLCHAIN=local; cargo `--offline` (trong khuôn) +
+   *     CARGO_NET_OFFLINE + RUSTUP_AUTO_INSTALL=0; cmake `FETCHCONTENT_FULLY_DISCONNECTED=ON` (FetchContent không tải);
+   *   • biến tiêm cờ của toolchain từ tiến trình máy chủ (JAVA_TOOL_OPTIONS, GOFLAGS, RUSTFLAGS, RUSTC_WRAPPER,
+   *     CMAKE_TOOLCHAIN_FILE…) KHÔNG qua bộ lọc `moiTruongDaLoc` (danh sách TRẮNG tên biến — không cần liệt kê chúng);
+   *   • trần giờ ≤ `HAN_GIO_TOI_DA_KIEM_TRA_MS`, trần đầu ra chung, giết cả cây — cùng `chayLenhTrongHopCat`.
+   *
+   * ⚠⚠ QUYẾT ĐỊNH `tu-dong` (chủ dự án giữ nguyên chính sách, chỉ mở rộng LOẠI lệnh kiểm chứng): test/build/check
+   *   vào tập kiểm chứng; **`java -cp <ra> <LớpMain>` thì KHÔNG** — chạy chương trình người dùng viết là chạy mã tuỳ ý
+   *   THEO YÊU CẦU (đọc tệp, mở cổng, gọi mạng…), không phải một phép kiểm "đã xanh chưa". Lớp tên theo quy ước TEST
+   *   (`Test*`/`*Test`/`*Tests`, như JUnit/Surefire) là mục RIÊNG `<LớpTest>` trong tập kiểm chứng — cùng hồ sơ rủi ro
+   *   với `node --test <đường>` (cũng THI HÀNH tệp test do model viết). Ranh giới là QUY ƯỚC, không phải hộp cát: hàng
+   *   rào thật vẫn là môi trường ĐÃ LỌC + hộp cát đường + hạn giờ giết cây + Q1 (không chạm repo chính khi chưa
+   *   checkpoint). `go run`/`cargo run` vì thế cũng KHÔNG có khuôn (kể cả ở chế độ duyệt tay) — muốn chạy thì viết test.
+   * ⚠ Trục thứ ba (THI HÀNH mã của dự án) vẫn đúng như khối `sinhSanPhamDung` đã khai: CMakeLists.txt
+   *   (`execute_process`), `build.rs`/proc-macro, test Go/Java — mã của dự án chạy lúc dựng/test.
+   * ⚠ C++: `ctest` chỉ chạy test dự án KHAI (`enable_testing()` + `add_test`); `--no-tests=error` ⇒ không có test thì
+   *   ĐỎ thật, không "xanh rỗng". Chạy thẳng một tệp .exe đã dựng KHÔNG có khuôn (argv[0] tự do = chạy tuỳ ý).
+   * ⚠ MSVC: CMake tự dò Visual Studio (COM/vswhere) — KHÔNG cần vcvars64 (đo ở `scripts/ai-eval/ngau-nhien`); thư mục
+   *   dựng phải nằm TRONG dự án (MSVC từ chối thư mục dưới %TEMP% hệ thống — MSB8029), đúng điều ô tự do đòi.
+   */
+  {
+    nhan: "javac -d <thư-mục-lớp> <tệp.java|thư-mục>…",
+    khuon: ["javac", "-d", null],
+    hanGioMs: 180_000,
+    moTa: "Biên dịch Java: các tệp .java (hoặc MỌI .java dưới thư mục được trỏ) vào thư mục lớp. Mã hoá UTF-8 cố định; KHÔNG cờ tuỳ ý (-processorpath, @tệp…). Chỉ sinh tệp .class.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanQuyetOTuDo: phanQuyetDuongChat,
+    duoi: { toiThieu: 1, toiDa: TRAN_PHAN_TU_ARGV - 3, laDuong: true, phanQuyet: phanQuyetDuongChat },
+    phanGiai: (oTuDo, goc, duoi) => {
+      if (oTuDo === null) return null;
+      const nguon = nguonJavac(goc, duoi);
+      if (!Array.isArray(nguon)) return nguon;
+      return phanGiaiJava("javac", ["-encoding", "UTF-8", "-d", oTuDo, ...nguon]);
+    },
+  },
+  {
+    nhan: "java -cp <thư-mục-lớp> <LớpTest>",
+    khuon: ["java", "-cp", null],
+    hanGioMs: 120_000,
+    moTa: "Chạy MỘT lớp TEST Java (tên Test*/*Test/*Tests, có main) với -ea. Không cờ JVM tuỳ ý (-javaagent, -agentlib, -XX…).",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: false,
+    dieuKienKhop: (argv) => laTenLopTest(argv[3]),
+    phanQuyetOTuDo: phanQuyetDuongChat,
+    duoi: { toiThieu: 1, toiDa: 1, laDuong: false, phanQuyet: phanQuyetTenLop },
+    phanGiai: (oTuDo, _goc, duoi) =>
+      oTuDo === null || duoi.length !== 1
+        ? null
+        : phanGiaiJava("java", ["-ea", "-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-cp", oTuDo, duoi[0]!]),
+  },
+  {
+    nhan: "java -cp <thư-mục-lớp> <LớpMain>",
+    khuon: ["java", "-cp", null],
+    hanGioMs: 120_000,
+    moTa: "Chạy CHƯƠNG TRÌNH Java (lớp có main) với -ea. Chạy mã tuỳ ý theo chương trình ⇒ LUÔN cần người duyệt, không tự chạy ở chế độ tự động. Không cờ JVM tuỳ ý.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: false,
+    phanQuyetOTuDo: phanQuyetDuongChat,
+    duoi: { toiThieu: 1, toiDa: 1, laDuong: false, phanQuyet: phanQuyetTenLop },
+    phanGiai: (oTuDo, _goc, duoi) =>
+      oTuDo === null || duoi.length !== 1
+        ? null
+        : phanGiaiJava("java", ["-ea", "-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-cp", oTuDo, duoi[0]!]),
+  },
+  {
+    nhan: "cmake -S . -B <thư-mục-dựng>",
+    khuon: ["cmake", "-S", ".", "-B", null],
+    hanGioMs: 240_000,
+    moTa: "Cấu hình dự án CMake (C/C++) ở gốc vào thư mục dựng (Debug; FetchContent ngắt mạng). KHÔNG -D tuỳ ý. Chạy CMakeLists.txt của dự án; chỉ sinh thư mục dựng.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanQuyetOTuDo: phanQuyetDuongChat,
+    phanGiai: (oTuDo) =>
+      oTuDo === null
+        ? null
+        : phanGiaiCmake("cmake", ["-S", ".", "-B", oTuDo, "-DCMAKE_BUILD_TYPE=Debug", "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"]),
+  },
+  {
+    nhan: "cmake --build <thư-mục-dựng>",
+    khuon: ["cmake", "--build", null],
+    hanGioMs: 300_000,
+    moTa: "Dựng (biên dịch + liên kết) dự án CMake đã cấu hình, cấu hình Debug. KHÔNG --target tuỳ ý. Chỉ sinh tệp trong thư mục dựng.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanQuyetOTuDo: phanQuyetDuongChat,
+    phanGiai: (oTuDo) => (oTuDo === null ? null : phanGiaiCmake("cmake", ["--build", oTuDo, "--config", "Debug"])),
+  },
+  {
+    nhan: "ctest --test-dir <thư-mục-dựng>",
+    khuon: ["ctest", "--test-dir", null],
+    hanGioMs: 240_000,
+    moTa: "Chạy các test dự án CMake KHAI (add_test) trong thư mục dựng, cấu hình Debug; không có test nào ⇒ báo lỗi (không xanh rỗng).",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: false,
+    ghiDia: false,
+    // ctest ghi `Testing/Temporary/LastTest.log` trong thư mục dựng.
+    sinhSanPhamDung: true,
+    phanQuyetOTuDo: phanQuyetDuongChat,
+    phanGiai: (oTuDo) =>
+      oTuDo === null
+        ? null
+        : phanGiaiCmake("ctest", ["--test-dir", oTuDo, "-C", "Debug", "--output-on-failure", "--no-tests=error"]),
+  },
+  {
+    nhan: "go test ./...",
+    khuon: ["go", "test", "./..."],
+    hanGioMs: 240_000,
+    moTa: "Chạy test Go của mọi gói trong module (kèm go vet một phần). Ngoại tuyến: GOPROXY=off, GOTOOLCHAIN=local — không tải module/toolchain.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: true,
+    manifestGoc: "go.mod",
+    ghiDia: false,
+    // chỉ ghi bộ nhớ đệm GOCACHE NGOÀI dự án.
+    sinhSanPhamDung: false,
+    phanGiai: (_o, goc) => phanGiaiGo("test", goc),
+  },
+  {
+    nhan: "go build ./...",
+    khuon: ["go", "build", "./..."],
+    hanGioMs: 240_000,
+    moTa: "Biên dịch mọi gói Go trong module. Ngoại tuyến: GOPROXY=off, GOTOOLCHAIN=local. Có thể sinh tệp chạy ở gốc nếu module chỉ có một gói main.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: true,
+    manifestGoc: "go.mod",
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: (_o, goc) => phanGiaiGo("build", goc),
+  },
+  {
+    nhan: "go vet ./...",
+    khuon: ["go", "vet", "./..."],
+    hanGioMs: 240_000,
+    moTa: "Phân tích tĩnh go vet cho mọi gói trong module. Ngoại tuyến: GOPROXY=off, GOTOOLCHAIN=local. Không sửa tệp.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: true,
+    manifestGoc: "go.mod",
+    ghiDia: false,
+    sinhSanPhamDung: false,
+    phanGiai: (_o, goc) => phanGiaiGo("vet", goc),
+  },
+  {
+    nhan: "cargo test --offline",
+    khuon: ["cargo", "test", "--offline"],
+    hanGioMs: 300_000,
+    moTa: "Dựng và chạy test Rust (cả doc-test) của crate ở gốc, NGOẠI TUYẾN (--offline, không tải crate, không tự cài toolchain). Sinh target/.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: true,
+    manifestGoc: "Cargo.toml",
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: () => phanGiaiCargo("test"),
+  },
+  {
+    nhan: "cargo build --offline",
+    khuon: ["cargo", "build", "--offline"],
+    hanGioMs: 300_000,
+    moTa: "Biên dịch crate Rust ở gốc, NGOẠI TUYẾN (--offline). Sinh target/ (và Cargo.lock nếu chưa có).",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: true,
+    manifestGoc: "Cargo.toml",
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: () => phanGiaiCargo("build"),
+  },
+  {
+    nhan: "cargo check --offline",
+    khuon: ["cargo", "check", "--offline"],
+    hanGioMs: 300_000,
+    moTa: "Kiểm kiểu/mượn crate Rust không sinh mã máy, NGOẠI TUYẾN (--offline). Sinh siêu dữ liệu trong target/.",
+    nhom: "hoi-kiem",
+    thoatCwdTheoCayThuMuc: true,
+    manifestGoc: "Cargo.toml",
+    ghiDia: false,
+    sinhSanPhamDung: true,
+    phanGiai: () => phanGiaiCargo("check"),
+  },
+  // ════════════════════════════════════════════════════════════════════════════════════════════
   // ★★★ Đợt 3c (2026-10-17) — NHÓM **CÀI ĐẶT** (`nhom: "cai-dat"`): LUÔN cần người duyệt, KHÔNG BAO GIỜ tự chạy
   // ════════════════════════════════════════════════════════════════════════════════════════════
   /**
@@ -958,18 +1371,49 @@ export const DANH_SACH_TRANG: readonly MucDanhSachTrang[] = [
 ];
 
 export type KetQuaPhanQuyetLenh =
-  | { ok: true; muc: MucDanhSachTrang; oTuDo: string | null; nhan: string; spec: LenhDaPhanGiai; hanGioMs: number }
+  | {
+      ok: true;
+      muc: MucDanhSachTrang;
+      oTuDo: string | null;
+      /** ★ 2026-10-18 — token ĐUÔI tự do đã qua phán quyết (rỗng nếu mục không có `duoi`). */
+      duoi: string[];
+      nhan: string;
+      spec: LenhDaPhanGiai;
+      hanGioMs: number;
+    }
   | { ok: false; ma: MaTuChoiLenh; chiTiet: string };
 
-/** Khớp CẤU TRÚC: cùng độ dài, từng phần tử bằng nhau (ô `null` bỏ qua phép so). */
-function khopKhuon(khuon: readonly (string | null)[], argv: readonly string[]): boolean {
-  if (khuon.length !== argv.length) return false;
+/**
+ * Khớp CẤU TRÚC: cùng độ dài, từng phần tử bằng nhau (ô `null` bỏ qua phép so). ★ 2026-10-18 — mục có `duoi`: độ dài
+ * trong `[khuon + toiThieu, khuon + toiDa]`, tiền tố khớp khuôn (đuôi do `duoi.phanQuyet` xét từng token).
+ */
+function khopKhuon(khuon: readonly (string | null)[], argv: readonly string[], duoi?: MucDanhSachTrang["duoi"]): boolean {
+  if (duoi) {
+    if (argv.length < khuon.length + duoi.toiThieu || argv.length > khuon.length + duoi.toiDa) return false;
+  } else if (khuon.length !== argv.length) return false;
   for (let i = 0; i < khuon.length; i++) {
     const k = khuon[i]!;
     if (k === null) continue;
     if (k !== argv[i]) return false;
   }
   return true;
+}
+
+/**
+ * ★★★ 2026-10-18 — MỌI ô tự do (mọi mục, cũ lẫn mới): token bắt đầu bằng `-` hoặc `@` ⇒ `CMD_ARG_PATH_REJECTED`.
+ * Chương trình đích đọc `-x` là CỜ chứ không phải đường (`npx vitest run --update` ghi đè snapshot không qua cửa ghi;
+ * `node --test --inspect-brk` mở cổng debugger; `dotnet test -bl` ghi binlog chứa môi trường), và `@x` là TỆP THAM SỐ
+ * (MSBuild `@x.rsp`, javac/java `@argfile`) — tệp model GHI ĐƯỢC biến thành cờ tuỳ ý. `phanQuyetDuongDan` coi cả hai là
+ * đường tương đối hợp lệ ⇒ trước bản vá này khuôn `<đường-dẫn>` nhận chúng. Cùng luật extension đã có (rà 9d26ad568).
+ * Không lệnh nào cần một đường bắt đầu bằng `-`/`@` (muốn thì viết `./-x`).
+ */
+function tuChoiDangCo(nhan: string, v: string): { ok: false; ma: MaTuChoiLenh; chiTiet: string } | null {
+  if (!v.startsWith("-") && !v.startsWith("@")) return null;
+  return {
+    ok: false,
+    ma: MA_TU_CHOI_LENH.CMD_ARG_PATH_REJECTED,
+    chiTiet: `${nhan}: "${v}" mang hình dạng CỜ / tệp tham số (bắt đầu bằng "${v[0]}") — ô này chỉ nhận đường/tên, không nhận cờ`,
+  };
 }
 
 /**
@@ -984,14 +1428,25 @@ export function phanQuyetLenh(argv: readonly string[], goc = gocHopCat()): KetQu
     return { ok: false, ma: MA_TU_CHOI_LENH.CMD_NOT_ALLOWED, chiTiet: `${argv.length} phần tử argv, trần ${TRAN_PHAN_TU_ARGV}` };
   }
   for (const muc of DANH_SACH_TRANG) {
-    if (!khopKhuon(muc.khuon, argv)) continue;
+    if (!khopKhuon(muc.khuon, argv, muc.duoi)) continue;
+    if (muc.dieuKienKhop && !muc.dieuKienKhop(argv)) continue;
     /**
      * ★★★ GỐC KHÔNG PHẢI DỰ ÁN NODE ⇒ TỪ CHỐI LỆNH NODE. Xem `CMD_GOC_THIEU_PACKAGE_JSON`.
      * ⚠ Phép kiểm chỉ nhìn **đúng gốc**, KHÔNG đi ngược lên — đi ngược lên chính là hành vi của npm
      *   mà đoạn này được viết ra để chặn. Tìm thấy `package.json` ở thư mục CHA nghĩa là npm sẽ dùng
      *   dự án CHA, tức đúng tình huống phải từ chối chứ không phải lý do để cho qua.
      */
-    if (muc.thoatCwdTheoCayThuMuc && !existsSync(path.join(goc, "package.json"))) {
+    const manifest = muc.manifestGoc ?? "package.json";
+    if (muc.thoatCwdTheoCayThuMuc && manifest !== "package.json" && !existsSync(path.join(goc, manifest))) {
+      return {
+        ok: false,
+        ma: MA_TU_CHOI_LENH.CMD_THIEU_DIEU_KIEN,
+        chiTiet:
+          `${muc.nhan}: dự án đang mở KHÔNG có "${manifest}" ở gốc. Công cụ sẽ đi NGƯỢC lên cây thư mục và chạy trên ` +
+          `một dự án KHÁC — kết quả không nói gì về dự án này. Tạo "${manifest}" ở gốc dự án trước.`,
+      };
+    }
+    if (muc.thoatCwdTheoCayThuMuc && manifest === "package.json" && !existsSync(path.join(goc, "package.json"))) {
       return {
         ok: false,
         ma: MA_TU_CHOI_LENH.CMD_GOC_THIEU_PACKAGE_JSON,
@@ -1027,10 +1482,25 @@ export function phanQuyetLenh(argv: readonly string[], goc = gocHopCat()): KetQu
           chiTiet: `${muc.nhan}: ô tự do KHÔNG có bộ phán quyết — từ chối theo chiều AN TOÀN`,
         };
       }
+      const coi = tuChoiDangCo(muc.nhan, oTuDo);
+      if (coi !== null) return coi;
       const pq = bpq(oTuDo);
       if (pq !== null) return { ok: false, ma: pq.ma, chiTiet: pq.chiTiet };
     }
-    const spec = muc.phanGiai(oTuDo, goc);
+    const duoi = argv.slice(muc.khuon.length);
+    if (duoi.length > 0) {
+      const bpqDuoi = muc.duoi?.phanQuyet;
+      if (typeof bpqDuoi !== "function") {
+        return { ok: false, ma: MA_TU_CHOI_LENH.CMD_NOT_ALLOWED, chiTiet: `${muc.nhan}: đuôi tự do KHÔNG có bộ phán quyết — từ chối theo chiều AN TOÀN` };
+      }
+      for (const t of duoi) {
+        const coi = tuChoiDangCo(muc.nhan, t);
+        if (coi !== null) return coi;
+        const pqd = bpqDuoi(t);
+        if (pqd !== null) return { ok: false, ma: pqd.ma, chiTiet: pqd.chiTiet };
+      }
+    }
+    const spec = muc.phanGiai(oTuDo, goc, duoi);
     if (spec !== null && "thieu" in spec) {
       return { ok: false, ma: MA_TU_CHOI_LENH.CMD_THIEU_DIEU_KIEN, chiTiet: `${muc.nhan}: ${spec.thieu}` };
     }
@@ -1045,7 +1515,13 @@ export function phanQuyetLenh(argv: readonly string[], goc = gocHopCat()): KetQu
       ok: true,
       muc,
       oTuDo,
-      nhan: oTuDo === null ? muc.nhan : `${muc.khuon.filter((k) => k !== null).join(" ")} ${oTuDo}`,
+      duoi,
+      nhan:
+        duoi.length > 0
+          ? argv.join(" ")
+          : oTuDo === null
+            ? muc.nhan
+            : `${muc.khuon.filter((k) => k !== null).join(" ")} ${oTuDo}`,
       spec,
       hanGioMs: muc.hanGioMs,
     };

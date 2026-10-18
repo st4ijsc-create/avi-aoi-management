@@ -129,6 +129,24 @@ export const NHAN_KIEM_CHUNG: ReadonlySet<string> = new Set([
    */
   "python -m pytest <đường-dẫn>",
   "python -m unittest <đường-dẫn>",
+  /**
+   * ★★★ 2026-10-18 — JAVA · C++ (CMake) · GO · RUST: test/build/check, cùng bất biến (CHỈ HỎI/KIỂM, không ghi đè mã
+   * nguồn — chỉ sinh sản phẩm dựng). Lý lẽ đầy đủ + mọi hàng rào: khối "JAVA · C++ · GO · RUST" ở `DANH_SACH_TRANG`.
+   * ⚠ `java -cp <thư-mục-lớp> <LớpMain>` KHÔNG có ở đây: chạy CHƯƠNG TRÌNH người dùng viết = chạy mã tuỳ ý theo yêu
+   *   cầu, không phải phép kiểm "đã xanh chưa" ⇒ ở `tu-dong` bị từ chối, ở `sua` qua thẻ duyệt như mọi lệnh khác.
+   *   Lớp theo quy ước TEST (`<LớpTest>`) thì có — cùng hồ sơ với `node --test <đường>`.
+   */
+  "javac -d <thư-mục-lớp> <tệp.java|thư-mục>…",
+  "java -cp <thư-mục-lớp> <LớpTest>",
+  "cmake -S . -B <thư-mục-dựng>",
+  "cmake --build <thư-mục-dựng>",
+  "ctest --test-dir <thư-mục-dựng>",
+  "go test ./...",
+  "go build ./...",
+  "go vet ./...",
+  "cargo test --offline",
+  "cargo build --offline",
+  "cargo check --offline",
 ]);
 
 /**
@@ -164,6 +182,8 @@ export type PhanQuyetLenhKiemChung =
        * chứng vốn đã loại mục `ghiDia`).
        */
       oTuDo: string | null;
+      /** ★ 2026-10-18 — token ĐUÔI là ĐƯỜNG (vd nguồn của `javac`) — Q1 xét chúng như đường lệnh chạm. */
+      duongThem: string[];
       thoatCwdTheoCayThuMuc: boolean;
       ghiDia: boolean;
     }
@@ -201,6 +221,7 @@ export function laLenhKiemChung(command: unknown, goc?: string): PhanQuyetLenhKi
     nhan: pq.muc.nhan,
     command: tach.argv.join(" "),
     oTuDo: pq.oTuDo,
+    duongThem: pq.muc.duoi?.laDuong ? [...pq.duoi] : [],
     thoatCwdTheoCayThuMuc: pq.muc.thoatCwdTheoCayThuMuc,
     ghiDia: pq.muc.ghiDia,
   };

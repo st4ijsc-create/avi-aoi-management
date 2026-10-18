@@ -59,6 +59,35 @@ export interface DuLieuNguCanhDuAn {
   tepQuyUoc?: Array<{ duong: string; noiDung: string }>;
 }
 
+/**
+ * ★ 2026-10-18 — nhóm lệnh được phép THEO NGÔN NGỮ (theo chương trình ở token đầu). Đo được: một danh sách phẳng 29 dòng
+ * lẫn npm/dotnet/cargo khiến model dự án Java/Go "không thấy" lệnh của mình và đoán lệnh khác (bị chặn) hoặc tuyên bố
+ * "đã chạy được" không chạy. Một dòng mỗi ngôn ngữ, thứ tự lệnh trong nhóm giữ nguyên thứ tự host đưa.
+ */
+const NHOM_NGON_NGU: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["JavaScript/TypeScript", ["npm", "npx", "node"]],
+  ["Python", ["python", "pip"]],
+  ["C#/.NET", ["dotnet"]],
+  ["Java", ["javac", "java"]],
+  ["C/C++ (CMake)", ["cmake", "ctest"]],
+  ["Go", ["go"]],
+  ["Rust", ["cargo"]],
+  ["Git", ["git"]],
+];
+
+export function nhomLenhTheoNgonNgu(lenh: readonly string[]): string[] {
+  const theoNhom = new Map<string, string[]>();
+  for (const l of lenh) {
+    const dau = l.trim().split(/\s+/)[0] ?? "";
+    const nhom = NHOM_NGON_NGU.find(([, ct]) => ct.includes(dau))?.[0] ?? "Other";
+    const ds = theoNhom.get(nhom) ?? [];
+    ds.push(l);
+    theoNhom.set(nhom, ds);
+  }
+  const thuTu = [...NHOM_NGON_NGU.map(([t]) => t), "Other"];
+  return thuTu.filter((t) => theoNhom.has(t)).map((t) => `- ${t}: ${theoNhom.get(t)!.join(" · ")}`);
+}
+
 export const TRAN_MUC_CAY = 80;
 /** Trần TỔNG chữ của mọi tệp quy ước trong prompt (spec Đợt 2 §4: 8 KB tổng) — chia đều phần còn lại cho tệp sau. */
 export const TRAN_KY_TU_QUY_UOC = 8192;
@@ -72,7 +101,14 @@ export function dungKhoiNguCanhDuAn(d: DuLieuNguCanhDuAn): string {
   if (d.cay.length > TRAN_MUC_CAY) dong.push(`… and ${d.cay.length - TRAN_MUC_CAY} more (use list_dir / find_files)`);
   dong.push("", "## Allowed commands");
   if (d.lenhDuocPhep.length === 0) dong.push("(no commands are allowed in this project)");
-  for (const l of d.lenhDuocPhep) dong.push(`- ${l}`);
+  else {
+    dong.push(
+      "Use run_command with exactly one of these forms. `<…>` is a path relative to the project root (or a class name) that " +
+        "you fill in; every other word and flag is fixed. No shell: no pipes, redirects, '&&', quotes or VAR=value. " +
+        "If the project's language is not listed, you cannot build or run it here — say so instead of claiming it works.",
+    );
+    for (const l of nhomLenhTheoNgonNgu(d.lenhDuocPhep)) dong.push(l);
+  }
   const quyUoc = (d.tepQuyUoc ?? []).filter((q) => q.noiDung.trim() !== "");
   if (quyUoc.length > 0) {
     // DỮ LIỆU của dự án (người viết dự án đặt), không phải lời người dùng lượt này ⇒ theo khi không mâu thuẫn.
