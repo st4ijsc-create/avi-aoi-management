@@ -94,6 +94,10 @@ node scripts/ai-eval/ngau-nhien/mot-luot.mjs --config raw --seed 2026-10-18a --n
 AI_EVAL_BASE=http://127.0.0.1:3010 node scripts/ai-eval/ngau-nhien/mot-luot.mjs --config pipeline --seed 2026-10-18a --n 27 --label NN-a-pipe-1
 # (b) AGENT máy chủ — server :3010 chạy TỪ worktree này (agent làm trong tmp/ngau-nhien-agent/<id> của repo server)
 AI_EVAL_BASE=http://127.0.0.1:3010 node scripts/ai-eval/ngau-nhien/agent.mjs --config agent --seed 2026-10-18a --n 27 --tran-phut 25 --label NN-b-agent-1
+#     … đủ 9 ngôn ngữ tự chạy test: server thêm vào AI_REPO_SANDBOX_ROOTS mục
+#     `nnbai=Bai ngau nhien|D:SOURCES_ai7_wt	mp
+gau-nhien-agent_bai` (restart), rồi mỗi bài dựng vào ĐÚNG thư mục ấy = gốc dự án:
+AI_EVAL_BASE=http://127.0.0.1:3010 node scripts/ai-eval/ngau-nhien/agent.mjs --config agent --project-id nnbai --goc-bai tmp/ngau-nhien-agent/_bai --seed 2026-10-18a --n 27 --label NN-b-goc-1
 # (c) EXTENSION headless — token avgw_ (scripts/ai-eval/vscode-e2e/tao-token.mjs), lát nhiều tệp
 AI_EVAL_BASE=http://127.0.0.1:3010 AI_EVAL_TOKEN=avgw_… node scripts/ai-eval/ngau-nhien/vscode.mjs --seed 2026-10-18a --n 8 -- --config that --label NN-c-that-1
 # Lát MultiPL-E (BÁO RIÊNG) — giao thức gốc (hoàn thành thô + stop token) và chế độ chat
@@ -114,8 +118,8 @@ Nhiễu: một lượt n = 27 có biên rộng (±1 bài/ngôn ngữ là bình t
 | đường | đo | giới hạn (nói thẳng) |
 |---|---|---|
 | (a) một lượt | model viết đủ các tệp `tepGiai` trong MỘT câu trả lời; bộ trích nhận dòng `// tệp: …`, chuỗi thông tin rào, dòng đứng trước khối | không cho model chạy thử; thiếu tệp ⇒ TRƯỢT (`THIEU_TEP`) |
-| (b) agent máy chủ | model tự đọc/ghi/chạy lệnh trong dự án bài | **danh sách lệnh của agent chỉ có `node --test` · `python -m pytest/unittest` · `dotnet build/test`** ⇒ Java/C++/Go/Rust agent KHÔNG tự chạy được test (báo cáo tách hai nhóm). Dự án ở `tmp/ngau-nhien-agent/` (đã .gitignore) vì hàng rào ghi chặn tệp chưa commit (xem docblock `agent.mjs`) |
-| (c) extension | mã THẬT của extension, người duyệt giả bấm "Áp" | chỉ node/pytest/dotnet; không bài cần `node_modules` repo (React); allowlist extension không có java/cmake/go/cargo |
+| (b) agent máy chủ | model tự đọc/ghi/chạy lệnh trong dự án bài | từ 241e1880f agent chạy được test MỌI ngôn ngữ theo khuôn cố định (`lib/cauHoi.mjs` `lenhTest` — đề bài nêu đúng lệnh, mỗi lệnh một `run_command`): `python -m pytest <tệp>` · `node --test <tệp>` · `dotnet test <Bai.csproj>` · `javac -d <out-kt> <src> <test>` → `java -cp <out-kt> HienThiTest` · `cmake -S . -B _b` → `cmake --build _b` → `ctest --test-dir _b` · `go test ./...` · `cargo test --offline`. ⚠ Ba khuôn cuối KHÔNG có ô đường ⇒ chỉ chạy ở GỐC dự án agent: mặc định (dự án `repo`, bài ở `tmp/ngau-nhien-agent/<id>`) C++/Go/Rust vẫn NGOÀI khuôn — báo cáo giữ cột "trong/ngoài khuôn"; muốn đủ 9 ngôn ngữ dùng `--goc-bai` (dưới). Dự án ở `tmp/` (đã .gitignore) vì hàng rào ghi chặn tệp chưa commit (docblock `agent.mjs`) |
+| (c) extension | mã THẬT của extension, người duyệt giả bấm "Áp" | chỉ node/pytest/dotnet: allowlist extension ĐÃ có java/cmake/go/cargo (241e1880f) nhưng bộ chấm `vscode-e2e/agent-f/cham.mjs` chỉ hiểu ba kiểu này, và workspace dưới %TEMP% (MSVC từ chối — MSB8029); không bài cần `node_modules` repo (React) |
 
 ## Lát MultiPL-E — chuẩn công khai, BÁO RIÊNG
 
@@ -144,6 +148,9 @@ Nhiễu: một lượt n = 27 có biên rộng (±1 bài/ngôn ngữ là bình t
 - Bash: đừng nhúng mã có dấu `` ` `` trong `node -e "…"` (bash thay lệnh — đã làm hỏng một docblock khi dựng).
 - `docKho` kiểm hình dạng bài TRONG phạm vi `--only` thôi — bài đang viết dở của người khác không chặn lượt của bạn.
 - Bash Git ghi đè `cd`; dùng đường tuyệt đối.
+- `ctest` chỉ chạy test dự án KHAI (`enable_testing()` + `add_test`) — khung C++ cũ không khai ⇒ agent `ctest --no-tests=error` ĐỎ dù mã đúng (sửa 2026-10-18, `kho/SUA-LOI.md`).
+- Agent dựng CMake vào thư mục khác `_b` ⇒ cây dựng đầy `*.cmake` SINH RA; bộ chấm bỏ cây có `CMakeCache.txt` (trừ gốc) để không thành `TEP_CAU_HINH_TEST_MOI` oan.
+- Khuôn agent trần 8 token/lệnh ⇒ `javac` nhận THƯ MỤC (`src test`), không liệt kê từng tệp (bài ud Java > 5 tệp).
 
 ## Định dạng bài (`kho/<id>/`)
 
@@ -181,10 +188,10 @@ Dựng khung bài mới: `node scripts/ai-eval/ngau-nhien/tao-bai.mjs <id>` (ch�
 | js | `src/*.mjs`, `package.json` `"type":"module"` | `test/hien-thi.test.mjs`, `test/an.test.mjs` — `node:test` + `node:assert/strict`; test PHẲNG | mỗi `test(...)` |
 | ts | `src/*.ts` — CHỈ cú pháp TS xoá được (không enum/namespace/parameter properties), import ghi đuôi `.ts` | `test/*.test.ts` như js | như js |
 | cs | `Bai.csproj` (xUnit, net10.0) ở gốc; mã `src/*.cs` namespace `Bai` | `tests/HienThiTests.cs`, `tests/AnTests.cs`: namespace `KiemThu`, tên lớp = tên tệp | mỗi `[Fact]` / mỗi ca `[Theory]` |
-| java | `src/*.java` package MẶC ĐỊNH | `test/HienThiTest.java`, `test/AnTest.java` có `main` dùng `Kt.chay(...)` … `Kt.ketThuc()`; chạy `java -ea` | mỗi `Kt.chay` |
-| cpp | `src/*.hpp` + `src/*.cpp`; `CMakeLists.txt` khuôn (mỗi `tests/*.cpp` một tệp chạy, liên kết mọi `src/*.cpp`), C++20, MSVC `/utf-8 /EHsc /permissive-` | `tests/hien_thi.cpp`, `tests/an.cpp` dùng `kt.hpp` (`kt::chay`, `KT_BANG`, `KT_DUNG`, `KT_NEM`, `KT_GAN`), `return kt::ketThuc();` | mỗi `kt::chay` |
-| go | gói `bai` ở gốc module `bai` (`go 1.24`), chỉ thư viện chuẩn | `hien_thi_test.go`, `an_test.go` (package `bai`) | mỗi hàm `TestXxx` cấp cao (test con không tính) |
-| rs | crate `bai` (`src/lib.rs`, có thể thêm module), không crate ngoài | `tests/hien_thi.rs`, `tests/an.rs` (test tích hợp, `use bai::…`) | mỗi `#[test]` (tránh khối mã ``` trong doc comment — `cargo test` chạy doc-test) |
+| java | `src/*.java` package MẶC ĐỊNH | `test/HienThiTest.java`, `test/AnTest.java` có `main` dùng `Kt.chay(...)` … `Kt.ketThuc()`; chạy `java -ea`. Tên lớp test PHẢI kết thúc `Test` (khuôn agent `java -cp <ra> <LớpTest>` tự chạy chỉ lớp `Test*`/`*Test`/`*Tests`) | mỗi `Kt.chay` |
+| cpp | `src/*.hpp` + `src/*.cpp`; `CMakeLists.txt` khuôn (mỗi `tests/*.cpp` một tệp chạy, liên kết mọi `src/*.cpp`, và MỘT `add_test` — `ctest` của agent chạy được; bộ chấm vẫn chạy thẳng `.exe` Release), C++20, MSVC `/utf-8 /EHsc /permissive-` | `tests/hien_thi.cpp`, `tests/an.cpp` dùng `kt.hpp` (`kt::chay`, `KT_BANG`, `KT_DUNG`, `KT_NEM`, `KT_GAN`), `return kt::ketThuc();` | mỗi `kt::chay` |
+| go | gói `bai` ở gốc module `bai` (`go 1.24`, `go.mod` ở GỐC — khuôn agent `go test ./...` đòi), chỉ thư viện chuẩn | `hien_thi_test.go`, `an_test.go` (package `bai`) | mỗi hàm `TestXxx` cấp cao (test con không tính) |
+| rs | crate `bai` (`src/lib.rs`, có thể thêm module, `Cargo.toml` ở GỐC — khuôn `cargo test --offline`), không crate ngoài | `tests/hien_thi.rs`, `tests/an.rs` (test tích hợp, `use bai::…`) | mỗi `#[test]` (tránh khối mã ``` trong doc comment — `cargo test` chạy doc-test) |
 
 ### Luật chất lượng bài
 

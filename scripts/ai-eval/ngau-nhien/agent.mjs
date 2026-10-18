@@ -16,6 +16,13 @@
  *
  * Chọn bài như đường (a): --seed · --n · --tat-ca · --only · --luot. Khác: --tran-phut (25) · --project-id (repo) ·
  * --tien-to <đường dự án viết vào câu hỏi> (mặc định tmp/ngau-nhien-agent/<id>) · --giu (giữ thư mục để soi) · --label.
+ * ★ 2026-10-18 — `--goc-bai <đường tương đối repo>`: dựng MỌI bài (lần lượt) vào ĐÚNG một thư mục cố định và coi nó là GỐC
+ *   dự án của agent (câu hỏi nói "dự án này", đường tính từ gốc). Bắt buộc với C++/Go/Rust nếu muốn agent TỰ chạy test:
+ *   khuôn `cmake -S . -B <dựng>` / `go test ./...` / `cargo test --offline` (repoCommandSandbox 241e1880f) không có ô
+ *   đường — chỉ chạy ở gốc dự án có CMakeLists.txt/go.mod/Cargo.toml. Phía server: thêm một mục vào AI_REPO_SANDBOX_ROOTS
+ *   trỏ đúng thư mục ấy, vd `nnbai=Bai ngau nhien|D:\SOURCES\_ai7_wt\tmp\ngau-nhien-agent\_bai`, rồi
+ *   `--project-id nnbai --goc-bai tmp/ngau-nhien-agent/_bai`. Không có cờ này ⇒ như cũ (dự án `repo`, bài ở thư mục con):
+ *   java/py/js/ts/cs/sql agent chạy được test; cpp/go/rs KHÔNG (cột "lệnh test trong khuôn" của báo cáo).
  * Cổng sức khoẻ: AI_EVAL_LLAMA/health (mặc định :8091) + BASE/ trước/sau MỖI bài; hỏng ⇒ exit 2, vứt số.
  */
 import fs from "node:fs";
@@ -46,12 +53,15 @@ const TRAN_MS = Number(arg("--tran-phut", 25)) * 60_000;
 const TIEN_TO = arg("--tien-to", null);
 const GIU = co("--giu");
 const REL_GOC = "tmp/ngau-nhien-agent";
+const GOC_BAI = arg("--goc-bai", null);
+if (GOC_BAI !== null && (!/^tmp\/[A-Za-z0-9_./-]+$/.test(GOC_BAI) || GOC_BAI.includes(".."))) { console.error(`--goc-bai phải là đường dưới tmp/ (đã .gitignore): ${GOC_BAI}`); process.exit(2); }
+if (GOC_BAI !== null && CONFIG === "agent" && PROJECT_ID === "repo") { console.error("--goc-bai cần --project-id trỏ đúng thư mục ấy (AI_REPO_SANDBOX_ROOTS), không phải 'repo'."); process.exit(2); }
 
 const DS = chonPhanTang(KHO_LOC, { seed: SEED, n: N });
 if (!DS.length) { console.error("Không có bài nào."); process.exit(2); }
 const thieuTc = [...new Set(DS.filter((b) => !coToolchain(b.kieu)).map((b) => b.kieu))];
 if (thieuTc.length) { console.error(`⛔ Thiếu toolchain cho: ${thieuTc.join(", ")}`); process.exit(2); }
-console.error(`ℹ ${LABEL}: config=${CONFIG} · seed=${SEED} · ${DS.length} bài × ${SO_LUOT} lượt · nơi làm ${REL_GOC}/<id>` +
+console.error(`ℹ ${LABEL}: config=${CONFIG} · seed=${SEED} · ${DS.length} bài × ${SO_LUOT} lượt · nơi làm ${GOC_BAI ? `${GOC_BAI} (gốc dự án agent)` : `${REL_GOC}/<id>`}` +
   (CONFIG === "agent" ? ` · server ${BASE} · projectId ${PROJECT_ID}` : ""));
 console.error(`  bài: ${DS.map((b) => b.id).join(", ")}`);
 
@@ -90,16 +100,17 @@ await kiemSong("trước");
 const rows = [];
 for (const b of DS) {
   for (let luot = 1; luot <= SO_LUOT; luot++) {
-    const rel = `${REL_GOC}/${b.id}`;
+    const rel = GOC_BAI ?? `${REL_GOC}/${b.id}`;
+    const daCauHoi = GOC_BAI ? null : TIEN_TO ? `${TIEN_TO}/${b.id}` : rel;
     const dir = `${ROOT}/${rel}`;
     dungKhung(b, dir);
-    const row = { id: b.id, lang: b.lang, muc: b.muc, luot, vanTay: b.vanTay, config: CONFIG, agentChayDuocTest: lenhTest(b, rel).agentChayDuoc };
+    const row = { id: b.id, lang: b.lang, muc: b.muc, luot, vanTay: b.vanTay, config: CONFIG, agentChayDuocTest: lenhTest(b, daCauHoi).agentChayDuoc };
     process.stderr.write(`▶ ${b.id} (${b.lang}/${b.muc}) lượt ${luot} … `);
     if (CONFIG === "mau") apMau(b, dir);
     if (CONFIG === "sai") apSai(b, dir);
     if (CONFIG === "gian-lan") apGianLan(b, dir);
     if (CONFIG === "agent") {
-      row.agent = await chayAgent({ base: BASE, cookie, projectId: PROJECT_ID, tranMs: TRAN_MS, cauHoi: taoCauHoiAgent(b, TIEN_TO ? `${TIEN_TO}/${b.id}` : rel) });
+      row.agent = await chayAgent({ base: BASE, cookie, projectId: PROJECT_ID, tranMs: TRAN_MS, cauHoi: taoCauHoiAgent(b, daCauHoi) });
       if (row.agent.http === 404) {
         console.error(`\n⛔ VỨT: ${BASE}/api/ai/agent/runs trả 404 — API agent chưa có trên server này.`);
         process.exit(2);
@@ -130,7 +141,11 @@ console.log(bang);
 if (CONFIG === "agent") {
   const g = (f) => rows.filter(f);
   const ty = (xs) => `${xs.filter((r) => r.dat).length}/${xs.length}`;
-  console.log(` agent CHẠY ĐƯỢC test của bài (node/pytest/dotnet): ${ty(g((r) => r.agentChayDuocTest))} · KHÔNG chạy được (java/cmake/go/cargo — ngoài danh sách lệnh): ${ty(g((r) => !r.agentChayDuocTest))}`);
+  // Giữ CỘT tách hai nhóm (không gộp): từ 241e1880f ranh giới KHÔNG còn theo ngôn ngữ mà theo CHỖ ĐẶT bài — dự án `repo` +
+  // thư mục con ⇒ cmake/go/cargo vẫn ngoài khuôn; `--goc-bai` ⇒ mọi bài trong khuôn (nhóm thứ hai rỗng, không in).
+  const ngoai = g((r) => !r.agentChayDuocTest);
+  console.log(` lệnh test hiển thị TRONG khuôn agent: ${ty(g((r) => r.agentChayDuocTest))}` +
+    (ngoai.length ? ` · NGOÀI khuôn (cmake/go/cargo ở thư mục con — dùng --goc-bai): ${ty(ngoai)}` : " (mọi bài)"));
   console.log(` ms trung vị ${trungVi(rows.map((r) => r.agent.ms))} · tool trung vị ${trungVi(rows.map((r) => r.agent.soGoiTool))} · token ra trung vị ${trungVi(rows.map((r) => r.agent.usage.ra))}` +
     ` · dừng: ${Object.entries(rows.reduce((m, r) => ((m[r.agent.lyDo ?? "?"] = (m[r.agent.lyDo ?? "?"] ?? 0) + 1), m), {})).map(([k, v]) => `${k}×${v}`).join(" ")}`);
 }

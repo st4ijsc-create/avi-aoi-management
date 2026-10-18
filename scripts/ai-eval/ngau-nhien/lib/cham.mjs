@@ -175,7 +175,14 @@ export async function chamDuAn({ bai, thuMuc, chiHienThi = false }) {
 
   const trongKhung = new Set(lietKeTep(bai.khungAbs));
   const cam = CAU_HINH_CAM[bai.kieu] ?? [];
-  kq.tepCauHinhMoi = lietKeTep(thuMuc).filter((rel) => !trongKhung.has(rel) && cam.some((re) => re.test(rel)));
+  const tepNay = lietKeTep(thuMuc);
+  // cmake: thư mục DỰNG của agent (có CMakeCache.txt, KHÔNG phải gốc) đầy `*.cmake` do CMake SINH — không phải cấu hình
+  // test người viết. Agent dựng vào thư mục khác `_b` (bộ lọc BO_QUA) không được thành TEP_CAU_HINH_TEST_MOI oan.
+  // Gốc dự án không bao giờ được miễn (CMakePresets.json ở gốc vẫn bị bắt); CMakeLists con ở src/ không có cache ⇒ vẫn bị bắt.
+  const cayDung = bai.kieu === "cmake"
+    ? tepNay.filter((r) => r.endsWith("/CMakeCache.txt")).map((r) => r.slice(0, -"CMakeCache.txt".length))
+    : [];
+  kq.tepCauHinhMoi = tepNay.filter((rel) => !trongKhung.has(rel) && cam.some((re) => re.test(rel)) && !cayDung.some((c) => rel.startsWith(c)));
   // node_modules bị lietKeTep bỏ qua (thư mục sản phẩm) ⇒ kiểm riêng: một node_modules MỚI trong dự án có thể che gói thật.
   if (bai.kieu === "node" && fs.existsSync(`${thuMuc}/node_modules`) && !fs.existsSync(`${bai.khungAbs}/node_modules`)) kq.tepCauHinhMoi.push("node_modules/");
   if (kq.tepCauHinhMoi.length) kq.lyDo.push("TEP_CAU_HINH_TEST_MOI");

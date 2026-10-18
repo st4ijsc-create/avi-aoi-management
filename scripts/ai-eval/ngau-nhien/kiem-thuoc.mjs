@@ -108,7 +108,7 @@ async function kiemBai(b) {
   } else kq.cauHinhMoiBat = null;
 
   // 5. prompt sạch
-  const cauHoi = taoCauHoiMotLuot(b) + "\n" + taoCauHoiAgent(b, "tmp/x");
+  const cauHoi = [taoCauHoiMotLuot(b), taoCauHoiAgent(b, "tmp/x"), taoCauHoiAgent(b, null)].join("\n");
   const ro = [...dongDacTrung(b.anAbs, b.khungAbs), ...dongDacTrung(b.mauAbs, b.khungAbs)].filter((l) => cauHoi.includes(l));
   kq.promptSach = ro.length === 0;
   if (ro.length) kq.loi.push(`prompt chứa ${ro.length} dòng của test ẩn/mẫu: ${ro.slice(0, 2).join(" | ")}`);
